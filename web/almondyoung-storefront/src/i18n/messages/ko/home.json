@@ -66,13 +66,29 @@
     "listNext": "다음 목록 보기"
   },
   "timeSale": {
+    "titleFirst": "타임",
+    "titleSecond": "세일",
+    "allTab": "전체",
+    "allTitle": "타임세일 전체",
+    "productCount": "{count}개 상품",
+    "emptyTitle": "진행 중인 타임세일이 없습니다",
+    "pageDescription": "정해진 시간 동안만 이 가격입니다.",
     "noSaleTitle": "진행 중인 타임세일이 없습니다",
     "noSaleDescription": "다음 타임세일을 준비하고 있어요.",
-    "endsIn": "타임세일 종료까지 {remaining}"
+    "nextSale": "다음 타임세일 {date} 시작",
+    "endsIn": "타임세일 종료까지 {remaining}",
+    "countdownLabel": "타임세일 종료까지",
+    "endsOn": "{date}까지",
+    "dayUnit": "일",
+    "untilEnd": "종료까지",
+    "endingSoon": "마감 임박",
+    "badge": "타임세일"
   },
   "beautytop": {
     "title": "뷰티탑",
-    "body": "우리 샵 순위와 동네 시세를 확인해 보세요"
+    "headline": "우리 샵, 동네에서 몇 등일까요?",
+    "body": "같은 업종 샵 수부터 우리 샵 순위까지 숫자로 보여 드려요",
+    "cta": "확인해 보기"
   },
   "comingSoon": {
     "title": "아몬드템플릿은 준비 중이에요",

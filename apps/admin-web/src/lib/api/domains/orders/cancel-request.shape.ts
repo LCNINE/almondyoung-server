@@ -1,19 +1,38 @@
 // src/lib/api/domains/orders/cancel-request.shape.ts
 //
-// 채널 주문 취소 요청(#1016 35번) 응답 정형·문구 순수 함수. admin-web 은 컴포넌트 테스트가 안 되므로 화면이 읽는 판정은 여기서 한다.
+// 채널 주문 취소 요청(#1016 35번 · 36번 재설계: 요청은 확정이다) 응답 정형·문구 순수 함수. admin-web 은 컴포넌트 테스트가 안 되므로 화면이 읽는 판정은 여기서 한다.
 // 서버 원형: apps/core/src/modules/sales-order/channel-cancel-request/channel-cancel-request.types.ts (CancelRequestView)
 
+import { formatDwell } from '../../../utils/format-dwell';
 import type { AmendmentRecord } from './sales-order-amendments.shape';
+
+export type SettlementPhase = 'in_progress' | 'delayed' | 'refused';
+export interface SettlementView {
+  requestId: string;
+  phase: SettlementPhase;
+  mode: 'auto' | 'manual';
+  confirmedAt: string;
+  deadlineAt: string;
+  lastFailure: { code: string; message: string; retryable: boolean; at: string } | null;
+}
 
 export interface CancelRequestView {
   id: string;
-  status: 'requested' | 'applied' | 'rejected' | 'superseded';
+  status: 'settling' | 'applied' | 'rejected' | 'superseded';
   scope: 'full' | 'partial';
-  stage: 'edited' | null;
   convertedFromFull: boolean;
   requestedAt: string;
-  rejection: { reasonCode: string; message: string; at: string } | null;
-  outcome: { refundAmount: number; shippingCharge: number; shippingRefund: number; shippingNotAdjusted: boolean } | null;
+  rejection: { reasonCode: string; message: string; at: string; unresolvedRefundAmount?: number } | null;
+  outcome: {
+    refundAmount: number;
+    shippingCharge: number;
+    shippingRefund: number;
+    shippingNotAdjusted: boolean;
+    externalRefundApplied?: number;
+  } | null;
+  /** 확정 뒤 정산 중일 때만(core 가 settling 에만 싣는다). 옛 응답은 null */
+  settlement: SettlementView | null;
+  refundMode: 'auto' | 'manual' | null;
 }
 
 export type AdminCancelResponse =
@@ -22,7 +41,7 @@ export type AdminCancelResponse =
 
 export type CancelAction =
   | { kind: 'cancel'; label: '취소' | '강제취소' }
-  | { kind: 'requested'; label: string }
+  | { kind: 'settling'; label: string; alert: boolean }
   | { kind: 'rejected'; reason: string }
   | { kind: 'seller_center'; label: string };
 
@@ -34,6 +53,7 @@ const REJECTION_LABELS: Record<string, string> = {
   NOT_CANCELABLE: '채널이 거절',
   REFUND_FAILED: '환불 불가',
   OPERATOR_WITHDRAWN: '요청 접음',
+  EXTERNAL_REFUND_UNRESOLVED: '이미 환불한 금액 확인 필요',
 };
 const won = new Intl.NumberFormat('ko-KR');
 
@@ -42,24 +62,105 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isStatus(value: unknown): value is CancelRequestView['status'] {
-  return value === 'requested' || value === 'applied' || value === 'rejected' || value === 'superseded';
+  // 'requested' 는 옛 흐름의 역사 값 — 뷰로 만들지 않는다(그 주문은 «취소» 버튼으로 새 흐름을 탄다, PR 6)
+  return value === 'settling' || value === 'applied' || value === 'rejected' || value === 'superseded';
 }
 
 function isScope(value: unknown): value is CancelRequestView['scope'] {
   return value === 'full' || value === 'partial';
 }
 
+export const SETTLEMENT_LABELS: Record<SettlementPhase, string> = {
+  in_progress: '환불 처리 중',
+  delayed: '환불 지연',
+  refused: '환불 거절',
+};
+export const MANUAL_REFUND_CONFIRM_TEXT =
+  '고객에게 계좌를 받아 직접 송금한 뒤, 결제 관리 › 환불 내역에서 [완료 처리]를 눌러 주세요.';
+const WALLET_REFUSED_PREFIX = 'wallet_refund_refused:';
+/** 채널(Medusa)이 «이미 환불한 금액»을 물으며 거절한 부분취소(#1016 37번) — core 가 이 실패일 때만 금액을 받는다 */
+const EXTERNAL_REFUND_PREFIX = 'external_refund_';
+const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+const KST_OFFSET_MS = 9 * 3_600_000;
+
+function isPhase(value: unknown): value is SettlementPhase {
+  return value === 'in_progress' || value === 'delayed' || value === 'refused';
+}
+
+function failureOf(value: unknown): SettlementView['lastFailure'] {
+  if (!isRecord(value) || typeof value.code !== 'string' || typeof value.message !== 'string') return null;
+  return {
+    code: value.code,
+    message: value.message,
+    retryable: value.retryable === true,
+    at: typeof value.at === 'string' ? value.at : '',
+  };
+}
+
+export function toSettlementView(value: unknown): SettlementView | null {
+  if (!isRecord(value) || typeof value.requestId !== 'string' || !isPhase(value.phase)) return null;
+  if (value.mode !== 'auto' && value.mode !== 'manual') return null;
+  if (typeof value.confirmedAt !== 'string' || typeof value.deadlineAt !== 'string') return null;
+  return {
+    requestId: value.requestId,
+    phase: value.phase,
+    mode: value.mode,
+    confirmedAt: value.confirmedAt,
+    deadlineAt: value.deadlineAt,
+    lastFailure: failureOf(value.lastFailure),
+  };
+}
+
+/** 운영자가 읽는 사유. wallet·PG 영구 거절과 그 밖(주문 없음 등 «개발 확인»)을 failureCode 접두사로 가른다(PR 3 넘길 것 4) */
+export function settlementReason(s: SettlementView): string | null {
+  const f = s.lastFailure;
+  // 환불 처리 중에 지난 실패를 곁에 두면 모순으로 읽힌다 — 다시 시도한 뒤의 진행 중엔 사유를 숨긴다
+  if (!f || s.phase === 'in_progress') return null;
+  if (f.code.startsWith(WALLET_REFUSED_PREFIX)) return `환불 거절 · ${f.message || f.code}`;
+  if (f.code.startsWith(EXTERNAL_REFUND_PREFIX)) return `${REJECTION_LABELS.EXTERNAL_REFUND_UNRESOLVED} · ${f.message || f.code}`;
+  return `정산 실패 · 개발 확인 · ${f.message || f.code}`;
+}
+
+/** 서버(core restartSettlement)와 같은 규칙 — 정산 중(30분 안)엔 조치 없음(D8), 이미 계좌 송금이면 다시 시도만 */
+export function settlementActionsOf(s: SettlementView | null): { retry: boolean; manualRefund: boolean } {
+  if (!s || s.phase === 'in_progress') return { retry: false, manualRefund: false };
+  return { retry: true, manualRefund: s.mode !== 'manual' };
+}
+
+export function settlementTiming(s: SettlementView, now: number): string {
+  const deadline = new Date(Date.parse(s.deadlineAt) + KST_OFFSET_MS);
+  const day = `${deadline.getUTCMonth() + 1}/${deadline.getUTCDate()}(${WEEKDAYS[deadline.getUTCDay()]})`;
+  return `확정 후 ${formatDwell(now - Date.parse(s.confirmedAt))} · 기한 ${day}`;
+}
+
+/** 운영자 취소는 요청 순간 확정된다(#1016 36번 재설계) — 응답이 곧 «취소했다»다 */
+export function cancelRequestToast(r: Extract<AdminCancelResponse, { requestId: string }>): string {
+  return r.convertedFromFull
+    ? '출고된 상품을 뺀 나머지를 취소했습니다. 환불은 채널이 처리합니다.'
+    : '취소했습니다. 환불은 채널이 처리합니다.';
+}
+
 function rejectionOf(value: unknown): CancelRequestView['rejection'] {
-  return isRecord(value) && typeof value.reasonCode === 'string' && typeof value.message === 'string'
-    ? { reasonCode: value.reasonCode, message: value.message, at: typeof value.at === 'string' ? value.at : '' }
-    : null;
+  if (!isRecord(value) || typeof value.reasonCode !== 'string' || typeof value.message !== 'string') return null;
+  return {
+    reasonCode: value.reasonCode,
+    message: value.message,
+    at: typeof value.at === 'string' ? value.at : '',
+    ...(typeof value.unresolvedRefundAmount === 'number' ? { unresolvedRefundAmount: value.unresolvedRefundAmount } : {}),
+  };
 }
 
 function outcomeOf(value: unknown): CancelRequestView['outcome'] {
   if (!isRecord(value)) return null;
   const { refundAmount, shippingCharge, shippingRefund } = value;
   if (typeof refundAmount !== 'number' || typeof shippingCharge !== 'number' || typeof shippingRefund !== 'number') return null;
-  return { refundAmount, shippingCharge, shippingRefund, shippingNotAdjusted: value.shippingNotAdjusted === true };
+  return {
+    refundAmount,
+    shippingCharge,
+    shippingRefund,
+    shippingNotAdjusted: value.shippingNotAdjusted === true,
+    ...(typeof value.externalRefundApplied === 'number' ? { externalRefundApplied: value.externalRefundApplied } : {}),
+  };
 }
 
 export function toCancelRequestView(value: unknown): CancelRequestView | null {
@@ -70,11 +171,12 @@ export function toCancelRequestView(value: unknown): CancelRequestView | null {
     id: value.id,
     status,
     scope,
-    stage: value.stage === 'edited' ? 'edited' : null,
     convertedFromFull: value.convertedFromFull === true,
     requestedAt: typeof value.requestedAt === 'string' ? value.requestedAt : '',
     rejection: rejectionOf(value.rejection),
     outcome: outcomeOf(value.outcome),
+    settlement: toSettlementView(value.settlement),
+    refundMode: value.refundMode === 'auto' || value.refundMode === 'manual' ? value.refundMode : null,
   };
 }
 
@@ -87,7 +189,6 @@ export function cancelRequestFromAmendment(row: AmendmentRecord): CancelRequestV
     id: row.id,
     status: row.status,
     scope: request.scope,
-    stage: request.stage,
     convertedFromFull: request.convertedFromFull,
     requestedAt: row.occurredAt,
     rejection: row.metadata.rejection,
@@ -99,8 +200,9 @@ export function cancelActionOf(row: { channel: string; orderStatus: string; canc
   const center = SELLER_CENTER[row.channel];
   if (center) return { kind: 'seller_center', label: `${center} 판매자센터에서 취소` };
   const request = row.cancelRequest;
-  if (request?.status === 'requested') {
-    return { kind: 'requested', label: request.stage === 'edited' ? '수정됨 · 환불 미완' : '취소 요청됨' };
+  if (request?.status === 'settling') {
+    const phase = request.settlement?.phase ?? 'in_progress';
+    return { kind: 'settling', label: SETTLEMENT_LABELS[phase], alert: phase !== 'in_progress' };
   }
   if (request?.status === 'rejected' && request.rejection) {
     return { kind: 'rejected', reason: `${REJECTION_LABELS[request.rejection.reasonCode] ?? request.rejection.reasonCode} · ${request.rejection.message}` };
@@ -111,8 +213,8 @@ export function cancelActionOf(row: { channel: string; orderStatus: string; canc
 export function cancelRequestLine(view: CancelRequestView): string {
   const name = view.scope === 'full' ? '전체취소' : view.convertedFromFull ? '부분취소(출고분 제외)' : '부분취소';
   switch (view.status) {
-    case 'requested':
-      return `${name} 요청 · ${view.stage === 'edited' ? '수정됨 · 환불 미완' : '처리 중'}`;
+    case 'settling':
+      return view.settlement ? `${name} 확정 · ${SETTLEMENT_LABELS[view.settlement.phase]}` : `${name} 확정 · 정산 중`;
     case 'applied': {
       const o = view.outcome;
       if (!o) return `${name} 반영`;
@@ -123,7 +225,8 @@ export function cancelRequestLine(view: CancelRequestView): string {
           : o.shippingRefund > 0
             ? `배송비 환불 ${won.format(o.shippingRefund)}원`
             : null;
-      return [`${name} 반영`, `환불 ${won.format(o.refundAmount)}원`, shipping].filter(Boolean).join(' · ');
+      const offset = o.externalRefundApplied ? `외부 환불 ${won.format(o.externalRefundApplied)}원 상계` : null;
+      return [`${name} 반영`, `환불 ${won.format(o.refundAmount)}원`, shipping, offset].filter(Boolean).join(' · ');
     }
     case 'rejected': {
       const r = view.rejection;
@@ -138,28 +241,18 @@ export function isCancelRequested(r: AdminCancelResponse): r is Extract<AdminCan
   return 'requestId' in r && typeof r.requestId === 'string';
 }
 
-function openRequestsOf(details: ReadonlyArray<unknown>): CancelRequestView[] {
-  return details.flatMap((d) => {
-    const view = isRecord(d) ? toCancelRequestView(d.cancelRequest) : null;
-    return view?.status === 'requested' ? [view] : [];
-  });
-}
-
 /**
- * 상세 목록에 «방금 낸» 처리 중 요청이 있으면 true — 행을 잠깐 다시 읽어 «취소 요청됨»이 끝나는 걸 보인다.
- * 오래 열린 요청은 세지 않는다: 막힌 요청을 영원히 3초마다 읽지 않게, 그건 정체 보드의 몫이다.
+ * 품목은 확정 때 이미 취소돼 새 요청을 낼 수 없다 — 채널이 «이미 환불한 금액»을 물었으면 [다시 시도]가 그 금액을 받는다(#1016 37번).
+ * 물을 금액(품목에 연결 안 된 외부 환불)은 사유 문장에 있다.
  */
-export function hasFreshOpenCancelRequest(details: ReadonlyArray<unknown>, now: number, windowMs = 120_000): boolean {
-  return openRequestsOf(details).some((v) => {
-    const at = Date.parse(v.requestedAt);
-    return Number.isFinite(at) && now - at <= windowMs;
-  });
+export function asksAlreadyRefunded(s: SettlementView | null): boolean {
+  if (!s || s.phase === 'in_progress') return false;
+  return s.lastFailure?.code.startsWith(EXTERNAL_REFUND_PREFIX) ?? false;
 }
 
-/** 이전 읽기에서 requested 였는데 이번에는 requested 가 아닌 요청의 id — 주문 목록의 상태(`orderStatus`)를 다시 읽을 때다. */
-export function settledCancelRequestIds(prev: ReadonlyArray<unknown>, next: ReadonlyArray<unknown>): string[] {
-  const stillOpen = new Set(openRequestsOf(next).map((v) => v.id));
-  return openRequestsOf(prev)
-    .map((v) => v.id)
-    .filter((id) => !stillOpen.has(id));
+/** 이미 환불한 금액 입력 — 0 이상의 정수(원), 콤마 허용. 아니면 null */
+export function parseAlreadyRefunded(text: string): number | null {
+  const t = text.replace(/,/g, '').trim();
+  if (!/^\d+$/.test(t)) return null;
+  return Number(t);
 }

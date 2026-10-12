@@ -66,13 +66,29 @@
     "listNext": "Show next items"
   },
   "timeSale": {
+    "titleFirst": "Time",
+    "titleSecond": "Sale",
+    "allTab": "All",
+    "allTitle": "All time sale items",
+    "productCount": "{count} items",
+    "emptyTitle": "No time sale is running",
+    "pageDescription": "These prices are only for a limited time.",
     "noSaleTitle": "No time sale is running",
     "noSaleDescription": "The next time sale is being prepared.",
-    "endsIn": "Ends in {remaining}"
+    "nextSale": "Next time sale starts {date}",
+    "endsIn": "Ends in {remaining}",
+    "countdownLabel": "Time sale ends in",
+    "endsOn": "Until {date}",
+    "dayUnit": "d",
+    "untilEnd": "Ends in",
+    "endingSoon": "Ending soon",
+    "badge": "Time sale"
   },
   "beautytop": {
     "title": "BeautyTop",
-    "body": "Check your shop's rank and local prices"
+    "headline": "Where does your shop rank in the neighborhood?",
+    "body": "From how many similar shops there are to your own rank, all in numbers",
+    "cta": "Check it out"
   },
   "comingSoon": {
     "title": "Almond Template is coming soon",

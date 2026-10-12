@@ -2,7 +2,7 @@ import { getOrders } from "@lib/api/medusa/orders"
 import { ShippingItemsSection } from "../../../components/desktop/shipping-items-section"
 import type { ShippingOrder } from "../../../types/mypage-types"
 import {
-  resolveMypageDisplayLabel,
+  resolveMypageCoreView,
   resolveMypageShippingStatus,
 } from "./mypage-order-status"
 import { withMypageTimeout } from "./mypage-timeout"
@@ -23,12 +23,13 @@ export async function ShippingItemsWrapper() {
     .filter((c: any) => c.shippingStatus !== null)
     .slice(0, 3)
 
-  const shippingOrders: ShippingOrder[] = await Promise.all(
-    candidates.map(async ({ order, shippingStatus }: any) => {
-      const statusLabel = await resolveMypageDisplayLabel(
+  const shippingOrders: ShippingOrder[] = (await Promise.all(
+    candidates.map(async ({ order, shippingStatus }: any): Promise<ShippingOrder | null> => {
+      const { statusLabel, cancelledByCore } = await resolveMypageCoreView(
         order,
         shippingStatus.statusLabel
       )
+      if (cancelledByCore) return null
 
       const firstItem = order.items?.[0]
       const productName =
@@ -64,7 +65,7 @@ export async function ShippingItemsWrapper() {
             ?.bank_transfer_status as string | undefined) ?? undefined,
       }
     })
-  )
+  )).filter((o): o is ShippingOrder => o !== null)
 
   return <ShippingItemsSection initialOrders={shippingOrders} />
 }

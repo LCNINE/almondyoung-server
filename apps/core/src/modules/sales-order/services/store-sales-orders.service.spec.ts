@@ -45,14 +45,20 @@ function makeContext(
     walletOutcome?: WalletRefundOutcome;
     cancelError?: Error;
     businessLinkError?: Error;
-    openRequestView?: Record<string, unknown> | null;
     replayView?: Record<string, unknown> | null;
     refundLinks?: Array<{ relationName: string; metadata: Record<string, unknown>; createdAt: Date }>;
     /** 이 주문에 다운로드(exercise)된 디지털 상품 ownership 이 있는지 */
     exercisedDigital?: boolean;
+    /** 취소 요청(확정 트랜잭션)이 끝난 뒤 판매주문 — 요청 뒤 다시 읽으면 이 값이 나온다 */
+    soAfterRequest?: ReturnType<typeof makeSo>;
+    /** 채널 취소 정산 사실(최근 순) */
+    settlementFacts?: Array<Record<string, unknown>>;
+    /** wallet 환불 목록. null = 실패·시간 초과 */
+    walletRefunds?: Array<Record<string, unknown>> | null;
   } = {},
 ) {
   const so = options.so ?? makeSo();
+  let currentSo = so;
   const fos = (options.fos ?? []).map((fo) => ({
     directShipStatus: null,
     fulfillmentMode: null,
@@ -78,12 +84,11 @@ function makeContext(
   let transactionTail = Promise.resolve();
 
   // Each where() call gets a fresh mock object so we can distinguish:
-  //   call 0: findSoOrThrow — limit().then() → [so]
-  //   call 1+: FO / returnRequests / exchangeRequests / businessLinks
+  //   sales_orders: findSoOrThrow — limit().then() → [currentSo] (요청 뒤 다시 읽으면 soAfterRequest)
+  //   그 밖: FO / returnRequests / exchangeRequests / businessLinks
   //     - then() directly (no limit) → fos      (fulfillment order list)
   //     - limit().then()             → []        (return/exchange/businessLinks single-row lookups)
   //     - orderBy().limit().then()   → []        (businessLinks ordered lookup)
-  let whereCallIndex = 0;
   const dbMock = {
     db: {
       execute: jest
@@ -92,13 +97,19 @@ function makeContext(
       select: jest.fn().mockImplementation(() => ({
         from: jest.fn().mockImplementation((table: unknown) => ({
           where: jest.fn().mockImplementation(() => {
-            const idx = whereCallIndex++;
-            const isOwnership =
-              getTableName(table as Parameters<typeof getTableName>[0]) === 'digital_asset_ownerships';
+            const tableName = getTableName(table as Parameters<typeof getTableName>[0]);
             return {
               limit: jest.fn().mockReturnValue({
                 then: jest.fn((fn: (r: unknown[]) => unknown) =>
-                  fn(isOwnership ? (options.exercisedDigital ? [{ id: 'own-1' }] : []) : idx === 0 ? [so] : []),
+                  fn(
+                    tableName === 'digital_asset_ownerships'
+                      ? options.exercisedDigital
+                        ? [{ id: 'own-1' }]
+                        : []
+                      : tableName === 'sales_orders'
+                        ? [currentSo]
+                        : [],
+                  ),
                 ),
               }),
               then: jest.fn((fn: (r: unknown[]) => unknown) => fn(fos)),
@@ -146,21 +157,33 @@ function makeContext(
 
   const walletClientMock: Partial<WalletRefundClient> = {
     refundByIntent: jest.fn().mockResolvedValue(walletOutcome),
+    listRefundsByIntent: jest
+      .fn()
+      .mockResolvedValue(options.walletRefunds === undefined ? [] : options.walletRefunds),
   };
 
   const cancelRequestsMock = {
-    request: jest.fn().mockResolvedValue({
-      id: 'req-1',
-      status: 'requested',
-      scope: 'full',
-      stage: null,
-      convertedFromFull: false,
-      requestedAt: '2026-10-07T00:00:00.000Z',
-      rejection: null,
-      outcome: null,
+    settlementFactsFor: jest.fn().mockResolvedValue(options.settlementFacts ?? []),
+    request: jest.fn().mockImplementation(() => {
+      currentSo = options.soAfterRequest ?? currentSo;
+      return Promise.resolve({
+        id: 'req-1',
+        status: 'settling',
+        scope: 'full',
+        stage: null,
+        convertedFromFull: false,
+        requestedAt: '2026-10-07T00:00:00.000Z',
+        rejection: null,
+        outcome: null,
+        settlement: null,
+        refundMode: 'auto',
+      });
     }),
-    findBySourceKey: jest.fn().mockResolvedValue(options.replayView ?? null),
-    latestFor: jest.fn().mockResolvedValue(options.openRequestView ?? null),
+    // 같은 키의 행이 보인다 = 그 키의 확정 트랜잭션이 커밋됐다 — 그 뒤에 다시 읽는 판매주문은 soAfterRequest 다.
+    findBySourceKey: jest.fn().mockImplementation(() => {
+      if (options.replayView) currentSo = options.soAfterRequest ?? currentSo;
+      return Promise.resolve(options.replayView ?? null);
+    }),
   };
 
   const service = new StoreSalesOrdersService(
@@ -264,7 +287,7 @@ describe('StoreSalesOrdersService', () => {
       expect(r.orderStatus).toBe('confirmed');
     });
 
-    it('고객 취소는 요청을 기록하고 core 취소·Wallet 을 부르지 않는다 (ADR-0042 원칙 1)', async () => {
+    it('고객 취소는 요청 하나로 끝난다 — 이 서비스는 core 취소·Wallet 을 직접 부르지 않는다(확정은 요청 안에서)', async () => {
       const { service, salesOrdersServiceMock, walletClientMock, cancelRequestsMock } = makeContext();
       const context = { idempotencyKey: 'k-1', actorId: CUSTOMER_ID, actorRoles: ['customer'] };
       await service.cancelRequestByChannelOrder(
@@ -284,6 +307,17 @@ describe('StoreSalesOrdersService', () => {
       expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
     });
 
+    it('응답은 확정 «뒤»의 판매주문으로 만든다 — 바로 «취소됨»(PR 4 넘길 것 1)', async () => {
+      const { service } = makeContext({ soAfterRequest: makeSo({ status: 'cancelled' }) });
+      const r = await service.cancelRequestByChannelOrder(
+        CHANNEL_ORDER_ID,
+        CUSTOMER_ID,
+        {},
+        { idempotencyKey: 'k-1', actorId: CUSTOMER_ID, actorRoles: ['customer'] },
+      );
+      expect(r.orderStatus).toBe('cancelled');
+    });
+
     it('같은 키 재요청은 가드보다 먼저 지금 뷰를 돌려준다 — 이미 취소된 뒤여도 400 이 아니다', async () => {
       const { service, cancelRequestsMock } = makeContext({
         so: makeSo({ status: 'cancelled' }),
@@ -295,6 +329,21 @@ describe('StoreSalesOrdersService', () => {
       ).resolves.toMatchObject({
         orderStatus: 'cancelled',
       });
+      expect(cancelRequestsMock.request).not.toHaveBeenCalled();
+    });
+
+    it('같은 키 재요청도 확정 «뒤»의 판매주문으로 답한다 — 처음 읽은 주문이 아니라 다시 읽은 «취소됨»', async () => {
+      const { service, cancelRequestsMock } = makeContext({
+        replayView: { id: 'req-1', status: 'settling' },
+        soAfterRequest: makeSo({ status: 'cancelled' }),
+      });
+      const r = await service.cancelRequestByChannelOrder(
+        CHANNEL_ORDER_ID,
+        CUSTOMER_ID,
+        {},
+        { idempotencyKey: 'k-1', actorId: CUSTOMER_ID, actorRoles: ['customer'] },
+      );
+      expect(r.orderStatus).toBe('cancelled');
       expect(cancelRequestsMock.request).not.toHaveBeenCalled();
     });
 
@@ -349,7 +398,7 @@ describe('StoreSalesOrdersService', () => {
         dbMock as any,
         { cancel: jest.fn(), createBusinessLink: jest.fn() } as any,
         { refundByIntent: jest.fn() } as any,
-        { latestFor: jest.fn().mockResolvedValue(null) } as any,
+        { settlementFactsFor: jest.fn().mockResolvedValue([]) } as any,
       );
       return { service, dbMock };
     }
@@ -375,28 +424,70 @@ describe('StoreSalesOrdersService', () => {
   });
 
   describe('getActionsByChannelOrder', () => {
-    it('열린 취소 요청 — 취소 버튼 없이 cancel_requested, cancelRequestStatus=requested', async () => {
-      const { service } = makeContext({ openRequestView: { id: 'req-1', status: 'requested' } });
-      const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-      expect(r.availableActions).toEqual(['receipt']);
-      expect(r.cancelUnavailableReason).toBe('cancel_requested');
-      expect(r.cancelRequestStatus).toBe('requested');
-    });
+    describe('채널 취소 정산(#1016 36번 재설계 §8.2)', () => {
+      const cancelled = () => makeSo({ status: 'cancelled' });
 
-    it('거절된 최근 요청 — 다시 취소할 수 있고 cancelRequestStatus=rejected', async () => {
-      const { service } = makeContext({ openRequestView: { id: 'req-1', status: 'rejected' } });
-      const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-      expect(r.availableActions).toContain('cancel');
-      expect(r.cancelRequestStatus).toBe('rejected');
-    });
-
-    it('취소된 주문은 요청 상태를 싣지 않는다', async () => {
-      const { service } = makeContext({
-        so: makeSo({ status: 'cancelled' }),
-        openRequestView: { id: 'req-1', status: 'applied' },
+      it('정산 중 → refundStatus·refundSummary.status 모두 pending', async () => {
+        const { service } = makeContext({ so: cancelled(), settlementFacts: [{ status: 'settling', mode: 'auto', phase: 'in_progress' }] });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.refundStatus).toBe('pending');
+        expect(r.refundSummary?.status).toBe('pending');
       });
+
+      it('지연 → delayed, 안내 문장은 null(스토어프론트 i18n 이 정본 — PR 4 넘길 것 4)', async () => {
+        const { service } = makeContext({ so: cancelled(), settlementFacts: [{ status: 'settling', mode: 'auto', phase: 'refused' }] });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.refundStatus).toBe('delayed');
+        expect(r.refundSummary).toMatchObject({ status: 'delayed', expectedProcessingMessage: null });
+      });
+
+      it('수동으로 끝남 + wallet 송금 대기 → transfer_pending', async () => {
+        const { service, walletClientMock } = makeContext({
+          so: cancelled(),
+          settlementFacts: [{ status: 'applied', mode: 'manual' }],
+          walletRefunds: [{ id: 'r1', status: 'PENDING', execution: 'MANUAL', amount: 50000 }],
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.refundStatus).toBe('transfer_pending');
+        expect(r.refundSummary).toMatchObject({ status: 'transfer_pending', expectedProcessingMessage: null });
+        expect(walletClientMock.listRefundsByIntent).toHaveBeenCalledWith(WALLET_INTENT_ID);
+      });
+
+      it('wallet 실패·시간 초과 → transfer_pending(«완료»라고 하지 않는다)', async () => {
+        const { service } = makeContext({ so: cancelled(), settlementFacts: [{ status: 'applied', mode: 'manual' }], walletRefunds: null });
+        expect((await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID)).refundStatus).toBe('transfer_pending');
+      });
+
+      it('수동 송금 끝 → 기존 도출(수집된 환불이면 succeeded)', async () => {
+        const { service } = makeContext({
+          so: cancelled(),
+          settlementFacts: [{ status: 'applied', mode: 'manual' }],
+          walletRefunds: [{ id: 'r1', status: 'SUCCEEDED', execution: 'MANUAL', amount: 50000 }],
+          refundLinks: [{ relationName: 'order_lifecycle_refund_collected', metadata: { amount: 50000 }, createdAt: new Date() }],
+        });
+        expect((await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID)).refundStatus).toBe('succeeded');
+      });
+
+      it('자동 정산 주문은 wallet 을 부르지 않는다 — 목록 배치가 wallet 에 기대지 않게', async () => {
+        const { service, walletClientMock } = makeContext({ so: cancelled(), settlementFacts: [{ status: 'applied', mode: 'auto' }] });
+        await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(walletClientMock.listRefundsByIntent).not.toHaveBeenCalled();
+      });
+
+      it('운영자 부분취소 정산(판매주문은 살아 있음)에도 같은 값을 둘 다 싣는다(PR 4 넘길 것 3)', async () => {
+        const { service } = makeContext({ settlementFacts: [{ status: 'settling', mode: 'auto', phase: 'in_progress' }] });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.orderStatus).toBe('confirmed');
+        expect(r.refundStatus).toBe('pending');
+        expect(r.refundSummary?.status).toBe('pending');
+      });
+    });
+
+    it('취소 요청 상태 칸은 더 싣지 않는다 — 요청은 확정이라 «처리 중» 요청이 없다(PR 6)', async () => {
+      const { service } = makeContext({});
       const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-      expect(r.cancelRequestStatus).toBeUndefined();
+      expect(r).not.toHaveProperty('cancelRequestStatus');
+      expect(r.cancelUnavailableReason).not.toBe('cancel_requested');
     });
 
     it('wallet 연결 없이 수집된 환불만 있으면 합계로 succeeded 요약(스펙 §7.5)', async () => {
@@ -649,7 +740,6 @@ describe('StoreSalesOrdersService', () => {
         outcome: null,
       }),
       findBySourceKey: jest.fn().mockResolvedValue(null),
-      latestFor: jest.fn().mockResolvedValue(null),
     };
 
     const service = new StoreSalesOrdersService(
@@ -899,7 +989,6 @@ describe('StoreSalesOrdersService', () => {
         outcome: null,
       }),
       findBySourceKey: jest.fn().mockResolvedValue(null),
-      latestFor: jest.fn().mockResolvedValue(null),
     };
 
     const service = new StoreSalesOrdersService(

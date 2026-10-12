@@ -3,8 +3,6 @@
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   USER_VARIABLE_NAME_SOURCE,
-  defaultSaleDisplay,
-  saleLayoutFor,
   pageWindowItems,
   type TimeSaleSettings,
   type SaleSurface,
@@ -57,8 +55,8 @@ export type SaleRendererProps = {
   settings: TimeSaleSettings;
   surface: SaleSurface;
   platform?: SalePlatform;
-  saleId: string;
-  title: string;
+  // 고객 화면 제목엔 쓰지 않는다(운영자 내부용). 어드민 미리보기의 {{title}} 치환용.
+  title?: string;
   startsAt: string;
   endsAt: string;
   products: SaleProduct[];
@@ -77,7 +75,17 @@ export type SaleRendererProps = {
 
   // 섹션 타이머·진행바·노출 판단의 기준 기간들. 없으면 받은 상품으로 계산한다.
   sectionPeriods?: SalePeriodLike[];
+
+  // 카테고리 탭. 첫 칸이 「전체」다. 없으면 탭 컴포넌트는 그리지 않는다.
+  tabs?: SaleTab[];
+
+  // 링크 탭에서 지금 고른 탭, 그리고 {{product_count}} 에 쓸 전체 상품 수(서버 페이지 나누기용).
+  activeTabKey?: string;
+  productCount?: number;
 };
+
+// href 가 있으면 링크 탭(서버가 탭별로 페이지를 나눌 때), 없으면 받은 상품을 화면에서 거른다.
+export type SaleTab = { key: string; name: string; productIds: string[]; href?: string };
 
 const names = { scheduled: '할인(예정)', active: '할인(실행중)', ended: '할인(종료)' };
 
@@ -120,11 +128,14 @@ export function SaleMembershipPrice({
   price,
   membershipPrice,
   hidden = false,
+  labelOnly = false,
   currency = (amount: number) => `${amount.toLocaleString('ko-KR')}원`,
 }: {
   price: number | null;
   membershipPrice?: number | null;
   hidden?: boolean;
+  // 라이브 카드처럼 「멤버십할인가」 표시만 두고 금액·절약액은 뺀다.
+  labelOnly?: boolean;
   currency?: (amount: number) => string;
 }) {
   const available = !(
@@ -146,7 +157,7 @@ export function SaleMembershipPrice({
         alignItems: 'flex-start',
         textAlign: 'left',
         gap: 4,
-        marginTop: 8,
+        marginTop: labelOnly ? 4 : 8,
         color: '#ffa500',
       }}
     >
@@ -169,7 +180,7 @@ export function SaleMembershipPrice({
         </span>
         멤버십할인가
       </span>
-      {available ? (
+      {labelOnly ? null : available ? (
         <>
           <strong style={{ fontSize: 15 }}>{currency(membershipPrice!)}</strong>
           <span style={{ fontSize: 11, fontWeight: 500 }}>가입 시 {currency(price! - membershipPrice!)} 절약</span>
@@ -263,6 +274,18 @@ export function resolveSection(now: number, input: SectionInput) {
   return { period, state, products: inPeriod, hidden };
 }
 
+// 카드 배지용: 하루 넘게 남으면 「N일」, 안이면 「HH:MM:SS」(라이브와 같다).
+export function countdownText(seconds: number) {
+  if (seconds >= 86400) return `${Math.floor(seconds / 86400)}일`;
+
+  return clockText(seconds);
+}
+
+const clockText = (seconds: number) =>
+  [Math.floor(seconds / 3600) % 24, Math.floor(seconds / 60) % 60, seconds % 60]
+    .map((n) => String(n).padStart(2, '0'))
+    .join(':');
+
 function formatRemaining(seconds: number) {
   return `${Math.floor(seconds / 3600)}시간 ${Math.floor(seconds / 60) % 60}분`;
 }
@@ -339,7 +362,8 @@ function expand(text: string, values: Record<string, string>) {
 export function SaleRenderer(props: SaleRendererProps) {
   const [mobile, setMobile] = useState(true),
     [now, setNow] = useState(0),
-    [popup, setPopup] = useState(false);
+    [popup, setPopup] = useState(false),
+    [tabKey, setTabKey] = useState<string | null>(null);
 
   useEffect(() => {
     const media = matchMedia('(max-width: 767px)');
@@ -363,13 +387,11 @@ export function SaleRenderer(props: SaleRendererProps) {
 
   const { settings, surface, products, previewState, previewSoldOut, sanitizeHtml } = props;
 
-  const d = settings.sales[props.saleId] ?? defaultSaleDisplay();
-
   const platform = props.platform ?? (mobile ? 'mobile' : 'pc');
 
-  const layout = saleLayoutFor(settings, d, surface, platform);
+  const layout = settings.styles[surface][platform];
 
-  const moreLayout = saleLayoutFor(settings, d, 'more', platform);
+  const moreLayout = settings.styles.more[platform];
 
   // 1) 기간·상태·남은 시간 계산(previewState 가 있으면 어드민 미리보기용 가짜 값)
   const sale = { startsAt: props.startsAt, endsAt: props.endsAt };
@@ -380,7 +402,7 @@ export function SaleRenderer(props: SaleRendererProps) {
     sale,
     products: filtered,
     sectionPeriods: props.sectionPeriods,
-    display: d,
+    display: { showScheduled: false, showEnded: false },
     previewState,
     paged: Boolean(props.pager),
   });
@@ -430,9 +452,8 @@ export function SaleRenderer(props: SaleRendererProps) {
   // 2) 문구에 쓸 변수 모음({{title}}, {{remaining_time}}, 사용자 변수 …)
   const vars: Record<string, string> = {
     ...saleTimeVariables(period, state, remaining),
-    title: props.title,
-    time_sale_name: props.title,
-    time_sale_no: props.saleId,
+    title: props.title ?? '타임세일',
+    time_sale_name: props.title ?? '타임세일',
     condition: names[state],
     remaining_time: formatRemaining(remaining),
     starts_at: new Date(props.startsAt).toLocaleString('ko-KR'),
@@ -442,19 +463,15 @@ export function SaleRenderer(props: SaleRendererProps) {
 
   // 3) 노출 여부 판단: 환경/세일 설정에서 꺼져 있거나
   // 기간 기준으로 숨겨야 하면 아무것도 그리지 않는다.
-  if (
-    !settings.environment.enabled ||
-    !settings.environment[surface] ||
-    !d[surface] ||
-    d.styles?.[surface]?.[platform]?.enabled === false
-  )
-    return null;
-  if (section.hidden) return null;
+  if (!settings.environment[surface] || section.hidden) return null;
 
-  const visible = (d.showSoldOut ? section.products : section.products.filter((p) => !p.soldOut)).slice();
-
-  const order = new Map((d.productOrder ?? []).map((id, index) => [id, index]));
-  if (order.size) visible.sort((a, b) => (order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity));
+  const tabs = props.tabs ?? [];
+  const activeTab = tabs.find((tab) => tab.key === (tabKey ?? props.activeTabKey)) ?? tabs[0];
+  const visible =
+    activeTab && !activeTab.href
+      ? section.products.filter((p) => activeTab.productIds.includes(p.id))
+      : section.products;
+  vars.product_count = (props.productCount ?? visible.length).toLocaleString('ko-KR');
 
   const html = (content: string, values = vars) => ({ __html: sanitizeHtml(expand(content, values)) });
 
@@ -569,6 +586,38 @@ export function SaleRenderer(props: SaleRendererProps) {
                     {expand(c.content, vars)}
                   </a>
                 ))}
+              {c.type === 'tabs' && tabs.length > 0 && (
+                <div
+                  role="tablist"
+                  style={{ ...tabListStyle, justifyContent: c.css.textAlign === 'left' ? 'flex-start' : 'center' }}
+                >
+                  {tabs.map((tab) => {
+                    const selected = tab.key === activeTab?.key;
+                    const style = {
+                      ...tabStyle,
+                      ...c.options.tabCss,
+                      ...(selected ? c.options.activeTabCss : {}),
+                    } as CSSProperties;
+
+                    return tab.href ? (
+                      <a key={tab.key} href={tab.href} role="tab" aria-selected={selected} style={style}>
+                        {tab.name}
+                      </a>
+                    ) : (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        role="tab"
+                        aria-selected={selected}
+                        onClick={() => setTabKey(tab.key)}
+                        style={style}
+                      >
+                        {tab.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               {c.type === 'timer' && (
                 <Timer component={{ ...c, css: { ...c.css, ...c.stateCss?.[state] } }} end={end} now={now} />
               )}
@@ -642,30 +691,28 @@ export function SaleRenderer(props: SaleRendererProps) {
                   html={html}
                   settings={settings}
                   stateOf={productState}
-                  saleProductVariables={d.productVariables}
                   pager={props.pager}
                   renderProductActions={props.renderProductActions}
-                  productVars={(p) => ({
-                    ...saleTimeVariables(
-                      periodOf(p, sale),
-                      productState(p),
+                  productVars={(p) => {
+                    const own = periodOf(p, sale);
+                    const current = productState(p);
+                    const seconds =
                       previewState && props.previewAnchor
-                        ? fixedRemaining(productState(p))
+                        ? fixedRemaining(current)
                         : Math.max(
                             0,
-                            Math.ceil(
-                              (Date.parse(
-                                productState(p) === 'scheduled' ? periodOf(p, sale).startsAt : periodOf(p, sale).endsAt,
-                              ) -
-                                now) /
-                                1000,
-                            ),
-                          ),
-                    ),
-                    product_starts_at: new Date(periodOf(p, sale).startsAt).toLocaleString('ko-KR'),
-                    product_ends_at: new Date(periodOf(p, sale).endsAt).toLocaleString('ko-KR'),
-                    product_remaining: productRemaining(p),
-                  })}
+                            Math.ceil((Date.parse(current === 'scheduled' ? own.startsAt : own.endsAt) - now) / 1000),
+                          );
+
+                    return {
+                      ...saleTimeVariables(own, current, seconds),
+                      product_starts_at: new Date(own.startsAt).toLocaleString('ko-KR'),
+                      product_ends_at: new Date(own.endsAt).toLocaleString('ko-KR'),
+                      product_remaining: productRemaining(p),
+                      // 마운트 전(now=0)엔 비운다 — 서버와 브라우저 시각이 달라 하이드레이션이 어긋난다.
+                      product_countdown: now === 0 && !previewState ? '' : countdownText(seconds),
+                    };
+                  }}
                 />
               )}
             </div>
@@ -709,7 +756,7 @@ export function SaleRenderer(props: SaleRendererProps) {
             <button autoFocus type="button" aria-label="닫기" onClick={() => setPopup(false)} style={popupCloseStyle}>
               ×
             </button>
-            {d.styles?.more?.[platform]?.enabled !== false && drawLayout(moreLayout, 'more')}
+            {drawLayout(moreLayout, 'more')}
           </div>
         </div>
       )}
@@ -942,6 +989,64 @@ const productBadgeStyle = (c: SaleComponent, prefix: string): CSSProperties => (
   ...(c.options.badgeCss as CSSProperties),
 });
 
+// 라이브 상품 카드의 「⏱ 타임세일 · 4일」 배지(이미지 왼쪽 위).
+const timeSaleBadgeStyle = (color: string): CSSProperties => ({
+  position: 'absolute',
+  top: 8,
+  left: 8,
+  zIndex: 99,
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  padding: '2px 8px',
+  borderRadius: 4,
+  background: color,
+  color: '#ffffff',
+  fontSize: 11,
+  fontWeight: 500,
+  lineHeight: '16px',
+  fontVariantNumeric: 'tabular-nums',
+});
+
+function ClockIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  );
+}
+
+const tabListStyle: CSSProperties = {
+  display: 'flex',
+  gap: 8,
+  overflowX: 'auto',
+  scrollbarWidth: 'none',
+};
+
+const tabStyle: CSSProperties = {
+  flex: '0 0 auto',
+  padding: '6px 8px',
+  border: 0,
+  borderBottom: '2px solid transparent',
+  background: 'transparent',
+  font: 'inherit',
+  color: 'inherit',
+  textDecoration: 'none',
+  whiteSpace: 'nowrap',
+  cursor: 'pointer',
+};
+
 const soldOutOverlayStyle = (c: SaleComponent): CSSProperties => ({
   position: 'absolute',
   inset: 0,
@@ -1112,6 +1217,31 @@ export function timerParts(
 
 // 남은 시간을 일·시간·분·초 칸으로 보여주는 타이머.
 function Timer({ component: c, end, now }: { component: SaleComponent; end: number; now: number }) {
+  if (c.options.timer === 'text') {
+    const remaining = Math.max(0, Math.ceil((end - now) / 1000));
+    const days = Math.floor(remaining / 86400);
+
+    // 라이브 섹션 머리의 「종료까지  4일 12:08:16」. 마운트 전엔 자리만 잡는다.
+    return (
+      <span aria-label="남은 시간" style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ lineHeight: 1, ...c.options.timerLabelCss } as CSSProperties}>{c.content}</span>
+        <span
+          style={
+            {
+              lineHeight: 1,
+              fontVariantNumeric: 'tabular-nums',
+              visibility: now === 0 ? 'hidden' : undefined,
+              ...c.options.timerDigitCss,
+            } as CSSProperties
+          }
+        >
+          {days > 0 && `${days}일 `}
+          {clockText(remaining)}
+        </span>
+      </span>
+    );
+  }
+
   const flip = c.options.timer === 'flip';
 
   const parts = timerParts(end, now, c.options);
@@ -1253,7 +1383,6 @@ function Products({
   settings,
   stateOf,
   productVars,
-  saleProductVariables,
   pager,
   renderProductActions,
 }: {
@@ -1266,7 +1395,6 @@ function Products({
   settings: TimeSaleSettings;
   stateOf: (product: SaleProduct) => SalePreviewState;
   productVars: (product: SaleProduct) => Record<string, string>;
-  saleProductVariables?: Record<string, Record<string, string>>;
 }) {
   const badgePrefix = `ts-badge-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
 
@@ -1395,15 +1523,16 @@ function Products({
         {list.map((p) => {
           const discount = p.price !== null && p.originalPrice ? Math.round((1 - p.price / p.originalPrice) * 100) : 0;
 
-          const showBadge = c.options.badge !== 'none' && discount > 0;
+          const timeSaleBadge = c.options.badge === 'timesale';
+          const showBadge = c.options.badge !== 'none' && (timeSaleBadge || discount > 0);
           const Card = c.options.disableProductLink ? 'div' : 'a';
           const image = p.images?.[c.options.imageType ?? 'list'] || p.image;
 
-          const values = {
+          const values: Record<string, string> = {
             ...vars,
             ...productVars(p),
-            // 상품 값: 세일 설정에 저장된 상품별 값 > 호출자가 넘긴 값 > 변수 preview(vars 에 이미 있음)
-            ...resolveUserVariables(settings.variables, saleProductVariables?.[p.id], p.variables),
+            // 상품 값: 호출자가 넘긴 값 > 변수 preview(vars 에 이미 있음)
+            ...resolveUserVariables(settings.variables, p.variables),
             product_name: p.name,
             product_no: p.id,
             summary_description: p.summary ?? '',
@@ -1478,7 +1607,18 @@ function Products({
                 ) : (
                   <div style={productImagePlaceholderStyle} />
                 )}
-                {showBadge && <span style={productBadgeStyle(c, badgePrefix)}>{discount}%</span>}
+                {showBadge &&
+                  (timeSaleBadge ? (
+                    <span
+                      style={{ ...timeSaleBadgeStyle(c.options.badgeColor), ...(c.options.badgeCss as CSSProperties) }}
+                    >
+                      <ClockIcon />
+                      타임세일
+                      {values.product_countdown && ` · ${values.product_countdown}`}
+                    </span>
+                  ) : (
+                    <span style={productBadgeStyle(c, badgePrefix)}>{discount}%</span>
+                  ))}
                 {c.imageLayers?.map((layer) => {
                   const content = html(layer.content, values);
 
@@ -1524,13 +1664,15 @@ function Products({
                   />
                 )}
                 {c.options.showOriginal && discount > 0 && (
-                  <small style={{ textDecoration: 'line-through', color: '#999999' }}>
+                  <div style={{ textDecoration: 'line-through', color: '#8b95a1', fontSize: 13, marginBottom: 2 }}>
                     {currency(p.originalPrice)}
-                  </small>
+                  </div>
                 )}
-                <div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, lineHeight: 1 }}>
                   {c.options.showDiscount && discount > 0 && (
-                    <strong style={{ color: c.options.badgeColor }}>{discount}% </strong>
+                    <strong style={{ color: c.options.badgeColor, ...c.options.discountCss } as CSSProperties}>
+                      {discount}%
+                    </strong>
                   )}
                   {!hasTexts && (
                     <span
@@ -1544,12 +1686,13 @@ function Products({
                   price={p.price}
                   membershipPrice={p.membershipPrice}
                   hidden={p.membershipOnly && p.membershipPrice == null}
+                  labelOnly={c.options.membershipLabelOnly}
                   currency={currency}
                 />
                 {!!p.reviewCount && p.reviewCount > 0 && Number.isFinite(p.rating) && (
                   <div
                     aria-label={`평점 ${p.rating}점, 리뷰 ${p.reviewCount.toLocaleString('ko-KR')}개`}
-                    style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 12, fontSize: 13 }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 8, fontSize: 12 }}
                   >
                     <span aria-hidden="true" style={{ position: 'relative', color: '#ddd', letterSpacing: 1 }}>
                       ★★★★★

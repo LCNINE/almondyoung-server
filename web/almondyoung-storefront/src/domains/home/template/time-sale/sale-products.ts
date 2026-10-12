@@ -7,17 +7,38 @@ import type { TimeSale } from "@/lib/api/medusa/time-sale"
 import { getRequiresMembershipToPurchase } from "@/lib/utils/product-card"
 import { isWelcomeMembershipProduct } from "@/lib/utils/welcome-membership"
 
-// 세일의 상품 id 순서(판매순 → 리뷰순 → 최신순)대로 상품을 되돌려 카드용 데이터로 바꾼다.
-// 가격은 /store/products 응답(멤버십 은닉·가격 비공개 미들웨어가 적용된 값)에서만 만든다.
+// 상품이 걸린 세일 기간. 세일이 여럿이면 먼저 끝나는 쪽 — 카드 배지가 실제보다 길게 남은 것처럼
+// 보이는 것보다 짧게 보이는 쪽이 안전하다.
+export function productPeriods(
+  sales: TimeSale[]
+): Map<string, { startsAt: string | null; endsAt: string | null }> {
+  const periods = new Map<
+    string,
+    { startsAt: string | null; endsAt: string | null }
+  >()
+  const byEnd = [...sales].sort((a, b) =>
+    (a.endsAt ?? "").localeCompare(b.endsAt ?? "")
+  )
+  for (const sale of byEnd) {
+    for (const id of sale.productIds) {
+      if (!periods.has(id))
+        periods.set(id, { startsAt: sale.startsAt, endsAt: sale.endsAt })
+    }
+  }
+  return periods
+}
+
+// 서버가 준 상품 id 순서(판매순 → 리뷰순 → 최신순)대로 상품을 되돌려 카드용 데이터로 바꾼다.
+// 가격은 /store/products 응답(멤버십 은닉 미들웨어가 적용된 값)에서만 만든다.
 export function buildSaleProducts({
-  sale,
+  sales,
   ids,
   products,
   countryCode,
   isMember = false,
   wishlistIds = [],
 }: {
-  sale: TimeSale
+  sales: TimeSale[]
   ids: string[]
   products: HttpTypes.StoreProduct[]
   countryCode: string
@@ -26,6 +47,7 @@ export function buildSaleProducts({
 }): SaleProduct[] {
   const availableIds = new Set(filterSoldOut(products).map((p) => p.id))
   const byId = new Map(products.map((product) => [product.id, product]))
+  const periods = productPeriods(sales)
 
   return ids.flatMap((id) => {
     const product = byId.get(id)
@@ -39,7 +61,7 @@ export function buildSaleProducts({
     const originalPrice: unknown = cheapestPrice?.original_price_number
     const currency: unknown = cheapestPrice?.currency_code
     const membershipPrice = cheapestVariant?.metadata?.membershipPrice
-    const period = sale.products?.find((item) => item.productId === id)
+    const period = periods.get(id)
 
     return [
       {
@@ -79,7 +101,6 @@ export function buildSaleProducts({
               product.metadata?.totalCount ??
               product.metadata?.reviewTotalCount
           ) || 0,
-        membershipOnly: !!sale.display?.membershipPriceOnly,
         quickActions: {
           handle: product.handle,
           variantId: product.variants?.[0]?.id,

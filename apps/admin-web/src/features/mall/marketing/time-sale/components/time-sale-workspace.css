@@ -686,56 +686,6 @@
   line-height: 20px;
   box-shadow: 0 2px 4px #0004;
 }
-.ts-service-switch {
-  display: inline-flex;
-  gap: 10px;
-  align-items: center;
-  font-size: 14px;
-  white-space: nowrap;
-}
-.ts-switch {
-  appearance: none;
-  display: inline-block;
-  position: relative;
-  vertical-align: middle;
-  width: 36px;
-  height: 14px;
-  border: 0;
-  border-radius: 20px;
-  background: #a5a5a5;
-  margin: 5px 2px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.ts-switch::after {
-  content: '';
-  position: absolute;
-  left: -1px;
-  top: -3px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #fafafa;
-  box-shadow: 0 1px 2px #0004;
-  transition: transform 0.15s;
-}
-.ts-switch:checked {
-  background: #80b5dd;
-}
-.ts-switch:checked::after {
-  background: #087ac1;
-  transform: translateX(18px);
-}
-.ts-appbar .ts-switch {
-  background: #154778;
-}
-.ts-appbar .ts-switch::after {
-  background: white;
-}
-.ts-switch:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
 .ts-management {
   min-height: calc(100svh - 64px);
 }
@@ -807,11 +757,6 @@
   border: 0;
   cursor: pointer;
 }
-.ts-order-buttons {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
 .ts-count {
   margin: 0 20px;
   color: #394dd4;
@@ -854,14 +799,6 @@
 .ts-table .ts-name {
   text-align: left;
   min-width: 180px;
-}
-.ts-table input[type='checkbox']:not(.ts-switch) {
-  appearance: auto;
-  width: 17px;
-  height: 17px;
-  accent-color: #3478d0;
-  vertical-align: middle;
-  cursor: pointer;
 }
 .ts-row-selected {
   background: #edf4fc;
@@ -1058,17 +995,6 @@
   font-size: 11px;
   margin-right: 10px;
 }
-.ts-style-selection .ts-switch {
-  width: 28px;
-  height: 10px;
-}
-.ts-style-selection .ts-switch::after {
-  width: 16px;
-  height: 16px;
-}
-.ts-style-selection .ts-switch:checked::after {
-  transform: translateX(14px);
-}
 .ts-member-settings {
   color: #777;
 }
@@ -1216,9 +1142,6 @@
     padding: 8px;
     margin: 0;
   }
-  .ts-service-switch {
-    font-size: 12px;
-  }
   .ts-list-toolbar {
     flex-wrap: wrap;
     padding: 8px;
@@ -1312,17 +1235,6 @@
   min-width: 1000px;
 }
 
-.ts-field-help {
-  display: inline-flex;
-  margin-left: 6px;
-  padding: 0;
-  border: 0;
-  color: #3280d8;
-  background: transparent;
-  vertical-align: middle;
-  cursor: pointer;
-}
-
 .ts-stock-notice {
   display: flex;
   align-items: center;
@@ -1370,21 +1282,6 @@
   font-size: 12px;
   line-height: 18px;
   text-decoration: none;
-}
-
-.ts-product-table .ts-switch {
-  width: 28px;
-  height: 12px;
-}
-
-.ts-product-table .ts-switch::after {
-  width: 16px;
-  height: 16px;
-  top: -2px;
-}
-
-.ts-product-table .ts-switch:checked::after {
-  transform: translateX(14px);
 }
 
 .ts-related-notices {

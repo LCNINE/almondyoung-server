@@ -57,6 +57,13 @@
       "when": 1790921762538,
       "tag": "20261002061602_add-beautytop-saved-shops",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791421788465,
+      "tag": "20261008010948_add-beautytop-growth-notes",
+      "breakpoints": true
     }
   ]
 }

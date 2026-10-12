@@ -9,7 +9,8 @@ export type QuarantineStatus =
 
 export type QuarantineReason =
   | 'channel_product_identification_failed'
-  | 'collected_order_modification_not_accepted';
+  | 'collected_order_modification_not_accepted'
+  | 'order_collection_processing_failed';
 
 export type ReplayStatus =
   | 'replayed'
@@ -18,7 +19,8 @@ export type ReplayStatus =
   | 'closed_terminal'
   | 'closed_already_collected'
   | 'not_found_or_not_payment_accepted'
-  | 'not_replayable';
+  | 'not_replayable'
+  | 'moved_to_identification_quarantine';
 
 export interface CauseGuidance {
   label: string;
@@ -102,6 +104,8 @@ const REPLAY_MESSAGES: Record<ReplayStatus, string> = {
     '채널에서 주문을 찾을 수 없거나 결제완료 상태가 아닙니다. 수집할 것이 없습니다.',
   not_replayable:
     '수집 후 변경 건이라 재처리할 수 없습니다. CS/주문정정으로 처리하세요.',
+  moved_to_identification_quarantine:
+    '상품 식별 실패로 넘어갔습니다. 식별 실패 격리 행에서 조치하세요.',
 };
 
 /**
@@ -115,6 +119,7 @@ export function replayResultMessage(status: string): string {
 const REASON_LABELS: Record<QuarantineReason, string> = {
   channel_product_identification_failed: '채널상품 식별 실패',
   collected_order_modification_not_accepted: '수집 후 변경(재처리 불가)',
+  order_collection_processing_failed: '수집 처리 실패',
 };
 
 /**
@@ -124,4 +129,46 @@ const REASON_LABELS: Record<QuarantineReason, string> = {
  */
 export function reasonLabel(reason: string): string {
   return REASON_LABELS[reason as QuarantineReason] ?? reason;
+}
+
+const PROCESSING_FAILURE_REASON = 'order_collection_processing_failed';
+
+/**
+ * 서버 상한과 같은 값이어야 한다 — apps/channel-adapter/src/services/order-collection/order-collection-failure.service.ts
+ * 의 `PROCESSING_FAILURE_MAX_ATTEMPTS`. 정체 보드·배지가 «사람 몫»으로 세는 기준이 이 값이다.
+ */
+const PROCESSING_FAILURE_MAX_ATTEMPTS = 4;
+
+const STAGE_LABELS: Record<string, string> = {
+  fetch: '조회 실패',
+  translate: '변환 실패',
+  enqueue_order: '주문 적재 실패',
+  enqueue_lifecycle: '취소·환불 적재 실패',
+};
+
+export function isProcessingFailure(reason: string): boolean {
+  return reason === PROCESSING_FAILURE_REASON;
+}
+
+/** 처리 실패 행의 단계 라벨. 모르는 값은 원문을 보여 준다(조사 단서를 잃지 않기 위함 — `reasonLabel` 과 같은 이유). */
+export function stageLabel(stage: string | null | undefined): string | null {
+  if (!stage) return null;
+  return STAGE_LABELS[stage] ?? stage;
+}
+
+/**
+ * 자동 재시도가 아직 남은 처리 실패에만 진행 라벨을 준다. 소진된 행·종결 행·다른 사유는 null —
+ * 정상 상태에 글씨를 더하지 않는다.
+ */
+export function retryProgressLabel(row: {
+  reason: string;
+  status: string;
+  attemptCount?: number;
+}): string | null {
+  if (!isProcessingFailure(row.reason) || row.status !== 'quarantined') {
+    return null;
+  }
+  const attempts = row.attemptCount ?? 0;
+  if (attempts >= PROCESSING_FAILURE_MAX_ATTEMPTS) return null;
+  return `자동 재시도 중 (${attempts}/${PROCESSING_FAILURE_MAX_ATTEMPTS})`;
 }

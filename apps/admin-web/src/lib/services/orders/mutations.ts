@@ -1100,12 +1100,12 @@ export const useResyncChannelChange = () => {
   });
 };
 
-/** 정체 보드 «취소 요청» — 같은 requestId 로 명령을 다시 낸다 (#1016 35번) */
-export const useResendCancelRequest = () => {
+/** 채널 취소 정산 [다시 시도] (#1016 36번 재설계) */
+export const useRetryCancelSettlement = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (salesOrderId: string) =>
-      orders.salesOrders.resendCancelRequest(salesOrderId),
+    mutationFn: (v: { salesOrderId: string; requestId: string; alreadyRefundedAmount?: number }) =>
+      orders.salesOrders.retryCancelSettlement(v.salesOrderId, v.requestId, v.alreadyRefundedAmount),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['order-progress'] });
       queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
@@ -1113,12 +1113,12 @@ export const useResendCancelRequest = () => {
   });
 };
 
-/** 정체 보드 «취소 요청» — 요청을 접어 보류를 푼다 */
-export const useWithdrawCancelRequest = () => {
+/** 채널 취소 정산 [계좌 송금으로 환불] */
+export const useManualRefundCancelSettlement = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (salesOrderId: string) =>
-      orders.salesOrders.withdrawCancelRequest(salesOrderId),
+    mutationFn: (v: { salesOrderId: string; requestId: string }) =>
+      orders.salesOrders.manualRefundCancelSettlement(v.salesOrderId, v.requestId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['order-progress'] });
       queryClient.invalidateQueries({ queryKey: ['sales-orders'] });

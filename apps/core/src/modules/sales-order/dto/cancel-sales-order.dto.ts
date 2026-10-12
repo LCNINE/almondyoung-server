@@ -131,6 +131,17 @@ export class CancelSalesOrderDto {
   postShipmentHandoff?: CancelSalesOrderPostShipmentHandoffDto;
 
   @ApiProperty({
+    description:
+      '채널(Medusa) 주문 부분취소만 — 이번 취소 품목에 이미 다른 경로(wallet 관리자 환불 등)로 돌려준 금액. Medusa 가 그만큼 상계하고 나머지만 환불한다(#1016 37번).',
+    required: false,
+    minimum: 0,
+  })
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  alreadyRefundedAmount?: number;
+
+  @ApiProperty({
     description: '취소 사유 코드',
     required: false,
     example: 'CUSTOMER_REQUEST',
@@ -175,4 +186,18 @@ export class CancelByIntentDto {
   @Min(0)
   @IsOptional()
   amount?: number;
+}
+
+/** 채널 취소 정산 [다시 시도] 본문 — 비어 있어도 된다 */
+export class RetryCancelSettlementDto {
+  @ApiProperty({
+    description:
+      '채널(Medusa)이 «이미 환불한 금액»을 물으며 거절한 부분취소만(external_refund_*) — 이번 취소 품목에 이미 다른 경로로 돌려준 금액. 없으면 0(#1016 37번).',
+    required: false,
+    minimum: 0,
+  })
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  alreadyRefundedAmount?: number;
 }

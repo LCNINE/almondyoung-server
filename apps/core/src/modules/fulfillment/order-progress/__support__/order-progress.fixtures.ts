@@ -189,3 +189,45 @@ export async function seedReturn(
 ): Promise<void> {
   await tx.insert(returnRequests).values({ salesOrderId, status, reasonCode: 'defective', createdAt });
 }
+
+/** 확정된 채널 취소 요청(정산 중) — #1016 36번 재설계. createdAt 이 확정 시각이다 */
+export async function seedSettling(
+  tx: DbTx,
+  salesOrderId: string,
+  args: { createdAt: Date; state?: 'in_progress' | 'refused'; mode?: 'auto' | 'manual' },
+): Promise<string> {
+  const id = randomUUID();
+  const at = args.createdAt.toISOString();
+  await tx.insert(wmsTables.salesOrderAmendments).values({
+    id,
+    salesOrderId,
+    amendmentKind: 'commercial',
+    reasonCode: 'CHANNEL_CANCEL_REQUEST',
+    deltas: [],
+    metadata: {
+      salesChannel: 'medusa',
+      externalOrderId: `ext-${id.slice(0, 8)}`,
+      request: {
+        kind: 'cancel',
+        scope: 'full',
+        requestedBy: 'customer:c',
+        sourceKey: id,
+        appliedAt: at,
+        command: { requestId: id },
+      },
+      settlement: {
+        state: args.state ?? 'in_progress',
+        mode: args.mode ?? 'auto',
+        since: at,
+        ...(args.state === 'refused'
+          ? { lastFailure: { code: 'wallet_refund_refused:X', message: '거절', retryable: false, at } }
+          : {}),
+      },
+    },
+    origin: 'operator',
+    status: 'settling',
+    occurredAt: args.createdAt,
+    createdAt: args.createdAt,
+  });
+  return id;
+}

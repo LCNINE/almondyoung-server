@@ -22,7 +22,7 @@ import { SalesOrderResponseDto } from '../dto/sales-order-response.dto';
 import { DailyStatsQueryDto } from '../dto/daily-stats-query.dto';
 import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 import { CreateBusinessLinkDto } from '../dto/create-business-link.dto';
-import { CancelSalesOrderDto, CancelByIntentDto } from '../dto/cancel-sales-order.dto';
+import { CancelSalesOrderDto, CancelByIntentDto, RetryCancelSettlementDto } from '../dto/cancel-sales-order.dto';
 
 @ApiTags('Sales Orders')
 @Controller('sales-orders')
@@ -78,6 +78,7 @@ export class SalesOrdersController {
       reasonCode: dto.reasonCode,
       reasonDetail: dto.reasonDetail,
       lines: dto.lines,
+      alreadyRefundedAmount: dto.alreadyRefundedAmount,
       fulfillmentCommandContext: {
         idempotencyKey: idempotencyKey.trim(),
         actorId,
@@ -96,21 +97,24 @@ export class SalesOrdersController {
     });
   }
 
-  @Post(':id/cancel-request/resend')
-  @ApiOperation({ summary: '채널 취소 요청 다시 보내기 — 같은 requestId (정체 보드 «취소 요청 미반영»)' })
+  @Post(':id/cancel-request/:requestId/retry')
+  @ApiOperation({ summary: '채널 취소 정산 다시 시도 — 환불 지연·거절인 요청에 같은 requestId 로 명령을 다시 낸다(#1016 36번 재설계)' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
-  resendCancelRequest(@Param('id') id: string) {
-    return this.cancelRequests.resend(id);
+  @ApiParam({ name: 'requestId', description: '취소 요청 ID' })
+  retryCancelSettlement(
+    @Param('id') id: string,
+    @Param('requestId') requestId: string,
+    @Body() dto: RetryCancelSettlementDto = {},
+  ) {
+    return this.cancelRequests.retrySettlement(id, requestId, { alreadyRefundedAmount: dto.alreadyRefundedAmount });
   }
 
-  @Post(':id/cancel-request/withdraw')
-  @ApiOperation({ summary: '채널 취소 요청 접기 — 보류를 푼다(OPERATOR_WITHDRAWN)' })
+  @Post(':id/cancel-request/:requestId/manual-refund')
+  @ApiOperation({ summary: '채널 취소를 계좌 송금으로 환불 — wallet 에 송금 대기 행을 만든다. 송금 뒤 결제 상세에서 완료 처리' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
-  withdrawCancelRequest(
-    @Param('id') id: string,
-    @User() user?: { userId?: string; id?: string; sub?: string; roles?: string[] },
-  ) {
-    return this.cancelRequests.withdraw(id, user?.userId ?? user?.id ?? user?.sub ?? null);
+  @ApiParam({ name: 'requestId', description: '취소 요청 ID' })
+  manualRefundCancelSettlement(@Param('id') id: string, @Param('requestId') requestId: string) {
+    return this.cancelRequests.switchToManualRefund(id, requestId);
   }
 
   @Post(':id/business-links')

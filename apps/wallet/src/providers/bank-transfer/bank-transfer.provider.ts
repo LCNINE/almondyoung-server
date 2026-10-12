@@ -13,6 +13,7 @@ import {
 } from '../payment-provider.interface';
 import { WalletSchema, charges, paymentMethods } from '../../schema';
 import { TossApiClient } from '../toss/toss-api.client';
+import { isTossRefundRetryable } from '../toss/toss-refund-errors';
 
 const DEFAULT_DEPOSIT_WINDOW_HOURS = 72;
 
@@ -174,7 +175,12 @@ export class BankTransferPaymentProvider implements PaymentProvider {
     if (result.ok) {
       return { status: 'SUCCEEDED', providerRefundId: paymentKey };
     }
-    return { status: 'FAILED', errorCode: result.error.code, errorMessage: result.error.message };
+    return {
+      status: 'FAILED',
+      errorCode: result.error.code,
+      errorMessage: result.error.message,
+      retryable: isTossRefundRetryable(result.error.code),
+    };
   }
 
   /** 발급 시 스냅샷된 paymentKey 를 charge 에서 읽는다 (webhook 확정건은 providerTransactionId 에도 있음). */

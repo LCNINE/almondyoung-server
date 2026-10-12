@@ -207,9 +207,7 @@ describe('requiresMembershipToPurchase', () => {
   it('pimPurchaseConstraint.requiresMembership=true(boolean/string)를 멤버십 전용 구매로 판정한다', () => {
     expect(requiresMembershipToPurchase(makeMembersOnlyPurchaseProduct())).toBe(true);
     expect(
-      requiresMembershipToPurchase(
-        makeProduct({ metadata: { pimPurchaseConstraint: { requiresMembership: 'true' } } }),
-      ),
+      requiresMembershipToPurchase(makeProduct({ metadata: { pimPurchaseConstraint: { requiresMembership: 'true' } } })),
     ).toBe(true);
   });
 
@@ -290,93 +288,5 @@ describe('transformStoreProductsPayload - 멤버십 전용 구매 게이트', ()
     const result = transformStoreProductsPayload(payload, false) as typeof payload;
 
     expect(result.products).toHaveLength(1);
-  });
-});
-
-describe('time-sale private pricing', () => {
-  const privateProduct = (): MembershipProduct => ({
-    id: 'private',
-    metadata: { brand: 'almond', membershipPrice: 7000 },
-    variants: [
-      {
-        id: 'v',
-        prices: [
-          { amount: 10000, currency_code: 'krw', price_list_id: null },
-          { amount: 7000, currency_code: 'krw', price_list_id: 'plist_membership' },
-          { amount: 6500, currency_code: 'krw' },
-        ],
-        calculated_price: {
-          calculated_amount: 10000,
-          original_amount: 10000,
-          calculated_price: { price_list_id: null },
-        },
-        membership_price: 7000,
-        price_list: { id: 'plist_membership' },
-        metadata: { membershipPrice: 7000, membership_price: 7000, membershipprice: 7000, color: 'red' },
-      },
-    ],
-  });
-
-  it('keeps the regular calculated price for non-members and removes only membership sale numbers', () => {
-    const hidden = transformStoreProductsPayload({ products: [privateProduct()] }, false, new Set(['private']));
-
-    expect(hidden).toEqual({
-      products: [
-        {
-          id: 'private',
-          metadata: { brand: 'almond', timeSalePriceHidden: true },
-          variants: [
-            {
-              id: 'v',
-              prices: [{ amount: 10000, currency_code: 'krw', price_list_id: null }],
-              calculated_price: {
-                calculated_amount: 10000,
-                original_amount: 10000,
-                calculated_price: { price_list_id: null },
-              },
-              metadata: { color: 'red' },
-            },
-          ],
-        },
-      ],
-    });
-  });
-
-  it('applies to a single product response too', () => {
-    const hidden = transformStoreProductsPayload({ product: privateProduct() }, false, new Set(['private'])) as {
-      product: MembershipProduct;
-    };
-
-    expect(JSON.stringify(hidden)).not.toMatch(/\b(7000|6500)\b/);
-    expect(hidden.product.metadata?.timeSalePriceHidden).toBe(true);
-  });
-
-  it('strips membership-specific amounts nested inside calculated_price but keeps the regular amount', () => {
-    const product = privateProduct();
-    const variant = product.variants?.[0] as Record<string, any>;
-    variant.calculated_price = {
-      calculated_amount: 10000,
-      original_amount: 10000,
-      membership_price: { amount: 7000 },
-      calculated_price: { price_list_id: null, membershipAmount: 7000 },
-    };
-
-    const hidden = transformStoreProductsPayload({ products: [product] }, false, new Set(['private'])) as {
-      products: MembershipProduct[];
-    };
-
-    expect(hidden.products[0].variants?.[0]?.calculated_price).toEqual({
-      calculated_amount: 10000,
-      original_amount: 10000,
-      calculated_price: { price_list_id: null },
-    });
-    expect(JSON.stringify(hidden)).not.toMatch(/\b7000\b/);
-  });
-
-  it('leaves member responses and non-private products untouched', () => {
-    const payload = { products: [privateProduct()] };
-
-    expect(transformStoreProductsPayload(payload, true, new Set(['private']))).toEqual(payload);
-    expect(transformStoreProductsPayload(payload, false, new Set(['other']))).toEqual(payload);
   });
 });

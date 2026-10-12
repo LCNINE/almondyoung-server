@@ -1,21 +1,14 @@
 /**
  * 타임세일 도메인 규칙. 화면과 분리해 둔다 — 여기 있는 판정이 가격에 직결된다.
  *
- * 타임세일 하나는 Medusa price list **두 개**로 저장된다.
- *   - 일반용   : rules = { region_id: [...] }            → 전원
- *   - 멤버십용 : rules = { 'customer.groups.id': [...] } → 멤버십 구독자
- *
- * 둘 다 룰이 1 개인 이유는 Medusa 가 `rules_count 내림 → amount 오름` 으로 가격을 고르기 때문이다.
- * 상시 운영되는 `Membership Prices` 가 룰 1 개라, 세일 리스트가 룰 0 개면 아무리 싸도 진다.
+ * 세일 저장은 Medusa `POST /admin/time-sales` 한 번이다. 리스트 분할·겹침 차단·가격 교체는 서버
+ * 워크플로가 한다.
  */
 
-import type {
-  SalePlatform,
-  SaleSurface,
-  TimeSaleSettings,
-} from '@packages/domain-types/time-sale';
+import { isCustomError } from '@/lib/api/customError';
+import type { SalePlatform, SaleSurface, TimeSaleSettings } from '@packages/domain-types/time-sale';
 
-export type TimeSaleStatus = 'scheduled' | 'active' | 'ended';
+export type TimeSaleStatus = 'draft' | 'scheduled' | 'active' | 'ended';
 
 export type TimeSalePeriod = {
   startsAt: string;
@@ -27,16 +20,9 @@ export type TimeSaleRow = {
   variantId: string;
   productId: string;
   productTitle: string;
-  productHandle?: string | null;
-  productThumbnail?: string | null;
-  productStatus?: string;
-  productDisplay?: boolean;
-  productSelling?: boolean;
-  productCode?: string | null;
   variantTitle: string;
   basePrice: number;
-
-  /** 기존 멤버십가가 없으면 null. 이 경우 일반 판매가를 기준으로 멤버십 할인을 검증한다. */
+  /** 멤버십가가 없는 상품(라이브 기준 54%)은 null. 이때 멤버십 세일가도 만들지 않는다. */
   membershipBasePrice: number | null;
   generalSalePrice: number | null;
   membershipSalePrice: number | null;
@@ -47,7 +33,6 @@ export type RowError = { variantId: string; message: string };
 export type SaleRowsSummary = {
   total: number;
   filled: number;
-
   /** 정가 대비 할인율. 품목마다 다르면 최소~최대. 입력된 게 없으면 null. */
   minPercent: number | null;
   maxPercent: number | null;
@@ -74,7 +59,8 @@ export function applySavedSalePrices(
   return rows.map((row) => ({
     ...row,
     generalSalePrice: saved.general.get(row.variantId) ?? null,
-    membershipSalePrice: saved.membership.get(row.variantId) ?? null,
+    membershipSalePrice:
+      row.membershipBasePrice === null ? null : (saved.membership.get(row.variantId) ?? null),
   }));
 }
 
@@ -95,11 +81,8 @@ export function summarizeSaleRows(rows: TimeSaleRow[]): SaleRowsSummary {
   }
 
   const percents = filled.map((row) =>
-    Math.round(
-      ((row.basePrice - (row.generalSalePrice as number)) / row.basePrice) * 100
-    )
+    Math.round(((row.basePrice - (row.generalSalePrice as number)) / row.basePrice) * 100)
   );
-
   const prices = filled.map((row) => row.generalSalePrice as number);
 
   return {
@@ -114,131 +97,25 @@ export function summarizeSaleRows(rows: TimeSaleRow[]): SaleRowsSummary {
 
 export function resolveTimeSaleStatus(
   period: TimeSalePeriod,
-  now: Date
+  now: Date,
+  status: 'draft' | 'active' = 'active'
 ): TimeSaleStatus {
+  if (status === 'draft') return 'draft';
   const start = Date.parse(period.startsAt);
-
   const end = Date.parse(period.endsAt);
-
   const at = now.getTime();
 
   if (at < start) return 'scheduled';
   if (at >= end) return 'ended';
-
   return 'active';
 }
 
 export const TIME_SALE_STATUS_LABEL: Record<TimeSaleStatus, string> = {
+  draft: '비공개',
   scheduled: '예약',
   active: '진행중',
   ended: '종료',
 };
-
-// 목록에 보이는 세일 상태 문구(원본 표기). 서비스 OFF 로 멈춘 세일은 따로 구분한다.
-export type TimeSaleListStatus =
-  | 'scheduled'
-  | 'active'
-  | 'stopped'
-  | 'ended'
-  | 'suspended';
-
-export const TIME_SALE_LIST_STATUS_LABEL: Record<TimeSaleListStatus, string> = {
-  scheduled: '대기중(예정)',
-  active: '실행중(할인)',
-  stopped: '중지(없음)',
-  ended: '중지(마감)',
-  suspended: '중지(서비스 OFF)',
-};
-
-// 목록의 번호 칸: 순번이 아니라 세일을 가리키는 짧은 id(옛 세일은 가격표 id 끝 8자).
-export function shortSaleNumber(saleId: string): string {
-  return saleId.includes('_') ? saleId.slice(-8) : saleId.slice(0, 8);
-}
-
-// SHIFT 반복 칸: 반복 없음 '-', 만료일 없으면 '무한', 있으면 만료일까지.
-export function formatShiftRepeat(display: {
-  repeatHours: number;
-  repeatUntil: string | null;
-}): string {
-  if (display.repeatHours <= 0) return '-';
-  if (!display.repeatUntil) return `${display.repeatHours}시간 · 무한`;
-
-  return `${display.repeatHours}시간 · ${display.repeatUntil.slice(0, 10)}까지`;
-}
-
-// 세일 하나의 목록 상태 판정. 상품별 기간이면 묶음 기간들로 종합한다.
-export function deriveTimeSaleListStatus(
-  sale: {
-    status: 'active' | 'draft';
-    priceListIds: string[];
-    periods: TimeSalePeriod[];
-  },
-  service: { enabled: boolean; suspendedPriceListIds: string[] },
-  now: Date
-): TimeSaleListStatus {
-  if (sale.status === 'draft') {
-    // 서비스를 끄며 멈춘 세일은 운영자가 멈춘 것과 구분한다.
-    const suspended =
-      !service.enabled &&
-      sale.priceListIds.some((id) =>
-        service.suspendedPriceListIds.includes(id)
-      );
-
-    return suspended ? 'suspended' : 'stopped';
-  }
-
-  const states = sale.periods.map((period) =>
-    resolveTimeSaleStatus(period, now)
-  );
-  if (states.includes('active')) return 'active';
-  if (states.includes('scheduled')) return 'scheduled';
-
-  return 'ended';
-}
-
-/**
- * 기간이 겹치는 세일.
- *
- * 겹친다는 사실만으로는 막지 않는다 —
- * 카테고리마다 기간이 다른 세일을 동시에 거는 게 요구사항이라
- * 기간 겹침은 정상이다. 여기서 나온 세일들과 **상품이** 겹치는지를 `findVariantConflicts` 로 한 번
- * 더 본다.
- */
-export function findOverlapping<T extends TimeSalePeriod & { id?: string }>(
-  candidate: TimeSalePeriod & { id?: string },
-  existing: T[]
-): T[] {
-  const start = Date.parse(candidate.startsAt);
-
-  const end = Date.parse(candidate.endsAt);
-
-  return existing.filter((other) => {
-    if (candidate.id && other.id === candidate.id) return false;
-
-    return start < Date.parse(other.endsAt) && end > Date.parse(other.startsAt);
-  });
-}
-
-/**
- * 기간이 겹치는 세일 중 **같은 품목을 쓰는** 것들.
- *
- * 상품이 겹치면 Medusa 가 `rules_count 내림 → amount 오름` 으로 한쪽 가격만 적용한다. 손님은 A
- * 세일 목록에서 B 세일의 가격을 보면서 A 의 카운트다운을 읽게 되고, A 가 끝나도 가격이 안 변한다.
- * 기간만 겹치는 건 통과시키고 이 경우만 막는다.
- */
-export function findVariantConflicts<T extends { variantIds: string[] }>(
-  variantIds: string[],
-  overlapping: T[]
-): Array<T & { conflictingVariantIds: string[] }> {
-  const candidate = new Set(variantIds);
-
-  return overlapping
-    .map((sale) => ({
-      ...sale,
-      conflictingVariantIds: sale.variantIds.filter((id) => candidate.has(id)),
-    }))
-    .filter((sale) => sale.conflictingVariantIds.length > 0);
-}
 
 /**
  * "정가의 N% 할인" 일괄 채우기.
@@ -254,19 +131,17 @@ export function applyPercentDiscount(
   rows: TimeSaleRow[],
   percent: number,
   membershipPercent: number = percent,
+  // 환경설정의 할인 가격 끝자리 처리(반올림·올림·내림).
   rounding: 'round' | 'ceil' | 'floor' = 'round'
 ): TimeSaleRow[] {
   const rate = 1 - percent / 100;
-
   const membershipRate = 1 - membershipPercent / 100;
 
   return rows.map((row) => ({
     ...row,
     generalSalePrice: Math[rounding](row.basePrice * rate),
     membershipSalePrice:
-      row.membershipBasePrice === null
-        ? null
-        : Math[rounding](row.membershipBasePrice * membershipRate),
+      row.membershipBasePrice === null ? null : Math[rounding](row.membershipBasePrice * membershipRate),
   }));
 }
 
@@ -280,57 +155,41 @@ export function applyPercentDiscount(
  * 딸려오는데(라이브에 143 개짜리가 있다) 전부 채워야만 저장되면 "안 팔리는 옵션만 세일" 이
  * 불가능하고, 그렇게 만든 세일은 편집 화면에서 다시 저장할 수도 없다.
  */
-export function validateRows(
-  rows: TimeSaleRow[],
-  membershipOnly = false
-): RowError[] {
+export function validateRows(rows: TimeSaleRow[]): RowError[] {
   const errors: RowError[] = [];
 
   for (const row of rows) {
-    if (!membershipOnly && row.generalSalePrice === null) {
+    if (row.generalSalePrice === null) {
       if (row.membershipSalePrice !== null) {
         errors.push({
           variantId: row.variantId,
-          message:
-            '일반 세일가를 비우면 이 품목은 세일에서 빠집니다. 멤버십 세일가도 비우세요.',
+          message: '일반 세일가를 비우면 이 품목은 세일에서 빠집니다. 멤버십 세일가도 비우세요.',
         });
       }
       continue;
     }
     // NaN·Infinity 를 먼저 쳐낸다. 뒤따르는 비교는 NaN 에서 전부 false 라, 걸러내지 않으면
     // 검증을 통과해 `amount: null` 로 직렬화된 가격이 Medusa 까지 간다.
-    if (
-      !membershipOnly &&
-      (!Number.isFinite(row.generalSalePrice) ||
-        (row.generalSalePrice ?? 0) <= 0)
-    ) {
-      errors.push({
-        variantId: row.variantId,
-        message: '세일가는 0원보다 큰 숫자여야 합니다.',
-      });
+    if (!Number.isFinite(row.generalSalePrice) || row.generalSalePrice <= 0) {
+      errors.push({ variantId: row.variantId, message: '세일가는 0원보다 큰 숫자여야 합니다.' });
       continue;
     }
-    if (!membershipOnly && (row.generalSalePrice ?? 0) >= row.basePrice) {
+    if (row.generalSalePrice >= row.basePrice) {
       errors.push({
         variantId: row.variantId,
         message: `세일가는 정가(${row.basePrice.toLocaleString()}원)보다 낮아야 합니다.`,
       });
     }
-    if (row.membershipSalePrice !== null) {
-      const membershipBase = row.membershipBasePrice ?? row.basePrice;
-
-      if (
-        !Number.isFinite(row.membershipSalePrice) ||
-        row.membershipSalePrice <= 0
-      ) {
+    if (row.membershipBasePrice !== null && row.membershipSalePrice !== null) {
+      if (!Number.isFinite(row.membershipSalePrice) || row.membershipSalePrice <= 0) {
         errors.push({
           variantId: row.variantId,
           message: '멤버십 세일가는 0원보다 큰 숫자여야 합니다.',
         });
-      } else if (row.membershipSalePrice >= membershipBase) {
+      } else if (row.membershipSalePrice >= row.membershipBasePrice) {
         errors.push({
           variantId: row.variantId,
-          message: `멤버십 세일가는 기존 가격(${membershipBase.toLocaleString()}원)보다 낮아야 합니다.`,
+          message: `멤버십 세일가는 멤버십가(${row.membershipBasePrice.toLocaleString()}원)보다 낮아야 합니다.`,
         });
       }
     }
@@ -342,131 +201,64 @@ export function validateRows(
 /**
  * 실제로 세일에 들어가는 품목.
  *
- * 세일가를 비운 품목은 `buildPriceListPayloads` 가 이미 빼고 있다. 중복 검사처럼 "이 세일이
+ * 세일가를 비운 품목은 `buildTimeSaleWriteBody` 가 이미 빼고 있다. 중복 검사처럼 "이 세일이
  * 건드리는 품목" 을 묻는 쪽도 같은 기준을 써야 한다 — 고른 상품의 옵션 전부를 세면 세일가를
  * 넣지도 않은 품목 때문에 저장이 막힌다.
  */
 export function saleVariantIds(rows: TimeSaleRow[]): string[] {
-  return rows
-    .filter((row) => row.generalSalePrice !== null)
-    .map((row) => row.variantId);
+  return rows.filter((row) => row.generalSalePrice !== null).map((row) => row.variantId);
 }
 
-export type PriceListPricePayload = {
-  amount: number;
-  currency_code: string;
-  variant_id: string;
-};
-
-export type PriceListPayload = {
+export type TimeSaleWriteBody = {
   title: string;
-  description: string;
-  type: 'sale';
-  status: 'active';
   starts_at: string;
   ends_at: string;
-  rules: Record<string, string[]>;
-  prices: PriceListPricePayload[];
+  status: 'draft' | 'active';
+  general_prices: Array<{ variant_id: string; amount: number }>;
+  membership_prices: Array<{ variant_id: string; amount: number }>;
 };
 
-const CURRENCY = 'krw';
-
 /**
- * 멤버십용 리스트는 제목으로도 구분되게 접미사를 붙인다 —
- * Medusa 기본 어드민 목록에서 사람이 읽는다.
+ * 편집 행 → 저장 요청 본문. 일반 세일가를 비운 품목은 세일에서 빠지고, 멤버십가가 없는 상품은 멤버십
+ * 세일가도 만들지 않는다 (`validateRows` 와 같은 기준).
  */
-export const MEMBERSHIP_LIST_TITLE_SUFFIX = ' (멤버십)';
-
-/**
- * 타임세일 하나 → price list 페이로드 (일반용, 멤버십용).
- *
- * 멤버십 세일가가 하나도 없으면 멤버십용 리스트를 만들지 않는다. 그래도 멤버십 구독자는 일반용
- * 리스트(전원 대상)를 받으므로 세일에서 빠지지 않는다.
- */
-export function buildPriceListPayloads(params: {
+export function buildTimeSaleWriteBody(params: {
   title: string;
   period: TimeSalePeriod;
+  status: 'draft' | 'active';
   rows: TimeSaleRow[];
-  regionIds: string[];
-  membershipGroupId: string;
-  membershipOnly?: boolean;
-}): { general: PriceListPayload; membership: PriceListPayload | null } {
-  const { title, period, rows, regionIds, membershipGroupId } = params;
-
-  const generalPrices = rows
-    .filter((row) => !params.membershipOnly && row.generalSalePrice !== null)
-    .map((row) => ({
-      amount: row.generalSalePrice as number,
-      currency_code: CURRENCY,
-      variant_id: row.variantId,
-    }));
-
-  const membershipPrices = rows
-    .filter((row) => row.membershipSalePrice !== null)
-    .map((row) => ({
-      amount: row.membershipSalePrice as number,
-      currency_code: CURRENCY,
-      variant_id: row.variantId,
-    }));
-
-  const base = {
-    type: 'sale' as const,
-    status: 'active' as const,
-    starts_at: period.startsAt,
-    ends_at: period.endsAt,
-  };
-
+}): TimeSaleWriteBody {
   return {
-    general: {
-      ...base,
-      title,
-      description: '타임세일 (전체)',
-      rules: { region_id: regionIds },
-      prices: generalPrices,
-    },
-    membership:
-      membershipPrices.length === 0
-        ? null
-        : {
-            ...base,
-            title: `${title}${MEMBERSHIP_LIST_TITLE_SUFFIX}`,
-            description: '타임세일 (멤버십 구독자)',
-            rules: { 'customer.groups.id': [membershipGroupId] },
-            prices: membershipPrices,
-          },
+    title: params.title.trim(),
+    starts_at: params.period.startsAt,
+    ends_at: params.period.endsAt,
+    status: params.status,
+    general_prices: params.rows
+      .filter((row) => row.generalSalePrice !== null)
+      .map((row) => ({ variant_id: row.variantId, amount: row.generalSalePrice as number })),
+    membership_prices: params.rows
+      .filter((row) => row.membershipBasePrice !== null && row.membershipSalePrice !== null)
+      .map((row) => ({ variant_id: row.variantId, amount: row.membershipSalePrice as number })),
   };
 }
+
+const CURRENCY = 'krw';
 
 type RawVariant = {
   id: string;
   title: string;
   metadata?: Record<string, unknown> | null;
-  prices?: Array<{
-    amount: number;
-    currency_code: string;
-    price_list_id?: string | null;
-  }>;
+  prices?: Array<{ amount: number; currency_code: string; price_list_id?: string | null }>;
 };
 
-type RawProduct = {
-  id: string;
-  handle?: string | null;
-  title: string;
-  thumbnail?: string | null;
-  status?: string;
-  metadata?: Record<string, unknown> | null;
-  variants: (RawVariant & { sku?: string | null })[];
-};
+type RawProduct = { id: string; title: string; variants: RawVariant[] };
 
 const toAmount = (raw: unknown): number | null => {
-  if (typeof raw === 'number')
-    return Number.isFinite(raw) && raw > 0 ? raw : null;
+  if (typeof raw === 'number') return Number.isFinite(raw) && raw > 0 ? raw : null;
   if (typeof raw === 'string') {
     const parsed = Number(raw);
-
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }
-
   return null;
 };
 
@@ -484,36 +276,36 @@ export function toTimeSaleRows(products: RawProduct[]): TimeSaleRow[] {
   return products.flatMap((product) =>
     product.variants.map((variant) => {
       const base = (variant.prices ?? []).find(
-        (price) => !price.price_list_id && price.currency_code === CURRENCY
+        (price) => !price.price_list_id && price.currency_code === CURRENCY,
       );
 
       return {
         variantId: variant.id,
         productId: product.id,
         productTitle: product.title,
-        productThumbnail: product.thumbnail,
-        productHandle: product.handle,
-        productStatus: product.status,
-        productDisplay:
-          product.status === 'published' &&
-          product.metadata?.timeSaleDisplay !== false,
-        productSelling:
-          product.status === 'published' &&
-          product.metadata?.timeSaleSelling !== false,
-        productCode: variant.sku,
         variantTitle: variant.title,
         basePrice: base?.amount ?? 0,
         membershipBasePrice: toAmount(variant.metadata?.membershipPrice),
         generalSalePrice: null,
         membershipSalePrice: null,
       };
-    })
+    }),
   );
 }
 
 /**
- * 스타일 라이브러리·미저장 보호의 순수 규칙. 화면(time-sale-workspace)이 부른다.
+ * 저장 실패에서 운영자에게 보여줄 서버 사유. axios 인터셉터가 4xx 를 `CustomError(message=서버 메시지)` 로
+ * 바꿔 던지므로 `error.message` 가 그 사유다. 5xx·네트워크 오류의 문구는 사유가 아니라 null.
  */
+export function readServerReason(error: unknown): string | null {
+  if (isCustomError(error) && error.statusCode < 500 && error.message) return error.message;
+  return null;
+}
+
+// 목록의 번호 칸: 순번이 아니라 세일을 가리키는 짧은 id(`tsale_…` 끝 8자).
+export function shortSaleNumber(saleId: string): string {
+  return saleId.slice(-8);
+}
 
 type StyleSettings = Pick<TimeSaleSettings, 'styles' | 'savedStyles'>;
 
@@ -588,19 +380,6 @@ export function deleteSavedStyle(
 
   settings.savedStyles = settings.savedStyles.filter((l) => l.id !== active.id);
   active.id = defaultStyleId(surface, platform);
-}
-
-/** 변수를 지울 때 모든 세일의 상품별 값에서도 그 변수 값을 지운다. */
-export function removeVariableValues(
-  sales: Record<
-    string,
-    { productVariables?: Record<string, Record<string, string>> }
-  >,
-  name: string
-) {
-  for (const sale of Object.values(sales))
-    for (const values of Object.values(sale.productVariables ?? {}))
-      delete values[name];
 }
 
 // 목록과 상품진열의 선택 행을 이동한다. 저장 전에는 원본 순서를 건드리지 않는다.

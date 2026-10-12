@@ -1,6 +1,5 @@
 import {
   createSaleComponent,
-  defaultSaleDisplay,
   defaultTimeSaleSettings,
   validateTimeSaleSettings,
   validateSaleCss,
@@ -21,6 +20,7 @@ import {
   resolveSectionPeriod,
   resolveUserVariables,
   blockPreviewNavigation,
+  countdownText,
   type SaleProduct,
 } from '../../../../../../../packages/time-sale-ui';
 
@@ -39,8 +39,6 @@ const product: SaleProduct = {
   soldOut: false,
 };
 
-const defaultDisplay = () => defaultSaleDisplay();
-
 const render = (
   c: SaleComponent,
   state: SalePreviewState,
@@ -54,7 +52,6 @@ const render = (
       settings,
       surface: 'main',
       platform: 'pc',
-      saleId: 's1',
       title: '세일',
       startsAt: '2026-01-01T00:00:00Z',
       endsAt: '2026-01-02T00:00:00Z',
@@ -77,26 +74,34 @@ describe('SaleRenderer', () => {
     );
     expect(render(image, 'active')).toMatch(/<img[^>]+border-radius:16px/);
   });
-  it('기본 스타일은 이전 아몬드영 섹션의 패딩과 5열 상품 간격을 저장한다', () => {
+  it('기본 메인 매대는 라이브 홈 섹션(제목·종료까지·더보기·탭·5열 두 줄)과 같다', () => {
     const settings = defaultTimeSaleSettings();
     validateTimeSaleSettings(settings);
 
-    expect(settings.styles.main.pc.css.padding).toBe('48px 40px');
-    expect(settings.styles.main.pc.components[1].content).toBe('');
-    expect(
-      settings.styles.main.pc.components.find((c) => c.type === 'timer')?.css
-        .padding
-    ).toBe('16px 0 24px');
+    const pc = settings.styles.main.pc;
+    expect(pc.css.padding).toBe('48px 40px');
     expect(settings.styles.main.mobile.css.padding).toBe('32px 16px');
-    expect(settings.styles.main.pc.mainCss?.backgroundColor).toBe('#f7f8f9');
-    const shelf = settings.styles.main.pc.components.find(
-      (c) => c.type === 'carousel'
-    );
+    expect(pc.mainCss?.backgroundColor).toBe('#f7f8f9');
+    expect(pc.components.map((c) => c.type)).toEqual([
+      'text',
+      'timer',
+      'button',
+      'tabs',
+      'grid',
+    ]);
+    expect(pc.components[0].content).toBe('타임세일');
+    const timer = pc.components.find((c) => c.type === 'timer');
+    expect(timer?.options.timer).toBe('text');
+    expect(timer?.content).toBe('종료까지');
+    const shelf = pc.components.find((c) => c.type === 'grid');
     expect(shelf?.options.columns).toBe(5);
-    expect(shelf?.options.gap).toBe(16);
     expect(shelf?.options.rows).toBe(2);
     expect(shelf?.options.slots).toBe(10);
-    expect(shelf?.options.carouselRows).toBe(true);
+    expect(shelf?.options.badge).toBe('timesale');
+    expect(shelf?.options.membershipLabelOnly).toBe(true);
+    expect(settings.styles.main.mobile.components.at(-1)?.type).toBe(
+      'carousel'
+    );
   });
 
   it('스토어프론트 액션 슬롯은 품절 마스크 위에서 상품별 버튼을 렌더한다', () => {
@@ -106,7 +111,6 @@ describe('SaleRenderer', () => {
         settings,
         surface: 'main',
         platform: 'pc',
-        saleId: 's1',
         title: '세일',
         startsAt: '2026-01-01T00:00:00Z',
         endsAt: '2026-01-02T00:00:00Z',
@@ -212,7 +216,6 @@ describe('SaleRenderer', () => {
           settings,
           surface: 'main',
           platform: 'pc',
-          saleId: 's1',
           title: '세일',
           startsAt: '2026-01-01T00:00:00Z',
           endsAt: '2026-01-02T00:00:00Z',
@@ -235,7 +238,7 @@ describe('SaleRenderer', () => {
   it('버튼 주소 이동·새 창·개별 스타일을 반영한다', () => {
     const c = createSaleComponent('button', 'link');
     c.options.buttonAction = 'url';
-    c.options.href = '/offers/{{time_sale_no}}';
+    c.options.href = '/offers/{{title}}';
     c.options.newWindow = true;
     c.options.buttonCss = {
       width: '45%',
@@ -245,7 +248,7 @@ describe('SaleRenderer', () => {
 
     const markup = render(c, 'active');
 
-    expect(markup).toContain('href="/offers/s1"');
+    expect(markup).toContain('href="/offers/세일"');
     expect(markup).toContain('target="_blank" rel="noopener noreferrer"');
     expect(markup).toContain('width:45%;height:45px');
   });
@@ -340,7 +343,7 @@ describe('SaleRenderer', () => {
 
   it('추가 설정도 저장 단계에서 URL·CSS·수치·레이어 개수를 검증한다', () => {
     const settings = defaultTimeSaleSettings();
-    const c = settings.styles.main.pc.components.find(
+    const c = settings.styles.main.mobile.components.find(
       (item) => item.type === 'carousel'
     )!;
     c.options.slideGroup = 2;
@@ -381,7 +384,7 @@ describe('SaleRenderer', () => {
     expect(() => validateTimeSaleSettings(settings)).not.toThrow();
     for (const platform of ['mobile', 'pc'] as const) {
       const shelf = settings.styles.main[platform].components.find(
-        (item) => item.type === 'carousel'
+        (item) => item.type === 'carousel' || item.type === 'grid'
       )!;
 
       expect(shelf.options.imageWidth).toBe(100);
@@ -389,7 +392,7 @@ describe('SaleRenderer', () => {
       expect(shelf.options.headerCss?.textAlign ?? shelf.css.textAlign).toBe(
         'left'
       );
-      expect(shelf.options.badgeColor).toBe('#f04452');
+      expect(shelf.options.badgeColor).toBe('#f54527');
     }
   });
 
@@ -419,7 +422,6 @@ describe('SaleRenderer', () => {
       settings,
       surface: 'main' as const,
       platform: 'mobile' as const,
-      saleId: 'preview',
       title: '세일',
       startsAt: '2026-01-01T00:00:00Z',
       endsAt: '2026-01-02T00:00:00Z',
@@ -657,7 +659,6 @@ describe('렌더러 옵션', () => {
         settings,
         surface: 'main',
         platform: 'pc',
-        saleId: 's1',
         title: '세일',
         startsAt: '2026-01-01T00:00:00Z',
         endsAt: '2026-01-02T00:00:00Z',
@@ -750,7 +751,6 @@ describe('렌더러 옵션', () => {
         settings,
         surface: 'main',
         platform: 'pc',
-        saleId: 's1',
         title: '세일',
         startsAt: '2026-01-01T00:00:00Z',
         endsAt: '2026-01-02T00:00:00Z',
@@ -776,7 +776,6 @@ describe('렌더러 옵션', () => {
         settings,
         surface: 'main',
         platform: 'pc',
-        saleId: id,
         title: '세일',
         startsAt: '2026-01-01T00:00:00Z',
         endsAt: '2026-01-02T00:00:00Z',
@@ -807,23 +806,18 @@ describe('렌더러 옵션', () => {
       return c;
     };
 
-    const renderWith = (products: SaleProduct[], saleVariables = {}) => {
+    const renderWith = (products: SaleProduct[]) => {
       const settings = defaultTimeSaleSettings();
       settings.variables = [
         { name: 'user_x', description: '', preview: '미리보기값' },
       ];
       settings.styles.main.pc.components = [grid()];
-      settings.sales.s1 = {
-        ...defaultDisplay(),
-        productVariables: saleVariables,
-      };
 
       return renderToStaticMarkup(
         createElement(SaleRenderer, {
           settings,
           surface: 'main',
           platform: 'pc',
-          saleId: 's1',
           title: '세일',
           startsAt: '2026-01-01T00:00:00Z',
           endsAt: '2026-01-02T00:00:00Z',
@@ -835,13 +829,15 @@ describe('렌더러 옵션', () => {
     };
 
     it('상품 A 는 자기 값, 값 없는 B 는 변수 preview 값을 쓴다', () => {
-      const html = renderWith(
-        [
-          { ...product, id: 'A', name: 'A상품' },
-          { ...product, id: 'B', name: 'B상품' },
-        ],
-        { A: { user_x: '회원 혜택' } }
-      );
+      const html = renderWith([
+        {
+          ...product,
+          id: 'A',
+          name: 'A상품',
+          variables: { user_x: '회원 혜택' },
+        },
+        { ...product, id: 'B', name: 'B상품' },
+      ]);
 
       expect(html).toContain('[회원 혜택]');
       expect(html).toContain('[미리보기값]');
@@ -862,7 +858,6 @@ describe('렌더러 옵션', () => {
           settings,
           surface: 'main',
           platform: 'pc',
-          saleId: 's1',
           title: '세일',
           startsAt: '2026-01-01T00:00:00Z',
           endsAt: '2026-01-02T00:00:00Z',
@@ -904,33 +899,78 @@ describe('렌더러 옵션', () => {
   });
 });
 
-it('uses a sale-specific style, platform visibility and saved product display order', () => {
+describe('라이브 섹션 모양', () => {
   const settings = defaultTimeSaleSettings();
-  const layout = structuredClone(settings.styles.main.pc);
-  layout.id = 'sale-style';
-  layout.header = '선택한 매대';
-  layout.components = [createSaleComponent('grid', 'sale-grid')];
-  settings.savedStyles = [layout];
-  settings.sales.s1 = {
-    ...defaultSaleDisplay(),
-    styles: { main: { pc: { styleId: layout.id, enabled: true } } },
-    productOrder: ['p2', 'p1'],
-  };
   const props = {
     settings,
     surface: 'main' as const,
     platform: 'pc' as const,
-    saleId: 's1',
-    title: '세일',
     startsAt: '2026-01-01T00:00:00Z',
     endsAt: '2026-01-02T00:00:00Z',
     products: [product, { ...product, id: 'p2', name: '상품B' }],
     previewState: 'active' as const,
     sanitizeHtml: (html: string) => html,
   };
-  const html = renderToStaticMarkup(createElement(SaleRenderer, props));
-  expect(html).toContain('선택한 매대');
-  expect(html.indexOf('상품B')).toBeLessThan(html.indexOf('상품A'));
-  settings.sales.s1.styles!.main!.pc!.enabled = false;
-  expect(renderToStaticMarkup(createElement(SaleRenderer, props))).toBe('');
+
+  it('기본 메인 매대는 제목·종료까지·더보기·탭·타임세일 배지를 그린다', () => {
+    const html = renderToStaticMarkup(
+      createElement(SaleRenderer, {
+        ...props,
+        tabs: [
+          { key: 'all', name: '전체', productIds: ['p1', 'p2'] },
+          { key: 'lash', name: '속눈썹펌', productIds: ['p2'] },
+        ],
+      })
+    );
+
+    expect(html).toContain('타임세일</div>');
+    expect(html).toContain('종료까지');
+    expect(html).toContain('더보기');
+    expect(html).toContain('role="tablist"');
+    expect(html).toContain('속눈썹펌');
+    // 상품 두 개 모두 시계 아이콘이 든 「타임세일 · …」 배지를 단다.
+    expect(html.match(/<polyline points="12 6 12 12 16 14"/g)).toHaveLength(2);
+  });
+
+  it('기본 설정(메인·더보기 × 모바일·PC)은 그대로 저장 검증을 통과한다', () => {
+    expect(() =>
+      validateTimeSaleSettings(defaultTimeSaleSettings())
+    ).not.toThrow();
+  });
+
+  it('첫 탭(전체)이 기본 선택이고 탭에 없는 상품은 거른다', () => {
+    const html = renderToStaticMarkup(
+      createElement(SaleRenderer, {
+        ...props,
+        tabs: [{ key: 'lash', name: '속눈썹펌', productIds: ['p2'] }],
+      })
+    );
+
+    expect(html).toContain('상품B');
+    expect(html).not.toContain('상품A');
+  });
+
+  it('링크 탭은 상품을 거르지 않는다(서버가 이미 탭별로 나눴다)', () => {
+    const html = renderToStaticMarkup(
+      createElement(SaleRenderer, {
+        ...props,
+        tabs: [
+          {
+            key: 'lash',
+            name: '속눈썹펌',
+            productIds: ['p2'],
+            href: '/kr/time-sale?tab=lash',
+          },
+        ],
+      })
+    );
+
+    expect(html).toContain('href="/kr/time-sale?tab=lash"');
+    expect(html).toContain('상품A');
+  });
+
+  it('카드 배지 남은 시간은 하루 넘으면 N일, 안이면 시:분:초', () => {
+    expect(countdownText(4 * 86400 + 3600)).toBe('4일');
+    expect(countdownText(3 * 3600 + 62)).toBe('03:01:02');
+  });
 });

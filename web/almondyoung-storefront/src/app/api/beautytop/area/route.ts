@@ -12,7 +12,9 @@ export async function GET(request: Request) {
   }
   const result = await queryPublic(resource, Object.fromEntries(url.searchParams))
   if (!result.ok) {
-    return Response.json({ error: result.error }, { status: STATUS[result.error], headers: { "Cache-Control": "no-store" } })
+    const headers: Record<string, string> = { "Cache-Control": "no-store" }
+    if (result.retryAfterMs !== undefined) headers["Retry-After"] = String(Math.ceil(result.retryAfterMs / 1000))
+    return Response.json({ error: result.error }, { status: STATUS[result.error], headers })
   }
   return Response.json(
     { data: result.data },

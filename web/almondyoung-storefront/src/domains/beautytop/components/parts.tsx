@@ -191,12 +191,64 @@ export function LoadError({ onRetry }: { onRetry: () => void }) {
   )
 }
 
-export function CardSkeleton() {
+export function LoadingSkeleton({ className }: { className?: string }) {
+  const t = useTranslations("beautytop")
   return (
-    <div className="bg-background space-y-3 rounded-2xl p-6">
-      <Skeleton className="h-4 w-1/4" />
-      <Skeleton className="h-7 w-2/3" />
-      <Skeleton className="mt-4 h-24 w-full" />
+    <Skeleton
+      role="img"
+      aria-label={t("loading")}
+      className={cn("motion-reduce:animate-none", className)}
+    />
+  )
+}
+
+export function CardSkeleton({
+  variant = "card",
+}: {
+  variant?: "card" | "list" | "chart"
+}) {
+  const t = useTranslations("beautytop")
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      className={
+        variant === "list"
+          ? "space-y-2"
+          : "bg-background space-y-3 rounded-2xl p-6"
+      }
+    >
+      <span className="sr-only">{t("loading")}</span>
+      <div
+        aria-hidden="true"
+        className="space-y-3 motion-reduce:[&_[data-slot=skeleton]]:animate-none"
+      >
+        {variant === "list" ? (
+          [0, 1, 2].map((index) => (
+            <div
+              key={index}
+              className="bg-muted flex h-16 items-center gap-3 rounded-xl px-4"
+            >
+              <Skeleton className="size-8 shrink-0 rounded-full" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-3 w-1/2" />
+              </div>
+              <Skeleton className="h-5 w-12" />
+            </div>
+          ))
+        ) : (
+          <>
+            <Skeleton className="h-4 w-1/4" />
+            <Skeleton className="h-7 w-2/3" />
+            <Skeleton
+              className={
+                variant === "chart" ? "mt-4 h-52 w-full" : "mt-4 h-24 w-full"
+              }
+            />
+          </>
+        )}
+      </div>
     </div>
   )
 }

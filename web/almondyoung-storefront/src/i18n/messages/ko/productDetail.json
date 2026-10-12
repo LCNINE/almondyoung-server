@@ -131,7 +131,7 @@
     "won": "원",
     "priceFrom": "~",
     "membershipBadgeLabel": "멤버십할인가",
-    "membershipOnlyPrice": "멤버십 회원에게 가격 공개",
+    "membershipOnlyPrice": "멤버십 회원 공개",
     "memberSavings": "멤버십 가입 시 {amount}원 절약",
     "membersOnlyTitle": "멤버십 전용 상품",
     "membersOnlyDescription": "멤버십 회원만 구매할 수 있어요"

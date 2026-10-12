@@ -1,4 +1,5 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { getTokenPayload } from '@/lib/auth/get-token-payload';
 import { forwardRequest } from '../../_lib/forward';
 
 const MEDUSA_API_URL = process.env.MEDUSA_API_URL ?? 'http://localhost:9000';
@@ -12,7 +13,31 @@ function medusaExtraHeaders(): Record<string, string> | undefined {
   return { Authorization: `Basic ${encoded}` };
 }
 
-function forwardToMedusa(request: NextRequest, path: string[]) {
+// Medusa 는 사용자 토큰이 아니라 공유 키 하나로 호출되므로, 넘기기 전에 여기서 직원 세션을 확인한다.
+const STAFF_ROLES = ['admin', 'master'];
+
+async function rejectNonStaff(): Promise<NextResponse | null> {
+  let payload;
+  try {
+    payload = await getTokenPayload();
+  } catch {
+    return NextResponse.json(
+      { error: 'Authentication unavailable' },
+      { status: 503 }
+    );
+  }
+  if (!payload) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  if (!payload.roles.some((role) => STAFF_ROLES.includes(role))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+  return null;
+}
+
+async function forwardToMedusa(request: NextRequest, path: string[]) {
+  const rejection = await rejectNonStaff();
+  if (rejection) return rejection;
   return forwardRequest(request, MEDUSA_API_URL, path, {
     extraHeaders: medusaExtraHeaders(),
     forwardAuthCookie: false,

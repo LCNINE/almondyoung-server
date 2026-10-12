@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, HttpException, NotFoundException } from '@nestjs/common';
 import { RefundsService } from './refunds.service';
 import { splitRefundOverRemaining } from './refund-plan';
 import type { Refund } from '../types';
@@ -11,15 +11,36 @@ const PM_ID = 'pm-001';
 const REFUND_ID = 'refund-001';
 const USER_ID = 'user-001';
 
-function makeCharge(overrides: Partial<{ id: string; status: string; amount: number; paymentMethodId: string }> = {}) {
-  return { id: CHARGE_ID, intentId: INTENT_ID, paymentMethodId: PM_ID, status: 'SUCCEEDED', amount: 10000, currency: 'KRW', ...overrides };
+function makeCharge(
+  overrides: Partial<{
+    id: string;
+    status: string;
+    amount: number;
+    paymentMethodId: string;
+    operation: 'AUTHORIZE' | 'CAPTURE';
+    requestPayload: Record<string, unknown> | null;
+  }> = {},
+) {
+  return {
+    id: CHARGE_ID,
+    intentId: INTENT_ID,
+    paymentMethodId: PM_ID,
+    status: 'SUCCEEDED',
+    amount: 10000,
+    currency: 'KRW',
+    operation: 'CAPTURE' as 'AUTHORIZE' | 'CAPTURE',
+    requestPayload: null as Record<string, unknown> | null,
+    ...overrides,
+  };
 }
 
 function makeMethod(type: string = 'TOSS') {
   return { id: PM_ID, type, providerData: {} };
 }
 
-function makeInsertedRefund(overrides: Partial<{ amount: number; reasonCode: string | null }> = {}) {
+function makeInsertedRefund(
+  overrides: Partial<{ amount: number; reasonCode: string | null; execution: 'AUTO' | 'MANUAL' }> = {},
+) {
   return {
     id: REFUND_ID,
     chargeId: CHARGE_ID,
@@ -30,6 +51,9 @@ function makeInsertedRefund(overrides: Partial<{ amount: number; reasonCode: str
     reasonCode: overrides.reasonCode ?? null,
     reasonMessage: null,
     providerRefundId: null,
+    execution: overrides.execution ?? 'AUTO',
+    failureCode: null,
+    failureRetryable: null,
     createdAt: new Date(),
   };
 }
@@ -45,7 +69,7 @@ function makeContext(options: {
   existingSucceededRefunds?: ReturnType<typeof makeInsertedRefund>[];
   priorRefundedAmount?: number;       // SUCCEEDED+PENDING total in the insert-phase transaction
   succeededRefundedAmount?: number;   // SUCCEEDED-only total in the post-SUCCEEDED transaction
-  providerResult?: { status: string; errorCode?: string; errorMessage?: string; providerRefundId?: string };
+  providerResult?: { status: string; errorCode?: string; errorMessage?: string; providerRefundId?: string; retryable?: boolean };
   pendingRefund?: ReturnType<typeof makeInsertedRefund>;  // for confirmManual tests
   intentMetadata?: Record<string, unknown>;  // payment_intents.metadata for assertRefundable/getIntentUserId
 } = {}) {
@@ -61,6 +85,7 @@ function makeContext(options: {
 
   // Track update calls
   const updateCalls: Array<{ set: Record<string, unknown> }> = [];
+  const insertCalls: Array<Record<string, unknown>> = [];
 
   // tx used inside transactions
   // txIndex distinguishes the insert transaction (1st) from the SUCCEEDED/confirmManual transaction (2nd+).
@@ -78,9 +103,16 @@ function makeContext(options: {
         }),
       })),
       insert: jest.fn().mockImplementation(() => ({
-        values: (vals: any) => ({
-          returning: jest.fn().mockResolvedValue([makeInsertedRefund({ amount: vals.amount, reasonCode: vals.reasonCode })]),
-        }),
+        values: (vals: any) => {
+          insertCalls.push(vals);
+          return {
+            returning: jest
+              .fn()
+              .mockResolvedValue([
+                makeInsertedRefund({ amount: vals.amount, reasonCode: vals.reasonCode, execution: vals.execution }),
+              ]),
+          };
+        },
       })),
       update: jest.fn().mockImplementation(() => ({
         set: (setValues: Record<string, unknown>) => ({
@@ -164,12 +196,181 @@ function makeContext(options: {
     stateTransitionService as any,
   );
 
-  return { service, db, chargesService, paymentMethodsService, provider, providerRegistry, stateTransitionService, updateCalls };
+  return { service, db, chargesService, paymentMethodsService, provider, providerRegistry, stateTransitionService, updateCalls, insertCalls };
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('RefundsService', () => {
+  describe('수동 실행 create() (#1016 36번 PR 1)', () => {
+    it('MANUAL 은 provider 를 부르지 않고 PENDING·MANUAL 행을 돌려준다', async () => {
+      const { service, provider, insertCalls, stateTransitionService } = makeContext({ method: makeMethod('TOSS') });
+
+      const refund = await service.create({ chargeId: CHARGE_ID, amount: 5000 }, { execution: 'MANUAL' });
+
+      expect(provider.refund).not.toHaveBeenCalled();
+      expect(insertCalls).toEqual([expect.objectContaining({ status: 'PENDING', execution: 'MANUAL', amount: 5000 })]);
+      expect(refund).toMatchObject({ status: 'PENDING', execution: 'MANUAL' });
+      expect(stateTransitionService.transitionRefund).not.toHaveBeenCalled();
+    });
+
+    it('MANUAL 은 무통장에 환불 계좌가 같이 와도 토스를 부르지 않는다 — 사람이 송금한다', async () => {
+      const { service, provider } = makeContext({ method: makeMethod('BANK_TRANSFER') });
+
+      await service.create(
+        {
+          chargeId: CHARGE_ID,
+          amount: 5000,
+          refundReceiveAccount: { bank: '06', accountNumber: '1234567890', holderName: '홍길동' },
+        },
+        { execution: 'MANUAL' },
+      );
+
+      expect(provider.refund).not.toHaveBeenCalled();
+    });
+
+    it('MANUAL 은 포인트 결제분에 거절 — 원장 환불(REDEEM_CANCEL) 없이 완료 처리되면 고객이 포인트를 못 받는다', async () => {
+      const { service, provider, insertCalls } = makeContext({ method: makeMethod('POINTS') });
+
+      await expect(service.create({ chargeId: CHARGE_ID, amount: 5000 }, { execution: 'MANUAL' })).rejects.toThrow(
+        '포인트 결제분은 수동 실행할 수 없다',
+      );
+      expect(provider.refund).not.toHaveBeenCalled();
+      expect(insertCalls).toEqual([]);
+    });
+
+    it('MANUAL 도 검증은 같다 — 남은 금액을 넘으면 400', async () => {
+      const { service, provider } = makeContext({ priorRefundedAmount: 8000 });
+
+      await expect(service.create({ chargeId: CHARGE_ID, amount: 5000 }, { execution: 'MANUAL' })).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(provider.refund).not.toHaveBeenCalled();
+    });
+
+    it('기본은 AUTO — 행에 execution AUTO, provider 를 부른다', async () => {
+      const { service, provider, insertCalls } = makeContext();
+
+      await service.create({ chargeId: CHARGE_ID, amount: 5000 });
+
+      expect(insertCalls).toEqual([expect.objectContaining({ execution: 'AUTO' })]);
+      expect(provider.refund).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('실패 분류 (#1016 36번 PR 1)', () => {
+    async function refusalOf(p: Promise<unknown>): Promise<unknown> {
+      try {
+        await p;
+      } catch (e) {
+        expect(e).toBeInstanceOf(HttpException);
+        return (e as HttpException).getResponse();
+      }
+      throw new Error('expected rejection');
+    }
+
+    it('provider 영구 실패(retryable=false) → FAILED 행에 failureCode·failureRetryable=false, 토스 메시지는 reasonMessage', async () => {
+      const { service, updateCalls } = makeContext({
+        providerResult: {
+          status: 'FAILED',
+          errorCode: 'ALREADY_CANCELED_PAYMENT',
+          errorMessage: '이미 취소된 결제 입니다.',
+          retryable: false,
+        },
+      });
+
+      await service.create({ chargeId: CHARGE_ID, amount: 5000 });
+
+      expect(updateCalls).toContainEqual({
+        set: expect.objectContaining({
+          reasonMessage: '이미 취소된 결제 입니다.',
+          failureCode: 'ALREADY_CANCELED_PAYMENT',
+          failureRetryable: false,
+        }),
+      });
+    });
+
+    it('provider 가 retryable 을 안 주면 일시(true), 코드가 없으면 REFUND_FAILED', async () => {
+      const { service, updateCalls } = makeContext({ providerResult: { status: 'FAILED' } });
+
+      await service.create({ chargeId: CHARGE_ID, amount: 5000 });
+
+      expect(updateCalls).toContainEqual({
+        set: expect.objectContaining({ failureCode: 'REFUND_FAILED', failureRetryable: true }),
+      });
+    });
+
+    it('provider 가 던지면 PROVIDER_EXCEPTION · 일시(true)', async () => {
+      const { service, providerRegistry, updateCalls } = makeContext();
+      providerRegistry.getProviderOrThrow.mockReturnValue({ refund: jest.fn().mockRejectedValue(new Error('socket hang up')) });
+
+      await service.create({ chargeId: CHARGE_ID, amount: 5000 });
+
+      expect(updateCalls).toContainEqual({
+        set: expect.objectContaining({ failureCode: 'PROVIDER_EXCEPTION', failureRetryable: true }),
+      });
+    });
+
+    it('금액 초과 거절 본문은 옛 error·message 에 retryable=true 만 더한다', async () => {
+      const { service } = makeContext({ priorRefundedAmount: 8000 });
+
+      expect(await refusalOf(service.create({ chargeId: CHARGE_ID, amount: 5000 }))).toEqual({
+        error: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE',
+        message: 'Refund amount (5000) exceeds available refundable amount (2000)',
+        retryable: true,
+      });
+    });
+
+    it('멤버십 결제 거절은 retryable=false', async () => {
+      const { service } = makeContext({ intentMetadata: { type: 'MEMBERSHIP_FEE' } });
+
+      expect(await refusalOf(service.create({ chargeId: CHARGE_ID, amount: 5000 }))).toEqual({
+        error: 'MEMBERSHIP_REFUND_NOT_ALLOWED',
+        message: '멤버십 결제는 환불할 수 없습니다.',
+        retryable: false,
+      });
+    });
+
+    it('charge 없음(404)도 retryable=false 를 싣는다', async () => {
+      const { service, chargesService } = makeContext();
+      chargesService.findById.mockResolvedValue(null);
+
+      expect(await refusalOf(service.create({ chargeId: 'missing', amount: 5000 }))).toEqual({
+        error: 'CHARGE_NOT_FOUND',
+        message: 'Charge not found: missing',
+        retryable: false,
+      });
+    });
+  });
+
+
+  describe('provider 원장 키 (#1016 36번 PR 0)', () => {
+    it('확정 결제분 환불은 provider 에 승인 결제분 id 를 authorizeChargeId 로 넘긴다', async () => {
+      const { service, provider } = makeContext({
+        charge: makeCharge({ operation: 'CAPTURE', requestPayload: { intentId: INTENT_ID, authorizeChargeId: 'auth-001' } }),
+        method: makeMethod('POINTS'),
+      });
+
+      await service.create({ chargeId: CHARGE_ID, amount: 5000 });
+
+      expect(provider.refund).toHaveBeenCalledWith(
+        expect.objectContaining({ chargeId: CHARGE_ID, authorizeChargeId: 'auth-001' }),
+      );
+    });
+
+    it('승인 결제분 환불은 자기 id 를 넘긴다', async () => {
+      const { service, provider } = makeContext({
+        charge: makeCharge({ operation: 'AUTHORIZE', requestPayload: null }),
+        method: makeMethod('POINTS'),
+      });
+
+      await service.create({ chargeId: CHARGE_ID, amount: 5000 });
+
+      expect(provider.refund).toHaveBeenCalledWith(
+        expect.objectContaining({ chargeId: CHARGE_ID, authorizeChargeId: CHARGE_ID }),
+      );
+    });
+  });
 
   describe('멤버십 결제 환불 차단', () => {
     it('create: MEMBERSHIP_FEE intent 는 환불 거절 (MEMBERSHIP_REFUND_NOT_ALLOWED)', async () => {
@@ -357,6 +558,38 @@ describe('RefundsService', () => {
       ).rejects.toThrow('BANK_TRANSFER');
     });
 
+    it('confirmManual: 카드 결제분이라도 MANUAL 행이면 받는다 (#1016 36번 PR 1)', async () => {
+      const { service, chargesService, paymentMethodsService, stateTransitionService } = makeContext({
+        method: makeMethod('TOSS'),
+        pendingRefund: makeInsertedRefund({ execution: 'MANUAL' }),
+      });
+      chargesService.findById = jest.fn().mockResolvedValue(makeCharge());
+      paymentMethodsService.findById = jest.fn().mockResolvedValue(makeMethod('TOSS'));
+
+      await service.confirmManual(REFUND_ID);
+
+      expect(stateTransitionService.transitionRefund).toHaveBeenCalledWith(
+        REFUND_ID,
+        'SUCCEEDED',
+        expect.objectContaining({ reasonCode: 'MANUAL_CONFIRM' }),
+        'PENDING',
+        expect.anything(),
+      );
+    });
+
+    it('confirmManual: 카드 AUTO PENDING 은 400 REFUND_NOT_MANUALLY_CONFIRMABLE', async () => {
+      const { service, chargesService, paymentMethodsService } = makeContext({
+        method: makeMethod('TOSS'),
+        pendingRefund: makeInsertedRefund({ execution: 'AUTO' }),
+      });
+      chargesService.findById = jest.fn().mockResolvedValue(makeCharge());
+      paymentMethodsService.findById = jest.fn().mockResolvedValue(makeMethod('TOSS'));
+
+      const error = await service.confirmManual(REFUND_ID).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).getResponse()).toMatchObject({ error: 'REFUND_NOT_MANUALLY_CONFIRMABLE' });
+    });
+
     it('confirmManual: BANK_TRANSFER는 SUCCEEDED + REFUND_SUCCEEDED outbox 발행', async () => {
       const { service, chargesService, paymentMethodsService, stateTransitionService } = makeContext({
         method: makeMethod('BANK_TRANSFER'),
@@ -536,8 +769,10 @@ describe('RefundsService', () => {
         .mockResolvedValue(new Map(Object.entries(opts.refunded ?? {})));
 
       const calls: Array<{ chargeId: string; amount: number }> = [];
-      const createSpy = jest.spyOn(ctx.service, 'create').mockImplementation(async (dto) => {
+      const executions: Record<string, string> = {};
+      const createSpy = jest.spyOn(ctx.service, 'create').mockImplementation(async (dto, options) => {
         calls.push({ chargeId: dto.chargeId, amount: dto.amount });
+        executions[dto.chargeId] = options?.execution ?? 'AUTO';
         const outcome = opts.outcomes?.[dto.chargeId] ?? 'SUCCEEDED';
         if (outcome === 'THROW') throw new Error(`boom:${dto.chargeId}`);
         const row: Refund = {
@@ -550,13 +785,16 @@ describe('RefundsService', () => {
           reasonCode: null,
           reasonMessage: null,
           providerRefundId: null,
+          execution: options?.execution ?? 'AUTO',
+          failureCode: null,
+          failureRetryable: null,
           createdAt: new Date(),
           updatedAt: new Date(),
         };
         return row;
       });
       const errorLog = jest.spyOn((ctx.service as any).logger, 'error').mockImplementation(() => undefined);
-      return { ...ctx, calls, createSpy, errorLog, refundedTotals };
+      return { ...ctx, calls, executions, createSpy, errorLog, refundedTotals };
     }
 
     function manualReconcileLog(errorLog: jest.SpyInstance): string | undefined {
@@ -739,6 +977,16 @@ describe('RefundsService', () => {
       expect(createSpy).not.toHaveBeenCalled();
     });
 
+    it('REFUND_NOT_AUTOMATABLE 은 retryable=false, REFUND_AMOUNT_EXCEEDS_TOTAL 은 retryable=true', async () => {
+      const cms = makeMultiChargeContext({ charges: [{ id: 'M1', amount: 10000, type: 'CMS_BATCH' }] });
+      expect((await catchResponse(cms.service.createByIntent(INTENT_ID, { amount: 10000 }))).retryable).toBe(false);
+
+      const over = makeMultiChargeContext({ charges: POINTS_THEN_CARD });
+      const response = await catchResponse(over.service.createByIntent(INTENT_ID, { amount: 10001 }));
+      expect(response.error).toBe('REFUND_AMOUNT_EXCEEDS_TOTAL');
+      expect(response.retryable).toBe(true);
+    });
+
     it('몫이 0 인 leg 는 부르지 않는다', async () => {
       const { service, calls } = makeMultiChargeContext({ charges: POINTS_THEN_CARD });
 
@@ -766,6 +1014,40 @@ describe('RefundsService', () => {
         { chargeId: 'C', amount: 1 },
         { chargeId: 'D', amount: 1 },
       ]);
+    });
+
+    it('MANUAL: 카드 몫은 MANUAL, 포인트 몫은 AUTO — 순서·분할은 AUTO 와 같다', async () => {
+      const { service, calls, executions } = makeMultiChargeContext({ charges: POINTS_THEN_CARD });
+
+      await service.createByIntent(INTENT_ID, { amount: 10000, execution: 'MANUAL' });
+
+      expect(calls).toEqual([
+        { chargeId: 'C1', amount: 7000 },
+        { chargeId: 'P1', amount: 3000 },
+      ]);
+      expect(executions).toEqual({ C1: 'MANUAL', P1: 'AUTO' });
+    });
+
+    it('MANUAL 은 자동 환불 못 하는 수단(효성 CMS)도 받는다 — REFUND_NOT_AUTOMATABLE 로 막지 않는다', async () => {
+      const { service, calls, executions } = makeMultiChargeContext({
+        charges: [
+          { id: 'P1', amount: 3000, type: 'POINTS' },
+          { id: 'M1', amount: 7000, type: 'CMS_BATCH' },
+        ],
+      });
+
+      await service.createByIntent(INTENT_ID, { amount: 10000, execution: 'MANUAL' });
+
+      expect(calls.map((c) => c.chargeId)).toEqual(['M1', 'P1']);
+      expect(executions).toEqual({ M1: 'MANUAL', P1: 'AUTO' });
+    });
+
+    it('execution 없으면 전부 AUTO(지금과 같다)', async () => {
+      const { service, executions } = makeMultiChargeContext({ charges: POINTS_THEN_CARD });
+
+      await service.createByIntent(INTENT_ID, { amount: 10000 });
+
+      expect(executions).toEqual({ C1: 'AUTO', P1: 'AUTO' });
     });
   });
 

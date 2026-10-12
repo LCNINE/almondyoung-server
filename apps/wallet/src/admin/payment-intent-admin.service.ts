@@ -26,11 +26,64 @@ import {
 import { AdminRefundListQueryDto } from './dto/admin-refund.dto';
 import { StateTransitionResponseDto } from './dto/state-transition.dto';
 import { RefundResponseDto } from '../refunds/dto';
+import { isManuallyConfirmable } from '../refunds/manual-confirmable';
 import {
   PaymentIntentItemResponseDto,
   ItemDiscountResponseDto,
   OrderDiscountResponseDto,
 } from '../payment-intents/dto';
+
+/**
+ * 관리자 환불 조회(목록·결제 상세)의 열 — charge → payment_method 조인으로 결제수단을 알아 manualConfirmable 을 정한다.
+ * 목록이 조인 없이 false 를 박아 «환불 내역»에 [완료 처리]를 못 두던 것을 한 곳으로 모았다(#1016 36번 PR 6).
+ * 행 타입은 select 에서 추론한다 — 손으로 쓴 인터페이스는 select 와 갈린다.
+ */
+function refundRowsQuery(db: DbService<WalletSchema>['db']) {
+  return db
+    .select({
+      id: refunds.id,
+      chargeId: refunds.chargeId,
+      intentId: refunds.intentId,
+      status: refunds.status,
+      amount: refunds.amount,
+      currency: refunds.currency,
+      reasonCode: refunds.reasonCode,
+      reasonMessage: refunds.reasonMessage,
+      createdAt: refunds.createdAt,
+      execution: refunds.execution,
+      failureCode: refunds.failureCode,
+      failureRetryable: refunds.failureRetryable,
+      paymentMethodType: paymentMethods.type,
+    })
+    .from(refunds)
+    .leftJoin(charges, eq(refunds.chargeId, charges.id))
+    .leftJoin(paymentMethods, eq(charges.paymentMethodId, paymentMethods.id))
+    .$dynamic();
+}
+
+type AdminRefundRow = Awaited<ReturnType<typeof refundRowsQuery>>[number];
+
+function toAdminRefund(r: AdminRefundRow): RefundResponseDto {
+  return {
+    id: r.id,
+    chargeId: r.chargeId,
+    intentId: r.intentId,
+    status: r.status,
+    amount: r.amount,
+    currency: r.currency,
+    reasonCode: r.reasonCode ?? null,
+    reasonMessage: r.reasonMessage ?? null,
+    createdAt: r.createdAt,
+    manualConfirmable: isManuallyConfirmable({
+      status: r.status,
+      execution: r.execution,
+      methodType: r.paymentMethodType ?? null,
+    }),
+    execution: r.execution,
+    failureCode: r.failureCode ?? null,
+    retryable: r.failureRetryable ?? null,
+  };
+}
 
 type RefundSummary = {
   succeededAmount: number;
@@ -203,38 +256,9 @@ export class PaymentIntentAdminService {
       createdAt: c.createdAt,
     }));
 
-    // Refunds (charge → payment_method join으로 manualConfirmable 계산)
-    const refundRows = await db
-      .select({
-        id: refunds.id,
-        chargeId: refunds.chargeId,
-        intentId: refunds.intentId,
-        status: refunds.status,
-        amount: refunds.amount,
-        currency: refunds.currency,
-        reasonCode: refunds.reasonCode,
-        reasonMessage: refunds.reasonMessage,
-        createdAt: refunds.createdAt,
-        paymentMethodType: paymentMethods.type,
-      })
-      .from(refunds)
-      .leftJoin(charges, eq(refunds.chargeId, charges.id))
-      .leftJoin(paymentMethods, eq(charges.paymentMethodId, paymentMethods.id))
-      .where(eq(refunds.intentId, id))
-      .orderBy(asc(refunds.createdAt));
-
-    const refundData: RefundResponseDto[] = refundRows.map((r) => ({
-      id: r.id,
-      chargeId: r.chargeId,
-      intentId: r.intentId,
-      status: r.status,
-      amount: r.amount,
-      currency: r.currency,
-      reasonCode: r.reasonCode ?? null,
-      reasonMessage: r.reasonMessage ?? null,
-      createdAt: r.createdAt,
-      manualConfirmable: r.status === 'PENDING' && r.paymentMethodType === 'BANK_TRANSFER',
-    }));
+    // Refunds (charge → payment_method join으로 manualConfirmable 계산 — 목록과 같은 조회·매핑)
+    const refundRows = await refundRowsQuery(db).where(eq(refunds.intentId, id)).orderBy(asc(refunds.createdAt));
+    const refundData: RefundResponseDto[] = refundRows.map(toAdminRefund);
     const refundSummary = this.summarizeRefundRows(refundRows);
 
     // Payment method
@@ -353,26 +377,13 @@ export class PaymentIntentAdminService {
 
     const total = countResult?.value ?? 0;
 
-    const rows = await db
-      .select()
-      .from(refunds)
+    const rows = await refundRowsQuery(db)
       .where(and(...conditions))
       .orderBy(desc(refunds.createdAt))
       .limit(limit)
       .offset(offset);
 
-    const data: RefundResponseDto[] = rows.map((r) => ({
-      id: r.id,
-      chargeId: r.chargeId,
-      intentId: r.intentId,
-      status: r.status,
-      amount: r.amount,
-      currency: r.currency,
-      reasonCode: r.reasonCode ?? null,
-      reasonMessage: r.reasonMessage ?? null,
-      createdAt: r.createdAt,
-      manualConfirmable: false, // 목록 조회는 charge join 없이 조회 — 상세에서만 정확한 값 제공
-    }));
+    const data: RefundResponseDto[] = rows.map(toAdminRefund);
 
     return { data, total, page, limit };
   }

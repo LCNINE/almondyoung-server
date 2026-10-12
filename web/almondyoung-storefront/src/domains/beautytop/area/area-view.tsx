@@ -1,10 +1,20 @@
 "use client"
 
 import LocalizedClientLink from "@/components/shared/localized-client-link"
-import { OPENING_SIDO, isOpeningArea, openingPath } from "@/lib/beautytop/opening-areas"
+import {
+  OPENING_SIDO,
+  isOpeningArea,
+  openingPath,
+} from "@/lib/beautytop/opening-areas"
 import { useTranslations } from "next-intl"
+import { useScopeLabel } from "../use-scope"
 import { useState } from "react"
-import { type Filters, RevenueCard, ScopeFilters, useScopeFilters } from "../components/neighborhood-tab"
+import {
+  type Filters,
+  RevenueCard,
+  ScopeFilters,
+  useScopeFilters,
+} from "../components/neighborhood-tab"
 import { CardSkeleton, LoadError } from "../components/parts"
 import { Trends } from "../components/trends-tab"
 import type { BeautyTopOptions, BeautyTopRevenue } from "../types"
@@ -15,17 +25,57 @@ import { PriceRuler } from "./price-ruler"
 import { ShareCard } from "./share-card"
 
 function AreaRevenue({ filters }: { filters: Filters }) {
-  const t = useTranslations("beautytop")
+  const scope = useTranslations("beautytop.scope")
+  const region = useScopeLabel(filters)
   const revenue = useArea<BeautyTopRevenue>("revenue", filters)
-  const group = revenue.data?.available ? revenue.data.groups?.[0] : undefined
-  if (!group || group.series.length < 2) return null
+  if (revenue.isPending)
+    return (
+      <>
+        <Divider />
+        <CardSkeleton variant="chart" />
+      </>
+    )
+  if (revenue.isError)
+    return (
+      <>
+        <Divider />
+        <LoadError onRetry={() => revenue.refetch()} />
+      </>
+    )
+  const datasets = [
+    { data: revenue.data, region },
+    { data: revenue.data?.national_comparison, region: scope("national") },
+  ].filter((dataset) => dataset.data?.available && dataset.data.groups?.length)
+  if (!datasets.length) return null
   return (
     <>
       <Divider />
-      <section className="flex flex-col gap-2">
-        <RevenueCard group={group} region={filters.gugun} />
-        <p className="text-muted-foreground text-xs">{t("revenue.note")}</p>
-      </section>
+      {datasets.map((dataset, index) => (
+        <section key={index} className="flex flex-col gap-2">
+          {dataset.data?.groups?.map((group) => (
+            <RevenueCard
+              key={`${group.industry}:${group.period}`}
+              group={group}
+              region={dataset.region}
+            />
+          ))}
+          {Array.from(
+            new Set(
+              [
+                dataset.data?.note,
+                dataset.data?.amount_note,
+                dataset.data?.category_note,
+                dataset.data?.average_note,
+                dataset.data?.estimation_note,
+              ].filter(Boolean)
+            )
+          ).map((note) => (
+            <p key={note} className="text-muted-foreground text-xs">
+              {note}
+            </p>
+          ))}
+        </section>
+      ))}
     </>
   )
 }
@@ -46,6 +96,7 @@ export function AreaView({
   const options = useArea<BeautyTopOptions>("options")
   const [filters, update] = useScopeFilters()
   const [wideTrends, setWideTrends] = useState(false)
+  const scopeKey = `${filters.sido}:${filters.gugun}:${filters.category}`
   const trendFilters: Filters = wideTrends ? { ...filters, gugun: "" } : filters
 
   if (options.isPending) return <CardSkeleton />
@@ -53,29 +104,61 @@ export function AreaView({
 
   return (
     <div className="bg-background -mx-4 flex flex-col gap-6 px-4 py-6">
-      <ScopeFilters options={options.data} filters={filters} onChange={(next) => { setWideTrends(false); update(next) }} />
-      <AreaHero key={`${filters.gugun}:${filters.category}`} filters={filters} mineLabel={mineLabel} />
-      {shopSlot && (<><Divider />{shopSlot(filters)}</>)}
+      <ScopeFilters
+        options={options.data}
+        filters={filters}
+        onChange={(next) => {
+          setWideTrends(false)
+          update(next)
+        }}
+      />
+      <AreaHero
+        key={`h:${scopeKey}`}
+        filters={filters}
+        mineLabel={mineLabel}
+        options={options.data}
+      />
+      {shopSlot && (
+        <>
+          <Divider />
+          {shopSlot(filters)}
+        </>
+      )}
       <Divider />
-      <PriceRuler key={`p:${filters.gugun}:${filters.category}`} filters={filters} />
-      <AreaRevenue key={`r:${filters.gugun}:${filters.category}`} filters={filters} />
+      <PriceRuler key={`p:${scopeKey}`} filters={filters} />
+      <AreaRevenue key={`r:${scopeKey}`} filters={filters} />
       <Divider />
-      <AreaCompare key={`c:${filters.sido}:${filters.gugun}:${filters.category}`} options={options.data} filters={filters} />
+      <AreaCompare
+        key={`c:${scopeKey}`}
+        options={options.data}
+        filters={filters}
+      />
       <Divider />
       <section aria-labelledby="insta-title" className="flex flex-col gap-3">
-        <h2 id="insta-title" className="text-lg font-bold">{t("insta.title")}</h2>
-        <Trends key={JSON.stringify(trendFilters)} filters={trendFilters} onWiden={() => setWideTrends(true)} />
+        <h2 id="insta-title" className="text-lg font-bold">
+          {t("insta.title")}
+        </h2>
+        <Trends
+          key={JSON.stringify(trendFilters)}
+          filters={trendFilters}
+          onWiden={() => setWideTrends(true)}
+        />
       </section>
       <Divider />
-      <ShareCard key={`s:${filters.gugun}:${filters.category}`} filters={filters} />
-      {filters.sido === OPENING_SIDO && isOpeningArea(filters.gugun, filters.category) && (
-        <LocalizedClientLink
-          href={openingPath(filters.gugun, filters.category)}
-          className="text-foreground w-fit text-sm underline underline-offset-4 transition-colors duration-150 hover:opacity-80"
-        >
-          {t("opening.fromArea")} →
-        </LocalizedClientLink>
-      )}
+      <ShareCard
+        key={`s:${scopeKey}`}
+        filters={filters}
+        options={options.data}
+      />
+      {filters.sido === OPENING_SIDO &&
+        isOpeningArea(filters.gugun, filters.category) && (
+          <LocalizedClientLink
+            href={openingPath(filters.gugun, filters.category)}
+            className="text-foreground w-fit text-sm underline underline-offset-4 transition-colors duration-150 hover:opacity-80"
+          >
+            {t("opening.fromArea")} →
+          </LocalizedClientLink>
+        )}
     </div>
   )
 }

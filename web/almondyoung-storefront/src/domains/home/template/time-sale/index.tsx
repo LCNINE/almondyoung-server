@@ -1,136 +1,85 @@
-import { getTimeSalePresentation } from "@/lib/api/medusa/time-sale"
+import { getTimeSaleOverview } from "@/lib/api/medusa/time-sale"
+import { listCategories } from "@/lib/api/medusa/categories"
+import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { getRegion } from "@/lib/api/medusa/regions"
+import { earliestEnd, orderedProducts } from "@/lib/utils/time-sale-merge"
+import { buildTabSources, deriveTimeSaleTabs } from "@/lib/utils/time-sale-tabs"
+import { filterSoldOut } from "@/domains/products/components/product-card/quantity/stock-status"
+import { getWishlist } from "@lib/api/users/wishlist"
+import { getTranslations } from "next-intl/server"
 import { ConfiguredTimeSale } from "../../components/sections/time-sale-section/configured"
-import {
-  buildPager,
-  morePageSize,
-  pageCount,
-  pageIds,
-  parsePage,
-} from "@/lib/utils/time-sale-pagination"
-import type {
-  SaleSurface,
-  SalePlatform,
-} from "@packages/domain-types/time-sale"
 import { buildSaleProducts } from "./sale-products"
 import { fetchProductsByIds } from "./fetch-products"
-import { retrieveCustomer } from "@/lib/api/medusa/customer"
-import { getWishlist } from "@/lib/api/users/wishlist"
-import {
-  mainProductIds,
-  matchesSalePartition,
-  saleSectionPeriods,
-} from "./section-plan"
 
-// 홈/더보기의 타임세일 서버 컴포넌트:
-// 세일 목록 → 세일별 상품 id 결정 → 상품 한 번에 조회 → 진열순위 첫 세일 하나만 섹션 렌더.
-// 더보기(surface="more")는 ?page=N 으로 한 페이지 분량(열 x 행)만 조회한다.
+/** 홈은 상위 HOME_ROWS 칸만 쓰지만 품절을 빼고 다음 상품을 당겨 올려야 하므로 넉넉히 받는다. */
+const MAX_PRODUCTS = 100
+
+/** 홈에는 데스크톱 두 줄(lg 5열)만 내보낸다. 나머지는 "더보기" 로 전용 페이지에서 본다. */
+const HOME_ROWS = 10
+
 export async function TimeSaleWrapper({
   countryCode,
-  surface = "main",
-  page: rawPage,
-  partitionId = "home-sale",
-  saleId,
-  pagePlatform = "pc",
 }: {
   countryCode: string
   background?: "white" | "muted"
-  surface?: SaleSurface
-  page?: string
-  partitionId?: string
-  saleId?: string
-  pagePlatform?: SalePlatform
 }) {
-  // 1) 세일·설정 조회. 이 면(surface)이 꺼져 있거나 보여줄 세일이 없으면 렌더하지 않는다.
-  const { timeSales, settings } = await getTimeSalePresentation()
-  if (!settings.environment[surface]) return null
-  const sales = timeSales.filter(
-    (sale) =>
-      sale.endsAt &&
-      sale.productIds.length > 0 &&
-      (!saleId || sale.saleId === saleId) &&
-      (surface !== "main" ||
-        matchesSalePartition(
-          settings.sales[sale.saleId]?.partitionId,
-          partitionId
-        ))
+  const overview = await getTimeSaleOverview()
+  if (!overview.settings.environment.main) return null
+
+  const sales = overview.sales.filter(
+    (sale) => sale.endsAt && sale.productIds.length > 0
   )
-  if (sales.length === 0) return null
+  const endsAt = earliestEnd(sales)
+  if (!endsAt) return null
 
-  // 2) 세일마다 이 화면에 올릴 상품 id 와 페이지 링크를 정한다.
-  const pageSize =
-    surface === "more" ? morePageSize(settings, pagePlatform) : null
-  const plans = sales.map((sale) => {
-    if (!pageSize) {
-      const ids =
-        surface === "more"
-          ? sale.productIds
-          : mainProductIds(sale.productIds, settings.environment.moreMode)
-
-      return { sale, ids, pager: undefined }
-    }
-
-    const pages = pageCount(sale.productIds.length, pageSize)
-    const page = parsePage(rawPage, pages)
-    const hrefFor = (n: number) =>
-      `/${countryCode}/time-sale?sale=${encodeURIComponent(sale.saleId)}&platform=${pagePlatform}&page=${n}`
-
-    return {
-      sale,
-      ids: pageIds(sale.productIds, page, pageSize),
-      pager: buildPager(
-        page,
-        pages,
-        hrefFor,
-        settings.styles.more[pagePlatform].components.find(
-          (c) => c.type === "grid" || c.type === "carousel"
-        )?.options.pageWindow
-      ),
-    }
-  })
-
-  // 3) 세일이 여럿이어도 상품 조회는 한 번(id 중복 제거).
-  // 세일마다 부르면 Medusa 왕복이 세일 수만큼 붙는다.
   const region = await getRegion(countryCode)
-  const allIds = Array.from(new Set(plans.flatMap((plan) => plan.ids)))
-  const products = await fetchProductsByIds(allIds, region?.id)
-  if (products.length === 0 && !pageSize) return null
+  const candidates = orderedProducts({
+    sales,
+    products: overview.products,
+  }).slice(0, MAX_PRODUCTS)
+  const fetched = await fetchProductsByIds(
+    candidates.map((product) => product.id),
+    region?.id
+  )
 
-  const customer = await retrieveCustomer()
+  // 서버가 준 순서(판매순 → 리뷰순 → 최신순)에서 품절을 빼고 앞에서부터 채운다.
+  const available = new Set(filterSoldOut(fetched).map((product) => product.id))
+  const shown = candidates
+    .filter((product) => available.has(product.id))
+    .slice(0, HOME_ROWS)
+  if (shown.length === 0) return null
+
+  const [customer, categories, t] = await Promise.all([
+    retrieveCustomer(),
+    listCategories(),
+    getTranslations("home.timeSale"),
+  ])
   const wishlist = customer ? await getWishlist().catch(() => []) : []
   const isMember =
     customer?.groups?.some(
       (group) => group.id === process.env.NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID
     ) ?? false
 
-  // 4) 섹션은 하나다. 진열순위(API 정렬) 앞에서부터 이 사용자에게 보일 게 있는 첫 세일만 그린다.
-  // 페이지 안 상품이 전부 은닉돼도 페이지 링크가 있으면 남겨 다른 페이지로 갈 수 있게 한다.
-  for (const { sale, ids, pager } of plans) {
-    const saleProducts = buildSaleProducts({
-      sale,
-      ids,
-      products,
-      countryCode,
-      isMember,
-      wishlistIds: wishlist.map((item) => item.productId),
-    })
-    if (saleProducts.length === 0 && !pager) continue
-
-    return (
-      <ConfiguredTimeSale
-        settings={settings}
-        surface={surface}
-        saleId={sale.saleId}
-        title={sale.title}
-        startsAt={sale.startsAt ?? new Date().toISOString()}
-        endsAt={sale.endsAt!}
-        countryCode={countryCode}
-        products={saleProducts}
-        sectionPeriods={saleSectionPeriods(sale)}
-        pager={pager}
-      />
-    )
-  }
-
-  return null
+  return (
+    <ConfiguredTimeSale
+      settings={overview.settings}
+      surface="main"
+      startsAt={sales.reduce(
+        (min, sale) =>
+          sale.startsAt && sale.startsAt < min ? sale.startsAt : min,
+        endsAt
+      )}
+      endsAt={endsAt}
+      countryCode={countryCode}
+      tabs={deriveTimeSaleTabs(shown, buildTabSources(categories), t("allTab"))}
+      products={buildSaleProducts({
+        sales,
+        ids: shown.map((product) => product.id),
+        products: fetched,
+        countryCode,
+        isMember,
+        wishlistIds: wishlist.map((item) => item.productId),
+      })}
+    />
+  )
 }

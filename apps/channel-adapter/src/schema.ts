@@ -252,6 +252,13 @@ export const orderCollectionFailures = pgTable(
     replayedAt: timestamp('replayed_at'),
     replayedWmsOrderId: uuid('replayed_wms_order_id'),
     errorMessage: text('error_message'),
+    /**
+     * 처리 실패(`order_collection_processing_failed`) 행만 쓰는 세 칸 (#1016 1번 행). 다른 사유 행은 0·null 이다.
+     * `error_message` 는 종결 사유 칸이라 실패 원인을 섞지 않는다.
+     */
+    attemptCount: integer('attempt_count').notNull().default(0),
+    failedStage: varchar('failed_stage', { length: 30 }),
+    lastError: text('last_error'),
 
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),

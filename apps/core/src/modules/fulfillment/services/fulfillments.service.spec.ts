@@ -519,6 +519,21 @@ describe('FulfillmentsService', () => {
     await expect(service.requiresPhysicalFulfillmentOrder(salesOrderId)).resolves.toBe(true);
   });
 
+  it.each(['shipped', 'delivered'])(
+    '셀메이트가 %s 로 표시한 판매주문에는 FO 를 만들지 않고 null 을 반환한다 (#1016 12번)',
+    async (salesOrderStatus) => {
+      const { service, state, productSkuMapping, shipmentReservation } = makeService({ salesOrderStatus });
+
+      const result = await service.create({ salesOrderId, warehouseId });
+
+      expect(result).toBeNull();
+      expect(state.fulfillmentOrders).toHaveLength(0);
+      expect(state.fulfillmentOrderItems).toHaveLength(0);
+      expect(productSkuMapping.getByVariant).not.toHaveBeenCalled();
+      expect(shipmentReservation.reservePartial).not.toHaveBeenCalled();
+    },
+  );
+
   it('matched + void line만 있는 sales order는 placeholder FO 없이 null을 반환한다', async () => {
     const { service, state, shipmentReservation, outbox } = makeService({
       matching: {

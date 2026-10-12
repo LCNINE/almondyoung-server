@@ -58,7 +58,7 @@ import MembershipBanner from "../components/banner/membership-banner"
  *   const products = await getProductsByIds(productIds)
  *   ```
  *
- * ### 타임세일 (TimeSaleWrapper → ConfiguredTimeSale)
+ * ### 타임세일 (TimeSaleSection)
  * - Campaign: "time-sale"
  * - 조건: starts_at, ends_at 설정 (시간 제한)
  * - 구현:
@@ -149,14 +149,13 @@ export async function HomeLogoutTemplate({
         <HomeQuickLinks />
       </div>
 
+      <BeautyTopHomeCard />
+
       <ErrorBoundary fallback={null}>
         <Suspense fallback={null}>
-          <TimeSaleWrapper countryCode={countryCode} partitionId="home-top" />
           <LogoContestWrapper countryCode={countryCode} />
         </Suspense>
       </ErrorBoundary>
-
-      {bannerVisible && <BeautyTopHomeCard />}
 
       <ErrorBoundary fallback={null}>
         <Suspense fallback={null}>

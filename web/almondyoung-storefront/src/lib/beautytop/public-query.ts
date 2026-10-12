@@ -28,7 +28,8 @@ export type PublicResource = keyof typeof PUBLIC_RESOURCES
 
 export type PublicQueryResult =
   | { ok: true; data: unknown }
-  | { ok: false; error: "INVALID_QUERY" | "SOURCE_UNAVAILABLE" | "BUSY" | "NOT_CONFIGURED" }
+  // retryAfterMs: the source's own wait hint, passed on when it was too long to wait out here.
+  | { ok: false; error: "INVALID_QUERY" | "SOURCE_UNAVAILABLE" | "BUSY" | "NOT_CONFIGURED"; retryAfterMs?: number }
 
 export function isPublicResource(value: string): value is PublicResource {
   return Object.prototype.hasOwnProperty.call(PUBLIC_RESOURCES, value)
@@ -57,7 +58,19 @@ function config() {
   }
 }
 
-async function attemptSource(resource: string, params: Record<string, string>, subject: string): Promise<PublicQueryResult> {
+function retryAfterMs(value: string | null): number | undefined {
+  if (!value) return undefined
+  if (/^\d+$/.test(value.trim())) return Number(value.trim()) * 1000
+  const date = Date.parse(value)
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined
+}
+
+async function attemptSource(
+  resource: string,
+  params: Record<string, string>,
+  subject: string,
+  timeoutMs: number
+): Promise<PublicQueryResult> {
   let token: ReturnType<typeof mintToken>
   try {
     token = mintToken(subject, config())
@@ -76,27 +89,37 @@ async function attemptSource(resource: string, params: Record<string, string>, s
     cache: "no-store",
     redirect: "error",
     // Cold aggregates can take over ten seconds at the source; the answer is then cached for hours.
-    signal: AbortSignal.timeout(20_000),
+    signal: AbortSignal.timeout(timeoutMs),
   })
   if (response.status === 429 || response.status === 503) {
     const body = await response.json().catch(() => null)
-    return { ok: false, error: body?.error?.code === "SOURCE_UNAVAILABLE" ? "SOURCE_UNAVAILABLE" : "BUSY" } as const
+    return {
+      ok: false,
+      error: body?.error?.code === "SOURCE_UNAVAILABLE" ? "SOURCE_UNAVAILABLE" : "BUSY",
+      retryAfterMs: retryAfterMs(response.headers.get("Retry-After")),
+    } as const
   }
   if (!response.ok) return { ok: false, error: "SOURCE_UNAVAILABLE" } as const
   const body = await response.json()
   return { ok: true, data: body?.data ?? null } as const
 }
 
-// The source answers BUSY beyond two concurrent requests per subject. This limit is per
-// server process, so several instances can still exceed it — hence the short retries below.
-const MAX_CONCURRENT_PER_SUBJECT = 2
+// Match the source's dedicated public aggregate pool. Teasers and other subjects keep
+// their existing two slots. This is per process; the source enforces the shared ceiling.
+const MAX_PUBLIC_CONCURRENT = 8
+const MAX_OTHER_CONCURRENT = 2
 const BUSY_RETRY_MS = [400, 800, 1200]
+const MAX_RETRY_DELAY_MS = 5000
+const MAX_TOTAL_RETRY_DELAY_MS = 10000
+// The server function is cut off at 20s; leave room to answer instead of being killed mid-wait.
+const SOURCE_DEADLINE_MS = 15_000
 const slots = new Map<string, { running: number; waiting: Array<() => void> }>()
 
 async function withSlot<T>(subject: string, task: () => Promise<T>): Promise<T> {
   const slot = slots.get(subject) ?? { running: 0, waiting: [] }
   slots.set(subject, slot)
-  if (slot.running < MAX_CONCURRENT_PER_SUBJECT) slot.running++
+  const maximum = subject === SERVER_SUBJECT ? MAX_PUBLIC_CONCURRENT : MAX_OTHER_CONCURRENT
+  if (slot.running < maximum) slot.running++
   else await new Promise<void>((resolve) => slot.waiting.push(resolve))
   try {
     return await task()
@@ -112,13 +135,27 @@ export async function fetchFromSource(
   params: Record<string, string>,
   subject: string = SERVER_SUBJECT
 ): Promise<PublicQueryResult> {
-  let result = await withSlot(subject, () => attemptSource(resource, params, subject))
-  for (const delay of BUSY_RETRY_MS) {
+  const deadline = Date.now() + SOURCE_DEADLINE_MS
+  const attempt = () =>
+    withSlot(subject, () => attemptSource(resource, params, subject, Math.max(1, deadline - Date.now())))
+  let result = await attempt()
+  let waited = 0
+  for (const fallbackDelay of BUSY_RETRY_MS) {
     if (result.ok || result.error !== "BUSY") break
+    const delay = Math.max(fallbackDelay, result.retryAfterMs ?? 0)
+    // A minute-long rate window should return BUSY to the caller instead of holding
+    // the request open or retrying before the source's Retry-After permits it.
+    if (delay > MAX_RETRY_DELAY_MS || waited + delay > MAX_TOTAL_RETRY_DELAY_MS) break
+    if (Date.now() + delay >= deadline) break
+    waited += delay
     await new Promise((resolve) => setTimeout(resolve, delay))
-    result = await withSlot(subject, () => attemptSource(resource, params, subject))
+    result = await attempt()
   }
-  return result
+  if (result.ok) return result
+  // Only BUSY carries a wait; the caller must not ask again before the source said it may.
+  return result.error === "BUSY" && result.retryAfterMs !== undefined
+    ? { ok: false, error: "BUSY", retryAfterMs: result.retryAfterMs }
+    : { ok: false, error: result.error }
 }
 
 class NotCacheable extends Error {
@@ -157,4 +194,21 @@ export async function queryPublic(
     .finally(() => inFlight.delete(key))
   inFlight.set(key, task)
   return task
+}
+
+// One page needs several aggregates at once. Asked as separate HTTP requests, each lands in
+// its own serverless instance and the per-process slot above stops limiting anything, so
+// the source sees all of them at once under one subject and answers BUSY. Batched, they share
+// one instance and therefore the bounded public pool.
+export const MAX_BATCH = 8
+
+export async function queryPublicBatch(items: string[]): Promise<PublicQueryResult[]> {
+  return Promise.all(
+    items.slice(0, MAX_BATCH).map((item) => {
+      const input = Object.fromEntries(new URLSearchParams(item))
+      const resource = input.resource ?? ""
+      if (!isPublicResource(resource)) return { ok: false, error: "INVALID_QUERY" } as const
+      return queryPublic(resource, input)
+    })
+  )
 }

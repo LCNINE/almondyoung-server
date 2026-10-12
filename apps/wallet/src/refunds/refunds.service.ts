@@ -1,17 +1,20 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
-import { WalletSchema, charges as chargesTable, refunds, paymentIntents } from '../schema';
+import { WalletSchema, charges as chargesTable, refunds, paymentIntents, RefundExecution } from '../schema';
 import { Charge, DbTx, Refund } from '../types';
 import { ChargesService } from '../charges/charges.service';
 import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
+import { refundRefusal } from './refund-refusal';
+import { isManuallyConfirmable } from './manual-confirmable';
 import { ProviderRegistry } from '../providers/provider.registry';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import { DEFAULT_PAYMENT_PROVIDER_DESCRIPTORS, PaymentProviderDescriptor } from '../providers/provider-descriptors';
 import { GatewayEventType, buildRefundEventPayload } from '../messaging/gateway-event.builder';
 import { CreateRefundDto } from './dto';
 import { splitRefundOverRemaining } from './refund-plan';
+import { ledgerLegChargeId } from '../charges/ledger-leg';
 
 /**
  * 이 결제수단을 wallet 이 자동으로 환불할 수 있는가 — provider 기술자에 'refund' capability 가 있는가.
@@ -47,42 +50,51 @@ export class RefundsService {
     }
   }
 
-  async create(dto: CreateRefundDto): Promise<Refund> {
+  /**
+   * 결제분 하나를 환불한다. execution = MANUAL 이면 provider 를 부르지 않고 «송금 대기»(PENDING) 행만 남긴다 —
+   * 운영자가 고객 계좌로 송금한 뒤 confirmManual 로 닫는다. PENDING 은 남은 금액에서 이미 빠지므로 같은 돈이 두 번 나가지 않는다.
+   */
+  async create(dto: CreateRefundDto, options: { execution?: RefundExecution } = {}): Promise<Refund> {
+    const execution: RefundExecution = options.execution ?? 'AUTO';
     // 1. Early validation (no lock needed)
     const charge = await this.chargesService.findById(dto.chargeId);
     if (!charge) {
-      throw new NotFoundException({ error: 'CHARGE_NOT_FOUND', message: `Charge not found: ${dto.chargeId}` });
+      throw new NotFoundException(refundRefusal('CHARGE_NOT_FOUND', `Charge not found: ${dto.chargeId}`));
     }
     if (dto.intentId && charge.intentId !== dto.intentId) {
-      throw new BadRequestException({
-        error: 'CHARGE_INTENT_MISMATCH',
-        message: `Charge ${dto.chargeId} does not belong to intent ${dto.intentId}`,
-      });
+      throw new BadRequestException(
+        refundRefusal('CHARGE_INTENT_MISMATCH', `Charge ${dto.chargeId} does not belong to intent ${dto.intentId}`),
+      );
     }
     if (charge.status !== 'SUCCEEDED') {
-      throw new BadRequestException({
-        error: 'CHARGE_NOT_REFUNDABLE',
-        message: `Charge is not in a refundable state: ${charge.status}`,
-      });
+      throw new BadRequestException(
+        refundRefusal('CHARGE_NOT_REFUNDABLE', `Charge is not in a refundable state: ${charge.status}`),
+      );
     }
     if (dto.amount > charge.amount) {
-      throw new BadRequestException({
-        error: 'REFUND_AMOUNT_EXCEEDS_CHARGE',
-        message: `Refund amount (${dto.amount}) exceeds charge amount (${charge.amount})`,
-      });
+      throw new BadRequestException(
+        refundRefusal(
+          'REFUND_AMOUNT_EXCEEDS_CHARGE',
+          `Refund amount (${dto.amount}) exceeds charge amount (${charge.amount})`,
+        ),
+      );
     }
     await this.assertRefundable(charge.intentId, dto.allowMembershipRefund);
 
     const method = await this.paymentMethodsService.findById(charge.paymentMethodId);
     if (!method) {
-      throw new NotFoundException({
-        error: 'PAYMENT_METHOD_NOT_FOUND',
-        message: `Payment method not found: ${charge.paymentMethodId}`,
-      });
+      throw new NotFoundException(
+        refundRefusal('PAYMENT_METHOD_NOT_FOUND', `Payment method not found: ${charge.paymentMethodId}`),
+      );
+    }
+    // 내부 불변식 — 포인트 leg 는 항상 AUTO(원장 REDEEM_CANCEL). MANUAL 로 만들면 confirmManual 이
+    // 원장 환불 없이 SUCCEEDED 로 닫아 고객이 포인트를 돌려받지 못한다. 클라이언트 거절이 아니라 500.
+    if (execution === 'MANUAL' && method.type === 'POINTS') {
+      throw new Error(`포인트 결제분은 수동 실행할 수 없다 — 포인트는 원장으로 자동 환불한다 (charge ${charge.id})`);
     }
     const userId = await this.getIntentUserId(charge.intentId);
     if (!userId) {
-      throw new NotFoundException({ error: 'INTENT_NOT_FOUND', message: `Intent not found for charge: ${charge.id}` });
+      throw new NotFoundException(refundRefusal('INTENT_NOT_FOUND', `Intent not found for charge: ${charge.id}`));
     }
 
     // 2. Lock charge row + re-check available amount + insert refund record atomically
@@ -92,10 +104,12 @@ export class RefundsService {
       const alreadyRefunded = await this.getRefundedTotalInTx(charge.id, tx);
       const available = charge.amount - alreadyRefunded;
       if (dto.amount > available) {
-        throw new BadRequestException({
-          error: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE',
-          message: `Refund amount (${dto.amount}) exceeds available refundable amount (${available})`,
-        });
+        throw new BadRequestException(
+          refundRefusal(
+            'REFUND_AMOUNT_EXCEEDS_AVAILABLE',
+            `Refund amount (${dto.amount}) exceeds available refundable amount (${available})`,
+          ),
+        );
       }
 
       const inserted = await tx
@@ -109,12 +123,20 @@ export class RefundsService {
           reasonCode: dto.reasonCode ?? null,
           reasonMessage: dto.reasonMessage ?? null,
           providerRefundId: null,
+          execution,
         })
         .returning();
       const row = inserted[0];
       if (!row) throw new Error('REFUND_INSERT_FAILED');
       return row;
     });
+
+    if (execution === 'MANUAL') {
+      this.logger.log(
+        `Manual refund awaiting transfer: refundId=${refund.id} charge=${charge.id} amount=${dto.amount}`,
+      );
+      return refund;
+    }
 
     const correlationId = `refund:${refund.id}:${Date.now()}`;
     const provider = this.providerRegistry.getProviderOrThrow(method.type);
@@ -125,6 +147,7 @@ export class RefundsService {
       providerResult = await provider.refund({
         refundId: refund.id,
         chargeId: charge.id,
+        authorizeChargeId: ledgerLegChargeId(charge),
         intentId: charge.intentId,
         userId,
         amount: dto.amount,
@@ -141,7 +164,13 @@ export class RefundsService {
       // reasonCode는 관리자가 입력한 환불 사유를 보존. PG 오류는 reasonMessage에 추가하고 state_transitions에 기록
       await this.dbService.db
         .update(refunds)
-        .set({ reasonMessage: message.slice(0, 500), updatedAt: new Date() })
+        .set({
+          reasonMessage: message.slice(0, 500),
+          // 응답이 안 왔다 — 돈이 나갔는지 모른다. 일시로 두면 정산이 장부를 다시 맞춘 뒤 이어 간다(스펙 §6.2)
+          failureCode: 'PROVIDER_EXCEPTION',
+          failureRetryable: true,
+          updatedAt: new Date(),
+        })
         .where(eq(refunds.id, refund.id));
       await this.stateTransitionService.transitionRefund(refund.id, 'FAILED', {
         correlationId,
@@ -216,7 +245,13 @@ export class RefundsService {
       // reasonCode는 관리자가 입력한 환불 사유를 보존. PG 오류는 reasonMessage에 기록
       await this.dbService.db
         .update(refunds)
-        .set({ reasonMessage: failMessage, updatedAt: new Date() })
+        .set({
+          reasonMessage: failMessage,
+          failureCode: failCode,
+          // provider 가 영구/일시를 정한다(토스 코드표 등). 모르면 일시 — 스펙 §6.5
+          failureRetryable: providerResult.retryable ?? true,
+          updatedAt: new Date(),
+        })
         .where(eq(refunds.id, refund.id));
       await this.stateTransitionService.transitionRefund(refund.id, 'FAILED', {
         correlationId,
@@ -236,6 +271,7 @@ export class RefundsService {
       reasonMessage?: string;
       allowMembershipRefund?: boolean;
       refundReceiveAccount?: CreateRefundDto['refundReceiveAccount'];
+      execution?: RefundExecution;
     },
   ): Promise<Refund[]> {
     const refundableCharges = await this.chargesService.findRefundableByIntent(intentId);
@@ -246,28 +282,30 @@ export class RefundsService {
         return succeededRefunds;
       }
 
-      throw new NotFoundException({
-        error: 'REFUNDABLE_CHARGE_NOT_FOUND',
-        message: `No refundable charge found for intent: ${intentId}`,
-      });
+      throw new NotFoundException(
+        refundRefusal('REFUNDABLE_CHARGE_NOT_FOUND', `No refundable charge found for intent: ${intentId}`),
+      );
     }
 
     // 계획을 먼저 세우고 검증이 끝난 뒤에만 돈을 움직인다. 집행 도중의 실패는 앞 leg 를 되돌릴 수 없다
     // (포인트 환불엔 역연산이 없고, PG 환불은 재청구가 안 된다).
-    const plan = await this.planIntentRefund(intentId, refundableCharges, dto.amount);
+    const plan = await this.planIntentRefund(intentId, refundableCharges, dto.amount, dto.execution ?? 'AUTO');
 
     const results: Refund[] = [];
     for (const leg of plan) {
       let refund: Refund;
       try {
-        refund = await this.create({
-          chargeId: leg.chargeId,
-          amount: leg.amount,
-          reasonCode: dto.reasonCode,
-          reasonMessage: dto.reasonMessage,
-          allowMembershipRefund: dto.allowMembershipRefund,
-          refundReceiveAccount: dto.refundReceiveAccount,
-        });
+        refund = await this.create(
+          {
+            chargeId: leg.chargeId,
+            amount: leg.amount,
+            reasonCode: dto.reasonCode,
+            reasonMessage: dto.reasonMessage,
+            allowMembershipRefund: dto.allowMembershipRefund,
+            refundReceiveAccount: dto.refundReceiveAccount,
+          },
+          { execution: leg.execution },
+        );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         this.logPartialIntentRefund(
@@ -299,12 +337,16 @@ export class RefundsService {
    *
    * 포인트가 마지막인 이유: 포인트 환불은 되돌릴 수단이 없는데(REDEEM_CANCEL 의 역연산 없음) 원장 안에서
    * 끝나 실패할 일이 거의 없다. 실패 가능성이 큰 외부 PG 를 먼저 해서, 그게 실패하면 아무 돈도 안 나간 채로 멈춘다.
+   *
+   * execution = MANUAL 이면 외부 결제 leg 는 PG 를 부르지 않으므로 «자동 환불 가능» 검사를 건너뛴다(효성 CMS 도 받는다).
+   * 포인트 leg 는 MANUAL 이어도 원장으로 자동 환불한다(스펙 §6.3).
    */
   private async planIntentRefund(
     intentId: string,
     refundableCharges: Charge[],
     amount: number,
-  ): Promise<Array<{ chargeId: string; amount: number; methodType: string }>> {
+    execution: RefundExecution,
+  ): Promise<Array<{ chargeId: string; amount: number; methodType: string; execution: RefundExecution }>> {
     const refunded = await this.getActiveRefundedTotalsByCharge(refundableCharges.map((c) => c.id));
     const open = refundableCharges
       .map((charge) => ({ charge, remaining: charge.amount - (refunded.get(charge.id) ?? 0) }))
@@ -312,34 +354,38 @@ export class RefundsService {
 
     const totalRemaining = open.reduce((sum, leg) => sum + leg.remaining, 0);
     if (amount > totalRemaining) {
-      throw new BadRequestException({
-        error: 'REFUND_AMOUNT_EXCEEDS_TOTAL',
-        message: `Refund amount (${amount}) exceeds remaining refundable amount (${totalRemaining}) for intent ${intentId}`,
-      });
+      throw new BadRequestException(
+        refundRefusal(
+          'REFUND_AMOUNT_EXCEEDS_TOTAL',
+          `Refund amount (${amount}) exceeds remaining refundable amount (${totalRemaining}) for intent ${intentId}`,
+        ),
+      );
     }
 
     // 분할 순서 = charge 생성 순서(기존과 같다) — 마지막 leg 가 반올림 나머지를 흡수한다.
     const shares = splitRefundOverRemaining(open, amount);
-    const planned: Array<{ chargeId: string; amount: number; methodType: string }> = [];
+    const planned: Array<{ chargeId: string; amount: number; methodType: string; execution: RefundExecution }> = [];
     for (let i = 0; i < open.length; i++) {
       if (shares[i] <= 0) continue;
       const charge = open[i].charge;
       const method = await this.paymentMethodsService.findById(charge.paymentMethodId);
       if (!method) {
-        throw new NotFoundException({
-          error: 'PAYMENT_METHOD_NOT_FOUND',
-          message: `Payment method not found: ${charge.paymentMethodId}`,
-        });
+        throw new NotFoundException(
+          refundRefusal('PAYMENT_METHOD_NOT_FOUND', `Payment method not found: ${charge.paymentMethodId}`),
+        );
       }
+      const legExecution: RefundExecution = execution === 'MANUAL' && method.type !== 'POINTS' ? 'MANUAL' : 'AUTO';
       // 효성 CMS 처럼 PG 환불 API 가 없는 수단은 provider 가 반드시 FAILED 를 낸다. 복합결제에서 그 leg 가
-      // 뒤에 있으면 앞 leg 만 나가고 멈춘다 — 아무것도 움직이기 전에 거절한다(수동 송금 경로는 호출자 몫).
-      if (!supportsAutoRefund(method.type)) {
-        throw new BadRequestException({
-          error: 'REFUND_NOT_AUTOMATABLE',
-          message: `Payment method ${method.type} cannot be refunded automatically (charge ${charge.id}); refund must be handled manually`,
-        });
+      // 뒤에 있으면 앞 leg 만 나가고 멈춘다 — 아무것도 움직이기 전에 거절한다. 수동 집행 leg 는 PG 를 안 부르므로 검사하지 않는다.
+      if (legExecution === 'AUTO' && !supportsAutoRefund(method.type)) {
+        throw new BadRequestException(
+          refundRefusal(
+            'REFUND_NOT_AUTOMATABLE',
+            `Payment method ${method.type} cannot be refunded automatically (charge ${charge.id}); refund must be handled manually`,
+          ),
+        );
       }
-      planned.push({ chargeId: charge.id, amount: shares[i], methodType: method.type });
+      planned.push({ chargeId: charge.id, amount: shares[i], methodType: method.type, execution: legExecution });
     }
 
     return [
@@ -359,6 +405,15 @@ export class RefundsService {
       `[createByIntent] 복합결제 환불 부분 실패 — 수동 대사 필요. intentId=${intentId} requested=${requested} ` +
         `moved=${moved.map((r) => `${r.id}:${r.amount}:${r.status}`).join(',')} failed=${failure}`,
     );
+  }
+
+  /** intent 의 환불 전부(상태 무관), 만든 순서. 거르는 건 호출자 몫이다(스펙 §6.2·§8.2). */
+  async listByIntent(intentId: string): Promise<Refund[]> {
+    return this.dbService.db
+      .select()
+      .from(refunds)
+      .where(eq(refunds.intentId, intentId))
+      .orderBy(asc(refunds.createdAt), asc(refunds.id));
   }
 
   async findByIdOrThrow(id: string): Promise<Refund> {
@@ -491,10 +546,9 @@ export class RefundsService {
       .where(eq(paymentIntents.id, intentId))
       .limit(1);
     if (rows[0]?.metadata?.type === 'MEMBERSHIP_FEE') {
-      throw new BadRequestException({
-        error: 'MEMBERSHIP_REFUND_NOT_ALLOWED',
-        message: '멤버십 결제는 환불할 수 없습니다.',
-      });
+      throw new BadRequestException(
+        refundRefusal('MEMBERSHIP_REFUND_NOT_ALLOWED', '멤버십 결제는 환불할 수 없습니다.'),
+      );
     }
   }
 
@@ -507,8 +561,13 @@ export class RefundsService {
     const charge = await this.chargesService.findById(refund.chargeId);
     if (!charge) throw new Error(`Charge not found: ${refund.chargeId}`);
     const method = await this.paymentMethodsService.findById(charge.paymentMethodId);
-    if (method?.type !== 'BANK_TRANSFER') {
-      throw new Error('수동 완료 처리는 무통장 환불(BANK_TRANSFER)만 가능합니다.');
+    if (
+      !isManuallyConfirmable({ status: refund.status, execution: refund.execution, methodType: method?.type ?? null })
+    ) {
+      throw new BadRequestException({
+        error: 'REFUND_NOT_MANUALLY_CONFIRMABLE',
+        message: '수동 완료 처리는 무통장 환불(BANK_TRANSFER)이나 수동 실행(MANUAL) 환불만 가능합니다.',
+      });
     }
 
     const userId = await this.getIntentUserId(refund.intentId);

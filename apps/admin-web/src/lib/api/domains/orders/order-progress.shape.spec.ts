@@ -1,5 +1,7 @@
 import {
   BOARD_STAGES,
+  cardAlertText,
+  gaveUpBadge,
   formatDwell,
   cellCount,
   freshness,
@@ -40,8 +42,9 @@ describe('order-progress shape', () => {
   });
 
   it('취소 요청 단계의 세부 상태 이름', () => {
-    expect(stateLabel('cancel_requested')).toBe('취소 요청 미반영');
-    expect(stateLabel('cancel_edited')).toBe('수정됨 · 환불 미완');
+    expect(stateLabel('settle_in_progress')).toBe('환불 처리 중');
+    expect(stateLabel('settle_delayed')).toBe('환불 지연');
+    expect(stateLabel('settle_refused')).toBe('환불 거절');
   });
 
   it('요약은 envelope 여부와 무관하게 읽고, 깨진 몸통은 빈 요약', () => {
@@ -128,5 +131,61 @@ describe('order-progress shape', () => {
     expect(stateLabel(null)).toBe('');
     expect(stateLabel('DISPATCH_RECALL_PENDING')).toBe('회수 재처리 대기');
     expect(stateLabel('recovery_required')).toBe('복구 필요');
+  });
+});
+
+describe('자동 멈춤 표시 (#1016 12번)', () => {
+  it('카드 경고 문구 — 0 이면 안 보인다', () => {
+    expect(cardAlertText(0, 0)).toBe('');
+    expect(cardAlertText(3, 0)).toBe('갇힘 3');
+    expect(cardAlertText(0, 1)).toBe('자동 멈춤 1');
+    expect(cardAlertText(1200, 2)).toBe('갇힘 1,200 · 자동 멈춤 2');
+  });
+
+  it('행 배지 — 없으면 null, 여럿이면 행 번호를 잇고 마지막 오류를 title 에', () => {
+    expect(gaveUpBadge(undefined)).toBeNull();
+    expect(gaveUpBadge([])).toBeNull();
+    expect(
+      gaveUpBadge([
+        {
+          rule: 'wake-awaiting-matching',
+          row: 12,
+          since: '2026-10-08T00:00:00.000Z',
+          lastError: 'boom',
+        },
+        {
+          rule: 'x',
+          row: 16,
+          since: '2026-10-08T00:00:00.000Z',
+          lastError: null,
+        },
+      ])
+    ).toEqual({ text: '자동 멈춤 · #12 #16', title: '#12 boom' });
+  });
+
+  it('옛 core 응답(gaveUp 없음)도 그대로 받는다', () => {
+    const s = toProgressSummary({
+      evaluatedAt: null,
+      stages: [
+        { stage: 'fo', open: 1, stuck: 0, oldestEnteredAt: null, states: [] },
+      ],
+    });
+    expect(s.stages[0].gaveUp ?? 0).toBe(0);
+  });
+
+  it('목록 행의 정산 정보 — 있으면 읽고, 옛 core(칸 없음)는 null', () => {
+    const page = toProgressPage({
+      items: [
+        {
+          salesOrderId: 'so1', orderNo: 'A', channelOrderId: 'c1', salesChannel: 'medusa', customerName: null, orderedAt: 'x',
+          state: 'settle_refused', stageEnteredAt: 'x', stuck: true, walletIntentId: 'int-1',
+          settlement: { requestId: 'r1', phase: 'refused', mode: 'auto', confirmedAt: 'a', deadlineAt: 'b', lastFailure: null },
+        },
+        { salesOrderId: 'so2', orderNo: 'B', channelOrderId: 'c2', salesChannel: 'medusa', customerName: null, orderedAt: 'x', state: 'settle_delayed', stageEnteredAt: 'x', stuck: false },
+      ],
+      nextCursor: null,
+    });
+    expect(page.items[0]).toMatchObject({ walletIntentId: 'int-1', settlement: { requestId: 'r1', phase: 'refused' } });
+    expect(page.items[1]).toMatchObject({ walletIntentId: null, settlement: null });
   });
 });

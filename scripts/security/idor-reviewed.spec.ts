@@ -165,13 +165,13 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core GET /store/orders/:id/actions': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:503',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:517',
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
     note: 'getActions(81-84줄) -> findSoOrThrow({id: orderId}, customerId) 호출(82줄), 실제 소유권 검증은 468-491줄 findSoOrThrow 내부 488줄.',
   },
   'core GET /store/orders/:id/tracking': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:503',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:517',
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
     note: 'getTracking(1081-1084줄) -> findSoOrThrow({id: orderId}, customerId)(1082줄).',
   },
@@ -195,7 +195,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core GET /store/orders/by-channel-order/:channelOrderId/actions': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:503',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:517',
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
     note: "getActionsByChannelOrder(427-430줄) -> findSoOrThrow({channelOrderId, salesChannel:'medusa'}, customerId)(428줄).",
   },
@@ -225,13 +225,13 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core GET /store/orders/by-channel-order/:channelOrderId/tracking': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:503',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:517',
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
     note: "getTrackingByChannelOrder(1076-1079줄) -> findSoOrThrow({channelOrderId, salesChannel:'medusa'}, customerId)(1077줄).",
   },
   'core GET /store/orders/by-wallet-intent/:walletIntentId/digital-exercised': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:105',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:114',
     predicate: 'eq(inventoryTables.salesOrders.customerId, customerId),',
     note: 'hasExercisedDigitalByWalletIntent; walletIntentId+customerId 복합 조건으로 직접 조회, 못찾으면 false 반환(존재 노출 없음).',
   },
@@ -243,7 +243,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core POST /store/orders/:id/cancel-request': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:503',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:517',
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
     note: 'cancelRequest(106-114줄) -> findSoOrThrow({id: orderId}, customerId)(112줄) -> processCancelRequest 는 이미 소유권 검증된 so 만 사용.',
   },
@@ -261,7 +261,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core POST /store/orders/by-channel-order/:channelOrderId/cancel-request': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:503',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:517',
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
     note: "cancelRequestByChannelOrder(456-464줄) -> findSoOrThrow({channelOrderId, salesChannel:'medusa'}, customerId)(462줄).",
   },
@@ -279,7 +279,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core POST /store/orders/by-channel-order/actions/batch': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:463',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:477',
     predicate: 'eq(inventoryTables.salesOrders.customerId, customerId),',
     note: 'getActionsByChannelOrderBatch; channelOrderIds IN + customerId 조건으로 직접 필터 (타인 주문은 결과셋에서 조용히 제외됨, DTO에 @ArrayMaxSize(100)).',
   },
@@ -798,6 +798,24 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '.where(eq(schema.users.id, userId))',
     note: 'getUserDetails(userId) 는 getUserBaseInfo(userId)(63행 동일 predicate)와 getUserExtendedInfo(userId)(115행)를 병렬로 호출하며 둘 다 eq(schema.users.id, userId) 로 스코프된다.',
   },
+  'user-service GET /beautytop/growth-notes': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/beautytop-growth/growth-notes.repository.ts:30',
+    predicate: 'eq(beautytopGrowthNotes.userId, userId),',
+    note: 'JWT CurrentUser에서만 userId를 받는다. 조회는 사용자·샵 종류·샵 ID로 제한하고 개인 기록만 반환한다.',
+  },
+  'user-service POST /beautytop/growth-notes': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/beautytop-growth/growth-notes.repository.ts:45',
+    predicate: 'eq(beautytopSavedShops.userId, userId),',
+    note: 'JWT CurrentUser에서 userId를 받는다. 동일 트랜잭션에서 사용자 소유 MY_SHOP을 잠금 확인한 뒤 같은 userId로 기록한다.',
+  },
+  'user-service DELETE /beautytop/growth-notes/:id': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/beautytop-growth/growth-notes.repository.ts:75',
+    predicate: 'eq(beautytopGrowthNotes.userId, userId),',
+    note: '기록 ID뿐 아니라 JWT CurrentUser의 userId 및 샵 종류·ID를 함께 검사하므로 타인 기록을 삭제할 수 없다.',
+  },
   'user-service GET /beautytop/shops': {
     verdict: 'SAFE',
     evidence: 'apps/user-service/src/api/beautytop-shops/beautytop-shops.service.ts:42',
@@ -906,15 +924,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(144);
+    expect(targets).toHaveLength(147);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(144);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(143);
+    expect(new Set(targets.map(keyOf)).size).toBe(147);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(146);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

@@ -11,6 +11,7 @@ import { ProductSellableQuantityService } from '../../inventory/product-sellable
 import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
 import { AuditContext, AuditService } from '../../inventory/shared/services/audit.service';
 import { productMasterVersions, productVariants } from '../../catalog/schema/catalog.schema';
+import { BadRequestError } from '@app/shared';
 import { MatchingLinkResolver } from './matching-link-resolver';
 
 export interface PimSkuComponent {
@@ -1166,6 +1167,15 @@ export class ProductMatchingService {
   }
 
   async changeMatchingStrategy(matchingId: string, newStrategy: 'void' | 'variant', tx?: DbTx) {
+    // variant 는 SKU 링크와 한 몸이다 — 링크 없이 전략만 바꾸면 matched+variant+링크 0개(숨은 미매칭)가 남고,
+    // variant→variant 는 옛 전략 delete 가 링크를 지운다. variant 는 링크와 함께 upsert 로만 만든다(#1016 12번, 스펙 §5.5).
+    // 컨트롤러가 메시지의 'required' 로 400 에 매핑한다.
+    if (newStrategy === 'variant') {
+      throw new BadRequestError(
+        'SKU links are required for variant strategy — save the matching with links via PUT /matchings/:variantId',
+      );
+    }
+
     const productMatching = await this.dbService.run(async (trx) => {
       const [row] = await trx
         .select()

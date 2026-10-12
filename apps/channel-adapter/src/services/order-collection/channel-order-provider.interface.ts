@@ -13,10 +13,32 @@ import type { AffectedLine } from '@packages/domain-types';
 export const CHANNEL_ORDER_PROVIDER = Symbol('CHANNEL_ORDER_PROVIDER');
 export const CHANNEL_PRODUCT_IDENTIFICATION_FAILED = 'channel_product_identification_failed' as const;
 export const COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED = 'collected_order_modification_not_accepted' as const;
+/**
+ * 수집 처리 중 주문 하나가 실패했다 (#1016 1번 행). 식별 실패와 달리 원인이 데이터·계약·일시 오류 무엇이든
+ * 될 수 있어 `failed_stage`·`last_error` 가 원인을 들고, 상한까지 자동 재시도한다.
+ */
+export const ORDER_COLLECTION_PROCESSING_FAILED = 'order_collection_processing_failed' as const;
 
 export type OrderCollectionFailureReason =
   | typeof CHANNEL_PRODUCT_IDENTIFICATION_FAILED
-  | typeof COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED;
+  | typeof COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED
+  | typeof ORDER_COLLECTION_PROCESSING_FAILED;
+
+/** 주문 하나가 실패한 단계. 격리 행의 `failed_stage` 값이다. */
+export type OrderProcessingStage = 'fetch' | 'translate' | 'enqueue_order' | 'enqueue_lifecycle';
+
+/**
+ * 주문 하나의 처리 실패 (#1016 1번 행). 한 주문의 실패가 채널 폴링 전체를 멈추지 않도록 provider·오케스트레이터가
+ * throw 대신 이 항목으로 기록한다. `input` 은 실패한 그 입력 — 원인이 행 안에서 보이게 하려는 것이고 되살릴 때는 쓰지 않는다.
+ */
+export interface OrderProcessingFailureItem {
+  externalOrderId: string;
+  /** 워터마크 근거. 조회 실패면 채널이 알려 준 변경 시각이다. */
+  sourceUpdatedAt: string;
+  stage: OrderProcessingStage;
+  error: string;
+  input: Record<string, unknown>;
+}
 
 export interface OrderCollectionFailureItem {
   externalOrderId: string;
@@ -87,6 +109,8 @@ export interface FetchOrdersResult {
   orders: OrderFetchItem[];
   failures: OrderCollectionFailureItem[];
   lifecycleEvents?: OrderLifecycleEventItem[];
+  /** 조회·번역 단계에서 실패한 주문 (#1016 1번 행). 오케스트레이터가 처리 실패 행으로 기록하고 지나간다. */
+  processingFailures?: OrderProcessingFailureItem[];
   /**
    * 이번 폴이 **끝까지 훑은 닫힌 조회 창**의 끝 (`WindowedChannelOrderSource`).
    *

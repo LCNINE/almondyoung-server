@@ -14,7 +14,12 @@ import {
   TableCell,
 } from '@/components/ui/table';
 import { useQuarantinedFailures } from '@/lib/services/channel/queries';
-import { canReplay, reasonLabel } from '../../guidance';
+import {
+  canReplay,
+  reasonLabel,
+  retryProgressLabel,
+  stageLabel,
+} from '../../guidance';
 import { QuarantineDetailDialog } from '../quarantine-detail-dialog';
 import type { OrderCollectionFailureDto } from '@/lib/api/domains/channel/order-collection-failures.client';
 
@@ -85,6 +90,13 @@ export function QuarantineTable() {
                     </TableCell>
                     <TableCell className="text-xs">
                       {reasonLabel(row.reason)}
+                      {stageLabel(row.failedStage) && (
+                        <div className="text-muted-foreground">
+                          {[stageLabel(row.failedStage), retryProgressLabel(row)]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell className="text-right">{lineCount}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">

@@ -245,56 +245,127 @@ describeIfDb('order-progress 판정 (PostgreSQL integration)', () => {
     expect(r).toMatchObject({ stage: null, outcome: 'cancelled' });
   });
 
-  it('열린 취소 요청 → cancel_request/cancel_requested, 진입 = 요청 시각(다른 단계보다 앞선다)', async () => {
-    const at = new Date('2026-10-06T02:50:00.000Z');
-    const r = await one(async (tx, w) => {
-      const o = await f.seedOrder(tx);
-      const fo = await f.seedFo(tx, w, o, { status: 'ready' });
-      await f.seedBox(tx, w, [fo.foItemId], { status: 'planned', plannedAt: new Date('2026-10-01T00:00:00.000Z') });
+  it('끝난(applied) 취소 요청은 단계에 영향 없음 — 요청 행이 없는 주문과 같은 판정', async () => {
+    const [withRow, without] = await judgeIn(async (tx) => {
+      const a = await f.seedOrder(tx);
       await tx.insert(wmsTables.salesOrderAmendments).values({
-        salesOrderId: o.salesOrderId,
+        salesOrderId: a.salesOrderId,
         amendmentKind: 'commercial',
         reasonCode: 'CHANNEL_CANCEL_REQUEST',
         deltas: [],
-        metadata: { request: { kind: 'cancel' } },
         origin: 'operator',
-        status: 'requested',
-        createdAt: at,
+        status: 'applied',
       });
-      return o.salesOrderId;
+      const b = await f.seedOrder(tx);
+      return [a.salesOrderId, b.salesOrderId];
     });
-    expect(r).toMatchObject({ stage: 'cancel_request', state: 'cancel_requested', outcome: null, estimatedEnteredAt: at.toISOString() });
+    expect(withRow.stage).not.toBe('cancel_request');
+    expect({ stage: withRow.stage, state: withRow.state, outcome: withRow.outcome }).toEqual({
+      stage: without.stage,
+      state: without.state,
+      outcome: without.outcome,
+    });
   });
 
-  it('수정됨 · 환불 미완 → cancel_request/cancel_edited · 닫힌 요청은 단계에 영향 없음', async () => {
-    const edited = await one(async (tx) => {
-      const o = await f.seedOrder(tx);
-      await tx.insert(wmsTables.salesOrderAmendments).values({
-        salesOrderId: o.salesOrderId,
-        amendmentKind: 'commercial',
-        reasonCode: 'CHANNEL_CANCEL_REQUEST',
-        deltas: [],
-        metadata: { request: { kind: 'cancel', stage: 'edited' } },
-        origin: 'operator',
-        status: 'requested',
-      });
+  it('정산 중 — 취소된 판매주문이어도 종료가 아니라 cancel_request/settle_in_progress, 진입 = 확정 시각', async () => {
+    const at = new Date('2026-10-06T02:50:00.000Z');
+    const r = await one(async (tx) => {
+      const o = await f.seedOrder(tx, { status: 'cancelled' });
+      await f.seedSettling(tx, o.salesOrderId, { createdAt: at });
       return o.salesOrderId;
     });
-    expect(edited).toMatchObject({ stage: 'cancel_request', state: 'cancel_edited' });
+    expect(r).toMatchObject({
+      stage: 'cancel_request',
+      state: 'settle_in_progress',
+      outcome: null,
+      estimatedEnteredAt: at.toISOString(),
+    });
+  });
 
-    const closed = await one(async (tx) => {
-      const o = await f.seedOrder(tx);
-      await tx.insert(wmsTables.salesOrderAmendments).values({
-        salesOrderId: o.salesOrderId,
-        amendmentKind: 'commercial',
-        reasonCode: 'CHANNEL_CANCEL_REQUEST',
-        deltas: [],
-        origin: 'operator',
-        status: 'rejected',
-      });
+  it('확정 후 30분 초과 → settle_delayed · 거절 → settle_refused', async () => {
+    const [delayed, refused] = await judgeIn(async (tx) => {
+      const a = await f.seedOrder(tx, { status: 'cancelled' });
+      await f.seedSettling(tx, a.salesOrderId, { createdAt: new Date('2026-10-06T02:29:00.000Z') });
+      const b = await f.seedOrder(tx, { status: 'cancelled' });
+      await f.seedSettling(tx, b.salesOrderId, { createdAt: new Date('2026-10-06T02:55:00.000Z'), state: 'refused' });
+      return [a.salesOrderId, b.salesOrderId];
+    });
+    expect([delayed, refused].map((r) => r.state).sort()).toEqual(['settle_delayed', 'settle_refused']);
+  });
+
+  it('정확히 30분은 아직 정산 중 — «넘어야» 지연', async () => {
+    const r = await one(async (tx) => {
+      const o = await f.seedOrder(tx, { status: 'cancelled' });
+      await f.seedSettling(tx, o.salesOrderId, { createdAt: new Date('2026-10-06T02:30:00.000Z') });
       return o.salesOrderId;
     });
-    expect(closed.stage).not.toBe('cancel_request');
+    expect(r.state).toBe('settle_in_progress');
+  });
+
+  it('정산 중 요청 둘 → 가장 나쁜 상태가 대표(거절 > 지연 > 정산 중)', async () => {
+    const r = await one(async (tx) => {
+      const o = await f.seedOrder(tx);
+      await f.seedSettling(tx, o.salesOrderId, { createdAt: new Date('2026-10-06T02:58:00.000Z') });
+      await f.seedSettling(tx, o.salesOrderId, { createdAt: new Date('2026-10-06T02:59:00.000Z'), state: 'refused' });
+      return o.salesOrderId;
+    });
+    expect(r.state).toBe('settle_refused');
+  });
+
+  it('정산 중 부분취소의 남은 상자 — 상자 판정의 주문 규칙은 cancel_settle(상자 규칙 제외 아님)', async () => {
+    let judged: Awaited<ReturnType<OrderProgressReader['judgeShipment']>>;
+    await expect(
+      db.transaction(async (raw) => {
+        const tx = raw as unknown as DbTx;
+        const w = await f.seedWorld(tx);
+        const o = await f.seedOrder(tx);
+        const fo = await f.seedFo(tx, w, o, { status: 'ready' });
+        const box = await f.seedBox(tx, w, [fo.foItemId], {
+          status: 'planned',
+          plannedAt: new Date('2026-10-06T01:00:00.000Z'),
+        });
+        await f.seedSettling(tx, o.salesOrderId, { createdAt: new Date('2026-10-06T02:58:00.000Z') });
+        judged = await reader.judgeShipment(box.shipmentId, tx);
+        throw new Rollback();
+      }),
+    ).rejects.toBeInstanceOf(Rollback);
+    expect(judged!.orderRules).toEqual(['cancel_settle']);
+  });
+
+  /** 정산 중 요청이 있는 주문의 상자 하나를 상자 판정과 주문 판정으로 함께 본다 */
+  async function judgeSettlingBox(soStatus: 'cancelled' | 'shipped') {
+    let shipment: Awaited<ReturnType<OrderProgressReader['judgeShipment']>>;
+    let order: JudgedRow | undefined;
+    await expect(
+      db.transaction(async (raw) => {
+        const tx = raw as unknown as DbTx;
+        const w = await f.seedWorld(tx);
+        const o = await f.seedOrder(tx, { status: soStatus });
+        const fo = await f.seedFo(tx, w, o, { status: 'ready' });
+        const box = await f.seedBox(tx, w, [fo.foItemId], {
+          status: 'planned',
+          plannedAt: new Date('2026-10-06T01:00:00.000Z'),
+        });
+        await f.seedSettling(tx, o.salesOrderId, { createdAt: new Date('2026-10-06T02:58:00.000Z'), state: 'refused' });
+        shipment = await reader.judgeShipment(box.shipmentId, tx);
+        [order] = await reader.judge([o.salesOrderId], now, tx);
+        throw new Rollback();
+      }),
+    ).rejects.toBeInstanceOf(Rollback);
+    return { shipment: shipment!, order: order! };
+  }
+
+  it('취소된 판매주문 + 정산 중 + 열린 상자 — 상자 판정은 취소 사실(cancel_open)을 지키고, 주문 판정은 정산 중이 앞선다', async () => {
+    const { shipment, order } = await judgeSettlingBox('cancelled');
+    // 25번의 CANCELLED_ORDER_RULES 가 이 값을 본다 — cancel_settle 로 덮이면 취소된 주문의 합포장을 재개한다
+    expect(shipment.orderRules).toEqual(['cancel_open']);
+    expect(order).toMatchObject({ stage: 'cancel_request', state: 'settle_refused', outcome: null });
+  });
+
+  it('셀메이트로 출고된 판매주문 + 정산 중(부분취소) — 상자 판정은 external_shipped(D16 제외), 주문 판정은 정산 중', async () => {
+    const { shipment, order } = await judgeSettlingBox('shipped');
+    expect(shipment.orderRules).toEqual(['external_shipped']);
+    expect(order).toMatchObject({ stage: 'cancel_request', state: 'settle_refused', outcome: null });
   });
 
   it('살아 있는 주문의 상자가 CANCEL_REPLAN_PENDING → cancel/<코드>, 진입 = 마지막 취소 시각', async () => {

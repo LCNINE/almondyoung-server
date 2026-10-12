@@ -133,6 +133,8 @@ export interface OrderModifiedCancelRequest {
   shippingRefund: number;
   /** 스냅샷이 없거나 그룹이 어긋나 배송비를 건드리지 않았다 */
   shippingNotAdjusted: boolean;
+  /** 이번 부분취소가 외부 환불에서 상계한 금액(#1016 37번). 0 이면 생략한다 — 수집 해시가 그대로이게 */
+  externalRefundApplied?: number;
 }
 
 export interface OrderModifiedPayload {
@@ -146,6 +148,12 @@ export interface OrderModifiedPayload {
     shippingAddress: ShippingAddress;
     /** 없으면 진행 중인 부분취소가 없다. 키를 생략한다 — 빈 배열을 싣지 않는다. */
     cancelRequests?: OrderModifiedCancelRequest[];
+    /**
+     * 채널이 주문을 취소했다(Medusa `status = canceled`). 아니면 키를 두지 않는다.
+     * 취소 «사실»은 lifecycle `OrderCancelled` 가 주문당 한 번 낸다 — 이 칸은 core 가 그 한 번을 놓친 정산 중 요청을
+     * 재수집 스냅샷으로 닫는 근거다(#1016 36번 재설계 PR 6 판정 3).
+     */
+    orderCancelled?: true;
   };
 }
 
@@ -326,6 +334,7 @@ const OrderModifiedCancelRequestSchema = z.object({
   shippingCharge: z.number().nonnegative(),
   shippingRefund: z.number().nonnegative(),
   shippingNotAdjusted: z.boolean(),
+  externalRefundApplied: z.number().nonnegative().optional(),
 });
 
 const OrderModifiedSchema = z.object({
@@ -338,6 +347,7 @@ const OrderModifiedSchema = z.object({
     lines: z.array(OrderModifiedSnapshotLineSchema),
     shippingAddress: ShippingAddressSchema,
     cancelRequests: z.array(OrderModifiedCancelRequestSchema).optional(),
+    orderCancelled: z.literal(true).optional(),
   }),
 });
 
@@ -422,22 +432,23 @@ const OrderMergedSchema = z.object({
 });
 
 /**
- * Core → Channel Adapter 주문 취소 완료 이벤트
+ * Core 주문 취소 완료 사실
  *
  * orders.events.v1 / OrderCancelled 는 외부 채널(Medusa/Naver/Coupang) → Core 인바운드 이벤트.
- * 이 타입은 Core 가 취소를 완료한 뒤 Channel Adapter 에 전파하는 아웃바운드 이벤트.
+ * 이 타입은 Core 가 취소를 반영한 뒤 내는 아웃바운드 사실이다. 소비자: ugc-service(리뷰 적립 회수).
+ * 채널에 취소를 «요청»하는 것은 이 사실이 아니라 `CancelChannelOrder` 명령이다(ADR-0042) —
+ * 이 사실을 구독해 채널을 부르면 채널이 먼저 한 취소가 채널로 되돌아간다.
  * 스트림: core.orders.events.v1
  */
 export interface SalesOrderCancelledPayload {
   orderId: string;
-  /** Core SalesOrder.channelOrderId (Medusa: 'order_xxx', Naver/Coupang: 채널 주문번호).
-   *  채널어댑터가 wms_order_mappings를 조회할 때 사용한다. */
+  /** Core SalesOrder.channelOrderId (Medusa: 'order_xxx', Naver/Coupang: 채널 주문번호). */
   channelOrderId?: string;
   reason: 'CUSTOMER_REQUEST' | 'OUT_OF_STOCK' | 'PAYMENT_FAILED' | 'ADMIN_CANCEL' | 'TIMEOUT';
   reasonDetail?: string;
   cancelledBy: string;
   cancelledAt: string;
-  /** full: 전체취소 → Medusa cancelOrder 동기화 대상. partial: 부분취소 → Medusa 동기화 제외. */
+  /** full: 전체취소. partial: 부분취소(`cancelledLines` 에 줄). */
   cancellationScope: 'full' | 'partial';
   refundRequired: boolean;
   refundAmount?: number;
@@ -590,53 +601,39 @@ const SalesOrderClaimProgressedSchema = z.object({
 // ===== 채널 주문 취소 결과 (#1016 35번 행, ADR-0042) =====
 
 /**
- * core 의 `CancelChannelOrder` 명령을 채널이 받아들이지 않은 이유. core 내부 값(`OPERATOR_WITHDRAWN`)은 사실이 아니라 넣지 않는다.
- * - `NOT_SUPPORTED`: 자동 취소 불가 채널(방어선 — core 가 이미 거른다)
- * - `ORDER_NOT_FOUND`: 채널에 그 주문이 없다
- * - `NOT_CANCELABLE`: 채널이 상태상 거절했다
- * - `REFUND_FAILED`: wallet 이 «환불 불가»로 거절해 채널의 취소가 롤백됐다. **아직 아무도 내지 않는다** — Medusa 가 그 거절을
- *   500 으로 가려 판별할 수 없다(스펙 §7.2). 값을 미리 둔 이유: enum 값은 나중에 더하면 소비자를 먼저 배포해야 한다
+ * 정산 실패 사실 (#1016 36번 재설계 스펙 §7.1·§7.2). 채널이 취소 명령의 «돈 정리»를 끝내지 못했다. 종결 사실이 아니다 —
+ * 성공은 사실로 내지 않는다(재수집된 `OrderCancelled`/`OrderModified` 가 곧 사실).
+ * - `retryable: false`: 같은 명령을 다시 보내도 같다(wallet·PG 영구 거절, 주문 없음 같은 이상). 운영자가 [다시 시도]·[계좌 송금으로 환불]을 고른다
+ * - `retryable: true`: 일시(Medusa 5xx·네트워크·라우트 없음). core 가 같은 requestId·refundMode 로 다시 낸다
+ * 판매주문 id 는 싣지 않는다 — channel-adapter 는 core 판매주문 id 를 모른다(#656). core 는 requestId 로 요청 행을 찾는다.
  */
-export const CHANNEL_ORDER_CANCEL_REJECTION_CODES = ['NOT_SUPPORTED', 'ORDER_NOT_FOUND', 'NOT_CANCELABLE', 'REFUND_FAILED'] as const;
-export type ChannelOrderCancelRejectionCode = (typeof CHANNEL_ORDER_CANCEL_REJECTION_CODES)[number];
-
-/** 종결 사실 — core 는 요청을 rejected 로 닫고 보류를 푼다. 성공은 사실로 내지 않는다(재수집된 변경이 곧 사실). */
-export interface ChannelOrderCancelRejectedPayload {
+export interface ChannelOrderSettlementFailedPayload {
   /** `CancelChannelOrderPayload.requestId` 그대로 */
   requestId: string;
   salesChannel: string;
   externalOrderId: string;
-  reasonCode: ChannelOrderCancelRejectionCode;
-  /** 운영자에게 보일 사유. 채널이 준 문구를 그대로 담는다 */
+  scope: 'full' | 'partial';
+  retryable: boolean;
+  /**
+   * 열린 문자열 — 값을 더할 때 소비자 선배포가 필요 없게. Medusa 응답의 code/type(wallet 영구 거절은 `wallet_refund_refused:<wallet 코드>`),
+   * 37번 사유 `external_refund_*`, `http_<status>`, `network`, `refund_pending`, adapter 사전검사 `channel_not_supported`·`order_not_collected`
+   */
+  failureCode: string;
+  /** 운영자에게 보일 사유. 채널이 준 문장 그대로(wallet 거절은 토스 한국어 메시지) */
   message: string;
+  /** ISO 8601 — channel-adapter 가 결과를 받은 시각. 같은 요청의 사실이 순서 없이 와도 core 가 최신을 고르게 */
+  at: string;
 }
 
-const ChannelOrderCancelRejectedSchema = z.object({
+const ChannelOrderSettlementFailedSchema = z.object({
   requestId: z.string().min(1),
   salesChannel: z.string().min(1),
   externalOrderId: z.string().min(1),
-  reasonCode: z.enum(CHANNEL_ORDER_CANCEL_REJECTION_CODES),
+  scope: z.enum(['full', 'partial']),
+  retryable: z.boolean(),
+  failureCode: z.string().min(1),
   message: z.string(),
-});
-
-/**
- * 진행 사실 — 종결이 아니다. 부분취소가 주문 수정까지 확정하고 환불에서 멈췄다(주문은 줄었는데 돈은 아직).
- * channel-adapter 는 이것을 낸 뒤 재시도하고, core 는 요청을 `requested` 로 둔 채 단계만 적는다(같은 값이라 여러 번 와도 멱등).
- */
-export interface ChannelOrderCancelStalledPayload {
-  requestId: string;
-  salesChannel: string;
-  externalOrderId: string;
-  stage: 'edited';
-  message: string;
-}
-
-const ChannelOrderCancelStalledSchema = z.object({
-  requestId: z.string().min(1),
-  salesChannel: z.string().min(1),
-  externalOrderId: z.string().min(1),
-  stage: z.literal('edited'),
-  message: z.string(),
+  at: z.string().datetime(),
 });
 
 // ===== Stream Config (타입 안전 버전) =====
@@ -662,13 +659,9 @@ export const ORDER_STREAM = stream({
       OrderRefundCreatedSchema,
     ),
     OrderMerged: event<'OrderMerged', OrderMergedPayload>('OrderMerged', OrderMergedSchema),
-    ChannelOrderCancelRejected: event<'ChannelOrderCancelRejected', ChannelOrderCancelRejectedPayload>(
-      'ChannelOrderCancelRejected',
-      ChannelOrderCancelRejectedSchema,
-    ),
-    ChannelOrderCancelStalled: event<'ChannelOrderCancelStalled', ChannelOrderCancelStalledPayload>(
-      'ChannelOrderCancelStalled',
-      ChannelOrderCancelStalledSchema,
+    ChannelOrderSettlementFailed: event<'ChannelOrderSettlementFailed', ChannelOrderSettlementFailedPayload>(
+      'ChannelOrderSettlementFailed',
+      ChannelOrderSettlementFailedSchema,
     ),
   },
 });

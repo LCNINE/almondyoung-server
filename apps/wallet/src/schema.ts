@@ -58,6 +58,9 @@ export const chargeStatusEnum = pgEnum('charge_status', [
 ]);
 
 export const refundStatusEnum = pgEnum('refund_status', ['PENDING', 'SUCCEEDED', 'FAILED']);
+// 환불을 누가 집행하나. AUTO: wallet 이 provider(PG·포인트 원장)를 부른다. MANUAL: 외부 결제 몫은 PG 를 부르지 않고
+// 송금 대기(PENDING)로 두고, 운영자가 고객 계좌로 송금한 뒤 confirmManual 로 닫는다(#1016 36번 재설계 S4).
+export const refundExecutionEnum = pgEnum('refund_execution', ['AUTO', 'MANUAL']);
 // 고객이 제출한 환불 요청(무통장/가상계좌)의 처리 상태. 관리자가 검토 후 승인 시 실제 환불 실행.
 export const refundRequestStatusEnum = pgEnum('refund_request_status', [
   'REQUESTED',
@@ -418,6 +421,11 @@ export const refunds = pgTable(
     reasonCode: varchar('reason_code', { length: 128 }),
     reasonMessage: text('reason_message'),
     providerRefundId: varchar('provider_refund_id', { length: 128 }),
+    execution: refundExecutionEnum('execution').notNull().default('AUTO'),
+    // FAILED 행에만 채운다: provider 실패 코드(토스 오류 코드 등)와 «같은 환불을 다시 시도하면 될 수 있는가».
+    // 영구/일시 분류의 정본은 wallet 이다(스펙 S6). 분류 전에 생긴 FAILED 행은 둘 다 null 이다.
+    failureCode: varchar('failure_code', { length: 128 }),
+    failureRetryable: boolean('failure_retryable'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -997,6 +1005,7 @@ export type PaymentIntentStatus = (typeof paymentIntentStatusEnum.enumValues)[nu
 export type ChargeOperation = (typeof chargeOperationEnum.enumValues)[number];
 export type ChargeStatus = (typeof chargeStatusEnum.enumValues)[number];
 export type RefundStatus = (typeof refundStatusEnum.enumValues)[number];
+export type RefundExecution = (typeof refundExecutionEnum.enumValues)[number];
 export type CashReceiptType = (typeof cashReceiptTypeEnum.enumValues)[number];
 export type CashReceiptStatus = (typeof cashReceiptStatusEnum.enumValues)[number];
 export type PaymentStateEntityType = (typeof paymentStateEntityTypeEnum.enumValues)[number];

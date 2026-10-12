@@ -1,8 +1,7 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 import type { HttpTypes } from "@medusajs/types"
-import { useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { useEarliestSaleEnd } from "@/components/providers/time-sale-provider"
 import { TimeSaleCountdown } from "@/components/shared/time-sale-countdown"
@@ -22,23 +21,15 @@ export function TimeSaleNotice({
   items: HttpTypes.StoreCartLineItem[]
 }) {
   const t = useTranslations("cart")
-  const router = useRouter()
   const productIds = useMemo(
-    () =>
-      items
-        .map((item) => item.product_id)
-        .filter((id): id is string => Boolean(id)),
+    () => items.map((item) => item.product_id).filter((id): id is string => Boolean(id)),
     [items]
   )
   const endsAt = useEarliestSaleEnd(productIds)
 
   // 배송비는 세일과 무관하다.
   const subtotal = useMemo(
-    () =>
-      items.reduce(
-        (sum, item) => sum + (item.unit_price ?? 0) * (item.quantity ?? 0),
-        0
-      ),
+    () => items.reduce((sum, item) => sum + (item.unit_price ?? 0) * (item.quantity ?? 0), 0),
     [items]
   )
   // 종료 시점은 렌더가 아니라 타이머 콜백이라 ref 로 붙잡는다.
@@ -51,33 +42,13 @@ export function TimeSaleNotice({
   const [snapshot, setSnapshot] = useState<Map<string, number> | null>(null)
   const [priceBeforeEnd, setPriceBeforeEnd] = useState<number | null>(null)
 
-  const endedRef = useRef<string | null>(null)
-  const previousEndRef = useRef(endsAt)
-
-  const handleEnd = useCallback(async (ended: string) => {
-    if (endedRef.current === ended) return
-    endedRef.current = ended
-
+  const handleEnd = useCallback(async () => {
     setPriceBeforeEnd(subtotalRef.current)
     setSnapshot(
       new Map(linesRef.current.map((item) => [item.id, item.unit_price ?? 0]))
     )
     await refreshCartPrices().catch(() => null)
   }, [])
-
-  useEffect(() => {
-    const previous = previousEndRef.current
-    previousEndRef.current = endsAt
-    if (!previous || previous === endsAt || Date.parse(previous) > Date.now())
-      return
-
-    void handleEnd(previous).then(() => router.refresh())
-  }, [endsAt, handleEnd, router])
-
-  const handleCountdownEnd = useCallback(
-    () => (endsAt ? handleEnd(endsAt) : undefined),
-    [endsAt, handleEnd]
-  )
 
   const changed = useMemo(() => {
     if (!snapshot) return []
@@ -86,16 +57,6 @@ export function TimeSaleNotice({
       return before !== undefined && before !== (item.unit_price ?? 0)
     })
   }, [items, snapshot])
-
-  const countdown = endsAt ? (
-    <TimeSaleCountdown
-      key={endsAt}
-      endsAt={endsAt}
-      refreshOnEnd
-      onEnd={handleCountdownEnd}
-      className="text-red-30 text-[14px] font-bold"
-    />
-  ) : null
 
   if (priceBeforeEnd !== null && changed.length > 0) {
     const first = changed[0]
@@ -115,15 +76,19 @@ export function TimeSaleNotice({
             to: won(subtotal),
           })
 
-    return (
-      <div className="mb-4">
-        <p className="text-red-30 text-[14px] font-bold">{message}</p>
-        {countdown}
-      </div>
-    )
+    return <p className="text-red-30 mb-4 text-[14px] font-bold">{message}</p>
   }
 
-  if (!countdown) return null
+  if (!endsAt) return null
 
-  return <div className="mb-4">{countdown}</div>
+  return (
+    <div className="mb-4">
+      <TimeSaleCountdown
+        endsAt={endsAt}
+        refreshOnEnd
+        onEnd={handleEnd}
+        className="text-red-30 text-[14px] font-bold"
+      />
+    </div>
+  )
 }

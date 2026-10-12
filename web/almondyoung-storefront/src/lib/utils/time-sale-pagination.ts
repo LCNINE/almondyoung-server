@@ -2,7 +2,6 @@ import { pageWindowItems } from "@packages/domain-types/time-sale"
 export { pageWindowItems } from "@packages/domain-types/time-sale"
 import type {
   SaleLayout,
-  SaleSurface,
   SalePlatform,
   TimeSaleSettings,
 } from "@packages/domain-types/time-sale"
@@ -27,22 +26,12 @@ export function listSizeOf(layout: SaleLayout): number | null {
   return list.options.columns * list.options.rows
 }
 
-// 더보기 링크가 현재 기기를 전달하여 열×행 수를 서버 페이지 크기와 맞춘다.
+// 더보기 한 페이지의 상품 수(열×행). 서버는 기기를 모르므로 PC 기준으로 나눈다.
 export function morePageSize(
   settings: TimeSaleSettings,
   platform: SalePlatform = "pc"
 ): number | null {
   return listSizeOf(settings.styles.more[platform])
-}
-
-// 상세 화면에 보여줄 상품 수 상한: 한 화면 개수의 3배(PC·모바일 중 큰 쪽).
-export function detailProductLimit(settings: TimeSaleSettings): number {
-  const surface: SaleSurface = "detail"
-  const sizes = [settings.styles[surface].pc, settings.styles[surface].mobile]
-    .map(listSizeOf)
-    .filter((size): size is number => size !== null)
-
-  return Math.max(0, ...sizes) * 3
 }
 
 export function pageCount(total: number, size: number): number {

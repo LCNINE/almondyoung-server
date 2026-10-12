@@ -1,5 +1,5 @@
 /** Shared persisted presentation contract; numeric prices remain in Medusa price lists. */
-export type SaleSurface = 'main' | 'more' | 'detail';
+export type SaleSurface = 'main' | 'more';
 
 export type SalePlatform = 'mobile' | 'pc';
 
@@ -9,7 +9,7 @@ export type SaleCss = Record<string, string | number>;
 
 export type SaleComponent = {
   id: string;
-  type: 'text' | 'image' | 'button' | 'timer' | 'progress' | 'carousel' | 'grid';
+  type: 'text' | 'image' | 'button' | 'timer' | 'progress' | 'carousel' | 'grid' | 'tabs';
   name: string;
   content: string;
   css: SaleCss;
@@ -19,7 +19,7 @@ export type SaleComponent = {
   imageLayers?: { id: string; content: string; css: SaleCss }[];
   progressTexts?: { id: string; position: 'top' | 'inside' | 'bottom'; content: string; css: SaleCss }[];
   options: {
-    timer: 'normal' | 'flip';
+    timer: 'normal' | 'flip' | 'text';
     hideZeroDays: boolean;
     daysToHours: boolean;
     columns: number;
@@ -38,6 +38,7 @@ export type SaleComponent = {
     imageRadius: number;
     showOriginal: boolean;
     showDiscount: boolean;
+    membershipLabelOnly?: boolean;
     productCss?: SaleCss;
     soldOutCss?: SaleCss;
     scheduledCss?: SaleCss;
@@ -45,6 +46,9 @@ export type SaleComponent = {
     badgeCss?: SaleCss;
     overlayCss?: SaleCss;
     imageCss?: SaleCss;
+    discountCss?: SaleCss;
+    tabCss?: SaleCss;
+    activeTabCss?: SaleCss;
     headerCss?: SaleCss;
     footerCss?: SaleCss;
     listCss?: SaleCss;
@@ -97,127 +101,35 @@ export type SaleLayout = {
   footerOptions?: { enabled: boolean; type: 'text' | 'image'; css: SaleCss };
 };
 
-// 기간 모드: sale = 세일 전체가 한 기간, product = 상품마다 기간이 따로.
-export type SalePeriodMode = 'sale' | 'product';
-
-// 가격표 묶음 하나: 일반·멤버십 가격표 짝과(상품별 기간 모드면) 그 묶음이 맡은 상품.
-export type SaleGroup = {
-  generalId: string | null;
-  membershipId: string | null;
-  productId: string | null;
-};
-
-// 상품별 기간 모드에서 한 세일에 둘 수 있는 상품(묶음) 수 상한.
-export const MAX_PRODUCT_PERIOD_GROUPS = 200;
-
 // 사용자 변수 이름 문법. 검증기와 문구 치환기가 같은 식을 쓴다.
 export const USER_VARIABLE_NAME_SOURCE = 'user_[a-z][a-z0-9_]{0,29}';
 
-// 상품별 변수 값의 상한: 상품 수·상품당 변수 수·값 길이(250KB 설정 크기 안에서 넉넉히 잡은 값).
-export const MAX_VARIABLE_PRODUCTS = 200;
-
 export const MAX_USER_VARIABLES = 5;
-
-export const MAX_VARIABLE_VALUE_LENGTH = 256;
-
-// 세일 하나의 노출 설정(구좌·반복·공개 제한·가격표 묶음). 설정 JSON 의 sales[saleId] 값이다.
-export type SaleProductAction = {
-  displayOnStart?: boolean;
-  displayOffStop?: boolean;
-  sellingOnStart?: boolean;
-  sellingOffStop?: boolean;
-  autoUpdate?: boolean;
-  related?: {
-    productId: string;
-    displayOffStart?: boolean;
-    displayOnStop?: boolean;
-    sellingOffStart?: boolean;
-    sellingOnStop?: boolean;
-  }[];
-};
-
-export type SaleDisplay = {
-  partitionId: string;
-  webId: string;
-  showSoldOut: boolean;
-  showScheduled: boolean;
-  showEnded: boolean;
-  membershipPriceOnly: boolean;
-  repeatHours: number;
-  repeatUntil: string | null;
-  main: boolean;
-  more: boolean;
-  detail: boolean;
-  order: number;
-  productOrder?: string[];
-  productActions?: Record<string, SaleProductAction>;
-  styles?: Partial<Record<SaleSurface, Partial<Record<SalePlatform, { styleId: string; enabled: boolean }>>>>;
-
-  // 상품별 사용자 변수 값: 상품 id → 변수명 → 값. 값이 없으면 변수의 preview 값을 쓴다.
-  productVariables: Record<string, Record<string, string>>;
-  periodMode: SalePeriodMode;
-  groups: SaleGroup[];
-};
 
 // 타임세일 전체 설정. Medusa Store.metadata 에 저장되고 숫자 가격은 가격표가 들고 있다.
 export type TimeSaleSettings = {
   version: 1;
   environment: {
-    enabled: boolean;
-    membershipPriceOnly: boolean;
     rounding: 'round' | 'ceil' | 'floor';
     imageSize: number;
     currencyPrefix: string;
     currencySuffix: string;
     main: boolean;
     more: boolean;
-    detail: boolean;
     moreMode: 'page' | 'popup';
     popupWidth: number;
     popupHeight: number;
     veilOpacity: number;
-
-    // 서비스를 끌 때 active 였던 타임세일 가격표 id. 켤 때 이것만 되살린다(서버만 쓴다).
-    suspendedPriceListIds: string[];
   };
   styles: Record<SaleSurface, Record<SalePlatform, SaleLayout>>;
   savedStyles: SaleLayout[];
   variables: { name: string; description: string; preview: string }[];
-  sales: Record<string, SaleDisplay>;
 };
-
-export const defaultSaleDisplay = (): SaleDisplay => ({
-  partitionId: '',
-  webId: '',
-  showSoldOut: true,
-  showScheduled: false,
-  showEnded: false,
-  membershipPriceOnly: false,
-  repeatHours: 0,
-  repeatUntil: null,
-  main: true,
-  more: true,
-  detail: true,
-  order: 0,
-  productVariables: {},
-  periodMode: 'sale',
-  groups: [],
-});
-
-export function saleLayoutFor(
-  settings: TimeSaleSettings,
-  display: SaleDisplay,
-  surface: SaleSurface,
-  platform: SalePlatform,
-): SaleLayout {
-  const id = display.styles?.[surface]?.[platform]?.styleId;
-
-  return settings.savedStyles.find((style) => style.id === id) ?? settings.styles[surface][platform];
-}
 
 const defaultComponentContent = (type: SaleComponent['type']) => {
   if (type === 'text') return '{{title}}';
   if (type === 'button') return '더보기';
+  if (type === 'timer') return '종료까지';
 
   return '';
 };
@@ -234,6 +146,7 @@ export const createSaleComponent = (type: SaleComponent['type'], id = `${type}-$
     progress: '프로그레스',
     carousel: '상품 캐러셀',
     grid: '상품 그리드',
+    tabs: '카테고리 탭',
   }[type],
   content: defaultComponentContent(type),
   css: { textAlign: 'center', padding: '8px', color: '#000000', fontSize: type === 'timer' ? '32px' : '14px' },
@@ -266,91 +179,134 @@ export const createSaleComponent = (type: SaleComponent['type'], id = `${type}-$
   },
 });
 
-// 설정이 한 번도 저장되지 않았을 때의 기본값(면·기기별 기본 스타일 포함).
+// 설정이 한 번도 저장되지 않았을 때의 기본값. 메인은 라이브 홈의 타임세일 섹션(제목 · 종료까지
+// 타이머 · 더보기 · 카테고리 탭 · 5열 상품), 더보기는 라이브 /time-sale 페이지와 같은 모습이다.
 export function defaultTimeSaleSettings(): TimeSaleSettings {
   const layout = (surface: SaleSurface, platform: SalePlatform): SaleLayout => {
-    const types: SaleComponent['type'][] =
-      surface === 'detail'
-        ? ['text', 'text', 'timer', 'progress']
-        : [
-            'text',
-            'text',
-            'timer',
-            surface === 'main' ? 'carousel' : 'grid',
-            ...(surface === 'main' ? ['button' as const] : []),
-          ];
+    const mobile = platform === 'mobile';
+    const main = surface === 'main';
+    const types: SaleComponent['type'][] = main
+      ? ['text', 'timer', 'button', 'tabs', mobile ? 'carousel' : 'grid']
+      : ['text', 'timer', 'tabs', 'text', 'grid'];
 
     return {
       id: `${surface}-${platform}`,
       name: '기본 스타일',
       header: '',
       footer: '',
-      mainCss: {
-        width: '100%',
-        maxWidth: '100%',
-        padding: '0',
-        backgroundColor: '#f7f8f9',
-        borderTop: '1px solid #e5e7eb',
-      },
-      css: {
-        maxWidth: '1360px',
-        margin: '0 auto',
-        position: 'relative',
-        padding: platform === 'mobile' ? '32px 16px' : '48px 40px',
-        backgroundColor: '#f7f8f9',
-        color: '#191f28',
-      },
+      mainCss: main
+        ? { width: '100%', maxWidth: '100%', padding: '0', backgroundColor: '#f7f8f9', borderTop: '1px solid #e5e7eb' }
+        : { width: '100%', maxWidth: '100%', padding: '0' },
+      css: main
+        ? {
+            maxWidth: '1360px',
+            margin: '0 auto',
+            position: 'relative',
+            padding: mobile ? '32px 16px' : '48px 40px',
+            color: '#000000',
+          }
+        : { position: 'relative', padding: '0', color: '#000000' },
       components: types.map((type, i) => {
         const c = createSaleComponent(type, `${surface}-${platform}-${i}`);
-        c.options.columns = platform === 'mobile' ? 2 : 5;
-        c.options.gap = 16;
-        c.options.rows = 2;
-        c.options.slots = 10;
+        c.options.columns = mobile ? 2 : 5;
+        c.options.gap = main ? 16 : 12;
+        // 더보기는 PC 5열×8행 = 40개씩(라이브와 같다). 모바일도 한 페이지 40개라 2열×20행.
+        c.options.rows = main ? 2 : mobile ? 20 : 8;
+        c.options.slots = main ? 10 : undefined;
         c.options.carouselRows = type === 'carousel';
         c.options.autoplay = false;
         c.options.arrows = false;
         c.options.dots = false;
         c.options.imageWidth = 100;
-        c.options.badgeColor = '#f04452';
+        c.options.badge = 'timesale';
+        c.options.badgeColor = '#f54527';
         if (type === 'carousel' || type === 'grid') {
-          c.css = { padding: '0', textAlign: 'left', fontSize: '17px' };
-          c.options.productCss = { color: '#191f28', textAlign: 'left' };
+          c.css = { padding: main ? '0' : '8px 0 0', textAlign: 'left', fontSize: '17px' };
+          c.options.productCss = { color: '#000000', textAlign: 'left' };
           c.options.imageCss = { backgroundColor: '#ffffff', maxWidth: '100%' };
-          c.options.listCss = { justifyContent: 'start' };
-          c.options.headerCss = {
-            margin: '16px 0 8px',
-            fontSize: '14px',
-            fontWeight: 600,
-            lineHeight: '1.25',
-          };
+          c.options.listCss = { justifyContent: 'start', rowGap: '24px' };
+          c.options.headerCss = { margin: '16px 0 8px', fontSize: '14px', fontWeight: 700, lineHeight: '1.25' };
+          c.options.membershipLabelOnly = true;
           c.options.footerCss = { fontSize: '17px', fontWeight: 700 };
+          c.options.discountCss = { color: '#f04452' };
+          c.options.pageCss = { minWidth: '36px', padding: '6px 8px', borderRadius: '6px', color: '#757575' };
+          c.options.activePageCss = { backgroundColor: '#000000', color: '#ffffff' };
         }
         if (type === 'button') {
           c.content = '더보기';
           c.css = {
             position: 'absolute',
-            top: platform === 'mobile' ? '32px' : '48px',
-            right: platform === 'mobile' ? '16px' : '40px',
-            color: '#757575',
+            top: mobile ? '40px' : '65px', // 제목+타이머 두 줄의 세로 가운데(라이브 Header 의 items-center)
+            right: mobile ? '16px' : '40px',
+            color: '#8e8e93',
             fontSize: '14px',
+            fontWeight: 500,
           };
           c.options.buttonCss = {
+            display: 'inline-flex',
+            alignItems: 'center',
+            height: '32px',
             border: '0',
             borderRadius: '0',
-            padding: '0',
+            padding: '0 12px',
             backgroundColor: 'transparent',
             textDecoration: 'underline',
+            textUnderlineOffset: '4px',
           };
         }
-        if (type === 'text') {
-          c.content = surface === 'detail' ? '{{condition}}' : i === 1 ? '' : '{{title}}';
-          c.css.fontWeight = 'bold';
-          c.css.fontSize = platform === 'mobile' ? '22px' : '26px';
-          c.css.textAlign = 'left';
-          if (i === 1) c.css = { textAlign: 'left', fontSize: '14px', color: '#8b95a1', padding: '0' };
+        if (type === 'text' && i === 0) {
+          c.content = main ? '타임세일' : '타임세일 전체';
+          c.css = {
+            textAlign: 'left',
+            padding: '0',
+            fontWeight: 'bold',
+            fontSize: main ? (mobile ? '22px' : '26px') : '20px',
+            lineHeight: main ? '1.1' : '1.4',
+            color: '#191f28',
+          };
+        }
+        if (type === 'text' && i > 0) {
+          c.name = '상품 수';
+          c.content = '{{product_count}}개 상품';
+          c.css = { textAlign: 'left', padding: '14px 0 0', fontSize: '14px', color: '#757575' };
         }
         if (type === 'timer') {
-          c.css.padding = '16px 0 24px';
+          c.content = '종료까지';
+          c.options.timer = 'text';
+          c.css = { textAlign: 'left', padding: main ? '15px 0 0' : '8px 0 0' };
+          c.options.timerLabelCss = { fontSize: mobile ? '14px' : '15px', fontWeight: 600, color: '#8b95a1' };
+          c.options.timerDigitCss = {
+            fontSize: mobile ? '20px' : '22px',
+            fontWeight: 700,
+            letterSpacing: '-0.02em',
+            color: '#191f28',
+          };
+        }
+        if (type === 'tabs') {
+          c.name = '카테고리 탭';
+          if (main) {
+            c.css = {
+              padding: '27px 0 36px',
+              textAlign: mobile ? 'left' : 'center',
+              fontSize: '14px',
+              fontWeight: 500,
+            };
+            c.options.tabCss = {
+              padding: mobile ? '8px 12px' : '7px 8px',
+              color: 'rgba(0,0,0,.6)',
+              lineHeight: '20px',
+            };
+            c.options.activeTabCss = { color: '#000000', borderBottom: '2px solid #ffa500' };
+          } else {
+            c.css = { padding: '14px 0 0', textAlign: 'left', fontSize: '14px' };
+            c.options.tabCss = {
+              padding: '6px 12px',
+              border: '1px solid #d9d9d9',
+              borderRadius: '9999px',
+              lineHeight: '20px',
+            };
+            c.options.activeTabCss = { border: '1px solid #000000', backgroundColor: '#000000', color: '#ffffff' };
+          }
         }
 
         return c;
@@ -361,29 +317,23 @@ export function defaultTimeSaleSettings(): TimeSaleSettings {
   return {
     version: 1,
     environment: {
-      enabled: true,
-      membershipPriceOnly: false,
       rounding: 'round',
       imageSize: 800,
       currencyPrefix: '',
       currencySuffix: '원',
       main: true,
       more: true,
-      detail: true,
       moreMode: 'page',
       popupWidth: 90,
       popupHeight: 80,
       veilOpacity: 0.5,
-      suspendedPriceListIds: [],
     },
     styles: {
       main: { mobile: layout('main', 'mobile'), pc: layout('main', 'pc') },
       more: { mobile: layout('more', 'mobile'), pc: layout('more', 'pc') },
-      detail: { mobile: layout('detail', 'mobile'), pc: layout('detail', 'pc') },
     },
     savedStyles: [],
     variables: [],
-    sales: {},
   };
 }
 
@@ -395,6 +345,7 @@ const cssKeys = new Set([
   'fontWeight',
   'fontStyle',
   'textDecoration',
+  'textUnderlineOffset',
   'textAlign',
   'whiteSpace',
   'textOverflow',
@@ -424,6 +375,7 @@ const cssKeys = new Set([
   'width',
   'height',
   'maxWidth',
+  'minWidth',
   'minHeight',
   'opacity',
   'boxShadow',
@@ -440,6 +392,7 @@ const cssKeys = new Set([
   'pointerEvents',
   'display',
   'gap',
+  'rowGap',
   'alignItems',
   'justifyContent',
   'backgroundImage',
@@ -485,13 +438,8 @@ export function validateSaleCss(css: unknown): asserts css is SaleCss {
   }
 }
 
-// 서비스 OFF 동안 기억해 둘 수 있는 active 가격표 수의 상한.
-export const MAX_SUSPENDED_PRICE_LISTS = 200;
-
 // 설정 저장·읽기 경계의 검증(250KB 이하, 환경값 범위,
-// 스타일·컴포넌트·사용자 변수·세일별 설정). 어긋나면 Error.
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  !!value && typeof value === 'object' && !Array.isArray(value);
+// 스타일·컴포넌트·사용자 변수). 어긋나면 Error.
 
 export function validateTimeSaleSettings(input: unknown): asserts input is TimeSaleSettings {
   // JSON structure is checked before typed access; shared contract cast is confined to this boundary.
@@ -499,15 +447,7 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
     throw new Error('설정 크기가 올바르지 않습니다.');
 
   const s = input as TimeSaleSettings;
-  if (
-    s.version !== 1 ||
-    !s.environment ||
-    !s.styles ||
-    !Array.isArray(s.variables) ||
-    !Array.isArray(s.savedStyles) ||
-    !s.sales ||
-    Array.isArray(s.sales)
-  )
+  if (s.version !== 1 || !s.environment || !s.styles || !Array.isArray(s.variables) || !Array.isArray(s.savedStyles))
     throw new Error('설정 형식이 올바르지 않습니다.');
 
   const e = s.environment;
@@ -527,18 +467,8 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
   )
     throw new Error('환경설정 값이 올바르지 않습니다.');
 
-  for (const key of ['enabled', 'membershipPriceOnly', 'main', 'more', 'detail'] as const)
+  for (const key of ['main', 'more'] as const)
     if (typeof e[key] !== 'boolean') throw new Error('노출 설정은 참/거짓이어야 합니다.');
-
-  // 이 필드가 없던 옛 설정은 빈 목록으로 읽는다. 상한 200개는 저장 크기(250KB) 안에서 넉넉히 잡은 값.
-  const suspended: unknown = e.suspendedPriceListIds;
-  if (
-    suspended !== undefined &&
-    (!Array.isArray(suspended) ||
-      suspended.length > MAX_SUSPENDED_PRICE_LISTS ||
-      suspended.some((id) => typeof id !== 'string' || !id || id.length > 100))
-  )
-    throw new Error(`중지된 가격표 목록이 올바르지 않습니다(최대 ${MAX_SUSPENDED_PRICE_LISTS}개).`);
 
   if (
     typeof e.currencyPrefix !== 'string' ||
@@ -549,7 +479,7 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
     throw new Error('통화 표시는 20자 이내로 입력하세요.');
 
   const layouts = [...s.savedStyles];
-  for (const surface of ['main', 'more', 'detail'] as const)
+  for (const surface of ['main', 'more'] as const)
     for (const platform of ['mobile', 'pc'] as const) {
       if (!s.styles[surface]?.[platform]) throw new Error('모바일/PC 스타일이 필요합니다.');
       layouts.push(s.styles[surface][platform]);
@@ -596,7 +526,7 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
         typeof c.name !== 'string' ||
         typeof c.content !== 'string' ||
         c.content.length > 10000 ||
-        !['text', 'image', 'button', 'timer', 'progress', 'carousel', 'grid'].includes(c.type) ||
+        !['text', 'image', 'button', 'timer', 'progress', 'carousel', 'grid', 'tabs'].includes(c.type) ||
         !cssValid(c.css) ||
         !Array.isArray(c.states) ||
         c.states.some((v) => !['scheduled', 'active', 'ended'].includes(v)) ||
@@ -702,6 +632,9 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
         'badgeCss',
         'overlayCss',
         'imageCss',
+        'discountCss',
+        'tabCss',
+        'activeTabCss',
         'headerCss',
         'footerCss',
         'listCss',
@@ -728,7 +661,7 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
 
       // 컴포넌트 수치(열·행·간격·딜레이 등) 허용 범위.
       if (
-        !['normal', 'flip'].includes(o.timer) ||
+        !['normal', 'flip', 'text'].includes(o.timer) ||
         !Number.isInteger(o.columns) ||
         o.columns < 1 ||
         o.columns > 10 ||
@@ -802,223 +735,6 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
     )
   )
     throw new Error('사용자 변수는 최대 5개이며 영문 소문자로 시작해야 합니다.');
-
-  // 세일별 노출 설정 검사(반복 간격은 최대 8760시간 = 1년).
-  for (const [id, d] of Object.entries(s.sales)) {
-    if (
-      !isSaleKey(id) ||
-      !d ||
-      typeof d.partitionId !== 'string' ||
-      d.partitionId.length > 10 ||
-      typeof d.webId !== 'string' ||
-      d.webId.length > 10 ||
-      !Number.isFinite(d.order) ||
-      !Number.isFinite(d.repeatHours) ||
-      d.repeatHours < 0 ||
-      d.repeatHours > 8760 ||
-      (d.repeatUntil !== null && !Number.isFinite(Date.parse(d.repeatUntil)))
-    )
-      throw new Error('타임세일 노출 설정을 확인하세요.');
-
-    if (d.productActions !== undefined) {
-      if (!isObject(d.productActions) || Object.keys(d.productActions).length > MAX_PRODUCT_PERIOD_GROUPS) {
-        throw new Error('상품 실행/중지 설정을 확인하세요.');
-      }
-
-      for (const [productId, action] of Object.entries(d.productActions)) {
-        if (!productId || productId.length > 64 || !isObject(action)) {
-          throw new Error('상품 실행/중지 설정을 확인하세요.');
-        }
-
-        if (
-          action.related !== undefined &&
-          (!Array.isArray(action.related) ||
-            action.related.length > 5 ||
-            action.related.some(
-              (item) =>
-                !isObject(item) || typeof item.productId !== 'string' || !item.productId || item.productId.length > 64,
-            ) ||
-            new Set(action.related.map((item) => item.productId)).size !== action.related.length)
-        )
-          throw new Error('전/후처리 연관 상품은 중복 없이 최대 5개입니다.');
-
-        const changes = [action, ...(action.related ?? [])];
-
-        for (const change of changes) {
-          if (
-            !isObject(change) ||
-            [
-              'displayOnStart',
-              'displayOffStop',
-              'sellingOnStart',
-              'sellingOffStop',
-              'autoUpdate',
-              'displayOffStart',
-              'displayOnStop',
-              'sellingOffStart',
-              'sellingOnStop',
-            ].some((key) => Reflect.get(change, key) !== undefined && typeof Reflect.get(change, key) !== 'boolean')
-          ) {
-            throw new Error('상품 실행/중지 설정은 체크 여부여야 합니다.');
-          }
-        }
-      }
-    }
-
-    for (const key of [
-      'showSoldOut',
-      'showScheduled',
-      'showEnded',
-      'membershipPriceOnly',
-      'main',
-      'more',
-      'detail',
-    ] as const)
-      if (typeof d[key] !== 'boolean') throw new Error('타임세일 옵션을 확인하세요.');
-
-    if (
-      d.productOrder !== undefined &&
-      (!Array.isArray(d.productOrder) ||
-        d.productOrder.length > 200 ||
-        d.productOrder.some((productId) => typeof productId !== 'string' || !productId || productId.length > 64) ||
-        new Set(d.productOrder).size !== d.productOrder.length)
-    )
-      throw new Error('상품 진열순위를 확인하세요.');
-    if (d.styles !== undefined) {
-      if (!d.styles || typeof d.styles !== 'object' || Array.isArray(d.styles))
-        throw new Error('진열매대 스타일을 확인하세요.');
-      for (const [surface, platforms] of Object.entries(d.styles)) {
-        if (
-          !['main', 'more', 'detail'].includes(surface) ||
-          !platforms ||
-          typeof platforms !== 'object' ||
-          Array.isArray(platforms)
-        )
-          throw new Error('진열매대 스타일을 확인하세요.');
-        for (const [platform, value] of Object.entries(platforms)) {
-          if (
-            !['mobile', 'pc'].includes(platform) ||
-            !value ||
-            typeof value !== 'object' ||
-            typeof value.enabled !== 'boolean' ||
-            typeof value.styleId !== 'string' ||
-            value.styleId.length > 100
-          )
-            throw new Error('진열매대 스타일을 확인하세요.');
-        }
-      }
-    }
-    validateProductVariables(d.productVariables, s.variables);
-
-    validateSaleGroups(d);
-  }
-}
-
-// 세일 키: 옛 세일은 가격표 id(plist_…), 새 세일은 UUID(saleId).
-const LEGACY_SALE_KEY = /^plist_[a-zA-Z0-9]+$/;
-
-const SALE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-
-export const isSaleKey = (key: string) => LEGACY_SALE_KEY.test(key) || SALE_ID.test(key);
-
-export const isSaleId = (key: string) => SALE_ID.test(key);
-
-const isListId = (value: unknown) => value === null || (typeof value === 'string' && LEGACY_SALE_KEY.test(value));
-
-// 상품별 변수 값 검사: 옛 설정엔 필드가 없으므로 undefined 는 빈 값으로 읽는다.
-// 상품 200개, 상품당 변수 5개, 값 256자 이하이며 정의된 변수 이름만 쓸 수 있다.
-function validateProductVariables(input: unknown, defined: { name: string }[]) {
-  if (input === undefined) return;
-
-  const fail = () => {
-    throw new Error('사용자 변수 값을 확인하세요.');
-  };
-
-  if (!input || typeof input !== 'object' || Array.isArray(input)) fail();
-
-  const entries = Object.entries(input as Record<string, unknown>);
-  if (entries.length > MAX_VARIABLE_PRODUCTS) fail();
-
-  for (const [productId, values] of entries) {
-    if (!productId || productId.length > 64 || !values || typeof values !== 'object' || Array.isArray(values)) fail();
-
-    const pairs = Object.entries(values as Record<string, unknown>);
-    if (pairs.length > MAX_USER_VARIABLES) fail();
-
-    for (const [name, value] of pairs)
-      if (
-        !defined.some((v) => v.name === name) ||
-        typeof value !== 'string' ||
-        value.length > MAX_VARIABLE_VALUE_LENGTH
-      )
-        fail();
-  }
-}
-
-// 기간 모드와 가격표 묶음의 일관성 검사: sale 은 묶음 1개, product 는 상품마다 1개(200개 상한).
-function validateSaleGroups(d: Partial<SaleDisplay>) {
-  if (d.periodMode === undefined && d.groups === undefined) return;
-
-  const groups = d.groups;
-  if (!['sale', 'product'].includes(d.periodMode ?? '') || !Array.isArray(groups))
-    throw new Error('타임세일 기간 구분을 확인하세요.');
-
-  const invalidGroup = groups.some(
-    (g) =>
-      !g ||
-      !isListId(g.generalId) ||
-      !isListId(g.membershipId) ||
-      (g.productId !== null && (typeof g.productId !== 'string' || !g.productId || g.productId.length > 64)),
-  );
-  if (invalidGroup) throw new Error('타임세일 가격표 묶음을 확인하세요.');
-
-  if (d.periodMode === 'sale') {
-    if (groups.length > 1 || groups.some((g) => g.productId !== null))
-      throw new Error('세일 단위 기간은 가격표 묶음이 하나입니다.');
-    return;
-  }
-
-  const productIds = groups.map((g) => g.productId);
-  if (groups.length > MAX_PRODUCT_PERIOD_GROUPS) throw new Error('상품별 기간은 상품 200개까지입니다.');
-  if (productIds.some((id) => id === null) || new Set(productIds).size !== productIds.length)
-    throw new Error('상품별 기간은 상품마다 하나씩입니다.');
-}
-
-// 반복 세일이 끝났을 때 다음 회차 기간. 반복 간격이 (기간 +
-// 10분)보다 짧거나 아직 안 끝났거나 반복 종료일을 넘으면 null.
-export function nextRepeatedPeriod(start: string, end: string, hours: number, until: string | null, now = Date.now()) {
-  const a = Date.parse(start),
-    b = Date.parse(end),
-    interval = hours * 3600000;
-
-  if (!Number.isFinite(a + b + interval) || interval <= 0 || b <= a || interval < b - a + 600000 || now < b)
-    return null;
-
-  const steps = Math.floor((now - b) / interval) + 1;
-
-  const nextStart = a + steps * interval,
-    nextEnd = b + steps * interval;
-
-  if (until && nextEnd > Date.parse(until)) return null;
-
-  return { startsAt: new Date(nextStart).toISOString(), endsAt: new Date(nextEnd).toISOString() };
-}
-
-// 한 회차가 끝난 뒤 다음 회차가 시작하기까지 최소로 비워 두는 간격(10분).
-export const REPEAT_GAP_MS = 600000;
-
-// 반복 간격이 (기간 + 10분)보다 짧은 기간을 찾는다(없으면 null).
-export function repeatTooShortFor<T extends { startsAt: string; endsAt: string }>(
-  repeatHours: number,
-  periods: T[],
-): T | null {
-  if (!(repeatHours > 0)) return null;
-
-  const interval = repeatHours * 3600000;
-
-  return (
-    periods.find((period) => interval < Date.parse(period.endsAt) - Date.parse(period.startsAt) + REPEAT_GAP_MS) ?? null
-  );
 }
 
 export function pageWindowItems(page: number, pages: number, window: number): (number | 'gap')[] {

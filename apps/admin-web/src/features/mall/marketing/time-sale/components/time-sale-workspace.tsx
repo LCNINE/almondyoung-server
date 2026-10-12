@@ -21,6 +21,7 @@ import {
   SaleRenderer,
   previewAnchorFor,
   type SaleProduct,
+  type SaleTab,
 } from '@packages/time-sale-ui';
 import {
   AlertDialog,
@@ -42,7 +43,6 @@ import {
   canDeleteSavedStyle,
   deleteSavedStyle,
   linkActiveStyle,
-  removeVariableValues,
   saveNewStyle,
   shouldKeepDraftOnRefetch,
 } from '../time-sale-model';
@@ -56,16 +56,11 @@ import {
   Timer,
   PanelsTopLeft,
   List,
-  Flag,
   Tags,
   Settings,
   Menu,
 } from 'lucide-react';
-import {
-  TimeSaleDialog,
-  TimeSaleHelpDialog,
-  TimeSaleSwitch,
-} from './time-sale-dialog';
+import { TimeSaleDialog, TimeSaleHelpDialog } from './time-sale-dialog';
 
 // 타임세일 화면 공용 토스트(성공/오류).
 export const saleToast = (message: string, error = false) =>
@@ -82,7 +77,6 @@ const sections = {
   management: '타임세일',
   main: '메인 매대 스타일',
   more: '더보기 매대 스타일',
-  detail: '상품상세 스타일',
   variables: '사용자 정의 변수',
   environment: '환경설정',
 };
@@ -95,6 +89,7 @@ const typeLabels = {
   progress: '프로그레스바',
   carousel: '캐로셀',
   grid: '상품목록',
+  tabs: '카테고리 탭',
 };
 
 const isShelf = (type: string) => type === 'carousel' || type === 'grid';
@@ -163,7 +158,26 @@ const optionLabels: Record<keyof SaleComponent['options'], string> = {
   imageType: '이미지 구분',
   imageContentGap: '이미지/내용 간격(px)',
   dotShape: '슬라이드 위치 표시 형태',
+  membershipLabelOnly: '멤버십가는 「멤버십할인가」 표시만',
+  discountCss: '할인율 CSS',
+  tabCss: '탭 CSS',
+  activeTabCss: '선택된 탭 CSS',
 };
+
+// 미리보기용 카테고리 탭(쇼핑몰은 세일 상품의 카테고리에서 만든다).
+const sampleTabs: SaleTab[] = [
+  ['all', '전체', 18],
+  ['lash-perm', '속눈썹펌', 6],
+  ['lash-ext', '속눈썹연장', 5],
+  ['semi', '반영구', 4],
+  ['nail', '네일아트', 3],
+].map(([key, name, count]) => ({
+  key: String(key),
+  name: String(name),
+  productIds: Array.from({ length: Number(count) }, (_, i) =>
+    String((i * 3) % 18)
+  ),
+}));
 
 const sampleProducts: SaleProduct[] = Array.from({ length: 18 }, (_, i) => ({
   id: String(i),
@@ -224,8 +238,9 @@ const extraCssOptions = {
   timer: ['timerDigitCss', 'timerLabelCss', 'timerSeparatorCss'],
   button: ['buttonCss'],
   progress: ['progressCss', 'progressFillCss'],
-  carousel: ['listCss', 'arrowCss', 'dotCss', 'activeDotCss'],
-  grid: ['listCss', 'pageCss', 'activePageCss'],
+  carousel: ['listCss', 'discountCss', 'arrowCss', 'dotCss', 'activeDotCss'],
+  grid: ['listCss', 'discountCss', 'pageCss', 'activePageCss'],
+  tabs: ['tabCss', 'activeTabCss'],
   image: [],
   text: [],
 } as const;
@@ -639,7 +654,14 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
 
   const query = useQuery({
     queryKey: ['time-sale-settings'],
-    queryFn: medusaTimeSaleSettingsApi.get,
+    // 저장된 적이 없으면 기본 스타일(라이브 쇼핑몰과 같은 모습)로 시작한다.
+    queryFn: async () => {
+      const result = await medusaTimeSaleSettingsApi.get();
+      return {
+        settings: result.settings ?? defaultTimeSaleSettings(),
+        revision: result.revision,
+      };
+    },
   });
 
   const [settings, setSettings] = useState<TimeSaleSettings | null>(null),
@@ -861,7 +883,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
     try {
       // 활성 레이아웃이 라이브러리 스타일과 이어져 있으면 그 항목도 같이 갱신한다.
       const toSave = structuredClone(settings);
-      if (section === 'main' || section === 'more' || section === 'detail')
+      if (section === 'main' || section === 'more')
         linkActiveStyle(toSave, section, platform);
 
       validateTimeSaleSettings(toSave);
@@ -890,8 +912,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
     }
   };
 
-  const surface: SaleSurface =
-    section === 'more' || section === 'detail' ? section : 'main';
+  const surface: SaleSurface = section === 'more' ? 'more' : 'main';
 
   const layout = settings?.styles[surface][platform];
   const component = layout?.components.find((c) => c.id === selected);
@@ -1799,7 +1820,6 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                   management: Timer,
                   main: PanelsTopLeft,
                   more: List,
-                  detail: Flag,
                   variables: Tags,
                   environment: Settings,
                 }[key as keyof typeof sections];
@@ -1833,69 +1853,6 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
               </button>
             </>
           )}
-          <label className="ts-service-switch">
-            서비스 {settings?.environment.enabled ? '켜짐' : '꺼짐'}
-            <TimeSaleSwitch
-              label="타임세일 서비스"
-              checked={settings?.environment.enabled ?? false}
-              disabled={!settings || saving || query.isError}
-              onChange={(enabled) =>
-                ask({
-                  text: `타임세일 서비스를 ${enabled ? '활성화' : '중지'} 하시겠습니까?`,
-                  run: () => {
-                    void (async () => {
-                      if (!settings) return;
-
-                      setSaving(true);
-
-                      try {
-                        const next = structuredClone(settings);
-                        next.environment.enabled = enabled;
-
-                        if (
-                          section === 'main' ||
-                          section === 'more' ||
-                          section === 'detail'
-                        ) {
-                          linkActiveStyle(next, section, platform);
-                        }
-
-                        validateTimeSaleSettings(next);
-
-                        const result = await medusaTimeSaleSettingsApi.save(
-                          next,
-                          revision
-                        );
-
-                        setSettings(result.settings);
-                        setRevision(result.revision);
-                        setDirty(false);
-                        queryClient.setQueryData(
-                          ['time-sale-settings'],
-                          result
-                        );
-                        await queryClient.invalidateQueries({
-                          queryKey: ['time-sales'],
-                        });
-                        saleToast(
-                          `서비스를 ${enabled ? '활성화' : '중지'} 하였습니다.`
-                        );
-                      } catch (error) {
-                        saleToast(
-                          error instanceof Error
-                            ? error.message
-                            : '서비스 변경에 실패했습니다.',
-                          true
-                        );
-                      } finally {
-                        setSaving(false);
-                      }
-                    })();
-                  },
-                })
-              }
-            />
-          </label>
           <button
             className="ts-appbar-icon"
             aria-label="위치 지정 HTML Tag안내"
@@ -1937,24 +1894,13 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
         ) : section === 'environment' ? (
           <div className="ts-settings">
             <h2>환경설정</h2>
-            {(
-              [
-                'enabled',
-                'membershipPriceOnly',
-                'main',
-                'more',
-                'detail',
-              ] as const
-            ).map((key) => (
+            {(['main', 'more'] as const).map((key) => (
               <Field
                 key={key}
                 label={
                   {
-                    enabled: '타임세일 서비스',
-                    membershipPriceOnly: '가격 공개 제한 (모든 세일)',
                     main: '메인 매대 노출',
                     more: '더보기 매대 노출',
-                    detail: '상품상세 노출',
                   }[key]
                 }
               >
@@ -2096,7 +2042,6 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                                 s.variables = s.variables.filter(
                                   (x) => x.name !== v.name
                                 );
-                                removeVariableValues(s.sales, v.name);
                               }),
                           })
                         }
@@ -2712,14 +2657,13 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                           ...settings,
                           environment: {
                             ...settings.environment,
-                            enabled: true,
                             [surface]: true,
                           },
                         }}
                         surface={surface}
                         platform={platform}
-                        saleId="preview"
                         title="타임세일"
+                        tabs={sampleTabs}
                         startsAt="2026-10-07T00:00:00Z"
                         endsAt="2026-10-08T00:00:00Z"
                         products={sampleProducts}
@@ -2765,7 +2709,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
           <tbody>
             {settings &&
               [
-                ...(['main', 'more', 'detail'] as const).flatMap((location) =>
+                ...(['main', 'more'] as const).flatMap((location) =>
                   (['mobile', 'pc'] as const).map((device) => ({
                     style: settings.styles[location][device],
                     location: sections[location],

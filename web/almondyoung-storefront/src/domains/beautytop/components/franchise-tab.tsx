@@ -8,7 +8,7 @@ import { queryBeautyTop } from "@/lib/beautytop/client"
 import { useInfiniteQuery } from "@tanstack/react-query"
 import type { BeautyTopFranchise } from "../types"
 import { useNumberFormats } from "../use-number-formats"
-import { Big, Card, Chip, Headline, LoadError } from "./parts"
+import { Big, Card, CardSkeleton, Chip, Headline, LoadError } from "./parts"
 
 const SUGGESTIONS = ["속눈썹", "네일", "헤어", "왁싱", "피부", "반영구"]
 const PAGE_SIZE = 20
@@ -83,9 +83,7 @@ export function FranchiseTab() {
 
       {query.length < 2 ? null : franchise.isPending ? (
         <div className="mt-5 space-y-2">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="bg-muted h-16 animate-pulse rounded-xl" />
-          ))}
+          <CardSkeleton variant="list" />
         </div>
       ) : franchise.isError && !franchise.data ? (
         <LoadError onRetry={() => franchise.refetch()} />

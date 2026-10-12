@@ -23,7 +23,6 @@ import { redirect } from "next/navigation"
 import { HttpApiError } from "../api-error"
 import { getRegion } from "./regions"
 import { listActiveTimeSales } from "./time-sale"
-import { activeSaleEpoch } from "@/lib/utils/time-sale-product-period"
 import { recoverCustomerCart, retrieveCustomer, transferCart } from "./customer"
 import {
   cartRequiresShipping,
@@ -1577,7 +1576,11 @@ export async function refreshCartPricesDuringRender(): Promise<CartRefreshResult
   const isMember = await getIsMembershipCustomer()
   // 세일이 하나 끝나면 이 값이 달라져 스로틀이 열린다.
   const sales = await listActiveTimeSales()
-  const saleEpoch = activeSaleEpoch(sales, Date.now())
+  const saleEpoch =
+    sales
+      .map((sale) => sale.endsAt ?? "")
+      .sort()
+      .join(",") || "none"
 
   if (
     !priceRefreshThrottle.take(

@@ -33,14 +33,13 @@ export function TimeSaleProductPicker({
   selectedIds,
   onToggle,
   onToggleMany,
-  ignoreSaleTitle,
-  allowRunningSales = false,
+  /** 편집 중인 세일 id. 그 세일에 걸린 상품은 "진행 중" 으로 막지 않는다 — 자기 자신이다. */
+  excludeId,
 }: {
   selectedIds: string[];
   onToggle: (productId: string) => void;
   onToggleMany: (productIds: string[], next: boolean) => void;
-  ignoreSaleTitle?: string;
-  allowRunningSales?: boolean;
+  excludeId?: string;
 }) {
   const [keyword, setKeyword] = useState('');
   const [submitted, setSubmitted] = useState('');
@@ -75,7 +74,7 @@ export function TimeSaleProductPicker({
     return names.join(' / ');
   };
 
-  const { data: variantMap } = useTimeSaleVariantMap();
+  const { data: variantMap } = useTimeSaleVariantMap(excludeId);
 
   const products = data?.products ?? [];
 
@@ -88,11 +87,7 @@ export function TimeSaleProductPicker({
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const blockingSaleOf = (product: MedusaProductItem) => {
-    if (allowRunningSales) return null;
-
-    const title = runningSaleOf(product, variantMap);
-
-    return title && title !== ignoreSaleTitle ? title : null;
+    return runningSaleOf(product, variantMap);
   };
 
   const selectable = products.filter((product) => !blockingSaleOf(product));

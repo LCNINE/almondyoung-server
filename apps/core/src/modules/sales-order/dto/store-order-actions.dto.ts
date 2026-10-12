@@ -10,7 +10,15 @@ export type StoreFulfillmentStatus =
   | 'delivered' // 배송 완료 (모든 활성 상자 배송완료)
   | 'canceled'; // 이행 취소 (모든 FO canceled)
 
-export type StoreRefundStatus = 'none' | 'pending' | 'manual_pending' | 'succeeded' | 'failed';
+export type StoreRefundStatus =
+  | 'none'
+  | 'pending'
+  | 'manual_pending'
+  | 'succeeded'
+  | 'failed'
+  // 채널 주문 정산(#1016 36번 재설계 §8.2) — 스토어프론트 PR 4 가 먼저 안다
+  | 'delayed'
+  | 'transfer_pending';
 
 export type StoreCancelUnavailableReason =
   | 'already_shipped'
@@ -18,9 +26,7 @@ export type StoreCancelUnavailableReason =
   | 'channel_order'
   | 'already_processing'
   // 다운로드(exercise)된 디지털 상품이 포함된 주문 — 회수가 불가하므로 셀프 취소 차단
-  | 'digital_downloaded'
-  // 채널 취소 요청이 처리 중(#1016 35번)
-  | 'cancel_requested';
+  | 'digital_downloaded';
 
 export type StoreClaimStatus =
   | 'none'
@@ -48,7 +54,7 @@ export class ShipmentProgressDto {
  * 내부 에러 코드, provider raw error, PG transaction key 등 운영 민감 정보는 포함하지 않는다.
  */
 export class RefundSummaryDto {
-  @ApiProperty({ enum: ['none', 'pending', 'manual_pending', 'succeeded', 'failed'] })
+  @ApiProperty({ enum: ['none', 'pending', 'manual_pending', 'succeeded', 'failed', 'delayed', 'transfer_pending'] })
   status: StoreRefundStatus;
 
   @ApiPropertyOptional({ description: '환불 금액 (KRW 기준 원 단위)' })
@@ -88,7 +94,7 @@ export class StoreOrderActionsResponseDto {
   @ApiPropertyOptional({ type: ShipmentProgressDto, description: '분할/합배송 진행 요약 (활성 상자 0개면 생략)' })
   shipmentProgress?: ShipmentProgressDto;
 
-  @ApiProperty({ enum: ['none', 'pending', 'manual_pending', 'succeeded', 'failed'] })
+  @ApiProperty({ enum: ['none', 'pending', 'manual_pending', 'succeeded', 'failed', 'delayed', 'transfer_pending'] })
   refundStatus: StoreRefundStatus;
 
   @ApiPropertyOptional({ type: RefundSummaryDto, description: '환불 상세 요약 (취소/부분취소 주문에서 제공)' })
@@ -107,16 +113,9 @@ export class StoreOrderActionsResponseDto {
       'channel_order',
       'already_processing',
       'digital_downloaded',
-      'cancel_requested',
     ],
   })
   cancelUnavailableReason?: StoreCancelUnavailableReason;
-
-  @ApiPropertyOptional({
-    enum: ['requested', 'rejected'],
-    description: '채널 취소 요청 상태(#1016 35번). requested = 처리 중, rejected = 마지막 요청이 실패',
-  })
-  cancelRequestStatus?: 'requested' | 'rejected';
 
   /**
    * 결제 상태. 현재는 결제확인된 주문만 WMS로 수집되므로 항상 'paid'.

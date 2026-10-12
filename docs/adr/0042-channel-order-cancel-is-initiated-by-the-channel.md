@@ -5,6 +5,7 @@ Accepted (2026-10-07). ADR-0040 §5.5 를 부분 대체한다 — **대체:** �
 취소 역투영. **유지:** 주문 성립은 Medusa, 이행·취소 가능 «판정»은 core sales-order, 돈 이동의 실행은 wallet,
 배송 상태 역투영(`updateOrderShippingProjection`). 트래킹 #1016 35번·31번 행.
 설계: `docs/superpowers/specs/2026-10-07-channel-order-cancel-design.md`.
+**원칙 2 는 ADR-0044 가 대체한다**(2026-10-12) — 물리 취소는 core 가 요청 순간에 확정하고, 돈의 정산은 채널이 따로 한다.
 
 ## Context
 ADR-0040 §5.5 는 «취소 판정은 Core, 돈 이동은 wallet, Core → Medusa 취소 역투영 유지»라고 이름만 붙였다. 그 모양대로

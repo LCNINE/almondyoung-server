@@ -80,6 +80,7 @@ export class MedusaOrderSource implements ReplayableChannelOrderSource {
       shippingAddress: this.buildShippingAddress(order),
       ...(entrancePassword ? { entrancePassword } : {}),
       ...(cancelRequests.length > 0 ? { cancelRequests } : {}),
+      ...(order.status === 'canceled' ? { orderCancelled: true as const } : {}),
       createdAt: order.created_at ?? new Date().toISOString(),
       lifecycle,
       raw: order as unknown as Record<string, unknown>,
@@ -228,6 +229,9 @@ export class MedusaOrderSource implements ReplayableChannelOrderSource {
             shippingCharge: r.shippingCharge as number,
             shippingRefund: r.shippingRefund as number,
             shippingNotAdjusted: r.shippingNotAdjusted === true,
+            ...(typeof r.externalRefundApplied === 'number' && r.externalRefundApplied > 0
+              ? { externalRefundApplied: r.externalRefundApplied }
+              : {}),
           },
         ];
       })

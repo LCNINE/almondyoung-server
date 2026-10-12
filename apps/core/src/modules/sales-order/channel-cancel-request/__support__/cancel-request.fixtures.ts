@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import {
   CHANNEL_ORDERS_COMMAND_STREAM,
   CORE_ORDER_STREAM,
@@ -89,6 +89,7 @@ export function modifiedPayload(
     quantities?: number[];
     cancelRequests?: OrderModifiedPayload['snapshot']['cancelRequests'];
     address?: typeof ADDRESS;
+    orderCancelled?: boolean;
   } = {},
 ): OrderModifiedPayload {
   return {
@@ -106,6 +107,7 @@ export function modifiedPayload(
         cancelled: false,
       })),
       ...(over.cancelRequests ? { cancelRequests: over.cancelRequests } : {}),
+      ...(over.orderCancelled ? { orderCancelled: true as const } : {}),
     },
   };
 }
@@ -116,6 +118,54 @@ export async function markLineShipped(tx: DbTx, salesOrderLineId: string, shippe
     .update(wmsTables.fulfillmentOrderItems)
     .set({ shippedQty })
     .where(eq(wmsTables.fulfillmentOrderItems.salesOrderLineId, salesOrderLineId));
+}
+
+/**
+ * 줄 «전체»가 출고된 모양 — 출고 수량을 다 찍고, 그 줄의 활성 박스 라인을 출고된 박스로 옮기고 예약을 푼다.
+ * markLineShipped 는 수량만 찍는 지름길이라 판정(planCancellation)까지만 맞다. 요청이 물리 취소까지 하면(PR 5)
+ * 같은 주문의 출고 불변식 검사(ACTIVE_LINE_QUANTITY)를 지나야 하므로, 다른 줄을 실제로 취소하는 시나리오(31번)는 이것을 쓴다.
+ */
+export async function shipLineOut(tx: DbTx, salesOrderLineId: string): Promise<void> {
+  const items = await tx
+    .select({ id: wmsTables.fulfillmentOrderItems.id, qty: wmsTables.fulfillmentOrderItems.qty })
+    .from(wmsTables.fulfillmentOrderItems)
+    .where(eq(wmsTables.fulfillmentOrderItems.salesOrderLineId, salesOrderLineId));
+  for (const item of items) {
+    const lines = await tx
+      .select({ id: wmsTables.shipmentLines.id, warehouseId: wmsTables.shipments.warehouseId })
+      .from(wmsTables.shipmentLines)
+      .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
+      .where(
+        and(
+          eq(wmsTables.shipmentLines.fulfillmentOrderItemId, item.id),
+          inArray(wmsTables.shipments.status, ['draft', 'planned']),
+        ),
+      );
+    if (lines.length > 0) {
+      const [shipped] = await tx
+        .insert(wmsTables.shipments)
+        .values({ warehouseId: lines[0].warehouseId, status: 'shipped', shippedAt: new Date() })
+        .returning();
+      const lineIds = lines.map((line) => line.id);
+      await tx
+        .update(wmsTables.shipmentLines)
+        .set({ shipmentId: shipped.id })
+        .where(inArray(wmsTables.shipmentLines.id, lineIds));
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ status: 'released' })
+        .where(
+          and(
+            inArray(wmsTables.stockReservations.shipmentLineId, lineIds),
+            eq(wmsTables.stockReservations.status, 'confirmed'),
+          ),
+        );
+    }
+    await tx
+      .update(wmsTables.fulfillmentOrderItems)
+      .set({ shippedQty: item.qty })
+      .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
+  }
 }
 
 /**
@@ -146,7 +196,7 @@ export function wireCancelRequest(tx: DbTx) {
     salesOrders,
     outboxPublisherFor(CHANNEL_ORDERS_COMMAND_STREAM, dbService),
   );
-  const settler = new ChannelCancelSettler(reader, salesOrders);
+  const settler = new ChannelCancelSettler(reader);
   const amendments = new SalesOrderAmendmentsService(dbService);
   const changes = new ChannelOrderChangeManager(
     new ChannelOrderChangeReader(salesOrders),

@@ -9,41 +9,42 @@ import type {
 import {
   SaleRenderer,
   type SalePagerItem,
-  type SalePeriodLike,
   type SaleProduct,
+  type SaleTab,
 } from "@packages/time-sale-ui"
 import { ProductQuickActions } from "@/domains/products/components/product-quick-actions"
 
+// 진행 중 세일 전부를 섹션 하나로 그린다(세일 이름은 고객에게 내보내지 않는다).
 export function ConfiguredTimeSale({
   settings,
   surface,
-  saleId,
-  title,
   startsAt,
   endsAt,
   products,
   countryCode,
+  tabs,
+  activeTabKey,
+  productCount,
   pager,
-  sectionPeriods,
 }: {
   settings: TimeSaleSettings
   surface: SaleSurface
-  saleId: string
-  title: string
   startsAt: string
   endsAt: string
   products: SaleProduct[]
   countryCode: string
+  tabs?: SaleTab[]
+  activeTabKey?: string
+  productCount?: number
   pager?: SalePagerItem[]
-  sectionPeriods: SalePeriodLike[]
 }) {
   return (
     <PromotionTracker
-      key={`${saleId}:${surface}`}
+      key={surface}
       promotion={{
-        promotion_id: settings.sales[saleId]?.webId || saleId,
-        promotion_name: title,
-        creative_slot: `time_sale_${surface}:${settings.sales[saleId]?.partitionId || "home-sale"}`,
+        promotion_id: "time_sale",
+        promotion_name: "타임세일",
+        creative_slot: `time_sale_${surface}`,
         items: products.map((product) => ({
           item_id: product.id,
           item_name: product.name,
@@ -53,22 +54,15 @@ export function ConfiguredTimeSale({
       <SaleRenderer
         settings={settings}
         surface={surface}
-        saleId={saleId}
-        title={title}
         startsAt={startsAt}
         endsAt={endsAt}
-        products={products.map((product) => ({
-          ...product,
-          membershipOnly:
-            settings.environment.membershipPriceOnly ||
-            !!settings.sales[saleId]?.membershipPriceOnly,
-        }))}
+        products={products}
+        tabs={tabs}
+        activeTabKey={activeTabKey}
+        productCount={productCount}
         sanitizeHtml={sanitizeHtml}
-        moreHref={(platform) =>
-          `/${countryCode}/time-sale?sale=${encodeURIComponent(saleId)}&platform=${platform}`
-        }
+        moreHref={`/${countryCode}/time-sale`}
         pager={pager}
-        sectionPeriods={sectionPeriods}
         renderProductActions={(product) =>
           product.quickActions ? (
             <ProductQuickActions

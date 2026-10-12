@@ -13,10 +13,10 @@ import { defaultTimeSaleSettings } from "@packages/domain-types/time-sale"
 const ids = Array.from({ length: 120 }, (_, i) => `p${i + 1}`)
 
 describe("더보기 페이지 나누기", () => {
-  it("기본 PC 5열·2행과 모바일 2열·2행의 페이지 크기가 일치한다", () => {
+  it("기본 더보기는 라이브처럼 PC·모바일 모두 한 페이지 40개다", () => {
     const settings = defaultTimeSaleSettings()
-    expect(morePageSize(settings, "pc")).toBe(10)
-    expect(morePageSize(settings, "mobile")).toBe(4)
+    expect(morePageSize(settings, "pc")).toBe(40)
+    expect(morePageSize(settings, "mobile")).toBe(40)
   })
   it("120개를 6개씩이면 20 페이지, 20 페이지는 115~120", () => {
     expect(pageCount(120, 6)).toBe(20)

@@ -1,10 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsSchema } from '../../inventory/schema/inventory.schema';
-import { CancelRequestInput, ChannelCancelRequestManager } from './channel-cancel-request.manager';
+import { DbTx, wmsSchema } from '../../inventory/schema/inventory.schema';
+import { CancelRequestInput, ChannelCancelRequestManager, RetrySettlementInput, SettlementFailedFact } from './channel-cancel-request.manager';
 import { ChannelCancelRequestReader } from './channel-cancel-request.reader';
-import { CancelRequestView, toCancelRequestView } from './channel-cancel-request.types';
+import type { ChannelSettlementFact } from '../services/channel-refund-status';
+import {
+  CancelRequestView,
+  readCancelRequestMetadata,
+  toCancelRequestView,
+  toSettlementView,
+} from './channel-cancel-request.types';
 
 @Injectable()
 export class ChannelCancelRequestService {
@@ -26,26 +32,43 @@ export class ChannelCancelRequestService {
     });
   }
 
-  latestFor(salesOrderId: string): Promise<CancelRequestView | null> {
+  /** 고객 환불 배지용 — 정산 칸이 있는 요청만, 최근 순 */
+  settlementFactsFor(salesOrderId: string, now: Date = new Date()): Promise<ChannelSettlementFact[]> {
     return this.db.run(async (tx) => {
-      const row = await this.reader.latestFor(salesOrderId, tx);
-      return row ? toCancelRequestView(row) : null;
+      const rows = await this.reader.settlementRowsFor(salesOrderId, tx);
+      return rows.flatMap((row): ChannelSettlementFact[] => {
+        const settlement = readCancelRequestMetadata(row.metadata).settlement;
+        if (!settlement) return [];
+        if (row.status === 'settling') {
+          const view = toSettlementView(row, now);
+          return view ? [{ status: 'settling', mode: view.mode, phase: view.phase }] : [];
+        }
+        return [{ status: 'applied', mode: settlement.mode }];
+      });
     });
   }
 
-  reject(fact: { requestId: string; reasonCode: string; message: string }): Promise<void> {
-    return this.manager.reject(fact);
+  retrySettlement(salesOrderId: string, requestId: string, input: RetrySettlementInput = {}): Promise<CancelRequestView> {
+    return this.manager.retrySettlement(salesOrderId, requestId, input);
   }
 
-  markStalled(fact: { requestId: string }): Promise<void> {
-    return this.manager.markStalled(fact);
+  switchToManualRefund(salesOrderId: string, requestId: string): Promise<CancelRequestView> {
+    return this.manager.switchToManualRefund(salesOrderId, requestId);
   }
 
-  resend(salesOrderId: string): Promise<CancelRequestView> {
-    return this.manager.resend(salesOrderId);
+  recordSettlementFailure(fact: SettlementFailedFact): Promise<void> {
+    return this.manager.recordSettlementFailure(fact);
   }
 
-  withdraw(salesOrderId: string, operatorId: string | null): Promise<CancelRequestView> {
-    return this.manager.withdraw(salesOrderId, operatorId);
+  settlementFingerprint(salesOrderId: string, tx: DbTx): Promise<string> {
+    return this.manager.settlementFingerprint(salesOrderId, tx);
+  }
+
+  hasSettlementToReissue(salesOrderId: string, now: Date, tx: DbTx): Promise<boolean> {
+    return this.manager.hasSettlementToReissue(salesOrderId, now, tx);
+  }
+
+  reissueSettlements(salesOrderId: string, now: Date, tx: DbTx): Promise<number> {
+    return this.manager.reissueSettlements(salesOrderId, now, tx);
   }
 }

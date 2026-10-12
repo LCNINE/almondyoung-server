@@ -1,14 +1,21 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, isNull, lt, sql, SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql, SQL } from 'drizzle-orm';
 import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
+import {
+  CHANNEL_CANCEL_REQUEST_REASON,
+  PHASE_RANK,
+  SettlementView,
+  toSettlementView,
+} from '../../sales-order/channel-cancel-request/channel-cancel-request.types';
 import { decodeCursor, encodeCursor } from './order-progress.cursor';
-import { judgedRowsSql } from './order-progress.judge-sql';
-import { OrderProgressSummary, assembleSummary } from './order-progress.summary';
+import { judgedRowsSql, judgedShipmentsSql, openShipmentScopeSql, shipmentScopeSql } from './order-progress.judge-sql';
+import { GaveUpBadge, OrderProgressSummary, assembleSummary, groupGaveUpMarks } from './order-progress.summary';
 import {
   ORDER_PROGRESS_STAGES,
   OrderProgressOutcome,
   OrderProgressStage,
+  STUCK_AFTER_MS_BY_STATE,
   isStuck,
   stuckCutoff,
 } from './order-progress.thresholds';
@@ -20,6 +27,25 @@ export type JudgedRow = {
   state: string | null;
   outcome: OrderProgressOutcome | null;
   estimatedEnteredAt: string;
+};
+
+/** 상자별 판정 한 행(리컨실러 스펙 §11.5). stage·state 는 판정 SQL 의 단위 값 그대로다(done 등 진행 단계 밖 값 포함) */
+export type JudgedShipmentRow = {
+  shipmentId: string;
+  stage: string;
+  state: string | null;
+  estimatedEnteredAt: string | null;
+  salesOrderIds: string[];
+  orderRules: string[];
+};
+
+type RawJudgedShipment = {
+  shipment_id: string;
+  stage: string;
+  state: string | null;
+  estimated_entered_at: string | null;
+  sales_order_ids: string[];
+  order_rules: string[];
 };
 
 type RawJudged = {
@@ -50,6 +76,11 @@ export type OrderProgressItem = {
   state: string | null;
   stageEnteredAt: string;
   stuck: boolean;
+  /** 리컨실러가 포기한 규칙들(스펙 2026-10-08 §6). 없으면 빈 배열 */
+  gaveUp: GaveUpBadge[];
+  /** 취소 요청 단계의 정산 중 요청(가장 나쁜 것, #1016 36번 재설계). 그 밖은 null */
+  settlement: SettlementView | null;
+  walletIntentId: string | null;
 };
 export type OrderProgressPage = { items: OrderProgressItem[]; nextCursor: string | null };
 
@@ -80,13 +111,25 @@ export class OrderProgressReader {
     }, tx);
   }
 
+  /** 진행 중 주문(과 그 주문과 상자를 나눈 주문)의 열린 상자를 상자별로 판정한다 — 리컨실러 상자 후보의 원천(§11.4-1) */
+  async judgeOpenShipments(tx?: DbTx): Promise<JudgedShipmentRow[]> {
+    return this.dbService.run(async (trx) => {
+      const result = await trx.execute(judgedShipmentsSql(openShipmentScopeSql()));
+      return toShipmentRows(result);
+    }, tx);
+  }
+
+  /** 상자 하나의 지금 판정. 취소·대체된 상자나 없는 상자는 undefined — 실행 직전 게이트가 쓴다(§11.4-3) */
+  async judgeShipment(shipmentId: string, tx?: DbTx): Promise<JudgedShipmentRow | undefined> {
+    return this.dbService.run(async (trx) => {
+      const result = await trx.execute(judgedShipmentsSql(shipmentScopeSql(shipmentId)));
+      return toShipmentRows(result).find((r) => r.shipmentId === shipmentId);
+    }, tx);
+  }
+
   async summary(now: Date, tx?: DbTx): Promise<OrderProgressSummary> {
     const t = wmsTables.orderProgress;
-    // 단계별 갇힘 기준선을 CASE 하나로 — 기준은 thresholds 한 곳에서만 온다
-    const cutoff = sql`CASE ${t.stage} ${sql.join(
-      ORDER_PROGRESS_STAGES.map((s) => sql`WHEN ${s} THEN ${stuckCutoff(s, now).toISOString()}::timestamptz`),
-      sql` `,
-    )} ELSE ${now.toISOString()}::timestamptz END`;
+    const cutoff = stuckCutoffSql(now);
     return this.dbService.run(async (trx) => {
       const rows = await trx
         .select({
@@ -94,6 +137,18 @@ export class OrderProgressReader {
           state: sql<string>`coalesce(${t.state}, '')`,
           open: sql<number>`count(*)::int`,
           stuck: sql<number>`(count(*) FILTER (WHERE ${t.stageEnteredAt} < ${cutoff}))::int`,
+          // 상자 규칙의 포기는 그 상자에 라인이 있는 주문마다 센다(D18). 바깥 행은 테이블 이름으로 가리킨다 —
+          // ${t.salesOrderId} 는 테이블 없이 "sales_order_id" 로 찍혀 서브쿼리 안의 같은 이름 칸에 묶인다(늘 참이 됐었다)
+          gaveUp: sql<number>`(count(*) FILTER (WHERE EXISTS (
+            SELECT 1 FROM ${wmsTables.orderReconcileState} r
+             WHERE r.sales_order_id = order_progress.sales_order_id AND r.gave_up_at IS NOT NULL
+          ) OR EXISTS (
+            SELECT 1 FROM ${wmsTables.shipmentReconcileState} sr
+              JOIN ${wmsTables.shipmentLines} sl ON sl.shipment_id = sr.shipment_id
+              JOIN ${wmsTables.fulfillmentOrderItems} foi ON foi.id = sl.fulfillment_order_item_id
+              JOIN ${wmsTables.fulfillmentOrders} fo ON fo.id = foi.fulfillment_order_id
+             WHERE fo.sales_order_id = order_progress.sales_order_id AND sr.gave_up_at IS NOT NULL
+          )))::int`,
           oldest: isoOf(sql`min(${t.stageEnteredAt})`),
         })
         .from(t)
@@ -110,9 +165,9 @@ export class OrderProgressReader {
     const conds: SQL[] = [isNull(t.outcome), eq(t.stage, query.stage)];
     if (query.state) conds.push(eq(t.state, query.state));
     if (query.channel) conds.push(sql`${t.salesChannel}::text = ${query.channel}`);
-    if (query.stuck === true) conds.push(lt(t.stageEnteredAt, stuckCutoff(query.stage, now)));
-    if (query.stuck === false)
-      conds.push(sql`${t.stageEnteredAt} >= ${stuckCutoff(query.stage, now).toISOString()}::timestamptz`);
+    const cutoff = stuckCutoffSql(now);
+    if (query.stuck === true) conds.push(sql`${t.stageEnteredAt} < ${cutoff}`);
+    if (query.stuck === false) conds.push(sql`coalesce(${t.stageEnteredAt} < ${cutoff}, false) = false`);
     if (query.cursor) {
       const c = decodeCursor(query.cursor);
       conds.push(
@@ -132,6 +187,7 @@ export class OrderProgressReader {
           displayOrderNo: so.displayOrderNo,
           channelOrderId: so.channelOrderId,
           customerName: so.customerName,
+          walletIntentId: so.walletIntentId,
         })
         .from(t)
         .innerJoin(so, eq(so.id, t.salesOrderId))
@@ -144,17 +200,61 @@ export class OrderProgressReader {
         .limit(query.limit + 1);
       const page = rows.slice(0, query.limit);
       const last = page[page.length - 1];
+      const r = wmsTables.orderReconcileState;
+      const ids = page.map((row) => row.salesOrderId);
+      const marks =
+        ids.length === 0
+          ? []
+          : await trx
+              .select({
+                salesOrderId: r.salesOrderId,
+                rule: r.rule,
+                row: r.trackingRow,
+                since: r.gaveUpAt,
+                lastError: r.lastError,
+              })
+              .from(r)
+              .where(and(inArray(r.salesOrderId, ids), isNotNull(r.gaveUpAt)));
+      const sr = wmsTables.shipmentReconcileState;
+      const sl = wmsTables.shipmentLines;
+      const foi = wmsTables.fulfillmentOrderItems;
+      const fo = wmsTables.fulfillmentOrders;
+      // 상자 규칙의 포기는 그 상자에 라인이 있는 주문마다 뜬다(D18)
+      const boxMarks =
+        ids.length === 0
+          ? []
+          : await trx
+              .select({
+                salesOrderId: fo.salesOrderId,
+                rule: sr.rule,
+                row: sr.trackingRow,
+                since: sr.gaveUpAt,
+                lastError: sr.lastError,
+              })
+              .from(sr)
+              .innerJoin(sl, eq(sl.shipmentId, sr.shipmentId))
+              .innerJoin(foi, eq(foi.id, sl.fulfillmentOrderItemId))
+              .innerJoin(fo, eq(fo.id, foi.fulfillmentOrderId))
+              .where(and(inArray(fo.salesOrderId, ids), isNotNull(sr.gaveUpAt)));
+      const gaveUpBy = groupGaveUpMarks([...marks, ...boxMarks]);
+      const settlements =
+        query.stage === 'cancel_request' && ids.length > 0
+          ? await settlementsOf(trx, ids, now)
+          : new Map<string, SettlementView>();
       return {
-        items: page.map((r) => ({
-          salesOrderId: r.salesOrderId,
-          orderNo: r.displayOrderNo ?? r.channelOrderId,
-          channelOrderId: r.channelOrderId,
-          salesChannel: r.salesChannel,
-          customerName: r.customerName ?? null,
-          orderedAt: r.orderedAt.toISOString(),
-          state: r.state ?? null,
-          stageEnteredAt: r.stageEnteredAt.toISOString(),
-          stuck: isStuck(query.stage, r.stageEnteredAt, now),
+        items: page.map((row) => ({
+          salesOrderId: row.salesOrderId,
+          orderNo: row.displayOrderNo ?? row.channelOrderId,
+          channelOrderId: row.channelOrderId,
+          salesChannel: row.salesChannel,
+          customerName: row.customerName ?? null,
+          orderedAt: row.orderedAt.toISOString(),
+          state: row.state ?? null,
+          stageEnteredAt: row.stageEnteredAt.toISOString(),
+          stuck: isStuck(query.stage, row.stageEnteredAt, now, row.state ?? null),
+          gaveUp: gaveUpBy.get(row.salesOrderId) ?? [],
+          settlement: settlements.get(row.salesOrderId) ?? null,
+          walletIntentId: row.walletIntentId ?? null,
         })),
         nextCursor:
           rows.length > query.limit && last
@@ -163,4 +263,60 @@ export class OrderProgressReader {
       };
     }, tx);
   }
+}
+
+/**
+ * 행마다의 갇힘 기준선 — 세부 상태 덮어쓰기가 단계 기준보다 앞선다(D6). NULL = 갇히지 않음.
+ * 요약과 목록이 같은 식을 쓴다(기준은 thresholds 한 곳에서만 온다).
+ */
+function stuckCutoffSql(now: Date): SQL {
+  const t = wmsTables.orderProgress;
+  const byState = Object.entries(STUCK_AFTER_MS_BY_STATE).map(([state, ms]) =>
+    ms === null || ms === undefined
+      ? sql`WHEN ${t.state} = ${state} THEN NULL::timestamptz`
+      : sql`WHEN ${t.state} = ${state} THEN ${new Date(now.getTime() - ms).toISOString()}::timestamptz`,
+  );
+  const byStage = ORDER_PROGRESS_STAGES.map(
+    (s) => sql`WHEN ${t.stage} = ${s} THEN ${stuckCutoff(s, now).toISOString()}::timestamptz`,
+  );
+  return sql`(CASE ${sql.join([...byState, ...byStage], sql` `)} ELSE ${now.toISOString()}::timestamptz END)`;
+}
+
+/** 취소 요청 단계 목록의 행마다 정산 정보 — 한 주문에 여럿이면 가장 나쁜 것, 같으면 먼저 확정된 것 */
+async function settlementsOf(trx: DbTx, salesOrderIds: string[], now: Date): Promise<Map<string, SettlementView>> {
+  const a = wmsTables.salesOrderAmendments;
+  const rows = await trx
+    .select({ id: a.id, salesOrderId: a.salesOrderId, status: a.status, createdAt: a.createdAt, metadata: a.metadata })
+    .from(a)
+    .where(
+      and(
+        inArray(a.salesOrderId, salesOrderIds),
+        eq(a.reasonCode, CHANNEL_CANCEL_REQUEST_REASON),
+        eq(a.status, 'settling'),
+      ),
+    );
+  const out = new Map<string, SettlementView>();
+  for (const row of rows) {
+    const view = toSettlementView(row, now);
+    if (!view) continue;
+    const prev = out.get(row.salesOrderId);
+    const worse =
+      !prev ||
+      PHASE_RANK[view.phase] < PHASE_RANK[prev.phase] ||
+      (PHASE_RANK[view.phase] === PHASE_RANK[prev.phase] && view.confirmedAt < prev.confirmedAt);
+    if (worse) out.set(row.salesOrderId, view);
+  }
+  return out;
+}
+
+function toShipmentRows(result: unknown): JudgedShipmentRow[] {
+  // execute() 원시 결과 타이핑 — judge() 와 같은 문서화된 캐스트. text[] 는 postgres.js 가 배열로 읽는다
+  return (result as RawJudgedShipment[]).map((r) => ({
+    shipmentId: r.shipment_id,
+    stage: r.stage,
+    state: r.state,
+    estimatedEnteredAt: r.estimated_entered_at,
+    salesOrderIds: r.sales_order_ids,
+    orderRules: r.order_rules,
+  }));
 }

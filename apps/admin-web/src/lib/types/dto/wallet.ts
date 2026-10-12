@@ -97,6 +97,12 @@ export interface RefundDto {
   reasonMessage: string | null;
   createdAt: string;
   manualConfirmable: boolean;
+  /** wallet PR 1 — 'MANUAL' 은 PG 없이 송금 대기 */
+  execution?: 'AUTO' | 'MANUAL';
+  /** FAILED 일 때 실패 코드(토스 오류 코드 등). 그 밖엔 null */
+  failureCode?: string | null;
+  /** FAILED 일 때만: 같은 환불을 다시 시도하면 될 수 있는가. null 은 분류 전 옛 행 */
+  retryable?: boolean | null;
 }
 
 // ─── Payment Method ─────────────────────────────────────────────────────────

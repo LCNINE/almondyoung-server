@@ -118,15 +118,14 @@ export function formatClock(view: SectionCountdown): string {
   return `${pad(view.hours)}:${pad(view.minutes)}:${pad(view.seconds)}`
 }
 
-export function formatCountdown(view: CountdownView): string {
-  switch (view.kind) {
-    case "days":
-      return `${view.days}일`
-    case "clock":
-      return `${pad(view.hours)}:${pad(view.minutes)}:${pad(view.seconds)}`
-    case "ended":
-      return "종료"
-  }
+/** `1일` 또는 `04:23:11`. 단위는 locale 마다 달라 호출부가 번역해서 넘긴다. 종료는 호출부가 먼저 거른다. */
+export function formatCountdown(
+  view: Exclude<CountdownView, { kind: "ended" }>,
+  dayUnit: string
+): string {
+  return view.kind === "days"
+    ? `${view.days}${dayUnit}`
+    : `${pad(view.hours)}:${pad(view.minutes)}:${pad(view.seconds)}`
 }
 
 /**

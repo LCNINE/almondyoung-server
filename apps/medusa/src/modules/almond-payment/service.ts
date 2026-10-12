@@ -26,10 +26,21 @@ import type { AlmondPaymentOptions, WalletSessionData } from './types';
 import {
   judgeWalletRefund,
   readExternalRefund,
+  readManualRefund,
   withoutExternalRefund,
+  withoutManualRefund,
   withWalletRefundIds,
   type WalletRefundRow,
 } from './refund-data';
+import { WalletHttpError, refusalFromWalletHttpError, walletRefundRefusedError } from './wallet-refund-refusal';
+
+/**
+ * wallet 환불 요청의 클라이언트 시간 한도. 정산은 이 호출을 결제 잠금(30초, paymentRefundLockKey) 안에서 부르고, 레디스 잠금은
+ * timeout 이 곧 만료다 — 걸린 호출이 잠금보다 오래 가면 잠금이 먼저 풀려 다른 정산이 환불 없이 취소하거나 끼어든다.
+ * 잠금보다 넉넉히 짧게 끊는다. 끊김은 WalletHttpError 가 아니므로 거절이 아니라 일시 오류로 올라간다(시도 표식 + 다음 맞추기가 처리).
+ * 환불만 건다 — 같은 walletFetch 를 쓰는 승인 확정·캡처는 잠금 밖이고 PG 시간이 다르다.
+ */
+const WALLET_REFUND_TIMEOUT_MS = 20_000;
 
 export class AlmondPaymentProviderService extends AbstractPaymentProvider<AlmondPaymentOptions> {
   static identifier = 'almond-payment';
@@ -71,12 +82,13 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     }
     const res = await fetch(url, { ...options, headers });
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      const message = body?.message ?? `Wallet API error ${res.status}: ${path}`;
-      // 에러 코드를 메시지 앞에 붙인다 — 호출부가 코드로 분기할 수 있어야 한다
-      // (예: NO_STAGED_APPROVAL, INTENT_NOT_CANCELABLE). 코드 없이 메시지 문구에만
-      // 의존하면 wallet 쪽 문구가 바뀔 때 조용히 분기가 죽는다.
-      throw new Error(body?.error ? `${body.error}: ${message}` : message);
+      const body = (await res.json().catch(() => ({}))) as { error?: unknown; message?: unknown; retryable?: unknown } | null;
+      const walletCode = typeof body?.error === 'string' ? body.error : undefined;
+      const message = typeof body?.message === 'string' ? body.message : `Wallet API error ${res.status}: ${path}`;
+      const retryable = typeof body?.retryable === 'boolean' ? body.retryable : undefined;
+      // WalletHttpError.message 는 «코드: 문장» — 호출부가 코드로 분기한다(NO_STAGED_APPROVAL, INTENT_NOT_CANCELABLE).
+      // 코드 없이 문구에만 기대면 wallet 쪽 문구가 바뀔 때 조용히 분기가 죽는다.
+      throw new WalletHttpError(res.status, walletCode, message, retryable);
     }
     return res.json();
   }
@@ -270,27 +282,39 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
       return { data: withWalletRefundIds(withoutExternalRefund(data), [external.walletRefundId]) };
     }
 
+    // 정산 라우트의 수동 환불(§6.3) — 금액이 같을 때만. 다르면 다른 환불이 끼어든 것이라 자동으로 가고 표식은 붙인 쪽이 지운다
+    const manual = readManualRefund(data);
+    const isManual = manual !== null && manual.amount === refundAmount;
+
     // Medusa 결제 모듈이 refund 행 id 를 idempotency_key 로 준다 — 같은 환불의 재시도가 wallet 에서 한 번으로 접힌다.
     const idempotencyKey = (input as { context?: { idempotency_key?: string } }).context?.idempotency_key;
-    const res = await this.walletFetch<{ refunds?: WalletRefundRow[] }>(`/v1/payment-intents/${intentId}/refund`, {
-      method: 'POST',
-      ...(idempotencyKey ? { headers: { 'Idempotency-Key': `medusa-refund:${idempotencyKey}` } } : {}),
-      body: JSON.stringify({ amount: refundAmount, reasonCode: 'MEDUSA_REFUND' }),
-    });
+    let res: { refunds?: WalletRefundRow[] };
+    try {
+      res = await this.walletFetch<{ refunds?: WalletRefundRow[] }>(`/v1/payment-intents/${intentId}/refund`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(WALLET_REFUND_TIMEOUT_MS),
+        ...(idempotencyKey ? { headers: { 'Idempotency-Key': `medusa-refund:${idempotencyKey}` } } : {}),
+        body: JSON.stringify({ amount: refundAmount, reasonCode: 'MEDUSA_REFUND', ...(isManual ? { execution: 'MANUAL' } : {}) }),
+      });
+    } catch (error) {
+      // 영구 거절(retryable: false)만 표지 붙은 NOT_ALLOWED 로 바꾼다 — 그 밖을 바꾸면 다시 불러야 할 실패가 «거절»로 닫힌다
+      throw refusalFromWalletHttpError(error) ?? error;
+    }
     // wallet 은 PG 가 거절한 환불도 200 + FAILED 행으로 준다. 여기서 던져야 Medusa 가 환불 행을 지우고 장부에 안 남긴다.
     const verdict = judgeWalletRefund(res?.refunds ?? [], refundAmount);
     if (!verdict.ok) {
       if (verdict.moved.length > 0) {
-        // 결제분(charge)이 여럿이면 앞의 것은 나가고 뒤의 것이 실패할 수 있다. 나간 환불은 reasonCode=MEDUSA_REFUND 라
-        // 환불 투영이 건너뛰고, Medusa 장부에도 안 남는다 — 이 로그가 유일한 흔적이다.
+        // 결제분(charge)이 여럿이면 앞의 것은 나가고 뒤의 것이 실패할 수 있다. 나간 환불은 Medusa 장부에 안 남는다 —
+        // 다음 정산의 장부 맞추기(wallet 환불 목록)가 넣는다. 그 전까지는 이 로그가 흔적이다.
         this.logger_.error(
-          `[almond-payment] refundPayment 실패했지만 wallet 에서 이미 나간 환불이 있습니다 — Medusa 장부에 없음, 수동 대사 필요. ` +
+          `[almond-payment] refundPayment 실패했지만 wallet 에서 이미 나간 환불이 있습니다 — 다음 정산의 장부 맞추기가 장부에 넣습니다. ` +
             `intentId=${intentId} requested=${refundAmount} moved=${verdict.moved.map((r) => `${r.id}:${r.amount}:${r.status}`).join(',')}`,
         );
       }
+      if (verdict.refusal) throw walletRefundRefusedError(verdict.refusal.code, verdict.refusal.message);
       throw new Error(`wallet 환불 실패(intentId=${intentId}, 요청 ${refundAmount}): ${verdict.reason}`);
     }
-    return { data: withWalletRefundIds(data, verdict.ids) };
+    return { data: withWalletRefundIds(isManual ? withoutManualRefund(data) : data, verdict.ids) };
   }
 
   async retrievePayment(input: RetrievePaymentInput): Promise<RetrievePaymentOutput> {

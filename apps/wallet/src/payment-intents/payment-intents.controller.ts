@@ -22,7 +22,8 @@ import {
   RefundByIntentResponseDto,
   TossApproveDto,
 } from './dto';
-import { RefundResponseDto } from '../refunds/dto';
+import { RefundListItemDto } from '../refunds/dto';
+import { toRefundResponse, toRefundListItem } from '../refunds/refund-response';
 import { AuthenticatedRequest } from '../wallet.module';
 import { WalletJwtAuth } from '../wallet-auth.decorator';
 
@@ -163,7 +164,18 @@ export class PaymentIntentsController {
   async refund(@Param('id') id: string, @Body() dto: RefundByIntentDto): Promise<RefundByIntentResponseDto> {
     await this.service.findByIdOrThrow(id);
     const refunds = await this.refundsService.createByIntent(id, dto);
-    return { intentId: id, refunds: refunds.map((r) => this.toRefundResponse(r)) };
+    return { intentId: id, refunds: refunds.map((r) => toRefundResponse(r)) };
+  }
+
+  @Get(':id/refunds')
+  @ApiOperation({
+    summary: 'List refunds of a payment intent (API-key, server-to-server)',
+    description: '상태 무관 전부, 만든 순서. 채널 취소 정산 직전 Medusa 가 장부를 맞출 때 읽는다.',
+  })
+  async listRefunds(@Param('id') id: string): Promise<RefundListItemDto[]> {
+    await this.service.findByIdOrThrow(id);
+    const refunds = await this.refundsService.listByIntent(id);
+    return refunds.map(toRefundListItem);
   }
 
   @Get(':id/refundability')
@@ -193,31 +205,6 @@ export class PaymentIntentsController {
     } else if (intent.userId !== jwtUserId) {
       throw new ForbiddenException({ error: 'FORBIDDEN', message: 'Access denied' });
     }
-  }
-
-  private toRefundResponse(refund: {
-    id: string;
-    chargeId: string;
-    intentId: string;
-    status: string;
-    amount: number;
-    currency: string;
-    reasonCode: string | null;
-    reasonMessage: string | null;
-    createdAt: Date;
-  }): RefundResponseDto {
-    return {
-      id: refund.id,
-      chargeId: refund.chargeId,
-      intentId: refund.intentId,
-      status: refund.status as any,
-      amount: refund.amount,
-      currency: refund.currency,
-      reasonCode: refund.reasonCode,
-      reasonMessage: refund.reasonMessage,
-      createdAt: refund.createdAt,
-      manualConfirmable: false,
-    };
   }
 
   private toResponse(

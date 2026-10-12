@@ -1187,7 +1187,7 @@ export class OutboundBatchOrchestrator {
     return { waybillId: waybill.id, trackingNo: waybill.trackingNo ?? '' };
   }
 
-  /** 합류의 송장·보류 사유 — 막지 않고 모은다. 인증·SQL 오류는 그대로 샌다. */
+  /** 합류의 송장 사유 — 막지 않고 모은다. 인증·SQL 오류는 그대로 샌다. */
   private async waybillBlockers(shipmentId: string, tx: DbTx): Promise<StartBlocker[]> {
     try {
       await this.waybills.assertDispatchable(shipmentId, tx);

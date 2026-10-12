@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { HttpTypes } from "@medusajs/types"
 import type { TimeSale } from "@/lib/api/medusa/time-sale"
-import { buildSaleProducts } from "./sale-products"
+import { buildSaleProducts, productPeriods } from "./sale-products"
 
 describe("buildSaleProducts", () => {
   it("현재 판매가를 만든 옵션의 공개 멤버십가만 연결한다", () => {
@@ -23,10 +23,9 @@ describe("buildSaleProducts", () => {
         },
       ],
     } as unknown as HttpTypes.StoreProduct
-    const sale = { products: [] } as unknown as TimeSale
     const build = () =>
       buildSaleProducts({
-        sale,
+        sales: [],
         ids: ["prod_1"],
         products: [product],
         countryCode: "kr",
@@ -41,7 +40,7 @@ describe("buildSaleProducts", () => {
       membersOnlyPurchase: false,
     })
     const wishlisted = buildSaleProducts({
-      sale,
+      sales: [],
       ids: ["prod_1"],
       products: [product],
       countryCode: "kr",
@@ -71,7 +70,7 @@ describe("buildSaleProducts", () => {
       } as unknown as HttpTypes.StoreProduct
 
       const [card] = buildSaleProducts({
-        sale: { products: [] } as unknown as TimeSale,
+        sales: [],
         ids: ["prod_1"],
         products: [product],
         countryCode: "kr",
@@ -90,10 +89,9 @@ describe("buildSaleProducts", () => {
       thumbnail: "01a047c4-b9d8-76cf-8294-1b10eecc9823",
       variants: [],
     } as unknown as HttpTypes.StoreProduct
-    const sale = { products: [] } as unknown as TimeSale
 
     const [card] = buildSaleProducts({
-      sale,
+      sales: [],
       ids: ["prod_1"],
       products: [product],
       countryCode: "kr",
@@ -102,5 +100,24 @@ describe("buildSaleProducts", () => {
     expect(card.image).toMatch(
       /^https?:\/\/.+\/files\/public\/01a047c4-b9d8-76cf-8294-1b10eecc9823$/
     )
+  })
+
+  it("상품이 세일 여럿에 걸리면 먼저 끝나는 세일 기간을 쓴다", () => {
+    const sale = (id: string, endsAt: string, productIds: string[]) =>
+      ({
+        id,
+        startsAt: "2026-10-01T00:00:00.000Z",
+        endsAt,
+        priceListIds: [],
+        productIds,
+      }) as TimeSale
+
+    const periods = productPeriods([
+      sale("tsale_late", "2026-10-20T00:00:00.000Z", ["p1", "p2"]),
+      sale("tsale_early", "2026-10-15T00:00:00.000Z", ["p1"]),
+    ])
+
+    expect(periods.get("p1")?.endsAt).toBe("2026-10-15T00:00:00.000Z")
+    expect(periods.get("p2")?.endsAt).toBe("2026-10-20T00:00:00.000Z")
   })
 })

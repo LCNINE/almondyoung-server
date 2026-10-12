@@ -4,3 +4,4 @@ export * from './logistics-assertions';
 export * from './outbound-v2-outbox';
 export * from './simple-outbound-wiring';
 export * from './cause-chain';
+export * from './consolidation-fixtures';

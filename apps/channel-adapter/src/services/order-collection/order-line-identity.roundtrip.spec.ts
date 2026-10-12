@@ -83,6 +83,8 @@ describe('external order-line identity real component round trip', () => {
       recordFailure: jest.fn(),
       findOpenByExternalOrderId: jest.fn().mockResolvedValue(null),
       closeAsTerminalLifecycle: jest.fn(),
+      // 폴링은 주기마다 열린 처리 실패 행을 한 번 조회한다 (#1016 1번 행) — 없으면 주기 전체가 죽는다.
+      findOpenProcessingFailures: jest.fn().mockResolvedValue(new Map()),
     };
     const mappings = new Map<string, Record<string, unknown>>();
     const channelDb = {

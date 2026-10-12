@@ -11,7 +11,6 @@ import { grantsFor, grantsGovernUsage } from '../../../modules/promotion-meta/gr
 import { consumeCouponGrantsForCart, restoreConsumedCouponGrants, type ConsumeRequest } from './consume-coupon-grants';
 import type { CouponGrantRow } from '../../../modules/promotion-meta/service';
 import { findPromotionCapViolations } from './enforce-promotion-cap';
-import { findStaleTimeSalePriceLines } from './private-time-sale-price';
 import { isOverseasProduct, requiresMembershipToPurchase, type MembershipProduct } from '../../../utils/membership-filter';
 // import { getInventoryValidationFailures } from '../../../utils/validate-inventory';
 
@@ -91,14 +90,6 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
     );
   }
 
-  const staleTimeSaleLines = await findStaleTimeSalePriceLines(container, cart.id);
-  if (staleTimeSaleLines.length) {
-    throw new MedusaError(
-      MedusaError.Types.INVALID_DATA,
-      '가격이 바뀐 상품이 있습니다. 장바구니를 새로고침한 뒤 다시 시도해주세요.',
-    );
-  }
-
   // cart.email이 없고 customer_id가 있으면 customer.email로 자동 채우기
   if (!cart.email && customerId) {
     const { data: customers } = await query.graph({
@@ -128,10 +119,6 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
   const cartItems: Array<{
     variant?: { product?: (MembershipProduct & { tags?: Array<{ value?: string }> }) | null } | null;
   }> = fullCart?.items ?? [];
-
-  if (cartItems.some((item) => item.variant?.product?.metadata?.timeSaleSelling === false)) {
-    throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '타임세일 설정에 따라 판매가 중지된 상품입니다.');
-  }
 
   // 멤버십 전용 구매 상품 최종 방어 — 게이트 적용 전에 담아둔 카트, 담은 뒤 멤버십 만료를 잡는다.
   const hasMembersOnlyPurchase = cartItems.some((item) => {

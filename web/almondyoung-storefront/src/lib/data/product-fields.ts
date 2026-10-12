@@ -6,3 +6,6 @@
  */
 export const PRODUCT_LIST_FIELDS =
   "*variants.calculated_price,+variants.inventory_quantity,+variants.manage_inventory,+variants.allow_backorder,+variants.metadata,*variants.options,+metadata,+tags,"
+
+/** 타임세일 섹션은 탭을 상품의 카테고리에서 역산하므로 카테고리 id 가 더 필요하다. */
+export const PRODUCT_LIST_FIELDS_WITH_CATEGORIES = `${PRODUCT_LIST_FIELDS}*categories,`

@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils/ui';
 import {
   BOARD_STAGES,
   BoardStageKey,
+  cardAlertText,
   formatDwell,
 } from '@/lib/api/domains/orders/order-progress.shape';
 
@@ -11,6 +12,7 @@ export type BandCell = {
   key: BoardStageKey;
   open: number | null;
   stuck: number;
+  gaveUp: number;
   oldestAt: string | null;
 };
 
@@ -31,6 +33,7 @@ export function StageBand(props: {
       key: s.key,
       open: 0,
       stuck: 0,
+      gaveUp: 0,
       oldestAt: null,
     };
     const unknown = c.open === null;
@@ -54,9 +57,7 @@ export function StageBand(props: {
           {c.open === null ? '—' : c.open.toLocaleString('ko-KR')}
         </span>
         <span className="min-h-4 text-xs font-semibold text-red-600 tabular-nums">
-          {!unknown && c.stuck > 0
-            ? `갇힘 ${c.stuck.toLocaleString('ko-KR')}`
-            : ''}
+          {!unknown ? cardAlertText(c.stuck, c.gaveUp) : ''}
         </span>
         <span className="min-h-3.5 text-[11px] text-muted-foreground">
           {!unknown && c.oldestAt

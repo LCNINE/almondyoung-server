@@ -44,7 +44,7 @@ import { ChannelCancelRequestService } from './channel-cancel-request/channel-ca
       // 소비 스키마 검증 ON (ADR-0029 §8, 플랜 Task 5-C — 이 앱이 첫 번째다).
       //
       // 근거는 샘플링이 아니라 **발행 경로를 전수로 닫은 정적 증명**이다. 이 앱이 구독하는
-      // 6개 이벤트(…, `ChannelOrderCancelRejected`·`ChannelOrderCancelStalled` 포함)는 전부 `orders.events.v1` 이고, 그 토픽의 발행자는 channel-adapter 의
+      // 5개 이벤트는 전부 `orders.events.v1` 이고, 그 토픽의 발행자는 channel-adapter 의
       // order publisher 2벌 + 자체 outbox dispatcher 뿐이며 셋 다 `StreamPublisher.publishEvent`
       // 를 지난다. `publishEvent` 는 envelope 에 원본이 아니라 **zod 가 파싱한 결과**를 싣기
       // 때문에(`stream-publisher.service.ts:123`) 같은 스키마로 다시 검증하면 반드시 통과한다.
@@ -97,7 +97,7 @@ import { ChannelCancelRequestService } from './channel-cancel-request/channel-ca
     ChannelOrderChangeService,
     ChannelAmendmentActionsService,
 
-    // 채널 주문 취소 요청 — #1016 35번 행(ADR-0042). core 는 판정·기록·보류·명령, 환불은 채널
+    // 채널 주문 취소 요청 — #1016 35번 행(ADR-0042·0044). core 는 판정·확정·기록·명령, 환불은 채널(정산)
     ChannelCancelRequestReader,
     ChannelCancelSettler,
     ChannelCancelRequestManager,
@@ -114,6 +114,7 @@ import { ChannelCancelRequestService } from './channel-cancel-request/channel-ca
     SalesOrdersService, // Fulfillment BC (cancel, merge 시 SO 상태 변경)
     SalesOrderAmendmentsService,
     SalesOrderQueryService, // Fulfillment BC (FO 생성 시 SO/라인 조회)
+    ChannelCancelRequestService, // Fulfillment BC (리컨실러 36번 — 정산 재발행)
   ],
 })
 export class SalesOrderModule {}

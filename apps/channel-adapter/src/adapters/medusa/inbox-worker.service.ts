@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
-import { channelDispatchOperations, inboxEvents, wmsOrderMappings } from '../../schema';
+import { inboxEvents, wmsOrderMappings } from '../../schema';
 import { eq, ne, and, gt, inArray, sql } from 'drizzle-orm';
 import { v7 } from 'uuid';
 import { PimMedusaSyncService } from './pim-medusa-sync.service';
@@ -27,10 +27,6 @@ import type {
   Cafe24UnlinkedPayload,
   UserDeletedPayload,
 } from '@packages/event-contracts/streams/user.stream';
-import {
-  getChannelFulfillmentCapabilities,
-  type ShipmentSalesChannel,
-} from '../../services/channel-capabilities';
 import { withMedusaOrderProjectionLock } from '../../services/medusa-order-projection-lock';
 
 const PRODUCT_MASTER_LIFECYCLE_EVENT_TYPES = ['ProductMasterActiveVersionChanged', 'ProductMasterDeleted'] as const;
@@ -48,7 +44,6 @@ const INBOX_WORKER_EVENT_TYPES = [
   'UserDeleted',
   'CoreFulfillmentShipped',
   'CoreFulfillmentDelivered',
-  'CoreOrderCancelled',
 ] as const;
 
 /**
@@ -566,70 +561,6 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
           this.logger.log(
             `[CoreFulfillmentDelivered] Medusa 배송 완료 동기화 완료: orderId=${deliveredPayload.orderId}, medusaOrderId=${deliveredMedusaOrderId}`,
           );
-          break;
-        }
-
-        case 'CoreOrderCancelled': {
-          // Core(WMS)가 주문을 취소했을 때 Medusa order도 canceled로 동기화한다.
-          // channelOrderId는 외부 채널에 따라 의미가 달라질 수 있으므로 Core order id와
-          // salesChannel='medusa' 매핑을 함께 확인한 경우에만 Medusa를 호출한다.
-          const cancelPayload: { orderId: string; channelOrderId?: string } = event.payload;
-
-          // wmsOrderId 는 채널어댑터가 주문 수집 때 만든 id 라 Core 가 저장한 salesOrder.id 와 다르다.
-          // Core 는 취소 이벤트에 channelOrderId 를 실어 보내므로 그걸 우선 키로 쓴다.
-          const [mapping] = await this.dbService.db
-            .select({
-              salesChannel: wmsOrderMappings.salesChannel,
-              channelOrderId: wmsOrderMappings.channelOrderId,
-            })
-            .from(wmsOrderMappings)
-            .where(
-              cancelPayload.channelOrderId
-                ? eq(wmsOrderMappings.channelOrderId, cancelPayload.channelOrderId)
-                : eq(wmsOrderMappings.wmsOrderId, cancelPayload.orderId),
-            )
-            .limit(1);
-
-          if (!mapping) {
-            this.logger.debug(
-              `[CoreOrderCancelled] Medusa 매핑 없음, 취소 동기화 스킵: orderId=${cancelPayload.orderId}`,
-            );
-            break;
-          }
-
-          const capabilities = getChannelFulfillmentCapabilities(mapping.salesChannel as ShipmentSalesChannel);
-          if (mapping.salesChannel !== 'medusa' || !capabilities?.automatedCancellation) {
-            const reason = `${mapping.salesChannel} order cancellation requires manual channel adjustment`;
-            await this.dbService.db
-              .insert(channelDispatchOperations)
-              .values({
-                inboxEventId: eventId,
-                dispatchAttemptId: null,
-                shipmentId: null,
-                salesOrderId: cancelPayload.orderId,
-                operation: 'cancel',
-                channel: mapping.salesChannel,
-                externalOrderId: mapping.channelOrderId,
-                providerIdempotencyKey: `cancel:${eventId}:${cancelPayload.orderId}`,
-                requestSnapshot: { eventType, payload: cancelPayload },
-                status: 'manual_adjustment_required',
-                errorMessage: reason,
-                updatedAt: new Date(),
-              })
-              .onConflictDoNothing();
-            this.logger.warn(`${reason}: ${mapping.channelOrderId}`);
-            break;
-          }
-
-          this.logger.log(
-            `[CoreOrderCancelled] Medusa 주문 취소 동기화: coreOrderId=${cancelPayload.orderId}, medusaOrderId=${mapping.channelOrderId}`,
-          );
-          const outcome = await this.medusaClient.cancelOrder(mapping.channelOrderId);
-          // 옛 동작 유지(PR-D 가 이 분기를 지운다): 400·404 는 건너뛴다. 5xx 는 cancelOrder 가 던져 failed 로 남는다 —
-          // 그 failed 행을 PR-D 전 대사가 센다(스펙 §11).
-          if (outcome.kind !== 'cancelled') {
-            this.logger.warn(`[CoreOrderCancelled] Medusa 취소 건너뜀(${outcome.kind}): medusaOrderId=${mapping.channelOrderId}`);
-          }
           break;
         }
 
