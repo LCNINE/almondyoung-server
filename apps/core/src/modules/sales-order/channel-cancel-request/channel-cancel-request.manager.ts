@@ -234,20 +234,20 @@ export class ChannelCancelRequestManager {
     input: RetrySettlementInput = {},
     tx?: DbTx,
   ): Promise<CancelRequestView> {
-    return this.restartSettlement(salesOrderId, requestId, 'retry', tx, input.alreadyRefundedAmount);
+    return this.restartSettlement(salesOrderId, requestId, 'retry', input.alreadyRefundedAmount, tx);
   }
 
   /** [계좌 송금으로 환불] — 같은 requestId 를 refundMode manual 로 다시 낸다. wallet 이 PG 없이 송금 대기 행을 만든다(스펙 §6.3) */
   async switchToManualRefund(salesOrderId: string, requestId: string, tx?: DbTx): Promise<CancelRequestView> {
-    return this.restartSettlement(salesOrderId, requestId, 'manual', tx);
+    return this.restartSettlement(salesOrderId, requestId, 'manual', undefined, tx);
   }
 
   private async restartSettlement(
     salesOrderId: string,
     requestId: string,
     kind: 'retry' | 'manual',
+    alreadyRefundedAmount: number | undefined,
     tx?: DbTx,
-    alreadyRefundedAmount?: number,
   ): Promise<CancelRequestView> {
     return this.db.run(async (trx) => {
       await this.lockSalesOrder(salesOrderId, trx);
