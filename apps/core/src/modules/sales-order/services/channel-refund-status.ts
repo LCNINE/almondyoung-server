@@ -7,7 +7,7 @@ export type ChannelSettlementFact =
   | { status: 'settling'; mode: SettlementMode; phase: SettlementPhase }
   | { status: 'applied'; mode: SettlementMode };
 
-/** 수동 정산이 끝난 뒤 wallet 의 송금 대기 행. unknown = wallet 이 답하지 않았다 */
+/** 정산(자동·수동)이 끝난 뒤 wallet 의 송금 대기 상태. unknown = wallet 이 답하지 않았다 */
 export type ManualTransfer = 'pending' | 'done' | 'unknown';
 
 /**
@@ -26,7 +26,7 @@ export function manualTransferOf(refunds: WalletRefundListItem[] | null): Manual
 
 /**
  * 채널 주문의 정산 → 고객 환불 배지(스펙 §8.2, #1016 36번 재설계 판정 5). null = 정산이 할 말이 없다 — 부르는 쪽이 지금 도출(수집된 환불 등)을 쓴다.
- * 고객에게는 지연과 거절을 구분하지 않는다(§5.2). wallet 을 모르면 «아직 송금 전»이 안전하다 — «완료»라고 했다가 돈이 안 갔으면 거짓이다.
+ * 고객에게는 지연과 거절을 구분하지 않는다(§5.2). wallet 을 모르면 «아직 송금 전»이 안전하다(수동 정산만 — 자동은 지금 도출) — «완료»라고 했다가 돈이 안 갔으면 거짓이다.
  */
 export function channelRefundStatus(
   facts: ChannelSettlementFact[],
