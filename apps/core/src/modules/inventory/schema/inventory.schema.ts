@@ -1466,11 +1466,21 @@ export const salesOrderAmendments = pgTable(
       .default(sql`'{}'::jsonb`),
     // #1016 판단 6: 채널 변경과 운영자 수정을 함께 담는 단일 변경 기록. `decision` 은 운영자 승인 축, `status` 는 적용 축이다.
     origin: varchar('origin', { length: 16 }).$type<'channel' | 'operator'>().notNull().default('operator'),
-    status: varchar('status', { length: 16 }).$type<'applied' | 'pending' | 'superseded'>().notNull().default('pending'),
+    // requested·rejected: 채널 주문 취소 요청의 옛 흐름(#1016 35번) 역사 값 — PR 6 이 쓰는 코드를 걷었다. 값·check·유니크 인덱스 제거는 contract phase(deploy → migrate).
+    status: varchar('status', { length: 16 })
+      .$type<'applied' | 'pending' | 'superseded' | 'dismissed' | 'requested' | 'settling' | 'rejected'>()
+      .notNull()
+      .default('pending'),
     sourceEventId: varchar('source_event_id', { length: 255 }),
     supersededById: uuid('superseded_by_id').references((): AnyPgColumn => salesOrderAmendments.id, {
       onDelete: 'set null',
     }),
+    // #1016 6번 행: 운영자가 «어긋난 채 둔다»고 닫은 채널 행. 이 행의 pending 델타와 똑같은 차이는 다시 띄우지 않는다.
+    dismissedAt: timestamp('dismissed_at', { withTimezone: true }),
+    dismissedBy: uuid('dismissed_by'),
+    dismissNote: text('dismiss_note'),
+    // 마지막 «다시 확인»(ResyncChannelOrder 명령) 시각. 결과는 돌아오지 않으므로 화면이 이 시각을 보여 준다.
+    resyncRequestedAt: timestamp('resync_requested_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1496,8 +1506,12 @@ export const salesOrderAmendments = pgTable(
     originCheck: check('sales_order_amendments_origin_check', sql`${t.origin} IN ('channel', 'operator')`),
     statusCheck: check(
       'sales_order_amendments_status_check',
-      sql`${t.status} IN ('applied', 'pending', 'superseded')`,
+      sql`${t.status} IN ('applied', 'pending', 'superseded', 'dismissed', 'requested', 'settling', 'rejected')`,
     ),
+    // 옛 흐름의 «한 주문에 열린 취소 요청 하나»(역사). 쓰는 코드 없음 — contract phase 에서 지운다.
+    uqOpenCancelRequest: uniqueIndex('uq_sales_order_amendments_open_cancel_request')
+      .on(t.salesOrderId)
+      .where(sql`${t.status} = 'requested'`),
   }),
 );
 
@@ -1630,6 +1644,73 @@ export const fulfillmentOrderCreationBacklogs = pgTable(
     idxStatusNextAttempt: index('idx_fo_creation_backlogs_status_next_attempt').on(t.status, t.nextAttemptAt),
     idxFulfillmentOrder: index('idx_fo_creation_backlogs_fulfillment_order').on(t.fulfillmentOrderId),
     idxWaitingVariantIds: index('idx_fo_creation_backlogs_waiting_variant_ids').using('gin', t.waitingVariantIds),
+  }),
+);
+
+/**
+ * 정체 보드 진행 투영 (스펙 docs/superpowers/specs/2026-10-06-order-stall-board-design.md §5).
+ * 판매주문당 한 행. 1분 크론(order-progress-refresh)만 쓴다 — 원천은 판매주문·FO·상자·송장·작업 항목이고
+ * 이 테이블은 그 판정 결과의 캐시이자 «단계에 들어온 시각»의 유일한 기록이다.
+ * stage·outcome 은 varchar 다(pgEnum 은 값을 더할 때마다 마이그가 필요하다). 값 목록은 order-progress.thresholds.ts.
+ */
+export const orderProgress = pgTable(
+  'order_progress',
+  {
+    salesOrderId: uuid('sales_order_id')
+      .primaryKey()
+      .references(() => salesOrders.id, { onDelete: 'cascade' }),
+    salesChannel: salesChannelEnum('sales_channel').notNull(),
+    orderedAt: timestamp('ordered_at', { withTimezone: true }).notNull(),
+    // NULL = 종료(outcome 이 있다)
+    stage: varchar('stage', { length: 32 }),
+    state: varchar('state', { length: 64 }),
+    // 갇힘 판정은 이 칸만 본다. 단계가 같으면 세부 상태가 바뀌어도 그대로 둔다(스펙 D5).
+    stageEnteredAt: timestamp('stage_entered_at', { withTimezone: true }).notNull(),
+    // NULL = 진행 중
+    outcome: varchar('outcome', { length: 32 }),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    evaluatedAt: timestamp('evaluated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    // 요약 집계·단계별 체류순 목록·갇힘 필터를 이 하나가 받는다(스펙 §5.1).
+    idxOrderProgressOpenStage: index('idx_order_progress_open_stage')
+      .on(t.stage, t.stageEnteredAt)
+      .where(sql`${t.outcome} IS NULL`),
+  }),
+);
+
+/**
+ * 리컨실러 재판정 상태 (스펙 docs/superpowers/specs/2026-10-08-order-reconciler-design.md §4.5).
+ * 행 하나 = «규칙 × 주문». 주문이 규칙의 상황을 떠나면 러너가 지운다 — 남은 행은 «아직 그 상황에 있다»는 뜻이다.
+ * rule·mode·last_result 는 varchar 다(값 목록은 order-reconcile.state.ts). tracking_row 는 #1016 행 번호 —
+ * 정체 보드가 리컨실러 모듈을 import 하지 않고도 «자동 멈춤 · #12» 를 그리게 행에 둔다.
+ */
+export const orderReconcileState = pgTable(
+  'order_reconcile_state',
+  {
+    rule: varchar('rule', { length: 64 }).notNull(),
+    salesOrderId: uuid('sales_order_id')
+      .notNull()
+      .references(() => salesOrders.id, { onDelete: 'cascade' }),
+    trackingRow: integer('tracking_row').notNull(),
+    fingerprint: text('fingerprint').notNull(),
+    mode: varchar('mode', { length: 16 }).notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    lastResult: varchar('last_result', { length: 16 }).notNull(),
+    lastError: text('last_error'),
+    nextCheckAt: timestamp('next_check_at', { withTimezone: true }).notNull(),
+    // NULL = 진행 중. 찍히면 정체 보드에 «자동 멈춤»으로 보인다
+    gaveUpAt: timestamp('gave_up_at', { withTimezone: true }),
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.rule, t.salesOrderId] }),
+    idxRuleNextCheck: index('idx_order_reconcile_state_rule_next_check').on(t.rule, t.nextCheckAt),
+    // 정체 보드 요약·목록이 «포기한 주문»만 찾는다
+    idxGaveUp: index('idx_order_reconcile_state_gave_up')
+      .on(t.salesOrderId)
+      .where(sql`${t.gaveUpAt} IS NOT NULL`),
   }),
 );
 
@@ -1785,6 +1866,38 @@ export const shipmentLines = pgTable(
     ),
     ckLineVersionPositive: check('ck_shipment_lines_line_version_positive', sql`${t.lineVersion} > 0`),
     idxCreatedFromLine: index('idx_shipment_lines_created_from_line').on(t.createdFromLineId),
+  }),
+);
+
+/**
+ * 리컨실러 상자 규칙의 재판정 상태(스펙 2026-10-08 §11.2 D17). 행 하나 = «규칙 × 상자». 칸의 뜻은 order_reconcile_state 와 같다.
+ * (rule, next_check_at) 인덱스는 두지 않는다 — 상자 후보는 판정 결과에서 고른 id 로 PK 를 찾는다.
+ */
+export const shipmentReconcileState = pgTable(
+  'shipment_reconcile_state',
+  {
+    rule: varchar('rule', { length: 64 }).notNull(),
+    shipmentId: uuid('shipment_id')
+      .notNull()
+      .references(() => shipments.id, { onDelete: 'cascade' }),
+    trackingRow: integer('tracking_row').notNull(),
+    fingerprint: text('fingerprint').notNull(),
+    mode: varchar('mode', { length: 16 }).notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    lastResult: varchar('last_result', { length: 16 }).notNull(),
+    lastError: text('last_error'),
+    nextCheckAt: timestamp('next_check_at', { withTimezone: true }).notNull(),
+    // NULL = 진행 중. 찍히면 그 상자에 라인이 있는 주문마다 정체 보드에 «자동 멈춤»으로 보인다(D18)
+    gaveUpAt: timestamp('gave_up_at', { withTimezone: true }),
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.rule, t.shipmentId] }),
+    // 정체 보드 요약·목록이 «포기한 상자»만 찾는다
+    idxGaveUp: index('idx_shipment_reconcile_state_gave_up')
+      .on(t.shipmentId)
+      .where(sql`${t.gaveUpAt} IS NOT NULL`),
   }),
 );
 
@@ -3436,6 +3549,9 @@ export const wmsTables = {
   orderEvents,
   businessLinks,
   salesOrderAmendments,
+  orderProgress,
+  orderReconcileState,
+  shipmentReconcileState,
   salesOrderCancellations,
   mergeGroups,
   stockReservations,
@@ -4625,6 +4741,10 @@ export type NewBusinessLink = InferInsertModel<typeof businessLinks>;
 
 export type SalesOrderAmendment = InferSelectModel<typeof salesOrderAmendments>;
 export type NewSalesOrderAmendment = InferInsertModel<typeof salesOrderAmendments>;
+
+export type OrderProgressRow = InferSelectModel<typeof orderProgress>;
+export type OrderReconcileStateRow = InferSelectModel<typeof orderReconcileState>;
+export type ShipmentReconcileStateRow = InferSelectModel<typeof shipmentReconcileState>;
 
 export type SalesOrderCancellation = InferSelectModel<typeof salesOrderCancellations>;
 export type NewSalesOrderCancellation = InferInsertModel<typeof salesOrderCancellations>;

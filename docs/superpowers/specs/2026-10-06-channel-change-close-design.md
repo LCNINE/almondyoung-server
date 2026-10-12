@@ -86,7 +86,7 @@ replay(`replayFailure`)·`buildReplayPath` 는 이미 «`quarantined` 가 아니
 
 `POST /sales-order-amendments/:id/dismiss` · 본문 `{ note?: string }`
 
-- 행을 잠그고(`FOR UPDATE`) `origin = channel`·`status = pending` 이 아니면 `ConflictError`(409). 없으면 `NotFoundError`
+- 그 행의 **판매주문을 먼저 잠그고**(`FOR UPDATE`, §6.3) 행을 잠근 뒤(`FOR UPDATE`) `origin = channel`·`status = pending` 이 아니면 `ConflictError`(409). 없으면 `NotFoundError`
 - `status = dismissed`, `dismissed_at = now()`, `dismissed_by = 사용자`, `dismiss_note = note`
 - 같은 판매주문의 `opened_amendment` 링크 metadata 는 고치지 않는다(생성 시점 기록이다)
 
@@ -104,6 +104,10 @@ replay(`replayFailure`)·`buildReplayPath` 는 이미 «`quarantined` 가 아니
 
 두 엔드포인트의 인증·권한은 같은 컨트롤러의 기존 엔드포인트(`GET /sales-order-amendments`)와 같게 둔다.
 
+> **계획 단계 수정(2026-10-06):** 무시·다시 확인은 `SalesOrderAmendmentsService` 가 아니라 `channel-order-change/channel-amendment-actions.service.ts` 의
+> `ChannelAmendmentActionsService` 에 둔다 — 기존 서비스 생성자를 쓰는 통합 스펙이 10곳이고, 운영자 경로와 책임이 다르다.
+> 명령의 `aggregateId` 는 채널 키다.
+
 ## 6. 무시 억제 (core)
 
 ### 6.1 지문
@@ -112,6 +116,8 @@ replay(`replayFailure`)·`buildReplayPath` 는 이미 «`quarantined` 가 아니
 
 - `outcome`·`blockers` 를 뺀 델타를, 키를 정렬한 JSON 문자열로 만든다
 - 같은 차이 = 같은 지문. 막힌 사유는 지문 밖이다 — 무시는 «이 차이를 받아들인다»는 뜻이라 그 사이 송장이 발급됐다고 다시 물을 이유가 없다
+
+> **계획 단계 수정(2026-10-06):** 지문은 값이 `undefined` 인 키를 없는 키로 본다 — jsonb 왕복이 그 키를 버리므로, 기록 전후의 같은 차이가 다른 지문이 되지 않게 한다.
 
 ### 6.2 판정
 
@@ -129,15 +135,24 @@ replay(`replayFailure`)·`buildReplayPath` 는 이미 «`quarantined` 가 아니
 «가장 최근 무시 행» 하나만 보는 이유: 운영자가 새 pending 행(옛 무시 차이 + 새 차이)을 다시 무시하면 그 행이 옛 차이까지 담는다.
 여러 무시 행의 합집합을 보면 운영자가 나중에 «이건 이제 신경 쓴다»고 할 길이 없어진다(무시 취소는 범위 밖이지만 막아 두지 않는다).
 
+> **계획 단계 수정(2026-10-06):** «가장 최근 무시 행»은 `dismissed_at DESC NULLS LAST, id DESC` 로 고른다.
+
 ### 6.3 순서와 동시성
 
-판정은 `lockEffectiveOrder` 가 잡은 판매주문 잠금 아래에서 일어난다. 무시(§5.2)는 amendment 행만 잠그므로, 무시와 같은 주문의
-`OrderModified` 처리가 겹치면 두 순서가 다 가능하다:
+판정은 `lockEffectiveOrder` 가 잡은 판매주문 잠금 아래에서 일어난다. 무시(§5.2)도 그 판매주문을 **먼저** 잠그고 나서 amendment 행을
+잠근다 — `handle` 과 같은 순서(판매주문 → amendment)라 교착 없이 둘이 직렬화되고, 가능한 순서는 아래 둘뿐이다:
 
 - 무시가 먼저 커밋 → 이벤트가 그 무시를 보고 억제
 - 이벤트가 먼저 커밋 → 무시하려던 행이 `superseded` 가 되어 무시가 409. 화면은 목록을 다시 불러 새 행을 보여 준다
 
-둘 다 결과가 맞다. 추가 잠금을 두지 않는다.
+둘 다 결과가 맞다.
+
+> **최종 리뷰 수정(2026-10-06):** 처음엔 무시가 amendment 행만 잠갔다. 그러면 이벤트가 판매주문을 잠근 채 «무시 행 없음»을 읽은 뒤
+> 무시가 끼어들어 커밋할 수 있다(amendment 행은 아직 안 잠겼으니 안 막힌다). 이벤트는 같은 차이로 새 pending 을 넣고, superseded
+> 갱신은 `status = pending` 만 보므로 방금 무시된 행은 그대로다 — 같은 차이로 dismissed 와 pending 이 함께 남아 §2 의 성공 기준 4 가
+> 깨지고, 채널 주문이 또 바뀌기 전엔 낫지 않는다. 그래서 판매주문 잠금을 더했다(`channel-amendment-actions.integration.spec.ts` 가 지킨다).
+> 다시 확인(§5.3)에는 더하지 않는다 — status 를 쓰지 않아서 둘이 겹쳐도 «pending 이 둘» 같은 모순이 안 생긴다. 행 잠금끼리
+> 직렬화되고, 이벤트가 먼저면 409, 다시 확인이 먼저면 그 행이 이벤트에 superseded 될 뿐이다(그때 표시가 일찍 사라질 수 있다 — §8).
 
 ## 7. 명령 스트림
 
@@ -171,6 +186,8 @@ interface ResyncChannelOrderPayload {
 `SalesOrderAmendmentsService` 에 `@InjectPublisher(CHANNEL_ORDERS_COMMAND_STREAM)`. 발행 스트림 선언은 `CORE_ORDER_STREAM` 이 있는
 `fulfillment.module.ts` 의 `publishes` 목록에 더한다(그 선언이 기동 때 토픽도 만든다).
 
+> **계획 단계 수정(2026-10-06):** outbox 행의 `payload` 칸은 봉투(envelope)라 명령 본문은 `payload.payload` 에 있다 — 통합 테스트가 그 모양으로 단언한다.
+
 ### 7.3 소비 (channel-adapter)
 
 `apps/channel-adapter/src/consumers/channel-orders-command.consumer.ts`(신규):
@@ -191,6 +208,13 @@ interface ResyncChannelOrderPayload {
 - **주문 상세 변경 기록**: `dismissed` 행을 «무시됨 · 누가 · 메모»로 보여 준다
 - 상태 문구·시각 문구는 `sales-order-amendments.shape.ts` 의 순수 함수로(admin-web 은 컴포넌트 테스트를 못 한다). 설명 문구는 더하지 않는다
 - 격리 화면 `guidance.ts` 의 `QuarantineStatus` 에 `closed_obsolete` 를 더한다(종결 상태 표시용)
+
+> **계획 단계 수정(2026-10-06):** 주문 상세의 무시 표시는 «무시됨 · 날짜 · 메모»다. `dismissed_by` 는 저장만 하고 이름 조회는 하지 않는다.
+
+> **최종 리뷰 수정(2026-10-06):** 다시 확인 뒤에도 차이가 그대로면 이벤트가 새 pending 행을 넣어 옛 행을 대체하는데, 새 행엔
+> `resync_requested_at` 이 없다 — «확인 요청 n분 전» 표시는 사라지고 행은 남는다. 읽는 법: **표시가 있다 = 아직 처리 안 됨,
+> 표시가 없는데 행이 남았다 = 확인했는데 여전히 다르다.** 무시·다시 확인이 409 가 아닌 이유로 실패하면 짧은 toast
+> («무시하지 못했습니다.» / «다시 확인을 요청하지 못했습니다.»)로 알린다 — 409 는 위대로 목록만 다시 불러온다.
 
 ## 9. 변경 지점
 
@@ -223,13 +247,17 @@ interface ResyncChannelOrderPayload {
 - **admin-web**: 상태·시각 문구 순수 함수
 - **스크립트**: 대상 필터(사유·상태) 단위 테스트
 
+> **계획 단계 수정(2026-10-06):** 스크립트는 분기 없는 고정 조건이라 단위 테스트를 두지 않고 dry-run 출력으로 확인한다(위 «스크립트» 항목 대체).
+
 ## 11. PR 과 배포
 
 **PR 하나.** §5~§8 을 함께 낸다 — 나누면 버튼은 있는데 명령을 받는 소비자가 없는 틈이 생긴다. §4.2 스크립트도 같은 PR.
 
 - 마이그레이션은 추가·넓히기뿐 → **`migrate → deploy`**
-- 한 SST 스택이라 core 와 channel-adapter 의 배포 순서를 못 정한다. 새 core 가 먼저 뜨면 그 사이 «다시 확인» 명령은 토픽에 쌓였다가
-  새 channel-adapter 가 뜨면 소비된다(토픽은 발행 쪽 `publishes` 선언으로도 기동 때 만들어진다) — 유실 없음
+- 한 SST 스택이라 core 와 channel-adapter 의 배포 순서를 못 정한다. 새 core 가 먼저 뜨면 그 사이 «다시 확인» 명령은 토픽에 쌓이지만
+  (토픽은 발행 쪽 `publishes` 선언으로도 기동 때 만들어진다) **유실될 수 있다** — 소비자는 `fromBeginning: false` 로 구독하므로, 새
+  channel-adapter 가 그룹에 처음 붙기 전에 발행된 명령은 건너뛴다. 영향은 작다: D5 대로 결과가 돌아오지 않으니 행에 «확인 요청» 표시가
+  남고, 운영자가 다시 누르면 된다
 - 배포 뒤: 스크립트 dry-run 으로 수 확인(3,004 근처 기대) → 사람이 `--apply`
 
 ## 12. 범위 밖

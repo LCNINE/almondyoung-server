@@ -2,6 +2,7 @@ import { listPublicShopListings } from "@/lib/api/ugc/shop-listings"
 import { sdk } from "@/lib/config/medusa"
 import { siteConfig } from "@/lib/config/site"
 import { MetadataRoute } from "next"
+import { listOpeningAreas, openingPath } from "@/lib/beautytop/opening-areas"
 
 // 검색엔진용 전체 URL 목록. countryCode 기본 region(kr) 기준.
 // medusa store API 를 직접 호출한다 (listProducts/getRegion 래퍼는 cookies 에 의존해
@@ -104,6 +105,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // /new 는 "준비 중" 문구뿐이라 제외 (page.tsx 에서도 noindex)
     entry("/cs", "weekly", 0.5),
     entry("/shop-trade", "weekly", 0.7),
+    // 개업 레이더는 정해 둔 조합만 연다 — 목록 밖 주소는 원천을 부르지 않고 없는 페이지로 끝난다
+    entry("/beautytop/opening", "weekly", 0.5),
+    ...listOpeningAreas().map((a) =>
+      entry(openingPath(a.gugun, a.category), "weekly", 0.5)
+    ),
   ]
 
   return [

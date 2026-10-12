@@ -70,7 +70,7 @@ function makeHandler(opts: {
   const benefitReader = {
     findMembershipBenefitUsageSince: jest
       .fn()
-      .mockResolvedValue(opts.usage ?? { totalDiscountAmount: 0, orderCount: 0, welcomeDeal: false }),
+      .mockResolvedValue(opts.usage ?? { totalDiscountAmount: 0, orderCount: 0, welcomeDeal: false, beautytopPremium: false }),
   };
   const termsRulesReader = { newRulesApply: jest.fn().mockResolvedValue(opts.newRules ?? true) };
   // 고객 알림은 billing-notice 스펙의 관심사다 — 여기선 연락처가 없는 것으로 두어 알림 경로를 닫는다.
@@ -230,7 +230,7 @@ describe('인보이스 터미널 실패 → 미수 원장', () => {
     it('7일 안이라도 멤버십 할인을 받았으면 적는다', async () => {
       const { handler, arrearsManager } = makeHandler({
         heldEntitlement: recentHeld(),
-        usage: { totalDiscountAmount: 1500, orderCount: 1, welcomeDeal: false },
+        usage: { totalDiscountAmount: 1500, orderCount: 1, welcomeDeal: false, beautytopPremium: false },
       });
       await handler.handleMandateRejected('c1', 'inv-1', 'Q201', recent());
       expect(arrearsManager.record).toHaveBeenCalledTimes(1);
@@ -239,7 +239,16 @@ describe('인보이스 터미널 실패 → 미수 원장', () => {
     it('7일 안이라도 웰컴딜을 샀으면 적는다', async () => {
       const { handler, arrearsManager } = makeHandler({
         heldEntitlement: recentHeld(),
-        usage: { totalDiscountAmount: 0, orderCount: 0, welcomeDeal: true },
+        usage: { totalDiscountAmount: 0, orderCount: 0, welcomeDeal: true, beautytopPremium: false },
+      });
+      await handler.handleMandateRejected('c1', 'inv-1', 'Q201', recent());
+      expect(arrearsManager.record).toHaveBeenCalledTimes(1);
+    });
+
+    it('7일 안이라도 뷰티탑 프리미엄을 열었으면 적는다', async () => {
+      const { handler, arrearsManager } = makeHandler({
+        heldEntitlement: recentHeld(),
+        usage: { totalDiscountAmount: 0, orderCount: 0, welcomeDeal: false, beautytopPremium: true },
       });
       await handler.handleMandateRejected('c1', 'inv-1', 'Q201', recent());
       expect(arrearsManager.record).toHaveBeenCalledTimes(1);

@@ -27,6 +27,7 @@ import {
   type StoreOrderAction,
   type StoreOrderActionsResponse,
 } from "@/lib/api/orders/store-orders"
+import { canConfirmPurchase } from "@/lib/orders/core-order-view"
 import {
   ExternalLink,
   MoreVertical,
@@ -35,6 +36,7 @@ import {
   RotateCcw,
   type LucideIcon,
 } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
@@ -91,6 +93,7 @@ export default function OrderActions({
   const cancelUnavailableReason =
     coreActions?.cancelUnavailableReason ?? cancelUnavailableReasonProp
   const channelInfo = coreActions?.channelInfo ?? channelInfoProp
+  const tActions = useTranslations("mypage.order.actions")
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [isConfirmed, setIsConfirmed] = useState(false)
@@ -109,10 +112,12 @@ export default function OrderActions({
   const isBankTransferAwaitingDeposit =
     bankTransferStatus === "awaiting_deposit"
 
-  const canConfirmPurchase =
-    paymentStatus === "authorized" &&
-    !isConfirmed &&
-    !isBankTransferAwaitingDeposit
+  const canConfirm = canConfirmPurchase({
+    paymentStatus,
+    isConfirmed,
+    awaitingDeposit: isBankTransferAwaitingDeposit,
+    actions: coreActions,
+  })
   const hasPendingRefundRequest = refundRequestStatus === "REQUESTED"
 
   const canCancel = availableActions
@@ -164,30 +169,21 @@ export default function OrderActions({
           toast.error(result.error)
           return
         }
-        const message =
-          result.actions.refundStatus === "succeeded"
-            ? "주문이 취소되고 환불이 완료되었습니다."
-            : result.actions.refundStatus === "pending"
-              ? "주문이 취소되었습니다. 환불 처리 중입니다."
-              : result.actions.refundStatus === "failed"
-                ? "주문은 취소되었지만 환불에 실패했습니다. 고객센터에서 확인해 주세요."
-                : result.actions.refundStatus === "manual_pending"
-                  ? "주문은 취소되었습니다. 환불은 고객센터에서 확인 후 처리됩니다."
-                  : "주문이 취소되었습니다."
-        toast.success(message)
         setShowCancelDialog(false)
+        // 취소는 요청 순간 확정된다(#1016 36번 재설계 §8.2) — 응답이 곧 «취소 완료»다
+        toast.success(tActions("cancelCompleted"))
         router.refresh()
       } catch (err: unknown) {
         // 인증 실패는 error.tsx 가 토큰 복구를 처리하도록 전파
         if ((err as { digest?: string }).digest === "UNAUTHORIZED") throw err
-        toast.error("취소 처리 중 오류가 발생했습니다.")
+        toast.error(tActions("cancelError"))
       }
     })
   }
 
   // ── 액션 단일 정의 ─────────────────────────────────────────────
   const actions: OrderAction[] = []
-  if (canConfirmPurchase)
+  if (canConfirm)
     actions.push({
       key: "confirm",
       label: "구매확정",
@@ -258,7 +254,7 @@ export default function OrderActions({
   if (showInquiry) actions.push({ key: "inquiry", label: "문의" })
 
   // 모바일 주요 버튼: 구매확정 > 배송조회, 둘 다 없으면 주문 상세 이동.
-  const primaryKey = canConfirmPurchase ? "confirm" : canTrack ? "track" : null
+  const primaryKey = canConfirm ? "confirm" : canTrack ? "track" : null
   const primaryAction = actions.find((a) => a.key === primaryKey)
   const menuActions = actions.filter((a) => a.key !== primaryKey)
 

@@ -77,7 +77,7 @@ function makeHandler(opts: {
   const benefitReader = {
     findMembershipBenefitUsageSince: jest
       .fn()
-      .mockResolvedValue({ totalDiscountAmount: 0, orderCount: 0, welcomeDeal: false }),
+      .mockResolvedValue({ totalDiscountAmount: 0, orderCount: 0, welcomeDeal: false, beautytopPremium: false }),
   };
   const termsRulesReader = { newRulesApply: jest.fn().mockResolvedValue(true) };
 

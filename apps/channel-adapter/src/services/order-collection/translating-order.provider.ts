@@ -1,6 +1,7 @@
 import type { SalesChannel } from '@packages/event-contracts/streams';
 import { ChannelOrderTranslator } from './channel-order.translator';
 import {
+  ChannelOrderFetchFailure,
   ChannelOrderSource,
   ChannelOrderSnapshot,
   ReplayableChannelOrderSource,
@@ -14,10 +15,12 @@ import {
   OrderFetchItem,
   OrderFetchOutcome,
   OrderLifecycleEventItem,
+  OrderProcessingFailureItem,
   OrderSyncFetch,
   ReplayableChannelOrderProvider,
   SyncableChannelOrderProvider,
 } from './channel-order-provider.interface';
+import { OrderProcessingStageError, errorMessage } from './order-processing-stage.error';
 
 /**
  * source(채널 원어) + translator(Core 계약)를 한 채널분으로 묶는다.
@@ -39,16 +42,46 @@ export class TranslatingOrderProvider implements ChannelOrderProvider {
   async fetchOrders(since: Date | null): Promise<FetchOrdersResult> {
     // 닫힌 창을 쓰는 source 만 창의 끝을 보고한다. 열린 질의(Medusa)는 이 갈래를 타지 않으므로
     // `completedWindowEnd` 가 `undefined` 로 남고, 오케스트레이터의 워터마크 계산이 전과 같다.
-    const { snapshots, completedWindowEnd } = isWindowedSource(this.source)
+    // 열린 질의 갈래의 빈 배열에 타입을 준다 — 맨 `[]` 이면 삼항의 결과가 `never[]` 와 합쳐져
+    // 아래 `map` 콜백 인자가 암묵적 `any` 가 된다.
+    const noFetchFailures: ChannelOrderFetchFailure[] = [];
+    const { snapshots, completedWindowEnd, fetchFailures } = isWindowedSource(this.source)
       ? await this.source.fetchOrdersInWindow(since)
-      : { snapshots: await this.source.fetchOrders(since), completedWindowEnd: undefined };
+      : {
+          snapshots: await this.source.fetchOrders(since),
+          completedWindowEnd: undefined,
+          fetchFailures: noFetchFailures,
+        };
 
     const orders: OrderFetchItem[] = [];
     const failures: OrderCollectionFailureItem[] = [];
     const lifecycleEvents: OrderLifecycleEventItem[] = [];
+    const processingFailures: OrderProcessingFailureItem[] = fetchFailures.map(
+      (failure): OrderProcessingFailureItem => ({
+        externalOrderId: failure.externalOrderId,
+        sourceUpdatedAt: failure.changedAt,
+        stage: 'fetch',
+        error: failure.error,
+        input: {},
+      }),
+    );
 
     for (const snapshot of snapshots) {
-      const { outcome, lifecycle } = await this.translator.translate(this.channel, snapshot);
+      let translated: Awaited<ReturnType<ChannelOrderTranslator['translate']>>;
+      try {
+        translated = await this.translator.translate(this.channel, snapshot);
+      } catch (error) {
+        // 스냅샷 하나의 번역이 `fetchOrders` 전체를 죽이면 그 채널 수집이 멈춘다 (#1016 1번 행).
+        processingFailures.push({
+          externalOrderId: snapshot.externalOrderId,
+          sourceUpdatedAt: snapshot.sourceUpdatedAt,
+          stage: 'translate',
+          error: errorMessage(error),
+          input: snapshot.raw,
+        });
+        continue;
+      }
+      const { outcome, lifecycle } = translated;
       lifecycleEvents.push(...lifecycle);
       if (outcome.kind === 'failure') {
         failures.push(outcome.failure);
@@ -61,6 +94,7 @@ export class TranslatingOrderProvider implements ChannelOrderProvider {
       orders,
       failures,
       lifecycleEvents,
+      processingFailures,
       ...(completedWindowEnd !== undefined ? { completedWindowEnd } : {}),
     };
   }
@@ -96,7 +130,12 @@ export class ReplayableTranslatingOrderProvider
     if (!snapshot) {
       return null;
     }
-    return this.translator.translate(this.channel, snapshot);
+    try {
+      return await this.translator.translate(this.channel, snapshot);
+    } catch (error) {
+      // 재시도가 실패 단계를 «조회»와 «번역»으로 가르려면 여기서 태그해야 한다 (스펙 §6.3).
+      throw new OrderProcessingStageError('translate', error, snapshot.raw);
+    }
   }
 }
 

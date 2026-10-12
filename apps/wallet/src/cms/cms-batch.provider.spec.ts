@@ -66,3 +66,20 @@ describe('CmsBatchProvider.cancel (W5 idempotency/state guard)', () => {
     expect(res.errorCode).toBe('CMS_CUTOFF');
   });
 });
+
+describe('CmsBatchProvider.refund', () => {
+  it('효성 CMS 는 환불 API 가 없다 — FAILED + retryable=false', async () => {
+    const provider = new CmsBatchProvider(null as never, null as never, null as never, null as never);
+    const result = await provider.refund({
+      refundId: 'rf-1',
+      chargeId: 'ch-1',
+      intentId: 'in-1',
+      userId: 'u-1',
+      amount: 10000,
+      currency: 'KRW',
+      idempotencyKey: 'k1',
+      correlationId: 'c1',
+    });
+    expect(result).toMatchObject({ status: 'FAILED', errorCode: 'CMS_REFUND_NOT_SUPPORTED', retryable: false });
+  });
+});

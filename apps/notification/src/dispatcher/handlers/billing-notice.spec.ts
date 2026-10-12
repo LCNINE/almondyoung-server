@@ -1,4 +1,5 @@
 import { MembershipEventConsumer } from './membership-event.consumer';
+import { KAKAO_AUTO_NOTICES } from './kakao-auto-notices';
 import { formatBillingPeriod, formatKstMonthDay, nextSendableAt, nhnRequestDateIfQuiet } from './billing-notice.format';
 
 describe('출금 실패 알림 — 표기', () => {
@@ -199,6 +200,40 @@ describe('MembershipEventConsumer — 출금 실패·미납 해지 알림톡', (
     });
 
     expect(dispatcher.send.mock.calls[0][0].eventKey).toBe('MEMBERSHIP_TERMINATED_WITH_ARREARS');
+  });
+
+  it('보내는 변수는 모두 알림톡 자동 알림 목록에 있다 — 관리자가 잇는 템플릿의 변수 검사가 이 목록을 믿는다', async () => {
+    const { consumer, dispatcher } = makeConsumer();
+    const terminated = {
+      userId: 'u1',
+      userName: '홍길동',
+      phoneNumber: '01012345678',
+      contractId: 'c1',
+      invoiceId: 'inv-1',
+      periodStart: '2026-09-01',
+      periodEnd: '2026-09-30',
+      arrearsSkippedReason: null,
+      occurredAt: '2026-09-07T01:00:00.000Z',
+    };
+    await consumer.onBillingAttemptFailed({} as never, failed);
+    for (const cause of ['UNCOLLECTIBLE', 'MANDATE_REJECTED'] as const) {
+      await consumer.onTerminatedForNonPayment({} as never, { ...terminated, cause, arrearsAmount: 4990 });
+      await consumer.onTerminatedForNonPayment({} as never, { ...terminated, cause, arrearsAmount: null });
+    }
+
+    const sent = dispatcher.send.mock.calls.map(
+      ([dto]: [{ eventKey: string; variables: Record<string, unknown> }]) => dto,
+    );
+    expect(sent.map((d) => d.eventKey).sort()).toEqual(KAKAO_AUTO_NOTICES.map((n) => n.eventKey).sort());
+    for (const dto of sent) {
+      const allowed = KAKAO_AUTO_NOTICES.find((n) => n.eventKey === dto.eventKey)?.variables ?? [];
+      expect({ eventKey: dto.eventKey, extra: Object.keys(dto.variables).filter((v) => !allowed.includes(v)) }).toEqual(
+        {
+          eventKey: dto.eventKey,
+          extra: [],
+        },
+      );
+    }
   });
 
   it('매핑이 꺼져 있으면(카카오 심사 전) 보내지 않는다', async () => {

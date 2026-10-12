@@ -5,6 +5,7 @@ import { PreviewSmsCampaignDto } from '../dto';
 import { MergedAudience, mergeCampaignAudience } from '../utils/campaign-audience';
 import { toKrE164 } from '../clients/sms-gate.client';
 import { isSendable } from '../utils/device-picker';
+import { longestFilledName } from '../utils/sms-body';
 import { bulkIntervalMs, BulkDevice, estimateBulkSchedule } from '../utils/bulk-schedule';
 import { BULK_WINDOW_END_HOUR, BULK_WINDOW_START_HOUR } from '../constants/sms-gate.constants';
 import { SmsGateRepository } from '../repositories/sms-gate.repository';
@@ -51,6 +52,7 @@ export interface SmsCampaignPreview {
   devices: { name: string; dailyLimit: number; intervalSeconds: number }[];
   estimatedStartDate: string | null;
   estimatedCompleteDate: string | null;
+  longestName: string | null;
   /** 폰이 꺼지거나 단건이 끼어들면 밀린다. 같은 번호의 중복 계정은 발송 때 한 통으로 합쳐진다. */
   estimated: true;
 }
@@ -118,6 +120,7 @@ export class SmsCampaignReader {
       })),
       estimatedStartDate: estimate.startDate,
       estimatedCompleteDate: estimate.completeDate,
+      longestName: longestFilledName(audience.recipients.map((r) => r.username)),
       estimated: true,
     };
   }

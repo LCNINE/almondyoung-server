@@ -32,30 +32,6 @@ export const priceVariantId = (price: MedusaPriceListPrice): string | undefined 
 export const priceProductId = (price: MedusaPriceListPrice): string | undefined =>
   price.price_set?.variant?.product_id;
 
-export interface CreatePriceListPayload {
-  title: string;
-  description: string;
-  type: 'sale';
-  status: 'active';
-  starts_at: string;
-  ends_at: string;
-  rules: Record<string, string[]>;
-  prices: Array<{ amount: number; currency_code: string; variant_id: string }>;
-}
-
-export interface UpdatePriceListPayload {
-  title?: string;
-  status?: 'active' | 'draft';
-  starts_at?: string;
-  ends_at?: string;
-}
-
-export interface BatchPricesPayload {
-  create?: Array<{ amount: number; currency_code: string; variant_id: string }>;
-  update?: Array<{ id: string; amount: number }>;
-  delete?: string[];
-}
-
 const LIST_FIELDS = 'id,title,description,type,status,starts_at,ends_at';
 
 export const medusaPriceListsApi = {
@@ -66,42 +42,6 @@ export const medusaPriceListsApi = {
       `${MEDUSA_BASE_URL}/admin/price-lists?${params}`
     );
     return res.data;
-  },
-
-  get: async (id: string) => {
-    const res = await client.get<{ price_list: MedusaPriceList }>(
-      // price 응답에 variant_id 를 실으려면 price_set.variant 까지 펼쳐야 한다.
-      `${MEDUSA_BASE_URL}/admin/price-lists/${id}?fields=${LIST_FIELDS},*prices,*prices.price_set,*prices.price_set.variant`
-    );
-    return res.data.price_list;
-  },
-
-  create: async (payload: CreatePriceListPayload) => {
-    const res = await client.post<{ price_list: MedusaPriceList }>(
-      `${MEDUSA_BASE_URL}/admin/price-lists`,
-      payload
-    );
-    return res.data.price_list;
-  },
-
-  update: async (id: string, payload: UpdatePriceListPayload) => {
-    const res = await client.post<{ price_list: MedusaPriceList }>(
-      `${MEDUSA_BASE_URL}/admin/price-lists/${id}`,
-      payload
-    );
-    return res.data.price_list;
-  },
-
-  remove: async (id: string) => {
-    await client.delete(`${MEDUSA_BASE_URL}/admin/price-lists/${id}`);
-  },
-
-  batchPrices: async (id: string, payload: BatchPricesPayload) => {
-    await client.post(`${MEDUSA_BASE_URL}/admin/price-lists/${id}/prices/batch`, {
-      create: payload.create ?? [],
-      update: payload.update ?? [],
-      delete: payload.delete ?? [],
-    });
   },
 };
 

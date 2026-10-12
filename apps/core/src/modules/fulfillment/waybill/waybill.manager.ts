@@ -54,6 +54,13 @@ export class WaybillManager {
           canonicalRequest: { actorId: actor.id, shipmentId, ...opts },
         },
         async (trx) => {
+          // 채널 취소 확정(요청 트랜잭션)과 직렬화한다(#1016 36번 재설계) — 확정이 같은 박스 행을 잠그고 박스를 취소한다.
+          // 잠근 뒤 읽으므로 방금 취소된 박스엔 아래 status 검사가 409 를 낸다.
+          await trx
+            .select({ id: inventoryTables.shipments.id })
+            .from(inventoryTables.shipments)
+            .where(eq(inventoryTables.shipments.id, shipmentId))
+            .for('update');
           const ctx = await this.reader.loadIssueContext(trx, shipmentId);
           if (ctx.status !== 'planned') {
             throw new ConflictError(`${WAYBILL.ERROR.NOT_DISPATCHABLE}: shipment ${ctx.status}`);

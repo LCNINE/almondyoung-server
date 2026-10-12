@@ -2,6 +2,8 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useTranslations } from "next-intl"
+import LocalizedClientLink from "@/components/shared/localized-client-link"
+import { BenefitAreaLine } from "@/domains/beautytop/area/benefit-area-line"
 import { useCurrentBenefits } from "./benefits-data"
 
 export default function BenefitDetailSection() {
@@ -37,6 +39,16 @@ export default function BenefitDetailSection() {
               <p className="text-white/70 text-sm leading-relaxed">
                 {benefit.description}
               </p>
+              {benefit.teaser === "beautytopArea" && <BenefitAreaLine />}
+              {benefit.link && (
+                <LocalizedClientLink
+                  href={benefit.link.href}
+                  className="mt-3 inline-flex items-center gap-1 rounded-sm text-sm font-medium text-white underline underline-offset-4 transition-colors hover:text-white/80 focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none"
+                >
+                  {benefit.link.text}
+                  <span aria-hidden="true">→</span>
+                </LocalizedClientLink>
+              )}
             </CardContent>
           </Card>
         ))}

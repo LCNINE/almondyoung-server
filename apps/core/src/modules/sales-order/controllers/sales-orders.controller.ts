@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { User } from '@app/authorization';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
 import { StoreSalesOrdersService } from '../services/store-sales-orders.service';
@@ -30,6 +31,7 @@ export class SalesOrdersController {
     private readonly service: SalesOrdersService,
     private readonly amendments: SalesOrderAmendmentsService,
     private readonly storeSalesOrders: StoreSalesOrdersService,
+    private readonly cancelRequests: ChannelCancelRequestService,
   ) {}
 
   @Post()
@@ -56,7 +58,7 @@ export class SalesOrdersController {
   }
 
   @Post(':id/cancel')
-  @ApiOperation({ summary: '판매 주문 취소 (관리자 경로 — Wallet 환불 포함)' })
+  @ApiOperation({ summary: '판매 주문 취소 (관리자 경로 — 채널 주문은 취소 요청, core 주문은 Wallet 환불 포함)' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
   @ApiResponse({ status: 200, description: '취소 성공. { status, refundStatus } 반환' })
   cancel(
@@ -76,6 +78,7 @@ export class SalesOrdersController {
       reasonCode: dto.reasonCode,
       reasonDetail: dto.reasonDetail,
       lines: dto.lines,
+      alreadyRefundedAmount: dto.alreadyRefundedAmount,
       fulfillmentCommandContext: {
         idempotencyKey: idempotencyKey.trim(),
         actorId,
@@ -92,6 +95,22 @@ export class SalesOrdersController {
       reasonCode: dto.reasonCode,
       amount: dto.amount,
     });
+  }
+
+  @Post(':id/cancel-request/:requestId/retry')
+  @ApiOperation({ summary: '채널 취소 정산 다시 시도 — 환불 지연·거절인 요청에 같은 requestId 로 명령을 다시 낸다(#1016 36번 재설계)' })
+  @ApiParam({ name: 'id', description: '판매 주문 ID' })
+  @ApiParam({ name: 'requestId', description: '취소 요청 ID' })
+  retryCancelSettlement(@Param('id') id: string, @Param('requestId') requestId: string) {
+    return this.cancelRequests.retrySettlement(id, requestId);
+  }
+
+  @Post(':id/cancel-request/:requestId/manual-refund')
+  @ApiOperation({ summary: '채널 취소를 계좌 송금으로 환불 — wallet 에 송금 대기 행을 만든다. 송금 뒤 결제 상세에서 완료 처리' })
+  @ApiParam({ name: 'id', description: '판매 주문 ID' })
+  @ApiParam({ name: 'requestId', description: '취소 요청 ID' })
+  manualRefundCancelSettlement(@Param('id') id: string, @Param('requestId') requestId: string) {
+    return this.cancelRequests.switchToManualRefund(id, requestId);
   }
 
   @Post(':id/business-links')

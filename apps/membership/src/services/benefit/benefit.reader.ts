@@ -5,7 +5,7 @@ import * as schema from '../../shared/schemas/entities/schema';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import { differenceInDays, addDays } from 'date-fns';
 import { calculateCycleStart, calculateCycleEnd, formatDate, isCycleCompleted } from '../../utils/cycle.utils';
-import { MembershipBenefitUsage } from './benefit-usage';
+import { BenefitUsageKind, MembershipBenefitUsage } from './benefit-usage';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -180,11 +180,27 @@ export class BenefitReader {
    * 구매확정 때 시각이 다시 찍혀 뒤로 밀릴 수 있지만, 판정은 «기간 시작 이후인가»만 보므로 영향이 없다.
    */
   async findMembershipBenefitUsageSince(userId: string, from: Date): Promise<MembershipBenefitUsage> {
-    const [discount, welcomeDeal] = await Promise.all([
+    const [discount, welcomeDeal, beautytopPremium] = await Promise.all([
       this.findBenefitUsageBetween(userId, from),
       this.hasWelcomeDealSince(userId, from),
+      this.hasBenefitUsageSince(userId, 'BEAUTYTOP_PREMIUM', from),
     ]);
-    return { ...discount, welcomeDeal };
+    return { ...discount, welcomeDeal, beautytopPremium };
+  }
+
+  async hasBenefitUsageSince(userId: string, kind: BenefitUsageKind, from: Date): Promise<boolean> {
+    const [row] = await this.db.db
+      .select({ id: schema.membershipBenefitUsages.id })
+      .from(schema.membershipBenefitUsages)
+      .where(
+        and(
+          eq(schema.membershipBenefitUsages.userId, userId),
+          eq(schema.membershipBenefitUsages.kind, kind),
+          gte(schema.membershipBenefitUsages.usedAt, from),
+        ),
+      )
+      .limit(1);
+    return !!row;
   }
 
   /**

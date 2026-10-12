@@ -67,3 +67,11 @@ export const useAlimtalkAutoSendResult = (notificationId: string | null) => {
     staleTime: 0,
   });
 };
+
+export const useAlimtalkAutoNotices = (enabled = true) => {
+  return useQuery({
+    queryKey: alimtalkQueryKeys.autoNotices(),
+    queryFn: () => alimtalkApi.getAutoNotices(),
+    enabled,
+  });
+};

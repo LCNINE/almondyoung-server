@@ -27,6 +27,7 @@ export const JOIN_BLOCKER_TEXT: BlockerText = {
   INBOUND_PENDING: { title: '적치 대기 중인 상품', guidance: '적치를 끝낸 뒤 다시 넣어 주세요.' },
   STOCK_SHORT: { title: '재고 부족', guidance: '재고가 모자라 이 배치에 넣을 수 없어요. 관리자에게 문의해 주세요.' },
   WAYBILL_NOT_READY: { title: '송장 재발급 필요', guidance: '관리자에게 송장 재발급을 요청한 뒤 다시 넣어 주세요.' },
+  CANCEL_REQUESTED: { title: '취소 처리 중인 주문', guidance: '취소가 끝날 때까지 이 박스는 넣을 수 없어요.' },
 };
 
 /** 후보 조회가 «이 박스는 이미 이 배치에 들어 있다» 를 알리는 코드(core `findJoinCandidates`). 막는 사유가 아니다. */

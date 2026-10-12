@@ -54,7 +54,7 @@ describeIfDb('BenefitReader.findMembershipBenefitUsageSince (PostgreSQL 통합)'
     await welcome(userId, new Date('2026-09-12T00:00:00Z'));
 
     const usage = await reader.findMembershipBenefitUsageSince(userId, since);
-    expect(usage).toMatchObject({ totalDiscountAmount: 0, welcomeDeal: true });
+    expect(usage).toMatchObject({ totalDiscountAmount: 0, welcomeDeal: true, beautytopPremium: false });
     expect(hasUsedMembershipBenefit(usage)).toBe(true);
   });
 

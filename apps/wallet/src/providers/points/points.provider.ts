@@ -14,6 +14,12 @@ import { WalletSchema, paymentMethods } from '../../schema';
 import { and, eq } from 'drizzle-orm';
 import { PointsLedgerService, PointsOperationResult } from './points-ledger.service';
 
+/**
+ * 다시 불러도 같은 포인트 환불 실패. NO_CAPTURED_REDEEM 은 원장에 확정 사용이 없다는 데이터 모양이다.
+ * 금액 초과(REFUND_AMOUNT_EXCEEDS_REMAINING)는 동시 환불 경합이라 일시로 둔다(스펙 §6.2).
+ */
+const POINTS_REFUND_PERMANENT_CODES: ReadonlySet<string> = new Set(['NO_CAPTURED_REDEEM']);
+
 @Injectable()
 export class PointsPaymentProvider implements PaymentProvider {
   readonly providerType = 'POINTS';
@@ -133,7 +139,8 @@ export class PointsPaymentProvider implements PaymentProvider {
     const result = await this.dbService.db.transaction((tx) =>
       this.pointsLedgerService.refund(tx, {
         intentId: params.intentId,
-        legId: params.chargeId,
+        // 원장은 사용(REDEEM)을 승인 결제분 id 로 쌓았다 — 확정분 환불이면 그 id 로 읽어야 한다(ledgerLegChargeId)
+        legId: params.authorizeChargeId ?? params.chargeId,
         attemptId: params.refundId,
         amount: params.amount,
         currency: params.currency,
@@ -153,10 +160,12 @@ export class PointsPaymentProvider implements PaymentProvider {
     }
 
     const raw = result.raw ?? {};
+    const errorCode = String(raw['reasonCode'] ?? 'POINTS_REFUND_FAILED');
     return {
       status: 'FAILED',
-      errorCode: String(raw['reasonCode'] ?? 'POINTS_REFUND_FAILED'),
+      errorCode,
       errorMessage: String(raw['reasonCode'] ?? 'Points refund failed'),
+      retryable: !POINTS_REFUND_PERMANENT_CODES.has(errorCode),
       raw: result.raw,
     };
   }

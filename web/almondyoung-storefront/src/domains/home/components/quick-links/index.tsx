@@ -6,6 +6,8 @@ import { FIXED_CATEGORIES } from "@/lib/constants/categories"
 import { getInterestCategoryKeys } from "@/lib/data/cookies"
 import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { cn } from "@/lib/utils"
+import LocalizedClientLink from "@/components/shared/localized-client-link"
+import { ChartNoAxesColumn } from "lucide-react"
 import { getTranslations } from "next-intl/server"
 import Image from "next/image"
 import {
@@ -39,8 +41,9 @@ type QuickLink = {
   label: string
   displayLabel?: string
   href: string
-  imageUrl: string
+  imageUrl: string | null
   external?: boolean
+  isNew?: boolean
   imageClassName?: string
   imageWrapClassName?: string
 }
@@ -109,6 +112,13 @@ export async function HomeQuickLinks({
       imageClassName: "object-contain p-2.5",
       imageWrapClassName: "bg-white",
     },
+    {
+      label: tQuickLinks("beautytop"),
+      href: "/beautytop",
+      imageUrl: null,
+      isNew: true,
+      imageWrapClassName: "bg-header-background",
+    },
   ]
 
   const categoryLinks: CategoryQuickLink[] = [
@@ -126,6 +136,8 @@ export async function HomeQuickLinks({
     },
   ]
   const isDesktopHeader = variant === "desktopHeader"
+  // 드롭다운 1칸 + 링크 전부를 한 줄에 둔다
+  const desktopColumnCount = 1 + externalLinks.length + categoryLinks.length
   const mobileItems: MobileQuickLinkItem[] = [
     ...externalLinks,
     {
@@ -192,7 +204,10 @@ export async function HomeQuickLinks({
 
           <nav
             aria-label={tQuickLinks("ariaLabel")}
-            className="scrollbar-hide hidden overflow-x-auto px-0.5 xl:grid xl:auto-cols-auto xl:grid-flow-row xl:grid-cols-[repeat(15,minmax(0,1fr))] xl:grid-rows-none xl:gap-x-5 xl:gap-y-5 xl:overflow-visible xl:pb-0"
+            className="scrollbar-hide hidden overflow-x-auto px-0.5 xl:grid xl:auto-cols-auto xl:grid-flow-row xl:grid-rows-none xl:gap-x-5 xl:gap-y-5 xl:overflow-visible xl:pb-0"
+            style={{
+              gridTemplateColumns: `repeat(${desktopColumnCount},minmax(0,1fr))`,
+            }}
           >
             <div className="hidden w-full max-w-[78px] justify-self-center xl:block">
               <CategoryDropdown
@@ -216,36 +231,45 @@ function ExternalQuickLink({
   link: QuickLink
   compact?: boolean
 }) {
-  return (
-    <a
-      href={link.href}
-      target="_blank"
-      rel="noreferrer"
-      className={cn(
-        "flex min-w-0 items-center rounded-lg px-0.5 py-1 transition-opacity hover:opacity-90",
-        compact
-          ? "w-auto flex-row gap-1.5 text-xs text-white/85 hover:text-white"
-          : "w-full max-w-[54px] flex-col gap-2 justify-self-center md:max-w-[78px]"
-      )}
-    >
-      <span
-        className={cn(
-          "relative aspect-square w-full overflow-hidden rounded-lg border border-gray-100 shadow-sm",
-          compact && "h-6 w-6 rounded-full border-0 bg-white/95 shadow-none",
-          link.imageWrapClassName ?? "bg-gray-100"
-        )}
-      >
-        <Image
-          src={link.imageUrl}
-          alt={link.label}
-          fill
-          sizes={compact ? "24px" : "(min-width: 768px) 78px, 54px"}
+  const className = cn(
+    "flex min-w-0 items-center rounded-lg px-0.5 py-1 transition-opacity hover:opacity-90",
+    compact
+      ? "w-auto flex-row gap-1.5 text-xs text-white/85 hover:text-white"
+      : "w-full max-w-[54px] flex-col gap-2 justify-self-center md:max-w-[78px]"
+  )
+  const content = (
+    <>
+      <span className={cn("relative", !compact && "block w-full")}>
+        <span
           className={cn(
-            "rounded-[inherit] object-cover",
-            link.imageClassName,
-            compact && "object-contain p-1"
+            "relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-lg border border-gray-100 shadow-sm",
+            compact && "h-6 w-6 rounded-full border-0 bg-white/95 shadow-none",
+            link.imageWrapClassName ?? "bg-gray-100"
           )}
-        />
+        >
+          {link.imageUrl ? (
+            <Image
+              src={link.imageUrl}
+              alt={link.label}
+              fill
+              sizes={compact ? "24px" : "(min-width: 768px) 78px, 54px"}
+              className={cn(
+                "rounded-[inherit] object-cover",
+                link.imageClassName,
+                compact && "object-contain p-1"
+              )}
+            />
+          ) : (
+            <ChartNoAxesColumn
+              aria-hidden
+              className={cn(
+                "text-white",
+                compact ? "h-3.5 w-3.5" : "h-1/2 w-1/2"
+              )}
+            />
+          )}
+        </span>
+        {link.isNew && <NewBadge compact={compact} />}
       </span>
       <span
         className={cn(
@@ -261,6 +285,35 @@ function ExternalQuickLink({
           </span>
         ))}
       </span>
+    </>
+  )
+
+  if (!link.external) {
+    return (
+      <LocalizedClientLink href={link.href} className={className}>
+        {content}
+      </LocalizedClientLink>
+    )
+  }
+
+  return (
+    <a href={link.href} target="_blank" rel="noreferrer" className={className}>
+      {content}
     </a>
+  )
+}
+
+export function NewBadge({ compact = false }: { compact?: boolean }) {
+  return (
+    <span
+      className={cn(
+        "bg-primary absolute rounded-full leading-none font-bold text-white",
+        compact
+          ? "-top-1.5 -right-2.5 px-1 py-[2px] text-[8px]"
+          : "-top-1.5 -right-1.5 px-1.5 py-[3px] text-[9px]"
+      )}
+    >
+      NEW
+    </span>
   )
 }

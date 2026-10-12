@@ -3,7 +3,7 @@ import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 import ShippingStatusCard from "../../../components/mobile/shipping-status-card"
 import type { OrderItem } from "../../../types/mypage-types"
 import {
-  resolveMypageDisplayLabel,
+  resolveMypageCoreView,
   resolveMypageShippingStatus,
 } from "./mypage-order-status"
 import { withMypageTimeout } from "./mypage-timeout"
@@ -24,12 +24,13 @@ export async function ShippingStatusWrapper() {
     .filter((c: any) => c.shippingStatus !== null)
     .slice(0, 12)
 
-  const orderList: OrderItem[] = await Promise.all(
+  const orderList: OrderItem[] = (await Promise.all(
     candidates.map(async ({ order, shippingStatus }: any) => {
-      const statusLabel = await resolveMypageDisplayLabel(
+      const { statusLabel, cancelledByCore } = await resolveMypageCoreView(
         order,
         shippingStatus.statusLabel
       )
+      if (cancelledByCore) return null
 
       const thumbnail =
         order.items?.[0]?.thumbnail ||
@@ -44,7 +45,7 @@ export async function ShippingStatusWrapper() {
         thumbnailUrl: getThumbnailUrl(thumbnail),
       }
     })
-  )
+  )).filter((o): o is OrderItem => o !== null)
 
   return <ShippingStatusCard initialOrders={orderList} />
 }

@@ -10,6 +10,7 @@ import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { eq, inArray, desc, sql, count, and } from 'drizzle-orm';
 import { FULFILLMENT_EVENTS } from '../events';
+import { isVoidMatching, physicalSkuLinks } from '../../product-matching/fulfillable-matching';
 import { ProductSkuMappingService } from '../../product-matching/services/product-sku-mapping.service';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
 import { acquireStockAvailabilityLocks } from '../../inventory/shared/locks/stock-availability-lock';
@@ -137,6 +138,15 @@ export class FulfillmentsService {
           .where(eq(wmsTables.fulfillmentOrders.salesOrderId, dto.salesOrderId))
           .limit(1);
         if (existing) return this.getOne(existing.id, trx);
+        // 셀메이트 과도기: 판매주문 status 의 shipped·delivered 는 셀메이트 스크립트가 쓴다(ADR-0017 — core 경로는 쓰지 않음).
+        // 이미 나간 주문에 FO 를 만들면 확정 예약·draft 상자가 재고를 묶는다(10-08 실측 3,883개). 판매주문 잠금 아래에서
+        // 검사해야 판정 직후 스크립트가 돈 틈까지 막힌다. FO 없이 돌아오면 워커가 backlog 를 not_required 로 닫는다.
+        if (salesOrder.status === 'shipped' || salesOrder.status === 'delivered') {
+          this.logger.log(
+            `Skip FO creation for sales order ${dto.salesOrderId}: already ${salesOrder.status} outside core (sellmate)`,
+          );
+          return null;
+        }
       }
 
       const requestedItems = Array.isArray(dto.items) ? dto.items : [];
@@ -538,7 +548,7 @@ export class FulfillmentsService {
   }
 
   private isVoidMatching(matching: VariantSkuMatching): boolean {
-    return matching?.status === 'matched' && matching.strategy === 'void';
+    return isVoidMatching(matching);
   }
 
   // 디지털 라인 판별: fulfillmentKind='digital' 또는 requiresShipping=false.
@@ -551,13 +561,7 @@ export class FulfillmentsService {
   }
 
   private getPhysicalSkuLinks(matching: VariantSkuMatching): Array<{ skuId: string; quantity: number }> {
-    if (matching?.status !== 'matched' || matching.strategy !== 'variant') {
-      return [];
-    }
-
-    return Array.isArray((matching as { links?: unknown[] }).links)
-      ? (matching as { links: Array<{ skuId: string; quantity: number }> }).links
-      : [];
+    return physicalSkuLinks(matching);
   }
 
   private getMatchingFailureReason(matching: VariantSkuMatching): string {

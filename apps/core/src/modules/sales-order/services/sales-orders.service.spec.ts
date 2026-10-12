@@ -268,9 +268,11 @@ function rejectRawDeleteSql(statement: unknown) {
 describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
   const salesOrderId = '11111111-1111-1111-1111-111111111111';
 
-  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]> } {
-    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]> };
+  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
+    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } };
     result.limit = (count: number) => Promise.resolve(result.slice(0, count));
+    // getOne 이 최근 취소 요청 행을 정렬해 읽는다 — 이 가짜는 정렬하지 않는다
+    result.orderBy = () => ({ limit: result.limit });
     return result;
   }
 
@@ -496,9 +498,11 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
 describe('SalesOrdersService.update accepted contract immutability', () => {
   const salesOrderId = '22222222-2222-4222-8222-222222222222';
 
-  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]> } {
-    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]> };
+  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
+    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } };
     result.limit = (count: number) => Promise.resolve(result.slice(0, count));
+    // getOne 이 최근 취소 요청 행을 정렬해 읽는다 — 이 가짜는 정렬하지 않는다
+    result.orderBy = () => ({ limit: result.limit });
     return result;
   }
 
@@ -635,9 +639,11 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
   const fulfillmentOrderItemId = '55555555-5555-4555-8555-555555555555';
   const reservationId = '66666666-6666-4666-8666-666666666666';
 
-  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]> } {
-    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]> };
+  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
+    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } };
     result.limit = (count: number) => Promise.resolve(result.slice(0, count));
+    // getOne 이 최근 취소 요청 행을 정렬해 읽는다 — 이 가짜는 정렬하지 않는다
+    result.orderBy = () => ({ limit: result.limit });
     return result;
   }
 
@@ -1545,9 +1551,11 @@ describe('SalesOrderAmendmentsService.create', () => {
   const lineId = '44444444-4444-4444-8444-444444444444';
   const amendmentId = '55555555-5555-4555-8555-555555555555';
 
-  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]> } {
-    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]> };
+  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
+    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } };
     result.limit = (count: number) => Promise.resolve(result.slice(0, count));
+    // getOne 이 최근 취소 요청 행을 정렬해 읽는다 — 이 가짜는 정렬하지 않는다
+    result.orderBy = () => ({ limit: result.limit });
     return result;
   }
 
@@ -1699,9 +1707,11 @@ describe('SalesOrdersService business links', () => {
   const amendmentId = '44444444-4444-4444-8444-444444444444';
   const cancellationId = '55555555-5555-4555-8555-555555555555';
 
-  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]> } {
-    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]> };
+  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
+    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } };
     result.limit = (count: number) => Promise.resolve(result.slice(0, count));
+    // getOne 이 최근 취소 요청 행을 정렬해 읽는다 — 이 가짜는 정렬하지 않는다
+    result.orderBy = () => ({ limit: result.limit });
     return result;
   }
 
@@ -1735,7 +1745,12 @@ describe('SalesOrdersService business links', () => {
     const tx: any = {
       select: jest.fn(() => ({
         from: (table: unknown) => ({
-          where: () => rows(selectRowsFor(table)),
+          where: () => {
+            const result = rows(selectRowsFor(table));
+            // 이 가짜는 where 를 무시한다 — getOne 의 «최근 취소 요청» 조회에는 요청 행이 없는 것으로 답한다
+            if (table === wmsTables.salesOrderAmendments) result.orderBy = () => ({ limit: () => Promise.resolve([]) });
+            return result;
+          },
         }),
       })),
       insert: jest.fn((table: unknown) => ({
@@ -1898,9 +1913,11 @@ describe('SalesOrdersService business links', () => {
 describe('SalesOrdersService.cancel full cancel shipped evidence guard', () => {
   const salesOrderId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
-  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]> } {
-    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]> };
+  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
+    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } };
     result.limit = (count: number) => Promise.resolve(result.slice(0, count));
+    // getOne 이 최근 취소 요청 행을 정렬해 읽는다 — 이 가짜는 정렬하지 않는다
+    result.orderBy = () => ({ limit: result.limit });
     return result;
   }
 

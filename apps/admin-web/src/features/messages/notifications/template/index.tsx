@@ -190,6 +190,11 @@ function NotificationCard({
             미리보기
           </Button>
         )}
+        {missing && entry.kind === 'event' && entry.alimtalk && (
+          <Button asChild variant="outline" size="sm">
+            <Link href="/messages/alimtalk/templates">알림톡 템플릿에서 잇기</Link>
+          </Button>
+        )}
         {(entry.kind === 'planned' || missing) && (
           <>
             <Button variant="outline" size="sm" disabled>

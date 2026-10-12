@@ -5,6 +5,7 @@ import { OrderPollerOrchestrator } from '../services/order-collection/order-poll
 import {
   CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
   COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED,
+  ORDER_COLLECTION_PROCESSING_FAILED,
   OrderCollectionFailureReason,
 } from '../services/order-collection/channel-order-provider.interface';
 import { OrderCollectionFailureStatus } from '../types';
@@ -23,12 +24,16 @@ export class OrderCollectionFailuresController {
   @ApiQuery({
     name: 'reason',
     required: false,
-    enum: [CHANNEL_PRODUCT_IDENTIFICATION_FAILED, COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED],
+    enum: [
+      CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
+      COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED,
+      ORDER_COLLECTION_PROCESSING_FAILED,
+    ],
   })
   @ApiQuery({
     name: 'status',
     required: false,
-    enum: ['quarantined', 'replayed', 'closed_lifecycle', 'closed_already_collected'],
+    enum: ['quarantined', 'replayed', 'closed_lifecycle', 'closed_already_collected', 'closed_obsolete'],
   })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'offset', required: false })
@@ -53,6 +58,15 @@ export class OrderCollectionFailuresController {
       data,
       timestamp: new Date().toISOString(),
     };
+  }
+
+  // `:id` 보다 먼저 선언해야 한다 — 뒤에 두면 'summary' 가 id 로 잡힌다.
+  @Get('summary')
+  @ApiOperation({ summary: '격리 건수 요약 (정체 보드 0단계)' })
+  @ApiQuery({ name: 'channel', required: false, example: 'medusa' })
+  async summary(@Query('channel') channel?: string) {
+    const data = await this.failures.summarizeQuarantined({ channel });
+    return { success: true, data, timestamp: new Date().toISOString() };
   }
 
   @Get(':id')
@@ -110,10 +124,17 @@ function buildReplayPath(id: string, status: string, reason: string) {
   }
 
   return {
-    fix:
-      reason === CHANNEL_PRODUCT_IDENTIFICATION_FAILED
-        ? 'Set pimVariantId on the affected Medusa variant metadata, then replay this failure.'
-        : 'Collected Medusa order changes are not replayable. Handle this as a separate CS/order amendment workflow.',
+    fix: replayFix(reason),
     endpoint: `POST /adapter/order-collection-failures/${id}/replay`,
   };
+}
+
+function replayFix(reason: string): string {
+  if (reason === CHANNEL_PRODUCT_IDENTIFICATION_FAILED) {
+    return 'Set pimVariantId on the affected Medusa variant metadata, then replay this failure.';
+  }
+  if (reason === ORDER_COLLECTION_PROCESSING_FAILED) {
+    return 'Retried automatically each poll up to 4 attempts. Fix the cause in last_error, then replay this failure.';
+  }
+  return 'Collected Medusa order changes are not replayable. Handle this as a separate CS/order amendment workflow.';
 }

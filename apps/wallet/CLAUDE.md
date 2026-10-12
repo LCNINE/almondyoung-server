@@ -76,6 +76,16 @@
 - Charge: CREATED → PENDING → REQUIRES_ACTION → SUCCEEDED → CANCELED/REFUNDED
 - Refund: PENDING → SUCCEEDED/FAILED
 
+### 환불 실패 분류와 수동 실행 (#1016 36번)
+- **영구/일시 분류의 정본은 wallet 이다.** 호출자(almond-payment·core)는 번역만 한다
+  - 4xx 거절 본문 `{ error, message, retryable }` — 표는 `refunds/refund-refusal.ts`. `error`·`message` 는 옛 값 그대로다(core `WalletRefundClient` 가 `error` 로 금액 초과류를 «이미 환불됨»으로 읽는다)
+  - FAILED 환불 행의 `failure_code`·`failure_retryable` — provider 가 `RefundResult.retryable` 로 정한다. 토스 코드표는 `providers/toss/toss-refund-errors.ts`
+  - **모르는 코드·없는 값은 `true`(일시).** 영구로 잘못 두면 아무도 다시 안 부른다
+- **수동 실행(`execution = MANUAL`)**: `POST /v1/payment-intents/:id/refund` 에 `execution: 'MANUAL'`. 계획(남은 금액 비례·외부 먼저·포인트 마지막)은 자동과 같고,
+  외부 결제 몫만 PG 를 부르지 않고 `PENDING` 행으로 남는다. 포인트 몫은 자동. 운영자가 송금한 뒤 `confirmManual` 로 닫는다
+- `confirmManual` 이 받는 행은 `isManuallyConfirmable` 한 곳이 정한다(무통장 PENDING 또는 MANUAL PENDING). 관리자 상세의 `manualConfirmable` 도 같은 함수다
+- `GET /v1/payment-intents/:id/refunds` — 환불 목록(상태 무관, 만든 순서). 정산 직전 장부 맞추기가 읽는다
+
 ### 멱등성
 - HTTP `Idempotency-Key` 헤더 → SHA256(body)와 조합하여 `idempotency_keys` 테이블에 기록
 - 동일 키로 재요청 시 캐시된 응답 반환 (24h TTL)

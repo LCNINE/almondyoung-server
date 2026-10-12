@@ -46,6 +46,8 @@ import { PlanReader } from './services/plan/plan.reader';
 import { PlanManager } from './services/plan/plan.manager';
 import { BenefitReader } from './services/benefit/benefit.reader';
 import { BenefitManager } from './services/benefit/benefit.manager';
+import { BenefitUsageManager } from './services/benefit/benefit-usage.manager';
+import { BenefitUsageService } from './services/benefit/benefit-usage.service';
 import { BillingController } from './controllers/billing.controller';
 import { AdminOperationsController } from './controllers/admin-operations.controller';
 import { SubscriptionController } from './controllers/subscription.controller';
@@ -67,6 +69,7 @@ import { ArrearsManager } from './services/arrears/arrears.manager';
 import { ArrearsRepaymentService } from './services/arrears/arrears-repayment.service';
 import { ArrearsPaymentConsumer } from './consumers/arrears-payment.consumer';
 import { MeArrearsController } from './controllers/me-arrears.controller';
+import { MeBenefitUsageController } from './controllers/me-benefit-usage.controller';
 import { MeTermsAgreementController } from './controllers/me-terms-agreement.controller';
 import { TermsAgreementManager } from './services/terms/terms-agreement.manager';
 import { TermsAgreementService } from './services/terms/terms-agreement.service';
@@ -152,6 +155,7 @@ import { EventTraceController } from './controllers/event-trace.controller';
     BillingController,
     AdminOperationsController,
     MeArrearsController,
+    MeBenefitUsageController,
     MeTermsAgreementController,
     SubscriptionController,
     PlanController,
@@ -210,6 +214,8 @@ import { EventTraceController } from './controllers/event-trace.controller';
     PlanManager,
     BenefitReader,
     BenefitManager,
+    BenefitUsageManager,
+    BenefitUsageService,
     SavingsReader,
     BillingManager,
     BillingOutcomeHandler,

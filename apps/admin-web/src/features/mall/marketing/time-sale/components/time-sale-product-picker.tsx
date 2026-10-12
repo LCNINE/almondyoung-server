@@ -37,13 +37,13 @@ export function TimeSaleProductPicker({
   selectedIds: selectedIdList,
   onToggle,
   onToggleMany,
-  /** 편집 중인 세일 이름. 그 세일에 걸린 상품은 "진행 중" 으로 막지 않는다 — 자기 자신이다. */
-  ignoreSaleTitle,
+  /** 편집 중인 세일 id. 그 세일에 걸린 상품은 "진행 중" 으로 막지 않는다 — 자기 자신이다. */
+  excludeId,
 }: {
   selectedIds: string[];
   onToggle: (productId: string) => void;
   onToggleMany: (productIds: string[], next: boolean) => void;
-  ignoreSaleTitle?: string;
+  excludeId?: string;
 }) {
   const [keyword, setKeyword] = useState('');
   const [submitted, setSubmitted] = useState('');
@@ -54,7 +54,7 @@ export function TimeSaleProductPicker({
     page,
     pageSize: PAGE_SIZE,
   });
-  const { data: variantMap } = useTimeSaleVariantMap();
+  const { data: variantMap } = useTimeSaleVariantMap(excludeId);
 
   const products = data?.products ?? [];
   const total = data?.count ?? 0;
@@ -62,8 +62,7 @@ export function TimeSaleProductPicker({
   const selectedIds = new Set(selectedIdList);
 
   const blockingSaleOf = (product: MedusaProductItem) => {
-    const title = runningSaleOf(product, variantMap);
-    return title && title !== ignoreSaleTitle ? title : null;
+    return runningSaleOf(product, variantMap);
   };
 
   // 이미 다른 세일에 걸린 상품은 고를 수 없다. 같은 품목이 두 세일에 걸리면 Medusa 가 한쪽

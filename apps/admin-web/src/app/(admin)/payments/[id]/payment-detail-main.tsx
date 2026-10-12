@@ -2,7 +2,6 @@
 
 import { Suspense, useState } from 'react';
 import { toast } from 'sonner';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { Copy } from '@/components/admin-ui-experimental/common/copy/copy';
@@ -16,11 +15,10 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import {
+  useConfirmRefund,
   usePaymentIntentDetail,
   useStateTransitions,
 } from '@/lib/services/wallet';
-import { walletQueryKeys } from '@/lib/services/wallet/query-keys';
-import { walletApi } from '@/lib/api/domains/wallet';
 import { StatusBadgeCell } from '@/components/table/table-cells/wallet/status-badge-cell';
 import { AmountCell } from '@/components/table/table-cells/wallet/amount-cell';
 import Link from 'next/link';
@@ -327,22 +325,21 @@ function RefundConfirmButton({
   currency: string;
 }) {
   const [open, setOpen] = useState(false);
-  const queryClient = useQueryClient();
-  const mutation = useMutation({
-    mutationFn: () => walletApi.confirmRefund(refundId),
-    onSuccess: () => {
-      toast.success('환불 완료 처리되었습니다.');
-      setOpen(false);
-      queryClient.invalidateQueries({
-        queryKey: walletQueryKeys.intentDetail(intentId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: walletQueryKeys.stateTransitions(intentId),
-      });
-      queryClient.invalidateQueries({ queryKey: walletQueryKeys.refunds() });
-    },
-    onError: () => toast.error('완료 처리 중 오류가 발생했습니다.'),
-  });
+  const confirm = useConfirmRefund();
+  const mutation = {
+    isPending: confirm.isPending,
+    mutate: () =>
+      confirm.mutate(
+        { refundId, intentId },
+        {
+          onSuccess: () => {
+            toast.success('환불 완료 처리되었습니다.');
+            setOpen(false);
+          },
+          onError: (e) => toast.error(e instanceof Error && e.message ? e.message : '완료 처리 중 오류가 발생했습니다.'),
+        },
+      ),
+  };
 
   return (
     <>

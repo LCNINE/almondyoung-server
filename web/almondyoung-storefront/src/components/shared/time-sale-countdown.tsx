@@ -17,25 +17,16 @@ type Props = {
   /** `router.refresh()` 전에 await 할 작업. 카트·체크아웃은 여기서 가격 재계산을 건다. */
   onEnd?: () => void | Promise<void>
   compact?: boolean
-  /** 24시간 이하로 남았을 때만 그린다. 그 위로는 아무것도 렌더하지 않는다. */
-  clockOnly?: boolean
   className?: string
 }
 
-export function TimeSaleCountdown({
-  endsAt,
-  refreshOnEnd,
-  onEnd,
-  compact,
-  clockOnly,
-  className,
-}: Props) {
-  const router = useRouter()
-  // 종료 처리는 한 번만. onEnd 가 매 렌더 새 함수여도 effect 가 되돌지 않게 막는다.
-  const endedRef = useRef(false)
-  const t = useTranslations("home.timeSale")
-  // 서버 렌더에서는 아무것도 그리지 않는다 — 서버 시각으로 그린 뒤 브라우저 시각으로 다시 그리면
-  // 하이드레이션이 어긋난다.
+/**
+ * 남은 시간 계산에 쓸 현재 시각. 서버 렌더와 첫 페인트에서는 null 이다 — 서버 시각으로 그린 뒤
+ * 브라우저 시각으로 다시 그리면 하이드레이션이 어긋난다.
+ *
+ * 며칠 남은 동안은 임계값까지 자고(최대 1시간), 24시간 안으로 들어오면 1초마다 깬다.
+ */
+export function useCountdownNow(endsAt: string): number | null {
   const [now, setNow] = useState<number | null>(null)
 
   useEffect(() => {
@@ -44,38 +35,52 @@ export function TimeSaleCountdown({
 
   useEffect(() => {
     if (now === null) return
-
     const delay = nextTickDelayMs(endsAt, now)
-    if (delay <= 0) {
-      if (refreshOnEnd && !endedRef.current) {
-        endedRef.current = true
-        void (async () => {
-          await onEnd?.()
-          router.refresh()
-        })()
-      }
-      return
-    }
-
+    if (delay <= 0) return
     const timer = setTimeout(() => setNow(Date.now()), delay)
     return () => clearTimeout(timer)
+  }, [endsAt, now])
+
+  return now
+}
+
+export function TimeSaleCountdown({
+  endsAt,
+  refreshOnEnd,
+  onEnd,
+  compact,
+  className,
+}: Props) {
+  const router = useRouter()
+  // 종료 처리는 한 번만. onEnd 가 매 렌더 새 함수여도 effect 가 되돌지 않게 막는다.
+  const endedRef = useRef(false)
+  const t = useTranslations("home.timeSale")
+  const now = useCountdownNow(endsAt)
+
+  useEffect(() => {
+    if (now === null || !refreshOnEnd || endedRef.current) return
+    if (nextTickDelayMs(endsAt, now) > 0) return
+    endedRef.current = true
+    void (async () => {
+      await onEnd?.()
+      router.refresh()
+    })()
   }, [endsAt, now, refreshOnEnd, onEnd, router])
 
   if (now === null) return null
 
   const view = resolveCountdown(endsAt, now)
-  if (clockOnly && view.kind !== "clock") return null
   if (view.kind === "ended") return null
 
   if (compact) {
-    return <span className={className}>{formatCountdown(view)}</span>
+    return <span className={className}>{formatCountdown(view, t("dayUnit"))}</span>
   }
 
   return (
     <span className={className}>
       <Clock className="inline-block h-[1em] w-[1em] align-[-0.1em]" aria-hidden />
       <span className="ml-1 tabular-nums">
-        {t("endsIn", { remaining: formatCountdown(view) })}
+        {t("endsIn", { remaining: formatCountdown(view, t("dayUnit")) })}
       </span>
     </span>
   )

@@ -5,8 +5,8 @@ import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { SmsCampaignPreview, SmsGateCategory } from '@/lib/api/domains/sms-gate';
-import { composeSmsBody } from '../../lib/sms-body';
-import { isLongSms, smsByteLength } from '../../lib/sms-bytes';
+import { NAME_VARIABLE, composeSmsBody } from '../../lib/sms-body';
+import { SmsSegmentHint } from '../../components/sms-segment-hint';
 
 const formatInterval = (seconds: number) => {
   const minutes = Math.floor(seconds / 60);
@@ -45,6 +45,7 @@ export function BulkConfirmDialog({
 }) {
   const isMarketing = category === 'MARKETING';
   const finalBody = composeSmsBody(category, content);
+  const longestName = finalBody.includes(NAME_VARIABLE) ? preview?.longestName : null;
 
   return (
     <Dialog open={preview !== null} onOpenChange={(open) => !open && onCancel()}>
@@ -100,9 +101,11 @@ export function BulkConfirmDialog({
             <Row label="최종 본문">
               <p className="rounded-md bg-neutral-50 p-2 whitespace-pre-wrap">{finalBody}</p>
               <p className="text-muted-foreground pt-1 text-xs">
-                {smsByteLength(finalBody)} byte
-                {isLongSms(finalBody) ? ' · 장문(여러 통으로 나뉘어 발송)' : ''} · {'{{이름}}'} 은 받는 회원
-                이름으로 바뀝니다
+                {longestName && `이름이 가장 긴 받는 사람(${longestName}) 기준 `}
+                <SmsSegmentHint
+                  body={longestName ? finalBody.replaceAll(NAME_VARIABLE, longestName) : finalBody}
+                  trackedLinks
+                />
               </p>
             </Row>
           </div>

@@ -8,6 +8,10 @@
  * 아직 들어오지 않은 것: 멤버십 전용 쿠폰 사용 · 멤버십 전용 상품 구매. 이용 기록이 쇼핑몰 엔진에만
  * 있어 이 서비스로 넘어오지 않는다. 그 전까지 이 둘만 쓴 고객은 «미사용»으로 판정된다(고객에게 유리한 쪽).
  */
+/** `membership_benefit_usages.kind` 에 들어갈 수 있는 값. 쇼핑 주문 밖의 혜택만 여기로 온다. */
+export const BENEFIT_USAGE_KINDS = ['BEAUTYTOP_PREMIUM'] as const;
+export type BenefitUsageKind = (typeof BENEFIT_USAGE_KINDS)[number];
+
 export interface MembershipBenefitUsage {
   /** 받은 멤버십 할인 합계(멤버십가·멤버십 타임세일, 취소된 주문 제외) */
   totalDiscountAmount: number;
@@ -15,10 +19,17 @@ export interface MembershipBenefitUsage {
   orderCount: number;
   /** 멤버십 전용 웰컴딜을 샀는가(취소되면 기록이 지워진다). */
   welcomeDeal: boolean;
+  /** 뷰티탑 프리미엄(내 샵·경쟁 샵 자료)을 열었는가. */
+  beautytopPremium: boolean;
 }
 
-export const NO_BENEFIT_USAGE: MembershipBenefitUsage = { totalDiscountAmount: 0, orderCount: 0, welcomeDeal: false };
+export const NO_BENEFIT_USAGE: MembershipBenefitUsage = {
+  totalDiscountAmount: 0,
+  orderCount: 0,
+  welcomeDeal: false,
+  beautytopPremium: false,
+};
 
 export function hasUsedMembershipBenefit(usage: MembershipBenefitUsage): boolean {
-  return usage.totalDiscountAmount > 0 || usage.welcomeDeal;
+  return usage.totalDiscountAmount > 0 || usage.welcomeDeal || usage.beautytopPremium;
 }

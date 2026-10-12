@@ -75,6 +75,8 @@ export interface RefundEventInput {
   status: RefundStatus;
   amount: number;
   currency: string;
+  /** 환불을 요청한 쪽이 남긴 사유 코드. Medusa 는 'MEDUSA_REFUND' 로 자기가 낸 환불을 가린다(ADR-0042). */
+  reasonCode?: string | null;
   occurredAt?: string;
   extra?: Record<string, unknown>;
 }
@@ -88,6 +90,7 @@ export function buildRefundEventPayload(input: RefundEventInput): GatewayRefundE
     status: input.status,
     amount: input.amount,
     currency: input.currency,
+    ...(input.reasonCode ? { reasonCode: input.reasonCode } : {}),
     ...(input.extra ?? {}),
     occurredAt: normalizeOccurredAt(input.occurredAt),
   };

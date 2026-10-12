@@ -27,10 +27,13 @@ import {
   CancelReasonForm,
   type CancelReasonCode,
 } from "@/components/orders/cancel-reason-form"
-import type { StoreOrderActionsResponse, StoreRefundStatus, RefundSummary } from "@/lib/api/orders/store-orders"
+import type { StoreOrderActionsResponse, RefundSummary } from "@/lib/api/orders/store-orders"
 import type { IssuedCashReceiptDto } from "@/lib/types/dto/wallet"
 import { CashReceiptInfo } from "./cash-receipt-info"
 import { cancelOrderByMedusaId } from "@/lib/api/orders/store-orders"
+import { paymentStatusForDisplay, showTrackLink } from "@/lib/orders/core-order-view"
+import { refundTone, resolveRefundStatus } from "@/lib/orders/refund-status"
+import { REFUND_TONE_TEXT_CLASS } from "@/components/orders/refund-status-style"
 import { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
 import { useState, useTransition } from "react"
@@ -110,13 +113,13 @@ export const OrderDetailsDesktop = ({
   const canTrack = availableActions.includes("track")
   const canReturn = availableActions.includes("return")
   const canExchange = availableActions.includes("exchange")
-  // 배송조회는 배송이 필요한 주문에서만(디지털 단독 주문은 숨김).
-  const showTrack =
-    requiresShipping &&
-    (canTrack ||
-      order.fulfillment_status === "shipped" ||
-      order.fulfillment_status === "fulfilled" ||
-      order.fulfillment_status === "partially_fulfilled")
+  // 배송조회는 배송이 필요한 주문에서만(디지털 단독 주문은 숨김). core 가 취소를 확정한 주문은 Medusa 이행만으로 띄우지 않는다
+  const showTrack = showTrackLink({
+    requiresShipping,
+    canTrack,
+    medusaFulfillmentStatus: order.fulfillment_status,
+    actions: coreActions,
+  })
   const cancelUnavailableReason = coreActions?.cancelUnavailableReason
 
   // 입금확인 완료된 무통장 주문은 셀프 취소 시 자동환불이 되지 않아 관리자가 인지하기 어렵다.
@@ -165,11 +168,12 @@ export const OrderDetailsDesktop = ({
       )
 
   const paymentStatusLabel = tPaymentStatus(
-    getPaymentStatusI18nKey(order.payment_status ?? "")
+    getPaymentStatusI18nKey(paymentStatusForDisplay(order.payment_status ?? "", coreActions))
   )
 
   const refundSummary: RefundSummary | undefined = coreActions?.refundSummary
-  const refundStatus: StoreRefundStatus = refundSummary?.status ?? coreActions?.refundStatus ?? "none"
+  const refundStatus = resolveRefundStatus(coreActions)
+  const refundStatusTone = refundTone(refundStatus)
   const refundStatusBadgeLabel = tRefundInfo(`statusLabels.${refundStatus}`)
   const refundGuidance = tRefundInfo(`guidance.${refundStatus}`)
   const showRefundSection = refundStatus !== "none"
@@ -188,18 +192,9 @@ export const OrderDetailsDesktop = ({
           toast.error(result.error)
           return
         }
-        const message =
-          result.actions.refundStatus === "succeeded"
-            ? tActions("cancelSuccess")
-            : result.actions.refundStatus === "pending"
-              ? tActions("cancelSuccessPending")
-              : result.actions.refundStatus === "failed"
-                ? tActions("cancelSuccessFailed")
-                : result.actions.refundStatus === "manual_pending"
-                  ? tActions("cancelSuccessManual")
-                  : tActions("cancelOrder")
-        toast.success(message)
         setShowCancelDialog(false)
+        // 취소는 요청 순간 확정된다(#1016 36번 재설계 §8.2) — 응답이 곧 «취소 완료»다. 환불은 환불 배지가 말한다
+        toast.success(tActions("cancelCompleted"))
         router.refresh()
       } catch (err: unknown) {
         // 인증 실패는 error.tsx 가 토큰 복구를 처리하도록 전파
@@ -360,15 +355,7 @@ export const OrderDetailsDesktop = ({
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-gray-500">{tRefundInfo("statusLabel")}:</span>
                     <span
-                      className={`text-xs font-medium ${
-                        refundStatus === "succeeded"
-                          ? "text-green-600"
-                          : refundStatus === "pending"
-                            ? "text-amber-600"
-                            : refundStatus === "manual_pending"
-                              ? "text-amber-600"
-                              : "text-red-500"
-                      }`}
+                      className={`text-xs font-medium ${refundStatusTone ? REFUND_TONE_TEXT_CLASS[refundStatusTone] : ""}`}
                     >
                       {refundStatusBadgeLabel}
                     </span>

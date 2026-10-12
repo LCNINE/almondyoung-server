@@ -15,6 +15,7 @@ describe('STREAM_REGISTRY', () => {
   const EXPECTED_TOPICS = [
     'carts.events.v1',
     'channel-adapter.events.v1',
+    'channel-orders.commands.v1',
     'core.orders.events.v1',
     'fulfillments.events.v1',
     'fulfillments.events.v2',

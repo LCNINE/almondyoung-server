@@ -13,6 +13,7 @@ import { locationOptimizationClient } from './location-optimization.client';
 import { matchingClient } from '../matching/matching.client';
 import { waybillsClient } from './waybills.client';
 import { salesOrderAmendmentsClient } from './sales-order-amendments.client';
+import { orderProgressClient } from './order-progress.client';
 
 export const orders = {
   salesOrders,
@@ -27,6 +28,7 @@ export const orders = {
   matching: matchingClient,
   waybills: waybillsClient,
   amendments: salesOrderAmendmentsClient,
+  progress: orderProgressClient,
 };
 
 export { salesOrders } from './sales-orders.client';
@@ -40,3 +42,4 @@ export { consolidationClient } from './consolidation.client';
 export { locationOptimizationClient } from './location-optimization.client';
 export { waybillsClient } from './waybills.client';
 export { salesOrderAmendmentsClient } from './sales-order-amendments.client';
+export { orderProgressClient } from './order-progress.client';

@@ -757,6 +757,48 @@
       "when": 1791199337847,
       "tag": "20261005112217_add-amendment-origin-status",
       "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1791227762569,
+      "tag": "20261005191602_add-amendment-dismiss-resync",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1791264113586,
+      "tag": "20261006052153_add-order-progress",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1791334622272,
+      "tag": "20261007005702_add-channel-cancel-request",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1791404607991,
+      "tag": "20261007202327_add-order-reconcile-state",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1791570862865,
+      "tag": "20261009183422_add-shipment-reconcile-state",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1791750341596,
+      "tag": "20261011202541_add-settling-cancel-request-status",
+      "breakpoints": true
     }
   ]
 }

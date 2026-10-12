@@ -47,6 +47,16 @@ ALMOND_PAYMENT_ENDPOINT=http://localhost:3000/api/v1
 - `GET /payment/status/{paymentEventId}` - 결제 상태 조회
 - `POST /payment/refund` - 환불 처리
 
+### refundPayment 규약 (ADR-0042)
+- **금액**: Medusa 는 `raw_amount` 를 BigNumber(`{ value, precision }`)로 넘긴다. `Number()` 는 NaN 이라 `new BigNumber(input.amount).numeric` 으로 바꾸고, 양의 정수가 아니면 wallet 을 부르기 전에 throw 한다(wallet 은 `@IsInt @Min(1)`).
+- **Idempotency-Key**: `medusa-refund:<context.idempotency_key>`(= Medusa refund 행 id). 한계 — provider 호출이 실패하면 Medusa 가 refund 행을 지우므로, wallet 은 환불했는데 응답만 유실된 경우 재시도는 새 키로 나간다. 정산 라우트는 그 전에 **장부 맞추기**(아래)로 유실분을 장부에 넣어 막는다. 그 밖의 경로(대시보드 환불)의 방어선은 여전히 wallet 환불가능액 검사다.
+- **`walletRefundIds`**: 결제 `data` 에 wallet 이 돌려준 환불 id 를 쌓는다. wallet 환불 사실이 돌아왔을 때 «Medusa 가 낸 것»을 가리는 근거다(`reasonCode: 'MEDUSA_REFUND'` 와 함께).
+- **`externalRefund` 표식**: `{ walletRefundId, amount }` 가 있고 금액이 같으면 wallet 을 부르지 않고(Medusa 밖에서 이미 끝난 환불을 장부에 넣는 중) 표식을 지운다. 지울 땐 키를 빼지 말고 `null` 로 쓴다 — Medusa 는 JSON 컬럼을 병합 갱신한다.
+- **결제 잠금**: provider 가 잡는 게 아니라 **부르는 쪽**이 `paymentRefundLockKey(paymentId)` 를 잡고 환불·표식 쓰기를 한다 — wallet 환불 투영(`api/hooks/payment-events`)·장부 맞추기·정산 라우트(부분취소·채널 전체취소)가 같은 키를 쓴다. 주문 잠금(`orderCancelLockKey`) 안에서 결제 잠금을 잡는다 — 순서는 늘 주문 → 결제. 정의는 `refund-data.ts`.
+- **wallet 오류 번역(#1016 36번 재설계 §6.4)**: `walletFetch` 는 `WalletHttpError { status, walletCode, walletMessage, retryable? }` 를 던진다(속성을 `code` 로 두지 않는다 — `formatException` 이 Postgres 코드로 읽는다). 4xx 본문이나 200 의 FAILED 행이 `retryable: false` 면 `MedusaError(NOT_ALLOWED, <wallet 문장>, 'wallet_refund_refused:<code>')`, 그 밖은 일시(그대로 던짐). 분류의 정본은 wallet 이다(`apps/wallet/src/refunds/refund-refusal.ts`).
+- **`manualRefund` 표식**: `{ requestId, amount }` 가 있고 금액이 같으면 wallet 에 `execution: 'MANUAL'`(외부 결제 몫은 송금 대기 PENDING)로 요청하고 표식을 `null` 로 지운다. 붙이고·실패 때 지우는 것은 정산(`workflows/orders/settlement/issue-payment-refund.ts`)이다. 정산은 매 시도의 첫 쓰기에서 표식 셋을 이번 시도의 값으로 맞춘다(`manualRefund` 는 수동이면 이번 값·자동이면 `null`, `externalRefund` 는 `null`) — 앞 시도가 죽으며 남긴 표식이 이번 환불을 MANUAL 로 바꾸거나 wallet 을 건너뛰게 하지 않는다.
+- **`refundAttempt` 표식과 장부 맞추기**: 정산은 환불 직전 `{ note, amount }` 시도 표식을 쓰고 성공하면 지운다. 정산 직전 장부 맞추기(`workflows/orders/settlement/wallet-refund-ledger.ts`)가 wallet 환불 목록(`GET /v1/payment-intents/:id/refunds`)에서 장부에 없는 SUCCEEDED 와 수동(`execution: 'MANUAL'`) PENDING 을 `externalRefund` 투영으로 넣는다 — 장부에 없는 MEDUSA_REFUND(응답 유실)는 시도 표식이 남아 있으면 그 메모로, 아니면 `wallet:<id>` 로. 장부에 없는 자동 PENDING 은 PG 결과가 아직이라(wallet 은 PG 호출 «전»에 행을 커밋한다) 넣지 않고 정산을 일시 실패로 멈춘다 — 넣으면 PG 가 실패해도 «환불 완료»로 취소된다(D8). 웹훅 투영은 MEDUSA_REFUND 를 여전히 넣지 않는다(provider 가 id 를 쓰기 전에 사실이 오는 정상 경합 때문).
+
 ### 지원하는 결제 방식
 1. **BNPL**: Buy Now Pay Later
 2. **REWARD_POINT**: 포인트 사용

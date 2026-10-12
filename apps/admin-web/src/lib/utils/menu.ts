@@ -152,6 +152,11 @@ const allMenus: MainMenu[] = [
         path: '/order/history',
       },
       {
+        id: 'stall-board',
+        title: '정체 보드',
+        path: '/order/stall-board',
+      },
+      {
         id: 'shipment',
         title: '출고',
         children: [

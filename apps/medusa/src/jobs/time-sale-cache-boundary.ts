@@ -1,5 +1,5 @@
-import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import type { MedusaContainer } from '@medusajs/framework/types';
+import { revalidateStorefront } from '../utils/storefront-revalidate';
 import { listProductsInPriceLists, listTimeSalesCrossingBoundary } from '../utils/time-sale';
 
 // 크론 주기(60초)보다 넉넉하게 잡는다. 실행이 밀려 경계를 건너뛰면 종료된 세일가가 캐시에 그대로
@@ -21,8 +21,6 @@ const START_PREWARM_SECONDS = 120;
  * 시작 지연은 손님에게 유리하지만 종료 지연은 CS 라, 양쪽 경계를 모두 친다.
  */
 export default async function timeSaleCacheBoundaryJob(container: MedusaContainer) {
-  const logger = container.resolve(ContainerRegistrationKeys.LOGGER);
-
   const crossed = await listTimeSalesCrossingBoundary(
     container,
     BOUNDARY_WINDOW_SECONDS,
@@ -30,55 +28,21 @@ export default async function timeSaleCacheBoundaryJob(container: MedusaContaine
   );
   if (crossed.length === 0) return;
 
-  const url = process.env.STOREFRONT_REVALIDATE_URL;
-  const secret = process.env.STOREFRONT_REVALIDATE_SECRET;
-  if (!url || !secret) {
-    logger.warn(
-      '[time-sale] STOREFRONT_REVALIDATE_URL/SECRET 미설정 — 세일 경계를 지났지만 캐시를 비우지 못했다'
-    );
-    return;
-  }
-
   const products = await listProductsInPriceLists(
     container,
     crossed.map((list) => list.id)
   );
-  // 한 상품이 여러 리스트에 걸려 있으면 행도 여럿이라 중복을 걷는다 (무효화는 멱등이지만 태그가 불어난다).
-  const handles = [...new Set(products.map((product) => product.handle).filter(Boolean))];
 
-  // 라우트는 `handle` 이 실렸을 때만 전역 목록 태그와 카테고리 경로를 비운다. 그건 한 번이면 족하므로
-  // 첫 상품만 handle 로 싣고 나머지는 태그로 정확히 지운다 (channel-adapter 의 배치 무효화와 같은 형태).
-  const [first, ...rest] = handles;
-  const body = {
-    ...(first ? { handle: first } : {}),
-    tags: ['time-sale', ...rest.map((handle) => `product-${handle}`)],
-  };
+  // 시작 시각이 아직 미래면 예열이다 — 종료 무효화와 구분돼야 "종료됐는데 세일가가 남았다" 를 볼 때
+  // 어느 쪽이 안 돌았는지 로그로 가른다.
+  const now = Date.now();
+  const label = (list: { title: string; startsAt: string | null }) =>
+    list.startsAt && Date.parse(list.startsAt) > now ? `${list.title}(시작예열)` : `${list.title}(종료)`;
 
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-revalidate-secret': secret },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      logger.error(`[time-sale] 캐시 무효화 실패 status=${response.status}`);
-      return;
-    }
-
-    // 시작 시각이 아직 미래면 예열이다 — 종료 무효화와 구분돼야 "종료됐는데 세일가가 남았다" 를 볼 때
-    // 어느 쪽이 안 돌았는지 로그로 가른다.
-    const now = Date.now();
-    const label = (list: { title: string; startsAt: string | null }) =>
-      list.startsAt && Date.parse(list.startsAt) > now ? `${list.title}(시작예열)` : `${list.title}(종료)`;
-
-    logger.info(
-      `[time-sale] 경계 ${crossed.length}건 → 상품 ${handles.length}개 캐시 무효화` +
-        ` (${crossed.map(label).join(', ')})`
-    );
-  } catch (error) {
-    logger.error(`[time-sale] 캐시 무효화 호출 실패: ${(error as Error).message}`);
-  }
+  await revalidateStorefront(container, {
+    productHandles: products.map((product) => product.handle),
+    logLabel: `경계 ${crossed.length}건: ${crossed.map(label).join(', ')}`,
+  });
 }
 
 export const config = {

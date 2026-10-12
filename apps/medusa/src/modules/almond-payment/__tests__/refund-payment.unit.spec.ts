@@ -1,0 +1,260 @@
+import { MedusaError } from '@medusajs/framework/utils';
+import { WalletHttpError } from '../wallet-refund-refusal';
+import { AlmondPaymentProviderService } from '../service';
+
+const makeLogger = () => ({ error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() });
+const makeService = (logger = makeLogger()) =>
+  new AlmondPaymentProviderService({ logger }, { walletBaseUrl: 'http://wallet.test', walletApiKey: 'k' } as any);
+const ok = (id: string, amount: number, status = 'SUCCEEDED') => ({ id, amount, status, reasonCode: 'MEDUSA_REFUND', reasonMessage: null });
+
+describe('almond-payment refundPayment', () => {
+  it('Medusa 의 환불 id 로 결정적 Idempotency-Key 를 보내고, wallet 환불 id 를 data 에 남긴다', async () => {
+    const svc = makeService();
+    const spy = jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({ intentId: 'i1', refunds: [ok('wr1', 3000)] });
+
+    const out = await svc.refundPayment({ data: { intentId: 'i1' }, amount: 3000, context: { idempotency_key: 'ref_m1' } } as any);
+
+    expect(spy).toHaveBeenCalledWith(
+      '/v1/payment-intents/i1/refund',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'medusa-refund:ref_m1' },
+        body: JSON.stringify({ amount: 3000, reasonCode: 'MEDUSA_REFUND' }),
+      }),
+    );
+    expect(out.data).toEqual({ intentId: 'i1', walletRefundIds: ['wr1'] });
+  });
+
+  it('외부 환불 표식이 있고 금액이 같으면 wallet 을 부르지 않고 표식을 지우며 그 id 를 기록한다', async () => {
+    const svc = makeService();
+    const spy = jest.spyOn(svc as any, 'walletFetch');
+
+    const out = await svc.refundPayment({
+      data: { intentId: 'i1', externalRefund: { walletRefundId: 'wr7', amount: 5000 } },
+      amount: 5000,
+      context: { idempotency_key: 'ref_m2' },
+    } as any);
+
+    expect(spy).not.toHaveBeenCalled();
+    // 표식은 null 로 쓴다: Medusa 가 JSON 컬럼을 병합 갱신하므로 키를 빼면 남는다
+    expect(out.data).toEqual({ intentId: 'i1', externalRefund: null, walletRefundIds: ['wr7'] });
+  });
+
+  it('raw amount 객체여도 변환된 금액으로 표식과 비교한다', async () => {
+    const svc = makeService();
+    const spy = jest.spyOn(svc as any, 'walletFetch');
+    const out = await svc.refundPayment({
+      data: { intentId: 'i1', externalRefund: { walletRefundId: 'wr7', amount: 5000 } },
+      amount: { value: '5000', precision: 20 },
+    } as any);
+    expect(spy).not.toHaveBeenCalled();
+    // 표식은 null 로 쓴다: Medusa 가 JSON 컬럼을 병합 갱신하므로 키를 빼면 남는다
+    expect(out.data).toEqual({ intentId: 'i1', externalRefund: null, walletRefundIds: ['wr7'] });
+  });
+
+  it('표식 금액과 환불 금액이 다르면 표식을 무시하고 wallet 을 부른다(다른 환불이 끼어든 것)', async () => {
+    const svc = makeService();
+    const spy = jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({ refunds: [ok('wr2', 1000)] });
+    await svc.refundPayment({
+      data: { intentId: 'i1', externalRefund: { walletRefundId: 'wr7', amount: 5000 } },
+      amount: 1000,
+      context: { idempotency_key: 'ref_m3' },
+    } as any);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('idempotency_key 가 없으면 지금처럼 키를 만들게 둔다', async () => {
+    const svc = makeService();
+    const spy = jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({ refunds: [ok('wr3', 1000)] });
+    await svc.refundPayment({ data: { intentId: 'i1' }, amount: 1000 } as any);
+    expect((spy.mock.calls[0][1] as any).headers).toBeUndefined();
+  });
+
+  /**
+   * wallet 은 PG 가 거절한 환불도 FAILED 행으로 200 에 담아 돌려준다(RefundsService.create 가 예외를 삼킨다).
+   * 200 만 보고 성공으로 치면 Medusa 는 환불·크레딧 라인을 기록하고 부분취소는 refunded 가 되는데 돈은 안 나갔다.
+   */
+  describe('wallet 이 돌려준 환불 행 판정', () => {
+    const refund = (svc: AlmondPaymentProviderService, amount = 3000) =>
+      svc.refundPayment({ data: { intentId: 'i1' }, amount, context: { idempotency_key: 'ref_m9' } } as any);
+
+    it('FAILED 행이 있으면 사유를 담아 던진다', async () => {
+      const svc = makeService();
+      jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({
+        intentId: 'i1',
+        refunds: [{ id: 'wr1', amount: 3000, status: 'FAILED', reasonCode: 'MEDUSA_REFUND', reasonMessage: '카드사 거절' }],
+      });
+      await expect(refund(svc)).rejects.toThrow(/FAILED.*MEDUSA_REFUND.*카드사 거절/);
+    });
+
+    it('돌려받은 성공·대기 합이 요청보다 적으면 던진다', async () => {
+      const svc = makeService();
+      jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({ intentId: 'i1', refunds: [ok('wr1', 2000)] });
+      await expect(refund(svc)).rejects.toThrow(/2000.*3000|3000.*2000/);
+    });
+
+    it('환불 행이 하나도 없으면 던진다', async () => {
+      const svc = makeService();
+      jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({ intentId: 'i1', refunds: [] });
+      await expect(refund(svc)).rejects.toThrow(/wallet 환불/);
+    });
+
+    it('PENDING(무통장 송금 대기)은 성공으로 센다 — wallet 이 송금을 이어서 추적한다', async () => {
+      const svc = makeService();
+      jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({ intentId: 'i1', refunds: [ok('wr1', 1000), ok('wr2', 2000, 'PENDING')] });
+      const out = await refund(svc);
+      expect(out.data).toEqual({ intentId: 'i1', walletRefundIds: ['wr1', 'wr2'] });
+    });
+
+    it('일부 결제분은 성공하고 하나가 실패하면 던지고, 성공한 wallet 환불 id 를 error 로그에 남긴다', async () => {
+      const logger = makeLogger();
+      const svc = makeService(logger);
+      jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({
+        intentId: 'i1',
+        refunds: [ok('wr1', 1000), { id: 'wr2', amount: 2000, status: 'FAILED', reasonCode: 'MEDUSA_REFUND', reasonMessage: 'PG 오류' }],
+      });
+      await expect(refund(svc)).rejects.toThrow(/PG 오류/);
+      expect(logger.error).toHaveBeenCalledTimes(1);
+      const line = logger.error.mock.calls[0][0] as string;
+      expect(line).toContain('i1');
+      expect(line).toContain('wr1');
+      expect(line).toContain('1000');
+      expect(line).not.toContain('wr2');
+    });
+  });
+  describe('wallet 오류 번역 (#1016 36번 재설계 §6.4)', () => {
+    const refund = (svc: AlmondPaymentProviderService) =>
+      svc.refundPayment({ data: { intentId: 'i1' }, amount: 3000, context: { idempotency_key: 'ref_r1' } } as any);
+
+    it('4xx retryable:false 는 NOT_ALLOWED + 표지, 문장은 wallet 원문', async () => {
+      const svc = makeService();
+      jest.spyOn(svc as any, 'walletFetch').mockRejectedValue(new WalletHttpError(400, 'REFUND_NOT_AUTOMATABLE', '자동 환불 불가', false));
+      await expect(refund(svc)).rejects.toMatchObject({
+        type: 'not_allowed',
+        code: 'wallet_refund_refused:REFUND_NOT_AUTOMATABLE',
+        message: '자동 환불 불가',
+      });
+    });
+
+    it('retryable 이 true·없음이거나 네트워크 오류면 원래 오류를 그대로 던진다(일시)', async () => {
+      const svc = makeService();
+      const exceeds = new WalletHttpError(400, 'REFUND_AMOUNT_EXCEEDS_TOTAL', 'm', true);
+      const bare = new WalletHttpError(400, 'Bad Request', 'm');
+      const net = new TypeError('fetch failed');
+      jest.spyOn(svc as any, 'walletFetch').mockRejectedValueOnce(exceeds).mockRejectedValueOnce(bare).mockRejectedValueOnce(net);
+      await expect(refund(svc)).rejects.toBe(exceeds);
+      await expect(refund(svc)).rejects.toBe(bare);
+      await expect(refund(svc)).rejects.toBe(net);
+    });
+
+    it('환불 요청은 결제 잠금 만료 전에 끊는다 — 시간 초과는 거절이 아니라 일시 오류로 그대로 던진다', async () => {
+      const svc = makeService();
+      const originalFetch = global.fetch;
+      const timeout = new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+      global.fetch = jest.fn().mockRejectedValue(timeout) as any;
+      try {
+        const err = await refund(svc).catch((e: unknown) => e);
+        expect(err).toBe(timeout);
+        expect(MedusaError.isMedusaError(err)).toBe(false);
+        const [url, init] = (global.fetch as jest.Mock).mock.calls[0] as [string, RequestInit];
+        expect(url).toBe('http://wallet.test/v1/payment-intents/i1/refund');
+        expect(init.signal).toBeInstanceOf(AbortSignal);
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it('200 의 FAILED 행이 retryable:false 면 그 failureCode·토스 문장으로 표지', async () => {
+      const svc = makeService();
+      jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({
+        refunds: [
+          {
+            id: 'wr1',
+            amount: 3000,
+            status: 'FAILED',
+            reasonCode: 'MEDUSA_REFUND',
+            reasonMessage: '취소 할 수 없는 금액 입니다.',
+            failureCode: 'NOT_CANCELABLE_AMOUNT',
+            retryable: false,
+          },
+        ],
+      });
+      await expect(refund(svc)).rejects.toMatchObject({
+        type: 'not_allowed',
+        code: 'wallet_refund_refused:NOT_CANCELABLE_AMOUNT',
+        message: '취소 할 수 없는 금액 입니다.',
+      });
+    });
+
+    it('200 의 FAILED 행이 분류 전(retryable null)이면 일반 오류 — 일시', async () => {
+      const svc = makeService();
+      jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({
+        refunds: [{ id: 'wr1', amount: 3000, status: 'FAILED', reasonCode: 'MEDUSA_REFUND', reasonMessage: 'x', failureCode: null, retryable: null }],
+      });
+      const err = await refund(svc).catch((e: unknown) => e);
+      expect(MedusaError.isMedusaError(err)).toBe(false);
+      expect((err as Error).message).toMatch(/FAILED/);
+    });
+  });
+
+  it('walletFetch 는 wallet 오류 본문을 WalletHttpError 로 던진다 — retryable 포함', async () => {
+    const svc = makeService();
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: 'REFUND_NOT_AUTOMATABLE', message: 'manual', retryable: false }),
+    }) as any;
+    try {
+      await expect((svc as any).walletFetch('/v1/payment-intents/i1/refund', { method: 'POST' })).rejects.toMatchObject({
+        name: 'WalletHttpError',
+        status: 400,
+        walletCode: 'REFUND_NOT_AUTOMATABLE',
+        walletMessage: 'manual',
+        retryable: false,
+        message: 'REFUND_NOT_AUTOMATABLE: manual',
+      });
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  describe('수동 환불 표식 (#1016 36번 재설계 §6.3)', () => {
+    it('금액이 같으면 execution MANUAL 로 요청하고 표식을 null 로 지운다', async () => {
+      const svc = makeService();
+      const spy = jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({ refunds: [ok('wr1', 3000, 'PENDING')] });
+      const out = await svc.refundPayment({
+        data: { intentId: 'i1', manualRefund: { requestId: 'channel-cancel:o1', amount: 3000 } },
+        amount: 3000,
+        context: { idempotency_key: 'ref_m9' },
+      } as any);
+      expect(spy).toHaveBeenCalledWith(
+        '/v1/payment-intents/i1/refund',
+        expect.objectContaining({ body: JSON.stringify({ amount: 3000, reasonCode: 'MEDUSA_REFUND', execution: 'MANUAL' }) }),
+      );
+      expect(out.data).toEqual({ intentId: 'i1', manualRefund: null, walletRefundIds: ['wr1'] });
+    });
+
+    it('금액이 다르면 표식을 무시하고 자동으로 요청한다 — 다른 환불이 끼어든 것, 표식은 붙인 쪽이 지운다', async () => {
+      const svc = makeService();
+      const marker = { requestId: 'channel-cancel:o1', amount: 5000 };
+      const spy = jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({ refunds: [ok('wr2', 1000)] });
+      const out = await svc.refundPayment({ data: { intentId: 'i1', manualRefund: marker }, amount: 1000 } as any);
+      expect(spy).toHaveBeenCalledWith(
+        '/v1/payment-intents/i1/refund',
+        expect.objectContaining({ body: JSON.stringify({ amount: 1000, reasonCode: 'MEDUSA_REFUND' }) }),
+      );
+      expect(out.data).toEqual({ intentId: 'i1', manualRefund: marker, walletRefundIds: ['wr2'] });
+    });
+
+    it('외부 환불 표식이 먼저다 — 둘 다 있으면 wallet 을 부르지 않는다(투영 중)', async () => {
+      const svc = makeService();
+      const spy = jest.spyOn(svc as any, 'walletFetch');
+      await svc.refundPayment({
+        data: { intentId: 'i1', externalRefund: { walletRefundId: 'wr7', amount: 3000 }, manualRefund: { requestId: 'x', amount: 3000 } },
+        amount: 3000,
+      } as any);
+      expect(spy).not.toHaveBeenCalled();
+    });
+  });
+});

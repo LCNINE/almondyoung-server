@@ -65,7 +65,9 @@ export type OrderCollectionFailureStatus =
   | 'replayed'
   | 'closed_lifecycle'
   /** 그 주문이 이미 Core 판매주문을 갖고 있다 — 수집할 것이 남아있지 않다 (#647). */
-  | 'closed_already_collected';
+  | 'closed_already_collected'
+  /** 그 주문의 수집 경로가 사라진 사유라 할 일이 없다 — 지금은 «수집 후 변경»뿐(#1016 6번 행). */
+  | 'closed_obsolete';
 
 // INBOX EVENTS 타입 (Kafka 이벤트 수신 처리)
 export type InboxEvent = InferSelectModel<typeof inboxEvents>;

@@ -506,6 +506,7 @@ export interface GatewayRefundEventPayload {
   status: string;
   amount: number;
   currency: string;
+  reasonCode?: string;
   occurredAt: string;
   [key: string]: unknown;
 }

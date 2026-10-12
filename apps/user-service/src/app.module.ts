@@ -31,6 +31,8 @@ import { PhoneVerificationModule } from './api/phone-verification/phone-verifica
 import { createKafkaConfigFromEnv } from '@app/events';
 import { UsersModule } from './api/users/users.module';
 import { WishlistModule } from './api/wishlist/wishlist.module';
+import { BeautytopShopsModule } from './api/beautytop-shops/beautytop-shops.module';
+import { GrowthNotesModule } from './api/beautytop-growth/growth-notes.module';
 import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
 import { validateUserServiceEnv } from './config/env.validation';
 import { HealthController } from './health.controller';
@@ -145,6 +147,8 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
     ShopModule,
     ConsentsModule,
     WishlistModule,
+    BeautytopShopsModule,
+    GrowthNotesModule,
     RecentViewsModule,
     FileModule,
     BusinessLicensesModule,

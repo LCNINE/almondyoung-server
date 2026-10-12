@@ -1,6 +1,7 @@
 import { useTranslations } from "next-intl"
 import type { BenefitDetail, FAQItem } from "./benefit.types"
 
+// 예정 혜택 번호가 09 부터 고정이라 현재 혜택은 8개까지만 번호가 겹치지 않는다.
 const CURRENT_BENEFIT_KEYS = [
   // "benefit01", // 웰컴 멤버십 보류 — 재노출 시 주석 해제
   "benefit02",
@@ -10,7 +11,17 @@ const CURRENT_BENEFIT_KEYS = [
   // "benefit06", // 렌탈서비스 보류 — 재노출 시 주석 해제
   "benefit07",
   // "benefit08", // ponytail: 이달의 쿠폰 혜택 임시 숨김 — 재노출 시 주석 해제
+  "benefit17",
 ] as const
+
+const BENEFIT_EXTRAS: Partial<
+  Record<
+    (typeof CURRENT_BENEFIT_KEYS)[number],
+    { href: string; teaser?: BenefitDetail["teaser"] }
+  >
+> = {
+  benefit17: { href: "/beautytop", teaser: "beautytopArea" },
+}
 
 const UPCOMING_BENEFIT_KEYS = [
   "benefit09",
@@ -32,6 +43,10 @@ export function useCurrentBenefits(): BenefitDetail[] {
     number: String(index + 1).padStart(2, "0"),
     title: t(`${key}.title`),
     description: t(`${key}.description`),
+    link: BENEFIT_EXTRAS[key]
+      ? { text: t(`${key}.link`), href: BENEFIT_EXTRAS[key].href }
+      : undefined,
+    teaser: BENEFIT_EXTRAS[key]?.teaser,
   }))
 }
 

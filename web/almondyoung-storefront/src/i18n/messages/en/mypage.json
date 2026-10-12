@@ -583,16 +583,14 @@
       "cancelDialogDescription": "A refund will be processed based on your payment method after cancellation.",
       "cancelConfirm": "Confirm Cancel",
       "cancelGoBack": "Go Back",
-      "cancelSuccess": "Order cancelled and refund completed.",
-      "cancelSuccessPending": "Order cancelled. Refund is being processed.",
-      "cancelSuccessFailed": "Order cancelled but refund failed. Please contact customer support.",
-      "cancelSuccessManual": "Order cancelled. Refund will be processed by customer support.",
       "cancelError": "An error occurred during cancellation.",
+      "cancelCompleted": "Your order has been cancelled.",
       "contactCs": "Contact Support",
       "bankTransferCancelGuide": "To cancel or refund a bank transfer order, please use the ‘Request refund’ button.",
       "bankTransferRefundNotice": "Unpaid orders are automatically canceled after the deposit deadline (7 days). To cancel or refund after deposit, enter your refund account (bank, account number, account holder) via ‘Request refund’. After admin review, the refund is sent to that account (about 2 business days). The account holder name must match exactly.",
       "download": "Download",
       "cancelUnavailable": {
+        "cancel_requested": "Cancellation is in progress.",
         "already_shipped": "This order has already shipped and cannot be canceled. Please use the return request instead.",
         "channel_order": "Please cancel this order on the channel where it was placed.",
         "already_processing": "Picking has started, so self-cancellation is unavailable. Please contact customer support.",
@@ -705,14 +703,18 @@
         "pending": "Your refund will be completed within 3-5 business days.",
         "manual_pending": "Refund will be processed after operator review. Please contact customer support for inquiries.",
         "succeeded": "Your refund has been completed.",
-        "failed": "There was an issue processing your refund. Please contact customer support."
+        "failed": "There was an issue processing your refund. Please contact customer support.",
+        "delayed": "We'll process it within 3 business days.",
+        "transfer_pending": "We'll send your refund to your bank account."
       },
       "statusLabels": {
         "none": "",
         "pending": "Processing refund",
         "manual_pending": "Awaiting review",
         "succeeded": "Refunded",
-        "failed": "Refund issue"
+        "failed": "Refund issue",
+        "delayed": "Refund delayed",
+        "transfer_pending": "Refund in progress"
       }
     },
     "cashReceipt": {
@@ -924,6 +926,12 @@
       "benefit08": {
         "title": "Monthly coupons",
         "description": "Special coupons offered to members every month!"
+      },
+      "benefit17": {
+        "title": "BeautyTop (beta)",
+        "description": "See the number of shops and treatment prices in your area, plus your shop's rank and how it compares with nearby shops. It may pause briefly while we check the data.",
+        "link": "Go to BeautyTop",
+        "teaser": "<b>{count}</b> {category} shops in {gugun} — where does yours rank?"
       }
     },
     "upcomingBenefits": {
@@ -979,7 +987,7 @@
       },
       "q5": {
         "question": "How can I cancel?",
-        "answer": "Cancel any time from My Page > Membership. You can keep using the service until the end of the billing period you already paid for, after which it ends automatically. Within 7 days of payment and if you have never used a membership benefit (member-price purchase, welcome deal, members-only coupon, etc.), you may withdraw for a full refund. Otherwise, a monthly plan's paid period is not refunded, and a yearly plan is settled at the regular monthly price for the period used and the remainder is refunded."
+        "answer": "Cancel any time from My Page > Membership. You can keep using the service until the end of the billing period you already paid for, after which it ends automatically. Within 7 days of payment and if you have never used a membership benefit (member-price purchase, welcome deal, members-only coupon, viewing your shop's analysis on BeautyTop, etc.), you may withdraw for a full refund. Otherwise, a monthly plan's paid period is not refunded, and a yearly plan is settled at the regular monthly price for the period used and the remainder is refunded."
       }
     },
     "history": {
@@ -1069,7 +1077,8 @@
       "keepBillingMethodSafe": "Keeping it does not allow any further withdrawals after cancellation.",
       "whyWithdrawal": "You are within {days} days of payment and have not used any membership benefit, so a full refund is available.",
       "whyAnnual": "For annual plans we settle the period you used at the monthly list price and refund the rest.",
-      "atPeriodEndPreCollectionNote": "If you choose this, this cycle will be charged as scheduled and your membership ends after that period."
+      "atPeriodEndPreCollectionNote": "If you choose this, this cycle will be charged as scheduled and your membership ends after that period.",
+      "beautytopLoss": "When your membership ends, BeautyTop shop analysis closes too, including your rank among <b>{count}</b> {category} shops in {gugun}."
     },
     "manageTitle": "Membership",
     "refundStatus": {

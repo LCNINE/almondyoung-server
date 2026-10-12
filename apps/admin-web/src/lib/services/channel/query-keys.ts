@@ -3,6 +3,7 @@
 
 export const channelQueryKeys = {
   failures: ['order-collection-failures'] as const,
+  summary: ['order-collection-failures', 'summary'] as const,
   failuresList: (query: Record<string, unknown>) =>
     [...channelQueryKeys.failures, 'list', query] as const,
   failure: (id: string) => [...channelQueryKeys.failures, id] as const,

@@ -49,6 +49,10 @@ export interface OrderCollectionFailureDto {
   replayedAt: string | null;
   replayedWmsOrderId: string | null;
   errorMessage: string | null;
+  /** 처리 실패(`order_collection_processing_failed`) 행만 의미가 있다. 옛 서버 응답엔 없으므로 선택 필드다. */
+  attemptCount?: number;
+  failedStage?: string | null;
+  lastError?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -64,7 +68,8 @@ export type ReplayResultStatus =
   | 'closed_terminal'
   | 'closed_already_collected'
   | 'not_found_or_not_payment_accepted'
-  | 'not_replayable';
+  | 'not_replayable'
+  | 'moved_to_identification_quarantine';
 
 export interface ReplayResultDto {
   status: ReplayResultStatus;
@@ -92,7 +97,9 @@ export interface FailureListResult {
 }
 
 function asRecord(body: unknown): Record<string, unknown> | null {
-  return body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
+  return body && typeof body === 'object' && !Array.isArray(body)
+    ? (body as Record<string, unknown>)
+    : null;
 }
 
 /**
@@ -101,7 +108,10 @@ function asRecord(body: unknown): Record<string, unknown> | null {
  * 배열(인터셉터 통과 후)과 `{ count, data }`(안 벗겨진 경우) 양쪽을 받는다. 그 외에는 빈 판을
  * 돌려준다 — 화면이 터지는 대신 "격리된 주문이 없습니다" 를 그리게 하기 위함이다.
  */
-export function toFailureListResult(body: unknown, limit: number = QUARANTINE_LIST_LIMIT): FailureListResult {
+export function toFailureListResult(
+  body: unknown,
+  limit: number = QUARANTINE_LIST_LIMIT
+): FailureListResult {
   const rows = Array.isArray(body)
     ? (body as OrderCollectionFailureDto[])
     : Array.isArray(asRecord(body)?.data)
@@ -121,12 +131,16 @@ export function toFailureListResult(body: unknown, limit: number = QUARANTINE_LI
  * 상세 응답 → 행 하나. 배열이 아닌 객체이되 `{ data: … }` 로 한 겹 더 싸여 있으면 벗긴다.
  * 행 자체에는 `data` 키가 없으므로 두 모양이 섞이지 않는다.
  */
-export function toFailureDetail(body: unknown): OrderCollectionFailureDto | null {
+export function toFailureDetail(
+  body: unknown
+): OrderCollectionFailureDto | null {
   const record = asRecord(body);
   if (!record) return null;
   const inner = asRecord(record.data);
   if (inner) return inner as unknown as OrderCollectionFailureDto;
-  return typeof record.id === 'string' ? (record as unknown as OrderCollectionFailureDto) : null;
+  return typeof record.id === 'string'
+    ? (record as unknown as OrderCollectionFailureDto)
+    : null;
 }
 
 /**
@@ -140,10 +154,27 @@ export function toReplayResult(body: unknown): ReplayResultDto | null {
   if (!record) return null;
   const inner = asRecord(record.result);
   if (inner) return inner as unknown as ReplayResultDto;
-  return typeof record.status === 'string' ? (record as unknown as ReplayResultDto) : null;
+  return typeof record.status === 'string'
+    ? (record as unknown as ReplayResultDto)
+    : null;
 }
 
-/** 배지·헤더에 쓸 건수 표기. 상한에 닿았으면 "더 있다" 는 사실을 숫자에 실어 보낸다. */
-export function formatQuarantineCount(result: Pick<FailureListResult, 'count' | 'truncated'>): string {
-  return result.truncated ? `${result.count}+` : String(result.count);
+export interface QuarantineSummary {
+  quarantined: number;
+  oldestCreatedAt: string | null;
+}
+
+/** GET /adapter/order-collection-failures/summary — 정체 보드 0단계. */
+export function toQuarantineSummary(body: unknown): QuarantineSummary {
+  const record = (v: unknown): v is Record<string, unknown> =>
+    typeof v === 'object' && v !== null && !Array.isArray(v);
+  const v =
+    record(body) && body.success === true && 'data' in body ? body.data : body;
+  if (!record(v) || typeof v.quarantined !== 'number')
+    return { quarantined: 0, oldestCreatedAt: null };
+  return {
+    quarantined: v.quarantined,
+    oldestCreatedAt:
+      typeof v.oldestCreatedAt === 'string' ? v.oldestCreatedAt : null,
+  };
 }

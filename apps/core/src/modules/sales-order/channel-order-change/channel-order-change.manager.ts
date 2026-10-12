@@ -8,8 +8,10 @@ import { ShipmentPlanningService } from '../../fulfillment/services/shipment-pla
 import { FULFILLMENT_SYSTEM_ACTOR_ID, SalesOrdersService } from '../services/sales-orders.service';
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
 import { ChannelOrderChangeReader, FINISHED_FULFILLMENT_STATUSES } from './channel-order-change.reader';
+import { ChannelCancelSettler } from '../channel-cancel-request/channel-cancel-settler';
 import { diffChannelSnapshot, isDecrease, removesAllLines } from './channel-order-diff';
 import { errorDetail, isDomainRefusal, toAddressBlocker } from './channel-change-blockers';
+import { suppressDismissed } from './channel-change-dismissal';
 import {
   CHANNEL_ORDER_MODIFIED_REASON,
   ChannelBlocker,
@@ -44,23 +46,38 @@ export class ChannelOrderChangeManager {
     private readonly salesOrders: SalesOrdersService,
     private readonly amendments: SalesOrderAmendmentsService,
     private readonly moduleRef: ModuleRef,
+    private readonly cancelSettler: ChannelCancelSettler,
   ) {}
 
   async handle(salesOrderId: string, payload: OrderModifiedPayload, sourceEventId: string, tx: DbTx): Promise<void> {
     const order = await this.reader.lockEffectiveOrder(salesOrderId, tx);
     if (!order) throw new Error(`Sales order ${salesOrderId} vanished after resolve`);
-    const deltas = diffChannelSnapshot(order, payload.snapshot);
+    // 정산 중 채널 취소 요청의 거울(채널이 아직 안 줄인 «늘어남»)은 5번 규칙을 타지 않는다 — 확정 때 이미 적용한 변경이다(#1016 36번 재설계 D10).
+    const fullDiff = diffChannelSnapshot(order, payload.snapshot);
+    // 요청은 감소를 먹지 않는다 — core 는 확정 때 이미 줄였으니 감소는 유효 수량에 들어 있어 diff 에 «감소»로 나오지 않는다.
+    // 정산 중 부분 요청은 채널이 아직 취소를 반영하지 않았을 때의 거울 «늘어남»만 흡수한다(settleModified).
+    // 「전 라인 제거」 판정은 그 흡수 «전» 전체 diff 로 한다.
+    // 알려진 가장자리(범위 밖): 채널이 우리 부분취소를 반영하기 전에 남은 줄을 지우면 ALL_LINES_REMOVED 로 잡히지 않는다.
+    const allRemoved = removesAllLines(order, fullDiff);
+    const deltas = await this.cancelSettler.settleModified(
+      salesOrderId,
+      fullDiff,
+      { cancelRequests: payload.snapshot.cancelRequests ?? [], orderCancelled: payload.snapshot.orderCancelled === true },
+      tx,
+    );
     const amendmentId = randomUUID();
-    const allRemoved = removesAllLines(order, deltas);
     const recorded: RecordedChannelDelta[] = [];
     for (const delta of deltas) {
       recorded.push(await this.settle(order, delta, { amendmentId, allRemoved, occurredAt: payload.modifiedAt }, tx));
     }
+    // 운영자가 무시한 차이와 똑같은 차이면 pending 을 다시 띄우지 않는다(#1016 6번 행 §6).
+    const dismissed = await this.reader.latestDismissedChannelDeltas(salesOrderId, tx);
+    const kept = suppressDismissed(recorded, dismissed);
     await this.amendments.recordChannelAmendment(
       {
         id: amendmentId,
         salesOrderId,
-        deltas: recorded,
+        deltas: kept,
         occurredAt: new Date(payload.modifiedAt),
         sourceEventId,
         salesChannel: payload.salesChannel,

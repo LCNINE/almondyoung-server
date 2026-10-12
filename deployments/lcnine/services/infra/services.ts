@@ -149,6 +149,8 @@ export function setup(infra: SharedInfra) {
   // Storefront
   const medusaPublishableKey = new sst.Secret('MedusaPublishableKey');
   const storefrontRevalidateSecret = new sst.Secret('StorefrontRevalidateSecret');
+  const beautytopSigningPrivateKey = new sst.Secret('BeautytopSigningPrivateKey', '');
+  const beautytopApiOrigin = new sst.Secret('BeautytopApiOrigin', '');
 
   // GA4 Data API (유입 통계). 서비스 계정 JSON 원문을 통째로 담는다.
   const ga4ServiceAccount = new sst.Secret('Ga4ServiceAccount');
@@ -964,6 +966,8 @@ export function setup(infra: SharedInfra) {
       USE_RAILWAY_BACKEND: 'true',
       NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: medusaPublishableKey.value,
       REVALIDATE_SECRET: storefrontRevalidateSecret.value,
+      BEAUTYTOP_SIGNING_PRIVATE_KEY: beautytopSigningPrivateKey.value,
+      BEAUTYTOP_API_ORIGIN: beautytopApiOrigin.value,
       // 인증 일원화: auth-web origin + user-service 직접 호출(server-side).
       AUTH_WEB_ORIGIN: idpAuthWebUrl,
       USER_SERVICE_URL: idpUserServiceUrl,

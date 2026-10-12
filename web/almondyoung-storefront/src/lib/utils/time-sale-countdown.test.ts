@@ -50,12 +50,13 @@ describe("resolveCountdown", () => {
 
 describe("formatCountdown", () => {
   it("시계는 두 자리로 채워 폭이 안 흔들린다", () => {
-    expect(formatCountdown({ kind: "clock", hours: 2, minutes: 3, seconds: 4 })).toBe("02:03:04")
+    expect(formatCountdown({ kind: "clock", hours: 2, minutes: 3, seconds: 4 }, "일")).toBe("02:03:04")
   })
 
-  it("일수와 종료", () => {
-    expect(formatCountdown({ kind: "days", days: 6 })).toBe("6일")
-    expect(formatCountdown({ kind: "ended" })).toBe("종료")
+  // 47시간 남으면 "1일" — resolveCountdown 이 내림한 값을 그대로 붙인다.
+  it("일수에는 넘겨받은 단위를 붙인다", () => {
+    expect(formatCountdown(resolveCountdown(at(47 * HOUR), NOW) as { kind: "days"; days: number }, "일")).toBe("1일")
+    expect(formatCountdown({ kind: "days", days: 6 }, "d")).toBe("6d")
   })
 })
 

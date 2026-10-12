@@ -123,6 +123,9 @@ export {
   useReissueWaybill,
   useVoidWaybill,
   useBatchIssueWaybills,
+  // 반영 대기 채널 변경 닫기 (#1016 6번 행)
+  useDismissChannelChange,
+  useResyncChannelChange,
 } from './mutations';
 
 // 데이터 변환 함수들 (주문 전용)

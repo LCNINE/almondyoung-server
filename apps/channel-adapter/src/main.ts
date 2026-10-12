@@ -83,7 +83,7 @@ async function bootstrap() {
 
     // 구독 목록 인자가 없다 — 소비 집합은 컨트롤러의 `@On` 에서 도출된다 (ADR-0029 §3).
     // 예전 이 자리의 `streams` 6개 목록은 실제 구독과 무관했다: 이 앱의 핸들러는
-    // `users.events.v1` · `core.orders.events.v1` · `payments.events.v1` 도 구독한다.
+    // `users.events.v1` · `payments.events.v1` 도 구독한다.
     // 도출된 토픽 전량은 startConsumer 가 로그로 찍는다.
     await EventsModule.startConsumer(app, {
       groupId,

@@ -287,7 +287,7 @@ describe('ProductSkuMappingService', () => {
     });
   });
 
-  it('removes existing SKU links when an existing matching is saved with empty links', async () => {
+  it('기존 링크를 빈 links 로 모두 지우면 pending 으로 내린다 — matched+variant+링크 0개를 쓰지 않는다 (#1016 12번)', async () => {
     const variantId = 'variant-1';
     const matchingId = 'matching-1';
     const updates: Array<{ table: unknown; set: Record<string, unknown> }> = [];
@@ -375,7 +375,7 @@ describe('ProductSkuMappingService', () => {
       makeLinkResolver() as any,
     );
 
-    const result = await service.upsert(variantId, {
+    await service.upsert(variantId, {
       links: [],
       policy: {
         preStockSellable: true,
@@ -387,22 +387,14 @@ describe('ProductSkuMappingService', () => {
     expect(tx.delete).toHaveBeenCalledWith(wmsTables.productVariantSkuLinks);
     expect(tx.insert).not.toHaveBeenCalledWith(wmsTables.productVariantSkuLinks);
     expect(updates.find((entry) => entry.table === wmsTables.productMatchings)?.set).toMatchObject({
-      status: 'matched',
-      strategy: 'variant',
-      isResolved: true,
+      status: 'pending',
+      strategy: null,
+      isResolved: false,
     });
     expect(productSellableQuantity.recalculateAndPublishForVariant).toHaveBeenCalledWith(variantId, tx);
-    expect(fulfillmentBacklog.wakeBacklogsWaitingForVariant).toHaveBeenCalledWith(variantId, tx);
-    expect(result).toMatchObject({
-      id: matchingId,
-      variantId,
-      links: [],
-      stockPolicy: {
-        preStockSellable: true,
-        alwaysSellableZeroStock: false,
-        availabilityOverride: 'manual_out_of_stock',
-      },
-    });
+    // pending 은 FO 를 만들 수 없는 매칭이라 깨울 대상이 없다
+    expect(fulfillmentBacklog.wakeBacklogsWaitingForVariant).not.toHaveBeenCalled();
+    expect(salesVariantPolicy).toMatchObject({ availabilityOverride: 'manual_out_of_stock' });
   });
 
   it('registers SKU 구성 matching and wakes only variant-related fulfillment backlog', async () => {

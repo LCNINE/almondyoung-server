@@ -1,0 +1,3 @@
+ALTER TABLE "sales_order_amendments" DROP CONSTRAINT "sales_order_amendments_status_check";--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_sales_order_amendments_open_cancel_request" ON "sales_order_amendments" USING btree ("sales_order_id") WHERE "sales_order_amendments"."status" = 'requested';--> statement-breakpoint
+ALTER TABLE "sales_order_amendments" ADD CONSTRAINT "sales_order_amendments_status_check" CHECK ("sales_order_amendments"."status" IN ('applied', 'pending', 'superseded', 'dismissed', 'requested', 'rejected'));

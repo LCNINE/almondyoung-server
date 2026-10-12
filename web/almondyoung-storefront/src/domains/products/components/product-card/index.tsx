@@ -10,9 +10,10 @@ import { Camera, Lock, Star } from "lucide-react"
 import { useTranslations } from "next-intl"
 import React, { useEffect, useMemo, useState } from "react"
 import ProductPrice from "./price"
-import { useIsTimeSalePrice } from "@/components/providers/time-sale-provider"
+import { useTimeSaleForVariant } from "@/components/providers/time-sale-provider"
 import Thumbnail, { listPhotoUrls } from "../thumbnail"
 import { Quantity } from "./quantity"
+import { TimeSaleBadge } from "./time-sale-badge"
 import { calculateStockStatus } from "./quantity/stock-status"
 import { SoldOutOverlay } from "@/components/products/sold-out-overlay"
 import { OverseasBadge } from "@/components/shared/badges/overseas-badge"
@@ -120,7 +121,9 @@ export default function ProductCard({
   const { cheapestPrice, cheapestVariant } = getProductPrice({
     product,
   })
-  const isTimeSale = useIsTimeSalePrice(cheapestVariant)
+  // 카드에 보이는 가격을 만든 세일. 상품이 세일에 들어 있어도 멤버십가가 더 싸 그쪽이 보이면 null 이다.
+  const timeSale = useTimeSaleForVariant(cheapestVariant)
+  const isTimeSale = timeSale !== null
   const tCard = useTranslations("productCard")
   const isDigital = isDigitalProduct(product)
   const photoCount = listPhotoUrls(product.thumbnail, product.images).length
@@ -206,10 +209,16 @@ export default function ProductCard({
             </div>
           )}
 
-          {isDigital && (
-            <span className="bg-primary/90 absolute top-2 left-2 z-10 rounded px-2 py-0.5 text-[11px] font-medium text-white">
-              {tCard("digitalBadge")}
-            </span>
+          {/* 좌측 위도 한 줄에 쌓는다. 우측 위는 멤버십·사진 장수, 우측 아래는 찜·장바구니가 쓴다 */}
+          {(timeSale?.endsAt || isDigital) && (
+            <div className="absolute top-2 left-2 z-10 flex flex-col items-start gap-1">
+              {timeSale?.endsAt && <TimeSaleBadge endsAt={timeSale.endsAt} />}
+              {isDigital && (
+                <span className="bg-primary/90 rounded px-2 py-0.5 text-[11px] font-medium text-white">
+                  {tCard("digitalBadge")}
+                </span>
+              )}
+            </div>
           )}
 
           {/* 장바구니 담기 및 위시리스트 버튼  */}

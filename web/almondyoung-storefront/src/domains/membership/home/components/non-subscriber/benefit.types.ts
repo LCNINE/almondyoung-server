@@ -9,6 +9,7 @@ export interface BenefitItem {
 export interface BenefitDetail extends BenefitItem {
   image?: string
   link?: { text: string; href: string }
+  teaser?: "beautytopArea"
 }
 
 export interface FAQItem {

@@ -1,11 +1,13 @@
 "use client"
 
+import { useTranslations } from "next-intl"
 import type {
   StoreFulfillmentStatus,
   StoreOrderActionsResponse,
-  StoreRefundStatus,
 } from "@/lib/api/orders/store-orders"
+import { refundTone, toRefundStatus } from "@/lib/orders/refund-status"
 import { cn } from "@/lib/utils"
+import { REFUND_TONE_BADGE_CLASS } from "./refund-status-style"
 
 interface BadgeProps {
   label: string
@@ -57,19 +59,6 @@ const FULFILLMENT_STATUS_MAP: Record<
   canceled: { label: "출고 취소", color: "bg-gray-100 text-gray-400" },
 }
 
-// ── 환불 상태 badge ─────────────────────────────────────────────────────
-
-const REFUND_STATUS_MAP: Record<StoreRefundStatus, BadgeProps | null> = {
-  none: null,
-  pending: { label: "환불 처리 중", color: "bg-amber-100 text-amber-700" },
-  manual_pending: {
-    label: "환불 수동 처리 대기",
-    color: "bg-amber-100 text-amber-700",
-  },
-  succeeded: { label: "환불 완료", color: "bg-green-100 text-green-700" },
-  failed: { label: "환불 실패", color: "bg-red-100 text-red-600" },
-}
-
 // ── Medusa payment_status → i18n 키 매핑 ───────────────────────────────
 
 const PAYMENT_STATUS_KEY_MAP: Record<string, string> = {
@@ -105,6 +94,7 @@ export const CANCEL_UNAVAILABLE_MESSAGES: Record<string, string> = {
   channel_order: "채널 주문은 해당 채널에서 취소해 주세요.",
   already_processing:
     "피킹이 시작되어 직접 취소가 불가합니다. 고객센터로 문의해 주세요.",
+  cancel_requested: "취소 처리 중입니다.",
   digital_downloaded:
     "이미 다운로드하신 디지털 상품이 포함되어 있어 직접 취소가 불가합니다. 고객센터로 문의해 주세요.",
 }
@@ -128,6 +118,7 @@ export function OrderStatusBadges({
   medusaStatus,
   refundRequestStatus,
 }: OrderStatusBadgesProps) {
+  const tRefundInfo = useTranslations("mypage.order.refundInfo")
   const refundRequestBadge: BadgeProps | null =
     refundRequestStatus === "REQUESTED"
       ? { label: "환불 신청", color: "bg-amber-100 text-amber-700" }
@@ -153,7 +144,12 @@ export function OrderStatusBadges({
     awaitingDepositBadge ??
     ORDER_STATUS_MAP[actions.orderStatus]
   const fulfillBadge = FULFILLMENT_STATUS_MAP[actions.fulfillmentStatus]
-  const refundBadge = REFUND_STATUS_MAP[actions.refundStatus]
+  // core 가 먼저 늘린 값은 «환불 처리 중»으로 접힌다(#1016 36번 PR 4)
+  const refundStatus = toRefundStatus(actions.refundStatus)
+  const tone = refundTone(refundStatus)
+  const refundBadge: BadgeProps | null = tone
+    ? { label: tRefundInfo(`statusLabels.${refundStatus}`), color: REFUND_TONE_BADGE_CLASS[tone] }
+    : null
 
   return (
     <div className="flex flex-wrap gap-1">

@@ -784,4 +784,129 @@ describe('Medusa order collection (source + translator)', () => {
       displayOrderNo: '2332',
     });
   });
+
+  it('취소된 주문은 modification 에만 orderCancelled 를 싣는다 — 해시 입력(changes)은 그대로 (#1016 36번 PR 6 판정 3)', async () => {
+    const base = {
+      currency_code: 'KRW',
+      total: 12000,
+      created_at: '2026-05-26T01:00:00.000Z',
+      updated_at: '2026-05-26T01:20:00.000Z',
+      items: [],
+    };
+    const provider = makeProvider({
+      listOrders: jest.fn().mockResolvedValue([
+        { ...base, id: 'order_c', status: 'canceled', payment_status: 'refunded', canceled_at: '2026-05-26T01:15:00.000Z' },
+        { ...base, id: 'order_l', status: 'pending', payment_status: 'captured' },
+      ]),
+    } as any);
+
+    const { orders } = await provider.fetchOrders(null);
+    const byId = new Map(orders.map((o) => [o.externalOrderId, o]));
+    const cancelled = byId.get('order_c');
+    const live = byId.get('order_l');
+    if (!cancelled || !live) throw new Error('unreachable');
+
+    expect(cancelled.modification.orderCancelled).toBe(true);
+    expect('orderCancelled' in cancelled.changes).toBe(false);
+    expect('orderCancelled' in live.modification).toBe(false);
+    // 계약 스키마가 칸을 안다 — 모르면 zod 가 조용히 지운다
+    const parsed = ORDER_STREAM.events.OrderModified.schema!.parse({
+      orderId: 'wms-1',
+      salesChannel: 'medusa',
+      externalOrderId: 'order_c',
+      modifiedAt: cancelled.modifiedAt,
+      snapshot: cancelled.modification,
+    });
+    expect(parsed.snapshot.orderCancelled).toBe(true);
+  });
+
+  describe('부분취소 진행 기록 (#1016 35번 PR-C)', () => {
+    const order = (metadata: Record<string, unknown> | undefined) => ({
+      id: 'order_pc_1',
+      payment_status: 'captured',
+      currency_code: 'KRW',
+      total: 9000,
+      subtotal: 9000,
+      shipping_total: 0,
+      discount_total: 0,
+      created_at: '2026-10-07T00:00:00.000Z',
+      updated_at: '2026-10-07T00:05:00.000Z',
+      metadata,
+      items: [
+        {
+          id: 'item_1',
+          title: 'P',
+          quantity: 1,
+          unit_price: 9000,
+          variant_id: 'variant_1',
+          variant: {
+            metadata: { pimVariantId: 'pim_variant_1' },
+            product: { metadata: { pimMasterId: 'master_1', pimVersionId: 'version_1' } },
+          },
+        },
+      ],
+      shipping_address: { first_name: 'J', phone: '010', postal_code: '1', address_1: 'S', address_2: '1' },
+    });
+    const record = {
+      requestHash: 'h',
+      stage: 'edited',
+      items: [{ item_id: 'item_1', quantity: 1 }],
+      refundAmount: 27500,
+      shippingCharge: 0,
+      shippingRefund: 3000,
+      shippingNotAdjusted: false,
+      groupFees: {},
+      at: '2026-10-07T00:04:00.000Z',
+      orderVersion: 2,
+    };
+
+    it('metadata.partialCancels 를 requestId 순으로 modification·changes 에 싣는다', async () => {
+      const provider = makeProvider({
+        listOrders: jest.fn().mockResolvedValue([
+          order({ partialCancels: { 'req-b': { ...record, stage: 'refunded' }, 'req-a': record } }),
+        ]),
+      });
+      const [item] = (await provider.fetchOrders(null)).orders;
+      const expected = [
+        { requestId: 'req-a', stage: 'edited', refundAmount: 27500, shippingCharge: 0, shippingRefund: 3000, shippingNotAdjusted: false },
+        { requestId: 'req-b', stage: 'refunded', refundAmount: 27500, shippingCharge: 0, shippingRefund: 3000, shippingNotAdjusted: false },
+      ];
+      expect(item.modification.cancelRequests).toEqual(expected);
+      expect(item.changes.cancelRequests).toEqual(expected);
+    });
+
+    it('상계액이 있으면 싣고, 0 이면 키가 없다(#1016 37번)', async () => {
+      const provider = makeProvider({
+        listOrders: jest.fn().mockResolvedValue([
+          order({ partialCancels: { 'req-a': { ...record, externalRefundApplied: 10000 }, 'req-b': { ...record, externalRefundApplied: 0 } } }),
+        ]),
+      });
+      const [item] = (await provider.fetchOrders(null)).orders;
+      expect(item.changes.cancelRequests?.[0]).toMatchObject({ requestId: 'req-a', externalRefundApplied: 10000 });
+      expect('externalRefundApplied' in (item.changes.cancelRequests?.[1] ?? {})).toBe(false);
+    });
+
+    it('기록이 없으면 changes 에 키 자체가 없다 — 모든 Medusa 주문의 해시가 바이트 단위로 그대로다', async () => {
+      const provider = makeProvider({ listOrders: jest.fn().mockResolvedValue([order(undefined)]) });
+      const [item] = (await provider.fetchOrders(null)).orders;
+      expect(Object.keys(item.changes).sort()).toEqual(['items', 'shippingAddress', 'totalAmount']);
+      expect('cancelRequests' in item.modification).toBe(false);
+    });
+
+    it('지운 기록(null)·모르는 단계·숫자 아닌 금액은 버린다', async () => {
+      const provider = makeProvider({
+        listOrders: jest.fn().mockResolvedValue([
+          order({
+            partialCancels: {
+              'req-null': null,
+              'req-weird': { ...record, stage: 'canceled' },
+              'req-nan': { ...record, refundAmount: 'x' },
+            },
+          }),
+        ]),
+      });
+      const [item] = (await provider.fetchOrders(null)).orders;
+      expect('cancelRequests' in item.changes).toBe(false);
+    });
+  });
 });

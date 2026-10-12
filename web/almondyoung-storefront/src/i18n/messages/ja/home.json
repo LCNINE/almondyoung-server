@@ -69,6 +69,8 @@
     "titleFirst": "タイム",
     "titleSecond": "セール",
     "allTab": "すべて",
+    "allTitle": "タイムセール全商品",
+    "productCount": "{count}件",
     "emptyTitle": "開催中のタイムセールはありません",
     "pageDescription": "この価格は期間限定です。",
     "noSaleTitle": "開催中のタイムセールはありません",
@@ -79,7 +81,14 @@
     "endsOn": "{date}まで",
     "dayUnit": "日",
     "untilEnd": "終了まで",
-    "endingSoon": "まもなく終了"
+    "endingSoon": "まもなく終了",
+    "badge": "タイムセール"
+  },
+  "beautytop": {
+    "title": "ビューティートップ",
+    "headline": "自店は地域で何位でしょう？",
+    "body": "同じ業種の店舗数から自店の順位まで、数字でお見せします",
+    "cta": "確認する"
   },
   "comingSoon": {
     "title": "アーモンドテンプレートは準備中です",

@@ -1,5 +1,6 @@
 import {
   OrderCancelledPayload,
+  OrderModifiedCancelRequest,
   OrderRefundCreatedPayload,
   SalesChannel,
   ShippingAddress,
@@ -112,6 +113,17 @@ export interface ChannelOrderSnapshot {
    * 저장되고 그룹핑 키를 오염시키므로 별도 슬롯으로 흘려보낸다.
    */
   entrancePassword?: string;
+  /**
+   * 우리 부분취소 명령(`CancelChannelOrder`)의 채널 쪽 진행 기록 (#1016 35번 PR-C). Medusa 만 낸다.
+   * **비면 키를 두지 않는다** — 이 값은 `changes`(해시 입력)에도 들어가는데 빈 배열·undefined 키도
+   * `stableStringify` 결과를 바꿔 배포 직후 모든 Medusa 주문이 `OrderModified` 를 낸다.
+   */
+  cancelRequests?: OrderModifiedCancelRequest[];
+  /**
+   * 채널이 주문을 취소했다 — 재수집 스냅샷이 core 의 정산 중 요청을 닫는 근거(#1016 36번 PR 6). 아니면 키를 두지 않는다.
+   * **`changes`(해시 입력)에는 넣지 않는다** — 넣으면 배포 직후 취소된 Medusa 주문이 전부 `OrderModified` 를 다시 낸다.
+   */
+  orderCancelled?: true;
   createdAt: string;
   lifecycle: LifecycleObservation[];
   /** 격리 시 운영자가 볼 채널 원본. */
@@ -132,6 +144,14 @@ export function isReplayableSource(source: ChannelOrderSource): source is Replay
   return typeof (source as ReplayableChannelOrderSource).fetchOrder === 'function';
 }
 
+/** 창 안에서 단건 조회에 실패한 주문 (#1016 1번 행). 삼키면 다른 주문이 워터마크를 밀어 그 주문이 조용히 사라진다. */
+export interface ChannelOrderFetchFailure {
+  externalOrderId: string;
+  /** 변경 피드가 알려 준 그 주문의 변경 시각 — 워터마크 근거다. */
+  changedAt: string;
+  error: string;
+}
+
 /**
  * **닫힌 조회 창**을 쓰는 source. 워터마크가 항목 없이도 전진할 수 있게 창의 끝을 함께 보고한다.
  *
@@ -148,6 +168,7 @@ export function isReplayableSource(source: ChannelOrderSource): source is Replay
  */
 export interface WindowedFetchResult {
   snapshots: ChannelOrderSnapshot[];
+  fetchFailures: ChannelOrderFetchFailure[];
   /** 방금 **끝까지 훑은** 닫힌 창의 끝. 창이 열려 있거나 페이징이 잘렸으면 `null`. */
   completedWindowEnd: Date | null;
 }

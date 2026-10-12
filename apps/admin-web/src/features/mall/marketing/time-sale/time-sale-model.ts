@@ -1,15 +1,13 @@
 /**
  * 타임세일 도메인 규칙. 화면과 분리해 둔다 — 여기 있는 판정이 가격에 직결된다.
  *
- * 타임세일 하나는 Medusa price list **두 개**로 저장된다.
- *   - 일반용   : rules = { region_id: [...] }            → 전원
- *   - 멤버십용 : rules = { 'customer.groups.id': [...] } → 멤버십 구독자
- *
- * 둘 다 룰이 1 개인 이유는 Medusa 가 `rules_count 내림 → amount 오름` 으로 가격을 고르기 때문이다.
- * 상시 운영되는 `Membership Prices` 가 룰 1 개라, 세일 리스트가 룰 0 개면 아무리 싸도 진다.
+ * 세일 저장은 Medusa `POST /admin/time-sales` 한 번이다. 리스트 분할·겹침 차단·가격 교체는 서버
+ * 워크플로가 한다.
  */
 
-export type TimeSaleStatus = 'scheduled' | 'active' | 'ended';
+import { isCustomError } from '@/lib/api/customError';
+
+export type TimeSaleStatus = 'draft' | 'scheduled' | 'active' | 'ended';
 
 export type TimeSalePeriod = {
   startsAt: string;
@@ -96,7 +94,12 @@ export function summarizeSaleRows(rows: TimeSaleRow[]): SaleRowsSummary {
   };
 }
 
-export function resolveTimeSaleStatus(period: TimeSalePeriod, now: Date): TimeSaleStatus {
+export function resolveTimeSaleStatus(
+  period: TimeSalePeriod,
+  now: Date,
+  status: 'draft' | 'active' = 'active'
+): TimeSaleStatus {
+  if (status === 'draft') return 'draft';
   const start = Date.parse(period.startsAt);
   const end = Date.parse(period.endsAt);
   const at = now.getTime();
@@ -107,51 +110,11 @@ export function resolveTimeSaleStatus(period: TimeSalePeriod, now: Date): TimeSa
 }
 
 export const TIME_SALE_STATUS_LABEL: Record<TimeSaleStatus, string> = {
+  draft: '비공개',
   scheduled: '예약',
   active: '진행중',
   ended: '종료',
 };
-
-/**
- * 기간이 겹치는 세일.
- *
- * 겹친다는 사실만으로는 막지 않는다 — 카테고리마다 기간이 다른 세일을 동시에 거는 게 요구사항이라
- * 기간 겹침은 정상이다. 여기서 나온 세일들과 **상품이** 겹치는지를 `findVariantConflicts` 로 한 번
- * 더 본다.
- */
-export function findOverlapping<T extends TimeSalePeriod & { id?: string }>(
-  candidate: TimeSalePeriod & { id?: string },
-  existing: T[]
-): T[] {
-  const start = Date.parse(candidate.startsAt);
-  const end = Date.parse(candidate.endsAt);
-
-  return existing.filter((other) => {
-    if (candidate.id && other.id === candidate.id) return false;
-    return start < Date.parse(other.endsAt) && end > Date.parse(other.startsAt);
-  });
-}
-
-/**
- * 기간이 겹치는 세일 중 **같은 품목을 쓰는** 것들.
- *
- * 상품이 겹치면 Medusa 가 `rules_count 내림 → amount 오름` 으로 한쪽 가격만 적용한다. 손님은 A
- * 세일 목록에서 B 세일의 가격을 보면서 A 의 카운트다운을 읽게 되고, A 가 끝나도 가격이 안 변한다.
- * 기간만 겹치는 건 통과시키고 이 경우만 막는다.
- */
-export function findVariantConflicts<T extends { variantIds: string[] }>(
-  variantIds: string[],
-  overlapping: T[]
-): Array<T & { conflictingVariantIds: string[] }> {
-  const candidate = new Set(variantIds);
-
-  return overlapping
-    .map((sale) => ({
-      ...sale,
-      conflictingVariantIds: sale.variantIds.filter((id) => candidate.has(id)),
-    }))
-    .filter((sale) => sale.conflictingVariantIds.length > 0);
-}
 
 /**
  * "정가의 N% 할인" 일괄 채우기.
@@ -235,7 +198,7 @@ export function validateRows(rows: TimeSaleRow[]): RowError[] {
 /**
  * 실제로 세일에 들어가는 품목.
  *
- * 세일가를 비운 품목은 `buildPriceListPayloads` 가 이미 빼고 있다. 중복 검사처럼 "이 세일이
+ * 세일가를 비운 품목은 `buildTimeSaleWriteBody` 가 이미 빼고 있다. 중복 검사처럼 "이 세일이
  * 건드리는 품목" 을 묻는 쪽도 같은 기준을 써야 한다 — 고른 상품의 옵션 전부를 세면 세일가를
  * 넣지도 않은 품목 때문에 저장이 막힌다.
  */
@@ -243,87 +206,40 @@ export function saleVariantIds(rows: TimeSaleRow[]): string[] {
   return rows.filter((row) => row.generalSalePrice !== null).map((row) => row.variantId);
 }
 
-export type PriceListPricePayload = {
-  amount: number;
-  currency_code: string;
-  variant_id: string;
-};
-
-export type PriceListPayload = {
+export type TimeSaleWriteBody = {
   title: string;
-  description: string;
-  type: 'sale';
-  status: 'active';
   starts_at: string;
   ends_at: string;
-  rules: Record<string, string[]>;
-  prices: PriceListPricePayload[];
+  status: 'draft' | 'active';
+  general_prices: Array<{ variant_id: string; amount: number }>;
+  membership_prices: Array<{ variant_id: string; amount: number }>;
 };
 
-const CURRENCY = 'krw';
-
-/** 멤버십용 리스트는 제목으로도 구분되게 접미사를 붙인다 — Medusa 기본 어드민 목록에서 사람이 읽는다. */
-export const MEMBERSHIP_LIST_TITLE_SUFFIX = ' (멤버십)';
-
 /**
- * 타임세일 하나 → price list 페이로드 (일반용, 멤버십용).
- *
- * 멤버십 세일가가 하나도 없으면 멤버십용 리스트를 만들지 않는다. 그래도 멤버십 구독자는 일반용
- * 리스트(전원 대상)를 받으므로 세일에서 빠지지 않는다.
+ * 편집 행 → 저장 요청 본문. 일반 세일가를 비운 품목은 세일에서 빠지고, 멤버십가가 없는 상품은 멤버십
+ * 세일가도 만들지 않는다 (`validateRows` 와 같은 기준).
  */
-export function buildPriceListPayloads(params: {
+export function buildTimeSaleWriteBody(params: {
   title: string;
   period: TimeSalePeriod;
+  status: 'draft' | 'active';
   rows: TimeSaleRow[];
-  regionIds: string[];
-  membershipGroupId: string;
-}): { general: PriceListPayload; membership: PriceListPayload | null } {
-  const { title, period, rows, regionIds, membershipGroupId } = params;
-
-  const generalPrices = rows
-    .filter((row) => row.generalSalePrice !== null)
-    .map((row) => ({
-      amount: row.generalSalePrice as number,
-      currency_code: CURRENCY,
-      variant_id: row.variantId,
-    }));
-
-  const membershipPrices = rows
-    .filter((row) => row.membershipBasePrice !== null && row.membershipSalePrice !== null)
-    .map((row) => ({
-      amount: row.membershipSalePrice as number,
-      currency_code: CURRENCY,
-      variant_id: row.variantId,
-    }));
-
-  const base = {
-    type: 'sale' as const,
-    status: 'active' as const,
-    starts_at: period.startsAt,
-    ends_at: period.endsAt,
-  };
-
+}): TimeSaleWriteBody {
   return {
-    general: {
-      ...base,
-      title,
-      description: '타임세일 (전체)',
-      rules: { region_id: regionIds },
-      prices: generalPrices,
-    },
-    membership:
-      membershipPrices.length === 0
-        ? null
-        : {
-            ...base,
-            title: `${title}${MEMBERSHIP_LIST_TITLE_SUFFIX}`,
-            description: '타임세일 (멤버십 구독자)',
-            rules: { 'customer.groups.id': [membershipGroupId] },
-            prices: membershipPrices,
-          },
+    title: params.title.trim(),
+    starts_at: params.period.startsAt,
+    ends_at: params.period.endsAt,
+    status: params.status,
+    general_prices: params.rows
+      .filter((row) => row.generalSalePrice !== null)
+      .map((row) => ({ variant_id: row.variantId, amount: row.generalSalePrice as number })),
+    membership_prices: params.rows
+      .filter((row) => row.membershipBasePrice !== null && row.membershipSalePrice !== null)
+      .map((row) => ({ variant_id: row.variantId, amount: row.membershipSalePrice as number })),
   };
 }
 
+const CURRENCY = 'krw';
 
 type RawVariant = {
   id: string;
@@ -372,4 +288,13 @@ export function toTimeSaleRows(products: RawProduct[]): TimeSaleRow[] {
       };
     }),
   );
+}
+
+/**
+ * 저장 실패에서 운영자에게 보여줄 서버 사유. axios 인터셉터가 4xx 를 `CustomError(message=서버 메시지)` 로
+ * 바꿔 던지므로 `error.message` 가 그 사유다. 5xx·네트워크 오류의 문구는 사유가 아니라 null.
+ */
+export function readServerReason(error: unknown): string | null {
+  if (isCustomError(error) && error.statusCode < 500 && error.message) return error.message;
+  return null;
 }

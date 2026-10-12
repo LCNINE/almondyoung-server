@@ -2,5 +2,8 @@
   "title": "Category",
   "errorLine1": "An error occurred",
   "errorLine2": "while loading categories.",
-  "viewProducts": "View products"
+  "viewProducts": "View products",
+  "shortcuts": "Shortcuts",
+  "almondyoungPlay": "AlmondYoung Play",
+  "dabeau": "Booking app"
 }

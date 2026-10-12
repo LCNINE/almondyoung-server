@@ -3,10 +3,13 @@ import { Module } from '@nestjs/common';
 import { UserContactClient } from '@app/shared';
 import { MembershipAudienceClient } from './clients/membership-audience.client';
 import { NhnAlimtalkClient } from './clients/nhn-alimtalk.client';
+import { AlimtalkAutoNoticesController } from './controllers/alimtalk-auto-notices.controller';
 import { AlimtalkAutoSendsController } from './controllers/alimtalk-auto-sends.controller';
 import { AlimtalkCampaignsController } from './controllers/alimtalk-campaigns.controller';
 import { AlimtalkTemplatesController } from './controllers/alimtalk-templates.controller';
 import { AlimtalkRepository } from './repositories/alimtalk.repository';
+import { AlimtalkAutoNoticeManager } from './services/alimtalk-auto-notice.manager';
+import { AlimtalkAutoNoticesService } from './services/alimtalk-auto-notices.service';
 import { AlimtalkAutoSendReader } from './services/alimtalk-auto-send.reader';
 import { AlimtalkAutoSendsService } from './services/alimtalk-auto-sends.service';
 import { AlimtalkCampaignManager } from './services/alimtalk-campaign.manager';
@@ -21,7 +24,12 @@ import { AlimtalkTemplatesService } from './services/alimtalk-templates.service'
 /** 관리자 알림톡: 카카오 템플릿 관리와 대상 골라 보내기. 이벤트 알림·인증번호 발송 경로와는 따로 돈다. */
 @Module({
   imports: [HttpModule],
-  controllers: [AlimtalkTemplatesController, AlimtalkCampaignsController, AlimtalkAutoSendsController],
+  controllers: [
+    AlimtalkTemplatesController,
+    AlimtalkCampaignsController,
+    AlimtalkAutoSendsController,
+    AlimtalkAutoNoticesController,
+  ],
   providers: [
     NhnAlimtalkClient,
     MembershipAudienceClient,
@@ -34,6 +42,8 @@ import { AlimtalkTemplatesService } from './services/alimtalk-templates.service'
     AlimtalkCampaignManager,
     AlimtalkCampaignsService,
     AlimtalkAutoSendReader,
+    AlimtalkAutoNoticeManager,
+    AlimtalkAutoNoticesService,
     AlimtalkAutoSendsService,
     AlimtalkDispatchManager,
     AlimtalkDispatchWorker,

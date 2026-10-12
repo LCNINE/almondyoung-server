@@ -1,0 +1,44 @@
+import type { ChannelDelta, QuantityCorrectionDelta } from '../channel-order-change/channel-order-change.types';
+import type { CancelRequestLine } from './channel-cancel-request.types';
+
+function isQuantityCorrection(delta: ChannelDelta): delta is QuantityCorrectionDelta {
+  return delta.type === 'quantity_correction';
+}
+
+function takeRequested(
+  lines: CancelRequestLine[],
+  deltas: ChannelDelta[],
+  sizeOf: (delta: QuantityCorrectionDelta) => number,
+): { matched: true; rest: ChannelDelta[] } | { matched: false } {
+  const taken = new Set<ChannelDelta>();
+  for (const line of lines) {
+    const hit = deltas.find(
+      (delta) =>
+        !taken.has(delta) &&
+        isQuantityCorrection(delta) &&
+        delta.salesOrderLineId === line.salesOrderLineId &&
+        sizeOf(delta) === line.quantity,
+    );
+    if (!hit) return { matched: false };
+    taken.add(hit);
+  }
+  return { matched: true, rest: deltas.filter((delta) => !taken.has(delta)) };
+}
+
+/**
+ * 정산 중인 부분취소(core 는 확정 때 이미 줄였다) ↔ 아직 안 줄인 채널 스냅샷. 다른 변경(주소 등)이 수집되면 diff 가 요청분을
+ * «늘어남»으로 본다 — 우리가 낸 감소의 거울이라 5번 규칙에 넘기지 않는다(#1016 36번 재설계 D10). 요청 줄 전부가 정확히 맞을 때만 먹는다.
+ */
+export function takeRequestedIncreases(lines: CancelRequestLine[], deltas: ChannelDelta[]) {
+  return takeRequested(lines, deltas, (d) => d.correctedQuantity - d.quantityBefore);
+}
+
+/** 요청 줄을 판매 줄별로 합친다(처음 나온 순서, 수량은 더한다). 채널 줄 번호는 같은 판매 줄이면 같다. */
+export function combineRequestLines(lines: CancelRequestLine[]): CancelRequestLine[] {
+  const byLine = new Map<string, CancelRequestLine>();
+  for (const line of lines) {
+    const seen = byLine.get(line.salesOrderLineId);
+    byLine.set(line.salesOrderLineId, seen ? { ...seen, quantity: seen.quantity + line.quantity } : { ...line });
+  }
+  return [...byLine.values()];
+}

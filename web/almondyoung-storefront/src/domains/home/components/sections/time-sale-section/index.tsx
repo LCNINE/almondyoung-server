@@ -3,7 +3,6 @@
 import { useState } from "react"
 import type { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
-import { TimeSaleCountdown } from "@/components/shared/time-sale-countdown"
 import { TimeSaleDeadline } from "@/components/shared/time-sale-deadline"
 import type { StoreCustomerWithGroups } from "@/lib/types/ui/medusa"
 import type { TimeSaleTab } from "@/lib/utils/time-sale-tabs"
@@ -12,8 +11,6 @@ import { HomeSection } from "../../shared/home-section"
 
 interface TimeSaleSectionProps {
   endsAt: string
-  /** 세일이 여럿일 때만 준다 — 하나뿐이면 "타임세일" 이 곧 이름이라 운영자가 지은 제목이 군더더기다. */
-  title?: string
   products: HttpTypes.StoreProduct[]
   tabs: TimeSaleTab[]
   customer: StoreCustomerWithGroups | null
@@ -33,7 +30,6 @@ const FALLBACK_TAB = {
 
 export function TimeSaleSection({
   endsAt,
-  title,
   products,
   tabs,
   customer,
@@ -51,9 +47,10 @@ export function TimeSaleSection({
     ? products.filter((product) => activeTab.productIds.includes(product.id))
     : products
 
+  // 운영자가 지은 세일 이름은 내부용이라 고객에게 내보내지 않는다 — 세일이 여럿이어도 제목은 "타임세일".
   const heading = (
     <span className="text-[#191f28]">
-      {title ?? `${t("titleFirst")}${t("titleSecond")}`}
+      {`${t("titleFirst")}${t("titleSecond")}`}
     </span>
   )
 
@@ -79,14 +76,6 @@ export function TimeSaleSection({
         // 9번째부터 감춰 두 줄을 맞춘다. 넘치는 상품은 "더보기" 로 전용 페이지에서 본다.
         gridClassName="md:max-lg:[&>li:nth-child(n+9)]:hidden"
         emptyTitle={t("emptyTitle")}
-        renderOverlay={() => (
-          <TimeSaleCountdown
-            endsAt={endsAt}
-            compact
-            clockOnly
-            className="absolute inset-x-0 bottom-0 z-10 bg-black/55 py-1 text-center text-[13px] font-semibold text-white tabular-nums"
-          />
-        )}
       />
     </HomeSection>
   )

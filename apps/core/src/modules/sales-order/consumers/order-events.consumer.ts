@@ -5,6 +5,8 @@ import { EventPayload, EventEnvelope, RetryPolicy, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { ChannelOrderChangeService } from '../channel-order-change/channel-order-change.service';
+import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
+import { ChannelCancelSettler } from '../channel-cancel-request/channel-cancel-settler';
 import { LibraryService } from '../../library/services/library.service';
 import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
 import { FulfillmentWorkflowGate } from '../../fulfillment/services/fulfillment-workflow-gate.service';
@@ -35,6 +37,8 @@ export class OrderEventsConsumer {
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
     private readonly channelOrderChanges: ChannelOrderChangeService,
+    private readonly cancelSettler: ChannelCancelSettler,
+    private readonly cancelRequests: ChannelCancelRequestService,
   ) {}
 
   private async checkAndRecordEvent(
@@ -249,6 +253,8 @@ export class OrderEventsConsumer {
           },
           tx,
         );
+        // 우리가 낸 취소 요청을 닫는다 — 정산 중 행(확정 때 적용, 위 cancel() 은 이미 취소된 주문이라 아무것도 안 했다). 줄 단위 취소(마켓)는 요청과 무관하다.
+        if (!lines) await this.cancelSettler.settleCancelled(salesOrderId, tx);
 
         this.logger.log(`[OrderCancelled] Cancelled sales order: ${salesOrderId}, reason: ${payload.reason}`);
       });
@@ -288,6 +294,22 @@ export class OrderEventsConsumer {
       if (alreadyProcessed) return;
       await this.channelOrderChanges.handle(salesOrderId, payload, envelope.messageId, tx);
     });
+  }
+
+  /**
+   * 정산 실패(#1016 36번 재설계 §7.3). 정산 중 요청만 읽고, 순서 없이 여러 번 와도 늦은 것만 적는다.
+   * order_events 에 기록하지 않는다(판매주문 생애가 아니다).
+   */
+  @On(ORDER_STREAM, 'ChannelOrderSettlementFailed')
+  async handleChannelOrderSettlementFailed(
+    @EventPayload() payload: EventPayloadOf<typeof ORDER_STREAM, 'ChannelOrderSettlementFailed'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof ORDER_STREAM, 'ChannelOrderSettlementFailed'>,
+  ) {
+    this.logger.log(
+      `[ChannelOrderSettlementFailed] ${payload.requestId} ${payload.failureCode} retryable=${payload.retryable}`,
+      { correlationId: envelope.correlationId },
+    );
+    await this.cancelRequests.recordSettlementFailure(payload);
   }
 
   @On(ORDER_STREAM, 'OrderRefundCreated')

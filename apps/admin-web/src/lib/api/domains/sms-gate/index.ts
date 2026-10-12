@@ -122,6 +122,7 @@ export interface SmsCampaignPreview {
   devices: { name: string; dailyLimit: number; intervalSeconds: number }[];
   estimatedStartDate: string | null;
   estimatedCompleteDate: string | null;
+  longestName: string | null;
 }
 
 export type SmsCampaignState = 'SCHEDULED' | 'PROCESSING' | 'COMPLETED' | 'CANCELLED';

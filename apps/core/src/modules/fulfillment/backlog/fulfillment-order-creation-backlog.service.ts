@@ -80,6 +80,17 @@ export class FulfillmentOrderCreationBacklogService {
     );
   }
 
+  async findBySalesOrderId(salesOrderId: string, tx?: DbTx): Promise<FulfillmentOrderCreationBacklog | undefined> {
+    return this.dbService.run(async (trx) => {
+      const [row] = await trx
+        .select()
+        .from(wmsTables.fulfillmentOrderCreationBacklogs)
+        .where(eq(wmsTables.fulfillmentOrderCreationBacklogs.salesOrderId, salesOrderId))
+        .limit(1);
+      return row;
+    }, tx);
+  }
+
   async claimPending(limit = 20): Promise<FulfillmentOrderCreationBacklog[]> {
     if (!this.workflowGate.shouldRunFoCreation()) {
       return [];
@@ -260,6 +271,39 @@ export class FulfillmentOrderCreationBacklogService {
         this.logger.log(`Requeued ${updated.length} fulfillment creation backlog(s) for variant ${variantId}`);
       }
 
+      return updated.length;
+    }, tx);
+  }
+
+  /**
+   * 주문 하나의 매칭 대기를 깨운다 — 리컨실러 12번 규칙 전용(스펙 2026-10-08 §5.3). variant 단위 깨우기는 그 variant 를
+   * 기다리는 모든 주문을 깨워, 주문 단위로 횟수를 세는 리컨실러가 자기 대상 밖을 건드리게 된다.
+   * 다른 경로가 먼저 깨웠으면 CAS 에 걸려 0 을 낸다.
+   */
+  async requeueAwaitingMatching(salesOrderId: string, tx?: DbTx): Promise<number> {
+    if (!this.workflowGate.shouldRunFoCreation()) {
+      return 0;
+    }
+
+    return this.dbService.run(async (trx) => {
+      const updated = await trx
+        .update(wmsTables.fulfillmentOrderCreationBacklogs)
+        .set({
+          status: 'pending',
+          waitingVariantIds: [],
+          failureReason: null,
+          failureDetails: null,
+          nextAttemptAt: new Date(),
+          lockedAt: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(wmsTables.fulfillmentOrderCreationBacklogs.salesOrderId, salesOrderId),
+            eq(wmsTables.fulfillmentOrderCreationBacklogs.status, 'awaiting_matching'),
+          ),
+        )
+        .returning({ id: wmsTables.fulfillmentOrderCreationBacklogs.id });
       return updated.length;
     }, tx);
   }

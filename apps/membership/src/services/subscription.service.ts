@@ -63,6 +63,10 @@ export class SubscriptionService {
     return this.configService.get<string>('MEMBERSHIP_INVOICE_BILLING_ENABLED') === 'true';
   }
 
+  async isMembershipActive(userId: string): Promise<boolean> {
+    return (await this.entitlementService.getActiveUserIds([userId])).includes(userId);
+  }
+
   /**
    * 현재 구독 상태 조회
    *

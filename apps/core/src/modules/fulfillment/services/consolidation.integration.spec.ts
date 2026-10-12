@@ -7,14 +7,16 @@ import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import {
+  CONSOLIDATION_RECIPIENT,
+  ConsolidationBase,
+  consolidationBase,
+  consolidationSources,
+  createConsolidationSource,
   inRollbackTx,
+  makeConsolidationService,
   makeDb,
   makeDbService,
-  seedHolder,
-  seedMatching,
-  seedSalesOrder,
-  seedSku,
-  seedWarehouseWithZone,
+  pendingConsolidationBlockedByWaybill,
   wireLogistics,
   Wired,
 } from './__support__';
@@ -27,13 +29,7 @@ import { assembleBoxWithdrawal } from './__support__/box-withdrawal-wiring';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
-const RECIPIENT = {
-  recipientName: 'Consolidation Customer',
-  phone: '010-1111-2222',
-  postalCode: '01234',
-  roadAddress: 'Seoul test road 1',
-  detailAddress: '101',
-};
+const RECIPIENT = CONSOLIDATION_RECIPIENT;
 
 describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
   jest.setTimeout(120_000);
@@ -50,24 +46,7 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
     ({ sql: client, db } = makeDb(DATABASE_URL as string));
     dbService = makeDbService(db);
     wired = wireLogistics(dbService, 'v2');
-    consolidation = new ConsolidationService(
-      dbService,
-      new FulfillmentCommandService(dbService),
-      wired.shipmentReservations,
-      new FulfillmentInvariantService(),
-      new AuditService(dbService),
-      {
-        getScopesByRoles: () =>
-          Promise.resolve(
-            new Set([
-              FULFILLMENT_SCOPE.SHIPMENT_CONSOLIDATE,
-              FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT,
-              FULFILLMENT_SCOPE.SHIPMENT_REOPEN,
-            ]),
-          ),
-      } as never,
-      new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
-    );
+    consolidation = makeConsolidationService(dbService, wired);
     planning = new ShipmentPlanningService(
       dbService,
       new FulfillmentCommandService(dbService),
@@ -84,97 +63,13 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
     await client.end();
   });
 
-  async function baseFixture(tx: DbTx, onHand = 100) {
-    const { warehouseId, locationId } = await seedWarehouseWithZone(tx);
-    const { holderId } = await seedHolder(tx);
-    const { skuId } = await seedSku(tx, holderId);
-    const [profile] = await tx
-      .insert(wmsTables.deliveryProfiles)
-      .values({
-        name: `consolidation-profile-${randomUUID()}`,
-        sourceType: 'in_house',
-        supportedFulfillmentModes: ['in_house'],
-      })
-      .returning();
-    await tx.update(wmsTables.skus).set({ deliveryProfileId: profile.id }).where(eq(wmsTables.skus.id, skuId));
-    await tx.insert(wmsTables.stockLedgers).values({
-      skuId,
-      warehouseId,
-      locationId,
-      stockState: 'ON_HAND',
-      qty: onHand,
-    });
-    return { warehouseId, skuId, profileId: profile.id };
-  }
-
-  async function createOrderShipment(
+  const baseFixture = consolidationBase;
+  const createOrderShipment = (
     tx: DbTx,
-    base: Awaited<ReturnType<typeof baseFixture>>,
-    options: {
-      quantity: number;
-      recipient?: typeof RECIPIENT;
-      salesChannel?: 'medusa' | 'naver' | 'coupang';
-      customerId?: string;
-      entrancePassword?: string;
-      orderDate?: Date;
-    },
-  ) {
-    const variantId = randomUUID();
-    const { salesOrderId, lineIds } = await seedSalesOrder(tx, {
-      lines: [{ variantId, quantity: options.quantity }],
-    });
-    await tx
-      .update(wmsTables.salesOrders)
-      .set({
-        salesChannel: options.salesChannel ?? 'medusa',
-        customerId: options.customerId ?? customerId,
-        customerName: 'Consolidation Customer',
-        customerPhone: '010-1111-2222',
-        shippingAddress: options.recipient ?? RECIPIENT,
-        // 비번은 스냅샷 밖의 전용 슬롯이다 — FO 생성이 여기서 상자 사본을 뜬다.
-        ...(options.entrancePassword ? { entrancePassword: options.entrancePassword } : {}),
-        ...(options.orderDate ? { orderDate: options.orderDate } : {}),
-      })
-      .where(eq(wmsTables.salesOrders.id, salesOrderId));
-    await tx
-      .update(wmsTables.salesOrderLines)
-      .set({ channelOrderItemId: `item-${randomUUID()}`, channelProductId: `product-${randomUUID()}` })
-      .where(eq(wmsTables.salesOrderLines.id, lineIds[0]));
-    await seedMatching(tx, { variantId, skuId: base.skuId });
-    await wired.fulfillments.create({ salesOrderId, warehouseId: base.warehouseId }, tx);
-    const [row] = await tx
-      .select({
-        fulfillmentOrderId: wmsTables.fulfillmentOrders.id,
-        fulfillmentOrderItemId: wmsTables.fulfillmentOrderItems.id,
-        shipmentLineId: wmsTables.shipmentLines.id,
-        shipmentId: wmsTables.shipments.id,
-      })
-      .from(wmsTables.fulfillmentOrders)
-      .innerJoin(
-        wmsTables.fulfillmentOrderItems,
-        eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, wmsTables.fulfillmentOrders.id),
-      )
-      .innerJoin(
-        wmsTables.shipmentLines,
-        eq(wmsTables.shipmentLines.fulfillmentOrderItemId, wmsTables.fulfillmentOrderItems.id),
-      )
-      .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
-      .where(eq(wmsTables.fulfillmentOrders.salesOrderId, salesOrderId));
-    const [shipment] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, row.shipmentId));
-    const [line] = await tx
-      .select()
-      .from(wmsTables.shipmentLines)
-      .where(eq(wmsTables.shipmentLines.id, row.shipmentLineId));
-    return { salesOrderId, ...row, shipment, line };
-  }
-
-  function requestFor(...fixtures: Array<Awaited<ReturnType<typeof createOrderShipment>>>) {
-    return fixtures.map((fixture) => ({
-      shipmentId: fixture.shipment.id,
-      expectedManifestVersion: fixture.shipment.manifestVersion,
-      expectedReservationVersion: fixture.shipment.reservationVersion,
-    }));
-  }
+    base: ConsolidationBase,
+    options: Omit<Parameters<typeof createConsolidationSource>[3], 'customerId'> & { customerId?: string },
+  ) => createConsolidationSource(tx, wired, base, { ...options, customerId: options.customerId ?? customerId });
+  const requestFor = consolidationSources;
 
   it("carries the most recent order's entrance password onto the consolidated target", async () => {
     await inRollbackTx(db, async (tx) => {
@@ -768,5 +663,38 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
       await firstConnection.sql.end();
       await secondConnection.sql.end();
     }
+  });
+
+  it('findPendingOperationIdForSource: 대기 중 합포장의 원본이면 그 작업, 끝나면 null', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const p = await pendingConsolidationBlockedByWaybill(tx, wired, consolidation, customerId);
+      expect(await consolidation.findPendingOperationIdForSource(p.first.shipment.id, tx)).toBe(p.operationId);
+      expect(await consolidation.findPendingOperationIdForSource(p.second.shipment.id, tx)).toBe(p.operationId);
+      await p.voidWaybill();
+      await consolidation.resumePending(p.operationId, tx);
+      expect(await consolidation.findPendingOperationIdForSource(p.first.shipment.id, tx)).toBeNull();
+    });
+  });
+
+  it('resumeReadiness·tryResumePending: 송장이 막는 동안은 blocked, 송장을 취소하면 completed, 다시 부르면 already_completed', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const p = await pendingConsolidationBlockedByWaybill(tx, wired, consolidation, customerId);
+
+      const blocked = await consolidation.resumeReadiness(p.operationId, tx);
+      expect(blocked?.blockers).toEqual([
+        expect.objectContaining({ shipmentId: p.first.shipment.id, codes: expect.arrayContaining(['ACTIVE_INVOICE']) }),
+      ]);
+      expect(blocked?.sources.map((s) => [s.status, s.recoveryCode])).toEqual([
+        ['recovery_required', 'CONSOLIDATION_PENDING'],
+        ['recovery_required', 'CONSOLIDATION_PENDING'],
+      ]);
+      expect(await consolidation.tryResumePending(p.operationId, tx)).toBe('blocked');
+
+      await p.voidWaybill();
+      expect((await consolidation.resumeReadiness(p.operationId, tx))?.blockers).toEqual([]);
+      expect(await consolidation.tryResumePending(p.operationId, tx)).toBe('completed');
+      expect(await consolidation.resumeReadiness(p.operationId, tx)).toBeNull();
+      expect(await consolidation.tryResumePending(p.operationId, tx)).toBe('already_completed');
+    });
   });
 });

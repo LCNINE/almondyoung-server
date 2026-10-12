@@ -54,12 +54,23 @@ export type StoreRefundStatus =
   | "manual_pending"
   | "succeeded"
   | "failed"
+  // 채널 주문 정산(#1016 36번 재설계, 스펙 §8.2): 지연·거절 / 계좌 송금 대기
+  | "delayed"
+  | "transfer_pending"
+
+/**
+ * core 가 보내는 원본 값. core 는 스토어프론트보다 먼저 값을 늘린다(같은 SST 스택이라 배포 순서가 없다) —
+ * 표시 전에 반드시 `toRefundStatus`/`resolveRefundStatus`(`@/lib/orders/refund-status`)로 접는다.
+ */
+export type StoreRefundStatusWire = StoreRefundStatus | (string & {})
 
 export type StoreCancelUnavailableReason =
   | "already_shipped"
   | "already_cancelled"
   | "channel_order"
   | "already_processing"
+  | "digital_downloaded"
+  | "cancel_requested"
 
 export type StoreClaimStatus =
   | "none"
@@ -69,7 +80,7 @@ export type StoreClaimStatus =
   | "completed"
 
 export interface RefundSummary {
-  status: StoreRefundStatus
+  status: StoreRefundStatusWire
   amount: number | null
   currency: string
   paymentMethodLabel: string | null
@@ -83,7 +94,7 @@ export interface StoreOrderActionsResponse {
   channelOrderId: string
   orderStatus: string
   fulfillmentStatus: StoreFulfillmentStatus
-  refundStatus: StoreRefundStatus
+  refundStatus: StoreRefundStatusWire
   claimStatus: StoreClaimStatus
   availableActions: StoreOrderAction[]
   cancelUnavailableReason?: StoreCancelUnavailableReason
