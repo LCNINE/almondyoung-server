@@ -11,6 +11,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   serial,
   text,
   timestamp,
@@ -115,8 +116,46 @@ export const roles = pgTable('roles', {
   roleId: uuid('role_id').primaryKey().defaultRandom(),
   name: varchar('name', { length: 100 }).notNull().unique(),
   description: text('description'),
+  // 화면 표시 이름. 비어 있으면 name 을 그대로 보여준다.
+  displayName: varchar('display_name', { length: 100 }),
   ...timestampColumns,
 });
+
+// 권한 목록의 DB 반영. 원본은 코드(@app/authorization PERMISSION_CATALOG)이고,
+// 부팅 동기화가 새 키만 넣고 사라진 키엔 deprecated_at 만 찍는다(지우지 않는다).
+export const iamPermissions = pgTable('iam_permissions', {
+  key: varchar('key', { length: 100 }).primaryKey(),
+  domain: varchar('domain', { length: 50 }).notNull(),
+  label: varchar('label', { length: 100 }).notNull(),
+  description: text('description').notNull(),
+  dangerous: boolean('dangerous').notNull(),
+  systemOnly: boolean('system_only').notNull(),
+  registeredAt: timestamp('registered_at')
+    .default(sql`now()`)
+    .notNull(),
+  deprecatedAt: timestamp('deprecated_at'),
+});
+
+// 역할↔권한 매핑의 원본. 코드는 이 표를 덮어쓰지 않는다.
+export const iamRolePermissions = pgTable(
+  'iam_role_permissions',
+  {
+    roleId: uuid('role_id')
+      .references(() => roles.roleId, { onDelete: 'cascade' })
+      .notNull(),
+    permissionKey: varchar('permission_key', { length: 100 })
+      .references(() => iamPermissions.key)
+      .notNull(),
+    // null 이면 시스템(초기 부여)
+    grantedBy: uuid('granted_by'),
+    grantedAt: timestamp('granted_at')
+      .default(sql`now()`)
+      .notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.roleId, table.permissionKey] }),
+  }),
+);
 
 // 사용자-역할 할당 테이블
 export const userRoleAssignments = pgTable(
@@ -719,6 +758,8 @@ export const blacklistsRelations = relations(blacklists, ({ one }) => ({
 export const userServiceTables = {
   users,
   roles,
+  iamPermissions,
+  iamRolePermissions,
   userRoleAssignments,
   userIdentities,
   businessLicenses,

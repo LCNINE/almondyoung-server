@@ -764,6 +764,12 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     evidence: 'apps/user-service/src/api/business-licenses/business-licenses.service.ts:293',
     predicate: '.where(eq(businessLicenses.userId, userId))',
   },
+  'user-service GET /me/permissions': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/iam/me-permissions.controller.ts:21',
+    predicate: 'this.iamService.forRoles(user.roles ?? [])',
+    note: '입력은 서명 검증된 토큰의 역할뿐이다. 다른 사용자를 지정하는 파라미터가 없고, 응답은 그 역할들의 권한 키 합집합과 역할 표시 이름이다.',
+  },
   'user-service GET /cafe24/link': {
     verdict: 'SAFE',
     evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:370',
@@ -924,15 +930,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(147);
+    expect(targets).toHaveLength(148);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(147);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(146);
+    expect(new Set(targets.map(keyOf)).size).toBe(148);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(147);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

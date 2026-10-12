@@ -92,19 +92,27 @@ export const STOREFRONT_APP_CLIENT_SEED: OAuthClientSeed = {
 };
 
 export const USER_SERVICE_REFERENCE_ROLES = [
-  { roleId: FIXED_UUIDS.ROLE_MASTER, name: 'master', description: '마스터' },
-  { roleId: FIXED_UUIDS.ROLE_ADMIN, name: 'admin', description: '관리자' },
-  { roleId: FIXED_UUIDS.ROLE_MEMBERSHIP, name: 'membership', description: '멤버십 회원' },
-  { roleId: FIXED_UUIDS.ROLE_USER, name: 'user', description: '일반 회원' },
+  { roleId: FIXED_UUIDS.ROLE_MASTER, name: 'master', description: '마스터', displayName: '마스터' },
+  { roleId: FIXED_UUIDS.ROLE_ADMIN, name: 'admin', description: '관리자', displayName: '관리자' },
+  { roleId: FIXED_UUIDS.ROLE_MEMBERSHIP, name: 'membership', description: '멤버십 회원', displayName: '멤버십 회원' },
+  { roleId: FIXED_UUIDS.ROLE_USER, name: 'user', description: '일반 회원', displayName: '일반 회원' },
   {
     roleId: FIXED_UUIDS.ROLE_LOGISTICS_WORKER,
     name: 'logistics_worker',
     description: '물류 작업자',
+    displayName: '물류 작업자',
   },
   {
     roleId: FIXED_UUIDS.ROLE_LOGISTICS_MANAGER,
     name: 'logistics_manager',
     description: '물류 관리자',
+    displayName: '물류 관리자',
+  },
+  {
+    roleId: FIXED_UUIDS.ROLE_INTERN,
+    name: 'intern',
+    description: '조회 전용 — 개인정보는 가려진다',
+    displayName: '인턴',
   },
 ];
 
@@ -149,9 +157,10 @@ export class UserServiceSeedStep extends SeedStep {
 
   async check(): Promise<SeedCheckResult> {
     // Roles
-    const roleIds = ROLES.map((r) => r.roleId);
-    const existingRoles = await this.findExistingIds('roles', roleIds, 'role_id');
-    const missingRoles = ROLES.filter((r) => !existingRoles.has(r.roleId));
+    // 이름으로 본다 — 같은 이름의 역할이 다른 id 로 이미 있으면 있는 것이다(삽입도 충돌 시 건너뛴다).
+    const roleNames = ROLES.map((r) => r.name);
+    const existingRoles = await this.findExistingIds('roles', roleNames, 'name');
+    const missingRoles = ROLES.filter((r) => !existingRoles.has(r.name));
 
     // Scopes
     const scopeKeys = SCOPES.map((s) => s.key);
@@ -284,9 +293,9 @@ export class UserServiceSeedStep extends SeedStep {
       this.logger.step(1, 6, 'Inserting roles');
       for (const role of ROLES) {
         await this.db.execute(sql`
-          INSERT INTO roles (role_id, name, description)
-          VALUES (${role.roleId}, ${role.name}, ${role.description})
-          ON CONFLICT (role_id) DO NOTHING
+          INSERT INTO roles (role_id, name, description, display_name)
+          VALUES (${role.roleId}, ${role.name}, ${role.description}, ${role.displayName})
+          ON CONFLICT DO NOTHING
         `);
       }
       itemsApplied += ROLES.length;
