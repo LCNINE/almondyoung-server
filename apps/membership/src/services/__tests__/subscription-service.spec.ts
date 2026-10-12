@@ -34,6 +34,9 @@ describe('SubscriptionService - Layer Refactoring', () => {
     findPlan: jest.fn(),
     findContractsByUserId: jest.fn(),
     findByPaymentIntentId: jest.fn(),
+    findAdminGrantDays: jest.fn().mockResolvedValue(null),
+    findContractsByUserIdWithPlan: jest.fn(),
+    findAdjustmentEventsByUserId: jest.fn(),
   };
 
   const mockSubscriptionCreator = {
@@ -272,6 +275,21 @@ describe('SubscriptionService - Layer Refactoring', () => {
       expect(result?.tier).toMatchObject({ code: 'GOLD' });
     });
 
+    it('관리자 수기 지급 계약이면 adminGrant 에 지급 일수를 싣는다 (#1056)', async () => {
+      mockEntitlementService.getUserEntitlement.mockResolvedValue({
+        entitlement: { id: 'e1', startsAt: '2026-09-28', endsAt: '2026-09-30', pausedAt: null },
+        contract: { id: 'c1', userId: 'u1', planId: 'p1', status: 'ACTIVE', autoRenewal: false, billingDate: '2026-09-28', nextBillingDate: null, recurringCancelledAt: null },
+        plan: { id: 'p1', tierId: 't1', price: 10000, currency: 'KRW', durationDays: 30, trialDays: 0, isActive: true },
+        tier: { id: 't1', code: 'GOLD', priorityLevel: 1 },
+      });
+      mockContractReader.findAdminGrantDays.mockResolvedValueOnce(2);
+
+      const result = await service.getCurrentSubscriptionDetails('u1');
+
+      expect(mockContractReader.findAdminGrantDays).toHaveBeenCalledWith('c1');
+      expect(result?.adminGrant).toEqual({ days: 2 });
+    });
+
     it('dunning 항목이 있으면 paymentActionNeeded=true, 내부값은 노출 안 함', async () => {
       mockEntitlementService.getUserEntitlement.mockResolvedValue({
         entitlement: { id: 'e1', startsAt: '2026-06-01', endsAt: '2026-07-01', pausedAt: null },
@@ -294,6 +312,37 @@ describe('SubscriptionService - Layer Refactoring', () => {
       expect(result).not.toHaveProperty('attempts');
       expect(result).not.toHaveProperty('nextRetryAt');
       expect(result).not.toHaveProperty('lastErrorCode');
+    });
+  });
+
+  describe('getSubscriptionHistory', () => {
+    it('수기 지급 계약만 adminGrant 가 채워지고, 결제 가입 계약은 null 이다 (#1056)', async () => {
+      const plan = { price: 10000, currency: 'KRW', durationDays: 30 };
+      const contract = (id: string) => ({
+        id,
+        userId: 'u1',
+        planId: 'p1',
+        status: 'ACTIVE',
+        billingDate: '2026-09-28',
+        nextBillingDate: null,
+        cancelledAt: null,
+        autoRenewal: false,
+        createdAt: new Date('2026-09-28T00:00:00Z'),
+        updatedAt: new Date('2026-09-28T00:00:00Z'),
+      });
+      mockContractReader.findContractsByUserIdWithPlan.mockResolvedValue([
+        { contract: contract('granted'), plan, tier: { id: 't1', code: 'GOLD' } },
+        { contract: contract('paid'), plan, tier: { id: 't1', code: 'GOLD' } },
+      ]);
+      mockContractReader.findAdjustmentEventsByUserId.mockResolvedValue([
+        { id: 'ev1', contractId: 'granted', eventType: 'GRANTED_BY_ADMIN', metadata: { days: 2 }, createdAt: new Date('2026-09-28T00:00:00Z') },
+      ]);
+      mockEntitlementService.getUserEntitlement.mockResolvedValue(null);
+
+      const rows = await service.getSubscriptionHistory('u1');
+
+      expect(rows.find((r) => r.id === 'granted')?.adminGrant).toEqual({ days: 2 });
+      expect(rows.find((r) => r.id === 'paid')?.adminGrant).toBeNull();
     });
   });
 
