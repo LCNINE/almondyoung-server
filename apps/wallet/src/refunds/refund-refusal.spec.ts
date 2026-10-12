@@ -69,4 +69,11 @@ describe('refundRefusal — wallet 이 환불 요청을 거절할 때의 본문'
   it('무통장 응답 끊긴 환불을 다시 보낼 계좌가 없다 — 영구(운영자가 토스 상점관리자에서 확인)', () => {
     expect(refundRefusal('AMBIGUOUS_REFUND_NEEDS_ACCOUNT', 'x').retryable).toBe(false);
   });
+
+  it('다시 보냈는데 또 끊겼다 — 결과를 아직 모르니 일시', () => {
+    expect(refundRefusal('AMBIGUOUS_REFUND_UNRESOLVED', 'x')).toMatchObject({
+      message: '이전 환불 요청의 결과를 아직 확인하지 못했습니다. 잠시 뒤 다시 시도해 주세요.',
+      retryable: true,
+    });
+  });
 });

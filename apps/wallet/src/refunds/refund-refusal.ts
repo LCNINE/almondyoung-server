@@ -31,6 +31,11 @@ const REFUSALS = {
     retryable: true,
     message: '이전 환불 요청의 결과를 확인했습니다. 환불 금액을 다시 계산해 주세요.',
   },
+  // 다시 보냈는데 또 응답이 끊겼다 — 결과를 아직 모른다. 잠시 뒤 같은 요청을 다시 하면 같은 행을 또 같은 키로 보낸다
+  AMBIGUOUS_REFUND_UNRESOLVED: {
+    retryable: true,
+    message: '이전 환불 요청의 결과를 아직 확인하지 못했습니다. 잠시 뒤 다시 시도해 주세요.',
+  },
   // 무통장 환불을 다시 보내려면 고객 계좌가 필요한데 wallet 은 계좌를 저장하지 않는다 — 다시 보내도 같다
   AMBIGUOUS_REFUND_NEEDS_ACCOUNT: {
     retryable: false,
