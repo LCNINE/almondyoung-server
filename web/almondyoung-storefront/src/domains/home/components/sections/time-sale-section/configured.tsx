@@ -12,7 +12,9 @@ import {
   type SaleProduct,
   type SaleTab,
 } from "@packages/time-sale-ui"
+import type { HttpTypes } from "@medusajs/types"
 import { ProductQuickActions } from "@/domains/products/components/product-quick-actions"
+import { Quantity } from "@/domains/products/components/product-card/quantity"
 
 // 진행 중 세일 전부를 섹션 하나로 그린다(세일 이름은 고객에게 내보내지 않는다).
 export function ConfiguredTimeSale({
@@ -26,6 +28,7 @@ export function ConfiguredTimeSale({
   activeTabKey,
   productCount,
   pager,
+  stockProducts,
 }: {
   settings: TimeSaleSettings
   surface: SaleSurface
@@ -37,6 +40,8 @@ export function ConfiguredTimeSale({
   activeTabKey?: string
   productCount?: number
   pager?: SalePagerItem[]
+  /** 상품 id → 원본 상품. 가격 아래 재고 상태(일부 품절·N개 남음)를 상품 카드와 같은 컴포넌트로 그린다. */
+  stockProducts?: Record<string, HttpTypes.StoreProduct>
 }) {
   return (
     <PromotionTracker
@@ -63,6 +68,10 @@ export function ConfiguredTimeSale({
         sanitizeHtml={sanitizeHtml}
         moreHref={`/${countryCode}/time-sale`}
         pager={pager}
+        renderProductStatus={(product) => {
+          const stock = stockProducts?.[product.id]
+          return stock ? <Quantity product={stock} /> : null
+        }}
         renderProductActions={(product) =>
           product.quickActions ? (
             <ProductQuickActions

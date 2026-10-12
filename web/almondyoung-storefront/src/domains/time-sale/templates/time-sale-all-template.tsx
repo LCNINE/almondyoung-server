@@ -111,6 +111,9 @@ export async function TimeSaleAllTemplate({
             )
           : undefined
       }
+      stockProducts={Object.fromEntries(
+        products.map((product) => [product.id, product])
+      )}
       products={buildSaleProducts({
         sales,
         ids,

@@ -69,6 +69,9 @@ export type SaleRendererProps = {
   moreHref?: string | ((platform: SalePlatform) => string);
   renderProductActions?: (product: SaleProduct) => ReactNode;
 
+  // 가격 아래 재고 상태(일부 품절·N개 남음 등). 스토어프론트가 상품 카드와 같은 컴포넌트를 넣는다.
+  renderProductStatus?: (product: SaleProduct) => ReactNode;
+
   // 있으면 그리드는 받은 상품을 한 페이지로 그대로 그리고 링크형 페이지 번호를 둔다.
   // 더보기 서버 페이지네이션용.
   pager?: SalePagerItem[];
@@ -693,6 +696,7 @@ export function SaleRenderer(props: SaleRendererProps) {
                   stateOf={productState}
                   pager={props.pager}
                   renderProductActions={props.renderProductActions}
+                  renderProductStatus={props.renderProductStatus}
                   productVars={(p) => {
                     const own = periodOf(p, sale);
                     const current = productState(p);
@@ -1385,8 +1389,10 @@ function Products({
   productVars,
   pager,
   renderProductActions,
+  renderProductStatus,
 }: {
   renderProductActions?: (product: SaleProduct) => ReactNode;
+  renderProductStatus?: (product: SaleProduct) => ReactNode;
   pager?: SalePagerItem[];
   component: SaleComponent;
   products: SaleProduct[];
@@ -1689,6 +1695,7 @@ function Products({
                   labelOnly={c.options.membershipLabelOnly}
                   currency={currency}
                 />
+                {renderProductStatus && !p.soldOut && <div style={{ marginTop: 8 }}>{renderProductStatus(p)}</div>}
                 {!!p.reviewCount && p.reviewCount > 0 && Number.isFinite(p.rating) && (
                   <div
                     aria-label={`평점 ${p.rating}점, 리뷰 ${p.reviewCount.toLocaleString('ko-KR')}개`}

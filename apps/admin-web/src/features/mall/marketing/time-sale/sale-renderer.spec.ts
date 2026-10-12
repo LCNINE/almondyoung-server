@@ -969,6 +969,23 @@ describe('라이브 섹션 모양', () => {
     expect(html).toContain('상품A');
   });
 
+  it('재고 상태 슬롯은 품절이 아닌 상품에만 그린다(라이브 카드와 같다)', () => {
+    const html = renderToStaticMarkup(
+      createElement(SaleRenderer, {
+        ...props,
+        products: [
+          { ...product, id: 'p1' },
+          { ...product, id: 'p2', soldOut: true },
+        ],
+        renderProductStatus: (p: SaleProduct) =>
+          createElement('span', null, `상태-${p.id}`),
+      })
+    );
+
+    expect(html).toContain('상태-p1');
+    expect(html).not.toContain('상태-p2');
+  });
+
   it('카드 배지 남은 시간은 하루 넘으면 N일, 안이면 시:분:초', () => {
     expect(countdownText(4 * 86400 + 3600)).toBe('4일');
     expect(countdownText(3 * 3600 + 62)).toBe('03:01:02');

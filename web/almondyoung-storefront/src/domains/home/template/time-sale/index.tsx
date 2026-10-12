@@ -72,6 +72,11 @@ export async function TimeSaleWrapper({
       endsAt={endsAt}
       countryCode={countryCode}
       tabs={deriveTimeSaleTabs(shown, buildTabSources(categories), t("allTab"))}
+      stockProducts={Object.fromEntries(
+        fetched
+          .filter((product) => shown.some((item) => item.id === product.id))
+          .map((product) => [product.id, product])
+      )}
       products={buildSaleProducts({
         sales,
         ids: shown.map((product) => product.id),
