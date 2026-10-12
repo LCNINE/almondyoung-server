@@ -32,13 +32,6 @@ export class ChannelCancelRequestService {
     });
   }
 
-  latestFor(salesOrderId: string): Promise<CancelRequestView | null> {
-    return this.db.run(async (tx) => {
-      const row = await this.reader.latestFor(salesOrderId, tx);
-      return row ? toCancelRequestView(row) : null;
-    });
-  }
-
   /** 고객 환불 배지용 — 정산 칸이 있는 요청만, 최근 순 */
   settlementFactsFor(salesOrderId: string, now: Date = new Date()): Promise<ChannelSettlementFact[]> {
     return this.db.run(async (tx) => {

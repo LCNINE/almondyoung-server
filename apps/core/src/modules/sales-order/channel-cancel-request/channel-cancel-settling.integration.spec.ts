@@ -103,10 +103,34 @@ describeIfDb('정산 중 요청의 사실 받기 (DB integration, rollback-only)
   it('부분 정산 중 + 채널 주문 취소 스냅샷 — superseded(CHANNEL_FULL_CANCEL), settleCancelled 와 같다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { w, seed, id } = await confirmPartial(tx);
-      await w.changes.handle(seed.salesOrderId, modifiedPayload(seed, { quantities: [1, 1], orderCancelled: true }), 'm-1', tx);
+      // 채널이 아직 줄이지 않았다(수량 원래대로) — 요청분의 «늘어남»은 먹혀야 하고 반영 대기 변경으로 새면 안 된다
+      await w.changes.handle(seed.salesOrderId, modifiedPayload(seed, { orderCancelled: true }), 'm-1', tx);
       const row = await rowOf(tx, id);
       expect(row.status).toBe('superseded');
       expect(row.metadata).toMatchObject({ supersededReason: 'CHANNEL_FULL_CANCEL' });
+      const channelRows = (await tx.select().from(wmsTables.salesOrderAmendments).where(eq(wmsTables.salesOrderAmendments.salesOrderId, seed.salesOrderId))).filter(
+        (a) => a.origin === 'channel',
+      );
+      expect(channelRows.flatMap((a) => a.deltas as unknown[])).toEqual([]);
+    });
+  });
+
+  it('부분 정산 중 refunded 기록 + 같은 스냅샷의 주문 취소 — superseded 가 아니라 applied + 결과(결과를 잃지 않는다)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, id } = await confirmPartial(tx);
+      await w.changes.handle(
+        seed.salesOrderId,
+        modifiedPayload(seed, {
+          quantities: [1, 1],
+          orderCancelled: true,
+          cancelRequests: [{ requestId: id, stage: 'refunded', refundAmount: 1000, shippingCharge: 0, shippingRefund: 0, shippingNotAdjusted: false }],
+        }),
+        'm-1',
+        tx,
+      );
+      const row = await rowOf(tx, id);
+      expect(row.status).toBe('applied');
+      expect(row.metadata).toMatchObject({ outcome: { refundAmount: 1000 } });
     });
   });
 

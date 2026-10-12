@@ -28,4 +28,5 @@ Medusa 2.13.4 에서 취소된 주문에 나중에 환불하면 돈이 나간 «
 - core 의 판매주문 `cancelled` 와 Medusa 주문 `canceled` 사이에 창이 생긴다(보통 몇 초, 막히면 운영자가 끝낼 때까지). 고객 화면은 core 상태를 먼저 읽는다.
 - 옛 «requested» 요청 행은 라이브에서 0 이 됐고, PR 6 이 보류 관문·[다시 보내기]·[요청 접기]·옛 사실(`ChannelOrderCancelRejected`·`Stalled`)을 지웠다.
 - 리컨실러 «정산 재시도»(#1016 36번)는 PR 6 에서 관찰 모드를 실행 모드로 바꿨고, channel-adapter 는 일시 실패를 ack 한다(재시도는 core 리컨실러 하나).
-- PR 6 은 Medusa 대시보드 기본 [Cancel]·취소된 주문 [Refund] 를 미들웨어로 막고(400), 스토어프론트의 취소 «다시 읽기»를 걷었다.
+- PR 6 은 Medusa 대시보드 기본 [Cancel] 을 «캡처 − 환불» > 0 이거나 읽을 수 없을 때만 막고(400), [Refund] 는 취소된 주문에서만 막는다. 스토어프론트의 취소 «다시 읽기»를 걷었다.
+- 성공은 여전히 사실이 아니다 — 재수집 `OrderModified.snapshot.orderCancelled`(수정에만 실리고 폴링 해시 밖)로 core 가, 일회성 `OrderCancelled` 를 놓친 정산 중 요청을 닫는다.

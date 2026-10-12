@@ -30,8 +30,9 @@ export class ChannelCancelSettler {
   /**
    * 정산 중 요청을 채널 기록으로 닫고, 요청이 먹지 않은 델타를 돌려준다 — 그것만 5번 규칙을 탄다.
    * 정산 중 부분취소는 채널 진행 기록이 «환불 끝»이면 닫고, 기록이 없으면(채널이 아직 안 줄였다) 요청분의 «늘어남»을 먹는다(D10).
-   * 채널이 주문을 취소했으면(`orderCancelled`) 정산 중 요청을 `OrderCancelled` 와 똑같이 닫는다 — 그 사실은 주문당 한 번만 오므로
-   * 놓친 행에겐 재수집 스냅샷이 유일한 탈출구다(PR 6 판정 3).
+   * 채널이 주문을 취소했으면(`orderCancelled`) 행별 처리 «뒤에» 남은 정산 중 요청을 `OrderCancelled` 와 똑같이 닫는다 — 그 사실은
+   * 주문당 한 번만 오므로 놓친 행에겐 재수집 스냅샷이 유일한 탈출구다(PR 6 판정 3). 순서가 바뀌면 «환불 끝» 부분 요청이 결과를 잃고
+   * 미반영 부분 요청의 «늘어남»이 먹히지 않는다.
    */
   async settleModified(
     salesOrderId: string,
@@ -39,7 +40,6 @@ export class ChannelCancelSettler {
     channel: { cancelRequests: OrderModifiedCancelRequest[]; orderCancelled: boolean },
     tx: DbTx,
   ): Promise<ChannelDelta[]> {
-    if (channel.orderCancelled) await this.closeSettlingByFullCancel(salesOrderId, tx);
     const unreflected: CancelRequestLine[] = [];
     for (const row of await this.reader.findSettling(salesOrderId, tx, { lock: true })) {
       const meta = readCancelRequestMetadata(row.metadata);
@@ -52,6 +52,10 @@ export class ChannelCancelSettler {
       if (!record) unreflected.push(...readCancelRequestLines(row.deltas));
       // edited — 채널은 줄였고 환불이 남았다. 정산 중 그대로(실패 사실이 사유를 싣는다)
     }
+    // 행별 처리가 먼저다 — 같은 스냅샷에 «환불 끝» 기록이 있는 부분 요청은 결과(outcome)를 달고 applied 로 닫혀야 하고,
+    // 기록 없는 부분 요청의 «늘어남»은 전체취소가 요청을 덮더라도 먹혀야 한다(안 그러면 5번 규칙에 반영 대기 변경으로 샌다).
+    // 전체취소 종결은 남은 정산 중 행(전체 → applied, 부분 → superseded)만 닫는다.
+    if (channel.orderCancelled) await this.closeSettlingByFullCancel(salesOrderId, tx);
     if (unreflected.length === 0) return deltas;
     // 채널이 아직 안 줄인 요청이 같은 줄에 여럿이면 diff 는 그 합을 «늘어남» 하나로 낸다(줄당 델타 하나) — 요청마다 따로 대조하면
     // 어느 것도 크기가 맞지 않아 이미 취소한 수량이 반영 대기 변경으로 새어 나간다. 판매 줄별로 합쳐 한 번에 먹는다(전부 맞을 때만).

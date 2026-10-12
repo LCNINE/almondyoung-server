@@ -398,7 +398,7 @@ describe('StoreSalesOrdersService', () => {
         dbMock as any,
         { cancel: jest.fn(), createBusinessLink: jest.fn() } as any,
         { refundByIntent: jest.fn() } as any,
-        { latestFor: jest.fn().mockResolvedValue(null), settlementFactsFor: jest.fn().mockResolvedValue([]) } as any,
+        { settlementFactsFor: jest.fn().mockResolvedValue([]) } as any,
       );
       return { service, dbMock };
     }
@@ -740,7 +740,6 @@ describe('StoreSalesOrdersService', () => {
         outcome: null,
       }),
       findBySourceKey: jest.fn().mockResolvedValue(null),
-      latestFor: jest.fn().mockResolvedValue(null),
     };
 
     const service = new StoreSalesOrdersService(
@@ -990,7 +989,6 @@ describe('StoreSalesOrdersService', () => {
         outcome: null,
       }),
       findBySourceKey: jest.fn().mockResolvedValue(null),
-      latestFor: jest.fn().mockResolvedValue(null),
     };
 
     const service = new StoreSalesOrdersService(
