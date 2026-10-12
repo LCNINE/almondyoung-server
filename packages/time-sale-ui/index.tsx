@@ -65,8 +65,43 @@ export type SalePeriod = { startsAt: string; endsAt: string };
 // 상품별 기간(없으면 세일 전체 기간을 쓴다).
 export type SalePeriodLike = { startsAt?: string | null; endsAt?: string | null };
 
+// 렌더러가 직접 그리는 고정 문구. 어드민이 편집한 문구(설정)는 여기 없다.
+export type SaleLabels = {
+  title: string;
+  timeSale: string;
+  membershipSale: string;
+  membershipDiscount: string;
+  membershipReveal: string;
+  savings: (amount: string, joining: boolean) => string;
+  dayUnit: string;
+  remainingTime: string;
+  elapsed: string;
+  moreDialog: string;
+  pages: string;
+  emptyPage: string;
+  rating: (rating: number, reviewCount: string) => string;
+};
+
+export const KO_SALE_LABELS: SaleLabels = {
+  title: '타임세일',
+  timeSale: '타임세일',
+  membershipSale: '멤버십 특가',
+  membershipDiscount: '멤버십할인가',
+  membershipReveal: '멤버십 회원에게 가격 공개',
+  savings: (amount, joining) => `${joining ? '가입 시 ' : ''}${amount} 절약`,
+  dayUnit: '일',
+  remainingTime: '남은 시간',
+  elapsed: '타임세일 경과',
+  moreDialog: '타임세일 더보기',
+  pages: '타임세일 페이지',
+  emptyPage: '이 페이지에 보여줄 상품이 없습니다.',
+  rating: (rating, reviewCount) => `평점 ${rating}점, 리뷰 ${reviewCount}개`,
+};
+
 export type SaleRendererProps = {
   settings: TimeSaleSettings;
+  // 스토어프론트가 locale 문구를 넘긴다. 빠진 항목은 한국어.
+  labels?: Partial<SaleLabels>;
   surface: SaleSurface;
   platform?: SalePlatform;
   // 고객 화면 제목엔 쓰지 않는다(운영자 내부용). 어드민 미리보기의 {{title}} 치환용.
@@ -152,6 +187,7 @@ export function SaleMembershipPrice({
   labelOnly = false,
   membershipSale = false,
   currency = (amount: number) => `${amount.toLocaleString('ko-KR')}원`,
+  labels = KO_SALE_LABELS,
 }: {
   price: number | null;
   membershipPrice?: number | null;
@@ -160,6 +196,7 @@ export function SaleMembershipPrice({
   labelOnly?: boolean;
   membershipSale?: boolean;
   currency?: (amount: number) => string;
+  labels?: SaleLabels;
 }) {
   const available = !(
     price === null ||
@@ -201,18 +238,17 @@ export function SaleMembershipPrice({
         >
           ✓
         </span>
-        {membershipSale ? '멤버십 특가' : '멤버십할인가'}
+        {membershipSale ? labels.membershipSale : labels.membershipDiscount}
       </span>
       {labelOnly ? null : available ? (
         <>
           <strong style={{ fontSize: 15 }}>{currency(membershipPrice!)}</strong>
           <span style={{ fontSize: 11, fontWeight: 500 }}>
-            {membershipSale ? '' : '가입 시 '}
-            {currency(price! - membershipPrice!)} 절약
+            {labels.savings(currency(price! - membershipPrice!), !membershipSale)}
           </span>
         </>
       ) : (
-        <span style={{ fontSize: 11, fontWeight: 500 }}>멤버십 회원에게 가격 공개</span>
+        <span style={{ fontSize: 11, fontWeight: 500 }}>{labels.membershipReveal}</span>
       )}
     </div>
   );
@@ -301,8 +337,8 @@ export function resolveSection(now: number, input: SectionInput) {
 }
 
 // 카드 배지용: 하루 넘게 남으면 「N일」, 안이면 「HH:MM:SS」(라이브와 같다).
-export function countdownText(seconds: number) {
-  if (seconds >= 86400) return `${Math.floor(seconds / 86400)}일`;
+export function countdownText(seconds: number, dayUnit = '일') {
+  if (seconds >= 86400) return `${Math.floor(seconds / 86400)}${dayUnit}`;
 
   return clockText(seconds);
 }
@@ -390,6 +426,7 @@ export function SaleRenderer(props: SaleRendererProps) {
     [now, setNow] = useState(0),
     [popup, setPopupOpen] = useState(false),
     [tabKey, setTabKey] = useState<string | null>(null);
+  const labels = { ...KO_SALE_LABELS, ...props.labels };
 
   // 팝업은 연 버튼을 기억했다가 닫을 때 포커스를 돌려준다. 안에선 Tab 이 뒤쪽 페이지로 새지 않게 가둔다.
   const popupTrigger = useRef<HTMLElement | null>(null);
@@ -505,8 +542,8 @@ export function SaleRenderer(props: SaleRendererProps) {
   // 2) 문구에 쓸 변수 모음({{title}}, {{remaining_time}}, 사용자 변수 …)
   const vars: Record<string, string> = {
     ...saleTimeVariables(period, state, remaining),
-    title: props.title ?? '타임세일',
-    time_sale_name: props.title ?? '타임세일',
+    title: props.title ?? labels.title,
+    time_sale_name: props.title ?? labels.title,
     condition: names[state],
     remaining_time: formatRemaining(remaining),
     starts_at: new Date(props.startsAt).toLocaleString('ko-KR'),
@@ -677,7 +714,12 @@ export function SaleRenderer(props: SaleRendererProps) {
                 </div>
               )}
               {c.type === 'timer' && (
-                <Timer component={{ ...c, css: { ...c.css, ...c.stateCss?.[state] } }} end={end} now={now} />
+                <Timer
+                  component={{ ...c, css: { ...c.css, ...c.stateCss?.[state] } }}
+                  end={end}
+                  now={now}
+                  labels={labels}
+                />
               )}
               {c.type === 'progress' && (
                 <>
@@ -692,7 +734,7 @@ export function SaleRenderer(props: SaleRendererProps) {
                   )}
                   <div
                     role="progressbar"
-                    aria-label="타임세일 경과"
+                    aria-label={labels.elapsed}
                     aria-valuemin={0}
                     aria-valuemax={100}
                     aria-valuenow={Math.round(progress)}
@@ -752,6 +794,7 @@ export function SaleRenderer(props: SaleRendererProps) {
                   pager={props.pager}
                   renderProductActions={props.renderProductActions}
                   renderProductStatus={props.renderProductStatus}
+                  labels={labels}
                   productVars={(p) => {
                     const own = periodOf(p, sale);
                     const current = productState(p);
@@ -769,7 +812,7 @@ export function SaleRenderer(props: SaleRendererProps) {
                       product_ends_at: new Date(own.endsAt).toLocaleString('ko-KR'),
                       product_remaining: productRemaining(p),
                       // 마운트 전(now=0)엔 비운다 — 서버와 브라우저 시각이 달라 하이드레이션이 어긋난다.
-                      product_countdown: now === 0 && !previewState ? '' : countdownText(seconds),
+                      product_countdown: now === 0 && !previewState ? '' : countdownText(seconds, labels.dayUnit),
                     };
                   }}
                 />
@@ -801,7 +844,7 @@ export function SaleRenderer(props: SaleRendererProps) {
           <div
             role="dialog"
             aria-modal="true"
-            aria-label="타임세일 더보기"
+            aria-label={labels.moreDialog}
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => {
               if (e.key === 'Escape') closePopup();
@@ -1284,14 +1327,24 @@ export function timerParts(
 }
 
 // 남은 시간을 일·시간·분·초 칸으로 보여주는 타이머.
-function Timer({ component: c, end, now }: { component: SaleComponent; end: number; now: number }) {
+function Timer({
+  component: c,
+  end,
+  now,
+  labels,
+}: {
+  component: SaleComponent;
+  end: number;
+  now: number;
+  labels: SaleLabels;
+}) {
   if (c.options.timer === 'text') {
     const remaining = Math.max(0, Math.ceil((end - now) / 1000));
     const days = Math.floor(remaining / 86400);
 
     // 라이브 섹션 머리의 「종료까지  4일 12:08:16」. 마운트 전엔 자리만 잡는다.
     return (
-      <span aria-label="남은 시간" style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+      <span aria-label={labels.remainingTime} style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
         <span style={{ lineHeight: 1, ...c.options.timerLabelCss } as CSSProperties}>{c.content}</span>
         <span
           style={
@@ -1303,7 +1356,7 @@ function Timer({ component: c, end, now }: { component: SaleComponent; end: numb
             } as CSSProperties
           }
         >
-          {days > 0 && `${days}일 `}
+          {days > 0 && `${days}${labels.dayUnit} `}
           {clockText(remaining)}
         </span>
       </span>
@@ -1454,7 +1507,9 @@ function Products({
   pager,
   renderProductActions,
   renderProductStatus,
+  labels,
 }: {
+  labels: SaleLabels;
   renderProductActions?: (product: SaleProduct) => ReactNode;
   renderProductStatus?: (product: SaleProduct) => ReactNode;
   pager?: SalePagerItem[];
@@ -1569,7 +1624,7 @@ function Products({
 
   const currency = (n: number | null) =>
     n === null
-      ? '멤버십 회원에게 가격 공개'
+      ? labels.membershipReveal
       : `${settings.environment.currencyPrefix}${n.toLocaleString('ko-KR')}${settings.environment.currencySuffix}`;
 
   return (
@@ -1692,7 +1747,7 @@ function Products({
                       style={{ ...timeSaleBadgeStyle(c.options.badgeColor), ...(c.options.badgeCss as CSSProperties) }}
                     >
                       <ClockIcon />
-                      {p.membershipSale ? '멤버십 특가' : '타임세일'}
+                      {p.membershipSale ? labels.membershipSale : labels.timeSale}
                       {values.product_countdown && ` · ${values.product_countdown}`}
                     </span>
                   ) : (
@@ -1768,11 +1823,12 @@ function Products({
                   labelOnly={c.options.membershipLabelOnly}
                   membershipSale={p.membershipSale}
                   currency={currency}
+                  labels={labels}
                 />
                 {renderProductStatus && !p.soldOut && <div style={{ marginTop: 8 }}>{renderProductStatus(p)}</div>}
                 {!!p.reviewCount && p.reviewCount > 0 && Number.isFinite(p.rating) && (
                   <div
-                    aria-label={`평점 ${p.rating}점, 리뷰 ${p.reviewCount.toLocaleString('ko-KR')}개`}
+                    aria-label={labels.rating(p.rating!, p.reviewCount.toLocaleString('ko-KR'))}
                     style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 8, fontSize: 12 }}
                   >
                     <span aria-hidden="true" style={{ position: 'relative', color: '#ddd', letterSpacing: 1 }}>
@@ -1848,10 +1904,10 @@ function Products({
         </div>
       )}
       {pager && products.length === 0 && (
-        <p style={{ textAlign: 'center', color: '#787878', padding: 16 }}>이 페이지에 보여줄 상품이 없습니다.</p>
+        <p style={{ textAlign: 'center', color: '#787878', padding: 16 }}>{labels.emptyPage}</p>
       )}
       {pager && pager.length > 0 && c.options.showPages !== false && (
-        <nav aria-label="타임세일 페이지" style={pagerStyle}>
+        <nav aria-label={labels.pages} style={pagerStyle}>
           {pager.map((item, i) =>
             item.href ? (
               <a
@@ -1877,7 +1933,7 @@ function Products({
         </nav>
       )}
       {c.type === 'grid' && !pager && pages > 1 && c.options.showPages !== false && (
-        <nav aria-label="타임세일 페이지" style={pagerStyle}>
+        <nav aria-label={labels.pages} style={pagerStyle}>
           {pageWindowItems(page + 1, pages, c.options.pageWindow ?? 5).map((item, index) =>
             item === 'gap' ? (
               <span key={`gap-${index}`} aria-hidden="true">

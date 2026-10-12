@@ -51,6 +51,8 @@ export function ConfiguredTimeSale({
   /** 진행 중 세일 전부의 기간. 한 페이지 상품만 그려도 섹션 타이머는 가장 먼저 끝나는 세일을 따른다. */
   sectionPeriods?: SalePeriodLike[]
 }) {
+  const t = useTranslations("home.timeSale")
+
   return (
     <PromotionTracker
       key={surface}
@@ -66,6 +68,22 @@ export function ConfiguredTimeSale({
     >
       <SaleRenderer
         settings={settings}
+        labels={{
+          title: t("badge"),
+          timeSale: t("badge"),
+          membershipSale: t("membershipBadge"),
+          membershipDiscount: t("membershipDiscount"),
+          membershipReveal: t("membershipReveal"),
+          savings: (amount, joining) =>
+            t(joining ? "joinSavingsAmount" : "savingsAmount", { amount }),
+          dayUnit: t("dayUnit"),
+          remainingTime: t("remainingTime"),
+          elapsed: t("elapsed"),
+          moreDialog: t("moreDialog"),
+          pages: t("pages"),
+          emptyPage: t("emptyPage"),
+          rating: (rating, count) => t("rating", { rating, count }),
+        }}
         surface={surface}
         startsAt={startsAt}
         endsAt={endsAt}
