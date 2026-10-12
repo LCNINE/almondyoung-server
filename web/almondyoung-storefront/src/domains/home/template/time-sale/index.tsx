@@ -70,6 +70,10 @@ export async function TimeSaleWrapper({
         endsAt
       )}
       endsAt={endsAt}
+      sectionPeriods={sales.map(({ startsAt, endsAt }) => ({
+        startsAt,
+        endsAt,
+      }))}
       countryCode={countryCode}
       tabs={deriveTimeSaleTabs(shown, buildTabSources(categories), t("allTab"))}
       stockProducts={Object.fromEntries(

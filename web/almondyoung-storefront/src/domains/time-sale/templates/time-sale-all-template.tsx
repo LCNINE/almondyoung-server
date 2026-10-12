@@ -101,6 +101,7 @@ export async function loadTimeSaleAll({
     ),
     endsAt,
     countryCode,
+    sectionPeriods: sales.map(({ startsAt, endsAt }) => ({ startsAt, endsAt })),
     tabs,
     activeTabKey: activeTab?.key,
     productCount: filtered.length,

@@ -18,4 +18,10 @@ export const adminTimeSaleRoutesMiddlewares: MiddlewareRoute[] = [
     bodyParser,
     middlewares: [validateAndTransformBody(AdminTimeSaleWrite)],
   },
+  {
+    // 스타일 설정은 검증기가 250KB 까지 받는다(저장 스타일 최대 50개). 기본 100kb 면 검증 전에 413 이 난다.
+    method: ['POST'],
+    matcher: '/admin/time-sale-settings',
+    bodyParser: { sizeLimit: '1mb' },
+  },
 ];

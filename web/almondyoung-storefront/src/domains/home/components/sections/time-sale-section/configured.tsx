@@ -11,6 +11,7 @@ import type {
 import {
   SaleRenderer,
   type SalePagerItem,
+  type SalePeriodLike,
   type SaleProduct,
   type SaleTab,
 } from "@packages/time-sale-ui"
@@ -33,6 +34,7 @@ export function ConfiguredTimeSale({
   productCount,
   pager,
   stockProducts,
+  sectionPeriods,
 }: {
   settings: TimeSaleSettings
   surface: SaleSurface
@@ -46,6 +48,8 @@ export function ConfiguredTimeSale({
   pager?: SalePagerItem[]
   /** 상품 id → 원본 상품. 가격 아래 재고 상태(일부 품절·N개 남음)를 상품 카드와 같은 컴포넌트로 그린다. */
   stockProducts?: Record<string, HttpTypes.StoreProduct>
+  /** 진행 중 세일 전부의 기간. 한 페이지 상품만 그려도 섹션 타이머는 가장 먼저 끝나는 세일을 따른다. */
+  sectionPeriods?: SalePeriodLike[]
 }) {
   return (
     <PromotionTracker
@@ -77,6 +81,7 @@ export function ConfiguredTimeSale({
             : undefined
         }
         pager={pager}
+        sectionPeriods={sectionPeriods}
         renderProductStatus={(product) => {
           const stock = stockProducts?.[product.id]
           return stock ? <Quantity product={stock} /> : null

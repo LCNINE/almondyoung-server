@@ -1,6 +1,12 @@
 'use client';
 
-import { useReducer, useRef, useState, type PointerEvent } from 'react';
+import {
+  useReducer,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+} from 'react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import {
   COLOR_PRESETS,
@@ -72,6 +78,26 @@ function ColorPickerBody({
     dispatch({ type: 'sv', s, v });
   };
 
+  // 방향키: 좌우 채도, 위아래 명도. Shift 는 10% 씩.
+  const nudgeSv = (e: KeyboardEvent<HTMLDivElement>) => {
+    const step = e.shiftKey ? 0.1 : 0.01;
+    const delta = {
+      ArrowLeft: [-step, 0],
+      ArrowRight: [step, 0],
+      ArrowUp: [0, step],
+      ArrowDown: [0, -step],
+    }[e.key];
+    if (!delta) return;
+
+    e.preventDefault();
+    const clamp = (n: number) => Math.min(1, Math.max(0, n));
+    dispatch({
+      type: 'sv',
+      s: clamp(draft.s + delta[0]),
+      v: clamp(draft.v + delta[1]),
+    });
+  };
+
   const channelInput = (channel: 'r' | 'g' | 'b' | 'a', label: string) => (
     <label className="flex flex-col items-center gap-1 text-xs text-gray-600">
       <input
@@ -105,8 +131,12 @@ function ColorPickerBody({
           ref={squareRef}
           role="slider"
           aria-label="채도/명도"
+          aria-valuemin={0}
+          aria-valuemax={100}
           aria-valuenow={Math.round(draft.s * 100)}
+          aria-valuetext={`채도 ${Math.round(draft.s * 100)}%, 명도 ${Math.round(draft.v * 100)}%`}
           tabIndex={0}
+          onKeyDown={nudgeSv}
           className="relative h-56 cursor-pointer touch-none select-none"
           style={{
             background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, ${hueColor})`,
