@@ -129,10 +129,11 @@ export const salesOrders = {
   },
 
   // 채널 취소 정산 조치(#1016 36번 재설계) — 정산 중 요청(settling)만
-  retryCancelSettlement: async (id: string, requestId: string): Promise<CancelRequestView> => {
+  // alreadyRefundedAmount: 채널이 «이미 환불한 금액»을 물은 부분취소만(#1016 37번)
+  retryCancelSettlement: async (id: string, requestId: string, alreadyRefundedAmount?: number): Promise<CancelRequestView> => {
     const response = await client.post(
       `${ALMONDYOUNG_API_BASE_URL}/sales-orders/${encodeURIComponent(id)}/cancel-request/${encodeURIComponent(requestId)}/retry`,
-      {}
+      alreadyRefundedAmount !== undefined ? { alreadyRefundedAmount } : {}
     );
     return response.data;
   },

@@ -1104,8 +1104,8 @@ export const useResyncChannelChange = () => {
 export const useRetryCancelSettlement = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (v: { salesOrderId: string; requestId: string }) =>
-      orders.salesOrders.retryCancelSettlement(v.salesOrderId, v.requestId),
+    mutationFn: (v: { salesOrderId: string; requestId: string; alreadyRefundedAmount?: number }) =>
+      orders.salesOrders.retryCancelSettlement(v.salesOrderId, v.requestId, v.alreadyRefundedAmount),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['order-progress'] });
       queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
