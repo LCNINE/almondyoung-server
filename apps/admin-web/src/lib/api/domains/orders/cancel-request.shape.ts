@@ -82,6 +82,16 @@ export const MANUAL_REFUND_CONFIRM_TEXT =
 const WALLET_REFUSED_PREFIX = 'wallet_refund_refused:';
 /** 채널(Medusa)이 «이미 환불한 금액»을 물으며 거절한 부분취소(#1016 37번) — core 가 이 실패일 때만 금액을 받는다 */
 const EXTERNAL_REFUND_PREFIX = 'external_refund_';
+/**
+ * 정산의 칩·줄 이름. 거절 중 채널이 «이미 환불한 금액»을 물은 것(#1016 37번, external_refund_*)은 운영자가 할 일이 다르다 —
+ * 계좌 송금이 아니라 [다시 시도]에 금액을 넣는다. 그래서 «환불 거절» 대신 그 말로 부른다(36번 스모크 발견 ③).
+ */
+export function settlementLabel(s: SettlementView): string {
+  if (s.phase === 'refused' && s.lastFailure?.code.startsWith(EXTERNAL_REFUND_PREFIX)) {
+    return REJECTION_LABELS.EXTERNAL_REFUND_UNRESOLVED;
+  }
+  return SETTLEMENT_LABELS[s.phase];
+}
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const KST_OFFSET_MS = 9 * 3_600_000;
 
@@ -222,7 +232,8 @@ export function cancelActionOf(row: { channel: string; orderStatus: string; canc
   const request = row.cancelRequest;
   if (request?.status === 'settling') {
     const phase = request.settlement?.phase ?? 'in_progress';
-    return { kind: 'settling', label: SETTLEMENT_LABELS[phase], alert: phase !== 'in_progress' };
+    const label = request.settlement ? settlementLabel(request.settlement) : SETTLEMENT_LABELS.in_progress;
+    return { kind: 'settling', label, alert: phase !== 'in_progress' };
   }
   if (request?.status === 'rejected' && request.rejection) {
     return { kind: 'rejected', reason: `${REJECTION_LABELS[request.rejection.reasonCode] ?? request.rejection.reasonCode} · ${request.rejection.message}` };
@@ -234,7 +245,7 @@ export function cancelRequestLine(view: CancelRequestView): string {
   const name = view.scope === 'full' ? '전체취소' : view.convertedFromFull ? '부분취소(출고분 제외)' : '부분취소';
   switch (view.status) {
     case 'settling':
-      return view.settlement ? `${name} 확정 · ${SETTLEMENT_LABELS[view.settlement.phase]}` : `${name} 확정 · 정산 중`;
+      return view.settlement ? `${name} 확정 · ${settlementLabel(view.settlement)}` : `${name} 확정 · 정산 중`;
     case 'applied': {
       const o = view.outcome;
       if (!o) return `${name} 반영`;

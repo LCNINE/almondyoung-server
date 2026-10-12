@@ -5,6 +5,7 @@ import {
   cancelRequestToast,
   MANUAL_REFUND_CONFIRM_TEXT,
   settlementActionsOf,
+  settlementLabel,
   settlementReason,
   settlementTiming,
   toSettlementView,
@@ -130,6 +131,39 @@ describe('정산(#1016 36번 재설계)', () => {
   ] as const)('취소 칸 — %s → %s', (phase, label, alert) => {
     const request = toCancelRequestView({ id: 'r1', status: 'settling', scope: 'full', settlement: settlement({ phase }) });
     expect(cancelActionOf({ channel: 'medusa', orderStatus: 'cancelled', cancelRequest: request })).toEqual({ kind: 'settling', label, alert });
+  });
+
+  it('칩 이름 — 채널이 «이미 환불한 금액»을 물은 거절(external_refund_*)은 거절과 할 일이 달라 따로 부른다(스모크 발견 ③)', () => {
+    const asked = settlement({ lastFailure: { code: 'external_refund_unresolved', message: 'x', retryable: false, at: 'x' } });
+    expect(settlementLabel(asked)).toBe('이미 환불한 금액 확인 필요');
+    expect(settlementLabel(settlement())).toBe('환불 거절');
+    expect(settlementLabel(settlement({ phase: 'delayed' }))).toBe('환불 지연');
+    // 다시 시도해 진행 중이면 지난 실패로 이름을 정하지 않는다
+    expect(settlementLabel({ ...asked, phase: 'in_progress' })).toBe('환불 처리 중');
+  });
+
+  it('취소 칸 — 금액 확인 거절도 빨강(alert)이다', () => {
+    const request = toCancelRequestView({
+      id: 'r1',
+      status: 'settling',
+      scope: 'partial',
+      settlement: settlement({ lastFailure: { code: 'external_refund_unresolved', message: 'x', retryable: false, at: 'x' } }),
+    });
+    expect(cancelActionOf({ channel: 'medusa', orderStatus: 'processing', cancelRequest: request })).toEqual({
+      kind: 'settling',
+      label: '이미 환불한 금액 확인 필요',
+      alert: true,
+    });
+  });
+
+  it('요청 줄 — 금액 확인 거절은 «부분취소 확정 · 이미 환불한 금액 확인 필요»', () => {
+    const v = toCancelRequestView({
+      id: 'r1',
+      status: 'settling',
+      scope: 'partial',
+      settlement: settlement({ lastFailure: { code: 'external_refund_exceeds', message: 'x', retryable: false, at: 'x' } }),
+    });
+    expect(cancelRequestLine(v!)).toBe('부분취소 확정 · 이미 환불한 금액 확인 필요');
   });
 
   it('사유 — wallet·PG 거절은 «환불 거절», 그 밖은 «정산 실패 · 개발 확인»(PR 3 넘길 것 4)', () => {

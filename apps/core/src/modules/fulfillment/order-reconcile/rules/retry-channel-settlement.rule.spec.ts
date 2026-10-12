@@ -14,6 +14,8 @@ describe('RetryChannelSettlementRule (#1016 36번)', () => {
     expect(rule.mode).toBe('act');
     expect(rule.row).toBe(36);
     expect(rule.situation).toEqual({ stage: 'cancel_request', states: ['settle_in_progress', 'settle_delayed'] });
+    // 막 (다시) 시작한 정산은 60초 유예 안이라 첫 평가가 «할 일 없음»이 된다 — 10분이 아니라 1분 뒤에 다시 본다(스모크 발견 ④)
+    expect(rule.idleRecheckMin).toBe(1);
   });
 
   it('거절(settle_refused)은 칸에 없다 — 리컨실러는 영구 거절을 다시 부르지 않는다', () => {

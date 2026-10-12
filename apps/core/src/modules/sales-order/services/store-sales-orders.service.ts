@@ -24,7 +24,7 @@ import {
 } from '../dto/store-order-actions.dto';
 import { StoreOrderTrackingResponseDto, StoreShipmentDto } from '../dto/store-order-tracking.dto';
 import { SalesOrdersService } from './sales-orders.service';
-import { channelRefundStatus, manualTransferOf, needsManualTransferCheck } from './channel-refund-status';
+import { channelRefundStatus, manualTransferOf, needsTransferCheck } from './channel-refund-status';
 import { WalletRefundClient } from './wallet-refund.client';
 import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
 import { channelCancelRoute, sellerCenterMessage } from '../channel-cancel-request/channel-cancel-route';
@@ -483,7 +483,7 @@ export class StoreSalesOrdersService {
         ),
       );
 
-    // SO당 select 1~3개 × 페이지(≤100건 제한) Promise.all. 느려지면 buildActionsView 쿼리 배치화.
+    // SO당 select 1~3개 × 페이지(≤100건 제한) Promise.all. 정산이 끝난 채널 취소가 있는 SO는 wallet GET 도 1회 더 한다(2초 시간 초과, 실패 = 모름). 느려지면 buildActionsView 쿼리 배치화.
     return Promise.all(sos.map((so) => this.buildActionsView(so)));
   }
 
@@ -756,7 +756,7 @@ export class StoreSalesOrdersService {
   private async channelSettlementRefundStatus(so: SalesOrderRow): Promise<StoreRefundStatus | null> {
     const facts = await this.cancelRequests.settlementFactsFor(so.id);
     if (facts.length === 0) return null;
-    const transfer = needsManualTransferCheck(facts)
+    const transfer = needsTransferCheck(facts)
       ? manualTransferOf(so.walletIntentId ? await this.walletRefundClient.listRefundsByIntent(so.walletIntentId) : null)
       : null;
     return channelRefundStatus(facts, transfer);

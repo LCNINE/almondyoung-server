@@ -267,10 +267,12 @@ core 직접 주문은 «취소 성립 + 환불 따로 추적»이다 — `POST /
 **리컨실러 규칙 «정산 재시도»** (`fulfillment/order-reconcile/rules/`, 12번 틀):
 
 - 상황: 정체 보드 취소 단계의 `settle_in_progress`·`settle_delayed`.
-- 검사: 요청이 `settling`, `state ≠ refused`, 마지막 시도가 백오프(1분 → 5분 → 15분 → 이후 1시간)보다 오래됨. 지문 = 요청 id + `state` + `mode`.
+- 검사: 요청이 `settling`, `state ≠ refused`, 마지막 (다시) 시작에서 60초(`SETTLEMENT_REISSUE_GRACE_MS`)가 지남. 지문 = 요청 id + `state` + `mode`.
+  할 일이 없었으면 1분 뒤 다시 본다(규칙의 `idleRecheckMin`).
 - 실행: 같은 `requestId`·`refundMode` 로 `CancelChannelOrder` 를 다시 낸다(멱등 — §6.1·§10).
 - 명령·사실 유실, channel-adapter 결함도 이 규칙이 잡는다. 관찰 모드로 배포해 거짓 양성을 본 뒤 실행 모드로 바꾼다(12번 관례).
-- 백오프·포기를 틀이 지원하는지 계획 단계에서 확인하고, 없으면 틀에 «다음 시도 시각»을 더한다(규칙마다 따로 두지 않는다).
+- 백오프·포기는 리컨실러 틀의 것을 그대로 쓴다 — 실행 뒤 1·4·16·64·256분, 5회 뒤 «자동 멈춤»(정체 보드에 보인다), 그 뒤로도 1024분(약 17시간)마다 한 번 더 해 본다.
+  처음 이 절은 «1분 → 5분 → 15분 → 이후 1시간, 포기 없음»이었으나, 규칙마다 백오프를 두면 공용 틀이 갈라져 틀을 따랐다(PR #1052 D3·#1053 E3, 2026-10-12 #1016 36번 마무리에서 확정).
 
 **운영자 조치** (`sales-orders.controller.ts`, `cancel-request` 아래):
 
@@ -302,10 +304,10 @@ core 직접 주문은 «취소 성립 + 환불 따로 추적»이다 — `POST /
 | --- | --- | --- |
 | 정산 중 | `pending` (기존) | 환불 처리 중 |
 | 지연·거절 | **`delayed`** (새 값) | 환불이 늦어지고 있어요 · 영업일 3일 안에 처리해 드릴게요 |
-| 수동, wallet 송금 대기 | **`transfer_pending`** (새 값) | 환불 진행 중 · 계좌로 송금해 드릴 예정이에요 |
+| 수동, 또는 자동이 wallet 에서 송금 대기(MANUAL PENDING)로 떨어짐 | **`transfer_pending`** (새 값) | 환불 진행 중 · 계좌로 송금해 드릴 예정이에요 |
 | 정산 완료(수동은 wallet SUCCEEDED) | `succeeded` (기존) | 환불 완료 |
 
-- 수동 모드 주문의 송금 여부는 core 가 actions API 를 만들 때 wallet 목록 API(§6.5)로 확인한다 — 수동 모드 주문만, core 의 기존
+- 송금 여부는 core 가 actions API 를 만들 때 wallet 목록 API(§6.5)로 확인한다 — 정산이 끝난 주문(자동·수동)은 wallet 목록으로 송금 대기를 확인한다. wallet 을 모르면 수동 정산만 «송금 전»으로 읽는다(자동은 지금 도출). core 의 기존
   wallet HTTP 클라이언트 옆에.
 - **옛 스토어프론트는 새 값을 모른다** — 모르는 값을 «환불 처리 중»으로 보이게 먼저 고쳐 배포한다(§9.2 의 4).
 

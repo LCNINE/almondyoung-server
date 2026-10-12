@@ -205,7 +205,13 @@ export class OrderReconcileRunner {
               id,
               nextRecord(
                 eff,
-                { fingerprint, mode: rule.mode, step, outcome: step === 'act' ? 'acted' : undefined },
+                {
+                  fingerprint,
+                  mode: rule.mode,
+                  step,
+                  outcome: step === 'act' ? 'acted' : undefined,
+                  idleRecheckMin: rule.idleRecheckMin,
+                },
                 now,
               ),
               sp,
