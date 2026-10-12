@@ -1,4 +1,4 @@
-import { RequireScopes, User } from '@app/authorization';
+import { RequireScopes, User, RequirePermission } from '@app/authorization';
 import { Controller, Logger, Param, Post, Req, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -39,6 +39,7 @@ export class AssistantChatController {
 
   constructor(private readonly service: AssistantChatService) {}
 
+  @RequirePermission('ai.assistant.use')
   @Post(':sessionId/messages')
   @ApiConsumes('multipart/form-data')
   @ApiOperation({

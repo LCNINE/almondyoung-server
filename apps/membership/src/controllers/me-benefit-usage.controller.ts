@@ -1,6 +1,6 @@
 import { Body, Controller, HttpCode, HttpStatus, Post, UseFilters, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard, User } from '@app/authorization';
+import { JwtAuthGuard, User, StoreRoute } from '@app/authorization';
 import { BadRequestError } from '@app/shared';
 import { BENEFIT_USAGE_KINDS } from '../services/benefit/benefit-usage';
 import { BenefitUsageService } from '../services/benefit/benefit-usage.service';
@@ -18,6 +18,7 @@ import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exce
 export class MeBenefitUsageController {
   constructor(private readonly benefitUsageService: BenefitUsageService) {}
 
+  @StoreRoute()
   @Post()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '멤버십 혜택 이용 기록(열기 직전)' })

@@ -1,7 +1,7 @@
 import { WarehouseActor, warehouseOperationContext } from '../../core/services/warehouse-operation-contract';
 import { Controller, Post, Body, Get, Param, Query, Headers, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { MovementService } from '../services/movement.service';
 import { MoveBatchDto } from '../dto/move-batch.dto';
@@ -14,6 +14,7 @@ import { MovementJobMapper, MovementWorkLogMapper } from '../mappers/movement.ma
 export class MovementController {
   constructor(private readonly movementService: MovementService) {}
 
+  @RequirePermission('inventory.stock.operate')
   @Post('move')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '동일 창고 내 즉시 이동(배치)' })
@@ -33,6 +34,7 @@ export class MovementController {
     return MovementJobMapper.toWithLinesDto(result.job, result.lines);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('jobs/:jobId')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '이동 작업 상세 조회' })
@@ -47,6 +49,7 @@ export class MovementController {
     return MovementJobMapper.toWithLinesDto(job, lines);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('history')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '이동 작업 히스토리 조회' })

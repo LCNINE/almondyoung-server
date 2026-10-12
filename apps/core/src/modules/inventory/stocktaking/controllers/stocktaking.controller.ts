@@ -22,7 +22,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { StocktakingService } from '../services/stocktaking.service';
 import { CreateStocktakingSessionDto } from '../dto/create-session.dto';
@@ -43,6 +43,7 @@ export class StocktakingController {
     private readonly idempotency: InventoryIdempotencyService,
   ) {}
 
+  @RequirePermission('inventory.stock.read')
   @Get('sessions')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '재고 실사 세션 목록 조회 (List stocktaking sessions)' })
@@ -52,6 +53,7 @@ export class StocktakingController {
     return this.stocktakingService.listSessions(query);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('sessions/:id')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '재고 실사 세션 상세 조회 (세션 + 전체 라인 + 진행률)' })
@@ -63,6 +65,7 @@ export class StocktakingController {
     return this.stocktakingService.getSession(id);
   }
 
+  @RequirePermission('inventory.stock.operate')
   @Post('sessions')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '재고 실사 세션 생성 (Create stocktaking session)' })
@@ -72,6 +75,7 @@ export class StocktakingController {
     return this.stocktakingService.createSession(dto);
   }
 
+  @RequirePermission('inventory.stock.operate')
   @Post('sessions/:id/start')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
@@ -83,6 +87,7 @@ export class StocktakingController {
     return this.stocktakingService.startSession(id);
   }
 
+  @RequirePermission('inventory.stock.operate')
   @Post('scan-location')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
@@ -105,6 +110,7 @@ export class StocktakingController {
     return this.stocktakingService.scanLocation(dto);
   }
 
+  @RequirePermission('inventory.stock.operate')
   @Post('scan-product')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
@@ -127,6 +133,7 @@ export class StocktakingController {
     return this.stocktakingService.scanProduct(dto);
   }
 
+  @RequirePermission('inventory.stock.operate')
   @Post('count-items')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
@@ -148,6 +155,7 @@ export class StocktakingController {
     );
   }
 
+  @RequirePermission('inventory.stock.operate')
   @Put('lines/:id/count')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '수량 수동 입력 (Update count manually)' })
@@ -171,6 +179,7 @@ export class StocktakingController {
     return this.stocktakingService.updateCount(id, dto);
   }
 
+  @RequirePermission('inventory.stock.operate')
   @Post('lines/:id/reset-count')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
@@ -190,6 +199,7 @@ export class StocktakingController {
     );
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('sessions/:id/variances')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '차이 조회 (Get variances/discrepancies)' })
@@ -200,6 +210,7 @@ export class StocktakingController {
     return this.stocktakingService.getVariances(id);
   }
 
+  @RequirePermission('inventory.stock.operate')
   @Post('sessions/:id/generate-adjustments')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
@@ -211,6 +222,7 @@ export class StocktakingController {
     return this.stocktakingService.generateAdjustments(id, dto);
   }
 
+  @RequirePermission('inventory.stock.adjust')
   @Post('sessions/:id/complete')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(INVENTORY_SCOPE.ADJUST)
@@ -235,6 +247,7 @@ export class StocktakingController {
     return this.stocktakingService.completeSession(id);
   }
 
+  @RequirePermission('inventory.stock.operate')
   @Post('sessions/:id/cancel')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(INVENTORY_SCOPE.OPERATE)

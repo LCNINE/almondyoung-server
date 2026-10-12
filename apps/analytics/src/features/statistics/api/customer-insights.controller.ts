@@ -1,6 +1,6 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AdminRealmGuard, JwtAuthGuard } from '@app/authorization';
+import { AdminRealmGuard, JwtAuthGuard, RequirePermission, PermissionGuard } from '@app/authorization';
 import { CustomerInsights, CustomerInsightsQuery } from '../read-model/customer-insights.query';
 import { CustomerInsightsQueryDto } from './statistics-query.dto';
 
@@ -12,11 +12,12 @@ import { CustomerInsightsQueryDto } from './statistics-query.dto';
  */
 @ApiTags('Statistics')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, AdminRealmGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)
 @Controller('statistics')
 export class CustomerInsightsController {
   constructor(private readonly customerInsightsQuery: CustomerInsightsQuery) {}
 
+  @RequirePermission('analytics.report.read')
   @Get('customers/insights')
   @ApiOperation({
     summary: '구매 기반 고객 분석',

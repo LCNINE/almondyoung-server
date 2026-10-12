@@ -4,6 +4,7 @@ import { Controller, Get } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { MyPermissionsResponseDto } from './dto/my-permissions.dto';
 import { IamService } from './iam.service';
+import { StoreRoute } from '@app/authorization';
 
 @ApiTags('Me')
 @ApiBearerAuth('access-token')
@@ -16,6 +17,7 @@ export class MePermissionsController {
     description: '관리자 화면의 메뉴·라우트·버튼 판정에 쓴다. 역할은 토큰 기준',
   })
   @ApiResponse({ status: 200, type: MyPermissionsResponseDto })
+  @StoreRoute()
   @Get('permissions')
   getMyPermissions(@CurrentUser() user: JwtPayload): Promise<MyPermissionsResponseDto> {
     return this.iamService.forRoles(user.roles ?? []);

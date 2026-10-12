@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { User, StoreRoute } from '@app/authorization';
 import { MemberShopListingDto, MyShopListingResponseDto } from '../dto';
 import { ShopListingsService } from '../shop-listings.service';
 
@@ -11,6 +11,7 @@ import { ShopListingsService } from '../shop-listings.service';
 export class MemberShopListingsController {
   constructor(private readonly service: ShopListingsService) {}
 
+  @StoreRoute()
   @Post()
   @ApiOperation({ summary: '내 매물 등록', description: '검토 대기로 들어간다. 검토 중+게시 중 3건까지.' })
   @ApiBody({ type: MemberShopListingDto })
@@ -20,6 +21,7 @@ export class MemberShopListingsController {
     return this.service.createByMember(dto, userId);
   }
 
+  @StoreRoute()
   @Get('mine')
   @ApiOperation({ summary: '내 매물 목록 (상태·거절 사유 포함)' })
   @ApiResponse({ status: 200, type: [MyShopListingResponseDto] })
@@ -27,6 +29,7 @@ export class MemberShopListingsController {
     return this.service.listMine(userId);
   }
 
+  @StoreRoute()
   @Get(':id')
   @ApiOperation({ summary: '내 매물 단건 (수정 폼용)' })
   @ApiResponse({ status: 200, type: MyShopListingResponseDto })
@@ -35,6 +38,7 @@ export class MemberShopListingsController {
     return this.service.getMine(id, userId);
   }
 
+  @StoreRoute()
   @Put(':id')
   @ApiOperation({ summary: '내 매물 수정', description: '다시 검토 대기로 내려간다. slug 는 바뀌지 않는다.' })
   @ApiBody({ type: MemberShopListingDto })
@@ -48,6 +52,7 @@ export class MemberShopListingsController {
     return this.service.updateByMember(id, dto, userId);
   }
 
+  @StoreRoute()
   @Post(':id/close')
   @ApiOperation({ summary: '거래완료로 표시' })
   @ApiResponse({ status: 201, type: MyShopListingResponseDto })
@@ -55,6 +60,7 @@ export class MemberShopListingsController {
     return this.service.closeByMember(id, userId);
   }
 
+  @StoreRoute()
   @Post(':id/reopen')
   @ApiOperation({ summary: '거래완료 해제' })
   @ApiResponse({ status: 201, type: MyShopListingResponseDto })
@@ -62,6 +68,7 @@ export class MemberShopListingsController {
     return this.service.reopenByMember(id, userId);
   }
 
+  @StoreRoute()
   @Delete(':id')
   @HttpCode(204)
   @ApiOperation({ summary: '내 매물 삭제', description: '연락처는 즉시 지워진다.' })

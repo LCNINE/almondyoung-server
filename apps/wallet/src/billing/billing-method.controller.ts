@@ -38,6 +38,7 @@ import {
   FastifyUploadedFile,
   UploadedFastifyFile,
 } from '../common/fastify-multipart.interceptor';
+import { StoreRoute } from '@app/authorization';
 
 @ApiTags('Billing Methods')
 @Controller('v1/billing-methods')
@@ -58,6 +59,7 @@ export class BillingMethodController {
     throw new InternalServerErrorException(message);
   }
 
+  @StoreRoute()
   @Post('cms/check-account')
   @HttpCode(200)
   @WalletJwtAuth()
@@ -89,6 +91,7 @@ export class BillingMethodController {
     }
   }
 
+  @StoreRoute()
   @Post('cms')
   @HttpCode(201)
   @WalletJwtAuth()
@@ -108,6 +111,7 @@ export class BillingMethodController {
     }
   }
 
+  @StoreRoute()
   @Post('cms/register')
   @HttpCode(201)
   @WalletJwtAuth()
@@ -134,6 +138,7 @@ export class BillingMethodController {
     }
   }
 
+  @StoreRoute()
   @Post('cms/register-with-agreement')
   @HttpCode(201)
   @WalletJwtAuth()
@@ -171,6 +176,7 @@ export class BillingMethodController {
     }
   }
 
+  @StoreRoute()
   @Put('cms/:id/with-agreement')
   @WalletJwtAuth()
   @UseInterceptors(new FastifyMultipartInterceptor('file'))
@@ -208,6 +214,7 @@ export class BillingMethodController {
     }
   }
 
+  @StoreRoute()
   @Put('cms/:id')
   @WalletJwtAuth()
   @ApiOperation({
@@ -233,6 +240,7 @@ export class BillingMethodController {
     }
   }
 
+  @StoreRoute()
   @Get('cms')
   @WalletJwtAuth()
   @ApiOperation({
@@ -261,6 +269,7 @@ export class BillingMethodController {
     }));
   }
 
+  @StoreRoute()
   @Get()
   @WalletJwtAuth()
   @ApiOperation({ summary: 'List billing methods for the authenticated user' })
@@ -290,6 +299,7 @@ export class BillingMethodController {
       }));
   }
 
+  @StoreRoute()
   @Delete(':id')
   @HttpCode(204)
   @WalletJwtAuth()

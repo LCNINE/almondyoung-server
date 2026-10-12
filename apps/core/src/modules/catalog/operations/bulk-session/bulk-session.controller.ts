@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { ApiBody, ApiConsumes, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RolesGuard, User } from '@app/authorization';
+import { RolesGuard, User, RequirePermission } from '@app/authorization';
 import { BulkSessionService } from './services/bulk-session.service';
 import { readWorkbookUpload } from './services/bulk-upload.multipart';
 import {
@@ -59,6 +59,7 @@ function parseImageLimit(limit: string): number {
 export class BulkSessionController {
   constructor(private readonly service: BulkSessionService) {}
 
+  @RequirePermission('catalog.bulk.execute')
   @Post()
   @HttpCode(202)
   @ApiOperation({ summary: '작성한 양식 업로드 접수. 파싱·검증은 워커가 이어받는다.' })
@@ -83,6 +84,7 @@ export class BulkSessionController {
     return this.service.upload({ buffer, fileName, name, userId: user.userId });
   }
 
+  @RequirePermission('catalog.product.read')
   @Get()
   @ApiOperation({ summary: '내 일괄 등록 세션 목록(페이지)' })
   @ApiQuery({ name: 'page', required: false })
@@ -96,6 +98,7 @@ export class BulkSessionController {
     return this.service.listSessions(user.userId, parsePage(page), parseLimit(limit));
   }
 
+  @RequirePermission('catalog.product.read')
   @Get(':id')
   @ApiOperation({ summary: '세션 요약 + 단계별 집계(폴링 대상). 행 목록은 없다.' })
   @ApiResponse({ status: 200, type: BulkSessionProgressDto })
@@ -104,6 +107,7 @@ export class BulkSessionController {
     return this.service.getProgress(id, user.userId);
   }
 
+  @RequirePermission('catalog.product.read')
   @Get(':id/items')
   @ApiOperation({ summary: '행 목록(변경분·충돌·라벨 포함). status·conflict·publishStatus 필터·페이지' })
   @ApiQuery({ name: 'status', required: false, enum: BULK_ITEM_STATUS_VALUES })
@@ -163,6 +167,7 @@ export class BulkSessionController {
     );
   }
 
+  @RequirePermission('catalog.bulk.execute')
   @Patch(':id/items/:itemId/conflict-decision')
   @ApiOperation({ summary: '필드별 충돌 결정(overwrite/skip). 부분 갱신 — 기존 결정에 머지된다.' })
   @ApiResponse({ status: 200, type: BulkSessionItemDto })
@@ -178,6 +183,7 @@ export class BulkSessionController {
     return this.service.setConflictDecision(id, itemId, user.userId, dto.decisions);
   }
 
+  @RequirePermission('catalog.bulk.execute')
   @Post(':id/approve')
   @HttpCode(200)
   @ApiOperation({ summary: '검토 완료 승인. review → awaiting_images | drafting' })
@@ -188,6 +194,7 @@ export class BulkSessionController {
     return this.service.approve(id, user.userId);
   }
 
+  @RequirePermission('catalog.bulk.execute')
   @Post(':id/cancel')
   @HttpCode(200)
   @ApiOperation({ summary: '세션 취소. 진행 중 phase → canceled. failed 도 취소 대상이다.' })
@@ -198,6 +205,7 @@ export class BulkSessionController {
     return this.service.cancel(id, user.userId);
   }
 
+  @RequirePermission('catalog.bulk.execute')
   @Post(':id/publish')
   @HttpCode(200)
   @ApiOperation({
@@ -210,6 +218,7 @@ export class BulkSessionController {
     return this.service.queuePublish(id, user.userId);
   }
 
+  @RequirePermission('catalog.bulk.execute')
   @Post(':id/retry-draft')
   @HttpCode(200)
   @ApiOperation({
@@ -223,6 +232,7 @@ export class BulkSessionController {
     return this.service.retryDraft(id, user.userId);
   }
 
+  @RequirePermission('catalog.bulk.execute')
   @Post(':id/items/:itemId/exclude')
   @HttpCode(200)
   @ApiOperation({ summary: '행 제외. 발행 대상에서 빼고 그 draft 의 세션 잠금을 푼다. 되돌릴 수 없다.' })
@@ -237,6 +247,7 @@ export class BulkSessionController {
     return this.service.excludeItem(id, itemId, user.userId);
   }
 
+  @RequirePermission('catalog.bulk.execute')
   @Post(':id/purge-drafts')
   @HttpCode(200)
   @ApiOperation({
@@ -250,6 +261,7 @@ export class BulkSessionController {
     return this.service.purgeDrafts(id, user.userId);
   }
 
+  @RequirePermission('catalog.product.read')
   @Get(':id/images')
   @ApiOperation({
     summary:
@@ -280,6 +292,7 @@ export class BulkSessionController {
     });
   }
 
+  @RequirePermission('catalog.bulk.execute')
   @Post(':id/images/resolve')
   @HttpCode(200)
   @ApiOperation({

@@ -1,4 +1,4 @@
-import { RequireScopes } from '@app/authorization';
+import { RequireScopes, RequirePermission } from '@app/authorization';
 import {
   Body,
   Controller,
@@ -34,6 +34,7 @@ export class UsersController {
     private readonly rolesService: RolesService,
   ) {}
 
+  @RequirePermission('customer.profile.read')
   @Get()
   @RequireScopes('master', 'admin:users:read', 'admin:access')
   @ApiOperation({
@@ -49,6 +50,7 @@ export class UsersController {
     return await this.usersService.getUsers(query);
   }
 
+  @RequirePermission('customer.profile.read')
   @Get('stats/daily-signups')
   @RequireScopes('master', 'admin:users:read', 'admin:access')
   @ApiOperation({ summary: '일별 신규 가입자 수 — KST 달력일 귀속' })
@@ -56,6 +58,7 @@ export class UsersController {
     return this.usersService.getDailySignups(query.from, query.to);
   }
 
+  @RequirePermission('customer.profile.read')
   @Get('consents')
   @RequireScopes('master', 'admin:users:read')
   @ApiOperation({
@@ -82,6 +85,7 @@ export class UsersController {
     });
   }
 
+  @RequirePermission('customer.profile.read')
   @Get('consent/:userId')
   @RequireScopes('master', 'admin:users:read')
   @ApiOperation({
@@ -96,6 +100,7 @@ export class UsersController {
     return await this.usersService.getUserConsentByUserId(userId);
   }
 
+  @RequirePermission('customer.profile.read')
   @Get(':userId')
   @RequireScopes('master', 'admin:users:read')
   @ApiOperation({
@@ -119,6 +124,7 @@ export class UsersController {
 
   @ApiOperation({ summary: '사용자 정보 수정' })
   @ApiResponse({ status: 200, description: '프로필 수정 성공' })
+  @RequirePermission('customer.profile.write')
   @Patch(':userId')
   @RequireScopes('master', 'admin:users:modify')
   @HttpCode(HttpStatus.OK)
@@ -133,6 +139,7 @@ export class UsersController {
 
   @ApiOperation({ summary: '사용자의 현재 역할 ID 조회' })
   @ApiResponse({ status: 200, description: '역할 ID 목록 반환' })
+  @RequirePermission('iam.role.read')
   @Get(':userId/roles')
   @RequireScopes('master')
   async getUserRoles(@Param('userId') userId: string): Promise<UserRolesResponseDto> {
@@ -146,6 +153,7 @@ export class UsersController {
 
   @ApiOperation({ summary: '사용자 역할 전체 교체 (체크박스 저장)' })
   @ApiResponse({ status: 200, description: '역할 교체 성공' })
+  @RequirePermission('iam.role.assign')
   @Put(':userId/roles')
   @RequireScopes('master')
   async replaceUserRoles(@Param('userId') userId: string, @Body() dto: ReplaceUserRolesDto): Promise<void> {

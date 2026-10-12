@@ -1,6 +1,6 @@
 import { Controller, Get, Logger, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { User, RequirePermission } from '@app/authorization';
 import { ProductVersionsService } from '../services/product-versions.service';
 import { ApiOkResponsePaginated } from '../../../common/decorators';
 import { ProductVersionDto } from '../dto/entities/master-version.entity';
@@ -15,6 +15,7 @@ export class ProductVersionsController {
 
   constructor(private readonly productVersionsService: ProductVersionsService) {}
 
+  @RequirePermission('catalog.product.read')
   @Get('draft')
   @ApiOperation({
     summary: 'Draft 버전 조회',
@@ -28,6 +29,7 @@ export class ProductVersionsController {
     return this.productVersionsService.getDraftVersions(query);
   }
 
+  @RequirePermission('catalog.product.read')
   @Get('my-drafts')
   @ApiOperation({
     summary: '내 작성중(임시저장) 상품 목록',

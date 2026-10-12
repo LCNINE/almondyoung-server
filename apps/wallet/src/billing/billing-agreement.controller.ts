@@ -19,12 +19,14 @@ import { AuthenticatedRequest } from '../wallet.module';
 import { BillingAgreementService } from './billing-agreement.service';
 import { BillingAgreementResponseDto, CreateBillingAgreementDto, UpdateBillingMethodDto } from './dto';
 import { BillingAgreement } from '../types';
+import { KeyAuthRoute, StoreRoute } from '@app/authorization';
 
 @ApiTags('Billing Agreements')
 @Controller('v1/billing-agreements')
 export class BillingAgreementController {
   constructor(private readonly service: BillingAgreementService) {}
 
+  @KeyAuthRoute()
   @Post()
   @ApiOperation({ summary: 'Create billing agreement (server-to-server, API key auth)' })
   async create(@Body() dto: CreateBillingAgreementDto): Promise<BillingAgreementResponseDto> {
@@ -45,6 +47,7 @@ export class BillingAgreementController {
     }
   }
 
+  @StoreRoute()
   @Get()
   @WalletJwtAuth()
   @ApiOperation({ summary: 'List billing agreements for the authenticated user' })
@@ -54,6 +57,7 @@ export class BillingAgreementController {
     return agreements.map((a) => this.toResponse(a));
   }
 
+  @StoreRoute()
   @Put(':id/billing-method')
   @WalletJwtAuth()
   @ApiOperation({ summary: 'Update billing method for a billing agreement' })
@@ -73,6 +77,7 @@ export class BillingAgreementController {
     }
   }
 
+  @KeyAuthRoute()
   @Delete('by-subscriber')
   @HttpCode(204)
   @ApiOperation({ summary: 'Revoke billing agreement by subscriber ref (server-to-server, API key auth)' })
@@ -87,6 +92,7 @@ export class BillingAgreementController {
     }
   }
 
+  @KeyAuthRoute()
   @Post('by-subscriber/terminate-mandate')
   @HttpCode(200)
   @ApiOperation({
@@ -112,6 +118,7 @@ export class BillingAgreementController {
     );
   }
 
+  @StoreRoute()
   @Delete(':id')
   @HttpCode(204)
   @WalletJwtAuth()

@@ -1,4 +1,4 @@
-import { RequireScopes } from '@app/authorization';
+import { RequireScopes, RequirePermission } from '@app/authorization';
 import { Controller, Get, Param } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
 import { ShopResponseDto } from 'apps/user-service/src/commons/dto/shop.dto';
@@ -8,6 +8,7 @@ import { ShopService } from './shop.service';
 export class ShopController {
   constructor(private readonly shopService: ShopService) {}
 
+  @RequirePermission('customer.profile.read')
   @Get('/:userId')
   @RequireScopes('master', 'admin:users:read')
   @ApiOperation({

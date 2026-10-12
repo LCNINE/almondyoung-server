@@ -2,7 +2,7 @@ import { WarehouseActor, warehouseOperationContext } from '../../core/services/w
 import { Controller, Post, Body, Get, Query, Param, BadRequestException, Headers, UseGuards } from '@nestjs/common';
 import { isUUID } from 'class-validator';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { InboundService } from '../services/inbound.service';
 import { InboundReceiptStateReader } from '../services/inbound-receipt-state.reader';
@@ -29,6 +29,7 @@ import { InboundReceiptsQueryDto } from '../dto/inbound-receipts-query.dto';
 @Controller('inbound')
 @UseGuards(ScopeGuard)
 export class InboundController {
+  @RequirePermission('inventory.stock.operate')
   @Post('simple')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '간편입고 - SKU 리스트를 지정 위치로 즉시 입고' })
@@ -44,6 +45,7 @@ export class InboundController {
     return InboundReceiptMapper.toSimpleResponseDto(result.receipt, result.lines);
   }
 
+  @RequirePermission('inventory.stock.operate')
   @Post('simple-fullscan')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '전수조사 간편입고 - (서버는 간편입고와 동일 처리, 기록만 구분)' })
@@ -66,12 +68,14 @@ export class InboundController {
   @ApiOperation({ summary: '입고 라인 메모 수정' })
   @ApiResponse({ status: 200, description: '메모가 수정되었습니다.' })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
+  @RequirePermission('inventory.stock.operate')
   @Post('lines/:lineId/memo')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   async updateInboundLineMemo(@Param('lineId') lineId: string, @Body() dto: UpdateInboundLineMemoDto) {
     return this.inboundService.updateInboundLineMemo(lineId, dto);
   }
 
+  @RequirePermission('inventory.stock.operate')
   @Post('individual')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '개별입고 - 단일 SKU를 지정(옵션) 로케로 입고' })
@@ -97,6 +101,7 @@ export class InboundController {
     private readonly receiptStateReader: InboundReceiptStateReader,
   ) {}
 
+  @RequirePermission('inventory.stock.read')
   @Get('lines/:lineId/state')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '입고 라인의 현재 처리 상태' })
@@ -114,6 +119,7 @@ export class InboundController {
     return this.receiptStateReader.getLineState({ lineId, warehouseId });
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('history')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '입고 실적 조회' })
@@ -130,6 +136,7 @@ export class InboundController {
     return this.inboundService.getInboundHistory(skuId, warehouseId, days ? parseInt(days, 10) : 30);
   }
 
+  @RequirePermission('inventory.stock.operate')
   @Post('verify-barcode')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '입고 검수 - 바코드 스캔' })
@@ -141,6 +148,7 @@ export class InboundController {
     return this.inboundService.verifyInboundByBarcode(dto.barcode, dto.expectedSkuId);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('receipts')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '회차별 입고내역 조회 - 전체 라인 포함' })
@@ -160,6 +168,7 @@ export class InboundController {
     return this.inboundService.listInboundReceipts(query);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('work-logs')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '입고 작업 타임라인 조회 (INBOUND/PUTAWAY/RETURN/CANCEL)' })
@@ -194,6 +203,7 @@ export class InboundController {
     });
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('status')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '집계 입고현황(확정수량) 조회' })
@@ -222,6 +232,7 @@ export class InboundController {
     });
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('putaway/pending')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '적치 대기 조회 — 시스템 존에 남은 미적치 잔량' })
@@ -279,6 +290,7 @@ export class InboundController {
     });
   }
 
+  @RequirePermission('inventory.stock.operate')
   @Post('putaway')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '입고 적치(즉시 이동): 원위치에서 목적지로 즉시 이동' })
@@ -293,6 +305,7 @@ export class InboundController {
     return this.inboundService.putawayFromOrigin(dto, undefined, actorId);
   }
 
+  @RequirePermission('inventory.stock.operate')
   @Post('return')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '입고 회송: 원위치 잔량에서 차감' })
@@ -307,6 +320,7 @@ export class InboundController {
     return this.inboundService.returnInbound(dto, undefined, actorId);
   }
 
+  @RequirePermission('inventory.stock.operate')
   @Post('cancel')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '입고 취소: 오입고 정정, 원위치 잔량에서 차감' })

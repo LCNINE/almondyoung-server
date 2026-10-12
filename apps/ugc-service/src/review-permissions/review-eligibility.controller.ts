@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { User, StoreRoute } from '@app/authorization';
 import { UgcInternalAuth } from '../shared/decorators/internal-auth.decorator';
 import { ApiOkResponsePaginated } from '@app/shared/decorators/api-paginated-response.decorator';
 import { PaginatedResponseDto } from '@app/shared/dto';
@@ -29,6 +29,7 @@ export class ReviewEligibilityController {
     return created.map((e) => ReviewPermissionMapper.toEligibilityResponse(e));
   }
 
+  @StoreRoute()
   @Get()
   @ApiOperation({ summary: '내 리뷰 작성 자격 목록 조회' })
   @ApiQuery({

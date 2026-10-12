@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
-import { AdminRealmGuard, JwtAuthGuard } from '@app/authorization';
+import { AdminRealmGuard, JwtAuthGuard, RequirePermission, PermissionGuard } from '@app/authorization';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
 import { OperatingCostService } from '../settings/operating-cost.service';
@@ -33,17 +33,19 @@ export class CreateOperatingCostDto {
  */
 @ApiTags('Statistics')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, AdminRealmGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)
 @Controller('statistics')
 export class OperatingCostController {
   constructor(private readonly service: OperatingCostService) {}
 
+  @RequirePermission('analytics.finance.read')
   @Get('operating-costs')
   @ApiOperation({ summary: '월 고정비 설정 목록 (적용일 내림차순, 이력 포함)' })
   async list() {
     return { items: await this.service.list() };
   }
 
+  @RequirePermission('analytics.setting.write')
   @Post('operating-costs')
   @HttpCode(201)
   @ApiOperation({ summary: '월 고정비 등록 — 변경은 새 적용일 행 추가로(이력 보존)' })
@@ -55,6 +57,7 @@ export class OperatingCostController {
     });
   }
 
+  @RequirePermission('analytics.setting.write')
   @Delete('operating-costs/:id')
   @ApiOperation({ summary: '월 고정비 설정 삭제' })
   async remove(@Param('id', ParseUUIDPipe) id: string) {

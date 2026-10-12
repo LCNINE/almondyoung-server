@@ -6,7 +6,16 @@ import {
   Module,
   UnauthorizedException,
 } from '@nestjs/common';
-import { AUTH_CONFIG, AuthenticationService, JwtAccessStrategy, JwtAuthGuard } from '@app/authorization';
+import {
+  AUTH_CONFIG,
+  AuthenticationService,
+  AuthzObserverGuard,
+  AuthzShadowInterceptor,
+  JwtAccessStrategy,
+  JwtAuthGuard,
+  PermissionGuard,
+  PermissionModule,
+} from '@app/authorization';
 import { ConfigModule } from '@nestjs/config';
 import { HttpModule } from '@nestjs/axios';
 import { UserContactClient } from '@app/shared';
@@ -383,6 +392,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
       envFilePath: ['.env', 'apps/wallet/.env'],
     }),
     PassportModule.register({ defaultStrategy: 'jwt' }),
+    PermissionModule.forRoot({ service: 'wallet' }),
     DbModule.forRoot({
       config: { connectionString: process.env.DATABASE_URL ?? '' },
       schema: walletSchema,
@@ -473,7 +483,13 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     JwtAuthGuard,
 
     // Guards & interceptors
+    // 그림자 판정 관찰 — 반드시 맨 앞(뒤 가드가 거부한 요청도 봐야 한다). 결과에 관여하지 않는다.
+    { provide: APP_GUARD, useClass: AuthzObserverGuard },
     { provide: APP_GUARD, useClass: WalletAuthGuard },
+    // 권한 강제 — AUTHZ_ENFORCE=true 일 때만 일한다(기본 꺼짐). 기존 가드 뒤에 둔다.
+    { provide: APP_GUARD, useClass: PermissionGuard },
+    // 그림자 판정 통과 표시 — 전역 인터셉터 맨 앞(앞선 인터셉터가 응답을 바로 돌려주면 표시를 못 한다).
+    { provide: APP_INTERCEPTOR, useClass: AuthzShadowInterceptor },
     { provide: APP_INTERCEPTOR, useClass: HttpIdempotencyInterceptor },
 
     // Domain

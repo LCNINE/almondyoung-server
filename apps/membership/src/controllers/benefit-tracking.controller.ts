@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Body, Query } from '@nestjs/common';
-import { User } from '@app/authorization';
+import { User, StoreRoute } from '@app/authorization';
 import { MembershipInternalAuth } from '../shared/decorators/internal-auth.decorator';
 import { BenefitTrackingService } from '../services/benefit-tracking.service';
 import { RecordDiscountDto, CycleBenefitDto } from '../shared/dto/benefit-tracking.dto';
@@ -55,6 +55,7 @@ export class BenefitTrackingController {
    * 외부 API: 현재 주기 조회
    * 사용자에게 "지금 이 주기 동안 얼마나 절약했는지" 보여주기
    */
+  @StoreRoute()
   @Get('current')
   async getCurrentCycleBenefit(@User('userId') userId: string): Promise<CycleBenefitDto> {
     // userId 는 인증된 주체에서만 취하고 query 파라미터는 신뢰하지 않는다(IDOR 방지).
@@ -66,6 +67,7 @@ export class BenefitTrackingController {
    * 외부 API: 혜택 이력 조회
    * 사용자의 전체 혜택 히스토리 (최근 N개 주기)
    */
+  @StoreRoute()
   @Get('history')
   async getCycleBenefitHistory(@User('userId') userId: string, @Query('limit') limit?: number) {
     // userId 는 인증된 주체에서만 취한다(IDOR 방지).

@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { RolesGuard, User } from '@app/authorization';
+import { RolesGuard, User, RequirePermission } from '@app/authorization';
 import { ApplyCsLabelDto } from '../dto/cs-label.dto';
 import { CsLabelsService } from '../services/cs-labels.service';
 
@@ -13,6 +13,7 @@ type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefi
 export class CsCaseLabelsController {
   constructor(private readonly service: CsLabelsService) {}
 
+  @RequirePermission('cs.inquiry.write')
   @Post()
   @ApiOperation({ summary: 'CS Case에 라벨 적용' })
   @ApiParam({ name: 'caseId' })
@@ -20,6 +21,7 @@ export class CsCaseLabelsController {
     return this.service.applyLabel(caseId, dto.labelId, this.getUserId(user));
   }
 
+  @RequirePermission('cs.inquiry.write')
   @Delete(':labelId')
   @ApiOperation({ summary: 'CS Case에서 라벨 제거' })
   @ApiParam({ name: 'caseId' })

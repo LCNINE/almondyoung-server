@@ -1,4 +1,4 @@
-import { RequireScopes, JwtPayload } from '@app/authorization';
+import { RequireScopes, JwtPayload, StoreRoute } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -17,6 +17,7 @@ import { BusinessLicenseResponseDto } from './dto/business-license.response.dto'
 export class BusinessLicensesController {
   constructor(private readonly businessLicensesService: BusinessLicensesService) {}
 
+  @StoreRoute()
   @Post()
   @ApiOperation({
     summary: '사업자 등록',
@@ -32,6 +33,7 @@ export class BusinessLicensesController {
     return this.businessLicensesService.createBusinessLicense(user.id, data);
   }
 
+  @StoreRoute()
   @Get('/me')
   @ApiOperation({
     summary: '현재 사용자의 사업자 등록 정보 조회',
@@ -45,6 +47,7 @@ export class BusinessLicensesController {
     return this.businessLicensesService.getMyBusinessLicense(user.id);
   }
 
+  @StoreRoute()
   @Patch('/me/business-number')
   @ApiOperation({
     summary: '내 사업자번호 채우기 (비어있을 때만)',
@@ -71,6 +74,7 @@ export class BusinessLicensesController {
   })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 403, description: '권한 없음' })
+  @StoreRoute()
   @Post('fetch')
   @RequireScopes('user:read')
   async fetchBusinessLicense(@Body() fetchBusinessLicenseDto: FetchBusinessLicenseDto) {
@@ -92,6 +96,7 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 403, description: '권한 없음' })
   @ApiResponse({ status: 404, description: '사업자 등록 정보를 찾을 수 없음' })
+  @StoreRoute()
   @Put(':businessId')
   @RequireScopes('user:modify')
   async updateBusinessLicenseByBusinessId(
@@ -111,6 +116,7 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 403, description: '권한 없음' })
   @ApiResponse({ status: 404, description: '사업자 등록 정보를 찾을 수 없음' })
+  @StoreRoute()
   @Delete(':id')
   @RequireScopes('user:delete')
   async removeBusinessLicense(@Param('id') businessLicenseId: string, @CurrentUser() user: JwtPayload) {

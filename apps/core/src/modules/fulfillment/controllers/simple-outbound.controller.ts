@@ -15,7 +15,7 @@ import {
 } from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { forceDispatchDecisionFrom } from '../../../platform/auth/force-dispatch-authorization';
-import { RequireScopes, ScopeGuard, User } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User, RequirePermission, RequireAnyPermission } from '@app/authorization';
 import { FULFILLMENT_SCOPE, SIMPLE_OUTBOUND_FORCE_SCOPES } from '../../../platform/auth/fulfillment-scopes';
 import { ForceSimpleOutboundDto, SimpleOutboundScanDto, SimpleOutboundStateDto } from '../dto/simple-outbound.dto';
 import { ShipmentWaybillReader, ShipmentByWaybillResult } from '../reader/shipment-waybill.reader';
@@ -38,6 +38,7 @@ export class SimpleOutboundController {
     private readonly waybills: ShipmentWaybillReader,
   ) {}
 
+  @RequirePermission('fulfillment.shipment.read')
   @Get('by-waybill')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOperation({ summary: '운송장번호로 박스와 라인 진행 조회 (단순출고 진입점)' })
@@ -51,6 +52,7 @@ export class SimpleOutboundController {
       : this.waybills.byTrackingNo(trackingNo, warehouseId);
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post(':shipmentId/simple-outbound-scans')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
@@ -71,6 +73,7 @@ export class SimpleOutboundController {
     );
   }
 
+  @RequireAnyPermission('fulfillment.dispatch.force', 'fulfillment.dispatch.station_force')
   @Post(':shipmentId/simple-outbound-forces')
   @RequireScopes(...SIMPLE_OUTBOUND_FORCE_SCOPES)
   @ApiHeader({ name: 'Idempotency-Key', required: true })

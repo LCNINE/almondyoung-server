@@ -4,12 +4,14 @@ import { PaymentMethodsService } from './payment-methods.service';
 import { CreatePaymentMethodDto, PaymentMethodResponseDto } from './dto';
 import { AuthenticatedRequest } from '../wallet.module';
 import { WalletJwtAuth } from '../wallet-auth.decorator';
+import { KeyAuthRoute, StoreRoute } from '@app/authorization';
 
 @ApiTags('Payment Methods')
 @Controller('v1/payment-methods')
 export class PaymentMethodsController {
   constructor(private readonly service: PaymentMethodsService) {}
 
+  @KeyAuthRoute()
   @Post()
   @HttpCode(201)
   @ApiOperation({ summary: 'Register a payment method (API-key authenticated, merchant backend)' })
@@ -18,6 +20,7 @@ export class PaymentMethodsController {
     return this.toResponse(method);
   }
 
+  @StoreRoute()
   @Get()
   @WalletJwtAuth()
   @ApiOperation({ summary: 'List payment methods for the authenticated user' })
@@ -32,6 +35,7 @@ export class PaymentMethodsController {
     return methods.map((m) => this.toResponse(m));
   }
 
+  @KeyAuthRoute()
   @Delete(':id')
   @HttpCode(204)
   @ApiOperation({ summary: 'Delete a payment method' })

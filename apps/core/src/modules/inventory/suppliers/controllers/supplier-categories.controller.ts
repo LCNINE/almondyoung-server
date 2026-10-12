@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { SupplierCategoriesService } from '../services/supplier-categories.service';
 import { CreateSupplierCategoryDto, UpdateSupplierCategoryDto, SupplierCategoryResponseDto } from '../dto';
@@ -11,6 +11,7 @@ import { CreateSupplierCategoryDto, UpdateSupplierCategoryDto, SupplierCategoryR
 export class SupplierCategoriesController {
   constructor(private readonly supplierCategoriesService: SupplierCategoriesService) {}
 
+  @RequirePermission('inventory.master.read')
   @Get()
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'Get all supplier categories' })
@@ -24,6 +25,7 @@ export class SupplierCategoriesController {
     return this.supplierCategoriesService.getCategories();
   }
 
+  @RequirePermission('inventory.master.read')
   @Get(':id')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'Get supplier category by ID' })
@@ -42,6 +44,7 @@ export class SupplierCategoriesController {
     return this.supplierCategoriesService.getCategoryById(id);
   }
 
+  @RequirePermission('inventory.master.write')
   @Post()
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'Create new supplier category' })
@@ -59,6 +62,7 @@ export class SupplierCategoriesController {
     return this.supplierCategoriesService.createCategory(createDto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Put(':id')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'Update supplier category' })
@@ -84,6 +88,7 @@ export class SupplierCategoriesController {
     return this.supplierCategoriesService.updateCategory(id, updateDto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Delete(':id')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'Delete supplier category' })

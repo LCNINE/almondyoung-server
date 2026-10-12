@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RolesGuard, User } from '@app/authorization';
+import { RolesGuard, User, RequirePermission } from '@app/authorization';
 import { CreateBusinessLinkDto } from '../../sales-order/dto/create-business-link.dto';
 import {
   AssignCsCaseDto,
@@ -31,6 +31,7 @@ type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefi
 export class CsCasesController {
   constructor(private readonly service: CsCasesService) {}
 
+  @RequirePermission('cs.inquiry.write')
   @Post()
   @ApiOperation({ summary: 'CS Case 생성' })
   @ApiResponse({ status: 201, type: CsCaseSummaryResponseDto })
@@ -38,6 +39,7 @@ export class CsCasesController {
     return this.service.create(dto, this.getUserId(user));
   }
 
+  @RequirePermission('cs.inquiry.read')
   @Get()
   @ApiOperation({ summary: 'CS Case 목록 조회' })
   @ApiQuery({ name: 'limit', required: false, type: Number })
@@ -46,6 +48,7 @@ export class CsCasesController {
     return this.service.list(limit);
   }
 
+  @RequirePermission('cs.inquiry.read')
   @Get(':id')
   @ApiOperation({ summary: 'CS Case 단건 조회(타임라인 포함)' })
   @ApiParam({ name: 'id' })
@@ -54,6 +57,7 @@ export class CsCasesController {
     return this.service.getOne(id);
   }
 
+  @RequirePermission('cs.inquiry.write')
   @Patch(':id/status')
   @ApiOperation({ summary: 'CS Case 상태 변경(재오픈 포함)' })
   @ApiParam({ name: 'id' })
@@ -62,6 +66,7 @@ export class CsCasesController {
     return this.service.updateStatus(id, dto.status, this.getUserId(user));
   }
 
+  @RequirePermission('cs.inquiry.write')
   @Patch(':id/assignee')
   @ApiOperation({ summary: 'CS Case 담당자 배정/해제' })
   @ApiParam({ name: 'id' })
@@ -70,6 +75,7 @@ export class CsCasesController {
     return this.service.assign(id, dto.assigneeId, this.getUserId(user));
   }
 
+  @RequirePermission('cs.inquiry.write')
   @Post(':id/business-links')
   @ApiOperation({ summary: 'CS Case 업무 연결 생성' })
   @ApiParam({ name: 'id' })

@@ -13,7 +13,7 @@ import {
 import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { IsArray, IsOptional, IsString, MaxLength, ValidateNested, IsInt, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-import { RequireScopes, ScopeGuard, User } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { StoreReturnExchangeService } from '../services/store-return-exchange.service';
 import { StoreSalesOrdersService } from '../services/store-sales-orders.service';
@@ -72,6 +72,7 @@ export class AdminReturnExchangeController {
 
   // ── Sales Order Admin Cancel ──────────────────────────────────────────────
 
+  @RequirePermission('order.order.cancel')
   @Post('sales-orders/:id/cancel')
   @HttpCode(200)
   @ApiOperation({ summary: '관리자 주문 취소 — 채널 주문은 취소 요청, core 주문은 Wallet 자동 환불 연동' })
@@ -95,6 +96,7 @@ export class AdminReturnExchangeController {
     });
   }
 
+  @RequirePermission('payment.refund.execute')
   @Post('sales-orders/:id/retry-refund')
   @HttpCode(200)
   @ApiOperation({ summary: '취소 주문 환불 재시도 (failed/manual_pending 상태에서만 의미 있음)' })
@@ -103,6 +105,7 @@ export class AdminReturnExchangeController {
     return this.storeSalesOrdersService.retryWalletRefund(id);
   }
 
+  @RequirePermission('payment.refund.execute')
   @Post('sales-orders/:id/manual-refund-complete')
   @HttpCode(200)
   @ApiOperation({
@@ -118,6 +121,7 @@ export class AdminReturnExchangeController {
 
   // ── Return Requests ───────────────────────────────────────────────────────
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('sales-orders/:id/return-requests')
   @UseGuards(ScopeGuard)
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
@@ -131,6 +135,7 @@ export class AdminReturnExchangeController {
     return this.service.adminCreateReturnRequest(id, admin.userId, dto);
   }
 
+  @RequirePermission('fulfillment.shipment.read')
   @Get('sales-orders/:id/return-eligibility')
   @UseGuards(ScopeGuard)
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
@@ -140,6 +145,7 @@ export class AdminReturnExchangeController {
     return this.service.adminGetReturnEligibility(id);
   }
 
+  @RequirePermission('fulfillment.shipment.read')
   @Get('sales-orders/by-channel-order/:channelOrderId/return-eligibility')
   @UseGuards(ScopeGuard)
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
@@ -149,6 +155,7 @@ export class AdminReturnExchangeController {
     return this.service.adminGetReturnEligibilityByChannelOrder(channelOrderId);
   }
 
+  @RequirePermission('order.claim.read')
   @Get('return-requests')
   @ApiQuery({ name: 'createdFrom', required: false, description: '접수 시각 하한 (ISO 8601, 포함)' })
   @ApiQuery({ name: 'createdTo', required: false, description: '접수 시각 상한 (ISO 8601, 포함)' })
@@ -175,6 +182,7 @@ export class AdminReturnExchangeController {
     });
   }
 
+  @RequirePermission('order.claim.read')
   @Get('return-requests/:id')
   @ApiOperation({ summary: '반품 요청 상세 조회 (관리자)' })
   @ApiParam({ name: 'id', description: '반품 요청 ID' })
@@ -182,6 +190,7 @@ export class AdminReturnExchangeController {
     return this.service.adminGetReturnRequest(id);
   }
 
+  @RequirePermission('order.claim.write')
   @Post('return-requests/:id/approve')
   @HttpCode(200)
   @ApiOperation({ summary: '반품 요청 승인 (관리자)' })
@@ -190,6 +199,7 @@ export class AdminReturnExchangeController {
     return this.service.approveReturnRequest(id, admin.userId, dto.adminNote);
   }
 
+  @RequirePermission('order.claim.write')
   @Post('return-requests/:id/reject')
   @HttpCode(200)
   @ApiOperation({ summary: '반품 요청 거절 (관리자)' })
@@ -198,6 +208,7 @@ export class AdminReturnExchangeController {
     return this.service.rejectReturnRequest(id, admin.userId, dto.adminNote);
   }
 
+  @RequirePermission('order.claim.write')
   @Post('return-requests/:id/collection-pending')
   @HttpCode(200)
   @ApiOperation({ summary: '반품 수거 대기 처리 (관리자)' })
@@ -206,6 +217,7 @@ export class AdminReturnExchangeController {
     return this.service.markCollectionPending(id, admin.userId);
   }
 
+  @RequirePermission('order.claim.write')
   @Post('return-requests/:id/collected')
   @HttpCode(200)
   @ApiOperation({ summary: '반품 수거 완료 처리 (관리자)' })
@@ -214,6 +226,7 @@ export class AdminReturnExchangeController {
     return this.service.markCollected(id, admin.userId);
   }
 
+  @RequirePermission('order.claim.write')
   @Post('return-requests/:id/inspected')
   @HttpCode(200)
   @ApiOperation({ summary: '반품 검수 완료 처리 (관리자)' })
@@ -222,6 +235,7 @@ export class AdminReturnExchangeController {
     return this.service.markInspected(id, admin.userId);
   }
 
+  @RequirePermission('order.claim.write')
   @Post('return-requests/:id/complete')
   @HttpCode(200)
   @ApiOperation({ summary: '반품 처리 완료 (관리자)' })
@@ -230,6 +244,7 @@ export class AdminReturnExchangeController {
     return this.service.completeReturnRequest(id, admin.userId);
   }
 
+  @RequirePermission('payment.refund.execute')
   @Post('return-requests/:id/retry-refund')
   @HttpCode(200)
   @ApiOperation({ summary: '반품 환불 재시도 (관리자) — refund_pending 상태에서만 가능' })
@@ -238,6 +253,7 @@ export class AdminReturnExchangeController {
     return this.service.retryReturnRefund(id, admin.userId);
   }
 
+  @RequirePermission('order.claim.write')
   @Post('return-requests/:id/manual-complete')
   @HttpCode(200)
   @ApiOperation({ summary: '반품 수동 환불 완료 (관리자) — refund_pending 상태에서만 가능' })
@@ -248,6 +264,7 @@ export class AdminReturnExchangeController {
 
   // ── Exchange Requests ─────────────────────────────────────────────────────
 
+  @RequirePermission('order.claim.read')
   @Get('exchange-requests')
   @ApiQuery({ name: 'createdFrom', required: false, description: '접수 시각 하한 (ISO 8601, 포함)' })
   @ApiQuery({ name: 'createdTo', required: false, description: '접수 시각 상한 (ISO 8601, 포함)' })
@@ -274,6 +291,7 @@ export class AdminReturnExchangeController {
     });
   }
 
+  @RequirePermission('order.claim.read')
   @Get('exchange-requests/:id')
   @ApiOperation({ summary: '교환 요청 상세 조회 (관리자)' })
   @ApiParam({ name: 'id', description: '교환 요청 ID' })
@@ -281,6 +299,7 @@ export class AdminReturnExchangeController {
     return this.service.adminGetExchangeRequest(id);
   }
 
+  @RequirePermission('order.claim.write')
   @Post('exchange-requests/:id/approve')
   @HttpCode(200)
   @ApiOperation({ summary: '교환 요청 승인 (관리자)' })
@@ -293,6 +312,7 @@ export class AdminReturnExchangeController {
     return this.service.approveExchangeRequest(id, admin.userId, dto.adminNote);
   }
 
+  @RequirePermission('order.claim.write')
   @Post('exchange-requests/:id/reject')
   @HttpCode(200)
   @ApiOperation({ summary: '교환 요청 거절 (관리자)' })
@@ -305,6 +325,7 @@ export class AdminReturnExchangeController {
     return this.service.rejectExchangeRequest(id, admin.userId, dto.adminNote);
   }
 
+  @RequirePermission('order.claim.write')
   @Post('exchange-requests/:id/collection-pending')
   @HttpCode(200)
   @ApiOperation({ summary: '교환 수거 대기 처리 (관리자)' })
@@ -313,6 +334,7 @@ export class AdminReturnExchangeController {
     return this.service.markExchangeCollectionPending(id, admin.userId);
   }
 
+  @RequirePermission('order.claim.write')
   @Post('exchange-requests/:id/collected')
   @HttpCode(200)
   @ApiOperation({ summary: '교환 수거 완료 처리 (관리자)' })
@@ -321,6 +343,7 @@ export class AdminReturnExchangeController {
     return this.service.markExchangeCollected(id, admin.userId);
   }
 
+  @RequirePermission('order.claim.write')
   @Post('exchange-requests/:id/inspected')
   @HttpCode(200)
   @ApiOperation({ summary: '교환 검수 완료 처리 (관리자)' })
@@ -329,6 +352,7 @@ export class AdminReturnExchangeController {
     return this.service.markExchangeInspected(id, admin.userId);
   }
 
+  @RequirePermission('order.claim.write')
   @Post('exchange-requests/:id/complete')
   @HttpCode(200)
   @ApiOperation({ summary: '교환 처리 완료 (관리자)' })

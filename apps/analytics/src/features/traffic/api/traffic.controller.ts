@@ -1,6 +1,6 @@
 import { BadRequestException, Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AdminRealmGuard, JwtAuthGuard } from '@app/authorization';
+import { AdminRealmGuard, JwtAuthGuard, RequirePermission, PermissionGuard } from '@app/authorization';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, Max, Min } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
@@ -26,7 +26,7 @@ class RealtimeQueryDto {
  */
 @ApiTags('Statistics')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, AdminRealmGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)
 @Controller('statistics')
 export class TrafficController {
   constructor(
@@ -34,6 +34,7 @@ export class TrafficController {
     private readonly realtimeQuery: RealtimeQuery,
   ) {}
 
+  @RequirePermission('analytics.report.read')
   @Get('traffic/realtime')
   @ApiOperation({
     summary: '실시간 접속 현황',
@@ -45,6 +46,7 @@ export class TrafficController {
     return this.realtimeQuery.getRealtime(query.limit ?? 10);
   }
 
+  @RequirePermission('analytics.report.read')
   @Get('traffic')
   @ApiOperation({
     summary: '유입 통계',

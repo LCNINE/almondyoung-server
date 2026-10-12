@@ -1,6 +1,6 @@
 import { Controller, Get, Param, UseFilters, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
-import { Public } from '@app/authorization';
+import { Public, StoreRoute } from '@app/authorization';
 import { PlanService } from '../services/plan.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import {
@@ -97,6 +97,7 @@ export class PlanController {
   /**
    * 특정 플랜 상세 조회
    */
+  @StoreRoute()
   @Get('plans/:planId')
   @ApiOperation({
     summary: '특정 플랜 상세 조회',
@@ -162,6 +163,7 @@ export class PlanController {
   /**
    * 모든 티어 목록 조회
    */
+  @StoreRoute()
   @Get('tiers')
   @ApiOperation({
     summary: '모든 티어 목록 조회',
@@ -214,6 +216,7 @@ export class PlanController {
   /**
    * 특정 티어의 모든 플랜 조회
    */
+  @StoreRoute()
   @Get('tiers/:tierId/plans')
   @ApiOperation({
     summary: '특정 티어의 모든 플랜 조회',
@@ -280,6 +283,7 @@ export class PlanController {
   /**
    * 티어별 혜택 조회
    */
+  @StoreRoute()
   @Get('tiers/:tierId/benefits')
   @ApiOperation({
     summary: '티어별 혜택 조회',

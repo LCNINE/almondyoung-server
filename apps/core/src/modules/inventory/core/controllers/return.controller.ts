@@ -13,7 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { ReturnService } from '../services/return.service';
 import { CreateReturnDto, ReceiveReturnDto, InspectReturnDto, ProcessReturnDto } from '../dto/return/create-return.dto';
@@ -39,6 +39,7 @@ export class ReturnController {
   /**
    * 1. 반품 요청 생성
    */
+  @RequirePermission('inventory.stock.adjust')
   @Post()
   @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({
@@ -79,6 +80,7 @@ export class ReturnController {
   /**
    * 2. 반품 상품 입고
    */
+  @RequirePermission('inventory.stock.adjust')
   @Patch(':id/receive')
   @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({
@@ -124,6 +126,7 @@ export class ReturnController {
   /**
    * 3. 품질 검사 (QC)
    */
+  @RequirePermission('inventory.stock.adjust')
   @Patch(':id/inspect')
   @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({
@@ -171,6 +174,7 @@ export class ReturnController {
   /**
    * 4. 최종 처리 (재입고/폐기)
    */
+  @RequirePermission('inventory.stock.adjust')
   @Patch(':id/process')
   @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({
@@ -220,6 +224,7 @@ export class ReturnController {
   /**
    * 반품 상세 조회
    */
+  @RequirePermission('inventory.stock.read')
   @Get(':id')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
@@ -249,6 +254,7 @@ export class ReturnController {
   /**
    * 반품 목록 조회
    */
+  @RequirePermission('inventory.stock.read')
   @Get()
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({

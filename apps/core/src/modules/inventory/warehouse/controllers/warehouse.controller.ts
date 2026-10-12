@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { CreateWarehouseDto } from '../dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from '../dto/update-warehouse.dto';
@@ -14,6 +14,7 @@ import { WarehouseService } from '../services/warehouse.service';
 export class WarehouseController {
   constructor(private readonly warehouseService: WarehouseService) {}
 
+  @RequirePermission('inventory.warehouse.write')
   @Post()
   @RequireScopes(INVENTORY_SCOPE.WAREHOUSE_MANAGE)
   @ApiOperation({ summary: '새 창고 생성' })
@@ -24,6 +25,7 @@ export class WarehouseController {
     return WarehouseMapper.toDto(warehouse);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get()
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '모든 창고 목록 조회' })
@@ -34,6 +36,7 @@ export class WarehouseController {
     return warehouses.map((w) => WarehouseMapper.toDto(w));
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get(':id')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '특정 창고 조회' })
@@ -44,6 +47,7 @@ export class WarehouseController {
     return this.warehouseService.findOne(id);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get(':id/summary')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '창고별 재고 요약 조회' })
@@ -53,6 +57,7 @@ export class WarehouseController {
     return this.warehouseService.getStockSummary(id);
   }
 
+  @RequirePermission('inventory.warehouse.write')
   @Patch(':id')
   @RequireScopes(INVENTORY_SCOPE.WAREHOUSE_MANAGE)
   @ApiOperation({ summary: '창고 정보 수정' })
@@ -67,6 +72,7 @@ export class WarehouseController {
     return WarehouseMapper.toDto(warehouse);
   }
 
+  @RequirePermission('inventory.warehouse.write')
   @Delete(':id')
   @RequireScopes(INVENTORY_SCOPE.WAREHOUSE_MANAGE)
   @ApiOperation({ summary: '창고 삭제' })

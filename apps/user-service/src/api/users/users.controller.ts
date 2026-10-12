@@ -1,4 +1,4 @@
-import { RequireScopes, JwtPayload } from '@app/authorization';
+import { RequireScopes, JwtPayload, RequirePermission, StoreRoute } from '@app/authorization';
 import {
   BadRequestException,
   Body,
@@ -43,6 +43,7 @@ export class UsersController {
     type: UserResponseDto,
   })
   @ApiQuery({ name: 'email', description: '찾고자 하는 사용자의 이메일' })
+  @RequirePermission('customer.profile.read')
   @Get('find-by-email')
   // 이메일 하나로 loginId·실명이 나오므로 공개하면 익명 열거가 된다.
   // 유일한 호출자는 어드민 "주문 수동입력 > 고객 검색"이고, 같은 화면의 /admin/users/:id 와 동일 스코프.
@@ -133,6 +134,7 @@ export class UsersController {
     description: '사용자 권한 정보 조회 성공',
     type: UserRolesResponse,
   })
+  @StoreRoute()
   @Get('roles')
   @HttpCode(HttpStatus.OK)
   @RequireScopes('user:read', 'master', 'admin:users:read')
@@ -146,6 +148,7 @@ export class UsersController {
     description: '현재 사용자 정보 조회 성공',
     type: UserResponseDto,
   })
+  @StoreRoute()
   @Get('me')
   @HttpCode(HttpStatus.OK)
   async getMe(@CurrentUser() user: JwtPayload): Promise<UserResponseDto> {
@@ -158,6 +161,7 @@ export class UsersController {
     description: '프로필 상세 조회 성공',
     type: UserDetailsResponseDto,
   })
+  @StoreRoute()
   @Get('me/profile')
   @HttpCode(HttpStatus.OK)
   async getMyProfile(@CurrentUser() user: JwtPayload): Promise<UserDetailsResponseDto> {
@@ -166,6 +170,7 @@ export class UsersController {
 
   @ApiOperation({ summary: '내 프로필 정보 수정' })
   @ApiResponse({ status: 200, description: '프로필 수정 성공' })
+  @StoreRoute()
   @Patch('me')
   @RequireScopes('user:modify', 'master')
   @HttpCode(HttpStatus.OK)

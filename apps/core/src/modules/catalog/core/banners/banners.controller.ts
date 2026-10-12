@@ -2,12 +2,14 @@ import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { BannersService } from './banners.service';
 import { CreateBannerDto, UpdateBannerDto, BannerResponseDto } from './dto';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('Banners')
 @Controller('banners')
 export class BannersController {
   constructor(private readonly bannersService: BannersService) {}
 
+  @RequirePermission('marketing.display.write')
   @Post()
   @ApiOperation({
     summary: '배너 생성',
@@ -20,6 +22,7 @@ export class BannersController {
     return this.bannersService.createBanner(dto);
   }
 
+  @RequirePermission('marketing.display.read')
   @Get('by-group/:bannerGroupId')
   @ApiOperation({
     summary: '배너 그룹의 배너 목록 조회',
@@ -40,6 +43,7 @@ export class BannersController {
     return this.bannersService.listBannersByGroupId(bannerGroupId, includeInactive === true);
   }
 
+  @RequirePermission('marketing.display.read')
   @Get(':id')
   @ApiOperation({
     summary: '배너 상세 조회',
@@ -52,6 +56,7 @@ export class BannersController {
     return this.bannersService.getBannerById(id);
   }
 
+  @RequirePermission('marketing.display.write')
   @Put(':id')
   @ApiOperation({
     summary: '배너 수정',
@@ -65,6 +70,7 @@ export class BannersController {
     return this.bannersService.updateBanner(id, dto);
   }
 
+  @RequirePermission('marketing.display.write')
   @Delete(':id')
   @ApiOperation({
     summary: '배너 삭제 (Soft Delete)',

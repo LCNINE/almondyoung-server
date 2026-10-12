@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { WarehouseTransferService } from '../services/warehouse-transfer.service';
 import { CreateTransferOrderDto } from '../dto/create-transfer-order.dto';
@@ -27,6 +27,7 @@ export class WarehouseTransferController {
 
   // outstanding 은 :id 보다 먼저 선언해야 한다 — Nest 는 선언 순서로 라우트를 매칭하므로
   // :id 가 먼저 오면 'outstanding' 이 id 파라미터로 흡수된다.
+  @RequirePermission('inventory.stock.read')
   @Get('outstanding')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '미도착 잔량 목록' })
@@ -37,6 +38,7 @@ export class WarehouseTransferController {
     return { items };
   }
 
+  @RequirePermission('inventory.stock.adjust')
   @Post()
   @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({ summary: '이동 지시서 생성' })
@@ -53,6 +55,7 @@ export class WarehouseTransferController {
     });
   }
 
+  @RequirePermission('inventory.stock.adjust')
   @Post(':id/ship')
   @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({ summary: '선적 — 출발 창고 재고를 운송중으로' })
@@ -62,6 +65,7 @@ export class WarehouseTransferController {
     return this.service.ship({ transferOrderId: id, idempotencyKey: dto.idempotencyKey, actorId: dto.actorId });
   }
 
+  @RequirePermission('inventory.stock.adjust')
   @Post(':id/receipts')
   @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({ summary: '도착 회차 등록 — 부분 도착과 분실을 함께 정산' })
@@ -77,6 +81,7 @@ export class WarehouseTransferController {
     });
   }
 
+  @RequirePermission('inventory.stock.adjust')
   @Patch(':id/eta')
   @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({ summary: '도착 예정일 갱신 (선적 지연 등)' })

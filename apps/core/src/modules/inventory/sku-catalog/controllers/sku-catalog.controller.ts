@@ -13,7 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { SkuCatalogService } from '../services/sku-catalog.service';
 import { CreateSkuDto } from '../dto/create-sku.dto';
@@ -30,6 +30,7 @@ import { SkuBarcodeMapper } from '../mappers/sku.mapper';
 export class SkuCatalogController {
   constructor(private readonly skus: SkuCatalogService) {}
 
+  @RequirePermission('inventory.master.write')
   @Post()
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '새 SKU 생성' })
@@ -39,6 +40,7 @@ export class SkuCatalogController {
     return this.skus.create(dto);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('deleted')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '삭제된 SKU 목록 조회' })
@@ -60,6 +62,7 @@ export class SkuCatalogController {
     return this.skus.getDeleted(filters);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get()
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU 검색' })
@@ -86,6 +89,7 @@ export class SkuCatalogController {
     return this.skus.search({ id, code, barcode, name, supplierName, inventoryManagement, groupId, holderId });
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('search/advanced')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU 고급 검색 (재고 필터링 포함)' })
@@ -107,6 +111,7 @@ export class SkuCatalogController {
     return this.skus.searchAdvanced(filters);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get(':id')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU 상세 조회' })
@@ -116,6 +121,7 @@ export class SkuCatalogController {
     return this.skus.getById(id);
   }
 
+  @RequirePermission('inventory.master.write')
   @Put(':id')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU 수정' })
@@ -125,6 +131,7 @@ export class SkuCatalogController {
     return this.skus.update(id, dto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Patch(':id/restore')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '삭제된 SKU 복구' })
@@ -134,6 +141,7 @@ export class SkuCatalogController {
     return this.skus.restore(id);
   }
 
+  @RequirePermission('inventory.master.write')
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
@@ -144,6 +152,7 @@ export class SkuCatalogController {
     return this.skus.delete(id);
   }
 
+  @RequirePermission('inventory.master.write')
   @Post(':id/barcodes')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU에 바코드 추가' })
@@ -154,6 +163,7 @@ export class SkuCatalogController {
     return SkuBarcodeMapper.toDto(barcode);
   }
 
+  @RequirePermission('inventory.master.write')
   @Delete(':id/barcodes/:barcodeId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequireScopes(INVENTORY_SCOPE.MANAGE)

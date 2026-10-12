@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiExtraModels, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { FulfillmentsService } from '../services/fulfillments.service';
 import { ShipmentPlanningService } from '../services/shipment-planning.service';
@@ -21,6 +21,7 @@ export class FulfillmentsController {
     private readonly shipmentPlanning: ShipmentPlanningService,
   ) {}
 
+  @RequirePermission('fulfillment.order.write')
   @Post()
   @ApiOperation({ summary: '주문처리 생성' })
   @ApiResponse({ status: 201, description: '주문처리 생성 성공' })
@@ -28,6 +29,7 @@ export class FulfillmentsController {
     return this.service.create(dto);
   }
 
+  @RequirePermission('fulfillment.order.write')
   @Post(':id/deliver')
   @ApiOperation({ summary: '배송 완료 처리 (고객 수령 확인, FulfillmentDelivered 이벤트 발행)' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
@@ -35,6 +37,7 @@ export class FulfillmentsController {
     return this.service.markDelivered(id);
   }
 
+  @RequirePermission('fulfillment.order.write')
   @Post(':id/cancel')
   @ApiOperation({ summary: '주문처리 취소' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
@@ -42,6 +45,7 @@ export class FulfillmentsController {
     return this.service.cancel(id);
   }
 
+  @RequirePermission('fulfillment.order.read')
   @Get(':id/outbox-events')
   @ApiOperation({ summary: '주문처리 outbox 이벤트 조회' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
@@ -49,6 +53,7 @@ export class FulfillmentsController {
     return this.service.getOutboxEvents(id);
   }
 
+  @RequirePermission('fulfillment.order.read')
   @Get(':id')
   @ApiOperation({
     summary: '주문처리 상세 조회 (progress, shipments, items, reservations, adminAvailableActions 포함)',
@@ -59,6 +64,7 @@ export class FulfillmentsController {
     return this.service.getOne(id);
   }
 
+  @RequirePermission('fulfillment.shipment.read')
   @Get(':id/shipments')
   @UseGuards(ScopeGuard)
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
@@ -68,6 +74,7 @@ export class FulfillmentsController {
     return this.shipmentPlanning.getFulfillmentShipments(id);
   }
 
+  @RequirePermission('fulfillment.order.read')
   @Get()
   @ApiOperation({ summary: '주문처리 목록 조회' })
   @ApiQuery({ name: 'limit', required: false, type: String })

@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Get, NotFoundException, Param, Post, Query } from '@nestjs/common';
 import { Public } from '../../commons/decorator/public.decorator';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
-import { JwtPayload } from '@app/authorization';
+import { JwtPayload, StoreRoute } from '@app/authorization';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Cafe24LinkService } from './cafe24-link.service';
 import { Cafe24MemberInfoRequestDto, Cafe24MemberInfoResponseDto } from './dto/member-info.dto';
@@ -34,6 +34,7 @@ export class Cafe24LinkController {
     return this.cafe24LinkService.fetchMemberInfo(body.encryptedIdToken);
   }
 
+  @StoreRoute()
   @Post('link')
   @ApiOperation({
     summary: 'Cafe24 계정 연결',
@@ -65,6 +66,7 @@ export class Cafe24LinkController {
     };
   }
 
+  @StoreRoute()
   @Get('link')
   @ApiOperation({
     summary: 'Cafe24 연결 정보 조회',
@@ -89,6 +91,7 @@ export class Cafe24LinkController {
     };
   }
 
+  @StoreRoute()
   @Post('unlink')
   @ApiOperation({
     summary: 'Cafe24 계정 연결 해제',
@@ -110,6 +113,7 @@ export class Cafe24LinkController {
     };
   }
 
+  @StoreRoute()
   @Get('migration')
   @ApiOperation({
     summary: 'Cafe24 이관 항목 전체 조회',
@@ -125,6 +129,7 @@ export class Cafe24LinkController {
     return { items };
   }
 
+  @StoreRoute()
   @Get('migration/:key')
   @ApiOperation({
     summary: 'Cafe24 이관 항목 단건 조회',
@@ -140,6 +145,7 @@ export class Cafe24LinkController {
     return this.cafe24LinkService.lookupMigrationItem(user.id, key as any);
   }
 
+  @StoreRoute()
   @Post('migration/:key')
   @ApiOperation({
     summary: 'Cafe24 이관 항목 단건 이관',

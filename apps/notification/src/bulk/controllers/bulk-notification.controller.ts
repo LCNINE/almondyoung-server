@@ -3,6 +3,7 @@ import { Controller, Post, Get, Body, Param, Query, Logger, ValidationPipe } fro
 import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { BulkNotificationService } from '../services/bulk-notification.service';
 import { CreateBulkNotificationDto } from '../dto/create-bulk-notification.dto';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('bulk')
 @Controller('bulk-notifications')
@@ -11,6 +12,7 @@ export class BulkNotificationController {
 
   constructor(private readonly bulkNotificationService: BulkNotificationService) {}
 
+  @RequirePermission('messaging.message.bulk_send')
   @Post()
   @ApiOperation({
     summary: '대량 알림 발송',
@@ -37,6 +39,7 @@ export class BulkNotificationController {
     return { message: 'Bulk notification campaign initiated', campaignId: result.campaignId, status: result.status };
   }
 
+  @RequirePermission('messaging.message.read')
   @Get()
   @ApiOperation({
     summary: '캠페인 목록 조회',
@@ -72,6 +75,7 @@ export class BulkNotificationController {
     return result;
   }
 
+  @RequirePermission('messaging.message.read')
   @Get(':campaignId')
   @ApiOperation({
     summary: '캠페인 상세 조회',
@@ -84,6 +88,7 @@ export class BulkNotificationController {
     return this.bulkNotificationService.findCampaignById(campaignId);
   }
 
+  @RequirePermission('messaging.message.bulk_send')
   @Post(':campaignId/cancel')
   @ApiOperation({
     summary: '캠페인 취소',
@@ -97,6 +102,7 @@ export class BulkNotificationController {
     return this.bulkNotificationService.cancelCampaign(campaignId);
   }
 
+  @RequirePermission('messaging.message.read')
   @Get(':campaignId/recipients')
   @ApiOperation({
     summary: '캠페인 수신자 목록 조회',
