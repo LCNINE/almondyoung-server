@@ -1,5 +1,5 @@
 import { Controller, Get, HttpCode, UseGuards } from '@nestjs/common';
-import { RequireScopes, ScopeGuard, User } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
 import {
   FULFILLMENT_SCOPE,
   SHORT_PICK_REPORT_SCOPES,
@@ -13,6 +13,7 @@ import { authenticatedWarehouseActor, WarehouseActor } from '../services/warehou
 export class WarehouseWorkContextController {
   constructor(private readonly scopes: ScopeGuard) {}
 
+  @RequirePermission('inventory.stock.read')
   @Get('work-context')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   async workContext(@User() user: WarehouseActor & { roles?: string[] }) {
@@ -40,6 +41,7 @@ export class WarehouseWorkContextController {
     };
   }
 
+  @RequirePermission('inventory.master.read')
   @Get('diagnostics-access')
   @HttpCode(204)
   @RequireScopes(INVENTORY_SCOPE.MANAGE)

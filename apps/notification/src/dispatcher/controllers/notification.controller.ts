@@ -5,12 +5,14 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/s
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 import { ListUserNotificationsDto } from '../dto/list-user-notifications.dto';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('notifications')
 @Controller('notifications')
 export class NotificationController {
   constructor(private readonly dispatcherService: NotificationDispatcherService) {}
 
+  @RequirePermission('messaging.message.send')
   @Post('send')
   @ApiOperation({
     summary: '알림 발송',
@@ -24,6 +26,7 @@ export class NotificationController {
     return this.dispatcherService.send(dto);
   }
 
+  @RequirePermission('messaging.message.read')
   @Get(':id')
   @ApiOperation({
     summary: '알림 상세 조회',
@@ -36,6 +39,7 @@ export class NotificationController {
     return this.dispatcherService.getNotification(id);
   }
 
+  @RequirePermission('messaging.message.read')
   @Get('users/:userId')
   @ApiOperation({
     summary: '회원 메시지 발송내역',
@@ -49,6 +53,7 @@ export class NotificationController {
   }
 
   // 이벤트 기반 개별 발송 엔드포인트
+  @RequirePermission('messaging.message.send')
   @Post('events/process')
   @ApiOperation({
     summary: '이벤트 기반 알림 처리',
@@ -85,6 +90,7 @@ export class NotificationController {
   }
 
   // 카프카 이벤트 수신 엔드포인트 (예시)
+  @RequirePermission('messaging.message.send')
   @Post('events/kafka')
   @ApiOperation({
     summary: 'Kafka 이벤트 처리',

@@ -12,7 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { SuppliersService } from '../services/suppliers.service';
 import {
@@ -30,6 +30,7 @@ import {
 export class SuppliersController {
   constructor(private readonly suppliersService: SuppliersService) {}
 
+  @RequirePermission('inventory.master.read')
   @Get()
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'Get suppliers list or filter options' })
@@ -61,6 +62,7 @@ export class SuppliersController {
     return this.suppliersService.getSuppliers(filters || {});
   }
 
+  @RequirePermission('inventory.master.read')
   @Get(':id')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'Get supplier by ID' })
@@ -79,6 +81,7 @@ export class SuppliersController {
     return this.suppliersService.getSupplierById(id);
   }
 
+  @RequirePermission('inventory.master.write')
   @Post()
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'Create new supplier' })
@@ -96,6 +99,7 @@ export class SuppliersController {
     return this.suppliersService.createSupplier(createDto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Put(':id')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'Update supplier' })
@@ -118,6 +122,7 @@ export class SuppliersController {
     return this.suppliersService.updateSupplier(id, updateDto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Delete(':id')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'Delete supplier' })

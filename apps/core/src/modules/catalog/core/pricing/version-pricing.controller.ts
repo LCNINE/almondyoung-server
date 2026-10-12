@@ -24,6 +24,7 @@ import {
   GetPriceSetRequestDto,
   VariantPriceSetDto,
 } from './dto';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('Version Pricing')
 @Controller('versions/:versionId/pricing')
@@ -33,6 +34,7 @@ export class VersionPricingController {
     private readonly calculatorService: PricingCalculatorService,
   ) {}
 
+  @RequirePermission('catalog.product.read')
   @Get('rules')
   @ApiOperation({
     summary: 'Get pricing rules for a specific version',
@@ -50,6 +52,7 @@ export class VersionPricingController {
     return this.pricingService.getVersionRules(versionId);
   }
 
+  @RequirePermission('catalog.price.write')
   @Put('rules')
   @ApiOperation({
     summary: 'Replace pricing rules for a draft version',
@@ -78,6 +81,7 @@ export class VersionPricingController {
     }
   }
 
+  @RequirePermission('catalog.price.write')
   @Delete('rules')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
@@ -102,6 +106,7 @@ export class VersionPricingController {
     }
   }
 
+  @RequirePermission('catalog.product.read')
   @Post('calculate')
   @ApiOperation({
     summary: 'Calculate price for a variant in a specific version',
@@ -153,6 +158,7 @@ export class VersionPricingController {
     };
   }
 
+  @RequirePermission('catalog.product.read')
   @Get('price-set')
   @ApiOperation({
     summary: 'Get complete price set for a variant in a specific version',

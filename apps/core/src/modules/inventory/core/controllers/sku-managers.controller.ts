@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { SkuManagersService } from '../services/sku-managers.service';
 import { CreateSkuManagersDto } from '../dto/sku-managers/create-sku-managers.dto';
@@ -13,6 +13,7 @@ import { SkuManagersResponseDto } from '../dto/sku-managers/sku-managers-respons
 export class SkuManagersController {
   constructor(private readonly skuManagersService: SkuManagersService) {}
 
+  @RequirePermission('inventory.master.write')
   @Post('managers')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
@@ -31,6 +32,7 @@ export class SkuManagersController {
     return this.skuManagersService.assignManagers(dto);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get(':skuId/managers')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
@@ -49,6 +51,7 @@ export class SkuManagersController {
     return this.skuManagersService.getManagersBySkuId(skuId);
   }
 
+  @RequirePermission('inventory.master.write')
   @Put(':skuId/managers')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
@@ -71,6 +74,7 @@ export class SkuManagersController {
     return this.skuManagersService.updateManagers(skuId, dto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Delete(':skuId/managers')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
@@ -96,6 +100,7 @@ export class SkuManagersController {
     return this.skuManagersService.removeManagers(skuId);
   }
 
+  @RequirePermission('inventory.master.write')
   @Delete(':skuId/managers/:role')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
@@ -123,6 +128,7 @@ export class SkuManagersController {
     return this.skuManagersService.removeManagerRole(skuId, role);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('managers/all')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
@@ -146,6 +152,7 @@ export class SkuManagersController {
 export class ManagerSkusController {
   constructor(private readonly skuManagersService: SkuManagersService) {}
 
+  @RequirePermission('inventory.stock.read')
   @Get(':managerId/skus')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({

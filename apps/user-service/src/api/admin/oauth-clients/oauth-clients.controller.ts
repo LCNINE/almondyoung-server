@@ -1,4 +1,4 @@
-import { RequireScopes } from '@app/authorization';
+import { RequireScopes, RequirePermission } from '@app/authorization';
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import {
@@ -17,6 +17,7 @@ export class OAuthClientsController {
 
   @ApiOperation({ summary: 'OAuth client 목록' })
   @ApiResponse({ status: 200, type: [OAuthClientResponseDto] })
+  @RequirePermission('system.oauth_client.write')
   @Get()
   @RequireScopes('master')
   list(): Promise<OAuthClientResponseDto[]> {
@@ -25,6 +26,7 @@ export class OAuthClientsController {
 
   @ApiOperation({ summary: 'OAuth client 단건 조회' })
   @ApiResponse({ status: 200, type: OAuthClientResponseDto })
+  @RequirePermission('system.oauth_client.write')
   @Get(':clientId')
   @RequireScopes('master')
   get(@Param('clientId') clientId: string): Promise<OAuthClientResponseDto> {
@@ -33,6 +35,7 @@ export class OAuthClientsController {
 
   @ApiOperation({ summary: 'OAuth client 생성 (clientSecret 1회 노출)' })
   @ApiResponse({ status: 201, type: OAuthClientWithSecretResponseDto })
+  @RequirePermission('system.oauth_client.write')
   @Post()
   @RequireScopes('master')
   create(@Body() dto: CreateOAuthClientDto): Promise<OAuthClientWithSecretResponseDto> {
@@ -41,6 +44,7 @@ export class OAuthClientsController {
 
   @ApiOperation({ summary: 'OAuth client 수정 (redirectUris/allowedScopes/isActive)' })
   @ApiResponse({ status: 200, type: OAuthClientResponseDto })
+  @RequirePermission('system.oauth_client.write')
   @Patch(':clientId')
   @RequireScopes('master')
   update(
@@ -52,6 +56,7 @@ export class OAuthClientsController {
 
   @ApiOperation({ summary: 'client_secret 회전 (이전 secret 은 grace 동안 함께 유효)' })
   @ApiResponse({ status: 200, type: OAuthClientWithSecretResponseDto })
+  @RequirePermission('system.oauth_client.write')
   @Post(':clientId/rotate-secret')
   @RequireScopes('master')
   rotateSecret(@Param('clientId') clientId: string): Promise<OAuthClientWithSecretResponseDto> {
@@ -60,6 +65,7 @@ export class OAuthClientsController {
 
   @ApiOperation({ summary: '회전 grace 종료 (previous_secret_hash 제거)' })
   @ApiResponse({ status: 200, type: OAuthClientResponseDto })
+  @RequirePermission('system.oauth_client.write')
   @Post(':clientId/clear-previous-secret')
   @RequireScopes('master')
   clearPreviousSecret(@Param('clientId') clientId: string): Promise<OAuthClientResponseDto> {
@@ -68,6 +74,7 @@ export class OAuthClientsController {
 
   @ApiOperation({ summary: 'OAuth client 비활성화 (soft)' })
   @ApiResponse({ status: 200, type: OAuthClientResponseDto })
+  @RequirePermission('system.oauth_client.write')
   @Delete(':clientId')
   @RequireScopes('master')
   deactivate(@Param('clientId') clientId: string): Promise<OAuthClientResponseDto> {

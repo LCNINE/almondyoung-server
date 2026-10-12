@@ -14,6 +14,7 @@ import {
   PriceBreakdownDto,
   VariantPriceSetDto,
 } from './dto';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('Master Pricing')
 @Controller('masters/:masterId/pricing')
@@ -39,6 +40,7 @@ export class MasterPricingController {
     return activeVersion?.id ?? null;
   }
 
+  @RequirePermission('catalog.product.read')
   @Get('rules')
   @ApiOperation({
     summary: 'Get pricing rules for active version',
@@ -62,6 +64,7 @@ export class MasterPricingController {
     return this.pricingService.getVersionRules(versionId);
   }
 
+  @RequirePermission('catalog.product.read')
   @Post('calculate')
   @HttpCode(200)
   @ApiOperation({
@@ -121,6 +124,7 @@ export class MasterPricingController {
     };
   }
 
+  @RequirePermission('catalog.product.read')
   @Get('price-set')
   @ApiOperation({
     summary: 'Get complete price set using active version',

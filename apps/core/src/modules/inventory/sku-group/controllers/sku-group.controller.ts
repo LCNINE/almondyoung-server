@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, 
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, Min } from 'class-validator';
 import { ApiOperation, ApiParam, ApiProperty, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { SkuGroupService } from '../services/sku-group.service';
 import { CreateSkuGroupDto, UpdateSkuGroupDto } from '../dto/create-sku-group.dto';
@@ -31,6 +31,7 @@ class UngroupedQueryDto {
 export class SkuGroupController {
   constructor(private readonly skuGroupService: SkuGroupService) {}
 
+  @RequirePermission('inventory.master.write')
   @Post()
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU 그룹 생성 (Create SKU group)' })
@@ -45,6 +46,7 @@ export class SkuGroupController {
     return this.skuGroupService.create(dto);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get()
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '모든 SKU 그룹 조회 (List all SKU groups)' })
@@ -54,6 +56,7 @@ export class SkuGroupController {
     return this.skuGroupService.list();
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('ungrouped')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '그룹에 속하지 않은 SKU 조회 (Get ungrouped SKUs)' })
@@ -63,6 +66,7 @@ export class SkuGroupController {
     return this.skuGroupService.getUngroupedSkus(query.limit ?? 50, query.offset ?? 0);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get(':id')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU 그룹 상세 조회' })
@@ -74,6 +78,7 @@ export class SkuGroupController {
     return this.skuGroupService.getById(groupId);
   }
 
+  @RequirePermission('inventory.master.write')
   @Put(':id')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU 그룹 수정' })
@@ -85,6 +90,7 @@ export class SkuGroupController {
     return this.skuGroupService.update(groupId, dto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
@@ -97,6 +103,7 @@ export class SkuGroupController {
     return this.skuGroupService.remove(groupId);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get(':id/members')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '그룹의 모든 SKU 조회' })
@@ -108,6 +115,7 @@ export class SkuGroupController {
     return this.skuGroupService.getMembers(groupId);
   }
 
+  @RequirePermission('inventory.master.write')
   @Post(':id/members')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU를 그룹에 추가' })
@@ -119,6 +127,7 @@ export class SkuGroupController {
     return this.skuGroupService.addSku(groupId, dto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Post(':id/members/bulk')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '여러 SKU를 그룹에 일괄 추가' })
@@ -129,6 +138,7 @@ export class SkuGroupController {
     return this.skuGroupService.bulkAddSkus(groupId, dto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Delete('members/:skuId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequireScopes(INVENTORY_SCOPE.MANAGE)

@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
-import { AdminRealmGuard, JwtAuthGuard } from '@app/authorization';
+import { AdminRealmGuard, JwtAuthGuard, RequirePermission, PermissionGuard } from '@app/authorization';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -119,7 +119,7 @@ export class CreateRevenueGoalDto {
  */
 @ApiTags('Statistics')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, AdminRealmGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)
 @Controller('statistics')
 export class RevenueGoalController {
   constructor(
@@ -127,6 +127,7 @@ export class RevenueGoalController {
     private readonly summary: GrowthSummaryQuery,
   ) {}
 
+  @RequirePermission('analytics.report.read')
   @Get('revenue-goals')
   @ApiOperation({ summary: '연간 매출 목표 — 그 해의 현재 목표와 이력 (최신 먼저)' })
   async list(@Query() query: RevenueGoalYearQueryDto) {
@@ -134,6 +135,7 @@ export class RevenueGoalController {
     return { year: query.year, current: items[0] ?? null, history: items };
   }
 
+  @RequirePermission('analytics.setting.write')
   @Post('revenue-goals')
   @HttpCode(201)
   @ApiOperation({ summary: '연간 매출 목표 등록 — 변경은 새 행 추가로(이력 보존), 가장 늦은 행이 현재 목표' })
@@ -158,6 +160,7 @@ export class RevenueGoalController {
     return created;
   }
 
+  @RequirePermission('analytics.setting.write')
   @Delete('revenue-goals/:id')
   @ApiOperation({ summary: '연간 매출 목표 삭제 — 직전 행이 다시 현재 목표가 된다' })
   async remove(@Param('id', ParseUUIDPipe) id: string) {

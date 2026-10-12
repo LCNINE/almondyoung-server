@@ -1,6 +1,6 @@
 import { Controller, Post, Body, HttpException, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { User, RequirePermission } from '@app/authorization';
 import { ProductBulkService } from './product-bulk.service';
 import { BulkUpdateDto, BulkDeleteDto, BulkRestoreDto, BulkPolicyDto } from './dto';
 
@@ -9,6 +9,7 @@ import { BulkUpdateDto, BulkDeleteDto, BulkRestoreDto, BulkPolicyDto } from './d
 export class ProductBulkController {
   constructor(private bulkService: ProductBulkService) {}
 
+  @RequirePermission('catalog.bulk.execute')
   @Post('update')
   @ApiOperation({
     summary: '제품 일괄 수정',
@@ -25,6 +26,7 @@ export class ProductBulkController {
     }
   }
 
+  @RequirePermission('catalog.bulk.execute')
   @Post('delete')
   @ApiOperation({
     summary: '제품 일괄 소프트 삭제',
@@ -41,6 +43,7 @@ export class ProductBulkController {
     }
   }
 
+  @RequirePermission('catalog.bulk.execute')
   @Post('restore')
   @ApiOperation({
     summary: '제품 일괄 복원',
@@ -57,6 +60,7 @@ export class ProductBulkController {
     }
   }
 
+  @RequirePermission('catalog.bulk.execute')
   @Post('policy')
   @ApiOperation({
     summary: '운영 노출 정책 일괄 변경',

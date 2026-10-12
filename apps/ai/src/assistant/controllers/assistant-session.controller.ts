@@ -1,4 +1,4 @@
-import { RequireScopes, User } from '@app/authorization';
+import { RequireScopes, User, RequirePermission } from '@app/authorization';
 import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CreateSessionDto } from '../dto/create-session.dto';
@@ -30,6 +30,7 @@ type AuthenticatedUser = { userId: string };
 export class AssistantSessionController {
   constructor(private readonly service: AssistantSessionService) {}
 
+  @RequirePermission('ai.assistant.use')
   @Post()
   @ApiOperation({ summary: '대화 시작' })
   @ApiResponse({ status: 201, type: SessionSummaryDto })
@@ -37,6 +38,7 @@ export class AssistantSessionController {
     return this.service.createSession(user.userId, dto);
   }
 
+  @RequirePermission('ai.assistant.use')
   @Get()
   @ApiOperation({ summary: '내 대화 목록 (최근 순)' })
   @ApiResponse({ status: 200, type: [SessionSummaryDto] })
@@ -44,6 +46,7 @@ export class AssistantSessionController {
     return this.service.listSessions(user.userId, query.limit);
   }
 
+  @RequirePermission('ai.assistant.use')
   @Get(':sessionId/messages')
   @ApiOperation({
     summary: '대화 내용 (보낸 순서)',
@@ -55,6 +58,7 @@ export class AssistantSessionController {
     return this.service.listMessages(user.userId, sessionId);
   }
 
+  @RequirePermission('ai.assistant.use')
   @Delete(':sessionId')
   @ApiOperation({ summary: '대화 삭제', description: '메시지도 함께 지워진다.' })
   @ApiResponse({ status: 200, type: DeletedDto })

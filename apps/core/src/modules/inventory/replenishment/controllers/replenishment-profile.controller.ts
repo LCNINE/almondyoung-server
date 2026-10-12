@@ -1,6 +1,6 @@
 import { Controller, HttpCode, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { ReplenishmentProfileService } from '../demand/replenishment-profile.service';
 import { RecomputeProfilesQueryDto, RefreshSummaryDto } from '../dto/replenishment-profile.dto';
@@ -15,6 +15,7 @@ import { RecomputeProfilesQueryDto, RefreshSummaryDto } from '../dto/replenishme
 export class ReplenishmentProfileController {
   constructor(private readonly service: ReplenishmentProfileService) {}
 
+  @RequirePermission('inventory.master.write')
   @Post('profiles/recompute')
   @HttpCode(200)
   @RequireScopes(INVENTORY_SCOPE.MANAGE)

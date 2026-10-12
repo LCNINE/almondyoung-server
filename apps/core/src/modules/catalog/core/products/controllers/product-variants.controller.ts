@@ -4,12 +4,14 @@ import { ProductVariantsService } from '../services/product-variants.service';
 import { VariantWithPriceDto } from '../dto';
 import { PaginatedResponseDto } from '../../../common/dto';
 import { ApiOkResponsePaginated } from '../../../common/decorators';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('Product Variants')
 @Controller('variants')
 export class ProductVariantsController {
   constructor(private readonly productVariantsService: ProductVariantsService) {}
 
+  @RequirePermission('catalog.product.read')
   @Get('masters/:masterId')
   @ApiOperation({
     summary: '마스터별 제품 변형 조회',
@@ -69,6 +71,7 @@ export class ProductVariantsController {
     );
   }
 
+  @RequirePermission('catalog.product.read')
   @Get('masters/:masterId/versions/:versionId')
   @ApiOperation({
     summary: '버전별 제품 변형 조회',
@@ -130,6 +133,7 @@ export class ProductVariantsController {
     );
   }
 
+  @RequirePermission('catalog.product.read')
   @Get('batch')
   @ApiOperation({
     summary: 'Variant 일괄 조회',
@@ -144,6 +148,7 @@ export class ProductVariantsController {
     return this.productVariantsService.findByIds(ids);
   }
 
+  @RequirePermission('catalog.product.read')
   @Get(':id')
   @ApiOperation({
     summary: '제품 변형 상세 조회',
@@ -183,6 +188,7 @@ export class ProductVariantsController {
     return variant;
   }
 
+  @RequirePermission('catalog.product.read')
   @Get(':id/price')
   @ApiOperation({
     summary: '제품 변형 가격 조회 (Deprecated)',

@@ -20,12 +20,14 @@ import {
   CreateCheckoutSessionDto,
 } from './dto';
 import { CheckoutSession } from '../types';
+import { KeyAuthRoute, StoreRoute } from '@app/authorization';
 
 @ApiTags('Checkout Sessions')
 @Controller('v1/checkout-sessions')
 export class CheckoutSessionController {
   constructor(private readonly service: CheckoutSessionService) {}
 
+  @KeyAuthRoute()
   @Post()
   @HttpCode(201)
   @ApiOperation({ summary: 'Create a checkout session (API-key authenticated, external service)' })
@@ -49,6 +51,7 @@ export class CheckoutSessionController {
     }
   }
 
+  @StoreRoute()
   @Get(':id')
   @WalletJwtAuth()
   @ApiOperation({ summary: 'Get a checkout session (wallet-web loads this)' })
@@ -60,6 +63,7 @@ export class CheckoutSessionController {
     return this.toResponse(session);
   }
 
+  @StoreRoute()
   @Post(':id/complete')
   @HttpCode(200)
   @WalletJwtAuth()

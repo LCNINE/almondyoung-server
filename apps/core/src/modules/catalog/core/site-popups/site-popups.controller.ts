@@ -1,4 +1,4 @@
-import { Public, RolesGuard, User } from '@app/authorization';
+import { Public, RolesGuard, User, RequirePermission } from '@app/authorization';
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CreateSitePopupDto, SitePopupListQueryDto, SitePopupResponseDto, UpdateSitePopupDto } from './dto';
@@ -10,6 +10,7 @@ import { SITE_POPUP_VIEWER_TYPES, SitePopupViewerType } from './site-popup.const
 export class SitePopupsController {
   constructor(private readonly sitePopupsService: SitePopupsService) {}
 
+  @RequirePermission('marketing.display.write')
   @Post()
   @UseGuards(RolesGuard('master', 'admin'))
   @ApiBearerAuth()
@@ -20,6 +21,7 @@ export class SitePopupsController {
     return this.sitePopupsService.create(dto, user?.userId);
   }
 
+  @RequirePermission('marketing.display.read')
   @Get()
   @UseGuards(RolesGuard('master', 'admin'))
   @ApiBearerAuth()
@@ -46,6 +48,7 @@ export class SitePopupsController {
     return this.sitePopupsService.listPublic(resolved);
   }
 
+  @RequirePermission('marketing.display.read')
   @Get(':id')
   @UseGuards(RolesGuard('master', 'admin'))
   @ApiBearerAuth()
@@ -57,6 +60,7 @@ export class SitePopupsController {
     return this.sitePopupsService.getById(id);
   }
 
+  @RequirePermission('marketing.display.write')
   @Put(':id')
   @UseGuards(RolesGuard('master', 'admin'))
   @ApiBearerAuth()
@@ -73,6 +77,7 @@ export class SitePopupsController {
     return this.sitePopupsService.update(id, dto, user?.userId);
   }
 
+  @RequirePermission('marketing.display.write')
   @Post(':id/reset-dismissals')
   @UseGuards(RolesGuard('master', 'admin'))
   @ApiBearerAuth()
@@ -89,6 +94,7 @@ export class SitePopupsController {
     return this.sitePopupsService.resetDismissals(id, user?.userId);
   }
 
+  @RequirePermission('marketing.display.write')
   @Delete(':id')
   @UseGuards(RolesGuard('master', 'admin'))
   @ApiBearerAuth()

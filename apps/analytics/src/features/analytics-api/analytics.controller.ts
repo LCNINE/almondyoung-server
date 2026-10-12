@@ -1,6 +1,6 @@
 import { Controller, Get, Query, UseGuards, NotFoundException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard, User } from '@app/authorization';
+import { JwtAuthGuard, User, Public, RequirePermission, StoreRoute, PermissionGuard } from '@app/authorization';
 import { ApiOkResponsePaginated } from '@app/shared/decorators/api-paginated-response.decorator';
 import { PaginatedResponseDto } from '@app/shared/dto';
 import { AnalyticsService } from './analytics.service';
@@ -17,6 +17,7 @@ export class AnalyticsController {
     private readonly userPurchaseQuery: UserPurchaseQuery,
   ) { }
 
+  @Public()
   @Get('health')
   @ApiOperation({
     summary: 'Health check',
@@ -31,8 +32,9 @@ export class AnalyticsController {
     return this.analyticsService.getHealth();
   }
 
+  @RequirePermission('analytics.report.read')
   @Get('summary')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: '대시보드 요약',
@@ -47,6 +49,7 @@ export class AnalyticsController {
     return this.analyticsService.getSummary();
   }
 
+  @Public()
   @Get('best-product')
   @ApiOperation({
     summary: 'Best product metrics',
@@ -72,8 +75,9 @@ export class AnalyticsController {
     return this.analyticsService.getProductOrderMetrics(query.categoryId, query.limit);
   }
 
+  @StoreRoute()
   @Get('frequently-purchased')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: '자주 산 상품 목록 조회',

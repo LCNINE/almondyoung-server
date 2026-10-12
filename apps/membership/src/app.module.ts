@@ -87,9 +87,16 @@ import { UserContactClient } from '@app/shared';
 import { AdminIdempotencyService } from './shared/idempotency/admin-idempotency.service';
 import { AdminIdempotencyInterceptor } from './shared/idempotency/admin-idempotency.interceptor';
 import { AuthorizationModule } from '@app/authorization';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { MEMBERSHIP_ROLE_MAPPINGS, MEMBERSHIP_SCOPES } from './shared/auth/membership-scopes';
-import { JwtAuthGuard, ScopeGuard } from '@app/authorization';
+import {
+  AuthzObserverGuard,
+  AuthzShadowInterceptor,
+  JwtAuthGuard,
+  PermissionGuard,
+  PermissionModule,
+  ScopeGuard,
+} from '@app/authorization';
 import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
 import { EventTraceController } from './controllers/event-trace.controller';
 
@@ -107,6 +114,7 @@ import { EventTraceController } from './controllers/event-trace.controller';
       scopes: MEMBERSHIP_SCOPES,
       roleMappings: MEMBERSHIP_ROLE_MAPPINGS,
     }),
+    PermissionModule.forRoot({ service: 'membership' }),
     HttpModule,
     SCHEDULE_ROOT,
     CronOnceModule,
@@ -167,6 +175,8 @@ import { EventTraceController } from './controllers/event-trace.controller';
     InternalMembershipController,
   ],
   providers: [
+    // 그림자 판정 관찰 — 반드시 맨 앞(뒤 가드가 거부한 요청도 봐야 한다). 결과에 관여하지 않는다.
+    { provide: APP_GUARD, useClass: AuthzObserverGuard },
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
@@ -176,6 +186,9 @@ import { EventTraceController } from './controllers/event-trace.controller';
       provide: APP_GUARD,
       useClass: ScopeGuard,
     },
+    // 권한 강제 — AUTHZ_ENFORCE=true 일 때만 일한다(기본 꺼짐). 기존 가드 뒤에 둔다.
+    { provide: APP_GUARD, useClass: PermissionGuard },
+    { provide: APP_INTERCEPTOR, useClass: AuthzShadowInterceptor },
     InternalApiKeyGuard,
     // Business Layer (Services)
     PlanService,

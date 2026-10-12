@@ -2,7 +2,7 @@ import { InventoryIdempotencyService } from '../services/inventory-idempotency.s
 import { WarehouseActor, warehouseOperationContext, warehouseRequest } from '../services/warehouse-operation-contract';
 import { BadRequestException, Body, Controller, HttpCode, HttpStatus, Headers, Post, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { StockEventService } from '../services/stock-event.service';
 import { InventoryCommandService } from '../services/inventory-command.service';
@@ -23,6 +23,7 @@ export class InventoryController {
   // 재고 변경 API (mutation)
   // ═══════════════════════════════════════════════════════════════
 
+  @RequirePermission('inventory.stock.adjust')
   @Post('/stocks/adjust')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(INVENTORY_SCOPE.ADJUST)
@@ -79,6 +80,7 @@ export class InventoryController {
     }
   }
 
+  @RequirePermission('inventory.stock.adjust')
   @Post('/stocks/entry-safe')
   @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({

@@ -17,6 +17,7 @@ import {
   ScopeAuthorizationDecision,
   ScopeGuard,
   User,
+  RequirePermission,
 } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import {
@@ -57,6 +58,7 @@ export class ShipmentController {
     private readonly shipmentDispatch: ShipmentDispatchCommandAdapter,
   ) {}
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post(':id/inspection-scans')
   @UseGuards(ScopeGuard)
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
@@ -78,6 +80,7 @@ export class ShipmentController {
     });
   }
 
+  @RequirePermission('fulfillment.dispatch.force')
   @Post(':id/force-dispatch')
   @UseGuards(ScopeGuard)
   @RequireScopes(FULFILLMENT_SCOPE.DISPATCH_FORCE)

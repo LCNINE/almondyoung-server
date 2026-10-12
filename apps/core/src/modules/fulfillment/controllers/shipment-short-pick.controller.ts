@@ -10,7 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiCreatedResponse, ApiHeader, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User, RequireAnyPermission } from '@app/authorization';
 import { SHORT_PICK_REPORT_SCOPES } from '../../../platform/auth/fulfillment-scopes';
 import {
   ReportShipmentShortPickDto,
@@ -26,6 +26,7 @@ type AuthenticatedUser = { id?: string; userId?: string; sub?: string; roles?: s
 export class ShipmentShortPickController {
   constructor(private readonly shortPick: ShipmentShortPickService) {}
 
+  @RequireAnyPermission('fulfillment.shipment.reopen', 'fulfillment.shipment.short_pick')
   @Post(':shipmentId/short-picks')
   @UseGuards(ScopeGuard)
   @RequireScopes(...SHORT_PICK_REPORT_SCOPES)

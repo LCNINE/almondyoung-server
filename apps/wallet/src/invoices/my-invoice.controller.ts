@@ -15,6 +15,7 @@ import type { AuthenticatedRequest } from '../wallet.module';
 import { InvoiceStatus } from '../schema';
 import { InvoiceQueryService, MyInvoiceView } from './invoice-query.service';
 import { InvoiceExecutorService } from './invoice-executor.service';
+import { StoreRoute } from '@app/authorization';
 
 /**
  * 고객(구독자) 인보이스 조회/재시도 API (JWT auth). userId 는 invoices 에 없으므로
@@ -30,6 +31,7 @@ export class MyInvoiceController {
     private readonly invoiceExecutorService: InvoiceExecutorService,
   ) {}
 
+  @StoreRoute()
   @Get()
   @ApiOperation({ summary: '내 인보이스 목록 (구독자 본인)' })
   async list(@Req() req: AuthenticatedRequest, @Query('status') status?: string): Promise<MyInvoiceView[]> {
@@ -37,6 +39,7 @@ export class MyInvoiceController {
     return this.invoiceQueryService.findMineByUserId(userId, status ? (status as InvoiceStatus) : undefined);
   }
 
+  @StoreRoute()
   @Post(':id/retry')
   @HttpCode(200)
   @ApiOperation({ summary: '내 미납 인보이스 즉시 재시도 (PAST_DUE 만)' })

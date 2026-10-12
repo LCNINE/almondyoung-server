@@ -13,7 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiCreatedResponse, ApiOkResponse } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import {
   ClaimBatchWorkItemDto,
@@ -38,6 +38,7 @@ type AuthenticatedUser = { id?: string; userId?: string; sub?: string; roles?: s
 export class OutboundBatchV2Controller {
   constructor(private readonly batches: OutboundBatchOrchestrator) {}
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('outbound-batches/v2')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiCreatedResponse({ type: CreateOutboundBatchV2ResponseDto })
@@ -49,6 +50,7 @@ export class OutboundBatchV2Controller {
     return this.batches.createBatch(dto, idempotencyKey ?? '', this.actor(user));
   }
 
+  @RequirePermission('fulfillment.shipment.read')
   @Get('outbound-batches/v2')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: [OutboundBatchV2ListItemDto] })
@@ -59,6 +61,7 @@ export class OutboundBatchV2Controller {
     return this.batches.listBatches({ warehouseId, status });
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('outbound-batches/:batchId/shipments/:shipmentId')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiCreatedResponse({ type: OutboundBatchCommandResponseDto })
@@ -71,6 +74,7 @@ export class OutboundBatchV2Controller {
     return this.batches.addShipment(batchId, shipmentId, idempotencyKey ?? '', this.actor(user));
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Delete('outbound-batches/:batchId/shipments/:shipmentId')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: OutboundBatchCommandResponseDto })
@@ -84,6 +88,7 @@ export class OutboundBatchV2Controller {
     return this.batches.excludeShipment(batchId, shipmentId, dto, idempotencyKey ?? '', this.actor(user));
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('batch-work-items/:workItemId/picker-claims')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiCreatedResponse({ type: OutboundBatchCommandResponseDto })
@@ -96,6 +101,7 @@ export class OutboundBatchV2Controller {
     return this.batches.claimPicker(workItemId, dto, idempotencyKey ?? '', this.actor(user));
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('batch-work-items/:workItemId/packer-claims')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiCreatedResponse({ type: OutboundBatchCommandResponseDto })
@@ -108,6 +114,7 @@ export class OutboundBatchV2Controller {
     return this.batches.claimPacker(workItemId, dto, idempotencyKey ?? '', this.actor(user));
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('batch-work-items/:workItemId/handoffs')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiCreatedResponse({ type: OutboundBatchCommandResponseDto })
@@ -127,6 +134,7 @@ export class OutboundBatchV2Controller {
     return this.batches.handoff(workItemId, dto, idempotencyKey ?? '', actor);
   }
 
+  @RequirePermission('fulfillment.shipment.read')
   @Get('outbound-batches/:batchId/eligible-shipments')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: [EligibleShipmentResponseDto] })
@@ -134,6 +142,7 @@ export class OutboundBatchV2Controller {
     return this.batches.getEligibleShipments(batchId);
   }
 
+  @RequirePermission('fulfillment.shipment.read')
   @Get('outbound-batches/:batchId/join-candidates')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: [JoinCandidateResponseDto] })
@@ -142,6 +151,7 @@ export class OutboundBatchV2Controller {
     return this.batches.findJoinCandidates(batchId, code);
   }
 
+  @RequirePermission('fulfillment.shipment.read')
   @Get('outbound-batches/:batchId/work-items')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: [OutboundBatchWorkItemResponseDto] })
@@ -149,6 +159,7 @@ export class OutboundBatchV2Controller {
     return this.batches.getWorkItems(batchId);
   }
 
+  @RequirePermission('fulfillment.shipment.read')
   @Get('outbound-batches/:batchId/v2')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: OutboundBatchV2DetailDto })

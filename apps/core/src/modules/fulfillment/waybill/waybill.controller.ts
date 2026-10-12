@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiCreatedResponse, ApiOkResponse } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { WaybillService } from './waybill.service';
 import {
@@ -32,6 +32,7 @@ type AuthenticatedUser = { id?: string; userId?: string; sub?: string; roles?: s
 export class WaybillController {
   constructor(private readonly waybills: WaybillService) {}
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('shipments/:shipmentId/waybills')
   @HttpCode(HttpStatus.CREATED)
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
@@ -50,6 +51,7 @@ export class WaybillController {
     );
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('shipments/:shipmentId/waybills/manual')
   @HttpCode(HttpStatus.CREATED)
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
@@ -63,6 +65,7 @@ export class WaybillController {
     return this.waybills.registerManual(shipmentId, dto, idem ?? '', this.actor(user));
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('waybills:batch')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
@@ -75,6 +78,7 @@ export class WaybillController {
     return this.waybills.issueBatch(dto.shipmentIds, { carrier: dto.carrier }, idem ?? '', this.actor(user));
   }
 
+  @RequirePermission('fulfillment.shipment.reopen')
   @Post('waybills/:waybillId/void')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(FULFILLMENT_SCOPE.SHIPMENT_REOPEN)
@@ -90,6 +94,7 @@ export class WaybillController {
 
   // 교착된 발급(pending/allocated)을 운영자가 푼다 — 활성 슬롯이 풀려야 재발급·수기등록이 열린다(#914).
   // 스코프가 WAREHOUSE_OPERATE 인 것은 의도다: 현장에서 막혔을 때 관리자를 기다리지 않고 바로 풀 수 있어야 한다.
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('waybills/:waybillId/abandon')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
@@ -103,6 +108,7 @@ export class WaybillController {
     return this.waybills.abandon(waybillId, dto, idem ?? '', this.actor(user));
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('shipments/:shipmentId/waybills/reissue')
   @HttpCode(HttpStatus.CREATED)
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
@@ -121,6 +127,7 @@ export class WaybillController {
     );
   }
 
+  @RequirePermission('fulfillment.shipment.read')
   @Get('shipments/:shipmentId/waybill')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: WaybillResponseDto })

@@ -22,6 +22,7 @@ import { AdminPaymentIntentListQueryDto, PendingBankTransferListQueryDto } from 
 import { WalletAdminAuth } from '../wallet-admin-auth.decorator';
 import { PaymentIntentsService } from '../payment-intents/payment-intents.service';
 import { RefundsService } from '../refunds/refunds.service';
+import { RequirePermission } from '@app/authorization';
 
 class AdminRefundDto {
   @IsString()
@@ -83,6 +84,7 @@ export class PaymentIntentAdminController {
     private readonly refundsService: RefundsService,
   ) {}
 
+  @RequirePermission('payment.payment.read')
   @Get()
   @ApiOperation({ summary: 'List payment intents (admin, paginated)' })
   async list(@Query() query: AdminPaymentIntentListQueryDto) {
@@ -93,6 +95,7 @@ export class PaymentIntentAdminController {
     }
   }
 
+  @RequirePermission('payment.payment.read')
   @Get('pending-bank-transfers')
   @ApiOperation({
     summary: 'List payment intents awaiting bank transfer deposit confirmation',
@@ -105,6 +108,7 @@ export class PaymentIntentAdminController {
     }
   }
 
+  @RequirePermission('payment.payment.read')
   @Get(':id')
   @ApiOperation({ summary: 'Get payment intent detail (admin)' })
   async getDetail(@Param('id') id: string) {
@@ -117,6 +121,7 @@ export class PaymentIntentAdminController {
     }
   }
 
+  @RequirePermission('payment.payment.read')
   @Get(':id/state-transitions')
   @ApiOperation({
     summary: 'Get state transition history for a payment intent',
@@ -131,6 +136,7 @@ export class PaymentIntentAdminController {
     }
   }
 
+  @RequirePermission('payment.deposit.confirm')
   @Post(':id/bank-transfer-confirm')
   @HttpCode(200)
   @ApiOperation({ summary: 'Confirm bank transfer deposit (admin)' })
@@ -149,6 +155,7 @@ export class PaymentIntentAdminController {
     }
   }
 
+  @RequirePermission('payment.payment.write')
   @Post(':id/capture')
   @HttpCode(200)
   @ApiOperation({ summary: 'Capture a payment intent (admin)' })
@@ -164,6 +171,7 @@ export class PaymentIntentAdminController {
     }
   }
 
+  @RequirePermission('payment.payment.write')
   @Post(':id/cancel')
   @HttpCode(200)
   @ApiOperation({ summary: 'Cancel a payment intent (admin)' })
@@ -182,6 +190,7 @@ export class PaymentIntentAdminController {
     }
   }
 
+  @RequirePermission('payment.payment.write')
   @Post(':id/resolve')
   @HttpCode(200)
   @ApiOperation({
@@ -200,6 +209,7 @@ export class PaymentIntentAdminController {
     }
   }
 
+  @RequirePermission('payment.refund.execute')
   @Post(':id/refund')
   @HttpCode(200)
   @ApiOperation({ summary: 'Refund a payment intent (admin)' })

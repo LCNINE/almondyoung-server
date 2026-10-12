@@ -5,6 +5,7 @@ import { User } from 'apps/user-service/database/drizzle/schema';
 import { WishlistService } from './wishlist.service';
 import { AddToWishlistDto } from './dto/wishlist.dto';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
+import { StoreRoute } from '@app/authorization';
 
 @ApiTags('찜하기')
 @ApiBearerAuth('access-token')
@@ -47,6 +48,7 @@ export class WishlistController {
   })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 400, description: '잘못된 요청 (상품 ID 누락 등)' })
+  @StoreRoute()
   @Post()
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
@@ -73,6 +75,7 @@ export class WishlistController {
     },
   })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
+  @StoreRoute()
   @Get()
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
@@ -86,6 +89,7 @@ export class WishlistController {
   })
   @ApiResponse({ status: 200, description: '찜 항목에서 해당 상품 조회 성공' })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
+  @StoreRoute()
   @Get(':productId')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)

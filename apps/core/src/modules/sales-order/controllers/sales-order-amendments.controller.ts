@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { User, RequirePermission } from '@app/authorization';
 import { ListSalesOrderAmendmentsQueryDto } from '../dto/list-sales-order-amendments.dto';
 import { CreateSalesOrderAmendmentDto } from '../dto/create-sales-order-amendment.dto';
 import { SalesOrderAmendmentResponseDto } from '../dto/sales-order-amendment-response.dto';
@@ -18,6 +18,7 @@ export class SalesOrderAmendmentsController {
     private readonly channelActions: ChannelAmendmentActionsService,
   ) {}
 
+  @RequirePermission('order.order.write')
   @Post()
   @ApiOperation({ summary: 'Create a SalesOrderAmendment for a post-acceptance delta' })
   @ApiResponse({ status: 201, description: 'SalesOrderAmendment created', type: SalesOrderAmendmentResponseDto })
@@ -25,12 +26,14 @@ export class SalesOrderAmendmentsController {
     return this.service.create(dto, this.getUserId(user));
   }
 
+  @RequirePermission('order.order.read')
   @Get()
   @ApiOperation({ summary: '정정 목록 — 반영 대기 변경 화면' })
   list(@Query() query: ListSalesOrderAmendmentsQueryDto) {
     return this.service.list({ status: query.status, origin: query.origin, limit: query.limit ?? 50, cursor: query.cursor });
   }
 
+  @RequirePermission('order.order.read')
   @Get(':id')
   @ApiOperation({ summary: 'Get a SalesOrderAmendment' })
   @ApiParam({ name: 'id', description: 'SalesOrderAmendment ID' })
@@ -39,6 +42,7 @@ export class SalesOrderAmendmentsController {
     return this.service.getOne(id);
   }
 
+  @RequirePermission('order.order.write')
   @Post(':id/dismiss')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '반영 대기 채널 변경을 무시로 닫는다 (#1016 6번 행)' })
@@ -47,6 +51,7 @@ export class SalesOrderAmendmentsController {
     return this.channelActions.dismiss(id, { note: dto.note, operatorId: this.getUserId(user) });
   }
 
+  @RequirePermission('order.order.write')
   @Post(':id/resync')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '반영 대기 채널 변경의 주문을 채널에서 다시 확인하도록 요청한다 (#1016 6번 행)' })

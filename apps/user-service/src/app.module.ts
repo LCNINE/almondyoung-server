@@ -2,7 +2,15 @@ import { DemoBoundaryGuard } from './demo/demo-boundary.guard';
 import { AttendanceModule } from './api/attendance/attendance.module';
 import { DbModule } from '@app/db';
 import { EventsModule, EventTraceApiModule } from '@app/events';
-import { AuthorizationModule, authorizationSchema, ScopeGuard } from '@app/authorization';
+import {
+  AuthorizationModule,
+  authorizationSchema,
+  AuthzObserverGuard,
+  AuthzShadowInterceptor,
+  PermissionGuard,
+  PermissionModule,
+  ScopeGuard,
+} from '@app/authorization';
 import { ResponseInterceptor } from '@app/shared';
 import { Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
@@ -18,6 +26,7 @@ import { join } from 'path';
 import { userServiceSchema as baseUserServiceSchema } from '../database/drizzle/schema';
 import { AdminModule } from './api/admin/admin.module';
 import { IamModule } from './api/iam/iam.module';
+import { LocalRolePermissionSource } from './api/iam/local-role-permission.source';
 import { AuthModule } from './api/auth/auth.module';
 import { OAuthModule } from './api/oauth/oauth.module';
 import { OAuthCorsModule } from './api/oauth/cors/oauth-cors.module';
@@ -141,6 +150,7 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
         { key: 'admin:users:purge', category: 'admin', description: '관리자 - 회원 완전삭제' },
       ],
     }),
+    PermissionModule.forRoot({ service: 'user-service', source: LocalRolePermissionSource, imports: [IamModule] }),
     AuthModule.register(),
     OAuthModule,
     OAuthCorsModule,
@@ -162,7 +172,11 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
   ],
   controllers: [HealthController, EventTraceController],
   providers: [
+    // 그림자 판정 관찰 — 반드시 맨 앞(뒤 가드가 거부한 요청도 봐야 한다). 결과에 관여하지 않는다.
+    { provide: APP_GUARD, useClass: AuthzObserverGuard },
     { provide: APP_GUARD, useClass: DemoBoundaryGuard },
+    // 그림자 판정 통과 표시 — 전역 인터셉터 맨 앞(앞선 인터셉터가 응답을 바로 돌려주면 표시를 못 한다).
+    { provide: APP_INTERCEPTOR, useClass: AuthzShadowInterceptor },
     {
       provide: APP_INTERCEPTOR,
       useClass: ResponseInterceptor,
@@ -175,6 +189,8 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
       provide: APP_GUARD,
       useClass: ScopeGuard,
     },
+    // 권한 강제 — AUTHZ_ENFORCE=true 일 때만 일한다(기본 꺼짐). 기존 가드 뒤에 둔다.
+    { provide: APP_GUARD, useClass: PermissionGuard },
   ],
 })
 export class AppModule {}

@@ -15,6 +15,7 @@ import { TagGroupWithValues, TagMapper } from './mappers';
 import { DbService, InjectDb } from '@app/db';
 import { type PimSchema } from '../../schema/catalog.schema';
 import { TagValueWithGroupNameDto } from './dto/tag-value-with-group-name.dto';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('Tags')
 @Controller('tags')
@@ -26,6 +27,7 @@ export class TagsController {
 
   // ===== TAG GROUPS =====
 
+  @RequirePermission('catalog.category.write')
   @Post('groups')
   @ApiOperation({
     summary: '태그 그룹 생성',
@@ -46,6 +48,7 @@ export class TagsController {
     return TagMapper.toGroupDto(tagGroup);
   }
 
+  @RequirePermission('catalog.product.read')
   @Get('groups')
   @ApiOperation({
     summary: '태그 그룹 목록 조회',
@@ -62,6 +65,7 @@ export class TagsController {
     return tagGroups.map(TagMapper.toGroupDto);
   }
 
+  @RequirePermission('catalog.product.read')
   @Get('groups/:id')
   @ApiOperation({
     summary: '태그 그룹 단일 조회',
@@ -86,6 +90,7 @@ export class TagsController {
     return TagMapper.toGroupDto(tagGroup);
   }
 
+  @RequirePermission('catalog.category.write')
   @Put('groups/:id')
   @ApiOperation({
     summary: '태그 그룹 수정',
@@ -114,6 +119,7 @@ export class TagsController {
     });
   }
 
+  @RequirePermission('catalog.category.write')
   @Delete('groups/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
@@ -143,6 +149,7 @@ export class TagsController {
 
   // ===== TAG VALUES =====
 
+  @RequirePermission('catalog.category.write')
   @Post('groups/:groupId/values')
   @ApiOperation({
     summary: '태그 값 생성',
@@ -179,6 +186,7 @@ export class TagsController {
     });
   }
 
+  @RequirePermission('catalog.product.read')
   @Get('values/:id')
   @ApiOperation({
     summary: '태그 값 단일 조회',
@@ -206,6 +214,7 @@ export class TagsController {
     });
   }
 
+  @RequirePermission('catalog.category.write')
   @Put('values/:id')
   @ApiOperation({
     summary: '태그 값 수정',
@@ -239,6 +248,7 @@ export class TagsController {
     });
   }
 
+  @RequirePermission('catalog.category.write')
   @Delete('values/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({

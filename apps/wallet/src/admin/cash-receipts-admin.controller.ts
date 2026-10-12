@@ -4,6 +4,7 @@ import { WalletAdminAuth } from '../wallet-admin-auth.decorator';
 import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
 import { CashReceiptResponseDto, IssueCashReceiptDto } from '../cash-receipts/dto';
 import { CashReceipt } from '../types';
+import { RequirePermission } from '@app/authorization';
 
 /**
  * 관리자용 현금영수증 API. 고객 셀프 발급(v1/cash-receipts)과 달리 소유권 스코프가 없어
@@ -15,6 +16,7 @@ import { CashReceipt } from '../types';
 export class CashReceiptsAdminController {
   constructor(private readonly service: CashReceiptsService) {}
 
+  @RequirePermission('payment.payment.read')
   @Get()
   @ApiOperation({ summary: '주문의 현금영수증 조회 (관리자)' })
   async list(@Query('intentId') intentId: string): Promise<CashReceiptResponseDto[]> {
@@ -22,6 +24,7 @@ export class CashReceiptsAdminController {
     return receipts.map((r) => this.toResponse(r));
   }
 
+  @RequirePermission('payment.payment.write')
   @Post()
   @HttpCode(201)
   @ApiOperation({ summary: '현금영수증 발급 (관리자)' })

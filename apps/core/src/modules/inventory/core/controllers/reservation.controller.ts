@@ -13,7 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { UnifiedReservationService } from '../../shared/services/unified-reservation.service';
 import { FulfillmentReservationReconciliationService } from '../services/fulfillment-reservation-reconciliation.service';
@@ -32,6 +32,7 @@ export class ReservationController {
   /**
    * 예약 해제
    */
+  @RequirePermission('inventory.stock.adjust')
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequireScopes(INVENTORY_SCOPE.ADJUST)
@@ -67,6 +68,7 @@ export class ReservationController {
   /**
    * 특정 Target의 예약 조회
    */
+  @RequirePermission('inventory.stock.read')
   @Get('by-target')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
@@ -102,6 +104,7 @@ export class ReservationController {
   /**
    * 특정 SKU의 예약 조회
    */
+  @RequirePermission('inventory.stock.read')
   @Get('by-sku/:skuId')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
@@ -137,6 +140,7 @@ export class ReservationController {
   /**
    * 창고별 예약 통계
    */
+  @RequirePermission('inventory.stock.read')
   @Get('summary/:warehouseId')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
@@ -163,6 +167,7 @@ export class ReservationController {
   /**
    * 예약 정합성 정리 (관리자용) — terminal FO 의 잔존 confirmed 예약을 대사 후 해제.
    */
+  @RequirePermission('inventory.stock.adjust')
   @Post('reconcile')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(INVENTORY_SCOPE.ADJUST)

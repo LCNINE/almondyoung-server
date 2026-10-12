@@ -20,12 +20,14 @@ import {
   FastifyUploadedFile,
   UploadedFastifyFile,
 } from '../common/fastify-multipart.interceptor';
+import { StoreRoute } from '@app/authorization';
 
 @ApiTags('CMS Agreements')
 @Controller('v1/cms-agreements')
 export class CmsAgreementController {
   constructor(private readonly service: CmsAgreementService) {}
 
+  @StoreRoute()
   @Post()
   @HttpCode(201)
   @WalletJwtAuth()
@@ -51,6 +53,7 @@ export class CmsAgreementController {
     }
   }
 
+  @StoreRoute()
   @Get(':key')
   @WalletJwtAuth()
   @ApiOperation({ summary: 'Get a CMS agreement document by agreement key' })

@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, User } from '@app/authorization';
+import { RequireScopes, User, RequirePermission } from '@app/authorization';
 import { ReviewRewardRuleService } from './review-reward-rule.service';
 import { ReviewRewardGrantService } from './review-reward-grant.service';
 import { ReviewBestSelectionService } from './review-best-selection.service';
@@ -26,6 +26,7 @@ export class AdminRewardController {
     private readonly bestSelectionService: ReviewBestSelectionService,
   ) {}
 
+  @RequirePermission('cs.review.read')
   @Get('rules')
   @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '리뷰 보상 규칙 목록' })
@@ -33,6 +34,7 @@ export class AdminRewardController {
     return this.ruleService.list(trigger ? { trigger } : undefined);
   }
 
+  @RequirePermission('cs.review.read')
   @Get('rules/:id')
   @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '리뷰 보상 규칙 상세' })
@@ -40,6 +42,7 @@ export class AdminRewardController {
     return this.ruleService.getById(id);
   }
 
+  @RequirePermission('cs.reward_policy.write')
   @Post('rules')
   @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '리뷰 보상 규칙 생성' })
@@ -47,6 +50,7 @@ export class AdminRewardController {
     return this.ruleService.create(toUpsertRuleInput(dto), adminUserId);
   }
 
+  @RequirePermission('cs.reward_policy.write')
   @Put('rules/:id')
   @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '리뷰 보상 규칙 수정' })
@@ -58,6 +62,7 @@ export class AdminRewardController {
     return this.ruleService.update(id, toUpsertRuleInput(dto), adminUserId);
   }
 
+  @RequirePermission('cs.reward_policy.write')
   @Patch('rules/:id/active')
   @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '리뷰 보상 규칙 활성/비활성' })
@@ -69,6 +74,7 @@ export class AdminRewardController {
     return this.ruleService.setActive(id, dto.active, adminUserId);
   }
 
+  @RequirePermission('cs.reward_policy.write')
   @Delete('rules/:id')
   @RequireScopes('admin:ugc:modify')
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -77,6 +83,7 @@ export class AdminRewardController {
     await this.ruleService.remove(id);
   }
 
+  @RequirePermission('cs.review.read')
   @Get('grants')
   @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '리뷰 보상 지급 내역 (미지급 사유 포함)' })
@@ -89,6 +96,7 @@ export class AdminRewardController {
     });
   }
 
+  @RequirePermission('cs.review.read')
   @Get('summary')
   @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '기간 지급 요약 — 총액·건수와 미지급 사유 분포' })
@@ -98,6 +106,7 @@ export class AdminRewardController {
     return this.grantService.summarize(since);
   }
 
+  @RequirePermission('cs.review.read')
   @Get('best-selections')
   @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '주간 베스트 리뷰 후보·확정 목록' })
@@ -110,6 +119,7 @@ export class AdminRewardController {
     });
   }
 
+  @RequirePermission('cs.reward_policy.write')
   @Post('best-selections/generate')
   @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '주간 베스트 후보 즉시 집계 (크론과 같은 일을 수동으로)' })
@@ -117,6 +127,7 @@ export class AdminRewardController {
     return this.bestSelectionService.generateCandidates();
   }
 
+  @RequirePermission('cs.reward_policy.write')
   @Post('best-selections/:id/confirm')
   @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '주간 베스트 확정 — 이때 지급이 나간다' })
@@ -124,6 +135,7 @@ export class AdminRewardController {
     return this.bestSelectionService.confirm(id, adminUserId);
   }
 
+  @RequirePermission('cs.reward_policy.write')
   @Post('best-selections/:id/reject')
   @RequireScopes('admin:ugc:modify')
   @HttpCode(HttpStatus.NO_CONTENT)

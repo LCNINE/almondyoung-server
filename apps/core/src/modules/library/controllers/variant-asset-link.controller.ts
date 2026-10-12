@@ -3,12 +3,14 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { VariantAssetLinkService } from '../services/variant-asset-link.service';
 import { DigitalAssetResponseDto, SetVariantAssetLinksDto } from '../dto';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('Library / Variant Asset Links')
 @Controller('variants/:variantId/digital-assets')
 export class VariantAssetLinkController {
   constructor(private readonly service: VariantAssetLinkService) {}
 
+  @RequirePermission('catalog.product.read')
   @Get()
   @ApiOperation({ summary: 'variant 의 매칭 자산 목록' })
   @ApiResponse({ status: 200, type: DigitalAssetResponseDto, isArray: true })
@@ -16,6 +18,7 @@ export class VariantAssetLinkController {
     return this.service.listAssetsForVariant(variantId);
   }
 
+  @RequirePermission('catalog.digital_asset.write')
   @Put()
   @HttpCode(204)
   @ApiOperation({ summary: 'variant 의 매칭 자산 집합을 완전 교체' })
@@ -27,6 +30,7 @@ export class VariantAssetLinkController {
     await this.service.setLinksForVariant(variantId, dto.assetIds, req.user?.id);
   }
 
+  @RequirePermission('catalog.digital_asset.write')
   @Post(':assetId')
   @HttpCode(204)
   @ApiOperation({ summary: 'variant 에 자산 1 개 추가 매칭' })
@@ -38,6 +42,7 @@ export class VariantAssetLinkController {
     await this.service.addLink(variantId, assetId, req.user?.id);
   }
 
+  @RequirePermission('catalog.digital_asset.write')
   @Delete(':assetId')
   @HttpCode(204)
   @ApiOperation({ summary: 'variant 의 자산 매칭 1 개 해제' })

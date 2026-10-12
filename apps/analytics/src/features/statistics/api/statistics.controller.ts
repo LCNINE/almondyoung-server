@@ -1,6 +1,6 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard } from '@app/authorization';
+import { JwtAuthGuard, RequirePermission, PermissionGuard } from '@app/authorization';
 import { StatisticsQuery } from '../read-model/statistics.query';
 import { ProductStatisticsQueryDto, StatisticsRangeQueryDto, UnsoldProductsQueryDto } from './statistics-query.dto';
 
@@ -12,11 +12,12 @@ import { ProductStatisticsQueryDto, StatisticsRangeQueryDto, UnsoldProductsQuery
  */
 @ApiTags('Statistics')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('statistics')
 export class StatisticsController {
   constructor(private readonly statisticsQuery: StatisticsQuery) {}
 
+  @RequirePermission('analytics.report.read')
   @Get('sales')
   @ApiOperation({
     summary: '매출 개요',
@@ -27,6 +28,7 @@ export class StatisticsController {
     return this.statisticsQuery.getSales(query.from, query.to, query.channel, query.granularity);
   }
 
+  @RequirePermission('analytics.report.read')
   @Get('products')
   @ApiOperation({
     summary: '상품 통계',
@@ -45,6 +47,7 @@ export class StatisticsController {
     );
   }
 
+  @RequirePermission('analytics.report.read')
   @Get('products/unsold')
   @ApiOperation({
     summary: '기간 내 무판매 활성 상품',
@@ -55,6 +58,7 @@ export class StatisticsController {
     return this.statisticsQuery.getUnsoldProducts(query.from, query.to, query.channel, query.limit, query.page);
   }
 
+  @RequirePermission('analytics.report.read')
   @Get('customers')
   @ApiOperation({
     summary: '고객·멤버십 통계',

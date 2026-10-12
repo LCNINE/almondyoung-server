@@ -1,7 +1,9 @@
 import { Controller, Get, Post, Param, Body } from '@nestjs/common';
+import { RequirePermission } from '@app/authorization';
 
 @Controller('location-optimization')
 export class LocationOptimizationController {
+  @RequirePermission('fulfillment.order.write')
   @Post('routes/optimize')
   async optimizePickingRoute(@Body() dto: { batchId: string; method?: string }) {
     return {
@@ -12,6 +14,7 @@ export class LocationOptimizationController {
     };
   }
 
+  @RequirePermission('fulfillment.order.read')
   @Get('routes/batches/:batchId')
   async getOptimizedRoute(@Param('batchId') batchId: string) {
     return {
@@ -21,6 +24,7 @@ export class LocationOptimizationController {
     };
   }
 
+  @RequirePermission('fulfillment.order.read')
   @Get('statistics/warehouses/:warehouseId')
   async getLocationStatistics(@Param('warehouseId') warehouseId: string) {
     return {
@@ -30,6 +34,7 @@ export class LocationOptimizationController {
     };
   }
 
+  @RequirePermission('fulfillment.order.read')
   @Get('zones/configuration')
   async getZoneConfiguration() {
     return {

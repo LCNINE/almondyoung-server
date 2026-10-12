@@ -1,6 +1,6 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AdminRealmGuard, JwtAuthGuard } from '@app/authorization';
+import { AdminRealmGuard, JwtAuthGuard, RequirePermission, PermissionGuard } from '@app/authorization';
 import { ProfitQuery, ProfitStatistics } from '../read-model/profit.query';
 import { ProfitStatisticsQueryDto } from './statistics-query.dto';
 
@@ -10,11 +10,12 @@ import { ProfitStatisticsQueryDto } from './statistics-query.dto';
  */
 @ApiTags('Statistics')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, AdminRealmGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)
 @Controller('statistics')
 export class ProfitController {
   constructor(private readonly profitQuery: ProfitQuery) {}
 
+  @RequirePermission('analytics.finance.read')
   @Get('profit')
   @ApiOperation({
     summary: '이익(수익성) 통계',

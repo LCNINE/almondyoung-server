@@ -1,6 +1,6 @@
 import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { BarcodeService } from '../services/barcode.service';
 import {
@@ -17,6 +17,7 @@ import {
 export class BarcodeGenerationController {
   constructor(private readonly barcodeService: BarcodeService) {}
 
+  @RequirePermission('inventory.master.write')
   @Post('custom')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
@@ -42,6 +43,7 @@ export class BarcodeGenerationController {
     });
   }
 
+  @RequirePermission('inventory.master.write')
   @Post('sku')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
@@ -63,6 +65,7 @@ export class BarcodeGenerationController {
     return this.barcodeService.generateSkuBarcodeImage(dto.skuId, dto.format ?? 'CODE128');
   }
 
+  @RequirePermission('inventory.master.write')
   @Post('location')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
@@ -84,6 +87,7 @@ export class BarcodeGenerationController {
     return this.barcodeService.generateLocationBarcodeImage(dto.locationCode, dto.format ?? 'CODE128');
   }
 
+  @RequirePermission('inventory.master.write')
   @Post('fulfillment-order')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
@@ -107,6 +111,7 @@ export class BarcodeGenerationController {
     return this.barcodeService.generateFulfillmentOrderBarcodeImage(dto.fulfillmentOrderId, dto.format ?? 'CODE128');
   }
 
+  @RequirePermission('inventory.master.write')
   @Post('validate')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(INVENTORY_SCOPE.MANAGE)

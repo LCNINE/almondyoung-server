@@ -10,7 +10,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
-import { Public, User } from '@app/authorization';
+import { Public, User, StoreRoute } from '@app/authorization';
 import { Response } from 'express';
 import { DownloadService } from './download.service';
 import { SignedUrlResponseDto } from './dto/signed-url-response.dto';
@@ -30,6 +30,7 @@ const OPEN_LINK_EXPIRES_IN_SECONDS = 300;
 export class DownloadController {
   constructor(private readonly downloadService: DownloadService) {}
 
+  @StoreRoute()
   @Get(':fileId/download')
   @ApiOperation({ summary: 'Get signed URL for file download' })
   @ApiParam({ name: 'fileId', description: 'File ID', type: 'string' })
@@ -59,6 +60,7 @@ export class DownloadController {
    * 본문(리치 텍스트)에 들어가는 것은 앵커 하나뿐이라, 첨부를 비공개로 두려면 서명 URL 로
    * 302 해 주는 경로가 있어야 한다. 권한 검사는 download 와 같은 loadReadable 을 탄다.
    */
+  @StoreRoute()
   @Get(':fileId/open')
   @ApiOperation({ summary: 'Redirect to a signed URL so a plain link can open a private file' })
   @ApiParam({ name: 'fileId', description: 'File ID', type: 'string' })
@@ -81,6 +83,7 @@ export class DownloadController {
     return res.redirect(302, signedUrl);
   }
 
+  @StoreRoute()
   @Get(':fileId/metadata')
   @ApiOperation({ summary: 'Get file metadata' })
   @ApiParam({ name: 'fileId', description: 'File ID', type: 'string' })

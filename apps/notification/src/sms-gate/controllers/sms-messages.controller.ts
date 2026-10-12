@@ -4,6 +4,7 @@ import { CurrentUser } from '../../shared/decorators/user.decorator';
 import { SendSmsGateMessageDto } from '../dto';
 import { SmsGateEnabledGuard } from '../guards/sms-gate-enabled.guard';
 import { SmsMessagesService } from '../services/sms-messages.service';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('sms-gate')
 @Controller('sms-gate/messages')
@@ -11,16 +12,19 @@ import { SmsMessagesService } from '../services/sms-messages.service';
 export class SmsMessagesController {
   constructor(private readonly service: SmsMessagesService) {}
 
+  @RequirePermission('messaging.message.send')
   @Post()
   send(@Body() dto: SendSmsGateMessageDto, @CurrentUser() user: { userId: string }) {
     return this.service.send(dto, user.userId);
   }
 
+  @RequirePermission('messaging.message.read')
   @Get('capacity')
   capacity(@Query('deviceId') deviceId?: string) {
     return this.service.capacity(deviceId);
   }
 
+  @RequirePermission('messaging.message.read')
   @Get()
   find(@Query('ids') ids = '') {
     return this.service.find(ids.split(',').filter(Boolean));

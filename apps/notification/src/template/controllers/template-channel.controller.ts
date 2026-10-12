@@ -2,12 +2,14 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { TemplateService } from '../services/template.service';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('templates')
 @Controller('templates')
 export class TemplateChannelController {
   constructor(private readonly templateService: TemplateService) {}
 
+  @RequirePermission('messaging.message.read')
   @Get('kakao/list')
   @ApiOperation({ summary: 'Kakao 템플릿 목록 조회', description: 'Kakao 알림톡 템플릿 목록을 조회합니다.' })
   @ApiResponse({ status: 200, description: 'Kakao 템플릿 목록 조회 성공' })
@@ -15,6 +17,7 @@ export class TemplateChannelController {
     return this.templateService.getKakaoTemplateList();
   }
 
+  @RequirePermission('messaging.message.read')
   @Get('sms/list')
   @ApiOperation({ summary: 'SMS 템플릿 목록 조회', description: 'SMS 템플릿 목록을 조회합니다.' })
   @ApiResponse({ status: 200, description: 'SMS 템플릿 목록 조회 성공' })

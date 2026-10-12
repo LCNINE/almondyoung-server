@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Headers, Param, Patch, Post, UnauthorizedException, UseGuards } from '@nestjs/common';
-import { RequireScopes, ScopeGuard, User } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
 import { ApiOkResponse } from '@nestjs/swagger';
 import {
   CancelShipmentOutstandingDto,
@@ -26,6 +26,7 @@ type AuthenticatedUser = {
 export class ShipmentPlanningController {
   constructor(private readonly planning: ShipmentPlanningService) {}
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post(':id/splits')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   split(
@@ -37,6 +38,7 @@ export class ShipmentPlanningController {
     return this.planning.split(shipmentId, dto, idempotencyKey ?? '', this.actor(user));
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post(':id/split-unreserved')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   splitUnreserved(
@@ -48,6 +50,7 @@ export class ShipmentPlanningController {
     return this.planning.splitUnreserved(shipmentId, dto, idempotencyKey ?? '', this.actor(user));
   }
 
+  @RequirePermission('fulfillment.shipment.override_recipient')
   @Patch(':id/recipient')
   @RequireScopes(FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT)
   reviseRecipient(
@@ -59,6 +62,7 @@ export class ShipmentPlanningController {
     return this.planning.reviseRecipient(shipmentId, dto, idempotencyKey ?? '', this.actor(user));
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post(':id/plan')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   plan(
@@ -70,6 +74,7 @@ export class ShipmentPlanningController {
     return this.planning.plan(shipmentId, dto, idempotencyKey ?? '', this.actor(user));
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post(':id/cancellations')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   cancelOutstanding(
@@ -81,6 +86,7 @@ export class ShipmentPlanningController {
     return this.planning.cancelOutstanding(shipmentId, dto, idempotencyKey ?? '', this.actor(user));
   }
 
+  @RequirePermission('fulfillment.shipment.read')
   @Get(':id')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: ShipmentDetailResponseDto })
@@ -100,6 +106,7 @@ export class ShipmentPlanningController {
 export class FulfillmentOperationController {
   constructor(private readonly planning: ShipmentPlanningService) {}
 
+  @RequirePermission('fulfillment.shipment.read')
   @Get(':operationId')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: FulfillmentOperationResponseDto })

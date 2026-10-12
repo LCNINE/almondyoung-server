@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { DbService, InjectTypedDb } from '@app/db';
 import { desc } from 'drizzle-orm';
 import { notifications, notificationTables } from '../../database/schemas/notification-schema';
+import { RequirePermission } from '@app/authorization';
 
 /** Uses the same persistent delivery records as the direct dispatcher (no Redis in demo). */
 @Controller('demo')
@@ -12,6 +13,7 @@ export class DemoNotificationController {
     @InjectTypedDb<typeof notificationTables>() private readonly database: DbService<typeof notificationTables>,
   ) {}
 
+  @RequirePermission('messaging.message.read')
   @Get('notifications')
   async list() {
     if (

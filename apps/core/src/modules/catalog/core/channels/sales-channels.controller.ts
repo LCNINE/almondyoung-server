@@ -26,12 +26,14 @@ import {
 import { PaginatedResponseDto } from '../../common/dto';
 import { ApiOkResponsePaginated } from '../../common/decorators';
 import { SalesChannelMapper } from './mappers';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('Sales Channels')
 @Controller('channels')
 export class SalesChannelsController {
   constructor(private readonly salesChannelsService: SalesChannelsService) {}
 
+  @RequirePermission('channel.account.write')
   @Post()
   @ApiOperation({
     summary: '판매 채널 생성',
@@ -45,6 +47,7 @@ export class SalesChannelsController {
     return SalesChannelMapper.toDto(entity);
   }
 
+  @RequirePermission('channel.account.read')
   @Get()
   @ApiOperation({
     summary: '판매 채널 목록 조회',
@@ -83,6 +86,7 @@ export class SalesChannelsController {
     };
   }
 
+  @RequirePermission('channel.account.read')
   @Get('active')
   @ApiOperation({
     summary: '활성 판매 채널 조회',
@@ -97,6 +101,7 @@ export class SalesChannelsController {
     };
   }
 
+  @RequirePermission('channel.account.read')
   @Get(':id')
   @ApiOperation({
     summary: '판매 채널 상세 조회',
@@ -113,6 +118,7 @@ export class SalesChannelsController {
     return SalesChannelMapper.toDto(channel);
   }
 
+  @RequirePermission('channel.account.write')
   @Put(':id')
   @ApiOperation({
     summary: '판매 채널 수정',
@@ -127,6 +133,7 @@ export class SalesChannelsController {
     return SalesChannelMapper.toDto(entity);
   }
 
+  @RequirePermission('channel.account.write')
   @Delete(':id')
   @ApiOperation({
     summary: '판매 채널 삭제',
@@ -140,6 +147,7 @@ export class SalesChannelsController {
     await this.salesChannelsService.deleteChannel(id);
   }
 
+  @RequirePermission('channel.account.write')
   @Put(':id/status')
   @ApiOperation({
     summary: '판매 채널 상태 설정',
@@ -157,6 +165,7 @@ export class SalesChannelsController {
     await this.salesChannelsService.setChannelActive(id, statusDto.isActive);
   }
 
+  @RequirePermission('channel.account.write')
   @Post('validate')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({

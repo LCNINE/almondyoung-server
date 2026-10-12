@@ -25,7 +25,7 @@ import {
 import { PauseHistoryResponseDto, PauseOperationResponseDto, ErrorResponseDto } from '../shared/dto/response.dto';
 import { PauseSubscriptionRequestDto, ResumeSubscriptionRequestDto } from '../shared/dto/request.dto';
 import { FastifyRequest } from 'fastify';
-import { JwtAuthGuard, User } from '@app/authorization';
+import { JwtAuthGuard, User, StoreRoute } from '@app/authorization';
 /**
  * 일시정지 관리 컨트롤러
  * 인증: JwtAuthGuard(= AuthGuard('jwt')) 적용.
@@ -41,6 +41,7 @@ export class PauseController {
   /**
    * 구독 일시정지
    */
+  @StoreRoute()
   @Post()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -122,6 +123,7 @@ export class PauseController {
   /**
    * 구독 재개
    */
+  @StoreRoute()
   @Post('resume')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -197,6 +199,7 @@ export class PauseController {
   /**
    * 일시정지 이력 조회
    */
+  @StoreRoute()
   @Get('history')
   @ApiOperation({
     summary: '일시정지 이력 조회',

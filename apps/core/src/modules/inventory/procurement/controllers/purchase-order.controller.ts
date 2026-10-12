@@ -15,7 +15,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { PurchaseOrderService } from '../services/purchase-order.service';
 import { PurchaseOrderCartService } from '../services/purchase-order-cart.service';
@@ -59,6 +59,7 @@ export class PurchaseOrderController {
 
   // ========== 발주 관리 ==========
 
+  @RequirePermission('inventory.master.write')
   @Post()
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 생성' })
@@ -72,6 +73,7 @@ export class PurchaseOrderController {
     return this.purchaseOrderService.createPurchaseOrder(createDto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Post('from-cart')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '장바구니에서 발주 생성' })
@@ -88,6 +90,7 @@ export class PurchaseOrderController {
     return this.purchaseOrderService.createPurchaseOrderFromCart(createDto, user.userId);
   }
 
+  @RequirePermission('inventory.master.read')
   @Get()
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 목록 조회' })
@@ -118,6 +121,7 @@ export class PurchaseOrderController {
 
   // ========== 발주대기리스트 (Cart) 관리 ==========
 
+  @RequirePermission('inventory.master.write')
   @Post('cart')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주대기리스트에 아이템 추가' })
@@ -130,6 +134,7 @@ export class PurchaseOrderController {
     return this.cartService.addToCart(addDto, user.userId);
   }
 
+  @RequirePermission('inventory.master.read')
   @Get('cart')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주대기리스트 조회' })
@@ -142,6 +147,7 @@ export class PurchaseOrderController {
     return this.cartService.getCartItems(type, user.userId);
   }
 
+  @RequirePermission('inventory.master.write')
   @Put('cart/:itemId')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주대기리스트 아이템 수정' })
@@ -158,6 +164,7 @@ export class PurchaseOrderController {
     return this.cartService.updateCartItem(itemId, user.userId, updateDto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Delete('cart/:itemId')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주대기리스트에서 아이템 제거' })
@@ -171,6 +178,7 @@ export class PurchaseOrderController {
     return this.cartService.removeFromCart(itemId, user.userId);
   }
 
+  @RequirePermission('inventory.master.write')
   @Delete('cart')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주대기리스트 비우기' })
@@ -187,6 +195,7 @@ export class PurchaseOrderController {
 
   // ========== 발주 상세 조회 및 관리 (동적 라우트) ==========
 
+  @RequirePermission('inventory.master.read')
   @Get(':id')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 상세 조회' })
@@ -204,6 +213,7 @@ export class PurchaseOrderController {
     return this.purchaseOrderService.getPurchaseOrderById(id);
   }
 
+  @RequirePermission('inventory.master.write')
   @Put(':id/lines')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 라인 수정 (created/confirmed 상태)' })
@@ -223,6 +233,7 @@ export class PurchaseOrderController {
   // ========== 라인 실행 (하나씩 실제로 발주) ==========
   // 경로 순서: 위의 @Get(':id') 와 세그먼트 수가 달라 충돌하지 않는다.
 
+  @RequirePermission('inventory.master.write')
   @Post(':poId/lines/:skuId/order')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 라인 실행 (실제로 발주함)' })
@@ -241,6 +252,7 @@ export class PurchaseOrderController {
     return this.purchaseOrderService.orderLine(poId, skuId, dto, user.userId);
   }
 
+  @RequirePermission('inventory.master.write')
   @Post(':poId/lines/:skuId/unavailable')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 라인 종결 (끝내 발주 못 함)' })
@@ -259,6 +271,7 @@ export class PurchaseOrderController {
     return this.purchaseOrderService.markLineUnavailable(poId, skuId, dto, user.userId);
   }
 
+  @RequirePermission('inventory.stock.operate')
   @Post(':poId/receipts')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '발주 수령 — 한 회차에 여러 SKU. 멱등키 필수' })
@@ -273,6 +286,7 @@ export class PurchaseOrderController {
     return this.purchaseOrderService.receive(poId, dto, undefined, warehouseOperationContext(dto, user, headerKey));
   }
 
+  @RequirePermission('inventory.stock.operate')
   @Post('receipt-lines/:receiptLineId/cancel')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '발주 수령 취소 — 당일·전량·적치/회송 전' })
@@ -292,6 +306,7 @@ export class PurchaseOrderController {
     );
   }
 
+  @RequirePermission('inventory.master.write')
   @Post(':poId/lines/:skuId/short-close')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '잔량 포기 — 남은 수량이 있는 실발주 라인' })
@@ -306,6 +321,7 @@ export class PurchaseOrderController {
     return this.purchaseOrderService.shortCloseLine(poId, skuId, dto, user.userId);
   }
 
+  @RequirePermission('inventory.master.write')
   @Patch(':poId/lines/:skuId/expected-arrival')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '라인 도착예정일 수정 — YYYY-MM-DD 또는 null' })
@@ -318,6 +334,7 @@ export class PurchaseOrderController {
     return this.purchaseOrderService.updateLineExpectedArrival(poId, skuId, dto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Post(':id/cancel')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 취소 (입고 전에만)' })

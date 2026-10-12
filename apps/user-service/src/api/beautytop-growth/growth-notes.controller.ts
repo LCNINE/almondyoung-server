@@ -17,6 +17,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { User } from 'apps/user-service/database/drizzle/schema';
 import { GrowthNoteTargetDto, RecordGrowthNoteDto } from './dto/growth-note.dto';
 import { GrowthNotesService } from './growth-notes.service';
+import { StoreRoute } from '@app/authorization';
 
 @ApiTags('뷰티탑 성장 노트')
 @ApiBearerAuth('access-token')
@@ -26,12 +27,14 @@ export class GrowthNotesController {
   constructor(private readonly service: GrowthNotesService) {}
 
   @ApiOperation({ summary: '본인 샵의 최근 실행 기록 조회' })
+  @StoreRoute()
   @Get()
   list(@CurrentUser() user: User, @Query() target: GrowthNoteTargetDto) {
     return this.service.list(user.id, target);
   }
 
   @ApiOperation({ summary: '내 샵 실행 기록 저장 (행동별 하루 한 번)' })
+  @StoreRoute()
   @Post()
   @HttpCode(HttpStatus.OK)
   record(@CurrentUser() user: User, @Body() dto: RecordGrowthNoteDto) {
@@ -39,6 +42,7 @@ export class GrowthNotesController {
   }
 
   @ApiOperation({ summary: '본인의 실행 기록 삭제' })
+  @StoreRoute()
   @Delete(':id')
   remove(
     @CurrentUser() user: User,

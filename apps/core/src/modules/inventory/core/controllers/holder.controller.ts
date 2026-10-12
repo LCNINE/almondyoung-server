@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpStatus, Logger, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { HolderService } from '../services/holder.service';
 import { HolderQueryDto } from '../dto/holder/holder-query.dto';
@@ -16,6 +16,7 @@ export class HolderController {
 
   constructor(private readonly holderService: HolderService) {}
 
+  @RequirePermission('inventory.stock.read')
   @Get()
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '재고소유 목록/검색 조회' })
@@ -30,6 +31,7 @@ export class HolderController {
     return await this.holderService.listHolders(query);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get(':id')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '재고소유 단일 조회' })
@@ -49,6 +51,7 @@ export class HolderController {
     return await this.holderService.getHolderById(id);
   }
 
+  @RequirePermission('inventory.master.write')
   @Post()
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '재고소유 생성' })
@@ -68,6 +71,7 @@ export class HolderController {
     return await this.holderService.createHolder(dto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Put(':id')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '재고소유 수정' })
@@ -92,6 +96,7 @@ export class HolderController {
     return await this.holderService.updateHolder(id, dto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Delete(':id')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '재고소유 삭제' })

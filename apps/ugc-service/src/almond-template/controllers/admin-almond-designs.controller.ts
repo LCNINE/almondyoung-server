@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiProduces, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { RequireScopes } from '@app/authorization';
+import { RequireScopes, RequirePermission } from '@app/authorization';
 import { NotFoundError } from '@app/shared';
 import {
   ALMOND_PRINT_DEFAULT_DPI,
@@ -31,6 +31,7 @@ import { type AlmondPrintFormat } from '../types/almond-design.types';
 export class AdminAlmondDesignsController {
   constructor(private readonly service: AlmondDesignsService) {}
 
+  @RequirePermission('marketing.almond_template.read')
   @Get(':id')
   @RequireScopes('admin:template:write')
   @ApiParam({ name: 'id', format: 'uuid' })
@@ -41,6 +42,7 @@ export class AdminAlmondDesignsController {
     return this.service.getForAdmin(id);
   }
 
+  @RequirePermission('marketing.almond_template.read')
   @Get(':id/preview/:side')
   @RequireScopes('admin:template:write')
   @ApiParam({ name: 'id', format: 'uuid' })
@@ -68,6 +70,7 @@ export class AdminAlmondDesignsController {
     return jpg;
   }
 
+  @RequirePermission('marketing.almond_template.read')
   @Get(':id/print-link')
   @RequireScopes('admin:template:write')
   @ApiParam({ name: 'id', format: 'uuid' })
@@ -94,6 +97,7 @@ export class AdminAlmondDesignsController {
     return this.service.printLink(id, parsed.format, parsed.dpi, accessToken);
   }
 
+  @RequirePermission('marketing.almond_template.read')
   @Get(':id/print.eps')
   @RequireScopes('admin:template:write')
   @ApiParam({ name: 'id', format: 'uuid' })
@@ -107,6 +111,7 @@ export class AdminAlmondDesignsController {
     return this.sendPrintFile(id, 'eps', reply);
   }
 
+  @RequirePermission('marketing.almond_template.read')
   @Get(':id/print.pdf')
   @RequireScopes('admin:template:write')
   @ApiParam({ name: 'id', format: 'uuid' })
@@ -120,6 +125,7 @@ export class AdminAlmondDesignsController {
     return this.sendPrintFile(id, 'pdf', reply);
   }
 
+  @RequirePermission('marketing.almond_template.read')
   @Get(':id/print.jpg')
   @RequireScopes('admin:template:write')
   @ApiParam({ name: 'id', format: 'uuid' })
