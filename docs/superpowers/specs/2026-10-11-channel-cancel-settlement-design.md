@@ -266,13 +266,13 @@ core 직접 주문은 «취소 성립 + 환불 따로 추적»이다 — `POST /
 
 **리컨실러 규칙 «정산 재시도»** (`fulfillment/order-reconcile/rules/`, 12번 틀):
 
+- 상황: 정체 보드 취소 단계의 `settle_in_progress`·`settle_delayed`.
 - 검사: 요청이 `settling`, `state ≠ refused`, 마지막 (다시) 시작에서 60초(`SETTLEMENT_REISSUE_GRACE_MS`)가 지남. 지문 = 요청 id + `state` + `mode`.
   할 일이 없었으면 1분 뒤 다시 본다(규칙의 `idleRecheckMin`).
-- 검사: 요청이 `settling`, `state ≠ refused`, 마지막 시도가 백오프(1분 → 5분 → 15분 → 이후 1시간)보다 오래됨. 지문 = 요청 id + `state` + `mode`.
 - 실행: 같은 `requestId`·`refundMode` 로 `CancelChannelOrder` 를 다시 낸다(멱등 — §6.1·§10).
+- 명령·사실 유실, channel-adapter 결함도 이 규칙이 잡는다. 관찰 모드로 배포해 거짓 양성을 본 뒤 실행 모드로 바꾼다(12번 관례).
 - 백오프·포기는 리컨실러 틀의 것을 그대로 쓴다 — 실행 뒤 1·4·16·64·256분, 5회 뒤 «자동 멈춤»(정체 보드에 보인다), 그 뒤로도 1024분(약 17시간)마다 한 번 더 해 본다.
   처음 이 절은 «1분 → 5분 → 15분 → 이후 1시간, 포기 없음»이었으나, 규칙마다 백오프를 두면 공용 틀이 갈라져 틀을 따랐다(PR #1052 D3·#1053 E3, 2026-10-12 #1016 36번 마무리에서 확정).
-- 백오프·포기를 틀이 지원하는지 계획 단계에서 확인하고, 없으면 틀에 «다음 시도 시각»을 더한다(규칙마다 따로 두지 않는다).
 
 **운영자 조치** (`sales-orders.controller.ts`, `cancel-request` 아래):
 
