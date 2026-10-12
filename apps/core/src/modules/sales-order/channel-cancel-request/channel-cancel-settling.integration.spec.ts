@@ -125,14 +125,16 @@ describeIfDb('정산 중 요청의 사실 받기 (DB integration, rollback-only)
         seed.salesOrderId,
         modifiedPayload(seed, {
           quantities: [1, 1],
-          cancelRequests: [{ requestId: id, stage: 'refunded', refundAmount: 1000, shippingCharge: 0, shippingRefund: 0, shippingNotAdjusted: false }],
+          cancelRequests: [
+            { requestId: id, stage: 'refunded', refundAmount: 1000, shippingCharge: 0, shippingRefund: 0, shippingNotAdjusted: false, externalRefundApplied: 500 },
+          ],
         }),
         'm-1',
         tx,
       );
       const row = await rowOf(tx, id);
       expect(row.status).toBe('applied');
-      expect(row.metadata).toMatchObject({ outcome: { refundAmount: 1000 } });
+      expect(row.metadata).toMatchObject({ outcome: { refundAmount: 1000, externalRefundApplied: 500 } });
       expect(await cancellationsOf(tx, seed.salesOrderId)).toHaveLength(1);
       const channelRows = (await tx.select().from(wmsTables.salesOrderAmendments).where(eq(wmsTables.salesOrderAmendments.salesOrderId, seed.salesOrderId))).filter(
         (a) => a.origin === 'channel',

@@ -398,7 +398,7 @@ describe('OrderEventsConsumer', () => {
     );
   });
 
-  it('전체 OrderCancelled 는 취소 뒤 열린 요청을 닫으러 간다', async () => {
+  it('전체 OrderCancelled 는 취소 뒤 정산 중 요청을 닫으러 간다', async () => {
     const mocks = makeMocks();
     const consumer = makeConsumer(mocks);
     mocks.salesOrders.findByChannelOrderId.mockResolvedValue({ id: 'so-1' } as any);

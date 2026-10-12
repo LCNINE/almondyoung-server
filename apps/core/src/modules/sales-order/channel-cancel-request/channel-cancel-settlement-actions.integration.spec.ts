@@ -135,12 +135,17 @@ describeIfDb('정산 조치 — 다시 시도·계좌 송금 (DB integration, ro
     });
   });
 
-  it('다른 주문의 요청 id·없는 id 는 404', async () => {
+  it('다른 주문의 요청 id·없는 id 는 404, 정산이 끝난 요청은 409', async () => {
     await inRollbackTx(db, async (tx) => {
       const { w, seed, id } = await refused(tx);
       const other = await seedChannelOrder(tx, w, { withFo: true });
       await expect(w.manager.retrySettlement(other.salesOrderId, id, tx)).rejects.toBeInstanceOf(NotFoundError);
       await expect(w.manager.retrySettlement(seed.salesOrderId, 'nope', tx)).rejects.toBeInstanceOf(NotFoundError);
+      // 확정된 전체취소가 수집(OrderCancelled)으로 닫혔다 — settling 이 아니면 다시 낼 정산이 없다
+      const done = await w.manager.request({ salesOrderId: other.salesOrderId, requester: OPERATOR, sourceKey: 'k2' }, tx);
+      await w.settler.settleCancelled(other.salesOrderId, tx);
+      expect((await rowOf(tx, done.id)).status).toBe('applied');
+      await expect(w.manager.retrySettlement(other.salesOrderId, done.id, tx)).rejects.toBeInstanceOf(ConflictError);
     });
   });
 
