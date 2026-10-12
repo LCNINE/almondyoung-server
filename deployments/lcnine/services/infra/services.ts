@@ -128,6 +128,8 @@ export function setup(infra: SharedInfra) {
   // Wallet
   const tossClientKey = new sst.Secret('TossClientKey');
   const tossSecretKey = new sst.Secret('TossSecretKey');
+  const tossWidgetClientKey = new sst.Secret('TossWidgetClientKey');
+  const tossWidgetSecretKey = new sst.Secret('TossWidgetSecretKey');
   const nicepayClientKey = new sst.Secret('NicepayClientKey');
   const nicepaySecretKey = new sst.Secret('NicepaySecretKey');
   const walletApiKey = new sst.Secret('WalletApiKey');
@@ -655,6 +657,9 @@ export function setup(infra: SharedInfra) {
       OIDC_ISSUER_URL: idpUserServiceUrl,
       TOSS_CLIENT_KEY: tossClientKey.value,
       TOSS_SECRET_KEY: tossSecretKey.value,
+      TOSS_WIDGET_CLIENT_KEY: tossWidgetClientKey.value,
+      TOSS_WIDGET_SECRET_KEY: tossWidgetSecretKey.value,
+      TOSS_WIDGET_VARIANT_KEY: 'widgetA',
       NICEPAY_CLIENT_KEY: nicepayClientKey.value,
       NICEPAY_SECRET_KEY: nicepaySecretKey.value,
       WALLET_API_KEY: walletApiKey.value,
