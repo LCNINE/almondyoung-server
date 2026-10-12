@@ -1,31 +1,38 @@
 /**
- * wallet 이 환불 요청을 4xx 로 거절할 때의 본문 — `{ error, message, retryable }`.
+ * wallet 이 환불 요청을 4xx 로 거절할 때의 본문 — `{ error, message, detail, retryable }`.
  *
- * error·message 는 옛 모양 그대로다: core WalletRefundClient 가 body.error 로 금액 초과류를 «이미 환불됨»으로 읽는다.
+ * error 는 옛 이름 그대로다: core WalletRefundClient 가 body.error 로 금액 초과류를 «이미 환불됨»으로 읽는다.
  * retryable 은 «같은 요청을 나중에 다시 보내면 될 수 있는가» — almond-payment 가 영구 거절과 일시 실패를 가른다(스펙 §6.4).
- * 코드를 더하면 이 표에 판정을 함께 적어야 컴파일된다.
+ * 코드를 더하면 이 표에 판정과 운영자 문장을 함께 적어야 컴파일된다.
  */
-const RETRYABLE = {
+const REFUSALS = {
   // 금액 초과류: 호출자 장부와 wallet 이 어긋난 경합(동시 환불 등)이다. 장부를 맞춘 다음 시도가 남은 몫만 보낸다(스펙 §6.2)
-  REFUND_AMOUNT_EXCEEDS_CHARGE: true,
-  REFUND_AMOUNT_EXCEEDS_AVAILABLE: true,
-  REFUND_AMOUNT_EXCEEDS_TOTAL: true,
+  REFUND_AMOUNT_EXCEEDS_CHARGE: { retryable: true, message: '환불 금액이 결제 금액보다 큽니다.' },
+  REFUND_AMOUNT_EXCEEDS_AVAILABLE: { retryable: true, message: '환불 금액이 환불할 수 있는 남은 금액보다 큽니다.' },
+  REFUND_AMOUNT_EXCEEDS_TOTAL: { retryable: true, message: '환불 금액이 이 결제에서 환불할 수 있는 남은 금액보다 큽니다.' },
   // 결제수단·정책·데이터가 막는다 — 다시 보내도 같다
-  REFUND_NOT_AUTOMATABLE: false,
-  MEMBERSHIP_REFUND_NOT_ALLOWED: false,
-  CHARGE_NOT_FOUND: false,
-  CHARGE_INTENT_MISMATCH: false,
-  CHARGE_NOT_REFUNDABLE: false,
-  PAYMENT_METHOD_NOT_FOUND: false,
-  INTENT_NOT_FOUND: false,
-  REFUNDABLE_CHARGE_NOT_FOUND: false,
-} as const satisfies Record<string, boolean>;
+  REFUND_NOT_AUTOMATABLE: {
+    retryable: false,
+    message: '자동으로 환불할 수 없는 결제수단입니다. 고객에게 계좌를 받아 송금으로 환불해 주세요.',
+  },
+  MEMBERSHIP_REFUND_NOT_ALLOWED: { retryable: false, message: '멤버십 결제는 환불할 수 없습니다.' },
+  CHARGE_NOT_FOUND: { retryable: false, message: '환불할 결제 내역을 찾을 수 없습니다.' },
+  CHARGE_INTENT_MISMATCH: { retryable: false, message: '환불할 결제 내역이 이 결제와 맞지 않습니다.' },
+  CHARGE_NOT_REFUNDABLE: { retryable: false, message: '아직 환불할 수 있는 상태의 결제가 아닙니다.' },
+  PAYMENT_METHOD_NOT_FOUND: { retryable: false, message: '결제수단 정보를 찾을 수 없습니다.' },
+  INTENT_NOT_FOUND: { retryable: false, message: '결제 정보를 찾을 수 없습니다.' },
+  REFUNDABLE_CHARGE_NOT_FOUND: { retryable: false, message: '환불할 수 있는 결제 내역이 없습니다.' },
+} as const satisfies Record<string, { retryable: boolean; message: string }>;
 
-export type WalletRefundRefusalCode = keyof typeof RETRYABLE;
+export type WalletRefundRefusalCode = keyof typeof REFUSALS;
 
+/**
+ * message 는 운영자가 읽는 한국어 문장이다 — Medusa 가 그대로 정산 실패 사유로 싣고 admin-web 이 보인다(#1016 36번).
+ * 결제분 id 같은 개발용 문장은 detail 로 둔다(로그·진단용).
+ */
 export function refundRefusal(
   error: WalletRefundRefusalCode,
-  message: string,
-): { error: WalletRefundRefusalCode; message: string; retryable: boolean } {
-  return { error, message, retryable: RETRYABLE[error] };
+  detail: string,
+): { error: WalletRefundRefusalCode; message: string; detail: string; retryable: boolean } {
+  return { error, message: REFUSALS[error].message, detail, retryable: REFUSALS[error].retryable };
 }

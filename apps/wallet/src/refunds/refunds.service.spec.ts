@@ -316,7 +316,8 @@ describe('RefundsService', () => {
 
       expect(await refusalOf(service.create({ chargeId: CHARGE_ID, amount: 5000 }))).toEqual({
         error: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE',
-        message: 'Refund amount (5000) exceeds available refundable amount (2000)',
+        message: '환불 금액이 환불할 수 있는 남은 금액보다 큽니다.',
+        detail: 'Refund amount (5000) exceeds available refundable amount (2000)',
         retryable: true,
       });
     });
@@ -327,6 +328,7 @@ describe('RefundsService', () => {
       expect(await refusalOf(service.create({ chargeId: CHARGE_ID, amount: 5000 }))).toEqual({
         error: 'MEMBERSHIP_REFUND_NOT_ALLOWED',
         message: '멤버십 결제는 환불할 수 없습니다.',
+        detail: '멤버십 결제는 환불할 수 없습니다.',
         retryable: false,
       });
     });
@@ -337,7 +339,8 @@ describe('RefundsService', () => {
 
       expect(await refusalOf(service.create({ chargeId: 'missing', amount: 5000 }))).toEqual({
         error: 'CHARGE_NOT_FOUND',
-        message: 'Charge not found: missing',
+        message: '환불할 결제 내역을 찾을 수 없습니다.',
+        detail: 'Charge not found: missing',
         retryable: false,
       });
     });
@@ -412,7 +415,7 @@ describe('RefundsService', () => {
       const { service } = makeContext({ charge: makeCharge() });
       await expect(
         service.create({ chargeId: CHARGE_ID, amount: 1000, intentId: 'wrong-intent' }),
-      ).rejects.toThrow('does not belong to intent');
+      ).rejects.toThrow('환불할 결제 내역이 이 결제와 맞지 않습니다');
     });
 
     it('기존 SUCCEEDED 환불 합계를 초과하는 금액은 거절 (REFUND_AMOUNT_EXCEEDS_AVAILABLE)', async () => {
@@ -420,7 +423,7 @@ describe('RefundsService', () => {
       const { service } = makeContext({ priorRefundedAmount: 8000 });
       await expect(
         service.create({ chargeId: CHARGE_ID, amount: 5000 }), // 5000 > 2000
-      ).rejects.toThrow('exceeds available refundable amount');
+      ).rejects.toThrow('환불할 수 있는 남은 금액보다 큽니다');
     });
 
     it('available 금액 이내의 환불은 정상 처리', async () => {
@@ -454,7 +457,7 @@ describe('RefundsService', () => {
       const { service } = makeContext({ charge: makeCharge({ status: 'PENDING' }) });
       await expect(
         service.create({ chargeId: CHARGE_ID, amount: 1000 }),
-      ).rejects.toThrow('not in a refundable state');
+      ).rejects.toThrow('아직 환불할 수 있는 상태의 결제가 아닙니다');
     });
 
     it('intent가 이미 전액 환불되어 환불 가능 charge가 없으면 기존 성공 환불을 반환한다', async () => {
@@ -477,7 +480,7 @@ describe('RefundsService', () => {
         existingSucceededRefunds: [existingRefund],
       });
 
-      await expect(service.createByIntent(INTENT_ID, { amount: 10000 })).rejects.toThrow('No refundable charge found');
+      await expect(service.createByIntent(INTENT_ID, { amount: 10000 })).rejects.toThrow('환불할 수 있는 결제 내역이 없습니다');
       expect(provider.refund).not.toHaveBeenCalled();
     });
   });
@@ -867,7 +870,7 @@ describe('RefundsService', () => {
       const response = await catchResponse(service.createByIntent(INTENT_ID, { amount: 6000 }));
 
       expect(response.error).toBe('REFUND_AMOUNT_EXCEEDS_TOTAL');
-      expect(String(response.message)).toContain('5000');
+      expect(String(response.detail)).toContain('5000');
       expect(createSpy).not.toHaveBeenCalled();
       expect(provider.refund).not.toHaveBeenCalled();
     });
@@ -962,7 +965,7 @@ describe('RefundsService', () => {
       const response = await catchResponse(service.createByIntent(INTENT_ID, { amount: 10000 }));
 
       expect(response.error).toBe('REFUND_NOT_AUTOMATABLE');
-      expect(String(response.message)).toContain('CMS_BATCH');
+      expect(String(response.detail)).toContain('CMS_BATCH');
       expect(createSpy).not.toHaveBeenCalled();
     });
 
