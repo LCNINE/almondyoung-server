@@ -18,5 +18,6 @@ import { RolePermissionsReader } from './role-permissions.reader';
     MyPermissionsReader,
     IamService,
   ],
+  exports: [IamService],
 })
 export class IamModule {}

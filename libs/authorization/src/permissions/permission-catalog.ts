@@ -91,6 +91,11 @@ export const PERMISSION_CATALOG = [
     grant: ADMIN,
     ...DANGEROUS,
   }),
+  permission('customer.dormant.execute', '휴면 전환 실행', '휴면 대상 회원을 일괄 전환한다', {
+    owners: ['user-service'],
+    grant: NOBODY,
+    ...DANGEROUS,
+  }),
   permission('customer.blacklist.write', '블랙리스트 관리', '블랙리스트에 올리고 내린다', {
     owners: ['user-service'],
     grant: ADMIN,
@@ -133,6 +138,10 @@ export const PERMISSION_CATALOG = [
   permission('fulfillment.order.read', '출고 현황 조회', '출고 요청·직배송·주문 진행 현황을 본다', {
     owners: ['core'],
     grant: ['admin', 'intern', ...LOGISTICS],
+  }),
+  permission('fulfillment.order.write', '출고 요청 처리', '직배송을 전달·완료하고 출고 요청을 만들고 취소한다', {
+    owners: ['core'],
+    grant: ADMIN,
   }),
   // 상자·배치·송장 조회는 오늘 출고 작업 권한 뒤에 있어 admin 도 통과하지 못한다.
   permission('fulfillment.shipment.read', '출고 작업 조회', '출고 상자·배치·송장 상세를 본다', {
@@ -192,6 +201,10 @@ export const PERMISSION_CATALOG = [
     owners: ['core'],
     grant: ['admin', 'intern', ...LOGISTICS],
   }),
+  permission('inventory.master.read', '재고 기준정보 조회', '공급처·보관주체·로케이션 구성·보충 규칙을 본다', {
+    owners: ['core'],
+    grant: ['admin', 'intern', ...LOGISTICS_MANAGER],
+  }),
   permission('inventory.stock.operate', '재고 현장 작업', '입고·적치·실사 카운트·이동을 한다', {
     owners: ['core'],
     grant: ['admin', ...LOGISTICS],
@@ -221,6 +234,11 @@ export const PERMISSION_CATALOG = [
   }),
   permission('catalog.product.delete', '상품 삭제', '상품을 휴지통으로 보내거나 지운다', {
     owners: ['core', 'admin-web'],
+    grant: ADMIN,
+    ...DANGEROUS,
+  }),
+  permission('catalog.product.export', '상품 내보내기', '상품 목록을 엑셀로 내려받는다', {
+    owners: ['core'],
     grant: ADMIN,
     ...DANGEROUS,
   }),
@@ -283,6 +301,10 @@ export const PERMISSION_CATALOG = [
     owners: ['core', 'admin-web'],
     grant: ADMIN,
   }),
+  permission('marketing.display.read', '전시·공지 조회', '배너·팝업·공지를 본다', {
+    owners: ['core', 'admin-web'],
+    grant: ADMIN_INTERN,
+  }),
   permission('marketing.notice.write', '공지 관리', '공지사항을 쓰고 고친다', { owners: ['core'], grant: ADMIN }),
   permission('marketing.shop_listing.write', '샵매매 관리', '샵매매 글을 작성·검토한다', {
     owners: ['ugc-service'],
@@ -291,6 +313,10 @@ export const PERMISSION_CATALOG = [
   permission('marketing.almond_template.write', '아몬드템플릿 관리', '아몬드템플릿 시안을 저장·게시·삭제한다', {
     owners: ['ugc-service'],
     grant: ADMIN,
+  }),
+  permission('marketing.almond_template.read', '아몬드템플릿 조회', '아몬드템플릿 시안과 디자인을 본다', {
+    owners: ['ugc-service'],
+    grant: ADMIN_INTERN,
   }),
 
   // 메시지
@@ -315,6 +341,10 @@ export const PERMISSION_CATALOG = [
     owners: ['notification'],
     grant: ADMIN,
   }),
+  permission('messaging.provider.write', '발송 채널 관리', '문자·알림톡 발송 프로바이더를 등록하고 전환한다', {
+    owners: ['notification'],
+    grant: ADMIN,
+  }),
 
   // 결제
   permission('payment.payment.read', '결제 조회', '결제 내역을 본다', { owners: ['wallet'], grant: ADMIN_INTERN }),
@@ -324,6 +354,16 @@ export const PERMISSION_CATALOG = [
   }),
   permission('payment.refund.execute', '환불 실행', '환불을 실행하거나 수동 송금을 확정한다', {
     owners: ['wallet', 'core'],
+    grant: ADMIN,
+    ...DANGEROUS,
+  }),
+  permission('payment.payment.write', '결제 처리', '결제를 승인 확정·취소·정리하고 현금영수증을 발행한다', {
+    owners: ['wallet'],
+    grant: ADMIN,
+    ...DANGEROUS,
+  }),
+  permission('payment.billing.execute', '정기결제 실행', '정기결제 청구서를 실행하고 자동이체 상태를 다시 조회한다', {
+    owners: ['wallet'],
     grant: ADMIN,
     ...DANGEROUS,
   }),
@@ -384,6 +424,10 @@ export const PERMISSION_CATALOG = [
     owners: ['analytics'],
     grant: ADMIN,
   }),
+  permission('analytics.keyword.write', '검색어 운영', '검색어 이슈를 표시하고 정리한다', {
+    owners: ['search'],
+    grant: ADMIN,
+  }),
 
   // 채널
   permission('channel.account.read', '판매처 조회', '판매처(채널) 연동 정보와 발송 현황을 본다', {
@@ -396,7 +440,10 @@ export const PERMISSION_CATALOG = [
   }),
 
   // 설정 — oauth-clients 는 오늘 'master' 단독이다.
-  permission('system.region.write', '리전 설정', '통화·세금·리전을 바꾼다', { owners: ['admin-web'], grant: ADMIN }),
+  permission('system.region.write', '리전 설정', '통화·세금·리전을 바꾼다', {
+    owners: ['admin-web', 'wallet'],
+    grant: ADMIN,
+  }),
   permission('system.shipping_profile.write', '배송 설정', '배송 프로필·배송비 그룹을 바꾼다', {
     owners: ['core', 'admin-web'],
     grant: ADMIN,
@@ -408,6 +455,10 @@ export const PERMISSION_CATALOG = [
   }),
   permission('system.menu.write', '메뉴 커스터마이즈', '관리자 메뉴 구성을 바꾼다', {
     owners: ['admin-web'],
+    grant: ADMIN,
+  }),
+  permission('system.operations.read', '운영 진단 조회', '이벤트 추적과 상세 헬스 정보를 본다', {
+    owners: ['core', 'user-service', 'membership', 'wallet', 'notification', 'channel-adapter'],
     grant: ADMIN,
   }),
 

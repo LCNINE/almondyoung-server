@@ -67,4 +67,25 @@ describe('permission catalog', () => {
     expect(findPermission('fulfillment.shipment.read')?.grantOnFirstRegistration).not.toContain('admin');
     expect(findPermission('fulfillment.shipment.read')?.grantOnFirstRegistration).not.toContain('intern');
   });
+
+  it('registers the keys that the route table needs with today-equivalent grants', () => {
+    const expected: Record<string, readonly string[]> = {
+      'inventory.master.read': ['admin', 'intern', 'logistics_manager'],
+      'fulfillment.order.write': ['admin'],
+      'marketing.display.read': ['admin', 'intern'],
+      'marketing.almond_template.read': ['admin', 'intern'],
+      'catalog.product.export': ['admin'],
+      'customer.dormant.execute': [],
+      'payment.payment.write': ['admin'],
+      'payment.billing.execute': ['admin'],
+      'messaging.provider.write': ['admin'],
+      'analytics.keyword.write': ['admin'],
+      'system.operations.read': ['admin'],
+    };
+    const actual = Object.fromEntries(
+      Object.keys(expected).map((key) => [key, findPermission(key)?.grantOnFirstRegistration ?? null]),
+    );
+    expect(actual).toEqual(expected);
+    expect(PERMISSION_CATALOG).toHaveLength(98);
+  });
 });
