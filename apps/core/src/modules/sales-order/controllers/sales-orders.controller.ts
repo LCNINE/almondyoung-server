@@ -97,23 +97,6 @@ export class SalesOrdersController {
     });
   }
 
-  @Post(':id/cancel-request/resend')
-  @ApiOperation({ summary: '채널 취소 요청 다시 보내기 — 같은 requestId (정체 보드 «취소 요청 미반영»; 옛 requested 행만)' })
-  @ApiParam({ name: 'id', description: '판매 주문 ID' })
-  resendCancelRequest(@Param('id') id: string) {
-    return this.cancelRequests.resend(id);
-  }
-
-  @Post(':id/cancel-request/withdraw')
-  @ApiOperation({ summary: '채널 취소 요청 접기 — 보류를 푼다(OPERATOR_WITHDRAWN; 옛 requested 행만)' })
-  @ApiParam({ name: 'id', description: '판매 주문 ID' })
-  withdrawCancelRequest(
-    @Param('id') id: string,
-    @User() user?: { userId?: string; id?: string; sub?: string; roles?: string[] },
-  ) {
-    return this.cancelRequests.withdraw(id, user?.userId ?? user?.id ?? user?.sub ?? null);
-  }
-
   @Post(':id/cancel-request/:requestId/retry')
   @ApiOperation({ summary: '채널 취소 정산 다시 시도 — 환불 지연·거절인 요청에 같은 requestId 로 명령을 다시 낸다(#1016 36번 재설계)' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })

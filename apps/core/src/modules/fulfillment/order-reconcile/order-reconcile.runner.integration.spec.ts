@@ -701,7 +701,7 @@ describeIfDb('OrderReconcileRunner (PostgreSQL integration)', () => {
       const rule = fakeBoxRule(state, 'act', async () => 'acted');
       const progress = boxesAs(
         [boxRow(gone, state), boxRow(nowExcluded, state)],
-        [boxRow(nowExcluded, state, { orderRules: ['cancel_request'] })], // gone 은 지금 판정에 없다(대체됨)
+        [boxRow(nowExcluded, state, { orderRules: ['external_shipped'] })], // gone 은 지금 판정에 없다(대체됨)
       );
       const runner = new OrderReconcileRunner(
         dbs,

@@ -12,11 +12,10 @@ import { ChannelOrderCancelManager } from '../services/order-cancel/channel-orde
  *
  * core 는 channel-adapter 를 직접 부르지 않는다 — 채널 쪽 일을 원하면 이 명령 스트림에 요청한다.
  * «다시 확인»은 5번 행의 즉시 끌어오기와 같은 메서드를 `force` 로 탄다. 결과는 `OrderModified` 로 돌아간다.
- * «취소»(35번 행)는 `ChannelOrderCancelManager` 가 채널 정산 라우트에 실행하고, 결과는 재수집 또는 `ChannelOrderSettlementFailed`
- * (+ 정리 PR 전까지 옛 `ChannelOrderCancelRejected`/`Stalled`)로 돌아간다(#1016 36번 재설계).
+ * «취소»(35번 행)는 `ChannelOrderCancelManager` 가 채널 정산 라우트에 실행하고, 결과는 재수집 또는 `ChannelOrderSettlementFailed` 로 돌아간다(#1016 36번 재설계).
  *
- * 다시 확인의 정해진 실패(미지원 채널 등)는 로그만 남기고 정상 종료한다. 취소의 영구 실패는 사실을 낸 뒤 정상 종료하고,
- * 일시 실패·예상 밖 예외는 던져서 재시도·DLQ 를 탄다.
+ * 다시 확인의 정해진 실패(미지원 채널 등)는 로그만 남기고 정상 종료한다. 취소의 정산 실패는 영구든 일시든 사실을 낸 뒤 정상 종료하고
+ * (일시 실패는 core 리컨실러가 다시 부른다), 사실을 못 낸 경우·예상 밖 예외는 던져서 재시도·DLQ 를 탄다.
  */
 @Controller()
 @UseInterceptors(EventTypeGuard)

@@ -1,6 +1,6 @@
 // src/lib/api/domains/orders/cancel-request.shape.ts
 //
-// 채널 주문 취소 요청(#1016 35번) 응답 정형·문구 순수 함수. admin-web 은 컴포넌트 테스트가 안 되므로 화면이 읽는 판정은 여기서 한다.
+// 채널 주문 취소 요청(#1016 35번 · 36번 재설계: 요청은 확정이다) 응답 정형·문구 순수 함수. admin-web 은 컴포넌트 테스트가 안 되므로 화면이 읽는 판정은 여기서 한다.
 // 서버 원형: apps/core/src/modules/sales-order/channel-cancel-request/channel-cancel-request.types.ts (CancelRequestView)
 
 import { formatDwell } from '../../../utils/format-dwell';
@@ -18,9 +18,8 @@ export interface SettlementView {
 
 export interface CancelRequestView {
   id: string;
-  status: 'requested' | 'settling' | 'applied' | 'rejected' | 'superseded';
+  status: 'settling' | 'applied' | 'rejected' | 'superseded';
   scope: 'full' | 'partial';
-  stage: 'edited' | null;
   convertedFromFull: boolean;
   requestedAt: string;
   rejection: { reasonCode: string; message: string; at: string; unresolvedRefundAmount?: number } | null;
@@ -42,7 +41,6 @@ export type AdminCancelResponse =
 
 export type CancelAction =
   | { kind: 'cancel'; label: '취소' | '강제취소' }
-  | { kind: 'requested'; label: string }
   | { kind: 'settling'; label: string; alert: boolean }
   | { kind: 'rejected'; reason: string }
   | { kind: 'seller_center'; label: string };
@@ -64,7 +62,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isStatus(value: unknown): value is CancelRequestView['status'] {
-  return value === 'requested' || value === 'settling' || value === 'applied' || value === 'rejected' || value === 'superseded';
+  // 'requested' 는 옛 흐름의 역사 값 — 뷰로 만들지 않는다(그 주문은 «취소» 버튼으로 새 흐름을 탄다, PR 6)
+  return value === 'settling' || value === 'applied' || value === 'rejected' || value === 'superseded';
 }
 
 function isScope(value: unknown): value is CancelRequestView['scope'] {
@@ -77,7 +76,7 @@ export const SETTLEMENT_LABELS: Record<SettlementPhase, string> = {
   refused: '환불 거절',
 };
 export const MANUAL_REFUND_CONFIRM_TEXT =
-  '고객에게 계좌를 받아 직접 송금한 뒤, 결제 상세의 환불 내역에서 [완료 처리]를 눌러 주세요.';
+  '고객에게 계좌를 받아 직접 송금한 뒤, 결제 관리 › 환불 내역에서 [완료 처리]를 눌러 주세요.';
 const WALLET_REFUSED_PREFIX = 'wallet_refund_refused:';
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const KST_OFFSET_MS = 9 * 3_600_000;
@@ -131,13 +130,11 @@ export function settlementTiming(s: SettlementView, now: number): string {
   return `확정 후 ${formatDwell(now - Date.parse(s.confirmedAt))} · 기한 ${day}`;
 }
 
+/** 운영자 취소는 요청 순간 확정된다(#1016 36번 재설계) — 응답이 곧 «취소했다»다 */
 export function cancelRequestToast(r: Extract<AdminCancelResponse, { requestId: string }>): string {
-  if (r.status === 'settling') {
-    return r.convertedFromFull
-      ? '출고된 상품을 뺀 나머지를 취소했습니다. 환불은 채널이 처리합니다.'
-      : '취소했습니다. 환불은 채널이 처리합니다.';
-  }
-  return r.convertedFromFull ? '출고된 상품을 뺀 나머지의 취소를 요청했습니다.' : '취소를 요청했습니다.';
+  return r.convertedFromFull
+    ? '출고된 상품을 뺀 나머지를 취소했습니다. 환불은 채널이 처리합니다.'
+    : '취소했습니다. 환불은 채널이 처리합니다.';
 }
 
 function rejectionOf(value: unknown): CancelRequestView['rejection'] {
@@ -171,7 +168,6 @@ export function toCancelRequestView(value: unknown): CancelRequestView | null {
     id: value.id,
     status,
     scope,
-    stage: value.stage === 'edited' ? 'edited' : null,
     convertedFromFull: value.convertedFromFull === true,
     requestedAt: typeof value.requestedAt === 'string' ? value.requestedAt : '',
     rejection: rejectionOf(value.rejection),
@@ -190,7 +186,6 @@ export function cancelRequestFromAmendment(row: AmendmentRecord): CancelRequestV
     id: row.id,
     status: row.status,
     scope: request.scope,
-    stage: request.stage,
     convertedFromFull: request.convertedFromFull,
     requestedAt: row.occurredAt,
     rejection: row.metadata.rejection,
@@ -202,9 +197,6 @@ export function cancelActionOf(row: { channel: string; orderStatus: string; canc
   const center = SELLER_CENTER[row.channel];
   if (center) return { kind: 'seller_center', label: `${center} 판매자센터에서 취소` };
   const request = row.cancelRequest;
-  if (request?.status === 'requested') {
-    return { kind: 'requested', label: request.stage === 'edited' ? '수정됨 · 환불 미완' : '취소 요청됨' };
-  }
   if (request?.status === 'settling') {
     const phase = request.settlement?.phase ?? 'in_progress';
     return { kind: 'settling', label: SETTLEMENT_LABELS[phase], alert: phase !== 'in_progress' };
@@ -218,8 +210,6 @@ export function cancelActionOf(row: { channel: string; orderStatus: string; canc
 export function cancelRequestLine(view: CancelRequestView): string {
   const name = view.scope === 'full' ? '전체취소' : view.convertedFromFull ? '부분취소(출고분 제외)' : '부분취소';
   switch (view.status) {
-    case 'requested':
-      return `${name} 요청 · ${view.stage === 'edited' ? '수정됨 · 환불 미완' : '처리 중'}`;
     case 'settling':
       return view.settlement ? `${name} 확정 · ${SETTLEMENT_LABELS[view.settlement.phase]}` : `${name} 확정 · 정산 중`;
     case 'applied': {
@@ -246,32 +236,6 @@ export function cancelRequestLine(view: CancelRequestView): string {
 
 export function isCancelRequested(r: AdminCancelResponse): r is Extract<AdminCancelResponse, { requestId: string }> {
   return 'requestId' in r && typeof r.requestId === 'string';
-}
-
-function openRequestsOf(details: ReadonlyArray<unknown>): CancelRequestView[] {
-  return details.flatMap((d) => {
-    const view = isRecord(d) ? toCancelRequestView(d.cancelRequest) : null;
-    return view?.status === 'requested' ? [view] : [];
-  });
-}
-
-/**
- * 상세 목록에 «방금 낸» 처리 중 요청이 있으면 true — 행을 잠깐 다시 읽어 «취소 요청됨»이 끝나는 걸 보인다.
- * 오래 열린 요청은 세지 않는다: 막힌 요청을 영원히 3초마다 읽지 않게, 그건 정체 보드의 몫이다.
- */
-export function hasFreshOpenCancelRequest(details: ReadonlyArray<unknown>, now: number, windowMs = 120_000): boolean {
-  return openRequestsOf(details).some((v) => {
-    const at = Date.parse(v.requestedAt);
-    return Number.isFinite(at) && now - at <= windowMs;
-  });
-}
-
-/** 이전 읽기에서 requested 였는데 이번에는 requested 가 아닌 요청의 id — 주문 목록의 상태(`orderStatus`)를 다시 읽을 때다. */
-export function settledCancelRequestIds(prev: ReadonlyArray<unknown>, next: ReadonlyArray<unknown>): string[] {
-  const stillOpen = new Set(openRequestsOf(next).map((v) => v.id));
-  return openRequestsOf(prev)
-    .map((v) => v.id)
-    .filter((id) => !stillOpen.has(id));
 }
 
 /**

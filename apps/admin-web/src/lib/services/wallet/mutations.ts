@@ -303,3 +303,16 @@ export const useDeleteFeeRate = () => {
     },
   });
 };
+
+/** 수동 환불 [완료 처리] — 무통장·수동 실행(MANUAL) 송금 대기 PENDING → SUCCEEDED */
+export const useConfirmRefund = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ refundId }: { refundId: string; intentId: string }) => walletApi.confirmRefund(refundId),
+    onSuccess: (_data, { intentId }) => {
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.intentDetail(intentId) });
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.stateTransitions(intentId) });
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.refunds() });
+    },
+  });
+};

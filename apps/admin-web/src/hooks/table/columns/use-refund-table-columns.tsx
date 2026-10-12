@@ -4,7 +4,8 @@ import type { RefundDto } from '@/lib/types/dto/wallet';
 import { IdCell, DateCell } from '@/components/table/table-cells/common';
 import { StatusBadgeCell, AmountCell } from '@/components/table/table-cells/wallet';
 import Link from 'next/link';
-import { refundExecutionLabel } from '@/lib/api/domains/wallet/refund-execution';
+import { RefundConfirmCell } from '@/features/payments/components/refund-table/confirm-cell';
+import { refundExecutionLabel, refundFailureLabel } from '@/lib/api/domains/wallet/refund-execution';
 
 const columnHelper = createColumnHelper<RefundDto>();
 
@@ -44,9 +45,19 @@ export const useRefundTableColumns = () => {
         header: '사유 코드',
         cell: ({ getValue }) => <span className="text-sm">{getValue() ?? '-'}</span>,
       }),
+      columnHelper.display({
+        id: 'failure',
+        header: '실패 사유',
+        cell: ({ row }) => <span className="text-sm">{refundFailureLabel(row.original)}</span>,
+      }),
       columnHelper.accessor('createdAt', {
         header: '생성일',
         cell: ({ getValue }) => <DateCell value={getValue()} />,
+      }),
+      columnHelper.display({
+        id: 'actions',
+        header: '',
+        cell: ({ row }) => (row.original.manualConfirmable ? <RefundConfirmCell refund={row.original} /> : null),
       }),
     ],
     [],

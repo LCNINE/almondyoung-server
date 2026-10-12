@@ -51,7 +51,7 @@ export const ORDER_PROGRESS_STATES = {
   ],
   dispatch: ['awaiting_dispatch', 'drop_ship_pending'],
   track: ['shipped', 'in_transit', 'failed', 'drop_ship_forwarded'],
-  cancel_request: ['cancel_requested', 'cancel_edited', 'settle_in_progress', 'settle_delayed', 'settle_refused'],
+  cancel_request: ['settle_in_progress', 'settle_delayed', 'settle_refused'],
   // 취소된 주문의 열린 상자·예약. 열린 상자의 recovery_code 가 그대로 나올 수도 있다
   cancel: ['CANCEL_REPLAN_PENDING', 'open_shipment', 'open_reservation'],
   // 열린(완료·거절·취소 아닌) 반품·교환
@@ -142,7 +142,7 @@ export const STUCK_AFTER_MS: Record<OrderProgressStage, number> = {
   pick: 12 * HOUR,
   dispatch: HOUR,
   track: 5 * DAY,
-  // 채널 취소 요청(#1016 35번 §5.5) — 보통 몇 초. 5분이면 명령이 처리되지 않았거나 결과가 유실됐다.
+  // 단계 기본값 — 정산 중 상태는 전부 STUCK_AFTER_MS_BY_STATE 가 덮는다(키는 Record 라 남는다)
   cancel_request: 5 * MINUTE,
   cancel: HOUR,
   return_exchange: 7 * DAY,

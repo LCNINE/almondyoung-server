@@ -32,13 +32,6 @@ export class ChannelCancelRequestService {
     });
   }
 
-  latestFor(salesOrderId: string): Promise<CancelRequestView | null> {
-    return this.db.run(async (tx) => {
-      const row = await this.reader.latestFor(salesOrderId, tx);
-      return row ? toCancelRequestView(row) : null;
-    });
-  }
-
   /** 고객 환불 배지용 — 정산 칸이 있는 요청만, 최근 순 */
   settlementFactsFor(salesOrderId: string, now: Date = new Date()): Promise<ChannelSettlementFact[]> {
     return this.db.run(async (tx) => {
@@ -63,24 +56,8 @@ export class ChannelCancelRequestService {
     return this.manager.switchToManualRefund(salesOrderId, requestId);
   }
 
-  reject(fact: { requestId: string; reasonCode: string; message: string; unresolvedRefundAmount?: number }): Promise<void> {
-    return this.manager.reject(fact);
-  }
-
-  markStalled(fact: { requestId: string }): Promise<void> {
-    return this.manager.markStalled(fact);
-  }
-
   recordSettlementFailure(fact: SettlementFailedFact): Promise<void> {
     return this.manager.recordSettlementFailure(fact);
-  }
-
-  resend(salesOrderId: string): Promise<CancelRequestView> {
-    return this.manager.resend(salesOrderId);
-  }
-
-  withdraw(salesOrderId: string, operatorId: string | null): Promise<CancelRequestView> {
-    return this.manager.withdraw(salesOrderId, operatorId);
   }
 
   settlementFingerprint(salesOrderId: string, tx: DbTx): Promise<string> {

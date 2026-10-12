@@ -45,7 +45,6 @@ function makeContext(
     walletOutcome?: WalletRefundOutcome;
     cancelError?: Error;
     businessLinkError?: Error;
-    openRequestView?: Record<string, unknown> | null;
     replayView?: Record<string, unknown> | null;
     refundLinks?: Array<{ relationName: string; metadata: Record<string, unknown>; createdAt: Date }>;
     /** 이 주문에 다운로드(exercise)된 디지털 상품 ownership 이 있는지 */
@@ -185,7 +184,6 @@ function makeContext(
       if (options.replayView) currentSo = options.soAfterRequest ?? currentSo;
       return Promise.resolve(options.replayView ?? null);
     }),
-    latestFor: jest.fn().mockResolvedValue(options.openRequestView ?? null),
   };
 
   const service = new StoreSalesOrdersService(
@@ -318,7 +316,6 @@ describe('StoreSalesOrdersService', () => {
         { idempotencyKey: 'k-1', actorId: CUSTOMER_ID, actorRoles: ['customer'] },
       );
       expect(r.orderStatus).toBe('cancelled');
-      expect(r.cancelRequestStatus).toBeUndefined();
     });
 
     it('같은 키 재요청은 가드보다 먼저 지금 뷰를 돌려준다 — 이미 취소된 뒤여도 400 이 아니다', async () => {
@@ -401,7 +398,7 @@ describe('StoreSalesOrdersService', () => {
         dbMock as any,
         { cancel: jest.fn(), createBusinessLink: jest.fn() } as any,
         { refundByIntent: jest.fn() } as any,
-        { latestFor: jest.fn().mockResolvedValue(null), settlementFactsFor: jest.fn().mockResolvedValue([]) } as any,
+        { settlementFactsFor: jest.fn().mockResolvedValue([]) } as any,
       );
       return { service, dbMock };
     }
@@ -486,28 +483,11 @@ describe('StoreSalesOrdersService', () => {
       });
     });
 
-    it('열린 취소 요청 — 취소 버튼 없이 cancel_requested, cancelRequestStatus=requested', async () => {
-      const { service } = makeContext({ openRequestView: { id: 'req-1', status: 'requested' } });
+    it('취소 요청 상태 칸은 더 싣지 않는다 — 요청은 확정이라 «처리 중» 요청이 없다(PR 6)', async () => {
+      const { service } = makeContext({});
       const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-      expect(r.availableActions).toEqual(['receipt']);
-      expect(r.cancelUnavailableReason).toBe('cancel_requested');
-      expect(r.cancelRequestStatus).toBe('requested');
-    });
-
-    it('거절된 최근 요청 — 다시 취소할 수 있고 cancelRequestStatus=rejected', async () => {
-      const { service } = makeContext({ openRequestView: { id: 'req-1', status: 'rejected' } });
-      const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-      expect(r.availableActions).toContain('cancel');
-      expect(r.cancelRequestStatus).toBe('rejected');
-    });
-
-    it('취소된 주문은 요청 상태를 싣지 않는다', async () => {
-      const { service } = makeContext({
-        so: makeSo({ status: 'cancelled' }),
-        openRequestView: { id: 'req-1', status: 'applied' },
-      });
-      const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-      expect(r.cancelRequestStatus).toBeUndefined();
+      expect(r).not.toHaveProperty('cancelRequestStatus');
+      expect(r.cancelUnavailableReason).not.toBe('cancel_requested');
     });
 
     it('wallet 연결 없이 수집된 환불만 있으면 합계로 succeeded 요약(스펙 §7.5)', async () => {
@@ -760,7 +740,6 @@ describe('StoreSalesOrdersService', () => {
         outcome: null,
       }),
       findBySourceKey: jest.fn().mockResolvedValue(null),
-      latestFor: jest.fn().mockResolvedValue(null),
     };
 
     const service = new StoreSalesOrdersService(
@@ -1010,7 +989,6 @@ describe('StoreSalesOrdersService', () => {
         outcome: null,
       }),
       findBySourceKey: jest.fn().mockResolvedValue(null),
-      latestFor: jest.fn().mockResolvedValue(null),
     };
 
     const service = new StoreSalesOrdersService(

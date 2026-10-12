@@ -10,8 +10,8 @@ describe('RetryChannelSettlementRule (#1016 36번)', () => {
   };
   const rule = new RetryChannelSettlementRule(service as never);
 
-  it('관찰 모드로 나간다 — 실행 전환은 channel-adapter ack 전환과 같은 배포(PR 6)', () => {
-    expect(rule.mode).toBe('observe');
+  it('실행 모드 — channel-adapter 가 일시 실패를 ack 하므로 다시 부르는 곳은 여기 하나다(PR 6)', () => {
+    expect(rule.mode).toBe('act');
     expect(rule.row).toBe(36);
     expect(rule.situation).toEqual({ stage: 'cancel_request', states: ['settle_in_progress', 'settle_delayed'] });
   });

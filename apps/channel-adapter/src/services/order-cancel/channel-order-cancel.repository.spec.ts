@@ -61,30 +61,11 @@ describe('ChannelOrderCancelRepository (#1016 35번 PR-B)', () => {
     );
   });
 
-  it('옛 사실이 있으면 «같은 트랜잭션»에 옛 키로 함께 적재한다 — 옛 core(PR 5 전)가 읽는다', async () => {
-    const { repository, enqueue, transaction } = makeRepository();
-    const rejected = { ...key, reasonCode: 'NOT_CANCELABLE' as const, message: '출고됨' };
-    await repository.recordSettlementFailure(fact, 'd1', { eventType: 'ChannelOrderCancelRejected', payload: rejected });
-    expect(transaction).toHaveBeenCalledTimes(1);
-    expect(enqueue.mock.calls.map(([event, tx]) => [event.eventType, event.idempotencyKey, tx])).toEqual([
-      ['ChannelOrderSettlementFailed', 'settlement-failed:req-1:d1:wallet_refund_refused:REFUND_NOT_AUTOMATABLE', 'tx'],
-      ['ChannelOrderCancelRejected', 'cancel-rejected:req-1:d1', 'tx'],
-    ]);
-    expect(enqueue.mock.calls[1][0]).toMatchObject({ aggregateId: 'medusa:order_1', partitionKey: 'medusa', payload: rejected });
-  });
-
-  it('옛 정체 사실은 옛 키로 적재한다', async () => {
+  it('정산 실패 사실 하나만 적재한다 — 옛 사실(Rejected·Stalled)은 더 내지 않는다(PR 6)', async () => {
     const { repository, enqueue } = makeRepository();
-    const stalled = { ...key, stage: 'edited' as const, message: '환불 미완' };
-    await repository.recordSettlementFailure({ ...fact, scope: 'partial', retryable: true, failureCode: 'refund_pending' }, 'd1', {
-      eventType: 'ChannelOrderCancelStalled',
-      payload: stalled,
-    });
-    expect(enqueue.mock.calls[1][0]).toMatchObject({
-      eventType: 'ChannelOrderCancelStalled',
-      idempotencyKey: 'cancel-stalled:req-1:d1',
-      payload: stalled,
-    });
+    await repository.recordSettlementFailure(fact, 'd1');
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(enqueue.mock.calls[0][0]).toMatchObject({ eventType: 'ChannelOrderSettlementFailed' });
   });
 
   it('같은 전달이라도 failureCode 가 다르면 키가 다르다 — 재시도 중 일시 → 영구로 바뀐 결과를 먹지 않는다', async () => {

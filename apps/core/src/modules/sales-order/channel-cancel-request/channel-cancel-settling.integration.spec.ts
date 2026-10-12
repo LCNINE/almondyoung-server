@@ -86,13 +86,43 @@ describeIfDb('정산 중 요청의 사실 받기 (DB integration, rollback-only)
     });
   });
 
-  it('부분 — refunded 기록: applied + 결과, 물리 적용은 다시 하지 않는다(취소 기록 그대로 하나)', async () => {
+  it('전체 — OrderCancelled 를 놓쳐도 재수집 스냅샷의 orderCancelled 로 applied(PR 6 판정 3)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, id } = await confirmFull(tx);
+      await w.manager.recordSettlementFailure(failure(id, { retryable: true, failureCode: 'http_500' }), tx);
+      await w.changes.handle(seed.salesOrderId, modifiedPayload(seed, { orderCancelled: true }), 'm-1', tx);
+      const row = await rowOf(tx, id);
+      expect(row.status).toBe('applied');
+      expect(row.metadata).toMatchObject({ settlement: { mode: 'auto' } });
+      expect((row.metadata as { settlement: Record<string, unknown> }).settlement.lastFailure).toBeUndefined();
+      // 판매주문은 확정 때 이미 취소됐다 — 취소 기록이 늘지 않는다
+      expect(await cancellationsOf(tx, seed.salesOrderId)).toHaveLength(1);
+    });
+  });
+
+  it('부분 정산 중 + 채널 주문 취소 스냅샷 — superseded(CHANNEL_FULL_CANCEL), settleCancelled 와 같다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, id } = await confirmPartial(tx);
+      // 채널이 아직 줄이지 않았다(수량 원래대로) — 요청분의 «늘어남»은 먹혀야 하고 반영 대기 변경으로 새면 안 된다
+      await w.changes.handle(seed.salesOrderId, modifiedPayload(seed, { orderCancelled: true }), 'm-1', tx);
+      const row = await rowOf(tx, id);
+      expect(row.status).toBe('superseded');
+      expect(row.metadata).toMatchObject({ supersededReason: 'CHANNEL_FULL_CANCEL' });
+      const channelRows = (await tx.select().from(wmsTables.salesOrderAmendments).where(eq(wmsTables.salesOrderAmendments.salesOrderId, seed.salesOrderId))).filter(
+        (a) => a.origin === 'channel',
+      );
+      expect(channelRows.flatMap((a) => a.deltas as unknown[])).toEqual([]);
+    });
+  });
+
+  it('부분 정산 중 refunded 기록 + 같은 스냅샷의 주문 취소 — superseded 가 아니라 applied + 결과(결과를 잃지 않는다)', async () => {
     await inRollbackTx(db, async (tx) => {
       const { w, seed, id } = await confirmPartial(tx);
       await w.changes.handle(
         seed.salesOrderId,
         modifiedPayload(seed, {
           quantities: [1, 1],
+          orderCancelled: true,
           cancelRequests: [{ requestId: id, stage: 'refunded', refundAmount: 1000, shippingCharge: 0, shippingRefund: 0, shippingNotAdjusted: false }],
         }),
         'm-1',
@@ -101,6 +131,34 @@ describeIfDb('정산 중 요청의 사실 받기 (DB integration, rollback-only)
       const row = await rowOf(tx, id);
       expect(row.status).toBe('applied');
       expect(row.metadata).toMatchObject({ outcome: { refundAmount: 1000 } });
+    });
+  });
+
+  it('orderCancelled 가 없는 재수집은 전체 정산 중 행을 닫지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, id } = await confirmFull(tx);
+      await w.changes.handle(seed.salesOrderId, modifiedPayload(seed), 'm-1', tx);
+      expect((await rowOf(tx, id)).status).toBe('settling');
+    });
+  });
+
+  it('부분 — refunded 기록: applied + 결과, 물리 적용은 다시 하지 않는다(취소 기록 그대로 하나)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, id } = await confirmPartial(tx);
+      await w.changes.handle(
+        seed.salesOrderId,
+        modifiedPayload(seed, {
+          quantities: [1, 1],
+          cancelRequests: [
+            { requestId: id, stage: 'refunded', refundAmount: 1000, shippingCharge: 0, shippingRefund: 0, shippingNotAdjusted: false, externalRefundApplied: 500 },
+          ],
+        }),
+        'm-1',
+        tx,
+      );
+      const row = await rowOf(tx, id);
+      expect(row.status).toBe('applied');
+      expect(row.metadata).toMatchObject({ outcome: { refundAmount: 1000, externalRefundApplied: 500 } });
       expect(await cancellationsOf(tx, seed.salesOrderId)).toHaveLength(1);
       const channelRows = (await tx.select().from(wmsTables.salesOrderAmendments).where(eq(wmsTables.salesOrderAmendments.salesOrderId, seed.salesOrderId))).filter(
         (a) => a.origin === 'channel',
@@ -166,6 +224,34 @@ describeIfDb('정산 중 요청의 사실 받기 (DB integration, rollback-only)
     });
   });
 
+  it('정산 중 부분취소(refunded) + 채널이 남은 줄도 지움 — 요청은 applied, 남은 감소는 ALL_LINES_REMOVED 로 대기', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancelRequest(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: true });
+      // 줄 0(수량 2) 전부 — 줄 1 이 남아 부분이다. core 유효 수량은 (0,1)
+      const view = await w.manager.request(
+        { salesOrderId: seed.salesOrderId, lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 2 }], requester: OPERATOR, sourceKey: 'k1' },
+        tx,
+      );
+      await w.changes.handle(
+        seed.salesOrderId,
+        modifiedPayload(seed, {
+          quantities: [0, 0],
+          cancelRequests: [{ requestId: view.id, stage: 'refunded', refundAmount: 2000, shippingCharge: 0, shippingRefund: 0, shippingNotAdjusted: false }],
+        }),
+        'm-1',
+        tx,
+      );
+      expect((await rowOf(tx, view.id)).status).toBe('applied');
+      const channelRows = (await tx.select().from(wmsTables.salesOrderAmendments).where(eq(wmsTables.salesOrderAmendments.salesOrderId, seed.salesOrderId))).filter(
+        (a) => a.origin === 'channel',
+      );
+      expect(channelRows).toHaveLength(1);
+      expect(channelRows[0].status).toBe('pending');
+      expect(JSON.stringify(channelRows[0].deltas)).toContain('ALL_LINES_REMOVED');
+    });
+  });
+
   it('정산 실패 — 영구면 refused, 일시면 in_progress, 둘 다 마지막 실패를 적는다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { w, id } = await confirmFull(tx);
@@ -199,20 +285,7 @@ describeIfDb('정산 중 요청의 사실 받기 (DB integration, rollback-only)
     });
   });
 
-  it('옛 사실(Rejected·Stalled)은 settling 행에 닿지 않는다(PR 3 넘길 것 1)', async () => {
-    await inRollbackTx(db, async (tx) => {
-      const { w, id } = await confirmFull(tx);
-      await w.manager.recordSettlementFailure(failure(id), tx);
-      await w.manager.reject({ requestId: id, reasonCode: 'NOT_CANCELABLE', message: 'x' }, tx);
-      await w.manager.markStalled({ requestId: id }, tx);
-      const row = await rowOf(tx, id);
-      expect(row.status).toBe('settling');
-      expect(row.metadata).toMatchObject({ settlement: { state: 'refused' } });
-      expect(row.metadata).not.toHaveProperty('rejection');
-    });
-  });
-
-  it('정산이 끝난 요청·옛 requested 행·없는 id 에 온 정산 실패는 버린다', async () => {
+  it('정산이 끝난 요청·없는 id 에 온 정산 실패는 버린다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { w, seed, id } = await confirmFull(tx);
       await w.salesOrders.cancel(seed.salesOrderId, { cancelledBy: 'medusa', metadata: { sourceEventId: 'oc-1' } }, tx);

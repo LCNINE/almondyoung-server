@@ -25,7 +25,6 @@ import { ChannelOrderChangeReader } from '../../channel-order-change/channel-ord
 import { ChannelCancelSettler } from '../channel-cancel-settler';
 import { ChannelCancelRequestManager } from '../channel-cancel-request.manager';
 import { ChannelCancelRequestReader } from '../channel-cancel-request.reader';
-import { CHANNEL_CANCEL_REQUEST_REASON } from '../channel-cancel-request.types';
 
 export const ADDRESS = {
   recipientName: '김',
@@ -90,6 +89,7 @@ export function modifiedPayload(
     quantities?: number[];
     cancelRequests?: OrderModifiedPayload['snapshot']['cancelRequests'];
     address?: typeof ADDRESS;
+    orderCancelled?: boolean;
   } = {},
 ): OrderModifiedPayload {
   return {
@@ -107,6 +107,7 @@ export function modifiedPayload(
         cancelled: false,
       })),
       ...(over.cancelRequests ? { cancelRequests: over.cancelRequests } : {}),
+      ...(over.orderCancelled ? { orderCancelled: true as const } : {}),
     },
   };
 }
@@ -168,62 +169,6 @@ export async function shipLineOut(tx: DbTx, salesOrderLineId: string): Promise<v
 }
 
 /**
- * PR 5 전에 만들어진 «requested» 요청 행 — 라이브에 남은 옛 행의 모양(물리 미적용·출고 보류). manager.request 는 이제 이 행을 만들지 않는다.
- * 옛 규칙([다시 보내기]·[요청 접기]·옛 사실·수집 때 적용)이 끝까지 도는지 보는 스펙이 쓴다.
- */
-export async function seedLegacyRequest(
-  tx: DbTx,
-  seed: SeededOrder,
-  opts: { lines?: Array<{ salesOrderLineId: string; quantity: number }>; stage?: 'edited'; appliedAt?: string } = {},
-): Promise<string> {
-  const id = randomUUID();
-  const scope: 'full' | 'partial' = opts.lines ? 'partial' : 'full';
-  const lines =
-    opts.lines ?? seed.lineIds.map((salesOrderLineId, i) => ({ salesOrderLineId, quantity: seed.lines[i].qty }));
-  const itemOf = (lineId: string) => seed.lines[seed.lineIds.indexOf(lineId)].item;
-  const requestedAt = new Date().toISOString();
-  await tx.insert(wmsTables.salesOrderAmendments).values({
-    id,
-    salesOrderId: seed.salesOrderId,
-    amendmentKind: 'commercial',
-    reasonCode: CHANNEL_CANCEL_REQUEST_REASON,
-    deltas: lines.map((l) => ({
-      type: 'cancel_line',
-      salesOrderLineId: l.salesOrderLineId,
-      channelOrderItemId: itemOf(l.salesOrderLineId),
-      quantity: l.quantity,
-    })),
-    metadata: {
-      salesChannel: 'medusa',
-      externalOrderId: seed.externalOrderId,
-      request: {
-        kind: 'cancel',
-        scope,
-        requestedBy: 'admin:7d0a3c6e-0000-4000-8000-000000000001',
-        sourceKey: `legacy-${id}`,
-        ...(opts.stage ? { stage: opts.stage } : {}),
-        ...(opts.appliedAt ? { appliedAt: opts.appliedAt } : {}),
-        command: {
-          requestId: id,
-          salesChannel: 'medusa',
-          externalOrderId: seed.externalOrderId,
-          scope,
-          ...(scope === 'partial'
-            ? { lines: lines.map((l) => ({ channelOrderItemId: itemOf(l.salesOrderLineId), quantity: l.quantity })) }
-            : {}),
-          requestedBy: 'operator',
-          requestedAt,
-        },
-      },
-    },
-    origin: 'operator',
-    status: 'requested',
-    occurredAt: new Date(requestedAt),
-  });
-  return id;
-}
-
-/**
  * 취소 요청 통합 스펙의 배선. 롤백 트랜잭션 하나에 판매주문·요청 reader/manager 를 묶는다.
  */
 export function wireCancelRequest(tx: DbTx) {
@@ -251,7 +196,7 @@ export function wireCancelRequest(tx: DbTx) {
     salesOrders,
     outboxPublisherFor(CHANNEL_ORDERS_COMMAND_STREAM, dbService),
   );
-  const settler = new ChannelCancelSettler(reader, salesOrders);
+  const settler = new ChannelCancelSettler(reader);
   const amendments = new SalesOrderAmendmentsService(dbService);
   const changes = new ChannelOrderChangeManager(
     new ChannelOrderChangeReader(salesOrders),

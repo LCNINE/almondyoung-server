@@ -27,15 +27,6 @@ export class ChannelCancelRequestReader {
     return row ?? null;
   }
 
-  async findOpen(salesOrderId: string, tx: DbTx, opts: { lock?: boolean } = {}): Promise<AmendmentRow | null> {
-    const base = tx
-      .select()
-      .from(t)
-      .where(and(eq(t.salesOrderId, salesOrderId), isCancelRequest, eq(t.status, 'requested')));
-    const [row] = opts.lock ? await base.limit(1).for('update') : await base.limit(1);
-    return row ?? null;
-  }
-
   /** 정산 중인 요청(새 흐름, #1016 36번 재설계). 한 주문에 여럿일 수 있다 — 오래된 순 */
   async findSettling(salesOrderId: string, tx: DbTx, opts: { lock?: boolean } = {}): Promise<AmendmentRow[]> {
     const base = tx

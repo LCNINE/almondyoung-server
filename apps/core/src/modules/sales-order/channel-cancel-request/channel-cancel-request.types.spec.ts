@@ -36,7 +36,7 @@ describe('취소 요청 메타데이터', () => {
     expect(() => readCancelRequestLines([{ type: 'quantity_correction' }])).toThrow();
   });
 
-  it('뷰 — 단계·거절·결과', () => {
+  it('역사 값(옛 흐름의 rejected·stage edited·rejection)을 읽어도 던지지 않고 뷰에 그대로 싣는다', () => {
     const view = toCancelRequestView({
       id: 'r1',
       status: 'rejected',
@@ -123,7 +123,7 @@ describe('정산 상태(#1016 36번 재설계 §5.1)', () => {
     expect(view).toMatchObject({ status: 'settling', refundMode: 'auto', settlement: { phase: 'delayed' } });
   });
 
-  it('옛 행(정산 칸 없음)은 settlement·refundMode 가 null', () => {
+  it('역사 값 requested(정산 칸 없음)를 읽어도 던지지 않는다 — settlement·refundMode 는 null', () => {
     expect(toCancelRequestView(row({ status: 'requested', settlement: null }))).toMatchObject({
       status: 'requested',
       settlement: null,

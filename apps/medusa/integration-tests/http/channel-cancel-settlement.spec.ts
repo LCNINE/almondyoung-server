@@ -1,7 +1,7 @@
 // apps/medusa/integration-tests/http/channel-cancel-settlement.spec.ts
 import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
 import { Modules } from '@medusajs/framework/utils';
-import { beginOrderEditOrderWorkflow, refundPaymentWorkflow } from '@medusajs/medusa/core-flows';
+import { beginOrderEditOrderWorkflow, cancelOrderWorkflow, refundPaymentWorkflow } from '@medusajs/medusa/core-flows';
 import { readManualRefund, readRefundAttempt } from '../../src/modules/almond-payment/refund-data';
 import { FakeWallet, WALLET_BASE_URL, setupCommerce, placeOrder, loadOrder, Commerce } from './fixtures/partial-cancel-fixture';
 
@@ -350,13 +350,12 @@ medusaIntegrationTestRunner({
       });
     });
 
-    describe('특성: 기본 /cancel (Medusa 2.13.4 — 업그레이드로 바뀌면 스펙 §6.1 순서·§6.6 미들웨어를 재검토)', () => {
-      it('wallet 영구 거절에도 200 + canceled + Refund 0 + 환불 거래 −X(유령) — 장부 차액은 +X 로 뒤집힌다', async () => {
+    describe('특성: 기본 취소 워크플로 (Medusa 2.13.4 — 업그레이드로 바뀌면 스펙 §6.1 순서·§6.6 미들웨어를 재검토)', () => {
+      it('wallet 영구 거절에도 canceled + Refund 0 + 환불 거래 −X(유령) — 장부 차액은 +X 로 뒤집힌다', async () => {
         const { orderId } = await place();
         const { captured } = await ledger(orderId);
         wallet.rejectNextRefundWith = { status: 400, error: 'REFUND_NOT_AUTOMATABLE', retryable: false };
-        const res = await api.post(`/admin/orders/${orderId}/cancel`, {}, c.adminHeaders).catch((e: any) => e.response);
-        expect(res.status).toBe(200);
+        await cancelOrderWorkflow(getContainer()).run({ input: { order_id: orderId } });
         const o = await order(orderId);
         expect(o.status).toBe('canceled');
         expect((await ledger(orderId)).refunds).toEqual([]);
@@ -366,6 +365,42 @@ medusaIntegrationTestRunner({
         const refundTx = txs.filter((t: any) => t.reference === 'refund').reduce((s: number, t: any) => s + num(t.amount), 0);
         expect(refundTx).toBe(-captured);
         expect(num(o.summary.pending_difference)).toBe(captured);
+      });
+    });
+
+    describe('미들웨어 §6.6 — 대시보드 함정', () => {
+      it('결제가 있는 주문의 기본 /cancel 은 400 — 주문·wallet 그대로', async () => {
+        const { orderId } = await place();
+        const res = await api.post(`/admin/orders/${orderId}/cancel`, {}, c.adminHeaders).catch((e: any) => e.response);
+        expect(res.status).toBe(400);
+        expect(res.data.code).toBe('default_cancel_blocked');
+        expect((await order(orderId)).status).not.toBe('canceled');
+        expect(wallet.refundCalls()).toHaveLength(0);
+      });
+
+      it('정산 라우트(channel-cancel)는 지나간다', async () => {
+        const { orderId } = await place();
+        const res = await channelCancel(orderId);
+        expect(res.status).toBe(200);
+        expect((await order(orderId)).status).toBe('canceled');
+      });
+
+      it('취소된 주문의 기본 환불은 400 — wallet 을 부르지 않는다', async () => {
+        const { orderId } = await place();
+        await channelCancel(orderId);
+        const { paymentId } = await ledger(orderId);
+        const before = wallet.refundCalls().length;
+        const res = await api.post(`/admin/payments/${paymentId}/refund`, { amount: 1000 }, c.adminHeaders).catch((e: any) => e.response);
+        expect(res.status).toBe(400);
+        expect(res.data.code).toBe('refund_on_canceled_order');
+        expect(wallet.refundCalls()).toHaveLength(before);
+      });
+
+      it('살아 있는 주문의 기본 환불은 그대로 된다', async () => {
+        const { orderId } = await place();
+        const { paymentId } = await ledger(orderId);
+        const res = await api.post(`/admin/payments/${paymentId}/refund`, { amount: 1000 }, c.adminHeaders).catch((e: any) => e.response);
+        expect(res.status).toBe(200);
       });
     });
   },

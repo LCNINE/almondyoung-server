@@ -1,7 +1,7 @@
 import type { Refund } from '../types';
 import { RefundResponseDto, RefundListItemDto } from './dto';
 
-/** 환불 행 → API 응답. manualConfirmable 은 결제수단을 아는 호출자(관리자 상세)만 true 로 정한다. */
+/** 환불 행 → API 응답. manualConfirmable 은 결제수단을 아는 호출자(관리자 목록·상세)만 정한다. */
 export function toRefundResponse(refund: Refund, manualConfirmable = false): RefundResponseDto {
   return {
     id: refund.id,

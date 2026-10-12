@@ -42,7 +42,7 @@ describe('OrderEventsConsumer', () => {
     workflowGate: jest.Mocked<Pick<FulfillmentWorkflowGate, 'shouldEnqueueFo'>>;
     channelOrderChanges: jest.Mocked<Pick<ChannelOrderChangeService, 'handle'>>;
     cancelSettler: { settleCancelled: jest.Mock };
-    cancelRequests: { reject: jest.Mock; markStalled: jest.Mock };
+    cancelRequests: { recordSettlementFailure: jest.Mock };
     txInserts: Array<{ table: unknown; values: unknown }>;
     // Rows returned by the businessLinks idempotency guard's `select(...)` lookup. Empty by
     // default (no existing link); push a row to simulate a refund link already recorded.
@@ -98,7 +98,7 @@ describe('OrderEventsConsumer', () => {
       },
       channelOrderChanges: { handle: jest.fn().mockResolvedValue(undefined) },
       cancelSettler: { settleCancelled: jest.fn().mockResolvedValue(undefined) },
-      cancelRequests: { reject: jest.fn().mockResolvedValue(undefined), markStalled: jest.fn().mockResolvedValue(undefined) },
+      cancelRequests: { recordSettlementFailure: jest.fn().mockResolvedValue(undefined) },
       txInserts,
       businessLinkRows,
       fakeTx,
@@ -145,16 +145,6 @@ describe('OrderEventsConsumer', () => {
   }
 
   const envelope = { messageId: 'msg-1', correlationId: 'corr-1' } as EnvelopeOf<typeof ORDER_STREAM, 'OrderCreated'>;
-
-  it('거절·정체 사실은 요청 서비스로 그대로 넘긴다', async () => {
-    const mocks = makeMocks();
-    const consumer = makeConsumer(mocks);
-    const key = { requestId: 'req-1', salesChannel: 'medusa', externalOrderId: 'order_1' };
-    await consumer.handleChannelOrderCancelRejected({ ...key, reasonCode: 'NOT_CANCELABLE', message: 'x' } as any, { messageId: 'm1' } as any);
-    await consumer.handleChannelOrderCancelStalled({ ...key, stage: 'edited', message: 'y' } as any, { messageId: 'm2' } as any);
-    expect(mocks.cancelRequests.reject).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'req-1', reasonCode: 'NOT_CANCELABLE' }));
-    expect(mocks.cancelRequests.markStalled).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'req-1' }));
-  });
 
   it('새 SO + status=confirmed → createFromEvent 호출, grant 호출, orderEvents insert', async () => {
     const mocks = makeMocks();
@@ -408,7 +398,7 @@ describe('OrderEventsConsumer', () => {
     );
   });
 
-  it('전체 OrderCancelled 는 취소 뒤 열린 요청을 닫으러 간다', async () => {
+  it('전체 OrderCancelled 는 취소 뒤 정산 중 요청을 닫으러 간다', async () => {
     const mocks = makeMocks();
     const consumer = makeConsumer(mocks);
     mocks.salesOrders.findByChannelOrderId.mockResolvedValue({ id: 'so-1' } as any);

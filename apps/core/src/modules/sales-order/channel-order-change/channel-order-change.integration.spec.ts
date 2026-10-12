@@ -50,7 +50,7 @@ function wire(tx: DbTx) {
   const reader = new ChannelOrderChangeReader(salesOrders);
   const manager = new ChannelOrderChangeManager(reader, salesOrders, amendments, {
     get: () => outbound.planning,
-  } as never, new ChannelCancelSettler(new ChannelCancelRequestReader(), salesOrders));
+  } as never, new ChannelCancelSettler(new ChannelCancelRequestReader()));
   return { logistics, outbound, salesOrders, manager };
 }
 
@@ -260,7 +260,7 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
         w.salesOrders,
         new SalesOrderAmendmentsService(ambientDbService(tx)),
         { get: () => failingPlanning } as never,
-        new ChannelCancelSettler(new ChannelCancelRequestReader(), w.salesOrders),
+        new ChannelCancelSettler(new ChannelCancelRequestReader()),
       );
       await expect(
         manager.handle(seed.salesOrderId, payload(seed, { shippingAddress: NEXT }), `m-${randomUUID()}`, tx),

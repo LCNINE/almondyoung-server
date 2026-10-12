@@ -128,22 +128,6 @@ export const salesOrders = {
     return response.data;
   },
 
-  // 채널 취소 요청 다시 보내기·접기 (정체 보드 «취소 요청», #1016 35번)
-  resendCancelRequest: async (id: string): Promise<CancelRequestView> => {
-    const response = await client.post(
-      `${ALMONDYOUNG_API_BASE_URL}/sales-orders/${encodeURIComponent(id)}/cancel-request/resend`,
-      {}
-    );
-    return response.data;
-  },
-  withdrawCancelRequest: async (id: string): Promise<CancelRequestView> => {
-    const response = await client.post(
-      `${ALMONDYOUNG_API_BASE_URL}/sales-orders/${encodeURIComponent(id)}/cancel-request/withdraw`,
-      {}
-    );
-    return response.data;
-  },
-
   // 채널 취소 정산 조치(#1016 36번 재설계) — 정산 중 요청(settling)만
   retryCancelSettlement: async (id: string, requestId: string): Promise<CancelRequestView> => {
     const response = await client.post(

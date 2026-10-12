@@ -98,11 +98,6 @@ export interface StoreOrderActionsResponse {
   claimStatus: StoreClaimStatus
   availableActions: StoreOrderAction[]
   cancelUnavailableReason?: StoreCancelUnavailableReason
-  /**
-   * 채널 취소 요청 상태(#1016 35번). requested = 처리 중, rejected = 마지막 요청이 실패.
-   * 그 밖의 값은 처리 중으로 읽는다(`cancelOutcomeOf`) — core 가 먼저 값을 늘릴 수 있다
-   */
-  cancelRequestStatus?: "requested" | "rejected" | (string & {})
   /** 결제 상태. 무통장입금 미확인 시 'awaiting_payment', 확인 완료 시 'paid'. */
   paymentStatus?: "paid" | "awaiting_payment"
   refundSummary?: RefundSummary

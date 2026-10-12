@@ -640,7 +640,7 @@ function BusinessTimelineModal({
               <div className="mt-4 border-t px-1 pt-3">
                 <p className="mb-2 text-sm font-medium">취소 요청</p>
                 {requests.map((view) => (
-                  <div key={view.id} className={view.status === 'requested' ? 'mb-1 text-sm text-amber-700' : 'mb-1 text-sm text-muted-foreground'}>
+                  <div key={view.id} className="mb-1 text-sm text-muted-foreground">
                     {cancelRequestLine(view)}
                   </div>
                 ))}
@@ -867,7 +867,7 @@ export default function OrderTable() {
                     <SettlementCell r={r} />
                   </>
                 )}
-                {/* 수동 정산 주문은 송금 뒤 [완료 처리]가 결제 상세에 있다(D7) — 아래 환불 상태 갈래가 이미 버튼을 띄우는 행은 건너뛴다 */}
+                {/* 수동 정산 주문은 송금 뒤 [완료 처리]가 환불 내역·결제 상세에 있다(D7, PR 6) — 아래 환불 상태 갈래가 이미 버튼을 띄우는 행은 건너뛴다 */}
                 {r.isFirstOfOrder &&
                   r.cancelRequest?.refundMode === 'manual' &&
                   !['failed', 'manual_pending', 'succeeded', 'pending'].includes(r.refundStatus ?? '') && (
@@ -916,13 +916,6 @@ export default function OrderTable() {
                   const action = cancelActionOf(r);
                   if (action.kind === 'seller_center') {
                     return <span className="text-[11px] text-gray-500 whitespace-normal leading-tight">{action.label}</span>;
-                  }
-                  if (action.kind === 'requested') {
-                    return (
-                      <span className="inline-flex items-center h-7 px-2 rounded border border-amber-200 bg-amber-50 text-xs text-amber-700 whitespace-nowrap">
-                        {action.label}
-                      </span>
-                    );
                   }
                   if (action.kind === 'settling') {
                     return (

@@ -63,7 +63,7 @@ export function SettlementActions(props: { salesOrderId: string; settlement: Set
               onClick={() =>
                 manual.mutate(target, {
                   onSuccess: () => {
-                    toast.success('계좌 송금으로 바꿨습니다. 송금 뒤 결제 상세에서 완료 처리해 주세요.');
+                    toast.success('계좌 송금으로 바꿨습니다. 송금 뒤 환불 내역에서 완료 처리해 주세요.');
                     setConfirming(false);
                   },
                   onError: (e) => toast.error(errorText(e, '바꾸지 못했습니다.')),

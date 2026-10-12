@@ -52,16 +52,17 @@ export class ChannelOrderChangeManager {
   async handle(salesOrderId: string, payload: OrderModifiedPayload, sourceEventId: string, tx: DbTx): Promise<void> {
     const order = await this.reader.lockEffectiveOrder(salesOrderId, tx);
     if (!order) throw new Error(`Sales order ${salesOrderId} vanished after resolve`);
-    // 열린 채널 취소 요청이 먹는 감소는 5번 규칙을 타지 않는다 — 우리가 요청한 변경이다(#1016 35번 §5.4).
+    // 정산 중 채널 취소 요청의 거울(채널이 아직 안 줄인 «늘어남»)은 5번 규칙을 타지 않는다 — 확정 때 이미 적용한 변경이다(#1016 36번 재설계 D10).
     const fullDiff = diffChannelSnapshot(order, payload.snapshot);
-    // 「전 라인 제거」 판정은 요청이 먹기 전 전체 diff 로 한다 — 부분 요청은 혼자서 전 라인을 지우지 않는다
-    // (남는 게 없으면 전체 범위로 나간다). 요청분 + 채널이 더 지운 분이 합쳐 0 이면 남은 델타를 ALL_LINES_REMOVED 로 세운다.
+    // 요청은 감소를 먹지 않는다 — core 는 확정 때 이미 줄였으니 감소는 유효 수량에 들어 있어 diff 에 «감소»로 나오지 않는다.
+    // 정산 중 부분 요청은 채널이 아직 취소를 반영하지 않았을 때의 거울 «늘어남»만 흡수한다(settleModified).
+    // 「전 라인 제거」 판정은 그 흡수 «전» 전체 diff 로 한다.
+    // 알려진 가장자리(범위 밖): 채널이 우리 부분취소를 반영하기 전에 남은 줄을 지우면 ALL_LINES_REMOVED 로 잡히지 않는다.
     const allRemoved = removesAllLines(order, fullDiff);
     const deltas = await this.cancelSettler.settleModified(
       salesOrderId,
       fullDiff,
-      payload.snapshot.cancelRequests ?? [],
-      payload.modifiedAt,
+      { cancelRequests: payload.snapshot.cancelRequests ?? [], orderCancelled: payload.snapshot.orderCancelled === true },
       tx,
     );
     const amendmentId = randomUUID();

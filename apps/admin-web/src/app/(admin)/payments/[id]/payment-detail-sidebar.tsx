@@ -9,6 +9,7 @@ import { usePaymentIntentDetail, useCaptureIntent, useCancelIntent, useRefundInt
 import { PaymentMethodTypeCell } from '@/components/table/table-cells/wallet/payment-method-type-cell';
 import { UserDetailGeneralContent } from '@/app/(admin)/users/[id]/user-detail-general';
 import { toast } from 'sonner';
+import { pendingRefundToast } from '@/lib/api/domains/wallet/refund-execution';
 import {
   Dialog,
   DialogContent,
@@ -157,7 +158,7 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
         return;
       }
       if (result.status === 'PENDING') {
-        toast.info('환불 대기 중: 무통장 입금 환불은 수동 송금이 필요합니다. 환불 내역에서 완료 처리해 주세요.');
+        toast.info(pendingRefundToast(isBankTransfer));
         resetRefundForm();
         return;
       }

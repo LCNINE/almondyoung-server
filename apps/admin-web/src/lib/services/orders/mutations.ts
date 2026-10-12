@@ -1100,32 +1100,6 @@ export const useResyncChannelChange = () => {
   });
 };
 
-/** 정체 보드 «취소 요청» — 같은 requestId 로 명령을 다시 낸다 (#1016 35번) */
-export const useResendCancelRequest = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (salesOrderId: string) =>
-      orders.salesOrders.resendCancelRequest(salesOrderId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['order-progress'] });
-      queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
-    },
-  });
-};
-
-/** 정체 보드 «취소 요청» — 요청을 접어 보류를 푼다 */
-export const useWithdrawCancelRequest = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (salesOrderId: string) =>
-      orders.salesOrders.withdrawCancelRequest(salesOrderId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['order-progress'] });
-      queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
-    },
-  });
-};
-
 /** 채널 취소 정산 [다시 시도] (#1016 36번 재설계) */
 export const useRetryCancelSettlement = () => {
   const queryClient = useQueryClient();

@@ -35,7 +35,7 @@ describe('stillInSituation — 실행 직전 재판정 게이트(스펙 D12)', (
   });
 
   it('채널 취소 요청이 끼어들었으면 막는다', () => {
-    expect(stillInSituation(awaiting, judged({ stage: 'cancel_request', state: 'cancel_requested' }))).toBe(false);
+    expect(stillInSituation(awaiting, judged({ stage: 'cancel_request', state: 'settle_refused' }))).toBe(false);
   });
 
   it('판정 결과가 없으면(주문이 사라짐) 막는다', () => {

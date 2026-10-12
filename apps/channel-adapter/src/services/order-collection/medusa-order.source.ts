@@ -80,6 +80,7 @@ export class MedusaOrderSource implements ReplayableChannelOrderSource {
       shippingAddress: this.buildShippingAddress(order),
       ...(entrancePassword ? { entrancePassword } : {}),
       ...(cancelRequests.length > 0 ? { cancelRequests } : {}),
+      ...(order.status === 'canceled' ? { orderCancelled: true as const } : {}),
       createdAt: order.created_at ?? new Date().toISOString(),
       lifecycle,
       raw: order as unknown as Record<string, unknown>,

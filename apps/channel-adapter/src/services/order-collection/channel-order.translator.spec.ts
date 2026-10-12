@@ -376,6 +376,17 @@ describe('ChannelOrderTranslator — 변경 해시 입력의 모양', () => {
     expect(withRecord.outcome.order.modification.cancelRequests).toEqual([record]);
   });
 
+  it('orderCancelled 는 modification 에만 실린다 — changes 는 해시 입력이라 넣지 않는다 (#1016 36번 PR 6)', async () => {
+    const { translator } = makeTranslator(LISTING);
+    const without = await translator.translate('naver', makeSnapshot());
+    const cancelled = await translator.translate('naver', makeSnapshot({ orderCancelled: true }));
+    if (without.outcome.kind !== 'order' || cancelled.outcome.kind !== 'order') throw new Error('unreachable');
+
+    expect('orderCancelled' in without.outcome.order.modification).toBe(false);
+    expect(cancelled.outcome.order.modification.orderCancelled).toBe(true);
+    expect('orderCancelled' in cancelled.outcome.order.changes).toBe(false);
+  });
+
   /**
    * `allLinesTotal` 을 내지 않는 source 가 Medusa 다. 폴백이 사라지면 Medusa 의 해시 입력이
    * 바뀌어 배포 직후 한 주기의 주문이 전부 `collected_order_modification_not_accepted` 로
