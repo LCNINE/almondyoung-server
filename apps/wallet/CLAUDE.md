@@ -84,7 +84,12 @@
 - **수동 실행(`execution = MANUAL`)**: `POST /v1/payment-intents/:id/refund` 에 `execution: 'MANUAL'`. 계획(남은 금액 비례·외부 먼저·포인트 마지막)은 자동과 같고,
   외부 결제 몫만 PG 를 부르지 않고 `PENDING` 행으로 남는다. 포인트 몫은 자동. 운영자가 송금한 뒤 `confirmManual` 로 닫는다
 - `confirmManual` 이 받는 행은 `isManuallyConfirmable` 한 곳이 정한다(무통장 PENDING 또는 MANUAL PENDING). 관리자 상세의 `manualConfirmable` 도 같은 함수다
-- **응답 끊긴 환불(`FAILED`·`PROVIDER_EXCEPTION`·AUTO, 14일 안)은 새 행이 아니라 같은 행·같은 멱등 키로 다시 보낸다** — `RefundsService.create()` 가 잠금 안에서 되살려 `dispatch` 한다. 새 행은 새 키라 토스가 같은 돈을 두 번 보낸다. 금액이 다른 요청은 옛 행만 확정하고 `AMBIGUOUS_REFUND_RESOLVED` 로 거절, 무통장은 계좌가 없으면 `AMBIGUOUS_REFUND_NEEDS_ACCOUNT`
+- **돈이 나갔는지 모르는 환불은 새 행을 만들지 않는다.** 멱등 키가 행 id(`wallet:refund:<id>`)라 새 행 = 새 키 = 토스가 같은 돈을 또 보낸다
+- **응답 끊긴 환불(`FAILED`·`PROVIDER_EXCEPTION`·AUTO, 14일 안)**: `createByIntent` 가 돈이 움직이기 «전에» 의도 전체에서 먼저 확인한다(`settleAmbiguousBeforePlan`)
+  - 빠른 길: 그런 행이 정확히 하나이고 계획이 그 결제 한 다리·같은 금액이면 `create()` 가 그 행을 같은 키로 다시 보낸다
+  - 그 외: 해당 행을 전부 다시 보내고 요청은 `AMBIGUOUS_REFUND_RESOLVED` / `AMBIGUOUS_REFUND_UNRESOLVED`(일시)로 거절해 호출자가 장부를 다시 맞추게 한다. 무통장 행에 계좌가 없으면 `AMBIGUOUS_REFUND_NEEDS_ACCOUNT`(영구). 전부 MANUAL 인 계획은 이 확인을 건너뛴다
+- **멈춘 AUTO PENDING(30분, TOSS·POINTS, 14일 안)**: `refund-stuck-resend` 크론(`@CronOnce` 5분)이 같은 행을 다시 보낸다. 선점은 `updated_at < now-30분` 조건부 UPDATE(등호 아님 — `defaultNow()` µs 와 JS ms 가 어긋난다)
+- provider 가 PG 를 안 부른 PENDING 은 `RefundResult.manualTransfer` 를 붙이고 wallet 이 그 행을 `MANUAL` 로 적는다(무통장 계좌 없음 폴백)
 - `GET /v1/payment-intents/:id/refunds` — 환불 목록(상태 무관, 만든 순서). 정산 직전 장부 맞추기가 읽는다
 
 ### 멱등성
