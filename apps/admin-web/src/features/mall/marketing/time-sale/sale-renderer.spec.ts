@@ -98,7 +98,7 @@ describe('SaleRenderer', () => {
     expect(shelf?.options.rows).toBe(2);
     expect(shelf?.options.slots).toBe(10);
     expect(shelf?.options.badge).toBe('timesale');
-    expect(shelf?.options.membershipLabelOnly).toBe(true);
+    expect(shelf?.options.membershipLabelOnly).toBe(false);
     expect(settings.styles.main.mobile.components.at(-1)?.type).toBe(
       'carousel'
     );

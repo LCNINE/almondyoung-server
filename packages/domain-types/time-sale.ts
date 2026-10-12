@@ -226,7 +226,8 @@ export function defaultTimeSaleSettings(): TimeSaleSettings {
           c.options.imageCss = { backgroundColor: '#ffffff', maxWidth: '100%' };
           c.options.listCss = { justifyContent: 'start', rowGap: '24px' };
           c.options.headerCss = { margin: '16px 0 8px', fontSize: '14px', fontWeight: 700, lineHeight: '1.25' };
-          c.options.membershipLabelOnly = true;
+          // 일반 상품 카드처럼 멤버십가 금액과 「가입 시 N원 절약」까지 보인다.
+          c.options.membershipLabelOnly = false;
           c.options.footerCss = { fontSize: '17px', fontWeight: 700 };
           c.options.discountCss = { color: '#f04452' };
           c.options.pageCss = { minWidth: '36px', padding: '6px 8px', borderRadius: '6px', color: '#757575' };

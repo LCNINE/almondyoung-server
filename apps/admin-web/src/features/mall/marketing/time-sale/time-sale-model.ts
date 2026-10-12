@@ -28,7 +28,11 @@ export type TimeSaleRow = {
   membershipSalePrice: number | null;
 };
 
-export type RowError = { variantId: string; message: string };
+/** `warning` 은 표시만 하고 저장은 막지 않는다(세일가가 판매가 이상 — 판매가가 나중에 바뀐 경우 등). */
+export type RowError = { variantId: string; message: string; warning?: true };
+
+/** 저장을 막는 오류만. 서버가 거절하거나 잘못된 가격이 만들어지는 경우다. */
+export const blockingErrors = (errors: RowError[]) => errors.filter((error) => !error.warning);
 
 export type SaleRowsSummary = {
   total: number;
@@ -177,7 +181,8 @@ export function validateRows(rows: TimeSaleRow[]): RowError[] {
     if (row.generalSalePrice >= row.basePrice) {
       errors.push({
         variantId: row.variantId,
-        message: `세일가는 정가(${row.basePrice.toLocaleString()}원)보다 낮아야 합니다.`,
+        message: `세일가가 정가(${row.basePrice.toLocaleString()}원) 이상입니다.`,
+        warning: true,
       });
     }
     if (row.membershipBasePrice !== null && row.membershipSalePrice !== null) {
@@ -189,7 +194,8 @@ export function validateRows(rows: TimeSaleRow[]): RowError[] {
       } else if (row.membershipSalePrice >= row.membershipBasePrice) {
         errors.push({
           variantId: row.variantId,
-          message: `멤버십 세일가는 멤버십가(${row.membershipBasePrice.toLocaleString()}원)보다 낮아야 합니다.`,
+          message: `멤버십 세일가가 멤버십가(${row.membershipBasePrice.toLocaleString()}원) 이상입니다.`,
+          warning: true,
         });
       }
     }
@@ -216,6 +222,7 @@ export type TimeSaleWriteBody = {
   status: 'draft' | 'active';
   general_prices: Array<{ variant_id: string; amount: number }>;
   membership_prices: Array<{ variant_id: string; amount: number }>;
+  product_order?: string[];
 };
 
 /**
@@ -227,8 +234,11 @@ export function buildTimeSaleWriteBody(params: {
   period: TimeSalePeriod;
   status: 'draft' | 'active';
   rows: TimeSaleRow[];
+  /** 상품진열 순서. 빠지면 서버가 저장된 순서를 유지한다. */
+  productOrder?: string[];
 }): TimeSaleWriteBody {
   return {
+    ...(params.productOrder ? { product_order: params.productOrder } : {}),
     title: params.title.trim(),
     starts_at: params.period.startsAt,
     ends_at: params.period.endsAt,

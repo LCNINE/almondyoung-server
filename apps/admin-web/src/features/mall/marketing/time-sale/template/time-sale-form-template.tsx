@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
 import { Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +11,7 @@ import {
   useCreateTimeSale,
   useTimeSaleDetail,
   useTimeSaleProductRows,
+  useTimeSaleProductMeta,
   useUpdateTimeSale,
 } from '@/lib/services/time-sale';
 import {
@@ -19,13 +19,28 @@ import {
   applySavedSalePrices,
   summarizeSaleRows,
   validateRows,
+  blockingErrors,
   shortSaleNumber,
   resolveTimeSaleStatus,
   TIME_SALE_STATUS_LABEL,
   type TimeSaleRow,
 } from '../time-sale-model';
-import { TimeSaleWorkspace } from '../components/time-sale-workspace';
+import {
+  TimeSaleWorkspace,
+  saleToast,
+} from '../components/time-sale-workspace';
 import { TimeSaleDialog } from '../components/time-sale-dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { TimeSaleDisplayTable } from '../components/time-sale-display-table';
 import { TimeSaleProductPicker } from '../components/time-sale-product-picker';
 import { TimeSaleSelectedList } from '../components/time-sale-selected-list';
 import { TimeSalePriceEditor } from '../components/time-sale-price-editor';
@@ -109,7 +124,14 @@ export default function TimeSaleFormTemplate({
   const { data: detail, isLoading: loadingDetail } = useTimeSaleDetail(
     timeSaleId ?? null
   );
-  const { data: loadedRows, isFetching } = useTimeSaleProductRows(selectedIds);
+  const {
+    data: loadedRows,
+    isFetching,
+    refetch: refetchRows,
+  } = useTimeSaleProductRows(selectedIds);
+  const { data: productMeta, refetch: refetchMeta } = useTimeSaleProductMeta(
+    part === 'products' ? selectedIds : []
+  );
   const createTimeSale = useCreateTimeSale();
   const updateTimeSale = useUpdateTimeSale();
 
@@ -138,13 +160,25 @@ export default function TimeSaleFormTemplate({
     return loadedRows.map((row) => edited.get(row.variantId) ?? row);
   }, [loadedRows, rows]);
 
-  const errors = validateRows(mergedRows);
+  const allErrors = validateRows(mergedRows);
+  const errors = blockingErrors(allErrors);
   const errorByVariant = new Map(
-    errors.map((error) => [error.variantId, error.message])
+    allErrors.map((error) => [error.variantId, error.message])
   );
   const saleSummary = summarizeSaleRows(mergedRows);
 
+  // 저장하지 않은 변경이 있는지. 닫거나 나갈 때 확인을 받는다.
+  const [dirty, setDirty] = useState(false);
+  const [leaveAsk, setLeaveAsk] = useState(false);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
+
   const toggleProduct = (productId: string) => {
+    setDirty(true);
     setSelectedIds((prev) =>
       prev.includes(productId)
         ? prev.filter((id) => id !== productId)
@@ -153,6 +187,7 @@ export default function TimeSaleFormTemplate({
   };
 
   const toggleMany = (productIds: string[], next: boolean) => {
+    setDirty(true);
     setSelectedIds((prev) => {
       const kept = prev.filter((id) => !productIds.includes(id));
       return next ? [...kept, ...productIds] : kept;
@@ -175,13 +210,14 @@ export default function TimeSaleFormTemplate({
   const fillByPercent = () => {
     const value = Number(percent);
     if (!isValidPercent(value)) {
-      toast.error('할인율은 1~99 사이여야 합니다.');
+      saleToast('할인율은 1~99 사이여야 합니다.', true);
       return;
     }
     if (membershipPercentInvalid) {
-      toast.error('멤버십 할인율은 1~99 사이여야 합니다.');
+      saleToast('멤버십 할인율은 1~99 사이여야 합니다.', true);
       return;
     }
+    setDirty(true);
     setRows(
       applyPercentDiscount(
         mergedRows,
@@ -194,11 +230,30 @@ export default function TimeSaleFormTemplate({
   const isPending = createTimeSale.isPending || updateTimeSale.isPending;
 
   const close = onClose ?? (() => router.push(TIME_SALE_LIST_PATH));
+  const requestClose = () => (dirty ? setLeaveAsk(true) : close());
   const showInfo = part !== 'products';
   const showProducts = part !== 'info';
   // 수정은 저장된 세일가까지 다 읽은 뒤에만 저장한다 — 덜 읽은 채 저장하면 가격이 지워진다.
   const ready =
     !isEdit || (!!detail && (detail.productIds.length === 0 || pricesApplied));
+  const saleStatus = detail
+    ? resolveTimeSaleStatus(detail.period, new Date(), detail.status)
+    : null;
+  // 상품진열 줄마다 넘기므로 고정한다 — 매번 새로 만들면 230개 줄이 입력마다 다시 그려진다.
+  const statusNode = useMemo(
+    () =>
+      saleStatus === null ? null : saleStatus === 'draft' ? (
+        <span className="ts-status">비공개</span>
+      ) : (
+        <>
+          <span className="ts-status ts-status-active">공개</span>
+          <span className="ts-status-detail">
+            ({TIME_SALE_STATUS_LABEL[saleStatus]})
+          </span>
+        </>
+      ),
+    [saleStatus]
+  );
   const heading =
     part === 'products' ? (
       <>
@@ -206,25 +261,7 @@ export default function TimeSaleFormTemplate({
         <span className="ts-status-detail">
           {detail ? shortSaleNumber(detail.id) : ''} : {detail?.title ?? ''}
         </span>
-        ]{' '}
-        {detail &&
-          (() => {
-            const status = resolveTimeSaleStatus(
-              detail.period,
-              new Date(),
-              detail.status
-            );
-            return status === 'draft' ? (
-              <span className="ts-status">비공개</span>
-            ) : (
-              <>
-                <span className="ts-status ts-status-active">공개</span>
-                <span className="ts-status-detail">
-                  ({TIME_SALE_STATUS_LABEL[status]})
-                </span>
-              </>
-            );
-          })()}
+        ] {statusNode}
       </>
     ) : isEdit ? (
       '타임 세일 수정'
@@ -234,18 +271,18 @@ export default function TimeSaleFormTemplate({
 
   const submit = async () => {
     if (!title.trim() || !startsAt || !endsAt) {
-      toast.error('세일 이름과 기간을 입력하세요.');
+      saleToast('세일 이름과 기간을 입력하세요.', true);
       return;
     }
     if (
       new Date(endsAt).getTime() - new Date(startsAt).getTime() <
       MIN_PERIOD_MS
     ) {
-      toast.error('종료 시각은 시작 시각보다 5분 이상 뒤여야 합니다.');
+      saleToast('종료 시각은 시작 시각보다 5분 이상 뒤여야 합니다.', true);
       return;
     }
     if (!part && saleSummary.filled === 0) {
-      toast.error('세일가를 입력한 품목이 하나도 없습니다.');
+      saleToast('세일가를 입력한 품목이 하나도 없습니다.', true);
       return;
     }
 
@@ -262,12 +299,15 @@ export default function TimeSaleFormTemplate({
           period,
           status: detail.status,
           rows: mergedRows,
+          ...(part === 'products' ? { productOrder: selectedIds } : {}),
         });
-        toast.success(
-          part === 'products'
-            ? '상품진열을 적용하였습니다.'
-            : '타임세일이 수정되었습니다.'
-        );
+        setDirty(false);
+        // 상품진열은 이어서 고칠 수 있게 닫지 않는다.
+        if (part === 'products') {
+          saleToast('진열 적용을 완료했습니다.');
+          return;
+        }
+        saleToast('타임세일이 수정되었습니다.');
       } else {
         await createTimeSale.mutateAsync({
           title: title.trim(),
@@ -276,16 +316,18 @@ export default function TimeSaleFormTemplate({
           status: part ? 'draft' : 'active',
           rows: mergedRows,
         });
-        toast.success('타임세일이 등록되었습니다.');
+        saleToast('타임세일이 등록되었습니다.');
       }
+      setDirty(false);
       close();
     } catch (error) {
-      toast.error(
+      saleToast(
         error instanceof TimeSaleValidationError
           ? error.message
           : isEdit
             ? '타임세일 수정에 실패했습니다.'
-            : '타임세일 등록에 실패했습니다.'
+            : '타임세일 등록에 실패했습니다.',
+        true
       );
     }
   };
@@ -304,7 +346,10 @@ export default function TimeSaleFormTemplate({
               <input
                 aria-label="명칭"
                 value={title}
-                onChange={(event) => setTitle(event.target.value)}
+                onChange={(event) => {
+                  setDirty(true);
+                  setTitle(event.target.value);
+                }}
               />
             </fieldset>
             <div className="ts-span-all">
@@ -316,7 +361,10 @@ export default function TimeSaleFormTemplate({
                     step={1}
                     aria-label="시작"
                     value={startsAt}
-                    onChange={(event) => setStartsAt(event.target.value)}
+                    onChange={(event) => {
+                      setDirty(true);
+                      setStartsAt(event.target.value);
+                    }}
                   />
                   ~
                   <input
@@ -324,7 +372,10 @@ export default function TimeSaleFormTemplate({
                     step={1}
                     aria-label="종료"
                     value={endsAt}
-                    onChange={(event) => setEndsAt(event.target.value)}
+                    onChange={(event) => {
+                      setDirty(true);
+                      setEndsAt(event.target.value);
+                    }}
                   />
                 </div>
               </fieldset>
@@ -335,37 +386,40 @@ export default function TimeSaleFormTemplate({
           </div>
         )}
 
-        {showProducts && part === 'products' && (
-          <div className="ts-list-toolbar">
-            <span className="ts-count">{selectedIds.length}</span>
-            <div className="ts-toolbar-spacer" />
-            <button
-              type="button"
-              className="ts-button"
-              onClick={() => setAdding((value) => !value)}
-            >
-              <Plus size={16} />
-              상품 추가
-            </button>
-          </div>
-        )}
-
         {part === 'products' && (
-          <>
-            <TimeSaleSelectedList
-              rows={mergedRows}
-              isLoading={isFetching && selectedIds.length > 0}
-              onRemove={toggleProduct}
-            />
-            {adding && (
+          <TimeSaleDisplayTable
+            productIds={selectedIds}
+            rows={mergedRows}
+            meta={productMeta}
+            status={statusNode}
+            errorByVariant={errorByVariant}
+            adding={adding}
+            onToggleAdding={() => setAdding((value) => !value)}
+            onRefresh={() => {
+              void refetchRows();
+              void refetchMeta();
+            }}
+            onReorder={(next) => {
+              setDirty(true);
+              setSelectedIds(next);
+            }}
+            onRemove={(ids) => {
+              setDirty(true);
+              setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)));
+            }}
+            onRowsChange={(next) => {
+              setDirty(true);
+              setRows(next);
+            }}
+            picker={
               <TimeSaleProductPicker
                 selectedIds={selectedIds}
                 onToggle={toggleProduct}
                 onToggleMany={toggleMany}
                 excludeId={timeSaleId}
               />
-            )}
-          </>
+            }
+          />
         )}
 
         {!part && (
@@ -388,7 +442,7 @@ export default function TimeSaleFormTemplate({
           </Section>
         )}
 
-        {showProducts && mergedRows.length > 0 && (
+        {!part && mergedRows.length > 0 && (
           <Section
             step={2}
             title="세일가"
@@ -445,7 +499,10 @@ export default function TimeSaleFormTemplate({
               errorByVariant={errorByVariant}
               membershipPercent={resolvedMembershipPercent}
               disabled={membershipPercentInvalid}
-              onChange={setRows}
+              onChange={(next) => {
+                setDirty(true);
+                setRows(next);
+              }}
             />
 
             <p className="text-muted-foreground text-xs">
@@ -485,17 +542,45 @@ export default function TimeSaleFormTemplate({
     </button>
   );
 
+  const leaveDialog = (
+    <AlertDialog open={leaveAsk} onOpenChange={setLeaveAsk}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>저장하지 않은 변경사항이 있습니다</AlertDialogTitle>
+          <AlertDialogDescription className="break-keep">
+            닫으면 변경한 내용이 사라집니다. 저장하려면 [계속 편집]을 누른 뒤
+            저장하세요.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>계속 편집</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              setDirty(false);
+              close();
+            }}
+          >
+            저장하지 않고 닫기
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+
   if (onClose) {
     return (
-      <TimeSaleDialog
-        open
-        title={heading}
-        onClose={onClose}
-        footer={submitButton}
-        width={part === 'products' ? 1250 : 900}
-      >
-        {body}
-      </TimeSaleDialog>
+      <>
+        <TimeSaleDialog
+          open
+          title={heading}
+          onClose={requestClose}
+          footer={submitButton}
+          width={part === 'products' ? 1500 : 900}
+        >
+          {body}
+        </TimeSaleDialog>
+        {leaveDialog}
+      </>
     );
   }
 
@@ -511,11 +596,12 @@ export default function TimeSaleFormTemplate({
           <button
             type="button"
             className="ts-button ts-button-neutral"
-            onClick={close}
+            onClick={requestClose}
           >
             닫기
           </button>
         </footer>
+        {leaveDialog}
       </div>
     </TimeSaleWorkspace>
   );

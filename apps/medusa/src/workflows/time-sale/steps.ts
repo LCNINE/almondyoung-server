@@ -185,6 +185,7 @@ export const createTimeSaleRowStep = createStep(
       starts_at: new Date(input.starts_at),
       ends_at: new Date(input.ends_at),
       status: input.status,
+      product_order: input.product_order ?? [],
     });
     return new StepResponse({ id: row.id as string }, row.id as string);
   },
@@ -205,6 +206,7 @@ export const updateTimeSaleRowStep = createStep(
       starts_at: new Date(data.input.starts_at),
       ends_at: new Date(data.input.ends_at),
       status: data.input.status,
+      ...(data.input.product_order ? { product_order: data.input.product_order } : {}),
     });
     return new StepResponse({ id: data.id }, before);
   },
@@ -217,6 +219,7 @@ export const updateTimeSaleRowStep = createStep(
       starts_at: new Date(before.starts_at),
       ends_at: new Date(before.ends_at),
       status: before.status,
+      product_order: before.product_order,
     });
   },
 );

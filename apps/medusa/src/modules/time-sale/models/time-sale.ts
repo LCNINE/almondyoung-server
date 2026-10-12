@@ -17,6 +17,8 @@ const TimeSale = model.define(
     ends_at: model.dateTime(),
     // draft 는 연결된 price list 도 draft 라 가격 계산에서 빠진다 — 고객에게 안 보인다.
     status: model.enum(['draft', 'active']).default('draft'),
+    // 상품진열 순서(product id). 비어 있으면 쇼핑몰은 판매순 → 리뷰순 → 최신순으로 그린다.
+    product_order: model.array().default([]),
   },
 );
 

@@ -1,6 +1,7 @@
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import type { MedusaContainer } from '@medusajs/framework/types';
 import type { TimeSaleRecord } from '../modules/time-sale/service';
+import { orderByProductOrder } from '../workflows/time-sale/rules';
 
 // ── 경계 크론용 (price list 기준) ──────────────────────────────────────────────
 // 가격 엔진은 price list 의 starts_at/ends_at/status 를 읽는다. 워크플로가 time_sale 값을 리스트에 맞춰
@@ -174,7 +175,7 @@ async function loadSales(container: MedusaContainer, filters: Record<string, unk
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
   const { data } = await query.graph({
     entity: 'time_sale',
-    fields: ['id', 'title', 'status', 'starts_at', 'ends_at', 'price_lists.id'],
+    fields: ['id', 'title', 'status', 'starts_at', 'ends_at', 'product_order', 'price_lists.id'],
     filters,
   });
   return data as unknown as SaleWithLists[];
@@ -241,7 +242,7 @@ export async function listAdminTimeSales(
         status: sale.status,
         startsAt: iso(sale.starts_at),
         endsAt: iso(sale.ends_at),
-        productIds: [...productIds],
+        productIds: orderByProductOrder([...productIds], sale.product_order ?? []),
         generalPrices,
         membershipPrices,
       };
@@ -292,7 +293,12 @@ export async function listActiveStoreTimeSales(container: MedusaContainer): Prom
     }
   }
 
-  const categoryIds = await loadCategoryIds(container, ordered);
+  // 운영자가 상품진열 순서를 정한 세일의 상품이 앞에 온다(종료 빠른 세일부터). 나머지는 판매순 그대로.
+  const products = orderByProductOrder(
+    ordered,
+    sales.flatMap((sale) => sale.product_order ?? []),
+  );
+  const categoryIds = await loadCategoryIds(container, products);
 
   return {
     timeSales: sales.map((sale) => ({
@@ -300,9 +306,12 @@ export async function listActiveStoreTimeSales(container: MedusaContainer): Prom
       startsAt: iso(sale.starts_at),
       endsAt: iso(sale.ends_at),
       priceListIds: sale.price_lists.map((p) => p.id),
-      productIds: [...new Set(sale.price_lists.flatMap((p) => productsByList.get(p.id) ?? []))],
+      productIds: orderByProductOrder(
+        [...new Set(sale.price_lists.flatMap((p) => productsByList.get(p.id) ?? []))],
+        sale.product_order ?? [],
+      ),
     })),
-    products: ordered.map((id) => ({ id, categoryIds: categoryIds.get(id) ?? [] })),
+    products: products.map((id) => ({ id, categoryIds: categoryIds.get(id) ?? [] })),
   };
 }
 

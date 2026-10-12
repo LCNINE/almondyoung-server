@@ -12,6 +12,20 @@ export interface MedusaProductItem {
   variants?: Array<{ id: string; sku?: string | null }>;
 }
 
+/** 상품진열 표의 상품 정보(코드·진열·품절·이미지·상세 링크). */
+export interface MedusaProductMeta {
+  id: string;
+  handle: string;
+  status?: string;
+  thumbnail?: string | null;
+  variants?: Array<{
+    sku?: string | null;
+    manage_inventory?: boolean;
+    allow_backorder?: boolean;
+    inventory_quantity?: number | null;
+  }>;
+}
+
 export interface MedusaCategoryItem {
   id: string;
   name: string;
@@ -26,6 +40,20 @@ export interface MedusaCollectionItem {
 const readRequest = { timeout: 15_000, retry: 0 };
 
 export const medusaCatalogApi = {
+  getProductsMeta: async (ids: string[]) => {
+    const p = new URLSearchParams({
+      limit: String(ids.length),
+      fields:
+        'id,handle,status,thumbnail,variants.sku,variants.manage_inventory,variants.allow_backorder,+variants.inventory_quantity',
+    });
+    for (const id of ids) p.append('id', id);
+    const res = await client.get<{ products: MedusaProductMeta[] }>(
+      `${MEDUSA_BASE_URL}/admin/products?${p}`,
+      readRequest
+    );
+    return res.data.products;
+  },
+
   searchProducts: async (
     q?: string,
     options: { limit?: number; offset?: number; categoryId?: string } = {}

@@ -18,7 +18,20 @@ export type TimeSaleWriteInput = {
   status: TimeSaleStatus;
   general_prices: TimeSalePriceInput[];
   membership_prices: TimeSalePriceInput[];
+  /** 상품진열 순서. 빠지면 저장된 순서를 그대로 둔다. */
+  product_order?: string[];
 };
+
+/**
+ * 상품진열 순서대로 정렬한다. 순서에 있는 상품이 앞에 그 순서로 오고, 순서에 없는 상품은 뒤에
+ * 원래 순서(판매순 등) 그대로 붙는다 — 순서를 저장한 뒤 새로 담긴 상품이 사라지지 않게.
+ */
+export function orderByProductOrder(ids: string[], order: string[]): string[] {
+  const present = new Set(ids);
+  const ranked = [...new Set(order)].filter((id) => present.has(id));
+  const rankedSet = new Set(ranked);
+  return [...ranked, ...ids.filter((id) => !rankedSet.has(id))];
+}
 
 export const GENERAL_LIST_DESCRIPTION = '타임세일 (전체)';
 export const MEMBERSHIP_LIST_DESCRIPTION = '타임세일 (멤버십 구독자)';

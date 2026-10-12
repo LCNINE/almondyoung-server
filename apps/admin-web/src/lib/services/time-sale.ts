@@ -10,6 +10,7 @@ import {
   resolveTimeSaleStatus,
   toTimeSaleRows,
   validateRows,
+  blockingErrors,
   type TimeSalePeriod,
   type TimeSaleRow,
 } from '@/features/mall/marketing/time-sale/time-sale-model';
@@ -17,8 +18,10 @@ import {
 const timeSaleKeys = {
   all: ['time-sales'] as const,
   lists: () => [...timeSaleKeys.all, 'list'] as const,
-  products: (ids: string[]) => [...timeSaleKeys.all, 'products', ids] as const,
+  // 진열순서를 바꿔도 다시 받지 않게 키는 정렬한 id 로 만든다.
+  products: (ids: string[]) => [...timeSaleKeys.all, 'products', [...ids].sort()] as const,
   search: (params: unknown) => [...timeSaleKeys.all, 'search', params] as const,
+  meta: (ids: string[]) => [...timeSaleKeys.all, 'meta', [...ids].sort()] as const,
 };
 
 function useAllTimeSales() {
@@ -104,6 +107,15 @@ export function useTimeSaleProductRows(productIds: string[]) {
   });
 }
 
+export function useTimeSaleProductMeta(productIds: string[]) {
+  return useQuery({
+    queryKey: timeSaleKeys.meta(productIds),
+    queryFn: async () =>
+      new Map((await medusaCatalogApi.getProductsMeta(productIds)).map((product) => [product.id, product])),
+    enabled: productIds.length > 0,
+  });
+}
+
 export function useTimeSaleDetail(id: string | null) {
   const { data, isLoading } = useAllTimeSales();
   const sale = id ? data?.find((item) => item.id === id) : undefined;
@@ -125,10 +137,16 @@ export function useTimeSaleDetail(id: string | null) {
 
 export class TimeSaleValidationError extends Error {}
 
-type SaveInput = { title: string; period: TimeSalePeriod; status: 'draft' | 'active'; rows: TimeSaleRow[] };
+type SaveInput = {
+  title: string;
+  period: TimeSalePeriod;
+  status: 'draft' | 'active';
+  rows: TimeSaleRow[];
+  productOrder?: string[];
+};
 
 const toBody = (input: SaveInput) => {
-  const errors = validateRows(input.rows);
+  const errors = blockingErrors(validateRows(input.rows));
   if (errors.length > 0) throw new TimeSaleValidationError(`${errors.length}개 품목의 세일가를 고쳐야 합니다.`);
   return buildTimeSaleWriteBody(input);
 };

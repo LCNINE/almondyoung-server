@@ -1613,3 +1613,135 @@
     width: 100%;
   }
 }
+.ts-display-notice {
+  border-bottom: 1px solid #ddd;
+  box-shadow: 0 1px 3px #0002;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.ts-display-notice summary {
+  padding: 12px 14px;
+  cursor: pointer;
+}
+.ts-display-notice ul {
+  list-style: disc;
+  padding: 4px 14px 14px 46px;
+  line-height: 1.6;
+}
+.ts-notice-strong {
+  color: #d32f2f;
+  font-weight: 600;
+}
+.ts-display .ts-list-toolbar {
+  padding: 8px 0;
+}
+.ts-display-fill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: #555;
+}
+.ts-display-fill input,
+.ts-display-price input {
+  width: 72px;
+  border: 0;
+  border-bottom: 1px solid #999;
+  background: transparent;
+  font-size: 13px;
+  padding: 2px 0;
+}
+.ts-display-price input {
+  width: 80px;
+}
+.ts-display-price {
+  position: relative;
+  display: inline-block;
+  padding-bottom: 14px;
+}
+.ts-display-price small {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  font-size: 10px;
+  color: #888;
+  white-space: nowrap;
+}
+.ts-display-table {
+  min-width: 1400px;
+}
+.ts-display-table .ts-yes {
+  color: #1565c0;
+}
+.ts-display-table .ts-no {
+  color: #d32f2f;
+}
+.ts-display-thumb {
+  width: 34px;
+  height: 34px;
+  object-fit: cover;
+  margin: 0 auto;
+}
+.ts-display-detail {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid #999;
+  background: #fffbcc;
+  color: #212121;
+}
+.ts-display-name {
+  min-width: 260px;
+}
+.ts-display-options {
+  margin-top: 4px;
+  padding: 0 6px;
+  border: 1px solid #82b3ff;
+  border-radius: 3px;
+  font-size: 11px;
+  line-height: 18px;
+  color: #2684ff;
+}
+.ts-display-error {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #d32f2f;
+}
+.ts-display-variant td {
+  background: #fafafa;
+  height: 44px;
+}
+.ts-display-table .ts-status-detail {
+  display: block;
+}
+.ts-display-table th {
+  white-space: nowrap;
+}
+.ts-display-table td:not(.ts-name) {
+  white-space: nowrap;
+}
+.ts-display-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 8px;
+  font-size: 12px;
+  color: #555;
+  white-space: nowrap;
+}
+.ts-display-search input {
+  width: 200px;
+  border: 0;
+  border-bottom: 1px solid #999;
+  background: transparent;
+  font-size: 13px;
+  padding: 2px 0;
+}
+.ts-display-hit td {
+  background: #fff8c4;
+}
+.ts-display-note {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #555;
+}

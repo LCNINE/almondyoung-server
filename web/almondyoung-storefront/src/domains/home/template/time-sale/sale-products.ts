@@ -4,7 +4,10 @@ import { filterSoldOut } from "@/domains/products/components/product-card/quanti
 import { getProductPrice } from "@/lib/utils/get-product-price"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import type { TimeSale } from "@/lib/api/medusa/time-sale"
-import { getRequiresMembershipToPurchase } from "@/lib/utils/product-card"
+import {
+  getHideMembershipPriceForNonMembers,
+  getRequiresMembershipToPurchase,
+} from "@/lib/utils/product-card"
 import { isWelcomeMembershipProduct } from "@/lib/utils/welcome-membership"
 
 // 상품이 걸린 세일 기간. 세일이 여럿이면 먼저 끝나는 쪽 — 카드 배지가 실제보다 길게 남은 것처럼
@@ -79,6 +82,8 @@ export function buildSaleProducts({
             ? product.metadata.model_name
             : null,
         href: `/${countryCode}/products/${product.handle}`,
+        // 멤버십가 비공개 상품은 비회원에게 「멤버십 회원에게 가격 공개」를 보인다(상품 카드와 같은 기준).
+        membershipOnly: getHideMembershipPriceForNonMembers(product),
         price:
           typeof salePrice === "number" && Number.isFinite(salePrice)
             ? salePrice

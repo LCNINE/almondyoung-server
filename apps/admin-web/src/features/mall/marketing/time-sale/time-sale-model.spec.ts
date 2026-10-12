@@ -8,6 +8,7 @@ import {
   resolveTimeSaleStatus,
   saleVariantIds,
   validateRows,
+  blockingErrors,
   toTimeSaleRows,
   type TimeSaleRow,
 } from './time-sale-model';
@@ -80,14 +81,21 @@ describe('applyPercentDiscount', () => {
 });
 
 describe('validateRows', () => {
-  it('세일가가 정가 이상이면 막는다', () => {
+  // 판매가가 세일 뒤에 바뀌면 저장된 세일가가 판매가 이상이 된다. 막으면 순서 변경조차 저장이 안 된다.
+  it('세일가가 정가 이상이면 경고만 하고 저장은 막지 않는다', () => {
     const errors = validateRows([row({ generalSalePrice: 10000, membershipSalePrice: 7000 })]);
     expect(errors[0].message).toContain('정가');
+    expect(blockingErrors(errors)).toEqual([]);
   });
 
-  it('멤버십 세일가가 멤버십가 이상이면 막는다', () => {
+  it('멤버십 세일가가 멤버십가 이상이면 경고만 한다', () => {
     const errors = validateRows([row({ generalSalePrice: 9000, membershipSalePrice: 8000 })]);
     expect(errors[0].message).toContain('멤버십가');
+    expect(blockingErrors(errors)).toEqual([]);
+  });
+
+  it('0원 이하 세일가는 저장을 막는다', () => {
+    expect(blockingErrors(validateRows([row({ generalSalePrice: 0 })]))).toHaveLength(1);
   });
 
   // 빈 칸은 "이 품목은 세일에서 뺀다" 는 뜻이다. 상품 하나에 옵션이 백 개씩 딸려오는데 전부

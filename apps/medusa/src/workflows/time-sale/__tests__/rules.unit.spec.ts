@@ -1,6 +1,7 @@
 import {
   buildPriceListData,
   findConflictingSales,
+  orderByProductOrder,
   planTimeSaleUpdate,
   validateTimeSaleInput,
   type LinkedList,
@@ -18,6 +19,16 @@ const base: TimeSaleWriteInput = {
   ],
   membership_prices: [{ variant_id: 'v1', amount: 700 }],
 };
+
+describe('orderByProductOrder', () => {
+  it('puts ordered products first and keeps the rest in their original order', () => {
+    expect(orderByProductOrder(['a', 'b', 'c', 'd'], ['c', 'x', 'a'])).toEqual(['c', 'a', 'b', 'd']);
+  });
+
+  it('keeps the original order when nothing is ordered', () => {
+    expect(orderByProductOrder(['a', 'b'], [])).toEqual(['a', 'b']);
+  });
+});
 
 describe('validateTimeSaleInput', () => {
   it('passes a well-formed input', () => {
