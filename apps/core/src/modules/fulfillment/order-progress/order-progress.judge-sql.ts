@@ -157,8 +157,7 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
        ORDER BY x.sales_order_id, x.created_at ASC
     ),
     has_fo AS (SELECT DISTINCT sales_order_id FROM fo),
-    -- 채널 취소 요청(#1016 35번·36번 재설계). requested = 옛 행(출고 보류 중), settling = 확정됨·정산 중.
-    -- 한 주문에 여럿일 수 있다(정산 중 요청 둘) — 보류 중인 옛 행이 먼저, 그다음 나쁜 순(거절 > 지연 > 정산 중), 같으면 오래된 것.
+    -- 채널 취소 요청 — 확정됨·정산 중(#1016 36번 재설계). 한 주문에 여럿일 수 있다(정산 중 요청 둘) — 나쁜 순(거절 > 지연 > 정산 중), 같으면 오래된 것.
     -- «지연»은 저장하지 않는다 — 확정 시각(created_at) + SETTLE_DELAYED_AFTER_MS 로 여기서 정한다(D1).
     -- 정산 중은 주문 접기(보드)에서만 앞선다 — 상자 판정은 판매주문의 종료 사실(셀메이트 출고·취소·반품)을 그대로 지킨다(decided.base_rule).
     creq AS (
@@ -167,20 +166,17 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
         JOIN so ON so.id = a.sales_order_id
         CROSS JOIN LATERAL (
           SELECT CASE
-                   WHEN a.status = 'requested' AND a.metadata->'request'->>'stage' = 'edited' THEN 'cancel_edited'
-                   WHEN a.status = 'requested' THEN 'cancel_requested'
                    WHEN a.metadata->'settlement'->>'state' = 'refused' THEN 'settle_refused'
                    WHEN a.created_at < ${now} - make_interval(secs => ${SETTLE_DELAYED_AFTER_MS / 1000}) THEN 'settle_delayed'
                    ELSE 'settle_in_progress'
                  END AS state
         ) x
-       WHERE a.reason_code = ${CHANNEL_CANCEL_REQUEST_REASON} AND a.status IN ('requested', 'settling')
+       WHERE a.reason_code = ${CHANNEL_CANCEL_REQUEST_REASON} AND a.status = 'settling'
        ORDER BY a.sales_order_id,
-                CASE x.state WHEN 'cancel_requested' THEN 0 WHEN 'cancel_edited' THEN 0
-                             WHEN 'settle_refused' THEN 1 WHEN 'settle_delayed' THEN 2 ELSE 3 END,
+                CASE x.state WHEN 'settle_refused' THEN 1 WHEN 'settle_delayed' THEN 2 ELSE 3 END,
                 a.created_at
     ),
-    -- base_rule: 정산 중을 모르는 판정. 보류 중인 옛 요청(cancel_request)은 보류라 어디서나 맨 앞이다.
+    -- base_rule: 정산 중을 모르는 판정.
     decided_base AS (
       SELECT so.id, so.sales_channel, so.order_date, so.created_at AS so_created_at, so.updated_at AS so_updated_at,
              bl.status AS bl_status, bl.created_at AS bl_created_at,
@@ -190,7 +186,6 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
              (hf.sales_order_id IS NOT NULL) AS has_fo,
              cr.state AS creq_state, cr.created_at AS creq_at,
              CASE
-               WHEN cr.state IN ('cancel_requested', 'cancel_edited') THEN 'cancel_request'
                WHEN so.status IN ('shipped', 'delivered') THEN 'external_shipped'
                WHEN so.status IN ('cancelled', 'timeout')
                  AND (ob.sales_order_id IS NOT NULL OR orr.sales_order_id IS NOT NULL) THEN 'cancel_open'
@@ -217,7 +212,7 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
     -- cancel_settle 은 보류가 아니다 — 상자 규칙 제외(D16)에 넣지 않는다(order-reconcile.subject.ts, D5)
     decided AS (
       SELECT b.*,
-             CASE WHEN b.base_rule <> 'cancel_request' AND b.creq_state IS NOT NULL THEN 'cancel_settle' ELSE b.base_rule END AS rule
+             CASE WHEN b.creq_state IS NOT NULL THEN 'cancel_settle' ELSE b.base_rule END AS rule
         FROM decided_base b
     )
   `;
@@ -238,12 +233,12 @@ export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
            d.sales_channel,
            d.order_date AS ordered_at,
            CASE d.rule
-             WHEN 'cancel_request' THEN 'cancel_request' WHEN 'cancel_settle' THEN 'cancel_request' WHEN 'cancel_open' THEN 'cancel' WHEN 'return_exchange' THEN 'return_exchange'
+             WHEN 'cancel_settle' THEN 'cancel_request' WHEN 'cancel_open' THEN 'cancel' WHEN 'return_exchange' THEN 'return_exchange'
              WHEN 'accept' THEN 'accept' WHEN 'fo' THEN 'fo' WHEN 'unclassified' THEN 'unclassified'
              WHEN 'unit' THEN d.rep_stage ELSE NULL
            END AS stage,
            left(CASE d.rule
-             WHEN 'cancel_request' THEN d.creq_state WHEN 'cancel_settle' THEN d.creq_state
+             WHEN 'cancel_settle' THEN d.creq_state
              WHEN 'cancel_open' THEN coalesce(
                d.open_recovery_code,
                CASE WHEN d.has_open_box THEN 'open_shipment' ELSE 'open_reservation' END)
@@ -259,7 +254,7 @@ export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
            END AS outcome,
            to_char(
              (CASE d.rule
-                WHEN 'cancel_request' THEN d.creq_at WHEN 'cancel_settle' THEN d.creq_at
+                WHEN 'cancel_settle' THEN d.creq_at
                 WHEN 'cancel_open' THEN coalesce(d.cancel_at, d.so_updated_at)
                 WHEN 'return_exchange' THEN d.rx_at
                 WHEN 'accept' THEN d.so_created_at

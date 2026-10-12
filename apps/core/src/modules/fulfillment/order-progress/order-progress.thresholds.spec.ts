@@ -81,20 +81,13 @@ describe('세부 상태별 갇힘(#1016 36번 재설계 D6)', () => {
     expect(isStuck('cancel_request', ago(1), now, 'settle_refused')).toBe(true);
   });
 
-  it('옛 요청 상태는 단계 기준(5분) 그대로', () => {
-    expect(isStuck('cancel_request', ago(5 * 60_000 - 1), now, 'cancel_requested')).toBe(false);
-    expect(isStuck('cancel_request', ago(5 * 60_000 + 1), now, 'cancel_requested')).toBe(true);
-  });
-
   it('세부 상태가 없거나 덮어쓰기가 없으면 단계 기준', () => {
     expect(stuckAfterMs('fo', null)).toBe(DAY);
     expect(stuckAfterMs('fo', 'awaiting_matching')).toBe(DAY);
   });
 
   it('36번 규칙의 칸이 어휘에 있다', () => {
-    expect(ORDER_PROGRESS_STATES.cancel_request).toEqual(
-      expect.arrayContaining(['settle_in_progress', 'settle_delayed', 'settle_refused']),
-    );
+    expect(ORDER_PROGRESS_STATES.cancel_request).toEqual(['settle_in_progress', 'settle_delayed', 'settle_refused']);
   });
 });
 

@@ -245,61 +245,26 @@ describeIfDb('order-progress 판정 (PostgreSQL integration)', () => {
     expect(r).toMatchObject({ stage: null, outcome: 'cancelled' });
   });
 
-  it('열린 취소 요청 → cancel_request/cancel_requested, 진입 = 요청 시각(다른 단계보다 앞선다)', async () => {
-    const at = new Date('2026-10-06T02:50:00.000Z');
-    const r = await one(async (tx, w) => {
-      const o = await f.seedOrder(tx);
-      const fo = await f.seedFo(tx, w, o, { status: 'ready' });
-      await f.seedBox(tx, w, [fo.foItemId], { status: 'planned', plannedAt: new Date('2026-10-01T00:00:00.000Z') });
+  it('끝난(applied) 취소 요청은 단계에 영향 없음 — 요청 행이 없는 주문과 같은 판정', async () => {
+    const [withRow, without] = await judgeIn(async (tx) => {
+      const a = await f.seedOrder(tx);
       await tx.insert(wmsTables.salesOrderAmendments).values({
-        salesOrderId: o.salesOrderId,
-        amendmentKind: 'commercial',
-        reasonCode: 'CHANNEL_CANCEL_REQUEST',
-        deltas: [],
-        metadata: { request: { kind: 'cancel' } },
-        origin: 'operator',
-        status: 'requested',
-        createdAt: at,
-      });
-      return o.salesOrderId;
-    });
-    expect(r).toMatchObject({
-      stage: 'cancel_request',
-      state: 'cancel_requested',
-      outcome: null,
-      estimatedEnteredAt: at.toISOString(),
-    });
-  });
-
-  it('수정됨 · 환불 미완 → cancel_request/cancel_edited · 닫힌 요청은 단계에 영향 없음', async () => {
-    const edited = await one(async (tx) => {
-      const o = await f.seedOrder(tx);
-      await tx.insert(wmsTables.salesOrderAmendments).values({
-        salesOrderId: o.salesOrderId,
-        amendmentKind: 'commercial',
-        reasonCode: 'CHANNEL_CANCEL_REQUEST',
-        deltas: [],
-        metadata: { request: { kind: 'cancel', stage: 'edited' } },
-        origin: 'operator',
-        status: 'requested',
-      });
-      return o.salesOrderId;
-    });
-    expect(edited).toMatchObject({ stage: 'cancel_request', state: 'cancel_edited' });
-
-    const closed = await one(async (tx) => {
-      const o = await f.seedOrder(tx);
-      await tx.insert(wmsTables.salesOrderAmendments).values({
-        salesOrderId: o.salesOrderId,
+        salesOrderId: a.salesOrderId,
         amendmentKind: 'commercial',
         reasonCode: 'CHANNEL_CANCEL_REQUEST',
         deltas: [],
         origin: 'operator',
-        status: 'rejected',
+        status: 'applied',
       });
-      return o.salesOrderId;
+      const b = await f.seedOrder(tx);
+      return [a.salesOrderId, b.salesOrderId];
     });
-    expect(closed.stage).not.toBe('cancel_request');
+    expect(withRow.stage).not.toBe('cancel_request');
+    expect({ stage: withRow.stage, state: withRow.state, outcome: withRow.outcome }).toEqual({
+      stage: without.stage,
+      state: without.state,
+      outcome: without.outcome,
+    });
   });
 
   it('정산 중 — 취소된 판매주문이어도 종료가 아니라 cancel_request/settle_in_progress, 진입 = 확정 시각', async () => {
@@ -345,25 +310,6 @@ describeIfDb('order-progress 판정 (PostgreSQL integration)', () => {
       return o.salesOrderId;
     });
     expect(r.state).toBe('settle_refused');
-  });
-
-  it('옛 requested 행과 정산 중 행이 같이 있으면 옛 행(보류 중)이 대표', async () => {
-    const r = await one(async (tx) => {
-      const o = await f.seedOrder(tx);
-      await f.seedSettling(tx, o.salesOrderId, { createdAt: new Date('2026-10-06T02:55:00.000Z'), state: 'refused' });
-      await tx.insert(wmsTables.salesOrderAmendments).values({
-        salesOrderId: o.salesOrderId,
-        amendmentKind: 'commercial',
-        reasonCode: 'CHANNEL_CANCEL_REQUEST',
-        deltas: [],
-        metadata: { request: { kind: 'cancel' } },
-        origin: 'operator',
-        status: 'requested',
-        createdAt: new Date('2026-10-06T02:56:00.000Z'),
-      });
-      return o.salesOrderId;
-    });
-    expect(r.state).toBe('cancel_requested');
   });
 
   it('정산 중 부분취소의 남은 상자 — 상자 판정의 주문 규칙은 cancel_settle(상자 규칙 제외 아님)', async () => {

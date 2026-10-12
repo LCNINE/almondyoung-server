@@ -557,10 +557,6 @@ export class StoreSalesOrdersService {
     overrideRefundStatus?: StoreRefundStatus,
   ): Promise<StoreOrderActionsResponseDto> {
     const foRows = await this.loadFoRows(so.id);
-    // 취소된 주문엔 요청 상태를 싣지 않는다 — 끝난 일을 «처리 중»으로 보이게 하지 않으려는 것
-    const cancelRequest = so.status === 'cancelled' ? null : await this.cancelRequests.latestFor(so.id);
-    const cancelRequestStatus =
-      cancelRequest?.status === 'requested' || cancelRequest?.status === 'rejected' ? cancelRequest.status : undefined;
     const phaseInput = await this.loadFulfillmentPhaseInput(so.id, foRows);
     const { phase: fulfillmentStatus, progress } = deriveFulfillmentPhase(phaseInput);
     const shipmentProgress: ShipmentProgressDto | undefined = progress.total > 0 ? progress : undefined;
@@ -723,10 +719,6 @@ export class StoreSalesOrdersService {
           availableActions.push('exchange');
         }
       }
-    } else if (cancelRequestStatus === 'requested') {
-      // 채널 취소가 처리 중 — 다시 누르면 같은 요청을 돌려받을 뿐이다
-      availableActions.push('receipt');
-      cancelUnavailableReason = 'cancel_requested';
     } else if (isChannelOrder) {
       availableActions.push('receipt');
       cancelUnavailableReason = 'channel_order';
@@ -758,7 +750,6 @@ export class StoreSalesOrdersService {
       // 무통장입금 도입 시 Wallet intent status를 확인해 'awaiting_payment'로 분기한다.
       paymentStatus: so.walletIntentId ? 'paid' : undefined,
       channelInfo: isChannelOrder ? { channel: so.salesChannel, ...CHANNEL_CANCEL_URLS[so.salesChannel] } : undefined,
-      cancelRequestStatus,
     };
   }
 
