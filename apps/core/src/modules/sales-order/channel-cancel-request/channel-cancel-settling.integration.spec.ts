@@ -198,6 +198,34 @@ describeIfDb('정산 중 요청의 사실 받기 (DB integration, rollback-only)
     });
   });
 
+  it('정산 중 부분취소(refunded) + 채널이 남은 줄도 지움 — 요청은 applied, 남은 감소는 ALL_LINES_REMOVED 로 대기', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancelRequest(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: true });
+      // 줄 0(수량 2) 전부 — 줄 1 이 남아 부분이다. core 유효 수량은 (0,1)
+      const view = await w.manager.request(
+        { salesOrderId: seed.salesOrderId, lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 2 }], requester: OPERATOR, sourceKey: 'k1' },
+        tx,
+      );
+      await w.changes.handle(
+        seed.salesOrderId,
+        modifiedPayload(seed, {
+          quantities: [0, 0],
+          cancelRequests: [{ requestId: view.id, stage: 'refunded', refundAmount: 2000, shippingCharge: 0, shippingRefund: 0, shippingNotAdjusted: false }],
+        }),
+        'm-1',
+        tx,
+      );
+      expect((await rowOf(tx, view.id)).status).toBe('applied');
+      const channelRows = (await tx.select().from(wmsTables.salesOrderAmendments).where(eq(wmsTables.salesOrderAmendments.salesOrderId, seed.salesOrderId))).filter(
+        (a) => a.origin === 'channel',
+      );
+      expect(channelRows).toHaveLength(1);
+      expect(channelRows[0].status).toBe('pending');
+      expect(JSON.stringify(channelRows[0].deltas)).toContain('ALL_LINES_REMOVED');
+    });
+  });
+
   it('정산 실패 — 영구면 refused, 일시면 in_progress, 둘 다 마지막 실패를 적는다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { w, id } = await confirmFull(tx);
@@ -231,20 +259,7 @@ describeIfDb('정산 중 요청의 사실 받기 (DB integration, rollback-only)
     });
   });
 
-  it('옛 사실(Rejected·Stalled)은 settling 행에 닿지 않는다(PR 3 넘길 것 1)', async () => {
-    await inRollbackTx(db, async (tx) => {
-      const { w, id } = await confirmFull(tx);
-      await w.manager.recordSettlementFailure(failure(id), tx);
-      await w.manager.reject({ requestId: id, reasonCode: 'NOT_CANCELABLE', message: 'x' }, tx);
-      await w.manager.markStalled({ requestId: id }, tx);
-      const row = await rowOf(tx, id);
-      expect(row.status).toBe('settling');
-      expect(row.metadata).toMatchObject({ settlement: { state: 'refused' } });
-      expect(row.metadata).not.toHaveProperty('rejection');
-    });
-  });
-
-  it('정산이 끝난 요청·옛 requested 행·없는 id 에 온 정산 실패는 버린다', async () => {
+  it('정산이 끝난 요청·없는 id 에 온 정산 실패는 버린다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { w, seed, id } = await confirmFull(tx);
       await w.salesOrders.cancel(seed.salesOrderId, { cancelledBy: 'medusa', metadata: { sourceEventId: 'oc-1' } }, tx);

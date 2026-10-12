@@ -147,7 +147,7 @@ export class StoreSalesOrdersService {
     },
   ): Promise<AdminCancelResult> {
     const so = await this.findSoOrThrow({ id: orderId });
-    // 채널 주문은 채널이 환불하고 core 는 문지기다(ADR-0042) — 판정·기록·보류 뒤 명령. 마켓은 판매자센터로.
+    // 채널 주문은 채널이 환불하고 core 는 문지기다(ADR-0042·0044) — 판정·확정·기록 뒤 명령. 마켓은 판매자센터로.
     const route = channelCancelRoute(so.salesChannel);
     if (route === 'seller_center') throw new BadRequestException(sellerCenterMessage(so.salesChannel));
     if (route === 'command') {

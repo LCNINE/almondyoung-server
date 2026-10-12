@@ -6,6 +6,7 @@ import { SETTLEMENT_REISSUE_GRACE_MS, SETTLE_DELAYED_AFTER_MS, settlementDeadlin
 /** 요청 행의 reason_code — 이 값으로 변경 기록 안의 취소 요청을 가린다. */
 export const CHANNEL_CANCEL_REQUEST_REASON = 'CHANNEL_CANCEL_REQUEST';
 
+/** 'requested'·'rejected' 는 역사 값이다(#1016 36번 PR 6) — 쓰는 코드는 없고, check 가 허용하는 동안 읽다 던지지 않게 남긴다 */
 export type CancelRequestStatus = 'requested' | 'settling' | 'applied' | 'rejected' | 'superseded';
 
 export type CancelRequester =
@@ -54,11 +55,11 @@ const CancelRequestMetadataSchema = z.object({
     requestedBy: z.string().min(1),
     sourceKey: z.string().min(1),
     convertedFromFull: z.boolean().optional(),
-    /** ChannelOrderCancelStalled 또는 수집된 진행 기록이 «수정됨 · 환불 미완»이라고 알렸다 */
+    /** 옛 흐름(PR 6 전)의 «수정됨 · 환불 미완» 표지 — 역사 값 */
     stage: z.literal('edited').optional(),
     /** 부분취소의 물리 취소를 반영한 시각 — 환불보다 먼저 올 수 있다 */
     appliedAt: z.string().optional(),
-    /** 처음 낸 명령 그대로. [다시 보내기]가 같은 값을 다시 낸다 */
+    /** 처음 낸 명령 그대로. 리컨실러·[다시 시도]가 같은 값을 다시 낸다 */
     command: z.custom<CancelChannelOrderPayload>((value) => typeof value === 'object' && value !== null),
   }),
   rejection: z
@@ -130,9 +131,9 @@ export interface CancelRequestView {
     shippingNotAdjusted: boolean;
     externalRefundApplied?: number;
   } | null;
-  /** 정산 중(settling)일 때만. 옛 requested 행·끝난 행은 null */
+  /** 정산 중(settling)일 때만. 정산 전 흐름(PR 5 전) 행·끝난 행은 null */
   settlement: SettlementView | null;
-  /** 새 흐름(PR 5 뒤) 요청의 환불 방식. 옛 행은 null */
+  /** 새 흐름(PR 5 뒤) 요청의 환불 방식. 정산 전 흐름(PR 5 전) 행은 null */
   refundMode: SettlementMode | null;
 }
 

@@ -7,7 +7,6 @@ import { BatchControlledStockGuard } from '../../../inventory/core/services/batc
 import { FulfillmentInvariantService } from '../../services/fulfillment-invariant.service';
 import { WAYBILL_TERMINAL_STATUSES } from '../../waybill/waybill.constants';
 import { WaybillService } from '../../waybill/waybill.service';
-import { isCancelRequestedError } from '../../hold/cancel-request-hold';
 import { conflict } from './allocation.errors';
 import { assertProfileComplete, assertRecipientComplete } from './allocation.queries';
 import {
@@ -368,7 +367,6 @@ export async function describeStartBlockers(trx: DbTx, blockers: StartBlocker[])
     INBOUND_PENDING: 0,
     STOCK_SHORT: 1,
     WAYBILL_NOT_READY: 2,
-    CANCEL_REQUESTED: 3,
   };
   return blockers
     .map((blocker) => ({
@@ -385,14 +383,11 @@ export async function describeStartBlockers(trx: DbTx, blockers: StartBlocker[])
     );
 }
 
-/**
- * `assertDispatchable` 의 거절을 박스 사유로 바꾼다. 출고 보류(취소 요청, #1016 35번)는 송장 문제가 아니다 —
- * `WAYBILL_NOT_READY` 에 섞으면 현장이 «송장 재발급»으로 읽는다.
- */
+/** `assertDispatchable` 의 거절을 박스 사유로 바꾼다 — 송장이 준비되지 않았다. */
 export function dispatchBlocker(shipmentId: string, error: ConflictError): StartBlocker {
   return {
     shipmentId,
-    reason: isCancelRequestedError(error) ? 'CANCEL_REQUESTED' : 'WAYBILL_NOT_READY',
+    reason: 'WAYBILL_NOT_READY',
     shipmentLineId: null,
     skuId: null,
     requiredQty: null,

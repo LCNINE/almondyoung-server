@@ -2,7 +2,7 @@ import { eq, sql as drizzleSql } from 'drizzle-orm';
 import { ConflictError, NotFoundError } from '@app/shared';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
-import { seedChannelOrder, seedLegacyRequest, wireCancelRequest } from './__support__/cancel-request.fixtures';
+import { seedChannelOrder, wireCancelRequest } from './__support__/cancel-request.fixtures';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -135,14 +135,12 @@ describeIfDb('정산 조치 — 다시 시도·계좌 송금 (DB integration, ro
     });
   });
 
-  it('다른 주문의 요청 id·없는 id 는 404, 옛 requested 행은 409', async () => {
+  it('다른 주문의 요청 id·없는 id 는 404', async () => {
     await inRollbackTx(db, async (tx) => {
       const { w, seed, id } = await refused(tx);
       const other = await seedChannelOrder(tx, w, { withFo: true });
       await expect(w.manager.retrySettlement(other.salesOrderId, id, tx)).rejects.toBeInstanceOf(NotFoundError);
       await expect(w.manager.retrySettlement(seed.salesOrderId, 'nope', tx)).rejects.toBeInstanceOf(NotFoundError);
-      const legacy = await seedLegacyRequest(tx, other);
-      await expect(w.manager.retrySettlement(other.salesOrderId, legacy, tx)).rejects.toBeInstanceOf(ConflictError);
     });
   });
 

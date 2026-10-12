@@ -63,24 +63,8 @@ export class ChannelCancelRequestService {
     return this.manager.switchToManualRefund(salesOrderId, requestId);
   }
 
-  reject(fact: { requestId: string; reasonCode: string; message: string; unresolvedRefundAmount?: number }): Promise<void> {
-    return this.manager.reject(fact);
-  }
-
-  markStalled(fact: { requestId: string }): Promise<void> {
-    return this.manager.markStalled(fact);
-  }
-
   recordSettlementFailure(fact: SettlementFailedFact): Promise<void> {
     return this.manager.recordSettlementFailure(fact);
-  }
-
-  resend(salesOrderId: string): Promise<CancelRequestView> {
-    return this.manager.resend(salesOrderId);
-  }
-
-  withdraw(salesOrderId: string, operatorId: string | null): Promise<CancelRequestView> {
-    return this.manager.withdraw(salesOrderId, operatorId);
   }
 
   settlementFingerprint(salesOrderId: string, tx: DbTx): Promise<string> {
