@@ -1,4 +1,5 @@
 import { CustomError } from '@/lib/api/customError';
+import { defaultTimeSaleSettings } from '@packages/domain-types/time-sale';
 import {
   applyPercentDiscount,
   applySavedSalePrices,
@@ -10,6 +11,7 @@ import {
   validateRows,
   blockingErrors,
   toTimeSaleRows,
+  isDefaultStyleModified,
   type TimeSaleRow,
 } from './time-sale-model';
 
@@ -325,5 +327,27 @@ describe('readServerReason', () => {
     expect(readServerReason(new CustomError({ message: 'boom', statusCode: 500 }))).toBeNull();
     expect(readServerReason(new Error('Network Error'))).toBeNull();
     expect(readServerReason(undefined)).toBeNull();
+  });
+});
+
+describe('isDefaultStyleModified', () => {
+  it('초기값 그대로면 false, 키 순서만 달라도 false', () => {
+    const s = defaultTimeSaleSettings();
+    expect(isDefaultStyleModified(s, 'main', 'pc')).toBe(false);
+
+    const active = s.styles.main.pc;
+    s.styles.main.pc = Object.fromEntries(
+      Object.entries(active).reverse()
+    ) as typeof active;
+    expect(isDefaultStyleModified(s, 'main', 'pc')).toBe(false);
+  });
+
+  it('기본 id 에서 내용을 고치면 true, 저장된 스타일 id 면 false', () => {
+    const s = defaultTimeSaleSettings();
+    s.styles.main.pc.name = '바꾼 이름';
+    expect(isDefaultStyleModified(s, 'main', 'pc')).toBe(true);
+
+    s.styles.main.pc.id = 'style-1';
+    expect(isDefaultStyleModified(s, 'main', 'pc')).toBe(false);
   });
 });

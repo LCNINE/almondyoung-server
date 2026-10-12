@@ -6,7 +6,12 @@
  */
 
 import { isCustomError } from '@/lib/api/customError';
-import type { SalePlatform, SaleSurface, TimeSaleSettings } from '@packages/domain-types/time-sale';
+import {
+  defaultTimeSaleSettings,
+  type SalePlatform,
+  type SaleSurface,
+  type TimeSaleSettings,
+} from '@packages/domain-types/time-sale';
 
 export type TimeSaleStatus = 'draft' | 'scheduled' | 'active' | 'ended';
 
@@ -324,6 +329,29 @@ type StyleSettings = Pick<TimeSaleSettings, 'styles' | 'savedStyles'>;
 /** 면·기기별 기본 스타일의 id(`main-pc` 꼴). 라이브러리에 없는 활성 레이아웃이 쓴다. */
 export const defaultStyleId = (surface: SaleSurface, platform: SalePlatform) =>
   `${surface}-${platform}`;
+
+// 설정은 Store.metadata(jsonb)에 저장되어 키 순서가 바뀌므로 키를 정렬해 비교한다.
+const stableJson = (value: unknown): string =>
+  JSON.stringify(value, (_, v) =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]]))
+      : v
+  );
+
+/** 활성 레이아웃이 기본 스타일 id 인데 내용이 초기값과 다른지(드롭다운 「기본 (수정됨)」 표시용). */
+export function isDefaultStyleModified(
+  settings: StyleSettings,
+  surface: SaleSurface,
+  platform: SalePlatform
+) {
+  const active = settings.styles[surface][platform];
+
+  return (
+    active.id === defaultStyleId(surface, platform) &&
+    stableJson(active) !==
+      stableJson(defaultTimeSaleSettings().styles[surface][platform])
+  );
+}
 
 /** refetch 결과가 편집본을 덮으면 안 되는지. 편집 중이거나 revision 이 같으면 유지한다. */
 export function shouldKeepDraftOnRefetch(

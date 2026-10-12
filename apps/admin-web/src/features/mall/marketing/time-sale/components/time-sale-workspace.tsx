@@ -41,6 +41,7 @@ import {
 import {
   canDeleteSavedStyle,
   deleteSavedStyle,
+  isDefaultStyleModified,
   linkActiveStyle,
   saveNewStyle,
   shouldKeepDraftOnRefetch,
@@ -910,6 +911,8 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
   const layout = settings?.styles[surface][platform];
   const component = layout?.components.find((c) => c.id === selected);
   const hasShelf = !!layout?.components.some((c) => isShelf(c.type));
+  const defaultModified =
+    !!settings && isDefaultStyleModified(settings, surface, platform);
 
   const changeLayout = (run: (l: NonNullable<typeof layout>) => void) =>
     update((s) => run(s.styles[surface][platform]));
@@ -2199,7 +2202,19 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                               else selectStyle();
                             }}
                           >
-                            <option value={`${surface}-${platform}`}>
+                            {defaultModified && (
+                              <option value={`${surface}-${platform}`}>
+                                기본 (수정됨)
+                              </option>
+                            )}
+                            {/* 라이브러리에 없는 id 라 고르면 초기값을 불러온다. */}
+                            <option
+                              value={
+                                defaultModified
+                                  ? 'default-reset'
+                                  : `${surface}-${platform}`
+                              }
+                            >
                               기본
                             </option>
                             {settings.savedStyles.map((style) => (
