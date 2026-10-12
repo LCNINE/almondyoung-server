@@ -1,4 +1,4 @@
-import { readFileSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import {
   UserServiceSeedStep,
@@ -107,11 +107,13 @@ describe('user-service logistics reference roles', () => {
       roleId: '019d0004-0005-7000-a000-000000000005',
       name: 'logistics_worker',
       description: '물류 작업자',
+      displayName: '물류 작업자',
     },
     {
       roleId: '019d0004-0006-7000-a000-000000000006',
       name: 'logistics_manager',
       description: '물류 관리자',
+      displayName: '물류 관리자',
     },
   ];
 
@@ -158,7 +160,8 @@ describe('user-service logistics reference roles', () => {
     const userRoleInserts = renderedQueries.filter(({ sql }) => /insert into user_roles/i.test(sql));
 
     expect(roleInserts).toHaveLength(ORCHESTRATED_ROLES.length * 2);
-    expect(roleInserts.every(({ sql }) => /on conflict \(role_id\) do nothing/i.test(sql))).toBe(true);
+    // 이름이 같은 역할이 다른 id 로 이미 있어도(예: 관리 화면에서 만든 intern) 시드가 죽지 않아야 한다.
+    expect(roleInserts.every(({ sql }) => /on conflict do nothing/i.test(sql))).toBe(true);
     expect(roleInserts.filter(({ params }) => params.includes(ORCHESTRATED_UUIDS.ROLE_LOGISTICS_WORKER))).toHaveLength(
       2,
     );
@@ -173,5 +176,78 @@ describe('user-service logistics reference roles', () => {
         ),
       ),
     ).toBe(false);
+  });
+});
+
+describe('user-service intern reference role', () => {
+  const intern = {
+    roleId: '019d0004-0007-7000-a000-000000000007',
+    name: 'intern',
+    description: '조회 전용 — 개인정보는 가려진다',
+    displayName: '인턴',
+  };
+
+  it('uses the same fixed id as the migration in both reference seed paths', () => {
+    expect(ORCHESTRATED_ROLES.find((role) => role.name === 'intern')).toEqual(intern);
+    expect(LEGACY_ROLES.find((role) => role.name === 'intern')).toEqual(intern);
+    expect(ORCHESTRATED_UUIDS.ROLE_INTERN).toBe(intern.roleId);
+    expect(LEGACY_UUIDS.ROLE_INTERN).toBe(intern.roleId);
+    const dir = join(__dirname, '../../../apps/user-service/database/drizzle');
+    const file = readdirSync(dir).find((name) => name.endsWith('_seed-iam-roles.sql'));
+    const migration = readFileSync(join(dir, file ?? 'missing'), 'utf8');
+    expect(migration).toContain(`'${intern.roleId}', 'intern'`);
+  });
+
+  it('gives every reference role a display name', () => {
+    expect(ORCHESTRATED_ROLES.filter((role) => !role.displayName)).toEqual([]);
+    expect(LEGACY_ROLES.filter((role) => !role.displayName)).toEqual([]);
+  });
+
+  it('writes the display name when it inserts a role', async () => {
+    const execute = jest.fn().mockResolvedValue(undefined);
+    const step = Object.create(UserServiceSeedStep.prototype) as UserServiceSeedStep;
+    Object.assign(step as object, {
+      db: { execute },
+      logger: { step: jest.fn(), success: jest.fn(), warn: jest.fn(), error: jest.fn() },
+      adminPassword: 'seed-test-password',
+      oauthClients: [],
+    });
+    await step.apply();
+
+    const dialect = new PgDialect();
+    const internInsert = execute.mock.calls
+      .map(([query]) => dialect.sqlToQuery(query))
+      .find(({ sql, params }) => /insert into roles/i.test(sql) && params.includes(intern.roleId));
+    expect(internInsert?.sql).toMatch(/display_name/i);
+    expect(internInsert?.params).toContain('인턴');
+  });
+});
+
+describe('user-service role seed check', () => {
+  it('treats a role as present when one with the same name exists under another id', async () => {
+    const step = Object.create(UserServiceSeedStep.prototype) as UserServiceSeedStep;
+    const findExistingIds = jest.fn(async (table: string, values: string[], column?: string) =>
+      table === 'roles' && column === 'name' ? new Set(values) : new Set<string>(),
+    );
+    const client = Object.assign(jest.fn().mockResolvedValue([]), {
+      unsafe: jest.fn().mockResolvedValue([{ count: 0 }]),
+    });
+    Object.assign(step as object, {
+      client,
+      findExistingIds,
+      findExistingKeys: jest.fn().mockResolvedValue(new Set()),
+      logger: { step: jest.fn(), success: jest.fn(), warn: jest.fn(), error: jest.fn() },
+      adminPassword: 'seed-test-password',
+      oauthClients: [],
+    });
+
+    const result = await step.check();
+
+    expect(findExistingIds).toHaveBeenCalledWith(
+      'roles',
+      ORCHESTRATED_ROLES.map((role) => role.name),
+      'name',
+    );
+    expect(JSON.stringify(result)).not.toMatch(/intern/);
   });
 });

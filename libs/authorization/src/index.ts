@@ -19,3 +19,4 @@ export * from './database/auth.types';
 export * from './constants';
 export * from './api/role-scope-api.module';
 export * from './guards/master-role.guard';
+export * from './permissions';

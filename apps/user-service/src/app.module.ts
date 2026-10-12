@@ -17,6 +17,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { userServiceSchema as baseUserServiceSchema } from '../database/drizzle/schema';
 import { AdminModule } from './api/admin/admin.module';
+import { IamModule } from './api/iam/iam.module';
 import { AuthModule } from './api/auth/auth.module';
 import { OAuthModule } from './api/oauth/oauth.module';
 import { OAuthCorsModule } from './api/oauth/cors/oauth-cors.module';
@@ -157,6 +158,7 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
     FileModule,
     BusinessLicensesModule,
     AdminModule,
+    IamModule,
   ],
   controllers: [HealthController, EventTraceController],
   providers: [
