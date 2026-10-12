@@ -32,9 +32,8 @@ export interface ResyncChannelOrderPayload {
 }
 
 /**
- * 채널에 주문 취소·부분취소를 요청한다 (#1016 35번 행, ADR-0042). core 는 요청을 기록·보류한 뒤 이 명령을 내고,
- * 확정은 재수집된 `OrderCancelled`/`OrderModified` 로, 거절은 `ChannelOrderCancelRejected` 로 돌려받는다.
- * 정산이 끝나지 못하면 `ChannelOrderSettlementFailed`(#1016 36번 재설계)도 함께 온다.
+ * 채널에 주문 취소·부분취소를 요청한다 (#1016 35번 행, ADR-0042). core 는 요청 순간 취소를 확정하고 명령을 낸다.
+ * 정산이 끝나지 못하면 `ChannelOrderSettlementFailed` 로 돌려받는다(#1016 36번 재설계).
  * 환불은 채널이 한다 — core 도 channel-adapter 도 wallet 을 부르지 않는다.
  */
 export interface CancelChannelOrderPayload {

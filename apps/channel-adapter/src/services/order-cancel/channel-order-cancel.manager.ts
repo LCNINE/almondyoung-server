@@ -1,20 +1,19 @@
 // apps/channel-adapter/src/services/order-cancel/channel-order-cancel.manager.ts
 import { Injectable, Logger } from '@nestjs/common';
-import type { CancelChannelOrderPayload, ChannelOrderCancelRejectionCode } from '@packages/event-contracts/streams';
+import type { CancelChannelOrderPayload } from '@packages/event-contracts/streams';
 import { MedusaClient } from '../../adapters/medusa/medusa.client';
 import { getChannelFulfillmentCapabilities } from '../channel-capabilities';
 import { OrderPollerOrchestrator } from '../order-collection/order-poller.orchestrator';
-import { ChannelOrderCancelRepository, type LegacyCancelFact } from './channel-order-cancel.repository';
+import { ChannelOrderCancelRepository } from './channel-order-cancel.repository';
 
-/** 정산이 끝나지 못한 결과. `legacy` 는 오늘의 channel-adapter 가 같은 응답에 내던 옛 사실 — 옛 core(PR 5 전)가 읽는다 */
-type SettlementFailure = { retryable: boolean; failureCode: string; message: string; legacy?: LegacyCancelFact };
+/** 정산이 끝나지 못한 결과 */
+type SettlementFailure = { retryable: boolean; failureCode: string; message: string };
 
 /**
  * core 의 `CancelChannelOrder` 를 채널에 실행한다 (#1016 35번 행, ADR-0042 · 36번 재설계 스펙 §7.2).
  *
  * 정산이 끝나지 못한 모든 결과는 `ChannelOrderSettlementFailed` 로 낸 뒤 명령을 ack 한다 — Kafka 재시도·DLQ 에 기대지 않는다(스펙 S7).
  * 다시 부르는 곳은 core 리컨실러 «정산 재시도»(#36) 하나다. 사실을 못 낸 경우(아웃박스 쓰기 실패)만 던져 재배달을 탄다.
- * 옛 core 는 새 사실을 버리므로 오늘 내던 옛 사실(`Rejected`·`Stalled`)을 같은 트랜잭션에 함께 낸다(판정 1). 정리 PR 에서 지운다.
  * 채널 호출이 멱등이라 다시 해도 안전하다: 전체는 «이미 취소됨»과 장부 맞추기, 부분은 Medusa 가 같은 requestId 의 진행 단계부터 이어 간다.
  * 성공은 사실로 내지 않는다(D11) — 즉시 재수집한 `OrderCancelled`/`OrderModified` 가 곧 사실이다.
  */
@@ -39,7 +38,6 @@ export class ChannelOrderCancelManager {
         retryable: false,
         failureCode: 'channel_not_supported',
         message,
-        legacy: rejected(command, 'NOT_SUPPORTED', message),
       });
     }
     const failure =
@@ -62,7 +60,7 @@ export class ChannelOrderCancelManager {
     const { salesChannel, externalOrderId } = command;
     if (!(await this.repository.hasCollectedOrder(salesChannel, externalOrderId))) {
       const message = `수집된 적 없는 주문입니다: ${salesChannel}:${externalOrderId}`;
-      return { retryable: false, failureCode: 'order_not_collected', message, legacy: rejected(command, 'ORDER_NOT_FOUND', message) };
+      return { retryable: false, failureCode: 'order_not_collected', message };
     }
     return undefined;
   }
@@ -74,12 +72,11 @@ export class ChannelOrderCancelManager {
       case 'already_cancelled':
         return undefined;
       case 'refund_refused':
-        // 옛 사실을 내지 않는다 — 옛 core 는 Rejected 를 받으면 요청을 닫고 보류를 풀어 고객이 취소한 물건을 내보낸다
         return { retryable: false, failureCode: outcome.failureCode, message: outcome.message };
       case 'not_found':
-        return { retryable: false, failureCode: 'not_found', message: outcome.message, legacy: rejected(command, 'ORDER_NOT_FOUND', outcome.message) };
+        return { retryable: false, failureCode: 'not_found', message: outcome.message };
       case 'not_cancelable':
-        return { retryable: false, failureCode: outcome.failureCode, message: outcome.message, legacy: rejected(command, 'NOT_CANCELABLE', outcome.message) };
+        return { retryable: false, failureCode: outcome.failureCode, message: outcome.message };
       case 'transient':
         return { retryable: true, failureCode: outcome.failureCode, message: outcome.message };
       default: {
@@ -109,27 +106,22 @@ export class ChannelOrderCancelManager {
           retryable: false,
           failureCode: 'partial_cancel_rejected',
           message: outcome.message,
-          legacy: rejected(command, 'NOT_CANCELABLE', outcome.message),
         };
       case 'external_refund':
         return {
           retryable: false,
           failureCode: outcome.reason,
           message: outcome.message,
-          legacy: rejected(command, 'EXTERNAL_REFUND_UNRESOLVED', outcome.message, outcome.unresolvedAmount),
         };
       case 'refund_refused':
-        // 수정이 확정된 뒤의 거절이면 옛 core 에 «수정됨 · 환불 미완»을 알린다(PR 2 전엔 같은 상황이 502 + Stalled 였다)
         return {
           retryable: false,
           failureCode: outcome.failureCode,
           message: outcome.message,
-          ...(outcome.edited ? { legacy: stalled(command, outcome.message) } : {}),
         };
       case 'refund_pending':
-        return { retryable: true, failureCode: 'refund_pending', message: outcome.message, legacy: stalled(command, outcome.message) };
+        return { retryable: true, failureCode: 'refund_pending', message: outcome.message };
       case 'not_cancelable':
-        // 옛 adapter 는 이 400 을 던졌다(옛 사실 없음). 옛 Rejected 를 새로 내면 수정 전 주문의 보류가 풀린다
         return { retryable: false, failureCode: outcome.failureCode, message: outcome.message };
       case 'transient':
         return { retryable: true, failureCode: outcome.failureCode, message: outcome.message };
@@ -158,32 +150,6 @@ export class ChannelOrderCancelManager {
         at: new Date().toISOString(),
       },
       deliveryId,
-      failure.legacy,
     );
   }
-}
-
-function rejected(
-  command: CancelChannelOrderPayload,
-  reasonCode: ChannelOrderCancelRejectionCode,
-  message: string,
-  unresolvedRefundAmount?: number,
-): LegacyCancelFact {
-  const { requestId, salesChannel, externalOrderId } = command;
-  return {
-    eventType: 'ChannelOrderCancelRejected',
-    payload: {
-      requestId,
-      salesChannel,
-      externalOrderId,
-      reasonCode,
-      message,
-      ...(unresolvedRefundAmount !== undefined ? { unresolvedRefundAmount } : {}),
-    },
-  };
-}
-
-function stalled(command: CancelChannelOrderPayload, message: string): LegacyCancelFact {
-  const { requestId, salesChannel, externalOrderId } = command;
-  return { eventType: 'ChannelOrderCancelStalled', payload: { requestId, salesChannel, externalOrderId, stage: 'edited', message } };
 }
