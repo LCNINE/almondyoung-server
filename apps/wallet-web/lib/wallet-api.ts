@@ -27,8 +27,6 @@ export interface PaymentMethod {
 }
 
 export interface TossWidgetConfig {
-  checkoutMode?: 'CUSTOM' | 'WIDGET';
-  brandpayClientKey?: string;
   clientKey: string;
   variantKey: string;
   customerKey: string;
