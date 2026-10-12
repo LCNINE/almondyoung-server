@@ -404,7 +404,12 @@ medusaIntegrationTestRunner({
 
         it('returns 400 for an invalid body', async () => {
           await expect(
-            api.post('/admin/time-sales', { ...input(), general_prices: [] }, adminHeaders),
+            // 일반가가 비어도 된다(멤버십 전용 특가). 금액이 0 이하면 스키마에서 거절한다.
+            api.post(
+              '/admin/time-sales',
+              { ...input(), general_prices: [{ variant_id: variantIds[0], amount: 0 }] },
+              adminHeaders,
+            ),
           ).rejects.toMatchObject({ response: { status: 400 } });
         });
 
