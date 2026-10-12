@@ -335,6 +335,14 @@ Cross-BC **seam** services (those that legitimately span schemas, e.g. `ProductS
 - Nullable normalization: `string ?? ''`, `number ?? 0`, `date ?? undefined`
 - Use only enum values defined in schema
 
+### 라우트 권한 선언 (`@app/authorization`, ADR-0045)
+
+새 HTTP 라우트는 반드시 넷 중 하나를 단다: `@Public`/`@InternalOnly`/`@OptionalAuth` · `@StoreRoute`(고객) ·
+`@KeyAuthRoute`(wallet 머천트 키) · `@RequirePermission('영역.대상.행동')`. 없으면 `route-classification.spec.ts`
+가 빨갛다. 권한 키는 `libs/authorization/src/permissions/permission-catalog.ts` 에만 있다 — 새 키는 거기에 추가하고
+`grantOnFirstRegistration` 에 «오늘 그 기능을 쓰는 역할»을 적는다(첫 등록 때 한 번만 부여된다).
+코드는 역할 이름이 아니라 권한만 본다.
+
 ### 크론 (`@app/cron-once`)
 
 앱의 크론은 `@nestjs/schedule` 의 `@Cron` 이 아니라 **`@CronOnce(expr, { name })`** 를 쓴다 (ADR-0036, #821).

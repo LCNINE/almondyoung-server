@@ -23,6 +23,18 @@ Accepted (2026-10-12). 적용은 단계별로 한다 — 이 ADR 시점에는 �
    master 는 활성 권한 전체를 계산해서 받는다.
 5. **초기 부여는 «지금 그 역할이 실제로 할 수 있는 것»을 옮긴다.** 권한 확대는 배포가 아니라 관리 화면에서 한다.
 
+### 라우트 분류와 판정
+6. **모든 HTTP 라우트는 넷 중 정확히 하나로 분류한다:** 공개(`@Public`·`@InternalOnly`·`@OptionalAuth`) · 고객(`@StoreRoute`) ·
+   키(`@KeyAuthRoute` — 그 앱의 가드가 머천트 API 키 같은 키를 검사하는 경로) · 권한(`@RequirePermission` /
+   `@RequireAnyPermission`). `scripts/security/route-classification.spec.ts` 가 강제한다.
+7. **조회 동사(GET·HEAD)는 조회 권한을, 쓰기 동사는 조회 아닌 권한을 요구한다.** 예외는 같은 스펙에 이유와 함께 둔다.
+8. **각 서비스는 역할별 권한을 메모리에 둔다(`PermissionModule`).** 요청마다 네트워크를 타지 않고, 버전 확인은 배경에서
+   주기적으로 한다. 한 번도 받지 못한 상태는 «권한 없음»이 아니라 «판정 불가»로 따로 다룬다.
+9. **판정은 «그림자 → 강제» 순서로 켠다.** 그림자 단계에서는 기존 가드가 결과를 정하고 새 판정은 계산해
+   `authz_shadow_evaluations_total` 지표와 로그로만 남긴다. 강제는 서비스별 `AUTHZ_ENFORCE=true`.
+10. **가드 순서:** 관찰 가드(맨 앞) → 인증 → 기존 인가 → 권한 강제 가드(맨 뒤). 관찰 가드가 맨 앞이어야 뒤 가드가
+    거부한 요청까지 비교할 수 있다. `scripts/security/permission-wiring.spec.ts` 가 지킨다.
+
 ## Consequences
 - 역할 구성을 배포 없이 바꿀 수 있다. 변경은 각 서비스의 버전 확인 주기 안에 반영된다.
 - 사람↔역할 변경은 access 토큰 수명 안에 반영된다(토큰 발급 경로가 매번 DB 에서 역할을 읽는다).
