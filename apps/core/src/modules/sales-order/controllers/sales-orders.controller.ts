@@ -22,7 +22,7 @@ import { SalesOrderResponseDto } from '../dto/sales-order-response.dto';
 import { DailyStatsQueryDto } from '../dto/daily-stats-query.dto';
 import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 import { CreateBusinessLinkDto } from '../dto/create-business-link.dto';
-import { CancelSalesOrderDto, CancelByIntentDto } from '../dto/cancel-sales-order.dto';
+import { CancelSalesOrderDto, CancelByIntentDto, RetryCancelSettlementDto } from '../dto/cancel-sales-order.dto';
 
 @ApiTags('Sales Orders')
 @Controller('sales-orders')
@@ -101,8 +101,12 @@ export class SalesOrdersController {
   @ApiOperation({ summary: '채널 취소 정산 다시 시도 — 환불 지연·거절인 요청에 같은 requestId 로 명령을 다시 낸다(#1016 36번 재설계)' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
   @ApiParam({ name: 'requestId', description: '취소 요청 ID' })
-  retryCancelSettlement(@Param('id') id: string, @Param('requestId') requestId: string) {
-    return this.cancelRequests.retrySettlement(id, requestId);
+  retryCancelSettlement(
+    @Param('id') id: string,
+    @Param('requestId') requestId: string,
+    @Body() dto: RetryCancelSettlementDto = {},
+  ) {
+    return this.cancelRequests.retrySettlement(id, requestId, { alreadyRefundedAmount: dto.alreadyRefundedAmount });
   }
 
   @Post(':id/cancel-request/:requestId/manual-refund')
