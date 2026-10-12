@@ -155,14 +155,14 @@ export class BankTransferPaymentProvider implements PaymentProvider {
   async refund(params: RefundParams): Promise<RefundResult> {
     // 환불계좌가 없으면 자동환불 불가 → 수동환불(PENDING) 폴백 (관리자가 외부 처리 후 완료 기록).
     if (!params.refundReceiveAccount) {
-      return { status: 'PENDING' };
+      return { status: 'PENDING', manualTransfer: true };
     }
 
     // 발급 시 charges.responsePayload 에 스냅샷된 paymentKey 로 토스 가상계좌 환불(계좌로 송금)을 호출한다.
     const paymentKey = await this.getPaymentKey(params.chargeId);
     if (!paymentKey) {
       //  대상 charge 에 paymentKey 스냅샷이 없으면(구건 등) 자동환불 불가 → 수동 폴백.
-      return { status: 'PENDING' };
+      return { status: 'PENDING', manualTransfer: true };
     }
 
     const result = await this.tossApi.cancelPayment(

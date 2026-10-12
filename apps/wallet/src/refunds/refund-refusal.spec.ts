@@ -56,4 +56,24 @@ describe('refundRefusal — wallet 이 환불 요청을 거절할 때의 본문'
       '자동으로 환불할 수 없는 결제수단입니다. 고객에게 계좌를 받아 송금으로 환불해 주세요.',
     );
   });
+
+  it('응답 끊긴 이전 환불을 확인한 뒤의 거절 — 장부를 다시 맞추면 되므로 일시', () => {
+    expect(refundRefusal('AMBIGUOUS_REFUND_RESOLVED', 'charge c-1 refund r-1 resolved SUCCEEDED')).toEqual({
+      error: 'AMBIGUOUS_REFUND_RESOLVED',
+      message: '이전 환불 요청의 결과를 확인했습니다. 환불 금액을 다시 계산해 주세요.',
+      detail: 'charge c-1 refund r-1 resolved SUCCEEDED',
+      retryable: true,
+    });
+  });
+
+  it('무통장 응답 끊긴 환불을 다시 보낼 계좌가 없다 — 영구(운영자가 토스 상점관리자에서 확인)', () => {
+    expect(refundRefusal('AMBIGUOUS_REFUND_NEEDS_ACCOUNT', 'x').retryable).toBe(false);
+  });
+
+  it('다시 보냈는데 또 끊겼다 — 결과를 아직 모르니 일시', () => {
+    expect(refundRefusal('AMBIGUOUS_REFUND_UNRESOLVED', 'x')).toMatchObject({
+      message: '이전 환불 요청의 결과를 아직 확인하지 못했습니다. 잠시 뒤 다시 시도해 주세요.',
+      retryable: true,
+    });
+  });
 });

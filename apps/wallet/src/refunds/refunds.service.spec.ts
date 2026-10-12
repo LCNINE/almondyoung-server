@@ -62,17 +62,25 @@ function makeInsertedRefund(
  * Build a fully wired mock context for RefundsService.
  * Each component is exposed for per-test customization.
  */
-function makeContext(options: {
-  charge?: ReturnType<typeof makeCharge>;
-  method?: ReturnType<typeof makeMethod>;
-  refundableCharges?: ReturnType<typeof makeCharge>[];
-  existingSucceededRefunds?: ReturnType<typeof makeInsertedRefund>[];
-  priorRefundedAmount?: number;       // SUCCEEDED+PENDING total in the insert-phase transaction
-  succeededRefundedAmount?: number;   // SUCCEEDED-only total in the post-SUCCEEDED transaction
-  providerResult?: { status: string; errorCode?: string; errorMessage?: string; providerRefundId?: string; retryable?: boolean };
-  pendingRefund?: ReturnType<typeof makeInsertedRefund>;  // for confirmManual tests
-  intentMetadata?: Record<string, unknown>;  // payment_intents.metadata for assertRefundable/getIntentUserId
-} = {}) {
+function makeContext(
+  options: {
+    charge?: ReturnType<typeof makeCharge>;
+    method?: ReturnType<typeof makeMethod>;
+    refundableCharges?: ReturnType<typeof makeCharge>[];
+    existingSucceededRefunds?: ReturnType<typeof makeInsertedRefund>[];
+    priorRefundedAmount?: number; // SUCCEEDED+PENDING total in the insert-phase transaction
+    succeededRefundedAmount?: number; // SUCCEEDED-only total in the post-SUCCEEDED transaction
+    providerResult?: {
+      status: string;
+      errorCode?: string;
+      errorMessage?: string;
+      providerRefundId?: string;
+      retryable?: boolean;
+    };
+    pendingRefund?: ReturnType<typeof makeInsertedRefund>; // for confirmManual tests
+    intentMetadata?: Record<string, unknown>; // payment_intents.metadata for assertRefundable/getIntentUserId
+  } = {},
+) {
   const intentMetadata = options.intentMetadata ?? {};
   const charge = options.charge ?? makeCharge();
   const method = options.method ?? makeMethod();
@@ -99,7 +107,11 @@ function makeContext(options: {
       execute: jest.fn().mockResolvedValue([]),
       select: jest.fn().mockImplementation(() => ({
         from: () => ({
-          where: () => [{ amount: selectAmount }],
+          // 되살릴 «응답 끊긴» 행 조회(orderBy().limit()) 는 없다고 답한다
+          where: () =>
+            Object.assign([{ amount: selectAmount }], {
+              orderBy: () => ({ limit: () => Promise.resolve([]) }),
+            }),
         }),
       })),
       insert: jest.fn().mockImplementation(() => ({
@@ -162,8 +174,12 @@ function makeContext(options: {
   const provider = { refund: jest.fn().mockResolvedValue(providerResult) };
   const providerRegistry = { getProviderOrThrow: jest.fn().mockReturnValue(provider) };
   const stateTransitionService = {
-    transitionRefund: jest.fn().mockResolvedValue({ entityId: REFUND_ID, previousStatus: 'PENDING', newStatus: 'SUCCEEDED' }),
-    transitionCharge: jest.fn().mockResolvedValue({ entityId: CHARGE_ID, previousStatus: 'SUCCEEDED', newStatus: 'REFUNDED' }),
+    transitionRefund: jest
+      .fn()
+      .mockResolvedValue({ entityId: REFUND_ID, previousStatus: 'PENDING', newStatus: 'SUCCEEDED' }),
+    transitionCharge: jest
+      .fn()
+      .mockResolvedValue({ entityId: CHARGE_ID, previousStatus: 'SUCCEEDED', newStatus: 'REFUNDED' }),
   };
 
   // For confirmManual: select is called twice:
@@ -196,7 +212,17 @@ function makeContext(options: {
     stateTransitionService as any,
   );
 
-  return { service, db, chargesService, paymentMethodsService, provider, providerRegistry, stateTransitionService, updateCalls, insertCalls };
+  return {
+    service,
+    db,
+    chargesService,
+    paymentMethodsService,
+    provider,
+    providerRegistry,
+    stateTransitionService,
+    updateCalls,
+    insertCalls,
+  };
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -302,7 +328,9 @@ describe('RefundsService', () => {
 
     it('provider 가 던지면 PROVIDER_EXCEPTION · 일시(true)', async () => {
       const { service, providerRegistry, updateCalls } = makeContext();
-      providerRegistry.getProviderOrThrow.mockReturnValue({ refund: jest.fn().mockRejectedValue(new Error('socket hang up')) });
+      providerRegistry.getProviderOrThrow.mockReturnValue({
+        refund: jest.fn().mockRejectedValue(new Error('socket hang up')),
+      });
 
       await service.create({ chargeId: CHARGE_ID, amount: 5000 });
 
@@ -346,11 +374,13 @@ describe('RefundsService', () => {
     });
   });
 
-
   describe('provider 원장 키 (#1016 36번 PR 0)', () => {
     it('확정 결제분 환불은 provider 에 승인 결제분 id 를 authorizeChargeId 로 넘긴다', async () => {
       const { service, provider } = makeContext({
-        charge: makeCharge({ operation: 'CAPTURE', requestPayload: { intentId: INTENT_ID, authorizeChargeId: 'auth-001' } }),
+        charge: makeCharge({
+          operation: 'CAPTURE',
+          requestPayload: { intentId: INTENT_ID, authorizeChargeId: 'auth-001' },
+        }),
         method: makeMethod('POINTS'),
       });
 
@@ -378,7 +408,9 @@ describe('RefundsService', () => {
   describe('멤버십 결제 환불 차단', () => {
     it('create: MEMBERSHIP_FEE intent 는 환불 거절 (MEMBERSHIP_REFUND_NOT_ALLOWED)', async () => {
       const { service } = makeContext({ intentMetadata: { type: 'MEMBERSHIP_FEE' } });
-      await expect(service.create({ chargeId: CHARGE_ID, amount: 5000 })).rejects.toThrow('멤버십 결제는 환불할 수 없습니다');
+      await expect(service.create({ chargeId: CHARGE_ID, amount: 5000 })).rejects.toThrow(
+        '멤버십 결제는 환불할 수 없습니다',
+      );
     });
 
     it('create: allowMembershipRefund=true (admin 강제취소 예외) 면 통과', async () => {
@@ -406,16 +438,14 @@ describe('RefundsService', () => {
   describe('중복/초과 환불 방지', () => {
     it('charge amount보다 큰 금액 환불 시 BadRequestException', async () => {
       const { service } = makeContext({ charge: makeCharge({ amount: 10000 }) });
-      await expect(
-        service.create({ chargeId: CHARGE_ID, amount: 15000 }),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.create({ chargeId: CHARGE_ID, amount: 15000 })).rejects.toThrow(BadRequestException);
     });
 
     it('charge intentId 불일치 시 BadRequestException (CHARGE_INTENT_MISMATCH)', async () => {
       const { service } = makeContext({ charge: makeCharge() });
-      await expect(
-        service.create({ chargeId: CHARGE_ID, amount: 1000, intentId: 'wrong-intent' }),
-      ).rejects.toThrow('환불할 결제 내역이 이 결제와 맞지 않습니다');
+      await expect(service.create({ chargeId: CHARGE_ID, amount: 1000, intentId: 'wrong-intent' })).rejects.toThrow(
+        '환불할 결제 내역이 이 결제와 맞지 않습니다',
+      );
     });
 
     it('기존 SUCCEEDED 환불 합계를 초과하는 금액은 거절 (REFUND_AMOUNT_EXCEEDS_AVAILABLE)', async () => {
@@ -428,9 +458,7 @@ describe('RefundsService', () => {
 
     it('available 금액 이내의 환불은 정상 처리', async () => {
       const { service } = makeContext({ priorRefundedAmount: 3000 }); // available = 7000
-      await expect(
-        service.create({ chargeId: CHARGE_ID, amount: 5000 }),
-      ).resolves.toBeDefined();
+      await expect(service.create({ chargeId: CHARGE_ID, amount: 5000 })).resolves.toBeDefined();
     });
 
     it('provider 성공 시 status 직접 업데이트 없이 PENDING -> SUCCEEDED 전이로 완료한다', async () => {
@@ -455,9 +483,9 @@ describe('RefundsService', () => {
 
     it('charge가 SUCCEEDED 아닌 상태면 환불 불가 (CHARGE_NOT_REFUNDABLE)', async () => {
       const { service } = makeContext({ charge: makeCharge({ status: 'PENDING' }) });
-      await expect(
-        service.create({ chargeId: CHARGE_ID, amount: 1000 }),
-      ).rejects.toThrow('아직 환불할 수 있는 상태의 결제가 아닙니다');
+      await expect(service.create({ chargeId: CHARGE_ID, amount: 1000 })).rejects.toThrow(
+        '아직 환불할 수 있는 상태의 결제가 아닙니다',
+      );
     });
 
     it('intent가 이미 전액 환불되어 환불 가능 charge가 없으면 기존 성공 환불을 반환한다', async () => {
@@ -480,7 +508,9 @@ describe('RefundsService', () => {
         existingSucceededRefunds: [existingRefund],
       });
 
-      await expect(service.createByIntent(INTENT_ID, { amount: 10000 })).rejects.toThrow('환불할 수 있는 결제 내역이 없습니다');
+      await expect(service.createByIntent(INTENT_ID, { amount: 10000 })).rejects.toThrow(
+        '환불할 수 있는 결제 내역이 없습니다',
+      );
       expect(provider.refund).not.toHaveBeenCalled();
     });
   });
@@ -488,7 +518,7 @@ describe('RefundsService', () => {
   describe('provider 실패 처리', () => {
     it('provider 예외 시 reasonMessage에 PG 오류 저장, reasonCode는 보존', async () => {
       const { service, updateCalls, stateTransitionService } = makeContext({
-        providerResult: undefined as any,  // will be overridden
+        providerResult: undefined as any, // will be overridden
       });
       // Override provider to throw
       const providerWithError = { refund: jest.fn().mockRejectedValue(new Error('PG_TIMEOUT: Connection refused')) };
@@ -496,7 +526,11 @@ describe('RefundsService', () => {
       (svc as any).providerRegistry = { getProviderOrThrow: jest.fn().mockReturnValue(providerWithError) };
 
       // Use a fresh context with throwing provider
-      const { service: service2, updateCalls: uc2, stateTransitionService: sts2 } = makeContext({
+      const {
+        service: service2,
+        updateCalls: uc2,
+        stateTransitionService: sts2,
+      } = makeContext({
         providerResult: undefined as any,
       });
       const throwingProvider = { refund: jest.fn().mockRejectedValue(new Error('PG_TIMEOUT: Connection refused')) };
@@ -556,9 +590,7 @@ describe('RefundsService', () => {
       chargesService.findById = jest.fn().mockResolvedValue(makeCharge());
       paymentMethodsService.findById = jest.fn().mockResolvedValue(makeMethod('TOSS'));
 
-      await expect(
-        service.confirmManual(REFUND_ID),
-      ).rejects.toThrow('BANK_TRANSFER');
+      await expect(service.confirmManual(REFUND_ID)).rejects.toThrow('BANK_TRANSFER');
     });
 
     it('confirmManual: 카드 결제분이라도 MANUAL 행이면 받는다 (#1016 36번 PR 1)', async () => {
@@ -622,9 +654,7 @@ describe('RefundsService', () => {
         pendingRefund: { ...makeInsertedRefund(), status: 'SUCCEEDED' },
       });
 
-      await expect(
-        service.confirmManual(REFUND_ID),
-      ).rejects.toThrow('PENDING 상태가 아닙니다');
+      await expect(service.confirmManual(REFUND_ID)).rejects.toThrow('PENDING 상태가 아닙니다');
     });
 
     it('confirmManual: 존재하지 않는 환불 ID는 NotFoundException', async () => {
@@ -637,9 +667,7 @@ describe('RefundsService', () => {
         }),
       }));
 
-      await expect(
-        service.confirmManual('nonexistent'),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.confirmManual('nonexistent')).rejects.toThrow(NotFoundException);
     });
   });
 

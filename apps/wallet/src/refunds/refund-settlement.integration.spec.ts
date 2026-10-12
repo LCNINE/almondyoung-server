@@ -50,6 +50,7 @@ type Seeded = {
   tossChargeId?: string;
   pointsChargeId?: string;
   cmsChargeId?: string;
+  bankChargeId?: string;
 };
 
 describeIfDb('환불 정산 — 수동 실행·실패 분류·송금 완료·목록 (실 Postgres)', () => {
@@ -122,7 +123,7 @@ describeIfDb('환불 정산 — 수동 실행·실패 분류·송금 완료·목
     await sql.end();
   });
 
-  async function method(userId: string, type: 'TOSS' | 'POINTS' | 'CMS_BATCH'): Promise<string> {
+  async function method(userId: string, type: 'TOSS' | 'POINTS' | 'CMS_BATCH' | 'BANK_TRANSFER'): Promise<string> {
     const id = randomUUID();
     methodIds.push(id);
     await db.insert(paymentMethods).values({ id, userId, type });
@@ -154,12 +155,12 @@ describeIfDb('환불 정산 — 수동 실행·실패 분류·송금 완료·목
   }
 
   /** 확정까지 끝난 결제 하나. 포인트는 진짜 원장으로 승인·확정한다(capture.service.ts 와 같이 원장 키 = 승인 결제분 id). */
-  async function seed(legs: { toss?: number; points?: number; cms?: number }): Promise<Seeded> {
+  async function seed(legs: { toss?: number; points?: number; cms?: number; bank?: number }): Promise<Seeded> {
     const userId = `itest-settle-${randomUUID()}`;
     userIds.push(userId);
     const intentId = randomUUID();
     intentIds.push(intentId);
-    const total = (legs.toss ?? 0) + (legs.points ?? 0) + (legs.cms ?? 0);
+    const total = (legs.toss ?? 0) + (legs.points ?? 0) + (legs.cms ?? 0) + (legs.bank ?? 0);
     await db.insert(paymentIntents).values({
       id: intentId,
       userId,
@@ -222,6 +223,14 @@ describeIfDb('환불 정산 — 수동 실행·실패 분류·송금 완료·목
         await method(userId, 'CMS_BATCH'),
         legs.cms,
         new Date(t0 + 2_000),
+      );
+    }
+    if (legs.bank) {
+      seeded.bankChargeId = await capturedCharge(
+        intentId,
+        await method(userId, 'BANK_TRANSFER'),
+        legs.bank,
+        new Date(t0 + 3_000),
       );
     }
     return seeded;
@@ -333,6 +342,26 @@ describeIfDb('환불 정산 — 수동 실행·실패 분류·송금 완료·목
     expect(row).toMatchObject({ chargeId: s.cmsChargeId, status: 'PENDING', execution: 'MANUAL', amount: 10_000 });
   });
 
+  it('무통장 «계좌 없음» 폴백은 MANUAL 송금 대기로 남는다 — 목록·[완료 처리]가 수동 행으로 다룬다', async () => {
+    const s = await seed({ bank: 8_000 });
+    externalRefund.mockResolvedValue({ status: 'PENDING', manualTransfer: true });
+
+    const [row] = await service.createByIntent(s.intentId, { amount: 8_000 });
+
+    expect(row).toMatchObject({ status: 'PENDING', execution: 'MANUAL', failureCode: null });
+    expect((await service.listByIntent(s.intentId)).map((r) => r.execution)).toEqual(['MANUAL']);
+    expect((await service.confirmManual(row.id)).status).toBe('SUCCEEDED');
+  });
+
+  it('manualTransfer 없는 PENDING(PG 비동기)은 AUTO 그대로', async () => {
+    const s = await seed({ toss: 5_000 });
+    externalRefund.mockResolvedValue({ status: 'PENDING' });
+
+    const [row] = await service.createByIntent(s.intentId, { amount: 5_000 });
+
+    expect(row).toMatchObject({ status: 'PENDING', execution: 'AUTO' });
+  });
+
   it('listByIntent: 상태 무관 전부, 만든 순서 — FAILED 는 남은 금액을 줄이지 않는다', async () => {
     const s = await seed({ toss: 10_000 });
     externalRefund.mockResolvedValue({ status: 'FAILED', errorCode: 'PROVIDER_ERROR', retryable: true });
@@ -345,5 +374,246 @@ describeIfDb('환불 정산 — 수동 실행·실패 분류·송금 완료·목
       ['FAILED', 'AUTO', 'PROVIDER_ERROR', true],
       ['PENDING', 'MANUAL', null, null],
     ]);
+  });
+
+  /** 결제사 응답이 끊긴 환불 한 번 — provider 가 던지면 wallet 은 FAILED·PROVIDER_EXCEPTION 행을 남긴다 */
+  async function ambiguousRefund(intentId: string, amount: number) {
+    externalRefund.mockRejectedValueOnce(new Error('socket hang up'));
+    const [row] = await service.createByIntent(intentId, { amount, reasonCode: 'MEDUSA_REFUND' });
+    expect(row).toMatchObject({ status: 'FAILED', failureCode: 'PROVIDER_EXCEPTION', failureRetryable: true });
+    return row;
+  }
+
+  it('응답 끊긴 환불 뒤 같은 금액 요청 — 새 행 없이 같은 행이 같은 멱등 키로 다시 나가고, 그 행 하나가 응답이다', async () => {
+    const s = await seed({ toss: 10_000 });
+    const first = await ambiguousRefund(s.intentId, 3_000);
+    externalRefund.mockResolvedValueOnce({ status: 'SUCCEEDED', providerRefundId: 'pk' });
+
+    const result = await service.createByIntent(s.intentId, { amount: 3_000, reasonCode: 'MEDUSA_REFUND' });
+
+    expect(result.map((r) => [r.id, r.status])).toEqual([[first.id, 'SUCCEEDED']]);
+    expect(externalRefund).toHaveBeenLastCalledWith(
+      expect.objectContaining({ refundId: first.id, idempotencyKey: `wallet:refund:${first.id}`, amount: 3_000 }),
+    );
+    expect(await rowsOf(s.intentId)).toHaveLength(1);
+  });
+
+  it('응답 끊긴 환불 뒤 다른 금액 요청 — 옛 행만 확정하고 이번 요청은 일시 거절(장부를 다시 맞추게)', async () => {
+    const s = await seed({ toss: 10_000 });
+    const first = await ambiguousRefund(s.intentId, 3_000);
+    externalRefund.mockResolvedValueOnce({ status: 'SUCCEEDED', providerRefundId: 'pk' });
+
+    const refusal = await refusalOf(service.createByIntent(s.intentId, { amount: 5_000 }));
+
+    expect(refusal).toMatchObject({ error: 'AMBIGUOUS_REFUND_RESOLVED', retryable: true });
+    expect(externalRefund).toHaveBeenCalledTimes(2);
+    expect(externalRefund).toHaveBeenLastCalledWith(
+      expect.objectContaining({ refundId: first.id, idempotencyKey: `wallet:refund:${first.id}` }),
+    );
+    expect((await rowsOf(s.intentId)).map((r) => [r.id, r.status])).toEqual([[first.id, 'SUCCEEDED']]);
+  });
+
+  it('되살려 보냈는데 또 끊김 — 같은 행이 다시 FAILED·PROVIDER_EXCEPTION, 새 행 없음', async () => {
+    const s = await seed({ toss: 10_000 });
+    const first = await ambiguousRefund(s.intentId, 3_000);
+    externalRefund.mockRejectedValueOnce(new Error('ETIMEDOUT'));
+
+    const [row] = await service.createByIntent(s.intentId, { amount: 3_000 });
+
+    expect(row).toMatchObject({ id: first.id, status: 'FAILED', failureCode: 'PROVIDER_EXCEPTION' });
+    expect(await rowsOf(s.intentId)).toHaveLength(1);
+  });
+
+  it('14일 지난 응답 끊긴 행은 되살리지 않는다 — 토스 멱등 키가 만료됐다, 지금처럼 새 행', async () => {
+    const s = await seed({ toss: 10_000 });
+    const first = await ambiguousRefund(s.intentId, 3_000);
+    await db
+      .update(refunds)
+      .set({ createdAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000) })
+      .where(eq(refunds.id, first.id));
+    externalRefund.mockResolvedValueOnce({ status: 'SUCCEEDED', providerRefundId: 'pk' });
+
+    const [row] = await service.createByIntent(s.intentId, { amount: 3_000 });
+
+    expect(row.id).not.toBe(first.id);
+    expect(await rowsOf(s.intentId)).toHaveLength(2);
+  });
+
+  it('복합결제 — 앞 leg 가 나간 뒤 포인트 leg 가 끊겨도, 다음 요청은 돈을 더 움직이기 전에 옛 행만 확정하고 거절한다', async () => {
+    const s = await seed({ toss: 7_000, points: 3_000 });
+    externalRefund.mockResolvedValue({ status: 'SUCCEEDED', providerRefundId: 'pk' });
+    const spy = jest.spyOn(pointsProvider, 'refund').mockRejectedValueOnce(new Error('socket hang up'));
+    try {
+      const first = await service.createByIntent(s.intentId, { amount: 5_000 });
+      expect(first.map((r) => [r.status, r.amount])).toEqual([
+        ['SUCCEEDED', 3_500],
+        ['FAILED', 1_500],
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
+    const callsBefore = externalRefund.mock.calls.length;
+
+    const refusal = await refusalOf(service.createByIntent(s.intentId, { amount: 1_500 }));
+
+    expect(refusal).toMatchObject({ error: 'AMBIGUOUS_REFUND_RESOLVED', retryable: true });
+    expect(externalRefund.mock.calls.length).toBe(callsBefore);
+    const rows = await rowsOf(s.intentId);
+    expect(rows).toHaveLength(2);
+    expect(rows.filter((r) => r.status === 'SUCCEEDED').reduce((sum, r) => sum + r.amount, 0)).toBe(5_000);
+  });
+
+  it('무통장 응답 끊긴 환불 — 계좌 없이 다시 요청하면 아무것도 보내지 않고 영구 거절', async () => {
+    const s = await seed({ bank: 8_000 });
+    externalRefund.mockRejectedValueOnce(new Error('socket hang up'));
+    const account = { bank: '004', accountNumber: '123456789', holderName: '홍길동' };
+    const [first] = await service.createByIntent(s.intentId, { amount: 8_000, refundReceiveAccount: account });
+    expect(first).toMatchObject({ status: 'FAILED', failureCode: 'PROVIDER_EXCEPTION' });
+
+    const refusal = await refusalOf(service.createByIntent(s.intentId, { amount: 8_000 }));
+
+    expect(refusal).toMatchObject({ error: 'AMBIGUOUS_REFUND_NEEDS_ACCOUNT', retryable: false });
+    expect(externalRefund).toHaveBeenCalledTimes(1);
+    expect(await rowsOf(s.intentId)).toEqual([
+      expect.objectContaining({ id: first.id, status: 'FAILED', failureCode: 'PROVIDER_EXCEPTION' }),
+    ]);
+  });
+
+  it('MANUAL 요청은 응답 끊긴 행을 되살리지 않는다 — PG 를 부르지 않는다', async () => {
+    const s = await seed({ toss: 10_000 });
+    const first = await ambiguousRefund(s.intentId, 3_000);
+
+    const [row] = await service.createByIntent(s.intentId, { amount: 3_000, execution: 'MANUAL' });
+
+    expect(row).toMatchObject({ status: 'PENDING', execution: 'MANUAL' });
+    expect(row.id).not.toBe(first.id);
+    expect(externalRefund).toHaveBeenCalledTimes(1);
+    expect((await rowsOf(s.intentId)).find((r) => r.id === first.id)).toMatchObject({
+      status: 'FAILED',
+      failureCode: 'PROVIDER_EXCEPTION',
+    });
+  });
+
+  it('다른 금액 요청인데 다시 보낸 것도 또 끊김 — 아직 모르니 UNRESOLVED(일시), 행은 그대로 하나', async () => {
+    const s = await seed({ toss: 10_000 });
+    const first = await ambiguousRefund(s.intentId, 3_000);
+    externalRefund.mockRejectedValueOnce(new Error('ETIMEDOUT'));
+
+    const refusal = await refusalOf(service.createByIntent(s.intentId, { amount: 5_000 }));
+
+    expect(refusal).toMatchObject({ error: 'AMBIGUOUS_REFUND_UNRESOLVED', retryable: true });
+    expect(await rowsOf(s.intentId)).toEqual([
+      expect.objectContaining({ id: first.id, status: 'FAILED', failureCode: 'PROVIDER_EXCEPTION' }),
+    ]);
+  });
+
+  it('토스 409 IDEMPOTENT_REQUEST_PROCESSING 도 «결과 모름» — 행은 FAILED·PROVIDER_EXCEPTION 그대로, 새 행 없이 다음 요청이 같은 행·같은 키로 보낸다', async () => {
+    const s = await seed({ toss: 10_000 });
+    const first = await ambiguousRefund(s.intentId, 3_000);
+    externalRefund.mockResolvedValueOnce({ status: 'FAILED', errorCode: 'IDEMPOTENT_REQUEST_PROCESSING', errorMessage: '처리중', retryable: true });
+
+    const [still] = await service.createByIntent(s.intentId, { amount: 3_000 });
+
+    expect(still).toMatchObject({ id: first.id, status: 'FAILED', failureCode: 'PROVIDER_EXCEPTION', failureRetryable: true });
+    expect(still.reasonMessage).toContain('IDEMPOTENT_REQUEST_PROCESSING');
+    expect(await rowsOf(s.intentId)).toHaveLength(1);
+    externalRefund.mockResolvedValueOnce({ status: 'SUCCEEDED', providerRefundId: 'pk' });
+
+    const [done] = await service.createByIntent(s.intentId, { amount: 3_000 });
+
+    expect(done).toMatchObject({ id: first.id, status: 'SUCCEEDED' });
+    expect(externalRefund).toHaveBeenLastCalledWith(
+      expect.objectContaining({ refundId: first.id, idempotencyKey: `wallet:refund:${first.id}` }),
+    );
+    expect(await rowsOf(s.intentId)).toHaveLength(1);
+  });
+
+  it('무통장 응답 끊긴 환불 + 다른 금액 요청(빠른 길 아님)을 계좌 없이 — intent 단계에서 영구 거절, provider 재호출 없고 행 그대로', async () => {
+    const s = await seed({ bank: 8_000 });
+    externalRefund.mockRejectedValueOnce(new Error('socket hang up'));
+    const account = { bank: '004', accountNumber: '123456789', holderName: '홍길동' };
+    const [first] = await service.createByIntent(s.intentId, { amount: 8_000, refundReceiveAccount: account });
+    expect(first).toMatchObject({ status: 'FAILED', failureCode: 'PROVIDER_EXCEPTION' });
+
+    const refusal = await refusalOf(service.createByIntent(s.intentId, { amount: 5_000 }));
+
+    expect(refusal).toMatchObject({ error: 'AMBIGUOUS_REFUND_NEEDS_ACCOUNT', retryable: false });
+    expect(externalRefund).toHaveBeenCalledTimes(1);
+    expect(await rowsOf(s.intentId)).toEqual([
+      expect.objectContaining({ id: first.id, status: 'FAILED', failureCode: 'PROVIDER_EXCEPTION' }),
+    ]);
+  });
+
+  /** 멈춘 AUTO PENDING — provider 호출 도중 프로세스가 죽은 꼴. 행만 직접 만든다 */
+  async function stuckPending(chargeId: string, intentId: string, amount: number, updatedAgoMs: number, execution: 'AUTO' | 'MANUAL' = 'AUTO') {
+    const id = randomUUID();
+    const at = new Date(Date.now() - updatedAgoMs);
+    await db.insert(refunds).values({
+      id, chargeId, intentId, amount, currency: 'KRW', status: 'PENDING', execution, reasonCode: 'MEDUSA_REFUND',
+      createdAt: at, updatedAt: at,
+    });
+    return id;
+  }
+
+  it('크론: 30분 넘게 멈춘 TOSS AUTO PENDING 만 같은 키로 다시 보낸다 — 젊은 행·MANUAL·무통장은 그대로', async () => {
+    const s = await seed({ toss: 10_000, bank: 5_000 });
+    const old = await stuckPending(s.tossChargeId!, s.intentId, 2_000, 31 * 60_000);
+    const young = await stuckPending(s.tossChargeId!, s.intentId, 1_000, 5 * 60_000);
+    const manual = await stuckPending(s.tossChargeId!, s.intentId, 1_000, 31 * 60_000, 'MANUAL');
+    const bank = await stuckPending(s.bankChargeId!, s.intentId, 1_000, 31 * 60_000);
+    externalRefund.mockResolvedValue({ status: 'SUCCEEDED', providerRefundId: 'pk' });
+
+    const summary = await service.resendStuckAutoPending(new Date());
+
+    expect(externalRefund).toHaveBeenCalledTimes(1);
+    expect(externalRefund).toHaveBeenCalledWith(expect.objectContaining({ refundId: old, idempotencyKey: `wallet:refund:${old}`, amount: 2_000 }));
+    const byId = new Map((await rowsOf(s.intentId)).map((r) => [r.id, r.status]));
+    expect([byId.get(old), byId.get(young), byId.get(manual), byId.get(bank)]).toEqual(['SUCCEEDED', 'PENDING', 'PENDING', 'PENDING']);
+    expect(summary.resent).toBeGreaterThanOrEqual(1);
+  });
+
+  it('크론: 다시 보내다 또 끊기면 FAILED·PROVIDER_EXCEPTION — 다음 환불 요청이 같은 행을 되살린다', async () => {
+    const s = await seed({ toss: 10_000 });
+    const old = await stuckPending(s.tossChargeId!, s.intentId, 2_000, 31 * 60_000);
+    externalRefund.mockRejectedValueOnce(new Error('ECONNRESET'));
+
+    await service.resendStuckAutoPending(new Date());
+
+    expect(await rowsOf(s.intentId)).toEqual([expect.objectContaining({ id: old, status: 'FAILED', failureCode: 'PROVIDER_EXCEPTION' })]);
+  });
+
+  it('크론: 두 번 돌아도 한 번만 보낸다 — 집은 행은 다음 바퀴 후보에서 빠진다', async () => {
+    const s = await seed({ toss: 10_000 });
+    const old = await stuckPending(s.tossChargeId!, s.intentId, 2_000, 31 * 60_000);
+    externalRefund.mockResolvedValue({ status: 'SUCCEEDED', providerRefundId: 'pk' });
+    await service.resendStuckAutoPending(new Date());
+    await service.resendStuckAutoPending(new Date());
+
+    expect(externalRefund).toHaveBeenCalledTimes(1);
+    expect((await rowsOf(s.intentId))[0]).toMatchObject({ id: old, status: 'SUCCEEDED' });
+  });
+
+  it('크론: defaultNow() 마이크로초 정밀도 행도 집는다 — 밀리초 동등 비교면 영영 못 집는다', async () => {
+    const s = await seed({ toss: 10_000 });
+    const old = await stuckPending(s.tossChargeId!, s.intentId, 2_000, 0);
+    await sql`UPDATE refunds SET updated_at = now() - interval '31 minutes', created_at = now() - interval '31 minutes' WHERE id = ${old}`;
+    externalRefund.mockResolvedValue({ status: 'SUCCEEDED', providerRefundId: 'pk' });
+
+    await service.resendStuckAutoPending(new Date());
+
+    expect(externalRefund).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: `wallet:refund:${old}` }));
+    expect((await rowsOf(s.intentId))[0]).toMatchObject({ id: old, status: 'SUCCEEDED' });
+  });
+
+  it('크론: 다른 주체가 막 집은(updated_at 이 방금) 행은 다시 보내지 않는다', async () => {
+    const s = await seed({ toss: 10_000 });
+    const old = await stuckPending(s.tossChargeId!, s.intentId, 2_000, 31 * 60_000);
+    await db.update(refunds).set({ updatedAt: new Date() }).where(eq(refunds.id, old));
+
+    const summary = await service.resendStuckAutoPending(new Date());
+
+    expect(externalRefund).not.toHaveBeenCalled();
+    expect(summary.resent).toBe(0);
+    expect((await rowsOf(s.intentId))[0]).toMatchObject({ id: old, status: 'PENDING' });
   });
 });
