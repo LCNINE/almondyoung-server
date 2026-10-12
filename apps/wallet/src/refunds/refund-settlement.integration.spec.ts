@@ -375,4 +375,64 @@ describeIfDb('환불 정산 — 수동 실행·실패 분류·송금 완료·목
       ['PENDING', 'MANUAL', null, null],
     ]);
   });
+
+  /** 결제사 응답이 끊긴 환불 한 번 — provider 가 던지면 wallet 은 FAILED·PROVIDER_EXCEPTION 행을 남긴다 */
+  async function ambiguousRefund(intentId: string, amount: number) {
+    externalRefund.mockRejectedValueOnce(new Error('socket hang up'));
+    const [row] = await service.createByIntent(intentId, { amount, reasonCode: 'MEDUSA_REFUND' });
+    expect(row).toMatchObject({ status: 'FAILED', failureCode: 'PROVIDER_EXCEPTION', failureRetryable: true });
+    return row;
+  }
+
+  it('응답 끊긴 환불 뒤 같은 금액 요청 — 새 행 없이 같은 행이 같은 멱등 키로 다시 나가고, 그 행 하나가 응답이다', async () => {
+    const s = await seed({ toss: 10_000 });
+    const first = await ambiguousRefund(s.intentId, 3_000);
+    externalRefund.mockResolvedValueOnce({ status: 'SUCCEEDED', providerRefundId: 'pk' });
+
+    const result = await service.createByIntent(s.intentId, { amount: 3_000, reasonCode: 'MEDUSA_REFUND' });
+
+    expect(result.map((r) => [r.id, r.status])).toEqual([[first.id, 'SUCCEEDED']]);
+    expect(externalRefund).toHaveBeenLastCalledWith(
+      expect.objectContaining({ refundId: first.id, idempotencyKey: `wallet:refund:${first.id}`, amount: 3_000 }),
+    );
+    expect(await rowsOf(s.intentId)).toHaveLength(1);
+  });
+
+  it('응답 끊긴 환불 뒤 다른 금액 요청 — 옛 행만 확정하고 이번 요청은 일시 거절(장부를 다시 맞추게)', async () => {
+    const s = await seed({ toss: 10_000 });
+    const first = await ambiguousRefund(s.intentId, 3_000);
+    externalRefund.mockResolvedValueOnce({ status: 'SUCCEEDED', providerRefundId: 'pk' });
+
+    const refusal = await refusalOf(service.createByIntent(s.intentId, { amount: 5_000 }));
+
+    expect(refusal).toMatchObject({ error: 'AMBIGUOUS_REFUND_RESOLVED', retryable: true });
+    expect(externalRefund).toHaveBeenCalledTimes(2);
+    expect((await rowsOf(s.intentId)).map((r) => [r.id, r.status])).toEqual([[first.id, 'SUCCEEDED']]);
+  });
+
+  it('되살려 보냈는데 또 끊김 — 같은 행이 다시 FAILED·PROVIDER_EXCEPTION, 새 행 없음', async () => {
+    const s = await seed({ toss: 10_000 });
+    const first = await ambiguousRefund(s.intentId, 3_000);
+    externalRefund.mockRejectedValueOnce(new Error('ETIMEDOUT'));
+
+    const [row] = await service.createByIntent(s.intentId, { amount: 3_000 });
+
+    expect(row).toMatchObject({ id: first.id, status: 'FAILED', failureCode: 'PROVIDER_EXCEPTION' });
+    expect(await rowsOf(s.intentId)).toHaveLength(1);
+  });
+
+  it('14일 지난 응답 끊긴 행은 되살리지 않는다 — 토스 멱등 키가 만료됐다, 지금처럼 새 행', async () => {
+    const s = await seed({ toss: 10_000 });
+    const first = await ambiguousRefund(s.intentId, 3_000);
+    await db
+      .update(refunds)
+      .set({ createdAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000) })
+      .where(eq(refunds.id, first.id));
+    externalRefund.mockResolvedValueOnce({ status: 'SUCCEEDED', providerRefundId: 'pk' });
+
+    const [row] = await service.createByIntent(s.intentId, { amount: 3_000 });
+
+    expect(row.id).not.toBe(first.id);
+    expect(await rowsOf(s.intentId)).toHaveLength(2);
+  });
 });

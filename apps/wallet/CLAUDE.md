@@ -84,6 +84,7 @@
 - **수동 실행(`execution = MANUAL`)**: `POST /v1/payment-intents/:id/refund` 에 `execution: 'MANUAL'`. 계획(남은 금액 비례·외부 먼저·포인트 마지막)은 자동과 같고,
   외부 결제 몫만 PG 를 부르지 않고 `PENDING` 행으로 남는다. 포인트 몫은 자동. 운영자가 송금한 뒤 `confirmManual` 로 닫는다
 - `confirmManual` 이 받는 행은 `isManuallyConfirmable` 한 곳이 정한다(무통장 PENDING 또는 MANUAL PENDING). 관리자 상세의 `manualConfirmable` 도 같은 함수다
+- **응답 끊긴 환불(`FAILED`·`PROVIDER_EXCEPTION`·AUTO, 14일 안)은 새 행이 아니라 같은 행·같은 멱등 키로 다시 보낸다** — `RefundsService.create()` 가 잠금 안에서 되살려 `dispatch` 한다. 새 행은 새 키라 토스가 같은 돈을 두 번 보낸다. 금액이 다른 요청은 옛 행만 확정하고 `AMBIGUOUS_REFUND_RESOLVED` 로 거절, 무통장은 계좌가 없으면 `AMBIGUOUS_REFUND_NEEDS_ACCOUNT`
 - `GET /v1/payment-intents/:id/refunds` — 환불 목록(상태 무관, 만든 순서). 정산 직전 장부 맞추기가 읽는다
 
 ### 멱등성
