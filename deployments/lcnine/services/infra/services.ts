@@ -297,6 +297,9 @@ export function setup(infra: SharedInfra) {
     // credentials 로 JSON.parse 해서 넘긴다. 속성 권한은 뷰어(읽기 전용).
     GA4_SERVICE_ACCOUNT: ga4ServiceAccount.value,
     GA4_PROPERTY_ID: 'properties/543601630',
+    // 역할별 권한 사본을 user-service 에서 받는다(@app/authorization PermissionModule).
+    USER_SERVICE_URL: idpUserServiceUrl,
+    USER_SERVICE_INTERNAL_KEY: idpUserServiceInternalKey,
   });
   const channelAdapterEnv = withPrefix('CHANNEL_ADAPTER', {
     DATABASE_URL: dbUrl('channel_adapter'),
@@ -316,6 +319,8 @@ export function setup(infra: SharedInfra) {
     ALMOND_AUTH_URL: 'https://asia-northeast3-almond-auth.cloudfunctions.net/api',
     MEMBERSHIP_SERVICE_URL: url('membership'),
     USER_SERVICE_URL: idpUserServiceUrl,
+    // 역할별 권한 사본을 user-service 에서 받는다(@app/authorization PermissionModule).
+    USER_SERVICE_INTERNAL_KEY: idpUserServiceInternalKey,
     PIM_API_URL: url('core'),
     NAVER_API_ENDPOINT: 'https://dummy.com',
     NAVER_CLIENT_ID: '1',
@@ -419,6 +424,9 @@ export function setup(infra: SharedInfra) {
     UGC_INTERNAL_KEY: ugcInternalKey.value,
     FILE_SERVICE_URL: url('file'),
     FILE_SERVICE_INTERNAL_KEY: fileServiceInternalKey.value,
+    // 역할별 권한 사본을 user-service 에서 받는다(@app/authorization PermissionModule).
+    USER_SERVICE_URL: idpUserServiceUrl,
+    USER_SERVICE_INTERNAL_KEY: idpUserServiceInternalKey,
   });
   const searchEnv = withPrefix('SEARCH', {
     ...searchBackendEnv,
@@ -432,6 +440,9 @@ export function setup(infra: SharedInfra) {
     OIDC_ISSUER_URL: idpUserServiceUrl,
     OPENAI_API_KEY: openAiApiKey.value,
     SEARCH_INTERNAL_KEY: searchInternalKey.value,
+    // 역할별 권한 사본을 user-service 에서 받는다(@app/authorization PermissionModule).
+    USER_SERVICE_URL: idpUserServiceUrl,
+    USER_SERVICE_INTERNAL_KEY: idpUserServiceInternalKey,
   });
 
   // 태스크 A: analytics + channel-adapter + membership (타깃그룹 3개 ≤ 5)
@@ -506,6 +517,9 @@ export function setup(infra: SharedInfra) {
       JWT_ISSUER: 'almondyoung-auth',
       // admin-web 이 넘겨 준 RS256 토큰을 검증한다.
       OIDC_ISSUER_URL: idpUserServiceUrl,
+      // 역할별 권한 사본을 user-service 에서 받는다(@app/authorization PermissionModule).
+      USER_SERVICE_URL: idpUserServiceUrl,
+      USER_SERVICE_INTERNAL_KEY: idpUserServiceInternalKey,
       // 도구가 부르는 곳. 인증은 부른 사람의 것을 그대로 싣는다.
       CORE_API_URL: url('core'),
       FILE_SERVICE_URL: url('file'),
@@ -556,6 +570,9 @@ export function setup(infra: SharedInfra) {
       JWT_ISSUER: 'almondyoung-auth',
       // OIDC: storefront/admin-web 의 RS256 토큰 검증용.
       OIDC_ISSUER_URL: idpUserServiceUrl,
+      // 역할별 권한 사본을 user-service 에서 받는다(@app/authorization PermissionModule).
+      USER_SERVICE_URL: idpUserServiceUrl,
+      USER_SERVICE_INTERNAL_KEY: idpUserServiceInternalKey,
       // 서버 간 내부 라우트(`/internal/*`)를 여는 공유 키. 사람 JWT 가 없는 호출자(channel-adapter)가
       // 이 값을 Authorization 헤더로 보낸다. 미설정이면 InternalKeyGuard 가 전부 거부한다.
       CORE_INTERNAL_KEY: coreInternalKey.value,
@@ -635,6 +652,9 @@ export function setup(infra: SharedInfra) {
       AUTH_SECRET: authSecret.value,
       // OIDC: storefront/admin-web 의 RS256 토큰 검증용.
       OIDC_ISSUER_URL: idpUserServiceUrl,
+      // 역할별 권한 사본을 user-service 에서 받는다(@app/authorization PermissionModule).
+      USER_SERVICE_URL: idpUserServiceUrl,
+      USER_SERVICE_INTERNAL_KEY: idpUserServiceInternalKey,
       AWS_ACCESS_KEY_ID: awsS3AccessKeyId.value,
       AWS_SECRET_ACCESS_KEY: awsS3SecretAccessKey.value,
       AWS_REGION: 'ap-northeast-2',

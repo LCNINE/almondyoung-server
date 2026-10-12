@@ -148,6 +148,8 @@ same_value OIDC_CLIENT_SECRET apps/medusa/.env web/almondyoung-storefront/.env.l
 same_value WALLET_API_KEY apps/medusa/.env apps/wallet/.env apps/wallet-web/.env.local
 same_value CORE_INTERNAL_KEY apps/core/.env apps/channel-adapter/.env
 same_value MEDUSA_API_KEY apps/channel-adapter/.env apps/admin-web/.env.local
+# 역할별 권한 사본(@app/authorization PermissionModule) — 값이 다르면 사본을 못 받아 그림자 판정이 «판정 불가»만 센다.
+same_value USER_SERVICE_INTERNAL_KEY apps/user-service/.env apps/core/.env apps/channel-adapter/.env apps/file-service/.env apps/membership/.env apps/wallet/.env
 
 echo "── 7. OIDC_ISSUER_URL 이 «로컬» IdP 를 가리키는가"
 # 🔴 라이브를 가리키면 libs/authorization 이 라이브 JWKS 로 서명을 검증해 전 API 가 401 인데,
