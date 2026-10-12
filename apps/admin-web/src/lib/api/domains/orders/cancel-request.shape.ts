@@ -76,7 +76,7 @@ export const SETTLEMENT_LABELS: Record<SettlementPhase, string> = {
   refused: '환불 거절',
 };
 export const MANUAL_REFUND_CONFIRM_TEXT =
-  '고객에게 계좌를 받아 직접 송금한 뒤, 결제 상세의 환불 내역에서 [완료 처리]를 눌러 주세요.';
+  '고객에게 계좌를 받아 직접 송금한 뒤, 결제 관리 › 환불 내역에서 [완료 처리]를 눌러 주세요.';
 const WALLET_REFUSED_PREFIX = 'wallet_refund_refused:';
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const KST_OFFSET_MS = 9 * 3_600_000;

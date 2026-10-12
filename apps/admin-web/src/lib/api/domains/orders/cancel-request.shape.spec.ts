@@ -179,7 +179,7 @@ describe('정산(#1016 36번 재설계)', () => {
     expect(cancelActionOf({ channel: 'medusa', orderStatus: 'confirmed', cancelRequest: null })).toEqual({ kind: 'cancel', label: '취소' });
   });
 
-  it('계좌 송금 확인 문구는 실제 화면 이름을 쓴다(D7)', () => {
-    expect(MANUAL_REFUND_CONFIRM_TEXT).toBe('고객에게 계좌를 받아 직접 송금한 뒤, 결제 상세의 환불 내역에서 [완료 처리]를 눌러 주세요.');
+  it('계좌 송금 확인 문구는 실제 화면 이름을 쓴다(D7, PR 6 — 환불 내역에 [완료 처리]가 생겼다)', () => {
+    expect(MANUAL_REFUND_CONFIRM_TEXT).toBe('고객에게 계좌를 받아 직접 송금한 뒤, 결제 관리 › 환불 내역에서 [완료 처리]를 눌러 주세요.');
   });
 });

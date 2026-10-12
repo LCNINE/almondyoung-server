@@ -867,7 +867,7 @@ export default function OrderTable() {
                     <SettlementCell r={r} />
                   </>
                 )}
-                {/* 수동 정산 주문은 송금 뒤 [완료 처리]가 결제 상세에 있다(D7) — 아래 환불 상태 갈래가 이미 버튼을 띄우는 행은 건너뛴다 */}
+                {/* 수동 정산 주문은 송금 뒤 [완료 처리]가 환불 내역·결제 상세에 있다(D7, PR 6) — 아래 환불 상태 갈래가 이미 버튼을 띄우는 행은 건너뛴다 */}
                 {r.isFirstOfOrder &&
                   r.cancelRequest?.refundMode === 'manual' &&
                   !['failed', 'manual_pending', 'succeeded', 'pending'].includes(r.refundStatus ?? '') && (
