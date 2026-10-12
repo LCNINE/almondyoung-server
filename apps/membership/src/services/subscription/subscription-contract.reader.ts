@@ -551,6 +551,26 @@ export class SubscriptionContractReader {
   }
 
   /**
+   * 관리자가 일수로 수기 지급한 계약이면 그 일수, 아니면 null. 수기 지급은 플랜을 복사해 계약을 만들어
+   * 계약·플랜만으론 결제 가입과 구별되지 않고, GRANTED_BY_ADMIN 이벤트가 유일한 흔적이다 (#1056).
+   */
+  async findAdminGrantDays(contractId: string): Promise<number | null> {
+    const [event] = await this.dbService.db
+      .select({ metadata: schema.subscriptionContractEvents.metadata })
+      .from(schema.subscriptionContractEvents)
+      .where(
+        and(
+          eq(schema.subscriptionContractEvents.contractId, contractId),
+          eq(schema.subscriptionContractEvents.eventType, 'GRANTED_BY_ADMIN'),
+        ),
+      )
+      .limit(1);
+
+    if (!event) return null;
+    return ((event.metadata ?? {}) as { days?: number }).days ?? 0;
+  }
+
+  /**
    * 사용자의 구독 기간 조정 이벤트 조회 (ENTITLEMENT_EXTENDED / ENTITLEMENT_REDUCED)
    */
   async findAdjustmentEventsByUserId(userId: string) {

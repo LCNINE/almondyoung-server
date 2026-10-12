@@ -37,6 +37,12 @@ type CreateSubscriptionOptions = {
   initialPaymentAmount?: number;
 };
 
+/** 이력의 조정 이벤트에 GRANTED_BY_ADMIN 이 있으면 그 계약은 관리자 수기 지급이다 (#1056). */
+function adminGrantOf(adjustments: { eventType: string; days: number }[]): { days: number } | null {
+  const grant = adjustments.find((a) => a.eventType === 'GRANTED_BY_ADMIN');
+  return grant ? { days: grant.days } : null;
+}
+
 @Injectable()
 export class SubscriptionService {
   private readonly logger = new Logger(SubscriptionService.name);
@@ -86,6 +92,7 @@ export class SubscriptionService {
     const paymentActionNeeded =
       (contract.billingPath === 'INVOICE' && contract.isPastDue) ||
       (await this.billingReader.findDunningByContractId(contract.id)) !== null;
+    const adminGrantDays = await this.contractReader.findAdminGrantDays(contract.id);
     const tierDto = tier
       ? {
           id: tier.id,
@@ -107,6 +114,8 @@ export class SubscriptionService {
       pausedAt: entitlement.pausedAt ?? null,
       recurringCancelledAt: contract.recurringCancelledAt ?? null,
       paymentActionNeeded,
+      // 수기 지급은 결제 가입이 아니다 — 화면은 월간구독·다음 결제일 대신 임시 이용권으로 그린다.
+      adminGrant: adminGrantDays === null ? null : { days: adminGrantDays },
       startDate: entitlement.startsAt,
       endDate: entitlement.endsAt,
       currentPeriodStart: entitlement.startsAt,
@@ -457,6 +466,7 @@ export class SubscriptionService {
         plan: { price: plan.price, currency: plan.currency ?? 'KRW', durationDays: plan.durationDays },
         tier: tier?.id ? { code: tier.code } : null,
         adjustments: contractAdjustments,
+        adminGrant: adminGrantOf(contractAdjustments),
         // 이 계약 기간 동안 받은 멤버십 할인 합계. 결제 주기 경계로 끊은 값이라 환불 판정과 같은 정의다.
         savings: savingsByContract[contract.id] ?? { totalSavings: 0, orderCount: 0 },
       };
@@ -513,6 +523,7 @@ export class SubscriptionService {
         plan: { price: plan.price, currency: plan.currency ?? 'KRW', durationDays: plan.durationDays },
         tier: tier?.id ? { code: tier.code } : null,
         adjustments: contractAdjustments,
+        adminGrant: adminGrantOf(contractAdjustments),
         // 이 계약 기간 동안 받은 멤버십 할인 합계. 결제 주기 경계로 끊은 값이라 환불 판정과 같은 정의다.
         savings: savingsByContract[contract.id] ?? { totalSavings: 0, orderCount: 0 },
       };
