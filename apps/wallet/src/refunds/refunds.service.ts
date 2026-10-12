@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { DbService } from '@app/db';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { WalletSchema, charges as chargesTable, refunds, paymentIntents, RefundExecution } from '../schema';
-import { Charge, DbTx, Refund } from '../types';
+import { Charge, DbTx, PaymentMethod, Refund } from '../types';
 import { ChargesService } from '../charges/charges.service';
 import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
@@ -26,6 +26,13 @@ function supportsAutoRefund(methodType: string): boolean {
   );
   return descriptor !== undefined && descriptor.capabilities.includes('refund');
 }
+
+type DispatchContext = {
+  charge: Charge;
+  method: PaymentMethod;
+  userId: string;
+  refundReceiveAccount?: CreateRefundDto['refundReceiveAccount'];
+};
 
 @Injectable()
 export class RefundsService {
@@ -138,6 +145,16 @@ export class RefundsService {
       return refund;
     }
 
+    return this.dispatch(refund, { charge, method, userId, refundReceiveAccount: dto.refundReceiveAccount });
+  }
+
+  /**
+   * 환불 행 하나를 provider 에 보내고 결과를 그 행에 적는다. 멱등 키는 행 id 에서 나온다(`wallet:refund:<id>`) — 같은 행을 다시 보내면
+   * 토스는 첫 요청이 처리됐으면 그 응답을, 아니면 이제 처리한다(멱등키 15일). 포인트 원장도 같은 키로 멱등이다.
+   * 그래서 «돈이 나갔는지 모르는» 행은 새 행이 아니라 이 함수로 같은 행을 다시 보낸다(#1016 36번 마무리 ①③).
+   */
+  private async dispatch(refund: Refund, ctx: DispatchContext): Promise<Refund> {
+    const { charge, method, userId } = ctx;
     const correlationId = `refund:${refund.id}:${Date.now()}`;
     const provider = this.providerRegistry.getProviderOrThrow(method.type);
     const idempotencyKey = `wallet:refund:${refund.id}`;
@@ -150,13 +167,13 @@ export class RefundsService {
         authorizeChargeId: ledgerLegChargeId(charge),
         intentId: charge.intentId,
         userId,
-        amount: dto.amount,
+        amount: refund.amount,
         currency: charge.currency,
         idempotencyKey,
         correlationId,
-        reasonCode: dto.reasonCode,
+        reasonCode: refund.reasonCode ?? undefined,
         providerData: method.providerData,
-        refundReceiveAccount: dto.refundReceiveAccount,
+        refundReceiveAccount: ctx.refundReceiveAccount,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -210,9 +227,9 @@ export class RefundsService {
                 intentId: charge.intentId,
                 userId,
                 status: 'SUCCEEDED',
-                amount: dto.amount,
+                amount: refund.amount,
                 currency: charge.currency,
-                reasonCode: dto.reasonCode ?? null,
+                reasonCode: refund.reasonCode ?? null,
                 occurredAt: now,
                 extra: notifyExtra,
               }),
@@ -234,7 +251,7 @@ export class RefundsService {
           );
         }
       });
-      await this.cancelCashReceiptBestEffort(charge.id, dto.amount);
+      await this.cancelCashReceiptBestEffort(charge.id, refund.amount);
     } else if (providerResult.status === 'PENDING') {
       // PG 를 안 부른 수동 폴백(무통장 계좌 없음 등)은 MANUAL 송금 대기다 — Medusa 장부 맞추기가 넣고, 환불 내역이 [완료 처리]를 띄운다.
       // AUTO 로 두면 «진행 중»으로 읽혀 정산이 멈추고(D8) 고객에겐 «환불 완료»로 보인다(#1016 36번 마무리 ②)
