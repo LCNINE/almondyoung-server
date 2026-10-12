@@ -90,6 +90,7 @@ export function modifiedPayload(
     quantities?: number[];
     cancelRequests?: OrderModifiedPayload['snapshot']['cancelRequests'];
     address?: typeof ADDRESS;
+    orderCancelled?: boolean;
   } = {},
 ): OrderModifiedPayload {
   return {
@@ -107,6 +108,7 @@ export function modifiedPayload(
         cancelled: false,
       })),
       ...(over.cancelRequests ? { cancelRequests: over.cancelRequests } : {}),
+      ...(over.orderCancelled ? { orderCancelled: true as const } : {}),
     },
   };
 }

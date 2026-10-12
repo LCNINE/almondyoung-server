@@ -86,6 +86,38 @@ describeIfDb('정산 중 요청의 사실 받기 (DB integration, rollback-only)
     });
   });
 
+  it('전체 — OrderCancelled 를 놓쳐도 재수집 스냅샷의 orderCancelled 로 applied(PR 6 판정 3)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, id } = await confirmFull(tx);
+      await w.manager.recordSettlementFailure(failure(id, { retryable: true, failureCode: 'http_500' }), tx);
+      await w.changes.handle(seed.salesOrderId, modifiedPayload(seed, { orderCancelled: true }), 'm-1', tx);
+      const row = await rowOf(tx, id);
+      expect(row.status).toBe('applied');
+      expect(row.metadata).toMatchObject({ settlement: { mode: 'auto' } });
+      expect((row.metadata as { settlement: Record<string, unknown> }).settlement.lastFailure).toBeUndefined();
+      // 판매주문은 확정 때 이미 취소됐다 — 취소 기록이 늘지 않는다
+      expect(await cancellationsOf(tx, seed.salesOrderId)).toHaveLength(1);
+    });
+  });
+
+  it('부분 정산 중 + 채널 주문 취소 스냅샷 — superseded(CHANNEL_FULL_CANCEL), settleCancelled 와 같다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, id } = await confirmPartial(tx);
+      await w.changes.handle(seed.salesOrderId, modifiedPayload(seed, { quantities: [1, 1], orderCancelled: true }), 'm-1', tx);
+      const row = await rowOf(tx, id);
+      expect(row.status).toBe('superseded');
+      expect(row.metadata).toMatchObject({ supersededReason: 'CHANNEL_FULL_CANCEL' });
+    });
+  });
+
+  it('orderCancelled 가 없는 재수집은 전체 정산 중 행을 닫지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, id } = await confirmFull(tx);
+      await w.changes.handle(seed.salesOrderId, modifiedPayload(seed), 'm-1', tx);
+      expect((await rowOf(tx, id)).status).toBe('settling');
+    });
+  });
+
   it('부분 — refunded 기록: applied + 결과, 물리 적용은 다시 하지 않는다(취소 기록 그대로 하나)', async () => {
     await inRollbackTx(db, async (tx) => {
       const { w, seed, id } = await confirmPartial(tx);

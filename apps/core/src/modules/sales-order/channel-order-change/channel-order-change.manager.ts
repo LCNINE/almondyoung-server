@@ -60,7 +60,7 @@ export class ChannelOrderChangeManager {
     const deltas = await this.cancelSettler.settleModified(
       salesOrderId,
       fullDiff,
-      payload.snapshot.cancelRequests ?? [],
+      { cancelRequests: payload.snapshot.cancelRequests ?? [], orderCancelled: payload.snapshot.orderCancelled === true },
       payload.modifiedAt,
       tx,
     );

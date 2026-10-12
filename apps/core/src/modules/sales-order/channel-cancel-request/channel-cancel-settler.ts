@@ -36,15 +36,19 @@ export class ChannelCancelSettler {
   /**
    * 열린 부분취소 요청이 먹은 감소를 반영하고, 먹지 않은 델타를 돌려준다 — 그것만 5번 규칙을 탄다.
    * 정산 중 부분취소는 채널 진행 기록이 «환불 끝»이면 닫고, 기록이 없으면(채널이 아직 안 줄였다) 요청분의 «늘어남»을 먹는다(D10).
+   * 채널이 주문을 취소했으면(`orderCancelled`) 정산 중 요청을 `OrderCancelled` 와 똑같이 닫는다 — 그 사실은 주문당 한 번만 오므로
+   * 놓친 행에겐 재수집 스냅샷이 유일한 탈출구다(PR 6 판정 3).
    */
   async settleModified(
     salesOrderId: string,
     deltas: ChannelDelta[],
-    progress: OrderModifiedCancelRequest[],
+    channel: { cancelRequests: OrderModifiedCancelRequest[]; orderCancelled: boolean },
     occurredAt: string,
     tx: DbTx,
   ): Promise<ChannelDelta[]> {
+    const progress = channel.cancelRequests;
     const rest = await this.settleLegacyModified(salesOrderId, deltas, progress, occurredAt, tx);
+    if (channel.orderCancelled) await this.closeSettlingByFullCancel(salesOrderId, tx);
     const unreflected: CancelRequestLine[] = [];
     for (const row of await this.reader.findSettling(salesOrderId, tx, { lock: true })) {
       const meta = readCancelRequestMetadata(row.metadata);
@@ -126,7 +130,11 @@ export class ChannelCancelSettler {
       if (meta.request.scope === 'full') await this.write(open.id, 'applied', meta, tx);
       else await this.supersede(open, meta, 'CHANNEL_FULL_CANCEL', tx);
     }
-    // 정산 중 — 전체는 끝났고, 부분은 전체취소가 «캡처 − 환불»을 다 돌려줘 덮였다(스펙 §7.3)
+    await this.closeSettlingByFullCancel(salesOrderId, tx);
+  }
+
+  /** 정산 중 — 전체는 끝났고, 부분은 전체취소가 «캡처 − 환불»을 다 돌려줘 덮였다(스펙 §7.3) */
+  private async closeSettlingByFullCancel(salesOrderId: string, tx: DbTx): Promise<void> {
     for (const row of await this.reader.findSettling(salesOrderId, tx, { lock: true })) {
       const meta = readCancelRequestMetadata(row.metadata);
       if (meta.request.scope === 'full') await this.write(row.id, 'applied', settled(meta), tx);
