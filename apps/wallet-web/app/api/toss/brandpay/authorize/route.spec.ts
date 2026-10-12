@@ -1,5 +1,5 @@
-jest.mock('@/lib/auth/oidc-client', () => ({ refreshTokens: jest.fn() }));
-jest.mock('@/lib/auth/session-cookies', () => ({
+jest.mock('../../../../../lib/auth/oidc-client', () => ({ refreshTokens: jest.fn() }));
+jest.mock('../../../../../lib/auth/session-cookies', () => ({
   SESSION_COOKIE_NAMES: { ACCESS_TOKEN: 'wallet_at', REFRESH_TOKEN: 'wallet_rt' },
   backendAuthCookieFromToken: (token: string | undefined) => (token ? `accessToken=${token}` : ''),
   writeSessionCookies: jest.fn(),
