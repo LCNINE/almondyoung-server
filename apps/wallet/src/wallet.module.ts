@@ -98,6 +98,7 @@ import { StatisticsAdminController } from './admin/statistics-admin.controller';
 import { ExpirationJob } from './jobs/expiration.job';
 import { TossActionExpirationJob } from './jobs/toss-action-expiration.job';
 import { PointsExpirationJob } from './jobs/points-expiration.job';
+import { RefundResendJob } from './refunds/refund-resend.job';
 
 // Webhooks
 import { TossWebhookController } from './webhooks/toss-webhook.controller';
@@ -556,6 +557,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     ExpirationJob,
     TossActionExpirationJob,
     PointsExpirationJob,
+    RefundResendJob,
   ],
 })
 export class WalletModule {}

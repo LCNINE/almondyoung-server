@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, asc, eq, gt, inArray, sql, SQL } from 'drizzle-orm';
-import { WalletSchema, charges as chargesTable, refunds, paymentIntents, RefundExecution } from '../schema';
+import { and, asc, eq, gt, inArray, lt, sql, SQL } from 'drizzle-orm';
+import { WalletSchema, charges as chargesTable, refunds, paymentIntents, paymentMethods as paymentMethodsTable, RefundExecution } from '../schema';
 import { Charge, DbTx, PaymentMethod, Refund } from '../types';
 import { ChargesService } from '../charges/charges.service';
 import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
@@ -32,6 +32,14 @@ function supportsAutoRefund(methodType: string): boolean {
  * 이보다 오래된 행은 지금처럼 무시한다 — 기존 결제·환불 건은 처리된 것으로 간주(2026-10-11 결정).
  */
 export const AMBIGUOUS_RESEND_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * AUTO PENDING 이 이만큼 갱신이 없으면 멈춘 것으로 본다 — provider 호출 도중 프로세스가 죽었다(배포 교체 등).
+ * 토스 호출이 매달릴 수 있는 최장(undici 기본 headers·body 각 300초)의 세 배라, 진행 중인 호출을 집지 않는다.
+ */
+export const STUCK_PENDING_AFTER_MS = 30 * 60 * 1000;
+/** 같은 키로 다시 보낼 때 추가 정보가 필요 없는 수단. 무통장은 고객 계좌가 필요한데 저장하지 않는다 */
+const RESENDABLE_METHOD_TYPES = ['TOSS', 'POINTS'] as const;
 
 type DispatchContext = {
   charge: Charge;
@@ -579,6 +587,59 @@ export class RefundsService {
       `[createByIntent] 복합결제 환불 부분 실패 — 수동 대사 필요. intentId=${intentId} requested=${requested} ` +
         `moved=${moved.map((r) => `${r.id}:${r.amount}:${r.status}`).join(',')} failed=${failure}`,
     );
+  }
+
+  /**
+   * 멈춘 AUTO PENDING 을 같은 키로 마저 보낸다(#1016 36번 마무리 ③). Medusa 장부 맞추기는 장부에 없는 AUTO PENDING 을 «진행 중»으로 보고
+   * 정산을 멈추므로(D8), 이 크론이 끝내 주지 않으면 그 주문의 정산은 리컨실러 «자동 멈춤»까지 간다.
+   * 한 행은 한 주체만 — 조건부 UPDATE(updated_at 이 아직 오래됨)로 집는다. 먼저 집은 쪽이 updated_at 을 now 로 올리므로
+   * 크론 태스크가 둘이어도, 늦게 끝난 create() 와 겹쳐도 나중 쪽은 0행이다. (updated_at 동등 비교는 쓰지 않는다 —
+   * DB 는 마이크로초, JS Date 는 밀리초라 영영 안 맞는다.)
+   */
+  async resendStuckAutoPending(now: Date, limit = 50): Promise<{ scanned: number; resent: number }> {
+    const stuckBefore = new Date(now.getTime() - STUCK_PENDING_AFTER_MS);
+    const candidates = await this.dbService.db
+      .select({ refund: refunds, charge: chargesTable, method: paymentMethodsTable })
+      .from(refunds)
+      .innerJoin(chargesTable, eq(chargesTable.id, refunds.chargeId))
+      .innerJoin(paymentMethodsTable, eq(paymentMethodsTable.id, chargesTable.paymentMethodId))
+      .where(
+        and(
+          eq(refunds.status, 'PENDING'),
+          eq(refunds.execution, 'AUTO'),
+          lt(refunds.updatedAt, stuckBefore),
+          gt(refunds.createdAt, new Date(now.getTime() - AMBIGUOUS_RESEND_WINDOW_MS)),
+          inArray(paymentMethodsTable.type, [...RESENDABLE_METHOD_TYPES]),
+        ),
+      )
+      .orderBy(asc(refunds.updatedAt))
+      .limit(limit);
+
+    let resent = 0;
+    for (const { refund, charge, method } of candidates) {
+      const claimed = await this.dbService.db
+        .update(refunds)
+        .set({ updatedAt: now })
+        .where(
+          and(
+            eq(refunds.id, refund.id),
+            eq(refunds.status, 'PENDING'),
+            eq(refunds.execution, 'AUTO'),
+            lt(refunds.updatedAt, stuckBefore),
+          ),
+        )
+        .returning({ id: refunds.id });
+      if (claimed.length === 0) continue;
+      const userId = await this.getIntentUserId(refund.intentId);
+      if (!userId) {
+        this.logger.error(`[resendStuckAutoPending] intent 없음 — refund=${refund.id}`);
+        continue;
+      }
+      const result = await this.dispatch(refund, { charge, method, userId });
+      this.logger.warn(`[resendStuckAutoPending] refund=${refund.id} amount=${refund.amount} → ${result.status}`);
+      resent++;
+    }
+    return { scanned: candidates.length, resent };
   }
 
   /** intent 의 환불 전부(상태 무관), 만든 순서. 거르는 건 호출자 몫이다(스펙 §6.2·§8.2). */

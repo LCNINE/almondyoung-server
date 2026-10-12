@@ -506,4 +506,65 @@ describeIfDb('환불 정산 — 수동 실행·실패 분류·송금 완료·목
       expect.objectContaining({ id: first.id, status: 'FAILED', failureCode: 'PROVIDER_EXCEPTION' }),
     ]);
   });
+
+  /** 멈춘 AUTO PENDING — provider 호출 도중 프로세스가 죽은 꼴. 행만 직접 만든다 */
+  async function stuckPending(chargeId: string, intentId: string, amount: number, updatedAgoMs: number, execution: 'AUTO' | 'MANUAL' = 'AUTO') {
+    const id = randomUUID();
+    const at = new Date(Date.now() - updatedAgoMs);
+    await db.insert(refunds).values({
+      id, chargeId, intentId, amount, currency: 'KRW', status: 'PENDING', execution, reasonCode: 'MEDUSA_REFUND',
+      createdAt: at, updatedAt: at,
+    });
+    return id;
+  }
+
+  it('크론: 30분 넘게 멈춘 TOSS AUTO PENDING 만 같은 키로 다시 보낸다 — 젊은 행·MANUAL·무통장은 그대로', async () => {
+    const s = await seed({ toss: 10_000, bank: 5_000 });
+    const old = await stuckPending(s.tossChargeId!, s.intentId, 2_000, 31 * 60_000);
+    const young = await stuckPending(s.tossChargeId!, s.intentId, 1_000, 5 * 60_000);
+    const manual = await stuckPending(s.tossChargeId!, s.intentId, 1_000, 31 * 60_000, 'MANUAL');
+    const bank = await stuckPending(s.bankChargeId!, s.intentId, 1_000, 31 * 60_000);
+    externalRefund.mockResolvedValue({ status: 'SUCCEEDED', providerRefundId: 'pk' });
+
+    const summary = await service.resendStuckAutoPending(new Date());
+
+    expect(externalRefund).toHaveBeenCalledTimes(1);
+    expect(externalRefund).toHaveBeenCalledWith(expect.objectContaining({ refundId: old, idempotencyKey: `wallet:refund:${old}`, amount: 2_000 }));
+    const byId = new Map((await rowsOf(s.intentId)).map((r) => [r.id, r.status]));
+    expect([byId.get(old), byId.get(young), byId.get(manual), byId.get(bank)]).toEqual(['SUCCEEDED', 'PENDING', 'PENDING', 'PENDING']);
+    expect(summary.resent).toBeGreaterThanOrEqual(1);
+  });
+
+  it('크론: 다시 보내다 또 끊기면 FAILED·PROVIDER_EXCEPTION — 다음 환불 요청이 같은 행을 되살린다', async () => {
+    const s = await seed({ toss: 10_000 });
+    const old = await stuckPending(s.tossChargeId!, s.intentId, 2_000, 31 * 60_000);
+    externalRefund.mockRejectedValueOnce(new Error('ECONNRESET'));
+
+    await service.resendStuckAutoPending(new Date());
+
+    expect(await rowsOf(s.intentId)).toEqual([expect.objectContaining({ id: old, status: 'FAILED', failureCode: 'PROVIDER_EXCEPTION' })]);
+  });
+
+  it('크론: 두 번 돌아도 한 번만 보낸다 — 집은 행은 다음 바퀴 후보에서 빠진다', async () => {
+    const s = await seed({ toss: 10_000 });
+    const old = await stuckPending(s.tossChargeId!, s.intentId, 2_000, 31 * 60_000);
+    externalRefund.mockResolvedValue({ status: 'SUCCEEDED', providerRefundId: 'pk' });
+    await service.resendStuckAutoPending(new Date());
+    await service.resendStuckAutoPending(new Date());
+
+    expect(externalRefund).toHaveBeenCalledTimes(1);
+    expect((await rowsOf(s.intentId))[0]).toMatchObject({ id: old, status: 'SUCCEEDED' });
+  });
+
+  it('크론: defaultNow() 마이크로초 정밀도 행도 집는다 — 밀리초 동등 비교면 영영 못 집는다', async () => {
+    const s = await seed({ toss: 10_000 });
+    const old = await stuckPending(s.tossChargeId!, s.intentId, 2_000, 0);
+    await sql`UPDATE refunds SET updated_at = now() - interval '31 minutes', created_at = now() - interval '31 minutes' WHERE id = ${old}`;
+    externalRefund.mockResolvedValue({ status: 'SUCCEEDED', providerRefundId: 'pk' });
+
+    await service.resendStuckAutoPending(new Date());
+
+    expect(externalRefund).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: `wallet:refund:${old}` }));
+    expect((await rowsOf(s.intentId))[0]).toMatchObject({ id: old, status: 'SUCCEEDED' });
+  });
 });
