@@ -89,9 +89,8 @@ describe("buildSaleProducts", () => {
       priceListIds: ["pl_m"],
       productIds: ["prod_m"],
       membershipOnlyVariantIds: ["v_m"],
-      membershipOnlyProductIds: ["prod_m"],
     } satisfies TimeSale
-    const product = (calculated: number) =>
+    const product = (calculated: number, priceListId: string | null = null) =>
       ({
         id: "prod_m",
         title: "롤리킹",
@@ -103,16 +102,21 @@ describe("buildSaleProducts", () => {
             calculated_price: {
               calculated_amount: calculated,
               original_amount: 18000,
+              calculated_price: { price_list_id: priceListId },
             },
             metadata: { membershipPrice: 16000 },
           },
         ],
       }) as unknown as HttpTypes.StoreProduct
-    const build = (calculated: number, isMember: boolean) =>
+    const build = (
+      calculated: number,
+      isMember: boolean,
+      priceListId: string | null = null
+    ) =>
       buildSaleProducts({
         sales: [sale],
         ids: ["prod_m"],
-        products: [product(calculated)],
+        products: [product(calculated, priceListId)],
         countryCode: "kr",
         isMember,
       })[0]
@@ -128,12 +132,30 @@ describe("buildSaleProducts", () => {
     })
 
     it("회원에게는 일반가 아래 특가를 보인다", () => {
-      expect(build(14000, true)).toMatchObject({
+      expect(build(14000, true, "pl_m")).toMatchObject({
         membershipSale: true,
         price: 18000,
         originalPrice: 18000,
         membershipPrice: 14000,
       })
+    })
+
+    it("회원에게 상시 멤버십가가 더 싸게 적용됐으면 기간 특가로 그리지 않는다", () => {
+      expect(
+        build(11900, true, "pl_membership_prices").membershipSale
+      ).toBeUndefined()
+    })
+
+    it("대표 옵션이 멤버십 전용 특가가 아니면 멤버십 특가로 그리지 않는다", () => {
+      const mixed = product(18000)
+      mixed.variants![0].id = "v_plain"
+      const [card] = buildSaleProducts({
+        sales: [sale],
+        ids: ["prod_m"],
+        products: [mixed],
+        countryCode: "kr",
+      })
+      expect(card.membershipSale).toBeUndefined()
     })
   })
 

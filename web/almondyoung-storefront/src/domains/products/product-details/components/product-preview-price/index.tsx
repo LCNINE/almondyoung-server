@@ -3,10 +3,7 @@
 import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
 import { TimeSaleBadge } from "@/components/shared/badges/time-sale-badge"
 import { TimeSaleCountdown } from "@/components/shared/time-sale-countdown"
-import {
-  useMembershipOnlySale,
-  useTimeSaleForVariant,
-} from "@/components/providers/time-sale-provider"
+import { useVariantTimeSale } from "@/components/providers/time-sale-provider"
 import {
   getPricesForVariant,
   getProductPrice,
@@ -29,9 +26,10 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
   const tSale = useTranslations("home.timeSale")
   const { cheapestPrice, cheapestVariant } = getProductPrice({ product })
   // 세일이 여럿이라 전역 종료 시각이 없다 — 이 품목의 가격을 만든 세일의 것을 쓴다.
-  // 멤버십 전용 특가 옵션은 비회원에게 세일가가 계산되지 않아 id 목록으로 따로 찾는다.
-  const membershipOnlySale = useMembershipOnlySale(cheapestVariant?.id)
-  const timeSale = useTimeSaleForVariant(cheapestVariant) ?? membershipOnlySale
+  const { timeSale, membershipOnly: membershipOnlySale } = useVariantTimeSale(
+    cheapestVariant,
+    hasMembership
+  )
   const isTimeSale = timeSale !== null
   const endsAt = timeSale?.endsAt ?? null
 
@@ -91,7 +89,7 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
   // 멤버십가 비공개 상품: 비회원에게도 일반 판매가는 그대로 보여주고,
   // 아래 멤버십가 프로모션 영역에서 숫자 대신 "멤버십 회원 공개"를 표시
   const showMembershipPriceHiddenNotice =
-    !hasMembership && (isMembershipOnly || membershipOnlySale !== null)
+    !hasMembership && (isMembershipOnly || membershipOnlySale)
 
   // 멤버십 전용 특가를 회원에게: 일반가는 그대로 두고 그 아래 특가를 강조한다(카드와 같다).
   if (hasMembership && membershipOnlySale && isMembershipApplied) {

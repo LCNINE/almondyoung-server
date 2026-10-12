@@ -14,9 +14,10 @@ export type TimeSale = {
   /** 카드가 "이 가격이 타임세일에서 나왔는가" 를 판별할 때 쓴다. */
   priceListIds: string[]
   productIds: string[]
-  /** 멤버십 세일가만 있는 옵션·상품(멤버십 전용 특가). 옛 Medusa 응답이면 없다. */
+  /** 이 세일에 가격이 걸린 옵션 전부(일반·멤버십). 옛 Medusa 응답이면 없다. */
+  variantIds?: string[]
+  /** 멤버십 세일가만 있는 옵션(멤버십 전용 특가). 옛 Medusa 응답이면 없다. */
   membershipOnlyVariantIds?: string[]
-  membershipOnlyProductIds?: string[]
 }
 
 export type TimeSaleOverview = {

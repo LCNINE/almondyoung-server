@@ -2,7 +2,11 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { medusaProductPricingApi } from '@/lib/api/domains/medusa/price-lists';
-import { medusaTimeSalesApi } from '@/lib/api/domains/medusa/time-sales';
+import {
+  medusaTimeSaleSettingsApi,
+  medusaTimeSalesApi,
+} from '@/lib/api/domains/medusa/time-sales';
+import { defaultTimeSaleSettings } from '@packages/domain-types/time-sale';
 import { medusaCatalogApi, type MedusaCategoryItem } from '@/lib/api/domains/medusa/catalog';
 import {
   buildTimeSaleWriteBody,
@@ -14,6 +18,23 @@ import {
   type TimeSalePeriod,
   type TimeSaleRow,
 } from '@/features/mall/marketing/time-sale/time-sale-model';
+
+/** 진열·스타일 설정. 편집기와 상품진열 폼이 같은 캐시를 쓴다. 저장된 적이 없으면 기본값으로 시작한다. */
+export const timeSaleSettingsQuery = {
+  queryKey: ['time-sale-settings'],
+  queryFn: async () => {
+    const result = await medusaTimeSaleSettingsApi.get();
+    return {
+      settings: result.settings ?? defaultTimeSaleSettings(),
+      revision: result.revision,
+    };
+  },
+};
+
+/** 환경설정의 할인 금액 끝자리 처리. 일괄 할인 계산이 모두 이 값을 쓴다. */
+export function useTimeSaleRounding() {
+  return useQuery(timeSaleSettingsQuery).data?.settings.environment.rounding ?? 'round';
+}
 
 const timeSaleKeys = {
   all: ['time-sales'] as const,

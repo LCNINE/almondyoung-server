@@ -1,7 +1,7 @@
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import type { MedusaContainer } from '@medusajs/framework/types';
 import type { TimeSaleRecord } from '../modules/time-sale/service';
-import { findTimeSaleIssues, membershipOnlyItems, orderByProductOrder } from '../workflows/time-sale/rules';
+import { findTimeSaleIssues, membershipOnlyVariantIds, orderByProductOrder } from '../workflows/time-sale/rules';
 
 // ── 경계 크론용 (price list 기준) ──────────────────────────────────────────────
 // 가격 엔진은 price list 의 starts_at/ends_at/status 를 읽는다. 워크플로가 time_sale 값을 리스트에 맞춰
@@ -304,9 +304,10 @@ export type StoreTimeSaleDto = {
   endsAt: string;
   priceListIds: string[];
   productIds: string[];
-  /** 멤버십 세일가만 있는 옵션·상품. 금액은 싣지 않는다 — 비회원 화면은 «회원 공개»로만 그린다. */
+  /** 이 세일에 가격이 걸린 옵션 전부(일반·멤버십). 카트 라인처럼 가격표 출처가 없는 자리가 옵션 단위로 가른다. */
+  variantIds: string[];
+  /** 멤버십 세일가만 있는 옵션. 금액은 싣지 않는다 — 비회원 화면은 「회원 공개」로만 그린다. */
   membershipOnlyVariantIds: string[];
-  membershipOnlyProductIds: string[];
 };
 
 export type StoreTimeSaleResponse = {
@@ -357,10 +358,7 @@ export async function listActiveStoreTimeSales(container: MedusaContainer): Prom
   return {
     timeSales: sales.map((sale) => {
       const saleListIds = new Set(sale.price_lists.map((p) => p.id));
-      const membershipOnly = membershipOnlyItems(
-        priceRows.prices.filter((row) => saleListIds.has(row.price_list_id)),
-        priceRows.membershipListIds,
-      );
+      const saleRows = priceRows.prices.filter((row) => saleListIds.has(row.price_list_id));
       return {
         id: sale.id,
         startsAt: iso(sale.starts_at),
@@ -370,8 +368,8 @@ export async function listActiveStoreTimeSales(container: MedusaContainer): Prom
           [...new Set(sale.price_lists.flatMap((p) => productsByList.get(p.id) ?? []))],
           sale.product_order ?? [],
         ),
-        membershipOnlyVariantIds: membershipOnly.variantIds,
-        membershipOnlyProductIds: membershipOnly.productIds,
+        variantIds: [...new Set(saleRows.map((row) => row.variant_id))],
+        membershipOnlyVariantIds: membershipOnlyVariantIds(saleRows, priceRows.membershipListIds),
       };
     }),
     products: products.map((id) => ({ id, categoryIds: categoryIds.get(id) ?? [] })),

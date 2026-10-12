@@ -276,21 +276,17 @@ export function planTimeSaleUpdate(params: {
 }
 
 /**
- * 멤버십 세일가만 있고 일반 세일가가 없는 품목(멤버십 전용 특가). 비회원 화면이 이 품목을 «회원 공개»로
- * 그린다. 상품은 일반 세일 옵션이 하나라도 있으면 일반 세일로 본다 — 카드를 일반 세일 기준으로 그리기 위해서.
+ * 멤버십 세일가만 있고 일반 세일가가 없는 옵션(멤버십 전용 특가). 비회원 화면이 이 옵션을 「회원 공개」로 그린다.
  */
-export function membershipOnlyItems(
-  rows: Array<{ price_list_id: string; variant_id: string; product_id: string }>,
+export function membershipOnlyVariantIds(
+  rows: Array<{ price_list_id: string; variant_id: string }>,
   membershipListIds: Set<string>,
-): { variantIds: string[]; productIds: string[] } {
+): string[] {
   const general = new Set(rows.filter((r) => !membershipListIds.has(r.price_list_id)).map((r) => r.variant_id));
-  const generalProducts = new Set(
-    rows.filter((r) => !membershipListIds.has(r.price_list_id)).map((r) => r.product_id),
-  );
-  const only = rows.filter((r) => membershipListIds.has(r.price_list_id) && !general.has(r.variant_id));
 
-  return {
-    variantIds: [...new Set(only.map((r) => r.variant_id))],
-    productIds: [...new Set(only.map((r) => r.product_id))].filter((id) => !generalProducts.has(id)),
-  };
+  return [
+    ...new Set(
+      rows.filter((r) => membershipListIds.has(r.price_list_id) && !general.has(r.variant_id)).map((r) => r.variant_id),
+    ),
+  ];
 }

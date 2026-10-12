@@ -12,6 +12,7 @@ import {
   useTimeSaleDetail,
   useTimeSaleProductRows,
   useTimeSaleProductMeta,
+  useTimeSaleRounding,
   useUpdateTimeSale,
 } from '@/lib/services/time-sale';
 import {
@@ -169,6 +170,7 @@ export default function TimeSaleFormTemplate({
 
   // 저장하지 않은 변경이 있는지. 닫거나 나갈 때 확인을 받는다.
   const [dirty, setDirty] = useState(false);
+  const rounding = useTimeSaleRounding();
   const [leaveAsk, setLeaveAsk] = useState(false);
   useEffect(() => {
     if (!dirty) return;
@@ -222,7 +224,8 @@ export default function TimeSaleFormTemplate({
       applyPercentDiscount(
         mergedRows,
         value,
-        resolvedMembershipPercent ?? value
+        resolvedMembershipPercent ?? value,
+        rounding
       )
     );
   };
@@ -507,6 +510,7 @@ export default function TimeSaleFormTemplate({
 
             <TimeSalePriceEditor
               rows={mergedRows}
+              rounding={rounding}
               errorByVariant={errorByVariant}
               membershipPercent={resolvedMembershipPercent}
               disabled={membershipPercentInvalid}

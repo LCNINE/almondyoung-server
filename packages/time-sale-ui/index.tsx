@@ -573,7 +573,9 @@ export function SaleRenderer(props: SaleRendererProps) {
                   }}
                 />
               )}
+              {/* 더보기 화면이 꺼져 있으면 기본 더보기 버튼은 갈 곳이 없다. 주소 버튼은 그대로 둔다. */}
               {c.type === 'button' &&
+                (c.options.buttonAction === 'url' || settings.environment.more) &&
                 (c.options.buttonAction !== 'url' &&
                 currentSurface === 'main' &&
                 settings.environment.moreMode === 'popup' ? (

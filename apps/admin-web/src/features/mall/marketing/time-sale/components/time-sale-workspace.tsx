@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import sanitizeHtml from 'sanitize-html';
 import { toast } from 'sonner';
 import { medusaTimeSaleSettingsApi } from '@/lib/api/domains/medusa/time-sales';
+import { timeSaleSettingsQuery } from '@/lib/services/time-sale';
 import {
   createSaleComponent,
   defaultTimeSaleSettings,
@@ -631,17 +632,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
   const [previewWidth, setPreviewWidth] = useState(0);
   const previewViewport = useRef<HTMLDivElement>(null);
 
-  const query = useQuery({
-    queryKey: ['time-sale-settings'],
-    // 저장된 적이 없으면 기본 스타일(라이브 쇼핑몰과 같은 모습)로 시작한다.
-    queryFn: async () => {
-      const result = await medusaTimeSaleSettingsApi.get();
-      return {
-        settings: result.settings ?? defaultTimeSaleSettings(),
-        revision: result.revision,
-      };
-    },
-  });
+  const query = useQuery(timeSaleSettingsQuery);
 
   const [settings, setSettings] = useState<TimeSaleSettings | null>(null),
     [revision, setRevision] = useState(''),

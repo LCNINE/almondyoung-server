@@ -10,10 +10,7 @@ import { Camera, Lock, Star } from "lucide-react"
 import { useTranslations } from "next-intl"
 import React, { useEffect, useMemo, useState } from "react"
 import ProductPrice from "./price"
-import {
-  useMembershipOnlySale,
-  useTimeSaleForVariant,
-} from "@/components/providers/time-sale-provider"
+import { useVariantTimeSale } from "@/components/providers/time-sale-provider"
 import Thumbnail, { listPhotoUrls } from "../thumbnail"
 import { Quantity } from "./quantity"
 import { TimeSaleBadge } from "./time-sale-badge"
@@ -125,10 +122,10 @@ export default function ProductCard({
     product,
   })
   // 카드에 보이는 가격을 만든 세일. 상품이 세일에 들어 있어도 멤버십가가 더 싸 그쪽이 보이면 null 이다.
-  const generalOrMemberSale = useTimeSaleForVariant(cheapestVariant)
-  // 멤버십 전용 특가 옵션. 비회원은 세일가가 계산되지 않아 위에서 null 이라 따로 찾는다.
-  const membershipOnlySale = useMembershipOnlySale(cheapestVariant?.id)
-  const timeSale = generalOrMemberSale ?? membershipOnlySale
+  const { timeSale, membershipOnly: isMembershipOnlySale } = useVariantTimeSale(
+    cheapestVariant,
+    isMembership
+  )
   const isTimeSale = timeSale !== null
   const tCard = useTranslations("productCard")
   const isDigital = isDigitalProduct(product)
@@ -221,7 +218,7 @@ export default function ProductCard({
               {timeSale?.endsAt && (
                 <TimeSaleBadge
                   endsAt={timeSale.endsAt}
-                  membershipOnly={membershipOnlySale !== null}
+                  membershipOnly={isMembershipOnlySale}
                 />
               )}
               {isDigital && (
@@ -272,7 +269,7 @@ export default function ProductCard({
                 isMembership={isMembership}
                 isMembershipOnly={isMembershipOnly}
                 isTimeSale={isTimeSale}
-                isMembershipOnlySale={membershipOnlySale !== null}
+                isMembershipOnlySale={isMembershipOnlySale}
               />
             )}
 

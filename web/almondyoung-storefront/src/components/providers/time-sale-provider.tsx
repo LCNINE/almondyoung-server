@@ -91,16 +91,42 @@ export function useMembershipOnlySale(
   }, [sales, variantId])
 }
 
+/**
+ * 카드·상세가 그릴 타임세일. 회원은 실제로 적용된 가격표(`price_list_id`)만 믿는다 — 상시 멤버십가가 기간 특가보다
+ * 싸면 Medusa 가 그쪽을 골랐으니 세일이 아니다. 비회원은 멤버십 전용 특가의 세일가가 계산되지 않으므로 id 목록으로 찾는다.
+ */
+export function useVariantTimeSale(
+  variant: (VariantLike & { id?: string | null }) | null | undefined,
+  isMember: boolean
+): { timeSale: TimeSale | null; membershipOnly: boolean } {
+  const priced = useTimeSaleForVariant(variant)
+  const byId = useMembershipOnlySale(variant?.id)
+
+  if (isMember) {
+    const variantId = variant?.id ?? ""
+    return {
+      timeSale: priced,
+      membershipOnly: !!priced?.membershipOnlyVariantIds?.includes(variantId),
+    }
+  }
+
+  return { timeSale: priced ?? byId, membershipOnly: !priced && byId !== null }
+}
+
 type LineLike = {
   product_id?: string | null
   variant_id?: string | null
   unit_price?: number | null
   compare_at_unit_price?: number | null
+  variant?: { metadata?: Record<string, unknown> | null } | null
 }
 
 /**
- * 카트·체크아웃 라인의 타임세일. 멤버십 전용 특가 옵션은 할인이 실제로 들어간 라인(=회원)만 세일로 본다
- * — 비회원은 정가로 결제하는데 「타임세일」을 띄우면 안 된다.
+ * 카트·체크아웃 라인의 타임세일. 라인엔 가격표 출처(`price_list_id`)가 없어 옵션 id 와 금액으로 가른다.
+ *
+ * - 세일에 가격이 걸린 옵션만 세일이다 — 같은 상품의 세일 밖 옵션을 정가로 담았는데 배지가 붙으면 안 된다.
+ * - 멤버십 전용 특가 옵션은 상시 멤버십가보다 싸게 담긴 라인만 세일이다. 비회원은 정가로 담기고, 상시 멤버십가가
+ *   더 싸면 Medusa 가 그쪽을 고르므로 둘 다 기간 특가가 아니다.
  */
 export function lineTimeSale(
   sales: TimeSale[],
@@ -108,19 +134,22 @@ export function lineTimeSale(
 ): { sale: TimeSale; membershipOnly: boolean } | null {
   if (!line?.product_id) return null
 
-  const variantId = line.variant_id
-  const membershipSale = variantId
-    ? sales.find((sale) => sale.membershipOnlyVariantIds?.includes(variantId))
-    : undefined
-  if (membershipSale) {
-    const discounted =
-      (line.compare_at_unit_price ?? 0) > (line.unit_price ?? 0)
-    return discounted ? { sale: membershipSale, membershipOnly: true } : null
-  }
-
+  const variantId = line.variant_id ?? ""
   const productId = line.product_id
-  const sale = sales.find((s) => s.productIds.includes(productId))
-  return sale ? { sale, membershipOnly: false } : null
+  const sale = sales.find((s) =>
+    s.variantIds
+      ? s.variantIds.includes(variantId)
+      : s.productIds.includes(productId)
+  )
+  if (!sale) return null
+  if (!sale.membershipOnlyVariantIds?.includes(variantId))
+    return { sale, membershipOnly: false }
+
+  const unit = line.unit_price ?? 0
+  const regularMembership = Number(line.variant?.metadata?.membershipPrice)
+  const discounted = unit < (line.compare_at_unit_price ?? 0)
+  const beatsRegular = !(regularMembership > 0) || unit < regularMembership
+  return discounted && beatsRegular ? { sale, membershipOnly: true } : null
 }
 
 export function useTimeSaleForLine(line: LineLike | null | undefined) {

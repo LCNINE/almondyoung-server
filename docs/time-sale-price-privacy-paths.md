@@ -31,7 +31,7 @@ Medusa pricing 은 평탄화한 컨텍스트 키가 10개를 넘으면, DB 의 �
 
 | 경로 | 비회원 | 회원 | 테스트 |
 | --- | --- | --- | --- |
-| `GET /store/time-sale` | 세일 기간·상품 id 와 함께 `membershipOnlyVariantIds`·`membershipOnlyProductIds` 를 준다. **금액은 싣지 않는다** — 공개 캐시(`revalidate: 60`)라 회원·비회원이 같은 응답을 받는다 | 같다 | `rules.unit.spec.ts` (`membershipOnlyItems`) |
+| `GET /store/time-sale` | 세일 기간·상품 id 와 함께 세일 옵션 전부(`variantIds`)와 멤버십 전용 옵션(`membershipOnlyVariantIds`)을 준다. **금액은 싣지 않는다** — 공개 캐시(`revalidate: 60`)라 회원·비회원이 같은 응답을 받는다 | 같다 | `rules.unit.spec.ts` (`membershipOnlyVariantIds`) |
 | `/store/products*` | `calculated_price` 는 정가. 멤버십가 비공개 상품이면 기존 미들웨어(`utils/membership-filter.ts`)가 `metadata.membershipPrice` 를 지운다 | `calculated_price` 가 특가 | 기존 |
 | `/store/carts/*` 라인 | 정가로 담긴다 | 특가로 담긴다(`compare_at_unit_price` 는 정가) | 로컬 실측(2026-10-12) |
 | 결제 | 별도 검사 없다. 가격은 가격표가 정한다 | 같다 | — |
@@ -47,11 +47,13 @@ Medusa pricing 은 평탄화한 컨텍스트 키가 10개를 넘으면, DB 의 �
 | 타임세일 매대·더보기(`packages/time-sale-ui`, `sale-products.ts`) | 정가 + 「멤버십 회원에게 가격 공개」 | 정가 + 「멤버십 특가 N원」 |
 | 장바구니·결제(`lineTimeSale`) | 타임세일 표시 없음 | 「타임세일 멤버십 특가」 + 마감 카운트다운 |
 
-장바구니는 회원 여부를 따로 묻지 않는다. 멤버십 전용 옵션 라인 중 `compare_at_unit_price > unit_price` 인 것,
-즉 할인이 실제로 들어간 라인만 세일로 본다.
+판정은 모두 옵션 단위다. 카드·상세·매대는 대표(최저가) 옵션, 장바구니는 라인의 옵션을 본다.
 
-옵션이 섞인 상품(일반 세일 옵션 + 멤버십 전용 옵션)은 상품 단위로는 일반 세일로 본다
-(`membershipOnlyProductIds` 에서 빠진다). 카드는 대표 옵션이 무엇이냐에 따라 표시가 갈린다.
+- 회원은 실제로 적용된 가격표(`calculated_price.price_list_id`)가 그 세일 것일 때만 특가로 그린다. 상시 멤버십가가
+  기간 특가보다 싸면 Medusa 가 그쪽을 고르므로 세일 표시를 하지 않는다(`useVariantTimeSale`).
+- 비회원은 세일가가 계산되지 않으므로 `membershipOnlyVariantIds` 로 찾는다.
+- 장바구니 라인엔 가격표 출처가 없다. 멤버십 전용 옵션 라인은 `unit_price` 가 정가(`compare_at_unit_price`)와
+  상시 멤버십가(`variant.metadata.membershipPrice`)보다 모두 쌀 때만 세일로 본다. 세일 밖 옵션은 `variantIds` 로 걸러진다.
 
 ## 부수 효과
 

@@ -51,10 +51,6 @@ export function buildSaleProducts({
   const availableIds = new Set(filterSoldOut(products).map((p) => p.id))
   const byId = new Map(products.map((product) => [product.id, product]))
   const periods = productPeriods(sales)
-  const membershipSaleIds = new Set(
-    sales.flatMap((sale) => sale.membershipOnlyProductIds ?? [])
-  )
-
   return ids.flatMap((id) => {
     const product = byId.get(id)
     if (!product) return []
@@ -69,8 +65,18 @@ export function buildSaleProducts({
     const membershipPrice = cheapestVariant?.metadata?.membershipPrice
     const period = periods.get(id)
     // 멤버십 전용 특가: 판매가 자리엔 일반가를 그대로 두고, 특가는 회원에게만 멤버십가 자리에 보인다.
-    // 회원이면 Medusa 가 이미 특가를 계산해 준다(calculated). 비회원은 「회원 공개」로 숨긴다.
-    const membershipSale = membershipSaleIds.has(id)
+    // 카드가 그리는 대표 옵션 기준이다. 회원이면 그 세일 가격표가 실제로 적용됐을 때만(상시 멤버십가가 더 싸면
+    // Medusa 가 그쪽을 고른다). 비회원은 세일가가 계산되지 않으므로 「회원 공개」로 숨긴다.
+    const variantId = cheapestVariant?.id ?? ""
+    const membershipOnlySale = sales.find((sale) =>
+      sale.membershipOnlyVariantIds?.includes(variantId)
+    )
+    const appliedPriceList =
+      cheapestVariant?.calculated_price?.calculated_price?.price_list_id
+    const membershipSale =
+      !!membershipOnlySale &&
+      (!isMember ||
+        membershipOnlySale.priceListIds.includes(appliedPriceList ?? ""))
     const finite = (value: unknown) =>
       typeof value === "number" && Number.isFinite(value) ? value : null
 

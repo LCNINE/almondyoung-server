@@ -38,6 +38,7 @@ import {
   type TimeSaleRow,
 } from '../time-sale-model';
 import { saleToast } from './time-sale-workspace';
+import { useTimeSaleRounding } from '@/lib/services/time-sale';
 
 const STOREFRONT_URL = (process.env.NEXT_PUBLIC_STOREFRONT_URL ?? '').replace(
   /\/+$/,
@@ -583,6 +584,7 @@ export function TimeSaleDisplayTable({
   onRemove: (ids: string[]) => void;
   onRowsChange: (rows: TimeSaleRow[]) => void;
 }) {
+  const rounding = useTimeSaleRounding();
   const [checked, setChecked] = useState<string[]>([]);
   const [open, setOpen] = useState<string[]>([]);
   const [hit, setHit] = useState<string | null>(null);
@@ -708,7 +710,8 @@ export function TimeSaleDisplayTable({
       applyPercentDiscount(
         rows.filter((row) => targets.has(row.productId)),
         general,
-        membership
+        membership,
+        rounding
       ).map((row) => [row.variantId, row])
     );
     onRowsChange(rows.map((row) => filled.get(row.variantId) ?? row));

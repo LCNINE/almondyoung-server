@@ -114,13 +114,22 @@ export function ConfiguredTimeSale({
 function TimeSaleMorePopup({ countryCode }: { countryCode: string }) {
   const t = useTranslations("home.timeSale")
   const [query, setQuery] = useState({ tab: "all", page: 1 })
-  const [data, setData] = useState<TimeSaleAllProps | null>(null)
+  // undefined = 아직 받는 중, null = 보여줄 세일이 없음(끝났거나 더보기가 꺼짐).
+  const [data, setData] = useState<TimeSaleAllProps | null | undefined>(
+    undefined
+  )
   const [pending, startTransition] = useTransition()
 
   useEffect(() => {
+    // 탭·페이지를 빨리 바꾸면 늦게 끝난 옛 요청이 최신 결과를 덮지 않게 버린다.
+    let stale = false
     startTransition(async () => {
-      setData(await loadTimeSaleMore(countryCode, query.tab, query.page))
+      const next = await loadTimeSaleMore(countryCode, query.tab, query.page)
+      if (!stale) setData(next)
     })
+    return () => {
+      stale = true
+    }
   }, [countryCode, query])
 
   const stayInPopup = (event: MouseEvent<HTMLDivElement>) => {
@@ -140,7 +149,10 @@ function TimeSaleMorePopup({ countryCode }: { countryCode: string }) {
     })
   }
 
-  if (!data) return <p className="py-24 text-center">{t("loading")}</p>
+  if (data === undefined)
+    return <p className="py-24 text-center">{t("loading")}</p>
+  if (data === null)
+    return <p className="py-24 text-center">{t("noSaleTitle")}</p>
 
   return (
     <div

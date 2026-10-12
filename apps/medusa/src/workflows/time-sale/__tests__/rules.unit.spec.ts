@@ -3,7 +3,7 @@ import {
   findConflictingSales,
   orderByProductOrder,
   findTimeSaleIssues,
-  membershipOnlyItems,
+  membershipOnlyVariantIds,
   planTimeSaleUpdate,
   validateTimeSaleInput,
   type LinkedList,
@@ -348,7 +348,7 @@ describe('planTimeSaleUpdate', () => {
   });
 });
 
-describe('membershipOnlyItems', () => {
+describe('membershipOnlyVariantIds', () => {
   const rows = [
     { price_list_id: 'gen', variant_id: 'a1', product_id: 'A' },
     { price_list_id: 'mem', variant_id: 'a1', product_id: 'A' },
@@ -357,10 +357,6 @@ describe('membershipOnlyItems', () => {
   ];
 
   it('marks variants priced only in the membership list', () => {
-    expect(membershipOnlyItems(rows, new Set(['mem'])).variantIds).toEqual(['a2', 'b1']);
-  });
-
-  it('treats a product as membership-only only when none of its variants has a general sale price', () => {
-    expect(membershipOnlyItems(rows, new Set(['mem'])).productIds).toEqual(['B']);
+    expect(membershipOnlyVariantIds(rows, new Set(['mem']))).toEqual(['a2', 'b1']);
   });
 });
