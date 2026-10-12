@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isAccessTokenUsable, selfOrigin } from '@/lib/auth/access-token';
-import { SESSION_COOKIE_NAMES } from '@/lib/auth/session-cookies';
+import { isAccessTokenUsable, selfOrigin } from '../../../../../lib/auth/access-token';
+import { SESSION_COOKIE_NAMES } from '../../../../../lib/auth/session-cookies';
 
 export const dynamic = 'force-dynamic';
 

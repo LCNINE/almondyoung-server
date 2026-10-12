@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { isAccessTokenUsable, selfOrigin } from '@/lib/auth/access-token';
-import { refreshTokens } from '@/lib/auth/oidc-client';
-import { SESSION_COOKIE_NAMES, clearSessionCookiesOn, writeSessionCookies } from '@/lib/auth/session-cookies';
+import { isAccessTokenUsable, selfOrigin } from '../../../lib/auth/access-token';
+import { refreshTokens } from '../../../lib/auth/oidc-client';
+import { SESSION_COOKIE_NAMES, clearSessionCookiesOn, writeSessionCookies } from '../../../lib/auth/session-cookies';
 
 /**
  * 보호된 page 의 세션 가드가 access token 을 못 쓸 때(만료/만료임박) 들르는 Node Route Handler.

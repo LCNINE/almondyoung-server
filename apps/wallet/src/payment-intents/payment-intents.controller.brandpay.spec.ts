@@ -1,4 +1,10 @@
 import { ForbiddenException } from '@nestjs/common';
+
+// Mock wallet.module to prevent EventsModule.forApp requiring KAFKA_BROKERS in test environment
+jest.mock('../wallet.module', () => ({
+  AuthenticatedRequest: jest.fn(),
+}));
+
 import { PaymentIntentsController } from './payment-intents.controller';
 import type { PaymentIntentsService } from './payment-intents.service';
 import type { RefundsService } from '../refunds/refunds.service';

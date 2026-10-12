@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
-import { refreshTokens, type TokenSet } from '@/lib/auth/oidc-client';
-import { SESSION_COOKIE_NAMES, backendAuthCookieFromToken, writeSessionCookies } from '@/lib/auth/session-cookies';
+import { refreshTokens, type TokenSet } from '../../../../../lib/auth/oidc-client';
+import { SESSION_COOKIE_NAMES, backendAuthCookieFromToken, writeSessionCookies } from '../../../../../lib/auth/session-cookies';
 
 export const dynamic = 'force-dynamic';
 

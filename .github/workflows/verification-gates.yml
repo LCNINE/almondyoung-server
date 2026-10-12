@@ -51,6 +51,9 @@ jobs:
       - name: Install admin-web deps
         run: npm ci --prefix apps/admin-web
 
+      - name: Install wallet-web deps
+        run: npm ci --prefix apps/wallet-web
+
       # Core HTTP 통합 spec 이 실제 native client/runner 와 fake-indexeddb 를 사용한다.
       # 타입 검사와 Jest 의 모듈 로딩 모두 native 패키지 의존성이 필요하다.
       - name: Install warehouse-app deps

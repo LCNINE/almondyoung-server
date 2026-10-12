@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-import { selfOrigin } from '@/lib/auth/access-token';
-import { consumeStateCookie, writeSessionCookies } from '@/lib/auth/session-cookies';
-import { exchangeCodeForTokens, verifyIdToken, type OidcStateRecord } from '@/lib/auth/oidc-client';
+import { selfOrigin } from '../../../lib/auth/access-token';
+import { consumeStateCookie, writeSessionCookies } from '../../../lib/auth/session-cookies';
+import { exchangeCodeForTokens, verifyIdToken, type OidcStateRecord } from '../../../lib/auth/oidc-client';
 import { createWebLogger } from '@packages/web-observability';
 
 const logger = createWebLogger({

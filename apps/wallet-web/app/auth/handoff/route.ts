@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { selfOrigin } from '@/lib/auth/access-token';
-import { exchangeHandoffForTokens } from '@/lib/auth/oidc-client';
-import { writeSessionCookies } from '@/lib/auth/session-cookies';
+import { selfOrigin } from '../../../lib/auth/access-token';
+import { exchangeHandoffForTokens } from '../../../lib/auth/oidc-client';
+import { writeSessionCookies } from '../../../lib/auth/session-cookies';
 
 /**
  * storefront → wallet-web 결제 진입 핸드오프 착지점.
