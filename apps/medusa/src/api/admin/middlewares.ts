@@ -1,4 +1,5 @@
 import { authenticate, MiddlewareRoute } from '@medusajs/framework/http';
+import { adminOrderRoutesMiddlewares } from './orders/middlewares';
 import { adminPaymentRoutesMiddlewares } from './payments/middlewares';
 import { adminTimeSaleRoutesMiddlewares } from './time-sales/middlewares';
 import { logHeadersMiddleware } from '../log-headers';
@@ -19,6 +20,7 @@ export const adminRouteMiddlewares: MiddlewareRoute[] = [
     method: ['POST', 'PUT', 'PATCH', 'DELETE'],
     middlewares: [authenticate('user', ['session', 'bearer', 'api-key'])],
   },
+  ...adminOrderRoutesMiddlewares,
   ...adminPaymentRoutesMiddlewares,
   ...adminTimeSaleRoutesMiddlewares,
 ];

@@ -1,4 +1,5 @@
 import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
+import { cancelOrderWorkflow } from '@medusajs/medusa/core-flows';
 import { readExternalRefund, readWalletRefundIds } from '../../src/modules/almond-payment/refund-data';
 import { handleRefundProjection } from '../../src/api/hooks/payment-events/route';
 import { FakeWallet, WALLET_BASE_URL, setupCommerce, placeOrder, loadOrder, Commerce } from './fixtures/partial-cancel-fixture';
@@ -51,11 +52,11 @@ medusaIntegrationTestRunner({
       expect(await refundsOf(orderId)).toEqual([]);
     });
 
-    it('외부 환불을 기록한 뒤 코어 취소는 wallet 환불을 다시 부르지 않는다 (35번의 이중 시도 제거)', async () => {
+    it('코어 취소 워크플로는 외부 환불을 기록한 뒤 wallet 환불을 다시 부르지 않는다 (35번의 이중 시도 제거)', async () => {
       const { orderId, intentId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'C', quantity: 1 }] });
       await handleRefundProjection(getContainer(), intentId, 13000, 'msg-pre', orderId, logger, { refundId: 'wr-pre', reasonCode: 'ADMIN_REFUND' });
 
-      await api.post(`/admin/orders/${orderId}/cancel`, {}, c.adminHeaders);
+      await cancelOrderWorkflow(getContainer()).run({ input: { order_id: orderId } });
 
       expect(wallet.callsTo('/refund')).toBe(0);
       expect((await loadOrder(getContainer(), orderId)).status).toBe('canceled');
