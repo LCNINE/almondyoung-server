@@ -129,4 +129,48 @@ describe('BankTransferPaymentProvider', () => {
 
     expect(result).toMatchObject({ status: 'FAILED', errorCode: 'INVALID_REFUND_ACCOUNT_INFO', retryable: false });
   });
+
+  it('환불계좌가 없으면 PG 를 부르지 않고 «수동 송금» PENDING — manualTransfer 로 표시한다', async () => {
+    const cancelPayment = jest.fn();
+    const provider = new BankTransferPaymentProvider(
+      dbWithCharge({ providerTransactionId: null, responsePayload: { paymentKey: 'pk_1' } }),
+      { cancelPayment } as unknown as TossApiClient,
+    );
+
+    const result = await provider.refund({
+      refundId: 'rf-1',
+      chargeId: 'ch-1',
+      intentId: 'in-1',
+      userId: 'u-1',
+      amount: 1000,
+      currency: 'KRW',
+      idempotencyKey: 'wallet:refund:rf-1',
+      correlationId: 'c-1',
+    });
+
+    expect(result).toEqual({ status: 'PENDING', manualTransfer: true });
+    expect(cancelPayment).not.toHaveBeenCalled();
+  });
+
+  it('paymentKey 스냅샷이 없는 옛 건도 같은 폴백 — manualTransfer', async () => {
+    const cancelPayment = jest.fn();
+    const provider = new BankTransferPaymentProvider(dbWithCharge(undefined), {
+      cancelPayment,
+    } as unknown as TossApiClient);
+
+    const result = await provider.refund({
+      refundId: 'rf-2',
+      chargeId: 'ch-2',
+      intentId: 'in-2',
+      userId: 'u-2',
+      amount: 1000,
+      currency: 'KRW',
+      idempotencyKey: 'wallet:refund:rf-2',
+      correlationId: 'c-2',
+      refundReceiveAccount: { bank: '06', accountNumber: '1234567890', holderName: '홍길동' },
+    });
+
+    expect(result).toEqual({ status: 'PENDING', manualTransfer: true });
+    expect(cancelPayment).not.toHaveBeenCalled();
+  });
 });

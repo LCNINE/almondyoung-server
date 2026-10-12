@@ -236,8 +236,12 @@ export class RefundsService {
       });
       await this.cancelCashReceiptBestEffort(charge.id, dto.amount);
     } else if (providerResult.status === 'PENDING') {
-      // Refund is processing asynchronously
-      await this.dbService.db.update(refunds).set({ updatedAt: new Date() }).where(eq(refunds.id, refund.id));
+      // PG 를 안 부른 수동 폴백(무통장 계좌 없음 등)은 MANUAL 송금 대기다 — Medusa 장부 맞추기가 넣고, 환불 내역이 [완료 처리]를 띄운다.
+      // AUTO 로 두면 «진행 중»으로 읽혀 정산이 멈추고(D8) 고객에겐 «환불 완료»로 보인다(#1016 36번 마무리 ②)
+      await this.dbService.db
+        .update(refunds)
+        .set({ ...(providerResult.manualTransfer ? { execution: 'MANUAL' as const } : {}), updatedAt: new Date() })
+        .where(eq(refunds.id, refund.id));
     } else {
       // FAILED
       const failCode = providerResult.errorCode ?? 'REFUND_FAILED';

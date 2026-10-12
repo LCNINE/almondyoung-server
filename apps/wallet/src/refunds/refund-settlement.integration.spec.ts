@@ -50,6 +50,7 @@ type Seeded = {
   tossChargeId?: string;
   pointsChargeId?: string;
   cmsChargeId?: string;
+  bankChargeId?: string;
 };
 
 describeIfDb('환불 정산 — 수동 실행·실패 분류·송금 완료·목록 (실 Postgres)', () => {
@@ -122,7 +123,7 @@ describeIfDb('환불 정산 — 수동 실행·실패 분류·송금 완료·목
     await sql.end();
   });
 
-  async function method(userId: string, type: 'TOSS' | 'POINTS' | 'CMS_BATCH'): Promise<string> {
+  async function method(userId: string, type: 'TOSS' | 'POINTS' | 'CMS_BATCH' | 'BANK_TRANSFER'): Promise<string> {
     const id = randomUUID();
     methodIds.push(id);
     await db.insert(paymentMethods).values({ id, userId, type });
@@ -154,12 +155,12 @@ describeIfDb('환불 정산 — 수동 실행·실패 분류·송금 완료·목
   }
 
   /** 확정까지 끝난 결제 하나. 포인트는 진짜 원장으로 승인·확정한다(capture.service.ts 와 같이 원장 키 = 승인 결제분 id). */
-  async function seed(legs: { toss?: number; points?: number; cms?: number }): Promise<Seeded> {
+  async function seed(legs: { toss?: number; points?: number; cms?: number; bank?: number }): Promise<Seeded> {
     const userId = `itest-settle-${randomUUID()}`;
     userIds.push(userId);
     const intentId = randomUUID();
     intentIds.push(intentId);
-    const total = (legs.toss ?? 0) + (legs.points ?? 0) + (legs.cms ?? 0);
+    const total = (legs.toss ?? 0) + (legs.points ?? 0) + (legs.cms ?? 0) + (legs.bank ?? 0);
     await db.insert(paymentIntents).values({
       id: intentId,
       userId,
@@ -222,6 +223,14 @@ describeIfDb('환불 정산 — 수동 실행·실패 분류·송금 완료·목
         await method(userId, 'CMS_BATCH'),
         legs.cms,
         new Date(t0 + 2_000),
+      );
+    }
+    if (legs.bank) {
+      seeded.bankChargeId = await capturedCharge(
+        intentId,
+        await method(userId, 'BANK_TRANSFER'),
+        legs.bank,
+        new Date(t0 + 3_000),
       );
     }
     return seeded;
@@ -331,6 +340,26 @@ describeIfDb('환불 정산 — 수동 실행·실패 분류·송금 완료·목
 
     expect(externalRefund).not.toHaveBeenCalled();
     expect(row).toMatchObject({ chargeId: s.cmsChargeId, status: 'PENDING', execution: 'MANUAL', amount: 10_000 });
+  });
+
+  it('무통장 «계좌 없음» 폴백은 MANUAL 송금 대기로 남는다 — 목록·[완료 처리]가 수동 행으로 다룬다', async () => {
+    const s = await seed({ bank: 8_000 });
+    externalRefund.mockResolvedValue({ status: 'PENDING', manualTransfer: true });
+
+    const [row] = await service.createByIntent(s.intentId, { amount: 8_000 });
+
+    expect(row).toMatchObject({ status: 'PENDING', execution: 'MANUAL', failureCode: null });
+    expect((await service.listByIntent(s.intentId)).map((r) => r.execution)).toEqual(['MANUAL']);
+    expect((await service.confirmManual(row.id)).status).toBe('SUCCEEDED');
+  });
+
+  it('manualTransfer 없는 PENDING(PG 비동기)은 AUTO 그대로', async () => {
+    const s = await seed({ toss: 5_000 });
+    externalRefund.mockResolvedValue({ status: 'PENDING' });
+
+    const [row] = await service.createByIntent(s.intentId, { amount: 5_000 });
+
+    expect(row).toMatchObject({ status: 'PENDING', execution: 'AUTO' });
   });
 
   it('listByIntent: 상태 무관 전부, 만든 순서 — FAILED 는 남은 금액을 줄이지 않는다', async () => {

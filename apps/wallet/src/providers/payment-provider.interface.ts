@@ -74,6 +74,11 @@ export interface RefundResult {
    * 모르는 실패를 영구로 두면 아무도 다시 안 부른다. 영구/일시 분류의 정본은 wallet 이다(스펙 S6).
    */
   retryable?: boolean;
+  /**
+   * PENDING 일 때만 의미: PG 를 부르지 않았다 — 운영자가 고객 계좌로 송금하고 [완료 처리](confirmManual)를 눌러야 끝난다.
+   * wallet 은 이 행을 execution MANUAL 로 적는다. 없으면 PG 가 비동기로 처리 중인 PENDING 이다(#1016 36번 마무리 ②).
+   */
+  manualTransfer?: boolean;
   raw?: Record<string, unknown>;
 }
 
