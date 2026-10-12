@@ -7,7 +7,7 @@ import {
   cancelActionOf,
   cancelRequestFromAmendment,
   cancelRequestLine,
-  SETTLEMENT_LABELS,
+  settlementLabel,
   settlementReason,
   settlementTiming,
 } from '@/lib/api/domains/orders/cancel-request.shape';
@@ -862,7 +862,7 @@ export default function OrderTable() {
                           : 'border-amber-200 bg-amber-50 text-amber-700'
                       )}
                     >
-                      {SETTLEMENT_LABELS[r.cancelRequest.settlement.phase]}
+                      {settlementLabel(r.cancelRequest.settlement)}
                     </span>
                     <SettlementCell r={r} />
                   </>
