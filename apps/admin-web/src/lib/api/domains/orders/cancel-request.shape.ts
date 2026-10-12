@@ -78,6 +78,8 @@ export const SETTLEMENT_LABELS: Record<SettlementPhase, string> = {
 export const MANUAL_REFUND_CONFIRM_TEXT =
   '고객에게 계좌를 받아 직접 송금한 뒤, 결제 관리 › 환불 내역에서 [완료 처리]를 눌러 주세요.';
 const WALLET_REFUSED_PREFIX = 'wallet_refund_refused:';
+/** 채널(Medusa)이 «이미 환불한 금액»을 물으며 거절한 부분취소(#1016 37번) — core 가 이 실패일 때만 금액을 받는다 */
+const EXTERNAL_REFUND_PREFIX = 'external_refund_';
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const KST_OFFSET_MS = 9 * 3_600_000;
 
@@ -115,6 +117,7 @@ export function settlementReason(s: SettlementView): string | null {
   // 환불 처리 중에 지난 실패를 곁에 두면 모순으로 읽힌다 — 다시 시도한 뒤의 진행 중엔 사유를 숨긴다
   if (!f || s.phase === 'in_progress') return null;
   if (f.code.startsWith(WALLET_REFUSED_PREFIX)) return `환불 거절 · ${f.message || f.code}`;
+  if (f.code.startsWith(EXTERNAL_REFUND_PREFIX)) return `${REJECTION_LABELS.EXTERNAL_REFUND_UNRESOLVED} · ${f.message || f.code}`;
   return `정산 실패 · 개발 확인 · ${f.message || f.code}`;
 }
 
@@ -239,10 +242,17 @@ export function isCancelRequested(r: AdminCancelResponse): r is Extract<AdminCan
 }
 
 /**
- * 직전 요청이 «외부 환불 미해결»로 거절됐으면 다시 요청할 때 «이미 환불한 금액»을 물어야 한다(#1016 37번).
- * 물을 때는 품목에 연결 안 된 외부 환불 금액을, 아니면 null 을 돌려준다 — 평소엔 칸을 숨긴다.
+ * 품목은 확정 때 이미 취소돼 새 요청을 낼 수 없다 — 채널이 «이미 환불한 금액»을 물었으면 [다시 시도]가 그 금액을 받는다(#1016 37번).
+ * 물을 금액(품목에 연결 안 된 외부 환불)은 사유 문장에 있다.
  */
-export function unresolvedRefundToAsk(request: CancelRequestView | null): number | null {
-  if (request?.status !== 'rejected' || request.rejection?.reasonCode !== 'EXTERNAL_REFUND_UNRESOLVED') return null;
-  return request.rejection.unresolvedRefundAmount ?? 0;
+export function asksAlreadyRefunded(s: SettlementView | null): boolean {
+  if (!s || s.phase === 'in_progress') return false;
+  return s.lastFailure?.code.startsWith(EXTERNAL_REFUND_PREFIX) ?? false;
+}
+
+/** 이미 환불한 금액 입력 — 0 이상의 정수(원), 콤마 허용. 아니면 null */
+export function parseAlreadyRefunded(text: string): number | null {
+  const t = text.replace(/,/g, '').trim();
+  if (!/^\d+$/.test(t)) return null;
+  return Number(t);
 }

@@ -5,9 +5,13 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   MANUAL_REFUND_CONFIRM_TEXT,
   SettlementView,
+  asksAlreadyRefunded,
+  parseAlreadyRefunded,
   settlementActionsOf,
 } from '@/lib/api/domains/orders/cancel-request.shape';
 import { useManualRefundCancelSettlement, useRetryCancelSettlement } from '@/lib/services/orders/mutations';
@@ -20,6 +24,10 @@ export function SettlementActions(props: { salesOrderId: string; settlement: Set
   const retry = useRetryCancelSettlement();
   const manual = useManualRefundCancelSettlement();
   const [confirming, setConfirming] = useState(false);
+  // 채널이 «이미 환불한 금액»을 물었으면 다시 시도는 금액을 받아야만 다른 결과가 난다(#1016 37번)
+  const asksAmount = asksAlreadyRefunded(props.settlement);
+  const [askingAmount, setAskingAmount] = useState(false);
+  const [amountText, setAmountText] = useState('');
   const target = { salesOrderId: props.salesOrderId, requestId: props.settlement.requestId };
   // 다이얼로그는 포털이어도 React 트리로는 이 span 의 자손이라 클릭이 표 행으로 버블된다 — 여기서 한 번에 막는다
   const stop = (e: MouseEvent) => e.stopPropagation();
@@ -33,12 +41,17 @@ export function SettlementActions(props: { salesOrderId: string; settlement: Set
           size="sm"
           className="h-7 px-2 text-xs"
           disabled={retry.isPending}
-          onClick={() =>
+          onClick={() => {
+            if (asksAmount) {
+              setAmountText('');
+              setAskingAmount(true);
+              return;
+            }
             retry.mutate(target, {
               onSuccess: () => toast.success('정산을 다시 시도합니다.'),
               onError: (e) => toast.error(errorText(e, '다시 시도하지 못했습니다.')),
-            })
-          }
+            });
+          }}
         >
           다시 시도
         </Button>
@@ -48,6 +61,45 @@ export function SettlementActions(props: { salesOrderId: string; settlement: Set
           계좌 송금으로 환불
         </Button>
       )}
+      <Dialog open={askingAmount} onOpenChange={setAskingAmount}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>이미 환불한 금액을 적어 다시 시도</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm">{props.settlement.lastFailure?.message}</p>
+          <div className="space-y-1">
+            <Label>이번 취소 품목에 이미 돌려준 금액(원)</Label>
+            <Input inputMode="numeric" value={amountText} onChange={(e) => setAmountText(e.target.value)} placeholder="없으면 0" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAskingAmount(false)}>
+              닫기
+            </Button>
+            <Button
+              disabled={retry.isPending}
+              onClick={() => {
+                const amount = parseAlreadyRefunded(amountText);
+                if (amount === null) {
+                  toast.error('이미 환불한 금액을 0 이상의 숫자로 적어 주세요 (없으면 0)');
+                  return;
+                }
+                retry.mutate(
+                  { ...target, alreadyRefundedAmount: amount },
+                  {
+                    onSuccess: () => {
+                      toast.success('정산을 다시 시도합니다.');
+                      setAskingAmount(false);
+                    },
+                    onError: (e) => toast.error(errorText(e, '다시 시도하지 못했습니다.')),
+                  },
+                );
+              }}
+            >
+              다시 시도
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={confirming} onOpenChange={setConfirming}>
         <DialogContent>
           <DialogHeader>

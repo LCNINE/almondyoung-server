@@ -11,7 +11,8 @@ import {
   type SettlementView,
   isCancelRequested,
   toCancelRequestView,
-  unresolvedRefundToAsk,
+  asksAlreadyRefunded,
+  parseAlreadyRefunded,
 } from './cancel-request.shape';
 
 const view = (over: Record<string, unknown> = {}) => ({
@@ -32,16 +33,6 @@ describe('cancel-request shape', () => {
     expect(toCancelRequestView(view())).toEqual(view());
     expect(toCancelRequestView({ id: 'r1' })).toBeNull();
     expect(toCancelRequestView(null)).toBeNull();
-  });
-
-  it('37번 — 외부 환불 미해결 거절 뒤에만 «이미 환불한 금액»을 묻는다', () => {
-    const rejected = (reasonCode: string, extra: Record<string, unknown> = {}) =>
-      toCancelRequestView(view({ status: 'rejected', rejection: { reasonCode, message: 'm', at: 't', ...extra } }));
-    expect(unresolvedRefundToAsk(rejected('EXTERNAL_REFUND_UNRESOLVED', { unresolvedRefundAmount: 10000 }))).toBe(10000);
-    expect(unresolvedRefundToAsk(rejected('EXTERNAL_REFUND_UNRESOLVED'))).toBe(0);
-    expect(unresolvedRefundToAsk(rejected('NOT_CANCELABLE'))).toBeNull();
-    expect(unresolvedRefundToAsk(toCancelRequestView(view()))).toBeNull();
-    expect(unresolvedRefundToAsk(null)).toBeNull();
   });
 
   it('37번 — 반영 줄에 상계를 적고, 거절 줄은 라벨로 보인다', () => {
@@ -148,6 +139,27 @@ describe('정산(#1016 36번 재설계)', () => {
     expect(settlementReason(settlement({ lastFailure: { code: 'http_502', message: '', retryable: true, at: 'x' } }))).toBe('정산 실패 · 개발 확인 · http_502');
     expect(settlementReason(settlement({ lastFailure: null }))).toBeNull();
     expect(settlementReason(settlement({ phase: 'in_progress' }))).toBeNull();
+  });
+
+  it('37번 — 채널이 «이미 환불한 금액»을 물은 정산(external_refund_*)이면 사유를 그 말로 보이고, 다시 시도에서 금액을 묻는다', () => {
+    const asked = (code: string, over: Partial<SettlementView> = {}) =>
+      settlement({ lastFailure: { code, message: '품목에 연결 안 된 외부 환불 3,000원이 있습니다', retryable: false, at: 'x' }, ...over });
+    expect(settlementReason(asked('external_refund_unresolved'))).toBe('이미 환불한 금액 확인 필요 · 품목에 연결 안 된 외부 환불 3,000원이 있습니다');
+    expect(asksAlreadyRefunded(asked('external_refund_unresolved'))).toBe(true);
+    expect(asksAlreadyRefunded(asked('external_refund_exceeds'))).toBe(true);
+    expect(asksAlreadyRefunded(asked('external_refund_unresolved', { phase: 'in_progress' }))).toBe(false);
+    expect(asksAlreadyRefunded(settlement())).toBe(false);
+    expect(asksAlreadyRefunded(null)).toBe(false);
+  });
+
+  it('37번 — 이미 환불한 금액 입력은 0 이상의 정수만(콤마 허용)', () => {
+    expect(parseAlreadyRefunded('3000')).toBe(3000);
+    expect(parseAlreadyRefunded(' 3,000 ')).toBe(3000);
+    expect(parseAlreadyRefunded('0')).toBe(0);
+    expect(parseAlreadyRefunded('')).toBeNull();
+    expect(parseAlreadyRefunded('-1')).toBeNull();
+    expect(parseAlreadyRefunded('12.5')).toBeNull();
+    expect(parseAlreadyRefunded('abc')).toBeNull();
   });
 
   it('조치 — 정산 중엔 없음, 지연·거절엔 둘, 이미 계좌 송금이면 다시 시도만', () => {

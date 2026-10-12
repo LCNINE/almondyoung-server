@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbTx, wmsSchema } from '../../inventory/schema/inventory.schema';
-import { CancelRequestInput, ChannelCancelRequestManager, SettlementFailedFact } from './channel-cancel-request.manager';
+import { CancelRequestInput, ChannelCancelRequestManager, RetrySettlementInput, SettlementFailedFact } from './channel-cancel-request.manager';
 import { ChannelCancelRequestReader } from './channel-cancel-request.reader';
 import type { ChannelSettlementFact } from '../services/channel-refund-status';
 import {
@@ -48,8 +48,8 @@ export class ChannelCancelRequestService {
     });
   }
 
-  retrySettlement(salesOrderId: string, requestId: string): Promise<CancelRequestView> {
-    return this.manager.retrySettlement(salesOrderId, requestId);
+  retrySettlement(salesOrderId: string, requestId: string, input: RetrySettlementInput = {}): Promise<CancelRequestView> {
+    return this.manager.retrySettlement(salesOrderId, requestId, input);
   }
 
   switchToManualRefund(salesOrderId: string, requestId: string): Promise<CancelRequestView> {

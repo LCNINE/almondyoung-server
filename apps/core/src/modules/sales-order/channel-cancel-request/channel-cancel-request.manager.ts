@@ -41,6 +41,14 @@ export interface CancelRequestInput {
   alreadyRefundedAmount?: number;
 }
 
+export interface RetrySettlementInput {
+  /** 채널이 «이미 환불한 금액»을 물으며 거절한 부분취소(#1016 37번)를 다시 낼 때만. 저장된 명령을 고친다 */
+  alreadyRefundedAmount?: number;
+}
+
+/** Medusa 가 주문 수정 «전»에 내는 37번 거절 — 그때만 금액을 바꿔도 같은 requestId 가 새 요청으로 통과한다 */
+const EXTERNAL_REFUND_FAILURE_PREFIX = 'external_refund_';
+
 export type SettlementFailedFact = Pick<ChannelOrderSettlementFailedPayload, 'requestId' | 'retryable' | 'failureCode' | 'message' | 'at'>;
 
 /** 확정이 취소할 수 있는 박스 — 아직 떠나지 않은 상자(취소 코드가 빼는 대상과 같다) */
@@ -220,19 +228,25 @@ export class ChannelCancelRequestManager {
   }
 
   /** [다시 시도] — 환불 지연·거절인 정산을 같은 requestId·같은 방식으로 다시 낸다(스펙 §7.3) */
-  async retrySettlement(salesOrderId: string, requestId: string, tx?: DbTx): Promise<CancelRequestView> {
-    return this.restartSettlement(salesOrderId, requestId, 'retry', tx);
+  async retrySettlement(
+    salesOrderId: string,
+    requestId: string,
+    input: RetrySettlementInput = {},
+    tx?: DbTx,
+  ): Promise<CancelRequestView> {
+    return this.restartSettlement(salesOrderId, requestId, 'retry', input.alreadyRefundedAmount, tx);
   }
 
   /** [계좌 송금으로 환불] — 같은 requestId 를 refundMode manual 로 다시 낸다. wallet 이 PG 없이 송금 대기 행을 만든다(스펙 §6.3) */
   async switchToManualRefund(salesOrderId: string, requestId: string, tx?: DbTx): Promise<CancelRequestView> {
-    return this.restartSettlement(salesOrderId, requestId, 'manual', tx);
+    return this.restartSettlement(salesOrderId, requestId, 'manual', undefined, tx);
   }
 
   private async restartSettlement(
     salesOrderId: string,
     requestId: string,
     kind: 'retry' | 'manual',
+    alreadyRefundedAmount: number | undefined,
     tx?: DbTx,
   ): Promise<CancelRequestView> {
     return this.db.run(async (trx) => {
@@ -256,11 +270,22 @@ export class ChannelCancelRequestManager {
       }
       if (kind === 'manual' && settlement.mode === 'manual') throw new ConflictError('이미 계좌 송금으로 환불하고 있습니다.');
       const mode = kind === 'manual' ? 'manual' : settlement.mode;
+      // 품목은 확정 때 이미 취소돼 새 요청을 낼 수 없다 — 37번 거절의 출구는 같은 요청에 금액을 적는 것뿐이다.
+      // 저장된 명령을 고쳐야 뒤의 조치·리컨실러 재발행도 같은 금액을 낸다(Medusa 는 금액이 바뀐 같은 requestId 를 거절한다).
+      let command = meta.request.command;
+      if (alreadyRefundedAmount !== undefined) {
+        if (!settlement.lastFailure?.code.startsWith(EXTERNAL_REFUND_FAILURE_PREFIX)) {
+          throw new BadRequestError('이미 환불한 금액은 채널이 그 금액을 물으며 거절한 부분취소에만 적을 수 있습니다.');
+        }
+        if (command.scope !== 'partial') throw new BadRequestError('이미 환불한 금액은 부분취소에만 적을 수 있습니다.');
+        command = { ...command, alreadyRefundedAmount };
+      }
       const next: CancelRequestMetadata = {
         ...meta,
+        request: { ...meta.request, command },
         settlement: { ...settlement, state: 'in_progress', mode, since: now.toISOString() },
       };
-      await this.enqueue({ ...meta.request.command, refundMode: mode }, `cancel-request:${row.id}:${kind}:${now.getTime()}`, trx);
+      await this.enqueue({ ...command, refundMode: mode }, `cancel-request:${row.id}:${kind}:${now.getTime()}`, trx);
       await this.write(row.id, 'settling', next, trx);
       this.logger.log(`[CancelRequest] ${row.id} settlement restarted (${kind}, ${mode})`);
       return toCancelRequestView({ ...row, metadata: next }, now);

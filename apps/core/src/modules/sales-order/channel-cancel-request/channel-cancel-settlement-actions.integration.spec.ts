@@ -1,5 +1,5 @@
 import { eq, sql as drizzleSql } from 'drizzle-orm';
-import { ConflictError, NotFoundError } from '@app/shared';
+import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
 import { seedChannelOrder, wireCancelRequest } from './__support__/cancel-request.fixtures';
@@ -50,7 +50,7 @@ describeIfDb('정산 조치 — 다시 시도·계좌 송금 (DB integration, ro
     await inRollbackTx(db, async (tx) => {
       const { w, seed, id } = await refused(tx);
       const before = (await rowOf(tx, id)).metadata as { settlement: { since: string } };
-      const view = await w.manager.retrySettlement(seed.salesOrderId, id, tx);
+      const view = await w.manager.retrySettlement(seed.salesOrderId, id, {}, tx);
       expect(view.settlement).toMatchObject({ phase: 'in_progress', mode: 'auto', lastFailure: { code: 'wallet_refund_refused:X' } });
       const after = (await rowOf(tx, id)).metadata as { settlement: { since: string } };
       expect(Date.parse(after.settlement.since)).toBeGreaterThan(Date.parse(before.settlement.since));
@@ -77,7 +77,7 @@ describeIfDb('정산 조치 — 다시 시도·계좌 송금 (DB integration, ro
       const view = await w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' }, tx);
       await ageRequest(tx, view.id, 31);
       const before = (await rowOf(tx, view.id)).metadata as { settlement: { since: string } };
-      await expect(w.manager.retrySettlement(seed.salesOrderId, view.id, tx)).resolves.toMatchObject({ status: 'settling' });
+      await expect(w.manager.retrySettlement(seed.salesOrderId, view.id, {}, tx)).resolves.toMatchObject({ status: 'settling' });
       const after = (await rowOf(tx, view.id)).metadata as { settlement: { since: string } };
       expect(Date.parse(after.settlement.since)).toBeGreaterThan(Date.parse(before.settlement.since));
       expect(await commandsOf(tx, seed.externalOrderId)).toHaveLength(2);
@@ -90,8 +90,8 @@ describeIfDb('정산 조치 — 다시 시도·계좌 송금 (DB integration, ro
       const seed = await seedChannelOrder(tx, w, { withFo: true });
       const view = await w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' }, tx);
       await ageRequest(tx, view.id, 31);
-      await w.manager.retrySettlement(seed.salesOrderId, view.id, tx);
-      await expect(w.manager.retrySettlement(seed.salesOrderId, view.id, tx)).rejects.toBeInstanceOf(ConflictError);
+      await w.manager.retrySettlement(seed.salesOrderId, view.id, {}, tx);
+      await expect(w.manager.retrySettlement(seed.salesOrderId, view.id, {}, tx)).rejects.toBeInstanceOf(ConflictError);
       await expect(w.manager.switchToManualRefund(seed.salesOrderId, view.id, tx)).rejects.toBeInstanceOf(ConflictError);
       expect(await commandsOf(tx, seed.externalOrderId)).toHaveLength(2);
     });
@@ -103,7 +103,7 @@ describeIfDb('정산 조치 — 다시 시도·계좌 송금 (DB integration, ro
       const seed = await seedChannelOrder(tx, w, { withFo: true });
       const view = await w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' }, tx);
       await ageRequest(tx, view.id, 31);
-      await w.manager.retrySettlement(seed.salesOrderId, view.id, tx);
+      await w.manager.retrySettlement(seed.salesOrderId, view.id, {}, tx);
       await w.manager.recordSettlementFailure(
         { requestId: view.id, retryable: false, failureCode: 'wallet_refund_refused:X', message: '거절', at: new Date(Date.now() + 1000).toISOString() },
         tx,
@@ -117,7 +117,7 @@ describeIfDb('정산 조치 — 다시 시도·계좌 송금 (DB integration, ro
       const w = wireCancelRequest(tx);
       const seed = await seedChannelOrder(tx, w, { withFo: true });
       const view = await w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' }, tx);
-      await expect(w.manager.retrySettlement(seed.salesOrderId, view.id, tx)).rejects.toBeInstanceOf(ConflictError);
+      await expect(w.manager.retrySettlement(seed.salesOrderId, view.id, {}, tx)).rejects.toBeInstanceOf(ConflictError);
       await expect(w.manager.switchToManualRefund(seed.salesOrderId, view.id, tx)).rejects.toBeInstanceOf(ConflictError);
     });
   });
@@ -131,7 +131,7 @@ describeIfDb('정산 조치 — 다시 시도·계좌 송금 (DB integration, ro
         tx,
       );
       await expect(w.manager.switchToManualRefund(seed.salesOrderId, id, tx)).rejects.toBeInstanceOf(ConflictError);
-      await expect(w.manager.retrySettlement(seed.salesOrderId, id, tx)).resolves.toMatchObject({ refundMode: 'manual' });
+      await expect(w.manager.retrySettlement(seed.salesOrderId, id, {}, tx)).resolves.toMatchObject({ refundMode: 'manual' });
     });
   });
 
@@ -139,13 +139,70 @@ describeIfDb('정산 조치 — 다시 시도·계좌 송금 (DB integration, ro
     await inRollbackTx(db, async (tx) => {
       const { w, seed, id } = await refused(tx);
       const other = await seedChannelOrder(tx, w, { withFo: true });
-      await expect(w.manager.retrySettlement(other.salesOrderId, id, tx)).rejects.toBeInstanceOf(NotFoundError);
-      await expect(w.manager.retrySettlement(seed.salesOrderId, 'nope', tx)).rejects.toBeInstanceOf(NotFoundError);
+      await expect(w.manager.retrySettlement(other.salesOrderId, id, {}, tx)).rejects.toBeInstanceOf(NotFoundError);
+      await expect(w.manager.retrySettlement(seed.salesOrderId, 'nope', {}, tx)).rejects.toBeInstanceOf(NotFoundError);
       // 확정된 전체취소가 수집(OrderCancelled)으로 닫혔다 — settling 이 아니면 다시 낼 정산이 없다
       const done = await w.manager.request({ salesOrderId: other.salesOrderId, requester: OPERATOR, sourceKey: 'k2' }, tx);
       await w.settler.settleCancelled(other.salesOrderId, tx);
       expect((await rowOf(tx, done.id)).status).toBe('applied');
-      await expect(w.manager.retrySettlement(other.salesOrderId, done.id, tx)).rejects.toBeInstanceOf(ConflictError);
+      await expect(w.manager.retrySettlement(other.salesOrderId, done.id, {}, tx)).rejects.toBeInstanceOf(ConflictError);
+    });
+  });
+
+  /** 부분취소를 확정하고 채널이 «이미 환불한 금액»을 물으며 거절한 상태(#1016 37번) — 품목은 core 에서 이미 취소됐다 */
+  async function askedForRefundedAmount(tx: DbTx, failureCode: string) {
+    const w = wireCancelRequest(tx);
+    const seed = await seedChannelOrder(tx, w, { withFo: true });
+    const view = await w.manager.request(
+      {
+        salesOrderId: seed.salesOrderId,
+        lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 1 }],
+        requester: OPERATOR,
+        sourceKey: 'k1',
+      },
+      tx,
+    );
+    await w.manager.recordSettlementFailure(
+      { requestId: view.id, retryable: false, failureCode, message: '품목에 연결 안 된 외부 환불 3,000원이 있습니다', at: new Date(Date.now() + 1000).toISOString() },
+      tx,
+    );
+    return { w, seed, id: view.id };
+  }
+
+  it('«이미 환불한 금액» 거절 → 금액을 적어 다시 시도: 명령에 금액이 실리고, 저장된 명령도 바뀌어 뒤의 조치·재발행이 같은 금액을 낸다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, id } = await askedForRefundedAmount(tx, 'external_refund_unresolved');
+      await w.manager.retrySettlement(seed.salesOrderId, id, { alreadyRefundedAmount: 3000 }, tx);
+      let commands = await commandsOf(tx, seed.externalOrderId);
+      expect(commands).toHaveLength(2);
+      expect(commands[0].payload.payload.alreadyRefundedAmount).toBeUndefined();
+      expect(commands[1].payload.payload).toMatchObject({ requestId: id, scope: 'partial', alreadyRefundedAmount: 3000 });
+
+      // 금액 없이 누른 다음 조치(여기선 계좌 송금)도 그 금액을 잃지 않는다 — Medusa 는 금액이 바뀐 같은 requestId 를 다른 요청으로 거절한다
+      await w.manager.recordSettlementFailure(
+        { requestId: id, retryable: false, failureCode: 'wallet_refund_refused:X', message: '거절', at: new Date(Date.now() + 5000).toISOString() },
+        tx,
+      );
+      await w.manager.switchToManualRefund(seed.salesOrderId, id, tx);
+      commands = await commandsOf(tx, seed.externalOrderId);
+      expect(commands[commands.length - 1].payload.payload).toMatchObject({ refundMode: 'manual', alreadyRefundedAmount: 3000 });
+    });
+  });
+
+  it('«품목에 연결할 외부 환불 없음»·«금액 초과» 거절도 금액을 고쳐 다시 시도할 수 있다(0 = 상계 없음)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, id } = await askedForRefundedAmount(tx, 'external_refund_exceeds');
+      await w.manager.retrySettlement(seed.salesOrderId, id, { alreadyRefundedAmount: 0 }, tx);
+      const commands = await commandsOf(tx, seed.externalOrderId);
+      expect(commands[commands.length - 1].payload.payload).toMatchObject({ alreadyRefundedAmount: 0 });
+    });
+  });
+
+  it('«이미 환불한 금액» 거절이 아닌 정산엔 금액을 받지 않는다(400) — 수정이 끝난 뒤 금액이 바뀌면 Medusa 가 영구 거절한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, id } = await askedForRefundedAmount(tx, 'wallet_refund_refused:X');
+      await expect(w.manager.retrySettlement(seed.salesOrderId, id, { alreadyRefundedAmount: 3000 }, tx)).rejects.toBeInstanceOf(BadRequestError);
+      expect(await commandsOf(tx, seed.externalOrderId)).toHaveLength(1);
     });
   });
 
