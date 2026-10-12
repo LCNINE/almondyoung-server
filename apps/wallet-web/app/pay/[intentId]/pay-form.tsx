@@ -34,11 +34,8 @@ import { CheckoutFrame } from '@/components/payment/checkout-frame';
 import { PaymentMethodCard } from '@/components/payment/payment-method-card';
 import { TossSubMethodCard, type TossSubMethod } from '@/components/payment/toss-submethod-card';
 import { TossPaymentWidget } from '@/components/payment/toss-payment-widget';
-import { CustomTossCheckout } from '@/components/payment/custom-toss-checkout';
-import { stagePaymentPreference, type PaymentPreference } from '@/lib/payment-preference';
 import { isTossWidgetReady } from '@/lib/toss-widget-readiness';
-import type { CheckoutSelection } from '@/components/payment/card-checkout';
-import type { TossPaymentsBrandpay, TossPaymentsWidgets } from '@tosspayments/tosspayments-sdk';
+import type { TossPaymentsWidgets } from '@tosspayments/tosspayments-sdk';
 import {
   CashReceiptCard,
   EMPTY_CASH_RECEIPT,
@@ -192,11 +189,10 @@ export function PayForm({
   const maxPoints = Math.min(availablePoints, intent.payableAmount);
   const remainingAmount = intent.payableAmount - pointsUsed;
 
-  async function handleConfirm(selection?: CheckoutSelection, brandpay?: TossPaymentsBrandpay) {
-    const custom = tossWidgetConfig?.checkoutMode === 'CUSTOM' && !!selection;
-    const pts = selection ? Math.min(maxPoints, Math.max(0, selection.points)) : pointsUsed;
-    const methodId = custom ? externalMethods.find((method) => method.type === 'TOSS')?.id : selectedMethodId;
-    const remaining = intent.payableAmount - pts;
+  async function handleConfirm() {
+    const pts = pointsUsed;
+    const methodId = selectedMethodId;
+    const remaining = remainingAmount;
     if (remaining > 0 && !methodId) {
       setError('결제 수단을 선택해주세요.');
       return;
@@ -204,7 +200,7 @@ export function PayForm({
     if (
       !isTossWidgetReady(
         remaining,
-        !custom && isTossSelected && !!tossWidgetConfig,
+        isTossSelected && !!tossWidgetConfig,
         tossWidgetReadyAmount,
         !!tossWidgetsRef.current,
       )
@@ -214,7 +210,7 @@ export function PayForm({
     }
     // 무통장 + 증빙 신청 검증
     let cashReceipt;
-    if (!custom && isBankTransferSelected) {
+    if (isBankTransferSelected) {
       const built = buildCashReceipt(cashReceiptState, userBizNumber);
       if (!built.ok) {
         setError(built.error);
@@ -251,22 +247,7 @@ export function PayForm({
           ...(na.customerEmail ? { customerEmail: na.customerEmail as string } : {}),
           ...(na.customerMobilePhone ? { customerMobilePhone: na.customerMobilePhone as string } : {}),
         };
-        if (custom && selection && remaining > 0) {
-          stagePaymentPreference(intent.id, tossWidgetConfig.customerKey, {
-            method: selection.method as PaymentPreference['method'],
-            cardCompany: selection.cardCompany,
-          });
-        }
-        if (custom && selection?.method === 'BRANDPAY') {
-          if (!brandpay || !selection.cardId) throw new Error('결제할 카드를 선택해주세요.');
-          await brandpay.requestPayment({
-            ...tossParams,
-            successUrl: `${tossParams.successUrl}${tossParams.successUrl.includes('?') ? '&' : '?'}paymentType=BRANDPAY`,
-            amount: { currency: 'KRW', value: na.amount as number },
-            methodId: selection.cardId,
-            card: { cardInstallmentPlan: selection.installment },
-          });
-        } else if (!custom && isTossSelected && tossWidgetConfig) {
+        if (isTossSelected && tossWidgetConfig) {
           if (na.amount !== tossWidgetReadyAmount || !tossWidgetsRef.current) {
             throw new Error('결제 금액이 변경되었습니다. 화면을 새로고침한 뒤 다시 시도해주세요.');
           }
@@ -274,29 +255,11 @@ export function PayForm({
         } else {
           const { loadTossPayments } = await import('@tosspayments/tosspayments-sdk');
           const tossPayments = await loadTossPayments(na.clientKey as string);
-          const payment = tossPayments.payment({
-            customerKey: custom ? tossWidgetConfig.customerKey : `user-${intent.userId}`,
-          });
-          // 화면의 한글 명칭 대신 API 버전에 관계없이 사용할 수 있는 간편결제 코드를 전달한다.
-          const easyPay = {
-            카카오페이: 'KAKAOPAY',
-            네이버페이: 'NAVERPAY',
-            토스페이: 'TOSSPAY',
-          }[selection?.method ?? ''];
+          const payment = tossPayments.payment({ customerKey: `user-${intent.userId}` });
           await payment.requestPayment({
             ...tossParams,
-            method: custom ? ('CARD' as const) : isTossSelected ? tossSubMethod : ('CARD' as const),
+            method: isTossSelected ? tossSubMethod : ('CARD' as const),
             amount: { currency: 'KRW' as const, value: na.amount as number },
-            ...(custom && easyPay ? { card: { flowMode: 'DIRECT' as const, easyPay } } : {}),
-            ...(custom && selection?.method === '신용·체크카드' && selection.cardCompany
-              ? {
-                  card: {
-                    flowMode: 'DIRECT' as const,
-                    cardCompany: selection.cardCompany,
-                    cardInstallmentPlan: selection.installment,
-                  },
-                }
-              : {}),
           });
         }
         return; // requestPayment redirects
@@ -387,28 +350,6 @@ export function PayForm({
         fallbackCurrency={intent.currency}
         orderListUrl={buildStorefrontOrderListUrl(intent.returnUrl, region)}
         onRefresh={() => router.refresh()}
-      />
-    );
-  }
-
-  if (
-    !isMembership &&
-    tossWidgetConfig?.checkoutMode === 'CUSTOM' &&
-    externalMethods.some((method) => method.type === 'TOSS')
-  ) {
-    return (
-      <CustomTossCheckout
-        customer={businessInfo}
-        key={intent.id}
-        intentId={intent.id}
-        orderName={typeof intent.metadata?.orderName === 'string' ? intent.metadata.orderName : '주문 결제'}
-        amount={intent.payableAmount}
-        availablePoints={availablePoints}
-        config={tossWidgetConfig}
-        loading={loading}
-        error={error}
-        onClose={() => void handleCancel()}
-        onPay={handleConfirm}
       />
     );
   }

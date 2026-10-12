@@ -125,55 +125,6 @@ describe('deferred approval — staging', () => {
     expect(ctx.tossApi.confirmPayment).not.toHaveBeenCalled();
   });
 
-  it('custom BrandPay 승인 전에 재조회 유형을 저장하고 저장 실패 시 과금하지 않는다', async () => {
-    const charge = makeCharge({ responsePayload: { nextAction: { checkoutMode: 'CUSTOM' } } });
-    const ctx = makeTossContext({}, charge);
-    ctx.tossApi.confirmBrandPayPayment.mockImplementation(async () => {
-      expect(ctx.chargesService.updateStatus).toHaveBeenCalledWith(CHARGE_ID, 'REQUIRES_ACTION', {
-        responsePayload: { nextAction: { checkoutMode: 'CUSTOM' }, paymentType: 'BRANDPAY' },
-      });
-      return { ok: true, data: { paymentKey: 'pk_brandpay' } };
-    });
-    await ctx.service.approve('intent-1', 'pk_brandpay', ORDER_ID, 10000, 'corr-1', 'BRANDPAY');
-    expect(ctx.tossApi.confirmBrandPayPayment).toHaveBeenCalledWith(
-      'pk_brandpay',
-      10000,
-      ORDER_ID,
-      tossBrandPayCustomerKey('u1'),
-      false,
-    );
-
-    const failed = makeTossContext({}, charge);
-    failed.chargesService.updateStatus.mockRejectedValueOnce(new Error('db unavailable'));
-    await expect(
-      failed.service.approve('intent-1', 'pk_brandpay', ORDER_ID, 10000, 'corr-1', 'BRANDPAY'),
-    ).rejects.toThrow('db unavailable');
-    expect(failed.tossApi.confirmBrandPayPayment).not.toHaveBeenCalled();
-  });
-
-  it('직접 구성한 UI의 지연 승인은 개별 브랜드페이 키를 선택한다', async () => {
-    const charge = makeCharge({ responsePayload: { nextAction: { checkoutMode: 'CUSTOM' } } });
-    const ctx = makeTossContext({ approvalMode: 'DEFERRED' }, charge);
-    await ctx.service.approve('intent-1', 'pk_custom', ORDER_ID, 10000, 'corr-1', 'BRANDPAY');
-    const extra = ctx.chargesService.updateStatus.mock.calls[0][2];
-    const stagedCharge = makeCharge({ responsePayload: extra.responsePayload });
-    const staged = readStagedApproval(stagedCharge);
-    await ctx.service.confirmStaged(stagedCharge, staged!, 'corr-2');
-    expect(ctx.tossApi.confirmBrandPayPayment).toHaveBeenCalledWith(
-      'pk_custom',
-      10000,
-      ORDER_ID,
-      tossBrandPayCustomerKey('u1'),
-      false,
-    );
-    expect(ctx.chargesService.updateStatus.mock.calls.at(-1)?.[2].responsePayload).toEqual(
-      expect.objectContaining({
-        nextAction: { checkoutMode: 'CUSTOM' },
-        paymentType: 'BRANDPAY',
-      }),
-    );
-  });
-
   it('고객 키가 빠진 브랜드페이 적재 데이터는 거부한다', () => {
     expect(
       readStagedApproval(

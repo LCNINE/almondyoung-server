@@ -4,7 +4,6 @@ import { approveToss, getBillingMethods } from '@/lib/wallet-api';
 import { getBackendAuthCookie } from '@/lib/auth/session-cookies';
 import { buildReturnUrl } from '@/lib/return-url';
 import { createWebLogger } from '@packages/web-observability';
-import { TossSuccessRedirect } from '@/components/payment/toss-success-redirect';
 
 // 쿠키 기반 + 동적 승인 처리라 CloudFront/Next 캐시 금지 (stale HTML/청크 방지).
 export const dynamic = 'force-dynamic';
@@ -92,12 +91,7 @@ export default async function TossCompletePage({ params, searchParams }: Props) 
                 order_id: orderId,
               },
             });
-            return (
-              <TossSuccessRedirect
-                intentId={intentId}
-                target={`/pay/${intentId}/billing-setup?provider=TOSS&returnUrl=${encodeURIComponent(successUrl)}`}
-              />
-            );
+            redirect(`/pay/${intentId}/billing-setup?provider=TOSS&returnUrl=${encodeURIComponent(successUrl)}`);
           }
         } catch (e) {
           if (isRedirectError(e)) throw e;
@@ -107,9 +101,9 @@ export default async function TossCompletePage({ params, searchParams }: Props) 
           });
         }
       }
-      return <TossSuccessRedirect intentId={intentId} target={successUrl} />;
+      redirect(successUrl);
     }
-    return <TossSuccessRedirect intentId={intentId} target={buildPayPath(intentId, region)} />;
+    redirect(buildPayPath(intentId, region));
   } catch (e) {
     if (isRedirectError(e)) throw e;
     logger.error('wallet.toss_complete.approve_failed', {
