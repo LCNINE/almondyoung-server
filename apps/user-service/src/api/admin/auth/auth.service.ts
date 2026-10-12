@@ -1,4 +1,5 @@
-import { ConflictError } from '@app/shared';
+import { ScopeGuard, type JwtPayload } from '@app/authorization';
+import { ConflictError, ForbiddenError, NotFoundError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
 import { Injectable, Logger } from '@nestjs/common';
 import { userServiceSchema, UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
@@ -10,12 +11,16 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { generateInitialPassword } from './lib/generate-initial-password';
 import { eq } from 'drizzle-orm';
 
+/** 고객 계정의 역할. 이 밖의 역할을 하나라도 가진 계정은 직원 계정이다. */
+const CUSTOMER_ROLE_NAMES: readonly string[] = ['user', 'membership'];
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   constructor(
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
     private readonly usersService: UsersService,
+    private readonly scopeGuard: ScopeGuard,
   ) {}
 
   private getClient(tx?: DbTransaction) {
@@ -67,12 +72,24 @@ export class AuthService {
     };
   }
 
-  async changePassword(changePasswordDto: ChangePasswordDto) {
+  /**
+   * 관리자가 다른 계정의 비밀번호를 정한다.
+   *
+   * 직원 계정(고객 역할 밖의 역할을 가진 계정)은 계정 생성과 같은 권한(`master` 스코프)이 있어야 바꿀 수 있다 —
+   * 회원 정보 수정 권한만으로는 고객 계정까지다.
+   */
+  async changePassword(changePasswordDto: ChangePasswordDto, actor: Pick<JwtPayload, 'roles'>) {
     const { loginId, newPassword } = changePasswordDto;
 
     const user = await this.usersService.findUserByLoginId(loginId);
     if (!user) {
-      throw new Error('User not found');
+      throw new NotFoundError('사용자를 찾을 수 없습니다.');
+    }
+
+    const targetRoles = await this.usersService.getUserRoleNames(user.id);
+    const isStaffAccount = targetRoles.some((role) => !CUSTOMER_ROLE_NAMES.includes(role));
+    if (isStaffAccount && (await this.scopeGuard.getGrantedScopes(actor, ['master'])).length === 0) {
+      throw new ForbiddenError('직원 계정의 비밀번호는 계정 생성 권한이 있어야 바꿀 수 있습니다.');
     }
 
     const saltOrRounds = 10;

@@ -1,5 +1,6 @@
-import { RequireScopes } from '@app/authorization';
-import { Body, Controller, HttpException, HttpStatus, Patch, Post } from '@nestjs/common';
+import { JwtPayload, RequireScopes } from '@app/authorization';
+import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
+import { Body, Controller, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { CreateAccountDto } from './dto/create-account-dto';
@@ -18,14 +19,7 @@ export class AuthController {
 
   @Patch('change-password')
   @RequireScopes('master', 'admin:users:modify')
-  async changePassword(@Body() changePasswordDto: ChangePasswordDto) {
-    try {
-      return await this.authService.changePassword(changePasswordDto);
-    } catch (error) {
-      if (error.message.includes('not found')) {
-        throw new HttpException('사용자를 찾을 수 없습니다.', HttpStatus.NOT_FOUND);
-      }
-      throw new HttpException('비밀번호 변경에 실패했습니다.', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
+  changePassword(@Body() changePasswordDto: ChangePasswordDto, @CurrentUser() user: JwtPayload) {
+    return this.authService.changePassword(changePasswordDto, user);
   }
 }
