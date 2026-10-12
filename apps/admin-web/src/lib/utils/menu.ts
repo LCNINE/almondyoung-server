@@ -466,16 +466,52 @@ const allMenus: MainMenu[] = [
           icon: 'MessageSquare',
           defaultPath: '/messages/send',
           children: [
-            { id: 'message-send', title: '개별 메시지 전송', path: '/messages/send' },
-            { id: 'message-bulk', title: '대량 메시지 전송', path: '/messages/bulk' },
-            { id: 'message-groups', title: '수신자 그룹', path: '/messages/groups' },
-            { id: 'message-campaigns', title: '발송 목록', path: '/messages/campaigns' },
+            {
+              id: 'message-send',
+              title: '개별 메시지 전송',
+              path: '/messages/send',
+            },
+            {
+              id: 'message-bulk',
+              title: '대량 메시지 전송',
+              path: '/messages/bulk',
+            },
+            {
+              id: 'message-groups',
+              title: '수신자 그룹',
+              path: '/messages/groups',
+            },
+            {
+              id: 'message-campaigns',
+              title: '발송 목록',
+              path: '/messages/campaigns',
+            },
             { id: 'message-inbox', title: '메시지함', path: '/messages/inbox' },
-            { id: 'message-templates', title: '문자 템플릿', path: '/messages/templates' },
-            { id: 'alimtalk-send', title: '알림톡 보내기', path: '/messages/alimtalk/send' },
-            { id: 'alimtalk-campaigns', title: '알림톡 발송 목록', path: '/messages/alimtalk/campaigns' },
-            { id: 'alimtalk-templates', title: '알림톡 템플릿', path: '/messages/alimtalk/templates' },
-            { id: 'message-devices', title: '발송폰 디바이스', path: '/messages/devices' },
+            {
+              id: 'message-templates',
+              title: '문자 템플릿',
+              path: '/messages/templates',
+            },
+            {
+              id: 'alimtalk-send',
+              title: '알림톡 보내기',
+              path: '/messages/alimtalk/send',
+            },
+            {
+              id: 'alimtalk-campaigns',
+              title: '알림톡 발송 목록',
+              path: '/messages/alimtalk/campaigns',
+            },
+            {
+              id: 'alimtalk-templates',
+              title: '알림톡 템플릿',
+              path: '/messages/alimtalk/templates',
+            },
+            {
+              id: 'message-devices',
+              title: '발송폰 디바이스',
+              path: '/messages/devices',
+            },
           ],
         },
       ]
@@ -561,7 +597,6 @@ const allMenus: MainMenu[] = [
     id: 'own-mall',
     title: '자사몰 관리',
     icon: 'Store',
-    defaultPath: '/mall/users', // 첫 번째 페이지, 임시로 users로 설정
     children: [
       {
         id: 'mall-selection',
@@ -572,7 +607,11 @@ const allMenus: MainMenu[] = [
         id: 'marketing',
         title: '마케팅',
         children: [
-          { id: 'messages', title: '메시지 관리', path: '/mall/marketing/messages' },
+          {
+            id: 'messages',
+            title: '메시지 관리',
+            path: '/mall/marketing/messages',
+          },
           {
             id: 'banner-groups',
             title: '배너 그룹',
@@ -588,7 +627,11 @@ const allMenus: MainMenu[] = [
           },
           { id: 'events', title: '이벤트', path: '/mall/marketing/events' },
           { id: 'shop-listings', title: '샵매매', path: '/mall/shop-listings' },
-          { id: 'almond-templates', title: '아몬드템플릿', path: '/mall/almond-templates' },
+          {
+            id: 'almond-templates',
+            title: '아몬드템플릿',
+            path: '/mall/almond-templates',
+          },
           { id: 'deposit', title: '예치금' },
         ],
       },
@@ -727,12 +770,26 @@ const allMenus: MainMenu[] = [
   },
 ];
 
-export const mainMenus: MainMenu[] = process.env.NEXT_PUBLIC_APP_STAGE === 'demo'
-  ? [{ id: 'demo', title: '시연 관리', icon: 'Package', defaultPath: '/demo', children: [
-      { id: 'demo-console', title: '시연 콘솔', path: '/demo', requireRole: ['admin', 'master'] },
-    ] }, ...filterDemoMenus(allMenus)]
-  : allMenus;
-
+export const mainMenus: MainMenu[] =
+  process.env.NEXT_PUBLIC_APP_STAGE === 'demo'
+    ? [
+        {
+          id: 'demo',
+          title: '시연 관리',
+          icon: 'Package',
+          defaultPath: '/demo',
+          children: [
+            {
+              id: 'demo-console',
+              title: '시연 콘솔',
+              path: '/demo',
+              requireRole: ['admin', 'master'],
+            },
+          ],
+        },
+        ...filterDemoMenus(allMenus),
+      ]
+    : allMenus;
 
 // 첫 번째 페이지를 찾는 헬퍼 함수 추가
 export function getFirstPagePath(menuId: string): string | null {

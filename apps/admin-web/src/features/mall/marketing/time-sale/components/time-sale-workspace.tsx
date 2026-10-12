@@ -47,6 +47,8 @@ import {
   shouldKeepDraftOnRefetch,
 } from '../time-sale-model';
 import { TimeSaleColorPicker } from './time-sale-color-picker';
+import { CssEditor } from './time-sale-css-editor';
+import { TimeSaleImageField } from './time-sale-image-field';
 import './time-sale-workspace.css';
 import {
   DoorOpen,
@@ -59,7 +61,11 @@ import {
   Settings,
   Menu,
 } from 'lucide-react';
-import { TimeSaleHelpDialog, TimeSaleSwitch } from './time-sale-dialog';
+import {
+  TimeSaleDialog,
+  TimeSaleHelpDialog,
+  TimeSaleSwitch,
+} from './time-sale-dialog';
 
 // 타임세일 화면 공용 토스트(성공/오류).
 export const saleToast = (message: string, error = false) =>
@@ -82,13 +88,13 @@ const sections = {
 };
 
 const typeLabels = {
-  text: '텍스트',
+  text: '텍스트/HTML',
   image: '이미지',
   button: '버튼',
-  timer: '타이머',
-  progress: '프로그레스',
-  carousel: '상품 캐러셀',
-  grid: '상품 그리드',
+  timer: '카운트다운 타이머',
+  progress: '프로그레스바',
+  carousel: '캐로셀',
+  grid: '상품목록',
 };
 
 const isShelf = (type: string) => type === 'carousel' || type === 'grid';
@@ -127,42 +133,50 @@ const optionLabels: Record<keyof SaleComponent['options'], string> = {
   footer: '상품 Footer',
   progressColor: '프로그레스 색상',
   progressBackground: '프로그레스 배경',
+  listCss: '캐러셀 / 상품목록 컨테이너',
+  arrowCss: '슬라이드 이동 화살표 스타일',
+  dotCss: '슬라이드 위치 표시 스타일',
+  activeDotCss: '현재 위치 표시 스타일',
+  pageCss: '페이지 번호 스타일',
+  activePageCss: '현재 페이지 번호 스타일',
+  showPages: '페이지 번호 보이기',
+  pageWindow: '페이지 윈도우(번호 개수)',
+  timerDigitCss: '타이머 숫자 스타일',
+  timerLabelCss: '타이머 일시분초 스타일',
+  timerSeparatorCss: '타이머 구분자 스타일',
+  buttonCss: '버튼 스타일',
+  progressCss: '프로그레스바 스타일',
+  progressFillCss: '프로그레스 막대 스타일',
+  showTimerLabels: '일시분초 보이기',
+  timerLabels: '일시분초 텍스트',
+  timerSeparators: '시간 텍스트 구분자',
+  buttonAction: '버튼 클릭이벤트',
+  href: '이동 주소',
+  newWindow: '새 창 띄우기',
+  disableProductLink: '상품 상세페이지 이동 비활성',
+  productHref: '상품 상세페이지 주소',
+  productOrder: '상품 진열방식',
+  slots: '전체 슬롯 수',
+  carouselRows: '캐러셀에 페이지 행 수 적용',
+  slideGroup: '슬라이드 그룹(이동 상품 수)',
+  direction: '상품 방향',
+  imageType: '이미지 구분',
+  imageContentGap: '이미지/내용 간격(px)',
+  dotShape: '슬라이드 위치 표시 형태',
 };
 
 const sampleProducts: SaleProduct[] = Array.from({ length: 18 }, (_, i) => ({
   id: String(i),
   name: `타임세일 상품 ${i + 1}`,
-  image: null,
+  image: `https://file.almondyoung.com/files/public/${i % 2 === 0 ? '01a0fc80-2423-714a-8ef9-402225e307fa' : '01a09e63-5f74-7629-a802-f00e7a54acd6'}`,
   href: '#',
   price: 19800 + i * 1000,
   originalPrice: 30000 + i * 1000,
+  membershipPrice: 18800 + i * 1000,
+  rating: i % 2 === 0 ? 4.9 : 4.7,
+  reviewCount: i % 2 === 0 ? 204 : 7,
   soldOut: i % 5 === 0,
 }));
-
-const cssFields: [keyof SaleCss, string][] = [
-  ['color', '글자 색상'],
-  ['backgroundColor', '배경 색상'],
-  ['fontSize', '글자 크기'],
-  ['fontWeight', '글자 굵기'],
-  ['textAlign', '정렬'],
-  ['padding', '안쪽 여백(위 우 아래 좌)'],
-  ['margin', '바깥 여백(위 우 아래 좌)'],
-  ['borderTop', '위 테두리'],
-  ['borderRight', '우 테두리'],
-  ['borderBottom', '아래 테두리'],
-  ['borderLeft', '좌 테두리'],
-  ['borderRadius', '모서리(좌상 우상 우하 좌하)'],
-  ['width', '폭'],
-  ['maxWidth', '최대 폭'],
-  ['height', '높이'],
-  ['opacity', '불투명도'],
-];
-
-const cssFieldDefault = (key: keyof SaleCss) => {
-  if (key === 'color') return '#000000';
-  if (key === 'backgroundColor') return '#ffffff';
-  return '';
-};
 
 const saveMessage = (section: string, selected: string) => {
   if (section === 'environment') return '환경설정 변경 사항을 저장하였습니다.';
@@ -175,15 +189,18 @@ const saveMessage = (section: string, selected: string) => {
 };
 
 const slotButtonLabels = {
-  header: 'Header',
-  container: '매대 컨테이너',
-  footer: 'Footer',
+  header: '머리말',
+  container: '메인 컨테이너',
+  footer: '꼬리말',
 };
 
+const editorTabs = ['sale', 'header', 'footer', 'container'] as const;
+
 const selectionLabel = (selected: string, componentName?: string) => {
+  if (selected === 'main-container') return '메인 컨테이너';
   if (selected === 'container') return '컨테이너';
-  if (selected === 'header') return 'Header';
-  if (selected === 'footer') return 'Footer';
+  if (selected === 'header') return '머리말';
+  if (selected === 'footer') return '꼬리말';
   return componentName;
 };
 
@@ -203,6 +220,64 @@ const CSS_OPTION_KEYS = [
   'footerCss',
 ] as const;
 
+const extraCssOptions = {
+  timer: ['timerDigitCss', 'timerLabelCss', 'timerSeparatorCss'],
+  button: ['buttonCss'],
+  progress: ['progressCss', 'progressFillCss'],
+  carousel: ['listCss', 'arrowCss', 'dotCss', 'activeDotCss'],
+  grid: ['listCss', 'pageCss', 'activePageCss'],
+  image: [],
+  text: [],
+} as const;
+
+const extraOptionDefaults = {
+  showTimerLabels: true,
+  buttonAction: 'more',
+  href: '',
+  newWindow: false,
+  disableProductLink: false,
+  productHref: '',
+  productOrder: 'priority',
+  slots: 18,
+  carouselRows: false,
+  showPages: true,
+  pageWindow: 5,
+  slideGroup: 1,
+  direction: 'column',
+  imageType: 'list',
+  imageContentGap: 0,
+  dotShape: 'circle',
+};
+
+const optionChoices: Partial<
+  Record<keyof SaleComponent['options'], [string, string][]>
+> = {
+  buttonAction: [
+    ['more', '더보기 이동'],
+    ['url', '주소 이동'],
+  ],
+  productOrder: [
+    ['priority', '우선순위(정방향)'],
+    ['reverse', '우선순위(역방향)'],
+    ['random', '무작위'],
+  ],
+  direction: [
+    ['column', '세로'],
+    ['row', '가로'],
+  ],
+  imageType: [
+    ['list', '목록 이미지'],
+    ['detail', '상세 이미지'],
+    ['small', '작은목록 이미지'],
+    ['thumbnail', '축소 이미지'],
+  ],
+  dotShape: [
+    ['circle', '원형핀'],
+    ['square', '사각핀'],
+    ['number', '숫자'],
+  ],
+};
+
 // 상품 메시지 텍스트 최대 개수. 서버 검증(domain-types)의 상한과 같은 값이다.
 const MAX_PRODUCT_TEXTS = 7;
 
@@ -215,6 +290,21 @@ const stateTabLabels: Record<SalePreviewState, string> = {
 // 컴포넌트 종류별로 편집 화면에 보여줄 옵션 키를
 // 거른다(타이머·진행바·상품 목록이 각자 쓰는 옵션만).
 const optionAppliesTo = (type: SaleComponent['type'], key: string) => {
+  if (type === 'image') return key === 'imageWidth';
+  if (key.endsWith('Css') || key === 'timerLabels' || key === 'timerSeparators')
+    return false;
+  if (key in extraOptionDefaults) {
+    if (type === 'timer') return key === 'showTimerLabels';
+    if (type === 'button')
+      return ['buttonAction', 'href', 'newWindow'].includes(key);
+    if (isShelf(type))
+      return (
+        !['showTimerLabels', 'buttonAction', 'href'].includes(key) &&
+        (type === 'carousel' ||
+          !['slots', 'slideGroup', 'dotShape', 'carouselRows'].includes(key))
+      );
+    return false;
+  }
   if ((CSS_OPTION_KEYS as readonly string[]).includes(key)) return false;
   if (type === 'timer') return TIMER_OPTION_KEYS.includes(key);
   if (type === 'progress') return PROGRESS_OPTION_KEYS.includes(key);
@@ -241,90 +331,120 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function CssEditor({
-  value,
+type ProductText = NonNullable<SaleComponent['productTexts']>[number];
+
+function LayerMessagesEditor({
+  component,
   onChange,
+  progress = false,
 }: {
-  value: SaleCss;
-  onChange: (css: SaleCss) => void;
+  component: SaleComponent;
+  progress?: boolean;
+  onChange: (
+    items:
+      | NonNullable<SaleComponent['progressTexts']>
+      | NonNullable<SaleComponent['imageLayers']>
+  ) => void;
 }) {
-  const [json, setJson] = useState('');
+  const items = progress
+    ? (component.progressTexts ?? [])
+    : (component.imageLayers ?? []);
+  const max = progress ? 3 : 4;
+  const label = progress ? '프로그레스바 메시지' : '상품 이미지 레이어';
+
+  const update = (
+    index: number,
+    patch: Partial<NonNullable<SaleComponent['progressTexts']>[number]>
+  ) =>
+    onChange(
+      items.map((item, i) => (i === index ? { ...item, ...patch } : item))
+    );
 
   return (
-    <>
-      <details open>
-        <summary>컨테이너 / 텍스트 스타일</summary>
-        {cssFields.map(([key, label]) => (
-          <Field key={key} label={label}>
-            {key === 'color' || key === 'backgroundColor' ? (
-              <TimeSaleColorPicker
-                value={String(value[key] ?? cssFieldDefault(key))}
-                onChange={(color) => onChange({ ...value, [key]: color })}
-              />
-            ) : (
-              <input
-                type="text"
-                value={value[key] ?? cssFieldDefault(key)}
-                onChange={(e) => {
-                  const next = { ...value };
-                  if (e.target.value) next[key] = e.target.value;
-                  else delete next[key];
-                  onChange(next);
-                }}
-              />
-            )}
+    <details>
+      <summary>{label}</summary>
+      <button
+        type="button"
+        disabled={items.length >= max}
+        onClick={() =>
+          onChange([
+            ...items,
+            {
+              id: `message-${Date.now()}`,
+              content: '{{condition}}',
+              css: {},
+              ...(progress ? { position: 'top' as const } : {}),
+            },
+          ])
+        }
+      >
+        + {label} 추가
+      </button>
+      {items.map((item, index) => (
+        <div key={item.id}>
+          <div className="ts-actions">
+            <span>
+              {index + 1} / {max}
+            </span>
+            <button
+              type="button"
+              aria-label={`${label} ${index + 1} 삭제`}
+              onClick={() => onChange(items.filter((_, i) => i !== index))}
+            >
+              삭제
+            </button>
+          </div>
+          {progress && (
+            <Field label="메시지 위치">
+              <select
+                value={
+                  'position' in item && typeof item.position === 'string'
+                    ? item.position
+                    : 'top'
+                }
+                onChange={(e) =>
+                  update(index, {
+                    position: e.target.value as 'top' | 'inside' | 'bottom',
+                  })
+                }
+              >
+                <option value="top">상단</option>
+                <option value="inside">내부</option>
+                <option value="bottom">하단</option>
+              </select>
+            </Field>
+          )}
+          <Field label="메시지 형식">
+            <textarea
+              value={item.content}
+              onChange={(e) => update(index, { content: e.target.value })}
+            />
           </Field>
-        ))}
-      </details>
-      <details>
-        <summary>사용자 정의 CSS JSON</summary>
-        <textarea
-          aria-label="사용자 정의 CSS JSON"
-          value={json}
-          placeholder={JSON.stringify(value, null, 2)}
-          onChange={(e) => setJson(e.target.value)}
-        />
-        <button
-          type="button"
-          onClick={() => {
-            try {
-              const parsed: unknown = JSON.parse(json);
-              if (
-                !parsed ||
-                typeof parsed !== 'object' ||
-                Array.isArray(parsed)
-              )
-                throw new Error();
-              const settings = defaultTimeSaleSettings();
-              settings.styles.main.mobile.css = parsed as SaleCss;
-              validateTimeSaleSettings(settings);
-              onChange(parsed as SaleCss);
-              saleToast('적용을 완료하였습니다.');
-            } catch {
-              saleToast('허용된 스타일 속성과 올바른 JSON을 입력하세요.', true);
-            }
-          }}
-        >
-          적용
-        </button>
-      </details>
-    </>
+          <CssEditor
+            value={item.css}
+            onChange={(css) => update(index, { css })}
+          />
+        </div>
+      ))}
+    </details>
   );
 }
-
-type ProductText = NonNullable<SaleComponent['productTexts']>[number];
 
 function StateCssEditor({
   component,
   onChange,
+  state,
+  onSelectState,
 }: {
   component: SaleComponent;
   onChange: (state: SalePreviewState, css: SaleCss) => void;
+  state: SalePreviewState;
+  onSelectState: (state: SalePreviewState) => void;
 }) {
-  const [tab, setTab] = useState<SalePreviewState>('scheduled');
+  const tab = state;
 
   return (
-    <details>
+    <details className="ts-state-css">
       <summary>상태별 컴포넌트 CSS</summary>
       <div className="ts-inline">
         {(Object.keys(stateTabLabels) as SalePreviewState[]).map((v) => (
@@ -332,12 +452,16 @@ function StateCssEditor({
             key={v}
             type="button"
             aria-pressed={tab === v}
-            onClick={() => setTab(v)}
+            onClick={() => onSelectState(v)}
           >
             {stateTabLabels[v]}
           </button>
         ))}
       </div>
+      <p className="ts-style-hint">
+        {stateTabLabels[tab]} 상태에만 적용됩니다. 기본 스타일 위에 덮어쓰며,
+        프리뷰도 선택한 상태로 바뀝니다.
+      </p>
       <CssEditor
         key={`${component.id}-${tab}`}
         value={component.stateCss?.[tab] ?? {}}
@@ -350,9 +474,11 @@ function StateCssEditor({
 function ProductTextsEditor({
   component,
   onChange,
+  position,
 }: {
   component: SaleComponent;
   onChange: (texts: ProductText[]) => void;
+  position?: ProductText['position'];
 }) {
   const texts = component.productTexts ?? [];
 
@@ -369,16 +495,28 @@ function ProductTextsEditor({
 
   return (
     <details>
-      <summary>상품 메시지 텍스트</summary>
+      <summary>
+        {position
+          ? {
+              top: '상품 상단',
+              header: '상품 머리말 내용',
+              footer: '상품 꼬리말 내용',
+              bottom: '상품 하단',
+            }[position]
+          : '상품 메시지 텍스트'}
+      </summary>
       <button
         type="button"
-        disabled={texts.length >= MAX_PRODUCT_TEXTS}
+        disabled={
+          texts.filter((t) => t.position === (position ?? 'footer')).length >=
+          MAX_PRODUCT_TEXTS
+        }
         onClick={() =>
           onChange([
             ...texts,
             {
               id: `text-${Date.now()}`,
-              position: 'footer',
+              position: position ?? 'footer',
               content: '{{product_name}}',
               css: {},
             },
@@ -387,53 +525,102 @@ function ProductTextsEditor({
       >
         메시지 텍스트 추가
       </button>
-      {texts.map((t, i) => (
-        <div key={t.id}>
-          <strong>
-            {i + 1} / {MAX_PRODUCT_TEXTS}
-          </strong>
-          <button type="button" disabled={i === 0} onClick={() => move(i, -1)}>
-            위로
-          </button>
-          <button
-            type="button"
-            disabled={i === texts.length - 1}
-            onClick={() => move(i, 1)}
-          >
-            아래로
-          </button>
-          <button
-            type="button"
-            onClick={() => onChange(texts.filter((_, j) => j !== i))}
-          >
-            삭제
-          </button>
-          <Field label="위치">
-            <select
-              value={t.position}
-              onChange={(e) =>
-                update(i, {
-                  position: e.target.value as ProductText['position'],
-                })
-              }
+      {texts.map((t, i) =>
+        position && t.position !== position ? null : (
+          <div key={t.id}>
+            <strong>
+              {
+                texts
+                  .slice(0, i + 1)
+                  .filter((item) => item.position === t.position).length
+              }{' '}
+              / {MAX_PRODUCT_TEXTS}
+            </strong>
+            <button
+              type="button"
+              disabled={i === 0}
+              onClick={() => move(i, -1)}
             >
-              <option value="header">머리말</option>
-              <option value="footer">꼬리말</option>
-            </select>
-          </Field>
-          <Field label="메시지 형식">
-            <textarea
-              value={t.content}
-              onChange={(e) => update(i, { content: e.target.value })}
+              위로
+            </button>
+            <button
+              type="button"
+              disabled={i === texts.length - 1}
+              onClick={() => move(i, 1)}
+            >
+              아래로
+            </button>
+            <button
+              type="button"
+              onClick={() => onChange(texts.filter((_, j) => j !== i))}
+            >
+              삭제
+            </button>
+            <Field label="위치">
+              <select
+                value={t.position}
+                onChange={(e) =>
+                  update(i, {
+                    position: e.target.value as ProductText['position'],
+                  })
+                }
+              >
+                <option
+                  value="top"
+                  disabled={
+                    t.position !== 'top' &&
+                    texts.filter((item) => item.position === 'top').length >=
+                      MAX_PRODUCT_TEXTS
+                  }
+                >
+                  상품 상단
+                </option>
+                <option
+                  value="header"
+                  disabled={
+                    t.position !== 'header' &&
+                    texts.filter((item) => item.position === 'header').length >=
+                      MAX_PRODUCT_TEXTS
+                  }
+                >
+                  머리말
+                </option>
+                <option
+                  value="footer"
+                  disabled={
+                    t.position !== 'footer' &&
+                    texts.filter((item) => item.position === 'footer').length >=
+                      MAX_PRODUCT_TEXTS
+                  }
+                >
+                  꼬리말
+                </option>
+                <option
+                  value="bottom"
+                  disabled={
+                    t.position !== 'bottom' &&
+                    texts.filter((item) => item.position === 'bottom').length >=
+                      MAX_PRODUCT_TEXTS
+                  }
+                >
+                  상품 하단
+                </option>
+              </select>
+            </Field>
+            <Field label="메시지 형식">
+              <textarea
+                value={t.content}
+                onChange={(e) => update(i, { content: e.target.value })}
+              />
+            </Field>
+            <CssEditor
+              key={t.id}
+              value={t.css}
+              onChange={(css) => update(i, { css })}
             />
-          </Field>
-          <CssEditor
-            key={t.id}
-            value={t.css}
-            onChange={(css) => update(i, { css })}
-          />
-        </div>
-      ))}
+          </div>
+        )
+      )}
     </details>
   );
 }
@@ -443,7 +630,12 @@ function ProductTextsEditor({
 export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [helpOpen, setHelpOpen] = useState(false);
-  const [navigationOpen, setNavigationOpen] = useState(false);
+  const [navigationOpen, setNavigationOpen] = useState(true);
+  const [editorTab, setEditorTab] = useState('sale');
+  const [importOpen, setImportOpen] = useState(false);
+  const [fitPreview, setFitPreview] = useState(true);
+  const [previewWidth, setPreviewWidth] = useState(0);
+  const previewViewport = useRef<HTMLDivElement>(null);
 
   const query = useQuery({
     queryKey: ['time-sale-settings'],
@@ -457,14 +649,26 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
 
   const [section, setSection] = useState<keyof typeof sections>('management'),
     [platform, setPlatform] = useState<SalePlatform>('mobile'),
-    [state, setState] = useState<SalePreviewState>('active'),
-    [soldOut, setSoldOut] = useState(true),
+    [state, setState] = useState<SalePreviewState>('scheduled'),
+    [soldOut, setSoldOut] = useState(false),
     [selected, setSelected] = useState('container'),
     [refresh, setRefresh] = useState(0),
     [previewAnchor, setPreviewAnchor] = useState(() =>
-      previewAnchorFor('active', Date.now())
+      previewAnchorFor('scheduled', Date.now())
     ),
     [width, setWidth] = useState(375);
+
+  useEffect(() => {
+    const viewport = previewViewport.current;
+    if (!viewport) return;
+
+    const observer = new ResizeObserver(() =>
+      setPreviewWidth(viewport.clientWidth)
+    );
+    observer.observe(viewport);
+
+    return () => observer.disconnect();
+  }, [section, settings]);
 
   const [confirmation, setConfirmation] = useState<{
       text: string;
@@ -504,12 +708,15 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
   };
 
   // dirty 면 확인창을 거쳐 편집본을 버리고 이동하고, 아니면 바로 이동한다.
-  const guarded = (go: () => void) => {
+  const guarded = (
+    go: () => void,
+    text = '수정 사항이 존재합니다. 무시하고 탭을 이동하시겠습니까?'
+  ) => {
     if (!dirty) return go();
 
     ask({
       title: '확인',
-      text: '수정 사항이 존재합니다. 무시하고 탭을 이동하시겠습니까?',
+      text,
       run: () => {
         discardDraft();
         go();
@@ -704,6 +911,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
 
     guarded(() => {
       setSection(next);
+      setEditorTab('sale');
       setSelected('container');
     });
   };
@@ -722,6 +930,849 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
     }
     changeComponent((c) => Object.assign(c, createSaleComponent(type, c.id)));
   };
+
+  const defaultMainWidth = platform === 'mobile' ? '100%' : '1280px';
+
+  const optionField = (k: keyof SaleComponent['options']) => {
+    if (!component) return null;
+
+    const value =
+      component.options[k] ??
+      extraOptionDefaults[k as keyof typeof extraOptionDefaults];
+
+    if (typeof value === 'number') {
+      const limits: Partial<Record<keyof SaleComponent['options'], number>> = {
+        imageWidth: 100,
+        imageRadius: 100,
+        badgeSize: 100,
+        imageContentGap: 100,
+        gap: 100,
+        slots: 60,
+        pageWindow: 20,
+      };
+      const min = [
+        'imageWidth',
+        'badgeSize',
+        'slots',
+        'pageWindow',
+        'slideGroup',
+      ].includes(k)
+        ? 1
+        : 0;
+      const change = (next: string) =>
+        changeComponent((item) => {
+          Object.assign(item.options, { [k]: Number(next) });
+        });
+
+      return (
+        <Field key={k} label={optionLabels[k]}>
+          <div className="ts-option-range">
+            <input
+              type="number"
+              aria-label={optionLabels[k]}
+              step="any"
+              value={value}
+              onChange={(event) => change(event.target.value)}
+            />
+            <input
+              type="range"
+              aria-label={`${optionLabels[k]} 슬라이더`}
+              min={min}
+              max={Math.max(value, limits[k] ?? 100)}
+              step="1"
+              value={value}
+              onChange={(event) => change(event.target.value)}
+            />
+          </div>
+        </Field>
+      );
+    }
+
+    return (
+      <Field key={k} label={optionLabels[k]}>
+        {typeof value === 'boolean' ? (
+          <input
+            type="checkbox"
+            checked={Boolean(value)}
+            onChange={(e) =>
+              changeComponent((c) => {
+                Object.assign(c.options, {
+                  [k]: e.target.checked,
+                });
+              })
+            }
+          />
+        ) : optionChoices[k] ? (
+          <select
+            value={String(value)}
+            onChange={(e) =>
+              changeComponent((c) =>
+                Object.assign(c.options, { [k]: e.target.value })
+              )
+            }
+          >
+            {optionChoices[k]!.map(([option, label]) => (
+              <option key={option} value={option}>
+                {label}
+              </option>
+            ))}
+          </select>
+        ) : k === 'timer' ? (
+          <select
+            value={component.options.timer}
+            onChange={(e) =>
+              changeComponent((c) => {
+                c.options.timer = e.target.value as 'normal' | 'flip';
+              })
+            }
+          >
+            <option value="normal">일반</option>
+            <option value="flip">슬라이딩 플립</option>
+          </select>
+        ) : k === 'badge' ? (
+          <select
+            value={component.options.badge}
+            onChange={(e) =>
+              changeComponent((c) => {
+                c.options.badge = e.target.value;
+              })
+            }
+          >
+            {[
+              'none',
+              'flower',
+              'star',
+              'drop',
+              'tag',
+              'arrow',
+              'bag',
+              'snowman',
+              'tree',
+              'ornament',
+              'circle',
+              'ribbon',
+            ].map((v) => (
+              <option key={v}>{v}</option>
+            ))}
+          </select>
+        ) : optionInputType(k, component.options[k]) === 'color' ? (
+          <TimeSaleColorPicker
+            value={String(component.options[k])}
+            transparentValue="#00000000"
+            onChange={(color) =>
+              changeComponent((c) => {
+                Object.assign(c.options, { [k]: color });
+              })
+            }
+          />
+        ) : (
+          <input
+            type={optionInputType(k, value)}
+            step="any"
+            value={value as string | number}
+            onChange={(e) =>
+              changeComponent((c) => {
+                Object.assign(c.options, {
+                  [k]:
+                    typeof value === 'number'
+                      ? Number(e.target.value)
+                      : e.target.value,
+                });
+              })
+            }
+          />
+        )}
+      </Field>
+    );
+  };
+
+  const decoration =
+    selected === 'header' || selected === 'footer' ? selected : null;
+  const decorationControls =
+    decoration && layout ? (
+      <div className="ts-properties">
+        <fieldset>
+          <legend>표시</legend>
+          <Field label="보이기">
+            <input
+              type="checkbox"
+              checked={layout[`${decoration}Options`]?.enabled ?? true}
+              onChange={(e) =>
+                changeLayout((l) => {
+                  l[`${decoration}Options`] = {
+                    type: 'text',
+                    css: {},
+                    ...l[`${decoration}Options`],
+                    enabled: e.target.checked,
+                  };
+                })
+              }
+            />
+          </Field>
+        </fieldset>
+        <fieldset>
+          <legend>내용</legend>
+          <Field label="내용 유형">
+            <select
+              value={layout[`${decoration}Options`]?.type ?? 'text'}
+              onChange={(e) =>
+                changeLayout((l) => {
+                  l[`${decoration}Options`] = {
+                    enabled: true,
+                    css: {},
+                    ...l[`${decoration}Options`],
+                    type: e.target.value as 'text' | 'image',
+                  };
+                })
+              }
+            >
+              <option value="text">텍스트/HTML</option>
+              <option value="image">이미지</option>
+            </select>
+          </Field>
+        </fieldset>
+      </div>
+    ) : null;
+
+  const properties = layout ? (
+    <div className="ts-properties">
+      <h3>{selectionLabel(selected, component?.name)} 설정</h3>
+      {selected === 'main-container' && (
+        <fieldset>
+          <legend>규격</legend>
+          <Field label="가로 최대">
+            <input
+              type="number"
+              min={1}
+              value={
+                parseFloat(
+                  String(layout.mainCss?.maxWidth ?? defaultMainWidth)
+                ) || 100
+              }
+              onChange={(e) =>
+                changeLayout((item) => {
+                  const unit = String(
+                    item.mainCss?.maxWidth ?? defaultMainWidth
+                  ).endsWith('%')
+                    ? '%'
+                    : 'px';
+
+                  item.mainCss = {
+                    ...item.mainCss,
+                    maxWidth: `${Math.max(1, Number(e.target.value))}${unit}`,
+                  };
+                })
+              }
+            />
+          </Field>
+          <input
+            aria-label="가로 최대 슬라이더"
+            type="range"
+            min={1}
+            max={
+              String(layout.mainCss?.maxWidth ?? defaultMainWidth).endsWith('%')
+                ? 100
+                : 2000
+            }
+            value={
+              parseFloat(
+                String(layout.mainCss?.maxWidth ?? defaultMainWidth)
+              ) || 100
+            }
+            onChange={(event) =>
+              changeLayout((item) => {
+                const unit = String(
+                  item.mainCss?.maxWidth ?? defaultMainWidth
+                ).endsWith('%')
+                  ? '%'
+                  : 'px';
+                item.mainCss = {
+                  ...item.mainCss,
+                  maxWidth: `${event.target.value}${unit}`,
+                };
+              })
+            }
+          />
+          <Field label="단위">
+            <select
+              value={
+                String(layout.mainCss?.maxWidth ?? defaultMainWidth).endsWith(
+                  '%'
+                )
+                  ? '%'
+                  : 'px'
+              }
+              onChange={(e) =>
+                changeLayout((item) => {
+                  const width =
+                    parseFloat(
+                      String(item.mainCss?.maxWidth ?? defaultMainWidth)
+                    ) || 100;
+
+                  item.mainCss = {
+                    ...item.mainCss,
+                    maxWidth: `${width}${e.target.value}`,
+                  };
+                })
+              }
+            >
+              <option value="%">% - 퍼센트</option>
+              <option value="px">px - 픽셀</option>
+            </select>
+          </Field>
+          <Field label="컨테이너 수평 정렬">
+            <select
+              value={
+                (layout.mainCss?.marginLeft ?? 'auto') === 'auto'
+                  ? (layout.mainCss?.marginRight ?? 'auto') === 'auto'
+                    ? 'center'
+                    : 'right'
+                  : 'left'
+              }
+              onChange={(e) =>
+                changeLayout((item) => {
+                  item.mainCss = {
+                    ...item.mainCss,
+                    marginLeft: e.target.value === 'left' ? '0' : 'auto',
+                    marginRight: e.target.value === 'right' ? '0' : 'auto',
+                  };
+                })
+              }
+            >
+              <option value="left">왼쪽</option>
+              <option value="center">가운데</option>
+              <option value="right">오른쪽</option>
+            </select>
+          </Field>
+        </fieldset>
+      )}
+      {selected === 'container' || selected === 'main-container' ? (
+        <CssEditor
+          containerOnly
+          value={
+            selected === 'main-container' ? (layout.mainCss ?? {}) : layout.css
+          }
+          onChange={(css) =>
+            changeLayout((l) => {
+              if (selected === 'main-container') l.mainCss = css;
+              else l.css = css;
+            })
+          }
+        />
+      ) : selected === 'header' || selected === 'footer' ? (
+        <div className="ts-text-editor">
+          <details name={`decoration-${selected}`}>
+            <summary>
+              {layout[`${selected}Options`]?.type === 'image'
+                ? '이미지 내용'
+                : '텍스트/HTML 내용'}
+            </summary>
+            <div className="ts-css-body">
+              <div className="ts-field">
+                {layout[`${selected}Options`]?.type === 'image' ? (
+                  <TimeSaleImageField
+                    value={layout[selected]}
+                    onChange={(content) =>
+                      changeLayout((item) => {
+                        item[selected] = content;
+                      })
+                    }
+                  />
+                ) : (
+                  <textarea
+                    aria-label="HTML / 변수"
+                    value={layout[selected]}
+                    onChange={(e) =>
+                      changeLayout((l) => {
+                        l[selected] = e.target.value;
+                      })
+                    }
+                  />
+                )}
+              </div>
+            </div>
+          </details>
+          <CssEditor
+            key={selected}
+            accordionName={`decoration-${selected}`}
+            value={layout[`${selected}Options`]?.css ?? {}}
+            onChange={(css) =>
+              changeLayout((l) => {
+                l[`${selected}Options`] = {
+                  enabled: true,
+                  type: 'text',
+                  ...l[`${selected}Options`],
+                  css,
+                };
+              })
+            }
+          />
+        </div>
+      ) : component && isShelf(component.type) ? (
+        <div className="ts-component-editor">
+          <details name={`shelf-${component.id}`} open>
+            <summary>{typeLabels[component.type]}</summary>
+            <div className="ts-css-body">
+              {(['columns', 'rows'] as const).map((key) => (
+                <label className="ts-shelf-range" key={key}>
+                  <span>
+                    {key === 'columns' ? '가로-열(cols)' : '세로-행(rows)'} :{' '}
+                    {component.options[key]}개
+                  </span>
+                  <input
+                    type="range"
+                    aria-label={key === 'columns' ? '가로 열 수' : '세로 행 수'}
+                    min="1"
+                    max={key === 'columns' ? 8 : 10}
+                    step="1"
+                    value={component.options[key]}
+                    onChange={(event) =>
+                      changeComponent((item) => {
+                        item.options[key] = Number(event.target.value);
+                      })
+                    }
+                  />
+                </label>
+              ))}
+              {component.type === 'carousel' &&
+                [
+                  'slots',
+                  'slideGroup',
+                  'carouselRows',
+                  'autoplay',
+                  'delay',
+                  'duration',
+                  'loop',
+                  'arrows',
+                  'dots',
+                  'dotShape',
+                ].map((key) =>
+                  optionField(key as keyof SaleComponent['options'])
+                )}
+            </div>
+          </details>
+          <details name={`shelf-${component.id}`}>
+            <summary>상품 속성</summary>
+            <div className="ts-css-body">
+              {[
+                'productOrder',
+                'direction',
+                'gap',
+                'imageType',
+                'imageWidth',
+                'imageRadius',
+                'imageContentGap',
+                'showOriginal',
+                'showDiscount',
+                'overlay',
+              ].map((key) =>
+                optionField(key as keyof SaleComponent['options'])
+              )}
+              {[
+                'productCss',
+                'soldOutCss',
+                'scheduledCss',
+                'endedCss',
+                'imageCss',
+              ].map((key) => (
+                <details key={key}>
+                  <summary>
+                    {optionLabels[key as keyof SaleComponent['options']]}
+                  </summary>
+                  <CssEditor
+                    jsonOnly
+                    value={
+                      component.options[
+                        key as (typeof CSS_OPTION_KEYS)[number]
+                      ] ?? {}
+                    }
+                    onChange={(css) =>
+                      changeComponent((item) => {
+                        Object.assign(item.options, { [key]: css });
+                      })
+                    }
+                  />
+                </details>
+              ))}
+            </div>
+          </details>
+          <details name={`shelf-${component.id}`}>
+            <summary>상품 상세페이지 주소</summary>
+            <div className="ts-css-body">
+              {['disableProductLink', 'productHref', 'newWindow'].map((key) =>
+                optionField(key as keyof SaleComponent['options'])
+              )}
+            </div>
+          </details>
+          <details name={`shelf-${component.id}`}>
+            <summary>상품 이미지 엠블럼</summary>
+            <div className="ts-css-body">
+              {['badge', 'badgeSize', 'badgeColor'].map((key) =>
+                optionField(key as keyof SaleComponent['options'])
+              )}
+              <CssEditor
+                jsonOnly
+                value={component.options.badgeCss ?? {}}
+                onChange={(css) =>
+                  changeComponent((item) => {
+                    item.options.badgeCss = css;
+                  })
+                }
+              />
+            </div>
+          </details>
+          <LayerMessagesEditor
+            component={component}
+            onChange={(items) =>
+              changeComponent((item) => {
+                item.imageLayers = items;
+              })
+            }
+          />
+          {(['top', 'header', 'footer', 'bottom'] as const).map((position) => (
+            <ProductTextsEditor
+              key={position}
+              position={position}
+              component={component}
+              onChange={(texts) =>
+                changeComponent((item) => {
+                  item.productTexts = texts;
+                })
+              }
+            />
+          ))}
+          <details name={`shelf-${component.id}`}>
+            <summary>
+              {component.type === 'grid'
+                ? '상품 페이지 설정'
+                : '캐로셀 컨테이너'}
+            </summary>
+            <div className="ts-css-body">
+              {component.type === 'grid' &&
+                ['showPages', 'pageWindow'].map((key) =>
+                  optionField(key as keyof SaleComponent['options'])
+                )}
+              {extraCssOptions[component.type as 'grid' | 'carousel'].map(
+                (key) => (
+                  <details key={key}>
+                    <summary>{optionLabels[key]}</summary>
+                    <CssEditor
+                      jsonOnly
+                      value={component.options[key] ?? {}}
+                      onChange={(css) =>
+                        changeComponent((item) => {
+                          item.options[key] = css;
+                        })
+                      }
+                    />
+                  </details>
+                )
+              )}
+            </div>
+          </details>
+          <StateCssEditor
+            state={state}
+            onSelectState={setState}
+            component={component}
+            onChange={(state, css) =>
+              changeComponent((item) => {
+                item.stateCss = { ...item.stateCss, [state]: css };
+              })
+            }
+          />
+          <CssEditor
+            showFont={false}
+            value={component.css}
+            onChange={(css) =>
+              changeComponent((item) => {
+                item.css = css;
+              })
+            }
+          />
+        </div>
+      ) : component?.type === 'image' ? (
+        <div className="ts-component-editor">
+          <details name={`image-${component.id}`} open>
+            <summary>이미지 내용</summary>
+            <div className="ts-css-body">
+              <TimeSaleImageField
+                value={component.content}
+                onChange={(content) =>
+                  changeComponent((item) => {
+                    item.content = content;
+                  })
+                }
+              />
+              {optionField('imageWidth')}
+            </div>
+          </details>
+          <CssEditor
+            accordionName={`image-${component.id}`}
+            value={component.css}
+            onChange={(css) =>
+              changeComponent((item) => {
+                item.css = css;
+              })
+            }
+          />
+          <StateCssEditor
+            state={state}
+            onSelectState={setState}
+            component={component}
+            onChange={(state, css) =>
+              changeComponent((item) => {
+                item.stateCss = { ...item.stateCss, [state]: css };
+              })
+            }
+          />
+        </div>
+      ) : component?.type === 'text' ? (
+        <div className="ts-text-editor">
+          <details name={`component-${component.id}`}>
+            <summary>텍스트/HTML 내용</summary>
+            <div className="ts-css-body">
+              <Field label="텍스트 / HTML / 변수">
+                <textarea
+                  aria-label="텍스트 / HTML / 변수"
+                  value={component.content}
+                  onChange={(event) =>
+                    changeComponent((item) => {
+                      item.content = event.target.value;
+                    })
+                  }
+                />
+              </Field>
+              <div className="ts-inline">
+                {(['scheduled', 'active', 'ended'] as const).map((state) => (
+                  <label key={state}>
+                    <input
+                      type="checkbox"
+                      checked={component.states.includes(state)}
+                      onChange={(event) =>
+                        changeComponent((item) => {
+                          item.states = event.target.checked
+                            ? [...item.states, state]
+                            : item.states.filter((value) => value !== state);
+                        })
+                      }
+                    />
+                    {
+                      { scheduled: '예정', active: '진행', ended: '종료' }[
+                        state
+                      ]
+                    }
+                  </label>
+                ))}
+              </div>
+            </div>
+          </details>
+          <CssEditor
+            key={component.id}
+            accordionName={`component-${component.id}`}
+            value={component.css}
+            onChange={(css) =>
+              changeComponent((item) => {
+                item.css = css;
+              })
+            }
+          />
+          <StateCssEditor
+            state={state}
+            onSelectState={setState}
+            component={component}
+            onChange={(state, css) =>
+              changeComponent((item) => {
+                item.stateCss = { ...item.stateCss, [state]: css };
+              })
+            }
+          />
+        </div>
+      ) : (
+        component && (
+          <>
+            <Field label="컴포넌트 이름">
+              <input
+                value={component.name}
+                onChange={(e) =>
+                  changeComponent((c) => {
+                    c.name = e.target.value;
+                  })
+                }
+              />
+            </Field>
+            <Field label="컴포넌트 종류">
+              <select
+                value={component.type}
+                onChange={(e) =>
+                  changeType(e.target.value as SaleComponent['type'])
+                }
+              >
+                {Object.entries(typeLabels).map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {component.type !== 'timer' && !isShelf(component.type) && (
+              <Field label={'텍스트 / HTML / 변수'}>
+                <textarea
+                  value={component.content}
+                  onChange={(e) =>
+                    changeComponent((c) => {
+                      c.content = e.target.value;
+                    })
+                  }
+                />
+              </Field>
+            )}
+            <div className="ts-inline">
+              {(['scheduled', 'active', 'ended'] as const).map((v) => (
+                <label key={v}>
+                  <input
+                    type="checkbox"
+                    checked={component.states.includes(v)}
+                    onChange={(e) =>
+                      changeComponent((c) => {
+                        c.states = e.target.checked
+                          ? [...c.states, v]
+                          : c.states.filter((x) => x !== v);
+                      })
+                    }
+                  />
+                  {
+                    {
+                      scheduled: '예정',
+                      active: '진행',
+                      ended: '종료',
+                    }[v]
+                  }
+                </label>
+              ))}
+            </div>
+            {(Object.keys(optionLabels) as (keyof SaleComponent['options'])[])
+              .filter((k) => optionAppliesTo(component.type, k))
+              .map(optionField)}
+            {(component.type === 'carousel' || component.type === 'grid') && (
+              <>
+                {CSS_OPTION_KEYS.map((k) => (
+                  <details key={k}>
+                    <summary>{optionLabels[k]}</summary>
+                    <CssEditor
+                      key={`${component.id}-${k}`}
+                      value={component.options[k] ?? {}}
+                      onChange={(css) =>
+                        changeComponent((c) => {
+                          c.options[k] = css;
+                        })
+                      }
+                    />
+                  </details>
+                ))}
+                <ProductTextsEditor
+                  component={component}
+                  onChange={(texts) =>
+                    changeComponent((c) => {
+                      c.productTexts = texts;
+                    })
+                  }
+                />
+              </>
+            )}
+            {component.type === 'timer' &&
+              (['timerLabels', 'timerSeparators'] as const).map((key) => (
+                <details key={key}>
+                  <summary>{optionLabels[key]}</summary>
+                  {['일', '시', '분', '초'].map((label, index) => (
+                    <Field
+                      key={label}
+                      label={`${label} ${key === 'timerLabels' ? '단위 텍스트' : '텍스트 구분자'}`}
+                    >
+                      <input
+                        value={
+                          component.options[key]?.[index] ??
+                          (key === 'timerLabels'
+                            ? ['일', '시간', '분', '초'][index]
+                            : '')
+                        }
+                        onChange={(e) =>
+                          changeComponent((c) => {
+                            const values = [
+                              ...(c.options[key] ??
+                                (key === 'timerLabels'
+                                  ? ['일', '시간', '분', '초']
+                                  : ['', '', '', ''])),
+                            ];
+                            values[index] = e.target.value;
+                            c.options[key] = values;
+                          })
+                        }
+                      />
+                    </Field>
+                  ))}
+                </details>
+              ))}
+            {extraCssOptions[component.type].map((key) => (
+              <details key={key}>
+                <summary>{optionLabels[key]}</summary>
+                <CssEditor
+                  key={`${component.id}-${key}`}
+                  value={component.options[key] ?? {}}
+                  onChange={(css) =>
+                    changeComponent((c) => {
+                      c.options[key] = css;
+                    })
+                  }
+                />
+              </details>
+            ))}
+            {isShelf(component.type) && (
+              <LayerMessagesEditor
+                component={component}
+                onChange={(items) =>
+                  changeComponent((c) => {
+                    c.imageLayers = items;
+                  })
+                }
+              />
+            )}
+            {component.type === 'progress' && (
+              <LayerMessagesEditor
+                component={component}
+                progress
+                onChange={(items) =>
+                  changeComponent((c) => {
+                    c.progressTexts = items as NonNullable<
+                      SaleComponent['progressTexts']
+                    >;
+                  })
+                }
+              />
+            )}
+            <StateCssEditor
+              state={state}
+              onSelectState={setState}
+              component={component}
+              onChange={(st, css) =>
+                changeComponent((c) => {
+                  c.stateCss = { ...c.stateCss, [st]: css };
+                })
+              }
+            />
+            <CssEditor
+              key={component.id}
+              value={component.css}
+              onChange={(css) =>
+                changeComponent((c) => {
+                  c.css = css;
+                })
+              }
+            />
+          </>
+        )
+      )}
+    </div>
+  ) : null;
 
   return (
     <div className="ts-workspace">
@@ -771,7 +1822,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
             <Menu size={22} />
           </button>
           <strong>{sections[section]}</strong>
-          {section !== 'management' && (
+          {(section === 'environment' || section === 'variables') && (
             <>
               <span>{dirty ? '저장되지 않은 변경 사항' : '저장됨'}</span>
               <button
@@ -1134,25 +2185,38 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
           layout && (
             <>
               <div className="ts-toolbar">
+                <h2>
+                  <span>{platform === 'mobile' ? '모바일' : 'PC'}</span>{' '}
+                  {sections[section]}
+                </h2>
                 <select
                   aria-label="프리뷰 상태"
                   value={state}
                   onChange={(e) => {
                     const next = e.target.value as SalePreviewState;
 
-                    setState(next);
-                    setPreviewAnchor(previewAnchorFor(next, Date.now()));
+                    guarded(() => {
+                      setState(next);
+                      setPreviewAnchor(previewAnchorFor(next, Date.now()));
+                    }, '수정 사항이 존재합니다. 무시하고 타임세일 상태를 변경 하시겠습니까?');
                   }}
                 >
-                  <option value="scheduled">할인(예정)</option>
+                  <option value="scheduled">예정(대기중)</option>
                   <option value="active">할인(실행중)</option>
-                  <option value="ended">할인(종료)</option>
+                  <option value="ended">마감(중지)</option>
                 </select>
                 <label>
                   <input
                     type="checkbox"
                     checked={soldOut}
-                    onChange={(e) => setSoldOut(e.target.checked)}
+                    onChange={(e) => {
+                      const next = e.target.checked;
+
+                      guarded(
+                        () => setSoldOut(next),
+                        '수정 사항이 존재합니다. 무시하고 품절 모드로 변경 하시겠습니까?'
+                      );
+                    }}
                   />{' '}
                   품절모드
                 </label>
@@ -1166,8 +2230,9 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                         guarded(() => {
                           setPlatform(p);
                           setWidth(p === 'mobile' ? 375 : 1000);
+                          setEditorTab('sale');
                           setSelected('container');
-                        })
+                        }, '수정 사항이 존재합니다. 무시하고 플랫폼을 변경 하시겠습니까?')
                       }
                     />{' '}
                     {p === 'mobile' ? '모바일' : 'PC'}
@@ -1182,98 +2247,374 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                 >
                   ↻
                 </button>
-                <label>
-                  프리뷰 폭{' '}
-                  <input
-                    type="number"
-                    min={280}
-                    max={1600}
-                    value={width}
-                    onChange={(e) =>
-                      setWidth(
-                        Math.min(1600, Math.max(280, Number(e.target.value)))
-                      )
-                    }
-                  />
-                </label>
               </div>
-              <div className="ts-editor">
-                <div className="ts-components">
-                  <Field label="스타일 이름">
-                    <input
-                      value={layout.name}
-                      onChange={(e) =>
-                        changeLayout((l) => {
-                          l.name = e.target.value;
-                        })
-                      }
-                      maxLength={100}
-                    />
-                  </Field>
-                  <div className="ts-actions">
-                    <button
-                      onClick={() => {
-                        if (settings.savedStyles.length >= 50) {
-                          saleToast('스타일은 최대 50개입니다.', true);
-                          return;
-                        }
-
-                        // 활성 레이아웃을 새 스타일로 저장하고 그 id 로 이어 붙인다.
-                        update((s) =>
-                          saveNewStyle(
-                            s,
-                            surface,
-                            platform,
-                            `style-${Date.now()}`
+              <div
+                className={`ts-editor ${component || decoration ? 'ts-editor-selected' : ''}`}
+              >
+                <div className="ts-style-panel">
+                  <div
+                    className="ts-style-tabs"
+                    role="tablist"
+                    aria-label="매대 스타일 편집"
+                  >
+                    {editorTabs.map((tab, index) => (
+                      <button
+                        key={tab}
+                        id={`ts-tab-${tab}`}
+                        role="tab"
+                        aria-selected={editorTab === tab}
+                        aria-controls="ts-style-tabpanel"
+                        tabIndex={editorTab === tab ? 0 : -1}
+                        onKeyDown={(event) => {
+                          if (
+                            ![
+                              'ArrowLeft',
+                              'ArrowRight',
+                              'Home',
+                              'End',
+                            ].includes(event.key)
                           )
-                        );
-                        saleToast('신규 스타일을 생성하였습니다.');
-                      }}
-                    >
-                      신규 스타일
-                    </button>
-                    <select
-                      aria-label="스타일 가져오기"
-                      value=""
-                      onChange={(e) => {
-                        const imported = settings.savedStyles.find(
-                          (s) => s.id === e.target.value
-                        );
-                        if (imported)
-                          ask({
-                            text: '현재 스타일을 선택한 스타일로 덮어쓰시겠습니까?',
-                            run: () => {
-                              changeLayout((l) =>
-                                Object.assign(l, structuredClone(imported))
-                              );
-                              setSelected('container');
-                              saleToast('스타일을 가져왔습니다.');
-                            },
+                            return;
+
+                          event.preventDefault();
+
+                          const nextIndex =
+                            event.key === 'Home'
+                              ? 0
+                              : event.key === 'End'
+                                ? editorTabs.length - 1
+                                : (index +
+                                    (event.key === 'ArrowRight' ? 1 : -1) +
+                                    editorTabs.length) %
+                                  editorTabs.length;
+                          const next = document.getElementById(
+                            `ts-tab-${editorTabs[nextIndex]}`
+                          );
+
+                          next?.focus();
+                          next?.click();
+                        }}
+                        onClick={() => {
+                          if (tab === editorTab) return;
+
+                          guarded(() => {
+                            setEditorTab(tab);
+                            setSelected(
+                              tab === 'sale'
+                                ? 'container'
+                                : tab === 'container'
+                                  ? 'main-container'
+                                  : tab
+                            );
                           });
-                      }}
-                    >
-                      <option value="">스타일 가져오기</option>
-                      {settings.savedStyles.map((l) => (
-                        <option key={l.id} value={l.id}>
-                          {l.name}
-                        </option>
-                      ))}
-                    </select>
+                        }}
+                      >
+                        {tab === 'sale' ? '타임세일' : slotButtonLabels[tab]}
+                      </button>
+                    ))}
+                  </div>
+                  <div
+                    className="ts-style-scroll"
+                    role="tabpanel"
+                    id="ts-style-tabpanel"
+                    aria-labelledby={`ts-tab-${editorTab}`}
+                  >
+                    {editorTab === 'sale' && (
+                      <div className="ts-components">
+                        <Field label="매대 선택">
+                          <select
+                            aria-label="매대 선택"
+                            value={layout.id}
+                            onChange={(e) => {
+                              const next = e.target.value;
+
+                              const selectStyle = () => {
+                                const style =
+                                  settings.savedStyles.find(
+                                    (item) => item.id === next
+                                  ) ??
+                                  defaultTimeSaleSettings().styles[surface][
+                                    platform
+                                  ];
+
+                                update((draft) => {
+                                  draft.styles[surface][platform] =
+                                    structuredClone(style);
+                                });
+                                setSelected('container');
+                              };
+
+                              if (dirty)
+                                ask({
+                                  text: '현재 매대의 수정 사항을 선택한 스타일로 덮어쓰시겠습니까?',
+                                  run: selectStyle,
+                                });
+                              else selectStyle();
+                            }}
+                          >
+                            <option value={`${surface}-${platform}`}>
+                              기본
+                            </option>
+                            {settings.savedStyles.map((style) => (
+                              <option key={style.id} value={style.id}>
+                                {style.name}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        <div className="ts-actions">
+                          <button
+                            onClick={() => {
+                              if (settings.savedStyles.length >= 50) {
+                                saleToast('스타일은 최대 50개입니다.', true);
+                                return;
+                              }
+
+                              ask({
+                                text: '신규 매대 스타일을 추가 하시겠습니까?',
+                                run: () => {
+                                  update((s) =>
+                                    saveNewStyle(
+                                      s,
+                                      surface,
+                                      platform,
+                                      `style-${Date.now()}`
+                                    )
+                                  );
+                                  saleToast('신규 스타일을 생성하였습니다.');
+                                },
+                              });
+                            }}
+                          >
+                            + 매대 추가
+                          </button>
+                          <button onClick={() => setImportOpen(true)}>
+                            가져오기
+                          </button>
+                          <button
+                            disabled={
+                              !canDeleteSavedStyle(settings, surface, platform)
+                            }
+                            onClick={() =>
+                              ask({
+                                text: `[${layout.name}] 스타일을 삭제하시겠습니까? 변경 사항을 저장하면 삭제된 스타일은 복구할 수 없습니다. 삭제를 취소하려면 아니오를 선택하세요.`,
+                                run: () =>
+                                  update((s) =>
+                                    deleteSavedStyle(s, surface, platform)
+                                  ),
+                              })
+                            }
+                          >
+                            삭제
+                          </button>
+                        </div>
+                        <fieldset className="ts-style-name">
+                          <legend>매대 스타일명</legend>
+                          <input
+                            aria-label="스타일 이름"
+                            value={layout.name}
+                            maxLength={100}
+                            onChange={(e) =>
+                              changeLayout((item) => {
+                                item.name = e.target.value;
+                              })
+                            }
+                          />
+                        </fieldset>
+                        <h3>
+                          기본 <span>({layout.components.length}/15)</span>
+                        </h3>
+                        {layout.components.map((c, i) => (
+                          <div
+                            key={c.id}
+                            className={`ts-component ${selected === c.id ? 'active' : ''}`}
+                          >
+                            <button onClick={() => setSelected(c.id)}>
+                              {i + 1} / 15
+                            </button>
+                            <select
+                              aria-label={`${i + 1}번째 구성요소 종류`}
+                              value={c.type}
+                              onFocus={() => setSelected(c.id)}
+                              onChange={(e) => {
+                                const type = e.target
+                                  .value as SaleComponent['type'];
+
+                                if (
+                                  isShelf(type) &&
+                                  layout.components.some(
+                                    (item) =>
+                                      item.id !== c.id && isShelf(item.type)
+                                  )
+                                ) {
+                                  saleToast(
+                                    '캐로셀, 상품목록은 매대에 오직 1개만 존재할 수 있습니다.',
+                                    true
+                                  );
+                                  return;
+                                }
+
+                                changeLayout((item) =>
+                                  Object.assign(
+                                    item.components[i],
+                                    createSaleComponent(type, c.id)
+                                  )
+                                );
+                                setSelected(c.id);
+                              }}
+                            >
+                              {Object.entries(typeLabels).map(
+                                ([type, label]) => (
+                                  <option
+                                    key={type}
+                                    value={type}
+                                    disabled={
+                                      isShelf(type) &&
+                                      hasShelf &&
+                                      !isShelf(c.type)
+                                    }
+                                  >
+                                    {label}
+                                  </option>
+                                )
+                              )}
+                            </select>
+                            <span>
+                              <button
+                                className="ts-component-move"
+                                aria-label={`${c.name} 위로`}
+                                disabled={i === 0}
+                                onClick={() =>
+                                  changeLayout((l) => {
+                                    [l.components[i - 1], l.components[i]] = [
+                                      l.components[i],
+                                      l.components[i - 1],
+                                    ];
+                                  })
+                                }
+                              >
+                                ↑
+                              </button>
+                              <button
+                                className="ts-component-move"
+                                aria-label={`${c.name} 아래로`}
+                                disabled={i === layout.components.length - 1}
+                                onClick={() =>
+                                  changeLayout((l) => {
+                                    [l.components[i], l.components[i + 1]] = [
+                                      l.components[i + 1],
+                                      l.components[i],
+                                    ];
+                                  })
+                                }
+                              >
+                                ↓
+                              </button>
+                              <button
+                                aria-label={`${c.name} 삭제`}
+                                onClick={() =>
+                                  ask({
+                                    text: `${c.name}을 삭제하시겠습니까?`,
+                                    run: () => {
+                                      changeLayout((l) => {
+                                        l.components = l.components.filter(
+                                          (x) => x.id !== c.id
+                                        );
+                                      });
+                                      if (selected === c.id)
+                                        setSelected('container');
+                                    },
+                                  })
+                                }
+                              >
+                                ×
+                              </button>
+                            </span>
+                          </div>
+                        ))}
+                        <select
+                          aria-label="컴포넌트 추가"
+                          value=""
+                          onChange={(e) => {
+                            const type = e.target
+                              .value as SaleComponent['type'];
+                            if (layout.components.length >= 15) {
+                              saleToast(
+                                '컴포넌트는 최대 15개까지 추가할 수 있습니다.',
+                                true
+                              );
+                              return;
+                            }
+                            if (isShelf(type) && hasShelf) {
+                              saleToast(
+                                "'캐로셀', '상품목록'은 매대에 오직 1개만 존재할 수 있습니다.",
+                                true
+                              );
+                              return;
+                            }
+                            const c = createSaleComponent(type);
+                            changeLayout((l) => l.components.push(c));
+                            setSelected(c.id);
+                          }}
+                        >
+                          <option value="">+ 컴포넌트 추가</option>
+                          {Object.entries(typeLabels).map(([key, label]) => (
+                            <option
+                              key={key}
+                              value={key}
+                              disabled={isShelf(key) && hasShelf}
+                            >
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="ts-style-hint">
+                          캐로셀, 상품목록은 매대에 오직 1개만 존재할 수
+                          있습니다.
+                        </p>
+                      </div>
+                    )}
+                    {decorationControls}
+                    {!component && !decoration && properties}
+                  </div>
+                  <div className="ts-style-footer">
                     <button
+                      className="ts-button ts-button-primary"
                       onClick={() =>
                         ask({
-                          text: RESET_STYLE_TEXT,
+                          text:
+                            editorTab === 'sale'
+                              ? RESET_STYLE_TEXT
+                              : "초기화를 진행합니다. 안전하게 진행하기 위해 입력란에 '초기화'를 입력하여 주십시오.",
                           reset: true,
                           run: () => {
-                            changeLayout((l) =>
-                              Object.assign(
-                                l,
+                            changeLayout((item) => {
+                              const defaults =
                                 defaultTimeSaleSettings().styles[surface][
                                   platform
-                                ]
-                              )
+                                ];
+
+                              if (
+                                editorTab === 'header' ||
+                                editorTab === 'footer'
+                              ) {
+                                item[editorTab] = '';
+                                delete item[`${editorTab}Options`];
+                              } else if (editorTab === 'container')
+                                item.mainCss = defaults.mainCss ?? {};
+                              else
+                                Object.assign(item, defaults, {
+                                  id: item.id,
+                                  name: item.name,
+                                });
+                            });
+                            setSelected(
+                              editorTab === 'sale'
+                                ? 'container'
+                                : editorTab === 'container'
+                                  ? 'main-container'
+                                  : editorTab
                             );
-                            setSelected('container');
                           },
                         })
                       }
@@ -1281,379 +2622,125 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                       초기화
                     </button>
                     <button
-                      disabled={
-                        !canDeleteSavedStyle(settings, surface, platform)
-                      }
-                      onClick={() =>
-                        ask({
-                          text: `[${layout.name}] 스타일을 삭제하시겠습니까? 변경 사항을 저장하면 삭제된 스타일은 복구할 수 없습니다. 삭제를 취소하려면 아니오를 선택하세요.`,
-                          run: () =>
-                            update((s) =>
-                              deleteSavedStyle(s, surface, platform)
-                            ),
-                        })
-                      }
+                      className="ts-button ts-button-primary"
+                      disabled={!dirty || saving}
+                      onClick={() => void save(saveMessage(section, selected))}
                     >
-                      스타일 삭제
+                      {saving ? '저장 중…' : '저장'}
                     </button>
+                    <span role="status">
+                      {dirty ? '저장되지 않은 변경 사항' : '저장됨'}
+                    </span>
                   </div>
-                  {(['header', 'container', 'footer'] as const).map((key) => (
-                    <button
-                      className={`ts-component ${selected === key ? 'active' : ''}`}
-                      key={key}
-                      onClick={() => setSelected(key)}
-                    >
-                      {slotButtonLabels[key]}
-                    </button>
-                  ))}
-                  <h3>컴포넌트 ({layout.components.length}/15)</h3>
-                  {layout.components.map((c, i) => (
-                    <div
-                      key={c.id}
-                      className={`ts-component ${selected === c.id ? 'active' : ''}`}
-                    >
-                      <button onClick={() => setSelected(c.id)}>
-                        {i + 1}. {c.name}
-                      </button>
-                      <span>
-                        <button
-                          aria-label={`${c.name} 위로`}
-                          disabled={i === 0}
-                          onClick={() =>
-                            changeLayout((l) => {
-                              [l.components[i - 1], l.components[i]] = [
-                                l.components[i],
-                                l.components[i - 1],
-                              ];
-                            })
-                          }
-                        >
-                          ↑
-                        </button>
-                        <button
-                          aria-label={`${c.name} 아래로`}
-                          disabled={i === layout.components.length - 1}
-                          onClick={() =>
-                            changeLayout((l) => {
-                              [l.components[i], l.components[i + 1]] = [
-                                l.components[i + 1],
-                                l.components[i],
-                              ];
-                            })
-                          }
-                        >
-                          ↓
-                        </button>
-                        <button
-                          aria-label={`${c.name} 삭제`}
-                          onClick={() =>
-                            ask({
-                              text: `${c.name}을 삭제하시겠습니까?`,
-                              run: () => {
-                                changeLayout((l) => {
-                                  l.components = l.components.filter(
-                                    (x) => x.id !== c.id
-                                  );
-                                });
-                                setSelected('container');
-                              },
-                            })
-                          }
-                        >
-                          ×
-                        </button>
-                      </span>
-                    </div>
-                  ))}
-                  <select
-                    aria-label="컴포넌트 추가"
-                    value=""
-                    onChange={(e) => {
-                      const type = e.target.value as SaleComponent['type'];
-                      if (layout.components.length >= 15) {
-                        saleToast(
-                          '컴포넌트는 최대 15개까지 추가할 수 있습니다.',
-                          true
-                        );
-                        return;
-                      }
-                      if (isShelf(type) && hasShelf) {
-                        saleToast(
-                          "'캐로셀', '상품목록'은 매대에 오직 1개만 존재할 수 있습니다.",
-                          true
-                        );
-                        return;
-                      }
-                      const c = createSaleComponent(type);
-                      changeLayout((l) => l.components.push(c));
-                      setSelected(c.id);
-                    }}
-                  >
-                    <option value="">+ 컴포넌트 추가</option>
-                    {Object.entries(typeLabels).map(([key, label]) => (
-                      <option
-                        key={key}
-                        value={key}
-                        disabled={isShelf(key) && hasShelf}
-                      >
-                        {label}
-                      </option>
-                    ))}
-                  </select>
                 </div>
-                <div className="ts-properties">
-                  <h3>{selectionLabel(selected, component?.name)} 설정</h3>
-                  {selected === 'container' ? (
-                    <CssEditor
-                      value={layout.css}
-                      onChange={(css) =>
-                        changeLayout((l) => {
-                          l.css = css;
-                        })
-                      }
-                    />
-                  ) : selected === 'header' || selected === 'footer' ? (
-                    <Field label="HTML / 변수">
-                      <textarea
-                        value={layout[selected]}
-                        onChange={(e) =>
-                          changeLayout((l) => {
-                            l[selected] = e.target.value;
-                          })
-                        }
-                      />
-                    </Field>
-                  ) : (
-                    component && (
-                      <>
-                        <Field label="컴포넌트 이름">
-                          <input
-                            value={component.name}
-                            onChange={(e) =>
-                              changeComponent((c) => {
-                                c.name = e.target.value;
-                              })
-                            }
-                          />
-                        </Field>
-                        <Field label="컴포넌트 종류">
-                          <select
-                            value={component.type}
-                            onChange={(e) =>
-                              changeType(
-                                e.target.value as SaleComponent['type']
-                              )
-                            }
-                          >
-                            {Object.entries(typeLabels).map(([k, v]) => (
-                              <option key={k} value={k}>
-                                {v}
-                              </option>
-                            ))}
-                          </select>
-                        </Field>
-                        <Field
-                          label={
-                            component.type === 'image'
-                              ? '이미지 주소'
-                              : '텍스트 / HTML / 변수'
-                          }
-                        >
-                          <textarea
-                            value={component.content}
-                            onChange={(e) =>
-                              changeComponent((c) => {
-                                c.content = e.target.value;
-                              })
-                            }
-                          />
-                        </Field>
-                        <div className="ts-inline">
-                          {(['scheduled', 'active', 'ended'] as const).map(
-                            (v) => (
-                              <label key={v}>
-                                <input
-                                  type="checkbox"
-                                  checked={component.states.includes(v)}
-                                  onChange={(e) =>
-                                    changeComponent((c) => {
-                                      c.states = e.target.checked
-                                        ? [...c.states, v]
-                                        : c.states.filter((x) => x !== v);
-                                    })
-                                  }
-                                />
-                                {
-                                  {
-                                    scheduled: '예정',
-                                    active: '진행',
-                                    ended: '종료',
-                                  }[v]
-                                }
-                              </label>
-                            )
-                          )}
-                        </div>
-                        {(
-                          Object.keys(
-                            optionLabels
-                          ) as (keyof SaleComponent['options'])[]
-                        )
-                          .filter((k) => optionAppliesTo(component.type, k))
-                          .map((k) => (
-                            <Field key={k} label={optionLabels[k]}>
-                              {typeof component.options[k] === 'boolean' ? (
-                                <input
-                                  type="checkbox"
-                                  checked={Boolean(component.options[k])}
-                                  onChange={(e) =>
-                                    changeComponent((c) => {
-                                      Object.assign(c.options, {
-                                        [k]: e.target.checked,
-                                      });
-                                    })
-                                  }
-                                />
-                              ) : k === 'timer' ? (
-                                <select
-                                  value={component.options.timer}
-                                  onChange={(e) =>
-                                    changeComponent((c) => {
-                                      c.options.timer = e.target.value as
-                                        | 'normal'
-                                        | 'flip';
-                                    })
-                                  }
-                                >
-                                  <option value="normal">일반</option>
-                                  <option value="flip">슬라이딩 플립</option>
-                                </select>
-                              ) : k === 'badge' ? (
-                                <select
-                                  value={component.options.badge}
-                                  onChange={(e) =>
-                                    changeComponent((c) => {
-                                      c.options.badge = e.target.value;
-                                    })
-                                  }
-                                >
-                                  {[
-                                    'none',
-                                    'flower',
-                                    'star',
-                                    'drop',
-                                    'tag',
-                                    'arrow',
-                                    'bag',
-                                    'snowman',
-                                    'tree',
-                                    'ornament',
-                                    'circle',
-                                    'ribbon',
-                                  ].map((v) => (
-                                    <option key={v}>{v}</option>
-                                  ))}
-                                </select>
-                              ) : optionInputType(k, component.options[k]) ===
-                                'color' ? (
-                                <TimeSaleColorPicker
-                                  value={String(component.options[k])}
-                                  transparentValue="#00000000"
-                                  onChange={(color) =>
-                                    changeComponent((c) => {
-                                      Object.assign(c.options, { [k]: color });
-                                    })
-                                  }
-                                />
-                              ) : (
-                                <input
-                                  type={optionInputType(
-                                    k,
-                                    component.options[k]
-                                  )}
-                                  step="any"
-                                  value={
-                                    component.options[k] as string | number
-                                  }
-                                  onChange={(e) =>
-                                    changeComponent((c) => {
-                                      Object.assign(c.options, {
-                                        [k]:
-                                          typeof c.options[k] === 'number'
-                                            ? Number(e.target.value)
-                                            : e.target.value,
-                                      });
-                                    })
-                                  }
-                                />
-                              )}
-                            </Field>
-                          ))}
-                        {(component.type === 'carousel' ||
-                          component.type === 'grid') && (
-                          <>
-                            {CSS_OPTION_KEYS.map((k) => (
-                              <details key={k}>
-                                <summary>{optionLabels[k]}</summary>
-                                <CssEditor
-                                  key={`${component.id}-${k}`}
-                                  value={component.options[k] ?? {}}
-                                  onChange={(css) =>
-                                    changeComponent((c) => {
-                                      c.options[k] = css;
-                                    })
-                                  }
-                                />
-                              </details>
-                            ))}
-                            <ProductTextsEditor
-                              component={component}
-                              onChange={(texts) =>
-                                changeComponent((c) => {
-                                  c.productTexts = texts;
-                                })
-                              }
-                            />
-                          </>
-                        )}
-                        <StateCssEditor
-                          component={component}
-                          onChange={(st, css) =>
-                            changeComponent((c) => {
-                              c.stateCss = { ...c.stateCss, [st]: css };
-                            })
-                          }
-                        />
-                        <CssEditor
-                          key={component.id}
-                          value={component.css}
-                          onChange={(css) =>
-                            changeComponent((c) => {
-                              c.css = css;
-                            })
-                          }
-                        />
-                      </>
-                    )
-                  )}
-                </div>
+                {(component || decoration) && properties}
                 <div className="ts-preview">
-                  <div className="ts-preview-canvas" style={{ width }}>
-                    <SaleRenderer
-                      key={refresh}
-                      settings={settings}
-                      surface={surface}
-                      platform={platform}
-                      saleId="preview"
-                      title="타임세일"
-                      startsAt="2026-10-07T00:00:00Z"
-                      endsAt="2026-10-08T00:00:00Z"
-                      products={sampleProducts}
-                      previewState={state}
-                      previewAnchor={previewAnchor}
-                      previewSoldOut={soldOut}
-                      sanitizeHtml={sanitizeHtml}
+                  <div className="ts-preview-toolbar">
+                    <label>
+                      Viewport width:{' '}
+                      <input
+                        type="number"
+                        aria-label="프리뷰 폭"
+                        disabled={editorTab !== 'sale'}
+                        min={280}
+                        max={1600}
+                        value={width}
+                        onChange={(e) =>
+                          setWidth(
+                            Math.min(
+                              1600,
+                              Math.max(280, Number(e.target.value))
+                            )
+                          )
+                        }
+                      />{' '}
+                      px
+                    </label>
+                    <input
+                      type="range"
+                      aria-label="프리뷰 폭 슬라이더"
+                      disabled={editorTab !== 'sale'}
+                      min={280}
+                      max={1600}
+                      value={width}
+                      onChange={(e) => setWidth(Number(e.target.value))}
                     />
+                    <button
+                      className="ts-button"
+                      disabled={editorTab !== 'sale'}
+                      onClick={() =>
+                        setWidth(platform === 'mobile' ? 375 : 1000)
+                      }
+                    >
+                      기본 설정
+                    </button>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={fitPreview}
+                        onChange={(e) => setFitPreview(e.target.checked)}
+                      />{' '}
+                      화면에 맞춤
+                    </label>
+                    <span>
+                      메인 컨테이너 (w:{' '}
+                      {layout.mainCss?.maxWidth ||
+                        layout.mainCss?.width ||
+                        defaultMainWidth}
+                      )
+                    </span>
+                  </div>
+                  <div
+                    className="ts-preview-viewport"
+                    ref={previewViewport}
+                    tabIndex={0}
+                    aria-label="매대 프리뷰, 가로 스크롤 가능"
+                  >
+                    <div
+                      className="ts-preview-canvas"
+                      style={{
+                        width,
+                        zoom:
+                          fitPreview && previewWidth
+                            ? Math.min(1, previewWidth / width)
+                            : 1,
+                      }}
+                    >
+                      <SaleRenderer
+                        key={refresh}
+                        settings={{
+                          ...settings,
+                          environment: {
+                            ...settings.environment,
+                            enabled: true,
+                            [surface]: true,
+                          },
+                        }}
+                        surface={surface}
+                        platform={platform}
+                        saleId="preview"
+                        title="타임세일"
+                        startsAt="2026-10-07T00:00:00Z"
+                        endsAt="2026-10-08T00:00:00Z"
+                        products={sampleProducts}
+                        previewState={state}
+                        previewAnchor={previewAnchor}
+                        previewSoldOut={soldOut}
+                        onPreviewSelect={(id) => {
+                          const tab =
+                            id === 'header' || id === 'footer' ? id : 'sale';
+                          const select = () => {
+                            setEditorTab(tab);
+                            setSelected(id);
+                          };
+
+                          if (tab !== editorTab) guarded(select);
+                          else select();
+                        }}
+                        previewSelected={selected}
+                        sanitizeHtml={sanitizeHtml}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1661,6 +2748,71 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
           )
         )}
       </div>
+      <TimeSaleDialog
+        open={importOpen}
+        title="진열매대 선택"
+        onClose={() => setImportOpen(false)}
+      >
+        <table className="ts-table">
+          <thead>
+            <tr>
+              <th>위치</th>
+              <th>스타일명칭</th>
+              <th>플랫폼</th>
+              <th>선택</th>
+            </tr>
+          </thead>
+          <tbody>
+            {settings &&
+              [
+                ...(['main', 'more', 'detail'] as const).flatMap((location) =>
+                  (['mobile', 'pc'] as const).map((device) => ({
+                    style: settings.styles[location][device],
+                    location: sections[location],
+                    device: device === 'mobile' ? '모바일' : 'PC',
+                    current: location === section && device === platform,
+                  }))
+                ),
+                ...settings.savedStyles.map((style) => ({
+                  style,
+                  location: '저장 매대',
+                  device: '공용',
+                  current: false,
+                })),
+              ]
+                .filter((item) => !item.current)
+                .map(({ style, location, device }, index) => (
+                  <tr key={`${style.id}-${index}`}>
+                    <td>{location}</td>
+                    <td>{style.name}</td>
+                    <td>{device}</td>
+                    <td>
+                      <button
+                        className="ts-button"
+                        onClick={() => {
+                          setImportOpen(false);
+                          ask({
+                            text: '현재 스타일을 선택한 스타일로 덮어쓰시겠습니까?',
+                            run: () => {
+                              changeLayout((item) =>
+                                Object.assign(item, structuredClone(style), {
+                                  id: item.id,
+                                })
+                              );
+                              setSelected('container');
+                              saleToast('스타일을 가져왔습니다.');
+                            },
+                          });
+                        }}
+                      >
+                        선택
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+          </tbody>
+        </table>
+      </TimeSaleDialog>
       <TimeSaleHelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
       <AlertDialog
         open={!!confirmation}

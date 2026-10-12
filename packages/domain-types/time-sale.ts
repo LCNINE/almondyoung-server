@@ -15,7 +15,9 @@ export type SaleComponent = {
   css: SaleCss;
   states: SalePreviewState[];
   stateCss?: Partial<Record<SalePreviewState, SaleCss>>;
-  productTexts?: { id: string; position: 'header' | 'footer'; content: string; css: SaleCss }[];
+  productTexts?: { id: string; position: 'top' | 'header' | 'footer' | 'bottom'; content: string; css: SaleCss }[];
+  imageLayers?: { id: string; content: string; css: SaleCss }[];
+  progressTexts?: { id: string; position: 'top' | 'inside' | 'bottom'; content: string; css: SaleCss }[];
   options: {
     timer: 'normal' | 'flip';
     hideZeroDays: boolean;
@@ -45,6 +47,36 @@ export type SaleComponent = {
     imageCss?: SaleCss;
     headerCss?: SaleCss;
     footerCss?: SaleCss;
+    listCss?: SaleCss;
+    arrowCss?: SaleCss;
+    dotCss?: SaleCss;
+    activeDotCss?: SaleCss;
+    pageCss?: SaleCss;
+    activePageCss?: SaleCss;
+    showPages?: boolean;
+    pageWindow?: number;
+    timerDigitCss?: SaleCss;
+    timerLabelCss?: SaleCss;
+    timerSeparatorCss?: SaleCss;
+    buttonCss?: SaleCss;
+    progressCss?: SaleCss;
+    progressFillCss?: SaleCss;
+    showTimerLabels?: boolean;
+    timerLabels?: string[];
+    timerSeparators?: string[];
+    buttonAction?: 'more' | 'url';
+    href?: string;
+    newWindow?: boolean;
+    disableProductLink?: boolean;
+    productHref?: string;
+    productOrder?: 'priority' | 'reverse' | 'random';
+    slots?: number;
+    carouselRows?: boolean;
+    slideGroup?: number;
+    direction?: 'column' | 'row';
+    imageContentGap?: number;
+    imageType?: 'list' | 'detail' | 'small' | 'thumbnail';
+    dotShape?: 'circle' | 'square' | 'number';
     overlay: string;
     header: string;
     footer: string;
@@ -60,6 +92,9 @@ export type SaleLayout = {
   footer: string;
   css: SaleCss;
   components: SaleComponent[];
+  mainCss?: SaleCss;
+  headerOptions?: { enabled: boolean; type: 'text' | 'image'; css: SaleCss };
+  footerOptions?: { enabled: boolean; type: 'text' | 'image'; css: SaleCss };
 };
 
 // 기간 모드: sale = 세일 전체가 한 기간, product = 상품마다 기간이 따로.
@@ -241,7 +276,6 @@ export function defaultTimeSaleSettings(): TimeSaleSettings {
             'text',
             'text',
             'timer',
-            ...(platform === 'mobile' ? ['progress' as const] : []),
             surface === 'main' ? 'carousel' : 'grid',
             ...(surface === 'main' ? ['button' as const] : []),
           ];
@@ -251,16 +285,72 @@ export function defaultTimeSaleSettings(): TimeSaleSettings {
       name: '기본 스타일',
       header: '',
       footer: '',
-      css: { maxWidth: '100%', margin: '8px 0', backgroundColor: '#ffffff' },
+      mainCss: {
+        width: '100%',
+        maxWidth: '100%',
+        padding: '0',
+        backgroundColor: '#f7f8f9',
+        borderTop: '1px solid #e5e7eb',
+      },
+      css: {
+        maxWidth: '1360px',
+        margin: '0 auto',
+        position: 'relative',
+        padding: platform === 'mobile' ? '32px 16px' : '48px 40px',
+        backgroundColor: '#f7f8f9',
+        color: '#191f28',
+      },
       components: types.map((type, i) => {
         const c = createSaleComponent(type, `${surface}-${platform}-${i}`);
-        c.options.columns = platform === 'mobile' ? 2 : 4;
-        c.options.gap = platform === 'mobile' ? 3 : 5;
-        c.options.imageWidth = platform === 'mobile' ? 95 : 90;
+        c.options.columns = platform === 'mobile' ? 2 : 5;
+        c.options.gap = 16;
+        c.options.rows = 2;
+        c.options.slots = 10;
+        c.options.carouselRows = type === 'carousel';
+        c.options.autoplay = false;
+        c.options.arrows = false;
+        c.options.dots = false;
+        c.options.imageWidth = 100;
+        c.options.badgeColor = '#f04452';
+        if (type === 'carousel' || type === 'grid') {
+          c.css = { padding: '0', textAlign: 'left', fontSize: '17px' };
+          c.options.productCss = { color: '#191f28', textAlign: 'left' };
+          c.options.imageCss = { backgroundColor: '#ffffff', maxWidth: '100%' };
+          c.options.listCss = { justifyContent: 'start' };
+          c.options.headerCss = {
+            margin: '16px 0 8px',
+            fontSize: '14px',
+            fontWeight: 600,
+            lineHeight: '1.25',
+          };
+          c.options.footerCss = { fontSize: '17px', fontWeight: 700 };
+        }
+        if (type === 'button') {
+          c.content = '더보기';
+          c.css = {
+            position: 'absolute',
+            top: platform === 'mobile' ? '32px' : '48px',
+            right: platform === 'mobile' ? '16px' : '40px',
+            color: '#757575',
+            fontSize: '14px',
+          };
+          c.options.buttonCss = {
+            border: '0',
+            borderRadius: '0',
+            padding: '0',
+            backgroundColor: 'transparent',
+            textDecoration: 'underline',
+          };
+        }
         if (type === 'text') {
-          c.content = surface === 'detail' || i === 1 ? '{{condition}}' : '{{title}}';
+          c.content = surface === 'detail' ? '{{condition}}' : i === 1 ? '' : '{{title}}';
           c.css.fontWeight = 'bold';
-          c.css.fontSize = '24px';
+          c.css.fontSize = platform === 'mobile' ? '22px' : '26px';
+          c.css.textAlign = 'left';
+          if (i === 1) c.css = { textAlign: 'left', fontSize: '14px', color: '#8b95a1', padding: '0' };
+        }
+        if (type === 'timer') {
+          c.css.padding = '16px 0 24px';
         }
 
         return c;
@@ -274,7 +364,7 @@ export function defaultTimeSaleSettings(): TimeSaleSettings {
       enabled: true,
       membershipPriceOnly: false,
       rounding: 'round',
-      imageSize: 100,
+      imageSize: 800,
       currencyPrefix: '',
       currencySuffix: '원',
       main: true,
@@ -306,10 +396,22 @@ const cssKeys = new Set([
   'fontStyle',
   'textDecoration',
   'textAlign',
+  'whiteSpace',
+  'textOverflow',
+  'overflow',
+  'boxSizing',
   'lineHeight',
   'letterSpacing',
   'padding',
+  'paddingTop',
+  'paddingRight',
+  'paddingBottom',
+  'paddingLeft',
   'margin',
+  'marginTop',
+  'marginRight',
+  'marginBottom',
+  'marginLeft',
   'border',
   'borderTop',
   'borderRight',
@@ -331,7 +433,11 @@ const cssKeys = new Set([
   'bottom',
   'left',
   'zIndex',
+  'flex',
+  'flexDirection',
   'transform',
+  'filter',
+  'pointerEvents',
   'display',
   'gap',
   'alignItems',
@@ -346,7 +452,12 @@ const cssKeys = new Set([
 // 스크립트·주입에 쓰일 구문(url(), expression, @import 등)을 막는다.
 function cssValueValid(key: string, value: unknown): boolean {
   if (key === 'backgroundImage') {
-    return typeof value === 'string' && /^url\(["']?https:\/\/[^()"'<>\s]+["']?\)$/.test(value);
+    return (
+      typeof value === 'string' &&
+      value.length <= 256 &&
+      (/^url\(["']?https:\/\/[^()"'<>\s]+["']?\)$/.test(value) ||
+        /^(?:linear|radial|conic)-gradient\([#a-z0-9\s.,()%+-]+\)$/i.test(value))
+    );
   }
 
   if (typeof value === 'number') return Number.isFinite(value);
@@ -363,6 +474,15 @@ function cssValid(css: unknown): boolean {
     !Array.isArray(css) &&
     Object.entries(css).every(([key, value]) => cssKeys.has(key) && cssValueValid(key, value))
   );
+}
+
+export function validateSaleCss(css: unknown): asserts css is SaleCss {
+  if (!css || typeof css !== 'object' || Array.isArray(css)) throw new Error('CSS 객체를 입력하세요.');
+
+  for (const [key, value] of Object.entries(css)) {
+    if (!cssKeys.has(key)) throw new Error(`지원하지 않는 CSS 속성: ${key}`);
+    if (!cssValueValid(key, value)) throw new Error(`CSS 값을 확인하세요: ${key}`);
+  }
 }
 
 // 서비스 OFF 동안 기억해 둘 수 있는 active 가격표 수의 상한.
@@ -447,11 +567,24 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
       typeof l.header !== 'string' ||
       typeof l.footer !== 'string' ||
       !cssValid(l.css) ||
+      (l.mainCss !== undefined && !cssValid(l.mainCss)) ||
       !Array.isArray(l.components) ||
       l.components.length > 15 ||
       new Set(l.components.map((c) => c.id)).size !== l.components.length
     )
       throw new Error('스타일 형식이 올바르지 않습니다.');
+
+    for (const slot of ['header', 'footer'] as const) {
+      const options = l[`${slot}Options`];
+
+      if (!options) continue;
+
+      if (typeof options.enabled !== 'boolean' || !['text', 'image'].includes(options.type) || !cssValid(options.css))
+        throw new Error('머리말/꼬리말 설정을 확인하세요.');
+
+      if (options.type === 'image' && l[slot] && !/^(https?:\/\/|\/(?!\/))/.test(l[slot]))
+        throw new Error('이미지 주소는 http(s) 또는 /로 시작해야 합니다.');
+    }
 
     if (l.components.filter((c) => c.type === 'carousel' || c.type === 'grid').length > 1)
       throw new Error('상품 캐러셀/그리드는 하나만 추가할 수 있습니다.');
@@ -479,24 +612,88 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
       )
         throw new Error('상태별 CSS를 확인하세요.');
 
-      // 상품 문구는 헤더/푸터 합쳐 최대 7개(상품 카드가 길어지는 걸 막는 제한).
+      // 원본과 같이 상품 문구는 위치별 최대 7개다.
       if (
         c.productTexts &&
         (!Array.isArray(c.productTexts) ||
-          c.productTexts.length > 7 ||
+          c.productTexts.length > 28 ||
+          ['top', 'header', 'footer', 'bottom'].some(
+            (position) => c.productTexts!.filter((t) => t.position === position).length > 7,
+          ) ||
           c.productTexts.some(
             (t) =>
               !t ||
               typeof t.id !== 'string' ||
-              !['header', 'footer'].includes(t.position) ||
+              !['top', 'header', 'footer', 'bottom'].includes(t.position) ||
               typeof t.content !== 'string' ||
               t.content.length > 2000 ||
               !cssValid(t.css),
           ))
       )
-        throw new Error('상품 텍스트는 최대 7개입니다.');
+        throw new Error('상품 텍스트는 위치별 최대 7개입니다.');
 
       const o = c.options;
+      for (const [items, limit] of [
+        [c.imageLayers, 4],
+        [c.progressTexts, 3],
+      ] as const) {
+        if (
+          items !== undefined &&
+          (!Array.isArray(items) ||
+            items.length > limit ||
+            items.some(
+              (item) =>
+                !item ||
+                typeof item.id !== 'string' ||
+                typeof item.content !== 'string' ||
+                item.content.length > 2000 ||
+                !cssValid(item.css) ||
+                ('position' in item &&
+                  (typeof item.position !== 'string' || !['top', 'inside', 'bottom'].includes(item.position))),
+            ))
+        )
+          throw new Error('레이어/프로그레스 메시지 설정을 확인하세요.');
+      }
+
+      for (const key of ['showTimerLabels', 'newWindow', 'disableProductLink', 'carouselRows', 'showPages'] as const)
+        if (o[key] !== undefined && typeof o[key] !== 'boolean') throw new Error('표시/이동 옵션을 확인하세요.');
+
+      for (const key of ['timerLabels', 'timerSeparators'] as const)
+        if (
+          o[key] !== undefined &&
+          (!Array.isArray(o[key]) || o[key].length !== 4 || o[key].some((v) => typeof v !== 'string' || v.length > 50))
+        )
+          throw new Error('타이머 단위/구분자를 확인하세요.');
+
+      for (const [key, values] of [
+        ['buttonAction', ['more', 'url']],
+        ['productOrder', ['priority', 'reverse', 'random']],
+        ['direction', ['column', 'row']],
+        ['dotShape', ['circle', 'square', 'number']],
+        ['imageType', ['list', 'detail', 'small', 'thumbnail']],
+      ] as const)
+        if (o[key] !== undefined && !(values as readonly string[]).includes(o[key]))
+          throw new Error('컴포넌트 선택 옵션을 확인하세요.');
+
+      for (const [key, max] of [
+        ['slots', 200],
+        ['slideGroup', 10],
+        ['imageContentGap', 100],
+        ['pageWindow', 20],
+      ] as const)
+        if (
+          o[key] !== undefined &&
+          (!Number.isInteger(o[key]) || o[key] < (key === 'imageContentGap' ? 0 : 1) || o[key] > max)
+        )
+          throw new Error('상품 슬롯/간격 범위를 확인하세요.');
+
+      for (const key of ['href', 'productHref'] as const)
+        if (
+          o[key] !== undefined &&
+          (typeof o[key] !== 'string' || o[key].length > 2000 || (o[key] && !/^(https?:\/\/|\/(?!\/)|#)/.test(o[key])))
+        )
+          throw new Error('이동 주소는 http(s), / 또는 #으로 시작해야 합니다.');
+
       for (const key of [
         'productCss',
         'soldOutCss',
@@ -507,6 +704,18 @@ export function validateTimeSaleSettings(input: unknown): asserts input is TimeS
         'imageCss',
         'headerCss',
         'footerCss',
+        'listCss',
+        'arrowCss',
+        'dotCss',
+        'activeDotCss',
+        'pageCss',
+        'activePageCss',
+        'timerDigitCss',
+        'timerLabelCss',
+        'timerSeparatorCss',
+        'buttonCss',
+        'progressCss',
+        'progressFillCss',
       ] as const)
         if (o[key] && !cssValid(o[key])) throw new Error('상품 스타일 CSS를 확인하세요.');
 
@@ -810,4 +1019,20 @@ export function repeatTooShortFor<T extends { startsAt: string; endsAt: string }
   return (
     periods.find((period) => interval < Date.parse(period.endsAt) - Date.parse(period.startsAt) + REPEAT_GAP_MS) ?? null
   );
+}
+
+export function pageWindowItems(page: number, pages: number, window: number): (number | 'gap')[] {
+  if (pages <= 1) return [];
+
+  const start = Math.max(1, Math.min(page - Math.floor(window / 2), pages - window + 1));
+  const end = Math.min(pages, start + window - 1);
+  const items: (number | 'gap')[] = [];
+
+  if (start > 1) items.push(1);
+  if (start > 2) items.push('gap');
+  for (let n = start; n <= end; n++) items.push(n);
+  if (end < pages - 1) items.push('gap');
+  if (end < pages) items.push(pages);
+
+  return items;
 }

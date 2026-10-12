@@ -6,11 +6,18 @@ import {
   pageIds,
   pageWindowItems,
   parsePage,
+  morePageSize,
 } from "./time-sale-pagination"
+import { defaultTimeSaleSettings } from "@packages/domain-types/time-sale"
 
 const ids = Array.from({ length: 120 }, (_, i) => `p${i + 1}`)
 
 describe("더보기 페이지 나누기", () => {
+  it("기본 PC 5열·2행과 모바일 2열·2행의 페이지 크기가 일치한다", () => {
+    const settings = defaultTimeSaleSettings()
+    expect(morePageSize(settings, "pc")).toBe(10)
+    expect(morePageSize(settings, "mobile")).toBe(4)
+  })
   it("120개를 6개씩이면 20 페이지, 20 페이지는 115~120", () => {
     expect(pageCount(120, 6)).toBe(20)
     expect(pageIds(ids, 20, 6)).toEqual([

@@ -2,6 +2,7 @@
 
 import { VariantPrice } from "@/lib/types/common/price"
 import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
+import { SaleMembershipPrice } from "@packages/time-sale-ui"
 
 interface Props {
   price: VariantPrice
@@ -16,10 +17,12 @@ function TimeSalePrice({
   original,
   sale,
   showMembershipBadge,
+  membershipPrice,
 }: {
   original: number
   sale: number
   showMembershipBadge: boolean
+  membershipPrice?: number
 }) {
   const percent = Math.round(((original - sale) / original) * 100)
 
@@ -29,13 +32,23 @@ function TimeSalePrice({
         {original.toLocaleString()}원
       </span>
       <div className="flex items-baseline gap-1.5">
-        <span className="text-[17px] leading-none font-bold text-[#f04452]">{percent}%</span>
+        <span className="text-[17px] leading-none font-bold text-[#f04452]">
+          {percent}%
+        </span>
         <span className="text-[17px] leading-none font-bold whitespace-nowrap text-[#191f28]">
           {sale.toLocaleString()}원
         </span>
       </div>
-      {showMembershipBadge && (
-        <ProductMembershipBadge size="sm" label="멤버십할인가" className="mt-1" />
+      {membershipPrice ? (
+        <SaleMembershipPrice price={sale} membershipPrice={membershipPrice} />
+      ) : (
+        showMembershipBadge && (
+          <ProductMembershipBadge
+            size="sm"
+            label="멤버십할인가"
+            className="mt-1"
+          />
+        )
       )}
     </div>
   )
@@ -62,7 +75,9 @@ export default function ProductPrice({
         </span>
         <div className="flex flex-col gap-0.5 text-[#ffa500]">
           <ProductMembershipBadge size="sm" label="멤버십할인가" />
-          <span className="text-[15px] font-bold">멤버십 회원에게 가격 공개</span>
+          <span className="text-[15px] font-bold">
+            멤버십 회원에게 가격 공개
+          </span>
         </div>
       </div>
     )
@@ -90,7 +105,8 @@ export default function ProductPrice({
   if (!isMembership && hasMemberDiscount) {
     const saleDiscount = memberDiscount
     // 멤버십가가 지금 보고 있는 값보다 쌀 때만 가입 유인이 된다. 세일가가 더 싸면 거짓말이 된다.
-    const membershipStillCheaper = membershipPrice > 0 && membershipPrice < price.calculated_price_number
+    const membershipStillCheaper =
+      membershipPrice > 0 && membershipPrice < price.calculated_price_number
 
     if (isTimeSale) {
       return (
@@ -98,6 +114,7 @@ export default function ProductPrice({
           original={price.original_price_number}
           sale={price.calculated_price_number}
           showMembershipBadge={membershipStillCheaper}
+          membershipPrice={membershipStillCheaper ? membershipPrice : undefined}
         />
       )
     }

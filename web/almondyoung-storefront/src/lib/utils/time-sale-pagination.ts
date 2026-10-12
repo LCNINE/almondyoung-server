@@ -1,10 +1,13 @@
+import { pageWindowItems } from "@packages/domain-types/time-sale"
+export { pageWindowItems } from "@packages/domain-types/time-sale"
 import type {
   SaleLayout,
   SaleSurface,
+  SalePlatform,
   TimeSaleSettings,
 } from "@packages/domain-types/time-sale"
 
-// 원본 "상품 페이지 설정 > 페이지 윈도우" 기본값(5개). 컴포넌트 설정에는 저장 칸이 없다.
+// 원본 "상품 페이지 설정 > 페이지 윈도우" 기본값(5개).
 export const DEFAULT_PAGE_WINDOW = 5
 
 // 페이지 번호 하나(href 가 있으면 링크) 또는 말줄임.
@@ -24,9 +27,12 @@ export function listSizeOf(layout: SaleLayout): number | null {
   return list.options.columns * list.options.rows
 }
 
-// 더보기 페이지의 한 페이지 상품 수. 서버는 기기를 모르므로 PC 레이아웃의 열x행 기준이다.
-export function morePageSize(settings: TimeSaleSettings): number | null {
-  return listSizeOf(settings.styles.more.pc)
+// 더보기 링크가 현재 기기를 전달하여 열×행 수를 서버 페이지 크기와 맞춘다.
+export function morePageSize(
+  settings: TimeSaleSettings,
+  platform: SalePlatform = "pc"
+): number | null {
+  return listSizeOf(settings.styles.more[platform])
 }
 
 // 상세 화면에 보여줄 상품 수 상한: 한 화면 개수의 3배(PC·모바일 중 큰 쪽).
@@ -70,29 +76,6 @@ export function chunk<T>(items: T[], size: number): T[][] {
 }
 
 // 원본 모양: 1 … 3 4 [5] 6 7 … 9. 현재 페이지 둘레 window 개 + 처음·끝, 사이는 말줄임.
-export function pageWindowItems(
-  page: number,
-  pages: number,
-  window: number
-): (number | "gap")[] {
-  if (pages <= 1) return []
-
-  const start = Math.max(
-    1,
-    Math.min(page - Math.floor(window / 2), pages - window + 1)
-  )
-  const end = Math.min(pages, start + window - 1)
-  const items: (number | "gap")[] = []
-
-  if (start > 1) items.push(1)
-  if (start > 2) items.push("gap")
-  for (let n = start; n <= end; n++) items.push(n)
-  if (end < pages - 1) items.push("gap")
-  if (end < pages) items.push(pages)
-
-  return items
-}
-
 // 렌더러에 넘길 페이지 링크 목록.
 export function buildPager(
   page: number,

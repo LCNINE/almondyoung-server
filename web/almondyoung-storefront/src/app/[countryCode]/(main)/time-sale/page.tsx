@@ -14,10 +14,10 @@ export default async function TimeSalePage({
   searchParams,
 }: {
   params: Promise<{ countryCode: string }>
-  searchParams: Promise<{ page?: string; sale?: string }>
+  searchParams: Promise<{ page?: string; sale?: string; platform?: string }>
 }) {
   const { countryCode } = await params
-  const { page, sale } = await searchParams
+  const { page, sale, platform } = await searchParams
   const [sales, t] = await Promise.all([
     listActiveTimeSales(),
     getTranslations("home.timeSale"),
@@ -36,6 +36,7 @@ export default async function TimeSalePage({
           surface="more"
           page={page}
           saleId={sale}
+          pagePlatform={platform === "mobile" ? "mobile" : "pc"}
         />
       ) : (
         <div className="py-24 text-center">

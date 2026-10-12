@@ -131,6 +131,276 @@
 .ts-field input[type='checkbox'] {
   align-self: flex-start;
 }
+
+.ts-css-editor > details,
+.ts-text-editor > details,
+.ts-component-editor > details {
+  border: 1px solid #ddd;
+  border-top: 0;
+}
+
+.ts-css-editor > details:first-child,
+.ts-text-editor > details:first-child,
+.ts-component-editor > details:first-child {
+  border-top: 1px solid #ddd;
+}
+
+.ts-css-editor > details > summary,
+.ts-text-editor > details > summary,
+.ts-component-editor > details > summary {
+  padding: 16px;
+  background: #f7f7f7;
+  font-size: 15px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.ts-css-editor > details > summary::-webkit-details-marker,
+.ts-text-editor > details > summary::-webkit-details-marker,
+.ts-component-editor > details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.ts-css-body {
+  padding: 12px;
+}
+
+.ts-css-container-only > details {
+  border: 0;
+}
+
+.ts-css-container-only > details > summary {
+  display: none;
+}
+
+.ts-css-container-only .ts-css-body {
+  padding: 0;
+}
+
+.ts-css-body fieldset {
+  margin: 0 0 16px;
+  padding: 5px 12px;
+  border: 1px groove #bbccdd;
+  border-radius: 4px;
+}
+
+.ts-css-body legend,
+.ts-css-body .ts-field > span,
+.ts-size-label {
+  font-size: 12px;
+  color: #555;
+}
+
+.ts-size-control {
+  margin: 12px 0;
+}
+
+.ts-size-inputs {
+  display: grid;
+  grid-template-columns: 68px 54px minmax(60px, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.ts-size-inputs input,
+.ts-size-inputs select {
+  min-width: 0;
+  width: 100%;
+}
+
+.ts-size-inputs input[type='range'] {
+  padding: 0;
+  border: 0;
+  accent-color: #087ac1;
+}
+
+.ts-css-body legend {
+  padding: 0 3px;
+  color: #212121;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.ts-size-inline {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.ts-workspace .ts-css-body input[type='range'] {
+  appearance: none;
+  height: 4px;
+  background:
+    radial-gradient(circle, #639acb 1px, transparent 1.5px) 0 50% / 10% 4px
+      repeat-x,
+    #bad4ee;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+}
+
+.ts-css-body input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #1976d2;
+  box-shadow: 0 2px 4px #0003;
+}
+
+.ts-size-inline .ts-size-inputs {
+  grid-template-columns: 38px 28px minmax(50px, 1fr);
+  gap: 4px;
+  margin: 0;
+}
+
+.ts-size-inline .ts-size-inputs input:not([type='range']) {
+  padding: 1px 2px;
+  height: 20px;
+  font-size: 12px;
+}
+
+.ts-size-inline .ts-size-inputs select {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.ts-direction-selection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ts-direction-presets {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ts-direction-presets button {
+  padding: 2px;
+  background: transparent;
+  border: 0;
+}
+
+.ts-direction-icon {
+  display: block;
+  width: 24px;
+  height: 24px;
+  border: 2px solid #212121;
+}
+
+.ts-direction-diagram {
+  position: relative;
+  width: 66px;
+  height: 66px;
+  flex-shrink: 0;
+}
+
+.ts-direction-diagram > span {
+  position: absolute;
+  inset: 16px;
+  border: 2px dashed #ddd;
+}
+
+.ts-direction-diagram input {
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+
+.ts-direction-diagram-border input:nth-of-type(1) {
+  top: 0;
+  left: 26px;
+}
+.ts-direction-diagram-border input:nth-of-type(2) {
+  right: 0;
+  top: 26px;
+}
+.ts-direction-diagram-border input:nth-of-type(3) {
+  bottom: 0;
+  left: 26px;
+}
+.ts-direction-diagram-border input:nth-of-type(4) {
+  left: 0;
+  top: 26px;
+}
+.ts-direction-diagram-radius input:nth-of-type(1) {
+  top: 0;
+  left: 0;
+}
+.ts-direction-diagram-radius input:nth-of-type(2) {
+  top: 0;
+  right: 0;
+}
+.ts-direction-diagram-radius input:nth-of-type(3) {
+  bottom: 0;
+  right: 0;
+}
+.ts-direction-diagram-radius input:nth-of-type(4) {
+  bottom: 0;
+  left: 0;
+}
+
+.ts-bold-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.ts-properties:has(> .ts-text-editor),
+.ts-properties:has(> .ts-component-editor) {
+  padding: 0;
+}
+
+.ts-properties:has(> .ts-text-editor) > h3,
+.ts-properties:has(> .ts-component-editor) > h3 {
+  display: none;
+}
+
+.ts-shelf-range {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+  font-size: 13px;
+}
+
+.ts-option-range {
+  display: grid;
+  grid-template-columns: 65px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.ts-option-range input {
+  width: 100%;
+}
+
+.ts-state-css > .ts-inline,
+.ts-state-css > .ts-style-hint {
+  margin: 12px;
+}
+
+.ts-state-css button[aria-pressed='true'] {
+  color: white;
+  background: #1976d2;
+  border-color: #1976d2;
+}
+
+.ts-css-editor > details > textarea {
+  width: calc(100% - 24px);
+  min-height: 120px;
+  margin: 12px;
+}
 .ts-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1184,4 +1454,259 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 매대 편집: 선택 패널과 실제 폭 프리뷰를 각각 스크롤한다. */
+.ts-toolbar h2 {
+  margin-right: auto;
+  font-size: 18px;
+  font-weight: 600;
+}
+.ts-toolbar h2 span {
+  color: #269bcc;
+}
+.ts-editor {
+  grid-template-columns: 400px minmax(0, 1fr);
+  gap: 12px;
+  border: 0;
+  padding: 0 4px 12px;
+  min-height: 0;
+  align-items: start;
+}
+.ts-editor-selected {
+  grid-template-columns: 400px 360px minmax(0, 1fr);
+}
+.ts-style-panel,
+.ts-editor > .ts-properties {
+  height: calc(100svh - 150px);
+  min-height: 440px;
+  border: 1px solid #ddd;
+  background: white;
+}
+.ts-style-panel {
+  display: flex;
+  flex-direction: column;
+}
+.ts-style-tabs {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid #ddd;
+}
+.ts-style-tabs button {
+  flex: 1;
+  padding: 16px 5px;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+.ts-style-tabs button[aria-selected='true'] {
+  color: #087ac1;
+  border-bottom-color: #087ac1;
+}
+.ts-style-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+.ts-style-scroll .ts-components,
+.ts-style-scroll .ts-properties {
+  padding: 12px;
+  max-height: none;
+  overflow: visible;
+  border: 0;
+}
+.ts-style-scroll .ts-properties h3 {
+  font-size: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid #ddd;
+}
+.ts-components > .ts-field {
+  flex-direction: row;
+  align-items: center;
+}
+.ts-components > .ts-field select {
+  flex: 1;
+}
+.ts-actions {
+  justify-content: flex-end;
+}
+.ts-actions button {
+  background: white;
+  border-color: #8bb8d5;
+  color: #087ac1;
+}
+.ts-style-name {
+  border: 1px solid #bbc5cb;
+  border-radius: 3px;
+  padding: 4px 12px 10px;
+  margin-top: 16px;
+}
+.ts-style-name input {
+  width: 100%;
+  border-width: 0 0 1px !important;
+}
+.ts-component {
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+.ts-component > button {
+  flex-shrink: 0;
+  width: 46px;
+  font-size: 12px;
+}
+.ts-component > select {
+  flex: 1;
+  height: 38px;
+  background: #f3f3f3;
+}
+.ts-component.active {
+  background: transparent;
+}
+.ts-component.active > select {
+  background: #c8f1fa;
+  border-color: #4ba8bf;
+}
+.ts-component span {
+  gap: 6px;
+  color: #777;
+}
+.ts-component:not(.active) .ts-component-move {
+  display: none;
+}
+.ts-style-hint {
+  margin-top: 12px;
+  color: #777;
+  font-size: 12px;
+}
+.ts-style-footer {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 10px;
+  border-top: 1px solid #ddd;
+  background: #fafafa;
+}
+.ts-style-footer .ts-button-primary {
+  height: 36px;
+  background: #087ac1;
+  color: white;
+  border-color: #087ac1;
+}
+.ts-style-footer .ts-button-primary:disabled {
+  background: #ddd;
+  color: #999;
+  border-color: #ddd;
+}
+.ts-style-footer > span {
+  margin-left: auto;
+  color: #777;
+  font-size: 11px;
+}
+.ts-preview {
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  overflow: visible;
+}
+.ts-preview-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 32px;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+.ts-preview-toolbar input[type='number'] {
+  width: 62px;
+  padding: 2px;
+}
+.ts-preview-toolbar input[type='range'] {
+  width: 120px;
+  padding: 0;
+  accent-color: #087ac1;
+}
+.ts-preview-viewport {
+  height: calc(100svh - 186px);
+  min-height: 400px;
+  overflow: auto;
+  border: 2px solid #111;
+  background: #7f7f7f;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.ts-preview-canvas {
+  max-width: none;
+  margin: 0;
+  min-height: 100%;
+  box-shadow: none;
+}
+.ts-preview [data-sale-component] {
+  position: relative;
+  cursor: pointer;
+}
+.ts-preview
+  [data-sale-component]:has(> .ts-preview-select[aria-pressed='true']) {
+  outline: 2px solid #269bcc;
+  outline-offset: -2px;
+}
+.ts-preview .ts-preview-select {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  padding: 2px 5px;
+  background: #087ac1;
+  color: white;
+  font-size: 11px;
+  opacity: 0;
+}
+.ts-preview [data-sale-component]:hover > .ts-preview-select,
+.ts-preview .ts-preview-select:focus-visible,
+.ts-preview .ts-preview-select[aria-pressed='true'] {
+  opacity: 1;
+}
+@media (max-width: 1250px) {
+  .ts-editor-selected {
+    grid-template-columns: 340px minmax(0, 1fr);
+  }
+  .ts-editor-selected > .ts-properties {
+    grid-column: 1;
+    height: auto;
+    max-height: 600px;
+  }
+  .ts-editor-selected > .ts-preview {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    position: sticky;
+    top: 8px;
+  }
+}
+@media (max-width: 900px) {
+  .ts-editor,
+  .ts-editor-selected {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ts-style-panel,
+  .ts-editor > .ts-properties,
+  .ts-style-scroll .ts-components,
+  .ts-style-scroll .ts-properties {
+    width: 100%;
+  }
+  .ts-editor-selected > .ts-preview {
+    grid-column: 1;
+    grid-row: auto;
+    position: static;
+  }
+  .ts-navigation {
+    width: 180px;
+  }
+  .ts-toolbar {
+    gap: 12px;
+  }
+  .ts-toolbar h2 {
+    width: 100%;
+  }
 }

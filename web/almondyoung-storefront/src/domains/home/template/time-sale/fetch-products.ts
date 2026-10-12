@@ -15,6 +15,8 @@ export async function fetchProductsByIds(
       listProducts({
         queryParams: { id: part, limit: part.length },
         regionId,
+        // 기간·공개 제한이 바뀌어도 홈과 더보기가 이전 가격 캐시를 재사용하지 않는다.
+        fresh: true,
       })
     )
   )

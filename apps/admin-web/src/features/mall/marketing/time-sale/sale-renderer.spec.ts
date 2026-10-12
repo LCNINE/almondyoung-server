@@ -2,6 +2,8 @@ import {
   createSaleComponent,
   defaultSaleDisplay,
   defaultTimeSaleSettings,
+  validateTimeSaleSettings,
+  validateSaleCss,
   type SaleComponent,
   type SalePreviewState,
 } from '../../../../../../../packages/domain-types/time-sale';
@@ -14,6 +16,7 @@ import {
   previewAnchorFor,
   previewRemainingSeconds,
   productStyle,
+  saleTimeVariables,
   resolveProductState,
   resolveSectionPeriod,
   resolveUserVariables,
@@ -63,6 +66,384 @@ const render = (
 };
 
 describe('SaleRenderer', () => {
+  it('이미지의 둥근 모서리는 상태별 CSS까지 반영해 이미지 자체를 자른다', () => {
+    const image = createSaleComponent('image');
+    image.content = 'https://example.com/image.png';
+    image.css.borderRadius = '0 0 12px 12px / 0 0 6px 6px';
+    image.stateCss = { active: { borderRadius: '16px' } };
+
+    expect(render(image, 'scheduled')).toMatch(
+      /<img[^>]+border-radius:0 0 12px 12px \/ 0 0 6px 6px/
+    );
+    expect(render(image, 'active')).toMatch(/<img[^>]+border-radius:16px/);
+  });
+  it('기본 스타일은 이전 아몬드영 섹션의 패딩과 5열 상품 간격을 저장한다', () => {
+    const settings = defaultTimeSaleSettings();
+    validateTimeSaleSettings(settings);
+
+    expect(settings.styles.main.pc.css.padding).toBe('48px 40px');
+    expect(settings.styles.main.pc.components[1].content).toBe('');
+    expect(
+      settings.styles.main.pc.components.find((c) => c.type === 'timer')?.css
+        .padding
+    ).toBe('16px 0 24px');
+    expect(settings.styles.main.mobile.css.padding).toBe('32px 16px');
+    expect(settings.styles.main.pc.mainCss?.backgroundColor).toBe('#f7f8f9');
+    const shelf = settings.styles.main.pc.components.find(
+      (c) => c.type === 'carousel'
+    );
+    expect(shelf?.options.columns).toBe(5);
+    expect(shelf?.options.gap).toBe(16);
+    expect(shelf?.options.rows).toBe(2);
+    expect(shelf?.options.slots).toBe(10);
+    expect(shelf?.options.carouselRows).toBe(true);
+  });
+
+  it('스토어프론트 액션 슬롯은 품절 마스크 위에서 상품별 버튼을 렌더한다', () => {
+    const settings = defaultTimeSaleSettings();
+    const markup = renderToStaticMarkup(
+      createElement(SaleRenderer, {
+        settings,
+        surface: 'main',
+        platform: 'pc',
+        saleId: 's1',
+        title: '세일',
+        startsAt: '2026-01-01T00:00:00Z',
+        endsAt: '2026-01-02T00:00:00Z',
+        products: [product],
+        previewState: 'active',
+        sanitizeHtml: (html: string) => html,
+        renderProductActions: (p: SaleProduct) =>
+          createElement('button', { 'aria-label': `${p.name} 좋아요` }),
+      })
+    );
+
+    expect(markup).toContain('class="group"');
+    expect(markup).toContain('z-index:100;pointer-events:none');
+    expect(markup).toContain('aria-label="상품A 좋아요"');
+  });
+
+  it('품절 마스크와 배지는 이미지 크기 안에서만 겹쳐 고정 헤더를 덮지 않는다', () => {
+    const c = createSaleComponent('grid', 'sold-out-image');
+    c.options.imageWidth = 50;
+
+    const markup = render(c, 'active', [
+      { ...product, soldOut: true, image: '/product.jpg' },
+    ]);
+
+    expect(markup).toContain('position:relative;isolation:isolate;width:50%');
+    expect(markup).toContain('src="/product.jpg"');
+    expect(markup).toContain('width:100%;max-width:100%');
+    expect(markup).toContain('품절');
+  });
+
+  it('실제 매대는 PC 최대 폭과 여백을 가지며 적은 상품은 가운데 모은다', () => {
+    const c = createSaleComponent('carousel', 'real-products');
+    c.options.columns = 4;
+
+    const markup = render(c, 'active', [product, { ...product, id: 'p2' }]);
+
+    expect(markup).toContain(
+      'max-width:1360px;margin:0 auto;position:relative;padding:48px 40px'
+    );
+    expect(markup).toContain('justify-content:center');
+    expect(markup).not.toContain('멤버십 회원 특가');
+  });
+
+  it('비공개 멤버십 가격은 주황 안내를 표시하고 숫자나 절약액을 만들지 않는다', () => {
+    const c = createSaleComponent('carousel', 'private-products');
+    const markup = render(c, 'active', [
+      { ...product, membershipOnly: true, membershipPrice: null },
+    ]);
+
+    expect(markup).toContain('멤버십할인가');
+    expect(markup).toContain('멤버십 회원에게 가격 공개');
+    expect(markup).not.toContain('가입 시');
+    expect(markup).not.toContain('멤버십 회원 특가');
+  });
+
+  it('상품 상단 메시지는 기본 상품명과 가격을 유지하며 선택한 이미지를 표시한다', () => {
+    const c = createSaleComponent('carousel', 'images');
+    c.options.imageType = 'detail';
+    c.productTexts = [
+      { id: 'top', position: 'top', content: '상단 안내', css: {} },
+    ];
+
+    const markup = render(c, 'active', [
+      { ...product, images: { detail: '/detail.png' } },
+    ]);
+
+    expect(markup).toContain('상단 안내');
+    expect(markup).toContain('상품A');
+    expect(markup).toContain('5,000원');
+    expect(markup).toContain('src="/detail.png"');
+  });
+
+  it('직접 CSS는 여백·그라데이션·마감 효과를 허용하고 주입과 알 수 없는 속성을 거절한다', () => {
+    expect(() =>
+      validateSaleCss({
+        padding: '12px',
+        marginLeft: 'auto',
+        backgroundImage: 'linear-gradient(90deg, #ffffff, #ffa500)',
+        filter: 'grayscale(100%)',
+        pointerEvents: 'none',
+      })
+    ).not.toThrow();
+    expect(() =>
+      validateSaleCss({ backgroundImage: 'url(javascript:alert(1))' })
+    ).toThrow();
+    expect(() => validateSaleCss({ unknown: 'red' })).toThrow();
+  });
+
+  it('머리말 표시·이미지와 메인 컨테이너 CSS를 별도로 반영한다', () => {
+    const settings = defaultTimeSaleSettings();
+    const layout = settings.styles.main.pc;
+    layout.header = '/banner.png';
+    layout.headerOptions = {
+      enabled: true,
+      type: 'image',
+      css: { width: '50%' },
+    };
+    layout.mainCss = { maxWidth: '900px', margin: '0 auto' };
+
+    const draw = () =>
+      renderToStaticMarkup(
+        createElement(SaleRenderer, {
+          settings,
+          surface: 'main',
+          platform: 'pc',
+          saleId: 's1',
+          title: '세일',
+          startsAt: '2026-01-01T00:00:00Z',
+          endsAt: '2026-01-02T00:00:00Z',
+          products: [product],
+          previewState: 'active',
+          sanitizeHtml: (value: string) => value,
+        })
+      );
+
+    expect(draw()).toContain('src="/banner.png"');
+    expect(draw()).toContain('max-width:900px;margin:0 auto');
+    expect(draw()).toContain('width:50%');
+
+    layout.headerOptions.enabled = false;
+
+    expect(draw()).not.toContain('/banner.png');
+    expect(() => validateTimeSaleSettings(settings)).not.toThrow();
+  });
+
+  it('버튼 주소 이동·새 창·개별 스타일을 반영한다', () => {
+    const c = createSaleComponent('button', 'link');
+    c.options.buttonAction = 'url';
+    c.options.href = '/offers/{{time_sale_no}}';
+    c.options.newWindow = true;
+    c.options.buttonCss = {
+      width: '45%',
+      height: '45px',
+      borderRadius: '12px',
+    };
+
+    const markup = render(c, 'active');
+
+    expect(markup).toContain('href="/offers/s1"');
+    expect(markup).toContain('target="_blank" rel="noopener noreferrer"');
+    expect(markup).toContain('width:45%;height:45px');
+  });
+
+  it('타이머는 숫자와 콜론을 첫 행, 단위를 둘째 행에 정렬한다', () => {
+    const markup = render(
+      createSaleComponent('timer', 'aligned-timer'),
+      'active'
+    );
+
+    expect(markup).toContain('row-gap:8px');
+    expect(markup).toContain(
+      'grid-row:1;grid-column:2;align-self:center">:</span>'
+    );
+    expect(markup).toContain('grid-row:2;grid-column:1;text-align:center');
+    expect(markup).toContain('line-height:1.25');
+  });
+
+  it('타이머 단위·텍스트 구분자·숫자 스타일을 반영한다', () => {
+    const c = createSaleComponent('timer', 'timer');
+    c.options.showTimerLabels = false;
+    c.options.timerSeparators = ['d', 'h', 'm', 's'];
+    c.options.timerDigitCss = { padding: '9px', borderRadius: '12px' };
+
+    const markup = render(c, 'active');
+
+    expect(markup).toContain('padding:9px');
+    expect(markup).toContain('>h</span>');
+    expect(markup).not.toContain('>시간</span>');
+    expect(markup).not.toContain('>:</span>');
+  });
+
+  it('프로그레스 메시지는 상단·내부·하단의 지정 위치에 놓인다', () => {
+    const c = createSaleComponent('progress', 'progress');
+    c.progressTexts = [
+      { id: 'a', position: 'top', content: 'TOP_MESSAGE', css: {} },
+      { id: 'b', position: 'inside', content: 'INSIDE_MESSAGE', css: {} },
+      { id: 'c', position: 'bottom', content: 'BOTTOM_MESSAGE', css: {} },
+    ];
+    c.options.progressCss = { height: '18px', borderRadius: '6px' };
+
+    const markup = render(c, 'active');
+
+    expect(markup.indexOf('TOP_MESSAGE')).toBeLessThan(
+      markup.indexOf('role="progressbar"')
+    );
+    expect(markup.indexOf('INSIDE_MESSAGE')).toBeLessThan(
+      markup.indexOf('BOTTOM_MESSAGE')
+    );
+    expect(markup).toContain('height:18px');
+  });
+
+  it('상품 슬롯 상한·역순·이미지 레이어·링크 비활성을 반영한다', () => {
+    const c = createSaleComponent('carousel', 'carousel');
+    c.options.slots = 1;
+    c.options.productOrder = 'reverse';
+    c.options.disableProductLink = true;
+    c.imageLayers = [
+      {
+        id: 'layer',
+        content: 'LAYER {{product_name}}',
+        css: { top: '10%', zIndex: 3 },
+      },
+    ];
+
+    const markup = render(c, 'active', [
+      product,
+      { ...product, id: 'p2', name: '상품B' },
+    ]);
+
+    expect(markup).toContain('LAYER 상품B');
+    expect(markup).not.toContain('상품A');
+    expect(markup).not.toContain('href="/p/1"');
+    expect(markup).toContain('top:10%;z-index:3');
+  });
+
+  it('원본 시간 변수와 조건 변수는 현재 기간에서 계산된다', () => {
+    const variables = saleTimeVariables(
+      { startsAt: '2026-01-01T00:00:00Z', endsAt: '2026-01-02T00:00:00Z' },
+      'scheduled',
+      90061
+    );
+
+    expect(variables.remaining_days).toBe('01');
+    expect(variables.remaining_hours).toBe('01');
+    expect(variables.remaining_minutes).toBe('01');
+    expect(variables.remaining_seconds).toBe('01');
+    expect(variables.remaining_thours).toBe('25');
+    expect(variables.is_before).toBe('true');
+    expect(variables.is_running).toBe('');
+  });
+
+  it('추가 설정도 저장 단계에서 URL·CSS·수치·레이어 개수를 검증한다', () => {
+    const settings = defaultTimeSaleSettings();
+    const c = settings.styles.main.pc.components.find(
+      (item) => item.type === 'carousel'
+    )!;
+    c.options.slideGroup = 2;
+    c.options.productHref = '/products/{{product_no}}';
+    c.options.listCss = { alignItems: 'flex-start' };
+
+    expect(() => validateTimeSaleSettings(settings)).not.toThrow();
+
+    c.options.productHref = 'javascript:alert(1)';
+
+    expect(() => validateTimeSaleSettings(settings)).toThrow('이동 주소');
+
+    c.options.productHref = '';
+    c.options.slots = 0;
+
+    expect(() => validateTimeSaleSettings(settings)).toThrow('슬롯');
+  });
+
+  it('타이머의 글자 크기와 색상 편집은 숫자에도 적용된다', () => {
+    const c = createSaleComponent('timer', 'styled-timer');
+    c.css.fontSize = '20px';
+    c.css.color = '#f04452';
+
+    const markup = render(c, 'active');
+
+    expect(markup).toMatch(/display:block;font-size:20px;[^\"]*color:#f04452/);
+
+    c.stateCss = { active: { fontSize: '18px', color: '#ffa500' } };
+
+    expect(render(c, 'active')).toMatch(
+      /display:block;font-size:18px;[^\"]*color:#ffa500/
+    );
+  });
+
+  it('아몬드영 기본 매대는 저장 가능한 CSS와 모바일·PC 상품 간격을 제공한다', () => {
+    const settings = defaultTimeSaleSettings();
+
+    expect(() => validateTimeSaleSettings(settings)).not.toThrow();
+    for (const platform of ['mobile', 'pc'] as const) {
+      const shelf = settings.styles.main[platform].components.find(
+        (item) => item.type === 'carousel'
+      )!;
+
+      expect(shelf.options.imageWidth).toBe(100);
+      expect(shelf.options.gap).toBe(16);
+      expect(shelf.options.headerCss?.textAlign ?? shelf.css.textAlign).toBe(
+        'left'
+      );
+      expect(shelf.options.badgeColor).toBe('#f04452');
+    }
+  });
+
+  it('멤버십가와 현재 판매가 기준 절약액을 표시하고 더 비싼 멤버십가는 광고하지 않는다', () => {
+    const c = createSaleComponent('carousel', 'membership');
+    const markup = render(c, 'active', [{ ...product, membershipPrice: 3990 }]);
+
+    expect(markup).toContain('멤버십할인가');
+    expect(markup).toContain('3,990원');
+    expect(markup).toContain('가입 시 1,010원 절약');
+    expect(markup).toContain('align-items:flex-start;text-align:left');
+    expect(markup).toMatch(/<a[^>]*text-align:left/);
+    expect(
+      render(c, 'active', [{ ...product, membershipPrice: 6000 }])
+    ).not.toContain('가입 시');
+    expect(
+      render(c, 'active', [{ ...product, price: null, membershipPrice: 3990 }])
+    ).not.toContain('3,990원');
+    expect(
+      render(c, 'active', [{ ...product, membershipPrice: null }])
+    ).not.toContain('가입 시');
+  });
+
+  it('편집 프리뷰에서만 구성요소 선택 버튼을 제공한다', () => {
+    const settings = defaultTimeSaleSettings();
+    const props = {
+      settings,
+      surface: 'main' as const,
+      platform: 'mobile' as const,
+      saleId: 'preview',
+      title: '세일',
+      startsAt: '2026-01-01T00:00:00Z',
+      endsAt: '2026-01-02T00:00:00Z',
+      products: [product],
+      previewState: 'active' as const,
+      sanitizeHtml: (html: string) => html,
+    };
+
+    const markup = renderToStaticMarkup(
+      createElement(SaleRenderer, {
+        ...props,
+        onPreviewSelect: jest.fn(),
+        previewSelected: 'main-mobile-2',
+      })
+    );
+
+    expect(markup).toContain('aria-label="타이머 편집"');
+    expect(markup).toContain('data-sale-component="main-mobile-2"');
+    expect(markup).toContain('aria-pressed="true"');
+    expect(
+      renderToStaticMarkup(createElement(SaleRenderer, props))
+    ).not.toContain('data-sale-component');
+  });
+
   it('상태별·품절 상품 CSS 가 순서대로 덮인다', () => {
     const c = createSaleComponent('grid', 'g');
     c.options.productCss = { opacity: 1, color: 'black' };
@@ -246,13 +627,17 @@ describe('렌더러 옵션', () => {
     );
   });
 
-  it('(b) dots 가 true 면 페이지 수만큼 점 버튼, false 면 0개', () => {
+  it('(b) dots는 이동 그룹에 따른 실제 위치 수를 표시하며 숨길 수 있다', () => {
     const c = createSaleComponent('carousel', 'c');
     c.options.columns = 2;
     c.options.dots = true;
 
     const count = (html: string) =>
       (html.match(/aria-label="\d+번째 위치"/g) ?? []).length;
+
+    expect(count(render(c, 'active', many))).toBe(7);
+
+    c.options.slideGroup = 2;
 
     expect(count(render(c, 'active', many))).toBe(4);
 
@@ -282,7 +667,12 @@ describe('렌더러 옵션', () => {
       })
     );
 
-    expect(html.match(/<img[^>]*>/)?.[0]).toContain('max-width:300px');
+    expect(html).toContain(
+      `isolation:isolate;width:${c.options.imageWidth}%;max-width:300px`
+    );
+    expect(html.match(/<img[^>]*>/)?.[0]).toContain(
+      'width:100%;max-width:100%'
+    );
   });
 
   it('(d) 배지 11종이 모두 BADGE_SHAPES 에 있다', () => {

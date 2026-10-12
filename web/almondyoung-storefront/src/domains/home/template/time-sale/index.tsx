@@ -8,9 +8,14 @@ import {
   pageIds,
   parsePage,
 } from "@/lib/utils/time-sale-pagination"
-import type { SaleSurface } from "@packages/domain-types/time-sale"
+import type {
+  SaleSurface,
+  SalePlatform,
+} from "@packages/domain-types/time-sale"
 import { buildSaleProducts } from "./sale-products"
 import { fetchProductsByIds } from "./fetch-products"
+import { retrieveCustomer } from "@/lib/api/medusa/customer"
+import { getWishlist } from "@/lib/api/users/wishlist"
 import {
   mainProductIds,
   matchesSalePartition,
@@ -26,6 +31,7 @@ export async function TimeSaleWrapper({
   page: rawPage,
   partitionId = "home-sale",
   saleId,
+  pagePlatform = "pc",
 }: {
   countryCode: string
   background?: "white" | "muted"
@@ -33,6 +39,7 @@ export async function TimeSaleWrapper({
   page?: string
   partitionId?: string
   saleId?: string
+  pagePlatform?: SalePlatform
 }) {
   // 1) 세일·설정 조회. 이 면(surface)이 꺼져 있거나 보여줄 세일이 없으면 렌더하지 않는다.
   const { timeSales, settings } = await getTimeSalePresentation()
@@ -51,7 +58,8 @@ export async function TimeSaleWrapper({
   if (sales.length === 0) return null
 
   // 2) 세일마다 이 화면에 올릴 상품 id 와 페이지 링크를 정한다.
-  const pageSize = surface === "more" ? morePageSize(settings) : null
+  const pageSize =
+    surface === "more" ? morePageSize(settings, pagePlatform) : null
   const plans = sales.map((sale) => {
     if (!pageSize) {
       const ids =
@@ -65,12 +73,19 @@ export async function TimeSaleWrapper({
     const pages = pageCount(sale.productIds.length, pageSize)
     const page = parsePage(rawPage, pages)
     const hrefFor = (n: number) =>
-      `/${countryCode}/time-sale?sale=${encodeURIComponent(sale.saleId)}&page=${n}`
+      `/${countryCode}/time-sale?sale=${encodeURIComponent(sale.saleId)}&platform=${pagePlatform}&page=${n}`
 
     return {
       sale,
       ids: pageIds(sale.productIds, page, pageSize),
-      pager: buildPager(page, pages, hrefFor),
+      pager: buildPager(
+        page,
+        pages,
+        hrefFor,
+        settings.styles.more[pagePlatform].components.find(
+          (c) => c.type === "grid" || c.type === "carousel"
+        )?.options.pageWindow
+      ),
     }
   })
 
@@ -81,6 +96,13 @@ export async function TimeSaleWrapper({
   const products = await fetchProductsByIds(allIds, region?.id)
   if (products.length === 0 && !pageSize) return null
 
+  const customer = await retrieveCustomer()
+  const wishlist = customer ? await getWishlist().catch(() => []) : []
+  const isMember =
+    customer?.groups?.some(
+      (group) => group.id === process.env.NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID
+    ) ?? false
+
   // 4) 섹션은 하나다. 진열순위(API 정렬) 앞에서부터 이 사용자에게 보일 게 있는 첫 세일만 그린다.
   // 페이지 안 상품이 전부 은닉돼도 페이지 링크가 있으면 남겨 다른 페이지로 갈 수 있게 한다.
   for (const { sale, ids, pager } of plans) {
@@ -89,6 +111,8 @@ export async function TimeSaleWrapper({
       ids,
       products,
       countryCode,
+      isMember,
+      wishlistIds: wishlist.map((item) => item.productId),
     })
     if (saleProducts.length === 0 && !pager) continue
 

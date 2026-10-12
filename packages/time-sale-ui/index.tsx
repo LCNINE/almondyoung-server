@@ -1,10 +1,11 @@
 'use client';
 
-import { Fragment, useEffect, useId, useRef, useState, type CSSProperties } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   USER_VARIABLE_NAME_SOURCE,
   defaultSaleDisplay,
   saleLayoutFor,
+  pageWindowItems,
   type TimeSaleSettings,
   type SaleSurface,
   type SalePlatform,
@@ -19,14 +20,29 @@ export type SaleProduct = {
   id: string;
   name: string;
   image?: string | null;
+  images?: Partial<Record<'list' | 'detail' | 'small' | 'thumbnail', string | null>>;
+  summary?: string | null;
+  modelName?: string | null;
   href: string;
   price: number | null;
   originalPrice: number | null;
+  membershipPrice?: number | null;
+  rating?: number;
+  reviewCount?: number;
   soldOut: boolean;
   variables?: Record<string, string>;
   startsAt?: string | null;
   endsAt?: string | null;
   membershipOnly?: boolean;
+  quickActions?: {
+    handle: string;
+    variantId?: string;
+    currency?: string;
+    isSingleOption: boolean;
+    membersOnlyPurchase: boolean;
+    isWelcomeMembership: boolean;
+    isWishlisted: boolean;
+  };
 };
 
 // 서버 페이지 나누기용 페이지 링크 한 칸. href 가 없으면 말줄임이다.
@@ -49,8 +65,11 @@ export type SaleRendererProps = {
   previewState?: SalePreviewState;
   previewAnchor?: SalePeriod;
   previewSoldOut?: boolean;
+  onPreviewSelect?: (id: string) => void;
+  previewSelected?: string;
   sanitizeHtml: (html: string) => string;
-  moreHref?: string;
+  moreHref?: string | ((platform: SalePlatform) => string);
+  renderProductActions?: (product: SaleProduct) => ReactNode;
 
   // 있으면 그리드는 받은 상품을 한 페이지로 그대로 그리고 링크형 페이지 번호를 둔다.
   // 더보기 서버 페이지네이션용.
@@ -61,6 +80,106 @@ export type SaleRendererProps = {
 };
 
 const names = { scheduled: '할인(예정)', active: '할인(실행중)', ended: '할인(종료)' };
+
+export function saleTimeVariables(period: SalePeriod, state: SalePreviewState, remaining: number) {
+  const parts = timerParts(remaining * 1000, 0, { daysToHours: false, hideZeroDays: false });
+  const values: Record<string, string> = {
+    remaining_days: String(parts[0][0]).padStart(2, '0'),
+    remaining_hours: String(parts[1][0]).padStart(2, '0'),
+    remaining_minutes: String(parts[2][0]).padStart(2, '0'),
+    remaining_seconds: String(parts[3][0]).padStart(2, '0'),
+    remaining_thours: String(Math.floor(remaining / 3600)),
+    remaining_simple_time: formatRemaining(remaining),
+    is_before: state === 'scheduled' ? 'true' : '',
+    is_running: state === 'active' ? 'true' : '',
+    is_after: state === 'ended' ? 'true' : '',
+  };
+  const total = (Date.parse(period.endsAt) - Date.parse(period.startsAt)) / 1000;
+  values.remaining_percent = String(Math.round(Math.min(100, Math.max(0, (remaining / Math.max(1, total)) * 100))));
+
+  for (const [prefix, date] of [
+    ['begin', new Date(period.startsAt)],
+    ['end', new Date(period.endsAt)],
+  ] as const) {
+    values[`${prefix}_datetime`] = date.toLocaleString('ko-KR');
+    for (const [key, value] of [
+      ['year', date.getFullYear()],
+      ['month', date.getMonth() + 1],
+      ['day', date.getDate()],
+      ['hour', date.getHours()],
+      ['minute', date.getMinutes()],
+      ['second', date.getSeconds()],
+    ] as const)
+      values[`${prefix}_${key}`] = String(value).padStart(2, '0');
+  }
+
+  return values;
+}
+
+export function SaleMembershipPrice({
+  price,
+  membershipPrice,
+  hidden = false,
+  currency = (amount: number) => `${amount.toLocaleString('ko-KR')}원`,
+}: {
+  price: number | null;
+  membershipPrice?: number | null;
+  hidden?: boolean;
+  currency?: (amount: number) => string;
+}) {
+  const available = !(
+    price === null ||
+    !Number.isFinite(price) ||
+    typeof membershipPrice !== 'number' ||
+    !Number.isFinite(membershipPrice) ||
+    membershipPrice <= 0 ||
+    membershipPrice >= price
+  );
+
+  if (!available && !hidden) return null;
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        textAlign: 'left',
+        gap: 4,
+        marginTop: 8,
+        color: '#ffa500',
+      }}
+    >
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 700 }}>
+        <span
+          aria-hidden="true"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 11,
+            height: 11,
+            borderRadius: '50%',
+            background: '#ffa500',
+            color: 'white',
+            fontSize: 8,
+          }}
+        >
+          ✓
+        </span>
+        멤버십할인가
+      </span>
+      {available ? (
+        <>
+          <strong style={{ fontSize: 15 }}>{currency(membershipPrice!)}</strong>
+          <span style={{ fontSize: 11, fontWeight: 500 }}>가입 시 {currency(price! - membershipPrice!)} 절약</span>
+        </>
+      ) : (
+        <span style={{ fontSize: 11, fontWeight: 500 }}>멤버십 회원에게 가격 공개</span>
+      )}
+    </div>
+  );
+}
 
 function formatToken(value: string, format?: string) {
   if (!value) return '';
@@ -280,7 +399,9 @@ export function SaleRenderer(props: SaleRendererProps) {
         ? 0
         : anchorTarget
       : now + previewOffsetMs(state)
-    : Date.parse(countdownTarget);
+    : now === 0
+      ? 0
+      : Date.parse(countdownTarget);
 
   const fixedRemaining = (current: SalePreviewState) =>
     now === 0 || !props.previewAnchor ? 0 : previewRemainingSeconds(props.previewAnchor, current, now);
@@ -291,6 +412,8 @@ export function SaleRenderer(props: SaleRendererProps) {
   const productState = (product: SaleProduct) => previewState ?? resolveProductState(now, product, sale);
 
   const productRemaining = (product: SaleProduct) => {
+    if (now === 0 && !previewState) return formatRemaining(0);
+
     const own = periodOf(product, sale);
 
     const current = productState(product);
@@ -306,7 +429,10 @@ export function SaleRenderer(props: SaleRendererProps) {
 
   // 2) 문구에 쓸 변수 모음({{title}}, {{remaining_time}}, 사용자 변수 …)
   const vars: Record<string, string> = {
+    ...saleTimeVariables(period, state, remaining),
     title: props.title,
+    time_sale_name: props.title,
+    time_sale_no: props.saleId,
     condition: names[state],
     remaining_time: formatRemaining(remaining),
     starts_at: new Date(props.startsAt).toLocaleString('ko-KR'),
@@ -332,64 +458,220 @@ export function SaleRenderer(props: SaleRendererProps) {
 
   const html = (content: string, values = vars) => ({ __html: sanitizeHtml(expand(content, values)) });
 
+  const slot = (l: SaleLayout, position: 'header' | 'footer') => {
+    const options = l[`${position}Options`];
+
+    if (!l[position] || options?.enabled === false) return null;
+
+    return (
+      <div style={options?.css as CSSProperties}>
+        {previewState && props.onPreviewSelect && (
+          <button
+            type="button"
+            className="ts-preview-select"
+            aria-label={`${position === 'header' ? '머리말' : '꼬리말'} 편집`}
+            aria-pressed={props.previewSelected === position}
+            onClick={() => props.onPreviewSelect?.(position)}
+          >
+            {position === 'header' ? '머리말' : '꼬리말'} / {options?.type === 'image' ? '이미지' : '텍스트'}
+          </button>
+        )}
+        {options?.type === 'image' ? (
+          <img
+            src={expand(l[position], vars)}
+            alt={position === 'header' ? '머리말' : '꼬리말'}
+            style={{ display: 'block', maxWidth: '100%', width: '100%' }}
+          />
+        ) : (
+          <div dangerouslySetInnerHTML={html(l[position])} />
+        )}
+      </div>
+    );
+  };
+
   // 4) 레이아웃의 컴포넌트를 현재 상태(state)에 해당하는 것만 순서대로 그린다.
   const drawLayout = (l: SaleLayout, currentSurface: SaleSurface) => (
-    <div style={l.css as CSSProperties} onClickCapture={previewState ? blockPreviewNavigation : undefined}>
-      {l.header && <div dangerouslySetInnerHTML={html(l.header)} />}
-      {l.components
-        .filter((c) => c.states.includes(state))
-        .map((c) => (
-          <div key={c.id} style={{ ...c.css, ...c.stateCss?.[state] } as CSSProperties}>
-            {c.type === 'text' && <div dangerouslySetInnerHTML={html(c.content)} />}
-            {c.type === 'image' && c.content && (
-              <img src={c.content} alt={c.name} style={{ maxWidth: '100%', height: 'auto' }} />
-            )}
-            {c.type === 'button' &&
-              (currentSurface === 'main' && settings.environment.moreMode === 'popup' ? (
-                <button type="button" onClick={() => setPopup(true)} style={buttonStyle}>
-                  {expand(c.content, vars)}
-                </button>
-              ) : (
-                <a href={props.moreHref ?? '/time-sale'} style={buttonStyle}>
-                  {expand(c.content, vars)}
-                </a>
-              ))}
-            {c.type === 'timer' && <Timer component={c} end={end} now={now} />}
-            {c.type === 'progress' && (
-              <>
-                <div dangerouslySetInnerHTML={html(c.content || '{{condition}} {{remaining_time^? 남음}}')} />
-                <div
-                  role="progressbar"
-                  aria-label="타임세일 경과"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={Math.round(progress)}
-                  style={progressTrackStyle(c.options.progressBackground)}
+    <div
+      style={
+        {
+          width: '100%',
+          maxWidth: platform === 'mobile' ? '100%' : 1280,
+          margin: '0 auto',
+          padding: l.css.padding !== undefined ? 0 : platform === 'mobile' ? 16 : 24,
+          boxSizing: 'border-box',
+          ...l.mainCss,
+        } as CSSProperties
+      }
+      onClickCapture={previewState ? blockPreviewNavigation : undefined}
+    >
+      {slot(l, 'header')}
+      <div
+        style={{ boxSizing: 'border-box', ...l.css } as CSSProperties}
+        onClickCapture={previewState ? blockPreviewNavigation : undefined}
+      >
+        {l.components
+          .filter((c) => c.states.includes(state))
+          .map((c) => (
+            <div
+              key={c.id}
+              data-sale-component={previewState && props.onPreviewSelect ? c.id : undefined}
+              style={{ ...c.css, ...c.stateCss?.[state] } as CSSProperties}
+              onClickCapture={previewState && props.onPreviewSelect ? () => props.onPreviewSelect?.(c.id) : undefined}
+            >
+              {previewState && props.onPreviewSelect && (
+                <button
+                  type="button"
+                  className="ts-preview-select"
+                  aria-label={`${c.name} 편집`}
+                  aria-pressed={props.previewSelected === c.id}
+                  onClick={() => props.onPreviewSelect?.(c.id)}
                 >
-                  <div style={{ width: `${progress}%`, height: '100%', background: c.options.progressColor }} />
-                </div>
-              </>
-            )}
-            {(c.type === 'carousel' || c.type === 'grid') && (
-              <Products
-                component={c}
-                products={visible}
-                vars={vars}
-                html={html}
-                settings={settings}
-                stateOf={productState}
-                saleProductVariables={d.productVariables}
-                pager={props.pager}
-                productVars={(p) => ({
-                  product_starts_at: new Date(periodOf(p, sale).startsAt).toLocaleString('ko-KR'),
-                  product_ends_at: new Date(periodOf(p, sale).endsAt).toLocaleString('ko-KR'),
-                  product_remaining: productRemaining(p),
-                })}
-              />
-            )}
-          </div>
-        ))}
-      {l.footer && <div dangerouslySetInnerHTML={html(l.footer)} />}
+                  타임세일 / {c.name}
+                </button>
+              )}
+              {c.type === 'text' && <div dangerouslySetInnerHTML={html(c.content)} />}
+              {c.type === 'image' && c.content && (
+                <img
+                  src={c.content}
+                  alt={c.name}
+                  style={{
+                    width: `${c.options.imageWidth}%`,
+                    maxWidth: '100%',
+                    height: 'auto',
+                    borderRadius: c.stateCss?.[state]?.borderRadius ?? c.css.borderRadius,
+                  }}
+                />
+              )}
+              {c.type === 'button' &&
+                (c.options.buttonAction !== 'url' &&
+                currentSurface === 'main' &&
+                settings.environment.moreMode === 'popup' ? (
+                  <button
+                    type="button"
+                    onClick={() => setPopup(true)}
+                    style={{ ...buttonStyle, ...c.options.buttonCss } as CSSProperties}
+                  >
+                    {expand(c.content, vars)}
+                  </button>
+                ) : (
+                  <a
+                    href={
+                      c.options.buttonAction === 'url'
+                        ? expand(c.options.href ?? '', vars)
+                        : typeof props.moreHref === 'function'
+                          ? props.moreHref(platform)
+                          : (props.moreHref ?? '/time-sale')
+                    }
+                    target={c.options.newWindow ? '_blank' : undefined}
+                    rel={c.options.newWindow ? 'noopener noreferrer' : undefined}
+                    style={{ ...buttonStyle, ...c.options.buttonCss } as CSSProperties}
+                  >
+                    {expand(c.content, vars)}
+                  </a>
+                ))}
+              {c.type === 'timer' && (
+                <Timer component={{ ...c, css: { ...c.css, ...c.stateCss?.[state] } }} end={end} now={now} />
+              )}
+              {c.type === 'progress' && (
+                <>
+                  {c.progressTexts ? (
+                    c.progressTexts
+                      .filter((t) => t.position === 'top')
+                      .map((t) => (
+                        <div key={t.id} style={t.css as CSSProperties} dangerouslySetInnerHTML={html(t.content)} />
+                      ))
+                  ) : (
+                    <div dangerouslySetInnerHTML={html(c.content || '{{condition}} {{remaining_time^? 남음}}')} />
+                  )}
+                  <div
+                    role="progressbar"
+                    aria-label="타임세일 경과"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.round(progress)}
+                    style={
+                      {
+                        ...progressTrackStyle(c.options.progressBackground),
+                        ...(c.progressTexts?.some((text) => text.position === 'inside') ? { height: 24 } : {}),
+                        position: 'relative',
+                        ...c.options.progressCss,
+                      } as CSSProperties
+                    }
+                  >
+                    <div
+                      style={
+                        {
+                          width: `${progress}%`,
+                          height: '100%',
+                          background: c.options.progressColor,
+                          ...c.options.progressFillCss,
+                        } as CSSProperties
+                      }
+                    />
+                    {c.progressTexts
+                      ?.filter((t) => t.position === 'inside')
+                      .map((t) => (
+                        <div
+                          key={t.id}
+                          style={
+                            {
+                              position: 'absolute',
+                              inset: 0,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              ...t.css,
+                            } as CSSProperties
+                          }
+                          dangerouslySetInnerHTML={html(t.content)}
+                        />
+                      ))}
+                  </div>
+                  {c.progressTexts
+                    ?.filter((t) => t.position === 'bottom')
+                    .map((t) => (
+                      <div key={t.id} style={t.css as CSSProperties} dangerouslySetInnerHTML={html(t.content)} />
+                    ))}
+                </>
+              )}
+              {(c.type === 'carousel' || c.type === 'grid') && (
+                <Products
+                  component={c}
+                  products={visible}
+                  vars={vars}
+                  html={html}
+                  settings={settings}
+                  stateOf={productState}
+                  saleProductVariables={d.productVariables}
+                  pager={props.pager}
+                  renderProductActions={props.renderProductActions}
+                  productVars={(p) => ({
+                    ...saleTimeVariables(
+                      periodOf(p, sale),
+                      productState(p),
+                      previewState && props.previewAnchor
+                        ? fixedRemaining(productState(p))
+                        : Math.max(
+                            0,
+                            Math.ceil(
+                              (Date.parse(
+                                productState(p) === 'scheduled' ? periodOf(p, sale).startsAt : periodOf(p, sale).endsAt,
+                              ) -
+                                now) /
+                                1000,
+                            ),
+                          ),
+                    ),
+                    product_starts_at: new Date(periodOf(p, sale).startsAt).toLocaleString('ko-KR'),
+                    product_ends_at: new Date(periodOf(p, sale).endsAt).toLocaleString('ko-KR'),
+                    product_remaining: productRemaining(p),
+                  })}
+                />
+              )}
+            </div>
+          ))}
+      </div>
+      {slot(l, 'footer')}
     </div>
   );
 
@@ -439,7 +721,7 @@ const buttonStyle: CSSProperties = {
   display: 'inline-block',
   border: '1px solid #dddddd',
   padding: '8px 24px',
-  borderRadius: 4,
+  borderRadius: 999,
   cursor: 'pointer',
   background: 'white',
   color: 'inherit',
@@ -475,10 +757,11 @@ const popupDialogStyle = (width: number, height: number): CSSProperties => ({
 const popupCloseStyle: CSSProperties = { float: 'right', width: 40, height: 40 };
 
 const timerStyle: CSSProperties = {
-  display: 'flex',
+  display: 'grid',
   justifyContent: 'center',
   alignItems: 'center',
-  gap: 5,
+  columnGap: 5,
+  rowGap: 8,
   fontVariantNumeric: 'tabular-nums',
 };
 
@@ -486,6 +769,8 @@ const timerDigitStyle = (flip: boolean): CSSProperties => ({
   display: 'block',
   fontSize: 32,
   minWidth: 44,
+  lineHeight: 1.25,
+  textAlign: 'center',
   padding: '0 4px',
   border: '1px solid #dddddd',
   borderRadius: 4,
@@ -500,9 +785,16 @@ const timerDigitStyle = (flip: boolean): CSSProperties => ({
 
 const timerLabelStyle: CSSProperties = { fontSize: 13, color: '#b7b7b7' };
 
-const productListStyle = (c: SaleComponent): CSSProperties => ({
-  display: c.type === 'grid' ? 'grid' : 'flex',
-  gridTemplateColumns: `repeat(${c.options.columns},minmax(0,1fr))`,
+const productListStyle = (c: SaleComponent, rows = 1): CSSProperties => ({
+  display: c.type === 'grid' || c.options.carouselRows ? 'grid' : 'flex',
+  gridTemplateColumns: c.type === 'grid' ? `repeat(${c.options.columns},minmax(0,1fr))` : undefined,
+  ...(c.type === 'carousel' && c.options.carouselRows
+    ? {
+        gridAutoFlow: 'column',
+        gridTemplateRows: `repeat(${rows},minmax(0,1fr))`,
+        gridAutoColumns: `calc((100% - ${c.options.gap * (c.options.columns - 1)}px) / ${c.options.columns})`,
+      }
+    : {}),
   gap: c.options.gap,
   overflowX: c.type === 'carousel' ? 'auto' : undefined,
   scrollSnapType: 'x mandatory',
@@ -529,6 +821,11 @@ const productCardStyle = (c: SaleComponent, state: SalePreviewState, soldOut: bo
   textDecoration: 'none',
   flex: `0 0 calc((100% - ${c.options.gap * (c.options.columns - 1)}px) / ${c.options.columns})`,
   minWidth: 0,
+  textAlign: 'left',
+  display: 'flex',
+  flexDirection: c.options.direction ?? 'column',
+  ...(c.options.direction === 'row' ? { flexWrap: 'wrap' } : {}),
+  overflowWrap: 'anywhere',
   scrollSnapAlign: 'start',
   ...(productStyle(c, state, soldOut) as CSSProperties),
 });
@@ -537,7 +834,7 @@ const productImageStyle = (c: SaleComponent, imageSize: number): CSSProperties =
   display: 'block',
   width: `${c.options.imageWidth}%`,
   maxWidth: `${imageSize}px`,
-  margin: 'auto',
+  margin: '0',
   aspectRatio: '1',
   objectFit: 'contain',
   borderRadius: c.options.imageRadius,
@@ -545,6 +842,17 @@ const productImageStyle = (c: SaleComponent, imageSize: number): CSSProperties =
 });
 
 const productImagePlaceholderStyle: CSSProperties = { aspectRatio: '1', background: '#eeeeee' };
+
+const carouselArrowStyle: CSSProperties = {
+  width: 32,
+  height: 32,
+  border: '1px solid #e5e7eb',
+  borderRadius: '50%',
+  background: 'white',
+  color: '#191f28',
+  cursor: 'pointer',
+  boxShadow: '0 2px 6px #00000014',
+};
 
 // 꼭짓점 수와 안쪽 반지름 비율로 별·톱니 모양 clip-path 를 만든다.
 function starPolygon(points: number, inner: number) {
@@ -808,19 +1116,62 @@ function Timer({ component: c, end, now }: { component: SaleComponent; end: numb
 
   const parts = timerParts(end, now, c.options);
 
+  const digitStyle = {
+    ...timerDigitStyle(flip),
+    ...(c.css.fontSize !== undefined ? { fontSize: c.css.fontSize } : {}),
+    ...(typeof c.css.color === 'string' ? { color: c.css.color } : {}),
+    ...c.options.timerDigitCss,
+  };
+
   return (
     <div aria-label="남은 시간" style={timerStyle}>
       {parts.map(([n, label], i) => (
         <Fragment key={label}>
-          {i > 0 && <span>:</span>}
-          <div>
+          {i > 0 && !c.options.timerSeparators?.some(Boolean) && (
+            <span
+              style={
+                { ...c.options.timerSeparatorCss, gridRow: 1, gridColumn: i * 2, alignSelf: 'center' } as CSSProperties
+              }
+            >
+              :
+            </span>
+          )}
+          <div style={{ gridRow: 1, gridColumn: i * 2 + 1 }}>
             {flip ? (
-              <FlipDigit value={String(n).padStart(2, '0')} style={timerDigitStyle(true)} />
+              <FlipDigit value={String(n).padStart(2, '0')} style={digitStyle} />
             ) : (
-              <span style={timerDigitStyle(false)}>{String(n).padStart(2, '0')}</span>
+              <span style={digitStyle}>{String(n).padStart(2, '0')}</span>
             )}
-            <span style={timerLabelStyle}>{label}</span>
           </div>
+          {c.options.showTimerLabels !== false && (
+            <span
+              style={
+                {
+                  ...timerLabelStyle,
+                  ...c.options.timerLabelCss,
+                  gridRow: 2,
+                  gridColumn: i * 2 + 1,
+                  textAlign: 'center',
+                } as CSSProperties
+              }
+            >
+              {c.options.timerLabels?.[['일', '시간', '분', '초'].indexOf(label)] ?? label}
+            </span>
+          )}
+          {!!c.options.timerSeparators?.some(Boolean) && (
+            <span
+              style={
+                {
+                  ...c.options.timerSeparatorCss,
+                  gridRow: 1,
+                  gridColumn: i * 2 + 2,
+                  alignSelf: 'center',
+                } as CSSProperties
+              }
+            >
+              {c.options.timerSeparators[['일', '시간', '분', '초'].indexOf(label)]}
+            </span>
+          )}
         </Fragment>
       ))}
     </div>
@@ -850,7 +1201,9 @@ const startsOf = (el: HTMLElement, columns: number) => {
 
   const offsets = Array.from(el.children).map((child) => child.getBoundingClientRect().left - box + el.scrollLeft);
 
-  return pageStarts(offsets, columns);
+  const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
+
+  return Array.from(new Set(pageStarts(offsets, columns).map((offset) => Math.min(offset, maxScroll))));
 };
 
 // 가로 스크롤을 duration(초) 동안 부드럽게 옮긴다. 0 이거나 움직임 줄이기 설정이면 즉시 이동.
@@ -902,7 +1255,9 @@ function Products({
   productVars,
   saleProductVariables,
   pager,
+  renderProductActions,
 }: {
+  renderProductActions?: (product: SaleProduct) => ReactNode;
   pager?: SalePagerItem[];
   component: SaleComponent;
   products: SaleProduct[];
@@ -920,9 +1275,27 @@ function Products({
 
   const scroll = useRef<HTMLDivElement>(null);
 
+  const orderedProducts = useMemo(() => {
+    const items = products.slice();
+
+    if (c.options.productOrder === 'reverse') items.reverse();
+    if (c.options.productOrder === 'random') {
+      for (let i = items.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [items[i], items[j]] = [items[j], items[i]];
+      }
+    }
+
+    return c.type === 'carousel' && c.options.slots ? items.slice(0, c.options.slots) : items;
+  }, [products, c.options.productOrder, c.options.slots, c.type]);
+
+  const stepSize = c.options.slideGroup ?? 1;
+  const carouselRows = c.options.carouselRows && orderedProducts.length > c.options.rows ? c.options.rows : 1;
+  const carouselColumns = Math.ceil(orderedProducts.length / carouselRows);
+
   const size = c.options.columns * c.options.rows,
-    pages = Math.ceil(products.length / size),
-    dotCount = Math.ceil(products.length / c.options.columns);
+    pages = Math.ceil(orderedProducts.length / size),
+    dotCount = orderedProducts.length ? Math.ceil(Math.max(0, carouselColumns - c.options.columns) / stepSize) + 1 : 0;
 
   const cancelScroll = useRef<() => void>(() => undefined);
 
@@ -935,7 +1308,7 @@ function Products({
   };
 
   const goToPage = (el: HTMLElement, index: number) => {
-    const starts = startsOf(el, c.options.columns);
+    const starts = startsOf(el, stepSize * carouselRows);
 
     const last = starts.length - 1;
 
@@ -943,7 +1316,7 @@ function Products({
   };
 
   const pageOf = (el: HTMLElement) =>
-    activePageOf(el.scrollLeft, startsOf(el, c.options.columns), el.scrollWidth - el.clientWidth);
+    activePageOf(el.scrollLeft, startsOf(el, stepSize * carouselRows), el.scrollWidth - el.clientWidth);
 
   useEffect(() => {
     if (c.type !== 'carousel' || !c.options.autoplay) return;
@@ -961,7 +1334,7 @@ function Products({
 
       const current = pageOf(el);
 
-      const lastPage = startsOf(el, c.options.columns).length - 1;
+      const lastPage = startsOf(el, stepSize * carouselRows).length - 1;
 
       if (current >= lastPage) {
         if (c.options.loop) goToPage(el, 0);
@@ -972,7 +1345,7 @@ function Products({
       clearInterval(id);
       cancelScroll.current();
     };
-  }, [c.type, c.options.autoplay, c.options.delay, c.options.duration, c.options.loop, c.options.columns]);
+  }, [c.type, c.options.autoplay, c.options.delay, c.options.duration, c.options.loop, stepSize, carouselRows]);
 
   useEffect(() => () => cancelScroll.current(), []);
 
@@ -982,10 +1355,10 @@ function Products({
     if (el) goToPage(el, pageOf(el) + direction);
   };
 
-  const hasTexts = (c.productTexts ?? []).length > 0;
+  const hasTexts = (c.productTexts ?? []).some((text) => text.position === 'header' || text.position === 'footer');
 
   // 서버가 이미 한 페이지만 보냈으면(pager) 다시 자르지 않는다.
-  const list = c.type === 'grid' && !pager ? products.slice(page * size, (page + 1) * size) : products;
+  const list = c.type === 'grid' && !pager ? orderedProducts.slice(page * size, (page + 1) * size) : orderedProducts;
 
   const currency = (n: number | null) =>
     n === null
@@ -993,11 +1366,26 @@ function Products({
       : `${settings.environment.currencyPrefix}${n.toLocaleString('ko-KR')}${settings.environment.currencySuffix}`;
 
   return (
-    <>
+    <div style={{ position: 'relative' }}>
       {c.options.badge in badgePaths && <BadgeDefs prefix={badgePrefix} />}
       <div
         ref={scroll}
-        style={productListStyle(c)}
+        style={
+          {
+            ...productListStyle(c, carouselRows),
+            ...(list.length > 0 && list.length < c.options.columns
+              ? {
+                  justifyContent: 'center',
+                  ...(c.type === 'grid'
+                    ? {
+                        gridTemplateColumns: `repeat(${list.length}, minmax(0, calc((100% - ${c.options.gap * (c.options.columns - 1)}px) / ${c.options.columns})))`,
+                      }
+                    : {}),
+                }
+              : {}),
+            ...c.options.listCss,
+          } as CSSProperties
+        }
         onScroll={(e) => {
           const el = e.currentTarget;
 
@@ -1008,6 +1396,8 @@ function Products({
           const discount = p.price !== null && p.originalPrice ? Math.round((1 - p.price / p.originalPrice) * 100) : 0;
 
           const showBadge = c.options.badge !== 'none' && discount > 0;
+          const Card = c.options.disableProductLink ? 'div' : 'a';
+          const image = p.images?.[c.options.imageType ?? 'list'] || p.image;
 
           const values = {
             ...vars,
@@ -1015,88 +1405,192 @@ function Products({
             // 상품 값: 세일 설정에 저장된 상품별 값 > 호출자가 넘긴 값 > 변수 preview(vars 에 이미 있음)
             ...resolveUserVariables(settings.variables, saleProductVariables?.[p.id], p.variables),
             product_name: p.name,
+            product_no: p.id,
+            summary_description: p.summary ?? '',
+            model_name: p.modelName ?? '',
             sale_price: currency(p.price),
+            time_sale_price: currency(p.price),
+            price: currency(p.price),
             original_price: currency(p.originalPrice),
+            retail_price: currency(p.originalPrice),
+            base_price: currency(p.originalPrice),
             discount_rate: `${discount}%`,
+            discount_percent: discount ? `${discount}%` : '',
+            discount_amount:
+              p.price !== null && p.originalPrice !== null ? currency(Math.max(0, p.originalPrice - p.price)) : '',
             sold_out: p.soldOut ? '품절' : '',
           };
 
-          const texts = (position: 'header' | 'footer', textValues: Record<string, string>) =>
+          const texts = (position: 'top' | 'header' | 'footer' | 'bottom', textValues: Record<string, string>) =>
             (c.productTexts ?? [])
               .filter((t) => t.position === position)
               .map((t) => (
                 <div
                   key={t.id}
-                  style={{ ...(c.options[`${position}Css`] as CSSProperties), ...(t.css as CSSProperties) }}
+                  style={{
+                    ...(c.options.direction === 'row' && position !== 'footer' ? { flex: '0 0 100%' } : {}),
+                    ...(position === 'header' || position === 'footer'
+                      ? (c.options[`${position}Css`] as CSSProperties)
+                      : {}),
+                    ...(t.css as CSSProperties),
+                  }}
                   dangerouslySetInnerHTML={html(t.content, textValues)}
                 />
               ));
 
           return (
-            <a key={p.id} href={p.href} style={productCardStyle(c, stateOf(p), p.soldOut)}>
-              {p.membershipOnly && (
-                <span
-                  style={{
-                    display: 'inline-block',
-                    marginBottom: 6,
-                    padding: '3px 8px',
-                    borderRadius: 4,
-                    background: '#eaf2ff',
-                    color: '#245fae',
-                    fontSize: 12,
-                  }}
-                >
-                  멤버십 회원 특가
-                </span>
-              )}
+            <Card
+              key={p.id}
+              className="group"
+              href={
+                c.options.disableProductLink
+                  ? undefined
+                  : c.options.productHref
+                    ? expand(c.options.productHref, values)
+                    : p.href
+              }
+              target={c.options.newWindow ? '_blank' : undefined}
+              rel={c.options.newWindow ? 'noopener noreferrer' : undefined}
+              style={productCardStyle(c, stateOf(p), p.soldOut)}
+            >
+              {texts('top', values)}
               {texts('header', values)}
-              <div style={{ position: 'relative' }}>
-                {p.image ? (
+              <div
+                style={{
+                  position: 'relative',
+                  isolation: 'isolate',
+                  width: productImageStyle(c, settings.environment.imageSize).width,
+                  maxWidth: productImageStyle(c, settings.environment.imageSize).maxWidth,
+                  ...(c.options.direction === 'row' ? { flex: '0 0 45%', minWidth: 0 } : {}),
+                }}
+              >
+                {image ? (
                   <img
-                    src={p.image}
+                    src={image}
                     alt={p.name}
                     loading="lazy"
-                    style={productImageStyle(c, settings.environment.imageSize)}
+                    style={{
+                      ...productImageStyle(c, settings.environment.imageSize),
+                      width: '100%',
+                      maxWidth: '100%',
+                    }}
                   />
                 ) : (
                   <div style={productImagePlaceholderStyle} />
                 )}
                 {showBadge && <span style={productBadgeStyle(c, badgePrefix)}>{discount}%</span>}
+                {c.imageLayers?.map((layer) => {
+                  const content = html(layer.content, values);
+
+                  return content.__html.trim() ? (
+                    <div
+                      key={layer.id}
+                      style={{ position: 'absolute', inset: 0, ...layer.css } as CSSProperties}
+                      dangerouslySetInnerHTML={content}
+                    />
+                  ) : null;
+                })}
                 {p.soldOut && (
                   <div style={soldOutOverlayStyle(c)} dangerouslySetInnerHTML={html(c.options.overlay, values)} />
                 )}
-              </div>
-              {!hasTexts && (
-                <div
-                  style={c.options.headerCss as CSSProperties}
-                  dangerouslySetInnerHTML={html(c.options.header, values)}
-                />
-              )}
-              {c.options.showOriginal && discount > 0 && (
-                <small style={{ textDecoration: 'line-through', color: '#999999' }}>{currency(p.originalPrice)}</small>
-              )}
-              <div>
-                {c.options.showDiscount && discount > 0 && (
-                  <strong style={{ color: c.options.badgeColor }}>{discount}% </strong>
+                {renderProductActions && (
+                  <div style={{ position: 'absolute', inset: 0, zIndex: 100, pointerEvents: 'none' }}>
+                    {renderProductActions(p)}
+                  </div>
                 )}
+              </div>
+              <div
+                style={{
+                  minWidth: 0,
+                  ...(c.options.direction === 'row'
+                    ? { flex: 1, paddingLeft: c.options.imageContentGap ?? 16 }
+                    : { paddingTop: c.options.imageContentGap ?? 0 }),
+                }}
+              >
                 {!hasTexts && (
-                  <span
-                    style={c.options.footerCss as CSSProperties}
-                    dangerouslySetInnerHTML={html(c.options.footer, values)}
+                  <div
+                    style={
+                      {
+                        fontSize: 14,
+                        fontWeight: 600,
+                        margin: '16px 0 10px',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        ...c.options.headerCss,
+                      } as CSSProperties
+                    }
+                    dangerouslySetInnerHTML={html(c.options.header, values)}
                   />
                 )}
+                {c.options.showOriginal && discount > 0 && (
+                  <small style={{ textDecoration: 'line-through', color: '#999999' }}>
+                    {currency(p.originalPrice)}
+                  </small>
+                )}
+                <div>
+                  {c.options.showDiscount && discount > 0 && (
+                    <strong style={{ color: c.options.badgeColor }}>{discount}% </strong>
+                  )}
+                  {!hasTexts && (
+                    <span
+                      style={{ fontSize: 17, fontWeight: 700, ...c.options.footerCss } as CSSProperties}
+                      dangerouslySetInnerHTML={html(c.options.footer, values)}
+                    />
+                  )}
+                </div>
+                {texts('footer', values)}
+                <SaleMembershipPrice
+                  price={p.price}
+                  membershipPrice={p.membershipPrice}
+                  hidden={p.membershipOnly && p.membershipPrice == null}
+                  currency={currency}
+                />
+                {!!p.reviewCount && p.reviewCount > 0 && Number.isFinite(p.rating) && (
+                  <div
+                    aria-label={`평점 ${p.rating}점, 리뷰 ${p.reviewCount.toLocaleString('ko-KR')}개`}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 12, fontSize: 13 }}
+                  >
+                    <span aria-hidden="true" style={{ position: 'relative', color: '#ddd', letterSpacing: 1 }}>
+                      ★★★★★
+                      <span
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          width: `${Math.min(5, Math.max(0, p.rating!)) * 20}%`,
+                          overflow: 'hidden',
+                          whiteSpace: 'nowrap',
+                          color: '#ffa500',
+                        }}
+                      >
+                        ★★★★★
+                      </span>
+                    </span>
+                    <span style={{ color: '#374151' }}>({p.reviewCount.toLocaleString('ko-KR')})</span>
+                  </div>
+                )}
               </div>
-              {texts('footer', values)}
-            </a>
+              {texts('bottom', values)}
+            </Card>
           );
         })}
       </div>
       {c.type === 'carousel' && c.options.arrows && (
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <button type="button" aria-label="이전 상품" onClick={() => moveBy(-1)}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
+          <button
+            type="button"
+            aria-label="이전 상품"
+            onClick={() => moveBy(-1)}
+            style={{ ...carouselArrowStyle, ...c.options.arrowCss } as CSSProperties}
+          >
             〈
           </button>
-          <button type="button" aria-label="다음 상품" onClick={() => moveBy(1)}>
+          <button
+            type="button"
+            aria-label="다음 상품"
+            onClick={() => moveBy(1)}
+            style={{ ...carouselArrowStyle, ...c.options.arrowCss } as CSSProperties}
+          >
             〉
           </button>
         </div>
@@ -1114,15 +1608,25 @@ function Products({
 
                 if (el) goToPage(el, i);
               }}
-              style={dotStyle(i === dot)}
-            />
+              style={
+                {
+                  ...dotStyle(i === dot),
+                  ...(c.options.dotShape === 'square' ? { borderRadius: 0 } : {}),
+                  ...(c.options.dotShape === 'number' ? { width: 24, height: 24, fontSize: 12 } : {}),
+                  ...c.options.dotCss,
+                  ...(i === dot ? c.options.activeDotCss : {}),
+                } as CSSProperties
+              }
+            >
+              {c.options.dotShape === 'number' ? i + 1 : null}
+            </button>
           ))}
         </div>
       )}
       {pager && products.length === 0 && (
         <p style={{ textAlign: 'center', color: '#787878', padding: 16 }}>이 페이지에 보여줄 상품이 없습니다.</p>
       )}
-      {pager && pager.length > 0 && (
+      {pager && pager.length > 0 && c.options.showPages !== false && (
         <nav aria-label="타임세일 페이지" style={pagerStyle}>
           {pager.map((item, i) =>
             item.href ? (
@@ -1130,7 +1634,13 @@ function Products({
                 key={item.label}
                 href={item.href}
                 aria-current={item.current ? 'page' : undefined}
-                style={pagerLinkStyle(Boolean(item.current))}
+                style={
+                  {
+                    ...pagerLinkStyle(Boolean(item.current)),
+                    ...c.options.pageCss,
+                    ...(item.current ? c.options.activePageCss : {}),
+                  } as CSSProperties
+                }
               >
                 {item.label}
               </a>
@@ -1142,21 +1652,33 @@ function Products({
           )}
         </nav>
       )}
-      {c.type === 'grid' && !pager && pages > 1 && (
+      {c.type === 'grid' && !pager && pages > 1 && c.options.showPages !== false && (
         <nav aria-label="타임세일 페이지" style={pagerStyle}>
-          {Array.from({ length: pages }, (_, i) => (
-            <button
-              type="button"
-              key={i}
-              aria-current={i === page ? 'page' : undefined}
-              onClick={() => setPage(i)}
-              style={pagerButtonStyle(page === i)}
-            >
-              {i + 1}
-            </button>
-          ))}
+          {pageWindowItems(page + 1, pages, c.options.pageWindow ?? 5).map((item, index) =>
+            item === 'gap' ? (
+              <span key={`gap-${index}`} aria-hidden="true">
+                …
+              </span>
+            ) : (
+              <button
+                type="button"
+                key={item}
+                aria-current={item === page + 1 ? 'page' : undefined}
+                onClick={() => setPage(item - 1)}
+                style={
+                  {
+                    ...pagerButtonStyle(page + 1 === item),
+                    ...c.options.pageCss,
+                    ...(page + 1 === item ? c.options.activePageCss : {}),
+                  } as CSSProperties
+                }
+              >
+                {item}
+              </button>
+            ),
+          )}
         </nav>
       )}
-    </>
+    </div>
   );
 }
