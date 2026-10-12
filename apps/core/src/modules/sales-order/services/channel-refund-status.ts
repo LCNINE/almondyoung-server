@@ -11,12 +11,12 @@ export type ChannelSettlementFact =
 export type ManualTransfer = 'pending' | 'done' | 'unknown';
 
 /**
- * 수동 정산은 Medusa 에 Refund 행이 생겨 «수집된 환불»로 보이지만, 실제 송금은 운영자가 [완료 처리]를 눌러야 끝난다(스펙 §8.2).
- * 정산 중인 것이 없고 수동으로 끝난 정산이 «하나라도» 있으면 wallet 에 묻는다 — 자동으로 끝난 요청이 더 최근이어도 앞선 수동 송금은 남아 있을 수 있다.
+ * 정산이 끝났으면 wallet 에 송금 대기 행을 묻는다(스펙 §8.2). 수동 정산은 물론이고, 자동 정산도 wallet 이 PG 를 못 불러
+ * «송금 대기»(MANUAL PENDING)로 떨어뜨릴 수 있다 — 무통장 계좌 없음 폴백(#1016 36번 마무리 ②). 정산 중이면 묻지 않는다(정산 칸이 말한다).
  */
-export function needsManualTransferCheck(facts: ChannelSettlementFact[]): boolean {
+export function needsTransferCheck(facts: ChannelSettlementFact[]): boolean {
   if (facts.some((f) => f.status === 'settling')) return false;
-  return facts.some((f) => f.status === 'applied' && f.mode === 'manual');
+  return facts.some((f) => f.status === 'applied');
 }
 
 export function manualTransferOf(refunds: WalletRefundListItem[] | null): ManualTransfer {
@@ -38,6 +38,8 @@ export function channelRefundStatus(
   if (open.some((f) => f.mode === 'manual')) return 'transfer_pending';
   if (open.some((f) => f.phase === 'delayed')) return 'delayed';
   if (open.length > 0) return 'pending';
-  if (needsManualTransferCheck(facts) && manualTransfer !== 'done') return 'transfer_pending';
+  if (manualTransfer === 'pending') return 'transfer_pending';
+  // wallet 을 모를 때 «아직 송금 전»으로 읽는 것은 수동 정산뿐이다 — 자동 정산은 대부분 PG 환불로 끝났으니 지금 도출을 쓴다
+  if (manualTransfer === 'unknown' && facts.some((f) => f.status === 'applied' && f.mode === 'manual')) return 'transfer_pending';
   return null;
 }

@@ -468,10 +468,15 @@ describe('StoreSalesOrdersService', () => {
         expect((await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID)).refundStatus).toBe('succeeded');
       });
 
-      it('자동 정산 주문은 wallet 을 부르지 않는다 — 목록 배치가 wallet 에 기대지 않게', async () => {
-        const { service, walletClientMock } = makeContext({ so: cancelled(), settlementFacts: [{ status: 'applied', mode: 'auto' }] });
-        await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-        expect(walletClientMock.listRefundsByIntent).not.toHaveBeenCalled();
+      it('자동으로 끝난 정산도 wallet 을 부른다 — wallet 이 송금 대기(무통장 계좌 없음 폴백)로 떨어뜨렸을 수 있다', async () => {
+        const { service, walletClientMock } = makeContext({
+          so: cancelled(),
+          settlementFacts: [{ status: 'applied', mode: 'auto' }],
+          walletRefunds: [{ id: 'r1', status: 'PENDING', execution: 'MANUAL', amount: 50000 }],
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(walletClientMock.listRefundsByIntent).toHaveBeenCalledWith(WALLET_INTENT_ID);
+        expect(r.refundStatus).toBe('transfer_pending');
       });
 
       it('운영자 부분취소 정산(판매주문은 살아 있음)에도 같은 값을 둘 다 싣는다(PR 4 넘길 것 3)', async () => {

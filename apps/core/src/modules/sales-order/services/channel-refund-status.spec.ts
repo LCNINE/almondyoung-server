@@ -1,4 +1,4 @@
-import { channelRefundStatus, manualTransferOf, needsManualTransferCheck } from './channel-refund-status';
+import { channelRefundStatus, manualTransferOf, needsTransferCheck } from './channel-refund-status';
 
 const settling = (phase: 'in_progress' | 'delayed' | 'refused', mode: 'auto' | 'manual' = 'auto') =>
   ({ status: 'settling', mode, phase }) as const;
@@ -28,21 +28,28 @@ describe('channelRefundStatus — 정산 → 고객 환불 배지(스펙 §8.2)'
     expect(channelRefundStatus([applied('manual')], 'unknown')).toBe('transfer_pending');
     expect(channelRefundStatus([applied('auto'), applied('manual')], 'pending')).toBe('transfer_pending');
   });
-  it('자동으로 끝남 → 기존 도출(수집된 환불)', () => {
+  it('자동으로 끝남 → wallet 이 송금 대기(무통장 계좌 없음 폴백)를 갖고 있으면 transfer_pending, 아니면 기존 도출', () => {
+    expect(channelRefundStatus([applied('auto')], 'pending')).toBe('transfer_pending');
+    expect(channelRefundStatus([applied('auto')], 'done')).toBeNull();
+  });
+  it('자동으로만 끝남 + wallet 모름 → 기존 도출 — 대부분 카드 환불로 진짜 끝났다, «송금 예정»도 거짓일 수 있다', () => {
+    expect(channelRefundStatus([applied('auto')], 'unknown')).toBeNull();
     expect(channelRefundStatus([applied('auto')], null)).toBeNull();
+  });
+  it('자동·수동 섞임 + wallet 모름 → 수동이 있으니 transfer_pending(지금 그대로)', () => {
+    expect(channelRefundStatus([applied('auto'), applied('manual')], 'unknown')).toBe('transfer_pending');
   });
   it('요청 없음 → 기존 도출', () => {
     expect(channelRefundStatus([], null)).toBeNull();
   });
 });
 
-describe('needsManualTransferCheck — wallet 은 «수동으로 끝난 정산이 하나라도 있고 정산 중이 없는» 주문만 부른다', () => {
-  it('수동으로 끝난 정산이 하나라도 있고 정산 중인 것이 없을 때만', () => {
-    expect(needsManualTransferCheck([applied('manual'), applied('auto')])).toBe(true);
-    expect(needsManualTransferCheck([applied('auto'), applied('manual')])).toBe(true);
-    expect(needsManualTransferCheck([applied('auto')])).toBe(false);
-    expect(needsManualTransferCheck([settling('in_progress'), applied('manual')])).toBe(false);
-    expect(needsManualTransferCheck([])).toBe(false);
+describe('needsTransferCheck — 정산이 끝났고 정산 중인 것이 없으면 wallet 의 송금 대기를 묻는다(자동도 — wallet 이 수동으로 떨어뜨릴 수 있다)', () => {
+  it('끝난 정산이 하나라도 있고 정산 중인 것이 없을 때만', () => {
+    expect(needsTransferCheck([applied('auto')])).toBe(true);
+    expect(needsTransferCheck([applied('manual'), applied('auto')])).toBe(true);
+    expect(needsTransferCheck([settling('in_progress'), applied('manual')])).toBe(false);
+    expect(needsTransferCheck([])).toBe(false);
   });
 });
 
