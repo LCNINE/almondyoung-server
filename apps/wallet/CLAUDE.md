@@ -74,7 +74,7 @@
 `StateTransitionService`가 합법적 상태 전이만 허용하고, 모든 전이를 `payment_state_transitions`에 기록한다.
 - Intent: CREATED → PROCESSING → AUTHORIZED → CAPTURED → SUCCEEDED (터미널: SUCCEEDED, FAILED, CANCELED)
 - Charge: CREATED → PENDING → REQUIRES_ACTION → SUCCEEDED → CANCELED/REFUNDED
-- Refund: PENDING → SUCCEEDED/FAILED
+- Refund: PENDING → SUCCEEDED/FAILED, FAILED → PENDING (같은 행 재전송 — 응답 끊긴 환불만)
 
 ### 환불 실패 분류와 수동 실행 (#1016 36번)
 - **영구/일시 분류의 정본은 wallet 이다.** 호출자(almond-payment·core)는 번역만 한다
@@ -87,6 +87,9 @@
 - **돈이 나갔는지 모르는 환불은 새 행을 만들지 않는다.** 멱등 키가 행 id(`wallet:refund:<id>`)라 새 행 = 새 키 = 토스가 같은 돈을 또 보낸다
 - **응답 끊긴 환불(`FAILED`·`PROVIDER_EXCEPTION`·AUTO, 14일 안)**: `createByIntent` 가 돈이 움직이기 «전에» 의도 전체에서 먼저 확인한다(`settleAmbiguousBeforePlan`)
   - 빠른 길: 그런 행이 정확히 하나이고 계획이 그 결제 한 다리·같은 금액이면 `create()` 가 그 행을 같은 키로 다시 보낸다
+  - `create()` 를 직접 부르는 경로(관리자 환불, 환불요청 승인)도 결제분 단위로 같은 되살리기를 한다. 끊긴 행이 있는데 금액이 다르면 되살려 보낸 뒤 RESOLVED/UNRESOLVED 로 거절한다
+  - 토스 409 `IDEMPOTENT_REQUEST_PROCESSING`(이전 멱등 요청이 처리중)도 «결과 모름»이다 — `dispatch` 가 `PROVIDER_EXCEPTION`·일시로 적고 원래 코드는 `reason_message` 에 남긴다
+  - 요청 경로가 되살리는 수단은 멱등 키를 보내는 TOSS·POINTS·BANK_TRANSFER 뿐이다(나이스는 키가 없어 «같은 키»가 성립하지 않는다 — 행을 무시)
   - 그 외: 해당 행을 전부 다시 보내고 요청은 `AMBIGUOUS_REFUND_RESOLVED` / `AMBIGUOUS_REFUND_UNRESOLVED`(일시)로 거절해 호출자가 장부를 다시 맞추게 한다. 무통장 행에 계좌가 없으면 `AMBIGUOUS_REFUND_NEEDS_ACCOUNT`(영구). 전부 MANUAL 인 계획은 이 확인을 건너뛴다
 - **멈춘 AUTO PENDING(30분, TOSS·POINTS, 14일 안)**: `refund-stuck-resend` 크론(`@CronOnce` 5분)이 같은 행을 다시 보낸다. 선점은 `updated_at < now-30분` 조건부 UPDATE(등호 아님 — `defaultNow()` µs 와 JS ms 가 어긋난다)
 - provider 가 PG 를 안 부른 PENDING 은 `RefundResult.manualTransfer` 를 붙이고 wallet 이 그 행을 `MANUAL` 로 적는다(무통장 계좌 없음 폴백)

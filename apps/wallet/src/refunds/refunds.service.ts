@@ -40,6 +40,10 @@ export const AMBIGUOUS_RESEND_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 export const STUCK_PENDING_AFTER_MS = 30 * 60 * 1000;
 /** 같은 키로 다시 보낼 때 추가 정보가 필요 없는 수단. 무통장은 고객 계좌가 필요한데 저장하지 않는다 */
 const RESENDABLE_METHOD_TYPES = ['TOSS', 'POINTS'] as const;
+/** 요청 경로가 «같은 행·같은 키»로 되살릴 수 있는 수단 — 멱등 키를 보내는 provider 만(나이스는 키가 없어 같은 키가 성립하지 않는다) */
+const RESUMABLE_METHOD_TYPES = [...RESENDABLE_METHOD_TYPES, 'BANK_TRANSFER'] as const;
+/** 토스 409 — 「이전 멱등 요청이 처리중」(토스 문서). 다시 요청해 응답을 확인하라는 뜻이라 결과를 «모르는» 상태로 센다 */
+const TOSS_IDEMPOTENT_PROCESSING_CODE = 'IDEMPOTENT_REQUEST_PROCESSING';
 
 type DispatchContext = {
   charge: Charge;
@@ -306,8 +310,12 @@ export class RefundsService {
         .where(eq(refunds.id, refund.id));
     } else {
       // FAILED
-      const failCode = providerResult.errorCode ?? 'REFUND_FAILED';
-      const failMessage = providerResult.errorMessage ?? null;
+      // 토스가 «이전 요청 처리중»이라 답했다 — 첫 요청의 결과를 아직 모른다. 응답 끊김과 같이 취급해야 새 행(새 키)이 안 생긴다
+      const stillProcessing = providerResult.errorCode === TOSS_IDEMPOTENT_PROCESSING_CODE;
+      const failCode = stillProcessing ? 'PROVIDER_EXCEPTION' : (providerResult.errorCode ?? 'REFUND_FAILED');
+      const failMessage = stillProcessing
+        ? `${TOSS_IDEMPOTENT_PROCESSING_CODE}: ${providerResult.errorMessage ?? ''}`.trim()
+        : (providerResult.errorMessage ?? null);
       // reasonCode는 관리자가 입력한 환불 사유를 보존. PG 오류는 reasonMessage에 기록
       await this.dbService.db
         .update(refunds)
@@ -315,7 +323,7 @@ export class RefundsService {
           reasonMessage: failMessage,
           failureCode: failCode,
           // provider 가 영구/일시를 정한다(토스 코드표 등). 모르면 일시 — 스펙 §6.5
-          failureRetryable: providerResult.retryable ?? true,
+          failureRetryable: stillProcessing ? true : (providerResult.retryable ?? true),
           updatedAt: new Date(),
         })
         .where(eq(refunds.id, refund.id));
@@ -329,10 +337,16 @@ export class RefundsService {
     return this.findByIdOrThrow(refund.id);
   }
 
-  /** «응답 끊긴» 환불의 조건 — FAILED·PROVIDER_EXCEPTION·AUTO, 14일 안(MANUAL 은 PG 를 부르지 않는다). 한 곳에서만 정한다 */
+  /**
+   * «응답 끊긴» 환불의 조건 — FAILED·PROVIDER_EXCEPTION·AUTO, 14일 안(MANUAL 은 PG 를 부르지 않는다), 멱등 키를 보내는 수단.
+   * 한 곳에서만 정한다
+   */
   private ambiguousWhere(scope: SQL) {
+    // 서브쿼리는 sql 로 쓴다 — 빌더를 부르면 DbService 를 목으로 쓰는 유닛 스펙이 깨진다(바인딩은 문자열뿐, Date 없음)
+    const resumableCharges = sql`(SELECT ${chargesTable.id} FROM ${chargesTable} INNER JOIN ${paymentMethodsTable} ON ${paymentMethodsTable.id} = ${chargesTable.paymentMethodId} WHERE ${inArray(paymentMethodsTable.type, [...RESUMABLE_METHOD_TYPES])})`;
     return and(
       scope,
+      sql`${refunds.chargeId} IN ${resumableCharges}`,
       eq(refunds.status, 'FAILED'),
       eq(refunds.failureCode, 'PROVIDER_EXCEPTION'),
       eq(refunds.execution, 'AUTO'),
@@ -412,10 +426,15 @@ export class RefundsService {
     const targets: { row: Refund; charge: Charge; method: PaymentMethod; userId: string }[] = [];
     for (const row of rows) {
       const charge = await this.chargesService.findById(row.chargeId);
-      if (!charge) continue;
-      const method = await this.paymentMethodsService.findById(charge.paymentMethodId);
-      const userId = await this.getIntentUserId(charge.intentId);
-      if (!method || !userId) continue;
+      const method = charge ? await this.paymentMethodsService.findById(charge.paymentMethodId) : null;
+      const userId = charge ? await this.getIntentUserId(charge.intentId) : null;
+      if (!charge || !method || !userId) {
+        // 못 읽은 행은 다시 보내지 못한다 — 조용히 넘기면 이 행이 «없는 것»처럼 계획이 나간다
+        this.logger.error(
+          `[settleAmbiguousBeforePlan] 끊긴 환불을 다시 보낼 수 없다 — refund=${row.id} charge=${charge ? 'ok' : '없음'} method=${method ? 'ok' : '없음'} user=${userId ? 'ok' : '없음'}`,
+        );
+        continue;
+      }
       if (method.type === 'BANK_TRANSFER' && !refundReceiveAccount) {
         throw new BadRequestException(
           refundRefusal(
@@ -619,7 +638,8 @@ export class RefundsService {
     for (const { refund, charge, method } of candidates) {
       const claimed = await this.dbService.db
         .update(refunds)
-        .set({ updatedAt: now })
+        // 집은 «그 시각»을 적는다 — 실행 시작 시각(now)을 쓰면 오래 걸린 실행의 뒤쪽 행이 이미 낡아 보인다
+        .set({ updatedAt: new Date() })
         .where(
           and(
             eq(refunds.id, refund.id),
@@ -636,7 +656,10 @@ export class RefundsService {
         continue;
       }
       const result = await this.dispatch(refund, { charge, method, userId });
-      this.logger.warn(`[resendStuckAutoPending] refund=${refund.id} amount=${refund.amount} → ${result.status}`);
+      // FAILED 면 Medusa 가 옛 규칙으로 이미 «환불됨»으로 적었을 수 있다 — 운영자가 봐야 한다
+      const line = `[resendStuckAutoPending] refund=${refund.id} amount=${refund.amount} → ${result.status}`;
+      if (result.status === 'FAILED') this.logger.error(line);
+      else this.logger.warn(line);
       resent++;
     }
     return { scanned: candidates.length, resent };
