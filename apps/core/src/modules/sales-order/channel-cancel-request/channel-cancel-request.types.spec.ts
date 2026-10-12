@@ -103,9 +103,16 @@ describe('정산 상태(#1016 36번 재설계 §5.1)', () => {
       phase: 'in_progress',
       mode: 'auto',
       confirmedAt: '2026-10-12T01:00:00.000Z',
+      startedAt: '2026-10-12T01:00:00.000Z',
       deadlineAt: '2026-10-15T01:00:00.000Z',
       lastFailure: null,
     });
+  });
+
+  it('이번 시도의 시작 시각(startedAt)은 settlement.since — [다시 시도]·[계좌 송금]이 새로 찍는다. admin-web 이 결과가 올 때까지 다시 읽는 기준', () => {
+    const since = minutes(45).toISOString();
+    const view = toSettlementView(row({ settlement: { state: 'in_progress', mode: 'manual', since } }), minutes(46));
+    expect(view).toMatchObject({ confirmedAt: '2026-10-12T01:00:00.000Z', startedAt: since });
   });
 
   it('마지막 실패를 그대로 싣는다', () => {

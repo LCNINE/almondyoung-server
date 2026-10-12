@@ -12,6 +12,8 @@ export interface SettlementView {
   phase: SettlementPhase;
   mode: 'auto' | 'manual';
   confirmedAt: string;
+  /** 이번 정산 시도의 시작 — [다시 시도]·[계좌 송금]마다 새로 찍힌다. 옛 core 응답엔 없다 */
+  startedAt?: string;
   deadlineAt: string;
   lastFailure: { code: string; message: string; retryable: boolean; at: string } | null;
 }
@@ -106,6 +108,7 @@ export function toSettlementView(value: unknown): SettlementView | null {
     phase: value.phase,
     mode: value.mode,
     confirmedAt: value.confirmedAt,
+    ...(typeof value.startedAt === 'string' ? { startedAt: value.startedAt } : {}),
     deadlineAt: value.deadlineAt,
     lastFailure: failureOf(value.lastFailure),
   };
@@ -119,6 +122,23 @@ export function settlementReason(s: SettlementView): string | null {
   if (f.code.startsWith(WALLET_REFUSED_PREFIX)) return `환불 거절 · ${f.message || f.code}`;
   if (f.code.startsWith(EXTERNAL_REFUND_PREFIX)) return `${REJECTION_LABELS.EXTERNAL_REFUND_UNRESOLVED} · ${f.message || f.code}`;
   return `정산 실패 · 개발 확인 · ${f.message || f.code}`;
+}
+
+/**
+ * 상세 목록에 «결과를 기다리는» 정산이 있으면 true — 행을 잠깐 다시 읽어 거절·완료를 곧바로 보인다(#1016 36번).
+ * 취소·조치 응답은 정산 시작만 알리고, 결과(거절·완료·일시 실패)는 몇 초 뒤 Medusa → channel-adapter → 사실로 따로 온다.
+ * 시작(startedAt, 옛 core 는 확정 시각) 뒤 2분까지만 센다 — 막힌 정산을 계속 읽지 않게, 그건 리컨실러·정체 보드의 몫이다.
+ */
+export function awaitsSettlementResult(details: ReadonlyArray<unknown>, now: number, windowMs = 120_000): boolean {
+  return details.some((d) => {
+    const view = isRecord(d) ? toCancelRequestView(d.cancelRequest) : null;
+    const s = view?.status === 'settling' ? view.settlement : null;
+    if (!s || s.phase === 'refused') return false;
+    const start = Date.parse(s.startedAt ?? s.confirmedAt);
+    if (!Number.isFinite(start) || now - start > windowMs) return false;
+    // 시작 뒤에 온 실패 사실이 곧 «결과»다. 지난 시도의 실패는 아니다
+    return !(s.lastFailure && Date.parse(s.lastFailure.at) >= start);
+  });
 }
 
 /** 서버(core restartSettlement)와 같은 규칙 — 정산 중(30분 안)엔 조치 없음(D8), 이미 계좌 송금이면 다시 시도만 */

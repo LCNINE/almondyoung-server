@@ -7,7 +7,7 @@ import type { SalesOrdersQuery } from '@/lib/types/dto/orders';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { formatCustomerOrderNo } from '../utils/customer-order-no';
 import { isOrderLineMatched } from './demo-order-line';
-import { toCancelRequestView } from '@/lib/api/domains/orders/cancel-request.shape';
+import { awaitsSettlementResult, toCancelRequestView } from '@/lib/api/domains/orders/cancel-request.shape';
 import type { CancelRequestView } from '@/lib/api/domains/orders/cancel-request.shape';
 export { filterRefundIssueRows } from './refund-filter.utils';
 
@@ -123,6 +123,8 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
     staleTime: 30 * 1000,
     // 페이지 이동으로 대상 주문이 바뀌어도 이전 enrichment 를 유지 (테이블 깜빡임 방지)
     placeholderData: keepPreviousData,
+    // 막 시작한 채널 취소 정산의 결과(거절·완료)는 응답 몇 초 뒤 따로 온다 — 그 결과가 올 때까지(최대 2분) 3초마다 다시 읽는다.
+    refetchInterval: (query) => (awaitsSettlementResult(query.state.data ?? [], Date.now()) ? 3000 : false),
     queryFn: async () => {
       if (!orderIds.length) return [];
       const details = await Promise.all(

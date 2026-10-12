@@ -12,6 +12,7 @@ import {
   isCancelRequested,
   toCancelRequestView,
   asksAlreadyRefunded,
+  awaitsSettlementResult,
   parseAlreadyRefunded,
 } from './cancel-request.shape';
 
@@ -160,6 +161,43 @@ describe('정산(#1016 36번 재설계)', () => {
     expect(parseAlreadyRefunded('-1')).toBeNull();
     expect(parseAlreadyRefunded('12.5')).toBeNull();
     expect(parseAlreadyRefunded('abc')).toBeNull();
+  });
+
+  it('응답의 이번 시도 시작(startedAt)을 읽는다 — 옛 core 응답엔 없다', () => {
+    expect(toSettlementView({ ...settlement(), startedAt: '2026-10-12T02:00:00.000Z' })).toMatchObject({ startedAt: '2026-10-12T02:00:00.000Z' });
+    expect(toSettlementView(settlement())?.startedAt).toBeUndefined();
+  });
+
+  describe('정산 결과를 기다리는 동안만 다시 읽는다 — 결과(거절·완료·일시 실패)는 취소 응답 몇 초 뒤 따로 온다', () => {
+    const START = Date.parse('2026-10-12T01:00:00.000Z');
+    const detail = (over: Partial<SettlementView> = {}, status = 'settling') => ({
+      cancelRequest: { id: 'r1', status, scope: 'full', settlement: settlement({ phase: 'in_progress', lastFailure: null, ...over }) },
+    });
+
+    it('막 확정한 정산(결과 없음, 2분 안)이 있으면 true', () => {
+      expect(awaitsSettlementResult([null, detail()], START + 5_000)).toBe(true);
+    });
+
+    it('결과가 오면 false — 거절, 시작 뒤의 실패 사실, 정산 완료(settling 아님)', () => {
+      const failedAfter = { code: 'http_500', message: '', retryable: true, at: '2026-10-12T01:00:04.000Z' };
+      expect(awaitsSettlementResult([detail({ phase: 'refused', lastFailure: { ...failedAfter, retryable: false } })], START + 5_000)).toBe(false);
+      expect(awaitsSettlementResult([detail({ lastFailure: failedAfter })], START + 5_000)).toBe(false);
+      expect(awaitsSettlementResult([detail({}, 'applied')], START + 5_000)).toBe(false);
+    });
+
+    it('2분이 지나면 false — 막힌 정산을 계속 읽지 않는다(그건 리컨실러·보드의 몫)', () => {
+      expect(awaitsSettlementResult([detail()], START + 120_001)).toBe(false);
+    });
+
+    it('[다시 시도]·[계좌 송금] 뒤엔 startedAt 이 기준 — 확정이 오래전이어도, 지난 시도의 실패는 «결과»가 아니다', () => {
+      const restarted = Date.parse('2026-10-12T02:00:00.000Z');
+      const old = { code: 'wallet_refund_refused:X', message: '거절', retryable: false, at: '2026-10-12T01:00:05.000Z' };
+      expect(awaitsSettlementResult([detail({ phase: 'delayed', startedAt: '2026-10-12T02:00:00.000Z', lastFailure: old })], restarted + 3_000)).toBe(true);
+    });
+
+    it('옛 core(startedAt 없음)는 확정 시각을 기준으로 한다', () => {
+      expect(awaitsSettlementResult([detail()], START + 3_000)).toBe(true);
+    });
   });
 
   it('조치 — 정산 중엔 없음, 지연·거절엔 둘, 이미 계좌 송금이면 다시 시도만', () => {

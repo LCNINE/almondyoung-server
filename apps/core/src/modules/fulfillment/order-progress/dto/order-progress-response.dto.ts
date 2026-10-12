@@ -42,6 +42,7 @@ export class OrderProgressSettlementDto {
   @ApiProperty({ enum: ['in_progress', 'delayed', 'refused'] }) phase!: string;
   @ApiProperty({ enum: ['auto', 'manual'] }) mode!: string;
   @ApiProperty({ description: '확정 시각' }) confirmedAt!: string;
+  @ApiProperty({ description: '이번 정산 시도의 시작 — [다시 시도]·[계좌 송금]마다 새로 찍힌다' }) startedAt!: string;
   @ApiProperty({ description: '3영업일 기한(주말 제외)' }) deadlineAt!: string;
   @ApiProperty({ nullable: true, type: OrderProgressSettlementFailureDto })
   lastFailure!: OrderProgressSettlementFailureDto | null;

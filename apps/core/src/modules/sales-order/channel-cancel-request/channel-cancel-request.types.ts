@@ -103,6 +103,8 @@ export interface SettlementView {
   phase: SettlementPhase;
   mode: SettlementMode;
   confirmedAt: string;
+  /** 이번 정산 시도의 시작(settlement.since) — 확정 때와 [다시 시도]·[계좌 송금]마다 새로 찍힌다 */
+  startedAt: string;
   deadlineAt: string;
   lastFailure: SettlementFailure | null;
 }
@@ -157,6 +159,7 @@ export function toSettlementView(
     phase: settlementPhase(settlement, row.createdAt, now),
     mode: settlement.mode,
     confirmedAt: row.createdAt.toISOString(),
+    startedAt: settlement.since,
     deadlineAt: settlementDeadline(row.createdAt).toISOString(),
     lastFailure: settlement.lastFailure ?? null,
   };
