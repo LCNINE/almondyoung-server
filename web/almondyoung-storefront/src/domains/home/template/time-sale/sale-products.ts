@@ -78,11 +78,18 @@ export function buildSaleProducts({
         membershipOnlySale.priceListIds.includes(appliedPriceList ?? ""))
     // 카드 기간은 대표 옵션 가격을 만든 세일 것이다. 옵션마다 다른 세일에 걸릴 수 있어 상품 단위로 고르면
     // 가격과 타이머가 다른 세일을 가리킨다. 출처를 모르면(옛 응답) 상품이 걸린 세일 중 먼저 끝나는 것을 쓴다.
+    // 이 카드 가격이 정말 세일가인가. 적용된 가격표가 세일 것이거나, 비회원이 보는 멤버십 전용 특가(회원 공개)일 때만이다.
+    // 회원에게 상시 멤버십가가 더 싸게 적용됐으면 세일이 아니므로 배지·카운트다운을 끈다(onSale: false).
+    // 가격표 출처 필드가 아예 없으면(undefined) 판단하지 않는다.
+    const appliedSale = sales.find((sale) =>
+      sale.priceListIds.includes(appliedPriceList ?? "")
+    )
+    const applicableSale =
+      appliedSale ?? (isMember ? undefined : membershipOnlySale)
+    const onSale =
+      applicableSale || appliedPriceList === undefined ? undefined : false
     const pricedSale =
-      sales.find((sale) =>
-        sale.priceListIds.includes(appliedPriceList ?? "")
-      ) ??
-      membershipOnlySale ??
+      applicableSale ??
       sales.find((sale) => sale.variantIds?.includes(variantId))
     const period = pricedSale
       ? { startsAt: pricedSale.startsAt, endsAt: pricedSale.endsAt }
@@ -146,6 +153,7 @@ export function buildSaleProducts({
       soldOut: !availableIds.has(product.id),
       startsAt: period?.startsAt ?? null,
       endsAt: period?.endsAt ?? null,
+      onSale,
     }
     if (!membershipSale) return [base]
 

@@ -44,6 +44,8 @@ export type SaleProduct = {
   membershipOnly?: boolean;
   // 멤버십 세일가만 있는 상품(멤버십 전용 특가). 배지·멤버십가 문구가 「멤버십 특가」로 바뀐다.
   membershipSale?: boolean;
+  // false 면 이 가격은 세일가가 아니다(회원에게 상시 멤버십가가 더 싸게 적용됨). 타임세일 배지를 끈다.
+  onSale?: boolean;
   quickActions?: {
     handle: string;
     variantId?: string;
@@ -1490,8 +1492,9 @@ function Products({
       }
     }
 
-    return c.type === 'carousel' && c.options.slots ? items.slice(0, c.options.slots) : items;
-  }, [products, c.options.productOrder, c.options.slots, c.type, shuffleSeed]);
+    // 서버가 이미 한 페이지만 보냈으면(pager) 칸 수로 또 자르지 않는다 — 자르면 그 페이지의 나머지 상품에 닿을 길이 없다.
+    return c.type === 'carousel' && c.options.slots && !pager ? items.slice(0, c.options.slots) : items;
+  }, [products, c.options.productOrder, c.options.slots, c.type, shuffleSeed, pager]);
 
   const stepSize = c.options.slideGroup ?? 1;
   const carouselRows = c.options.carouselRows && orderedProducts.length > c.options.rows ? c.options.rows : 1;
@@ -1600,7 +1603,7 @@ function Products({
           const discount = p.price !== null && p.originalPrice ? Math.round((1 - p.price / p.originalPrice) * 100) : 0;
 
           const timeSaleBadge = c.options.badge === 'timesale';
-          const showBadge = c.options.badge !== 'none' && (timeSaleBadge || discount > 0);
+          const showBadge = c.options.badge !== 'none' && p.onSale !== false && (timeSaleBadge || discount > 0);
           const Card = c.options.disableProductLink ? 'div' : 'a';
           const image = p.images?.[c.options.imageType ?? 'list'] || p.image;
 

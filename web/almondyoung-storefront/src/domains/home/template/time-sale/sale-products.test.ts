@@ -146,6 +146,12 @@ describe("buildSaleProducts", () => {
       ).toBeUndefined()
     })
 
+    it("회원에게 상시 멤버십가가 적용됐으면 타임세일 배지·카운트다운도 끈다", () => {
+      expect(build(11900, true, "pl_membership_prices").onSale).toBe(false)
+      expect(build(9900, true, "pl_m").onSale).toBeUndefined()
+      expect(build(18000, false).onSale).toBeUndefined()
+    })
+
     it("대표 옵션이 멤버십 전용 특가가 아니면 멤버십 특가로 그리지 않는다", () => {
       const mixed = product(18000)
       mixed.variants![0].id = "v_plain"

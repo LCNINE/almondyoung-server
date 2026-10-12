@@ -237,8 +237,12 @@ export default function TimeSaleFormTemplate({
   const showInfo = part !== 'products';
   const showProducts = part !== 'info';
   // 수정은 저장된 세일가까지 다 읽은 뒤에만 저장한다 — 덜 읽은 채 저장하면 가격이 지워진다.
+  // 상품을 넣고 빼면 행 조회 키가 바뀌어 새 행이 올 때까지 비어 있다. 그 사이 저장도 가격을 지우므로 막는다.
+  const rowsLoaded = selectedIds.length === 0 || loadedRows !== undefined;
   const ready =
-    !isEdit || (!!detail && (detail.productIds.length === 0 || pricesApplied));
+    rowsLoaded &&
+    (!isEdit ||
+      (!!detail && (detail.productIds.length === 0 || pricesApplied)));
   const saleStatus = detail
     ? resolveTimeSaleStatus(detail.period, new Date(), detail.status)
     : null;
@@ -278,6 +282,7 @@ export default function TimeSaleFormTemplate({
   const [warnOpen, setWarnOpen] = useState<string[]>([]);
 
   const submit = async (confirmed = false) => {
+    if (!ready) return;
     if (!title.trim() || !startsAt || !endsAt) {
       saleToast('세일 이름과 기간을 입력하세요.', true);
       return;

@@ -875,10 +875,17 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
       validateTimeSaleSettings(toSave);
 
       setSaving(true);
+      const submitted = JSON.stringify(settings);
       const result = await medusaTimeSaleSettingsApi.save(toSave, revision);
 
       setRevision(result.revision);
-      loadSettings(result.settings);
+      setSaved(JSON.stringify(result.settings));
+      // 응답을 기다리는 사이 운영자가 더 고쳤으면 그 편집본을 둔다(변경 표시가 남아 다시 저장하게 된다).
+      setSettings((current) =>
+        JSON.stringify(current) === submitted
+          ? structuredClone(result.settings)
+          : current
+      );
       // 오래된 캐시가 방금 저장한 편집본을 덮지 않게 캐시도 같이 맞춘다.
       queryClient.setQueryData(['time-sale-settings'], {
         settings: result.settings,
