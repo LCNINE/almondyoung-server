@@ -42,8 +42,6 @@ describe('order-progress shape', () => {
   });
 
   it('취소 요청 단계의 세부 상태 이름', () => {
-    expect(stateLabel('cancel_requested')).toBe('취소 요청 미반영');
-    expect(stateLabel('cancel_edited')).toBe('수정됨 · 환불 미완');
     expect(stateLabel('settle_in_progress')).toBe('환불 처리 중');
     expect(stateLabel('settle_delayed')).toBe('환불 지연');
     expect(stateLabel('settle_refused')).toBe('환불 거절');
@@ -183,7 +181,7 @@ describe('자동 멈춤 표시 (#1016 12번)', () => {
           state: 'settle_refused', stageEnteredAt: 'x', stuck: true, walletIntentId: 'int-1',
           settlement: { requestId: 'r1', phase: 'refused', mode: 'auto', confirmedAt: 'a', deadlineAt: 'b', lastFailure: null },
         },
-        { salesOrderId: 'so2', orderNo: 'B', channelOrderId: 'c2', salesChannel: 'medusa', customerName: null, orderedAt: 'x', state: 'cancel_requested', stageEnteredAt: 'x', stuck: false },
+        { salesOrderId: 'so2', orderNo: 'B', channelOrderId: 'c2', salesChannel: 'medusa', customerName: null, orderedAt: 'x', state: 'settle_delayed', stageEnteredAt: 'x', stuck: false },
       ],
       nextCursor: null,
     });

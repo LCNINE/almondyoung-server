@@ -163,8 +163,6 @@ export function cellCount(
 }
 
 const STATE_LABELS: Record<string, string> = {
-  cancel_requested: '취소 요청 미반영',
-  cancel_edited: '수정됨 · 환불 미완',
   settle_in_progress: '환불 처리 중',
   settle_delayed: '환불 지연',
   settle_refused: '환불 거절',

@@ -640,7 +640,7 @@ function BusinessTimelineModal({
               <div className="mt-4 border-t px-1 pt-3">
                 <p className="mb-2 text-sm font-medium">취소 요청</p>
                 {requests.map((view) => (
-                  <div key={view.id} className={view.status === 'requested' ? 'mb-1 text-sm text-amber-700' : 'mb-1 text-sm text-muted-foreground'}>
+                  <div key={view.id} className="mb-1 text-sm text-muted-foreground">
                     {cancelRequestLine(view)}
                   </div>
                 ))}
@@ -916,13 +916,6 @@ export default function OrderTable() {
                   const action = cancelActionOf(r);
                   if (action.kind === 'seller_center') {
                     return <span className="text-[11px] text-gray-500 whitespace-normal leading-tight">{action.label}</span>;
-                  }
-                  if (action.kind === 'requested') {
-                    return (
-                      <span className="inline-flex items-center h-7 px-2 rounded border border-amber-200 bg-amber-50 text-xs text-amber-700 whitespace-nowrap">
-                        {action.label}
-                      </span>
-                    );
                   }
                   if (action.kind === 'settling') {
                     return (
