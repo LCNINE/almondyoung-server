@@ -35,6 +35,12 @@ describe('validateTimeSaleInput', () => {
     expect(errors).toHaveLength(3);
   });
 
+  it('allows a draft sale without prices — products are added after creation', () => {
+    expect(
+      validateTimeSaleInput({ ...base, status: 'draft', general_prices: [], membership_prices: [] }),
+    ).toEqual([]);
+  });
+
   it('rejects non-positive and non-finite amounts', () => {
     const errors = validateTimeSaleInput({
       ...base,

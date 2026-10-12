@@ -7,7 +7,7 @@ export const AdminTimeSaleWrite = z.object({
   starts_at: z.string().datetime(),
   ends_at: z.string().datetime(),
   status: z.enum(['draft', 'active']),
-  general_prices: z.array(price).min(1),
+  general_prices: z.array(price),
   membership_prices: z.array(price),
 });
 

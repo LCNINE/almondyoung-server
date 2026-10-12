@@ -906,8 +906,14 @@
 }
 .ts-form-field legend {
   padding: 0 3px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
+  color: #212121;
+}
+.ts-form-field input:not([type='checkbox']):not([type='range']):focus,
+.ts-form-field input:not([type='checkbox']):not([type='range']):focus-visible {
+  outline: none;
+  border-bottom: 2px solid #1976d2;
 }
 .ts-form-field input:not([type='checkbox']):not([type='range']),
 .ts-form-field select {

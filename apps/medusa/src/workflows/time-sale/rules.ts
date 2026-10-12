@@ -41,7 +41,10 @@ export function validateTimeSaleInput(input: TimeSaleWriteInput): string[] {
   if (!(Date.parse(input.ends_at) > Date.parse(input.starts_at))) {
     errors.push('종료 시각은 시작 시각보다 뒤여야 합니다.');
   }
-  if (input.general_prices.length === 0) errors.push('세일가를 넣은 품목이 하나도 없습니다.');
+  // 신규 세일은 명칭·기간만으로 비공개 생성하고 상품은 나중에 붙인다. 공개는 품목이 있어야 한다.
+  if (input.status === 'active' && input.general_prices.length === 0) {
+    errors.push('세일가를 넣은 품목이 하나도 없습니다.');
+  }
 
   for (const [label, prices] of [
     ['일반', input.general_prices],

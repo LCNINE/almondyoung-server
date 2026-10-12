@@ -1,8 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Pause, Play, Plus, RefreshCw, Trash2 } from 'lucide-react';
@@ -31,8 +29,7 @@ import {
   resolveTimeSaleStatus,
   shortSaleNumber,
 } from '../time-sale-model';
-
-const LIST_PATH = '/mall/marketing/time-sale';
+import TimeSaleFormTemplate from './time-sale-form-template';
 
 const formatDate = (iso: string) => {
   if (!iso || !Number.isFinite(Date.parse(iso))) return '-';
@@ -46,7 +43,9 @@ const formatDate = (iso: string) => {
 
 // 타임세일 목록 화면: 공개/비공개 전환·수정·삭제. 저장은 세일 하나당 Medusa 라우트 한 번이다.
 export default function MarketingTimeSaleTemplate() {
-  const router = useRouter();
+  // null: 닫힘, 'new': 신규, 그 외: 수정할 세일 id
+  const [formTarget, setFormTarget] = useState<string | null>(null);
+  const [productsTarget, setProductsTarget] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: sales, isLoading, isError } = useTimeSaleList();
@@ -150,7 +149,9 @@ export default function MarketingTimeSaleTemplate() {
           </ul>
         </div>
         <div className="ts-list-toolbar">
-          <span className="ts-count">{sales?.length ?? 0}</span>
+          <span className="ts-count">
+            {selected.length} / {sales?.length ?? 0}
+          </span>
           <div className="ts-toolbar-spacer" />
           <button
             className="ts-icon-button"
@@ -160,9 +161,9 @@ export default function MarketingTimeSaleTemplate() {
           >
             <RefreshCw size={21} />
           </button>
-          <Link className="ts-button" href={`${LIST_PATH}/new`}>
+          <button className="ts-button" onClick={() => setFormTarget('new')}>
             <Plus size={16} />새 타임세일
-          </Link>
+          </button>
           <button
             className="ts-button ts-button-neutral"
             disabled={!selectedSales.length || bulkPending}
@@ -204,12 +205,16 @@ export default function MarketingTimeSaleTemplate() {
                     }
                   />
                 </th>
-                <th>상태</th>
+                <th>
+                  상태
+                  <br />
+                  <small>(브라우저 표시)</small>
+                </th>
                 <th>명칭</th>
                 <th>타임세일번호</th>
                 <th>기간</th>
-                <th>상품</th>
                 <th>수정</th>
+                <th>상품진열</th>
               </tr>
             </thead>
             <tbody>
@@ -219,7 +224,6 @@ export default function MarketingTimeSaleTemplate() {
                   now,
                   sale.status
                 );
-                const editPath = `${LIST_PATH}/${sale.id}/edit`;
 
                 return (
                   <tr
@@ -237,9 +241,23 @@ export default function MarketingTimeSaleTemplate() {
                       />
                     </td>
                     <td>
-                      <span className={`ts-status ts-status-${status}`}>
-                        {TIME_SALE_STATUS_LABEL[status]}
-                      </span>
+                      {status === 'draft' ? (
+                        <>
+                          <span className="ts-status">비공개</span>
+                          <br />
+                          <span className="ts-readonly">(없음)</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="ts-status ts-status-active">
+                            공개
+                          </span>
+                          <br />
+                          <span className="ts-status-detail">
+                            ({TIME_SALE_STATUS_LABEL[status]})
+                          </span>
+                        </>
+                      )}
                     </td>
                     <td className="ts-name">{sale.title}</td>
                     <td title={sale.id}>{shortSaleNumber(sale.id)}</td>
@@ -249,16 +267,21 @@ export default function MarketingTimeSaleTemplate() {
                       {formatDate(sale.period.endsAt)}
                     </td>
                     <td>
-                      {sale.productIds.length}개
-                      {sale.hasMembership ? ' · 멤버십가' : ''}
+                      <button
+                        className="ts-button"
+                        aria-label={`${sale.title} 수정`}
+                        onClick={() => setFormTarget(sale.id)}
+                      >
+                        수정
+                      </button>
                     </td>
                     <td>
                       <button
                         className="ts-button"
-                        aria-label={`${sale.title} 수정`}
-                        onClick={() => router.push(editPath)}
+                        aria-label={`${sale.title} 상품진열`}
+                        onClick={() => setProductsTarget(sale.id)}
                       >
-                        수정
+                        {sale.productIds.length}
                       </button>
                     </td>
                   </tr>
@@ -278,6 +301,22 @@ export default function MarketingTimeSaleTemplate() {
           <p className="ts-empty">등록된 타임세일이 없습니다.</p>
         )}
 
+        {formTarget && (
+          <TimeSaleFormTemplate
+            key={formTarget}
+            timeSaleId={formTarget === 'new' ? undefined : formTarget}
+            onClose={() => setFormTarget(null)}
+            part="info"
+          />
+        )}
+        {productsTarget && (
+          <TimeSaleFormTemplate
+            key={productsTarget}
+            timeSaleId={productsTarget}
+            onClose={() => setProductsTarget(null)}
+            part="products"
+          />
+        )}
         <AlertDialog
           open={!!statusTarget}
           onOpenChange={(open) => !open && setStatusTarget(null)}
