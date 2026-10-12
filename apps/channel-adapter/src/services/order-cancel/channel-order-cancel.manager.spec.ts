@@ -151,17 +151,25 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
     });
 
     it.each(['http_500', 'http_404', 'network'])(
-      '일시 실패 %s 는 사실을 «먼저» 내고 던진다 — Kafka 재시도를 탄다(PR 6 까지). 옛 사실은 없다',
+      '일시 실패 %s 는 사실을 내고 ack 한다 — 다시 부르는 건 core 리컨실러(PR 6). 옛 사실은 없다',
       async (failureCode) => {
         const { manager, repository, medusa, poller } = setup();
         medusa.cancelOrder.mockResolvedValue({ kind: 'transient', failureCode, message: 'down' });
-        await expect(manager.execute(full, 'd1')).rejects.toThrow(/req-1/);
+        await expect(manager.execute(full, 'd1')).resolves.toBeUndefined();
         const { fact, legacy } = recorded(repository);
         expect(fact).toMatchObject({ retryable: true, failureCode, message: 'down', scope: 'full' });
         expect(legacy).toBeUndefined();
         expect(poller.syncOrder).not.toHaveBeenCalled();
       },
     );
+
+    it('일시 실패는 사실을 낸 뒤 ack 한다 — 다시 부르는 건 core 리컨실러 하나(스펙 S7, PR 6)', async () => {
+      const { manager, repository, medusa, poller } = setup();
+      medusa.cancelOrder.mockResolvedValue({ kind: 'transient', failureCode: 'http_502', message: 'bad gateway' });
+      await expect(manager.execute(full, 'd1')).resolves.toBeUndefined();
+      expect(recorded(repository).fact).toMatchObject({ retryable: true, failureCode: 'http_502' });
+      expect(poller.syncOrder).not.toHaveBeenCalled();
+    });
 
     it('취소는 됐는데 재수집이 실패하면 던진다 — 재시도의 취소는 «이미 취소됨»이라 멱등이다', async () => {
       const { manager, repository, medusa, poller } = setup();
@@ -239,10 +247,10 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
       expect(recorded(repository).legacy).toBeUndefined();
     });
 
-    it('환불 미완(502)은 일시 정산 실패 refund_pending + 옛 Stalled 를 «먼저» 내고 던진다', async () => {
+    it('환불 미완(502)은 일시 정산 실패 refund_pending + 옛 Stalled 를 «먼저» 내고 ack 한다', async () => {
       const { manager, repository, medusa, poller } = setup();
       medusa.partialCancelOrder.mockResolvedValue({ kind: 'refund_pending', message: 'PG down' });
-      await expect(manager.execute(partial, 'd1')).rejects.toThrow(/req-1/);
+      await expect(manager.execute(partial, 'd1')).resolves.toBeUndefined();
       const { fact, legacy } = recorded(repository);
       expect(fact).toMatchObject({ retryable: true, failureCode: 'refund_pending', message: 'PG down' });
       expect(legacy).toEqual({ eventType: 'ChannelOrderCancelStalled', payload: { ...key, stage: 'edited', message: 'PG down' } });
@@ -262,10 +270,10 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
       expect(legacy).toBeUndefined();
     });
 
-    it.each(['http_502', 'http_404', 'network'])('일시 실패 %s 는 사실을 낸 뒤 던진다, 옛 사실 없음', async (failureCode) => {
+    it.each(['http_502', 'http_404', 'network'])('일시 실패 %s 는 사실을 낸 뒤 ack 한다, 옛 사실 없음', async (failureCode) => {
       const { manager, repository, medusa } = setup();
       medusa.partialCancelOrder.mockResolvedValue({ kind: 'transient', failureCode, message: 'down' });
-      await expect(manager.execute(partial, 'd1')).rejects.toThrow(/req-1/);
+      await expect(manager.execute(partial, 'd1')).resolves.toBeUndefined();
       const { fact, legacy } = recorded(repository);
       expect(fact).toMatchObject({ scope: 'partial', retryable: true, failureCode });
       expect(legacy).toBeUndefined();

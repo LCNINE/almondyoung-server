@@ -12,9 +12,8 @@ type SettlementFailure = { retryable: boolean; failureCode: string; message: str
 /**
  * core 의 `CancelChannelOrder` 를 채널에 실행한다 (#1016 35번 행, ADR-0042 · 36번 재설계 스펙 §7.2).
  *
- * 정산이 끝나지 못한 모든 결과는 `ChannelOrderSettlementFailed` 로 낸다 — 영구(`retryable: false`)는 낸 뒤 정상 종료(ack),
- * 일시(`retryable: true`)는 낸 뒤 던져 Kafka 재시도(3회·1/2/4초)·DLQ 를 탄다. 일시 실패의 ack 는 core 리컨실러가 실행 모드가 되는
- * 정리 PR 에서 켠다(PR 3 판정 2) — 그 전에 ack 하면 짧은 순단마저 아무도 다시 부르지 않는다.
+ * 정산이 끝나지 못한 모든 결과는 `ChannelOrderSettlementFailed` 로 낸 뒤 명령을 ack 한다 — Kafka 재시도·DLQ 에 기대지 않는다(스펙 S7).
+ * 다시 부르는 곳은 core 리컨실러 «정산 재시도»(#36) 하나다. 사실을 못 낸 경우(아웃박스 쓰기 실패)만 던져 재배달을 탄다.
  * 옛 core 는 새 사실을 버리므로 오늘 내던 옛 사실(`Rejected`·`Stalled`)을 같은 트랜잭션에 함께 낸다(판정 1). 정리 PR 에서 지운다.
  * 채널 호출이 멱등이라 다시 해도 안전하다: 전체는 «이미 취소됨»과 장부 맞추기, 부분은 Medusa 가 같은 requestId 의 진행 단계부터 이어 간다.
  * 성공은 사실로 내지 않는다(D11) — 즉시 재수집한 `OrderCancelled`/`OrderModified` 가 곧 사실이다.
@@ -161,10 +160,6 @@ export class ChannelOrderCancelManager {
       deliveryId,
       failure.legacy,
     );
-    if (failure.retryable) {
-      // 정리 PR(리컨실러 실행 모드)까지 던져 Kafka 재시도를 탄다 — 사실은 이미 적재됐다(판정 2)
-      throw new Error(`채널 정산 일시 실패(${requestId}) ${failure.failureCode}: ${failure.message}`);
-    }
   }
 }
 
