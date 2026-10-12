@@ -38,6 +38,8 @@ interface ReconcileRuleBody {
   /** #1016 행 번호 */
   readonly row: number;
   readonly mode: ReconcileMode;
+  /** check 가 false(할 일 없음)였을 때 다시 볼 간격(분). 없으면 틀 기본 10분. 칸을 벗어난 게이트 기록에는 쓰지 않는다 */
+  readonly idleRecheckMin?: number;
   /** 상황 지문 — 바뀌면 횟수·포기가 리셋된다 */
   fingerprint(id: string, tx: DbTx): Promise<string>;
   /** 원천 재확인. false = 지금은 할 일 없음(실패 아님) */

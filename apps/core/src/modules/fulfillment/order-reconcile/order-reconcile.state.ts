@@ -101,6 +101,8 @@ export function nextRecord(
     step: ReconcileStep;
     outcome?: 'acted' | 'error';
     error?: string | null;
+    /** 할 일이 없었을 때(not_needed·would_act) 다시 볼 간격. 규칙이 정한다 — 없으면 IDLE_RECHECK_MIN */
+    idleRecheckMin?: number;
   },
   now: Date,
 ): ReconcileRecord {
@@ -112,7 +114,7 @@ export function nextRecord(
       gaveUpAt: eff.gaveUpAt,
       lastResult: input.step,
       lastError: null,
-      nextCheckAt: plusMinutes(now, IDLE_RECHECK_MIN),
+      nextCheckAt: plusMinutes(now, input.idleRecheckMin ?? IDLE_RECHECK_MIN),
     };
   }
   if (input.step === 'give_up') {

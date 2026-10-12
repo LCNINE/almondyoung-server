@@ -17,6 +17,8 @@ export class RetryChannelSettlementRule implements OrderReconcileRule {
   readonly row = 36;
   readonly subject = 'order' as const;
   readonly mode: ReconcileMode = 'act';
+  // 막 (다시) 시작한 정산은 SETTLEMENT_REISSUE_GRACE_MS(60초) 안이라 첫 평가가 늘 «할 일 없음»이다 — 10분이 아니라 1분 뒤에 다시 본다
+  readonly idleRecheckMin = 1;
   readonly situation: OrderReconcileSituation = {
     stage: 'cancel_request',
     states: ['settle_in_progress', 'settle_delayed'],

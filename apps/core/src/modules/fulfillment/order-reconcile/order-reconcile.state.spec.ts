@@ -159,6 +159,21 @@ describe('nextRecord', () => {
     });
   });
 
+  it('할 일 없음(not_needed)의 재확인 간격은 규칙이 정할 수 있다 — 기본 10분', () => {
+    expect(nextRecord(fresh, { ...base, step: 'not_needed' }, NOW).nextCheckAt).toEqual(plusMin(10));
+    expect(nextRecord(fresh, { ...base, step: 'not_needed', idleRecheckMin: 1 }, NOW).nextCheckAt).toEqual(plusMin(1));
+  });
+
+  it('idleRecheckMin 은 실행 뒤 백오프를 바꾸지 않는다', () => {
+    expect(nextRecord(fresh, { ...base, step: 'act', outcome: 'acted', idleRecheckMin: 1 }, NOW).nextCheckAt).toEqual(
+      plusMin(1),
+    );
+    expect(
+      nextRecord({ ...fresh, attempts: 1 }, { ...base, step: 'act', outcome: 'acted', idleRecheckMin: 1 }, NOW)
+        .nextCheckAt,
+    ).toEqual(plusMin(4));
+  });
+
   it('첫 시도부터 포기까지 341분(5시간 41분)', () => {
     let eff: EffectivePrior = fresh;
     let at = NOW;
