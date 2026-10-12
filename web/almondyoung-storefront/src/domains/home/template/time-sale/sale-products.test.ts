@@ -81,6 +81,62 @@ describe("buildSaleProducts", () => {
     }
   )
 
+  describe("멤버십 전용 특가", () => {
+    const sale = {
+      id: "ts_1",
+      startsAt: "2030-01-01T00:00:00.000Z",
+      endsAt: "2030-01-10T00:00:00.000Z",
+      priceListIds: ["pl_m"],
+      productIds: ["prod_m"],
+      membershipOnlyVariantIds: ["v_m"],
+      membershipOnlyProductIds: ["prod_m"],
+    } satisfies TimeSale
+    const product = (calculated: number) =>
+      ({
+        id: "prod_m",
+        title: "롤리킹",
+        handle: "prod-m",
+        metadata: {},
+        variants: [
+          {
+            id: "v_m",
+            calculated_price: {
+              calculated_amount: calculated,
+              original_amount: 18000,
+            },
+            metadata: { membershipPrice: 16000 },
+          },
+        ],
+      }) as unknown as HttpTypes.StoreProduct
+    const build = (calculated: number, isMember: boolean) =>
+      buildSaleProducts({
+        sales: [sale],
+        ids: ["prod_m"],
+        products: [product(calculated)],
+        countryCode: "kr",
+        isMember,
+      })[0]
+
+    it("비회원에게는 일반가 그대로, 특가는 회원 공개로 숨긴다", () => {
+      expect(build(18000, false)).toMatchObject({
+        membershipSale: true,
+        membershipOnly: true,
+        price: 18000,
+        originalPrice: 18000,
+        membershipPrice: null,
+      })
+    })
+
+    it("회원에게는 일반가 아래 특가를 보인다", () => {
+      expect(build(14000, true)).toMatchObject({
+        membershipSale: true,
+        price: 18000,
+        originalPrice: 18000,
+        membershipPrice: 14000,
+      })
+    })
+  })
+
   it("썸네일 파일 id 를 파일 서비스 주소로 바꾼다", () => {
     const product = {
       id: "prod_1",

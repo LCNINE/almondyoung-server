@@ -104,9 +104,16 @@ describe('validateRows', () => {
     expect(validateRows([row()])).toEqual([]);
   });
 
-  it('일반 세일가 없이 멤버십 세일가만 남으면 막는다', () => {
-    const errors = validateRows([row({ membershipSalePrice: 6000 })]);
-    expect(errors[0].message).toContain('멤버십 세일가도 비우세요');
+  // 일반가를 못 건드리는 국내 브랜드 상품은 멤버십 회원에게만 기간 할인한다(멤버십 전용 특가).
+  it('일반 세일가 없이 멤버십 세일가만 넣으면 멤버십 전용 특가로 저장된다', () => {
+    expect(validateRows([row({ membershipSalePrice: 6000 })])).toEqual([]);
+  });
+
+  it('멤버십 전용 특가에도 멤버십 세일가 검사가 돈다', () => {
+    expect(validateRows([row({ membershipSalePrice: -1 })])[0].message).toContain('멤버십 세일가는 0원보다');
+    const warn = validateRows([row({ membershipSalePrice: 9000 })]);
+    expect(warn[0].warning).toBe(true);
+    expect(warn[0].message).toContain('멤버십가');
   });
 
   // 할인율 100 이상이면 음수가, NaN 이면 `amount: null` 이 Medusa 까지 간다. 멤버십 쪽은
@@ -134,6 +141,12 @@ describe('saleVariantIds', () => {
         row({ variantId: 'variant_2' }),
       ])
     ).toEqual(['variant_1']);
+  });
+
+  it('멤버십 전용 특가 품목도 세일에 들어간다', () => {
+    expect(saleVariantIds([row({ variantId: 'variant_m', membershipSalePrice: 6000 })])).toEqual([
+      'variant_m',
+    ]);
   });
 });
 
@@ -245,6 +258,16 @@ describe('summarizeSaleRows', () => {
     expect(summary.total).toBe(2);
     expect(summary.filled).toBe(1);
     expect(summary.minPercent).toBe(10);
+  });
+
+  it('멤버십 전용 특가 품목도 세일 품목 수에 센다(할인율 요약은 일반 세일가 기준)', () => {
+    const summary = summarizeSaleRows([
+      row({ variantId: 'v1', membershipSalePrice: 6000 }),
+      row({ variantId: 'v2', basePrice: 10000, generalSalePrice: 9000 }),
+    ]);
+    expect(summary.filled).toBe(2);
+    expect(summary.minPercent).toBe(10);
+    expect(summary.maxPercent).toBe(10);
   });
 
   it('입력이 하나도 없으면 전부 null 이다', () => {

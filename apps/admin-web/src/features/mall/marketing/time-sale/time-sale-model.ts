@@ -68,15 +68,20 @@ export function applySavedSalePrices(
   }));
 }
 
+/** 일반 세일가 없이 멤버십 세일가만 넣은 행(멤버십 전용 특가). */
+export const isMembershipOnlyRow = (row: TimeSaleRow) =>
+  row.generalSalePrice === null && row.membershipBasePrice !== null && row.membershipSalePrice !== null;
+
 export function summarizeSaleRows(rows: TimeSaleRow[]): SaleRowsSummary {
   const filled = rows.filter(
     (row) => row.generalSalePrice !== null && row.basePrice > 0
   );
+  const membershipOnly = rows.filter(isMembershipOnlyRow).length;
 
   if (filled.length === 0) {
     return {
       total: rows.length,
-      filled: 0,
+      filled: membershipOnly,
       minPercent: null,
       maxPercent: null,
       minPrice: null,
@@ -91,7 +96,7 @@ export function summarizeSaleRows(rows: TimeSaleRow[]): SaleRowsSummary {
 
   return {
     total: rows.length,
-    filled: filled.length,
+    filled: filled.length + membershipOnly,
     minPercent: Math.min(...percents),
     maxPercent: Math.max(...percents),
     minPrice: Math.min(...prices),
@@ -163,27 +168,21 @@ export function validateRows(rows: TimeSaleRow[]): RowError[] {
   const errors: RowError[] = [];
 
   for (const row of rows) {
-    if (row.generalSalePrice === null) {
-      if (row.membershipSalePrice !== null) {
+    // 일반 세일가를 비우고 멤버십 세일가만 넣으면 멤버십 전용 특가다 — 일반 검사는 건너뛰고 멤버십만 본다.
+    if (row.generalSalePrice !== null) {
+      // NaN·Infinity 를 먼저 쳐낸다. 뒤따르는 비교는 NaN 에서 전부 false 라, 걸러내지 않으면
+      // 검증을 통과해 `amount: null` 로 직렬화된 가격이 Medusa 까지 간다.
+      if (!Number.isFinite(row.generalSalePrice) || row.generalSalePrice <= 0) {
+        errors.push({ variantId: row.variantId, message: '세일가는 0원보다 큰 숫자여야 합니다.' });
+        continue;
+      }
+      if (row.generalSalePrice >= row.basePrice) {
         errors.push({
           variantId: row.variantId,
-          message: '일반 세일가를 비우면 이 품목은 세일에서 빠집니다. 멤버십 세일가도 비우세요.',
+          message: `세일가가 정가(${row.basePrice.toLocaleString()}원) 이상입니다.`,
+          warning: true,
         });
       }
-      continue;
-    }
-    // NaN·Infinity 를 먼저 쳐낸다. 뒤따르는 비교는 NaN 에서 전부 false 라, 걸러내지 않으면
-    // 검증을 통과해 `amount: null` 로 직렬화된 가격이 Medusa 까지 간다.
-    if (!Number.isFinite(row.generalSalePrice) || row.generalSalePrice <= 0) {
-      errors.push({ variantId: row.variantId, message: '세일가는 0원보다 큰 숫자여야 합니다.' });
-      continue;
-    }
-    if (row.generalSalePrice >= row.basePrice) {
-      errors.push({
-        variantId: row.variantId,
-        message: `세일가가 정가(${row.basePrice.toLocaleString()}원) 이상입니다.`,
-        warning: true,
-      });
     }
     if (row.membershipBasePrice !== null && row.membershipSalePrice !== null) {
       if (!Number.isFinite(row.membershipSalePrice) || row.membershipSalePrice <= 0) {
@@ -212,7 +211,9 @@ export function validateRows(rows: TimeSaleRow[]): RowError[] {
  * 넣지도 않은 품목 때문에 저장이 막힌다.
  */
 export function saleVariantIds(rows: TimeSaleRow[]): string[] {
-  return rows.filter((row) => row.generalSalePrice !== null).map((row) => row.variantId);
+  return rows
+    .filter((row) => row.generalSalePrice !== null || isMembershipOnlyRow(row))
+    .map((row) => row.variantId);
 }
 
 export type TimeSaleWriteBody = {
@@ -226,7 +227,8 @@ export type TimeSaleWriteBody = {
 };
 
 /**
- * 편집 행 → 저장 요청 본문. 일반 세일가를 비운 품목은 세일에서 빠지고, 멤버십가가 없는 상품은 멤버십
+ * 편집 행 → 저장 요청 본문. 일반 세일가를 비운 품목은 일반 세일에서 빠지고(멤버십 세일가만 있으면 멤버십
+ * 전용 특가), 멤버십가가 없는 상품은 멤버십
  * 세일가도 만들지 않는다 (`validateRows` 와 같은 기준).
  */
 export function buildTimeSaleWriteBody(params: {

@@ -32,7 +32,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { applyPercentDiscount, type TimeSaleRow } from '../time-sale-model';
+import {
+  applyPercentDiscount,
+  isMembershipOnlyRow,
+  type TimeSaleRow,
+} from '../time-sale-model';
 import { saleToast } from './time-sale-workspace';
 
 const STOREFRONT_URL = (process.env.NEXT_PUBLIC_STOREFRONT_URL ?? '').replace(
@@ -420,7 +424,10 @@ const ProductRow = memo(
             {single && first ? (
               <PriceInput
                 value={first.generalSalePrice}
-                hint={prevText(prevG(first.variantId)) || undefined}
+                hint={
+                  prevText(prevG(first.variantId)) ||
+                  (isMembershipOnlyRow(first) ? '멤버십 전용 특가' : undefined)
+                }
                 alert={prevG(first.variantId) !== undefined}
                 onChange={(value) =>
                   onVariant(first.variantId, { generalSalePrice: value })
@@ -434,7 +441,11 @@ const ProductRow = memo(
                 hint={
                   hasPrevious
                     ? '이전 값 있음'
-                    : `옵션 ${salePrices.length}/${variants.length}개 세일`
+                    : `옵션 ${salePrices.length}/${variants.length}개 세일${
+                        variants.some(isMembershipOnlyRow)
+                          ? ` · 멤버십 전용 ${variants.filter(isMembershipOnlyRow).length}개`
+                          : ''
+                      }`
                 }
                 alert={hasPrevious}
                 onChange={(value) =>
@@ -489,7 +500,12 @@ const ProductRow = memo(
                 <td>
                   <PriceInput
                     value={row.generalSalePrice}
-                    hint={prevText(prevG(row.variantId)) || undefined}
+                    hint={
+                      prevText(prevG(row.variantId)) ||
+                      (isMembershipOnlyRow(row)
+                        ? '멤버십 전용 특가'
+                        : undefined)
+                    }
                     alert={prevG(row.variantId) !== undefined}
                     onChange={(value) =>
                       onVariant(row.variantId, { generalSalePrice: value })
@@ -723,6 +739,11 @@ export function TimeSaleDisplayTable({
           <li>
             멤버십가가 있는 상품은 멤버십 기간판매가를 따로 넣을 수 있으며,
             구독자에게는 둘 중 싼 값이 적용됩니다.
+          </li>
+          <li>
+            기간판매가는 비우고 멤버십 기간판매가만 넣으면 멤버십 전용
+            특가입니다. 일반 고객에게는 판매가 그대로, 멤버십가는 회원 공개로
+            보입니다.
           </li>
         </ul>
       </details>

@@ -143,7 +143,10 @@ export const prepareTimeSaleStep = createStep(
         starts_at: data.input.starts_at,
         ends_at: data.input.ends_at,
         status: data.input.status,
-        variantIds: data.input.general_prices.map((p) => p.variant_id),
+        // 멤버십 전용 품목(일반 세일가 없음)도 겹침 대상이다. 다른 세일 쪽은 이미 두 가격표를 다 본다.
+        variantIds: [
+          ...new Set([...data.input.general_prices, ...data.input.membership_prices].map((p) => p.variant_id)),
+        ],
       },
       others,
     );

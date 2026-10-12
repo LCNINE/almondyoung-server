@@ -93,7 +93,7 @@ export function validateTimeSaleInput(input: TimeSaleWriteInput): string[] {
     errors.push('종료 시각은 시작 시각보다 뒤여야 합니다.');
   }
   // 신규 세일은 명칭·기간만으로 비공개 생성하고 상품은 나중에 붙인다. 공개는 품목이 있어야 한다.
-  if (input.status === 'active' && input.general_prices.length === 0) {
+  if (input.status === 'active' && input.general_prices.length + input.membership_prices.length === 0) {
     errors.push('세일가를 넣은 품목이 하나도 없습니다.');
   }
 
@@ -110,11 +110,6 @@ export function validateTimeSaleInput(input: TimeSaleWriteInput): string[] {
     const dup = duplicates(prices);
     if (dup.length > 0) errors.push(`${label} 세일가에 같은 품목이 두 번 있습니다: ${dup.join(', ')}`);
   }
-
-  // 멤버십 세일가만 있고 일반 세일가가 없는 품목은 «구독자만 싸게 사는» 상태라 막는다.
-  const general = new Set(input.general_prices.map((p) => p.variant_id));
-  const orphan = input.membership_prices.filter((p) => !general.has(p.variant_id)).map((p) => p.variant_id);
-  if (orphan.length > 0) errors.push(`일반 세일가 없이 멤버십 세일가만 있는 품목: ${orphan.join(', ')}`);
 
   return errors;
 }
@@ -278,4 +273,24 @@ export function planTimeSaleUpdate(params: {
   }
 
   return plan;
+}
+
+/**
+ * 멤버십 세일가만 있고 일반 세일가가 없는 품목(멤버십 전용 특가). 비회원 화면이 이 품목을 «회원 공개»로
+ * 그린다. 상품은 일반 세일 옵션이 하나라도 있으면 일반 세일로 본다 — 카드를 일반 세일 기준으로 그리기 위해서.
+ */
+export function membershipOnlyItems(
+  rows: Array<{ price_list_id: string; variant_id: string; product_id: string }>,
+  membershipListIds: Set<string>,
+): { variantIds: string[]; productIds: string[] } {
+  const general = new Set(rows.filter((r) => !membershipListIds.has(r.price_list_id)).map((r) => r.variant_id));
+  const generalProducts = new Set(
+    rows.filter((r) => !membershipListIds.has(r.price_list_id)).map((r) => r.product_id),
+  );
+  const only = rows.filter((r) => membershipListIds.has(r.price_list_id) && !general.has(r.variant_id));
+
+  return {
+    variantIds: [...new Set(only.map((r) => r.variant_id))],
+    productIds: [...new Set(only.map((r) => r.product_id))].filter((id) => !generalProducts.has(id)),
+  };
 }

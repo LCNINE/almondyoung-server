@@ -83,7 +83,10 @@
     "untilEnd": "終了まで",
     "endingSoon": "まもなく終了",
     "badge": "タイムセール",
-    "loading": "読み込み中…"
+    "loading": "読み込み中…",
+    "membershipBadge": "会員特価",
+    "membershipOnlyPrice": "会員限定公開",
+    "membershipSavings": "{amount}ウォンお得"
   },
   "beautytop": {
     "title": "ビューティートップ",

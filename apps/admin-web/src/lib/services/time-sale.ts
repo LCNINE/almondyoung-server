@@ -35,7 +35,7 @@ export function useTimeSaleList() {
     data: query.data?.map((sale) => ({
       ...sale,
       period: { startsAt: sale.startsAt, endsAt: sale.endsAt },
-      variantCount: Object.keys(sale.generalPrices).length,
+      variantCount: new Set([...Object.keys(sale.generalPrices), ...Object.keys(sale.membershipPrices)]).size,
       hasMembership: Object.keys(sale.membershipPrices).length > 0,
     })),
   };
@@ -52,7 +52,9 @@ export function useTimeSaleVariantMap(excludeId?: string) {
   for (const sale of data ?? []) {
     if (sale.id === excludeId || sale.status === 'draft') continue;
     if (resolveTimeSaleStatus({ startsAt: sale.startsAt, endsAt: sale.endsAt }, now, sale.status) === 'ended') continue;
-    for (const variantId of Object.keys(sale.generalPrices)) map.set(variantId, sale.title);
+    // 멤버십 전용 특가 품목(일반 세일가 없음)도 그 세일에 걸린 품목이다.
+    for (const variantId of [...Object.keys(sale.generalPrices), ...Object.keys(sale.membershipPrices)])
+      map.set(variantId, sale.title);
   }
   return { data: map };
 }

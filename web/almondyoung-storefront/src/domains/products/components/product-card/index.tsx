@@ -10,7 +10,10 @@ import { Camera, Lock, Star } from "lucide-react"
 import { useTranslations } from "next-intl"
 import React, { useEffect, useMemo, useState } from "react"
 import ProductPrice from "./price"
-import { useTimeSaleForVariant } from "@/components/providers/time-sale-provider"
+import {
+  useMembershipOnlySale,
+  useTimeSaleForVariant,
+} from "@/components/providers/time-sale-provider"
 import Thumbnail, { listPhotoUrls } from "../thumbnail"
 import { Quantity } from "./quantity"
 import { TimeSaleBadge } from "./time-sale-badge"
@@ -122,7 +125,10 @@ export default function ProductCard({
     product,
   })
   // 카드에 보이는 가격을 만든 세일. 상품이 세일에 들어 있어도 멤버십가가 더 싸 그쪽이 보이면 null 이다.
-  const timeSale = useTimeSaleForVariant(cheapestVariant)
+  const generalOrMemberSale = useTimeSaleForVariant(cheapestVariant)
+  // 멤버십 전용 특가 옵션. 비회원은 세일가가 계산되지 않아 위에서 null 이라 따로 찾는다.
+  const membershipOnlySale = useMembershipOnlySale(cheapestVariant?.id)
+  const timeSale = generalOrMemberSale ?? membershipOnlySale
   const isTimeSale = timeSale !== null
   const tCard = useTranslations("productCard")
   const isDigital = isDigitalProduct(product)
@@ -212,7 +218,12 @@ export default function ProductCard({
           {/* 좌측 위도 한 줄에 쌓는다. 우측 위는 멤버십·사진 장수, 우측 아래는 찜·장바구니가 쓴다 */}
           {(timeSale?.endsAt || isDigital) && (
             <div className="absolute top-2 left-2 z-10 flex flex-col items-start gap-1">
-              {timeSale?.endsAt && <TimeSaleBadge endsAt={timeSale.endsAt} />}
+              {timeSale?.endsAt && (
+                <TimeSaleBadge
+                  endsAt={timeSale.endsAt}
+                  membershipOnly={membershipOnlySale !== null}
+                />
+              )}
               {isDigital && (
                 <span className="bg-primary/90 rounded px-2 py-0.5 text-[11px] font-medium text-white">
                   {tCard("digitalBadge")}
@@ -237,7 +248,9 @@ export default function ProductCard({
           />
         </div>
 
-        <div className={`mt-4 min-h-20 ${isTimeSale ? "flex flex-col gap-2" : ""}`}>
+        <div
+          className={`mt-4 min-h-20 ${isTimeSale ? "flex flex-col gap-2" : ""}`}
+        >
           <h3 className="text-foreground line-clamp-1 text-[14px] leading-tight">
             {getIsOverseas(product) && <OverseasBadge />}
             {product.title}
@@ -259,6 +272,7 @@ export default function ProductCard({
                 isMembership={isMembership}
                 isMembershipOnly={isMembershipOnly}
                 isTimeSale={isTimeSale}
+                isMembershipOnlySale={membershipOnlySale !== null}
               />
             )}
 

@@ -3,7 +3,10 @@
 import { useCallback, useMemo, useRef, useState } from "react"
 import type { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
-import { useEarliestSaleEnd } from "@/components/providers/time-sale-provider"
+import {
+  lineTimeSale,
+  useTimeSale,
+} from "@/components/providers/time-sale-provider"
 import { TimeSaleCountdown } from "@/components/shared/time-sale-countdown"
 import { refreshCartPrices } from "@/lib/api/medusa/cart"
 import { formatPrice } from "@/lib/utils/price-utils"
@@ -21,15 +24,24 @@ export function TimeSaleNotice({
   items: HttpTypes.StoreCartLineItem[]
 }) {
   const t = useTranslations("cart")
-  const productIds = useMemo(
-    () => items.map((item) => item.product_id).filter((id): id is string => Boolean(id)),
-    [items]
+  const { sales } = useTimeSale()
+  // 라인별로 세일을 가른다 — 비회원이 정가로 담은 멤버십 전용 특가 옵션은 마감 안내 대상이 아니다.
+  const endsAt = useMemo(
+    () =>
+      items.reduce<string | null>((earliest, item) => {
+        const end = lineTimeSale(sales, item)?.sale.endsAt
+        return end && (!earliest || end < earliest) ? end : earliest
+      }, null),
+    [items, sales]
   )
-  const endsAt = useEarliestSaleEnd(productIds)
 
   // 배송비는 세일과 무관하다.
   const subtotal = useMemo(
-    () => items.reduce((sum, item) => sum + (item.unit_price ?? 0) * (item.quantity ?? 0), 0),
+    () =>
+      items.reduce(
+        (sum, item) => sum + (item.unit_price ?? 0) * (item.quantity ?? 0),
+        0
+      ),
     [items]
   )
   // 종료 시점은 렌더가 아니라 타이머 콜백이라 ref 로 붙잡는다.

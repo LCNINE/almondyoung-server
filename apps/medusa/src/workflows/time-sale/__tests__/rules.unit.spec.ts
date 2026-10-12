@@ -3,6 +3,7 @@ import {
   findConflictingSales,
   orderByProductOrder,
   findTimeSaleIssues,
+  membershipOnlyItems,
   planTimeSaleUpdate,
   validateTimeSaleInput,
   type LinkedList,
@@ -107,12 +108,23 @@ describe('validateTimeSaleInput', () => {
     expect(validateTimeSaleInput(base)).toEqual([]);
   });
 
-  it('rejects membership variant missing from general prices', () => {
-    const errors = validateTimeSaleInput({
-      ...base,
-      membership_prices: [{ variant_id: 'v9', amount: 100 }],
-    });
-    expect(errors.some((e) => e.includes('v9'))).toBe(true);
+  it('allows a membership-only variant (no general sale price)', () => {
+    expect(
+      validateTimeSaleInput({
+        ...base,
+        membership_prices: [...base.membership_prices, { variant_id: 'v9', amount: 100 }],
+      }),
+    ).toEqual([]);
+  });
+
+  it('publishes a sale whose items are all membership-only', () => {
+    expect(
+      validateTimeSaleInput({
+        ...base,
+        general_prices: [],
+        membership_prices: [{ variant_id: 'v9', amount: 100 }],
+      }),
+    ).toEqual([]);
   });
 });
 
@@ -333,5 +345,22 @@ describe('planTimeSaleUpdate', () => {
 
   it('throws when the general list is missing (broken invariant)', () => {
     expect(() => planTimeSaleUpdate({ input: base, lists: [lists[1]], ...ctx })).toThrow();
+  });
+});
+
+describe('membershipOnlyItems', () => {
+  const rows = [
+    { price_list_id: 'gen', variant_id: 'a1', product_id: 'A' },
+    { price_list_id: 'mem', variant_id: 'a1', product_id: 'A' },
+    { price_list_id: 'mem', variant_id: 'a2', product_id: 'A' },
+    { price_list_id: 'mem', variant_id: 'b1', product_id: 'B' },
+  ];
+
+  it('marks variants priced only in the membership list', () => {
+    expect(membershipOnlyItems(rows, new Set(['mem'])).variantIds).toEqual(['a2', 'b1']);
+  });
+
+  it('treats a product as membership-only only when none of its variants has a general sale price', () => {
+    expect(membershipOnlyItems(rows, new Set(['mem'])).productIds).toEqual(['B']);
   });
 });

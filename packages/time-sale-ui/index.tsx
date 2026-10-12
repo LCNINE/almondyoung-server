@@ -32,6 +32,8 @@ export type SaleProduct = {
   startsAt?: string | null;
   endsAt?: string | null;
   membershipOnly?: boolean;
+  // 멤버십 세일가만 있는 상품(멤버십 전용 특가). 배지·멤버십가 문구가 「멤버십 특가」로 바뀐다.
+  membershipSale?: boolean;
   quickActions?: {
     handle: string;
     variantId?: string;
@@ -136,6 +138,7 @@ export function SaleMembershipPrice({
   membershipPrice,
   hidden = false,
   labelOnly = false,
+  membershipSale = false,
   currency = (amount: number) => `${amount.toLocaleString('ko-KR')}원`,
 }: {
   price: number | null;
@@ -143,6 +146,7 @@ export function SaleMembershipPrice({
   hidden?: boolean;
   // 라이브 카드처럼 「멤버십할인가」 표시만 두고 금액·절약액은 뺀다.
   labelOnly?: boolean;
+  membershipSale?: boolean;
   currency?: (amount: number) => string;
 }) {
   const available = !(
@@ -185,12 +189,15 @@ export function SaleMembershipPrice({
         >
           ✓
         </span>
-        멤버십할인가
+        {membershipSale ? '멤버십 특가' : '멤버십할인가'}
       </span>
       {labelOnly ? null : available ? (
         <>
           <strong style={{ fontSize: 15 }}>{currency(membershipPrice!)}</strong>
-          <span style={{ fontSize: 11, fontWeight: 500 }}>가입 시 {currency(price! - membershipPrice!)} 절약</span>
+          <span style={{ fontSize: 11, fontWeight: 500 }}>
+            {membershipSale ? '' : '가입 시 '}
+            {currency(price! - membershipPrice!)} 절약
+          </span>
         </>
       ) : (
         <span style={{ fontSize: 11, fontWeight: 500 }}>멤버십 회원에게 가격 공개</span>
@@ -1635,7 +1642,7 @@ function Products({
                       style={{ ...timeSaleBadgeStyle(c.options.badgeColor), ...(c.options.badgeCss as CSSProperties) }}
                     >
                       <ClockIcon />
-                      타임세일
+                      {p.membershipSale ? '멤버십 특가' : '타임세일'}
                       {values.product_countdown && ` · ${values.product_countdown}`}
                     </span>
                   ) : (
@@ -1709,6 +1716,7 @@ function Products({
                   membershipPrice={p.membershipPrice}
                   hidden={p.membershipOnly && p.membershipPrice == null}
                   labelOnly={c.options.membershipLabelOnly}
+                  membershipSale={p.membershipSale}
                   currency={currency}
                 />
                 {renderProductStatus && !p.soldOut && <div style={{ marginTop: 8 }}>{renderProductStatus(p)}</div>}

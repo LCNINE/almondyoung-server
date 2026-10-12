@@ -51,6 +51,9 @@ export function buildSaleProducts({
   const availableIds = new Set(filterSoldOut(products).map((p) => p.id))
   const byId = new Map(products.map((product) => [product.id, product]))
   const periods = productPeriods(sales)
+  const membershipSaleIds = new Set(
+    sales.flatMap((sale) => sale.membershipOnlyProductIds ?? [])
+  )
 
   return ids.flatMap((id) => {
     const product = byId.get(id)
@@ -65,64 +68,84 @@ export function buildSaleProducts({
     const currency: unknown = cheapestPrice?.currency_code
     const membershipPrice = cheapestVariant?.metadata?.membershipPrice
     const period = periods.get(id)
+    // 멤버십 전용 특가: 판매가 자리엔 일반가를 그대로 두고, 특가는 회원에게만 멤버십가 자리에 보인다.
+    // 회원이면 Medusa 가 이미 특가를 계산해 준다(calculated). 비회원은 「회원 공개」로 숨긴다.
+    const membershipSale = membershipSaleIds.has(id)
+    const finite = (value: unknown) =>
+      typeof value === "number" && Number.isFinite(value) ? value : null
 
+    const base: SaleProduct = {
+      id: product.id,
+      name: product.title,
+      image: product.thumbnail ? getThumbnailUrl(product.thumbnail) : null,
+      images: {
+        detail: product.images?.[0]?.url
+          ? getThumbnailUrl(product.images[0].url)
+          : null,
+      },
+      summary: product.description,
+      modelName:
+        typeof product.metadata?.model_name === "string"
+          ? product.metadata.model_name
+          : null,
+      href: `/${countryCode}/products/${product.handle}`,
+      // 멤버십가 비공개 상품은 비회원에게 「멤버십 회원에게 가격 공개」를 보인다(상품 카드와 같은 기준).
+      membershipOnly: getHideMembershipPriceForNonMembers(product),
+      price:
+        typeof salePrice === "number" && Number.isFinite(salePrice)
+          ? salePrice
+          : null,
+      membershipPrice:
+        typeof membershipPrice === "number" &&
+        Number.isFinite(membershipPrice) &&
+        membershipPrice > 0
+          ? membershipPrice
+          : null,
+      rating:
+        Number(
+          product.metadata?.averageRating ??
+            product.metadata?.rating ??
+            product.metadata?.reviewRating
+        ) || 0,
+      reviewCount:
+        Number(
+          product.metadata?.reviewCount ??
+            product.metadata?.totalCount ??
+            product.metadata?.reviewTotalCount
+        ) || 0,
+      quickActions: {
+        handle: product.handle,
+        variantId: product.variants?.[0]?.id,
+        currency: typeof currency === "string" ? currency : undefined,
+        isSingleOption: (product.variants?.length ?? 0) <= 1,
+        membersOnlyPurchase:
+          !isMember && getRequiresMembershipToPurchase(product),
+        isWelcomeMembership: isWelcomeMembershipProduct(product.tags),
+        isWishlisted: wishlistIds.includes(product.id),
+      },
+      originalPrice:
+        typeof originalPrice === "number" && Number.isFinite(originalPrice)
+          ? originalPrice
+          : null,
+      soldOut: !availableIds.has(product.id),
+      startsAt: period?.startsAt ?? null,
+      endsAt: period?.endsAt ?? null,
+    }
+    if (!membershipSale) return [base]
+
+    const regular = finite(originalPrice)
+    const sale = finite(salePrice)
     return [
       {
-        id: product.id,
-        name: product.title,
-        image: product.thumbnail ? getThumbnailUrl(product.thumbnail) : null,
-        images: {
-          detail: product.images?.[0]?.url
-            ? getThumbnailUrl(product.images[0].url)
-            : null,
-        },
-        summary: product.description,
-        modelName:
-          typeof product.metadata?.model_name === "string"
-            ? product.metadata.model_name
-            : null,
-        href: `/${countryCode}/products/${product.handle}`,
-        // 멤버십가 비공개 상품은 비회원에게 「멤버십 회원에게 가격 공개」를 보인다(상품 카드와 같은 기준).
-        membershipOnly: getHideMembershipPriceForNonMembers(product),
-        price:
-          typeof salePrice === "number" && Number.isFinite(salePrice)
-            ? salePrice
-            : null,
+        ...base,
+        membershipSale: true,
+        membershipOnly: true,
+        price: regular,
+        originalPrice: regular,
         membershipPrice:
-          typeof membershipPrice === "number" &&
-          Number.isFinite(membershipPrice) &&
-          membershipPrice > 0
-            ? membershipPrice
+          isMember && sale !== null && regular !== null && sale < regular
+            ? sale
             : null,
-        rating:
-          Number(
-            product.metadata?.averageRating ??
-              product.metadata?.rating ??
-              product.metadata?.reviewRating
-          ) || 0,
-        reviewCount:
-          Number(
-            product.metadata?.reviewCount ??
-              product.metadata?.totalCount ??
-              product.metadata?.reviewTotalCount
-          ) || 0,
-        quickActions: {
-          handle: product.handle,
-          variantId: product.variants?.[0]?.id,
-          currency: typeof currency === "string" ? currency : undefined,
-          isSingleOption: (product.variants?.length ?? 0) <= 1,
-          membersOnlyPurchase:
-            !isMember && getRequiresMembershipToPurchase(product),
-          isWelcomeMembership: isWelcomeMembershipProduct(product.tags),
-          isWishlisted: wishlistIds.includes(product.id),
-        },
-        originalPrice:
-          typeof originalPrice === "number" && Number.isFinite(originalPrice)
-            ? originalPrice
-            : null,
-        soldOut: !availableIds.has(product.id),
-        startsAt: period?.startsAt ?? null,
-        endsAt: period?.endsAt ?? null,
       },
     ]
   })

@@ -83,7 +83,10 @@
     "untilEnd": "Ends in",
     "endingSoon": "Ending soon",
     "badge": "Time sale",
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "membershipBadge": "Member deal",
+    "membershipOnlyPrice": "Members only",
+    "membershipSavings": "Save {amount} KRW"
   },
   "beautytop": {
     "title": "BeautyTop",

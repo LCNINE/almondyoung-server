@@ -28,7 +28,7 @@ import Image from "next/image"
 import { cloneElement, ReactElement, useState, useTransition } from "react"
 import { toast } from "sonner"
 
-import { useTimeSaleForProduct } from "@/components/providers/time-sale-provider"
+import { useTimeSaleForLine } from "@/components/providers/time-sale-provider"
 import { ShippingGroupNotice } from "../shipping-group-notice"
 
 /**
@@ -231,7 +231,7 @@ function DesktopItem({
   maxQuantity,
 }: DesktopItemProps) {
   const t = useTranslations("cart.items")
-  const isTimeSale = useTimeSaleForProduct(item?.product_id) !== null
+  const lineSale = useTimeSaleForLine(item)
   const tCart = useTranslations("cart")
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [inputQuantity, setInputQuantity] = useState("")
@@ -313,9 +313,13 @@ function DesktopItem({
             {t("overStockBadge")}
           </p>
         )}
-        {isTimeSale && (
+        {lineSale && (
           <span className="bg-red-30 mb-1 inline-flex w-fit items-center rounded-[3px] px-1 py-0.5 text-[11px] leading-none font-medium text-white">
-            {t("timeSaleBadge")}
+            {t(
+              lineSale.membershipOnly
+                ? "timeSaleMembershipBadge"
+                : "timeSaleBadge"
+            )}
           </span>
         )}
         <p className="text-sm font-medium" data-testid="product-title">
@@ -518,7 +522,7 @@ function MobileItem({
   maxQuantity,
 }: MobileItemProps) {
   const t = useTranslations("cart.items")
-  const isTimeSale = useTimeSaleForProduct(item?.product_id) !== null
+  const lineSale = useTimeSaleForLine(item)
   const tCart = useTranslations("cart")
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [inputQuantity, setInputQuantity] = useState("")
@@ -588,9 +592,13 @@ function MobileItem({
                 {t("overStockBadge")}
               </p>
             )}
-            {isTimeSale && (
+            {lineSale && (
               <span className="bg-red-30 mb-0.5 inline-flex w-fit items-center rounded-[3px] px-1 py-0.5 text-[11px] leading-none font-medium text-white">
-                {t("timeSaleBadge")}
+                {t(
+                  lineSale.membershipOnly
+                    ? "timeSaleMembershipBadge"
+                    : "timeSaleBadge"
+                )}
               </span>
             )}
             <p className="line-clamp-2 text-sm leading-snug font-medium">

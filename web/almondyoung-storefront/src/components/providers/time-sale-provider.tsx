@@ -35,13 +35,19 @@ export function TimeSaleProvider({
     () => ({
       sales,
       byPriceListId: new Map(
-        sales.flatMap((sale) => sale.priceListIds.map((id) => [id, sale] as const))
+        sales.flatMap((sale) =>
+          sale.priceListIds.map((id) => [id, sale] as const)
+        )
       ),
     }),
     [sales]
   )
 
-  return <TimeSaleContext.Provider value={value}>{children}</TimeSaleContext.Provider>
+  return (
+    <TimeSaleContext.Provider value={value}>
+      {children}
+    </TimeSaleContext.Provider>
+  )
 }
 
 export function useTimeSale() {
@@ -67,32 +73,57 @@ export function useTimeSaleForVariant(variant: VariantLike): TimeSale | null {
 }
 
 /**
- * 이 상품이 걸린 타임세일. 없으면 null.
- * 카트 라인은 `price_list_id` 를 안 실어 오므로 variant 대신 상품 id 로 가른다.
+ * 이 옵션이 멤버십 전용 특가(일반 세일가 없이 멤버십 세일가만)로 걸린 세일. 아니면 null.
+ * 비회원은 세일가가 계산되지 않아 `useTimeSaleForVariant` 로는 못 찾으므로 id 목록으로 가른다.
  */
-export function useTimeSaleForProduct(productId: string | null | undefined): TimeSale | null {
+export function useMembershipOnlySale(
+  variantId: string | null | undefined
+): TimeSale | null {
   const { sales } = useTimeSale()
 
   return useMemo(() => {
-    if (!productId) return null
-    return sales.find((sale) => sale.productIds.includes(productId)) ?? null
-  }, [sales, productId])
+    if (!variantId) return null
+    return (
+      sales.find((sale) =>
+        sale.membershipOnlyVariantIds?.includes(variantId)
+      ) ?? null
+    )
+  }, [sales, variantId])
+}
+
+type LineLike = {
+  product_id?: string | null
+  variant_id?: string | null
+  unit_price?: number | null
+  compare_at_unit_price?: number | null
 }
 
 /**
- * 이 상품들이 속한 세일 중 가장 먼저 끝나는 종료 시각. 없으면 null.
- *
- * 카트처럼 여러 상품을 한 번에 안내하는 자리에서 쓴다 — 가장 임박한 마감을 보여줘야 손님이
- * 늦게 알아차리지 않는다.
+ * 카트·체크아웃 라인의 타임세일. 멤버십 전용 특가 옵션은 할인이 실제로 들어간 라인(=회원)만 세일로 본다
+ * — 비회원은 정가로 결제하는데 「타임세일」을 띄우면 안 된다.
  */
-export function useEarliestSaleEnd(productIds: string[]): string | null {
-  const { sales } = useTimeSale()
+export function lineTimeSale(
+  sales: TimeSale[],
+  line: LineLike | null | undefined
+): { sale: TimeSale; membershipOnly: boolean } | null {
+  if (!line?.product_id) return null
 
-  return useMemo(() => {
-    const ids = new Set(productIds)
-    return sales.reduce<string | null>((earliest, sale) => {
-      if (!sale.endsAt || !sale.productIds.some((id) => ids.has(id))) return earliest
-      return !earliest || sale.endsAt < earliest ? sale.endsAt : earliest
-    }, null)
-  }, [sales, productIds])
+  const variantId = line.variant_id
+  const membershipSale = variantId
+    ? sales.find((sale) => sale.membershipOnlyVariantIds?.includes(variantId))
+    : undefined
+  if (membershipSale) {
+    const discounted =
+      (line.compare_at_unit_price ?? 0) > (line.unit_price ?? 0)
+    return discounted ? { sale: membershipSale, membershipOnly: true } : null
+  }
+
+  const productId = line.product_id
+  const sale = sales.find((s) => s.productIds.includes(productId))
+  return sale ? { sale, membershipOnly: false } : null
+}
+
+export function useTimeSaleForLine(line: LineLike | null | undefined) {
+  const { sales } = useTimeSale()
+  return lineTimeSale(sales, line)
 }

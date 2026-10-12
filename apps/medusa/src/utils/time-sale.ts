@@ -1,7 +1,7 @@
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import type { MedusaContainer } from '@medusajs/framework/types';
 import type { TimeSaleRecord } from '../modules/time-sale/service';
-import { findTimeSaleIssues, orderByProductOrder } from '../workflows/time-sale/rules';
+import { findTimeSaleIssues, membershipOnlyItems, orderByProductOrder } from '../workflows/time-sale/rules';
 
 // ── 경계 크론용 (price list 기준) ──────────────────────────────────────────────
 // 가격 엔진은 price list 의 starts_at/ends_at/status 를 읽는다. 워크플로가 time_sale 값을 리스트에 맞춰
@@ -304,6 +304,9 @@ export type StoreTimeSaleDto = {
   endsAt: string;
   priceListIds: string[];
   productIds: string[];
+  /** 멤버십 세일가만 있는 옵션·상품. 금액은 싣지 않는다 — 비회원 화면은 «회원 공개»로만 그린다. */
+  membershipOnlyVariantIds: string[];
+  membershipOnlyProductIds: string[];
 };
 
 export type StoreTimeSaleResponse = {
@@ -326,7 +329,10 @@ export async function listActiveStoreTimeSales(container: MedusaContainer): Prom
   if (sales.length === 0) return { timeSales: [], products: [] };
 
   const listIds = sales.flatMap((sale) => sale.price_lists.map((p) => p.id));
-  const rows = await listProductsInPriceLists(container, listIds);
+  const [rows, priceRows] = await Promise.all([
+    listProductsInPriceLists(container, listIds),
+    loadPriceRows(container, listIds),
+  ]);
 
   const productsByList = new Map<string, string[]>();
   const ordered: string[] = [];
@@ -349,16 +355,25 @@ export async function listActiveStoreTimeSales(container: MedusaContainer): Prom
   const categoryIds = await loadCategoryIds(container, products);
 
   return {
-    timeSales: sales.map((sale) => ({
-      id: sale.id,
-      startsAt: iso(sale.starts_at),
-      endsAt: iso(sale.ends_at),
-      priceListIds: sale.price_lists.map((p) => p.id),
-      productIds: orderByProductOrder(
-        [...new Set(sale.price_lists.flatMap((p) => productsByList.get(p.id) ?? []))],
-        sale.product_order ?? [],
-      ),
-    })),
+    timeSales: sales.map((sale) => {
+      const saleListIds = new Set(sale.price_lists.map((p) => p.id));
+      const membershipOnly = membershipOnlyItems(
+        priceRows.prices.filter((row) => saleListIds.has(row.price_list_id)),
+        priceRows.membershipListIds,
+      );
+      return {
+        id: sale.id,
+        startsAt: iso(sale.starts_at),
+        endsAt: iso(sale.ends_at),
+        priceListIds: [...saleListIds],
+        productIds: orderByProductOrder(
+          [...new Set(sale.price_lists.flatMap((p) => productsByList.get(p.id) ?? []))],
+          sale.product_order ?? [],
+        ),
+        membershipOnlyVariantIds: membershipOnly.variantIds,
+        membershipOnlyProductIds: membershipOnly.productIds,
+      };
+    }),
     products: products.map((id) => ({ id, categoryIds: categoryIds.get(id) ?? [] })),
   };
 }

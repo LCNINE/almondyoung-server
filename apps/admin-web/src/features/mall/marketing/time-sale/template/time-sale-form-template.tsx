@@ -457,7 +457,7 @@ export default function TimeSaleFormTemplate({
           <Section
             step={2}
             title="세일가"
-            description="일반가는 정가에서, 멤버십가는 멤버십가에서 깎습니다. 세일가를 비운 품목은 세일에서 빠집니다."
+            description="일반가는 정가에서, 멤버십가는 멤버십가에서 깎습니다. 세일가를 비운 품목은 세일에서 빠지고, 일반 세일가만 비우면 멤버십 회원 전용 특가가 됩니다."
           >
             <div className="flex flex-wrap items-end gap-2">
               <div className="space-y-1">
