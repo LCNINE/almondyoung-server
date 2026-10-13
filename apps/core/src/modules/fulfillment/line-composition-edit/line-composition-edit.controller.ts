@@ -1,7 +1,12 @@
-import { Body, Controller, Param, ParseUUIDPipe, Put, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, UnauthorizedException } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { User } from '@app/authorization';
-import { LineCompositionChangeResponseDto, PutLineCompositionDto } from './line-composition-edit.dto';
+import {
+  ApplyToExistingLinesResponseDto,
+  ExistingLinesImpactResponseDto,
+  LineCompositionChangeResponseDto,
+  PutLineCompositionDto,
+} from './line-composition-edit.dto';
 import { LineCompositionEditService } from './line-composition-edit.service';
 
 type AuthenticatedUser = { userId?: string; id?: string; sub?: string };
@@ -31,5 +36,26 @@ export class SalesOrderLineCompositionController {
     @User() user?: AuthenticatedUser,
   ) {
     return this.edits.assignToLine(salesOrderId, salesOrderLineId, dto, actorOf(user));
+  }
+}
+
+// 상품매칭 저장 다이얼로그가 부른다. ProductMatchingModule 은 fulfillment 를 import 하지 못해(순환) 여기 둔다
+@ApiTags('Product Matching')
+@Controller('matchings')
+export class MatchingExistingLinesController {
+  constructor(private readonly edits: LineCompositionEditService) {}
+
+  @Get('variants/:variantId/existing-lines-impact')
+  @ApiOperation({ summary: '상품매칭 변경이 이미 굳힌 출고 라인에 미칠 영향(미리보기)' })
+  @ApiOkResponse({ type: ExistingLinesImpactResponseDto })
+  impact(@Param('variantId', ParseUUIDPipe) variantId: string) {
+    return this.edits.previewExistingLines(variantId);
+  }
+
+  @Post('variants/:variantId/apply-to-existing-lines')
+  @ApiOperation({ summary: '상품매칭을 기존 출고(작성 중 박스)에도 적용 — 개별 지정·작업 중 박스는 건너뛴다' })
+  @ApiOkResponse({ type: ApplyToExistingLinesResponseDto })
+  apply(@Param('variantId', ParseUUIDPipe) variantId: string, @User() user?: AuthenticatedUser) {
+    return this.edits.applyToExistingLines(variantId, actorOf(user));
   }
 }

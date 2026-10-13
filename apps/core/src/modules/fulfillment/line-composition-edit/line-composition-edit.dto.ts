@@ -49,3 +49,23 @@ export class LineCompositionChangeResponseDto {
   @ApiProperty({ type: [String], description: '내용이 바뀐 박스' }) changedShipmentIds: string[];
   @ApiProperty({ nullable: true, description: '박스가 바뀌었을 때만 남는 amendment' }) amendmentId: string | null;
 }
+
+export class ExistingLinesImpactResponseDto {
+  @ApiProperty() variantId: string;
+  @ApiProperty({ description: '상품매칭이 실물 SKU 로 해결됐나 — 아니면 적용할 것이 없다' }) applicable: boolean;
+  @ApiProperty({ type: [LineCompositionItemDto], nullable: true }) newComposition: LineCompositionItemDto[] | null;
+  @ApiProperty({ description: '바꿀 수 있음' }) changeable: number;
+  @ApiProperty({ description: '개별 지정이라 건너뜀' }) skippedOperator: number;
+  @ApiProperty({ description: '작업 중 박스라 건너뜀' }) skippedInProgress: number;
+  @ApiProperty({ description: '이미 같음' }) alreadySame: number;
+}
+
+export class ApplySkippedCountDto {
+  @ApiProperty({ enum: ['operator', 'in_progress', 'same', 'units_ambiguous', 'not_applicable'] }) reason: string;
+  @ApiProperty() count: number;
+}
+
+export class ApplyToExistingLinesResponseDto {
+  @ApiProperty() changed: number;
+  @ApiProperty({ type: [ApplySkippedCountDto] }) skipped: ApplySkippedCountDto[];
+}

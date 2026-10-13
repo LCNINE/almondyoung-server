@@ -62,7 +62,10 @@ import { DraftBoxAmender } from './draft-box/draft-box-amender';
 import { LineCompositionEditReader } from './line-composition-edit/line-composition-edit.reader';
 import { LineCompositionEditManager } from './line-composition-edit/line-composition-edit.manager';
 import { LineCompositionEditService } from './line-composition-edit/line-composition-edit.service';
-import { SalesOrderLineCompositionController } from './line-composition-edit/line-composition-edit.controller';
+import {
+  MatchingExistingLinesController,
+  SalesOrderLineCompositionController,
+} from './line-composition-edit/line-composition-edit.controller';
 
 // Controllers
 import { FulfillmentsController } from './controllers/fulfillments.controller';
@@ -134,6 +137,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ShipmentRecallOperationController,
     OutboundRefillController,
     SalesOrderLineCompositionController,
+    MatchingExistingLinesController,
   ],
   providers: [
     // Core fulfillment services

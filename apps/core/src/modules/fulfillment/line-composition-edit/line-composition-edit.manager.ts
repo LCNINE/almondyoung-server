@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, wmsSchema } from '../../inventory/schema/inventory.schema';
 import {
@@ -18,7 +18,14 @@ import { DraftBoxAmender } from '../draft-box/draft-box-amender';
 import { FulfillmentInvariantService } from '../services/fulfillment-invariant.service';
 import { lockShipmentAggregate } from '../services/shipment-aggregate';
 import { LineCompositionEditReader } from './line-composition-edit.reader';
-import { BoxOfLine, isBlockingBox, LineCompositionChangeResult } from './line-composition-edit.types';
+import {
+  ApplySkipReason,
+  ApplyToExistingLinesResult,
+  BoxOfLine,
+  classifyExistingLine,
+  isBlockingBox,
+  LineCompositionChangeResult,
+} from './line-composition-edit.types';
 
 export const LINE_COMPOSITION_OPERATOR_REASON = 'LINE_COMPOSITION_OPERATOR';
 export const LINE_COMPOSITION_MATCHING_REASON = 'LINE_COMPOSITION_MATCHING_APPLIED';
@@ -36,6 +43,29 @@ function boxMembershipKey(boxes: readonly BoxOfLine[]): string {
 
 function badRequest(code: string, message: string): BadRequestException {
   return new BadRequestException({ code, message });
+}
+
+type ApplyOutcome = 'changed' | ApplySkipReason;
+
+// 주문 하나의 적용이 이 코드로 실패하면 그 주문의 후보 라인을 이 사유로 센다. 나머지 오류는 그대로 던진다 —
+// 앞 주문들은 이미 커밋됐고, 다시 보내면 «이미 같음»이 되어 멱등이다.
+// 박스 구성이 잠금을 얻는 사이 바뀐 경합도 작업 중으로 센다: 전체를 중단하지 않고, 다시 보내면 된다.
+const SKIP_REASON_BY_CODE: Record<string, ApplySkipReason> = {
+  LINE_BOX_NOT_DRAFT: 'in_progress',
+  BOX_NOT_DRAFT: 'in_progress',
+  SHIPMENT_ACTIVE_WORK_ITEM: 'in_progress',
+  SHIPMENT_CUSTODY_EXISTS: 'in_progress',
+  SHIPMENT_ACTIVE_INVOICE: 'in_progress',
+  SHIPMENT_COMPONENT_CHANGED_RETRY: 'in_progress',
+  COMPOSITION_UNITS_AMBIGUOUS: 'units_ambiguous',
+};
+const SKIP_REASON_ORDER: ApplySkipReason[] = ['operator', 'in_progress', 'same', 'units_ambiguous', 'not_applicable'];
+
+function errorCode(error: unknown): string | null {
+  if (!(error instanceof HttpException)) return null;
+  const body = error.getResponse();
+  if (typeof body !== 'object' || body === null || !('code' in body)) return null;
+  return typeof body.code === 'string' ? body.code : null;
 }
 
 /**
@@ -123,6 +153,90 @@ export class LineCompositionEditManager {
         reasonCode: LINE_COMPOSITION_OPERATOR_REASON,
       });
     }, tx);
+  }
+
+  /**
+   * 상품매칭 저장 뒤 «기존 출고에도 적용»(스펙 §7.2). 주문마다 별도 트랜잭션 — 한 트랜잭션에 몰면 잠금이 여러 판매주문·재고 키에
+   * 걸쳐 출고 작업과 교착·대기가 커진다. tx 를 받으면(테스트) 그 안에서 주문마다 savepoint 로 같은 경계를 흉내 낸다.
+   */
+  async applyToExistingLines(variantId: string, actor: { id: string }, tx?: DbTx): Promise<ApplyToExistingLinesResult> {
+    // 상품매칭이 실물 구성으로 해결되지 않으면 적용할 것이 없다(미리보기 applicable=false 와 같다). 주문별 재확인은 경합용이다
+    const candidates = await this.dbService.run(async (trx) => {
+      if (!(await this.reader.matchingComposition(trx, variantId))) return [];
+      return this.reader.existingLineCandidates(trx, variantId);
+    }, tx);
+    const byOrder = new Map<string, string[]>();
+    for (const row of candidates) {
+      byOrder.set(row.salesOrderId, [...(byOrder.get(row.salesOrderId) ?? []), row.salesOrderLineId]);
+    }
+    const counts = new Map<ApplyOutcome, number>();
+    const bump = (outcome: ApplyOutcome, by = 1) => counts.set(outcome, (counts.get(outcome) ?? 0) + by);
+    for (const [salesOrderId, lineIds] of [...byOrder].sort(([a], [b]) => a.localeCompare(b))) {
+      try {
+        const outcomes = await this.dbService.run(
+          (trx) =>
+            trx.transaction((savepoint) => this.applyToOrder(savepoint, salesOrderId, variantId, lineIds, actor)),
+          tx,
+        );
+        for (const outcome of outcomes) bump(outcome);
+      } catch (error) {
+        const code = errorCode(error);
+        const reason = code ? SKIP_REASON_BY_CODE[code] : undefined;
+        if (!reason) throw error;
+        bump(reason, lineIds.length);
+      }
+    }
+    return {
+      changed: counts.get('changed') ?? 0,
+      skipped: SKIP_REASON_ORDER.flatMap((reason) => {
+        const count = counts.get(reason) ?? 0;
+        return count > 0 ? [{ reason, count }] : [];
+      }),
+    };
+  }
+
+  private async applyToOrder(
+    trx: DbTx,
+    salesOrderId: string,
+    variantId: string,
+    lineIds: readonly string[],
+    actor: { id: string },
+  ): Promise<ApplyOutcome[]> {
+    const order = await this.reader.lockOrder(trx, salesOrderId);
+    if (!order || order.status === 'cancelled') return lineIds.map(() => 'in_progress');
+    // 미리보기 뒤 상품매칭·라인이 바뀌었을 수 있다 — 잠금 아래에서 다시 읽는다
+    const next = await this.reader.matchingComposition(trx, variantId);
+    if (!next) return lineIds.map(() => 'not_applicable');
+    const lines = await this.reader.linesForApply(trx, lineIds);
+    const frozen = await selectFrozenCompositions(trx, lineIds);
+    const boxes = await this.reader.boxesOfLines(trx, lineIds);
+    const outcomes: ApplyOutcome[] = [];
+    for (const line of lines) {
+      if (line.compositionSource === null) continue;
+      const before = frozen.get(line.id) ?? [];
+      const decision = classifyExistingLine({
+        source: line.compositionSource,
+        frozen: before,
+        next,
+        blocked: (boxes.get(line.id) ?? []).some(isBlockingBox),
+      });
+      if (decision !== 'changeable') {
+        outcomes.push(decision);
+        continue;
+      }
+      await this.changeFrozenLine(trx, {
+        salesOrderId,
+        salesOrderLineId: line.id,
+        before,
+        after: next,
+        source: 'matching',
+        actorId: actor.id,
+        note: null,
+        reasonCode: LINE_COMPOSITION_MATCHING_REASON,
+      });
+      outcomes.push('changed');
+    }
+    return outcomes;
   }
 
   /** FO 가 있고 굳힌 라인의 구성을 바꾸고 박스를 맞춘다. 호출자가 판매주문을 잠갔다. */

@@ -1,13 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, eq, inArray, notInArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, ne, notInArray, or, sql } from 'drizzle-orm';
 import { DbTx, SalesOrderLine, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
-import { compositionFromMatching, CompositionItem } from '../../product-matching/line-composition/line-composition';
+import {
+  compositionFromMatching,
+  CompositionItem,
+  CompositionSource,
+} from '../../product-matching/line-composition/line-composition';
+import { selectFrozenCompositions } from '../../product-matching/line-composition/frozen-compositions';
 import { ProductSkuMappingService } from '../../product-matching/services/product-sku-mapping.service';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import { ACTIVE_WORK_ITEM_STATUSES } from '../services/work-item-status';
 import { BoxLineView } from '../draft-box/box-target';
-import { BoxOfLine } from './line-composition-edit.types';
+import { BoxOfLine, classifyExistingLine, ExistingLinesImpact, isBlockingBox } from './line-composition-edit.types';
 
 // 이미 끝난 박스 — 라인을 «담고» 있어도 수정 판정에서 뺀다(묘비·대체)
 const DEAD_SHIPMENT_STATUSES = ['canceled', 'superseded'] as const;
@@ -183,5 +188,90 @@ export class LineCompositionEditReader {
   async matchingComposition(trx: DbTx, variantId: string): Promise<CompositionItem[] | null> {
     const resolved = compositionFromMatching(await this.productSkuMapping.getByVariant(variantId, trx));
     return resolved.kind === 'follow' ? resolved.items : null;
+  }
+
+  /**
+   * 일괄 적용 후보: 그 variant 의 굳힌 라인 중 아직 안 나간 수량이 있는 것(스펙 §7.2 «FO 미완료»). 직배송 FO 는 박스가 없어
+   * 맞출 것이 없으므로 뺀다. FO 전 운영자 지정 라인은 FO 항목이 없어 여기 안 들어온다 — FO 가 생길 때 그 구성으로 만들어진다.
+   */
+  async existingLineCandidates(
+    trx: DbTx,
+    variantId: string,
+  ): Promise<Array<{ salesOrderLineId: string; salesOrderId: string }>> {
+    const lines = wmsTables.salesOrderLines;
+    const items = wmsTables.fulfillmentOrderItems;
+    const orders = wmsTables.fulfillmentOrders;
+    return (
+      trx
+        .selectDistinct({ salesOrderLineId: lines.id, salesOrderId: lines.salesOrderId })
+        .from(lines)
+        // fulfillment_order_items.sales_order_line_id 는 varchar 다 — uuid 를 text 로 맞춰 조인한다
+        .innerJoin(items, eq(items.salesOrderLineId, sql`${lines.id}::text`))
+        .innerJoin(orders, eq(orders.id, items.fulfillmentOrderId))
+        .where(
+          and(
+            eq(lines.variantId, variantId),
+            isNotNull(lines.compositionSource),
+            sql`${items.qty} - ${items.shippedQty} - ${items.canceledQty} > 0`,
+            or(isNull(orders.fulfillmentMode), ne(orders.fulfillmentMode, 'drop_ship')),
+          ),
+        )
+        .orderBy(asc(lines.salesOrderId), asc(lines.id))
+    );
+  }
+
+  async linesForApply(
+    trx: DbTx,
+    lineIds: readonly string[],
+  ): Promise<Array<{ id: string; compositionSource: CompositionSource | null }>> {
+    if (lineIds.length === 0) return [];
+    return trx
+      .select({ id: wmsTables.salesOrderLines.id, compositionSource: wmsTables.salesOrderLines.compositionSource })
+      .from(wmsTables.salesOrderLines)
+      .where(inArray(wmsTables.salesOrderLines.id, [...lineIds]))
+      .orderBy(asc(wmsTables.salesOrderLines.id));
+  }
+
+  /** «기존 출고에도 적용» 미리보기(스펙 §7.2). 읽기만 한다 — 적용은 잠금 아래에서 다시 판정한다. */
+  async previewExistingLines(variantId: string, tx?: DbTx): Promise<ExistingLinesImpact> {
+    return this.dbService.run(async (trx) => {
+      const next = await this.matchingComposition(trx, variantId);
+      if (!next) {
+        return {
+          variantId,
+          applicable: false,
+          newComposition: null,
+          changeable: 0,
+          skippedOperator: 0,
+          skippedInProgress: 0,
+          alreadySame: 0,
+        };
+      }
+      const lineIds = (await this.existingLineCandidates(trx, variantId)).map((row) => row.salesOrderLineId);
+      const lines = await this.linesForApply(trx, lineIds);
+      const frozen = await selectFrozenCompositions(trx, lineIds);
+      const boxes = await this.boxesOfLines(trx, lineIds);
+      const counts = { changeable: 0, operator: 0, in_progress: 0, same: 0 };
+      for (const line of lines) {
+        if (line.compositionSource === null) continue;
+        counts[
+          classifyExistingLine({
+            source: line.compositionSource,
+            frozen: frozen.get(line.id) ?? [],
+            next,
+            blocked: (boxes.get(line.id) ?? []).some(isBlockingBox),
+          })
+        ] += 1;
+      }
+      return {
+        variantId,
+        applicable: true,
+        newComposition: next,
+        changeable: counts.changeable,
+        skippedOperator: counts.operator,
+        skippedInProgress: counts.in_progress,
+        alreadySame: counts.same,
+      };
+    }, tx);
   }
 }
