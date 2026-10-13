@@ -8,6 +8,7 @@ type Props = {
     variant?: string
     size?: string
     template?: string
+    saved?: string
   }>
 }
 
@@ -19,6 +20,7 @@ export default async function EditAlmondTemplatePage({ searchParams }: Props) {
     variant = "",
     size = "",
     template = "",
+    saved = "",
   } = await searchParams
   if (!product || !PRINT_PRODUCTS[product]) notFound()
   return (
@@ -27,6 +29,7 @@ export default async function EditAlmondTemplatePage({ searchParams }: Props) {
       variantId={variant}
       size={size}
       templateId={template}
+      savedId={saved}
       mode="customer"
     />
   )

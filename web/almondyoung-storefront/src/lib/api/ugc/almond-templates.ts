@@ -16,6 +16,8 @@ import type {
 } from "@/lib/types/ui/almond-template"
 import { almondTemplateThumbnailUrl } from "@/lib/utils/almond-template-thumbnail-url"
 import { parseDesign } from "@/domains/almond-template/lib/document"
+import { decodeJwtPayload } from "@/lib/auth/jwt"
+import { getAccessToken } from "@lib/data/cookies"
 import { api } from "../api"
 import { HttpApiError } from "../api-error"
 
@@ -54,6 +56,11 @@ export const listAdminAlmondTemplates = async (): Promise<
     withAuth: true,
     cache: "no-store",
   })
+
+export const getMyUserId = async (): Promise<string | null> => {
+  const token = await getAccessToken()
+  return (token && decodeJwtPayload(token)?.sub) || null
+}
 
 export const getAdminAlmondTemplate = async (
   id: string

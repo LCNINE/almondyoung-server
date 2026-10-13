@@ -1,3 +1,4 @@
+import { NumberInput } from "./number-input"
 import { RotateCcw, FlipHorizontal, FlipVertical } from "lucide-react"
 import type { Layer } from "../../lib/document"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
@@ -74,8 +75,7 @@ export function ObjectPropertiesMore({
             ).map(([field, label, step]) => (
               <label key={field}>
                 {label}
-                <input
-                  type="number"
+                <NumberInput
                   step={step}
                   className="mt-1 w-full border p-2"
                   value={
@@ -87,9 +87,9 @@ export function ObjectPropertiesMore({
                         : 100)
                   }
                   disabled={!editable}
-                  onChange={(e) =>
+                  onValue={(value) =>
                     patch(selected.id, {
-                      [field]: Number(e.target.value),
+                      [field]: value,
                     })
                   }
                 />
@@ -109,9 +109,8 @@ export function ObjectPropertiesMore({
                 height: "높이",
               }[field]
             }
-            <input
+            <NumberInput
               className="mt-1 w-full rounded border p-2"
-              type="number"
               min={
                 field === "width" || field === "height"
                   ? 1
@@ -122,9 +121,7 @@ export function ObjectPropertiesMore({
               step="0.1"
               value={selected[field]}
               disabled={!editable}
-              onChange={(event) =>
-                setGeometry(field, Number(event.target.value))
-              }
+              onValue={(value) => setGeometry(field, value)}
             />
           </label>
         ))}
@@ -139,40 +136,32 @@ export function ObjectPropertiesMore({
         <div className="grid grid-cols-2 gap-2">
           <label>
             투명도 (%)
-            <input
-              type="number"
+            <NumberInput
               min="10"
               max="100"
               step="10"
               className="mt-1 w-full border p-2"
               value={Math.round((selected.opacity ?? 1) * 100)}
               disabled={!editable}
-              onChange={(e) =>
+              onValue={(value) =>
                 patch(selected.id, {
-                  opacity: Math.max(
-                    0.1,
-                    Math.min(1, Number(e.target.value) / 100)
-                  ),
+                  opacity: Math.max(0.1, Math.min(1, value / 100)),
                 })
               }
             />
           </label>
           <label>
             회전 (°)
-            <input
-              type="number"
+            <NumberInput
               min="-360"
               max="360"
               step="1"
               className="mt-1 w-full border p-2"
               value={selected.rotation ?? 0}
               disabled={!editable}
-              onChange={(e) =>
+              onValue={(value) =>
                 patch(selected.id, {
-                  rotation: Math.max(
-                    -360,
-                    Math.min(360, Number(e.target.value))
-                  ),
+                  rotation: Math.max(-360, Math.min(360, value)),
                 })
               }
             />

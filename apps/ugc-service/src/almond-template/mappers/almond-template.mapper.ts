@@ -34,6 +34,7 @@ export class AlmondTemplateMapper {
       kind: row.kind,
       status: row.status,
       createdBy: row.createdBy,
+      updatedBy: row.updatedBy,
       createdAt: row.createdAt.toISOString(),
     };
   }

@@ -6,12 +6,30 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { ServiceUnavailableError } from '@app/shared';
-import { ALMOND_PRINT_SIDE_GAP_MM, ALMOND_PRINT_TIMEOUT_MS } from '../constants/almond-template.constants';
-import { composeSideBySide } from './almond-print-svg';
+import {
+  ALMOND_PREVIEW_LONG_SIDE_PX,
+  ALMOND_PRINT_SIDE_GAP_MM,
+  ALMOND_PRINT_TIMEOUT_MS,
+} from '../constants/almond-template.constants';
+import { composeSideBySide, readSvgSizeMm } from './almond-print-svg';
 
 const execFileAsync = promisify(execFile);
 const STDERR_MAX_BUFFER = 10 * 1024 * 1024;
 const CMYK_ARGS = ['-sColorConversionStrategy=CMYK', '-sProcessColorModel=DeviceCMYK'];
+
+export function withJpegDensity(jpeg: Buffer, dpi: number): Buffer {
+  if (jpeg[0] !== 0xff || jpeg[1] !== 0xd8) return jpeg;
+  const app0 = Buffer.alloc(18);
+  app0.writeUInt16BE(0xffe0, 0);
+  app0.writeUInt16BE(16, 2);
+  app0.write('JFIF\0', 4, 'latin1');
+  app0.writeUInt16BE(0x0102, 9);
+  app0.writeUInt8(1, 11);
+  app0.writeUInt16BE(dpi, 12);
+  app0.writeUInt16BE(dpi, 14);
+  const rest = jpeg[2] === 0xff && jpeg[3] === 0xe0 ? jpeg.subarray(4 + jpeg.readUInt16BE(4)) : jpeg.subarray(2);
+  return Buffer.concat([jpeg.subarray(0, 2), app0, rest]);
+}
 
 function isMissingBinary(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
@@ -43,6 +61,35 @@ export class AlmondPrintRenderer {
     return this.exclusive((dir) => this.convertJpg(dir, frontSvg, backSvg, dpi));
   }
 
+  renderPreview(svg: string): Promise<Buffer> {
+    return this.exclusive((dir) => this.convertPreview(dir, svg));
+  }
+
+  private async convertPreview(dir: string, svg: string): Promise<Buffer> {
+    const size = readSvgSizeMm(svg);
+    if (!size) throw new Error('SVG 루트 크기를 읽을 수 없습니다');
+    const dpi = Math.max(1, Math.floor((ALMOND_PREVIEW_LONG_SIDE_PX * 25.4) / Math.max(size.width, size.height)));
+    const svgPath = join(dir, 'preview.svg');
+    const pdfPath = join(dir, 'preview.pdf');
+    const jpgPath = join(dir, 'preview.jpg');
+    await writeFile(svgPath, svg, 'utf8');
+    await this.exec(this.rsvgBin, ['-f', 'pdf', '-o', pdfPath, svgPath]);
+    await this.exec(this.gsBin, [
+      '-dSAFER',
+      '-dBATCH',
+      '-dNOPAUSE',
+      '-sDEVICE=jpeg',
+      `-r${dpi}`,
+      '-dJPEGQ=85',
+      '-dTextAlphaBits=4',
+      '-dGraphicsAlphaBits=4',
+      '-o',
+      jpgPath,
+      pdfPath,
+    ]);
+    return readFile(jpgPath);
+  }
+
   private async convertJpg(dir: string, frontSvg: string, backSvg: string | null, dpi: number): Promise<Buffer> {
     const svgPath = join(dir, 'sheet.svg');
     const pdfPath = join(dir, 'sheet.pdf');
@@ -63,7 +110,7 @@ export class AlmondPrintRenderer {
       jpgPath,
       pdfPath,
     ]);
-    return readFile(jpgPath);
+    return withJpegDensity(await readFile(jpgPath), dpi);
   }
 
   private async convertEps(dir: string, frontSvg: string, backSvg: string | null): Promise<Buffer> {

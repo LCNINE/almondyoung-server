@@ -15,6 +15,6 @@ export class AlmondDesignMapper {
   }
 
   static toAdminResponse(row: AlmondDesignView): AdminAlmondDesignResponseDto {
-    return { ...this.toResponse(row), userId: row.userId };
+    return { ...this.toResponse(row), userId: row.userId, hasBack: row.hasBack };
   }
 }

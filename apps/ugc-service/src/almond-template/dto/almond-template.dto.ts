@@ -50,6 +50,9 @@ export class AdminAlmondTemplateSummaryResponseDto extends AlmondTemplateSummary
   @ApiProperty({ nullable: true, type: String, example: 'pet', description: 'design.kind' }) kind: string | null;
   @ApiProperty({ enum: ALMOND_TEMPLATE_STATUSES }) status: AlmondTemplateStatus;
   @ApiProperty() createdBy: string;
+  @ApiProperty({ nullable: true, type: String, description: '마지막으로 저장·게시 상태를 바꾼 사람' }) updatedBy:
+    | string
+    | null;
   @ApiProperty() createdAt: string;
 }
 

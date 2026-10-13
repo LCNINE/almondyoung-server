@@ -23,10 +23,22 @@ export const ALMOND_DESIGN_MAX_SVG_LENGTH = 3 * 1024 * 1024;
 export const ALMOND_DESIGN_CREATE_ROUTE = { method: 'POST', url: '/almond-designs' } as const;
 export const ALMOND_DESIGN_CREATE_BODY_LIMIT = 5 * 1024 * 1024;
 
+export const ALMOND_SAVED_DESIGN_MAX_PER_USER = 50;
+export const ALMOND_SAVED_DESIGN_UPSERT_ROUTE = { method: 'PUT', url: '/me/almond-saved-designs' } as const;
+export const ALMOND_SAVED_DESIGN_UPSERT_BODY_LIMIT = 20 * 1024 * 1024;
+
+export const ALMOND_PRINT_FILE_CONTEXT_ID = 'almond-print-file';
+export const ALMOND_PRINT_LINK_EXPIRES_SEC = 300;
+
 export const ALMOND_PRINT_SIDE_GAP_MM = 10;
 export const ALMOND_PRINT_TIMEOUT_MS = 120_000;
 export const ALMOND_PRINT_DEFAULT_DPI = 300;
 export const ALMOND_PRINT_MIN_DPI = 150;
-export const ALMOND_PRINT_MAX_DPI = 400;
+export const ALMOND_PRINT_MAX_DPI = 700;
+export const ALMOND_PRINT_MAX_JPG_PIXELS = 300_000_000;
+export const ALMOND_PREVIEW_LONG_SIDE_PX = 1200;
+// 실물보다 줄여서 넘기는 상품. 스토어프론트 PRINT_SPECS 의 fileScale 과 같아야 한다.
+// 2026-09-30~10월 사이 시안은 이 축소 없이 실물 크기로 저장됐으므로 인쇄할 때 맞춘다.
+export const ALMOND_PRINT_FILE_SCALE: Readonly<Record<string, number>> = { window: 0.1 };
 export const ALMOND_PRINT_MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 export const ALMOND_PRINT_IMAGE_FETCH_TIMEOUT_MS = 15_000;

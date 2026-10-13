@@ -1,4 +1,7 @@
+import { Ban, RotateCcw, X } from "lucide-react"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
+import { sideBackground } from "../../lib/document"
+import { Backdrop, LayerGraphic } from "../graphic"
 
 export function StatusBar({ editor }: { editor: AlmondEditor }) {
   const {
@@ -6,6 +9,10 @@ export function StatusBar({ editor }: { editor: AlmondEditor }) {
     design,
     side,
     setSide,
+    hasBack,
+    removedBack,
+    removeBack,
+    restoreBack,
     setSelectedId,
     guideMenuOpen,
     setGuideMenuOpen,
@@ -27,9 +34,7 @@ export function StatusBar({ editor }: { editor: AlmondEditor }) {
           <h2 className="mb-1 text-sm font-semibold text-slate-900">
             ⓘ 작업 시 유의사항
           </h2>
-          <p>
-            · 인턴 시안은 상품과 규격을 맞춰 게시해야 고객 화면에 나타납니다.
-          </p>
+          <p>· 시안은 상품과 규격을 맞춰 게시해야 고객 화면에 나타납니다.</p>
           <p>
             · 다른 기기에서 이어 작업하려면 편집 JSON을 내려받아 보관하세요.
           </p>
@@ -54,24 +59,63 @@ export function StatusBar({ editor }: { editor: AlmondEditor }) {
           +
         </button>
         <span className="mx-2 h-5 border-l" />
-        <button
-          className={side === "front" ? "font-semibold" : "text-slate-400"}
-          onClick={() => {
-            setSide("front")
-            setSelectedId(null)
-          }}
-        >
-          앞면
-        </button>
-        <button
-          className={side === "back" ? "font-semibold" : "text-slate-400"}
-          onClick={() => {
-            setSide("back")
-            setSelectedId(null)
-          }}
-        >
-          뒷면
-        </button>
+        {(hasBack ? (["front", "back"] as const) : (["front"] as const)).map(
+          (item) => {
+            const removed = item === "back" && !!removedBack
+            const label = item === "front" ? "앞면" : "뒷면"
+            return (
+              <div key={item} className="group relative">
+                <button
+                  type="button"
+                  aria-label={removed ? "뒷면 되살리기" : `${label} 편집`}
+                  aria-pressed={side === item}
+                  title={removed ? "뒷면 되살리기" : label}
+                  onClick={() => {
+                    if (removed) return restoreBack()
+                    setSide(item)
+                    setSelectedId(null)
+                  }}
+                  className={`relative block h-10 overflow-hidden border-2 ${side === item && !removed ? "border-[#222]" : "border-[#dcdee3]"}`}
+                >
+                  <svg
+                    viewBox={`0 0 ${design.widthMm} ${design.heightMm}`}
+                    className="h-full"
+                    style={{
+                      aspectRatio: `${design.widthMm} / ${design.heightMm}`,
+                    }}
+                  >
+                    <Backdrop value={sideBackground(design, item)} />
+                    {design[item]
+                      .filter((layer) => layer.visible !== false)
+                      .map((layer) => (
+                        <LayerGraphic key={layer.id} layer={layer} />
+                      ))}
+                  </svg>
+                  {removed && (
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-white">
+                      <Ban size={18} className="group-hover:hidden" />
+                      <RotateCcw
+                        size={18}
+                        className="hidden group-hover:block"
+                      />
+                    </span>
+                  )}
+                </button>
+                {item === "back" && !removed && (
+                  <button
+                    type="button"
+                    aria-label="뒷면 없이 단면으로"
+                    title="뒷면 없이 단면으로"
+                    onClick={removeBack}
+                    className="absolute -top-1 -right-1 flex size-4 items-center justify-center bg-[#555] text-white"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+            )
+          }
+        )}
         <span className="mx-2 h-5 border-l" />
         <span>
           사이즈 {design.widthMm} × {design.heightMm} mm

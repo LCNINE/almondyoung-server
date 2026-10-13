@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { almondTemplates, type UgcServiceSchema, type UgcTx } from '../../db/schema';
 import {
   ALMOND_TEMPLATE_DEFAULT_INDUSTRY,
@@ -79,7 +79,12 @@ export function parseAlmondTemplate(design: Record<string, unknown>, thumbnailSv
 
   const colors = [
     ...new Set(
-      [design.background, ...front.map((layer) => layer.fill), ...back.map((layer) => layer.fill)]
+      [
+        design.background,
+        isRecord(design.backBackground) ? design.backBackground.background : undefined,
+        ...front.map((layer) => layer.fill),
+        ...back.map((layer) => layer.fill),
+      ]
         .filter((value): value is string => typeof value === 'string' && HEX_COLOR.test(value))
         .map((value) => value.toLowerCase()),
     ),
@@ -127,14 +132,14 @@ export class AlmondTemplateManager {
         if (!id) {
           const [created] = await trx
             .insert(almondTemplates)
-            .values({ ...record, status, createdBy: userId })
+            .values({ ...record, status, createdBy: userId, updatedBy: userId })
             .returning();
           return created;
         }
         const [updated] = await trx
           .update(almondTemplates)
-          .set({ ...record, updatedAt: new Date() })
-          .where(eq(almondTemplates.id, id))
+          .set({ ...record, updatedBy: userId, updatedAt: new Date() })
+          .where(and(eq(almondTemplates.id, id), isNull(almondTemplates.deletedAt)))
           .returning();
         if (!updated) throw new NotFoundError(`Almond template not found: ${id}`);
         return updated;
@@ -147,23 +152,29 @@ export class AlmondTemplateManager {
     }
   }
 
-  async updateStatus(id: string, status: AlmondTemplateStatus, tx?: UgcTx): Promise<AlmondTemplateEntity> {
+  async updateStatus(
+    id: string,
+    status: AlmondTemplateStatus,
+    userId: string,
+    tx?: UgcTx,
+  ): Promise<AlmondTemplateEntity> {
     return this.db.run(async (trx) => {
       const [row] = await trx
         .update(almondTemplates)
-        .set({ status, updatedAt: new Date() })
-        .where(eq(almondTemplates.id, id))
+        .set({ status, updatedBy: userId, updatedAt: new Date() })
+        .where(and(eq(almondTemplates.id, id), isNull(almondTemplates.deletedAt)))
         .returning();
       if (!row) throw new NotFoundError(`Almond template not found: ${id}`);
       return row;
     }, tx);
   }
 
-  async remove(id: string, tx?: UgcTx): Promise<void> {
+  async remove(id: string, userId: string, tx?: UgcTx): Promise<void> {
     await this.db.run(async (trx) => {
       const deleted = await trx
-        .delete(almondTemplates)
-        .where(eq(almondTemplates.id, id))
+        .update(almondTemplates)
+        .set({ deletedAt: new Date(), deletedBy: userId })
+        .where(and(eq(almondTemplates.id, id), isNull(almondTemplates.deletedAt)))
         .returning({ id: almondTemplates.id });
       if (deleted.length === 0) throw new NotFoundError(`Almond template not found: ${id}`);
     }, tx);

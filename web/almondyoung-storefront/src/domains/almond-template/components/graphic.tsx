@@ -1,5 +1,5 @@
 import { memo } from "react"
-import type { Layer } from "../lib/document"
+import type { Layer, SideBackground } from "../lib/document"
 import { FRAME_PATHS, LEGACY_CLIPART } from "../lib/art-library"
 import { CLIPART_DATA } from "../lib/clipart-data"
 import { imageSrc } from "../lib/image-ref"
@@ -482,3 +482,27 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
 }
 
 export const LayerGraphic = memo(LayerGraphicView)
+
+export function Backdrop({
+  value,
+  width = "100%",
+  height = "100%",
+}: {
+  value: SideBackground
+  width?: number | string
+  height?: number | string
+}) {
+  return (
+    <>
+      <rect width={width} height={height} fill={value.background} />
+      {value.backgroundImage && (
+        <image
+          href={imageSrc(value.backgroundImage)}
+          width={width}
+          height={height}
+          preserveAspectRatio="xMidYMid slice"
+        />
+      )}
+    </>
+  )
+}

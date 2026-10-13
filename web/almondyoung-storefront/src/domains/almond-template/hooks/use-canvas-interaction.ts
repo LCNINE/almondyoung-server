@@ -17,7 +17,7 @@ import type { EditorMode } from "./use-template-storage"
 type Params = {
   design: Design
   setDesign: Dispatch<SetStateAction<Design>>
-  setHistory: Dispatch<SetStateAction<Design[]>>
+  commit: (before: Design) => void
   side: "front" | "back"
   mode: EditorMode
   moveMode: boolean
@@ -27,7 +27,7 @@ type Params = {
 export function useCanvasInteraction({
   design,
   setDesign,
-  setHistory,
+  commit,
   side,
   mode,
   moveMode,
@@ -43,7 +43,11 @@ export function useCanvasInteraction({
     layer: Layer
     handle?: string
     rotationStart?: number
+    moved?: boolean
+    added?: boolean
   } | null>(null)
+  const [panReady, setPanReady] = useState(false)
+  const panning = moveMode || panReady
 
   useEffect(() => {
     if (!canvasAreaRef.current) return
@@ -76,6 +80,60 @@ export function useCanvasInteraction({
     return () => area.removeEventListener("wheel", zoomWheel)
   }, [])
 
+  useEffect(() => {
+    const typing = (target: EventTarget | null) =>
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement
+    const down = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || typing(event.target)) return
+      event.preventDefault()
+      setPanReady(true)
+    }
+    const up = (event: KeyboardEvent) => {
+      if (event.code === "Space") setPanReady(false)
+    }
+    window.addEventListener("keydown", down)
+    window.addEventListener("keyup", up)
+    return () => {
+      window.removeEventListener("keydown", down)
+      window.removeEventListener("keyup", up)
+    }
+  }, [])
+  useEffect(() => {
+    const area = canvasAreaRef.current
+    if (!area || !panning) return
+    let start: { x: number; y: number; left: number; top: number } | null = null
+    const press = (event: PointerEvent) => {
+      event.stopPropagation()
+      start = {
+        x: event.clientX,
+        y: event.clientY,
+        left: area.scrollLeft,
+        top: area.scrollTop,
+      }
+      area.setPointerCapture(event.pointerId)
+    }
+    const move = (event: PointerEvent) => {
+      if (!start) return
+      area.scrollLeft = start.left - (event.clientX - start.x)
+      area.scrollTop = start.top - (event.clientY - start.y)
+    }
+    const release = () => {
+      start = null
+    }
+    area.addEventListener("pointerdown", press, { capture: true })
+    area.addEventListener("pointermove", move)
+    area.addEventListener("pointerup", release)
+    area.style.cursor = "grab"
+    return () => {
+      area.removeEventListener("pointerdown", press, { capture: true })
+      area.removeEventListener("pointermove", move)
+      area.removeEventListener("pointerup", release)
+      area.style.cursor = ""
+    }
+  }, [panning])
+
   const point = (event: React.PointerEvent) => {
     const rect = svgRef.current!.getBoundingClientRect()
     return {
@@ -93,7 +151,22 @@ export function useCanvasInteraction({
     )
       return
     const p = point(event)
-    dragRef.current = { ...p, layer }
+    if (event.ctrlKey || event.metaKey) {
+      const copy = {
+        ...layer,
+        id: crypto.randomUUID(),
+        name: `${layer.name} 복사`,
+        locked: false,
+      }
+      setDesign((old) => {
+        const index = old[side].findIndex((item) => item.id === layer.id)
+        const next = [...old[side]]
+        next.splice(index + 1, 0, copy)
+        return { ...old, [side]: next }
+      })
+      setSelectedId(copy.id)
+      dragRef.current = { ...p, layer: copy, added: true }
+    } else dragRef.current = { ...p, layer }
     svgRef.current?.setPointerCapture(event.pointerId)
   }
   const startResize = (
@@ -123,6 +196,8 @@ export function useCanvasInteraction({
     if (!dragRef.current) return
     const p = point(event)
     const { layer, x, y, handle, rotationStart } = dragRef.current
+    if (p.x === x && p.y === y) return
+    dragRef.current.moved = true
     const rad = ((layer.rotation ?? 0) * Math.PI) / 180
     const dx = p.x - x,
       dy = p.y - y
@@ -178,20 +253,24 @@ export function useCanvasInteraction({
     )
   }
   const endDrag = () => {
-    if (dragRef.current) {
-      setHistory((items) => [
-        ...items.slice(-29),
-        {
-          ...design,
-          [side]: design[side].map((layer) =>
-            layer.id === dragRef.current?.layer.id
-              ? dragRef.current.layer
-              : layer
-          ),
-        },
-      ])
-      dragRef.current = null
+    const drag = dragRef.current
+    dragRef.current = null
+    if (drag?.added) {
+      const withoutCopy = {
+        ...design,
+        [side]: design[side].filter((layer) => layer.id !== drag.layer.id),
+      }
+      if (drag.moved) commit(withoutCopy)
+      else setDesign(withoutCopy)
+      return
     }
+    if (!drag?.moved) return
+    commit({
+      ...design,
+      [side]: design[side].map((layer) =>
+        layer.id === drag.layer.id ? drag.layer : layer
+      ),
+    })
   }
   const canvasFit = Math.max(
     0.01,
@@ -213,5 +292,6 @@ export function useCanvasInteraction({
     endDrag,
     canvasFit,
     handleSize,
+    panning,
   }
 }

@@ -69,8 +69,54 @@ export type Design = {
   backgroundImage?: string
   backgroundPixelWidth?: number
   backgroundPixelHeight?: number
+  backBackground?: SideBackground
   front: Layer[]
   back: Layer[]
+}
+
+export type SideBackground = Pick<
+  Design,
+  | "background"
+  | "backgroundImage"
+  | "backgroundPixelWidth"
+  | "backgroundPixelHeight"
+>
+
+export function sideBackground(
+  design: Design,
+  side: "front" | "back"
+): SideBackground {
+  if (side === "back" && design.backBackground) return design.backBackground
+  return {
+    background: design.background,
+    backgroundImage: design.backgroundImage,
+    backgroundPixelWidth: design.backgroundPixelWidth,
+    backgroundPixelHeight: design.backgroundPixelHeight,
+  }
+}
+
+export function printsBack(design: Design): boolean {
+  const bg = design.backBackground
+  return (
+    design.back.length > 0 ||
+    !!bg?.backgroundImage ||
+    (!!bg && bg.background.toLowerCase() !== "#ffffff")
+  )
+}
+
+export function withSideBackground(
+  design: Design,
+  side: "front" | "back",
+  value: SideBackground
+): Design {
+  if (side === "back") return { ...design, backBackground: value }
+  return {
+    ...design,
+    backgroundImage: undefined,
+    backgroundPixelWidth: undefined,
+    backgroundPixelHeight: undefined,
+    ...value,
+  }
 }
 
 export function newDesign(kind: PrintKind, productId = ""): Design {
@@ -82,10 +128,14 @@ export function newDesign(kind: PrintKind, productId = ""): Design {
     widthMm,
     heightMm,
     background: "#ffffff",
+    backBackground: { background: "#ffffff" },
     front: [],
     back: [],
   }
 }
+
+export const MAX_IMAGE_FILE_BYTES = 10 * 1024 * 1024
+const MAX_IMAGE_DATA_LENGTH = Math.ceil((MAX_IMAGE_FILE_BYTES * 4) / 3) + 100
 
 const kinds = new Set(Object.keys(PRINT_SPECS))
 const color = /^#[0-9a-fA-F]{6}$/
@@ -175,10 +225,10 @@ export function parseDesign(value: unknown): Design {
       (layer.type === "qr" &&
         (!layer.qrBits || !Number.isInteger(layer.qrSize))) ||
       (layer.text?.length ?? 0) > 500 ||
-      (layer.image?.length ?? 0) > 8_000_000 ||
+      (layer.image?.length ?? 0) > MAX_IMAGE_DATA_LENGTH ||
       (layer.image && !isImageValue(layer.image)) ||
       (layer.originalImage !== undefined &&
-        (layer.originalImage.length > 8_000_000 ||
+        (layer.originalImage.length > MAX_IMAGE_DATA_LENGTH ||
           !isImageValue(layer.originalImage))) ||
       (layer.imageFilter !== undefined &&
         !["grayscale", "emboss", "boxblur", "brightness", "sepia"].includes(
@@ -220,10 +270,24 @@ export function parseDesign(value: unknown): Design {
       throw new Error("레이어 데이터가 올바르지 않습니다.")
     }
   }
+  if (data.backBackground !== undefined) {
+    if (
+      !data.backBackground ||
+      typeof data.backBackground.background !== "string" ||
+      !color.test(data.backBackground.background)
+    )
+      throw new Error("뒷면 배경이 올바르지 않습니다.")
+    checkBackgroundImage(data.backBackground)
+  }
+  checkBackgroundImage(data)
+  return data as Design
+}
+
+function checkBackgroundImage(data: Partial<SideBackground>) {
   if (
     data.backgroundImage &&
     (!isImageValue(data.backgroundImage) ||
-      data.backgroundImage.length > 8_000_000)
+      data.backgroundImage.length > MAX_IMAGE_DATA_LENGTH)
   )
     throw new Error("배경 이미지가 올바르지 않습니다.")
   if (
@@ -235,7 +299,6 @@ export function parseDesign(value: unknown): Design {
         data.backgroundPixelHeight < 1))
   )
     throw new Error("배경 이미지 해상도가 올바르지 않습니다.")
-  return data as Design
 }
 
 export function updateLayer(
@@ -351,23 +414,32 @@ export function resizeLayerFromHandle(
   }
 }
 
+const MIN_PRINT_TEXT_MM = 1.76
+
 export function printIssues(design: Design): string[] {
   const issues: string[] = []
   const minDpi = PRINT_SPECS[design.kind].minImageDpi
   if (!design.front.length) issues.push("앞면에 인쇄할 내용이 없습니다.")
-  if (
-    design.backgroundImage &&
-    (!design.backgroundPixelWidth ||
-      !design.backgroundPixelHeight ||
-      imageDpi(
-        design.kind,
-        design.backgroundPixelWidth,
-        design.backgroundPixelHeight,
-        design.widthMm,
-        design.heightMm
-      ) < minDpi)
-  )
-    issues.push(`배경 이미지 해상도가 ${minDpi}dpi보다 낮습니다.`)
+  for (const [label, side] of [
+    ["앞면", "front"],
+    ["뒷면", "back"],
+  ] as const) {
+    const bg = sideBackground(design, side)
+    if (side === "back" && !printsBack(design)) continue
+    if (
+      bg.backgroundImage &&
+      (!bg.backgroundPixelWidth ||
+        !bg.backgroundPixelHeight ||
+        imageDpi(
+          design.kind,
+          bg.backgroundPixelWidth,
+          bg.backgroundPixelHeight,
+          design.widthMm,
+          design.heightMm
+        ) < minDpi)
+    )
+      issues.push(`${label} 배경 이미지 해상도가 ${minDpi}dpi보다 낮습니다.`)
+  }
   for (const [side, layers] of [
     ["앞면", design.front],
     ["뒷면", design.back],
@@ -395,6 +467,15 @@ export function printIssues(design: Design): string[] {
         )
       if (layer.type === "text" && !(layer.text ?? "").trim())
         issues.push(`${side}의 ${layer.name}: 문구가 비어 있습니다.`)
+      if (
+        layer.type === "text" &&
+        (layer.text ?? "").trim() &&
+        (layer.fontSize ?? 10) * PRINT_SPECS[design.kind].fileScale <
+          MIN_PRINT_TEXT_MM
+      )
+        issues.push(
+          `${side}의 ${layer.name}: 글자가 너무 작아 인쇄 시 뭉개질 수 있습니다. 더 크게 키워 주세요.`
+        )
       if (
         (layer.type === "text" || layer.type === "qr") &&
         (layer.x < PRINT_SPECS[design.kind].safetyMm ||

@@ -20,8 +20,21 @@ function layerName(type: Layer["type"]) {
 }
 
 export function makeLayer(type: Layer["type"], design: Design): Layer {
-  const width = type === "text" ? design.widthMm * 0.8 : design.widthMm * 0.35
   const fontSize = Math.max(3, mm(design.widthMm / 13))
+  if (type === "clipart" || type === "qr") {
+    const side =
+      Math.min(design.widthMm, design.heightMm) * (type === "qr" ? 0.25 : 0.3)
+    return {
+      ...makeLayer("rect", design),
+      type,
+      name: layerName(type),
+      x: mm((design.widthMm - side) / 2),
+      y: mm((design.heightMm - side) / 2),
+      width: mm(side),
+      height: mm(side),
+    }
+  }
+  const width = type === "text" ? design.widthMm * 0.8 : design.widthMm * 0.35
   return {
     id: crypto.randomUUID(),
     type,
@@ -42,5 +55,24 @@ export function makeLayer(type: Layer["type"], design: Design): Layer {
     strokeWidth: 0,
     align: "left",
     editable: true,
+  }
+}
+
+export function imageBox(
+  design: Design,
+  pixelWidth: number,
+  pixelHeight: number
+) {
+  const scale = Math.min(
+    (design.widthMm * 0.5) / pixelWidth,
+    (design.heightMm * 0.5) / pixelHeight
+  )
+  const width = pixelWidth * scale
+  const height = pixelHeight * scale
+  return {
+    x: mm((design.widthMm - width) / 2),
+    y: mm((design.heightMm - height) / 2),
+    width: mm(width),
+    height: mm(height),
   }
 }

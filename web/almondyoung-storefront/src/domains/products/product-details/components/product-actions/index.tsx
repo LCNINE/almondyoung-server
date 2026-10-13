@@ -107,10 +107,14 @@ export default function ProductActions({
 
   const isSimple = (product.variants?.length ?? 0) <= 1
 
-  // 변형이 1개뿐이면 자동으로 선택 리스트에 추가
+  // 변형이 1개뿐이거나 URL 에 v_id 가 있으면 그 변형을 선택 리스트에 넣는다
   useEffect(() => {
-    if (isSimple && product.variants?.length === 1) {
-      const variant = product.variants[0]
+    const linkedId = searchParams.get("v_id")
+    const variant =
+      isSimple && product.variants?.length === 1
+        ? product.variants[0]
+        : product.variants?.find((item) => item.id === linkedId)
+    if (variant) {
       const price = getPricesForVariant(variant)
       if (price) {
         setSelectedItems([

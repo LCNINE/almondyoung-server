@@ -36,7 +36,8 @@
     "coupon": "Coupons",
     "logout": "Log out",
     "withdraw": "Delete Account",
-    "business": "Business Info"
+    "business": "Business Info",
+    "almondTemplates": "My Designs (Almond Template)"
   },
   "contests": {
     "title": "My Contests",
@@ -1488,5 +1489,19 @@
     "noticeArrears": "If a debit fails or your auto-debit account is rejected and your membership is ended, the fee for the period you were entitled to remains unpaid. The rule is the same as for a paid period you could not get refunded — if it has been no more than 7 days since your access started and you have not used any membership benefit, no unpaid fee arises. You can pay it any time from My Page > Membership; until then, you cannot start a new membership and the next period's access is no longer granted ahead of payment confirmation.",
     "agreeArrearsLine": "If your membership ends because a debit fails or your account is rejected, the fee for a period in which you used a benefit or that is past 7 days remains unpaid, and you cannot start a new membership until it is paid.",
     "agreeWithdrawLine": "Using any membership benefit once (member-price purchase, welcome deal, members-only coupon, etc.) limits withdrawal (full refund), even within 7 days."
+  },
+  "almondTemplates": {
+    "title": "My Designs",
+    "description": "Designs you saved in Almond Template. Continue editing or order them.",
+    "empty": "No saved designs yet.",
+    "browse": "Browse Almond Template",
+    "edit": "Continue editing",
+    "delete": "Delete",
+    "deleteConfirm": "Delete “{title}”? This cannot be undone.",
+    "deleted": "Design deleted.",
+    "loadFail": "Could not load your designs. Please try again later.",
+    "deleteFail": "Could not delete the design.",
+    "savedAt": "Saved",
+    "limit": "Up to 50 designs are kept."
   }
 }

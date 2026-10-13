@@ -631,15 +631,15 @@ export const almondTemplates = pgTable(
     thumbnailSvg: text('thumbnail_svg').notNull(),
     status: almondTemplateStatusEnum('status').notNull().default('draft'),
     createdBy: uuid('created_by').notNull(),
+    updatedBy: uuid('updated_by'),
+    deletedAt: timestamp('deleted_at'),
+    deletedBy: uuid('deleted_by'),
     ...timestampColumns,
   },
   (table) => [
-    uniqueIndex('almond_templates_product_size_title_unique').on(
-      table.productId,
-      table.widthMm,
-      table.heightMm,
-      table.title,
-    ),
+    uniqueIndex('almond_templates_product_size_title_unique')
+      .on(table.productId, table.widthMm, table.heightMm, table.title)
+      .where(sql`${table.deletedAt} is null`),
     index('almond_templates_status_updated').on(table.status, table.updatedAt),
   ],
 );
@@ -656,9 +656,26 @@ export const almondDesigns = pgTable(
     design: jsonb('design').$type<Record<string, unknown>>().notNull(),
     frontSvg: text('front_svg').notNull(),
     backSvg: text('back_svg'),
+    printFiles: jsonb('print_files').$type<Record<string, string>>().notNull().default({}),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [index('almond_designs_user_created').on(table.userId, table.createdAt)],
+);
+
+export const almondSavedDesigns = pgTable(
+  'almond_saved_designs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    productId: varchar('product_id', { length: 36 }).notNull(),
+    widthMm: integer('width_mm').notNull(),
+    heightMm: integer('height_mm').notNull(),
+    title: varchar('title', { length: 80 }).notNull(),
+    design: jsonb('design').$type<Record<string, unknown>>().notNull(),
+    thumbnailSvg: text('thumbnail_svg').notNull(),
+    ...timestampColumns,
+  },
+  (table) => [index('almond_saved_designs_user_updated').on(table.userId, table.updatedAt)],
 );
 
 export const ugcServiceSchema = {
@@ -683,6 +700,7 @@ export const ugcServiceSchema = {
   logoContestVotes,
   almondTemplates,
   almondDesigns,
+  almondSavedDesigns,
 } as const;
 
 export type UgcServiceSchema = typeof ugcServiceSchema;

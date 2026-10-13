@@ -1,19 +1,19 @@
 import { X } from "lucide-react"
-import { LayerGraphic } from "../../graphic"
+import { Backdrop, LayerGraphic } from "../../graphic"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
-import { imageSrc } from "../../../lib/image-ref"
+import { sideBackground } from "../../../lib/document"
 
 export function PreviewDialog({ editor }: { editor: AlmondEditor }) {
   const {
     mode,
     design,
+    hasBack,
     previewSide,
     setPreviewSide,
     setPreview,
     exportJson,
     exportSvg,
     printProof,
-    variantId,
     ordering,
     orderDesign,
   } = editor
@@ -35,12 +35,14 @@ export function PreviewDialog({ editor }: { editor: AlmondEditor }) {
           >
             앞면
           </button>
-          <button
-            className={`border px-3 py-1 ${previewSide === "back" ? "bg-slate-900 text-white" : ""}`}
-            onClick={() => setPreviewSide("back")}
-          >
-            뒷면
-          </button>
+          {hasBack && (
+            <button
+              className={`border px-3 py-1 ${previewSide === "back" ? "bg-slate-900 text-white" : ""}`}
+              onClick={() => setPreviewSide("back")}
+            >
+              뒷면
+            </button>
+          )}
         </div>
         <button
           className="flex h-10 items-center gap-1 rounded border px-4 hover:bg-slate-100"
@@ -68,15 +70,7 @@ export function PreviewDialog({ editor }: { editor: AlmondEditor }) {
           }}
           className="bg-white shadow-xl"
         >
-          <rect width="100%" height="100%" fill={design.background} />
-          {design.backgroundImage && (
-            <image
-              href={imageSrc(design.backgroundImage)}
-              width="100%"
-              height="100%"
-              preserveAspectRatio="xMidYMid slice"
-            />
-          )}
+          <Backdrop value={sideBackground(design, previewSide)} />
           {design[previewSide].map((layer) => (
             <LayerGraphic key={layer.id} layer={layer} />
           ))}
@@ -103,7 +97,7 @@ export function PreviewDialog({ editor }: { editor: AlmondEditor }) {
         ) : (
           <button
             className="bg-primary rounded px-4 py-2 font-bold text-white disabled:opacity-50"
-            disabled={ordering || !variantId}
+            disabled={ordering}
             onClick={orderDesign}
           >
             {ordering ? "시안 저장 중…" : "이 시안으로 주문하기"}

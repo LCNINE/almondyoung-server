@@ -1,3 +1,4 @@
+import { NumberInput } from "./number-input"
 import { useRef } from "react"
 import {
   Bold,
@@ -69,19 +70,15 @@ export function ObjectProperties({
             <div className="flex items-center gap-2">
               <label className="flex min-w-0 flex-1 items-center gap-1">
                 크기
-                <input
+                <NumberInput
                   aria-label="글자 크기"
-                  type="number"
                   min="2"
                   step="0.5"
                   className="w-16 border p-1 text-right"
                   value={selected.fontSize ?? 10}
                   disabled={!editable}
-                  onChange={(event) =>
-                    patch(
-                      selected.id,
-                      textBoxFor(selected, Number(event.target.value))
-                    )
+                  onValue={(value) =>
+                    patch(selected.id, textBoxFor(selected, value))
                   }
                 />
               </label>
@@ -175,17 +172,16 @@ export function ObjectProperties({
             {!["clipart", "qr", "frame"].includes(selected.type) && (
               <label className="flex items-center gap-2">
                 선두께
-                <input
+                <NumberInput
                   aria-label="선두께"
-                  type="number"
                   min="0"
                   max="50"
                   step="0.2"
                   value={selected.strokeWidth ?? 0}
                   disabled={!editable}
-                  onChange={(event) =>
+                  onValue={(value) =>
                     patch(selected.id, {
-                      strokeWidth: Number(event.target.value),
+                      strokeWidth: value,
                     })
                   }
                   className="w-16 border p-1 text-right"
@@ -204,20 +200,16 @@ export function ObjectProperties({
             <div className="flex items-center gap-2">
               <label className="flex min-w-0 flex-1 items-center gap-1">
                 투명도
-                <input
+                <NumberInput
                   aria-label="오브젝트 투명도"
-                  type="number"
                   min="10"
                   max="100"
                   step="10"
                   value={Math.round((selected.opacity ?? 1) * 100)}
                   disabled={!editable}
-                  onChange={(event) =>
+                  onValue={(value) =>
                     patch(selected.id, {
-                      opacity: Math.max(
-                        0.1,
-                        Math.min(1, Number(event.target.value) / 100)
-                      ),
+                      opacity: Math.max(0.1, Math.min(1, value / 100)),
                     })
                   }
                   className="w-14 border p-1 text-right"
@@ -225,19 +217,15 @@ export function ObjectProperties({
               </label>
               <label className="flex min-w-0 flex-1 items-center gap-1">
                 회전
-                <input
+                <NumberInput
                   aria-label="오브젝트 회전"
-                  type="number"
                   min="-360"
                   max="360"
                   value={selected.rotation ?? 0}
                   disabled={!editable}
-                  onChange={(event) =>
+                  onValue={(value) =>
                     patch(selected.id, {
-                      rotation: Math.max(
-                        -360,
-                        Math.min(360, Number(event.target.value))
-                      ),
+                      rotation: Math.max(-360, Math.min(360, value)),
                     })
                   }
                   className="w-14 border p-1 text-right"

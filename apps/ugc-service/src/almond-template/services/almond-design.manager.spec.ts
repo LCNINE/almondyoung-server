@@ -45,6 +45,20 @@ describe('parseAlmondDesign', () => {
     expect(record).toMatchObject({ backSvg: null, templateId: null });
   });
 
+  it('흰 배경만 있는 뒷면은 단면으로, 색·이미지 배경만 있는 뒷면은 양면으로 저장한다', () => {
+    const blank = parseAlmondDesign(
+      input({ design: design({ back: [], backBackground: { background: '#FFFFFF' } }), backSvg: SVG }),
+    );
+    expect(blank.backSvg).toBeNull();
+
+    for (const backBackground of [{ background: '#112233' }, { background: '#ffffff', backgroundImage: `file:${TEMPLATE}` }]) {
+      expect(parseAlmondDesign(input({ design: design({ back: [], backBackground }) })).backSvg).toBe(SVG);
+      expect(() => parseAlmondDesign(input({ design: design({ back: [], backBackground }), backSvg: undefined }))).toThrow(
+        BadRequestError,
+      );
+    }
+  });
+
   it.each<[string, Partial<AlmondDesignInput>]>([
     ['버전이 1 이 아니다', { design: design({ version: 2 }) }],
     ['front 가 배열이 아니다', { design: design({ front: {} }) }],

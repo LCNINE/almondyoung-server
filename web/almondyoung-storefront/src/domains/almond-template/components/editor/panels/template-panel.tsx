@@ -1,4 +1,6 @@
+import { useState } from "react"
 import { PRINT_PRODUCTS, PRINT_SPECS } from "../../../lib/catalog"
+import type { PublishedTemplate } from "../../../lib/gallery-filter"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
 
 export function TemplatePanel({
@@ -12,6 +14,18 @@ export function TemplatePanel({
 }) {
   const { productId, mode, publishedTemplates, loadPublished, applyStarter } =
     editor
+  const [previewing, setPreviewing] = useState<{
+    item: PublishedTemplate
+    top: number
+    left: number
+  } | null>(null)
+  const [applying, setApplying] = useState(false)
+  const apply = async (item: PublishedTemplate) => {
+    setApplying(true)
+    await loadPublished(item)
+    setApplying(false)
+    setPreviewing(null)
+  }
   return (
     <>
       {mode === "customer" ? (
@@ -22,9 +36,17 @@ export function TemplatePanel({
                 <button
                   key={item.id}
                   title={item.title}
-                  aria-label={`${item.title} 시안 불러오기`}
-                  onClick={() => void loadPublished(item)}
-                  className="flex h-40 items-center justify-center bg-[#f5f5f5] p-2 hover:outline hover:outline-2 hover:outline-[#5e9bd9]"
+                  aria-label={`${item.title} 시안 미리보기`}
+                  aria-pressed={previewing?.item.id === item.id}
+                  onClick={(event) => {
+                    const rect = event.currentTarget.getBoundingClientRect()
+                    setPreviewing(
+                      previewing?.item.id === item.id
+                        ? null
+                        : { item, top: rect.top, left: rect.right + 8 }
+                    )
+                  }}
+                  className={`flex h-40 items-center justify-center bg-[#f5f5f5] p-2 hover:outline hover:outline-2 hover:outline-[#5e9bd9] ${previewing?.item.id === item.id ? "outline outline-2 outline-[#5e9bd9]" : ""}`}
                 >
                   <img
                     src={item.thumbnail}
@@ -38,6 +60,36 @@ export function TemplatePanel({
             <p className="rounded bg-slate-100 p-4 text-sm text-slate-600">
               게시된 시안이 없습니다.
             </p>
+          )}
+          {previewing && (
+            <div
+              role="dialog"
+              aria-label={`${previewing.item.title} 미리보기`}
+              className="fixed z-40 w-[360px] bg-white p-3 shadow-[0_8px_24px_rgba(0,0,0,0.18)]"
+              style={{
+                top: Math.min(previewing.top, window.innerHeight - 320),
+                left: previewing.left,
+              }}
+            >
+              <img
+                src={previewing.item.thumbnail}
+                alt={previewing.item.title}
+                className="mx-auto max-h-60 max-w-full object-contain"
+              />
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <span className="truncate text-sm text-slate-600">
+                  {previewing.item.title}
+                </span>
+                <button
+                  type="button"
+                  disabled={applying}
+                  onClick={() => void apply(previewing.item)}
+                  className="shrink-0 bg-[#5bc0be] px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {applying ? "불러오는 중" : "적용"}
+                </button>
+              </div>
+            </div>
           )}
         </>
       ) : (

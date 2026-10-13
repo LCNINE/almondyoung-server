@@ -126,23 +126,19 @@ export function EditorHeader({ editor }: { editor: AlmondEditor }) {
               setPreview(true)
             },
           },
-          ...(mode === "designer"
+          {
+            label: "불러오기",
+            icon: FolderOpen,
+            click: openLoad,
+          },
+          { label: "저장", icon: Save, click: save },
+          ...(savedId
             ? [
                 {
-                  label: "불러오기",
-                  icon: FolderOpen,
-                  click: openLoad,
+                  label: "다른 이름으로 저장",
+                  icon: CopyPlus,
+                  click: saveAs,
                 },
-                { label: "저장", icon: Save, click: save },
-                ...(savedId
-                  ? [
-                      {
-                        label: "다른 이름으로 저장",
-                        icon: CopyPlus,
-                        click: saveAs,
-                      },
-                    ]
-                  : []),
               ]
             : []),
         ].map(({ label, icon: Icon, click }) => (

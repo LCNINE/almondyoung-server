@@ -1,7 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { execFileSync } from 'node:child_process';
 import { ServiceUnavailableError } from '@app/shared';
-import { AlmondPrintRenderer } from './almond-print.renderer';
+import { AlmondPrintRenderer, withJpegDensity } from './almond-print.renderer';
 
 function hasBinary(bin: string): boolean {
   try {
@@ -64,6 +64,12 @@ describeIfBinaries('AlmondPrintRenderer (실제 gs·rsvg-convert)', () => {
     });
   }, 60_000);
 
+  it('미리보기는 긴 변을 제한한 RGB JPG 로 만든다', async () => {
+    const jpg = await renderer.renderPreview(side('앞면', '#ff6600'));
+    expect(jpegFrame(jpg)).toMatchObject({ components: 3 });
+    expect(Math.max(jpegFrame(jpg).width, jpegFrame(jpg).height)).toBeLessThanOrEqual(1200);
+  }, 60_000);
+
   it('동시에 불러도 차례로 끝낸다', async () => {
     const results = await Promise.all([
       renderer.renderPdf(side('하나', '#111111'), null),
@@ -77,5 +83,26 @@ describe('AlmondPrintRenderer 변환기 없음', () => {
   it('바이너리가 없으면 503 으로 알린다', async () => {
     const renderer = new AlmondPrintRenderer(configOf({ RSVG_CONVERT_BIN: '/nonexistent/rsvg-convert' }));
     await expect(renderer.renderPdf(side('앞면', '#000000'), null)).rejects.toThrow(ServiceUnavailableError);
+  });
+});
+
+describe('withJpegDensity', () => {
+  const adobeOnly = Buffer.from([0xff, 0xd8, 0xff, 0xee, 0x00, 0x04, 0x41, 0x64, 0xff, 0xd9]);
+
+  it('해상도 정보(JFIF)가 없는 CMYK JPG 에 dpi 를 넣는다 — 없으면 프로그램들이 72dpi 로 읽는다', () => {
+    const out = withJpegDensity(adobeOnly, 350);
+    expect(out.subarray(0, 4)).toEqual(Buffer.from([0xff, 0xd8, 0xff, 0xe0]));
+    expect(out.subarray(6, 11).toString('latin1')).toBe('JFIF\0');
+    expect(out.readUInt8(13)).toBe(1);
+    expect(out.readUInt16BE(14)).toBe(350);
+    expect(out.readUInt16BE(16)).toBe(350);
+    expect(out.subarray(20)).toEqual(adobeOnly.subarray(2));
+  });
+
+  it('이미 JFIF 가 있으면 바꿔 끼운다', () => {
+    const once = withJpegDensity(adobeOnly, 300);
+    const twice = withJpegDensity(once, 700);
+    expect(twice.length).toBe(once.length);
+    expect(twice.readUInt16BE(14)).toBe(700);
   });
 });

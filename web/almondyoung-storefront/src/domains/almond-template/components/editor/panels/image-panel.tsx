@@ -1,9 +1,16 @@
+import { imageBox } from "../../../lib/layer"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
 import { imageSrc } from "../../../lib/image-ref"
 
 export function ImagePanel({ editor }: { editor: AlmondEditor }) {
-  const { add, imageLibrary, imageFile, fillFrames, removeWhiteBackground } =
-    editor
+  const {
+    design,
+    add,
+    imageLibrary,
+    imageFile,
+    fillFrames,
+    removeWhiteBackground,
+  } = editor
   return (
     <>
       <label
@@ -61,7 +68,13 @@ export function ImagePanel({ editor }: { editor: AlmondEditor }) {
               <button
                 key={`${index}-${item.image.length}`}
                 aria-label={`업로드 이미지 ${index + 1} 추가`}
-                onClick={() => add("image", { ...item, fill: "#ffffff" })}
+                onClick={() =>
+                  add("image", {
+                    ...item,
+                    ...imageBox(design, item.pixelWidth, item.pixelHeight),
+                    fill: "#ffffff",
+                  })
+                }
                 className="flex h-24 items-center justify-center border bg-slate-50"
               >
                 <img

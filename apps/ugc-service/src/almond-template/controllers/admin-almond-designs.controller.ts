@@ -7,17 +7,20 @@ import {
   ParseIntPipe,
   ParseUUIDPipe,
   Query,
+  Req,
   Res,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiProduces, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import type { FastifyReply } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { RequireScopes } from '@app/authorization';
+import { NotFoundError } from '@app/shared';
 import {
   ALMOND_PRINT_DEFAULT_DPI,
   ALMOND_PRINT_MAX_DPI,
   ALMOND_PRINT_MIN_DPI,
 } from '../constants/almond-template.constants';
-import { AdminAlmondDesignResponseDto } from '../dto/almond-design.dto';
+import { AdminAlmondDesignResponseDto, AlmondPrintLinkResponseDto } from '../dto/almond-design.dto';
 import { AlmondDesignsService } from '../services/almond-designs.service';
 import { type AlmondPrintFormat } from '../types/almond-design.types';
 
@@ -35,6 +38,59 @@ export class AdminAlmondDesignsController {
   @ApiResponse({ status: 404 })
   get(@Param('id', ParseUUIDPipe) id: string): Promise<AdminAlmondDesignResponseDto> {
     return this.service.getForAdmin(id);
+  }
+
+  @Get(':id/preview/:side')
+  @RequireScopes('admin:template:write')
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiParam({ name: 'side', enum: ['front.jpg', 'back.jpg'] })
+  @ApiOperation({
+    summary: '고객 시안 미리보기 JPG. 인쇄 파일과 같은 원본을 긴 변 1200px 로 줄여 어드민 Lambda 응답 상한(6MB) 안에 둔다',
+  })
+  @ApiProduces('image/jpeg')
+  @ApiResponse({ status: 200 })
+  @ApiResponse({ status: 404 })
+  async preview(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('side') side: string,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<Buffer> {
+    if (side !== 'front.jpg' && side !== 'back.jpg') throw new BadRequestException('side 는 front.jpg 또는 back.jpg');
+    const jpg = await this.service.renderPreview(id, side === 'front.jpg' ? 'front' : 'back');
+    if (jpg === null) throw new NotFoundError(`Almond design has no back side: ${id}`);
+    reply.headers({ 'content-type': 'image/jpeg', 'x-content-type-options': 'nosniff', 'cache-control': 'private, no-store' });
+    return jpg;
+  }
+
+  @Get(':id/print-link')
+  @RequireScopes('admin:template:write')
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiQuery({ name: 'format', enum: ['pdf', 'eps', 'jpg'] })
+  @ApiQuery({ name: 'dpi', required: false, example: ALMOND_PRINT_DEFAULT_DPI })
+  @ApiOperation({
+    summary: '인쇄 파일 다운로드 링크',
+    description:
+      '인쇄 파일을 file-service(S3)에 올리고 5분짜리 서명 URL 을 준다. 브라우저가 S3 에서 직접 받으므로 어드민 Lambda 응답 상한(6MB)에 걸리지 않는다. 같은 형식·dpi 는 한 번 만든 파일을 재사용한다.',
+  })
+  @ApiResponse({ status: 200, type: AlmondPrintLinkResponseDto })
+  @ApiResponse({ status: 400 })
+  @ApiResponse({ status: 404 })
+  printLink(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('format') format: string,
+    @Query('dpi', new DefaultValuePipe(ALMOND_PRINT_DEFAULT_DPI), ParseIntPipe) dpi: number,
+    @Req() request: FastifyRequest,
+  ): Promise<AlmondPrintLinkResponseDto> {
+    if (format !== 'pdf' && format !== 'eps' && format !== 'jpg') {
+      throw new BadRequestException('format 은 pdf·eps·jpg 중 하나여야 합니다.');
+    }
+    if (dpi < ALMOND_PRINT_MIN_DPI || dpi > ALMOND_PRINT_MAX_DPI) {
+      throw new BadRequestException(`dpi 는 ${ALMOND_PRINT_MIN_DPI}~${ALMOND_PRINT_MAX_DPI} 사이여야 합니다.`);
+    }
+    const header = request.headers.authorization;
+    const accessToken = header?.startsWith('Bearer ') ? header.slice(7) : request.cookies.accessToken;
+    if (!accessToken) throw new UnauthorizedException();
+    return this.service.printLink(id, format, dpi, accessToken);
   }
 
   @Get(':id/print.eps')
@@ -67,7 +123,9 @@ export class AdminAlmondDesignsController {
   @RequireScopes('admin:template:write')
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiQuery({ name: 'dpi', required: false, example: ALMOND_PRINT_DEFAULT_DPI })
-  @ApiOperation({ summary: '인쇄용 CMYK JPG (앞·뒷면 나란히 한 장). PET배너는 300, 미니배너는 350dpi' })
+  @ApiOperation({
+    summary: '인쇄용 CMYK JPG (앞·뒷면 나란히 한 장). PET·미니배너 350dpi, 현수막은 1/10 파일이라 700dpi',
+  })
   @ApiProduces('image/jpeg')
   @ApiResponse({ status: 200 })
   @ApiResponse({ status: 400 })

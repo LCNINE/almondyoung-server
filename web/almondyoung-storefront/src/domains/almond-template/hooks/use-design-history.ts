@@ -11,6 +11,10 @@ export function useDesignHistory(initial: () => Design) {
     setFuture([])
     setDesign(next)
   }
+  const commit = (before: Design) => {
+    setHistory((items) => [...items.slice(-29), before])
+    setFuture([])
+  }
   const undo = () => {
     const prev = history.at(-1)
     if (prev) {
@@ -28,5 +32,5 @@ export function useDesignHistory(initial: () => Design) {
     }
   }
 
-  return { design, setDesign, history, setHistory, future, change, undo, redo }
+  return { design, setDesign, history, future, change, commit, undo, redo }
 }

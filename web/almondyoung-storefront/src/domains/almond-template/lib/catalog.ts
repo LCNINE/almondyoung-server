@@ -222,6 +222,7 @@ export const PRINT_SPECS: Record<
     bleedMm: number
     fileScale: number
     minImageDpi: number
+    duplex: boolean
     note: string
   }
 > = {
@@ -231,7 +232,8 @@ export const PRINT_SPECS: Record<
     safetyMm: 20,
     bleedMm: 0,
     fileScale: 1,
-    minImageDpi: 300,
+    minImageDpi: 350,
+    duplex: false,
     note: "공식 PET배너 칼선은 실물 크기(1:1). 네 모서리 40×40mm 타공, 안전선은 아몬드영이 정한 보수적 20mm입니다.",
   },
   mini: {
@@ -244,6 +246,7 @@ export const PRINT_SPECS: Record<
     bleedMm: 0,
     fileScale: 1,
     minImageDpi: 350,
+    duplex: false,
     note: "공식 미니배너 칼선은 실물 크기(1:1). 네 모서리 타공 표시와 사방 15mm 안쪽의 중요 문구 배치를 확인하세요. 거치대 부자재는 별도입니다.",
   },
   card: {
@@ -253,6 +256,7 @@ export const PRINT_SPECS: Record<
     bleedMm: 1,
     fileScale: 1,
     minImageDpi: 300,
+    duplex: true,
     note: "이지템플릿 명함 90×50mm와 규격 대조. 스노우지 250g·500매, 양면은 앞/뒷면 작업.",
   },
   window: {
@@ -266,6 +270,7 @@ export const PRINT_SPECS: Record<
     bleedMm: 0,
     fileScale: 0.1,
     minImageDpi: 700,
+    duplex: false,
     note: "일반현수막은 실물의 1/10 크기로 파일을 작업하고 이미지는 700dpi로 저장합니다. 선은 1mm, 글자는 5pt 이상(1/10 기준)이어야 하며 정사각은 비규격으로 주문합니다. 큐방(4cm)은 별도 부자재이고 안전선 20mm는 임시값입니다.",
   },
   menu: {
@@ -279,6 +284,7 @@ export const PRINT_SPECS: Record<
     bleedMm: 3,
     fileScale: 1,
     minImageDpi: 300,
+    duplex: false,
     note: "포맥스 3t와 코팅 포스터는 생산 품목이 다릅니다. 이지템플릿 규격·칼선은 미확인이고 안전선 10mm는 임시값입니다.",
   },
   diploma: {
@@ -288,6 +294,7 @@ export const PRINT_SPECS: Record<
     bleedMm: 3,
     fileScale: 1,
     minImageDpi: 300,
+    duplex: false,
     note: "금박용지·케이스에 대응하는 이지템플릿 상품·칼선은 미확인이고 안전선 10mm는 임시값입니다.",
   },
   nail: {
@@ -297,6 +304,7 @@ export const PRINT_SPECS: Record<
     bleedMm: 1.5,
     fileScale: 1,
     minImageDpi: 300,
+    duplex: true,
     note: "90×90mm는 이지템플릿 명함의 기본 규격에 없습니다. 안전선 1.5mm는 임시값이며 비규격·용지·수량을 확인해야 합니다.",
   },
 }

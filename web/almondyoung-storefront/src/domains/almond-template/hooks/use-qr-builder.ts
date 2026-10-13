@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react"
 import QRCode from "qrcode"
-import type { Design, Layer } from "../lib/document"
+import type { Layer } from "../lib/document"
 
 type Params = {
-  design: Design
   add: (type: Layer["type"], extra?: Partial<Layer>) => void
   patch: (id: string, value: Partial<Layer>) => void
   selected: Layer | undefined
@@ -41,7 +40,6 @@ export function parseQrData(data: string) {
 }
 
 export function useQrBuilder({
-  design,
   add,
   patch,
   selected,
@@ -83,8 +81,7 @@ export function useQrBuilder({
         fill: qrColor,
       }
       if (editingQr) return patch(editingQr.id, qr)
-      const width = Math.min(design.widthMm, design.heightMm) * 0.25
-      add("qr", { ...qr, width, height: width, name: "QR코드" })
+      add("qr", { ...qr, name: "QR코드" })
     } catch {
       setMessage("QR코드를 만들 수 없습니다. 내용을 줄여 주세요.")
     }

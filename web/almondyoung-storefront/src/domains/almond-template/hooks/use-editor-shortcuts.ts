@@ -4,7 +4,6 @@ import type { Layer } from "../lib/document"
 type Params = {
   preview: boolean
   textDialog: string | null
-  helpOpen: boolean
   issues: string[]
   saveDialog: boolean
   loadDialog: boolean
@@ -24,6 +23,7 @@ type Params = {
   pasteCopied: () => void
   cutSelected: () => void
   removeSelected: () => void
+  nudgeSelected: (dx: number, dy: number) => void
   canSave: boolean
   save: () => void
   saveNamed: () => void
@@ -32,7 +32,6 @@ type Params = {
 export function useEditorShortcuts({
   preview,
   textDialog,
-  helpOpen,
   issues,
   saveDialog,
   loadDialog,
@@ -52,6 +51,7 @@ export function useEditorShortcuts({
   pasteCopied,
   cutSelected,
   removeSelected,
+  nudgeSelected,
   canSave,
   save,
   saveNamed,
@@ -65,7 +65,6 @@ export function useEditorShortcuts({
         else if (
           !preview &&
           textDialog === null &&
-          !helpOpen &&
           !issues.length &&
           !loadDialog
         )
@@ -91,7 +90,6 @@ export function useEditorShortcuts({
       if (
         preview ||
         textDialog !== null ||
-        helpOpen ||
         issues.length ||
         saveDialog ||
         loadDialog
@@ -102,6 +100,9 @@ export function useEditorShortcuts({
         event.preventDefault()
         if (event.shiftKey) redo()
         else undo()
+      } else if (command && event.key.toLowerCase() === "y") {
+        event.preventDefault()
+        redo()
       } else if (command && event.key.toLowerCase() === "c") {
         if (selected) {
           event.preventDefault()
@@ -117,6 +118,17 @@ export function useEditorShortcuts({
           event.preventDefault()
           cutSelected()
         }
+      } else if (event.key.startsWith("Arrow") && editable) {
+        event.preventDefault()
+        const step = event.shiftKey ? 10 : 1
+        nudgeSelected(
+          event.key === "ArrowLeft"
+            ? -step
+            : event.key === "ArrowRight"
+              ? step
+              : 0,
+          event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0
+        )
       } else if (
         (event.key === "Delete" || event.key === "Backspace") &&
         editable

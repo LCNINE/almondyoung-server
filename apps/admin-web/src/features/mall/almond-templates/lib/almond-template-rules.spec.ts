@@ -23,6 +23,7 @@ function template(
     purpose: '이벤트·홍보',
     status: 'draft',
     createdBy: 'u1',
+    updatedBy: null,
     createdAt: '2026-09-01T00:00:00.000Z',
     updatedAt: '2026-09-02T00:00:00.000Z',
     ...overrides,

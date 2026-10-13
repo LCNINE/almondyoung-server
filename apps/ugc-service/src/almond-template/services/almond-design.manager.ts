@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { BadRequestError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
+import { eq, sql } from 'drizzle-orm';
 import { almondDesigns, type UgcServiceSchema, type UgcTx } from '../../db/schema';
 import { ALMOND_TEMPLATE_MAX_LAYERS_PER_SIDE } from '../constants/almond-template.constants';
 import { assertSafeDesignSvg } from '../print/almond-print-svg';
@@ -9,7 +10,7 @@ import { isRecord, isSizeMm, readLayers, UUID } from './almond-template.manager'
 
 const DATA_URI = /^\s*data:[a-z]+\/[a-z0-9.+-]+[;,]/i;
 
-function containsDataUri(value: unknown): boolean {
+export function containsDataUri(value: unknown): boolean {
   if (typeof value === 'string') return DATA_URI.test(value);
   if (Array.isArray(value)) return value.some(containsDataUri);
   if (isRecord(value)) return Object.values(value).some(containsDataUri);
@@ -48,8 +49,14 @@ export function parseAlmondDesign(input: AlmondDesignInput): AlmondDesignRecord 
     throw new BadRequestError('시안 JSON 에 이미지를 직접 넣을 수 없습니다. 업로드한 파일(file:<id>)로 참조하세요.');
   }
 
+  const backBackground = isRecord(design.backBackground) ? design.backBackground : undefined;
+  const printsBack =
+    back.length > 0 ||
+    typeof backBackground?.backgroundImage === 'string' ||
+    (typeof backBackground?.background === 'string' && backBackground.background.toLowerCase() !== '#ffffff');
+
   assertSafeDesignSvg(frontSvg, 'front');
-  if (back.length > 0 && backSvg === undefined) {
+  if (printsBack && backSvg === undefined) {
     throw new BadRequestError('뒷면 SVG 가 필요합니다.');
   }
   if (backSvg !== undefined) assertSafeDesignSvg(backSvg, 'back');
@@ -62,7 +69,7 @@ export function parseAlmondDesign(input: AlmondDesignInput): AlmondDesignRecord 
     templateId: templateId?.toLowerCase() ?? null,
     design: { ...design, productId: normalizedProductId },
     frontSvg,
-    backSvg: back.length > 0 ? (backSvg ?? null) : null,
+    backSvg: printsBack ? (backSvg ?? null) : null,
   };
 }
 
@@ -82,6 +89,15 @@ export class AlmondDesignManager {
         .values({ ...record, userId })
         .returning({ id: almondDesigns.id, createdAt: almondDesigns.createdAt });
       return row;
+    }, tx);
+  }
+
+  async savePrintFile(id: string, key: string, fileId: string, tx?: UgcTx): Promise<void> {
+    await this.db.run(async (trx) => {
+      await trx
+        .update(almondDesigns)
+        .set({ printFiles: sql`${almondDesigns.printFiles} || ${JSON.stringify({ [key]: fileId })}::jsonb` })
+        .where(eq(almondDesigns.id, id));
     }, tx);
   }
 }
