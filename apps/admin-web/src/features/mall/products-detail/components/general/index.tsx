@@ -702,7 +702,7 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
                 멤버십가 비공개
               </Label>
               <p className="text-xs text-gray-500">
-                비회원에게 멤버십가 숫자 대신 &ldquo;멤버십 회원 공개&rdquo;를
+                비회원에게 멤버십가 숫자 대신 &ldquo;멤버십 회원에게 가격 공개&rdquo;를
                 표시합니다.
               </p>
             </div>

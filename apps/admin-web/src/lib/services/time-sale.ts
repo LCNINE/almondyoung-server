@@ -2,23 +2,47 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { medusaProductPricingApi } from '@/lib/api/domains/medusa/price-lists';
-import { medusaTimeSalesApi } from '@/lib/api/domains/medusa/time-sales';
-import { medusaCatalogApi } from '@/lib/api/domains/medusa/catalog';
+import {
+  medusaTimeSaleSettingsApi,
+  medusaTimeSalesApi,
+} from '@/lib/api/domains/medusa/time-sales';
+import { defaultTimeSaleSettings } from '@packages/domain-types/time-sale';
+import { medusaCatalogApi, type MedusaCategoryItem } from '@/lib/api/domains/medusa/catalog';
 import {
   buildTimeSaleWriteBody,
   readServerReason,
   resolveTimeSaleStatus,
   toTimeSaleRows,
   validateRows,
+  blockingErrors,
   type TimeSalePeriod,
   type TimeSaleRow,
 } from '@/features/mall/marketing/time-sale/time-sale-model';
 
+/** 진열·스타일 설정. 편집기와 상품진열 폼이 같은 캐시를 쓴다. 저장된 적이 없으면 기본값으로 시작한다. */
+export const timeSaleSettingsQuery = {
+  queryKey: ['time-sale-settings'],
+  queryFn: async () => {
+    const result = await medusaTimeSaleSettingsApi.get();
+    return {
+      settings: result.settings ?? defaultTimeSaleSettings(),
+      revision: result.revision,
+    };
+  },
+};
+
+/** 환경설정의 할인 금액 끝자리 처리. 일괄 할인 계산이 모두 이 값을 쓴다. */
+export function useTimeSaleRounding() {
+  return useQuery(timeSaleSettingsQuery).data?.settings.environment.rounding ?? 'round';
+}
+
 const timeSaleKeys = {
   all: ['time-sales'] as const,
   lists: () => [...timeSaleKeys.all, 'list'] as const,
-  products: (ids: string[]) => [...timeSaleKeys.all, 'products', ids] as const,
+  // 진열순서를 바꿔도 다시 받지 않게 키는 정렬한 id 로 만든다.
+  products: (ids: string[]) => [...timeSaleKeys.all, 'products', [...ids].sort()] as const,
   search: (params: unknown) => [...timeSaleKeys.all, 'search', params] as const,
+  meta: (ids: string[]) => [...timeSaleKeys.all, 'meta', [...ids].sort()] as const,
 };
 
 function useAllTimeSales() {
@@ -32,7 +56,7 @@ export function useTimeSaleList() {
     data: query.data?.map((sale) => ({
       ...sale,
       period: { startsAt: sale.startsAt, endsAt: sale.endsAt },
-      variantCount: Object.keys(sale.generalPrices).length,
+      variantCount: new Set([...Object.keys(sale.generalPrices), ...Object.keys(sale.membershipPrices)]).size,
       hasMembership: Object.keys(sale.membershipPrices).length > 0,
     })),
   };
@@ -49,9 +73,34 @@ export function useTimeSaleVariantMap(excludeId?: string) {
   for (const sale of data ?? []) {
     if (sale.id === excludeId || sale.status === 'draft') continue;
     if (resolveTimeSaleStatus({ startsAt: sale.startsAt, endsAt: sale.endsAt }, now, sale.status) === 'ended') continue;
-    for (const variantId of Object.keys(sale.generalPrices)) map.set(variantId, sale.title);
+    // 멤버십 전용 특가 품목(일반 세일가 없음)도 그 세일에 걸린 품목이다.
+    for (const variantId of [...Object.keys(sale.generalPrices), ...Object.keys(sale.membershipPrices)])
+      map.set(variantId, sale.title);
   }
   return { data: map };
+}
+
+/** 상품 선택 화면의 카테고리 경로 표시용. 전부 받아 둔다(카테고리는 수백 개 수준). */
+export function useMedusaProductCategories() {
+  return useQuery({
+    queryKey: ['medusa-product-categories', 'all'],
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const result: MedusaCategoryItem[] = [];
+      let count = Infinity;
+
+      while (result.length < count) {
+        const page = await medusaCatalogApi.listCategories(undefined, { limit: 100, offset: result.length });
+        if (!page.product_categories.length) break;
+
+        result.push(...page.product_categories);
+        count = page.count;
+      }
+
+      return result;
+    },
+  });
 }
 
 /** 세일에 올릴 상품 고르기용 Medusa 상품 목록. 상품관리 목록과 같은 페이지 크기로 넘긴다. */
@@ -81,6 +130,17 @@ export function useTimeSaleProductRows(productIds: string[]) {
   });
 }
 
+export function useTimeSaleProductMeta(productIds: string[]) {
+  return useQuery({
+    queryKey: timeSaleKeys.meta(productIds),
+    queryFn: async () =>
+      new Map((await medusaCatalogApi.getProductsMeta(productIds)).map((product) => [product.id, product])),
+    enabled: productIds.length > 0,
+  });
+}
+
+const NO_PRICES: Record<string, number> = {};
+
 export function useTimeSaleDetail(id: string | null) {
   const { data, isLoading } = useAllTimeSales();
   const sale = id ? data?.find((item) => item.id === id) : undefined;
@@ -96,16 +156,25 @@ export function useTimeSaleDetail(id: string | null) {
         general: new Map(Object.entries(sale.generalPrices)),
         membership: new Map(Object.entries(sale.membershipPrices)),
       },
+      // 쿼리 데이터를 그대로 넘긴다 — 참조가 유지돼야 상품진열 줄이 입력마다 다시 그려지지 않는다.
+      previousGeneralPrices: sale.previousGeneralPrices ?? NO_PRICES,
+      previousMembershipPrices: sale.previousMembershipPrices ?? NO_PRICES,
     },
   };
 }
 
 export class TimeSaleValidationError extends Error {}
 
-type SaveInput = { title: string; period: TimeSalePeriod; status: 'draft' | 'active'; rows: TimeSaleRow[] };
+type SaveInput = {
+  title: string;
+  period: TimeSalePeriod;
+  status: 'draft' | 'active';
+  rows: TimeSaleRow[];
+  productOrder?: string[];
+};
 
 const toBody = (input: SaveInput) => {
-  const errors = validateRows(input.rows);
+  const errors = blockingErrors(validateRows(input.rows));
   if (errors.length > 0) throw new TimeSaleValidationError(`${errors.length}개 품목의 세일가를 고쳐야 합니다.`);
   return buildTimeSaleWriteBody(input);
 };

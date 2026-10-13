@@ -44,7 +44,8 @@
     "overStockBadge": "재고 부족",
     "overStockHint": "재고가 {max}개 남았어요. {max}개 이하로 조정해주세요.",
     "quantityAdjustedToMax": "재고가 {max}개라 {max}개로 맞췄어요.",
-    "timeSaleBadge": "타임세일"
+    "timeSaleBadge": "타임세일",
+    "timeSaleMembershipBadge": "타임세일 멤버십 특가"
   },
   "summary": {
     "title": "주문 예상 금액",

@@ -5,6 +5,7 @@
     "apps/wallet-web",
     "apps/admin-web",
     "apps/medusa",
+    "packages/time-sale-ui",
     "web",
     "native",
     "deployments",

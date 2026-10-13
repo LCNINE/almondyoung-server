@@ -9,6 +9,7 @@ export type TimeSaleRecord = {
   starts_at: Date;
   ends_at: Date;
   status: TimeSaleStatus;
+  product_order: string[];
 };
 
 class TimeSaleModuleService extends MedusaService({ TimeSale }) {}

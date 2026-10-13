@@ -82,7 +82,21 @@
     "dayUnit": "일",
     "untilEnd": "종료까지",
     "endingSoon": "마감 임박",
-    "badge": "타임세일"
+    "badge": "타임세일",
+    "loading": "불러오는 중…",
+    "membershipBadge": "멤버십 특가",
+    "membershipOnlyPrice": "멤버십 회원 공개",
+    "membershipSavings": "{amount}원 절약",
+    "membershipDiscount": "멤버십할인가",
+    "membershipReveal": "멤버십 회원에게 가격 공개",
+    "savingsAmount": "{amount} 절약",
+    "joinSavingsAmount": "가입 시 {amount} 절약",
+    "remainingTime": "남은 시간",
+    "elapsed": "타임세일 경과",
+    "moreDialog": "타임세일 더보기",
+    "pages": "타임세일 페이지",
+    "emptyPage": "이 페이지에 보여줄 상품이 없습니다.",
+    "rating": "평점 {rating}점, 리뷰 {count}개"
   },
   "beautytop": {
     "title": "뷰티탑",

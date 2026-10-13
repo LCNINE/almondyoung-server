@@ -44,7 +44,8 @@
     "overStockBadge": "在庫不足",
     "overStockHint": "在庫が残り{max}個です。{max}個以下に調整してください。",
     "quantityAdjustedToMax": "在庫が{max}個のため、{max}個に調整しました。",
-    "timeSaleBadge": "タイムセール"
+    "timeSaleBadge": "タイムセール",
+    "timeSaleMembershipBadge": "タイムセール会員特価"
   },
   "summary": {
     "title": "ご注文金額",

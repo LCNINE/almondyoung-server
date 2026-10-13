@@ -1,5 +1,6 @@
 "use client"
 
+import { useTranslations } from "next-intl"
 import { VariantPrice } from "@/lib/types/common/price"
 import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
 
@@ -10,6 +11,40 @@ interface Props {
   isMembershipOnly: boolean
   /** 이 가격이 타임세일 price list 에서 나왔는지. */
   isTimeSale?: boolean
+  /** 멤버십 세일가만 있는 옵션(멤버십 전용 특가). */
+  isMembershipOnlySale?: boolean
+}
+
+// 멤버십 전용 특가를 회원에게: 일반가는 그대로 두고 그 아래 특가를 강조한다.
+function MembershipSalePrice({
+  original,
+  sale,
+}: {
+  original: number
+  sale: number
+}) {
+  const t = useTranslations("home.timeSale")
+
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-foreground text-[15px] font-bold whitespace-nowrap">
+        {original.toLocaleString()}원
+      </span>
+      <div className="flex flex-col gap-0.5 text-[#ffa500]">
+        <ProductMembershipBadge size="sm" label={t("membershipBadge")} />
+        <span className="text-[15px] font-bold whitespace-nowrap">
+          {sale.toLocaleString()}원
+        </span>
+        {original > sale && (
+          <span className="hidden text-[11px] font-medium md:block">
+            {t("membershipSavings", {
+              amount: (original - sale).toLocaleString(),
+            })}
+          </span>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function TimeSalePrice({
@@ -29,13 +64,19 @@ function TimeSalePrice({
         {original.toLocaleString()}원
       </span>
       <div className="flex items-baseline gap-1.5">
-        <span className="text-[17px] leading-none font-bold text-[#f04452]">{percent}%</span>
+        <span className="text-[17px] leading-none font-bold text-[#f04452]">
+          {percent}%
+        </span>
         <span className="text-[17px] leading-none font-bold whitespace-nowrap text-[#191f28]">
           {sale.toLocaleString()}원
         </span>
       </div>
       {showMembershipBadge && (
-        <ProductMembershipBadge size="sm" label="멤버십할인가" className="mt-1" />
+        <ProductMembershipBadge
+          size="sm"
+          label="멤버십할인가"
+          className="mt-1"
+        />
       )}
     </div>
   )
@@ -47,19 +88,43 @@ export default function ProductPrice({
   isMembership,
   isMembershipOnly,
   isTimeSale,
+  isMembershipOnlySale = false,
 }: Props) {
   if (!price) {
     return null
   }
 
-  // 멤버십가 비공개 상품: 비회원에게 일반 판매가는 그대로 보여주고,
+  if (isMembership && isMembershipOnlySale) {
+    return (
+      <MembershipSalePrice
+        original={price.original_price_number}
+        sale={price.calculated_price_number}
+      />
+    )
+  }
+
+  // 멤버십가 비공개 상품·멤버십 전용 특가: 비회원에게 일반 판매가는 그대로 보여주고,
   // 멤버십가 숫자 영역만 "멤버십 회원 공개"로 대체 (상품 숨김/구매 제한 아님)
-  if (!isMembership && isMembershipOnly) {
+  if (!isMembership && (isMembershipOnly || isMembershipOnlySale)) {
+    // 일반 타임세일가는 모두에게 적용되는 공개 가격이라 그대로 보여주고, 멤버십가 숫자만 숨긴다.
+    const publicSale =
+      isTimeSale &&
+      !isMembershipOnlySale &&
+      price.calculated_price_number < price.original_price_number
+
     return (
       <div className="flex flex-col gap-1">
-        <span className="text-foreground text-[15px] font-bold whitespace-nowrap">
-          {price.original_price_number.toLocaleString()}원
-        </span>
+        {publicSale ? (
+          <TimeSalePrice
+            original={price.original_price_number}
+            sale={price.calculated_price_number}
+            showMembershipBadge={false}
+          />
+        ) : (
+          <span className="text-foreground text-[15px] font-bold whitespace-nowrap">
+            {price.original_price_number.toLocaleString()}원
+          </span>
+        )}
         <div className="flex flex-col gap-0.5 text-[#ffa500]">
           <ProductMembershipBadge size="sm" label="멤버십할인가" />
           <span className="text-[15px] font-bold">멤버십 회원 공개</span>
@@ -90,7 +155,8 @@ export default function ProductPrice({
   if (!isMembership && hasMemberDiscount) {
     const saleDiscount = memberDiscount
     // 멤버십가가 지금 보고 있는 값보다 쌀 때만 가입 유인이 된다. 세일가가 더 싸면 거짓말이 된다.
-    const membershipStillCheaper = membershipPrice > 0 && membershipPrice < price.calculated_price_number
+    const membershipStillCheaper =
+      membershipPrice > 0 && membershipPrice < price.calculated_price_number
 
     if (isTimeSale) {
       return (

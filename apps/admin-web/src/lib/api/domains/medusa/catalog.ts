@@ -7,13 +7,29 @@ export interface MedusaProductItem {
   id: string;
   title: string;
   thumbnail?: string | null;
+  status?: string;
   /** 타임세일 선택 화면이 "이 상품이 이미 세일 중인가" 를 variant id 로 판별한다. */
-  variants?: Array<{ id: string }>;
+  variants?: Array<{ id: string; sku?: string | null }>;
+}
+
+/** 상품진열 표의 상품 정보(코드·진열·품절·이미지·상세 링크). */
+export interface MedusaProductMeta {
+  id: string;
+  handle: string;
+  status?: string;
+  thumbnail?: string | null;
+  variants?: Array<{
+    sku?: string | null;
+    manage_inventory?: boolean;
+    allow_backorder?: boolean;
+    inventory_quantity?: number | null;
+  }>;
 }
 
 export interface MedusaCategoryItem {
   id: string;
   name: string;
+  parent_category_id?: string | null;
 }
 
 export interface MedusaCollectionItem {
@@ -21,7 +37,23 @@ export interface MedusaCollectionItem {
   title: string;
 }
 
+const readRequest = { timeout: 15_000, retry: 0 };
+
 export const medusaCatalogApi = {
+  getProductsMeta: async (ids: string[]) => {
+    const p = new URLSearchParams({
+      limit: String(ids.length),
+      fields:
+        'id,handle,status,thumbnail,variants.sku,variants.manage_inventory,variants.allow_backorder,+variants.inventory_quantity',
+    });
+    for (const id of ids) p.append('id', id);
+    const res = await client.get<{ products: MedusaProductMeta[] }>(
+      `${MEDUSA_BASE_URL}/admin/products?${p}`,
+      readRequest
+    );
+    return res.data.products;
+  },
+
   searchProducts: async (
     q?: string,
     options: { limit?: number; offset?: number; categoryId?: string } = {}
@@ -29,31 +61,41 @@ export const medusaCatalogApi = {
     const p = new URLSearchParams({
       limit: String(options.limit ?? 20),
       offset: String(options.offset ?? 0),
-      fields: 'id,title,thumbnail,variants.id',
+      fields: 'id,title,status,thumbnail,variants.id,variants.sku',
     });
     if (q) p.append('q', q);
     if (options.categoryId) p.append('category_id[]', options.categoryId);
-    const res = await client.get<{ products: MedusaProductItem[]; count: number }>(
-      `${MEDUSA_BASE_URL}/admin/products?${p}`
-    );
+    const res = await client.get<{
+      products: MedusaProductItem[];
+      count: number;
+    }>(`${MEDUSA_BASE_URL}/admin/products?${p}`, readRequest);
     return res.data;
   },
 
-  listCategories: async (q?: string) => {
-    const p = new URLSearchParams({ limit: '50' });
+  listCategories: async (
+    q?: string,
+    options: { limit?: number; offset?: number } = {}
+  ) => {
+    const p = new URLSearchParams({
+      limit: String(options.limit ?? 50),
+      offset: String(options.offset ?? 0),
+      fields: 'id,name,parent_category_id',
+    });
     if (q) p.append('q', q);
-    const res = await client.get<{ product_categories: MedusaCategoryItem[]; count: number }>(
-      `${MEDUSA_BASE_URL}/admin/product-categories?${p}`
-    );
+    const res = await client.get<{
+      product_categories: MedusaCategoryItem[];
+      count: number;
+    }>(`${MEDUSA_BASE_URL}/admin/product-categories?${p}`, readRequest);
     return res.data;
   },
 
   listCollections: async (q?: string) => {
     const p = new URLSearchParams({ limit: '50' });
     if (q) p.append('title', q);
-    const res = await client.get<{ collections: MedusaCollectionItem[]; count: number }>(
-      `${MEDUSA_BASE_URL}/admin/collections?${p}`
-    );
+    const res = await client.get<{
+      collections: MedusaCollectionItem[];
+      count: number;
+    }>(`${MEDUSA_BASE_URL}/admin/collections?${p}`);
     return res.data;
   },
 };

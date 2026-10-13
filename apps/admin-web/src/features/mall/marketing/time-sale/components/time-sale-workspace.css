@@ -1,0 +1,1853 @@
+.ts-workspace {
+  display: flex;
+  min-height: 700px;
+  width: 100%;
+  font-family: Arial, 'Noto Sans KR', sans-serif;
+  font-size: 14px;
+  background: #fafafa;
+  color: #212121;
+  border: 1px solid #ddd;
+}
+.ts-navigation {
+  width: 190px;
+  flex-shrink: 0;
+  background: white;
+  border-right: 1px solid #ddd;
+}
+.ts-navigation button {
+  display: block;
+  text-align: left;
+  width: 100%;
+  padding: 14px 16px;
+  border: 0;
+  border-left: 3px solid transparent;
+  background: none;
+}
+.ts-navigation button.active {
+  color: #1976d2;
+  background: #e3f2fd;
+  border-left-color: #1976d2;
+}
+.ts-body {
+  min-width: 0;
+  flex: 1;
+}
+.ts-appbar {
+  min-height: 64px;
+  padding: 12px 20px;
+  background: #1976d2;
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: 0 2px 5px #0003;
+}
+.ts-appbar strong {
+  flex: 1;
+}
+.ts-workspace button {
+  cursor: pointer;
+}
+.ts-workspace button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.ts-appbar button,
+.ts-actions button,
+.ts-settings > button,
+.ts-properties button {
+  background: white;
+  color: #1976d2;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  padding: 6px 12px;
+}
+.ts-toolbar {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  padding: 16px;
+  flex-wrap: wrap;
+}
+.ts-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ts-toolbar input[type='number'] {
+  width: 70px;
+}
+.ts-workspace input:not([type='checkbox']):not([type='radio']),
+.ts-workspace select,
+.ts-workspace textarea {
+  border: 1px solid #ccc;
+  border-radius: 2px;
+  padding: 6px;
+  background: white;
+  max-width: 100%;
+  min-width: 0;
+  color: #212121;
+}
+.ts-workspace input[type='checkbox'],
+.ts-workspace input[type='radio'] {
+  accent-color: #1976d2;
+}
+.ts-workspace textarea {
+  width: 100%;
+  height: 100px;
+  resize: vertical;
+}
+.ts-workspace button:focus-visible,
+.ts-workspace input:focus-visible,
+.ts-workspace select:focus-visible,
+.ts-workspace textarea:focus-visible {
+  outline: 2px solid #1976d2;
+  outline-offset: 2px;
+}
+.ts-editor {
+  display: grid;
+  grid-template-columns: 260px 300px minmax(0, 1fr);
+  border-top: 1px solid #ddd;
+  min-height: 650px;
+}
+.ts-components,
+.ts-properties {
+  padding: 16px;
+  overflow: auto;
+  max-height: 900px;
+  background: white;
+  border-right: 1px solid #ddd;
+}
+.ts-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 12px 0;
+}
+.ts-field > span {
+  font-size: 12px;
+  color: #666;
+}
+.ts-field input[type='checkbox'] {
+  align-self: flex-start;
+}
+
+.ts-css-editor > details,
+.ts-text-editor > details,
+.ts-component-editor > details,
+.ts-properties > details {
+  border: 1px solid #ddd;
+  border-top: 0;
+}
+.ts-properties > details:not(details + details) {
+  border-top: 1px solid #ddd;
+}
+
+.ts-css-editor > details:first-child,
+.ts-text-editor > details:first-child,
+.ts-component-editor > details:first-child {
+  border-top: 1px solid #ddd;
+}
+
+.ts-css-editor > details > summary,
+.ts-text-editor > details > summary,
+.ts-component-editor > details > summary,
+.ts-properties > details > summary {
+  padding: 16px;
+  background: #f7f7f7;
+  font-size: 15px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.ts-css-editor > details > summary::-webkit-details-marker,
+.ts-text-editor > details > summary::-webkit-details-marker,
+.ts-component-editor > details > summary::-webkit-details-marker,
+.ts-properties > details > summary::-webkit-details-marker {
+  display: none;
+}
+.ts-properties > details > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  outline: none;
+}
+.ts-properties > details > summary::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid #888;
+  border-bottom: 1.5px solid #888;
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+.ts-properties > details[open] > summary {
+  font-weight: 600;
+  border-bottom: 1px solid #ddd;
+}
+.ts-properties > details[open] > summary::before {
+  transform: rotate(45deg);
+}
+.ts-properties > details > .ts-css-editor > details {
+  border-right: 0;
+  border-left: 0;
+}
+.ts-properties > details > .ts-css-editor > details:first-child {
+  border-top: 0;
+}
+.ts-properties > details > .ts-css-editor > details:last-child {
+  border-bottom: 0;
+}
+.ts-properties > details > .ts-css-editor > details > summary {
+  padding: 12px 16px 12px 22px;
+  background: white;
+  font-size: 14px;
+}
+.ts-properties > details > .ts-css-editor > details > summary::before {
+  content: '└';
+  margin-right: 8px;
+  color: #999;
+}
+
+.ts-css-body {
+  padding: 12px;
+}
+
+.ts-css-container-only > details {
+  border: 0;
+}
+
+.ts-css-container-only > details > summary {
+  display: none;
+}
+
+.ts-css-container-only .ts-css-body {
+  padding: 0;
+}
+
+.ts-css-body fieldset {
+  margin: 0 0 16px;
+  padding: 5px 12px;
+  border: 1px groove #bbccdd;
+  border-radius: 4px;
+}
+
+.ts-css-body legend,
+.ts-css-body .ts-field > span,
+.ts-size-label {
+  font-size: 12px;
+  color: #555;
+}
+
+.ts-size-control {
+  margin: 12px 0;
+}
+
+.ts-size-inputs {
+  display: grid;
+  grid-template-columns: 68px 54px minmax(60px, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.ts-size-inputs input,
+.ts-size-inputs select {
+  min-width: 0;
+  width: 100%;
+}
+
+.ts-size-inputs input[type='range'] {
+  padding: 0;
+  border: 0;
+  accent-color: #087ac1;
+}
+
+.ts-css-body legend {
+  padding: 0 3px;
+  color: #212121;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.ts-size-inline {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.ts-workspace .ts-css-body input[type='range'] {
+  appearance: none;
+  height: 4px;
+  background:
+    radial-gradient(circle, #639acb 1px, transparent 1.5px) 0 50% / 10% 4px
+      repeat-x,
+    #bad4ee;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+}
+
+.ts-css-body input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #1976d2;
+  box-shadow: 0 2px 4px #0003;
+}
+
+.ts-size-inline .ts-size-inputs {
+  grid-template-columns: 38px 28px minmax(50px, 1fr);
+  gap: 4px;
+  margin: 0;
+}
+
+.ts-size-inline .ts-size-inputs input:not([type='range']) {
+  padding: 1px 2px;
+  height: 20px;
+  font-size: 12px;
+}
+
+.ts-size-inline .ts-size-inputs select {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.ts-direction-selection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ts-direction-presets {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ts-direction-presets button {
+  padding: 2px;
+  background: transparent;
+  border: 0;
+}
+
+.ts-direction-icon {
+  display: block;
+  width: 24px;
+  height: 24px;
+  border: 2px solid #212121;
+}
+
+.ts-direction-diagram {
+  position: relative;
+  width: 66px;
+  height: 66px;
+  flex-shrink: 0;
+}
+
+.ts-direction-diagram > span {
+  position: absolute;
+  inset: 16px;
+  border: 2px dashed #ddd;
+}
+
+.ts-direction-diagram input {
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+
+.ts-direction-diagram-border input:nth-of-type(1) {
+  top: 0;
+  left: 26px;
+}
+.ts-direction-diagram-border input:nth-of-type(2) {
+  right: 0;
+  top: 26px;
+}
+.ts-direction-diagram-border input:nth-of-type(3) {
+  bottom: 0;
+  left: 26px;
+}
+.ts-direction-diagram-border input:nth-of-type(4) {
+  left: 0;
+  top: 26px;
+}
+.ts-direction-diagram-radius input:nth-of-type(1) {
+  top: 0;
+  left: 0;
+}
+.ts-direction-diagram-radius input:nth-of-type(2) {
+  top: 0;
+  right: 0;
+}
+.ts-direction-diagram-radius input:nth-of-type(3) {
+  bottom: 0;
+  right: 0;
+}
+.ts-direction-diagram-radius input:nth-of-type(4) {
+  bottom: 0;
+  left: 0;
+}
+
+.ts-bold-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.ts-properties:has(> .ts-text-editor),
+.ts-properties:has(> .ts-component-editor) {
+  padding: 0;
+}
+
+.ts-properties:has(> .ts-text-editor) > h3,
+.ts-properties:has(> .ts-component-editor) > h3 {
+  display: none;
+}
+
+.ts-shelf-range {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+  font-size: 13px;
+}
+
+.ts-option-range {
+  display: grid;
+  grid-template-columns: 65px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.ts-option-range input {
+  width: 100%;
+}
+
+.ts-css-editor > details > textarea {
+  width: calc(100% - 24px);
+  min-height: 120px;
+  margin: 12px;
+}
+.ts-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.ts-component {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 6px 0;
+  padding: 10px 8px;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 2px;
+  width: 100%;
+  text-align: left;
+}
+.ts-component.active {
+  background: #e3f2fd;
+  border-color: #1976d2;
+  color: #1976d2;
+}
+.ts-component span {
+  display: flex;
+  gap: 8px;
+}
+.ts-components h3,
+.ts-properties h3 {
+  font-weight: 600;
+  margin: 16px 0;
+}
+.ts-inline {
+  display: flex;
+  gap: 10px;
+}
+.ts-preview {
+  padding: 16px;
+  overflow: auto;
+  background: #f1f1f1;
+}
+.ts-preview-canvas {
+  background: white;
+  margin: 0 auto;
+  box-shadow: 0 1px 4px #0003;
+  min-height: 500px;
+}
+.ts-settings {
+  background: white;
+  padding: 24px;
+  max-width: 800px;
+  min-height: 650px;
+}
+.ts-settings h2 {
+  font-weight: 600;
+  font-size: 18px;
+}
+.ts-settings table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+}
+.ts-settings td,
+.ts-settings th {
+  text-align: left;
+  padding: 8px;
+  border-bottom: 1px solid #ddd;
+}
+.ts-settings td button {
+  margin-left: 8px;
+  color: #1976d2;
+}
+.ts-dialog-veil {
+  position: fixed;
+  inset: 0;
+  background: #0005;
+  z-index: 10003;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.ts-dialog {
+  background: white;
+  border-radius: 4px;
+  max-width: 440px;
+  padding: 24px;
+  box-shadow: 0 6px 24px #0004;
+}
+.ts-dialog h2 {
+  font-size: 20px;
+  margin-bottom: 12px;
+}
+.ts-dialog > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 24px;
+  margin-top: 24px;
+  color: #1976d2;
+}
+.ts-empty {
+  padding: 32px;
+}
+.time-sale-toast-success {
+  background: #4caf50 !important;
+  color: white !important;
+  border: 0 !important;
+  min-height: 48px;
+}
+.time-sale-toast-error {
+  background: #f44336 !important;
+  color: white !important;
+  border: 0 !important;
+  min-height: 48px;
+}
+@media (max-width: 1100px) {
+  .ts-editor {
+    grid-template-columns: 210px 260px minmax(0, 1fr);
+  }
+  .ts-navigation {
+    width: 160px;
+  }
+}
+@media (max-width: 800px) {
+  .ts-workspace {
+    display: block;
+  }
+  .ts-navigation {
+    display: flex;
+    overflow: auto;
+    width: 100%;
+    padding: 0;
+  }
+  .ts-navigation button {
+    white-space: nowrap;
+  }
+  .ts-editor {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .ts-components,
+  .ts-properties {
+    width: 50%;
+  }
+  .ts-preview {
+    width: 100%;
+  }
+}
+.ts-workspace
+  :is(
+    button,
+    select,
+    summary,
+    label:has(input[type='checkbox'], input[type='radio']),
+    input[type='checkbox'],
+    input[type='radio'],
+    input[type='color'],
+    input[type='range']
+  ):not(:disabled) {
+  cursor: pointer;
+}
+.ts-workspace :is(button, select, input):disabled {
+  cursor: not-allowed;
+}
+.ts-color-checker {
+  background: repeating-conic-gradient(#ccc 0 25%, #fff 0 50%) 0 0 / 8px 8px;
+}
+.ts-color-range {
+  display: block;
+  width: 100%;
+  height: 10px;
+  margin: 0;
+  border-radius: 2px;
+  appearance: none;
+  cursor: pointer;
+}
+.ts-color-range::-webkit-slider-thumb {
+  width: 6px;
+  height: 14px;
+  border: 1px solid #888;
+  border-radius: 1px;
+  background: white;
+  appearance: none;
+}
+.ts-color-range::-moz-range-thumb {
+  width: 6px;
+  height: 14px;
+  border: 1px solid #888;
+  border-radius: 1px;
+  background: white;
+}
+.ts-color-hue {
+  background: linear-gradient(
+    to right,
+    #f00,
+    #ff0,
+    #0f0,
+    #0ff,
+    #00f,
+    #f0f,
+    #f00
+  );
+}
+.ts-workspace .ts-color-trigger {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: white;
+  color: #212121;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* SweetOffer ê´ë¦¬ íë©´ì ê³µíµ í¬ê¸°Â·ìì. ì´ëë¯¼ì ì ì­ UIìë ì ì©íì§ ìëë¤. */
+.ts-workspace {
+  min-height: 100svh;
+  border: 0;
+  font-family: Arial, 'Noto Sans KR', sans-serif;
+  font-size: 13px;
+}
+.ts-navigation {
+  width: 240px;
+}
+.ts-navigation-brand {
+  height: 64px;
+  padding: 20px 24px;
+  font-size: 22px;
+  font-weight: 700;
+  display: flex;
+  justify-content: space-between;
+}
+.ts-navigation .ts-navigation-brand button {
+  width: auto;
+  padding: 0;
+}
+.ts-navigation > button {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  height: 48px;
+  padding: 12px 18px;
+  color: #212121;
+  border-left: 0;
+  font-size: 16px;
+}
+.ts-navigation > button svg {
+  color: #777;
+}
+.ts-navigation > button.active {
+  color: #212121;
+  background: #edf4fc;
+}
+.ts-appbar {
+  height: 64px;
+  padding: 8px 24px;
+  background: #3478d0;
+  gap: 10px;
+}
+.ts-appbar strong {
+  font-size: 20px;
+  font-weight: 500;
+}
+.ts-appbar .ts-appbar-icon {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  border: 0;
+  padding: 6px;
+  background: transparent;
+  color: #fff;
+}
+.ts-appbar .ts-new-window {
+  color: #111;
+  height: 36px;
+  min-height: 36px;
+  width: 102px;
+  padding: 0 12px;
+  margin: 0 8px;
+  font-size: 13px;
+  line-height: 20px;
+  box-shadow: 0 2px 4px #0004;
+}
+.ts-management {
+  min-height: calc(100svh - 64px);
+}
+.ts-list-intro {
+  padding: 20px 24px 12px;
+}
+.ts-list-intro h1 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 20px;
+}
+.ts-list-intro ul,
+.ts-product-notices ul {
+  list-style: disc;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.ts-list-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 20px;
+  min-height: 52px;
+}
+.ts-toolbar-spacer {
+  flex: 1;
+}
+.ts-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 64px;
+  height: 30px;
+  padding: 4px 10px;
+  border: 1px solid #82b3ff;
+  border-radius: 3px;
+  background: transparent;
+  color: #2684ff;
+  font-size: 13px;
+  font-weight: 400;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ts-button:hover:not(:disabled) {
+  background: #eaf3ff;
+}
+.ts-button-neutral {
+  color: #777;
+  border-color: #ccc;
+}
+.ts-button:disabled {
+  border-color: #ccc;
+}
+.ts-button:disabled,
+.ts-icon-button:disabled {
+  color: #999;
+  opacity: 0.6;
+  cursor: default;
+}
+.ts-icon-button {
+  display: inline-flex;
+  padding: 5px;
+  align-items: center;
+  justify-content: center;
+  color: #777;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.ts-count {
+  margin: 0 20px;
+  color: #394dd4;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.ts-table-scroll {
+  overflow-x: auto;
+}
+.ts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-weight: 400;
+}
+.ts-table th {
+  background: #efefef;
+  font-weight: 400;
+  color: #212121;
+  height: 58px;
+  border-top: 1px solid #ddd;
+}
+.ts-table td,
+.ts-table th {
+  padding: 7px 10px;
+  text-align: center;
+  border-bottom: 1px solid #ddd;
+  vertical-align: middle;
+  line-height: 1.5;
+}
+.ts-table small {
+  font-size: 11px;
+}
+.ts-sale-table {
+  width: 100%;
+}
+.ts-table td {
+  height: 57px;
+}
+.ts-table .ts-name {
+  text-align: left;
+  min-width: 180px;
+}
+.ts-row-selected {
+  background: #edf4fc;
+}
+.ts-status {
+  color: #999;
+}
+.ts-status-detail {
+  color: #269bcc;
+}
+.ts-status-active {
+  color: #2a9e42;
+}
+.ts-status-stopped,
+.ts-status-suspended {
+  color: #bbb;
+}
+.ts-readonly {
+  color: #aaa;
+}
+.ts-row-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.ts-variable-button {
+  color: #fff;
+  background: #777;
+  border: 0;
+  clip-path: polygon(20% 0, 100% 0, 100% 100%, 20% 100%, 0 50%);
+  padding: 0 2px 0 5px;
+  cursor: pointer;
+}
+.ts-blue {
+  color: #298bff;
+}
+.ts-modal {
+  display: flex !important;
+  flex-direction: column;
+  gap: 0 !important;
+  width: min(900px, calc(100vw - 64px));
+  max-width: 900px;
+  max-height: calc(100svh - 64px);
+  border: 0 !important;
+  border-radius: 4px;
+  background: white;
+  color: #212121;
+  padding: 0 !important;
+  box-shadow: 0 14px 34px #0005;
+  font-family: Arial, 'Noto Sans KR', sans-serif;
+  font-size: 13px;
+}
+.ts-modal-wide {
+  width: calc(100vw - 64px) !important;
+  max-width: 1600px !important;
+}
+.ts-modal-title {
+  padding: 22px 24px 18px;
+  padding-right: 50px;
+  font-size: 20px !important;
+  font-weight: 500 !important;
+  line-height: 1.5 !important;
+  flex-shrink: 0;
+}
+.ts-modal-body {
+  padding: 8px 24px 24px;
+  overflow: auto;
+  min-height: 0;
+}
+.ts-modal-footer {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: flex-end;
+  gap: 6px;
+  border-top: 1px solid #ddd;
+  padding: 8px;
+}
+.ts-modal-footer .ts-button {
+  height: 35px;
+}
+.ts-modal button:focus-visible,
+.ts-modal input:focus-visible,
+.ts-modal select:focus-visible,
+.ts-modal summary:focus-visible {
+  outline: 2px solid #3478d0;
+  outline-offset: 2px;
+}
+.ts-modal button:disabled {
+  cursor: default;
+}
+.ts-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px 16px;
+}
+.ts-span-all {
+  grid-column: 1 / -1;
+}
+.ts-form-field {
+  border: 1px solid #bac8ce;
+  border-radius: 3px;
+  padding: 6px 12px 4px;
+  min-width: 0;
+  min-height: 50px;
+}
+.ts-form-field legend {
+  padding: 0 3px;
+  font-size: 15px;
+  font-weight: 500;
+  color: #212121;
+}
+.ts-form-field input:not([type='checkbox']):not([type='range']):focus,
+.ts-form-field input:not([type='checkbox']):not([type='range']):focus-visible {
+  outline: none;
+  border-bottom: 2px solid #1976d2;
+}
+.ts-form-field input:not([type='checkbox']):not([type='range']),
+.ts-form-field select {
+  display: block;
+  border: 0;
+  border-bottom: 1px solid #999;
+  box-shadow: none;
+  border-radius: 0;
+  min-width: 0;
+  width: 100%;
+  height: 30px;
+  background: white;
+  color: #212121;
+  padding: 2px 0;
+  font-size: 13px;
+}
+.ts-field-hint {
+  font-size: 11px;
+  color: #888;
+  line-height: 1.5;
+  padding: 4px 14px 0;
+}
+.ts-period-inputs {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: 570px;
+}
+.ts-form-thirds {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.ts-repeat-options {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px 12px;
+  padding: 8px 0;
+}
+.ts-repeat-slider input[type='range'] {
+  width: 100%;
+  height: 4px;
+  appearance: none;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.ts-repeat-slider input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #3478ce;
+  box-shadow: 0 2px 5px #0003;
+}
+.ts-repeat-marks {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+  color: #777;
+  font-size: 11px;
+}
+.ts-repeat-expiry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ts-repeat-expiry input {
+  max-width: 245px;
+}
+.ts-repeat-expiry small {
+  color: #5b994b;
+}
+.ts-style-selection {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 0;
+}
+.ts-style-selection > span:first-child {
+  flex: 1;
+}
+.ts-enabled-text {
+  color: #38994b;
+  font-size: 11px;
+  margin-right: 10px;
+}
+.ts-member-settings {
+  color: #777;
+}
+.ts-member-settings summary,
+.ts-price-details summary {
+  cursor: pointer;
+  padding: 8px 0;
+}
+.ts-member-settings label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ts-product-notices {
+  margin: 0 0 10px;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px #0005;
+  border: 1px solid #eee;
+}
+.ts-product-notices details + details {
+  border-top: 1px solid #ddd;
+}
+.ts-product-notices summary {
+  min-height: 48px;
+  padding: 12px 16px;
+  line-height: 24px;
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+}
+.ts-product-notices summary::after {
+  content: 'â';
+  color: #777;
+  font-size: 18px;
+}
+.ts-product-notices details[open] summary::after {
+  content: 'â';
+}
+.ts-product-notices ul {
+  padding: 8px 56px 16px;
+  margin: 0;
+  color: #222;
+  list-style: disc;
+  line-height: 20px;
+}
+.ts-product-notices:has(details[open]) {
+  border: 0;
+  box-shadow: none;
+}
+.ts-product-notices:has(details[open]) details {
+  border: 1px solid #eee;
+  box-shadow: 0 1px 2px #0005;
+}
+.ts-product-notices:has(details[open]) details + details {
+  margin-top: 14px;
+}
+.ts-product-notices .ts-notice-important {
+  color: #f21b0b;
+}
+.ts-product-table {
+  min-width: 1100px;
+  table-layout: fixed;
+}
+.ts-product-table input[type='number'] {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid #999;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  height: 28px;
+  font-size: 13px;
+}
+.ts-price-details {
+  margin-top: 14px;
+}
+.ts-bulk-prices {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  margin: 12px 0;
+}
+.ts-bulk-prices label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ts-bulk-prices input {
+  width: 120px;
+}
+.ts-price-error {
+  color: #d32f2f;
+  padding: 12px 0;
+}
+.ts-help {
+  color: #777;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ts-help p {
+  margin: 10px 0 0;
+}
+.ts-help-steps {
+  border: 1px solid #298bff;
+  padding: 8px 24px;
+  list-style: decimal;
+  margin: 8px 0;
+}
+.ts-help-code {
+  border: 1px solid #298bff;
+  margin-bottom: 12px;
+}
+.ts-help-code header {
+  background: #4296bf;
+  color: white;
+  padding: 10px;
+  font-size: 16px;
+}
+.ts-help-code code {
+  display: block;
+  padding: 10px;
+  overflow-wrap: anywhere;
+  font-family: inherit;
+}
+.ts-help-note {
+  font-size: 11px;
+}
+@media (max-width: 800px) {
+  .ts-navigation {
+    position: fixed;
+    inset: 64px auto 0 0;
+    z-index: 30;
+    display: block;
+    width: 240px;
+    box-shadow: 2px 0 8px #0003;
+  }
+  .ts-appbar {
+    padding: 8px;
+  }
+  .ts-appbar strong {
+    font-size: 16px;
+  }
+  .ts-appbar .ts-new-window {
+    padding: 8px;
+    margin: 0;
+  }
+  .ts-list-toolbar {
+    flex-wrap: wrap;
+    padding: 8px;
+  }
+  .ts-modal,
+  .ts-modal-wide {
+    width: calc(100vw - 24px) !important;
+    max-height: calc(100svh - 24px);
+  }
+  .ts-modal-title {
+    padding: 18px;
+    padding-right: 40px;
+    font-size: 17px !important;
+  }
+  .ts-modal-body {
+    padding: 8px 16px 20px;
+  }
+  .ts-form-grid,
+  .ts-form-thirds {
+    grid-template-columns: 1fr;
+  }
+  .ts-repeat-options {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ts-product-table .ts-name,
+.ts-product-table td:nth-child(5) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ts-product-table td,
+.ts-product-table th {
+  padding: 7px 6px;
+}
+.ts-product-image {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  margin: auto;
+}
+.ts-product-detail-link {
+  color: #212121;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.ts-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 0 12px;
+  flex-wrap: wrap;
+}
+.ts-picker-search label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ts-picker-search select,
+.ts-picker-search input {
+  height: 32px;
+  padding: 4px;
+  border: 0;
+  border-bottom: 1px solid #999;
+  background: white;
+  min-width: 180px;
+}
+.ts-picker-pagination {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 52px;
+}
+.ts-picker-pagination > span:last-child {
+  margin-left: 15px;
+  color: #777;
+  font-size: 12px;
+}
+.ts-page-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.ts-page-button.active {
+  background: #eee;
+}
+.ts-picker-table {
+  min-width: 1000px;
+}
+
+.ts-stock-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  color: #666;
+  font-size: 13px;
+}
+
+.ts-product-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: max-content;
+  margin: 2px auto 0;
+  font-size: 10px;
+  line-height: 13px;
+}
+
+.ts-product-actions label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.ts-product-actions input[type='checkbox'] {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+}
+
+.ts-product-yes {
+  color: #1338be;
+}
+
+.ts-product-no {
+  color: #e00000;
+}
+
+.ts-product-detail-link {
+  display: inline-block;
+  background: #fff5b0;
+  border: 1px solid #afa96b;
+  padding: 2px 6px;
+  font-size: 12px;
+  line-height: 18px;
+  text-decoration: none;
+}
+
+.ts-related-notices {
+  list-style: disc;
+  padding: 0 32px;
+  margin: 12px 0 20px;
+  color: #222;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.ts-title-detail {
+  color: #269bff;
+}
+
+.ts-audience {
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+.ts-audience legend {
+  padding: 0 6px;
+  font-weight: 600;
+}
+.ts-audience label {
+  cursor: pointer;
+}
+.ts-audience p,
+.ts-price-guide {
+  margin-top: 8px;
+  color: #666;
+  line-height: 1.6;
+}
+.ts-price-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.ts-price-summary small {
+  white-space: normal;
+}
+.ts-option-prices {
+  min-width: 650px;
+}
+.ts-option-prices input {
+  min-width: 100px;
+  max-width: 150px;
+  margin: auto;
+}
+.ts-customer-preview td {
+  text-align: left;
+  background: #f3f7fd;
+  height: auto;
+}
+.ts-customer-preview [role='alert'] {
+  color: #d32f2f;
+}
+
+.ts-related-table th {
+  white-space: nowrap;
+}
+
+.ts-related-table td:nth-child(3) {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ë§¤ë í¸ì§: ì í í¨ëê³¼ ì¤ì  í­ íë¦¬ë·°ë¥¼ ê°ê° ì¤í¬ë¡¤íë¤. */
+.ts-toolbar h2 {
+  margin-right: auto;
+  font-size: 18px;
+  font-weight: 600;
+}
+.ts-toolbar h2 span {
+  color: #269bcc;
+}
+.ts-title-help {
+  position: relative;
+  display: inline-block;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.ts-title-help summary {
+  display: flex;
+  color: #999;
+  cursor: pointer;
+  list-style: none;
+}
+.ts-title-help summary::-webkit-details-marker {
+  display: none;
+}
+.ts-title-help[open] summary {
+  color: #269bcc;
+}
+.ts-title-help p {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 10;
+  width: max-content;
+  max-width: 360px;
+  margin: 0;
+  padding: 12px 14px;
+  word-break: keep-all;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px #0002;
+  color: #555;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+.ts-editor {
+  grid-template-columns: 400px minmax(0, 1fr);
+  gap: 12px;
+  border: 0;
+  padding: 0 4px 12px;
+  min-height: 0;
+  align-items: start;
+}
+.ts-editor-selected {
+  grid-template-columns: 400px 360px minmax(0, 1fr);
+}
+.ts-style-panel,
+.ts-editor > .ts-properties {
+  height: calc(100svh - 150px);
+  min-height: 440px;
+  border: 1px solid #ddd;
+  background: white;
+}
+.ts-style-panel {
+  display: flex;
+  flex-direction: column;
+}
+.ts-style-tabs {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid #ddd;
+}
+.ts-style-tabs button {
+  flex: 1;
+  padding: 16px 5px;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+.ts-style-tabs button[aria-selected='true'] {
+  color: #087ac1;
+  border-bottom-color: #087ac1;
+}
+.ts-style-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+.ts-style-scroll .ts-components,
+.ts-style-scroll .ts-properties {
+  padding: 12px;
+  max-height: none;
+  overflow: visible;
+  border: 0;
+}
+.ts-style-scroll .ts-properties h3 {
+  font-size: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid #ddd;
+}
+.ts-components > .ts-field {
+  flex-direction: row;
+  align-items: center;
+}
+.ts-components > .ts-field select {
+  flex: 1;
+}
+.ts-actions {
+  justify-content: flex-end;
+}
+.ts-actions button {
+  background: white;
+  border-color: #8bb8d5;
+  color: #087ac1;
+}
+.ts-style-name {
+  border: 1px solid #bbc5cb;
+  border-radius: 3px;
+  padding: 4px 12px 10px;
+  margin-top: 16px;
+}
+.ts-style-name input {
+  width: 100%;
+  border-width: 0 0 1px !important;
+}
+.ts-component {
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+.ts-component > button {
+  flex-shrink: 0;
+  width: 46px;
+  font-size: 12px;
+}
+.ts-component > select {
+  flex: 1;
+  height: 38px;
+  background: #f3f3f3;
+}
+.ts-component.active {
+  background: transparent;
+}
+.ts-component.active > select {
+  background: #c8f1fa;
+  border-color: #4ba8bf;
+}
+.ts-component span {
+  gap: 6px;
+  color: #777;
+}
+.ts-component:not(.active) .ts-component-move {
+  display: none;
+}
+.ts-style-hint {
+  margin-top: 12px;
+  color: #777;
+  font-size: 12px;
+}
+.ts-style-footer {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 10px;
+  border-top: 1px solid #ddd;
+  background: #fafafa;
+}
+.ts-style-footer .ts-button-primary {
+  height: 36px;
+  background: #087ac1;
+  color: white;
+  border-color: #087ac1;
+}
+.ts-style-footer .ts-button-primary:disabled {
+  background: #ddd;
+  color: #999;
+  border-color: #ddd;
+}
+.ts-style-footer > span {
+  margin-left: auto;
+  color: #777;
+  font-size: 11px;
+}
+.ts-preview {
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  overflow: visible;
+}
+.ts-preview-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 32px;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+.ts-preview-toolbar input[type='number'] {
+  width: 62px;
+  padding: 2px;
+}
+.ts-preview-toolbar input[type='range'] {
+  width: 120px;
+  padding: 0;
+  accent-color: #087ac1;
+}
+.ts-preview-viewport {
+  height: calc(100svh - 186px);
+  min-height: 400px;
+  overflow: auto;
+  border: 2px solid #111;
+  background: #7f7f7f;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.ts-preview-canvas {
+  max-width: none;
+  margin: 0;
+  min-height: 100%;
+  box-shadow: none;
+}
+.ts-preview [data-sale-component] {
+  position: relative;
+  isolation: isolate;
+  cursor: pointer;
+}
+.ts-preview [data-sale-component]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border: 2px solid transparent;
+  pointer-events: none;
+}
+.ts-preview [data-sale-component]:hover::after,
+.ts-preview
+  [data-sale-component]:has(> .ts-preview-select[aria-pressed='true'])::after {
+  border-color: #269bcc;
+}
+.ts-preview .ts-preview-select {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 4;
+  white-space: nowrap;
+  padding: 2px 5px;
+  background: #087ac1;
+  color: white;
+  font-size: 11px;
+  opacity: 0;
+  pointer-events: none;
+}
+.ts-preview [data-sale-component] > .ts-preview-select {
+  top: auto;
+  bottom: 100%;
+}
+.ts-preview [data-sale-component]:hover > .ts-preview-select,
+.ts-preview .ts-preview-select:focus-visible,
+.ts-preview .ts-preview-select[aria-pressed='true'] {
+  opacity: 1;
+}
+@media (max-width: 1250px) {
+  .ts-editor-selected {
+    grid-template-columns: 340px minmax(0, 1fr);
+  }
+  .ts-editor-selected > .ts-properties {
+    grid-column: 1;
+    height: auto;
+    max-height: 600px;
+  }
+  .ts-editor-selected > .ts-preview {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    position: sticky;
+    top: 8px;
+  }
+}
+@media (max-width: 900px) {
+  .ts-editor,
+  .ts-editor-selected {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ts-style-panel,
+  .ts-editor > .ts-properties,
+  .ts-style-scroll .ts-components,
+  .ts-style-scroll .ts-properties {
+    width: 100%;
+  }
+  .ts-editor-selected > .ts-preview {
+    grid-column: 1;
+    grid-row: auto;
+    position: static;
+  }
+  .ts-navigation {
+    width: 180px;
+  }
+  .ts-toolbar {
+    gap: 12px;
+  }
+  .ts-toolbar h2 {
+    width: 100%;
+  }
+}
+.ts-display-notice {
+  border-bottom: 1px solid #ddd;
+  box-shadow: 0 1px 3px #0002;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.ts-display-notice summary {
+  padding: 12px 14px;
+  cursor: pointer;
+}
+.ts-display-notice ul {
+  list-style: disc;
+  padding: 4px 14px 14px 46px;
+  line-height: 1.6;
+}
+.ts-notice-strong {
+  color: #d32f2f;
+  font-weight: 600;
+}
+.ts-display .ts-list-toolbar {
+  padding: 8px 0;
+}
+.ts-display-fill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: #555;
+}
+.ts-display-fill input,
+.ts-display-price input {
+  width: 72px;
+  border: 0;
+  border-bottom: 1px solid #999;
+  background: transparent;
+  font-size: 13px;
+  padding: 2px 0;
+}
+.ts-display-price input {
+  width: 80px;
+}
+.ts-display-price {
+  position: relative;
+  display: inline-block;
+  padding-bottom: 14px;
+}
+.ts-display-price small {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  font-size: 10px;
+  color: #888;
+  white-space: nowrap;
+}
+.ts-display-table {
+  width: 100%;
+}
+.ts-display-table td,
+.ts-display-table th {
+  padding: 6px 6px;
+}
+.ts-display-clip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ts-display-code .ts-display-clip {
+  max-width: 110px;
+}
+.ts-display-table .ts-yes {
+  color: #1565c0;
+}
+.ts-display-table .ts-no {
+  color: #d32f2f;
+}
+.ts-display-thumb {
+  width: 34px;
+  height: 34px;
+  object-fit: cover;
+  margin: 0 auto;
+}
+.ts-display-detail {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid #999;
+  background: #fffbcc;
+  color: #212121;
+}
+.ts-display-name .ts-display-clip {
+  max-width: 220px;
+}
+.ts-display-options {
+  cursor: pointer;
+  margin-top: 4px;
+  padding: 0 6px;
+  border: 1px solid #82b3ff;
+  border-radius: 3px;
+  font-size: 11px;
+  line-height: 18px;
+  color: #2684ff;
+}
+.ts-display-error {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #d32f2f;
+}
+.ts-display-variant td {
+  background: #fafafa;
+  height: 44px;
+}
+.ts-display-table .ts-status-detail {
+  display: block;
+}
+.ts-display-table th {
+  white-space: nowrap;
+}
+.ts-display-table td:not(.ts-name) {
+  white-space: nowrap;
+}
+.ts-display-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 8px;
+  font-size: 12px;
+  color: #555;
+  white-space: nowrap;
+}
+.ts-display-search input {
+  width: 200px;
+  border: 0;
+  border-bottom: 1px solid #999;
+  background: transparent;
+  font-size: 13px;
+  padding: 2px 0;
+}
+.ts-display-hit td {
+  background: #fff8c4;
+}
+.ts-display-note {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #555;
+}
+
+.ts-display-price small.ts-display-hint-alert {
+  color: #d32f2f;
+}

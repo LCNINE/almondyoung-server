@@ -31,7 +31,11 @@
       "@context/*": ["src/context/*"],
       "@data/*": ["src/data/*"],
       "domains/*": ["src/domains/*"],
-      "/*": ["src/*"]
+      "/*": ["src/*"],
+      "@packages/domain-types/*": ["../../packages/domain-types/*"],
+      "@packages/time-sale-ui": ["../../packages/time-sale-ui"],
+      "react": ["./node_modules/@types/react"],
+      "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime"]
     },
     "plugins": [
       {

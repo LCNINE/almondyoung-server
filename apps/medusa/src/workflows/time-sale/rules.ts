@@ -18,7 +18,58 @@ export type TimeSaleWriteInput = {
   status: TimeSaleStatus;
   general_prices: TimeSalePriceInput[];
   membership_prices: TimeSalePriceInput[];
+  /** 상품진열 순서. 빠지면 저장된 순서를 그대로 둔다. */
+  product_order?: string[];
 };
+
+/**
+ * 상품진열 순서대로 정렬한다. 순서에 있는 상품이 앞에 그 순서로 오고, 순서에 없는 상품은 뒤에
+ * 원래 순서(판매순 등) 그대로 붙는다 — 순서를 저장한 뒤 새로 담긴 상품이 사라지지 않게.
+ */
+export function orderByProductOrder(ids: string[], order: string[]): string[] {
+  const present = new Set(ids);
+  const ranked = [...new Set(order)].filter((id) => present.has(id));
+  const rankedSet = new Set(ranked);
+  return [...ranked, ...ids.filter((id) => !rankedSet.has(id))];
+}
+
+export type TimeSaleListState = {
+  id: string;
+  isMembership: boolean;
+  starts_at: string;
+  ends_at: string;
+  status: string;
+  variantIds: string[];
+};
+
+/**
+ * 세일 행과 연결된 가격표가 어긋났는지. 수정 워크플로는 사가라 처리 도중 프로세스가 죽으면 보상이 돌지
+ * 않고 반쯤 바뀐 채 남는다(«새 가격 만들기 → 옛 가격 지우기» 사이면 같은 품목이 두 줄). 그걸 찾아낸다.
+ * 가격표 기간·상태와 중복 줄은 다시 저장하면 고쳐지고, 일반 가격표가 없으면 복구 스크립트가 필요하다.
+ */
+export function findTimeSaleIssues(
+  sale: { starts_at: string; ends_at: string; status: TimeSaleStatus },
+  lists: TimeSaleListState[],
+): string[] {
+  const issues: string[] = [];
+  const general = lists.filter((list) => !list.isMembership);
+  const membership = lists.filter((list) => list.isMembership);
+
+  if (general.length === 0) issues.push('일반 가격표가 연결되지 않았습니다. 복구 스크립트가 필요합니다.');
+  if (general.length > 1 || membership.length > 1) issues.push('같은 종류의 가격표가 둘 이상 연결돼 있습니다.');
+
+  const duplicated = lists.reduce((count, list) => count + duplicates(list.variantIds.map((variant_id) => ({ variant_id, amount: 0 }))).length, 0);
+  if (duplicated > 0) issues.push(
+      `같은 품목에 세일가가 두 줄 있습니다(${duplicated}개 품목). 상품진열에서 가격을 확인하고 다시 적용하세요.`,
+    );
+
+  const sameTime = (a: string, b: string) => Date.parse(a) === Date.parse(b);
+  if (lists.some((list) => !sameTime(list.starts_at, sale.starts_at) || !sameTime(list.ends_at, sale.ends_at) || list.status !== sale.status)) {
+    issues.push('가격표 기간·상태가 세일과 다릅니다. 다시 저장하면 맞춰집니다.');
+  }
+
+  return issues;
+}
 
 export const GENERAL_LIST_DESCRIPTION = '타임세일 (전체)';
 export const MEMBERSHIP_LIST_DESCRIPTION = '타임세일 (멤버십 구독자)';
@@ -41,7 +92,10 @@ export function validateTimeSaleInput(input: TimeSaleWriteInput): string[] {
   if (!(Date.parse(input.ends_at) > Date.parse(input.starts_at))) {
     errors.push('종료 시각은 시작 시각보다 뒤여야 합니다.');
   }
-  if (input.general_prices.length === 0) errors.push('세일가를 넣은 품목이 하나도 없습니다.');
+  // 신규 세일은 명칭·기간만으로 비공개 생성하고 상품은 나중에 붙인다. 공개는 품목이 있어야 한다.
+  if (input.status === 'active' && input.general_prices.length + input.membership_prices.length === 0) {
+    errors.push('세일가를 넣은 품목이 하나도 없습니다.');
+  }
 
   for (const [label, prices] of [
     ['일반', input.general_prices],
@@ -56,11 +110,6 @@ export function validateTimeSaleInput(input: TimeSaleWriteInput): string[] {
     const dup = duplicates(prices);
     if (dup.length > 0) errors.push(`${label} 세일가에 같은 품목이 두 번 있습니다: ${dup.join(', ')}`);
   }
-
-  // 멤버십 세일가만 있고 일반 세일가가 없는 품목은 «구독자만 싸게 사는» 상태라 막는다.
-  const general = new Set(input.general_prices.map((p) => p.variant_id));
-  const orphan = input.membership_prices.filter((p) => !general.has(p.variant_id)).map((p) => p.variant_id);
-  if (orphan.length > 0) errors.push(`일반 세일가 없이 멤버십 세일가만 있는 품목: ${orphan.join(', ')}`);
 
   return errors;
 }
@@ -224,4 +273,20 @@ export function planTimeSaleUpdate(params: {
   }
 
   return plan;
+}
+
+/**
+ * 멤버십 세일가만 있고 일반 세일가가 없는 옵션(멤버십 전용 특가). 비회원 화면이 이 옵션을 「회원 공개」로 그린다.
+ */
+export function membershipOnlyVariantIds(
+  rows: Array<{ price_list_id: string; variant_id: string }>,
+  membershipListIds: Set<string>,
+): string[] {
+  const general = new Set(rows.filter((r) => !membershipListIds.has(r.price_list_id)).map((r) => r.variant_id));
+
+  return [
+    ...new Set(
+      rows.filter((r) => membershipListIds.has(r.price_list_id) && !general.has(r.variant_id)).map((r) => r.variant_id),
+    ),
+  ];
 }

@@ -197,7 +197,8 @@
     "shippingFee": "배송비 {amount}원",
     "shippingFeeLine": "{name} {amount}원",
     "amountWon": "{amount}원",
-    "timeSaleBadge": "타임세일"
+    "timeSaleBadge": "타임세일",
+    "timeSaleMembershipBadge": "타임세일 멤버십 특가"
   },
   "discount": {
     "title": "할인 / 부가결제",

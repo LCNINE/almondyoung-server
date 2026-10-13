@@ -1,5 +1,9 @@
 "use server"
 
+import {
+  defaultTimeSaleSettings,
+  type TimeSaleSettings,
+} from "@packages/domain-types/time-sale"
 import { sdk } from "@/lib/config/medusa"
 import { TIME_SALE_TAG } from "@lib/data/cache-tags"
 
@@ -10,17 +14,24 @@ export type TimeSale = {
   /** 카드가 "이 가격이 타임세일에서 나왔는가" 를 판별할 때 쓴다. */
   priceListIds: string[]
   productIds: string[]
+  /** 이 세일에 가격이 걸린 옵션 전부(일반·멤버십). 옛 Medusa 응답이면 없다. */
+  variantIds?: string[]
+  /** 멤버십 세일가만 있는 옵션(멤버십 전용 특가). 옛 Medusa 응답이면 없다. */
+  membershipOnlyVariantIds?: string[]
 }
 
 export type TimeSaleOverview = {
   sales: TimeSale[]
   /** 진행 중 세일 상품 전체(판매순 → 리뷰순 → 최신순). 옛 Medusa 응답이면 없다. */
   products?: Array<{ id: string; categoryIds: string[] }>
+  /** 어드민 스타일 편집기의 진열·스타일 설정. 저장된 적이 없으면 기본값(라이브와 같은 모습). */
+  settings: TimeSaleSettings
 }
 
 type Response = {
   timeSales?: TimeSale[]
   products?: Array<{ id: string; categoryIds: string[] }>
+  settings?: TimeSaleSettings
 }
 
 /**
@@ -35,8 +46,12 @@ export const getTimeSaleOverview = async (): Promise<TimeSaleOverview> => {
       method: "GET",
       next: { tags: [TIME_SALE_TAG], revalidate: 60 },
     })
-    .then((response) => ({ sales: response.timeSales ?? [], products: response.products }))
-    .catch(() => ({ sales: [] }))
+    .then((response) => ({
+      sales: response.timeSales ?? [],
+      products: response.products,
+      settings: response.settings ?? defaultTimeSaleSettings(),
+    }))
+    .catch(() => ({ sales: [], settings: defaultTimeSaleSettings() }))
 }
 
 export const listActiveTimeSales = async (): Promise<TimeSale[]> =>

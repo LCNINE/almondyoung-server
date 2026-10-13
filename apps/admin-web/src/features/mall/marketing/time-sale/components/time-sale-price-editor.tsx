@@ -15,6 +15,8 @@ const won = (value: number) => `${value.toLocaleString('ko-KR')}원`;
 
 type Group = { productId: string; productTitle: string; rows: TimeSaleRow[] };
 
+type ProductPeriodInput = { startsAt: string; endsAt: string };
+
 const groupByProduct = (rows: TimeSaleRow[]): Group[] => {
   const groups = new Map<string, Group>();
   for (const row of rows) {
@@ -41,17 +43,29 @@ export function TimeSalePriceEditor({
   rows,
   errorByVariant,
   membershipPercent,
+  rounding = 'round',
   disabled,
   onChange,
+  productPeriods,
+  onProductPeriodChange,
+  generalPriceDisabled = false,
 }: {
   rows: TimeSaleRow[];
   errorByVariant: Map<string, string>;
   /** null 이면 상품 줄에 적은 할인율을 멤버십가에도 그대로 쓴다. */
   membershipPercent: number | null;
+  rounding?: 'round' | 'ceil' | 'floor';
   /** 멤버십 할인율 입력이 틀렸을 때. 이때 적용을 허용하면 그 값이 일반 할인율로 대체돼
    * 조용히 저장된다 — 값이 그럴듯해서 검증에도 안 걸린다. */
   disabled?: boolean;
   onChange: (rows: TimeSaleRow[]) => void;
+  productPeriods?: Record<string, ProductPeriodInput>;
+  onProductPeriodChange?: (
+    productId: string,
+    field: keyof ProductPeriodInput,
+    value: string
+  ) => void;
+  generalPriceDisabled?: boolean;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [percentByProduct, setPercentByProduct] = useState<
@@ -59,6 +73,9 @@ export function TimeSalePriceEditor({
   >({});
 
   const groups = groupByProduct(rows);
+  const generalPriceHeader = generalPriceDisabled
+    ? '일반 세일가 (가격 공개 제한: 저장 안 됨)'
+    : '일반 세일가 (비우면 제외)';
 
   const toggleExpanded = (productId: string) => {
     setExpanded((prev) => {
@@ -78,7 +95,8 @@ export function TimeSalePriceEditor({
       applyPercentDiscount(
         group.rows,
         percent,
-        membershipPercent ?? percent
+        membershipPercent ?? percent,
+        rounding
       ).map((row) => [row.variantId, row])
     );
     onChange(rows.map((row) => discounted.get(row.variantId) ?? row));
@@ -158,6 +176,38 @@ export function TimeSalePriceEditor({
                 )}
               </button>
 
+              {productPeriods && (
+                <div className="flex shrink-0 items-center gap-1">
+                  <Input
+                    type="datetime-local"
+                    aria-label={`${group.productTitle} 할인 시작`}
+                    className="w-48"
+                    value={productPeriods[group.productId]?.startsAt ?? ''}
+                    onChange={(event) =>
+                      onProductPeriodChange?.(
+                        group.productId,
+                        'startsAt',
+                        event.target.value
+                      )
+                    }
+                  />
+                  <span className="text-muted-foreground text-xs">~</span>
+                  <Input
+                    type="datetime-local"
+                    aria-label={`${group.productTitle} 할인 종료`}
+                    className="w-48"
+                    value={productPeriods[group.productId]?.endsAt ?? ''}
+                    onChange={(event) =>
+                      onProductPeriodChange?.(
+                        group.productId,
+                        'endsAt',
+                        event.target.value
+                      )
+                    }
+                  />
+                </div>
+              )}
+
               <div className="flex shrink-0 items-center gap-1">
                 <Input
                   type="number"
@@ -191,7 +241,7 @@ export function TimeSalePriceEditor({
                       <th className="px-3 py-2 text-left">품목</th>
                       <th className="px-3 py-2 text-right">정가</th>
                       <th className="px-3 py-2 text-right">
-                        일반 세일가 (비우면 제외)
+                        {generalPriceHeader}
                       </th>
                       <th className="px-3 py-2 text-right">멤버십가</th>
                       <th className="px-3 py-2 text-right">멤버십 세일가</th>
@@ -218,6 +268,7 @@ export function TimeSalePriceEditor({
                               type="number"
                               className="ml-auto w-28 text-right"
                               value={row.generalSalePrice ?? ''}
+                              disabled={generalPriceDisabled}
                               onChange={(event) =>
                                 editRow(
                                   row.variantId,

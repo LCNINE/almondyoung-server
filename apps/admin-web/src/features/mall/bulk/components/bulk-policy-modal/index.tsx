@@ -55,7 +55,7 @@ const ROWS: { flag: PolicyFlag; label: string; desc: string }[] = [
   {
     flag: 'hideMembershipPriceForNonMembers',
     label: '멤버십가 비공개',
-    desc: '비회원에게 멤버십가 숫자 대신 "멤버십 회원 공개"를 표시합니다.',
+    desc: '비회원에게 멤버십가 숫자 대신 "멤버십 회원에게 가격 공개"를 표시합니다.',
   },
   {
     flag: 'isVisibleToMembersOnly',

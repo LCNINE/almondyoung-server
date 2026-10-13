@@ -1,7 +1,5 @@
 import type { RowData } from '@tanstack/react-table';
 
-declare module '*.css';
-
 declare module '@tanstack/react-table' {
   // 원본 ColumnMeta 제네릭 시그니처와 일치해야 병합된다.
   interface ColumnMeta<TData extends RowData, TValue> {

@@ -1,28 +1,36 @@
 import { getTranslations } from "next-intl/server"
-import LocalizedClientLink from "@/components/shared/localized-client-link"
-import { TimeSaleDeadline } from "@/components/shared/time-sale-deadline"
-import ProductCard from "@/domains/products/components/product-card"
+import { ConfiguredTimeSale } from "@/domains/home/components/sections/time-sale-section/configured"
+import { buildSaleProducts } from "@/domains/home/template/time-sale/sale-products"
+import { fetchProductsByIds } from "@/domains/home/template/time-sale/fetch-products"
 import { listCategories } from "@/lib/api/medusa/categories"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
-import { listProducts } from "@/lib/api/medusa/products"
 import { getRegion } from "@/lib/api/medusa/regions"
 import type { TimeSaleOverview } from "@/lib/api/medusa/time-sale"
-import { cn } from "@/lib/utils"
-import { getIsMembershipOnly } from "@/lib/utils/product-card"
-import { earliestEnd, orderedProducts, paginate } from "@/lib/utils/time-sale-merge"
-import { ALL_TAB_KEY, buildTabSources, deriveTimeSaleTabs } from "@/lib/utils/time-sale-tabs"
+import {
+  earliestEnd,
+  orderedProducts,
+  paginate,
+} from "@/lib/utils/time-sale-merge"
+import { buildPager, morePageSize } from "@/lib/utils/time-sale-pagination"
+import {
+  ALL_TAB_KEY,
+  buildTabSources,
+  deriveTimeSaleTabs,
+} from "@/lib/utils/time-sale-tabs"
 import { getWishlist } from "@lib/api/users/wishlist"
-import type { CustomerGroup } from "@/lib/types/dto/medusa"
 
-const PAGE_SIZE = 40
+export type TimeSaleAllProps = Omit<
+  React.ComponentProps<typeof ConfiguredTimeSale>,
+  "surface"
+>
 
 /**
- * 진행 중 세일 상품 전체. 홈 섹션은 상위 10개만 보이므로 «더보기» 가 여기로 온다.
+ * 진행 중 세일 상품 전체 한 페이지. 더보기 페이지와 메인 매대의 더보기 팝업이 같이 쓴다.
  *
  * 상품 수백 개를 한 번에 받지 않는다 — id 목록(서버가 정렬·카테고리까지 준다)을 탭으로 거른 뒤
- * 한 페이지(40개)만 `/store/products` 로 받는다. 그래야 멤버십가 은닉·가격 계산이 다른 목록과 같다.
+ * 한 페이지만 `/store/products` 로 받는다. 그래야 멤버십가 은닉·가격 계산이 다른 목록과 같다.
  */
-export async function TimeSaleAllTemplate({
+export async function loadTimeSaleAll({
   overview,
   countryCode,
   tabKey,
@@ -32,100 +40,99 @@ export async function TimeSaleAllTemplate({
   countryCode: string
   tabKey: string
   page: number
-}) {
-  const t = await getTranslations("home.timeSale")
-  const sales = overview.sales
-  const all = orderedProducts(overview)
+}): Promise<TimeSaleAllProps | null> {
+  const { settings, sales } = overview
   const endsAt = earliestEnd(sales)
+  if (!settings.environment.more || !endsAt) return null
 
+  const t = await getTranslations("home.timeSale")
+  const all = orderedProducts(overview)
   const categories = await listCategories()
-  const tabs = deriveTimeSaleTabs(all, buildTabSources(categories), t("allTab"))
-  const activeTab = tabs.find((tab) => tab.key === tabKey) ?? tabs[0]
-  const activeIds = activeTab ? new Set(activeTab.productIds) : null
-  const filtered = activeIds ? all.filter((p) => activeIds.has(p.id)) : all
-  const { items, page: current, totalPages } = paginate(filtered, page, PAGE_SIZE)
-
-  const [region, customer] = await Promise.all([getRegion(countryCode), retrieveCustomer()])
-  const ids = items.map((p) => p.id)
-  const [listed, wishlist] = await Promise.all([
-    ids.length
-      ? listProducts({ queryParams: { id: ids, limit: ids.length }, regionId: region?.id })
-      : Promise.resolve(null),
-    customer ? getWishlist().catch(() => []) : Promise.resolve([]),
-  ])
-  const byId = new Map((listed?.response.products ?? []).map((product) => [product.id, product]))
-  // `listProducts` 는 id 필터라 순서를 보존하지 않는다 — 서버가 준 순서로 되돌린다.
-  const products = ids
-    .map((id) => byId.get(id))
-    .filter((p): p is NonNullable<typeof p> => Boolean(p))
-  const wishlistIds = new Set(wishlist.map((item) => item.productId))
-  const isMembership =
-    customer?.groups?.some(
-      (group: CustomerGroup) => group.id === process.env.NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID
-    ) ?? false
 
   const href = (key: string, p: number) => {
     const params = new URLSearchParams()
     if (key !== ALL_TAB_KEY) params.set("tab", key)
     if (p > 1) params.set("page", String(p))
     const query = params.toString()
-    return `/time-sale${query ? `?${query}` : ""}`
+    return `/${countryCode}/time-sale${query ? `?${query}` : ""}`
   }
 
-  return (
-    <section>
-      <h1 className="text-xl font-bold text-foreground">{t("allTitle")}</h1>
-      {endsAt && <TimeSaleDeadline endsAt={endsAt} className="mt-2" />}
+  const tabs = deriveTimeSaleTabs(
+    all,
+    buildTabSources(categories),
+    t("allTab")
+  ).map((tab) => ({
+    ...tab,
+    href: href(tab.key, 1),
+  }))
+  const activeTab = tabs.find((tab) => tab.key === tabKey) ?? tabs[0]
+  const activeIds = activeTab ? new Set(activeTab.productIds) : null
+  const filtered = activeIds ? all.filter((p) => activeIds.has(p.id)) : all
+  const pageSize = morePageSize(settings) ?? 40
+  const {
+    items,
+    page: current,
+    totalPages,
+  } = paginate(filtered, page, pageSize)
 
-      {tabs.length > 0 && (
-        <nav className="mt-4 flex gap-2 overflow-x-auto">
-          {tabs.map((tab) => (
-            <LocalizedClientLink
-              key={tab.key}
-              href={href(tab.key, 1)}
-              className={cn(
-                "shrink-0 rounded-full border px-3 py-1.5 text-sm",
-                tab.key === activeTab?.key ? "border-foreground bg-foreground text-background" : "border-border"
-              )}
-            >
-              {tab.name}
-            </LocalizedClientLink>
-          ))}
-        </nav>
-      )}
-
-      <p className="mt-4 text-sm text-muted-foreground">{t("productCount", { count: filtered.length })}</p>
-
-      <ul className="mt-2 grid grid-cols-2 gap-x-3 gap-y-6 md:grid-cols-4 lg:grid-cols-5">
-        {products.map((product) => (
-          <li key={product.id}>
-            <ProductCard
-              product={product}
-              isMembership={isMembership}
-              isMembershipOnly={getIsMembershipOnly(product)}
-              isWishlisted={wishlistIds.has(product.id)}
-              enablePhotoSwipe={false}
-            />
-          </li>
-        ))}
-      </ul>
-
-      {totalPages > 1 && (
-        <nav className="mt-8 flex flex-wrap justify-center gap-1">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-            <LocalizedClientLink
-              key={p}
-              href={href(activeTab?.key ?? ALL_TAB_KEY, p)}
-              className={cn(
-                "min-w-9 rounded-md px-2 py-1.5 text-center text-sm",
-                p === current ? "bg-foreground text-background" : "text-muted-foreground"
-              )}
-            >
-              {p}
-            </LocalizedClientLink>
-          ))}
-        </nav>
-      )}
-    </section>
+  const [region, customer] = await Promise.all([
+    getRegion(countryCode),
+    retrieveCustomer(),
+  ])
+  const ids = items.map((p) => p.id)
+  const [products, wishlist] = await Promise.all([
+    fetchProductsByIds(ids, region?.id),
+    customer ? getWishlist().catch(() => []) : Promise.resolve([]),
+  ])
+  const isMember =
+    customer?.groups?.some(
+      (group) => group.id === process.env.NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID
+    ) ?? false
+  const listLayout = settings.styles.more.pc.components.find(
+    (c) => c.type === "grid" || c.type === "carousel"
   )
+
+  return {
+    settings,
+    startsAt: sales.reduce(
+      (min, sale) =>
+        sale.startsAt && sale.startsAt < min ? sale.startsAt : min,
+      endsAt
+    ),
+    endsAt,
+    countryCode,
+    sectionPeriods: sales.map(({ startsAt, endsAt }) => ({ startsAt, endsAt })),
+    tabs,
+    activeTabKey: activeTab?.key,
+    productCount: filtered.length,
+    // 한 페이지여도 빈 배열을 준다. undefined 면 렌더러가 칸 수로 다시 잘라 나머지 상품에 닿을 수 없다.
+    pager:
+      totalPages > 1
+        ? buildPager(
+            current,
+            totalPages,
+            (p) => href(activeTab?.key ?? ALL_TAB_KEY, p),
+            listLayout?.options.pageWindow
+          )
+        : [],
+    stockProducts: Object.fromEntries(
+      products.map((product) => [product.id, product])
+    ),
+    products: buildSaleProducts({
+      sales,
+      ids,
+      products,
+      countryCode,
+      isMember,
+      wishlistIds: wishlist.map((item) => item.productId),
+    }),
+  }
+}
+
+export async function TimeSaleAllTemplate(
+  props: Parameters<typeof loadTimeSaleAll>[0]
+) {
+  const data = await loadTimeSaleAll(props)
+
+  return data ? <ConfiguredTimeSale {...data} surface="more" /> : null
 }

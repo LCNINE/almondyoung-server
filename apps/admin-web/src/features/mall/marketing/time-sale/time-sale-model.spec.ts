@@ -1,4 +1,5 @@
 import { CustomError } from '@/lib/api/customError';
+import { defaultTimeSaleSettings } from '@packages/domain-types/time-sale';
 import {
   applyPercentDiscount,
   applySavedSalePrices,
@@ -8,7 +9,9 @@ import {
   resolveTimeSaleStatus,
   saleVariantIds,
   validateRows,
+  blockingErrors,
   toTimeSaleRows,
+  isDefaultStyleModified,
   type TimeSaleRow,
 } from './time-sale-model';
 
@@ -80,14 +83,21 @@ describe('applyPercentDiscount', () => {
 });
 
 describe('validateRows', () => {
-  it('세일가가 정가 이상이면 막는다', () => {
+  // 판매가가 세일 뒤에 바뀌면 저장된 세일가가 판매가 이상이 된다. 막으면 순서 변경조차 저장이 안 된다.
+  it('세일가가 정가 이상이면 경고만 하고 저장은 막지 않는다', () => {
     const errors = validateRows([row({ generalSalePrice: 10000, membershipSalePrice: 7000 })]);
     expect(errors[0].message).toContain('정가');
+    expect(blockingErrors(errors)).toEqual([]);
   });
 
-  it('멤버십 세일가가 멤버십가 이상이면 막는다', () => {
+  it('멤버십 세일가가 멤버십가 이상이면 경고만 한다', () => {
     const errors = validateRows([row({ generalSalePrice: 9000, membershipSalePrice: 8000 })]);
     expect(errors[0].message).toContain('멤버십가');
+    expect(blockingErrors(errors)).toEqual([]);
+  });
+
+  it('0원 이하 세일가는 저장을 막는다', () => {
+    expect(blockingErrors(validateRows([row({ generalSalePrice: 0 })]))).toHaveLength(1);
   });
 
   // 빈 칸은 "이 품목은 세일에서 뺀다" 는 뜻이다. 상품 하나에 옵션이 백 개씩 딸려오는데 전부
@@ -96,9 +106,16 @@ describe('validateRows', () => {
     expect(validateRows([row()])).toEqual([]);
   });
 
-  it('일반 세일가 없이 멤버십 세일가만 남으면 막는다', () => {
-    const errors = validateRows([row({ membershipSalePrice: 6000 })]);
-    expect(errors[0].message).toContain('멤버십 세일가도 비우세요');
+  // 일반가를 못 건드리는 국내 브랜드 상품은 멤버십 회원에게만 기간 할인한다(멤버십 전용 특가).
+  it('일반 세일가 없이 멤버십 세일가만 넣으면 멤버십 전용 특가로 저장된다', () => {
+    expect(validateRows([row({ membershipSalePrice: 6000 })])).toEqual([]);
+  });
+
+  it('멤버십 전용 특가에도 멤버십 세일가 검사가 돈다', () => {
+    expect(validateRows([row({ membershipSalePrice: -1 })])[0].message).toContain('멤버십 세일가는 0원보다');
+    const warn = validateRows([row({ membershipSalePrice: 9000 })]);
+    expect(warn[0].warning).toBe(true);
+    expect(warn[0].message).toContain('멤버십가');
   });
 
   // 할인율 100 이상이면 음수가, NaN 이면 `amount: null` 이 Medusa 까지 간다. 멤버십 쪽은
@@ -126,6 +143,12 @@ describe('saleVariantIds', () => {
         row({ variantId: 'variant_2' }),
       ])
     ).toEqual(['variant_1']);
+  });
+
+  it('멤버십 전용 특가 품목도 세일에 들어간다', () => {
+    expect(saleVariantIds([row({ variantId: 'variant_m', membershipSalePrice: 6000 })])).toEqual([
+      'variant_m',
+    ]);
   });
 });
 
@@ -239,6 +262,16 @@ describe('summarizeSaleRows', () => {
     expect(summary.minPercent).toBe(10);
   });
 
+  it('멤버십 전용 특가 품목도 세일 품목 수에 센다(할인율 요약은 일반 세일가 기준)', () => {
+    const summary = summarizeSaleRows([
+      row({ variantId: 'v1', membershipSalePrice: 6000 }),
+      row({ variantId: 'v2', basePrice: 10000, generalSalePrice: 9000 }),
+    ]);
+    expect(summary.filled).toBe(2);
+    expect(summary.minPercent).toBe(10);
+    expect(summary.maxPercent).toBe(10);
+  });
+
   it('입력이 하나도 없으면 전부 null 이다', () => {
     const summary = summarizeSaleRows([row({ generalSalePrice: null })]);
     expect(summary.filled).toBe(0);
@@ -294,5 +327,27 @@ describe('readServerReason', () => {
     expect(readServerReason(new CustomError({ message: 'boom', statusCode: 500 }))).toBeNull();
     expect(readServerReason(new Error('Network Error'))).toBeNull();
     expect(readServerReason(undefined)).toBeNull();
+  });
+});
+
+describe('isDefaultStyleModified', () => {
+  it('초기값 그대로면 false, 키 순서만 달라도 false', () => {
+    const s = defaultTimeSaleSettings();
+    expect(isDefaultStyleModified(s, 'main', 'pc')).toBe(false);
+
+    const active = s.styles.main.pc;
+    s.styles.main.pc = Object.fromEntries(
+      Object.entries(active).reverse()
+    ) as typeof active;
+    expect(isDefaultStyleModified(s, 'main', 'pc')).toBe(false);
+  });
+
+  it('기본 id 에서 내용을 고치면 true, 저장된 스타일 id 면 false', () => {
+    const s = defaultTimeSaleSettings();
+    s.styles.main.pc.name = '바꾼 이름';
+    expect(isDefaultStyleModified(s, 'main', 'pc')).toBe(true);
+
+    s.styles.main.pc.id = 'style-1';
+    expect(isDefaultStyleModified(s, 'main', 'pc')).toBe(false);
   });
 });

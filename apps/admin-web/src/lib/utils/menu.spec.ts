@@ -6,6 +6,16 @@ import {
 } from './menu';
 
 describe('admin menu navigation', () => {
+  it('자사몰 관리는 존재하는 첫 하위 페이지로 이동한다', () => {
+    const path = getFirstPagePath('own-mall');
+
+    expect(path).toBe('/mall/marketing/messages');
+    expect(getActiveMenuAndItem(path!)).toEqual({
+      menuId: 'own-mall',
+      itemId: 'messages',
+    });
+  });
+
   it('places product management immediately before inventory management', () => {
     const productMenuIndex = mainMenus.findIndex(
       (menu) => menu.id === 'product-management'

@@ -31,7 +31,10 @@
       "@packages/event-contracts": ["../../packages/event-contracts"],
       "@packages/event-contracts/*": ["../../packages/event-contracts/*"],
       "@packages/domain-types": ["../../packages/domain-types"],
-      "@packages/domain-types/*": ["../../packages/domain-types/*"]
+      "@packages/domain-types/*": ["../../packages/domain-types/*"],
+      "@packages/time-sale-ui": ["../../packages/time-sale-ui"],
+      "react": ["./node_modules/@types/react"],
+      "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

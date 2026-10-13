@@ -33,6 +33,8 @@ export function MainLayout({ children }: MainLayoutProps) {
       setActiveMenu(menuId);
       setActiveItem(itemId || undefined);
     }
+
+    if (pathname === '/') setSidebarOpen(true);
   }, [pathname]);
 
   const handleMenuChange = (menuId: string) => {
@@ -49,11 +51,16 @@ export function MainLayout({ children }: MainLayoutProps) {
       <span>
         <strong>DEMO</strong> · 시연 데이터 · 택배와 알림은 모의 처리됩니다.
       </span>
-      <Link href="/demo" className="shrink-0 whitespace-nowrap font-semibold underline">
+      <Link
+        href="/demo"
+        className="shrink-0 whitespace-nowrap font-semibold underline"
+      >
         시연 콘솔
       </Link>
     </div>
   );
+
+  if (pathname.startsWith('/mall/marketing/time-sale')) return <>{children}</>;
 
   // 로그인 페이지와 모바일 전용 페이지는 PC 레이아웃 제외
   if (pathname === '/login' || pathname === '/unauthorized') {

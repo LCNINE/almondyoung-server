@@ -82,7 +82,21 @@
     "dayUnit": "d",
     "untilEnd": "Ends in",
     "endingSoon": "Ending soon",
-    "badge": "Time sale"
+    "badge": "Time sale",
+    "loading": "Loading…",
+    "membershipBadge": "Member deal",
+    "membershipOnlyPrice": "Members only",
+    "membershipSavings": "Save {amount} KRW",
+    "membershipDiscount": "Member price",
+    "membershipReveal": "Price shown to members",
+    "savingsAmount": "Save {amount}",
+    "joinSavingsAmount": "Join and save {amount}",
+    "remainingTime": "Time remaining",
+    "elapsed": "Time sale progress",
+    "moreDialog": "More time sale items",
+    "pages": "Time sale pages",
+    "emptyPage": "No items on this page.",
+    "rating": "Rated {rating}, {count} reviews"
   },
   "beautytop": {
     "title": "BeautyTop",

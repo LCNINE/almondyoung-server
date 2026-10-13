@@ -39,7 +39,6 @@ interface ProductQuickActionsProps {
  */
 export function ProductQuickActions({
   productId,
-  productHandle: _productHandle,
   productTitle = "",
   productImage,
   variantId,
@@ -185,104 +184,113 @@ export function ProductQuickActions({
 
   return (
     <>
-    <QuickAddDrawer
-      open={showQuickAddDrawer}
-      onOpenChange={setShowQuickAddDrawer}
-      productId={productId}
-      productTitle={productTitle}
-      productImage={productImage}
-      countryCode={countryCode}
-      isWelcomeMembership={isWelcomeMembership}
-    />
-    <div className="absolute right-2 bottom-2 z-10 flex flex-col items-end gap-1.5">
-      {/* 찜하기 버튼 - 모바일에서는 항상 표시, 데스크탑에서는 호버 시 표시 */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className={cn(
-          "h-8 w-8 rounded-full border border-white/20 bg-white/80 shadow-sm backdrop-blur-sm",
-          "transition-all duration-200 hover:scale-105 hover:bg-white active:scale-95",
-          "md:opacity-0 md:group-hover:opacity-100",
-          isPending && "opacity-50"
-        )}
-        onClick={handleWishlistToggle}
-        aria-disabled={isPending}
-      >
-        <AnimatedHeart
-          isActive={isWishlisted}
-          className="h-4 w-4"
-          inactiveColor="text-gray-600"
-        />
-      </Button>
-
-      {membersOnlyPurchase ? null : !showQuantitySelector ? (
+      <QuickAddDrawer
+        open={showQuickAddDrawer}
+        onOpenChange={setShowQuickAddDrawer}
+        productId={productId}
+        productTitle={productTitle}
+        productImage={productImage}
+        countryCode={countryCode}
+        isWelcomeMembership={isWelcomeMembership}
+      />
+      <div className="pointer-events-auto absolute right-2 bottom-2 z-10 flex flex-col items-end gap-1.5">
+        {/* 찜하기 버튼 - 모바일에서는 항상 표시, 데스크탑에서는 호버 시 표시 */}
         <Button
           variant="ghost"
           size="icon"
           className={cn(
             "h-8 w-8 rounded-full border border-white/20 bg-white/80 shadow-sm backdrop-blur-sm",
             "transition-all duration-200 hover:scale-105 hover:bg-white active:scale-95",
-            "md:opacity-0 md:group-hover:opacity-100"
+            "md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100",
+            isPending && "opacity-50"
           )}
-          onClick={handleCartClick}
+          onClick={handleWishlistToggle}
+          aria-label={t("wishlistToast")}
+          aria-pressed={isWishlisted}
+          aria-disabled={isPending}
         >
-          <ShoppingCart className="h-4 w-4 text-gray-600" />
+          <AnimatedHeart
+            isActive={isWishlisted}
+            className="h-4 w-4"
+            inactiveColor="text-gray-600"
+          />
         </Button>
-      ) : (
-        <div
-          className="flex items-center gap-1 rounded-full border border-white/20 bg-white/95 px-2 py-1 shadow-md backdrop-blur-sm"
-          onClick={(e) => e.preventDefault()}
-        >
-          {isAddedToCart ? (
-            <div className="flex items-center gap-1 px-2">
-              <Check className="h-4 w-4 text-green-600" />
-              <span className="text-xs font-medium text-green-600">{t("added")}</span>
-            </div>
-          ) : (
-            <>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 rounded-full p-0 hover:bg-gray-100"
-                onClick={(e) => handleQuantityChange(-1, e)}
-                disabled={quantity <= 1}
-              >
-                <Minus className="h-3 w-3" />
-              </Button>
-              <span className="min-w-[20px] text-center text-sm font-medium">
-                {quantity}
-              </span>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 rounded-full p-0 hover:bg-gray-100"
-                onClick={(e) => handleQuantityChange(1, e)}
-                disabled={isWelcomeMembership && quantity >= 1}
-              >
-                <Plus className="h-3 w-3" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="bg-yellow-30 hover:bg-yellow-40 ml-1 h-6 rounded-full px-2 text-xs text-white hover:text-white"
-                onClick={handleAddToCart}
-                disabled={isCartLoading}
-              >
-                {isCartLoading ? <Spinner size="sm" color="white" /> : t("add")}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-5 w-5 rounded-full p-0 text-gray-400 hover:bg-gray-100"
-                onClick={handleClose}
-              >
-                <span className="text-xs">X</span>
-              </Button>
-            </>
-          )}
-        </div>
-      )}
-    </div>
+
+        {membersOnlyPurchase ? null : !showQuantitySelector ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn(
+              "h-8 w-8 rounded-full border border-white/20 bg-white/80 shadow-sm backdrop-blur-sm",
+              "transition-all duration-200 hover:scale-105 hover:bg-white active:scale-95",
+              "md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100"
+            )}
+            onClick={handleCartClick}
+            aria-label={t("addToCartAria")}
+          >
+            <ShoppingCart className="h-4 w-4 text-gray-600" />
+          </Button>
+        ) : (
+          <div
+            className="flex items-center gap-1 rounded-full border border-white/20 bg-white/95 px-2 py-1 shadow-md backdrop-blur-sm"
+            onClick={(e) => e.preventDefault()}
+          >
+            {isAddedToCart ? (
+              <div className="flex items-center gap-1 px-2">
+                <Check className="h-4 w-4 text-green-600" />
+                <span className="text-xs font-medium text-green-600">
+                  {t("added")}
+                </span>
+              </div>
+            ) : (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 rounded-full p-0 hover:bg-gray-100"
+                  onClick={(e) => handleQuantityChange(-1, e)}
+                  disabled={quantity <= 1}
+                >
+                  <Minus className="h-3 w-3" />
+                </Button>
+                <span className="min-w-[20px] text-center text-sm font-medium">
+                  {quantity}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 rounded-full p-0 hover:bg-gray-100"
+                  onClick={(e) => handleQuantityChange(1, e)}
+                  disabled={isWelcomeMembership && quantity >= 1}
+                >
+                  <Plus className="h-3 w-3" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="bg-yellow-30 hover:bg-yellow-40 ml-1 h-6 rounded-full px-2 text-xs text-white hover:text-white"
+                  onClick={(event) => void handleAddToCart(event)}
+                  disabled={isCartLoading}
+                >
+                  {isCartLoading ? (
+                    <Spinner size="sm" color="white" />
+                  ) : (
+                    t("add")
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5 rounded-full p-0 text-gray-400 hover:bg-gray-100"
+                  onClick={handleClose}
+                >
+                  <span className="text-xs">X</span>
+                </Button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
     </>
   )
 }

@@ -197,7 +197,8 @@
     "shippingFee": "Shipping {amount} KRW",
     "shippingFeeLine": "{name} {amount} KRW",
     "amountWon": "{amount} KRW",
-    "timeSaleBadge": "Time sale"
+    "timeSaleBadge": "Time sale",
+    "timeSaleMembershipBadge": "Time sale member deal"
   },
   "discount": {
     "title": "Discounts / Additional payments",

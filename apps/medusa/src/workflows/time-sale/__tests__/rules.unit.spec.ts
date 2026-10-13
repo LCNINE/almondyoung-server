@@ -1,6 +1,9 @@
 import {
   buildPriceListData,
   findConflictingSales,
+  orderByProductOrder,
+  findTimeSaleIssues,
+  membershipOnlyVariantIds,
   planTimeSaleUpdate,
   validateTimeSaleInput,
   type LinkedList,
@@ -19,6 +22,46 @@ const base: TimeSaleWriteInput = {
   membership_prices: [{ variant_id: 'v1', amount: 700 }],
 };
 
+describe('findTimeSaleIssues', () => {
+  const sale = { starts_at: '2030-01-01T00:00:00.000Z', ends_at: '2030-01-08T00:00:00.000Z', status: 'active' as const };
+  const list = (over: Partial<Parameters<typeof findTimeSaleIssues>[1][number]> = {}) => ({
+    id: 'pl_1',
+    isMembership: false,
+    starts_at: sale.starts_at,
+    ends_at: sale.ends_at,
+    status: 'active',
+    variantIds: ['v1', 'v2'],
+    ...over,
+  });
+
+  it('reports nothing for a consistent sale', () => {
+    expect(findTimeSaleIssues(sale, [list(), list({ id: 'pl_2', isMembership: true })])).toEqual([]);
+  });
+
+  it('finds a missing general list', () => {
+    expect(findTimeSaleIssues(sale, [list({ isMembership: true })])[0]).toContain('일반 가격표');
+  });
+
+  it('finds the same variant priced twice (create-then-delete interrupted)', () => {
+    expect(findTimeSaleIssues(sale, [list({ variantIds: ['v1', 'v1', 'v2'] })])[0]).toContain('1개 품목');
+  });
+
+  it('finds a list whose period or status drifted from the sale', () => {
+    expect(findTimeSaleIssues(sale, [list({ status: 'draft' })])[0]).toContain('기간·상태');
+    expect(findTimeSaleIssues(sale, [list({ ends_at: '2030-01-09T00:00:00.000Z' })])[0]).toContain('기간·상태');
+  });
+});
+
+describe('orderByProductOrder', () => {
+  it('puts ordered products first and keeps the rest in their original order', () => {
+    expect(orderByProductOrder(['a', 'b', 'c', 'd'], ['c', 'x', 'a'])).toEqual(['c', 'a', 'b', 'd']);
+  });
+
+  it('keeps the original order when nothing is ordered', () => {
+    expect(orderByProductOrder(['a', 'b'], [])).toEqual(['a', 'b']);
+  });
+});
+
 describe('validateTimeSaleInput', () => {
   it('passes a well-formed input', () => {
     expect(validateTimeSaleInput(base)).toEqual([]);
@@ -33,6 +76,12 @@ describe('validateTimeSaleInput', () => {
       membership_prices: [],
     });
     expect(errors).toHaveLength(3);
+  });
+
+  it('allows a draft sale without prices — products are added after creation', () => {
+    expect(
+      validateTimeSaleInput({ ...base, status: 'draft', general_prices: [], membership_prices: [] }),
+    ).toEqual([]);
   });
 
   it('rejects non-positive and non-finite amounts', () => {
@@ -59,12 +108,23 @@ describe('validateTimeSaleInput', () => {
     expect(validateTimeSaleInput(base)).toEqual([]);
   });
 
-  it('rejects membership variant missing from general prices', () => {
-    const errors = validateTimeSaleInput({
-      ...base,
-      membership_prices: [{ variant_id: 'v9', amount: 100 }],
-    });
-    expect(errors.some((e) => e.includes('v9'))).toBe(true);
+  it('allows a membership-only variant (no general sale price)', () => {
+    expect(
+      validateTimeSaleInput({
+        ...base,
+        membership_prices: [...base.membership_prices, { variant_id: 'v9', amount: 100 }],
+      }),
+    ).toEqual([]);
+  });
+
+  it('publishes a sale whose items are all membership-only', () => {
+    expect(
+      validateTimeSaleInput({
+        ...base,
+        general_prices: [],
+        membership_prices: [{ variant_id: 'v9', amount: 100 }],
+      }),
+    ).toEqual([]);
   });
 });
 
@@ -285,5 +345,18 @@ describe('planTimeSaleUpdate', () => {
 
   it('throws when the general list is missing (broken invariant)', () => {
     expect(() => planTimeSaleUpdate({ input: base, lists: [lists[1]], ...ctx })).toThrow();
+  });
+});
+
+describe('membershipOnlyVariantIds', () => {
+  const rows = [
+    { price_list_id: 'gen', variant_id: 'a1', product_id: 'A' },
+    { price_list_id: 'mem', variant_id: 'a1', product_id: 'A' },
+    { price_list_id: 'mem', variant_id: 'a2', product_id: 'A' },
+    { price_list_id: 'mem', variant_id: 'b1', product_id: 'B' },
+  ];
+
+  it('marks variants priced only in the membership list', () => {
+    expect(membershipOnlyVariantIds(rows, new Set(['mem']))).toEqual(['a2', 'b1']);
   });
 });

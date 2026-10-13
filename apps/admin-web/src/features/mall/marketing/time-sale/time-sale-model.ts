@@ -6,6 +6,12 @@
  */
 
 import { isCustomError } from '@/lib/api/customError';
+import {
+  defaultTimeSaleSettings,
+  type SalePlatform,
+  type SaleSurface,
+  type TimeSaleSettings,
+} from '@packages/domain-types/time-sale';
 
 export type TimeSaleStatus = 'draft' | 'scheduled' | 'active' | 'ended';
 
@@ -27,7 +33,11 @@ export type TimeSaleRow = {
   membershipSalePrice: number | null;
 };
 
-export type RowError = { variantId: string; message: string };
+/** `warning` 은 표시만 하고 저장은 막지 않는다(세일가가 판매가 이상 — 판매가가 나중에 바뀐 경우 등). */
+export type RowError = { variantId: string; message: string; warning?: true };
+
+/** 저장을 막는 오류만. 서버가 거절하거나 잘못된 가격이 만들어지는 경우다. */
+export const blockingErrors = (errors: RowError[]) => errors.filter((error) => !error.warning);
 
 export type SaleRowsSummary = {
   total: number;
@@ -63,15 +73,20 @@ export function applySavedSalePrices(
   }));
 }
 
+/** 일반 세일가 없이 멤버십 세일가만 넣은 행(멤버십 전용 특가). */
+export const isMembershipOnlyRow = (row: TimeSaleRow) =>
+  row.generalSalePrice === null && row.membershipBasePrice !== null && row.membershipSalePrice !== null;
+
 export function summarizeSaleRows(rows: TimeSaleRow[]): SaleRowsSummary {
   const filled = rows.filter(
     (row) => row.generalSalePrice !== null && row.basePrice > 0
   );
+  const membershipOnly = rows.filter(isMembershipOnlyRow).length;
 
   if (filled.length === 0) {
     return {
       total: rows.length,
-      filled: 0,
+      filled: membershipOnly,
       minPercent: null,
       maxPercent: null,
       minPrice: null,
@@ -86,7 +101,7 @@ export function summarizeSaleRows(rows: TimeSaleRow[]): SaleRowsSummary {
 
   return {
     total: rows.length,
-    filled: filled.length,
+    filled: filled.length + membershipOnly,
     minPercent: Math.min(...percents),
     maxPercent: Math.max(...percents),
     minPrice: Math.min(...prices),
@@ -129,16 +144,18 @@ export const TIME_SALE_STATUS_LABEL: Record<TimeSaleStatus, string> = {
 export function applyPercentDiscount(
   rows: TimeSaleRow[],
   percent: number,
-  membershipPercent: number = percent
+  membershipPercent: number = percent,
+  // 환경설정의 할인 가격 끝자리 처리(반올림·올림·내림).
+  rounding: 'round' | 'ceil' | 'floor' = 'round'
 ): TimeSaleRow[] {
   const rate = 1 - percent / 100;
   const membershipRate = 1 - membershipPercent / 100;
 
   return rows.map((row) => ({
     ...row,
-    generalSalePrice: Math.round(row.basePrice * rate),
+    generalSalePrice: Math[rounding](row.basePrice * rate),
     membershipSalePrice:
-      row.membershipBasePrice === null ? null : Math.round(row.membershipBasePrice * membershipRate),
+      row.membershipBasePrice === null ? null : Math[rounding](row.membershipBasePrice * membershipRate),
   }));
 }
 
@@ -156,26 +173,21 @@ export function validateRows(rows: TimeSaleRow[]): RowError[] {
   const errors: RowError[] = [];
 
   for (const row of rows) {
-    if (row.generalSalePrice === null) {
-      if (row.membershipSalePrice !== null) {
+    // 일반 세일가를 비우고 멤버십 세일가만 넣으면 멤버십 전용 특가다 — 일반 검사는 건너뛰고 멤버십만 본다.
+    if (row.generalSalePrice !== null) {
+      // NaN·Infinity 를 먼저 쳐낸다. 뒤따르는 비교는 NaN 에서 전부 false 라, 걸러내지 않으면
+      // 검증을 통과해 `amount: null` 로 직렬화된 가격이 Medusa 까지 간다.
+      if (!Number.isFinite(row.generalSalePrice) || row.generalSalePrice <= 0) {
+        errors.push({ variantId: row.variantId, message: '세일가는 0원보다 큰 숫자여야 합니다.' });
+        continue;
+      }
+      if (row.generalSalePrice >= row.basePrice) {
         errors.push({
           variantId: row.variantId,
-          message: '일반 세일가를 비우면 이 품목은 세일에서 빠집니다. 멤버십 세일가도 비우세요.',
+          message: `세일가가 정가(${row.basePrice.toLocaleString()}원) 이상입니다.`,
+          warning: true,
         });
       }
-      continue;
-    }
-    // NaN·Infinity 를 먼저 쳐낸다. 뒤따르는 비교는 NaN 에서 전부 false 라, 걸러내지 않으면
-    // 검증을 통과해 `amount: null` 로 직렬화된 가격이 Medusa 까지 간다.
-    if (!Number.isFinite(row.generalSalePrice) || row.generalSalePrice <= 0) {
-      errors.push({ variantId: row.variantId, message: '세일가는 0원보다 큰 숫자여야 합니다.' });
-      continue;
-    }
-    if (row.generalSalePrice >= row.basePrice) {
-      errors.push({
-        variantId: row.variantId,
-        message: `세일가는 정가(${row.basePrice.toLocaleString()}원)보다 낮아야 합니다.`,
-      });
     }
     if (row.membershipBasePrice !== null && row.membershipSalePrice !== null) {
       if (!Number.isFinite(row.membershipSalePrice) || row.membershipSalePrice <= 0) {
@@ -186,7 +198,8 @@ export function validateRows(rows: TimeSaleRow[]): RowError[] {
       } else if (row.membershipSalePrice >= row.membershipBasePrice) {
         errors.push({
           variantId: row.variantId,
-          message: `멤버십 세일가는 멤버십가(${row.membershipBasePrice.toLocaleString()}원)보다 낮아야 합니다.`,
+          message: `멤버십 세일가가 멤버십가(${row.membershipBasePrice.toLocaleString()}원) 이상입니다.`,
+          warning: true,
         });
       }
     }
@@ -203,7 +216,9 @@ export function validateRows(rows: TimeSaleRow[]): RowError[] {
  * 넣지도 않은 품목 때문에 저장이 막힌다.
  */
 export function saleVariantIds(rows: TimeSaleRow[]): string[] {
-  return rows.filter((row) => row.generalSalePrice !== null).map((row) => row.variantId);
+  return rows
+    .filter((row) => row.generalSalePrice !== null || isMembershipOnlyRow(row))
+    .map((row) => row.variantId);
 }
 
 export type TimeSaleWriteBody = {
@@ -213,10 +228,12 @@ export type TimeSaleWriteBody = {
   status: 'draft' | 'active';
   general_prices: Array<{ variant_id: string; amount: number }>;
   membership_prices: Array<{ variant_id: string; amount: number }>;
+  product_order?: string[];
 };
 
 /**
- * 편집 행 → 저장 요청 본문. 일반 세일가를 비운 품목은 세일에서 빠지고, 멤버십가가 없는 상품은 멤버십
+ * 편집 행 → 저장 요청 본문. 일반 세일가를 비운 품목은 일반 세일에서 빠지고(멤버십 세일가만 있으면 멤버십
+ * 전용 특가), 멤버십가가 없는 상품은 멤버십
  * 세일가도 만들지 않는다 (`validateRows` 와 같은 기준).
  */
 export function buildTimeSaleWriteBody(params: {
@@ -224,8 +241,11 @@ export function buildTimeSaleWriteBody(params: {
   period: TimeSalePeriod;
   status: 'draft' | 'active';
   rows: TimeSaleRow[];
+  /** 상품진열 순서. 빠지면 서버가 저장된 순서를 유지한다. */
+  productOrder?: string[];
 }): TimeSaleWriteBody {
   return {
+    ...(params.productOrder ? { product_order: params.productOrder } : {}),
     title: params.title.trim(),
     starts_at: params.period.startsAt,
     ends_at: params.period.endsAt,
@@ -297,4 +317,143 @@ export function toTimeSaleRows(products: RawProduct[]): TimeSaleRow[] {
 export function readServerReason(error: unknown): string | null {
   if (isCustomError(error) && error.statusCode < 500 && error.message) return error.message;
   return null;
+}
+
+// 목록의 번호 칸: 순번이 아니라 세일을 가리키는 짧은 id(`tsale_…` 끝 8자).
+export function shortSaleNumber(saleId: string): string {
+  return saleId.slice(-8);
+}
+
+type StyleSettings = Pick<TimeSaleSettings, 'styles' | 'savedStyles'>;
+
+/** 면·기기별 기본 스타일의 id(`main-pc` 꼴). 라이브러리에 없는 활성 레이아웃이 쓴다. */
+export const defaultStyleId = (surface: SaleSurface, platform: SalePlatform) =>
+  `${surface}-${platform}`;
+
+// 설정은 Store.metadata(jsonb)에 저장되어 키 순서가 바뀌므로 키를 정렬해 비교한다.
+const stableJson = (value: unknown): string =>
+  JSON.stringify(value, (_, v) =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]]))
+      : v
+  );
+
+/** 활성 레이아웃이 기본 스타일 id 인데 내용이 초기값과 다른지(드롭다운 「기본 (수정됨)」 표시용). */
+export function isDefaultStyleModified(
+  settings: StyleSettings,
+  surface: SaleSurface,
+  platform: SalePlatform
+) {
+  const active = settings.styles[surface][platform];
+
+  return (
+    active.id === defaultStyleId(surface, platform) &&
+    stableJson(active) !==
+      stableJson(defaultTimeSaleSettings().styles[surface][platform])
+  );
+}
+
+/** refetch 결과가 편집본을 덮으면 안 되는지. 편집 중이거나 revision 이 같으면 유지한다. */
+export function shouldKeepDraftOnRefetch(
+  dirty: boolean,
+  serverRevision: string,
+  draftRevision: string
+) {
+  return dirty || serverRevision === draftRevision;
+}
+
+/** 활성 레이아웃을 새 스타일로 저장: 복사본을 라이브러리 끝에 넣고 활성 id 를 그 id 로 잇는다. */
+export function saveNewStyle(
+  settings: StyleSettings,
+  surface: SaleSurface,
+  platform: SalePlatform,
+  newId: string
+) {
+  const active = settings.styles[surface][platform];
+
+  const snapshot = { ...structuredClone(active), id: newId };
+
+  settings.savedStyles.push(snapshot);
+  active.id = newId;
+
+  return snapshot;
+}
+
+/** 저장할 때마다 활성 레이아웃과 같은 id 의 라이브러리 항목을 현재 편집본으로 갱신한다. */
+export function linkActiveStyle(
+  settings: StyleSettings,
+  surface: SaleSurface,
+  platform: SalePlatform
+) {
+  const active = settings.styles[surface][platform];
+
+  const index = settings.savedStyles.findIndex((l) => l.id === active.id);
+
+  if (index < 0) return false;
+
+  settings.savedStyles[index] = structuredClone(active);
+
+  return true;
+}
+
+/** 삭제는 활성 레이아웃이 라이브러리에 저장된 스타일일 때만(기본 스타일은 삭제 대상이 아니다). */
+export function canDeleteSavedStyle(
+  settings: StyleSettings,
+  surface: SaleSurface,
+  platform: SalePlatform
+) {
+  const id = settings.styles[surface][platform].id;
+
+  return (
+    id !== defaultStyleId(surface, platform) &&
+    settings.savedStyles.some((l) => l.id === id)
+  );
+}
+
+/** 스타일 삭제: 라이브러리에서 빼고 활성 레이아웃은 내용을 둔 채 기본 스타일 id 로 되돌린다. */
+export function deleteSavedStyle(
+  settings: StyleSettings,
+  surface: SaleSurface,
+  platform: SalePlatform
+) {
+  const active = settings.styles[surface][platform];
+
+  settings.savedStyles = settings.savedStyles.filter((l) => l.id !== active.id);
+  active.id = defaultStyleId(surface, platform);
+}
+
+// 목록과 상품진열의 선택 행을 이동한다. 저장 전에는 원본 순서를 건드리지 않는다.
+export function moveSelectedItems<T>(
+  items: T[],
+  selected: T[],
+  direction: 'first' | 'up' | 'down' | 'last'
+): T[] {
+  const picked = new Set(selected);
+  if (direction === 'first' || direction === 'last') {
+    const yes = items.filter((item) => picked.has(item));
+
+    const no = items.filter((item) => !picked.has(item));
+
+    return direction === 'first' ? [...yes, ...no] : [...no, ...yes];
+  }
+
+  const next = [...items];
+
+  const delta = direction === 'up' ? -1 : 1;
+
+  const indices = items.map((_, i) => i);
+  if (delta === 1) indices.reverse();
+  for (const i of indices) {
+    const j = i + delta;
+    if (
+      picked.has(next[i]) &&
+      j >= 0 &&
+      j < next.length &&
+      !picked.has(next[j])
+    ) {
+      [next[i], next[j]] = [next[j], next[i]];
+    }
+  }
+
+  return next;
 }

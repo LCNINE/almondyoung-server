@@ -58,6 +58,16 @@
           ],
           "mappedType": "enum"
         },
+        "product_order": {
+          "name": "product_order",
+          "type": "text[]",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "default": "'{}'",
+          "mappedType": "array"
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamptz",

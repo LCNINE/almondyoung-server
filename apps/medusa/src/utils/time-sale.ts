@@ -1,6 +1,7 @@
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import type { MedusaContainer } from '@medusajs/framework/types';
 import type { TimeSaleRecord } from '../modules/time-sale/service';
+import { findTimeSaleIssues, membershipOnlyVariantIds, orderByProductOrder } from '../workflows/time-sale/rules';
 
 // ── 경계 크론용 (price list 기준) ──────────────────────────────────────────────
 // 가격 엔진은 price list 의 starts_at/ends_at/status 를 읽는다. 워크플로가 time_sale 값을 리스트에 맞춰
@@ -166,15 +167,36 @@ export type AdminTimeSaleDto = {
   generalPrices: Record<string, number>;
   /** variant id → 멤버십용 세일가. */
   membershipPrices: Record<string, number>;
+  /**
+   * 같은 품목에 줄이 둘 이상일 때 덮인 옛 금액(variant id → 금액). 저장 도중 중단되면 새 줄과 옛 줄이
+   * 같이 남는데, 위 가격은 최신 줄(저장하려던 값)이고 이건 운영자 확인용이다.
+   */
+  previousGeneralPrices: Record<string, number>;
+  previousMembershipPrices: Record<string, number>;
+  /** 세일 행과 가격표가 어긋난 점(저장 도중 중단 등). 비어 있으면 정상. */
+  issues: string[];
 };
 
-type SaleWithLists = TimeSaleRecord & { price_lists: Array<{ id: string }> };
+type SaleWithLists = TimeSaleRecord & {
+  price_lists: Array<{ id: string; starts_at: Date | string | null; ends_at: Date | string | null; status: string }>;
+};
 
 async function loadSales(container: MedusaContainer, filters: Record<string, unknown> = {}): Promise<SaleWithLists[]> {
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
   const { data } = await query.graph({
     entity: 'time_sale',
-    fields: ['id', 'title', 'status', 'starts_at', 'ends_at', 'price_lists.id'],
+    fields: [
+      'id',
+      'title',
+      'status',
+      'starts_at',
+      'ends_at',
+      'product_order',
+      'price_lists.id',
+      'price_lists.starts_at',
+      'price_lists.ends_at',
+      'price_lists.status',
+    ],
     filters,
   });
   return data as unknown as SaleWithLists[];
@@ -192,7 +214,8 @@ async function loadPriceRows(container: MedusaContainer, listIds: string[]) {
          from price pr
          join product_variant_price_set pvps on pvps.price_set_id = pr.price_set_id
          join product_variant pv on pv.id = pvps.variant_id and pv.deleted_at is null
-        where pr.price_list_id in (${placeholders}) and pr.deleted_at is null`,
+        where pr.price_list_id in (${placeholders}) and pr.deleted_at is null
+        order by pr.created_at, pr.id`,
       listIds,
     ),
     knex.raw(
@@ -226,13 +249,26 @@ export async function listAdminTimeSales(
   return sales
     .map((sale) => {
       const listIds = new Set(sale.price_lists.map((p) => p.id));
+      const variantsByList = new Map<string, string[]>();
       const generalPrices: Record<string, number> = {};
       const membershipPrices: Record<string, number> = {};
+      const previousGeneralPrices: Record<string, number> = {};
+      const previousMembershipPrices: Record<string, number> = {};
       const productIds = new Set<string>();
       for (const row of prices) {
         if (!listIds.has(row.price_list_id)) continue;
-        const target = membershipListIds.has(row.price_list_id) ? membershipPrices : generalPrices;
-        target[row.variant_id] = Number(row.amount);
+        const listVariants = variantsByList.get(row.price_list_id);
+        if (listVariants) listVariants.push(row.variant_id);
+        else variantsByList.set(row.price_list_id, [row.variant_id]);
+        // 생성 시각 순으로 읽으므로 나중 줄(저장하려던 값)이 덮어쓴다. 다른 금액에 덮인 옛 값은 따로 둔다.
+        const membership = membershipListIds.has(row.price_list_id);
+        const target = membership ? membershipPrices : generalPrices;
+        const amount = Number(row.amount);
+        const before = target[row.variant_id];
+        if (before !== undefined && before !== amount) {
+          (membership ? previousMembershipPrices : previousGeneralPrices)[row.variant_id] = before;
+        }
+        target[row.variant_id] = amount;
         productIds.add(row.product_id);
       }
       return {
@@ -241,9 +277,22 @@ export async function listAdminTimeSales(
         status: sale.status,
         startsAt: iso(sale.starts_at),
         endsAt: iso(sale.ends_at),
-        productIds: [...productIds],
+        productIds: orderByProductOrder([...productIds], sale.product_order ?? []),
         generalPrices,
         membershipPrices,
+        previousGeneralPrices,
+        previousMembershipPrices,
+        issues: findTimeSaleIssues(
+          { starts_at: iso(sale.starts_at), ends_at: iso(sale.ends_at), status: sale.status },
+          sale.price_lists.map((list) => ({
+            id: list.id,
+            isMembership: membershipListIds.has(list.id),
+            starts_at: list.starts_at ? iso(list.starts_at) : '',
+            ends_at: list.ends_at ? iso(list.ends_at) : '',
+            status: list.status,
+            variantIds: variantsByList.get(list.id) ?? [],
+          })),
+        ),
       };
     })
     .sort((a, b) => b.startsAt.localeCompare(a.startsAt));
@@ -255,6 +304,10 @@ export type StoreTimeSaleDto = {
   endsAt: string;
   priceListIds: string[];
   productIds: string[];
+  /** 이 세일에 가격이 걸린 옵션 전부(일반·멤버십). 카트 라인처럼 가격표 출처가 없는 자리가 옵션 단위로 가른다. */
+  variantIds: string[];
+  /** 멤버십 세일가만 있는 옵션. 금액은 싣지 않는다 — 비회원 화면은 「회원 공개」로만 그린다. */
+  membershipOnlyVariantIds: string[];
 };
 
 export type StoreTimeSaleResponse = {
@@ -277,7 +330,10 @@ export async function listActiveStoreTimeSales(container: MedusaContainer): Prom
   if (sales.length === 0) return { timeSales: [], products: [] };
 
   const listIds = sales.flatMap((sale) => sale.price_lists.map((p) => p.id));
-  const rows = await listProductsInPriceLists(container, listIds);
+  const [rows, priceRows] = await Promise.all([
+    listProductsInPriceLists(container, listIds),
+    loadPriceRows(container, listIds),
+  ]);
 
   const productsByList = new Map<string, string[]>();
   const ordered: string[] = [];
@@ -292,17 +348,31 @@ export async function listActiveStoreTimeSales(container: MedusaContainer): Prom
     }
   }
 
-  const categoryIds = await loadCategoryIds(container, ordered);
+  // 운영자가 상품진열 순서를 정한 세일의 상품이 앞에 온다(종료 빠른 세일부터). 나머지는 판매순 그대로.
+  const products = orderByProductOrder(
+    ordered,
+    sales.flatMap((sale) => sale.product_order ?? []),
+  );
+  const categoryIds = await loadCategoryIds(container, products);
 
   return {
-    timeSales: sales.map((sale) => ({
-      id: sale.id,
-      startsAt: iso(sale.starts_at),
-      endsAt: iso(sale.ends_at),
-      priceListIds: sale.price_lists.map((p) => p.id),
-      productIds: [...new Set(sale.price_lists.flatMap((p) => productsByList.get(p.id) ?? []))],
-    })),
-    products: ordered.map((id) => ({ id, categoryIds: categoryIds.get(id) ?? [] })),
+    timeSales: sales.map((sale) => {
+      const saleListIds = new Set(sale.price_lists.map((p) => p.id));
+      const saleRows = priceRows.prices.filter((row) => saleListIds.has(row.price_list_id));
+      return {
+        id: sale.id,
+        startsAt: iso(sale.starts_at),
+        endsAt: iso(sale.ends_at),
+        priceListIds: [...saleListIds],
+        productIds: orderByProductOrder(
+          [...new Set(sale.price_lists.flatMap((p) => productsByList.get(p.id) ?? []))],
+          sale.product_order ?? [],
+        ),
+        variantIds: [...new Set(saleRows.map((row) => row.variant_id))],
+        membershipOnlyVariantIds: membershipOnlyVariantIds(saleRows, priceRows.membershipListIds),
+      };
+    }),
+    products: products.map((id) => ({ id, categoryIds: categoryIds.get(id) ?? [] })),
   };
 }
 

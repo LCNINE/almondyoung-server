@@ -13,6 +13,7 @@ import {
   mainMenus,
   type MenuItem,
 } from '@/lib/utils/menu';
+import { guardedNavigate, navigateTo } from '@/lib/navigation-guard';
 import { IconComponent } from '@/lib/utils/icons';
 import { Badge } from '@/components/ui/badge';
 import { useOrderStats } from '@/lib/services/orders';
@@ -28,6 +29,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
   SidebarTrigger,
+  useSidebar,
 } from '@/components/ui/sidebar';
 import { SidebarMenuItemRecursive } from './sidebar-menu-item';
 
@@ -77,6 +79,7 @@ export function AppSidebar({
   onMenuChange,
 }: AppSidebarProps) {
   const router = useRouter();
+  const { setOpen } = useSidebar();
   const pathname = usePathname();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [browsingAll, setBrowsingAll] = useState(false);
@@ -151,10 +154,13 @@ export function AppSidebar({
   };
 
   const goToMenu = (menuId: string) => {
-    setBrowsingAll(false);
-    onMenuChange(menuId);
     const path = getFirstPagePath(menuId);
-    if (path) router.push(path);
+    // 이동이 승인된 뒤에만 메뉴 상태를 바꾼다(취소하면 사이드바 그대로).
+    guardedNavigate(() => {
+      setBrowsingAll(false);
+      onMenuChange(menuId);
+      if (path) navigateTo(router, path);
+    });
   };
 
   const isHome = pathname === '/';
@@ -219,7 +225,10 @@ export function AppSidebar({
                     tooltip={{ children: menu.title, hidden: false }}
                     aria-label={menu.title}
                     isActive={activeMenu === menu.id}
-                    onClick={() => goToMenu(menu.id)}
+                    onClick={() =>
+                      // 지금 메뉴의 아이콘은 첫 페이지로 보내지 않고 접힌 하위 메뉴만 펼친다
+                      activeMenu === menu.id ? setOpen(true) : goToMenu(menu.id)
+                    }
                     className="size-8 justify-center p-0"
                   >
                     <IconComponent name={menu.icon} className="size-4" />
