@@ -39,7 +39,7 @@ export class AlmondTemplatesService {
   }
   async upsert(dto: UpsertAlmondTemplateDto, userId: string): Promise<AdminAlmondTemplateDetailResponseDto> {
     return AlmondTemplateMapper.toAdminDetail(
-      await this.manager.upsert(dto.design, dto.thumbnailSvg, dto.status, userId),
+      await this.manager.upsert(dto.design, dto.thumbnailSvg, dto.status, userId, dto.id),
     );
   }
   async updateStatus(id: string, status: AlmondTemplateStatus): Promise<AdminAlmondTemplateSummaryResponseDto> {

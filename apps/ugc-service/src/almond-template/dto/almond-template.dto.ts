@@ -1,10 +1,15 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsIn, IsObject, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsIn, IsObject, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ALMOND_TEMPLATE_STATUSES, type AlmondTemplateStatus } from '../constants/almond-template.constants';
 
 export class UpsertAlmondTemplateDto {
+  @ApiPropertyOptional({ description: '갱신할 시안 id. 없으면 새로 만든다', format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  id?: string;
+
   @ApiProperty({
-    description: '편집기가 내려받는 시안 JSON (version 1). productId·widthMm·heightMm·title 이 업서트 키다',
+    description: '편집기가 내려받는 시안 JSON (version 1). 같은 상품·크기에서 title 은 유일하다',
     type: 'object',
     additionalProperties: true,
   })

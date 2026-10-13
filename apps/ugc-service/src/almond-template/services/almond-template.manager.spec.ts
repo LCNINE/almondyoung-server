@@ -1,5 +1,5 @@
 import { DbService } from '@app/db';
-import { BadRequestError } from '@app/shared';
+import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import type { UgcServiceSchema } from '../../db/schema';
 import { AlmondTemplateManager, parseAlmondTemplate } from './almond-template.manager';
 
@@ -93,5 +93,57 @@ describe('AlmondTemplateManager.upsert', () => {
   it('검증에 실패하면 DB 에 닿지 않고 400 으로 거부한다', async () => {
     const manager = new AlmondTemplateManager(explodingDb);
     await expect(manager.upsert(design({ version: 0 }), SVG, 'published', ADMIN)).rejects.toThrow(BadRequestError);
+  });
+
+  const ID = '33333333-3333-4333-8333-333333333333';
+  const uniqueViolation = Object.assign(new Error('duplicate key'), {
+    code: '23505',
+    constraint_name: 'almond_templates_product_size_title_unique',
+  });
+
+  function dbReturning(rows: unknown[] | Error) {
+    const calls: { op: 'insert' | 'update'; values?: unknown; set?: unknown }[] = [];
+    const returning = () => (rows instanceof Error ? Promise.reject(rows) : Promise.resolve(rows));
+    const trx = {
+      insert: () => ({
+        values: (values: unknown) => {
+          calls.push({ op: 'insert', values });
+          return { returning };
+        },
+      }),
+      update: () => ({
+        set: (set: unknown) => {
+          calls.push({ op: 'update', set });
+          return { where: () => ({ returning }) };
+        },
+      }),
+    };
+    const db = { run: (work: (t: typeof trx) => Promise<unknown>) => work(trx) } as unknown as DbService<UgcServiceSchema>;
+    return { db, calls };
+  }
+
+  it('id 가 없으면 새로 만든다', async () => {
+    const { db, calls } = dbReturning([{ id: ID }]);
+    await expect(new AlmondTemplateManager(db).upsert(design(), SVG, 'draft', ADMIN)).resolves.toEqual({ id: ID });
+    expect(calls).toEqual([{ op: 'insert', values: expect.objectContaining({ title: '시안 A', status: 'draft', createdBy: ADMIN }) }]);
+  });
+
+  it('id 가 있으면 그 시안을 갱신하고 게시 상태는 건드리지 않는다', async () => {
+    const { db, calls } = dbReturning([{ id: ID }]);
+    await new AlmondTemplateManager(db).upsert(design(), SVG, 'draft', ADMIN, ID);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].op).toBe('update');
+    expect(calls[0].set).toMatchObject({ title: '시안 A' });
+    expect(calls[0].set).not.toHaveProperty('status');
+  });
+
+  it('없는 id 는 404', async () => {
+    const { db } = dbReturning([]);
+    await expect(new AlmondTemplateManager(db).upsert(design(), SVG, 'draft', ADMIN, ID)).rejects.toThrow(NotFoundError);
+  });
+
+  it.each([undefined, ID])('같은 상품·크기·이름이 이미 있으면 덮어쓰지 않고 409 (id=%s)', async (id) => {
+    const { db } = dbReturning(uniqueViolation);
+    await expect(new AlmondTemplateManager(db).upsert(design(), SVG, 'draft', ADMIN, id)).rejects.toThrow(ConflictError);
   });
 });

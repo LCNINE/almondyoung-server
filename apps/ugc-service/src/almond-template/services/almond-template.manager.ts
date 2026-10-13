@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { BadRequestError, NotFoundError } from '@app/shared';
+import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
 import { eq } from 'drizzle-orm';
 import { almondTemplates, type UgcServiceSchema, type UgcTx } from '../../db/schema';
@@ -13,8 +13,10 @@ import {
   ALMOND_TEMPLATE_MIN_SIZE_MM,
   type AlmondTemplateStatus,
 } from '../constants/almond-template.constants';
+import { isUniqueViolation } from '../../shop-listings/shop-listing.util';
 import { type AlmondTemplateEntity, type AlmondTemplateRecord } from '../types/almond-template.types';
 
+const TITLE_UNIQUE_CONSTRAINT = 'almond_templates_product_size_title_unique';
 const INT4_MAX = 2_147_483_647;
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -115,28 +117,34 @@ export class AlmondTemplateManager {
     thumbnailSvg: string,
     status: AlmondTemplateStatus,
     userId: string,
+    id?: string,
     tx?: UgcTx,
   ): Promise<AlmondTemplateEntity> {
     const record = parseAlmondTemplate(design, thumbnailSvg);
 
-    return this.db.run(async (trx) => {
-      const [row] = await trx
-        .insert(almondTemplates)
-        .values({ ...record, status, createdBy: userId })
-        .onConflictDoUpdate({
-          target: [almondTemplates.productId, almondTemplates.widthMm, almondTemplates.heightMm, almondTemplates.title],
-          set: {
-            industry: record.industry,
-            purpose: record.purpose,
-            colors: record.colors,
-            design: record.design,
-            thumbnailSvg: record.thumbnailSvg,
-            updatedAt: new Date(),
-          },
-        })
-        .returning();
-      return row;
-    }, tx);
+    try {
+      return await this.db.run(async (trx) => {
+        if (!id) {
+          const [created] = await trx
+            .insert(almondTemplates)
+            .values({ ...record, status, createdBy: userId })
+            .returning();
+          return created;
+        }
+        const [updated] = await trx
+          .update(almondTemplates)
+          .set({ ...record, updatedAt: new Date() })
+          .where(eq(almondTemplates.id, id))
+          .returning();
+        if (!updated) throw new NotFoundError(`Almond template not found: ${id}`);
+        return updated;
+      }, tx);
+    } catch (error) {
+      if (isUniqueViolation(error, TITLE_UNIQUE_CONSTRAINT)) {
+        throw new ConflictError(`같은 상품·크기에 「${record.title}」 시안이 이미 있습니다.`);
+      }
+      throw error;
+    }
   }
 
   async updateStatus(id: string, status: AlmondTemplateStatus, tx?: UgcTx): Promise<AlmondTemplateEntity> {

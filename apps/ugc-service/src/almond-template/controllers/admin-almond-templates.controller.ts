@@ -58,11 +58,13 @@ export class AdminAlmondTemplatesController {
   @RequireScopes('admin:template:write')
   @ApiOperation({
     summary: '아몬드템플릿 저장',
-    description: '같은 상품·크기·이름이 있으면 갱신한다. 본문 상한은 이 라우트만 20MB',
+    description: 'id 가 있으면 그 시안을 갱신하고 없으면 새로 만든다. 같은 상품·크기·이름이 이미 있으면 409. 본문 상한은 이 라우트만 20MB',
   })
   @ApiBody({ type: UpsertAlmondTemplateDto })
   @ApiResponse({ status: 200, type: AdminAlmondTemplateDetailResponseDto })
   @ApiResponse({ status: 400 })
+  @ApiResponse({ status: 404 })
+  @ApiResponse({ status: 409 })
   upsert(
     @Body() dto: UpsertAlmondTemplateDto,
     @User('userId') userId: string,
