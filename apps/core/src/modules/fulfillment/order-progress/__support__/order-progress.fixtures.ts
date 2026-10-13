@@ -84,6 +84,11 @@ export async function seedFo(
       qty: 1,
     })
     .returning();
+  // 실제 FO 생성은 라인 구성을 굳힌다 — 고객 취소 계획이 비율을 거기서 읽는다(#1063)
+  await tx
+    .insert(wmsTables.salesOrderLineCompositions)
+    .values({ salesOrderLineId: order.lineId, skuId: w.skuId, qtyPerUnit: 1 })
+    .onConflictDoNothing();
   return { foId: fo.id, foItemId: item.id };
 }
 
