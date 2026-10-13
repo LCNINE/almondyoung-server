@@ -14,8 +14,7 @@ export function bleedExtended(
     (layer.type === "rect" && !layer.shapeVariant) ||
     layer.type === "image" ||
     (layer.type === "frame" && (layer.frameShape ?? "rect") === "rect")
-  if (!bleedMm || !fillsBox || layer.rotation || layer.strokeWidth)
-    return layer
+  if (!bleedMm || !fillsBox || layer.rotation || layer.strokeWidth) return layer
   const left = layer.x <= EDGE_MM ? Math.min(layer.x, -bleedMm) : layer.x
   const top = layer.y <= EDGE_MM ? Math.min(layer.y, -bleedMm) : layer.y
   const right =
@@ -26,7 +25,13 @@ export function bleedExtended(
     layer.y + layer.height >= heightMm - EDGE_MM
       ? Math.max(layer.y + layer.height, heightMm + bleedMm)
       : layer.y + layer.height
-  return { ...layer, x: left, y: top, width: right - left, height: bottom - top }
+  return {
+    ...layer,
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+  }
 }
 
 export async function printSvg(

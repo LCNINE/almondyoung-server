@@ -96,7 +96,8 @@ export function useAlmondEditor({
   const [previewSide, setPreviewSide] = useState<Side>("front")
   const [preview, setPreview] = useState(false)
   const backPrinted = printsBack(design)
-  const hasBack = PRINT_SPECS[design.kind].duplex || backPrinted || !!removedBack
+  const hasBack =
+    PRINT_SPECS[design.kind].duplex || backPrinted || !!removedBack
   useEffect(() => {
     if (backPrinted) setRemovedBack(null)
   }, [backPrinted])
