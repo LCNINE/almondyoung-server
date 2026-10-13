@@ -12,7 +12,14 @@ import { ProductSkuMappingService } from '../../product-matching/services/produc
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import { ACTIVE_WORK_ITEM_STATUSES } from '../services/work-item-status';
 import { BoxLineView } from '../draft-box/box-target';
-import { BoxOfLine, classifyExistingLine, ExistingLinesImpact, isBlockingBox } from './line-composition-edit.types';
+import {
+  BoxOfLine,
+  classifyExistingLine,
+  CLOSED_FULFILLMENT_ORDER_STATUSES,
+  CLOSED_SALES_ORDER_STATUSES,
+  ExistingLinesImpact,
+  isBlockingBox,
+} from './line-composition-edit.types';
 
 // 이미 끝난 박스 — 라인을 «담고» 있어도 수정 판정에서 뺀다(묘비·대체)
 const DEAD_SHIPMENT_STATUSES = ['canceled', 'superseded'] as const;
@@ -52,10 +59,11 @@ export class LineCompositionEditReader {
   async fulfillmentOrderOf(
     trx: DbTx,
     salesOrderId: string,
-  ): Promise<{ id: string; fulfillmentMode: string | null; ownerId: string | null } | null> {
+  ): Promise<{ id: string; status: string; fulfillmentMode: string | null; ownerId: string | null } | null> {
     const [fo] = await trx
       .select({
         id: wmsTables.fulfillmentOrders.id,
+        status: wmsTables.fulfillmentOrders.status,
         fulfillmentMode: wmsTables.fulfillmentOrders.fulfillmentMode,
         ownerId: wmsTables.fulfillmentOrders.ownerId,
       })
@@ -191,8 +199,9 @@ export class LineCompositionEditReader {
   }
 
   /**
-   * 일괄 적용 후보: 그 variant 의 굳힌 라인 중 아직 안 나간 수량이 있는 것(스펙 §7.2 «FO 미완료»). 직배송 FO 는 박스가 없어
-   * 맞출 것이 없으므로 뺀다. FO 전 운영자 지정 라인은 FO 항목이 없어 여기 안 들어온다 — FO 가 생길 때 그 구성으로 만들어진다.
+   * 일괄 적용 후보: 그 variant 의 굳힌 라인 중 아직 안 나간 수량이 있고 FO·판매주문이 닫히지 않은 것(스펙 §7.2 «FO 미완료»).
+   * 직배송 FO 는 박스가 없어 맞출 것이 없으므로 뺀다. FO 전 운영자 지정 라인은 FO 항목이 없어 여기 안 들어온다 — FO 가 생길 때
+   * 그 구성으로 만들어진다.
    */
   async existingLineCandidates(
     trx: DbTx,
@@ -201,6 +210,7 @@ export class LineCompositionEditReader {
     const lines = wmsTables.salesOrderLines;
     const items = wmsTables.fulfillmentOrderItems;
     const orders = wmsTables.fulfillmentOrders;
+    const salesOrders = wmsTables.salesOrders;
     return (
       trx
         .selectDistinct({ salesOrderLineId: lines.id, salesOrderId: lines.salesOrderId })
@@ -208,12 +218,15 @@ export class LineCompositionEditReader {
         // fulfillment_order_items.sales_order_line_id 는 varchar 다 — uuid 를 text 로 맞춰 조인한다
         .innerJoin(items, eq(items.salesOrderLineId, sql`${lines.id}::text`))
         .innerJoin(orders, eq(orders.id, items.fulfillmentOrderId))
+        .innerJoin(salesOrders, eq(salesOrders.id, lines.salesOrderId))
         .where(
           and(
             eq(lines.variantId, variantId),
             isNotNull(lines.compositionSource),
             sql`${items.qty} - ${items.shippedQty} - ${items.canceledQty} > 0`,
             or(isNull(orders.fulfillmentMode), ne(orders.fulfillmentMode, 'drop_ship')),
+            notInArray(orders.status, [...CLOSED_FULFILLMENT_ORDER_STATUSES]),
+            notInArray(salesOrders.status, [...CLOSED_SALES_ORDER_STATUSES, 'cancelled']),
           ),
         )
         .orderBy(asc(lines.salesOrderId), asc(lines.id))

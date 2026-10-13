@@ -23,6 +23,8 @@ import {
   ApplyToExistingLinesResult,
   BoxOfLine,
   classifyExistingLine,
+  CLOSED_FULFILLMENT_ORDER_STATUSES,
+  CLOSED_SALES_ORDER_STATUSES,
   isBlockingBox,
   LineCompositionChangeResult,
 } from './line-composition-edit.types';
@@ -45,6 +47,21 @@ function badRequest(code: string, message: string): BadRequestException {
   return new BadRequestException({ code, message });
 }
 
+const closedSalesOrderStatuses = new Set<string>(CLOSED_SALES_ORDER_STATUSES);
+const closedFulfillmentOrderStatuses = new Set<string>(CLOSED_FULFILLMENT_ORDER_STATUSES);
+
+function assertSalesOrderOpen(order: { id: string; status: string }): void {
+  if (closedSalesOrderStatuses.has(order.status)) {
+    throw conflict('SALES_ORDER_CLOSED', `Sales order ${order.id} is ${order.status}`);
+  }
+}
+
+function assertFulfillmentOrderOpen(fo: { id: string; status: string }): void {
+  if (closedFulfillmentOrderStatuses.has(fo.status)) {
+    throw conflict('FULFILLMENT_ORDER_CLOSED', `Fulfillment order ${fo.id} is ${fo.status}`);
+  }
+}
+
 type ApplyOutcome = 'changed' | ApplySkipReason;
 
 // 주문 하나의 적용이 이 코드로 실패하면 그 주문의 후보 라인을 이 사유로 센다. 나머지 오류는 그대로 던진다 —
@@ -57,10 +74,15 @@ const SKIP_REASON_BY_CODE: Record<string, ApplySkipReason> = {
   SHIPMENT_CUSTODY_EXISTS: 'in_progress',
   SHIPMENT_ACTIVE_INVOICE: 'in_progress',
   SHIPMENT_COMPONENT_CHANGED_RETRY: 'in_progress',
+  FULFILLMENT_INVARIANT_COMPONENT_CHANGED_RETRY: 'in_progress',
   COMPOSITION_UNITS_AMBIGUOUS: 'units_ambiguous',
   // 새 구성이 이 주문의 FO 경로(직배송·3PL 화주)에 못 들어간다 — 주문 하나의 문제라 전체를 중단하지 않는다
   DROP_SHIP_NOT_SUPPORTED: 'not_applicable',
   SKU_HOLDER_MISMATCH_FOR_3PL: 'not_applicable',
+  // 후보를 고른 뒤 잠금 전에 주문·FO 가 닫혔거나 라인의 박스가 모두 사라졌다 — 맞출 박스가 없다
+  SALES_ORDER_CLOSED: 'not_applicable',
+  FULFILLMENT_ORDER_CLOSED: 'not_applicable',
+  LINE_NOT_IN_FULFILLMENT: 'not_applicable',
 };
 const SKIP_REASON_ORDER: ApplySkipReason[] = ['operator', 'in_progress', 'same', 'units_ambiguous', 'not_applicable'];
 
@@ -104,11 +126,13 @@ export class LineCompositionEditManager {
       if (!order) throw new NotFoundException(`Sales order ${salesOrderId} not found`);
       if (order.status === 'cancelled')
         throw conflict('SALES_ORDER_CANCELLED', `Sales order ${salesOrderId} is cancelled`);
+      assertSalesOrderOpen(order);
       const line = await this.reader.loadLine(trx, salesOrderId, salesOrderLineId);
       if (!line) throw new NotFoundException(`Line ${salesOrderLineId} is not in sales order ${salesOrderId}`);
       if (isDigitalFulfillmentLine(line)) throw badRequest('LINE_NOT_PHYSICAL', `Line ${line.id} is not physical`);
 
       const fo = await this.reader.fulfillmentOrderOf(trx, salesOrderId);
+      if (fo) assertFulfillmentOrderOpen(fo);
       await this.assertSkus(trx, after, fo?.ownerId ?? null);
 
       if (!fo) {
@@ -207,11 +231,13 @@ export class LineCompositionEditManager {
   ): Promise<ApplyOutcome[]> {
     const order = await this.reader.lockOrder(trx, salesOrderId);
     if (!order || order.status === 'cancelled') return lineIds.map(() => 'in_progress');
+    assertSalesOrderOpen(order);
     // 미리보기 뒤 상품매칭·라인이 바뀌었을 수 있다 — 잠금 아래에서 다시 읽는다
     const next = await this.reader.matchingComposition(trx, variantId);
     if (!next) return lineIds.map(() => 'not_applicable');
     // 상품매칭이 직배송·타 화주 SKU 로 바뀌었어도 창고·3PL 박스에 넣지 않는다 — 개별 지정 경로와 같은 검사. 주문당 한 번
     const fo = await this.reader.fulfillmentOrderOf(trx, salesOrderId);
+    if (fo) assertFulfillmentOrderOpen(fo);
     await this.assertSkus(trx, next, fo?.ownerId ?? null);
     const lines = await this.reader.linesForApply(trx, lineIds);
     const frozen = await selectFrozenCompositions(trx, lineIds);
@@ -260,6 +286,10 @@ export class LineCompositionEditManager {
     },
   ): Promise<LineCompositionChangeResult> {
     const boxes = (await this.reader.boxesOfLines(trx, [input.salesOrderLineId])).get(input.salesOrderLineId) ?? [];
+    // 맞출 박스가 없는데 구성만 바꾸면 남은 FO 항목·취소 비율이 새 구성과 갈린다
+    if (boxes.length === 0) {
+      throw conflict('LINE_NOT_IN_FULFILLMENT', `Line ${input.salesOrderLineId} has no live boxes`);
+    }
     const blocking = boxes.filter(isBlockingBox);
     if (blocking.length > 0) {
       throw conflict('LINE_BOX_NOT_DRAFT', `Line ${input.salesOrderLineId} is in boxes that are not editable`, {
@@ -341,7 +371,7 @@ export class LineCompositionEditManager {
     const byId = new Map(rows.map((row) => [row.id, row]));
     for (const id of ids) {
       const sku = byId.get(id);
-      if (!sku) throw new BadRequestException(`SKU ${id} not found`);
+      if (!sku) throw badRequest('SKU_NOT_FOUND', `SKU ${id} not found`);
       if (sku.stockType === 'drop_shipped') throw badRequest('DROP_SHIP_NOT_SUPPORTED', `SKU ${id} is drop-shipped`);
       if (ownerId && sku.holderId !== ownerId) {
         throw badRequest('SKU_HOLDER_MISMATCH_FOR_3PL', `SKU ${id} belongs to another holder`);

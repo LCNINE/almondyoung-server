@@ -322,6 +322,93 @@ describeIfDb('주문별 라인 구성 지정 (#1063 스펙 §7.1)', () => {
     });
   });
 
+  it('코어 밖에서 출고 처리된 주문은 SALES_ORDER_CLOSED, FO 가 닫혔으면 FULFILLMENT_ORDER_CLOSED — 아무것도 쓰지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const fx = await seedOrderWithDraftBox(tx, w.logistics, {
+        lines: [{ quantity: 1, qtyPerUnits: [1] }],
+        spareSkus: 1,
+      });
+      const [spare] = fx.spareSkuIds;
+      const before = await boxLinesOf(tx, fx.shipmentId);
+      const assign = () =>
+        w.edit.manager.assignToLine(fx.salesOrderId, fx.lineIds[0], [{ skuId: spare, qtyPerUnit: 1 }], null, actor, tx);
+
+      // 셀메이트 수기 출고 스크립트는 SO·FO 상태만 shipped 로 바꾸고 draft 박스를 남긴다
+      for (const status of ['shipped', 'delivered'] as const) {
+        await tx.update(wmsTables.salesOrders).set({ status }).where(eq(wmsTables.salesOrders.id, fx.salesOrderId));
+        await expect(assign()).rejects.toMatchObject({ response: { code: 'SALES_ORDER_CLOSED' } });
+      }
+      await tx
+        .update(wmsTables.salesOrders)
+        .set({ status: 'confirmed' })
+        .where(eq(wmsTables.salesOrders.id, fx.salesOrderId));
+      for (const status of ['shipped', 'completed', 'canceled'] as const) {
+        await tx
+          .update(wmsTables.fulfillmentOrders)
+          .set({ status })
+          .where(eq(wmsTables.fulfillmentOrders.id, fx.fulfillmentOrderId));
+        await expect(assign()).rejects.toMatchObject({ response: { code: 'FULFILLMENT_ORDER_CLOSED' } });
+      }
+
+      expect((await lineOf(tx, fx.lineIds[0])).compositionSource).toBe('matching');
+      expect(await boxLinesOf(tx, fx.shipmentId)).toEqual(before);
+    });
+  });
+
+  it('FO 항목은 있는데 살아 있는 박스가 없는 라인은 LINE_NOT_IN_FULFILLMENT — 구성·amendment 를 쓰지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const fx = await seedOrderWithDraftBox(tx, w.logistics, {
+        lines: [{ quantity: 1, qtyPerUnits: [1] }],
+        spareSkus: 1,
+      });
+      const [a] = fx.skuIdsByLine[0];
+      await tx.update(wmsTables.shipments).set({ status: 'canceled' }).where(eq(wmsTables.shipments.id, fx.shipmentId));
+
+      await expect(
+        w.edit.manager.assignToLine(
+          fx.salesOrderId,
+          fx.lineIds[0],
+          [{ skuId: fx.spareSkuIds[0], qtyPerUnit: 1 }],
+          null,
+          actor,
+          tx,
+        ),
+      ).rejects.toMatchObject({ response: { code: 'LINE_NOT_IN_FULFILLMENT' } });
+
+      expect((await lineOf(tx, fx.lineIds[0])).compositionSource).toBe('matching');
+      const compositions = await tx
+        .select({ skuId: wmsTables.salesOrderLineCompositions.skuId })
+        .from(wmsTables.salesOrderLineCompositions)
+        .where(eq(wmsTables.salesOrderLineCompositions.salesOrderLineId, fx.lineIds[0]));
+      expect(compositions).toEqual([{ skuId: a }]);
+      const amendments = await tx
+        .select({ id: wmsTables.salesOrderAmendments.id })
+        .from(wmsTables.salesOrderAmendments)
+        .where(eq(wmsTables.salesOrderAmendments.salesOrderId, fx.salesOrderId));
+      expect(amendments).toEqual([]);
+    });
+  });
+
+  it('없는 SKU 는 SKU_NOT_FOUND', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const fx = await seedOrderWithDraftBox(tx, w.logistics, { lines: [{ quantity: 1, qtyPerUnits: [1] }] });
+
+      await expect(
+        w.edit.manager.assignToLine(
+          fx.salesOrderId,
+          fx.lineIds[0],
+          [{ skuId: randomUUID(), qtyPerUnit: 1 }],
+          null,
+          actor,
+          tx,
+        ),
+      ).rejects.toMatchObject({ response: { code: 'SKU_NOT_FOUND' } });
+    });
+  });
+
   it('FO 뒤에 FO 항목이 없는 라인은 LINE_NOT_IN_FULFILLMENT, 전체 취소된 주문은 SALES_ORDER_CANCELLED', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wire(tx);

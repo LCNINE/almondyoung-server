@@ -32,6 +32,11 @@ export function classifyExistingLine(input: {
   return 'changeable';
 }
 
+// 코어 밖(셀메이트 수기 출고 스크립트)에서 상태만 shipped 로 바뀌고 draft 박스가 남는 일이 있다 — 항목 잔량만으로는
+// «아직 안 나감»을 믿을 수 없어 상태로도 닫힘을 본다
+export const CLOSED_SALES_ORDER_STATUSES = ['shipped', 'delivered'] as const;
+export const CLOSED_FULFILLMENT_ORDER_STATUSES = ['shipped', 'completed', 'canceled'] as const;
+
 export type ApplySkipReason = 'operator' | 'in_progress' | 'same' | 'units_ambiguous' | 'not_applicable';
 
 export interface LineCompositionChangeResult {

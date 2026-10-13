@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { ConflictException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb, wireLogistics } from '../services/__support__';
@@ -96,6 +97,135 @@ describeIfDb('기존 출고에도 적용 (#1063 스펙 §7.2)', () => {
           { reason: 'in_progress', count: 1 },
           { reason: 'same', count: 1 },
         ],
+      });
+    });
+  });
+
+  it('FO·판매주문이 코어 밖에서 출고 처리된 주문은 후보에서 빠진다 — 세지도 바꾸지도 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const fx = await seedOrderWithDraftBox(tx, w.logistics, {
+        lines: [{ quantity: 1, qtyPerUnits: [1] }],
+        spareSkus: 1,
+      });
+      const variantId = fx.variantIds[0];
+      const [newSku] = fx.spareSkuIds;
+      // 셀메이트 수기 출고 스크립트는 상태만 shipped 로 바꾸고 draft 박스를 남긴다
+      const closedFo = await seedOrderWithDraftBox(tx, w.logistics, { lines: [{ quantity: 1, qtyPerUnits: [1] }] });
+      const closedSo = await seedOrderWithDraftBox(tx, w.logistics, { lines: [{ quantity: 1, qtyPerUnits: [1] }] });
+      for (const other of [closedFo, closedSo]) {
+        await tx
+          .update(wmsTables.salesOrderLines)
+          .set({ variantId })
+          .where(eq(wmsTables.salesOrderLines.id, other.lineIds[0]));
+      }
+      await tx
+        .update(wmsTables.fulfillmentOrders)
+        .set({ status: 'shipped' })
+        .where(eq(wmsTables.fulfillmentOrders.id, closedFo.fulfillmentOrderId));
+      await tx
+        .update(wmsTables.salesOrders)
+        .set({ status: 'shipped' })
+        .where(eq(wmsTables.salesOrders.id, closedSo.salesOrderId));
+      const closedBefore = [await boxLinesOf(tx, closedFo.shipmentId), await boxLinesOf(tx, closedSo.shipmentId)];
+      const [matching] = await tx
+        .select({ id: wmsTables.productMatchings.id })
+        .from(wmsTables.productMatchings)
+        .where(eq(wmsTables.productMatchings.variantId, variantId));
+      await tx
+        .update(wmsTables.productVariantSkuLinks)
+        .set({ skuId: newSku })
+        .where(eq(wmsTables.productVariantSkuLinks.productMatchingId, matching.id));
+
+      expect(await w.edit.reader.previewExistingLines(variantId, tx)).toMatchObject({
+        changeable: 1,
+        skippedOperator: 0,
+        skippedInProgress: 0,
+        alreadySame: 0,
+      });
+      expect(await w.edit.manager.applyToExistingLines(variantId, actor, tx)).toEqual({ changed: 1, skipped: [] });
+      expect([await boxLinesOf(tx, closedFo.shipmentId), await boxLinesOf(tx, closedSo.shipmentId)]).toEqual(
+        closedBefore,
+      );
+    });
+  });
+
+  it('잠금 아래에서 FO 가 닫혔거나 라인에 살아 있는 박스가 없으면 적용 불가로 센다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const closedFo = await seedOrderWithDraftBox(tx, w.logistics, {
+        lines: [{ quantity: 1, qtyPerUnits: [1] }],
+        spareSkus: 1,
+      });
+      const variantId = closedFo.variantIds[0];
+      const [newSku] = closedFo.spareSkuIds;
+      const noBox = await seedOrderWithDraftBox(tx, w.logistics, { lines: [{ quantity: 1, qtyPerUnits: [1] }] });
+      await tx
+        .update(wmsTables.salesOrderLines)
+        .set({ variantId })
+        .where(eq(wmsTables.salesOrderLines.id, noBox.lineIds[0]));
+      await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'canceled' })
+        .where(eq(wmsTables.shipments.id, noBox.shipmentId));
+      const [matching] = await tx
+        .select({ id: wmsTables.productMatchings.id })
+        .from(wmsTables.productMatchings)
+        .where(eq(wmsTables.productMatchings.variantId, variantId));
+      await tx
+        .update(wmsTables.productVariantSkuLinks)
+        .set({ skuId: newSku })
+        .where(eq(wmsTables.productVariantSkuLinks.productMatchingId, matching.id));
+      // 후보를 고른 뒤 잠금 전에 FO 가 닫힌 경합
+      const reader = w.edit.reader;
+      jest.spyOn(reader, 'existingLineCandidates').mockImplementationOnce(async (trx, id) => {
+        const candidates = await reader.existingLineCandidates(trx, id);
+        await tx
+          .update(wmsTables.fulfillmentOrders)
+          .set({ status: 'shipped' })
+          .where(eq(wmsTables.fulfillmentOrders.id, closedFo.fulfillmentOrderId));
+        return candidates;
+      });
+      const before = await boxLinesOf(tx, closedFo.shipmentId);
+
+      expect(await w.edit.manager.applyToExistingLines(variantId, actor, tx)).toEqual({
+        changed: 0,
+        skipped: [{ reason: 'not_applicable', count: 2 }],
+      });
+      expect(await boxLinesOf(tx, closedFo.shipmentId)).toEqual(before);
+      const [line] = await tx
+        .select({ compositionSource: wmsTables.salesOrderLines.compositionSource })
+        .from(wmsTables.salesOrderLines)
+        .where(eq(wmsTables.salesOrderLines.id, noBox.lineIds[0]));
+      expect(line.compositionSource).toBe('matching');
+    });
+  });
+
+  it('박스 맞추기가 불변식 경합으로 재시도를 요구하면 작업 중으로 센다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const fx = await seedOrderWithDraftBox(tx, w.logistics, {
+        lines: [{ quantity: 1, qtyPerUnits: [1] }],
+        spareSkus: 1,
+      });
+      const variantId = fx.variantIds[0];
+      const [matching] = await tx
+        .select({ id: wmsTables.productMatchings.id })
+        .from(wmsTables.productMatchings)
+        .where(eq(wmsTables.productMatchings.variantId, variantId));
+      await tx
+        .update(wmsTables.productVariantSkuLinks)
+        .set({ skuId: fx.spareSkuIds[0] })
+        .where(eq(wmsTables.productVariantSkuLinks.productMatchingId, matching.id));
+      jest
+        .spyOn(w.edit.amender, 'amend')
+        .mockRejectedValueOnce(
+          new ConflictException({ code: 'FULFILLMENT_INVARIANT_COMPONENT_CHANGED_RETRY', message: 'retry' }),
+        );
+
+      expect(await w.edit.manager.applyToExistingLines(variantId, actor, tx)).toEqual({
+        changed: 0,
+        skipped: [{ reason: 'in_progress', count: 1 }],
       });
     });
   });
