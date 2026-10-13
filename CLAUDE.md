@@ -343,8 +343,9 @@ Cross-BC **seam** services (those that legitimately span schemas, e.g. `ProductS
 
 관리자 화면(admin-web)도 역할 이름이 아니라 권한으로 판정한다. 새 페이지는 `RouteGuard screen="<경로>"` 를 달고
 `apps/admin-web/src/lib/auth/screen-access.ts` 에 경로 권한을 적는다(없으면 `screen-access.gate.spec.ts` 가 빨갛다).
-Medusa 를 새로 부르면 `medusa-permissions.ts` 에 경로를 더한다(`medusa-coverage.spec.ts`). admin-web 은 권한 목록을
-`@permission-catalog` 별칭으로 원본 그대로 가져오므로 `libs/authorization/src/permissions` 는 폴더 밖을 import 하지 않는다.
+Medusa 를 새로 부르면 `medusa-permissions.ts` 에 경로를 더한다(`medusa-coverage.spec.ts`). 새 뮤테이션 훅은
+`useX.permission` 을 선언하고, 그 동작을 부르는 화면은 `run={useX}` 로 판정한다(없으면 `mutation-guard.gate.spec.ts` 가
+빨갛다). admin-web 은 권한 목록을 `@permission-catalog` 별칭으로 원본 그대로 가져오므로 `libs/authorization/src/permissions` 는 폴더 밖을 import 하지 않는다.
 
 ### 크론 (`@app/cron-once`)
 
