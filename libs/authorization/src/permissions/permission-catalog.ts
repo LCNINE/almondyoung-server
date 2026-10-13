@@ -32,6 +32,8 @@ const ADMIN_INTERN = ['admin', 'intern'] as const;
 const NOBODY = [] as const;
 const LOGISTICS = ['logistics_worker', 'logistics_manager'] as const;
 const LOGISTICS_MANAGER = ['logistics_manager'] as const;
+const ADMIN_LOGISTICS = ['admin', ...LOGISTICS] as const;
+const ADMIN_LOGISTICS_MANAGER = ['admin', ...LOGISTICS_MANAGER] as const;
 const DANGEROUS = { dangerous: true } as const;
 
 export const PERMISSION_CATALOG = [
@@ -134,7 +136,7 @@ export const PERMISSION_CATALOG = [
     grant: ADMIN,
   }),
 
-  // 출고 — 오늘 admin 매핑에는 출고 스코프가 없다(master·물류 역할만).
+  // 출고 — 관리자는 물류 관리자와 같은 출고 권한을 갖는다(팀별 역할로 나눌 때 역할 편집에서 회수한다).
   permission('fulfillment.order.read', '출고 현황 조회', '출고 요청·직배송·주문 진행 현황을 본다', {
     owners: ['core'],
     grant: ['admin', 'intern', ...LOGISTICS],
@@ -143,51 +145,50 @@ export const PERMISSION_CATALOG = [
     owners: ['core'],
     grant: ADMIN,
   }),
-  // 상자·배치·송장 조회는 오늘 출고 작업 권한 뒤에 있어 admin 도 통과하지 못한다.
   permission('fulfillment.shipment.read', '출고 작업 조회', '출고 상자·배치·송장 상세를 본다', {
     owners: ['core'],
-    grant: LOGISTICS,
+    grant: ADMIN_LOGISTICS,
   }),
   permission('fulfillment.warehouse.operate', '출고 현장 작업', '일반 출고 계획·피킹·패킹·검수를 한다', {
     owners: ['core'],
-    grant: LOGISTICS,
+    grant: ADMIN_LOGISTICS,
   }),
   permission('fulfillment.shipment.consolidate', '합배송', '서로 다른 주문의 출고를 합친다', {
     owners: ['core'],
-    grant: LOGISTICS_MANAGER,
+    grant: ADMIN_LOGISTICS_MANAGER,
   }),
   permission(
     'fulfillment.shipment.override_recipient',
     '수취 정보 변경 확정',
     '주문 원본과 다른 수취 정보로 확정한다',
-    { owners: ['core'], grant: LOGISTICS_MANAGER, ...DANGEROUS },
+    { owners: ['core'], grant: ADMIN_LOGISTICS_MANAGER, ...DANGEROUS },
   ),
   permission('fulfillment.reservation.transfer', '예약 이전', '출고 라인 예약을 옮기고 우선순위를 바꾼다', {
     owners: ['core'],
-    grant: LOGISTICS_MANAGER,
+    grant: ADMIN_LOGISTICS_MANAGER,
   }),
   permission('fulfillment.dispatch.force', '강제 출고', '출고를 강제로 완료한다', {
     owners: ['core'],
-    grant: LOGISTICS_MANAGER,
+    grant: ADMIN_LOGISTICS_MANAGER,
     ...DANGEROUS,
   }),
   permission('fulfillment.dispatch.recall', '출고 회수', '출고 시도를 되돌린다', {
     owners: ['core'],
-    grant: LOGISTICS_MANAGER,
+    grant: ADMIN_LOGISTICS_MANAGER,
     ...DANGEROUS,
   }),
   permission('fulfillment.shipment.reopen', '출고 재개방', '잠긴 출고를 다시 열고 송장을 무효로 한다', {
     owners: ['core'],
-    grant: LOGISTICS_MANAGER,
+    grant: ADMIN_LOGISTICS_MANAGER,
     ...DANGEROUS,
   }),
   permission('fulfillment.shipment.short_pick', '결품 보고', '스테이션 결품·파손을 보고한다', {
     owners: ['core'],
-    grant: LOGISTICS,
+    grant: ADMIN_LOGISTICS,
   }),
   permission('fulfillment.dispatch.station_force', '스테이션 강제 출고', '남은 미스캔 수량을 채우고 출고한다', {
     owners: ['core'],
-    grant: LOGISTICS,
+    grant: ADMIN_LOGISTICS,
     ...DANGEROUS,
   }),
   permission(
@@ -196,7 +197,7 @@ export const PERMISSION_CATALOG = [
     '다른 작업자가 잡은 피킹·패킹·토트·카트를 넘기거나 되돌린다',
     {
       owners: ['core'],
-      grant: LOGISTICS_MANAGER,
+      grant: ADMIN_LOGISTICS_MANAGER,
     },
   ),
   permission('fulfillment.tracking.ingest', '배송 추적 수신', '배송사 추적 이벤트를 받는다(시스템 전용)', {
@@ -449,9 +450,17 @@ export const PERMISSION_CATALOG = [
   }),
 
   // 설정 — oauth-clients 는 오늘 'master' 단독이다.
+  permission('system.region.read', '리전 설정 조회', '통화·세금·리전 설정을 본다', {
+    owners: ['admin-web'],
+    grant: ADMIN_INTERN,
+  }),
   permission('system.region.write', '리전 설정', '통화·세금·리전을 바꾼다', {
     owners: ['admin-web', 'wallet'],
     grant: ADMIN,
+  }),
+  permission('system.shipping_profile.read', '배송 설정 조회', '배송 프로필·배송비 그룹을 본다', {
+    owners: ['admin-web'],
+    grant: ADMIN_INTERN,
   }),
   permission('system.shipping_profile.write', '배송 설정', '배송 프로필·배송비 그룹을 바꾼다', {
     owners: ['core', 'admin-web'],

@@ -58,13 +58,13 @@ describe('permission catalog', () => {
     expect(isPermission('order:order:read')).toBe(false);
   });
 
-  // 오늘 core 의 출고 «작업» 조회(상자·배치·송장)는 fulfillment.warehouse.operate 를 요구하고 admin 매핑엔 출고 스코프가 없다.
-  // 반면 출고 «현황» 조회(출고 요청·직배송·주문 진행)는 스코프 없이 직원이면 통과한다. 초기 부여는 이 둘을 그대로 옮긴다.
-  it('mirrors what admin can read in fulfillment today', () => {
-    expect(findPermission('fulfillment.order.read')?.grantOnFirstRegistration).toEqual(
-      expect.arrayContaining(['admin', 'intern']),
+  // 관리자도 물류 관리자와 같은 출고 권한을 갖는다(팀별 역할로 나눌 때 역할 편집에서 회수한다).
+  it('gives admin the same fulfillment permissions as the logistics manager', () => {
+    const fulfillment = PERMISSION_CATALOG.filter((p) => p.key.startsWith('fulfillment.') && !p.systemOnly);
+    const managerOnly = fulfillment.filter(
+      (p) => p.grantOnFirstRegistration.some((r) => r === 'logistics_manager') && !p.grantOnFirstRegistration.some((r) => r === 'admin'),
     );
-    expect(findPermission('fulfillment.shipment.read')?.grantOnFirstRegistration).not.toContain('admin');
+    expect(managerOnly.map((p) => p.key)).toEqual([]);
     expect(findPermission('fulfillment.shipment.read')?.grantOnFirstRegistration).not.toContain('intern');
   });
 
@@ -86,13 +86,19 @@ describe('permission catalog', () => {
       Object.keys(expected).map((key) => [key, findPermission(key)?.grantOnFirstRegistration ?? null]),
     );
     expect(actual).toEqual(expected);
-    expect(PERMISSION_CATALOG).toHaveLength(100);
+    expect(PERMISSION_CATALOG).toHaveLength(102);
   });
 
   it('registers the handler checkpoint keys with today-equivalent grants', () => {
-    expect(findPermission('fulfillment.work.supervise')?.grantOnFirstRegistration).toEqual(['logistics_manager']);
+    expect(findPermission('fulfillment.work.supervise')?.grantOnFirstRegistration).toEqual(['admin', 'logistics_manager']);
     expect(findPermission('fulfillment.work.supervise')?.dangerous).toBe(false);
     expect(findPermission('system.file.manage')?.grantOnFirstRegistration).toEqual([]);
     expect(findPermission('system.file.manage')?.dangerous).toBe(true);
+  });
+
+  it('registers read access to the region and shipping settings for the screens that show them', () => {
+    expect(findPermission('system.region.read')?.grantOnFirstRegistration).toEqual(['admin', 'intern']);
+    expect(findPermission('system.shipping_profile.read')?.grantOnFirstRegistration).toEqual(['admin', 'intern']);
+    expect(findPermission('system.region.read')?.dangerous).toBe(false);
   });
 });

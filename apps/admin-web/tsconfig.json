@@ -33,6 +33,7 @@
       "@packages/domain-types": ["../../packages/domain-types"],
       "@packages/domain-types/*": ["../../packages/domain-types/*"],
       "@packages/time-sale-ui": ["../../packages/time-sale-ui"],
+      "@permission-catalog": ["../../libs/authorization/src/permissions/index.ts"],
       "react": ["./node_modules/@types/react"],
       "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime"]
     }
