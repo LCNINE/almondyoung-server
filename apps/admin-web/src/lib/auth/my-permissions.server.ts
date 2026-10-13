@@ -7,7 +7,14 @@ import { MyPermissionsCache, parseMyPermissions, type MyPermissions } from './my
 export type PermissionState =
   | { readonly state: 'unauthenticated' }
   | { readonly state: 'unavailable' }
-  | { readonly state: 'ready'; readonly roles: MyPermissions['roles']; readonly permissions: ReadonlySet<string> };
+  | {
+      readonly state: 'ready';
+      readonly roles: MyPermissions['roles'];
+      readonly permissions: ReadonlySet<string>;
+      readonly version: string;
+      /** 이 사본을 user-service 에서 받은 시각 — 브라우저 캐시에 넘길 때 신선도 기준 */
+      readonly fetchedAt: number;
+    };
 
 /** 느린 응답이 화면 렌더를 붙잡지 않게 끊는다. 끊기면 마지막 사본을 쓴다. */
 const FETCH_TIMEOUT_MS = 3_000;
@@ -38,7 +45,8 @@ const processCache = new MyPermissionsCache(() => fetchMyPermissions());
 export const getMyPermissions = cache(async (): Promise<PermissionState> => {
   const payload = await getTokenPayload();
   if (!payload) return { state: 'unauthenticated' };
-  const value = await processCache.get(payload.roles);
-  if (!value) return { state: 'unavailable' };
-  return { state: 'ready', roles: value.roles, permissions: value.permissions };
+  const copy = await processCache.getWithTime(payload.roles);
+  if (!copy) return { state: 'unavailable' };
+  const { value, fetchedAt } = copy;
+  return { state: 'ready', roles: value.roles, permissions: value.permissions, version: value.version, fetchedAt };
 });

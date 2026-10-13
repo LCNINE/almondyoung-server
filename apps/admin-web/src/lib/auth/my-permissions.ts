@@ -46,6 +46,8 @@ interface Entry {
   /** 이 시각 전에는 원본을 다시 부르지 않는다 — 성공 뒤엔 주기만큼, 실패 뒤엔 재시도 간격만큼. */
   nextAttemptAt: number;
   inFlight: Promise<void> | null;
+  /** value 를 받은 시각(실패한 재조회는 바꾸지 않는다) */
+  fetchedAt: number;
 }
 
 export class MyPermissionsCache {
@@ -70,11 +72,16 @@ export class MyPermissionsCache {
    * 다시 부른다 — 원본이 죽었을 때 요청마다 타임아웃을 기다리지 않게.
    */
   async get(roles: readonly string[]): Promise<MyPermissions | null> {
+    return (await this.getWithTime(roles))?.value ?? null;
+  }
+
+  /** `get` 과 같고, 돌려주는 사본을 받은 시각을 함께 준다(브라우저 캐시에 그대로 넘길 때). */
+  async getWithTime(roles: readonly string[]): Promise<{ value: MyPermissions; fetchedAt: number } | null> {
     const key = rolesKey(roles);
     let entry = this.entries.get(key);
     if (!entry) {
       if (this.entries.size >= this.maxKeys) this.entries.clear();
-      entry = { value: null, nextAttemptAt: Number.NEGATIVE_INFINITY, inFlight: null };
+      entry = { value: null, fetchedAt: 0, nextAttemptAt: Number.NEGATIVE_INFINITY, inFlight: null };
       this.entries.set(key, entry);
     }
     if (this.now() >= entry.nextAttemptAt) {
@@ -82,6 +89,7 @@ export class MyPermissionsCache {
       target.inFlight ??= this.fetcher(roles)
         .then((value) => {
           target.value = value;
+          target.fetchedAt = this.now();
           target.nextAttemptAt = this.now() + this.ttlMs;
         })
         .catch(() => {
@@ -94,6 +102,6 @@ export class MyPermissionsCache {
     } else if (entry.inFlight) {
       await entry.inFlight;
     }
-    return entry.value;
+    return entry.value ? { value: entry.value, fetchedAt: entry.fetchedAt } : null;
   }
 }
