@@ -81,7 +81,7 @@ UNIQUE `(sales_order_line_id, sku_id)`. 예: «A×2 + B×1» = 두 행. 현재 �
 디지털 라인(FO 대상 아님)과 상품매칭이 void 인 라인은 박스에 들어가지 않으므로 굳히지 않는다(출처 NULL 유지).
 **알고 남기는 것:** FO 를 만든 뒤 상품매칭이 void → 실물로 바뀌어도 그 라인은 FO 에 들어가지 않는다. 지금 동작과 같고 범위 밖이다.
 
-## 5. 판정 — 함수 하나, 소비자 넷
+## 5. 판정 — 함수 하나, 소비자 다섯
 
 ### 5.1 순수 함수
 
@@ -94,12 +94,15 @@ UNIQUE `(sales_order_line_id, sku_id)`. 예: «A×2 + B×1» = 두 행. 현재 �
 | `void` | 출처 NULL, 상품매칭 void(`isVoidMatching`) | 없음(박스 제외) |
 | `missing` | 그 밖 | 매칭 대기 |
 
-`follow`·`void` 판정은 기존 `fulfillable-matching.ts` 를 그대로 쓴다. 그 앞에 «주문 하나의 라인을 전부 읽어 이 함수를 돌리는»
-`LineCompositionReader.forOrder(salesOrderId, tx)` 를 둔다. 아래 소비자는 이 리더만 부른다.
+`follow`·`void` 판정은 기존 `fulfillable-matching.ts` 를 그대로 쓴다. 디지털 라인은 다섯 번째 결과 `digital` 로 따로 낸다.
+그 앞에 «주문 하나의 라인을 전부 읽어 이 함수를 돌리는» `LineCompositionReader.resolveForOrder(salesOrderId, tx)` 를 둔다.
+리더는 라인마다 **유효 수량**(주문 수량 − 부분 취소)도 함께 낸다 — FO 생성과 리컨실러가 «전량 취소된 미매칭 라인은 막지 않는다»를
+같은 값으로 판정해야 하기 때문이다(계획 단계에서 정함). 아래 소비자는 이 리더만 부른다.
 
 ### 5.2 SQL 술어 — 목록 화면용, TS 와 한 쌍
 
-목록(매칭체크 페이지)은 SQL 로 걸러야 해서 «라인이 해결됐나» 술어 `lineResolvedSql()` 을 `fulfillable-matching.ts` 옆에 둔다:
+목록(매칭체크 페이지·주문 목록)은 SQL 로 판정해야 해서 «라인이 해결됐나» 술어 `lineResolvedSql()` 을 리더 옆에 둔다. 조인 없이
+상관 서브쿼리로 상품매칭을 읽는다(조인을 요구하면 쓰는 쿼리마다 모양이 갈린다):
 `composition_source IS NOT NULL OR (상품매칭 matched AND (strategy = 'void' OR (strategy = 'variant' AND 링크 존재)))`.
 **같은 픽스처로 TS 판정과 SQL 술어가 같은 답을 내는지 확인하는 통합 스펙**을 붙인다 — 둘이 갈리면 이 스펙이 빨개진다.
 
@@ -111,6 +114,7 @@ UNIQUE `(sales_order_line_id, sku_id)`. 예: «A×2 + B×1» = 두 행. 현재 �
 | 2 | 리컨실러 12번 `wake-awaiting-matching.rule.ts` | `check` 를 «기다리는 variant 의 상품매칭이 모두 해결»에서 **«리더 결과에 `missing` 없음»**으로. `fingerprint` 도 리더 결과(라인별 결과·구성)로. 안 바꾸면 1회 지정으로 풀린 주문을 상품매칭 기준으로 «안 풀림» 판정한다 |
 | 3 | 매칭체크 `getOrderLines` (`excludeMatched`) | 사본 SQL 을 `lineResolvedSql()` 로 교체. 행에 출처 표시용 칸(`compositionSource`) 추가 |
 | 4 | 14번 필터 `typeGroup: 'unmatched'` | `awaiting_matching` 대기열이 열린 주문(D8) |
+| 5 | 주문 목록 라인 배지 «매칭 대기» (admin-web `isOrderLineMatched`) | 라인의 `productMatchingId` 대신 core 가 내려주는 `matchingResolved`(= `lineResolvedSql()`)를 본다. 판매주문 목록·상세 응답의 라인에 칸 추가. **PR 1 이 옛 칸 쓰기를 멈추므로 같은 PR 에서 바꿔야 한다** — 안 그러면 모든 라인이 «매칭 대기»가 된다(계획 단계에서 찾음) |
 
 깨우기 경로:
 
@@ -121,7 +125,8 @@ UNIQUE `(sales_order_line_id, sku_id)`. 예: «A×2 + B×1» = 두 행. 현재 �
 
 운영자 지정과 FO 생성이 같은 라인을 동시에 굳힐 수 있다. **둘 다 판매주문 행을 먼저 잠근다**(6번 행 «판매주문 잠금 먼저»).
 `matching` 굳히기는 출처 NULL 조건부라, 운영자가 먼저 굳혔으면 FO 생성은 그 구성을 읽는다.
-FO 생성 워커가 지금 판매주문을 잠그는지는 계획 단계에서 확인한다 — 안 잠그면 잠금을 더한다.
+FO 생성(`createV2`)은 이미 판매주문을 `FOR UPDATE` 로 잠근 뒤 라인을 읽는다(계획 단계에서 확인). 그래서 같은 트랜잭션 안에서
+조건부 굳히기가 0행이면 경합이 아니라 불변식 위반이다 — 조용히 넘기지 않고 던진다.
 
 ## 6. 공유 부품 — 박스 목표와 작성 중 박스 맞추기
 
@@ -217,7 +222,7 @@ S2 는 «라인별 담긴 개수»를 새로 계산해 `boxTarget` → `amend` �
 ### 9.1 PR 1 — core 판정과 굳히기 (expand)
 
 - 마이그(additive): §4.1 칸 셋 · §4.2 테이블 · `shipment_operation_type` 에 `'amend'`
-- §5 전부(판정 함수·리더·SQL 술어·소비자 넷·경합 잠금)
+- §5 전부(판정 함수·리더·SQL 술어·소비자 다섯·경합 잠금). 소비자 5 때문에 admin-web 의 `isOrderLineMatched` 한 곳도 이 PR 에 들어간다
 - 옛 칸 쓰기·읽기 중단: «SKU 연결 저장»의 라인 `productMatchingId` 일괄 덮어쓰기, `confirm` 의 스냅샷 생성, FO 생성의 스냅샷 분기.
   컬럼은 남긴다
 - 백필 `scripts/ops/1016-14-backfill-line-compositions.ts` — FO 항목이 있고 출처 NULL 인 물리 라인을 FO 항목에서 역산해 `matching`
@@ -270,6 +275,6 @@ S2 는 «라인별 담긴 개수»를 새로 계산해 `boxTarget` → `amend` �
 
 1. 유효 수량(주문 수량 − 부분 취소)을 구하는 곳이 둘(`loadPartialCancelledLineQuantities`, 채널 변경 리더의 `effectiveQuantity`)인지 —
    둘이면 하나로 모아 §6.2 와 S2 가 같이 쓴다
-2. FO 생성 워커가 판매주문을 잠그는지(§5.4)
+2. ~~FO 생성 워커가 판매주문을 잠그는지(§5.4)~~ — 잠근다(`createV2` 의 `FOR UPDATE`). §5.4 에 반영
 3. 배송 프로필 계산을 FO 생성에서 함수로 뽑을 수 있는지(§6.3)
 4. admin-web 이 `productMatchingId`·`mappingSnapshotId` 를 어디서 읽는지(PR 4 범위)
