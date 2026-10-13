@@ -236,6 +236,55 @@ describeIfDb('주문별 라인 구성 지정 (#1063 스펙 §7.1)', () => {
     });
   });
 
+  it('박스를 세고 잠그는 사이 라인이 다른 박스로 옮겨지면 SHIPMENT_COMPONENT_CHANGED_RETRY, 아무것도 바뀌지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const fx = await seedOrderWithDraftBox(tx, w.logistics, {
+        lines: [
+          { quantity: 1, qtyPerUnits: [1] },
+          { quantity: 1, qtyPerUnits: [1] },
+        ],
+        spareSkus: 1,
+      });
+      const [a] = fx.skuIdsByLine[0];
+      const [other] = await tx
+        .insert(wmsTables.shipments)
+        .values({ warehouseId: fx.warehouseId, status: 'draft' })
+        .returning();
+      const moved = (await boxLinesOf(tx, fx.shipmentId)).find((line) => line.salesOrderLineId === fx.lineIds[0]);
+      // 첫 조회 직후, 박스 잠금 전에 분할이 커밋된 것과 같은 상태를 만든다
+      const reader = w.edit.reader;
+      jest.spyOn(reader, 'boxesOfLines').mockImplementationOnce(async (trx, ids) => {
+        // once 구현은 이 호출에서 소진됐으므로 안쪽 호출은 원래 메서드로 간다
+        const result = await reader.boxesOfLines(trx, ids);
+        await tx
+          .update(wmsTables.shipmentLines)
+          .set({ shipmentId: other.id })
+          .where(eq(wmsTables.shipmentLines.id, moved?.id ?? ''));
+        return result;
+      });
+
+      await expect(
+        w.edit.manager.assignToLine(
+          fx.salesOrderId,
+          fx.lineIds[0],
+          [{ skuId: fx.spareSkuIds[0], qtyPerUnit: 1 }],
+          null,
+          actor,
+          tx,
+        ),
+      ).rejects.toMatchObject({ response: { code: 'SHIPMENT_COMPONENT_CHANGED_RETRY' } });
+
+      expect((await lineOf(tx, fx.lineIds[0])).compositionSource).toBe('matching');
+      expect(await boxLinesOf(tx, other.id)).toMatchObject([{ skuId: a, qty: 1 }]);
+      const amendments = await tx
+        .select({ id: wmsTables.salesOrderAmendments.id })
+        .from(wmsTables.salesOrderAmendments)
+        .where(eq(wmsTables.salesOrderAmendments.salesOrderId, fx.salesOrderId));
+      expect(amendments).toEqual([]);
+    });
+  });
+
   it('디지털 라인·직배송 SKU·FO 있는데 미굳힘 라인을 거절한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wire(tx);

@@ -15,14 +15,23 @@ import { SalesOrderAmendmentsService } from '../../sales-order/services/sales-or
 import { FulfillmentOrderCreationBacklogService } from '../backlog/fulfillment-order-creation-backlog.service';
 import { boxTarget, unitsOfLineInBox } from '../draft-box/box-target';
 import { DraftBoxAmender } from '../draft-box/draft-box-amender';
+import { FulfillmentInvariantService } from '../services/fulfillment-invariant.service';
+import { lockShipmentAggregate } from '../services/shipment-aggregate';
 import { LineCompositionEditReader } from './line-composition-edit.reader';
-import { isBlockingBox, LineCompositionChangeResult } from './line-composition-edit.types';
+import { BoxOfLine, isBlockingBox, LineCompositionChangeResult } from './line-composition-edit.types';
 
 export const LINE_COMPOSITION_OPERATOR_REASON = 'LINE_COMPOSITION_OPERATOR';
 export const LINE_COMPOSITION_MATCHING_REASON = 'LINE_COMPOSITION_MATCHING_APPLIED';
 
 function conflict(code: string, message: string, extra: Record<string, unknown> = {}): ConflictException {
   return new ConflictException({ code, message, ...extra });
+}
+
+function boxMembershipKey(boxes: readonly BoxOfLine[]): string {
+  return boxes
+    .map((box) => `${box.shipmentId}:${isBlockingBox(box) ? 'blocked' : 'open'}`)
+    .sort()
+    .join(',');
 }
 
 function badRequest(code: string, message: string): BadRequestException {
@@ -43,6 +52,7 @@ export class LineCompositionEditManager {
     private readonly amender: DraftBoxAmender,
     private readonly backlog: FulfillmentOrderCreationBacklogService,
     private readonly amendments: SalesOrderAmendmentsService,
+    private readonly invariant: FulfillmentInvariantService,
   ) {}
 
   async assignToLine(
@@ -137,6 +147,16 @@ export class LineCompositionEditManager {
       });
     }
     const shipmentIds = boxes.map((box) => box.shipmentId).sort();
+    // 분할·합포장은 판매주문이 아니라 박스를 잠근다 — 박스를 잠그기 전에 센 담긴 개수는 그 사이 옮겨진 줄을 놓친다.
+    // 잠금 순서는 FO 생성과 같다(판매주문, 박스 id 순, 재고)
+    for (const shipmentId of shipmentIds) await this.lockBox(trx, shipmentId);
+    const locked = (await this.reader.boxesOfLines(trx, [input.salesOrderLineId])).get(input.salesOrderLineId) ?? [];
+    if (boxMembershipKey(locked) !== boxMembershipKey(boxes)) {
+      throw conflict(
+        'SHIPMENT_COMPONENT_CHANGED_RETRY',
+        `Boxes of line ${input.salesOrderLineId} changed while acquiring locks`,
+      );
+    }
     const linesByBox = await this.reader.lineQtyByBox(trx, input.salesOrderLineId, shipmentIds);
     // 담긴 개수는 옛 구성으로 센다 — 구성을 바꾼 뒤엔 «이 줄 수량이 몇 개분인가»를 알 수 없다
     const unitsByBox = new Map(
@@ -180,6 +200,18 @@ export class LineCompositionEditManager {
       changedShipmentIds,
       amendmentId,
     };
+  }
+
+  /** 잠그는 사이 줄이 모두 빠져나간 박스는 404 가 아니라 다시 시도할 경합이다. */
+  private async lockBox(trx: DbTx, shipmentId: string): Promise<void> {
+    try {
+      await lockShipmentAggregate(trx, this.invariant, shipmentId);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw conflict('SHIPMENT_COMPONENT_CHANGED_RETRY', `Shipment ${shipmentId} changed while acquiring locks`);
+      }
+      throw error;
+    }
   }
 
   /** FO 생성과 같은 SKU 규칙 — 직배송 SKU 는 창고 SKU 와 섞지 않고, 3PL FO 는 화주가 같아야 한다. */

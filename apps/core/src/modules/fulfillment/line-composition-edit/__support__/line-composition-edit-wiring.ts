@@ -10,10 +10,11 @@ import { LineCompositionEditReader } from '../line-composition-edit.reader';
 import { LineCompositionEditService } from '../line-composition-edit.service';
 
 export function wireLineCompositionEdit(dbService: DbService<typeof wmsSchema>, logistics: Wired) {
+  const invariant = new FulfillmentInvariantService();
   const amender = new DraftBoxAmender(
     dbService,
     logistics.shipmentReservations,
-    new FulfillmentInvariantService(),
+    invariant,
     new AuditService(dbService),
   );
   const reader = new LineCompositionEditReader(dbService, logistics.productSkuMapping);
@@ -24,6 +25,7 @@ export function wireLineCompositionEdit(dbService: DbService<typeof wmsSchema>, 
     amender,
     logistics.backlog,
     new SalesOrderAmendmentsService(dbService),
+    invariant,
   );
   const service = new LineCompositionEditService(reader, manager);
   return { amender, reader, manager, service };
