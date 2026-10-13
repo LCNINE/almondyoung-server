@@ -163,4 +163,37 @@ describe('deriveComposition', () => {
       }),
     ).toEqual({ kind: 'cancelled', lineId: 'l' });
   });
+
+  it('취소 기록이 어긋나도 나눠떨어지면 정확 규칙이 틀린다 — 반박되면 ambiguous (FO 쪽 증거 없음, 두 후보)', () => {
+    expect(
+      deriveComposition({
+        lineId: 'l',
+        quantity: 3,
+        cancelledQty: 1,
+        foItems: [{ skuId: 'a', qty: 6, canceledQty: 0 }],
+      }),
+    ).toEqual({ kind: 'ambiguous', lineId: 'l', candidates: [2, 3] });
+  });
+
+  it('정확 규칙이 유일한 후보와 다르면 ambiguous', () => {
+    expect(
+      deriveComposition({
+        lineId: 'l',
+        quantity: 2,
+        cancelledQty: 0,
+        foItems: [{ skuId: 'a', qty: 4, canceledQty: 2 }],
+      }),
+    ).toEqual({ kind: 'ambiguous', lineId: 'l', candidates: [2] });
+  });
+
+  it('FO 뒤 취소(Q2/C1/qty2/canceled1)는 후보 하나가 동의하면 ok', () => {
+    expect(
+      deriveComposition({
+        lineId: 'l',
+        quantity: 2,
+        cancelledQty: 1,
+        foItems: [{ skuId: 'a', qty: 2, canceledQty: 1 }],
+      }),
+    ).toEqual({ kind: 'ok', lineId: 'l', items: [{ skuId: 'a', qtyPerUnit: 1 }] });
+  });
 });
