@@ -29,11 +29,6 @@ export interface ChannelDispatchResponse {
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const ALLOWED_ROLES = new Set([
-  'logistics_worker',
-  'logistics_manager',
-  'master',
-]);
 const ALLOWED_OPERATIONS = new Set(['dispatch', 'delivery', 'recall']);
 const ALLOWED_STATUSES = new Set<string>(CHANNEL_DISPATCH_STATUSES);
 
@@ -41,11 +36,9 @@ export function isUuid(value: unknown): value is string {
   return typeof value === 'string' && UUID_PATTERN.test(value);
 }
 
-export function canReadChannelDispatch(roles: unknown): boolean {
-  return (
-    Array.isArray(roles) &&
-    roles.some((role) => typeof role === 'string' && ALLOWED_ROLES.has(role))
-  );
+/** 출고 작업 조회 권한(출고를 다루는 직원에게 부여된다). */
+export function canReadChannelDispatch(permissions: ReadonlySet<string>): boolean {
+  return permissions.has('fulfillment.shipment.read');
 }
 
 export function buildChannelDispatchUpstreamUrl(
