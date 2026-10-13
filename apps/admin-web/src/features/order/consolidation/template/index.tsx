@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { usePermission } from '@/hooks/use-permission';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { useWarehouses } from '@/lib/services/inventory/queries';
 import {
   useShipmentConsolidationCandidates,
@@ -55,15 +55,15 @@ function shortId(value: string) {
 
 export default function ConsolidationTemplate() {
   const { data: warehouses = [] } = useWarehouses();
-  const { hasScope, isPermissionLoading } = usePermission();
+  const { can, isPermissionLoading } = usePermissionCheck();
   const [warehouseId, setWarehouseId] = useState('');
   const [reason, setReason] = useState('동일 수령인 합포장');
   const [csCaseId, setCsCaseId] = useState('');
   const [note, setNote] = useState('');
   const [retry, setRetry] = useState<RetryState | null>(null);
 
-  const canRead = !!hasScope([FULFILLMENT_SCOPES.operate]);
-  const canCreate = !!hasScope([FULFILLMENT_SCOPES.consolidate]);
+  const canRead = can(['fulfillment.shipment.read']);
+  const canCreate = can([FULFILLMENT_SCOPES.consolidate]);
   const candidates = useShipmentConsolidationCandidates({ warehouseId });
   const create = useCreateShipmentConsolidation();
   const operation = useFulfillmentOperation(retry?.operationId ?? '');

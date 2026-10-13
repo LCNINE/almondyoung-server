@@ -1,3 +1,5 @@
+import type { Permission } from '@permission-catalog';
+
 export const FULFILLMENT_SCOPES = {
   operate: 'fulfillment.warehouse.operate',
   consolidate: 'fulfillment.shipment.consolidate',
@@ -5,7 +7,7 @@ export const FULFILLMENT_SCOPES = {
   forceDispatch: 'fulfillment.dispatch.force',
   recall: 'fulfillment.dispatch.recall',
   reopen: 'fulfillment.shipment.reopen',
-} as const;
+} as const satisfies Record<string, Permission>;
 
 export type FulfillmentAdminAction =
   | 'split'

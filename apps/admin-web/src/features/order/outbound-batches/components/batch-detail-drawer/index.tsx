@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { usePermission } from '@/hooks/use-permission';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   Sheet,
   SheetContent,
@@ -52,7 +52,7 @@ const STRATEGY_LABELS: Record<PickingStrategyName, string> = {
 };
 
 export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
-  const { hasScope, isPermissionLoading } = usePermission();
+  const { can, isPermissionLoading } = usePermissionCheck();
   const { data: batch, isLoading, refetch } = useOutboundBatchV2(batchId);
   const { data: eligible = [] } = useOutboundBatchEligibleShipments(batchId);
   const addShipment = useAddShipmentToBatch();
@@ -64,7 +64,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
   const [reason, setReason] = useState('shift_handoff');
   const retry = useWarehouseCommandRetry();
   const canOperateWarehouse =
-    !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.operate]);
+    !isPermissionLoading && !!can([FULFILLMENT_SCOPES.operate]);
 
   const command = async <T,>(
     action: string,

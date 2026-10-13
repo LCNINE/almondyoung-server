@@ -15,9 +15,13 @@ export const useMe = () => {
   });
 };
 
-export const useMyRoles = () => {
+/** 권한은 백엔드 사본과 같은 30초 주기로 따라온다. 창으로 돌아오면 다시 읽는다. */
+export const useMyPermissions = () => {
   return useQuery({
-    queryKey: authQueryKeys.myRoles(),
-    queryFn: () => userApi.getMyRoles(),
+    queryKey: authQueryKeys.myPermissions(),
+    queryFn: () => userApi.getMyPermissions(),
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: true,
+    retry: 1,
   });
 };

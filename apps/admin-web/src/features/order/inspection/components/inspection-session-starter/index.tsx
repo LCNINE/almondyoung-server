@@ -14,7 +14,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { usePermission } from '@/hooks/use-permission';
+import { usePermissionCheck } from '@/hooks/use-permission';
+import { permissionLabel } from '@/lib/auth/permission-labels';
 import {
   FULFILLMENT_SCOPES,
   getServerDenyMessage,
@@ -36,10 +37,10 @@ export function InspectionSessionStarter() {
   const { data: batch, isLoading, refetch } = useOutboundBatchV2(batchId);
   const { data: shipment } = useShipmentDetail(shipmentId);
   const scan = useShipmentInspectionScan();
-  const { hasScope, isPermissionLoading } = usePermission();
+  const { can, isPermissionLoading } = usePermissionCheck();
   const mayForceDispatch =
     !isPermissionLoading &&
-    Boolean(hasScope([FULFILLMENT_SCOPES.forceDispatch]));
+    Boolean(can([FULFILLMENT_SCOPES.forceDispatch]));
   const workItem = batch?.workItems.find(
     (item) => item.shipmentId === shipmentId
   );
@@ -201,7 +202,7 @@ export function InspectionSessionStarter() {
               </div>
               {!mayForceDispatch && !isPermissionLoading && (
                 <p className="text-xs text-muted-foreground">
-                  강제 출고는 {FULFILLMENT_SCOPES.forceDispatch} scope
+                  강제 출고는 {permissionLabel(FULFILLMENT_SCOPES.forceDispatch)} 권한
                   보유자에게만 표시됩니다.
                 </p>
               )}

@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { usePermission } from '@/hooks/use-permission';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   createIdempotentCommand,
   FULFILLMENT_SCOPES,
@@ -61,7 +61,7 @@ export function WaybillActions({
 }: {
   shipment: ShipmentAdminDetail;
 }) {
-  const { hasScope, isPermissionLoading } = usePermission();
+  const { can, isPermissionLoading } = usePermissionCheck();
   const issue = useIssueWaybill();
   const manual = useRegisterManualWaybill();
   const reissue = useReissueWaybill();
@@ -76,9 +76,9 @@ export function WaybillActions({
   const [pendingNotice, setPendingNotice] = useState<string | null>(null);
 
   const operate =
-    !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.operate]);
+    !isPermissionLoading && !!can([FULFILLMENT_SCOPES.operate]);
   const reopen =
-    !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.reopen]);
+    !isPermissionLoading && !!can([FULFILLMENT_SCOPES.reopen]);
   const voidTarget = activeVoidableWaybill(shipment.waybills ?? []);
 
   const busy =

@@ -24,9 +24,12 @@ import {
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useMe, useMyRoles } from '@/lib/services/users';
+import { usePermissions } from '@/hooks/use-permission';
+import type { MyRole } from '@/lib/auth/my-permissions';
+import { permissionLabel } from '@/lib/auth/permission-labels';
+import { useMe } from '@/lib/services/users';
 import { useUpdateMyProfile, useChangePassword } from '@/lib/services/users';
-import type { User, UserRolesResponseDto } from '@/lib/types';
+import type { User } from '@/lib/types';
 import { formatDate, formatDateTime } from '@/lib/utils/date';
 import { CheckCircle, Lock, Shield, XCircle } from 'lucide-react';
 
@@ -63,35 +66,8 @@ const ROLE_COLOR: Record<string, string> = {
   ADMIN: 'bg-blue-100 text-blue-700 border-blue-200',
 };
 
-const ROLE_LABEL: Record<string, string> = {
-  MASTER: '마스터 관리자',
-  ADMIN: '관리자',
-};
-
 function getRoleColor(name: string) {
   return ROLE_COLOR[name.toUpperCase()] ?? 'bg-gray-100 text-gray-700';
-}
-
-function getRoleLabel(name: string) {
-  return ROLE_LABEL[name.toUpperCase()] ?? name;
-}
-
-type GroupedRole = {
-  role: { id: string; name: string };
-  scopes: { scope_name: string; description: string }[];
-};
-
-function groupRoles(roles: UserRolesResponseDto['roles']): GroupedRole[] {
-  const map = new Map<string, GroupedRole>();
-  for (const { role, scopes } of roles) {
-    if (!map.has(role.id)) {
-      map.set(role.id, { role, scopes: [] });
-    }
-    const entry = map.get(role.id)!;
-    const scopeList = Array.isArray(scopes) ? scopes : scopes ? [scopes as { scope_name: string; description: string }] : [];
-    entry.scopes.push(...scopeList);
-  }
-  return Array.from(map.values());
 }
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
@@ -109,16 +85,19 @@ interface MeProps {
 }
 
 interface RolesProps {
-  myRoles: UserRolesResponseDto | undefined;
+  roles: readonly MyRole[];
+  permissions: ReadonlySet<string>;
   isLoading: boolean;
+  /** 역할·권한을 확인하지 못했다(빈 결과와 다르다). */
+  isFailed: boolean;
 }
 
 function ProfileHeader({
   me,
-  myRoles,
+  roles,
   isLoading,
   isRolesLoading,
-}: MeProps & { myRoles: UserRolesResponseDto | undefined; isRolesLoading: boolean }) {
+}: MeProps & { roles: readonly MyRole[]; isRolesLoading: boolean }) {
   const initials = me?.username?.slice(0, 2).toUpperCase() ?? '?';
 
   return (
@@ -140,10 +119,9 @@ function ProfileHeader({
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-xl font-bold text-foreground">{me?.username}</h1>
                 {!isRolesLoading &&
-                  myRoles?.roles &&
-                  groupRoles(myRoles.roles).map(({ role }) => (
-                    <Badge key={role.id} variant="outline" className={getRoleColor(role.name)}>
-                      {getRoleLabel(role.name)}
+                  roles.map((role) => (
+                    <Badge key={role.name} variant="outline" className={getRoleColor(role.name)}>
+                      {role.displayName}
                     </Badge>
                   ))}
               </div>
@@ -361,7 +339,7 @@ function SecuritySection() {
   );
 }
 
-function RolesSection({ myRoles, isLoading }: RolesProps) {
+function RolesSection({ roles, permissions, isLoading, isFailed }: RolesProps) {
   return (
     <Container className="divide-y">
       <Header title="역할 & 권한" />
@@ -372,33 +350,33 @@ function RolesSection({ myRoles, isLoading }: RolesProps) {
             <Skeleton className="h-4 w-full" />
             <Skeleton className="h-4 w-3/4" />
           </div>
-        ) : !myRoles?.roles?.length ? (
+        ) : isFailed ? (
+          <p className="text-sm text-muted-foreground">역할 정보를 불러오지 못했습니다. 잠시 뒤 다시 확인하세요.</p>
+        ) : roles.length === 0 ? (
           <p className="text-sm text-muted-foreground">할당된 역할이 없습니다.</p>
         ) : (
           <div className="space-y-4">
-            {groupRoles(myRoles.roles).map(({ role, scopes }) => (
-              <div key={role.id}>
-                <div className="flex items-center gap-2 mb-2">
-                  <Shield className="w-4 h-4 text-muted-foreground" />
-                  <Badge variant="outline" className={getRoleColor(role.name)}>
-                    {getRoleLabel(role.name)}
-                  </Badge>
-                </div>
-                {scopes.length > 0 && (
-                  <div className="ml-6 flex flex-wrap gap-1.5">
-                    {scopes.map((s) => (
-                      <span
-                        key={s.scope_name}
-                        title={s.description || undefined}
-                        className="text-xs font-mono bg-muted text-muted-foreground px-1.5 py-0.5 rounded"
-                      >
-                        {s.scope_name}
-                      </span>
-                    ))}
-                  </div>
-                )}
+            <div className="flex flex-wrap items-center gap-2">
+              <Shield className="w-4 h-4 text-muted-foreground" />
+              {roles.map((role) => (
+                <Badge key={role.name} variant="outline" className={getRoleColor(role.name)}>
+                  {role.displayName}
+                </Badge>
+              ))}
+            </div>
+            {permissions.size > 0 && (
+              <div className="ml-6 flex flex-wrap gap-1.5">
+                {[...permissions].sort().map((key) => (
+                  <span
+                    key={key}
+                    title={key}
+                    className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded"
+                  >
+                    {permissionLabel(key)}
+                  </span>
+                ))}
               </div>
-            ))}
+            )}
           </div>
         )}
       </div>
@@ -460,7 +438,8 @@ function AccountStatusSection({ me, isLoading }: MeProps) {
 
 export function MyAccountTemplate() {
   const { data: me, isLoading: isMeLoading } = useMe();
-  const { data: myRoles, isLoading: isRolesLoading } = useMyRoles();
+  const { status: permissionStatus, roles, permissions } = usePermissions();
+  const isRolesLoading = permissionStatus === 'loading';
 
   return (
     <div className="space-y-4 p-6">
@@ -474,7 +453,7 @@ export function MyAccountTemplate() {
       <ProfileHeader
         me={me}
         isLoading={isMeLoading}
-        myRoles={myRoles}
+        roles={roles}
         isRolesLoading={isRolesLoading}
       />
 
@@ -484,7 +463,12 @@ export function MyAccountTemplate() {
           <SecuritySection />
         </TwoColumnPage.Main>
         <TwoColumnPage.Sidebar>
-          <RolesSection myRoles={myRoles} isLoading={isRolesLoading} />
+          <RolesSection
+            roles={roles}
+            permissions={permissions}
+            isLoading={isRolesLoading}
+            isFailed={permissionStatus === 'error'}
+          />
           <AccountStatusSection me={me} isLoading={isMeLoading} />
         </TwoColumnPage.Sidebar>
       </TwoColumnPage>

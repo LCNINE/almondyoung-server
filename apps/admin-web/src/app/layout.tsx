@@ -1,5 +1,6 @@
 // src/app/layout.tsx
 import { AuthExpiredHandler } from '@/components/layout/auth-expired-handler';
+import { PermissionDeniedHandler } from '@/components/layout/permission-denied-handler';
 import { MainLayout } from '@/components/layout/main-layout';
 import { ObservabilityProvider } from '@/components/providers/observability-provider';
 import QueryProvider from '@/components/providers/query-provider';
@@ -30,6 +31,7 @@ export default function RootLayout({
             <ObservabilityProvider />
             <MainLayout>{children}</MainLayout>
             <AuthExpiredHandler />
+            <PermissionDeniedHandler />
             <Toaster />
             <ReactQueryDevtools
               initialIsOpen={false}

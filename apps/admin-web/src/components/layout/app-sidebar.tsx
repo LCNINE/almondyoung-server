@@ -18,7 +18,8 @@ import { IconComponent } from '@/lib/utils/icons';
 import { Badge } from '@/components/ui/badge';
 import { useOrderStats } from '@/lib/services/orders';
 import { useAdminUserCount } from '@/lib/services/users';
-import { usePermission } from '@/hooks/use-permission';
+import { usePermissions, useCan } from '@/hooks/use-permission';
+import { filterMenuItems, firstAccessiblePathIn } from '@/lib/auth/screen-access';
 import {
   Sidebar,
   SidebarContent,
@@ -58,20 +59,6 @@ function findParentPath(
   return null;
 }
 
-// requireRole 이 걸린 항목은 해당 role 보유자에게만 노출
-function filterMenuByRole(
-  items: MenuItem[],
-  hasRole: (roles: string[]) => boolean | undefined,
-): MenuItem[] {
-  return items
-    .filter((item) => !item.requireRole || hasRole(item.requireRole) === true)
-    .map((item) =>
-      item.children
-        ? { ...item, children: filterMenuByRole(item.children, hasRole) }
-        : item,
-    );
-}
-
 export function AppSidebar({
   activeMenu,
   activeItem,
@@ -90,9 +77,13 @@ export function AppSidebar({
 
   const currentMenu = getMenuById(activeMenu);
 
-  const { hasRole } = usePermission();
-  const visibleChildren = currentMenu
-    ? filterMenuByRole(currentMenu.children, hasRole)
+  // 메뉴는 화면 진입과 같은 경로 권한표로 거른다. 권한을 받기 전엔 비워 둔다(다 보였다 숨기지 않는다).
+  const { status: permissionStatus, permissions } = usePermissions();
+  const permissionsReady = permissionStatus === 'ready';
+  const visibleChildren =
+    currentMenu && permissionsReady ? filterMenuItems(currentMenu.children, permissions) : [];
+  const visibleMainMenus = permissionsReady
+    ? mainMenus.filter((menu) => filterMenuItems(menu.children, permissions).length > 0)
     : [];
 
   // activeItem이 변경될 때 부모 메뉴들을 자동으로 펼침
@@ -116,8 +107,15 @@ export function AppSidebar({
     );
   };
 
-  const { data: orderStats } = useOrderStats();
-  const { data: adminUserCount } = useAdminUserCount();
+  // 배지는 그 메뉴가 보이는 사람에게만 조회한다 — 권한 없는 사람이 셸에서 403 을 내지 않게.
+  const canSeeOrderStats = useCan(['order.order.read']);
+  const canSeeAccounts = useCan(['customer.profile.read']);
+  const { data: orderStats } = useOrderStats({
+    enabled: canSeeOrderStats.status === 'ready' && canSeeOrderStats.allowed,
+  });
+  const { data: adminUserCount } = useAdminUserCount({
+    enabled: canSeeAccounts.status === 'ready' && canSeeAccounts.allowed,
+  });
 
   // 특별한 정보 표시 (예: 주문/출고관리)
   const getMenuInfo = () => {
@@ -154,7 +152,8 @@ export function AppSidebar({
   };
 
   const goToMenu = (menuId: string) => {
-    const path = getFirstPagePath(menuId);
+    const menu = getMenuById(menuId);
+    const path = menu && permissionsReady ? firstAccessiblePathIn(menu, permissions) : getFirstPagePath(menuId);
     // 이동이 승인된 뒤에만 메뉴 상태를 바꾼다(취소하면 사이드바 그대로).
     guardedNavigate(() => {
       setBrowsingAll(false);
@@ -164,7 +163,8 @@ export function AppSidebar({
   };
 
   const isHome = pathname === '/';
-  const showAll = browsingAll || isHome || !currentMenu;
+  // 권한으로 하위 메뉴가 하나도 안 남은 메뉴(권한 없는 화면에 직접 들어온 경우)는 빈 제목 대신 전체 목록을 보인다.
+  const showAll = browsingAll || isHome || !currentMenu || (permissionsReady && visibleChildren.length === 0);
 
   return (
     <Sidebar collapsible="icon" className="border-r">
@@ -190,7 +190,7 @@ export function AppSidebar({
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-              {mainMenus.map((menu) => (
+              {visibleMainMenus.map((menu) => (
                 <SidebarMenuItem key={menu.id}>
                   <SidebarMenuButton
                     tooltip={menu.title}
@@ -219,7 +219,7 @@ export function AppSidebar({
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-              {mainMenus.map((menu) => (
+              {visibleMainMenus.map((menu) => (
                 <SidebarMenuItem key={menu.id}>
                   <SidebarMenuButton
                     tooltip={{ children: menu.title, hidden: false }}
