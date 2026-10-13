@@ -19,7 +19,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { ApplicationException } from '@app/shared';
-import { AuthorizationService, RequireScopes, RequirePermission } from '@app/authorization';
+import { AuthorizationService, PermissionCheckpoints, RequireScopes, RequirePermission } from '@app/authorization';
 import { MEMBERSHIP_SCOPE } from '../shared/auth/membership-scopes';
 import { IdempotentAdminOp } from '../shared/idempotency/idempotent-admin-op.decorator';
 import { AdminOperationsService } from '../services/admin-operations.service';
@@ -85,6 +85,7 @@ export class AdminOperationsController {
     private readonly authorizationService: AuthorizationService,
     private readonly arrearsReader: ArrearsReader,
     private readonly arrearsManager: ArrearsManager,
+    private readonly checkpoints: PermissionCheckpoints,
   ) {}
 
   private handleError(error: unknown, operation: string, context?: string): never {
@@ -636,9 +637,13 @@ export class AdminOperationsController {
       );
 
       // 정책 산정액 초과 환불 권한. master 는 ScopeGuard 와 동일하게 항상 통과한다.
-      const canOverridePolicyAmount =
+      const canOverridePolicyAmount = this.checkpoints.compare(
+        'membership.refund_override',
         (roles ?? []).includes('master') ||
-        (await this.authorizationService.hasScope({ roles: roles ?? [] }, MEMBERSHIP_SCOPE.BILLING_REFUND_OVERRIDE));
+          (await this.authorizationService.hasScope({ roles: roles ?? [] }, MEMBERSHIP_SCOPE.BILLING_REFUND_OVERRIDE)),
+        { roles: roles ?? [] },
+        ['membership.billing.refund_override'],
+      );
 
       const result = await this.cancellationService.forceCancelSubscription(
         contractId,

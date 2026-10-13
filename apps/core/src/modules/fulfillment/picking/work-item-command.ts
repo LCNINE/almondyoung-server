@@ -163,6 +163,8 @@ export interface PickingCustodyPolicy {
     key: string;
     corruptMessage(balanceId: string): string;
   };
+  /** 남이 잡은 작업을 되돌릴 수 있는가(감독 판정). 판정은 전략이 판정 지점으로 한다. */
+  supervises(actor: PickingActor): boolean;
   /** 되돌림 이동 뒤·재큐잉 전(tote: releaseEmptyShipmentTotes). */
   afterUnpick?(trx: DbTx, shipmentId: string): Promise<void>;
   messages: {
@@ -176,10 +178,6 @@ const RESOURCE_TYPE = 'outbound_batch_work_item';
 
 /** grain 검사만 하려고 넘기는 자리 — 소유자 판정은 이 값으로 하지 않는다. */
 const ANY_SPOT: HeldSpots = { empty: false, allows: () => true };
-
-function isPrivileged(actor: PickingActor): boolean {
-  return actor.roles.some((role) => role === 'logistics_manager' || role === 'master');
-}
 
 /** 완료 판정용 배정 grain 잔량. SETTLED 는 뺀다(설계 D2). */
 async function loadAllocationCustody(trx: DbTx, sessionId: string, allocation: ShipmentAllocation) {
@@ -403,7 +401,7 @@ export async function unpickWorkItemShipment(
           throw conflict('PICKING_STALE_CLAIM', 'Only the active picker may unpick this work item');
         }
       } else if (item.status === 'ready_to_pack') {
-        if (item.pickerId !== input.actor.id && !isPrivileged(input.actor)) {
+        if (item.pickerId !== input.actor.id && !policy.supervises(input.actor)) {
           throw conflict('PICKING_UNPICK_FORBIDDEN', 'Only the previous picker or a manager may unpick');
         }
       } else {

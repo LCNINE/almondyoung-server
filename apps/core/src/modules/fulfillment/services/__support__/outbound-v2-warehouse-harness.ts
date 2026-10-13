@@ -1,3 +1,4 @@
+import { createCheckpointsForTesting } from '@app/authorization';
 import { assembleLabels } from '../../waybill/__support__/label-fixtures';
 import { outboxPublisherFor } from '../../outbox/__support__/outbox-publisher.factory';
 import {
@@ -145,6 +146,7 @@ export function makeServices(db: Database, tx: DbTx) {
     moduleRef as never,
     boxes,
     withdrawals,
+    createCheckpointsForTesting(),
   );
   const labelGuard = assembleLabels(dbService).guard;
   const aggregate = new AggregateThenSortPickingStrategy(
@@ -157,9 +159,25 @@ export function makeServices(db: Database, tx: DbTx) {
     {} as never,
     {} as never,
     {} as never,
+    createCheckpointsForTesting(),
   );
-  const discrete = new DiscretePickingStrategy(commands, workflow, sessions, batches, labelGuard);
-  const tote = new PickToTotePickingStrategy(commands, workflow, sessions, batches, audit, labelGuard);
+  const discrete = new DiscretePickingStrategy(
+    commands,
+    workflow,
+    sessions,
+    batches,
+    labelGuard,
+    createCheckpointsForTesting(),
+  );
+  const tote = new PickToTotePickingStrategy(
+    commands,
+    workflow,
+    sessions,
+    batches,
+    audit,
+    labelGuard,
+    createCheckpointsForTesting(),
+  );
   const registry = new PickingStrategyRegistry(dbService, [discrete, aggregate, tote]);
   const picking = new PickingProcessService(
     dbService,
@@ -191,7 +209,15 @@ export function makeServices(db: Database, tx: DbTx) {
     invariant,
   );
   const authorization = { getScopesByRoles: jest.fn().mockResolvedValue(new Set(['master'])) };
-  const shortPick = new ShipmentShortPickService(commands, authorization as never, audit, workflow, boxes, withdrawals);
+  const shortPick = new ShipmentShortPickService(
+    commands,
+    authorization as never,
+    audit,
+    workflow,
+    boxes,
+    withdrawals,
+    createCheckpointsForTesting(),
+  );
   const dispatch = new ShipmentDispatchService(
     dbService,
     commands,

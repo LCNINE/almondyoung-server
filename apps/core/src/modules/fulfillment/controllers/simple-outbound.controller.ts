@@ -15,7 +15,14 @@ import {
 } from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { forceDispatchDecisionFrom } from '../../../platform/auth/force-dispatch-authorization';
-import { RequireScopes, ScopeGuard, User, RequirePermission, RequireAnyPermission } from '@app/authorization';
+import {
+  PermissionCheckpoints,
+  RequireScopes,
+  ScopeGuard,
+  User,
+  RequirePermission,
+  RequireAnyPermission,
+} from '@app/authorization';
 import { FULFILLMENT_SCOPE, SIMPLE_OUTBOUND_FORCE_SCOPES } from '../../../platform/auth/fulfillment-scopes';
 import { ForceSimpleOutboundDto, SimpleOutboundScanDto, SimpleOutboundStateDto } from '../dto/simple-outbound.dto';
 import { ShipmentWaybillReader, ShipmentByWaybillResult } from '../reader/shipment-waybill.reader';
@@ -36,6 +43,7 @@ export class SimpleOutboundController {
   constructor(
     private readonly simpleOutbound: SimpleOutboundService,
     private readonly waybills: ShipmentWaybillReader,
+    private readonly checkpoints: PermissionCheckpoints,
   ) {}
 
   @RequirePermission('fulfillment.shipment.read')
@@ -85,6 +93,11 @@ export class SimpleOutboundController {
     @User() user: AuthenticatedUser,
     @Req() request: unknown,
   ): Promise<SimpleOutboundStateDto> {
+    const authorization = forceDispatchDecisionFrom(request);
+    this.checkpoints.compareDecision('fulfillment.force_dispatch_decision', authorization !== undefined, request, [
+      'fulfillment.dispatch.force',
+      'fulfillment.dispatch.station_force',
+    ]);
     return unwrapPreparedOutbound(
       await this.simpleOutbound.forceComplete(shipmentId, {
         reason: dto.reason,
@@ -92,7 +105,7 @@ export class SimpleOutboundController {
         note: dto.note,
         actor: this.actor(user),
         idempotencyKey: this.idempotencyKey(idempotencyKey),
-        authorization: forceDispatchDecisionFrom(request),
+        authorization,
       }),
     );
   }

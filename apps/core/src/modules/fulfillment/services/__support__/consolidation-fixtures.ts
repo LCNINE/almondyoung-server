@@ -1,3 +1,4 @@
+import { createCheckpointsForTesting } from '@app/authorization';
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { eq } from 'drizzle-orm';
@@ -43,6 +44,7 @@ export function makeConsolidationService(
         ),
     } as never,
     new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: mode })),
+    createCheckpointsForTesting(),
   );
 }
 

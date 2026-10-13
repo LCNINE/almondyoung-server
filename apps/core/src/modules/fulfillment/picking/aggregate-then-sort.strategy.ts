@@ -43,6 +43,9 @@ import {
   WorkItemCommandDeps,
 } from './work-item-command';
 import { packingRefOf, spotsOf } from './work-item-custody-judgement';
+import { PermissionCheckpoints } from '@app/authorization';
+import { legacyFulfillmentSupervisor } from '../../../platform/auth/fulfillment-authz';
+import { authzSubjectOf } from '../../../platform/auth/system-actor';
 
 const BULK_CART_REF_PREFIX = 'bulk-cart:';
 
@@ -79,7 +82,18 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
     private readonly withdrawals: BoxWithdrawalService,
     private readonly returnBins: ReturnBinService,
     private readonly returns: BoxReturnService,
+    private readonly checkpoints: PermissionCheckpoints,
   ) {}
+
+  /** 남이 잡은 작업을 넘기거나 되돌릴 수 있는가 — 옛 판정이 결과를 정하고 권한 판정은 비교만 한다. */
+  private supervises(actor: { readonly id: string; readonly roles: readonly string[] }): boolean {
+    return this.checkpoints.compare(
+      'fulfillment.work_supervise',
+      legacyFulfillmentSupervisor(actor.roles),
+      authzSubjectOf(actor),
+      ['fulfillment.work.supervise'],
+    );
+  }
 
   private forwardDeps(): WorkItemCommandDeps {
     return { commands: this.commands, workflowGate: this.workflowGate, labels: this.labels };
@@ -467,7 +481,7 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
     const reason = input.reason.trim();
     if (!reason) throw new BadRequestException('reason is required');
     if (reason.length > 500) throw new BadRequestException('reason must be at most 500 characters');
-    if (!input.actor.roles.some((role) => role === 'logistics_manager' || role === 'master')) {
+    if (!this.supervises(input.actor)) {
       throw conflict('AGGREGATE_CART_HANDOFF_FORBIDDEN', 'Cart handoff requires logistics_manager or master');
     }
     if (input.expectedOwnerId === input.targetWorkerId) {
@@ -490,7 +504,7 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
         },
       },
       async (trx, commandRequestId) => {
-        if (!input.actor.roles.some((role) => role === 'logistics_manager' || role === 'master')) {
+        if (!this.supervises(input.actor)) {
           throw conflict('AGGREGATE_CART_HANDOFF_FORBIDDEN', 'Cart handoff requires logistics_manager or master');
         }
         await this.acquireCartLock(cartId, trx);
@@ -573,6 +587,7 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
   private custodyPolicy(): PickingCustodyPolicy {
     return {
       strategy: this.capabilities.name,
+      supervises: (actor) => this.supervises(actor),
       keys: {
         complete: 'aggregate-complete',
         unpick: 'aggregate-unpick',

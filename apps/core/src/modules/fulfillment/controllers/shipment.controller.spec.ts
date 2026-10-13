@@ -1,7 +1,12 @@
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { createGlobalValidationPipe } from '../../../platform/http/validation-pipe';
 import { PATH_METADATA } from '@nestjs/common/constants';
-import { REQUIRED_SCOPES_KEY, ScopeGuard } from '@app/authorization';
+import {
+  REQUIRED_SCOPES_KEY,
+  ScopeGuard,
+  createCheckpointsForTesting,
+  PermissionCheckpoints,
+} from '@app/authorization';
 import { Test } from '@nestjs/testing';
 import { validateSync } from 'class-validator';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
@@ -19,7 +24,7 @@ describe('ShipmentController V2 dispatch commands', () => {
       inspectionScan,
       forceDispatch,
     };
-    const controller = new ShipmentController(workflowGate as never, dispatch);
+    const controller = new ShipmentController(workflowGate as never, dispatch, createCheckpointsForTesting());
     return { controller, workflowGate, inspectionScan, forceDispatch };
   }
 
@@ -112,7 +117,10 @@ describe('ShipmentController V2 dispatch commands', () => {
   });
 
   it('requires ShipmentDispatchService in the Nest controller graph', async () => {
-    const baseProviders = [{ provide: FulfillmentWorkflowGate, useValue: { assertV2MutationAllowed: jest.fn() } }];
+    const baseProviders = [
+      { provide: FulfillmentWorkflowGate, useValue: { assertV2MutationAllowed: jest.fn() } },
+      { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting() },
+    ];
     const guard = { canActivate: jest.fn().mockReturnValue(true) };
     const missingDispatchBuilder = Test.createTestingModule({
       controllers: [ShipmentController],

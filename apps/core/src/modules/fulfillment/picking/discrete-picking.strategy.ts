@@ -29,6 +29,9 @@ import {
   WorkItemCommandDeps,
 } from './work-item-command';
 import { spotsOf } from './work-item-custody-judgement';
+import { PermissionCheckpoints } from '@app/authorization';
+import { legacyFulfillmentSupervisor } from '../../../platform/auth/fulfillment-authz';
+import { authzSubjectOf } from '../../../platform/auth/system-actor';
 
 @Injectable()
 export class DiscretePickingStrategy implements PickingStrategy {
@@ -46,7 +49,18 @@ export class DiscretePickingStrategy implements PickingStrategy {
     private readonly sessions: BatchInventorySessionService,
     private readonly batches: OutboundBatchOrchestrator,
     private readonly labels: LabelCurrencyGuard,
+    private readonly checkpoints: PermissionCheckpoints,
   ) {}
+
+  /** 남이 잡은 작업을 넘기거나 되돌릴 수 있는가 — 옛 판정이 결과를 정하고 권한 판정은 비교만 한다. */
+  private supervises(actor: { readonly id: string; readonly roles: readonly string[] }): boolean {
+    return this.checkpoints.compare(
+      'fulfillment.work_supervise',
+      legacyFulfillmentSupervisor(actor.roles),
+      authzSubjectOf(actor),
+      ['fulfillment.work.supervise'],
+    );
+  }
 
   private forwardDeps(): WorkItemCommandDeps {
     return { commands: this.commands, workflowGate: this.workflowGate, labels: this.labels };
@@ -189,6 +203,7 @@ export class DiscretePickingStrategy implements PickingStrategy {
   private custodyPolicy(): PickingCustodyPolicy {
     return {
       strategy: this.capabilities.name,
+      supervises: (actor) => this.supervises(actor),
       keys: {
         complete: 'discrete-complete',
         unpick: 'discrete-unpick',

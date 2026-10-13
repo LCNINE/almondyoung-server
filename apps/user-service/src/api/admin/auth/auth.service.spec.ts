@@ -1,5 +1,11 @@
 import { DbService } from '@app/db';
-import { ScopeGuard } from '@app/authorization';
+import {
+  checkpointEvaluations,
+  createCheckpointsForTesting,
+  PermissionCheckpoints,
+  ScopeGuard,
+} from '@app/authorization';
+import { register } from 'prom-client';
 import { ForbiddenError, NotFoundError } from '@app/shared';
 import { Test } from '@nestjs/testing';
 import { UsersService } from '../../users/users.service';
@@ -18,6 +24,7 @@ describe('AuthService.changePassword', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    register.resetMetrics();
     usersService.findUserByLoginId.mockResolvedValue({ id: 'u-1', loginId: 'target' });
     scopeGuard.getGrantedScopes.mockImplementation(async (user: { roles: string[] }) =>
       user.roles.includes('master') ? ['master'] : [],
@@ -28,6 +35,10 @@ describe('AuthService.changePassword', () => {
         { provide: DbService, useValue: { db } },
         { provide: UsersService, useValue: usersService },
         { provide: ScopeGuard, useValue: scopeGuard },
+        {
+          provide: PermissionCheckpoints,
+          useValue: createCheckpointsForTesting({ master: ['iam.admin_user.write'], admin: [] }),
+        },
       ],
     }).compile();
     service = module.get(AuthService);
@@ -64,5 +75,18 @@ describe('AuthService.changePassword', () => {
   it('reports an unknown login id as not found', async () => {
     usersService.findUserByLoginId.mockResolvedValue(undefined);
     await expect(service.changePassword(request, master)).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it('compares the staff password rule with the account management permission', async () => {
+    usersService.getUserRoleNames.mockResolvedValue(['logistics_manager']);
+    await expect(service.changePassword(request, admin)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(service.changePassword(request, master)).resolves.toEqual({ message: '비밀번호가 변경되었습니다.' });
+    expect(await checkpointEvaluations('iam.staff_password_reset', 'match')).toBe(2);
+  });
+
+  it('does not compare anything for a customer account', async () => {
+    usersService.getUserRoleNames.mockResolvedValue(['user']);
+    await service.changePassword(request, admin);
+    expect(await checkpointEvaluations('iam.staff_password_reset', 'match')).toBe(0);
   });
 });

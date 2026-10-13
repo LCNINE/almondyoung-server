@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/require-await */
+import { createCheckpointsForTesting } from '@app/authorization';
 import { ConflictException } from '@nestjs/common';
 import {
   CompletePickInput,
@@ -579,9 +580,14 @@ function createProductionDiscreteFixture(): PickingStrategyContractFixture {
   };
   const batches = { handoff: jest.fn() };
   const Strategy = DiscretePickingStrategy as any;
-  const strategy: DiscretePickingStrategy = new Strategy(commands, workflowGate, sessions, batches, {
-    assertCurrent: jest.fn(async () => undefined),
-  });
+  const strategy: DiscretePickingStrategy = new Strategy(
+    commands,
+    workflowGate,
+    sessions,
+    batches,
+    { assertCurrent: jest.fn(async () => undefined) },
+    createCheckpointsForTesting(),
+  );
   const startDeps = {
     commands,
     workflowGate,

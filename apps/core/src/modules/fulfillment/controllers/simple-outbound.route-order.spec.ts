@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as ts from 'typescript';
 import { Test } from '@nestjs/testing';
 import * as request from 'supertest';
-import { ScopeGuard } from '@app/authorization';
+import { ScopeGuard, PermissionCheckpoints, createCheckpointsForTesting } from '@app/authorization';
 import { SimpleOutboundController } from './simple-outbound.controller';
 import { ShipmentPlanningController } from './shipment-planning.controller';
 import { SimpleOutboundService } from '../services/simple-outbound.service';
@@ -134,6 +134,7 @@ describe('shipments route ordering (by-waybill vs :id)', () => {
       controllers: routeOrderControllers,
       providers: [
         { provide: SimpleOutboundService, useValue: { scan: jest.fn(), forceComplete: jest.fn() } },
+        { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting() },
         { provide: ShipmentWaybillReader, useValue: { byTrackingNo } },
         { provide: ShipmentPlanningService, useValue: { getShipmentDetail } },
       ],

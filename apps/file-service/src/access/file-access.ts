@@ -1,6 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { NotFoundError, ForbiddenError } from '@app/shared';
-import { AuthorizationService, STAFF_ROLES } from '@app/authorization';
+import {
+  AuthorizationService,
+  AuthzSubject,
+  Permission,
+  PermissionCheckpoints,
+  STAFF_ROLES,
+  systemPrincipal,
+} from '@app/authorization';
 import { FileRepository } from '../shared/repositories/file.repository';
 import {
   ALMOND_PRINT_FILE_CONTEXT_ID,
@@ -28,11 +35,21 @@ const STAFF_READABLE_CONTEXT_IDS: readonly string[] = [
   ALMOND_PRINT_FILE_CONTEXT_ID,
 ];
 
+/** 직원이 소유자가 아니어도 여는 컨텍스트와, 그 파일을 여는 화면의 조회 권한. */
+const STAFF_CONTEXT_PERMISSIONS: ReadonlyMap<string, Permission> = new Map<string, Permission>([
+  [DIGITAL_ASSET_FILE_CONTEXT_ID, 'catalog.product.read'],
+  [ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID, 'archive.page.read'],
+]);
+
+/** core 의 서비스 위임 토큰(역할 없이 위임 스코프만). 사람 주체가 아니다. */
+const CORE_FILE_DELEGATION = systemPrincipal('core.file-delegation');
+
 @Injectable()
 export class FileAccess {
   constructor(
     private readonly repo: FileRepository,
     private readonly authorization: AuthorizationService,
+    private readonly checkpoints: PermissionCheckpoints,
   ) {}
 
   async loadReadable(fileId: string, user: JwtPayload): Promise<Upload> {
@@ -46,7 +63,16 @@ export class FileAccess {
     if (await this.isMasterOrOwner(file, user)) {
       return file;
     }
-    if (this.isStaff(user) && STAFF_READABLE_CONTEXT_IDS.includes(file.contextId)) {
+    const contextPermission = STAFF_CONTEXT_PERMISSIONS.get(file.contextId);
+    if (
+      contextPermission &&
+      this.checkpoints.compare(
+        'file.staff_context_read',
+        this.isStaff(user) && STAFF_READABLE_CONTEXT_IDS.includes(file.contextId),
+        this.subjectOf(user),
+        [contextPermission],
+      )
+    ) {
       return file;
     }
     throw new ForbiddenError('You do not have permission to access this file');
@@ -79,8 +105,20 @@ export class FileAccess {
     return (user.roles ?? []).some((role) => STAFF_ROLES.includes(role));
   }
 
+  /** 판정 지점에 넘길 주체. core 위임 토큰(역할 없음 + 위임 스코프)은 시스템 주체다 — 옛 판정과 같은 입력이다. */
+  private subjectOf(user: JwtPayload): AuthzSubject {
+    const roles = user.roles ?? [];
+    return roles.length === 0 && user.scopes?.includes('master') ? CORE_FILE_DELEGATION : { roles };
+  }
+
   private async isMasterOrOwner(file: Upload, user: JwtPayload): Promise<boolean> {
     if (file.uploadedBy === user.userId) return true;
+    const legacy = await this.legacyOwnerException(user);
+    return this.checkpoints.compare('file.owner_exception', legacy, this.subjectOf(user), ['system.file.manage']);
+  }
+
+  /** 소유자가 아닌데도 여는 옛 판정. 권한 판정은 옆에서 비교만 한다. */
+  private async legacyOwnerException(user: JwtPayload): Promise<boolean> {
     // master 역할은 그 자체로 통과 — ScopeGuard/MasterRoleGuard 와 동일 컨벤션.
     // (admin master 계정은 roles: ['master'] 만 들고 오고 role→scope DB 매핑은 없음)
     if (user.roles?.includes('master')) return true;

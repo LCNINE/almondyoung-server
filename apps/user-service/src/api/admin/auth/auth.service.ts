@@ -1,18 +1,16 @@
-import { ScopeGuard, type JwtPayload } from '@app/authorization';
+import { PermissionCheckpoints, ScopeGuard, type JwtPayload } from '@app/authorization';
 import { ConflictError, ForbiddenError, NotFoundError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
 import { Injectable, Logger } from '@nestjs/common';
 import { userServiceSchema, UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { DbTransaction } from 'apps/user-service/src/commons/types';
 import * as bcrypt from 'bcrypt';
+import { CUSTOMER_ROLE_NAMES } from '../../iam/iam.constants';
 import { UsersService } from '../../users/users.service';
 import { CreateAccountDto } from './dto/create-account-dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { generateInitialPassword } from './lib/generate-initial-password';
 import { eq } from 'drizzle-orm';
-
-/** 고객 계정의 역할. 이 밖의 역할을 하나라도 가진 계정은 직원 계정이다. */
-const CUSTOMER_ROLE_NAMES: readonly string[] = ['user', 'membership'];
 
 @Injectable()
 export class AuthService {
@@ -21,6 +19,7 @@ export class AuthService {
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
     private readonly usersService: UsersService,
     private readonly scopeGuard: ScopeGuard,
+    private readonly checkpoints: PermissionCheckpoints,
   ) {}
 
   private getClient(tx?: DbTransaction) {
@@ -88,8 +87,15 @@ export class AuthService {
 
     const targetRoles = await this.usersService.getUserRoleNames(user.id);
     const isStaffAccount = targetRoles.some((role) => !CUSTOMER_ROLE_NAMES.includes(role));
-    if (isStaffAccount && (await this.scopeGuard.getGrantedScopes(actor, ['master'])).length === 0) {
-      throw new ForbiddenError('직원 계정의 비밀번호는 계정 생성 권한이 있어야 바꿀 수 있습니다.');
+    if (isStaffAccount) {
+      const legacy = (await this.scopeGuard.getGrantedScopes(actor, ['master'])).length > 0;
+      if (
+        !this.checkpoints.compare('iam.staff_password_reset', legacy, { roles: actor.roles ?? [] }, [
+          'iam.admin_user.write',
+        ])
+      ) {
+        throw new ForbiddenError('직원 계정의 비밀번호는 계정 생성 권한이 있어야 바꿀 수 있습니다.');
+      }
     }
 
     const saltOrRounds = 10;

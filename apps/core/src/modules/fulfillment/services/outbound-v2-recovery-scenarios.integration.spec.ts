@@ -1,3 +1,4 @@
+import { createCheckpointsForTesting } from '@app/authorization';
 import { outbox_events } from '@app/events';
 import { assembleLabels } from '../waybill/__support__/label-fixtures';
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
@@ -98,8 +99,16 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
       { get: jest.fn(() => ({ resumePending: jest.fn() })) } as never,
       new BoxAllocationManager(sessions, new BatchControlledStockGuard()),
       assembleBoxWithdrawal(dbService),
+      createCheckpointsForTesting(),
     );
-    const picking = new DiscretePickingStrategy(commands, workflow, sessions, batches, assembleLabels(dbService).guard);
+    const picking = new DiscretePickingStrategy(
+      commands,
+      workflow,
+      sessions,
+      batches,
+      assembleLabels(dbService).guard,
+      createCheckpointsForTesting(),
+    );
     return { dbService, guard, audit, sessions, recovery, inventory, batches, picking };
   }
 

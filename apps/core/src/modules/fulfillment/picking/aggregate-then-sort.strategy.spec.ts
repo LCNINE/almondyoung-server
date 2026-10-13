@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/require-await */
+import { createCheckpointsForTesting } from '@app/authorization';
 import { ConflictException } from '@nestjs/common';
 import { AggregateThenSortPickingStrategy } from './aggregate-then-sort.strategy';
 import {
@@ -470,9 +471,18 @@ function createHarness(): AggregateHarness {
   };
   const workflowGate = { assertV2MutationAllowed: jest.fn() };
   const Strategy = AggregateThenSortPickingStrategy as any;
-  const strategy: AggregateThenSortPickingStrategy = new Strategy(commands, workflowGate, sessions, batches, {
-    assertCurrent: jest.fn(async () => undefined),
-  });
+  const strategy: AggregateThenSortPickingStrategy = new Strategy(
+    commands,
+    workflowGate,
+    sessions,
+    batches,
+    { assertCurrent: jest.fn(async () => undefined) },
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    createCheckpointsForTesting(),
+  );
   const startDeps = {
     commands,
     workflowGate,
