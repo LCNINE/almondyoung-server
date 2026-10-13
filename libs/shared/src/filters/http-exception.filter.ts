@@ -8,6 +8,7 @@ interface ErrorResponse {
   message?: string | string[];
   errors?: unknown;
   details?: unknown;
+  requiredPermissions?: unknown;
 }
 
 type PreparationDetails = { reasonCode: string; recovery: 'retry_preparation' | 'review_batch' };
@@ -63,6 +64,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     // "Invalid pricing rules structure" 만 보이고 어느 룰이 문제인지 알 수 없었다.
     let errors: unknown;
     let details: PreparationDetails | LineBoxNotDraftDetails | undefined;
+    // 권한 거부(403)가 어떤 권한이 필요한지 알려 주면 화면이 그 이름으로 안내한다. 문자열 목록만 통과시킨다.
+    let requiredPermissions: string[] | undefined;
 
     // 1. Custom ApplicationException 처리
     if (exception instanceof ApplicationException) {
@@ -105,6 +108,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       } else if (status === 409 && errorCode === 'LINE_BOX_NOT_DRAFT') {
         details = lineBoxNotDraftDetails(candidate);
       }
+      const required = errorResponse?.requiredPermissions;
+      if (status === 403 && Array.isArray(required) && required.every((key): key is string => typeof key === 'string')) {
+        requiredPermissions = required;
+      }
       devMessage = `${exception.message} - ${request.method} ${request.url}`;
     }
     // 3. 일반 Error 처리
@@ -127,6 +134,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       message: message,
       ...(errors !== undefined && { errors }),
       ...(details !== undefined && { details }),
+      ...(requiredPermissions !== undefined && { requiredPermissions }),
       ...(process.env.NODE_ENV !== 'production' &&
         devMessage && {
           devMessage: devMessage,
