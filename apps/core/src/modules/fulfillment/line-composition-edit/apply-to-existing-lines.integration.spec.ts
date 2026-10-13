@@ -152,4 +152,32 @@ describeIfDb('기존 출고에도 적용 (#1063 스펙 §7.2)', () => {
       expect(await w.edit.manager.applyToExistingLines(variantId, actor, tx)).toEqual({ changed: 0, skipped: [] });
     });
   });
+
+  it('새 구성이 직배송 SKU 면 박스에 넣지 않고 적용 불가로 센다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const fx = await seedOrderWithDraftBox(tx, w.logistics, {
+        lines: [{ quantity: 1, qtyPerUnits: [1] }],
+        spareSkus: 1,
+      });
+      const variantId = fx.variantIds[0];
+      const [dropSku] = fx.spareSkuIds;
+      await tx.update(wmsTables.skus).set({ stockType: 'drop_shipped' }).where(eq(wmsTables.skus.id, dropSku));
+      const [matching] = await tx
+        .select({ id: wmsTables.productMatchings.id })
+        .from(wmsTables.productMatchings)
+        .where(eq(wmsTables.productMatchings.variantId, variantId));
+      await tx
+        .update(wmsTables.productVariantSkuLinks)
+        .set({ skuId: dropSku })
+        .where(eq(wmsTables.productVariantSkuLinks.productMatchingId, matching.id));
+      const before = await boxLinesOf(tx, fx.shipmentId);
+
+      expect(await w.edit.manager.applyToExistingLines(variantId, actor, tx)).toEqual({
+        changed: 0,
+        skipped: [{ reason: 'not_applicable', count: 1 }],
+      });
+      expect(await boxLinesOf(tx, fx.shipmentId)).toEqual(before);
+    });
+  });
 });

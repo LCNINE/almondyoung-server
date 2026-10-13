@@ -58,6 +58,9 @@ const SKIP_REASON_BY_CODE: Record<string, ApplySkipReason> = {
   SHIPMENT_ACTIVE_INVOICE: 'in_progress',
   SHIPMENT_COMPONENT_CHANGED_RETRY: 'in_progress',
   COMPOSITION_UNITS_AMBIGUOUS: 'units_ambiguous',
+  // 새 구성이 이 주문의 FO 경로(직배송·3PL 화주)에 못 들어간다 — 주문 하나의 문제라 전체를 중단하지 않는다
+  DROP_SHIP_NOT_SUPPORTED: 'not_applicable',
+  SKU_HOLDER_MISMATCH_FOR_3PL: 'not_applicable',
 };
 const SKIP_REASON_ORDER: ApplySkipReason[] = ['operator', 'in_progress', 'same', 'units_ambiguous', 'not_applicable'];
 
@@ -207,6 +210,9 @@ export class LineCompositionEditManager {
     // 미리보기 뒤 상품매칭·라인이 바뀌었을 수 있다 — 잠금 아래에서 다시 읽는다
     const next = await this.reader.matchingComposition(trx, variantId);
     if (!next) return lineIds.map(() => 'not_applicable');
+    // 상품매칭이 직배송·타 화주 SKU 로 바뀌었어도 창고·3PL 박스에 넣지 않는다 — 개별 지정 경로와 같은 검사. 주문당 한 번
+    const fo = await this.reader.fulfillmentOrderOf(trx, salesOrderId);
+    await this.assertSkus(trx, next, fo?.ownerId ?? null);
     const lines = await this.reader.linesForApply(trx, lineIds);
     const frozen = await selectFrozenCompositions(trx, lineIds);
     const boxes = await this.reader.boxesOfLines(trx, lineIds);
