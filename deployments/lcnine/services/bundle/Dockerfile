@@ -48,6 +48,8 @@ RUN npm run build:analytics \
 
 # === 런타임 ===
 FROM base AS runner
+# ugc-service 아몬드템플릿 미리보기·인쇄 파일 변환(rsvg-convert → gs)과 한글 글꼴. apps/ugc-service/Dockerfile 과 같다.
+RUN apk add --no-cache ghostscript rsvg-convert fontconfig font-noto-cjk
 COPY --from=deps-prod /app/node_modules ./node_modules
 COPY package*.json ./
 COPY --from=builder /app/dist ./dist
