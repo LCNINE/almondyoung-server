@@ -25,4 +25,10 @@ describe('역할 이름 검사기', () => {
     ].join('\n');
     expect(nonLiteralCheckpointCalls(source)).toEqual([2, 8]);
   });
+
+  it('화면 파일(.tsx)은 JSX 로 읽어 그 안의 역할 이름 문자열도 센다', () => {
+    // JSX 텍스트의 작은따옴표(Don't)를 .ts 로 읽으면 문자열 시작으로 오해해 뒤의 'admin' 을 놓친다.
+    const source = "export const A = () => <p>Don't {role === 'admin' ? 1 : 0}</p>;";
+    expect(countRoleLiterals(source, 'screen.tsx')).toBe(1);
+  });
 });
