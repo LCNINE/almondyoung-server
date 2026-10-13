@@ -7,6 +7,7 @@ import type { OwnerService } from './permissions/permission.types';
 import { AuthzShadowRecorder } from './services/authz-shadow.recorder';
 import { HttpRolePermissionSource } from './services/http-role-permission.source';
 import { PermissionCache } from './services/permission-cache';
+import { PermissionCheckpoints } from './services/permission-checkpoints';
 import { PermissionDecider } from './services/permission-decider';
 import {
   DEFAULT_REFRESH_INTERVAL_MS,
@@ -35,6 +36,7 @@ const EXPORTED = [
   AuthzObserverGuard,
   AuthzShadowInterceptor,
   PermissionGuard,
+  PermissionCheckpoints,
 ];
 
 /**

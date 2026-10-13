@@ -31,3 +31,7 @@ export * from './services/permission-decider';
 export * from './services/role-permission-source';
 export * from './services/route-requirement.resolver';
 export * from './services/request-identity';
+export * from './services/system-principal';
+export * from './services/permission-decision';
+export * from './services/permission-checkpoints';
+export * from './testing/checkpoints';

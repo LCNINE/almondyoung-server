@@ -22,4 +22,12 @@ export class PermissionDecider {
       ? ALLOW
       : { allowed: false, reason: 'missing_permission' };
   }
+
+  /** 요구 권한 가운데 이 역할들이 가진 것. 사본이 없으면 null(판정 불가), 미인증이면 빈 목록. */
+  grantedAmong(anyOf: readonly string[], roles: readonly string[] | undefined): readonly string[] | null {
+    if (roles === undefined) return [];
+    const held = this.cache.permissionsFor(roles);
+    if (held === null) return null;
+    return anyOf.filter((permission) => held.has(permission));
+  }
 }

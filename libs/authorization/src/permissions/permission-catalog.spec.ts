@@ -86,6 +86,13 @@ describe('permission catalog', () => {
       Object.keys(expected).map((key) => [key, findPermission(key)?.grantOnFirstRegistration ?? null]),
     );
     expect(actual).toEqual(expected);
-    expect(PERMISSION_CATALOG).toHaveLength(98);
+    expect(PERMISSION_CATALOG).toHaveLength(100);
+  });
+
+  it('registers the handler checkpoint keys with today-equivalent grants', () => {
+    expect(findPermission('fulfillment.work.supervise')?.grantOnFirstRegistration).toEqual(['logistics_manager']);
+    expect(findPermission('fulfillment.work.supervise')?.dangerous).toBe(false);
+    expect(findPermission('system.file.manage')?.grantOnFirstRegistration).toEqual([]);
+    expect(findPermission('system.file.manage')?.dangerous).toBe(true);
   });
 });

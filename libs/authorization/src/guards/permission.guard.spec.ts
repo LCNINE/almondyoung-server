@@ -1,5 +1,6 @@
 import { ForbiddenException, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host';
+import { getPermissionDecision } from '../services/permission-decision';
 import { PermissionDecider, Verdict } from '../services/permission-decider';
 import { PermissionRuntimeOptions } from '../services/permission-runtime.options';
 import { RouteRequirementResolver } from '../services/route-requirement.resolver';
@@ -28,14 +29,34 @@ const guardWith = (enforce: boolean, verdict: Verdict) => {
     resolve: () => ({ requirement: { kind: 'permission', anyOf: ['order.order.write'] }, path: '/orders' }),
   };
   const decide = jest.fn(() => verdict);
-  return { guard: new PermissionGuard(resolver, { decide }, options(enforce)), decide };
+  const grantedAmong = jest.fn((): readonly string[] | null => ['order.order.write']);
+  return { guard: new PermissionGuard(resolver, { decide, grantedAmong }, options(enforce)), decide, grantedAmong };
 };
 
 describe('PermissionGuard', () => {
-  it('does nothing while enforcement is off', () => {
+  it('never blocks while enforcement is off, but stamps what the caller holds', () => {
     const { guard, decide } = guardWith(false, { allowed: false, reason: 'missing_permission' });
-    expect(guard.canActivate(context())).toBe(true);
+    const host = context();
+    expect(guard.canActivate(host)).toBe(true);
     expect(decide).not.toHaveBeenCalled();
+    expect(getPermissionDecision(host.switchToHttp().getRequest(), 'order.order.write')).toBeDefined();
+  });
+
+  it('stamps nothing while the snapshot is missing', () => {
+    const { guard, grantedAmong } = guardWith(false, { allowed: false, reason: 'unavailable' });
+    grantedAmong.mockReturnValue(null);
+    const host = context();
+    expect(guard.canActivate(host)).toBe(true);
+    expect(getPermissionDecision(host.switchToHttp().getRequest(), 'order.order.write')).toBeUndefined();
+  });
+
+  it('does not stamp an open route', () => {
+    const resolver: Pick<RouteRequirementResolver, 'resolve'> = {
+      resolve: () => ({ requirement: { kind: 'open' }, path: '/x' }),
+    };
+    const decider: Pick<PermissionDecider, 'decide' | 'grantedAmong'> = { decide: jest.fn(), grantedAmong: jest.fn() };
+    expect(new PermissionGuard(resolver, decider, options(false)).canActivate(context())).toBe(true);
+    expect(decider.grantedAmong).not.toHaveBeenCalled();
   });
 
   it('ignores non-http contexts', () => {
