@@ -138,6 +138,7 @@ export function wireLogistics(
     fulfillments,
     shipmentReservations,
     retryWorker,
+    workflowGate,
   };
 }
 

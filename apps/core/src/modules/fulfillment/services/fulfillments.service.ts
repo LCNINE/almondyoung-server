@@ -55,6 +55,9 @@ type FulfillmentOrderItemInsert = {
   status: string;
 };
 
+// 상품매칭을 따르던 라인과 그 라인을 굳힐 구성
+type LineFreeze = { salesOrderLineId: string; items: CompositionItem[] };
+
 type UnmatchedSalesOrderLine = {
   salesOrderLineId: string;
   variantId: string;
@@ -158,7 +161,7 @@ export class FulfillmentsService {
       }
 
       let itemsToInsert: Omit<FulfillmentOrderItemInsert, 'fulfillmentOrderId'>[];
-      let freeze: Array<{ salesOrderLineId: string; items: CompositionItem[] }> = [];
+      let freeze: LineFreeze[] = [];
       if (requestedItems.length > 0) {
         const referenced = requestedItems.find((item) => item.salesOrderId || item.salesOrderLineId);
         if (referenced) {
@@ -213,7 +216,7 @@ export class FulfillmentsService {
       // Digital-only/void-matched sales orders do not create a placeholder FO.
       if (itemsToInsert.length === 0 && dto.salesOrderId) return null;
       if (itemsToInsert.length === 0) throw new BadRequestException('Fulfillment order items cannot be empty');
-      // 판매주문 잠금 아래에서 굳힌다(#1063 스펙 §5.4). 뒤 검증이 실패하면 이 트랜잭션과 함께 롤백된다.
+      // 판매주문 잠금 아래에서 굳힌다(#1063 스펙 §5.4). 뒤 검증이 실패하면 호출자의 트랜잭션, 또는 백로그 워커가 감싼 savepoint 가 롤백되면서 함께 되돌아간다.
       if (freeze.length > 0) await this.lineCompositionManager.freezeFromMatching(freeze, trx);
       await this.validateSkuRows(itemsToInsert, dto.ownerId ?? null, trx);
       const uniqueSkuIds = [...new Set(itemsToInsert.map((item) => item.skuId))];
@@ -441,7 +444,7 @@ export class FulfillmentsService {
     trx: DbTx,
   ): Promise<{
     items: Omit<FulfillmentOrderItemInsert, 'fulfillmentOrderId'>[];
-    freeze: Array<{ salesOrderLineId: string; items: CompositionItem[] }>;
+    freeze: LineFreeze[];
   }> {
     const resolved = await this.lineCompositions.resolveForOrder(salesOrderId, trx);
     if (resolved.length === 0) {
@@ -450,7 +453,7 @@ export class FulfillmentsService {
 
     const items: Omit<FulfillmentOrderItemInsert, 'fulfillmentOrderId'>[] = [];
     const missingLines: UnmatchedSalesOrderLine[] = [];
-    const freeze: Array<{ salesOrderLineId: string; items: CompositionItem[] }> = [];
+    const freeze: LineFreeze[] = [];
 
     for (const entry of resolved) {
       const { line, fulfillableQuantity, resolution } = entry;

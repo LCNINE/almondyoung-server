@@ -2,6 +2,10 @@ import { randomUUID } from 'crypto';
 import { BadRequestException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
+import { WarehouseService } from '../../inventory/warehouse/services/warehouse.service';
+import { WarehouseReader } from '../../inventory/warehouse/services/warehouse.reader';
+import { WarehouseManager } from '../../inventory/warehouse/services/warehouse.manager';
+import { FulfillmentOrderCreationBacklogWorker } from './fulfillment-order-creation-backlog.worker';
 import { findCompositionInvariantViolations } from '../../product-matching/line-composition/__support__/composition-invariant';
 import {
   inRollbackTx,
@@ -155,6 +159,7 @@ describeIfDb('FO 생성의 라인 구성 판정·굳히기 (PostgreSQL integrati
 
   it('굳힌 뒤 같은 트랜잭션의 검증(창고 SKU·직배송 SKU 혼합)이 실패하면 굳힌 것도 남지 않는다', async () => {
     const { warehouseId, salesOrderId } = await db.transaction(async (raw) => {
+      // inRollbackTx 와 같은 이유 — drizzle 트랜잭션 핸들은 DbTx 와 구조가 같고 스키마 제네릭만 다르다
       const tx = raw as unknown as DbTx;
       const seeded = await world(tx);
       await tx.update(wmsTables.skus).set({ stockType: 'drop_shipped' }).where(eq(wmsTables.skus.id, seeded.b));
@@ -184,5 +189,50 @@ describeIfDb('FO 생성의 라인 구성 판정·굳히기 (PostgreSQL integrati
     } finally {
       await db.delete(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, salesOrderId));
     }
+  });
+
+  it('백로그 워커 경로에서 FO 생성이 실패하면 savepoint 가 굳히기도 되돌리고 백로그는 failed 로 남는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const dbService = makeDbService(db);
+      const w = wireLogistics(dbService);
+      const { a, b } = await world(tx);
+      await tx.update(wmsTables.skus).set({ stockType: 'drop_shipped' }).where(eq(wmsTables.skus.id, b));
+      const v1 = randomUUID();
+      const v2 = randomUUID();
+      const { salesOrderId, lineIds } = await seedSalesOrder(tx, {
+        lines: [
+          { variantId: v1, quantity: 1 },
+          { variantId: v2, quantity: 1 },
+        ],
+      });
+      await seedMatching(tx, { variantId: v1, skuId: a });
+      await seedMatching(tx, { variantId: v2, skuId: b });
+      const [row] = await tx
+        .insert(wmsTables.fulfillmentOrderCreationBacklogs)
+        .values({ salesOrderId, status: 'processing', attempts: 1, lockedAt: new Date() })
+        .returning();
+
+      const reader = new WarehouseReader(dbService);
+      const warehouses = new WarehouseService(reader, new WarehouseManager(dbService, reader, w.location));
+      const worker = new FulfillmentOrderCreationBacklogWorker(
+        dbService,
+        w.backlog,
+        w.fulfillments,
+        warehouses,
+        w.workflowGate,
+      );
+
+      // processOne 은 자기 트랜잭션을 열어 롤백 전용 바깥 tx 에 못 얹는다 — 같은 본문인 processClaimed 를 직접 부른다
+      await worker['processClaimed'](row, tx);
+
+      const [after] = await tx
+        .select({ status: wmsTables.fulfillmentOrderCreationBacklogs.status })
+        .from(wmsTables.fulfillmentOrderCreationBacklogs)
+        .where(eq(wmsTables.fulfillmentOrderCreationBacklogs.id, row.id));
+      expect(after.status).toBe('failed');
+      expect(await foItems(tx, salesOrderId)).toEqual([]);
+      for (const lineId of lineIds) expect((await compositionOf(tx, lineId)).source).toBeNull();
+      expect(await findCompositionInvariantViolations(tx)).toEqual([]);
+    });
   });
 });
