@@ -1,3 +1,4 @@
+import { Injectable } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
@@ -6,6 +7,7 @@ import { PermissionGuard } from './guards/permission.guard';
 import { AuthzShadowInterceptor } from './interceptors/authz-shadow.interceptor';
 import { PermissionModule } from './permission.module';
 import { PermissionCache } from './services/permission-cache';
+import { PermissionCheckpoints } from './services/permission-checkpoints';
 import { PERMISSION_RUNTIME_OPTIONS, PermissionRuntimeOptions } from './services/permission-runtime.options';
 import { RolePermissionSource, SnapshotFetch } from './services/role-permission-source';
 
@@ -55,6 +57,21 @@ describe('PermissionModule', () => {
     const app = module.createNestApplication();
     await expect(app.init()).resolves.toBe(app);
     await app.close();
+  });
+
+  it('lets an app service inject the handler checkpoints', async () => {
+    @Injectable()
+    class UsesCheckpoints {
+      constructor(readonly checkpoints: PermissionCheckpoints) {}
+    }
+    const module = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ ignoreEnvFile: true, ignoreEnvVars: true, load: [() => ({})] }),
+        PermissionModule.forRoot({ service: 'core', source: StubSource }),
+      ],
+      providers: [UsesCheckpoints],
+    }).compile();
+    expect(module.get(UsesCheckpoints).checkpoints).toBeInstanceOf(PermissionCheckpoints);
   });
 
   it('turns enforcement on only for the exact value true', async () => {

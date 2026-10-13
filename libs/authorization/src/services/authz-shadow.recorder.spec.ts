@@ -1,4 +1,13 @@
-import { CanActivate, Controller, ExecutionContext, ForbiddenException, Get, Injectable, Logger } from '@nestjs/common';
+import {
+  CanActivate,
+  Controller,
+  ExecutionContext,
+  ForbiddenException,
+  Get,
+  Injectable,
+  Logger,
+  Req,
+} from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR, Reflector } from '@nestjs/core';
 import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -8,11 +17,13 @@ import { Socket } from 'node:net';
 import { register } from 'prom-client';
 import { RequirePermission } from '../decorators/require-permission.decorator';
 import { AuthzObserverGuard } from '../guards/authz-observer.guard';
+import { PermissionGuard } from '../guards/permission.guard';
 import { AuthzShadowInterceptor } from '../interceptors/authz-shadow.interceptor';
 import { AuthzShadowRecorder } from './authz-shadow.recorder';
 import { PermissionCache } from './permission-cache';
+import { getPermissionDecision } from './permission-decision';
 import { PermissionDecider } from './permission-decider';
-import { PermissionRuntimeOptions } from './permission-runtime.options';
+import { PERMISSION_RUNTIME_OPTIONS, PermissionRuntimeOptions } from './permission-runtime.options';
 import { RouteRequirement, RouteRequirementResolver } from './route-requirement.resolver';
 
 const options: PermissionRuntimeOptions = {
@@ -188,8 +199,8 @@ describe('AuthzShadowRecorder', () => {
 class OrdersProbeController {
   @RequirePermission('order.order.read')
   @Get()
-  list() {
-    return { ok: true };
+  list(@Req() request: object) {
+    return { ok: true, stamped: getPermissionDecision(request, 'order.order.read') !== undefined };
   }
 }
 
@@ -232,6 +243,9 @@ describe('AuthzObserverGuard in a running app', () => {
         { provide: APP_GUARD, useClass: AuthzObserverGuard },
         { provide: APP_GUARD, useClass: HeaderUserGuard },
         { provide: APP_GUARD, useClass: LegacyDenyGuard },
+        { provide: PermissionDecider, useValue: new PermissionDecider(c) },
+        { provide: PERMISSION_RUNTIME_OPTIONS, useValue: options },
+        { provide: APP_GUARD, useClass: PermissionGuard },
         { provide: APP_INTERCEPTOR, useClass: AuthzShadowInterceptor },
       ],
     }).compile();
@@ -263,6 +277,13 @@ describe('AuthzObserverGuard in a running app', () => {
     const res = await app.inject({ method: 'GET', url: '/orders', headers: { 'x-roles': 'intern' } });
     expect(res.statusCode).toBe(200);
     expect(await outcomeCount('would_deny')).toBe(1);
+  });
+
+  it('stamps the route decision before the handler runs', async () => {
+    const granted = await app.inject({ method: 'GET', url: '/orders', headers: { 'x-roles': 'logistics_worker' } });
+    expect(granted.json()).toEqual({ ok: true, stamped: true });
+    const notGranted = await app.inject({ method: 'GET', url: '/orders', headers: { 'x-roles': 'intern' } });
+    expect(notGranted.json()).toEqual({ ok: true, stamped: false });
   });
 
   it('labels the route by its pattern, not its url', async () => {

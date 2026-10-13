@@ -36,4 +36,10 @@ describe('PermissionDecider', () => {
       reason: 'unavailable',
     });
   });
+
+  it('lists the held permissions among the required ones', () => {
+    expect(ready.grantedAmong(['order.order.read', 'x.y.write'], ['admin'])).toEqual(['order.order.read']);
+    expect(ready.grantedAmong(['order.order.read'], undefined)).toEqual([]);
+    expect(new PermissionDecider(cacheWith(null)).grantedAmong(['order.order.read'], ['admin'])).toBeNull();
+  });
 });

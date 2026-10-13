@@ -190,6 +190,15 @@ export const PERMISSION_CATALOG = [
     grant: LOGISTICS,
     ...DANGEROUS,
   }),
+  permission(
+    'fulfillment.work.supervise',
+    '현장 작업 감독',
+    '다른 작업자가 잡은 피킹·패킹·토트·카트를 넘기거나 되돌린다',
+    {
+      owners: ['core'],
+      grant: LOGISTICS_MANAGER,
+    },
+  ),
   permission('fulfillment.tracking.ingest', '배송 추적 수신', '배송사 추적 이벤트를 받는다(시스템 전용)', {
     owners: ['core'],
     grant: NOBODY,
@@ -457,6 +466,12 @@ export const PERMISSION_CATALOG = [
     owners: ['admin-web'],
     grant: ADMIN,
   }),
+  permission(
+    'system.file.manage',
+    '모든 파일 열람·삭제',
+    '올린 사람이 아니어도 비공개 파일을 열고 지운다(고객이 올린 서류 포함)',
+    { owners: ['file-service'], grant: NOBODY, ...DANGEROUS },
+  ),
   permission('system.operations.read', '운영 진단 조회', '이벤트 추적과 상세 헬스 정보를 본다', {
     owners: ['core', 'user-service', 'membership', 'wallet', 'notification', 'channel-adapter'],
     grant: ADMIN,
