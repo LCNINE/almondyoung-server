@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useTransition, type MouseEvent } from "react"
+import { useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { PromotionTracker } from "@/components/analytics/promotion-tracker"
 import sanitizeHtml from "sanitize-html"
@@ -19,6 +20,7 @@ import type { HttpTypes } from "@medusajs/types"
 import { ProductQuickActions } from "@/domains/products/components/product-quick-actions"
 import { Quantity } from "@/domains/products/components/product-card/quantity"
 import { loadTimeSaleMore } from "@/domains/time-sale/actions/load-time-sale-more"
+import { scheduleRefreshAfterEnd } from "@/lib/utils/time-sale-countdown"
 import type { TimeSaleAllProps } from "@/domains/time-sale/templates/time-sale-all-template"
 
 // 진행 중 세일 전부를 섹션 하나로 그린다(세일 이름은 고객에게 내보내지 않는다).
@@ -52,6 +54,18 @@ export function ConfiguredTimeSale({
   sectionPeriods?: SalePeriodLike[]
 }) {
   const t = useTranslations("home.timeSale")
+  const router = useRouter()
+
+  // 렌더러는 끝난 상품을 숨기기만 한다. 다음 세일·정가는 서버에서 다시 받아야 보인다.
+  useEffect(() => {
+    const delay = Date.parse(endsAt) - Date.now()
+    if (!(delay <= 2 ** 31 - 1)) return
+    const timer = setTimeout(
+      () => scheduleRefreshAfterEnd(endsAt, () => router.refresh()),
+      Math.max(0, delay)
+    )
+    return () => clearTimeout(timer)
+  }, [endsAt, router])
 
   return (
     <PromotionTracker

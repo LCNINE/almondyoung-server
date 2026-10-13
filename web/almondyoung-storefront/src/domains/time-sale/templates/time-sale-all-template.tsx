@@ -105,6 +105,7 @@ export async function loadTimeSaleAll({
     tabs,
     activeTabKey: activeTab?.key,
     productCount: filtered.length,
+    // 한 페이지여도 빈 배열을 준다. undefined 면 렌더러가 칸 수로 다시 잘라 나머지 상품에 닿을 수 없다.
     pager:
       totalPages > 1
         ? buildPager(
@@ -113,7 +114,7 @@ export async function loadTimeSaleAll({
             (p) => href(activeTab?.key ?? ALL_TAB_KEY, p),
             listLayout?.options.pageWindow
           )
-        : undefined,
+        : [],
     stockProducts: Object.fromEntries(
       products.map((product) => [product.id, product])
     ),
