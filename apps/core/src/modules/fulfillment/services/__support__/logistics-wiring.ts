@@ -20,6 +20,8 @@ import { FulfillmentWorkflowGate, type FulfillmentWorkflowMode } from '../fulfil
 import { ConfigService } from '@nestjs/config';
 import { ProductSkuMappingService } from '../../../product-matching/services/product-sku-mapping.service';
 import { MatchingLinkResolver } from '../../../product-matching/services/matching-link-resolver';
+import { LineCompositionReader } from '../../../product-matching/line-composition/line-composition.reader';
+import { LineCompositionManager } from '../../../product-matching/line-composition/line-composition.manager';
 import { SkuCatalogReader } from '../../../inventory/sku-catalog/services/sku-catalog.reader';
 import { SkuCatalogManager } from '../../../inventory/sku-catalog/services/sku-catalog.manager';
 import { SkuCatalogService } from '../../../inventory/sku-catalog/services/sku-catalog.service';
@@ -58,6 +60,8 @@ export interface Wired {
   availability: AvailabilityService;
   backlog: FulfillmentOrderCreationBacklogService;
   productSkuMapping: ProductSkuMappingService;
+  lineCompositions: LineCompositionReader;
+  lineCompositionManager: LineCompositionManager;
   fulfillments: FulfillmentsService;
   shipmentReservations: ShipmentReservationService;
   retryWorker: FulfillmentOrderReservationRetryWorker;
@@ -98,6 +102,8 @@ export function wireLogistics(
   const skuCatalogService = new SkuCatalogService(skuCatalogReader, skuCatalogManager);
   const linkResolver = new MatchingLinkResolver(skuCatalogService);
   const productSkuMapping = new ProductSkuMappingService(dbService as never, sellable, backlog, linkResolver);
+  const lineCompositions = new LineCompositionReader(dbService, productSkuMapping);
+  const lineCompositionManager = new LineCompositionManager(dbService);
   const progress = new FulfillmentProgressService();
   const invariant = new FulfillmentInvariantService();
   const shipmentReservations = new ShipmentReservationService(dbService, unified, progress, invariant);
@@ -126,6 +132,8 @@ export function wireLogistics(
     availability,
     backlog,
     productSkuMapping,
+    lineCompositions,
+    lineCompositionManager,
     fulfillments,
     shipmentReservations,
     retryWorker,
