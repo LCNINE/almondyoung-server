@@ -23,7 +23,6 @@ import {
 import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   createIdempotentCommand,
-  FULFILLMENT_SCOPES,
   getServerDenyMessage,
   isWaybillIssued,
   isWaybillPendingIssue,
@@ -61,7 +60,7 @@ export function WaybillActions({
 }: {
   shipment: ShipmentAdminDetail;
 }) {
-  const { can, isPermissionLoading } = usePermissionCheck();
+  const { canRun } = usePermissionCheck();
   const issue = useIssueWaybill();
   const manual = useRegisterManualWaybill();
   const reissue = useReissueWaybill();
@@ -75,10 +74,6 @@ export function WaybillActions({
   const [lastKind, setLastKind] = useState<'issue' | 'reissue' | 'manual' | null>(null);
   const [pendingNotice, setPendingNotice] = useState<string | null>(null);
 
-  const operate =
-    !isPermissionLoading && !!can([FULFILLMENT_SCOPES.operate]);
-  const reopen =
-    !isPermissionLoading && !!can([FULFILLMENT_SCOPES.reopen]);
   const voidTarget = activeVoidableWaybill(shipment.waybills ?? []);
 
   const busy =
@@ -205,12 +200,12 @@ export function WaybillActions({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
-        {operate && (
+        {canRun(useIssueWaybill) && (
           <Button size="sm" variant="outline" onClick={openIssue}>
             운송장 발급
           </Button>
         )}
-        {operate && (
+        {canRun(useRegisterManualWaybill) && (
           <Button
             size="sm"
             variant="outline"
@@ -226,7 +221,7 @@ export function WaybillActions({
             수동 등록
           </Button>
         )}
-        {operate && (
+        {canRun(useReissueWaybill) && (
           <Button
             size="sm"
             variant="outline"
@@ -241,7 +236,7 @@ export function WaybillActions({
             재발급
           </Button>
         )}
-        {reopen && (
+        {canRun(useVoidWaybill) && (
           <Button
             size="sm"
             variant="destructive"

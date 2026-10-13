@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useSendSmsGateMessage, useSmsDevices } from '@/lib/services/sms-gate';
+import { Can } from '@/components/auth/can';
 import { HelpSheet } from '../../components/help-sheet';
 import { OfflineBanner } from '../../components/offline-banner';
 import { CategoryRadio } from '../../components/category-radio';
@@ -145,9 +146,11 @@ export default function SmsSendTemplate() {
           <section className="flex flex-col gap-2">
             <h3 className="font-semibold">메시지 작성</h3>
             <MessageComposer category={category} content={content} onChange={setContent}>
-              <Button type="button" onClick={handleSend} disabled={!canSend}>
-                {send.isPending || isChecking ? <Loader className="animate-spin" /> : '전송'}
-              </Button>
+              <Can run={useSendSmsGateMessage}>
+                <Button type="button" onClick={handleSend} disabled={!canSend}>
+                  {send.isPending || isChecking ? <Loader className="animate-spin" /> : '전송'}
+                </Button>
+              </Can>
             </MessageComposer>
           </section>
 

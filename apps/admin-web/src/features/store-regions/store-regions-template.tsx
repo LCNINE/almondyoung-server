@@ -13,7 +13,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import type { MedusaRegion } from '@/lib/api/domains/medusa/regions';
-import { useMedusaRegions } from '@/lib/services/medusa-regions';
+import {
+  useCreateMedusaRegion,
+  useMedusaRegions,
+  useUpdateMedusaRegion,
+} from '@/lib/services/medusa-regions';
+import { Can } from '@/components/auth/can';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { useMemo, useState } from 'react';
 import { RegionFormDialog } from './components/region-form-dialog';
 
@@ -23,6 +29,7 @@ export default function StoreRegionsTemplate() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<MedusaRegion | null>(null);
+  const { canRun } = usePermissionCheck();
 
   const openCreate = () => {
     setEditTarget(null);
@@ -39,7 +46,11 @@ export default function StoreRegionsTemplate() {
       <Header
         title="리전 설정 (Medusa)"
         subtitle="스토어의 통화·국가·세금 설정입니다. 결제수단 가용성은 '리전·결제수단 관리'에서 별도로 설정합니다."
-        right={<Button onClick={openCreate}>리전 추가</Button>}
+        right={
+          <Can run={useCreateMedusaRegion}>
+            <Button onClick={openCreate}>리전 추가</Button>
+          </Can>
+        }
       />
       <Table>
         <TableHeader>
@@ -107,9 +118,11 @@ export default function StoreRegionsTemplate() {
                 )}
               </TableCell>
               <TableCell className="text-right">
-                <Button variant="ghost" size="sm" onClick={() => openEdit(r)}>
-                  수정
-                </Button>
+                {canRun(useUpdateMedusaRegion) && (
+                  <Button variant="ghost" size="sm" onClick={() => openEdit(r)}>
+                    수정
+                  </Button>
+                )}
               </TableCell>
             </TableRow>
           ))}

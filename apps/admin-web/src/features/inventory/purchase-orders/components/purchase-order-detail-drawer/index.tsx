@@ -8,7 +8,8 @@ import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { usePurchaseOrder, useCancelPurchaseOrder } from '@/lib/services/inventory';
+import { usePurchaseOrder, useCancelPurchaseOrder, useUpdatePurchaseOrderLines } from '@/lib/services/inventory';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { PurchaseOrderDto, PurchaseOrderStatus } from '@/lib/types/dto/inventory';
 import { PurchaseOrderFormDialog } from '../purchase-order-form-dialog';
 import { PurchaseOrderLineList } from '../line-list';
@@ -44,6 +45,7 @@ export function PurchaseOrderDetailDrawer({ row, open, onOpenChange }: Props) {
   const [cancelReason, setCancelReason] = useState('');
   const { data: detail } = usePurchaseOrder(row?.id ?? '');
   const cancelMutation = useCancelPurchaseOrder();
+  const { canRun } = usePermissionCheck();
 
   // 다이얼로그는 「발주 취소」 버튼이 setCancelOpen(true) 를 직접 불러서 열린다 —
   // Radix Dialog.Root 는 제어 prop 이 외부에서 true 로 바뀔 때 onOpenChange(true) 를
@@ -133,12 +135,12 @@ export function PurchaseOrderDetailDrawer({ row, open, onOpenChange }: Props) {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  {canEditLines && (
+                  {canEditLines && canRun(useUpdatePurchaseOrderLines) && (
                     <Button size="sm" variant="outline" onClick={() => setEditLinesOpen(true)}>
                       라인 수정
                     </Button>
                   )}
-                  {showCancelButton && (
+                  {showCancelButton && canRun(useCancelPurchaseOrder) && (
                     <Button size="sm" variant="destructive" onClick={() => setCancelOpen(true)}>
                       발주 취소
                     </Button>

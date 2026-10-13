@@ -18,6 +18,8 @@ import {
   useUpdateNotificationEvent,
 } from '@/lib/services/notification';
 import { cn } from '@/lib/utils/cn';
+import { BlockedReason } from '@/components/auth/blocked-reason';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { NOTIFICATION_CATALOG, NOTIFICATION_GROUPS, type CatalogEntry, type NotificationGroup } from '../catalog';
 import { ChannelBadges } from '../components/channel-badges';
 import { PreviewDialog, type PreviewTarget } from '../components/preview-dialog';
@@ -34,6 +36,8 @@ export default function NotificationSettingsTemplate() {
   const events = useNotificationEvents();
   const templates = useNotificationTemplates();
   const updateEvent = useUpdateNotificationEvent();
+  const { blockedReason } = usePermissionCheck();
+  const toggleBlocked = blockedReason(useUpdateNotificationEvent);
   const [preview, setPreview] = useState<PreviewTarget | null>(null);
   const emailLayout = useEmailLayout();
 
@@ -93,6 +97,7 @@ export default function NotificationSettingsTemplate() {
                     event={entry.kind === 'event' ? eventByKey.get(entry.eventKey) : undefined}
                     templateByKey={templateByKey}
                     busy={updateEvent.isPending}
+                    toggleBlocked={toggleBlocked}
                     onToggle={toggle}
                     onPreview={setPreview}
                   />
@@ -112,6 +117,7 @@ function NotificationCard({
   event,
   templateByKey,
   busy,
+  toggleBlocked,
   onToggle,
   onPreview,
 }: {
@@ -119,6 +125,8 @@ function NotificationCard({
   event: NotificationEvent | undefined;
   templateByKey: Map<string, NotificationTemplate>;
   busy: boolean;
+  /** 발송 켜기/끄기를 막는 이유(권한 없음 등). null 이면 바꿀 수 있다 */
+  toggleBlocked: string | null;
   onToggle: (event: NotificationEvent, isActive: boolean) => void;
   onPreview: (target: PreviewTarget) => void;
 }) {
@@ -136,13 +144,18 @@ function NotificationCard({
           <div className="flex items-start justify-between gap-2">
             <span className="font-medium">{entry.title}</span>
             {event && (
-              <Switch
-                checked={event.isActive}
-                disabled={busy}
-                onCheckedChange={(checked) => onToggle(event, checked)}
-                aria-label={`${entry.title} 발송`}
-                className="data-[state=checked]:bg-emerald-500"
-              />
+              <BlockedReason reason={toggleBlocked}>
+                {(blocked) => (
+                  <Switch
+                    {...blocked}
+                    checked={event.isActive}
+                    disabled={busy}
+                    onCheckedChange={toggleBlocked ? undefined : (checked) => onToggle(event, checked)}
+                    aria-label={`${entry.title} 발송`}
+                    className="data-[state=checked]:bg-emerald-500"
+                  />
+                )}
+              </BlockedReason>
             )}
           </div>
           <p className="text-muted-foreground text-xs">{entry.condition}</p>

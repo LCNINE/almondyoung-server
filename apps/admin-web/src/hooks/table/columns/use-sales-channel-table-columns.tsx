@@ -8,9 +8,10 @@ import { Button } from '@/components/ui/button';
 
 const columnHelper = createColumnHelper<ChannelDto>();
 
+/** 넘기지 않은 동작의 버튼은 그리지 않는다(권한 없음). */
 type UseSalesChannelTableColumnsProps = {
-  onEdit: (channel: ChannelDto) => void;
-  onDelete: (channel: ChannelDto) => void;
+  onEdit?: (channel: ChannelDto) => void;
+  onDelete?: (channel: ChannelDto) => void;
 };
 
 export function useSalesChannelTableColumns({
@@ -39,22 +40,26 @@ export function useSalesChannelTableColumns({
         header: '기능',
         cell: ({ row }) => (
           <div className="flex items-center justify-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-blue-600 hover:text-blue-700"
-              onClick={() => onEdit(row.original)}
-            >
-              수정
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-red-600 hover:text-red-700"
-              onClick={() => onDelete(row.original)}
-            >
-              삭제
-            </Button>
+            {onEdit && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-blue-600 hover:text-blue-700"
+                onClick={() => onEdit?.(row.original)}
+              >
+                수정
+              </Button>
+            )}
+            {onDelete && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-red-600 hover:text-red-700"
+                onClick={() => onDelete?.(row.original)}
+              >
+                삭제
+              </Button>
+            )}
           </div>
         ),
       }),

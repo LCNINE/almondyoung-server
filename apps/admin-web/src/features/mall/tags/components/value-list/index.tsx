@@ -3,7 +3,13 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useTagGroup, useDeleteTagValue } from '@/lib/services/products';
+import {
+  useTagGroup,
+  useCreateTagValue,
+  useDeleteTagValue,
+  useUpdateTagValue,
+} from '@/lib/services/products';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { TagValueDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
 import { ValueCreateDialog } from '../value-create-dialog';
@@ -16,6 +22,7 @@ type Props = {
 
 export function ValueList({ groupId }: Props) {
   const { data: group, isLoading } = useTagGroup(groupId);
+  const { canRun } = usePermissionCheck();
   const deleteMutation = useDeleteTagValue();
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -55,9 +62,11 @@ export function ValueList({ groupId }: Props) {
     <div className="rounded-lg border">
       <div className="flex items-center justify-between border-b px-4 py-3">
         <span className="text-sm font-medium">{group.name} — 태그 값</span>
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          값 추가
-        </Button>
+        {canRun(useCreateTagValue) && (
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            값 추가
+          </Button>
+        )}
       </div>
 
       {values.length === 0 ? (
@@ -79,6 +88,7 @@ export function ValueList({ groupId }: Props) {
                 <Badge variant={value.isActive ? 'default' : 'secondary'} className="text-xs">
                   {value.isActive ? '활성' : '비활성'}
                 </Badge>
+                {canRun(useUpdateTagValue) && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -87,6 +97,8 @@ export function ValueList({ groupId }: Props) {
                 >
                   편집
                 </Button>
+                )}
+                {canRun(useDeleteTagValue) && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -95,6 +107,7 @@ export function ValueList({ groupId }: Props) {
                 >
                   삭제
                 </Button>
+                )}
               </div>
             </li>
           ))}

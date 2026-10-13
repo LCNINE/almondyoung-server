@@ -28,6 +28,7 @@ import {
 import { usePointsBalance, usePointsEvents } from '@/lib/services/wallet';
 import { useDeductPoints, useEarnPoints } from '@/lib/services/wallet';
 import { formatDateTime } from '@/lib/utils/date';
+import { usePermissionCheck } from '@/hooks/use-permission';
 
 const PAGE_SIZE = 10;
 
@@ -325,6 +326,7 @@ export function PointsTab({ customerId }: { customerId: string }) {
     null
   );
   const [page, setPage] = useState(1);
+  const { canRun } = usePermissionCheck();
 
   const { data: balance, isLoading: isBalanceLoading } =
     usePointsBalance(customerId);
@@ -343,25 +345,29 @@ export function PointsTab({ customerId }: { customerId: string }) {
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-800">
         <Coins className="size-4 text-indigo-500" />
         적립금
-        <Button
-          type="button"
-          size="sm"
-          className="ml-auto h-7 px-3 text-xs"
-          onClick={() => setEarnOpen(true)}
-        >
-          <Plus className="mr-1 size-3.5" />
-          적립금 지급
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="h-7 px-3 text-xs"
-          onClick={() => setDeductOpen(true)}
-        >
-          <Minus className="mr-1 size-3.5" />
-          적립금 차감
-        </Button>
+        {canRun(useEarnPoints) && (
+          <Button
+            type="button"
+            size="sm"
+            className="ml-auto h-7 px-3 text-xs"
+            onClick={() => setEarnOpen(true)}
+          >
+            <Plus className="mr-1 size-3.5" />
+            적립금 지급
+          </Button>
+        )}
+        {canRun(useDeductPoints) && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 px-3 text-xs"
+            onClick={() => setDeductOpen(true)}
+          >
+            <Minus className="mr-1 size-3.5" />
+            적립금 차감
+          </Button>
+        )}
       </div>
 
       {/* ── 잔액 요약 ── */}

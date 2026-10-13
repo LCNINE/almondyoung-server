@@ -17,7 +17,11 @@ import {
   useCouponList,
   useUpdateCouponStatus,
   useDeleteCoupon,
+  useCreateCoupon,
+  useBulkIssueCoupon,
 } from '@/lib/services/coupons';
+import { Can } from '@/components/auth/can';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { CouponCreateDialog } from '../components/coupon-create-dialog';
 import { CouponAssignDialog } from '../components/coupon-assign-dialog';
 import { CouponDeleteDialog } from '../components/coupon-delete-dialog';
@@ -69,10 +73,11 @@ function IssuanceCell({ issued, max }: { issued: number | null; max: number | nu
 interface CouponRowProps {
   coupon: MedusaPromotion;
   onDetail: (coupon: MedusaPromotion) => void;
-  onAssign: (coupon: MedusaPromotion) => void;
+  /** 발급·상태 변경·삭제는 넘기지 않으면 그 버튼을 그리지 않는다(권한 없음) */
+  onAssign?: (coupon: MedusaPromotion) => void;
   onViewCustomers: (coupon: MedusaPromotion) => void;
-  onToggleStatus: (coupon: MedusaPromotion) => void;
-  onDelete: (coupon: MedusaPromotion) => void;
+  onToggleStatus?: (coupon: MedusaPromotion) => void;
+  onDelete?: (coupon: MedusaPromotion) => void;
   isToggling: boolean;
   isDeleting: boolean;
 }
@@ -134,16 +139,18 @@ function CouponRow({ coupon, onDetail, onAssign, onViewCustomers, onToggleStatus
             <Eye className="h-3.5 w-3.5 mr-1" />
             상세
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 px-2 text-xs"
-            onClick={() => onAssign(coupon)}
-            title="고객에게 발급"
-          >
-            <Tag className="h-3.5 w-3.5 mr-1" />
-            발급
-          </Button>
+          {onAssign && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs"
+              onClick={() => onAssign(coupon)}
+              title="고객에게 발급"
+            >
+              <Tag className="h-3.5 w-3.5 mr-1" />
+              발급
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"
@@ -154,7 +161,7 @@ function CouponRow({ coupon, onDetail, onAssign, onViewCustomers, onToggleStatus
             <Users className="h-3.5 w-3.5 mr-1" />
             현황
           </Button>
-          {canToggle && (
+          {canToggle && onToggleStatus && (
             <Button
               size="sm"
               variant="ghost"
@@ -165,16 +172,18 @@ function CouponRow({ coupon, onDetail, onAssign, onViewCustomers, onToggleStatus
               {coupon.status === 'active' ? '비활성화' : '활성화'}
             </Button>
           )}
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-            onClick={() => onDelete(coupon)}
-            disabled={isDeleting}
-            title="삭제"
-          >
-            <X className="h-3.5 w-3.5" />
-          </Button>
+          {onDelete && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+              onClick={() => onDelete(coupon)}
+              disabled={isDeleting}
+              title="삭제"
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
       </td>
     </tr>
@@ -194,6 +203,7 @@ export default function MarketingCouponsTemplate() {
 
   const updateStatus = useUpdateCouponStatus();
   const deleteCoupon = useDeleteCoupon();
+  const { canRun } = usePermissionCheck();
 
   // Medusa V2 promotions list doesn't accept status as a filter param — fetch a wider batch and filter client-side
   const { data, isLoading } = useCouponList({
@@ -263,10 +273,12 @@ export default function MarketingCouponsTemplate() {
           subtitle="쿠폰을 생성·발급하고, 캠페인으로 묶어 관리합니다."
           right={
             tab === 'coupons' ? (
-              <Button onClick={() => setCreateOpen(true)} className="bg-orange-500 text-white hover:bg-orange-600">
-                <Tag className="h-4 w-4 mr-1.5" />
-                쿠폰 생성
-              </Button>
+              <Can run={useCreateCoupon}>
+                <Button onClick={() => setCreateOpen(true)} className="bg-orange-500 text-white hover:bg-orange-600">
+                  <Tag className="h-4 w-4 mr-1.5" />
+                  쿠폰 생성
+                </Button>
+              </Can>
             ) : undefined
           }
         />
@@ -358,10 +370,10 @@ export default function MarketingCouponsTemplate() {
                       key={coupon.id}
                       coupon={coupon}
                       onDetail={setDetailTarget}
-                      onAssign={setAssignTarget}
+                      onAssign={canRun(useBulkIssueCoupon) ? setAssignTarget : undefined}
                       onViewCustomers={setCustomersTarget}
-                      onToggleStatus={handleToggleStatus}
-                      onDelete={setDeleteTarget}
+                      onToggleStatus={canRun(useUpdateCouponStatus) ? handleToggleStatus : undefined}
+                      onDelete={canRun(useDeleteCoupon) ? setDeleteTarget : undefined}
                       isToggling={updateStatus.isPending}
                       isDeleting={deleteCoupon.isPending}
                     />

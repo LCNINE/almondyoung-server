@@ -35,6 +35,8 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Spinner } from '@/components/ui/spinner';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   useQuestions,
   useCreateAnswer,
@@ -71,6 +73,10 @@ function AnswerForm({ question }: { question: QuestionDto }) {
   const deleteAnswer = useDeleteAnswer(question.id);
 
   const hasAnswer = question.answer !== null;
+  const { canRun } = usePermissionCheck();
+  const canSubmit = hasAnswer
+    ? canRun(useUpdateAnswer)
+    : canRun(useCreateAnswer);
   const [content, setContent] = useState(question.answer?.content ?? '');
 
   const isLoading =
@@ -129,15 +135,17 @@ function AnswerForm({ question }: { question: QuestionDto }) {
           </span>
         )}
       </div>
-      <Textarea
-        placeholder="답변 내용을 입력하세요..."
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-        rows={5}
-        disabled={isLoading}
-      />
+      <PermissionReadOnly run={hasAnswer ? useUpdateAnswer : useCreateAnswer}>
+        <Textarea
+          placeholder="답변 내용을 입력하세요..."
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          rows={5}
+          disabled={isLoading}
+        />
+      </PermissionReadOnly>
       <div className="flex justify-end gap-2">
-        {hasAnswer && (
+        {hasAnswer && canRun(useDeleteAnswer) && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="destructive" size="sm" disabled={isLoading}>
@@ -160,15 +168,17 @@ function AnswerForm({ question }: { question: QuestionDto }) {
             </AlertDialogContent>
           </AlertDialog>
         )}
-        <Button onClick={handleSubmit} size="sm" disabled={isLoading}>
-          {isLoading ? (
-            <Spinner className="h-4 w-4" />
-          ) : hasAnswer ? (
-            '답변 수정'
-          ) : (
-            '답변 등록'
-          )}
-        </Button>
+        {canSubmit && (
+          <Button onClick={handleSubmit} size="sm" disabled={isLoading}>
+            {isLoading ? (
+              <Spinner className="h-4 w-4" />
+            ) : hasAnswer ? (
+              '답변 수정'
+            ) : (
+              '답변 등록'
+            )}
+          </Button>
+        )}
       </div>
     </div>
   );

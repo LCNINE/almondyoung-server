@@ -22,6 +22,8 @@ import {
   useUnlinkAlimtalkAutoNotice,
 } from '@/lib/services/alimtalk';
 import { autoNoticeFit } from '../lib/alimtalk';
+import { BlockedReason } from '@/components/auth/blocked-reason';
+import { usePermissionCheck } from '@/hooks/use-permission';
 
 const errorMessage = (error: unknown, fallback: string) =>
   (error instanceof Error && error.message) || fallback;
@@ -38,6 +40,8 @@ export function AutoNoticeLink({ template }: { template: AlimtalkTemplate }) {
   const link = useLinkAlimtalkAutoNotice();
   const unlink = useUnlinkAlimtalkAutoNotice();
   const toggle = useToggleAlimtalkAutoNotice();
+  const { canRun, blockedReason } = usePermissionCheck();
+  const toggleBlocked = blockedReason(useToggleAlimtalkAutoNotice);
   const [picked, setPicked] = useState<string>('');
   const [confirmReplace, setConfirmReplace] = useState(false);
 
@@ -107,27 +111,35 @@ export function AutoNoticeLink({ template }: { template: AlimtalkTemplate }) {
             <Badge variant={n.isActive ? 'default' : 'secondary'}>
               {n.isActive ? '발송 중' : '꺼짐'}
             </Badge>
-            <Switch
-              checked={n.isActive}
-              disabled={toggle.isPending || (!approved && !n.isActive)}
-              aria-label={`${n.name} ${n.isActive ? '끄기' : '켜기'}`}
-              onCheckedChange={(isActive) =>
-                toggle.mutate(
-                  { eventKey: n.eventKey, isActive },
-                  {
-                    onSuccess: () =>
-                      toast.success(
-                        isActive
-                          ? `«${n.name}»을 켰습니다.`
-                          : `«${n.name}»을 껐습니다.`
-                      ),
-                    onError: (error) =>
-                      toast.error(errorMessage(error, '바꾸지 못했습니다.')),
+            <BlockedReason reason={toggleBlocked}>
+              {(blocked) => (
+                <Switch
+                  {...blocked}
+                  checked={n.isActive}
+                  disabled={toggle.isPending || (!approved && !n.isActive)}
+                  aria-label={`${n.name} ${n.isActive ? '끄기' : '켜기'}`}
+                  onCheckedChange={
+                    toggleBlocked
+                      ? undefined
+                      : (isActive) =>
+                          toggle.mutate(
+                            { eventKey: n.eventKey, isActive },
+                            {
+                              onSuccess: () =>
+                                toast.success(
+                                  isActive
+                                    ? `«${n.name}»을 켰습니다.`
+                                    : `«${n.name}»을 껐습니다.`
+                                ),
+                              onError: (error) =>
+                                toast.error(errorMessage(error, '바꾸지 못했습니다.')),
+                            }
+                          )
                   }
-                )
-              }
-            />
-            {!n.isActive && (
+                />
+              )}
+            </BlockedReason>
+            {canRun(useUnlinkAlimtalkAutoNotice) && !n.isActive && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -162,7 +174,7 @@ export function AutoNoticeLink({ template }: { template: AlimtalkTemplate }) {
         ))}
 
       {approved ? (
-        others.length > 0 && (
+        canRun(useLinkAlimtalkAutoNotice) && others.length > 0 && (
           <div className="flex flex-col gap-2 rounded-md border border-dashed px-3 py-3">
             <Label className="text-xs font-medium">다른 자동 알림에 잇기</Label>
             <Select

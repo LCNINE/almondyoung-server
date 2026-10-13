@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import type { ArchiveSpace } from '@/lib/types/dto/archive';
 import { useCreateArchivePage } from '@/lib/services/archive';
+import { Can } from '@/components/auth/can';
 import { ArchiveSidebar } from '../components/archive-sidebar';
 import { ArchivePageView } from '../components/page-view';
 import { ArchiveSearchDialog } from '../components/search-dialog';
@@ -203,14 +204,16 @@ function EmptyState({
         </p>
       </div>
       <div className="flex gap-2">
-        <Button
-          type="button"
-          onClick={onCreate}
-          disabled={creating}
-          className="gap-1.5"
-        >
-          <Plus className="size-4" aria-hidden />새 페이지
-        </Button>
+        <Can run={useCreateArchivePage}>
+          <Button
+            type="button"
+            onClick={onCreate}
+            disabled={creating}
+            className="gap-1.5"
+          >
+            <Plus className="size-4" aria-hidden />새 페이지
+          </Button>
+        </Can>
         <Button
           type="button"
           variant="outline"

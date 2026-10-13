@@ -28,6 +28,7 @@ import {
   uploadRichTextImage,
 } from '@/lib/api/domains/files/upload.client';
 import { archiveClient } from '@/lib/api/domains/archive';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   archiveQueryKeys,
   useArchiveTree,
@@ -145,6 +146,9 @@ export default function BlockEditor({
   const createPage = useCreateArchivePage();
   const moveMutation = useMoveArchivePage(space);
   const { data: treeNodes } = useArchiveTree(space);
+  const { canRun } = usePermissionCheck();
+  const canCreateSubPage = canRun(useCreateArchivePage);
+  const canAttachPages = canRun(useMoveArchivePage);
   const queryClient = useQueryClient();
   const scope = useMemo(() => ({ pageId, space }), [pageId, space]);
 
@@ -372,7 +376,7 @@ export default function BlockEditor({
 
   useEffect(() => {
     const container = editorRef.current;
-    if (!container || !editable) return;
+    if (!container || !editable || !canAttachPages) return;
 
     const isOurs = (event: DragEvent) =>
       Boolean(event.dataTransfer?.types.includes(ARCHIVE_PAGE_DRAG_TYPE));
@@ -428,7 +432,7 @@ export default function BlockEditor({
       container.removeEventListener('drop', onDrop, true);
     };
     // subPageIdsInBody 는 editor 에만 매인 안정된 함수라 여기 다시 붙일 이유가 없다.
-  }, [editable, editor]);
+  }, [canAttachPages, editable, editor]);
 
   /** 본문에 이미 들어 있는 하위 페이지 — 두 번 넣어도 소용이 없으니 고를 목록에서 뺀다. */
   const subPageIdsInBody = useCallback(() => {
@@ -546,6 +550,11 @@ export default function BlockEditor({
         onItemClick: startPickExisting,
       };
 
+      const archiveItems = [
+        ...(canCreateSubPage ? [subPageItem] : []),
+        ...(canAttachPages ? [attachExistingItem] : []),
+      ];
+
       // 메뉴는 «연속된 같은 group» 을 한 덩어리로 묶는다. 뒤에 그냥 붙이면 같은 이름의
       // 머리글이 두 번 나오므로, 기존 「기본 블록」 덩어리의 끝에 끼워 넣는다.
       const lastBasic = items
@@ -553,17 +562,16 @@ export default function BlockEditor({
         .lastIndexOf(BASIC_BLOCK_GROUP);
       const merged =
         lastBasic === -1
-          ? [...items, subPageItem, attachExistingItem]
+          ? [...items, ...archiveItems]
           : [
               ...items.slice(0, lastBasic + 1),
-              subPageItem,
-              attachExistingItem,
+              ...archiveItems,
               ...items.slice(lastBasic + 1),
             ];
 
       return Promise.resolve(filterSuggestionItems(merged, query));
     },
-    [editor, insertSubPage, startPickExisting]
+    [canAttachPages, canCreateSubPage, editor, insertSubPage, startPickExisting]
   );
 
   return (

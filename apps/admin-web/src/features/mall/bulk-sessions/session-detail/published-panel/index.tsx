@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
 import { SimplePagination } from '@/components/simple-pagination';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   useBulkSessionItems,
   useExcludeItem,
@@ -58,6 +59,7 @@ export function PublishedPanel({
 
   const excludeItem = useExcludeItem(sessionId);
   const republish = usePublishBulkSession(sessionId);
+  const { canRun } = usePermissionCheck();
 
   const { done, total } = computePublishProgress(progress);
   const percent = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -91,6 +93,7 @@ export function PublishedPanel({
             <p className="text-sm font-medium text-destructive">
               발행 실패 {failedCount}건
             </p>
+            {canRun(usePublishBulkSession) && (
             <Button
               type="button"
               size="sm"
@@ -103,6 +106,7 @@ export function PublishedPanel({
               )}
               실패 행 재발행
             </Button>
+            )}
           </div>
 
           {itemsQuery.isPending && (
@@ -140,6 +144,7 @@ export function PublishedPanel({
                       </span>
                     )}
                   </div>
+                  {canRun(useExcludeItem) && (
                   <Button
                     type="button"
                     size="sm"
@@ -149,6 +154,7 @@ export function PublishedPanel({
                   >
                     제외
                   </Button>
+                  )}
                 </li>
               ))}
             </ul>

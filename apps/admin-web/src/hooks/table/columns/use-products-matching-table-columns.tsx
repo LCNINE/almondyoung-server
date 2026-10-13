@@ -9,7 +9,7 @@ import type { MasterMatchingRowVM } from '@/lib/types/ui/matching';
 const columnHelper = createColumnHelper<MasterMatchingRowVM>();
 
 type RowActions = {
-  onEdit: (row: MasterMatchingRowVM) => void;
+  onEdit?: (row: MasterMatchingRowVM) => void; // 넘기지 않으면 편집 버튼을 그리지 않는다(권한 없음)
 };
 
 const getStrategyDecisionRateVariant = (
@@ -116,14 +116,16 @@ export const useProductsMatchingTableColumns = (actions: RowActions) => {
         header: '액션',
         cell: ({ row }) => (
           <div onClick={(e) => e.stopPropagation()}>
+            {actions.onEdit && (
             <Button
               variant="ghost"
               size="sm"
               className="h-7 px-2 text-xs"
-              onClick={() => actions.onEdit(row.original)}
+              onClick={() => actions.onEdit?.(row.original)}
             >
               전략 편집
             </Button>
+            )}
           </div>
         ),
       }),

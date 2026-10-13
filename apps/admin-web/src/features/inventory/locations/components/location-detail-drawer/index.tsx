@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useUpdateLocation } from '@/lib/services/inventory';
+import { Can } from '@/components/auth/can';
 import type { LocationDto, UpdateLocationRequest } from '@/lib/types/dto/inventory';
 import { toast } from 'sonner';
 
@@ -142,6 +143,7 @@ export function LocationDetailDrawer({ row, open, onOpenChange }: Props) {
         </div>
 
         <div className="mt-8 flex gap-2">
+          <Can run={useUpdateLocation}>
           {editing ? (
             <>
               <Button variant="outline" className="flex-1" onClick={() => setEditing(false)}>
@@ -160,6 +162,7 @@ export function LocationDetailDrawer({ row, open, onOpenChange }: Props) {
               수정
             </Button>
           )}
+          </Can>
         </div>
       </SheetContent>
     </Sheet>

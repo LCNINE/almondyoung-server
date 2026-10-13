@@ -13,11 +13,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Can } from '@/components/auth/can';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SimplePagination } from '@/components/simple-pagination';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   fetchAllInvalidItems,
   useApproveBulkSession,
@@ -91,6 +93,8 @@ export function ReviewPanel({
   const undecidedQuery = useBulkSessionUndecidedCount(sessionId, true);
   const setDecision = useSetConflictDecision(sessionId);
   const approve = useApproveBulkSession(sessionId);
+  const { blockedReason } = usePermissionCheck();
+  const decisionBlockedReason = blockedReason(useSetConflictDecision);
 
   function handleTabChange(value: string) {
     if (!isReviewTab(value)) return;
@@ -200,6 +204,7 @@ export function ReviewPanel({
             </Button>
           )}
 
+          <Can run={useApproveBulkSession}>
           <AlertDialog open={approveOpen} onOpenChange={setApproveOpen}>
             <Button
               type="button"
@@ -235,6 +240,7 @@ export function ReviewPanel({
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+          </Can>
         </div>
       </div>
 
@@ -266,6 +272,7 @@ export function ReviewPanel({
               key={item.id}
               item={item}
               disabled={decisionsLocked}
+              blockedReason={decisionBlockedReason}
               onDecide={handleDecide}
             />
           ))}

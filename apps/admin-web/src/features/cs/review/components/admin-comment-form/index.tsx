@@ -25,6 +25,8 @@ import {
 } from '@/lib/services/review';
 import { useOptionalAdminUser } from '@/lib/services/users';
 import { toast } from 'sonner';
+import { Can } from '@/components/auth/can';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
 
 function AdminCommentFormContent({ reviewId }: { reviewId: string }) {
   const { data: review } = useReview(reviewId);
@@ -106,15 +108,18 @@ function AdminCommentFormContent({ reviewId }: { reviewId: string }) {
           </div>
         </div>
       )}
-      <Textarea
-        placeholder="리뷰에 대한 관리자 답글을 입력하세요..."
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-        rows={6}
-        disabled={isLoading}
-      />
+      <PermissionReadOnly run={hasComment ? useUpdateReviewComment : useCreateReviewComment}>
+        <Textarea
+          placeholder="리뷰에 대한 관리자 답글을 입력하세요..."
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          rows={6}
+          disabled={isLoading}
+        />
+      </PermissionReadOnly>
       <div className="flex gap-2 justify-end">
         {hasComment && (
+          <Can run={useDeleteReviewComment}>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="destructive" size="sm" disabled={isLoading}>
@@ -136,7 +141,9 @@ function AdminCommentFormContent({ reviewId }: { reviewId: string }) {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+          </Can>
         )}
+        <Can run={hasComment ? useUpdateReviewComment : useCreateReviewComment}>
         <Button onClick={handleSubmit} size="sm" disabled={isLoading}>
           {isLoading ? (
             <Spinner className="h-4 w-4" />
@@ -146,6 +153,7 @@ function AdminCommentFormContent({ reviewId }: { reviewId: string }) {
             '답글 등록'
           )}
         </Button>
+        </Can>
       </div>
     </div>
   );

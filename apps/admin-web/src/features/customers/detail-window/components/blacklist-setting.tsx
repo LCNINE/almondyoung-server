@@ -21,6 +21,7 @@ import {
   useDeleteBlacklist,
 } from '@/lib/services/blacklists';
 import { formatDateTime } from '@/lib/utils/date';
+import { usePermissionCheck } from '@/hooks/use-permission';
 
 function errMessage(error: unknown, fallback: string): string {
   if (error instanceof AxiosError) {
@@ -44,6 +45,10 @@ export function BlacklistSetting({ userId }: { userId: string }) {
   const [internalNote, setInternalNote] = useState('');
 
   const isBlacklisted = !!blacklist && !blacklist.deletedAt;
+  const { canRun } = usePermissionCheck();
+  const canToggle = isBlacklisted
+    ? canRun(useDeleteBlacklist)
+    : canRun(useCreateBlacklist);
 
   const handleAdd = async () => {
     if (!reason.trim()) return;
@@ -76,20 +81,22 @@ export function BlacklistSetting({ userId }: { userId: string }) {
 
   return (
     <>
-      <Button
-        type="button"
-        size="sm"
-        variant={isBlacklisted ? 'destructive' : 'outline'}
-        disabled={isLoading}
-        onClick={() => setOpen(true)}
-      >
-        {isBlacklisted ? (
-          <ShieldOff className="mr-1 h-4 w-4" />
-        ) : (
-          <Shield className="mr-1 h-4 w-4" />
-        )}
-        {isBlacklisted ? '블랙리스트 해제' : '블랙리스트 설정'}
-      </Button>
+      {canToggle && (
+        <Button
+          type="button"
+          size="sm"
+          variant={isBlacklisted ? 'destructive' : 'outline'}
+          disabled={isLoading}
+          onClick={() => setOpen(true)}
+        >
+          {isBlacklisted ? (
+            <ShieldOff className="mr-1 h-4 w-4" />
+          ) : (
+            <Shield className="mr-1 h-4 w-4" />
+          )}
+          {isBlacklisted ? '블랙리스트 해제' : '블랙리스트 설정'}
+        </Button>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

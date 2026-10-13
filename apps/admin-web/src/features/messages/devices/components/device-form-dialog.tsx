@@ -21,6 +21,9 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import type { SmsDeviceFormValues, SmsDeviceStatus } from '@/lib/api/domains/sms-gate';
 import { useCreateSmsDevice, useDeleteSmsDevice, useUpdateSmsDevice } from '@/lib/services/sms-gate';
+import { Can } from '@/components/auth/can';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
+import { usePermissionCheck } from '@/hooks/use-permission';
 
 const DEFAULT_FORM: SmsDeviceFormValues = { deviceId: '', name: '', dailyLimit: 150, enabled: true };
 
@@ -57,6 +60,8 @@ function DeviceFormBody({ device, onClose }: { device: SmsDeviceStatus | null; o
   const updateDevice = useUpdateSmsDevice();
   const deleteDevice = useDeleteSmsDevice();
   const isSubmitting = createDevice.isPending || updateDevice.isPending;
+  const saveAction = device ? useUpdateSmsDevice : useCreateSmsDevice;
+  const { canRun } = usePermissionCheck();
 
   const handleSubmit = () => {
     if (device) {
@@ -101,6 +106,7 @@ function DeviceFormBody({ device, onClose }: { device: SmsDeviceStatus | null; o
       }}
       className="flex flex-col gap-4"
     >
+      <PermissionReadOnly run={saveAction}>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="deviceId">Device ID</Label>
         <Input
@@ -145,7 +151,7 @@ function DeviceFormBody({ device, onClose }: { device: SmsDeviceStatus | null; o
       </div>
 
       <div className="flex items-center gap-2 pt-2">
-        {device && (
+        {device && canRun(useDeleteSmsDevice) && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button type="button" variant="destructive">
@@ -172,11 +178,14 @@ function DeviceFormBody({ device, onClose }: { device: SmsDeviceStatus | null; o
           <Button type="button" variant="outline" onClick={onClose}>
             취소
           </Button>
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? <Loader className="animate-spin" /> : device ? '저장' : '등록'}
-          </Button>
+          <Can run={saveAction}>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? <Loader className="animate-spin" /> : device ? '저장' : '등록'}
+            </Button>
+          </Can>
         </div>
       </div>
+      </PermissionReadOnly>
     </form>
   );
 }

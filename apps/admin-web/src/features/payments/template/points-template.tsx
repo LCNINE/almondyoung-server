@@ -6,7 +6,8 @@ import { Header } from '@/components/admin-ui-experimental/common/header/header'
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { usePointsBalance } from '@/lib/services/wallet';
+import { useDeductPoints, useEarnPoints, usePointsBalance } from '@/lib/services/wallet';
+import { Can } from '@/components/auth/can';
 import { PointsBalanceCards } from '../components/points-balance-cards';
 import { PointsEventTable } from '../components/points-event-table';
 import { PointsEarnDialog } from '../components/points-earn-dialog';
@@ -75,16 +76,20 @@ export default function PointsTemplate() {
 
           {searchUserId && balance && (
             <>
-              <Button variant="outline" onClick={() => setEarnOpen(true)}>
-                적립금 지급
-              </Button>
-              <Button
-                variant="outline"
-                className="text-destructive border-destructive/40 hover:bg-destructive/10"
-                onClick={() => setDeductOpen(true)}
-              >
-                적립금 차감
-              </Button>
+              <Can run={useEarnPoints}>
+                <Button variant="outline" onClick={() => setEarnOpen(true)}>
+                  적립금 지급
+                </Button>
+              </Can>
+              <Can run={useDeductPoints}>
+                <Button
+                  variant="outline"
+                  className="text-destructive border-destructive/40 hover:bg-destructive/10"
+                  onClick={() => setDeductOpen(true)}
+                >
+                  적립금 차감
+                </Button>
+              </Can>
             </>
           )}
         </div>

@@ -10,6 +10,9 @@ import {
   Upload,
   X,
 } from 'lucide-react';
+import { Can } from '@/components/auth/can';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
+import { usePermissionReadOnly } from '@/components/auth/permission-read-only-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -36,7 +39,8 @@ interface Props {
   onAfterCreate: (newId: string) => void;
   onAfterDelete: () => void;
   onDirtyChange: (dirty: boolean) => void;
-  onRequestDelete: (id: string) => void;
+  /** 넘기지 않으면 삭제 버튼을 그리지 않는다(권한 없음). */
+  onRequestDelete?: (id: string) => void;
 }
 
 interface FormState {
@@ -180,7 +184,7 @@ function EditForm({
   isBrandCategory: boolean;
   hasChildren: boolean;
   onDirtyChange: (dirty: boolean) => void;
-  onRequestDelete: (id: string) => void;
+  onRequestDelete?: (id: string) => void;
 }) {
   const detail = useCategoryDetail(categoryId);
   const update = useUpdateCategory();
@@ -265,15 +269,20 @@ function EditForm({
       title={initial.name || '카테고리'}
       footer={
         <div className="flex items-center justify-between">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-destructive hover:text-destructive"
-            onClick={() => onRequestDelete(categoryId)}
-          >
-            <Trash2 className="mr-1 h-3.5 w-3.5" />
-            삭제
-          </Button>
+          {onRequestDelete ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              onClick={() => onRequestDelete(categoryId)}
+            >
+              <Trash2 className="mr-1 h-3.5 w-3.5" />
+              삭제
+            </Button>
+          ) : (
+            <span />
+          )}
+          <Can run={useUpdateCategory}>
           <div className="flex gap-2">
             <Button
               variant="outline"
@@ -294,14 +303,17 @@ function EditForm({
               저장
             </Button>
           </div>
+          </Can>
         </div>
       }
     >
-      <FormFields
-        value={form}
-        onChange={setForm}
-        isBrandCategory={isBrandCategory}
-      />
+      <PermissionReadOnly run={useUpdateCategory}>
+        <FormFields
+          value={form}
+          onChange={setForm}
+          isBrandCategory={isBrandCategory}
+        />
+      </PermissionReadOnly>
 
       <div className="p-3 space-y-2 text-sm border rounded-md bg-muted/30">
         <div className="flex items-center justify-between">
@@ -518,6 +530,7 @@ function CategoryImageField({
 }) {
   const [uploading, setUploading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const readOnly = usePermissionReadOnly() !== null;
 
   const handleFile = async (file: File | undefined) => {
     if (!file) return;
@@ -557,6 +570,7 @@ function CategoryImageField({
             </div>
           )}
         </div>
+        {!readOnly && (
         <div className="flex flex-col gap-2">
           <input
             ref={inputRef}
@@ -593,6 +607,7 @@ function CategoryImageField({
             </Button>
           )}
         </div>
+        )}
       </div>
       <p className="text-xs text-muted-foreground">
         {isBrandCategory

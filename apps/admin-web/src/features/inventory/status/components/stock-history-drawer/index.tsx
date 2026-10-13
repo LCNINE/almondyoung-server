@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { useStockHistory, useCancelStockEvent } from '@/lib/services/inventory';
+import { Can } from '@/components/auth/can';
 import type {
   StockHistoryDto,
   StockSummaryDto,
@@ -128,15 +129,17 @@ export function StockHistoryDrawer({ row, open, onOpenChange }: Props) {
                         {new Date(item.occurredAt).toLocaleString('ko-KR')}
                       </p>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="shrink-0 text-xs"
-                      disabled={cancelMutation.isPending}
-                      onClick={() => handleCancel(item.id)}
-                    >
-                      취소
-                    </Button>
+                    <Can run={useCancelStockEvent}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="shrink-0 text-xs"
+                        disabled={cancelMutation.isPending}
+                        onClick={() => handleCancel(item.id)}
+                      >
+                        취소
+                      </Button>
+                    </Can>
                   </li>
                 );
               })}

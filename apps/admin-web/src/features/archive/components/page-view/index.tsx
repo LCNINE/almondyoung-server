@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   flushArchivePageUpdate,
   useArchivePage,
@@ -49,6 +50,9 @@ export function ArchivePageView({ pageId, onLoaded, onOpenNav }: Props) {
   const updateMutation = useUpdateArchivePage(page?.space ?? 'team');
   const favoriteMutation = useToggleArchiveFavorite();
   const deleteMutation = useDeleteArchivePage(page?.space ?? 'team');
+  const { canRun } = usePermissionCheck();
+  const canEdit = canRun(useUpdateArchivePage);
+  const canDelete = canRun(useDeleteArchivePage);
 
   const metaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 아직 서버로 못 보낸 제목·아이콘·커버 변경분.
@@ -198,14 +202,17 @@ export function ArchivePageView({ pageId, onLoaded, onOpenNav }: Props) {
         }
         onOpenNav={onOpenNav}
         onOpenHistory={() => setHistoryOpen(true)}
-        onDelete={() =>
-          deleteMutation.mutate(pageId, {
-            onSuccess: () => {
-              toast.success('휴지통으로 옮겼습니다.');
-              router.push('/archive');
-            },
-            onError: () => toast.error('삭제하지 못했습니다.'),
-          })
+        onDelete={
+          canDelete
+            ? () =>
+                deleteMutation.mutate(pageId, {
+                  onSuccess: () => {
+                    toast.success('휴지통으로 옮겼습니다.');
+                    router.push('/archive');
+                  },
+                  onError: () => toast.error('삭제하지 못했습니다.'),
+                })
+            : undefined
         }
       />
 
@@ -214,6 +221,7 @@ export function ArchivePageView({ pageId, onLoaded, onOpenNav }: Props) {
           title={title}
           icon={icon}
           coverUrl={coverUrl}
+          readOnly={!canEdit}
           onTitleChange={(next) => {
             setTitle(next);
             saveMetaDebounced({ title: next });
@@ -240,6 +248,7 @@ export function ArchivePageView({ pageId, onLoaded, onOpenNav }: Props) {
             onSave={handleBodySave}
             onLeave={handleBodyLeave}
             onDirtyChange={handleDirty}
+            editable={canEdit}
           />
         </div>
       </div>

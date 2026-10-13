@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Can } from '@/components/auth/can';
 import { useSetUserRoles, useUserRoles } from '@/lib/services/customers';
 import { useAdminRoles } from '@/lib/services/roles';
 import { SectionCard } from './_ui';
@@ -58,15 +59,17 @@ export function RolesSection({ userId }: { userId: string }) {
       icon={<ShieldCheck className="size-4 text-amber-500" />}
       action={
         !editing ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => setEditing(true)}
-          >
-            <Pencil className="mr-1 h-3.5 w-3.5" />
-            수정
-          </Button>
+          <Can run={useSetUserRoles}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setEditing(true)}
+            >
+              <Pencil className="mr-1 h-3.5 w-3.5" />
+              수정
+            </Button>
+          </Can>
         ) : (
           <div className="flex gap-2">
             <Button

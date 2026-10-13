@@ -35,11 +35,17 @@ import {
   retryNoticeOf,
 } from '@/lib/services/orders';
 import type { BatchResultItem, CarrierCode } from '@/lib/types/dto/fulfillment';
+import { Can } from '@/components/auth/can';
+import { useCan } from '@/hooks/use-permission';
+import { permissionLabel } from '@/lib/auth/permission-labels';
 
 export default function WaybillIssueTemplate() {
   const fulfillments = useFulfillments();
   const [foId, setFoId] = useState('');
-  const shipments = useFulfillmentShipments(foId);
+  // shipment 목록은 출고 조회 권한이다 — 없으면 요청하지 않고 «없음» 대신 그 이유를 보인다
+  const shipmentRead = useCan(['fulfillment.shipment.read']);
+  const shipmentDenied = shipmentRead.status === 'ready' && !shipmentRead.allowed;
+  const shipments = useFulfillmentShipments(foId, { enabled: shipmentRead.status === 'ready' && shipmentRead.allowed });
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [carrier, setCarrier] = useState<CarrierCode>('HANJIN');
   const [results, setResults] = useState<BatchResultItem[]>([]);
@@ -127,9 +133,11 @@ export default function WaybillIssueTemplate() {
             </SelectContent>
           </Select>
         </div>
-        <Button onClick={runBatch} disabled={batch.isPending || !selectedIds.length}>
-          {batch.isPending ? '발급 중...' : `선택 ${selectedIds.length}건 일괄발급`}
-        </Button>
+        <Can run={useBatchIssueWaybills}>
+          <Button onClick={runBatch} disabled={batch.isPending || !selectedIds.length}>
+            {batch.isPending ? '발급 중...' : `선택 ${selectedIds.length}건 일괄발급`}
+          </Button>
+        </Can>
       </div>
 
       <div className="rounded-md border">
@@ -160,7 +168,14 @@ export default function WaybillIssueTemplate() {
                 <TableCell className="text-right tabular-nums">{s.totalQty}</TableCell>
               </TableRow>
             ))}
-            {foId && plannedShipments.length === 0 && (
+            {foId && shipmentDenied && (
+              <TableRow>
+                <TableCell colSpan={4} className="py-6 text-center text-sm text-muted-foreground">
+                  shipment 목록은 {permissionLabel('fulfillment.shipment.read')} 권한이 있어야 보입니다.
+                </TableCell>
+              </TableRow>
+            )}
+            {foId && !shipmentDenied && plannedShipments.length === 0 && (
               <TableRow>
                 <TableCell colSpan={4} className="py-6 text-center text-sm text-muted-foreground">
                   planned 상태 shipment 가 없습니다.

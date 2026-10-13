@@ -21,6 +21,13 @@ import { OrderLineDialog } from '../line-execution/order-dialog';
 import { MarkLineUnavailableDialog } from '../line-execution/unavailable-dialog';
 import { ShortCloseLineDialog } from '../line-execution/short-close-dialog';
 import { ExpectedArrivalDialog } from '../line-execution/expected-arrival-dialog';
+import {
+  useMarkPurchaseOrderLineUnavailable,
+  useOrderPurchaseOrderLine,
+  useShortClosePurchaseOrderLine,
+  useUpdatePurchaseOrderLineExpectedArrival,
+} from '@/lib/services/inventory';
+import { usePermissionCheck } from '@/hooks/use-permission';
 
 const LINE_STATUS_LABELS: Record<PurchaseOrderLineStatus, string> = {
   requested: '요청됨',
@@ -42,6 +49,7 @@ type LineAction = 'order' | 'unavailable' | 'short-close' | 'expected-arrival';
 export function PurchaseOrderLineList({ po }: { po: PurchaseOrderDto }) {
   const [activeLine, setActiveLine] = useState<PurchaseOrderLineDto | null>(null);
   const [activeAction, setActiveAction] = useState<LineAction | null>(null);
+  const { canRun } = usePermissionCheck();
 
   const openAction = (line: PurchaseOrderLineDto, action: LineAction) => {
     setActiveLine(line);
@@ -112,13 +120,17 @@ export function PurchaseOrderLineList({ po }: { po: PurchaseOrderDto }) {
 
               <div className="flex shrink-0 flex-wrap justify-end gap-1">
                 {isLineExecutable(po.status, line) && (<>
-                  <Button size="sm" variant="outline" onClick={() => openAction(line, 'order')}>실행</Button>
-                  <Button size="sm" variant="ghost" onClick={() => openAction(line, 'unavailable')}>불가</Button>
+                  {canRun(useOrderPurchaseOrderLine) && (
+                    <Button size="sm" variant="outline" onClick={() => openAction(line, 'order')}>실행</Button>
+                  )}
+                  {canRun(useMarkPurchaseOrderLineUnavailable) && (
+                    <Button size="sm" variant="ghost" onClick={() => openAction(line, 'unavailable')}>불가</Button>
+                  )}
                 </>)}
-                {canEditExpectedArrival(po.status, line) && (
+                {canEditExpectedArrival(po.status, line) && canRun(useUpdatePurchaseOrderLineExpectedArrival) && (
                   <Button size="sm" variant="outline" onClick={() => openAction(line, 'expected-arrival')}>예정일 수정</Button>
                 )}
-                {canShortClose(po.status, line) && (
+                {canShortClose(po.status, line) && canRun(useShortClosePurchaseOrderLine) && (
                   <Button size="sm" variant="ghost" onClick={() => openAction(line, 'short-close')}>잔량 포기</Button>
                 )}
               </div>

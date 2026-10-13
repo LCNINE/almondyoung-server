@@ -38,6 +38,7 @@ import {
   useStopSmsCampaign,
 } from '@/lib/services/sms-gate';
 import { formatPhoneNumber } from '@/lib/utils/phone';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { HelpSheet } from '../../components/help-sheet';
 import { CategoryBadge } from '../../components/category-badge';
 
@@ -53,6 +54,7 @@ const isStoppable = (state: SmsCampaignState) => state === 'SCHEDULED' || state 
 export default function SmsCampaignsTemplate() {
   const { data, isLoading, isError } = useSmsCampaigns();
   const stopCampaign = useStopSmsCampaign();
+  const { canRun } = usePermissionCheck();
   const [stopping, setStopping] = useState<SmsCampaign | null>(null);
   const [viewingClicks, setViewingClicks] = useState<SmsCampaign | null>(null);
   const [continuing, setContinuing] = useState<SmsCampaign | null>(null);
@@ -152,12 +154,16 @@ export default function SmsCampaignsTemplate() {
                     <TableCell>
                       {isStoppable(campaign.state) && (
                         <div className="flex gap-1">
-                          <Button variant="outline" size="sm" onClick={() => setContinuing(campaign)}>
-                            수정
-                          </Button>
-                          <Button variant="outline" size="sm" onClick={() => setStopping(campaign)}>
-                            중지
-                          </Button>
+                          {canRun(useContinueSmsCampaign) && (
+                            <Button variant="outline" size="sm" onClick={() => setContinuing(campaign)}>
+                              수정
+                            </Button>
+                          )}
+                          {canRun(useStopSmsCampaign) && (
+                            <Button variant="outline" size="sm" onClick={() => setStopping(campaign)}>
+                              중지
+                            </Button>
+                          )}
                         </div>
                       )}
                     </TableCell>

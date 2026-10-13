@@ -10,7 +10,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useWarehouses } from '@/lib/services/inventory';
+import { useUpdateWarehouse, useWarehouses } from '@/lib/services/inventory';
+import { Can } from '@/components/auth/can';
 import type { WarehouseDto } from '@/lib/types/dto/inventory';
 import { methodsForStrategies, PICKING_METHOD_LABELS } from '@/lib/utils/picking-method';
 import { PickingMethodDialog } from '../picking-method-dialog';
@@ -76,9 +77,11 @@ export function WarehousesTable() {
                   )}
                 </TableCell>
                 <TableCell>
-                  <Button size="sm" variant="outline" onClick={() => setEditRow(warehouse)}>
-                    편집
-                  </Button>
+                  <Can run={useUpdateWarehouse}>
+                    <Button size="sm" variant="outline" onClick={() => setEditRow(warehouse)}>
+                      편집
+                    </Button>
+                  </Can>
                 </TableCell>
               </TableRow>
             );

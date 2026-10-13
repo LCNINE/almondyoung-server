@@ -14,6 +14,8 @@ export type BandCell = {
   stuck: number;
   gaveUp: number;
   oldestAt: string | null;
+  /** 권한이 없어 가린 칸이면 그 이유(«—»(값을 못 얻음)와 구분해 «가림»으로 그린다) */
+  hiddenReason?: string | null;
 };
 
 /** 위쪽 띠 — 0~8 단계, 점선 오른쪽에 취소·반품·교환(·분류 안 됨은 있을 때만). 설명·범례는 두지 않는다. */
@@ -36,12 +38,14 @@ export function StageBand(props: {
       gaveUp: 0,
       oldestAt: null,
     };
-    const unknown = c.open === null;
+    const hidden = c.hiddenReason ?? null;
+    const unknown = c.open === null || hidden !== null;
     return (
       <button
         key={s.key}
         type="button"
         onClick={() => props.onSelect(s.key)}
+        title={hidden ?? undefined}
         className={cn(
           'flex min-w-0 flex-col gap-1 rounded-lg border bg-white p-2.5 text-left transition-colors hover:border-slate-400',
           c.open === 0 && 'opacity-50',
@@ -54,7 +58,7 @@ export function StageBand(props: {
           {s.name}
         </span>
         <span className="text-[22px] font-bold leading-tight tabular-nums">
-          {c.open === null ? '—' : c.open.toLocaleString('ko-KR')}
+          {hidden !== null ? '가림' : c.open === null ? '—' : c.open.toLocaleString('ko-KR')}
         </span>
         <span className="min-h-4 text-xs font-semibold text-red-600 tabular-nums">
           {!unknown ? cardAlertText(c.stuck, c.gaveUp) : ''}

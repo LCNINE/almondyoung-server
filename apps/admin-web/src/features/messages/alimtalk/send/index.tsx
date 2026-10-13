@@ -35,6 +35,7 @@ import {
   usePreviewAlimtalkCampaign,
 } from '@/lib/services/alimtalk';
 import { cn } from '@/lib/utils/ui';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { KakaoBubble } from '../components/kakao-bubble';
 import {
   defaultBinding,
@@ -86,6 +87,7 @@ export default function AlimtalkSendTemplate() {
   const groups = useAlimtalkRecipientGroups();
   const previewCampaign = usePreviewAlimtalkCampaign();
   const createCampaign = useCreateAlimtalkCampaign();
+  const { canRun } = usePermissionCheck();
 
   const [templateCode, setTemplateCode] = useState('');
   const [bindings, setBindings] = useState<AlimtalkVariableBinding[]>([]);
@@ -451,7 +453,7 @@ export default function AlimtalkSendTemplate() {
         buttons={template?.buttons ?? []}
         isSubmitting={createCampaign.isPending}
         onCancel={() => setConfirming(null)}
-        onConfirm={confirm}
+        onConfirm={canRun(useCreateAlimtalkCampaign) ? confirm : undefined}
       />
     </Container>
   );

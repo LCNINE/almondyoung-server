@@ -3,10 +3,12 @@
 import { useState } from 'react';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
+import { Can } from '@/components/auth/can';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils/ui';
+import { useCreateChannelListing } from '@/lib/services/products';
 import { ChannelListingsTable } from '../components/channel-listings-table';
 import { ChannelListingFormDialog } from '../components/channel-listing-form-dialog';
 import { QuarantineTable } from '@/features/mall/quarantine/components/quarantine-table';
@@ -90,9 +92,11 @@ export default function ChannelListingsTemplate() {
               </div>
               <Button onClick={handleSearch}>조회</Button>
               {searchedVariantId && (
-                <Button onClick={() => setCreateOpen(true)} variant="outline">
-                  리스팅 등록
-                </Button>
+                <Can run={useCreateChannelListing}>
+                  <Button onClick={() => setCreateOpen(true)} variant="outline">
+                    리스팅 등록
+                  </Button>
+                </Can>
               )}
             </div>
 

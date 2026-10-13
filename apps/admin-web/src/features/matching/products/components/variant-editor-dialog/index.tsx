@@ -41,6 +41,8 @@ import { SkuLookupSection } from './sku-lookup-section';
 import { StrategySection } from './strategy-section';
 import { StockPolicySection } from './stock-policy-section';
 import { VariantAssetSection } from './asset-section';
+import { Can } from '@/components/auth/can';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
 
 interface VariantEditorDialogProps {
   master: MasterDto | null;
@@ -215,6 +217,7 @@ export function VariantMatchingPanel({
         )}
       </div>
 
+      <PermissionReadOnly run={[useUpsertVariantMatching, useUpdateVariantStockPolicy, useSetMatchingPriority, useChangeMatchingStrategy]}>
       <SkuLookupSection links={links} onChange={setLinks} />
 
       <Separator />
@@ -235,12 +238,15 @@ export function VariantMatchingPanel({
         strategy={strategy}
         onChange={handleStockPolicyChange}
       />
+      </PermissionReadOnly>
 
+      <Can run={[useUpsertVariantMatching, useUpdateVariantStockPolicy, useSetMatchingPriority, useChangeMatchingStrategy]}>
       <div className="sticky bottom-0 -mx-4 -mb-4 flex justify-end border-t bg-background px-4 py-3">
         <Button size="sm" onClick={handleSave} disabled={isLoading}>
           {isLoading ? '저장 중...' : '저장'}
         </Button>
       </div>
+      </Can>
     </div>
   );
 }

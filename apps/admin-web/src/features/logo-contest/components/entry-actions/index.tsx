@@ -19,6 +19,7 @@ import {
   useUpdateLogoContestEntryStatus,
 } from '@/lib/services/logo-contest';
 import { AdminLogoContestEntryDto } from '@/lib/types/dto/logo-contest';
+import { usePermissionCheck } from '@/hooks/use-permission';
 
 type PendingAction = 'hide' | 'show' | 'winner';
 
@@ -27,6 +28,7 @@ export function EntryActions({ entry }: { entry: AdminLogoContestEntryDto }) {
   const updateStatus = useUpdateLogoContestEntryStatus(entry.id);
   const designateWinner = useDesignateLogoContestWinner(entry.id);
   const { data: contestStatus } = useLogoContestStatus();
+  const { canRun } = usePermissionCheck();
 
   const isBusy = updateStatus.isPending || designateWinner.isPending;
   const nextStatus = entry.status === 'active' ? 'hidden' : 'active';
@@ -59,28 +61,32 @@ export function EntryActions({ entry }: { entry: AdminLogoContestEntryDto }) {
 
   return (
     <div className="flex gap-1" onClick={(event) => event.stopPropagation()}>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={isBusy}
-        onClick={() => setPending(entry.status === 'active' ? 'hide' : 'show')}
-      >
-        {entry.status === 'active' ? '숨김' : '공개'}
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        disabled={
-          isBusy ||
-          entry.isWinner ||
-          entry.status === 'hidden' ||
-          !contestStatus ||
-          Date.now() <= new Date(contestStatus.endsAt).getTime()
-        }
-        onClick={() => setPending('winner')}
-      >
-        대상 수상작 선정
-      </Button>
+      {canRun(useUpdateLogoContestEntryStatus) && (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={isBusy}
+          onClick={() => setPending(entry.status === 'active' ? 'hide' : 'show')}
+        >
+          {entry.status === 'active' ? '숨김' : '공개'}
+        </Button>
+      )}
+      {canRun(useDesignateLogoContestWinner) && (
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={
+            isBusy ||
+            entry.isWinner ||
+            entry.status === 'hidden' ||
+            !contestStatus ||
+            Date.now() <= new Date(contestStatus.endsAt).getTime()
+          }
+          onClick={() => setPending('winner')}
+        >
+          대상 수상작 선정
+        </Button>
+      )}
 
       <AlertDialog
         open={pending === 'hide' || pending === 'show'}

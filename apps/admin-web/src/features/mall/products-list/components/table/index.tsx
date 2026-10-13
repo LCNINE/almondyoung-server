@@ -18,6 +18,12 @@ import {
 import { useMastersSummary } from '@/lib/services/products/queries';
 import { useMasterSelection } from '@/lib/services/products/mutations';
 import { useRequestFormExport } from '@/lib/services/products/form-export';
+import {
+  useBulkDeleteMasters,
+  useBulkUpdateMasters,
+  useBulkUpdatePolicy,
+} from '@/lib/services/products';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { parseServerError } from '@/lib/api/server-error';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useProductsListTableColumns } from '@/hooks/table/columns/use-products-list-table-columns';
@@ -41,6 +47,7 @@ export function ProductsListTable() {
   const requestFormExport = useRequestFormExport();
   const [modalAction, setModalAction] = useState<BulkActionType | null>(null);
   const [policyOpen, setPolicyOpen] = useState(false);
+  const { canRun, can } = usePermissionCheck();
 
   const { searchParams: query, pageSize } = useProductsListTableQuery();
   const { data, isLoading, isFetching } = useMastersSummary(query);
@@ -242,10 +249,14 @@ export function ProductsListTable() {
                 {selectAllGate.reason}
               </span>
             )}
-            <ExcelDownloadMenu
-              selectedIds={selectedIds}
-              totalCount={totalCount}
-            />
+            {/* 엑셀 내보내기는 훅 없이 API 를 부른다 — 그 API 의 권한으로 판정한다 */}
+            {can(['catalog.product.export']) && (
+              <ExcelDownloadMenu
+                selectedIds={selectedIds}
+                totalCount={totalCount}
+              />
+            )}
+            {canRun(useRequestFormExport) && (
             <Button
               size="sm"
               variant="outline"
@@ -281,6 +292,8 @@ export function ProductsListTable() {
               <FileSpreadsheet className="w-3 h-3 mr-1" />
               양식 다운로드
             </Button>
+            )}
+            {canRun(useBulkUpdateMasters) && (
             <Button
               size="sm"
               variant="outline"
@@ -289,6 +302,8 @@ export function ProductsListTable() {
             >
               선택 상품상태변경
             </Button>
+            )}
+            {canRun(useBulkUpdatePolicy) && (
             <Button
               size="sm"
               variant="outline"
@@ -297,6 +312,8 @@ export function ProductsListTable() {
             >
               운영 노출 정책 변경
             </Button>
+            )}
+            {canRun(useBulkDeleteMasters) && (
             <Button
               size="sm"
               variant="destructive"
@@ -306,6 +323,7 @@ export function ProductsListTable() {
               <Trash2 className="w-3 h-3 mr-1" />
               선택 삭제
             </Button>
+            )}
           </div>
         }
         rowClassName={(row) =>

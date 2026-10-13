@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { useDeleteSupplier, useWarehouses } from '@/lib/services/inventory';
+import { useDeleteSupplier, useUpdateSupplier, useWarehouses } from '@/lib/services/inventory';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { SupplierDto } from '@/lib/types/dto/inventory';
 import { toast } from 'sonner';
 import { SupplierFormDialog } from '../supplier-form-dialog';
@@ -28,6 +29,7 @@ export function SupplierDetailDrawer({ row, open, onOpenChange }: Props) {
   const { data: warehouses } = useWarehouses();
   const [editOpen, setEditOpen] = useState(false);
   const deleteMutation = useDeleteSupplier();
+  const { canRun } = usePermissionCheck();
 
   const handleDelete = async () => {
     if (!row) return;
@@ -120,17 +122,21 @@ export function SupplierDetailDrawer({ row, open, onOpenChange }: Props) {
           </div>
 
           <div className="mt-8 flex gap-2">
-            <Button variant="outline" className="flex-1" onClick={() => setEditOpen(true)}>
-              수정
-            </Button>
-            <Button
-              variant="destructive"
-              className="flex-1"
-              onClick={handleDelete}
-              disabled={deleteMutation.isPending}
-            >
-              {deleteMutation.isPending ? '삭제 중...' : '삭제'}
-            </Button>
+            {canRun(useUpdateSupplier) && (
+              <Button variant="outline" className="flex-1" onClick={() => setEditOpen(true)}>
+                수정
+              </Button>
+            )}
+            {canRun(useDeleteSupplier) && (
+              <Button
+                variant="destructive"
+                className="flex-1"
+                onClick={handleDelete}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? '삭제 중...' : '삭제'}
+              </Button>
+            )}
           </div>
         </SheetContent>
       </Sheet>

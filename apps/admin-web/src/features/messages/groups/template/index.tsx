@@ -27,14 +27,19 @@ import {
 import type { SmsRecipientGroup } from '@/lib/api/domains/sms-gate';
 import {
   useDeleteSmsRecipientGroup,
+  useImportSupabaseSmsGroup,
   useSmsRecipientGroups,
+  useUploadSmsGroupRecipients,
 } from '@/lib/services/sms-gate';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { ExcelUploadDialog } from '../components/excel-upload-dialog';
 import { SupabaseImportDialog } from '../components/supabase-import-dialog';
 
 export default function SmsRecipientGroupsTemplate() {
   const { data, isLoading, isError } = useSmsRecipientGroups();
   const deleteGroup = useDeleteSmsRecipientGroup();
+  const { canRun } = usePermissionCheck();
+  const canUpload = canRun(useUploadSmsGroupRecipients);
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
   const [appendTo, setAppendTo] = useState<SmsRecipientGroup | null>(null);
@@ -57,12 +62,16 @@ export default function SmsRecipientGroupsTemplate() {
         subtitle="회원이 아닌 번호를 모아 두는 곳입니다. 대량 메시지 전송에서 대상으로 고를 수 있습니다."
         right={
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setImporting(true)}>
-              네이버 플레이스에서 가져오기
-            </Button>
-            <Button variant="outline" onClick={() => setCreating(true)}>
-              엑셀로 만들기
-            </Button>
+            {canRun(useImportSupabaseSmsGroup) && (
+              <Button variant="outline" onClick={() => setImporting(true)}>
+                네이버 플레이스에서 가져오기
+              </Button>
+            )}
+            {canUpload && (
+              <Button variant="outline" onClick={() => setCreating(true)}>
+                엑셀로 만들기
+              </Button>
+            )}
           </div>
         }
       />
@@ -98,20 +107,24 @@ export default function SmsRecipientGroupsTemplate() {
                     {new Date(group.updatedAt).toLocaleDateString('ko-KR')}
                   </TableCell>
                   <TableCell className="flex justify-end gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setAppendTo(group)}
-                    >
-                      엑셀 추가
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setDeleting(group)}
-                    >
-                      삭제
-                    </Button>
+                    {canUpload && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setAppendTo(group)}
+                      >
+                        엑셀 추가
+                      </Button>
+                    )}
+                    {canRun(useDeleteSmsRecipientGroup) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setDeleting(group)}
+                      >
+                        삭제
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

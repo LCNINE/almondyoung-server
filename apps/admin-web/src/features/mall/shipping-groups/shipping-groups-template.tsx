@@ -19,9 +19,12 @@ import {
   type ShippingGroup,
 } from '@/lib/api/domains/medusa/shipping-groups';
 import {
+  useCreateShippingGroup,
   useDeleteShippingGroup,
   useShippingGroups,
+  useUpdateShippingGroup,
 } from '@/lib/services/medusa-shipping-groups';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { AreaTemplateSection } from './components/area-template-section';
@@ -56,6 +59,7 @@ export default function ShippingGroupsTemplate() {
   const { data, isLoading } = useShippingGroups();
   const groups = useMemo(() => data ?? [], [data]);
   const deleteMutation = useDeleteShippingGroup();
+  const { canRun } = usePermissionCheck();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ShippingGroup | null>(null);
@@ -88,7 +92,11 @@ export default function ShippingGroupsTemplate() {
         className="px-0"
         title="배송비 그룹"
         subtitle="같은 그룹 상품은 여러 개를 담아도 배송비가 한 번만 부과됩니다. 상품별 그룹 지정은 상품 상세에서 합니다."
-        right={<Button onClick={openCreate}>그룹 추가</Button>}
+        right={
+          canRun(useCreateShippingGroup) ? (
+            <Button onClick={openCreate}>그룹 추가</Button>
+          ) : undefined
+        }
       />
       <Table>
         <TableHeader>
@@ -148,14 +156,16 @@ export default function ShippingGroupsTemplate() {
                   {`${group.delivery.method} · ${group.delivery.area} · ${group.delivery.leadTimeMinDays}~${group.delivery.leadTimeMaxDays}일`}
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => openEdit(group)}
-                  >
-                    수정
-                  </Button>
-                  {!isDefault && (
+                  {canRun(useUpdateShippingGroup) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openEdit(group)}
+                    >
+                      수정
+                    </Button>
+                  )}
+                  {!isDefault && canRun(useDeleteShippingGroup) && (
                     <Button
                       variant="ghost"
                       size="sm"

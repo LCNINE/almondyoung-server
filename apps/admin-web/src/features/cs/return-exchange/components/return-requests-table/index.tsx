@@ -35,7 +35,6 @@ import {
   useCreateReturnRequest,
 } from '@/lib/services/return-exchange';
 import { getServerDenyMessage } from '@/lib/services/orders';
-import { FULFILLMENT_SCOPES } from '@/lib/services/orders/operation-policy';
 import { useReturnEligibility } from '@/lib/services/return-exchange';
 import { usePermissionCheck } from '@/hooks/use-permission';
 import type { ReturnRequest } from '@/lib/api/domains/return-exchange';
@@ -91,9 +90,10 @@ export function ReturnRequestsTable({
 }: Props) {
   const query = { status: statusFilter, createdFrom, createdTo, page, limit: PAGE_SIZE };
   const { data, isLoading, isFetching } = useReturnRequests(query);
-  const { can, isPermissionLoading } = usePermissionCheck();
+  const { can, canRun, isPermissionLoading } = usePermissionCheck();
   const canReadEligibility =
-    !isPermissionLoading && can([FULFILLMENT_SCOPES.operate]) === true;
+    // 반품 가능 수량 조회 API 의 권한(출고 조회)으로 판정한다
+    !isPermissionLoading && can(['fulfillment.shipment.read']) === true;
 
   const approve = useApproveReturn();
   const reject = useRejectReturn();
@@ -315,6 +315,7 @@ export function ReturnRequestsTable({
                       <div className="flex gap-1 justify-end flex-wrap">
                         {request.status === 'requested' && (
                           <>
+                            {canRun(useApproveReturn) && (
                             <Button
                               size="sm"
                               variant="default"
@@ -331,6 +332,8 @@ export function ReturnRequestsTable({
                             >
                               승인
                             </Button>
+                            )}
+                            {canRun(useRejectReturn) && (
                             <Button
                               size="sm"
                               variant="destructive"
@@ -347,9 +350,10 @@ export function ReturnRequestsTable({
                             >
                               거절
                             </Button>
+                            )}
                           </>
                         )}
-                        {request.status === 'approved' && (
+                        {request.status === 'approved' && canRun(useMarkReturnCollectionPending) && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -364,7 +368,7 @@ export function ReturnRequestsTable({
                             수거 대기
                           </Button>
                         )}
-                        {request.status === 'collection_pending' && (
+                        {request.status === 'collection_pending' && canRun(useMarkReturnCollected) && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -379,7 +383,7 @@ export function ReturnRequestsTable({
                             수거 완료
                           </Button>
                         )}
-                        {request.status === 'collected' && (
+                        {request.status === 'collected' && canRun(useMarkReturnInspected) && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -394,7 +398,7 @@ export function ReturnRequestsTable({
                             검수 완료
                           </Button>
                         )}
-                        {request.status === 'inspected' && (
+                        {request.status === 'inspected' && canRun(useCompleteReturn) && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -411,6 +415,7 @@ export function ReturnRequestsTable({
                         )}
                         {request.status === 'refund_pending' && (
                           <>
+                            {canRun(useRetryReturnRefund) && (
                             <Button
                               size="sm"
                               variant="outline"
@@ -428,6 +433,8 @@ export function ReturnRequestsTable({
                             >
                               환불 재시도
                             </Button>
+                            )}
+                            {canRun(useManualCompleteReturn) && (
                             <Button
                               size="sm"
                               variant="secondary"
@@ -438,6 +445,7 @@ export function ReturnRequestsTable({
                             >
                               수동 완료
                             </Button>
+                            )}
                           </>
                         )}
                       </div>
@@ -632,6 +640,7 @@ export function ReturnRequestsTable({
                     placeholder="선택 사항"
                   />
                 </div>
+                {canRun(useCreateReturnRequest) && (
                 <Button
                   disabled={
                     createReturn.isPending || selectedEligibilityMax < 1
@@ -640,6 +649,7 @@ export function ReturnRequestsTable({
                 >
                   {createReturn.isPending ? '접수 중...' : '반품 요청 접수'}
                 </Button>
+                )}
               </div>
               <p className="text-xs text-muted-foreground">
                 이 attempt에서 한 번에 선택 가능한 최대 수량은{' '}

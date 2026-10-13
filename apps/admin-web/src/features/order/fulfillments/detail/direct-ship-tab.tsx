@@ -16,6 +16,8 @@ import {
   orderQueryKeys,
 } from '@/lib/services/orders';
 import type { FulfillmentOrderDetail } from '@/lib/types/dto/fulfillment';
+import { Can } from '@/components/auth/can';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
 
 function extractErrorMessage(err: unknown): string {
   if (err && typeof err === 'object') {
@@ -155,6 +157,7 @@ function DirectShipContent({
             전달은 pending 또는 미전달 상태에서만 가능합니다.
           </p>
         )}
+        <PermissionReadOnly run={useForwardDirectShipOrders}>
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
             <Label className="text-xs">공급사 이름</Label>
@@ -166,6 +169,7 @@ function DirectShipContent({
               disabled={!canForward}
             />
           </div>
+          <Can run={useForwardDirectShipOrders}>
           <Button
             size="sm"
             variant="outline"
@@ -174,7 +178,9 @@ function DirectShipContent({
           >
             {forward.isPending ? '처리 중...' : '공급사 전달'}
           </Button>
+          </Can>
         </div>
+        </PermissionReadOnly>
       </section>
 
       {/* CSV 발주서 다운로드 */}
@@ -183,6 +189,7 @@ function DirectShipContent({
         <p className="mb-3 text-xs text-muted-foreground">
           공급사별 직배 발주서를 CSV 형식으로 내보냅니다. 공급사 이름으로 데이터가 필터링됩니다.
         </p>
+        <PermissionReadOnly run={useExportDirectShipFile}>
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
             <Label className="text-xs">공급사 이름</Label>
@@ -193,6 +200,7 @@ function DirectShipContent({
               className="w-52"
             />
           </div>
+          <Can run={useExportDirectShipFile}>
           <Button
             size="sm"
             variant="outline"
@@ -202,7 +210,9 @@ function DirectShipContent({
             <Download className="mr-1.5 h-3.5 w-3.5" />
             {exportFile.isPending ? '내보내는 중...' : 'CSV 내보내기'}
           </Button>
+          </Can>
         </div>
+        </PermissionReadOnly>
       </section>
 
       {/* 공급사 출고 완료 (complete) */}
@@ -226,6 +236,7 @@ function DirectShipContent({
             공급사 전달(forwarded) 상태에서만 가능합니다.
           </p>
         )}
+        <PermissionReadOnly run={useCompleteDirectShipOrders}>
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
             <Label className="text-xs">처리자 이름/ID</Label>
@@ -237,13 +248,16 @@ function DirectShipContent({
               disabled={!canComplete}
             />
           </div>
+          <Can run={useCompleteDirectShipOrders}>
           <Button
             onClick={handleComplete}
             disabled={!canComplete || complete.isPending || !completedBy.trim()}
           >
             {complete.isPending ? '처리 중...' : '공급사 출고 완료'}
           </Button>
+          </Can>
         </div>
+        </PermissionReadOnly>
       </section>
     </div>
   );

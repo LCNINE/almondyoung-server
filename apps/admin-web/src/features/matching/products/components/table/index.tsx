@@ -7,9 +7,16 @@ import { useProductsMatchingTableColumns } from '@/hooks/table/columns/use-produ
 import { useProductsMatchingTableFilters } from '@/hooks/table/filters/use-products-matching-table-filters';
 import { useProductsMatchingTableQuery } from '@/hooks/table/query/use-products-matching-table-query';
 import { useMasters } from '@/lib/services/products';
-import { useMastersBatchStats } from '@/lib/services/matching';
+import {
+  useChangeMatchingStrategy,
+  useMastersBatchStats,
+  useSetMatchingPriority,
+  useUpdateVariantStockPolicy,
+  useUpsertVariantMatching,
+} from '@/lib/services/matching';
 import type { MasterMatchingRowVM } from '@/lib/types/ui/matching';
 import type { MasterDto } from '@/lib/types/dto/products';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { VariantEditorDialog } from '../variant-editor-dialog';
 
 const PAGE_SIZE = 20;
@@ -43,7 +50,17 @@ export function ProductsMatchingTable() {
 
   const handleEdit = useCallback((row: MasterMatchingRowVM) => setEditMaster(row), []);
 
-  const columns = useProductsMatchingTableColumns({ onEdit: handleEdit });
+  const { canRun } = usePermissionCheck();
+  const columns = useProductsMatchingTableColumns({
+    onEdit: canRun(
+      useUpsertVariantMatching,
+      useUpdateVariantStockPolicy,
+      useSetMatchingPriority,
+      useChangeMatchingStrategy
+    )
+      ? handleEdit
+      : undefined,
+  });
 
   const { table } = useDataTable({
     data: rows,

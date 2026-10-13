@@ -9,7 +9,9 @@ import {
   useActivateChannelListing,
   useDeactivateChannelListing,
   useDeleteChannelListing,
+  useUpdateChannelListing,
 } from '@/lib/services/products';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { ChannelListingWithChannelDto, ChannelListingDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
 import { ChannelListingFormDialog } from '../channel-listing-form-dialog';
@@ -27,6 +29,7 @@ export function ChannelListingsTable({ variantId }: Props) {
   const deleteMutation = useDeleteChannelListing();
 
   const [editRow, setEditRow] = useState<ChannelListingDto | null>(null);
+  const { canRun } = usePermissionCheck();
 
   const handleToggleActive = async (row: ChannelListingWithChannelDto) => {
     try {
@@ -53,9 +56,13 @@ export function ChannelListingsTable({ variantId }: Props) {
   };
 
   const columns = useChannelListingsTableColumns({
-    onEdit: (row) => setEditRow(row as unknown as ChannelListingDto),
-    onToggleActive: handleToggleActive,
-    onDelete: handleDelete,
+    onEdit: canRun(useUpdateChannelListing)
+      ? (row) => setEditRow(row as unknown as ChannelListingDto)
+      : undefined,
+    onToggleActive: canRun(useActivateChannelListing, useDeactivateChannelListing)
+      ? handleToggleActive
+      : undefined,
+    onDelete: canRun(useDeleteChannelListing) ? handleDelete : undefined,
   });
 
   const rows = data?.data ?? [];

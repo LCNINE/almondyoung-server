@@ -5,7 +5,11 @@ import { DataTable } from '@/components/data-table';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useChannelCategoriesTableColumns } from '@/hooks/table/columns/use-channel-categories-table-columns';
 import { useChannelCategories } from '@/lib/services/products';
-import { useDeleteChannelCategory } from '@/lib/services/products';
+import {
+  useDeleteChannelCategory,
+  useUpdateChannelCategory,
+} from '@/lib/services/products';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { ChannelCategoryDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
 import { ChannelCategoryFormDialog } from '../channel-category-form-dialog';
@@ -17,6 +21,7 @@ export function ChannelCategoriesTable() {
   const deleteMutation = useDeleteChannelCategory();
 
   const [editRow, setEditRow] = useState<ChannelCategoryDto | null>(null);
+  const { canRun } = usePermissionCheck();
 
   const handleDelete = async (row: ChannelCategoryDto) => {
     if ((row.channelCount ?? 0) > 0) {
@@ -38,8 +43,8 @@ export function ChannelCategoriesTable() {
   };
 
   const columns = useChannelCategoriesTableColumns({
-    onEdit: (row) => setEditRow(row),
-    onDelete: handleDelete,
+    onEdit: canRun(useUpdateChannelCategory) ? (row) => setEditRow(row) : undefined,
+    onDelete: canRun(useDeleteChannelCategory) ? handleDelete : undefined,
   });
 
   const rows = data?.data ?? [];

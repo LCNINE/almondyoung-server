@@ -9,6 +9,8 @@ import {
   useReplenishmentGrades,
   useUpdateReplenishmentGrades,
 } from '@/lib/services/inventory';
+import { Can } from '@/components/auth/can';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
 import {
   DEMAND_GRADES,
   EMPTY_GRADE_FORM,
@@ -56,6 +58,7 @@ export function GradesTab() {
         분류 창 누적 매출 컷으로 야간에 매겨집니다 — 컷을 바꾸는 것은 전역
         탭이고 다음 재계산에 반영됩니다.
       </p>
+      <PermissionReadOnly run={useUpdateReplenishmentGrades}>
       <div className="grid max-w-md grid-cols-3 gap-3">
         {DEMAND_GRADES.map((grade) => (
           <label key={grade} className="flex flex-col gap-1 text-sm">
@@ -67,10 +70,13 @@ export function GradesTab() {
           </label>
         ))}
       </div>
+      </PermissionReadOnly>
       <div className="flex justify-end">
-        <Button onClick={() => void handleSave()} disabled={update.isPending}>
-          {update.isPending ? '저장 중...' : '저장'}
-        </Button>
+        <Can run={useUpdateReplenishmentGrades}>
+          <Button onClick={() => void handleSave()} disabled={update.isPending}>
+            {update.isPending ? '저장 중...' : '저장'}
+          </Button>
+        </Can>
       </div>
     </div>
   );

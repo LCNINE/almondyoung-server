@@ -22,7 +22,7 @@ const TARGET_TYPE_LABELS: Record<string, string> = {
 };
 
 type RowActions = {
-  onRelease: (row: ReservationDto) => void;
+  onRelease?: (row: ReservationDto) => void; // 넘기지 않으면 해제 버튼을 그리지 않는다(권한 없음)
 };
 
 export const useReservationsTableColumns = (actions: RowActions) => {
@@ -96,12 +96,14 @@ export const useReservationsTableColumns = (actions: RowActions) => {
         header: '액션',
         cell: ({ row }) => (
           <div onClick={(e) => e.stopPropagation()}>
-            <button
-              className="rounded px-2 py-1 text-xs hover:bg-muted"
-              onClick={() => actions.onRelease(row.original)}
-            >
-              해제
-            </button>
+            {actions.onRelease && (
+              <button
+                className="rounded px-2 py-1 text-xs hover:bg-muted"
+                onClick={() => actions.onRelease?.(row.original)}
+              >
+                해제
+              </button>
+            )}
           </div>
         ),
       }),

@@ -33,7 +33,8 @@ type Props = {
   savedAt: Date | null;
   onToggleFavorite: () => void;
   onOpenHistory: () => void;
-  onDelete: () => void;
+  /** 넘기지 않으면 삭제 버튼을 그리지 않는다(권한 없음). */
+  onDelete?: () => void;
   /** 좁은 화면에서 문서 목록 드로어를 연다. md 이상에는 목록이 이미 붙어 있어 쓰지 않는다. */
   onOpenNav: () => void;
 };
@@ -122,13 +123,15 @@ export function PageToolbar({
         <History className="size-4" aria-hidden />
       </IconAction>
 
-      <IconAction
-        label="휴지통으로 옮기기"
-        onClick={onDelete}
-        className="text-muted-foreground hover:text-destructive"
-      >
-        <Trash2 className="size-4" aria-hidden />
-      </IconAction>
+      {onDelete && (
+        <IconAction
+          label="휴지통으로 옮기기"
+          onClick={onDelete}
+          className="text-muted-foreground hover:text-destructive"
+        >
+          <Trash2 className="size-4" aria-hidden />
+        </IconAction>
+      )}
     </div>
   );
 }

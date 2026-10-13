@@ -10,9 +10,10 @@ import type { SkuResponseDto } from '@/lib/types/dto/inventory';
 const columnHelper = createColumnHelper<SkuResponseDto>();
 
 type RowActions = {
-  onEdit: (row: SkuResponseDto) => void;
-  onChangeGroup: (row: SkuResponseDto) => void;
-  onDelete: (row: SkuResponseDto) => void;
+  // 넘기지 않으면 그 버튼을 그리지 않는다(권한 없음)
+  onEdit?: (row: SkuResponseDto) => void;
+  onChangeGroup?: (row: SkuResponseDto) => void;
+  onDelete?: (row: SkuResponseDto) => void;
 };
 
 const STOCK_TYPE_LABELS: Record<string, string> = {
@@ -111,30 +112,36 @@ export const useSkusTableColumns = (actions: RowActions) => {
             className="flex items-center gap-1"
             onClick={(e) => e.stopPropagation()}
           >
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={() => actions.onEdit(row.original)}
-            >
-              편집
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={() => actions.onChangeGroup(row.original)}
-            >
-              그룹
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-              onClick={() => actions.onDelete(row.original)}
-            >
-              삭제
-            </Button>
+            {actions.onEdit && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => actions.onEdit?.(row.original)}
+              >
+                편집
+              </Button>
+            )}
+            {actions.onChangeGroup && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => actions.onChangeGroup?.(row.original)}
+              >
+                그룹
+              </Button>
+            )}
+            {actions.onDelete && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                onClick={() => actions.onDelete?.(row.original)}
+              >
+                삭제
+              </Button>
+            )}
           </div>
         ),
       }),

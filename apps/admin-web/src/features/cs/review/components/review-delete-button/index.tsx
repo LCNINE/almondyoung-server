@@ -16,6 +16,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useDeleteReview } from '@/lib/services/review';
+import { Can } from '@/components/auth/can';
 
 export function ReviewDeleteButton({ reviewId }: { reviewId: string }) {
   const router = useRouter();
@@ -35,7 +36,7 @@ export function ReviewDeleteButton({ reviewId }: { reviewId: string }) {
   };
 
   return (
-    <>
+    <Can run={useDeleteReview}>
       <Button
         variant="destructive"
         size="sm"
@@ -61,6 +62,6 @@ export function ReviewDeleteButton({ reviewId }: { reviewId: string }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </Can>
   );
 }

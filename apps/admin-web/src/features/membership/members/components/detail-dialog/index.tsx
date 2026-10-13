@@ -53,6 +53,8 @@ import {
   useGrantSubscriptionByDays,
 } from '@/lib/services/membership';
 import { useUserNames } from '@/hooks/use-user-names';
+import { usePermissionCheck } from '@/hooks/use-permission';
+import { Can } from '@/components/auth/can';
 import { useMemberArrears } from '@/lib/services/membership';
 import { ArrearsTab } from './arrears-tab';
 import { formatDate, formatDateTime } from '@/lib/utils/date';
@@ -651,6 +653,7 @@ function GrantForm({ userId }: { userId: string }) {
 // 첫번째 탭: 기간 관리
 function PeriodTab({ userId }: { userId: string }) {
   const { data: detail, isLoading } = useMemberDetail(userId);
+  const { canRun } = usePermissionCheck();
 
   if (isLoading) return <Skeleton className="w-full h-48 bg-gray-200" />;
 
@@ -694,9 +697,9 @@ function PeriodTab({ userId }: { userId: string }) {
       </div>
 
       {isActive ? (
-        <AdjustForm userId={userId} />
+        canRun(useAdjustEntitlement) && <AdjustForm userId={userId} />
       ) : (
-        <GrantForm userId={userId} />
+        canRun(useGrantSubscriptionByDays) && <GrantForm userId={userId} />
       )}
     </div>
   );
@@ -799,6 +802,7 @@ function PlanTab({
   const setAutoRenewalMutation = useSetAutoRenewal();
   const scheduleCancelMutation = useScheduleCancelSubscription();
   const completeManualRefundMutation = useCompleteManualRefund();
+  const { canRun } = usePermissionCheck();
   const [forceCancelOpen, setForceCancelOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleReason, setScheduleReason] = useState('');
@@ -978,6 +982,7 @@ function PlanTab({
                 {/* 효성 CMS 환불은 wallet 에 환불 행이 없어 결제관리에서 닫을 수 없다 — 여기서 확정한다.
                     결제관리가 닫아야 하는 건(확정 대기)은 여기서 누르면 이중 송금이라 버튼을 열지 않는다. */}
                 {allowForceCancel &&
+                  canRun(useCompleteManualRefund) &&
                   !detail?.refundCompleted &&
                   !pgConfirmPending &&
                   !refundImpossible && (
@@ -1066,32 +1071,34 @@ function PlanTab({
                 : ''}
             </CardDescription>
           </CardHeader>
-          {allowForceCancel && (
-            <CardContent>
-              {canUndoCancellation ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleUndoCancel}
-                  disabled={setAutoRenewalMutation.isPending}
-                >
-                  {setAutoRenewalMutation.isPending
-                    ? '처리 중...'
-                    : '해지 예약 철회 (자동 결제 재개)'}
-                </Button>
-              ) : (
-                <p className="text-xs text-amber-900">
-                  1회 결제 건이라 되살릴 자동결제가 없습니다. 계속 이용하려면
-                  고객이 직접 재가입해야 합니다.
-                </p>
-              )}
-            </CardContent>
-          )}
+          {allowForceCancel &&
+            (!canUndoCancellation || canRun(useSetAutoRenewal)) && (
+              <CardContent>
+                {canUndoCancellation ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleUndoCancel}
+                    disabled={setAutoRenewalMutation.isPending}
+                  >
+                    {setAutoRenewalMutation.isPending
+                      ? '처리 중...'
+                      : '해지 예약 철회 (자동 결제 재개)'}
+                  </Button>
+                ) : (
+                  <p className="text-xs text-amber-900">
+                    1회 결제 건이라 되살릴 자동결제가 없습니다. 계속 이용하려면
+                    고객이 직접 재가입해야 합니다.
+                  </p>
+                )}
+              </CardContent>
+            )}
         </Card>
       )}
 
       {/* 해지 예약 — 정기결제 계약에만 의미가 있다 */}
       {allowForceCancel &&
+        canRun(useScheduleCancelSubscription) &&
         isActive &&
         isRecurringContract &&
         !isCancellationScheduled && (
@@ -1165,7 +1172,7 @@ function PlanTab({
         </Card>
       )}
 
-      {allowForceCancel && isActive && (
+      {allowForceCancel && isActive && canRun(useForceCancelSubscription) && (
         <Card className="border-destructive/30">
           <CardHeader>
             <CardTitle className="text-sm text-destructive">
@@ -1215,6 +1222,7 @@ function BillingTab({
   const { data: events, isLoading } = useMemberBillingEvents(userId);
   const retryBillingMutation = useRetryBilling();
   const reconcileMutation = useReconcileInvoice();
+  const { canRun } = usePermissionCheck();
   const [retryConfirmOpen, setRetryConfirmOpen] = useState(false);
   const [reconcileResult, setReconcileResult] = useState<string | null>(null);
 
@@ -1255,7 +1263,7 @@ function BillingTab({
   return (
     <div className="space-y-3">
       <div className="flex justify-end gap-2">
-        {allowRetry && (
+        {allowRetry && canRun(useRetryBilling) && (
           <Button
             size="sm"
             variant="outline"
@@ -1266,16 +1274,18 @@ function BillingTab({
             {retryBillingMutation.isPending ? '처리 중...' : '결제 수동 재시도'}
           </Button>
         )}
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={handleReconcile}
-          disabled={reconcileMutation.isPending}
-          title="wallet 인보이스 권위 상태를 되물어 구독(자격)↔인보이스(결제) 발산을 해소 (INVOICE 계약 전용)"
-          className="text-xs h-7"
-        >
-          {reconcileMutation.isPending ? '정합화 중...' : '강제 정합화'}
-        </Button>
+        <Can run={useReconcileInvoice}>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handleReconcile}
+            disabled={reconcileMutation.isPending}
+            title="wallet 인보이스 권위 상태를 되물어 구독(자격)↔인보이스(결제) 발산을 해소 (INVOICE 계약 전용)"
+            className="text-xs h-7"
+          >
+            {reconcileMutation.isPending ? '정합화 중...' : '강제 정합화'}
+          </Button>
+        </Can>
       </div>
       {reconcileResult && (
         <div className="rounded-md border border-dashed p-2 text-xs text-muted-foreground">

@@ -22,7 +22,7 @@ import {
 import { useWarehouses } from '@/lib/services/inventory/queries';
 import { usePermissionCheck } from '@/hooks/use-permission';
 import {
-  FULFILLMENT_SCOPES,
+  useCreateOutboundBatchV2,
   useOutboundBatchesV2,
 } from '@/lib/services/orders';
 import type { OutboundBatchV2ListItem } from '@/lib/types/dto/fulfillment';
@@ -34,7 +34,7 @@ import { PICKING_METHOD_LABELS } from '@/lib/utils/picking-method';
 
 export function OutboundBatchesTable() {
   const searchParams = useSearchParams();
-  const { can, isPermissionLoading } = usePermissionCheck();
+  const { canRun } = usePermissionCheck();
   const { data: warehouses = [] } = useWarehouses();
   const [warehouseId, setWarehouseId] = useState('all');
   const [createOpen, setCreateOpen] = useState(false);
@@ -46,8 +46,7 @@ export function OutboundBatchesTable() {
   } = useOutboundBatchesV2({
     warehouseId: warehouseId === 'all' ? undefined : warehouseId,
   });
-  const canOperateWarehouse =
-    !isPermissionLoading && !!can([FULFILLMENT_SCOPES.operate]);
+  const canCreateBatch = canRun(useCreateOutboundBatchV2);
 
   useEffect(() => {
     const batchId = searchParams.get('batchId');
@@ -70,7 +69,7 @@ export function OutboundBatchesTable() {
             ))}
           </SelectContent>
         </Select>
-        <PermissionAction allowed={canOperateWarehouse}>
+        <PermissionAction allowed={canCreateBatch}>
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             <Plus className="mr-1.5 h-3.5 w-3.5" />
             배치 생성
@@ -146,7 +145,7 @@ export function OutboundBatchesTable() {
         </div>
       )}
 
-      {canOperateWarehouse && (
+      {canCreateBatch && (
         <CreateBatchDialog open={createOpen} onOpenChange={setCreateOpen} />
       )}
       {selectedBatchId && (

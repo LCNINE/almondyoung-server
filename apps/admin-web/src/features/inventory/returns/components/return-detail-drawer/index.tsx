@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useReturn } from '@/lib/services/inventory';
+import { useInspectReturn, useProcessReturn, useReceiveReturn, useReturn } from '@/lib/services/inventory';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { ReturnDto, ReturnStatus } from '@/lib/types/dto/inventory';
 import { ReceiveReturnDialog } from '../receive-return-dialog';
 import { InspectReturnDialog } from '../inspect-return-dialog';
@@ -46,6 +47,7 @@ export function ReturnDetailDrawer({ row, open, onOpenChange }: Props) {
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [inspectOpen, setInspectOpen] = useState(false);
   const [processOpen, setProcessOpen] = useState(false);
+  const { canRun } = usePermissionCheck();
 
   const { data: detail } = useReturn(row?.id ?? '');
   const current = detail ?? row;
@@ -103,13 +105,13 @@ export function ReturnDetailDrawer({ row, open, onOpenChange }: Props) {
             )}
 
             <div className="flex flex-col gap-2 pt-2">
-              {status === 'requested' && (
+              {status === 'requested' && canRun(useReceiveReturn) && (
                 <Button onClick={() => setReceiveOpen(true)}>입고 처리</Button>
               )}
-              {status === 'received' && (
+              {status === 'received' && canRun(useInspectReturn) && (
                 <Button onClick={() => setInspectOpen(true)}>QC 검수</Button>
               )}
-              {(status === 'qc_passed' || status === 'qc_failed') && (
+              {(status === 'qc_passed' || status === 'qc_failed') && canRun(useProcessReturn) && (
                 <Button onClick={() => setProcessOpen(true)}>처리 (재입고/폐기)</Button>
               )}
             </div>

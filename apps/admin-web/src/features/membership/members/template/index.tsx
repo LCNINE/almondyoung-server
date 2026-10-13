@@ -34,6 +34,7 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { useGrantSubscriptionByDays } from '@/lib/services/membership';
+import { Can } from '@/components/auth/can';
 import { userApi } from '@/lib/api/domains/users';
 import { cn } from '@/lib/utils/ui';
 
@@ -236,14 +237,16 @@ export default function MembershipMemberListTemplate() {
         title="멤버십 회원 조회"
         subtitle="지금 챙길 사람부터 보고, 누르면 그 사람들 명단으로 바뀝니다."
         right={
-          <Button
-            size="sm"
-            className="gap-1"
-            onClick={() => setSubscribeDialogOpen(true)}
-          >
-            <UserPlus className="h-4 w-4" />
-            신규 구독 등록
-          </Button>
+          <Can run={useGrantSubscriptionByDays}>
+            <Button
+              size="sm"
+              className="gap-1"
+              onClick={() => setSubscribeDialogOpen(true)}
+            >
+              <UserPlus className="h-4 w-4" />
+              신규 구독 등록
+            </Button>
+          </Can>
         }
       />
       <MemberInsightPanel axis={axis} onSelect={selectAxis} />

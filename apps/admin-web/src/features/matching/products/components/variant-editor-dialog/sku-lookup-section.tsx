@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useDebounced } from '@/hooks/use-debounced';
 import { useSkuSearch } from '@/lib/services/inventory';
+import { usePermissionReadOnly } from '@/components/auth/permission-read-only-context';
 import type { SkuLinkState } from '@/lib/types/ui/matching';
 
 interface SkuLookupSectionProps {
@@ -15,6 +16,7 @@ interface SkuLookupSectionProps {
 
 export function SkuLookupSection({ links, onChange }: SkuLookupSectionProps) {
   const [search, setSearch] = useState('');
+  const readOnly = usePermissionReadOnly() !== null;
   const debounced = useDebounced(search, 350);
   const { data: results, isFetching } = useSkuSearch(debounced, 1, 30);
 
@@ -69,6 +71,7 @@ export function SkuLookupSection({ links, onChange }: SkuLookupSectionProps) {
                     </p>
                   )}
                 </div>
+                {!readOnly && (
                 <Button
                   variant="ghost"
                   size="icon"
@@ -78,6 +81,7 @@ export function SkuLookupSection({ links, onChange }: SkuLookupSectionProps) {
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
+                )}
               </div>
               <div className="mt-2 flex items-center gap-1.5 border-t px-3 py-2 text-xs text-muted-foreground">
                 <span>이 옵션 1개 팔리면</span>

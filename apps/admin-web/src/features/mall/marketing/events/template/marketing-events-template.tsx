@@ -7,7 +7,11 @@ import { Badge } from '@/components/ui/badge';
 import {
   useCouponEventList,
   useDeleteCouponEvent,
+  useCreateCouponEvent,
+  useUpdateCouponEvent,
 } from '@/lib/services/coupon-events';
+import { Can } from '@/components/auth/can';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { CouponEvent } from '@/lib/api/domains/medusa/coupon-events';
 import { EventFormDialog } from '../components/event-form-dialog';
 import { toast } from 'sonner';
@@ -41,6 +45,7 @@ function StatusBadge({ status }: { status: string }) {
 export default function MarketingEventsTemplate() {
   const { data, isLoading } = useCouponEventList();
   const deleteEvent = useDeleteCouponEvent();
+  const { canRun } = usePermissionCheck();
   const [formOpen, setFormOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
@@ -80,10 +85,12 @@ export default function MarketingEventsTemplate() {
           <h2 className="text-base font-semibold">이벤트</h2>
           <p className="text-sm text-muted-foreground">배너에 걸어 여러 쿠폰을 한 페이지에서 발급받게 합니다.</p>
         </div>
-        <Button onClick={openCreate} className="bg-orange-500 text-white hover:bg-orange-600">
-          <Ticket className="h-4 w-4 mr-1.5" />
-          이벤트 만들기
-        </Button>
+        <Can run={useCreateCouponEvent}>
+          <Button onClick={openCreate} className="bg-orange-500 text-white hover:bg-orange-600">
+            <Ticket className="h-4 w-4 mr-1.5" />
+            이벤트 만들기
+          </Button>
+        </Can>
       </div>
 
       {isLoading ? (
@@ -129,19 +136,23 @@ export default function MarketingEventsTemplate() {
                   {copiedSlug === e.slug ? <Check className="h-3.5 w-3.5 mr-1 text-green-500" /> : <Copy className="h-3.5 w-3.5 mr-1" />}
                   링크
                 </Button>
-                <Button size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={() => openEdit(e.id)}>
-                  <Pencil className="h-3.5 w-3.5 mr-1" />
-                  수정
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                  onClick={() => handleDelete(e)}
-                  disabled={deleteEvent.isPending}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                {canRun(useUpdateCouponEvent) && (
+                  <Button size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={() => openEdit(e.id)}>
+                    <Pencil className="h-3.5 w-3.5 mr-1" />
+                    수정
+                  </Button>
+                )}
+                {canRun(useDeleteCouponEvent) && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                    onClick={() => handleDelete(e)}
+                    disabled={deleteEvent.isPending}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
               </div>
             </li>
           ))}
