@@ -4,7 +4,7 @@ import { ArchiveTemplate } from '@/features/archive/template';
 export default async function ArchivePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/archive/[id]">
       <ArchiveTemplate pageId={id} />
     </RouteGuard>
   );

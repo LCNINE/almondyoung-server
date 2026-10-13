@@ -3,7 +3,7 @@ import { ManualCreateForm } from '@/features/order/fulfillments/components/manua
 
 export default function FulfillmentManualPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/order/fulfillment-manual">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <ManualCreateForm />
       </div>

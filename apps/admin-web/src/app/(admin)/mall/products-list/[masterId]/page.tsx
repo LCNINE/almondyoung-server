@@ -11,7 +11,7 @@ export default async function ProductsDetailPage({
   const { masterId } = await params;
   const { versionId } = await searchParams;
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/mall/products-list/[masterId]">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <ProductsDetailTemplate
           masterId={masterId}

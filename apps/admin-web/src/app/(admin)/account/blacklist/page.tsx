@@ -3,7 +3,7 @@ import BlacklistListTemplate from '@/features/blacklists/template';
 
 export default function BlacklistPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/account/blacklist">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <BlacklistListTemplate />
       </div>

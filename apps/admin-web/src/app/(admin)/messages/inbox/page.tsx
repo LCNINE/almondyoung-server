@@ -3,7 +3,7 @@ import SmsInboxTemplate from '@/features/messages/inbox/template';
 
 export default function SmsInboxPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/messages/inbox">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <SmsInboxTemplate />
       </div>

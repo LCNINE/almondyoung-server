@@ -4,7 +4,7 @@ import HoldersTemplate from '@/features/inventory/holders/template';
 
 export default function Page() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/inventory/holders">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <Suspense>
           <HoldersTemplate />

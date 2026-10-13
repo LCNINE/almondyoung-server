@@ -5,7 +5,7 @@ import StallBoardTemplate from '@/features/order/stall-board/template';
 
 export default function StallBoardPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/order/stall-board">
       <StallBoardTemplate />
     </RouteGuard>
   );

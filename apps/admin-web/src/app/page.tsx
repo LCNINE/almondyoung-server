@@ -3,7 +3,7 @@ import MainTemplate from '@/features/main/template/MainTemplate';
 
 export default function HomePage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/">
       <MainTemplate />
     </RouteGuard>
   );
