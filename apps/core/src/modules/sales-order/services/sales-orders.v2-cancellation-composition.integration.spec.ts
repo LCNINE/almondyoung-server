@@ -43,7 +43,7 @@ function wire(tx: DbTx) {
   return { logistics, salesOrders };
 }
 
-/** 라인 하나(주문 수량 quantity), 매칭 SKU 하나 × qtyPerUnit, 재고 넉넉. withFo=false 면 FO 를 만들지 않는다. */
+/** 라인 하나(주문 수량 quantity), 매칭 SKU 하나 × qtyPerUnit, 재고 넉넉. */
 async function seedOrder(tx: DbTx, w: ReturnType<typeof wire>, quantity: number, qtyPerUnit: number) {
   const { warehouseId, locationId } = await seedWarehouseWithZone(tx);
   const { holderId } = await seedHolder(tx);

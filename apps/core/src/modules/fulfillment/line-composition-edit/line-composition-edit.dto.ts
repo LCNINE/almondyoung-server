@@ -47,7 +47,11 @@ export class LineCompositionChangeResponseDto {
   @ApiProperty({ enum: ['matching', 'operator'] }) source: string;
   @ApiProperty({ type: [LineCompositionItemDto] }) items: LineCompositionItemDto[];
   @ApiProperty({ type: [String], description: '내용이 바뀐 박스' }) changedShipmentIds: string[];
-  @ApiProperty({ nullable: true, description: '박스가 바뀌었을 때만 남는 amendment' }) amendmentId: string | null;
+  @ApiProperty({
+    nullable: true,
+    description: 'FO 생성 뒤 구성이 바뀌면 남는 amendment(박스가 안 바뀌었어도). FO 전 지정·같은 구성이면 null',
+  })
+  amendmentId: string | null;
 }
 
 export class ExistingLinesImpactResponseDto {

@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { and, eq, isNull } from 'drizzle-orm';
 import { DbTx, returnRequests, wmsTables } from '../../../inventory/schema/inventory.schema';
 
 /** 정체 보드 판정 스펙 전용 — 판정이 읽는 칸만 채운다(실제 흐름 서비스는 부르지 않는다). */
@@ -89,6 +90,11 @@ export async function seedFo(
     .insert(wmsTables.salesOrderLineCompositions)
     .values({ salesOrderLineId: order.lineId, skuId: w.skuId, qtyPerUnit: 1 })
     .onConflictDoNothing();
+  // 구성 행이 있으면 출처도 있어야 한다(스펙 §4.3) — 이미 굳힌 라인은 그대로 둔다
+  await tx
+    .update(wmsTables.salesOrderLines)
+    .set({ compositionSource: 'matching', compositionSetAt: new Date() })
+    .where(and(eq(wmsTables.salesOrderLines.id, order.lineId), isNull(wmsTables.salesOrderLines.compositionSource)));
   return { foId: fo.id, foItemId: item.id };
 }
 

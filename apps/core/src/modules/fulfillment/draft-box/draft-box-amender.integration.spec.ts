@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { inRollbackTx, makeDb, makeDbService, wireLogistics, Wired } from '../services/__support__';
@@ -34,6 +34,27 @@ describeIfDb('DraftBoxAmender (#1063 스펙 §6.3)', () => {
 
   const target = (lineId: string, units: number, items: Array<{ skuId: string; qtyPerUnit: number }>) =>
     boxTarget(new Map([[lineId, units]]), new Map([[lineId, items]]));
+
+  async function foTotals(tx: DbTx, fulfillmentOrderId: string) {
+    const [fo] = await tx
+      .select({ totalItems: wmsTables.fulfillmentOrders.totalItems, totalQty: wmsTables.fulfillmentOrders.totalQty })
+      .from(wmsTables.fulfillmentOrders)
+      .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
+    return fo;
+  }
+
+  async function confirmedReservedQty(tx: DbTx, shipmentLineId: string): Promise<number> {
+    const rows = await tx
+      .select({ quantity: wmsTables.stockReservations.quantity })
+      .from(wmsTables.stockReservations)
+      .where(
+        and(
+          eq(wmsTables.stockReservations.shipmentLineId, shipmentLineId),
+          eq(wmsTables.stockReservations.status, 'confirmed'),
+        ),
+      );
+    return rows.reduce((total, row) => total + row.quantity, 0);
+  }
 
   async function shipment(tx: DbTx, id: string) {
     const [row] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, id));
@@ -107,6 +128,62 @@ describeIfDb('DraftBoxAmender (#1063 스펙 §6.3)', () => {
       expect(items.get(b)).toMatchObject({ qty: 2, canceledQty: 0 });
       expect((await shipment(tx, fx.shipmentId)).shippingProfileId).toBe(profile.id);
       expect((await shipment(tx, result.tombstoneShipmentId ?? '')).status).toBe('canceled');
+      // qty 0 으로 대체된 옛 항목은 품목 수에 들지 않는다
+      expect(await foTotals(tx, fx.fulfillmentOrderId)).toEqual({ totalItems: 1, totalQty: 2 });
+    });
+  });
+
+  it('1개당 수량을 줄이면 줄·FO 항목 qty 가 줄고 그만큼 예약이 풀리며 묘비는 없다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { logistics, amender } = wire();
+      const fx = await seedOrderWithDraftBox(tx, logistics, { lines: [{ quantity: 3, qtyPerUnits: [2] }] });
+      const [a] = fx.skuIdsByLine[0];
+      const [boxLine] = await boxLinesOf(tx, fx.shipmentId);
+      expect(boxLine).toMatchObject({ skuId: a, qty: 6, reservedQty: 6 });
+
+      const result = await amender.amend(
+        fx.shipmentId,
+        target(fx.lineIds[0], 3, [{ skuId: a, qtyPerUnit: 1 }]),
+        'it',
+        actor,
+        tx,
+      );
+
+      expect(result).toMatchObject({ changed: true, tombstoneShipmentId: null });
+      expect(await boxLinesOf(tx, fx.shipmentId)).toMatchObject([{ id: boxLine.id, skuId: a, qty: 3, reservedQty: 3 }]);
+      expect(await itemsOf(tx, fx.fulfillmentOrderId)).toMatchObject([{ skuId: a, qty: 3, canceledQty: 0 }]);
+      expect(await confirmedReservedQty(tx, boxLine.id)).toBe(3);
+      expect(await foTotals(tx, fx.fulfillmentOrderId)).toEqual({ totalItems: 1, totalQty: 3 });
+      await expect(
+        new FulfillmentInvariantService().assertFulfillmentOrders([fx.fulfillmentOrderId], tx),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  it('A→B→A: 두 번째 교체는 qty 0 으로 남은 A 항목을 되살리고 항목을 새로 만들지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { logistics, amender } = wire();
+      const fx = await seedOrderWithDraftBox(tx, logistics, {
+        lines: [{ quantity: 2, qtyPerUnits: [1] }],
+        spareSkus: 1,
+      });
+      const [a] = fx.skuIdsByLine[0];
+      const [b] = fx.spareSkuIds;
+
+      await amender.amend(fx.shipmentId, target(fx.lineIds[0], 2, [{ skuId: b, qtyPerUnit: 1 }]), 'it', actor, tx);
+      const afterFirst = await itemsOf(tx, fx.fulfillmentOrderId);
+      await amender.amend(fx.shipmentId, target(fx.lineIds[0], 2, [{ skuId: a, qtyPerUnit: 1 }]), 'it', actor, tx);
+
+      const items = await itemsOf(tx, fx.fulfillmentOrderId);
+      expect(items).toHaveLength(afterFirst.length);
+      const bySku = new Map(items.map((item) => [item.skuId, item]));
+      expect(bySku.get(a)).toMatchObject({ qty: 2, canceledQty: 0 });
+      expect(bySku.get(b)).toMatchObject({ qty: 0, canceledQty: 0 });
+      expect(await boxLinesOf(tx, fx.shipmentId)).toMatchObject([{ skuId: a, qty: 2, reservedQty: 2 }]);
+      expect(await foTotals(tx, fx.fulfillmentOrderId)).toEqual({ totalItems: 1, totalQty: 2 });
+      await expect(
+        new FulfillmentInvariantService().assertFulfillmentOrders([fx.fulfillmentOrderId], tx),
+      ).resolves.toBeUndefined();
     });
   });
 
