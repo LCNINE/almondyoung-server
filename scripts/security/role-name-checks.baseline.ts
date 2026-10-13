@@ -19,6 +19,26 @@ export type RoleLiteralKind =
   | 'data-value';
 
 export const ROLE_LITERAL_BASELINE: Readonly<Record<string, { count: number; kind: RoleLiteralKind }>> = {
+  // 관리자 화면: 역할 필터 옵션·표시 정렬·상품 출처(master/version)·리뷰 출처·URL 세그먼트 — 판정은 없다.
+  'apps/admin-web/src/app/api/proxy/medusa/[...path]/route.ts': { count: 1, kind: 'data-value' },
+  'apps/admin-web/src/components/table/table-cells/user/role-cell.tsx': { count: 2, kind: 'data-value' },
+  'apps/admin-web/src/features/cs/review/lib/review-tabs.ts': { count: 1, kind: 'data-value' },
+  'apps/admin-web/src/features/mall/products-detail/components/draft-completion-checklist/draft-completion-checklist-model.ts': { count: 1, kind: 'data-value' },
+  'apps/admin-web/src/features/mall/products-detail/components/general/basic-information-model.ts': { count: 1, kind: 'data-value' },
+  'apps/admin-web/src/features/mall/products-detail/components/images/product-images-model.ts': { count: 1, kind: 'data-value' },
+  'apps/admin-web/src/features/mall/products-detail/components/options/product-options-model.ts': { count: 1, kind: 'data-value' },
+  'apps/admin-web/src/features/mall/products-detail/components/variants/product-variants-model.ts': { count: 1, kind: 'data-value' },
+  'apps/admin-web/src/features/mall/products-detail/components/version-lifecycle-actions/version-lifecycle-actions-model.ts': { count: 1, kind: 'data-value' },
+  'apps/admin-web/src/features/mall/shop-listings/template/index.tsx': { count: 1, kind: 'data-value' },
+  'apps/admin-web/src/features/order/history/components/modals/cancel-order-modal.tsx': { count: 1, kind: 'data-value' },
+  'apps/admin-web/src/features/users/components/filter-box/index.tsx': { count: 2, kind: 'data-value' },
+  'apps/admin-web/src/hooks/table/columns/use-variants-matching-table-columns.tsx': { count: 1, kind: 'data-value' },
+  'apps/admin-web/src/hooks/table/filters/use-customer-table-filters.ts': { count: 2, kind: 'data-value' },
+  'apps/admin-web/src/hooks/table/filters/use-user-table-filters.ts': { count: 2, kind: 'data-value' },
+  'apps/admin-web/src/lib/services/products/query-keys.ts': { count: 2, kind: 'data-value' },
+  'apps/admin-web/src/lib/services/products/use-product-detail.ts': { count: 2, kind: 'data-value' },
+  'apps/admin-web/src/lib/types/dto/products.ts': { count: 2, kind: 'data-value' },
+  'apps/admin-web/src/lib/types/dto/review.ts': { count: 1, kind: 'data-value' },
   'apps/ai/src/platform/auth/ai-scopes.ts': { count: 2, kind: 'role-mapping' },
   'apps/core/src/modules/archive/archive.controller.ts': { count: 2, kind: 'legacy-route-guard' },
   'apps/core/src/modules/catalog/core/notices/notices.controller.ts': { count: 8, kind: 'legacy-route-guard' },
@@ -120,7 +140,7 @@ export const ROLE_LITERAL_BASELINE: Readonly<Record<string, { count: number; kin
   'libs/authorization/src/guards/admin-realm.guard.ts': { count: 2, kind: 'legacy-library' },
   'libs/authorization/src/guards/master-role.guard.ts': { count: 1, kind: 'legacy-library' },
   'libs/authorization/src/guards/scope.guard.ts': { count: 2, kind: 'legacy-library' },
-  'libs/authorization/src/permissions/permission-catalog.ts': { count: 16, kind: 'role-mapping' },
+  'libs/authorization/src/permissions/permission-catalog.ts': { count: 18, kind: 'role-mapping' },
   'libs/authorization/src/permissions/permission.types.ts': { count: 4, kind: 'role-mapping' },
   'libs/authorization/src/services/authorization.service.ts': { count: 3, kind: 'legacy-library' },
 };

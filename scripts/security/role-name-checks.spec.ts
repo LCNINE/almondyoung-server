@@ -10,8 +10,8 @@ import { countRoleLiterals, nonLiteralCheckpointCalls } from './role-name-scan';
  * 판정 지점 이름(지표 라벨)이 리터럴인지도 함께 본다.
  */
 const ROOT = join(__dirname, '..', '..');
-const INCLUDED = /^(apps|libs)\/[^/]+\/src\/.*\.ts$/;
-const EXCLUDED = /\.spec\.ts$|\.d\.ts$|__support__|fixtures|^apps\/(admin-web|medusa|wallet-web)\//;
+const INCLUDED = /^(apps|libs)\/[^/]+\/src\/.*\.tsx?$/;
+const EXCLUDED = /\.spec\.tsx?$|\.d\.ts$|__support__|fixtures|^apps\/(medusa|wallet-web)\//;
 
 /** 추적 중인 파일과 아직 추가하지 않은 새 파일(무시 목록 제외) 모두. */
 const sources = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '--', 'apps', 'libs'], {
@@ -25,7 +25,7 @@ const read = (file: string) => readFileSync(join(ROOT, file), 'utf8');
 
 const counts = new Map<string, number>();
 for (const file of sources) {
-  const count = countRoleLiterals(read(file));
+  const count = countRoleLiterals(read(file), file);
   if (count > 0) counts.set(file, count);
 }
 
@@ -50,7 +50,7 @@ describe('역할 이름 판정', () => {
   });
 
   it('판정 지점 이름은 리터럴이다(여러 줄 호출 포함)', () => {
-    const offenders = sources.flatMap((file) => nonLiteralCheckpointCalls(read(file)).map((line) => `${file}:${line}`));
+    const offenders = sources.flatMap((file) => nonLiteralCheckpointCalls(read(file), file).map((line) => `${file}:${line}`));
     expect(offenders).toEqual([]);
   });
 });
