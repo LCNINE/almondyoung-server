@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from "react"
 import { PRINT_PRODUCTS, PRINT_SPECS } from "../lib/catalog"
-import { imageDpi, newDesign, printIssues, type Design } from "../lib/document"
+import {
+  imageDpi,
+  newDesign,
+  printIssues,
+  printsBack,
+  type Design,
+} from "../lib/document"
 import { mm } from "../lib/layer"
 import { useCanvasInteraction } from "./use-canvas-interaction"
 import { useDesignHistory } from "./use-design-history"
@@ -89,7 +95,8 @@ export function useAlmondEditor({
   const [moveMode, setMoveMode] = useState(false)
   const [previewSide, setPreviewSide] = useState<Side>("front")
   const [preview, setPreview] = useState(false)
-  const hasBack = PRINT_SPECS[design.kind].duplex || design.back.length > 0
+  const hasBack =
+    PRINT_SPECS[design.kind].duplex || printsBack(design) || !!removedBack
   useEffect(() => {
     if (design.back.length) setRemovedBack(null)
   }, [design.back.length])

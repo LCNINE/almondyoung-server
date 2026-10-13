@@ -1,4 +1,5 @@
 import { useState, type InputHTMLAttributes } from "react"
+import { useLeaveWarning } from "../../hooks/use-leave-warning"
 
 type Props = Omit<
   InputHTMLAttributes<HTMLInputElement>,
@@ -16,6 +17,7 @@ export function NumberInput({
   ...rest
 }: Props) {
   const [draft, setDraft] = useState<string | null>(null)
+  useLeaveWarning(draft !== null && Number(draft) !== value)
   const commit = (raw: string) => {
     setDraft(null)
     const next = Math.min(

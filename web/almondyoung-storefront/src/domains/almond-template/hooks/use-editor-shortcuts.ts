@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import type { Layer } from "../lib/document"
 
 type Params = {
@@ -56,6 +56,8 @@ export function useEditorShortcuts({
   save,
   saveNamed,
 }: Params) {
+  const latestSave = useRef(save)
+  latestSave.current = save
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
@@ -67,8 +69,17 @@ export function useEditorShortcuts({
           textDialog === null &&
           !issues.length &&
           !loadDialog
-        )
-          save()
+        ) {
+          const active = document.activeElement
+          if (
+            active instanceof HTMLInputElement ||
+            active instanceof HTMLTextAreaElement
+          ) {
+            // 입력 중인 문구·숫자는 blur 때 반영되므로 그 렌더가 끝난 뒤 저장한다
+            active.blur()
+            setTimeout(() => latestSave.current())
+          } else save()
+        }
         return
       }
       if (

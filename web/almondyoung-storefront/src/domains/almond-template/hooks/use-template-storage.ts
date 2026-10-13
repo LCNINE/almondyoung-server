@@ -25,6 +25,7 @@ import { parseDesign, type Design } from "../lib/document"
 import type { PublishedTemplate } from "../lib/gallery-filter"
 import { printSvg } from "../components/print-svg"
 import { PRINT_PRODUCTS } from "../lib/catalog"
+import { useLeaveWarning } from "./use-leave-warning"
 
 export type EditorMode = "customer" | "designer"
 export type SavedItem = AlmondSavedDesignSummary &
@@ -170,12 +171,7 @@ export function useTemplateStorage({
       cancelled = true
     }
   }, [key])
-  useEffect(() => {
-    if (!dirty) return
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault()
-    window.addEventListener("beforeunload", warn)
-    return () => window.removeEventListener("beforeunload", warn)
-  }, [dirty])
+  useLeaveWarning(dirty)
   const loadPublished = async (item: PublishedTemplate) => {
     try {
       const loaded = forRoute((await getAlmondTemplate(item.id)).design)

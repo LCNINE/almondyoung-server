@@ -3,6 +3,7 @@ import { useRef, useState } from "react"
 import { Backdrop, LayerGraphic } from "../graphic"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import { CanvasGuides } from "./canvas-guides"
+import { useLeaveWarning } from "../../hooks/use-leave-warning"
 import { sideBackground, type Layer } from "../../lib/document"
 
 function quickActionsAt(layer: Layer, scale: number) {
@@ -49,6 +50,9 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
   const editingLayer = editing
     ? layers.find((layer) => layer.id === editing.id)
     : undefined
+  useLeaveWarning(
+    !!editing && !!editingLayer && editing.text !== (editingLayer.text ?? "")
+  )
   const startTextEdit = () => {
     if (selected?.type === "text" && editable)
       setEditing({ id: selected.id, text: selected.text ?? "" })
