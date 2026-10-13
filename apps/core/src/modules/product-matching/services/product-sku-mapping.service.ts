@@ -2,7 +2,7 @@ import { Injectable, BadRequestException, Logger, NotFoundException } from '@nes
 import { AnyTx, DbService, InjectTypedDb, TxFor } from '@app/db';
 import { MergedSchema } from '../../../platform/database/merged-schema';
 import { wmsTables, DbTx } from '../../inventory/schema/inventory.schema';
-import { eq, inArray, sql, and, desc, isNull } from 'drizzle-orm';
+import { eq, inArray, sql, and, desc } from 'drizzle-orm';
 import { UpsertMatchingDto } from '../dto/upsert-matching.dto';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { ProductSellableQuantityResult } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.calculator';
