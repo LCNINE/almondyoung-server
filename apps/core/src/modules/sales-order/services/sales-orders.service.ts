@@ -24,14 +24,15 @@ import {
   count,
   sql,
   ilike,
-  isNull,
   isNotNull,
   exists,
   notExists,
+  getTableColumns,
   type InferInsertModel,
   type SQL,
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
+import { lineResolvedSql } from '../../product-matching/line-composition/line-resolved.sql';
 import { PoliciesService } from './policies.service';
 import { computeEntrancePasswordExpiry } from './entrance-password-expiry';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
@@ -302,7 +303,6 @@ export class SalesOrdersService {
               channelOrderItemId: l.channelOrderItemId ?? null,
               channelProductId: l.channelProductId ?? null,
               variantId: l.variantId,
-              productMatchingId: l.productMatchingId ?? null,
               productName: l.productName ?? '',
               quantity: l.quantity,
               unitPrice: l.unitPrice ?? null,
@@ -402,7 +402,7 @@ export class SalesOrdersService {
     }, tx);
   }
 
-  async confirm(id: string, warehouseId?: string, tx?: DbTx) {
+  async confirm(id: string, tx?: DbTx) {
     return this.db.run(async (trx) => {
       // Row lock before state check to prevent concurrent double-confirm races
       await trx.execute(sql`
@@ -432,25 +432,6 @@ export class SalesOrdersService {
       }
 
       // salesOrder.status === 'pending' — proceed with confirm
-      const lines = await trx
-        .select()
-        .from(wmsTables.salesOrderLines)
-        .where(eq(wmsTables.salesOrderLines.salesOrderId, id));
-
-      if (warehouseId && lines.length > 0) {
-        for (const line of lines) {
-          const snapshotId = await this.productSkuMapping.createSnapshotForVariant(line.variantId, warehouseId, trx);
-          if (snapshotId) {
-            await trx
-              .update(wmsTables.salesOrderLines)
-              .set({ mappingSnapshotId: snapshotId })
-              .where(eq(wmsTables.salesOrderLines.id, line.id));
-          } else {
-            this.logger.warn(`No mapping found for variantId=${line.variantId} in warehouseId=${warehouseId}`);
-          }
-        }
-      }
-
       await trx
         .update(wmsTables.salesOrders)
         .set({ status: 'confirmed', confirmedAt: new Date() })
@@ -759,8 +740,9 @@ export class SalesOrdersService {
     const db = tx ?? this.db.db;
     const [order] = await db.select().from(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, id)).limit(1);
     if (!order) return null;
+    // 라인 배지(«매칭 대기»)는 이 값을 본다 — 옛 product_matching_id 는 #1063 부터 쓰이지 않는다
     const lines = await db
-      .select()
+      .select({ ...getTableColumns(wmsTables.salesOrderLines), matchingResolved: lineResolvedSql() })
       .from(wmsTables.salesOrderLines)
       .where(eq(wmsTables.salesOrderLines.salesOrderId, id));
     const { links: businessLinks, context } = await this.loadBusinessTimelineLinks(id, db);
@@ -929,8 +911,20 @@ export class SalesOrdersService {
         case 'hold': // 출고불가: 재고부족 라인 존재
           conditions.push(lineExists(eq(S.salesOrderLines.status, 'stock_unavailable')));
           break;
-        case 'unmatched': // 매칭안됨: 미매칭 라인 존재
-          conditions.push(lineExists(isNull(S.salesOrderLines.productMatchingId)));
+        case 'unmatched': // 매칭안됨: 매칭이 없어 FO 생성을 기다리는 주문. 대기열이 라인 구성 판정의 결과다(#1063 스펙 D8)
+          conditions.push(
+            exists(
+              trx
+                .select({ x: sql`1` })
+                .from(S.fulfillmentOrderCreationBacklogs)
+                .where(
+                  and(
+                    eq(S.fulfillmentOrderCreationBacklogs.salesOrderId, S.salesOrders.id),
+                    eq(S.fulfillmentOrderCreationBacklogs.status, 'awaiting_matching'),
+                  ),
+                ),
+            ),
+          );
           break;
         case 'direct': // 직배송: drop_ship FO 존재
           conditions.push(
@@ -1105,7 +1099,10 @@ export class SalesOrdersService {
       }
 
       const orderIds = orders.map((o) => o.id);
-      const lines = await trx.select().from(S.salesOrderLines).where(inArray(S.salesOrderLines.salesOrderId, orderIds));
+      const lines = await trx
+        .select({ ...getTableColumns(S.salesOrderLines), matchingResolved: lineResolvedSql() })
+        .from(S.salesOrderLines)
+        .where(inArray(S.salesOrderLines.salesOrderId, orderIds));
 
       const linesByOrderId = new Map<string, typeof lines>();
       for (const line of lines) {

@@ -7,8 +7,9 @@ describe('demo order matching display', () => {
   it('keeps unresolved demo lines unmatched', () => {
     expect(isOrderLineMatched({}, 'demo')).toBe(false);
   });
-  it('preserves legacy matching requirements outside demo', () => {
+  it('outside demo, follows the core matchingResolved flag', () => {
     expect(isOrderLineMatched({ variantId: 'variant' }, 'live')).toBe(false);
-    expect(isOrderLineMatched({ productMatchingId: 'mapping' }, 'live')).toBe(true);
+    expect(isOrderLineMatched({ variantId: 'variant', matchingResolved: false }, 'live')).toBe(false);
+    expect(isOrderLineMatched({ matchingResolved: true }, 'live')).toBe(true);
   });
 });

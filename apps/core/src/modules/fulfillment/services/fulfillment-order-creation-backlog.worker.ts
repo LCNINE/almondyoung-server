@@ -115,13 +115,17 @@ export class FulfillmentOrderCreationBacklogWorker {
       // 같은 트랜잭션에서 읽는다 — 판매 창고 전환과 이 생성이 겹칠 때 서로 다른
       // 스냅샷을 보고 엇갈리지 않게 한다.
       const warehouseId = await this.warehouses.getDefaultId(tx);
-      const fulfillmentOrder = await this.fulfillments.create(
-        {
-          salesOrderId: backlog.salesOrderId,
-          warehouseId,
-          shippingAddress: salesOrder.shippingAddress as any,
-        },
-        tx,
+      // savepoint 로 감싼다 — 이 워커는 create 의 실패를 잡아 같은 트랜잭션에서 markFailed 등을 쓰고 커밋한다.
+      // 감싸지 않으면 create 가 실패 전에 쓴 것(라인 구성 굳히기 등)이 FO 없이 함께 커밋된다.
+      const fulfillmentOrder = await tx.transaction((savepoint) =>
+        this.fulfillments.create(
+          {
+            salesOrderId: backlog.salesOrderId,
+            warehouseId,
+            shippingAddress: salesOrder.shippingAddress as any,
+          },
+          savepoint,
+        ),
       );
 
       if (fulfillmentOrder?.id) {

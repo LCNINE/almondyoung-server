@@ -10,8 +10,13 @@ import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { eq, inArray, desc, sql, count, and } from 'drizzle-orm';
 import { FULFILLMENT_EVENTS } from '../events';
-import { isVoidMatching, physicalSkuLinks } from '../../product-matching/fulfillable-matching';
-import { ProductSkuMappingService } from '../../product-matching/services/product-sku-mapping.service';
+import { LineCompositionReader } from '../../product-matching/line-composition/line-composition.reader';
+import { LineCompositionManager } from '../../product-matching/line-composition/line-composition.manager';
+import {
+  blocksFulfillment,
+  CompositionItem,
+  MatchingFailureReason,
+} from '../../product-matching/line-composition/line-composition';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
 import { acquireStockAvailabilityLocks } from '../../inventory/shared/locks/stock-availability-lock';
 import { assertWarehouseSellable } from '../../inventory/shared/availability/sellable-warehouses';
@@ -50,17 +55,13 @@ type FulfillmentOrderItemInsert = {
   status: string;
 };
 
+// 상품매칭을 따르던 라인과 그 라인을 굳힐 구성
+type LineFreeze = { salesOrderLineId: string; items: CompositionItem[] };
+
 type UnmatchedSalesOrderLine = {
   salesOrderLineId: string;
   variantId: string;
-  reason: string;
-};
-
-type VariantSkuMatching = Awaited<ReturnType<ProductSkuMappingService['getByVariant']>>;
-
-type PartialCancelledLineQuantity = {
-  salesOrderLineId: string;
-  quantity: number;
+  reason: MatchingFailureReason;
 };
 
 function uniqueStrings(values: readonly string[]): string[] {
@@ -74,17 +75,18 @@ export class FulfillmentsService {
   constructor(
     private readonly db: DbService<typeof wmsSchema>,
     private readonly reservationLifecycle: ReservationLifecycleService,
-    private readonly productSkuMapping: ProductSkuMappingService,
+    private readonly lineCompositions: LineCompositionReader,
     @InjectPublisher(FULFILLMENT_STREAM)
     private readonly fulfillmentsV1: PublisherFor<typeof FULFILLMENT_STREAM>,
     private readonly workflowGate: FulfillmentWorkflowGate,
+    private readonly lineCompositionManager: LineCompositionManager,
     @Optional() private readonly shipmentReservation?: ShipmentReservationService,
     @Optional() private readonly fulfillmentProgress?: FulfillmentProgressService,
   ) {}
 
   async requiresPhysicalFulfillmentOrder(salesOrderId: string, tx?: DbTx): Promise<boolean> {
     return this.db.run(async (trx) => {
-      const items = await this.buildItemsFromSalesOrder(salesOrderId, trx);
+      const { items } = await this.buildItemsFromSalesOrder(salesOrderId, trx);
       return items.length > 0;
     }, tx);
   }
@@ -159,6 +161,7 @@ export class FulfillmentsService {
       }
 
       let itemsToInsert: Omit<FulfillmentOrderItemInsert, 'fulfillmentOrderId'>[];
+      let freeze: LineFreeze[] = [];
       if (requestedItems.length > 0) {
         const referenced = requestedItems.find((item) => item.salesOrderId || item.salesOrderLineId);
         if (referenced) {
@@ -203,7 +206,9 @@ export class FulfillmentsService {
           };
         });
       } else if (dto.salesOrderId) {
-        itemsToInsert = await this.buildItemsFromSalesOrder(dto.salesOrderId, trx);
+        const built = await this.buildItemsFromSalesOrder(dto.salesOrderId, trx);
+        itemsToInsert = built.items;
+        freeze = built.freeze;
       } else {
         throw new BadRequestException('Fulfillment order requires items or salesOrderId');
       }
@@ -211,6 +216,8 @@ export class FulfillmentsService {
       // Digital-only/void-matched sales orders do not create a placeholder FO.
       if (itemsToInsert.length === 0 && dto.salesOrderId) return null;
       if (itemsToInsert.length === 0) throw new BadRequestException('Fulfillment order items cannot be empty');
+      // 판매주문 잠금 아래에서 굳힌다(#1063 스펙 §5.4). 뒤 검증이 실패하면 호출자의 트랜잭션, 또는 백로그 워커가 감싼 savepoint 가 롤백되면서 함께 되돌아간다.
+      if (freeze.length > 0) await this.lineCompositionManager.freezeFromMatching(freeze, trx);
       await this.validateSkuRows(itemsToInsert, dto.ownerId ?? null, trx);
       const uniqueSkuIds = [...new Set(itemsToInsert.map((item) => item.skuId))];
       const skuRows = await trx
@@ -285,9 +292,7 @@ export class FulfillmentsService {
           shippingProfileId: compatibleProfileId ?? null,
           recipientSnapshot: dto.shippingAddress ?? salesOrder?.shippingAddress ?? null,
           entrancePassword: selectEntrancePassword(
-            salesOrder
-              ? [{ orderDate: salesOrder.orderDate, entrancePassword: salesOrder.entrancePassword }]
-              : [],
+            salesOrder ? [{ orderDate: salesOrder.orderDate, entrancePassword: salesOrder.entrancePassword }] : [],
           ),
         })
         .returning();
@@ -329,7 +334,7 @@ export class FulfillmentsService {
     } else if ((dto.lines?.length ?? 0) > 0) {
       skuIds = dto.lines?.map((line) => line.skuId) ?? [];
     } else if (dto.salesOrderId) {
-      const items = await this.buildItemsFromSalesOrder(dto.salesOrderId, executor);
+      const { items } = await this.buildItemsFromSalesOrder(dto.salesOrderId, executor);
       skuIds = items.map((item) => item.skuId);
     } else {
       return true;
@@ -430,81 +435,44 @@ export class FulfillmentsService {
     return this.getOne(fo.id, trx);
   }
 
+  /**
+   * 판매주문 → FO 항목. 판정은 LineCompositionReader 하나가 한다(#1063 스펙 §5.3-1). 이 메서드는 읽기만 한다 —
+   * 미리 판정(requiresPhysicalFulfillmentOrder·preflight)에서도 불리므로, 굳히기는 잠금을 쥔 createV2 가 `freeze` 를 받아서 한다.
+   */
   private async buildItemsFromSalesOrder(
     salesOrderId: string,
     trx: DbTx,
-  ): Promise<Omit<FulfillmentOrderItemInsert, 'fulfillmentOrderId'>[]> {
-    const soLines = await trx
-      .select()
-      .from(wmsTables.salesOrderLines)
-      .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId));
-
-    if (soLines.length === 0) {
+  ): Promise<{
+    items: Omit<FulfillmentOrderItemInsert, 'fulfillmentOrderId'>[];
+    freeze: LineFreeze[];
+  }> {
+    const resolved = await this.lineCompositions.resolveForOrder(salesOrderId, trx);
+    if (resolved.length === 0) {
       throw new BadRequestException(`Sales order ${salesOrderId} has no lines`);
     }
 
-    const itemsToInsert: Omit<FulfillmentOrderItemInsert, 'fulfillmentOrderId'>[] = [];
+    const items: Omit<FulfillmentOrderItemInsert, 'fulfillmentOrderId'>[] = [];
     const missingLines: UnmatchedSalesOrderLine[] = [];
-    const cancelledByLine = await this.loadPartialCancelledLineQuantities(salesOrderId, trx);
+    const freeze: LineFreeze[] = [];
 
-    for (const sl of soLines) {
-      const fulfillableQuantity = sl.quantity - (cancelledByLine.get(sl.id) ?? 0);
-      if (fulfillableQuantity <= 0) {
+    for (const entry of resolved) {
+      const { line, fulfillableQuantity, resolution } = entry;
+      if (blocksFulfillment(entry) && resolution.kind === 'missing') {
+        missingLines.push({ salesOrderLineId: line.id, variantId: line.variantId, reason: resolution.reason });
         continue;
       }
-
-      // 디지털 라인은 물리 출고 대상이 아니다 — FO item 을 만들지 않는다.
-      // (digital-only 주문은 buildItems 결과가 비어 requiresPhysicalFulfillmentOrder=false → backlog not_required)
-      if (this.isDigitalFulfillmentLine(sl)) {
-        continue;
-      }
-
-      const snapshotMappings = sl.mappingSnapshotId
-        ? (await this.productSkuMapping.getMappingSnapshot(sl.mappingSnapshotId, trx)).mappings
-        : [];
-
-      if (snapshotMappings.length > 0) {
-        for (const mapping of snapshotMappings) {
-          itemsToInsert.push({
-            salesOrderId,
-            salesOrderLineId: sl.id,
-            mappingSnapshotId: sl.mappingSnapshotId,
-            variantId: sl.variantId,
-            skuId: mapping.skuId,
-            qty: fulfillableQuantity * Math.max(1, mapping.quantity || 1),
-            reservedQty: 0,
-            pickedQty: 0,
-            shippedQty: 0,
-            status: 'pending',
-          });
-        }
-        continue;
-      }
-
-      const matching = await this.productSkuMapping.getByVariant(sl.variantId, trx);
-      if (this.isVoidMatching(matching)) {
-        continue;
-      }
-
-      const links = this.getPhysicalSkuLinks(matching);
-
-      if (links.length === 0) {
-        missingLines.push({
-          salesOrderLineId: sl.id,
-          variantId: sl.variantId,
-          reason: this.getMatchingFailureReason(matching),
-        });
-        continue;
-      }
-
-      for (const link of links) {
-        itemsToInsert.push({
+      if (fulfillableQuantity <= 0) continue;
+      // 디지털 라인은 물리 출고 대상이 아니다 — digital-only 주문은 결과가 비어 backlog not_required 로 닫힌다
+      if (resolution.kind === 'digital' || resolution.kind === 'void' || resolution.kind === 'missing') continue;
+      if (resolution.kind === 'follow') freeze.push({ salesOrderLineId: line.id, items: resolution.items });
+      for (const item of resolution.items) {
+        items.push({
           salesOrderId,
-          salesOrderLineId: sl.id,
+          salesOrderLineId: line.id,
           mappingSnapshotId: null,
-          variantId: sl.variantId,
-          skuId: link.skuId,
-          qty: fulfillableQuantity * Math.max(1, link.quantity || 1),
+          variantId: line.variantId,
+          skuId: item.skuId,
+          qty: fulfillableQuantity * item.qtyPerUnit,
           reservedQty: 0,
           pickedQty: 0,
           shippedQty: 0,
@@ -521,67 +489,7 @@ export class FulfillmentsService {
       });
     }
 
-    return itemsToInsert;
-  }
-
-  private async loadPartialCancelledLineQuantities(salesOrderId: string, trx: DbTx): Promise<Map<string, number>> {
-    const cancellations = await trx
-      .select({ metadata: wmsTables.salesOrderCancellations.metadata })
-      .from(wmsTables.salesOrderCancellations)
-      .where(eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId));
-
-    const cancelledByLine = new Map<string, number>();
-    for (const cancellation of cancellations) {
-      const metadata = (cancellation.metadata ?? {}) as Record<string, unknown>;
-      const cancelledLines = Array.isArray(metadata.cancelledLines)
-        ? (metadata.cancelledLines as PartialCancelledLineQuantity[])
-        : [];
-      for (const line of cancelledLines) {
-        if (!line || typeof line.salesOrderLineId !== 'string' || typeof line.quantity !== 'number') {
-          continue;
-        }
-        cancelledByLine.set(line.salesOrderLineId, (cancelledByLine.get(line.salesOrderLineId) ?? 0) + line.quantity);
-      }
-    }
-
-    return cancelledByLine;
-  }
-
-  private isVoidMatching(matching: VariantSkuMatching): boolean {
-    return isVoidMatching(matching);
-  }
-
-  // 디지털 라인 판별: fulfillmentKind='digital' 또는 requiresShipping=false.
-  // null(미지정, 기존 데이터/외부 채널)은 물리로 간주.
-  private isDigitalFulfillmentLine(line: {
-    fulfillmentKind?: string | null;
-    requiresShipping?: boolean | null;
-  }): boolean {
-    return line.fulfillmentKind === 'digital' || line.requiresShipping === false;
-  }
-
-  private getPhysicalSkuLinks(matching: VariantSkuMatching): Array<{ skuId: string; quantity: number }> {
-    return physicalSkuLinks(matching);
-  }
-
-  private getMatchingFailureReason(matching: VariantSkuMatching): string {
-    if (!matching) {
-      return 'NO_PRODUCT_SKU_MATCHING';
-    }
-
-    if (matching.status === 'ignored') {
-      return 'LEGACY_PRODUCT_MATCHING_IGNORED';
-    }
-
-    if (matching.status !== 'matched') {
-      return 'PRODUCT_MATCHING_UNRESOLVED';
-    }
-
-    if (matching.strategy !== 'variant') {
-      return 'PRODUCT_MATCHING_STRATEGY_UNRESOLVED';
-    }
-
-    return 'NO_PRODUCT_SKU_MATCHING';
+    return { items, freeze };
   }
 
   private async validateSkuRows(

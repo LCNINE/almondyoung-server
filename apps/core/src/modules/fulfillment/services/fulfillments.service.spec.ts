@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 
 import { wmsTables } from '../../inventory/schema/inventory.schema';
+import { LineCompositionReader } from '../../product-matching/line-composition/line-composition.reader';
 import { FulfillmentsService } from './fulfillments.service';
 
 describe('FulfillmentsService', () => {
@@ -16,6 +17,7 @@ describe('FulfillmentsService', () => {
     salesOrders: Array<Record<string, any>>;
     warehouses: Array<Record<string, any>>;
     salesOrderLines: Array<Record<string, any>>;
+    salesOrderLineCompositions: Array<Record<string, any>>;
     skus: Array<Record<string, any>>;
     fulfillmentOrders: Array<Record<string, any>>;
     fulfillmentOrderItems: Array<Record<string, any>>;
@@ -49,6 +51,7 @@ describe('FulfillmentsService', () => {
       if (table === wmsTables.salesOrders) return state.salesOrders;
       if (table === wmsTables.warehouses) return state.warehouses;
       if (table === wmsTables.salesOrderLines) return state.salesOrderLines;
+      if (table === wmsTables.salesOrderLineCompositions) return state.salesOrderLineCompositions;
       if (table === wmsTables.skus) return state.skus;
       if (table === wmsTables.fulfillmentOrders) return state.fulfillmentOrders;
       if (table === wmsTables.fulfillmentOrderItems) return state.fulfillmentOrderItems;
@@ -154,7 +157,7 @@ describe('FulfillmentsService', () => {
       links?: Array<{ skuId: string; quantity: number }> | null;
       matching?: Record<string, any> | null;
       matchingsByVariant?: Record<string, Record<string, any> | null>;
-      mappingSnapshots?: Record<string, { mappings: Array<{ skuId: string; quantity: number }> }>;
+      lineCompositions?: Array<Record<string, any>>;
       policy?: {
         inventoryManagement: boolean;
         preStockSellable: boolean;
@@ -175,15 +178,10 @@ describe('FulfillmentsService', () => {
       // isSellable 은 명시한다 — assertWarehouseSellable 이 falsy 를 비판매로 읽어
       // 필드를 빠뜨린 더블은 출고 생성 전부가 BadRequestError 로 죽는다.
       warehouses: options.warehouses ?? [{ id: warehouseId, isSellable: true }],
-      salesOrderLines: options.lines ?? [
-        {
-          id: salesOrderLineId,
-          salesOrderId,
-          variantId,
-          quantity: 1,
-          mappingSnapshotId: null,
-        },
-      ],
+      salesOrderLines: (options.lines ?? [{ id: salesOrderLineId, salesOrderId, variantId, quantity: 1 }]).map(
+        (line) => ({ compositionSource: null, ...line }),
+      ),
+      salesOrderLineCompositions: options.lineCompositions ?? [],
       skus: options.skus ?? [{ id: skuId, holderId: null }],
       fulfillmentOrders: options.fulfillmentOrders ?? [],
       fulfillmentOrderItems: options.fulfillmentOrderItems ?? [],
@@ -219,11 +217,6 @@ describe('FulfillmentsService', () => {
               },
         );
       }),
-      getMappingSnapshot: jest
-        .fn()
-        .mockImplementation((requestedSnapshotId: string) =>
-          Promise.resolve(options.mappingSnapshots?.[requestedSnapshotId] ?? { mappings: [] }),
-        ),
     };
     const reservationLifecycle = {
       handleFulfillmentOrderStatusChange: jest.fn().mockResolvedValue(undefined),
@@ -238,15 +231,17 @@ describe('FulfillmentsService', () => {
       projectOrder: jest.fn().mockReturnValue({ status: 'created' }),
     };
 
+    const lineCompositionManager = { freezeFromMatching: jest.fn().mockResolvedValue(undefined) };
     const service = new FulfillmentsService(
       db as any,
       reservationLifecycle as any,
-      productSkuMapping as any,
+      new LineCompositionReader(db as any, productSkuMapping as any),
       outbox as any,
       {
         assertV2MutationAllowed: jest.fn(),
         assertOperationalMutationAllowed: jest.fn(),
       } as any,
+      lineCompositionManager as any,
       shipmentReservation as any,
       fulfillmentProgress as any,
     );
@@ -256,6 +251,7 @@ describe('FulfillmentsService', () => {
       state,
       tx,
       productSkuMapping,
+      lineCompositionManager,
       reservationLifecycle,
       shipmentReservation,
       fulfillmentProgress,
@@ -377,7 +373,6 @@ describe('FulfillmentsService', () => {
           salesOrderId,
           variantId,
           quantity: 3,
-          mappingSnapshotId: null,
         },
       ],
       salesOrderCancellations: [
@@ -437,14 +432,12 @@ describe('FulfillmentsService', () => {
           salesOrderId,
           variantId,
           quantity: 1,
-          mappingSnapshotId: null,
         },
         {
           id: voidSalesOrderLineId,
           salesOrderId,
           variantId: voidVariantId,
           quantity: 3,
-          mappingSnapshotId: null,
         },
       ],
       matchingsByVariant: {
@@ -475,7 +468,6 @@ describe('FulfillmentsService', () => {
           salesOrderId,
           variantId,
           quantity: 1,
-          mappingSnapshotId: null,
           fulfillmentKind: 'digital',
           requiresShipping: false,
         },
@@ -495,14 +487,12 @@ describe('FulfillmentsService', () => {
           salesOrderId,
           variantId,
           quantity: 1,
-          mappingSnapshotId: null,
         },
         {
           id: voidSalesOrderLineId,
           salesOrderId,
           variantId: voidVariantId,
           quantity: 1,
-          mappingSnapshotId: null,
           fulfillmentKind: 'digital',
           requiresShipping: false,
         },
@@ -561,14 +551,12 @@ describe('FulfillmentsService', () => {
           salesOrderId,
           variantId,
           quantity: 1,
-          mappingSnapshotId: null,
         },
         {
           id: voidSalesOrderLineId,
           salesOrderId,
           variantId: voidVariantId,
           quantity: 3,
-          mappingSnapshotId: null,
         },
       ],
       matchingsByVariant: {
@@ -611,14 +599,12 @@ describe('FulfillmentsService', () => {
           salesOrderId,
           variantId,
           quantity: 1,
-          mappingSnapshotId: null,
         },
         {
           id: voidSalesOrderLineId,
           salesOrderId,
           variantId: voidVariantId,
           quantity: 3,
-          mappingSnapshotId: null,
         },
       ],
       matchingsByVariant: {
@@ -644,6 +630,34 @@ describe('FulfillmentsService', () => {
 
     expect(state.fulfillmentOrders).toHaveLength(0);
     expect(state.fulfillmentOrderItems).toHaveLength(0);
+  });
+
+  it('상품매칭을 따르는 라인만 굳히기로 넘기고, 이미 굳힌 라인은 굳힌 구성으로 FO 항목을 만든다', async () => {
+    const frozenLineId = '88888888-8888-8888-8888-888888888888';
+    const frozenSkuId = '99999999-9999-9999-9999-999999999999';
+    const { service, state, lineCompositionManager } = makeService({
+      lines: [
+        { id: salesOrderLineId, salesOrderId, variantId, quantity: 1 },
+        { id: frozenLineId, salesOrderId, variantId: voidVariantId, quantity: 2, compositionSource: 'operator' },
+      ],
+      skus: [
+        { id: skuId, holderId: null },
+        { id: frozenSkuId, holderId: null },
+      ],
+      lineCompositions: [{ salesOrderLineId: frozenLineId, skuId: frozenSkuId, qtyPerUnit: 1 }],
+      links: [{ skuId, quantity: 2 }],
+    });
+
+    await service.create({ salesOrderId, warehouseId });
+
+    expect(lineCompositionManager.freezeFromMatching).toHaveBeenCalledWith(
+      [{ salesOrderLineId, items: [{ skuId, qtyPerUnit: 2 }] }],
+      expect.anything(),
+    );
+    expect(state.fulfillmentOrderItems.map((i) => [i.salesOrderLineId, i.skuId, i.qty])).toEqual([
+      [salesOrderLineId, skuId, 2],
+      [frozenLineId, frozenSkuId, 2],
+    ]);
   });
 
   it('sales order line 이 없으면 빈 FO를 만들지 않는다', async () => {

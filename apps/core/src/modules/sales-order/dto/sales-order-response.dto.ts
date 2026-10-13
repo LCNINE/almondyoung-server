@@ -17,6 +17,13 @@ export class SalesOrderLineResponseDto {
   @ApiProperty({ description: 'Mapping snapshot ID', nullable: true })
   mappingSnapshotId: string | null;
 
+  // 상세·목록 응답만 채운다(라인 조회가 술어를 함께 select 한다)
+  @ApiProperty({
+    description: '매칭 해결 여부 — 라인 구성을 굳혔거나 상품매칭이 실물/void 로 해결됨(#1063)',
+    required: false,
+  })
+  matchingResolved?: boolean;
+
   @ApiProperty({ description: '상품명' })
   productName: string;
 

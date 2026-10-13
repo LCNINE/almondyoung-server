@@ -16,7 +16,7 @@ export const ORDER_TYPE_GROUPS = [
   'ready', // 완전출고 (모든 라인 재고차감)
   'partial', // 부분출고 (일부 라인만 재고차감)
   'hold', // 출고불가 (재고부족 라인 존재)
-  'unmatched', // 매칭안됨 (미매칭 라인 존재)
+  'unmatched', // 매칭안됨 (매칭이 없어 FO 생성을 기다리는 주문)
   'direct', // 직배송 (drop_ship FO 존재)
 ] as const;
 export type OrderTypeGroup = (typeof ORDER_TYPE_GROUPS)[number];

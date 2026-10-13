@@ -21,7 +21,9 @@ describe('FulfillmentOrderCreationBacklogWorker', () => {
       return [];
     };
 
-    return {
+    const fakeTx: any = {
+      // 워커가 create 를 savepoint 로 감싼다 — 가짜는 같은 tx 를 그대로 넘긴다
+      transaction: (fn: (t: any) => any) => fn(fakeTx),
       select: jest.fn(() => ({
         from: (table: unknown) => ({
           where: () => {
@@ -36,6 +38,7 @@ describe('FulfillmentOrderCreationBacklogWorker', () => {
         }),
       })),
     };
+    return fakeTx;
   }
 
   function makeWorker(
