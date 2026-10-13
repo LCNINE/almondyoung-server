@@ -142,7 +142,7 @@ export function collectFulfillmentInvariantViolations(
 
   for (const item of snapshot.fulfillmentOrderItems) {
     const settledQty = item.shippedQty + item.canceledQty;
-    if (item.qty <= 0 || item.shippedQty < 0 || item.canceledQty < 0 || settledQty > item.qty) {
+    if (item.qty < 0 || item.shippedQty < 0 || item.canceledQty < 0 || settledQty > item.qty) {
       violations.push({
         kind: 'FOI_QUANTITY',
         resourceId: item.id,

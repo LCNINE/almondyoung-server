@@ -2725,7 +2725,8 @@ export const fulfillmentOrderItems = pgTable(
     idxSalesOrder: index('idx_fulfillment_order_items_so').on(t.salesOrderId),
     idxSku: index('idx_fulfillment_order_items_sku').on(t.skuId),
     idxVariant: index('idx_fulfillment_order_items_variant').on(t.variantId),
-    ckQtyPositive: check('ck_fulfillment_order_items_qty_positive', sql`${t.qty} > 0`),
+    // #1063: 라인 구성 변경으로 SKU 가 빠지면 그 항목의 수요는 0 이 된다 — canceledQty 는 고객 취소 전용이라 qty 를 줄인다
+    ckQtyNonnegative: check('ck_fulfillment_order_items_qty_nonnegative', sql`${t.qty} >= 0`),
     ckProgressNonnegative: check(
       'ck_fulfillment_order_items_progress_nonnegative',
       sql`${t.reservedQty} >= 0 AND ${t.pickedQty} >= 0 AND ${t.shippedQty} >= 0 AND ${t.canceledQty} >= 0`,
