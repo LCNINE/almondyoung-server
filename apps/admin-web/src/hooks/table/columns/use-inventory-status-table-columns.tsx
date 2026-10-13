@@ -9,8 +9,9 @@ const columnHelper = createColumnHelper<StockSummaryDto>();
 
 type RowActions = {
   onHistory: (row: StockSummaryDto) => void;
-  onAdjust: (row: StockSummaryDto) => void;
-  onRebuild: (row: StockSummaryDto) => void;
+  // onAdjust·onRebuild 를 넘기지 않으면 그 버튼을 그리지 않는다(권한 없음)
+  onAdjust?: (row: StockSummaryDto) => void;
+  onRebuild?: (row: StockSummaryDto) => void;
 };
 
 export const useInventoryStatusTableColumns = (actions: RowActions) => {
@@ -75,18 +76,22 @@ export const useInventoryStatusTableColumns = (actions: RowActions) => {
             >
               이력
             </button>
-            <button
-              className="rounded px-2 py-1 text-xs hover:bg-muted"
-              onClick={() => actions.onAdjust(row.original)}
-            >
-              조정
-            </button>
-            <button
-              className="rounded px-2 py-1 text-xs hover:bg-muted"
-              onClick={() => actions.onRebuild(row.original)}
-            >
-              재구축
-            </button>
+            {actions.onAdjust && (
+              <button
+                className="rounded px-2 py-1 text-xs hover:bg-muted"
+                onClick={() => actions.onAdjust?.(row.original)}
+              >
+                조정
+              </button>
+            )}
+            {actions.onRebuild && (
+              <button
+                className="rounded px-2 py-1 text-xs hover:bg-muted"
+                onClick={() => actions.onRebuild?.(row.original)}
+              >
+                재구축
+              </button>
+            )}
           </div>
         ),
       }),

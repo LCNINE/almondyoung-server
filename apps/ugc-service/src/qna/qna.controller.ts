@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { OptionalAuth, Public, RequireScopes, User } from '@app/authorization';
+import { OptionalAuth, Public, RequireScopes, User, StoreRoute, RequirePermission } from '@app/authorization';
 import { ApiOkResponsePaginated } from '@app/shared/decorators/api-paginated-response.decorator';
 import { PaginatedResponseDto } from '@app/shared/dto';
 import { QnaService } from './qna.service';
@@ -26,6 +26,7 @@ export class QnaController {
 
   // ─── 질문 ───
 
+  @StoreRoute()
   @Post('questions')
   @ApiOperation({ summary: '질문 작성' })
   @ApiBody({ type: CreateQuestionDto })
@@ -77,6 +78,7 @@ export class QnaController {
     };
   }
 
+  @StoreRoute()
   @Get('questions/me')
   @ApiOperation({ summary: '내 문의 목록 조회' })
   @ApiQuery({
@@ -124,6 +126,7 @@ export class QnaController {
     return QnaMapper.toQuestionResponse(question);
   }
 
+  @StoreRoute()
   @Patch('questions/:id')
   @ApiOperation({ summary: '질문 수정 (본인만)' })
   @ApiParam({ name: 'id', description: '질문 ID (UUID)' })
@@ -139,6 +142,7 @@ export class QnaController {
     return QnaMapper.toQuestionResponse(question);
   }
 
+  @StoreRoute()
   @Delete('questions/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '질문 삭제 (본인만, soft delete)' })
@@ -151,6 +155,7 @@ export class QnaController {
 
   // ─── 관리자용 조회 ───
 
+  @RequirePermission('cs.inquiry.read')
   @Get('admin/questions')
   @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '전체 문의 목록 조회 (관리자)' })
@@ -181,6 +186,7 @@ export class QnaController {
     };
   }
 
+  @RequirePermission('cs.inquiry.read')
   @Get('admin/questions/stats/daily')
   @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '일별 문의 접수 수 (관리자) — 작성일 KST 귀속, 삭제 제외' })
@@ -188,6 +194,7 @@ export class QnaController {
     return this.qnaService.getDailyCountsForAdmin(query.from, query.to);
   }
 
+  @RequirePermission('cs.inquiry.read')
   @Get('admin/questions/:id')
   @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '문의 상세 조회 (관리자)' })
@@ -200,6 +207,7 @@ export class QnaController {
     return QnaMapper.toQuestionResponse(question);
   }
 
+  @RequirePermission('cs.inquiry.write')
   @Delete('admin/questions/:id')
   @RequireScopes('admin:ugc:modify')
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -213,6 +221,7 @@ export class QnaController {
 
   // ─── 답변 (관리자) ───
 
+  @RequirePermission('cs.inquiry.write')
   @Post('questions/:id/answer')
   @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '답변 작성 (관리자)' })
@@ -230,6 +239,7 @@ export class QnaController {
     return QnaMapper.toAnswerResponse(answer);
   }
 
+  @RequirePermission('cs.inquiry.write')
   @Patch('questions/:id/answer')
   @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '답변 수정 (관리자)' })
@@ -246,6 +256,7 @@ export class QnaController {
     return QnaMapper.toAnswerResponse(answer);
   }
 
+  @RequirePermission('cs.inquiry.write')
   @Delete('questions/:id/answer')
   @RequireScopes('admin:ugc:modify')
   @HttpCode(HttpStatus.NO_CONTENT)

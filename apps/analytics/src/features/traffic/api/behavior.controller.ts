@@ -1,6 +1,6 @@
 import { BadRequestException, Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AdminRealmGuard, JwtAuthGuard } from '@app/authorization';
+import { AdminRealmGuard, JwtAuthGuard, RequirePermission, PermissionGuard } from '@app/authorization';
 import { BehaviorQuery } from '../read-model/behavior.query';
 import { BehaviorStatisticsQueryDto, BehaviorStatisticsResponseDto } from './behavior-query.dto';
 
@@ -12,11 +12,12 @@ import { BehaviorStatisticsQueryDto, BehaviorStatisticsResponseDto } from './beh
  */
 @ApiTags('Statistics')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, AdminRealmGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)
 @Controller('statistics')
 export class BehaviorController {
   constructor(private readonly behaviorQuery: BehaviorQuery) {}
 
+  @RequirePermission('analytics.report.read')
   @Get('behavior')
   @ApiOperation({
     summary: '행동 통계',

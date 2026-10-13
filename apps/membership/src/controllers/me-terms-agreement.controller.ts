@@ -1,6 +1,6 @@
 import { Body, Controller, HttpCode, HttpStatus, Post, UseFilters, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard, User } from '@app/authorization';
+import { JwtAuthGuard, User, StoreRoute } from '@app/authorization';
 import { TermsAgreementService } from '../services/terms/terms-agreement.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
@@ -18,6 +18,7 @@ import { RecordTermsAgreementRequest, RecordTermsAgreementRequestSchema } from '
 export class MeTermsAgreementController {
   constructor(private readonly termsAgreementService: TermsAgreementService) {}
 
+  @StoreRoute()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: '멤버십 가입 약관 동의 기록' })

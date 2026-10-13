@@ -40,6 +40,9 @@ import {
   lockAndAssertPickerClaim,
 } from './allocation/allocation.queries';
 import { ShipmentCustodyBalance, WorkItemRow, uniqueSorted } from './allocation/allocation.types';
+import { PermissionCheckpoints } from '@app/authorization';
+import { legacyFulfillmentSupervisor } from '../../../platform/auth/fulfillment-authz';
+import { authzSubjectOf } from '../../../platform/auth/system-actor';
 
 type ToteRow = typeof wmsTables.totes.$inferSelect;
 type ToteAssignmentRow = typeof wmsTables.shipmentToteAssignments.$inferSelect;
@@ -63,7 +66,18 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
     private readonly batches: OutboundBatchOrchestrator,
     private readonly audit: AuditService,
     private readonly labels: LabelCurrencyGuard,
+    private readonly checkpoints: PermissionCheckpoints,
   ) {}
+
+  /** 남이 잡은 작업을 넘기거나 되돌릴 수 있는가 — 옛 판정이 결과를 정하고 권한 판정은 비교만 한다. */
+  private supervises(actor: { readonly id: string; readonly roles: readonly string[] }): boolean {
+    return this.checkpoints.compare(
+      'fulfillment.work_supervise',
+      legacyFulfillmentSupervisor(actor.roles),
+      authzSubjectOf(actor),
+      ['fulfillment.work.supervise'],
+    );
+  }
 
   async registerTote(input: ToteRegistrationInput, tx?: DbTx): Promise<ToteRegistrationResult> {
     this.workflowGate.assertV2MutationAllowed('picking.pick_to_tote.register_tote');
@@ -425,7 +439,7 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
     this.workflowGate.assertV2MutationAllowed('picking.pick_to_tote.tote_handoff');
     const toteBarcode = this.requiredToteBarcode(input.toteBarcode);
     const reason = this.requiredReason(input.reason);
-    if (!input.actor.roles.some((role) => role === 'logistics_manager' || role === 'master')) {
+    if (!this.supervises(input.actor)) {
       throw conflict('TOTE_HANDOFF_FORBIDDEN', 'Cross-shipment tote handoff requires logistics_manager or master');
     }
     if (input.shipmentId === input.targetShipmentId) {
@@ -451,7 +465,7 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
         },
       },
       async (trx, commandRequestId) => {
-        if (!input.actor.roles.some((role) => role === 'logistics_manager' || role === 'master')) {
+        if (!this.supervises(input.actor)) {
           throw conflict('TOTE_HANDOFF_FORBIDDEN', 'Cross-shipment tote handoff requires logistics_manager or master');
         }
         const lockedItems = await this.loadWorkItemsForUpdate([input.workItemId, input.targetWorkItemId], trx);
@@ -762,7 +776,6 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
           throw conflict('PICKING_STALE_CLAIM', `Work item ${item.id} lease version changed`);
         }
         const allocations = await loadWorkItemAllocations(trx, input.workItemId);
-        const privileged = input.actor.roles.some((role) => role === 'logistics_manager' || role === 'master');
         const now = await databaseNow(trx);
         if (item.status === 'picking') {
           if (
@@ -774,7 +787,7 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
             throw conflict('PICKING_STALE_CLAIM', 'Only the active picker may unpick this work item');
           }
         } else if (item.status === 'ready_to_pack') {
-          if (item.pickerId !== input.actor.id && !privileged) {
+          if (item.pickerId !== input.actor.id && !this.supervises(input.actor)) {
             throw conflict('PICKING_UNPICK_FORBIDDEN', 'Only the previous picker or a manager may unpick');
           }
         } else {
@@ -1092,7 +1105,9 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
     if (item.leaseVersion !== input.expectedLeaseVersion) {
       throw conflict('PICKING_STALE_CLAIM', `Work item ${item.id} lease version changed`);
     }
-    const privileged = input.actor.roles.some((role) => role === 'logistics_manager' || role === 'master');
+    // 감독 판정은 결과를 바꾸는 분기에서만 한 번 계산한다(자기 작업이면 묻지 않는다).
+    let supervisor: boolean | undefined;
+    const privileged = () => (supervisor ??= this.supervises(input.actor));
     const now = await databaseNow(tx);
     if (item.status === 'picking') {
       if (
@@ -1106,24 +1121,24 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
       return;
     }
     if (item.status === 'ready_to_pack') {
-      if (item.pickerId !== input.actor.id && !privileged) {
+      if (item.pickerId !== input.actor.id && !privileged()) {
         throw conflict('TOTE_RELEASE_FORBIDDEN', 'Only the previous picker or a manager may release this tote');
       }
       return;
     }
     if (item.status === 'packing') {
-      if (!privileged && item.packerId !== input.actor.id) {
+      if (item.packerId !== input.actor.id && !privileged()) {
         throw conflict('TOTE_RELEASE_FORBIDDEN', 'Only the active packer or a manager may release this tote');
       }
       if (
-        !privileged &&
-        (item.packerReleasedAt || !item.leaseExpiresAt || item.leaseExpiresAt.getTime() <= now.getTime())
+        (item.packerReleasedAt || !item.leaseExpiresAt || item.leaseExpiresAt.getTime() <= now.getTime()) &&
+        !privileged()
       ) {
         throw conflict('PICKING_STALE_CLAIM', 'Packer lease is no longer active');
       }
       return;
     }
-    if (item.status === 'completed' && privileged) return;
+    if (item.status === 'completed' && privileged()) return;
     throw conflict('TOTE_RELEASE_FORBIDDEN', 'Completed work requires a manager; other states cannot release totes');
   }
 

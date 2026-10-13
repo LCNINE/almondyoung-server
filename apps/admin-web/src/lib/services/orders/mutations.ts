@@ -9,22 +9,15 @@ import { isConflict } from '@/lib/api/domains/orders/sales-order-amendments.shap
 import type {
   CancelSalesOrderDto,
   ResolveMatchingDto,
-  ResolveOptionMatchingDto,
   SetMatchingPriorityDto,
   ChangeStrategyDto,
   StockPolicyDto,
   VariantMatchingDto,
 } from '@/lib/types/dto/orders';
 import type {
-  StartInspectionRequest,
-  InspectItemRequest,
-  ForceShipmentRequest,
-  BulkApproveRequest,
-  CompleteInspectionSessionRequest,
   ForwardDirectShipOrdersRequest,
   CompleteDirectShipOrdersRequest,
   CreateStandaloneFulfillmentRequest,
-  InspectByScanRequest,
   SplitShipmentRequest,
   ReviseShipmentRecipientRequest,
   PlanShipmentRequest,
@@ -54,6 +47,7 @@ import type {
   IssueBatchWaybillRequest,
   VoidWaybillRequest,
 } from '@/lib/types/dto/fulfillment';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 function commandKey(idempotencyKey?: string): string {
   return idempotencyKey ?? crypto.randomUUID();
@@ -70,6 +64,7 @@ export const useCreateSalesOrder = () => {
     },
   });
 };
+useCreateSalesOrder.permission = ['order.order.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateSalesOrder = () => {
   const queryClient = useQueryClient();
@@ -83,6 +78,7 @@ export const useUpdateSalesOrder = () => {
     },
   });
 };
+useUpdateSalesOrder.permission = ['order.order.write'] as const satisfies PermissionRequirement;
 
 export const useCancelSalesOrder = () => {
   const queryClient = useQueryClient();
@@ -97,6 +93,7 @@ export const useCancelSalesOrder = () => {
     },
   });
 };
+useCancelSalesOrder.permission = ['order.order.cancel'] as const satisfies PermissionRequirement;
 
 export const useAdminCancelSalesOrder = () => {
   const queryClient = useQueryClient();
@@ -111,6 +108,7 @@ export const useAdminCancelSalesOrder = () => {
     },
   });
 };
+useAdminCancelSalesOrder.permission = ['order.order.cancel'] as const satisfies PermissionRequirement;
 
 export const useAdminRetryRefund = () => {
   const queryClient = useQueryClient();
@@ -125,6 +123,7 @@ export const useAdminRetryRefund = () => {
     },
   });
 };
+useAdminRetryRefund.permission = ['payment.refund.execute'] as const satisfies PermissionRequirement;
 
 export const useAdminManualRefundComplete = () => {
   const queryClient = useQueryClient();
@@ -147,97 +146,7 @@ export const useAdminManualRefundComplete = () => {
     },
   });
 };
-
-// ===== 검수 관련 뮤테이션 =====
-
-export const useStartInspection = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: StartInspectionRequest) =>
-      orders.inspection.startSession(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inspection'] });
-    },
-  });
-};
-
-export const useCompleteInspectionSession = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      sessionId,
-      data,
-    }: {
-      sessionId: string;
-      data: CompleteInspectionSessionRequest;
-    }) => orders.inspection.completeSession(sessionId, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inspection'] });
-    },
-  });
-};
-
-export const useInspectItem = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: InspectItemRequest) =>
-      orders.inspection.inspectItem(data),
-    onSuccess: (_, data) => {
-      queryClient.invalidateQueries({ queryKey: ['inspection'] });
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.inspectionHistory(data.foiId),
-      });
-    },
-  });
-};
-
-export const useInspectByScan = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: InspectByScanRequest) =>
-      orders.inspection.inspectByScan(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inspection'] });
-    },
-  });
-};
-
-export const useForceShipment = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: ForceShipmentRequest) =>
-      orders.inspection.forceShipment(data),
-    onSuccess: (_, data) => {
-      queryClient.invalidateQueries({ queryKey: ['inspection'] });
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.inspectionHistory(data.foiId),
-      });
-    },
-  });
-};
-
-export const useResetInspection = () => {
-  return useMutation({
-    mutationFn: ({
-      foiId,
-      inspectorUserId,
-    }: {
-      foiId: string;
-      inspectorUserId: string;
-    }) => orders.inspection.resetInspection(foiId, inspectorUserId),
-  });
-};
-
-export const useBulkApprove = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: BulkApproveRequest) =>
-      orders.inspection.bulkApprove(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inspection'] });
-    },
-  });
-};
+useAdminManualRefundComplete.permission = ['payment.refund.execute'] as const satisfies PermissionRequirement;
 
 // ===== 매칭 관련 뮤테이션 (WMS API 스펙 기반) =====
 
@@ -273,34 +182,7 @@ export const useResolveMatching = () => {
     },
   });
 };
-
-/**
- * 옵션별 매칭 해소
- */
-export const useResolveOptionMatching = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({
-      id,
-      data,
-    }: {
-      id: string;
-      data: ResolveOptionMatchingDto;
-    }) => orders.matching.resolveOptionMatching(id, data),
-    onSuccess: (data, variables) => {
-      // 매칭 목록 쿼리 무효화
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.matchingLists(),
-      });
-
-      // 개별 매칭 쿼리 무효화
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.matchingDetail(variables.id),
-      });
-    },
-  });
-};
+useResolveMatching.permission = ['order.matching.write'] as const satisfies PermissionRequirement;
 
 /**
  * 전략 미결정 우선순위 설정
@@ -324,6 +206,7 @@ export const useSetMatchingPriority = () => {
     },
   });
 };
+useSetMatchingPriority.permission = ['order.matching.write'] as const satisfies PermissionRequirement;
 
 /**
  * 매칭 전략 변경
@@ -347,6 +230,7 @@ export const useChangeMatchingStrategy = () => {
     },
   });
 };
+useChangeMatchingStrategy.permission = ['order.matching.write'] as const satisfies PermissionRequirement;
 
 /**
  * 매칭의 재고 정책 업데이트
@@ -375,6 +259,7 @@ export const useUpdateMatchingStockPolicy = () => {
     },
   });
 };
+useUpdateMatchingStockPolicy.permission = ['order.matching.write'] as const satisfies PermissionRequirement;
 
 /**
  * Variant별 매칭 업데이트
@@ -403,6 +288,7 @@ export const useUpdateVariantMatching = () => {
     },
   });
 };
+useUpdateVariantMatching.permission = ['order.matching.write'] as const satisfies PermissionRequirement;
 
 /**
  * 재고상품 비매칭 처리 (하위 호환 편의 함수)
@@ -433,6 +319,7 @@ export const useIgnoreMatching = () => {
       }),
   });
 };
+useIgnoreMatching.permission = ['order.matching.write'] as const satisfies PermissionRequirement;
 
 /**
  * SKU 구성 매칭 처리 (편의 함수)
@@ -470,6 +357,7 @@ export const useCompleteMatching = () => {
       }),
   });
 };
+useCompleteMatching.permission = ['order.matching.write'] as const satisfies PermissionRequirement;
 
 // ===== 직배송 뮤테이션 (D2) =====
 
@@ -484,6 +372,7 @@ export const useForwardDirectShipOrders = () => {
     },
   });
 };
+useForwardDirectShipOrders.permission = ['fulfillment.order.write'] as const satisfies PermissionRequirement;
 
 export const useCompleteDirectShipOrders = () => {
   const queryClient = useQueryClient();
@@ -496,6 +385,7 @@ export const useCompleteDirectShipOrders = () => {
     },
   });
 };
+useCompleteDirectShipOrders.permission = ['fulfillment.order.write'] as const satisfies PermissionRequirement;
 
 export const useExportDirectShipFile = () => {
   return useMutation({
@@ -503,28 +393,7 @@ export const useExportDirectShipFile = () => {
       orders.directShip.exportFile(companyName),
   });
 };
-
-// ===== 합포장 뮤테이션 (D2) =====
-
-export const useAnalyzeConsolidation = (warehouseId: string) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => orders.consolidation.analyze(warehouseId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.consolidationCandidates(warehouseId),
-      });
-    },
-  });
-};
-
-export const useAutoConsolidate = () => {
-  // ⚠️ STUB — 실제 FO 머지 안 함. UI에서 stub 경고 표시 필수
-  return useMutation({
-    mutationFn: (groupId: string) =>
-      orders.consolidation.autoConsolidate(groupId),
-  });
-};
+useExportDirectShipFile.permission = ['order.order.export'] as const satisfies PermissionRequirement;
 
 // ===== FO 액션 뮤테이션 (Core /fulfillments canonical API) =====
 
@@ -549,6 +418,7 @@ export const useCreateFulfillmentOrder = () => {
     },
   });
 };
+useCreateFulfillmentOrder.permission = ['fulfillment.order.write'] as const satisfies PermissionRequirement;
 
 // ===== Shipment planning / durable operations =====
 
@@ -584,6 +454,7 @@ export const useSplitShipment = () => {
       invalidateShipment(queryClient, shipmentId),
   });
 };
+useSplitShipment.permission = ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement;
 
 export const useReviseShipmentRecipient = () => {
   const queryClient = useQueryClient();
@@ -606,6 +477,7 @@ export const useReviseShipmentRecipient = () => {
       invalidateShipment(queryClient, shipmentId),
   });
 };
+useReviseShipmentRecipient.permission = ['fulfillment.shipment.override_recipient'] as const satisfies PermissionRequirement;
 
 export const usePlanShipment = () => {
   const queryClient = useQueryClient();
@@ -628,6 +500,7 @@ export const usePlanShipment = () => {
       invalidateShipment(queryClient, shipmentId),
   });
 };
+usePlanShipment.permission = ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement;
 
 export const useCancelShipmentOutstanding = () => {
   const queryClient = useQueryClient();
@@ -650,6 +523,7 @@ export const useCancelShipmentOutstanding = () => {
       invalidateShipment(queryClient, shipmentId),
   });
 };
+useCancelShipmentOutstanding.permission = ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement;
 
 export const useRecallShipment = () => {
   const queryClient = useQueryClient();
@@ -672,6 +546,7 @@ export const useRecallShipment = () => {
       invalidateShipment(queryClient, shipmentId),
   });
 };
+useRecallShipment.permission = ['fulfillment.dispatch.recall'] as const satisfies PermissionRequirement;
 
 export const useReportShipmentShortPick = () => {
   const queryClient = useQueryClient();
@@ -694,6 +569,7 @@ export const useReportShipmentShortPick = () => {
       invalidateShipment(queryClient, shipmentId),
   });
 };
+useReportShipmentShortPick.permission = ['fulfillment.shipment.reopen', 'fulfillment.shipment.short_pick'] as const satisfies PermissionRequirement;
 
 export const useCreateShipmentConsolidation = () => {
   const queryClient = useQueryClient();
@@ -715,6 +591,7 @@ export const useCreateShipmentConsolidation = () => {
     },
   });
 };
+useCreateShipmentConsolidation.permission = ['fulfillment.shipment.consolidate'] as const satisfies PermissionRequirement;
 
 export const useCreateConsolidation = useCreateShipmentConsolidation;
 
@@ -739,6 +616,7 @@ export const useShipmentInspectionScan = () => {
       invalidateShipment(queryClient, shipmentId),
   });
 };
+useShipmentInspectionScan.permission = ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement;
 
 export const useForceShipmentDispatch = () => {
   const queryClient = useQueryClient();
@@ -761,6 +639,7 @@ export const useForceShipmentDispatch = () => {
       invalidateShipment(queryClient, shipmentId),
   });
 };
+useForceShipmentDispatch.permission = ['fulfillment.dispatch.force'] as const satisfies PermissionRequirement;
 
 // ===== Outbound batch V2 / strategy picking =====
 
@@ -792,6 +671,7 @@ export const useCreateOutboundBatchV2 = () => {
       }),
   });
 };
+useCreateOutboundBatchV2.permission = ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement;
 
 export const useAddShipmentToBatch = () => {
   const queryClient = useQueryClient();
@@ -813,6 +693,7 @@ export const useAddShipmentToBatch = () => {
     onSuccess: (_, { batchId }) => invalidateBatchV2(queryClient, batchId),
   });
 };
+useAddShipmentToBatch.permission = ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement;
 
 export const useExcludeShipmentFromBatch = () => {
   const queryClient = useQueryClient();
@@ -837,6 +718,7 @@ export const useExcludeShipmentFromBatch = () => {
     onSuccess: (_, { batchId }) => invalidateBatchV2(queryClient, batchId),
   });
 };
+useExcludeShipmentFromBatch.permission = ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement;
 
 function workItemClaimMutation(kind: 'picker' | 'packer') {
   return () => {
@@ -868,8 +750,14 @@ function workItemClaimMutation(kind: 'picker' | 'packer') {
   };
 }
 
-export const useClaimBatchPicker = workItemClaimMutation('picker');
-export const useClaimBatchPacker = workItemClaimMutation('packer');
+export const useClaimBatchPicker = Object.assign(
+  workItemClaimMutation('picker'),
+  { permission: ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement },
+);
+export const useClaimBatchPacker = Object.assign(
+  workItemClaimMutation('packer'),
+  { permission: ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement },
+);
 
 export const useHandoffBatchWorkItem = () => {
   const queryClient = useQueryClient();
@@ -892,6 +780,7 @@ export const useHandoffBatchWorkItem = () => {
     onSuccess: (_, { batchId }) => invalidateBatchV2(queryClient, batchId),
   });
 };
+useHandoffBatchWorkItem.permission = ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement;
 
 function pickingMutation<T extends { batchId: string }>(
   mutationFn: (data: T, key: string) => Promise<unknown>
@@ -911,28 +800,46 @@ function pickingMutation<T extends { batchId: string }>(
   };
 }
 
-export const useStartPickingV2 = pickingMutation<StartPickingV2Request>(
-  orders.picking.startV2
+export const useStartPickingV2 = Object.assign(
+  pickingMutation<StartPickingV2Request>(
+    orders.picking.startV2
+  ),
+  { permission: ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement },
 );
-export const useDiscretePickingScan =
-  pickingMutation<DiscretePickingScanRequest>(orders.picking.scanV2);
-export const usePickingHandoff = pickingMutation<PickingHandoffRequest>(
-  orders.picking.handoffV2
+export const useDiscretePickingScan = Object.assign(
+  pickingMutation<DiscretePickingScanRequest>(orders.picking.scanV2),
+  { permission: ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement },
 );
-export const useCompletePickingV2 = pickingMutation<CompletePickingRequest>(
-  orders.picking.completeV2
+export const usePickingHandoff = Object.assign(
+  pickingMutation<PickingHandoffRequest>(
+    orders.picking.handoffV2
+  ),
+  { permission: ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement },
 );
-export const useAggregateBulkCartScan =
+export const useCompletePickingV2 = Object.assign(
+  pickingMutation<CompletePickingRequest>(
+    orders.picking.completeV2
+  ),
+  { permission: ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement },
+);
+export const useAggregateBulkCartScan = Object.assign(
   pickingMutation<AggregateBulkCartScanRequest>(
-    orders.picking.aggregateBulkCartScan
-  );
-export const useAggregateSortScan = pickingMutation<AggregateSortScanRequest>(
-  orders.picking.aggregateSortScan
+      orders.picking.aggregateBulkCartScan
+    ),
+  { permission: ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement },
 );
-export const useAggregateCartHandoff =
+export const useAggregateSortScan = Object.assign(
+  pickingMutation<AggregateSortScanRequest>(
+    orders.picking.aggregateSortScan
+  ),
+  { permission: ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement },
+);
+export const useAggregateCartHandoff = Object.assign(
   pickingMutation<AggregateCartHandoffRequest>(
-    orders.picking.aggregateCartHandoff
-  );
+      orders.picking.aggregateCartHandoff
+    ),
+  { permission: ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement },
+);
 export const useRegisterTote = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -949,17 +856,30 @@ export const useRegisterTote = () => {
       }),
   });
 };
-export const useAssignTote = pickingMutation<AssignToteRequest>(
-  orders.picking.assignTote
+useRegisterTote.permission = ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement;
+export const useAssignTote = Object.assign(
+  pickingMutation<AssignToteRequest>(
+    orders.picking.assignTote
+  ),
+  { permission: ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement },
 );
-export const useToteScan = pickingMutation<ToteScanRequest>(
-  orders.picking.scanTote
+export const useToteScan = Object.assign(
+  pickingMutation<ToteScanRequest>(
+    orders.picking.scanTote
+  ),
+  { permission: ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement },
 );
-export const useToteHandoff = pickingMutation<ToteHandoffRequest>(
-  orders.picking.handoffTote
+export const useToteHandoff = Object.assign(
+  pickingMutation<ToteHandoffRequest>(
+    orders.picking.handoffTote
+  ),
+  { permission: ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement },
 );
-export const useReleaseTote = pickingMutation<ReleaseToteRequest>(
-  orders.picking.releaseTote
+export const useReleaseTote = Object.assign(
+  pickingMutation<ReleaseToteRequest>(
+    orders.picking.releaseTote
+  ),
+  { permission: ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement },
 );
 
 export const useDeliverFulfillment = (id: string) => {
@@ -971,6 +891,7 @@ export const useDeliverFulfillment = (id: string) => {
     },
   });
 };
+useDeliverFulfillment.permission = ['fulfillment.order.write'] as const satisfies PermissionRequirement;
 
 export const useCancelFulfillment = (boundId?: string) => {
   const queryClient = useQueryClient();
@@ -985,6 +906,7 @@ export const useCancelFulfillment = (boundId?: string) => {
     },
   });
 };
+useCancelFulfillment.permission = ['fulfillment.order.write'] as const satisfies PermissionRequirement;
 
 // ===== Waybill (운송장) 발급 =====
 
@@ -1004,6 +926,7 @@ export const useIssueWaybill = () => {
       invalidateShipment(queryClient, shipmentId),
   });
 };
+useIssueWaybill.permission = ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement;
 
 export const useRegisterManualWaybill = () => {
   const queryClient = useQueryClient();
@@ -1021,6 +944,7 @@ export const useRegisterManualWaybill = () => {
       invalidateShipment(queryClient, shipmentId),
   });
 };
+useRegisterManualWaybill.permission = ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement;
 
 export const useReissueWaybill = () => {
   const queryClient = useQueryClient();
@@ -1038,6 +962,7 @@ export const useReissueWaybill = () => {
       invalidateShipment(queryClient, shipmentId),
   });
 };
+useReissueWaybill.permission = ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement;
 
 export const useVoidWaybill = () => {
   const queryClient = useQueryClient();
@@ -1057,6 +982,7 @@ export const useVoidWaybill = () => {
     },
   });
 };
+useVoidWaybill.permission = ['fulfillment.shipment.reopen'] as const satisfies PermissionRequirement;
 
 export const useBatchIssueWaybills = () =>
   useMutation({
@@ -1068,6 +994,7 @@ export const useBatchIssueWaybills = () =>
       idempotencyKey?: string;
     }) => orders.waybills.batch(data, commandKey(idempotencyKey)),
   });
+useBatchIssueWaybills.permission = ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement;
 
 // ===== 반영 대기 채널 변경 닫기 (#1016 6번 행) =====
 // 성공이든 409(그 사이 superseded·이미 닫힘)든 목록을 다시 불러온다 — 409 면 지금 상태가 답이다.
@@ -1086,6 +1013,7 @@ export const useDismissChannelChange = () => {
     },
   });
 };
+useDismissChannelChange.permission = ['order.order.write'] as const satisfies PermissionRequirement;
 
 export const useResyncChannelChange = () => {
   const queryClient = useQueryClient();
@@ -1099,6 +1027,7 @@ export const useResyncChannelChange = () => {
     },
   });
 };
+useResyncChannelChange.permission = ['order.order.write'] as const satisfies PermissionRequirement;
 
 /** 채널 취소 정산 [다시 시도] (#1016 36번 재설계) */
 export const useRetryCancelSettlement = () => {
@@ -1112,6 +1041,7 @@ export const useRetryCancelSettlement = () => {
     },
   });
 };
+useRetryCancelSettlement.permission = ['payment.refund.execute'] as const satisfies PermissionRequirement;
 
 /** 채널 취소 정산 [계좌 송금으로 환불] */
 export const useManualRefundCancelSettlement = () => {
@@ -1125,3 +1055,4 @@ export const useManualRefundCancelSettlement = () => {
     },
   });
 };
+useManualRefundCancelSettlement.permission = ['payment.refund.execute'] as const satisfies PermissionRequirement;

@@ -1,4 +1,4 @@
-import { RequireScopes, JwtPayload } from '@app/authorization';
+import { RequireScopes, JwtPayload, StoreRoute } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import {
   BadRequestException,
@@ -144,6 +144,7 @@ export class AuthController {
 
   @ApiOperation({ summary: '비밀번호 변경' })
   @ApiResponse({ status: 200, description: '비밀번호 변경 성공' })
+  @StoreRoute()
   @Post('change-password')
   @UseGuards(AuthGuard('jwt'))
   @RequireScopes('user:modify', 'master', 'admin:access')
@@ -159,6 +160,7 @@ export class AuthController {
       '토큰은 wallet-web 이 POST /oauth/token (grant_type=payment_handoff) 으로 한 번 교환한다.',
   })
   @ApiResponse({ status: 200, description: '핸드오프 토큰 발급 성공' })
+  @StoreRoute()
   @Post('payment-handoff')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
@@ -248,6 +250,7 @@ export class AuthController {
 
   @ApiOperation({ summary: '회원 소프트 탈퇴' })
   @ApiResponse({ status: 200, description: '회원 소프트 탈퇴 성공' })
+  @StoreRoute()
   @Delete('')
   @UseGuards(AuthGuard('jwt'))
   @RequireScopes('user:delete')
@@ -266,6 +269,7 @@ export class AuthController {
       },
     },
   })
+  @StoreRoute()
   @Post('verify-password-for-pin-reset')
   @UseGuards(AuthGuard('jwt'))
   @RequireScopes('user:modify', 'master', 'admin:access')

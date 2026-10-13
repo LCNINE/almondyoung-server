@@ -4,6 +4,7 @@ import { PaymentClientService } from '../services/billing/payment-client.service
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import { UseFilters } from '@nestjs/common';
 import { MembershipAdminAuth } from '../shared/decorators/admin-auth.decorator';
+import { RequirePermission } from '@app/authorization';
 /**
  * 정기결제 관리 컨트롤러 (관리자 전용)
  */
@@ -19,6 +20,7 @@ export class BillingController {
   /**
    * 정기결제 스케줄러 수동 실행
    */
+  @RequirePermission('membership.member.write')
   @Post('process-due')
   @HttpCode(HttpStatus.OK)
   async processDueBillings(): Promise<{
@@ -48,6 +50,7 @@ export class BillingController {
   /**
    * 사용자의 결제 프로필 조회
    */
+  @RequirePermission('membership.billing.read')
   @Get('payment-profiles/:userId')
   async getUserPaymentProfile(@Param('userId') userId: string) {
     try {
@@ -67,6 +70,7 @@ export class BillingController {
   /**
    * 특정 결제 Intent 상태 조회
    */
+  @RequirePermission('membership.billing.read')
   @Get('payment-intents/:intentId')
   async getPaymentIntent(@Param('intentId') intentId: string) {
     try {
@@ -86,6 +90,7 @@ export class BillingController {
   /**
    * 특정 결제 Attempt 상태 조회
    */
+  @RequirePermission('membership.billing.read')
   @Get('payment-attempts/:attemptId')
   async getPaymentAttempt(@Param('attemptId') attemptId: string) {
     try {
@@ -105,6 +110,7 @@ export class BillingController {
   /**
    * 정기결제 시스템 상태 확인
    */
+  @RequirePermission('membership.billing.read')
   @Get('health')
   async getHealthStatus() {
     // 결제 서버 연결 상태 확인

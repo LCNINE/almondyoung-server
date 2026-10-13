@@ -2,12 +2,14 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { MetricsService } from '../services/metrics.service';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('metrics')
 @Controller('metrics')
 export class MetricsController {
   constructor(private readonly metricsService: MetricsService) {}
 
+  @RequirePermission('messaging.message.read')
   @Get('daily')
   @ApiOperation({ summary: '일일 메트릭 조회', description: '지정된 날짜의 일일 알림 메트릭을 조회합니다.' })
   @ApiQuery({ name: 'date', required: false, description: '조회할 날짜 (ISO 문자열)', example: '2024-01-15' })
@@ -17,6 +19,7 @@ export class MetricsController {
     return this.metricsService.getDailyMetrics(targetDate);
   }
 
+  @RequirePermission('messaging.message.read')
   @Get('channel-performance')
   @ApiOperation({ summary: '채널 성능 조회', description: '특정 채널의 성능 지표를 조회합니다.' })
   @ApiQuery({ name: 'channel', description: '채널명', example: 'EMAIL' })
@@ -26,6 +29,7 @@ export class MetricsController {
     return this.metricsService.getChannelPerformance(channel, days || 7);
   }
 
+  @RequirePermission('messaging.message.read')
   @Get('provider-health')
   @ApiOperation({ summary: '프로바이더 상태 조회', description: '모든 프로바이더의 상태를 조회합니다.' })
   @ApiResponse({ status: 200, description: '프로바이더 상태 조회 성공' })

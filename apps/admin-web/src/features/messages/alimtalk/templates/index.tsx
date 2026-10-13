@@ -15,7 +15,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import type { AlimtalkTemplate } from '@/lib/api/domains/alimtalk';
-import { useAlimtalkTemplates } from '@/lib/services/alimtalk';
+import { useAlimtalkTemplates, useCreateAlimtalkTemplate } from '@/lib/services/alimtalk';
+import { Can } from '@/components/auth/can';
 import { AlimtalkTemplateDetailSheet } from '../components/template-detail-sheet';
 import { AlimtalkTemplateFormDialog } from '../components/template-form-dialog';
 import { StatusBadge } from '../components/status-badge';
@@ -43,7 +44,9 @@ export default function AlimtalkTemplatesTemplate() {
             >
               심사 상태 새로고침
             </Button>
-            <Button onClick={() => setCreating(true)}>템플릿 만들기</Button>
+            <Can run={useCreateAlimtalkTemplate}>
+              <Button onClick={() => setCreating(true)}>템플릿 만들기</Button>
+            </Can>
           </div>
         }
       />

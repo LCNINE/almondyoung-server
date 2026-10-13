@@ -5,12 +5,14 @@ import { AuthenticatedRequest } from '../wallet.module';
 import { CashReceiptsService } from './cash-receipts.service';
 import { CashReceiptResponseDto, IssueCashReceiptDto } from './dto';
 import { CashReceipt } from '../types';
+import { StoreRoute } from '@app/authorization';
 
 @ApiTags('CashReceipts')
 @Controller('v1/cash-receipts')
 export class CashReceiptsController {
   constructor(private readonly service: CashReceiptsService) {}
 
+  @StoreRoute()
   @Post()
   @HttpCode(201)
   @WalletJwtAuth()
@@ -21,6 +23,7 @@ export class CashReceiptsController {
     return this.toResponse(receipt);
   }
 
+  @StoreRoute()
   @Get()
   @WalletJwtAuth()
   @ApiOperation({ summary: '주문의 현금영수증 조회' })

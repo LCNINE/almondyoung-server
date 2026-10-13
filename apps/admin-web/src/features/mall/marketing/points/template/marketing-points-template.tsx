@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { Button } from '@/components/ui/button';
-import { usePointsStats, useTopPointUsers } from '@/lib/services/wallet';
+import { useBatchEarnPoints, usePointsStats, useTopPointUsers } from '@/lib/services/wallet';
+import { Can } from '@/components/auth/can';
 import { PointsEventsFilterBox } from '../components/filter-box';
 import { PointsEventsTable } from '../components/table';
 import { PointsBatchEarnDialog } from '../components/points-batch-earn-dialog';
@@ -81,9 +82,11 @@ export default function MarketingPointsTemplate() {
           title="적립금 관리"
           subtitle="적립금 통계 및 내역을 조회하고 일괄 지급합니다."
           right={
-            <Button onClick={() => setBatchEarnOpen(true)} className="bg-orange-500 text-white hover:bg-orange-600">
-              일괄 지급
-            </Button>
+            <Can run={useBatchEarnPoints}>
+              <Button onClick={() => setBatchEarnOpen(true)} className="bg-orange-500 text-white hover:bg-orange-600">
+                일괄 지급
+              </Button>
+            </Can>
           }
         />
         <PointsStatsCards />

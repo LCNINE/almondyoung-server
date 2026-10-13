@@ -1,9 +1,14 @@
+import { checkpointEvaluations, createCheckpointsForTesting, PermissionCheckpoints } from '@app/authorization';
+import { register } from 'prom-client';
 import { wmsTables } from '../../inventory/schema/inventory.schema';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { RecallShipmentDispatchDto } from '../dto/shipment-recall.dto';
 import { ShipmentRecallService } from './shipment-recall.service';
 
-function makeService(scopes: Set<string> = new Set([FULFILLMENT_SCOPE.DISPATCH_RECALL])) {
+function makeService(
+  scopes: Set<string> = new Set([FULFILLMENT_SCOPE.DISPATCH_RECALL]),
+  checkpoints: PermissionCheckpoints = createCheckpointsForTesting(),
+) {
   const commands = { execute: jest.fn() };
   const authorization = { getScopesByRoles: jest.fn().mockResolvedValue(scopes) };
   const workflowGate = { assertV2MutationAllowed: jest.fn() };
@@ -19,6 +24,7 @@ function makeService(scopes: Set<string> = new Set([FULFILLMENT_SCOPE.DISPATCH_R
     {} as never,
     {} as never,
     workflowGate as never,
+    checkpoints,
   );
   return { service, commands, authorization, reservations, workflowGate };
 }
@@ -44,6 +50,23 @@ describe('ShipmentRecallService command validation', () => {
       ),
     ).rejects.toThrow(FULFILLMENT_SCOPE.DISPATCH_RECALL);
     expect(commands.execute).not.toHaveBeenCalled();
+  });
+
+  it('compares the recall permission next to the legacy scope check', async () => {
+    register.resetMetrics();
+    const { service, commands } = makeService(new Set(), createCheckpointsForTesting({ logistics_worker: [] }));
+    await expect(
+      service.report(
+        '11111111-1111-4111-8111-111111111111',
+        '22222222-2222-4222-8222-222222222222',
+        dto,
+        'recall-key',
+        actor,
+      ),
+    ).rejects.toThrow(FULFILLMENT_SCOPE.DISPATCH_RECALL);
+    expect(commands.execute).not.toHaveBeenCalled();
+    expect(await checkpointEvaluations('fulfillment.dispatch_recall', 'match')).toBe(1);
+    expect(await checkpointEvaluations('fulfillment.dispatch_recall', 'would_deny')).toBe(0);
   });
 
   it('fails closed unless physical recovery is exact true and reason is approved', async () => {

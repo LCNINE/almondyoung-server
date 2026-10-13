@@ -3,7 +3,7 @@ import MarketingTimeSaleTemplate from '@/features/mall/marketing/time-sale/templ
 
 export default function MarketingTimeSalePage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/mall/marketing/time-sale">
       <MarketingTimeSaleTemplate />
     </RouteGuard>
   );

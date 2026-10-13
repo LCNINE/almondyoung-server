@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import { isoToLocalInput } from '@/lib/utils/datetime';
 import type { BannerDto } from '@/lib/types/dto/products';
+import { usePermissionReadOnly } from '@/components/auth/permission-read-only-context';
 
 export type BannerDraft = {
   title?: string;
@@ -30,7 +31,8 @@ type Props = {
   onChange: (patch: BannerDraft) => void;
   onEditImages: () => void;
   onEditList: () => void;
-  onDelete: () => void;
+  /** 넘기지 않으면 삭제 버튼을 그리지 않는다(권한 없음) */
+  onDelete?: () => void;
   onPreview: () => void;
   onMove: (direction: -1 | 1) => void;
   isMoving: boolean;
@@ -62,6 +64,8 @@ export function BannerRow({
   const listSrc = resolvePublicFileUrl(banner.listImageFileId);
   const isActive = draft.isActive ?? banner.isActive;
   const alwaysOn = !draft.displayStartAt && !draft.displayEndAt;
+  // 수정 권한이 없으면 감싼 쪽(PermissionReadOnly)이 알려 준다 — 직접 만든 컨트롤도 같이 막는다
+  const readOnly = usePermissionReadOnly() !== null;
 
   return (
     <div
@@ -75,25 +79,29 @@ export function BannerRow({
     >
       <div className="flex w-[76px] shrink-0 justify-center pt-16">
         <div className="flex flex-col items-center rounded-[6px] border border-[#e4e4e7] px-3 py-1.5">
-          <button
-            type="button"
-            aria-label="위로 이동"
-            disabled={index === 0 || isMoving}
-            onClick={() => onMove(-1)}
-            className="text-muted-foreground hover:text-foreground disabled:opacity-25"
-          >
-            <ChevronUp className="h-4 w-4" />
-          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              aria-label="위로 이동"
+              disabled={index === 0 || isMoving}
+              onClick={() => onMove(-1)}
+              className="text-muted-foreground hover:text-foreground disabled:opacity-25"
+            >
+              <ChevronUp className="h-4 w-4" />
+            </button>
+          )}
           <span className="text-sm text-[#1f2937]">{index + 1}</span>
-          <button
-            type="button"
-            aria-label="아래로 이동"
-            disabled={index === total - 1 || isMoving}
-            onClick={() => onMove(1)}
-            className="text-muted-foreground hover:text-foreground disabled:opacity-25"
-          >
-            <ChevronDown className="h-4 w-4" />
-          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              aria-label="아래로 이동"
+              disabled={index === total - 1 || isMoving}
+              onClick={() => onMove(1)}
+              className="text-muted-foreground hover:text-foreground disabled:opacity-25"
+            >
+              <ChevronDown className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -124,6 +132,7 @@ export function BannerRow({
           >
             {isActive ? '노출중' : '숨김'}
           </Badge>
+          {!readOnly && (
           <div className="absolute bottom-2 left-2 flex gap-1">
             <button
               type="button"
@@ -144,6 +153,7 @@ export function BannerRow({
               {isActive ? '미사용으로' : '노출하기'}
             </button>
           </div>
+          )}
         </div>
         <button
           type="button"
@@ -181,6 +191,7 @@ export function BannerRow({
                 onChange({ displayStartAt: undefined, displayEndAt: undefined })
               }
               label="항상 표시"
+              disabled={readOnly}
             />
             <Radio
               checked={!alwaysOn}
@@ -191,6 +202,7 @@ export function BannerRow({
                 })
               }
               label="기간 설정"
+              disabled={readOnly}
             />
             {!alwaysOn && (
               <div className="flex items-center gap-2">
@@ -221,6 +233,7 @@ export function BannerRow({
             <button
               type="button"
               onClick={onEditList}
+              disabled={readOnly}
               className="flex h-10 w-full items-center gap-2 rounded-[6px] border border-[#e4e4e7] bg-white px-2 text-left hover:border-[#c6c6c6]"
             >
               {listSrc ? (
@@ -249,13 +262,15 @@ export function BannerRow({
       </div>
 
       <div className="w-[100px] shrink-0 pt-16 text-center">
-        <Button
-          variant="outline"
-          onClick={onDelete}
-          className="h-10 rounded-full border-[#e4e4e7] bg-white px-6 text-sm"
-        >
-          삭제
-        </Button>
+        {onDelete && (
+          <Button
+            variant="outline"
+            onClick={onDelete}
+            className="h-10 rounded-full border-[#e4e4e7] bg-white px-6 text-sm"
+          >
+            삭제
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -280,15 +295,18 @@ function Radio({
   checked,
   onSelect,
   label,
+  disabled,
 }: {
   checked: boolean;
   onSelect: () => void;
   label: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onSelect}
+      disabled={disabled}
       className="flex items-center gap-1.5"
     >
       <span

@@ -3,12 +3,14 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { ProductAuditService } from './product-audit.service';
 import { AuditLogItemDto, ListAuditLogsQueryDto, ProductAuditHistoryItemDto } from './dto';
 import { ApiOkResponsePaginated } from '../../common/decorators';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('Product Audit')
 @Controller('products/audit')
 export class ProductAuditController {
   constructor(private readonly auditService: ProductAuditService) {}
 
+  @RequirePermission('catalog.product.read')
   @Get()
   @ApiOperation({
     summary: '감사 로그 목록',
@@ -19,6 +21,7 @@ export class ProductAuditController {
     return this.auditService.listAuditLogs(query);
   }
 
+  @RequirePermission('catalog.product.read')
   @Get(':masterId')
   @ApiOperation({
     summary: '제품 감사 이력 조회',

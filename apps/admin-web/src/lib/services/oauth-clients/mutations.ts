@@ -7,6 +7,7 @@ import {
 } from '@/lib/api/domains/oauth-clients';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { oauthClientsQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 const invalidate = (qc: ReturnType<typeof useQueryClient>) =>
   qc.invalidateQueries({ queryKey: oauthClientsQueryKeys.all });
@@ -18,6 +19,7 @@ export const useCreateOAuthClient = () => {
     onSuccess: () => invalidate(qc),
   });
 };
+useCreateOAuthClient.permission = ['system.oauth_client.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateOAuthClient = () => {
   const qc = useQueryClient();
@@ -27,6 +29,7 @@ export const useUpdateOAuthClient = () => {
     onSuccess: () => invalidate(qc),
   });
 };
+useUpdateOAuthClient.permission = ['system.oauth_client.write'] as const satisfies PermissionRequirement;
 
 export const useRotateOAuthClientSecret = () => {
   const qc = useQueryClient();
@@ -35,6 +38,7 @@ export const useRotateOAuthClientSecret = () => {
     onSuccess: () => invalidate(qc),
   });
 };
+useRotateOAuthClientSecret.permission = ['system.oauth_client.write'] as const satisfies PermissionRequirement;
 
 export const useClearOAuthClientPreviousSecret = () => {
   const qc = useQueryClient();
@@ -43,6 +47,7 @@ export const useClearOAuthClientPreviousSecret = () => {
     onSuccess: () => invalidate(qc),
   });
 };
+useClearOAuthClientPreviousSecret.permission = ['system.oauth_client.write'] as const satisfies PermissionRequirement;
 
 export const useDeactivateOAuthClient = () => {
   const qc = useQueryClient();
@@ -51,3 +56,4 @@ export const useDeactivateOAuthClient = () => {
     onSuccess: () => invalidate(qc),
   });
 };
+useDeactivateOAuthClient.permission = ['system.oauth_client.write'] as const satisfies PermissionRequirement;

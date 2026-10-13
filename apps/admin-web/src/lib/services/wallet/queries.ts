@@ -164,10 +164,11 @@ export const useFeeRates = () => {
   });
 };
 
-export const useFeeSummary = (from: string, to: string) => {
+export const useFeeSummary = (from: string, to: string, options?: { enabled?: boolean }) => {
   return useQuery({
     queryKey: walletQueryKeys.feeSummary(from, to),
     queryFn: () => walletApi.getFeeSummary(from, to),
+    enabled: options?.enabled ?? true,
     staleTime: 60 * 1000,
     placeholderData: keepPreviousData,
   });

@@ -9,6 +9,7 @@ import {
   useGenerateBestSelections,
   useRejectBestSelection,
 } from '@/lib/services/review-reward';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { formatDateTime } from '../shared';
 
 const STATUS_TABS: Array<{ value: BestSelectionStatus; label: string }> = [
@@ -23,6 +24,7 @@ export function BestSelections() {
   const generate = useGenerateBestSelections();
   const confirm = useConfirmBestSelection();
   const reject = useRejectBestSelection();
+  const { canRun } = usePermissionCheck();
   const [message, setMessage] = useState<string | null>(null);
 
   return (
@@ -35,6 +37,7 @@ export function BestSelections() {
             지인 클릭으로 밀 수 있어 마지막 판단은 사람이 합니다.
           </p>
         </div>
+        {canRun(useGenerateBestSelections) && (
         <button
           type="button"
           onClick={() => {
@@ -49,6 +52,7 @@ export function BestSelections() {
         >
           지금 집계
         </button>
+        )}
       </div>
 
       <div className="flex gap-1.5">
@@ -114,6 +118,7 @@ export function BestSelections() {
                   <td className="px-2 py-1.5">
                     {selection.status === 'CANDIDATE' ? (
                       <div className="flex gap-1.5">
+                        {canRun(useConfirmBestSelection) && (
                         <button
                           type="button"
                           onClick={() => {
@@ -132,6 +137,8 @@ export function BestSelections() {
                         >
                           확정
                         </button>
+                        )}
+                        {canRun(useRejectBestSelection) && (
                         <button
                           type="button"
                           onClick={() => {
@@ -142,6 +149,7 @@ export function BestSelections() {
                         >
                           제외
                         </button>
+                        )}
                       </div>
                     ) : (
                       <span className="text-gray-400">{formatDateTime(selection.confirmedAt)}</span>

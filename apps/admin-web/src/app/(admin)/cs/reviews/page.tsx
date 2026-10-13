@@ -3,7 +3,7 @@ import ReviewListTemplate from '@/features/cs/review/template';
 
 export default function ReviewsPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/cs/reviews">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <ReviewListTemplate />
       </div>

@@ -9,6 +9,7 @@ import {
   OrderCollectionFailureReason,
 } from '../services/order-collection/channel-order-provider.interface';
 import { OrderCollectionFailureStatus } from '../types';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('adapter-order-collection-failures')
 @Controller('adapter/order-collection-failures')
@@ -18,6 +19,7 @@ export class OrderCollectionFailuresController {
     private readonly orderPoller: OrderPollerOrchestrator,
   ) {}
 
+  @RequirePermission('channel.account.read')
   @Get()
   @ApiOperation({ summary: '격리된 주문 수집 실패 목록 조회' })
   @ApiQuery({ name: 'channel', required: false, example: 'medusa' })
@@ -61,6 +63,7 @@ export class OrderCollectionFailuresController {
   }
 
   // `:id` 보다 먼저 선언해야 한다 — 뒤에 두면 'summary' 가 id 로 잡힌다.
+  @RequirePermission('channel.account.read')
   @Get('summary')
   @ApiOperation({ summary: '격리 건수 요약 (정체 보드 0단계)' })
   @ApiQuery({ name: 'channel', required: false, example: 'medusa' })
@@ -69,6 +72,7 @@ export class OrderCollectionFailuresController {
     return { success: true, data, timestamp: new Date().toISOString() };
   }
 
+  @RequirePermission('channel.account.read')
   @Get(':id')
   @ApiOperation({ summary: '격리된 주문 수집 실패 상세 조회' })
   async inspect(@Param('id') id: string) {
@@ -85,6 +89,7 @@ export class OrderCollectionFailuresController {
     };
   }
 
+  @RequirePermission('order.order.write')
   @Post(':id/replay')
   @ApiOperation({ summary: '격리된 주문 수집 실패 재처리' })
   async replay(@Param('id') id: string) {

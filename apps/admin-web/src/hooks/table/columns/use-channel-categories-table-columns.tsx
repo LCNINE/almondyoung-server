@@ -8,9 +8,10 @@ import { DateCell } from '@/components/table/table-cells/common';
 
 const columnHelper = createColumnHelper<ChannelCategoryDto>();
 
+// 넘기지 않은 동작은 버튼을 그리지 않는다(권한 없음).
 type RowActions = {
-  onEdit: (row: ChannelCategoryDto) => void;
-  onDelete: (row: ChannelCategoryDto) => void;
+  onEdit?: (row: ChannelCategoryDto) => void;
+  onDelete?: (row: ChannelCategoryDto) => void;
 };
 
 export const useChannelCategoriesTableColumns = (actions: RowActions) => {
@@ -41,13 +42,16 @@ export const useChannelCategoriesTableColumns = (actions: RowActions) => {
         header: '',
         cell: ({ row }) => (
           <div className="flex gap-1">
-            <Button size="sm" variant="outline" onClick={() => actions.onEdit(row.original)}>
+            {actions.onEdit && (
+            <Button size="sm" variant="outline" onClick={() => actions.onEdit?.(row.original)}>
               편집
             </Button>
+            )}
+            {actions.onDelete && (
             <Button
               size="sm"
               variant="destructive"
-              onClick={() => actions.onDelete(row.original)}
+              onClick={() => actions.onDelete?.(row.original)}
               disabled={(row.original.channelCount ?? 0) > 0}
               title={
                 (row.original.channelCount ?? 0) > 0
@@ -57,6 +61,7 @@ export const useChannelCategoriesTableColumns = (actions: RowActions) => {
             >
               삭제
             </Button>
+            )}
           </div>
         ),
       }),

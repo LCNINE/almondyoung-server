@@ -13,12 +13,14 @@ import { randomUUID } from 'node:crypto';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { DirectBillingChargeService, DirectChargeResult } from './direct-billing-charge.service';
 import { DirectBillingChargeDto } from './dto';
+import { KeyAuthRoute } from '@app/authorization';
 
 @ApiTags('Direct Billing Charges')
 @Controller('v1/direct-billing-charges')
 export class DirectBillingChargeController {
   constructor(private readonly service: DirectBillingChargeService) {}
 
+  @KeyAuthRoute()
   @Post()
   @HttpCode(201)
   @ApiOperation({ summary: 'Charge with existing billing method immediately (server-to-server, API key auth)' })

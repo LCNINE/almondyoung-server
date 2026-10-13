@@ -4,7 +4,7 @@ import UserListTemplate from '@/features/users/template';
 export default function UsersPage() {
   return (
     <RouteGuard
-      requireRole={['master']}
+      screen="/users"
     >
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <UserListTemplate />

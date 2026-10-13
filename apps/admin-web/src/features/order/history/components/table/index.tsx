@@ -21,7 +21,14 @@ import { buildQuery, PAGE_SIZE } from '../../utils/build-query';
 import { useSalesOrderRows } from '../../hooks/use-order-rows';
 import type { OrderLineRow } from '../../hooks/use-order-rows';
 import { ProductThumbnailCell } from '@/components/table/table-cells/product-thumbnail-cell';
-import { useSalesOrder, useAdminRetryRefund, useSalesOrderAmendments } from '@/lib/services/orders';
+import {
+  useSalesOrder,
+  useAdminRetryRefund,
+  useSalesOrderAmendments,
+  useAdminCancelSalesOrder,
+  useAdminManualRefundComplete,
+} from '@/lib/services/orders';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   blockerCodes,
   blockerLabel,
@@ -164,6 +171,8 @@ function RetryRefundButton({
   onDone: (status: string) => void;
 }) {
   const retryMutation = useAdminRetryRefund();
+  const { canRun } = usePermissionCheck();
+  if (!canRun(useAdminRetryRefund)) return null;
   return (
     <button
       className="h-6 px-2 rounded border border-orange-400 text-orange-600 hover:bg-orange-50 text-[11px] whitespace-nowrap disabled:opacity-50"
@@ -213,6 +222,8 @@ function ViewPaymentButton({
 }
 
 function ManualCompleteButton({ onDone }: { onDone: () => void }) {
+  const { canRun } = usePermissionCheck();
+  if (!canRun(useAdminManualRefundComplete)) return null;
   return (
     <button
       className="h-6 px-2 rounded border border-amber-400 text-amber-700 hover:bg-amber-50 text-[11px] whitespace-nowrap"
@@ -721,6 +732,10 @@ export default function OrderTable() {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showManualRefundModal, setShowManualRefundModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<OrderLineRow | null>(null);
+  const { can, canRun } = usePermissionCheck();
+  const canCancelOrder = canRun(useAdminCancelSalesOrder);
+  // 메모 모달은 컴포넌트 안 뮤테이션이라 훅이 없다
+  const canWriteOrder = can(['order.order.write']);
 
   /* 컬럼 정의 */
   const columns: MergedTableColumn<OrderLineRow>[] = useMemo(
@@ -934,6 +949,11 @@ export default function OrderTable() {
                       </>
                     );
                   }
+                  if (!canCancelOrder) {
+                    return action.kind === 'rejected' ? (
+                      <span className="text-[11px] text-red-600 whitespace-normal leading-tight">취소 실패 · {action.reason}</span>
+                    ) : null;
+                  }
                   const open = (e: MouseEvent) => {
                     e.stopPropagation();
                     setSelectedOrder(r);
@@ -1063,6 +1083,7 @@ export default function OrderTable() {
           r.lineStatus === 'stock_unavailable' ? (
             <span className="text-gray-500">입고 후 발송</span>
           ) : (
+            canWriteOrder ? (
             <button
               className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs"
               onClick={(e) => {
@@ -1073,10 +1094,11 @@ export default function OrderTable() {
             >
               메모추가
             </button>
+            ) : null
           ),
       },
     ],
-    []
+    [canCancelOrder, canWriteOrder]
   );
 
   return (
@@ -1110,14 +1132,16 @@ export default function OrderTable() {
             )}
           </div>
           <div className="flex gap-2 flex-wrap">
-            <button
-              className="px-3 h-9 rounded border text-sm hover:bg-gray-50"
-              onClick={() => {
-                /* TODO: 엑셀 다운로드 */
-              }}
-            >
-              엑셀 다운로드
-            </button>
+            {can(['order.order.export']) && (
+              <button
+                className="px-3 h-9 rounded border text-sm hover:bg-gray-50"
+                onClick={() => {
+                  /* TODO: 엑셀 다운로드 */
+                }}
+              >
+                엑셀 다운로드
+              </button>
+            )}
           </div>
         </div>
 

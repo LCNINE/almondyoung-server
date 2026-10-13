@@ -1,3 +1,4 @@
+import { createCheckpointsForTesting } from '@app/authorization';
 import { ConfigService } from '@nestjs/config';
 import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -44,6 +45,7 @@ describeIfDb('WaybillReader (DB integration)', () => {
       { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
       workflowGate,
       assembleBoxWithdrawal(svc),
+      createCheckpointsForTesting(),
     );
     deps = {
       fulfillments: wired.fulfillments,

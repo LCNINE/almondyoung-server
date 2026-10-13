@@ -17,6 +17,8 @@ import {
   ScopeAuthorizationDecision,
   ScopeGuard,
   User,
+  RequirePermission,
+  PermissionCheckpoints,
 } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import {
@@ -55,8 +57,10 @@ export class ShipmentController {
     private readonly workflowGate: FulfillmentWorkflowGate,
     @Inject(ShipmentDispatchService)
     private readonly shipmentDispatch: ShipmentDispatchCommandAdapter,
+    private readonly checkpoints: PermissionCheckpoints,
   ) {}
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post(':id/inspection-scans')
   @UseGuards(ScopeGuard)
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
@@ -78,6 +82,7 @@ export class ShipmentController {
     });
   }
 
+  @RequirePermission('fulfillment.dispatch.force')
   @Post(':id/force-dispatch')
   @UseGuards(ScopeGuard)
   @RequireScopes(FULFILLMENT_SCOPE.DISPATCH_FORCE)
@@ -93,11 +98,15 @@ export class ShipmentController {
     @Req() request?: unknown,
   ) {
     this.workflowGate.assertV2MutationAllowed('shipment.dispatch.force');
+    const authorization = getScopeAuthorizationDecision(request, FULFILLMENT_SCOPE.DISPATCH_FORCE);
+    this.checkpoints.compareDecision('fulfillment.force_dispatch_decision', authorization !== undefined, request, [
+      'fulfillment.dispatch.force',
+    ]);
     return this.shipmentDispatch.forceDispatch(id, {
       ...dto,
       actor: this.actor(user),
       idempotencyKey: this.requiredIdempotencyKey(idempotencyKey),
-      authorization: getScopeAuthorizationDecision(request, FULFILLMENT_SCOPE.DISPATCH_FORCE),
+      authorization,
     });
   }
 

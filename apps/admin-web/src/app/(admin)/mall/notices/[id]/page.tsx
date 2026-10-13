@@ -5,7 +5,7 @@ import NoticeDetailTemplate from '@/features/mall/notice-detail/template';
 export default async function NoticeDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/mall/notices/[id]">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <Suspense>
           <NoticeDetailTemplate id={id} />

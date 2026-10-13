@@ -3,7 +3,7 @@ import EmailLayoutSettingsTemplate from '@/features/messages/notifications/templ
 
 export default function EmailLayoutSettingsPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/mall/marketing/messages/layout-settings">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <EmailLayoutSettingsTemplate />
       </div>

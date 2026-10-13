@@ -17,6 +17,8 @@ import {
 } from 'recharts';
 import { GrowthAnalysis, GrowthGranularity } from '@/lib/api/domains/analytics';
 import { useGrowthAnalysis, useGrowthSummary, useProfitStatistics } from '@/lib/services/analytics';
+import { useCan } from '@/hooks/use-permission';
+import { permissionLabel } from '@/lib/auth/permission-labels';
 import { useOrderRefunds } from '@/lib/services/wallet/queries';
 import { cn } from '@/lib/utils/ui';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -354,7 +356,10 @@ export default function GrowthStatisticsTemplate() {
   const analysisQuery = useGrowthAnalysis(range);
   const analysis = analysisQuery.data;
   // 목표 달성 시 예상 이익의 마진율 — 최근 90일(어제까지). 상품 목록은 필요 없어 1행만 받는다.
-  const profitQuery = useProfitStatistics({ from: kstDaysAgo(90), to: kstDaysAgo(1), limit: 1 });
+  // 마진율은 이익 통계 권한이 있어야 본다 — 없으면 요청하지 않고 «가림»으로 보인다
+  const finance = useCan(['analytics.finance.read']);
+  const canSeeFinance = finance.status === 'ready' && finance.allowed;
+  const profitQuery = useProfitStatistics({ from: kstDaysAgo(90), to: kstDaysAgo(1), limit: 1 }, { enabled: canSeeFinance });
 
   const refunds = useMemo(() => (refundsQuery.isError ? null : refundMap(refundsQuery.data?.series)), [refundsQuery.data, refundsQuery.isError]);
   const monitor = useMemo(() => (summary && !refundsQuery.isLoading ? monitorStats(summary, refunds) : null), [summary, refunds, refundsQuery.isLoading]);
@@ -430,6 +435,7 @@ export default function GrowthStatisticsTemplate() {
           ytdNet={ytdNet}
           isLoading={summaryQuery.isLoading || refundsQuery.isLoading}
           marginRate={marginRate}
+          marginHiddenReason={finance.status === 'ready' && !finance.allowed ? `${permissionLabel('analytics.finance.read')} 권한이 있어야 보입니다` : null}
           scope={summary?.goal?.scope ?? 'own_mall'}
           externalAvailable={summary ? hasExternalChannels(summary) : false}
         />

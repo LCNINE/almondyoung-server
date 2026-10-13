@@ -7,6 +7,7 @@ import {
   type UpdateCampaignPayload,
 } from '@/lib/api/domains/medusa/campaigns';
 import { couponQueryKeys } from './coupons/query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 const campaignKeys = {
   all: ['campaigns'] as const,
@@ -37,6 +38,7 @@ export const useCreateCampaign = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: campaignKeys.all }),
   });
 };
+useCreateCampaign.permission = ['marketing.promotion.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateCampaign = () => {
   const qc = useQueryClient();
@@ -49,6 +51,7 @@ export const useUpdateCampaign = () => {
     },
   });
 };
+useUpdateCampaign.permission = ['marketing.promotion.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteCampaign = () => {
   const qc = useQueryClient();
@@ -57,6 +60,7 @@ export const useDeleteCampaign = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: campaignKeys.all }),
   });
 };
+useDeleteCampaign.permission = ['marketing.promotion.write'] as const satisfies PermissionRequirement;
 
 export const useLinkPromotion = () => {
   const qc = useQueryClient();
@@ -69,6 +73,7 @@ export const useLinkPromotion = () => {
     },
   });
 };
+useLinkPromotion.permission = ['marketing.promotion.write'] as const satisfies PermissionRequirement;
 
 export const useUnlinkPromotion = () => {
   const qc = useQueryClient();
@@ -82,3 +87,4 @@ export const useUnlinkPromotion = () => {
     },
   });
 };
+useUnlinkPromotion.permission = ['marketing.promotion.write'] as const satisfies PermissionRequirement;

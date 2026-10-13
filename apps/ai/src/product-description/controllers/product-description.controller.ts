@@ -1,4 +1,4 @@
-import { RequireScopes } from '@app/authorization';
+import { RequireScopes, RequirePermission } from '@app/authorization';
 import { Body, Controller, Post, Req, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -24,6 +24,7 @@ import { AI_SCOPE } from '../../platform/auth/ai-scopes';
 export class ProductDescriptionController {
   constructor(private readonly service: ProductDescriptionService) {}
 
+  @RequirePermission('ai.assistant.use')
   @Post('extract')
   @ApiOperation({ summary: '이미지에서 사실 추출' })
   async extract(@Body() dto: ExtractFactsDto, @Req() request: FastifyRequest, @Res() reply: FastifyReply) {
@@ -31,6 +32,7 @@ export class ProductDescriptionController {
     return sendWebResponse(reply, result);
   }
 
+  @RequirePermission('ai.assistant.use')
   @Post('compose')
   @ApiOperation({ summary: '추출 결과로 상세 본문 작성' })
   async compose(@Body() dto: ComposeDescriptionDto, @Req() request: FastifyRequest, @Res() reply: FastifyReply) {

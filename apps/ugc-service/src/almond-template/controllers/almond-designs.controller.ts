@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpStatus, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { User, StoreRoute } from '@app/authorization';
 import {
   AlmondDesignCreatedResponseDto,
   AlmondDesignResponseDto,
@@ -14,6 +14,7 @@ import { AlmondDesignsService } from '../services/almond-designs.service';
 export class AlmondDesignsController {
   constructor(private readonly service: AlmondDesignsService) {}
 
+  @StoreRoute()
   @Post()
   @ApiOperation({
     summary: '주문용 시안 저장',
@@ -26,6 +27,7 @@ export class AlmondDesignsController {
     return this.service.create(dto, userId);
   }
 
+  @StoreRoute()
   @Get(':id')
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiOperation({ summary: '내 시안 조회 (남의 것은 404)' })

@@ -21,12 +21,14 @@ import {
   VariantMatchingBatchResponseDto,
 } from '../dto/variant-matching-batch.dto';
 import { NewSkuScopeGuard } from '../guards/new-sku-scope.guard';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('Product Matchings')
 @Controller('matchings')
 export class ProductSkuMappingController {
   constructor(private readonly service: ProductSkuMappingService) {}
 
+  @RequirePermission('order.order.read')
   @Post('variants/batch')
   @ApiOperation({
     summary: 'Variant 운영 매칭 정보 일괄 조회',
@@ -43,6 +45,7 @@ export class ProductSkuMappingController {
     }
   }
 
+  @RequirePermission('order.matching.write')
   @Put('variants/:variantId/stock-policy')
   @ApiOperation({
     summary: 'Variant 운영 재고 정책 저장',
@@ -59,6 +62,7 @@ export class ProductSkuMappingController {
     }
   }
 
+  @RequirePermission('order.order.read')
   @Get(':variantId')
   async get(@Param('variantId') variantId: string) {
     try {
@@ -68,6 +72,7 @@ export class ProductSkuMappingController {
     }
   }
 
+  @RequirePermission('order.matching.write')
   @Put(':variantId')
   @UseGuards(NewSkuScopeGuard)
   async upsert(@Param('variantId') variantId: string, @Body() dto: UpsertMatchingDto) {
@@ -80,6 +85,7 @@ export class ProductSkuMappingController {
     }
   }
 
+  @RequirePermission('order.order.read')
   @Get('masters/batch-stats')
   @ApiOperation({
     summary: '마스터별 매칭 통계 일괄 조회',

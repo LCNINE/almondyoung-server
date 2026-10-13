@@ -38,6 +38,7 @@ export default function SplitOrderModal({ order, open, onOpenChange }: Props) {
     }, [open, order.orderId]);
 
     const splitMutation = useMutation({
+        meta: { permission: ['order.order.write'] },
         mutationFn: splitOrder,
         onSuccess: (result) => {
             if (result.success) {

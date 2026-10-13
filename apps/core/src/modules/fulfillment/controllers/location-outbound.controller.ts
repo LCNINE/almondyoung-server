@@ -14,7 +14,14 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiHeader, ApiTags } from '@nestjs/swagger';
-import { getScopeAuthorizationDecision, RequireScopes, ScopeGuard, User } from '@app/authorization';
+import {
+  getScopeAuthorizationDecision,
+  PermissionCheckpoints,
+  RequireScopes,
+  ScopeGuard,
+  User,
+  RequirePermission,
+} from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import {
   LocationOutboundConfirmDto,
@@ -29,8 +36,12 @@ type AuthenticatedUser = { id?: string; userId?: string; sub?: string; roles?: s
 @Controller('shipments')
 @UseGuards(ScopeGuard)
 export class LocationOutboundController {
-  constructor(private readonly outbound: LocationOutboundService) {}
+  constructor(
+    private readonly outbound: LocationOutboundService,
+    private readonly checkpoints: PermissionCheckpoints,
+  ) {}
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post(':shipmentId/location-outbound-starts')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
@@ -43,6 +54,7 @@ export class LocationOutboundController {
     return unwrapPreparedOutbound(await this.outbound.start(shipmentId, dto, this.actor(user), this.key(key)));
   }
 
+  @RequirePermission('fulfillment.shipment.read')
   @Get(':shipmentId/location-outbound-state')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   state(
@@ -54,6 +66,7 @@ export class LocationOutboundController {
     return this.outbound.getState(shipmentId, query.warehouseId);
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post(':shipmentId/location-outbound-scans')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
@@ -66,6 +79,7 @@ export class LocationOutboundController {
     return unwrapPreparedOutbound(await this.outbound.scan(shipmentId, dto, this.actor(user), this.key(key)));
   }
 
+  @RequirePermission('fulfillment.dispatch.force')
   @Post(':shipmentId/location-outbound-forces')
   @RequireScopes(FULFILLMENT_SCOPE.DISPATCH_FORCE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
@@ -76,17 +90,16 @@ export class LocationOutboundController {
     @User() user: AuthenticatedUser,
     @Req() request: unknown,
   ) {
+    const authorization = getScopeAuthorizationDecision(request, FULFILLMENT_SCOPE.DISPATCH_FORCE);
+    this.checkpoints.compareDecision('fulfillment.force_dispatch_decision', authorization !== undefined, request, [
+      'fulfillment.dispatch.force',
+    ]);
     return unwrapPreparedOutbound(
-      await this.outbound.force(
-        shipmentId,
-        dto,
-        this.actor(user),
-        this.key(key),
-        getScopeAuthorizationDecision(request, FULFILLMENT_SCOPE.DISPATCH_FORCE),
-      ),
+      await this.outbound.force(shipmentId, dto, this.actor(user), this.key(key), authorization),
     );
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post(':shipmentId/location-outbound-force-resolutions')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })

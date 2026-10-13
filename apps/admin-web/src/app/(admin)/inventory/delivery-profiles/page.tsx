@@ -4,7 +4,7 @@ import DeliveryProfilesTemplate from '@/features/inventory/delivery-profiles/tem
 
 export default function Page() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/inventory/delivery-profiles">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <Suspense>
           <DeliveryProfilesTemplate />

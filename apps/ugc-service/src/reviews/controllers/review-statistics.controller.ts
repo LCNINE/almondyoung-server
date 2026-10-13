@@ -1,6 +1,6 @@
 import { BadRequestException, Controller, Get, HttpStatus, Query } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes } from '@app/authorization';
+import { RequireScopes, RequirePermission } from '@app/authorization';
 import { AdminReviewStatisticsQueryDto, AdminReviewStatisticsResponseDto } from '../dto/review-statistics.dto';
 import { ReviewStatisticsService } from '../services/review-statistics.service';
 
@@ -14,6 +14,7 @@ import { ReviewStatisticsService } from '../services/review-statistics.service';
 export class ReviewStatisticsController {
   constructor(private readonly reviewStatisticsService: ReviewStatisticsService) {}
 
+  @RequirePermission('cs.review.read')
   @Get()
   @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '리뷰 통계 (관리자)' })

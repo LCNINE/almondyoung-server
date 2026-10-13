@@ -4,6 +4,7 @@ import { qnaApi } from '@/lib/api/domains/qna';
 import { CreateAnswerDto } from '@/lib/types/dto/qna';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { qnaQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export const useCreateAnswer = (questionId: string) => {
   const queryClient = useQueryClient();
@@ -18,6 +19,7 @@ export const useCreateAnswer = (questionId: string) => {
     },
   });
 };
+useCreateAnswer.permission = ['cs.inquiry.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateAnswer = (questionId: string) => {
   const queryClient = useQueryClient();
@@ -32,6 +34,7 @@ export const useUpdateAnswer = (questionId: string) => {
     },
   });
 };
+useUpdateAnswer.permission = ['cs.inquiry.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteAnswer = (questionId: string) => {
   const queryClient = useQueryClient();
@@ -46,6 +49,7 @@ export const useDeleteAnswer = (questionId: string) => {
     },
   });
 };
+useDeleteAnswer.permission = ['cs.inquiry.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteQuestion = (questionId: string) => {
   const queryClient = useQueryClient();
@@ -60,3 +64,4 @@ export const useDeleteQuestion = (questionId: string) => {
     },
   });
 };
+useDeleteQuestion.permission = ['cs.inquiry.write'] as const satisfies PermissionRequirement;

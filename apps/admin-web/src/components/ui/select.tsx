@@ -5,11 +5,15 @@ import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react"
 import { Select as SelectPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils/index"
+import { usePermissionReadOnly } from "@/components/auth/permission-read-only-context"
 
 function Select({
+  disabled,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Root>) {
-  return <SelectPrimitive.Root data-slot="select" {...props} />
+  // 권한 때문에 읽기 전용인 편집 폼 안이면 값만 보인다
+  const permissionReadOnly = usePermissionReadOnly() !== null
+  return <SelectPrimitive.Root data-slot="select" {...props} disabled={disabled || permissionReadOnly} />
 }
 
 function SelectGroup({

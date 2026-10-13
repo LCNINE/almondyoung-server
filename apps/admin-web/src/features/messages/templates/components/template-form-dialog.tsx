@@ -22,6 +22,9 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
 import type { SmsGateCategory, SmsTemplate, SmsTemplateFormValues } from '@/lib/api/domains/sms-gate';
 import { useCreateSmsTemplate, useDeleteSmsTemplate, useUpdateSmsTemplate } from '@/lib/services/sms-gate';
+import { Can } from '@/components/auth/can';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { NameVariableButton } from '../../components/name-variable-button';
 import { SmsSegmentHint } from '../../components/sms-segment-hint';
 import { composeSmsBody } from '../../lib/sms-body';
@@ -64,6 +67,8 @@ function TemplateFormBody({ template, onClose }: { template: SmsTemplate | null;
   const updateTemplate = useUpdateSmsTemplate();
   const deleteTemplate = useDeleteSmsTemplate();
   const isSubmitting = createTemplate.isPending || updateTemplate.isPending;
+  const saveAction = template ? useUpdateSmsTemplate : useCreateSmsTemplate;
+  const { canRun } = usePermissionCheck();
 
   const handleSubmit = () => {
     const callbacks = (done: string, failed: string) => ({
@@ -102,6 +107,7 @@ function TemplateFormBody({ template, onClose }: { template: SmsTemplate | null;
       }}
       className="flex flex-col gap-4"
     >
+      <PermissionReadOnly run={saveAction}>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="template-name">이름</Label>
         <Input
@@ -144,11 +150,13 @@ function TemplateFormBody({ template, onClose }: { template: SmsTemplate | null;
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between">
           <Label htmlFor="template-content">본문</Label>
-          <NameVariableButton
-            textareaRef={contentRef}
-            value={form.content}
-            onChange={(content) => setForm({ ...form, content })}
-          />
+          {canRun(saveAction) && (
+            <NameVariableButton
+              textareaRef={contentRef}
+              value={form.content}
+              onChange={(content) => setForm({ ...form, content })}
+            />
+          )}
         </div>
         <Textarea
           id="template-content"
@@ -165,7 +173,7 @@ function TemplateFormBody({ template, onClose }: { template: SmsTemplate | null;
       </div>
 
       <div className="flex items-center gap-2 pt-2">
-        {template && (
+        {template && canRun(useDeleteSmsTemplate) && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button type="button" variant="destructive">
@@ -192,11 +200,14 @@ function TemplateFormBody({ template, onClose }: { template: SmsTemplate | null;
           <Button type="button" variant="outline" onClick={onClose}>
             취소
           </Button>
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? <Loader className="animate-spin" /> : template ? '저장' : '만들기'}
-          </Button>
+          <Can run={saveAction}>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? <Loader className="animate-spin" /> : template ? '저장' : '만들기'}
+            </Button>
+          </Can>
         </div>
       </div>
+      </PermissionReadOnly>
     </form>
   );
 }

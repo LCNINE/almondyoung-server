@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useCreateRevenueGoal, useDeleteRevenueGoal, useGrowthSummary, useRevenueGoals } from '@/lib/services/analytics';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { formatKrw } from '../../shared';
 import { kstToday } from '../../as-of';
 import { hasExternalChannels, monitorStats, scopedDaily } from '../model';
@@ -31,6 +32,7 @@ export function RevenueGoalSettings() {
   const summary = useGrowthSummary();
   const createGoal = useCreateRevenueGoal();
   const deleteGoal = useDeleteRevenueGoal();
+  const { canRun } = usePermissionCheck();
 
   const [annual, setAnnual] = useState('');
   const [preCoverage, setPreCoverage] = useState('');
@@ -175,9 +177,11 @@ export function RevenueGoalSettings() {
             <span className="text-gray-500">메모</span>
             <input type="text" name="goalMemo" autoComplete="off" value={memo} onChange={(e) => setMemo(e.target.value)} maxLength={255} placeholder="예: 3분기 회의 확정" className={`${field} w-44`} />
           </label>
-          <button type="button" onClick={submit} disabled={createGoal.isPending} className="rounded bg-gray-800 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40">
-            등록
-          </button>
+          {canRun(useCreateRevenueGoal) ? (
+            <button type="button" onClick={submit} disabled={createGoal.isPending} className="rounded bg-gray-800 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40">
+              등록
+            </button>
+          ) : null}
           {validAmount != null ? <span className="pb-1.5 text-gray-500">= {won(validAmount)} · 하루 평균 {won(validAmount / (year % 4 === 0 ? 366 : 365))}</span> : null}
         </div>
         {formError ? <p className="text-xs text-red-500">{formError}</p> : null}
@@ -339,14 +343,16 @@ export function RevenueGoalSettings() {
                   <td className="py-1.5 text-right tabular-nums">{g.preCoverageActual != null ? formatKrw(g.preCoverageActual) : '-'}</td>
                   <td className="py-1.5 pl-4 text-gray-500">{g.memo ?? ''}</td>
                   <td className="py-1.5 text-right">
-                    <button
-                      type="button"
-                      onClick={() => deleteGoal.mutate(g.id)}
-                      disabled={deleteGoal.isPending}
-                      className="rounded border border-gray-200 px-2 py-0.5 text-gray-500 hover:bg-gray-50 disabled:opacity-40"
-                    >
-                      삭제
-                    </button>
+                    {canRun(useDeleteRevenueGoal) ? (
+                      <button
+                        type="button"
+                        onClick={() => deleteGoal.mutate(g.id)}
+                        disabled={deleteGoal.isPending}
+                        className="rounded border border-gray-200 px-2 py-0.5 text-gray-500 hover:bg-gray-50 disabled:opacity-40"
+                      >
+                        삭제
+                      </button>
+                    ) : null}
                   </td>
                 </tr>
               ))}

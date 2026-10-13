@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { medusaPromotionsApi, type CreatePromotionPayload } from '@/lib/api/domains/medusa/promotions';
 import { couponQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export const useCreateCoupon = () => {
   const queryClient = useQueryClient();
@@ -13,6 +14,7 @@ export const useCreateCoupon = () => {
     },
   });
 };
+useCreateCoupon.permission = ['marketing.promotion.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateCouponStatus = () => {
   const queryClient = useQueryClient();
@@ -24,6 +26,7 @@ export const useUpdateCouponStatus = () => {
     },
   });
 };
+useUpdateCouponStatus.permission = ['marketing.promotion.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteCoupon = () => {
   const queryClient = useQueryClient();
@@ -34,6 +37,7 @@ export const useDeleteCoupon = () => {
     },
   });
 };
+useDeleteCoupon.permission = ['marketing.promotion.write'] as const satisfies PermissionRequirement;
 
 export const useBulkIssueCoupon = () => {
   const queryClient = useQueryClient();
@@ -46,6 +50,7 @@ export const useBulkIssueCoupon = () => {
     },
   });
 };
+useBulkIssueCoupon.permission = ['marketing.promotion.write'] as const satisfies PermissionRequirement;
 
 export const useRevokeCouponFromCustomer = () => {
   const queryClient = useQueryClient();
@@ -58,3 +63,4 @@ export const useRevokeCouponFromCustomer = () => {
     },
   });
 };
+useRevokeCouponFromCustomer.permission = ['marketing.promotion.write'] as const satisfies PermissionRequirement;

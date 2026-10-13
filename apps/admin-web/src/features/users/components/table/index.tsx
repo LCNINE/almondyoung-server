@@ -1,7 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { useAdminUsers } from '@/lib/services/users';
+import {
+  useAdminUsers,
+  useCreateAdminAccount,
+  useReplaceUserRoles,
+} from '@/lib/services/users';
+import { Can } from '@/components/auth/can';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useUserTableColumns } from '@/hooks/table/columns/use-user-table-columns';
 import { useUserTableFilters } from '@/hooks/table/filters/use-user-table-filters';
@@ -41,19 +46,24 @@ export function UserTable() {
 
   return (
     <div>
-      <div className="flex justify-end p-2">
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          관리자 추가
-        </Button>
-      </div>
+      <Can run={useCreateAdminAccount}>
+        <div className="flex justify-end p-2">
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            관리자 추가
+          </Button>
+        </div>
+      </Can>
       {selectedUserIds.length > 0 && (
         <div className="flex items-center gap-2 p-3 border-b bg-muted/50">
           <span className="text-sm text-muted-foreground">
             {selectedUserIds.length}명 선택됨
           </span>
-          <Button size="sm" onClick={() => setModalOpen(true)}>
-            역할 부여
-          </Button>
+          {/* 일괄 부여 모달은 훅 없이 API 를 직접 부르지만 같은 동작이다 */}
+          <Can run={useReplaceUserRoles}>
+            <Button size="sm" onClick={() => setModalOpen(true)}>
+              역할 부여
+            </Button>
+          </Can>
           <Button
             size="sm"
             variant="outline"

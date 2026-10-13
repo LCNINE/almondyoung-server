@@ -22,6 +22,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   useArchiveTrash,
@@ -40,6 +41,7 @@ export function ArchiveTrashDialog({ open, onOpenChange }: Props) {
   const { data: items, isLoading } = useArchiveTrash(open);
   const restoreMutation = useRestoreArchivePage();
   const purgeMutation = usePurgeArchivePage();
+  const { canRun } = usePermissionCheck();
   const [pendingPurge, setPendingPurge] = useState<ArchiveTrashItemDto | null>(
     null
   );
@@ -111,27 +113,31 @@ export function ArchiveTrashDialog({ open, onOpenChange }: Props) {
                         : ''}
                     </p>
                   </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    disabled={restoreMutation.isPending}
-                    onClick={() => restore(item)}
-                    className="gap-1.5"
-                  >
-                    <RotateCcw className="size-3.5" aria-hidden />
-                    되돌리기
-                  </Button>
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    aria-label={`${item.title || '제목 없음'} 영구 삭제`}
-                    onClick={() => setPendingPurge(item)}
-                    className="size-8 text-muted-foreground hover:text-destructive"
-                  >
-                    <Trash2 className="size-4" aria-hidden />
-                  </Button>
+                  {canRun(useRestoreArchivePage) && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={restoreMutation.isPending}
+                      onClick={() => restore(item)}
+                      className="gap-1.5"
+                    >
+                      <RotateCcw className="size-3.5" aria-hidden />
+                      되돌리기
+                    </Button>
+                  )}
+                  {canRun(usePurgeArchivePage) && (
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      aria-label={`${item.title || '제목 없음'} 영구 삭제`}
+                      onClick={() => setPendingPurge(item)}
+                      className="size-8 text-muted-foreground hover:text-destructive"
+                    >
+                      <Trash2 className="size-4" aria-hidden />
+                    </Button>
+                  )}
                 </div>
               ))
             )}

@@ -11,7 +11,7 @@ export default async function ProductVersionsTreePage({
   const { masterId } = await params;
   const { versionId } = await searchParams;
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/mall/products-list/[masterId]/versions">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <ProductVersionsTreeTemplate
           masterId={masterId}

@@ -4,7 +4,13 @@ import { useState } from 'react';
 import { cn } from '@/lib/utils/cn';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useTagGroups, useDeleteTagGroup } from '@/lib/services/products';
+import {
+  useTagGroups,
+  useCreateTagGroup,
+  useDeleteTagGroup,
+  useUpdateTagGroup,
+} from '@/lib/services/products';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { TagGroupDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
 import { GroupCreateDialog } from '../group-create-dialog';
@@ -18,6 +24,7 @@ type Props = {
 
 export function GroupList({ selectedGroupId, onSelectGroup }: Props) {
   const { data: groups, isLoading } = useTagGroups();
+  const { canRun } = usePermissionCheck();
   const deleteMutation = useDeleteTagGroup();
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -40,9 +47,11 @@ export function GroupList({ selectedGroupId, onSelectGroup }: Props) {
     <div className="rounded-lg border">
       <div className="flex items-center justify-between border-b px-4 py-3">
         <span className="text-sm font-medium">태그 그룹</span>
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          그룹 추가
-        </Button>
+        {canRun(useCreateTagGroup) && (
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            그룹 추가
+          </Button>
+        )}
       </div>
 
       {isLoading ? (
@@ -72,6 +81,7 @@ export function GroupList({ selectedGroupId, onSelectGroup }: Props) {
                 <Badge variant={group.isActive ? 'default' : 'secondary'} className="text-xs">
                   {group.isActive ? '활성' : '비활성'}
                 </Badge>
+                {canRun(useUpdateTagGroup) && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -80,6 +90,8 @@ export function GroupList({ selectedGroupId, onSelectGroup }: Props) {
                 >
                   편집
                 </Button>
+                )}
+                {canRun(useDeleteTagGroup) && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -88,6 +100,7 @@ export function GroupList({ selectedGroupId, onSelectGroup }: Props) {
                 >
                   삭제
                 </Button>
+                )}
               </div>
             </li>
           ))}

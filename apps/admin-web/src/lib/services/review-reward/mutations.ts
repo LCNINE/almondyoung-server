@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { reviewRewardApi } from '@/lib/api/domains/review-reward';
 import { UpsertReviewRewardRuleDto } from '@/lib/types/dto/review-reward';
 import { reviewRewardQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 const useInvalidateAll = () => {
   const queryClient = useQueryClient();
@@ -17,6 +18,7 @@ export const useCreateReviewRewardRule = () => {
     onSuccess: invalidate,
   });
 };
+useCreateReviewRewardRule.permission = ['cs.reward_policy.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateReviewRewardRule = () => {
   const invalidate = useInvalidateAll();
@@ -26,6 +28,7 @@ export const useUpdateReviewRewardRule = () => {
     onSuccess: invalidate,
   });
 };
+useUpdateReviewRewardRule.permission = ['cs.reward_policy.write'] as const satisfies PermissionRequirement;
 
 export const useSetReviewRewardRuleActive = () => {
   const invalidate = useInvalidateAll();
@@ -34,6 +37,7 @@ export const useSetReviewRewardRuleActive = () => {
     onSuccess: invalidate,
   });
 };
+useSetReviewRewardRuleActive.permission = ['cs.reward_policy.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteReviewRewardRule = () => {
   const invalidate = useInvalidateAll();
@@ -42,6 +46,7 @@ export const useDeleteReviewRewardRule = () => {
     onSuccess: invalidate,
   });
 };
+useDeleteReviewRewardRule.permission = ['cs.reward_policy.write'] as const satisfies PermissionRequirement;
 
 export const useGenerateBestSelections = () => {
   const invalidate = useInvalidateAll();
@@ -50,6 +55,7 @@ export const useGenerateBestSelections = () => {
     onSuccess: invalidate,
   });
 };
+useGenerateBestSelections.permission = ['cs.reward_policy.write'] as const satisfies PermissionRequirement;
 
 export const useConfirmBestSelection = () => {
   const invalidate = useInvalidateAll();
@@ -58,6 +64,7 @@ export const useConfirmBestSelection = () => {
     onSuccess: invalidate,
   });
 };
+useConfirmBestSelection.permission = ['cs.reward_policy.write'] as const satisfies PermissionRequirement;
 
 export const useRejectBestSelection = () => {
   const invalidate = useInvalidateAll();
@@ -66,3 +73,4 @@ export const useRejectBestSelection = () => {
     onSuccess: invalidate,
   });
 };
+useRejectBestSelection.permission = ['cs.reward_policy.write'] as const satisfies PermissionRequirement;

@@ -9,7 +9,7 @@ import {
   ApiExtraModels,
   getSchemaPath,
 } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { LocationService } from '../services/location.service';
 import {
@@ -40,6 +40,7 @@ export class LocationController {
 
   constructor(private readonly locationService: LocationService) {}
 
+  @RequirePermission('inventory.master.write')
   @Post('/warehouses/:warehouseId/columns')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '새 열(Column) 생성' })
@@ -60,6 +61,7 @@ export class LocationController {
     return await this.locationService.createColumn(warehouseId, dto);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('/warehouses/:warehouseId/columns')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '창고의 모든 열 조회' })
@@ -75,6 +77,7 @@ export class LocationController {
     return await this.locationService.getColumns(warehouseId, query.isActive);
   }
 
+  @RequirePermission('inventory.master.write')
   @Put('/columns/:columnId')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '열 정보 수정' })
@@ -94,6 +97,7 @@ export class LocationController {
     return await this.locationService.updateColumn(columnId, dto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Post('/warehouses/:warehouseId/racks')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
@@ -117,6 +121,7 @@ export class LocationController {
     return await this.locationService.createRack(warehouseId, dto);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('/warehouses/:warehouseId/racks')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '창고의 모든 랙 조회' })
@@ -134,6 +139,7 @@ export class LocationController {
     return racks.map(LocationMapper.toLocationRackResponseDto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Put('/racks/:rackId')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '랙 정보 수정' })
@@ -153,6 +159,7 @@ export class LocationController {
     return await this.locationService.updateRack(rackId, dto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Post('/warehouses/:warehouseId/zones')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
@@ -176,6 +183,7 @@ export class LocationController {
     return await this.locationService.createZoneLocation(warehouseId, dto);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('/warehouses/:warehouseId')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
@@ -193,6 +201,7 @@ export class LocationController {
     return await this.locationService.getLocations(warehouseId, query);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('/:locationId')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '특정 로케이션 상세 조회' })
@@ -213,6 +222,7 @@ export class LocationController {
     return LocationMapper.toLocationResponseDto(await this.locationService.getLocationById(locationId));
   }
 
+  @RequirePermission('inventory.master.write')
   @Put('/:locationId')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '로케이션 정보 수정 (메타데이터만)' })
@@ -232,6 +242,7 @@ export class LocationController {
     return await this.locationService.updateLocation(locationId, dto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Post('/warehouses/:warehouseId/racks/custom-bins')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({

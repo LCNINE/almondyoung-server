@@ -11,6 +11,8 @@ import {
   useSitePopup,
   useUpdateSitePopup,
 } from '@/lib/services/products';
+import { Can } from '@/components/auth/can';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
 import { PopupFormFields } from '@/features/mall/popups/components/popup-form-fields';
 import { PopupPreview } from '@/features/mall/popups/components/popup-preview';
 import {
@@ -81,12 +83,14 @@ export default function PopupDetailTemplate({ id }: Props) {
     <Container>
       <Header title={popup.title} subtitle="팝업 내용과 노출 조건을 수정합니다." />
 
+      <PermissionReadOnly run={useUpdateSitePopup}>
       <div className="grid grid-cols-1 gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_380px]">
         <PopupFormFields value={form} onChange={setForm} />
 
         <div className="grid gap-4 lg:sticky lg:top-4 lg:self-start">
           <PopupPreview value={form} />
 
+          <Can run={useResetSitePopupDismissals}>
           <div className="grid gap-2 rounded-md border p-4">
             <p className="text-sm font-medium">숨김 초기화</p>
             <p className="text-muted-foreground text-xs">
@@ -103,8 +107,10 @@ export default function PopupDetailTemplate({ id }: Props) {
               숨김 초기화
             </Button>
           </div>
+          </Can>
         </div>
       </div>
+      </PermissionReadOnly>
 
       <div className="flex justify-end gap-2 border-t px-6 py-4">
         <Button
@@ -114,9 +120,11 @@ export default function PopupDetailTemplate({ id }: Props) {
         >
           목록으로
         </Button>
-        <Button onClick={handleSave} disabled={updateMutation.isPending}>
-          저장
-        </Button>
+        <Can run={useUpdateSitePopup}>
+          <Button onClick={handleSave} disabled={updateMutation.isPending}>
+            저장
+          </Button>
+        </Can>
       </div>
     </Container>
   );

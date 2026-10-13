@@ -7,7 +7,7 @@ import ShipmentRoundTemplate from '@/features/order/shipment-round/template/Ship
 export default function OrderShipmentRoundPage() {
   return (
     <RouteGuard
-      requireRole={['admin', 'master']}
+      screen="/order/shipment-round"
     >
       <ShipmentRoundTemplate />
     </RouteGuard>

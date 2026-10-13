@@ -3,7 +3,7 @@ import ProfitStatisticsTemplate from '@/features/statistics/template/profit';
 
 export default function StatisticsProfitPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/statistics/profit">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <ProfitStatisticsTemplate />
       </div>

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getTokenPayload } from '@/lib/auth/get-token-payload';
+import { getMyPermissions } from '@/lib/auth/my-permissions.server';
 import {
   buildChannelDispatchUpstreamUrl,
   canReadChannelDispatch,
@@ -26,15 +26,19 @@ export async function GET(_request: Request, { params }: Params) {
     return errorResponse('Invalid identifier', 400);
   }
 
-  let tokenPayload;
+  let state;
   try {
-    tokenPayload = await getTokenPayload();
+    state = await getMyPermissions();
   } catch {
     return errorResponse('Authentication unavailable', 503);
   }
-  if (!tokenPayload) return errorResponse('Unauthorized', 401);
-  if (!canReadChannelDispatch(tokenPayload.roles)) {
-    return errorResponse('Forbidden', 403);
+  if (state.state === 'unauthenticated') return errorResponse('Unauthorized', 401);
+  if (state.state === 'unavailable') return errorResponse('Permission data is not loaded yet', 503);
+  if (!canReadChannelDispatch(state.permissions)) {
+    return NextResponse.json(
+      { error: 'Forbidden', requiredPermissions: ['fulfillment.shipment.read'] },
+      { status: 403, headers: RESPONSE_HEADERS }
+    );
   }
 
   const serviceUrl = process.env.CHANNEL_ADAPTER_SERVICE_URL;

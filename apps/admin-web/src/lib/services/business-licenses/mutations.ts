@@ -4,6 +4,7 @@ import { businessLicensesApi } from '@/lib/api/domains/business-licenses';
 import { BusinessLicenseUpdateDto } from '@/lib/types/dto/business-licenses';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { businessLicensesQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export const useUpdateBusinessLicense = (businessId: string) => {
   const queryClient = useQueryClient();
@@ -16,6 +17,7 @@ export const useUpdateBusinessLicense = (businessId: string) => {
     },
   });
 };
+useUpdateBusinessLicense.permission = ['customer.business_verification.review'] as const satisfies PermissionRequirement;
 
 export const useDeleteBusinessLicense = (id: string) => {
   const queryClient = useQueryClient();
@@ -27,3 +29,4 @@ export const useDeleteBusinessLicense = (id: string) => {
     },
   });
 };
+useDeleteBusinessLicense.permission = ['customer.account.archive'] as const satisfies PermissionRequirement;

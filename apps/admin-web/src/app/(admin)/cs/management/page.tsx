@@ -1,14 +1,10 @@
-// src/app/(admin)/cs/management/page.tsx
-'use client';
-
-import { MainLayout } from '@/components/layout/main-layout';
-import { ComingSoon } from '@/components/ui/coming-soon';
+import RouteGuard from '@/components/layout/route-guard';
+import CSManagementClient from './cs-management.client';
 
 export default function CSManagementPage() {
   return (
-    <ComingSoon
-      title="CS 관리"
-      description="고객 서비스를 관리할 수 있는 페이지입니다."
-    />
+    <RouteGuard screen="/cs/management">
+      <CSManagementClient />
+    </RouteGuard>
   );
 }

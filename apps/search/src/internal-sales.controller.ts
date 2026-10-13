@@ -10,6 +10,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { ProductIndexService } from './product-index.service';
 import { UpdateSalesCountsDto, UpdateSalesCountsResponseDto } from './dto/update-sales-counts.dto';
+import { Public } from '@app/authorization';
 
 /**
  * Medusa 가 누적 판매 수량을 밀어 넣는 내부 라우트.
@@ -30,6 +31,7 @@ export class InternalSalesController {
     this.internalKey = configService.get<string>('SEARCH_INTERNAL_KEY');
   }
 
+  @Public()
   @Post('sales-counts')
   async updateSalesCounts(
     @Headers('authorization') authorization: string | undefined,

@@ -3,7 +3,7 @@ import SupplierCategoriesTemplate from '@/features/inventory/supplier-categories
 
 export default function InventorySupplierCategoriesPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/inventory/supplier-categories">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <SupplierCategoriesTemplate />
       </div>

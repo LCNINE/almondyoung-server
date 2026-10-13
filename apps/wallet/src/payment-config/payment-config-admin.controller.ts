@@ -12,6 +12,7 @@ import {
   UpdateCatalogDto,
   UpdateRegionDto,
 } from './dto';
+import { RequirePermission } from '@app/authorization';
 
 function toRegionResponse(r: Region): RegionResponseDto {
   return { id: r.id, code: r.code, name: r.name, isActive: r.isActive, sortOrder: r.sortOrder };
@@ -25,12 +26,14 @@ export class PaymentConfigAdminController {
 
   // ── Catalog (글로벌 결제수단) ──────────────────────────────────────────────
 
+  @RequirePermission('payment.payment.read')
   @Get('payment-methods')
   @ApiOperation({ summary: '결제수단 카탈로그 목록 (글로벌 활성화 상태 포함)' })
   async listCatalog(): Promise<CatalogResponseDto[]> {
     return this.service.listCatalog();
   }
 
+  @RequirePermission('payment.method.write')
   @Patch('payment-methods/:code')
   @ApiOperation({ summary: '결제수단 글로벌 활성화/비활성화 및 표시정보 수정' })
   async updateCatalog(@Param('code') code: string, @Body() dto: UpdateCatalogDto): Promise<CatalogResponseDto> {
@@ -39,6 +42,7 @@ export class PaymentConfigAdminController {
 
   // ── Regions ─────────────────────────────────────────────────────────────────
 
+  @RequirePermission('payment.payment.read')
   @Get('regions')
   @ApiOperation({ summary: '리전 목록' })
   async listRegions(): Promise<RegionResponseDto[]> {
@@ -46,6 +50,7 @@ export class PaymentConfigAdminController {
     return rows.map(toRegionResponse);
   }
 
+  @RequirePermission('system.region.write')
   @Post('regions')
   @HttpCode(201)
   @ApiOperation({ summary: '리전 생성 (소문자 alpha-2)' })
@@ -53,6 +58,7 @@ export class PaymentConfigAdminController {
     return toRegionResponse(await this.service.createRegion(dto));
   }
 
+  @RequirePermission('system.region.write')
   @Patch('regions/:code')
   @ApiOperation({ summary: '리전 수정/활성화' })
   async updateRegion(@Param('code') code: string, @Body() dto: UpdateRegionDto): Promise<RegionResponseDto> {
@@ -61,12 +67,14 @@ export class PaymentConfigAdminController {
 
   // ── Region ↔ 결제수단 매핑 ───────────────────────────────────────────────────
 
+  @RequirePermission('payment.payment.read')
   @Get('regions/:code/payment-methods')
   @ApiOperation({ summary: '해당 리전의 결제수단 매트릭스 (카탈로그 전체 + 리전별 상태)' })
   async getRegionMethods(@Param('code') code: string): Promise<RegionMethodMatrixResponseDto> {
     return this.service.getRegionMethods(code);
   }
 
+  @RequirePermission('payment.method.write')
   @Put('regions/:code/payment-methods')
   @ApiOperation({ summary: '리전별 결제수단 활성화 일괄 저장' })
   async putRegionMethods(

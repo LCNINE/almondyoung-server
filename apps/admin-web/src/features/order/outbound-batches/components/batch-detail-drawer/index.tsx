@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { usePermission } from '@/hooks/use-permission';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   Sheet,
   SheetContent,
@@ -24,7 +24,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
-  FULFILLMENT_SCOPES,
   getServerDenyMessage,
   useAddShipmentToBatch,
   useClaimBatchPacker,
@@ -52,7 +51,7 @@ const STRATEGY_LABELS: Record<PickingStrategyName, string> = {
 };
 
 export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
-  const { hasScope, isPermissionLoading } = usePermission();
+  const { canRun } = usePermissionCheck();
   const { data: batch, isLoading, refetch } = useOutboundBatchV2(batchId);
   const { data: eligible = [] } = useOutboundBatchEligibleShipments(batchId);
   const addShipment = useAddShipmentToBatch();
@@ -63,8 +62,13 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
   const [targetWorkerId, setTargetWorkerId] = useState('');
   const [reason, setReason] = useState('shift_handoff');
   const retry = useWarehouseCommandRetry();
-  const canOperateWarehouse =
-    !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.operate]);
+  const canAdd = canRun(useAddShipmentToBatch);
+  const canClaimPicker = canRun(useClaimBatchPicker);
+  const canClaimPacker = canRun(useClaimBatchPacker);
+  const canHandoff = canRun(useHandoffBatchWorkItem);
+  const canExclude = canRun(useExcludeShipmentFromBatch);
+  const canWorkItemAction =
+    canClaimPicker || canClaimPacker || canHandoff || canExclude;
 
   const command = async <T,>(
     action: string,
@@ -146,7 +150,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                         <TableHead>Shipment</TableHead>
                         <TableHead>Waybill</TableHead>
                         <TableHead className="text-right">수량</TableHead>
-                        {canOperateWarehouse && <TableHead />}
+                        {canAdd && <TableHead />}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -170,7 +174,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                           <TableCell className="text-right">
                             {item.totalQty}
                           </TableCell>
-                          {canOperateWarehouse && (
+                          {canAdd && (
                             <TableCell>
                               <Button
                                 size="sm"
@@ -209,7 +213,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                   작업대에서만 실행하며, 여기서는 packer handoff만 제공합니다.
                 </p>
               </div>
-              {canOperateWarehouse && (
+              {(canHandoff || canExclude) && (
                 <div className="grid gap-2 md:grid-cols-2">
                   <div className="space-y-1">
                     <Label>handoff 대상 작업자</Label>
@@ -237,7 +241,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                       <TableHead>상태</TableHead>
                       <TableHead>Picker</TableHead>
                       <TableHead>Packer</TableHead>
-                      {canOperateWarehouse && <TableHead>작업</TableHead>}
+                      {canWorkItemAction && <TableHead>작업</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -275,9 +279,10 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                           <br />
                           {item.packerClaim.workerId || '—'}
                         </TableCell>
-                        {canOperateWarehouse && (
+                        {canWorkItemAction && (
                           <TableCell>
                             <div className="flex min-w-52 flex-wrap gap-1">
+                              {canClaimPicker && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -301,6 +306,8 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                               >
                                 Picker claim
                               </Button>
+                              )}
+                              {canClaimPacker && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -324,6 +331,8 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                               >
                                 Packer claim
                               </Button>
+                              )}
+                              {canHandoff && (
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -353,6 +362,8 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                               >
                                 Packer handoff
                               </Button>
+                              )}
+                              {canExclude && (
                               <Button
                                 size="sm"
                                 variant="destructive"
@@ -375,6 +386,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                               >
                                 제외
                               </Button>
+                              )}
                             </div>
                           </TableCell>
                         )}

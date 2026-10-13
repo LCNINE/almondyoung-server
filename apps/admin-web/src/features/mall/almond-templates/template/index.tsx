@@ -31,6 +31,7 @@ import {
   useDeleteAlmondTemplate,
   useUpdateAlmondTemplateStatus,
 } from '@/lib/services/products';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { AdminAlmondTemplateDto } from '@/lib/types/dto/products';
 import { formatDateTime } from '@/lib/utils/date';
 import {
@@ -65,6 +66,7 @@ export default function AlmondTemplatesTemplate() {
   const { data, isLoading, isError, refetch } = useAlmondTemplates();
   const statusMutation = useUpdateAlmondTemplateStatus();
   const deleteMutation = useDeleteAlmondTemplate();
+  const { canRun } = usePermissionCheck();
 
   const templates = useMemo(() => data ?? [], [data]);
   const counts = useMemo(() => countByTab(templates), [templates]);
@@ -294,16 +296,18 @@ export default function AlmondTemplatesTemplate() {
               </div>
 
               <div className="flex shrink-0 gap-2">
-                <Button
-                  variant={
-                    template.status === 'published' ? 'outline' : 'default'
-                  }
-                  size="sm"
-                  disabled={isToggling}
-                  onClick={() => void handleToggleStatus(template)}
-                >
-                  {template.status === 'published' ? '게시 내리기' : '게시하기'}
-                </Button>
+                {canRun(useUpdateAlmondTemplateStatus) && (
+                  <Button
+                    variant={
+                      template.status === 'published' ? 'outline' : 'default'
+                    }
+                    size="sm"
+                    disabled={isToggling}
+                    onClick={() => void handleToggleStatus(template)}
+                  >
+                    {template.status === 'published' ? '게시 내리기' : '게시하기'}
+                  </Button>
+                )}
                 {editUrl ? (
                   <Button variant="outline" size="sm" asChild>
                     <a href={editUrl} target="_blank" rel="noopener noreferrer">
@@ -315,13 +319,15 @@ export default function AlmondTemplatesTemplate() {
                     편집
                   </Button>
                 )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setDeleteTarget(template)}
-                >
-                  삭제
-                </Button>
+                {canRun(useDeleteAlmondTemplate) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setDeleteTarget(template)}
+                  >
+                    삭제
+                  </Button>
+                )}
               </div>
             </li>
           );

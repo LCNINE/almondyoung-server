@@ -2,12 +2,14 @@ import { Controller, Get, Param } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ProductSellableQuantityDto } from '../dto/product-sellable-quantity.dto';
 import { ProductSellableQuantityService } from '../services/product-sellable-quantity.service';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('Inventory')
 @Controller('inventory/product-sellable-quantities')
 export class ProductSellableQuantityController {
   constructor(private readonly productSellableQuantity: ProductSellableQuantityService) {}
 
+  @RequirePermission('inventory.stock.read')
   @Get('/variants/:variantId')
   @ApiOperation({
     summary: '판매상품 variant 판매가능수량 projection 조회',

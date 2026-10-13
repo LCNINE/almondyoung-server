@@ -1,7 +1,13 @@
 import { NotFoundException } from '@nestjs/common';
 import { createGlobalValidationPipe } from '../../../platform/http/validation-pipe';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
-import { ScopeGuard } from '@app/authorization';
+import {
+  ScopeGuard,
+  checkpointEvaluations,
+  createCheckpointsForTesting,
+  PermissionCheckpoints,
+} from '@app/authorization';
+import { register } from 'prom-client';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { ConsolidationController } from '../controllers/consolidation.controller';
 import { CreateConsolidationDto } from '../dto/consolidation.dto';
@@ -20,7 +26,7 @@ const recipient = {
   detailAddress: ' Unit  2 ',
 };
 
-function harness(dbService: unknown = {}) {
+function harness(dbService: unknown = {}, checkpoints: PermissionCheckpoints = createCheckpointsForTesting()) {
   const execute = jest.fn((input: { canonicalRequest: unknown }) => Promise.resolve(input.canonicalRequest));
   const authorization = {
     getScopesByRoles: jest
@@ -41,6 +47,7 @@ function harness(dbService: unknown = {}) {
     {} as never,
     authorization as never,
     { assertV2MutationAllowed: jest.fn() } as never,
+    checkpoints,
   );
   return { service, execute, authorization };
 }
@@ -129,6 +136,20 @@ describe('ConsolidationService command boundary', () => {
       first,
       second,
     ]);
+  });
+
+  it('compares the consolidation permission next to the legacy scope check', async () => {
+    register.resetMetrics();
+    const { service, execute } = harness(
+      {},
+      createCheckpointsForTesting({ logistics_manager: ['fulfillment.shipment.consolidate'] }),
+    );
+    const source = { shipmentId: first, expectedManifestVersion: 1, expectedReservationVersion: 1 };
+    await expect(
+      service.consolidate({ sources: [source], recipientSourceShipmentId: first, reason: 'one' }, 'key', actor),
+    ).rejects.toThrow('At least two source shipments are required');
+    expect(execute).not.toHaveBeenCalled();
+    expect(await checkpointEvaluations('fulfillment.consolidation_scope', 'match')).toBe(1);
   });
 
   it('rejects duplicate sources and ambiguous recipient selection before claiming the command', async () => {

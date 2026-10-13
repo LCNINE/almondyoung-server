@@ -64,6 +64,20 @@
       "when": 1791421788465,
       "tag": "20261008010948_add-beautytop-growth-notes",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791781675796,
+      "tag": "20261012050755_add-iam-permission-tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791781676605,
+      "tag": "20261012050756_seed-iam-roles",
+      "breakpoints": true
     }
   ]
 }

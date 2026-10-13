@@ -1,6 +1,12 @@
 import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { GUARDS_METADATA, PATH_METADATA } from '@nestjs/common/constants';
-import { REQUIRED_SCOPES_KEY } from '@app/authorization';
+import {
+  REQUIRED_SCOPES_KEY,
+  checkpointEvaluations,
+  createCheckpointsForTesting,
+  PermissionCheckpoints,
+} from '@app/authorization';
+import { register } from 'prom-client';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { DbTx } from '../../inventory/schema/inventory.schema';
@@ -70,7 +76,7 @@ function workItem(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeService() {
+function makeService(checkpoints: PermissionCheckpoints = createCheckpointsForTesting()) {
   const commands = { execute: jest.fn() };
   const workflowGate = { assertV2MutationAllowed: jest.fn() };
   const service = new OutboundBatchOrchestrator(
@@ -83,6 +89,7 @@ function makeService() {
     {} as never,
     {} as never,
     {} as never,
+    checkpoints,
   );
   return { service, commands, workflowGate };
 }
@@ -239,6 +246,21 @@ describe('OutboundBatchOrchestrator policy', () => {
     expect(commands.execute).not.toHaveBeenCalled();
   });
 
+  it('compares the work supervision permission next to the legacy handoff rule', async () => {
+    register.resetMetrics();
+    const { service, commands } = makeService(createCheckpointsForTesting({ logistics_worker: [] }));
+    await expect(
+      service.handoff(
+        UUIDS.workItem,
+        { claimType: 'picker', targetWorkerId: UUIDS.other, expectedLeaseVersion: 1, reason: 'shift change' },
+        'handoff-key',
+        { id: UUIDS.actor, roles: ['logistics_worker'] },
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(commands.execute).not.toHaveBeenCalled();
+    expect(await checkpointEvaluations('fulfillment.work_supervise', 'match')).toBe(1);
+  });
+
   it('lets a total_picking batch reach the command layer now that warehouse capability gates it instead', async () => {
     const { service, commands } = makeService();
     commands.execute.mockResolvedValue({ operationId: 'op-1', batchId: UUIDS.batch });
@@ -319,6 +341,7 @@ describe('createBatch picking method contract', () => {
       {} as never,
       {} as never,
       {} as never,
+      createCheckpointsForTesting(),
     );
     return { orchestrator, commands };
   };

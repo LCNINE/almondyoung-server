@@ -42,6 +42,9 @@ import { findShipmentIdsByCode } from './join-candidate.queries';
 import { isAppPrintable } from '../waybill/waybill-label-content.assembler';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import { maskName, readRecipientName } from '../reader/shipment-waybill.reader';
+import { PermissionCheckpoints } from '@app/authorization';
+import { legacyFulfillmentSupervisor } from '../../../platform/auth/fulfillment-authz';
+import { authzSubjectOf } from '../../../platform/auth/system-actor';
 
 const TERMINAL_FOR_BATCH_STATUSES = ['completed', 'excluded'] as const;
 const LEASE_MS = 15 * 60_000;
@@ -81,7 +84,18 @@ export class OutboundBatchOrchestrator {
     private readonly moduleRef: ModuleRef,
     private readonly boxes: BoxAllocationManager,
     private readonly withdrawals: BoxWithdrawalService,
+    private readonly checkpoints: PermissionCheckpoints,
   ) {}
+
+  /** 남이 잡은 작업을 넘기거나 되돌릴 수 있는가 — 옛 판정이 결과를 정하고 권한 판정은 비교만 한다. */
+  private supervises(actor: { readonly id: string; readonly roles: readonly string[] }): boolean {
+    return this.checkpoints.compare(
+      'fulfillment.work_supervise',
+      legacyFulfillmentSupervisor(actor.roles),
+      authzSubjectOf(actor),
+      ['fulfillment.work.supervise'],
+    );
+  }
 
   async createBatch(
     dto: CreateOutboundBatchV2Dto,
@@ -449,7 +463,7 @@ export class OutboundBatchOrchestrator {
     tx?: DbTx,
   ): Promise<OutboundBatchCommandResponseDto> {
     this.workflowGate.assertV2MutationAllowed('outbound_batch.work_item.handoff');
-    if (!actor.roles.some((role) => role === 'logistics_manager' || role === 'master')) {
+    if (!this.supervises(actor)) {
       throw new ForbiddenException('Only logistics_manager or master may name a handoff target');
     }
     if (!dto.reason?.trim()) throw new BadRequestException('reason is required');

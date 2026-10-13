@@ -65,6 +65,7 @@ export function GoalHero({
   ytdNet,
   isLoading,
   marginRate,
+  marginHiddenReason = null,
   scope,
   externalAvailable,
 }: {
@@ -75,6 +76,8 @@ export function GoalHero({
   isLoading?: boolean;
   /** 최근 90일 마진율(원가 입력분) — 목표 달성 시 예상 이익. 없으면 null */
   marginRate: number | null;
+  /** 이익 통계 권한이 없어 마진율을 가렸을 때의 이유(«계산 불가»와 구분한다) */
+  marginHiddenReason?: string | null;
   scope: 'own_mall' | 'all_channels';
   /** 최근 1년 집계에 외부 판매채널 매출이 있는가 */
   externalAvailable: boolean;
@@ -169,8 +172,11 @@ export function GoalHero({
             />
             <Stat
               label="목표 달성 시 예상 이익"
-              value={marginRate != null ? won(pacing.annualTarget * marginRate) : '계산 불가'}
-              sub={marginRate != null ? `최근 90일 마진율 ${formatPercent(marginRate)} 적용 · 원가 입력분 기준 근사치` : '원가가 입력된 상품이 없어 마진율이 없습니다'}
+              value={marginHiddenReason ? '가림' : marginRate != null ? won(pacing.annualTarget * marginRate) : '계산 불가'}
+              sub={
+                marginHiddenReason ??
+                (marginRate != null ? `최근 90일 마진율 ${formatPercent(marginRate)} 적용 · 원가 입력분 기준 근사치` : '원가가 입력된 상품이 없어 마진율이 없습니다')
+              }
             />
           </div>
         </div>

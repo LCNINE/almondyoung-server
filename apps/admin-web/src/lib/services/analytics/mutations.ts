@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { analyticsApi, CreateRevenueGoalPayload } from '@/lib/api/domains/analytics';
 import { analyticsQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 /**
  * 고정비를 바꾸면 손익·손익분기가 같이 바뀐다 — profit 조회까지 무효화해야
@@ -21,6 +22,7 @@ export const useCreateOperatingCost = () => {
     onSuccess: () => invalidateOperatingCost(queryClient),
   });
 };
+useCreateOperatingCost.permission = ['analytics.setting.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteOperatingCost = () => {
   const queryClient = useQueryClient();
@@ -29,6 +31,7 @@ export const useDeleteOperatingCost = () => {
     onSuccess: () => invalidateOperatingCost(queryClient),
   });
 };
+useDeleteOperatingCost.permission = ['analytics.setting.write'] as const satisfies PermissionRequirement;
 
 /** 목표를 바꾸면 성장 요약(메인 카드)도 바뀐다 — 고정비 쿼리는 건드리지 않는다. */
 function invalidateRevenueGoal(queryClient: ReturnType<typeof useQueryClient>) {
@@ -43,6 +46,7 @@ export const useCreateRevenueGoal = () => {
     onSuccess: () => invalidateRevenueGoal(queryClient),
   });
 };
+useCreateRevenueGoal.permission = ['analytics.setting.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteRevenueGoal = () => {
   const queryClient = useQueryClient();
@@ -51,3 +55,4 @@ export const useDeleteRevenueGoal = () => {
     onSuccess: () => invalidateRevenueGoal(queryClient),
   });
 };
+useDeleteRevenueGoal.permission = ['analytics.setting.write'] as const satisfies PermissionRequirement;

@@ -1,4 +1,4 @@
-import { RequireScopes } from '@app/authorization';
+import { RequireScopes, RequirePermission } from '@app/authorization';
 import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { BusinessLicenseResponseDto } from '../../business-licenses/dto/business-license.response.dto';
@@ -14,6 +14,7 @@ import { DateRangeQueryDto } from '../users/dto/date-range-query.dto';
 export class BusinessLicensesController {
   constructor(private readonly businessLicensesService: BusinessLicensesService) {}
 
+  @RequirePermission('customer.profile.read')
   @Get('/user/:userId')
   @ApiOperation({
     summary: '관리자가 특정 사용자의 사업자 등록 정보 조회',
@@ -28,6 +29,7 @@ export class BusinessLicensesController {
     return this.businessLicensesService.getBusinessLicensesByUserId(userId);
   }
 
+  @RequirePermission('customer.business_verification.review')
   @Post('/user/:userId')
   @RequireScopes('master', 'admin:users:modify')
   @ApiOperation({
@@ -46,6 +48,7 @@ export class BusinessLicensesController {
     return this.businessLicensesService.upsertBusinessLicenseByUserId(userId, upsertBusinessLicenseDto);
   }
 
+  @RequirePermission('customer.profile.read')
   @Get('stats/daily')
   @RequireScopes('master', 'admin:users:read')
   @ApiOperation({ summary: '일별 사업자 등록 신청 수 — 신청일 KST 귀속' })
@@ -53,6 +56,7 @@ export class BusinessLicensesController {
     return this.businessLicensesService.getDailyApplications(query.from, query.to);
   }
 
+  @RequirePermission('customer.profile.read')
   @Get()
   @RequireScopes('master', 'admin:users:read')
   @ApiOperation({
@@ -67,6 +71,7 @@ export class BusinessLicensesController {
   }
 
   // 사업자 등록 정보 상세 조회 기능
+  @RequirePermission('customer.profile.read')
   @Get(':id')
   @RequireScopes('master', 'admin:users:read')
   @ApiOperation({
@@ -79,6 +84,7 @@ export class BusinessLicensesController {
     return this.businessLicensesService.getBusinessLicenseByBusinessLicenseId(id);
   }
 
+  @RequirePermission('customer.business_verification.review')
   @Put(':businessId')
   @RequireScopes('master', 'admin:users:modify')
   @ApiOperation({
@@ -96,6 +102,7 @@ export class BusinessLicensesController {
     return this.businessLicensesService.updateBusinessLicenseByBusinessId(businessId, updateBusinessLicenseDto);
   }
 
+  @RequirePermission('customer.account.archive')
   @Delete(':id')
   @RequireScopes('master', 'admin:users:archive', 'admin:users:purge')
   @ApiOperation({

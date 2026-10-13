@@ -10,7 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RolesGuard } from '@app/authorization';
+import { RolesGuard, RequirePermission } from '@app/authorization';
 
 import { OwnershipService } from '../services/ownership.service';
 import {
@@ -29,6 +29,7 @@ import {
 export class OwnershipAdminController {
   constructor(private readonly service: OwnershipService) {}
 
+  @RequirePermission('customer.profile.read')
   @Get()
   @ApiOperation({ summary: '어드민 ownership 조회 (customer/asset/order 필터, revoke 포함)' })
   @ApiQuery({ name: 'customerId', required: false })
@@ -60,6 +61,7 @@ export class OwnershipAdminController {
     });
   }
 
+  @RequirePermission('catalog.digital_asset.write')
   @Post('grant')
   @ApiOperation({ summary: '어드민 수동 부여 (멱등)' })
   @ApiResponse({ status: 201, type: AdminOwnershipResponseDto })
@@ -67,6 +69,7 @@ export class OwnershipAdminController {
     return this.service.grantManual(dto);
   }
 
+  @RequirePermission('catalog.digital_asset.write')
   @Post(':id/revoke')
   @HttpCode(200)
   @ApiOperation({ summary: '어드민 강제 회수 (다운로드 차단)' })
@@ -78,6 +81,7 @@ export class OwnershipAdminController {
     return this.service.adminRevoke(id, dto.reason ?? null);
   }
 
+  @RequirePermission('catalog.digital_asset.write')
   @Post(':id/resend')
   @HttpCode(200)
   @ApiOperation({ summary: '어드민 재발급 (회수된 ownership 재활성화)' })

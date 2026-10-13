@@ -10,6 +10,7 @@ import type {
   SetVariantAssetLinksDto,
   UpdateDigitalAssetDto,
 } from '@/lib/types/dto/library';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export const useCreateDigitalAsset = () => {
   const qc = useQueryClient();
@@ -20,6 +21,7 @@ export const useCreateDigitalAsset = () => {
     },
   });
 };
+useCreateDigitalAsset.permission = ['catalog.digital_asset.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateDigitalAsset = () => {
   const qc = useQueryClient();
@@ -32,6 +34,7 @@ export const useUpdateDigitalAsset = () => {
     },
   });
 };
+useUpdateDigitalAsset.permission = ['catalog.digital_asset.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteDigitalAsset = () => {
   const qc = useQueryClient();
@@ -42,6 +45,7 @@ export const useDeleteDigitalAsset = () => {
     },
   });
 };
+useDeleteDigitalAsset.permission = ['catalog.digital_asset.write'] as const satisfies PermissionRequirement;
 
 export const useAddFileVersion = () => {
   const qc = useQueryClient();
@@ -54,6 +58,7 @@ export const useAddFileVersion = () => {
     },
   });
 };
+useAddFileVersion.permission = ['catalog.digital_asset.write'] as const satisfies PermissionRequirement;
 
 export const useRollbackFileVersion = () => {
   const qc = useQueryClient();
@@ -66,6 +71,7 @@ export const useRollbackFileVersion = () => {
     },
   });
 };
+useRollbackFileVersion.permission = ['catalog.digital_asset.write'] as const satisfies PermissionRequirement;
 
 export const useSetVariantAssetLinks = () => {
   const qc = useQueryClient();
@@ -77,6 +83,7 @@ export const useSetVariantAssetLinks = () => {
     },
   });
 };
+useSetVariantAssetLinks.permission = ['catalog.digital_asset.write'] as const satisfies PermissionRequirement;
 
 export const useGrantOwnership = () => {
   const qc = useQueryClient();
@@ -87,6 +94,7 @@ export const useGrantOwnership = () => {
     },
   });
 };
+useGrantOwnership.permission = ['catalog.digital_asset.write'] as const satisfies PermissionRequirement;
 
 export const useRevokeOwnership = () => {
   const qc = useQueryClient();
@@ -98,6 +106,7 @@ export const useRevokeOwnership = () => {
     },
   });
 };
+useRevokeOwnership.permission = ['catalog.digital_asset.write'] as const satisfies PermissionRequirement;
 
 export const useResendOwnership = () => {
   const qc = useQueryClient();
@@ -108,3 +117,4 @@ export const useResendOwnership = () => {
     },
   });
 };
+useResendOwnership.permission = ['catalog.digital_asset.write'] as const satisfies PermissionRequirement;

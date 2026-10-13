@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiProduces, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
-import { RequireScopes } from '@app/authorization';
+import { RequireScopes, RequirePermission } from '@app/authorization';
 import {
   ALMOND_PRINT_DEFAULT_DPI,
   ALMOND_PRINT_MAX_DPI,
@@ -27,6 +27,7 @@ import { type AlmondPrintFormat } from '../types/almond-design.types';
 export class AdminAlmondDesignsController {
   constructor(private readonly service: AlmondDesignsService) {}
 
+  @RequirePermission('marketing.almond_template.read')
   @Get(':id')
   @RequireScopes('admin:template:write')
   @ApiParam({ name: 'id', format: 'uuid' })
@@ -37,6 +38,7 @@ export class AdminAlmondDesignsController {
     return this.service.getForAdmin(id);
   }
 
+  @RequirePermission('marketing.almond_template.read')
   @Get(':id/print.eps')
   @RequireScopes('admin:template:write')
   @ApiParam({ name: 'id', format: 'uuid' })
@@ -50,6 +52,7 @@ export class AdminAlmondDesignsController {
     return this.sendPrintFile(id, 'eps', reply);
   }
 
+  @RequirePermission('marketing.almond_template.read')
   @Get(':id/print.pdf')
   @RequireScopes('admin:template:write')
   @ApiParam({ name: 'id', format: 'uuid' })
@@ -63,6 +66,7 @@ export class AdminAlmondDesignsController {
     return this.sendPrintFile(id, 'pdf', reply);
   }
 
+  @RequirePermission('marketing.almond_template.read')
   @Get(':id/print.jpg')
   @RequireScopes('admin:template:write')
   @ApiParam({ name: 'id', format: 'uuid' })

@@ -15,6 +15,7 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { authQueryKeys } from '@/lib/services/auth';
 import { usersQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export const useUpdateMyProfile = () => {
   const queryClient = useQueryClient();
@@ -25,6 +26,7 @@ export const useUpdateMyProfile = () => {
     },
   });
 };
+useUpdateMyProfile.permission = 'self' as const satisfies PermissionRequirement;
 
 export const useChangePassword = () => {
   return useMutation({
@@ -37,6 +39,7 @@ export const useChangePassword = () => {
     }) => userApi.changePassword(currentPassword, newPassword),
   });
 };
+useChangePassword.permission = 'self' as const satisfies PermissionRequirement;
 
 export const useReplaceUserRoles = (userId: string) => {
   const queryClient = useQueryClient();
@@ -51,6 +54,7 @@ export const useReplaceUserRoles = (userId: string) => {
     },
   });
 };
+useReplaceUserRoles.permission = ['iam.role.assign'] as const satisfies PermissionRequirement;
 
 // 어드민(master 전용) - 관리자 계정 생성. 목록/카운트 등 users 관련 쿼리를 전부 무효화한다
 // (bulk-role-modal 의 역할 일괄 부여와 동일하게 usersQueryKeys.all 을 사용).
@@ -64,3 +68,4 @@ export const useCreateAdminAccount = () => {
     },
   });
 };
+useCreateAdminAccount.permission = ['iam.admin_user.write'] as const satisfies PermissionRequirement;

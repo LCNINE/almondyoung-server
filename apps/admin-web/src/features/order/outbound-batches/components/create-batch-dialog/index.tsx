@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { usePermission } from '@/hooks/use-permission';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   Select,
   SelectContent,
@@ -22,7 +22,6 @@ import {
 } from '@/components/ui/select';
 import { useWarehouses } from '@/lib/services/inventory/queries';
 import {
-  FULFILLMENT_SCOPES,
   getServerDenyMessage,
   useCreateOutboundBatchV2,
 } from '@/lib/services/orders';
@@ -40,7 +39,7 @@ interface Props {
 }
 
 export function CreateBatchDialog({ open, onOpenChange }: Props) {
-  const { hasScope, isPermissionLoading } = usePermission();
+  const { canRun } = usePermissionCheck();
   const { data: warehouses = [] } = useWarehouses();
   const mutation = useCreateOutboundBatchV2();
   const [warehouseId, setWarehouseId] = useState('');
@@ -49,8 +48,7 @@ export function CreateBatchDialog({ open, onOpenChange }: Props) {
   const [name, setName] = useState('');
   const [scheduledPickingAt, setScheduledPickingAt] = useState('');
   const retry = useWarehouseCommandRetry();
-  const canOperateWarehouse =
-    !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.operate]);
+  const canOperateWarehouse = canRun(useCreateOutboundBatchV2);
 
   const selectedWarehouse = warehouses.find((item) => item.id === warehouseId);
   const availableMethods = methodsForStrategies(

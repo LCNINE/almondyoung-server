@@ -1,3 +1,4 @@
+import { createCheckpointsForTesting } from '@app/authorization';
 import { randomUUID } from 'crypto';
 import { ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -52,6 +53,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
       { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
       new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
       assembleBoxWithdrawal(dbService),
+      createCheckpointsForTesting(),
     );
   }
 

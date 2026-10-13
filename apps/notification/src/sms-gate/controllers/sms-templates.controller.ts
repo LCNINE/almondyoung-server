@@ -4,6 +4,7 @@ import { CurrentUser } from '../../shared/decorators/user.decorator';
 import { CreateSmsTemplateDto, UpdateSmsTemplateDto } from '../dto';
 import { SmsGateEnabledGuard } from '../guards/sms-gate-enabled.guard';
 import { SmsTemplatesService } from '../services/sms-templates.service';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('sms-gate')
 @Controller('sms-gate/templates')
@@ -11,21 +12,25 @@ import { SmsTemplatesService } from '../services/sms-templates.service';
 export class SmsTemplatesController {
   constructor(private readonly service: SmsTemplatesService) {}
 
+  @RequirePermission('messaging.message.read')
   @Get()
   list() {
     return this.service.list();
   }
 
+  @RequirePermission('messaging.template.write')
   @Post()
   create(@Body() dto: CreateSmsTemplateDto, @CurrentUser() user: { userId: string }) {
     return this.service.create(dto, user.userId);
   }
 
+  @RequirePermission('messaging.template.write')
   @Patch(':id')
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateSmsTemplateDto) {
     return this.service.update(id, dto);
   }
 
+  @RequirePermission('messaging.template.write')
   @Delete(':id')
   delete(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.delete(id);

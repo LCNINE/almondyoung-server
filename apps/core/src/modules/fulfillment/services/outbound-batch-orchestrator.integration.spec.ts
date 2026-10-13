@@ -1,3 +1,4 @@
+import { createCheckpointsForTesting } from '@app/authorization';
 import { randomUUID } from 'crypto';
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -106,6 +107,7 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       { getScopesByRoles: () => Promise.resolve(new Set([FULFILLMENT_SCOPE.SHIPMENT_REOPEN])) } as never,
       workflowGate,
       assembleBoxWithdrawal(dbService),
+      createCheckpointsForTesting(),
     );
     const moduleRef = {
       get: jest.fn((token: unknown) => {
@@ -137,6 +139,7 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       moduleRef as never,
       new BoxAllocationManager(new BatchInventorySessionService(dbService, audit), new BatchControlledStockGuard()),
       assembleBoxWithdrawal(dbService),
+      createCheckpointsForTesting(),
     );
     return { batches, planning, waybills, commands, invariant, audit, moduleRef };
   }

@@ -3,6 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PaymentConfigService } from './payment-config.service';
 import { WalletJwtAuth } from '../wallet-auth.decorator';
 import { AvailablePaymentMethodDto } from './dto';
+import { StoreRoute } from '@app/authorization';
 
 /**
  * storefront/wallet-web facing.
@@ -13,6 +14,7 @@ import { AvailablePaymentMethodDto } from './dto';
 export class PaymentConfigController {
   constructor(private readonly service: PaymentConfigService) {}
 
+  @StoreRoute()
   @Get(':code/payment-methods')
   @WalletJwtAuth()
   @ApiOperation({ summary: '해당 리전에서 사용 가능한 결제수단 목록' })

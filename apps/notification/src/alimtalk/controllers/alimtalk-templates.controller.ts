@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { RolesGuard } from '@app/authorization';
+import { RolesGuard, RequirePermission } from '@app/authorization';
 import { CurrentUser } from '../../shared/decorators/user.decorator';
 import {
   AlimtalkTemplateCommentDto,
@@ -19,39 +19,46 @@ const AdminOnly = () => UseGuards(RolesGuard('admin', 'master'));
 export class AlimtalkTemplatesController {
   constructor(private readonly service: AlimtalkTemplatesService) {}
 
+  @RequirePermission('messaging.message.read')
   @Get()
   list() {
     return this.service.list();
   }
 
+  @RequirePermission('messaging.message.read')
   @Get('categories')
   categories() {
     return this.service.categories();
   }
 
+  @RequirePermission('messaging.message.read')
   @Get(':code')
   get(@Param('code') code: string) {
     return this.service.get(code);
   }
 
+  @RequirePermission('messaging.template.write')
   @Post()
   @AdminOnly()
   create(@Body() dto: CreateAlimtalkTemplateDto) {
     return this.service.create(dto);
   }
 
+  @RequirePermission('messaging.template.write')
   @Put(':code')
   @AdminOnly()
   update(@Param('code') code: string, @Body() dto: UpdateAlimtalkTemplateDto) {
     return this.service.update(code, dto);
   }
 
+  @RequirePermission('messaging.template.write')
   @Post(':code/comments')
   @AdminOnly()
   comment(@Param('code') code: string, @Body() dto: AlimtalkTemplateCommentDto) {
     return this.service.comment(code, dto.comment);
   }
 
+  @RequirePermission('messaging.message.send')
   @Post(':code/test-send')
   @AdminOnly()
   @HttpCode(HttpStatus.OK)

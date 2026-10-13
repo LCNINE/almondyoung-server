@@ -6,7 +6,8 @@ import { useDataTable } from '@/hooks/use-data-table';
 import { useStocktakingTableColumns } from '@/hooks/table/columns/use-stocktaking-table-columns';
 import { useStocktakingTableFilters } from '@/hooks/table/filters/use-stocktaking-table-filters';
 import { useStocktakingTableQuery } from '@/hooks/table/query/use-stocktaking-table-query';
-import { useStocktakingSessions } from '@/lib/services/inventory';
+import { useCreateStocktakingSession, useStocktakingSessions } from '@/lib/services/inventory';
+import { Can } from '@/components/auth/can';
 import type { StocktakingSessionDto } from '@/lib/types/dto/inventory';
 import { Button } from '@/components/ui/button';
 import { SessionDetailDrawer } from '../session-detail-drawer';
@@ -38,9 +39,11 @@ export function StocktakingTable() {
   return (
     <>
       <div className="flex items-center gap-2 px-4 pt-4">
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          세션 생성
-        </Button>
+        <Can run={useCreateStocktakingSession}>
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            세션 생성
+          </Button>
+        </Can>
       </div>
 
       <DataTable

@@ -15,6 +15,8 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { parseServerError } from '@/lib/api/server-error';
 import { useUpdateWarehouse } from '@/lib/services/inventory';
+import { BlockedReason } from '@/components/auth/blocked-reason';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { WarehouseDto } from '@/lib/types/dto/inventory';
 
 type Props = {
@@ -31,6 +33,8 @@ type Props = {
 export function SellableToggle({ warehouse }: Props) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const mutation = useUpdateWarehouse();
+  const { blockedReason } = usePermissionCheck();
+  const reason = blockedReason(useUpdateWarehouse);
 
   const apply = async (isSellable: boolean) => {
     try {
@@ -58,12 +62,17 @@ export function SellableToggle({ warehouse }: Props) {
 
   return (
     <>
-      <Switch
-        checked={warehouse.isSellable}
-        onCheckedChange={handleChange}
-        disabled={mutation.isPending}
-        aria-label={`${warehouse.name} 판매 창고 여부`}
-      />
+      <BlockedReason reason={reason}>
+        {(blocked) => (
+          <Switch
+            {...blocked}
+            checked={warehouse.isSellable}
+            onCheckedChange={reason ? undefined : handleChange}
+            disabled={mutation.isPending}
+            aria-label={`${warehouse.name} 판매 창고 여부`}
+          />
+        )}
+      </BlockedReason>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>

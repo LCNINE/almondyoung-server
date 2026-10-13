@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, Headers, Post, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { ApiCreatedResponse, ApiHeader, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import {
   AggregateBulkCartScanDto,
@@ -27,6 +27,7 @@ type AuthenticatedUser = {
 export class PickingV2Controller {
   constructor(private readonly picking: PickingProcessService) {}
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('bulk-cart-scans')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
@@ -45,6 +46,7 @@ export class PickingV2Controller {
     });
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('sort-scans')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
@@ -63,6 +65,7 @@ export class PickingV2Controller {
     });
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('cart-handoffs')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
@@ -79,6 +82,7 @@ export class PickingV2Controller {
     });
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('cart-surplus-returns')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
@@ -108,6 +112,7 @@ export class PickingV2Controller {
 export class PickingCommandV2Controller {
   constructor(private readonly picking: PickingProcessService) {}
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('starts')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
@@ -123,6 +128,7 @@ export class PickingCommandV2Controller {
     });
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('scans')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
@@ -140,6 +146,7 @@ export class PickingCommandV2Controller {
     });
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('handoffs')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
@@ -155,6 +162,7 @@ export class PickingCommandV2Controller {
     });
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('completions')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })

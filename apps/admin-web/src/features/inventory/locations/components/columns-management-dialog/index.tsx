@@ -9,7 +9,8 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useLocationColumns } from '@/lib/services/inventory';
+import { useCreateColumn, useLocationColumns, useUpdateColumn } from '@/lib/services/inventory';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { LocationColumnDto } from '@/lib/types/dto/inventory';
 import { ColumnFormDialog } from '../column-form-dialog';
 
@@ -23,6 +24,7 @@ export function ColumnsManagementDialog({ open, onOpenChange, warehouseId }: Pro
   const { data: columns, isLoading } = useLocationColumns(warehouseId);
   const [editColumn, setEditColumn] = useState<LocationColumnDto | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const { canRun } = usePermissionCheck();
 
   return (
     <>
@@ -33,9 +35,11 @@ export function ColumnsManagementDialog({ open, onOpenChange, warehouseId }: Pro
           </DialogHeader>
 
           <div className="mb-4 flex justify-end">
-            <Button size="sm" onClick={() => setCreateOpen(true)}>
-              새 열
-            </Button>
+            {canRun(useCreateColumn) && (
+              <Button size="sm" onClick={() => setCreateOpen(true)}>
+                새 열
+              </Button>
+            )}
           </div>
 
           {isLoading ? (
@@ -56,13 +60,15 @@ export function ColumnsManagementDialog({ open, onOpenChange, warehouseId }: Pro
                     )}
                     {!col.isActive && <Badge variant="destructive">비활성</Badge>}
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setEditColumn(col)}
-                  >
-                    수정
-                  </Button>
+                  {canRun(useUpdateColumn) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setEditColumn(col)}
+                    >
+                      수정
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>

@@ -1,6 +1,6 @@
 import { Body, Controller, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
 import { ApiCreatedResponse, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { ShipmentTrackingEventDto } from '../dto/shipment-tracking-event.dto';
 import { ShipmentDeliveryTrackingService } from '../services/shipment-delivery-tracking.service';
@@ -10,6 +10,7 @@ import { ShipmentDeliveryTrackingService } from '../services/shipment-delivery-t
 export class ShipmentTrackingController {
   constructor(private readonly tracking: ShipmentDeliveryTrackingService) {}
 
+  @RequirePermission('fulfillment.tracking.ingest')
   @Post(':dispatchAttemptId/tracking-events')
   @UseGuards(ScopeGuard)
   @RequireScopes(FULFILLMENT_SCOPE.TRACKING_INGEST)

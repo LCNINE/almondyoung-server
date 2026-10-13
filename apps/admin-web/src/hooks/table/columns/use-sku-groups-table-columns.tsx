@@ -9,9 +9,10 @@ import type { SkuGroupResponseDto } from '@/lib/types/dto/inventory';
 const columnHelper = createColumnHelper<SkuGroupResponseDto>();
 
 type RowActions = {
-  onEdit: (row: SkuGroupResponseDto) => void;
+  // onEdit·onDelete 를 넘기지 않으면 그 버튼을 그리지 않는다(권한 없음)
+  onEdit?: (row: SkuGroupResponseDto) => void;
   onViewMembers: (row: SkuGroupResponseDto) => void;
-  onDelete: (row: SkuGroupResponseDto) => void;
+  onDelete?: (row: SkuGroupResponseDto) => void;
 };
 
 export const useSkuGroupsTableColumns = (actions: RowActions) => {
@@ -53,22 +54,26 @@ export const useSkuGroupsTableColumns = (actions: RowActions) => {
             >
               멤버
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={() => actions.onEdit(row.original)}
-            >
-              편집
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-              onClick={() => actions.onDelete(row.original)}
-            >
-              삭제
-            </Button>
+            {actions.onEdit && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => actions.onEdit?.(row.original)}
+              >
+                편집
+              </Button>
+            )}
+            {actions.onDelete && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                onClick={() => actions.onDelete?.(row.original)}
+              >
+                삭제
+              </Button>
+            )}
           </div>
         ),
       }),

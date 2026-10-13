@@ -1,4 +1,4 @@
-import { RequireScopes, JwtPayload } from '@app/authorization';
+import { RequireScopes, JwtPayload, StoreRoute } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import { Body, Controller, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -14,6 +14,7 @@ import { FileValidatorPipe } from './pipes/file-validator.pipe';
 export class FileController {
   constructor(private readonly fileService: FileService) {}
 
+  @StoreRoute()
   @Post('upload')
   @FastifyFileInterceptor('file')
   @RequireScopes('user:modify')
@@ -41,6 +42,7 @@ export class FileController {
   /**
    *  aws s3 폴더명과 파일명을 파라미터로 받아서 삭제
    */
+  @StoreRoute()
   @Post('delete')
   @RequireScopes('user:delete')
   @ApiOperation({

@@ -21,6 +21,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useDebounced } from '@/hooks/use-debounced';
+import { usePermissionCheck } from '@/hooks/use-permission';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
 import type {
   OverrideMode,
   SkuOverrideRowDto,
@@ -149,6 +151,7 @@ export function SkuOverridesTab() {
   const { data, isLoading } = useReplenishmentSkuOverrides(debouncedQ);
   const upsert = useUpsertSkuOverride();
   const remove = useDeleteSkuOverride();
+  const { canRun } = usePermissionCheck();
   const [drafts, setDrafts] = useState<Record<string, SkuOverrideDraft>>({});
 
   // 새 예외: SKU 검색 → 선택 → 입력
@@ -238,6 +241,7 @@ export function SkuOverridesTab() {
         α 를 덮습니다.
       </p>
 
+      {canRun(useUpsertSkuOverride) && (
       <div className="rounded border p-3">
         <p className="mb-2 text-sm font-semibold">새 예외</p>
         <div className="flex flex-wrap items-center gap-2">
@@ -282,6 +286,7 @@ export function SkuOverridesTab() {
           </div>
         )}
       </div>
+      )}
 
       <Input
         className="w-64"
@@ -292,6 +297,7 @@ export function SkuOverridesTab() {
       {isLoading || !data ? (
         <p className="text-sm text-muted-foreground">로딩 중...</p>
       ) : (
+        <PermissionReadOnly run={useUpsertSkuOverride}>
         <Table>
           <TableHeader>
             <TableRow>
@@ -331,27 +337,32 @@ export function SkuOverridesTab() {
                     wrap={asTableCells}
                   />
                   <TableCell className="space-x-1 text-right">
-                    <Button
-                      size="sm"
-                      onClick={() => void handleSave(row)}
-                      disabled={upsert.isPending}
-                    >
-                      저장
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void handleDelete(row)}
-                      disabled={remove.isPending}
-                    >
-                      지우기
-                    </Button>
+                    {canRun(useUpsertSkuOverride) && (
+                      <Button
+                        size="sm"
+                        onClick={() => void handleSave(row)}
+                        disabled={upsert.isPending}
+                      >
+                        저장
+                      </Button>
+                    )}
+                    {canRun(useDeleteSkuOverride) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void handleDelete(row)}
+                        disabled={remove.isPending}
+                      >
+                        지우기
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               );
             })}
           </TableBody>
         </Table>
+        </PermissionReadOnly>
       )}
     </div>
   );

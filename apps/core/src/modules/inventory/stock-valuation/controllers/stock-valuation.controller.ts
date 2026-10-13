@@ -1,6 +1,6 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { ApiOkResponsePaginated } from '../../shared/decorators/api-paginated-response.decorator';
 import { PaginatedResponseDto } from '../../shared/dto';
@@ -17,6 +17,7 @@ import {
 export class StockValuationController {
   constructor(private readonly stockValuation: StockValuationService) {}
 
+  @RequirePermission('inventory.stock.read')
   @Get('/summary')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
@@ -30,6 +31,7 @@ export class StockValuationController {
     return this.stockValuation.getSummary();
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('/products')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({

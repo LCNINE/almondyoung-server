@@ -12,6 +12,7 @@ import {
   useReservationSummary,
   useReconcileReservations,
 } from '@/lib/services/inventory';
+import { Can } from '@/components/auth/can';
 import type { ReservationTargetType } from '@/lib/types/dto/inventory';
 import { ReservationsTable } from '../components/reservations-table';
 import { ReservationSummaryTable } from '../components/summary-table';
@@ -78,14 +79,16 @@ export default function ReservationsTemplate() {
         title="재고 예약"
         subtitle="SKU · 주문 · 창고별 재고 예약을 모니터링하고 관리합니다."
         right={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleReconcile}
-            disabled={reconcileMutation.isPending}
-          >
-            {reconcileMutation.isPending ? '처리 중...' : '예약 정합성 정리'}
-          </Button>
+          <Can run={useReconcileReservations}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleReconcile}
+              disabled={reconcileMutation.isPending}
+            >
+              {reconcileMutation.isPending ? '처리 중...' : '예약 정합성 정리'}
+            </Button>
+          </Can>
         }
       />
 

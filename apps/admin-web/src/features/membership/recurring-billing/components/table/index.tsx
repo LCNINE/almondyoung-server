@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'next/navigation';
 import { useRecurringBillingItems, usePollCmsMember, usePollCmsWithdrawal } from '@/lib/services/membership';
 import { useDataTable } from '@/hooks/use-data-table';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { useRecurringBillingTableColumns } from '@/hooks/table/columns/use-recurring-billing-table-columns';
 import { useRecurringBillingTableQuery } from '@/hooks/table/query/use-recurring-billing-table-query';
 import { DataTable } from '@/components/data-table';
@@ -56,6 +57,7 @@ function RecurringBillingCmsTable({ query }: { query: ReturnType<typeof useRecur
   const { data, isLoading, isFetching } = useRecurringBillingItems(query);
   const pollMember = usePollCmsMember();
   const pollWithdrawal = usePollCmsWithdrawal();
+  const { canRun } = usePermissionCheck();
 
   const contractIds = useMemo(
     () =>
@@ -89,14 +91,18 @@ function RecurringBillingCmsTable({ query }: { query: ReturnType<typeof useRecur
 
   const columns = useRecurringBillingTableColumns({
     onDetail: setSelectedRow,
-    onPollMember: (row) => {
-      const id = row.providerState?.cmsMemberRowId;
-      if (id) pollMember.mutate(id);
-    },
-    onPollWithdrawal: (row) => {
-      const wId = row.providerState?.withdrawalId;
-      if (wId) pollWithdrawal.mutate(wId);
-    },
+    onPollMember: canRun(usePollCmsMember)
+      ? (row) => {
+          const id = row.providerState?.cmsMemberRowId;
+          if (id) pollMember.mutate(id);
+        }
+      : undefined,
+    onPollWithdrawal: canRun(usePollCmsWithdrawal)
+      ? (row) => {
+          const wId = row.providerState?.withdrawalId;
+          if (wId) pollWithdrawal.mutate(wId);
+        }
+      : undefined,
     view: query.view,
     userMap,
   });

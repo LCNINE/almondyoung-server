@@ -11,35 +11,27 @@ const logger = new Logger('User Service Seeder');
 const BCRYPT_COST = 10;
 
 export const USER_SERVICE_REFERENCE_ROLES = [
-  {
-    roleId: FIXED_UUIDS.ROLE_MASTER,
-    name: 'master',
-    description: '마스터',
-  },
-  {
-    roleId: FIXED_UUIDS.ROLE_ADMIN,
-    name: 'admin',
-    description: '관리자',
-  },
-  {
-    roleId: FIXED_UUIDS.ROLE_MEMBERSHIP,
-    name: 'membership',
-    description: '멤버십 회원',
-  },
-  {
-    roleId: FIXED_UUIDS.ROLE_USER,
-    name: 'user',
-    description: '일반 회원',
-  },
+  { roleId: FIXED_UUIDS.ROLE_MASTER, name: 'master', description: '마스터', displayName: '마스터' },
+  { roleId: FIXED_UUIDS.ROLE_ADMIN, name: 'admin', description: '관리자', displayName: '관리자' },
+  { roleId: FIXED_UUIDS.ROLE_MEMBERSHIP, name: 'membership', description: '멤버십 회원', displayName: '멤버십 회원' },
+  { roleId: FIXED_UUIDS.ROLE_USER, name: 'user', description: '일반 회원', displayName: '일반 회원' },
   {
     roleId: FIXED_UUIDS.ROLE_LOGISTICS_WORKER,
     name: 'logistics_worker',
     description: '물류 작업자',
+    displayName: '물류 작업자',
   },
   {
     roleId: FIXED_UUIDS.ROLE_LOGISTICS_MANAGER,
     name: 'logistics_manager',
     description: '물류 관리자',
+    displayName: '물류 관리자',
+  },
+  {
+    roleId: FIXED_UUIDS.ROLE_INTERN,
+    name: 'intern',
+    description: '조회 전용 — 개인정보는 가려진다',
+    displayName: '인턴',
   },
 ];
 
@@ -88,9 +80,9 @@ export async function seedUserService(
 
     for (const role of roles) {
       await db.execute(sql`
-        INSERT INTO roles (role_id, name, description)
-        VALUES (${role.roleId}, ${role.name}, ${role.description})
-        ON CONFLICT (role_id) DO NOTHING
+        INSERT INTO roles (role_id, name, description, display_name)
+        VALUES (${role.roleId}, ${role.name}, ${role.description}, ${role.displayName})
+        ON CONFLICT DO NOTHING
       `);
     }
 

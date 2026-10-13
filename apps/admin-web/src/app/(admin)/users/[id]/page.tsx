@@ -6,7 +6,7 @@ import { UserDetailRole } from "./user-detail-role";
 export default async function UserDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   return (
-    <RouteGuard requireRole={['master']}>
+    <RouteGuard screen="/users/[id]">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <TwoColumnPage>
           <UserDetailGeneral userId={id} />

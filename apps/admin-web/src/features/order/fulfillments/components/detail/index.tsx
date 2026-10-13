@@ -7,6 +7,7 @@ import { Header } from '@/components/admin-ui-experimental/common/header';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Can } from '@/components/auth/can';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,10 +20,9 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { FoStatusBadge } from '@/components/table/table-cells/fulfillment';
-import { usePermission } from '@/hooks/use-permission';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { useFulfillmentOrder } from '@/lib/services/orders/queries';
 import { useCancelFulfillment } from '@/lib/services/orders/mutations';
-import { FULFILLMENT_SCOPES } from '@/lib/services/orders/operation-policy';
 import type {
   FulfillmentMode,
   FulfillmentOrderPriority,
@@ -93,11 +93,10 @@ function ConfirmActionButton({
 }
 
 export function FulfillmentDetail({ id }: { id: string }) {
-  const { hasScope, isPermissionLoading } = usePermission();
+  const { canRun } = usePermissionCheck();
   const { data, isLoading } = useFulfillmentOrder(id);
   const cancelMutation = useCancelFulfillment();
-  const canOperate =
-    !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.operate]);
+  const canCancel = canRun(useCancelFulfillment);
 
   if (isLoading) {
     return (
@@ -143,7 +142,7 @@ export function FulfillmentDetail({ id }: { id: string }) {
         <div className="flex items-center justify-between p-3">
           <Header title="출고주문 상세" />
           <div className="flex gap-2">
-            {canOperate && !data.shipments && (
+            {canCancel && !data.shipments && (
               <ConfirmActionButton
                 label="취소"
                 title="출고주문 취소"
@@ -260,7 +259,9 @@ export function FulfillmentDetail({ id }: { id: string }) {
           <Tabs defaultValue="inventory" className="w-full">
             <TabsList className="flex h-auto flex-wrap justify-start">
               <TabsTrigger value="inventory">재고</TabsTrigger>
-              <TabsTrigger value="shipment">배송</TabsTrigger>
+              <Can anyOf={['fulfillment.shipment.read']}>
+                <TabsTrigger value="shipment">배송</TabsTrigger>
+              </Can>
               {fo.fulfillmentMode === 'drop_ship' && (
                 <TabsTrigger value="direct-ship">직배</TabsTrigger>
               )}
@@ -269,9 +270,11 @@ export function FulfillmentDetail({ id }: { id: string }) {
             <TabsContent value="inventory">
               <InventoryTab fo={fo} />
             </TabsContent>
-            <TabsContent value="shipment">
-              <ShipmentTab fo={fo} />
-            </TabsContent>
+            <Can anyOf={['fulfillment.shipment.read']}>
+              <TabsContent value="shipment">
+                <ShipmentTab fo={fo} />
+              </TabsContent>
+            </Can>
             {fo.fulfillmentMode === 'drop_ship' && (
               <TabsContent value="direct-ship">
                 <DirectShipTab fo={fo} />

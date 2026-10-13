@@ -20,10 +20,14 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   TimeSaleValidationError,
+  useCreateTimeSale,
   useDeleteTimeSale,
   useSetTimeSaleStatus,
   useTimeSaleList,
+  useUpdateTimeSale,
 } from '@/lib/services/time-sale';
+import { BlockedReason } from '@/components/auth/blocked-reason';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   TIME_SALE_STATUS_LABEL,
   resolveTimeSaleStatus,
@@ -51,6 +55,9 @@ export default function MarketingTimeSaleTemplate() {
   const { data: sales, isLoading, isError } = useTimeSaleList();
   const deleteTimeSale = useDeleteTimeSale();
   const setStatus = useSetTimeSaleStatus();
+  const { canRun, blockedReason } = usePermissionCheck();
+  const canSetStatus = canRun(useSetTimeSaleStatus);
+  const productsBlocked = blockedReason(useUpdateTimeSale);
 
   const [selected, setSelected] = useState<string[]>([]);
   const [statusTarget, setStatusTarget] = useState<'draft' | 'active' | null>(
@@ -161,33 +168,41 @@ export default function MarketingTimeSaleTemplate() {
           >
             <RefreshCw size={21} />
           </button>
-          <button className="ts-button" onClick={() => setFormTarget('new')}>
-            <Plus size={16} />새 타임세일
-          </button>
-          <button
-            className="ts-button ts-button-neutral"
-            disabled={!selectedSales.length || bulkPending}
-            onClick={() => setStatusTarget('active')}
-          >
-            <Play size={13} fill="currentColor" />
-            공개
-          </button>
-          <button
-            className="ts-button ts-button-neutral"
-            disabled={!selectedSales.length || bulkPending}
-            onClick={() => setStatusTarget('draft')}
-          >
-            <Pause size={13} fill="currentColor" />
-            비공개
-          </button>
-          <button
-            className="ts-button ts-button-neutral"
-            disabled={!selectedSales.length || bulkPending}
-            onClick={() => setDeleteOpen(true)}
-          >
-            <Trash2 size={13} />
-            삭제
-          </button>
+          {canRun(useCreateTimeSale) && (
+            <button className="ts-button" onClick={() => setFormTarget('new')}>
+              <Plus size={16} />새 타임세일
+            </button>
+          )}
+          {canSetStatus && (
+            <button
+              className="ts-button ts-button-neutral"
+              disabled={!selectedSales.length || bulkPending}
+              onClick={() => setStatusTarget('active')}
+            >
+              <Play size={13} fill="currentColor" />
+              공개
+            </button>
+          )}
+          {canSetStatus && (
+            <button
+              className="ts-button ts-button-neutral"
+              disabled={!selectedSales.length || bulkPending}
+              onClick={() => setStatusTarget('draft')}
+            >
+              <Pause size={13} fill="currentColor" />
+              비공개
+            </button>
+          )}
+          {canRun(useDeleteTimeSale) && (
+            <button
+              className="ts-button ts-button-neutral"
+              disabled={!selectedSales.length || bulkPending}
+              onClick={() => setDeleteOpen(true)}
+            >
+              <Trash2 size={13} />
+              삭제
+            </button>
+          )}
         </div>
         <div className="ts-table-scroll">
           <table className="ts-table ts-sale-table">
@@ -274,22 +289,33 @@ export default function MarketingTimeSaleTemplate() {
                       {formatDate(sale.period.endsAt)}
                     </td>
                     <td>
-                      <button
-                        className="ts-button"
-                        aria-label={`${sale.title} 수정`}
-                        onClick={() => setFormTarget(sale.id)}
-                      >
-                        수정
-                      </button>
+                      {canRun(useUpdateTimeSale) && (
+                        <button
+                          className="ts-button"
+                          aria-label={`${sale.title} 수정`}
+                          onClick={() => setFormTarget(sale.id)}
+                        >
+                          수정
+                        </button>
+                      )}
                     </td>
                     <td>
-                      <button
-                        className="ts-button"
-                        aria-label={`${sale.title} 상품진열`}
-                        onClick={() => setProductsTarget(sale.id)}
-                      >
-                        {sale.productIds.length}
-                      </button>
+                      <BlockedReason reason={productsBlocked}>
+                        {(blocked) => (
+                          <button
+                            {...blocked}
+                            className="ts-button"
+                            aria-label={`${sale.title} 상품진열`}
+                            onClick={
+                              productsBlocked
+                                ? undefined
+                                : () => setProductsTarget(sale.id)
+                            }
+                          >
+                            {sale.productIds.length}
+                          </button>
+                        )}
+                      </BlockedReason>
                     </td>
                   </tr>
                 );

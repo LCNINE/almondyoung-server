@@ -24,6 +24,7 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils/ui';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { formatDate, formatDateTime } from '@/lib/utils/date';
 import {
   useAdjustArrearsAmount,
@@ -152,6 +153,9 @@ function LineCard({
 }) {
   const outstanding = item.status === 'OUTSTANDING';
   const period = periodLabel(item.periodStart, item.periodEnd);
+  const { canRun } = usePermissionCheck();
+  const canAdjust = canRun(useAdjustArrearsAmount);
+  const canWaive = canRun(useWaiveArrears);
   return (
     <Card
       className={cn(
@@ -288,24 +292,28 @@ function LineCard({
             ) : (
               <span />
             )}
-            {outstanding && allowActions && (
+            {outstanding && allowActions && (canAdjust || canWaive) && (
               <div className="ml-auto flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8"
-                  onClick={() => onAction({ kind: 'adjust', item })}
-                >
-                  금액 조정
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 text-red-600 hover:text-red-700"
-                  onClick={() => onAction({ kind: 'waive', item })}
-                >
-                  면제
-                </Button>
+                {canAdjust && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8"
+                    onClick={() => onAction({ kind: 'adjust', item })}
+                  >
+                    금액 조정
+                  </Button>
+                )}
+                {canWaive && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-red-600 hover:text-red-700"
+                    onClick={() => onAction({ kind: 'waive', item })}
+                  >
+                    면제
+                  </Button>
+                )}
               </div>
             )}
           </div>

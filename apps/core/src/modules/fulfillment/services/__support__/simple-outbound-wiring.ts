@@ -1,3 +1,4 @@
+import { createCheckpointsForTesting } from '@app/authorization';
 import { randomUUID } from 'crypto';
 import { assembleLabels } from '../../waybill/__support__/label-fixtures';
 import { ConfigService } from '@nestjs/config';
@@ -122,6 +123,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
     workflowGate,
     withdrawals,
+    createCheckpointsForTesting(),
   );
   const batches = new OutboundBatchOrchestrator(
     dbService,
@@ -133,9 +135,17 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     moduleRef,
     boxes,
     withdrawals,
+    createCheckpointsForTesting(),
   );
   const labelGuard = assembleLabels(dbService).guard;
-  const discrete = new DiscretePickingStrategy(commands, workflowGate, sessions, batches, labelGuard);
+  const discrete = new DiscretePickingStrategy(
+    commands,
+    workflowGate,
+    sessions,
+    batches,
+    labelGuard,
+    createCheckpointsForTesting(),
+  );
   const barcodes = new BarcodeService(dbService);
   const returnBins = new ReturnBinService(dbService, commands, workflowGate, sessions, barcodes, audit);
   const returns = new BoxReturnService(
@@ -158,6 +168,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     withdrawals,
     returnBins,
     returns,
+    createCheckpointsForTesting(),
   );
   const picking = new PickingProcessService(
     dbService,
@@ -219,6 +230,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
       workflowGate,
       boxes,
       withdrawals,
+      createCheckpointsForTesting(),
     ),
   };
 }

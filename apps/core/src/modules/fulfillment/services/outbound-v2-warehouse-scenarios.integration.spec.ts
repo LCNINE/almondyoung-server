@@ -1,3 +1,4 @@
+import { createCheckpointsForTesting } from '@app/authorization';
 import { outbox_events } from '@app/events';
 import { assembleLabels } from '../waybill/__support__/label-fixtures';
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
@@ -164,6 +165,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       moduleRef as never,
       boxes,
       withdrawals,
+      createCheckpointsForTesting(),
     );
     const labelGuard = assembleLabels(dbService).guard;
     const aggregate = new AggregateThenSortPickingStrategy(
@@ -176,9 +178,25 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       {} as never,
       {} as never,
       {} as never,
+      createCheckpointsForTesting(),
     );
-    const discrete = new DiscretePickingStrategy(commands, workflow, sessions, batches, labelGuard);
-    const tote = new PickToTotePickingStrategy(commands, workflow, sessions, batches, audit, labelGuard);
+    const discrete = new DiscretePickingStrategy(
+      commands,
+      workflow,
+      sessions,
+      batches,
+      labelGuard,
+      createCheckpointsForTesting(),
+    );
+    const tote = new PickToTotePickingStrategy(
+      commands,
+      workflow,
+      sessions,
+      batches,
+      audit,
+      labelGuard,
+      createCheckpointsForTesting(),
+    );
     const registry = new PickingStrategyRegistry(dbService, [discrete, aggregate, tote]);
     const picking = new PickingProcessService(
       dbService,
@@ -217,6 +235,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       workflow,
       boxes,
       withdrawals,
+      createCheckpointsForTesting(),
     );
     const dispatch = new ShipmentDispatchService(
       dbService,

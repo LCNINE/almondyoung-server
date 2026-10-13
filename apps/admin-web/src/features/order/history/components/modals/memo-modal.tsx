@@ -35,6 +35,7 @@ export function MemoModal({ order, open, onOpenChange }: Props) {
     }, [order, open]);
 
     const updateMutation = useMutation({
+        meta: { permission: ['order.order.write'] },
         mutationFn: async (params: { orderId: string; memo: string }) => {
             await orders.salesOrders.updateSalesOrder(params.orderId, {
                 memo: params.memo,

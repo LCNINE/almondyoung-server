@@ -67,6 +67,7 @@ import { ProductSellableQuantityService } from '../../inventory/product-sellable
 import { ModuleRef } from '@nestjs/core';
 import { ShipmentPlanningService } from '../../fulfillment/services/shipment-planning.service';
 import { canonicalFulfillmentRequestHash } from '../../fulfillment/services/fulfillment-command.service';
+import { FULFILLMENT_SYSTEM_ACTOR_ID } from '../../../platform/auth/system-actor';
 
 type SalesOrderLineInsert = InferInsertModel<typeof wmsTables.salesOrderLines>;
 type BusinessLinkInsert = InferInsertModel<typeof wmsTables.businessLinks>;
@@ -184,7 +185,7 @@ const WALLET_EFFECT_REF_TYPES = new Set([
 ]);
 const LOGISTICS_EFFECT_REF_TYPES = new Set(['return', 'return_handoff']);
 const OPERATIONS_EFFECT_REF_TYPES = new Set(['recovery_handoff', 'refund_policy_handoff', 'compensation_handoff']);
-export const FULFILLMENT_SYSTEM_ACTOR_ID = '00000000-0000-4000-8000-000000000010';
+export { FULFILLMENT_SYSTEM_ACTOR_ID };
 const OPEN_FULFILLMENT_BACKLOG_STATUSES = new Set(['pending', 'failed', 'processing', 'awaiting_matching']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CANCELLABLE_FULFILLMENT_STATUSES = new Set([

@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   useCreateMedusaAddress,
   useUpdateMedusaAddress,
@@ -84,6 +85,8 @@ export function CustomerAddressCreateDialog({
   const createAddress = useCreateMedusaAddress(customer?.id ?? '');
   const updateAddress = useUpdateMedusaAddress(customer?.id ?? '');
   const isEdit = !!address;
+  const { canRun } = usePermissionCheck();
+  const canSubmit = isEdit ? canRun(useUpdateMedusaAddress) : canRun(useCreateMedusaAddress);
   const isPending = createAddress.isPending || updateAddress.isPending;
   const idPrefix = isEdit ? `address-${address?.id}` : 'address-new';
 
@@ -148,6 +151,8 @@ export function CustomerAddressCreateDialog({
       toast.error(error instanceof Error ? error.message : isEdit ? '배송지 수정에 실패했습니다.' : '배송지 등록에 실패했습니다.');
     }
   };
+
+  if (!canSubmit) return null;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>

@@ -53,6 +53,7 @@ export function SplitQuantityModal({ order, open, onOpenChange }: Props) {
     const queryClient = useQueryClient();
 
     const splitMutation = useMutation({
+        meta: { permission: ['order.order.write'] },
         mutationFn: splitQuantity,
         onSuccess: (result) => {
             if (result.success) {

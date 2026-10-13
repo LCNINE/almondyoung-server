@@ -2,6 +2,8 @@
 
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
 import { CustomError } from './customError';
+import { permissionDeniedMessage } from '@/lib/auth/permission-check';
+import { readRequiredPermissions } from '@/lib/auth/permission-labels';
 
 const REFRESH_LOCK_NAME = 'admin-web:auth-refresh';
 const REFRESH_MARKER_KEY = 'admin-web:last-auth-refresh';
@@ -156,7 +158,19 @@ client.interceptors.response.use(
     // (재시도 후 raw AxiosError를 던지면 토스트에 "Request failed with status code 409" 같은
     //  generic 문구만 떠서 운영자가 원인을 알 수 없다)
     if (err.response && err.response.status < 500) {
-      const message = readErrorMessage(err.response.data) || err.message || '요청 처리 중 오류가 발생했습니다.';
+      const serverMessage = readErrorMessage(err.response.data) || err.message || '요청 처리 중 오류가 발생했습니다.';
+      let message = serverMessage;
+      // 403 이면 내 권한을 다시 읽게 알리고(그사이 역할·매핑이 바뀌었을 수 있다), 서버가 필요한 권한을
+      // 알려 줬으면 그 이름으로 안내한다.
+      if (err.response.status === 403) {
+        const requiredPermissions = readRequiredPermissions(err.response.data);
+        message = permissionDeniedMessage(requiredPermissions, serverMessage);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('auth:permission-denied', { detail: { requiredPermissions, url: config?.url } })
+          );
+        }
+      }
 
       throw new CustomError({
         message,

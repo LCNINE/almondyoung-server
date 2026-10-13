@@ -20,6 +20,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils/ui';
+import { usePermissions } from '@/hooks/use-permission';
+import { filterMenuItems } from '@/lib/auth/screen-access';
 import { mainMenus, type MainMenu, type MenuItem } from '@/lib/utils/menu';
 import { QuarantineMenuBadge } from './quarantine-menu-badge';
 
@@ -179,6 +181,14 @@ export function MobileNav({
 }: MobileNavProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  // 데스크톱 사이드바와 같은 판정 — 권한을 받기 전엔 비워 둔다.
+  const { status, permissions } = usePermissions();
+  const visibleMenus =
+    status === 'ready'
+      ? mainMenus
+          .map((menu) => ({ ...menu, children: filterMenuItems(menu.children, permissions) }))
+          .filter((menu) => menu.children.length > 0)
+      : [];
 
   const handleNavigate = (path: string, menuId: string) => {
     onMenuChange(menuId);
@@ -207,7 +217,7 @@ export function MobileNav({
             </span>
           </div>
           <nav className="flex-1 overflow-y-auto">
-            {mainMenus.map((menu) => (
+            {visibleMenus.map((menu) => (
               <TopMenuSection
                 key={menu.id}
                 menu={menu}

@@ -1,6 +1,7 @@
 import { BadRequestException, Controller, Get, NotFoundException, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { InvoiceQueryService, InvoiceStatusView } from './invoice-query.service';
+import { KeyAuthRoute } from '@app/authorization';
 
 /**
  * 인보이스 조회 API (server-to-server, API key auth — 데코레이터 없음이 기본 API key 가드).
@@ -11,6 +12,7 @@ import { InvoiceQueryService, InvoiceStatusView } from './invoice-query.service'
 export class InvoiceController {
   constructor(private readonly invoiceQueryService: InvoiceQueryService) {}
 
+  @KeyAuthRoute()
   @Get('by-idempotency-key')
   @ApiOperation({ summary: 'Get authoritative invoice status by idempotency key (server-to-server, API key auth)' })
   async getByIdempotencyKey(@Query('key') key: string): Promise<InvoiceStatusView> {

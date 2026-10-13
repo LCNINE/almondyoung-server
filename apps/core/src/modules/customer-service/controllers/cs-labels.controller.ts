@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { RolesGuard } from '@app/authorization';
+import { RolesGuard, RequirePermission } from '@app/authorization';
 import { CreateCsLabelDto } from '../dto/cs-label.dto';
 import { CsLabelsService } from '../services/cs-labels.service';
 
@@ -11,12 +11,14 @@ import { CsLabelsService } from '../services/cs-labels.service';
 export class CsLabelsController {
   constructor(private readonly service: CsLabelsService) {}
 
+  @RequirePermission('cs.inquiry.read')
   @Get()
   @ApiOperation({ summary: '라벨 taxonomy 목록' })
   list() {
     return this.service.listLabels();
   }
 
+  @RequirePermission('cs.inquiry.write')
   @Post()
   @ApiOperation({ summary: '라벨 생성(관리자)' })
   create(@Body() dto: CreateCsLabelDto) {

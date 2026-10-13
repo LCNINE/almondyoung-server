@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 import { useOperatingCosts } from '@/lib/services/analytics';
 import { useCreateOperatingCost, useDeleteOperatingCost } from '@/lib/services/analytics';
+import { Can } from '@/components/auth/can';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { StatisticsShell } from '../components/shell';
 import { formatKrw } from '../shared';
 import { RevenueGoalSettings } from '../growth/components/RevenueGoalSettings';
@@ -56,6 +58,7 @@ function OperatingCostSettings() {
   const { data, isLoading, isError } = useOperatingCosts();
   const createCost = useCreateOperatingCost();
   const deleteCost = useDeleteOperatingCost();
+  const { canRun } = usePermissionCheck();
 
   const [monthlyFixedCost, setMonthlyFixedCost] = useState('');
   const [effectiveFrom, setEffectiveFrom] = useState('');
@@ -95,54 +98,56 @@ function OperatingCostSettings() {
 
   return (
     <div className="mt-3 space-y-3 rounded-md border border-gray-200 bg-gray-50 p-3">
-      <div className="flex flex-wrap items-end gap-2 text-xs">
-        <label className="flex flex-col gap-1">
-          <span className="text-gray-500">월 고정비 (원)</span>
-          <input
-            type="number"
-            min="0"
-            step="10000"
-            value={monthlyFixedCost}
-            onChange={(event) => setMonthlyFixedCost(event.target.value)}
-            placeholder="6200000"
-            className="w-40 rounded border border-gray-200 bg-white px-2 py-1.5 tabular-nums"
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-gray-500">적용 시작일 (KST)</span>
-          <input
-            type="date"
-            value={effectiveFrom}
-            onChange={(event) => setEffectiveFrom(event.target.value)}
-            className="rounded border border-gray-200 bg-white px-2 py-1.5"
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-gray-500">메모</span>
-          <input
-            type="text"
-            value={memo}
-            onChange={(event) => setMemo(event.target.value)}
-            placeholder="예: 사무실 이전 반영"
-            maxLength={255}
-            className="w-44 rounded border border-gray-200 bg-white px-2 py-1.5"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={submit}
-          disabled={createCost.isPending}
-          className="rounded bg-gray-800 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40"
-        >
-          등록
-        </button>
-        {previewText ? <span className="pb-1.5 text-gray-500">= {previewText} / 월</span> : null}
-      </div>
-      {formError ? <p className="text-xs text-red-500">{formError}</p> : null}
-      <p className="text-xs text-gray-400">
-        고정비가 바뀌면 기존 행을 고치지 말고 <strong>새 적용 시작일로 등록</strong>하세요 — 과거 기간의 손익이
-        지금 입력 때문에 바뀌면 안 됩니다. 기간 조회 시에는 그 달의 실제 일수로 나눈 하루치를 날짜만큼 더합니다.
-      </p>
+      <Can run={useCreateOperatingCost}>
+        <div className="flex flex-wrap items-end gap-2 text-xs">
+          <label className="flex flex-col gap-1">
+            <span className="text-gray-500">월 고정비 (원)</span>
+            <input
+              type="number"
+              min="0"
+              step="10000"
+              value={monthlyFixedCost}
+              onChange={(event) => setMonthlyFixedCost(event.target.value)}
+              placeholder="6200000"
+              className="w-40 rounded border border-gray-200 bg-white px-2 py-1.5 tabular-nums"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-gray-500">적용 시작일 (KST)</span>
+            <input
+              type="date"
+              value={effectiveFrom}
+              onChange={(event) => setEffectiveFrom(event.target.value)}
+              className="rounded border border-gray-200 bg-white px-2 py-1.5"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-gray-500">메모</span>
+            <input
+              type="text"
+              value={memo}
+              onChange={(event) => setMemo(event.target.value)}
+              placeholder="예: 사무실 이전 반영"
+              maxLength={255}
+              className="w-44 rounded border border-gray-200 bg-white px-2 py-1.5"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={createCost.isPending}
+            className="rounded bg-gray-800 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40"
+          >
+            등록
+          </button>
+          {previewText ? <span className="pb-1.5 text-gray-500">= {previewText} / 월</span> : null}
+        </div>
+        {formError ? <p className="text-xs text-red-500">{formError}</p> : null}
+        <p className="text-xs text-gray-400">
+          고정비가 바뀌면 기존 행을 고치지 말고 <strong>새 적용 시작일로 등록</strong>하세요 — 과거 기간의 손익이
+          지금 입력 때문에 바뀌면 안 됩니다. 기간 조회 시에는 그 달의 실제 일수로 나눈 하루치를 날짜만큼 더합니다.
+        </p>
+      </Can>
       {isError ? (
         <p className="text-xs text-red-500">고정비 설정을 불러오지 못했습니다.</p>
       ) : isLoading ? (
@@ -164,14 +169,16 @@ function OperatingCostSettings() {
                 <td className="py-1.5 text-right tabular-nums">{formatKrw(cost.monthlyFixedCost)}</td>
                 <td className="py-1.5 pl-4 text-gray-500">{cost.memo ?? ''}</td>
                 <td className="py-1.5 text-right">
-                  <button
-                    type="button"
-                    onClick={() => deleteCost.mutate(cost.id)}
-                    disabled={deleteCost.isPending}
-                    className="rounded border border-gray-200 px-2 py-0.5 text-gray-500 hover:bg-white disabled:opacity-40"
-                  >
-                    삭제
-                  </button>
+                  {canRun(useDeleteOperatingCost) ? (
+                    <button
+                      type="button"
+                      onClick={() => deleteCost.mutate(cost.id)}
+                      disabled={deleteCost.isPending}
+                      className="rounded border border-gray-200 px-2 py-0.5 text-gray-500 hover:bg-white disabled:opacity-40"
+                    >
+                      삭제
+                    </button>
+                  ) : null}
                 </td>
               </tr>
             ))}

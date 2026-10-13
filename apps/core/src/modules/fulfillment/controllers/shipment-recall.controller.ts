@@ -13,7 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiAcceptedResponse, ApiHeader, ApiOkResponse, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { RecallShipmentDispatchDto, ShipmentRecallActor, ShipmentRecallResponseDto } from '../dto/shipment-recall.dto';
 import { ShipmentRecallService } from '../services/shipment-recall.service';
@@ -25,6 +25,7 @@ type AuthenticatedUser = { id?: string; userId?: string; sub?: string; roles?: s
 export class ShipmentRecallController {
   constructor(private readonly recall: ShipmentRecallService) {}
 
+  @RequirePermission('fulfillment.dispatch.recall')
   @Post(':shipmentId/recalls')
   @UseGuards(ScopeGuard)
   @RequireScopes(FULFILLMENT_SCOPE.DISPATCH_RECALL)
@@ -71,6 +72,7 @@ export class ShipmentRecallController {
 export class ShipmentRecallOperationController {
   constructor(private readonly recall: ShipmentRecallService) {}
 
+  @RequirePermission('fulfillment.dispatch.recall')
   @Get(':operationId')
   @UseGuards(ScopeGuard)
   @RequireScopes(FULFILLMENT_SCOPE.DISPATCH_RECALL)

@@ -14,6 +14,7 @@ import {
   YAxis,
 } from 'recharts';
 import { ArrowRight } from 'lucide-react';
+import { useCan } from '@/hooks/use-permission';
 import {
   useAnalyticsOverview,
   useProductStatistics,
@@ -87,10 +88,16 @@ export default function OverviewStatisticsTemplate() {
   const overview = useAnalyticsOverview();
   const weekSales = useSalesStatistics({ from: week.from, to: week.to, granularity: 'day' });
   // 마진 하위 정렬로 받아 역마진 상품을 첫 페이지에서 바로 감지한다
-  const profit = useProfitStatistics({ from: month.from, to: month.to, sort: 'margin', order: 'asc', page: 1, limit: 5 });
+  // 이익·수수료는 별도 권한이다 — 없는 사람에게는 요청하지 않고 그 카드를 그리지 않는다
+  const finance = useCan(['analytics.finance.read']);
+  const canSeeFinance = finance.status === 'ready' && finance.allowed;
+  const profit = useProfitStatistics(
+    { from: month.from, to: month.to, sort: 'margin', order: 'asc', page: 1, limit: 5 },
+    { enabled: canSeeFinance },
+  );
   const zeroHit = useZeroHitKeywords({ from: month.from, to: month.to, page: 1, limit: 1 });
   const reviews = useReviewStatistics({ from: month.from, to: month.to, limit: 5 });
-  const fees = useFeeSummary(month.from, month.to);
+  const fees = useFeeSummary(month.from, month.to, { enabled: canSeeFinance });
   const membershipRevenue = useMembershipRevenue(month.from, month.to);
   // 건수뿐 아니라 표본도 받는다 — 오래 안 팔린 순 정렬이라 이 표본이 '털 후보' 전략 카드의 모수다
   const unsold = useUnsoldProducts({ from: month.from, to: month.to, page: 1, limit: UNSOLD_SAMPLE_SIZE });
@@ -422,12 +429,14 @@ export default function OverviewStatisticsTemplate() {
           <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">{stale}</p>
         ) : null}
 
-        <BusinessHealthCard
-          health={health}
-          isLoading={profit.isLoading || fees.isLoading || membershipRevenue.isLoading || stockValuation.isLoading}
-          rangeLabel="최근 30일"
-          needsFixedCost={profit.data != null && profit.data.operating.fixedCost == null}
-        />
+        {canSeeFinance && (
+          <BusinessHealthCard
+            health={health}
+            isLoading={profit.isLoading || fees.isLoading || membershipRevenue.isLoading || stockValuation.isLoading}
+            rangeLabel="최근 30일"
+            needsFixedCost={profit.data != null && profit.data.operating.fixedCost == null}
+          />
+        )}
 
         <Link
           href="/statistics/growth"
@@ -647,78 +656,80 @@ export default function OverviewStatisticsTemplate() {
           </div>
         </div>
 
-        <ChartCard
-          title={`최근 30일 매출·마진 추이 + 앞으로 ${FORECAST_HORIZON_DAYS}일 추정`}
-          description={
-            trend.revenue
-              ? `점선은 최근 ${FORECAST_BASIS_DAYS}일 추세를 그대로 이은 추정치이고, 옅은 띠는 그 추세의 95% 예측 범위입니다 — 계절성·이벤트·프로모션은 넣지 않았습니다. 마진은 원가가 입력된 상품 몫만 반영합니다. 취소·환불이 발생일에 귀속되어 음수인 날이 있을 수 있습니다.`
-              : `최근 ${FORECAST_BASIS_DAYS}일 안에 판매가 있는 날이 3일이 안 돼 추세를 추정하지 않았습니다. 마진은 원가가 입력된 상품 몫만 반영합니다.`
-          }
-          isLoading={profit.isLoading}
-          isEmpty={trend.rows.length === 0}
-        >
-          <ResponsiveContainer width="100%" height={240}>
-            <ComposedChart data={trend.rows} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-              <XAxis dataKey="bucket" tick={{ fontSize: 11 }} stroke="#999" />
-              <YAxis tick={{ fontSize: 11 }} stroke="#999" tickFormatter={formatKrwAxis} />
-              <Tooltip formatter={(value: number) => formatKrw(value)} />
-              <Legend />
-              <Area
-                dataKey="netRevenueBand"
-                fill={SERIES_COLORS[0]}
-                fillOpacity={0.1}
-                stroke="none"
-                legendType="none"
-                tooltipType="none"
-                isAnimationActive={false}
-              />
-              <Area
-                dataKey="estimatedMarginBand"
-                fill={SERIES_COLORS[1]}
-                fillOpacity={0.1}
-                stroke="none"
-                legendType="none"
-                tooltipType="none"
-                isAnimationActive={false}
-              />
-              <Line
-                type="monotone"
-                dataKey="netRevenue"
-                name="순매출"
-                stroke={SERIES_COLORS[0]}
-                strokeWidth={2}
-                dot={false}
-              />
-              <Line
-                type="monotone"
-                dataKey="estimatedMargin"
-                name="추정 마진"
-                stroke={SERIES_COLORS[1]}
-                strokeWidth={2}
-                dot={false}
-              />
-              <Line
-                type="monotone"
-                dataKey="netRevenueForecast"
-                name="순매출 추정"
-                stroke={SERIES_COLORS[0]}
-                strokeWidth={2}
-                strokeDasharray="4 4"
-                dot={false}
-              />
-              <Line
-                type="monotone"
-                dataKey="estimatedMarginForecast"
-                name="마진 추정"
-                stroke={SERIES_COLORS[1]}
-                strokeWidth={2}
-                strokeDasharray="4 4"
-                dot={false}
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
-        </ChartCard>
+        {canSeeFinance && (
+          <ChartCard
+            title={`최근 30일 매출·마진 추이 + 앞으로 ${FORECAST_HORIZON_DAYS}일 추정`}
+            description={
+              trend.revenue
+                ? `점선은 최근 ${FORECAST_BASIS_DAYS}일 추세를 그대로 이은 추정치이고, 옅은 띠는 그 추세의 95% 예측 범위입니다 — 계절성·이벤트·프로모션은 넣지 않았습니다. 마진은 원가가 입력된 상품 몫만 반영합니다. 취소·환불이 발생일에 귀속되어 음수인 날이 있을 수 있습니다.`
+                : `최근 ${FORECAST_BASIS_DAYS}일 안에 판매가 있는 날이 3일이 안 돼 추세를 추정하지 않았습니다. 마진은 원가가 입력된 상품 몫만 반영합니다.`
+            }
+            isLoading={profit.isLoading}
+            isEmpty={trend.rows.length === 0}
+          >
+            <ResponsiveContainer width="100%" height={240}>
+              <ComposedChart data={trend.rows} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                <XAxis dataKey="bucket" tick={{ fontSize: 11 }} stroke="#999" />
+                <YAxis tick={{ fontSize: 11 }} stroke="#999" tickFormatter={formatKrwAxis} />
+                <Tooltip formatter={(value: number) => formatKrw(value)} />
+                <Legend />
+                <Area
+                  dataKey="netRevenueBand"
+                  fill={SERIES_COLORS[0]}
+                  fillOpacity={0.1}
+                  stroke="none"
+                  legendType="none"
+                  tooltipType="none"
+                  isAnimationActive={false}
+                />
+                <Area
+                  dataKey="estimatedMarginBand"
+                  fill={SERIES_COLORS[1]}
+                  fillOpacity={0.1}
+                  stroke="none"
+                  legendType="none"
+                  tooltipType="none"
+                  isAnimationActive={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="netRevenue"
+                  name="순매출"
+                  stroke={SERIES_COLORS[0]}
+                  strokeWidth={2}
+                  dot={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="estimatedMargin"
+                  name="추정 마진"
+                  stroke={SERIES_COLORS[1]}
+                  strokeWidth={2}
+                  dot={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="netRevenueForecast"
+                  name="순매출 추정"
+                  stroke={SERIES_COLORS[0]}
+                  strokeWidth={2}
+                  strokeDasharray="4 4"
+                  dot={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="estimatedMarginForecast"
+                  name="마진 추정"
+                  stroke={SERIES_COLORS[1]}
+                  strokeWidth={2}
+                  strokeDasharray="4 4"
+                  dot={false}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </ChartCard>
+        )}
 
         <div className="rounded-[10px] border border-gray-200 bg-white p-4">
           <p className="mb-3 text-sm font-semibold text-gray-900">무엇이 궁금하면 어느 탭인가</p>

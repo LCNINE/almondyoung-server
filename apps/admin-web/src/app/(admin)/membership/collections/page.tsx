@@ -3,7 +3,7 @@ import RecoveryTemplate from '@/features/membership/collections/template';
 
 export default function CollectionsPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/membership/collections">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <RecoveryTemplate />
       </div>

@@ -23,7 +23,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ExternalLink } from 'lucide-react';
-import { useDirectShipOrders } from '@/lib/services/orders';
+import {
+  useCompleteDirectShipOrders,
+  useDirectShipOrders,
+  useExportDirectShipFile,
+  useForwardDirectShipOrders,
+} from '@/lib/services/orders';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { ForwardDialog } from '../forward-dialog';
 import { CompleteDialog } from '../complete-dialog';
 import { ExportButton } from '../export-button';
@@ -59,6 +65,7 @@ export function DirectShipOrdersTable() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [forwardOpen, setForwardOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
+  const { canRun } = usePermissionCheck();
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -102,6 +109,7 @@ export function DirectShipOrdersTable() {
             <span className="flex items-center text-sm text-muted-foreground">
               {selected.size}건 선택
             </span>
+            {canRun(useForwardDirectShipOrders) && (
             <Button
               size="sm"
               variant="outline"
@@ -109,9 +117,12 @@ export function DirectShipOrdersTable() {
             >
               공급사 전달
             </Button>
+            )}
+            {canRun(useCompleteDirectShipOrders) && (
             <Button size="sm" onClick={() => setCompleteOpen(true)}>
               공급사 출고 완료
             </Button>
+            )}
           </div>
         )}
       </div>
@@ -181,7 +192,7 @@ export function DirectShipOrdersTable() {
                     </Link>
                   </TableCell>
                   <TableCell>
-                    {order.status === 'forwarded' && (
+                    {order.status === 'forwarded' && canRun(useExportDirectShipFile) && (
                       <ExportButton companyName={order.companyName} />
                     )}
                   </TableCell>

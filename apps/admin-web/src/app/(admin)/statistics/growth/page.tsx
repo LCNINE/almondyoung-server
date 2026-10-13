@@ -3,7 +3,7 @@ import GrowthStatisticsTemplate from '@/features/statistics/template/growth';
 
 export default function StatisticsGrowthPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/statistics/growth">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <GrowthStatisticsTemplate />
       </div>

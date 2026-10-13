@@ -14,14 +14,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { usePermission } from '@/hooks/use-permission';
+import { usePermissionCheck } from '@/hooks/use-permission';
+import { permissionLabel } from '@/lib/auth/permission-labels';
 import {
   FULFILLMENT_SCOPES,
   getServerDenyMessage,
   useOutboundBatchV2,
   useShipmentDetail,
+  useForceShipmentDispatch,
   useShipmentInspectionScan,
 } from '@/lib/services/orders';
+import { Can } from '@/components/auth/can';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
 import { ForceShipmentDialog } from '../force-shipment-dialog';
 import { useWarehouseCommandRetry } from '../../../outbound-batches/warehouse-command-retry';
 
@@ -36,10 +40,8 @@ export function InspectionSessionStarter() {
   const { data: batch, isLoading, refetch } = useOutboundBatchV2(batchId);
   const { data: shipment } = useShipmentDetail(shipmentId);
   const scan = useShipmentInspectionScan();
-  const { hasScope, isPermissionLoading } = usePermission();
-  const mayForceDispatch =
-    !isPermissionLoading &&
-    Boolean(hasScope([FULFILLMENT_SCOPES.forceDispatch]));
+  const { canRun, isPermissionLoading } = usePermissionCheck();
+  const mayForceDispatch = canRun(useForceShipmentDispatch);
   const workItem = batch?.workItems.find(
     (item) => item.shipmentId === shipmentId
   );
@@ -155,6 +157,7 @@ export function InspectionSessionStarter() {
                   ))
                 )}
               </div>
+              <PermissionReadOnly run={useShipmentInspectionScan}>
               <div className="flex flex-wrap items-end gap-2">
                 <div className="space-y-1">
                   <Label>Barcode</Label>
@@ -175,6 +178,7 @@ export function InspectionSessionStarter() {
                     }
                   />
                 </div>
+                <Can run={useShipmentInspectionScan}>
                 <Button
                   disabled={
                     !inspectionReady ||
@@ -190,6 +194,7 @@ export function InspectionSessionStarter() {
                       ? '원래 명령 재시도'
                       : '검수 scan'}
                 </Button>
+                </Can>
                 {mayForceDispatch && (
                   <Button
                     variant="destructive"
@@ -199,9 +204,10 @@ export function InspectionSessionStarter() {
                   </Button>
                 )}
               </div>
+              </PermissionReadOnly>
               {!mayForceDispatch && !isPermissionLoading && (
                 <p className="text-xs text-muted-foreground">
-                  강제 출고는 {FULFILLMENT_SCOPES.forceDispatch} scope
+                  강제 출고는 {permissionLabel(FULFILLMENT_SCOPES.forceDispatch)} 권한
                   보유자에게만 표시됩니다.
                 </p>
               )}

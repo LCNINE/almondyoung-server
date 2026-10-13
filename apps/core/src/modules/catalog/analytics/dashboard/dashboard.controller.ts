@@ -8,12 +8,14 @@ import {
   TopProductsQueryDto,
   SalesTrendsQueryDto,
 } from './dto';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('Dashboard')
 @Controller('dashboard')
 export class DashboardController {
   constructor(private dashboardService: DashboardService) {}
 
+  @RequirePermission('analytics.report.read')
   @Get('metrics')
   @ApiOperation({
     summary: '대시보드 메트릭 조회',
@@ -37,6 +39,7 @@ export class DashboardController {
     }
   }
 
+  @RequirePermission('analytics.report.read')
   @Get('top-products')
   @ApiOperation({
     summary: '상위 제품 목록 조회',
@@ -80,6 +83,7 @@ export class DashboardController {
     }
   }
 
+  @RequirePermission('analytics.report.read')
   @Get('sales-trends')
   @ApiOperation({
     summary: '매출 트렌드 조회',

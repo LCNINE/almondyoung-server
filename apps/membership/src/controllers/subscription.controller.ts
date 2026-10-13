@@ -41,7 +41,7 @@ import {
   CancelSubscriptionRequestDto,
 } from '../shared/dto/request.dto';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
-import { JwtAuthGuard, User } from '@app/authorization';
+import { JwtAuthGuard, User, StoreRoute } from '@app/authorization';
 /**
  * 구독 관리 컨트롤러
  * 인증: JwtAuthGuard(= AuthGuard('jwt')) 적용. @Public()/@OptionalAuth() 로 우회.
@@ -61,6 +61,7 @@ export class SubscriptionController {
    *
    * @description 사용자의 현재 구독 상태를 조회합니다.
    */
+  @StoreRoute()
   @Get('current')
   @ApiOperation({
     summary: '현재 구독 상태 조회',
@@ -91,6 +92,7 @@ export class SubscriptionController {
    * 멤버십 혜택을 지금 쓸 수 있는지. 할인 그룹 동기화와 같은 판정(현재 권한·미만료·미정지)이라
    * 다른 화면이 멤버십 전용 기능의 문을 열 때 이 값 하나만 본다.
    */
+  @StoreRoute()
   @Get('current/active')
   @ApiOperation({ summary: '멤버십 혜택 이용 가능 여부' })
   @UseGuards(JwtAuthGuard)
@@ -100,6 +102,7 @@ export class SubscriptionController {
   // 구독 생성은 결제 확인을 거친 경로(checkout-intent → confirm-checkout-intent, subscribe-with-method)로만
   // 이뤄진다. 결제 없이 계약/권한을 발급하던 `POST /subscriptions` 직접 경로는 무료 멤버십 발급 취약점이라 제거했다.
 
+  @StoreRoute()
   @Post('checkout-intent')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
@@ -150,6 +153,7 @@ export class SubscriptionController {
    * JWT 불필요 - wallet API key로 payment intent를 검증하여 구독을 생성합니다.
    * (크로스도메인 결제 리다이렉트 후 accessToken 쿠키 소실 문제 우회)
    */
+  @StoreRoute()
   @Post('confirm-checkout-intent')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
@@ -186,6 +190,7 @@ export class SubscriptionController {
   /**
    * 구독 취소
    */
+  @StoreRoute()
   @Post('cancel')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -226,6 +231,7 @@ export class SubscriptionController {
    * 환불 진행 상황 — 해지 직후 안내를 놓친 고객이 다시 확인하는 창구.
    * 즉시해지하면 화면이 비가입자로 바뀌므로 계약 상태와 무관하게 조회된다.
    */
+  @StoreRoute()
   @Get('refund-status')
   @ApiOperation({ summary: '환불 진행 상황 조회' })
   @UseGuards(JwtAuthGuard)
@@ -240,6 +246,7 @@ export class SubscriptionController {
   /**
    * 멤버십이 왜 끝났는지 — 계좌 심사 거절·미수로 끊긴 고객이 이유와 다음 행동을 알 수 있어야 한다.
    */
+  @StoreRoute()
   @Get('termination-notice')
   @ApiOperation({ summary: '멤버십 종료 사유 안내' })
   @UseGuards(JwtAuthGuard)
@@ -248,6 +255,7 @@ export class SubscriptionController {
     return this.cancellationService.getTerminationNotice(userId);
   }
 
+  @StoreRoute()
   @Get('cancel-preview')
   @ApiOperation({
     summary: '해지 미리보기',
@@ -263,6 +271,7 @@ export class SubscriptionController {
   /**
    * 해지 예약 철회
    */
+  @StoreRoute()
   @Post('cancel/undo')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -287,6 +296,7 @@ export class SubscriptionController {
   /**
    * 구독 이력 조회
    */
+  @StoreRoute()
   @Get('history')
   @ApiOperation({
     summary: '구독 이력 조회',
@@ -312,6 +322,7 @@ export class SubscriptionController {
    *
    * ⚠️ 반드시 wildcard/파라미터 라우트보다 먼저 선언되어야 합니다.
    */
+  @StoreRoute()
   @Get('history/paged')
   @ApiOperation({
     summary: '구독 이력 페이지네이션 조회',
@@ -341,6 +352,7 @@ export class SubscriptionController {
   /**
    * 기존 결제수단으로 즉시 구독
    */
+  @StoreRoute()
   @Post('subscribe-with-method')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
@@ -372,6 +384,7 @@ export class SubscriptionController {
   /**
    * 취소 이유 목록 조회
    */
+  @StoreRoute()
   @Get('cancellation-reasons')
   @ApiOperation({
     summary: '취소 이유 목록 조회',

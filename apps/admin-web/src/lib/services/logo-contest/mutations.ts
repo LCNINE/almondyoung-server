@@ -4,6 +4,7 @@ import { logoContestApi } from '@/lib/api/domains/logo-contest';
 import { UpdateLogoContestEntryStatusDto } from '@/lib/types/dto/logo-contest';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { logoContestQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export const useUpdateLogoContestEntryStatus = (entryId: string) => {
   const queryClient = useQueryClient();
@@ -16,6 +17,7 @@ export const useUpdateLogoContestEntryStatus = (entryId: string) => {
     },
   });
 };
+useUpdateLogoContestEntryStatus.permission = ['cs.review.moderate'] as const satisfies PermissionRequirement;
 
 export const useDesignateLogoContestWinner = (entryId: string) => {
   const queryClient = useQueryClient();
@@ -27,3 +29,4 @@ export const useDesignateLogoContestWinner = (entryId: string) => {
     },
   });
 };
+useDesignateLogoContestWinner.permission = ['cs.review.moderate'] as const satisfies PermissionRequirement;

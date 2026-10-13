@@ -18,7 +18,7 @@ interface SearchDialogProps {
     onClose: () => void;
     type: 'supplier' | 'holder';
     onSelect: (item: any) => void;
-    onCreate: (data: any) => void;
+    onCreate?: (data: any) => void; // 넘기지 않으면 신규등록 버튼을 그리지 않는다(권한 없음)
     searchResults: any[];
     isLoading: boolean;
     onSearch: (query: string, filters?: any) => void;
@@ -60,7 +60,7 @@ export function SearchDialog({
 
     // 신규등록 폼 제출
     const handleCreateSubmit = () => {
-        onCreate(createFormData);
+        onCreate?.(createFormData);
         setShowCreateForm(false);
         setCreateFormData({});
         onClose();
@@ -104,10 +104,12 @@ export function SearchDialog({
                                     <Search className="h-4 w-4 mr-2" />
                                     검색
                                 </Button>
+                                {onCreate && (
                                 <Button variant="outline" onClick={() => setShowCreateForm(true)}>
                                     <Plus className="h-4 w-4 mr-2" />
                                     신규등록
                                 </Button>
+                                )}
                             </div>
 
                             {/* 검색 결과 */}

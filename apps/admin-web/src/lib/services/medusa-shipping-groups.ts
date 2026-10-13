@@ -7,6 +7,7 @@ import {
   type ShippingAreaTemplate,
   type ShippingGroupPayload,
 } from '@/lib/api/domains/medusa/shipping-groups';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 const shippingGroupKeys = {
   all: ['medusa-shipping-groups'] as const,
@@ -27,6 +28,7 @@ export const useCreateShippingGroup = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: shippingGroupKeys.all }),
   });
 };
+useCreateShippingGroup.permission = ['system.shipping_profile.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateShippingGroup = () => {
   const qc = useQueryClient();
@@ -41,6 +43,7 @@ export const useUpdateShippingGroup = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: shippingGroupKeys.all }),
   });
 };
+useUpdateShippingGroup.permission = ['system.shipping_profile.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteShippingGroup = () => {
   const qc = useQueryClient();
@@ -49,6 +52,7 @@ export const useDeleteShippingGroup = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: shippingGroupKeys.all }),
   });
 };
+useDeleteShippingGroup.permission = ['system.shipping_profile.write'] as const satisfies PermissionRequirement;
 
 const areaTemplateKeys = {
   all: ['medusa-shipping-area-templates'] as const,
@@ -73,6 +77,7 @@ export const useUpsertShippingAreaTemplate = () => {
     },
   });
 };
+useUpsertShippingAreaTemplate.permission = ['system.shipping_profile.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteShippingAreaTemplate = () => {
   const qc = useQueryClient();
@@ -81,3 +86,4 @@ export const useDeleteShippingAreaTemplate = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: areaTemplateKeys.all }),
   });
 };
+useDeleteShippingAreaTemplate.permission = ['system.shipping_profile.write'] as const satisfies PermissionRequirement;

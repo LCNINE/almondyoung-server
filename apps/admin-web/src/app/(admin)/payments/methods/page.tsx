@@ -3,7 +3,7 @@ import PaymentMethodCatalogTemplate from '@/features/payment-config/catalog-temp
 
 export default function PaymentMethodsPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/payments/methods">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <PaymentMethodCatalogTemplate />
       </div>

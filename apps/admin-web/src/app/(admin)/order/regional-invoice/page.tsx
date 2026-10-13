@@ -5,7 +5,7 @@ import RegionalInvoiceTemplate from '@/features/order/regional-invoice/template/
 export default function OrderRegionalInvoicePage() {
   return (
     <RouteGuard
-      requireRole={['admin', 'master']}
+      screen="/order/regional-invoice"
     >
       <RegionalInvoiceTemplate />
     </RouteGuard>

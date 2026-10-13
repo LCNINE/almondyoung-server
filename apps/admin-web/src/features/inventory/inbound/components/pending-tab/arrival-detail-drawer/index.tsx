@@ -25,6 +25,7 @@ import {
   useReceivePurchaseOrder,
   useShortClosePurchaseOrderLine,
 } from '@/lib/services/inventory';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { ExpectedArrivalDto } from '@/lib/types/dto/inventory';
 import { toast } from 'sonner';
 import {
@@ -57,6 +58,7 @@ export function ArrivalDetailDrawer({
   const [closeReason, setCloseReason] = useState('');
   const receiveMutation = useReceivePurchaseOrder();
   const closeMutation = useShortClosePurchaseOrderLine();
+  const { canRun } = usePermissionCheck();
 
   useEffect(() => {
     if (closingLine) setCloseReason('');
@@ -184,27 +186,31 @@ export function ArrivalDetailDrawer({
                         </span>
                       </div>
                       <div className="flex items-center gap-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            setActiveLineKey(isExpanded ? null : lineKey)
-                          }
-                        >
-                          {isExpanded ? '닫기' : '입고'}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() =>
-                            setClosingLine({
-                              skuId: line.skuId,
-                              skuName: line.skuName,
-                            })
-                          }
-                        >
-                          잔량 포기
-                        </Button>
+                        {canRun(useReceivePurchaseOrder) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              setActiveLineKey(isExpanded ? null : lineKey)
+                            }
+                          >
+                            {isExpanded ? '닫기' : '입고'}
+                          </Button>
+                        )}
+                        {canRun(useShortClosePurchaseOrderLine) && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              setClosingLine({
+                                skuId: line.skuId,
+                                skuName: line.skuName,
+                              })
+                            }
+                          >
+                            잔량 포기
+                          </Button>
+                        )}
                       </div>
                     </div>
 

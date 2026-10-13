@@ -1,4 +1,4 @@
-import { RequireScopes, User } from '@app/authorization';
+import { PermissionCheckpoints, RequireScopes, User, RequirePermission } from '@app/authorization';
 import { Controller, Logger, Param, Post, Req, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -37,8 +37,12 @@ function fitToolCalls(toolCalls: unknown): unknown {
 export class AssistantChatController {
   private readonly logger = new Logger(AssistantChatController.name);
 
-  constructor(private readonly service: AssistantChatService) {}
+  constructor(
+    private readonly service: AssistantChatService,
+    private readonly checkpoints: PermissionCheckpoints,
+  ) {}
 
+  @RequirePermission('ai.assistant.use')
   @Post(':sessionId/messages')
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
@@ -56,6 +60,10 @@ export class AssistantChatController {
   ) {
     const turn = await readTurn(request);
     const headers = callerAuthHeaders(request);
+    const grantedScopes = grantedAiScopes(request);
+    this.checkpoints.compareDecision('ai.assistant_tools', grantedScopes.includes(AI_SCOPE.ASSISTANT), request, [
+      'ai.assistant.use',
+    ]);
 
     const events = this.service.runTurn({
       userId: user.userId,
@@ -64,7 +72,7 @@ export class AssistantChatController {
       // 여기서 기다릴 것이 없으므로 async 가 아니다 — 타입만 Promise 면 도구 쪽은 그대로 await 한다.
       coreHeaders: (extra?: Record<string, string>) => Promise.resolve({ ...headers, ...extra }),
       signal: clientAbortSignal(reply),
-      grantedScopes: grantedAiScopes(request),
+      grantedScopes,
     });
 
     // 첫 이벤트를 받기 전에 헤더를 내보내지 않는다 — 소유 확인이 던지는 404 가

@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createColumnHelper } from '@tanstack/react-table';
 import { useUserNames } from '@/hooks/use-user-names';
 import { useDataTable } from '@/hooks/use-data-table';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { DataTable } from '@/components/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -114,6 +115,8 @@ export function RecurringContractsView({ query }: Props) {
   const [detailRow, setDetailRow] = useState<ContractRow | null>(null);
   const [resetReason, setResetReason] = useState('');
   const queryClient = useQueryClient();
+  const { can } = usePermissionCheck();
+  const canReset = can(['membership.member.write']);
 
   const closeModal = () => {
     setDetailRow(null);
@@ -121,6 +124,7 @@ export function RecurringContractsView({ query }: Props) {
   };
 
   const resetBillingMutation = useMutation({
+    meta: { permission: ['membership.member.write'] },
     mutationFn: ({
       contractId,
       reason,
@@ -363,7 +367,8 @@ export function RecurringContractsView({ query }: Props) {
                   );
                 })()}
             </div>
-            {detailRow.billingInProgress &&
+            {canReset &&
+              detailRow.billingInProgress &&
               hoursElapsed(detailRow) >= STUCK_THRESHOLD_HOURS && (
                 <div className="mt-3 space-y-2">
                   <p className="text-xs text-muted-foreground">
@@ -379,7 +384,8 @@ export function RecurringContractsView({ query }: Props) {
                 </div>
               )}
             <div className="mt-4 flex justify-end gap-2">
-              {detailRow.billingInProgress &&
+              {canReset &&
+                detailRow.billingInProgress &&
                 hoursElapsed(detailRow) >= STUCK_THRESHOLD_HOURS && (
                   <Button
                     variant="destructive"

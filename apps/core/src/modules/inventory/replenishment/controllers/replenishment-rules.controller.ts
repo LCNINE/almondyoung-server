@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { ReplenishmentRulesService } from '../rules/replenishment-rules.service';
 import {
@@ -30,6 +30,7 @@ import {
 export class ReplenishmentRulesController {
   constructor(private readonly service: ReplenishmentRulesService) {}
 
+  @RequirePermission('inventory.master.read')
   @Get('settings')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
@@ -41,6 +42,7 @@ export class ReplenishmentRulesController {
     return this.service.getSettings();
   }
 
+  @RequirePermission('inventory.master.write')
   @Put('settings')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
@@ -55,6 +57,7 @@ export class ReplenishmentRulesController {
     return this.service.updateSettings(dto);
   }
 
+  @RequirePermission('inventory.master.read')
   @Get('grades')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '등급별 α' })
@@ -63,6 +66,7 @@ export class ReplenishmentRulesController {
     return this.service.getGrades();
   }
 
+  @RequirePermission('inventory.master.write')
   @Put('grades')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '등급별 α 3행 일괄 — 저장 즉시 반영' })
@@ -72,6 +76,7 @@ export class ReplenishmentRulesController {
     return this.service.updateGrades(dto.items);
   }
 
+  @RequirePermission('inventory.master.read')
   @Get('suppliers')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '공급사 목록 + 규칙 + 관측 프로필 — 규칙 없는 공급사도 포함' })
@@ -80,6 +85,7 @@ export class ReplenishmentRulesController {
     return this.service.listSuppliers();
   }
 
+  @RequirePermission('inventory.master.write')
   @Put('suppliers/:supplierId')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '공급사 규칙 upsert — 저장 즉시 반영' })
@@ -93,6 +99,7 @@ export class ReplenishmentRulesController {
     return this.service.upsertSupplier(supplierId, dto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Delete('suppliers/:supplierId')
   @HttpCode(204)
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
@@ -103,6 +110,7 @@ export class ReplenishmentRulesController {
     return this.service.deleteSupplier(supplierId);
   }
 
+  @RequirePermission('inventory.master.read')
   @Get('routes')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '경로 규칙 ∪ 관측 경로' })
@@ -111,6 +119,7 @@ export class ReplenishmentRulesController {
     return this.service.listRoutes();
   }
 
+  @RequirePermission('inventory.master.write')
   @Put('routes/:fromWarehouseId/:toWarehouseId')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '경로 규칙 upsert — 저장 즉시 반영' })
@@ -127,6 +136,7 @@ export class ReplenishmentRulesController {
     return this.service.upsertRoute(from, to, dto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Delete('routes/:fromWarehouseId/:toWarehouseId')
   @HttpCode(204)
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
@@ -138,6 +148,7 @@ export class ReplenishmentRulesController {
     return this.service.deleteRoute(from, to);
   }
 
+  @RequirePermission('inventory.master.read')
   @Get('skus')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU 예외 목록 — 코드 · 이름 검색' })
@@ -146,6 +157,7 @@ export class ReplenishmentRulesController {
     return this.service.listSkuOverrides(query.q, query.limit ?? 100);
   }
 
+  @RequirePermission('inventory.master.write')
   @Put('skus/:skuId')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU 예외 upsert — 저장 즉시 반영' })
@@ -157,6 +169,7 @@ export class ReplenishmentRulesController {
     return this.service.upsertSkuOverride(skuId, dto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Delete('skus/:skuId')
   @HttpCode(204)
   @RequireScopes(INVENTORY_SCOPE.MANAGE)

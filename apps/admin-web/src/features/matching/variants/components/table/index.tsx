@@ -8,9 +8,13 @@ import { useVariantsMatchingTableColumns } from '@/hooks/table/columns/use-varia
 import { useVariantsMatchingTableFilters } from '@/hooks/table/filters/use-variants-matching-table-filters';
 import { useVariantsMatchingTableQuery } from '@/hooks/table/query/use-variants-matching-table-query';
 import {
+  useChangeMatchingStrategy,
   useMatchings,
   useResolveLegacyIgnoredMatching,
+  useSetMatchingPriority,
+  useUpsertVariantMatching,
 } from '@/lib/services/matching';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type {
   LegacyIgnoredResolutionTarget,
   MatchingDto,
@@ -84,11 +88,16 @@ export function VariantsMatchingTable({
     [resolveLegacyIgnored]
   );
 
+  const { canRun } = usePermissionCheck();
   const columns = useVariantsMatchingTableColumns({
-    onEdit: handleEdit,
-    onResolveLegacyIgnored: (row, target) => {
-      void handleResolveLegacyIgnored(row, target);
-    },
+    onEdit: canRun(useUpsertVariantMatching, useSetMatchingPriority, useChangeMatchingStrategy)
+      ? handleEdit
+      : undefined,
+    onResolveLegacyIgnored: canRun(useResolveLegacyIgnoredMatching)
+      ? (row, target) => {
+          void handleResolveLegacyIgnored(row, target);
+        }
+      : undefined,
     isResolvingLegacyIgnored: resolveLegacyIgnored.isPending,
   });
 

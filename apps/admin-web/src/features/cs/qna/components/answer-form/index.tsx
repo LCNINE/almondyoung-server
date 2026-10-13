@@ -25,6 +25,8 @@ import {
 } from '@/lib/services/qna';
 import { useOptionalAdminUser } from '@/lib/services/users';
 import { toast } from 'sonner';
+import { Can } from '@/components/auth/can';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
 
 function AnswerFormContent({ questionId }: { questionId: string }) {
   const { data: question } = useQuestion(questionId);
@@ -102,15 +104,18 @@ function AnswerFormContent({ questionId }: { questionId: string }) {
           </div>
         </div>
       )}
-      <Textarea
-        placeholder="답변 내용을 입력하세요..."
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-        rows={6}
-        disabled={isLoading}
-      />
+      <PermissionReadOnly run={hasAnswer ? useUpdateAnswer : useCreateAnswer}>
+        <Textarea
+          placeholder="답변 내용을 입력하세요..."
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          rows={6}
+          disabled={isLoading}
+        />
+      </PermissionReadOnly>
       <div className="flex gap-2 justify-end">
         {hasAnswer && (
+          <Can run={useDeleteAnswer}>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="destructive" size="sm" disabled={isLoading}>
@@ -132,7 +137,9 @@ function AnswerFormContent({ questionId }: { questionId: string }) {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+          </Can>
         )}
+        <Can run={hasAnswer ? useUpdateAnswer : useCreateAnswer}>
         <Button onClick={handleSubmit} size="sm" disabled={isLoading}>
           {isLoading ? (
             <Spinner className="h-4 w-4" />
@@ -142,6 +149,7 @@ function AnswerFormContent({ questionId }: { questionId: string }) {
             '답변 등록'
           )}
         </Button>
+        </Can>
       </div>
     </div>
   );

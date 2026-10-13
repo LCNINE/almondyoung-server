@@ -44,10 +44,11 @@ export const useUnsoldProducts = (query: StatisticsRangeQuery & { limit?: number
   });
 };
 
-export const useProfitStatistics = (query: ProfitStatisticsQuery) => {
+export const useProfitStatistics = (query: ProfitStatisticsQuery, options?: { enabled?: boolean }) => {
   return useQuery({
     queryKey: analyticsQueryKeys.profit(query),
     queryFn: () => analyticsApi.getProfitStatistics(query),
+    enabled: options?.enabled ?? true,
     // 페이지 이동 시 이전 페이지를 유지해 테이블이 깜빡이지 않게 한다
     placeholderData: (previous) => previous,
   });

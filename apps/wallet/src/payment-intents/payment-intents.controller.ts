@@ -26,6 +26,7 @@ import { RefundListItemDto } from '../refunds/dto';
 import { toRefundResponse, toRefundListItem } from '../refunds/refund-response';
 import { AuthenticatedRequest } from '../wallet.module';
 import { WalletJwtAuth } from '../wallet-auth.decorator';
+import { KeyAuthRoute, StoreRoute } from '@app/authorization';
 
 @ApiTags('Payment Intents')
 @Controller('v1/payment-intents')
@@ -35,6 +36,7 @@ export class PaymentIntentsController {
     private readonly refundsService: RefundsService,
   ) {}
 
+  @KeyAuthRoute()
   @Post()
   @HttpCode(201)
   @ApiOperation({ summary: 'Create a payment intent (API-key authenticated, merchant backend)' })
@@ -48,6 +50,7 @@ export class PaymentIntentsController {
   }
 
   // 주의: 정적 경로는 `:id` 동적 경로보다 먼저 선언해야 매칭 충돌이 없다.
+  @KeyAuthRoute()
   @Get('by-idempotency-key')
   @ApiOperation({ summary: 'Look up a payment intent by billing idempotency key (API-key, server-to-server)' })
   async findByIdempotencyKey(@Query('key') key: string): Promise<PaymentIntentResponseDto> {
@@ -64,6 +67,7 @@ export class PaymentIntentsController {
     return this.toResponse(intent);
   }
 
+  @StoreRoute()
   @Get(':id')
   @WalletJwtAuth()
   @ApiOperation({ summary: 'Get a payment intent' })
@@ -72,6 +76,7 @@ export class PaymentIntentsController {
     return this.toResponse(intent);
   }
 
+  @StoreRoute()
   @Get(':id/deposit-account')
   @WalletJwtAuth()
   @ApiOperation({ summary: '무통장(가상계좌) 입금 안내 계좌 조회 (고객)' })
@@ -80,6 +85,7 @@ export class PaymentIntentsController {
     return this.service.getBankTransferDepositAccount(id, req.jwtUserId);
   }
 
+  @StoreRoute()
   @Post(':id/confirm')
   @HttpCode(200)
   @WalletJwtAuth()
@@ -98,6 +104,7 @@ export class PaymentIntentsController {
     return this.toResponse(updated, nextAction);
   }
 
+  @KeyAuthRoute()
   @Post(':id/toss-approve')
   @HttpCode(200)
   @ApiOperation({ summary: 'Approve Toss payment after checkout (API-key authenticated)' })
@@ -107,6 +114,7 @@ export class PaymentIntentsController {
     return this.toResponse(updated);
   }
 
+  @KeyAuthRoute()
   @Post(':id/finalize-approval')
   @HttpCode(200)
   @ApiOperation({
@@ -121,6 +129,7 @@ export class PaymentIntentsController {
     return this.toResponse(updated);
   }
 
+  @KeyAuthRoute()
   @Post(':id/capture')
   @HttpCode(200)
   @ApiOperation({ summary: 'Capture an authorized payment intent (API-key authenticated, merchant backend)' })
@@ -130,6 +139,7 @@ export class PaymentIntentsController {
     return this.toResponse(intent);
   }
 
+  @StoreRoute()
   @Post(':id/cancel')
   @HttpCode(200)
   @WalletJwtAuth()
@@ -144,6 +154,7 @@ export class PaymentIntentsController {
     return this.toResponse(updated);
   }
 
+  @StoreRoute()
   @Post(':id/abandon')
   @HttpCode(200)
   @WalletJwtAuth()
@@ -158,6 +169,7 @@ export class PaymentIntentsController {
     return this.toResponse(updated);
   }
 
+  @KeyAuthRoute()
   @Post(':id/refund')
   @HttpCode(200)
   @ApiOperation({ summary: 'Refund a payment intent (API-key authenticated)' })
@@ -167,6 +179,7 @@ export class PaymentIntentsController {
     return { intentId: id, refunds: refunds.map((r) => toRefundResponse(r)) };
   }
 
+  @KeyAuthRoute()
   @Get(':id/refunds')
   @ApiOperation({
     summary: 'List refunds of a payment intent (API-key, server-to-server)',
@@ -178,6 +191,7 @@ export class PaymentIntentsController {
     return refunds.map(toRefundListItem);
   }
 
+  @KeyAuthRoute()
   @Get(':id/refundability')
   @ApiOperation({
     summary: 'Check whether an intent can be refunded and by which route (API-key, server-to-server)',

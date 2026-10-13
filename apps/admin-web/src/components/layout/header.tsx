@@ -15,7 +15,8 @@ import { AssistantButton } from '@/features/assistant/components/assistant-butto
 import { HeaderSearch } from './header-search';
 import { MobileNav } from './mobile-nav';
 import { useSignout } from '@/lib/services/auth';
-import { useMe, useMyRoles } from '@/lib/services/users';
+import { usePermissions } from '@/hooks/use-permission';
+import { useMe } from '@/lib/services/users';
 import { Loader2, LogOut, User } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -35,9 +36,9 @@ export function Header({
   const { mutateAsync: signout, isPending: isSigningOut } = useSignout();
 
   const { data: me, isLoading: isMeLoading } = useMe();
-  const { data: myRoles, isLoading: isMyRolesLoading } = useMyRoles();
+  const { status: permissionStatus, roles } = usePermissions();
 
-  const isLoading = isMyRolesLoading;
+  const isLoading = permissionStatus === 'loading';
 
   // 로그아웃 처리
   const handleLogout = async () => {
@@ -65,18 +66,7 @@ export function Header({
   };
 
   // 사용자 역할 표시
-  const getUserRole = () => {
-    const roleName = myRoles?.roles?.[0]?.role?.name;
-
-    switch (roleName) {
-      case 'MASTER':
-        return '마스터 관리자';
-      case 'ADMIN':
-        return '관리자';
-      default:
-        return '사용자';
-    }
-  };
+  const getUserRole = () => roles.map((role) => role.displayName).join(', ') || '사용자';
 
   return (
     <header className="sticky top-0 z-30 bg-white border-b border-gray-200 shadow-sm">

@@ -3,7 +3,7 @@ import MatchingTemplate from '@/features/order/matching/template';
 
 export default function OrderMatchingPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/order/matching">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <MatchingTemplate />
       </div>

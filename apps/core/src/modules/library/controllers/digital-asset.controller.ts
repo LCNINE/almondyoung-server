@@ -21,12 +21,14 @@ import {
   DigitalAssetListResponseDto,
   DigitalAssetFileVersionDto,
 } from '../dto';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('Library / Digital Assets')
 @Controller('digital-assets')
 export class DigitalAssetController {
   constructor(private readonly service: DigitalAssetService) {}
 
+  @RequirePermission('catalog.digital_asset.write')
   @Post()
   @ApiOperation({ summary: '디지털 자산 등록' })
   @ApiResponse({ status: 201, type: DigitalAssetResponseDto })
@@ -34,6 +36,7 @@ export class DigitalAssetController {
     return this.service.createAsset(dto, req.user?.id);
   }
 
+  @RequirePermission('catalog.product.read')
   @Get()
   @ApiOperation({ summary: '디지털 자산 목록' })
   @ApiQuery({ name: 'q', required: false })
@@ -52,6 +55,7 @@ export class DigitalAssetController {
     });
   }
 
+  @RequirePermission('catalog.product.read')
   @Get(':id')
   @ApiOperation({ summary: '디지털 자산 상세' })
   @ApiResponse({ status: 200, type: DigitalAssetResponseDto })
@@ -59,6 +63,7 @@ export class DigitalAssetController {
     return this.service.getAsset(id);
   }
 
+  @RequirePermission('catalog.digital_asset.write')
   @Patch(':id')
   @ApiOperation({ summary: '디지털 자산 메타데이터 수정' })
   @ApiResponse({ status: 200, type: DigitalAssetResponseDto })
@@ -70,6 +75,7 @@ export class DigitalAssetController {
     return this.service.updateAsset(id, dto, req.user?.id);
   }
 
+  @RequirePermission('catalog.digital_asset.write')
   @Delete(':id')
   @HttpCode(204)
   @ApiOperation({ summary: '디지털 자산 삭제 (soft delete)' })
@@ -77,6 +83,7 @@ export class DigitalAssetController {
     await this.service.deleteAsset(id, req.user?.id);
   }
 
+  @RequirePermission('catalog.product.read')
   @Get(':id/file-versions')
   @ApiOperation({ summary: '디지털 자산 파일 버전 이력' })
   @ApiResponse({ status: 200, type: DigitalAssetFileVersionDto, isArray: true })
@@ -84,6 +91,7 @@ export class DigitalAssetController {
     return this.service.listFileVersions(id);
   }
 
+  @RequirePermission('catalog.digital_asset.write')
   @Post(':id/file-versions')
   @ApiOperation({ summary: '디지털 자산 파일 새 버전 등록 (= 파일 교체)' })
   @ApiResponse({ status: 201, type: DigitalAssetFileVersionDto })
@@ -95,6 +103,7 @@ export class DigitalAssetController {
     return this.service.addFileVersion(id, dto, req.user?.id);
   }
 
+  @RequirePermission('catalog.digital_asset.write')
   @Post(':id/file-versions/:versionId/rollback')
   @ApiOperation({
     summary: '자산의 현재 파일 버전을 과거 버전으로 되돌리기 (rollback)',

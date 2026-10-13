@@ -19,11 +19,12 @@ export function ItemActions({
 }: {
   item: BulkSessionItem;
   excluding: boolean;
-  onExclude: (itemId: string) => void;
+  /** 넘기지 않으면 제외 버튼을 그리지 않는다(권한 없음). */
+  onExclude?: (itemId: string) => void;
 }) {
   function handleExclude() {
     if (!window.confirm(EXCLUDE_CONFIRM)) return;
-    onExclude(item.id);
+    onExclude?.(item.id);
   }
 
   return (
@@ -39,6 +40,7 @@ export function ItemActions({
           임시 버전 열기
         </Link>
       )}
+      {onExclude && (
       <Button
         type="button"
         size="sm"
@@ -48,6 +50,7 @@ export function ItemActions({
       >
         제외
       </Button>
+      )}
     </div>
   );
 }

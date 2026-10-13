@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RolesGuard, User } from '@app/authorization';
+import { RolesGuard, User, RequirePermission } from '@app/authorization';
 import { UnauthorizedError } from '@app/shared';
 import { ArchiveService } from './archive.service';
 import type { ArchiveSpace } from './schema/archive.schema';
@@ -26,6 +26,7 @@ type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefi
 export class ArchiveController {
   constructor(private readonly service: ArchiveService) {}
 
+  @RequirePermission('archive.page.read')
   @Get('pages')
   @ApiOperation({ summary: '스페이스의 페이지 트리(평면 목록)' })
   @ApiQuery({ name: 'space', required: false, enum: ['team', 'private'] })
@@ -34,6 +35,7 @@ export class ArchiveController {
     return this.service.listTree(toSpace(space), this.actorId(user));
   }
 
+  @RequirePermission('archive.page.read')
   @Get('search')
   @ApiOperation({ summary: '제목·본문 검색' })
   @ApiQuery({ name: 'q', required: true })
@@ -42,6 +44,7 @@ export class ArchiveController {
     return this.service.search(query ?? '', this.actorId(user));
   }
 
+  @RequirePermission('archive.page.read')
   @Get('favorites')
   @ApiOperation({ summary: '즐겨찾기한 페이지' })
   @ApiResponse({ status: 200, type: [ArchivePageNodeDto] })
@@ -49,6 +52,7 @@ export class ArchiveController {
     return this.service.listFavorites(this.actorId(user));
   }
 
+  @RequirePermission('archive.page.read')
   @Get('recent')
   @ApiOperation({ summary: '최근 수정된 페이지' })
   @ApiResponse({ status: 200, type: [ArchivePageNodeDto] })
@@ -56,6 +60,7 @@ export class ArchiveController {
     return this.service.listRecent(this.actorId(user));
   }
 
+  @RequirePermission('archive.page.read')
   @Get('trash')
   @ApiOperation({ summary: '휴지통(삭제의 뿌리만)' })
   @ApiResponse({ status: 200, type: [ArchiveTrashItemDto] })
@@ -63,6 +68,7 @@ export class ArchiveController {
     return this.service.listTrash(this.actorId(user));
   }
 
+  @RequirePermission('archive.page.write')
   @Post('pages')
   @ApiOperation({ summary: '페이지 생성' })
   @ApiResponse({ status: 201, type: ArchivePageDetailDto })
@@ -70,6 +76,7 @@ export class ArchiveController {
     return this.service.create(dto, this.actorId(user));
   }
 
+  @RequirePermission('archive.page.read')
   @Get('pages/:id')
   @ApiOperation({ summary: '페이지 단건 조회(본문 포함)' })
   @ApiParam({ name: 'id' })
@@ -78,6 +85,7 @@ export class ArchiveController {
     return this.service.getPage(id, this.actorId(user));
   }
 
+  @RequirePermission('archive.page.write')
   @Patch('pages/:id')
   @ApiOperation({ summary: '페이지 저장(자동 저장)' })
   @ApiParam({ name: 'id' })
@@ -86,6 +94,7 @@ export class ArchiveController {
     return this.service.update(id, dto, this.actorId(user));
   }
 
+  @RequirePermission('archive.page.write')
   @Post('pages/:id/move')
   @ApiOperation({ summary: '페이지 이동·정렬. 변경 후 트리를 돌려준다' })
   @ApiParam({ name: 'id' })
@@ -94,6 +103,7 @@ export class ArchiveController {
     return this.service.move(id, dto, this.actorId(user));
   }
 
+  @RequirePermission('archive.page.write')
   @Delete('pages/:id')
   @ApiOperation({ summary: '페이지를 휴지통으로(하위 포함)' })
   @ApiParam({ name: 'id' })
@@ -101,6 +111,7 @@ export class ArchiveController {
     return this.service.remove(id, this.actorId(user));
   }
 
+  @RequirePermission('archive.page.write')
   @Post('pages/:id/restore')
   @ApiOperation({ summary: '휴지통에서 복원' })
   @ApiParam({ name: 'id' })
@@ -109,6 +120,7 @@ export class ArchiveController {
     return this.service.restore(id, this.actorId(user));
   }
 
+  @RequirePermission('archive.page.write')
   @Delete('pages/:id/purge')
   @ApiOperation({ summary: '영구 삭제(하위·스냅샷 포함)' })
   @ApiParam({ name: 'id' })
@@ -116,6 +128,7 @@ export class ArchiveController {
     return this.service.purge(id, this.actorId(user));
   }
 
+  @RequirePermission('archive.page.read')
   @Post('pages/:id/favorite')
   @ApiOperation({ summary: '즐겨찾기 추가' })
   @ApiParam({ name: 'id' })
@@ -123,6 +136,7 @@ export class ArchiveController {
     return this.service.setFavorite(id, this.actorId(user), true);
   }
 
+  @RequirePermission('archive.page.read')
   @Delete('pages/:id/favorite')
   @ApiOperation({ summary: '즐겨찾기 해제' })
   @ApiParam({ name: 'id' })
@@ -130,6 +144,7 @@ export class ArchiveController {
     return this.service.setFavorite(id, this.actorId(user), false);
   }
 
+  @RequirePermission('archive.page.read')
   @Get('pages/:id/versions')
   @ApiOperation({ summary: '저장 이력' })
   @ApiParam({ name: 'id' })
@@ -138,6 +153,7 @@ export class ArchiveController {
     return this.service.listVersions(id, this.actorId(user));
   }
 
+  @RequirePermission('archive.page.read')
   @Get('pages/:id/versions/:versionId')
   @ApiOperation({ summary: '저장 이력 단건(본문 포함)' })
   @ApiParam({ name: 'id' })
@@ -147,6 +163,7 @@ export class ArchiveController {
     return this.service.getVersion(id, versionId, this.actorId(user));
   }
 
+  @RequirePermission('archive.page.write')
   @Post('pages/:id/versions/:versionId/restore')
   @ApiOperation({ summary: '해당 시점으로 되돌리기' })
   @ApiParam({ name: 'id' })

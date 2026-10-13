@@ -3,7 +3,7 @@ import InventoryStatisticsTemplate from '@/features/statistics/template/inventor
 
 export default function StatisticsInventoryPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/statistics/inventory">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <InventoryStatisticsTemplate />
       </div>

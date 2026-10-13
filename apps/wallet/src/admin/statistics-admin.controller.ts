@@ -5,6 +5,7 @@ import { IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 
 import { paymentMethodTypeEnum, PaymentMethodType } from '../schema';
 import { StatisticsAdminService } from './statistics-admin.service';
 import { WalletAdminAuth } from '../wallet-admin-auth.decorator';
+import { RequirePermission } from '@app/authorization';
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -47,12 +48,14 @@ class StatisticsRangeQueryDto {
 export class StatisticsAdminController {
   constructor(private readonly service: StatisticsAdminService) {}
 
+  @RequirePermission('analytics.finance.read')
   @Get('fee-rates')
   @ApiOperation({ summary: '결제수단별 수수료율 목록 (이력 포함)' })
   async listFeeRates() {
     return this.service.listFeeRates();
   }
 
+  @RequirePermission('analytics.setting.write')
   @Post('fee-rates')
   @HttpCode(201)
   @ApiOperation({ summary: '수수료율 등록 — 변경은 새 적용일 행 추가로(이력 보존)' })
@@ -65,36 +68,42 @@ export class StatisticsAdminController {
     });
   }
 
+  @RequirePermission('analytics.setting.write')
   @Delete('fee-rates/:id')
   @ApiOperation({ summary: '수수료율 삭제' })
   async deleteFeeRate(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.deleteFeeRate(id);
   }
 
+  @RequirePermission('analytics.finance.read')
   @Get('fees')
   @ApiOperation({ summary: '기간 결제수단별 추정 수수료 요약 (캡처 금액 × 시점 요율)' })
   async getFeeSummary(@Query() query: StatisticsRangeQueryDto) {
     return this.service.getFeeSummary(query.from, query.to);
   }
 
+  @RequirePermission('analytics.report.read')
   @Get('payments/daily')
   @ApiOperation({ summary: '일별 결제(캡처)·환불 시계열 — KST 달력일 귀속' })
   async getDailyPayments(@Query() query: StatisticsRangeQueryDto) {
     return this.service.getDailyPayments(query.from, query.to);
   }
 
+  @RequirePermission('analytics.report.read')
   @Get('order-refunds')
   @ApiOperation({ summary: '일별 상품 주문 환불 (Medusa 결제만, SUCCEEDED, KST 달력일 귀속) — 멤버십·정기결제 환불 제외' })
   async getOrderRefunds(@Query() query: StatisticsRangeQueryDto) {
     return this.service.getOrderRefunds(query.from, query.to);
   }
 
+  @RequirePermission('analytics.report.read')
   @Get('points/daily')
   @ApiOperation({ summary: '일별 적립금 지급(EARN) 시계열 — KST 달력일 귀속' })
   async getDailyPoints(@Query() query: StatisticsRangeQueryDto) {
     return this.service.getDailyPoints(query.from, query.to);
   }
 
+  @RequirePermission('analytics.report.read')
   @Get('membership-revenue')
   @ApiOperation({ summary: '멤버십 구독료 수입 (PAID 인보이스, finalized_at KST 기준)' })
   async getMembershipRevenue(@Query() query: StatisticsRangeQueryDto) {

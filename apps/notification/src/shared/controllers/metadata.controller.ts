@@ -1,6 +1,7 @@
 // apps/notification/src/shared/controllers/metadata.controller.ts
 import { Controller, Get } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { RequirePermission } from '@app/authorization';
 
 // 스키마에 정의된 알림 카테고리 목록 (notification-schema.ts의 notificationCategoryEnum과 동기화)
 const NOTIFICATION_CATEGORIES = [
@@ -16,6 +17,7 @@ const NOTIFICATION_CATEGORIES = [
 @ApiTags('metadata')
 @Controller('metadata')
 export class MetadataController {
+  @RequirePermission('messaging.message.read')
   @Get('notification-categories')
   @ApiOperation({
     summary: '알림 카테고리 목록 조회',

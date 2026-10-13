@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
+import { usePermissionCheck } from '@/hooks/use-permission';
 
 const TYPE_LABEL: Record<AdminCashReceiptType, string> = {
   소득공제: '소득공제 (개인)',
@@ -35,6 +36,7 @@ export function AdminCashReceiptSection({ intentId }: { intentId?: string }) {
   const queryClient = useQueryClient();
   const [type, setType] = useState<AdminCashReceiptType>('소득공제');
   const [identityNumber, setIdentityNumber] = useState('');
+  const { can } = usePermissionCheck();
 
   const queryKey = ['admin-cash-receipts', intentId];
   const { data: receipts, isLoading } = useQuery({
@@ -44,6 +46,7 @@ export function AdminCashReceiptSection({ intentId }: { intentId?: string }) {
   });
 
   const issueMutation = useMutation({
+    meta: { permission: ['payment.payment.write'] },
     mutationFn: () =>
       walletApi.issueCashReceipt({
         intentId: intentId!,
@@ -64,7 +67,8 @@ export function AdminCashReceiptSection({ intentId }: { intentId?: string }) {
   });
 
   const issued = (receipts ?? []).filter((r) => r.status === 'ISSUED');
-  const canIssue = !!intentId && issued.length === 0;
+  const canIssue =
+    !!intentId && issued.length === 0 && can(['payment.payment.write']);
 
   function handleIssue() {
     const digits = identityNumber.replace(/[^0-9]/g, '');

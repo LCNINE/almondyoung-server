@@ -7,8 +7,9 @@ import {
 } from '@tanstack/react-query';
 import { usersQueryKeys } from './query-keys';
 
-export const useAdminUserCount = () => {
+export const useAdminUserCount = (options: { enabled?: boolean } = {}) => {
   return useQuery({
+    enabled: options.enabled ?? true,
     queryKey: usersQueryKeys.count(),
     queryFn: async () => {
       const res = await userApi.getAdminUsers({ limit: 1, roleName: 'admin,master' });

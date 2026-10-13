@@ -11,7 +11,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { User } from '@app/authorization';
+import { User, RequirePermission } from '@app/authorization';
 import { z } from 'zod';
 import { DemoDispatchOutcomeReader } from './demo-dispatch-outcome.reader';
 import { DEMO_FIXTURE_VERSION } from './demo-order.provider';
@@ -29,6 +29,7 @@ export class DemoController {
     private readonly dispatchOutcomes: DemoDispatchOutcomeReader,
   ) {}
 
+  @RequirePermission('channel.account.read')
   @Get('capabilities')
   capabilities() {
     return {
@@ -45,6 +46,7 @@ export class DemoController {
     };
   }
 
+  @RequirePermission('channel.account.write')
   @Post('runs')
   @HttpCode(202)
   async createRun(
@@ -57,6 +59,7 @@ export class DemoController {
     return toDetail(await this.runs.create(request, actorId, authorizationForCore(authorization, cookie)));
   }
 
+  @RequirePermission('channel.account.read')
   @Get('runs')
   async listRuns(@Query('limit') rawLimit?: string) {
     const limit = parseOrBadRequest(limitSchema, rawLimit);
@@ -64,6 +67,7 @@ export class DemoController {
     return { items: result.items.map(toSummary), total: result.total };
   }
 
+  @RequirePermission('channel.account.read')
   @Get('runs/:id')
   async getRun(@Param('id') rawId: string) {
     const id = parseOrBadRequest(idSchema, rawId);
@@ -72,6 +76,7 @@ export class DemoController {
     return toDetail(run);
   }
 
+  @RequirePermission('channel.account.read')
   @Get('dispatch-outcomes')
   async listDispatchOutcomes(@Query('limit') rawLimit?: string) {
     const limit = parseOrBadRequest(limitSchema, rawLimit);

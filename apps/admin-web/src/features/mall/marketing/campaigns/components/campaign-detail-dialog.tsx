@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useGetCampaign, useUnlinkPromotion, useLinkPromotion } from '@/lib/services/campaigns';
 import { useCouponList } from '@/lib/services/coupons';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { type MedusaCampaign } from '@/lib/api/domains/medusa/campaigns';
 import { toast } from 'sonner';
 import { Link2, X } from 'lucide-react';
@@ -39,6 +40,7 @@ export function CampaignDetailDialog({
 
   const unlinkMutation = useUnlinkPromotion();
   const linkMutation = useLinkPromotion();
+  const { canRun } = usePermissionCheck();
 
   const { data: allCoupons } = useCouponList({ limit: 200 }, { enabled: !!campaign?.id });
   const linkedIds = new Set((c?.promotions ?? []).map((p) => p.id));
@@ -136,23 +138,25 @@ export function CampaignDetailDialog({
                       <span className="font-mono text-sm font-semibold">{p.code}</span>
                       <StatusBadge status={p.status} />
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => handleUnlink(p.id)}
-                      disabled={unlinkMutation.isPending}
-                      title="연결 해제"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
+                    {canRun(useUnlinkPromotion) && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => handleUnlink(p.id)}
+                        disabled={unlinkMutation.isPending}
+                        title="연결 해제"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          {unlinkedCoupons.length > 0 && (
+          {canRun(useLinkPromotion) && unlinkedCoupons.length > 0 && (
             <div className="space-y-2">
               <span className="text-sm font-medium flex items-center gap-1">
                 <Link2 className="h-3.5 w-3.5" />

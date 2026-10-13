@@ -11,7 +11,7 @@ import {
   HttpStatus,
   HttpCode,
 } from '@nestjs/common';
-import { Public, User } from '@app/authorization';
+import { Public, User, RequirePermission } from '@app/authorization';
 import { BadRequestError } from '@app/shared';
 import { DateMapper } from '../../../common/mappers';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
@@ -41,6 +41,7 @@ export class ProductMastersController {
     private readonly productVersionsService: ProductVersionsService,
   ) {}
 
+  @RequirePermission('catalog.product.write')
   @Post()
   @ApiOperation({
     summary: '제품 마스터 생성',
@@ -74,6 +75,7 @@ export class ProductMastersController {
     }
   }
 
+  @RequirePermission('catalog.product.read')
   @Get()
   @ApiOperation({
     summary: '상품 목록 조회',
@@ -226,6 +228,7 @@ export class ProductMastersController {
     };
   }
 
+  @RequirePermission('catalog.product.read')
   @Get('selection')
   @ApiOperation({
     summary: '필터 결과 전체 선택 목록',
@@ -267,6 +270,7 @@ export class ProductMastersController {
     return { items, total };
   }
 
+  @RequirePermission('catalog.product.read')
   @Get('deleted')
   @ApiOperation({
     summary: '삭제된 제품 마스터 목록 조회',
@@ -317,6 +321,7 @@ export class ProductMastersController {
     return masterDetail;
   }
 
+  @RequirePermission('catalog.product.delete')
   @Delete(':masterId')
   @ApiOperation({
     summary: '제품 마스터 소프트 삭제',
@@ -348,6 +353,7 @@ export class ProductMastersController {
     };
   }
 
+  @RequirePermission('catalog.product.delete')
   @Post(':masterId/restore')
   @HttpCode(200)
   @ApiOperation({
@@ -372,6 +378,7 @@ export class ProductMastersController {
     };
   }
 
+  @RequirePermission('catalog.product.write')
   @Patch(':masterId/membership-price-visibility')
   @ApiOperation({
     summary: '멤버십가 공개 제한 변경',
@@ -406,6 +413,7 @@ export class ProductMastersController {
     };
   }
 
+  @RequirePermission('catalog.product.write')
   @Patch(':masterId/membership-visibility')
   @ApiOperation({
     summary: 'Deprecated: 멤버십가 공개 제한 변경',
@@ -433,6 +441,7 @@ export class ProductMastersController {
     };
   }
 
+  @RequirePermission('catalog.product.write')
   @Patch(':masterId/members-only-visibility')
   @ApiOperation({
     summary: '멤버십 회원 전용 노출 변경',
@@ -458,6 +467,7 @@ export class ProductMastersController {
     return { success: true, masterId, isVisibleToMembersOnly: body.isVisibleToMembersOnly };
   }
 
+  @RequirePermission('catalog.product.write')
   @Patch(':masterId/requires-membership')
   @ApiOperation({
     summary: '멤버십 전용 구매 변경',
@@ -483,6 +493,7 @@ export class ProductMastersController {
     return { success: true, masterId, requiresMembership: body.requiresMembership };
   }
 
+  @RequirePermission('catalog.product.write')
   @Patch(':masterId/overseas')
   @ApiOperation({
     summary: '해외직구 여부 변경',
@@ -508,6 +519,7 @@ export class ProductMastersController {
     return { success: true, masterId, isOverseas: body.isOverseas };
   }
 
+  @RequirePermission('catalog.product.write')
   @Patch(':masterId/shipping-group')
   @ApiOperation({
     summary: '배송비 그룹 변경',
@@ -538,6 +550,7 @@ export class ProductMastersController {
     return { success: true, masterId, shippingGroupCode: body.shippingGroupCode ?? null };
   }
 
+  @RequirePermission('catalog.product.write')
   @Patch(':masterId/unpublish')
   @ApiOperation({
     summary: '제품 마스터 비공개 처리',
@@ -564,6 +577,7 @@ export class ProductMastersController {
     };
   }
 
+  @RequirePermission('catalog.product.delete')
   @Delete(':id/permanent')
   @ApiOperation({
     summary: '제품 버전 영구 삭제',

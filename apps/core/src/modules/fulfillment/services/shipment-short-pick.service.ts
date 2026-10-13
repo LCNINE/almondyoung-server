@@ -6,9 +6,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AuthorizationService } from '@app/authorization';
+import { AuthorizationService, PermissionCheckpoints } from '@app/authorization';
 import { and, asc, eq, ne } from 'drizzle-orm';
+import { legacyHasShortPickScope } from '../../../platform/auth/fulfillment-authz';
 import { SHORT_PICK_REPORT_SCOPES } from '../../../platform/auth/fulfillment-scopes';
+import { authzSubjectOf } from '../../../platform/auth/system-actor';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { describeStartBlockers } from '../picking/allocation/allocation.locks';
@@ -40,6 +42,7 @@ export class ShipmentShortPickService {
     private readonly workflowGate: FulfillmentWorkflowGate,
     private readonly boxes: BoxAllocationManager,
     private readonly withdrawals: BoxWithdrawalService,
+    private readonly checkpoints: PermissionCheckpoints,
   ) {}
 
   /**
@@ -447,10 +450,13 @@ export class ShipmentShortPickService {
 
   /** 관리자(reopen) 또는 스테이션 작업자(short_pick) — 스펙 U7. ScopeGuard 를 거치지 않은 직접 호출도 같은 규칙. */
   private async requireScope(actor: ShipmentShortPickActor): Promise<void> {
-    if (actor.roles.includes('master')) return;
-    const scopes = await this.authorization.getScopesByRoles(actor.roles);
-    if (scopes.has('master')) return;
-    if (!SHORT_PICK_REPORT_SCOPES.some((scope) => scopes.has(scope))) {
+    const legacy = await legacyHasShortPickScope(this.authorization, actor.roles);
+    if (
+      !this.checkpoints.compare('fulfillment.short_pick_report', legacy, authzSubjectOf(actor), [
+        'fulfillment.shipment.reopen',
+        'fulfillment.shipment.short_pick',
+      ])
+    ) {
       throw new ForbiddenException(`Missing required scope: ${SHORT_PICK_REPORT_SCOPES.join(' or ')}`);
     }
   }

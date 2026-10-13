@@ -58,6 +58,8 @@ import {
   useVariantMatchingBatch,
 } from '@/lib/services/matching';
 import { useQueryClient } from '@tanstack/react-query';
+import { useAdjustStock } from '@/lib/services/inventory';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type {
   StockPolicyDto,
   VariantMatchingBatchItemDto,
@@ -341,6 +343,12 @@ function VariantsTable({
   showMatchingColumns: boolean;
   matchingBatchLoading: boolean;
 }) {
+  const { canRun, blockedReason } = usePermissionCheck();
+  // 편집 드로어와 선택 일괄 저장이 같은 선택 열·버튼을 공유한다.
+  const writable =
+    editable && canRun(useUpdateDraftVariant, useBulkUpdateDraftVariants);
+  const policyBlockedReason = blockedReason(useUpdateVariantStockPolicy);
+  const canAdjustStock = canRun(useAdjustStock);
   const [editingVariant, setEditingVariant] =
     useState<ProductVariantTableRow | null>(null);
   const [matchingEditingVariant, setMatchingEditingVariant] =
@@ -355,8 +363,8 @@ function VariantsTable({
   const updateStockPolicy = useUpdateVariantStockPolicy();
   const queryClient = useQueryClient();
   const actions = useMemo(
-    () => (editable ? { onEdit: setEditingVariant } : undefined),
-    [editable]
+    () => (writable ? { onEdit: setEditingVariant } : undefined),
+    [writable]
   );
 
   const handlePolicyChange = useCallback(
@@ -437,9 +445,12 @@ function VariantsTable({
             pendingVariantId: pendingPolicyVariantId,
             isBulkPending: bulkPolicyPending,
             onPolicyChange: handlePolicyChange,
-            onBulkPolicyChange: handleBulkPolicyChange,
+            onBulkPolicyChange: policyBlockedReason
+              ? undefined
+              : handleBulkPolicyChange,
+            policyBlockedReason,
             onEditMatching: setMatchingEditingVariant,
-            onAdjustStock: setAdjustingVariant,
+            onAdjustStock: canAdjustStock ? setAdjustingVariant : undefined,
           }
         : undefined,
     [
@@ -449,6 +460,8 @@ function VariantsTable({
       bulkPolicyPending,
       handlePolicyChange,
       handleBulkPolicyChange,
+      policyBlockedReason,
+      canAdjustStock,
     ]
   );
 
@@ -464,7 +477,7 @@ function VariantsTable({
     count: total,
     pageSize: PAGE_SIZE,
     getRowId: (row) => row.id,
-    enableRowSelection: editable,
+    enableRowSelection: writable,
     prefix: 'variants',
   });
 
@@ -472,7 +485,7 @@ function VariantsTable({
     .getSelectedRowModel()
     .rows.map((row) => row.original);
   const canBulkUpdate =
-    editable &&
+    writable &&
     Boolean(versionId) &&
     selectedRows.length > 0 &&
     !bulkUpdateVariants.isPending;
@@ -509,7 +522,7 @@ function VariantsTable({
 
   return (
     <>
-      {editable && selectedRows.length > 0 && (
+      {writable && selectedRows.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 p-3 border-b bg-muted/50">
           <span className="text-sm text-muted-foreground">
             {selectedRows.length}개 선택됨

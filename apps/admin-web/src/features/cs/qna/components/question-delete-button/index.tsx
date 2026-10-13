@@ -16,6 +16,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useDeleteQuestion } from '@/lib/services/qna';
+import { Can } from '@/components/auth/can';
 
 export function QuestionDeleteButton({ questionId }: { questionId: string }) {
   const router = useRouter();
@@ -35,7 +36,7 @@ export function QuestionDeleteButton({ questionId }: { questionId: string }) {
   };
 
   return (
-    <>
+    <Can run={useDeleteQuestion}>
       <Button
         variant="destructive"
         size="sm"
@@ -61,6 +62,6 @@ export function QuestionDeleteButton({ questionId }: { questionId: string }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </Can>
   );
 }

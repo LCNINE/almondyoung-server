@@ -10,7 +10,7 @@ import {
   Query,
   UnauthorizedException,
 } from '@nestjs/common';
-import { User } from '@app/authorization';
+import { User, RequirePermission } from '@app/authorization';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
 import { SalesOrdersService } from '../services/sales-orders.service';
@@ -34,6 +34,7 @@ export class SalesOrdersController {
     private readonly cancelRequests: ChannelCancelRequestService,
   ) {}
 
+  @RequirePermission('order.order.write')
   @Post()
   @ApiOperation({ summary: '판매 주문 생성' })
   @ApiResponse({ status: 201, description: '판매 주문 생성 성공' })
@@ -42,6 +43,7 @@ export class SalesOrdersController {
     return this.service.create(dto);
   }
 
+  @RequirePermission('order.order.write')
   @Patch(':id')
   @ApiOperation({ summary: '판매 주문 수정' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
@@ -50,6 +52,7 @@ export class SalesOrdersController {
     return this.service.update(id, dto);
   }
 
+  @RequirePermission('order.order.write')
   @Post(':id/confirm')
   @ApiOperation({ summary: '판매 주문 확정' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
@@ -57,6 +60,7 @@ export class SalesOrdersController {
     return this.service.confirm(id);
   }
 
+  @RequirePermission('order.order.cancel')
   @Post(':id/cancel')
   @ApiOperation({ summary: '판매 주문 취소 (관리자 경로 — 채널 주문은 취소 요청, core 주문은 Wallet 환불 포함)' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
@@ -87,6 +91,7 @@ export class SalesOrdersController {
     });
   }
 
+  @RequirePermission('order.order.cancel')
   @Post('cancel-by-intent')
   @ApiOperation({ summary: '환불 완료된 결제의 주문 취소 (재환불 없음) — Wallet 환불 승인 후 호출' })
   @ApiResponse({ status: 201, description: '{ status, skipped? } 반환' })
@@ -97,6 +102,7 @@ export class SalesOrdersController {
     });
   }
 
+  @RequirePermission('payment.refund.execute')
   @Post(':id/cancel-request/:requestId/retry')
   @ApiOperation({ summary: '채널 취소 정산 다시 시도 — 환불 지연·거절인 요청에 같은 requestId 로 명령을 다시 낸다(#1016 36번 재설계)' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
@@ -109,6 +115,7 @@ export class SalesOrdersController {
     return this.cancelRequests.retrySettlement(id, requestId, { alreadyRefundedAmount: dto.alreadyRefundedAmount });
   }
 
+  @RequirePermission('payment.refund.execute')
   @Post(':id/cancel-request/:requestId/manual-refund')
   @ApiOperation({ summary: '채널 취소를 계좌 송금으로 환불 — wallet 에 송금 대기 행을 만든다. 송금 뒤 결제 상세에서 완료 처리' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
@@ -117,6 +124,7 @@ export class SalesOrdersController {
     return this.cancelRequests.switchToManualRefund(id, requestId);
   }
 
+  @RequirePermission('order.order.write')
   @Post(':id/business-links')
   @ApiOperation({ summary: '판매 주문 업무 연결 생성' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
@@ -125,6 +133,7 @@ export class SalesOrdersController {
     return this.service.createBusinessLink(id, dto);
   }
 
+  @RequirePermission('order.order.read')
   @Get(':id/amendments')
   @ApiOperation({ summary: '판매 주문 정정 목록 조회' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
@@ -132,18 +141,21 @@ export class SalesOrdersController {
     return this.amendments.listForSalesOrder(id);
   }
 
+  @RequirePermission('order.order.read')
   @Get('stats/daily')
   @ApiOperation({ summary: '일별 주문처리 현황', description: '주문일(KST) 기준 일별 상태별 건수와 교환·반품 접수 건수' })
   getDailyStatusStats(@Query() query: DailyStatsQueryDto) {
     return this.service.getDailyStatusStats(query.from, query.to);
   }
 
+  @RequirePermission('order.order.read')
   @Get('stats')
   @ApiOperation({ summary: '주문 현황 통계', description: '최근 14일 주문 현황 통계를 조회합니다.' })
   getStats() {
     return this.service.getStats();
   }
 
+  @RequirePermission('order.order.read')
   @Get(':id')
   @ApiOperation({ summary: '판매 주문 단건 조회' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
@@ -152,6 +164,7 @@ export class SalesOrdersController {
     return this.service.getOne(id);
   }
 
+  @RequirePermission('order.order.read')
   @Get()
   @ApiOperation({ summary: '판매 주문 목록 조회' })
   @ApiResponse({ status: 200, description: '목록 조회 성공', type: [SalesOrderResponseDto] })

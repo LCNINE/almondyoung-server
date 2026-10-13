@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Header, HttpCode, Param, Post, Query, StreamableFile, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RolesGuard, User } from '@app/authorization';
+import { RolesGuard, User, RequirePermission } from '@app/authorization';
 import { FormExportService } from './services/form-export.service';
 import {
   CreateFormExportDto,
@@ -23,6 +23,7 @@ import { parsePage, parseLimit } from './pagination';
 export class FormExportController {
   constructor(private readonly service: FormExportService) {}
 
+  @RequirePermission('catalog.bulk.execute')
   @Post()
   @HttpCode(202)
   @ApiOperation({ summary: '양식 생성 접수. 조립은 워커가 이어받는다.' })
@@ -31,6 +32,7 @@ export class FormExportController {
     return this.service.request(dto.masterIds, user.userId);
   }
 
+  @RequirePermission('catalog.product.read')
   @Get()
   @ApiOperation({ summary: '내 양식 생성 목록(페이지)' })
   @ApiQuery({ name: 'page', required: false })
@@ -46,6 +48,7 @@ export class FormExportController {
 
   // ⚠️ 이 핸들러는 반드시 `@Get(':exportId')` 보다 **위**에 있어야 한다. Nest 는 선언
   // 순서로 매칭하므로 아래에 두면 'blank' 가 :exportId 로 잡혀 404 가 난다.
+  @RequirePermission('catalog.product.read')
   @Get('blank')
   @ApiOperation({ summary: '빈 양식 다운로드. 신규 전용 세션용 — 잡도 만료도 없다.' })
   @ApiResponse({ status: 200, description: 'xlsx 바이너리' })
@@ -55,6 +58,7 @@ export class FormExportController {
     return new StreamableFile(await this.service.buildBlankWorkbook());
   }
 
+  @RequirePermission('catalog.product.read')
   @Get(':exportId')
   @ApiOperation({ summary: '양식 생성 상태 조회(폴링 대상)' })
   @ApiResponse({ status: 200, type: FormExportStatusDto })
@@ -62,6 +66,7 @@ export class FormExportController {
     return this.service.getStatus(exportId, user.userId);
   }
 
+  @RequirePermission('catalog.product.read')
   @Get(':exportId/download-url')
   @ApiOperation({ summary: '완성된 양식의 다운로드 URL' })
   @ApiResponse({ status: 200, type: FormExportDownloadDto })
@@ -73,6 +78,7 @@ export class FormExportController {
     return { url: await this.service.getDownloadUrl(exportId, user.userId) };
   }
 
+  @RequirePermission('catalog.bulk.execute')
   @Post(':exportId/retry')
   @HttpCode(202)
   @ApiOperation({ summary: '같은 상품 집합으로 양식 생성을 다시 접수한다' })

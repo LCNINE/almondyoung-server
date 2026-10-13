@@ -7,7 +7,7 @@ import CustomerListTemplate from '@/features/customers/template';
  */
 export default function CustomerPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/account/customer">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <CustomerListTemplate />
       </div>

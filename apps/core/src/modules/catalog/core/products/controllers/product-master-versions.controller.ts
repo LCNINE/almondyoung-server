@@ -11,7 +11,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { User, RequirePermission } from '@app/authorization';
 import { ProductVersionsService } from '../services/product-versions.service';
 import { ProductMastersService } from '../services/product-masters.service';
 import { ProductVariantsService } from '../services/product-variants.service';
@@ -28,6 +28,7 @@ export class ProductMasterVersionsController {
     private readonly productVariantsService: ProductVariantsService,
   ) {}
 
+  @RequirePermission('catalog.product.read')
   @Get()
   @ApiOperation({
     summary: '버전 트리 조회',
@@ -45,6 +46,7 @@ export class ProductMasterVersionsController {
     return tree.map((node) => this._mapToResponseDto(node));
   }
 
+  @RequirePermission('catalog.product.read')
   @Get('active')
   @ApiOperation({
     summary: 'Active 버전 조회',
@@ -65,6 +67,7 @@ export class ProductMasterVersionsController {
     };
   }
 
+  @RequirePermission('catalog.product.read')
   @Get(':versionId')
   @ApiOperation({
     summary: '특정 버전 조회',
@@ -88,6 +91,7 @@ export class ProductMasterVersionsController {
     return ProductVersionMapper.toDetailResponseDto(versionDetail);
   }
 
+  @RequirePermission('catalog.product.write')
   @Post()
   @ApiOperation({
     summary: '새 Draft 버전 생성',
@@ -131,6 +135,7 @@ export class ProductMasterVersionsController {
     };
   }
 
+  @RequirePermission('catalog.product.write')
   @Post('empty')
   @ApiOperation({
     summary: '빈 Draft 버전 생성',
@@ -148,6 +153,7 @@ export class ProductMasterVersionsController {
     };
   }
 
+  @RequirePermission('catalog.product.write')
   @Put(':versionId')
   @ApiOperation({
     summary: 'Draft 버전 수정',
@@ -182,6 +188,7 @@ export class ProductMasterVersionsController {
     return ProductVersionMapper.toDetailResponseDto(versionDetail);
   }
 
+  @RequirePermission('catalog.product.write')
   @Patch(':versionId/publish')
   @ApiOperation({
     summary: '버전 Publish',
@@ -205,6 +212,7 @@ export class ProductMasterVersionsController {
     return { message: 'Version published successfully' };
   }
 
+  @RequirePermission('catalog.product.read')
   @Get(':versionId/compare/:compareVersionId')
   @ApiOperation({
     summary: '버전 비교',
@@ -228,6 +236,7 @@ export class ProductMasterVersionsController {
     return this.productVersionsService.compareVersions(versionId, compareVersionId);
   }
 
+  @RequirePermission('catalog.product.write')
   @Put(':versionId/variants/bulk')
   @ApiOperation({
     summary: 'Draft 버전의 variant 일괄 편집 (CoW)',
@@ -249,6 +258,7 @@ export class ProductMasterVersionsController {
     return { results };
   }
 
+  @RequirePermission('catalog.product.write')
   @Put(':versionId/variants/:variantId')
   @ApiOperation({
     summary: 'Draft 버전 컨텍스트에서 variant 편집 (CoW)',
@@ -274,6 +284,7 @@ export class ProductMasterVersionsController {
     return this.productVariantsService.updateVariantInDraft(masterId, versionId, variantId, body);
   }
 
+  @RequirePermission('catalog.product.write')
   @Delete(':versionId')
   @ApiOperation({
     summary: 'Draft 버전 삭제',

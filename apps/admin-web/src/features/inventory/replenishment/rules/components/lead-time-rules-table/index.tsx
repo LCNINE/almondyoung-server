@@ -64,8 +64,9 @@ type Props<TId> = {
   emptyMessage: string;
   isSaving: boolean;
   isDeleting: boolean;
-  onSave: (id: TId, payload: UpsertLeadTimeRuleDto) => Promise<unknown>;
-  onDelete: (id: TId) => Promise<unknown>;
+  /** 넘기지 않으면 저장·지우기 버튼을 그리지 않는다(권한 없음) */
+  onSave?: (id: TId, payload: UpsertLeadTimeRuleDto) => Promise<unknown>;
+  onDelete?: (id: TId) => Promise<unknown>;
   deleteSuccessSuffix: string;
   newRow?: NewLeadTimeRow;
 };
@@ -145,6 +146,7 @@ export function LeadTimeRulesTable<TId>({
     });
 
   const handleSave = async (row: LeadTimeRuleRow<TId>) => {
+    if (!onSave) return;
     const { payload, error } = leadTimeRulePayloadFrom(
       draftOf(row.key, row.rule)
     );
@@ -160,6 +162,7 @@ export function LeadTimeRulesTable<TId>({
   };
 
   const handleDelete = async (row: LeadTimeRuleRow<TId>) => {
+    if (!onDelete) return;
     await runWithToast({
       run: () => onDelete(row.id),
       success: `${row.name} 규칙을 지웠습니다. ${deleteSuccessSuffix}`,
@@ -227,14 +230,16 @@ export function LeadTimeRulesTable<TId>({
                   onChange={(patch) => patchDraft(row.key, draft, patch)}
                 />
                 <TableCell className="space-x-1 text-right">
-                  <Button
-                    size="sm"
-                    onClick={() => void handleSave(row)}
-                    disabled={isSaving}
-                  >
-                    저장
-                  </Button>
-                  {row.rule !== null && (
+                  {onSave && (
+                    <Button
+                      size="sm"
+                      onClick={() => void handleSave(row)}
+                      disabled={isSaving}
+                    >
+                      저장
+                    </Button>
+                  )}
+                  {row.rule !== null && onDelete && (
                     <Button
                       size="sm"
                       variant="outline"

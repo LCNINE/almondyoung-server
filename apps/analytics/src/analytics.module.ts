@@ -4,7 +4,8 @@ import { loggerConfig } from '@app/shared/observability/logger.config';
 import { ConfigModule } from '@nestjs/config';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
-import { AuthorizationModule } from '@app/authorization';
+import { AuthorizationModule, AuthzObserverGuard, AuthzShadowInterceptor, PermissionModule } from '@app/authorization';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { AnalyticsController } from './features/analytics-api/analytics.controller';
 import { AnalyticsService } from './features/analytics-api/analytics.service';
 import { OrderEventsConsumer } from './datasets/orders/ingest/order-events.consumer';
@@ -85,6 +86,7 @@ import { CronOnceModule } from '@app/cron-once';
       microserviceName: 'analytics',
       scopes: [],
     }),
+    PermissionModule.forRoot({ service: 'analytics' }),
   ],
   controllers: [
     AnalyticsController,
@@ -101,6 +103,9 @@ import { CronOnceModule } from '@app/cron-once';
     MembershipEventsConsumer,
   ],
   providers: [
+    // 그림자 판정 관찰. 인증이 컨트롤러 단위라 강제 가드(PermissionGuard)는 컨트롤러의 JwtAuthGuard 바로 뒤에 건다.
+    { provide: APP_GUARD, useClass: AuthzObserverGuard },
+    { provide: APP_INTERCEPTOR, useClass: AuthzShadowInterceptor },
     AnalyticsService,
     OrderFactsService,
     OrderAggregatesService,

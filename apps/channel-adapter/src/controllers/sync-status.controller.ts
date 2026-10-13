@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { SyncStatusService } from '../services/sync-status.service';
 import { DataType } from '../types';
 import { ChannelType } from '../adapters/channel-adapter.factory';
+import { RequirePermission } from '@app/authorization';
 
 /**
  * 동기화 상태 및 통계 조회 컨트롤러
@@ -19,6 +20,7 @@ export class SyncStatusController {
 
   constructor(private readonly syncStatusService: SyncStatusService) {}
 
+  @RequirePermission('channel.account.read')
   @Get('overview')
   @ApiOperation({ summary: '전체 채널 동기화 통계 조회' })
   async getOverview() {
@@ -44,6 +46,7 @@ export class SyncStatusController {
     }
   }
 
+  @RequirePermission('channel.account.read')
   @Get('channel/:channel')
   @ApiOperation({ summary: '특정 채널의 상세 통계 조회' })
   async getChannelStats(@Param('channel') channel: ChannelType) {
@@ -71,6 +74,7 @@ export class SyncStatusController {
     }
   }
 
+  @RequirePermission('channel.account.read')
   @Get('history/:channel/:dataType')
   @ApiOperation({ summary: '특정 채널의 동기화 히스토리 조회' })
   async getSyncHistory(

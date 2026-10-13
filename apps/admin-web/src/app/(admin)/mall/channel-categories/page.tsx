@@ -3,7 +3,7 @@ import ChannelCategoriesTemplate from '@/features/mall/channel-categories/templa
 
 export default function ChannelCategoriesPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/mall/channel-categories">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <ChannelCategoriesTemplate />
       </div>

@@ -34,6 +34,7 @@ import {
   useAlimtalkCampaigns,
   useStopAlimtalkCampaign,
 } from '@/lib/services/alimtalk';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlimtalkAutoSendsTab } from './auto-sends-tab';
 import { CampaignResultsDialog } from './campaign-results-dialog';
@@ -51,6 +52,7 @@ const isStoppable = (state: AlimtalkCampaignState) =>
 export default function AlimtalkCampaignsTemplate() {
   const { data, isLoading, isError } = useAlimtalkCampaigns();
   const stopCampaign = useStopAlimtalkCampaign();
+  const { canRun } = usePermissionCheck();
   const [stopping, setStopping] = useState<AlimtalkCampaign | null>(null);
   const [viewing, setViewing] = useState<AlimtalkCampaign | null>(null);
 
@@ -166,7 +168,7 @@ export default function AlimtalkCampaignsTemplate() {
                           >
                             결과 보기
                           </Button>
-                          {isStoppable(campaign.state) && (
+                          {canRun(useStopAlimtalkCampaign) && isStoppable(campaign.state) && (
                             <Button
                               variant="outline"
                               size="sm"

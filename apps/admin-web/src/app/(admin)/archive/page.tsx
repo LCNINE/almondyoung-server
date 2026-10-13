@@ -3,7 +3,7 @@ import { ArchiveTemplate } from '@/features/archive/template';
 
 export default function ArchiveHomePage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/archive">
       <ArchiveTemplate />
     </RouteGuard>
   );
