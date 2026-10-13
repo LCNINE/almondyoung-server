@@ -49,8 +49,44 @@ export function matchingFailureReason(matching: MatchingForFulfillment): Matchin
 }
 
 // 지문·비교가 순서에 흔들리지 않게 SKU 순으로 둔다
-function sortItems(items: readonly CompositionItem[]): CompositionItem[] {
+export function sortComposition(items: readonly CompositionItem[]): CompositionItem[] {
   return [...items].sort((a, b) => a.skuId.localeCompare(b.skuId));
+}
+
+export type MatchingComposition =
+  | { kind: 'follow'; items: CompositionItem[] }
+  | { kind: 'void' }
+  | { kind: 'missing'; reason: MatchingFailureReason };
+
+/** 상품매칭 하나가 정하는 구성. 라인 판정과 «기존 출고에도 적용» 미리보기가 같은 규칙을 쓴다. */
+export function compositionFromMatching(matching: MatchingForFulfillment): MatchingComposition {
+  if (isVoidMatching(matching)) return { kind: 'void' };
+  const links = physicalSkuLinks(matching);
+  if (links.length > 0) {
+    // 링크 수량 0·누락을 1 로 읽는 것은 옛 FO 생성(`Math.max(1, link.quantity || 1)`)과 같은 규칙이다
+    return {
+      kind: 'follow',
+      items: sortComposition(links.map((l) => ({ skuId: l.skuId, qtyPerUnit: Math.max(1, l.quantity || 1) }))),
+    };
+  }
+  return { kind: 'missing', reason: matchingFailureReason(matching) };
+}
+
+export function sameComposition(a: readonly CompositionItem[], b: readonly CompositionItem[]): boolean {
+  if (a.length !== b.length) return false;
+  const left = sortComposition(a);
+  const right = sortComposition(b);
+  return left.every((item, i) => item.skuId === right[i].skuId && item.qtyPerUnit === right[i].qtyPerUnit);
+}
+
+/** 운영자가 보낸 구성의 형식 문제. 없으면 null. DTO 검증이 못 잡는 «SKU 중복»까지 본다. */
+export function compositionItemsProblem(items: readonly CompositionItem[]): string | null {
+  if (items.length === 0) return 'composition is empty';
+  if (new Set(items.map((item) => item.skuId)).size !== items.length) return 'composition has duplicate SKUs';
+  if (items.some((item) => !Number.isSafeInteger(item.qtyPerUnit) || item.qtyPerUnit <= 0)) {
+    return 'qtyPerUnit must be a positive integer';
+  }
+  return null;
 }
 
 export function resolveLineComposition(
@@ -66,18 +102,9 @@ export function resolveLineComposition(
         `Line composition invariant violated: line ${line.id} has source ${line.compositionSource} but no rows`,
       );
     }
-    return { kind: 'frozen', source: line.compositionSource, items: sortItems(frozen) };
+    return { kind: 'frozen', source: line.compositionSource, items: sortComposition(frozen) };
   }
-  if (isVoidMatching(matching)) return { kind: 'void' };
-  const links = physicalSkuLinks(matching);
-  if (links.length > 0) {
-    // 링크 수량 0·누락을 1 로 읽는 것은 옛 FO 생성(`Math.max(1, link.quantity || 1)`)과 같은 규칙이다
-    return {
-      kind: 'follow',
-      items: sortItems(links.map((l) => ({ skuId: l.skuId, qtyPerUnit: Math.max(1, l.quantity || 1) }))),
-    };
-  }
-  return { kind: 'missing', reason: matchingFailureReason(matching) };
+  return compositionFromMatching(matching);
 }
 
 /** FO 생성을 막는 라인인가. 전량 취소된 라인은 미매칭이어도 막지 않는다 — FO 생성과 리컨실러가 이 함수 하나로 판정한다. */
