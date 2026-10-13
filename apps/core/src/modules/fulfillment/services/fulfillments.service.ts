@@ -33,6 +33,7 @@ import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 import { FulfillmentProgressService } from './fulfillment-progress.service';
 import { selectEntrancePassword } from './entrance-password.selection';
+import { compatibleShippingProfileId } from './shipping-profile';
 
 type FulfillmentStatus = (typeof wmsTables.fulfillmentOrders.status.enumValues)[number];
 
@@ -278,12 +279,7 @@ export class FulfillmentsService {
         .values(itemsToInsert.map((item) => ({ ...item, fulfillmentOrderId: fo.id })))
         .returning();
 
-      const profileIds = skuRows.map((row) => row.deliveryProfileId);
-      const profiles = new Set(profileIds);
-      const compatibleProfileId =
-        profileIds.every((profileId): profileId is string => profileId !== null) && profiles.size === 1
-          ? profileIds[0]
-          : null;
+      const compatibleProfileId = compatibleShippingProfileId(skuRows.map((row) => row.deliveryProfileId));
       const [shipment] = await trx
         .insert(wmsTables.shipments)
         .values({
