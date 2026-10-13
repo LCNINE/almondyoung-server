@@ -196,7 +196,7 @@ export function useCanvasInteraction({
     if (!dragRef.current) return
     const p = point(event)
     const { layer, x, y, handle, rotationStart } = dragRef.current
-    if (p.x === x && p.y === y) return
+    if (!dragRef.current.moved && p.x === x && p.y === y) return
     dragRef.current.moved = true
     const rad = ((layer.rotation ?? 0) * Math.PI) / 180
     const dx = p.x - x,

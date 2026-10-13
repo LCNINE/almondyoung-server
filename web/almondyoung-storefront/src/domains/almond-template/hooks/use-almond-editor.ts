@@ -95,11 +95,19 @@ export function useAlmondEditor({
   const [moveMode, setMoveMode] = useState(false)
   const [previewSide, setPreviewSide] = useState<Side>("front")
   const [preview, setPreview] = useState(false)
-  const hasBack =
-    PRINT_SPECS[design.kind].duplex || printsBack(design) || !!removedBack
+  const backPrinted = printsBack(design)
+  const hasBack = PRINT_SPECS[design.kind].duplex || backPrinted || !!removedBack
   useEffect(() => {
-    if (design.back.length) setRemovedBack(null)
-  }, [design.back.length])
+    if (backPrinted) setRemovedBack(null)
+  }, [backPrinted])
+  useEffect(() => {
+    setRemovedBack(null)
+  }, [design.productId, design.kind])
+  useEffect(() => {
+    if (hasBack) return
+    setSide("front")
+    setPreviewSide("front")
+  }, [hasBack])
   const removeBack = () => {
     setRemovedBack({ back: design.back, backBackground: design.backBackground })
     change({ ...design, back: [], backBackground: { background: "#ffffff" } })
@@ -156,7 +164,10 @@ export function useAlmondEditor({
     runAuthed: auth.runAuthed,
     design,
     setDesign,
-    change,
+    change: (loaded) => {
+      setRemovedBack(null)
+      change(loaded)
+    },
     setSelectedId,
     setMessage,
   })
@@ -237,9 +248,11 @@ export function useAlmondEditor({
     nudgeSelected: (dx, dy) => {
       if (!selected) return
       const px = 1 / (canvas.canvasFit * canvas.zoom)
+      const clamp = (value: number, size: number) =>
+        mm(Math.max(-size, Math.min(size * 2, value)))
       actions.patch(selected.id, {
-        x: mm(selected.x + dx * px),
-        y: mm(selected.y + dy * px),
+        x: clamp(selected.x + dx * px, design.widthMm),
+        y: clamp(selected.y + dy * px, design.heightMm),
       })
     },
     canSave: true,

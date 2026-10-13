@@ -1,4 +1,4 @@
-import { useState, type InputHTMLAttributes } from "react"
+import { useRef, useState, type InputHTMLAttributes } from "react"
 import { useLeaveWarning } from "../../hooks/use-leave-warning"
 
 type Props = Omit<
@@ -17,15 +17,16 @@ export function NumberInput({
   ...rest
 }: Props) {
   const [draft, setDraft] = useState<string | null>(null)
+  const draftTarget = useRef(onValue)
   useLeaveWarning(draft !== null && Number(draft) !== value)
-  const commit = (raw: string) => {
+  const commit = (raw: string, apply = onValue) => {
     setDraft(null)
     const next = Math.min(
       Number(rest.max ?? Infinity),
       Math.max(Number(rest.min ?? -Infinity), Number(raw))
     )
     if (raw.trim() !== "" && Number.isFinite(next) && next !== value)
-      onValue(next)
+      apply(next)
   }
   return (
     <input
@@ -34,11 +35,12 @@ export function NumberInput({
       value={draft ?? value}
       onChange={(event) => {
         const typed = (event.nativeEvent as InputEvent).inputType
-        if (typed) setDraft(event.target.value)
-        else commit(event.target.value)
+        if (!typed) return commit(event.target.value)
+        if (draft === null) draftTarget.current = onValue
+        setDraft(event.target.value)
       }}
       onBlur={(event) => {
-        if (draft !== null) commit(draft)
+        if (draft !== null) commit(draft, draftTarget.current)
         onBlur?.(event)
       }}
       onKeyDown={(event) => {

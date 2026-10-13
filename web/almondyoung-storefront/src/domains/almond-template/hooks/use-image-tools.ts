@@ -60,7 +60,7 @@ export function useImageTools({
       !file.type.match(/^image\/(png|jpeg|webp)$/) ||
       file.size > MAX_IMAGE_FILE_BYTES
     ) {
-      setMessage("PNG/JPG/WebP 10MB 이하 이미지만 사용할 수 있습니다.")
+      setMessage("PNG/JPG/WebP 4MB 이하 이미지만 사용할 수 있습니다.")
       return
     }
     try {

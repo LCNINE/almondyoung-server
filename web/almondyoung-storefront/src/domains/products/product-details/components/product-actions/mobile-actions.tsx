@@ -34,6 +34,7 @@ type MobileActionsProps = {
   show: boolean
   templateHref?: string
   designAttached?: boolean
+  blockedLabel?: string
 }
 
 const MobileActions: React.FC<MobileActionsProps> = ({
@@ -56,6 +57,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   show,
   templateHref,
   designAttached,
+  blockedLabel,
 }) => {
   const t = useTranslations("productDetail.options")
   const [open, setOpen] = useState(false)
@@ -65,7 +67,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
       ? t("selectPlaceholder")
       : !inStock
         ? t("soldOut")
-        : null
+        : (blockedLabel ?? null)
 
   return (
     <>

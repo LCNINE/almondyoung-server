@@ -11,7 +11,7 @@ export function bleedExtended(
   bleedMm: number
 ): Layer {
   const fillsBox =
-    layer.type === "rect" ||
+    (layer.type === "rect" && !layer.shapeVariant) ||
     layer.type === "image" ||
     (layer.type === "frame" && (layer.frameShape ?? "rect") === "rect")
   if (!bleedMm || !fillsBox || layer.rotation || layer.strokeWidth)

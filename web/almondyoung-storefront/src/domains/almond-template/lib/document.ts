@@ -1,6 +1,7 @@
 import { PRINT_SPECS, type PrintKind } from "./catalog"
 import { CLIPART_IDS, FRAME_IDS, SHAPE_VARIANTS } from "./art-library"
 import { FILE_IMAGE_REF } from "./image-ref"
+import { fittedFontSize } from "../components/graphic"
 
 export type Layer = {
   id: string
@@ -134,7 +135,8 @@ export function newDesign(kind: PrintKind, productId = ""): Design {
   }
 }
 
-export const MAX_IMAGE_FILE_BYTES = 10 * 1024 * 1024
+// 원본이 uploadFile 서버액션으로 Lambda 를 지나는데, 이진 본문은 base64 로 실려 6MB 이벤트 상한에 걸린다
+export const MAX_IMAGE_FILE_BYTES = 4 * 1024 * 1024
 const MAX_IMAGE_DATA_LENGTH = Math.ceil((MAX_IMAGE_FILE_BYTES * 4) / 3) + 100
 
 const kinds = new Set(Object.keys(PRINT_SPECS))
@@ -470,7 +472,7 @@ export function printIssues(design: Design): string[] {
       if (
         layer.type === "text" &&
         (layer.text ?? "").trim() &&
-        (layer.fontSize ?? 10) * PRINT_SPECS[design.kind].fileScale <
+        fittedFontSize(layer) * PRINT_SPECS[design.kind].fileScale <
           MIN_PRINT_TEXT_MM
       )
         issues.push(

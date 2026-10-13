@@ -27,6 +27,15 @@ describe("bleedExtended", () => {
     })
   })
 
+  it("다각형 도형은 늘리지 않는다", () => {
+    const diamond = {
+      ...image(0, 20),
+      type: "rect" as const,
+      shapeVariant: "diamond",
+    }
+    expect(bleedExtended(diamond, 90, 50, 1)).toMatchObject({ x: 0, width: 20 })
+  })
+
   it("이미 재단 여백 밖까지 나간 상자는 줄이지 않는다", () => {
     expect(bleedExtended(image(-20, 80), 90, 50, 1)).toMatchObject({
       x: -20,

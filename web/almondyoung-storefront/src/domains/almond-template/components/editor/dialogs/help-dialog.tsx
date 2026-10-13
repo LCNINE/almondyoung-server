@@ -47,7 +47,7 @@ const MENU: Item[] = [
   [
     ImageIcon,
     "이미지",
-    "내 PC 이미지를 불러옵니다. PNG·JPG·WebP 파일당 10MB까지 올릴 수 있습니다.",
+    "내 PC 이미지를 불러옵니다. PNG·JPG·WebP 파일당 4MB까지 올릴 수 있습니다.",
   ],
   [
     PaintBucket,

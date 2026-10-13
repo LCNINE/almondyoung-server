@@ -43,7 +43,7 @@ export function useDesignOrder({
           templateId: templateId || undefined,
         })
         router.push(
-          `/${countryCode}/products/${productId}?${variantId ? `v_id=${variantId}&` : ""}almond_design=${id}`
+          `/${countryCode}/products/${productId}?${variantId ? `v_id=${variantId}&` : ""}almond_design=${id}&almond_size=${stored.widthMm}x${stored.heightMm}`
         )
       }, "주문용 시안을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.")
     )
