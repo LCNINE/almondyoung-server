@@ -16,7 +16,14 @@ import { BackfillLine, deriveComposition } from './1016-14-line-composition-back
 
 const APPLY = process.argv.includes('--apply');
 
-type FoItemRow = { lineId: string; salesOrderId: string; quantity: number; skuId: string; qty: number };
+type FoItemRow = {
+  lineId: string;
+  salesOrderId: string;
+  quantity: number;
+  skuId: string;
+  qty: number;
+  canceledQty: number;
+};
 type CancellationRow = { salesOrderId: string; metadata: unknown };
 
 async function main() {
@@ -38,7 +45,7 @@ async function main() {
     // fulfillment_order_items.sales_order_line_id 는 varchar 라 uuid 를 text 로 맞춘다
     const rows = await sql<FoItemRow[]>`
       SELECT l.id AS "lineId", l.sales_order_id AS "salesOrderId", l.quantity,
-             foi.sku_id AS "skuId", SUM(foi.qty)::int AS qty
+             foi.sku_id AS "skuId", SUM(foi.qty)::int AS qty, SUM(foi.canceled_qty)::int AS "canceledQty"
       FROM sales_order_lines l
       JOIN fulfillment_order_items foi ON foi.sales_order_line_id = l.id::text
       WHERE l.composition_source IS NULL
@@ -57,20 +64,28 @@ async function main() {
     for (const row of rows) {
       const line = lines.get(row.lineId) ?? {
         lineId: row.lineId,
+        salesOrderId: row.salesOrderId,
         quantity: row.quantity,
         cancelledQty: cancelledByLine.get(row.lineId) ?? 0,
         foItems: [],
       };
-      line.foItems.push({ skuId: row.skuId, qty: row.qty });
+      line.foItems.push({ skuId: row.skuId, qty: row.qty, canceledQty: row.canceledQty });
       lines.set(row.lineId, line);
     }
 
     const decisions = [...lines.values()].map(deriveComposition);
     const ok = decisions.filter((d) => d.kind === 'ok');
-    const rest = decisions.filter((d) => d.kind !== 'ok');
-    console.log(`대상 라인 ${decisions.length} · 역산 가능 ${ok.length} · 사람 판단 ${rest.length}`);
-    for (const d of rest)
-      console.log(`  ${d.kind}\t${d.lineId}${d.kind === 'ambiguous' ? `\t후보 ${d.candidates.join('/')}` : ''}`);
+    const count = (kind: string) => decisions.filter((d) => d.kind === kind).length;
+    console.log(
+      `대상 라인 ${decisions.length} · ok ${ok.length} · ambiguous ${count('ambiguous')} · indivisible ${count('indivisible')} · cancelled ${count('cancelled')} (cancelled 는 쓰지 않는다)`,
+    );
+    for (const d of decisions) {
+      if (d.kind !== 'ambiguous' && d.kind !== 'indivisible') continue;
+      const orderId = lines.get(d.lineId)?.salesOrderId ?? '';
+      console.log(
+        `  ${d.kind}\t주문 ${orderId}\t라인 ${d.lineId}${d.kind === 'ambiguous' ? `\t후보 ${d.candidates.join('/')}` : ''}`,
+      );
+    }
 
     if (!APPLY) return;
 
@@ -80,6 +95,8 @@ async function main() {
       await sql.begin(async (trx) => {
         // postgres.js 의 TransactionSql 은 Omit 으로 호출 시그니처를 잃는다(타입 결함) — 런타임은 Sql 과 같다
         const tx = trx as unknown as postgres.Sql;
+        // 이 raw SQL 쓰기는 «LineCompositionManager 가 유일한 writer»(스펙 §4.3)의 유일한 허용 예외다 — 일회성 ops 스크립트이고,
+        // 같은 «출처 NULL 일 때만 선점» 조건과 «구성 행은 같은 트랜잭션» 규칙을 그대로 지킨다.
         // 출처 NULL 조건 — 그새 FO 생성·운영자가 굳혔으면 건드리지 않는다
         const claimed = await tx`
           UPDATE sales_order_lines
