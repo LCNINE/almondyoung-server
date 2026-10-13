@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { AuthorizationService } from '@app/authorization';
+import { AuthorizationService, createCheckpointsForTesting, PermissionCheckpoints } from '@app/authorization';
 import { NotFoundError, ForbiddenError } from '@app/shared';
 import { FileAccess } from './file-access';
 import { FileRepository } from '../shared/repositories/file.repository';
@@ -50,6 +50,7 @@ describe('FileAccess', () => {
           provide: AuthorizationService,
           useValue: { hasScope: jest.fn() },
         },
+        { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting() },
       ],
     }).compile();
 

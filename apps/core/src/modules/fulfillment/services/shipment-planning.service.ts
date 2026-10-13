@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectTypedDb, DbService } from '@app/db';
-import { AuthorizationService } from '@app/authorization';
+import { AuthorizationService, PermissionCheckpoints } from '@app/authorization';
 import type { ShippingAddress } from '@packages/event-contracts/streams';
 import { and, asc, eq, gt, inArray, ne, notInArray, or, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -21,7 +21,9 @@ import {
   FulfillmentOperationResponseDto,
   SplitShipmentDto,
 } from '../dto/shipment-planning.dto';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { legacyHasFulfillmentScope } from '../../../platform/auth/fulfillment-authz';
+import { FULFILLMENT_SCOPE, FulfillmentScope } from '../../../platform/auth/fulfillment-scopes';
+import { authzSubjectOf } from '../../../platform/auth/system-actor';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import { BoxWithdrawalService, WorkItemRow } from './box-withdrawal.service';
 import { FulfillmentCommandService } from './fulfillment-command.service';
@@ -173,6 +175,7 @@ export class ShipmentPlanningService {
     private readonly authorization: AuthorizationService,
     private readonly workflowGate: FulfillmentWorkflowGate,
     private readonly withdrawals: BoxWithdrawalService,
+    private readonly checkpoints: PermissionCheckpoints,
   ) {}
 
   async split(
@@ -1772,10 +1775,11 @@ export class ShipmentPlanningService {
     }
   }
 
-  private async requireScope(actor: ShipmentPlanningActor, scope: string): Promise<void> {
-    if (actor.roles.includes('master')) return;
-    const scopes = await this.authorization.getScopesByRoles(actor.roles);
-    if (!scopes.has(scope)) throw new ForbiddenException(`Missing required scope: ${scope}`);
+  private async requireScope(actor: ShipmentPlanningActor, scope: FulfillmentScope): Promise<void> {
+    const legacy = await legacyHasFulfillmentScope(this.authorization, actor.roles, scope);
+    if (!this.checkpoints.compare('fulfillment.planning_scope', legacy, authzSubjectOf(actor), [scope])) {
+      throw new ForbiddenException(`Missing required scope: ${scope}`);
+    }
   }
 
   private conflict(code: string, message: string): ConflictException {

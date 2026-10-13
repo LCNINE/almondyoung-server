@@ -2,7 +2,12 @@ import { randomUUID } from 'crypto';
 import { Request } from 'express';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { AuthorizationService, ScopeGuard } from '@app/authorization';
+import {
+  AuthorizationService,
+  createCheckpointsForTesting,
+  PermissionCheckpoints,
+  ScopeGuard,
+} from '@app/authorization';
 import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter';
 import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -54,6 +59,7 @@ describeIfDb('inbound workflow capability → native runner → Core HTTP → Po
     const module = await Test.createTestingModule({
       controllers: [WarehouseWorkContextController, InboundController, MovementController],
       providers: [
+        { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting() },
         ScopeGuard,
         {
           provide: AuthorizationService,

@@ -1,3 +1,4 @@
+import { createCheckpointsForTesting } from '@app/authorization';
 import { ConfigService } from '@nestjs/config';
 import type { DbService } from '@app/db';
 import type { Wired } from '../../../apps/core/src/modules/fulfillment/services/__support__/logistics-wiring';
@@ -33,5 +34,6 @@ export function buildShipmentPlanning(dbService: DbService<typeof wmsSchema>, wi
     ),
     // 전체 취소 연결(E10)의 협력자 — plan() 경로는 부르지 않지만 생성자가 요구한다.
     assembleBoxWithdrawal(dbService),
+    createCheckpointsForTesting(),
   );
 }

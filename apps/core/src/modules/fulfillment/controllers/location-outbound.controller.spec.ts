@@ -2,7 +2,12 @@ import { Server } from 'http';
 import { Request } from 'express';
 import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { AuthorizationService, ScopeGuard } from '@app/authorization';
+import {
+  AuthorizationService,
+  ScopeGuard,
+  PermissionCheckpoints,
+  createCheckpointsForTesting,
+} from '@app/authorization';
 import * as request from 'supertest';
 import { randomUUID } from 'crypto';
 import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter';
@@ -21,6 +26,7 @@ describe('location outbound HTTP authorization and validation', () => {
       controllers: [LocationOutboundController],
       providers: [
         ScopeGuard,
+        { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting() },
         {
           provide: AuthorizationService,
           useValue: {

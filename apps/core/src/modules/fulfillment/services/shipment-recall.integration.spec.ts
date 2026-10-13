@@ -1,3 +1,4 @@
+import { createCheckpointsForTesting } from '@app/authorization';
 import { outbox_events } from '@app/events';
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
 import { FULFILLMENT_V2_STREAM, INVENTORY_STREAM, SHIPMENT_STREAM } from '@packages/event-contracts/streams';
@@ -115,6 +116,7 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
       outboxPublisherFor(FULFILLMENT_V2_STREAM, dbService),
       new AuditService(dbService),
       { assertV2MutationAllowed: jest.fn() } as never,
+      createCheckpointsForTesting(),
     );
   });
 

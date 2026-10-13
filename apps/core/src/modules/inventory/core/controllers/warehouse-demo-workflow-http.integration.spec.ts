@@ -2,7 +2,12 @@ import { randomUUID } from 'crypto';
 import { Request } from 'express';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { AuthorizationService, ScopeGuard } from '@app/authorization';
+import {
+  AuthorizationService,
+  createCheckpointsForTesting,
+  PermissionCheckpoints,
+  ScopeGuard,
+} from '@app/authorization';
 import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter';
 import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -78,6 +83,7 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
         PickingCommandV2Controller,
       ],
       providers: [
+        { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting() },
         ScopeGuard,
         { provide: LocationOutboundService, useValue: outbound.location },
         { provide: PickingProcessService, useValue: outbound.picking },

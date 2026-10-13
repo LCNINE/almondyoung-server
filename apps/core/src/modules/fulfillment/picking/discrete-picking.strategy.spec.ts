@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
+import { createCheckpointsForTesting } from '@app/authorization';
 import { DiscretePickingStrategy } from './discrete-picking.strategy';
 import { DiscreteScanPickingInput, PickingScanResult } from './picking-strategy.interface';
 
@@ -130,6 +131,7 @@ function makeService(selectRows: unknown[][] = []) {
     sessions,
     {},
     { assertCurrent: jest.fn(async () => undefined) },
+    createCheckpointsForTesting(),
   );
   return { service, commands, sessions, workflowGate, tx };
 }

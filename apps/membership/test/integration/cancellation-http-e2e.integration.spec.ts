@@ -18,7 +18,13 @@ import { sign } from 'jsonwebtoken';
 import { addDays, format, subDays } from 'date-fns';
 import { eq } from 'drizzle-orm';
 import { DbModule, DbService } from '@app/db';
-import { AuthorizationModule, JwtAuthGuard, ScopeGuard } from '@app/authorization';
+import {
+  AuthorizationModule,
+  createCheckpointsForTesting,
+  JwtAuthGuard,
+  PermissionCheckpoints,
+  ScopeGuard,
+} from '@app/authorization';
 import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter';
 import * as schema from '../../src/shared/schemas/entities/schema';
 import { membershipSchema } from '../../src/shared/schemas/entities/schema';
@@ -139,6 +145,7 @@ describeE2E('멤버십 해지·환불 HTTP E2E', () => {
         { provide: MembershipEventPublisher, useValue: events },
         { provide: InvoiceBillingManager, useValue: invoices },
         { provide: SubscriptionService, useValue: { getCurrentSubscriptionDetails: jest.fn() } },
+        { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting() },
       ],
     }).compile();
 

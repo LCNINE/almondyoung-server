@@ -29,6 +29,9 @@ import {
   lockAndAssertPickerClaim,
 } from './allocation/allocation.queries';
 import { ShipmentCustodyBalance } from './allocation/allocation.types';
+import { PermissionCheckpoints } from '@app/authorization';
+import { legacyFulfillmentSupervisor } from '../../../platform/auth/fulfillment-authz';
+import { authzSubjectOf } from '../../../platform/auth/system-actor';
 
 const PACKING_REF_PREFIX = 'work-item:';
 
@@ -48,7 +51,18 @@ export class DiscretePickingStrategy implements PickingStrategy {
     private readonly sessions: BatchInventorySessionService,
     private readonly batches: OutboundBatchOrchestrator,
     private readonly labels: LabelCurrencyGuard,
+    private readonly checkpoints: PermissionCheckpoints,
   ) {}
+
+  /** 남이 잡은 작업을 넘기거나 되돌릴 수 있는가 — 옛 판정이 결과를 정하고 권한 판정은 비교만 한다. */
+  private supervises(actor: { readonly id: string; readonly roles: readonly string[] }): boolean {
+    return this.checkpoints.compare(
+      'fulfillment.work_supervise',
+      legacyFulfillmentSupervisor(actor.roles),
+      authzSubjectOf(actor),
+      ['fulfillment.work.supervise'],
+    );
+  }
 
   async scan(input: ScanPickingInput, tx?: DbTx): Promise<PickingScanResult> {
     if (input.strategy === 'aggregate_then_sort' || input.strategy === 'pick_to_tote') {
@@ -426,7 +440,6 @@ export class DiscretePickingStrategy implements PickingStrategy {
           throw conflict('PICKING_STALE_CLAIM', `Work item ${item.id} lease version changed`);
         }
         const allocations = await loadWorkItemAllocations(trx, input.workItemId);
-        const privileged = input.actor.roles.some((role) => role === 'logistics_manager' || role === 'master');
         const now = await databaseNow(trx);
         if (item.status === 'picking') {
           if (
@@ -438,7 +451,7 @@ export class DiscretePickingStrategy implements PickingStrategy {
             throw conflict('PICKING_STALE_CLAIM', 'Only the active picker may unpick this work item');
           }
         } else if (item.status === 'ready_to_pack') {
-          if (item.pickerId !== input.actor.id && !privileged) {
+          if (item.pickerId !== input.actor.id && !this.supervises(input.actor)) {
             throw conflict('PICKING_UNPICK_FORBIDDEN', 'Only the previous picker or a manager may unpick');
           }
         } else {

@@ -1,3 +1,12 @@
+import {
+  AuthorizationService,
+  checkpointEvaluations,
+  createCheckpointsForTesting,
+  PermissionCheckpoints,
+} from '@app/authorization';
+import { register } from 'prom-client';
+import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { FULFILLMENT_SYSTEM_ACTOR_ID } from '../../../platform/auth/system-actor';
 import { createGlobalValidationPipe } from '../../../platform/http/validation-pipe';
 import { ReviseShipmentRecipientDto, SplitShipmentDto } from '../dto/shipment-planning.dto';
 import { ShipmentPlanningController } from '../controllers/shipment-planning.controller';
@@ -8,7 +17,10 @@ import {
   ShipmentPlanningService,
 } from './shipment-planning.service';
 
-function planningHarness() {
+function planningHarness(
+  authorization: Pick<AuthorizationService, 'getScopesByRoles'> | Record<string, never> = {},
+  checkpoints: PermissionCheckpoints = createCheckpointsForTesting(),
+) {
   const execute = jest.fn((input: { canonicalRequest: unknown }) => Promise.resolve(input.canonicalRequest));
   const service = new ShipmentPlanningService(
     {} as never,
@@ -16,12 +28,40 @@ function planningHarness() {
     {} as never,
     {} as never,
     {} as never,
-    {} as never,
+    authorization as never,
     { assertV2MutationAllowed: jest.fn() } as never,
     {} as never,
+    checkpoints,
   );
   return { service, execute };
 }
+
+describe('ShipmentPlanningService reopen check', () => {
+  const noScopes: Pick<AuthorizationService, 'getScopesByRoles'> = {
+    getScopesByRoles: jest.fn(async () => new Set<string>()),
+  };
+  beforeEach(() => register.resetMetrics());
+
+  it('treats the fulfillment system actor as a system principal even without a permission snapshot', async () => {
+    const { service } = planningHarness(noScopes);
+    await expect(
+      service['requireScope'](
+        { id: FULFILLMENT_SYSTEM_ACTOR_ID, roles: ['master'] },
+        FULFILLMENT_SCOPE.SHIPMENT_REOPEN,
+      ),
+    ).resolves.toBeUndefined();
+    expect(await checkpointEvaluations('fulfillment.planning_scope', 'match')).toBe(1);
+    expect(await checkpointEvaluations('fulfillment.planning_scope', 'unavailable')).toBe(0);
+  });
+
+  it('keeps the legacy denial for a person without the scope and compares it', async () => {
+    const { service } = planningHarness(noScopes, createCheckpointsForTesting({ admin: [] }));
+    await expect(
+      service['requireScope']({ id: 'u-1', roles: ['admin'] }, FULFILLMENT_SCOPE.SHIPMENT_REOPEN),
+    ).rejects.toThrow(`Missing required scope: ${FULFILLMENT_SCOPE.SHIPMENT_REOPEN}`);
+    expect(await checkpointEvaluations('fulfillment.planning_scope', 'match')).toBe(1);
+  });
+});
 
 describe('ShipmentPlanningService command boundary', () => {
   const actor = { id: 'operator-from-jwt', roles: ['warehouse_operator'] };

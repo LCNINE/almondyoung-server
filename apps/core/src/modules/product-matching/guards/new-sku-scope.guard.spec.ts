@@ -1,3 +1,4 @@
+import { createCheckpointsForTesting } from '@app/authorization';
 import { ForbiddenException } from '@nestjs/common';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { NewSkuScopeGuard, bodyRequestsNewSku } from './new-sku-scope.guard';
@@ -29,7 +30,7 @@ describe('bodyRequestsNewSku', () => {
 describe('NewSkuScopeGuard', () => {
   it('lets a request without newSku through untouched', async () => {
     const authService = { getScopesByRoles: jest.fn() };
-    const guard = new NewSkuScopeGuard(authService as never);
+    const guard = new NewSkuScopeGuard(authService as never, createCheckpointsForTesting());
 
     await expect(guard.canActivate(makeContext({ links: [{ skuId: 'a' }] }, ['admin']))).resolves.toBe(true);
     expect(authService.getScopesByRoles).not.toHaveBeenCalled();
@@ -37,7 +38,7 @@ describe('NewSkuScopeGuard', () => {
 
   it('allows newSku when the role set grants inventory.manage', async () => {
     const authService = { getScopesByRoles: jest.fn().mockResolvedValue(new Set(['inventory.manage'])) };
-    const guard = new NewSkuScopeGuard(authService as never);
+    const guard = new NewSkuScopeGuard(authService as never, createCheckpointsForTesting());
 
     await expect(guard.canActivate(makeContext({ links: [{ newSku: { name: 'x' } }] }, ['admin']))).resolves.toBe(true);
     expect(authService.getScopesByRoles).toHaveBeenCalledWith(['admin']);
@@ -45,7 +46,7 @@ describe('NewSkuScopeGuard', () => {
 
   it('allows master without consulting the scope table', async () => {
     const authService = { getScopesByRoles: jest.fn() };
-    const guard = new NewSkuScopeGuard(authService as never);
+    const guard = new NewSkuScopeGuard(authService as never, createCheckpointsForTesting());
 
     await expect(guard.canActivate(makeContext({ links: [{ newSku: { name: 'x' } }] }, ['master']))).resolves.toBe(
       true,
@@ -55,7 +56,7 @@ describe('NewSkuScopeGuard', () => {
 
   it('rejects newSku when the role set lacks inventory.manage', async () => {
     const authService = { getScopesByRoles: jest.fn().mockResolvedValue(new Set(['inventory.operate'])) };
-    const guard = new NewSkuScopeGuard(authService as never);
+    const guard = new NewSkuScopeGuard(authService as never, createCheckpointsForTesting());
 
     await expect(
       guard.canActivate(makeContext({ links: [{ newSku: { name: 'x' } }] }, ['staff'])),
@@ -64,7 +65,7 @@ describe('NewSkuScopeGuard', () => {
 
   it('rejects newSku when the request carries no roles', async () => {
     const authService = { getScopesByRoles: jest.fn() };
-    const guard = new NewSkuScopeGuard(authService as never);
+    const guard = new NewSkuScopeGuard(authService as never, createCheckpointsForTesting());
 
     await expect(guard.canActivate(makeContext({ links: [{ newSku: { name: 'x' } }] }))).rejects.toBeInstanceOf(
       ForbiddenException,
@@ -73,7 +74,7 @@ describe('NewSkuScopeGuard', () => {
 
   it('rejects when the scope lookup fails', async () => {
     const authService = { getScopesByRoles: jest.fn().mockRejectedValue(new Error('db down')) };
-    const guard = new NewSkuScopeGuard(authService as never);
+    const guard = new NewSkuScopeGuard(authService as never, createCheckpointsForTesting());
 
     await expect(
       guard.canActivate(makeContext({ links: [{ newSku: { name: 'x' } }] }, ['staff'])),

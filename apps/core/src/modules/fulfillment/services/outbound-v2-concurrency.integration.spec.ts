@@ -1,3 +1,4 @@
+import { createCheckpointsForTesting } from '@app/authorization';
 import { outbox_events } from '@app/events';
 import { assembleLabels } from '../waybill/__support__/label-fixtures';
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
@@ -255,6 +256,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
       new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
       assembleBoxWithdrawal(dbService),
+      createCheckpointsForTesting(),
     );
   }
 
@@ -275,6 +277,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       moduleRef as never,
       new BoxAllocationManager(new BatchInventorySessionService(dbService, audit), new BatchControlledStockGuard()),
       assembleBoxWithdrawal(dbService),
+      createCheckpointsForTesting(),
     );
   }
 
@@ -443,6 +446,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       outboxPublisherFor(FULFILLMENT_V2_STREAM, dbService),
       new AuditService(dbService),
       new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
+      createCheckpointsForTesting(),
     );
   }
 

@@ -3,7 +3,7 @@ import { Server } from 'http';
 import { Request } from 'express';
 import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { AuthorizationService, ScopeGuard } from '@app/authorization';
+import { AuthorizationService, ScopeGuard, PermissionCheckpoints, createCheckpointsForTesting } from '@app/authorization';
 import * as request from 'supertest';
 import { LocationOutboundController } from '../../../fulfillment/controllers/location-outbound.controller';
 import { LocationOutboundService } from '../../../fulfillment/services/location-outbound.service';
@@ -37,6 +37,7 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
       ],
       providers: [
         ScopeGuard,
+        { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting() },
         { provide: LocationOutboundService, useValue: { force: mutation } },
         {
           provide: AuthorizationService,

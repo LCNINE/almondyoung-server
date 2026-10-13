@@ -2,7 +2,12 @@ import { isPreparationBlocked } from './outbound-preparation-result';
 import { Server } from 'http';
 import { Test } from '@nestjs/testing';
 import { ValidationPipe } from '@nestjs/common';
-import { AuthorizationService, ScopeGuard } from '@app/authorization';
+import {
+  AuthorizationService,
+  createCheckpointsForTesting,
+  PermissionCheckpoints,
+  ScopeGuard,
+} from '@app/authorization';
 import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter';
 import * as request from 'supertest';
 import { LocationOutboundController } from '../controllers/location-outbound.controller';
@@ -652,6 +657,7 @@ describeIfDb('LocationOutboundService — real inventory', () => {
       const module = await Test.createTestingModule({
         controllers: [SimpleOutboundController, LocationOutboundController],
         providers: [
+          { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting() },
           ScopeGuard,
           {
             provide: AuthorizationService,
