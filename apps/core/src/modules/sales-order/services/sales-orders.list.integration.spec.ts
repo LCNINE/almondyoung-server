@@ -175,6 +175,30 @@ describeIfDb('SalesOrdersService.list — server-side filters (DB integration, r
     });
   });
 
+  it('라인마다 matchingResolved 를 낸다 — void 상품매칭도 해결로 본다', async () => {
+    await run(async (tx, svc, tag) => {
+      const voidVariant = randomUUID();
+      await tx
+        .insert(wmsTables.productMatchings)
+        .values({ variantId: voidVariant, status: 'matched', strategy: 'void', isResolved: true });
+      const order = await insertOrder(tx, { channelOrderId: `${tag}-resolved` });
+      await tx.insert(wmsTables.salesOrderLines).values({
+        salesOrderId: order,
+        variantId: voidVariant,
+        productName: 'void line',
+        quantity: 1,
+      });
+      await insertLine(tx, order, { productName: 'unmatched line' });
+
+      const res = await listByKeyword(svc, tx, { keyword: tag });
+      const lines = res.data[0].lines as Array<{ productName: string; matchingResolved: boolean }>;
+      expect(Object.fromEntries(lines.map((l) => [l.productName, l.matchingResolved]))).toEqual({
+        'void line': true,
+        'unmatched line': false,
+      });
+    });
+  });
+
   it('keyword: 상품명 / 수령자 / 주문번호 대상별 검색', async () => {
     await run(async (tx, svc, tag) => {
       const byProduct = await insertOrder(tx, { channelOrderId: `${tag}-p` });

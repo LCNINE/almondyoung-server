@@ -96,6 +96,7 @@ export interface SalesOrderDto {
   lines: {
     variantId: string;
     productMatchingId?: string;
+    matchingResolved?: boolean;
     productName?: string;
     quantity: number;
     unitPrice?: number;

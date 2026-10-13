@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { DbService } from '@app/db';
-import { and, eq, desc, count, inArray, isNull, or, ne, gte, lte, ilike, SQL, sql } from 'drizzle-orm';
+import { and, eq, desc, count, inArray, isNull, gte, lte, ilike, SQL, sql } from 'drizzle-orm';
 import { ResolveLegacyIgnoredMatchingDto, ResolveMatchingDto, StockPolicyDto } from '../dto/resolve-matching.dto';
 import { MatchingStrategy, MatchingContext, SkuQuantityMapping } from '../strategies/matching-strategy.interface';
 import { VoidMatchingStrategy } from '../strategies/void-matching.strategy';
@@ -13,6 +13,7 @@ import { AuditContext, AuditService } from '../../inventory/shared/services/audi
 import { productMasterVersions, productVariants } from '../../catalog/schema/catalog.schema';
 import { BadRequestError } from '@app/shared';
 import { MatchingLinkResolver } from './matching-link-resolver';
+import { lineResolvedSql } from '../line-composition/line-resolved.sql';
 
 export interface PimSkuComponent {
   skuId: string;
@@ -714,21 +715,8 @@ export class ProductMatchingService {
       } else if (matchingStatus) {
         conditions.push(eq(productMatchings.status, matchingStatus));
       } else if (excludeMatched) {
-        const cond = or(
-          isNull(productMatchings.id),
-          ne(productMatchings.status, 'matched'),
-          and(eq(productMatchings.status, 'matched'), isNull(productMatchings.strategy)),
-          and(
-            eq(productMatchings.status, 'matched'),
-            eq(productMatchings.strategy, 'variant'),
-            sql`NOT EXISTS (
-              SELECT 1
-              FROM ${productVariantSkuLinks}
-              WHERE ${productVariantSkuLinks.productMatchingId} = ${productMatchings.id}
-            )`,
-          ),
-        );
-        if (cond) conditions.push(cond);
+        // «해결된 라인 제외» 판정은 라인 구성 판정의 SQL 짝 하나로 한다(#1063) — 1회 지정·void 로 풀린 라인도 빠진다
+        conditions.push(sql`NOT ${lineResolvedSql()}`);
       }
 
       if (salesChannel) {
@@ -782,6 +770,7 @@ export class ProductMatchingService {
           matchingId: productMatchings.id,
           matchingStatus: productMatchings.status,
           matchingStrategy: productMatchings.strategy,
+          compositionSource: salesOrderLines.compositionSource,
         })
         .from(salesOrderLines)
         .innerJoin(salesOrders, eq(salesOrderLines.salesOrderId, salesOrders.id))
@@ -835,6 +824,7 @@ export class ProductMatchingService {
         matchingId: row.matchingId ?? undefined,
         matchingStatus: row.matchingStatus ?? undefined,
         matchingStrategy: row.matchingStrategy ?? undefined,
+        compositionSource: row.compositionSource ?? undefined,
         matchedSkus: row.matchingId
           ? (skusByMatchingId.get(row.matchingId) ?? []).map((s) => ({
               skuId: s.skuId,
