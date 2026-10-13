@@ -110,9 +110,10 @@ export function wireLogistics(
   const fulfillments = new FulfillmentsService(
     dbService,
     lifecycle,
-    productSkuMapping,
+    lineCompositions,
     fulfillmentV1Publisher,
     workflowGate,
+    lineCompositionManager,
     shipmentReservations,
     progress,
   );
