@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Header } from './header';
+import { PermissionStatusBanner } from '@/components/auth/permission-status-banner';
 import { AppSidebar } from './app-sidebar';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { cn } from '@/lib/utils/ui';
@@ -60,7 +61,14 @@ export function MainLayout({ children }: MainLayoutProps) {
     </div>
   );
 
-  if (pathname.startsWith('/mall/marketing/time-sale')) return <>{children}</>;
+  // 셸 밖 화면도 권한 조회 실패는 알린다(쓰기 버튼이 이유 없이 사라지지 않게)
+  if (pathname.startsWith('/mall/marketing/time-sale'))
+    return (
+      <>
+        <PermissionStatusBanner />
+        {children}
+      </>
+    );
 
   // 로그인 페이지와 모바일 전용 페이지는 PC 레이아웃 제외
   if (pathname === '/login' || pathname === '/unauthorized') {
@@ -77,6 +85,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     return (
       <>
         {demoBanner}
+        <PermissionStatusBanner />
         {children}
       </>
     );
@@ -87,6 +96,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     return (
       <>
         {demoBanner}
+        <PermissionStatusBanner />
         {children}
       </>
     );
@@ -97,6 +107,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     return (
       <>
         {demoBanner}
+        <PermissionStatusBanner />
         {children}
       </>
     );
@@ -121,6 +132,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         )}
       >
         {demoBanner}
+        <PermissionStatusBanner />
         <Header
           activeMenu={activeMenu}
           activeItem={activeItem ?? undefined}

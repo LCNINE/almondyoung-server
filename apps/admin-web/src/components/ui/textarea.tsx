@@ -1,8 +1,14 @@
+"use client"
+
 import * as React from "react"
+
+import { usePermissionReadOnly } from "@/components/auth/permission-read-only-context"
 
 import { cn } from "@/lib/utils/index"
 
-function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
+function Textarea({ className, readOnly, ...props }: React.ComponentProps<"textarea">) {
+  // 권한 때문에 읽기 전용인 편집 폼 안이면 값은 보이고 고칠 수 없다
+  const permissionReadOnly = usePermissionReadOnly() !== null
   return (
     <textarea
       data-slot="textarea"
@@ -11,6 +17,7 @@ function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
         className
       )}
       {...props}
+      readOnly={readOnly || permissionReadOnly}
     />
   )
 }

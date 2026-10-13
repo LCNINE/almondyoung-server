@@ -1,4 +1,4 @@
-import { checkCan, permissionDeniedMessage, shouldRefreshPermissionsAfter403, permissionCheckFrom } from './permission-check';
+import { blockedReason, checkCan, permissionDeniedMessage, openState, permissionCheckFrom, runState, shouldRefreshPermissionsAfter403, showTrigger } from './permission-check';
 
 const data = { roles: [], permissions: new Set(['order.order.read']), version: 'v1' };
 
@@ -52,5 +52,65 @@ describe('permissionCheckFrom', () => {
     expect(check.isPermissionLoading).toBe(false);
     expect(check.can(['order.order.read'])).toBe(true);
     expect(check.can(['order.order.write'])).toBe(false);
+  });
+});
+
+describe('write triggers', () => {
+  const cancel = { permission: ['order.order.cancel'] as const };
+  const read = { permission: ['order.order.read'] as const };
+
+  it('hides a write trigger until the permissions are confirmed, and when the lookup failed', () => {
+    expect(showTrigger(runState({ isPending: true, isError: false }, [cancel]))).toBe(false);
+    expect(showTrigger(runState({ isPending: false, isError: true }, [cancel]))).toBe(false);
+  });
+
+  it('treats a failed refresh as unknown even when an older copy is still cached', () => {
+    const writer = { roles: [], permissions: new Set(['order.order.cancel']), version: 'v1' };
+    const stale = { isPending: false, isError: true, data: writer };
+    expect(showTrigger(runState(stale, [cancel]))).toBe(false);
+    expect(blockedReason(runState(stale, [cancel]), [cancel])).toBe('권한 정보를 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.');
+    expect(permissionCheckFrom(stale).canRun(cancel)).toBe(false);
+    expect(showTrigger(openState(stale, '/order/history'))).toBe(false);
+    expect(permissionCheckFrom(stale).can(['order.order.cancel'])).toBe(false);
+    // 닫는 이유는 «확인 못 함»이다 — 화면이 «권한 없음»으로 말하지 않게 미확인 상태로 알린다
+    expect(permissionCheckFrom(stale).isPermissionLoading).toBe(true);
+  });
+
+  it('answers from the loaded permissions and needs every action', () => {
+    expect(showTrigger(runState({ isPending: false, isError: false, data }, [cancel]))).toBe(false);
+    expect(showTrigger(runState({ isPending: false, isError: false, data }, [read]))).toBe(true);
+    expect(showTrigger(runState({ isPending: false, isError: false, data }, [read, cancel]))).toBe(false);
+  });
+
+  it('blocks a value control until confirmed, saying why without calling it a missing permission', () => {
+    expect(blockedReason(runState({ isPending: true, isError: false }, [cancel]), [cancel])).toBe('권한을 확인하는 중입니다.');
+    expect(blockedReason(runState({ isPending: false, isError: true }, [cancel]), [cancel])).toBe(
+      '권한 정보를 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.',
+    );
+    expect(blockedReason(runState({ isPending: false, isError: false, data }, [cancel]), [cancel])).toBe(
+      '이 작업에는 주문 취소 권한이 필요합니다.',
+    );
+    expect(blockedReason(runState({ isPending: false, isError: false, data }, [read]), [read])).toBeNull();
+  });
+
+  it('gives the screen-wide checker the same answers', () => {
+    const check = permissionCheckFrom({ isPending: false, isError: false, data });
+    expect(check.canRun(read)).toBe(true);
+    expect(check.canRun(cancel)).toBe(false);
+    expect(check.blockedReason(cancel)).toBe('이 작업에는 주문 취소 권한이 필요합니다.');
+    expect(permissionCheckFrom({ isPending: false, isError: true }).canRun(cancel)).toBe(false);
+  });
+});
+
+describe('links to another screen', () => {
+  it('shows a link only when the target screen would let the user in', () => {
+    const writer = { roles: [], permissions: new Set(['catalog.product.write']), version: 'v1' };
+    expect(showTrigger(openState({ isPending: false, isError: false, data: writer }, '/mall/product-registration'))).toBe(true);
+    expect(showTrigger(openState({ isPending: false, isError: false, data }, '/mall/product-registration'))).toBe(false);
+    expect(showTrigger(openState({ isPending: true, isError: false }, '/mall/product-registration'))).toBe(false);
+  });
+
+  it('refuses a screen the access table does not know', () => {
+    expect(() => openState({ isPending: false, isError: false, data }, '/no-such-screen')).toThrow('/no-such-screen');
   });
 });
