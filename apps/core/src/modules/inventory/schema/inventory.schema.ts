@@ -238,6 +238,8 @@ export const shipmentOperationTypeEnum = pgEnum('shipment_operation_type', [
   'replan',
   'short_pick',
   'recall',
+  // #1063: 작성 중 박스를 목표 내용에 맞춘 기록(라인 구성 변경·S2 주문 수정). PR 2 부터 쓴다.
+  'amend',
 ]);
 export const shipmentOperationStatusEnum = pgEnum('shipment_operation_status', [
   'pending',
@@ -1363,6 +1365,11 @@ export const salesOrderLines = pgTable(
     mappingSnapshotId: uuid('mapping_snapshot_id').references(() => productSkuMappingSnapshots.id, {
       onDelete: 'restrict',
     }), // SO 확정 시점 스냅샷
+    // #1063: 이 라인에 적용할 SKU 구성을 굳혔는지·누가 굳혔는지. NULL 이면 아직 현재 상품매칭을 따른다.
+    // 구성 행은 sales_order_line_compositions 에 있고, 출처가 있으면 행이 1개 이상이다(LineCompositionManager 만 쓴다).
+    compositionSource: varchar('composition_source', { length: 16 }).$type<'matching' | 'operator'>(),
+    compositionSetAt: timestamp('composition_set_at', { withTimezone: true }),
+    compositionSetBy: uuid('composition_set_by'),
 
     productName: varchar('product_name', { length: 255 }).notNull(),
     quantity: integer('quantity').notNull(),
@@ -1396,6 +1403,34 @@ export const salesOrderLines = pgTable(
     uqSalesOrderChannelItem: uniqueIndex('uq_sales_order_lines_order_channel_item')
       .on(t.salesOrderId, t.channelOrderItemId)
       .where(sql`${t.channelOrderItemId} IS NOT NULL`),
+    compositionSourceCheck: check(
+      'sales_order_lines_composition_source_check',
+      sql`${t.compositionSource} IN ('matching', 'operator')`,
+    ),
+  }),
+);
+
+/**
+ * 판매주문 라인의 «적용 구성»(SKU × 판매 1개당 수량). 출처는 sales_order_lines.composition_source(#1063 스펙 §4).
+ * 현재 값만 든다 — 바뀐 이력은 sales_order_amendments 가 든다.
+ */
+export const salesOrderLineCompositions = pgTable(
+  'sales_order_line_compositions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    salesOrderLineId: uuid('sales_order_line_id')
+      .references(() => salesOrderLines.id, { onDelete: 'cascade' })
+      .notNull(),
+    skuId: uuid('sku_id')
+      .references(() => skus.id, { onDelete: 'restrict' })
+      .notNull(),
+    qtyPerUnit: integer('qty_per_unit').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // (라인, SKU) 유일 — 라인별 조회도 이 인덱스의 앞 칸으로 탄다
+    uqLineSku: unique('uq_sales_order_line_compositions_line_sku').on(t.salesOrderLineId, t.skuId),
+    ckQtyPerUnitPositive: check('ck_sales_order_line_compositions_qty_per_unit_positive', sql`${t.qtyPerUnit} > 0`),
   }),
 );
 
@@ -3546,6 +3581,7 @@ export const wmsTables = {
   productSellableQuantityProjections,
   salesOrders,
   salesOrderLines,
+  salesOrderLineCompositions,
   orderEvents,
   businessLinks,
   salesOrderAmendments,
@@ -4731,6 +4767,7 @@ export type SalesOrder = InferSelectModel<typeof salesOrders>;
 export type NewSalesOrder = InferInsertModel<typeof salesOrders>;
 
 export type SalesOrderLine = InferSelectModel<typeof salesOrderLines>;
+export type SalesOrderLineComposition = InferSelectModel<typeof salesOrderLineCompositions>;
 export type NewSalesOrderLine = InferInsertModel<typeof salesOrderLines>;
 
 export type OrderEvent = InferSelectModel<typeof orderEvents>;
