@@ -225,9 +225,18 @@ S2 는 «라인별 담긴 개수»를 새로 계산해 `boxTarget` → `amend` �
 | `COMPOSITION_NOT_FROZEN` | FO 가 있는데 출처 NULL(백필 전) |
 | `COMPOSITION_UNITS_AMBIGUOUS` | §6.2 계산 불가 |
 | `BOX_NOT_DRAFT` | `amend` 직접 호출 시 방어 |
-| `LINE_NOT_IN_FULFILLMENT` | FO 가 있는데 그 라인의 FO 항목이 없음(void 매칭 라인·FO 전 전량 취소 라인) — 지정해도 출고에 안 실린다(§4.4) |
+| `LINE_NOT_IN_FULFILLMENT` | FO 가 있는데 그 라인의 FO 항목이 없음(void 매칭 라인·FO 전 전량 취소 라인) — 지정해도 출고에 안 실린다(§4.4). FO 항목은 있어도 살아 있는(묘비·대체 아닌) 박스가 하나도 없을 때도 같다 — 맞출 박스 없이 구성만 바뀌면 안 된다 |
 | `SALES_ORDER_CANCELLED` | 전체 취소된 판매주문 |
+| `SALES_ORDER_CLOSED` (409) | 판매주문 상태가 `shipped`·`delivered` — 코어 밖(셀메이트 수기 출고 스크립트)에서 닫힌 주문 |
+| `FULFILLMENT_ORDER_CLOSED` (409) | FO 상태가 `shipped`·`completed`·`canceled` — 항목 잔량이 남아 있어도 닫힌 FO 는 고치지 않는다 |
 | `SKU_HOLDER_MISMATCH_FOR_3PL` | 3PL FO(`ownerId`)에 다른 화주의 SKU 지정 — FO 생성과 같은 규칙 |
+| `SKU_NOT_FOUND` (400) | 없는 SKU 지정 |
+| `COMPOSITION_ITEMS_INVALID` (400) | 구성 항목 형식 오류(빈 목록·SKU 중복·1개당 수량이 양의 정수가 아님) |
+| `SHIPMENT_COMPONENT_CHANGED_RETRY` (409) | 라인의 박스를 세고 잠그는 사이 분할·합포장이 박스 구성을 바꿨다 — 다시 시도하면 된다 |
+
+`amend` 는 분할과 같은 가드를 거치므로 `SHIPMENT_ACTIVE_WORK_ITEM`·`SHIPMENT_CUSTODY_EXISTS`·`SHIPMENT_ACTIVE_INVOICE`
+(409) 도 이 경로에서 나올 수 있다(상태만 draft 이고 작업·보관·송장에 묶인 박스). 일괄 적용은 이 셋과 재시도 코드를
+«작업 중», 닫힘·박스 없음·SKU 경로 위반을 «적용 불가»로 센다.
 
 경로 접두사는 상품매칭 컨트롤러가 이미 쓰는 `matchings` 다(스펙 초안의 `product-matchings` 는 없는 경로였다).
 주문별 지정·일괄 적용 둘 다 관리자 영역 기본 가드(`AdminRealmGuard`) 뒤에 둔다 — 판매주문 취소·상품매칭 저장과 같은 수준.
