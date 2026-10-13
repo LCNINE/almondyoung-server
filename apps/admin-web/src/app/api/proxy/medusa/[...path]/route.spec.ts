@@ -22,7 +22,7 @@ const paramsFor = (...path: string[]) => ({ params: Promise.resolve({ path }) })
 const params = paramsFor('admin', 'promotions');
 
 function ready(...permissions: string[]): PermissionState {
-  return { state: 'ready', roles: [], permissions: new Set(permissions) };
+  return { state: 'ready', roles: [], permissions: new Set(permissions), version: 'v1', fetchedAt: 0 };
 }
 
 describe('Medusa admin proxy', () => {

@@ -69,6 +69,15 @@ describe('MyPermissionsCache', () => {
     expect([...((await cache.get(['admin']))?.permissions ?? [])]).toEqual(['order.order.read']);
   });
 
+  it('tells when the copy it serves was fetched, also after a failed refresh', async () => {
+    const fetcher = jest.fn().mockResolvedValueOnce(sample(['order.order.read'])).mockRejectedValueOnce(new Error('down'));
+    const cache = new MyPermissionsCache(fetcher, { now });
+    clock = 1_000;
+    expect((await cache.getWithTime(['admin']))?.fetchedAt).toBe(1_000);
+    clock = 60_000;
+    expect((await cache.getWithTime(['admin']))?.fetchedAt).toBe(1_000);
+  });
+
   it('reports unavailable when it never loaded', async () => {
     const cache = new MyPermissionsCache(async () => Promise.reject(new Error('down')), { now });
     expect(await cache.get(['admin'])).toBeNull();
