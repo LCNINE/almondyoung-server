@@ -150,11 +150,31 @@ FO 생성(`createV2`)은 이미 판매주문을 `FOR UPDATE` 로 잠근 뒤 라�
 | --- | --- |
 | 같은 FO 항목 줄이 있고 늘어남 | 줄·FO 항목 수량 증가 → 차이만큼 `reservePartial` |
 | 새 `(라인, SKU)` | FO 항목 + 상자 줄 생성 → `reservePartial`. **지금 없는 경로 — 새로 만든다** |
-| 줄어듦·빠짐 | `applyDraftCancellation` 의 «예약 해제 → 줄 감소 또는 묘비 이동 → FO 항목 `canceledQty`»를 함수로 떼어 같이 쓴다 |
+| 줄어듦·빠짐 | `applyDraftCancellation` 의 «예약 해제 → 줄 감소 또는 묘비 이동»을 함수로 떼어 같이 쓰고, FO 항목은 **`qty` 를 줄인다(0 허용)** — `canceledQty` 를 쓰지 않는다(아래) |
+
+**줄어든 수량을 `canceledQty` 로 적지 않는다(사용자 결정 2026-10-13, 계획 단계에서 찾음).** `canceledQty` 는 «고객 취소»로 읽힌다:
+출고 완료 판정이 `미출고 0 && canceledQty === 0` 이라(`shipment-dispatch.service.ts` `loadFulfillmentSummaries`) 구성을 바꾼 FO 는
+`FulfillmentShipped` 가 영영 안 나가고 Medusa 주문이 «출고됨»이 되지 않는다. FO 항목 `qty` 는 «이 SKU 의 수요»이므로 줄이면
+미출고 수량을 읽는 곳이 전부 그대로 맞는다. SKU 가 통째로 빠지면 `qty` 가 0 이 될 수 있어 CHECK `qty > 0` 을 `qty >= 0` 으로
+완화한다(마이그 1건, `migrate → deploy`). qty 0 항목 = «구성 변경으로 대체된 항목»: 불변식·정합성 SQL·진행 계산이 받아들인다.
+그 전에 고객 취소분이 있었다면 `qty` 는 그 취소분까지만 줄어 `qty = canceledQty` 로 남는다.
 
 마무리: 재고 키 잠금은 SKU 정렬 순서로 먼저(`acquireStockAvailabilityLocks`, FO 생성과 같은 규칙) · 박스는 `draft` 유지 ·
 `manifestVersion` +1 · FO 합계(`totalItems`·`totalQty`) 재계산 · 배송 프로필 재계산(FO 생성과 같은 함수로 뽑아 공유) ·
 `reservations.recompute` · 박스 오퍼레이션 기록(종류 `'amend'` 신설, before/after 스냅샷).
+
+박스 가드는 분할(`split`)과 같다: `draft` 가 아니면 `BOX_NOT_DRAFT`, 활성 작업 항목·보관(custody)·활성 송장이 있으면 그 코드
+(`SHIPMENT_ACTIVE_WORK_ITEM`·`SHIPMENT_CUSTODY_EXISTS`·`SHIPMENT_ACTIVE_INVOICE`). 상태만 `draft` 인 박스가 작업에 묶여 있을 수 있다.
+
+### 6.5 고객 취소 경로가 비율을 라인 구성에서 읽는다
+
+`sales-orders.service.ts` `planV2Outstanding`(부분·전체 취소 계획)은 SKU 비율을 «FO 항목 수량 ÷ 라인 주문 수량»으로 거꾸로 계산하고
+라인의 FO 항목을 전부 돈다. 구성을 바꾼 라인은 이 역산이 나눠떨어지지 않거나(부분 취소가 있던 라인의 1개당 수량 변경)
+빠진 SKU 항목에서 «이미 취소된 수량»으로 걸려 **고객 취소가 거절된다.** 그래서 비율은 굳힌 구성의 `qtyPerUnit` 에서 읽고,
+구성 SKU 마다 그 SKU 의 FO 항목들에서 미출고만큼 나눠 뺀다. 구성 밖 SKU 항목은 미출고가 0 이어야 한다(아니면 409).
+FO 가 있는데 출처 NULL 인 라인은 409 — 라이브 0건(백필 완료)이고 새 FO 는 생성 순간 굳는다.
+덤으로 «FO 생성 전 부분 취소가 있던 라인의 후속 취소»(FO 항목 수량이 주문 수량의 배수가 아니라 지금도 409)가 풀린다.
+이 역산을 하는 곳은 저장소에 이 하나뿐이다(계획 단계 grep).
 
 S1 스펙 D8 은 «줄 수량 0 = 빠진 줄»을 정했지만 코드는 아직 묘비 박스를 쓴다. **이 작업은 현재 코드를 따른다** — 갈래를 만들지 않는다.
 
@@ -181,10 +201,10 @@ S2 는 «라인별 담긴 개수»를 새로 계산해 `boxTarget` → `amend` �
 
 ### 7.2 일괄 적용 — 미리보기와 적용
 
-- `GET /product-matchings/variants/:variantId/existing-lines-impact` — 그 variant 의 굳힌 라인 중 FO 가 미완료인 것을
+- `GET /matchings/variants/:variantId/existing-lines-impact` — 그 variant 의 굳힌 라인 중 FO 가 미완료인 것을
   넷으로 센다: **바꿀 수 있음**(출처 `matching`, 새 매칭과 구성이 다름, 박스 모두 draft) / **개별 지정 건너뜀**(출처 `operator`) /
   **작업 중 건너뜀**(draft 아닌 박스 있음) / **이미 같음**. 상품매칭이 void 이거나 링크 0 이면 «바꿀 수 있음»은 0 이다(D4)
-- `POST /product-matchings/variants/:variantId/apply-to-existing-lines` — «바꿀 수 있음»을 **주문마다 별도 트랜잭션**으로
+- `POST /matchings/variants/:variantId/apply-to-existing-lines` — «바꿀 수 있음»을 **주문마다 별도 트랜잭션**으로
   §7.1 3~6 과 같은 경로로 처리한다(출처는 `matching` 유지). 미리보기 뒤 상태가 바뀔 수 있으니 **적용 때 다시 판정**하고
   `{ changed, skipped: { reason, count }[] }` 를 돌려준다. 다시 보내면 «이미 같음»이 되어 멱등
 
@@ -205,6 +225,12 @@ S2 는 «라인별 담긴 개수»를 새로 계산해 `boxTarget` → `amend` �
 | `COMPOSITION_NOT_FROZEN` | FO 가 있는데 출처 NULL(백필 전) |
 | `COMPOSITION_UNITS_AMBIGUOUS` | §6.2 계산 불가 |
 | `BOX_NOT_DRAFT` | `amend` 직접 호출 시 방어 |
+| `LINE_NOT_IN_FULFILLMENT` | FO 가 있는데 그 라인의 FO 항목이 없음(void 매칭 라인·FO 전 전량 취소 라인) — 지정해도 출고에 안 실린다(§4.4) |
+| `SALES_ORDER_CANCELLED` | 전체 취소된 판매주문 |
+| `SKU_HOLDER_MISMATCH_FOR_3PL` | 3PL FO(`ownerId`)에 다른 화주의 SKU 지정 — FO 생성과 같은 규칙 |
+
+경로 접두사는 상품매칭 컨트롤러가 이미 쓰는 `matchings` 다(스펙 초안의 `product-matchings` 는 없는 경로였다).
+주문별 지정·일괄 적용 둘 다 관리자 영역 기본 가드(`AdminRealmGuard`) 뒤에 둔다 — 판매주문 취소·상품매칭 저장과 같은 수준.
 
 ## 8. 화면 (admin-web)
 
@@ -234,7 +260,10 @@ S2 는 «라인별 담긴 개수»를 새로 계산해 `boxTarget` → `amend` �
 
 ### 9.2 PR 2 — core 수정 경로
 
-§6(`boxTarget`·`DraftBoxAmender`·감소 로직 함수화·배송 프로필 함수 공유)과 §7 API. 마이그 없음.
+§6(`boxTarget`·`DraftBoxAmender`·감소 로직 함수화·배송 프로필 함수 공유)과 §7 API, §6.5 취소 경로.
+마이그 1건: `fulfillment_order_items` CHECK `qty > 0` → `qty >= 0`(제약 완화). 배포 **`migrate → deploy`**.
+롤링 중 옛 태스크는 qty 0 항목을 «불변식 위반»으로 읽는다 — qty 0 은 새 코드의 수정 API 만 만들므로, 롤아웃이 끝나기 전
+그 API 를 쓰지 않으면 겹치지 않는다(PR 3 화면이 같은 배포에 실려도 롤아웃 완료 뒤에 쓴다).
 
 ### 9.3 PR 3 — admin-web
 
@@ -262,6 +291,7 @@ S2 는 «라인별 담긴 개수»를 새로 계산해 `boxTarget` → `amend` �
   - 일괄 적용: 개별 지정·작업 중 건너뜀, 재실행 멱등, 운영자 지정과 동시 실행
   - TS 판정 ↔ `lineResolvedSql()` 일치
   - §4.3 불변식 위반 0
+  - 구성 변경 뒤 고객 부분·전체 취소가 통과한다(§6.5) · 변경 뒤 FO 항목 `canceledQty` 가 0 으로 남는다(§6.3)
 - admin-web: §8-5 순수 함수
 
 ## 11. 범위 밖
@@ -273,8 +303,11 @@ S2 는 «라인별 담긴 개수»를 새로 계산해 `boxTarget` → `amend` �
 
 ## 12. 계획 단계에서 확인할 것
 
-1. 유효 수량(주문 수량 − 부분 취소)을 구하는 곳이 둘(`loadPartialCancelledLineQuantities`, 채널 변경 리더의 `effectiveQuantity`)인지 —
-   둘이면 하나로 모아 §6.2 와 S2 가 같이 쓴다
+1. ~~유효 수량을 구하는 곳이 둘인지~~ — **둘이고, PR 2 는 안 쓴다**(2026-10-13 확인). 리더의 `sumCancelledByLine`(취소 범위 전부)과
+   `SalesOrdersService.loadPriorPartialCancellationContext`(`partial` 만 — 채널 변경 리더가 `getCancelledQuantityByLine` 으로 쓴다).
+   V2 전체 취소 행도 `metadata.cancelledLines` 를 실으므로 둘의 답은 **전체 취소된 주문에서만** 갈린다. §6.2 는 «박스 줄 ÷ 옛 1개당
+   수량»이라 유효 수량이 필요 없다. 하나로 모으는 일은 판매 단위로 개수를 다시 세는 S2 가 한다
 2. ~~FO 생성 워커가 판매주문을 잠그는지(§5.4)~~ — 잠근다(`createV2` 의 `FOR UPDATE`). §5.4 에 반영
-3. 배송 프로필 계산을 FO 생성에서 함수로 뽑을 수 있는지(§6.3)
+3. ~~배송 프로필 계산을 FO 생성에서 함수로 뽑을 수 있는지(§6.3)~~ — 뽑힌다. «전부 NULL 아님 + 한 종류면 그 값, 아니면 NULL» 세 줄이
+   `createV2` 에만 있고 분할·합포장·묘비는 값을 복사만 한다. `compatibleShippingProfileId` 순수 함수로 뽑아 FO 생성과 amend 가 쓴다
 4. admin-web 이 `productMatchingId`·`mappingSnapshotId` 를 어디서 읽는지(PR 4 범위)
