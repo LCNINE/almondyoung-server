@@ -9,7 +9,7 @@ export default async function MarketingTimeSaleEditPage({
   const { id } = await params;
 
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/mall/marketing/time-sale/[id]/edit">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <TimeSaleFormTemplate timeSaleId={id} />
       </div>

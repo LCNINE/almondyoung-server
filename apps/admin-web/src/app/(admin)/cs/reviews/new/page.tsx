@@ -3,7 +3,7 @@ import { AdminReviewCreateForm } from '@/features/cs/review/components/admin-rev
 
 export default function ReviewCreatePage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/cs/reviews/new">
       <div className="flex w-full max-w-[960px] flex-col gap-y-2 p-3">
         <AdminReviewCreateForm />
       </div>

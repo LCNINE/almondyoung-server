@@ -11,7 +11,7 @@ export default async function ReviewDetailPage({
 }) {
   const { id } = await params;
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/cs/reviews/[id]">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <TwoColumnPage>
           <ReviewDetail reviewId={id} />

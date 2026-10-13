@@ -3,7 +3,7 @@ import RecurringBillingTemplate from '@/features/membership/recurring-billing/te
 
 export default function RecurringBillingPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/membership/recurring-billing">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <RecurringBillingTemplate />
       </div>

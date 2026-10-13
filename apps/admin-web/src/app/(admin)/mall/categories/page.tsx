@@ -3,7 +3,7 @@ import MallCategoriesTemplate from '@/features/mall/categories/template';
 
 export default function CategoriesPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/mall/categories">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <MallCategoriesTemplate />
       </div>

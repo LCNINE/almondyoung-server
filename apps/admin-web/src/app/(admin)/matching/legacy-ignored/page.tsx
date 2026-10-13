@@ -3,7 +3,7 @@ import LegacyIgnoredMatchingTemplate from '@/features/matching/legacy-ignored/te
 
 export default function LegacyIgnoredMatchingPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/matching/legacy-ignored">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <LegacyIgnoredMatchingTemplate />
       </div>

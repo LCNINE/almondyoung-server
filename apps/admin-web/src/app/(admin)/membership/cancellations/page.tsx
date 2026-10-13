@@ -3,7 +3,7 @@ import { CancellationsTemplate } from '@/features/membership/cancellations/templ
 
 export default function MembershipCancellationsPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/membership/cancellations">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <CancellationsTemplate />
       </div>

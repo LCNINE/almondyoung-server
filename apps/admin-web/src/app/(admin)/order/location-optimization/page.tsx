@@ -3,7 +3,7 @@ import LocationOptimizationTemplate from '@/features/order/location-optimization
 
 export default function LocationOptimizationPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/order/location-optimization">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <LocationOptimizationTemplate />
       </div>

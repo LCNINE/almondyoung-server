@@ -4,7 +4,7 @@ import ReplenishmentTemplate from '@/features/inventory/replenishment/template';
 
 export default function InventoryReplenishmentPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/inventory/replenishment">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <Suspense>
           <ReplenishmentTemplate />

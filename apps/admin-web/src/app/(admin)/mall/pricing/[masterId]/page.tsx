@@ -10,7 +10,7 @@ export default async function PricingDetailPage({ params }: Props) {
   const { masterId } = await params;
 
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/mall/pricing/[masterId]">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <Suspense>
           <PricingDetailTemplate masterId={masterId} />
