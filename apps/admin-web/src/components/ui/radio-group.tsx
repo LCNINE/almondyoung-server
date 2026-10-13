@@ -5,16 +5,21 @@ import * as RadioGroupPrimitive from "@radix-ui/react-radio-group"
 import { CircleIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils/ui"
+import { usePermissionReadOnly } from "@/components/auth/permission-read-only-context"
 
 function RadioGroup({
   className,
+  disabled,
   ...props
 }: React.ComponentProps<typeof RadioGroupPrimitive.Root>) {
+  // 권한 때문에 읽기 전용인 편집 폼 안이면 값만 보인다
+  const permissionReadOnly = usePermissionReadOnly() !== null
   return (
     <RadioGroupPrimitive.Root
       data-slot="radio-group"
       className={cn("grid gap-3", className)}
       {...props}
+      disabled={disabled || permissionReadOnly}
     />
   )
 }

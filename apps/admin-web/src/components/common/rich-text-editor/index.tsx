@@ -9,6 +9,7 @@ import { ResizableImage } from './resizable-image';
 import { cn } from '@/lib/utils/ui';
 import { EditorToolbar } from './toolbar';
 import { useImageUpload } from './use-image-upload';
+import { usePermissionReadOnly } from '@/components/auth/permission-read-only-context';
 
 export { isEmptyHtml } from './is-empty-html';
 
@@ -106,9 +107,17 @@ export function RichTextEditor({
   const { inputRef, uploading, openPicker, onFileChange, handleFileList } =
     useImageUpload(editor, imageContextId);
 
+  // 권한 때문에 읽기 전용인 편집 폼 안이면 본문은 보이고 고칠 수 없다(툴바·사진 붙여넣기도 없다)
+  const permissionReadOnly = usePermissionReadOnly() !== null;
+  useEffect(() => {
+    if (editor && editor.isEditable === permissionReadOnly) editor.setEditable(!permissionReadOnly, false);
+  }, [editor, permissionReadOnly]);
+
   // 사진을 막은 화면에서도 글 붙여넣기는 그대로 돼야 한다 —
   // 이미지 파일이 있을 때만 가로채고(true), 아니면 기본 동작에 넘긴다(false).
-  fileHandlerRef.current = allowImages
+  fileHandlerRef.current = permissionReadOnly
+    ? () => true
+    : allowImages
     ? handleFileList
     : (list) => {
         const hasImage = Array.from(list ?? []).some((f) =>
@@ -130,12 +139,14 @@ export function RichTextEditor({
 
   return (
     <div className="overflow-hidden rounded-md border bg-background">
-      <EditorToolbar
-        editor={editor}
-        onImageClick={openPicker}
-        imageUploading={uploading}
-        allowImages={allowImages}
-      />
+      {!permissionReadOnly && (
+        <EditorToolbar
+          editor={editor}
+          onImageClick={openPicker}
+          imageUploading={uploading}
+          allowImages={allowImages}
+        />
+      )}
       <EditorContent editor={editor} />
       <input
         ref={inputRef}
