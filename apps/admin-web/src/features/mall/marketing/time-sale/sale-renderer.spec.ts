@@ -24,10 +24,13 @@ import {
   type SaleProduct,
 } from '../../../../../../../packages/time-sale-ui';
 
+// 렌더러 패키지와 같은 React 인스턴스(루트 node_modules)를 써야 한다. 경로 import 는 타입이 없어 require 로 받는다.
 const { createElement } =
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   require('../../../../../../../node_modules/react') as typeof import('react');
 
 const { renderToStaticMarkup } =
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   require('../../../../../../../node_modules/react-dom/server') as typeof import('react-dom/server');
 
 const product: SaleProduct = {
