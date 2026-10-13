@@ -65,6 +65,7 @@ export interface Wired {
   fulfillments: FulfillmentsService;
   shipmentReservations: ShipmentReservationService;
   retryWorker: FulfillmentOrderReservationRetryWorker;
+  workflowGate: FulfillmentWorkflowGate;
 }
 
 export function wireLogistics(
