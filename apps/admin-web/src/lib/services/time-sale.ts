@@ -18,6 +18,7 @@ import {
   type TimeSalePeriod,
   type TimeSaleRow,
 } from '@/features/mall/marketing/time-sale/time-sale-model';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 /** 진열·스타일 설정. 편집기와 상품진열 폼이 같은 캐시를 쓴다. 저장된 적이 없으면 기본값으로 시작한다. */
 export const timeSaleSettingsQuery = {
@@ -192,6 +193,7 @@ export function useCreateTimeSale() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: timeSaleKeys.all }),
   });
 }
+useCreateTimeSale.permission = ['marketing.promotion.write'] as const satisfies PermissionRequirement;
 
 export function useUpdateTimeSale() {
   const queryClient = useQueryClient();
@@ -201,6 +203,7 @@ export function useUpdateTimeSale() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: timeSaleKeys.all }),
   });
 }
+useUpdateTimeSale.permission = ['marketing.promotion.write'] as const satisfies PermissionRequirement;
 
 /**
  * 공개/비공개 전환. 가격·이름·기간은 그대로 두고 상태만 바꾼다 — 서버 상세를 읽어 같은 본문으로 다시
@@ -225,6 +228,7 @@ export function useSetTimeSaleStatus() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: timeSaleKeys.all }),
   });
 }
+useSetTimeSaleStatus.permission = ['marketing.promotion.write'] as const satisfies PermissionRequirement;
 
 /** 세일 삭제 = 서버가 리스트·링크·세일 행을 한 번에 지운다. 가격은 즉시 원래대로 돌아간다. */
 export function useDeleteTimeSale() {
@@ -234,3 +238,4 @@ export function useDeleteTimeSale() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: timeSaleKeys.all }),
   });
 }
+useDeleteTimeSale.permission = ['marketing.promotion.write'] as const satisfies PermissionRequirement;

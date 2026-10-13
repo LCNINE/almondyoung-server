@@ -8,6 +8,7 @@ import type {
   UpdateChannelDto,
   UpdateChannelStatusDto,
 } from '@/lib/types/dto/products';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export const useCreateChannel = () => {
   const queryClient = useQueryClient();
@@ -18,6 +19,7 @@ export const useCreateChannel = () => {
     },
   });
 };
+useCreateChannel.permission = ['channel.account.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateChannel = () => {
   const queryClient = useQueryClient();
@@ -32,6 +34,7 @@ export const useUpdateChannel = () => {
     },
   });
 };
+useUpdateChannel.permission = ['channel.account.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteChannel = () => {
   const queryClient = useQueryClient();
@@ -42,6 +45,7 @@ export const useDeleteChannel = () => {
     },
   });
 };
+useDeleteChannel.permission = ['channel.account.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateChannelStatus = () => {
   const queryClient = useQueryClient();
@@ -59,3 +63,4 @@ export const useUpdateChannelStatus = () => {
     },
   });
 };
+useUpdateChannelStatus.permission = ['channel.account.write'] as const satisfies PermissionRequirement;

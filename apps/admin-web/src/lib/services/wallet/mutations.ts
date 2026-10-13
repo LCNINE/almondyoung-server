@@ -11,6 +11,7 @@ import type {
   UpdateCatalogPayload,
   UpdateRegionPayload,
 } from '@/lib/types/dto/wallet';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export const useCaptureIntent = (intentId: string) => {
   const queryClient = useQueryClient();
@@ -27,6 +28,7 @@ export const useCaptureIntent = (intentId: string) => {
     },
   });
 };
+useCaptureIntent.permission = ['payment.payment.write'] as const satisfies PermissionRequirement;
 
 export const useCancelIntent = (intentId: string) => {
   const queryClient = useQueryClient();
@@ -43,6 +45,7 @@ export const useCancelIntent = (intentId: string) => {
     },
   });
 };
+useCancelIntent.permission = ['payment.payment.write'] as const satisfies PermissionRequirement;
 
 export const useRefundIntent = (intentId: string) => {
   const queryClient = useQueryClient();
@@ -66,6 +69,7 @@ export const useRefundIntent = (intentId: string) => {
     },
   });
 };
+useRefundIntent.permission = ['payment.refund.execute'] as const satisfies PermissionRequirement;
 
 export const useApproveRefundRequest = () => {
   const queryClient = useQueryClient();
@@ -86,6 +90,7 @@ export const useApproveRefundRequest = () => {
     },
   });
 };
+useApproveRefundRequest.permission = { allOf: [['payment.refund.execute'], ['order.order.cancel']] } as const satisfies PermissionRequirement;
 
 export const useRejectRefundRequest = () => {
   const queryClient = useQueryClient();
@@ -96,6 +101,7 @@ export const useRejectRefundRequest = () => {
     },
   });
 };
+useRejectRefundRequest.permission = ['payment.refund.execute'] as const satisfies PermissionRequirement;
 
 export const useConfirmBankTransfer = () => {
   const queryClient = useQueryClient();
@@ -115,6 +121,7 @@ export const useConfirmBankTransfer = () => {
     },
   });
 };
+useConfirmBankTransfer.permission = ['payment.deposit.confirm'] as const satisfies PermissionRequirement;
 
 export const useEarnPoints = () => {
   const queryClient = useQueryClient();
@@ -138,6 +145,7 @@ export const useEarnPoints = () => {
     },
   });
 };
+useEarnPoints.permission = ['payment.point.adjust'] as const satisfies PermissionRequirement;
 
 export const useBatchEarnPoints = () => {
   const queryClient = useQueryClient();
@@ -158,6 +166,7 @@ export const useBatchEarnPoints = () => {
     },
   });
 };
+useBatchEarnPoints.permission = ['payment.point.adjust'] as const satisfies PermissionRequirement;
 
 export const useDeductPoints = () => {
   const queryClient = useQueryClient();
@@ -179,6 +188,7 @@ export const useDeductPoints = () => {
     },
   });
 };
+useDeductPoints.permission = ['payment.point.adjust'] as const satisfies PermissionRequirement;
 
 export const useProcessExpiredPoints = () => {
   const queryClient = useQueryClient();
@@ -189,6 +199,7 @@ export const useProcessExpiredPoints = () => {
     },
   });
 };
+useProcessExpiredPoints.permission = ['payment.point.adjust'] as const satisfies PermissionRequirement;
 
 export const useCancelEarnPoints = () => {
   const queryClient = useQueryClient();
@@ -212,6 +223,7 @@ export const useCancelEarnPoints = () => {
     },
   });
 };
+useCancelEarnPoints.permission = ['payment.point.adjust'] as const satisfies PermissionRequirement;
 
 // ── Payment method catalog & regions ─────────────────────────────────────────
 
@@ -232,6 +244,7 @@ export const useUpdatePaymentMethodCatalog = () => {
     },
   });
 };
+useUpdatePaymentMethodCatalog.permission = ['payment.method.write'] as const satisfies PermissionRequirement;
 
 export const useCreateRegion = () => {
   const queryClient = useQueryClient();
@@ -243,6 +256,7 @@ export const useCreateRegion = () => {
     },
   });
 };
+useCreateRegion.permission = ['system.region.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateRegion = () => {
   const queryClient = useQueryClient();
@@ -262,6 +276,7 @@ export const useUpdateRegion = () => {
     },
   });
 };
+useUpdateRegion.permission = ['system.region.write'] as const satisfies PermissionRequirement;
 
 export const usePutRegionPaymentMethods = () => {
   const queryClient = useQueryClient();
@@ -281,6 +296,7 @@ export const usePutRegionPaymentMethods = () => {
     },
   });
 };
+usePutRegionPaymentMethods.permission = ['payment.method.write'] as const satisfies PermissionRequirement;
 
 // ── 통계 — 수수료율 설정 ─────────────────────────────────────────────────────
 
@@ -293,6 +309,7 @@ export const useCreateFeeRate = () => {
     },
   });
 };
+useCreateFeeRate.permission = ['analytics.setting.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteFeeRate = () => {
   const queryClient = useQueryClient();
@@ -303,6 +320,7 @@ export const useDeleteFeeRate = () => {
     },
   });
 };
+useDeleteFeeRate.permission = ['analytics.setting.write'] as const satisfies PermissionRequirement;
 
 /** 수동 환불 [완료 처리] — 무통장·수동 실행(MANUAL) 송금 대기 PENDING → SUCCEEDED */
 export const useConfirmRefund = () => {
@@ -316,3 +334,4 @@ export const useConfirmRefund = () => {
     },
   });
 };
+useConfirmRefund.permission = ['payment.refund.execute'] as const satisfies PermissionRequirement;

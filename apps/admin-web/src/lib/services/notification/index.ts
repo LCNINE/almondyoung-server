@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { EmailLayoutSettings } from '@packages/email-layout';
 import { notificationAdminApi, type NotificationEvent, type TemplateContents } from '@/lib/api/domains/notification';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 const keys = {
   events: ['notification', 'events'] as const,
@@ -35,6 +36,7 @@ export const useUpdateNotificationEvent = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.events }),
   });
 };
+useUpdateNotificationEvent.permission = ['messaging.template.write'] as const satisfies PermissionRequirement;
 
 export const useEmailLayout = () =>
   useQuery({
@@ -49,6 +51,7 @@ export const useUpdateEmailLayout = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.emailLayout }),
   });
 };
+useUpdateEmailLayout.permission = ['messaging.template.write'] as const satisfies PermissionRequirement;
 
 export const useResetTemplateToDefault = () => {
   const queryClient = useQueryClient();
@@ -57,6 +60,7 @@ export const useResetTemplateToDefault = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.templates }),
   });
 };
+useResetTemplateToDefault.permission = ['messaging.template.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateTemplateContents = () => {
   const queryClient = useQueryClient();
@@ -66,3 +70,4 @@ export const useUpdateTemplateContents = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.templates }),
   });
 };
+useUpdateTemplateContents.permission = ['messaging.template.write'] as const satisfies PermissionRequirement;

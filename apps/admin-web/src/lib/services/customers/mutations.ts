@@ -9,6 +9,7 @@ import {
 } from '@/lib/types';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { customerQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 // 회원 기본정보 수정
 export const useUpdateUser = (userId: string) => {
@@ -22,6 +23,7 @@ export const useUpdateUser = (userId: string) => {
     },
   });
 };
+useUpdateUser.permission = ['customer.profile.write'] as const satisfies PermissionRequirement;
 
 // 사업자등록증 심사 수정
 export const useUpdateBusinessLicense = (userId: string) => {
@@ -41,6 +43,7 @@ export const useUpdateBusinessLicense = (userId: string) => {
     },
   });
 };
+useUpdateBusinessLicense.permission = ['customer.business_verification.review'] as const satisfies PermissionRequirement;
 
 // 사업자등록증 등록/수정 (userId 기준 upsert)
 export const useUpsertBusinessLicense = (userId: string) => {
@@ -55,6 +58,7 @@ export const useUpsertBusinessLicense = (userId: string) => {
     },
   });
 };
+useUpsertBusinessLicense.permission = ['customer.business_verification.review'] as const satisfies PermissionRequirement;
 
 // 회원 역할 일괄 교체
 export const useSetUserRoles = (userId: string) => {
@@ -71,3 +75,4 @@ export const useSetUserRoles = (userId: string) => {
     },
   });
 };
+useSetUserRoles.permission = ['iam.role.assign'] as const satisfies PermissionRequirement;

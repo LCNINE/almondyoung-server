@@ -6,6 +6,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { channelQueryKeys } from './query-keys';
 import { orderCollectionFailuresClient } from '@/lib/api/domains/channel/order-collection-failures.client';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export function useReplayFailure() {
   const queryClient = useQueryClient();
@@ -18,3 +19,4 @@ export function useReplayFailure() {
     },
   });
 }
+useReplayFailure.permission = ['order.order.write'] as const satisfies PermissionRequirement;

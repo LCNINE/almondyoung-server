@@ -86,6 +86,7 @@ import type {
   UpsertLeadTimeRuleDto,
   UpsertSkuOverrideDto,
 } from '../../types/dto/inventory';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 /**
  * 멱등 키 수명주기를 관리하는 mutation 래퍼 (P2-4, 스펙 §5).
@@ -125,6 +126,7 @@ export const useAdjustStock = () => {
     },
   });
 };
+useAdjustStock.permission = ['inventory.stock.adjust'] as const satisfies PermissionRequirement;
 
 export const useRebuildStockSummary = () => {
   const queryClient = useQueryClient();
@@ -136,6 +138,7 @@ export const useRebuildStockSummary = () => {
     },
   });
 };
+useRebuildStockSummary.permission = ['inventory.stock.adjust'] as const satisfies PermissionRequirement;
 
 export const useCancelStockEvent = () => {
   const queryClient = useQueryClient();
@@ -148,6 +151,7 @@ export const useCancelStockEvent = () => {
     },
   });
 };
+useCancelStockEvent.permission = ['inventory.stock.adjust'] as const satisfies PermissionRequirement;
 
 export const useCreateSku = () => {
   const queryClient = useQueryClient();
@@ -158,6 +162,7 @@ export const useCreateSku = () => {
     },
   });
 };
+useCreateSku.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateSku = () => {
   const queryClient = useQueryClient();
@@ -170,6 +175,7 @@ export const useUpdateSku = () => {
     },
   });
 };
+useUpdateSku.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteSku = () => {
   const queryClient = useQueryClient();
@@ -181,6 +187,7 @@ export const useDeleteSku = () => {
     },
   });
 };
+useDeleteSku.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useAddBarcode = () => {
   const queryClient = useQueryClient();
@@ -192,6 +199,7 @@ export const useAddBarcode = () => {
     },
   });
 };
+useAddBarcode.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useRemoveBarcode = () => {
   const queryClient = useQueryClient();
@@ -203,6 +211,7 @@ export const useRemoveBarcode = () => {
     },
   });
 };
+useRemoveBarcode.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useCreateWarehouse = () => {
   const queryClient = useQueryClient();
@@ -213,6 +222,7 @@ export const useCreateWarehouse = () => {
     },
   });
 };
+useCreateWarehouse.permission = ['inventory.warehouse.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateWarehouse = () => {
   const queryClient = useQueryClient();
@@ -225,6 +235,7 @@ export const useUpdateWarehouse = () => {
     },
   });
 };
+useUpdateWarehouse.permission = ['inventory.warehouse.write'] as const satisfies PermissionRequirement;
 
 export const useCreateDeliveryProfile = () => {
   const queryClient = useQueryClient();
@@ -233,6 +244,7 @@ export const useCreateDeliveryProfile = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.deliveryProfiles }),
   });
 };
+useCreateDeliveryProfile.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateDeliveryProfile = () => {
   const queryClient = useQueryClient();
@@ -242,6 +254,7 @@ export const useUpdateDeliveryProfile = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.deliveryProfiles }),
   });
 };
+useUpdateDeliveryProfile.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useCreateSupplier = () => {
   const queryClient = useQueryClient();
@@ -252,6 +265,7 @@ export const useCreateSupplier = () => {
     },
   });
 };
+useCreateSupplier.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateSupplier = () => {
   const queryClient = useQueryClient();
@@ -264,6 +278,7 @@ export const useUpdateSupplier = () => {
     },
   });
 };
+useUpdateSupplier.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteSupplier = () => {
   const queryClient = useQueryClient();
@@ -274,6 +289,7 @@ export const useDeleteSupplier = () => {
     },
   });
 };
+useDeleteSupplier.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useCreateSupplierCategory = () => {
   const queryClient = useQueryClient();
@@ -285,6 +301,7 @@ export const useCreateSupplierCategory = () => {
     },
   });
 };
+useCreateSupplierCategory.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateSupplierCategory = () => {
   const queryClient = useQueryClient();
@@ -298,6 +315,7 @@ export const useUpdateSupplierCategory = () => {
     },
   });
 };
+useUpdateSupplierCategory.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteSupplierCategory = () => {
   const queryClient = useQueryClient();
@@ -309,6 +327,7 @@ export const useDeleteSupplierCategory = () => {
     },
   });
 };
+useDeleteSupplierCategory.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useCreateHolder = () => {
   const queryClient = useQueryClient();
@@ -319,6 +338,7 @@ export const useCreateHolder = () => {
     },
   });
 };
+useCreateHolder.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateHolder = () => {
   const queryClient = useQueryClient();
@@ -331,6 +351,7 @@ export const useUpdateHolder = () => {
     },
   });
 };
+useUpdateHolder.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteHolder = () => {
   const queryClient = useQueryClient();
@@ -342,6 +363,7 @@ export const useDeleteHolder = () => {
     },
   });
 };
+useDeleteHolder.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 // 로케이션 관련 mutations
 export const useCreateColumn = () => {
@@ -354,6 +376,7 @@ export const useCreateColumn = () => {
     },
   });
 };
+useCreateColumn.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateColumn = () => {
   const queryClient = useQueryClient();
@@ -365,6 +388,7 @@ export const useUpdateColumn = () => {
     },
   });
 };
+useUpdateColumn.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useCreateRack = () => {
   const queryClient = useQueryClient();
@@ -376,6 +400,7 @@ export const useCreateRack = () => {
     },
   });
 };
+useCreateRack.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateRack = () => {
   const queryClient = useQueryClient();
@@ -387,6 +412,7 @@ export const useUpdateRack = () => {
     },
   });
 };
+useUpdateRack.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useCreateZoneLocation = () => {
   const queryClient = useQueryClient();
@@ -398,6 +424,7 @@ export const useCreateZoneLocation = () => {
     },
   });
 };
+useCreateZoneLocation.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateLocation = () => {
   const queryClient = useQueryClient();
@@ -410,6 +437,7 @@ export const useUpdateLocation = () => {
     },
   });
 };
+useUpdateLocation.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useAddCustomBin = () => {
   const queryClient = useQueryClient();
@@ -421,6 +449,7 @@ export const useAddCustomBin = () => {
     },
   });
 };
+useAddCustomBin.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 // SKU 그룹 관련 mutations
 export const useCreateSkuGroup = () => {
@@ -432,6 +461,7 @@ export const useCreateSkuGroup = () => {
     },
   });
 };
+useCreateSkuGroup.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateSkuGroup = () => {
   const queryClient = useQueryClient();
@@ -444,6 +474,7 @@ export const useUpdateSkuGroup = () => {
     },
   });
 };
+useUpdateSkuGroup.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteSkuGroup = () => {
   const queryClient = useQueryClient();
@@ -455,6 +486,7 @@ export const useDeleteSkuGroup = () => {
     },
   });
 };
+useDeleteSkuGroup.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useAddSkuToGroup = () => {
   const queryClient = useQueryClient();
@@ -468,6 +500,7 @@ export const useAddSkuToGroup = () => {
     },
   });
 };
+useAddSkuToGroup.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useBulkAddSkusToGroup = () => {
   const queryClient = useQueryClient();
@@ -481,6 +514,7 @@ export const useBulkAddSkusToGroup = () => {
     },
   });
 };
+useBulkAddSkusToGroup.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useRemoveSkuFromGroup = () => {
   const queryClient = useQueryClient();
@@ -494,6 +528,7 @@ export const useRemoveSkuFromGroup = () => {
     },
   });
 };
+useRemoveSkuFromGroup.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 // 재고 실사 관련 mutations
 export const useCreateStocktakingSession = () => {
@@ -506,6 +541,7 @@ export const useCreateStocktakingSession = () => {
     },
   });
 };
+useCreateStocktakingSession.permission = ['inventory.stock.operate'] as const satisfies PermissionRequirement;
 
 export const useStartStocktakingSession = () => {
   const queryClient = useQueryClient();
@@ -519,12 +555,14 @@ export const useStartStocktakingSession = () => {
     },
   });
 };
+useStartStocktakingSession.permission = ['inventory.stock.operate'] as const satisfies PermissionRequirement;
 
 export const useScanLocation = () => {
   return useMutation({
     mutationFn: (data: ScanLocationRequest) => stocktakingClient.scanLocation(data),
   });
 };
+useScanLocation.permission = ['inventory.stock.operate'] as const satisfies PermissionRequirement;
 
 export const useScanProduct = () => {
   const queryClient = useQueryClient();
@@ -537,6 +575,7 @@ export const useScanProduct = () => {
     },
   });
 };
+useScanProduct.permission = ['inventory.stock.operate'] as const satisfies PermissionRequirement;
 
 export const useUpdateLineCount = () => {
   return useMutation({
@@ -544,6 +583,7 @@ export const useUpdateLineCount = () => {
       stocktakingClient.updateLineCount(lineId, data),
   });
 };
+useUpdateLineCount.permission = ['inventory.stock.operate'] as const satisfies PermissionRequirement;
 
 export const useGenerateAdjustments = () => {
   return useMutation({
@@ -551,6 +591,7 @@ export const useGenerateAdjustments = () => {
       stocktakingClient.generateAdjustments(sessionId, data),
   });
 };
+useGenerateAdjustments.permission = ['inventory.stock.operate'] as const satisfies PermissionRequirement;
 
 export const useCompleteStocktakingSession = () => {
   const queryClient = useQueryClient();
@@ -561,6 +602,7 @@ export const useCompleteStocktakingSession = () => {
     },
   });
 };
+useCompleteStocktakingSession.permission = ['inventory.stock.adjust'] as const satisfies PermissionRequirement;
 
 // 재고 예약 관련 mutations
 export const useReleaseReservation = () => {
@@ -572,6 +614,7 @@ export const useReleaseReservation = () => {
     },
   });
 };
+useReleaseReservation.permission = ['inventory.stock.adjust'] as const satisfies PermissionRequirement;
 
 export const useReconcileReservations = () => {
   const queryClient = useQueryClient();
@@ -582,6 +625,7 @@ export const useReconcileReservations = () => {
     },
   });
 };
+useReconcileReservations.permission = ['inventory.stock.adjust'] as const satisfies PermissionRequirement;
 
 // 발주 관련 뮤테이션
 export const useCreatePurchaseOrder = () => {
@@ -593,6 +637,7 @@ export const useCreatePurchaseOrder = () => {
     },
   });
 };
+useCreatePurchaseOrder.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useCreatePurchaseOrderFromCart = () => {
   const queryClient = useQueryClient();
@@ -606,6 +651,7 @@ export const useCreatePurchaseOrderFromCart = () => {
     },
   });
 };
+useCreatePurchaseOrderFromCart.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useUpdatePurchaseOrderLines = () => {
   const queryClient = useQueryClient();
@@ -617,6 +663,7 @@ export const useUpdatePurchaseOrderLines = () => {
     },
   });
 };
+useUpdatePurchaseOrderLines.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useOrderPurchaseOrderLine = () => {
   const queryClient = useQueryClient();
@@ -641,6 +688,7 @@ export const useOrderPurchaseOrderLine = () => {
     },
   });
 };
+useOrderPurchaseOrderLine.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useMarkPurchaseOrderLineUnavailable = () => {
   const queryClient = useQueryClient();
@@ -665,6 +713,7 @@ export const useMarkPurchaseOrderLineUnavailable = () => {
     },
   });
 };
+useMarkPurchaseOrderLineUnavailable.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useCancelPurchaseOrder = () => {
   const queryClient = useQueryClient();
@@ -683,6 +732,7 @@ export const useCancelPurchaseOrder = () => {
     },
   });
 };
+useCancelPurchaseOrder.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useReceivePurchaseOrder = () => {
   const queryClient = useQueryClient();
@@ -696,6 +746,7 @@ export const useReceivePurchaseOrder = () => {
     },
   });
 };
+useReceivePurchaseOrder.permission = ['inventory.stock.operate'] as const satisfies PermissionRequirement;
 
 export const useCancelPurchaseOrderReceiptLine = () => {
   const queryClient = useQueryClient();
@@ -707,6 +758,7 @@ export const useCancelPurchaseOrderReceiptLine = () => {
     },
   });
 };
+useCancelPurchaseOrderReceiptLine.permission = ['inventory.stock.operate'] as const satisfies PermissionRequirement;
 
 export const useShortClosePurchaseOrderLine = () => {
   const queryClient = useQueryClient();
@@ -718,6 +770,7 @@ export const useShortClosePurchaseOrderLine = () => {
     },
   });
 };
+useShortClosePurchaseOrderLine.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useUpdatePurchaseOrderLineExpectedArrival = () => {
   const queryClient = useQueryClient();
@@ -729,6 +782,7 @@ export const useUpdatePurchaseOrderLineExpectedArrival = () => {
     },
   });
 };
+useUpdatePurchaseOrderLineExpectedArrival.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useAddToCart = () => {
   const queryClient = useQueryClient();
@@ -741,6 +795,7 @@ export const useAddToCart = () => {
     },
   });
 };
+useAddToCart.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useCreateTransferOrder = () => {
   const queryClient = useQueryClient();
@@ -752,6 +807,7 @@ export const useCreateTransferOrder = () => {
     },
   });
 };
+useCreateTransferOrder.permission = ['inventory.stock.adjust'] as const satisfies PermissionRequirement;
 
 export const useUpdateCartItem = () => {
   const queryClient = useQueryClient();
@@ -763,6 +819,7 @@ export const useUpdateCartItem = () => {
     },
   });
 };
+useUpdateCartItem.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useRemoveCartItem = () => {
   const queryClient = useQueryClient();
@@ -773,6 +830,7 @@ export const useRemoveCartItem = () => {
     },
   });
 };
+useRemoveCartItem.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useClearCart = () => {
   const queryClient = useQueryClient();
@@ -783,6 +841,7 @@ export const useClearCart = () => {
     },
   });
 };
+useClearCart.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 // 입고 관련 뮤테이션
 export const useSimpleInbound = () => {
@@ -794,6 +853,7 @@ export const useSimpleInbound = () => {
     },
   });
 };
+useSimpleInbound.permission = ['inventory.stock.operate'] as const satisfies PermissionRequirement;
 
 export const useSimpleFullscanInbound = () => {
   const queryClient = useQueryClient();
@@ -804,6 +864,7 @@ export const useSimpleFullscanInbound = () => {
     },
   });
 };
+useSimpleFullscanInbound.permission = ['inventory.stock.operate'] as const satisfies PermissionRequirement;
 
 export const useIndividualInbound = () => {
   const queryClient = useQueryClient();
@@ -814,12 +875,14 @@ export const useIndividualInbound = () => {
     },
   });
 };
+useIndividualInbound.permission = ['inventory.stock.operate'] as const satisfies PermissionRequirement;
 
 export const useVerifyBarcode = () => {
   return useMutation({
     mutationFn: (data: VerifyBarcodeRequest) => inboundClient.verifyBarcode(data),
   });
 };
+useVerifyBarcode.permission = ['inventory.stock.operate'] as const satisfies PermissionRequirement;
 
 export const usePutaway = () => {
   const queryClient = useQueryClient();
@@ -830,6 +893,7 @@ export const usePutaway = () => {
     },
   });
 };
+usePutaway.permission = ['inventory.stock.operate'] as const satisfies PermissionRequirement;
 
 export const useReturnInbound = () => {
   const queryClient = useQueryClient();
@@ -840,6 +904,7 @@ export const useReturnInbound = () => {
     },
   });
 };
+useReturnInbound.permission = ['inventory.stock.operate'] as const satisfies PermissionRequirement;
 
 export const useCancelInbound = () => {
   const queryClient = useQueryClient();
@@ -850,6 +915,7 @@ export const useCancelInbound = () => {
     },
   });
 };
+useCancelInbound.permission = ['inventory.stock.operate'] as const satisfies PermissionRequirement;
 
 export const useUpdateInboundLineMemo = () => {
   const queryClient = useQueryClient();
@@ -861,6 +927,7 @@ export const useUpdateInboundLineMemo = () => {
     },
   });
 };
+useUpdateInboundLineMemo.permission = ['inventory.stock.operate'] as const satisfies PermissionRequirement;
 
 // ===== 회수(Returns) =====
 
@@ -873,6 +940,7 @@ export const useCreateReturn = () => {
     },
   });
 };
+useCreateReturn.permission = ['inventory.stock.adjust'] as const satisfies PermissionRequirement;
 
 export const useReceiveReturn = () => {
   const queryClient = useQueryClient();
@@ -885,6 +953,7 @@ export const useReceiveReturn = () => {
     },
   });
 };
+useReceiveReturn.permission = ['inventory.stock.adjust'] as const satisfies PermissionRequirement;
 
 export const useInspectReturn = () => {
   const queryClient = useQueryClient();
@@ -897,6 +966,7 @@ export const useInspectReturn = () => {
     },
   });
 };
+useInspectReturn.permission = ['inventory.stock.adjust'] as const satisfies PermissionRequirement;
 
 export const useProcessReturn = () => {
   const queryClient = useQueryClient();
@@ -909,6 +979,7 @@ export const useProcessReturn = () => {
     },
   });
 };
+useProcessReturn.permission = ['inventory.stock.adjust'] as const satisfies PermissionRequirement;
 
 // ===== 즉시 이동(Movement) =====
 
@@ -921,6 +992,7 @@ export const useMoveImmediately = () => {
     },
   });
 };
+useMoveImmediately.permission = ['inventory.stock.operate'] as const satisfies PermissionRequirement;
 
 // ===== 보충 규칙(#743 B) =====
 
@@ -937,6 +1009,7 @@ export const useUpdateReplenishmentSettings = () => {
     onSuccess: () => invalidateReplenishmentRules(queryClient),
   });
 };
+useUpdateReplenishmentSettings.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateReplenishmentGrades = () => {
   const queryClient = useQueryClient();
@@ -945,6 +1018,7 @@ export const useUpdateReplenishmentGrades = () => {
     onSuccess: () => invalidateReplenishmentRules(queryClient),
   });
 };
+useUpdateReplenishmentGrades.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useUpsertSupplierRule = () => {
   const queryClient = useQueryClient();
@@ -954,6 +1028,7 @@ export const useUpsertSupplierRule = () => {
     onSuccess: () => invalidateReplenishmentRules(queryClient),
   });
 };
+useUpsertSupplierRule.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteSupplierRule = () => {
   const queryClient = useQueryClient();
@@ -962,6 +1037,7 @@ export const useDeleteSupplierRule = () => {
     onSuccess: () => invalidateReplenishmentRules(queryClient),
   });
 };
+useDeleteSupplierRule.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useUpsertRouteRule = () => {
   const queryClient = useQueryClient();
@@ -971,6 +1047,7 @@ export const useUpsertRouteRule = () => {
     onSuccess: () => invalidateReplenishmentRules(queryClient),
   });
 };
+useUpsertRouteRule.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteRouteRule = () => {
   const queryClient = useQueryClient();
@@ -979,6 +1056,7 @@ export const useDeleteRouteRule = () => {
     onSuccess: () => invalidateReplenishmentRules(queryClient),
   });
 };
+useDeleteRouteRule.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useUpsertSkuOverride = () => {
   const queryClient = useQueryClient();
@@ -988,6 +1066,7 @@ export const useUpsertSkuOverride = () => {
     onSuccess: () => invalidateReplenishmentRules(queryClient),
   });
 };
+useUpsertSkuOverride.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteSkuOverride = () => {
   const queryClient = useQueryClient();
@@ -996,3 +1075,4 @@ export const useDeleteSkuOverride = () => {
     onSuccess: () => invalidateReplenishmentRules(queryClient),
   });
 };
+useDeleteSkuOverride.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;

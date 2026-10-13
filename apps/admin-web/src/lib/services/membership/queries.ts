@@ -7,6 +7,7 @@ import { membershipPeopleApi } from '@/lib/api/domains/membership/people';
 import { AdminRecurringBillingListQuery } from '@/lib/types/dto/wallet';
 import { isCustomError } from '@/lib/api/customError';
 import { membershipQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export const useMembershipMembers = (
   query: AdminMembersQuery,
@@ -63,6 +64,7 @@ export const useSetAutoRenewal = () => {
     },
   });
 };
+useSetAutoRenewal.permission = ['membership.member.write'] as const satisfies PermissionRequirement;
 
 export const useAdjustEntitlement = () => {
   const queryClient = useQueryClient();
@@ -81,6 +83,7 @@ export const useAdjustEntitlement = () => {
     },
   });
 };
+useAdjustEntitlement.permission = ['membership.member.write'] as const satisfies PermissionRequirement;
 
 export const useBillingHistory = (query: AdminBillingHistoryQuery) => {
   return useQuery({
@@ -103,6 +106,7 @@ export const useCreateTier = () => {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: membershipQueryKeys.tiersWithPlans() }); },
   });
 };
+useCreateTier.permission = ['membership.plan.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateTier = () => {
   const queryClient = useQueryClient();
@@ -112,6 +116,7 @@ export const useUpdateTier = () => {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: membershipQueryKeys.tiersWithPlans() }); },
   });
 };
+useUpdateTier.permission = ['membership.plan.write'] as const satisfies PermissionRequirement;
 
 export const useCreatePlan = () => {
   const queryClient = useQueryClient();
@@ -121,6 +126,7 @@ export const useCreatePlan = () => {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: membershipQueryKeys.tiersWithPlans() }); },
   });
 };
+useCreatePlan.permission = ['membership.plan.write'] as const satisfies PermissionRequirement;
 
 export const useUpdatePlan = () => {
   const queryClient = useQueryClient();
@@ -130,6 +136,7 @@ export const useUpdatePlan = () => {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: membershipQueryKeys.tiersWithPlans() }); },
   });
 };
+useUpdatePlan.permission = ['membership.plan.write'] as const satisfies PermissionRequirement;
 
 export const useDeactivatePlan = () => {
   const queryClient = useQueryClient();
@@ -139,6 +146,7 @@ export const useDeactivatePlan = () => {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: membershipQueryKeys.tiersWithPlans() }); },
   });
 };
+useDeactivatePlan.permission = ['membership.plan.write'] as const satisfies PermissionRequirement;
 
 /** 해지·환불 견적. 다이얼로그를 열 때만 조회한다(enabled). */
 export const useCancellationQuote = (contractId: string, enabled: boolean) =>
@@ -170,6 +178,7 @@ export const useScheduleCancelSubscription = () => {
     },
   });
 };
+useScheduleCancelSubscription.permission = ['membership.billing.refund'] as const satisfies PermissionRequirement;
 
 /** 계좌 송금을 마친 환불 건을 완료로 확정한다(CMS·무통장 수동 송금). */
 export const useCompleteManualRefund = () => {
@@ -189,6 +198,7 @@ export const useCompleteManualRefund = () => {
     },
   });
 };
+useCompleteManualRefund.permission = ['membership.billing.refund'] as const satisfies PermissionRequirement;
 
 export const useForceCancelSubscription = () => {
   const queryClient = useQueryClient();
@@ -226,6 +236,7 @@ export const useForceCancelSubscription = () => {
     },
   });
 };
+useForceCancelSubscription.permission = ['membership.billing.refund'] as const satisfies PermissionRequirement;
 
 export const useActivatePlan = () => {
   const queryClient = useQueryClient();
@@ -234,6 +245,7 @@ export const useActivatePlan = () => {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: membershipQueryKeys.tiersWithPlans() }); },
   });
 };
+useActivatePlan.permission = ['membership.plan.write'] as const satisfies PermissionRequirement;
 
 export const useAdminSubscribeUser = () => {
   const queryClient = useQueryClient();
@@ -245,6 +257,7 @@ export const useAdminSubscribeUser = () => {
     },
   });
 };
+useAdminSubscribeUser.permission = ['membership.member.write'] as const satisfies PermissionRequirement;
 
 export const useGrantSubscriptionByDays = () => {
   const queryClient = useQueryClient();
@@ -256,6 +269,7 @@ export const useGrantSubscriptionByDays = () => {
     },
   });
 };
+useGrantSubscriptionByDays.permission = ['membership.member.write'] as const satisfies PermissionRequirement;
 
 export const useRetryBilling = () => {
   const queryClient = useQueryClient();
@@ -266,6 +280,7 @@ export const useRetryBilling = () => {
     },
   });
 };
+useRetryBilling.permission = ['membership.member.write'] as const satisfies PermissionRequirement;
 
 // INVOICE 계약 강제 정합화 — 성공 시 멤버십 캐시 + 인보이스 목록(walletApi) 캐시를 함께 무효화.
 export const useReconcileInvoice = () => {
@@ -278,6 +293,7 @@ export const useReconcileInvoice = () => {
     },
   });
 };
+useReconcileInvoice.permission = ['membership.member.write'] as const satisfies PermissionRequirement;
 
 export function useRecurringBillingOverview() {
   return useQuery({
@@ -320,6 +336,7 @@ export function usePollCmsMember() {
     },
   });
 }
+usePollCmsMember.permission = ['payment.billing.execute'] as const satisfies PermissionRequirement;
 
 export function usePollCmsWithdrawal() {
   const queryClient = useQueryClient();
@@ -330,3 +347,4 @@ export function usePollCmsWithdrawal() {
     },
   });
 }
+usePollCmsWithdrawal.permission = ['payment.billing.execute'] as const satisfies PermissionRequirement;
