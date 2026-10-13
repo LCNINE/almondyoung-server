@@ -124,7 +124,10 @@ export function StatusBar({ editor }: { editor: AlmondEditor }) {
           <span className="ml-2 text-xs text-slate-400">옵션 선택됨</span>
         )}
         <button onClick={() => setNoticeOpen(!noticeOpen)}>
-          작업 시 유의사항 {noticeOpen ? "접기" : "보기"}
+          작업 시 유의사항{" "}
+          <span className="text-foreground font-semibold underline underline-offset-2">
+            {noticeOpen ? "접기" : "보기"}
+          </span>
         </button>
         <button
           className="ml-auto"
