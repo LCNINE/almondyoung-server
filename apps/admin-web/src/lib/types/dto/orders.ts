@@ -95,7 +95,6 @@ export interface SalesOrderDto {
   walletIntentId?: string | null;
   lines: {
     variantId: string;
-    productMatchingId?: string;
     matchingResolved?: boolean;
     productName?: string;
     quantity: number;

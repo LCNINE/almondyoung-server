@@ -35,11 +35,6 @@ export class CreateSalesOrderLineDto {
   @IsNotEmpty()
   variantId: string;
 
-  @ApiProperty({ description: 'Product matching ID', required: false })
-  @IsUUID()
-  @IsOptional()
-  productMatchingId?: string;
-
   @ApiProperty({ description: '상품명', required: false })
   @IsString()
   @IsOptional()

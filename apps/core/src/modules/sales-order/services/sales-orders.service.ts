@@ -303,7 +303,6 @@ export class SalesOrdersService {
               channelOrderItemId: l.channelOrderItemId ?? null,
               channelProductId: l.channelProductId ?? null,
               variantId: l.variantId,
-              productMatchingId: l.productMatchingId ?? null,
               productName: l.productName ?? '',
               quantity: l.quantity,
               unitPrice: l.unitPrice ?? null,
@@ -403,7 +402,7 @@ export class SalesOrdersService {
     }, tx);
   }
 
-  async confirm(id: string, warehouseId?: string, tx?: DbTx) {
+  async confirm(id: string, tx?: DbTx) {
     return this.db.run(async (trx) => {
       // Row lock before state check to prevent concurrent double-confirm races
       await trx.execute(sql`
@@ -433,25 +432,6 @@ export class SalesOrdersService {
       }
 
       // salesOrder.status === 'pending' — proceed with confirm
-      const lines = await trx
-        .select()
-        .from(wmsTables.salesOrderLines)
-        .where(eq(wmsTables.salesOrderLines.salesOrderId, id));
-
-      if (warehouseId && lines.length > 0) {
-        for (const line of lines) {
-          const snapshotId = await this.productSkuMapping.createSnapshotForVariant(line.variantId, warehouseId, trx);
-          if (snapshotId) {
-            await trx
-              .update(wmsTables.salesOrderLines)
-              .set({ mappingSnapshotId: snapshotId })
-              .where(eq(wmsTables.salesOrderLines.id, line.id));
-          } else {
-            this.logger.warn(`No mapping found for variantId=${line.variantId} in warehouseId=${warehouseId}`);
-          }
-        }
-      }
-
       await trx
         .update(wmsTables.salesOrders)
         .set({ status: 'confirmed', confirmedAt: new Date() })
