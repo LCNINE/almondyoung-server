@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getTokenPayload } from '@/lib/auth/get-token-payload';
+import { getMyPermissions } from '@/lib/auth/my-permissions.server';
+import { canAny } from '@/lib/auth/screen-access';
 import { forwardRequest } from '../../_lib/forward';
+import { requiredForMedusa } from './medusa-permissions';
 
 const MEDUSA_API_URL = process.env.MEDUSA_API_URL ?? 'http://localhost:9000';
 const MEDUSA_API_KEY = process.env.MEDUSA_API_KEY ?? '';
@@ -13,30 +15,29 @@ function medusaExtraHeaders(): Record<string, string> | undefined {
   return { Authorization: `Basic ${encoded}` };
 }
 
-// Medusa 는 사용자 토큰이 아니라 공유 키 하나로 호출되므로, 넘기기 전에 여기서 직원 세션을 확인한다.
-const STAFF_ROLES = ['admin', 'master'];
-
-async function rejectNonStaff(): Promise<NextResponse | null> {
-  let payload;
+// Medusa 는 사용자 토큰이 아니라 공유 키 하나로 호출되므로, 넘기기 전에 여기서 경로별 권한을 확인한다.
+async function rejectWithoutPermission(method: string, path: string[]): Promise<NextResponse | null> {
+  let state;
   try {
-    payload = await getTokenPayload();
+    state = await getMyPermissions();
   } catch {
-    return NextResponse.json(
-      { error: 'Authentication unavailable' },
-      { status: 503 }
-    );
+    return NextResponse.json({ error: 'Authentication unavailable' }, { status: 503 });
   }
-  if (!payload) {
+  if (state.state === 'unauthenticated') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  if (!payload.roles.some((role) => STAFF_ROLES.includes(role))) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (state.state === 'unavailable') {
+    return NextResponse.json({ error: 'Permission data is not loaded yet' }, { status: 503 });
+  }
+  const required = requiredForMedusa(method, path);
+  if (!required || !canAny(state.permissions, required)) {
+    return NextResponse.json({ error: 'Forbidden', requiredPermissions: required ?? [] }, { status: 403 });
   }
   return null;
 }
 
 async function forwardToMedusa(request: NextRequest, path: string[]) {
-  const rejection = await rejectNonStaff();
+  const rejection = await rejectWithoutPermission(request.method, path);
   if (rejection) return rejection;
   return forwardRequest(request, MEDUSA_API_URL, path, {
     extraHeaders: medusaExtraHeaders(),
