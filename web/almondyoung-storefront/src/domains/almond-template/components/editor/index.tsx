@@ -4,8 +4,8 @@ import {
   useAlmondEditor,
   type AlmondEditorProps,
 } from "../../hooks/use-almond-editor"
+import { Info } from "lucide-react"
 import { Canvas } from "./canvas"
-import { BackupBanner } from "./backup-banner"
 import { AuthDialog } from "./dialogs/auth-dialog"
 import { HelpDialog } from "./dialogs/help-dialog"
 import { IssuesDialog } from "./dialogs/issues-dialog"
@@ -24,6 +24,7 @@ export function AlmondTemplateEditor(props: AlmondEditorProps) {
   const editor = useAlmondEditor(props)
   const {
     message,
+    toastId,
     saveDialog,
     loadDialog,
     setHelpOpen,
@@ -37,7 +38,6 @@ export function AlmondTemplateEditor(props: AlmondEditorProps) {
     <div className="fixed inset-0 z-[10000] flex h-screen flex-col overflow-hidden bg-[#f5f5f4] text-slate-900">
       <link rel="stylesheet" href={FONT_STYLESHEET} precedence="default" />
       <EditorHeader editor={editor} />
-      <BackupBanner editor={editor} />
       <div className="relative flex min-h-0 flex-1">
         <ToolNav editor={editor} />
         <ToolPanel editor={editor} />
@@ -49,9 +49,11 @@ export function AlmondTemplateEditor(props: AlmondEditorProps) {
       </div>
       {message && (
         <p
+          key={toastId}
           role="status"
-          className="absolute bottom-14 left-1/2 z-10 -translate-x-1/2 rounded-lg bg-slate-900 px-4 py-2 text-sm text-white shadow"
+          className="animate-in fade-in slide-in-from-top-2 absolute top-20 left-1/2 z-50 flex max-w-[90vw] -translate-x-1/2 items-center gap-2.5 rounded-xl border border-[#dcdee3] bg-white py-3 pr-5 pl-4 text-[15px] font-semibold text-[#1a1c20] shadow-[0_12px_32px_rgba(0,0,0,0.16)] duration-200"
         >
+          <Info className="h-5 w-5 shrink-0 text-[#555d6d]" strokeWidth={2.4} />
           {message}
         </p>
       )}

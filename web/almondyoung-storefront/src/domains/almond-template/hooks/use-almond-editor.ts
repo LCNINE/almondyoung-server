@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { PRINT_PRODUCTS, PRINT_SPECS } from "../lib/catalog"
 import { imageDpi, newDesign, printIssues, type Design } from "../lib/document"
 import { useCanvasInteraction } from "./use-canvas-interaction"
@@ -8,7 +8,6 @@ import { useImageTools } from "./use-image-tools"
 import { useLayerActions } from "./use-layer-actions"
 import { useAuthRetry } from "./use-auth-retry"
 import { useDesignOrder } from "./use-design-order"
-import { useDraftBackup } from "./use-draft-backup"
 import { useTemplateExport } from "./use-template-export"
 import { useTemplateStorage, type EditorMode } from "./use-template-storage"
 
@@ -59,7 +58,17 @@ export function useAlmondEditor({
   const [showRuler, setShowRuler] = useState(false)
   const [showCutline, setShowCutline] = useState(true)
   const [showSafety, setShowSafety] = useState(true)
-  const [message, setMessage] = useState("")
+  const [toast, setToast] = useState({ text: "", id: 0 })
+  const message = toast.text
+  const setMessage = useCallback(
+    (text: string) => setToast((current) => ({ text, id: current.id + 1 })),
+    []
+  )
+  useEffect(() => {
+    if (!toast.text) return
+    const timer = setTimeout(() => setToast((t) => ({ ...t, text: "" })), 3000)
+    return () => clearTimeout(timer)
+  }, [toast.id])
   const [tool, setTool] = useState<EditorTool>(
     mode === "customer" ? "image" : "template"
   )
@@ -109,19 +118,12 @@ export function useAlmondEditor({
     setSelectedId,
   })
   const auth = useAuthRetry(setMessage)
-  const backup = useDraftBackup({
-    backupKey: `${mode}:${productId}:${size}:${templateId}`,
-    design,
-    change,
-    setMessage,
-  })
   const storage = useTemplateStorage({
     mode,
     productId,
     size,
     templateId,
     runAuthed: auth.runAuthed,
-    forgetBackup: backup.forgetBackup,
     design,
     setDesign,
     change,
@@ -165,7 +167,6 @@ export function useAlmondEditor({
     variantId,
     templateId,
     runAuthed: auth.runAuthed,
-    forgetBackup: backup.forgetBackup,
   })
   const complete = () => {
     const found = printIssues(design)
@@ -173,7 +174,6 @@ export function useAlmondEditor({
       setIssues(found)
       return
     }
-    void backup.flushBackup()
     setPreviewSide(side)
     setPreview(true)
   }
@@ -205,6 +205,9 @@ export function useAlmondEditor({
     pasteCopied: actions.pasteCopied,
     cutSelected: actions.cutSelected,
     removeSelected: actions.removeSelected,
+    canSave: mode === "designer",
+    save: storage.save,
+    saveNamed: storage.saveNamed,
   })
 
   return {
@@ -233,6 +236,7 @@ export function useAlmondEditor({
     showSafety,
     setShowSafety,
     message,
+    toastId: toast.id,
     setMessage,
     tool,
     setTool,
@@ -265,7 +269,6 @@ export function useAlmondEditor({
     ...exporter,
     ...order,
     ...auth,
-    ...backup,
   }
 }
 

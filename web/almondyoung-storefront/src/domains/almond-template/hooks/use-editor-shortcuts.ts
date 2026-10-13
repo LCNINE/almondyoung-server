@@ -24,6 +24,9 @@ type Params = {
   pasteCopied: () => void
   cutSelected: () => void
   removeSelected: () => void
+  canSave: boolean
+  save: () => void
+  saveNamed: () => void
 }
 
 export function useEditorShortcuts({
@@ -49,9 +52,26 @@ export function useEditorShortcuts({
   pasteCopied,
   cutSelected,
   removeSelected,
+  canSave,
+  save,
+  saveNamed,
 }: Params) {
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault()
+        if (!canSave || event.repeat) return
+        if (saveDialog) saveNamed()
+        else if (
+          !preview &&
+          textDialog === null &&
+          !helpOpen &&
+          !issues.length &&
+          !loadDialog
+        )
+          save()
+        return
+      }
       if (
         event.target instanceof HTMLInputElement ||
         event.target instanceof HTMLTextAreaElement ||

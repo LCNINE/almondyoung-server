@@ -35,6 +35,15 @@ const GROUPS = [
 ] as const
 
 const PAGE_SIZE = 18
+const CARD_MAX_HEIGHT = 520
+
+function cardBox(size: string) {
+  const [w, h] = size.split("x").map(Number)
+  return {
+    aspectRatio: `${w} / ${h}`,
+    width: `min(100%, ${Math.round((CARD_MAX_HEIGHT * w) / h)}px)`,
+  }
+}
 
 const COLUMNS: Record<PrintKind | "default", string> = {
   pet: "grid-cols-2 px-[14px] md:grid-cols-6 md:px-0",
@@ -600,8 +609,8 @@ export function AlmondTemplateGallery({
                         src={item.thumbnail}
                         alt=""
                         loading="lazy"
-                        style={{ aspectRatio: item.size.replace("x", " / ") }}
-                        className="w-full bg-white object-contain shadow-[2px_3px_6px_rgba(0,0,0,0.18)] transition-shadow group-hover:shadow-[2px_4px_12px_rgba(0,0,0,0.3)]"
+                        style={cardBox(item.size)}
+                        className="mx-auto bg-white object-contain shadow-[2px_3px_6px_rgba(0,0,0,0.18)] transition-shadow group-hover:shadow-[2px_4px_12px_rgba(0,0,0,0.3)]"
                       />
                     </div>
                     <span
@@ -701,9 +710,9 @@ function BlankDesignCard({ name, size }: { name: string; size: string }) {
   const wide = w / h > 1.6
   return (
     <div
-      style={{ aspectRatio: `${w} / ${h}` }}
+      style={cardBox(size)}
       className={cn(
-        "flex w-full items-center justify-center gap-4 bg-white p-4 text-[#111] shadow-[2px_3px_6px_rgba(0,0,0,0.18)]",
+        "mx-auto flex items-center justify-center gap-4 bg-white p-4 text-[#111] shadow-[2px_3px_6px_rgba(0,0,0,0.18)]",
         wide ? "flex-row" : "flex-col"
       )}
     >

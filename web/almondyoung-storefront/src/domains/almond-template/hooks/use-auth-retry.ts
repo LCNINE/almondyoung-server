@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 
+export const AUTH_CHANNEL = "almond-template-auth"
+
 let restoring: Promise<boolean> | undefined
 
 function restoreToken() {
@@ -94,8 +96,13 @@ export function useAuthRetry(setMessage: (message: string) => void) {
   useEffect(() => {
     if (!authRequired) return
     const onFocus = () => void retryPending()
+    const channel = new BroadcastChannel(AUTH_CHANNEL)
+    channel.onmessage = onFocus
     window.addEventListener("focus", onFocus)
-    return () => window.removeEventListener("focus", onFocus)
+    return () => {
+      channel.close()
+      window.removeEventListener("focus", onFocus)
+    }
   }, [authRequired])
 
   useEffect(() => {

@@ -20,7 +20,8 @@ function layerName(type: Layer["type"]) {
 }
 
 export function makeLayer(type: Layer["type"], design: Design): Layer {
-  const width = type === "text" ? design.widthMm * 0.55 : design.widthMm * 0.35
+  const width = type === "text" ? design.widthMm * 0.8 : design.widthMm * 0.35
+  const fontSize = Math.max(3, mm(design.widthMm / 13))
   return {
     id: crypto.randomUUID(),
     type,
@@ -30,12 +31,12 @@ export function makeLayer(type: Layer["type"], design: Design): Layer {
     width: mm(width),
     height: mm(
       type === "text"
-        ? Math.min(30, design.heightMm * 0.15)
+        ? Math.min(fontSize * 1.2, design.heightMm * 0.15)
         : design.heightMm * 0.2
     ),
     fill: "#202020",
     text: type === "text" ? "문구를 입력하세요" : undefined,
-    fontSize: Math.max(3, mm(design.widthMm / 13)),
+    fontSize,
     fontFamily: SANS_FONT,
     opacity: 1,
     strokeWidth: 0,

@@ -30,6 +30,7 @@ export interface AdminAlmondTemplateDetailDto extends AdminAlmondTemplateSummary
 }
 
 export interface UpsertAlmondTemplateDto {
+  id?: string
   design: AlmondTemplateDesignDto
   thumbnailSvg: string
   status: AlmondTemplateStatus

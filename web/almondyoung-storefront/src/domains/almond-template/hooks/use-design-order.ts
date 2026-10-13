@@ -13,7 +13,6 @@ type Params = {
   variantId: string
   templateId: string
   runAuthed: (task: () => Promise<void>, failure: string) => Promise<void>
-  forgetBackup: () => Promise<unknown>
 }
 
 export function useDesignOrder({
@@ -22,7 +21,6 @@ export function useDesignOrder({
   variantId,
   templateId,
   runAuthed,
-  forgetBackup,
 }: Params) {
   const router = useRouter()
   const { countryCode } = useParams<{ countryCode: string }>()
@@ -44,7 +42,6 @@ export function useDesignOrder({
           backSvg,
           templateId: templateId || undefined,
         })
-        await forgetBackup()
         router.push(
           `/${countryCode}/products/${productId}?v_id=${variantId}&almond_design=${id}`
         )

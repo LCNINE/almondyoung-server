@@ -5,7 +5,7 @@ import { CLIPART_DATA } from "../lib/clipart-data"
 import { imageSrc } from "../lib/image-ref"
 import { fontStack } from "../lib/fonts"
 
-export function fittedFontSize(layer: Layer) {
+function textExtent(layer: Layer) {
   const lines = (layer.text ?? "").split("\n")
   const longest = Math.max(
     1,
@@ -16,14 +16,31 @@ export function fittedFontSize(layer: Layer) {
       )
     )
   )
+  return {
+    width: longest * ((layer.widthScale ?? 100) / 100),
+    height: lines.length * ((layer.lineHeight ?? 120) / 100),
+  }
+}
+
+export function fittedFontSize(layer: Layer) {
+  const extent = textExtent(layer)
   return Math.max(
     1,
     Math.min(
       layer.fontSize ?? 10,
-      layer.width / (longest * ((layer.widthScale ?? 100) / 100)),
-      layer.height / (lines.length * ((layer.lineHeight ?? 120) / 100))
+      layer.width / extent.width,
+      layer.height / extent.height
     )
   )
+}
+
+export function textBoxFor(layer: Layer, fontSize: number) {
+  const extent = textExtent(layer)
+  return {
+    fontSize,
+    width: Math.max(layer.width, Math.round(extent.width * fontSize * 10) / 10),
+    height: Math.round(extent.height * fontSize * 10) / 10,
+  }
 }
 
 function polygonPoints(layer: Layer, points: number[][]) {

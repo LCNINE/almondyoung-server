@@ -14,6 +14,7 @@ import { inlineThumbnailImages, uploadDesignImages } from "../lib/design-images"
 import { parseDesign, type Design } from "../lib/document"
 import type { PublishedTemplate } from "../lib/gallery-filter"
 import { printSvg } from "../components/print-svg"
+import { PRINT_PRODUCTS } from "../lib/catalog"
 
 export type EditorMode = "customer" | "designer"
 export type SavedItem = AdminAlmondTemplateSummary
@@ -30,7 +31,10 @@ type Params = {
   setSelectedId: (id: string | null) => void
   setMessage: (message: string) => void
   runAuthed: (task: () => Promise<void>, failure: string) => Promise<void>
-  forgetBackup: () => Promise<unknown>
+}
+
+function saveTarget(design: Design) {
+  return `${design.productId}:${design.widthMm}x${design.heightMm}:${(design.title ?? "").trim()}`
 }
 
 export function useTemplateStorage({
@@ -44,11 +48,19 @@ export function useTemplateStorage({
   setSelectedId,
   setMessage,
   runAuthed,
-  forgetBackup,
 }: Params) {
   const [saveDialog, setSaveDialog] = useState(false)
   const [loadDialog, setLoadDialog] = useState(false)
   const [saveName, setSaveName] = useState("")
+  const [saved, setSaved] = useState<{ id: string; target: string } | null>(
+    null
+  )
+  const savedId = saved?.target === saveTarget(design) ? saved.id : null
+  const [clean, setClean] = useState<Design | null>(design)
+  const dirty = design !== clean
+  const saving = useRef(false)
+  const latest = useRef(design)
+  latest.current = design
   const [savedItems, setSavedItems] = useState<SavedItem[]>([])
   const [publishedTemplates, setPublishedTemplates] = useState<
     PublishedTemplate[]
@@ -69,6 +81,11 @@ export function useTemplateStorage({
 
   useEffect(() => {
     let cancelled = false
+    setSaved(
+      mode === "designer" && templateId
+        ? { id: templateId, target: saveTarget(design) }
+        : null
+    )
     setPublishedTemplates([])
     if (mode === "customer" && productId) {
       const fileSize = size || `${design.widthMm}x${design.heightMm}`
@@ -93,7 +110,9 @@ export function useTemplateStorage({
           const chosen =
             items.find((item) => item.id === templateId) ?? items[0]
           const loaded = forRoute((await getAlmondTemplate(chosen.id)).design)
-          if (!cancelled) setDesign(loaded)
+          if (cancelled) return
+          setDesign(loaded)
+          setClean(loaded)
         })
         .catch(() => {
           if (!cancelled) setMessage("공개 시안을 불러오지 못했습니다.")
@@ -103,9 +122,17 @@ export function useTemplateStorage({
       cancelled = true
     }
   }, [key])
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault()
+    window.addEventListener("beforeunload", warn)
+    return () => window.removeEventListener("beforeunload", warn)
+  }, [dirty])
   const loadPublished = async (item: PublishedTemplate) => {
     try {
-      change(forRoute((await getAlmondTemplate(item.id)).design))
+      const loaded = forRoute((await getAlmondTemplate(item.id)).design)
+      change(loaded)
+      setClean(loaded)
       setSelectedId(null)
       setMessage(`「${item.title}」 시안을 불러왔습니다.`)
     } catch {
@@ -115,46 +142,120 @@ export function useTemplateStorage({
   const matchesRoute = (item: SavedItem) =>
     (!productId || item.productId === productId) &&
     (!size || item.size === size)
-  const saveNamed = () => {
-    const name = saveName.trim().slice(0, 50)
-    if (!name) return setMessage("시안 이름을 입력하세요.")
-    const named = { ...design, title: name }
+  const SAVE_FAILURE =
+    "서버에 저장하지 못했습니다. 이미지 용량을 줄여 다시 시도해 주세요."
+  const persist = async (named: Design, before: Design, id?: string) => {
+    const markup = await printSvg(
+      {
+        ...named,
+        front: named.front.filter((layer) => layer.visible !== false),
+      },
+      "front",
+      0
+    )
+    const [stored, thumbnailSvg] = await Promise.all([
+      uploadDesignImages(named, uploadFile),
+      inlineThumbnailImages(markup),
+    ])
+    const result = await upsertAlmondTemplate({
+      id,
+      design: stored,
+      thumbnailSvg,
+      status: "draft",
+    })
+    if ("conflict" in result) {
+      setMessage(
+        `「${named.title}」 이름의 시안이 이미 있습니다. 다른 이름으로 저장해 주세요.`
+      )
+      return
+    }
+    setClean(
+      latest.current === before ? stored : named === before ? before : null
+    )
+    setDesign(
+      latest.current === before
+        ? stored
+        : {
+            ...latest.current,
+            title:
+              latest.current.title === before.title
+                ? stored.title
+                : latest.current.title,
+          }
+    )
+    setSaved({ id: result.id, target: saveTarget(stored) })
+    setSaveDialog(false)
+    setMessage(
+      result.status === "published"
+        ? "저장되었습니다. 게시 중인 시안이라 고객 화면에 바로 반영됩니다."
+        : "저장되었습니다."
+    )
+  }
+  const checked = (named: Design) => {
     try {
       parseDesign(named)
     } catch (error) {
-      return setMessage(
+      setMessage(
         error instanceof Error ? error.message : "시안을 저장할 수 없습니다."
       )
+      return false
     }
-    if (!named.front.length && !named.back.length)
-      return setMessage("빈 시안은 저장할 수 없습니다.")
+    if (!named.front.length && !named.back.length) {
+      setMessage("빈 시안은 저장할 수 없습니다.")
+      return false
+    }
+    return true
+  }
+  const openSaveDialog = (name: string) => {
+    setSaveName(name)
+    setSaveDialog(true)
+  }
+  const defaultName = () =>
+    design.title || PRINT_PRODUCTS[design.productId]?.title || "내 시안"
+  const saveOnce = (task: () => Promise<void>) =>
     serverTask(async () => {
-      const markup = await printSvg(
-        {
-          ...named,
-          front: named.front.filter((layer) => layer.visible !== false),
-        },
-        "front",
-        0
+      if (saving.current) return
+      saving.current = true
+      try {
+        await task()
+      } finally {
+        saving.current = false
+      }
+    }, SAVE_FAILURE)
+  const save = () => {
+    if (!savedId) return openSaveDialog(defaultName())
+    const before = design
+    if (checked(before)) saveOnce(() => persist(before, before, savedId))
+  }
+  const saveAs = () => openSaveDialog(`${defaultName()} (사본)`)
+  const saveNamed = () => {
+    const name = saveName.trim().slice(0, 50)
+    if (!name) return setMessage("시안 이름을 입력하세요.")
+    const before = design
+    const named = { ...before, title: name }
+    if (!checked(named)) return
+    const fileSize = `${named.widthMm}x${named.heightMm}`
+    saveOnce(async () => {
+      const same = (await listAdminAlmondTemplates()).find(
+        (item) =>
+          item.productId === named.productId &&
+          item.size === fileSize &&
+          item.title === name
       )
-      const [stored, thumbnailSvg] = await Promise.all([
-        uploadDesignImages(named, uploadFile),
-        inlineThumbnailImages(markup),
-      ])
-      const saved = await upsertAlmondTemplate({
-        design: stored,
-        thumbnailSvg,
-        status: "draft",
-      })
-      setDesign(stored)
-      setSaveDialog(false)
-      void forgetBackup()
-      setMessage(
-        saved.status === "published"
-          ? `「${name}」 게시 중인 시안을 갱신했습니다. 고객 화면에 바로 반영됩니다.`
-          : `「${name}」 시안을 서버에 저장했습니다.`
-      )
-    }, "서버에 저장하지 못했습니다. 이미지 용량을 줄여 다시 시도해 주세요.")
+      if (same) {
+        const notice =
+          same.status === "published"
+            ? " 게시 중인 시안이라 고객 화면에 바로 반영됩니다."
+            : ""
+        if (
+          !window.confirm(
+            `「${name}」 시안이 이미 있습니다. 덮어쓸까요?${notice}`
+          )
+        )
+          return
+      }
+      await persist(named, before, same?.id)
+    })
   }
   const openLoad = () => {
     setLoadDialog(true)
@@ -164,7 +265,10 @@ export function useTemplateStorage({
   }
   const loadNamed = (item: SavedItem) =>
     serverTask(async () => {
-      change(forRoute((await getAdminAlmondTemplate(item.id)).design))
+      const loaded = forRoute((await getAdminAlmondTemplate(item.id)).design)
+      change(loaded)
+      setClean(loaded)
+      setSaved({ id: item.id, target: saveTarget(loaded) })
       setSelectedId(null)
       setLoadDialog(false)
       setMessage(`「${item.title}」 시안을 불러왔습니다.`)
@@ -172,6 +276,7 @@ export function useTemplateStorage({
   const deleteNamed = (item: SavedItem) =>
     serverTask(async () => {
       await deleteAlmondTemplate(item.id)
+      if (item.id === saved?.id) setSaved(null)
       setSavedItems((items) => items.filter((saved) => saved.id !== item.id))
     }, "시안을 삭제하지 못했습니다.")
   const togglePublished = (item: SavedItem) =>
@@ -211,6 +316,10 @@ export function useTemplateStorage({
     saveName,
     setSaveName,
     savedItems,
+    savedId,
+    dirty,
+    save,
+    saveAs,
     saveNamed,
     openLoad,
     loadNamed,

@@ -9,6 +9,7 @@ import {
   ChevronUp,
 } from "lucide-react"
 import { PrintColorPicker } from "../color-picker"
+import { textBoxFor } from "../graphic"
 import type { Layer } from "../../lib/document"
 import { OrderIcon } from "./order-icon"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
@@ -77,9 +78,10 @@ export function ObjectProperties({
                   value={selected.fontSize ?? 10}
                   disabled={!editable}
                   onChange={(event) =>
-                    patch(selected.id, {
-                      fontSize: Number(event.target.value),
-                    })
+                    patch(
+                      selected.id,
+                      textBoxFor(selected, Number(event.target.value))
+                    )
                   }
                 />
               </label>

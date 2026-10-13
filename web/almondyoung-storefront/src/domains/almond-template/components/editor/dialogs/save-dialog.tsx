@@ -79,8 +79,8 @@ export function SaveDialog({ editor }: { editor: AlmondEditor }) {
           ))}
         </div>
         <p className="mt-2 text-xs text-slate-500">
-          서버에 초안으로 저장됩니다. 같은 상품·크기·이름으로 저장하면 기존
-          시안을 덮어씁니다. 게시는 불러오기 목록에서 합니다.
+          새 시안으로 저장됩니다. 같은 상품·크기에 같은 이름이 있으면 덮어쓸지
+          묻습니다. 게시는 불러오기 목록에서 합니다.
         </p>
         <div className="mt-4 flex justify-end gap-2">
           <button className="border px-3 py-2" onClick={exportJson}>

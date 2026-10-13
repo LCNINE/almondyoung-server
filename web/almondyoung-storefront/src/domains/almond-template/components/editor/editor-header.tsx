@@ -9,14 +9,13 @@ import {
   Eye,
   FolderOpen,
   Save,
+  CopyPlus,
 } from "lucide-react"
-import { PRINT_PRODUCTS } from "../../lib/catalog"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 
 export function EditorHeader({ editor }: { editor: AlmondEditor }) {
   const {
     mode,
-    design,
     history,
     future,
     undo,
@@ -29,8 +28,10 @@ export function EditorHeader({ editor }: { editor: AlmondEditor }) {
     selected,
     complete,
     inputRef,
-    setSaveDialog,
-    setSaveName,
+    save,
+    saveAs,
+    savedId,
+    dirty,
     openLoad,
     importJson,
     copied,
@@ -43,7 +44,14 @@ export function EditorHeader({ editor }: { editor: AlmondEditor }) {
   return (
     <header className="flex h-[72px] shrink-0 items-stretch border-b bg-white text-xs shadow-sm">
       <button
-        onClick={() => window.history.back()}
+        onClick={() => {
+          if (
+            dirty &&
+            !window.confirm("저장하지 않은 변경사항이 있습니다. 나갈까요?")
+          )
+            return
+          window.history.back()
+        }}
         className="w-[160px] border-r px-5 text-left text-lg font-black tracking-tight"
       >
         ALMOND<span className="text-amber-500">YOUNG</span>
@@ -125,18 +133,16 @@ export function EditorHeader({ editor }: { editor: AlmondEditor }) {
                   icon: FolderOpen,
                   click: openLoad,
                 },
-                {
-                  label: "임시 저장",
-                  icon: Save,
-                  click: () => {
-                    setSaveName(
-                      design.title ||
-                        PRINT_PRODUCTS[design.productId]?.title ||
-                        "내 시안"
-                    )
-                    setSaveDialog(true)
-                  },
-                },
+                { label: "저장", icon: Save, click: save },
+                ...(savedId
+                  ? [
+                      {
+                        label: "다른 이름으로 저장",
+                        icon: CopyPlus,
+                        click: saveAs,
+                      },
+                    ]
+                  : []),
               ]
             : []),
         ].map(({ label, icon: Icon, click }) => (

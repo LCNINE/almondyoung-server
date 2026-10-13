@@ -77,6 +77,7 @@ export default async function AlmondTemplatePage({
       <AlmondTemplateEditor
         productId={editing.productId}
         size={editing.size}
+        templateId={editing.id}
         initialDesign={parseDesign(editing.design)}
         mode="designer"
       />

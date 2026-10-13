@@ -60,6 +60,7 @@ export function HelpDialog({ editor }: { editor: AlmondEditor }) {
             <>
               <p>⌘/Ctrl + Z: 이전 · Shift + ⌘/Ctrl + Z: 이후</p>
               <p>⌘/Ctrl + C/V/X: 복사·붙여넣기·잘라내기</p>
+              <p>⌘/Ctrl + S: 저장 (디자이너 모드)</p>
               <p>Delete: 선택 요소 삭제 · Esc: 선택 해제</p>
             </>
           ) : helpTab === "image" ? (

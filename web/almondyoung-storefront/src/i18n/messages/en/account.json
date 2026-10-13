@@ -2,5 +2,6 @@
   "search": "Search",
   "cart": "Cart",
   "myPage": "My",
-  "login": "Log in"
+  "login": "Log in",
+  "loginDone": "You are signed in. This window will close automatically."
 }
