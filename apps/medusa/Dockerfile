@@ -58,6 +58,9 @@ RUN cp /app/apps/medusa/medusa-config.js /app/apps/medusa/.medusa/server/medusa-
     cp /app/apps/medusa/instrumentation.ts /app/apps/medusa/.medusa/server/instrumentation.ts && \
     cp -r /app/apps/medusa/src /app/apps/medusa/.medusa/server/src
 
+# 5-1) 런타임은 .medusa/server/src 에서 돈다. src 의 '../../../../packages/...' 가 거기선 /app/apps/medusa/packages 를 가리킨다.
+RUN mkdir -p /app/apps/medusa/packages && cp -r /app/packages/domain-types /app/apps/medusa/packages/domain-types
+
 # DEBUG: 복사 후 확인
 RUN echo "===== After copying config and src =====" && \
     ls -la /app/apps/medusa/.medusa/server/ && \
