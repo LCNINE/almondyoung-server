@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { usePermission } from '@/hooks/use-permission';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   Select,
   SelectContent,
@@ -40,7 +40,7 @@ interface Props {
 }
 
 export function CreateBatchDialog({ open, onOpenChange }: Props) {
-  const { hasScope, isPermissionLoading } = usePermission();
+  const { can, isPermissionLoading } = usePermissionCheck();
   const { data: warehouses = [] } = useWarehouses();
   const mutation = useCreateOutboundBatchV2();
   const [warehouseId, setWarehouseId] = useState('');
@@ -50,7 +50,7 @@ export function CreateBatchDialog({ open, onOpenChange }: Props) {
   const [scheduledPickingAt, setScheduledPickingAt] = useState('');
   const retry = useWarehouseCommandRetry();
   const canOperateWarehouse =
-    !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.operate]);
+    !isPermissionLoading && !!can([FULFILLMENT_SCOPES.operate]);
 
   const selectedWarehouse = warehouses.find((item) => item.id === warehouseId);
   const availableMethods = methodsForStrategies(

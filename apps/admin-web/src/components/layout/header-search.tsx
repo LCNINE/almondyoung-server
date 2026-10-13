@@ -4,13 +4,13 @@ import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Command } from 'cmdk';
 import { Search, X } from 'lucide-react';
-import { usePermission } from '@/hooks/use-permission';
+import { usePermissions } from '@/hooks/use-permission';
+import { isMenuItemVisible } from '@/lib/auth/screen-access';
 import { mainMenus, type MenuItem } from '@/lib/utils/menu';
 
 interface MenuEntry {
   label: string;
   path: string;
-  requireRole?: string[];
 }
 
 const walk = (items: MenuItem[], trail: string[]): MenuEntry[] =>
@@ -18,7 +18,7 @@ const walk = (items: MenuItem[], trail: string[]): MenuEntry[] =>
     const t = [...trail, item.title];
     const self =
       item.path && !item.isComingSoon
-        ? [{ label: t.join(' > '), path: item.path, requireRole: item.requireRole }]
+        ? [{ label: t.join(' > '), path: item.path }]
         : [];
     return [...self, ...walk(item.children ?? [], t)];
   });
@@ -44,19 +44,21 @@ function Highlight({ text, keyword }: { text: string; keyword: string }) {
 
 export function HeaderSearch() {
   const router = useRouter();
-  const { hasRole } = usePermission();
+  const { status, permissions } = usePermissions();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
 
   const keyword = query.trim().toLowerCase();
-  const results = keyword
-    ? MENU_ENTRIES.filter(
-        (e) =>
-          e.label.toLowerCase().includes(keyword) &&
-          (!e.requireRole || hasRole(e.requireRole) === true)
-      )
-    : [];
+  // 메뉴와 같은 경로 권한표로 거른다. 권한을 받기 전엔 결과 없음.
+  const results =
+    keyword && status === 'ready'
+      ? MENU_ENTRIES.filter(
+          (e) =>
+            e.label.toLowerCase().includes(keyword) &&
+            isMenuItemVisible({ id: e.path, title: e.label, path: e.path }, permissions)
+        )
+      : [];
 
   const go = (path: string) => {
     setQuery('');

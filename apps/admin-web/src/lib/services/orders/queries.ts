@@ -370,12 +370,13 @@ export const useDailyOrderStatus = (from: string, to: string) => {
   });
 };
 
-export const useOrderStats = () => {
+export const useOrderStats = (options: { enabled?: boolean } = {}) => {
   return useQuery({
     queryKey: orderQueryKeys.orderStats,
     queryFn: () => orders.salesOrders.getStats(),
     staleTime: 60 * 1000,
     refetchInterval: 5 * 60 * 1000,
+    enabled: options.enabled ?? true,
   });
 };
 

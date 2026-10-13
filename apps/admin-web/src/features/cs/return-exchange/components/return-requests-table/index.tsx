@@ -37,7 +37,7 @@ import {
 import { getServerDenyMessage } from '@/lib/services/orders';
 import { FULFILLMENT_SCOPES } from '@/lib/services/orders/operation-policy';
 import { useReturnEligibility } from '@/lib/services/return-exchange';
-import { usePermission } from '@/hooks/use-permission';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { ReturnRequest } from '@/lib/api/domains/return-exchange';
 import {
   isReturnAttemptSelectable,
@@ -91,9 +91,9 @@ export function ReturnRequestsTable({
 }: Props) {
   const query = { status: statusFilter, createdFrom, createdTo, page, limit: PAGE_SIZE };
   const { data, isLoading, isFetching } = useReturnRequests(query);
-  const { hasScope, isPermissionLoading } = usePermission();
+  const { can, isPermissionLoading } = usePermissionCheck();
   const canReadEligibility =
-    !isPermissionLoading && hasScope([FULFILLMENT_SCOPES.operate]) === true;
+    !isPermissionLoading && can([FULFILLMENT_SCOPES.operate]) === true;
 
   const approve = useApproveReturn();
   const reject = useRejectReturn();

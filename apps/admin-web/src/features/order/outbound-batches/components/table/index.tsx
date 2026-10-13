@@ -20,7 +20,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useWarehouses } from '@/lib/services/inventory/queries';
-import { usePermission } from '@/hooks/use-permission';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   FULFILLMENT_SCOPES,
   useOutboundBatchesV2,
@@ -34,7 +34,7 @@ import { PICKING_METHOD_LABELS } from '@/lib/utils/picking-method';
 
 export function OutboundBatchesTable() {
   const searchParams = useSearchParams();
-  const { hasScope, isPermissionLoading } = usePermission();
+  const { can, isPermissionLoading } = usePermissionCheck();
   const { data: warehouses = [] } = useWarehouses();
   const [warehouseId, setWarehouseId] = useState('all');
   const [createOpen, setCreateOpen] = useState(false);
@@ -47,7 +47,7 @@ export function OutboundBatchesTable() {
     warehouseId: warehouseId === 'all' ? undefined : warehouseId,
   });
   const canOperateWarehouse =
-    !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.operate]);
+    !isPermissionLoading && !!can([FULFILLMENT_SCOPES.operate]);
 
   useEffect(() => {
     const batchId = searchParams.get('batchId');

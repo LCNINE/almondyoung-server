@@ -9,7 +9,6 @@ export interface MenuItem {
   children?: MenuItem[];
   isComingSoon?: boolean;
   path?: string;
-  requireRole?: string[];
   /**
    * 미매핑 주문(채널 수집 실패 격리) 건수를 메뉴 라벨 옆에 배지로 그린다.
    * 실제 카운트 조회는 렌더 컴포넌트(sidebar-menu-item.tsx의 데스크톱 사이드바,
@@ -56,7 +55,6 @@ const allMenus: MainMenu[] = [
             id: 'admin-accounts',
             title: '관리자 계정',
             path: '/users',
-            requireRole: ['master'],
           },
         ],
       },
@@ -810,7 +808,6 @@ export const mainMenus: MainMenu[] =
               id: 'demo-console',
               title: '시연 콘솔',
               path: '/demo',
-              requireRole: ['admin', 'master'],
             },
           ],
         },

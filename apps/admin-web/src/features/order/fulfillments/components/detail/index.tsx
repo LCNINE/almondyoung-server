@@ -19,7 +19,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { FoStatusBadge } from '@/components/table/table-cells/fulfillment';
-import { usePermission } from '@/hooks/use-permission';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { useFulfillmentOrder } from '@/lib/services/orders/queries';
 import { useCancelFulfillment } from '@/lib/services/orders/mutations';
 import { FULFILLMENT_SCOPES } from '@/lib/services/orders/operation-policy';
@@ -95,11 +95,11 @@ function ConfirmActionButton({
 }
 
 export function FulfillmentDetail({ id }: { id: string }) {
-  const { hasScope, isPermissionLoading } = usePermission();
+  const { can, isPermissionLoading } = usePermissionCheck();
   const { data, isLoading } = useFulfillmentOrder(id);
   const cancelMutation = useCancelFulfillment();
   const canOperate =
-    !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.operate]);
+    !isPermissionLoading && !!can([FULFILLMENT_SCOPES.operate]);
 
   if (isLoading) {
     return (

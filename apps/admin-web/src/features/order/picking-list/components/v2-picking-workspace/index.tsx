@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { usePermission } from '@/hooks/use-permission';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   Select,
   SelectContent,
@@ -37,7 +37,7 @@ import { ShortPickDialog } from '../short-pick-dialog';
 import { useWarehouseCommandRetry } from '../../../outbound-batches/warehouse-command-retry';
 
 export function V2PickingWorkspace() {
-  const { hasScope, isPermissionLoading } = usePermission();
+  const { can, isPermissionLoading } = usePermissionCheck();
   const [batchIdInput, setBatchIdInput] = useState('');
   const [batchId, setBatchId] = useState('');
   const { data: batch, isLoading, refetch } = useOutboundBatchV2(batchId);
@@ -51,9 +51,9 @@ export function V2PickingWorkspace() {
   const retry = useWarehouseCommandRetry();
   const [shortPickOpen, setShortPickOpen] = useState(false);
   const canOperateWarehouse =
-    !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.operate]);
+    !isPermissionLoading && !!can([FULFILLMENT_SCOPES.operate]);
   const canReportShortPick =
-    !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.reopen]);
+    !isPermissionLoading && !!can([FULFILLMENT_SCOPES.reopen]);
 
   const start = useStartPickingV2();
   const discreteScan = useDiscretePickingScan();

@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { usePermission } from '@/hooks/use-permission';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   SPLIT_QTY_ERROR,
   isSplitQtyAllowed,
@@ -103,7 +103,7 @@ export function ShipmentActions({
 }: {
   shipment: ShipmentAdminDetail;
 }) {
-  const { hasScope, isPermissionLoading } = usePermission();
+  const { can, isPermissionLoading } = usePermissionCheck();
   const split = useSplitShipment();
   const reviseRecipient = useReviseShipmentRecipient();
   const plan = usePlanShipment();
@@ -145,12 +145,12 @@ export function ShipmentActions({
     recall.isPending;
 
   const operate =
-    !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.operate]);
+    !isPermissionLoading && !!can([FULFILLMENT_SCOPES.operate]);
   const overrideRecipient =
-    !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.overrideRecipient]);
+    !isPermissionLoading && !!can([FULFILLMENT_SCOPES.overrideRecipient]);
   const canRecall =
     !isPermissionLoading &&
-    !!hasScope([FULFILLMENT_SCOPES.recall]) &&
+    !!can([FULFILLMENT_SCOPES.recall]) &&
     canRecallShipment(
       shipment.status,
       shipment.dispatchAttempts.map((attempt) => attempt.status)

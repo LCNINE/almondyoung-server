@@ -1,7 +1,8 @@
 'use client';
 
 import { USER_SERVICE_BASE_URL } from '@/const';
-import { User, UserRolesResponseDto } from '@/lib/types';
+import { parseMyPermissions, type MyPermissions } from '@/lib/auth/my-permissions';
+import { User } from '@/lib/types';
 import {
   AdminUserDetailDto,
   AdminUsersQuery,
@@ -48,11 +49,9 @@ export const userApi = {
     return response.data;
   },
 
-  getMyRoles: async (): Promise<UserRolesResponseDto> => {
-    const response = await client.get<UserRolesResponseDto>(
-      `${USER_SERVICE_BASE_URL}/users/roles`
-    );
-    return response.data;
+  getMyPermissions: async (): Promise<MyPermissions> => {
+    const response = await client.get<unknown>(`${USER_SERVICE_BASE_URL}/me/permissions`);
+    return parseMyPermissions(response.data);
   },
 
   // 해당 id로 관리자 사용자 정보 조회
