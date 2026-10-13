@@ -63,6 +63,35 @@ const render = (
 };
 
 describe('SaleRenderer', () => {
+  it('플랫폼을 안 주면 서버 렌더에 PC·모바일을 둘 다 그리고 CSS 로 하나만 보인다', () => {
+    const settings = defaultTimeSaleSettings();
+    const text = (content: string) => {
+      const c = createSaleComponent('text');
+      c.content = content;
+      return c;
+    };
+    settings.styles.main.pc.components = [text('PC전용')];
+    settings.styles.main.mobile.components = [text('모바일전용')];
+
+    const markup = renderToStaticMarkup(
+      createElement(SaleRenderer, {
+        settings,
+        surface: 'main',
+        startsAt: '2026-01-01T00:00:00Z',
+        endsAt: '2026-01-02T00:00:00Z',
+        products: [product],
+        previewState: 'active',
+        sanitizeHtml: (html: string) => html,
+      })
+    );
+
+    expect(markup).toMatch(/class="ts-only-pc">.*PC전용/);
+    expect(markup).toMatch(/class="ts-only-mobile">.*모바일전용/);
+    expect(markup).toContain(
+      '@media (max-width: 767px){.ts-only-pc{display:none}}'
+    );
+  });
+
   it('이미지의 둥근 모서리는 상태별 CSS까지 반영해 이미지 자체를 자른다', () => {
     const image = createSaleComponent('image');
     image.content = 'https://example.com/image.png';

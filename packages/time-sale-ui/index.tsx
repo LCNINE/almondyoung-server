@@ -421,9 +421,37 @@ function expand(text: string, values: Record<string, string>) {
 
 // 타임세일 섹션 렌더러(스토어프론트·어드민 미리보기
 // 공용). 설정의 스타일 레이아웃을 따라 컴포넌트를 그린다.
+const MOBILE_QUERY = '(max-width: 767px)';
+
+// 서버는 화면 너비를 몰라 PC·모바일을 둘 다 그리고 CSS 로 하나만 보인다
+// 마운트 뒤엔 맞는 쪽만 남긴다. 래퍼 자리는 그대로라 남는 쪽은 다시 마운트되지 않는다.
 export function SaleRenderer(props: SaleRendererProps) {
-  const [mobile, setMobile] = useState(true),
-    [now, setNow] = useState(0),
+  const [mobile, setMobile] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (props.platform) return;
+    const media = matchMedia(MOBILE_QUERY);
+
+    const update = () => setMobile(media.matches);
+    update();
+    media.addEventListener('change', update);
+
+    return () => media.removeEventListener('change', update);
+  }, [props.platform]);
+
+  if (props.platform) return <PlatformSaleRenderer {...props} platform={props.platform} />;
+
+  return (
+    <>
+      <style>{`.ts-only-pc,.ts-only-mobile{display:contents}@media ${MOBILE_QUERY}{.ts-only-pc{display:none}}@media not all and ${MOBILE_QUERY}{.ts-only-mobile{display:none}}`}</style>
+      <div className="ts-only-pc">{mobile !== true && <PlatformSaleRenderer {...props} platform="pc" />}</div>
+      <div className="ts-only-mobile">{mobile !== false && <PlatformSaleRenderer {...props} platform="mobile" />}</div>
+    </>
+  );
+}
+
+function PlatformSaleRenderer(props: SaleRendererProps & { platform: SalePlatform }) {
+  const [now, setNow] = useState(0),
     [popup, setPopupOpen] = useState(false),
     [tabKey, setTabKey] = useState<string | null>(null);
   const labels = { ...KO_SALE_LABELS, ...props.labels };
@@ -455,16 +483,6 @@ export function SaleRenderer(props: SaleRendererProps) {
     }
   };
 
-  useEffect(() => {
-    const media = matchMedia('(max-width: 767px)');
-
-    const update = () => setMobile(media.matches);
-    update();
-    media.addEventListener('change', update);
-
-    return () => media.removeEventListener('change', update);
-  }, []);
-
   // 카운트다운용 1초 시계. 서버 렌더와 맞추려고 마운트
   // 뒤에 시작한다(now=0 동안은 필터를 적용하지 않는다).
   useEffect(() => {
@@ -477,7 +495,7 @@ export function SaleRenderer(props: SaleRendererProps) {
 
   const { settings, surface, products, previewState, previewSoldOut, sanitizeHtml } = props;
 
-  const platform = props.platform ?? (mobile ? 'mobile' : 'pc');
+  const { platform } = props;
 
   const layout = settings.styles[surface][platform];
 
