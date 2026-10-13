@@ -3,21 +3,33 @@ import {
   deleteAlmondTemplate,
   getAdminAlmondTemplate,
   getAlmondTemplate,
+  getMyUserId,
   listAdminAlmondTemplates,
   listAlmondTemplates,
   updateAlmondTemplateStatus,
   upsertAlmondTemplate,
 } from "@/lib/api/ugc/almond-templates"
-import type { AdminAlmondTemplateSummary } from "@/lib/types/ui/almond-template"
+import {
+  deleteMyAlmondSavedDesign,
+  getMyAlmondSavedDesign,
+  listMyAlmondSavedDesigns,
+  upsertMyAlmondSavedDesign,
+} from "@/lib/api/ugc/almond-saved-designs"
+import type {
+  AdminAlmondTemplateSummary,
+  AlmondSavedDesignSummary,
+} from "@/lib/types/ui/almond-template"
 import { uploadFile } from "@/lib/api/file/upload"
-import { inlineThumbnailImages, uploadDesignImages } from "../lib/design-images"
+import { rasterThumbnail, uploadDesignImages } from "../lib/design-images"
 import { parseDesign, type Design } from "../lib/document"
 import type { PublishedTemplate } from "../lib/gallery-filter"
 import { printSvg } from "../components/print-svg"
 import { PRINT_PRODUCTS } from "../lib/catalog"
+import { useLeaveWarning } from "./use-leave-warning"
 
 export type EditorMode = "customer" | "designer"
-export type SavedItem = AdminAlmondTemplateSummary
+export type SavedItem = AlmondSavedDesignSummary &
+  Partial<Pick<AdminAlmondTemplateSummary, "status" | "createdBy">>
 export type { PublishedTemplate }
 
 type Params = {
@@ -25,6 +37,7 @@ type Params = {
   productId: string
   size: string
   templateId: string
+  savedDesignId?: string
   design: Design
   setDesign: (design: Design) => void
   change: (design: Design) => void
@@ -42,6 +55,7 @@ export function useTemplateStorage({
   productId,
   size,
   templateId,
+  savedDesignId = "",
   design,
   setDesign,
   change,
@@ -59,6 +73,7 @@ export function useTemplateStorage({
   const [clean, setClean] = useState<Design | null>(design)
   const dirty = design !== clean
   const saving = useRef(false)
+  const ownerChecked = useRef<string | null>(null)
   const latest = useRef(design)
   latest.current = design
   const [savedItems, setSavedItems] = useState<SavedItem[]>([])
@@ -67,7 +82,7 @@ export function useTemplateStorage({
   >([])
   const [storagePending, startTransition] = useTransition()
   const inputRef = useRef<HTMLInputElement>(null)
-  const key = `${mode}:${productId}:${size}:${templateId}`
+  const key = `${mode}:${productId}:${size}:${templateId}:${savedDesignId}`
   const forRoute = (value: unknown) => {
     const loaded = parseDesign(value)
     if (productId && loaded.productId !== productId)
@@ -78,6 +93,30 @@ export function useTemplateStorage({
   }
   const serverTask = (task: () => Promise<void>, failure: string) =>
     startTransition(() => runAuthed(task, failure))
+  const designer = mode === "designer"
+  const remote: {
+    list: () => Promise<SavedItem[]>
+    get: (id: string) => Promise<{ design: unknown }>
+    upsert: (dto: {
+      id?: string
+      design: Design
+      thumbnailSvg: string
+    }) => Promise<{ id: string; status?: string } | { conflict: true }>
+    remove: (id: string) => Promise<void>
+  } = designer
+    ? {
+        list: listAdminAlmondTemplates,
+        get: getAdminAlmondTemplate,
+        upsert: (dto: { id?: string; design: Design; thumbnailSvg: string }) =>
+          upsertAlmondTemplate({ ...dto, status: "draft" }),
+        remove: deleteAlmondTemplate,
+      }
+    : {
+        list: () => listMyAlmondSavedDesigns(productId, size),
+        get: getMyAlmondSavedDesign,
+        upsert: upsertMyAlmondSavedDesign,
+        remove: deleteMyAlmondSavedDesign,
+      }
 
   useEffect(() => {
     let cancelled = false
@@ -87,6 +126,16 @@ export function useTemplateStorage({
         : null
     )
     setPublishedTemplates([])
+    if (mode === "customer" && savedDesignId)
+      serverTask(async () => {
+        const loaded = forRoute(
+          (await getMyAlmondSavedDesign(savedDesignId)).design
+        )
+        if (cancelled) return
+        setDesign(loaded)
+        setClean(loaded)
+        setSaved({ id: savedDesignId, target: saveTarget(loaded) })
+      }, "저장한 디자인을 불러오지 못했습니다.")
     if (mode === "customer" && productId) {
       const fileSize = size || `${design.widthMm}x${design.heightMm}`
       listAlmondTemplates()
@@ -122,12 +171,7 @@ export function useTemplateStorage({
       cancelled = true
     }
   }, [key])
-  useEffect(() => {
-    if (!dirty) return
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault()
-    window.addEventListener("beforeunload", warn)
-    return () => window.removeEventListener("beforeunload", warn)
-  }, [dirty])
+  useLeaveWarning(dirty)
   const loadPublished = async (item: PublishedTemplate) => {
     try {
       const loaded = forRoute((await getAlmondTemplate(item.id)).design)
@@ -155,17 +199,14 @@ export function useTemplateStorage({
     )
     const [stored, thumbnailSvg] = await Promise.all([
       uploadDesignImages(named, uploadFile),
-      inlineThumbnailImages(markup),
+      rasterThumbnail(markup),
     ])
-    const result = await upsertAlmondTemplate({
-      id,
-      design: stored,
-      thumbnailSvg,
-      status: "draft",
-    })
+    const result = await remote.upsert({ id, design: stored, thumbnailSvg })
     if ("conflict" in result) {
       setMessage(
-        `「${named.title}」 이름의 시안이 이미 있습니다. 다른 이름으로 저장해 주세요.`
+        designer
+          ? `「${named.title}」 이름의 시안이 이미 있습니다. 다른 이름으로 저장해 주세요.`
+          : "디자인은 50개까지 보관할 수 있습니다. 불러오기에서 안 쓰는 디자인을 지운 뒤 저장해 주세요."
       )
       return
     }
@@ -184,11 +225,14 @@ export function useTemplateStorage({
           }
     )
     setSaved({ id: result.id, target: saveTarget(stored) })
+    ownerChecked.current = result.id
     setSaveDialog(false)
     setMessage(
-      result.status === "published"
+      "status" in result && result.status === "published"
         ? "저장되었습니다. 게시 중인 시안이라 고객 화면에 바로 반영됩니다."
-        : "저장되었습니다."
+        : designer
+          ? "저장되었습니다."
+          : "내 디자인에 저장했습니다. 불러오기에서 다시 열 수 있습니다."
     )
   }
   const checked = (named: Design) => {
@@ -225,7 +269,28 @@ export function useTemplateStorage({
   const save = () => {
     if (!savedId) return openSaveDialog(defaultName())
     const before = design
-    if (checked(before)) saveOnce(() => persist(before, before, savedId))
+    if (!checked(before)) return
+    saveOnce(async () => {
+      if (designer && ownerChecked.current !== savedId) {
+        const [item, me] = await Promise.all([
+          getAdminAlmondTemplate(savedId),
+          getMyUserId(),
+        ])
+        const notice =
+          item.status === "published"
+            ? " 게시 중인 시안이라 고객 화면에 바로 반영됩니다."
+            : ""
+        if (
+          item.createdBy !== me &&
+          !window.confirm(
+            `다른 사람이 만든 시안입니다. 원본을 고칠까요?${notice}\n취소하면 다른 이름으로 저장합니다.`
+          )
+        )
+          return saveAs()
+        ownerChecked.current = savedId
+      }
+      await persist(before, before, savedId)
+    })
   }
   const saveAs = () => openSaveDialog(`${defaultName()} (사본)`)
   const saveNamed = () => {
@@ -236,7 +301,7 @@ export function useTemplateStorage({
     if (!checked(named)) return
     const fileSize = `${named.widthMm}x${named.heightMm}`
     saveOnce(async () => {
-      const same = (await listAdminAlmondTemplates()).find(
+      const same = (await remote.list()).find(
         (item) =>
           item.productId === named.productId &&
           item.size === fileSize &&
@@ -249,7 +314,7 @@ export function useTemplateStorage({
             : ""
         if (
           !window.confirm(
-            `「${name}」 시안이 이미 있습니다. 덮어쓸까요?${notice}`
+            `「${name}」 ${designer ? "시안" : "디자인"}이 이미 있습니다. 덮어쓸까요?${notice}`
           )
         )
           return
@@ -260,12 +325,12 @@ export function useTemplateStorage({
   const openLoad = () => {
     setLoadDialog(true)
     serverTask(async () => {
-      setSavedItems((await listAdminAlmondTemplates()).filter(matchesRoute))
+      setSavedItems((await remote.list()).filter(matchesRoute))
     }, "저장된 시안 목록을 불러오지 못했습니다.")
   }
   const loadNamed = (item: SavedItem) =>
     serverTask(async () => {
-      const loaded = forRoute((await getAdminAlmondTemplate(item.id)).design)
+      const loaded = forRoute((await remote.get(item.id)).design)
       change(loaded)
       setClean(loaded)
       setSaved({ id: item.id, target: saveTarget(loaded) })
@@ -275,7 +340,7 @@ export function useTemplateStorage({
     }, "시안을 불러오지 못했습니다.")
   const deleteNamed = (item: SavedItem) =>
     serverTask(async () => {
-      await deleteAlmondTemplate(item.id)
+      await remote.remove(item.id)
       if (item.id === saved?.id) setSaved(null)
       setSavedItems((items) => items.filter((saved) => saved.id !== item.id))
     }, "시안을 삭제하지 못했습니다.")

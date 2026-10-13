@@ -1,5 +1,6 @@
 import type {
   AdminAlmondTemplateSummaryDto,
+  AlmondSavedDesignSummaryDto,
   AlmondTemplateSummaryDto,
 } from "@/lib/types/dto/almond-template"
 
@@ -8,3 +9,5 @@ export interface AlmondTemplateSummary extends AlmondTemplateSummaryDto {
 }
 
 export interface AdminAlmondTemplateSummary extends AdminAlmondTemplateSummaryDto {}
+
+export interface AlmondSavedDesignSummary extends AlmondSavedDesignSummaryDto {}

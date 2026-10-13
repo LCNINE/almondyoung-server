@@ -1,10 +1,11 @@
 import { INDUSTRIES, PURPOSES } from "../../../lib/gallery-filter"
-import { LayerGraphic } from "../../graphic"
+import { Backdrop, LayerGraphic } from "../../graphic"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
-import { imageSrc } from "../../../lib/image-ref"
+import { sideBackground } from "../../../lib/document"
 
 export function SaveDialog({ editor }: { editor: AlmondEditor }) {
   const {
+    mode,
     design,
     setSaveDialog,
     saveName,
@@ -14,29 +15,24 @@ export function SaveDialog({ editor }: { editor: AlmondEditor }) {
     exportJson,
     change,
   } = editor
+  const designer = mode === "designer"
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="시안 저장"
+      aria-label={designer ? "시안 저장" : "내 디자인 저장"}
       className="absolute inset-0 z-30 flex items-start justify-center overflow-y-auto bg-black/40 p-4 md:items-center"
     >
       <div className="w-[480px] max-w-[95vw] bg-white p-5 shadow-xl">
-        <h2 className="mb-3 text-lg font-bold">시안 저장</h2>
+        <h2 className="mb-3 text-lg font-bold">
+          {designer ? "시안 저장" : "내 디자인 저장"}
+        </h2>
         <div className="mb-4 flex h-44 items-center justify-center bg-slate-100">
           <svg
             viewBox={`0 0 ${design.widthMm} ${design.heightMm}`}
             className="h-[95%] max-w-[95%] bg-white shadow"
           >
-            <rect width="100%" height="100%" fill={design.background} />
-            {design.backgroundImage && (
-              <image
-                href={imageSrc(design.backgroundImage)}
-                width="100%"
-                height="100%"
-                preserveAspectRatio="xMidYMid slice"
-              />
-            )}
+            <Backdrop value={sideBackground(design, "front")} />
             {design.front
               .filter((layer) => layer.visible !== false)
               .map((layer) => (
@@ -45,47 +41,58 @@ export function SaveDialog({ editor }: { editor: AlmondEditor }) {
           </svg>
         </div>
         <label className="block text-sm">
-          템플릿명
+          {designer ? "템플릿명" : "디자인 이름"}
           <input
-            aria-label="템플릿명"
+            autoFocus
+            aria-label={designer ? "템플릿명" : "디자인 이름"}
             maxLength={50}
             value={saveName}
             onChange={(e) => setSaveName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) saveNamed()
+            }}
             className="mt-1 w-full border p-2"
           />
         </label>
-        <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-          {(
-            [
-              ["industry", "업종", INDUSTRIES],
-              ["purpose", "용도", PURPOSES],
-            ] as const
-          ).map(([field, label, options]) => (
-            <label key={field} className="block">
-              {label}
-              <select
-                aria-label={label}
-                value={design[field] ?? options[0]}
-                onChange={(e) => change({ ...design, [field]: e.target.value })}
-                className="mt-1 w-full border p-2"
-              >
-                {options.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))}
-        </div>
+        {designer && (
+          <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+            {(
+              [
+                ["industry", "업종", INDUSTRIES],
+                ["purpose", "용도", PURPOSES],
+              ] as const
+            ).map(([field, label, options]) => (
+              <label key={field} className="block">
+                {label}
+                <select
+                  aria-label={label}
+                  value={design[field] ?? options[0]}
+                  onChange={(e) =>
+                    change({ ...design, [field]: e.target.value })
+                  }
+                  className="mt-1 w-full border p-2"
+                >
+                  {options.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+        )}
         <p className="mt-2 text-xs text-slate-500">
-          새 시안으로 저장됩니다. 같은 상품·크기에 같은 이름이 있으면 덮어쓸지
-          묻습니다. 게시는 불러오기 목록에서 합니다.
+          {designer
+            ? "새 시안으로 저장됩니다. 같은 상품·크기에 같은 이름이 있으면 덮어쓸지 묻습니다. 게시는 불러오기 목록에서 합니다."
+            : "내 디자인 보관함에 저장됩니다(최대 50개). 같은 상품·크기에서만 다시 불러올 수 있고, 같은 이름이 있으면 덮어쓸지 묻습니다."}
         </p>
         <div className="mt-4 flex justify-end gap-2">
-          <button className="border px-3 py-2" onClick={exportJson}>
-            JSON 받기
-          </button>
+          {designer && (
+            <button className="border px-3 py-2" onClick={exportJson}>
+              JSON 받기
+            </button>
+          )}
           <button
             className="border px-3 py-2"
             onClick={() => setSaveDialog(false)}

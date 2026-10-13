@@ -74,6 +74,19 @@ export function readSvgSizeMm(svg: string): SvgSizeMm | null {
   return size.width > 0 && size.height > 0 ? size : null;
 }
 
+export function scaleSvgSizeMm(svg: string, factor: number): string {
+  return svg.replace(ROOT_SVG_TAG, (root) =>
+    root
+      .replace(SIZE_MM('width'), (_, value: string) => ` width="${formatMm(Number(value) * factor)}mm"`)
+      .replace(SIZE_MM('height'), (_, value: string) => ` height="${formatMm(Number(value) * factor)}mm"`),
+  );
+}
+
+export function toFileScale(svg: string, designWidthMm: number, fileScale: number): string {
+  const size = readSvgSizeMm(svg);
+  return fileScale < 1 && size && size.width >= designWidthMm ? scaleSvgSizeMm(svg, fileScale) : svg;
+}
+
 export function assertSafeDesignSvg(svg: string, side: 'front' | 'back'): void {
   const reject = (reason: string): never => {
     throw new BadRequestError(`${side === 'front' ? '앞면' : '뒷면'} SVG 가 올바르지 않습니다: ${reason}`);

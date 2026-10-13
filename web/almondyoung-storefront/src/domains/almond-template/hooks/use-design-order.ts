@@ -5,7 +5,7 @@ import { createAlmondDesign } from "@/lib/api/ugc/almond-designs"
 import { printSvg } from "../components/print-svg"
 import { PRINT_SPECS } from "../lib/catalog"
 import { uploadDesignImages } from "../lib/design-images"
-import type { Design } from "../lib/document"
+import { printsBack, type Design } from "../lib/document"
 
 type Params = {
   design: Design
@@ -32,7 +32,7 @@ export function useDesignOrder({
         const bleedMm = PRINT_SPECS[stored.kind].bleedMm
         const [frontSvg, backSvg] = await Promise.all([
           printSvg(stored, "front", bleedMm),
-          stored.back.length
+          printsBack(stored)
             ? printSvg(stored, "back", bleedMm)
             : Promise.resolve(undefined),
         ])
@@ -43,7 +43,7 @@ export function useDesignOrder({
           templateId: templateId || undefined,
         })
         router.push(
-          `/${countryCode}/products/${productId}?v_id=${variantId}&almond_design=${id}`
+          `/${countryCode}/products/${productId}?${variantId ? `v_id=${variantId}&` : ""}almond_design=${id}&almond_size=${stored.widthMm}x${stored.heightMm}`
         )
       }, "주문용 시안을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.")
     )

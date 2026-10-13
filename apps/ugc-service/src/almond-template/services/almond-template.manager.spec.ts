@@ -118,14 +118,18 @@ describe('AlmondTemplateManager.upsert', () => {
         },
       }),
     };
-    const db = { run: (work: (t: typeof trx) => Promise<unknown>) => work(trx) } as unknown as DbService<UgcServiceSchema>;
+    const db = {
+      run: (work: (t: typeof trx) => Promise<unknown>) => work(trx),
+    } as unknown as DbService<UgcServiceSchema>;
     return { db, calls };
   }
 
   it('id 가 없으면 새로 만든다', async () => {
     const { db, calls } = dbReturning([{ id: ID }]);
     await expect(new AlmondTemplateManager(db).upsert(design(), SVG, 'draft', ADMIN)).resolves.toEqual({ id: ID });
-    expect(calls).toEqual([{ op: 'insert', values: expect.objectContaining({ title: '시안 A', status: 'draft', createdBy: ADMIN }) }]);
+    expect(calls).toEqual([
+      { op: 'insert', values: expect.objectContaining({ title: '시안 A', status: 'draft', createdBy: ADMIN }) },
+    ]);
   });
 
   it('id 가 있으면 그 시안을 갱신하고 게시 상태는 건드리지 않는다', async () => {
@@ -133,17 +137,32 @@ describe('AlmondTemplateManager.upsert', () => {
     await new AlmondTemplateManager(db).upsert(design(), SVG, 'draft', ADMIN, ID);
     expect(calls).toHaveLength(1);
     expect(calls[0].op).toBe('update');
-    expect(calls[0].set).toMatchObject({ title: '시안 A' });
+    expect(calls[0].set).toMatchObject({ title: '시안 A', updatedBy: ADMIN });
     expect(calls[0].set).not.toHaveProperty('status');
   });
 
   it('없는 id 는 404', async () => {
     const { db } = dbReturning([]);
-    await expect(new AlmondTemplateManager(db).upsert(design(), SVG, 'draft', ADMIN, ID)).rejects.toThrow(NotFoundError);
+    await expect(new AlmondTemplateManager(db).upsert(design(), SVG, 'draft', ADMIN, ID)).rejects.toThrow(
+      NotFoundError,
+    );
   });
 
   it.each([undefined, ID])('같은 상품·크기·이름이 이미 있으면 덮어쓰지 않고 409 (id=%s)', async (id) => {
     const { db } = dbReturning(uniqueViolation);
-    await expect(new AlmondTemplateManager(db).upsert(design(), SVG, 'draft', ADMIN, id)).rejects.toThrow(ConflictError);
+    await expect(new AlmondTemplateManager(db).upsert(design(), SVG, 'draft', ADMIN, id)).rejects.toThrow(
+      ConflictError,
+    );
+  });
+
+  it('삭제는 행을 지우지 않고 지운 사람과 시각을 남긴다', async () => {
+    const { db, calls } = dbReturning([{ id: ID }]);
+    await new AlmondTemplateManager(db).remove(ID, ADMIN);
+    expect(calls).toEqual([{ op: 'update', set: { deletedAt: expect.any(Date), deletedBy: ADMIN } }]);
+  });
+
+  it('없거나 이미 지운 시안을 지우면 404', async () => {
+    const { db } = dbReturning([]);
+    await expect(new AlmondTemplateManager(db).remove(ID, ADMIN)).rejects.toThrow(NotFoundError);
   });
 });

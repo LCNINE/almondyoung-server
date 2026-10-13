@@ -14,16 +14,7 @@ import { TemplatePanel } from "./panels/template-panel"
 import { TextPanel } from "./panels/text-panel"
 
 export function ToolPanel({ editor }: { editor: AlmondEditor }) {
-  const {
-    tool,
-    panelOpen,
-    design,
-    add,
-    patch,
-    selected,
-    editable,
-    setMessage,
-  } = editor
+  const { tool, panelOpen, add, patch, selected, editable, setMessage } = editor
   const [templateSearch, setTemplateSearch] = useState("")
   const [shapeCategory, setShapeCategory] =
     useState<keyof typeof SHAPES>("기본도형")
@@ -34,7 +25,6 @@ export function ToolPanel({ editor }: { editor: AlmondEditor }) {
   const [frameCategory, setFrameCategory] = useState("기본모양틀")
   const [frameColumns, setFrameColumns] = useState<1 | 2>(2)
   const qr = useQrBuilder({
-    design,
     add,
     patch,
     selected,

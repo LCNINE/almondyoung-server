@@ -1,10 +1,9 @@
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import type { Layer } from "../lib/document"
 
 type Params = {
   preview: boolean
   textDialog: string | null
-  helpOpen: boolean
   issues: string[]
   saveDialog: boolean
   loadDialog: boolean
@@ -24,6 +23,7 @@ type Params = {
   pasteCopied: () => void
   cutSelected: () => void
   removeSelected: () => void
+  nudgeSelected: (dx: number, dy: number) => void
   canSave: boolean
   save: () => void
   saveNamed: () => void
@@ -32,7 +32,6 @@ type Params = {
 export function useEditorShortcuts({
   preview,
   textDialog,
-  helpOpen,
   issues,
   saveDialog,
   loadDialog,
@@ -52,10 +51,13 @@ export function useEditorShortcuts({
   pasteCopied,
   cutSelected,
   removeSelected,
+  nudgeSelected,
   canSave,
   save,
   saveNamed,
 }: Params) {
+  const latestSave = useRef(save)
+  latestSave.current = save
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
@@ -65,11 +67,19 @@ export function useEditorShortcuts({
         else if (
           !preview &&
           textDialog === null &&
-          !helpOpen &&
           !issues.length &&
           !loadDialog
-        )
-          save()
+        ) {
+          const active = document.activeElement
+          if (
+            active instanceof HTMLInputElement ||
+            active instanceof HTMLTextAreaElement
+          ) {
+            // 입력 중인 문구·숫자는 blur 때 반영되므로 그 렌더가 끝난 뒤 저장한다
+            active.blur()
+            setTimeout(() => latestSave.current())
+          } else save()
+        }
         return
       }
       if (
@@ -91,7 +101,6 @@ export function useEditorShortcuts({
       if (
         preview ||
         textDialog !== null ||
-        helpOpen ||
         issues.length ||
         saveDialog ||
         loadDialog
@@ -102,6 +111,9 @@ export function useEditorShortcuts({
         event.preventDefault()
         if (event.shiftKey) redo()
         else undo()
+      } else if (command && event.key.toLowerCase() === "y") {
+        event.preventDefault()
+        redo()
       } else if (command && event.key.toLowerCase() === "c") {
         if (selected) {
           event.preventDefault()
@@ -117,6 +129,17 @@ export function useEditorShortcuts({
           event.preventDefault()
           cutSelected()
         }
+      } else if (event.key.startsWith("Arrow") && editable) {
+        event.preventDefault()
+        const step = event.shiftKey ? 10 : 1
+        nudgeSelected(
+          event.key === "ArrowLeft"
+            ? -step
+            : event.key === "ArrowRight"
+              ? step
+              : 0,
+          event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0
+        )
       } else if (
         (event.key === "Delete" || event.key === "Backspace") &&
         editable

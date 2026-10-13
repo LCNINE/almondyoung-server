@@ -35,3 +35,21 @@ export interface UpsertAlmondTemplateDto {
   thumbnailSvg: string
   status: AlmondTemplateStatus
 }
+
+export interface AlmondSavedDesignSummaryDto {
+  id: string
+  title: string
+  productId: string
+  size: string
+  updatedAt: string
+}
+
+export interface AlmondSavedDesignDetailDto extends AlmondSavedDesignSummaryDto {
+  design: AlmondTemplateDesignDto
+}
+
+export interface UpsertAlmondSavedDesignDto {
+  id?: string
+  design: AlmondTemplateDesignDto
+  thumbnailSvg: string
+}

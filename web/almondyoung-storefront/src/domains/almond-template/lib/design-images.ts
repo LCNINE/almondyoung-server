@@ -38,12 +38,26 @@ export async function uploadDesignImages(
     image: await store(item.image),
     originalImage: await store(item.originalImage),
   })
-  const [front, back, backgroundImage] = await Promise.all([
-    Promise.all(design.front.map(layer)),
-    Promise.all(design.back.map(layer)),
-    store(design.backgroundImage),
-  ])
-  return { ...design, front, back, backgroundImage }
+  const [front, back, backgroundImage, backBackgroundImage] = await Promise.all(
+    [
+      Promise.all(design.front.map(layer)),
+      Promise.all(design.back.map(layer)),
+      store(design.backgroundImage),
+      store(design.backBackground?.backgroundImage),
+    ]
+  )
+  return {
+    ...design,
+    front,
+    back,
+    backgroundImage,
+    ...(design.backBackground && {
+      backBackground: {
+        ...design.backBackground,
+        backgroundImage: backBackgroundImage,
+      },
+    }),
+  }
 }
 
 async function downscaled(blob: Blob) {
@@ -59,7 +73,7 @@ async function downscaled(blob: Blob) {
   return canvas.toDataURL("image/webp", 0.85)
 }
 
-export async function inlineThumbnailImages(markup: string) {
+export async function rasterThumbnail(markup: string) {
   const svg = new DOMParser().parseFromString(markup, "image/svg+xml")
   await Promise.all(
     Array.from(svg.querySelectorAll("image")).map(async (node) => {
@@ -70,5 +84,22 @@ export async function inlineThumbnailImages(markup: string) {
       node.setAttribute("href", await downscaled(await imageBlob(source)))
     })
   )
-  return new XMLSerializer().serializeToString(svg)
+  const root = svg.documentElement
+  const [, , viewWidth, viewHeight] = (root.getAttribute("viewBox") ?? "")
+    .split(/[\s,]+/)
+    .map(Number)
+  const scale = THUMBNAIL_MAX_PX / Math.max(viewWidth, viewHeight)
+  const width = Math.max(1, Math.round(viewWidth * scale))
+  const height = Math.max(1, Math.round(viewHeight * scale))
+  root.setAttribute("width", String(width))
+  root.setAttribute("height", String(height))
+  const image = new Image()
+  image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(svg))}`
+  await image.decode()
+  const canvas = document.createElement("canvas")
+  canvas.width = width
+  canvas.height = height
+  canvas.getContext("2d")!.drawImage(image, 0, 0, width, height)
+  const raster = canvas.toDataURL("image/webp", 0.85)
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><image href="${raster}" width="${width}" height="${height}"/></svg>`
 }

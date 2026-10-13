@@ -4,12 +4,14 @@
 // CS 주문조회 화면. 주문 이력 목록의 주문번호 링크(/cs?orderId=...)로 진입한다.
 // 주문 라인에는 옵션 정보가 없고 PIM Variant 에만 있으므로, variantId 로 batch 조회해 옵션을 표시한다.
 
-import { useMemo } from 'react';
+import { Fragment, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { orders } from '@/lib/api/domains';
 import { useVariantsBatch } from '@/lib/services/products';
 import { formatCustomerOrderNo } from '@/features/order/history/utils/customer-order-no';
+import { AlmondDesignPrintCard } from '@/features/orders/almond-design/almond-design-print-card';
+import { useMedusaOrderById } from '@/lib/services/medusa-customers/queries';
 
 // orderItemStatus enum → 한글 라벨
 const LINE_STATUS_LABEL: Record<string, string> = {
@@ -98,6 +100,21 @@ export default function CsOrderLookup() {
     [lines]
   );
   const { data: variantMap } = useVariantsBatch(variantIds);
+  const medusaOrderId = order?.channelOrderId?.startsWith('order_')
+    ? order.channelOrderId
+    : undefined;
+  const { data: medusaOrder } = useMedusaOrderById(medusaOrderId);
+  const almondDesignByItem = useMemo(
+    () =>
+      new Map(
+        (medusaOrder?.order?.items ?? []).flatMap((item) =>
+          typeof item.metadata?.almond_design_id === 'string'
+            ? [[item.id, item.metadata.almond_design_id] as const]
+            : []
+        )
+      ),
+    [medusaOrder]
+  );
 
   if (!orderId) {
     return (
@@ -203,11 +220,12 @@ export default function CsOrderLookup() {
                 ? variantMap?.get(line.variantId)
                 : undefined;
               const option = variant?.optionLabel;
+              const almondDesignId = almondDesignByItem.get(
+                line.channelOrderItemId
+              );
               return (
-                <tr
-                  key={line.id ?? idx}
-                  className="border-b border-gray-100 last:border-0"
-                >
+                <Fragment key={line.id ?? idx}>
+                <tr className="border-b border-gray-100 last:border-0">
                   <td className="p-2 font-medium text-gray-900">
                     {line.productName ??
                       variant?.masterName ??
@@ -224,6 +242,14 @@ export default function CsOrderLookup() {
                       '-'}
                   </td>
                 </tr>
+                {almondDesignId && (
+                  <tr className="border-b border-gray-100">
+                    <td colSpan={6} className="px-2 pb-3">
+                      <AlmondDesignPrintCard designId={almondDesignId} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>

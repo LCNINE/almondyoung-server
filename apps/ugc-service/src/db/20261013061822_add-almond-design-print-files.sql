@@ -1,0 +1,1 @@
+ALTER TABLE "almond_designs" ADD COLUMN "print_files" jsonb DEFAULT '{}'::jsonb NOT NULL;

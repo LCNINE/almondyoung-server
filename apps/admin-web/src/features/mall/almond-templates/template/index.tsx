@@ -31,6 +31,7 @@ import {
   useDeleteAlmondTemplate,
   useUpdateAlmondTemplateStatus,
 } from '@/lib/services/products';
+import { useOptionalAdminUser } from '@/lib/services/users';
 import type { AdminAlmondTemplateDto } from '@/lib/types/dto/products';
 import { formatDateTime } from '@/lib/utils/date';
 import {
@@ -52,6 +53,11 @@ const DEFAULT_COUNTRY =
 
 function isAlmondTemplateTab(value: string): value is AlmondTemplateTab {
   return ALMOND_TEMPLATE_STATUS_TABS.some((item) => item.value === value);
+}
+
+function UserName({ id }: { id: string }) {
+  const { data } = useOptionalAdminUser(id);
+  return <span>{data?.username ?? id}</span>;
 }
 
 export default function AlmondTemplatesTemplate() {
@@ -278,6 +284,15 @@ export default function AlmondTemplatesTemplate() {
                   {template.size}mm · {template.industry ?? '업종 없음'} ·{' '}
                   {template.purpose ?? '용도 없음'} · 수정{' '}
                   {formatDateTime(template.updatedAt)}
+                </p>
+                <p className="text-muted-foreground mt-1 truncate text-xs">
+                  만든 사람 <UserName id={template.createdBy} />
+                  {template.updatedBy && (
+                    <>
+                      {' '}
+                      · 마지막 수정 <UserName id={template.updatedBy} />
+                    </>
+                  )}
                 </p>
                 {template.colors.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1">

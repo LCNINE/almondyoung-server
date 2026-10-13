@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Package } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { AlmondDesignPrintCard } from '@/features/orders/almond-design/almond-design-print-card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -291,7 +292,7 @@ export function OrderDetailDialog({
               </h3>
               <ul className="divide-y divide-gray-100 rounded-md border border-gray-100">
                 {(order.items ?? []).map((item) => (
-                  <li key={item.id} className="flex gap-3 p-2.5">
+                  <li key={item.id} className="flex flex-wrap gap-3 p-2.5">
                     {resolvePublicFileUrl(item.thumbnail) ? (
                       // 외부 CDN(메두사) 이미지라 next/image 대신 img 사용
                       // eslint-disable-next-line @next/next/no-img-element
@@ -322,6 +323,13 @@ export function OrderDetailDialog({
                     <div className="shrink-0 self-center text-sm text-gray-900">
                       {formatCurrency(item.total, currency)}
                     </div>
+                    {typeof item.metadata?.almond_design_id === 'string' && (
+                      <div className="basis-full">
+                        <AlmondDesignPrintCard
+                          designId={item.metadata.almond_design_id}
+                        />
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>

@@ -107,10 +107,14 @@ export default function ProductActions({
 
   const isSimple = (product.variants?.length ?? 0) <= 1
 
-  // 변형이 1개뿐이면 자동으로 선택 리스트에 추가
+  // 변형이 1개뿐이거나 URL 에 v_id 가 있으면 그 변형을 선택 리스트에 넣는다
   useEffect(() => {
-    if (isSimple && product.variants?.length === 1) {
-      const variant = product.variants[0]
+    const linkedId = searchParams.get("v_id")
+    const variant =
+      isSimple && product.variants?.length === 1
+        ? product.variants[0]
+        : product.variants?.find((item) => item.id === linkedId)
+    if (variant) {
       const price = getPricesForVariant(variant)
       if (price) {
         setSelectedItems([
@@ -296,7 +300,15 @@ export default function ProductActions({
       PRINT_SPECS[printKind].sizes[0])
     : undefined
   const almondDesignId = searchParams.get("almond_design")
+  const almondDesignSize = searchParams.get("almond_size")
+  const almondSizeMismatch =
+    !!almondDesignId &&
+    !!almondDesignSize &&
+    !!templateVariant &&
+    !!printSize &&
+    printSize.join("x") !== almondDesignSize
   const almondDesignMetadata =
+    !almondSizeMismatch &&
     hasAlmondTemplate &&
     templateVariant &&
     almondDesignId &&
@@ -336,7 +348,9 @@ export default function ProductActions({
       ? t("selectPlaceholder")
       : !allInStock
         ? t("soldOut")
-        : null
+        : almondSizeMismatch
+          ? t("almondDesignSizeMismatch")
+          : null
 
   // 재고부족 응답을 사람 말로 바꾼다. 요청 수량이 이미 남은 재고를 넘었으면 남은 수량을 알려주고,
   // 재고 안인데도 실패했으면 장바구니에 담긴 수량과 합쳐 넘긴 경우이므로 그렇게 안내한다.
@@ -376,7 +390,7 @@ export default function ProductActions({
 
   // 장바구니 담기
   const handleAddToCart = () => {
-    if (selectedItems.length === 0) return
+    if (selectedItems.length === 0 || almondSizeMismatch) return
 
     setShowCartModal(true)
     setPriceChange(null)
@@ -426,7 +440,7 @@ export default function ProductActions({
 
   // 바로구매
   const handleBuyNow = () => {
-    if (selectedItems.length === 0) return
+    if (selectedItems.length === 0 || almondSizeMismatch) return
 
     startTransition(async () => {
       try {
@@ -566,6 +580,13 @@ export default function ProductActions({
               {t("almondDesignAttached")}
             </p>
           )}
+          {almondSizeMismatch && (
+            <p className="text-muted-foreground text-center text-xs">
+              {t("almondDesignSizeHint", {
+                size: almondDesignSize.replace("x", "×"),
+              })}
+            </p>
+          )}
           <div className="flex w-full gap-x-3">
             {/* TODO: 재입고 알림 기능 추가 후 활성화
           {!allInStock && selectedItems.length > 0 ? (
@@ -659,6 +680,9 @@ export default function ProductActions({
         show={!inView}
         templateHref={templateHref}
         designAttached={!!almondDesignMetadata}
+        blockedLabel={
+          almondSizeMismatch ? t("almondDesignSizeMismatch") : undefined
+        }
       />
 
       <CartAddedModal

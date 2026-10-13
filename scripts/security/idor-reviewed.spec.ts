@@ -718,6 +718,36 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '',
     note: "생성 전용. userId 는 @User('userId') 토큰값으로만 채우고 바디로 받지 않는다. templateId 는 공개 시안 참조라 남의 자원이 아니다.",
   },
+  'ugc-service DELETE /me/almond-saved-designs/:id': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/almond-template/services/almond-saved-design.manager.ts:62',
+    predicate: 'and(eq(almondSavedDesigns.id, id), eq(almondSavedDesigns.userId, userId))',
+    note: "DELETE 의 WHERE 에 소유자 조건. 0행이면 404(존재 은닉). userId 는 @User('userId') 토큰값.",
+  },
+  'ugc-service GET /me/almond-saved-designs': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/almond-template/services/almond-saved-design.reader.ts:30',
+    predicate: 'eq(almondSavedDesigns.userId, userId)',
+    note: 'listOwned — 첫 조건이 소유자. productId·size 는 거기에 덧붙는 좁히기 조건일 뿐이다.',
+  },
+  'ugc-service GET /me/almond-saved-designs/:id': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/almond-template/services/almond-saved-design.reader.ts:50',
+    predicate: 'and(eq(almondSavedDesigns.id, id), eq(almondSavedDesigns.userId, userId))',
+    note: 'findOwned — SELECT WHERE 에 소유자 조건. 0행이면 404(존재 은닉).',
+  },
+  'ugc-service GET /me/almond-saved-designs/:id/thumbnail': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/almond-template/services/almond-saved-design.reader.ts:50',
+    predicate: 'and(eq(almondSavedDesigns.id, id), eq(almondSavedDesigns.userId, userId))',
+    note: '상세와 같은 findOwned 를 거친다.',
+  },
+  'ugc-service PUT /me/almond-saved-designs': {
+    verdict: 'SAFE',
+    evidence: 'apps/ugc-service/src/almond-template/services/almond-saved-design.manager.ts:36',
+    predicate: 'and(eq(almondSavedDesigns.id, id), eq(almondSavedDesigns.userId, userId))',
+    note: "id 가 있으면 UPDATE WHERE 에 소유자 조건(남의 id 는 0행 → 404). 없으면 새로 만들고 userId 는 토큰값으로만 채운다.",
+  },
   'ugc-service PATCH /qna/questions/:id': {
     verdict: 'SAFE',
     evidence: 'apps/ugc-service/src/qna/qna.service.ts:185',
@@ -924,15 +954,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(147);
+    expect(targets).toHaveLength(152);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(147);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(146);
+    expect(new Set(targets.map(keyOf)).size).toBe(152);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(151);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

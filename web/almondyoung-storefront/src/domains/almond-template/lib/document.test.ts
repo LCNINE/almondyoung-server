@@ -5,10 +5,13 @@ import {
   newDesign,
   parseDesign,
   printIssues,
+  printsBack,
   reorderLayer,
   resizeDesign,
   resizeLayerFromHandle,
+  sideBackground,
   updateLayer,
+  withSideBackground,
 } from "./document"
 
 describe("아몬드템플릿", () => {
@@ -258,5 +261,50 @@ describe("아몬드템플릿", () => {
         front: [{ ...design.front[2], frameShape: "unknown" }],
       })
     ).toThrow()
+  })
+
+  it("뒷면 배경을 앞면과 따로 저장하고, 없던 옛 시안은 앞면 배경을 따른다", () => {
+    const legacy = { ...newDesign("card"), background: "#112233" }
+    delete legacy.backBackground
+    expect(sideBackground(legacy, "back").background).toBe("#112233")
+
+    const design = withSideBackground(legacy, "back", { background: "#fff799" })
+    expect(sideBackground(design, "front").background).toBe("#112233")
+    expect(sideBackground(design, "back").background).toBe("#fff799")
+    expect(parseDesign(design)).toEqual(design)
+    expect(() =>
+      parseDesign({ ...design, backBackground: { background: "red" } })
+    ).toThrow()
+  })
+
+  it("앞면 배경을 색만으로 바꾸면 배경 이미지가 지워진다", () => {
+    const withImage = withSideBackground(newDesign("card"), "front", {
+      background: "#ffffff",
+      backgroundImage: "file:00000000-0000-4000-8000-000000000000",
+      backgroundPixelWidth: 100,
+      backgroundPixelHeight: 100,
+    })
+    const cleared = withSideBackground(withImage, "front", {
+      background: "#112233",
+    })
+    expect(sideBackground(cleared, "front")).toEqual({ background: "#112233" })
+  })
+
+  it("배경만 칠한 뒷면도 인쇄하고, 흰 빈 뒷면은 단면으로 본다", () => {
+    const blank = newDesign("card")
+    expect(printsBack(blank)).toBe(false)
+    expect(
+      printsBack(withSideBackground(blank, "back", { background: "#112233" }))
+    ).toBe(true)
+    const withImage = withSideBackground(blank, "back", {
+      background: "#ffffff",
+      backgroundImage: "file:00000000-0000-4000-8000-000000000000",
+      backgroundPixelWidth: 100,
+      backgroundPixelHeight: 100,
+    })
+    expect(printsBack(withImage)).toBe(true)
+    expect(printIssues(withImage)).toContain(
+      "뒷면 배경 이미지 해상도가 300dpi보다 낮습니다."
+    )
   })
 })

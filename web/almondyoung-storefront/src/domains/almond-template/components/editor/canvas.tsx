@@ -1,7 +1,19 @@
-import { LayerGraphic } from "../graphic"
+import { Pencil, Trash2 } from "lucide-react"
+import { useRef, useState } from "react"
+import { Backdrop, LayerGraphic } from "../graphic"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import { CanvasGuides } from "./canvas-guides"
-import { imageSrc } from "../../lib/image-ref"
+import { useLeaveWarning } from "../../hooks/use-leave-warning"
+import { sideBackground, type Layer } from "../../lib/document"
+
+function quickActionsAt(layer: Layer, scale: number) {
+  const rad = ((layer.rotation ?? 0) * Math.PI) / 180
+  const dx = (44 / scale) * (layer.flipX ? -1 : 1)
+  const dy = (-layer.height / 2 - 16 / scale) * (layer.flipY ? -1 : 1)
+  const x = layer.x + layer.width / 2 + dx * Math.cos(rad) - dy * Math.sin(rad)
+  const y = layer.y + layer.height / 2 + dx * Math.sin(rad) + dy * Math.cos(rad)
+  return { left: `${x * scale}px`, top: `${y * scale}px` }
+}
 
 export function Canvas({ editor }: { editor: AlmondEditor }) {
   const {
@@ -26,7 +38,37 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
     endDrag,
     canvasFit,
     handleSize,
+    editable,
+    patch,
+    removeSelected,
   } = editor
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(
+    null
+  )
+  const cancelEdit = useRef(false)
+  const scale = canvasFit * zoom
+  const editingLayer = editing
+    ? layers.find((layer) => layer.id === editing.id)
+    : undefined
+  useLeaveWarning(
+    !!editing && !!editingLayer && editing.text !== (editingLayer.text ?? "")
+  )
+  const startTextEdit = () => {
+    if (selected?.type === "text" && editable)
+      setEditing({ id: selected.id, text: selected.text ?? "" })
+  }
+  const finishTextEdit = () => {
+    const cancelled = cancelEdit.current
+    cancelEdit.current = false
+    if (
+      !cancelled &&
+      editingLayer &&
+      editing &&
+      editing.text !== (editingLayer.text ?? "")
+    )
+      patch(editingLayer.id, { text: editing.text })
+    setEditing(null)
+  }
   return (
     <div
       ref={canvasAreaRef}
@@ -46,26 +88,19 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
             height: `${design.heightMm * canvasFit * zoom}px`,
             overflow: "visible",
           }}
-          className="block shrink-0 touch-none bg-white shadow-xl outline outline-1 outline-offset-2 outline-[#222]"
+          className="block shrink-0 touch-none bg-white shadow-xl outline outline-1 outline-offset-2 outline-[#222] select-none"
           onPointerDown={() => setSelectedId(null)}
           onPointerMove={moveDrag}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
+          onDoubleClick={startTextEdit}
         >
           <defs>
             <clipPath id="almond-print-area">
               <rect width={design.widthMm} height={design.heightMm} />
             </clipPath>
           </defs>
-          <rect width="100%" height="100%" fill={design.background} />
-          {design.backgroundImage && (
-            <image
-              href={imageSrc(design.backgroundImage)}
-              width="100%"
-              height="100%"
-              preserveAspectRatio="xMidYMid slice"
-            />
-          )}
+          <Backdrop value={sideBackground(design, side)} />
           <g clipPath="url(#almond-print-area)">
             {layers.map((layer) =>
               layer.visible === false ? null : (
@@ -164,6 +199,63 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
             <CanvasGuides editor={editor} />
           )}
         </svg>
+        {selected && selected.visible !== false && editable && !editing && (
+          <div
+            className="absolute z-20 flex -translate-x-1/2 -translate-y-1/2 gap-1"
+            style={quickActionsAt(selected, scale)}
+          >
+            {selected.type === "text" && (
+              <button
+                type="button"
+                aria-label="문구 수정"
+                title="문구 수정"
+                onClick={startTextEdit}
+                className="flex size-6 items-center justify-center rounded bg-white text-[#10a8a1] shadow"
+              >
+                <Pencil size={14} />
+              </button>
+            )}
+            <button
+              type="button"
+              aria-label="선택 요소 삭제"
+              title="삭제"
+              onClick={removeSelected}
+              className="flex size-6 items-center justify-center rounded bg-white text-[#10a8a1] shadow"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        )}
+        {editingLayer && editing && (
+          <textarea
+            autoFocus
+            aria-label="문구 수정"
+            value={editing.text}
+            maxLength={500}
+            onChange={(event) =>
+              setEditing({ ...editing, text: event.target.value })
+            }
+            onFocus={(event) => event.currentTarget.select()}
+            onBlur={finishTextEdit}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.stopPropagation()
+                cancelEdit.current = true
+                event.currentTarget.blur()
+              } else if (
+                event.key === "Enter" &&
+                (event.metaKey || event.ctrlKey)
+              )
+                event.currentTarget.blur()
+            }}
+            className="absolute z-30 min-h-24 resize-none border border-[#10c9c1] bg-white p-2 text-base text-[#1a1c20] shadow-lg outline-none"
+            style={{
+              left: `${Math.max(0, editingLayer.x * scale)}px`,
+              top: `${(editingLayer.y + editingLayer.height) * scale + 4}px`,
+              width: `${Math.max(260, editingLayer.width * scale)}px`,
+            }}
+          />
+        )}
         {selected && selectedPrintWarning && (
           <div
             role="status"

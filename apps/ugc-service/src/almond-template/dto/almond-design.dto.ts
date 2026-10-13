@@ -39,4 +39,11 @@ export class AlmondDesignResponseDto {
 
 export class AdminAlmondDesignResponseDto extends AlmondDesignResponseDto {
   @ApiProperty({ format: 'uuid' }) userId: string;
+  @ApiProperty({ description: '뒷면 인쇄 원본이 있는가' }) hasBack: boolean;
+}
+
+export class AlmondPrintLinkResponseDto {
+  @ApiProperty({ description: '5분 동안 유효한 다운로드 URL' }) url: string;
+  @ApiProperty() expiresAt: string;
+  @ApiProperty({ example: 'almond-design-<id>-350dpi.jpg' }) fileName: string;
 }

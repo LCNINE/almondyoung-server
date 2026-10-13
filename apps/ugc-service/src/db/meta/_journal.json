@@ -85,6 +85,27 @@
       "when": 1790751977595,
       "tag": "20260930070617_add-almond-designs",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791869046915,
+      "tag": "20261013052406_almond-templates-soft-delete-and-updated-by",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791869095202,
+      "tag": "20261013052455_add-almond-saved-designs",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791872302359,
+      "tag": "20261013061822_add-almond-design-print-files",
+      "breakpoints": true
     }
   ]
 }

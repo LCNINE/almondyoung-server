@@ -19,8 +19,17 @@ export const MENU_ITEMS: MenuItem[] = [
   },
   { label: "mypage.menu.exchangeLong2", icon: "🔄", path: "/mypage/exchange" },
   { label: "mypage.menu.review", icon: "⭐", path: "/mypage/reviews" },
-  { label: "mypage.menu.myShopListings", icon: "🏪", path: "/mypage/shop-listings" },
+  {
+    label: "mypage.menu.myShopListings",
+    icon: "🏪",
+    path: "/mypage/shop-listings",
+  },
   { label: "mypage.menu.contests", icon: "🎨", path: "/mypage/contests" },
+  {
+    label: "mypage.menu.almondTemplates",
+    icon: "🖌️",
+    path: "/mypage/almond-templates",
+  },
   { label: "mypage.menu.membership", icon: "💎", path: "/mypage/membership" },
   {
     label: "mypage.menu.payment",
@@ -116,6 +125,11 @@ export const MENU_SECTIONS: MenuSection[] = [
         path: "/mypage/shop-listings",
       },
       { label: "mypage.menu.contests", icon: "🎨", path: "/mypage/contests" },
+      {
+        label: "mypage.menu.almondTemplates",
+        icon: "🖌️",
+        path: "/mypage/almond-templates",
+      },
       { label: "mypage.menu.inquiries", icon: "❓", path: "/mypage/inquiries" },
     ],
   },
@@ -228,6 +242,12 @@ export const SIDEBAR_MENU_ITEMS = [
     path: "/mypage/contests",
   },
   {
+    id: "almond-templates",
+    label: "mypage.menu.almondTemplates",
+    hasSubMenu: false,
+    path: "/mypage/almond-templates",
+  },
+  {
     id: "membership",
     label: "mypage.menu.membership",
     hasSubMenu: false,
@@ -309,6 +329,11 @@ export const SIDEBAR_SECTIONS: {
         id: "contests",
         label: "mypage.menu.contests",
         path: "/mypage/contests",
+      },
+      {
+        id: "almond-templates",
+        label: "mypage.menu.almondTemplates",
+        path: "/mypage/almond-templates",
       },
       // {
       //   id: "inquiries",

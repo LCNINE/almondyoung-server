@@ -30,6 +30,9 @@ export const LOGO_CONTEST_IMAGE_CONTEXT_ID = 'logo-contest-image';
 
 export const ALMOND_TEMPLATE_IMAGE_CONTEXT_ID = 'almond-template-image';
 
+/** 아몬드템플릿 고객 시안의 인쇄 파일. 어드민 Lambda 응답 상한(6MB)을 피해 S3 서명 URL 로 내려준다. */
+export const ALMOND_PRINT_FILE_CONTEXT_ID = 'almond-print-file';
+
 function normalizeAllowedMimeTypes(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value;
@@ -270,6 +273,17 @@ export const FILE_CONTEXTS: FileContextSeed[] = [
     allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
     maxFileSize: 10485760,
     pathPrefix: 'contests/logo-image',
+    isActive: true,
+  },
+  {
+    id: ALMOND_PRINT_FILE_CONTEXT_ID,
+    name: 'Almond Print File',
+    description: '아몬드템플릿 고객 시안의 인쇄 파일(PDF·EPS·JPG)',
+    allowPublic: false,
+    allowPrivate: true,
+    allowedMimeTypes: ['application/pdf', 'application/postscript', 'application/eps', 'image/jpeg'],
+    maxFileSize: 314572800,
+    pathPrefix: 'almond-template/print',
     isActive: true,
   },
   {

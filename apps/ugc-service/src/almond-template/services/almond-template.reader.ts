@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { NotFoundError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { almondTemplates, type UgcServiceSchema, type UgcTx } from '../../db/schema';
 import {
   type AdminAlmondTemplateSummary,
@@ -20,9 +20,12 @@ const summaryColumns = {
   colors: almondTemplates.colors,
   status: almondTemplates.status,
   createdBy: almondTemplates.createdBy,
+  updatedBy: almondTemplates.updatedBy,
   createdAt: almondTemplates.createdAt,
   updatedAt: almondTemplates.updatedAt,
 };
+
+const notDeleted = isNull(almondTemplates.deletedAt);
 
 const adminSummaryColumns = {
   ...summaryColumns,
@@ -41,7 +44,7 @@ export class AlmondTemplateReader {
         trx
           .select(summaryColumns)
           .from(almondTemplates)
-          .where(eq(almondTemplates.status, 'published'))
+          .where(and(eq(almondTemplates.status, 'published'), notDeleted))
           .orderBy(desc(almondTemplates.updatedAt), desc(almondTemplates.id)),
       tx,
     );
@@ -53,6 +56,7 @@ export class AlmondTemplateReader {
         trx
           .select(adminSummaryColumns)
           .from(almondTemplates)
+          .where(notDeleted)
           .orderBy(desc(almondTemplates.updatedAt), desc(almondTemplates.id)),
       tx,
     );
@@ -63,7 +67,7 @@ export class AlmondTemplateReader {
       const [row] = await trx
         .select()
         .from(almondTemplates)
-        .where(and(eq(almondTemplates.id, id), eq(almondTemplates.status, 'published')))
+        .where(and(eq(almondTemplates.id, id), eq(almondTemplates.status, 'published'), notDeleted))
         .limit(1);
       if (!row) throw new NotFoundError(`Almond template not found: ${id}`);
       return row;
@@ -75,7 +79,7 @@ export class AlmondTemplateReader {
       const [row] = await trx
         .select({ thumbnailSvg: almondTemplates.thumbnailSvg })
         .from(almondTemplates)
-        .where(and(eq(almondTemplates.id, id), eq(almondTemplates.status, 'published')))
+        .where(and(eq(almondTemplates.id, id), eq(almondTemplates.status, 'published'), notDeleted))
         .limit(1);
       if (!row) throw new NotFoundError(`Almond template not found: ${id}`);
       return row.thumbnailSvg;
@@ -87,7 +91,7 @@ export class AlmondTemplateReader {
       const [row] = await trx
         .select({ thumbnailSvg: almondTemplates.thumbnailSvg })
         .from(almondTemplates)
-        .where(eq(almondTemplates.id, id))
+        .where(and(eq(almondTemplates.id, id), notDeleted))
         .limit(1);
       if (!row) throw new NotFoundError(`Almond template not found: ${id}`);
       return row.thumbnailSvg;
@@ -96,7 +100,11 @@ export class AlmondTemplateReader {
 
   async findById(id: string, tx?: UgcTx): Promise<AlmondTemplateEntity> {
     return this.db.run(async (trx) => {
-      const [row] = await trx.select().from(almondTemplates).where(eq(almondTemplates.id, id)).limit(1);
+      const [row] = await trx
+        .select()
+        .from(almondTemplates)
+        .where(and(eq(almondTemplates.id, id), notDeleted))
+        .limit(1);
       if (!row) throw new NotFoundError(`Almond template not found: ${id}`);
       return row;
     }, tx);

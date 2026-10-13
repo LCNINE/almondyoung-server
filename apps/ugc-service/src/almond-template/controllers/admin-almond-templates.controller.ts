@@ -58,7 +58,8 @@ export class AdminAlmondTemplatesController {
   @RequireScopes('admin:template:write')
   @ApiOperation({
     summary: '아몬드템플릿 저장',
-    description: 'id 가 있으면 그 시안을 갱신하고 없으면 새로 만든다. 같은 상품·크기·이름이 이미 있으면 409. 본문 상한은 이 라우트만 20MB',
+    description:
+      'id 가 있으면 그 시안을 갱신하고 없으면 새로 만든다. 같은 상품·크기·이름이 이미 있으면 409. 본문 상한은 이 라우트만 20MB',
   })
   @ApiBody({ type: UpsertAlmondTemplateDto })
   @ApiResponse({ status: 200, type: AdminAlmondTemplateDetailResponseDto })
@@ -80,8 +81,9 @@ export class AdminAlmondTemplatesController {
   updateStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateAlmondTemplateStatusDto,
+    @User('userId') userId: string,
   ): Promise<AdminAlmondTemplateSummaryResponseDto> {
-    return this.service.updateStatus(id, dto.status);
+    return this.service.updateStatus(id, dto.status, userId);
   }
 
   @Delete(':id')
@@ -89,7 +91,7 @@ export class AdminAlmondTemplatesController {
   @RequireScopes('admin:template:write')
   @ApiOperation({ summary: '아몬드템플릿 삭제' })
   @ApiResponse({ status: 204 })
-  async remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    await this.service.remove(id);
+  async remove(@Param('id', ParseUUIDPipe) id: string, @User('userId') userId: string): Promise<void> {
+    await this.service.remove(id, userId);
   }
 }

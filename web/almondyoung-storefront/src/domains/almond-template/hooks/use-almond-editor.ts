@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from "react"
 import { PRINT_PRODUCTS, PRINT_SPECS } from "../lib/catalog"
-import { imageDpi, newDesign, printIssues, type Design } from "../lib/document"
+import {
+  imageDpi,
+  newDesign,
+  printIssues,
+  printsBack,
+  type Design,
+} from "../lib/document"
+import { mm } from "../lib/layer"
 import { useCanvasInteraction } from "./use-canvas-interaction"
 import { useDesignHistory } from "./use-design-history"
 import { useEditorShortcuts } from "./use-editor-shortcuts"
@@ -29,6 +36,7 @@ export type AlmondEditorProps = {
   variantId?: string
   size?: string
   templateId?: string
+  savedId?: string
   initialDesign?: Design
 }
 
@@ -38,10 +46,11 @@ export function useAlmondEditor({
   variantId = "",
   size = "",
   templateId = "",
+  savedId = "",
   initialDesign,
 }: AlmondEditorProps) {
   const product = PRINT_PRODUCTS[productId]
-  const { design, setDesign, history, setHistory, future, change, undo, redo } =
+  const { design, setDesign, history, future, change, commit, undo, redo } =
     useDesignHistory(() => {
       if (initialDesign) return initialDesign
       const initial = newDesign(product?.kind ?? "pet", productId)
@@ -52,6 +61,10 @@ export function useAlmondEditor({
       return initial
     })
   const [side, setSide] = useState<Side>("front")
+  const [removedBack, setRemovedBack] = useState<Pick<
+    Design,
+    "back" | "backBackground"
+  > | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [guideMenuOpen, setGuideMenuOpen] = useState(false)
   const [noticeOpen, setNoticeOpen] = useState(false)
@@ -82,6 +95,31 @@ export function useAlmondEditor({
   const [moveMode, setMoveMode] = useState(false)
   const [previewSide, setPreviewSide] = useState<Side>("front")
   const [preview, setPreview] = useState(false)
+  const backPrinted = printsBack(design)
+  const hasBack =
+    PRINT_SPECS[design.kind].duplex || backPrinted || !!removedBack
+  useEffect(() => {
+    if (backPrinted) setRemovedBack(null)
+  }, [backPrinted])
+  useEffect(() => {
+    setRemovedBack(null)
+  }, [design.productId, design.kind])
+  useEffect(() => {
+    if (hasBack) return
+    setSide("front")
+    setPreviewSide("front")
+  }, [hasBack])
+  const removeBack = () => {
+    setRemovedBack({ back: design.back, backBackground: design.backBackground })
+    change({ ...design, back: [], backBackground: { background: "#ffffff" } })
+    setSide("front")
+    setSelectedId(null)
+  }
+  const restoreBack = () => {
+    if (!removedBack) return
+    change({ ...design, ...removedBack })
+    setRemovedBack(null)
+  }
   const layers = design[side]
   const selected = layers.find((layer) => layer.id === selectedId)
   const spec = PRINT_SPECS[design.kind]
@@ -111,7 +149,7 @@ export function useAlmondEditor({
   const canvas = useCanvasInteraction({
     design,
     setDesign,
-    setHistory,
+    commit,
     side,
     mode,
     moveMode,
@@ -123,10 +161,14 @@ export function useAlmondEditor({
     productId,
     size,
     templateId,
+    savedDesignId: savedId,
     runAuthed: auth.runAuthed,
     design,
     setDesign,
-    change,
+    change: (loaded) => {
+      setRemovedBack(null)
+      change(loaded)
+    },
     setSelectedId,
     setMessage,
   })
@@ -185,7 +227,6 @@ export function useAlmondEditor({
   useEditorShortcuts({
     preview,
     textDialog,
-    helpOpen,
     issues,
     saveDialog: storage.saveDialog,
     loadDialog: storage.loadDialog,
@@ -205,7 +246,17 @@ export function useAlmondEditor({
     pasteCopied: actions.pasteCopied,
     cutSelected: actions.cutSelected,
     removeSelected: actions.removeSelected,
-    canSave: mode === "designer",
+    nudgeSelected: (dx, dy) => {
+      if (!selected) return
+      const px = 1 / (canvas.canvasFit * canvas.zoom)
+      const clamp = (value: number, size: number) =>
+        mm(Math.max(-size, Math.min(size * 2, value)))
+      actions.patch(selected.id, {
+        x: clamp(selected.x + dx * px, design.widthMm),
+        y: clamp(selected.y + dy * px, design.heightMm),
+      })
+    },
+    canSave: true,
     save: storage.save,
     saveNamed: storage.saveNamed,
   })
@@ -223,6 +274,10 @@ export function useAlmondEditor({
     redo,
     side,
     setSide,
+    hasBack,
+    removedBack,
+    removeBack,
+    restoreBack,
     selectedId,
     setSelectedId,
     guideMenuOpen,

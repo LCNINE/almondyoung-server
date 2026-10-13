@@ -1,5 +1,11 @@
 import { useState } from "react"
-import type { Design, Layer } from "../lib/document"
+import {
+  MAX_IMAGE_FILE_BYTES,
+  sideBackground,
+  withSideBackground,
+  type Design,
+  type Layer,
+} from "../lib/document"
 import { makeLayer } from "../lib/layer"
 import { imageBlob } from "../lib/image-ref"
 
@@ -50,8 +56,11 @@ export function useImageTools({
     file: File,
     target: "layer" | "background" | "frame" = "layer"
   ) => {
-    if (!file.type.match(/^image\/(png|jpeg|webp)$/) || file.size > 5_000_000) {
-      setMessage("PNG/JPG/WebP 5MB 이하 이미지만 사용할 수 있습니다.")
+    if (
+      !file.type.match(/^image\/(png|jpeg|webp)$/) ||
+      file.size > MAX_IMAGE_FILE_BYTES
+    ) {
+      setMessage("PNG/JPG/WebP 4MB 이하 이미지만 사용할 수 있습니다.")
       return
     }
     try {
@@ -68,12 +77,14 @@ export function useImageTools({
             { image, pixelWidth, pixelHeight },
           ])
         if (target === "background")
-          change({
-            ...design,
-            backgroundImage: image,
-            backgroundPixelWidth: pixelWidth,
-            backgroundPixelHeight: pixelHeight,
-          })
+          change(
+            withSideBackground(design, side, {
+              background: sideBackground(design, side).background,
+              backgroundImage: image,
+              backgroundPixelWidth: pixelWidth,
+              backgroundPixelHeight: pixelHeight,
+            })
+          )
         else if (target === "frame" && selected)
           patch(selected.id, {
             image,
@@ -179,7 +190,7 @@ export function useImageTools({
         )
       context.putImageData(pixels, 0, 0)
       const image = canvas.toDataURL("image/png")
-      if (image.length > 8_000_000)
+      if (image.length > (MAX_IMAGE_FILE_BYTES * 4) / 3)
         return setMessage(
           "결과 이미지가 너무 큽니다. 작은 이미지를 사용하세요."
         )
@@ -240,7 +251,7 @@ export function useImageTools({
         context.putImageData(pixels, 0, 0)
       }
       const image = canvas.toDataURL("image/png")
-      if (image.length > 8_000_000)
+      if (image.length > (MAX_IMAGE_FILE_BYTES * 4) / 3)
         return setMessage("필터 결과가 너무 큽니다. 작은 이미지를 사용하세요.")
       patch(selected.id, {
         image,

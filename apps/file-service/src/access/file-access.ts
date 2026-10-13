@@ -2,7 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { NotFoundError, ForbiddenError } from '@app/shared';
 import { AuthorizationService, STAFF_ROLES } from '@app/authorization';
 import { FileRepository } from '../shared/repositories/file.repository';
-import { ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID, DIGITAL_ASSET_FILE_CONTEXT_ID } from '../database/default-file-contexts';
+import {
+  ALMOND_PRINT_FILE_CONTEXT_ID,
+  ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID,
+  DIGITAL_ASSET_FILE_CONTEXT_ID,
+} from '../database/default-file-contexts';
 import { Upload } from '../shared/types/file.types';
 import { JwtPayload } from '../shared/types/jwt-payload.interface';
 
@@ -21,6 +25,7 @@ export interface DeleteResult {
 const STAFF_READABLE_CONTEXT_IDS: readonly string[] = [
   DIGITAL_ASSET_FILE_CONTEXT_ID,
   ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID,
+  ALMOND_PRINT_FILE_CONTEXT_ID,
 ];
 
 @Injectable()

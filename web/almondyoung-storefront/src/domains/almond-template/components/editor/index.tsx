@@ -62,7 +62,7 @@ export function AlmondTemplateEditor(props: AlmondEditorProps) {
       {loadDialog && <LoadDialog editor={editor} />}
       <button
         aria-label="편집 도움말"
-        onClick={() => setHelpOpen(true)}
+        onClick={() => setHelpOpen(!helpOpen)}
         className="absolute right-3 bottom-16 z-20 flex h-10 w-10 items-center justify-center rounded bg-[#303030] text-xl font-bold text-white shadow"
       >
         ?

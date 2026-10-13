@@ -15,6 +15,9 @@ function entity(design: Record<string, unknown>): AlmondTemplateEntity {
     thumbnailSvg: '<svg></svg>',
     status: 'draft',
     createdBy: '33333333-3333-4333-8333-333333333333',
+    updatedBy: null,
+    deletedAt: null,
+    deletedBy: null,
     createdAt: new Date('2026-09-01T00:00:00Z'),
     updatedAt: new Date('2026-09-02T00:00:00Z'),
   };

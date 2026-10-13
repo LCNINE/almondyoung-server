@@ -42,10 +42,14 @@ export class AlmondTemplatesService {
       await this.manager.upsert(dto.design, dto.thumbnailSvg, dto.status, userId, dto.id),
     );
   }
-  async updateStatus(id: string, status: AlmondTemplateStatus): Promise<AdminAlmondTemplateSummaryResponseDto> {
-    return AlmondTemplateMapper.toAdminSummaryFromEntity(await this.manager.updateStatus(id, status));
+  async updateStatus(
+    id: string,
+    status: AlmondTemplateStatus,
+    userId: string,
+  ): Promise<AdminAlmondTemplateSummaryResponseDto> {
+    return AlmondTemplateMapper.toAdminSummaryFromEntity(await this.manager.updateStatus(id, status, userId));
   }
-  remove(id: string): Promise<void> {
-    return this.manager.remove(id);
+  remove(id: string, userId: string): Promise<void> {
+    return this.manager.remove(id, userId);
   }
 }

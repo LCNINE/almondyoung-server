@@ -7,6 +7,7 @@ import {
   inlinePublicImages,
   readSvgSizeMm,
   sniffImageMime,
+  toFileScale,
 } from './almond-print-svg';
 
 const FILE_A = '11111111-1111-4111-8111-111111111111';
@@ -122,6 +123,22 @@ describe('composeSideBySide', () => {
     const sheet = composeSideBySide(front, null, 10);
     expect(readSvgSizeMm(sheet)).toEqual({ width: 94, height: 54 });
     expect(sheet.match(/<svg x=/g)).toHaveLength(1);
+  });
+});
+
+describe('toFileScale', () => {
+  const legacy = svg('<rect/>', 'width="802mm" height="1802mm" viewBox="0 0 802 1802"');
+
+  it('실물 크기로 저장된 옛 현수막 시안은 축소 비율로 맞추고 viewBox 는 그대로 둔다', () => {
+    const scaled = toFileScale(legacy, 800, 0.1);
+    expect(readSvgSizeMm(scaled)).toEqual({ width: 80.2, height: 180.2 });
+    expect(scaled).toContain('viewBox="0 0 802 1802"');
+  });
+
+  it('이미 축소된 시안과 축소하지 않는 상품은 건드리지 않는다', () => {
+    const current = svg('<rect/>', 'width="80.2mm" height="180.2mm" viewBox="0 0 802 1802"');
+    expect(toFileScale(current, 800, 0.1)).toBe(current);
+    expect(toFileScale(legacy, 800, 1)).toBe(legacy);
   });
 });
 

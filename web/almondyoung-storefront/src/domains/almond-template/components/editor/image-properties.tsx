@@ -1,3 +1,4 @@
+import { NumberInput } from "./number-input"
 import {
   RotateCcw,
   FlipHorizontal,
@@ -96,16 +97,13 @@ export function ImageProperties({
         )}
         <div className="flex items-end gap-1">
           <span className="mb-1.5 w-14 shrink-0 text-xs">크기(mm)</span>
-          <input
+          <NumberInput
             aria-label="이미지 너비"
-            type="number"
             step="0.1"
             min="1"
             value={selected.width}
             disabled={!editable}
-            onChange={(event) =>
-              setImageSize("width", Number(event.target.value))
-            }
+            onValue={(value) => setImageSize("width", value)}
             className="min-w-0 flex-1 border px-1 py-1 text-right"
           />
           <button
@@ -117,16 +115,13 @@ export function ImageProperties({
           >
             {imageSizeLinked ? <Link size={15} /> : <Unlink size={15} />}
           </button>
-          <input
+          <NumberInput
             aria-label="이미지 높이"
-            type="number"
             step="0.1"
             min="1"
             value={selected.height}
             disabled={!editable}
-            onChange={(event) =>
-              setImageSize("height", Number(event.target.value))
-            }
+            onValue={(value) => setImageSize("height", value)}
             className="min-w-0 flex-1 border px-1 py-1 text-right"
           />
         </div>
@@ -153,19 +148,15 @@ export function ImageProperties({
           </label>
           <label className="flex flex-1 items-center gap-1">
             회전
-            <input
+            <NumberInput
               aria-label="이미지 회전"
-              type="number"
               min="-360"
               max="360"
               value={selected.rotation ?? 0}
               disabled={!editable}
-              onChange={(event) =>
+              onValue={(value) =>
                 patch(selected.id, {
-                  rotation: Math.max(
-                    -360,
-                    Math.min(360, Number(event.target.value))
-                  ),
+                  rotation: Math.max(-360, Math.min(360, value)),
                 })
               }
               className="w-14 min-w-0 border p-1 text-right"
@@ -324,15 +315,12 @@ export function ImageProperties({
               {(["x", "y"] as const).map((field) => (
                 <label key={field}>
                   {field.toUpperCase()} 위치
-                  <input
+                  <NumberInput
                     aria-label={`${field.toUpperCase()} 위치`}
-                    type="number"
                     step="0.1"
                     value={selected[field]}
                     disabled={!editable}
-                    onChange={(event) =>
-                      setGeometry(field, Number(event.target.value))
-                    }
+                    onValue={(value) => setGeometry(field, value)}
                     className="mt-1 w-full border p-1"
                   />
                 </label>

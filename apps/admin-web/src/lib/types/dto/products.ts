@@ -912,6 +912,7 @@ export interface AdminAlmondTemplateDto {
   purpose: string | null;
   status: AlmondTemplateStatus;
   createdBy: string;
+  updatedBy: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1298,4 +1299,13 @@ export interface ProductExportRequestDto {
   ids?: string[];
   /** 검색결과 전체 다운로드 — 목록 화면과 같은 필터. */
   filters?: ProductExportFiltersDto;
+}
+
+export interface AdminAlmondDesignDto {
+  id: string;
+  userId: string;
+  hasBack: boolean;
+  templateId: string | null;
+  design: Record<string, unknown>;
+  createdAt: string;
 }
