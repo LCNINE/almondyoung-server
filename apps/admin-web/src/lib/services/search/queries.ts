@@ -9,6 +9,7 @@ import {
   ZeroHitKeywordsQuery,
 } from '@/lib/api/domains/search';
 import { searchQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export const useKeywordStatistics = (query: KeywordStatisticsQuery) => {
   return useQuery({
@@ -44,3 +45,4 @@ export const useUpsertKeywordIssue = () => {
     },
   });
 };
+useUpsertKeywordIssue.permission = ['analytics.keyword.write'] as const satisfies PermissionRequirement;

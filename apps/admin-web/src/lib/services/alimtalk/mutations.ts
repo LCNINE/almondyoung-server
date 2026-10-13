@@ -9,6 +9,7 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { notificationAdminApi } from '@/lib/api/domains/notification';
 import { alimtalkQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export const useCreateAlimtalkTemplate = () => {
   const queryClient = useQueryClient();
@@ -26,6 +27,7 @@ export const useCreateAlimtalkTemplate = () => {
       }),
   });
 };
+useCreateAlimtalkTemplate.permission = ['messaging.template.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateAlimtalkTemplate = () => {
   const queryClient = useQueryClient();
@@ -43,6 +45,7 @@ export const useUpdateAlimtalkTemplate = () => {
       }),
   });
 };
+useUpdateAlimtalkTemplate.permission = ['messaging.template.write'] as const satisfies PermissionRequirement;
 
 export const useAddAlimtalkComment = () => {
   const queryClient = useQueryClient();
@@ -60,6 +63,7 @@ export const useAddAlimtalkComment = () => {
       }),
   });
 };
+useAddAlimtalkComment.permission = ['messaging.template.write'] as const satisfies PermissionRequirement;
 
 export const useAlimtalkTestSend = () => {
   return useMutation({
@@ -72,6 +76,7 @@ export const useAlimtalkTestSend = () => {
     }) => alimtalkApi.testSend(templateCode, variables),
   });
 };
+useAlimtalkTestSend.permission = ['messaging.message.send'] as const satisfies PermissionRequirement;
 
 export const usePreviewAlimtalkCampaign = () => {
   return useMutation({
@@ -79,6 +84,7 @@ export const usePreviewAlimtalkCampaign = () => {
       alimtalkApi.previewCampaign(dto),
   });
 };
+usePreviewAlimtalkCampaign.permission = ['messaging.message.read'] as const satisfies PermissionRequirement;
 
 export const useCreateAlimtalkCampaign = () => {
   const queryClient = useQueryClient();
@@ -91,6 +97,7 @@ export const useCreateAlimtalkCampaign = () => {
       }),
   });
 };
+useCreateAlimtalkCampaign.permission = ['messaging.message.bulk_send'] as const satisfies PermissionRequirement;
 
 export const useStopAlimtalkCampaign = () => {
   const queryClient = useQueryClient();
@@ -102,6 +109,7 @@ export const useStopAlimtalkCampaign = () => {
       }),
   });
 };
+useStopAlimtalkCampaign.permission = ['messaging.message.bulk_send'] as const satisfies PermissionRequirement;
 
 /** 연결이 바뀌면 템플릿 목록의 «쓰는 자동 알림»과 메시지 관리의 설정도 바뀐다. */
 function useInvalidateAutoNotices() {
@@ -129,6 +137,7 @@ export const useLinkAlimtalkAutoNotice = () => {
     onSuccess: invalidate,
   });
 };
+useLinkAlimtalkAutoNotice.permission = ['messaging.template.write'] as const satisfies PermissionRequirement;
 
 export const useUnlinkAlimtalkAutoNotice = () => {
   const invalidate = useInvalidateAutoNotices();
@@ -137,6 +146,7 @@ export const useUnlinkAlimtalkAutoNotice = () => {
     onSuccess: invalidate,
   });
 };
+useUnlinkAlimtalkAutoNotice.permission = ['messaging.template.write'] as const satisfies PermissionRequirement;
 
 /** 자동 알림 켜고 끄기 — 메시지 관리와 같은 이벤트 설정을 바꾼다. */
 export const useToggleAlimtalkAutoNotice = () => {
@@ -147,3 +157,4 @@ export const useToggleAlimtalkAutoNotice = () => {
     onSuccess: invalidate,
   });
 };
+useToggleAlimtalkAutoNotice.permission = ['messaging.template.write'] as const satisfies PermissionRequirement;

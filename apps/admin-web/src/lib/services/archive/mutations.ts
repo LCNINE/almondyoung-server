@@ -12,6 +12,7 @@ import type {
 } from '@/lib/types/dto/archive';
 import { archiveQueryKeys } from './query-keys';
 import { mergeSavedPage } from './write-back';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 /** 트리·최근 문서처럼 «목록» 성격의 캐시만 털어낸다. 열려 있는 본문은 건드리지 않는다. */
 function invalidateLists(
@@ -71,6 +72,7 @@ export const useCreateArchivePage = () => {
     },
   });
 };
+useCreateArchivePage.permission = ['archive.page.write'] as const satisfies PermissionRequirement;
 
 /**
  * 자동 저장. 서버가 돌려주는 건 저장 결과(제목·수정시각)뿐이므로, 본문은 서버 응답이 아니라
@@ -88,6 +90,7 @@ export const useUpdateArchivePage = (space: ArchiveSpace) => {
     },
   });
 };
+useUpdateArchivePage.permission = ['archive.page.write'] as const satisfies PermissionRequirement;
 
 export const useMoveArchivePage = (space: ArchiveSpace) => {
   const queryClient = useQueryClient();
@@ -101,6 +104,7 @@ export const useMoveArchivePage = (space: ArchiveSpace) => {
     },
   });
 };
+useMoveArchivePage.permission = ['archive.page.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteArchivePage = (space: ArchiveSpace) => {
   const queryClient = useQueryClient();
@@ -116,6 +120,7 @@ export const useDeleteArchivePage = (space: ArchiveSpace) => {
     },
   });
 };
+useDeleteArchivePage.permission = ['archive.page.write'] as const satisfies PermissionRequirement;
 
 export const useRestoreArchivePage = () => {
   const queryClient = useQueryClient();
@@ -129,6 +134,7 @@ export const useRestoreArchivePage = () => {
     },
   });
 };
+useRestoreArchivePage.permission = ['archive.page.write'] as const satisfies PermissionRequirement;
 
 export const usePurgeArchivePage = () => {
   const queryClient = useQueryClient();
@@ -140,6 +146,7 @@ export const usePurgeArchivePage = () => {
     },
   });
 };
+usePurgeArchivePage.permission = ['archive.page.write'] as const satisfies PermissionRequirement;
 
 export const useToggleArchiveFavorite = () => {
   const queryClient = useQueryClient();
@@ -157,6 +164,7 @@ export const useToggleArchiveFavorite = () => {
     },
   });
 };
+useToggleArchiveFavorite.permission = ['archive.page.read'] as const satisfies PermissionRequirement;
 
 export const useRestoreArchiveVersion = () => {
   const queryClient = useQueryClient();
@@ -173,3 +181,4 @@ export const useRestoreArchiveVersion = () => {
     },
   });
 };
+useRestoreArchiveVersion.permission = ['archive.page.write'] as const satisfies PermissionRequirement;

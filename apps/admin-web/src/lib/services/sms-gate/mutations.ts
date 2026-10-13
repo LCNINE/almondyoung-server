@@ -12,6 +12,7 @@ import {
 } from '@/lib/api/domains/sms-gate';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { smsGateQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export const useCreateSmsDevice = () => {
   const queryClient = useQueryClient();
@@ -20,6 +21,7 @@ export const useCreateSmsDevice = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.devices() }),
   });
 };
+useCreateSmsDevice.permission = ['messaging.device.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateSmsDevice = () => {
   const queryClient = useQueryClient();
@@ -29,6 +31,7 @@ export const useUpdateSmsDevice = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.devices() }),
   });
 };
+useUpdateSmsDevice.permission = ['messaging.device.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteSmsDevice = () => {
   const queryClient = useQueryClient();
@@ -37,6 +40,7 @@ export const useDeleteSmsDevice = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.devices() }),
   });
 };
+useDeleteSmsDevice.permission = ['messaging.device.write'] as const satisfies PermissionRequirement;
 
 export const useSendSmsGateMessage = () => {
   const queryClient = useQueryClient();
@@ -45,6 +49,7 @@ export const useSendSmsGateMessage = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.devices() }),
   });
 };
+useSendSmsGateMessage.permission = ['messaging.message.send'] as const satisfies PermissionRequirement;
 
 export const useCreateSmsTemplate = () => {
   const queryClient = useQueryClient();
@@ -53,6 +58,7 @@ export const useCreateSmsTemplate = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.templates() }),
   });
 };
+useCreateSmsTemplate.permission = ['messaging.template.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateSmsTemplate = () => {
   const queryClient = useQueryClient();
@@ -62,6 +68,7 @@ export const useUpdateSmsTemplate = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.templates() }),
   });
 };
+useUpdateSmsTemplate.permission = ['messaging.template.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteSmsTemplate = () => {
   const queryClient = useQueryClient();
@@ -70,6 +77,7 @@ export const useDeleteSmsTemplate = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.templates() }),
   });
 };
+useDeleteSmsTemplate.permission = ['messaging.template.write'] as const satisfies PermissionRequirement;
 
 export const usePreviewSmsCampaign = () => {
   return useMutation({
@@ -77,6 +85,7 @@ export const usePreviewSmsCampaign = () => {
       smsGateApi.previewCampaign(dto),
   });
 };
+usePreviewSmsCampaign.permission = ['messaging.message.read'] as const satisfies PermissionRequirement;
 
 export const useCreateSmsCampaign = () => {
   const queryClient = useQueryClient();
@@ -85,6 +94,7 @@ export const useCreateSmsCampaign = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.all }),
   });
 };
+useCreateSmsCampaign.permission = ['messaging.message.bulk_send'] as const satisfies PermissionRequirement;
 
 // 서버 body 한도(1MB) 아래로 나눠 보낸다.
 const GROUP_UPLOAD_BATCH = 2000;
@@ -116,6 +126,7 @@ export const useUploadSmsGroupRecipients = () => {
     onSettled: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.recipientGroups() }),
   });
 };
+useUploadSmsGroupRecipients.permission = ['messaging.message.bulk_send'] as const satisfies PermissionRequirement;
 
 export const useImportSupabaseSmsGroup = () => {
   const queryClient = useQueryClient();
@@ -124,6 +135,7 @@ export const useImportSupabaseSmsGroup = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.recipientGroups() }),
   });
 };
+useImportSupabaseSmsGroup.permission = ['messaging.message.bulk_send'] as const satisfies PermissionRequirement;
 
 export const useDeleteSmsRecipientGroup = () => {
   const queryClient = useQueryClient();
@@ -132,6 +144,7 @@ export const useDeleteSmsRecipientGroup = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.recipientGroups() }),
   });
 };
+useDeleteSmsRecipientGroup.permission = ['messaging.message.bulk_send'] as const satisfies PermissionRequirement;
 
 export const useContinueSmsCampaign = () => {
   const queryClient = useQueryClient();
@@ -141,6 +154,7 @@ export const useContinueSmsCampaign = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.all }),
   });
 };
+useContinueSmsCampaign.permission = ['messaging.message.bulk_send'] as const satisfies PermissionRequirement;
 
 export const useStopSmsCampaign = () => {
   const queryClient = useQueryClient();
@@ -149,6 +163,7 @@ export const useStopSmsCampaign = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.all }),
   });
 };
+useStopSmsCampaign.permission = ['messaging.message.bulk_send'] as const satisfies PermissionRequirement;
 
 export const useReplySmsConversation = () => {
   const queryClient = useQueryClient();
@@ -157,6 +172,7 @@ export const useReplySmsConversation = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.all }),
   });
 };
+useReplySmsConversation.permission = ['messaging.message.send'] as const satisfies PermissionRequirement;
 
 export const useDeleteSmsConversation = () => {
   const queryClient = useQueryClient();
@@ -165,3 +181,4 @@ export const useDeleteSmsConversation = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: smsGateQueryKeys.all }),
   });
 };
+useDeleteSmsConversation.permission = ['messaging.message.send'] as const satisfies PermissionRequirement;

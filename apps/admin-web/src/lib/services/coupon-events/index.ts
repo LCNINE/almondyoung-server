@@ -5,6 +5,7 @@ import {
   couponEventsApi,
   type CouponEventPayload,
 } from '@/lib/api/domains/medusa/coupon-events';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export const couponEventKeys = {
   all: ['coupon-events'] as const,
@@ -34,6 +35,7 @@ export const useCreateCouponEvent = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: couponEventKeys.all }),
   });
 };
+useCreateCouponEvent.permission = ['marketing.promotion.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateCouponEvent = () => {
   const qc = useQueryClient();
@@ -43,6 +45,7 @@ export const useUpdateCouponEvent = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: couponEventKeys.all }),
   });
 };
+useUpdateCouponEvent.permission = ['marketing.promotion.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteCouponEvent = () => {
   const qc = useQueryClient();
@@ -51,3 +54,4 @@ export const useDeleteCouponEvent = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: couponEventKeys.all }),
   });
 };
+useDeleteCouponEvent.permission = ['marketing.promotion.write'] as const satisfies PermissionRequirement;

@@ -17,6 +17,7 @@ import {
   collectAllRequiredImages,
 } from './bulk-session-model';
 import { productQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export function useBulkSessionList(page: number, limit: number) {
   return useQuery({
@@ -128,6 +129,7 @@ export function useUploadBulkSession() {
     },
   });
 }
+useUploadBulkSession.permission = ['catalog.bulk.execute'] as const satisfies PermissionRequirement;
 
 /**
  * 진행률 응답인지 구조로 확인한다. `as` 캐스팅 대신 가드를 쓰는 이유는 이 훅이 진행률을
@@ -192,32 +194,39 @@ export function useSetConflictDecision(id: string) {
     }) => products.bulkSession.setConflictDecision(id, itemId, decisions)
   );
 }
+useSetConflictDecision.permission = ['catalog.bulk.execute'] as const satisfies PermissionRequirement;
 
 export function useApproveBulkSession(id: string) {
   return useSessionMutation(id, () => products.bulkSession.approve(id));
 }
+useApproveBulkSession.permission = ['catalog.bulk.execute'] as const satisfies PermissionRequirement;
 
 export function useCancelBulkSession(id: string) {
   return useSessionMutation(id, () => products.bulkSession.cancel(id));
 }
+useCancelBulkSession.permission = ['catalog.bulk.execute'] as const satisfies PermissionRequirement;
 
 export function usePublishBulkSession(id: string) {
   return useSessionMutation(id, () => products.bulkSession.publish(id));
 }
+usePublishBulkSession.permission = ['catalog.bulk.execute'] as const satisfies PermissionRequirement;
 
 export function useRetryDraft(id: string) {
   return useSessionMutation(id, () => products.bulkSession.retryDraft(id));
 }
+useRetryDraft.permission = ['catalog.bulk.execute'] as const satisfies PermissionRequirement;
 
 export function useExcludeItem(id: string) {
   return useSessionMutation(id, (itemId: string) =>
     products.bulkSession.excludeItem(id, itemId)
   );
 }
+useExcludeItem.permission = ['catalog.bulk.execute'] as const satisfies PermissionRequirement;
 
 export function usePurgeDrafts(id: string) {
   return useSessionMutation(id, () => products.bulkSession.purgeDrafts(id));
 }
+usePurgeDrafts.permission = ['catalog.bulk.execute'] as const satisfies PermissionRequirement;
 
 export function useResolveImages(id: string) {
   const qc = useQueryClient();
@@ -234,3 +243,4 @@ export function useResolveImages(id: string) {
     },
   });
 }
+useResolveImages.permission = ['catalog.bulk.execute'] as const satisfies PermissionRequirement;
