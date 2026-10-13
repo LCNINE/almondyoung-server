@@ -24,7 +24,6 @@ import {
   count,
   sql,
   ilike,
-  isNull,
   isNotNull,
   exists,
   notExists,
@@ -932,8 +931,20 @@ export class SalesOrdersService {
         case 'hold': // 출고불가: 재고부족 라인 존재
           conditions.push(lineExists(eq(S.salesOrderLines.status, 'stock_unavailable')));
           break;
-        case 'unmatched': // 매칭안됨: 미매칭 라인 존재
-          conditions.push(lineExists(isNull(S.salesOrderLines.productMatchingId)));
+        case 'unmatched': // 매칭안됨: 매칭이 없어 FO 생성을 기다리는 주문. 대기열이 라인 구성 판정의 결과다(#1063 스펙 D8)
+          conditions.push(
+            exists(
+              trx
+                .select({ x: sql`1` })
+                .from(S.fulfillmentOrderCreationBacklogs)
+                .where(
+                  and(
+                    eq(S.fulfillmentOrderCreationBacklogs.salesOrderId, S.salesOrders.id),
+                    eq(S.fulfillmentOrderCreationBacklogs.status, 'awaiting_matching'),
+                  ),
+                ),
+            ),
+          );
           break;
         case 'direct': // 직배송: drop_ship FO 존재
           conditions.push(

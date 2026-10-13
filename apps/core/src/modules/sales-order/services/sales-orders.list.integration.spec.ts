@@ -157,21 +157,23 @@ describeIfDb('SalesOrdersService.list — server-side filters (DB integration, r
     });
   });
 
-  it('typeGroup: unmatched 는 미매칭 라인이 있는 주문만', async () => {
+  it('typeGroup: unmatched 는 매칭이 없어 FO 생성을 기다리는 주문만(라인 칸이 아니라 출고 대기열 기준)', async () => {
     await run(async (tx, svc, tag) => {
-      const [matching] = await tx
-        .insert(wmsTables.productMatchings)
-        .values({ variantId: randomUUID(), status: 'matched', strategy: 'variant', isResolved: true })
-        .returning();
+      const waiting = await insertOrder(tx, { channelOrderId: `${tag}-waiting` });
+      await insertLine(tx, waiting);
+      await tx
+        .insert(wmsTables.fulfillmentOrderCreationBacklogs)
+        .values({ salesOrderId: waiting, status: 'awaiting_matching', waitingVariantIds: [] });
 
-      const unmatched = await insertOrder(tx, { channelOrderId: `${tag}-unmatched` });
-      await insertLine(tx, unmatched, { productMatchingId: null });
-
-      const matched = await insertOrder(tx, { channelOrderId: `${tag}-matched` });
-      await insertLine(tx, matched, { productMatchingId: matching.id });
+      // 라인 product_matching_id 가 NULL 이어도 대기열이 끝났으면 «매칭안됨» 이 아니다 — 14번 행의 오탐
+      const done = await insertOrder(tx, { channelOrderId: `${tag}-done` });
+      await insertLine(tx, done, { productMatchingId: null });
+      await tx
+        .insert(wmsTables.fulfillmentOrderCreationBacklogs)
+        .values({ salesOrderId: done, status: 'completed', waitingVariantIds: [] });
 
       const res = await listByKeyword(svc, tx, { keyword: tag, typeGroup: 'unmatched' });
-      expect(res.data.map((d: { id: string }) => d.id)).toEqual([unmatched]);
+      expect(res.data.map((d: { id: string }) => d.id)).toEqual([waiting]);
     });
   });
 
