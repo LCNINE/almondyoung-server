@@ -33,7 +33,19 @@ const CASES: Array<{ name: string; matching: MatchingSeed; operator?: boolean }>
   { name: '운영자 지정 + pending', matching: { status: 'pending', strategy: null, links: 0 }, operator: true },
 ];
 
+// 디지털 라인은 일부러 케이스에 없다 — 이 술어는 «매칭이 해결됐나»만 답하고 디지털 판정은 TS 만 한다.
 async function seedCase(tx: DbTx, skuId: string, c: (typeof CASES)[number]) {
+  // 미끼: 무관한 variant 의 해결된 매칭. 상관 서브쿼리가 깨지면(바깥 variant 와 안 묶이면) 모든 케이스가 참으로 새므로,
+  // DB 에 남은 행과 무관하게 매번 상관을 검증하려고 둔다.
+  for (const strategy of ['variant', 'void'] as const) {
+    const [decoy] = await tx
+      .insert(wmsTables.productMatchings)
+      .values({ variantId: randomUUID(), status: 'matched', strategy, isResolved: true })
+      .returning();
+    if (strategy === 'variant') {
+      await tx.insert(wmsTables.productVariantSkuLinks).values({ productMatchingId: decoy.id, skuId, quantity: 1 });
+    }
+  }
   const variantId = randomUUID();
   const { salesOrderId, lineIds } = await seedSalesOrder(tx, { lines: [{ variantId, quantity: 1 }] });
   if (c.matching) {
