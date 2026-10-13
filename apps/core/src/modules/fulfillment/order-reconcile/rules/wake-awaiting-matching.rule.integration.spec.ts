@@ -56,7 +56,7 @@ describeIfDb('WakeAwaitingMatchingRule (PostgreSQL integration)', () => {
   function wire(mode: 'v2' | 'maintenance' = 'v2') {
     const dbs = makeDbService(db);
     const w = wireLogistics(dbs);
-    const rule = new WakeAwaitingMatchingRule(w.backlog, gate(mode), w.productSkuMapping);
+    const rule = new WakeAwaitingMatchingRule(w.backlog, gate(mode), w.lineCompositions);
     return { dbs, w, rule };
   }
 
@@ -94,7 +94,7 @@ describeIfDb('WakeAwaitingMatchingRule (PostgreSQL integration)', () => {
     });
   });
 
-  it('기다리는 variant 가 비었거나 배열이 아니면 not_needed', async () => {
+  it('라인이 미매칭이면 대기 목록 모양과 무관하게 not_needed', async () => {
     await inRollbackTx(db, async (tx) => {
       const { rule } = wire();
       const empty = await seedAwaiting(tx, []);
@@ -172,7 +172,7 @@ describeIfDb('WakeAwaitingMatchingRule (PostgreSQL integration)', () => {
       class ObservingRule extends WakeAwaitingMatchingRule {
         readonly mode: ReconcileMode = 'observe';
       }
-      const observing = new ObservingRule(w.backlog, gate('v2'), w.productSkuMapping);
+      const observing = new ObservingRule(w.backlog, gate('v2'), w.lineCompositions);
       const observed = await runner.runRule(observing, now, tx);
       expect(observed.wouldAct).toBeGreaterThanOrEqual(1);
       expect(await backlogStatus(tx, o.salesOrderId)).toBe('awaiting_matching');
@@ -214,6 +214,66 @@ describeIfDb('WakeAwaitingMatchingRule (PostgreSQL integration)', () => {
         .where(eq(wmsTables.orderReconcileState.salesOrderId, o.salesOrderId));
       // 기록이 없던 후보라 not_needed 로 남겨 10분 물러난다 — 시도로 세지 않는다
       expect(rows).toEqual([expect.objectContaining({ lastResult: 'not_needed', attempts: 0 })]);
+    });
+  });
+
+  it('상품매칭은 미해결이어도 운영자가 라인을 굳혔으면 풀린 주문이다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { rule } = wire();
+      const world = await f.seedWorld(tx);
+      const o = await seedAwaiting(tx);
+      const [line] = await tx
+        .select({ id: wmsTables.salesOrderLines.id })
+        .from(wmsTables.salesOrderLines)
+        .where(eq(wmsTables.salesOrderLines.salesOrderId, o.salesOrderId));
+      await tx
+        .update(wmsTables.salesOrderLines)
+        .set({ compositionSource: 'operator', compositionSetAt: new Date() })
+        .where(eq(wmsTables.salesOrderLines.id, line.id));
+      await tx
+        .insert(wmsTables.salesOrderLineCompositions)
+        .values({ salesOrderLineId: line.id, skuId: world.skuId, qtyPerUnit: 1 });
+
+      expect(await rule.check(o.salesOrderId, tx)).toBe(true);
+    });
+  });
+
+  it('전량 취소된 미매칭 라인은 막지 않는다 — FO 생성과 같은 판정', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { rule } = wire();
+      const o = await seedAwaiting(tx);
+      const [line] = await tx
+        .select({ id: wmsTables.salesOrderLines.id, quantity: wmsTables.salesOrderLines.quantity })
+        .from(wmsTables.salesOrderLines)
+        .where(eq(wmsTables.salesOrderLines.salesOrderId, o.salesOrderId));
+      await tx.insert(wmsTables.salesOrderCancellations).values({
+        salesOrderId: o.salesOrderId,
+        cancellationScope: 'partial',
+        reasonCode: 'it',
+        metadata: { cancelledLines: [{ salesOrderLineId: line.id, quantity: line.quantity }] },
+      });
+      expect(await rule.check(o.salesOrderId, tx)).toBe(true);
+    });
+  });
+
+  it('지문은 라인을 굳히면 바뀐다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { rule } = wire();
+      const world = await f.seedWorld(tx);
+      const o = await seedAwaiting(tx);
+      const before = await rule.fingerprint(o.salesOrderId, tx);
+      const [line] = await tx
+        .select({ id: wmsTables.salesOrderLines.id })
+        .from(wmsTables.salesOrderLines)
+        .where(eq(wmsTables.salesOrderLines.salesOrderId, o.salesOrderId));
+      await tx
+        .update(wmsTables.salesOrderLines)
+        .set({ compositionSource: 'operator', compositionSetAt: new Date() })
+        .where(eq(wmsTables.salesOrderLines.id, line.id));
+      await tx
+        .insert(wmsTables.salesOrderLineCompositions)
+        .values({ salesOrderLineId: line.id, skuId: world.skuId, qtyPerUnit: 1 });
+      expect(await rule.fingerprint(o.salesOrderId, tx)).not.toBe(before);
     });
   });
 });
