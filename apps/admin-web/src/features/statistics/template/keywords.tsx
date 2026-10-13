@@ -26,6 +26,9 @@ import {
   useZeroHitKeywords,
 } from '@/lib/services/search';
 import { useAdminUsers } from '@/lib/services/users/queries';
+import { Can } from '@/components/auth/can';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { toLocalDateString } from '@/lib/utils/date';
 import { IndexEvidence, NeglectBadge } from '@/features/keyword-ops/components/badges';
 import {
@@ -478,6 +481,8 @@ function KeywordDetailPanel({ detail }: { detail: KeywordDetail }) {
 /** 담당자·메모·처리 상태 편집 — 저장은 keyword_norm 단위 upsert */
 function KeywordIssueEditor({ detail }: { detail: KeywordDetail }) {
   const upsert = useUpsertKeywordIssue();
+  // 네이티브 컨트롤이라 읽기 전용 표시를 직접 건다
+  const readOnly = usePermissionCheck().blockedReason(useUpsertKeywordIssue) !== null;
   const { data: adminUsers } = useAdminUsers({ roleName: 'admin,master', limit: 100 });
 
   const [status, setStatus] = useState<KeywordIssueStatus>(detail.issue?.status ?? 'new');
@@ -516,55 +521,62 @@ function KeywordIssueEditor({ detail }: { detail: KeywordDetail }) {
   return (
     <div className="space-y-2 border-t border-gray-200 pt-3">
       <p className="text-xs font-medium text-gray-600">운영 상태 — 담당자를 지정하고 메모를 남기세요</p>
-      <div className="flex flex-wrap items-end gap-2 text-xs">
-        <label className="flex flex-col gap-1">
-          <span className="text-gray-500">상태</span>
-          <select
-            value={status}
-            onChange={(event) => setStatus(event.target.value as KeywordIssueStatus)}
-            className="rounded border border-gray-200 bg-white px-2 py-1.5"
-          >
-            {KEYWORD_ISSUE_STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {STATUS_LABELS[value]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-gray-500">담당자</span>
-          <select
-            value={assigneeId}
-            onChange={(event) => setAssigneeId(event.target.value)}
-            className="min-w-40 rounded border border-gray-200 bg-white px-2 py-1.5"
-          >
-            <option value="">미지정</option>
-            {assigneeOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex min-w-64 flex-1 flex-col gap-1">
-          <span className="text-gray-500">메모 (예: &ldquo;경이로운 = 브랜드명&rdquo;)</span>
-          <input
-            type="text"
-            value={memo}
-            onChange={(event) => setMemo(event.target.value)}
-            maxLength={2000}
-            className="rounded border border-gray-200 bg-white px-2 py-1.5"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={save}
-          disabled={upsert.isPending}
-          className="rounded bg-gray-800 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40"
-        >
-          저장
-        </button>
-      </div>
+      <PermissionReadOnly run={useUpsertKeywordIssue}>
+        <div className="flex flex-wrap items-end gap-2 text-xs">
+          <label className="flex flex-col gap-1">
+            <span className="text-gray-500">상태</span>
+            <select
+              value={status}
+              onChange={(event) => setStatus(event.target.value as KeywordIssueStatus)}
+              disabled={readOnly}
+              className="rounded border border-gray-200 bg-white px-2 py-1.5"
+            >
+              {KEYWORD_ISSUE_STATUSES.map((value) => (
+                <option key={value} value={value}>
+                  {STATUS_LABELS[value]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-gray-500">담당자</span>
+            <select
+              value={assigneeId}
+              onChange={(event) => setAssigneeId(event.target.value)}
+              disabled={readOnly}
+              className="min-w-40 rounded border border-gray-200 bg-white px-2 py-1.5"
+            >
+              <option value="">미지정</option>
+              {assigneeOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex min-w-64 flex-1 flex-col gap-1">
+            <span className="text-gray-500">메모 (예: &ldquo;경이로운 = 브랜드명&rdquo;)</span>
+            <input
+              type="text"
+              value={memo}
+              onChange={(event) => setMemo(event.target.value)}
+              maxLength={2000}
+              readOnly={readOnly}
+              className="rounded border border-gray-200 bg-white px-2 py-1.5"
+            />
+          </label>
+          <Can run={useUpsertKeywordIssue}>
+            <button
+              type="button"
+              onClick={save}
+              disabled={upsert.isPending}
+              className="rounded bg-gray-800 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40"
+            >
+              저장
+            </button>
+          </Can>
+        </div>
+      </PermissionReadOnly>
       {upsert.isError ? <p className="text-xs text-red-500">저장에 실패했습니다. 다시 시도해주세요.</p> : null}
       {upsert.isSuccess && !upsert.isPending ? <p className="text-xs text-emerald-600">저장했습니다.</p> : null}
       {detail.issue ? (

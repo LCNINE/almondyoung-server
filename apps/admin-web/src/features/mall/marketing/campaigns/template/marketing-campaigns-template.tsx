@@ -14,7 +14,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { useCampaignList, useDeleteCampaign } from '@/lib/services/campaigns';
+import { useCampaignList, useCreateCampaign, useDeleteCampaign } from '@/lib/services/campaigns';
+import { Can } from '@/components/auth/can';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { CampaignCreateDialog } from '../components/campaign-create-dialog';
 import { CampaignDetailDialog } from '../components/campaign-detail-dialog';
 import type { MedusaCampaign } from '@/lib/api/domains/medusa/campaigns';
@@ -69,6 +71,7 @@ export default function MarketingCampaignsTemplate() {
 
   const { data, isLoading } = useCampaignList({ limit: 100 });
   const deleteCampaign = useDeleteCampaign();
+  const { canRun } = usePermissionCheck();
 
   const campaigns = data?.campaigns ?? [];
 
@@ -91,10 +94,12 @@ export default function MarketingCampaignsTemplate() {
           title="캠페인 관리"
           subtitle="여러 쿠폰을 묶는 행사 캠페인을 관리합니다."
           right={
-            <Button onClick={() => setCreateOpen(true)} className="bg-orange-500 text-white hover:bg-orange-600">
-              <Plus className="h-4 w-4 mr-1.5" />
-              캠페인 생성
-            </Button>
+            <Can run={useCreateCampaign}>
+              <Button onClick={() => setCreateOpen(true)} className="bg-orange-500 text-white hover:bg-orange-600">
+                <Plus className="h-4 w-4 mr-1.5" />
+                캠페인 생성
+              </Button>
+            </Can>
           }
         />
       </Container>
@@ -157,16 +162,18 @@ export default function MarketingCampaignsTemplate() {
                           <Eye className="h-3.5 w-3.5 mr-1" />
                           상세
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                          onClick={() => setDeleteTarget(campaign)}
-                          disabled={deleteCampaign.isPending}
-                          title="삭제"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        {canRun(useDeleteCampaign) && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                            onClick={() => setDeleteTarget(campaign)}
+                            disabled={deleteCampaign.isPending}
+                            title="삭제"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>

@@ -24,7 +24,6 @@ import { useWarehouses } from '@/lib/services/inventory/queries';
 import {
   useShipmentConsolidationCandidates,
   createIdempotentCommand,
-  FULFILLMENT_SCOPES,
   getServerDenyMessage,
   isRecoverableOperation,
   useCreateShipmentConsolidation,
@@ -55,7 +54,7 @@ function shortId(value: string) {
 
 export default function ConsolidationTemplate() {
   const { data: warehouses = [] } = useWarehouses();
-  const { can, isPermissionLoading } = usePermissionCheck();
+  const { can, canRun, isPermissionLoading } = usePermissionCheck();
   const [warehouseId, setWarehouseId] = useState('');
   const [reason, setReason] = useState('동일 수령인 합포장');
   const [csCaseId, setCsCaseId] = useState('');
@@ -63,7 +62,7 @@ export default function ConsolidationTemplate() {
   const [retry, setRetry] = useState<RetryState | null>(null);
 
   const canRead = can(['fulfillment.shipment.read']);
-  const canCreate = can([FULFILLMENT_SCOPES.consolidate]);
+  const canCreate = canRun(useCreateShipmentConsolidation);
   const candidates = useShipmentConsolidationCandidates({ warehouseId });
   const create = useCreateShipmentConsolidation();
   const operation = useFulfillmentOperation(retry?.operationId ?? '');
@@ -183,7 +182,7 @@ export default function ConsolidationTemplate() {
           </div>
         </div>
 
-        {retry && isRecoverableOperation(currentStatus) && (
+        {canCreate && retry && isRecoverableOperation(currentStatus) && (
           <Alert className="border-amber-300 bg-amber-50 dark:bg-amber-950/20">
             <RefreshCw />
             <AlertTitle>합포장 작업 {currentStatus}</AlertTitle>

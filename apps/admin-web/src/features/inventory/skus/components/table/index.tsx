@@ -6,7 +6,16 @@ import { useDataTable } from '@/hooks/use-data-table';
 import { useSkusTableColumns } from '@/hooks/table/columns/use-skus-table-columns';
 import { useSkusTableFilters } from '@/hooks/table/filters/use-skus-table-filters';
 import { useSkusTableQuery } from '@/hooks/table/query/use-skus-table-query';
-import { useSkus } from '@/lib/services/inventory';
+import {
+  useAddSkuToGroup,
+  useBulkAddSkusToGroup,
+  useCreateSku,
+  useDeleteSku,
+  useRemoveSkuFromGroup,
+  useSkus,
+  useUpdateSku,
+} from '@/lib/services/inventory';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { SkuResponseDto } from '@/lib/types/dto/inventory';
 import { SkuFormDialog } from '../sku-form-dialog';
 import { ChangeGroupDialog } from '../change-group-dialog';
@@ -39,10 +48,12 @@ export function SkusTable() {
     []
   );
 
+  const { canRun } = usePermissionCheck();
+
   const columns = useSkusTableColumns({
-    onEdit: handleEdit,
-    onChangeGroup: handleChangeGroup,
-    onDelete: handleDelete,
+    onEdit: canRun(useUpdateSku) ? handleEdit : undefined,
+    onChangeGroup: canRun(useAddSkuToGroup, useRemoveSkuFromGroup) ? handleChangeGroup : undefined,
+    onDelete: canRun(useDeleteSku) ? handleDelete : undefined,
   });
 
   const rows = data?.items ?? [];
@@ -63,9 +74,11 @@ export function SkusTable() {
     <div>
       <div className="flex items-center justify-between p-3 border-b">
         <div className="flex items-center gap-2">
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            SKU 생성
-          </Button>
+          {canRun(useCreateSku) && (
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              SKU 생성
+            </Button>
+          )}
         </div>
       </div>
 
@@ -74,13 +87,15 @@ export function SkusTable() {
           <span className="text-sm text-muted-foreground">
             {selectedRows.length}개 선택됨
           </span>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setBulkGroupOpen(true)}
-          >
-            그룹 일괄 추가
-          </Button>
+          {canRun(useBulkAddSkusToGroup) && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setBulkGroupOpen(true)}
+            >
+              그룹 일괄 추가
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"

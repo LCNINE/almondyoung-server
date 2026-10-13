@@ -9,10 +9,11 @@ import { DateCell } from '@/components/table/table-cells/common';
 
 const columnHelper = createColumnHelper<ChannelListingWithChannelDto>();
 
+// 넘기지 않은 동작은 버튼을 그리지 않는다(권한 없음).
 type RowActions = {
-  onEdit: (row: ChannelListingWithChannelDto) => void;
-  onToggleActive: (row: ChannelListingWithChannelDto) => void;
-  onDelete: (row: ChannelListingWithChannelDto) => void;
+  onEdit?: (row: ChannelListingWithChannelDto) => void;
+  onToggleActive?: (row: ChannelListingWithChannelDto) => void;
+  onDelete?: (row: ChannelListingWithChannelDto) => void;
 };
 
 export const useChannelListingsTableColumns = (actions: RowActions) => {
@@ -67,23 +68,29 @@ export const useChannelListingsTableColumns = (actions: RowActions) => {
         header: '',
         cell: ({ row }) => (
           <div className="flex gap-1">
-            <Button size="sm" variant="outline" onClick={() => actions.onEdit(row.original)}>
+            {actions.onEdit && (
+            <Button size="sm" variant="outline" onClick={() => actions.onEdit?.(row.original)}>
               편집
             </Button>
+            )}
+            {actions.onToggleActive && (
             <Button
               size="sm"
               variant="outline"
-              onClick={() => actions.onToggleActive(row.original)}
+              onClick={() => actions.onToggleActive?.(row.original)}
             >
               {row.original.isActive ? '비활성' : '활성'}
             </Button>
+            )}
+            {actions.onDelete && (
             <Button
               size="sm"
               variant="destructive"
-              onClick={() => actions.onDelete(row.original)}
+              onClick={() => actions.onDelete?.(row.original)}
             >
               삭제
             </Button>
+            )}
           </div>
         ),
       }),

@@ -41,7 +41,8 @@ export function BulkConfirmDialog({
   sendAt: string | null;
   isSubmitting: boolean;
   onCancel: () => void;
-  onConfirm: () => void;
+  /** 넘기지 않으면 발송 버튼을 그리지 않는다(권한 없음) */
+  onConfirm?: () => void;
 }) {
   const isMarketing = category === 'MARKETING';
   const finalBody = composeSmsBody(category, content);
@@ -114,9 +115,11 @@ export function BulkConfirmDialog({
           <Button variant="outline" onClick={onCancel}>
             취소
           </Button>
-          <Button onClick={onConfirm} disabled={isSubmitting}>
-            {isSubmitting ? <Loader className="animate-spin" /> : '발송 시작'}
-          </Button>
+          {onConfirm && (
+            <Button onClick={onConfirm} disabled={isSubmitting}>
+              {isSubmitting ? <Loader className="animate-spin" /> : '발송 시작'}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

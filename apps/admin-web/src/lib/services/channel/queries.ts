@@ -35,10 +35,11 @@ export function useQuarantinedFailures(
 // 상세 단건 조회가 필요해지면 `orderCollectionFailuresClient.get` 위에 새로 쓰면 된다.
 
 /** 정체 보드 0단계 — 격리 건수. 목록(상한 200)과 달리 진짜 건수다. */
-export function useQuarantineSummary() {
+export function useQuarantineSummary(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: channelQueryKeys.summary,
     queryFn: () => orderCollectionFailuresClient.summary(),
+    enabled: options?.enabled ?? true,
     refetchInterval: 60_000,
   });
 }

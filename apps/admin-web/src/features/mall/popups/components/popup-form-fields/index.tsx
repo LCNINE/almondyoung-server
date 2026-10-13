@@ -15,6 +15,7 @@ import { RichTextEditor } from '@/components/common/rich-text-editor';
 import { ImageUploadField } from '@/components/common/image-upload-field';
 import { SITE_POPUP_IMAGE_CONTEXT_ID } from '@/lib/api/domains/files/upload.client';
 import { useNotices } from '@/lib/services/products';
+import { usePermissionReadOnly } from '@/components/auth/permission-read-only-context';
 import {
   AUDIENCE_LABEL,
   CONTENT_TYPE_LABEL,
@@ -41,6 +42,8 @@ const switchClassName = 'h-6 w-11 border border-border data-[state=unchecked]:bg
 
 export function PopupFormFields({ value, onChange }: Props) {
   const { data: notices } = useNotices({ includeInactive: true });
+  // 수정 권한이 없어 감싼 폼이 읽기 전용이면 이미지 업로드도 막는다
+  const readOnly = usePermissionReadOnly() !== null;
 
   const set = <K extends keyof SitePopupFormValue>(key: K, next: SitePopupFormValue[K]) =>
     onChange({ ...value, [key]: next });
@@ -103,6 +106,7 @@ export function PopupFormFields({ value, onChange }: Props) {
             contextId={SITE_POPUP_IMAGE_CONTEXT_ID}
             value={value.pcImageFileId}
             onChange={(fileId) => set('pcImageFileId', fileId)}
+            disabled={readOnly}
           />
           <ImageUploadField
             label="모바일 이미지"
@@ -111,6 +115,7 @@ export function PopupFormFields({ value, onChange }: Props) {
             contextId={SITE_POPUP_IMAGE_CONTEXT_ID}
             value={value.mobileImageFileId}
             onChange={(fileId) => set('mobileImageFileId', fileId)}
+            disabled={readOnly}
           />
           <div className="grid gap-2">
             <Label htmlFor="popup-image-alt">이미지 설명 (대체 텍스트)</Label>

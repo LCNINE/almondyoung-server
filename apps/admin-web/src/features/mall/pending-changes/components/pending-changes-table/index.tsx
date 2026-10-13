@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { usePendingChannelChanges, useDismissChannelChange, useResyncChannelChange } from '@/lib/services/orders';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   blockerCodes,
   blockerLabel,
@@ -28,6 +29,7 @@ export function PendingChangesTable() {
   const { data, isLoading, isError, refetch } = usePendingChannelChanges();
   const dismiss = useDismissChannelChange();
   const resync = useResyncChannelChange();
+  const { canRun } = usePermissionCheck();
   const [dismissTarget, setDismissTarget] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const rows = data?.items ?? [];
@@ -96,12 +98,16 @@ export function PendingChangesTable() {
                   <TableCell className="text-xs text-muted-foreground">{new Date(row.occurredAt).toLocaleString('ko-KR')}</TableCell>
                   <TableCell className="whitespace-nowrap text-right">
                     <div className="flex justify-end gap-2">
-                      <Button variant="outline" size="sm" disabled={busy} onClick={() => resync.mutate(row.id)}>
-                        다시 확인
-                      </Button>
-                      <Button variant="ghost" size="sm" disabled={busy} onClick={() => setDismissTarget(row.id)}>
-                        무시
-                      </Button>
+                      {canRun(useResyncChannelChange) && (
+                        <Button variant="outline" size="sm" disabled={busy} onClick={() => resync.mutate(row.id)}>
+                          다시 확인
+                        </Button>
+                      )}
+                      {canRun(useDismissChannelChange) && (
+                        <Button variant="ghost" size="sm" disabled={busy} onClick={() => setDismissTarget(row.id)}>
+                          무시
+                        </Button>
+                      )}
                     </div>
                     {requested && <div className="mt-1 text-xs text-muted-foreground">{requested}</div>}
                   </TableCell>

@@ -8,6 +8,7 @@ import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Can } from '@/components/auth/can';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -383,14 +384,16 @@ function ProductDetailOptionsContent({ masterId, versionId }: Props) {
         }
         right={
           canEdit ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setEditOpen(true)}
-            >
-              <Pencil data-icon="inline-start" />
-              수정
-            </Button>
+            <Can run={useUpdateMasterVersion}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setEditOpen(true)}
+              >
+                <Pencil data-icon="inline-start" />
+                수정
+              </Button>
+            </Can>
           ) : null
         }
       />

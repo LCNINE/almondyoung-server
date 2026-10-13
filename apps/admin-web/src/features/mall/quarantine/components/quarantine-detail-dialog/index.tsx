@@ -13,6 +13,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Can } from '@/components/auth/can';
 import { toast } from 'sonner';
 import {
   actionForCause,
@@ -21,6 +22,7 @@ import {
   stageLabel,
 } from '../../guidance';
 import { useReplayFailure } from '@/lib/services/channel/mutations';
+import { useCreateChannelListing } from '@/lib/services/products';
 import { ChannelListingFormDialog } from '@/features/mall/channel-listings/components/channel-listing-form-dialog';
 import type { OrderCollectionFailureDto } from '@/lib/api/domains/channel/order-collection-failures.client';
 
@@ -104,6 +106,8 @@ export function QuarantineDetailDialog({ failure, onClose }: Props) {
                             {guidance.description}
                           </p>
                           {guidance.action === 'create-listing' && (
+                            // 매핑을 저장하면 곧바로 재처리까지 돈다.
+                            <Can run={[useCreateChannelListing, useReplayFailure]}>
                             <Button
                               size="sm"
                               variant="outline"
@@ -116,6 +120,7 @@ export function QuarantineDetailDialog({ failure, onClose }: Props) {
                             >
                               매핑 생성
                             </Button>
+                            </Can>
                           )}
                         </li>
                       );
@@ -128,9 +133,11 @@ export function QuarantineDetailDialog({ failure, onClose }: Props) {
                 <Button variant="outline" onClick={onClose}>
                   닫기
                 </Button>
-                <Button onClick={handleResolved} disabled={replay.isPending}>
-                  {replay.isPending ? '재처리 중…' : '조치 완료 — 재처리'}
-                </Button>
+                <Can run={useReplayFailure}>
+                  <Button onClick={handleResolved} disabled={replay.isPending}>
+                    {replay.isPending ? '재처리 중…' : '조치 완료 — 재처리'}
+                  </Button>
+                </Can>
               </DialogFooter>
             </>
           )}

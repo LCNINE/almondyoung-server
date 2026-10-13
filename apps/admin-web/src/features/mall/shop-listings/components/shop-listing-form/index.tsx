@@ -40,6 +40,9 @@ import {
   type AdminShopListingFormValues,
 } from '../../lib/admin-listing-rules';
 import { ImageGalleryField } from '@/components/common/image-gallery-field';
+import { Can } from '@/components/auth/can';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { MoneyInput } from '../money-input';
 import { ShopListingMarkdown } from '../shop-listing-markdown';
 
@@ -53,6 +56,9 @@ export function ShopListingForm({ listing }: Props) {
   const router = useRouter();
   const createMutation = useCreateShopListing();
   const updateMutation = useUpdateShopListing();
+  const saveAction = listing ? useUpdateShopListing : useCreateShopListing;
+  const { blockedReason } = usePermissionCheck();
+  const readOnly = blockedReason(saveAction) !== null;
   const [values, setValues] = useState<AdminShopListingFormValues>(() =>
     adminFormValuesFrom(listing)
   );
@@ -145,12 +151,15 @@ export function ShopListingForm({ listing }: Props) {
           <Button variant="outline" onClick={leave} disabled={isPending}>
             취소
           </Button>
-          <Button onClick={() => void handleSave()} disabled={isPending}>
-            {listing ? '저장' : '등록'}
-          </Button>
+          <Can run={saveAction}>
+            <Button onClick={() => void handleSave()} disabled={isPending}>
+              {listing ? '저장' : '등록'}
+            </Button>
+          </Can>
         </div>
       </div>
 
+      <PermissionReadOnly run={saveAction}>
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="flex flex-col gap-4 lg:col-span-2">
           <Card>
@@ -369,7 +378,7 @@ export function ShopListingForm({ listing }: Props) {
                   value={values.imageFileIds}
                   onChange={(next) => set('imageFileIds', next)}
                   contextId={SHOP_LISTING_IMAGE_CONTEXT_ID}
-                  disabled={isPending}
+                  disabled={isPending || readOnly}
                 />
               </div>
             </CardContent>
@@ -389,6 +398,7 @@ export function ShopListingForm({ listing }: Props) {
           )}
         </div>
       </div>
+      </PermissionReadOnly>
     </div>
   );
 }

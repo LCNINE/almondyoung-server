@@ -25,6 +25,7 @@ import {
   useSmsDevices,
 } from '@/lib/services/sms-gate';
 import { formatPhoneNumber } from '@/lib/utils/phone';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { NhnFallbackDialog } from '../../send/components/nhn-fallback-dialog';
 import { MessageBubble } from './message-bubble';
 
@@ -39,6 +40,7 @@ export function ConversationPanel({
   const { data: deviceData } = useSmsDevices();
   const reply = useReplySmsConversation();
   const deleteConversation = useDeleteSmsConversation();
+  const { canRun } = usePermissionCheck();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [text, setText] = useState('');
   const [isChecking, setIsChecking] = useState(false);
@@ -127,9 +129,11 @@ export function ConversationPanel({
             {data?.deviceId && ` · 최근 사용 폰 ${deviceName(data.deviceId)}`}
           </span>
         </div>
-        <Button variant="ghost" size="icon" aria-label="대화 삭제" onClick={() => setConfirmingDelete(true)}>
-          <Trash2 className="size-4" />
-        </Button>
+        {canRun(useDeleteSmsConversation) && (
+          <Button variant="ghost" size="icon" aria-label="대화 삭제" onClick={() => setConfirmingDelete(true)}>
+            <Trash2 className="size-4" />
+          </Button>
+        )}
       </div>
 
       <div className="bg-muted/20 min-h-0 flex-1">
@@ -155,6 +159,7 @@ export function ConversationPanel({
         )}
       </div>
 
+      {canRun(useReplySmsConversation) && (
       <div className="flex flex-col gap-2 border-t p-3">
         {data && !data.userId && (
           <p className="text-muted-foreground text-xs">회원이 아닌 번호로는 답장할 수 없습니다.</p>
@@ -188,6 +193,7 @@ export function ConversationPanel({
           </Button>
         </form>
       </div>
+      )}
 
       <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
         <AlertDialogContent>

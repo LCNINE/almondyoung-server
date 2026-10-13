@@ -7,6 +7,8 @@ import sanitizeHtml from 'sanitize-html';
 import { toast } from 'sonner';
 import { medusaTimeSaleSettingsApi } from '@/lib/api/domains/medusa/time-sales';
 import { timeSaleSettingsQuery } from '@/lib/services/time-sale';
+import { usePermissionCheck } from '@/hooks/use-permission';
+import { permissionLabel } from '@/lib/auth/permission-labels';
 import {
   createSaleComponent,
   defaultTimeSaleSettings,
@@ -633,6 +635,10 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
   const previewViewport = useRef<HTMLDivElement>(null);
 
   const query = useQuery(timeSaleSettingsQuery);
+  // 설정 저장은 훅 없이 API 를 바로 부른다 — 그 API 의 권한으로 판정한다
+  const { can, isPermissionLoading } = usePermissionCheck();
+  const canSaveSettings = can(['marketing.promotion.write']);
+  const settingsReason = `이 작업에는 ${permissionLabel('marketing.promotion.write')} 권한이 필요합니다.`;
 
   const [settings, setSettings] = useState<TimeSaleSettings | null>(null),
     [revision, setRevision] = useState(''),
@@ -853,7 +859,8 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
 
   // 설정 편집본을 복제해 고친다(원본 불변).
   const update = (run: (s: TimeSaleSettings) => void) => {
-    if (!settings) return;
+    // 설정을 고칠 권한이 확인되지 않으면 편집본을 바꾸지 않는다(저장할 수 없는 변경·이탈 경고를 만들지 않는다)
+    if (!settings || !canSaveSettings) return;
     const next = structuredClone(settings);
     run(next);
     setSettings(next);
@@ -1753,12 +1760,14 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
           {(section === 'environment' || section === 'variables') && (
             <>
               <span>{dirty ? '저장되지 않은 변경 사항' : '저장됨'}</span>
-              <button
-                disabled={!dirty || saving || !settings || query.isError}
-                onClick={() => void save(saveMessage(section, selected))}
-              >
-                {saving ? '저장 중…' : '저장'}
-              </button>
+              {canSaveSettings && (
+                <button
+                  disabled={!dirty || saving || !settings || query.isError}
+                  onClick={() => void save(saveMessage(section, selected))}
+                >
+                  {saving ? '저장 중…' : '저장'}
+                </button>
+              )}
             </>
           )}
           <button
@@ -1790,6 +1799,11 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
             <DoorOpen size={22} />
           </button>
         </header>
+        {!canSaveSettings && !isPermissionLoading && section !== 'management' && (
+          <p role="note" className="ts-empty">
+            보기 전용 — {settingsReason}
+          </p>
+        )}
         {query.isError && section !== 'management' ? (
           <div role="alert" className="ts-empty">
             설정을 불러오지 못했습니다.{' '}
@@ -1800,6 +1814,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
         ) : !settings ? (
           <div className="ts-empty">불러오는 중…</div>
         ) : section === 'environment' ? (
+          <fieldset disabled={!canSaveSettings} className="contents">
           <div className="ts-settings">
             <h2>환경설정</h2>
             {(['main', 'more'] as const).map((key) => (
@@ -1908,7 +1923,9 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
               )
             )}
           </div>
+          </fieldset>
         ) : section === 'variables' ? (
+          <fieldset disabled={!canSaveSettings} className="contents">
           <div className="ts-settings">
             <h2>사용자 정의 변수 ({settings.variables.length}/5)</h2>
             <p>
@@ -2028,6 +2045,7 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
             </button>
             <button onClick={resetVariableForm}>취소</button>
           </div>
+          </fieldset>
         ) : (
           layout && (
             <>
@@ -2481,13 +2499,15 @@ export function TimeSaleWorkspace({ children }: { children: ReactNode }) {
                     >
                       초기화
                     </button>
-                    <button
-                      className="ts-button ts-button-primary"
-                      disabled={!dirty || saving}
-                      onClick={() => void save(saveMessage(section, selected))}
-                    >
-                      {saving ? '저장 중…' : '저장'}
-                    </button>
+                    {canSaveSettings && (
+                      <button
+                        className="ts-button ts-button-primary"
+                        disabled={!dirty || saving}
+                        onClick={() => void save(saveMessage(section, selected))}
+                      >
+                        {saving ? '저장 중…' : '저장'}
+                      </button>
+                    )}
                     <span role="status">
                       {dirty ? '저장되지 않은 변경 사항' : '저장됨'}
                     </span>

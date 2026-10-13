@@ -5,6 +5,7 @@ import { Container } from '@/components/admin-ui-experimental/common/container/c
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { usePaymentIntentDetail, useCaptureIntent, useCancelIntent, useRefundIntent } from '@/lib/services/wallet';
 import { PaymentMethodTypeCell } from '@/components/table/table-cells/wallet/payment-method-type-cell';
 import { UserDetailGeneralContent } from '@/app/(admin)/users/[id]/user-detail-general';
@@ -75,6 +76,7 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
   const capture = useCaptureIntent(intentId);
   const cancel = useCancelIntent(intentId);
   const refund = useRefundIntent(intentId);
+  const { canRun } = usePermissionCheck();
 
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundChargeId, setRefundChargeId] = useState('');
@@ -90,7 +92,7 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
   // 무통장 환불은 환불계좌 3필드가 모두 있어야 자동 처리 가능.
   const bankRefundReady = !isBankTransfer || (!!refundBank && !!refundAccountNumber && !!refundHolderName);
 
-  const canCapture = data.status === 'AUTHORIZED';
+  const canCapture = data.status === 'AUTHORIZED' && canRun(useCaptureIntent);
   // AWAITING_DEPOSIT(무통장 입금대기) 포함 — 미입금 건을 입금확인 전에 거절/취소할 수 있어야 한다.
   // wallet 의 CANCELABLE_INTENT_STATUSES 가 이미 허용하며, 취소 시 선생성 주문 취소 + 예약재고 해제까지
   // 웹훅(handleCancelProjection)이 처리한다.
@@ -101,13 +103,13 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
     'AUTHORIZED',
     'SUCCEEDED',
     'AWAITING_DEPOSIT',
-  ].includes(data.status);
+  ].includes(data.status) && canRun(useCancelIntent);
   const isAwaitingDeposit = data.status === 'AWAITING_DEPOSIT';
 
   const succeededCharges = data.charges.filter(
     (c) => c.status === 'SUCCEEDED' && (c.operation === 'AUTHORIZE' || c.operation === 'CAPTURE'),
   );
-  const canRefund = succeededCharges.length > 0;
+  const canRefund = succeededCharges.length > 0 && canRun(useRefundIntent);
 
   const amountLabel = `${data.payableAmount.toLocaleString('ko-KR')} ${data.currency}`;
 

@@ -7,12 +7,14 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { Can } from '@/components/auth/can';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SimplePagination } from '@/components/simple-pagination';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   useBulkSessionItems,
   useExcludeItem,
@@ -98,6 +100,7 @@ export function DraftedPanel({
   const publish = usePublishBulkSession(sessionId);
   const retryDraft = useRetryDraft(sessionId);
   const excludeItem = useExcludeItem(sessionId);
+  const { canRun } = usePermissionCheck();
 
   function handleTabChange(value: string) {
     if (!isDraftedTab(value)) return;
@@ -142,6 +145,7 @@ export function DraftedPanel({
             <Badge variant="destructive">draft 실패 {failedCount}건</Badge>
           )}
         </div>
+        <Can run={usePublishBulkSession}>
         <Button
           type="button"
           disabled={publish.isPending}
@@ -150,12 +154,14 @@ export function DraftedPanel({
           {publish.isPending && <Spinner size="sm" data-icon="inline-start" />}
           일괄 발행
         </Button>
+        </Can>
       </div>
 
       {hasFailedDrafts && (
         <div className="rounded-lg border p-4">
           <div className="flex items-center justify-between gap-4">
             <p className="text-sm font-medium">draft 실패 행이 있습니다</p>
+            <Can run={useRetryDraft}>
             <Button
               type="button"
               variant="outline"
@@ -167,6 +173,7 @@ export function DraftedPanel({
               )}
               draft 실패 행 재시도
             </Button>
+            </Can>
           </div>
           <Alert variant="destructive" className="mt-3">
             <AlertDescription>{RETRY_WARNING}</AlertDescription>
@@ -235,7 +242,7 @@ export function DraftedPanel({
                   <ItemActions
                     item={item}
                     excluding={excludeItem.isPending}
-                    onExclude={handleExclude}
+                    onExclude={canRun(useExcludeItem) ? handleExclude : undefined}
                   />
                 </div>
               </div>

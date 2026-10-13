@@ -22,6 +22,7 @@ import {
   useShopListingTransition,
 } from '@/lib/services/products';
 import type { AdminShopListingDetailDto } from '@/lib/types/dto/products';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   SHOP_LISTING_AUTHOR_LABELS,
   SHOP_LISTING_STATUS_LABELS,
@@ -43,6 +44,10 @@ export function ModerationBar({ listing, onRefresh }: Props) {
   const close = useShopListingTransition('close');
   const reopen = useShopListingTransition('reopen');
   const [rejectOpen, setRejectOpen] = useState(false);
+  const { canRun } = usePermissionCheck();
+  const canReject = canRun(useRejectShopListing);
+  const canApprove = canRun(useApproveShopListing);
+  const canTransition = canRun(useShopListingTransition);
   const [reason, setReason] = useState('');
 
   const actions = adminListingActions(listing.status);
@@ -102,7 +107,7 @@ export function ModerationBar({ listing, onRefresh }: Props) {
         </div>
 
         <div className="flex gap-2">
-          {actions.includes('reject') && (
+          {canReject && actions.includes('reject') && (
             <Button
               variant="destructive"
               size="sm"
@@ -112,7 +117,7 @@ export function ModerationBar({ listing, onRefresh }: Props) {
               반려
             </Button>
           )}
-          {actions.includes('approve') && (
+          {canApprove && actions.includes('approve') && (
             <Button
               size="sm"
               disabled={busy}
@@ -130,7 +135,7 @@ export function ModerationBar({ listing, onRefresh }: Props) {
               승인
             </Button>
           )}
-          {actions.includes('hide') && (
+          {canTransition && actions.includes('hide') && (
             <Button
               variant="outline"
               size="sm"
@@ -142,7 +147,7 @@ export function ModerationBar({ listing, onRefresh }: Props) {
               숨김
             </Button>
           )}
-          {actions.includes('unhide') && (
+          {canTransition && actions.includes('unhide') && (
             <Button
               variant="outline"
               size="sm"
@@ -157,7 +162,7 @@ export function ModerationBar({ listing, onRefresh }: Props) {
               숨김 해제
             </Button>
           )}
-          {actions.includes('close') && (
+          {canTransition && actions.includes('close') && (
             <Button
               variant="outline"
               size="sm"
@@ -172,7 +177,7 @@ export function ModerationBar({ listing, onRefresh }: Props) {
               거래완료
             </Button>
           )}
-          {actions.includes('reopen') && (
+          {canTransition && actions.includes('reopen') && (
             <Button
               variant="outline"
               size="sm"

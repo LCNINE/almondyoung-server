@@ -28,10 +28,14 @@ import {
   STATUS_LABELS,
 } from '@/lib/types/dto/review';
 import { toast } from 'sonner';
+import { BlockedReason } from '@/components/auth/blocked-reason';
+import { usePermissionCheck } from '@/hooks/use-permission';
 
 function ReviewStatusToggleContent({ reviewId }: { reviewId: string }) {
   const { data: review } = useReview(reviewId);
   const updateStatus = useUpdateReviewStatus(reviewId);
+  const { blockedReason } = usePermissionCheck();
+  const reason = blockedReason(useUpdateReviewStatus);
 
   const [pendingStatus, setPendingStatus] = useState<ReviewStatus | null>(null);
 
@@ -57,7 +61,8 @@ function ReviewStatusToggleContent({ reviewId }: { reviewId: string }) {
       <div className="flex items-center gap-2">
         <Select
           value={review.status}
-          onValueChange={(value) => {
+          open={reason ? false : undefined}
+          onValueChange={reason ? undefined : (value) => {
             const next = value as ReviewStatus;
             if (next !== review.status) {
               setPendingStatus(next);
@@ -65,9 +70,13 @@ function ReviewStatusToggleContent({ reviewId }: { reviewId: string }) {
           }}
           disabled={updateStatus.isPending}
         >
-          <SelectTrigger className="flex-1">
-            <SelectValue placeholder="상태 선택" />
-          </SelectTrigger>
+          <BlockedReason reason={reason}>
+            {(blocked) => (
+              <SelectTrigger {...blocked} className="flex-1">
+                <SelectValue placeholder="상태 선택" />
+              </SelectTrigger>
+            )}
+          </BlockedReason>
           <SelectContent>
             {REVIEW_STATUSES.map((status) => (
               <SelectItem key={status} value={status}>

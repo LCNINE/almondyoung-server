@@ -15,12 +15,18 @@ import {
   settlementActionsOf,
 } from '@/lib/api/domains/orders/cancel-request.shape';
 import { useManualRefundCancelSettlement, useRetryCancelSettlement } from '@/lib/services/orders/mutations';
+import { usePermissionCheck } from '@/hooks/use-permission';
 
 const errorText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
 /** 정산 중 채널 취소의 운영자 조치 — 정체 보드 행과 주문 내역 취소 칸이 같이 쓴다(#1016 36번 재설계 §8.1) */
 export function SettlementActions(props: { salesOrderId: string; settlement: SettlementView }) {
-  const actions = settlementActionsOf(props.settlement);
+  const { canRun } = usePermissionCheck();
+  const settlementActions = settlementActionsOf(props.settlement);
+  const actions = {
+    retry: settlementActions.retry && canRun(useRetryCancelSettlement),
+    manualRefund: settlementActions.manualRefund && canRun(useManualRefundCancelSettlement),
+  };
   const retry = useRetryCancelSettlement();
   const manual = useManualRefundCancelSettlement();
   const [confirming, setConfirming] = useState(false);

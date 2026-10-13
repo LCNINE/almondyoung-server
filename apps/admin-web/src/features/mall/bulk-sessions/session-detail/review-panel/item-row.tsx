@@ -16,10 +16,11 @@ const KIND_LABEL: Record<BulkSessionItem['kind'], string> = {
 interface Props {
   item: BulkSessionItem;
   disabled: boolean;
+  blockedReason: string | null;
   onDecide: (itemId: string, field: string, decision: ConflictDecision) => void;
 }
 
-export function ItemRow({ item, disabled, onDecide }: Props) {
+export function ItemRow({ item, disabled, blockedReason, onDecide }: Props) {
   const [expanded, setExpanded] = useState(false);
 
   // 서버가 표시용 이름을 직접 붙여 준다(빈 문자열이면 이름을 뽑을 수 없었던 것) — 화면은
@@ -74,6 +75,7 @@ export function ItemRow({ item, disabled, onDecide }: Props) {
                   key={conflict.field}
                   conflict={conflict}
                   disabled={conflictsDisabled}
+                  blockedReason={blockedReason}
                   onDecide={(field, decision) =>
                     onDecide(item.id, field, decision)
                   }

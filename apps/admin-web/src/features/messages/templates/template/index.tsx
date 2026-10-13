@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { SmsTemplate } from '@/lib/api/domains/sms-gate';
-import { useSmsTemplates } from '@/lib/services/sms-gate';
+import { useCreateSmsTemplate, useSmsTemplates } from '@/lib/services/sms-gate';
+import { Can } from '@/components/auth/can';
 import { CategoryBadge } from '../../components/category-badge';
 import { TemplateFormDialog } from '../components/template-form-dialog';
 
@@ -22,9 +23,11 @@ export default function SmsTemplatesTemplate() {
         title="문자 템플릿"
         subtitle="개별 메시지 전송에서 불러 쓰는 문자 본문입니다. {{이름}} 은 받는 회원의 이름으로 바뀌어 발송됩니다."
         right={
-          <Button variant="outline" onClick={() => setCreating(true)}>
-            템플릿 만들기
-          </Button>
+          <Can run={useCreateSmsTemplate}>
+            <Button variant="outline" onClick={() => setCreating(true)}>
+              템플릿 만들기
+            </Button>
+          </Can>
         }
       />
 

@@ -6,7 +6,8 @@ import { useDataTable } from '@/hooks/use-data-table';
 import { usePurchaseOrdersTableColumns } from '@/hooks/table/columns/use-purchase-orders-table-columns';
 import { usePurchaseOrdersTableFilters } from '@/hooks/table/filters/use-purchase-orders-table-filters';
 import { usePurchaseOrdersTableQuery } from '@/hooks/table/query/use-purchase-orders-table-query';
-import { usePurchaseOrders } from '@/lib/services/inventory';
+import { useCreatePurchaseOrder, usePurchaseOrders } from '@/lib/services/inventory';
+import { Can } from '@/components/auth/can';
 import type { PurchaseOrderDto } from '@/lib/types/dto/inventory';
 import { Button } from '@/components/ui/button';
 import { PurchaseOrderDetailDrawer } from '../purchase-order-detail-drawer';
@@ -38,9 +39,11 @@ export function PurchaseOrdersTable() {
   return (
     <>
       <div className="flex items-center gap-2 px-4 pt-4">
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          발주 생성
-        </Button>
+        <Can run={useCreatePurchaseOrder}>
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            발주 생성
+          </Button>
+        </Can>
       </div>
 
       <DataTable

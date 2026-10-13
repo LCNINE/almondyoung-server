@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/collapsible';
 import { Spinner } from '@/components/ui/spinner';
 import { useInViewport } from '@/lib/hooks/use-in-viewport';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { useUpdateMasterVersion } from '@/lib/services/products/mutations';
 import { useProductDetailSuspense } from '@/lib/services/products/use-product-detail';
 import { ProductDescriptionFocusEditor } from './product-description-focus-editor';
@@ -78,6 +79,8 @@ function ProductDetailDescriptionContent({
     data.source === 'version' &&
     data.status === 'draft' &&
     Boolean(data.versionId);
+  const { canRun } = usePermissionCheck();
+  const canWrite = canRun(useUpdateMasterVersion);
   const [overlayOpen, setOverlayOpen] = useState(false);
   const hasContent =
     (data.description ?? '').trim().length > 0 || Boolean(data.descriptionHtml);
@@ -146,7 +149,7 @@ function ProductDetailDescriptionContent({
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="p-4">
-      {canEdit ? (
+      {canEdit && canWrite ? (
         <div className="flex justify-end mb-3">
           <Button
             size="sm"
@@ -180,7 +183,7 @@ function ProductDetailDescriptionContent({
         {!data.description && data.descriptionHtml ? (
           <LegacyHtmlPreview
             html={data.descriptionHtml}
-            canClear={canEdit}
+            canClear={canEdit && canWrite}
             onClear={handleClearLegacy}
             pending={updateVersion.isPending}
           />
@@ -230,7 +233,7 @@ function ProductDetailDescriptionContent({
           )
         : null}
 
-      {canEdit ? (
+      {canEdit && canWrite ? (
         <ProductDescriptionFocusEditor
           open={overlayOpen}
           onOpenChange={setOverlayOpen}

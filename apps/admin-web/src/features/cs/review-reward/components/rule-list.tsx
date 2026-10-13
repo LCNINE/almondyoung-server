@@ -9,6 +9,7 @@ import {
   useSetReviewRewardRuleActive,
   useUpdateReviewRewardRule,
 } from '@/lib/services/review-reward';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { RuleForm } from './rule-form';
 import {
   describeReward,
@@ -66,6 +67,7 @@ export function RuleList() {
   const updateRule = useUpdateReviewRewardRule();
   const setActive = useSetReviewRewardRuleActive();
   const deleteRule = useDeleteReviewRewardRule();
+  const { canRun } = usePermissionCheck();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -100,6 +102,7 @@ export function RuleList() {
             </p>
           )}
         </div>
+        {canRun(useCreateReviewRewardRule) && (
         <button
           type="button"
           onClick={() => {
@@ -110,6 +113,7 @@ export function RuleList() {
         >
           규칙 추가
         </button>
+        )}
       </div>
 
       {error && <p className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-600">{error}</p>}
@@ -166,6 +170,7 @@ export function RuleList() {
               </div>
 
               <div className="flex shrink-0 gap-1.5">
+                {canRun(useSetReviewRewardRuleActive) && (
                 <button
                   type="button"
                   onClick={() => {
@@ -179,6 +184,8 @@ export function RuleList() {
                 >
                   {rule.active ? '비활성화' : '활성화'}
                 </button>
+                )}
+                {canRun(useUpdateReviewRewardRule) && (
                 <button
                   type="button"
                   onClick={() => {
@@ -189,6 +196,8 @@ export function RuleList() {
                 >
                   {editingId === rule.id ? '닫기' : '수정'}
                 </button>
+                )}
+                {canRun(useDeleteReviewRewardRule) && (
                 <button
                   type="button"
                   onClick={() => {
@@ -200,6 +209,7 @@ export function RuleList() {
                 >
                   삭제
                 </button>
+                )}
               </div>
             </div>
 

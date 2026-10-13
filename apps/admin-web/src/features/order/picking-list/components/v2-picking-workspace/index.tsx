@@ -17,7 +17,6 @@ import {
 } from '@/components/ui/select';
 import {
   getServerDenyMessage,
-  FULFILLMENT_SCOPES,
   useAggregateBulkCartScan,
   useAggregateCartHandoff,
   useAggregateSortScan,
@@ -27,6 +26,7 @@ import {
   useOutboundBatchV2,
   usePickingHandoff,
   useRegisterTote,
+  useReportShipmentShortPick,
   useReleaseTote,
   useShipmentDetail,
   useStartPickingV2,
@@ -37,7 +37,7 @@ import { ShortPickDialog } from '../short-pick-dialog';
 import { useWarehouseCommandRetry } from '../../../outbound-batches/warehouse-command-retry';
 
 export function V2PickingWorkspace() {
-  const { can, isPermissionLoading } = usePermissionCheck();
+  const { canRun } = usePermissionCheck();
   const [batchIdInput, setBatchIdInput] = useState('');
   const [batchId, setBatchId] = useState('');
   const { data: batch, isLoading, refetch } = useOutboundBatchV2(batchId);
@@ -50,10 +50,22 @@ export function V2PickingWorkspace() {
   const [reason, setReason] = useState('shift_handoff');
   const retry = useWarehouseCommandRetry();
   const [shortPickOpen, setShortPickOpen] = useState(false);
-  const canOperateWarehouse =
-    !isPermissionLoading && !!can([FULFILLMENT_SCOPES.operate]);
-  const canReportShortPick =
-    !isPermissionLoading && !!can([FULFILLMENT_SCOPES.reopen]);
+  // 이 작업대의 피킹 명령 전부 — 모두 같은 창고 작업 권한이라 한 번에 판정한다
+  const canOperateWarehouse = canRun(
+    useStartPickingV2,
+    useDiscretePickingScan,
+    usePickingHandoff,
+    useCompletePickingV2,
+    useAggregateBulkCartScan,
+    useAggregateSortScan,
+    useAggregateCartHandoff,
+    useRegisterTote,
+    useAssignTote,
+    useToteScan,
+    useToteHandoff,
+    useReleaseTote
+  );
+  const canReportShortPick = canRun(useReportShipmentShortPick);
 
   const start = useStartPickingV2();
   const discreteScan = useDiscretePickingScan();

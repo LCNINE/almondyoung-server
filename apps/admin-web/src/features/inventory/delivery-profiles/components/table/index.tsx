@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useDeliveryProfiles } from '@/lib/services/inventory';
+import { Can } from '@/components/auth/can';
+import { useCreateDeliveryProfile, useDeliveryProfiles, useUpdateDeliveryProfile } from '@/lib/services/inventory';
 import type { DeliveryProfileDto } from '@/lib/types/dto/inventory';
 import { FULFILLMENT_MODE_LABELS, SOURCE_TYPE_LABELS } from '../../lib/labels';
 import { ProfileDialog } from '../profile-dialog';
@@ -16,9 +17,11 @@ export function DeliveryProfilesTable() {
   return (
     <div className="px-4 py-4">
       <div className="mb-3 flex justify-end">
-        <Button size="sm" onClick={() => setEditing('new')}>
-          새 프로필
-        </Button>
+        <Can run={useCreateDeliveryProfile}>
+          <Button size="sm" onClick={() => setEditing('new')}>
+            새 프로필
+          </Button>
+        </Can>
       </div>
       <Table>
         <TableHeader>
@@ -58,9 +61,11 @@ export function DeliveryProfilesTable() {
               <TableCell>{p.supportedFulfillmentModes.map((m) => FULFILLMENT_MODE_LABELS[m] ?? m).join(', ')}</TableCell>
               <TableCell className="text-right">{p.skuCount ?? 0}</TableCell>
               <TableCell>
-                <Button size="sm" variant="outline" onClick={() => setEditing(p)}>
-                  수정
-                </Button>
+                <Can run={useUpdateDeliveryProfile}>
+                  <Button size="sm" variant="outline" onClick={() => setEditing(p)}>
+                    수정
+                  </Button>
+                </Can>
               </TableCell>
             </TableRow>
           ))}

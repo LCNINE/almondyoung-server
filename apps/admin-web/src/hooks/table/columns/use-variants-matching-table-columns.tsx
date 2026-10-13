@@ -20,8 +20,9 @@ import {
 const columnHelper = createColumnHelper<MatchingDto>();
 
 type RowActions = {
-  onEdit: (row: MatchingDto) => void;
-  onResolveLegacyIgnored: (
+  // 넘기지 않으면 그 버튼을 그리지 않는다(권한 없음)
+  onEdit?: (row: MatchingDto) => void;
+  onResolveLegacyIgnored?: (
     row: MatchingDto,
     target: LegacyIgnoredResolutionTarget
   ) => void;
@@ -183,6 +184,7 @@ export const useVariantsMatchingTableColumns = (actions: RowActions) => {
               onClick={(e) => e.stopPropagation()}
             >
               {isLegacyIgnored ? (
+                actions.onResolveLegacyIgnored && (
                 <>
                   <Button
                     variant="outline"
@@ -190,7 +192,7 @@ export const useVariantsMatchingTableColumns = (actions: RowActions) => {
                     className="h-7 px-2 text-xs"
                     disabled={actions.isResolvingLegacyIgnored}
                     onClick={() =>
-                      actions.onResolveLegacyIgnored(row.original, 'pending')
+                      actions.onResolveLegacyIgnored?.(row.original, 'pending')
                     }
                   >
                     전략 미결정
@@ -201,21 +203,24 @@ export const useVariantsMatchingTableColumns = (actions: RowActions) => {
                     className="h-7 px-2 text-xs"
                     disabled={actions.isResolvingLegacyIgnored}
                     onClick={() =>
-                      actions.onResolveLegacyIgnored(row.original, 'void')
+                      actions.onResolveLegacyIgnored?.(row.original, 'void')
                     }
                   >
                     재고상품 비매칭
                   </Button>
                 </>
+                )
               ) : (
+                actions.onEdit && (
                 <Button
                   variant="ghost"
                   size="sm"
                   className="h-7 px-2 text-xs"
-                  onClick={() => actions.onEdit(row.original)}
+                  onClick={() => actions.onEdit?.(row.original)}
                 >
                   편집
                 </Button>
+                )
               )}
             </div>
           );

@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useCouponCustomers, useRevokeCouponFromCustomer } from '@/lib/services/coupons';
 import { toast } from 'sonner';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { Users, UserMinus, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import type { CouponCustomer } from '@/lib/api/domains/medusa/promotions';
@@ -44,6 +45,7 @@ export function CouponCustomersDialog({
 }) {
   const { data, isLoading } = useCouponCustomers(open ? promotionId : null);
   const revoke = useRevokeCouponFromCustomer();
+  const { canRun } = usePermissionCheck();
   const [revokeTarget, setRevokeTarget] = useState<CouponCustomer | null>(null);
 
   const handleRevokeConfirm = async () => {
@@ -124,16 +126,18 @@ export function CouponCustomersDialog({
                   <span className="text-right text-xs text-muted-foreground shrink-0">
                     {formatCouponDate(customer.next_expires_at) ?? '-'}
                   </span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
-                    onClick={() => setRevokeTarget(customer)}
-                    disabled={revoke.isPending}
-                    title="쿠폰 회수"
-                  >
-                    <UserMinus className="h-3.5 w-3.5" />
-                  </Button>
+                  {canRun(useRevokeCouponFromCustomer) && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => setRevokeTarget(customer)}
+                      disabled={revoke.isPending}
+                      title="쿠폰 회수"
+                    >
+                      <UserMinus className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>

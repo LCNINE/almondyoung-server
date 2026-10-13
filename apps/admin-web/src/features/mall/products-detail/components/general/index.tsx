@@ -6,6 +6,9 @@ import { toast } from 'sonner';
 import { CardErrorBoundary } from '@/components/admin-ui-experimental/common/card-error-boundary';
 import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
+import { Can } from '@/components/auth/can';
+import { BlockedReason } from '@/components/auth/blocked-reason';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { Button } from '@/components/ui/button';
 import {
   Drawer,
@@ -567,6 +570,12 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
   );
   const updateShippingGroup = useUpdateShippingGroup(masterId, versionId);
   const { data: shippingGroups } = useShippingGroups();
+  const { blockedReason } = usePermissionCheck();
+  const membershipPriceReason = blockedReason(useUpdateMembershipPriceVisibility);
+  const membersOnlyReason = blockedReason(useUpdateMembersOnlyVisibility);
+  const requiresMembershipReason = blockedReason(useUpdateRequiresMembership);
+  const shippingGroupReason = blockedReason(useUpdateShippingGroup);
+  const overseasReason = blockedReason(useUpdateOverseas);
 
   function handleShippingGroupChange(value: string) {
     const nextCode = value ? value : null;
@@ -667,14 +676,16 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
         }
         right={
           canEdit ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setEditOpen(true)}
-            >
-              <Pencil data-icon="inline-start" />
-              수정
-            </Button>
+            <Can run={useUpdateMasterVersion}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setEditOpen(true)}
+              >
+                <Pencil data-icon="inline-start" />
+                수정
+              </Button>
+            </Can>
           ) : null
         }
       />
@@ -706,13 +717,22 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
                 표시합니다.
               </p>
             </div>
-            <Switch
-              id="product-detail-membership-price-visibility"
-              checked={data.hideMembershipPriceForNonMembers ?? false}
-              onCheckedChange={handleMembershipPriceVisibilityChange}
-              disabled={updateMembershipPriceVisibility.isPending}
-              className="data-[state=unchecked]:border-gray-300"
-            />
+            <BlockedReason reason={membershipPriceReason}>
+              {(blocked) => (
+                <Switch
+                  {...blocked}
+                  id="product-detail-membership-price-visibility"
+                  checked={data.hideMembershipPriceForNonMembers ?? false}
+                  onCheckedChange={
+                    membershipPriceReason
+                      ? undefined
+                      : handleMembershipPriceVisibilityChange
+                  }
+                  disabled={updateMembershipPriceVisibility.isPending}
+                  className="data-[state=unchecked]:border-gray-300"
+                />
+              )}
+            </BlockedReason>
           </div>
 
           <div className="flex items-center justify-between gap-3">
@@ -724,13 +744,22 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
                 비회원의 상품 목록, 검색 결과, 상세 접근에서 숨깁니다.
               </p>
             </div>
-            <Switch
-              id="product-detail-members-only-visibility"
-              checked={data.isVisibleToMembersOnly ?? false}
-              onCheckedChange={handleMembersOnlyVisibilityChange}
-              disabled={updateMembersOnlyVisibility.isPending}
-              className="data-[state=unchecked]:border-gray-300"
-            />
+            <BlockedReason reason={membersOnlyReason}>
+              {(blocked) => (
+                <Switch
+                  {...blocked}
+                  id="product-detail-members-only-visibility"
+                  checked={data.isVisibleToMembersOnly ?? false}
+                  onCheckedChange={
+                    membersOnlyReason
+                      ? undefined
+                      : handleMembersOnlyVisibilityChange
+                  }
+                  disabled={updateMembersOnlyVisibility.isPending}
+                  className="data-[state=unchecked]:border-gray-300"
+                />
+              )}
+            </BlockedReason>
           </div>
 
           <div className="flex items-center justify-between gap-3">
@@ -743,13 +772,22 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
                 표시됩니다. 상품 노출은 제한되지 않습니다.
               </p>
             </div>
-            <Switch
-              id="product-detail-requires-membership"
-              checked={data.requiresMembership ?? false}
-              onCheckedChange={handleRequiresMembershipChange}
-              disabled={updateRequiresMembership.isPending}
-              className="data-[state=unchecked]:border-gray-300"
-            />
+            <BlockedReason reason={requiresMembershipReason}>
+              {(blocked) => (
+                <Switch
+                  {...blocked}
+                  id="product-detail-requires-membership"
+                  checked={data.requiresMembership ?? false}
+                  onCheckedChange={
+                    requiresMembershipReason
+                      ? undefined
+                      : handleRequiresMembershipChange
+                  }
+                  disabled={updateRequiresMembership.isPending}
+                  className="data-[state=unchecked]:border-gray-300"
+                />
+              )}
+            </BlockedReason>
           </div>
 
           <ShippingInfoBlock
@@ -757,6 +795,7 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
             onChange={handleShippingGroupChange}
             groups={shippingGroups}
             disabled={updateShippingGroup.isPending}
+            blockedReason={shippingGroupReason}
             digital={data.fulfillmentKind === 'digital'}
           />
 
@@ -768,13 +807,18 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
                 개인통관고유부호 입력이 필수가 됩니다.
               </p>
             </div>
-            <Switch
-              id="product-detail-overseas"
-              checked={data.isOverseas ?? false}
-              onCheckedChange={handleOverseasChange}
-              disabled={updateOverseas.isPending}
-              className="data-[state=unchecked]:border-gray-300"
-            />
+            <BlockedReason reason={overseasReason}>
+              {(blocked) => (
+                <Switch
+                  {...blocked}
+                  id="product-detail-overseas"
+                  checked={data.isOverseas ?? false}
+                  onCheckedChange={overseasReason ? undefined : handleOverseasChange}
+                  disabled={updateOverseas.isPending}
+                  className="data-[state=unchecked]:border-gray-300"
+                />
+              )}
+            </BlockedReason>
           </div>
         </div>
       </div>

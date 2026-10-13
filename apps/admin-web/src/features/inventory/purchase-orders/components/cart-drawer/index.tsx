@@ -11,7 +11,10 @@ import {
   useRemoveCartItem,
   useUpdateCartItem,
   useClearCart,
+  useCreatePurchaseOrderFromCart,
 } from '@/lib/services/inventory';
+import { usePermissionCheck } from '@/hooks/use-permission';
+import { BlockedReason } from '@/components/auth/blocked-reason';
 import type { CartItemDto } from '@/lib/types/dto/inventory';
 import { Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -31,6 +34,8 @@ export function CartDrawer({ open, onOpenChange }: Props) {
   const removeMutation = useRemoveCartItem();
   const updateMutation = useUpdateCartItem();
   const clearMutation = useClearCart();
+  const { canRun, blockedReason } = usePermissionCheck();
+  const quantityBlocked = blockedReason(useUpdateCartItem);
 
   const cartItems = cart ?? [];
 
@@ -97,36 +102,48 @@ export function CartDrawer({ open, onOpenChange }: Props) {
                         {item.supplier && ` · ${item.supplier.name}`}
                       </p>
                     </div>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={item.quantity}
-                      onChange={(e) => handleQuantityChange(item, Number(e.target.value))}
-                      className="w-16 text-center"
-                    />
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => handleRemove(item.id)}
-                      disabled={removeMutation.isPending}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                    <BlockedReason reason={quantityBlocked}>
+                      {(blocked) => (
+                        <Input
+                          {...blocked}
+                          type="number"
+                          min={1}
+                          value={item.quantity}
+                          readOnly={!!quantityBlocked}
+                          onChange={quantityBlocked ? undefined : (e) => handleQuantityChange(item, Number(e.target.value))}
+                          className="w-16 text-center"
+                        />
+                      )}
+                    </BlockedReason>
+                    {canRun(useRemoveCartItem) && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => handleRemove(item.id)}
+                        disabled={removeMutation.isPending}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
                   </div>
                 ))}
 
                 <div className="flex items-center justify-between pt-2">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={handleClear}
-                    disabled={clearMutation.isPending}
-                  >
-                    전체 비우기
-                  </Button>
-                  <Button size="sm" onClick={openFinalize}>
-                    발주 생성
-                  </Button>
+                  {canRun(useClearCart) && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={handleClear}
+                      disabled={clearMutation.isPending}
+                    >
+                      전체 비우기
+                    </Button>
+                  )}
+                  {canRun(useCreatePurchaseOrderFromCart) && (
+                    <Button size="sm" onClick={openFinalize}>
+                      발주 생성
+                    </Button>
+                  )}
                 </div>
               </>
             )}

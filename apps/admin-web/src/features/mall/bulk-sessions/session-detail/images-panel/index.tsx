@@ -8,7 +8,11 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
-import { useBulkSessionRequiredImages } from '@/lib/services/products/bulk-session';
+import { usePermissionCheck } from '@/hooks/use-permission';
+import {
+  useBulkSessionRequiredImages,
+  useResolveImages,
+} from '@/lib/services/products/bulk-session';
 import type {
   BulkImageUsage,
   BulkSessionProgress,
@@ -37,6 +41,8 @@ export function ImagesPanel({
 }) {
   const imagesQuery = useBulkSessionRequiredImages(sessionId);
   const { state, run, retryFailed } = useImageUploader(sessionId);
+  const { canRun } = usePermissionCheck();
+  const canUpload = canRun(useResolveImages);
 
   // 업로드 중 이탈해도 이미 올라간 것은 서버에 남는다 — 남은 것만 다시 떨구면 된다.
   useEffect(() => {
@@ -98,6 +104,7 @@ export function ImagesPanel({
         <Progress value={gatePercent} className="mt-3" />
       </div>
 
+      {canUpload && (
       <Dropzone
         onFiles={(files) => {
           void handleFiles(files);
@@ -106,6 +113,7 @@ export function ImagesPanel({
         // 로드 중·실패 상태에서는 받지 않는다(아래 목록 카드가 상태를 보여준다).
         disabled={state.running || !imagesQuery.data}
       />
+      )}
 
       {state.running && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -133,6 +141,7 @@ export function ImagesPanel({
             <p className="text-sm font-medium text-destructive">
               업로드 실패 {state.failed.length}건
             </p>
+            {canUpload && (
             <Button
               type="button"
               size="sm"
@@ -144,6 +153,7 @@ export function ImagesPanel({
             >
               실패한 것만 다시 시도
             </Button>
+            )}
           </div>
           <ul className="mt-2 flex flex-col gap-1 text-sm">
             {state.failed.map((f) => (

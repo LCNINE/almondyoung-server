@@ -4,7 +4,8 @@ import { useCallback, useState } from 'react';
 import { DataTable } from '@/components/data-table';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useSkuGroupsTableColumns } from '@/hooks/table/columns/use-sku-groups-table-columns';
-import { useSkuGroups } from '@/lib/services/inventory';
+import { useCreateSkuGroup, useDeleteSkuGroup, useSkuGroups, useUpdateSkuGroup } from '@/lib/services/inventory';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { SkuGroupResponseDto } from '@/lib/types/dto/inventory';
 import { GroupFormDialog } from '../group-form-dialog';
 import { DeleteGroupDialog } from '../delete-group-dialog';
@@ -24,11 +25,12 @@ export function SkuGroupsTable() {
   const handleEdit = useCallback((row: SkuGroupResponseDto) => setEditRow(row), []);
   const handleViewMembers = useCallback((row: SkuGroupResponseDto) => setMembersRow(row), []);
   const handleDelete = useCallback((row: SkuGroupResponseDto) => setDeleteRow(row), []);
+  const { canRun } = usePermissionCheck();
 
   const columns = useSkuGroupsTableColumns({
-    onEdit: handleEdit,
+    onEdit: canRun(useUpdateSkuGroup) ? handleEdit : undefined,
     onViewMembers: handleViewMembers,
-    onDelete: handleDelete,
+    onDelete: canRun(useDeleteSkuGroup) ? handleDelete : undefined,
   });
 
   const rows = groups ?? [];
@@ -44,9 +46,11 @@ export function SkuGroupsTable() {
   return (
     <div>
       <div className="flex items-center justify-between p-3 border-b">
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          그룹 생성
-        </Button>
+        {canRun(useCreateSkuGroup) && (
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            그룹 생성
+          </Button>
+        )}
       </div>
 
       <DataTable

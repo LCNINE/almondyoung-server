@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useConfirmBankTransfer } from '@/lib/services/wallet';
+import { Can } from '@/components/auth/can';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -53,49 +54,51 @@ export function BankTransferConfirmCell({
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger asChild>
-        <Button
-          size="sm"
-          className="h-8"
-          disabled={confirm.isPending}
-          onClick={(e) => e.stopPropagation()}
-        >
-          입금 확인
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent onClick={(e) => e.stopPropagation()}>
-        <AlertDialogHeader>
-          <AlertDialogTitle>입금 확인 처리</AlertDialogTitle>
-          <AlertDialogDescription>
-            결제 <span className="font-mono">{id.slice(0, 8)}…</span> (입금액{' '}
-            <span className="font-semibold text-foreground">{amountLabel}</span>
-            ) 건을 입금 확인 처리합니다.
-            {deposit !== payableAmount && (
-              <>
-                {' '}
-                주문 총액 {payableAmount.toLocaleString('ko-KR')} {currency} 중{' '}
-                {(payableAmount - deposit).toLocaleString('ko-KR')} {currency} 는
-                포인트로 결제되어 입금액이 더 적습니다.
-              </>
-            )}{' '}
-            통장에 실제 입금된 내역을 반드시 확인한 뒤 진행하세요. 이 작업은 결제를
-            캡처(확정)하며 되돌릴 수 없습니다.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={confirm.isPending}>취소</AlertDialogCancel>
-          <AlertDialogAction
+    <Can run={useConfirmBankTransfer}>
+      <AlertDialog open={open} onOpenChange={setOpen}>
+        <AlertDialogTrigger asChild>
+          <Button
+            size="sm"
+            className="h-8"
             disabled={confirm.isPending}
-            onClick={(e) => {
-              e.preventDefault();
-              void handleConfirm();
-            }}
+            onClick={(e) => e.stopPropagation()}
           >
-            {confirm.isPending ? '처리 중…' : '입금 확인'}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+            입금 확인
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>입금 확인 처리</AlertDialogTitle>
+            <AlertDialogDescription>
+              결제 <span className="font-mono">{id.slice(0, 8)}…</span> (입금액{' '}
+              <span className="font-semibold text-foreground">{amountLabel}</span>
+              ) 건을 입금 확인 처리합니다.
+              {deposit !== payableAmount && (
+                <>
+                  {' '}
+                  주문 총액 {payableAmount.toLocaleString('ko-KR')} {currency} 중{' '}
+                  {(payableAmount - deposit).toLocaleString('ko-KR')} {currency} 는
+                  포인트로 결제되어 입금액이 더 적습니다.
+                </>
+              )}{' '}
+              통장에 실제 입금된 내역을 반드시 확인한 뒤 진행하세요. 이 작업은 결제를
+              캡처(확정)하며 되돌릴 수 없습니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={confirm.isPending}>취소</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={confirm.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleConfirm();
+              }}
+            >
+              {confirm.isPending ? '처리 중…' : '입금 확인'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Can>
   );
 }

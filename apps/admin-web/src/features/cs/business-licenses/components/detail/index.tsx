@@ -42,6 +42,8 @@ import {
   XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Can } from '@/components/auth/can';
+import { usePermissionCheck } from '@/hooks/use-permission';
 
 // 개업일자는 yyyyMMdd 로만 남는다.
 function formatStartDate(startDate?: string): string {
@@ -60,6 +62,8 @@ function statusVariant(
 function BusinessLicenseDetailContent({ id }: { id: string }) {
   const { data } = useBusinessLicense(id);
   const updateMutation = useUpdateBusinessLicense(id);
+  const { canRun } = usePermissionCheck();
+  const canReview = canRun(useUpdateBusinessLicense);
   const ntsValidate = data.metadata?.ntsValidate;
 
   const [rejectComment, setRejectComment] = useState(data.reviewComment ?? '');
@@ -219,7 +223,7 @@ function BusinessLicenseDetailContent({ id }: { id: string }) {
 
       <section className="p-4">
         <div className="flex items-center justify-between">
-          {data.status === 'approved' || data.status === 'rejected' ? (
+          {canReview && (data.status === 'approved' || data.status === 'rejected') ? (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button
@@ -254,7 +258,7 @@ function BusinessLicenseDetailContent({ id }: { id: string }) {
           )}
 
           <div className="flex gap-2">
-            {data.status !== 'rejected' && (
+            {canReview && data.status !== 'rejected' && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="destructive" size="sm" disabled={isUpdating}>
@@ -301,7 +305,7 @@ function BusinessLicenseDetailContent({ id }: { id: string }) {
               </AlertDialog>
             )}
 
-            {data.status !== 'approved' && (
+            {canReview && data.status !== 'approved' && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button size="sm" disabled={isUpdating}>
@@ -381,7 +385,11 @@ function DeleteButton({ id }: { id: string }) {
 export function BusinessLicenseDetail({ id }: { id: string }) {
   return (
     <Container className="divide-y">
-      <Header title="사업자 인증 상세" right={<DeleteButton id={id} />} />
+      <Header title="사업자 인증 상세" right={
+          <Can run={useDeleteBusinessLicense}>
+            <DeleteButton id={id} />
+          </Can>
+        } />
       <Suspense
         fallback={
           <div className="flex justify-center p-4">

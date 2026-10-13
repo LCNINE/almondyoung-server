@@ -5,7 +5,15 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { useInboundWorkLogs } from '@/lib/services/inventory';
+import {
+  useCancelInbound,
+  useCancelPurchaseOrderReceiptLine,
+  useInboundWorkLogs,
+  usePutaway,
+  useReturnInbound,
+  useUpdateInboundLineMemo,
+} from '@/lib/services/inventory';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { InboundReceiptHistoryDto, InboundReceiptLineDto } from '@/lib/types/dto/inventory';
 import { PutawayDialog } from '../../line-action-menu/putaway-dialog';
 import { ReturnDialog } from '../../line-action-menu/return-dialog';
@@ -37,6 +45,7 @@ type Props = {
 export function ReceiptDetailDrawer({ row, open, onOpenChange }: Props) {
   const [activeLine, setActiveLine] = useState<InboundReceiptLineDto | null>(null);
   const [activeAction, setActiveAction] = useState<LineAction | null>(null);
+  const { canRun } = usePermissionCheck();
 
   const { data: workLogs } = useInboundWorkLogs(
     row
@@ -92,10 +101,18 @@ export function ReceiptDetailDrawer({ row, open, onOpenChange }: Props) {
                         {line.memo && <span className="text-xs text-muted-foreground">메모: {line.memo}</span>}
                       </div>
                       <div className="flex shrink-0 flex-wrap gap-1">
-                        <Button size="sm" variant="outline" onClick={() => openAction(line, 'putaway')}>적치</Button>
-                        <Button size="sm" variant="outline" onClick={() => openAction(line, 'return')}>회송</Button>
-                        <Button size="sm" variant="outline" onClick={() => openAction(line, 'cancel')}>취소</Button>
-                        <Button size="sm" variant="ghost" onClick={() => openAction(line, 'memo')}>메모</Button>
+                        {canRun(usePutaway) && (
+                          <Button size="sm" variant="outline" onClick={() => openAction(line, 'putaway')}>적치</Button>
+                        )}
+                        {canRun(useReturnInbound) && (
+                          <Button size="sm" variant="outline" onClick={() => openAction(line, 'return')}>회송</Button>
+                        )}
+                        {canRun(line.source === 'purchase_order' ? useCancelPurchaseOrderReceiptLine : useCancelInbound) && (
+                          <Button size="sm" variant="outline" onClick={() => openAction(line, 'cancel')}>취소</Button>
+                        )}
+                        {canRun(useUpdateInboundLineMemo) && (
+                          <Button size="sm" variant="ghost" onClick={() => openAction(line, 'memo')}>메모</Button>
+                        )}
                       </div>
                     </div>
                   </div>

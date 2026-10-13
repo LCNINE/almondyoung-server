@@ -7,6 +7,7 @@ import { Header } from '@/components/admin-ui-experimental/common/header/header'
 import { Copy } from '@/components/admin-ui-experimental/common/copy/copy';
 import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
+import { Can } from '@/components/auth/can';
 import {
   Dialog,
   DialogContent,
@@ -343,14 +344,16 @@ function RefundConfirmButton({
 
   return (
     <>
-      <Button
-        size="sm"
-        variant="outline"
-        className="h-6 text-xs"
-        onClick={() => setOpen(true)}
-      >
-        완료 처리
-      </Button>
+      <Can run={useConfirmRefund}>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 text-xs"
+          onClick={() => setOpen(true)}
+        >
+          완료 처리
+        </Button>
+      </Can>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>

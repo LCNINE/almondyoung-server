@@ -31,6 +31,7 @@ import type {
   GenerateAdjustmentsResponse,
 } from '@/lib/types/dto/inventory';
 import { toast } from 'sonner';
+import { usePermissionCheck } from '@/hooks/use-permission';
 
 type Props = {
   row: StocktakingSessionDto | null;
@@ -74,6 +75,7 @@ export function SessionDetailDrawer({ row, open, onOpenChange }: Props) {
   const updateCountMutation = useUpdateLineCount();
   const generateMutation = useGenerateAdjustments();
   const completeMutation = useCompleteStocktakingSession();
+  const { canRun } = usePermissionCheck();
 
   useEffect(() => {
     setReviewed(undefined);
@@ -301,14 +303,17 @@ export function SessionDetailDrawer({ row, open, onOpenChange }: Props) {
 
         {row && (
           <div className="mt-4 space-y-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRecover}
-              disabled={working}
-            >
-              작업 확인
-            </Button>
+            {/* 이 브라우저에 남은 실사 쓰기 요청을 다시 보낸다 — 실사 현장 작업 권한이 있을 때만 */}
+            {canRun(useUpdateLineCount) && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRecover}
+                disabled={working}
+              >
+                작업 확인
+              </Button>
+            )}
             {/* 세션 기본 정보 */}
             <div className="rounded-md border p-3 text-sm space-y-1">
               <p className="font-medium">세션 정보</p>
@@ -339,12 +344,14 @@ export function SessionDetailDrawer({ row, open, onOpenChange }: Props) {
                 <p className="text-sm text-muted-foreground mb-3">
                   세션을 시작하면 스캔 및 카운트 작업이 가능합니다.
                 </p>
-                <Button
-                  onClick={handleStart}
-                  disabled={startMutation.isPending}
-                >
-                  {startMutation.isPending ? '시작 중...' : '실사 시작'}
-                </Button>
+                {canRun(useStartStocktakingSession) && (
+                  <Button
+                    onClick={handleStart}
+                    disabled={startMutation.isPending}
+                  >
+                    {startMutation.isPending ? '시작 중...' : '실사 시작'}
+                  </Button>
+                )}
               </div>
             )}
 
@@ -354,6 +361,7 @@ export function SessionDetailDrawer({ row, open, onOpenChange }: Props) {
                 {/* 위치 스캔 */}
                 <div className="rounded-md border p-3 space-y-3">
                   <p className="text-sm font-medium">위치 스캔</p>
+                  {canRun(useScanLocation) && (
                   <div className="flex gap-2">
                     <Input
                       value={locationBarcode}
@@ -372,6 +380,7 @@ export function SessionDetailDrawer({ row, open, onOpenChange }: Props) {
                       스캔
                     </Button>
                   </div>
+                  )}
                   {scannedLocationCode && (
                     <div className="text-xs text-muted-foreground">
                       현재 위치:{' '}
@@ -404,6 +413,7 @@ export function SessionDetailDrawer({ row, open, onOpenChange }: Props) {
                 </div>
 
                 {/* 상품 스캔 */}
+                {canRun(useScanProduct) && (
                 <div className="rounded-md border p-3 space-y-3">
                   <p className="text-sm font-medium">상품 스캔</p>
                   <div className="flex gap-2">
@@ -433,8 +443,10 @@ export function SessionDetailDrawer({ row, open, onOpenChange }: Props) {
                     </p>
                   )}
                 </div>
+                )}
 
                 {/* 수동 카운트 입력 */}
+                {canRun(useUpdateLineCount) && (<>
                 <div className="rounded-md border p-3 space-y-3">
                   <p className="text-sm font-medium">수동 카운트 입력</p>
                   <div className="grid grid-cols-[1fr_100px_auto] gap-2 items-end">
@@ -484,21 +496,24 @@ export function SessionDetailDrawer({ row, open, onOpenChange }: Props) {
                 >
                   선택한 상품 다시 세기
                 </Button>
+                </>)}
 
                 {/* 차이 목록 */}
                 <div className="rounded-md border p-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium">차이 목록</p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleGenerateAdjustments}
-                      disabled={working || variancesFetching}
-                    >
-                      {generateMutation.isPending
-                        ? '확인 중...'
-                        : '반영 수량 확인'}
-                    </Button>
+                    {canRun(useGenerateAdjustments) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleGenerateAdjustments}
+                        disabled={working || variancesFetching}
+                      >
+                        {generateMutation.isPending
+                          ? '확인 중...'
+                          : '반영 수량 확인'}
+                      </Button>
+                    )}
                   </div>
                   {isVariancesLoading && (
                     <p className="text-xs text-muted-foreground">
@@ -567,6 +582,7 @@ export function SessionDetailDrawer({ row, open, onOpenChange }: Props) {
 
                 {/* 실사 완료 */}
                 <div className="flex justify-end pt-2">
+                  {canRun(useCompleteStocktakingSession, useGenerateAdjustments) && (
                   <Button
                     variant="default"
                     onClick={handleComplete}
@@ -578,6 +594,7 @@ export function SessionDetailDrawer({ row, open, onOpenChange }: Props) {
                   >
                     {completeMutation.isPending ? '처리 중...' : '실사 완료'}
                   </Button>
+                  )}
                 </div>
               </>
             )}

@@ -78,6 +78,7 @@ function formatDate(str: string | undefined | null): string {
 
 type UseColumnsOptions = {
   onDetail: (row: AdminRecurringBillingRow) => void;
+  /** 넘기지 않으면 새로고침 버튼을 그리지 않는다(권한 없음). */
   onPollMember?: (row: AdminRecurringBillingRow) => void;
   onPollWithdrawal?: (row: AdminRecurringBillingRow) => void;
   view?: string;
@@ -210,7 +211,7 @@ export const useRecurringBillingTableColumns = ({
               >
                 상세
               </Button>
-              {showPollMember && (
+              {showPollMember && onPollMember && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -220,7 +221,7 @@ export const useRecurringBillingTableColumns = ({
                   심사 새로고침
                 </Button>
               )}
-              {showPollWithdrawal && (
+              {showPollWithdrawal && onPollWithdrawal && (
                 <Button
                   size="sm"
                   variant="outline"

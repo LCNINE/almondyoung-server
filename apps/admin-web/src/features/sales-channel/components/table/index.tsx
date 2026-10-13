@@ -5,6 +5,7 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { useChannels, useDeleteChannel } from '@/lib/api/domains/sales-channel';
 import { useDataTable } from '@/hooks/use-data-table';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { useSalesChannelTableColumns } from '@/hooks/table/columns/use-sales-channel-table-columns';
 import { useSalesChannelTableQuery } from '@/hooks/table/query/use-sales-channel-table-query';
 import { DataTable } from '@/components/data-table';
@@ -14,7 +15,8 @@ import { SalesChannelFilters } from '../filter-box';
 const PAGE_SIZE = 20;
 
 type SalesChannelTableProps = {
-  onEdit: (channel: ChannelDto) => void;
+  /** 넘기지 않으면 수정 버튼을 그리지 않는다(권한 없음). */
+  onEdit?: (channel: ChannelDto) => void;
 };
 
 export function SalesChannelTable({ onEdit }: SalesChannelTableProps) {
@@ -32,6 +34,7 @@ export function SalesChannelTable({ onEdit }: SalesChannelTableProps) {
     error,
   } = useChannels(query);
   const deleteChannel = useDeleteChannel();
+  const { canRun } = usePermissionCheck();
 
   const channels = channelsResponse?.data ?? [];
 
@@ -66,9 +69,11 @@ export function SalesChannelTable({ onEdit }: SalesChannelTableProps) {
 
   const columns = useSalesChannelTableColumns({
     onEdit,
-    onDelete: (channel) => {
-      void handleDelete(channel);
-    },
+    onDelete: canRun(useDeleteChannel)
+      ? (channel) => {
+          void handleDelete(channel);
+        }
+      : undefined,
   });
 
   const { table } = useDataTable({

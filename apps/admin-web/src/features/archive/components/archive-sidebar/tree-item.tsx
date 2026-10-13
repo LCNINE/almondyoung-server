@@ -29,14 +29,17 @@ export type DropZone = 'before' | 'inside' | 'after';
 /** 트리에서 끌어낸 것이 «아카이브 문서»임을 알리는 형식. 편집기 본문이 이걸 보고 받는다. */
 export const ARCHIVE_PAGE_DRAG_TYPE = 'application/x-archive-page';
 
+/** 쓰기 동작(추가·삭제·이동)은 권한이 없으면 넘기지 않는다 — 넘기지 않은 동작의 버튼·메뉴는 그리지 않는다. */
 export type TreeItemActions = {
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
-  onCreateChild: (parentId: string) => void;
-  onDelete: (node: ArchiveTreeNode) => void;
-  onMoveStep: (node: ArchiveTreeNode, direction: -1 | 1) => void;
-  onOutdent: (node: ArchiveTreeNode) => void;
-  onIndent: (node: ArchiveTreeNode) => void;
+  onCreateChild?: (parentId: string) => void;
+  onDelete?: (node: ArchiveTreeNode) => void;
+  move?: {
+    onMoveStep: (node: ArchiveTreeNode, direction: -1 | 1) => void;
+    onOutdent: (node: ArchiveTreeNode) => void;
+    onIndent: (node: ArchiveTreeNode) => void;
+  };
   onDragStart: (node: ArchiveTreeNode) => void;
   onDragEnd: () => void;
   onDrop: (target: ArchiveTreeNode, zone: DropZone) => void;
@@ -74,18 +77,19 @@ function TreeItemComponent({
   const [menuOpen, setMenuOpen] = useState(false);
   const expanded = expandedIds.has(node.id);
   const isActive = node.id === activeId;
+  const { move, onCreateChild, onDelete } = actions;
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     // 이동 명령은 메뉴에만 있었는데 메뉴 버튼이 탭 순서 밖이라 키보드로는 닿지 않았다.
     // Alt+방향키로 직접 옮기고, 메뉴 자체는 컨텍스트 메뉴 키로 연다.
-    if (event.altKey) {
-      const move: Record<string, () => void> = {
-        ArrowUp: () => actions.onMoveStep(node, -1),
-        ArrowDown: () => actions.onMoveStep(node, 1),
-        ArrowRight: () => actions.onIndent(node),
-        ArrowLeft: () => actions.onOutdent(node),
+    if (event.altKey && move) {
+      const moveKeys: Record<string, () => void> = {
+        ArrowUp: () => move.onMoveStep(node, -1),
+        ArrowDown: () => move.onMoveStep(node, 1),
+        ArrowRight: () => move.onIndent(node),
+        ArrowLeft: () => move.onOutdent(node),
       };
-      const run = move[event.key];
+      const run = moveKeys[event.key];
       if (run) {
         event.preventDefault();
         run();
@@ -93,8 +97,8 @@ function TreeItemComponent({
       }
     }
     if (
-      event.key === 'ContextMenu' ||
-      (event.shiftKey && event.key === 'F10')
+      (move || onDelete) &&
+      (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10'))
     ) {
       event.preventDefault();
       setMenuOpen(true);
@@ -211,66 +215,76 @@ function TreeItemComponent({
           {node.title || '제목 없음'}
         </span>
 
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label={`${node.title || '제목 없음'} 안에 하위 페이지 추가`}
-          onClick={(event) => {
-            event.stopPropagation();
-            actions.onCreateChild(node.id);
-          }}
-          className="flex size-7 shrink-0 items-center justify-center rounded hover:bg-sidebar-accent focus-visible:opacity-100 lg:size-6 lg:opacity-0 lg:group-hover:opacity-100"
-        >
-          <Plus className="size-3.5" aria-hidden />
-        </button>
+        {onCreateChild && (
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label={`${node.title || '제목 없음'} 안에 하위 페이지 추가`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onCreateChild(node.id);
+            }}
+            className="flex size-7 shrink-0 items-center justify-center rounded hover:bg-sidebar-accent focus-visible:opacity-100 lg:size-6 lg:opacity-0 lg:group-hover:opacity-100"
+          >
+            <Plus className="size-3.5" aria-hidden />
+          </button>
+        )}
 
-        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              tabIndex={-1}
-              aria-label={`${node.title || '제목 없음'} 페이지 메뉴`}
-              onClick={(event) => event.stopPropagation()}
-              className="flex size-7 shrink-0 items-center justify-center rounded hover:bg-sidebar-accent focus-visible:opacity-100 data-[state=open]:opacity-100 lg:size-6 lg:opacity-0 lg:group-hover:opacity-100"
-            >
-              <MoreHorizontal className="size-3.5" aria-hidden />
-            </button>
-          </DropdownMenuTrigger>
-          {/* 드래그가 유일한 이동 수단이면 키보드만 쓰는 사람은 순서를 못 바꾼다(WCAG 2.2 «끌기 동작»). */}
-          <DropdownMenuContent align="start" className="w-56">
-            <DropdownMenuItem onSelect={() => actions.onMoveStep(node, -1)}>
-              <ArrowUp className="size-4" aria-hidden />
-              위로 이동
-              <DropdownMenuShortcut>Alt&nbsp;↑</DropdownMenuShortcut>
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => actions.onMoveStep(node, 1)}>
-              <ArrowDown className="size-4" aria-hidden />
-              아래로 이동
-              <DropdownMenuShortcut>Alt&nbsp;↓</DropdownMenuShortcut>
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => actions.onIndent(node)}>
-              <CornerDownRight className="size-4" aria-hidden />위 페이지의
-              하위로
-              <DropdownMenuShortcut>Alt&nbsp;→</DropdownMenuShortcut>
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() => actions.onOutdent(node)}
-              disabled={!node.parentId}
-            >
-              <CornerLeftUp className="size-4" aria-hidden />
-              상위로 빼기
-              <DropdownMenuShortcut>Alt&nbsp;←</DropdownMenuShortcut>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              variant="destructive"
-              onSelect={() => actions.onDelete(node)}
-            >
-              <Trash2 className="size-4" aria-hidden />
-              휴지통으로
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {(move || onDelete) && (
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                tabIndex={-1}
+                aria-label={`${node.title || '제목 없음'} 페이지 메뉴`}
+                onClick={(event) => event.stopPropagation()}
+                className="flex size-7 shrink-0 items-center justify-center rounded hover:bg-sidebar-accent focus-visible:opacity-100 data-[state=open]:opacity-100 lg:size-6 lg:opacity-0 lg:group-hover:opacity-100"
+              >
+                <MoreHorizontal className="size-3.5" aria-hidden />
+              </button>
+            </DropdownMenuTrigger>
+            {/* 드래그가 유일한 이동 수단이면 키보드만 쓰는 사람은 순서를 못 바꾼다(WCAG 2.2 «끌기 동작»). */}
+            <DropdownMenuContent align="start" className="w-56">
+              {move && (
+                <>
+                  <DropdownMenuItem onSelect={() => move.onMoveStep(node, -1)}>
+                    <ArrowUp className="size-4" aria-hidden />
+                    위로 이동
+                    <DropdownMenuShortcut>Alt&nbsp;↑</DropdownMenuShortcut>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => move.onMoveStep(node, 1)}>
+                    <ArrowDown className="size-4" aria-hidden />
+                    아래로 이동
+                    <DropdownMenuShortcut>Alt&nbsp;↓</DropdownMenuShortcut>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => move.onIndent(node)}>
+                    <CornerDownRight className="size-4" aria-hidden />위
+                    페이지의 하위로
+                    <DropdownMenuShortcut>Alt&nbsp;→</DropdownMenuShortcut>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => move.onOutdent(node)}
+                    disabled={!node.parentId}
+                  >
+                    <CornerLeftUp className="size-4" aria-hidden />
+                    상위로 빼기
+                    <DropdownMenuShortcut>Alt&nbsp;←</DropdownMenuShortcut>
+                  </DropdownMenuItem>
+                </>
+              )}
+              {move && onDelete && <DropdownMenuSeparator />}
+              {onDelete && (
+                <DropdownMenuItem
+                  variant="destructive"
+                  onSelect={() => onDelete(node)}
+                >
+                  <Trash2 className="size-4" aria-hidden />
+                  휴지통으로
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       {expanded && node.children.length > 0 ? (

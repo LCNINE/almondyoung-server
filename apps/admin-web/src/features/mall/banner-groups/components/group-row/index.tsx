@@ -21,6 +21,8 @@ import type { BannerGroupDto } from '@/lib/types/dto/products';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import { toast } from 'sonner';
 import { ActiveSwitch } from '@/components/common/active-switch';
+import { BlockedReason } from '@/components/auth/blocked-reason';
+import { usePermissionCheck } from '@/hooks/use-permission';
 
 /** 시안(Figma 10:40814) 실측 */
 const THUMB_SLOTS = 3;
@@ -38,12 +40,15 @@ const EMPTY_SLOT_BG = {
 
 type Props = {
   group: BannerGroupDto;
-  onDelete: () => void;
+  /** 넘기지 않으면 삭제 버튼을 그리지 않는다(권한 없음) */
+  onDelete?: () => void;
 };
 
 export function BannerGroupRow({ group, onDelete }: Props) {
   const { data: banners = [] } = useBannersByGroup(group.id);
   const updateMutation = useUpdateBannerGroup();
+  const { blockedReason } = usePermissionCheck();
+  const reason = blockedReason(useUpdateBannerGroup);
 
   const [confirmOff, setConfirmOff] = useState(false);
 
@@ -129,23 +134,30 @@ export function BannerGroupRow({ group, onDelete }: Props) {
         >
           <Link href={`/mall/banner-groups/${group.id}`}>수정</Link>
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onDelete}
-          className="text-destructive hover:text-destructive h-9 rounded-full border-[#e4e4e7] bg-white px-6"
-        >
-          삭제
-        </Button>
+        {onDelete && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onDelete}
+            className="text-destructive hover:text-destructive h-9 rounded-full border-[#e4e4e7] bg-white px-6"
+          >
+            삭제
+          </Button>
+        )}
       </div>
 
       <div className="flex justify-center">
-        <ActiveSwitch
-          checked={group.isActive}
-          disabled={updateMutation.isPending}
-          onCheckedChange={handleToggle}
-          aria-label={`${group.title} 표시 상태`}
-        />
+        <BlockedReason reason={reason}>
+          {(blocked) => (
+            <ActiveSwitch
+              {...blocked}
+              checked={group.isActive}
+              disabled={updateMutation.isPending}
+              onCheckedChange={reason ? undefined : handleToggle}
+              aria-label={`${group.title} 표시 상태`}
+            />
+          )}
+        </BlockedReason>
       </div>
 
       <AlertDialog open={confirmOff} onOpenChange={setConfirmOff}>

@@ -4,6 +4,9 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useOrderProgressSummary } from '@/lib/services/orders/queries';
 import { useQuarantineSummary } from '@/lib/services/channel/queries';
+import { useCan, useCanOpen } from '@/hooks/use-permission';
+import { CanOpen } from '@/components/auth/can';
+import { permissionLabel } from '@/lib/auth/permission-labels';
 import {
   BOARD_STAGES,
   BoardStageKey,
@@ -22,7 +25,14 @@ export default function StallBoardTemplate() {
     return () => clearInterval(id);
   }, []);
   const summary = useOrderProgressSummary();
-  const quarantine = useQuarantineSummary();
+  // 수집 격리 건수는 판매처 조회 권한이다 — 없으면 요청하지 않고 그 칸을 «가림»으로 그린다
+  const channelRead = useCan(['channel.account.read']);
+  const listingsAccess = useCanOpen('/mall/channel-listings');
+  const quarantine = useQuarantineSummary({ enabled: channelRead.status === 'ready' && channelRead.allowed });
+  const collectHidden =
+    channelRead.status === 'ready' && !channelRead.allowed
+      ? `${permissionLabel('channel.account.read')} 권한이 있어야 보입니다`
+      : null;
 
   const stages = summary.data?.stages ?? [];
   const hasSummary = summary.data !== undefined;
@@ -38,6 +48,7 @@ export default function StallBoardTemplate() {
       oldestAt: quarantine.isSuccess
         ? (quarantine.data?.oldestCreatedAt ?? null)
         : null,
+      hiddenReason: collectHidden,
     },
     ...BOARD_STAGES.slice(1, 9).map((b) => {
       const s = stages.find((x) => x.stage === b.key);
@@ -87,12 +98,23 @@ export default function StallBoardTemplate() {
         now={now}
       />
       {selected === 'collect' ? (
-        <Link
-          href="/mall/channel-listings"
-          className="rounded-lg border bg-white px-4 py-10 text-center text-sm"
+        <CanOpen
+          screen="/mall/channel-listings"
+          fallback={
+            listingsAccess.status === 'ready' ? (
+              <p className="rounded-lg border bg-white px-4 py-10 text-center text-sm text-muted-foreground">
+                수집 격리 목록을 볼 권한이 없습니다.
+              </p>
+            ) : null
+          }
         >
-          수집 격리 목록으로
-        </Link>
+          <Link
+            href="/mall/channel-listings"
+            className="rounded-lg border bg-white px-4 py-10 text-center text-sm"
+          >
+            수집 격리 목록으로
+          </Link>
+        </CanOpen>
       ) : (
         <StageOrders
           key={selected}

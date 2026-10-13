@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { useDigitalAssets, useVariantAssets, useSetVariantAssetLinks } from '@/lib/services/library';
 import type { DigitalAssetDto } from '@/lib/types/dto/library';
 import { toast } from 'sonner';
+import { usePermissionCheck } from '@/hooks/use-permission';
 
 interface VariantAssetSectionProps {
   variantId: string;
@@ -21,6 +22,8 @@ export function VariantAssetSection({ variantId }: VariantAssetSectionProps) {
   const { data: linked, isLoading: linkedLoading } = useVariantAssets(variantId);
   const { data: catalog, isLoading: catalogLoading } = useDigitalAssets({ limit: 100 });
   const setLinks = useSetVariantAssetLinks();
+  const { canRun } = usePermissionCheck();
+  const canEdit = canRun(useSetVariantAssetLinks);
 
   // 로컬 상태로 편집 — 저장 시점에 PUT 으로 replace
   const [editing, setEditing] = useState<string[] | null>(null);
@@ -67,7 +70,7 @@ export function VariantAssetSection({ variantId }: VariantAssetSectionProps) {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-xs font-medium text-muted-foreground">디지털 자산 매칭</p>
-        {isDirty && (
+        {canEdit && isDirty && (
           <div className="flex items-center gap-1">
             <Button size="sm" variant="ghost" onClick={handleCancel}>
               취소
@@ -98,6 +101,7 @@ export function VariantAssetSection({ variantId }: VariantAssetSectionProps) {
                         <span className="ml-2 text-muted-foreground">v{a.currentFileVersion.version}</span>
                       )}
                     </span>
+                    {canEdit && (
                     <Button
                       variant="ghost"
                       size="icon"
@@ -106,6 +110,7 @@ export function VariantAssetSection({ variantId }: VariantAssetSectionProps) {
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
+                    )}
                   </div>
                 );
               })}
@@ -114,6 +119,7 @@ export function VariantAssetSection({ variantId }: VariantAssetSectionProps) {
             <p className="text-xs text-muted-foreground">매칭된 자산이 없습니다.</p>
           )}
 
+          {canEdit && (
           <div className="rounded-md border bg-muted/20 p-2">
             <Input
               placeholder="자산 검색"
@@ -149,6 +155,7 @@ export function VariantAssetSection({ variantId }: VariantAssetSectionProps) {
               )}
             </div>
           </div>
+          )}
         </>
       )}
     </div>

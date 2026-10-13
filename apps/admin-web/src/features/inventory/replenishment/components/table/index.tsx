@@ -17,6 +17,7 @@ import {
   useAddToCart,
   useCreateTransferOrder,
 } from '@/lib/services/inventory';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type {
   PurchaseOrderType,
   ReplenishmentSuggestionRowDto,
@@ -58,6 +59,7 @@ export function ReplenishmentTable() {
     useReplenishmentSuggestions(action);
   const addToCart = useAddToCart();
   const createTransfer = useCreateTransferOrder();
+  const { canRun } = usePermissionCheck();
 
   const handleCart = async (row: ReplenishmentSuggestionRowDto) => {
     const purchase = purchaseAction(row);
@@ -219,7 +221,7 @@ export function ReplenishmentTable() {
                   className="space-x-1 text-right"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  {purchaseAction(row) && (
+                  {purchaseAction(row) && canRun(useAddToCart) && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -234,7 +236,7 @@ export function ReplenishmentTable() {
                       카트
                     </Button>
                   )}
-                  {transferAction(row) && (
+                  {transferAction(row) && canRun(useCreateTransferOrder) && (
                     <Button
                       size="sm"
                       variant="outline"

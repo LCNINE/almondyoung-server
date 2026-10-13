@@ -6,7 +6,8 @@ import { useDataTable } from '@/hooks/use-data-table';
 import { useHoldersTableColumns } from '@/hooks/table/columns/use-holders-table-columns';
 import { useHoldersTableFilters } from '@/hooks/table/filters/use-holders-table-filters';
 import { useHoldersTableQuery } from '@/hooks/table/query/use-holders-table-query';
-import { useHolders, useDeleteHolder } from '@/lib/services/inventory';
+import { useHolders, useDeleteHolder, useCreateHolder, useUpdateHolder } from '@/lib/services/inventory';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { HolderDto } from '@/lib/types/dto/inventory';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,14 +30,15 @@ export function HoldersTable() {
   const { data, isLoading, isFetching } = useHolders(query);
   const filters = useHoldersTableFilters();
   const deleteMutation = useDeleteHolder();
+  const { canRun } = usePermissionCheck();
 
   const [editRow, setEditRow] = useState<HolderDto | null>(null);
   const [deleteRow, setDeleteRow] = useState<HolderDto | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
   const columns = useHoldersTableColumns({
-    onEdit: setEditRow,
-    onDelete: setDeleteRow,
+    onEdit: canRun(useUpdateHolder) ? setEditRow : undefined,
+    onDelete: canRun(useDeleteHolder) ? setDeleteRow : undefined,
   });
 
   const rows = data?.data ?? [];
@@ -66,9 +68,11 @@ export function HoldersTable() {
   return (
     <>
       <div className="flex items-center gap-2 px-4 pt-4">
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          소유자 등록
-        </Button>
+        {canRun(useCreateHolder) && (
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            소유자 등록
+          </Button>
+        )}
       </div>
 
       <DataTable

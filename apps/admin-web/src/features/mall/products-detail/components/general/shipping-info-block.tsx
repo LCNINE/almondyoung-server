@@ -1,5 +1,6 @@
 'use client';
 
+import { BlockedReason } from '@/components/auth/blocked-reason';
 import { FormSelect } from '@/components/common/form';
 import { Label } from '@/components/ui/label';
 import {
@@ -47,6 +48,7 @@ export function ShippingInfoBlock({
   groups,
   disabled,
   digital,
+  blockedReason = null,
 }: {
   /** 빈 문자열이면 기본 설정 사용 */
   value: string;
@@ -54,6 +56,8 @@ export function ShippingInfoBlock({
   groups: ShippingGroup[] | undefined;
   disabled?: boolean;
   digital?: boolean;
+  /** 권한이 없으면 현재 설정은 보이고 바꾸지 못한다. */
+  blockedReason?: string | null;
 }) {
   // '개별설정' 라디오는 그 자체로 저장하지 않는다. 자동으로 아무 그룹이나 골라 저장하면
   // 라디오 한 번 잘못 눌러도 상품 배송비가 바뀌고 채널 재동기화까지 나간다.
@@ -98,26 +102,39 @@ export function ShippingInfoBlock({
       <div className="flex items-center gap-4">
         <Label className="shrink-0">배송정보</Label>
         <label className="flex items-center gap-1.5 text-sm">
-          <input
-            type="radio"
-            name="product-shipping-mode"
-            checked={!isCustom}
-            onChange={() => {
-              setCustomMode(false);
-              if (value) onChange('');
-            }}
-            disabled={disabled}
-          />
+          <BlockedReason reason={blockedReason}>
+            {(blocked) => (
+              <input
+                {...blocked}
+                type="radio"
+                name="product-shipping-mode"
+                checked={!isCustom}
+                onChange={() => {
+                  if (blockedReason) return;
+                  setCustomMode(false);
+                  if (value) onChange('');
+                }}
+                disabled={disabled}
+              />
+            )}
+          </BlockedReason>
           기본설정 사용
         </label>
         <label className="flex items-center gap-1.5 text-sm">
-          <input
-            type="radio"
-            name="product-shipping-mode"
-            checked={isCustom}
-            onChange={() => setCustomMode(true)}
-            disabled={disabled || customGroups.length === 0}
-          />
+          <BlockedReason reason={blockedReason}>
+            {(blocked) => (
+              <input
+                {...blocked}
+                type="radio"
+                name="product-shipping-mode"
+                checked={isCustom}
+                onChange={() => {
+                  if (!blockedReason) setCustomMode(true);
+                }}
+                disabled={disabled || customGroups.length === 0}
+              />
+            )}
+          </BlockedReason>
           개별설정
         </label>
       </div>
@@ -131,7 +148,7 @@ export function ShippingInfoBlock({
           }
           options={options}
           placeholder="배송비 그룹 선택"
-          disabled={disabled || !isCustom}
+          disabled={disabled || !isCustom || blockedReason !== null}
         />
         {isCustom && !value && (
           <p className="text-xs text-muted-foreground">

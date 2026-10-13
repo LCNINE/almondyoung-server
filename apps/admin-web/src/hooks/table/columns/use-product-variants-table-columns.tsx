@@ -26,6 +26,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { BlockedReason } from '@/components/auth/blocked-reason';
 import { AlertTriangle, PackagePlus, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -56,8 +57,11 @@ type MatchingActions = {
     patch: (policy: StockPolicyDto) => StockPolicyDto
   ) => void;
   onPolicyChange: (row: ProductVariantTableRow, policy: StockPolicyDto) => void;
+  /** 정책을 바꿀 권한이 없을 때의 이유 — 체크 상태는 보이고 바꾸지 못한다. */
+  policyBlockedReason?: string | null;
   onEditMatching: (row: ProductVariantTableRow) => void;
-  onAdjustStock: (row: ProductVariantTableRow) => void;
+  /** 넘기지 않으면 재고조정 버튼을 그리지 않는다(권한 없음). */
+  onAdjustStock?: (row: ProductVariantTableRow) => void;
 };
 
 export function useProductVariantsTableColumns(
@@ -175,26 +179,33 @@ export function useProductVariantsTableColumns(
       const info = row.matchingInfo;
       const pending = matchingActions?.pendingVariantId === row.id;
       const disabled = !matchingActions || !info || pending;
+      const blockedReason = matchingActions?.policyBlockedReason ?? null;
       return (
         // 헤더의 일괄 체크박스와 세로로 맞추려면 셀도 같은 가운데 정렬이어야 한다.
         <div className="flex justify-center w-full">
-          <Checkbox
-            checked={checked}
-            disabled={disabled}
-            aria-label={ariaLabel}
-            title={note}
-            onCheckedChange={(value) => {
-              if (!matchingActions || !info || pending) return;
-              matchingActions.onPolicyChange(
-                row,
-                nextPolicy(
-                  normalizeStockPolicy(info.stockPolicy),
-                  value === true
-                )
-              );
-            }}
-            onClick={(event) => event.stopPropagation()}
-          />
+          <BlockedReason reason={blockedReason}>
+            {(blocked) => (
+              <Checkbox
+                {...blocked}
+                checked={checked}
+                disabled={disabled}
+                aria-label={ariaLabel}
+                title={note}
+                onCheckedChange={(value) => {
+                  if (!matchingActions || !info || pending || blockedReason)
+                    return;
+                  matchingActions.onPolicyChange(
+                    row,
+                    nextPolicy(
+                      normalizeStockPolicy(info.stockPolicy),
+                      value === true
+                    )
+                  );
+                }}
+                onClick={(event) => event.stopPropagation()}
+              />
+            )}
+          </BlockedReason>
         </div>
       );
     };
@@ -429,19 +440,21 @@ export function useProductVariantsTableColumns(
                   (row.original.matchingInfo?.matching?.links?.length ?? 0) > 0;
                 return (
                   <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={!hasSku}
-                      title={hasSku ? undefined : '매칭된 SKU가 없습니다'}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        matchingActions.onAdjustStock(row.original);
-                      }}
-                    >
-                      <PackagePlus data-icon="inline-start" />
-                      재고조정
-                    </Button>
+                    {matchingActions.onAdjustStock && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!hasSku}
+                        title={hasSku ? undefined : '매칭된 SKU가 없습니다'}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          matchingActions.onAdjustStock?.(row.original);
+                        }}
+                      >
+                        <PackagePlus data-icon="inline-start" />
+                        재고조정
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="outline"

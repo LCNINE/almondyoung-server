@@ -5,6 +5,9 @@ import { Header } from '@/components/admin-ui-experimental/common/header/header'
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Can } from '@/components/auth/can';
+import { BlockedReason } from '@/components/auth/blocked-reason';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   Table,
   TableBody,
@@ -18,6 +21,7 @@ import {
   useRegionPaymentMethods,
   useUpdateRegion,
   usePutRegionPaymentMethods,
+  useCreateRegion,
 } from '@/lib/services/wallet';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
@@ -39,6 +43,9 @@ export default function RegionsTemplate() {
 
   const updateRegion = useUpdateRegion();
   const putMethods = usePutRegionPaymentMethods();
+  const { canRun, blockedReason } = usePermissionCheck();
+  const regionBlocked = blockedReason(useUpdateRegion);
+  const methodBlocked = blockedReason(usePutRegionPaymentMethods);
   const { data: matrix, isLoading: matrixLoading } =
     useRegionPaymentMethods(selectedCode);
 
@@ -125,7 +132,11 @@ export default function RegionsTemplate() {
       <Header
         title="리전·결제수단 관리"
         subtitle="리전(국가)별로 노출할 결제수단을 설정합니다. 실제 노출은 결제수단의 글로벌 활성화와 리전 활성화가 모두 켜진 경우입니다."
-        right={<Button onClick={() => setCreateOpen(true)}>리전 추가</Button>}
+        right={
+          <Can run={useCreateRegion}>
+            <Button onClick={() => setCreateOpen(true)}>리전 추가</Button>
+          </Can>
+        }
       />
 
       <div className="flex gap-4 px-6 pb-6">
@@ -160,14 +171,22 @@ export default function RegionsTemplate() {
                   <span className="text-sm">{r.name}</span>
                   {!isActive && <Badge variant="secondary">비활성</Badge>}
                 </button>
-                <Switch
-                  checked={isActive}
-                  onCheckedChange={(v) =>
-                    handleRegionActiveToggle(r.code, r.isActive, v)
-                  }
-                  disabled={isSaving}
-                  aria-label={`리전 ${r.code} 활성화`}
-                />
+                <BlockedReason reason={regionBlocked}>
+                  {(blocked) => (
+                    <Switch
+                      {...blocked}
+                      checked={isActive}
+                      onCheckedChange={
+                        regionBlocked
+                          ? undefined
+                          : (v) =>
+                              handleRegionActiveToggle(r.code, r.isActive, v)
+                      }
+                      disabled={isSaving}
+                      aria-label={`리전 ${r.code} 활성화`}
+                    />
+                  )}
+                </BlockedReason>
               </div>
             );
           })}
@@ -188,19 +207,22 @@ export default function RegionsTemplate() {
                     ? `${matrix.region.name} (${matrix.region.code}) 결제수단`
                     : '불러오는 중...'}
                 </div>
-                <Button
-                  onClick={handleSave}
-                  disabled={
-                    !hasChanges || isSaving || (hasMethodChanges && !matrix)
-                  }
-                  size="sm"
-                  className={[
-                    'bg-slate-900 text-white hover:bg-slate-800',
-                    'disabled:bg-slate-200 disabled:text-slate-500 disabled:opacity-100',
-                  ].join(' ')}
-                >
-                  {isSaving ? '저장 중...' : '변경사항 저장'}
-                </Button>
+                {(canRun(useUpdateRegion) ||
+                  canRun(usePutRegionPaymentMethods)) && (
+                  <Button
+                    onClick={handleSave}
+                    disabled={
+                      !hasChanges || isSaving || (hasMethodChanges && !matrix)
+                    }
+                    size="sm"
+                    className={[
+                      'bg-slate-900 text-white hover:bg-slate-800',
+                      'disabled:bg-slate-200 disabled:text-slate-500 disabled:opacity-100',
+                    ].join(' ')}
+                  >
+                    {isSaving ? '저장 중...' : '변경사항 저장'}
+                  </Button>
+                )}
               </div>
               <Table>
                 <TableHeader>
@@ -268,14 +290,26 @@ export default function RegionsTemplate() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Switch
-                            checked={regionEnabled}
-                            onCheckedChange={(v) =>
-                              handleMethodToggle(it.code, it.regionEnabled, v)
-                            }
-                            disabled={isSaving || it.isRetired}
-                            aria-label={`${it.displayName} ${matrix.region.code} 활성화`}
-                          />
+                          <BlockedReason reason={methodBlocked}>
+                            {(blocked) => (
+                              <Switch
+                                {...blocked}
+                                checked={regionEnabled}
+                                onCheckedChange={
+                                  methodBlocked
+                                    ? undefined
+                                    : (v) =>
+                                        handleMethodToggle(
+                                          it.code,
+                                          it.regionEnabled,
+                                          v
+                                        )
+                                }
+                                disabled={isSaving || it.isRetired}
+                                aria-label={`${it.displayName} ${matrix.region.code} 활성화`}
+                              />
+                            )}
+                          </BlockedReason>
                         </TableCell>
                       </TableRow>
                     );

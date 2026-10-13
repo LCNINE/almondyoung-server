@@ -18,6 +18,8 @@ type Props = {
   onTitleBlur: () => void;
   onIconChange: (icon: string | null) => void;
   onCoverChange: (coverUrl: string | null) => void;
+  /** 편집 권한이 없으면 제목·아이콘·커버를 보여 주기만 한다. */
+  readOnly?: boolean;
 };
 
 export function PageHeader({
@@ -28,6 +30,7 @@ export function PageHeader({
   onTitleBlur,
   onIconChange,
   onCoverChange,
+  readOnly = false,
 }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
@@ -71,33 +74,41 @@ export function PageHeader({
           {/* 커버는 장식이라 alt 를 비워 보조기술이 건너뛰게 한다. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={coverUrl} alt="" className="size-full object-cover" />
-          <div className="absolute right-4 top-4 flex gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              onClick={() => fileRef.current?.click()}
-            >
-              커버 바꾸기
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              aria-label="커버 없애기"
-              onClick={() => onCoverChange(null)}
-            >
-              <X className="size-4" aria-hidden />
-            </Button>
-          </div>
+          {readOnly ? null : (
+            <div className="absolute right-4 top-4 flex gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => fileRef.current?.click()}
+              >
+                커버 바꾸기
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                aria-label="커버 없애기"
+                onClick={() => onCoverChange(null)}
+              >
+                <X className="size-4" aria-hidden />
+              </Button>
+            </div>
+          )}
         </div>
       ) : null}
 
       {/* 제목은 본문 첫 블록과 같은 좌측선에 서야 한다 — 여백 규칙을 본문과 맞춘다. */}
       <div className="mx-auto max-w-3xl pl-11 pr-4 pt-6 sm:pr-6 sm:pt-8 min-[1160px]:pl-6">
         <div className="group/actions flex min-h-9 items-center gap-1">
-          <IconPicker icon={icon} onChange={onIconChange} />
-          {coverUrl ? null : (
+          {readOnly && !icon ? null : (
+            <IconPicker
+              icon={icon}
+              onChange={onIconChange}
+              disabled={readOnly}
+            />
+          )}
+          {coverUrl || readOnly ? null : (
             <Button
               type="button"
               variant="ghost"
@@ -122,6 +133,7 @@ export function PageHeader({
           rows={1}
           spellCheck={false}
           placeholder="제목 없음"
+          readOnly={readOnly}
           aria-label="문서 제목"
           onChange={(event) =>
             onTitleChange(event.target.value.replace(/\n/g, ''))

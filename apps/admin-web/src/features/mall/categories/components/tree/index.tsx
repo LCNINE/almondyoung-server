@@ -18,8 +18,11 @@ interface Props {
   search: string;
   onSearchChange: (q: string) => void;
   onSelect: (id: string) => void;
-  onAddRoot: () => void;
-  onAddChild: (parentId: string) => void;
+  /** 넘기지 않으면 추가 버튼을 그리지 않는다(권한 없음). */
+  onAddRoot?: () => void;
+  onAddChild?: (parentId: string) => void;
+  /** false 면 드래그로 순서·부모를 바꾸지 못한다(권한 없음). */
+  canRearrange: boolean;
   pending: ReturnType<typeof usePendingTreeChanges>;
 }
 
@@ -32,6 +35,7 @@ export function CategoryTreePane({
   onSelect,
   onAddRoot,
   onAddChild,
+  canRearrange,
   pending,
 }: Props) {
   const { effectiveExpanded, matchedIds, toggleExpand } = useTreeExpansion(tree, search);
@@ -43,15 +47,18 @@ export function CategoryTreePane({
   });
 
   const dragProps = useMemo(
-    () => (node: CategoryNode) => ({
-      draggable: true,
-      onDragStart: (e: React.DragEvent<HTMLDivElement>) => drag.onDragStart(e, node),
-      onDragOver: (e: React.DragEvent<HTMLDivElement>) => drag.onDragOver(e, node),
-      onDragLeave: drag.onDragLeave,
-      onDrop: (e: React.DragEvent<HTMLDivElement>) => drag.onDropNode(e, node),
-      onDragEnd: drag.onDragEnd,
-    }),
-    [drag],
+    () => (node: CategoryNode) =>
+      canRearrange
+        ? {
+            draggable: true,
+            onDragStart: (e: React.DragEvent<HTMLDivElement>) => drag.onDragStart(e, node),
+            onDragOver: (e: React.DragEvent<HTMLDivElement>) => drag.onDragOver(e, node),
+            onDragLeave: drag.onDragLeave,
+            onDrop: (e: React.DragEvent<HTMLDivElement>) => drag.onDropNode(e, node),
+            onDragEnd: drag.onDragEnd,
+          }
+        : { draggable: false },
+    [drag, canRearrange],
   );
 
   const totalCount = useMemo(() => countNodes(tree), [tree]);
@@ -66,9 +73,11 @@ export function CategoryTreePane({
             전체 {totalCount} · 활성 {activeCount}
           </span>
         </div>
+        {onAddRoot && (
         <Button size="sm" variant="outline" onClick={onAddRoot}>
           <Plus className="mr-1 h-3.5 w-3.5" /> 최상위 추가
         </Button>
+        )}
       </div>
 
       <div className="border-b p-2">
@@ -118,9 +127,11 @@ export function CategoryTreePane({
         ) : tree.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
             <p>아직 카테고리가 없습니다.</p>
+            {onAddRoot && (
             <Button size="sm" variant="outline" onClick={onAddRoot}>
               <Plus className="mr-1 h-3.5 w-3.5" /> 첫 카테고리 만들기
             </Button>
+            )}
           </div>
         ) : (
           tree.map((node) => (

@@ -28,7 +28,6 @@ import {
   useCancelShipmentOutstanding,
   canRecallShipment,
   createIdempotentCommand,
-  FULFILLMENT_SCOPES,
   getServerDenyMessage,
   isRecoverableOperation,
   useFulfillmentOperation,
@@ -99,7 +98,7 @@ export function ShipmentActions({
 }: {
   shipment: ShipmentAdminDetail;
 }) {
-  const { can, isPermissionLoading } = usePermissionCheck();
+  const { canRun } = usePermissionCheck();
   const split = useSplitShipment();
   const reviseRecipient = useReviseShipmentRecipient();
   const plan = usePlanShipment();
@@ -140,13 +139,8 @@ export function ShipmentActions({
     cancel.isPending ||
     recall.isPending;
 
-  const operate =
-    !isPermissionLoading && !!can([FULFILLMENT_SCOPES.operate]);
-  const overrideRecipient =
-    !isPermissionLoading && !!can([FULFILLMENT_SCOPES.overrideRecipient]);
   const canRecall =
-    !isPermissionLoading &&
-    !!can([FULFILLMENT_SCOPES.recall]) &&
+    canRun(useRecallShipment) &&
     canRecallShipment(
       shipment.status,
       shipment.dispatchAttempts.map((attempt) => attempt.status)
@@ -362,7 +356,7 @@ export function ShipmentActions({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
-        {operate && (
+        {canRun(useSplitShipment) && (
           <Button
             size="sm"
             variant="outline"
@@ -371,7 +365,7 @@ export function ShipmentActions({
             분할
           </Button>
         )}
-        {overrideRecipient && (
+        {canRun(useReviseShipmentRecipient) && (
           <Button
             size="sm"
             variant="outline"
@@ -380,12 +374,12 @@ export function ShipmentActions({
             수령인 변경
           </Button>
         )}
-        {operate && (
+        {canRun(usePlanShipment) && (
           <Button size="sm" variant="outline" onClick={() => setAction('plan')}>
             계획 확정
           </Button>
         )}
-        {operate && (
+        {canRun(useCancelShipmentOutstanding) && (
           <Button
             size="sm"
             variant="destructive"

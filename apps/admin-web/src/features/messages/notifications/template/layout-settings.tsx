@@ -15,6 +15,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { useEmailLayout, useUpdateEmailLayout } from '@/lib/services/notification';
 import { MessagePreview } from '../components/message-preview';
 import { MailImageUploadButton } from '../components/mail-image-upload-button';
+import { Can } from '@/components/auth/can';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
+import { usePermissionCheck } from '@/hooks/use-permission';
 
 const SAMPLE_BODY = [
   '## 주문이 접수되었습니다',
@@ -37,6 +40,8 @@ const COLOR_FIELDS: { key: keyof EmailLayoutSettings; label: string }[] = [
 export default function EmailLayoutSettingsTemplate() {
   const layout = useEmailLayout();
   const updateLayout = useUpdateEmailLayout();
+  const { canRun } = usePermissionCheck();
+  const canEdit = canRun(useUpdateEmailLayout);
   const [draft, setDraft] = useState<EmailLayoutSettings>(DEFAULT_EMAIL_LAYOUT);
 
   useEffect(() => {
@@ -77,10 +82,11 @@ export default function EmailLayoutSettingsTemplate() {
 
       <div className="grid grid-cols-1 gap-6 px-6 pb-6 lg:grid-cols-2">
         <section className="flex flex-col gap-4">
+          <PermissionReadOnly run={useUpdateEmailLayout}>
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-2">
               <Label htmlFor="logo-url">로고 이미지 주소</Label>
-              <MailImageUploadButton onInsert={(_markdown, url) => set({ logoUrl: url })} />
+              {canEdit && <MailImageUploadButton onInsert={(_markdown, url) => set({ logoUrl: url })} />}
             </div>
             <Input
               id="logo-url"
@@ -105,6 +111,7 @@ export default function EmailLayoutSettingsTemplate() {
                       } as Partial<EmailLayoutSettings>)
                     }
                     className="size-9 shrink-0 rounded border"
+                    disabled={!canEdit}
                   />
                   <Input
                     value={String(draft[key] ?? '')}
@@ -142,6 +149,7 @@ export default function EmailLayoutSettingsTemplate() {
             </p>
           </div>
 
+          <Can run={useUpdateEmailLayout}>
           <div className="flex justify-end gap-2">
             <Button
               type="button"
@@ -155,6 +163,8 @@ export default function EmailLayoutSettingsTemplate() {
               {updateLayout.isPending ? <Loader className="animate-spin" /> : '저장'}
             </Button>
           </div>
+          </Can>
+          </PermissionReadOnly>
         </section>
 
         <section className="flex flex-col gap-3">

@@ -5,6 +5,8 @@ import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
 import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
+import { Can } from '@/components/auth/can';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
 import { useUserRoles, useReplaceUserRoles } from '@/lib/services/users';
 import { useAdminRoles } from '@/lib/services/roles';
 import { useDataTable } from '@/hooks/use-data-table';
@@ -77,17 +79,21 @@ function UserRoleTable({ userId }: { userId: string }) {
 
   return (
     <div>
-      <DataTable
-        table={table}
-        count={rolesWithSelection.length}
-        pageSize={PAGE_SIZE}
-        noRecords={{ message: '역할이 없습니다.' }}
-      />
-      <div className="flex justify-end p-4 border-t">
-        <Button onClick={handleSave} disabled={!hasChanges || isPending}>
-          {isPending ? '저장 중...' : '저장'}
-        </Button>
-      </div>
+      <PermissionReadOnly run={useReplaceUserRoles}>
+        <DataTable
+          table={table}
+          count={rolesWithSelection.length}
+          pageSize={PAGE_SIZE}
+          noRecords={{ message: '역할이 없습니다.' }}
+        />
+      </PermissionReadOnly>
+      <Can run={useReplaceUserRoles}>
+        <div className="flex justify-end p-4 border-t">
+          <Button onClick={handleSave} disabled={!hasChanges || isPending}>
+            {isPending ? '저장 중...' : '저장'}
+          </Button>
+        </div>
+      </Can>
     </div>
   );
 }

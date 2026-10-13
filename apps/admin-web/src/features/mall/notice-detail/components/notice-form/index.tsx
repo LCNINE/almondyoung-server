@@ -14,6 +14,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useUpdateNotice } from '@/lib/services/products';
+import { Can } from '@/components/auth/can';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
 import type { NoticeDto, UpdateNoticeDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
 import { localInputToIso } from '@/lib/utils/datetime';
@@ -92,6 +94,7 @@ export function NoticeForm({ notice, onCancel, onSaved }: Props) {
 
   return (
     <div className="p-6">
+      <PermissionReadOnly run={useUpdateNotice}>
       <div className="grid max-w-3xl gap-4">
         <div className="grid gap-1.5">
           <Label htmlFor="title">
@@ -216,11 +219,14 @@ export function NoticeForm({ notice, onCancel, onSaved }: Props) {
               취소
             </Button>
           )}
-          <Button onClick={handleSave} disabled={updateMutation.isPending}>
-            저장
-          </Button>
+          <Can run={useUpdateNotice}>
+            <Button onClick={handleSave} disabled={updateMutation.isPending}>
+              저장
+            </Button>
+          </Can>
         </div>
       </div>
+      </PermissionReadOnly>
     </div>
   );
 }

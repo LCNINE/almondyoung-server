@@ -5,6 +5,7 @@
 
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { Can } from '@/components/auth/can';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { parseServerError } from '@/lib/api/server-error';
@@ -53,6 +54,7 @@ export function CanceledPanel({ sessionId }: { sessionId: string }) {
       </div>
 
       <div className="flex items-center gap-3">
+        <Can run={usePurgeDrafts}>
         <Button
           type="button"
           disabled={purging}
@@ -63,6 +65,7 @@ export function CanceledPanel({ sessionId }: { sessionId: string }) {
           {purging && <Spinner size="sm" data-icon="inline-start" />}
           임시 데이터 정리
         </Button>
+        </Can>
         {stats && (
           <p className="text-sm text-muted-foreground">
             정리 {stats.purged}건 · 정리 실패 {stats.failed}건 · 남음{' '}

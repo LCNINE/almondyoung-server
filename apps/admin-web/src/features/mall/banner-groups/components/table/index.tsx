@@ -3,7 +3,12 @@
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useBannerGroups, useDeleteBannerGroup } from '@/lib/services/products';
+import {
+  useBannerGroups,
+  useCreateBannerGroup,
+  useDeleteBannerGroup,
+} from '@/lib/services/products';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { BannerGroupDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
 import { BannerGroupCreateDialog } from '../create-dialog';
@@ -14,6 +19,9 @@ import { CategoryTabs } from '../category-tabs';
 export function BannerGroupsTable() {
   const { data, isLoading } = useBannerGroups();
   const deleteMutation = useDeleteBannerGroup();
+  const { canRun } = usePermissionCheck();
+  const canCreate = canRun(useCreateBannerGroup);
+  const canDelete = canRun(useDeleteBannerGroup);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<BannerGroupDto | null>(null);
@@ -45,14 +53,16 @@ export function BannerGroupsTable() {
         <h2 className="text-[20px] leading-[18px] font-bold text-[#1f2937]">
           배너 그룹
         </h2>
-        <Button
-          size="sm"
-          className="ml-auto bg-[#f29219] hover:bg-[#df7b00]"
-          onClick={() => setCreateOpen(true)}
-        >
-          <Plus className="mr-1 h-4 w-4" />
-          그룹 만들기
-        </Button>
+        {canCreate && (
+          <Button
+            size="sm"
+            className="ml-auto bg-[#f29219] hover:bg-[#df7b00]"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus className="mr-1 h-4 w-4" />
+            그룹 만들기
+          </Button>
+        )}
       </div>
 
       {categories.length > 1 && (
@@ -80,21 +90,23 @@ export function BannerGroupsTable() {
             <p className="text-muted-foreground text-sm">
               등록된 배너 그룹이 없습니다.
             </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-3"
-              onClick={() => setCreateOpen(true)}
-            >
-              첫 그룹 만들기
-            </Button>
+            {canCreate && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => setCreateOpen(true)}
+              >
+                첫 그룹 만들기
+              </Button>
+            )}
           </div>
         ) : (
           rows.map((group) => (
             <BannerGroupRow
               key={group.id}
               group={group}
-              onDelete={() => setDeleteTarget(group)}
+              onDelete={canDelete ? () => setDeleteTarget(group) : undefined}
             />
           ))
         )}

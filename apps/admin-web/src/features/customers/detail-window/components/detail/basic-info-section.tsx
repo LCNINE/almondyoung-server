@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Can } from '@/components/auth/can';
 import type { CustomerProfile } from '@/lib/types/dto/customers';
 import { useUpdateUser } from '@/lib/services/customers';
 import { formatDate } from '@/lib/utils/date';
@@ -67,10 +68,17 @@ export function BasicInfoSection({
       icon={<User className="size-4 text-indigo-500" />}
       action={
         !editing ? (
-          <Button type="button" size="sm" variant="outline" onClick={startEdit}>
-            <Pencil className="mr-1 h-3.5 w-3.5" />
-            수정
-          </Button>
+          <Can run={useUpdateUser}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={startEdit}
+            >
+              <Pencil className="mr-1 h-3.5 w-3.5" />
+              수정
+            </Button>
+          </Can>
         ) : (
           <div className="flex gap-2">
             <Button

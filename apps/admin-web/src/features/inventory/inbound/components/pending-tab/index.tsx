@@ -5,7 +5,13 @@ import { DataTable } from '@/components/data-table';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useInboundPendingTableColumns } from '@/hooks/table/columns/use-inbound-pending-table-columns';
 import { useInboundPendingTableQuery } from '@/hooks/table/query/use-inbound-pending-table-query';
-import { useExpectedArrivals } from '@/lib/services/inventory';
+import {
+  useExpectedArrivals,
+  useIndividualInbound,
+  useSimpleFullscanInbound,
+  useSimpleInbound,
+} from '@/lib/services/inventory';
+import { Can } from '@/components/auth/can';
 import { Button } from '@/components/ui/button';
 import { ArrivalDetailDrawer } from './arrival-detail-drawer';
 import { ReceiveDialog } from '../receive-dialog';
@@ -38,9 +44,11 @@ export function PendingTab() {
   return (
     <>
       <div className="flex items-center gap-2 px-4 pt-4">
-        <Button size="sm" onClick={() => setReceiveOpen(true)} disabled={!defaultWarehouseId}>
-          바로 입고
-        </Button>
+        <Can run={[useSimpleInbound, useSimpleFullscanInbound, useIndividualInbound]}>
+          <Button size="sm" onClick={() => setReceiveOpen(true)} disabled={!defaultWarehouseId}>
+            바로 입고
+          </Button>
+        </Can>
         {data && (
           <span className="text-sm text-muted-foreground">
             입고 대기 {data.totalDocuments}건 / 남은 수량 {data.totalOutstandingQuantity.toLocaleString()}개

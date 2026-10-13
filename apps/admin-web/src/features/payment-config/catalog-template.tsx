@@ -4,6 +4,8 @@ import { Container } from '@/components/admin-ui-experimental/common/container/c
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { BlockedReason } from '@/components/auth/blocked-reason';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   Table,
   TableBody,
@@ -23,6 +25,8 @@ export default function PaymentMethodCatalogTemplate() {
   const { data, isLoading } = usePaymentMethodCatalog();
   const catalog = useMemo(() => data ?? [], [data]);
   const updateMutation = useUpdatePaymentMethodCatalog();
+  const { blockedReason } = usePermissionCheck();
+  const reason = blockedReason(useUpdatePaymentMethodCatalog);
 
   const handleToggle = async (code: string, next: boolean) => {
     try {
@@ -99,12 +103,19 @@ export default function PaymentMethodCatalogTemplate() {
                 </Badge>
               </TableCell>
               <TableCell className="text-right">
-                <Switch
-                  checked={c.isEnabled}
-                  onCheckedChange={(v) => handleToggle(c.code, v)}
-                  disabled={updateMutation.isPending || c.isRetired}
-                  aria-label={`${c.displayName} 글로벌 활성화`}
-                />
+                <BlockedReason reason={reason}>
+                  {(blocked) => (
+                    <Switch
+                      {...blocked}
+                      checked={c.isEnabled}
+                      onCheckedChange={
+                        reason ? undefined : (v) => handleToggle(c.code, v)
+                      }
+                      disabled={updateMutation.isPending || c.isRetired}
+                      aria-label={`${c.displayName} 글로벌 활성화`}
+                    />
+                  )}
+                </BlockedReason>
               </TableCell>
             </TableRow>
           ))}
