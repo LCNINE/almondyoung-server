@@ -4,7 +4,7 @@ import { type PrintOrderRow } from '../schema/print-order.schema';
 import { WowpressApiError, WowpressClient, WowpressUnauthorizedError } from '../wowpress/wowpress.client';
 import { WOWPRESS_CANCELLABLE, WOWPRESS_STATUS_CANCELLED, type WowpressOrderDetail } from '../wowpress/wowpress.types';
 import { WOWPRESS_DEADLINE_MS } from '../wowpress/wowpress.transport';
-import { ORDER_UNCONFIRMED_ERROR } from './print-order-submit.manager';
+import { ORDER_LOOKUP_PENDING_ERROR, ORDER_UNCONFIRMED_ERROR } from './print-order-submit.manager';
 import { PrintOrderReader } from './print-order.reader';
 import { isPreservedLastError, PrintOrderRepository } from './print-order.repository';
 
@@ -292,6 +292,8 @@ export class PrintOrderCancellationManager {
       if (!(await this.repository.compareAndSet(row, { status: 'cancelling' }))) return this.reread(row, run, depth);
       return this.sendCancel({ ...row, status: 'cancelling' }, row.vendorOrderNumber, run, depth);
     }
+    // 응답을 잃어 ordkey 조회를 기다리는 행이다. 운영자에게 넘기면 예정된 조회가 사라지므로 그대로 두고 다시 시도하게 한다
+    if (run.mode === 'gate' && row.status === 'pending' && row.lastError === ORDER_LOOKUP_PENDING_ERROR) return 'busy';
     // 주문권을 썼는데 번호가 없으면 와우프레스에 주문이 들어갔는지 모르므로 자동으로 취소 처리하지 않는다
     if (row.orderAttemptedAt) return this.refuse(row, ORDER_UNCONFIRMED_ERROR, run, depth);
     if (

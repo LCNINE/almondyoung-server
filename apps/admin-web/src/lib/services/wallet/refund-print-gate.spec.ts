@@ -1,20 +1,33 @@
-import { isPrintRefundBlocked, partialCancelHref } from './refund-print-gate';
+import { partialCancelHref, printRefundGate } from './refund-print-gate';
 
-describe('isPrintRefundBlocked', () => {
-  it('제작 접수된 인쇄 줄이 없으면 막지 않는다', () => {
-    expect(isPrintRefundBlocked(false, false)).toBe(false);
+describe('printRefundGate', () => {
+  const opts = { medusaOrder: true, moneyCaptured: true, defectConfirmed: false };
+  const collected = { hasActivePrint: false, channelOrderId: 'order_01' };
+
+  it('인쇄 줄이 없고 수집된 주문이면 연다', () => {
+    expect(printRefundGate(collected, opts)).toBe('open');
   });
 
-  it('제작 접수된 인쇄 줄이 있으면 상품 하자 체크 전에는 막는다', () => {
-    expect(isPrintRefundBlocked(true, false)).toBe(true);
-  });
-
-  it('상품 하자 체크가 있으면 연다', () => {
-    expect(isPrintRefundBlocked(true, true)).toBe(false);
+  it('인쇄 줄이 있으면 하자 체크 전에는 막고, 체크하면 연다', () => {
+    const print = { hasActivePrint: true, channelOrderId: 'order_01' };
+    expect(printRefundGate(print, opts)).toBe('print');
+    expect(printRefundGate(print, { ...opts, defectConfirmed: true })).toBe('open');
   });
 
   it('인쇄 상태를 아직 모르면 막는다', () => {
-    expect(isPrintRefundBlocked(undefined, false)).toBe(true);
+    expect(printRefundGate(undefined, opts)).toBe('unknown');
+  });
+
+  it('Medusa 주문인데 아직 수집 전이면 받은 돈을 돌려주는 동작은 막는다', () => {
+    const uncollected = { hasActivePrint: false, channelOrderId: null };
+    expect(printRefundGate(uncollected, opts)).toBe('uncollected');
+    expect(printRefundGate(uncollected, { ...opts, defectConfirmed: true })).toBe('uncollected');
+  });
+
+  it('입금 전 거절처럼 돈이 안 오간 취소나 Medusa 주문이 아닌 결제는 수집 여부와 상관없이 연다', () => {
+    const uncollected = { hasActivePrint: false, channelOrderId: null };
+    expect(printRefundGate(uncollected, { ...opts, moneyCaptured: false })).toBe('open');
+    expect(printRefundGate(uncollected, { ...opts, medusaOrder: false })).toBe('open');
   });
 });
 

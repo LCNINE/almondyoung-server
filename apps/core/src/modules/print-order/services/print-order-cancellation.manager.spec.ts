@@ -13,6 +13,7 @@ import {
   PrintOrderCancellationManager,
 } from './print-order-cancellation.manager';
 import { PrintOrderReader } from './print-order.reader';
+import { ORDER_LOOKUP_PENDING_ERROR } from './print-order-submit.manager';
 import { isPreservedLastError, PrintOrderRepository } from './print-order.repository';
 
 const noNetwork: WowpressTransport = () => Promise.reject(new Error('real wowpress call in test'));
@@ -283,6 +284,19 @@ describe('PrintOrderCancellationManager', () => {
       );
       expect(store.get('po-a').status).toBe('submitted');
       expect(store.get('po-b').status).toBe('submitted');
+      expect(wowpress.cancel).not.toHaveBeenCalled();
+    });
+
+    it('asks to retry and leaves a row waiting for its ordkey lookup untouched', async () => {
+      const r = row({ status: 'pending', orderAttemptedAt: new Date(), lastError: ORDER_LOOKUP_PENDING_ERROR });
+      const { manager, store, wowpress } = setup(r);
+      const error = await manager
+        .cancelForOrder('so-1', 'gate', undefined, { keepOnRefusal: true })
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ConflictError);
+      expect(error).not.toBeInstanceOf(PrintInProductionError);
+      expect((error as Error).message).toBe(PRINT_CANCEL_RETRY_MESSAGE);
+      expect(store.get(r.id)).toMatchObject({ status: 'pending', lastError: ORDER_LOOKUP_PENDING_ERROR });
       expect(wowpress.cancel).not.toHaveBeenCalled();
     });
 
