@@ -172,6 +172,7 @@ export class LineCompositionEditManager {
       return this.changeFrozenLine(trx, {
         salesOrderId,
         salesOrderLineId: line.id,
+        fulfillmentOrderId: fo.id,
         before,
         after,
         source: 'operator',
@@ -259,6 +260,7 @@ export class LineCompositionEditManager {
       await this.changeFrozenLine(trx, {
         salesOrderId,
         salesOrderLineId: line.id,
+        fulfillmentOrderId: fo?.id ?? null,
         before,
         after: next,
         source: 'matching',
@@ -277,6 +279,8 @@ export class LineCompositionEditManager {
     input: {
       salesOrderId: string;
       salesOrderLineId: string;
+      /** 박스 링크용. 일괄 적용 경로에서 FO 를 못 찾았으면 null — 그때는 박스가 없어 이 오류까지 오지 않는다 */
+      fulfillmentOrderId: string | null;
       before: readonly CompositionItem[];
       after: CompositionItem[];
       source: CompositionSource;
@@ -293,7 +297,16 @@ export class LineCompositionEditManager {
     const blocking = boxes.filter(isBlockingBox);
     if (blocking.length > 0) {
       throw conflict('LINE_BOX_NOT_DRAFT', `Line ${input.salesOrderLineId} is in boxes that are not editable`, {
-        boxes: blocking.map((box) => ({ shipmentId: box.shipmentId, status: box.status, batchId: box.batchId })),
+        // 응답 필터는 허용목록 details 만 통과시킨다(GlobalExceptionFilter) — 최상위 칸은 화면에 도착하지 않는다
+        details: {
+          fulfillmentOrderId: input.fulfillmentOrderId,
+          boxes: blocking.map((box) => ({
+            shipmentId: box.shipmentId,
+            status: box.status,
+            batchId: box.batchId,
+            hasActiveWaybill: box.hasActiveWaybill,
+          })),
+        },
       });
     }
     const shipmentIds = boxes.map((box) => box.shipmentId).sort();

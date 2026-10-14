@@ -4,6 +4,8 @@ export interface ParsedServerError {
   message: string;
   denied: boolean;
   conflict: boolean;
+  /** 응답 본문의 details 원본 — 모양 검증은 쓰는 쪽 몫이다. 없으면 undefined */
+  details: unknown;
 }
 
 type ErrorLike = {
@@ -12,7 +14,8 @@ type ErrorLike = {
   response?: unknown;
 };
 
-function record(value: unknown): Record<string, unknown> | null {
+/** 객체 검사 직후 좁히기 — 응답 본문을 읽는 쪽이 같은 헬퍼를 쓰게 내보낸다 */
+export function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object'
     ? (value as Record<string, unknown>)
     : null;
@@ -53,6 +56,7 @@ export function parseServerError(
     message,
     denied: status === 403,
     conflict: status === 409,
+    details: responseData?.details,
   };
 }
 

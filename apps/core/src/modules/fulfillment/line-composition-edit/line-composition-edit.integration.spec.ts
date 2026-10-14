@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { GlobalExceptionFilter } from '@app/shared';
 import { eq } from 'drizzle-orm';
 import { CORE_ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -45,6 +46,22 @@ function wire(tx: DbTx) {
 async function lineOf(tx: DbTx, id: string) {
   const [line] = await tx.select().from(wmsTables.salesOrderLines).where(eq(wmsTables.salesOrderLines.id, id));
   return line;
+}
+
+// 매니저 예외를 실제 응답 필터에 통과시킨다 — PR 2 는 예외 본문만 보고, 필터가 박스 목록을 버리는 걸 못 잡았다
+function throughFilter(error: unknown): unknown {
+  let body: unknown;
+  const reply = {
+    status: () => reply,
+    send: (value: unknown) => {
+      body = value;
+    },
+  };
+  const host = {
+    switchToHttp: () => ({ getResponse: () => reply, getRequest: () => ({ method: 'PUT', url: '/' }) }),
+  } as never;
+  new GlobalExceptionFilter().catch(error, host);
+  return body;
 }
 
 describeIfDb('주문별 라인 구성 지정 (#1063 스펙 §7.1)', () => {
@@ -184,19 +201,17 @@ describeIfDb('주문별 라인 구성 지정 (#1063 스펙 §7.1)', () => {
       });
       await tx.update(wmsTables.shipments).set({ status: 'planned' }).where(eq(wmsTables.shipments.id, fx.shipmentId));
 
-      await expect(
-        w.edit.manager.assignToLine(
-          fx.salesOrderId,
-          fx.lineIds[0],
-          [{ skuId: fx.spareSkuIds[0], qtyPerUnit: 1 }],
-          null,
-          actor,
-          tx,
-        ),
-      ).rejects.toMatchObject({
-        response: {
-          code: 'LINE_BOX_NOT_DRAFT',
-          boxes: [{ shipmentId: fx.shipmentId, status: 'planned', batchId: null }],
+      const error = await w.edit.manager
+        .assignToLine(fx.salesOrderId, fx.lineIds[0], [{ skuId: fx.spareSkuIds[0], qtyPerUnit: 1 }], null, actor, tx)
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(throughFilter(error)).toMatchObject({
+        code: 'LINE_BOX_NOT_DRAFT',
+        details: {
+          fulfillmentOrderId: fx.fulfillmentOrderId,
+          boxes: [{ shipmentId: fx.shipmentId, status: 'planned', batchId: null, hasActiveWaybill: false }],
         },
       });
     });

@@ -262,6 +262,37 @@ export class FulfillmentOrderResponseDto {
   shipments?: FulfillmentV2ShipmentSummaryDto[];
 }
 
+export class LineCompositionItemViewDto {
+  @ApiProperty()
+  skuId: string;
+
+  @ApiProperty()
+  skuCode: string;
+
+  @ApiProperty()
+  skuName: string;
+
+  @ApiProperty({ description: '판매 1개당 SKU 수량' })
+  qtyPerUnit: number;
+}
+
+export class FulfillmentOrderLineViewDto {
+  @ApiProperty()
+  salesOrderLineId: string;
+
+  @ApiProperty()
+  productName: string;
+
+  @ApiProperty()
+  quantity: number;
+
+  @ApiProperty({ enum: ['matching', 'operator'], nullable: true, description: 'NULL = 아직 굳히지 않음' })
+  compositionSource: 'matching' | 'operator' | null;
+
+  @ApiProperty({ type: [LineCompositionItemViewDto] })
+  composition: LineCompositionItemViewDto[];
+}
+
 /** V2 read contract deliberately has no singular `shipment` or `invoice`. */
 export class FulfillmentOrderV2ResponseDto {
   @ApiProperty()
@@ -293,6 +324,9 @@ export class FulfillmentOrderV2ResponseDto {
 
   @ApiProperty({ type: [FulfillmentOrderItemDto] })
   items: FulfillmentOrderItemDto[];
+
+  @ApiProperty({ type: [FulfillmentOrderLineViewDto], description: 'FO 항목이 가리키는 판매주문 라인과 그 구성' })
+  lines: FulfillmentOrderLineViewDto[];
 
   @ApiProperty({ type: [ReservationSummaryDto] })
   reservations: ReservationSummaryDto[];

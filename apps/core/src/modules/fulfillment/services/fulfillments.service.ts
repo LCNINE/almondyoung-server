@@ -11,6 +11,7 @@ import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.sch
 import { eq, inArray, desc, sql, count, and } from 'drizzle-orm';
 import { FULFILLMENT_EVENTS } from '../events';
 import { LineCompositionReader } from '../../product-matching/line-composition/line-composition.reader';
+import { selectLineCompositionViews } from '../../product-matching/line-composition/line-composition-views';
 import { LineCompositionManager } from '../../product-matching/line-composition/line-composition.manager';
 import {
   blocksFulfillment,
@@ -933,11 +934,16 @@ export class FulfillmentsService {
         reservedQty: lines.reduce((total, line) => total + line.reservedQty, 0),
       };
     });
+    const salesOrderLineIds = uniqueStrings(
+      itemsWithSku.map((item) => item.salesOrderLineId).filter((lineId): lineId is string => lineId !== null),
+    );
+    const lineViews = await selectLineCompositionViews(db, salesOrderLineIds);
     return {
       ...fulfillmentOrder,
       progress,
       shipments: shipmentList,
       items: itemsWithSku,
+      lines: lineViews,
       reservations: v2Reservations,
       adminAvailableActions,
       blockedReasons,
