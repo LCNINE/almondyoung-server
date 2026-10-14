@@ -24,6 +24,8 @@ import { LibraryModule } from './modules/library/library.module';
 import { CustomerServiceModule } from './modules/customer-service/customer-service.module';
 import { ArchiveModule } from './modules/archive/archive.module';
 import { DemoModule } from './modules/demo/demo.module';
+import { PrintOrderModule } from './modules/print-order/print-order.module';
+import { PrintOrderAdminModule } from './modules/print-order/print-order-admin.module';
 
 @Module({
   imports: [
@@ -60,6 +62,8 @@ import { DemoModule } from './modules/demo/demo.module';
     LibraryModule,
     CustomerServiceModule,
     ArchiveModule,
+    PrintOrderModule,
+    PrintOrderAdminModule,
     DemoModule.forEnvironment(),
   ],
   controllers: [AppController],

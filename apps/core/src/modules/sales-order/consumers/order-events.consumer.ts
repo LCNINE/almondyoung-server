@@ -8,6 +8,7 @@ import { ChannelOrderChangeService } from '../channel-order-change/channel-order
 import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
 import { ChannelCancelSettler } from '../channel-cancel-request/channel-cancel-settler';
 import { LibraryService } from '../../library/services/library.service';
+import { PrintOrderCancellationManager } from '../../print-order/services/print-order-cancellation.manager';
 import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
 import { FulfillmentWorkflowGate } from '../../fulfillment/services/fulfillment-workflow-gate.service';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
@@ -39,6 +40,7 @@ export class OrderEventsConsumer {
     private readonly channelOrderChanges: ChannelOrderChangeService,
     private readonly cancelSettler: ChannelCancelSettler,
     private readonly cancelRequests: ChannelCancelRequestService,
+    private readonly printCancellation: PrintOrderCancellationManager,
   ) {}
 
   private async checkAndRecordEvent(
@@ -213,7 +215,7 @@ export class OrderEventsConsumer {
     });
 
     try {
-      await this.dbService.run(async (tx) => {
+      const cancelled = await this.dbService.run(async (tx) => {
         const salesOrderId = await this.resolveSalesOrderId(payload, tx);
         if (!salesOrderId) {
           throw new NotFoundException(`Sales order ${payload.orderId} not found for OrderCancelled`);
@@ -226,15 +228,14 @@ export class OrderEventsConsumer {
           payload,
           tx,
         );
-        if (alreadyProcessed) return;
-
         const lines = await this.resolveCancelledLines(salesOrderId, payload.cancelledLines, tx);
         if (lines === null) {
           this.logger.log(
             `[OrderCancelled] No resolvable cancelled lines for salesOrder=${salesOrderId}, skipping as no-op`,
           );
-          return;
+          return null;
         }
+        if (alreadyProcessed) return { salesOrderId, lines };
 
         await this.salesOrdersService.cancel(
           salesOrderId,
@@ -257,7 +258,10 @@ export class OrderEventsConsumer {
         if (!lines) await this.cancelSettler.settleCancelled(salesOrderId, tx);
 
         this.logger.log(`[OrderCancelled] Cancelled sales order: ${salesOrderId}, reason: ${payload.reason}`);
+        return { salesOrderId, lines };
       });
+      // 와우프레스 호출은 트랜잭션 밖에서 한다. 이미 취소된 주문이라 막을 수 없으니 거절·장애는 보드에 남긴다
+      if (cancelled) await this.printCancellation.cancelForOrder(cancelled.salesOrderId, 'record', cancelled.lines);
     } catch (error) {
       this.logger.error(`[OrderCancelled] Failed to process: ${payload.orderId}`, error.stack);
       throw error;

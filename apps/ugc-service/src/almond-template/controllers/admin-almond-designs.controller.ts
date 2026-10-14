@@ -21,6 +21,7 @@ import {
   ALMOND_PRINT_MIN_DPI,
 } from '../constants/almond-template.constants';
 import { AdminAlmondDesignResponseDto, AlmondPrintLinkResponseDto } from '../dto/almond-design.dto';
+import { parsePrintFormatAndDpi } from './print-link-params';
 import { AlmondDesignsService } from '../services/almond-designs.service';
 import { type AlmondPrintFormat } from '../types/almond-design.types';
 
@@ -45,7 +46,8 @@ export class AdminAlmondDesignsController {
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiParam({ name: 'side', enum: ['front.jpg', 'back.jpg'] })
   @ApiOperation({
-    summary: '고객 시안 미리보기 JPG. 인쇄 파일과 같은 원본을 긴 변 1200px 로 줄여 어드민 Lambda 응답 상한(6MB) 안에 둔다',
+    summary:
+      '고객 시안 미리보기 JPG. 인쇄 파일과 같은 원본을 긴 변 1200px 로 줄여 어드민 Lambda 응답 상한(6MB) 안에 둔다',
   })
   @ApiProduces('image/jpeg')
   @ApiResponse({ status: 200 })
@@ -58,7 +60,11 @@ export class AdminAlmondDesignsController {
     if (side !== 'front.jpg' && side !== 'back.jpg') throw new BadRequestException('side 는 front.jpg 또는 back.jpg');
     const jpg = await this.service.renderPreview(id, side === 'front.jpg' ? 'front' : 'back');
     if (jpg === null) throw new NotFoundError(`Almond design has no back side: ${id}`);
-    reply.headers({ 'content-type': 'image/jpeg', 'x-content-type-options': 'nosniff', 'cache-control': 'private, no-store' });
+    reply.headers({
+      'content-type': 'image/jpeg',
+      'x-content-type-options': 'nosniff',
+      'cache-control': 'private, no-store',
+    });
     return jpg;
   }
 
@@ -81,16 +87,11 @@ export class AdminAlmondDesignsController {
     @Query('dpi', new DefaultValuePipe(ALMOND_PRINT_DEFAULT_DPI), ParseIntPipe) dpi: number,
     @Req() request: FastifyRequest,
   ): Promise<AlmondPrintLinkResponseDto> {
-    if (format !== 'pdf' && format !== 'eps' && format !== 'jpg') {
-      throw new BadRequestException('format 은 pdf·eps·jpg 중 하나여야 합니다.');
-    }
-    if (dpi < ALMOND_PRINT_MIN_DPI || dpi > ALMOND_PRINT_MAX_DPI) {
-      throw new BadRequestException(`dpi 는 ${ALMOND_PRINT_MIN_DPI}~${ALMOND_PRINT_MAX_DPI} 사이여야 합니다.`);
-    }
+    const parsed = parsePrintFormatAndDpi(format, dpi);
     const header = request.headers.authorization;
     const accessToken = header?.startsWith('Bearer ') ? header.slice(7) : request.cookies.accessToken;
     if (!accessToken) throw new UnauthorizedException();
-    return this.service.printLink(id, format, dpi, accessToken);
+    return this.service.printLink(id, parsed.format, parsed.dpi, accessToken);
   }
 
   @Get(':id/print.eps')

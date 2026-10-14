@@ -1,6 +1,7 @@
 'use client';
 
 import { walletApi } from '@/lib/api/domains/wallet';
+import { salesOrders } from '@/lib/api/domains/orders';
 import type {
   PaymentIntentListQuery,
   RefundListQuery,
@@ -216,5 +217,14 @@ export const useRegionPaymentMethods = (code: string | null) => {
     queryFn: () => walletApi.getRegionPaymentMethods(code as string),
     staleTime: 30 * 1000,
     enabled: !!code,
+  });
+};
+
+// 결제 상세의 환불·결제취소 제한 판단. 결제 상태가 바뀌면 다시 읽도록 결제 키 아래에 둔다
+export const usePrintStatusByIntent = (intentId: string) => {
+  return useQuery({
+    queryKey: [...walletQueryKeys.intentDetail(intentId), 'print-status'],
+    queryFn: () => salesOrders.printStatusByIntent(intentId),
+    staleTime: 30 * 1000,
   });
 };

@@ -4,6 +4,7 @@ import { EventsModule } from '@app/events';
 import { CoreInventoryModule } from '../inventory/core/inventory.module';
 import { SharedModule } from '../inventory/shared/shared.module';
 import { ProductMatchingModule } from '../product-matching/product-matching.module';
+import { PrintOrderModule } from '../print-order/print-order.module';
 import { LibraryModule } from '../library/library.module';
 import { ProductSellableQuantityModule } from '../inventory/product-sellable-quantity/product-sellable-quantity.module';
 import { FulfillmentOrderCreationBacklogModule } from '../fulfillment/backlog/fulfillment-order-creation-backlog.module';
@@ -73,6 +74,9 @@ import { ChannelCancelRequestService } from './channel-cancel-request/channel-ca
     FulfillmentOrderCreationBacklogModule,
 
     ProductSellableQuantityModule,
+
+    // 인쇄 외주 송장·상태 (배송조회·이행 단계에 반영)
+    PrintOrderModule,
   ],
   controllers: [
     SalesOrdersController,
@@ -115,6 +119,7 @@ import { ChannelCancelRequestService } from './channel-cancel-request/channel-ca
     SalesOrderAmendmentsService,
     SalesOrderQueryService, // Fulfillment BC (FO 생성 시 SO/라인 조회)
     ChannelCancelRequestService, // Fulfillment BC (리컨실러 36번 — 정산 재발행)
+    StoreSalesOrdersService, // 와우프레스 발주 어드민 (취소 마무리 뒤 운영자 취소)
   ],
 })
 export class SalesOrderModule {}

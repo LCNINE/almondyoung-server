@@ -217,5 +217,13 @@
     "sortSelectAria": "Select review sort order",
     "filterPhotoOnly": "Photo reviews only",
     "bestBadge": "Best"
+  },
+  "customOrderNotice": {
+    "title": "Custom-made product notice",
+    "body1": "This is a made-to-order product printed exactly as the design you created.",
+    "body2": "Production is requested as soon as you pay, so <strong>cancellations and refunds are not possible after payment.</strong>",
+    "body3": "Please be sure to double-check text typos, photos, and size before paying.",
+    "body4": "(If the product is defective, such as a printing defect, we will exchange or refund it.)",
+    "agree": "I have read the above and agree that cancellations and refunds are not possible after payment"
   }
 }

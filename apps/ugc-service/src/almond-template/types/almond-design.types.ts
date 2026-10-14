@@ -5,6 +5,13 @@ export type AlmondDesignEntity = InferSelectModel<typeof almondDesigns>;
 export type AlmondDesignView = Pick<AlmondDesignEntity, 'id' | 'userId' | 'design' | 'templateId' | 'createdAt'> & {
   hasBack: boolean;
 };
+export interface AlmondDesignInfo {
+  id: string;
+  productId: string;
+  widthMm: number;
+  heightMm: number;
+  hasBack: boolean;
+}
 export type AlmondDesignPrintSource = Pick<AlmondDesignEntity, 'id' | 'frontSvg' | 'backSvg'>;
 
 export interface AlmondDesignRecord {

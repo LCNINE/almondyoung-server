@@ -806,6 +806,34 @@
       "when": 1791859220233,
       "tag": "20261013024020_add-sales-order-line-compositions",
       "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1791950014881,
+      "tag": "20261014035334_add-print-orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1791954461699,
+      "tag": "20261014050741_add-print-order-attempted-at",
+      "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1791960702830,
+      "tag": "20261014065142_add-print-order-cancel-resolved",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1791962829248,
+      "tag": "20261014072709_add-print-order-sales-cancel-failed",
+      "breakpoints": true
     }
   ]
 }

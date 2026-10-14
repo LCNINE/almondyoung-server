@@ -25,6 +25,7 @@ import {
   AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { authorizationSchema } from '@app/authorization';
+import { printOrders } from '../../print-order/schema/print-order.schema';
 
 /*───────────────────────────
  * ENUM DECLARATIONS
@@ -1370,6 +1371,7 @@ export const salesOrderLines = pgTable(
     compositionSource: varchar('composition_source', { length: 16 }).$type<'matching' | 'operator'>(),
     compositionSetAt: timestamp('composition_set_at', { withTimezone: true }),
     compositionSetBy: uuid('composition_set_by'),
+    almondDesignId: uuid('almond_design_id'),
 
     productName: varchar('product_name', { length: 255 }).notNull(),
     quantity: integer('quantity').notNull(),
@@ -3555,6 +3557,7 @@ export const dispatchAttemptSources = pgTable(
  * TABLES ONLY SCHEMA (for TypedDatabase)
  *──────────────────────────*/
 export const wmsTables = {
+  printOrders,
   suppliers,
   supplierCategories,
   supplierCategoryMappings,

@@ -1,0 +1,1 @@
+ALTER TABLE "print_orders" ADD COLUMN "sales_cancel_failed_at" timestamp with time zone;

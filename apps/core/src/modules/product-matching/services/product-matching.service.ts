@@ -717,6 +717,7 @@ export class ProductMatchingService {
       } else if (excludeMatched) {
         // «해결된 라인 제외» 판정은 라인 구성 판정의 SQL 짝 하나로 한다(#1063) — 1회 지정·void 로 풀린 라인도 빠진다
         conditions.push(sql`NOT ${lineResolvedSql()}`);
+        conditions.push(isNull(salesOrderLines.almondDesignId));
       }
 
       if (salesChannel) {

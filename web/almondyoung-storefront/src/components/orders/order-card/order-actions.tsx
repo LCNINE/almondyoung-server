@@ -1,5 +1,6 @@
 "use client"
 
+import { useCancelFailureAlert } from "@/components/orders/cancel-failure-alert"
 import {
   CancelReasonForm,
   type CancelReasonCode,
@@ -94,6 +95,7 @@ export default function OrderActions({
     coreActions?.cancelUnavailableReason ?? cancelUnavailableReasonProp
   const channelInfo = coreActions?.channelInfo ?? channelInfoProp
   const tActions = useTranslations("mypage.order.actions")
+  const { showCancelFailure, cancelFailureAlert } = useCancelFailureAlert()
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [isConfirmed, setIsConfirmed] = useState(false)
@@ -166,7 +168,8 @@ export default function OrderActions({
               : undefined,
         })
         if (!result.success) {
-          toast.error(result.error)
+          setShowCancelDialog(false)
+          showCancelFailure(result.error)
           return
         }
         setShowCancelDialog(false)
@@ -176,7 +179,8 @@ export default function OrderActions({
       } catch (err: unknown) {
         // 인증 실패는 error.tsx 가 토큰 복구를 처리하도록 전파
         if ((err as { digest?: string }).digest === "UNAUTHORIZED") throw err
-        toast.error(tActions("cancelError"))
+        setShowCancelDialog(false)
+        showCancelFailure(tActions("cancelError"))
       }
     })
   }
@@ -466,6 +470,7 @@ export default function OrderActions({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {cancelFailureAlert}
     </>
   )
 }

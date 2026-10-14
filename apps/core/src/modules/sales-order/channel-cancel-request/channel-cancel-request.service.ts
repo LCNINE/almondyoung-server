@@ -25,6 +25,10 @@ export class ChannelCancelRequestService {
     return this.manager.request(input);
   }
 
+  precheck(salesOrderId: string, lines?: CancelRequestInput['lines']): Promise<void> {
+    return this.manager.precheck(salesOrderId, lines);
+  }
+
   findBySourceKey(salesOrderId: string, sourceKey: string): Promise<CancelRequestView | null> {
     return this.db.run(async (tx) => {
       const row = await this.reader.findBySourceKey(salesOrderId, sourceKey, tx);

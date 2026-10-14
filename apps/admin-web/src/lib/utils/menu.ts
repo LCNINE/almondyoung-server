@@ -17,6 +17,7 @@ export interface MenuItem {
    * 이 파일은 순수 데이터이고 훅을 가질 수 없다.
    */
   hasQuarantineBadge?: boolean;
+  hasPrintOrderBadge?: boolean;
 }
 
 export interface MainMenu {
@@ -155,6 +156,12 @@ const allMenus: MainMenu[] = [
         id: 'stall-board',
         title: '정체 보드',
         path: '/order/stall-board',
+      },
+      {
+        id: 'print-orders',
+        title: '와우프레스 발주',
+        path: '/order/print-orders',
+        hasPrintOrderBadge: true,
       },
       {
         id: 'shipment',

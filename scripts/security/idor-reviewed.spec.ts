@@ -165,15 +165,15 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core GET /store/orders/:id/actions': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:517',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:591',
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
-    note: 'getActions(81-84줄) -> findSoOrThrow({id: orderId}, customerId) 호출(82줄), 실제 소유권 검증은 468-491줄 findSoOrThrow 내부 488줄.',
+    note: 'getActions(107-110줄) -> findSoOrThrow({id: orderId}, customerId) 호출(108줄), 실제 소유권 검증은 571-594줄 findSoOrThrow 내부 591줄.',
   },
   'core GET /store/orders/:id/tracking': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:517',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:591',
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
-    note: 'getTracking(1081-1084줄) -> findSoOrThrow({id: orderId}, customerId)(1082줄).',
+    note: 'getTracking(1207-1210줄) -> findSoOrThrow({id: orderId}, customerId)(1208줄).',
   },
   'core GET /store/orders/:orderId/exchange-requests/:exchangeRequestId': {
     verdict: 'SAFE',
@@ -195,9 +195,9 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core GET /store/orders/by-channel-order/:channelOrderId/actions': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:517',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:591',
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
-    note: "getActionsByChannelOrder(427-430줄) -> findSoOrThrow({channelOrderId, salesChannel:'medusa'}, customerId)(428줄).",
+    note: "getActionsByChannelOrder(530-533줄) -> findSoOrThrow({channelOrderId, salesChannel:'medusa'}, customerId)(531줄).",
   },
   'core GET /store/orders/by-channel-order/:channelOrderId/exchange-requests/:exchangeRequestId': {
     verdict: 'SAFE',
@@ -225,13 +225,13 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core GET /store/orders/by-channel-order/:channelOrderId/tracking': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:517',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:591',
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
-    note: "getTrackingByChannelOrder(1076-1079줄) -> findSoOrThrow({channelOrderId, salesChannel:'medusa'}, customerId)(1077줄).",
+    note: "getTrackingByChannelOrder(1202-1205줄) -> findSoOrThrow({channelOrderId, salesChannel:'medusa'}, customerId)(1203줄).",
   },
   'core GET /store/orders/by-wallet-intent/:walletIntentId/digital-exercised': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:114',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:123',
     predicate: 'eq(inventoryTables.salesOrders.customerId, customerId),',
     note: 'hasExercisedDigitalByWalletIntent; walletIntentId+customerId 복합 조건으로 직접 조회, 못찾으면 false 반환(존재 노출 없음).',
   },
@@ -243,9 +243,9 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core POST /store/orders/:id/cancel-request': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:517',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:591',
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
-    note: 'cancelRequest(106-114줄) -> findSoOrThrow({id: orderId}, customerId)(112줄) -> processCancelRequest 는 이미 소유권 검증된 so 만 사용.',
+    note: 'cancelRequest(132-140줄) -> findSoOrThrow({id: orderId}, customerId)(138줄) -> processCancelRequest 는 이미 소유권 검증된 so 만 사용.',
   },
   'core POST /store/orders/:orderId/exchange-requests': {
     verdict: 'SAFE',
@@ -261,9 +261,9 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core POST /store/orders/by-channel-order/:channelOrderId/cancel-request': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:517',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:591',
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
-    note: "cancelRequestByChannelOrder(456-464줄) -> findSoOrThrow({channelOrderId, salesChannel:'medusa'}, customerId)(462줄).",
+    note: "cancelRequestByChannelOrder(559-567줄) -> findSoOrThrow({channelOrderId, salesChannel:'medusa'}, customerId)(565줄).",
   },
   'core POST /store/orders/by-channel-order/:channelOrderId/exchange-requests': {
     verdict: 'SAFE',
@@ -279,7 +279,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core POST /store/orders/by-channel-order/actions/batch': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:477',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:551',
     predicate: 'eq(inventoryTables.salesOrders.customerId, customerId),',
     note: 'getActionsByChannelOrderBatch; channelOrderIds IN + customerId 조건으로 직접 필터 (타인 주문은 결과셋에서 조용히 제외됨, DTO에 @ArrayMaxSize(100)).',
   },

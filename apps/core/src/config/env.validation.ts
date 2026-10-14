@@ -74,6 +74,18 @@ export const almondyoungEnvSchema = z
     WALLET_BASE_URL: z.string().url().optional(),
     WALLET_API_KEY: z.string().min(1).optional(),
 
+    // 아몬드템플릿 → 와우프레스 자동 발주. 미설정이면 발주 워커만 실패로 남는다
+    WOWPRESS_AUTH_UID: z.string().optional(),
+    WOWPRESS_AUTH_PW: z.string().optional(),
+    WOWPRESS_SENDER_NAME: z.string().optional(),
+    WOWPRESS_SENDER_TEL: z.string().optional(),
+    WOWPRESS_SENDER_ZIPCODE: z.string().optional(),
+    WOWPRESS_SENDER_ADDR1: z.string().optional(),
+    WOWPRESS_SENDER_ADDR2: z.string().optional(),
+    UGC_SERVICE_URL: z.string().optional(),
+    UGC_INTERNAL_KEY: z.string().optional(),
+    PRINT_ORDER_SUBMIT_ENABLED: z.string().optional(),
+
     // OpenTelemetry
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
     OTEL_SERVICE_NAME: z.string().optional(),

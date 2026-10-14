@@ -30,6 +30,11 @@ import {
   calculateMembershipDiscount,
   getCartTotals,
 } from "@/lib/utils/price-utils"
+import {
+  CustomOrderNotice,
+  isCustomOrderPaymentBlocked,
+} from "@/domains/almond-template/components/custom-order-notice"
+import { ensureCustomOrderAgreement } from "@/domains/almond-template/custom-order-agreement"
 import { MobileCTA, PCFixedCTA } from "domains/checkout/components/cta"
 import { MobileHeader, PCHeader } from "domains/checkout/components/header"
 import { useTranslations } from "next-intl"
@@ -170,6 +175,12 @@ export default function CheckoutTemplate({
   }, [checkoutCartId, gaEcommerce])
 
   const [loading, setLoading] = useState(false)
+  const [customOrderAgreed, setCustomOrderAgreed] = useState(false)
+  const needsAgreement = isCustomOrderPaymentBlocked(cartItems, false)
+  const paymentBlocked = isCustomOrderPaymentBlocked(
+    cartItems,
+    customOrderAgreed
+  )
   const [error, setError] = useState<string | null>(null)
 
   // 배송 메모 상태
@@ -242,6 +253,25 @@ export default function CheckoutTemplate({
         shippingMemo,
         readShippingMemo(cart?.metadata)
       )
+
+      const agreementSaved = await ensureCustomOrderAgreement({
+        needsAgreement,
+        agreed: customOrderAgreed,
+        saveAgreement: () =>
+          updateCart(
+            {
+              metadata: {
+                custom_order_notice_agreed_at: new Date().toISOString(),
+              },
+            },
+            checkoutCartId
+          ),
+      })
+      if (!agreementSaved) {
+        toast.error(tProcess("toasts.unknownError"))
+        setLoading(false)
+        return
+      }
 
       if (requiresShipping && memoChanged) {
         await updateCart(
@@ -448,6 +478,16 @@ export default function CheckoutTemplate({
           <div className="lg:sticky lg:top-6 lg:w-[375px] lg:shrink-0">
             <PaymentTotalSection totals={cartTotals} />
 
+            {needsAgreement && (
+              <div className="mt-4">
+                <CustomOrderNotice
+                  withAgreement
+                  agreed={customOrderAgreed}
+                  onAgreeChange={setCustomOrderAgreed}
+                />
+              </div>
+            )}
+
             <div className="lg:hidden">
               <OrderConsentSection />
             </div>
@@ -477,11 +517,13 @@ export default function CheckoutTemplate({
         onPayment={handlePayment}
         loading={loading}
         totals={cartTotals}
+        disabled={paymentBlocked}
       />
       <MobileCTA
         onPayment={handlePayment}
         loading={loading}
         totals={cartTotals}
+        disabled={paymentBlocked}
       />
     </main>
   )

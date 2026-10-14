@@ -30,6 +30,7 @@ import {
   useTransition,
 } from "react"
 import { toast } from "sonner"
+import { CustomOrderNotice } from "@/domains/almond-template/components/custom-order-notice"
 import { useTranslations } from "next-intl"
 import ProductPreviewPrice from "../product-preview-price"
 import { ProductShippingNotice } from "../product-shipping-notice"
@@ -587,6 +588,7 @@ export default function ProductActions({
               })}
             </p>
           )}
+          {hasAlmondTemplate && <CustomOrderNotice />}
           <div className="flex w-full gap-x-3">
             {/* TODO: 재입고 알림 기능 추가 후 활성화
           {!allInStock && selectedItems.length > 0 ? (
@@ -680,6 +682,7 @@ export default function ProductActions({
         show={!inView}
         templateHref={templateHref}
         designAttached={!!almondDesignMetadata}
+        showCustomOrderNotice={hasAlmondTemplate}
         blockedLabel={
           almondSizeMismatch ? t("almondDesignSizeMismatch") : undefined
         }

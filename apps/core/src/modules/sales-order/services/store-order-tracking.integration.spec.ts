@@ -160,7 +160,10 @@ describeIfDb('Store order tracking V2 graph (DB integration, rollback-only)', ()
         },
       ]);
 
-      const service = new StoreSalesOrdersService({ db: tx } as never, {} as never, {} as WalletRefundClient, {} as never);
+      const service = new StoreSalesOrdersService({ db: tx } as never, {} as never, {} as WalletRefundClient, {} as never, {
+        forSalesOrder: () => Promise.resolve([]),
+        isAllOutsourced: () => Promise.resolve(false),
+      } as never, {} as never);
       const firstView = await service.getTracking(first.salesOrderId, customerId);
       const secondView = await service.getTracking(second.salesOrderId, customerId);
 

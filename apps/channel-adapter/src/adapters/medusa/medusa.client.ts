@@ -120,6 +120,7 @@ export interface MedusaOrder {
     quantity?: number;
     unit_price?: number;
     variant_id?: string;
+    metadata?: Record<string, unknown> | null;
     variant?: {
       id?: string;
       title?: string;
@@ -216,6 +217,7 @@ const ORDER_FIELDS = [
   'items.quantity',
   'items.unit_price',
   'items.variant_id',
+  'items.metadata',
   '+items.requires_shipping',
   '+items.variant',
   '+items.variant.metadata',

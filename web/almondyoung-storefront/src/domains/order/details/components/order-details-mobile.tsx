@@ -1,5 +1,6 @@
 "use client"
 
+import { useCancelFailureAlert } from "@/components/orders/cancel-failure-alert"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import OrderItemCartButton from "@/components/orders/order-card/order-item-cart-button"
 import { cartRequiresShipping, isDigitalItem } from "@/lib/api/medusa/shipping-method-policy"
@@ -75,6 +76,7 @@ export const OrderDetailsMobile = ({
   const tLabels = useTranslations("mypage.order.labels")
   const tStatus = useTranslations("mypage.order.status")
   const tActions = useTranslations("mypage.order.actions")
+  const { showCancelFailure, cancelFailureAlert } = useCancelFailureAlert()
   const tPaymentStatus = useTranslations("mypage.order.paymentStatus")
   const tRefundInfo = useTranslations("mypage.order.refundInfo")
   const tRefundRequest = useTranslations("mypage.order.refundRequest")
@@ -196,7 +198,8 @@ export const OrderDetailsMobile = ({
               : undefined,
         })
         if (!result.success) {
-          toast.error(result.error)
+          setShowCancelDialog(false)
+          showCancelFailure(result.error)
           return
         }
         setShowCancelDialog(false)
@@ -206,7 +209,8 @@ export const OrderDetailsMobile = ({
       } catch (err: unknown) {
         // 인증 실패는 error.tsx 가 토큰 복구를 처리하도록 전파
         if ((err as { digest?: string }).digest === "UNAUTHORIZED") throw err
-        toast.error(tActions("cancelError"))
+        setShowCancelDialog(false)
+        showCancelFailure(tActions("cancelError"))
       }
     })
   }
@@ -596,6 +600,7 @@ export const OrderDetailsMobile = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {cancelFailureAlert}
     </main>
   )
 }

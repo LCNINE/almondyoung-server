@@ -188,6 +188,12 @@ export class CancelByIntentDto {
   amount?: number;
 }
 
+export class PrintGateByIntentDto {
+  @ApiProperty({ description: '환불 승인할 결제의 Wallet 결제 intent ID' })
+  @IsString()
+  walletIntentId: string;
+}
+
 /** 채널 취소 정산 [다시 시도] 본문 — 비어 있어도 된다 */
 export class RetryCancelSettlementDto {
   @ApiProperty({

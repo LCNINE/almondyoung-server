@@ -72,6 +72,13 @@ export class ChannelCancelRequestManager {
     private readonly commands: PublisherFor<typeof CHANNEL_ORDERS_COMMAND_STREAM>,
   ) {}
 
+  // 잠그지 않고 요청이 받을 범위를 미리 판정한다. 되돌릴 수 없는 외부 취소(인쇄 업체)를 먼저 하는 호출부가 쓴다
+  async precheck(salesOrderId: string, lines: CancelRequestInput['lines'], tx?: DbTx): Promise<void> {
+    await this.db.run(async (trx) => {
+      await this.salesOrders.planCancellation(salesOrderId, lines, trx);
+    }, tx);
+  }
+
   async request(input: CancelRequestInput, tx?: DbTx): Promise<CancelRequestView> {
     return this.db.run(async (trx) => {
       const so = await this.lockSalesOrder(input.salesOrderId, trx);

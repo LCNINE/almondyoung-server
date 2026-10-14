@@ -201,6 +201,34 @@ describeIfDb('SalesOrdersService.list — server-side filters (DB integration, r
     });
   });
 
+  it('외주(almond) 라인은 매칭 없이도 matchingResolved true, 디지털 라인은 기존대로 false', async () => {
+    await run(async (tx, svc, tag) => {
+      const order = await insertOrder(tx, { channelOrderId: `${tag}-almond` });
+      await tx.insert(wmsTables.salesOrderLines).values({
+        salesOrderId: order,
+        variantId: randomUUID(),
+        productName: 'almond line',
+        quantity: 1,
+        almondDesignId: randomUUID(),
+      });
+      await tx.insert(wmsTables.salesOrderLines).values({
+        salesOrderId: order,
+        variantId: randomUUID(),
+        productName: 'digital line',
+        quantity: 1,
+        fulfillmentKind: 'digital',
+        requiresShipping: false,
+      });
+
+      const res = await listByKeyword(svc, tx, { keyword: tag });
+      const lines = res.data[0].lines as Array<{ productName: string; matchingResolved: boolean }>;
+      expect(Object.fromEntries(lines.map((l) => [l.productName, l.matchingResolved]))).toEqual({
+        'almond line': true,
+        'digital line': false,
+      });
+    });
+  });
+
   it('keyword: 상품명 / 수령자 / 주문번호 대상별 검색', async () => {
     await run(async (tx, svc, tag) => {
       const byProduct = await insertOrder(tx, { channelOrderId: `${tag}-p` });

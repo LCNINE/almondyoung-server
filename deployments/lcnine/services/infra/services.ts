@@ -72,6 +72,14 @@ export function setup(infra: SharedInfra) {
 
   // UGC — 서버 간(internal) 라우트 인증 키 (medusa 구매확정 → ugc 리뷰자격 등록)
   const ugcInternalKey = new sst.Secret('UgcInternalKey');
+  // 와우프레스 자동 발주(core print-order). 값은 `sst secret set` 으로 직접 넣는다. 발송인(dlvyfr)도 공개 저장소에 남기지 않으려 secret 으로 둔다.
+  const wowpressAuthUid = new sst.Secret('WowpressAuthUid');
+  const wowpressAuthPw = new sst.Secret('WowpressAuthPw');
+  const wowpressSenderName = new sst.Secret('WowpressSenderName', '');
+  const wowpressSenderTel = new sst.Secret('WowpressSenderTel', '');
+  const wowpressSenderZipcode = new sst.Secret('WowpressSenderZipcode', '');
+  const wowpressSenderAddr1 = new sst.Secret('WowpressSenderAddr1', '');
+  const wowpressSenderAddr2 = new sst.Secret('WowpressSenderAddr2', '');
 
   // Search — 서버 간(internal) 라우트 인증 키 (medusa 주문/백필 → search 판매량 색인)
   // 아래 searchEnv 와 Medusa **양쪽**에 같은 값이 들어가야 한다. search 쪽 라우트는
@@ -564,6 +572,18 @@ export function setup(infra: SharedInfra) {
       WALLET_API_KEY: walletApiKey.value,
       // 디지털 자산 다운로드: library ownership 다운로드 시 file-service signed URL 호출
       FILE_SERVICE_URL: url('file'),
+      // 아몬드템플릿 → 와우프레스 자동 발주 (apps/core/src/modules/print-order/README.md)
+      WOWPRESS_AUTH_UID: wowpressAuthUid.value,
+      WOWPRESS_AUTH_PW: wowpressAuthPw.value,
+      WOWPRESS_SENDER_NAME: wowpressSenderName.value,
+      WOWPRESS_SENDER_TEL: wowpressSenderTel.value,
+      WOWPRESS_SENDER_ZIPCODE: wowpressSenderZipcode.value,
+      WOWPRESS_SENDER_ADDR1: wowpressSenderAddr1.value,
+      WOWPRESS_SENDER_ADDR2: wowpressSenderAddr2.value,
+      UGC_SERVICE_URL: url('ugc'),
+      UGC_INTERNAL_KEY: ugcInternalKey.value,
+      // 켜기 전엔 print_orders 행만 쌓이고 와우프레스로 보내지 않는다. 첫 품목 검증 뒤 'true'.
+      PRINT_ORDER_SUBMIT_ENABLED: 'false',
     },
   });
 
