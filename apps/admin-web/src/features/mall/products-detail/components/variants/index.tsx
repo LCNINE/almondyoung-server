@@ -64,6 +64,7 @@ import type {
 } from '@/lib/types/dto/matching';
 import { VariantMatchingPanel } from '@/features/matching/products/components/variant-editor-dialog';
 import { VariantStockAdjustDialog } from './variant-stock-adjust-dialog';
+import { ProductVariantRestockDialog } from './variant-restock-dialog';
 import {
   canEditProductVariants,
   toBulkProductVariantUpdateDto,
@@ -345,6 +346,9 @@ function VariantsTable({
     useState<ProductVariantTableRow | null>(null);
   const [matchingEditingVariant, setMatchingEditingVariant] =
     useState<ProductVariantTableRow | null>(null);
+  const [restockEditingVariant, setRestockEditingVariant] =
+    useState<ProductVariantTableRow | null>(null);
+
   const [adjustingVariant, setAdjustingVariant] =
     useState<ProductVariantTableRow | null>(null);
   const [pendingPolicyVariantId, setPendingPolicyVariantId] = useState<
@@ -405,7 +409,10 @@ function VariantsTable({
           const next = normalizeStockPolicy(patch(current));
           // 이미 같은 값인 품목까지 저장하면 무의미한 요청 + 이벤트가 그만큼 나간다.
           if (JSON.stringify(next) === JSON.stringify(current)) continue;
-          await updateStockPolicy.mutateAsync({ variantId: row.id, data: next });
+          await updateStockPolicy.mutateAsync({
+            variantId: row.id,
+            data: next,
+          });
           applied += 1;
         }
         toast.success(
@@ -440,6 +447,7 @@ function VariantsTable({
             onBulkPolicyChange: handleBulkPolicyChange,
             onEditMatching: setMatchingEditingVariant,
             onAdjustStock: setAdjustingVariant,
+            onEditRestock: setRestockEditingVariant,
           }
         : undefined,
     [
@@ -568,6 +576,16 @@ function VariantsTable({
           open={!!matchingEditingVariant}
           onOpenChange={(open) => {
             if (!open) setMatchingEditingVariant(null);
+          }}
+        />
+      )}
+
+      {restockEditingVariant && (
+        <ProductVariantRestockDialog
+          variant={restockEditingVariant}
+          open
+          onOpenChange={(open) => {
+            if (!open) setRestockEditingVariant(null);
           }}
         />
       )}

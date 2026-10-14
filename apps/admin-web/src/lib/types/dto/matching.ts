@@ -29,6 +29,8 @@ export interface StockPolicyDto {
   availabilityOverride?: AvailabilityOverride;
   /** 표시 전용 출시예정일 (YYYY-MM-DD). 판매 개시는 입고가 연다 — ADR-0028. */
   comingSoonDate?: string | null;
+  restockDate?: string | null;
+  restockApproximate?: boolean;
 }
 
 export interface SkuMappingDto {
@@ -269,6 +271,9 @@ export interface ProductSellableQuantityProjectionDto {
   alwaysSellableZeroStock: boolean;
   availabilityOverride: AvailabilityOverride;
   comingSoonDate: string | null;
+  inboundDate?: string | null;
+  inboundApproximate?: boolean;
+  inboundSource?: 'manual' | 'purchase_order' | null;
   calculatedAt: string;
   components: ProductSellableQuantityProjectionComponentDto[];
 }

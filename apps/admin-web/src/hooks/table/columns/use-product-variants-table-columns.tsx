@@ -26,7 +26,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { AlertTriangle, PackagePlus, Pencil } from 'lucide-react';
+import { AlertTriangle, CalendarDays, PackagePlus, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -58,6 +58,7 @@ type MatchingActions = {
   onPolicyChange: (row: ProductVariantTableRow, policy: StockPolicyDto) => void;
   onEditMatching: (row: ProductVariantTableRow) => void;
   onAdjustStock: (row: ProductVariantTableRow) => void;
+  onEditRestock?: (row: ProductVariantTableRow) => void;
 };
 
 export function useProductVariantsTableColumns(
@@ -418,6 +419,55 @@ export function useProductVariantsTableColumns(
                     alwaysSellableZeroStock: checked,
                   }),
                   comingSoonNote(policy)
+                );
+              },
+            }),
+            columnHelper.display({
+              id: 'restockDate',
+              header: '재입고 예정일',
+              cell: ({ row }) => {
+                const info = row.original.matchingInfo;
+                const date =
+                  info?.projection?.inboundDate ??
+                  info?.stockPolicy.restockDate ??
+                  null;
+                const isManual = info?.projection?.inboundDate
+                  ? info.projection.inboundSource === 'manual'
+                  : !!info?.stockPolicy.restockDate;
+
+                return (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto min-h-9 justify-start gap-2 px-2 text-left"
+                    disabled={
+                      matchingActions.isLoading ||
+                      !info ||
+                      !matchingActions.onEditRestock
+                    }
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      matchingActions.onEditRestock?.(row.original);
+                    }}
+                    aria-label={`${row.original.variantName ?? '품목'} 재입고 예정일 변경`}
+                  >
+                    <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="flex flex-col gap-0.5">
+                      <span
+                        className={
+                          date ? 'font-medium' : 'text-muted-foreground'
+                        }
+                      >
+                        {date ?? '예정일 설정'}
+                      </span>
+                      {date && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {isManual ? '직접 지정' : '발주서 도착 예정일'}
+                        </span>
+                      )}
+                    </span>
+                  </Button>
                 );
               },
             }),
