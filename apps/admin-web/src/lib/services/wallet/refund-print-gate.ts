@@ -32,6 +32,10 @@ export function printRefundGate(
   return 'open';
 }
 
+// 고객 돈이 승인·매입된 상태. 이때의 취소는 돈을 돌려준다(입금 전·결제 진행 중 취소는 돈이 오가지 않는다)
+export const isMoneyMoved = (intentStatus: string): boolean =>
+  intentStatus === 'AUTHORIZED' || intentStatus === 'SUCCEEDED';
+
 export const printRefundGateMessage = (gate: PrintRefundGate): string =>
   gate === 'print'
     ? PRINT_REFUND_RESTRICTED_NOTE

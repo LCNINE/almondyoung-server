@@ -1,7 +1,8 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsIn,
   IsInt,
@@ -192,6 +193,11 @@ export class PrintGateByIntentDto {
   @ApiProperty({ description: '환불 승인할 결제의 Wallet 결제 intent ID' })
   @IsString()
   walletIntentId: string;
+
+  @ApiPropertyOptional({ description: 'Medusa 결제라 판매주문이 있어야 하는가 — 없으면 409 PRINT_ORDER_NOT_COLLECTED' })
+  @IsBoolean()
+  @IsOptional()
+  expectSalesOrder?: boolean;
 }
 
 /** 채널 취소 정산 [다시 시도] 본문 — 비어 있어도 된다 */

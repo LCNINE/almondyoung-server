@@ -7,6 +7,7 @@ import {
   PrintInProductionError,
   PrintNeedsPartialCancelError,
   PrintOrderCancellationManager,
+  PrintOrderNotCollectedError,
   PrintPartialCancelAvailableError,
 } from '../../print-order/services/print-order-cancellation.manager';
 import { WalletRefundClient, WalletRefundOutcome } from './wallet-refund.client';
@@ -74,6 +75,8 @@ function makeContext(
     activeShipmentStatuses?: string[];
     printOrders?: Array<Record<string, unknown>>;
     allOutsourced?: boolean;
+    /** 판매주문이 아직 없다(수집 전) */
+    noSalesOrder?: boolean;
     /** 인쇄가 아닌 판매주문 줄이 있는가 */
     nonPrintLine?: boolean;
     /** 전체 취소 계획의 남은 줄 */
@@ -146,7 +149,9 @@ function makeContext(
                         ? [{ id: 'own-1' }]
                         : []
                       : tableName === 'sales_orders'
-                        ? [currentSo]
+                        ? options.noSalesOrder
+                          ? []
+                          : [currentSo]
                         : tableName === 'sales_order_lines' && options.nonPrintLine
                           ? [{ id: 'normal-line' }]
                           : [],
@@ -1331,6 +1336,16 @@ describe('StoreSalesOrdersService', () => {
       expect((error as PrintNeedsPartialCancelError).getHttpStatus()).toBe(409);
       expect((error as PrintNeedsPartialCancelError).getErrorCode()).toBe('PRINT_NEEDS_PARTIAL_CANCEL');
       expect(printCancel).not.toHaveBeenCalled();
+    });
+
+    it('Medusa 결제(expectSalesOrder)인데 판매주문이 아직 없으면 PRINT_ORDER_NOT_COLLECTED(409)', async () => {
+      const { service } = makeContext({ noSalesOrder: true });
+      const error = await service
+        .printGateByWalletIntent(WALLET_INTENT_ID, { expectSalesOrder: true })
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(PrintOrderNotCollectedError);
+      expect((error as PrintOrderNotCollectedError).getErrorCode()).toBe('PRINT_ORDER_NOT_COLLECTED');
+      await expect(service.printGateByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({ ok: true });
     });
 
     it('인쇄 줄이 없거나 모두 취소됐으면 ok', async () => {

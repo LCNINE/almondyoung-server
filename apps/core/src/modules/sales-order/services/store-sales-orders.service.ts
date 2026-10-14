@@ -29,6 +29,7 @@ import {
   PrintInProductionError,
   PrintNeedsPartialCancelError,
   PrintOrderCancellationManager,
+  PrintOrderNotCollectedError,
   PrintPartialCancelAvailableError,
   PrintShippedError,
   type PrintCancelResult,
@@ -319,9 +320,14 @@ export class StoreSalesOrdersService {
       .map((line) => ({ salesOrderLineId: line.salesOrderLineId, quantity: line.quantity }));
   }
 
-  /** 무통장 환불 승인 전 확인. 살아 있는 인쇄 줄이 있으면 승인을 막고 부분 취소로 보낸다 — 인쇄는 건드리지 않는다 */
-  async printGateByWalletIntent(intentId: string): Promise<{ ok: true }> {
-    if ((await this.printStatusByWalletIntent(intentId)).hasActivePrint) throw new PrintNeedsPartialCancelError();
+  /**
+   * 무통장 환불 승인 전 확인. 살아 있는 인쇄 줄이 있으면 승인을 막고 부분 취소로 보낸다 — 인쇄는 건드리지 않는다.
+   * expectSalesOrder(Medusa 결제)인데 판매주문이 아직 없으면 인쇄 여부를 모르므로 막는다
+   */
+  async printGateByWalletIntent(intentId: string, opts: { expectSalesOrder?: boolean } = {}): Promise<{ ok: true }> {
+    const status = await this.printStatusByWalletIntent(intentId);
+    if (status.hasActivePrint) throw new PrintNeedsPartialCancelError();
+    if (opts.expectSalesOrder && status.channelOrderId === null) throw new PrintOrderNotCollectedError();
     return { ok: true };
   }
 

@@ -63,6 +63,20 @@ export class PrintNeedsPartialCancelError extends ConflictError {
   }
 }
 
+export const PRINT_ORDER_NOT_COLLECTED_MESSAGE =
+  '주문이 아직 수집되지 않아 아몬드템플릿 인쇄 상품이 있는지 확인할 수 없습니다. 몇 분 뒤 다시 시도해 주세요.';
+
+// Medusa 결제인데 판매주문이 아직 없다. 지금 환불하면 그 뒤 수집된 주문의 인쇄가 그대로 발주된다
+export class PrintOrderNotCollectedError extends ConflictError {
+  constructor() {
+    super(PRINT_ORDER_NOT_COLLECTED_MESSAGE);
+  }
+
+  getErrorCode(): string {
+    return 'PRINT_ORDER_NOT_COLLECTED';
+  }
+}
+
 export type PrintCancelMode = 'gate' | 'record';
 export interface PrintCancelOptions {
   // 고객 취소: 와우프레스가 거절하면 고객에게 바로 알리고 인쇄는 계속하므로, 운영자 확인(cancel_refused)으로 넘기지 않는다

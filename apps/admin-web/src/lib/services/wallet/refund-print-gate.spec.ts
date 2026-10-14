@@ -1,4 +1,4 @@
-import { partialCancelHref, printRefundGate } from './refund-print-gate';
+import { isMoneyMoved, partialCancelHref, printRefundGate } from './refund-print-gate';
 
 describe('printRefundGate', () => {
   const opts = { medusaOrder: true, moneyCaptured: true, defectConfirmed: false };
@@ -38,5 +38,14 @@ describe('partialCancelHref', () => {
 
   it('주문번호를 모르면 주문내역 목록으로 보낸다', () => {
     expect(partialCancelHref(null)).toBe('/order/history');
+  });
+});
+
+describe('isMoneyMoved', () => {
+  it('승인·매입된 결제만 돈이 오간 것으로 본다', () => {
+    expect(isMoneyMoved('AUTHORIZED')).toBe(true);
+    expect(isMoneyMoved('SUCCEEDED')).toBe(true);
+    expect(isMoneyMoved('REQUIRES_ACTION')).toBe(false);
+    expect(isMoneyMoved('AWAITING_DEPOSIT')).toBe(false);
   });
 });

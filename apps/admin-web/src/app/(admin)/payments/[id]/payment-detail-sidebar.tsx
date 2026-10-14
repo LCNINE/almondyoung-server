@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useRef, useState } from 'react';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { Spinner } from '@/components/ui/spinner';
@@ -13,6 +13,7 @@ import {
   usePrintStatusByIntent,
   printRefundGate,
   printRefundGateMessage,
+  isMoneyMoved,
   PRINT_REFUND_RESTRICTED_NOTE,
   PRINT_PARTIAL_CANCEL_GUIDE,
   PRINT_DEFECT_OVERRIDE_LABEL,
@@ -85,7 +86,8 @@ function PaymentMethodInfo({ intentId }: { intentId: string }) {
 }
 
 function ActionButtonsContent({ intentId }: { intentId: string }) {
-  const { data } = usePaymentIntentDetail(intentId);
+  const intentQuery = usePaymentIntentDetail(intentId);
+  const { data } = intentQuery;
   const capture = useCaptureIntent(intentId);
   const cancel = useCancelIntent(intentId);
   const refund = useRefundIntent(intentId);
@@ -93,14 +95,39 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
   const hasActivePrint = printStatus.data?.hasActivePrint;
   // 상품 하자 환불이면 와우프레스 주문은 그대로 두고 환불만 한다(인쇄 취소를 보내지 않는다)
   const [defectConfirmed, setDefectConfirmed] = useState(false);
-  const medusaOrder = typeof data.metadata?.medusaSessionId === 'string';
-  const gateFor = (status: typeof printStatus.data, moneyCaptured: boolean) =>
-    printRefundGate(status, { medusaOrder, moneyCaptured, defectConfirmed });
-  const refundGate = gateFor(printStatus.data, true);
-  const cancelGate = gateFor(printStatus.data, data.status === 'SUCCEEDED');
-  // 화면의 상태는 낡을 수 있다(수집 전에 연 화면 등). 누르는 순간 다시 읽어 판정한다
-  const confirmGate = async (moneyCaptured: boolean): Promise<boolean> => {
-    const gate = gateFor((await printStatus.refetch()).data, moneyCaptured);
+  const gateFor = (
+    status: typeof printStatus.data,
+    intent: Pick<typeof data, 'status' | 'metadata'>,
+    action: 'refund' | 'cancel'
+  ) =>
+    printRefundGate(status, {
+      medusaOrder: typeof intent.metadata?.medusaSessionId === 'string',
+      moneyCaptured: action === 'refund' || isMoneyMoved(intent.status),
+      defectConfirmed,
+    });
+  const refundGate = gateFor(printStatus.data, data, 'refund');
+  const cancelGate = gateFor(printStatus.data, data, 'cancel');
+  // 화면의 상태는 낡을 수 있다(수집 전에 연 화면, 그 사이 결제 완료 등). 누르는 순간 결제와 인쇄 상태를 둘 다 다시 읽어
+  // 판정하고, 어느 쪽이든 읽지 못하면 막는다(실패한 refetch 는 이전 data 를 그대로 돌려준다)
+  // 재조회를 기다리는 동안 mutation 의 isPending 은 아직 false 다. 연속 클릭이 둘 다 통과해 환불이 두 번 나가지 않게
+  // 재조회부터 mutation 이 끝날 때까지 한 번에 하나만 돈다
+  const busyRef = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const exclusive = async (fn: () => Promise<void>) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      await fn();
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  };
+  const confirmGate = async (action: 'refund' | 'cancel'): Promise<boolean> => {
+    const [intent, print] = await Promise.all([intentQuery.refetch(), printStatus.refetch()]);
+    const gate =
+      intent.isError || print.isError || !intent.data ? 'unknown' : gateFor(print.data, intent.data, action);
     if (gate === 'open') return true;
     toast.error(printRefundGateMessage(gate));
     return false;
@@ -150,8 +177,9 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
     }
   };
 
-  const handleCancel = async () => {
-    if (cancelGate !== 'open' || !(await confirmGate(data.status === 'SUCCEEDED'))) return;
+  const handleCancel = () => exclusive(cancelNow);
+  const cancelNow = async () => {
+    if (cancelGate !== 'open' || !(await confirmGate('cancel'))) return;
     try {
       await cancel.mutateAsync();
       toast.success(isAwaitingDeposit ? '입금 거절(주문 취소) 완료' : '취소 처리 완료');
@@ -171,9 +199,10 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
     setRefundHolderName('');
   };
 
-  const handleRefund = async () => {
+  const handleRefund = () => exclusive(refundNow);
+  const refundNow = async () => {
     if (refundGate !== 'open' || !refundChargeId || !refundAmount || !bankRefundReady) return;
-    if (!(await confirmGate(true))) return;
+    if (!(await confirmGate('refund'))) return;
     try {
       const result = await refund.mutateAsync({
         chargeId: refundChargeId,
@@ -276,7 +305,7 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
             className="w-full"
             variant="outline"
             onClick={openRefundDialog}
-            disabled={refundGate !== 'open'}
+            disabled={busy || refundGate !== 'open'}
           >
             환불 (Refund)
           </Button>
@@ -287,7 +316,7 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
               <Button
                 className="w-full"
                 variant="destructive"
-                disabled={cancel.isPending || cancelGate !== 'open'}
+                disabled={busy || cancel.isPending || cancelGate !== 'open'}
               >
                 {cancel.isPending
                   ? '처리 중...'
@@ -327,7 +356,7 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
                   닫기
                 </AlertDialogCancel>
                 <AlertDialogAction
-                  disabled={cancel.isPending || cancelGate !== 'open'}
+                  disabled={busy || cancel.isPending || cancelGate !== 'open'}
                   onClick={() => void handleCancel()}
                 >
                   {isAwaitingDeposit ? '입금 거절' : '취소 확정'}
@@ -433,7 +462,7 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
             </Button>
             <Button
               onClick={handleRefund}
-              disabled={refund.isPending || refundGate !== 'open' || !refundChargeId || !refundAmount || !bankRefundReady}
+              disabled={busy || refund.isPending || refundGate !== 'open' || !refundChargeId || !refundAmount || !bankRefundReady}
             >
               {refund.isPending ? '처리 중...' : '환불 실행'}
             </Button>
