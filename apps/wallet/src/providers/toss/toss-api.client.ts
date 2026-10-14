@@ -137,7 +137,7 @@ export class TossApiClient {
     if (cancelAmount !== undefined) body.cancelAmount = cancelAmount;
     if (refundReceiveAccount) body.refundReceiveAccount = refundReceiveAccount;
     return this.post<TossCancelResponse>(
-      `/payments/${paymentKey}/cancel`,
+      `/payments/${encodeURIComponent(paymentKey)}/cancel`,
       body,
       idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
       useWidgetKey,

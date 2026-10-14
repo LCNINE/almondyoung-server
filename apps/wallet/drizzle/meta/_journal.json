@@ -141,6 +141,13 @@
       "when": 1792200212907,
       "tag": "20261017012332_add-refund-kind",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792575232691,
+      "tag": "20261021093352_widen-toss-payment-key-columns",
+      "breakpoints": true
     }
   ]
 }
