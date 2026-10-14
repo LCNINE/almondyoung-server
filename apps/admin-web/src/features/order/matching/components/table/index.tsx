@@ -17,6 +17,10 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { useChangeMatchingStrategy } from '@/lib/services/matching';
 import { RefreshCw } from 'lucide-react';
+import {
+  ExistingLinesDialog,
+  useExistingLinesFollowUp,
+} from '../../../line-composition/components/existing-lines-dialog';
 import { LineCompositionDialog } from '../../../line-composition/components/line-composition-dialog';
 import {
   compositionItemText,
@@ -389,6 +393,7 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
   const [overrideTarget, setOverrideTarget] = useState<LineCompositionTarget | null>(null);
 
   const changeMatchingStrategy = useChangeMatchingStrategy();
+  const followUp = useExistingLinesFollowUp();
   const isResolvingAsVoid = changeMatchingStrategy.isPending;
 
   const variantIds = useMemo(
@@ -543,6 +548,7 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
       <InventoryMatchingDialog
         isOpen={showInventoryDialog}
         line={currentLine}
+        onSaved={followUp.check}
         onClose={() => {
           setShowInventoryDialog(false);
           setCurrentLine(null);
@@ -567,6 +573,8 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
           onClose={() => setOverrideTarget(null)}
         />
       )}
+
+      {followUp.state && <ExistingLinesDialog state={followUp.state} onClose={followUp.close} />}
     </div>
   );
 }

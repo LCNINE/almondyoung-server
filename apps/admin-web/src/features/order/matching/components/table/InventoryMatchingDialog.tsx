@@ -64,6 +64,7 @@ interface InventoryMatchingDialogProps {
   isOpen: boolean;
   onClose: () => void;
   line: OrderLineDto | null;
+  onSaved?: (variantId: string) => void;
 }
 
 /** 재고 생성/상품매칭 다이얼로그 (자동/수동/비매칭) */
@@ -71,6 +72,7 @@ export function InventoryMatchingDialog({
   isOpen,
   onClose,
   line,
+  onSaved,
 }: InventoryMatchingDialogProps) {
   const resolveMatching = useResolveMatching();
   const upsertVariantMatching = useUpsertVariantMatching();
@@ -402,6 +404,8 @@ export function InventoryMatchingDialog({
       }
 
       toast.success('상품매칭을 저장했습니다.');
+      // 비매칭 저장은 기존 출고에 적용할 구성이 없다
+      if (activeTab !== 'none') onSaved?.(line.variantId);
       onClose();
     } catch (e) {
       console.error('상품등록/매칭 저장 실패:', e);
