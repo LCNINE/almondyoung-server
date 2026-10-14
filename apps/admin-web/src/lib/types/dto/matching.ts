@@ -1,6 +1,8 @@
 // src/lib/types/dto/matching.ts
 // 상품 매칭 관련 DTO 타입 정의
 
+import type { CompositionItemView, CompositionSource } from './line-composition';
+
 export type MatchingStatus = 'pending' | 'matched' | 'ignored';
 export type MatchingStrategy = 'void' | 'variant';
 export type MatchingPriority = 'normal' | 'high';
@@ -188,6 +190,10 @@ export interface OrderLineDto {
   matchingStatus?: MatchingStatus;
   matchingStrategy?: MatchingStrategy;
   matchedSkus: OrderLineMatchedSku[];
+  /** 라인 구성 출처. 없으면 아직 굳히지 않음(현재 상품매칭을 따른다) */
+  compositionSource?: CompositionSource;
+  /** 굳힌 라인의 구성. 옛 core 는 이 칸을 안 준다 */
+  composition?: CompositionItemView[];
 }
 
 export interface OrderLinesResponseDto {
