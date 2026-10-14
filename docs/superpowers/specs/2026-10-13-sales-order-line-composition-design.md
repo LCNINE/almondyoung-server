@@ -303,8 +303,13 @@ PR 2 가 이미 라이브(2026-10-14 Core td 242)라 이 PR 의 core 변경은 �
 ### 9.4 PR 4 — contract (PR 1 배포·백필 완료 뒤, 적어도 한 번의 배포를 사이에 두고)
 
 `sales_order_lines.product_matching_id`·`mapping_snapshot_id`, `fulfillment_order_items.mapping_snapshot_id`,
-`product_sku_mapping_snapshots` 테이블 DROP. 응답 DTO(`sales-order-response.dto.ts`)·admin-web 타입(`lib/types/dto/orders.ts`)·
-`getMappingSnapshot`·`createSnapshotForVariant` 제거. 순서 **`deploy → migrate`**.
+`product_sku_mapping_snapshots` 테이블 DROP. 응답 DTO(`sales-order-response.dto.ts`)의 두 칸과 FO 항목 삽입·입력 DTO 의
+`mappingSnapshotId` 제거. 순서 **`deploy → migrate`**.
+`getMappingSnapshot`·`createSnapshotForVariant`·admin-web 타입(`lib/types/dto/orders.ts`)의 두 칸은 PR 1(`60913c07d`)이 이미 지웠다.
+한 PR 로 낸다 — Drizzle 은 선언된 칸을 모든 select·insert 에 싣기 때문에 «코드 사용 중단»이 곧 schema.ts 에서 지우기이고,
+그걸 마이그와 가르면 스냅샷이 어긋나 다른 사람의 다음 generate 가 이 DROP 을 쓸어 담는다. 옛 코드가 DROP 을 만나지 않게 하는 건
+배포 순서(Core 롤아웃 완료 뒤 migrate)다. drizzle-kit 이 낸 SQL 은 CASCADE 뒤 같은 FK 를 다시 지우려다 실패해서 순서를 손으로 고쳤다
+(PR 4 계획 `docs/superpowers/plans/2026-10-15-sales-order-line-composition-pr4.md`).
 
 ### 9.5 배포 전 라이브 확인 (PR 본문에 SQL 로)
 
@@ -341,4 +346,5 @@ PR 2 가 이미 라이브(2026-10-14 Core td 242)라 이 PR 의 core 변경은 �
 2. ~~FO 생성 워커가 판매주문을 잠그는지(§5.4)~~ — 잠근다(`createV2` 의 `FOR UPDATE`). §5.4 에 반영
 3. ~~배송 프로필 계산을 FO 생성에서 함수로 뽑을 수 있는지(§6.3)~~ — 뽑힌다. «전부 NULL 아님 + 한 종류면 그 값, 아니면 NULL» 세 줄이
    `createV2` 에만 있고 분할·합포장·묘비는 값을 복사만 한다. `compatibleShippingProfileId` 순수 함수로 뽑아 FO 생성과 amend 가 쓴다
-4. admin-web 이 `productMatchingId`·`mappingSnapshotId` 를 어디서 읽는지(PR 4 범위)
+4. ~~admin-web 이 `productMatchingId`·`mappingSnapshotId` 를 어디서 읽는지(PR 4 범위)~~ — **어디서도 안 읽는다**(2026-10-15 확인).
+   PR 1 이 타입을 지웠고 `isOrderLineMatched` 는 `matchingResolved` 를 본다
