@@ -18,7 +18,7 @@ import {
   useResolveMatching,
   useUpsertVariantMatching,
 } from '@/lib/services/matching';
-import { useSkuSearch, useDeliveryProfiles } from '@/lib/services/inventory';
+import { useDeliveryProfiles } from '@/lib/services/inventory';
 import {
   Dialog,
   DialogContent,
@@ -33,8 +33,18 @@ import {
   useHolderSearch,
   useCreateHolder,
 } from '@/lib/services/inventory';
-import { Search, Trash2, ArrowRight, X, Loader2, Plus } from 'lucide-react';
+import { Trash2, ArrowRight, X, Loader2, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
+import {
+  PickedSkuList,
+  SkuSearchPanel,
+} from '../../../line-composition/components/sku-composition-picker';
+import {
+  addPicked,
+  removePicked,
+  setPickedQuantity,
+  type PickedSku,
+} from '../../../line-composition/picked-skus';
 import { SearchDialog } from './SearchDialog';
 import {
   buildMatchingLinks,
@@ -49,23 +59,6 @@ import {
   pickDefaultTab,
 } from '../../lib/matching-save-route';
 import { buildLegacySkuMappings } from '../../lib/build-legacy-sku-mappings';
-
-/** SKU 연결 정보 */
-type LinkedSku = {
-  skuId: string;
-  skuName: string;
-  quantity: number;
-};
-
-/** 간단 디바운스 */
-function useDebounced<T>(value: T, delay = 350) {
-  const [v, setV] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setV(value), delay);
-    return () => clearTimeout(t);
-  }, [value, delay]);
-  return v;
-}
 
 interface InventoryMatchingDialogProps {
   isOpen: boolean;
@@ -139,15 +132,8 @@ export function InventoryMatchingDialog({
   };
 
   // 수동 매칭 상태
-  const [linkedSkus, setLinkedSkus] = useState<LinkedSku[]>([]);
+  const [linkedSkus, setLinkedSkus] = useState<PickedSku[]>([]);
   const [skuSearch, setSkuSearch] = useState('');
-  const [searchType, setSearchType] = useState('name');
-  const debounced = useDebounced(skuSearch, 350);
-  const { data: skuResults, isLoading: searching } = useSkuSearch(
-    debounced,
-    1,
-    20
-  );
 
   // 검색 상태
   const [supplierSearch, setSupplierSearch] = useState('');
@@ -211,7 +197,6 @@ export function InventoryMatchingDialog({
       }))
     );
     setSkuSearch(baseName); // 수동 탭 검색 프리필
-    setSearchType('name');
     setShowNotice(true);
   }, [line?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -263,27 +248,19 @@ export function InventoryMatchingDialog({
         : '';
 
   /** 수동 매칭 - SKU 추가 */
-  const handleAddSku = (skuId: string, skuName: string) => {
-    if (!linkedSkus.find((s) => s.skuId === skuId)) {
-      setLinkedSkus([...linkedSkus, { skuId, skuName, quantity: 1 }]);
-    } else {
-      // 이미 추가된 SKU인 경우 사용자에게 알림
-      toast.error('이미 매칭된 재고상품입니다.');
-    }
+  const handleAddSku = (sku: { id: string; name: string }) => {
+    const result = addPicked(linkedSkus, sku);
+    if (result.ok) setLinkedSkus(result.list);
+    else toast.error('이미 매칭된 재고상품입니다.');
   };
 
   /** 수동 매칭 - SKU 제거 */
-  const handleRemoveSku = (skuId: string) => {
-    setLinkedSkus(linkedSkus.filter((s) => s.skuId !== skuId));
-  };
+  const handleRemoveSku = (skuId: string) =>
+    setLinkedSkus(removePicked(linkedSkus, skuId));
 
   /** 수동 매칭 - 수량 업데이트 */
-  const handleUpdateQuantity = (skuId: string, value: number) => {
-    const quantity = Math.max(1, Math.floor(value)); // 최소 1, 정수만 허용
-    setLinkedSkus(
-      linkedSkus.map((s) => (s.skuId === skuId ? { ...s, quantity } : s))
-    );
-  };
+  const handleUpdateQuantity = (skuId: string, value: number) =>
+    setLinkedSkus(setPickedQuantity(linkedSkus, skuId, value));
 
   /** 자동 매칭 - 옵션 행 업데이트 */
   const updateOptionName = (id: string, name: string) =>
@@ -433,10 +410,6 @@ export function InventoryMatchingDialog({
   };
 
   if (!line) return null;
-
-  // 검색 결과 필터링 (서버에서 이미 필터링되므로 클라이언트에서는 추가 필터링 불필요)
-  const filteredSkuResults =
-    (skuResults as any)?.items ?? (Array.isArray(skuResults) ? skuResults : []);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -813,56 +786,11 @@ export function InventoryMatchingDialog({
                   <h3 className="text-sm font-medium text-gray-700 mb-3">
                     현재 매칭된 재고상품
                   </h3>
-                  <div className="space-y-2">
-                    {linkedSkus.length === 0 ? (
-                      <div className="text-center py-8 text-gray-400 text-sm border border-dashed rounded-lg">
-                        현재 매칭된 재고상품이 없습니다.
-                      </div>
-                    ) : (
-                      linkedSkus.map((sku) => (
-                        <div
-                          key={sku.skuId}
-                          className="bg-white border rounded-lg p-3"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm font-medium truncate">
-                                {sku.skuName}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              <FormNumberInput
-                                className="w-12 h-7 text-center text-xs"
-                                value={String(sku.quantity)}
-                                onChange={(e) =>
-                                  handleUpdateQuantity(
-                                    sku.skuId,
-                                    Number(e.target.value)
-                                  )
-                                }
-                                onBlur={(e) => {
-                                  const value = Number(e.target.value);
-                                  if (isNaN(value) || value < 1) {
-                                    handleUpdateQuantity(sku.skuId, 1);
-                                  }
-                                }}
-                                min={1}
-                                step={1}
-                              />
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 px-2 text-red-600 hover:bg-red-50 text-xs"
-                                onClick={() => handleRemoveSku(sku.skuId)}
-                              >
-                                삭제
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                  <PickedSkuList
+                    value={linkedSkus}
+                    onRemove={handleRemoveSku}
+                    onQuantityChange={handleUpdateQuantity}
+                  />
                 </div>
               </div>
 
@@ -890,124 +818,13 @@ export function InventoryMatchingDialog({
                   </div>
                 </div>
 
-                <div className="flex gap-2 mb-3">
-                  <FormSelect
-                    options={[{ value: 'name', label: '재고 상품명' }]}
-                    value={searchType || 'name'}
-                    onValueChange={setSearchType}
-                    className="w-40"
-                  />
-                  <div className="flex-1 relative">
-                    <FormInput
-                      placeholder="재고 상품명으로 검색"
-                      value={skuSearch}
-                      onChange={(e) => setSkuSearch(e.target.value)}
-                      className="pr-10"
-                    />
-                    <Search className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  </div>
-                  <Button
-                    className="bg-orange-500 hover:bg-orange-600 text-white px-4"
-                    onClick={() => {
-                      // 검색은 useSkuSearch 훅에서 자동으로 처리됨
-                      // debounced 값이 변경되면 자동으로 검색이 실행됨
-                    }}
-                  >
-                    찾기
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      // 판매상품명으로 검색
-                      setSkuSearch(sellingProductName);
-                    }}
-                  >
-                    판매상품명으로 검색
-                  </Button>
-                </div>
-
-                {/* 검색 결과 테이블 */}
-                <div className="bg-white border rounded-lg">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b">
-                      <tr>
-                        <th className="text-left px-4 py-2 text-xs font-medium text-gray-700">
-                          등록
-                        </th>
-                        <th className="text-left px-4 py-2 text-xs font-medium text-gray-700">
-                          재고상품 명
-                        </th>
-                        <th className="text-center px-4 py-2 text-xs font-medium text-gray-700">
-                          공급처
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {searching ? (
-                        <tr>
-                          <td colSpan={3} className="px-4 py-8 text-center">
-                            <Loader2 className="w-5 h-5 animate-spin mx-auto text-gray-400" />
-                          </td>
-                        </tr>
-                      ) : filteredSkuResults.length > 0 ? (
-                        filteredSkuResults.map((sku: any) => {
-                          const isLinked = linkedSkus.some(
-                            (s) => s.skuId === sku.id
-                          );
-                          return (
-                            <tr
-                              key={sku.id}
-                              className="border-b last:border-0 hover:bg-gray-50"
-                            >
-                              <td className="px-4 py-3">
-                                <Button
-                                  size="sm"
-                                  variant={isLinked ? 'outline' : 'primary'}
-                                  className={cn(
-                                    'h-7 px-3 text-xs',
-                                    isLinked
-                                      ? 'text-gray-500'
-                                      : 'bg-orange-500 hover:bg-orange-600 text-white'
-                                  )}
-                                  onClick={() =>
-                                    !isLinked && handleAddSku(sku.id, sku.name)
-                                  }
-                                  disabled={isLinked}
-                                >
-                                  {isLinked ? '등록됨' : '등록'}
-                                </Button>
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="text-sm">{sku.name}</div>
-                              </td>
-                              <td className="px-4 py-3 text-center">
-                                <div className="text-sm text-gray-600">
-                                  {sku.supplier?.name || '자체제작'}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      ) : (
-                        <tr>
-                          <td
-                            colSpan={3}
-                            className="px-4 py-8 text-center text-sm text-gray-500"
-                          >
-                            {debounced
-                              ? '검색 결과가 없습니다.'
-                              : '검색어를 입력해주세요'}
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-
-                  {/* 페이지 네이션 */}
-                  <div className="text-center py-2 border-t">
-                    <span className="text-xs text-gray-400">페이지 네이션</span>
-                  </div>
-                </div>
+                <SkuSearchPanel
+                  query={skuSearch}
+                  onQueryChange={setSkuSearch}
+                  suggestedQuery={sellingProductName}
+                  picked={linkedSkus}
+                  onAdd={handleAddSku}
+                />
               </div>
             </div>
           )}

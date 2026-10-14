@@ -244,7 +244,7 @@ S2 는 «라인별 담긴 개수»를 새로 계산해 `boxTarget` → `amend` �
 ## 8. 화면 (admin-web)
 
 1. **매칭체크(`/order/matching`)** — 행마다 «이 주문만» 버튼. SKU·1개당 수량 고르기는 `InventoryMatchingDialog` 수동 탭의
-   SKU 검색·구성 목록을 `SkuCompositionPicker` 로 뽑아 두 다이얼로그가 같이 쓴다(따로 있는 «SKU 검색 다이얼로그»는 없다 —
+   SKU 검색·구성 목록을 `PickedSkuList`·`SkuSearchPanel`(`sku-composition-picker.tsx`)로 뽑아 두 다이얼로그가 같이 쓴다(따로 있는 «SKU 검색 다이얼로그»는 없다 —
    `SearchDialog` 는 공급처·화주 검색이다). 지정된 행은 매칭 칸에 «개별 지정»과 **라인의 구성**(상품매칭 SKU 가 아니라)을 보인다.
    `excludeMatched` 는 §5.2 술어 — 기본값이 켜져 있어 지정한 행은 기본 화면에서 빠진다
 2. **출고 주문 상세(`/order/fulfillments/[id]`)** — 라인마다 구성 표시, 개별 지정이면 «개별 지정»(매칭 출처는 정상 상태라 표시 없음),
