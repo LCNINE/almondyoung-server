@@ -9,7 +9,6 @@ export {
   productVariantSkuLinks,
   productSkuMappings,
   productSkuMappingItems,
-  productSkuMappingSnapshots,
   matchingStatusEnum,
   matchingStrategyEnum,
   matchingPriorityEnum,
@@ -17,7 +16,6 @@ export {
   productVariantSkuLinksRelations,
   productSkuMappingsRelations,
   productSkuMappingItemsRelations,
-  productSkuMappingSnapshotsRelations,
 } from '../../inventory/schema/inventory.schema';
 
 import {
@@ -25,7 +23,6 @@ import {
   productVariantSkuLinks,
   productSkuMappings,
   productSkuMappingItems,
-  productSkuMappingSnapshots,
 } from '../../inventory/schema/inventory.schema';
 
 export const matchingSchema = {
@@ -33,5 +30,4 @@ export const matchingSchema = {
   productVariantSkuLinks,
   productSkuMappings,
   productSkuMappingItems,
-  productSkuMappingSnapshots,
 };
