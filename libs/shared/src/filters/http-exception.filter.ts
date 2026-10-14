@@ -10,6 +10,44 @@ interface ErrorResponse {
   details?: unknown;
 }
 
+type PreparationDetails = { reasonCode: string; recovery: 'retry_preparation' | 'review_batch' };
+
+interface LineBoxRef {
+  shipmentId: string;
+  status: string;
+  batchId: string | null;
+  hasActiveWaybill: boolean;
+}
+
+interface LineBoxNotDraftDetails {
+  fulfillmentOrderId: string | null;
+  boxes: LineBoxRef[];
+}
+
+// 판매주문 라인 구성 수정(#1063)을 막은 박스 — 화면이 박스·배치 링크를 만든다. 모양이 하나라도 어긋나면 통째로 버린다
+function lineBoxNotDraftDetails(candidate: unknown): LineBoxNotDraftDetails | undefined {
+  if (typeof candidate !== 'object' || candidate === null) return undefined;
+  const fulfillmentOrderId = 'fulfillmentOrderId' in candidate ? candidate.fulfillmentOrderId : undefined;
+  if (fulfillmentOrderId !== null && typeof fulfillmentOrderId !== 'string') return undefined;
+  const rawBoxes: unknown = 'boxes' in candidate ? candidate.boxes : undefined;
+  if (!Array.isArray(rawBoxes)) return undefined;
+  // Array.isArray 는 any[] 로 좁히므로 unknown[] 에 받아 typeof 가드 전까지 unknown 으로 둔다
+  const rawList: unknown[] = rawBoxes;
+  const boxes: LineBoxRef[] = [];
+  for (const raw of rawList) {
+    if (typeof raw !== 'object' || raw === null) return undefined;
+    const shipmentId = 'shipmentId' in raw ? raw.shipmentId : undefined;
+    const status = 'status' in raw ? raw.status : undefined;
+    const batchId = 'batchId' in raw ? raw.batchId : undefined;
+    const hasActiveWaybill = 'hasActiveWaybill' in raw ? raw.hasActiveWaybill : undefined;
+    if (typeof shipmentId !== 'string' || typeof status !== 'string') return undefined;
+    if (batchId !== null && typeof batchId !== 'string') return undefined;
+    if (typeof hasActiveWaybill !== 'boolean') return undefined;
+    boxes.push({ shipmentId, status, batchId, hasActiveWaybill });
+  }
+  return { fulfillmentOrderId, boxes };
+}
+
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
@@ -24,7 +62,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     // 검증 실패 상세 (zod issues 등). 이게 응답에서 빠져 있어서
     // "Invalid pricing rules structure" 만 보이고 어느 룰이 문제인지 알 수 없었다.
     let errors: unknown;
-    let details: { reasonCode: string; recovery: 'retry_preparation' | 'review_batch' } | undefined;
+    let details: PreparationDetails | LineBoxNotDraftDetails | undefined;
 
     // 1. Custom ApplicationException 처리
     if (exception instanceof ApplicationException) {
@@ -64,6 +102,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         (candidate.recovery === 'retry_preparation' || candidate.recovery === 'review_batch')
       ) {
         details = { reasonCode: candidate.reasonCode, recovery: candidate.recovery };
+      } else if (status === 409 && errorCode === 'LINE_BOX_NOT_DRAFT') {
+        details = lineBoxNotDraftDetails(candidate);
       }
       devMessage = `${exception.message} - ${request.method} ${request.url}`;
     }
