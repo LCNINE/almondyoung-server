@@ -115,4 +115,61 @@ describeIfDb('LineCompositionReader / LineCompositionManager (PostgreSQL integra
       ).rejects.toThrow(/empty/);
     });
   });
+  it('assignByOperator 는 출처와 무관하게 구성을 갈아 끼우고 operator·지정자를 남긴다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire();
+      const sku = await twoSkus(tx);
+      const actorId = randomUUID();
+      const { salesOrderId, lineIds } = await seedSalesOrder(tx, { lines: [{ variantId: randomUUID(), quantity: 1 }] });
+      await w.lineCompositionManager.freezeFromMatching(
+        [{ salesOrderLineId: lineIds[0], items: [{ skuId: sku.a, qtyPerUnit: 1 }] }],
+        tx,
+      );
+
+      await w.lineCompositionManager.assignByOperator(lineIds[0], [{ skuId: sku.b, qtyPerUnit: 3 }], actorId, tx);
+
+      const [r] = await w.lineCompositions.resolveForOrder(salesOrderId, tx);
+      expect(r.resolution).toEqual({ kind: 'frozen', source: 'operator', items: [{ skuId: sku.b, qtyPerUnit: 3 }] });
+      const [line] = await tx
+        .select()
+        .from(wmsTables.salesOrderLines)
+        .where(eq(wmsTables.salesOrderLines.id, lineIds[0]));
+      expect(line.compositionSetBy).toBe(actorId);
+      expect(await findCompositionInvariantViolations(tx)).toEqual([]);
+    });
+  });
+
+  it('replaceMatchingComposition 은 matching 라인만 바꾸고 operator·미굳힘 라인에는 던진다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire();
+      const sku = await twoSkus(tx);
+      const { salesOrderId, lineIds } = await seedSalesOrder(tx, {
+        lines: [
+          { variantId: randomUUID(), quantity: 1 },
+          { variantId: randomUUID(), quantity: 1 },
+          { variantId: randomUUID(), quantity: 1 },
+        ],
+      });
+      await w.lineCompositionManager.freezeFromMatching(
+        [{ salesOrderLineId: lineIds[0], items: [{ skuId: sku.a, qtyPerUnit: 1 }] }],
+        tx,
+      );
+      await w.lineCompositionManager.assignByOperator(lineIds[1], [{ skuId: sku.a, qtyPerUnit: 1 }], randomUUID(), tx);
+
+      await w.lineCompositionManager.replaceMatchingComposition(lineIds[0], [{ skuId: sku.b, qtyPerUnit: 2 }], tx);
+      const resolved = new Map((await w.lineCompositions.resolveForOrder(salesOrderId, tx)).map((r) => [r.line.id, r]));
+      expect(resolved.get(lineIds[0])?.resolution).toEqual({
+        kind: 'frozen',
+        source: 'matching',
+        items: [{ skuId: sku.b, qtyPerUnit: 2 }],
+      });
+
+      await expect(
+        w.lineCompositionManager.replaceMatchingComposition(lineIds[1], [{ skuId: sku.b, qtyPerUnit: 1 }], tx),
+      ).rejects.toThrow(/not matching-frozen/);
+      await expect(
+        w.lineCompositionManager.replaceMatchingComposition(lineIds[2], [{ skuId: sku.b, qtyPerUnit: 1 }], tx),
+      ).rejects.toThrow(/not matching-frozen/);
+    });
+  });
 });

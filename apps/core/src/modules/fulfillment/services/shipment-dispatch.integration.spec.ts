@@ -750,6 +750,48 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
     });
   });
 
+  it('구성 변경으로 대체된 qty 0 항목이 있는 FO 도 출고되고 v1 완료 이벤트는 나간 항목만 싣는다 (#1063)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedReadyShipment(tx);
+      // DraftBoxAmender 가 SKU 교체 뒤 남기는 모양: 같은 라인의 옛 SKU 항목이 qty 0, 줄 없음
+      const [replacedSku] = await tx
+        .insert(wmsTables.skus)
+        .values({ name: 'Replaced SKU', code: `REPLACED-${randomUUID()}`, holderId: fixture.holder.id })
+        .returning();
+      await tx.insert(wmsTables.fulfillmentOrderItems).values({
+        fulfillmentOrderId: fixture.fulfillmentOrder.id,
+        salesOrderId: fixture.salesOrder.id,
+        salesOrderLineId: fixture.salesOrderLine.id,
+        skuId: replacedSku.id,
+        qty: 0,
+        status: 'pending',
+      });
+
+      const result = await services(tx).inspectionScan(fixture.shipment.id, {
+        barcode: fixture.barcode,
+        quantity: 1,
+        actor: { id: fixture.actorId, roles: ['logistics_worker'] },
+        idempotencyKey: `dispatch-scan-${randomUUID()}`,
+      });
+
+      expect(result).toMatchObject({ status: 'shipped' });
+      const [shipped] = await tx
+        .select()
+        .from(outbox_events)
+        .where(
+          and(
+            eq(outbox_events.topic, 'fulfillments.events.v1'),
+            eq(outbox_events.aggregateId, fixture.fulfillmentOrder.id),
+          ),
+        );
+      expect(shipped).toMatchObject({ eventType: 'FulfillmentShipped' });
+      expect(shipped.payload).toMatchObject({
+        messageType: 'FulfillmentShipped',
+        payload: { shippedItems: [{ fulfillmentItemId: fixture.item.id, skuId: fixture.sku.id, shippedQty: 2 }] },
+      });
+    });
+  });
+
   it('redispatches the same recalled shipment as attempt 2 with a new waybill and immutable attempt-1 history', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedReadyShipment(tx);

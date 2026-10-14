@@ -59,9 +59,7 @@ export function projectFulfillmentOrderItemProgress(
   assertNonNegativeInteger('canceledQty', input.canceledQty, input.id);
   assertNonNegativeInteger('confirmedReservedQty', input.confirmedReservedQty, input.id);
   assertNonNegativeInteger('activeLineQty', input.activeLineQty, input.id);
-  if (input.qty === 0) {
-    throw new BadRequestException(`FOI ${input.id} qty must be positive`);
-  }
+  // qty 0 = 라인 구성 변경으로 대체된 항목(#1063 스펙 §6.3). 미출고 0 이고 canceledQty 도 0 이라 아래 규칙이 'canceled' 로 둔다.
 
   const settledQty = input.shippedQty + input.canceledQty;
   if (settledQty > input.qty) {
