@@ -4,6 +4,8 @@ export interface ParsedServerError {
   message: string;
   denied: boolean;
   conflict: boolean;
+  /** 응답 본문의 details 원본 — 모양 검증은 쓰는 쪽 몫이다. 없으면 undefined */
+  details: unknown;
 }
 
 type ErrorLike = {
@@ -53,6 +55,7 @@ export function parseServerError(
     message,
     denied: status === 403,
     conflict: status === 409,
+    details: responseData?.details,
   };
 }
 
