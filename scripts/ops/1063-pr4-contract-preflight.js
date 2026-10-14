@@ -4,8 +4,11 @@
 //   ② 지울 칸의 값 — 680행 안팎의 product_matching_id 는 variant_id 로 다시 얻을 수 있는 주소라 버린다
 //   ③ 지울 칸·테이블에 기대는 뷰 = 없어야 한다(있으면 DROP COLUMN 이 실패한다)
 //   ④ core 적용 마이그 수 — migrate 전 116 이어야 한다(117 이면 이미 적용됨, 116 미만이면 남의 마이그가 밀려 있다)
+//   ⑤ 대기 중 마이그 — 이 체크아웃의 journal 중 라이브에 아직 없는 것. 배포할 커밋을 체크아웃한 상태에서 돌린다
 // 실행(사람): sst tunnel 을 띄운 뒤
 //   cd deployments/lcnine/services && npx sst shell --stage live -- node -e "$(cat ../../../scripts/ops/1063-pr4-contract-preflight.js)"
+const fs = require('fs');
+const path = require('path');
 const postgres = require('postgres');
 const d = JSON.parse(process.env.SST_RESOURCE_Db);
 const sql = postgres({
@@ -62,8 +65,16 @@ const sql = postgres({
             OR t.relname = 'product_sku_mapping_snapshots')`;
       console.log('③ 뷰 의존(없어야 한다):', deps.length === 0 ? '없음' : deps);
 
-      const [mig] = await tx`SELECT COUNT(*)::int AS applied FROM drizzle.__drizzle_migrations`;
-      console.log('④ core 적용 마이그(migrate 전 116):', mig);
+      const [mig] = await tx`
+        SELECT COUNT(*)::int AS applied, MAX(created_at)::bigint AS last_when FROM drizzle.__drizzle_migrations`;
+      console.log('④ core 적용 마이그(migrate 전 116):', { applied: mig.applied });
+
+      // 적용 수만으로는 «대기 중인 게 이 DROP 하나뿐인가»를 모른다 — 머지 뒤 배포 전에 남의 expand 마이그가
+      // 끼면 migrate 한 번이 둘을 같이 돌린다. 이 체크아웃(= 배포할 커밋)의 journal 과 비교한다.
+      const journalPath = path.resolve(process.cwd(), '../../../apps/core/drizzle/meta/_journal.json');
+      const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8'));
+      const pending = journal.entries.filter((e) => e.when > Number(mig.last_when)).map((e) => e.tag);
+      console.log('⑤ 대기 중 마이그(migrate 전엔 drop-legacy-line-matching-columns 하나여야 한다):', pending);
     });
   } finally {
     await sql.end();

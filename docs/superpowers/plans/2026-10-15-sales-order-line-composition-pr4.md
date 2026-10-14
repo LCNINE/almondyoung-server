@@ -460,8 +460,11 @@ Expected(마지막 줄): `?? scripts/ops/1016-36-ambiguous-refund-preflight.js` 
 //   ② 지울 칸의 값 — 680행 안팎의 product_matching_id 는 variant_id 로 다시 얻을 수 있는 주소라 버린다
 //   ③ 지울 칸·테이블에 기대는 뷰 = 없어야 한다(있으면 DROP COLUMN 이 실패한다)
 //   ④ core 적용 마이그 수 — migrate 전 116 이어야 한다(117 이면 이미 적용됨, 116 미만이면 남의 마이그가 밀려 있다)
+//   ⑤ 대기 중 마이그 — 이 체크아웃의 journal 중 라이브에 아직 없는 것. 배포할 커밋을 체크아웃한 상태에서 돌린다
 // 실행(사람): sst tunnel 을 띄운 뒤
 //   cd deployments/lcnine/services && npx sst shell --stage live -- node -e "$(cat ../../../scripts/ops/1063-pr4-contract-preflight.js)"
+const fs = require('fs');
+const path = require('path');
 const postgres = require('postgres');
 const d = JSON.parse(process.env.SST_RESOURCE_Db);
 const sql = postgres({
@@ -518,8 +521,16 @@ const sql = postgres({
             OR t.relname = 'product_sku_mapping_snapshots')`;
       console.log('③ 뷰 의존(없어야 한다):', deps.length === 0 ? '없음' : deps);
 
-      const [mig] = await tx`SELECT COUNT(*)::int AS applied FROM drizzle.__drizzle_migrations`;
-      console.log('④ core 적용 마이그(migrate 전 116):', mig);
+      const [mig] = await tx`
+        SELECT COUNT(*)::int AS applied, MAX(created_at)::bigint AS last_when FROM drizzle.__drizzle_migrations`;
+      console.log('④ core 적용 마이그(migrate 전 116):', { applied: mig.applied });
+
+      // 적용 수만으로는 «대기 중인 게 이 DROP 하나뿐인가»를 모른다 — 머지 뒤 배포 전에 남의 expand 마이그가
+      // 끼면 migrate 한 번이 둘을 같이 돌린다. 이 체크아웃(= 배포할 커밋)의 journal 과 비교한다.
+      const journalPath = path.resolve(process.cwd(), '../../../apps/core/drizzle/meta/_journal.json');
+      const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8'));
+      const pending = journal.entries.filter((e) => e.when > Number(mig.last_when)).map((e) => e.tag);
+      console.log('⑤ 대기 중 마이그(migrate 전엔 drop-legacy-line-matching-columns 하나여야 한다):', pending);
     });
   } finally {
     await sql.end();
@@ -597,11 +608,11 @@ PR 본문에 반드시 넣을 것:
 - Step 4 grep 결과, Task 2 Step 7 의 통합 비교(`SAME`, 기준 RED 목록)
 - **배포 절차** (PR 3 #1071 과 한 번에):
   0. 머지 직전: `git fetch && git diff --name-only d78d94fed origin/develop -- 'apps/*/drizzle/*.sql'` 가 이 PR 의 파일 하나뿐인지. 다른 게 있으면 그 PR 의 순서(대개 `migrate → deploy`)를 **PR 4 머지 전에** 끝낸다 — `db:migrate` 는 골라서 적용할 수 없어, 섞이면 그 migrate 가 이 DROP 을 옛 태스크 앞에서 돌린다
-  1. `scripts/ops/1063-pr4-contract-preflight.js` → ① `gate_live_units_gt0 = 0` · ③ 없음 · ④ 116
-  2. 머지 → `sst deploy --stage live`(PR 3 의 core·admin-web·`libs/shared` 와 함께. 마이그는 아직 돌리지 않는다)
+  1. `scripts/ops/1063-pr4-contract-preflight.js` → ① `gate_live_units_gt0 = 0` · ③ 없음 · ④ 116 · ⑤ `[…drop-legacy-line-matching-columns]` 하나
+  2. 머지 → **배포할 커밋을 체크아웃한 채로** 0단계 `git diff` 와 사전 점검 ⑤를 한 번 더(머지와 배포 사이에 남의 마이그가 develop 에 들어왔을 수 있다 — 그러면 그 PR 순서를 먼저 처리) → `sst deploy --stage live` (PR 3 의 core·admin-web·`libs/shared` 와 함께. **마이그는 아직 돌리지 않는다**)
   3. Core 롤아웃 완료 확인: `aws ecs describe-services --cluster lcnine-services-live-ClusterCluster-zbwvckhv --services Core --region ap-northeast-2 --profile login --query 'services[0].deployments[].{td:taskDefinition,state:rolloutState,running:runningCount}'` 가 **한 줄**(새 td, `COMPLETED`)이어야 한다. 두 줄이면 옛 td 242 태스크가 아직 있다 — 기다린다
   4. PR 3 화면 스모크(PR #1071 본문의 네 항목). **이때까지는 td 242 로 되돌릴 수 있다** — migrate 는 서두를 이유가 없다(새 코드는 칸이 있어도 없어도 같다)
-  5. 사전 점검 한 번 더(④ 116) → 사람이 대상·행동을 짚어 `db:migrate --stage live --deployment lcnine-services --yes`. 기대: core 117, 다른 서비스 변화 없음
+  5. 사전 점검 한 번 더(④ 116 · ⑤ 이 마이그 하나) → 사람이 대상·행동을 짚어 `db:migrate --stage live --deployment lcnine-services --yes`. 기대: core 117, 다른 서비스 변화 없음. `lock_timeout`(10초)으로 실패하면 전부 롤백된 것이니 잠시 뒤 그대로 다시 돌린다
   6. 사전 점검 한 번 더 → ② «칸이 이미 없다» · ④ 117. Core 로그에 `does not exist` 가 없는지
 - **되돌리기:** 5단계 전에는 Core td 242 로 그냥 되돌린다. 5단계 뒤에는 앞으로만 간다. 비상시(새 Core 를 내려야 하고 옛 td 로 가야 할 때)만 칸을 빈 채로 되살리면 td 242 가 다시 뜬다:
   ```sql
