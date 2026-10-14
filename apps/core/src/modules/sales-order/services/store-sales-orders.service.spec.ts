@@ -7,7 +7,6 @@ import {
   PrintInProductionError,
   PrintNeedsPartialCancelError,
   PrintOrderCancellationManager,
-  PrintOrderNotCollectedError,
   PrintPartialCancelAvailableError,
 } from '../../print-order/services/print-order-cancellation.manager';
 import { WalletRefundClient, WalletRefundOutcome } from './wallet-refund.client';
@@ -1338,13 +1337,8 @@ describe('StoreSalesOrdersService', () => {
       expect(printCancel).not.toHaveBeenCalled();
     });
 
-    it('Medusa 결제(expectSalesOrder)인데 판매주문이 아직 없으면 PRINT_ORDER_NOT_COLLECTED(409)', async () => {
+    it('판매주문이 아직 없으면 통과시킨다(환불 신청된 주문은 수집되지 않아 막으면 풀리지 않는다)', async () => {
       const { service } = makeContext({ noSalesOrder: true });
-      const error = await service
-        .printGateByWalletIntent(WALLET_INTENT_ID, { expectSalesOrder: true })
-        .catch((e: unknown) => e);
-      expect(error).toBeInstanceOf(PrintOrderNotCollectedError);
-      expect((error as PrintOrderNotCollectedError).getErrorCode()).toBe('PRINT_ORDER_NOT_COLLECTED');
       await expect(service.printGateByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({ ok: true });
     });
 

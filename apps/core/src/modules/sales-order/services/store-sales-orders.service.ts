@@ -29,7 +29,6 @@ import {
   PrintInProductionError,
   PrintNeedsPartialCancelError,
   PrintOrderCancellationManager,
-  PrintOrderNotCollectedError,
   PrintPartialCancelAvailableError,
   PrintShippedError,
   type PrintCancelResult,
@@ -322,12 +321,11 @@ export class StoreSalesOrdersService {
 
   /**
    * 무통장 환불 승인 전 확인. 살아 있는 인쇄 줄이 있으면 승인을 막고 부분 취소로 보낸다 — 인쇄는 건드리지 않는다.
-   * expectSalesOrder(Medusa 결제)인데 판매주문이 아직 없으면 인쇄 여부를 모르므로 막는다
+   * 판매주문이 아직 없으면 통과시킨다: 환불 신청된 주문은 수집기가 일부러 수집하지 않고(refund_status=requested),
+   * 환불 뒤에는 종료 상태라 계속 수집되지 않는다. 여기서 막으면 기다려도 풀리지 않는다
    */
-  async printGateByWalletIntent(intentId: string, opts: { expectSalesOrder?: boolean } = {}): Promise<{ ok: true }> {
-    const status = await this.printStatusByWalletIntent(intentId);
-    if (status.hasActivePrint) throw new PrintNeedsPartialCancelError();
-    if (opts.expectSalesOrder && status.channelOrderId === null) throw new PrintOrderNotCollectedError();
+  async printGateByWalletIntent(intentId: string): Promise<{ ok: true }> {
+    if ((await this.printStatusByWalletIntent(intentId)).hasActivePrint) throw new PrintNeedsPartialCancelError();
     return { ok: true };
   }
 

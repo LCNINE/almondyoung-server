@@ -107,12 +107,9 @@ export class SalesOrdersController {
   @HttpCode(200)
   @ApiOperation({ summary: '무통장 환불 승인 전 확인 — 살아 있는 인쇄 줄이 있으면 409 PRINT_NEEDS_PARTIAL_CANCEL' })
   @ApiResponse({ status: 200, description: '{ ok: true } — 인쇄 줄이 없거나 모두 취소됨' })
-  @ApiResponse({
-    status: 409,
-    description: '인쇄 상품이 있는 주문(PRINT_NEEDS_PARTIAL_CANCEL) 또는 Medusa 결제인데 주문 수집 전(PRINT_ORDER_NOT_COLLECTED)',
-  })
+  @ApiResponse({ status: 409, description: '인쇄 상품이 있는 주문 — 승인하지 말고 부분 취소로 처리' })
   printGateByIntent(@Body() dto: PrintGateByIntentDto) {
-    return this.storeSalesOrders.printGateByWalletIntent(dto.walletIntentId, { expectSalesOrder: dto.expectSalesOrder });
+    return this.storeSalesOrders.printGateByWalletIntent(dto.walletIntentId);
   }
 
   @Get('print-status-by-intent/:walletIntentId')

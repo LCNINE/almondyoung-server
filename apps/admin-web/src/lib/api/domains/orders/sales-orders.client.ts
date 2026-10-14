@@ -103,10 +103,10 @@ export const salesOrders = {
   },
 
   // 무통장 환불 승인 전 확인 — 인쇄 상품이 있는 주문이면 409 로 실패하고 승인하지 않는다(부분 취소로 처리)
-  printGateByIntent: async (walletIntentId: string, expectSalesOrder: boolean): Promise<{ ok: true }> => {
+  printGateByIntent: async (walletIntentId: string): Promise<{ ok: true }> => {
     const response = await client.post(
       `${ALMONDYOUNG_API_BASE_URL}/sales-orders/print-gate-by-intent`,
-      { walletIntentId, expectSalesOrder }
+      { walletIntentId }
     );
     return response.data;
   },

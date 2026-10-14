@@ -73,8 +73,7 @@ export const useApproveRefundRequest = () => {
     // 0) 인쇄 상품 확인 → 1) Wallet 환불 실행 → 2) 성공 시 core 주문 취소(재환불 없음).
     // 인쇄 상품이 있으면 0) 이 실패해 환불하지 않는다(부분 취소로 처리). 환불 뒤의 core 취소 실패는 결과로만 보고한다.
     mutationFn: async (vars: { id: string; intentId: string; amount?: number; adminNote?: string }) => {
-      const intent = await walletApi.getPaymentIntentDetail(vars.intentId);
-      await salesOrders.printGateByIntent(vars.intentId, typeof intent.metadata?.medusaSessionId === 'string');
+      await salesOrders.printGateByIntent(vars.intentId);
       await walletApi.approveRefundRequest(vars.id, vars.adminNote);
       const cancel = await salesOrders
         .cancelSalesOrderByIntent(vars.intentId, { amount: vars.amount })
