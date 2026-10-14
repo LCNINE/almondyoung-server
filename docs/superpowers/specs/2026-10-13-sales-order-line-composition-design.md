@@ -243,14 +243,32 @@ S2 는 «라인별 담긴 개수»를 새로 계산해 `boxTarget` → `amend` �
 
 ## 8. 화면 (admin-web)
 
-1. **매칭체크(`/order/matching`)** — 행마다 «이 주문만» 버튼. 기존 SKU 검색 다이얼로그를 재사용해 SKU·1개당 수량을 고른다.
-   지정된 행 상태 칸에 «개별 지정». `excludeMatched` 는 §5.2 술어
-2. **출고 주문 상세(`/order/fulfillments/[id]`)** — 라인마다 구성과 출처(매칭/개별) 표시, 같은 다이얼로그로 변경.
-   `LINE_BOX_NOT_DRAFT` 면 박스·배치 링크(«빼기»는 거기서)
-3. **상품매칭 저장 다이얼로그(`InventoryMatchingDialog`)** — 저장 뒤 미리보기에 영향이 있을 때만 한 단계: 네 숫자 +
-   «기존 출고에도 적용». 결과 «바뀜 N · 건너뜀 M(사유별)». 영향 0 이면 이 단계는 없다
+1. **매칭체크(`/order/matching`)** — 행마다 «이 주문만» 버튼. SKU·1개당 수량 고르기는 `InventoryMatchingDialog` 수동 탭의
+   SKU 검색·구성 목록을 `SkuCompositionPicker` 로 뽑아 두 다이얼로그가 같이 쓴다(따로 있는 «SKU 검색 다이얼로그»는 없다 —
+   `SearchDialog` 는 공급처·화주 검색이다). 지정된 행은 매칭 칸에 «개별 지정»과 **라인의 구성**(상품매칭 SKU 가 아니라)을 보인다.
+   `excludeMatched` 는 §5.2 술어 — 기본값이 켜져 있어 지정한 행은 기본 화면에서 빠진다
+2. **출고 주문 상세(`/order/fulfillments/[id]`)** — 라인마다 구성 표시, 개별 지정이면 «개별 지정»(매칭 출처는 정상 상태라 표시 없음),
+   같은 다이얼로그로 변경. FO 항목 `qty` 0 은 «대체됨»(구성 변경으로 빠진 SKU) — `canceledQty`(고객 취소)와 다르다.
+   `LINE_BOX_NOT_DRAFT` 면 박스·배치 링크(«빼기»는 거기서): 배치에 든 박스 → `/order/outbound-batches?batchId=…`(드로어가 열린다),
+   배치 없는 박스 → `/order/fulfillments/<foId>`. 박스 상세 경로는 따로 없다
+3. **상품매칭 저장 다이얼로그(`InventoryMatchingDialog`)** — 저장 뒤 미리보기가 `applicable && changeable > 0` 일 때만 한 단계:
+   네 숫자 + «기존 출고에도 적용». 결과 «바뀜 N · 건너뜀 M(사유별)». 바꿀 것이 0 이면(건너뜀만 있어도) 이 단계는 없다 —
+   적용 버튼이 할 일이 없다
 4. 정상 상태는 숨기고 설명 문구는 «개별 지정» 표시와 거절 사유뿐
 5. 판정(미리보기 숫자 → 표시, 오류 코드 → 문구·링크)은 순수 함수로 빼서 테스트한다(admin-web 은 컴포넌트 테스트 환경이 없다)
+
+### 8.1 화면이 요구하는 core 읽기·오류 본문 (PR 3 계획 단계에서 찾음, 2026-10-14)
+
+- **라인 구성 항목을 내려주는 GET 이 없었다.** 응답에 칸만 더한다(additive, 마이그 없음):
+  - `GET /fulfillments/:id` 에 `lines: [{ salesOrderLineId, productName, quantity, compositionSource, composition: [{ skuId, skuCode, skuName, qtyPerUnit }] }]`
+    — FO 항목이 가리키는 라인들
+  - `GET /matchings/order-lines` 행에 `composition`(같은 항목 모양, 굳히지 않은 라인은 빈 배열)
+- **`GlobalExceptionFilter` 는 `code`·`message`·`errors`·허용목록 `details` 밖의 칸을 버린다** — PR 2 의 `LINE_BOX_NOT_DRAFT` 가
+  본문 최상위에 실은 `boxes` 는 화면에 도착하지 않았다(PR 2 통합 스펙은 매니저 예외만 보고 HTTP 응답은 안 봤다). 매니저가
+  `details: { fulfillmentOrderId, boxes: [{ shipmentId, status, batchId, hasActiveWaybill }] }` 로 싣고, 필터 허용목록에
+  `LINE_BOX_NOT_DRAFT` 를 모양 검증과 함께 더한다(`SIMPLE_OUTBOUND_PLAN_INVALIDATED` 와 같은 방식). 프록시·axios 래퍼는 본문을 그대로 넘긴다
+- 화면이 문구를 갖는 코드는 §7.4 표 + `BOX_NOT_DRAFT`·`FULFILLMENT_INVARIANT_COMPONENT_CHANGED_RETRY`(다시 시도)·`AMEND_WOULD_EMPTY_BOX`·
+  amend 가드 셋. 모르는 코드·코드 없는 404·검증 400 은 서버 메시지를 그대로 보인다
 
 ## 9. PR 분할과 배포
 
@@ -276,7 +294,11 @@ S2 는 «라인별 담긴 개수»를 새로 계산해 `boxTarget` → `amend` �
 
 ### 9.3 PR 3 — admin-web
 
-§8. PR 2 와 같은 `sst deploy` 에 실어도 된다 — 새 API 만 부르는 화면이다.
+§8. PR 2 와 같은 `sst deploy` 에 실어도 된다 — 새 API 만 부르는 화면이다. Core 롤아웃이 끝난 뒤에 쓴다(§9.2).
+
+§8.1 의 core 변경(응답 칸 둘·필터 허용목록·`LINE_BOX_NOT_DRAFT` 본문 모양)도 이 PR 에 들어간다 — 전부 additive 이고 마이그가 없다.
+화면은 새 칸이 없으면 그 표시를 숨기고(구성 칸·박스 링크) 서버 메시지로 물러서므로 admin-web 이 Core 보다 먼저 떠도 깨지지 않는다.
+PR 2 가 이미 라이브(2026-10-14 Core td 242)라 이 PR 의 core 변경은 새 배포 하나로 나간다.
 
 ### 9.4 PR 4 — contract (PR 1 배포·백필 완료 뒤, 적어도 한 번의 배포를 사이에 두고)
 
