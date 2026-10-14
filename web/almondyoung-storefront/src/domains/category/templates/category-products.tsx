@@ -127,14 +127,16 @@ export default async function CategoryProducts({
         isMembership={isMembership}
         isLoggedIn={!!customer}
         initialWishlistIds={initialWishlistIds}
+        paginationLinks={
+          paginationBaseUrl && lastPage > 1 ? (
+            <CategoryPaginationLinks
+              baseUrl={paginationBaseUrl}
+              page={page}
+              lastPage={lastPage}
+            />
+          ) : null
+        }
       />
-      {paginationBaseUrl && lastPage > 1 && (
-        <CategoryPaginationLinks
-          baseUrl={paginationBaseUrl}
-          page={page}
-          lastPage={lastPage}
-        />
-      )}
     </>
   )
 }

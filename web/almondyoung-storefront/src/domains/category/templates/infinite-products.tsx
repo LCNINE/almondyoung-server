@@ -12,6 +12,7 @@ import {
 } from "@/lib/utils/product-card"
 import type { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
+import type { ReactNode } from "react"
 
 type InfiniteProductsProps = {
   initialProducts: HttpTypes.StoreProduct[]
@@ -26,6 +27,7 @@ type InfiniteProductsProps = {
   isMembership: boolean
   isLoggedIn: boolean
   initialWishlistIds: string[]
+  paginationLinks?: ReactNode
 }
 
 export default function InfiniteProducts({
@@ -41,6 +43,7 @@ export default function InfiniteProducts({
   isMembership,
   isLoggedIn,
   initialWishlistIds,
+  paginationLinks,
 }: InfiniteProductsProps) {
   const t = useTranslations("category.products")
 
@@ -143,6 +146,8 @@ export default function InfiniteProducts({
       {!hasNextPage && visibleProducts.length > limit && (
         <p className="py-8 text-center text-sm text-gray-500">{t("noMore")}</p>
       )}
+      {/* 서버의 페이지 링크도 무한 로드의 완료 상태를 따른다. */}
+      {hasNextPage && paginationLinks}
     </>
   )
 }
