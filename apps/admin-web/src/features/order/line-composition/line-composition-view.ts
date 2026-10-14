@@ -1,5 +1,5 @@
 // 판매주문 라인 구성(#1063) 화면 판정. 컴포넌트는 이 결과만 그린다 — admin-web 은 컴포넌트 테스트 환경이 없다
-import { parseServerError } from '@/lib/api/server-error';
+import { parseServerError, record } from '@/lib/api/server-error';
 import type {
   ApplySkipReason,
   ApplyToExistingLinesResult,
@@ -117,10 +117,6 @@ export interface CompositionErrorView {
 interface BlockingBox {
   batchId: string | null;
   hasActiveWaybill: boolean;
-}
-
-function record(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
 }
 
 // parseServerError 가 풀어 준 details. 응답 필터가 허용한 details(GlobalExceptionFilter lineBoxNotDraftDetails)만 믿는다. 모양이 어긋나면 링크 없이 문구만 보인다
