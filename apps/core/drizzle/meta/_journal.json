@@ -806,6 +806,13 @@
       "when": 1791859220233,
       "tag": "20261013024020_add-sales-order-line-compositions",
       "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1791966236646,
+      "tag": "20261014082356_restock-schedule",
+      "breakpoints": true
     }
   ]
 }

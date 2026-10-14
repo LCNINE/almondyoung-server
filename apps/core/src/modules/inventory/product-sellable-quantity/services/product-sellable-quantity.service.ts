@@ -3,7 +3,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { CronExpression } from '@nestjs/schedule';
 import { CronOnce } from '@app/cron-once';
 import { AnyTx, DbService, InjectTypedDb, TxFor } from '@app/db';
-import { and, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lte, or, sql, gte } from 'drizzle-orm';
 import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import { ProductSellableQuantityChangedPayload } from '@packages/event-contracts';
@@ -22,6 +22,10 @@ import {
   ProductSellableQuantityResult,
 } from './product-sellable-quantity.calculator';
 
+import { outstandingLineWhere } from '../../procurement/services/purchase-order-outstanding.sql';
+import { resolveRestockSchedule, restockToday } from './product-restock';
+import { lockProductVariants } from './product-variant-lock';
+
 type MergedTx = TxFor<MergedSchema>;
 
 export type SoldOutState = 'none' | 'partial' | 'all';
@@ -34,6 +38,7 @@ export const SOLD_OUT_REASONS = new Set(['MANUAL_OUT_OF_STOCK', 'INSUFFICIENT_CO
 export class ProductSellableQuantityService {
   private readonly logger = new Logger(ProductSellableQuantityService.name);
   private isRefreshingSalesPeriodProjections = false;
+  private isRefreshingRestockProjections = false;
 
   constructor(
     @InjectTypedDb<MergedSchema>()
@@ -113,6 +118,8 @@ export class ProductSellableQuantityService {
             variantId: wmsTables.salesVariantPolicies.variantId,
             availabilityOverride: wmsTables.salesVariantPolicies.availabilityOverride,
             comingSoonDate: wmsTables.salesVariantPolicies.comingSoonDate,
+            restockDate: wmsTables.salesVariantPolicies.restockDate,
+            restockApproximate: wmsTables.salesVariantPolicies.restockApproximate,
           })
           .from(wmsTables.salesVariantPolicies)
           .where(inArray(wmsTables.salesVariantPolicies.variantId, existingVariantIds));
@@ -147,6 +154,42 @@ export class ProductSellableQuantityService {
                 .where(and(inArray(stockSummary.skuId, skuIds), inSellableWarehouse(stockSummary.warehouseId)))
                 .groupBy(stockSummary.skuId)
             : [];
+
+        const today = restockToday();
+        const pol = wmsTables.purchaseOrderLines;
+        const po = wmsTables.purchaseOrders;
+        const arrivalRows =
+          matchingIds.length > 0
+            ? await trx
+                .select({
+                  variantId: wmsTables.productMatchings.variantId,
+                  expectedArrival: pol.expectedArrival,
+                  approximate: sql<boolean>`${po.type} = 'foreign'`,
+                })
+                .from(pol)
+                .innerJoin(po, eq(po.id, pol.poId))
+                .innerJoin(wmsTables.productVariantSkuLinks, eq(wmsTables.productVariantSkuLinks.skuId, pol.skuId))
+                .innerJoin(
+                  wmsTables.productMatchings,
+                  eq(wmsTables.productMatchings.id, wmsTables.productVariantSkuLinks.productMatchingId),
+                )
+                .where(
+                  and(
+                    inArray(wmsTables.productMatchings.variantId, existingVariantIds),
+                    outstandingLineWhere(),
+                    gte(pol.expectedArrival, today),
+                  ),
+                )
+            : [];
+        const arrivalsByVariant = new Map<string, Array<{ expectedArrival: string; approximate: boolean }>>();
+
+        for (const arrival of arrivalRows) {
+          if (!arrival.expectedArrival) continue;
+
+          const arrivals = arrivalsByVariant.get(arrival.variantId) ?? [];
+          arrivals.push({ expectedArrival: arrival.expectedArrival, approximate: arrival.approximate });
+          arrivalsByVariant.set(arrival.variantId, arrivals);
+        }
 
         const variantMap = new Map(variantRows.map((variant) => [variant.id, variant]));
         const activeVersionMap = new Map<string, (typeof activeVersions)[number]>();
@@ -209,9 +252,19 @@ export class ProductSellableQuantityService {
               })),
             };
 
-            return calculateProductSellableQuantity(input);
+            const projection = calculateProductSellableQuantity(input);
+
+            return {
+              ...projection,
+              ...resolveRestockSchedule(
+                policy,
+                arrivalsByVariant.get(variantId) ?? [],
+                projection.stockBoundQuantity,
+                today,
+              ),
+            };
           })
-          .filter((projection): projection is ProductSellableQuantityResult => projection !== null);
+          .filter((projection) => projection !== null);
       },
       tx as MergedTx | undefined,
     );
@@ -283,7 +336,7 @@ export class ProductSellableQuantityService {
   ): Promise<{ projection: ProductSellableQuantityResult | null; published: boolean }> {
     return this.dbService.run(
       async (trx) => {
-        await trx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${variantId}))`);
+        await lockProductVariants(trx, [variantId]);
 
         let projection: ProductSellableQuantityResult;
         try {
@@ -293,6 +346,17 @@ export class ProductSellableQuantityService {
             return { projection: null, published: false };
           }
           throw error;
+        }
+
+        const previous = await trx.query.productSellableQuantityProjections.findFirst({
+          where: eq(wmsTables.productSellableQuantityProjections.variantId, variantId),
+        });
+
+        if (previous && previous.stockBoundQuantity <= 0 && projection.stockBoundQuantity > 0) {
+          await trx
+            .update(wmsTables.salesVariantPolicies)
+            .set({ restockDate: null, restockApproximate: false, updatedAt: new Date() })
+            .where(eq(wmsTables.salesVariantPolicies.variantId, variantId));
         }
 
         // 입고로 실재고가 붙는 순간 출시예정 플래그를 걷는다 (ADR-0028). 남겨두면 두 가지가 샌다 —
@@ -306,11 +370,7 @@ export class ProductSellableQuantityService {
           projection = await this.getByVariantId(variantId, trx);
         }
 
-        const previous = await trx.query.productSellableQuantityProjections.findFirst({
-          where: eq(wmsTables.productSellableQuantityProjections.variantId, variantId),
-        });
-
-        if (previous && !hasProductSellableQuantityProjectionChanged(projection, previous)) {
+        if (previous?.restockCalculatedAt && !hasProductSellableQuantityProjectionChanged(projection, previous)) {
           return { projection, published: false };
         }
 
@@ -327,6 +387,9 @@ export class ProductSellableQuantityService {
             isSellable: projection.isSellable,
             reason: projection.reason,
             comingSoonDate: projection.comingSoonDate,
+            inboundDate: projection.inboundDate ?? null,
+            inboundApproximate: projection.inboundApproximate ?? false,
+            restockCalculatedAt: now,
             calculatedAt: projection.calculatedAt,
             updatedAt: now,
           })
@@ -341,6 +404,9 @@ export class ProductSellableQuantityService {
               isSellable: projection.isSellable,
               reason: projection.reason,
               comingSoonDate: projection.comingSoonDate,
+              inboundDate: projection.inboundDate ?? null,
+              inboundApproximate: projection.inboundApproximate ?? false,
+              restockCalculatedAt: now,
               calculatedAt: projection.calculatedAt,
               updatedAt: now,
             },
@@ -415,10 +481,17 @@ export class ProductSellableQuantityService {
     );
   }
 
-  async recalculateAndPublishForSku(
-    skuId: string,
+  async recalculateAndPublishForSku(skuId: string, tx?: AnyTx) {
+    return this.recalculateAndPublishForSkus([skuId], tx);
+  }
+
+  async recalculateAndPublishForSkus(
+    skuIds: string[],
     tx?: AnyTx,
   ): Promise<Array<{ projection: ProductSellableQuantityResult | null; published: boolean }>> {
+    const uniqueSkuIds = [...new Set(skuIds.filter(Boolean))];
+    if (uniqueSkuIds.length === 0) return [];
+
     return this.dbService.run(
       async (trx) => {
         const rows = await trx
@@ -428,7 +501,7 @@ export class ProductSellableQuantityService {
             wmsTables.productMatchings,
             eq(wmsTables.productVariantSkuLinks.productMatchingId, wmsTables.productMatchings.id),
           )
-          .where(eq(wmsTables.productVariantSkuLinks.skuId, skuId));
+          .where(inArray(wmsTables.productVariantSkuLinks.skuId, uniqueSkuIds));
 
         return this.recalculateAndPublishForVariants(
           rows.map((row) => row.variantId),
@@ -457,6 +530,49 @@ export class ProductSellableQuantityService {
       },
       tx as MergedTx | undefined,
     );
+  }
+
+  @CronOnce(CronExpression.EVERY_5_MINUTES, { name: 'product-restock-projection-refresh' })
+  async refreshRestockProjectionsCron(): Promise<void> {
+    if (this.isRefreshingRestockProjections) return;
+
+    this.isRefreshingRestockProjections = true;
+
+    try {
+      await this.refreshRestockProjections();
+    } catch (error) {
+      this.logger.error('Failed to refresh restock projections', error instanceof Error ? error.stack : String(error));
+    } finally {
+      this.isRefreshingRestockProjections = false;
+    }
+  }
+
+  /** 날짜 만료와 마이그레이션 이후 최초 반영만 처리한다. 변경되지 않은 발주는 조회하지 않는다. */
+  async refreshRestockProjections(batchSize = 100): Promise<void> {
+    if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 500) {
+      throw new RangeError('Restock refresh batch size must be between 1 and 500');
+    }
+
+    const projection = wmsTables.productSellableQuantityProjections;
+    const rows = await this.dbService.db
+      .select({ variantId: projection.variantId })
+      .from(projection)
+      .innerJoin(productVariants, eq(productVariants.id, projection.variantId))
+      .where(or(sql`${projection.inboundDate} < ${restockToday()}`, isNull(projection.restockCalculatedAt)))
+      // 실제 날짜 만료를 먼저 정리하고, 최초 반영은 남은 슬롯에서 진행한다.
+      .orderBy(sql`${projection.inboundDate} ASC NULLS LAST`, projection.variantId)
+      .limit(batchSize);
+
+    for (const row of rows) {
+      try {
+        await this.recalculateAndPublishForVariant(row.variantId);
+      } catch (error) {
+        this.logger.error(
+          `Failed to expire restock date for ${row.variantId}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      }
+    }
   }
 
   @CronOnce(CronExpression.EVERY_MINUTE, {
@@ -554,6 +670,8 @@ export function toProductSellableQuantityChangedPayload(
     reason: projection.reason,
     availabilityOverride: projection.availabilityOverride,
     comingSoonDate: projection.comingSoonDate,
+    inboundDate: projection.inboundDate ?? null,
+    inboundApproximate: projection.inboundApproximate ?? false,
     preStockSellable: projection.preStockSellable,
     calculatedAt: projection.calculatedAt.toISOString(),
   };
@@ -570,6 +688,8 @@ export function hasProductSellableQuantityProjectionChanged(
     isSellable: boolean;
     reason: string;
     comingSoonDate?: string | null;
+    inboundDate?: string | null;
+    inboundApproximate?: boolean;
   },
 ): boolean {
   return (
@@ -580,6 +700,8 @@ export function hasProductSellableQuantityProjectionChanged(
     current.stockBoundQuantity !== previous.stockBoundQuantity ||
     current.isSellable !== previous.isSellable ||
     current.reason !== previous.reason ||
-    (current.comingSoonDate ?? null) !== (previous.comingSoonDate ?? null)
+    (current.comingSoonDate ?? null) !== (previous.comingSoonDate ?? null) ||
+    (current.inboundDate ?? null) !== (previous.inboundDate ?? null) ||
+    (current.inboundApproximate ?? false) !== (previous.inboundApproximate ?? false)
   );
 }

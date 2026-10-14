@@ -51,6 +51,9 @@ export interface ProductSellableQuantityResult {
   alwaysSellableZeroStock: boolean;
   availabilityOverride: ProductAvailabilityOverride;
   comingSoonDate: string | null;
+  inboundDate?: string | null;
+  inboundApproximate?: boolean;
+  inboundSource?: 'manual' | 'purchase_order' | null;
   components: ProductSellableQuantityComponentResult[];
   calculatedAt: Date;
 }
@@ -113,8 +116,7 @@ export function calculateProductSellableQuantity(
   // 로 나간다. 그래서 출시예정은 매칭 상태보다 **앞서** 끊어야 한다 — 뒤에 두면 매칭이 안 걸린
   // 신상품이 "곧 출시 예정" 이라고 표시되면서 구매까지 되고, reason 도 안 바뀌어 변경 감지에
   // 걸리지 않아 Medusa 로 전파조차 되지 않는다.
-  const stockCountableMatching =
-    input.matching?.status === 'matched' && input.matching.strategy === 'variant';
+  const stockCountableMatching = input.matching?.status === 'matched' && input.matching.strategy === 'variant';
   if (comingSoon && !stockCountableMatching) {
     return zero('COMING_SOON');
   }

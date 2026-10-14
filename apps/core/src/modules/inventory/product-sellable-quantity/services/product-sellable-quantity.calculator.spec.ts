@@ -309,6 +309,8 @@ describe('calculateProductSellableQuantity', () => {
       reason: 'SELLABLE',
       availabilityOverride: null,
       comingSoonDate: null,
+      inboundDate: null,
+      inboundApproximate: false,
       preStockSellable: false,
       calculatedAt: now.toISOString(),
     });

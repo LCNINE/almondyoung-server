@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ArrayMaxSize, IsArray, IsBoolean, IsDateString, IsEnum, IsOptional, IsUUID } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsDateString, Matches, IsEnum, IsOptional, IsUUID } from 'class-validator';
 import { ProductSellableQuantityReason } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.calculator';
 
 export class BatchVariantMatchingsRequestDto {
@@ -47,6 +47,21 @@ export class UpdateVariantStockPolicyDto {
   @IsOptional()
   @IsDateString()
   comingSoonDate?: string | null;
+
+  @ApiProperty({
+    description: '수동 재입고 예정일 (YYYY-MM-DD). 비우면 발주 예정일을 자동 적용',
+    required: false,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  restockDate?: string | null;
+
+  @ApiProperty({ description: '수동 재입고일이 대략적인 일정인지', required: false })
+  @IsOptional()
+  @IsBoolean()
+  restockApproximate?: boolean;
 }
 
 export class VariantStockPolicyDto {
@@ -65,6 +80,12 @@ export class VariantStockPolicyDto {
 
   @ApiProperty({ description: '출시예정 안내에 띄울 날짜 (YYYY-MM-DD). 표시 전용', nullable: true })
   comingSoonDate: string | null;
+
+  @ApiProperty({ description: '수동 재입고 예정일. 비우면 발주 예정일 자동 적용', nullable: true })
+  restockDate?: string | null;
+
+  @ApiProperty({ description: '수동 재입고일의 대략적인 일정 여부' })
+  restockApproximate?: boolean;
 }
 
 export class ProductSellableQuantityProjectionComponentDto {
@@ -121,6 +142,15 @@ export class ProductSellableQuantityProjectionViewDto {
 
   @ApiProperty({ description: '출시예정 안내에 띄울 날짜 (YYYY-MM-DD). 표시 전용', nullable: true })
   comingSoonDate: string | null;
+
+  @ApiProperty({ description: '고객에게 표시할 재입고 예정일', nullable: true })
+  inboundDate?: string | null;
+
+  @ApiProperty({ description: '재입고 일정이 대략적인지' })
+  inboundApproximate?: boolean;
+
+  @ApiProperty({ description: '재입고일 출처', nullable: true, enum: ['manual', 'purchase_order'] })
+  inboundSource?: 'manual' | 'purchase_order' | null;
 
   @ApiProperty({ description: '계산 시각' })
   calculatedAt: string;

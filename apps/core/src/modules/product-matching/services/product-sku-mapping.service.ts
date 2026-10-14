@@ -1,3 +1,4 @@
+import { lockProductVariants } from '../../inventory/product-sellable-quantity/services/product-variant-lock';
 import { Injectable, BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { AnyTx, DbService, InjectTypedDb, TxFor } from '@app/db';
 import { MergedSchema } from '../../../platform/database/merged-schema';
@@ -62,6 +63,13 @@ export class ProductSkuMappingService {
           comingSoonDate: policy?.availabilityOverride === 'coming_soon' ? (policy?.comingSoonDate ?? null) : null,
         }
       : {};
+    const restockPatch = {
+      ...(Object.prototype.hasOwnProperty.call(policy ?? {}, 'restockDate')
+        ? { restockDate: policy?.restockDate ?? null }
+        : {}),
+      ...(policy?.restockApproximate !== undefined ? { restockApproximate: policy.restockApproximate } : {}),
+    };
+
     const variantPolicyValues = {
       variantId,
       inventoryManagement: true,
@@ -70,6 +78,7 @@ export class ProductSkuMappingService {
         policy?.alwaysSellableZeroStock ?? existingPolicy?.alwaysSellableZeroStock ?? fallback.alwaysSellableZeroStock,
       ...availabilityOverridePatch,
       ...comingSoonDatePatch,
+      ...restockPatch,
       updatedAt: now,
     };
 
@@ -84,6 +93,7 @@ export class ProductSkuMappingService {
           alwaysSellableZeroStock: variantPolicyValues.alwaysSellableZeroStock,
           ...availabilityOverridePatch,
           ...comingSoonDatePatch,
+          ...restockPatch,
           updatedAt: now,
         },
       });
@@ -172,6 +182,8 @@ export class ProductSkuMappingService {
             alwaysSellableZeroStock: wmsTables.salesVariantPolicies.alwaysSellableZeroStock,
             availabilityOverride: wmsTables.salesVariantPolicies.availabilityOverride,
             comingSoonDate: wmsTables.salesVariantPolicies.comingSoonDate,
+            restockDate: wmsTables.salesVariantPolicies.restockDate,
+            restockApproximate: wmsTables.salesVariantPolicies.restockApproximate,
           })
           .from(wmsTables.salesVariantPolicies)
           .where(inArray(wmsTables.salesVariantPolicies.variantId, uniqueVariantIds));
@@ -214,6 +226,8 @@ export class ProductSkuMappingService {
             alwaysSellableZeroStock: matching?.alwaysSellableZeroStock ?? policy?.alwaysSellableZeroStock ?? false,
             availabilityOverride: policy?.availabilityOverride ?? null,
             comingSoonDate: policy?.comingSoonDate ?? null,
+            restockDate: policy?.restockDate ?? null,
+            restockApproximate: policy?.restockApproximate ?? false,
           };
 
           if (!existingVariantIds.has(variantId)) {
@@ -286,6 +300,8 @@ export class ProductSkuMappingService {
             alwaysSellableZeroStock: matching.alwaysSellableZeroStock,
             availabilityOverride: policy?.availabilityOverride ?? null,
             comingSoonDate: policy?.comingSoonDate ?? null,
+            restockDate: policy?.restockDate ?? null,
+            restockApproximate: policy?.restockApproximate ?? false,
           },
         };
       },
@@ -302,6 +318,8 @@ export class ProductSkuMappingService {
         if (!hasLinks && dto.policy === undefined) {
           throw new BadRequestException('variant strategy requires at least one SKU link');
         }
+
+        await lockProductVariants(trx, [variantId]);
 
         const existing = await trx.query.productMatchings.findFirst({
           where: (m, { eq }) => eq(m.variantId, variantId),
@@ -452,6 +470,8 @@ export class ProductSkuMappingService {
         if (!variant) {
           throw new NotFoundException(`Variant not found: ${variantId}`);
         }
+
+        await lockProductVariants(trx, [variantId]);
 
         const existing = await trx.query.productMatchings.findFirst({
           where: (m, { eq }) => eq(m.variantId, variantId),

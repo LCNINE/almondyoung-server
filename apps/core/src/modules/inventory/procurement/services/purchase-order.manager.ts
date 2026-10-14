@@ -16,6 +16,8 @@ import { acceptsChanges } from './purchase-order-status.rules';
 import { PurchaseOrderHeaderDeriver } from './purchase-order-header.deriver';
 import { PurchaseOrderReader } from './purchase-order.reader';
 
+import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
+
 /**
  * 발주의 검증·비즈니스 로직·DB 쓰기가 전부 여기 산다.
  *
@@ -42,6 +44,7 @@ export class PurchaseOrderManager {
     private readonly dbService: DbService<typeof wmsSchema>,
     private readonly reader: PurchaseOrderReader,
     private readonly headerDeriver: PurchaseOrderHeaderDeriver,
+    private readonly productSellableQuantity: ProductSellableQuantityService,
   ) {}
 
   /**
@@ -182,6 +185,7 @@ export class PurchaseOrderManager {
     return this.dbService.run(async (trx) => {
       await this.executeLineOrder(trx, poId, skuId, dto, userId);
       await this.headerDeriver.refresh(poId, trx);
+      await this.productSellableQuantity.recalculateAndPublishForSkus([skuId], trx);
       return this.reader.findById(poId, trx);
     }, tx);
   }
@@ -246,7 +250,7 @@ export class PurchaseOrderManager {
 
       // 잠금 순서 불변식: 발주 행(위) → 라인 행. 옛 모델은 계획을 잠그지 않아 경합을 감수했다 — 사라졌다.
       const lines = await trx
-        .select({ receivedQty: wmsTables.purchaseOrderLines.receivedQty })
+        .select({ receivedQty: wmsTables.purchaseOrderLines.receivedQty, skuId: wmsTables.purchaseOrderLines.skuId })
         .from(wmsTables.purchaseOrderLines)
         .where(eq(wmsTables.purchaseOrderLines.poId, poId))
         .orderBy(wmsTables.purchaseOrderLines.skuId)
@@ -265,6 +269,11 @@ export class PurchaseOrderManager {
           updatedAt: new Date(),
         })
         .where(eq(wmsTables.purchaseOrders.id, poId));
+
+      await this.productSellableQuantity.recalculateAndPublishForSkus(
+        lines.map((line) => line.skuId),
+        trx,
+      );
 
       return this.reader.findById(poId, trx);
     }, tx);

@@ -1257,6 +1257,7 @@ export const productVariantSkuLinks = pgTable(
   },
   (t) => ({
     pk: primaryKey(t.productMatchingId, t.skuId),
+    idxSku: index('idx_product_variant_sku_links_sku').on(t.skuId, t.productMatchingId),
   }),
 );
 
@@ -1274,6 +1275,9 @@ export const productSellableQuantityProjections = pgTable(
     // 표시 전용 출시예정일. 여기 담아두는 이유는 변경 감지 때문이다 — 날짜만 고친 경우
     // reason 이 그대로라 이 컬럼이 없으면 "변경 없음"으로 접혀 Medusa 까지 전파되지 않는다.
     comingSoonDate: date('coming_soon_date'),
+    inboundDate: date('inbound_date'),
+    inboundApproximate: boolean('inbound_approximate').notNull().default(false),
+    restockCalculatedAt: timestamp('restock_calculated_at', { withTimezone: true }),
     calculatedAt: timestamp('calculated_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1281,6 +1285,12 @@ export const productSellableQuantityProjections = pgTable(
   (t) => ({
     idxSellable: index('idx_product_sellable_qty_sellable').on(t.isSellable),
     idxUpdatedAt: index('idx_product_sellable_qty_updated_at').on(t.updatedAt),
+    idxRestockDate: index('idx_product_sellable_qty_restock_date')
+      .on(t.inboundDate)
+      .where(sql`${t.inboundDate} IS NOT NULL`),
+    idxRestockUninitialized: index('idx_product_sellable_qty_restock_uninitialized')
+      .on(t.variantId)
+      .where(sql`${t.restockCalculatedAt} IS NULL`),
   }),
 );
 
@@ -1974,6 +1984,8 @@ export const salesVariantPolicies = pgTable('sales_variant_policies', {
   // 출시예정 안내에 띄울 날짜. 판매 개시를 트리거하지 않는 **표시 전용** 값이다
   // (판매를 여는 건 입고 — ADR-0028). 비우면 스토어프론트가 "곧 출시 예정"만 띄운다.
   comingSoonDate: date('coming_soon_date'),
+  restockDate: date('restock_date'),
+  restockApproximate: boolean('restock_approximate').notNull().default(false),
   effectiveFrom: timestamp('effective_from', { withTimezone: true }),
   effectiveTo: timestamp('effective_to', { withTimezone: true }),
   updatedBy: uuid('updated_by'),
@@ -2341,6 +2353,11 @@ export const purchaseOrderLines = pgTable(
   },
   (t) => ({
     pk: primaryKey(t.poId, t.skuId),
+    idxRestockArrival: index('idx_po_lines_restock_arrival')
+      .on(t.skuId, t.expectedArrival)
+      .where(
+        sql`${t.status} = 'ordered' AND ${t.closedAt} IS NULL AND ${t.receivedQty} < COALESCE(${t.orderedQty}, 0) AND ${t.expectedArrival} IS NOT NULL`,
+      ),
     // 실발주 전에는 받을 수 없고, 실발주를 넘겨 받을 수 없다(D7). CHECK 는 NULL 을 통과시키므로 COALESCE.
     ckReceived: check(
       'ck_po_lines_received',
@@ -3030,10 +3047,7 @@ export const demoCarrierShipments = pgTable(
     uqDemoCarrierRequestKey: unique('uq_demo_carrier_request_key').on(t.requestKey),
     uqDemoCarrierWaybillNo: unique('uq_demo_carrier_waybill_no').on(t.waybillNo),
     ckDemoCarrierRequestHash: check('ck_demo_carrier_request_hash', sql`length(${t.requestHash}) = 64`),
-    ckDemoCarrierStatus: check(
-      'ck_demo_carrier_status',
-      sql`${t.status} IN ('allocated', 'registered', 'canceled')`,
-    ),
+    ckDemoCarrierStatus: check('ck_demo_carrier_status', sql`${t.status} IN ('allocated', 'registered', 'canceled')`),
   }),
 );
 

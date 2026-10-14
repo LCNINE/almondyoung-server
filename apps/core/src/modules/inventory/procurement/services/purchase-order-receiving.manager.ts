@@ -27,6 +27,8 @@ const STATUS_LABEL = {
   cancelled: '취소됨',
 } as const;
 
+import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
+
 /**
  * 발주 수령 정산. 현장 작업(회차·원장)은 입고 커널에 맡기고 발주 라인 카운터와 링크를 원자적으로 갱신한다.
  *
@@ -41,6 +43,7 @@ export class PurchaseOrderReceivingManager {
     private readonly idempotency: InventoryIdempotencyService,
     private readonly headerDeriver: PurchaseOrderHeaderDeriver,
     private readonly reader: PurchaseOrderReader,
+    private readonly productSellableQuantity: ProductSellableQuantityService,
   ) {}
 
   async receive(
@@ -114,6 +117,7 @@ export class PurchaseOrderReceivingManager {
             );
         }
         await this.headerDeriver.refresh(poId, trx);
+        await this.productSellableQuantity.recalculateAndPublishForSkus(skuIds, trx);
         return {
           receiptId: arrival.receipt.id,
           poId,
@@ -159,6 +163,7 @@ export class PurchaseOrderReceivingManager {
             and(eq(wmsTables.purchaseOrderLines.poId, link.poId), eq(wmsTables.purchaseOrderLines.skuId, link.skuId)),
           );
         await this.headerDeriver.refresh(link.poId, trx);
+        await this.productSellableQuantity.recalculateAndPublishForSkus([link.skuId], trx);
         return { poId: link.poId, skuId: link.skuId, quantity: cancelled.quantity, receiptLineId };
       },
       tx,
@@ -187,6 +192,8 @@ export class PurchaseOrderReceivingManager {
         .set({ closedReason: dto.reason, closedAt: new Date(), closedBy: userId })
         .where(and(eq(wmsTables.purchaseOrderLines.poId, poId), eq(wmsTables.purchaseOrderLines.skuId, skuId)));
       await this.headerDeriver.refresh(poId, trx);
+      await this.productSellableQuantity.recalculateAndPublishForSkus([skuId], trx);
+
       return this.reader.findById(poId, trx);
     }, tx);
   }
@@ -208,10 +215,16 @@ export class PurchaseOrderReceivingManager {
         throw new ConflictError('더 받을 것이 없는 품목은 예정일을 수정할 수 없습니다');
       }
 
+      if (line.expectedArrival === dto.expectedArrival) {
+        return this.reader.findById(poId, trx);
+      }
+
       await trx
         .update(wmsTables.purchaseOrderLines)
         .set({ expectedArrival: dto.expectedArrival })
         .where(and(eq(wmsTables.purchaseOrderLines.poId, poId), eq(wmsTables.purchaseOrderLines.skuId, skuId)));
+      await this.productSellableQuantity.recalculateAndPublishForSkus([skuId], trx);
+
       return this.reader.findById(poId, trx);
     }, tx);
   }

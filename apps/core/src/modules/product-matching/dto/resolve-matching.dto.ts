@@ -8,6 +8,7 @@ import {
   IsNumber,
   Min,
   IsDateString,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
@@ -59,6 +60,21 @@ export class StockPolicyDto {
   @IsOptional()
   @IsDateString()
   comingSoonDate?: string | null;
+
+  @ApiProperty({
+    description: '수동 재입고 예정일 (YYYY-MM-DD). 비우면 발주 예정일을 자동 적용',
+    required: false,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  restockDate?: string | null;
+
+  @ApiProperty({ description: '수동 재입고일이 대략적인 일정인지', required: false })
+  @IsOptional()
+  @IsBoolean()
+  restockApproximate?: boolean;
 }
 
 export class ResolveMatchingDto {

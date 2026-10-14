@@ -62,6 +62,7 @@ function makeTx(selectRowsQueue: unknown[][] = [[]]) {
   const deletes: unknown[] = [];
 
   const tx = {
+    execute: jest.fn().mockResolvedValue([]),
     inserts,
     updates,
     deletes,
@@ -688,6 +689,8 @@ describe('ProductMatchingService strategy semantics', () => {
       alwaysSellableZeroStock: false,
       availabilityOverride: 'manual_out_of_stock',
       comingSoonDate: null,
+      restockDate: null,
+      restockApproximate: false,
     });
   });
 

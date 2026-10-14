@@ -46,13 +46,16 @@ describeIfDb('PurchaseOrderReceivingManager (DB integration)', () => {
     const deriver = new PurchaseOrderHeaderDeriver();
     return {
       reader,
-      poManager: new PurchaseOrderManager(dbService, reader, deriver),
+      poManager: new PurchaseOrderManager(dbService, reader, deriver, {
+        recalculateAndPublishForSkus: jest.fn().mockResolvedValue([]),
+      } as never),
       receiving: new PurchaseOrderReceivingManager(
         dbService,
         makeInboundReceiptKernel(db),
         new InventoryIdempotencyService(dbService),
         deriver,
         reader,
+        { recalculateAndPublishForSkus: jest.fn().mockResolvedValue([]) } as never,
       ),
     };
   }
