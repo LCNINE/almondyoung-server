@@ -1,3 +1,4 @@
+import { selectCompositionItemViews } from '../line-composition/line-composition-views';
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
@@ -808,6 +809,11 @@ export class ProductMatchingService {
         skusByMatchingId.get(link.productMatchingId)!.push(link);
       }
 
+      // 굳힌 라인은 상품매칭이 아니라 라인 구성을 보여 준다 — 개별 지정·상품매칭 변경 뒤에는 둘이 다르다
+      const compositionsByLine = await selectCompositionItemViews(
+        trx,
+        rows.filter((row) => row.compositionSource !== null).map((row) => row.lineId),
+      );
       const data = rows.map((row) => ({
         id: row.lineId,
         variantId: row.variantId,
@@ -825,6 +831,7 @@ export class ProductMatchingService {
         matchingStatus: row.matchingStatus ?? undefined,
         matchingStrategy: row.matchingStrategy ?? undefined,
         compositionSource: row.compositionSource ?? undefined,
+        composition: compositionsByLine.get(row.lineId) ?? [],
         matchedSkus: row.matchingId
           ? (skusByMatchingId.get(row.matchingId) ?? []).map((s) => ({
               skuId: s.skuId,
