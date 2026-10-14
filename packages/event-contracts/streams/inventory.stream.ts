@@ -282,6 +282,9 @@ export interface ProductSellableQuantityChangedPayload {
   availabilityOverride?: 'manual_out_of_stock' | 'coming_soon' | null;
   /** 표시 전용 출시예정일 (YYYY-MM-DD). 판매 개시를 트리거하지 않는다 — ADR-0028. */
   comingSoonDate?: string | null;
+  /** 재입고 예정일. null은 기존 표시를 제거, 필드 생략은 이전 생산자 호환. */
+  inboundDate?: string | null;
+  inboundApproximate?: boolean;
   preStockSellable?: boolean;
   calculatedAt: string;
 }
@@ -481,6 +484,8 @@ const ProductSellableQuantityChangedSchema = z.object({
   reason: ProductSellableQuantityReasonSchema.optional(),
   availabilityOverride: z.enum(['manual_out_of_stock', 'coming_soon']).nullable().optional(),
   comingSoonDate: z.string().nullable().optional(),
+  inboundDate: z.string().nullable().optional(),
+  inboundApproximate: z.boolean().optional(),
   preStockSellable: z.boolean().optional(),
   calculatedAt: z.string().datetime(),
 });
