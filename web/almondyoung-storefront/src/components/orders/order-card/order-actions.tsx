@@ -2,6 +2,10 @@
 
 import { useCancelFailureAlert } from "@/components/orders/cancel-failure-alert"
 import {
+  PRINT_PARTIAL_CANCEL_AVAILABLE,
+  usePrintPartialCancelDialog,
+} from "@/components/orders/print-partial-cancel-dialog"
+import {
   CancelReasonForm,
   type CancelReasonCode,
 } from "@/components/orders/cancel-reason-form"
@@ -96,6 +100,8 @@ export default function OrderActions({
   const channelInfo = coreActions?.channelInfo ?? channelInfoProp
   const tActions = useTranslations("mypage.order.actions")
   const { showCancelFailure, cancelFailureAlert } = useCancelFailureAlert()
+  const { askPrintPartialCancel, printPartialCancelDialog } =
+    usePrintPartialCancelDialog(() => runCancel(true))
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [isConfirmed, setIsConfirmed] = useState(false)
@@ -157,11 +163,14 @@ export default function OrderActions({
   const handleTrack = () =>
     toast.info("배송 조회는 준비 중이에요. 고객센터로 문의해 주세요.")
 
-  const handleCancelConfirm = () => {
+  const handleCancelConfirm = () => runCancel(false)
+
+  const runCancel = (excludePrint: boolean) => {
     startCancelTransition(async () => {
       try {
         const result = await cancelOrderByMedusaId(orderId, {
           reasonCode: cancelReasonCode,
+          ...(excludePrint ? { excludePrint: true } : {}),
           reasonDetail:
             cancelReasonCode === "OTHER" && cancelReasonDetail
               ? cancelReasonDetail
@@ -169,6 +178,10 @@ export default function OrderActions({
         })
         if (!result.success) {
           setShowCancelDialog(false)
+          if (result.code === PRINT_PARTIAL_CANCEL_AVAILABLE) {
+            askPrintPartialCancel()
+            return
+          }
           showCancelFailure(result.error)
           return
         }
@@ -471,6 +484,7 @@ export default function OrderActions({
         </DialogContent>
       </Dialog>
       {cancelFailureAlert}
+      {printPartialCancelDialog}
     </>
   )
 }

@@ -1,6 +1,10 @@
 "use client"
 
 import { useCancelFailureAlert } from "@/components/orders/cancel-failure-alert"
+import {
+  PRINT_PARTIAL_CANCEL_AVAILABLE,
+  usePrintPartialCancelDialog,
+} from "@/components/orders/print-partial-cancel-dialog"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import OrderItemCartButton from "@/components/orders/order-card/order-item-cart-button"
 import { cartRequiresShipping, isDigitalItem } from "@/lib/api/medusa/shipping-method-policy"
@@ -77,6 +81,8 @@ export const OrderDetailsMobile = ({
   const tStatus = useTranslations("mypage.order.status")
   const tActions = useTranslations("mypage.order.actions")
   const { showCancelFailure, cancelFailureAlert } = useCancelFailureAlert()
+  const { askPrintPartialCancel, printPartialCancelDialog } =
+    usePrintPartialCancelDialog(() => runCancel(true))
   const tPaymentStatus = useTranslations("mypage.order.paymentStatus")
   const tRefundInfo = useTranslations("mypage.order.refundInfo")
   const tRefundRequest = useTranslations("mypage.order.refundRequest")
@@ -187,11 +193,14 @@ export const OrderDetailsMobile = ({
   const refundGuidance = tRefundInfo(`guidance.${refundStatus}`)
   const showRefundSection = refundStatus !== "none"
 
-  const handleCancelConfirm = () => {
+  const handleCancelConfirm = () => runCancel(false)
+
+  const runCancel = (excludePrint: boolean) => {
     startCancelTransition(async () => {
       try {
         const result = await cancelOrderByMedusaId(order.id, {
           reasonCode: cancelReasonCode,
+          ...(excludePrint ? { excludePrint: true } : {}),
           reasonDetail:
             cancelReasonCode === "OTHER" && cancelReasonDetail
               ? cancelReasonDetail
@@ -199,6 +208,10 @@ export const OrderDetailsMobile = ({
         })
         if (!result.success) {
           setShowCancelDialog(false)
+          if (result.code === PRINT_PARTIAL_CANCEL_AVAILABLE) {
+            askPrintPartialCancel()
+            return
+          }
           showCancelFailure(result.error)
           return
         }
@@ -601,6 +614,7 @@ export const OrderDetailsMobile = ({
         </DialogContent>
       </Dialog>
       {cancelFailureAlert}
+      {printPartialCancelDialog}
     </main>
   )
 }

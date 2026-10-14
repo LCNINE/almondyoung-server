@@ -600,7 +600,13 @@
       },
       "writeReview": "レビューを書く",
       "addToCartSuccess": "カートに追加しました。",
-      "goToCart": "カートを見る"
+      "goToCart": "カートを見る",
+      "printPartialCancel": {
+        "title": "印刷商品はキャンセルできません",
+        "description": "ご注文の印刷商品はすでに制作に入っているため、キャンセルできません。\n印刷商品を除いた残りの商品だけキャンセルしますか？印刷商品はそのまま制作してお届けします。",
+        "keep": "キャンセルしない",
+        "confirm": "残りの商品のみキャンセル"
+      }
     },
     "delivery": {
       "paid": "お支払い完了",
@@ -680,7 +686,8 @@
       "reasonWrongItem": "誤配送",
       "reasonDamagedInShipping": "配送中の破損",
       "reasonOther": "その他",
-      "noLines": "注文商品情報が見つかりません。"
+      "noLines": "注文商品情報が見つかりません。",
+      "customMadeNotAllowed": "オーダーメイドの印刷商品は返品・交換のお申し込みを受け付けておりません。印刷不良はお受け取りから5日以内にカスタマーセンターへお問い合わせください。"
     },
     "paymentStatus": {
       "awaiting": "お支払い待ち",

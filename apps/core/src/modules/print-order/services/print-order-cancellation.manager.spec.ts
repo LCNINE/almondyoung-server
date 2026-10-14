@@ -76,6 +76,19 @@ class FakeRepo extends PrintOrderRepository {
     if (same) this.store.put({ ...cur, ...patch, updatedAt: this.store.tick() });
     return Promise.resolve(same);
   });
+  compareAndSetUnprotected = jest.fn((snapshot: PrintOrderRow, patch: Partial<PrintOrderRow>) => {
+    const hook = this.beforeWrite;
+    this.beforeWrite = null;
+    hook?.(snapshot.id);
+    const cur = this.store.get(snapshot.id);
+    const same =
+      cur.status === snapshot.status &&
+      cur.vendorOrderNumber === snapshot.vendorOrderNumber &&
+      (cur.orderAttemptedAt === null) === (snapshot.orderAttemptedAt === null) &&
+      !isPreservedLastError(cur.lastError);
+    if (same) this.store.put({ ...cur, ...patch, updatedAt: this.store.tick() });
+    return Promise.resolve(same);
+  });
   reclaimCancelling = jest.fn((snapshot: PrintOrderRow) => {
     const cur = this.store.get(snapshot.id);
     const same = cur.status === 'cancelling' && cur.updatedAt.getTime() === snapshot.updatedAt.getTime();
@@ -229,6 +242,57 @@ describe('PrintOrderCancellationManager', () => {
       expect((error as PrintInProductionError).getErrorCode()).toBe('PRINT_IN_PRODUCTION');
       expect(store.get(r.id).status).toBe('cancel_refused');
       expect(store.get(r.id).cancelRefusedAt).toBeInstanceOf(Date);
+    });
+
+    it('keepOnRefusal (customer cancel) puts a refused row back to submitted instead of cancel_refused', async () => {
+      const r = row(SUBMITTED);
+      const { manager, store, wowpress } = setup(r);
+      wowpress.cancel.mockRejectedValue(new WowpressApiError('취소할 수 없는 상태입니다'));
+      wowpress.detail.mockResolvedValue(IN_PRODUCTION);
+
+      await expect(manager.cancelForOrder('so-1', 'gate', undefined, { keepOnRefusal: true })).rejects.toBeInstanceOf(
+        PrintInProductionError,
+      );
+      expect(store.get(r.id).status).toBe('submitted');
+      expect(store.get(r.id).cancelRefusedAt).toBeNull();
+    });
+
+    it('keepOnRefusal hands the row to the operator when duplicate evidence lands while waiting on wowpress', async () => {
+      const r = row(SUBMITTED);
+      const { manager, store, wowpress, repo } = setup(r);
+      wowpress.cancel.mockRejectedValue(new WowpressApiError('취소할 수 없는 상태입니다'));
+      wowpress.detail.mockImplementation(() => {
+        repo.beforeWrite = (id: string) => store.put({ ...store.get(id), lastError: 'duplicate wowpress order suspected: WP-1 / WP-2' });
+        return Promise.resolve(IN_PRODUCTION);
+      });
+
+      await expect(manager.cancelForOrder('so-1', 'gate', undefined, { keepOnRefusal: true })).rejects.toBeInstanceOf(
+        PrintInProductionError,
+      );
+      expect(store.get(r.id).status).toBe('cancel_refused');
+    });
+
+    it('keepOnRefusal leaves rows untouched when the multi-order precheck finds one in production', async () => {
+      const a = row({ ...SUBMITTED, id: 'po-a', salesOrderLineId: 'line-a', vendorOrderNumber: 'WP-A' });
+      const b = row({ ...SUBMITTED, id: 'po-b', salesOrderLineId: 'line-b', vendorOrderNumber: 'WP-B' });
+      const { manager, store, wowpress } = setup(a, b);
+      wowpress.detail.mockResolvedValue(IN_PRODUCTION);
+
+      await expect(manager.cancelForOrder('so-1', 'gate', undefined, { keepOnRefusal: true })).rejects.toBeInstanceOf(
+        PrintInProductionError,
+      );
+      expect(store.get('po-a').status).toBe('submitted');
+      expect(store.get('po-b').status).toBe('submitted');
+      expect(wowpress.cancel).not.toHaveBeenCalled();
+    });
+
+    it('keepOnRefusal still hands an order sent but not confirmed to the operator', async () => {
+      const r = row({ status: 'failed', orderAttemptedAt: new Date() });
+      const { manager, store } = setup(r);
+      await expect(manager.cancelForOrder('so-1', 'gate', undefined, { keepOnRefusal: true })).rejects.toBeInstanceOf(
+        PrintInProductionError,
+      );
+      expect(store.get(r.id).status).toBe('cancel_refused');
     });
 
     it('treats an order sent but not confirmed (no ordnum) as refused without calling wowpress', async () => {

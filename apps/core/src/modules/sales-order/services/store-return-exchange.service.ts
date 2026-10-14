@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, gte, inArray, lte, max, notInArray, sum } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, lte, max, notInArray, sum } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { InjectTypedDb } from '@app/db';
 import {
@@ -74,6 +74,9 @@ const ACTIVE_EXCHANGE_STATUSES = [
 
 // Statuses where FO is considered fully delivered
 const FO_DELIVERED_STATUSES = new Set(['completed']);
+
+export const CUSTOM_MADE_CLAIM_MESSAGE =
+  '주문제작 인쇄 상품은 반품·교환 신청을 받지 않습니다. 인쇄 불량은 받으신 날부터 5일 안에 고객센터로 문의해 주세요.';
 
 @Injectable()
 export class StoreReturnExchangeService {
@@ -197,6 +200,7 @@ export class StoreReturnExchangeService {
 
     const lineIds = dto.lines.map((l) => l.salesOrderLineId);
     await this.assertLinesBelongToOrder(orderId, lineIds);
+    await this.assertNoCustomMadeLines(lineIds);
     await this.assertExchangeQuantitiesAvailable(lineIds, dto.lines);
 
     return this.db.db.transaction(async (tx) => {
@@ -313,6 +317,7 @@ export class StoreReturnExchangeService {
           unitPrice: l.unitPrice ?? null,
           totalPrice: l.totalPrice ?? null,
           variantId: l.variantId,
+          customMade: l.almondDesignId != null,
         }),
       ),
     };
@@ -1492,6 +1497,18 @@ export class StoreReturnExchangeService {
     if (so.customerId !== customerId) {
       throw new ForbiddenException('본인 주문만 접근할 수 있습니다.');
     }
+  }
+
+  // 인쇄물은 주문제작품이라 회수·재판매가 안 된다. 불량은 고객센터가 와우프레스 재작업으로 처리한다.
+  // 반품은 창고 배송 기록이 있어야 신청되므로 와우프레스가 직접 보낸 인쇄 줄은 애초에 고를 수 없다 — 교환만 막는다
+  private async assertNoCustomMadeLines(lineIds: string[]): Promise<void> {
+    if (lineIds.length === 0) return;
+    const [customMade] = await this.db.db
+      .select({ id: wmsTables.salesOrderLines.id })
+      .from(wmsTables.salesOrderLines)
+      .where(and(inArray(wmsTables.salesOrderLines.id, lineIds), isNotNull(wmsTables.salesOrderLines.almondDesignId)))
+      .limit(1);
+    if (customMade) throw new BadRequestException(CUSTOM_MADE_CLAIM_MESSAGE);
   }
 
   private async assertOrderDelivered(orderId: string, so: SalesOrderRow): Promise<void> {

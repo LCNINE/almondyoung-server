@@ -5,7 +5,9 @@ import { PrintOrderReader } from '../../print-order/services/print-order.reader'
 import {
   PRINT_IN_PRODUCTION_MESSAGE,
   PrintInProductionError,
+  PrintNeedsPartialCancelError,
   PrintOrderCancellationManager,
+  PrintPartialCancelAvailableError,
 } from '../../print-order/services/print-order-cancellation.manager';
 import { WalletRefundClient, WalletRefundOutcome } from './wallet-refund.client';
 
@@ -72,6 +74,10 @@ function makeContext(
     activeShipmentStatuses?: string[];
     printOrders?: Array<Record<string, unknown>>;
     allOutsourced?: boolean;
+    /** 인쇄가 아닌 판매주문 줄이 있는가 */
+    nonPrintLine?: boolean;
+    /** 전체 취소 계획의 남은 줄 */
+    planLines?: Array<{ salesOrderLineId: string; quantity: number }>;
     walletOutcome?: WalletRefundOutcome;
     cancelError?: Error;
     businessLinkError?: Error;
@@ -141,7 +147,9 @@ function makeContext(
                         : []
                       : tableName === 'sales_orders'
                         ? [currentSo]
-                        : [],
+                        : tableName === 'sales_order_lines' && options.nonPrintLine
+                          ? [{ id: 'normal-line' }]
+                          : [],
                   ),
                 ),
               }),
@@ -186,6 +194,11 @@ function makeContext(
           recordedRefundMetadata = dto.metadata;
           return Promise.resolve(undefined);
         }),
+    planCancellation: jest.fn().mockResolvedValue({
+      lines: options.planLines ?? [],
+      hasShippedQuantity: false,
+      leavesNothing: true,
+    }),
   };
 
   const walletClientMock: Partial<WalletRefundClient> = {
@@ -241,22 +254,27 @@ describe('StoreSalesOrdersService', () => {
           { status: 'submitted', orderAttemptedAt: new Date() },
         ],
       });
-      await expect(service.printStatusByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({ hasActivePrint: true });
+      await expect(service.printStatusByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({ hasActivePrint: true, channelOrderId: 'medusa-order-001' });
     });
 
-    it('인쇄 줄이 모두 취소됐거나 주문권을 쓰지 않은 실패면 false', async () => {
-      const { service } = makeContext({
-        printOrders: [
-          { status: 'cancelled', orderAttemptedAt: new Date() },
-          { status: 'failed', orderAttemptedAt: null },
-        ],
+    it('아직 안 보낸 실패 행도 재전송되면 제작되므로 true', async () => {
+      const { service } = makeContext({ printOrders: [{ status: 'failed', orderAttemptedAt: null }] });
+      await expect(service.printStatusByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({
+        hasActivePrint: true,
+        channelOrderId: 'medusa-order-001',
       });
-      await expect(service.printStatusByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({ hasActivePrint: false });
+    });
+
+    it('인쇄 줄이 모두 취소됐으면 false', async () => {
+      const { service } = makeContext({
+        printOrders: [{ status: 'cancelled', orderAttemptedAt: new Date() }],
+      });
+      await expect(service.printStatusByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({ hasActivePrint: false, channelOrderId: 'medusa-order-001' });
     });
 
     it('인쇄 줄이 없으면 false', async () => {
       const { service } = makeContext({ printOrders: [] });
-      await expect(service.printStatusByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({ hasActivePrint: false });
+      await expect(service.printStatusByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({ hasActivePrint: false, channelOrderId: 'medusa-order-001' });
     });
   });
 
@@ -365,11 +383,72 @@ describe('StoreSalesOrdersService', () => {
         {},
         { idempotencyKey: 'k', actorId: CUSTOMER_ID, actorRoles: [] },
       );
-      expect(printCancel).toHaveBeenCalledWith(SO_ID, 'gate');
+      expect(printCancel).toHaveBeenCalledWith(SO_ID, 'gate', undefined, { keepOnRefusal: true });
       expect(order).toEqual(['print', 'request']);
     });
 
-    it('와우프레스가 인쇄 취소를 거절하면 고객 취소 전체를 막고 안내 문구를 그대로 돌려준다', async () => {
+    it('인쇄가 제작 중이고 다른 상품이 남아 있으면 PRINT_PARTIAL_CANCEL_AVAILABLE(409) 로 고객 동의를 묻는다', async () => {
+      const printCancel = jest.fn().mockRejectedValue(new PrintInProductionError());
+      const { service, cancelRequestsMock } = makeContext({
+        printCancel,
+        printOrders: [{ status: 'submitted', orderAttemptedAt: new Date(), salesOrderLineId: 'print-line' }],
+        planLines: [
+          { salesOrderLineId: 'print-line', quantity: 1 },
+          { salesOrderLineId: 'normal-line', quantity: 2 },
+        ],
+      });
+      const error = await service
+        .cancelRequestByChannelOrder(
+          CHANNEL_ORDER_ID,
+          CUSTOMER_ID,
+          {},
+          { idempotencyKey: 'k', actorId: CUSTOMER_ID, actorRoles: [] },
+        )
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(PrintPartialCancelAvailableError);
+      expect((error as PrintPartialCancelAvailableError).getHttpStatus()).toBe(409);
+      expect((error as PrintPartialCancelAvailableError).getErrorCode()).toBe('PRINT_PARTIAL_CANCEL_AVAILABLE');
+      expect(cancelRequestsMock.request).not.toHaveBeenCalled();
+    });
+
+    it('excludePrint 면 인쇄 줄을 뺀 남은 수량만 부분 취소로 요청한다', async () => {
+      const { service, cancelRequestsMock, printCancel } = makeContext({
+        printOrders: [{ status: 'submitted', orderAttemptedAt: new Date(), salesOrderLineId: 'print-line' }],
+        planLines: [
+          { salesOrderLineId: 'print-line', quantity: 1 },
+          { salesOrderLineId: 'normal-line', quantity: 2 },
+        ],
+      });
+      await service.cancelRequestByChannelOrder(
+        CHANNEL_ORDER_ID,
+        CUSTOMER_ID,
+        { excludePrint: true },
+        { idempotencyKey: 'k', actorId: CUSTOMER_ID, actorRoles: [] },
+      );
+      const lines = [{ salesOrderLineId: 'normal-line', quantity: 2 }];
+      expect(cancelRequestsMock.precheck).toHaveBeenCalledWith(SO_ID, lines);
+      expect(printCancel).toHaveBeenCalledWith(SO_ID, 'gate', lines, { keepOnRefusal: true });
+      expect(cancelRequestsMock.request).toHaveBeenCalledWith(expect.objectContaining({ lines }));
+    });
+
+    it('excludePrint 인데 남은 상품이 인쇄뿐이면 제작 중 안내로 막는다', async () => {
+      const { service, cancelRequestsMock } = makeContext({
+        printOrders: [{ status: 'submitted', orderAttemptedAt: new Date(), salesOrderLineId: 'print-line' }],
+        planLines: [{ salesOrderLineId: 'print-line', quantity: 1 }],
+      });
+      const error = await service
+        .cancelRequestByChannelOrder(
+          CHANNEL_ORDER_ID,
+          CUSTOMER_ID,
+          { excludePrint: true },
+          { idempotencyKey: 'k', actorId: CUSTOMER_ID, actorRoles: [] },
+        )
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(PrintInProductionError);
+      expect(cancelRequestsMock.request).not.toHaveBeenCalled();
+    });
+
+    it('와우프레스가 인쇄 취소를 거절하고 남은 상품이 인쇄뿐이면 고객 취소 전체를 막고 안내 문구를 그대로 돌려준다', async () => {
       const printCancel = jest.fn().mockRejectedValue(new PrintInProductionError());
       const { service, cancelRequestsMock } = makeContext({ printCancel });
       const error = await service
@@ -821,7 +900,16 @@ describe('StoreSalesOrdersService', () => {
         expect(r.availableActions).not.toContain('cancel');
         expect(r.cancelUnavailableReason).toBe('already_processing');
       });
-      it('와우프레스 취소 거절(cancel_refused) 행이 있으면 already_processing (셀프취소 불가)', async () => {
+      it('와우프레스 취소 거절 행이 있어도 인쇄 말고 다른 상품이 있으면 취소를 연다(인쇄 제외 취소를 묻는다)', async () => {
+        const { service } = makeContext({
+          fos: [{ status: 'ready' }],
+          printOrders: [{ id: 'po-1', status: 'cancel_refused', trackingNumber: null }],
+          nonPrintLine: true,
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.availableActions).toContain('cancel');
+      });
+      it('와우프레스 취소 거절(cancel_refused) 행만 있으면 already_processing (셀프취소 불가)', async () => {
         const { service } = makeContext({
           fos: [{ status: 'ready' }],
           printOrders: [{ id: 'po-1', status: 'cancel_refused', trackingNumber: null }],
@@ -1234,31 +1322,20 @@ describe('StoreSalesOrdersService', () => {
   });
 
   describe('printGateByWalletIntent (무통장 환불 승인 전)', () => {
-    it('인쇄 줄이 없으면(취소할 것이 없으면) ok', async () => {
-      const { service, printCancel } = makeAdminContext({
-        printCancel: jest.fn().mockResolvedValue({ vendorCancelled: [], locallyCancelled: [] }),
+    it('살아 있는 인쇄 줄이 있으면 PrintNeedsPartialCancelError(409) — 와우프레스 취소는 시도하지 않는다', async () => {
+      const { service, printCancel } = makeContext({
+        printOrders: [{ status: 'submitted', orderAttemptedAt: new Date() }],
       });
-      await expect(service.printGateByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({ ok: true });
-      expect(printCancel).toHaveBeenCalledWith(SO_ID, 'gate');
-    });
-
-    it('와우프레스가 거절하면 PrintInProductionError(409, PRINT_IN_PRODUCTION) 를 그대로 던진다', async () => {
-      const { service } = makeAdminContext({ printCancel: jest.fn().mockRejectedValue(new PrintInProductionError()) });
       const error = await service.printGateByWalletIntent(WALLET_INTENT_ID).catch((e: unknown) => e);
-      expect(error).toBeInstanceOf(PrintInProductionError);
-      expect((error as PrintInProductionError).getHttpStatus()).toBe(409);
-      expect((error as PrintInProductionError).getErrorCode()).toBe('PRINT_IN_PRODUCTION');
+      expect(error).toBeInstanceOf(PrintNeedsPartialCancelError);
+      expect((error as PrintNeedsPartialCancelError).getHttpStatus()).toBe(409);
+      expect((error as PrintNeedsPartialCancelError).getErrorCode()).toBe('PRINT_NEEDS_PARTIAL_CANCEL');
+      expect(printCancel).not.toHaveBeenCalled();
     });
 
-    it('취소된 뒤 다시 불러도 ok (멱등)', async () => {
-      const printCancel = jest
-        .fn()
-        .mockResolvedValueOnce(PRINT_RESULT)
-        .mockResolvedValueOnce({ vendorCancelled: [], locallyCancelled: [] });
-      const { service } = makeAdminContext({ printCancel });
+    it('인쇄 줄이 없거나 모두 취소됐으면 ok', async () => {
+      const { service } = makeContext({ printOrders: [{ status: 'cancelled', orderAttemptedAt: new Date() }] });
       await expect(service.printGateByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({ ok: true });
-      await expect(service.printGateByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({ ok: true });
-      expect(printCancel).toHaveBeenCalledTimes(2);
     });
   });
 

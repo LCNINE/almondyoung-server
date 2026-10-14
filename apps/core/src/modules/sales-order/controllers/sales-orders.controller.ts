@@ -105,10 +105,9 @@ export class SalesOrdersController {
 
   @Post('print-gate-by-intent')
   @HttpCode(200)
-  @ApiOperation({ summary: '무통장 환불 승인 전 인쇄(와우프레스) 취소 — 제작이 시작됐으면 409 PRINT_IN_PRODUCTION' })
+  @ApiOperation({ summary: '무통장 환불 승인 전 확인 — 살아 있는 인쇄 줄이 있으면 409 PRINT_NEEDS_PARTIAL_CANCEL' })
   @ApiResponse({ status: 200, description: '{ ok: true } — 인쇄 줄이 없거나 모두 취소됨' })
-  @ApiResponse({ status: 409, description: '와우프레스가 취소를 거절(제작 시작) — 환불 승인하지 말 것' })
-  @ApiResponse({ status: 502, description: '와우프레스 응답 불확실 — 잠시 후 다시 시도' })
+  @ApiResponse({ status: 409, description: '인쇄 상품이 있는 주문 — 승인하지 말고 부분 취소로 처리' })
   printGateByIntent(@Body() dto: PrintGateByIntentDto) {
     return this.storeSalesOrders.printGateByWalletIntent(dto.walletIntentId);
   }

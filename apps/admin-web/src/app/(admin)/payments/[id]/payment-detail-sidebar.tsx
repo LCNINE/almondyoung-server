@@ -13,8 +13,11 @@ import {
   usePrintStatusByIntent,
   isPrintRefundBlocked,
   PRINT_REFUND_RESTRICTED_NOTE,
+  PRINT_PARTIAL_CANCEL_GUIDE,
   PRINT_DEFECT_OVERRIDE_LABEL,
+  partialCancelHref,
 } from '@/lib/services/wallet';
+import Link from 'next/link';
 import { Checkbox } from '@/components/ui/checkbox';
 import { PaymentMethodTypeCell } from '@/components/table/table-cells/wallet/payment-method-type-cell';
 import { UserDetailGeneralContent } from '@/app/(admin)/users/[id]/user-detail-general';
@@ -202,6 +205,10 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
             {hasActivePrint === true ? (
               <>
                 <p className="text-xs text-amber-800">{PRINT_REFUND_RESTRICTED_NOTE}</p>
+                <p className="text-xs text-amber-800">{PRINT_PARTIAL_CANCEL_GUIDE}</p>
+                <Button asChild size="sm" variant="outline" className="w-full">
+                  <Link href={partialCancelHref(printStatus.data?.channelOrderId)}>주문내역에서 부분 취소하기</Link>
+                </Button>
                 <label className="flex items-center gap-2 text-xs text-amber-900">
                   <Checkbox
                     checked={defectConfirmed}

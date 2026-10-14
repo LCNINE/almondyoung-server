@@ -102,7 +102,7 @@ export const salesOrders = {
     return response.data;
   },
 
-  // 무통장 환불 승인 전 인쇄(와우프레스) 취소 — 제작이 시작됐으면 409 로 실패하고 승인하지 않는다
+  // 무통장 환불 승인 전 확인 — 인쇄 상품이 있는 주문이면 409 로 실패하고 승인하지 않는다(부분 취소로 처리)
   printGateByIntent: async (walletIntentId: string): Promise<{ ok: true }> => {
     const response = await client.post(
       `${ALMONDYOUNG_API_BASE_URL}/sales-orders/print-gate-by-intent`,
@@ -112,7 +112,9 @@ export const salesOrders = {
   },
 
   // 결제의 주문에 와우프레스로 제작이 접수된 인쇄 줄이 있는가 — 결제 상세의 환불·결제취소 제한 판단
-  printStatusByIntent: async (walletIntentId: string): Promise<{ hasActivePrint: boolean }> => {
+  printStatusByIntent: async (
+    walletIntentId: string
+  ): Promise<{ hasActivePrint: boolean; channelOrderId: string | null }> => {
     const response = await client.get(
       `${ALMONDYOUNG_API_BASE_URL}/sales-orders/print-status-by-intent/${encodeURIComponent(walletIntentId)}`
     );

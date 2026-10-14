@@ -165,6 +165,9 @@ export class StoreOrderLineDto {
 
   @ApiProperty({ description: '상품 변형 ID' })
   variantId: string;
+
+  @ApiProperty({ description: '주문제작(아몬드템플릿 인쇄) 상품 — 고객 반품·교환 신청 대상이 아니다' })
+  customMade: boolean;
 }
 
 export class StoreOrderLinesResponseDto {

@@ -13,6 +13,11 @@ export function isActivePrint(row: Pick<PrintOrderRow, 'status' | 'orderAttempte
   return true;
 }
 
+// 취소되지 않은 인쇄 행. 아직 안 보낸 실패·미지원 행도 재전송되면 제작되므로 살아 있는 것으로 본다
+export function isLivePrint(row: Pick<PrintOrderRow, 'status'>): boolean {
+  return row.status !== 'cancelled';
+}
+
 export function retryBlocked(row: PrintOrderRow): boolean {
   return isPreservedLastError(row.lastError);
 }

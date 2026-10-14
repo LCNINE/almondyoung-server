@@ -41,6 +41,7 @@ import {
 } from '@/lib/services/orders/print-orders.queries';
 import { formatDateTime } from '@/lib/utils/date';
 import { cn } from '@/lib/utils/ui';
+import { PrintDefectGuide } from './defect-guide';
 
 type Action =
   | {
@@ -118,6 +119,8 @@ export default function PrintOrdersTemplate() {
           </span>
         )}
       </div>
+
+      <PrintDefectGuide />
 
       <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
         {TABS.map(({ key, label }) => {

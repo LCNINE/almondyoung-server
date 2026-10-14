@@ -9,7 +9,7 @@ import { PrintOrderReader } from './print-order.reader';
 import { isPreservedLastError, PrintOrderRepository } from './print-order.repository';
 
 export const PRINT_IN_PRODUCTION_MESSAGE =
-  '주문하신 인쇄물이 이미 제작에 들어가 취소할 수 없습니다. 인쇄 상태에 문제가 있으면 상품을 받으신 뒤 교환·환불을 신청해 주세요.';
+  '주문하신 인쇄물이 이미 제작에 들어가 취소할 수 없습니다. 인쇄물에 불량이 있으면 받으신 날부터 5일 안에 고객센터로 문의해 주세요.';
 export const PRINT_CANCEL_RETRY_MESSAGE = '잠시 후 다시 시도해 주세요.';
 export const PRINT_SHIPPED_MESSAGE = '이미 출고된 주문은 취소할 수 없습니다. 고객센터로 문의해 주세요.';
 export const PRINT_PARTIAL_QUANTITY_MESSAGE =
@@ -25,7 +25,49 @@ export class PrintInProductionError extends ConflictError {
   }
 }
 
+export class PrintShippedError extends ConflictError {
+  constructor() {
+    super(PRINT_SHIPPED_MESSAGE);
+  }
+
+  getErrorCode(): string {
+    return 'PRINT_SHIPPED';
+  }
+}
+
+export const PRINT_PARTIAL_CANCEL_AVAILABLE_MESSAGE =
+  '주문하신 인쇄 상품은 이미 제작에 들어가 취소할 수 없습니다. 인쇄 상품을 뺀 나머지 상품만 취소할 수 있습니다.';
+
+// 고객 취소 1단계 응답. 스토어는 이 코드를 받으면 안내창을 띄우고, 동의하면 excludePrint 로 다시 요청한다
+export class PrintPartialCancelAvailableError extends ConflictError {
+  constructor() {
+    super(PRINT_PARTIAL_CANCEL_AVAILABLE_MESSAGE);
+  }
+
+  getErrorCode(): string {
+    return 'PRINT_PARTIAL_CANCEL_AVAILABLE';
+  }
+}
+
+export const PRINT_NEEDS_PARTIAL_CANCEL_MESSAGE =
+  '아몬드템플릿 인쇄 상품이 있는 주문은 금액만으로 환불할 수 없습니다. 주문내역 > 주문 취소 > 부분 취소에서 환불할 상품을 골라 주세요.';
+
+// 금액만 아는 환불 경로는 어느 상품을 돌려주는지 몰라, 인쇄를 멋대로 취소하거나 인쇄분까지 환불하게 된다
+export class PrintNeedsPartialCancelError extends ConflictError {
+  constructor() {
+    super(PRINT_NEEDS_PARTIAL_CANCEL_MESSAGE);
+  }
+
+  getErrorCode(): string {
+    return 'PRINT_NEEDS_PARTIAL_CANCEL';
+  }
+}
+
 export type PrintCancelMode = 'gate' | 'record';
+export interface PrintCancelOptions {
+  // 고객 취소: 와우프레스가 거절하면 고객에게 바로 알리고 인쇄는 계속하므로, 운영자 확인(cancel_refused)으로 넘기지 않는다
+  keepOnRefusal?: boolean;
+}
 export interface PrintCancelLine {
   salesOrderLineId: string;
   quantity: number;
@@ -43,6 +85,7 @@ type VendorState = 'cancelled' | 'cancellable' | 'refused';
 interface Run {
   mode: PrintCancelMode;
   result: PrintCancelResult;
+  keepOnRefusal: boolean;
 }
 
 const MAX_REREADS = 3;
@@ -98,8 +141,13 @@ export class PrintOrderCancellationManager {
     salesOrderId: string,
     mode: PrintCancelMode,
     lines?: PrintCancelLine[],
+    options: PrintCancelOptions = {},
   ): Promise<PrintCancelResult> {
-    const run: Run = { mode, result: { vendorCancelled: [], locallyCancelled: [] } };
+    const run: Run = {
+      mode,
+      result: { vendorCancelled: [], locallyCancelled: [] },
+      keepOnRefusal: mode === 'gate' && options.keepOnRefusal === true,
+    };
     const all = await this.reader.forSalesOrder(salesOrderId);
     const requested = lines ? this.requestedQuantities(lines, mode) : null;
     const rows = requested ? all.filter((r) => requested.has(r.salesOrderLineId)) : all;
@@ -206,6 +254,8 @@ export class PrintOrderCancellationManager {
       const state = await this.detailState(row.id, ordnum);
       if (state === null) this.raise('unavailable');
       if (state === 'refused') {
+        // 아직 아무 행도 선점하지 않았다. 고객 취소면 행을 그대로 두고 거절만 알린다
+        if (run.keepOnRefusal) this.raise('refused');
         this.raise(await this.refuse(row, `wowpress order ${ordnum} is no longer cancellable`, run, 0));
       }
     }
@@ -263,7 +313,9 @@ export class PrintOrderCancellationManager {
     if (!ordnum) return this.refuse(row, 'cancelling without wowpress ordnum', run, depth);
     const state = await this.detailState(row.id, ordnum);
     if (state === 'cancelled') return this.markCancelled(row, ordnum, run);
-    if (state === 'refused') return this.refuse(row, `wowpress order ${ordnum} is no longer cancellable`, run, depth);
+    if (state === 'refused') {
+      return this.vendorRefused(row, `wowpress order ${ordnum} is no longer cancellable`, run, depth);
+    }
     const stale = Date.now() - row.updatedAt.getTime() > CANCEL_CLAIM_STALE_MS;
     if (state === 'cancellable' && stale) {
       if (!(await this.repository.reclaimCancelling(row))) return this.reread(row, run, depth);
@@ -284,7 +336,7 @@ export class PrintOrderCancellationManager {
           : null;
       if (state === 'cancelled') return this.markCancelled(claimed, ordnum, run);
       if (state === 'refused') {
-        return this.refuse(claimed, `wowpress refused cancel: ${errorMessage(error)}`, run, depth);
+        return this.vendorRefused(claimed, `wowpress refused cancel: ${errorMessage(error)}`, run, depth);
       }
       // 결과를 모르므로 cancelling 으로 둔다. 다음 요청이 와우프레스 상태로 정한다
       this.logger.warn(`print order ${claimed.id} wowpress cancel failed (ordnum ${ordnum}): ${errorMessage(error)}`);
@@ -320,6 +372,16 @@ export class PrintOrderCancellationManager {
     }
   }
 
+  // 와우프레스가 직접 취소를 거절했다. keepOnRefusal 이면 우리가 잡은 cancelling 표시만 풀어 원래대로 진행시킨다
+  private async vendorRefused(row: PrintOrderRow, reason: string, run: Run, depth: number): Promise<Outcome> {
+    if (!run.keepOnRefusal) return this.refuse(row, reason, run, depth);
+    const status = row.trackingNumber ? 'shipped' : 'submitted';
+    // 기다리는 사이 중복 의심·번호 미저장 기록이 붙었으면 되돌리지 않는다. 다시 읽으면 운영자에게 넘어간다
+    if (!(await this.repository.compareAndSetUnprotected(row, { status }))) return this.reread(row, run, depth);
+    this.logger.warn(`print order ${row.id} cancel refused (${run.mode}); kept as ${status}: ${reason}`);
+    return 'refused';
+  }
+
   private async refuse(row: PrintOrderRow, reason: string, run: Run, depth: number): Promise<Outcome> {
     const marked = await this.repository.compareAndSet(row, {
       status: 'cancel_refused',
@@ -333,7 +395,12 @@ export class PrintOrderCancellationManager {
 
   private async record(row: PrintOrderRow, reason: string): Promise<Outcome> {
     if (TERMINAL_FOR_CANCEL.includes(row.status) && !needsOperator(row)) return 'done';
-    return this.refuse(row, reason, { mode: 'record', result: { vendorCancelled: [], locallyCancelled: [] } }, 0);
+    return this.refuse(
+      row,
+      reason,
+      { mode: 'record', result: { vendorCancelled: [], locallyCancelled: [] }, keepOnRefusal: false },
+      0,
+    );
   }
 
   // 처음 읽은 뒤 다른 주문의 증거가 붙었을 수 있다. 끝났다고 답하기 직전에 다시 읽어 판정한다
@@ -361,7 +428,7 @@ export class PrintOrderCancellationManager {
       case 'unavailable':
         throw new UpstreamUnavailableError(PRINT_CANCEL_RETRY_MESSAGE);
       case 'shipped':
-        throw new ConflictError(PRINT_SHIPPED_MESSAGE);
+        throw new PrintShippedError();
     }
   }
 }

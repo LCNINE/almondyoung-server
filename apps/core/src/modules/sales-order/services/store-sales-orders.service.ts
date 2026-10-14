@@ -23,9 +23,14 @@ import {
   StoreRefundStatus,
 } from '../dto/store-order-actions.dto';
 import { PrintOrderReader } from '../../print-order/services/print-order.reader';
-import { isActivePrint } from '../../print-order/services/print-order-board.rules';
+import { isLivePrint } from '../../print-order/services/print-order-board.rules';
+import { isDigitalFulfillmentLine } from '../../product-matching/line-composition/line-composition';
 import {
+  PrintInProductionError,
+  PrintNeedsPartialCancelError,
   PrintOrderCancellationManager,
+  PrintPartialCancelAvailableError,
+  PrintShippedError,
   type PrintCancelResult,
 } from '../../print-order/services/print-order-cancellation.manager';
 import { type PrintOrderRow } from '../../print-order/schema/print-order.schema';
@@ -284,24 +289,59 @@ export class StoreSalesOrdersService {
     return { status: 'cancelled', refundStatus };
   }
 
-  /** 무통장 환불 승인 전에 인쇄를 먼저 멈춘다. 거절·재시도 대상이면 던져 승인을 막는다 */
+  /**
+   * 고객이 인쇄를 빼고 취소할 줄. 전체 취소 계획에서 취소되지 않은 인쇄 줄(실패·미지원도 재전송될 수 있다)과
+   * 디지털 줄을 뺀다 — 부분 취소는 디지털 이용권을 회수하지 않으므로 디지털은 전체 취소로만 돌려준다
+   */
+  private async linesWithoutPrint(salesOrderId: string): Promise<Array<{ salesOrderLineId: string; quantity: number }>> {
+    const printLineIds = new Set(
+      (await this.printOrders.forSalesOrder(salesOrderId)).filter(isLivePrint).map((r) => r.salesOrderLineId),
+    );
+    const digitalLineIds = new Set(
+      (
+        await this.db.db
+          .select({
+            id: inventoryTables.salesOrderLines.id,
+            fulfillmentKind: inventoryTables.salesOrderLines.fulfillmentKind,
+            requiresShipping: inventoryTables.salesOrderLines.requiresShipping,
+          })
+          .from(inventoryTables.salesOrderLines)
+          .where(eq(inventoryTables.salesOrderLines.salesOrderId, salesOrderId))
+      )
+        .filter(isDigitalFulfillmentLine)
+        .map((line) => line.id),
+    );
+    const plan = await this.db.db.transaction((trx) =>
+      this.salesOrdersService.planCancellation(salesOrderId, undefined, trx),
+    );
+    return plan.lines
+      .filter((line) => !printLineIds.has(line.salesOrderLineId) && !digitalLineIds.has(line.salesOrderLineId))
+      .map((line) => ({ salesOrderLineId: line.salesOrderLineId, quantity: line.quantity }));
+  }
+
+  /** 무통장 환불 승인 전 확인. 살아 있는 인쇄 줄이 있으면 승인을 막고 부분 취소로 보낸다 — 인쇄는 건드리지 않는다 */
   async printGateByWalletIntent(intentId: string): Promise<{ ok: true }> {
-    const so = await this.findMedusaOrderIdByIntent(intentId);
-    if (so) await this.printCancellation.cancelForOrder(so.id, 'gate');
+    if ((await this.printStatusByWalletIntent(intentId)).hasActivePrint) throw new PrintNeedsPartialCancelError();
     return { ok: true };
   }
 
-  /** 결제 상세가 환불·결제취소를 막을지 정한다. 와우프레스로 제작이 접수됐을 수 있는 인쇄 행이 있으면 true */
-  async printStatusByWalletIntent(intentId: string): Promise<{ hasActivePrint: boolean }> {
+  /**
+   * 결제 상세가 환불·결제취소를 막을지 정한다. 취소되지 않은 인쇄 행이 있으면 true —
+   * 아직 안 보낸 실패·미지원 행도 운영자가 재전송하면 제작되므로 막는다.
+   * channelOrderId 는 막았을 때 주문내역 부분 취소로 보내는 링크용이다
+   */
+  async printStatusByWalletIntent(
+    intentId: string,
+  ): Promise<{ hasActivePrint: boolean; channelOrderId: string | null }> {
     const so = await this.findMedusaOrderIdByIntent(intentId);
-    if (!so) return { hasActivePrint: false };
+    if (!so) return { hasActivePrint: false, channelOrderId: null };
     const rows = await this.printOrders.forSalesOrder(so.id);
-    return { hasActivePrint: rows.some(isActivePrint) };
+    return { hasActivePrint: rows.some(isLivePrint), channelOrderId: so.channelOrderId };
   }
 
-  private async findMedusaOrderIdByIntent(intentId: string): Promise<{ id: string } | undefined> {
+  private async findMedusaOrderIdByIntent(intentId: string): Promise<{ id: string; channelOrderId: string } | undefined> {
     return this.db.db
-      .select({ id: inventoryTables.salesOrders.id })
+      .select({ id: inventoryTables.salesOrders.id, channelOrderId: inventoryTables.salesOrders.channelOrderId })
       .from(inventoryTables.salesOrders)
       .where(
         and(
@@ -605,6 +645,21 @@ export class StoreSalesOrdersService {
    * `mypage.order.actions.cancelUnavailable.digital_downloaded`), wallet 의
    * CoreDigitalGuardClient 및 그 호출부.
    */
+  private async hasNonPrintLine(salesOrderId: string): Promise<boolean> {
+    const row = await this.db.db
+      .select({ id: inventoryTables.salesOrderLines.id })
+      .from(inventoryTables.salesOrderLines)
+      .where(
+        and(
+          eq(inventoryTables.salesOrderLines.salesOrderId, salesOrderId),
+          isNull(inventoryTables.salesOrderLines.almondDesignId),
+        ),
+      )
+      .limit(1)
+      .then((r) => r[0]);
+    return !!row;
+  }
+
   private async hasExercisedDigitalAsset(salesOrderId: string): Promise<boolean> {
     const row = await this.db.db
       .select({ id: digitalAssetOwnerships.id })
@@ -796,8 +851,12 @@ export class StoreSalesOrdersService {
     } else if (isChannelOrder) {
       availableActions.push('receipt');
       cancelUnavailableReason = 'channel_order';
-    } else if (isPickingStarted(foRows) || phaseInput.printStatuses?.includes('cancel_refused')) {
-      // 피킹 시작 이후·와우프레스가 인쇄 취소를 거절한 뒤에는 고객 셀프 취소 불가 — 고객센터 문의 안내
+    } else if (
+      isPickingStarted(foRows) ||
+      (phaseInput.printStatuses?.includes('cancel_refused') && !(await this.hasNonPrintLine(so.id)))
+    ) {
+      // 피킹 시작 이후·와우프레스가 인쇄 취소를 거절했고 인쇄 말고 취소할 상품이 없으면 고객 셀프 취소 불가 — 고객센터 문의 안내.
+      // 다른 상품이 있으면 취소를 열어 두고, 요청이 PRINT_PARTIAL_CANCEL_AVAILABLE 로 인쇄 제외 취소를 묻는다
       availableActions.push('receipt');
       cancelUnavailableReason = 'already_processing';
     } else if (await this.hasExercisedDigitalAsset(so.id)) {
@@ -879,11 +938,23 @@ export class StoreSalesOrdersService {
     }
 
     if (!fulfillmentCommandContext) throw new BadRequestException('Idempotency-Key header is required');
-    await this.cancelRequests.precheck(so.id, undefined);
-    const printed = await this.printCancellation.cancelForOrder(so.id, 'gate');
+    // 고객이 인쇄 상품을 빼고 나머지만 취소하겠다고 동의한 두 번째 요청이다
+    const lines = dto.excludePrint ? await this.linesWithoutPrint(so.id) : undefined;
+    if (lines?.length === 0) throw new PrintInProductionError();
+    await this.cancelRequests.precheck(so.id, lines);
+    const printed = await this.printCancellation
+      .cancelForOrder(so.id, 'gate', lines, { keepOnRefusal: true })
+      .catch(async (error: unknown) => {
+        const locked = error instanceof PrintInProductionError || error instanceof PrintShippedError;
+        if (locked && !lines && (await this.linesWithoutPrint(so.id)).length > 0) {
+          throw new PrintPartialCancelAvailableError();
+        }
+        throw error;
+      });
     await this.afterPrintCancel(printed, () =>
       this.cancelRequests.request({
         salesOrderId: so.id,
+        ...(lines ? { lines } : {}),
         requester: { kind: 'customer', customerId },
         sourceKey: fulfillmentCommandContext.idempotencyKey,
         reasonCode: dto.reasonCode,

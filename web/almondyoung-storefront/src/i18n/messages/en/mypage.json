@@ -600,7 +600,13 @@
       },
       "writeReview": "Write a review",
       "addToCartSuccess": "Added to cart.",
-      "goToCart": "View cart"
+      "goToCart": "View cart",
+      "printPartialCancel": {
+        "title": "The print item can't be canceled",
+        "description": "Your print item is already in production and can't be canceled.\nCancel only the other items? The print item will still be made and shipped to you.",
+        "keep": "Keep order",
+        "confirm": "Cancel other items"
+      }
     },
     "delivery": {
       "paid": "Paid",
@@ -680,7 +686,8 @@
       "reasonWrongItem": "Wrong item",
       "reasonDamagedInShipping": "Damaged in shipping",
       "reasonOther": "Other",
-      "noLines": "No order items found."
+      "noLines": "No order items found.",
+      "customMadeNotAllowed": "Custom print items can't be returned or exchanged. For a printing defect, contact customer service within 5 days of receiving it."
     },
     "paymentStatus": {
       "awaiting": "Payment Pending",

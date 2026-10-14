@@ -70,8 +70,8 @@ export const useRefundIntent = (intentId: string) => {
 export const useApproveRefundRequest = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    // 0) 인쇄(와우프레스) 취소 → 1) Wallet 환불 실행 → 2) 성공 시 core 주문 취소(재환불 없음).
-    // 인쇄가 이미 제작 중이면 0) 이 실패해 환불하지 않는다. 환불 뒤의 core 취소 실패는 결과로만 보고한다.
+    // 0) 인쇄 상품 확인 → 1) Wallet 환불 실행 → 2) 성공 시 core 주문 취소(재환불 없음).
+    // 인쇄 상품이 있으면 0) 이 실패해 환불하지 않는다(부분 취소로 처리). 환불 뒤의 core 취소 실패는 결과로만 보고한다.
     mutationFn: async (vars: { id: string; intentId: string; amount?: number; adminNote?: string }) => {
       await salesOrders.printGateByIntent(vars.intentId);
       await walletApi.approveRefundRequest(vars.id, vars.adminNote);

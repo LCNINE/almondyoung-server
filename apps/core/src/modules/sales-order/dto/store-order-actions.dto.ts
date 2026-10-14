@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsBoolean, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export type StoreOrderAction = 'cancel' | 'track' | 'return' | 'exchange' | 'receipt';
 
@@ -162,4 +162,12 @@ export class StoreCancelOrderDto {
   @MaxLength(500)
   @IsOptional()
   reasonDetail?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '인쇄 상품을 빼고 나머지만 취소한다. 첫 요청이 409 PRINT_PARTIAL_CANCEL_AVAILABLE 이면 고객 동의 뒤 true 로 다시 보낸다',
+  })
+  @IsBoolean()
+  @IsOptional()
+  excludePrint?: boolean;
 }
