@@ -7,6 +7,7 @@ import {
   compositionItemText,
   compositionErrorView,
   existingLinesStep,
+  canEditLineComposition,
   foItemStatusLabel,
   matchingRowTarget,
   sourceBadge,
@@ -48,12 +49,26 @@ describe('foItemStatusLabel', () => {
   it('qty 0 = 구성 변경으로 빠진 SKU → «대체됨»', () => {
     expect(foItemStatusLabel({ qty: 0, status: 'pending' })).toBe('대체됨');
   });
+  it('옛 부분취소는 qty 0 + canceled 로 쓴다 → 상태 그대로', () => {
+    expect(foItemStatusLabel({ qty: 0, status: 'canceled' })).toBe('canceled');
+  });
   it('고객 취소·부분 감소는 상태 그대로', () => {
     expect(foItemStatusLabel({ qty: 2, status: 'partial' })).toBe('partial');
     expect(foItemStatusLabel({ qty: 1, status: 'pending' })).toBe('pending');
     // 고객 취소는 qty 가 그대로(canceledQty 가 들고 있음)라 «대체됨» 이 아니다
     const canceled = { qty: 2, canceledQty: 2, status: 'canceled' };
     expect(foItemStatusLabel(canceled)).toBe('canceled');
+  });
+});
+
+describe('canEditLineComposition', () => {
+  it('직배 출고는 서버가 개별 지정을 거절하므로 숨긴다', () => {
+    expect(canEditLineComposition({ canEdit: true, fulfillmentMode: 'drop_ship' })).toBe(false);
+  });
+  it('직배가 아니면 권한을 따른다', () => {
+    expect(canEditLineComposition({ canEdit: true, fulfillmentMode: 'in_house' })).toBe(true);
+    expect(canEditLineComposition({ canEdit: true, fulfillmentMode: null })).toBe(true);
+    expect(canEditLineComposition({ canEdit: false, fulfillmentMode: 'in_house' })).toBe(false);
   });
 });
 

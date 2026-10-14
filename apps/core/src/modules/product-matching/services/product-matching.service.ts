@@ -1,4 +1,3 @@
-import { selectCompositionItemViews } from '../line-composition/line-composition-views';
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
@@ -15,6 +14,7 @@ import { productMasterVersions, productVariants } from '../../catalog/schema/cat
 import { BadRequestError } from '@app/shared';
 import { MatchingLinkResolver } from './matching-link-resolver';
 import { lineResolvedSql } from '../line-composition/line-resolved.sql';
+import { selectCompositionItemViews } from '../line-composition/line-composition-views';
 
 export interface PimSkuComponent {
   skuId: string;

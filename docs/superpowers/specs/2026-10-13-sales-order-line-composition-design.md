@@ -248,7 +248,7 @@ S2 는 «라인별 담긴 개수»를 새로 계산해 `boxTarget` → `amend` �
    `SearchDialog` 는 공급처·화주 검색이다). 지정된 행은 매칭 칸에 «개별 지정»과 **라인의 구성**(상품매칭 SKU 가 아니라)을 보인다.
    `excludeMatched` 는 §5.2 술어 — 기본값이 켜져 있어 지정한 행은 기본 화면에서 빠진다
 2. **출고 주문 상세(`/order/fulfillments/[id]`)** — 라인마다 구성 표시, 개별 지정이면 «개별 지정»(매칭 출처는 정상 상태라 표시 없음),
-   같은 다이얼로그로 변경. FO 항목 `qty` 0 은 «대체됨»(구성 변경으로 빠진 SKU) — `canceledQty`(고객 취소)와 다르다.
+   같은 다이얼로그로 변경. FO 항목 `qty` 0 이면서 고객 취소 상태가 아닌 것은 «대체됨»(구성 변경으로 빠진 SKU; 옛 부분취소는 qty 0 + status canceled 로 쓴다) — `canceledQty`(고객 취소)와 다르다.
    `LINE_BOX_NOT_DRAFT` 면 박스·배치 링크(«빼기»는 거기서): 배치에 든 박스 → `/order/outbound-batches?batchId=…`(드로어가 열린다),
    배치 없는 박스 → `/order/fulfillments/<foId>`. 박스 상세 경로는 따로 없다
 3. **상품매칭 저장 다이얼로그(`InventoryMatchingDialog`)** — 저장 뒤 미리보기가 `applicable && changeable > 0` 일 때만 한 단계:

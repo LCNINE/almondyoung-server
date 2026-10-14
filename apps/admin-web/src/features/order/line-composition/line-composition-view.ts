@@ -1,5 +1,6 @@
 // 판매주문 라인 구성(#1063) 화면 판정. 컴포넌트는 이 결과만 그린다 — admin-web 은 컴포넌트 테스트 환경이 없다
 import { parseServerError, record } from '@/lib/api/server-error';
+import type { FulfillmentMode, FulfillmentOrderItem } from '@/lib/types/dto/fulfillment';
 import type {
   ApplySkipReason,
   ApplyToExistingLinesResult,
@@ -16,9 +17,18 @@ export function sourceBadge(source: CompositionSource | null | undefined): strin
   return source === 'operator' ? OPERATOR_BADGE : null;
 }
 
-// qty 0 은 구성 변경으로 빠진 SKU 다. 고객 취소는 canceledQty 가 들고 qty 는 그대로라 여기 걸리지 않는다
-export function foItemStatusLabel(item: { qty: number; status: string }): string {
-  return item.qty === 0 ? '대체됨' : item.status;
+// qty 0 이면서 취소 상태가 아닌 것만 구성 변경으로 빠진 SKU 다. 옛 부분취소(cancelPartial)도 전량이면 qty 0 + status canceled 로 쓰므로
+// qty 만 보면 고객 취소가 «대체됨» 으로 오표시된다
+export function foItemStatusLabel(item: Pick<FulfillmentOrderItem, 'qty' | 'status'>): string {
+  return item.qty === 0 && item.status !== 'canceled' ? '대체됨' : item.status;
+}
+
+// 직배 출고는 서버가 개별 지정을 DROP_SHIP_NOT_SUPPORTED 로 항상 거절한다 — 눌러도 실패할 버튼은 두지 않는다
+export function canEditLineComposition(args: {
+  canEdit: boolean;
+  fulfillmentMode: FulfillmentMode | null | undefined;
+}): boolean {
+  return args.canEdit && args.fulfillmentMode !== 'drop_ship';
 }
 
 // 구성 한 줄의 표시. 매칭표와 출고 상세가 같은 모양으로 보이게 한 곳에서 만든다

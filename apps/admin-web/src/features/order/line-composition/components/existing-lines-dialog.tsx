@@ -27,7 +27,7 @@ export function useExistingLinesFollowUp() {
   return { state, check, close };
 }
 
-/** 부모가 state 가 있을 때만 렌더한다 — 열릴 때마다 새로 마운트돼 mutation 상태가 새지 않는다 */
+/** 부모가 state 가 있을 때만 렌더한다 — 열릴 때마다, 그리고 variantId 가 바뀔 때마다(부모가 key 로) 새로 마운트돼 mutation 상태가 새지 않는다 */
 export function ExistingLinesDialog({ state, onClose }: { state: FollowUp; onClose: () => void }) {
   const apply = useApplyToExistingLines();
 

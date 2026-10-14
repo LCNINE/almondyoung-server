@@ -574,7 +574,7 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
         />
       )}
 
-      {followUp.state && <ExistingLinesDialog state={followUp.state} onClose={followUp.close} />}
+      {followUp.state && <ExistingLinesDialog key={followUp.state.variantId} state={followUp.state} onClose={followUp.close} />}
     </div>
   );
 }
