@@ -21,6 +21,11 @@ export function foItemStatusLabel(item: { qty: number; status: string }): string
   return item.qty === 0 ? '대체됨' : item.status;
 }
 
+// 구성 한 줄의 표시. 매칭표와 출고 상세가 같은 모양으로 보이게 한 곳에서 만든다
+export function compositionItemText(item: CompositionItemView): string {
+  return item.qtyPerUnit > 1 ? `${item.skuName} ×${item.qtyPerUnit}` : item.skuName;
+}
+
 export interface LineCompositionTarget {
   salesOrderId: string;
   salesOrderLineId: string;

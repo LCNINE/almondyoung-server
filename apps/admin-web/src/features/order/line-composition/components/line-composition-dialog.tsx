@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -27,24 +27,15 @@ export function LineCompositionDialog({
   onClose,
   currentFulfillmentOrderId,
 }: {
-  target: LineCompositionTarget | null;
+  target: LineCompositionTarget;
   onClose: () => void;
   currentFulfillmentOrderId?: string;
 }) {
   const assign = useAssignLineComposition();
-  const [picked, setPicked] = useState<PickedSku[]>([]);
-  const [query, setQuery] = useState('');
+  // 부모가 라인마다 key 를 줘서 라인이 바뀌면 새로 마운트된다 — 그래서 초기값만 target 에서 시드한다
+  const [picked, setPicked] = useState<PickedSku[]>(() => pickedFromComposition(target.composition));
+  const [query, setQuery] = useState(target.productName);
   const [error, setError] = useState<CompositionErrorView | null>(null);
-
-  // 같은 라인을 다시 열 때만 초기화한다 — target 객체는 렌더마다 새로 만들어질 수 있어 id 로 건다
-  useEffect(() => {
-    if (!target) return;
-    setPicked(pickedFromComposition(target.composition));
-    setQuery(target.productName);
-    setError(null);
-  }, [target?.salesOrderLineId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (!target) return null;
 
   const onSave = async () => {
     setError(null);
@@ -62,7 +53,8 @@ export function LineCompositionDialog({
   };
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    // 저장 중 닫으면 끝난 요청의 오류·onClose 가 다른 라인의 다이얼로그에 닿는다
+    <Dialog open onOpenChange={(open) => !open && !assign.isPending && onClose()}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>이 주문만</DialogTitle>
@@ -102,7 +94,7 @@ export function LineCompositionDialog({
           </div>
         )}
         <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} disabled={assign.isPending}>
             닫기
           </Button>
           <Button onClick={onSave} disabled={picked.length === 0 || assign.isPending}>

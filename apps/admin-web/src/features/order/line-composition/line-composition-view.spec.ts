@@ -4,6 +4,7 @@ import type { OrderLineDto } from '@/lib/types/dto/matching';
 import {
   COMPOSITION_ERROR_MESSAGES,
   applyResultText,
+  compositionItemText,
   compositionErrorView,
   existingLinesStep,
   foItemStatusLabel,
@@ -30,6 +31,16 @@ describe('sourceBadge', () => {
     expect(sourceBadge('matching')).toBeNull();
     expect(sourceBadge(null)).toBeNull();
     expect(sourceBadge(undefined)).toBeNull();
+  });
+});
+
+describe('compositionItemText', () => {
+  const item = { skuId: 's', skuCode: 'C', skuName: '리본' };
+  it('1개당 1 이면 이름만', () => {
+    expect(compositionItemText({ ...item, qtyPerUnit: 1 })).toBe('리본');
+  });
+  it('1개당 2 이상이면 이름 ×N', () => {
+    expect(compositionItemText({ ...item, qtyPerUnit: 3 })).toBe('리본 ×3');
   });
 });
 

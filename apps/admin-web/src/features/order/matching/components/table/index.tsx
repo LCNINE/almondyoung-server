@@ -19,6 +19,7 @@ import { useChangeMatchingStrategy } from '@/lib/services/matching';
 import { RefreshCw } from 'lucide-react';
 import { LineCompositionDialog } from '../../../line-composition/components/line-composition-dialog';
 import {
+  compositionItemText,
   matchingRowTarget,
   sourceBadge,
   type LineCompositionTarget,
@@ -70,10 +71,7 @@ function MatchingContent({
         <Badge variant="secondary">{badge}</Badge>
         {(line.composition ?? []).map((item) => (
           <div key={item.skuId} className="text-sm text-gray-800">
-            {item.skuName}
-            {item.qtyPerUnit > 1 && (
-              <span className="ml-1 text-xs text-gray-500">×{item.qtyPerUnit}</span>
-            )}
+            {compositionItemText(item)}
           </div>
         ))}
       </div>
@@ -533,7 +531,7 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
                   onProductRegistration={handleProductRegistration}
                   onResolveAsVoid={handleResolveAsVoid}
                   isResolvingAsVoid={isResolvingAsVoid}
-                  onOverride={(target) => setOverrideTarget(matchingRowTarget(target))}
+                  onOverride={(line) => setOverrideTarget(matchingRowTarget(line))}
                 />
               ))
             )}
@@ -562,7 +560,13 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
       />
 
       {/* 이 주문만 — 상품매칭을 만들지 않고 이 라인의 구성을 지정한다 */}
-      <LineCompositionDialog target={overrideTarget} onClose={() => setOverrideTarget(null)} />
+      {overrideTarget && (
+        <LineCompositionDialog
+          key={overrideTarget.salesOrderLineId}
+          target={overrideTarget}
+          onClose={() => setOverrideTarget(null)}
+        />
+      )}
     </div>
   );
 }
