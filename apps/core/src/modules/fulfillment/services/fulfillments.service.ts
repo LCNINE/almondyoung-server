@@ -47,7 +47,6 @@ type FulfillmentOrderItemInsert = {
   fulfillmentOrderId: string;
   salesOrderId: string | null;
   salesOrderLineId: string | null;
-  mappingSnapshotId: string | null;
   variantId: string | null;
   skuId: string;
   qty: number;
@@ -179,7 +178,6 @@ export class FulfillmentsService {
           return {
             salesOrderId: null,
             salesOrderLineId: null,
-            mappingSnapshotId: item.mappingSnapshotId ?? null,
             variantId: item.variantId ?? null,
             skuId: item.skuId,
             qty: item.quantity,
@@ -197,7 +195,6 @@ export class FulfillmentsService {
           return {
             salesOrderId: null,
             salesOrderLineId: null,
-            mappingSnapshotId: null,
             variantId: null,
             skuId: line.skuId,
             qty: line.quantity,
@@ -466,7 +463,6 @@ export class FulfillmentsService {
         items.push({
           salesOrderId,
           salesOrderLineId: line.id,
-          mappingSnapshotId: null,
           variantId: line.variantId,
           skuId: item.skuId,
           qty: fulfillableQuantity * item.qtyPerUnit,

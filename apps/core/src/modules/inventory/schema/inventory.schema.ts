@@ -1361,10 +1361,6 @@ export const salesOrderLines = pgTable(
       .references(() => salesOrders.id, { onDelete: 'cascade' })
       .notNull(),
     variantId: uuid('variant_id').notNull(), // PIM의 Variant ID
-    productMatchingId: uuid('product_matching_id').references(() => productMatchings.id, { onDelete: 'set null' }), // 매칭 정보
-    mappingSnapshotId: uuid('mapping_snapshot_id').references(() => productSkuMappingSnapshots.id, {
-      onDelete: 'restrict',
-    }), // SO 확정 시점 스냅샷
     // #1063: 이 라인에 적용할 SKU 구성을 굳혔는지·누가 굳혔는지. NULL 이면 아직 현재 상품매칭을 따른다.
     // 구성 행은 sales_order_line_compositions 에 있고, 출처가 있으면 행이 1개 이상이다(LineCompositionManager 만 쓴다).
     compositionSource: varchar('composition_source', { length: 16 }).$type<'matching' | 'operator'>(),
@@ -1396,7 +1392,6 @@ export const salesOrderLines = pgTable(
   },
   (t) => ({
     idxSalesOrderId: index('idx_sales_order_lines_sales_order_id').on(t.salesOrderId), // EXISTS/조인 주문별 라인 조회
-    idxMappingSnapshot: index('idx_sales_order_lines_snapshot').on(t.mappingSnapshotId),
     idxVariant: index('idx_sales_order_lines_variant').on(t.variantId),
     idxChannelOrderItem: index('idx_sales_order_lines_channel_order_item').on(t.channelOrderItemId),
     idxChannelProduct: index('idx_sales_order_lines_channel_product').on(t.channelProductId),
@@ -2654,32 +2649,6 @@ export const productSkuMappingItems = pgTable(
   }),
 );
 
-/**
- * 주문시점 매핑 스냅샷 (불변)
- */
-export const productSkuMappingSnapshots = pgTable(
-  'product_sku_mapping_snapshots',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    productId: varchar('product_id', { length: 255 }).notNull(),
-    sourceVersion: integer('source_version').notNull(),
-    warehouseId: uuid('warehouse_id')
-      .references(() => warehouses.id, { onDelete: 'restrict' })
-      .notNull(),
-    snapshotData: json('snapshot_data').notNull(), // { items: [{ skuId, qtyPerProduct }] }
-
-    // 에러 로그에서 필요한 추가 컬럼들
-    variantId: uuid('variant_id').notNull(), // PIM variant ID
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }),
-    quantity: integer('quantity').notNull(),
-    mappingId: uuid('mapping_id').references(() => productSkuMappings.id, { onDelete: 'restrict' }),
-
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    idxProduct: index('idx_product_sku_mapping_snapshots_product').on(t.productId),
-  }),
-);
 
 /*───────────────────────────
  * FULFILLMENT ORDER ITEMS (FOI) - 핵심 확장
@@ -2699,9 +2668,6 @@ export const fulfillmentOrderItems = pgTable(
     // 추적 정보 (nullable: 명시적 라인 전달 시 SO 정보가 없을 수 있음)
     salesOrderId: varchar('sales_order_id', { length: 255 }), // 원본 SO ID
     salesOrderLineId: varchar('sales_order_line_id', { length: 255 }), // 원본 SOL ID
-    mappingSnapshotId: uuid('mapping_snapshot_id').references(() => productSkuMappingSnapshots.id, {
-      onDelete: 'restrict',
-    }),
     variantId: uuid('variant_id'), // PIM Variant ID - 정책 평가용
 
     // 실제 출고 정보
@@ -3627,7 +3593,6 @@ export const wmsTables = {
   // FOI 기반 확장 스키마
   productSkuMappings,
   productSkuMappingItems,
-  productSkuMappingSnapshots,
   fulfillmentOrderItems,
   inspectionIssues,
   outboundBatches,
@@ -3772,7 +3737,6 @@ export const skusRelations = relations(skus, ({ one, many }) => ({
   productVariantSkuLinks: many(productVariantSkuLinks),
   // Mapping relations
   productSkuMappingItems: many(productSkuMappingItems),
-  productSkuMappingSnapshots: many(productSkuMappingSnapshots),
 }));
 
 export const skuSuppliersRelations = relations(skuSuppliers, ({ one }) => ({
@@ -3859,7 +3823,6 @@ export const warehousesRelations = relations(warehouses, ({ many }) => ({
     relationName: 'destinationWarehouse',
   }),
   productSkuMappings: many(productSkuMappings),
-  productSkuMappingSnapshots: many(productSkuMappingSnapshots),
   settings: many(settings),
   shipments: many(shipments),
   totes: many(totes),
@@ -3988,7 +3951,6 @@ export const stockReservationsRelations = relations(stockReservations, ({ one })
 // Product Matching Relations
 export const productMatchingsRelations = relations(productMatchings, ({ one, many }) => ({
   productVariantSkuLinks: many(productVariantSkuLinks),
-  salesOrderLines: many(salesOrderLines),
 }));
 
 export const productVariantSkuLinksRelations = relations(productVariantSkuLinks, ({ one }) => ({
@@ -4018,10 +3980,6 @@ export const salesOrderLinesRelations = relations(salesOrderLines, ({ one }) => 
   salesOrder: one(salesOrders, {
     fields: [salesOrderLines.salesOrderId],
     references: [salesOrders.id],
-  }),
-  productMatching: one(productMatchings, {
-    fields: [salesOrderLines.productMatchingId],
-    references: [productMatchings.id],
   }),
 }));
 
@@ -4077,10 +4035,6 @@ export const fulfillmentOrderItemsRelations = relations(fulfillmentOrderItems, (
   sku: one(skus, {
     fields: [fulfillmentOrderItems.skuId],
     references: [skus.id],
-  }),
-  mappingSnapshot: one(productSkuMappingSnapshots, {
-    fields: [fulfillmentOrderItems.mappingSnapshotId],
-    references: [productSkuMappingSnapshots.id],
   }),
   stockReservations: many(stockReservations),
   shipmentLines: many(shipmentLines),
@@ -4492,21 +4446,6 @@ export const productSkuMappingItemsRelations = relations(productSkuMappingItems,
   }),
 }));
 
-export const productSkuMappingSnapshotsRelations = relations(productSkuMappingSnapshots, ({ one, many }) => ({
-  warehouse: one(warehouses, {
-    fields: [productSkuMappingSnapshots.warehouseId],
-    references: [warehouses.id],
-  }),
-  sku: one(skus, {
-    fields: [productSkuMappingSnapshots.skuId],
-    references: [skus.id],
-  }),
-  mapping: one(productSkuMappings, {
-    fields: [productSkuMappingSnapshots.mappingId],
-    references: [productSkuMappings.id],
-  }),
-  fulfillmentOrderItems: many(fulfillmentOrderItems),
-}));
 
 // Settings Relations
 export const settingsRelations = relations(settings, ({ one }) => ({
@@ -4642,7 +4581,6 @@ export const wmsRelations = {
   // Product-SKU Mapping Relations
   productSkuMappingsRelations,
   productSkuMappingItemsRelations,
-  productSkuMappingSnapshotsRelations,
 
   // Settings Relations
   settingsRelations,
@@ -4888,8 +4826,6 @@ export type NewProductSkuMapping = InferInsertModel<typeof productSkuMappings>;
 export type ProductSkuMappingItem = InferSelectModel<typeof productSkuMappingItems>;
 export type NewProductSkuMappingItem = InferInsertModel<typeof productSkuMappingItems>;
 
-export type ProductSkuMappingSnapshot = InferSelectModel<typeof productSkuMappingSnapshots>;
-export type NewProductSkuMappingSnapshot = InferInsertModel<typeof productSkuMappingSnapshots>;
 
 // Waybill Types
 export type Waybill = InferSelectModel<typeof waybills>;

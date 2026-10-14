@@ -742,7 +742,7 @@ export class SalesOrdersService {
     const db = tx ?? this.db.db;
     const [order] = await db.select().from(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, id)).limit(1);
     if (!order) return null;
-    // 라인 배지(«매칭 대기»)는 이 값을 본다 — 옛 product_matching_id 는 #1063 부터 쓰이지 않는다
+    // 라인 배지(«매칭 대기»)는 이 값을 본다(#1063)
     const lines = await db
       .select({ ...getTableColumns(wmsTables.salesOrderLines), matchingResolved: lineResolvedSql() })
       .from(wmsTables.salesOrderLines)

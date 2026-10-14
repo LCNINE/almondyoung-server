@@ -268,7 +268,6 @@ export class DraftBoxAmender {
         fulfillmentOrderId,
         salesOrderId: template.salesOrderId,
         salesOrderLineId,
-        mappingSnapshotId: null,
         variantId: template.variantId,
         skuId,
         qty,
