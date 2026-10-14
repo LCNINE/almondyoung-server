@@ -4,6 +4,7 @@
 import React, { useMemo, useState } from 'react';
 import type { OrderLineDto } from '@/lib/types/dto/orders';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ProductRegistrationDialog } from './ProductRegistrationDialog';
 import { InventoryMatchingDialog } from './InventoryMatchingDialog';
@@ -16,6 +17,12 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { useChangeMatchingStrategy } from '@/lib/services/matching';
 import { RefreshCw } from 'lucide-react';
+import { LineCompositionDialog } from '../../../line-composition/components/line-composition-dialog';
+import {
+  matchingRowTarget,
+  sourceBadge,
+  type LineCompositionTarget,
+} from '../../../line-composition/line-composition-view';
 
 interface MatchingTableProps {
   data: OrderLineDto[];
@@ -55,6 +62,24 @@ function MatchingContent({
   onResolveAsVoid: (matchingId: string) => void;
   isResolvingAsVoid: boolean;
 }) {
+  // 개별 지정 라인은 상품매칭 상태가 아니라 라인 구성을 보인다(스펙 §8)
+  const badge = sourceBadge(line.compositionSource);
+  if (badge) {
+    return (
+      <div className="space-y-1 py-1">
+        <Badge variant="secondary">{badge}</Badge>
+        {(line.composition ?? []).map((item) => (
+          <div key={item.skuId} className="text-sm text-gray-800">
+            {item.skuName}
+            {item.qtyPerUnit > 1 && (
+              <span className="ml-1 text-xs text-gray-500">×{item.qtyPerUnit}</span>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   // 외부채널 + PIM 미등록 → 상품 생성 필요
   if (!line.matchingId && line.salesChannel !== 'medusa') {
     return (
@@ -248,6 +273,7 @@ function OrderLineRows({
   onProductRegistration,
   onResolveAsVoid,
   isResolvingAsVoid,
+  onOverride,
 }: {
   line: OrderLineDto;
   index: number;
@@ -259,6 +285,7 @@ function OrderLineRows({
   onProductRegistration: (line: OrderLineDto) => void;
   onResolveAsVoid: (matchingId: string) => void;
   isResolvingAsVoid: boolean;
+  onOverride: (line: OrderLineDto) => void;
 }) {
   const displayName =
     variantInfo?.masterName || line.productName || '상품명 없음';
@@ -324,11 +351,19 @@ function OrderLineRows({
       {/* ── 주문 상세 행 ── */}
       <tr className="bg-white">
         <td className="px-4 pb-3 pt-1 border-b border-gray-200 align-top">
-          <div className="text-xs">
-            <span className="text-gray-400">주문번호</span>{' '}
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-gray-400">주문번호</span>
             <span className="text-blue-600 underline cursor-pointer hover:text-blue-800">
               {line.channelOrderId}
             </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="ml-auto h-6 px-2 text-xs"
+              onClick={() => onOverride(line)}
+            >
+              이 주문만
+            </Button>
           </div>
           <div className="text-xs text-gray-500 mt-0.5 space-x-2">
             <span>수량: {line.quantity}개</span>
@@ -353,6 +388,7 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
   const [showInventoryDialog, setShowInventoryDialog] = useState(false);
   const [showProductDialog, setShowProductDialog] = useState(false);
   const [currentLine, setCurrentLine] = useState<OrderLineDto | null>(null);
+  const [overrideTarget, setOverrideTarget] = useState<LineCompositionTarget | null>(null);
 
   const changeMatchingStrategy = useChangeMatchingStrategy();
   const isResolvingAsVoid = changeMatchingStrategy.isPending;
@@ -497,6 +533,7 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
                   onProductRegistration={handleProductRegistration}
                   onResolveAsVoid={handleResolveAsVoid}
                   isResolvingAsVoid={isResolvingAsVoid}
+                  onOverride={(target) => setOverrideTarget(matchingRowTarget(target))}
                 />
               ))
             )}
@@ -523,6 +560,9 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
           setCurrentLine(null);
         }}
       />
+
+      {/* 이 주문만 — 상품매칭을 만들지 않고 이 라인의 구성을 지정한다 */}
+      <LineCompositionDialog target={overrideTarget} onClose={() => setOverrideTarget(null)} />
     </div>
   );
 }
