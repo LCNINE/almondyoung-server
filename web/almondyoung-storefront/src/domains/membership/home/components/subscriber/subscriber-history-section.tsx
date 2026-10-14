@@ -29,23 +29,43 @@ function AdjustmentBadge({ adj }: { adj: SubscriptionAdjustmentDto }) {
     const days = adj.days
     switch (adj.eventType) {
       case "GRANTED_BY_ADMIN":
-        return { text: t("history.adjGrantedByAdmin", { days }), className: "font-semibold text-purple-600", showReason: true }
+        return {
+          text: t("history.adjGrantedByAdmin", { days }),
+          className: "font-semibold text-purple-600",
+          showReason: true,
+        }
       case "ENTITLEMENT_EXTENDED":
-        return { text: t("history.adjExtended", { days }), className: "font-semibold text-blue-600", showReason: false }
+        return {
+          text: t("history.adjExtended", { days }),
+          className: "font-semibold text-blue-600",
+          showReason: false,
+        }
       default:
-        return { text: t("history.adjReduced", { days: Math.abs(days) }), className: "font-semibold text-orange-500", showReason: false }
+        return {
+          text: t("history.adjReduced", { days: Math.abs(days) }),
+          className: "font-semibold text-orange-500",
+          showReason: false,
+        }
     }
   })()
 
   return (
-    <div className="rounded-lg bg-white border border-gray-100 px-3 py-2 text-xs">
+    <div className="rounded-lg border border-gray-100 bg-white px-3 py-2 text-xs">
       <div className="flex items-center justify-between">
-        <span className="text-gray-600">{formatDate(adj.createdAt, DATE_FORMATS.KO_DOT)}</span>
+        <span className="text-gray-600">
+          {formatDate(adj.createdAt, DATE_FORMATS.KO_DOT)}
+        </span>
         <span className={adjLabel.className}>{adjLabel.text}</span>
-        <span className="text-gray-400">{t("billing.expirePast", { date: formatDate(adj.newEndsAt, DATE_FORMATS.KO_DOT) })}</span>
+        <span className="text-gray-400">
+          {t("billing.expirePast", {
+            date: formatDate(adj.newEndsAt, DATE_FORMATS.KO_DOT),
+          })}
+        </span>
       </div>
       {adjLabel.showReason && adj.reason && (
-        <p className="mt-1 text-gray-500">{t("history.adjReasonPrefix", { reason: adj.reason })}</p>
+        <p className="mt-1 text-gray-500">
+          {t("history.adjReasonPrefix", { reason: adj.reason })}
+        </p>
       )}
     </div>
   )
@@ -54,11 +74,20 @@ function AdjustmentBadge({ adj }: { adj: SubscriptionAdjustmentDto }) {
 function HistoryCard({ item }: { item: SubscriptionHistoryItemDto }) {
   const t = useTranslations("mypage.membership")
   const [open, setOpen] = useState(false)
+
+  const adminGrant = item.adminGrant
+
   const startDate = item.startDate ?? item.createdAt
   const cancelledEndDate = item.cancelledAt ?? item.endDate ?? null
   const today = new Date()
-  const isInTrial = !!item.billingDate && item.status === "ACTIVE" && new Date(item.billingDate) > today
-  const displayNextBillingDate = isInTrial ? item.billingDate : item.nextBillingDate
+  const isInTrial =
+    !adminGrant &&
+    !!item.billingDate &&
+    item.status === "ACTIVE" &&
+    new Date(item.billingDate) > today
+  const displayNextBillingDate = isInTrial
+    ? item.billingDate
+    : item.nextBillingDate
 
   const fmt = (d?: string | null) => formatDate(d, DATE_FORMATS.KO_DOT)
 
@@ -80,7 +109,8 @@ function HistoryCard({ item }: { item: SubscriptionHistoryItemDto }) {
   const headerDateSuffix = (): string => {
     if (item.status === "ACTIVE" && item.endDate)
       return t("billing.expireSuffix", { date: fmt(item.endDate) })
-    if (item.status !== "ACTIVE" && cancelledEndDate) return ` ~ ${fmt(cancelledEndDate)}`
+    if (item.status !== "ACTIVE" && cancelledEndDate)
+      return ` ~ ${fmt(cancelledEndDate)}`
     return ""
   }
 
@@ -96,19 +126,22 @@ function HistoryCard({ item }: { item: SubscriptionHistoryItemDto }) {
             <span className="text-sm font-semibold text-gray-900">
               {t("membershipName")}
             </span>
-            {item.plan && (
+            {(adminGrant || item.plan) && (
               <span className="text-xs text-gray-400">
-                {planLabel(item.plan.durationDays)}
+                {adminGrant
+                  ? t("subscription.temporaryPass", { days: adminGrant.days })
+                  : planLabel(item.plan?.durationDays)}
               </span>
             )}
           </div>
           <span className="text-xs text-gray-500">
-            {fmt(startDate)}{headerDateSuffix()}
+            {fmt(startDate)}
+            {headerDateSuffix()}
           </span>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex shrink-0 items-center gap-2">
           <span
-            className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[item.status] ?? "text-gray-500 bg-gray-100"}`}
+            className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[item.status] ?? "bg-gray-100 text-gray-500"}`}
           >
             {statusLabel(item.status)}
           </span>
@@ -122,9 +155,21 @@ function HistoryCard({ item }: { item: SubscriptionHistoryItemDto }) {
       {open && (
         <div className="border-t border-gray-100 bg-gray-50 px-3 py-3 text-xs text-gray-700">
           <div className="grid grid-cols-2 gap-y-2">
-            <span className="text-gray-400">{t("billing.subscriptionAmount")}</span>
+            <span className="text-gray-400">
+              {t(
+                adminGrant
+                  ? "billing.paymentAmount"
+                  : "billing.subscriptionAmount"
+              )}
+            </span>
             <span className="font-medium text-gray-900">
-              {item.plan ? t("billing.amountWon", { amount: item.plan.price.toLocaleString() }) : "-"}
+              {adminGrant
+                ? t("billing.temporaryPassNoCharge")
+                : item.plan
+                  ? t("billing.amountWon", {
+                      amount: item.plan.price.toLocaleString(),
+                    })
+                  : "-"}
             </span>
             {/* 얼마 내고 얼마 아꼈는지가 나란히 보여야 재가입 판단이 된다 */}
             <span className="text-gray-400">{t("history.historySavings")}</span>
@@ -137,45 +182,87 @@ function HistoryCard({ item }: { item: SubscriptionHistoryItemDto }) {
                 {t("stats.unitCount")}
               </span>
             </span>
-            <span className="text-gray-400">{t("billing.subscriptionType")}</span>
-            <span className="font-medium text-gray-900">
-              {item.plan ? planLabel(item.plan.durationDays) : "-"}
+            <span className="text-gray-400">
+              {t(adminGrant ? "billing.usageType" : "billing.subscriptionType")}
             </span>
-            <span className="text-gray-400">{t("billing.recurring")}</span>
             <span className="font-medium text-gray-900">
-              {item.autoRenewal === undefined
-                ? "-"
-                : item.autoRenewal
-                  ? t("billing.recurring")
-                  : t("billing.oneTime")}
+              {adminGrant
+                ? t("subscription.temporaryPass", { days: adminGrant.days })
+                : item.plan
+                  ? planLabel(item.plan.durationDays)
+                  : "-"}
             </span>
-            <span className="text-gray-400">{t("billing.subscriptionStartDate")}</span>
+            {!adminGrant && (
+              <>
+                <span className="text-gray-400">{t("billing.recurring")}</span>
+                <span className="font-medium text-gray-900">
+                  {item.autoRenewal === undefined
+                    ? "-"
+                    : item.autoRenewal
+                      ? t("billing.recurring")
+                      : t("billing.oneTime")}
+                </span>
+              </>
+            )}
+            <span className="text-gray-400">
+              {t(
+                adminGrant
+                  ? "billing.usageStartDate"
+                  : "billing.subscriptionStartDate"
+              )}
+            </span>
             <span className="font-medium text-gray-900">{fmt(startDate)}</span>
             {item.status === "ACTIVE" ? (
               <>
-                <span className="text-gray-400">{t("billing.expectedEndDate")}</span>
-                <span className="font-medium text-gray-900">{fmt(item.endDate)}</span>
                 <span className="text-gray-400">
-                  {isInTrial ? t("billing.autoStartDate") : t("billing.nextBillingDate")}
+                  {t(
+                    adminGrant
+                      ? "billing.usageEndDate"
+                      : "billing.expectedEndDate"
+                  )}
                 </span>
-                <span className="font-medium text-gray-900">{fmt(displayNextBillingDate)}</span>
+                <span className="font-medium text-gray-900">
+                  {fmt(item.endDate)}
+                </span>
+                {!adminGrant && (
+                  <>
+                    <span className="text-gray-400">
+                      {isInTrial
+                        ? t("billing.autoStartDate")
+                        : t("billing.nextBillingDate")}
+                    </span>
+                    <span className="font-medium text-gray-900">
+                      {fmt(displayNextBillingDate)}
+                    </span>
+                  </>
+                )}
               </>
             ) : (
               <>
-                <span className="text-gray-400">{t("billing.endDateLabel")}</span>
-                <span className="font-medium text-gray-900">{fmt(cancelledEndDate)}</span>
+                <span className="text-gray-400">
+                  {t("billing.endDateLabel")}
+                </span>
+                <span className="font-medium text-gray-900">
+                  {fmt(cancelledEndDate)}
+                </span>
               </>
             )}
             {item.cancelledAt && (
               <>
-                <span className="text-gray-400">{t("billing.cancelledDate")}</span>
-                <span className="font-medium text-gray-900">{fmt(item.cancelledAt)}</span>
+                <span className="text-gray-400">
+                  {t("billing.cancelledDate")}
+                </span>
+                <span className="font-medium text-gray-900">
+                  {fmt(item.cancelledAt)}
+                </span>
               </>
             )}
           </div>
           {item.adjustments && item.adjustments.length > 0 && (
             <div className="mt-3 border-t border-gray-200 pt-3">
-              <p className="mb-2 font-semibold text-gray-700">{t("history.adjustmentsTitle")}</p>
+              <p className="mb-2 font-semibold text-gray-700">
+                {t("history.adjustmentsTitle")}
+              </p>
               <div className="flex flex-col gap-1.5">
                 {item.adjustments.map((adj) => (
                   <AdjustmentBadge key={adj.id} adj={adj} />
@@ -201,7 +288,9 @@ export default function MembershipHistorySection({
   return (
     <section className="mt-6 flex flex-col gap-4">
       <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <h3 className="mb-3 text-sm font-semibold text-gray-900">{t("history.subscriptionHistory")}</h3>
+        <h3 className="mb-3 text-sm font-semibold text-gray-900">
+          {t("history.subscriptionHistory")}
+        </h3>
         {sortedSubscriptionHistory.length ? (
           <div className="flex flex-col gap-2">
             {sortedSubscriptionHistory.map((item) => (
@@ -209,7 +298,9 @@ export default function MembershipHistorySection({
             ))}
           </div>
         ) : (
-          <p className="text-sm text-gray-500">{t("history.noSubscriptionHistory")}</p>
+          <p className="text-sm text-gray-500">
+            {t("history.noSubscriptionHistory")}
+          </p>
         )}
       </div>
     </section>

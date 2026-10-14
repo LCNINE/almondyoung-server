@@ -794,6 +794,7 @@
       "EXPIRED": "만료됨"
     },
     "subscription": {
+      "temporaryPass": "임시 이용권 ({days}일)",
       "monthly": "월간 구독",
       "annual": "연간 구독",
       "annualLong": "12개월(연간구독)",
@@ -806,6 +807,11 @@
       "yearMonthFormat": "{year}년 {month}월"
     },
     "billing": {
+      "paymentAmount": "결제 금액",
+      "usageType": "이용 유형",
+      "usageStartDate": "이용 시작일",
+      "usageEndDate": "이용 종료 예정일",
+
       "autoStartDate": "자동 결제 시작일",
       "endDate": "구독 종료일",
       "endDateLabel": "종료일",
@@ -819,6 +825,8 @@
       "expectedEndDate": "구독 종료 예정일",
       "trialEndAutoStart": "무료 체험 후 자동 결제 시작일: {date}",
       "nextBillingNotice": "다음 결제 예정일은 {date} 입니다",
+      "temporaryPassNoCharge": "수기 지급 · 결제 없음",
+      "temporaryPassNotice": "수기 지급된 이용권은 자동결제되지 않습니다.",
       "membershipEndNotice": "멤버십 이용 종료 예정일은 {date} 입니다",
       "membershipEndsNotice": "{date} 까지 이용 후 자동 종료됩니다 (자동갱신 없음)",
       "paymentActionNeeded": "결제 확인이 필요합니다. 결제 수단을 확인하시거나 고객센터로 문의해 주세요.",

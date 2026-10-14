@@ -1,7 +1,13 @@
 /*───────────────────────────
  * 현재 구독 응답 DTO
  *──────────────────────────*/
-export type SubscriptionStatus = "ACTIVE" | "PAUSED" | "RECURRING_CANCELLED" | "ENDED" | "CANCELLED" | "EXPIRED"
+export type SubscriptionStatus =
+  | "ACTIVE"
+  | "PAUSED"
+  | "RECURRING_CANCELLED"
+  | "ENDED"
+  | "CANCELLED"
+  | "EXPIRED"
 
 export interface MembershipTierDto {
   id: string
@@ -30,6 +36,7 @@ export interface SubscriptionDetailsDto {
   userId: string
   planId: string
   status: SubscriptionStatus
+  adminGrant?: { days: number } | null
   autoRenewal?: boolean
   pausedAt?: string | null
   recurringCancelledAt?: string | null
@@ -118,6 +125,7 @@ export interface SubscriptionHistoryItemDto {
   billingDate?: string
   nextBillingDate?: string | null
   cancelledAt?: string | null
+  adminGrant?: { days: number } | null
   autoRenewal?: boolean
   createdAt: string
   updatedAt: string
@@ -185,7 +193,11 @@ export interface RefundStatusDto {
   completedAt: string | null
   refundProcessingBusinessDays: number
   /** 계좌번호는 뒤 4자리만 온다 */
-  maskedAccount: { bank: string; accountNumber: string; holderName: string } | null
+  maskedAccount: {
+    bank: string
+    accountNumber: string
+    holderName: string
+  } | null
 }
 
 /** 멤버십이 왜 끝났는지 — 계좌 심사 거절·미수로 끊긴 고객에게 이유와 다음 행동을 알린다. */

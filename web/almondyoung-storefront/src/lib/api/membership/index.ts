@@ -74,6 +74,8 @@ function normalizeCurrentSubscription(
     userId: (contract.userId as string) ?? "",
     planId: (contract.planId as string) ?? "",
     status: contract.status as SubscriptionDetailsDto["status"],
+    adminGrant:
+      (raw.adminGrant as SubscriptionDetailsDto["adminGrant"]) ?? null,
     startDate: pick(entitlement.startsAt) ?? "",
     endDate: pick(entitlement.endsAt),
     createdAt: pick(contract.createdAt) ?? "",
@@ -211,7 +213,8 @@ export async function cancelSubscription(
     return { ok: true, ...result }
   } catch (error) {
     if (error instanceof ApiAuthError) throw error
-    if (error instanceof HttpApiError) return { ok: false, message: error.message }
+    if (error instanceof HttpApiError)
+      return { ok: false, message: error.message }
     throw error
   }
 }
@@ -283,7 +286,8 @@ export async function undoCancellation(): Promise<
   } catch (error) {
     // 실패 이유(만료돼 복구 불가, 되살릴 자동결제 없음)가 곧 다음 행동 안내다 — 삼키지 않는다.
     if (error instanceof ApiAuthError) throw error
-    if (error instanceof HttpApiError) return { ok: false, message: error.message }
+    if (error instanceof HttpApiError)
+      return { ok: false, message: error.message }
     throw error
   }
 }
@@ -366,11 +370,15 @@ export async function getTierBenefits(tierId: string): Promise<{
  * 화면의 기본 조회다. 환불 판정과 같은 기간 경계를 쓴다.
  */
 export async function getSavingsOverview(): Promise<SavingsOverviewDto> {
-  return await api<SavingsOverviewDto>("membership", "/membership/savings/overview", {
-    method: "GET",
-    withAuth: true,
-    cache: "no-store",
-  })
+  return await api<SavingsOverviewDto>(
+    "membership",
+    "/membership/savings/overview",
+    {
+      method: "GET",
+      withAuth: true,
+      cache: "no-store",
+    }
+  )
 }
 
 /** 한 결제 주기의 절약 내역 (주문별 상세 포함) */
@@ -471,7 +479,9 @@ export async function createMembershipCheckoutIntent(
       // 멤버십 서버의 오류 본문은 { error: { code, message } } 모양이다.
       const body = error.data?.error
       if (body?.code === "ARREARS_OUTSTANDING") {
-        throw new Error(body.message ?? "미납된 멤버십 요금을 먼저 납부해 주세요.")
+        throw new Error(
+          body.message ?? "미납된 멤버십 요금을 먼저 납부해 주세요."
+        )
       }
       throw new Error("이미 활성 구독이 존재합니다.")
     }

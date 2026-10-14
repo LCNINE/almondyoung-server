@@ -794,6 +794,7 @@
       "EXPIRED": "Expired"
     },
     "subscription": {
+      "temporaryPass": "Temporary pass ({days} days)",
       "monthly": "Monthly subscription",
       "annual": "Annual subscription",
       "annualLong": "12 months (annual)",
@@ -806,6 +807,11 @@
       "yearMonthFormat": "{month}/{year}"
     },
     "billing": {
+      "paymentAmount": "Payment amount",
+      "usageType": "Access type",
+      "usageStartDate": "Access start date",
+      "usageEndDate": "Access end date",
+
       "autoStartDate": "Auto-billing starts",
       "endDate": "Subscription ends",
       "endDateLabel": "End date",
@@ -819,6 +825,8 @@
       "expectedEndDate": "Expected end date",
       "trialEndAutoStart": "Auto-billing starts after trial: {date}",
       "nextBillingNotice": "Your next billing date is {date}",
+      "temporaryPassNoCharge": "Admin grant · No charge",
+      "temporaryPassNotice": "This temporary pass does not renew automatically.",
       "membershipEndNotice": "Your membership ends on {date}",
       "membershipEndsNotice": "Your membership ends on {date} (no auto-renewal)",
       "paymentActionNeeded": "Please review your payment. Check your payment method or contact support.",
