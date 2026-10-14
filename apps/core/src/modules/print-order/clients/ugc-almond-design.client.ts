@@ -6,6 +6,7 @@ const DESIGN_TIMEOUT_MS = 10_000;
 const PRINT_LINK_TIMEOUT_MS = 120_000;
 
 const designInfo = z.object({
+  userId: z.string(),
   productId: z.string(),
   widthMm: z.number(),
   heightMm: z.number(),

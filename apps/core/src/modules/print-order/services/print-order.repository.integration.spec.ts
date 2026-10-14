@@ -266,8 +266,9 @@ describeIfDb('PrintOrderRepository protected records (operator actions)', () => 
           expect((await repo.findById(resolved.id, tx))?.cancelResolvedAt).not.toBeNull();
           const duplicate = 'duplicate wowpress order suspected: W-7 / W-8';
           await repo.recordFailure(resolved.id, duplicate, tx);
+          // 다른 와우프레스 주문이 살아 있을 수 있다는 새 증거다. 운영자 마무리를 지우고 보드(취소 확인 필요)로 다시 연다
           await expect(repo.findById(resolved.id, tx)).resolves.toMatchObject({
-            status: 'cancelled',
+            status: 'cancel_refused',
             cancelResolvedAt: null,
             cancelResolvedBy: null,
           });

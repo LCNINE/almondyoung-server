@@ -19,6 +19,9 @@ import {
   type PrintOrderLineContext,
 } from './print-order.repository';
 import {
+  DESIGN_OWNER_MISMATCH_ERROR,
+  ORDER_LOOKUP_DELAY_MS,
+  ORDER_LOOKUP_PENDING_ERROR,
   ORDER_UNCONFIRMED_ERROR,
   PRINT_ORDER_MAX_ATTEMPTS,
   PRINT_ORDER_STALE_MS,
@@ -31,6 +34,7 @@ const DRAFT_VARIANT = '0190f1d2-0000-7000-8000-00000000a002';
 const UNKNOWN_VARIANT = '0190f1d2-0000-7000-8000-00000000a003';
 const LINE_ID = '0190f1d2-0000-7000-8000-00000000b001';
 const DESIGN_ID = '0190f1d2-0000-7000-8000-00000000c001';
+const CUSTOMER_ID = '0190f1d2-0000-7000-8000-00000000d001';
 const ATTEMPTED = new Date('2020-01-01T00:00:01Z');
 const TEST_MEMO = '테스트 시안입니다. 혹시 이 시안대로 출력이 되나요?';
 
@@ -67,7 +71,7 @@ class FakeWowpress extends WowpressClient {
 
 class FakeUgc extends UgcAlmondDesignClient {
   design = jest.fn<Promise<UgcAlmondDesignInfo>, [string]>(() =>
-    Promise.resolve({ productId: 'p', widthMm: 90, heightMm: 50, hasBack: false }),
+    Promise.resolve({ userId: CUSTOMER_ID, productId: 'p', widthMm: 90, heightMm: 50, hasBack: false }),
   );
   printLink = jest.fn<Promise<UgcPrintLink>, [string, 'jpg' | 'pdf' | 'eps', number]>(() =>
     Promise.resolve({ url: 'https://s3/print.jpg', fileName: 'print.jpg' }),
@@ -188,6 +192,13 @@ class FakeRepo extends PrintOrderRepository {
   }
 }
 
+// 다음 차례에 워커가 pending 행을 다시 선점한 상태
+function reclaim(repo: FakeRepo): PrintOrderRow {
+  const row = { ...repo.get('po-1'), status: 'submitting' as const, submittingAt: new Date() };
+  repo.rows.set(row.id, row);
+  return row;
+}
+
 function makeRow(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
   const now = new Date('2020-01-01T00:00:00Z');
   return {
@@ -226,6 +237,7 @@ function context(variantId: string): PrintOrderLineContext {
     line: { id: LINE_ID, variantId, quantity: 2 },
     order: {
       channelOrderId: 'order_01J',
+      customerId: CUSTOMER_ID,
       shippingAddress: {
         recipientName: '홍길동',
         phone: '010-1234-5678',
@@ -282,6 +294,19 @@ describe('PrintOrderSubmitManager', () => {
 
     expect(wowpress.order.mock.calls[0]?.[0].ordbody).toBe(TEST_MEMO);
     expect(repo.get('po-1')).toMatchObject({ status: 'submitted', testMemo: true });
+  });
+
+  it('fails without ordering when the design belongs to another customer', async () => {
+    const { repo, wowpress, ugc, manager } = setup(CONFIRMED_VARIANT);
+    ugc.design.mockResolvedValue({ userId: 'someone-else', productId: 'p', widthMm: 90, heightMm: 50, hasBack: false });
+
+    await manager.submit(repo.get('po-1'));
+
+    expect(repo.get('po-1').status).toBe('failed');
+    expect(repo.get('po-1').lastError).toBe(DESIGN_OWNER_MISMATCH_ERROR);
+    expect(repo.get('po-1').orderAttemptedAt).toBeNull();
+    expect(ugc.printLink).not.toHaveBeenCalled();
+    expect(wowpress.order).not.toHaveBeenCalled();
   });
 
   it('marks unsupported without calling wowpress when no spec for the variant', async () => {
@@ -438,18 +463,42 @@ describe('PrintOrderSubmitManager', () => {
     expect(repo.get('po-1').orderAttemptedAt).not.toBeNull();
   });
 
-  it('marks failed instead of retrying when order() throws after the right was taken', async () => {
+  it('defers a lookup instead of failing when order() throws after the right was taken', async () => {
     const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT);
     wowpress.order.mockRejectedValueOnce(new Error('timeout'));
 
     await manager.submit(repo.get('po-1'));
 
-    expect(repo.get('po-1')).toMatchObject({
-      status: 'failed',
-      lastError: ORDER_UNCONFIRMED_ERROR,
-      vendorOrderNumber: null,
-    });
+    const row = repo.get('po-1');
+    expect(row).toMatchObject({ status: 'pending', lastError: ORDER_LOOKUP_PENDING_ERROR, vendorOrderNumber: null });
+    expect(row.orderAttemptedAt).not.toBeNull();
+    expect(row.nextAttemptAt.getTime()).toBeGreaterThan(Date.now() + ORDER_LOOKUP_DELAY_MS - 60_000);
     expect(wowpress.order).toHaveBeenCalledTimes(1);
+    expect(wowpress.uploadFileUrl).not.toHaveBeenCalled();
+  });
+
+  it('continues with the file when the deferred lookup finds the lost order', async () => {
+    const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT);
+    wowpress.order.mockRejectedValueOnce(new Error('timeout'));
+    await manager.submit(repo.get('po-1'));
+
+    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-LATE' });
+    await manager.submit(reclaim(repo));
+
+    expect(wowpress.order).toHaveBeenCalledTimes(1);
+    expect(wowpress.uploadFileUrl).toHaveBeenCalledWith('W-LATE', 'print.jpg', 'https://s3/print.jpg');
+    expect(repo.get('po-1')).toMatchObject({ status: 'submitted', vendorOrderNumber: 'W-LATE' });
+  });
+
+  it('hands the row to the operator when the deferred lookup still finds nothing', async () => {
+    const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT);
+    wowpress.order.mockRejectedValueOnce(new Error('timeout'));
+    await manager.submit(repo.get('po-1'));
+
+    await manager.submit(reclaim(repo));
+
+    expect(wowpress.order).toHaveBeenCalledTimes(1);
+    expect(repo.get('po-1')).toMatchObject({ status: 'failed', lastError: ORDER_UNCONFIRMED_ERROR });
   });
 
   it('confirms a sent order via ordkey on a later run instead of ordering again', async () => {

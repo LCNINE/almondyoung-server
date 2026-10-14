@@ -45,6 +45,7 @@ export class AlmondDesignReader {
       const [row] = await trx
         .select({
           id: almondDesigns.id,
+          userId: almondDesigns.userId,
           productId: almondDesigns.productId,
           widthMm: almondDesigns.widthMm,
           heightMm: almondDesigns.heightMm,

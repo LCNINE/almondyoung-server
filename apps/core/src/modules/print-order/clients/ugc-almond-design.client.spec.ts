@@ -18,10 +18,11 @@ describe('UgcAlmondDesignClient', () => {
 
   it('reads design info with the internal key', async () => {
     fetchSpy.mockResolvedValue(
-      jsonResponse(200, { id: ID, productId: 'p1', widthMm: 90, heightMm: 50, hasBack: true, extra: 1 }),
+      jsonResponse(200, { id: ID, userId: 'u1', productId: 'p1', widthMm: 90, heightMm: 50, hasBack: true, extra: 1 }),
     );
 
     await expect(new UgcAlmondDesignClient(config).design(ID)).resolves.toEqual({
+      userId: 'u1',
       productId: 'p1',
       widthMm: 90,
       heightMm: 50,

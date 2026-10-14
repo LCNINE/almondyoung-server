@@ -17,6 +17,9 @@ export const PRINT_ORDER_MAX_ATTEMPTS = 3;
 // ponytail: 주문권(order_attempted_at)이 한 번뿐이라 멈춘 프로세스가 자동 재주문을 만들지는 못한다. 남는 건 응답을 잃은 행을 운영자가 와우프레스에서 확인하는 일이다
 export const PRINT_ORDER_STALE_MS = 30 * 60_000;
 export const ORDER_UNCONFIRMED_ERROR = 'order sent but not confirmed — verify on WowPress before retry';
+export const ORDER_LOOKUP_PENDING_ERROR = 'order sent but response lost — looking up by ordkey before giving up';
+export const ORDER_LOOKUP_DELAY_MS = 5 * 60_000;
+export const DESIGN_OWNER_MISMATCH_ERROR = 'almond design does not belong to the ordering customer — not ordered';
 const TEST_MEMO = '테스트 시안입니다. 혹시 이 시안대로 출력이 되나요?';
 
 const shippingAddress = z.object({
@@ -77,8 +80,13 @@ export class PrintOrderSubmitManager {
       if (!state.ordnum && state.orderSent) state.ordnum = await this.confirmSentOrder(row);
       let link: UgcPrintLink | null = null;
       if (!state.ordnum) {
+        // 시안 ID 는 고객이 장바구니 메타데이터로 넣는 값이다. 남의 시안을 인쇄해 받지 못하게 주문 고객과 대조한다
+        const design = await this.ugc.design(row.almondDesignId);
+        if (design.userId !== ctx.order.customerId) {
+          await owned({ status: 'failed', lastError: DESIGN_OWNER_MISMATCH_ERROR });
+          return;
+        }
         // 파일을 못 만들면 주문하지 않도록 링크를 주문보다 먼저 받는다
-        await this.ugc.design(row.almondDesignId);
         link = await this.ugc.printLink(row.almondDesignId, spec.file.format, spec.file.dpi);
         state.ordnum = await this.placeOrder(row, ctx, spec, claimedAt, state);
       }
@@ -92,6 +100,12 @@ export class PrintOrderSubmitManager {
       }
       if (error instanceof AlreadyRecorded) return;
       if (state.orderSent && !state.ordnum) {
+        // 이번 차례에 보낸 주문의 응답만 잃었을 수 있다. 바로 포기하지 않고 한 번 미뤄, 다음 차례의 ordkey 조회
+        // (confirmSentOrder)가 주문을 찾으면 파일 전달부터 이어 가게 한다. 다음 차례 조회에서도 못 찾으면 운영자 확인으로 넘긴다
+        if (row.orderAttemptedAt === null) {
+          await this.deferLookup(row.id, error, write);
+          return;
+        }
         await this.markUnconfirmed(row.id, error, write);
         return;
       }
@@ -146,6 +160,16 @@ export class PrintOrderSubmitManager {
     if (!found) throw new Error(`ordkey ${row.salesOrderLineId} not found on wowpress`);
     if (!(await this.recordReceivedOrdnum(row, found.ordnum, 'submit lookup'))) throw new AlreadyRecorded();
     return found.ordnum;
+  }
+
+  private async deferLookup(id: string, cause: unknown, write: Write): Promise<void> {
+    this.logger.warn(`print order ${id}: ${ORDER_LOOKUP_PENDING_ERROR} (${errorMessage(cause)})`);
+    const patch: Partial<PrintOrderRow> = {
+      status: 'pending',
+      nextAttemptAt: new Date(Date.now() + ORDER_LOOKUP_DELAY_MS),
+      lastError: ORDER_LOOKUP_PENDING_ERROR,
+    };
+    if (!(await write(patch))) this.logger.warn(`print order ${id} was reclaimed; lookup not deferred here`);
   }
 
   private async markUnconfirmed(id: string, cause: unknown, write: Write): Promise<void> {

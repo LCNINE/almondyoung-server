@@ -175,6 +175,31 @@ describeIfDb('SalesOrdersService.planCancellation (DB integration, rollback-only
     });
   });
 
+  it('V2 전체 — 인쇄(외주) 줄은 창고 항목이 없어도 남은 판매 수량이 계획에 들어간다(출고분 제외 전환에서도 환불되게)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireSalesOrders(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: true });
+      await markLineShipped(tx, seed.lineIds[0], 2);
+      const [printLine] = await tx
+        .insert(wmsTables.salesOrderLines)
+        .values({
+          salesOrderId: seed.salesOrderId,
+          variantId: randomUUID(),
+          productName: 'print',
+          quantity: 1,
+          unitPrice: 15000,
+          almondDesignId: randomUUID(),
+        })
+        .returning({ id: wmsTables.salesOrderLines.id });
+      const plan = await w.salesOrders.planCancellation(seed.salesOrderId, undefined, tx);
+      expect(plan.lines).toEqual([
+        { salesOrderLineId: seed.lineIds[1], quantity: 1 },
+        { salesOrderLineId: printLine.id, quantity: 1 },
+      ]);
+      expect(plan.hasShippedQuantity).toBe(true);
+    });
+  });
+
   it('V2 전체 — 디지털 줄(박스 없음)이 있어도 나간 게 없으면 leavesNothing', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireSalesOrders(tx);

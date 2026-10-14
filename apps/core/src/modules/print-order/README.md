@@ -6,7 +6,8 @@
 ## 하는 일
 
 - 판매주문 라인에 `almond_design_id` 가 있으면 `pending` 행을 만든다.
-- `PrintOrderSubmitWorker` (매분): ugc 에서 인쇄 파일 링크 → 와우프레스 가격조회 → 주문 → 파일 전달.
+- `PrintOrderSubmitWorker` (매분): 시안 주인 확인 → ugc 에서 인쇄 파일 링크 → 와우프레스 가격조회 → 주문 → 파일 전달.
+  시안 ID 는 고객이 장바구니 메타데이터로 넣는 값이라, 시안 주인(ugc `almond_designs.user_id`)과 주문 고객(`sales_orders.customer_id`)이 다르면 주문하지 않고 `failed` 로 둔다.
 - `PrintOrderTrackingWorker` (30분): 주문상세로 송장·배송 상태 반영. 고객 배송조회(`/store/orders/by-channel-order/:id/tracking`)에 한 항목으로 덧붙는다.
 - 취소: `PrintOrderCancellation` 이 판매주문 취소 앞단에서 와우프레스 취소를 먼저 시도한다. 아래 취소·환불 경로 참고.
 - 운영자 보드: admin-web `주문 > 와우프레스 발주` (`/order/print-orders`).
@@ -31,7 +32,7 @@
 ### 한 번만 주문할 권리 (`order_attempted_at`)
 
 와우프레스 주문 API 는 중복 주문 위험이 있다. 주문 호출 직전에 `order_attempted_at` 을 찍고, 그 값이 있는데 `vendor_order_number` 가 비어 있으면 응답이 유실됐을 수 있다는 뜻이다.
-이 경우 자동으로 다시 주문하지 않는다. `ordkey`(= `sales_order_line_id`)로 와우프레스에 조회해 있으면 `ordnum` 을 채우고, 없거나 조회가 실패하면 `failed`(`order sent but not confirmed — verify on WowPress before retry`)로 둔다. 보드에서는 `와우프레스 확인 필요`(`needsWowpressCheck`)로 표시된다.
+이 경우 자동으로 다시 주문하지 않는다. 이번 차례에 보낸 주문의 응답을 잃었으면 바로 포기하지 않고 5분 미뤄(`pending`, `ORDER_LOOKUP_PENDING_ERROR`) 다음 차례에 `ordkey`(= `sales_order_line_id`)로 와우프레스에 조회한다. 있으면 `ordnum` 을 채우고 파일 전달부터 이어 가고, 없거나 조회가 실패하면 `failed`(`order sent but not confirmed — verify on WowPress before retry`)로 둔다. 보드에서는 `와우프레스 확인 필요`(`needsWowpressCheck`)로 표시된다.
 운영자가 와우프레스에 그 주문이 없음을 직접 확인한 뒤 재전송하면서 `와우프레스에 주문 없음 확인`(`confirmNoWowpressOrder`)을 체크해야만 주문권이 풀리고(`order_attempted_at` 해제) 다시 주문된다. 체크 없이 재전송하면 거절된다.
 중복 의심·번호 미저장·취소 뒤 주문 같은 보호 기록(`retryBlocked`)이 남은 행은 재전송 자체가 막힌다 — 와우프레스에서 처리한다 (`services/print-order-board.rules.ts`, `services/print-order-admin.manager.ts`).
 
@@ -88,7 +89,7 @@
    - `apps/core/drizzle/20261014065142_add-print-order-cancel-resolved.sql`
    - `apps/core/drizzle/20261014072709_add-print-order-sales-cancel-failed.sql`
 2. `sst secret set WowpressAuthUid …`, `WowpressAuthPw`, `WowpressSender*` 값 입력 (사람이 직접).
-3. 변경된 서비스만 `--target` 으로: ugc → core (`PRINT_ORDER_SUBMIT_ENABLED=false`) → channel-adapter → admin-web → storefront.
+3. 변경된 서비스만 `--target` 으로: ugc → core (`PRINT_ORDER_SUBMIT_ENABLED=false`) → channel-adapter → admin-web → storefront. core 는 ugc 시안 정보의 `userId` 를 요구하므로 ugc 가 먼저다.
 4. 위 품목 여는 절차로 개시한다.
 
 ## 알려진 한계·확인할 것
@@ -96,7 +97,6 @@
 - Medusa 어드민에서 주문을 직접 취소하는 경로는 `PrintOrderCancellation` 을 지나지 않는다. 와우프레스에 발주된 라인이면 보드에서 따로 정리해야 한다.
 - 환불 신청(무통장 포함)에 상품 정보가 없어 인쇄 상품이 섞인 주문은 승인 대신 부분 취소로 처리한다. 신청에 상품을 담는 것은 후속 과제다.
 - 인쇄만 출고되고 실물은 아직인 주문은 스토어 주문 액션이 출고로 판정해 고객 취소 버튼이 사라진다. 고객센터 → 부분 취소로 처리한다.
-- 인쇄 줄이 여럿인 V2 주문에서 일부 인쇄만 취소된 채 고객이 인쇄 제외 취소를 하면, 취소된 인쇄 줄의 판매주문 수량은 남는다(V2 전체 취소 계획이 외주 줄을 빼므로). 운영자가 부분 취소로 그 줄을 정리한다.
 - 고객 반품은 창고 배송 기록이 있어야 신청되므로 인쇄 줄은 고를 수 없고, 교환은 `assertNoCustomMadeLines` 가 막는다. 인쇄 불량은 고객센터가 받는다.
 - 인쇄물 하자는 일반 반품(창고 회수) 흐름에 맞지 않는다. 와우프레스 약관(18조2)은 수령 7일 안에 전량 반송하면 재작업이 원칙이고 환불은 예외다. 고객에게는 5일 안에 고객센터로 접수하라고 안내한다(우리가 와우프레스 7일 기한 안에 접수할 여유). API 대리 주문·고객 직배송 건에 약관이 그대로 적용되는지는 와우프레스 확인이 필요하다.
 - 첫 실주문에서 `ord_list`, `cjson_order` 응답 모양과 배송지 `sd/sgg/umd` 분해(`wowpress/korean-address.ts`)가 실제 응답과 맞는지 반드시 확인한다. 문서만으로 확정하지 못한 부분이다.

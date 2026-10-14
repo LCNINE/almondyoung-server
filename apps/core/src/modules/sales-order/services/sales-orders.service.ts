@@ -1675,7 +1675,13 @@ export class SalesOrdersService {
       ? salesOrderLines.flatMap((line) => {
           const items = fulfillmentItems.filter((item) => item.salesOrderLineId === line.id);
           if (items.length === 0) {
-            if (isDigitalFulfillmentLine(line) || isOutsourcedLine(line)) return [];
+            // 인쇄(외주) 줄은 창고 항목이 없어도 판매·환불 대상이다. 남은 판매 수량을 넣고 출고 정리만 아래에서 건너뛴다.
+            // 빼 버리면 전체 취소가 부분 취소로 바뀔 때 와우프레스는 취소됐는데 인쇄분이 환불되지 않는다
+            if (isOutsourcedLine(line)) {
+              const remaining = line.quantity - (prior.cancelledByLine.get(line.id) ?? 0);
+              return remaining > 0 ? [{ salesOrderLineId: line.id, quantity: remaining }] : [];
+            }
+            if (isDigitalFulfillmentLine(line)) return [];
             throw new ConflictException(`V2 fulfillment item is missing for SalesOrder line ${line.id}`);
           }
           const outstandingSalesQuantities = items.map((item) => {

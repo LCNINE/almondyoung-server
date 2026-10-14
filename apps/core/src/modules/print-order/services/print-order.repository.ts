@@ -37,7 +37,7 @@ export function hasPreservedLastError(): SQL {
 
 export interface PrintOrderLineContext {
   line: { id: string; variantId: string; quantity: number };
-  order: { channelOrderId: string; shippingAddress: unknown };
+  order: { channelOrderId: string; customerId: string | null; shippingAddress: unknown };
 }
 
 @Injectable()
@@ -50,17 +50,28 @@ export class PrintOrderRepository {
   claimDue(limit: number, now: Date, tx?: DbTx): Promise<PrintOrderRow[]> {
     const t = wmsTables.printOrders;
     return this.dbService.run(async (trx) => {
-      const due = trx
+      // 잠글 행을 먼저 따로 고른다. UPDATE … IN (SELECT … LIMIT … SKIP LOCKED) 는 안쪽 SELECT 가 다시 실행될 때마다
+      // 다른 행을 집어 limit 을 넘겼다. 고른 행은 이 트랜잭션이 끝날 때까지 잠겨 있다
+      const due = await trx
         .select({ id: t.id })
         .from(t)
         .where(and(eq(t.status, 'pending'), lte(t.nextAttemptAt, now)))
         .orderBy(asc(t.createdAt))
         .limit(limit)
         .for('update', { skipLocked: true });
+      if (due.length === 0) return [];
       return trx
         .update(t)
         .set({ status: 'submitting', submittingAt: now, updatedAt: now })
-        .where(and(inArray(t.id, due), eq(t.status, 'pending')))
+        .where(
+          and(
+            inArray(
+              t.id,
+              due.map((row) => row.id),
+            ),
+            eq(t.status, 'pending'),
+          ),
+        )
         .returning();
     }, tx);
   }
@@ -334,6 +345,7 @@ export class PrintOrderRepository {
           variantId: lines.variantId,
           quantity: lines.quantity,
           channelOrderId: orders.channelOrderId,
+          customerId: orders.customerId,
           shippingAddress: orders.shippingAddress,
         })
         .from(lines)
@@ -342,7 +354,7 @@ export class PrintOrderRepository {
       if (!row) return null;
       return {
         line: { id: row.id, variantId: row.variantId, quantity: row.quantity },
-        order: { channelOrderId: row.channelOrderId, shippingAddress: row.shippingAddress },
+        order: { channelOrderId: row.channelOrderId, customerId: row.customerId, shippingAddress: row.shippingAddress },
       };
     }, tx);
   }

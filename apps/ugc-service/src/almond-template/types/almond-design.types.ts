@@ -7,6 +7,8 @@ export type AlmondDesignView = Pick<AlmondDesignEntity, 'id' | 'userId' | 'desig
 };
 export interface AlmondDesignInfo {
   id: string;
+  // 내부 경로 전용. 발주 전에 시안 주인과 주문 고객을 대조한다
+  userId: string;
   productId: string;
   widthMm: number;
   heightMm: number;
