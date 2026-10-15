@@ -11,6 +11,7 @@ import {
   PRINT_IN_PRODUCTION_MESSAGE,
   PrintInProductionError,
   PrintOrderCancellationManager,
+  SHIPPED_BEFORE_CANCEL_ERROR,
 } from './print-order-cancellation.manager';
 import { PrintOrderReader } from './print-order.reader';
 import { ORDER_LOOKUP_PENDING_ERROR } from './print-order-submit.manager';
@@ -353,6 +354,30 @@ describe('PrintOrderCancellationManager', () => {
       expect((error as Error).message).toBe('이미 출고된 주문은 취소할 수 없습니다. 고객센터로 문의해 주세요.');
       expect(store.get(r.id).status).toBe(status);
       expect(wowpress.cancel).not.toHaveBeenCalled();
+    });
+
+    it.each(['shipped', 'delivered'] as const)(
+      'record on a %s row keeps status and tracking but flags it for the operator',
+      async (status) => {
+        const r = row({ ...SUBMITTED, status, trackingNumber: '123', cancelResolvedAt: new Date() });
+        const { manager, store, wowpress } = setup(r);
+        await expect(manager.cancelForOrder('so-1', 'record')).resolves.toEqual(NOTHING_CANCELLED);
+        expect(wowpress.cancel).not.toHaveBeenCalled();
+        expect(store.get(r.id)).toMatchObject({
+          status,
+          trackingNumber: '123',
+          lastError: SHIPPED_BEFORE_CANCEL_ERROR,
+          cancelResolvedAt: null,
+        });
+        expect(store.get(r.id).cancelRefusedAt).toBeInstanceOf(Date);
+      },
+    );
+
+    it('gate on a shipped row does not flag it (the cancel is refused instead)', async () => {
+      const r = row({ ...SUBMITTED, status: 'shipped', trackingNumber: '123' });
+      const { manager, store } = setup(r);
+      await manager.cancelForOrder('so-1', 'gate').catch(() => undefined);
+      expect(store.get(r.id).cancelRefusedAt).toBeNull();
     });
 
     it('passes an already cancelled row (safe to retry)', async () => {

@@ -324,6 +324,29 @@ describe('PrintOrderAdminManager', () => {
       expect(store.get(r.id).status).toBe('failed');
     });
 
+    it.each(['shipped', 'delivered'] as const)(
+      'proceed: acknowledges a %s row cancelled after shipping without changing its status',
+      async (status) => {
+        const { store, manager, add } = setup();
+        const r = add({ status, vendorOrderNumber: 'WP-1', trackingNumber: '1234', cancelRefusedAt: new Date() });
+        const out = await manager.resolveCancel(r.id, 'proceed', ACTOR);
+        expect(store.get(r.id)).toMatchObject({ status, trackingNumber: '1234', cancelResolvedBy: ACTOR });
+        expect(store.get(r.id).cancelResolvedAt).toBeInstanceOf(Date);
+        expect(out.cancelSales).toBe(false);
+      },
+    );
+
+    it('cancelled: refuses a row that already shipped', async () => {
+      const { manager, add } = setup();
+      const r = add({
+        status: 'shipped',
+        vendorOrderNumber: 'WP-1',
+        trackingNumber: '1234',
+        cancelRefusedAt: new Date(),
+      });
+      await expect(manager.resolveCancel(r.id, 'cancelled', ACTOR)).rejects.toBeInstanceOf(BadRequestError);
+    });
+
     it('proceed: a second click on an already resolved row is a no-op', async () => {
       const { repo, manager, add } = setup();
       const r = add(refused);

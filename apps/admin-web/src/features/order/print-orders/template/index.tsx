@@ -283,6 +283,7 @@ function PrintOrderRow({
   const showSalesRetry =
     row.resolvable && row.status === 'cancelled' && row.salesCancelFailed;
   const showResolve = row.resolvable && !showSalesRetry;
+  const shipped = row.status === 'shipped' || row.status === 'delivered';
   const awaitingTest =
     row.testMemo && !row.testConfirmedAt && row.status !== 'cancelled';
   const retryable = row.status === 'failed' || row.status === 'unsupported';
@@ -363,14 +364,16 @@ function PrintOrderRow({
             )}
             {showResolve && (
               <>
-                <Button
-                  size="sm"
-                  onClick={() =>
-                    onAction({ kind: 'resolve', row, outcome: 'cancelled' })
-                  }
-                >
-                  취소 완료함
-                </Button>
+                {!shipped && (
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      onAction({ kind: 'resolve', row, outcome: 'cancelled' })
+                    }
+                  >
+                    취소 완료함
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="outline"
@@ -378,7 +381,7 @@ function PrintOrderRow({
                     onAction({ kind: 'resolve', row, outcome: 'proceed' })
                   }
                 >
-                  생산 진행으로 처리
+                  {shipped ? '반품·환불 확인함' : '생산 진행으로 처리'}
                 </Button>
               </>
             )}
@@ -464,6 +467,7 @@ function ActionDialog({
   const { row } = action;
   const orderNo = row.displayOrderNo ?? row.channelOrderId;
   const showRetrySales = row.status === 'cancelled' && row.salesCancelFailed;
+  const shipped = row.status === 'shipped' || row.status === 'delivered';
   const verifyRetry = action.kind === 'retry' && row.needsWowpressCheck;
   const pending = retry.isPending || confirmTest.isPending || resolve.isPending;
 
@@ -473,7 +477,9 @@ function ActionDialog({
         ? showRetrySales
           ? '판매주문 취소 다시 시도'
           : '취소 완료함으로 처리'
-        : '생산 진행으로 처리'
+        : shipped
+          ? '반품·환불 확인함'
+          : '생산 진행으로 처리'
       : action.kind === 'retry'
         ? '와우프레스로 재전송'
         : '테스트 건 확인 완료';
@@ -484,7 +490,9 @@ function ActionDialog({
         ? showRetrySales
           ? `주문 ${orderNo}: 인쇄는 취소됐지만 판매주문 취소(환불)가 열리지 않았습니다. 판매주문 취소를 다시 요청합니다.`
           : `주문 ${orderNo}: 와우프레스에서 취소된 것을 확인했습니다. 발주를 취소로 바꾸고 고객 주문 취소·환불을 진행합니다. 같은 주문의 다른 인쇄물과 함께 발주된 경우, 와우프레스가 남은 인쇄물에 택배비를 다시 청구할 수 있습니다.`
-        : `주문 ${orderNo}: 와우프레스에서 취소할 수 없어 제작을 그대로 진행합니다. 고객 주문은 취소되지 않습니다.`
+        : shipped
+          ? `주문 ${orderNo}: 인쇄물은 이미 발송됐는데 고객 주문이 취소됐습니다. 반품·환불 처리를 확인했으면 이 건을 확인 목록에서 내립니다. 발주 상태와 송장은 그대로 둡니다.`
+          : `주문 ${orderNo}: 와우프레스에서 취소할 수 없어 제작을 그대로 진행합니다. 고객 주문은 취소되지 않습니다.`
       : action.kind === 'retry'
         ? `주문 ${orderNo}을(를) 와우프레스로 다시 보냅니다.`
         : `주문 ${orderNo}: 와우프레스 파일상담 확인 결과를 메모로 남깁니다.`;
@@ -497,7 +505,9 @@ function ActionDialog({
           onSuccess: (res) =>
             done(
               action.outcome === 'proceed'
-                ? '생산 진행으로 처리했습니다.'
+                ? shipped
+                  ? '확인 목록에서 내렸습니다.'
+                  : '생산 진행으로 처리했습니다.'
                 : res.salesCancel === null
                   ? '판매주문에 취소할 남은 수량이 없어 인쇄만 정리했습니다.'
                   : '판매주문 취소를 요청했습니다.'

@@ -44,9 +44,21 @@ function cancelledButNotRefunded(row: PrintOrderRow, refundNotOpened: boolean): 
   );
 }
 
+// 발송·배송 뒤에 판매주문이 취소된 행. 운영자가 반품·환불을 확인하고 마무리할 때까지 남긴다
+export function shippedAfterCancel(row: PrintOrderRow): boolean {
+  return (
+    (row.status === 'shipped' || row.status === 'delivered') &&
+    row.cancelRefusedAt !== null &&
+    row.cancelResolvedAt === null
+  );
+}
+
 export function awaitsCancelResolution(row: PrintOrderRow, now: number, refundNotOpened: boolean): boolean {
   return (
-    row.status === 'cancel_refused' || isStaleCancelling(row, now) || cancelledButNotRefunded(row, refundNotOpened)
+    row.status === 'cancel_refused' ||
+    isStaleCancelling(row, now) ||
+    cancelledButNotRefunded(row, refundNotOpened) ||
+    shippedAfterCancel(row)
   );
 }
 

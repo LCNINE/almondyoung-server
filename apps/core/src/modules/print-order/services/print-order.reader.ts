@@ -1,7 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
-import { and, asc, desc, eq, ilike, isNull, lt, ne, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+  type SQL,
+  type SQLWrapper,
+} from 'drizzle-orm';
 import { wmsSchema, wmsTables, type DbTx } from '../../inventory/schema/inventory.schema';
 import { type PrintOrderRow } from '../schema/print-order.schema';
 
@@ -244,6 +259,7 @@ export class PrintOrderReader {
           eq(t.status, 'cancel_refused'),
           and(eq(t.status, 'cancelling'), lt(t.updatedAt, staleCancellingBefore)),
           refundNotOpenedSql(),
+          and(inArray(t.status, ['shipped', 'delivered']), isNotNull(t.cancelRefusedAt), isNull(t.cancelResolvedAt)),
         );
       case 'test_pending':
         return and(eq(t.testMemo, true), isNull(t.testConfirmedAt), ne(t.status, 'cancelled'));

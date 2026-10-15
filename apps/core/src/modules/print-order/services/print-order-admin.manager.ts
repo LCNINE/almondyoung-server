@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { type PrintOrderRow } from '../schema/print-order.schema';
-import { awaitsCancelResolution, orderMayBeInFlight } from './print-order-board.rules';
+import { awaitsCancelResolution, orderMayBeInFlight, shippedAfterCancel } from './print-order-board.rules';
 import { PrintOrderReader } from './print-order.reader';
 import { isPreservedLastError, PrintOrderRepository } from './print-order.repository';
 
@@ -90,9 +90,14 @@ export class PrintOrderAdminManager {
     const refundNotOpened = row.status === 'cancelled' && (await this.reader.refundNotOpened(id));
     // 판매주문 줄에 남은 수량이 없으면 열 환불이 없다
     if (outcome === 'cancelled' && row.status === 'cancelled' && !refundNotOpened) return { row, cancelSales: false };
-    if (outcome === 'proceed' && PROCEEDED.includes(row.status)) return { row, cancelSales: false };
+    if (outcome === 'proceed' && PROCEEDED.includes(row.status) && !shippedAfterCancel(row)) {
+      return { row, cancelSales: false };
+    }
     if (!awaitsCancelResolution(row, now, refundNotOpened)) {
       throw new BadRequestError(`Only refused or stuck cancellations can be resolved (current: ${row.status})`);
+    }
+    if (outcome === 'cancelled' && shippedAfterCancel(row)) {
+      throw new BadRequestError('This print order has already shipped; it cannot be cancelled');
     }
     if (outcome === 'proceed' && row.status === 'cancelled') {
       throw new BadRequestError('This print order is already cancelled; it cannot go back to production');
@@ -124,6 +129,7 @@ export class PrintOrderAdminManager {
 
   // 번호가 없으면 추적할 주문이 없으므로 주문 대기열이 아니라 failed 로 보낸다(재전송은 운영자가 따로 누른다)
   private proceedStatus(row: PrintOrderRow): PrintOrderRow['status'] {
+    if (row.status === 'shipped' || row.status === 'delivered') return row.status;
     if (!row.vendorOrderNumber) return 'failed';
     return row.trackingNumber ? 'shipped' : 'submitted';
   }

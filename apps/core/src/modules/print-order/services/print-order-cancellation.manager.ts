@@ -63,6 +63,8 @@ export class PrintNeedsPartialCancelError extends ConflictError {
   }
 }
 
+export const SHIPPED_BEFORE_CANCEL_ERROR = 'sales order cancelled after print shipped — check return/refund';
+
 export type PrintCancelMode = 'gate' | 'record';
 export interface PrintCancelOptions {
   // 고객 취소: 와우프레스가 거절하면 고객에게 바로 알리고 인쇄는 계속하므로, 운영자 확인(cancel_refused)으로 넘기지 않는다
@@ -279,9 +281,7 @@ export class PrintOrderCancellationManager {
         return 'refused';
       case 'shipped':
       case 'delivered':
-        if (run.mode === 'record') {
-          this.logger.warn(`print order ${row.id} already ${row.status} but its sales order was cancelled`);
-        }
+        if (run.mode === 'record') return this.flagShipped(row, run, depth);
         return 'shipped';
       case 'submitting':
         if (run.mode === 'gate') return 'busy';
@@ -395,6 +395,19 @@ export class PrintOrderCancellationManager {
     if (!marked) return this.reread(row, run, depth);
     this.logger.warn(`print order ${row.id} cancel refused (${run.mode}): ${reason}`);
     return 'refused';
+  }
+
+  // 인쇄물은 이미 떠났는데 판매주문은 취소됐다. 상태·송장은 그대로 두고 운영자 확인 탭에 올린다
+  private async flagShipped(row: PrintOrderRow, run: Run, depth: number): Promise<Outcome> {
+    const marked = await this.repository.compareAndSet(row, {
+      cancelRefusedAt: new Date(),
+      cancelResolvedAt: null,
+      cancelResolvedBy: null,
+      lastError: SHIPPED_BEFORE_CANCEL_ERROR,
+    });
+    if (!marked) return this.reread(row, run, depth);
+    this.logger.warn(`print order ${row.id} already ${row.status} but its sales order was cancelled`);
+    return 'shipped';
   }
 
   private async record(row: PrintOrderRow, reason: string): Promise<Outcome> {
