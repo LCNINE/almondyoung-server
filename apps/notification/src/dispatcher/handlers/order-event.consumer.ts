@@ -7,6 +7,7 @@ import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
 import { Channel, NotificationCategory, NotificationPriority } from '../../shared/enums';
+import { eventNoticeKey } from './event-notice-key';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 import { formatOrderTotal } from '../../shared/utils/template-helpers';
 import { CORE_ORDER_STREAM, ORDER_STREAM } from '@packages/event-contracts/streams/orders.stream';
@@ -60,6 +61,7 @@ export class OrderEventConsumer {
           category: NotificationCategory.TRANSACTIONAL,
           eventKey: 'DEMO_ORDER_CREATED',
           correlationId: envelope.correlationId,
+          idempotencyKey: eventNoticeKey(envelope.messageId, 'DEMO_ORDER_CREATED', `demo-order:${payload.orderId}`),
           payload: {
             ...payload,
             // RFC 2606 reserved TLD: it cannot resolve to a real mailbox.
@@ -104,6 +106,7 @@ export class OrderEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.customerId),
         priority: eventMapping.priority as any,
         variables: {
           name: payload.shippingAddress?.recipientName ?? '고객',
@@ -148,6 +151,7 @@ export class OrderEventConsumer {
       eventKey: eventMapping.eventKey,
       payload: { ...payload, email },
       correlationId: envelope.correlationId,
+      idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.customerId),
       priority: eventMapping.priority as NotificationPriority,
       variables: {
         name: payload.customerName ?? '고객',
@@ -192,6 +196,7 @@ export class OrderEventConsumer {
       eventKey: eventMapping.eventKey,
       payload: { ...payload, email },
       correlationId: envelope.correlationId,
+      idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.customerId),
       priority: eventMapping.priority as NotificationPriority,
       variables: {
         name: payload.customerName ?? '고객',
@@ -233,6 +238,7 @@ export class OrderEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.orderId),
         priority: eventMapping.priority as any,
         variables: {
           orderId: payload.orderId,

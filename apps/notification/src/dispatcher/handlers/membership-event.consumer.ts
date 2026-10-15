@@ -7,6 +7,7 @@ import { NotifyMemberDeps, notifyMember } from './notify-member';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
 import { Channel, NotificationCategory, NotificationPriority } from '../../shared/enums';
+import { eventNoticeKey } from './event-notice-key';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 import { formatAmount, formatDate } from '../../shared/utils/template-helpers';
 import { formatBillingPeriod, formatKstMonthDay, nextSendableAt, nhnRequestDateIfQuiet } from './billing-notice.format';
@@ -68,6 +69,7 @@ export class MembershipEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.userId),
         priority: eventMapping.priority as any,
         // 날짜·금액은 여기서 포맷을 끝낸다 — 렌더러는 `{{var}}` 단순 치환이라
         // 템플릿 안의 `{{formatDate x}}` 는 치환되지 않고 리터럴로 남는다.
@@ -119,6 +121,7 @@ export class MembershipEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.userId),
         priority: eventMapping.priority as any,
         variables: {
           userName: payload.userName,
@@ -162,6 +165,7 @@ export class MembershipEventConsumer {
       eventKey,
       userId: payload.userId,
       correlationId: envelope.correlationId,
+      idempotencyKey: eventNoticeKey(envelope.messageId, eventKey, payload.userId),
       payload,
       variables: (contact) => ({
         name: contact.username || '고객',

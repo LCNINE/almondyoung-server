@@ -7,6 +7,7 @@ import { NotifyMemberDeps, notifyMember } from './notify-member';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
 import { NotificationCategory } from '../../shared/enums';
+import { eventNoticeKey } from './event-notice-key';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 import { USER_STREAM } from '@packages/event-contracts/streams/user.stream';
 import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
@@ -63,6 +64,7 @@ export class UserEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.userId),
         priority: eventMapping.priority as any,
         variables: {
           name: payload.name,
@@ -103,6 +105,7 @@ export class UserEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.userId),
         priority: eventMapping.priority as any,
         variables: {
           name: payload.name,
@@ -140,6 +143,7 @@ export class UserEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.userId),
         priority: eventMapping.priority as any,
         variables: {
           name: payload.name,
@@ -163,6 +167,7 @@ export class UserEventConsumer {
       eventKey: 'USER_WELCOME',
       userId: payload.userId,
       correlationId: envelope.correlationId,
+      idempotencyKey: eventNoticeKey(envelope.messageId, 'USER_WELCOME', payload.userId),
       payload,
       variables: (contact) => ({ name: contact.username || payload.name || '고객' }),
     });
@@ -178,6 +183,7 @@ export class UserEventConsumer {
       eventKey: 'USER_WITHDRAWN',
       userId: payload.userId,
       correlationId: envelope.correlationId,
+      idempotencyKey: eventNoticeKey(envelope.messageId, 'USER_WITHDRAWN', payload.userId),
       payload,
       email: payload.email,
       variables: () => ({ name: payload.name ?? '고객' }),

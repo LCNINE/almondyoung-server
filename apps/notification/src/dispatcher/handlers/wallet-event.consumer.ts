@@ -6,6 +6,7 @@ import { NotificationDispatcherService } from '../services/notification-dispatch
 import { EventMappingService } from '../../shared/services/event-mapping.service';
 import { Channel, NotificationCategory, NotificationPriority } from '../../shared/enums';
 import { UserContactClient } from '@app/shared';
+import { eventNoticeKey } from './event-notice-key';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 import { formatAmount, formatDueDate } from '../../shared/utils/template-helpers';
 import { PAYMENT_STREAM } from '@packages/event-contracts/streams/payment.stream';
@@ -79,6 +80,7 @@ export class WalletEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.customerId),
         priority: eventMapping.priority as any,
         variables: {
           intentId: payload.intentId,
@@ -120,6 +122,7 @@ export class WalletEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.orderId),
         priority: eventMapping.priority as any,
         variables: {
           orderId: payload.orderId,
@@ -157,6 +160,7 @@ export class WalletEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.customerId),
         priority: eventMapping.priority as any,
         variables: {
           intentId: payload.intentId,
@@ -210,6 +214,7 @@ export class WalletEventConsumer {
       eventKey: mapping.eventKey,
       payload: { ...payload, email },
       correlationId: envelope.correlationId,
+      idempotencyKey: eventNoticeKey(envelope.messageId, mapping.eventKey, payload.userId),
       priority: mapping.priority as NotificationPriority,
       variables: {
         name: (typeof payload.customerName === 'string' ? payload.customerName : contact?.username) ?? '고객',
@@ -244,6 +249,7 @@ export class WalletEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.customerId),
         priority: eventMapping.priority as any,
         variables: {
           invoiceId: payload.invoiceId,
@@ -286,6 +292,7 @@ export class WalletEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.customerId),
         priority: eventMapping.priority as any,
         variables: {
           invoiceId: payload.invoiceId,
@@ -326,6 +333,7 @@ export class WalletEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.customerId),
         priority: eventMapping.priority as any,
         variables: {
           invoiceId: payload.invoiceId,
@@ -388,6 +396,7 @@ export class WalletEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.userId),
         priority: eventMapping.priority as any,
         // 키 이름은 BANK_TRANSFER_ISSUED_EMAIL 템플릿의 {{...}} 와 정확히 일치해야 한다.
         variables: {
@@ -454,6 +463,7 @@ export class WalletEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.userId),
         priority: eventMapping.priority as any,
         // 키 이름은 CMS_MEMBER_REGISTERED_EMAIL 템플릿의 {{...}} 와 정확히 일치해야 한다.
         variables: {
@@ -494,6 +504,7 @@ export class WalletEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.userId),
         priority: eventMapping.priority as any,
         // 키 이름은 MANDATE_PENDING_EMAIL 템플릿의 {{...}} 와 정확히 일치해야 한다.
         variables: {
@@ -529,6 +540,7 @@ export class WalletEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.userId),
         priority: eventMapping.priority as any,
         // 키 이름은 CMS_MEMBER_REJECTED_EMAIL 템플릿의 {{...}} 와 정확히 일치해야 한다.
         variables: {
