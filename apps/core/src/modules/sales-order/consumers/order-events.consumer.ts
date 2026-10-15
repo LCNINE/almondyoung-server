@@ -235,7 +235,7 @@ export class OrderEventsConsumer {
           );
           return null;
         }
-        if (alreadyProcessed) return { salesOrderId, lines };
+        if (alreadyProcessed) return { salesOrderId, lines, redelivery: true };
 
         await this.salesOrdersService.cancel(
           salesOrderId,
@@ -258,10 +258,14 @@ export class OrderEventsConsumer {
         if (!lines) await this.cancelSettler.settleCancelled(salesOrderId, tx);
 
         this.logger.log(`[OrderCancelled] Cancelled sales order: ${salesOrderId}, reason: ${payload.reason}`);
-        return { salesOrderId, lines };
+        return { salesOrderId, lines, redelivery: false };
       });
       // 와우프레스 호출은 트랜잭션 밖에서 한다. 이미 취소된 주문이라 막을 수 없으니 거절·장애는 보드에 남긴다
-      if (cancelled) await this.printCancellation.cancelForOrder(cancelled.salesOrderId, 'record', cancelled.lines);
+      if (cancelled) {
+        await this.printCancellation.cancelForOrder(cancelled.salesOrderId, 'record', cancelled.lines, {
+          redelivery: cancelled.redelivery,
+        });
+      }
     } catch (error) {
       this.logger.error(`[OrderCancelled] Failed to process: ${payload.orderId}`, error.stack);
       throw error;

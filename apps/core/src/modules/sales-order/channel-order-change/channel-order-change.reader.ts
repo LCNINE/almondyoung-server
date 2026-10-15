@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, ne, notInArray, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { toShippingAddress } from './channel-order-diff';
@@ -148,6 +148,16 @@ export class ChannelOrderChangeReader {
         r.status !== 'cancelled' &&
         (r.status === 'submitting' || r.orderAttemptedAt !== null || r.vendorOrderNumber !== null),
     );
+  }
+
+  async hasActivePrintOrder(salesOrderLineId: string, tx: DbTx): Promise<boolean> {
+    const t = wmsTables.printOrders;
+    const rows = await tx
+      .select({ id: t.id })
+      .from(t)
+      .where(and(eq(t.salesOrderLineId, salesOrderLineId), ne(t.status, 'cancelled')))
+      .for('update');
+    return rows.length > 0;
   }
 
   async isFullyShipped(salesOrderId: string, tx: DbTx): Promise<boolean> {

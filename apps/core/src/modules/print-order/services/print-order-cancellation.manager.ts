@@ -67,6 +67,8 @@ export type PrintCancelMode = 'gate' | 'record';
 export interface PrintCancelOptions {
   // 고객 취소: 와우프레스가 거절하면 고객에게 바로 알리고 인쇄는 계속하므로, 운영자 확인(cancel_refused)으로 넘기지 않는다
   keepOnRefusal?: boolean;
+  // record: 이미 처리한 같은 취소 이벤트가 다시 온 것이다. 운영자가 마무리한 행은 그 결정을 뒤집지 않는다
+  redelivery?: boolean;
 }
 export interface PrintCancelLine {
   salesOrderLineId: string;
@@ -156,8 +158,8 @@ export class PrintOrderCancellationManager {
 
     if (mode === 'record') {
       for (const row of rows) {
-        // 운영자가 이미 마무리한 행이다(재전달된 같은 취소 이벤트). 새 보호 증거가 붙으면 표식이 지워져 다시 탄다
-        if (row.cancelResolvedAt !== null) {
+        // 재전달된 같은 취소 이벤트만 운영자 마무리를 존중한다. 새 취소는 다시 와우프레스 취소를 시도하고, 거절되면 운영자에게 다시 넘긴다
+        if (options.redelivery === true && row.cancelResolvedAt !== null) {
           this.logger.log(`print order ${row.id} cancel already resolved by operator; record skipped`);
           continue;
         }

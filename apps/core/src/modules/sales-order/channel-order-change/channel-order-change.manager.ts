@@ -62,7 +62,10 @@ export class ChannelOrderChangeManager {
     const deltas = await this.cancelSettler.settleModified(
       salesOrderId,
       fullDiff,
-      { cancelRequests: payload.snapshot.cancelRequests ?? [], orderCancelled: payload.snapshot.orderCancelled === true },
+      {
+        cancelRequests: payload.snapshot.cancelRequests ?? [],
+        orderCancelled: payload.snapshot.orderCancelled === true,
+      },
       tx,
     );
     const amendmentId = randomUUID();
@@ -175,6 +178,10 @@ export class ChannelOrderChangeManager {
   ): Promise<RecordedChannelDelta> {
     const sourceEventId = `${ctx.amendmentId}:${delta.salesOrderLineId}`;
     const refusal = await this.attempt(tx, async (sp) => {
+      // 판매주문 취소는 외주 줄을 그냥 통과시킨다. 인쇄 줄을 줄이면 와우프레스는 원래 수량대로 주문·제작된다
+      if (await this.reader.hasActivePrintOrder(delta.salesOrderLineId, sp)) {
+        throw new Refused({ code: 'CANCEL_NOT_IMMEDIATE', detail: 'print order on this line — decide on WowPress' });
+      }
       try {
         await this.salesOrders.cancel(
           order.id,

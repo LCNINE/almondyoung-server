@@ -728,10 +728,20 @@ describe('PrintOrderCancellationManager', () => {
     it('a redelivered OrderCancelled does not reopen a row the operator resolved with proceed', async () => {
       const r = row({ ...SUBMITTED, status: 'submitted', cancelResolvedAt: new Date(), cancelResolvedBy: 'op-1' });
       const { manager, store, wowpress } = setup(r);
-      await expect(manager.cancelForOrder('so-1', 'record')).resolves.toEqual(NOTHING_CANCELLED);
+      await expect(manager.cancelForOrder('so-1', 'record', undefined, { redelivery: true })).resolves.toEqual(
+        NOTHING_CANCELLED,
+      );
       expect(wowpress.cancel).not.toHaveBeenCalled();
       expect(wowpress.detail).not.toHaveBeenCalled();
       expect(store.get(r.id).status).toBe('submitted');
+    });
+
+    it('a new (not redelivered) record cancel still tries to cancel a row the operator resolved with proceed', async () => {
+      const r = row({ ...SUBMITTED, status: 'submitted', cancelResolvedAt: new Date(), cancelResolvedBy: 'op-1' });
+      const { manager, store, wowpress } = setup(r);
+      await manager.cancelForOrder('so-1', 'record', undefined, { redelivery: false });
+      expect(wowpress.cancel).toHaveBeenCalledTimes(1);
+      expect(store.get(r.id)).toMatchObject({ status: 'cancelled', cancelResolvedAt: null, cancelResolvedBy: null });
     });
 
     it('a gate (new admin cancel) still tries to cancel a row the operator resolved with proceed', async () => {
