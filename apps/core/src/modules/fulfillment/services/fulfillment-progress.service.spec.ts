@@ -52,4 +52,17 @@ describe('fulfillment progress projection', () => {
   it('rejects over-settled demand', () => {
     expect(() => projectFulfillmentOrderProgress([item({ shippedQty: 8, canceledQty: 3 })])).toThrow('exceeds qty');
   });
+
+  it('qty 0 항목(구성 변경으로 대체됨)은 미출고 0 · canceled 로 투영하고 FO 합계에 섞이지 않는다', () => {
+    expect(projectFulfillmentOrderItemProgress(item({ qty: 0, activeLineQty: 0 }))).toMatchObject({
+      outstandingQty: 0,
+      status: 'canceled',
+    });
+    expect(
+      projectFulfillmentOrderProgress([
+        item({ id: 'foi-0', qty: 0, activeLineQty: 0 }),
+        item({ id: 'foi-1', qty: 3, activeLineQty: 3 }),
+      ]),
+    ).toMatchObject({ status: 'created', totalQty: 3, canceledQty: 0, outstandingQty: 3 });
+  });
 });

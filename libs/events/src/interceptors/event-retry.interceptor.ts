@@ -5,6 +5,8 @@
  * 1. @RetryPolicy 분류 (nonRetryable → 즉시 DLQ)
  * 2. retryable → backoff 재시도 (대기 중 heartbeat 유지)
  * 3. 최종 실패 → DLQ 전송 후 에러 삼킴 (offset commit)
+ *    커밋은 `buildKafkaConsumerServerOptions` 의 `autoCommit: true` 가 한다 — #1073 전까지는 꺼져 있어
+ *    이 문장이 거짓이었다(리밸런스마다 최신으로 점프).
  *
  * 구 EventsExceptionFilter 대체 — 예외 필터는 RPC 경로에서 host.getHandler()가
  * null 이라 메타데이터 조회·핸들러 재실행이 불가능했다(설계 스펙 §1 참조).

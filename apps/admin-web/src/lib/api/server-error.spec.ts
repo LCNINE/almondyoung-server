@@ -50,4 +50,15 @@ describe('server error parser', () => {
       message: 'reservation version changed',
     });
   });
+
+  it('exposes the unwrapped body details, undefined when absent', () => {
+    const details = { boxes: [] };
+    expect(
+      parseServerError({ statusCode: 409, response: { code: 'X', details } }).details,
+    ).toBe(details);
+    expect(
+      parseServerError({ response: { status: 409, data: { code: 'X', details } } }).details,
+    ).toBe(details);
+    expect(parseServerError({ response: { status: 409, data: { code: 'X' } } }).details).toBeUndefined();
+  });
 });

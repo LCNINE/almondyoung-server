@@ -225,23 +225,50 @@ S2 는 «라인별 담긴 개수»를 새로 계산해 `boxTarget` → `amend` �
 | `COMPOSITION_NOT_FROZEN` | FO 가 있는데 출처 NULL(백필 전) |
 | `COMPOSITION_UNITS_AMBIGUOUS` | §6.2 계산 불가 |
 | `BOX_NOT_DRAFT` | `amend` 직접 호출 시 방어 |
-| `LINE_NOT_IN_FULFILLMENT` | FO 가 있는데 그 라인의 FO 항목이 없음(void 매칭 라인·FO 전 전량 취소 라인) — 지정해도 출고에 안 실린다(§4.4) |
+| `LINE_NOT_IN_FULFILLMENT` | FO 가 있는데 그 라인의 FO 항목이 없음(void 매칭 라인·FO 전 전량 취소 라인) — 지정해도 출고에 안 실린다(§4.4). FO 항목은 있어도 살아 있는(묘비·대체 아닌) 박스가 하나도 없을 때도 같다 — 맞출 박스 없이 구성만 바뀌면 안 된다 |
 | `SALES_ORDER_CANCELLED` | 전체 취소된 판매주문 |
+| `SALES_ORDER_CLOSED` (409) | 판매주문 상태가 `shipped`·`delivered` — 코어 밖(셀메이트 수기 출고 스크립트)에서 닫힌 주문 |
+| `FULFILLMENT_ORDER_CLOSED` (409) | FO 상태가 `shipped`·`completed`·`canceled` — 항목 잔량이 남아 있어도 닫힌 FO 는 고치지 않는다 |
 | `SKU_HOLDER_MISMATCH_FOR_3PL` | 3PL FO(`ownerId`)에 다른 화주의 SKU 지정 — FO 생성과 같은 규칙 |
+| `SKU_NOT_FOUND` (400) | 없는 SKU 지정 |
+| `COMPOSITION_ITEMS_INVALID` (400) | 구성 항목 형식 오류(빈 목록·SKU 중복·1개당 수량이 양의 정수가 아님) |
+| `SHIPMENT_COMPONENT_CHANGED_RETRY` (409) | 라인의 박스를 세고 잠그는 사이 분할·합포장이 박스 구성을 바꿨다 — 다시 시도하면 된다 |
+
+`amend` 는 분할과 같은 가드를 거치므로 `SHIPMENT_ACTIVE_WORK_ITEM`·`SHIPMENT_CUSTODY_EXISTS`·`SHIPMENT_ACTIVE_INVOICE`
+(409) 도 이 경로에서 나올 수 있다(상태만 draft 이고 작업·보관·송장에 묶인 박스). 일괄 적용은 이 셋과 재시도 코드를
+«작업 중», 닫힘·박스 없음·SKU 경로 위반을 «적용 불가»로 센다.
 
 경로 접두사는 상품매칭 컨트롤러가 이미 쓰는 `matchings` 다(스펙 초안의 `product-matchings` 는 없는 경로였다).
 주문별 지정·일괄 적용 둘 다 관리자 영역 기본 가드(`AdminRealmGuard`) 뒤에 둔다 — 판매주문 취소·상품매칭 저장과 같은 수준.
 
 ## 8. 화면 (admin-web)
 
-1. **매칭체크(`/order/matching`)** — 행마다 «이 주문만» 버튼. 기존 SKU 검색 다이얼로그를 재사용해 SKU·1개당 수량을 고른다.
-   지정된 행 상태 칸에 «개별 지정». `excludeMatched` 는 §5.2 술어
-2. **출고 주문 상세(`/order/fulfillments/[id]`)** — 라인마다 구성과 출처(매칭/개별) 표시, 같은 다이얼로그로 변경.
-   `LINE_BOX_NOT_DRAFT` 면 박스·배치 링크(«빼기»는 거기서)
-3. **상품매칭 저장 다이얼로그(`InventoryMatchingDialog`)** — 저장 뒤 미리보기에 영향이 있을 때만 한 단계: 네 숫자 +
-   «기존 출고에도 적용». 결과 «바뀜 N · 건너뜀 M(사유별)». 영향 0 이면 이 단계는 없다
+1. **매칭체크(`/order/matching`)** — 행마다 «이 주문만» 버튼. SKU·1개당 수량 고르기는 `InventoryMatchingDialog` 수동 탭의
+   SKU 검색·구성 목록을 `PickedSkuList`·`SkuSearchPanel`(`sku-composition-picker.tsx`)로 뽑아 두 다이얼로그가 같이 쓴다(따로 있는 «SKU 검색 다이얼로그»는 없다 —
+   `SearchDialog` 는 공급처·화주 검색이다). 지정된 행은 매칭 칸에 «개별 지정»과 **라인의 구성**(상품매칭 SKU 가 아니라)을 보인다.
+   `excludeMatched` 는 §5.2 술어 — 기본값이 켜져 있어 지정한 행은 기본 화면에서 빠진다
+2. **출고 주문 상세(`/order/fulfillments/[id]`)** — 라인마다 구성 표시, 개별 지정이면 «개별 지정»(매칭 출처는 정상 상태라 표시 없음),
+   같은 다이얼로그로 변경. FO 항목 `qty` 0 이면서 고객 취소 상태가 아닌 것은 «대체됨»(구성 변경으로 빠진 SKU; 옛 부분취소는 qty 0 + status canceled 로 쓴다) — `canceledQty`(고객 취소)와 다르다.
+   `LINE_BOX_NOT_DRAFT` 면 박스·배치 링크(«빼기»는 거기서): 배치에 든 박스 → `/order/outbound-batches?batchId=…`(드로어가 열린다),
+   배치 없는 박스 → `/order/fulfillments/<foId>`. 박스 상세 경로는 따로 없다
+3. **상품매칭 저장 다이얼로그(`InventoryMatchingDialog`)** — 저장 뒤 미리보기가 `applicable && changeable > 0` 일 때만 한 단계:
+   «바꿀 수 있음» 은 항상 보이고 나머지 숫자는 0 이면 숨긴다 + «기존 출고에도 적용». 결과 «바뀜 N · 건너뜀 M(사유별)». 바꿀 것이 0 이면(건너뜀만 있어도) 이 단계는 없다 —
+   적용 버튼이 할 일이 없다
 4. 정상 상태는 숨기고 설명 문구는 «개별 지정» 표시와 거절 사유뿐
 5. 판정(미리보기 숫자 → 표시, 오류 코드 → 문구·링크)은 순수 함수로 빼서 테스트한다(admin-web 은 컴포넌트 테스트 환경이 없다)
+
+### 8.1 화면이 요구하는 core 읽기·오류 본문 (PR 3 계획 단계에서 찾음, 2026-10-14)
+
+- **라인 구성 항목을 내려주는 GET 이 없었다.** 응답에 칸만 더한다(additive, 마이그 없음):
+  - `GET /fulfillments/:id` 에 `lines: [{ salesOrderLineId, productName, quantity, compositionSource, composition: [{ skuId, skuCode, skuName, qtyPerUnit }] }]`
+    — FO 항목이 가리키는 라인들
+  - `GET /matchings/order-lines` 행에 `composition`(같은 항목 모양, 굳히지 않은 라인은 빈 배열)
+- **`GlobalExceptionFilter` 는 `code`·`message`·`errors`·허용목록 `details` 밖의 칸을 버린다** — PR 2 의 `LINE_BOX_NOT_DRAFT` 가
+  본문 최상위에 실은 `boxes` 는 화면에 도착하지 않았다(PR 2 통합 스펙은 매니저 예외만 보고 HTTP 응답은 안 봤다). 매니저가
+  `details: { fulfillmentOrderId, boxes: [{ shipmentId, status, batchId, hasActiveWaybill }] }` 로 싣고, 필터 허용목록에
+  `LINE_BOX_NOT_DRAFT` 를 모양 검증과 함께 더한다(`SIMPLE_OUTBOUND_PLAN_INVALIDATED` 와 같은 방식). 프록시·axios 래퍼는 본문을 그대로 넘긴다
+- 화면이 문구를 갖는 코드는 §7.4 표 + `BOX_NOT_DRAFT`·`FULFILLMENT_INVARIANT_COMPONENT_CHANGED_RETRY`(다시 시도)·`AMEND_WOULD_EMPTY_BOX`·
+  amend 가드 셋. 모르는 코드·코드 없는 404·검증 400 은 서버 메시지를 그대로 보인다
 
 ## 9. PR 분할과 배포
 
@@ -267,13 +294,22 @@ S2 는 «라인별 담긴 개수»를 새로 계산해 `boxTarget` → `amend` �
 
 ### 9.3 PR 3 — admin-web
 
-§8. PR 2 와 같은 `sst deploy` 에 실어도 된다 — 새 API 만 부르는 화면이다.
+§8. PR 2 와 같은 `sst deploy` 에 실어도 된다 — 새 API 만 부르는 화면이다. Core 롤아웃이 끝난 뒤에 쓴다(§9.2).
+
+§8.1 의 core 변경(응답 칸 둘·필터 허용목록·`LINE_BOX_NOT_DRAFT` 본문 모양)도 이 PR 에 들어간다 — 전부 additive 이고 마이그가 없다.
+화면은 새 칸이 없으면 그 표시를 숨기고(구성 칸·박스 링크) 서버 메시지로 물러서므로 admin-web 이 Core 보다 먼저 떠도 깨지지 않는다.
+PR 2 가 이미 라이브(2026-10-14 Core td 242)라 이 PR 의 core 변경은 새 배포 하나로 나간다.
 
 ### 9.4 PR 4 — contract (PR 1 배포·백필 완료 뒤, 적어도 한 번의 배포를 사이에 두고)
 
 `sales_order_lines.product_matching_id`·`mapping_snapshot_id`, `fulfillment_order_items.mapping_snapshot_id`,
-`product_sku_mapping_snapshots` 테이블 DROP. 응답 DTO(`sales-order-response.dto.ts`)·admin-web 타입(`lib/types/dto/orders.ts`)·
-`getMappingSnapshot`·`createSnapshotForVariant` 제거. 순서 **`deploy → migrate`**.
+`product_sku_mapping_snapshots` 테이블 DROP. 응답 DTO(`sales-order-response.dto.ts`)의 두 칸과 FO 항목 삽입·입력 DTO 의
+`mappingSnapshotId` 제거. 순서 **`deploy → migrate`**.
+`getMappingSnapshot`·`createSnapshotForVariant`·admin-web 타입(`lib/types/dto/orders.ts`)의 두 칸은 PR 1(`60913c07d`)이 이미 지웠다.
+한 PR 로 낸다 — Drizzle 은 선언된 칸을 모든 select·insert 에 싣기 때문에 «코드 사용 중단»이 곧 schema.ts 에서 지우기이고,
+그걸 마이그와 가르면 스냅샷이 어긋나 다른 사람의 다음 generate 가 이 DROP 을 쓸어 담는다. 옛 코드가 DROP 을 만나지 않게 하는 건
+배포 순서(Core 롤아웃 완료 뒤 migrate)다. drizzle-kit 이 낸 SQL 은 CASCADE 뒤 같은 FK 를 다시 지우려다 실패해서 순서를 손으로 고쳤다
+(PR 4 계획 `docs/superpowers/plans/2026-10-15-sales-order-line-composition-pr4.md`).
 
 ### 9.5 배포 전 라이브 확인 (PR 본문에 SQL 로)
 
@@ -310,4 +346,5 @@ S2 는 «라인별 담긴 개수»를 새로 계산해 `boxTarget` → `amend` �
 2. ~~FO 생성 워커가 판매주문을 잠그는지(§5.4)~~ — 잠근다(`createV2` 의 `FOR UPDATE`). §5.4 에 반영
 3. ~~배송 프로필 계산을 FO 생성에서 함수로 뽑을 수 있는지(§6.3)~~ — 뽑힌다. «전부 NULL 아님 + 한 종류면 그 값, 아니면 NULL» 세 줄이
    `createV2` 에만 있고 분할·합포장·묘비는 값을 복사만 한다. `compatibleShippingProfileId` 순수 함수로 뽑아 FO 생성과 amend 가 쓴다
-4. admin-web 이 `productMatchingId`·`mappingSnapshotId` 를 어디서 읽는지(PR 4 범위)
+4. ~~admin-web 이 `productMatchingId`·`mappingSnapshotId` 를 어디서 읽는지(PR 4 범위)~~ — **어디서도 안 읽는다**(2026-10-15 확인).
+   PR 1 이 타입을 지웠고 `isOrderLineMatched` 는 `matchingResolved` 를 본다

@@ -31,6 +31,8 @@ import { InventoryTab } from '../../detail/inventory-tab';
 import { ShipmentTab } from '../../detail/shipment-tab';
 import { DirectShipTab } from '../../detail/direct-ship-tab';
 import { HistoryTab } from '../../detail/history-tab';
+import { LineCompositions } from '../../detail/line-compositions';
+import { foItemStatusLabel } from '../../../line-composition/line-composition-view';
 
 // 출고/취소가 불가능한 종료 상태
 const TERMINAL_STATUSES = new Set(['shipped', 'completed', 'canceled']);
@@ -202,6 +204,8 @@ export function FulfillmentDetail({ id }: { id: string }) {
         )}
       </Container>
 
+      <LineCompositions fo={fo} canEdit={canOperate && !isTerminal} />
+
       {/* FOI 라인 */}
       <Container>
         <Header title={`출고 라인 (${fo.items.length})`} />
@@ -234,7 +238,7 @@ export function FulfillmentDetail({ id }: { id: string }) {
                   <td className="py-2 pr-3">{item.shippedQty}</td>
                   <td className="py-2 pr-3">
                     <span className="text-xs text-gray-600">
-                      {item.status}
+                      {foItemStatusLabel(item)}
                     </span>
                   </td>
                 </tr>

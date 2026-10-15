@@ -148,7 +148,9 @@ describe('OrderEventConsumer demo delivery boundary', () => {
       insert: jest.fn().mockReturnValue({
         values: jest.fn().mockImplementation((values: Record<string, unknown>) => {
           inserted = { notificationId: 'b87083f0-14a5-405f-9d7e-f84d764c4cb8', ...values };
-          return { returning: jest.fn().mockResolvedValue([inserted]) };
+          // 멱등 키가 있으면 디스패처는 onConflictDoNothing 을 거쳐 returning 한다.
+          const returning = jest.fn().mockResolvedValue([inserted]);
+          return { returning, onConflictDoNothing: jest.fn().mockReturnValue({ returning }) };
         }),
       }),
       update: jest.fn().mockReturnValue({
@@ -326,5 +328,23 @@ describe('OrderEventConsumer 반품·교환 진행 알림', () => {
     });
 
     expect(dispatcher.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrderEventConsumer 재전달 (#1073)', () => {
+  it('같은 메시지가 다시 오면 같은 멱등 키로 보낸다 — 디스패처가 두 번째를 버린다', async () => {
+    const { consumer, dispatcher } = makeConsumer({
+      APP_STAGE: 'demo',
+      DEMO_CONSOLE_ENABLED: 'true',
+      EXTERNAL_INTEGRATIONS_MODE: 'mock',
+    });
+    const redelivered = { ...envelope, messageId: 'msg-1' } as EnvelopeOf<typeof ORDER_STREAM, 'OrderCreated'>;
+
+    await consumer.onOrderCreated(redelivered, anonymousOrder);
+    await consumer.onOrderCreated(redelivered, anonymousOrder);
+
+    const [first, second] = dispatcher.send.mock.calls.map(([dto]) => dto.idempotencyKey);
+    expect(first).toBeTruthy();
+    expect(second).toBe(first);
   });
 });

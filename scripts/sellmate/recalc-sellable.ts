@@ -115,7 +115,7 @@ async function main() {
     );
     console.log('   (발행분은 live core outbox 디스패처가 Kafka 로 전송)');
   } finally {
-    await dbService.onModuleDestroy();
+    await dbService.onApplicationShutdown();
   }
 }
 

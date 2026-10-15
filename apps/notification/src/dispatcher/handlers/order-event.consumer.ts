@@ -7,6 +7,7 @@ import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
 import { Channel, NotificationCategory, NotificationPriority } from '../../shared/enums';
+import { eventNoticeKey } from './event-notice-key';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 import { formatOrderTotal } from '../../shared/utils/template-helpers';
 import { CORE_ORDER_STREAM, ORDER_STREAM } from '@packages/event-contracts/streams/orders.stream';
@@ -33,7 +34,7 @@ const CARRIER_LABEL: Record<string, string> = {
 // 재시도 금지 — NotificationDispatcherService.send 는 채널마다 notifications 행을 INSERT 하고
 // 큐에 적재하므로, 루프 중간에 throw 하면 재시도가 앞 채널을 재발송한다(고객이 보는 중복).
 // maxRetries:0 은 시도 횟수를 지금과 동일하게 1회로 유지하면서, 실패를 조용한 소실이 아니라
-// DLQ 로 보이게 한다 — 오늘보다 순수 개선이다. 멱등 키 도입은 ADR-0029 Follow-up 11.
+// DLQ 로 보이게 한다 — 오늘보다 순수 개선이다. 이벤트 발송은 eventNoticeKey 멱등 키를 갖는다 (#1073).
 @RetryPolicy({ maxRetries: 0 })
 export class OrderEventConsumer {
   private readonly logger = new Logger(OrderEventConsumer.name);
@@ -60,6 +61,7 @@ export class OrderEventConsumer {
           category: NotificationCategory.TRANSACTIONAL,
           eventKey: 'DEMO_ORDER_CREATED',
           correlationId: envelope.correlationId,
+          idempotencyKey: eventNoticeKey(envelope.messageId, 'DEMO_ORDER_CREATED', `demo-order:${payload.orderId}`),
           payload: {
             ...payload,
             // RFC 2606 reserved TLD: it cannot resolve to a real mailbox.
@@ -104,6 +106,7 @@ export class OrderEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.customerId),
         priority: eventMapping.priority as any,
         variables: {
           name: payload.shippingAddress?.recipientName ?? '고객',
@@ -148,6 +151,7 @@ export class OrderEventConsumer {
       eventKey: eventMapping.eventKey,
       payload: { ...payload, email },
       correlationId: envelope.correlationId,
+      idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.customerId),
       priority: eventMapping.priority as NotificationPriority,
       variables: {
         name: payload.customerName ?? '고객',
@@ -192,6 +196,7 @@ export class OrderEventConsumer {
       eventKey: eventMapping.eventKey,
       payload: { ...payload, email },
       correlationId: envelope.correlationId,
+      idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.customerId),
       priority: eventMapping.priority as NotificationPriority,
       variables: {
         name: payload.customerName ?? '고객',
@@ -233,6 +238,7 @@ export class OrderEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.orderId),
         priority: eventMapping.priority as any,
         variables: {
           orderId: payload.orderId,

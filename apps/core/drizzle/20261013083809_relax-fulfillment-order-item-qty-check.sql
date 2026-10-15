@@ -1,0 +1,2 @@
+ALTER TABLE "fulfillment_order_items" DROP CONSTRAINT "ck_fulfillment_order_items_qty_positive";--> statement-breakpoint
+ALTER TABLE "fulfillment_order_items" ADD CONSTRAINT "ck_fulfillment_order_items_qty_nonnegative" CHECK ("fulfillment_order_items"."qty" >= 0);

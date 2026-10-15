@@ -7,18 +7,15 @@
  *
  * ## 운영에서 escape 한 에러가 어떻게 처리되는가 — 이 하네스가 흉내내지 *않는* 부분
  *
- * Nest 의 `Server.handleEvent` 는 핸들러가 Observable 을 돌려주면 그것을
- * `connectable(...).connect()` 로 **구독만 하고 기다리지 않는다** (`server.js:105–117`).
- * 그 connector 는 구독자 없는 `Subject` 라, 에러가 흘러들어오면 `hasError` 만 세워지고
- * **아무 데도 보고되지 않는다** — rxjs 의 unhandled-error 보고 경로도 타지 않는다.
- * 그 사이 `handleEvent` 는 이미 정상 resolve 했으므로 kafkajs 입장에서 그 메시지는
- * 성공 처리된 것이고 offset 이 전진한다.
+ * 기본 `Server.handleEvent`(`server.js:100-118`)는 Observable 을 구독만 하고 기다리지 않지만,
+ * Kafka 경로의 `ServerKafka` 는 그 메서드를 덮어써 `lastValueFrom` 으로 기다린다
+ * (`server-kafka.js:225-236`). 그래서 인터셉터를 탈출한 에러는 kafkajs `eachMessage` 까지 올라가고,
+ * kafkajs 는 그 메시지를 resolve 하지 않은 채 재시도하다 컨슈머를 재시작한다. 커밋이 켜진 뒤(#1073)
+ * 재시작한 컨슈머는 마지막 커밋 오프셋부터 다시 읽으므로 그 메시지를 다시 받는다. 커밋이 꺼져 있던
+ * 동안에는 재시작이 최신으로 점프해 그 메시지와 뒤 메시지를 건너뛰었다.
  *
- * 즉 **옛 배선에서 핸들러가 throw 하면 메시지는 조용히 사라진다.** 재전달 루프가
- * 아니다 — 그쪽이 차라리 나았을 것이다. `InMemoryServer` 는 동기 배달을 보장하려고
- * 그 Observable 을 `lastValueFrom` 으로 기다리므로 에러가 `broker.deliveryFailures`
- * 에 남는다. **그 배열은 "에러가 파이프라인을 탈출했다"의 관찰 창구일 뿐이고,
- * 운영에는 그 창구가 없다** — 운영에서는 같은 사건이 아무 흔적도 남기지 않는다.
+ * `InMemoryServer` 도 `lastValueFrom` 으로 기다리므로 에러가 `broker.deliveryFailures` 에 남는다 —
+ * 그 배열이 «에러가 파이프라인을 탈출했다»의 관찰 창구다.
  *
  * 따라서 아래 두 describe 가 증명하는 것은 이것이다:
  * - 옛 배선: 에러가 파이프라인을 **탈출한다**. 재시도 0회 · DLQ 0건.
@@ -148,9 +145,10 @@ describe('핸들러 throw — 옛 배선 (forConsumer + connectMicroservice)', (
       payload: validCartPayload('cart-3'),
     });
 
-    // 파일 상단 주석 참조: 운영의 `handleEvent` 는 이 Observable 을 기다리지 않고
-    // 구독자 없는 Subject 에 흘려보내므로 에러가 어디에도 남지 않는다. 하네스는
-    // 동기 배달을 위해 기다리기 때문에 여기서만 보인다.
+    // 파일 상단 주석 참조: 운영의 `ServerKafka.handleEvent` 는 이 Observable 을 기다리므로,
+    // 인터셉터를 탈출한 에러는 kafkajs `eachMessage` 까지 올라간다. 커밋이 켜진 뒤(#1073)에는
+    // 재시작한 컨슈머가 그 메시지를 다시 받는다. 하네스는 같은 대기를 `lastValueFrom` 으로
+    // 흉내내 에러를 `broker.deliveryFailures` 에 남기므로 여기서 보인다.
     expect(broker.deliveryFailures).toHaveLength(1);
   });
 });

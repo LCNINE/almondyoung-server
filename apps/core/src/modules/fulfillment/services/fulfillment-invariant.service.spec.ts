@@ -335,4 +335,25 @@ describe('배정 불변식 I1~I3 (스펙 §5)', () => {
     snapshot.sessions[0].handedBackQty = 2;
     expect(kinds(snapshot)).not.toContain('SESSION_CONSERVATION');
   });
+
+  it('줄이 없는 qty 0 FO 항목은 위반이 아니고, qty 0 인데 활성 줄이 있으면 ACTIVE_LINE_QUANTITY 다', () => {
+    const zero = validSnapshot();
+    zero.fulfillmentOrderItems.push({ id: 'foi-0', fulfillmentOrderId: 'fo-1', qty: 0, shippedQty: 0, canceledQty: 0 });
+    expect(collectFulfillmentInvariantViolations(zero)).toEqual([]);
+
+    const withLine = validSnapshot();
+    withLine.fulfillmentOrderItems.push({ id: 'foi-0', fulfillmentOrderId: 'fo-1', qty: 0, shippedQty: 0, canceledQty: 0 });
+    withLine.shipmentLines.push({
+      id: 'line-0',
+      shipmentId: 'shipment-1',
+      fulfillmentOrderItemId: 'foi-0',
+      skuId: 'sku-0',
+      qty: 1,
+      inspectedQty: 0,
+    });
+    expect(collectFulfillmentInvariantViolations(withLine).map((v) => [v.kind, v.resourceId])).toContainEqual([
+      'ACTIVE_LINE_QUANTITY',
+      'foi-0',
+    ]);
+  });
 });

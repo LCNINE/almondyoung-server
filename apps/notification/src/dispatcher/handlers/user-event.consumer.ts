@@ -7,6 +7,7 @@ import { NotifyMemberDeps, notifyMember } from './notify-member';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
 import { NotificationCategory } from '../../shared/enums';
+import { eventNoticeKey } from './event-notice-key';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 import { USER_STREAM } from '@packages/event-contracts/streams/user.stream';
 import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
@@ -22,7 +23,7 @@ import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 // 재시도 금지 — NotificationDispatcherService.send 는 채널마다 notifications 행을 INSERT 하고
 // 큐에 적재하므로, 루프 중간에 throw 하면 재시도가 앞 채널을 재발송한다(고객이 보는 중복).
 // maxRetries:0 은 시도 횟수를 지금과 동일하게 1회로 유지하면서, 실패를 조용한 소실이 아니라
-// DLQ 로 보이게 한다 — 오늘보다 순수 개선이다. 멱등 키 도입은 ADR-0029 Follow-up 11.
+// DLQ 로 보이게 한다 — 오늘보다 순수 개선이다. 이벤트 발송은 eventNoticeKey 멱등 키를 갖는다 (#1073).
 @RetryPolicy({ maxRetries: 0 })
 export class UserEventConsumer {
   private readonly logger = new Logger(UserEventConsumer.name);
@@ -63,6 +64,7 @@ export class UserEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.userId),
         priority: eventMapping.priority as any,
         variables: {
           name: payload.name,
@@ -103,6 +105,7 @@ export class UserEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.userId),
         priority: eventMapping.priority as any,
         variables: {
           name: payload.name,
@@ -140,6 +143,7 @@ export class UserEventConsumer {
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
+        idempotencyKey: eventNoticeKey(envelope.messageId, eventMapping.eventKey, payload.userId),
         priority: eventMapping.priority as any,
         variables: {
           name: payload.name,
@@ -163,6 +167,7 @@ export class UserEventConsumer {
       eventKey: 'USER_WELCOME',
       userId: payload.userId,
       correlationId: envelope.correlationId,
+      idempotencyKey: eventNoticeKey(envelope.messageId, 'USER_WELCOME', payload.userId),
       payload,
       variables: (contact) => ({ name: contact.username || payload.name || '고객' }),
     });
@@ -178,6 +183,7 @@ export class UserEventConsumer {
       eventKey: 'USER_WITHDRAWN',
       userId: payload.userId,
       correlationId: envelope.correlationId,
+      idempotencyKey: eventNoticeKey(envelope.messageId, 'USER_WITHDRAWN', payload.userId),
       payload,
       email: payload.email,
       variables: () => ({ name: payload.name ?? '고객' }),

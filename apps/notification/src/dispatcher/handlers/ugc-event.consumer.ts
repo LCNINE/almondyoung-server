@@ -7,6 +7,7 @@ import { EnvelopeOf, EventPayloadOf } from '@packages/event-contracts/types';
 import { Channel, NotificationCategory, NotificationPriority } from '../../shared/enums';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
+import { eventNoticeKey } from './event-notice-key';
 
 @Controller()
 @UseInterceptors(EventTypeGuard)
@@ -45,6 +46,7 @@ export class UgcEventConsumer {
       eventKey: mapping.eventKey,
       payload: { ...payload, email: contact.email },
       correlationId: envelope.correlationId,
+      idempotencyKey: eventNoticeKey(envelope.messageId, mapping.eventKey, payload.userId),
       priority: mapping.priority as NotificationPriority,
       variables: { name: contact.username || '고객', title: payload.title },
     });

@@ -411,7 +411,7 @@ export class DemoLogisticsSeedStep extends SeedStep {
         );
         await new ReplenishmentProfileService(job).recompute('full');
       } finally {
-        await dbService.onModuleDestroy();
+        await dbService.onApplicationShutdown();
       }
 
       return {

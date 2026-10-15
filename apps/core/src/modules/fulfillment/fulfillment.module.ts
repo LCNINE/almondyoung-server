@@ -58,6 +58,14 @@ import { SimpleOutboundService } from './services/simple-outbound.service';
 import { ShipmentWaybillReader } from './reader/shipment-waybill.reader';
 import { RefillPendingReader } from './reader/refill-pending.reader';
 import { OutboundRefillController } from './controllers/outbound-refill.controller';
+import { DraftBoxAmender } from './draft-box/draft-box-amender';
+import { LineCompositionEditReader } from './line-composition-edit/line-composition-edit.reader';
+import { LineCompositionEditManager } from './line-composition-edit/line-composition-edit.manager';
+import { LineCompositionEditService } from './line-composition-edit/line-composition-edit.service';
+import {
+  MatchingExistingLinesController,
+  SalesOrderLineCompositionController,
+} from './line-composition-edit/line-composition-edit.controller';
 
 // Controllers
 import { FulfillmentsController } from './controllers/fulfillments.controller';
@@ -128,6 +136,8 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ShipmentRecallController,
     ShipmentRecallOperationController,
     OutboundRefillController,
+    SalesOrderLineCompositionController,
+    MatchingExistingLinesController,
   ],
   providers: [
     // Core fulfillment services
@@ -167,6 +177,10 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ReturnBinService,
     ShipmentWaybillReader,
     RefillPendingReader,
+    DraftBoxAmender,
+    LineCompositionEditReader,
+    LineCompositionEditManager,
+    LineCompositionEditService,
     {
       provide: PICKING_STRATEGIES,
       useFactory: (

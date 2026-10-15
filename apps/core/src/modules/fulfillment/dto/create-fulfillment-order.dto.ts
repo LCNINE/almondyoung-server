@@ -34,11 +34,6 @@ export class CreateFulfillmentOrderItemDto {
   @IsUUID()
   @IsOptional()
   salesOrderId?: string;
-
-  @ApiProperty({ description: 'Mapping Snapshot ID', required: false })
-  @IsUUID()
-  @IsOptional()
-  mappingSnapshotId?: string;
 }
 
 /** @deprecated Use CreateFulfillmentOrderItemDto instead */

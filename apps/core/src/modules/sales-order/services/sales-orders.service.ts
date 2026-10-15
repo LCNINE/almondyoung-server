@@ -33,6 +33,8 @@ import {
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { lineResolvedSql } from '../../product-matching/line-composition/line-resolved.sql';
+import { selectFrozenCompositions } from '../../product-matching/line-composition/frozen-compositions';
+import { outstandingSalesUnits, physicalCancellationByItem } from './v2-cancellation-units';
 import { PoliciesService } from './policies.service';
 import { computeEntrancePasswordExpiry } from './entrance-password-expiry';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
@@ -740,7 +742,7 @@ export class SalesOrdersService {
     const db = tx ?? this.db.db;
     const [order] = await db.select().from(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, id)).limit(1);
     if (!order) return null;
-    // 라인 배지(«매칭 대기»)는 이 값을 본다 — 옛 product_matching_id 는 #1063 부터 쓰이지 않는다
+    // 라인 배지(«매칭 대기»)는 이 값을 본다(#1063)
     const lines = await db
       .select({ ...getTableColumns(wmsTables.salesOrderLines), matchingResolved: lineResolvedSql() })
       .from(wmsTables.salesOrderLines)
@@ -1647,6 +1649,7 @@ export class SalesOrdersService {
         shippedQty: wmsTables.fulfillmentOrderItems.shippedQty,
         canceledQty: wmsTables.fulfillmentOrderItems.canceledQty,
         salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+        skuId: wmsTables.fulfillmentOrderItems.skuId,
       })
       .from(wmsTables.fulfillmentOrderItems)
       .innerJoin(
@@ -1654,6 +1657,11 @@ export class SalesOrdersService {
         eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
       )
       .where(eq(wmsTables.fulfillmentOrders.salesOrderId, salesOrderId));
+    // 비율은 굳힌 라인 구성에서 읽는다(#1063 스펙 §6.5)
+    const compositions = await selectFrozenCompositions(
+      tx,
+      salesOrderLines.map((line) => line.id),
+    );
     const prior = await this.loadPriorPartialCancellationContext(salesOrderId, tx);
     const requestedSalesLines = isFullCancel
       ? salesOrderLines.flatMap((line) => {
@@ -1662,21 +1670,12 @@ export class SalesOrdersService {
             if (line.fulfillmentKind === 'digital' || line.requiresShipping === false) return [];
             throw new ConflictException(`V2 fulfillment item is missing for SalesOrder line ${line.id}`);
           }
-          const outstandingSalesQuantities = items.map((item) => {
-            if (item.qty % line.quantity !== 0) {
-              throw new ConflictException(`Cannot derive V2 cancellation ratio for SalesOrder line ${line.id}`);
-            }
-            const ratio = item.qty / line.quantity;
-            const outstandingPhysicalQty = item.qty - item.shippedQty - item.canceledQty;
-            if (outstandingPhysicalQty % ratio !== 0) {
-              throw new ConflictException(`V2 progress is not aligned for SalesOrder line ${line.id}`);
-            }
-            return outstandingPhysicalQty / ratio;
-          });
-          if (new Set(outstandingSalesQuantities).size !== 1) {
-            throw new ConflictException(`V2 component progress is inconsistent for SalesOrder line ${line.id}`);
-          }
-          return [{ salesOrderLineId: line.id, quantity: outstandingSalesQuantities[0] }];
+          return [
+            {
+              salesOrderLineId: line.id,
+              quantity: outstandingSalesUnits(line.id, items, compositions.get(line.id) ?? []),
+            },
+          ];
         })
       : this.normalizePartialCancellationLines(options.lines ?? []);
     if (requestedSalesLines.every((line) => line.quantity === 0)) {
@@ -1736,20 +1735,14 @@ export class SalesOrdersService {
         if (salesLine.fulfillmentKind === 'digital' || salesLine.requiresShipping === false) continue;
         throw new ConflictException(`V2 fulfillment item is missing for SalesOrder line ${salesLine.id}`);
       }
-      for (const item of requestedItems) {
-        const originalFoiQty = item.qty;
-        if (originalFoiQty % salesLine.quantity !== 0) {
-          throw new ConflictException(`Cannot derive V2 cancellation ratio for SalesOrder line ${salesLine.id}`);
-        }
-        const requestedPhysicalQty = request.quantity * (originalFoiQty / salesLine.quantity);
-        const outstandingPhysicalQty = originalFoiQty - item.shippedQty - item.canceledQty;
-        if (requestedPhysicalQty > outstandingPhysicalQty) {
-          throw new BadRequestException(
-            `Cancellation for SalesOrder line ${salesLine.id} includes shipped or already canceled quantity; use recall or return`,
-          );
-        }
-        let remainingPhysicalQty = requestedPhysicalQty;
-        const rows = activeRows.filter((candidate) => candidate.fulfillmentOrderItemId === item.id);
+      for (const { itemId, qty: physicalQty } of physicalCancellationByItem(
+        salesLine.id,
+        request.quantity,
+        requestedItems,
+        compositions.get(salesLine.id) ?? [],
+      )) {
+        let remainingPhysicalQty = physicalQty;
+        const rows = activeRows.filter((candidate) => candidate.fulfillmentOrderItemId === itemId);
         const ordered = [...rows].sort((left, right) => {
           const leftRank = left.shipmentStatus === 'draft' ? 0 : 1;
           const rightRank = right.shipmentStatus === 'draft' ? 0 : 1;
@@ -1772,7 +1765,7 @@ export class SalesOrdersService {
         }
         if (remainingPhysicalQty > 0) {
           throw new ConflictException(
-            `V2 outstanding line quantity is short by ${remainingPhysicalQty} for fulfillment item ${item.id}`,
+            `V2 outstanding line quantity is short by ${remainingPhysicalQty} for fulfillment item ${itemId}`,
           );
         }
       }

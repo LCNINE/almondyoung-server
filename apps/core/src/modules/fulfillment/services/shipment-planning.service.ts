@@ -29,41 +29,24 @@ import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 import { ACTIVE_WORK_ITEM_STATUSES } from './work-item-status';
+import {
+  assertShipmentHasNoActiveWaybill,
+  assertShipmentHasNoCustodyOrActiveWork,
+  completeShipmentOperation,
+  createShipmentOperation,
+  loadShipmentAggregate,
+  lockShipmentAggregate,
+  selectConfirmedReservationQtyByLine,
+  shipmentSnapshot,
+  ShipmentAggregate,
+  ShipmentLineRow,
+  ShipmentManifestSnapshot,
+  ShipmentOperationMember,
+  ShipmentRow,
+} from './shipment-aggregate';
+import { shrinkDraftLines } from './draft-line-shrink';
 
 const TRUSTED_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
-
-type ShipmentRow = typeof wmsTables.shipments.$inferSelect;
-type ShipmentLineRow = typeof wmsTables.shipmentLines.$inferSelect & {
-  fulfillmentOrderId: string;
-  salesOrderId: string | null;
-  salesOrderLineId: string | null;
-  fulfillmentMode: string | null;
-};
-
-type ShipmentAggregate = {
-  shipment: ShipmentRow;
-  lines: ShipmentLineRow[];
-  fulfillmentOrderIds: string[];
-};
-
-type ShipmentManifestSnapshot = {
-  shipmentId: string;
-  status: string;
-  warehouseId: string;
-  shippingProfileId: string | null;
-  recipientSnapshot: unknown;
-  manifestVersion: number;
-  reservationVersion: number;
-  lines: Array<{
-    id: string;
-    fulfillmentOrderItemId: string;
-    skuId: string;
-    qty: number;
-    reservedQty: number;
-    inspectedQty: number;
-    lineVersion: number;
-  }>;
-};
 
 type CancelResponse = {
   operationId: string;
@@ -93,13 +76,7 @@ function assertPositiveSafeInteger(name: string, value: number): void {
   }
 }
 
-export function confirmedReservationReleaseForCancellation(
-  lineQty: number,
-  confirmedQty: number,
-  cancelQty: number,
-): number {
-  return Math.max(0, cancelQty - (lineQty - confirmedQty));
-}
+export { confirmedReservationReleaseForCancellation } from './draft-line-shrink';
 
 function sameJson(left: unknown, right: unknown): boolean {
   const normalize = (value: unknown): unknown => {
@@ -1189,38 +1166,20 @@ export class ShipmentPlanningService {
     operationBefore?: ShipmentManifestSnapshot,
   ): Promise<void> {
     const before = operationBefore ?? this.snapshot(aggregate);
-    const confirmed = await this.confirmedReservationQtyByLine(
-      selected.map((entry) => entry.line.id),
-      tx,
-    );
-    for (const { request, line } of selected) {
-      const confirmedQty = confirmed.get(line.id) ?? 0;
-      const releaseQty = confirmedReservationReleaseForCancellation(line.qty, confirmedQty, request.qty);
-      if (releaseQty > 0) await this.reservations.releasePartial(line.id, releaseQty, dto.reason, tx);
-    }
-
     const totalShipmentQty = aggregate.lines.reduce((total, line) => total + line.qty, 0);
     const totalCanceledQty = selected.reduce((total, entry) => total + entry.request.qty, 0);
     const cancelWholeShipment = totalShipmentQty === totalCanceledQty;
-    let tombstone: ShipmentRow | undefined;
-    if (!cancelWholeShipment && selected.some(({ request, line }) => request.qty === line.qty)) {
-      // 취소 묘비 상자는 **의도적으로 비번을 안 받는다.** 이 상자는 송장을 발행하지 않고
-      // 배송되지도 않으므로 비번을 실을 이유가 없고, 실으면 배송 완료 파기가 영영 도달하지
-      // 않는 사본이 하나 더 생긴다(백스톱 배치만 남는다).
-      [tombstone] = await tx
-        .insert(wmsTables.shipments)
-        .values({
-          warehouseId: aggregate.shipment.warehouseId,
-          status: 'canceled',
-          shippingProfileId: aggregate.shipment.shippingProfileId,
-          recipientSnapshot: aggregate.shipment.recipientSnapshot,
-          manifestVersion: 1,
-          reservationVersion: 1,
-          openedBy: actor.id,
-          openedAt: new Date(),
-        })
-        .returning();
-    }
+    const { tombstone } = await shrinkDraftLines(
+      this.reservations,
+      {
+        shipment: aggregate.shipment,
+        lines: selected.map(({ request, line }) => ({ line, qty: request.qty })),
+        reason: dto.reason,
+        actorId: actor.id,
+        wholeShipment: cancelWholeShipment,
+      },
+      tx,
+    );
 
     const canceledByFoi = new Map<string, number>();
     for (const { request, line } of selected) {
@@ -1228,18 +1187,6 @@ export class ShipmentPlanningService {
         line.fulfillmentOrderItemId,
         (canceledByFoi.get(line.fulfillmentOrderItemId) ?? 0) + request.qty,
       );
-      if (cancelWholeShipment) continue;
-      if (request.qty === line.qty) {
-        await tx
-          .update(wmsTables.shipmentLines)
-          .set({ shipmentId: tombstone!.id, lineVersion: line.lineVersion + 1 })
-          .where(eq(wmsTables.shipmentLines.id, line.id));
-      } else {
-        await tx
-          .update(wmsTables.shipmentLines)
-          .set({ qty: line.qty - request.qty, lineVersion: line.lineVersion + 1 })
-          .where(eq(wmsTables.shipmentLines.id, line.id));
-      }
     }
     for (const [fulfillmentOrderItemId, canceledQty] of canceledByFoi) {
       await tx
@@ -1262,12 +1209,9 @@ export class ShipmentPlanningService {
     await this.reservations.recompute(aggregate.shipment.id, tx);
     if (tombstone) await this.reservations.recompute(tombstone.id, tx);
     const sourceAfter = this.snapshot(await this.loadAggregate(aggregate.shipment.id, tx));
-    const members: Array<{
-      shipmentId: string;
-      role: 'source' | 'target';
-      before: ShipmentManifestSnapshot | null;
-      after: ShipmentManifestSnapshot;
-    }> = [{ shipmentId: aggregate.shipment.id, role: 'source', before, after: sourceAfter }];
+    const members: ShipmentOperationMember[] = [
+      { shipmentId: aggregate.shipment.id, role: 'source', before, after: sourceAfter },
+    ];
     if (tombstone) {
       members.push({
         shipmentId: tombstone.id,
@@ -1286,77 +1230,15 @@ export class ShipmentPlanningService {
   }
 
   private async lockAggregate(shipmentId: string, tx: DbTx): Promise<ShipmentAggregate> {
-    const optimistic = await this.loadAggregate(shipmentId, tx);
-    await this.invariant.assertFulfillmentOrders(optimistic.fulfillmentOrderIds, tx);
-    const locked = await this.loadAggregate(shipmentId, tx);
-    if (
-      optimistic.lines.map((line) => `${line.id}:${line.shipmentId}`).join(',') !==
-      locked.lines.map((line) => `${line.id}:${line.shipmentId}`).join(',')
-    ) {
-      throw this.conflict('SHIPMENT_COMPONENT_CHANGED_RETRY', 'Shipment component changed while acquiring locks');
-    }
-    return locked;
+    return lockShipmentAggregate(tx, this.invariant, shipmentId);
   }
 
   private async loadAggregate(shipmentId: string, tx: DbTx): Promise<ShipmentAggregate> {
-    const [shipment] = await tx
-      .select()
-      .from(wmsTables.shipments)
-      .where(eq(wmsTables.shipments.id, shipmentId))
-      .limit(1);
-    if (!shipment) throw new NotFoundException(`Shipment ${shipmentId} not found`);
-    const lines = await tx
-      .select({
-        id: wmsTables.shipmentLines.id,
-        shipmentId: wmsTables.shipmentLines.shipmentId,
-        fulfillmentOrderItemId: wmsTables.shipmentLines.fulfillmentOrderItemId,
-        skuId: wmsTables.shipmentLines.skuId,
-        qty: wmsTables.shipmentLines.qty,
-        reservedQty: wmsTables.shipmentLines.reservedQty,
-        inspectedQty: wmsTables.shipmentLines.inspectedQty,
-        lineVersion: wmsTables.shipmentLines.lineVersion,
-        createdFromLineId: wmsTables.shipmentLines.createdFromLineId,
-        forced: wmsTables.shipmentLines.forced,
-        createdAt: wmsTables.shipmentLines.createdAt,
-        fulfillmentOrderId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
-        salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
-        salesOrderId: wmsTables.fulfillmentOrders.salesOrderId,
-        fulfillmentMode: wmsTables.fulfillmentOrders.fulfillmentMode,
-      })
-      .from(wmsTables.shipmentLines)
-      .innerJoin(
-        wmsTables.fulfillmentOrderItems,
-        eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
-      )
-      .innerJoin(
-        wmsTables.fulfillmentOrders,
-        eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
-      )
-      .where(eq(wmsTables.shipmentLines.shipmentId, shipmentId))
-      .orderBy(asc(wmsTables.shipmentLines.id));
-    if (lines.length === 0) throw new NotFoundException(`Shipment ${shipmentId} has no lines`);
-    return { shipment, lines, fulfillmentOrderIds: uniqueSorted(lines.map((line) => line.fulfillmentOrderId)) };
+    return loadShipmentAggregate(tx, shipmentId);
   }
 
   private snapshot(aggregate: ShipmentAggregate): ShipmentManifestSnapshot {
-    return {
-      shipmentId: aggregate.shipment.id,
-      status: aggregate.shipment.status,
-      warehouseId: aggregate.shipment.warehouseId,
-      shippingProfileId: aggregate.shipment.shippingProfileId,
-      recipientSnapshot: aggregate.shipment.recipientSnapshot,
-      manifestVersion: aggregate.shipment.manifestVersion,
-      reservationVersion: aggregate.shipment.reservationVersion,
-      lines: aggregate.lines.map((line) => ({
-        id: line.id,
-        fulfillmentOrderItemId: line.fulfillmentOrderItemId,
-        skuId: line.skuId,
-        qty: line.qty,
-        reservedQty: line.reservedQty,
-        inspectedQty: line.inspectedQty,
-        lineVersion: line.lineVersion,
-      })),
-    };
+    return shipmentSnapshot(aggregate);
   }
 
   private async createOperation(
@@ -1370,52 +1252,20 @@ export class ShipmentPlanningService {
     requestHash: string,
     before: ShipmentManifestSnapshot,
   ) {
-    const [operation] = await tx
-      .insert(wmsTables.shipmentOperations)
-      .values({
-        type,
-        status: 'pending',
-        operatorId: actor.id,
-        reason,
-        csCaseId: csCaseId ?? null,
-        note: note ?? null,
-        idempotencyKey,
-        requestHash,
-        beforeManifestSnapshot: before,
-      })
-      .returning();
-    return operation;
+    return createShipmentOperation(tx, {
+      type,
+      actorId: actor.id,
+      reason,
+      csCaseId: csCaseId ?? null,
+      note: note ?? null,
+      idempotencyKey,
+      requestHash,
+      before,
+    });
   }
 
-  private async completeOperation(
-    tx: DbTx,
-    operationId: string,
-    members: Array<{
-      shipmentId: string;
-      role: 'source' | 'target';
-      before: ShipmentManifestSnapshot | null;
-      after: ShipmentManifestSnapshot;
-    }>,
-  ): Promise<void> {
-    await tx.insert(wmsTables.shipmentOperationMembers).values(
-      members.map((member) => ({
-        operationId,
-        shipmentId: member.shipmentId,
-        role: member.role,
-        beforeManifestVersion: member.before?.manifestVersion ?? null,
-        afterManifestVersion: member.after.manifestVersion,
-        beforeManifestSnapshot: member.before,
-        afterManifestSnapshot: member.after,
-      })),
-    );
-    await tx
-      .update(wmsTables.shipmentOperations)
-      .set({
-        status: 'completed',
-        afterManifestSnapshot: members.map((member) => member.after),
-        completedAt: new Date(),
-      })
-      .where(eq(wmsTables.shipmentOperations.id, operationId));
+  private async completeOperation(tx: DbTx, operationId: string, members: ShipmentOperationMember[]): Promise<void> {
+    await completeShipmentOperation(tx, operationId, members);
   }
 
   private async auditCommand(
@@ -1437,69 +1287,15 @@ export class ShipmentPlanningService {
   }
 
   private async confirmedReservationQtyByLine(lineIds: string[], tx: DbTx): Promise<Map<string, number>> {
-    if (lineIds.length === 0) return new Map();
-    const rows = await tx
-      .select({ shipmentLineId: wmsTables.stockReservations.shipmentLineId, qty: wmsTables.stockReservations.quantity })
-      .from(wmsTables.stockReservations)
-      .where(
-        and(
-          inArray(wmsTables.stockReservations.shipmentLineId, lineIds),
-          eq(wmsTables.stockReservations.status, 'confirmed'),
-        ),
-      );
-    const result = new Map<string, number>();
-    for (const row of rows) {
-      if (row.shipmentLineId) result.set(row.shipmentLineId, (result.get(row.shipmentLineId) ?? 0) + row.qty);
-    }
-    return result;
+    return selectConfirmedReservationQtyByLine(tx, lineIds);
   }
 
-  // 'SHIPMENT_ACTIVE_INVOICE' 코드 문자열은 운영/클라이언트 의미 보존을 위해 유지(데이터소스만 waybill 로 전환).
   private async assertNoActiveWaybill(shipmentId: string, tx: DbTx): Promise<void> {
-    const [waybill] = await tx
-      .select({ id: wmsTables.waybills.id, status: wmsTables.waybills.status })
-      .from(wmsTables.waybills)
-      .where(
-        and(
-          eq(wmsTables.waybills.shipmentId, shipmentId),
-          notInArray(wmsTables.waybills.status, [...WAYBILL_TERMINAL_STATUSES]),
-        ),
-      )
-      .limit(1);
-    if (waybill) throw this.conflict('SHIPMENT_ACTIVE_INVOICE', `Void active waybill ${waybill.id} before editing`);
+    await assertShipmentHasNoActiveWaybill(tx, shipmentId);
   }
 
   private async assertNoCustodyOrActiveWork(aggregate: ShipmentAggregate, tx: DbTx): Promise<void> {
-    if (aggregate.lines.some((line) => line.inspectedQty > 0)) {
-      throw this.conflict('SHIPMENT_CUSTODY_EXISTS', 'Explicit unpick is required before editing inspected quantity');
-    }
-    const [workItem] = await tx
-      .select({ id: wmsTables.outboundBatchWorkItems.id })
-      .from(wmsTables.outboundBatchWorkItems)
-      .where(
-        and(
-          eq(wmsTables.outboundBatchWorkItems.shipmentId, aggregate.shipment.id),
-          inArray(wmsTables.outboundBatchWorkItems.status, [...ACTIVE_WORK_ITEM_STATUSES]),
-        ),
-      )
-      .limit(1);
-    if (workItem) throw this.conflict('SHIPMENT_ACTIVE_WORK_ITEM', `Exclude work item ${workItem.id} before editing`);
-
-    const [balance] = await tx
-      .select({ id: wmsTables.batchInventorySessionBalances.id })
-      .from(wmsTables.batchInventorySessionBalances)
-      .where(
-        and(
-          inArray(
-            wmsTables.batchInventorySessionBalances.shipmentLineId,
-            aggregate.lines.map((line) => line.id),
-          ),
-          gt(wmsTables.batchInventorySessionBalances.qty, 0),
-          ne(wmsTables.batchInventorySessionBalances.custodyType, 'SETTLED'),
-        ),
-      )
-      .limit(1);
-    if (balance) throw this.conflict('SHIPMENT_CUSTODY_EXISTS', 'Explicit unpick is required before editing custody');
+    await assertShipmentHasNoCustodyOrActiveWork(tx, aggregate);
   }
 
   private async markActiveWorkItemWaitingForCancellation(

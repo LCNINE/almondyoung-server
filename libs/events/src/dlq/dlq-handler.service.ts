@@ -87,17 +87,23 @@ export class DLQHandler {
       reprocessAttempts: 0,
     };
 
+    // source 가 없는 envelope 도 DLQ 에 도달해야 한다. 여기서 던지면 kafkajs 가 컨슈머를 크래시시키고
+    // 커밋된 오프셋 때문에 재시작해도 같은 메시지가 와 앱 전체가 무한 루프에 빠진다 (#1073).
+    const aggregateId = params.originalMessage.source?.aggregateId ?? 'unknown';
+    const partitionKey =
+      params.originalMessage.source?.aggregateId ?? params.originalMessage.messageId ?? params.originalTopic;
+
     try {
       // DLQ 토픽으로 발행
       await this.transport.send(dlqTopic, {
-        key: params.originalMessage.source.aggregateId,
+        key: partitionKey,
         value: JSON.stringify(dlqMessage),
         headers: {
           'dlq-message-id': dlqMessageId,
           'original-topic': params.originalTopic,
           'original-message-type': params.originalMessage.messageType,
           'original-message-id': params.originalMessage.messageId,
-          'original-aggregate-id': params.originalMessage.source.aggregateId,
+          'original-aggregate-id': aggregateId,
           'failure-reason': params.error.name,
           'retry-count': String(params.context.retryCount),
           'failed-at': dlqMessage.failedAt,
@@ -109,7 +115,7 @@ export class DLQHandler {
         dlqTopic,
         dlqMessageId,
         originalMessageId: params.originalMessage.messageId,
-        aggregateId: params.originalMessage.source.aggregateId,
+        aggregateId,
         errorMessage: params.error.message,
         retryCount: params.context.retryCount,
       });

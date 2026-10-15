@@ -15,6 +15,7 @@ import { productMasterVersions, productVariants } from '../../catalog/schema/cat
 import { BadRequestError } from '@app/shared';
 import { MatchingLinkResolver } from './matching-link-resolver';
 import { lineResolvedSql } from '../line-composition/line-resolved.sql';
+import { selectCompositionItemViews } from '../line-composition/line-composition-views';
 
 export interface PimSkuComponent {
   skuId: string;
@@ -837,6 +838,11 @@ export class ProductMatchingService {
         skusByMatchingId.get(link.productMatchingId)!.push(link);
       }
 
+      // 굳힌 라인은 상품매칭이 아니라 라인 구성을 보여 준다 — 개별 지정·상품매칭 변경 뒤에는 둘이 다르다
+      const compositionsByLine = await selectCompositionItemViews(
+        trx,
+        rows.filter((row) => row.compositionSource !== null).map((row) => row.lineId),
+      );
       const data = rows.map((row) => ({
         id: row.lineId,
         variantId: row.variantId,
@@ -854,6 +860,7 @@ export class ProductMatchingService {
         matchingStatus: row.matchingStatus ?? undefined,
         matchingStrategy: row.matchingStrategy ?? undefined,
         compositionSource: row.compositionSource ?? undefined,
+        composition: compositionsByLine.get(row.lineId) ?? [],
         matchedSkus: row.matchingId
           ? (skusByMatchingId.get(row.matchingId) ?? []).map((s) => ({
               skuId: s.skuId,
