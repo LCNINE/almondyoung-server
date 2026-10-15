@@ -52,7 +52,11 @@ COPY apps/ugc-service/print-fonts.txt /tmp/print-fonts.txt
 RUN set -eu; mkdir -p /fonts; \
   sha=$(sed -n 's/^commit //p' /tmp/print-fonts.txt); \
   grep -v -e '^#' -e '^commit ' -e '^$' /tmp/print-fonts.txt | while read -r path; do \
-    wget -q -O "/fonts/${path##*/}" "https://raw.githubusercontent.com/google/fonts/$sha/ofl/$path"; \
+    for try in 1 2 3 4 5; do \
+      wget -q -T 60 -O "/fonts/${path##*/}" "https://raw.githubusercontent.com/google/fonts/$sha/ofl/$path" && break; \
+      sleep 5; \
+    done; \
+    [ -s "/fonts/${path##*/}" ] || { echo "글꼴을 받지 못했습니다: $path" >&2; exit 1; }; \
   done
 
 # === 런타임 ===
