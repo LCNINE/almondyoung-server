@@ -40,8 +40,6 @@ export function ImageProperties({
     setBrightnessOpen,
     imageMoreOpen,
     setImageMoreOpen,
-    imageCropOpen,
-    setImageCropOpen,
     imageSizeLinked,
     setImageSizeLinked,
     brightness,
@@ -66,42 +64,19 @@ export function ImageProperties({
         <button
           type="button"
           aria-label="이미지 자르기"
-          aria-expanded={imageCropOpen}
+          aria-pressed={editor.cropId === selected.id}
+          disabled={!editable}
           className="flex w-full items-center gap-3 border-b pb-3 text-left"
-          onClick={() => setImageCropOpen(!imageCropOpen)}
+          onClick={() =>
+            editor.cropId === selected.id
+              ? editor.setCropId(null)
+              : editor.startCrop()
+          }
         >
-          <Crop size={19} strokeWidth={1.5} /> 자르기
+          <Crop size={19} strokeWidth={1.5} />
+          {editor.cropId === selected.id ? "자르기 완료" : "자르기"}
+          <span className="ml-auto text-xs text-slate-400">더블클릭</span>
         </button>
-        {imageCropOpen && (
-          <div className="space-y-2 border-b pb-3">
-            {(
-              [
-                ["imageScale", "확대", 1, 3, 0.1],
-                ["imageOffsetX", "가로 위치", 0, 1, 0.05],
-                ["imageOffsetY", "세로 위치", 0, 1, 0.05],
-              ] as const
-            ).map(([field, label, min, max, step]) => (
-              <label key={field} className="block text-xs">
-                {label}
-                <input
-                  type="range"
-                  aria-label={label}
-                  min={min}
-                  max={max}
-                  step={step}
-                  value={selected[field] ?? (field === "imageScale" ? 1 : 0.5)}
-                  disabled={!editable}
-                  onChange={(event) =>
-                    patch(selected.id, {
-                      [field]: Number(event.target.value),
-                    })
-                  }
-                  className="block w-full"
-                />
-              </label>
-            ))}
-          </div>
-        )}
         <div className="flex items-end gap-1">
           <span className="mb-1.5 w-14 shrink-0 text-xs">크기(mm)</span>
           <NumberInput

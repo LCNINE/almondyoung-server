@@ -358,6 +358,104 @@ function ShapeText({ layer }: { layer: Layer }) {
   )
 }
 
+type Paint = { fill?: string; stroke?: string; strokeWidth?: number }
+
+// 색을 칠하는 도형의 윤곽. 사진을 넣으면 같은 윤곽이 사진의 잘라내기 틀이 된다
+function ShapeBody({ layer, paint }: { layer: Layer; paint: Paint }) {
+  const box = {
+    x: layer.x,
+    y: layer.y,
+    width: layer.width,
+    height: layer.height,
+  }
+  const variant = layer.shapeVariant
+  const scaledStroke = (unit: number) =>
+    paint.strokeWidth === undefined
+      ? undefined
+      : (paint.strokeWidth * unit) / Math.max(layer.width, layer.height)
+  if (layer.type === "rect" && variant === "rounded")
+    return (
+      <rect
+        {...box}
+        rx={Math.min(layer.width, layer.height) * 0.16}
+        {...paint}
+      />
+    )
+  if (layer.type === "rect" && variant && shapePoints[variant])
+    return (
+      <polygon points={polygonPoints(layer, shapePoints[variant])} {...paint} />
+    )
+  if (layer.type === "rect" && variant && FRAME_PATHS[variant])
+    return (
+      <path
+        d={FRAME_PATHS[variant]}
+        transform={`translate(${layer.x} ${layer.y}) scale(${layer.width / 100} ${layer.height / 100})`}
+        {...paint}
+        strokeWidth={scaledStroke(100)}
+      />
+    )
+  if (layer.type === "rect") return <rect {...box} {...paint} />
+  if (layer.type === "ellipse")
+    return (
+      <ellipse
+        cx={layer.x + layer.width / 2}
+        cy={layer.y + layer.height / 2}
+        rx={layer.width / 2}
+        ry={layer.height / 2}
+        {...paint}
+      />
+    )
+  if (layer.type === "triangle")
+    return (
+      <polygon
+        points={polygonPoints(layer, [
+          [0.5, 0],
+          [1, 1],
+          [0, 1],
+        ])}
+        {...paint}
+      />
+    )
+  if (layer.type === "star")
+    return <polygon points={polygonPoints(layer, star)} {...paint} />
+  if (layer.type === "heart")
+    return (
+      <path
+        d={heart}
+        transform={`translate(${layer.x} ${layer.y}) scale(${layer.width} ${layer.height})`}
+        {...paint}
+        strokeWidth={scaledStroke(1)}
+      />
+    )
+  return null
+}
+
+// 사진이 놓일 자리. crop 이 있으면 원본의 그 구간이 상자에 그대로 맞고, 없으면 예전 확대·위치 방식이다
+export function photoBox(layer: Layer) {
+  const crop = layer.crop
+  if (crop) {
+    const width = layer.width / crop.w
+    const height = layer.height / crop.h
+    return {
+      x: layer.x - crop.x * width,
+      y: layer.y - crop.y * height,
+      width,
+      height,
+      preserveAspectRatio: "none",
+    }
+  }
+  const scale = layer.imageScale ?? 1
+  const width = layer.width * scale
+  const height = layer.height * scale
+  return {
+    x: layer.x - (width - layer.width) * (layer.imageOffsetX ?? 0.5),
+    y: layer.y - (height - layer.height) * (layer.imageOffsetY ?? 0.5),
+    width,
+    height,
+    preserveAspectRatio: "xMidYMid slice",
+  }
+}
+
 function LayerGraphicView({ layer }: { layer: Layer }) {
   if (layer.visible === false) return null
   const filterId = layer.shadow || layer.texture ? `fx-${layer.id}` : undefined
@@ -378,13 +476,6 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
         : layer.x
   const shape = layer.frameShape ?? "rect"
   const qrSize = layer.qrSize ?? 0
-  const imageScale = layer.imageScale ?? 1
-  const imageWidth = layer.width * imageScale,
-    imageHeight = layer.height * imageScale
-  const imageX =
-    layer.x - (imageWidth - layer.width) * (layer.imageOffsetX ?? 0.5)
-  const imageY =
-    layer.y - (imageHeight - layer.height) * (layer.imageOffsetY ?? 0.5)
   const clipartSource =
     CLIPART_DATA[LEGACY_CLIPART[layer.clipartId ?? ""] ?? layer.clipartId ?? ""]
   return (
@@ -395,46 +486,25 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
         </defs>
       )}
       <g filter={filterId ? `url(#${filterId})` : undefined}>
-        {layer.type === "rect" && layer.shapeVariant === "rounded" && (
-          <rect
-            x={layer.x}
-            y={layer.y}
-            width={layer.width}
-            height={layer.height}
-            rx={Math.min(layer.width, layer.height) * 0.16}
-            {...paint}
-          />
+        {SHAPE_TEXT_TYPES.has(layer.type) && (
+          <ShapeBody layer={layer} paint={paint} />
         )}
-        {layer.type === "rect" &&
-          layer.shapeVariant &&
-          shapePoints[layer.shapeVariant] && (
-            <polygon
-              points={polygonPoints(layer, shapePoints[layer.shapeVariant])}
-              {...paint}
+        {SHAPE_TEXT_TYPES.has(layer.type) && layer.image && (
+          <>
+            <defs>
+              <clipPath id={`clip-${layer.id}`}>
+                <ShapeBody layer={layer} paint={{}} />
+              </clipPath>
+            </defs>
+            <image
+              href={imageSrc(layer.image)}
+              {...photoBox(layer)}
+              clipPath={`url(#clip-${layer.id})`}
             />
-          )}
-        {layer.type === "rect" &&
-          layer.shapeVariant &&
-          !shapePoints[layer.shapeVariant] &&
-          FRAME_PATHS[layer.shapeVariant] && (
-            <path
-              d={FRAME_PATHS[layer.shapeVariant]}
-              transform={`translate(${layer.x} ${layer.y}) scale(${layer.width / 100} ${layer.height / 100})`}
-              {...paint}
-              strokeWidth={
-                ((layer.strokeWidth ?? 0) * 100) /
-                Math.max(layer.width, layer.height)
-              }
-            />
-          )}
-        {layer.type === "rect" && !layer.shapeVariant && (
-          <rect
-            x={layer.x}
-            y={layer.y}
-            width={layer.width}
-            height={layer.height}
-            {...paint}
-          />
+            {paint.stroke !== "none" && paint.strokeWidth > 0 && (
+              <ShapeBody layer={layer} paint={{ ...paint, fill: "none" }} />
+            )}
+          </>
         )}
         {layer.type === "clipart" && clipartSource && (
           <image
@@ -446,28 +516,6 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
             preserveAspectRatio="xMidYMid meet"
           />
         )}
-        {layer.type === "ellipse" && (
-          <ellipse
-            cx={cx}
-            cy={cy}
-            rx={layer.width / 2}
-            ry={layer.height / 2}
-            {...paint}
-          />
-        )}
-        {layer.type === "triangle" && (
-          <polygon
-            points={polygonPoints(layer, [
-              [0.5, 0],
-              [1, 1],
-              [0, 1],
-            ])}
-            {...paint}
-          />
-        )}
-        {layer.type === "star" && (
-          <polygon points={polygonPoints(layer, star)} {...paint} />
-        )}
         {layer.type === "line" && (
           <line
             x1={layer.x}
@@ -476,16 +524,6 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
             y2={cy}
             stroke={layer.stroke ?? layer.fill}
             strokeWidth={Math.max(0.3, layer.strokeWidth ?? 1)}
-          />
-        )}
-        {layer.type === "heart" && (
-          <path
-            d={heart}
-            transform={`translate(${layer.x} ${layer.y}) scale(${layer.width} ${layer.height})`}
-            {...paint}
-            strokeWidth={
-              (layer.strokeWidth ?? 0) / Math.max(layer.width, layer.height)
-            }
           />
         )}
         {layer.type === "image" && layer.image && (
@@ -502,11 +540,7 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
             </defs>
             <image
               href={imageSrc(layer.image)}
-              x={imageX}
-              y={imageY}
-              width={imageWidth}
-              height={imageHeight}
-              preserveAspectRatio="xMidYMid slice"
+              {...photoBox(layer)}
               clipPath={`url(#clip-${layer.id})`}
             />
           </>
@@ -542,11 +576,7 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
             {layer.image ? (
               <image
                 href={imageSrc(layer.image)}
-                x={imageX}
-                y={imageY}
-                width={imageWidth}
-                height={imageHeight}
-                preserveAspectRatio="xMidYMid slice"
+                {...photoBox(layer)}
                 clipPath={`url(#clip-${layer.id})`}
               />
             ) : (

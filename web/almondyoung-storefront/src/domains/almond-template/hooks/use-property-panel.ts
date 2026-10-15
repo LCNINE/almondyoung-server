@@ -12,7 +12,6 @@ export function usePropertyPanel({
   const [brightnessOpen, setBrightnessOpen] = useState(false)
   const [imageMoreOpen, setImageMoreOpen] = useState(false)
   const [objectMoreId, setObjectMoreId] = useState<string | null>(null)
-  const [imageCropOpen, setImageCropOpen] = useState(false)
   const [imageSizeLinked, setImageSizeLinked] = useState(true)
   const [brightness, setBrightness] = useState(50)
   const objectMoreOpen = !!selectedId && objectMoreId === selectedId
@@ -66,8 +65,6 @@ export function usePropertyPanel({
     imageMoreOpen,
     setImageMoreOpen,
     setObjectMoreId,
-    imageCropOpen,
-    setImageCropOpen,
     imageSizeLinked,
     setImageSizeLinked,
     brightness,

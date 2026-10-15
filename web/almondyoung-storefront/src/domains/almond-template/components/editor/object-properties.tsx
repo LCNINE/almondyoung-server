@@ -113,6 +113,89 @@ function EffectToggles({
   )
 }
 
+// 도형 윤곽을 그대로 사진 틀로 쓴다 (예전 모양틀 기능)
+function ShapePhoto({
+  editor,
+  selected,
+}: {
+  editor: AlmondEditor
+  selected: Layer
+}) {
+  const { patch, editable, imageFile } = editor
+  const fileRef = useRef<HTMLInputElement>(null)
+  return (
+    <div className="space-y-2 border-t pt-3">
+      <div className="flex items-center gap-2">
+        <span className="w-9 shrink-0">사진</span>
+        <button
+          type="button"
+          disabled={!editable}
+          onClick={() => fileRef.current?.click()}
+          className="border px-2 py-1"
+        >
+          {selected.image ? "사진 바꾸기" : "도형에 사진 넣기"}
+        </button>
+        {selected.image && (
+          <button
+            type="button"
+            disabled={!editable}
+            onClick={() =>
+              patch(selected.id, {
+                image: undefined,
+                pixelWidth: undefined,
+                pixelHeight: undefined,
+                originalImage: undefined,
+                imageScale: undefined,
+                imageOffsetX: undefined,
+                imageOffsetY: undefined,
+              })
+            }
+            className="border px-2 py-1"
+          >
+            빼기
+          </button>
+        )}
+        <input
+          ref={fileRef}
+          type="file"
+          hidden
+          accept="image/png,image/jpeg,image/webp"
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            event.target.value = ""
+            if (file) void imageFile(file, "frame")
+          }}
+        />
+      </div>
+      {selected.image &&
+        (
+          [
+            ["imageScale", "사진 확대", 1, 3, 0.05],
+            ["imageOffsetX", "가로 위치", 0, 1, 0.02],
+            ["imageOffsetY", "세로 위치", 0, 1, 0.02],
+          ] as const
+        ).map(([field, label, min, max, step]) => (
+          <label key={field} className="flex items-center gap-2">
+            <span className="w-14 shrink-0">{label}</span>
+            <input
+              type="range"
+              aria-label={label}
+              min={min}
+              max={max}
+              step={step}
+              value={selected[field] ?? (field === "imageScale" ? 1 : 0.5)}
+              disabled={!editable}
+              onChange={(event) =>
+                patch(selected.id, { [field]: Number(event.target.value) })
+              }
+              className="min-w-0 flex-1"
+            />
+          </label>
+        ))}
+    </div>
+  )
+}
+
 export function ObjectProperties({
   editor,
   panel,
@@ -178,7 +261,7 @@ export function ObjectProperties({
                 label="글자색"
                 value={selected.fill}
                 compact
-                placement="right"
+                placement={inline ? "left" : "right"}
                 disabled={!editable}
                 onApply={(color) => patch(selected.id, { fill: color })}
               />
@@ -233,10 +316,10 @@ export function ObjectProperties({
             </div>
             <div className="flex items-center gap-2">
               <PrintColorPicker
-                label="글자 테두리"
+                label="테두리"
                 value={noStroke ? "#ffffff" : (selected.stroke ?? "#ffffff")}
                 compact
-                placement="right"
+                placement={inline ? "left" : "right"}
                 disabled={!editable}
                 onApply={(color) =>
                   patch(selected.id, {
@@ -247,7 +330,7 @@ export function ObjectProperties({
                   })
                 }
               />
-              <label className="flex items-center gap-1">
+              <label className="flex items-center gap-1 whitespace-nowrap">
                 두께
                 <NumberInput
                   aria-label="글자 테두리 두께"
@@ -265,13 +348,15 @@ export function ObjectProperties({
               {!noStroke && (
                 <button
                   type="button"
-                  className="ml-auto border px-2 py-1"
+                  title="글자 테두리 빼기"
+                  aria-label="글자 테두리 빼기"
+                  className="ml-auto border px-2 py-1 whitespace-nowrap"
                   disabled={!editable}
                   onClick={() =>
                     patch(selected.id, { stroke: "none", strokeWidth: 0 })
                   }
                 >
-                  테두리 없음
+                  빼기
                 </button>
               )}
             </div>
@@ -285,7 +370,7 @@ export function ObjectProperties({
                   label="채우기"
                   value={selected.fill === "none" ? "#ffffff" : selected.fill}
                   compact
-                  placement="right"
+                  placement={inline ? "left" : "right"}
                   disabled={!editable}
                   onApply={(color) => patch(selected.id, { fill: color })}
                 />
@@ -296,7 +381,7 @@ export function ObjectProperties({
                       noStroke ? "#333333" : (selected.stroke ?? "#333333")
                     }
                     compact
-                    placement="right"
+                    placement={inline ? "left" : "right"}
                     disabled={!editable}
                     onApply={(color) =>
                       patch(selected.id, {
@@ -384,7 +469,7 @@ export function ObjectProperties({
                         label="글자색"
                         value={shapeTextColor(selected)}
                         compact
-                        placement="right"
+                        placement={inline ? "left" : "right"}
                         disabled={!editable}
                         onApply={(color) =>
                           patch(selected.id, { textColor: color })
@@ -412,6 +497,7 @@ export function ObjectProperties({
                 )}
               </div>
             )}
+            {shapeText && <ShapePhoto editor={editor} selected={selected} />}
             {(shapeText || selected.type === "line") && (
               <EffectToggles editor={editor} selected={selected} />
             )}

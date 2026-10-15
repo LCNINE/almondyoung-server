@@ -1,9 +1,11 @@
-import { Pencil, Trash2 } from "lucide-react"
+import { Check, Combine, Pencil, Split, Trash2 } from "lucide-react"
 import { useRef, useState } from "react"
-import { Backdrop, LayerGraphic } from "../graphic"
+import { Backdrop, LayerGraphic, photoBox } from "../graphic"
+import { currentCrop, unionBounds } from "../../lib/canvas-math"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import { CanvasGuides } from "./canvas-guides"
 import { useLeaveWarning } from "../../hooks/use-leave-warning"
+import { imageSrc } from "../../lib/image-ref"
 import {
   SHAPE_TEXT_TYPES,
   sideBackground,
@@ -50,7 +52,29 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
     patch,
     removeSelected,
     pad,
+    guides,
+    startGroupResize,
+    cropId,
+    setCropId,
+    startCrop,
+    resetCrop,
+    mergedGroup,
+    mergeGroup,
+    splitGroup,
+    showOverflow,
   } = editor
+  const cropping = !!selected && cropId === selected.id
+  const groupBox = group.length > 1 ? unionBounds(group) : null
+  const handles = [
+    ["nw", 0, 0],
+    ["n", 0.5, 0],
+    ["ne", 1, 0],
+    ["e", 1, 0.5],
+    ["se", 1, 1],
+    ["s", 0.5, 1],
+    ["sw", 0, 1],
+    ["w", 0, 0.5],
+  ] as const
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(
     null
   )
@@ -110,7 +134,9 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
             onPointerMove={moveDrag}
             onPointerUp={endDrag}
             onPointerCancel={endDrag}
-            onDoubleClick={startTextEdit}
+            onDoubleClick={() =>
+              selected?.type === "image" ? startCrop() : startTextEdit()
+            }
           >
             <defs>
               <clipPath id="almond-print-area">
@@ -118,6 +144,14 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
               </clipPath>
             </defs>
             <Backdrop value={sideBackground(design, side)} />
+            {showOverflow && (
+              // 작업영역 밖으로 나간 부분을 흐리게 보여준다. 인쇄·저장 파일에서는 빠진다
+              <g id="overflow-ghost" opacity={0.3} pointerEvents="none">
+                {layers.map((layer) => (
+                  <LayerGraphic key={layer.id} layer={layer} />
+                ))}
+              </g>
+            )}
             <g clipPath="url(#almond-print-area)">
               {layers.map((layer) =>
                 layer.visible === false ? null : (
@@ -148,6 +182,34 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                 id="selection-outline"
                 transform={`translate(${selected.x + selected.width / 2} ${selected.y + selected.height / 2}) rotate(${selected.rotation ?? 0}) scale(${selected.flipX ? -1 : 1} ${selected.flipY ? -1 : 1}) translate(${-selected.x - selected.width / 2} ${-selected.y - selected.height / 2})`}
               >
+                {cropping && selected.image && (
+                  <>
+                    <image
+                      href={imageSrc(selected.image)}
+                      {...photoBox({
+                        ...selected,
+                        crop: currentCrop(selected),
+                      })}
+                      opacity={0.35}
+                      pointerEvents="none"
+                    />
+                    <rect
+                      {...(({ x, y, width, height }) => ({
+                        x,
+                        y,
+                        width,
+                        height,
+                      }))(
+                        photoBox({ ...selected, crop: currentCrop(selected) })
+                      )}
+                      fill="none"
+                      stroke="#555"
+                      strokeWidth={1 / scale}
+                      strokeDasharray={`${4 / scale} ${3 / scale}`}
+                      pointerEvents="none"
+                    />
+                  </>
+                )}
                 <rect
                   x={selected.x}
                   y={selected.y}
@@ -210,6 +272,71 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                     startResize(event, selected, "rotate")
                   }
                 />
+              </g>
+            )}
+            {groupBox && (
+              <g id="group-outline">
+                <rect
+                  x={groupBox.x0}
+                  y={groupBox.y0}
+                  width={groupBox.x1 - groupBox.x0}
+                  height={groupBox.y1 - groupBox.y0}
+                  fill="none"
+                  stroke="#10c9c1"
+                  strokeWidth={1 / scale}
+                  strokeDasharray={`${4 / scale} ${3 / scale}`}
+                  pointerEvents="none"
+                />
+                {handles.map(([handle, rx, ry]) => (
+                  <rect
+                    key={handle}
+                    role="button"
+                    aria-label={`묶음 ${handle} 크기 조절`}
+                    x={
+                      groupBox.x0 +
+                      (groupBox.x1 - groupBox.x0) * rx -
+                      handleSize / 2
+                    }
+                    y={
+                      groupBox.y0 +
+                      (groupBox.y1 - groupBox.y0) * ry -
+                      handleSize / 2
+                    }
+                    width={handleSize}
+                    height={handleSize}
+                    fill="white"
+                    stroke="#10c9c1"
+                    strokeWidth={1 / scale}
+                    className="cursor-pointer"
+                    onPointerDown={(event) => startGroupResize(event, handle)}
+                  />
+                ))}
+              </g>
+            )}
+            {guides && (
+              <g id="snap-guides" pointerEvents="none">
+                {guides.x.map((x) => (
+                  <line
+                    key={`x${x}`}
+                    x1={x}
+                    x2={x}
+                    y1={-design.heightMm}
+                    y2={design.heightMm * 2}
+                    stroke="#ff2d87"
+                    strokeWidth={1 / scale}
+                  />
+                ))}
+                {guides.y.map((y) => (
+                  <line
+                    key={`y${y}`}
+                    y1={y}
+                    y2={y}
+                    x1={-design.widthMm}
+                    x2={design.widthMm * 2}
+                    stroke="#ff2d87"
+                    strokeWidth={1 / scale}
+                  />
+                ))}
               </g>
             )}
             {group.length > 1 &&
@@ -275,20 +402,55 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
               </button>
             </div>
           )}
-          {group.length > 1 && (
-            <button
-              type="button"
-              aria-label="선택한 요소 모두 삭제"
-              title={`${group.length}개 삭제`}
-              onClick={removeGroup}
-              className="absolute z-20 flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded bg-white text-[#10a8a1] shadow"
+          {groupBox && (
+            <div
+              className="absolute z-20 flex -translate-x-full -translate-y-1/2 gap-1"
               style={{
-                left: `${Math.max(...group.map((layer) => layerBounds(layer).x1)) * scale}px`,
-                top: `${Math.min(...group.map((layer) => layerBounds(layer).y0)) * scale - 16}px`,
+                left: `${groupBox.x1 * scale}px`,
+                top: `${groupBox.y0 * scale - 16}px`,
               }}
             >
-              <Trash2 size={14} />
-            </button>
+              <button
+                type="button"
+                aria-label={
+                  mergedGroup ? "합친 요소 풀기" : "선택한 요소 합치기"
+                }
+                title={mergedGroup ? "풀기" : "합치기"}
+                onClick={mergedGroup ? splitGroup : mergeGroup}
+                className="flex h-6 items-center gap-1 rounded bg-white px-1.5 text-xs whitespace-nowrap text-[#10a8a1] shadow"
+              >
+                {mergedGroup ? <Split size={14} /> : <Combine size={14} />}
+                {mergedGroup ? "풀기" : "합치기"}
+              </button>
+              <button
+                type="button"
+                aria-label="선택한 요소 모두 삭제"
+                title={`${group.length}개 삭제`}
+                onClick={removeGroup}
+                className="flex size-6 items-center justify-center rounded bg-white text-[#10a8a1] shadow"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          )}
+          {cropping && (
+            <div className="absolute -top-11 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded bg-[#303030] px-3 py-1.5 text-xs whitespace-nowrap text-white shadow">
+              모서리를 끌어 자르고, 안쪽을 끌어 사진 위치를 옮기세요
+              <button
+                type="button"
+                onClick={resetCrop}
+                className="rounded border border-white/40 px-2 py-0.5"
+              >
+                원래대로
+              </button>
+              <button
+                type="button"
+                onClick={() => setCropId(null)}
+                className="flex items-center gap-1 rounded bg-white px-2 py-0.5 font-semibold text-[#303030]"
+              >
+                <Check size={12} /> 완료
+              </button>
+            </div>
           )}
           {editingLayer && editing && (
             <textarea
@@ -339,7 +501,7 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
           )}
           <div
             aria-label="인쇄 안내선 범례"
-            className="absolute top-0 left-full ml-3 w-24 space-y-2 bg-[#f5f5f4] text-sm"
+            className="pointer-events-none absolute top-0 left-full ml-3 w-24 space-y-2 bg-[#f5f5f4] text-sm"
           >
             <div className="border-b-2 border-[#222] pb-1">작업선</div>
             {showCutline && (

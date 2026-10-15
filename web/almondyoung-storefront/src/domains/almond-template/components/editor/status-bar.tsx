@@ -24,6 +24,8 @@ export function StatusBar({ editor }: { editor: AlmondEditor }) {
     setShowCutline,
     showSafety,
     setShowSafety,
+    showOverflow,
+    setShowOverflow,
     zoom,
     zoomBy,
     zoomReset,
@@ -147,6 +149,7 @@ export function StatusBar({ editor }: { editor: AlmondEditor }) {
                 ["눈금자", showRuler, setShowRuler],
                 ["재단선", showCutline, setShowCutline],
                 ["안전선", showSafety, setShowSafety],
+                ["영역 밖 보기", showOverflow, setShowOverflow],
               ] as const
             ).map(([label, checked, set]) => (
               <label key={label} className="mb-2 flex items-center gap-2">

@@ -58,6 +58,8 @@ export type Layer = {
   textColor?: string
   shadow?: boolean
   texture?: boolean
+  crop?: { x: number; y: number; w: number; h: number }
+  groupId?: string
 }
 
 export const SHAPE_TEXT_TYPES: ReadonlySet<Layer["type"]> = new Set<
@@ -222,6 +224,10 @@ export function parseDesign(value: unknown): Design {
         (layer.fill === "none" && SHAPE_TEXT_TYPES.has(layer.type))
       ) ||
       (layer.textColor !== undefined && !color.test(layer.textColor)) ||
+      (layer.groupId !== undefined &&
+        (typeof layer.groupId !== "string" ||
+          !/^[a-zA-Z0-9_-]{1,100}$/.test(layer.groupId))) ||
+      (layer.crop !== undefined && !validCrop(layer.crop)) ||
       (layer.stroke !== undefined &&
         layer.stroke !== "none" &&
         !color.test(layer.stroke)) ||
@@ -387,6 +393,41 @@ export function resizeDesign(
   }
 }
 
+function validCrop(crop: Layer["crop"]) {
+  if (!crop || typeof crop !== "object") return false
+  const { x, y, w, h } = crop
+  return (
+    [x, y, w, h].every(Number.isFinite) &&
+    x >= 0 &&
+    y >= 0 &&
+    w > 0 &&
+    h > 0 &&
+    x + w <= 1.0001 &&
+    y + h <= 1.0001
+  )
+}
+
+// 사진이 실제로 쓰는 픽셀로 잰 해상도. 잘라낸 사진은 남은 구간의 픽셀만 인쇄에 쓰인다
+export function layerImageDpi(kind: PrintKind, layer: Layer) {
+  if (!layer.image || !layer.pixelWidth || !layer.pixelHeight) return Infinity
+  if (layer.crop)
+    return imageDpi(
+      kind,
+      layer.pixelWidth * layer.crop.w,
+      layer.pixelHeight * layer.crop.h,
+      layer.width,
+      layer.height
+    )
+  return imageDpi(
+    kind,
+    layer.pixelWidth,
+    layer.pixelHeight,
+    layer.width,
+    layer.height,
+    layer.imageScale
+  )
+}
+
 export function imageDpi(
   kind: PrintKind,
   pixelWidth: number,
@@ -512,20 +553,7 @@ export function printIssues(design: Design): string[] {
       if (layer.visible === false) continue
       if (layer.type === "frame" && !layer.image)
         issues.push(`${side}의 ${layer.name}: 사진을 넣어 주세요.`)
-      if (
-        (layer.type === "frame" || layer.type === "image") &&
-        layer.image &&
-        layer.pixelWidth &&
-        layer.pixelHeight &&
-        imageDpi(
-          design.kind,
-          layer.pixelWidth,
-          layer.pixelHeight,
-          layer.width,
-          layer.height,
-          layer.imageScale
-        ) < minDpi
-      )
+      if (layer.image && layerImageDpi(design.kind, layer) < minDpi)
         issues.push(
           `${side}의 ${layer.name}: 이미지 해상도가 ${minDpi}dpi보다 낮습니다.`
         )

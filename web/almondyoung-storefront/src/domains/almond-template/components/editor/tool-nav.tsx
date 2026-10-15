@@ -6,7 +6,6 @@ import {
   Layers,
   Shapes,
   Smile,
-  Frame,
   QrCode,
 } from "lucide-react"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
@@ -27,7 +26,6 @@ export function ToolNav({ editor }: { editor: AlmondEditor }) {
           ["layers", Layers, "레이어"],
           ["shape", Shapes, "도형"],
           ["clipart", Smile, "클립아트"],
-          ["frame", Frame, "모양틀"],
           ["qr", QrCode, "QR코드"],
           ["spec", LayoutTemplate, "규격"],
         ] as const

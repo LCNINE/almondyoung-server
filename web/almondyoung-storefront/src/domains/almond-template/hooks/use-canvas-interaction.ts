@@ -14,6 +14,16 @@ import {
 } from "../lib/document"
 import { mm } from "../lib/layer"
 import { textExtent } from "../components/graphic"
+import {
+  cropToBox,
+  layerBounds,
+  panCrop,
+  scaleIntoBox,
+  snapBox,
+  unionBounds,
+  type Box,
+  type Guides,
+} from "../lib/canvas-math"
 import type { EditorMode } from "./use-template-storage"
 
 type Params = {
@@ -26,9 +36,8 @@ type Params = {
   setSelectedId: (id: string | null) => void
   groupIds: string[]
   setGroupIds: (ids: string[]) => void
+  cropId: string | null
 }
-
-type Box = { x0: number; y0: number; x1: number; y1: number }
 
 export const MIN_ZOOM = 0.1
 export const MAX_ZOOM = 8
@@ -51,17 +60,6 @@ function stretchText(layer: Layer, box: Partial<Layer>): Partial<Layer> {
   }
 }
 
-function layerBounds(layer: Layer) {
-  const rad = ((layer.rotation ?? 0) * Math.PI) / 180
-  const cos = Math.abs(Math.cos(rad))
-  const sin = Math.abs(Math.sin(rad))
-  const halfW = (layer.width * cos + layer.height * sin) / 2
-  const halfH = (layer.width * sin + layer.height * cos) / 2
-  const cx = layer.x + layer.width / 2
-  const cy = layer.y + layer.height / 2
-  return { x0: cx - halfW, y0: cy - halfH, x1: cx + halfW, y1: cy + halfH }
-}
-
 export function useCanvasInteraction({
   design,
   setDesign,
@@ -72,7 +70,9 @@ export function useCanvasInteraction({
   setSelectedId,
   groupIds,
   setGroupIds,
+  cropId,
 }: Params) {
+  const [guides, setGuides] = useState<Guides | null>(null)
   const [zoom, setZoom] = useState(1)
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 })
   const svgRef = useRef<SVGSVGElement>(null)
@@ -86,6 +86,7 @@ export function useCanvasInteraction({
     moved?: boolean
     added?: boolean
     group?: Layer[]
+    groupBox?: Box
   } | null>(null)
   const marqueeStart = useRef<{ x: number; y: number } | null>(null)
   const [marquee, setMarquee] = useState<Box | null>(null)
@@ -207,8 +208,20 @@ export function useCanvasInteraction({
   }
   const startDrag = (event: React.PointerEvent<SVGGElement>, layer: Layer) => {
     event.stopPropagation()
-    const group = design[side].filter((item) => groupIds.includes(item.id))
-    if (group.length > 1 && groupIds.includes(layer.id)) {
+    const merged = layer.groupId
+      ? design[side].filter(
+          (item) => item.groupId === layer.groupId && item.visible !== false
+        )
+      : []
+    const group =
+      merged.length > 1 && !groupIds.includes(layer.id)
+        ? merged
+        : design[side].filter((item) => groupIds.includes(item.id))
+    if (group.length > 1 && group.some((item) => item.id === layer.id)) {
+      if (!groupIds.includes(layer.id)) {
+        setSelectedId(null)
+        setGroupIds(group.map((item) => item.id))
+      }
       if (moveMode) return
       dragRef.current = { ...point(event), layer, group }
       svgRef.current?.setPointerCapture(event.pointerId)
@@ -263,6 +276,29 @@ export function useCanvasInteraction({
     }
     svgRef.current?.setPointerCapture(event.pointerId)
   }
+  const startGroupResize = (
+    event: React.PointerEvent<SVGElement>,
+    handle: string
+  ) => {
+    event.stopPropagation()
+    const group = design[side].filter((item) => groupIds.includes(item.id))
+    if (group.length < 2 || group.some((item) => !movable(item))) return
+    const box = unionBounds(group)
+    dragRef.current = {
+      ...point(event),
+      layer: group[0],
+      handle,
+      group,
+      groupBox: box,
+    }
+    svgRef.current?.setPointerCapture(event.pointerId)
+  }
+  // 끌고 있는 것 말고 다른 요소들 — 붙일 기준선이 된다
+  const snapTargets = (except: string[]) =>
+    design[side]
+      .filter((item) => item.visible !== false && !except.includes(item.id))
+      .map(layerBounds)
+  const snapThreshold = () => 6 / (canvasFit * zoom)
   const moveDrag = (event: React.PointerEvent<SVGSVGElement>) => {
     const start = marqueeStart.current
     if (start) {
@@ -277,18 +313,78 @@ export function useCanvasInteraction({
     }
     if (!dragRef.current) return
     const p = point(event)
-    const { layer, x, y, handle, rotationStart, group } = dragRef.current
+    const { layer, x, y, handle, rotationStart, group, groupBox } =
+      dragRef.current
     if (!dragRef.current.moved && p.x === x && p.y === y) return
     dragRef.current.moved = true
+    if (group && handle && groupBox) {
+      const fake = {
+        ...layer,
+        rotation: 0,
+        x: groupBox.x0,
+        y: groupBox.y0,
+        width: groupBox.x1 - groupBox.x0,
+        height: groupBox.y1 - groupBox.y0,
+      }
+      const next = resizeLayerFromHandle(
+        fake,
+        handle,
+        p.x - x,
+        p.y - y,
+        design.widthMm * 2,
+        design.heightMm * 2,
+        event.shiftKey
+      )
+      const to = {
+        x0: next.x ?? fake.x,
+        y0: next.y ?? fake.y,
+        x1: (next.x ?? fake.x) + (next.width ?? fake.width),
+        y1: (next.y ?? fake.y) + (next.height ?? fake.height),
+      }
+      setDesign((old) => ({
+        ...old,
+        [side]: old[side].map((item) => {
+          const from = group.find((member) => member.id === item.id)
+          return from
+            ? {
+                ...item,
+                ...stretchText(from, scaleIntoBox(from, groupBox, to)),
+              }
+            : item
+        }),
+      }))
+      return
+    }
     if (group) {
+      const box = unionBounds(group)
+      const snap = event.altKey
+        ? { dx: 0, dy: 0, guides: null }
+        : snapBox(
+            {
+              x0: box.x0 + p.x - x,
+              x1: box.x1 + p.x - x,
+              y0: box.y0 + p.y - y,
+              y1: box.y1 + p.y - y,
+            },
+            snapTargets(group.map((item) => item.id)),
+            design,
+            snapThreshold()
+          )
+      setGuides(snap.guides)
       setDesign((old) => {
         const dx = Math.max(
           ...group.map((item) => -old.widthMm - item.x),
-          Math.min(...group.map((item) => old.widthMm * 2 - item.x), p.x - x)
+          Math.min(
+            ...group.map((item) => old.widthMm * 2 - item.x),
+            p.x - x + snap.dx
+          )
         )
         const dy = Math.max(
           ...group.map((item) => -old.heightMm - item.y),
-          Math.min(...group.map((item) => old.heightMm * 2 - item.y), p.y - y)
+          Math.min(
+            ...group.map((item) => old.heightMm * 2 - item.y),
+            p.y - y + snap.dy
+          )
         )
         return {
           ...old,
@@ -309,6 +405,40 @@ export function useCanvasInteraction({
       (dx * Math.cos(rad) + dy * Math.sin(rad)) * (layer.flipX ? -1 : 1)
     const localDy =
       (-dx * Math.sin(rad) + dy * Math.cos(rad)) * (layer.flipY ? -1 : 1)
+    if (cropId === layer.id && handle !== "rotate") {
+      setDesign((old) =>
+        updateLayer(
+          old,
+          side,
+          layer.id,
+          handle
+            ? cropToBox(
+                layer,
+                resizeLayerFromHandle(
+                  layer,
+                  handle,
+                  localDx,
+                  localDy,
+                  old.widthMm,
+                  old.heightMm,
+                  event.shiftKey
+                ) as { x: number; y: number; width: number; height: number }
+              )
+            : panCrop(layer, localDx, localDy)
+        )
+      )
+      return
+    }
+    const snap =
+      handle || event.altKey
+        ? { dx: 0, dy: 0, guides: null }
+        : snapBox(
+            layerBounds({ ...layer, x: layer.x + dx, y: layer.y + dy }),
+            snapTargets([layer.id]),
+            design,
+            snapThreshold()
+          )
+    setGuides(snap.guides)
     setDesign((old) =>
       updateLayer(old, side, layer.id, {
         ...(handle === "rotate" && rotationStart !== undefined
@@ -347,13 +477,13 @@ export function useCanvasInteraction({
                 x: mm(
                   Math.max(
                     -old.widthMm,
-                    Math.min(old.widthMm * 2, layer.x + p.x - x)
+                    Math.min(old.widthMm * 2, layer.x + p.x - x + snap.dx)
                   )
                 ),
                 y: mm(
                   Math.max(
                     -old.heightMm,
-                    Math.min(old.heightMm * 2, layer.y + p.y - y)
+                    Math.min(old.heightMm * 2, layer.y + p.y - y + snap.dy)
                   )
                 ),
               }),
@@ -361,6 +491,7 @@ export function useCanvasInteraction({
     )
   }
   const endDrag = () => {
+    setGuides(null)
     if (marqueeStart.current) {
       marqueeStart.current = null
       setMarquee(null)
@@ -375,8 +506,13 @@ export function useCanvasInteraction({
           b.y1 > marquee.y0
         )
       })
-      if (hits.length === 1) setSelectedId(hits[0].id)
-      else if (hits.length > 1) setGroupIds(hits.map((layer) => layer.id))
+      const groups = new Set(hits.map((layer) => layer.groupId).filter(Boolean))
+      const picked = design[side].filter(
+        (layer) =>
+          hits.includes(layer) || (!!layer.groupId && groups.has(layer.groupId))
+      )
+      if (picked.length === 1) setSelectedId(picked[0].id)
+      else if (picked.length > 1) setGroupIds(picked.map((layer) => layer.id))
       return
     }
     const drag = dragRef.current
@@ -490,6 +626,8 @@ export function useCanvasInteraction({
     canvasFit,
     handleSize,
     panning,
+    guides,
+    startGroupResize,
     pad,
     zoomBy,
     zoomReset,

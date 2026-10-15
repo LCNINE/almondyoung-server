@@ -13,7 +13,13 @@ function download(name: string, content: BlobPart, type: string) {
 export function svgMarkup(source: SVGSVGElement, design: Design) {
   const clone = source.cloneNode(true) as SVGSVGElement
   clone.querySelector("#print-guides")?.remove()
-  clone.querySelector("#selection-outline")?.remove()
+  for (const id of [
+    "selection-outline",
+    "overflow-ghost",
+    "group-outline",
+    "snap-guides",
+  ])
+    clone.querySelector(`#${id}`)?.remove()
   clone.setAttribute("xmlns", "http://www.w3.org/2000/svg")
   clone.setAttribute("width", `${design.widthMm}mm`)
   clone.setAttribute("height", `${design.heightMm}mm`)
