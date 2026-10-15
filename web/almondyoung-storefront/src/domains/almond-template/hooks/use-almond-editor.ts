@@ -65,7 +65,12 @@ export function useAlmondEditor({
     Design,
     "back" | "backBackground"
   > | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, selectOne] = useState<string | null>(null)
+  const [groupIds, setGroupIds] = useState<string[]>([])
+  const setSelectedId = useCallback((id: string | null) => {
+    selectOne(id)
+    setGroupIds([])
+  }, [])
   const [guideMenuOpen, setGuideMenuOpen] = useState(false)
   const [noticeOpen, setNoticeOpen] = useState(false)
   const [showRuler, setShowRuler] = useState(false)
@@ -122,6 +127,37 @@ export function useAlmondEditor({
   }
   const layers = design[side]
   const selected = layers.find((layer) => layer.id === selectedId)
+  const group = layers.filter((layer) => groupIds.includes(layer.id))
+  const moveGroup = (dx: number, dy: number) =>
+    change({
+      ...design,
+      [side]: layers.map((layer) =>
+        groupIds.includes(layer.id)
+          ? {
+              ...layer,
+              x: mm(
+                Math.max(
+                  -design.widthMm,
+                  Math.min(design.widthMm * 2, layer.x + dx)
+                )
+              ),
+              y: mm(
+                Math.max(
+                  -design.heightMm,
+                  Math.min(design.heightMm * 2, layer.y + dy)
+                )
+              ),
+            }
+          : layer
+      ),
+    })
+  const removeGroup = () => {
+    change({
+      ...design,
+      [side]: layers.filter((layer) => !groupIds.includes(layer.id)),
+    })
+    setGroupIds([])
+  }
   const spec = PRINT_SPECS[design.kind]
   const selectedImage =
     selected && (selected.type === "image" || selected.type === "frame")
@@ -154,6 +190,8 @@ export function useAlmondEditor({
     mode,
     moveMode,
     setSelectedId,
+    groupIds,
+    setGroupIds,
   })
   const auth = useAuthRetry(setMessage)
   const storage = useTemplateStorage({
@@ -232,7 +270,7 @@ export function useAlmondEditor({
     loadDialog: storage.loadDialog,
     selected,
     copied: actions.copied,
-    editable: actions.editable,
+    editable: group.length > 1 || actions.editable,
     setSelectedId,
     setPreview,
     setTextDialog,
@@ -245,10 +283,11 @@ export function useAlmondEditor({
     copySelected: actions.copySelected,
     pasteCopied: actions.pasteCopied,
     cutSelected: actions.cutSelected,
-    removeSelected: actions.removeSelected,
+    removeSelected: group.length > 1 ? removeGroup : actions.removeSelected,
     nudgeSelected: (dx, dy) => {
-      if (!selected) return
       const px = 1 / (canvas.canvasFit * canvas.zoom)
+      if (group.length > 1) return moveGroup(dx * px, dy * px)
+      if (!selected) return
       const clamp = (value: number, size: number) =>
         mm(Math.max(-size, Math.min(size * 2, value)))
       actions.patch(selected.id, {
@@ -280,6 +319,8 @@ export function useAlmondEditor({
     restoreBack,
     selectedId,
     setSelectedId,
+    group,
+    removeGroup,
     guideMenuOpen,
     setGuideMenuOpen,
     noticeOpen,

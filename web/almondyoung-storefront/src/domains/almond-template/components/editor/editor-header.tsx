@@ -37,6 +37,8 @@ export function EditorHeader({ editor }: { editor: AlmondEditor }) {
     copied,
     editable,
     removeSelected,
+    group,
+    removeGroup,
     copySelected,
     pasteCopied,
     cutSelected,
@@ -100,8 +102,8 @@ export function EditorHeader({ editor }: { editor: AlmondEditor }) {
           {
             label: "삭제",
             icon: Trash2,
-            disabled: !editable,
-            click: removeSelected,
+            disabled: !editable && group.length < 2,
+            click: group.length > 1 ? removeGroup : removeSelected,
           },
         ].map(({ label, icon: Icon, disabled, click }) => (
           <button

@@ -22,6 +22,21 @@ type Params = {
   mode: EditorMode
   moveMode: boolean
   setSelectedId: (id: string | null) => void
+  groupIds: string[]
+  setGroupIds: (ids: string[]) => void
+}
+
+type Box = { x0: number; y0: number; x1: number; y1: number }
+
+function layerBounds(layer: Layer) {
+  const rad = ((layer.rotation ?? 0) * Math.PI) / 180
+  const cos = Math.abs(Math.cos(rad))
+  const sin = Math.abs(Math.sin(rad))
+  const halfW = (layer.width * cos + layer.height * sin) / 2
+  const halfH = (layer.width * sin + layer.height * cos) / 2
+  const cx = layer.x + layer.width / 2
+  const cy = layer.y + layer.height / 2
+  return { x0: cx - halfW, y0: cy - halfH, x1: cx + halfW, y1: cy + halfH }
 }
 
 export function useCanvasInteraction({
@@ -32,6 +47,8 @@ export function useCanvasInteraction({
   mode,
   moveMode,
   setSelectedId,
+  groupIds,
+  setGroupIds,
 }: Params) {
   const [zoom, setZoom] = useState(1)
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 })
@@ -45,16 +62,20 @@ export function useCanvasInteraction({
     rotationStart?: number
     moved?: boolean
     added?: boolean
+    group?: Layer[]
   } | null>(null)
+  const marqueeStart = useRef<{ x: number; y: number } | null>(null)
+  const [marquee, setMarquee] = useState<Box | null>(null)
   const [panReady, setPanReady] = useState(false)
   const panning = moveMode || panReady
 
   useEffect(() => {
     if (!canvasAreaRef.current) return
+    // 스크롤바가 생기면 content-box 가 줄어 캔버스가 작아지고, 그러면 스크롤바가 사라져 다시 커지는 루프가 돈다
     const observer = new ResizeObserver(([entry]) =>
       setCanvasSize({
-        width: entry.contentRect.width,
-        height: entry.contentRect.height,
+        width: entry.borderBoxSize[0].inlineSize - 64,
+        height: entry.borderBoxSize[0].blockSize - 64,
       })
     )
     observer.observe(canvasAreaRef.current)
@@ -64,16 +85,12 @@ export function useCanvasInteraction({
     const area = canvasAreaRef.current
     if (!area) return
     const zoomWheel = (event: WheelEvent) => {
-      if (!event.altKey) return
+      if (!event.altKey && !event.ctrlKey && !event.metaKey) return
       event.preventDefault()
+      // 트랙패드는 작은 delta 를 잔뜩 쏘므로 이벤트당 고정 10% 대신 delta 에 비례시킨다
+      const delta = Math.max(-100, Math.min(100, event.deltaY))
       setZoom((value) =>
-        Math.max(
-          0.4,
-          Math.min(
-            2,
-            Math.round((value + (event.deltaY < 0 ? 0.1 : -0.1)) * 10) / 10
-          )
-        )
+        Math.max(0.4, Math.min(2, value * Math.exp(-delta * 0.0003)))
       )
     }
     area.addEventListener("wheel", zoomWheel, { passive: false })
@@ -141,8 +158,23 @@ export function useCanvasInteraction({
       y: ((event.clientY - rect.top) * design.heightMm) / rect.height,
     }
   }
+  const movable = (layer: Layer) =>
+    !layer.locked && !(mode === "customer" && layer.editable === false)
+  const startMarquee = (event: React.PointerEvent) => {
+    setSelectedId(null)
+    if (moveMode) return
+    marqueeStart.current = point(event)
+    svgRef.current?.setPointerCapture(event.pointerId)
+  }
   const startDrag = (event: React.PointerEvent<SVGGElement>, layer: Layer) => {
     event.stopPropagation()
+    const group = design[side].filter((item) => groupIds.includes(item.id))
+    if (group.length > 1 && groupIds.includes(layer.id)) {
+      if (moveMode) return
+      dragRef.current = { ...point(event), layer, group }
+      svgRef.current?.setPointerCapture(event.pointerId)
+      return
+    }
     setSelectedId(layer.id)
     if (
       moveMode ||
@@ -193,11 +225,44 @@ export function useCanvasInteraction({
     svgRef.current?.setPointerCapture(event.pointerId)
   }
   const moveDrag = (event: React.PointerEvent<SVGSVGElement>) => {
+    const start = marqueeStart.current
+    if (start) {
+      const p = point(event)
+      setMarquee({
+        x0: Math.min(start.x, p.x),
+        y0: Math.min(start.y, p.y),
+        x1: Math.max(start.x, p.x),
+        y1: Math.max(start.y, p.y),
+      })
+      return
+    }
     if (!dragRef.current) return
     const p = point(event)
-    const { layer, x, y, handle, rotationStart } = dragRef.current
+    const { layer, x, y, handle, rotationStart, group } = dragRef.current
     if (!dragRef.current.moved && p.x === x && p.y === y) return
     dragRef.current.moved = true
+    if (group) {
+      setDesign((old) => {
+        const dx = Math.max(
+          ...group.map((item) => -old.widthMm - item.x),
+          Math.min(...group.map((item) => old.widthMm * 2 - item.x), p.x - x)
+        )
+        const dy = Math.max(
+          ...group.map((item) => -old.heightMm - item.y),
+          Math.min(...group.map((item) => old.heightMm * 2 - item.y), p.y - y)
+        )
+        return {
+          ...old,
+          [side]: old[side].map((item) => {
+            const from = group.find((member) => member.id === item.id)
+            return from
+              ? { ...item, x: mm(from.x + dx), y: mm(from.y + dy) }
+              : item
+          }),
+        }
+      })
+      return
+    }
     const rad = ((layer.rotation ?? 0) * Math.PI) / 180
     const dx = p.x - x,
       dy = p.y - y
@@ -253,8 +318,37 @@ export function useCanvasInteraction({
     )
   }
   const endDrag = () => {
+    if (marqueeStart.current) {
+      marqueeStart.current = null
+      setMarquee(null)
+      if (!marquee) return
+      const hits = design[side].filter((layer) => {
+        if (layer.visible === false || !movable(layer)) return false
+        const b = layerBounds(layer)
+        return (
+          b.x0 < marquee.x1 &&
+          b.x1 > marquee.x0 &&
+          b.y0 < marquee.y1 &&
+          b.y1 > marquee.y0
+        )
+      })
+      if (hits.length === 1) setSelectedId(hits[0].id)
+      else if (hits.length > 1) setGroupIds(hits.map((layer) => layer.id))
+      return
+    }
     const drag = dragRef.current
     dragRef.current = null
+    const group = drag?.group
+    if (group) {
+      if (!drag.moved) return
+      commit({
+        ...design,
+        [side]: design[side].map(
+          (layer) => group.find((item) => item.id === layer.id) ?? layer
+        ),
+      })
+      return
+    }
     if (drag?.added) {
       const withoutCopy = {
         ...design,
@@ -286,6 +380,9 @@ export function useCanvasInteraction({
     setZoom,
     svgRef,
     canvasAreaRef,
+    marquee,
+    layerBounds,
+    startMarquee,
     startDrag,
     startResize,
     moveDrag,
