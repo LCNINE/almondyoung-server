@@ -16,6 +16,8 @@
 > - §9 channel-adapter 컨트롤러에 `@UseFilters(GlobalExceptionFilter)`.
 > - §8.3 다시 보내기 중 죽은 lease 는 한도에 닿았으면 FAILED 로 되돌린다(`requeueStaleProcessingEvents`).
 > - 순서 lock 구분자는 NUL 이 아니라 U+001F(Postgres 가 NUL 거부).
+> - **순서(outbox 선택 조건·컨슈머 보류)는 앱이 고른 주문 생애 토픽에만 건다**(최종 리뷰 B) — `OutboxConfig.sequencedTopics`, `EventFailuresModule.forRoot({ sequencedTopics })`. D8 의 뜻은 «같은 주문»이었다. 모든 토픽에 걸면 «마지막 값이 이긴다» 스트림(`ProductSellableQuantityChanged`, 키=품목)이 주기마다 품목당 한 행만 나가 적체가 쌓이고, 한 번의 실패가 더 새 재고 값을 몇 시간씩 묶는다. 목록 밖 토픽의 컨슈머 실패도 `failed` 로 기록은 되고, 그 행은 키 없는 행처럼 혼자 한 순서다. 아래 §8.1·§8.2·§11 의 `sequenceByAggregate` 는 이 목록으로 읽는다.
+> - 실패 테이블이 없으면(마이그 전 배포) `startConsumer` 가 실패 테이블 모드를 켜지 않고 옛 `.dlq` 경로로 돈다(최종 리뷰 A). 순서는 여전히 `migrate → deploy`.
 
 ## 1. 배경
 

@@ -43,6 +43,7 @@ import {
   PAYMENT_STREAM,
   SHIPMENT_STREAM,
   FULFILLMENT_V2_STREAM,
+  CHANNEL_ORDERS_COMMAND_STREAM,
 } from '@packages/event-contracts/streams';
 import { FulfillmentEventsConsumer } from './consumers/fulfillment-events.consumer';
 import { ShipmentEventsConsumer } from './consumers/shipment-events.consumer';
@@ -194,10 +195,11 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
             // `No publisher found for topic` 은 여기서 발생하지 않는다.
             enableOutbox: true,
             // 굳기 전 약 2시간 버티고, 같은 주문의 순서를 지킨다 (#1016 7번, 스펙 D4·§8.2).
+            // 순서는 이 앱이 outbox 로 적재하는 주문 생애 토픽만 — 이유는 `OutboxConfig.sequencedTopics` 주석.
             outbox: {
               retryDelaysSeconds: LONG_OUTBOX_RETRY_DELAYS_SECONDS,
               maxRetries: LONG_OUTBOX_MAX_RETRIES,
-              sequenceByAggregate: true,
+              sequencedTopics: [ORDER_STREAM.topic.topic],
             },
             validation: {
               validateOnPublish: true,
@@ -226,8 +228,17 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
             // 현황: `npm run audit:consume-validation -- channel-adapter`
             policy: { validateOnConsume: true },
           }),
-          // outbox 디스패처가 있는 분기에서만 선다(#1016 7·8번) — 컨슈머 실패가 `.dlq` 대신 DB 로 간다
-          EventFailuresModule,
+          // outbox 디스패처가 있는 분기에서만 선다(#1016 7·8번) — 컨슈머 실패가 `.dlq` 대신 DB 로 간다.
+          // 보류(같은 순서 키 지키기)는 이 앱이 소비하는 주문 생애 토픽만 — 이유는 `EventFailuresOptions.sequencedTopics` 주석.
+          EventFailuresModule.forRoot({
+            sequencedTopics: [
+              CHANNEL_ORDERS_COMMAND_STREAM.topic.topic,
+              FULFILLMENT_STREAM.topic.topic,
+              FULFILLMENT_V2_STREAM.topic.topic,
+              SHIPMENT_STREAM.topic.topic,
+              PAYMENT_STREAM.topic.topic,
+            ],
+          }),
         ]
       : []),
   ],

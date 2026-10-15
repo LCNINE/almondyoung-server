@@ -7,7 +7,7 @@ import { outbox_events } from './outbox.schema';
 import { OutboxConfig } from './outbox.types';
 import { recordOutboxFailed, recordOutboxPublished } from './outbox.metrics';
 import type { OutboxDispatchGate } from './outbox-dispatch-gate.port';
-import { eq, inArray, and, lt, lte, or, isNull, not, ilike, sql, type SQL } from 'drizzle-orm';
+import { eq, inArray, notInArray, and, lt, lte, or, isNull, not, ilike, sql, type SQL } from 'drizzle-orm';
 
 /**
  * 실패 후 다음 시도까지의 대기(초). core 로컬 판본
@@ -106,7 +106,7 @@ export class OutboxDispatcher {
       cleanupDays: config?.cleanupDays ?? 7,
       strictPartitionOrdering: config?.strictPartitionOrdering ?? false,
       retryDelaysSeconds,
-      sequenceByAggregate: config?.sequenceByAggregate ?? false,
+      sequencedTopics: [...(config?.sequencedTopics ?? [])],
     };
   }
 
@@ -162,7 +162,7 @@ export class OutboxDispatcher {
             this.pauseCondition(),
             // 파티션 순서 보장도 같은 이유로 선택 단계에서 건다 (Task 6-C-3).
             this.partitionOrderCondition(),
-            // 같은 주문의 순서 (#1016 7번). 선택 단계에서 거는 이유는 위 두 조건과 같다.
+            // 같은 주문의 순서 (#1016 7번, `sequencedTopics` 토픽만). 선택 단계에서 거는 이유는 위 두 조건과 같다.
             this.aggregateSequenceCondition(),
           ),
         )
@@ -239,28 +239,38 @@ export class OutboxDispatcher {
   }
 
   /**
-   * 같은 `(topic, aggregate_id)` 의 **더 이른** 미발행·굳은 행이 있으면 후보에서 뺀다 (#1016 7번, 스펙 §8.2).
+   * `sequencedTopics` 토픽의 행은 같은 `(topic, aggregate_id)` 의 **더 이른** 미발행·굳은 행이 있으면 후보에서 뺀다
+   * (#1016 7번, 스펙 §8.2). 목록 밖 토픽의 행은 조건의 첫 갈래(`topic not in`)로 그대로 통과한다. 목록이 비면 `undefined`.
    *
    * 키가 `partition_key` 가 아니라 `aggregate_id` 인 이유: channel-adapter 는 주문 이벤트의 파티션 키가 채널
    * 이름이라 그 키로 막으면 채널 전체가 멈춘다. 주문 하나를 가리키는 것은 `aggregate_id` 다.
-   * `FAILED` 를 막는 것이 `partitionOrderCondition` 과 반대인 이유는 `OutboxConfig.sequenceByAggregate` 주석.
+   * `FAILED` 를 막는 것이 `partitionOrderCondition` 과 반대인 이유·토픽을 고르는 이유는 `OutboxConfig.sequencedTopics` 주석.
    * 인덱스는 더하지 않았다 — 조건이 미발행 상태만 보고 `PUBLISHED` 는 7일 뒤 지워지므로 작을 것으로 보지만 확인하지 않았다.
    * 배포 전 `EXPLAIN ANALYZE` 가 게이트다 (스펙 §11). 느리면 `(topic, aggregate_id, created_at)` 부분 인덱스를 더한다.
    */
   private aggregateSequenceCondition(): SQL | undefined {
-    if (!this.config.sequenceByAggregate) return undefined;
+    const topics = this.config.sequencedTopics;
+    if (topics.length === 0) return undefined;
 
-    return sql`not exists (
-      select 1
-      from ${outbox_events} previous
-      where previous.topic = ${outbox_events.topic}
-        and previous.aggregate_id = ${outbox_events.aggregateId}
-        and previous.status in ('PENDING', 'PROCESSING', 'FAILED')
-        and (
-          previous.created_at < ${outbox_events.createdAt}
-          or (previous.created_at = ${outbox_events.createdAt} and previous.id < ${outbox_events.id})
-        )
-    )`;
+    return or(
+      notInArray(outbox_events.topic, [...topics]),
+      sql`not exists (
+        select 1
+        from ${outbox_events} previous
+        where previous.topic = ${outbox_events.topic}
+          and previous.aggregate_id = ${outbox_events.aggregateId}
+          and previous.status in ('PENDING', 'PROCESSING', 'FAILED')
+          and (
+            previous.created_at < ${outbox_events.createdAt}
+            or (previous.created_at = ${outbox_events.createdAt} and previous.id < ${outbox_events.id})
+          )
+      )`,
+    );
+  }
+
+  /** 순서를 지키는 토픽 — `OutboxFailuresService` 가 «뒤에서 기다리는 수»를 셀 때 같은 목록을 쓴다 */
+  get sequencedTopics(): readonly string[] {
+    return this.config.sequencedTopics;
   }
 
   /**

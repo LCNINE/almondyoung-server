@@ -39,7 +39,9 @@ describeIfDb('DeadLetterQueryService (PostgreSQL 통합)', () => {
         await run({
           tx: tx as never,
           store: new DeadLetterStore(dbService),
-          query: new DeadLetterQueryService(dbService, new FailureActionLog(dbService)),
+          query: new DeadLetterQueryService(dbService, new FailureActionLog(dbService), {
+            sequencedTopics: ['orders.events.v1'],
+          }),
         });
         throw sentinel;
       });
@@ -117,6 +119,21 @@ describeIfDb('DeadLetterQueryService (PostgreSQL 통합)', () => {
         ['order-A', 3],
         ['order-B', 1],
       ]);
+    });
+  });
+
+  it('순서를 지키지 않는 토픽의 행은 같은 키라도 각자 머리이고 뒤 수가 0 이다', async () => {
+    await inRollbackTx(async ({ store, query }) => {
+      const unsequenced = (id: string) => ({ ...msg(id, 'variant-1'), topic: 'stock.events.v1' });
+      await store.recordFailure(unsequenced('s1'), new Error('x'));
+      await store.recordFailure(unsequenced('s2'), new Error('x'));
+      const page = await query.listSequences();
+      expect(page.items.map((i) => [i.topic, i.sequenceKey, i.heldBehind])).toEqual([
+        ['stock.events.v1', 'variant-1', 0],
+        ['stock.events.v1', 'variant-1', 0],
+      ]);
+      const detail = await query.detail(page.items[0].id);
+      expect(detail.sequence.map((r) => r.messageId)).toEqual(['s1']);
     });
   });
 });

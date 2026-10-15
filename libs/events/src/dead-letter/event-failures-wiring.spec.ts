@@ -74,7 +74,7 @@ describe('EventFailuresModule 배선 (#1016 8번)', () => {
           serviceName: 'wiring-spec',
           kafka: { clientId: 'w', brokers: ['unused:9092'] },
         }),
-        EventFailuresModule,
+        EventFailuresModule.forRoot({ sequencedTopics: [TOPIC] }),
       ],
       controllers: [FailingConsumer],
     })

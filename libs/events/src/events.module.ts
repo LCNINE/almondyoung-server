@@ -46,6 +46,7 @@ import { buildConsumerInterceptors, EVENTS_CONSUMER_POLICY, optionalGet } from '
 import { DeadLetterRuntime } from './dead-letter/dead-letter.runtime';
 import { DeadLetterStore } from './dead-letter/dead-letter.store';
 import { checkDeadLetterTables, DEAD_LETTER_MIGRATION_NAME } from './dead-letter/dead-letter-tables';
+import { EVENT_FAILURES_OPTIONS, type EventFailuresOptions } from './dead-letter/event-failures.options';
 import {
   buildKafkaConsumerServerOptions,
   KAFKA_CONSUMER_GROUP_POSTFIX,
@@ -463,6 +464,7 @@ export class EventsModule {
     return {
       recorder: app.get(DeadLetterStore, { strict: false }),
       consumerGroup,
+      sequencedTopics: app.get<EventFailuresOptions>(EVENT_FAILURES_OPTIONS, { strict: false }).sequencedTopics,
     };
   }
 

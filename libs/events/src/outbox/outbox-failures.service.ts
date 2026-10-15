@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, asc, eq, gt, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, sql, type SQL } from 'drizzle-orm';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared/filters/domain-exceptions';
 import { outbox_events } from './outbox.schema';
 import { OutboxDispatcher } from './outbox-dispatcher.service';
@@ -15,7 +15,7 @@ export interface OutboxFailedItem {
   failedAt: Date | null;
   retryCount: number;
   errorMessage: string | null;
-  /** 같은 (topic, aggregate_id) 뒤에서 기다리는 PENDING 수 — `sequenceByAggregate` 가 막고 있는 것 */
+  /** 같은 (topic, aggregate_id) 뒤에서 기다리는 PENDING 수 — `sequencedTopics` 가 막고 있는 것. 목록 밖 토픽은 0 */
   waitingBehind: number;
 }
 export interface OutboxFailureDetail extends OutboxFailedItem {
@@ -166,6 +166,7 @@ export class OutboxFailuresService {
             and behind.aggregate_id = "event"."outbox_events"."aggregate_id"
             and behind.status = 'PENDING'
             and behind.id > "event"."outbox_events"."id"
+            and ${inArray(sql.raw('behind.topic'), [...this.dispatcher.sequencedTopics])}
         )`,
       })
       .from(outbox_events)

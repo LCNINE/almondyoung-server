@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { and, asc, eq, inArray, notExists, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -7,6 +7,7 @@ import { dead_letters } from './dead-letter.schema';
 import { DeadLetterRuntime } from './dead-letter.runtime';
 import { FailureActionLog } from './failure-action.log';
 import { tryLockSequence, type SequenceLockKey } from './sequence-lock';
+import { EVENT_FAILURES_OPTIONS, type EventFailuresOptions } from './event-failures.options';
 import { UNRESOLVED_DEAD_LETTER_STATUSES, type DeadLetterRow } from './dead-letter.types';
 
 export interface RedriveStop {
@@ -44,6 +45,7 @@ export class DeadLetterRedriver {
     private readonly dbService: DbService,
     private readonly runtime: DeadLetterRuntime,
     private readonly actions: FailureActionLog,
+    @Inject(EVENT_FAILURES_OPTIONS) private readonly options: EventFailuresOptions,
   ) {}
 
   private get db() {
@@ -87,7 +89,7 @@ export class DeadLetterRedriver {
     const key: SequenceLockKey = {
       consumerGroup: row.consumerGroup,
       topic: row.topic,
-      sequenceKey: row.sequenceKey,
+      sequenceKey: this.sequenceKeyOf(row),
       rowId: row.id,
     };
 
@@ -163,14 +165,23 @@ export class DeadLetterRedriver {
     return { id: row.id, errorName: after.errorName, errorMessage: after.errorMessage };
   }
 
+  /**
+   * 순서를 묶는 키. 키가 없거나 순서를 지키지 않는 토픽(`sequencedTopics` 밖)의 행은 null — 그 행 혼자 한 순서다.
+   * 실시간 소비가 그 토픽에서 보류하지 않으므로 다시 넣기도 뒤 행을 끌고 가지 않는다.
+   */
+  private sequenceKeyOf(row: DeadLetterRow): string | null {
+    return row.sequenceKey !== null && this.options.sequencedTopics.includes(row.topic) ? row.sequenceKey : null;
+  }
+
   private async nextInSequence(row: DeadLetterRow): Promise<DeadLetterRow | undefined> {
+    const sequenceKey = this.sequenceKeyOf(row);
     const sequence =
-      row.sequenceKey === null
+      sequenceKey === null
         ? eq(dead_letters.id, row.id)
         : and(
             eq(dead_letters.consumerGroup, row.consumerGroup),
             eq(dead_letters.topic, row.topic),
-            eq(dead_letters.sequenceKey, row.sequenceKey),
+            eq(dead_letters.sequenceKey, sequenceKey),
           );
     const [next] = await this.db
       .select()
@@ -181,7 +192,7 @@ export class DeadLetterRedriver {
     return next;
   }
 
-  /** 순서마다 가장 이른 안 푼 행 */
+  /** 순서마다 가장 이른 안 푼 행. 순서를 지키지 않는 토픽의 행은 전부 각자 머리다(`earlier` 가 그 토픽을 보지 않는다) */
   private async heads(): Promise<DeadLetterRow[]> {
     const earlier = alias(dead_letters, 'earlier');
     return this.db
@@ -199,6 +210,7 @@ export class DeadLetterRedriver {
                   eq(earlier.consumerGroup, dead_letters.consumerGroup),
                   eq(earlier.topic, dead_letters.topic),
                   eq(earlier.sequenceKey, dead_letters.sequenceKey),
+                  inArray(earlier.topic, [...this.options.sequencedTopics]),
                   inArray(earlier.status, UNRESOLVED),
                   sql`${earlier.id} < ${dead_letters.id}`,
                 ),

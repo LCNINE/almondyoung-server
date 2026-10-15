@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { and, asc, eq, gt, inArray, notExists, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -7,6 +7,7 @@ import { dead_letters } from './dead-letter.schema';
 import { outbox_events } from '../outbox/outbox.schema';
 import { FailureActionLog, type FailureActionRow } from './failure-action.log';
 import { UNRESOLVED_DEAD_LETTER_STATUSES, type DeadLetterRow } from './dead-letter.types';
+import { EVENT_FAILURES_OPTIONS, type EventFailuresOptions } from './event-failures.options';
 
 export interface EventFailuresSummary {
   deadLetters: { failed: number; held: number; oldestFailedAt: string | null };
@@ -41,6 +42,7 @@ export class DeadLetterQueryService {
   constructor(
     private readonly dbService: DbService,
     private readonly actions: FailureActionLog,
+    @Inject(EVENT_FAILURES_OPTIONS) private readonly options: EventFailuresOptions,
   ) {}
 
   private get db() {
@@ -75,6 +77,7 @@ export class DeadLetterQueryService {
     const limit = Math.min(Math.max(parseInt(limitRaw ?? '', 10) || DEFAULT_LIMIT, 1), MAX_LIMIT);
     const cursor = Math.max(parseInt(cursorRaw ?? '', 10) || 0, 0);
     const earlier = alias(dead_letters, 'earlier');
+    const sequencedTopics = [...this.options.sequencedTopics];
     const rows = await this.db
       .select({
         id: dead_letters.id,
@@ -96,6 +99,7 @@ export class DeadLetterQueryService {
             and "later"."sequence_key" = "event"."dead_letters"."sequence_key"
             and "later"."status" in ('failed', 'held')
             and "later"."id" > "event"."dead_letters"."id"
+            and ${inArray(sql.raw('"later"."topic"'), sequencedTopics)}
         )`,
       })
       .from(dead_letters)
@@ -112,6 +116,7 @@ export class DeadLetterQueryService {
                   eq(earlier.consumerGroup, dead_letters.consumerGroup),
                   eq(earlier.topic, dead_letters.topic),
                   eq(earlier.sequenceKey, dead_letters.sequenceKey),
+                  inArray(earlier.topic, sequencedTopics),
                   inArray(earlier.status, UNRESOLVED),
                   sql`${earlier.id} < ${dead_letters.id}`,
                 ),
@@ -128,8 +133,9 @@ export class DeadLetterQueryService {
   async detail(id: number): Promise<DeadLetterDetail> {
     const [row] = await this.db.select().from(dead_letters).where(eq(dead_letters.id, id));
     if (!row) throw new NotFoundError(`dead letter 가 없다: ${id}`);
+    // 순서를 지키지 않는 토픽의 행은 혼자 한 순서다(redriver 의 `sequenceKeyOf` 와 같은 규칙)
     const sequence =
-      row.sequenceKey === null
+      row.sequenceKey === null || !this.options.sequencedTopics.includes(row.topic)
         ? [row]
         : await this.db
             .select()

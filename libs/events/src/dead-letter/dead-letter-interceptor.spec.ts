@@ -86,7 +86,7 @@ describe('EventRetryInterceptor — dead letter 모드 (#1016 8번)', () => {
   let recorder: MemoryRecorder;
   let publisher: StreamPublisher<typeof CART_STREAM.events>;
 
-  beforeEach(async () => {
+  async function boot(sequencedTopics: string[]): Promise<void> {
     process.env.KAFKA_BOOTSTRAP_TOPICS = 'false';
     calls.length = 0;
     failCreated = false;
@@ -105,7 +105,7 @@ describe('EventRetryInterceptor — dead letter 모드 (#1016 8번)', () => {
       { deferInitialization: true },
     ) as NestMicroservice;
     microservice.useGlobalInterceptors(
-      ...buildConsumerInterceptors(app, [CART_STREAM], { recorder, consumerGroup: 'spec-group' }),
+      ...buildConsumerInterceptors(app, [CART_STREAM], { recorder, consumerGroup: 'spec-group', sequencedTopics }),
     );
     microservice.registerListeners();
     microservice.setIsInitialized(true);
@@ -113,6 +113,10 @@ describe('EventRetryInterceptor — dead letter 모드 (#1016 8번)', () => {
     await app.startAllMicroservices();
     await app.init();
     publisher = app.get(EventsModule.getPublisherToken(TOPIC));
+  }
+
+  beforeEach(async () => {
+    await boot([TOPIC]);
   });
 
   afterEach(async () => {
@@ -138,6 +142,21 @@ describe('EventRetryInterceptor — dead letter 모드 (#1016 8번)', () => {
 
     expect(calls).toEqual([]);
     expect(recorder.rows.map((r) => [r.handler, r.status])).toContainEqual(['CartConsumer.onUpdated', 'held']);
+  });
+
+  it('순서를 지키지 않는 토픽(sequencedTopics 밖)은 실패를 기록하되 뒤 메시지를 보류하지 않는다', async () => {
+    await app.close();
+    await boot([]);
+    failCreated = true;
+    await publisher.publishEvent({ eventType: 'CartCreated', aggregateId: 'cart-1', payload: cart('cart-1') });
+    calls.length = 0;
+    await publisher.publishEvent({ eventType: 'CartUpdated', aggregateId: 'cart-1', payload: cartUpdated('cart-1') });
+
+    expect(calls).toEqual(['updated:cart-1']);
+    expect(recorder.rows.map((r) => [r.handler, r.status, r.sequenceKey])).toEqual([
+      ['CartConsumer.onCreated', 'failed', 'cart-1'], // 순서 키는 표시용으로 남는다
+    ]);
+    expect(broker.messagesOn(getDLQTopicName(TOPIC))).toHaveLength(0);
   });
 
   it('이벤트 종류가 다른 핸들러는 보류 검사를 하지 않는다 — 가짜 held 가 생기지 않는다', async () => {

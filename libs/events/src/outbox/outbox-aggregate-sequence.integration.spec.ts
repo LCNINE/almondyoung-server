@@ -13,6 +13,7 @@ import { event, stream } from '@packages/event-contracts/types';
 import type { MessageEnvelope } from '@packages/event-contracts/types';
 import { StreamPublisher } from '../publishers/stream-publisher.service';
 import { OutboxDispatcher } from './outbox-dispatcher.service';
+import { inArray } from 'drizzle-orm';
 import { outbox_events } from './outbox.schema';
 
 const HARNESS_STREAM = stream({
@@ -21,11 +22,28 @@ const HARNESS_STREAM = stream({
   aggregateType: 'SequenceHarness',
   events: { Moved: event('Moved', z.object({ step: z.number().int() })) },
 });
+/** 순서를 지키지 않는 토픽 — «마지막 값이 이긴다» 스트림 자리. `sequencedTopics` 에 넣지 않는다 */
+const LATEST_WINS_STREAM = stream({
+  topic: 'outbox-aggregate-sequence.latest-wins.v1',
+  partitions: 1,
+  aggregateType: 'SequenceHarness',
+  events: { Moved: event('Moved', z.object({ step: z.number().int() })) },
+});
+const HARNESS_TOPICS = [HARNESS_STREAM.topic.topic, LATEST_WINS_STREAM.topic.topic];
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 
-type SeedRow = { marker: string; aggregateId: string; createdAt: Date; status?: 'PENDING' | 'FAILED' | 'DISCARDED' };
+type SeedRow = {
+  marker: string;
+  aggregateId: string;
+  createdAt: Date;
+  status?: 'PENDING' | 'PROCESSING' | 'FAILED' | 'DISCARDED';
+  topic?: string;
+};
+
+/** 롤백용 — 트랜잭션을 되돌리려고 일부러 던진다 */
+class RollbackSentinel extends Error {}
 type Db = PostgresJsDatabase<Record<string, never>>;
 
 describeIfDb('outbox 같은 주문 순서 지키기 (PostgreSQL 통합)', () => {
@@ -42,7 +60,7 @@ describeIfDb('outbox 같은 주문 순서 지키기 (PostgreSQL 통합)', () => 
   });
 
   async function inRollbackTx(run: (tx: Db) => Promise<void>) {
-    const sentinel = Symbol('rollback');
+    const sentinel = new RollbackSentinel();
     try {
       await db.transaction(async (tx) => {
         await run(tx as never);
@@ -67,11 +85,13 @@ describeIfDb('outbox 같은 주문 순서 지키기 (PostgreSQL 통합)', () => 
     };
   }
 
-  async function dispatchOnce(tx: Db, rows: SeedRow[], sequenceByAggregate: boolean): Promise<string[]> {
-    await tx.delete(outbox_events);
+  /** `sequenced` 가 true 면 HARNESS 토픽만 `sequencedTopics` 에 넣는다(LATEST_WINS 는 늘 밖) */
+  async function dispatchOnce(tx: Db, rows: SeedRow[], sequenced: boolean): Promise<string[]> {
+    // 하네스 토픽만 지운다 — 롤백 트랜잭션 안이라도 WHERE 없는 DELETE 는 쓰지 않는다(CLAUDE.md)
+    await tx.delete(outbox_events).where(inArray(outbox_events.topic, HARNESS_TOPICS));
     for (const row of rows) {
       await tx.insert(outbox_events).values({
-        topic: HARNESS_STREAM.topic.topic,
+        topic: row.topic ?? HARNESS_STREAM.topic.topic,
         aggregateType: HARNESS_STREAM.aggregateType,
         aggregateId: row.aggregateId,
         eventType: 'Moved',
@@ -80,22 +100,26 @@ describeIfDb('outbox 같은 주문 순서 지키기 (PostgreSQL 통합)', () => 
         payload: envelope(row.marker, row.aggregateId),
         status: row.status ?? 'PENDING',
         retryCount: row.status === 'FAILED' ? 8 : 0,
+        // 살아 있는 lease — 타임아웃 회수 대상이 아니다
+        processingStartedAt: row.status === 'PROCESSING' ? new Date() : null,
         createdAt: row.createdAt,
       });
     }
     const published: string[] = [];
-    const publisher = new StreamPublisher(
-      {
-        send: (_topic, message) => {
-          published.push((JSON.parse(message.value) as MessageEnvelope).messageId.replace('msg-', ''));
-          return Promise.resolve();
-        },
+    const transport = {
+      send: (_topic: string, message: { value: string }) => {
+        published.push((JSON.parse(message.value) as MessageEnvelope).messageId.replace('msg-', ''));
+        return Promise.resolve();
       },
-      HARNESS_STREAM,
-      'outbox-aggregate-sequence-spec',
+    };
+    const publishers = new Map(
+      [HARNESS_STREAM, LATEST_WINS_STREAM].map((s) => [
+        s.topic.topic,
+        new StreamPublisher(transport, s, 'outbox-aggregate-sequence-spec'),
+      ]),
     );
-    const dispatcher = new OutboxDispatcher({ db: tx } as never, new Map([[HARNESS_STREAM.topic.topic, publisher]]), {
-      sequenceByAggregate,
+    const dispatcher = new OutboxDispatcher({ db: tx } as never, publishers, {
+      sequencedTopics: sequenced ? [HARNESS_STREAM.topic.topic] : [],
       maxRetries: 8,
     });
     await dispatcher.dispatchPendingEvents();
@@ -172,6 +196,40 @@ describeIfDb('outbox 같은 주문 순서 지키기 (PostgreSQL 통합)', () => 
         true,
       );
       expect(published).toEqual(['T1']);
+    });
+  });
+
+  it('앞 PROCESSING(살아 있는 lease)도 같은 주문의 뒤 행을 막는다', async () => {
+    await inRollbackTx(async (tx) => {
+      const published = await dispatchOnce(
+        tx,
+        [
+          { marker: 'P1', aggregateId: 'order-P', createdAt: at('01'), status: 'PROCESSING' },
+          { marker: 'P2', aggregateId: 'order-P', createdAt: at('02') },
+          { marker: 'Q1', aggregateId: 'order-Q', createdAt: at('03') },
+        ],
+        true,
+      );
+      expect(published).toEqual(['Q1']);
+    });
+  });
+
+  it('순서를 지키지 않는 토픽은 같은 키의 앞 FAILED 에 막히지 않는다 — 켠 토픽만 막힌다', async () => {
+    await inRollbackTx(async (tx) => {
+      const latest = LATEST_WINS_STREAM.topic.topic;
+      const published = await dispatchOnce(
+        tx,
+        [
+          { marker: 'V1', aggregateId: 'variant-1', createdAt: at('01'), status: 'FAILED', topic: latest },
+          { marker: 'V2', aggregateId: 'variant-1', createdAt: at('02'), topic: latest },
+          { marker: 'V3', aggregateId: 'variant-1', createdAt: at('03'), topic: latest },
+          { marker: 'A1', aggregateId: 'order-A', createdAt: at('04'), status: 'FAILED' },
+          { marker: 'A2', aggregateId: 'order-A', createdAt: at('05') },
+        ],
+        true,
+      );
+      // 같은 품목의 두 행이 한 주기에 다 나간다 — 품목당 한 행으로 줄지 않는다
+      expect(published).toEqual(['V2', 'V3']);
     });
   });
 });

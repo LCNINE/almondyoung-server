@@ -25,7 +25,10 @@ export interface DeadLetterMessage {
   /** `클래스.메서드` — 같은 이벤트를 받는 핸들러가 둘 이상일 때 대상을 가른다 */
   handler: string;
   topic: string;
-  /** `envelope.source.aggregateId`. 없으면 null — 그 행은 혼자 한 순서다 */
+  /**
+   * `envelope.source.aggregateId`. 없으면 null — 그 행은 혼자 한 순서다. 순서를 지키지 않는 토픽(`sequencedTopics` 밖)의
+   * 행도 혼자 한 순서다 — 이 칸은 표시용으로만 남는다
+   */
   sequenceKey: string | null;
   messageId: string;
   eventType: string | null;

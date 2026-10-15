@@ -1,6 +1,6 @@
 /**
  * 실행: `npm run test:core:integration:local -- dead-letter.redriver`
- * 이 스위트는 커밋한다 — 토픽 `redriver-spec.v1` 행만 쓰고 지운다(WHERE 없는 DELETE 금지, CLAUDE.md).
+ * 이 스위트는 커밋한다 — 토픽 `redriver-spec.v1`·`redriver-spec-unsequenced.v1` 행만 쓰고 지운다(WHERE 없는 DELETE 금지, CLAUDE.md).
  */
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -17,6 +17,9 @@ import { tryLockSequence } from './sequence-lock';
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 const TOPIC = 'redriver-spec.v1';
+/** 순서를 지키지 않는 토픽 — `sequencedTopics` 에 넣지 않는다 */
+const UNSEQUENCED_TOPIC = 'redriver-spec-unsequenced.v1';
+const TOPICS = [TOPIC, UNSEQUENCED_TOPIC];
 const GROUP = 'redriver-spec-group';
 
 describeIfDb('DeadLetterRedriver (PostgreSQL 통합)', () => {
@@ -46,7 +49,7 @@ describeIfDb('DeadLetterRedriver (PostgreSQL 통합)', () => {
     const runtime = new DeadLetterRuntime();
     const server = {
       getHandlerByPattern: (topic: string) =>
-        topic === TOPIC
+        TOPICS.includes(topic)
           ? async (data: { messageId: string }, context: { getMessage(): { headers: Record<string, Buffer> } }) => {
               const id = Number(context.getMessage().headers[DEAD_LETTER_HEADERS.id].toString());
               dispatched.push(data.messageId);
@@ -56,19 +59,21 @@ describeIfDb('DeadLetterRedriver (PostgreSQL 통합)', () => {
           : null,
     } as unknown as Server;
     runtime.attach({ consumerGroup: GROUP, server });
-    redriver = new DeadLetterRedriver(dbService, runtime, new FailureActionLog(dbService));
+    redriver = new DeadLetterRedriver(dbService, runtime, new FailureActionLog(dbService), {
+      sequencedTopics: [TOPIC],
+    });
   });
 
   afterEach(async () => {
-    const ids = (await db.select({ id: dead_letters.id }).from(dead_letters).where(eq(dead_letters.topic, TOPIC))).map(
-      (r) => r.id,
-    );
+    const ids = (
+      await db.select({ id: dead_letters.id }).from(dead_letters).where(inArray(dead_letters.topic, TOPICS))
+    ).map((r) => r.id);
     if (ids.length > 0) {
       await db
         .delete(failure_actions)
         .where(and(eq(failure_actions.targetKind, 'dead_letter'), inArray(failure_actions.targetId, ids)));
     }
-    await db.delete(dead_letters).where(eq(dead_letters.topic, TOPIC));
+    await db.delete(dead_letters).where(inArray(dead_letters.topic, TOPICS));
   });
 
   const msg = (messageId: string, key = 'order-A'): DeadLetterMessage => ({
@@ -90,8 +95,8 @@ describeIfDb('DeadLetterRedriver (PostgreSQL 통합)', () => {
     return rows.map((r) => r.id);
   }
 
-  const statuses = async () =>
-    (await db.select().from(dead_letters).where(eq(dead_letters.topic, TOPIC)).orderBy(dead_letters.id)).map(
+  const statuses = async (topic = TOPIC) =>
+    (await db.select().from(dead_letters).where(eq(dead_letters.topic, topic)).orderBy(dead_letters.id)).map(
       (r) => `${r.messageId}:${r.status}`,
     );
 
@@ -162,5 +167,20 @@ describeIfDb('DeadLetterRedriver (PostgreSQL 통합)', () => {
     const result = await redriver.redriveAll('admin-1');
     expect(result).toMatchObject({ sequences: 2, succeeded: 1, stopped: 1, busy: 0 });
     expect(result.stoppedByError).toEqual({ Error: 1 });
+  });
+
+  it('순서를 지키지 않는 토픽의 행은 혼자 한 순서다 — 같은 키의 다른 실패를 끌고 가지 않는다', async () => {
+    // 실시간 소비가 이 토픽에서 보류하지 않으므로 같은 키라도 둘 다 failed 다
+    await store.recordFailure({ ...msg('u1'), topic: UNSEQUENCED_TOPIC }, new Error('x'));
+    await store.recordFailure({ ...msg('u2'), topic: UNSEQUENCED_TOPIC }, new Error('x'));
+    const [first] = await db
+      .select()
+      .from(dead_letters)
+      .where(eq(dead_letters.topic, UNSEQUENCED_TOPIC))
+      .orderBy(dead_letters.id);
+
+    expect(await redriver.redrive(first.id, 'admin-1')).toEqual({ processed: 1, stoppedAt: null });
+    expect(dispatched).toEqual(['u1']);
+    expect(await statuses(UNSEQUENCED_TOPIC)).toEqual(['u1:redriven', 'u2:failed']);
   });
 });

@@ -1,7 +1,7 @@
 /** 실행: `DATABASE_URL=… npx jest --runInBand --runTestsByPath libs/events/src/outbox/outbox-failures.integration.spec.ts` */
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { event, stream } from '@packages/event-contracts/types';
 import type { MessageEnvelope } from '@packages/event-contracts/types';
@@ -18,6 +18,8 @@ const HARNESS = stream({
   aggregateType: 'H',
   events: { Moved: event('Moved', z.object({ step: z.number().int() })) },
 });
+/** 순서를 지키지 않는 토픽 — 뒤 대기 수가 0 이어야 한다 */
+const UNSEQUENCED_TOPIC = 'outbox-failures.unsequenced.v1';
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 type Db = PostgresJsDatabase<Record<string, never>>;
@@ -46,7 +48,8 @@ describeIfDb('OutboxFailuresService (PostgreSQL 통합)', () => {
     const sentinel = new Error('rollback');
     try {
       await db.transaction(async (tx) => {
-        await tx.delete(outbox_events);
+        // 하네스 토픽만 지운다(WHERE 없는 DELETE 금지, CLAUDE.md). 다른 행이 남아 있을 수 있으니 단언은 자기 행만 본다
+        await tx.delete(outbox_events).where(inArray(outbox_events.topic, [HARNESS.topic.topic, UNSEQUENCED_TOPIC]));
         const sent: string[] = [];
         const fail = { on: false };
         const publisher = new StreamPublisher(
@@ -62,7 +65,7 @@ describeIfDb('OutboxFailuresService (PostgreSQL 통합)', () => {
         );
         const dbService = { db: tx } as never;
         const dispatcher = new OutboxDispatcher(dbService, new Map([[HARNESS.topic.topic, publisher]]), {
-          sequenceByAggregate: true,
+          sequencedTopics: [HARNESS.topic.topic],
           maxRetries: 8,
         });
         const service = new OutboxFailuresService(dbService, dispatcher, new FailureActionLog(dbService));
@@ -92,11 +95,12 @@ describeIfDb('OutboxFailuresService (PostgreSQL 통합)', () => {
     status: 'FAILED' | 'PENDING',
     second: number,
     aggregateId = 'order-A',
+    topic = HARNESS.topic.topic,
   ): Promise<number> {
     const [row] = await tx
       .insert(outbox_events)
       .values({
-        topic: HARNESS.topic.topic,
+        topic,
         aggregateType: 'H',
         aggregateId,
         eventType: 'Moved',
@@ -159,12 +163,16 @@ describeIfDb('OutboxFailuresService (PostgreSQL 통합)', () => {
       const b1 = await seed(tx, 'B1', 'FAILED', 4, 'order-B');
       await seed(tx, 'B2', 'PENDING', 5, 'order-B');
       await seed(tx, 'C1', 'PENDING', 6, 'order-C');
-      const page = await service.listFailed();
-      expect(page.items.map((i) => [i.id, i.waitingBehind])).toEqual([
+      // 순서를 지키지 않는 토픽은 같은 키 뒤에 PENDING 이 있어도 막고 있지 않다 — 0
+      const u1 = await seed(tx, 'U1', 'FAILED', 7, 'order-U', UNSEQUENCED_TOPIC);
+      await seed(tx, 'U2', 'PENDING', 8, 'order-U', UNSEQUENCED_TOPIC);
+      const mine = new Set([a1, b1, u1]);
+      const page = await service.listFailed('200');
+      expect(page.items.filter((i) => mine.has(i.id)).map((i) => [i.id, i.waitingBehind])).toEqual([
         [a1, 2],
         [b1, 1],
+        [u1, 0],
       ]);
-      expect(page.nextCursor).toBeNull();
     });
   });
 
@@ -200,10 +208,12 @@ describeIfDb('OutboxFailuresService (PostgreSQL 통합)', () => {
 
   it('전체 다시 보내기는 오래된 순서로 한 번씩, 결과를 요약한다', async () => {
     await inRollbackTx(async ({ tx, service, sent }) => {
-      await seed(tx, 'A1', 'FAILED', 1);
-      await seed(tx, 'A2', 'FAILED', 2);
+      const a1 = await seed(tx, 'A1', 'FAILED', 1);
+      const a2 = await seed(tx, 'A2', 'FAILED', 2);
       const result = await service.resendAll('admin-1');
-      expect(result).toMatchObject({ total: 2, published: 2, failed: [] });
+      // 같은 DB 의 다른 FAILED 행도 대상이 되므로(롤백된다) 자기 행만 본다
+      expect(result.failed.filter((f) => f.id === a1 || f.id === a2)).toEqual([]);
+      expect(result.published).toBeGreaterThanOrEqual(2);
       expect(sent).toEqual(['msg-A1', 'msg-A2']);
     });
   });

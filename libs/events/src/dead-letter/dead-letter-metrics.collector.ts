@@ -36,7 +36,9 @@ export class DeadLetterMetricsCollector {
     if (!this.runtime.isAttached) {
       if (!this.loggedDetached) {
         this.loggedDetached = true;
-        this.logger.warn('Dead letter metrics skipped — 실패 테이블 모드가 꺼져 있다(컨슈머 시작 전이거나 테이블 없음)');
+        this.logger.warn(
+          'Dead letter metrics skipped — 실패 테이블 모드가 꺼져 있다(컨슈머 시작 전이거나 테이블 없음)',
+        );
       }
       return;
     }

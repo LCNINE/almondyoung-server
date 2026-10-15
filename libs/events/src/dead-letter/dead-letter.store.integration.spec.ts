@@ -39,7 +39,11 @@ describeIfDb('DeadLetterStore (PostgreSQL 통합)', () => {
     }
   }
 
-  const message = (messageId: string, sequenceKey: string | null = 'order-A', handler = 'C.onCreated'): DeadLetterMessage => ({
+  const message = (
+    messageId: string,
+    sequenceKey: string | null = 'order-A',
+    handler = 'C.onCreated',
+  ): DeadLetterMessage => ({
     consumerGroup: 'spec-group',
     handler,
     topic: 'orders.events.v1',

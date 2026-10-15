@@ -63,6 +63,8 @@ export const DEAD_LETTER_INTERCEPTOR_OPTIONS = Symbol('DEAD_LETTER_INTERCEPTOR_O
 export interface DeadLetterInterceptorOptions {
   recorder: DeadLetterRecorder;
   consumerGroup: string;
+  /** 보류 검사를 하는 토픽(`EventFailuresOptions.sequencedTopics`). 그 밖의 토픽은 실패를 기록만 하고 보류하지 않는다 */
+  sequencedTopics: readonly string[];
 }
 
 /** 실패 행의 `handler` 칸 — 다시 넣기 헤더와 같은 값이어야 한다 */
@@ -169,8 +171,11 @@ export class EventRetryInterceptor implements NestInterceptor {
 
     const message = this.toDeadLetterMessage(kafkaContext, envelope, handlerId, this.deadLetters);
     const deadLetters = this.deadLetters;
+    // 순서를 지키는 토픽만 보류한다. 그 밖의 토픽(«마지막 값이 이긴다» 스트림 등)은 실패를 기록만 한다 — 한 번의 실패가
+    // 더 새 값을 붙잡지 않게(최종 리뷰 B, `EventFailuresOptions.sequencedTopics`).
+    const sequenced = deadLetters.sequencedTopics.includes(message.topic);
     return defer(async () => {
-      if (await this.holdIfBlocked(message, deadLetters.recorder)) return undefined; // 보관했다 → 정상 완료 → 커밋
+      if (sequenced && (await this.holdIfBlocked(message, deadLetters.recorder))) return undefined; // 보관했다 → 정상 완료 → 커밋
       return this.executeWithRetry(next, handler.name, kafkaContext, retryPolicy, disableDLQ, message);
     });
   }

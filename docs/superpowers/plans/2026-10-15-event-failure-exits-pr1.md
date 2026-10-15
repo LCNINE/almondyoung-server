@@ -45,6 +45,7 @@
 3. **이벤트 종류가 다른 핸들러** — 같은 토픽의 다른 이벤트 핸들러가 남의 순서에 `held` 행을 만들면 안 된다 → Task 6 의 «종류가 다른 핸들러» 테스트
 4. **머리 종결 vs 중간 종결** — 머리를 종결하면 뒤가 이어서 흐르고, 중간 `held` 를 종결하면 아무것도 흐르지 않아야 한다 → Task 8
 5. **켜는 순간 옛 `FAILED`** — `sequenceByAggregate` 를 켜면 옛 `FAILED` 가 같은 주문의 새 행을 막고, `DISCARDED` 로 바꾸면 풀려야 한다 → Task 2 + Task 14 배포 전 확인
+   - **최종 리뷰에서 바뀜(B):** `sequenceByAggregate: boolean` 은 `sequencedTopics: readonly string[]`(주문 생애 토픽 허용 목록)로 대체됐고, 컨슈머 보류도 `EventFailuresModule.forRoot({ sequencedTopics })` 토픽에만 건다. 이 계획 본문의 `sequenceByAggregate` 코드 조각은 그 이전 판이다 — 정본은 코드다.
 
 ---
 

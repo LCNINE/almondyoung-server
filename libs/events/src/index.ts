@@ -56,6 +56,8 @@ export { DeadLetterRedriver } from './dead-letter/dead-letter.redriver';
 export type { RedriveResult, RedriveAllResult, RedriveStop } from './dead-letter/dead-letter.redriver';
 export * from './dead-letter/dead-letter.query';
 export { EventFailuresModule } from './dead-letter/event-failures.module';
+export { EVENT_FAILURES_OPTIONS } from './dead-letter/event-failures.options';
+export type { EventFailuresOptions } from './dead-letter/event-failures.options';
 export * from './dead-letter/event-failures.http';
 
 // Retry & Auto DLQ
