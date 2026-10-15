@@ -22,6 +22,6 @@ describe('startConsumer 를 부르는 앱의 종료 훅', () => {
   });
 
   it.each(consumerMains())('%s 가 app.enableShutdownHooks() 를 부른다', (file) => {
-    expect(readFileSync(file, 'utf8')).toMatch(/app\.enableShutdownHooks\(\)/);
+    expect(readFileSync(file, 'utf8')).toMatch(/^\s*app\.enableShutdownHooks\(\);/m);
   });
 });
