@@ -39,7 +39,28 @@ export const getOwnerships = async ({
     method: "GET",
     withAuth: true,
     params,
+    cache: "no-store",
   })
+}
+
+/** 페이지·사용 여부 필터와 무관하게 본인의 활성 권한이 반영된 Medusa 주문을 일괄 확인한다. */
+export async function getGrantedLibraryOrderIds(
+  channelOrderIds: string[]
+): Promise<string[]> {
+  if (channelOrderIds.length === 0) return []
+
+  const response = await api<{ grantedOrderIds: string[] }>(
+    "library",
+    "/library/ownerships/order-status",
+    {
+      method: "POST",
+      body: { channelOrderIds },
+      withAuth: true,
+      cache: "no-store",
+    }
+  )
+
+  return response.grantedOrderIds
 }
 
 /**

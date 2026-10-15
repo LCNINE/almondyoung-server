@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
   HttpCode,
@@ -15,10 +16,8 @@ import { StoreRoute } from '@app/authorization';
 
 import { OwnershipFilter, OwnershipService } from '../services/ownership.service';
 import { FileServiceClient } from '../clients/file-service.client';
-import {
-  OwnershipListResponseDto,
-  OwnershipResponseDto,
-} from '../dto/ownership-response.dto';
+import { OwnershipOrderStatusDto, OwnershipOrderStatusResponseDto } from '../dto/ownership-order-status.dto';
+import { OwnershipListResponseDto, OwnershipResponseDto } from '../dto/ownership-response.dto';
 
 const ALLOWED_FILTERS: OwnershipFilter[] = ['all', 'new', 'used'];
 
@@ -65,16 +64,24 @@ export class OwnershipController {
     });
   }
 
+  @Post('order-status')
+  @HttpCode(200)
+  @ApiOperation({ summary: '본인의 Medusa 주문별 다운로드 권한 반영 상태를 일괄 조회' })
+  @ApiResponse({ status: 200, type: OwnershipOrderStatusResponseDto })
+  async orderStatus(@Req() req: any, @Body() body: OwnershipOrderStatusDto): Promise<OwnershipOrderStatusResponseDto> {
+    const customerId = this._requireUserId(req);
+    const grantedOrderIds = await this.service.grantedMedusaOrderIds(customerId, body.channelOrderIds);
+
+    return { grantedOrderIds };
+  }
+
   @Post(':id/exercise')
   @HttpCode(200)
   @ApiOperation({
     summary: '본인 ownership 사용 처리 (idempotent — 이미 exercise 된 경우 그대로 성공)',
   })
   @ApiResponse({ status: 200, type: OwnershipResponseDto })
-  async exercise(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Req() req: any,
-  ): Promise<OwnershipResponseDto> {
+  async exercise(@Param('id', ParseUUIDPipe) id: string, @Req() req: any): Promise<OwnershipResponseDto> {
     const customerId = this._requireUserId(req);
     return this.service.exercise(id, customerId);
   }
@@ -87,10 +94,7 @@ export class OwnershipController {
     status: 200,
     description: '{ url, filename } — 브라우저가 S3 signed URL 에서 직접 다운로드(강제 다운로드 disposition 포함)',
   })
-  async download(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Req() req: any,
-  ): Promise<{ url: string; filename: string }> {
+  async download(@Param('id', ParseUUIDPipe) id: string, @Req() req: any): Promise<{ url: string; filename: string }> {
     const customerId = this._requireUserId(req);
     const { fileId, assetName } = await this.service.getDownloadable(id, customerId);
 

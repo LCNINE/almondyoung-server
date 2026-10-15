@@ -45,6 +45,8 @@ export interface MedusaOrdersResponse {
 export async function getOrders(params?: {
   limit?: number
   offset?: number
+  /** 화면에서 필요한 필드만 요청할 때 사용. 생략하면 주문목록 기본 필드. */
+  fields?: string
   status?: OrderStatus | OrderStatus[]
   /** ISO 8601 datetime string — 이 날짜 이후 주문만 조회 */
   dateFrom?: string
@@ -55,6 +57,7 @@ export async function getOrders(params?: {
 }): Promise<HttpTypes.StoreOrderListResponse | null> {
   const filters: HttpTypes.StoreOrderFilters & Record<string, unknown> = {
     fields:
+      params?.fields ??
       "id,display_id,status,fulfillment_status,payment_status,created_at,updated_at,total,currency_code,metadata,*items,+items.requires_shipping,+items.product_type,*items.variant,*items.variant.product,*payment_collections,*payment_collections.payment_sessions,+payment_collections.payment_sessions.data",
     order: "-created_at",
   }
