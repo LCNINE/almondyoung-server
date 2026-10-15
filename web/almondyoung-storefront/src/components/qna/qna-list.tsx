@@ -19,34 +19,45 @@ import { useUser } from "@/contexts/user-context"
 import { siteConfig } from "@/lib/config/site"
 import { getPathWithoutCountry } from "@/lib/utils/get-path-without-country"
 import { useParams, useRouter } from "next/navigation"
-import { useCallback, useEffect, useState, useTransition } from "react"
+import { useCallback, useEffect, useRef, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { useTranslations } from "next-intl"
 import { QnaInquiryDialog } from "./qna-inquiry-dialog"
 import { QNA_ROW_COLS, QnaRow } from "./qna-row"
+import { QNA_ITEMS_PER_PAGE, visibleQuestions } from "./visible-questions"
 import { Separator } from "../ui/separator"
 
 type Props = {
   productId: string
   productName: string
   productThumbnail: string | null
+  /** 서버가 기본 필터로 받아 둔 첫 페이지. null 이면 서버 조회가 실패한 것이라 마운트 때 다시 받는다 */
+  initialQuestions: Question[] | null
+  initialTotal: number
 }
 
 type AnswerStatusSelectValue = "all" | QnaAnswerStatusFilter
 
-const ITEMS_PER_PAGE = 10
+const ITEMS_PER_PAGE = QNA_ITEMS_PER_PAGE
 
-export function QnaList({ productId, productName, productThumbnail }: Props) {
+export function QnaList({
+  productId,
+  productName,
+  productThumbnail,
+  initialQuestions,
+  initialTotal,
+}: Props) {
   const { user } = useUser()
   const router = useRouter()
   const { countryCode } = useParams()
   const t = useTranslations("productDetail.qna")
 
-  const [questions, setQuestions] = useState<Question[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [hasLoaded, setHasLoaded] = useState(false)
+  const [questions, setQuestions] = useState<Question[]>(initialQuestions ?? [])
+  const [isLoading, setIsLoading] = useState(initialQuestions === null)
+  const [hasLoaded, setHasLoaded] = useState(initialQuestions !== null)
   const [currentPage, setCurrentPage] = useState(1)
-  const [total, setTotal] = useState(0)
+  const [total, setTotal] = useState(initialTotal)
+  const skipInitialFetch = useRef(initialQuestions !== null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [isInquiryOpen, setIsInquiryOpen] = useState(false)
   const [editQuestion, setEditQuestion] = useState<Question | undefined>(
@@ -79,10 +90,7 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
           page,
           limit: ITEMS_PER_PAGE,
         })
-        const filtered = (result.data ?? []).filter(
-          (q) => q.status === "active" || q.status === "answered"
-        )
-        setQuestions(filtered)
+        setQuestions(visibleQuestions(result.data))
         setTotal(result.total ?? 0)
       } catch (error) {
         console.error(t("loadFail"), error)
@@ -96,8 +104,12 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
     [productId, statusFilter, excludeSecret, mineOnly, t]
   )
 
-  // 필터 변경 시 1페이지로 리셋 후 재조회
+  // 필터 변경 시 1페이지로 리셋 후 재조회. 첫 페이지는 서버가 이미 내려줬다
   useEffect(() => {
+    if (skipInitialFetch.current) {
+      skipInitialFetch.current = false
+      return
+    }
     setCurrentPage(1)
     setExpandedId(null)
     fetchQuestions(1)

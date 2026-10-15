@@ -1,7 +1,9 @@
-import { QnaList } from "@/components/qna/qna-list"
 import { FEATURES } from "@/lib/config/features"
 import { ErrorBoundary } from "@/components/shared/error-boundary"
-import { ProductReviewSkeleton } from "@/components/skeletons/product-detail-skeletons"
+import {
+  ProductQnaSkeleton,
+  ProductReviewSkeleton,
+} from "@/components/skeletons/product-detail-skeletons"
 import type { ProductDetail } from "@/lib/types/ui/pim"
 import { Customer } from "@/lib/types/ui/medusa"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
@@ -22,6 +24,7 @@ import { ProductSummary } from "../components/product-summary"
 import ProductActionsWrapper from "./product-actions-wrappers/product-actions-wrapper"
 import { ProductDetailInfoWrapper } from "./product-actions-wrappers/product-detail-info-wrapper"
 import { ReviewPreviewWrapper } from "./product-actions-wrappers/review-preview-wrapper"
+import { QnaSectionWrapper } from "./product-actions-wrappers/qna-section-wrapper"
 import { ReviewSectionWrapper } from "./product-actions-wrappers/review-section-wrapper"
 import { SectionTabsWrapper } from "./product-actions-wrappers/section-tabs-wrapper"
 
@@ -115,11 +118,13 @@ export async function ProductTemplate({
               {/* Q&A Tab Panel — QnA 기능을 닫은 동안 미노출 */}
               {FEATURES.qna && pimMasterId && (
                 <SectionTabPanel value="qna">
-                  <QnaList
-                    productId={pimMasterId}
-                    productName={product.title ?? ""}
-                    productThumbnail={product.thumbnail ?? null}
-                  />
+                  <Suspense fallback={<ProductQnaSkeleton />}>
+                    <QnaSectionWrapper
+                      productId={pimMasterId}
+                      productName={product.title ?? ""}
+                      productThumbnail={product.thumbnail ?? null}
+                    />
+                  </Suspense>
                 </SectionTabPanel>
               )}
             </SectionTabsWrapper>
