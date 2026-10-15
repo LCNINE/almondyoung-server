@@ -8,7 +8,7 @@ import {
   type UgcPrintLink,
 } from '../clients/ugc-almond-design.client';
 import { type PrintOrderRow } from '../schema/print-order.schema';
-import { WowpressApiError, WowpressClient } from '../wowpress/wowpress.client';
+import { WowpressApiError, WowpressClient, WowpressDuplicateOrdersError } from '../wowpress/wowpress.client';
 import {
   type WowpressLineSpec,
   type WowpressOrderInput,
@@ -568,6 +568,23 @@ describe('PrintOrderSubmitManager', () => {
     expect(wowpress.uploadFileUrl).toHaveBeenCalledWith('W-9', 'print.jpg', 'https://s3/print.jpg');
     expect(repo.get('po-1').status).toBe('submitted');
     expect(repo.get('po-1').fileDeliveredAt).toBeInstanceOf(Date);
+  });
+
+  it.each([
+    ['stale recovery', true],
+    ['submit lookup', false],
+  ] as const)('keeps both order numbers as protected evidence when %s finds duplicates', async (_, stale) => {
+    const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT, makeRow({ orderAttemptedAt: ATTEMPTED }));
+    wowpress.findByOrdkey.mockRejectedValueOnce(new WowpressDuplicateOrdersError(['W-1', 'W-2']));
+
+    if (stale) await manager.recoverStale(repo.get('po-1'));
+    else await manager.submit(repo.claim('po-1'));
+
+    expect(repo.get('po-1')).toMatchObject({
+      status: 'failed',
+      lastError: 'duplicate wowpress order suspected: W-1 / W-2',
+    });
+    expect(wowpress.order).not.toHaveBeenCalled();
   });
 
   it('finishes a row whose file was already delivered without uploading it again', async () => {

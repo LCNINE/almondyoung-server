@@ -27,6 +27,14 @@ export class WowpressApiError extends Error {
   }
 }
 
+// 같은 ordkey 로 주문이 둘 이상 잡혔다. «못 찾음»으로 다루면 재전송이 열려 세 번째 주문이 된다
+export class WowpressDuplicateOrdersError extends WowpressApiError {
+  constructor(readonly ordnums: string[]) {
+    super(`multiple ordnums for ordkey: ${ordnums.join(', ')}`);
+    this.name = 'WowpressDuplicateOrdersError';
+  }
+}
+
 export class WowpressUnauthorizedError extends WowpressApiError {
   constructor() {
     super('unauthorized');
@@ -260,7 +268,7 @@ export class WowpressClient {
     const [first, ...rest] = ordnums;
     if (first === undefined) return null;
     if (rest.length > 0) {
-      throw new WowpressApiError(`multiple ordnums for ordkey: ${[first, ...rest].map(([n]) => n).join(', ')}`);
+      throw new WowpressDuplicateOrdersError([first, ...rest].map(([n]) => n));
     }
 
     return { ordnum: first[0], dboxnum: first[1] };

@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
 import { UgcAlmondDesignClient, type UgcPrintLink } from '../clients/ugc-almond-design.client';
 import { type PrintOrderRow } from '../schema/print-order.schema';
-import { WowpressClient } from '../wowpress/wowpress.client';
+import { WowpressClient, WowpressDuplicateOrdersError } from '../wowpress/wowpress.client';
 import { WOWPRESS_PRODUCTS } from '../wowpress/wowpress-products';
 import { type WowpressLineSpec, type WowpressOrderResult } from '../wowpress/wowpress.types';
 import {
@@ -34,6 +34,10 @@ const shippingAddress = z.object({
 class LostOwnership extends Error {}
 // 이미 failed 와 lastError 로 기록을 끝냈다는 신호. 이후 실패 처리를 하지 않는다
 class AlreadyRecorded extends Error {}
+
+function duplicateOrdersError(error: WowpressDuplicateOrdersError): string {
+  return `${DUPLICATE_ORDER_ERROR_PREFIX}: ${error.ordnums.join(' / ')}`;
+}
 
 export function unsavedOrdnumError(ordnum: string): string {
   return `${UNSAVED_ORDNUM_ERROR_PREFIX}${ordnum} not saved — verify on WowPress`;
@@ -297,6 +301,10 @@ export class PrintOrderSubmitManager {
       return;
     }
     if (error instanceof AlreadyRecorded) return;
+    if (error instanceof WowpressDuplicateOrdersError) {
+      await this.recordTerminal(row, duplicateOrdersError(error));
+      return;
+    }
     if (state.orderSent && !state.ordnum) {
       // 이번 차례에 보낸 주문의 응답만 잃었을 수 있다. 바로 포기하지 않고 한 번 미뤄, 다음 차례의 ordkey 조회
       // (confirmSentOrder)가 주문을 찾으면 파일 전달부터 이어 가게 한다. 다음 차례 조회에서도 못 찾으면 운영자 확인으로 넘긴다
@@ -316,6 +324,7 @@ export class PrintOrderSubmitManager {
     try {
       if (!row.vendorOrderNumber && row.orderAttemptedAt) {
         const found = await this.wowpress.findByOrdkey(row.salesOrderLineId, row.createdAt).catch((error: unknown) => {
+          if (error instanceof WowpressDuplicateOrdersError) throw error;
           this.logger.warn(`print order ${row.id} ordkey lookup failed: ${errorMessage(error)}`);
           return null;
         });
@@ -331,6 +340,10 @@ export class PrintOrderSubmitManager {
         this.logger.warn(`print order ${row.id} is no longer stale; left as is`);
       }
     } catch (error) {
+      if (error instanceof WowpressDuplicateOrdersError) {
+        await this.recordTerminal(row, duplicateOrdersError(error));
+        return;
+      }
       // 주문권을 쓴 행은 예외가 나도 pending 으로 돌리지 않는다
       if (row.orderAttemptedAt) {
         await this.failSentStale(row, error, write);

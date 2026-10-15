@@ -519,7 +519,10 @@ describe('WowpressClient', () => {
         ],
       });
 
-      await expect(client.findByOrdkey('k1', new Date())).rejects.toThrow('multiple ordnums for ordkey: WP-A, WP-B');
+      await expect(client.findByOrdkey('k1', new Date())).rejects.toMatchObject({
+        name: 'WowpressDuplicateOrdersError',
+        ordnums: ['WP-A', 'WP-B'],
+      });
     });
 
     it('logs the ordnum of a 401 body for cjson_order and for ord_list before any retry', async () => {
