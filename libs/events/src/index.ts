@@ -45,6 +45,9 @@ export * from './consumers/consumer-lag.collector';
 export * from './dlq/dlq.types';
 export * from './dlq/dlq-handler.service';
 
+// 컨슈머 실패 기록 (#1016 8번) — 인터셉터가 쓰는 port 와 다시 넣기 헤더
+export * from './dead-letter/dead-letter.types';
+
 // Retry & Auto DLQ
 export * from './retry/retry-policy.types';
 export * from './retry/retry-policy.decorator';

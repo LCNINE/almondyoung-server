@@ -16,9 +16,12 @@
 import { CallHandler, ExecutionContext, Inject, Injectable, Logger, NestInterceptor, Optional } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { KafkaContext, KafkaHeaders } from '@nestjs/microservices';
-import { defer, lastValueFrom, Observable } from 'rxjs';
+import { defer, lastValueFrom, Observable, of } from 'rxjs';
 import { DLQHandler } from '../dlq/dlq-handler.service';
-import { SchemaValidationError } from '@packages/event-contracts/types';
+import { dlqMessagesTotal } from '../dlq/dlq.metrics';
+import { EVENT_TYPE_FILTER } from '../consumers/decorators';
+import { DEAD_LETTER_HEADERS, type DeadLetterMessage, type DeadLetterRecorder } from '../dead-letter/dead-letter.types';
+import { SchemaValidationError, type MessageEnvelope } from '@packages/event-contracts/types';
 import { parseEnvelope } from '../utils/envelope.util';
 import {
   RETRY_POLICY_METADATA,
@@ -55,6 +58,34 @@ export class DlqDeliveryError extends Error {
   }
 }
 
+/** 앱이 실패 테이블을 켰을 때 인터셉터가 받는 것 (#1016 8번). 이 토큰은 DI 로 제공되지 않는다 — `buildConsumerInterceptors` 가 직접 넣는다 */
+export const DEAD_LETTER_INTERCEPTOR_OPTIONS = Symbol('DEAD_LETTER_INTERCEPTOR_OPTIONS');
+export interface DeadLetterInterceptorOptions {
+  recorder: DeadLetterRecorder;
+  consumerGroup: string;
+}
+
+/** 실패 행의 `handler` 칸 — 다시 넣기 헤더와 같은 값이어야 한다 */
+export function handlerIdOf(cls: { name: string }, handler: { name: string }): string {
+  return `${cls.name}.${handler.name}`;
+}
+
+function headerString(headers: Record<string, unknown>, name: string): string | undefined {
+  const value = headers[name];
+  // kafkajs 는 Buffer, 인메모리 하네스는 string 으로 준다. 그 밖의 모양(반복 헤더 배열 등)은 다시 넣기가 만들지 않는다
+  if (typeof value === 'string') return value;
+  if (Buffer.isBuffer(value)) return value.toString('utf-8');
+  return undefined;
+}
+
+function tryParseEnvelope(value: unknown): MessageEnvelope | undefined {
+  try {
+    return parseEnvelope(value);
+  } catch {
+    return undefined;
+  }
+}
+
 @Injectable()
 export class EventRetryInterceptor implements NestInterceptor {
   private readonly logger = new Logger(EventRetryInterceptor.name);
@@ -64,6 +95,9 @@ export class EventRetryInterceptor implements NestInterceptor {
     @Optional()
     @Inject(DLQHandler)
     private readonly dlqHandler?: DLQHandler,
+    @Optional()
+    @Inject(DEAD_LETTER_INTERCEPTOR_OPTIONS)
+    private readonly deadLetters?: DeadLetterInterceptorOptions,
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
@@ -101,7 +135,105 @@ export class EventRetryInterceptor implements NestInterceptor {
     }
     retryPolicy.nonRetryableErrors = nonRetryable;
 
-    return defer(() => this.executeWithRetry(next, handler.name, kafkaContext, retryPolicy, disableDLQ));
+    if (!this.deadLetters) {
+      return defer(() => this.executeWithRetry(next, handler.name, kafkaContext, retryPolicy, disableDLQ));
+    }
+
+    // ── 실패 테이블 모드 (#1016 8번, 스펙 §6) ──
+    // `EventTypeGuard` 는 클래스 레벨이라 이 전역 인터셉터보다 **안쪽**에서 돈다. 즉 여기는 같은 토픽의 모든 핸들러에
+    // 대해 돈다. 이벤트 종류를 직접 비교하지 않으면 남의 이벤트를 이 핸들러 이름으로 보류하는 가짜 행이 생긴다(스펙 §6.1).
+    const envelope = tryParseEnvelope(kafkaContext.getMessage().value);
+    const expectedEventType = this.reflector.get<string | undefined>(EVENT_TYPE_FILTER, handler);
+    if (expectedEventType && envelope?.messageType !== expectedEventType) {
+      return next.handle(); // 안쪽 EventTypeGuard 가 조용히 거른다
+    }
+
+    const handlerId = handlerIdOf(context.getClass(), handler);
+    const redriveId = headerString(headers, DEAD_LETTER_HEADERS.id);
+    if (redriveId !== undefined) {
+      if (headerString(headers, DEAD_LETTER_HEADERS.handler) !== handlerId) {
+        return of(undefined); // 같은 이벤트를 받는 다른 핸들러 — 이미 성공했으니 건드리지 않는다
+      }
+      const recorder = this.deadLetters.recorder;
+      return defer(() => this.executeRedrive(next, Number(redriveId), handlerId, recorder));
+    }
+
+    const message = this.toDeadLetterMessage(kafkaContext, envelope, handlerId, this.deadLetters);
+    const deadLetters = this.deadLetters;
+    return defer(async () => {
+      if (await this.holdIfBlocked(message, deadLetters.recorder)) return undefined; // 보관했다 → 정상 완료 → 커밋
+      return this.executeWithRetry(next, handler.name, kafkaContext, retryPolicy, disableDLQ, message);
+    });
+  }
+
+  private toDeadLetterMessage(
+    kafkaContext: KafkaContext,
+    envelope: MessageEnvelope | undefined,
+    handlerId: string,
+    deadLetters: DeadLetterInterceptorOptions,
+  ): DeadLetterMessage {
+    const topic = kafkaContext.getTopic();
+    const partition = kafkaContext.getPartition();
+    const offset = String(kafkaContext.getMessage().offset);
+    return {
+      consumerGroup: deadLetters.consumerGroup,
+      handler: handlerId,
+      topic,
+      sequenceKey: envelope?.source?.aggregateId || null,
+      // 빈 messageId 는 유일 키를 무력화한다 — 위치로 대신한다
+      messageId: envelope?.messageId || `${topic}:${partition}:${offset}`,
+      eventType: envelope?.messageType ?? null,
+      envelope: envelope ?? { raw: String(kafkaContext.getMessage().value) },
+      kafkaPartition: partition,
+      kafkaOffset: offset,
+    };
+  }
+
+  /** DB 를 못 읽으면 커밋하지 않고 다시 받는다 — 보류 여부를 모르는 채 처리하면 순서가 깨질 수 있다 */
+  private async holdIfBlocked(message: DeadLetterMessage, recorder: DeadLetterRecorder): Promise<boolean> {
+    try {
+      return await recorder.holdIfBlocked(message);
+    } catch (error) {
+      throw new DlqDeliveryError(
+        `dead letter 보류 검사 실패: ${error instanceof Error ? error.message : String(error)}`,
+        error,
+      );
+    }
+  }
+
+  /** 다시 넣기 — 한 번만 시도한다(스펙 §7.3). 결과는 그 행에 적는다 */
+  private async executeRedrive(
+    next: CallHandler,
+    id: number,
+    handlerId: string,
+    recorder: DeadLetterRecorder,
+  ): Promise<unknown> {
+    // 핸들러 에러만 «다시 넣기 실패»다. 결과 기록이 터진 것을 같은 catch 로 받으면 성공한 다시 넣기를
+    // failed 로 적게 된다 — 그래서 기록은 try 밖에서 하고, 기록 실패는 커밋하지 않고 다시 받는다.
+    let result: unknown;
+    try {
+      result = await lastValueFrom(next.handle(), { defaultValue: undefined });
+    } catch (error) {
+      if (error instanceof DlqDeliveryError) throw error;
+      const failure = error instanceof Error ? error : new Error(String(error));
+      this.logger.warn({ msg: `Redrive failed: ${handlerId}`, deadLetterId: id, error: failure.message });
+      await this.recordOrRedeliver(() => recorder.recordRedriveFailure(id, failure));
+      return undefined;
+    }
+    await this.recordOrRedeliver(() => recorder.markRedriven(id));
+    return result;
+  }
+
+  /** 기록 실패는 `DlqDeliveryError` 로 — 중첩된 바깥 인스턴스가 핸들러 에러로 오분류해 재시도하지 않게 한다 */
+  private async recordOrRedeliver(write: () => Promise<void>): Promise<void> {
+    try {
+      await write();
+    } catch (recordError) {
+      throw new DlqDeliveryError(
+        `dead letter 기록 실패: ${recordError instanceof Error ? recordError.message : String(recordError)}`,
+        recordError,
+      );
+    }
   }
 
   private async executeWithRetry(
@@ -110,6 +242,7 @@ export class EventRetryInterceptor implements NestInterceptor {
     kafkaContext: KafkaContext,
     retryPolicy: NormalizedRetryPolicy,
     disableDLQ: boolean,
+    deadLetterMessage?: DeadLetterMessage,
   ): Promise<unknown> {
     let retryContext = createRetryContext();
 
@@ -139,7 +272,14 @@ export class EventRetryInterceptor implements NestInterceptor {
         }
 
         if (!isRetryableError(failure, retryPolicy) || retriesSoFar >= retryPolicy.maxRetries) {
-          await this.handleFinalFailure(kafkaContext, failure, handlerName, retryContext, disableDLQ);
+          await this.handleFinalFailure(
+            kafkaContext,
+            failure,
+            handlerName,
+            retryContext,
+            disableDLQ,
+            deadLetterMessage,
+          );
           return undefined; // 에러 삼킴 → 정상 완료 → offset commit
         }
 
@@ -166,6 +306,7 @@ export class EventRetryInterceptor implements NestInterceptor {
     handlerName: string,
     retryContext: RetryContext,
     disableDLQ: boolean,
+    deadLetterMessage?: DeadLetterMessage,
   ): Promise<void> {
     const topic = kafkaContext.getTopic();
     const offset = kafkaContext.getMessage().offset;
@@ -173,6 +314,32 @@ export class EventRetryInterceptor implements NestInterceptor {
 
     if (disableDLQ) {
       this.logger.warn({ msg: `DLQ disabled for handler: ${handlerName}. Discarding message.`, topic, offset });
+      return;
+    }
+    if (this.deadLetters && deadLetterMessage) {
+      try {
+        await this.deadLetters.recorder.recordFailure(deadLetterMessage, error);
+      } catch (recordError) {
+        this.logger.error({
+          msg: `❌ CRITICAL: Failed to record dead letter`,
+          originalError: error.message,
+          recordError: recordError instanceof Error ? recordError.message : String(recordError),
+          topic,
+          offset,
+        });
+        // 커밋하지 않고 다시 받는다(#1073 이후 참). DB 가 원인인 실패에서도 메시지를 잃지 않는다.
+        throw new DlqDeliveryError(
+          recordError instanceof Error ? recordError.message : String(recordError),
+          recordError,
+        );
+      }
+      dlqMessagesTotal.inc({ topic, consumer: handlerName, error: error.name });
+      this.logger.error({
+        msg: `❌ Handler failed after ${retries} retries — dead letter: ${handlerName}`,
+        error: error.message,
+        topic,
+        offset,
+      });
       return;
     }
     if (!this.dlqHandler) {

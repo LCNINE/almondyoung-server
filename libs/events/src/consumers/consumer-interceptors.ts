@@ -18,7 +18,7 @@ import { ClsInterceptor } from 'nestjs-cls';
 import type { SchemaValidationOptions, StreamConfig } from '@packages/event-contracts/types';
 import { DLQHandler } from '../dlq/dlq-handler.service';
 import { ChainContextInterceptor } from '../interceptors/chain-context.interceptor';
-import { EventRetryInterceptor } from '../interceptors/event-retry.interceptor';
+import { DeadLetterInterceptorOptions, EventRetryInterceptor } from '../interceptors/event-retry.interceptor';
 import { SchemaValidationInterceptor } from '../interceptors/schema-validation.interceptor';
 import { EventChainService } from '../tracking/event-chain.service';
 
@@ -38,7 +38,7 @@ export interface EventsConsumerPolicy {
  * Nest 11 의 `get()` 은 `optional` 옵션이 없고 못 찾으면 던진다. 던지는 조건이
  * "등록되지 않음" 하나뿐이므로 catch 로 흡수한다.
  */
-function optionalGet<T>(app: INestApplicationContext, token: Type<T> | string): T | undefined {
+export function optionalGet<T>(app: INestApplicationContext, token: Type<T> | string): T | undefined {
   try {
     return app.get<T>(token, { strict: false });
   } catch {
@@ -83,8 +83,13 @@ export function assertSinglePolicyDeclaration(app: INestApplicationContext): voi
  * 등록 순서와 같은 이유·같은 순서).
  *
  * @param streams `@On` 에서 **도출된** 스트림 목록 — 검증 스키마 맵이 된다
+ * @param deadLetters 앱이 실패 테이블을 켰을 때만 (#1016 8번). 없으면 지금처럼 `.dlq` 토픽으로 보낸다
  */
-export function buildConsumerInterceptors(app: INestApplicationContext, streams: StreamConfig[]): NestInterceptor[] {
+export function buildConsumerInterceptors(
+  app: INestApplicationContext,
+  streams: StreamConfig[],
+  deadLetters?: DeadLetterInterceptorOptions,
+): NestInterceptor[] {
   const reflector = app.get(Reflector, { strict: false });
   assertSinglePolicyDeclaration(app);
   const policy = optionalGet<EventsConsumerPolicy>(app, EVENTS_CONSUMER_POLICY);
@@ -107,7 +112,7 @@ export function buildConsumerInterceptors(app: INestApplicationContext, streams:
     // DLQ 로 나가는 메시지도 인바운드 사슬을 물고 나간다. 에러는 그대로 통과시키므로
     // (`error: (err) => subscriber.error(err)`) 아래 재시도·분류망의 순서 의미는 그대로다.
     new ClsInterceptor({ saveCtx: false, resolveProxyProviders: false }),
-    new EventRetryInterceptor(reflector, optionalGet(app, DLQHandler)),
+    new EventRetryInterceptor(reflector, optionalGet(app, DLQHandler), deadLetters),
     new SchemaValidationInterceptor(reflector, streams, policy?.validation),
   ];
 
