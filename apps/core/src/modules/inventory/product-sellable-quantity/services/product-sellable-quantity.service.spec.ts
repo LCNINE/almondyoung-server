@@ -15,6 +15,9 @@ describe('ProductSellableQuantityService.recalculateAndPublishForVariant', () =>
     stockBoundQuantity: number;
     isSellable: boolean;
     reason: string;
+    restockCalculatedAt?: Date | null;
+    inboundDate?: string | null;
+    inboundApproximate?: boolean;
   };
   // 회수 후 서비스가 받는 것은 스트림 publisher 다 (ADR-0029 §5-1, Task 6-C-2). 목의 타입을
   // 그대로 좁혀 두면 `aggregateType`·`topic` 처럼 이제 **파생되는** 필드를 단언하려 할 때
@@ -50,7 +53,7 @@ describe('ProductSellableQuantityService.recalculateAndPublishForVariant', () =>
       execute: jest.fn().mockResolvedValue(undefined),
       query: {
         productSellableQuantityProjections: {
-          findFirst: jest.fn().mockResolvedValue(previous),
+          findFirst: jest.fn().mockResolvedValue(previous ? { restockCalculatedAt: new Date(), ...previous } : null),
         },
       },
       insert: jest.fn(() => ({
@@ -252,6 +255,37 @@ describe('ProductSellableQuantityService.recalculateAndPublishForVariant', () =>
     expect(outbox.enqueue).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { inboundDate: '2026-10-18', inboundApproximate: false },
+    { inboundDate: '2026-10-17', inboundApproximate: true },
+    { inboundDate: null, inboundApproximate: false },
+  ])('재고 수량이 같아도 재입고 일정 변경을 발행한다: %p', async (restock) => {
+    const outbox = makeOutbox();
+    const { service, getByVariantId } = makeService(outbox);
+    getByVariantId.mockResolvedValue({ ...projection, stockBoundQuantity: 0, ...restock });
+    const { tx, inserted } = makeTx({
+      ...projection,
+      stockBoundQuantity: 0,
+      inboundDate: '2026-10-17',
+      inboundApproximate: false,
+    });
+
+    const result = await service.recalculateAndPublishForVariant(projection.variantId, tx);
+
+    expect(result.published).toBe(true);
+    expect(inserted[0]).toMatchObject(restock);
+    expect(outbox.enqueue.mock.calls[0][0].payload).toMatchObject(restock);
+  });
+
+  it('기존 스크립트의 stale 표시 제거를 위해 이전 projection을 최초 1회 재발행한다', async () => {
+    const outbox = makeOutbox();
+    const { service } = makeService(outbox);
+    const { tx } = makeTx({ ...projection, restockCalculatedAt: null });
+
+    expect((await service.recalculateAndPublishForVariant(projection.variantId, tx)).published).toBe(true);
+    expect(outbox.enqueue.mock.calls[0][0].payload).toMatchObject({ inboundDate: null, inboundApproximate: false });
+  });
+
   it('여러 variant 재계산은 advisory lock 순서를 안정화하기 위해 정렬하고 중복 제거한다', async () => {
     const outbox = makeOutbox();
     const { service, getByVariantId } = makeService(outbox);
@@ -270,5 +304,54 @@ describe('ProductSellableQuantityService.recalculateAndPublishForVariant', () =>
       'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
       'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
     ]);
+  });
+});
+
+describe('재입고 날짜 만료 작업 범위', () => {
+  function createRefreshService(rows: Array<{ variantId: string }>) {
+    const builder = {
+      from: jest.fn(() => builder),
+      innerJoin: jest.fn(() => builder),
+      where: jest.fn(() => builder),
+      orderBy: jest.fn(() => builder),
+      limit: jest.fn().mockResolvedValue(rows),
+    };
+    const dbService = { db: { select: jest.fn(() => builder) } };
+    const service = new ProductSellableQuantityService(dbService as never, {} as never);
+    const recalculate = jest
+      .spyOn(service, 'recalculateAndPublishForVariant')
+      .mockResolvedValue({ projection: null, published: false });
+
+    return { service, builder, recalculate };
+  }
+
+  it('날짜 만료/최초 반영 후보가 없으면 재계산하지 않는다', async () => {
+    const { service, recalculate } = createRefreshService([]);
+
+    await service.refreshRestockProjections();
+
+    expect(recalculate).not.toHaveBeenCalled();
+  });
+
+  it('한 번에 제한된 후보만 처리하고 전체 상품/발주 목록을 순회하지 않는다', async () => {
+    const { service, builder, recalculate } = createRefreshService([
+      { variantId: 'expired' },
+      { variantId: 'uninitialized' },
+    ]);
+
+    await service.refreshRestockProjections();
+
+    expect(builder.limit).toHaveBeenCalledTimes(1);
+    expect(builder.limit).toHaveBeenCalledWith(100);
+    expect(recalculate.mock.calls.map(([id]) => id)).toEqual(['expired', 'uninitialized']);
+  });
+
+  it('한 후보 처리 실패가 다음 후보 처리를 막지 않는다', async () => {
+    const { service, recalculate } = createRefreshService([{ variantId: 'failed' }, { variantId: 'next' }]);
+    recalculate.mockRejectedValueOnce(new Error('temporary failure'));
+
+    await service.refreshRestockProjections();
+
+    expect(recalculate).toHaveBeenCalledWith('next');
   });
 });

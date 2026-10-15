@@ -736,6 +736,76 @@ describe('MedusaClient product sellable inventory projection', () => {
     });
   });
 
+  it.each([
+    { input: { inboundDate: '2026-10-18', inboundApproximate: true }, changed: true },
+    { input: { inboundDate: null, inboundApproximate: false }, changed: true },
+    { input: {}, changed: false },
+  ])('재입고일 projection 갱신·제거·이전 이벤트 호환: %p', async ({ input, changed }) => {
+    const storedMetadata: Record<string, unknown> = {
+      pimVariantId: 'pim-var-1',
+      inboundDate: '2026-10-17',
+      inboundApproximate: false,
+      custom: 'preserved',
+    };
+    // 우리가 사용하는 batchVariants API는 metadata 객체를 교체한다.
+    const batchVariants = jest.fn(
+      async (_id: string, body: { update: Array<{ metadata: Record<string, unknown> }> }) => {
+        for (const key of Object.keys(storedMetadata)) delete storedMetadata[key];
+        Object.assign(storedMetadata, body.update[0].metadata);
+
+        return {};
+      },
+    );
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    (client as any).logger = logger;
+    (client as any).getProductWithVariantDetails = jest.fn().mockResolvedValue({
+      id: 'prod_1',
+      variants: [
+        {
+          id: 'variant_medusa_1',
+          manage_inventory: true,
+          allow_backorder: false,
+          metadata: storedMetadata,
+        },
+      ],
+    });
+    (client as any).ensureVariantInventoryLinks = jest
+      .fn()
+      .mockResolvedValue(new Map([['pim-var-1', { inventoryItemId: 'inventory_1' }]]));
+    (client as any).upsertProjectionInventoryLevel = jest.fn().mockResolvedValue(0);
+    (client as any).sdk = { admin: { product: { batchVariants } } };
+
+    const result = await client.applyProductSellableQuantityProjection({
+      medusaProductId: 'prod_1',
+      variantId: 'pim-var-1',
+      masterId: 'master_1',
+      sellableQuantity: 0,
+      stockBoundQuantity: 0,
+      isSellable: false,
+      reason: 'INSUFFICIENT_COMPONENT_STOCK',
+      calculatedAt: '2026-10-14T00:00:00Z',
+      ...input,
+    });
+
+    expect(result.soldOutChanged).toBe(changed);
+    if (changed) {
+      const metadata = batchVariants.mock.calls[0][1].update[0].metadata;
+      expect(metadata.custom).toBe('preserved');
+      if (input.inboundDate) {
+        expect(metadata).toMatchObject(input);
+        expect(storedMetadata).toMatchObject(input);
+      } else {
+        expect(storedMetadata).not.toHaveProperty('inboundDate');
+        expect(storedMetadata).not.toHaveProperty('inboundApproximate');
+      }
+    } else {
+      expect(batchVariants).not.toHaveBeenCalled();
+      expect(storedMetadata.inboundDate).toBe('2026-10-17');
+    }
+
+    expect(storedMetadata.custom).toBe('preserved');
+  });
+
   it('turns off managed inventory for missing matching projection events', async () => {
     const batchVariants = jest.fn().mockResolvedValue({});
     const upsertProjectionInventoryLevel = jest.fn().mockResolvedValue(undefined);
@@ -1110,7 +1180,7 @@ describe('MedusaClient.ensureCategoryFromSnapshot 부모 갱신', () => {
 
 describe('MedusaClient.ensureCategoryFromSnapshot 부모 필수 모드', () => {
   function makeClient() {
-    const update = jest.fn().mockResolvedValue({ product_category: { id: 'pcat_child' } })
+    const update = jest.fn().mockResolvedValue({ product_category: { id: 'pcat_child' } });
     const client = Object.create(MedusaClient.prototype) as MedusaClient;
     Object.defineProperties(client, {
       sdk: { value: { admin: { productCategory: { update } } } },
@@ -1139,9 +1209,7 @@ describe('MedusaClient.ensureCategoryFromSnapshot 부모 필수 모드', () => {
   it('부모를 못 찾으면 던져서 inbox 재시도에 맡긴다', async () => {
     const { client } = makeClient();
 
-    await expect(
-      client.ensureCategoryFromSnapshot(snapshot, { requireParent: true })
-    ).rejects.toThrow('재시도 대상');
+    await expect(client.ensureCategoryFromSnapshot(snapshot, { requireParent: true })).rejects.toThrow('재시도 대상');
   });
 
   it('requireParent 없이는 기존처럼 부모 필드를 건너뛰고 진행한다', async () => {
@@ -1198,12 +1266,12 @@ describe('MedusaClient.ensureCategoryFromSnapshot 멤버십 전용 플래그 보
 
     await client.ensureCategoryFromSnapshot(
       { ...productPathSnapshot, isVisibleToMembersOnly: false },
-      { refreshFields: true }
+      { refreshFields: true },
     );
 
     expect(update.mock.calls[0][1].metadata.isVisibleToMembersOnly).toBe(false);
   });
-})
+});
 
 describe('MedusaClient.ensureCategoryFromSnapshot 상품 경로는 필드를 건드리지 않는다', () => {
   function makeClient() {
@@ -1219,7 +1287,9 @@ describe('MedusaClient.ensureCategoryFromSnapshot 상품 경로는 필드를 건
     (client as any).findCategoryByPimRef = jest.fn().mockResolvedValue(null);
     (client as any).findCategoryByCandidateHandles = jest.fn().mockResolvedValue(stale);
     (client as any).findCategoryByPimId = jest.fn().mockResolvedValue(stale);
-    (client as any).getCategoryById = jest.fn().mockResolvedValue({ ...stale, metadata: { isVisibleToMembersOnly: true } });
+    (client as any).getCategoryById = jest
+      .fn()
+      .mockResolvedValue({ ...stale, metadata: { isVisibleToMembersOnly: true } });
     (client as any).setCategoryCache = jest.fn();
     return { client, update };
   }
@@ -1252,7 +1322,7 @@ describe('MedusaClient.ensureCategoryFromSnapshot 상품 경로는 필드를 건
     expect(update).toHaveBeenCalled();
     expect(update.mock.calls[0][1].metadata.isVisibleToMembersOnly).toBe(true);
   });
-})
+});
 
 /** rank·parent 는 형제 순서를 흔든다. 단건 갱신은 둘 다 건드리지 않아야 한다. */
 describe('MedusaClient 카테고리 순서', () => {
@@ -1472,7 +1542,12 @@ describe('MedusaClient 취소 (#1016 35번 PR-B · 36번 재설계 PR 3)', () =>
     jest.fn().mockResolvedValue({
       ok: status >= 200 && status < 300,
       status,
-      json: body === undefined ? async () => { throw new SyntaxError('Unexpected end of JSON input'); } : async () => body,
+      json:
+        body === undefined
+          ? async () => {
+              throw new SyntaxError('Unexpected end of JSON input');
+            }
+          : async () => body,
     }) as any;
 
   const originalFetch = global.fetch;
@@ -1499,7 +1574,11 @@ describe('MedusaClient 취소 (#1016 35번 PR-B · 36번 재설계 PR 3)', () =>
     });
 
     it('manual 도 그대로 싣는다', async () => {
-      global.fetch = respond(200, { orderId: 'order_1', status: 'canceled', refund: { mode: 'manual', amount: 30000 } });
+      global.fetch = respond(200, {
+        orderId: 'order_1',
+        status: 'canceled',
+        refund: { mode: 'manual', amount: 30000 },
+      });
       await makeClient().cancelOrder('order_1', { refundMode: 'manual' });
       expect(lastBody()).toEqual({ refundMode: 'manual' });
     });
@@ -1571,7 +1650,9 @@ describe('MedusaClient 취소 (#1016 35번 PR-B · 36번 재설계 PR 3)', () =>
     });
 
     it('연결 실패는 던지지 않고 일시 실패 network 다', async () => {
-      global.fetch = jest.fn().mockRejectedValue(new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } })) as any;
+      global.fetch = jest
+        .fn()
+        .mockRejectedValue(new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } })) as any;
       await expect(makeClient().cancelOrder('order_1', auto)).resolves.toEqual({
         kind: 'transient',
         failureCode: 'network',
@@ -1585,7 +1666,12 @@ describe('MedusaClient 취소 (#1016 35번 PR-B · 36번 재설계 PR 3)', () =>
 
     it('부분취소 라우트에 item_id·취소할 수량·refundMode 를 보낸다', async () => {
       global.fetch = respond(200, {
-        requestId: 'req-1', refundAmount: 27500, shippingDelta: -3000, shippingNotAdjusted: false, stage: 'refunded', refund: { mode: 'auto', amount: 27500 },
+        requestId: 'req-1',
+        refundAmount: 27500,
+        shippingDelta: -3000,
+        shippingNotAdjusted: false,
+        stage: 'refunded',
+        refund: { mode: 'auto', amount: 27500 },
       });
       await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({
         kind: 'cancelled',
@@ -1593,12 +1679,24 @@ describe('MedusaClient 취소 (#1016 35번 PR-B · 36번 재설계 PR 3)', () =>
         shippingDelta: -3000,
         shippingNotAdjusted: false,
       });
-      expect((global.fetch as jest.Mock).mock.calls[0][0]).toBe('http://medusa.local/admin/orders/order_1/partial-cancel');
-      expect(lastBody()).toEqual({ requestId: 'req-1', items: [{ item_id: 'ordli_1', quantity: 2 }], refundMode: 'auto' });
+      expect((global.fetch as jest.Mock).mock.calls[0][0]).toBe(
+        'http://medusa.local/admin/orders/order_1/partial-cancel',
+      );
+      expect(lastBody()).toEqual({
+        requestId: 'req-1',
+        items: [{ item_id: 'ordli_1', quantity: 2 }],
+        refundMode: 'auto',
+      });
     });
 
     it('이미 환불한 금액은 already_refunded 로 싣고, manual 도 그대로 싣는다', async () => {
-      global.fetch = respond(200, { requestId: 'req-1', refundAmount: 20000, shippingDelta: 0, shippingNotAdjusted: false, stage: 'refunded' });
+      global.fetch = respond(200, {
+        requestId: 'req-1',
+        refundAmount: 20000,
+        shippingDelta: 0,
+        shippingNotAdjusted: false,
+        stage: 'refunded',
+      });
       await makeClient().partialCancelOrder('order_1', { ...input, alreadyRefunded: 10000, refundMode: 'manual' });
       expect(lastBody()).toEqual({
         requestId: 'req-1',
@@ -1610,28 +1708,53 @@ describe('MedusaClient 취소 (#1016 35번 PR-B · 36번 재설계 PR 3)', () =>
 
     it('external_refund_* 사유의 거절은 사유·금액과 함께 따로 돌려준다', async () => {
       global.fetch = respond(400, {
-        type: 'not_allowed', code: 'partial_cancel_rejected', reason: 'external_refund_unresolved', unresolvedAmount: 10000, message: '외부 환불 10,000원',
+        type: 'not_allowed',
+        code: 'partial_cancel_rejected',
+        reason: 'external_refund_unresolved',
+        unresolvedAmount: 10000,
+        message: '외부 환불 10,000원',
       });
       await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({
-        kind: 'external_refund', reason: 'external_refund_unresolved', message: '외부 환불 10,000원', unresolvedAmount: 10000,
+        kind: 'external_refund',
+        reason: 'external_refund_unresolved',
+        message: '외부 환불 10,000원',
+        unresolvedAmount: 10000,
       });
     });
 
     it('미해결 금액이 소수로 오면 원 단위로 반올림한다 — 계약은 0 이상 정수다', async () => {
       global.fetch = respond(400, {
-        type: 'not_allowed', code: 'partial_cancel_rejected', reason: 'external_refund_unresolved', unresolvedAmount: 9999.6, message: '외부 환불',
+        type: 'not_allowed',
+        code: 'partial_cancel_rejected',
+        reason: 'external_refund_unresolved',
+        unresolvedAmount: 9999.6,
+        message: '외부 환불',
       });
-      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toMatchObject({ kind: 'external_refund', unresolvedAmount: 10000 });
+      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toMatchObject({
+        kind: 'external_refund',
+        unresolvedAmount: 10000,
+      });
     });
 
     it('code=partial_cancel_rejected 는 정해진 거절이다', async () => {
-      global.fetch = respond(400, { type: 'not_allowed', code: 'partial_cancel_rejected', message: '수량이 남은 수량보다 많습니다' });
-      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({ kind: 'rejected', message: '수량이 남은 수량보다 많습니다' });
+      global.fetch = respond(400, {
+        type: 'not_allowed',
+        code: 'partial_cancel_rejected',
+        message: '수량이 남은 수량보다 많습니다',
+      });
+      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({
+        kind: 'rejected',
+        message: '수량이 남은 수량보다 많습니다',
+      });
     });
 
     it('400 표지 + stage edited 는 «수정은 확정됐고 환불만 거절»', async () => {
       global.fetch = respond(400, {
-        type: 'not_allowed', code: 'wallet_refund_refused:ALREADY_CANCELED_PAYMENT', stage: 'edited', requestId: 'req-1', message: '이미 취소된 결제입니다',
+        type: 'not_allowed',
+        code: 'wallet_refund_refused:ALREADY_CANCELED_PAYMENT',
+        stage: 'edited',
+        requestId: 'req-1',
+        message: '이미 취소된 결제입니다',
       });
       await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({
         kind: 'refund_refused',
@@ -1644,22 +1767,41 @@ describe('MedusaClient 취소 (#1016 35번 PR-B · 36번 재설계 PR 3)', () =>
     it('표지는 있는데 stage 가 없으면 edited 가 아니다 — 수정됐다고 지어내지 않는다', async () => {
       global.fetch = respond(400, { type: 'not_allowed', code: 'wallet_refund_refused:X', message: '거절' });
       await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({
-        kind: 'refund_refused', failureCode: 'wallet_refund_refused:X', message: '거절', edited: false,
+        kind: 'refund_refused',
+        failureCode: 'wallet_refund_refused:X',
+        message: '거절',
+        edited: false,
       });
     });
 
     it('502 refund_pending 은 환불 미완 결과다', async () => {
-      global.fetch = respond(502, { type: 'refund_pending', stage: 'edited', requestId: 'req-1', message: '환불이 끝나지 않았습니다' });
-      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({ kind: 'refund_pending', message: '환불이 끝나지 않았습니다' });
+      global.fetch = respond(502, {
+        type: 'refund_pending',
+        stage: 'edited',
+        requestId: 'req-1',
+        message: '환불이 끝나지 않았습니다',
+      });
+      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({
+        kind: 'refund_pending',
+        message: '환불이 끝나지 않았습니다',
+      });
     });
 
     it.each([
-      [{ type: 'not_allowed', message: 'Order order_1 already has an existing active order change' }, 400, 'not_allowed'],
+      [
+        { type: 'not_allowed', message: 'Order order_1 already has an existing active order change' },
+        400,
+        'not_allowed',
+      ],
       [{ type: 'invalid_data', message: 'items 가 비어 있습니다' }, 400, 'invalid_data'],
       [{ type: 'not_found', message: 'Order id not found: order_1' }, 404, 'not_found'],
     ])('Medusa 자신의 거절(%o)은 취소 불가 — failureCode 는 code ?? type', async (body, status, failureCode) => {
       global.fetch = respond(status, body);
-      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({ kind: 'not_cancelable', failureCode, message: body.message });
+      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({
+        kind: 'not_cancelable',
+        failureCode,
+        message: body.message,
+      });
     });
 
     it.each([
@@ -1667,18 +1809,24 @@ describe('MedusaClient 취소 (#1016 35번 PR-B · 36번 재설계 PR 3)', () =>
       [502, undefined, 'http_502'],
       [500, { type: 'unknown_error', message: 'An unknown error occurred.' }, 'http_500'],
       [401, { message: 'Unauthorized' }, 'http_401'],
-    ])('%i(본문 %o)은 일시 실패 %s — 본문 없는 502 는 ALB, 404 는 라우트 없는 옛 Medusa', async (status, body, failureCode) => {
-      global.fetch = respond(status, body);
-      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({
-        kind: 'transient',
-        failureCode,
-        message: (body as { message?: string } | undefined)?.message ?? `status ${status}`,
-      });
-    });
+    ])(
+      '%i(본문 %o)은 일시 실패 %s — 본문 없는 502 는 ALB, 404 는 라우트 없는 옛 Medusa',
+      async (status, body, failureCode) => {
+        global.fetch = respond(status, body);
+        await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toEqual({
+          kind: 'transient',
+          failureCode,
+          message: (body as { message?: string } | undefined)?.message ?? `status ${status}`,
+        });
+      },
+    );
 
     it('연결 실패는 일시 실패 network 다', async () => {
       global.fetch = jest.fn().mockRejectedValue(new TypeError('fetch failed')) as any;
-      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toMatchObject({ kind: 'transient', failureCode: 'network' });
+      await expect(makeClient().partialCancelOrder('order_1', input)).resolves.toMatchObject({
+        kind: 'transient',
+        failureCode: 'network',
+      });
     });
   });
 });

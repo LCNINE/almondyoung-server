@@ -35,4 +35,22 @@ describe('UpdateVariantStockPolicyDto', () => {
       pipe.transform({ availabilityOverride: 'coming_soon', comingSoonDate: '곧' }, metadata),
     ).rejects.toThrow();
   });
+
+  it('재입고 날짜와 대략적인 일정 여부를 whitelist 이후에도 보존한다', async () => {
+    expect(await pipe.transform({ restockDate: '2026-10-17', restockApproximate: true }, metadata)).toEqual({
+      restockDate: '2026-10-17',
+      restockApproximate: true,
+    });
+    expect(await pipe.transform({ restockDate: null, restockApproximate: false }, metadata)).toEqual({
+      restockDate: null,
+      restockApproximate: false,
+    });
+  });
+
+  it.each(['2026-02-30', '2026-13-01', '2026-10-17T00:00:00Z', '곧'])(
+    '유효한 달력 날짜가 아니면 거절한다: %s',
+    async (restockDate) => {
+      await expect(pipe.transform({ restockDate }, metadata)).rejects.toThrow();
+    },
+  );
 });

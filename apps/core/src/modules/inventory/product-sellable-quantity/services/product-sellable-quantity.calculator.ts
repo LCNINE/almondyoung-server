@@ -51,6 +51,9 @@ export interface ProductSellableQuantityResult {
   alwaysSellableZeroStock: boolean;
   availabilityOverride: ProductAvailabilityOverride;
   comingSoonDate: string | null;
+  inboundDate?: string | null;
+  inboundApproximate?: boolean;
+  inboundSource?: 'manual' | 'purchase_order' | null;
   components: ProductSellableQuantityComponentResult[];
   calculatedAt: Date;
 }
@@ -100,7 +103,17 @@ export function calculateProductSellableQuantity(
   }
 
   if (input.availabilityOverride === 'manual_out_of_stock') {
-    return zero('MANUAL_OUT_OF_STOCK');
+    // 판매 차단과 실제 재고량을 분리한다. 입고 시 재입고 일정 해제는 실제 재고로 판단한다.
+    const components = componentResults(input.components);
+    const hasStockMatching = input.matching?.status === 'matched' && input.matching.strategy === 'variant';
+
+    return {
+      ...zero('MANUAL_OUT_OF_STOCK', components),
+      stockBoundQuantity:
+        hasStockMatching && components.length > 0
+          ? Math.min(...components.map((component) => component.componentSellableQuantity))
+          : 0,
+    };
   }
 
   // 출시예정 = "아직 물건이 없다"는 선언. 재고 없이 파는 모든 경로(선판매·항상판매·void)를
@@ -113,8 +126,7 @@ export function calculateProductSellableQuantity(
   // 로 나간다. 그래서 출시예정은 매칭 상태보다 **앞서** 끊어야 한다 — 뒤에 두면 매칭이 안 걸린
   // 신상품이 "곧 출시 예정" 이라고 표시되면서 구매까지 되고, reason 도 안 바뀌어 변경 감지에
   // 걸리지 않아 Medusa 로 전파조차 되지 않는다.
-  const stockCountableMatching =
-    input.matching?.status === 'matched' && input.matching.strategy === 'variant';
+  const stockCountableMatching = input.matching?.status === 'matched' && input.matching.strategy === 'variant';
   if (comingSoon && !stockCountableMatching) {
     return zero('COMING_SOON');
   }

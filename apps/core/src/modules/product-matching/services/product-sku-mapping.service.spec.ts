@@ -94,6 +94,7 @@ describe('ProductSkuMappingService', () => {
     let salesVariantPolicy: Record<string, any> | null = null;
 
     const tx = {
+      execute: jest.fn().mockResolvedValue([]),
       query: {
         productMatchings: {
           findFirst: jest.fn().mockResolvedValue(null),
@@ -191,6 +192,7 @@ describe('ProductSkuMappingService', () => {
     let salesVariantPolicy: Record<string, any> | null = null;
 
     const tx = {
+      execute: jest.fn().mockResolvedValue([]),
       query: {
         productMatchings: {
           findFirst: jest.fn().mockImplementation(async () => matching),
@@ -308,6 +310,7 @@ describe('ProductSkuMappingService', () => {
     let salesVariantPolicy: Record<string, any> | null = null;
 
     const tx = {
+      execute: jest.fn().mockResolvedValue([]),
       query: {
         productMatchings: {
           findFirst: jest.fn().mockImplementation(async () => matching),
@@ -415,6 +418,7 @@ describe('ProductSkuMappingService', () => {
     let salesVariantPolicy: Record<string, any> | null = null;
 
     const tx = {
+      execute: jest.fn().mockResolvedValue([]),
       query: {
         productMatchings: {
           findFirst: jest.fn().mockImplementation(async () => matching),
@@ -554,6 +558,7 @@ describe('ProductSkuMappingService', () => {
     let salesVariantPolicy: Record<string, any> | null = null;
 
     const tx = {
+      execute: jest.fn().mockResolvedValue([]),
       query: {
         productMatchings: {
           findFirst: jest.fn().mockImplementation(async () => matching),
@@ -657,6 +662,7 @@ describe('ProductSkuMappingService', () => {
     const matchingId = '44444444-4444-4444-4444-444444444444';
     const calculatedAt = new Date('2026-01-01T00:00:00.000Z');
     const tx = {
+      execute: jest.fn().mockResolvedValue([]),
       select: createSelectMock(
         new Map<unknown, unknown[]>([
           [productVariants, [{ id: variantA }, { id: variantB }]],
@@ -790,6 +796,7 @@ describe('ProductSkuMappingService', () => {
 
   it('returns 404 when saving stock policy for a nonexistent variant', async () => {
     const tx = {
+      execute: jest.fn().mockResolvedValue([]),
       select: createSelectMock(new Map<unknown, unknown[]>([[productVariants, []]])),
     };
     const service = createService(
@@ -829,6 +836,7 @@ describe('ProductSkuMappingService', () => {
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     };
     const tx = {
+      execute: jest.fn().mockResolvedValue([]),
       query: {
         productMatchings: {
           findFirst: jest.fn().mockResolvedValue(matching),
@@ -917,6 +925,7 @@ describe('ProductSkuMappingService', () => {
       availabilityOverride: 'manual_out_of_stock',
     };
     const tx = {
+      execute: jest.fn().mockResolvedValue([]),
       query: {
         productMatchings: {
           findFirst: jest.fn().mockResolvedValue(null),
@@ -978,6 +987,7 @@ describe('ProductSkuMappingService', () => {
       availabilityOverride: 'manual_out_of_stock',
     };
     const tx = {
+      execute: jest.fn().mockResolvedValue([]),
       query: {
         productMatchings: {
           findFirst: jest.fn().mockResolvedValue(null),

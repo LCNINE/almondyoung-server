@@ -117,6 +117,7 @@ async function main(): Promise<void> {
       idempotency,
       headerDeriver,
       poReader,
+      wired.sellable,
     );
     void inboundService;
 

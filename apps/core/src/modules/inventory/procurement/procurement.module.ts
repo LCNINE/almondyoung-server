@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ProductSellableQuantityModule } from '../product-sellable-quantity/product-sellable-quantity.module';
 import { CoreInventoryModule } from '../core/inventory.module';
 import { SharedModule } from '../shared/shared.module';
 import { InboundModule } from '../inbound/inbound.module';
@@ -24,7 +25,7 @@ import { PurchaseOrderExpectedArrivalReader } from './services/purchase-order-ex
  *   런타임 의존이 아니다 — grep 이 걸려도 위반이 아니다.)
  */
 @Module({
-  imports: [CoreInventoryModule, SharedModule, InboundModule],
+  imports: [CoreInventoryModule, SharedModule, InboundModule, ProductSellableQuantityModule],
   controllers: [PurchaseOrderController],
   providers: [
     PurchaseOrderService,
