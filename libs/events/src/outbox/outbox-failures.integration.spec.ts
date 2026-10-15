@@ -35,7 +35,13 @@ describeIfDb('OutboxFailuresService (PostgreSQL 통합)', () => {
   });
 
   async function inRollbackTx(
-    run: (ctx: { tx: Db; service: OutboxFailuresService; sent: string[]; fail: { on: boolean } }) => Promise<void>,
+    run: (ctx: {
+      tx: Db;
+      service: OutboxFailuresService;
+      dispatcher: OutboxDispatcher;
+      sent: string[];
+      fail: { on: boolean };
+    }) => Promise<void>,
   ) {
     const sentinel = new Error('rollback');
     try {
@@ -60,7 +66,7 @@ describeIfDb('OutboxFailuresService (PostgreSQL 통합)', () => {
           maxRetries: 8,
         });
         const service = new OutboxFailuresService(dbService, dispatcher, new FailureActionLog(dbService));
-        await run({ tx: tx as never, service, sent, fail });
+        await run({ tx: tx as never, service, dispatcher, sent, fail });
         throw sentinel;
       });
     } catch (error) {
@@ -80,13 +86,19 @@ describeIfDb('OutboxFailuresService (PostgreSQL 통합)', () => {
     payload: { step: 1 },
   });
 
-  async function seed(tx: Db, marker: string, status: 'FAILED' | 'PENDING', second: number): Promise<number> {
+  async function seed(
+    tx: Db,
+    marker: string,
+    status: 'FAILED' | 'PENDING',
+    second: number,
+    aggregateId = 'order-A',
+  ): Promise<number> {
     const [row] = await tx
       .insert(outbox_events)
       .values({
         topic: HARNESS.topic.topic,
         aggregateType: 'H',
-        aggregateId: 'order-A',
+        aggregateId,
         eventType: 'Moved',
         payload: envelope(marker),
         status,
@@ -141,11 +153,48 @@ describeIfDb('OutboxFailuresService (PostgreSQL 통합)', () => {
 
   it('목록은 FAILED 만, 같은 주문 뒤에서 기다리는 행 수와 함께', async () => {
     await inRollbackTx(async ({ tx, service }) => {
-      await seed(tx, 'A1', 'FAILED', 1);
+      const a1 = await seed(tx, 'A1', 'FAILED', 1);
       await seed(tx, 'A2', 'PENDING', 2);
+      await seed(tx, 'A3', 'PENDING', 3);
+      const b1 = await seed(tx, 'B1', 'FAILED', 4, 'order-B');
+      await seed(tx, 'B2', 'PENDING', 5, 'order-B');
+      await seed(tx, 'C1', 'PENDING', 6, 'order-C');
       const page = await service.listFailed();
-      expect(page.items.map((i) => [i.eventType, i.waitingBehind])).toEqual([['Moved', 1]]);
+      expect(page.items.map((i) => [i.id, i.waitingBehind])).toEqual([
+        [a1, 2],
+        [b1, 1],
+      ]);
       expect(page.nextCursor).toBeNull();
+    });
+  });
+
+  it('다시 보내기 중 죽은 lease(retry_count 가 한도) 는 FAILED 로 돌아온다 — PENDING 에 갇히지 않는다', async () => {
+    await inRollbackTx(async ({ tx, dispatcher, sent }) => {
+      const stale = new Date('2026-10-15T00:00:00.000Z');
+      const stuck = await seed(tx, 'A1', 'FAILED', 1);
+      await tx
+        .update(outbox_events)
+        .set({ status: 'PROCESSING', processingStartedAt: stale })
+        .where(eq(outbox_events.id, stuck));
+      await dispatcher.dispatchPendingEvents();
+      const [row] = await tx.select().from(outbox_events).where(eq(outbox_events.id, stuck));
+      expect([row.status, row.retryCount]).toEqual(['FAILED', 8]);
+      expect(row.failedAt).not.toBeNull();
+      expect(sent).toEqual([]);
+    });
+  });
+
+  it('통제: 보통의 만료된 PROCESSING 행(retry_count 0) 은 예전처럼 다시 돌아 발행된다', async () => {
+    await inRollbackTx(async ({ tx, dispatcher, sent }) => {
+      const id = await seed(tx, 'A1', 'PENDING', 1);
+      await tx
+        .update(outbox_events)
+        .set({ status: 'PROCESSING', processingStartedAt: new Date('2026-10-15T00:00:00.000Z') })
+        .where(eq(outbox_events.id, id));
+      await dispatcher.dispatchPendingEvents();
+      const [row] = await tx.select().from(outbox_events).where(eq(outbox_events.id, id));
+      expect(row.status).toBe('PUBLISHED');
+      expect(sent).toEqual(['msg-A1']);
     });
   });
 

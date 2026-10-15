@@ -276,6 +276,15 @@ export class OutboxDispatcher {
     const threshold = new Date(now.getTime() - this.config.processingTimeoutMs);
     const timeoutSeconds = Math.floor(this.config.processingTimeoutMs / 1000);
 
+    const stale = and(
+      eq(outbox_events.status, 'PROCESSING'),
+      or(isNull(outbox_events.processingStartedAt), lte(outbox_events.processingStartedAt, threshold)),
+    );
+
+    // 사람의 «다시 보내기»는 `FAILED → PROCESSING` 으로 lease 하되 `retry_count` 를 한도(maxRetries)에 둔 채로 둔다.
+    // 그 도중 프로세스가 죽으면 PENDING 으로 되돌리면 안 된다 — acquire 가 `retry_count < maxRetries` 만 고르므로
+    // 영영 선택되지 않고, FAILED 도 아니라 목록·다시 보내기·종결 어디에도 안 보이며, 같은 주문 뒤 행을 계속 막는다.
+    // 그래서 한도에 닿은 행은 FAILED 로 돌려보낸다. 다른 앱 경로는 한도에 닿은 행을 lease 하지 않으므로 동작이 그대로다.
     const result = await this.db
       .update(outbox_events)
       .set({
@@ -284,14 +293,23 @@ export class OutboxDispatcher {
         nextAttemptAt: now,
         errorMessage: `Requeued after ${timeoutSeconds}s processing timeout`,
       })
-      .where(
-        and(
-          eq(outbox_events.status, 'PROCESSING'),
-          or(isNull(outbox_events.processingStartedAt), lte(outbox_events.processingStartedAt, threshold)),
-        ),
-      )
+      .where(and(stale, lt(outbox_events.retryCount, this.config.maxRetries)))
       .returning({ id: outbox_events.id });
 
+    const backToFailed = await this.db
+      .update(outbox_events)
+      .set({
+        status: 'FAILED',
+        processingStartedAt: null,
+        failedAt: now,
+        errorMessage: `Requeued after ${timeoutSeconds}s processing timeout during manual resend`,
+      })
+      .where(stale)
+      .returning({ id: outbox_events.id });
+
+    if (backToFailed.length > 0) {
+      this.logger.warn(`Returned ${backToFailed.length} stale manual-resend outbox events to FAILED`);
+    }
     if (result.length > 0) {
       this.logger.warn(`Requeued ${result.length} stale outbox events`);
     }
