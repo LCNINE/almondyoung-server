@@ -13,9 +13,9 @@ import {
   useRedriveDeadLetter,
 } from '@/lib/services/events';
 import {
+  actionErrorText,
   discardResultText,
   dwellSince,
-  errorMessageOf,
   errorOneLine,
   isStopped,
   isUnresolved,
@@ -24,6 +24,7 @@ import {
   redriveAllResultText,
   redriveResultText,
   statusLabel,
+  stopDetail,
 } from '../display';
 import { ConfirmAllDialog } from './confirm-all-dialog';
 import { DiscardDialog, type DiscardTarget } from './discard-dialog';
@@ -50,38 +51,37 @@ export function DeadLetterSection({ service, now }: SectionProps) {
 
   const items = list.data?.pages.flatMap((p) => p.items) ?? [];
 
+  // 결과 토스트는 mutate() 콜백이 아니라 mutateAsync 의 promise 에 건다. mutate() 쪽 콜백은 다음 호출이나
+  // 언마운트(탭 이동)로 observer 가 떨어지면 불리지 않아, 멈춘 결과가 조용히 사라진다.
   const onRedrive = (id: number) =>
-    redrive.mutate(id, {
-      onSuccess: (r) => {
-        if (isStopped(r)) toast.error(redriveResultText(r));
+    redrive.mutateAsync(id).then(
+      (r) => {
+        if (isStopped(r)) toast.error(redriveResultText(r), { description: stopDetail(r) });
         else toast.success(redriveResultText(r));
       },
-      onError: (e) => toast.error(errorMessageOf(e)),
-    });
+      (e) => toast.error(actionErrorText(e))
+    );
 
   const onDiscard = (reason: string) => {
     if (!discardTarget) return;
-    discard.mutate(
-      { id: discardTarget.id, reason },
-      {
-        onSuccess: (r) => {
-          setDiscardTarget(null);
-          if (isStopped(r)) toast.error(discardResultText(r));
-          else toast.success(discardResultText(r));
-        },
-        onError: (e) => toast.error(errorMessageOf(e)),
-      }
+    discard.mutateAsync({ id: discardTarget.id, reason }).then(
+      (r) => {
+        setDiscardTarget(null);
+        if (isStopped(r)) toast.error(discardResultText(r), { description: stopDetail(r) });
+        else toast.success(discardResultText(r));
+      },
+      (e) => toast.error(actionErrorText(e))
     );
   };
 
   const onRedriveAll = () =>
-    redriveAll.mutate(undefined, {
-      onSuccess: (r) => {
+    redriveAll.mutateAsync().then(
+      (r) => {
         if (r.stopped > 0) toast.error(redriveAllResultText(r));
         else toast.success(redriveAllResultText(r));
       },
-      onError: (e) => toast.error(errorMessageOf(e)),
-    });
+      (e) => toast.error(actionErrorText(e))
+    );
 
   return (
     <section className="flex flex-col gap-2">
@@ -145,7 +145,7 @@ export function DeadLetterSection({ service, now }: SectionProps) {
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={redrive.isPending && redrive.variables === item.id}
+                      disabled={redrive.isPending}
                       onClick={() => onRedrive(item.id)}
                     >
                       다시 넣기

@@ -13,8 +13,8 @@ import {
   useResendOutbox,
 } from '@/lib/services/events';
 import {
+  actionErrorText,
   dwellSince,
-  errorMessageOf,
   errorOneLine,
   loadErrorText,
   resendAllConfirmText,
@@ -43,37 +43,35 @@ export function OutboxSection({ service, now }: SectionProps) {
 
   const items = list.data?.pages.flatMap((p) => p.items) ?? [];
 
+  // 결과 토스트는 mutateAsync 의 promise 에 건다 — mutate() 쪽 콜백은 다음 호출·언마운트로 유실된다
   const onResend = (id: number) =>
-    resend.mutate(id, {
-      onSuccess: (r) => {
+    resend.mutateAsync(id).then(
+      (r) => {
         if (r.status === 'PUBLISHED') toast.success(resendResultText(r));
         else toast.error(resendResultText(r));
       },
-      onError: (e) => toast.error(errorMessageOf(e)),
-    });
+      (e) => toast.error(actionErrorText(e))
+    );
 
   const onDiscard = (reason: string) => {
     if (!discardTarget) return;
-    discard.mutate(
-      { id: discardTarget.id, reason },
-      {
-        onSuccess: () => {
-          setDiscardTarget(null);
-          toast.success('종결');
-        },
-        onError: (e) => toast.error(errorMessageOf(e)),
-      }
+    discard.mutateAsync({ id: discardTarget.id, reason }).then(
+      () => {
+        setDiscardTarget(null);
+        toast.success('종결');
+      },
+      (e) => toast.error(actionErrorText(e))
     );
   };
 
   const onResendAll = () =>
-    resendAll.mutate(undefined, {
-      onSuccess: (r) => {
+    resendAll.mutateAsync().then(
+      (r) => {
         if (r.failed.length > 0) toast.error(resendAllResultText(r));
         else toast.success(resendAllResultText(r));
       },
-      onError: (e) => toast.error(errorMessageOf(e)),
-    });
+      (e) => toast.error(actionErrorText(e))
+    );
 
   return (
     <section className="flex flex-col gap-2">
@@ -137,7 +135,7 @@ export function OutboxSection({ service, now }: SectionProps) {
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={resend.isPending && resend.variables === item.id}
+                      disabled={resend.isPending}
                       onClick={() => onResend(item.id)}
                     >
                       다시 보내기

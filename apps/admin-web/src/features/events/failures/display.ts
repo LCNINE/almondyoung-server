@@ -40,6 +40,22 @@ export function loadErrorText(error: unknown): string {
   return `불러오지 못했습니다 — ${errorMessageOf(error)}`;
 }
 
+/** 프록시(`app/api/proxy/_lib/forward.ts`)가 30초에서 끊으면 504 다. 서버는 그 뒤에도 끝까지 처리한다 */
+const PROXY_TIMEOUT_STATUS = 504;
+
+function statusCodeOf(error: unknown): number | null {
+  if (error && typeof error === 'object' && 'statusCode' in error && typeof error.statusCode === 'number') {
+    return error.statusCode;
+  }
+  return null;
+}
+
+/** 조치(다시 넣기·종결·전체) 오류 토스트. 504 를 «실패»라고 하면 운영자가 다시 눌러 결과 요약만 흐려진다 */
+export function actionErrorText(error: unknown): string {
+  if (statusCodeOf(error) === PROXY_TIMEOUT_STATUS) return '서버에서 계속 처리 중입니다 — 잠시 뒤 새로 읽으세요';
+  return errorMessageOf(error);
+}
+
 export function isStopped(result: RedriveResult): boolean {
   return result.stoppedAt !== null;
 }
@@ -51,6 +67,15 @@ function stopSuffix(result: RedriveResult): string {
 export function redriveResultText(result: RedriveResult): string {
   if (isStopped(result)) return stopSuffix(result);
   return result.processed > 0 ? `${result.processed}건 처리` : '처리할 것이 없습니다';
+}
+
+/**
+ * 멈춘 이유 — 토스트의 설명 줄. 디스패치 단계에서 멈추면(핸들러 없음·이름 바뀜·런타임 미부착) 오류 이름은 그냥 `Error`
+ * 이고 행은 갱신되지 않아 목록엔 옛 오류가 남는다. 그래서 이유는 여기서만 사람에게 닿는다.
+ */
+export function stopDetail(result: RedriveResult): string | undefined {
+  if (!result.stoppedAt) return undefined;
+  return errorOneLine(result.stoppedAt.errorName, result.stoppedAt.errorMessage);
 }
 
 /** 종결 결과. 머리를 종결했으면 뒤 보류가 이어서 다시 넣어진 결과가 함께 온다 */

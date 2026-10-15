@@ -1,5 +1,6 @@
 import {
   REASON_MAX,
+  actionErrorText,
   actionLabel,
   discardFollowUpText,
   discardResultText,
@@ -17,6 +18,7 @@ import {
   resendAllResultText,
   resendResultText,
   statusLabel,
+  stopDetail,
   tabBadgeCount,
 } from './display';
 import type { EventFailuresSummary } from '@/lib/api/domains/events/failures.types';
@@ -67,7 +69,7 @@ describe('errorOneLine', () => {
 });
 
 describe('errorMessageOf / loadErrorText', () => {
-  it('서버 문구를 그대로 보여 준다 — 마이그 전 배포의 «시작되지 않았다»가 사람에게 닿게', () => {
+  it('서버 문구를 그대로 보여 준다 — 409 «이미 진행 중» 같은 이유가 사람에게 닿게', () => {
     const err = new Error('DeadLetterRuntime 이 시작되지 않았다 — ② 마이그 …');
     expect(errorMessageOf(err)).toBe('DeadLetterRuntime 이 시작되지 않았다 — ② 마이그 …');
     expect(loadErrorText(err)).toBe('불러오지 못했습니다 — DeadLetterRuntime 이 시작되지 않았다 — ② 마이그 …');
@@ -230,5 +232,37 @@ describe('statusLabel / isUnresolved / actionLabel', () => {
     expect(actionLabel('outbox', 'redrive', 'succeeded')).toBe('다시 보내기');
     expect(actionLabel('outbox', 'redrive', 'failed')).toBe('다시 보내기 실패');
     expect(actionLabel('outbox', 'discard', 'succeeded')).toBe('종결');
+  });
+});
+
+describe('stopDetail', () => {
+  it('멈춘 이유를 한 줄로 — 디스패치 단계에서 멈추면 이름은 그냥 Error 라 메시지가 진단이다', () => {
+    expect(
+      stopDetail({
+        processed: 0,
+        stoppedAt: {
+          id: 3,
+          errorName: 'Error',
+          errorMessage: '핸들러가 실행되지 않았다 — 이벤트 종류·핸들러 이름이 바뀌었는지 확인',
+        },
+      })
+    ).toBe('Error: 핸들러가 실행되지 않았다 — 이벤트 종류·핸들러 이름이 바뀌었는지 확인');
+  });
+
+  it('멈추지 않았으면 없다', () => {
+    expect(stopDetail({ processed: 2, stoppedAt: null })).toBeUndefined();
+  });
+});
+
+describe('actionErrorText', () => {
+  it('프록시가 30초에서 끊은 504 — 서버는 계속 처리하므로 실패라고 말하지 않는다', () => {
+    const timeout = Object.assign(new Error('Upstream request timed out after 30000ms'), { statusCode: 504 });
+    expect(actionErrorText(timeout)).toBe('서버에서 계속 처리 중입니다 — 잠시 뒤 새로 읽으세요');
+  });
+
+  it('그 밖의 오류는 서버 문구 그대로', () => {
+    const conflict = Object.assign(new Error('이 순서를 이미 다시 넣는 작업이 진행 중이다'), { statusCode: 409 });
+    expect(actionErrorText(conflict)).toBe('이 순서를 이미 다시 넣는 작업이 진행 중이다');
+    expect(actionErrorText(undefined)).toBe('요청이 실패했습니다');
   });
 });
