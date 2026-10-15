@@ -26,7 +26,7 @@
   font-display: swap;
 }
 
-/* Pretendard 는 globals.css 의 dynamic-subset CDN 담당. 로컬로 재선언하면 전체 폰트를 받는다 */
+/* Pretendard 는 app/layout.tsx 의 dynamic-subset CDN 담당. 로컬로 재선언하면 전체 폰트를 받는다 */
 
 @theme inline {
   /* 폰트 패밀리 */

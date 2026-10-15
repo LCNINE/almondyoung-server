@@ -79,7 +79,6 @@ export function ImageGallery({ product }: Props) {
             alt={product.title ?? t("mainAlt")}
             fill
             sizes="(max-width: 767px) 100vw, (max-width: 1279px) 560px, 700px"
-            quality={100}
             className="object-cover"
             priority
           />

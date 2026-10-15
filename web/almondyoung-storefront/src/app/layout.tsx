@@ -59,6 +59,14 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
 
   return (
     <html lang={locale} suppressHydrationWarning>
+      <head>
+        {/* globals.css 안의 @import 로 두면 메인 CSS 를 다 받은 뒤에야 요청이 나가 첫 표시가 한 단계 밀린다 */}
+        <link rel="preconnect" href="https://cdn.jsdelivr.net" crossOrigin="anonymous" />
+        <link
+          rel="stylesheet"
+          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css"
+        />
+      </head>
       <body
         suppressHydrationWarning
         className="overflow-x-clip [scrollbar-gutter:stable_both-edges]"

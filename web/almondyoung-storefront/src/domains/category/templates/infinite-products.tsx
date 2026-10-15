@@ -133,6 +133,7 @@ export default function InfiniteProducts({
                         )}
                         isWishlisted={wishlistSet.has(p.id ?? "")}
                         countryCode={countryCode}
+                        priority={virtualRow.index === 0}
                       />
                     </li>
                   ))}

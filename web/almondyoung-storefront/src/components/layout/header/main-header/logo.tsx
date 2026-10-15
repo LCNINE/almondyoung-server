@@ -28,8 +28,8 @@ export function Logo({ tone = "light" }: { tone?: "light" | "dark" }) {
         <Image
           src="/images/almond-logo.png"
           alt="아몬드영"
-          width={1024}
-          height={386}
+          width={120}
+          height={45}
           className="h-full w-full object-contain object-left invert"
           priority
         />

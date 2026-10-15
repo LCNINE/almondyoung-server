@@ -2,13 +2,14 @@
 
 import { ChevronDown, ChevronUp } from "lucide-react"
 import Image from "next/image"
-import { useRef, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { useTranslations } from "next-intl"
 import { cn } from "@lib/utils"
 import { Button } from "@/components/ui/button"
 import { useIntersection } from "@/hooks/use-intersection"
 import { ProductDescriptionMarkdown } from "./product-description-markdown"
 import { shouldShowFloatingCollapse } from "./floating-collapse"
+import { optimizeDescriptionHtmlImages } from "./description-html-images"
 
 type ProductInfo = {
   productNumber?: string
@@ -44,6 +45,10 @@ export function ProductDetailInfo({
 }: Props) {
   const t = useTranslations("productDetail.info")
   const [isExpanded, setIsExpanded] = useState(false)
+  const optimizedDescriptionHtml = useMemo(
+    () => (descriptionHtml ? optimizeDescriptionHtmlImages(descriptionHtml) : ""),
+    [descriptionHtml]
+  )
 
   const sectionRef = useRef<HTMLElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -130,7 +135,7 @@ export function ProductDetailInfo({
               <h4 className="sr-only">{t("detailSrTitle")}</h4>
               <div
                 className="prose max-w-none"
-                dangerouslySetInnerHTML={{ __html: descriptionHtml }}
+                dangerouslySetInnerHTML={{ __html: optimizedDescriptionHtml }}
               />
             </section>
           ) : (
