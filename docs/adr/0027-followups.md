@@ -91,6 +91,7 @@
 ### admin
 - **DLQ 재구동·직접등록 UI 미배선(curl 전용)** — 백엔드 존재(`admin-operations.controller.ts:1010-1036, 665-677`),
   UI grep 0건. DLQ 재구동은 최소 정기결제 관리 화면에 버튼+결과(succeeded/failed) 표시.
+  → DLQ 재구동 라우트는 삭제됨(#1016 8번). 직접등록만 남는다.
 - **인보이스 탭 사유에 Q코드 매핑 미적용** — `invoices-view.tsx:250-258`(raw). members 뷰/상세엔 적용됨.
   `cmsFailureReason()` 를 invoices-view 사유 셀에도.
 - **단건 집행 409 메시지 영문 원문 + 문자열 매칭 취약** — `recurring-billing-admin.controller.ts:47-56`.
@@ -105,9 +106,9 @@
 
 ### 이벤트 / 인프라
 - **DLQ 재발행이 원본 파티션 키를 잃음** — `dlq-handler.service.ts:171`. 순서 역전 가능(멱등 마커로 완화).
-  DLQMessage 에 원본 kafka key 보존.
+  DLQMessage 에 원본 kafka key 보존. → 삭제됨(#1016 8번) — 재발행 경로(`reprocessDLQ`) 자체를 지웠다.
 - **reprocess-count 헤더를 아무도 안 읽어 포이즌 메시지 비수렴** — `dlq-handler.service.ts:177`. 재발행 시
-  count 계승 + 상한 초과 시 `resolveDLQ`(park).
+  count 계승 + 상한 초과 시 `resolveDLQ`(park). → 삭제됨(#1016 8번) — `reprocessDLQ`·`resolveDLQ` 를 지웠다.
 - **validateOnConsume 전 서비스 OFF** — `app.module.ts:99`, `wallet.module.ts:384`, notification, channel-adapter.
   invoice.* 스키마의 런타임 집행 지점은 membership→wallet 발행 검증 한 곳뿐. 계약 실효성 한계(버그 아님).
 - **gateway.charge/refund.* 소비되는데 계약 미선언** — `payment-events.consumer.ts:120+`,
