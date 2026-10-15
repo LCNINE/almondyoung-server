@@ -67,6 +67,8 @@ async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(WalletModule, new FastifyAdapter(), {
     bufferLogs: true,
   });
+  // SIGTERM 때 Nest close() 가 컨슈머를 커밋하고 그룹에서 빼낸다 (#1073)
+  app.enableShutdownHooks();
 
   // HTTP 요청 하나 = 사슬 하나 (#612). CLS 컨텍스트가 없으면 한 요청 안의 두 발행이 서로
   // 다른 chainId 를 받는다. 다른 미들웨어·전역 파이프보다 앞이어야 한다.
