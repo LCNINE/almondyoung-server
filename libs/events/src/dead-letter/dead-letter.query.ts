@@ -70,9 +70,11 @@ export class DeadLetterQueryService {
     };
   }
 
+  /** `topic` 을 주면 그 토픽의 순서만 (스펙 §9 `GET dead-letters?topic&cursor`) */
   async listSequences(
     limitRaw?: string,
     cursorRaw?: string,
+    topic?: string,
   ): Promise<{ items: DeadLetterSequenceItem[]; nextCursor: number | null }> {
     const limit = Math.min(Math.max(parseInt(limitRaw ?? '', 10) || DEFAULT_LIMIT, 1), MAX_LIMIT);
     const cursor = Math.max(parseInt(cursorRaw ?? '', 10) || 0, 0);
@@ -90,6 +92,8 @@ export class DeadLetterQueryService {
         errorMessage: dead_letters.errorMessage,
         firstFailedAt: dead_letters.firstFailedAt,
         redriveCount: dead_letters.redriveCount,
+        // 이 머리 뒤에서 기다리는 같은 순서의 안 푼 행 수 — 뒤 `failed`(다시 넣다 멈춘 행)와 `held` 를 함께 센다.
+        // 칸 이름은 `dead-letter.schema.ts` 의 것이다(여기는 날 SQL 이라 스키마를 바꾸면 같이 고친다).
         // select-list 의 sql`` 안에서는 drizzle 이 테이블 한정자를 떼어 별칭·바깥 컬럼이 엇갈린다 —
         // 바깥(dead_letters)은 스키마 한정 이름으로, 안쪽은 별칭 later 로 직접 적는다.
         heldBehind: sql<number>`(
@@ -107,6 +111,7 @@ export class DeadLetterQueryService {
         and(
           inArray(dead_letters.status, UNRESOLVED),
           gt(dead_letters.id, cursor),
+          topic ? eq(dead_letters.topic, topic) : undefined,
           notExists(
             this.db
               .select({ one: sql`1` })

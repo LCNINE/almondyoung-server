@@ -29,9 +29,9 @@ export class EventFailuresController {
   }
 
   @Get('dead-letters')
-  @ApiOperation({ summary: '컨슈머 실패 — 순서 단위 목록(머리 + 뒤 보류 수)' })
-  listDeadLetters(@Query('limit') limit?: string, @Query('cursor') cursor?: string) {
-    return this.deadLetters.listSequences(limit, cursor);
+  @ApiOperation({ summary: '컨슈머 실패 — 순서 단위 목록(머리 + 뒤 보류 수). topic 으로 거를 수 있다' })
+  listDeadLetters(@Query('limit') limit?: string, @Query('cursor') cursor?: string, @Query('topic') topic?: string) {
+    return this.deadLetters.listSequences(limit, cursor, topic);
   }
 
   @Get('dead-letters/:id')
@@ -42,9 +42,9 @@ export class EventFailuresController {
 
   @Post('dead-letters/redrive-all')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '컨슈머 실패 전체 다시 넣기 — 순서마다 한 번씩' })
-  redriveAll(@User() user: unknown) {
-    return this.redriver.redriveAll(actorIdOf(user));
+  @ApiOperation({ summary: '컨슈머 실패 전체 다시 넣기 — 순서마다 한 번씩. topic 을 주면 그 토픽만' })
+  redriveAll(@User() user: unknown, @Query('topic') topic?: string) {
+    return this.redriver.redriveAll(actorIdOf(user), topic);
   }
 
   @Post('dead-letters/:id/redrive')

@@ -1,6 +1,7 @@
 /**
- * 실행: `npm run test:core:integration:local -- dead-letter.redriver`
+ * 실행: `DATABASE_URL=…/core_sdd_1016 npx jest --runInBand --runTestsByPath libs/events/src/dead-letter/dead-letter.redriver.integration.spec.ts`
  * 이 스위트는 커밋한다 — 토픽 `redriver-spec.v1`·`redriver-spec-unsequenced.v1` 행만 쓰고 지운다(WHERE 없는 DELETE 금지, CLAUDE.md).
+ * 같은 DB 의 다른 행을 다시 넣지도 세지도 않는다 — 전체 다시 넣기는 토픽으로 좁혀 부르고, 단언은 이 스펙의 행만 본다.
  */
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -148,25 +149,40 @@ describeIfDb('DeadLetterRedriver (PostgreSQL 통합)', () => {
   });
 
   it('조치를 failure_actions 에 남긴다 — 다시 넣기 성공·실패, 종결 사유', async () => {
-    const [first] = await seed('m1', 'm2');
+    const [first, second] = await seed('m1', 'm2');
     failOn.add('m2');
     await redriver.redrive(first, 'admin-1');
     const actions = await db
       .select()
       .from(failure_actions)
-      .where(eq(failure_actions.targetKind, 'dead_letter'))
+      .where(and(eq(failure_actions.targetKind, 'dead_letter'), inArray(failure_actions.targetId, [first, second])))
       .orderBy(failure_actions.id);
-    const mine = actions.filter((a) => a.actor === 'admin-1').map((a) => `${a.action}:${a.outcome}`);
-    expect(mine.slice(-2)).toEqual(['redrive:succeeded', 'redrive:failed']);
+    expect(actions.map((a) => `${a.targetId === first ? 'm1' : 'm2'}:${a.action}:${a.outcome}:${a.actor}`)).toEqual([
+      'm1:redrive:succeeded:admin-1',
+      'm2:redrive:failed:admin-1',
+    ]);
   });
 
-  it('전체 다시 넣기는 순서마다 돌리고 요약한다', async () => {
+  it('전체 다시 넣기는 순서마다 돌리고 요약한다 — 토픽을 주면 그 토픽만', async () => {
     await store.recordFailure(msg('a1', 'order-A'), new Error('x'));
     await store.recordFailure(msg('b1', 'order-B'), new Error('x'));
+    // 다른 토픽의 안 푼 행 — 토픽으로 좁힌 전체 다시 넣기가 건드리지도 세지도 않아야 한다
+    await store.recordFailure({ ...msg('u1'), topic: UNSEQUENCED_TOPIC }, new Error('x'));
     failOn.add('b1');
-    const result = await redriver.redriveAll('admin-1');
+
+    const result = await redriver.redriveAll('admin-1', TOPIC);
+
     expect(result).toMatchObject({ sequences: 2, succeeded: 1, stopped: 1, busy: 0 });
     expect(result.stoppedByError).toEqual({ Error: 1 });
+    expect(dispatched.sort()).toEqual(['a1', 'b1']);
+    expect(await statuses(UNSEQUENCED_TOPIC)).toEqual(['u1:failed']);
+    const [other] = await db.select().from(dead_letters).where(eq(dead_letters.topic, UNSEQUENCED_TOPIC));
+    expect(
+      await db
+        .select()
+        .from(failure_actions)
+        .where(and(eq(failure_actions.targetKind, 'dead_letter'), eq(failure_actions.targetId, other.id))),
+    ).toEqual([]);
   });
 
   it('순서를 지키지 않는 토픽의 행은 혼자 한 순서다 — 같은 키의 다른 실패를 끌고 가지 않는다', async () => {
@@ -191,9 +207,10 @@ describeIfDb('DeadLetterRedriver (PostgreSQL 통합)', () => {
     const settledWithin = <T>(promise: Promise<T>, ms: number) =>
       Promise.race([promise, new Promise<typeof pending>((resolve) => setTimeout(() => resolve(pending), ms))]);
 
+    /** A 가 lock 을 쥔 채 `resolveInsideLock` 을 하고 커밋한 뒤, 기다리던 B(보류 검사)의 결과 */
     async function raceWithLockHolder(
       resolveInsideLock: (tx: PostgresJsDatabase<Record<string, never>>) => Promise<void>,
-    ) {
+    ): Promise<boolean> {
       let live!: Promise<boolean>;
       await db.transaction(async (tx) => {
         expect(await tryLockSequence(tx, { consumerGroup: GROUP, topic: TOPIC, sequenceKey: 'order-A' })).toBe(true);
@@ -206,21 +223,21 @@ describeIfDb('DeadLetterRedriver (PostgreSQL 통합)', () => {
 
     it('A 가 남은 행을 모두 풀고 커밋하면 B 는 보류하지 않는다(false)', async () => {
       const [first] = await seed('m1');
-      const live = await raceWithLockHolder(async (tx) => {
+      const held = await raceWithLockHolder(async (tx) => {
         await tx.update(dead_letters).set({ status: 'redriven' }).where(eq(dead_letters.id, first));
       });
-      expect(await live).toBe(false);
+      expect(held).toBe(false);
       expect(await statuses()).toEqual(['m1:redriven']);
     });
 
     it('A 가 커밋한 뒤에도 failed 가 남아 있으면 B 는 held 로 적는다(true)', async () => {
       const [first, second] = await seed('m1', 'm2');
-      const live = await raceWithLockHolder(async (tx) => {
+      const held = await raceWithLockHolder(async (tx) => {
         // 다시 넣기가 m1 은 성공하고 m2 에서 멈춘 모양 — m2 가 새 머리(failed)
         await tx.update(dead_letters).set({ status: 'redriven' }).where(eq(dead_letters.id, first));
         await tx.update(dead_letters).set({ status: 'failed' }).where(eq(dead_letters.id, second));
       });
-      expect(await live).toBe(true);
+      expect(held).toBe(true);
       expect(await statuses()).toEqual(['m1:redriven', 'm2:failed', 'm9:held']);
     });
   });

@@ -23,7 +23,12 @@ describe('core EventFailuresController (#1016 7·8번)', () => {
   });
 
   it('목록은 쿼리 문자열을 그대로 넘긴다 — 파싱은 서비스가 한다', async () => {
-    await controller.listDeadLetters('20', '100');
-    expect(deadLetters.listSequences).toHaveBeenCalledWith('20', '100');
+    await controller.listDeadLetters('20', '100', 'orders.events.v1');
+    expect(deadLetters.listSequences).toHaveBeenCalledWith('20', '100', 'orders.events.v1');
+  });
+
+  it('전체 다시 넣기는 토픽 거르기를 넘긴다', async () => {
+    await controller.redriveAll({ id: 'admin-3' }, 'orders.events.v1');
+    expect(redriver.redriveAll).toHaveBeenCalledWith('admin-3', 'orders.events.v1');
   });
 });

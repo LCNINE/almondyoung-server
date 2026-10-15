@@ -83,7 +83,7 @@ describeIfDb('이벤트 실패 출구 조립 (PostgreSQL 통합)', () => {
     app = moduleRef.createNestApplication({ logger: false });
     await EventsModule.startConsumer(app, { groupId: GROUP, kafka, strategy: new InMemoryServer(broker) });
     await app.init();
-    db = app.get(DbService).db;
+    db = app.get<DbService>(DbService).db;
   });
 
   afterAll(async () => {

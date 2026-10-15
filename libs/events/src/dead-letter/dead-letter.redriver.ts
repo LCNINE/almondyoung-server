@@ -8,7 +8,7 @@ import { DeadLetterRuntime } from './dead-letter.runtime';
 import { FailureActionLog } from './failure-action.log';
 import { tryLockSequence, type SequenceLockKey } from './sequence-lock';
 import { EVENT_FAILURES_OPTIONS, type EventFailuresOptions } from './event-failures.options';
-import { UNRESOLVED_DEAD_LETTER_STATUSES, type DeadLetterRow } from './dead-letter.types';
+import { isUnresolvedStatus, UNRESOLVED_DEAD_LETTER_STATUSES, type DeadLetterRow } from './dead-letter.types';
 
 export interface RedriveStop {
   id: number;
@@ -33,9 +33,15 @@ const UNRESOLVED = [...UNRESOLVED_DEAD_LETTER_STATUSES];
 
 /**
  * 다시 넣기와 종결 (#1016 8번, 스펙 §7). 단위는 «순서» = 같은 (그룹, 토픽, 순서 키)의 `failed`·`held`.
+ * 순서를 지키지 않는 토픽(`EventFailuresOptions.sequencedTopics` 밖)·키 없는 행은 그 행 혼자 한 순서다.
  *
- * lock 을 쥔 트랜잭션은 루프 내내 열려 있고(같은 순서의 실시간 소비가 기다린다), 행 상태는 그 트랜잭션 밖(`this.db`)에서
- * 바로 커밋한다 — 중간에 죽어도 이미 성공한 행이 되돌아가 두 번 처리되지 않게 하기 위해서다.
+ * **다시 넣기는 순서 lock 을 루프 내내 쥔다.** lock 을 쥔 트랜잭션은 마지막 행까지 열려 있고, 그동안 같은 순서의 실시간
+ * 소비는 보류 검사에서 기다린다 — 그 대기는 `DeadLetterStore.holdIfBlocked` 의 `lock_timeout`(10초)에서 끊겨 커밋하지
+ * 않고 다시 받는다(Kafka 세션 타임아웃을 넘겨 리밸런스가 나지 않게). 행 상태는 그 트랜잭션 밖(`this.db`)에서 바로
+ * 커밋한다 — 중간에 죽어도 이미 성공한 행이 되돌아가 두 번 처리되지 않게 하기 위해서다.
+ *
+ * **풀은 연결이 둘 이상이어야 한다** — 하나는 lock 트랜잭션이 쥐고, 행 쓰기·다시 넣은 핸들러의 쓰기가 다른 연결을 쓴다.
+ * 연결이 하나면 lock 트랜잭션이 끝나기를 기다리며 멈춘다(`DbService` 기본 풀은 10).
  */
 @Injectable()
 export class DeadLetterRedriver {
@@ -64,8 +70,9 @@ export class DeadLetterRedriver {
     return this.runSequence(row, actor, note.slice(0, MAX_REASON));
   }
 
-  async redriveAll(actor: string | null): Promise<RedriveAllResult> {
-    const heads = await this.heads();
+  /** `topic` 을 주면 그 토픽의 순서만 — 목록 화면의 토픽 거르기와 같은 범위 */
+  async redriveAll(actor: string | null, topic?: string): Promise<RedriveAllResult> {
+    const heads = await this.heads(topic);
     const result: RedriveAllResult = { sequences: heads.length, succeeded: 0, stopped: 0, busy: 0, stoppedByError: {} };
     for (const head of heads) {
       try {
@@ -193,7 +200,7 @@ export class DeadLetterRedriver {
   }
 
   /** 순서마다 가장 이른 안 푼 행. 순서를 지키지 않는 토픽의 행은 전부 각자 머리다(`earlier` 가 그 토픽을 보지 않는다) */
-  private async heads(): Promise<DeadLetterRow[]> {
+  private async heads(topic?: string): Promise<DeadLetterRow[]> {
     const earlier = alias(dead_letters, 'earlier');
     return this.db
       .select()
@@ -201,6 +208,7 @@ export class DeadLetterRedriver {
       .where(
         and(
           inArray(dead_letters.status, UNRESOLVED),
+          topic ? eq(dead_letters.topic, topic) : undefined,
           notExists(
             this.db
               .select({ one: sql`1` })
@@ -224,7 +232,7 @@ export class DeadLetterRedriver {
   private async load(id: number): Promise<DeadLetterRow> {
     const [row] = await this.db.select().from(dead_letters).where(eq(dead_letters.id, id));
     if (!row) throw new NotFoundError(`dead letter 가 없다: ${id}`);
-    if (!UNRESOLVED.includes(row.status as (typeof UNRESOLVED)[number])) {
+    if (!isUnresolvedStatus(row.status)) {
       throw new ConflictError(`이미 처리된 행이다: ${id} (${row.status})`);
     }
     return row;
