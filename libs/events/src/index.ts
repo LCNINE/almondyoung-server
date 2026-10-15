@@ -20,6 +20,7 @@ export * from './transport/kafka.transport';
 export * from './transport/in-memory.broker';
 export * from './transport/in-memory.transport';
 export * from './transport/in-memory.server';
+export * from './transport/kafka-context.factory';
 
 // Publisher
 export * from './publishers/stream-publisher.service';
