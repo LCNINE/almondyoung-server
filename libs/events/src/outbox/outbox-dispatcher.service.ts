@@ -33,7 +33,7 @@ export function nextAttemptDelaySeconds(retryCount: number, delays: readonly num
  * `processEvent`/`handleFailure` 가 `any` 를 받지 않아도 된다 — `partitionKey` 처럼 **없을 수도
  * 있는** 컬럼이 새로 생겼기 때문에, 옵셔널 여부를 타입이 말해 주는 편이 낫다.
  */
-type AcquiredOutboxRow = {
+export type OutboxDispatchRow = {
   id: number;
   topic: string;
   aggregateType: string;
@@ -310,45 +310,70 @@ export class OutboxDispatcher {
     return resolved;
   }
 
-  private async processEvent(event: AcquiredOutboxRow) {
+  private async processEvent(event: OutboxDispatchRow) {
     try {
-      const publisher = this.publisherFor(event.topic);
-
-      if (!publisher) {
-        throw new Error(`No publisher found for topic: ${event.topic}`);
-      }
-
-      // 검증을 탄다 (ADR-0029 §5). `enqueue` 를 지나지 않은 행 — 이 변경 이전에 적재된 PENDING
-      // 행 — 이 스키마를 위반하면 여기서 실패로 기록되고 재시도 후 FAILED 로 남는다. 발행돼서
-      // 소비자 DLQ 에 쌓이는 것보다 발행 측에 남는 편이 진단에 가깝다.
-      //
-      // partitionKey 는 ADR-0029 §5-1 로 승격된 컬럼이다. 비어 있으면 aggregateId 로 폴백하며,
-      // 그것이 컬럼이 생기기 전의 동작이다 — 현재 적재기(`OutboxPublisher.write`)는 아직 이
-      // 컬럼을 채우지 않으므로 라이브 동작은 그대로다.
-      // `payload` 컬럼은 jsonb 라 drizzle 이 `unknown` 으로 준다. 이 행에 실린 것이 조립·검증을
-      // 마친 envelope 라는 것은 적재 쪽(`OutboxWriter.write`)의 계약이므로 여기서 좁힌다.
-      await publisher.publishStoredEnvelope(event.payload as MessageEnvelope, event.partitionKey ?? event.aggregateId);
-
-      await this.db
-        .update(outbox_events)
-        .set({
-          status: 'PUBLISHED',
-          processingStartedAt: null,
-          publishedAt: new Date(),
-        })
-        .where(eq(outbox_events.id, event.id));
-
-      recordOutboxPublished(event.topic);
-      this.logger.log(`Event ${event.id} published: ${event.eventType}`);
+      await this.publishAndMark(event);
     } catch (error) {
       await this.handleFailure(event, error);
+    }
+  }
+
+  /** 발행 + `PUBLISHED` 표시. 디스패처 주기와 사람의 «다시 보내기»가 같은 길을 탄다(검증 포함). */
+  private async publishAndMark(event: OutboxDispatchRow): Promise<void> {
+    const publisher = this.publisherFor(event.topic);
+
+    if (!publisher) {
+      throw new Error(`No publisher found for topic: ${event.topic}`);
+    }
+
+    // 검증을 탄다 (ADR-0029 §5). `enqueue` 를 지나지 않은 행 — 이 변경 이전에 적재된 PENDING
+    // 행 — 이 스키마를 위반하면 여기서 실패로 기록되고 재시도 후 FAILED 로 남는다. 발행돼서
+    // 소비자 DLQ 에 쌓이는 것보다 발행 측에 남는 편이 진단에 가깝다.
+    //
+    // partitionKey 는 ADR-0029 §5-1 로 승격된 컬럼이다. 비어 있으면 aggregateId 로 폴백하며,
+    // 그것이 컬럼이 생기기 전의 동작이다 — 현재 적재기(`OutboxPublisher.write`)는 아직 이
+    // 컬럼을 채우지 않으므로 라이브 동작은 그대로다.
+    // `payload` 컬럼은 jsonb 라 drizzle 이 `unknown` 으로 준다. 이 행에 실린 것이 조립·검증을
+    // 마친 envelope 라는 것은 적재 쪽(`OutboxWriter.write`)의 계약이므로 여기서 좁힌다.
+    await publisher.publishStoredEnvelope(event.payload as MessageEnvelope, event.partitionKey ?? event.aggregateId);
+
+    await this.db
+      .update(outbox_events)
+      .set({
+        status: 'PUBLISHED',
+        processingStartedAt: null,
+        publishedAt: new Date(),
+      })
+      .where(eq(outbox_events.id, event.id));
+
+    recordOutboxPublished(event.topic);
+    this.logger.log(`Event ${event.id} published: ${event.eventType}`);
+  }
+
+  /**
+   * 사람이 선점(`FAILED → PROCESSING`)한 행을 **한 번** 보낸다 (#1016 7번, 스펙 §8.3). 실패하면 `FAILED` 로 되돌리고
+   * 오류만 갱신한다 — `retry_count` 를 그대로 두는 이유는 다시 2시간 재시도 일정에 태우지 않기 위해서다.
+   */
+  async publishLeasedRow(event: OutboxDispatchRow): Promise<{ ok: true } | { ok: false; error: string }> {
+    try {
+      await this.publishAndMark(event);
+      return { ok: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.db
+        .update(outbox_events)
+        .set({ status: 'FAILED', processingStartedAt: null, errorMessage: message, failedAt: new Date() })
+        .where(eq(outbox_events.id, event.id));
+      recordOutboxFailed(event.topic, true);
+      this.logger.error(`Event ${event.id} resend failed: ${message}`);
+      return { ok: false, error: message };
     }
   }
 
   /**
    * `retryCount` 가 증가하는 **유일한** 지점.
    */
-  private async handleFailure(event: AcquiredOutboxRow, error: unknown) {
+  private async handleFailure(event: OutboxDispatchRow, error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     const newRetryCount = event.retryCount + 1;
     const isFinalFailure = newRetryCount >= this.config.maxRetries;

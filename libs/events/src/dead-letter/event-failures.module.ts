@@ -3,6 +3,7 @@ import { DeadLetterRedriver } from './dead-letter.redriver';
 import { DeadLetterRuntime } from './dead-letter.runtime';
 import { DeadLetterStore } from './dead-letter.store';
 import { FailureActionLog } from './failure-action.log';
+import { OutboxFailuresService } from '../outbox/outbox-failures.service';
 
 /**
  * 이벤트 실패 출구 (#1016 7·8번). **앱이 이 모듈을 import 하면 켜진다** — `startConsumer` 가 컨테이너에서
@@ -12,7 +13,7 @@ import { FailureActionLog } from './failure-action.log';
  * 컨트롤러는 없다 — 앱마다 전역 가드가 달라 라우팅·인가는 앱이 소유한다(#705, `EventTraceApiModule` 과 같은 이유).
  */
 @Module({
-  providers: [DeadLetterStore, FailureActionLog, DeadLetterRuntime, DeadLetterRedriver],
-  exports: [DeadLetterStore, FailureActionLog, DeadLetterRuntime, DeadLetterRedriver],
+  providers: [DeadLetterStore, FailureActionLog, DeadLetterRuntime, DeadLetterRedriver, OutboxFailuresService],
+  exports: [DeadLetterStore, FailureActionLog, DeadLetterRuntime, DeadLetterRedriver, OutboxFailuresService],
 })
 export class EventFailuresModule {}
