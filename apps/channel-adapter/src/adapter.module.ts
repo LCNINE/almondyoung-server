@@ -12,6 +12,9 @@ import {
   EventChainService,
   EventTrackingService,
   EventTraceApiModule,
+  EventFailuresModule,
+  LONG_OUTBOX_MAX_RETRIES,
+  LONG_OUTBOX_RETRY_DELAYS_SECONDS,
   createKafkaConfigFromEnv,
   getPublisherToken,
   OutboxPublisher,
@@ -104,6 +107,7 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
 import { ChannelOrderCancelManager } from './services/order-cancel/channel-order-cancel.manager';
 import { ChannelOrderCancelRepository } from './services/order-cancel/channel-order-cancel.repository';
 import { EventTraceController } from './controllers/event-trace.controller';
+import { EventFailuresController } from './controllers/event-failures.controller';
 import { isSafeDemoMode } from './demo/demo-mode';
 import { DemoController } from './demo/demo.controller';
 import { DemoModeGuard } from './demo/demo-mode.guard';
@@ -189,6 +193,12 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
             // 이 회수 대상 두 토픽을 처음부터 안다 — core 가 6-C-2 에서 겪은
             // `No publisher found for topic` 은 여기서 발생하지 않는다.
             enableOutbox: true,
+            // 굳기 전 약 2시간 버티고, 같은 주문의 순서를 지킨다 (#1016 7번, 스펙 D4·§8.2).
+            outbox: {
+              retryDelaysSeconds: LONG_OUTBOX_RETRY_DELAYS_SECONDS,
+              maxRetries: LONG_OUTBOX_MAX_RETRIES,
+              sequenceByAggregate: true,
+            },
             validation: {
               validateOnPublish: true,
               throwOnValidationError: true,
@@ -216,11 +226,14 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
             // 현황: `npm run audit:consume-validation -- channel-adapter`
             policy: { validateOnConsume: true },
           }),
+          // outbox 디스패처가 있는 분기에서만 선다(#1016 7·8번) — 컨슈머 실패가 `.dlq` 대신 DB 로 간다
+          EventFailuresModule,
         ]
       : []),
   ],
   controllers: [
     EventTraceController,
+    ...(process.env.KAFKA_BROKERS ? [EventFailuresController] : []),
     HealthController,
     SyncStatusController,
     ShipmentEventsConsumer,

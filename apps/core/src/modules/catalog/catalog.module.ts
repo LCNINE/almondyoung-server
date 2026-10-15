@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { EventsModule } from '@app/events';
+import { EventsModule, LONG_OUTBOX_MAX_RETRIES, LONG_OUTBOX_RETRY_DELAYS_SECONDS } from '@app/events';
 import { PRODUCT_STREAM } from '@packages/event-contracts';
 
 // Core domain modules
@@ -30,6 +30,13 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
       serviceName: 'almondyoung',
       enableDLQ: true,
       enableOutbox: true,
+      // 굳기 전 약 2시간 버티고, 같은 주문의 순서를 지킨다 (#1016 7번, 스펙 D4·§8.2).
+      // 아웃박스는 앱 하나에 테이블 하나라 이 설정이 core 전체 outbox 에 적용된다.
+      outbox: {
+        retryDelaysSeconds: LONG_OUTBOX_RETRY_DELAYS_SECONDS,
+        maxRetries: LONG_OUTBOX_MAX_RETRIES,
+        sequenceByAggregate: true,
+      },
     }),
     // Core
     ProductsModule,
