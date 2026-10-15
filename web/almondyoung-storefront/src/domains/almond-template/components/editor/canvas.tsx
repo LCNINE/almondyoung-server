@@ -20,7 +20,6 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
     mode,
     design,
     side,
-    setSelectedId,
     showRuler,
     showCutline,
     showSafety,
@@ -32,6 +31,11 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
     zoom,
     svgRef,
     canvasAreaRef,
+    marquee,
+    layerBounds,
+    startMarquee,
+    group,
+    removeGroup,
     startDrag,
     startResize,
     moveDrag,
@@ -74,7 +78,7 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
       ref={canvasAreaRef}
       className="flex flex-1 items-center justify-center overflow-auto p-8"
       onPointerDown={(event) => {
-        if (event.target === event.currentTarget) setSelectedId(null)
+        if (event.target === event.currentTarget) startMarquee(event)
       }}
     >
       <div className="relative shrink-0">
@@ -89,7 +93,7 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
             overflow: "visible",
           }}
           className="block shrink-0 touch-none bg-white shadow-xl outline outline-1 outline-offset-2 outline-[#222] select-none"
-          onPointerDown={() => setSelectedId(null)}
+          onPointerDown={startMarquee}
           onPointerMove={moveDrag}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
@@ -195,6 +199,36 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
               />
             </g>
           )}
+          {group.length > 1 &&
+            group.map((layer) => {
+              const b = layerBounds(layer)
+              return (
+                <rect
+                  key={layer.id}
+                  x={b.x0}
+                  y={b.y0}
+                  width={b.x1 - b.x0}
+                  height={b.y1 - b.y0}
+                  fill="none"
+                  stroke="#10c9c1"
+                  strokeWidth={1 / scale}
+                  pointerEvents="none"
+                />
+              )
+            })}
+          {marquee && (
+            <rect
+              x={marquee.x0}
+              y={marquee.y0}
+              width={marquee.x1 - marquee.x0}
+              height={marquee.y1 - marquee.y0}
+              fill="rgba(16, 201, 193, 0.1)"
+              stroke="#10c9c1"
+              strokeWidth={1 / scale}
+              strokeDasharray={`${4 / scale} ${3 / scale}`}
+              pointerEvents="none"
+            />
+          )}
           {(showRuler || showCutline || showSafety) && (
             <CanvasGuides editor={editor} />
           )}
@@ -225,6 +259,21 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
               <Trash2 size={14} />
             </button>
           </div>
+        )}
+        {group.length > 1 && (
+          <button
+            type="button"
+            aria-label="선택한 요소 모두 삭제"
+            title={`${group.length}개 삭제`}
+            onClick={removeGroup}
+            className="absolute z-20 flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded bg-white text-[#10a8a1] shadow"
+            style={{
+              left: `${Math.max(...group.map((layer) => layerBounds(layer).x1)) * scale}px`,
+              top: `${Math.min(...group.map((layer) => layerBounds(layer).y0)) * scale - 16}px`,
+            }}
+          >
+            <Trash2 size={14} />
+          </button>
         )}
         {editingLayer && editing && (
           <textarea
