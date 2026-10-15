@@ -17,6 +17,18 @@ import { eq, inArray, and, lt, lte, or, isNull, not, ilike, sql, type SQL } from
 export const OUTBOX_RETRY_DELAYS_SECONDS = [10, 30, 60, 300] as const;
 
 /**
+ * 주문 경로 앱(core·channel-adapter)이 쓰는 긴 간격표 (#1016 7번, 스펙 D4). `maxRetries` 8 과 짝이고 합이 약 1시간 52분이다 —
+ * 그 안에 끝나는 장애는 사람 없이 풀린다. 마지막 시도까지 기다리는 횟수는 `maxRetries - 1` 이다.
+ */
+export const LONG_OUTBOX_RETRY_DELAYS_SECONDS = [10, 30, 60, 300, 900, 1800, 3600] as const;
+export const LONG_OUTBOX_MAX_RETRIES = 8;
+
+/** `retryCount` 는 실패 **후** 값이다. 표를 넘으면 마지막 값을 유지한다. */
+export function nextAttemptDelaySeconds(retryCount: number, delays: readonly number[]): number {
+  return delays[Math.min(retryCount - 1, delays.length - 1)];
+}
+
+/**
  * `acquireEventBatch` 가 고른 한 행. select 투영과 같은 모양이며, 이 타입이 있어서
  * `processEvent`/`handleFailure` 가 `any` 를 받지 않아도 된다 — `partitionKey` 처럼 **없을 수도
  * 있는** 컬럼이 새로 생겼기 때문에, 옵셔널 여부를 타입이 말해 주는 편이 낫다.
@@ -82,6 +94,10 @@ export class OutboxDispatcher {
     private readonly dispatchGate?: OutboxDispatchGate,
   ) {
     this.publisherMap = publisherMap;
+    const retryDelaysSeconds = config?.retryDelaysSeconds ?? OUTBOX_RETRY_DELAYS_SECONDS;
+    if (retryDelaysSeconds.length === 0 || retryDelaysSeconds.some((s) => !(s > 0))) {
+      throw new Error('OutboxConfig.retryDelaysSeconds 는 양수 하나 이상이어야 한다 — 빈 표는 0초 재시도 폭주가 된다');
+    }
     this.config = {
       dispatchIntervalMs: config?.dispatchIntervalMs ?? 5000,
       batchSize: config?.batchSize ?? 100,
@@ -89,6 +105,8 @@ export class OutboxDispatcher {
       processingTimeoutMs: config?.processingTimeoutMs ?? 300_000,
       cleanupDays: config?.cleanupDays ?? 7,
       strictPartitionOrdering: config?.strictPartitionOrdering ?? false,
+      retryDelaysSeconds,
+      sequenceByAggregate: config?.sequenceByAggregate ?? false,
     };
   }
 
@@ -328,7 +346,7 @@ export class OutboxDispatcher {
   }
 
   private calculateNextAttempt(retryCount: number): Date {
-    const delay = OUTBOX_RETRY_DELAYS_SECONDS[Math.min(retryCount - 1, OUTBOX_RETRY_DELAYS_SECONDS.length - 1)];
+    const delay = nextAttemptDelaySeconds(retryCount, this.config.retryDelaysSeconds);
     return new Date(Date.now() + delay * 1000);
   }
 

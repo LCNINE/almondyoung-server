@@ -6,7 +6,11 @@ export type NewOutboxEvent = typeof outbox_events.$inferInsert;
 
 export type DbTx = Pick<PostgresJsDatabase<any>, 'insert'>;
 
-export type OutboxStatus = 'PENDING' | 'PROCESSING' | 'PUBLISHED' | 'FAILED';
+/**
+ * `DISCARDED` 는 사람이 종결한 행이다 (#1016 7번). 재시도를 소진한 `FAILED` 와 달리 더 이상
+ * 발행 대상이 아니면서도, 같은 주문의 뒤 행을 막지 않는다 (`sequenceByAggregate`).
+ */
+export type OutboxStatus = 'PENDING' | 'PROCESSING' | 'PUBLISHED' | 'FAILED' | 'DISCARDED';
 
 export interface OutboxConfig {
   dispatchIntervalMs?: number; // 기본값: 5000
@@ -32,4 +36,18 @@ export interface OutboxConfig {
    * 않기 때문이며, 이 컬럼이 생기기 전에 적재된 행에 대해 그 편이 안전하다.
    */
   strictPartitionOrdering?: boolean;
+
+  /**
+   * 실패 후 다음 시도까지의 대기(초) 표 (#1016 7번). 생략하면 `OUTBOX_RETRY_DELAYS_SECONDS`.
+   * 합이 «굳기 전 버티는 시간»이다 — 기본표는 약 7분이라 그보다 긴 Kafka 장애는 행을 전부 `FAILED` 로 굳힌다.
+   * `strictPartitionOrdering` 을 켠 앱에서 늘리면 재시도 중인 행이 그 파티션을 그만큼 붙잡는다.
+   */
+  retryDelaysSeconds?: readonly number[];
+
+  /**
+   * 같은 `(topic, aggregate_id)` 의 **더 이른** `PENDING`·`PROCESSING`·`FAILED` 행이 있으면 뒤 행을 고르지 않는다
+   * (#1016 7번, 스펙 §8.2). `strictPartitionOrdering` 과 달리 `FAILED` 도 막는다 — 막히는 범위가 주문 하나라
+   * 가용성 사고가 아니고, 굳은 앞 행을 사람이 다시 보내거나 종결(`DISCARDED`)하면 풀린다.
+   */
+  sequenceByAggregate?: boolean;
 }
