@@ -47,6 +47,12 @@ export * from './dlq/dlq-handler.service';
 
 // 컨슈머 실패 기록 (#1016 8번) — 인터셉터가 쓰는 port 와 다시 넣기 헤더
 export * from './dead-letter/dead-letter.types';
+export * from './dead-letter/dead-letter.schema';
+export { DeadLetterStore } from './dead-letter/dead-letter.store';
+export { DeadLetterRuntime } from './dead-letter/dead-letter.runtime';
+export { FailureActionLog } from './dead-letter/failure-action.log';
+export type { FailureActionEntry, FailureActionRow } from './dead-letter/failure-action.log';
+export { EventFailuresModule } from './dead-letter/event-failures.module';
 
 // Retry & Auto DLQ
 export * from './retry/retry-policy.types';
