@@ -79,6 +79,8 @@ const resolvedRow: PrintOrderRow = {
   status: 'cancelled',
   testMemo: false,
   vendorOrderNumber: 'WP-1',
+  vendorBoxNumber: null,
+  vendorShippingFee: null,
   attemptCount: 0,
   lastError: null,
   nextAttemptAt: new Date(),

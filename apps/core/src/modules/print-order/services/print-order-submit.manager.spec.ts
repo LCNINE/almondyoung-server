@@ -8,8 +8,13 @@ import {
   type UgcPrintLink,
 } from '../clients/ugc-almond-design.client';
 import { type PrintOrderRow } from '../schema/print-order.schema';
-import { WowpressClient } from '../wowpress/wowpress.client';
-import { type WowpressLineSpec, type WowpressOrderInput, type WowpressTransport } from '../wowpress/wowpress.types';
+import { WowpressApiError, WowpressClient } from '../wowpress/wowpress.client';
+import {
+  type WowpressLineSpec,
+  type WowpressOrderInput,
+  type WowpressOrderResult,
+  type WowpressTransport,
+} from '../wowpress/wowpress.types';
 import { PrintOrderSubmitWorker } from '../workers/print-order-submit.worker';
 import {
   PrintOrderRepository,
@@ -57,13 +62,19 @@ jest.mock('../wowpress/wowpress-products', () => ({
   },
 }));
 
+function placed(ordnum: string): WowpressOrderResult {
+  return { orders: [{ ordnum, dboxno: null, prodno: null }], boxes: [] };
+}
+
 const noNetwork: WowpressTransport = () => Promise.reject(new Error('real wowpress call in test'));
 
 class FakeWowpress extends WowpressClient {
   quote = jest.fn<Promise<void>, [WowpressLineSpec, number]>(() => Promise.resolve());
-  order = jest.fn<Promise<{ ordnum: string }>, [WowpressOrderInput]>(() => Promise.resolve({ ordnum: this.ordnum }));
+  order = jest.fn<Promise<WowpressOrderResult>, [WowpressOrderInput]>(() => Promise.resolve(placed(this.ordnum)));
   uploadFileUrl = jest.fn<Promise<void>, [string, string, string]>(() => Promise.resolve());
-  findByOrdkey = jest.fn<Promise<{ ordnum: string } | null>, [string, Date]>(() => Promise.resolve(null));
+  findByOrdkey = jest.fn<Promise<{ ordnum: string; dboxnum: string | null } | null>, [string, Date]>(() =>
+    Promise.resolve(null),
+  );
   constructor(private readonly ordnum = 'W-1') {
     super(new ConfigService({}), noNetwork);
   }
@@ -88,10 +99,13 @@ const unusedDb = {} as unknown as DbService<typeof wmsSchema>;
 class FakeRepo extends PrintOrderRepository {
   rows = new Map<string, PrintOrderRow>();
   context: PrintOrderLineContext | null = null;
+  contexts = new Map<string, PrintOrderLineContext>();
   constructor() {
     super(unusedDb);
   }
-  findLineContext = jest.fn<Promise<PrintOrderLineContext | null>, [string]>(() => Promise.resolve(this.context));
+  findLineContext = jest.fn<Promise<PrintOrderLineContext | null>, [string]>((lineId) =>
+    Promise.resolve(this.contexts.get(lineId) ?? this.context),
+  );
   update = jest.fn((id: string, patch: Partial<PrintOrderRow>) => {
     this.patch(id, () => true, patch);
     return Promise.resolve();
@@ -153,11 +167,18 @@ class FakeRepo extends PrintOrderRepository {
   updateStale = jest.fn((id: string, olderThan: Date, patch: Partial<PrintOrderRow>) =>
     Promise.resolve(this.patch(id, (r) => this.isStale(r, olderThan), patch)),
   );
-  claimDue = jest.fn((limit: number, now: Date) => {
-    const due = [...this.rows.values()]
+  saveVendorBox = jest.fn((id: string, box: { vendorBoxNumber: string | null; vendorShippingFee: number | null }) => {
+    this.patch(id, () => true, {
+      ...(box.vendorBoxNumber === null ? {} : { vendorBoxNumber: box.vendorBoxNumber }),
+      ...(box.vendorShippingFee === null ? {} : { vendorShippingFee: box.vendorShippingFee }),
+    });
+    return Promise.resolve();
+  });
+  claimDueBatch = jest.fn((now: Date) => {
+    const pending = [...this.rows.values()]
       .filter((r) => r.status === 'pending' && r.nextAttemptAt.getTime() <= now.getTime())
-      .sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime())
-      .slice(0, limit);
+      .sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime());
+    const due = pending.filter((r) => r.salesOrderId === pending[0]?.salesOrderId);
     return Promise.resolve(
       due.map((r) => {
         this.patch(r.id, () => true, { status: 'submitting', submittingAt: now });
@@ -210,6 +231,8 @@ function makeRow(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
     status: 'submitting',
     testMemo: false,
     vendorOrderNumber: null,
+    vendorBoxNumber: null,
+    vendorShippingFee: null,
     attemptCount: 0,
     lastError: null,
     nextAttemptAt: now,
@@ -269,11 +292,8 @@ describe('PrintOrderSubmitManager', () => {
     expect(ugc.printLink).toHaveBeenCalledWith(DESIGN_ID, 'jpg', 350);
     expect(wowpress.quote).toHaveBeenCalledWith(mockSpec(true), 2);
     expect(wowpress.order).toHaveBeenCalledWith({
-      spec: mockSpec(true),
-      qty: 2,
+      items: [{ spec: mockSpec(true), qty: 2, ordbody: '', ordkey: LINE_ID }],
       ordtitle: '아몬드영 order_01J',
-      ordbody: '',
-      ordkey: LINE_ID,
       receiver: {
         name: '홍길동',
         tel: '010-1234-5678',
@@ -292,7 +312,7 @@ describe('PrintOrderSubmitManager', () => {
 
     await manager.submit(repo.get('po-1'));
 
-    expect(wowpress.order.mock.calls[0]?.[0].ordbody).toBe(TEST_MEMO);
+    expect(wowpress.order.mock.calls[0]?.[0].items[0]?.ordbody).toBe(TEST_MEMO);
     expect(repo.get('po-1')).toMatchObject({ status: 'submitted', testMemo: true });
   });
 
@@ -337,7 +357,7 @@ describe('PrintOrderSubmitManager', () => {
     function cancelDuringOrder(repo: FakeRepo, wowpress: FakeWowpress, patch: Partial<PrintOrderRow>) {
       wowpress.order.mockImplementationOnce(() => {
         repo.rows.set('po-1', { ...repo.get('po-1'), ...patch });
-        return Promise.resolve({ ordnum: 'W-LATE' });
+        return Promise.resolve(placed('W-LATE'));
       });
     }
 
@@ -391,7 +411,7 @@ describe('PrintOrderSubmitManager', () => {
       const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT, makeRow({ orderAttemptedAt: ATTEMPTED }));
       wowpress.findByOrdkey.mockImplementationOnce(() => {
         repo.rows.set('po-1', { ...repo.get('po-1'), status: 'cancel_refused' });
-        return Promise.resolve({ ordnum: 'W-9' });
+        return Promise.resolve({ ordnum: 'W-9', dboxnum: null });
       });
 
       await manager.recoverStale(repo.get('po-1'));
@@ -482,7 +502,7 @@ describe('PrintOrderSubmitManager', () => {
     wowpress.order.mockRejectedValueOnce(new Error('timeout'));
     await manager.submit(repo.get('po-1'));
 
-    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-LATE' });
+    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-LATE', dboxnum: null });
     await manager.submit(reclaim(repo));
 
     expect(wowpress.order).toHaveBeenCalledTimes(1);
@@ -503,7 +523,7 @@ describe('PrintOrderSubmitManager', () => {
 
   it('confirms a sent order via ordkey on a later run instead of ordering again', async () => {
     const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT, makeRow({ orderAttemptedAt: ATTEMPTED }));
-    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-LOST' });
+    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-LOST', dboxnum: null });
 
     await manager.submit(repo.get('po-1'));
 
@@ -534,7 +554,7 @@ describe('PrintOrderSubmitManager', () => {
 
   it('recovers a stale submitting row via ordkey instead of ordering again', async () => {
     const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT, makeRow({ orderAttemptedAt: ATTEMPTED }));
-    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-9' });
+    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-9', dboxnum: null });
 
     await manager.recoverStale(repo.get('po-1'));
 
@@ -546,6 +566,38 @@ describe('PrintOrderSubmitManager', () => {
     expect(wowpress.order).not.toHaveBeenCalled();
     expect(wowpress.uploadFileUrl).toHaveBeenCalledWith('W-9', 'print.jpg', 'https://s3/print.jpg');
     expect(repo.get('po-1').status).toBe('submitted');
+  });
+
+  it('saves the listed box number when a sent order is found via ordkey', async () => {
+    const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT, makeRow({ orderAttemptedAt: ATTEMPTED }));
+    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-LOST', dboxnum: 'BOX-L' });
+
+    await manager.submit(repo.get('po-1'));
+
+    expect(repo.saveVendorBox).toHaveBeenCalledWith('po-1', { vendorBoxNumber: 'BOX-L', vendorShippingFee: null });
+    expect(repo.get('po-1')).toMatchObject({ status: 'submitted', vendorBoxNumber: 'BOX-L', vendorShippingFee: null });
+  });
+
+  it('saves the listed box number during stale recovery and keeps going when the save throws', async () => {
+    const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT, makeRow({ orderAttemptedAt: ATTEMPTED }));
+    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-9', dboxnum: 'BOX-9' });
+
+    await manager.recoverStale(repo.get('po-1'));
+
+    expect(repo.saveVendorBox).toHaveBeenCalledWith('po-1', { vendorBoxNumber: 'BOX-9', vendorShippingFee: null });
+    expect(repo.get('po-1')).toMatchObject({ status: 'pending', vendorOrderNumber: 'W-9', vendorBoxNumber: 'BOX-9' });
+
+    const other = setup(CONFIRMED_VARIANT, makeRow({ orderAttemptedAt: ATTEMPTED }));
+    other.wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-9', dboxnum: 'BOX-9' });
+    other.repo.saveVendorBox.mockRejectedValueOnce(new Error('db down'));
+
+    await other.manager.recoverStale(other.repo.get('po-1'));
+
+    expect(other.repo.get('po-1')).toMatchObject({
+      status: 'pending',
+      vendorOrderNumber: 'W-9',
+      vendorBoxNumber: null,
+    });
   });
 
   it('returns a stale row with an ordnum to pending without asking wowpress', async () => {
@@ -583,12 +635,372 @@ describe('PrintOrderSubmitManager', () => {
   });
 });
 
+describe('PrintOrderSubmitManager.submitBatch', () => {
+  const LINES = [
+    '0190f1d2-0000-7000-8000-00000000b101',
+    '0190f1d2-0000-7000-8000-00000000b102',
+    '0190f1d2-0000-7000-8000-00000000b103',
+  ];
+
+  function batchSetup(variants: string[], overrides: Partial<PrintOrderRow>[] = []) {
+    const repo = new FakeRepo();
+    variants.forEach((variantId, i) => {
+      const id = `po-${i + 1}`;
+      const lineId = LINES[i] ?? '';
+      repo.rows.set(id, makeRow({ id, salesOrderLineId: lineId, almondDesignId: `design-${i + 1}`, ...overrides[i] }));
+      const ctx = context(variantId);
+      repo.contexts.set(lineId, { ...ctx, line: { ...ctx.line, id: lineId } });
+    });
+    const wowpress = new FakeWowpress();
+    const ugc = new FakeUgc();
+    const manager = new PrintOrderSubmitManager(repo, wowpress, ugc);
+    const claimed = () => [...repo.rows.keys()].map((id) => repo.get(id));
+    const listed = (map: Record<string, string>, dboxnum: string | null = null) =>
+      wowpress.findByOrdkey.mockImplementation((ordkey) =>
+        Promise.resolve(map[ordkey] ? { ordnum: map[ordkey], dboxnum } : null),
+      );
+    return { repo, wowpress, ugc, manager, claimed, listed };
+  }
+
+  const ALL = [CONFIRMED_VARIANT, CONFIRMED_VARIANT, CONFIRMED_VARIANT];
+  const orderedKeys = (wowpress: FakeWowpress) => wowpress.order.mock.calls[0]?.[0].items.map((i) => i.ordkey);
+
+  it('orders three new lines in one cjson_order and maps ordnums via ord_list', async () => {
+    const { repo, wowpress, manager, claimed, listed } = batchSetup(ALL);
+    wowpress.order.mockResolvedValue({
+      orders: [
+        { ordnum: 'W-1', dboxno: 7, prodno: 40001 },
+        { ordnum: 'W-2', dboxno: 7, prodno: 40001 },
+        { ordnum: 'W-3', dboxno: 7, prodno: 40001 },
+      ],
+      boxes: [{ dboxno: 7, dboxnum: 'BOX-7', shippingFee: 3500 }],
+    });
+    listed({ [LINES[0] ?? '']: 'W-3', [LINES[1] ?? '']: 'W-1', [LINES[2] ?? '']: 'W-2' });
+
+    await manager.submitBatch(claimed());
+
+    expect(wowpress.order).toHaveBeenCalledTimes(1);
+    expect(wowpress.order.mock.calls[0]?.[0]).toMatchObject({
+      ordtitle: '아몬드영 order_01J',
+      receiver: { name: '홍길동', addr1: '서울특별시 강남구 테헤란로 123' },
+    });
+    expect(orderedKeys(wowpress)).toEqual(LINES);
+    expect(wowpress.findByOrdkey).toHaveBeenCalledTimes(3);
+    LINES.forEach((line) => expect(wowpress.findByOrdkey).toHaveBeenCalledWith(line, repo.get('po-1').createdAt));
+    const expected: [string, string][] = [
+      ['po-1', 'W-3'],
+      ['po-2', 'W-1'],
+      ['po-3', 'W-2'],
+    ];
+    for (const [id, ordnum] of expected) {
+      expect(repo.get(id)).toMatchObject({
+        status: 'submitted',
+        vendorOrderNumber: ordnum,
+        vendorBoxNumber: 'BOX-7',
+        vendorShippingFee: 3500,
+      });
+      expect(wowpress.uploadFileUrl).toHaveBeenCalledWith(ordnum, 'print.jpg', 'https://s3/print.jpg');
+    }
+    expect(repo.saveVendorBox).toHaveBeenCalledTimes(3);
+  });
+
+  it('prepares new lines in parallel so one slow print link does not hold the others back', async () => {
+    const { ugc, wowpress, manager, claimed, listed } = batchSetup(ALL);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    ugc.printLink.mockImplementationOnce(async () => {
+      await gate;
+      return { url: 'https://s3/print.jpg', fileName: 'print.jpg' };
+    });
+    wowpress.order.mockResolvedValue({
+      orders: LINES.map((_, i) => ({ ordnum: `W-${i + 1}`, dboxno: null, prodno: null })),
+      boxes: [],
+    });
+    listed({ [LINES[0] ?? '']: 'W-1', [LINES[1] ?? '']: 'W-2', [LINES[2] ?? '']: 'W-3' });
+
+    const running = manager.submitBatch(claimed());
+    for (let i = 0; i < 20 && ugc.printLink.mock.calls.length < ALL.length; i++) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+
+    expect(ugc.printLink).toHaveBeenCalledTimes(ALL.length);
+    expect(wowpress.order).not.toHaveBeenCalled();
+
+    release();
+    await running;
+
+    expect(wowpress.order).toHaveBeenCalledTimes(1);
+    expect(orderedKeys(wowpress)).toEqual(LINES);
+  });
+
+  it('uses the response ordnum directly when only one line is ordered', async () => {
+    const { repo, wowpress, manager, claimed } = batchSetup([CONFIRMED_VARIANT]);
+    wowpress.order.mockResolvedValue({
+      orders: [{ ordnum: 'W-ONE', dboxno: 3, prodno: 40001 }],
+      boxes: [{ dboxno: 3, dboxnum: 'BOX-3', shippingFee: 3000 }],
+    });
+
+    await manager.submitBatch(claimed());
+
+    expect(wowpress.findByOrdkey).not.toHaveBeenCalled();
+    expect(repo.get('po-1')).toMatchObject({
+      status: 'submitted',
+      vendorOrderNumber: 'W-ONE',
+      vendorBoxNumber: 'BOX-3',
+      vendorShippingFee: 3000,
+    });
+  });
+
+  it('drops unsupported and owner-mismatch lines and orders the rest', async () => {
+    const { repo, wowpress, ugc, manager, claimed } = batchSetup([
+      UNKNOWN_VARIANT,
+      CONFIRMED_VARIANT,
+      CONFIRMED_VARIANT,
+    ]);
+    ugc.design.mockImplementation((designId) =>
+      Promise.resolve({
+        userId: designId === 'design-2' ? 'someone-else' : CUSTOMER_ID,
+        productId: 'p',
+        widthMm: 90,
+        heightMm: 50,
+        hasBack: false,
+      }),
+    );
+
+    await manager.submitBatch(claimed());
+
+    expect(repo.get('po-1').status).toBe('unsupported');
+    expect(repo.get('po-2')).toMatchObject({ status: 'failed', lastError: DESIGN_OWNER_MISMATCH_ERROR });
+    expect(repo.get('po-2').orderAttemptedAt).toBeNull();
+    expect(orderedKeys(wowpress)).toEqual([LINES[2]]);
+    expect(repo.get('po-3')).toMatchObject({ status: 'submitted', vendorOrderNumber: 'W-1' });
+  });
+
+  it('drops a line whose print link fails and retries it later', async () => {
+    const { repo, wowpress, ugc, manager, claimed, listed } = batchSetup(ALL);
+    ugc.printLink.mockImplementation((designId) =>
+      designId === 'design-2'
+        ? Promise.reject(new Error('render down'))
+        : Promise.resolve({ url: 'https://s3/print.jpg', fileName: 'print.jpg' }),
+    );
+    wowpress.order.mockResolvedValue({
+      orders: [
+        { ordnum: 'W-1', dboxno: null, prodno: null },
+        { ordnum: 'W-3', dboxno: null, prodno: null },
+      ],
+      boxes: [],
+    });
+    listed({ [LINES[0] ?? '']: 'W-1', [LINES[2] ?? '']: 'W-3' });
+
+    await manager.submitBatch(claimed());
+
+    expect(orderedKeys(wowpress)).toEqual([LINES[0], LINES[2]]);
+    expect(repo.get('po-2')).toMatchObject({ status: 'pending', attemptCount: 1, lastError: 'render down' });
+    expect(repo.get('po-2').orderAttemptedAt).toBeNull();
+    expect(repo.get('po-1')).toMatchObject({ status: 'submitted', vendorOrderNumber: 'W-1' });
+    expect(repo.get('po-3')).toMatchObject({ status: 'submitted', vendorOrderNumber: 'W-3' });
+  });
+
+  it('leaves a line for confirmSentOrder when ord_list cannot find it', async () => {
+    const { repo, wowpress, manager, claimed, listed } = batchSetup(ALL);
+    wowpress.order.mockResolvedValue({
+      orders: ['W-1', 'W-2', 'W-3'].map((ordnum) => ({ ordnum, dboxno: null, prodno: null })),
+      boxes: [],
+    });
+    listed({ [LINES[0] ?? '']: 'W-1', [LINES[2] ?? '']: 'W-3' });
+
+    await manager.submitBatch(claimed());
+
+    expect(wowpress.order).toHaveBeenCalledTimes(1);
+    const deferred = repo.get('po-2');
+    expect(deferred).toMatchObject({
+      status: 'pending',
+      lastError: ORDER_LOOKUP_PENDING_ERROR,
+      vendorOrderNumber: null,
+    });
+    expect(deferred.orderAttemptedAt).not.toBeNull();
+    expect(deferred.nextAttemptAt.getTime()).toBeGreaterThan(Date.now() + ORDER_LOOKUP_DELAY_MS - 60_000);
+    expect(repo.get('po-1')).toMatchObject({ status: 'submitted', vendorOrderNumber: 'W-1' });
+    expect(repo.get('po-3')).toMatchObject({ status: 'submitted', vendorOrderNumber: 'W-3' });
+  });
+
+  it('defers every line when order throws after taking order rights', async () => {
+    const { repo, wowpress, manager, claimed } = batchSetup(ALL);
+    wowpress.order.mockRejectedValueOnce(new Error('timeout'));
+
+    await manager.submitBatch(claimed());
+
+    for (const id of ['po-1', 'po-2', 'po-3']) {
+      expect(repo.get(id)).toMatchObject({ status: 'pending', lastError: ORDER_LOOKUP_PENDING_ERROR });
+      expect(repo.get(id).orderAttemptedAt).not.toBeNull();
+    }
+    expect(wowpress.uploadFileUrl).not.toHaveBeenCalled();
+
+    const again = claimed().map((r): PrintOrderRow => ({ ...r, status: 'submitting', submittingAt: new Date() }));
+    again.forEach((r) => repo.rows.set(r.id, r));
+    await manager.submitBatch(again);
+
+    expect(wowpress.order).toHaveBeenCalledTimes(1);
+    for (const id of ['po-1', 'po-2', 'po-3']) {
+      expect(repo.get(id)).toMatchObject({ status: 'failed', lastError: ORDER_UNCONFIRMED_ERROR });
+    }
+  });
+
+  it('routes rows already sent to the existing submit path', async () => {
+    const { repo, wowpress, ugc, manager, claimed, listed } = batchSetup(ALL, [
+      { orderAttemptedAt: ATTEMPTED },
+      { orderAttemptedAt: ATTEMPTED, vendorOrderNumber: 'W-OLD' },
+    ]);
+    listed({ [LINES[0] ?? '']: 'W-LOST' });
+
+    await manager.submitBatch(claimed());
+
+    expect(orderedKeys(wowpress)).toEqual([LINES[2]]);
+    expect(wowpress.findByOrdkey).toHaveBeenCalledTimes(1);
+    expect(wowpress.findByOrdkey).toHaveBeenCalledWith(LINES[0], repo.get('po-1').createdAt);
+    expect(ugc.design).toHaveBeenCalledTimes(1);
+    expect(ugc.design).toHaveBeenCalledWith('design-3');
+    expect(repo.get('po-1')).toMatchObject({ status: 'submitted', vendorOrderNumber: 'W-LOST' });
+    expect(repo.get('po-2')).toMatchObject({ status: 'submitted', vendorOrderNumber: 'W-OLD' });
+    expect(repo.get('po-3')).toMatchObject({ status: 'submitted', vendorOrderNumber: 'W-1' });
+    for (const ordnum of ['W-LOST', 'W-OLD', 'W-1']) {
+      expect(wowpress.uploadFileUrl).toHaveBeenCalledWith(ordnum, 'print.jpg', 'https://s3/print.jpg');
+    }
+  });
+
+  it('skips a line whose order right is lost', async () => {
+    const { repo, wowpress, manager, claimed, listed } = batchSetup(ALL);
+    const views = claimed();
+    repo.rows.set('po-2', { ...repo.get('po-2'), submittingAt: new Date('2021-01-01T00:00:00Z') });
+    wowpress.order.mockResolvedValue({
+      orders: ['W-1', 'W-3'].map((ordnum) => ({ ordnum, dboxno: null, prodno: null })),
+      boxes: [],
+    });
+    listed({ [LINES[0] ?? '']: 'W-1', [LINES[2] ?? '']: 'W-3' });
+
+    await manager.submitBatch(views);
+
+    expect(orderedKeys(wowpress)).toEqual([LINES[0], LINES[2]]);
+    expect(repo.get('po-2')).toMatchObject({ status: 'submitting', orderAttemptedAt: null, attemptCount: 0 });
+    expect(repo.get('po-1').status).toBe('submitted');
+    expect(repo.get('po-3').status).toBe('submitted');
+  });
+
+  it('throws-to-defer when ordinfo count differs', async () => {
+    const { repo, wowpress, manager, claimed } = batchSetup(ALL);
+    wowpress.order.mockRejectedValueOnce(
+      new WowpressApiError('ordinfo count does not match items in cjson_order response'),
+    );
+
+    await manager.submitBatch(claimed());
+
+    expect(wowpress.findByOrdkey).not.toHaveBeenCalled();
+    expect(wowpress.uploadFileUrl).not.toHaveBeenCalled();
+    for (const id of ['po-1', 'po-2', 'po-3']) {
+      expect(repo.get(id)).toMatchObject({
+        status: 'pending',
+        lastError: ORDER_LOOKUP_PENDING_ERROR,
+        vendorOrderNumber: null,
+      });
+    }
+  });
+
+  it('still orders a line holding the right when recording another line failure throws', async () => {
+    const { repo, wowpress, manager, claimed, listed } = batchSetup(ALL);
+    repo.takeOrderRight.mockImplementationOnce(() => Promise.reject(new Error('db blip')));
+    const updateOwned = repo.updateOwned.getMockImplementation();
+    repo.updateOwned.mockImplementation((id, claimedAt, patch) =>
+      id === 'po-1' && patch.status === 'pending'
+        ? Promise.reject(new Error('db down'))
+        : (updateOwned?.(id, claimedAt, patch) ?? Promise.resolve(false)),
+    );
+    wowpress.order.mockResolvedValue({
+      orders: ['W-2', 'W-3'].map((ordnum) => ({ ordnum, dboxno: null, prodno: null })),
+      boxes: [],
+    });
+    listed({ [LINES[1] ?? '']: 'W-2', [LINES[2] ?? '']: 'W-3' });
+
+    await expect(manager.submitBatch(claimed())).resolves.toBeUndefined();
+
+    expect(orderedKeys(wowpress)).toEqual([LINES[1], LINES[2]]);
+    expect(repo.get('po-2')).toMatchObject({ status: 'submitted', vendorOrderNumber: 'W-2' });
+    expect(repo.get('po-3')).toMatchObject({ status: 'submitted', vendorOrderNumber: 'W-3' });
+  });
+
+  it('defers the other lines when recording one deferred lookup throws after order fails', async () => {
+    const { repo, wowpress, manager, claimed } = batchSetup(ALL);
+    wowpress.order.mockRejectedValueOnce(new Error('timeout'));
+    const updateOwned = repo.updateOwned.getMockImplementation();
+    repo.updateOwned.mockImplementation((id, claimedAt, patch) =>
+      id === 'po-1' && patch.lastError === ORDER_LOOKUP_PENDING_ERROR
+        ? Promise.reject(new Error('db down'))
+        : (updateOwned?.(id, claimedAt, patch) ?? Promise.resolve(false)),
+    );
+
+    await expect(manager.submitBatch(claimed())).resolves.toBeUndefined();
+
+    for (const id of ['po-2', 'po-3']) {
+      expect(repo.get(id)).toMatchObject({ status: 'pending', lastError: ORDER_LOOKUP_PENDING_ERROR });
+    }
+  });
+
+  it('submits the other lines when recording one line upload failure throws after ordering', async () => {
+    const { repo, wowpress, manager, claimed, listed } = batchSetup(ALL);
+    wowpress.order.mockResolvedValue({
+      orders: ['W-1', 'W-2', 'W-3'].map((ordnum) => ({ ordnum, dboxno: null, prodno: null })),
+      boxes: [],
+    });
+    listed({ [LINES[0] ?? '']: 'W-1', [LINES[1] ?? '']: 'W-2', [LINES[2] ?? '']: 'W-3' });
+    wowpress.uploadFileUrl.mockImplementation((ordnum) =>
+      ordnum === 'W-1' ? Promise.reject(new Error('upload down')) : Promise.resolve(),
+    );
+    const updateOwned = repo.updateOwned.getMockImplementation();
+    repo.updateOwned.mockImplementation((id, claimedAt, patch) =>
+      id === 'po-1' && patch.lastError === 'upload down'
+        ? Promise.reject(new Error('db down'))
+        : (updateOwned?.(id, claimedAt, patch) ?? Promise.resolve(false)),
+    );
+
+    await expect(manager.submitBatch(claimed())).resolves.toBeUndefined();
+
+    expect(repo.get('po-2')).toMatchObject({ status: 'submitted', vendorOrderNumber: 'W-2' });
+    expect(repo.get('po-3')).toMatchObject({ status: 'submitted', vendorOrderNumber: 'W-3' });
+  });
+
+  it('falls back to ord_list dboxnum when the response has no box for the ordnum', async () => {
+    const { repo, wowpress, manager, claimed } = batchSetup([CONFIRMED_VARIANT, CONFIRMED_VARIANT]);
+    wowpress.order.mockResolvedValue({
+      orders: [
+        { ordnum: 'W-1', dboxno: 5, prodno: 40001 },
+        { ordnum: 'W-2', dboxno: null, prodno: 40001 },
+      ],
+      boxes: [{ dboxno: 5, dboxnum: 'BOX-5', shippingFee: 3000 }],
+    });
+    wowpress.findByOrdkey.mockImplementation((ordkey) =>
+      Promise.resolve(
+        ordkey === LINES[0] ? { ordnum: 'W-1', dboxnum: 'BOX-5' } : { ordnum: 'W-2', dboxnum: 'BOX-LIST' },
+      ),
+    );
+
+    await manager.submitBatch(claimed());
+
+    expect(repo.get('po-1')).toMatchObject({ vendorBoxNumber: 'BOX-5', vendorShippingFee: 3000 });
+    expect(repo.get('po-2')).toMatchObject({
+      status: 'submitted',
+      vendorBoxNumber: 'BOX-LIST',
+      vendorShippingFee: null,
+    });
+  });
+});
+
 describe('ownership of a claimed row', () => {
   it('records a suspected duplicate and stops when another run already stored an ordnum', async () => {
     const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT);
     wowpress.order.mockImplementationOnce(() => {
       repo.rows.set('po-1', { ...repo.get('po-1'), vendorOrderNumber: 'W-OTHER' });
-      return Promise.resolve({ ordnum: 'W-1' });
+      return Promise.resolve(placed('W-1'));
     });
 
     await manager.submit(repo.get('po-1'));
@@ -607,7 +1019,7 @@ describe('ownership of a claimed row', () => {
       const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT);
       wowpress.order.mockImplementationOnce(() => {
         repo.rows.set('po-1', { ...repo.get('po-1'), status, vendorOrderNumber: 'W-OTHER' });
-        return Promise.resolve({ ordnum: 'W-1' });
+        return Promise.resolve(placed('W-1'));
       });
 
       await manager.submit(repo.get('po-1'));
@@ -629,7 +1041,7 @@ describe('ownership of a claimed row', () => {
         cancelResolvedAt: new Date(),
         cancelResolvedBy: 'admin-1',
       });
-      return Promise.resolve({ ordnum: 'W-1' });
+      return Promise.resolve(placed('W-1'));
     });
 
     await manager.submit(repo.get('po-1'));
@@ -647,7 +1059,7 @@ describe('ownership of a claimed row', () => {
     const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT);
     wowpress.order.mockImplementationOnce(() => {
       repo.rows.set('po-1', { ...repo.get('po-1'), vendorOrderNumber: 'W-OTHER' });
-      return Promise.resolve({ ordnum: 'W-1' });
+      return Promise.resolve(placed('W-1'));
     });
     await manager.submit(repo.get('po-1'));
     const duplicate = 'duplicate wowpress order suspected: W-OTHER / W-1';
@@ -736,7 +1148,7 @@ describe('ownership of a claimed row', () => {
     const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT, makeRow({ orderAttemptedAt: ATTEMPTED }));
     const view = repo.claim('po-1');
     repo.rows.set('po-1', { ...repo.get('po-1'), vendorOrderNumber: 'W-OTHER' });
-    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-LOST' });
+    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-LOST', dboxnum: null });
 
     await manager.submit(view);
 
@@ -753,7 +1165,7 @@ describe('ownership of a claimed row', () => {
     const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT, makeRow({ orderAttemptedAt: ATTEMPTED }));
     const view = repo.claim('po-1');
     repo.rows.set('po-1', { ...repo.get('po-1'), vendorOrderNumber: 'W-LOST' });
-    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-LOST' });
+    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-LOST', dboxnum: null });
 
     await manager.submit(view);
 
@@ -765,7 +1177,7 @@ describe('ownership of a claimed row', () => {
     const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT, makeRow({ orderAttemptedAt: ATTEMPTED }));
     const staleView = repo.get('po-1');
     repo.rows.set('po-1', { ...repo.get('po-1'), vendorOrderNumber: 'W-OTHER' });
-    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-9' });
+    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-9', dboxnum: null });
 
     await manager.recoverStale(staleView);
 
@@ -774,7 +1186,7 @@ describe('ownership of a claimed row', () => {
       vendorOrderNumber: 'W-OTHER',
       lastError: 'duplicate wowpress order suspected: W-OTHER / W-9',
     });
-    expect(await repo.claimDue(1, new Date())).toEqual([]);
+    expect(await repo.claimDueBatch(new Date())).toEqual([]);
     expect(wowpress.order).not.toHaveBeenCalled();
     expect(wowpress.uploadFileUrl).not.toHaveBeenCalled();
   });
@@ -783,7 +1195,7 @@ describe('ownership of a claimed row', () => {
     const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT, makeRow({ orderAttemptedAt: ATTEMPTED }));
     const staleView = repo.get('po-1');
     repo.claim('po-1');
-    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-9' });
+    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-9', dboxnum: null });
 
     await manager.recoverStale(staleView);
 
@@ -807,7 +1219,7 @@ describe('an ordnum recovered by ordkey is never lost', () => {
 
   it('marks failed with the number when saving a submit-lookup ordnum throws', async () => {
     const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT, makeRow({ orderAttemptedAt: ATTEMPTED }));
-    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-LOST' });
+    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-LOST', dboxnum: null });
     repo.saveVendorOrderNumber.mockRejectedValueOnce(new Error('db down'));
     const { logs, restore } = captureLogs();
 
@@ -822,7 +1234,7 @@ describe('an ordnum recovered by ordkey is never lost', () => {
 
   it('marks failed with the number when saving a stale-lookup ordnum throws', async () => {
     const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT, makeRow({ orderAttemptedAt: ATTEMPTED }));
-    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-LOST' });
+    wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-LOST', dboxnum: null });
     repo.saveVendorOrderNumber.mockRejectedValueOnce(new Error('db down'));
     const { logs, restore } = captureLogs();
 
@@ -831,7 +1243,7 @@ describe('an ordnum recovered by ordkey is never lost', () => {
 
     expect(repo.get('po-1')).toMatchObject({ status: 'failed', lastError: unsavedOrdnumError('W-LOST') });
     expect(logs.some((line) => line.includes('W-LOST') && line.includes(LINE_ID))).toBe(true);
-    expect(await repo.claimDue(1, new Date())).toEqual([]);
+    expect(await repo.claimDueBatch(new Date())).toEqual([]);
     expect(wowpress.uploadFileUrl).not.toHaveBeenCalled();
   });
 
@@ -841,7 +1253,7 @@ describe('an ordnum recovered by ordkey is never lost', () => {
       const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT, makeRow({ orderAttemptedAt: ATTEMPTED }));
       const view = path === 'submit' ? repo.claim('po-1') : repo.get('po-1');
       repo.rows.set('po-1', { ...repo.get('po-1'), vendorOrderNumber: 'W-OTHER' });
-      wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-LOST' });
+      wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-LOST', dboxnum: null });
       repo.update.mockRejectedValue(new Error('db down'));
       const { logs, restore } = captureLogs();
 
@@ -851,7 +1263,7 @@ describe('an ordnum recovered by ordkey is never lost', () => {
 
       expect(logs.some((line) => line.includes('W-OTHER') && line.includes('W-LOST'))).toBe(true);
       expect(repo.get('po-1').status).not.toBe('pending');
-      expect(await repo.claimDue(1, new Date())).toEqual([]);
+      expect(await repo.claimDueBatch(new Date())).toEqual([]);
       expect(wowpress.order).not.toHaveBeenCalled();
       expect(wowpress.uploadFileUrl).not.toHaveBeenCalled();
     },
@@ -948,30 +1360,33 @@ describe('PrintOrderSubmitWorker', () => {
       const config = new ConfigService(value === undefined ? {} : { PRINT_ORDER_SUBMIT_ENABLED: value });
       await new PrintOrderSubmitWorker(config, repo, manager).tick();
       expect(repo.staleSubmitting).not.toHaveBeenCalled();
-      expect(repo.claimDue).not.toHaveBeenCalled();
+      expect(repo.claimDueBatch).not.toHaveBeenCalled();
       expect(wowpress.order).not.toHaveBeenCalled();
     }
   });
 
-  it('recovers stale rows, then claims one row at a time without one failure blocking the next', async () => {
+  it('recovers stale rows, then claims one sales order at a time without one failure blocking the next', async () => {
     const { repo, manager } = setup(CONFIRMED_VARIANT, makeRow({ id: 'po-stale' }));
     const old = new Date('2020-01-01T00:00:00Z');
-    repo.rows.set('po-a', makeRow({ id: 'po-a', status: 'pending', createdAt: new Date(old.getTime() + 1) }));
-    repo.rows.set('po-b', makeRow({ id: 'po-b', status: 'pending', createdAt: new Date(old.getTime() + 2) }));
+    const pending = (id: string, salesOrderId: string, ms: number) =>
+      makeRow({ id, salesOrderId, status: 'pending', createdAt: new Date(old.getTime() + ms) });
+    repo.rows.set('po-a1', pending('po-a1', 'so-a', 1));
+    repo.rows.set('po-b', pending('po-b', 'so-b', 2));
+    repo.rows.set('po-a2', pending('po-a2', 'so-a', 3));
     const order: string[] = [];
     jest.spyOn(manager, 'recoverStale').mockImplementation((r) => {
       order.push(`recover:${r.id}`);
       return Promise.resolve();
     });
-    jest.spyOn(manager, 'submit').mockImplementation((r) => {
-      order.push(`submit:${r.id}`);
-      return r.id === 'po-a' ? Promise.reject(new Error('boom')) : Promise.resolve();
+    jest.spyOn(manager, 'submitBatch').mockImplementation((rows) => {
+      order.push(`batch:${rows.map((r) => r.id).join('+')}`);
+      return rows[0]?.salesOrderId === 'so-a' ? Promise.reject(new Error('boom')) : Promise.resolve();
     });
 
     await new PrintOrderSubmitWorker(enabled, repo, manager).runOnce();
 
-    expect(order).toEqual(['recover:po-stale', 'submit:po-a', 'submit:po-b']);
-    expect(repo.claimDue.mock.calls.map(([limit]) => limit)).toEqual([1, 1, 1]);
+    expect(order).toEqual(['recover:po-stale', 'batch:po-a1+po-a2', 'batch:po-b']);
+    expect(repo.claimDueBatch).toHaveBeenCalledTimes(3);
   });
 
   describe('two instances when processing outlasts the stale window', () => {
@@ -994,7 +1409,7 @@ describe('PrintOrderSubmitWorker', () => {
           jest.setSystemTime(Date.now() + PRINT_ORDER_STALE_MS + 60_000);
           bRun = workerB.runOnce();
           resolve();
-          return new Promise<{ ordnum: string }>(() => undefined);
+          return new Promise<WowpressOrderResult>(() => undefined);
         });
       });
 

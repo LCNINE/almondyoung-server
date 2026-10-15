@@ -23,7 +23,7 @@ const noDb = {} as unknown as DbService<typeof wmsSchema>;
 class FakeWowpress extends WowpressClient {
   cancel = jest.fn<Promise<void>, [string]>(() => Promise.resolve());
   detail = jest.fn<Promise<WowpressOrderDetail>, [string]>(() =>
-    Promise.resolve({ ordstat: 1, jobstat: null, dlvyno: null, dlvyinvc: null }),
+    Promise.resolve({ ordstat: 1, jobstat: null, carrierCode: null, trackingNumber: null, boxNumber: null }),
   );
   constructor() {
     super(new ConfigService({}), noNetwork);
@@ -136,6 +136,8 @@ function row(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
     status: 'pending',
     testMemo: false,
     vendorOrderNumber: null,
+    vendorBoxNumber: null,
+    vendorShippingFee: null,
     attemptCount: 0,
     lastError: null,
     nextAttemptAt: new Date(),
@@ -159,10 +161,28 @@ function row(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
 }
 
 const SUBMITTED = { status: 'submitted' as const, vendorOrderNumber: 'WP-1', orderAttemptedAt: new Date() };
-const CANCELLABLE: WowpressOrderDetail = { ordstat: 1, jobstat: null, dlvyno: null, dlvyinvc: null };
-const VENDOR_CANCELLED: WowpressOrderDetail = { ordstat: 90, jobstat: null, dlvyno: null, dlvyinvc: null };
+const CANCELLABLE: WowpressOrderDetail = {
+  ordstat: 1,
+  jobstat: null,
+  carrierCode: null,
+  trackingNumber: null,
+  boxNumber: null,
+};
+const VENDOR_CANCELLED: WowpressOrderDetail = {
+  ordstat: 90,
+  jobstat: null,
+  carrierCode: null,
+  trackingNumber: null,
+  boxNumber: null,
+};
 const NOTHING_CANCELLED = { vendorCancelled: [], locallyCancelled: [] };
-const IN_PRODUCTION: WowpressOrderDetail = { ordstat: 20, jobstat: 120, dlvyno: null, dlvyinvc: null };
+const IN_PRODUCTION: WowpressOrderDetail = {
+  ordstat: 20,
+  jobstat: 120,
+  carrierCode: null,
+  trackingNumber: null,
+  boxNumber: null,
+};
 
 function setup(...rows: PrintOrderRow[]) {
   const store = new Store();
@@ -263,7 +283,8 @@ describe('PrintOrderCancellationManager', () => {
       const { manager, store, wowpress, repo } = setup(r);
       wowpress.cancel.mockRejectedValue(new WowpressApiError('취소할 수 없는 상태입니다'));
       wowpress.detail.mockImplementation(() => {
-        repo.beforeWrite = (id: string) => store.put({ ...store.get(id), lastError: 'duplicate wowpress order suspected: WP-1 / WP-2' });
+        repo.beforeWrite = (id: string) =>
+          store.put({ ...store.get(id), lastError: 'duplicate wowpress order suspected: WP-1 / WP-2' });
         return Promise.resolve(IN_PRODUCTION);
       });
 
@@ -369,7 +390,13 @@ describe('PrintOrderCancellationManager', () => {
       const r = row(SUBMITTED);
       const { manager, store, wowpress } = setup(r);
       wowpress.cancel.mockRejectedValue(new WowpressApiError('resultCode 500'));
-      wowpress.detail.mockResolvedValue({ ordstat: 1, jobstat: null, dlvyno: null, dlvyinvc: null });
+      wowpress.detail.mockResolvedValue({
+        ordstat: 1,
+        jobstat: null,
+        carrierCode: null,
+        trackingNumber: null,
+        boxNumber: null,
+      });
       await expect(manager.cancelForOrder('so-1', 'gate')).rejects.toBeInstanceOf(UpstreamUnavailableError);
       expect(store.get(r.id).status).toBe('cancelling');
     });
@@ -393,7 +420,9 @@ describe('PrintOrderCancellationManager', () => {
       const { manager, store, wowpress } = setup(pending, refusedLine, okLine, other);
       wowpress.detail.mockImplementation((ordnum) =>
         Promise.resolve(
-          ordnum === 'WP-2' ? IN_PRODUCTION : { ordstat: 1, jobstat: null, dlvyno: null, dlvyinvc: null },
+          ordnum === 'WP-2'
+            ? IN_PRODUCTION
+            : { ordstat: 1, jobstat: null, carrierCode: null, trackingNumber: null, boxNumber: null },
         ),
       );
 

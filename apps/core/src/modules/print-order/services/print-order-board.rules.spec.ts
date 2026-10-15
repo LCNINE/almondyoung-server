@@ -17,6 +17,8 @@ function row(overrides: Partial<PrintOrderListItem> = {}): PrintOrderListItem {
     status: 'submitted',
     testMemo: false,
     vendorOrderNumber: 'W-1',
+    vendorBoxNumber: null,
+    vendorShippingFee: null,
     attemptCount: 0,
     lastError: null,
     nextAttemptAt: LONG_AGO,

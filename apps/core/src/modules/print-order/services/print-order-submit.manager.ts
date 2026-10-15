@@ -4,7 +4,7 @@ import { UgcAlmondDesignClient, type UgcPrintLink } from '../clients/ugc-almond-
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { WowpressClient } from '../wowpress/wowpress.client';
 import { WOWPRESS_PRODUCTS } from '../wowpress/wowpress-products';
-import { type WowpressLineSpec } from '../wowpress/wowpress.types';
+import { type WowpressLineSpec, type WowpressOrderResult } from '../wowpress/wowpress.types';
 import {
   DUPLICATE_ORDER_ERROR_PREFIX,
   lateOrdnumError,
@@ -43,6 +43,21 @@ type OrdnumSource = 'order' | 'submit lookup' | 'stale lookup';
 
 type Write = (patch: Partial<PrintOrderRow>) => Promise<boolean>;
 
+interface Lane {
+  row: PrintOrderRow;
+  claimedAt: Date;
+  write: Write;
+  owned: (patch: Partial<PrintOrderRow>) => Promise<void>;
+  state: { orderSent: boolean; ordnum: string | null };
+}
+
+interface ReadyLane extends Lane {
+  ctx: PrintOrderLineContext;
+  spec: WowpressLineSpec;
+  link: UgcPrintLink;
+  address: z.infer<typeof shippingAddress>;
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -58,9 +73,41 @@ export class PrintOrderSubmitManager {
   ) {}
 
   async submit(row: PrintOrderRow): Promise<void> {
+    const lane = this.lane(row);
+    if (!lane) return;
+    if (!lane.state.orderSent && !lane.state.ordnum) {
+      await this.orderNew([lane]);
+      return;
+    }
+    try {
+      const line = await this.lineSpec(lane);
+      if (!line) return;
+      const ordnum = lane.state.ordnum ?? (await this.confirmSentOrder(row));
+      lane.state.ordnum = ordnum;
+      const link = await this.ugc.printLink(row.almondDesignId, line.spec.file.format, line.spec.file.dpi);
+      await this.deliver(lane, ordnum, link);
+    } catch (error) {
+      await this.settle(lane, error);
+    }
+  }
+
+  async submitBatch(rows: PrintOrderRow[]): Promise<void> {
+    const fresh: Lane[] = [];
+    for (const row of rows) {
+      if (row.orderAttemptedAt !== null || row.vendorOrderNumber !== null) {
+        await this.submit(row);
+        continue;
+      }
+      const lane = this.lane(row);
+      if (lane) fresh.push(lane);
+    }
+    if (fresh.length > 0) await this.orderNew(fresh);
+  }
+
+  private lane(row: PrintOrderRow): Lane | null {
     if (row.status !== 'submitting' || !row.submittingAt) {
       this.logger.warn(`print order ${row.id} is not a claimed row (status ${row.status})`);
-      return;
+      return null;
     }
     // 선점 시각이 소유권 표식이다. 다른 인스턴스가 다시 집으면 이 값이 바뀌어 이후 쓰기가 0행이 된다
     const claimedAt = row.submittingAt;
@@ -68,49 +115,192 @@ export class PrintOrderSubmitManager {
     const owned = async (patch: Partial<PrintOrderRow>) => {
       if (!(await write(patch))) throw new LostOwnership();
     };
-    const state = { orderSent: row.orderAttemptedAt !== null, ordnum: row.vendorOrderNumber };
-    try {
-      const ctx = await this.repository.findLineContext(row.salesOrderLineId);
-      if (!ctx) throw new Error(`sales order line not found: ${row.salesOrderLineId}`);
-      const spec = WOWPRESS_PRODUCTS[ctx.line.variantId];
-      if (!spec) {
-        await owned({ status: 'unsupported', lastError: `no wowpress spec for variant ${ctx.line.variantId}` });
-        return;
-      }
-      if (!state.ordnum && state.orderSent) state.ordnum = await this.confirmSentOrder(row);
-      let link: UgcPrintLink | null = null;
-      if (!state.ordnum) {
-        // 시안 ID 는 고객이 장바구니 메타데이터로 넣는 값이다. 남의 시안을 인쇄해 받지 못하게 주문 고객과 대조한다
-        const design = await this.ugc.design(row.almondDesignId);
-        if (design.userId !== ctx.order.customerId) {
-          await owned({ status: 'failed', lastError: DESIGN_OWNER_MISMATCH_ERROR });
-          return;
-        }
-        // 파일을 못 만들면 주문하지 않도록 링크를 주문보다 먼저 받는다
-        link = await this.ugc.printLink(row.almondDesignId, spec.file.format, spec.file.dpi);
-        state.ordnum = await this.placeOrder(row, ctx, spec, claimedAt, state);
-      }
-      link ??= await this.ugc.printLink(row.almondDesignId, spec.file.format, spec.file.dpi);
-      await this.wowpress.uploadFileUrl(state.ordnum, link.fileName, link.url);
-      await owned({ status: 'submitted' });
-    } catch (error) {
-      if (error instanceof LostOwnership) {
-        this.logger.warn(`print order ${row.id} was reclaimed or its order right is taken; stopped`);
-        return;
-      }
-      if (error instanceof AlreadyRecorded) return;
-      if (state.orderSent && !state.ordnum) {
-        // 이번 차례에 보낸 주문의 응답만 잃었을 수 있다. 바로 포기하지 않고 한 번 미뤄, 다음 차례의 ordkey 조회
-        // (confirmSentOrder)가 주문을 찾으면 파일 전달부터 이어 가게 한다. 다음 차례 조회에서도 못 찾으면 운영자 확인으로 넘긴다
-        if (row.orderAttemptedAt === null) {
-          await this.deferLookup(row.id, error, write);
-          return;
-        }
-        await this.markUnconfirmed(row.id, error, write);
-        return;
-      }
-      await this.fail(row, error, write);
+    return {
+      row,
+      claimedAt,
+      write,
+      owned,
+      state: { orderSent: row.orderAttemptedAt !== null, ordnum: row.vendorOrderNumber },
+    };
+  }
+
+  private async lineSpec(lane: Lane): Promise<{ ctx: PrintOrderLineContext; spec: WowpressLineSpec } | null> {
+    const ctx = await this.repository.findLineContext(lane.row.salesOrderLineId);
+    if (!ctx) throw new Error(`sales order line not found: ${lane.row.salesOrderLineId}`);
+
+    const spec = WOWPRESS_PRODUCTS[ctx.line.variantId];
+    if (!spec) {
+      await lane.owned({ status: 'unsupported', lastError: `no wowpress spec for variant ${ctx.line.variantId}` });
+      return null;
     }
+
+    return { ctx, spec };
+  }
+
+  private async prepare(lane: Lane): Promise<ReadyLane | null> {
+    const line = await this.lineSpec(lane);
+    if (!line) return null;
+
+    const { ctx, spec } = line;
+    // 시안 ID 는 고객이 장바구니 메타데이터로 넣는 값이다. 남의 시안을 인쇄해 받지 못하게 주문 고객과 대조한다
+    const design = await this.ugc.design(lane.row.almondDesignId);
+    if (design.userId !== ctx.order.customerId) {
+      await lane.owned({ status: 'failed', lastError: DESIGN_OWNER_MISMATCH_ERROR });
+      return null;
+    }
+
+    // 파일을 못 만들면 주문하지 않도록 링크를 주문보다 먼저 받는다
+    const link = await this.ugc.printLink(lane.row.almondDesignId, spec.file.format, spec.file.dpi);
+    const address = shippingAddress.parse(ctx.order.shippingAddress);
+    await this.wowpress.quote(spec, ctx.line.quantity);
+
+    return { ...lane, ctx, spec, link, address };
+  }
+
+  private async orderNew(lanes: Lane[]): Promise<void> {
+    const prepared = await Promise.all(
+      lanes.map(async (lane) => {
+        try {
+          return await this.prepare(lane);
+        } catch (error) {
+          await this.settle(lane, error);
+          return null;
+        }
+      }),
+    );
+    const ready = prepared.filter((lane): lane is ReadyLane => lane !== null);
+
+    const sent: ReadyLane[] = [];
+    for (const lane of ready) {
+      try {
+        // 주문권은 행마다 한 번뿐이다. 이 UPDATE 가 1행일 때만 주문을 보낸다
+        if (!(await this.repository.takeOrderRight(lane.row.id, lane.claimedAt, { testMemo: !lane.spec.confirmed }))) {
+          throw new LostOwnership();
+        }
+        lane.state.orderSent = true;
+        sent.push(lane);
+      } catch (error) {
+        await this.settle(lane, error);
+      }
+    }
+
+    const [first] = sent;
+    if (!first) return;
+
+    let result: WowpressOrderResult;
+    try {
+      result = await this.wowpress.order({
+        items: sent.map((lane) => ({
+          spec: lane.spec,
+          qty: lane.ctx.line.quantity,
+          ordbody: lane.spec.confirmed ? '' : TEST_MEMO,
+          ordkey: lane.ctx.line.id,
+        })),
+        ordtitle: `아몬드영 ${first.ctx.order.channelOrderId}`,
+        receiver: {
+          name: first.address.recipientName,
+          tel: first.address.phone,
+          zipcode: first.address.postalCode,
+          addr1: first.address.roadAddress,
+          addr2: first.address.detailAddress ?? '',
+          dlvymsg: first.address.deliveryNote ?? '',
+        },
+      });
+    } catch (error) {
+      for (const lane of sent) await this.settle(lane, error);
+      return;
+    }
+
+    for (const lane of sent) {
+      try {
+        await this.finishOrdered(lane, result, sent.length === 1);
+      } catch (error) {
+        await this.settle(lane, error);
+      }
+    }
+  }
+
+  private async finishOrdered(lane: ReadyLane, result: WowpressOrderResult, single: boolean): Promise<void> {
+    const { ordnum, dboxnum, source } = await this.matchOrdnum(lane.row, result, single);
+    if (!(await this.recordReceivedOrdnum(lane.row, ordnum, source))) throw new AlreadyRecorded();
+    lane.state.ordnum = ordnum;
+    await this.saveBox(lane.row, result, ordnum, dboxnum);
+    await this.deliver(lane, ordnum, lane.link);
+  }
+
+  private async matchOrdnum(
+    row: PrintOrderRow,
+    result: WowpressOrderResult,
+    single: boolean,
+  ): Promise<{ ordnum: string; dboxnum: string | null; source: OrdnumSource }> {
+    const [placed] = result.orders;
+    if (single && placed) return { ordnum: placed.ordnum, dboxnum: null, source: 'order' };
+    const found = await this.wowpress.findByOrdkey(row.salesOrderLineId, row.createdAt);
+    if (!found) throw new Error(`ordkey ${row.salesOrderLineId} not found on wowpress`);
+    return { ...found, source: 'submit lookup' };
+  }
+
+  private async saveBox(
+    row: PrintOrderRow,
+    result: WowpressOrderResult,
+    ordnum: string,
+    listedBoxNumber: string | null,
+  ): Promise<void> {
+    const placed = result.orders.find((o) => o.ordnum === ordnum);
+    const box = placed ? result.boxes.find((b) => b.dboxno === placed.dboxno) : undefined;
+
+    await this.storeBox(row, ordnum, {
+      vendorBoxNumber: box?.dboxnum ?? listedBoxNumber,
+      vendorShippingFee: box?.shippingFee ?? null,
+    });
+  }
+
+  private async storeBox(
+    row: PrintOrderRow,
+    ordnum: string,
+    box: { vendorBoxNumber: string | null; vendorShippingFee: number | null },
+  ): Promise<void> {
+    try {
+      await this.repository.saveVendorBox(row.id, box);
+    } catch (error) {
+      this.logger.warn(`print order ${row.id} ordnum ${ordnum}: could not save vendor box (${errorMessage(error)})`);
+    }
+  }
+
+  private async deliver(lane: Lane, ordnum: string, link: UgcPrintLink): Promise<void> {
+    await this.wowpress.uploadFileUrl(ordnum, link.fileName, link.url);
+    await lane.owned({ status: 'submitted' });
+  }
+
+  private async settle(lane: Lane, error: unknown): Promise<void> {
+    // 한 줄의 실패 기록이 던져도 같은 묶음의 다른 줄 처리는 이어 간다
+    try {
+      await this.recordLineFailure(lane, error);
+    } catch (recordError) {
+      this.logger.error(
+        `print order ${lane.row.id}: could not record failure "${errorMessage(error)}" (${errorMessage(recordError)})`,
+      );
+    }
+  }
+
+  private async recordLineFailure(lane: Lane, error: unknown): Promise<void> {
+    const { row, state, write } = lane;
+    if (error instanceof LostOwnership) {
+      this.logger.warn(`print order ${row.id} was reclaimed or its order right is taken; stopped`);
+      return;
+    }
+    if (error instanceof AlreadyRecorded) return;
+    if (state.orderSent && !state.ordnum) {
+      // 이번 차례에 보낸 주문의 응답만 잃었을 수 있다. 바로 포기하지 않고 한 번 미뤄, 다음 차례의 ordkey 조회
+      // (confirmSentOrder)가 주문을 찾으면 파일 전달부터 이어 가게 한다. 다음 차례 조회에서도 못 찾으면 운영자 확인으로 넘긴다
+      if (row.orderAttemptedAt === null) {
+        await this.deferLookup(row.id, error, write);
+        return;
+      }
+      await this.markUnconfirmed(row.id, error, write);
+      return;
+    }
+    await this.fail(row, error, write);
   }
 
   async recoverStale(row: PrintOrderRow): Promise<void> {
@@ -128,6 +318,7 @@ export class PrintOrderSubmitManager {
         }
         // 저장하지 못한 행은 recordReceivedOrdnum 이 failed 로 넘겼다. 파일을 보내지 않는다
         if (!(await this.recordReceivedOrdnum(row, found.ordnum, 'stale lookup'))) return;
+        await this.storeBox(row, found.ordnum, { vendorBoxNumber: found.dboxnum, vendorShippingFee: null });
       }
       if (!(await write({ status: 'pending', nextAttemptAt: new Date() }))) {
         this.logger.warn(`print order ${row.id} is no longer stale; left as is`);
@@ -159,6 +350,7 @@ export class PrintOrderSubmitManager {
     const found = await this.wowpress.findByOrdkey(row.salesOrderLineId, row.createdAt);
     if (!found) throw new Error(`ordkey ${row.salesOrderLineId} not found on wowpress`);
     if (!(await this.recordReceivedOrdnum(row, found.ordnum, 'submit lookup'))) throw new AlreadyRecorded();
+    await this.storeBox(row, found.ordnum, { vendorBoxNumber: found.dboxnum, vendorShippingFee: null });
     return found.ordnum;
   }
 
@@ -220,39 +412,6 @@ export class PrintOrderSubmitManager {
     await this.repository.recordFailure(row.id, lastError).catch((error: unknown) => {
       this.logger.error(`${at}: could not record "${lastError}" (${errorMessage(error)})`);
     });
-  }
-
-  private async placeOrder(
-    row: PrintOrderRow,
-    ctx: PrintOrderLineContext,
-    spec: WowpressLineSpec,
-    claimedAt: Date,
-    state: { orderSent: boolean },
-  ): Promise<string> {
-    const address = shippingAddress.parse(ctx.order.shippingAddress);
-    await this.wowpress.quote(spec, ctx.line.quantity);
-    // 주문권은 행마다 한 번뿐이다. 이 UPDATE 가 1행일 때만 주문을 보낸다
-    if (!(await this.repository.takeOrderRight(row.id, claimedAt, { testMemo: !spec.confirmed }))) {
-      throw new LostOwnership();
-    }
-    state.orderSent = true;
-    const { ordnum } = await this.wowpress.order({
-      spec,
-      qty: ctx.line.quantity,
-      ordtitle: `아몬드영 ${ctx.order.channelOrderId}`,
-      ordbody: spec.confirmed ? '' : TEST_MEMO,
-      ordkey: ctx.line.id,
-      receiver: {
-        name: address.recipientName,
-        tel: address.phone,
-        zipcode: address.postalCode,
-        addr1: address.roadAddress,
-        addr2: address.detailAddress ?? '',
-        dlvymsg: address.deliveryNote ?? '',
-      },
-    });
-    if (!(await this.recordReceivedOrdnum(row, ordnum, 'order'))) throw new AlreadyRecorded();
-    return ordnum;
   }
 
   private async fail(row: PrintOrderRow, error: unknown, write: Write): Promise<void> {

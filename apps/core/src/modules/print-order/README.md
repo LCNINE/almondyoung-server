@@ -6,18 +6,34 @@
 ## 하는 일
 
 - 판매주문 라인에 `almond_design_id` 가 있으면 `pending` 행을 만든다.
-- `PrintOrderSubmitWorker` (매분): 시안 주인 확인 → ugc 에서 인쇄 파일 링크 → 와우프레스 가격조회 → 주문 → 파일 전달.
+- `PrintOrderSubmitWorker` (매분): 판매주문 하나씩 집어 시안 주인 확인 → ugc 에서 인쇄 파일 링크 → 와우프레스 가격조회 → 주문 → 파일 전달. 아래 묶음 발주 참고.
   시안 ID 는 고객이 장바구니 메타데이터로 넣는 값이라, 시안 주인(ugc `almond_designs.user_id`)과 주문 고객(`sales_orders.customer_id`)이 다르면 주문하지 않고 `failed` 로 둔다.
 - `PrintOrderTrackingWorker` (30분): 주문상세로 송장·배송 상태 반영. 고객 배송조회(`/store/orders/by-channel-order/:id/tracking`)에 한 항목으로 덧붙는다.
 - 취소: `PrintOrderCancellation` 이 판매주문 취소 앞단에서 와우프레스 취소를 먼저 시도한다. 아래 취소·환불 경로 참고.
 - 운영자 보드: admin-web `주문 > 와우프레스 발주` (`/order/print-orders`).
 - 배송지 변경: Medusa 에서 주소를 고쳐도 와우프레스로 이미 보냈거나 보내는 중인 인쇄 줄이 있으면 반영하지 않고 운영자 확인(`SHIPMENT_NOT_REVISABLE`)으로 남긴다. 와우프레스 쪽 주소는 사람이 고친다. 발주 전 줄은 발주할 때 새 주소를 읽는다.
 
+## 묶음 발주
+
+같은 판매주문의 인쇄 줄은 와우프레스 주문 한 건(`cjson_order` 요청 하나)으로 함께 보낸다. 한 박스로 묶이는 것은 그 가운데 와우프레스 묶음배송 그룹이 같은 제품끼리뿐이고, 묶음배송 그룹이 다르거나 없는 제품은 박스가 따로 나간다. 설계는 `docs/superpowers/specs/2026-10-15-wowpress-bundled-order-design.md`.
+
+- 워커는 판매주문 단위로 줄을 선점한다. 묶음에는 이번 차례에 새로 주문할 줄(`order_attempted_at` 과 `vendor_order_number` 가 비어 있는 줄)만 들어간다. 응답 유실 복구 중이거나 파일만 다시 전달하는 줄은 넣지 않는다.
+- 각 줄의 `ordkey` 는 줄 id(`sales_order_line_id`)다. 원소가 하나면 응답 `ordnum` 을 그대로 쓰고, 둘 이상이면 `ord_list` 의 `ordkey` 로 줄마다 대응한다. 대응하지 못한 줄은 주문 응답 유실과 같은 경로(다음 차례 `ordkey` 조회)로 넘어간다.
+- 실패 후 재전송처럼 나중에 따로 재시도되는 줄은 혼자 발주된다. 이미 나간 박스에 붙이지 않으므로 별도 박스이고 택배비가 따로 붙는다.
+- `vendor_box_number` 는 와우프레스 배송박스 번호(`dboxnum`), `vendor_shipping_fee` 는 그 박스의 청구 택배비(`dlvcost_bill`, 부가세 포함)다. 택배비는 발주 응답을 받은 줄에만 남고, 응답 유실 복구(`ord_list` 조회)로 번호를 찾은 줄은 박스 번호만 남는다. 그래서 택배비를 합산할 때는 박스별로 한 번(같은 박스 줄 중 값이 있는 것, 박스별 max) 센다. 응답에서 못 읽으면 null 이다.
+- 묶음 일부만 취소하면 와우프레스가 남은 인쇄물에 택배비를 다시 청구할 수 있다(미납금 가능성). 취소 로직은 `ordnum` 단위 그대로다. 어드민 취소 확인 문구에도 적어 두었다.
+- 디플로마는 와우프레스에 대응 제품이 없어 발주 범위 밖이다. 판매는 기존대로 두고 운영자가 처리한다(보드에는 미지원으로 뜬다).
+
+### 고객 배송비 그룹
+
+어드민 `몰 > 배송비 그룹` 에서 `print-card`(`flat`), `print-mini`(`flat`), `print-sign`(`per_quantity`), `print-board`(`per_quantity`) 네 그룹을 만들고 상품 일괄 정책 지정으로 인쇄 상품 master 를 종류별로 지정한다. 금액·근거·절차는 스펙 §7 이 정본이다.
+사인제품(현수막·배너) 선불택배 가능 여부는 미확인이다. `prod_info` 의 `deliverinfo.dlvyprepay` 로 확정하기 전까지 `print-mini`·`print-sign`·`print-board` 는 설정만 하고 해당 상품 판매를 열지 않는다.
+
 ## 상태
 
 | 상태 | 뜻 | 다음 |
 |---|---|---|
-| `pending` | 발주 대기 (`next_attempt_at` 이후 워커가 집는다) | `submitting`, `unsupported`, `cancelled` |
+| `pending` | 발주 대기 (`next_attempt_at` 이후 워커가 판매주문 단위로 집는다) | `submitting`, `unsupported`, `cancelled` |
 | `submitting` | 워커가 선점해 외부 호출 중 | `submitted`, `pending`(재시도), `failed` |
 | `submitted` | 와우프레스 주문번호(`ordnum`) 확보 | `shipped`, `cancelling` |
 | `shipped` | 송장 확인됨 (택배는 보통 여기서 끝난다) | `delivered` |
@@ -84,11 +100,12 @@
 
 모두 additive 라 expand 순서(`migrate → deploy`)다.
 
-1. core 마이그레이션 적용 (`npm run db:migrate -- --stage <stage> --deployment lcnine-services --yes`). 이 브랜치의 4개:
+1. core 마이그레이션 적용 (`npm run db:migrate -- --stage <stage> --deployment lcnine-services --yes`). 이 브랜치의 5개:
    - `apps/core/drizzle/20261014035334_add-print-orders.sql`
    - `apps/core/drizzle/20261014050741_add-print-order-attempted-at.sql`
    - `apps/core/drizzle/20261014065142_add-print-order-cancel-resolved.sql`
    - `apps/core/drizzle/20261014072709_add-print-order-sales-cancel-failed.sql`
+   - `apps/core/drizzle/20261015042844_add-print-order-vendor-box.sql`
 2. `sst secret set WowpressAuthUid …`, `WowpressAuthPw`, `WowpressSender*` 값 입력 (사람이 직접).
 3. 변경된 서비스만 `--target` 으로: ugc → core (`PRINT_ORDER_SUBMIT_ENABLED=false`) → channel-adapter → admin-web → storefront. core 는 ugc 시안 정보의 `userId` 를 요구하므로 ugc 가 먼저다.
 4. 위 품목 여는 절차로 개시한다.
@@ -103,4 +120,5 @@
 - 고객 반품은 창고 배송 기록이 있어야 신청되므로 인쇄 줄은 고를 수 없고, 교환은 `assertNoCustomMadeLines` 가 막는다. 인쇄 불량은 고객센터가 받는다.
 - 인쇄물 하자는 일반 반품(창고 회수) 흐름에 맞지 않는다. 와우프레스 약관(18조2)은 수령 7일 안에 전량 반송하면 재작업이 원칙이고 환불은 예외다. 고객에게는 5일 안에 고객센터로 접수하라고 안내한다(우리가 와우프레스 7일 기한 안에 접수할 여유). API 대리 주문·고객 직배송 건에 약관이 그대로 적용되는지는 와우프레스 확인이 필요하다.
 - 첫 실주문에서 `ord_list`, `cjson_order` 응답 모양과 배송지 `sd/sgg/umd` 분해(`wowpress/korean-address.ts`)가 실제 응답과 맞는지 반드시 확인한다. 문서만으로 확정하지 못한 부분이다.
-- 택배사 코드는 `dlvyno` 109=롯데, 156=CJ 만 매핑한다. 그 밖은 송장만 보인다.
+- 택배사 코드는 109=롯데, 156=CJ 만 매핑한다. 그 밖은 송장만 보인다.
+- 주문상세의 송장은 배송박스 단위(`ordinfo.dlvybox.shipnum`)다. `dlvyinvc`/`dlvyno` 는 콜백 전용 키라 상세에서 읽으면 비어 있다(와우프레스 문서 2026.10.14 §6.11·§6.13).

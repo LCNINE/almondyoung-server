@@ -47,19 +47,33 @@ export class PrintOrderRepository {
     private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
 
-  claimDue(limit: number, now: Date, tx?: DbTx): Promise<PrintOrderRow[]> {
+  claimDueBatch(now: Date, tx?: DbTx): Promise<PrintOrderRow[]> {
     const t = wmsTables.printOrders;
     return this.dbService.run(async (trx) => {
+      const [oldest] = await trx
+        .select({ salesOrderId: t.salesOrderId })
+        .from(t)
+        .where(and(eq(t.status, 'pending'), lte(t.nextAttemptAt, now)))
+        .orderBy(asc(t.createdAt))
+        .limit(1);
+      if (!oldest) return [];
+
+      // 판매주문 단위로 직렬화해 같은 주문이 두 묶음으로 갈리지 않게 한다
+      const locked = await trx.execute<{ locked: boolean }>(
+        sql`SELECT pg_try_advisory_xact_lock(hashtext('print-order-claim'), hashtext(${oldest.salesOrderId})) AS locked`,
+      );
+      if (!locked[0]?.locked) return [];
+
       // 잠글 행을 먼저 따로 고른다. UPDATE … IN (SELECT … LIMIT … SKIP LOCKED) 는 안쪽 SELECT 가 다시 실행될 때마다
       // 다른 행을 집어 limit 을 넘겼다. 고른 행은 이 트랜잭션이 끝날 때까지 잠겨 있다
       const due = await trx
         .select({ id: t.id })
         .from(t)
-        .where(and(eq(t.status, 'pending'), lte(t.nextAttemptAt, now)))
+        .where(and(eq(t.salesOrderId, oldest.salesOrderId), eq(t.status, 'pending'), lte(t.nextAttemptAt, now)))
         .orderBy(asc(t.createdAt))
-        .limit(limit)
         .for('update', { skipLocked: true });
       if (due.length === 0) return [];
+
       return trx
         .update(t)
         .set({ status: 'submitting', submittingAt: now, updatedAt: now })
@@ -74,6 +88,27 @@ export class PrintOrderRepository {
         )
         .returning();
     }, tx);
+  }
+
+  async saveVendorBox(
+    id: string,
+    patch: { vendorBoxNumber: string | null; vendorShippingFee: number | null },
+    tx?: DbTx,
+  ): Promise<void> {
+    const t = wmsTables.printOrders;
+    const set: Partial<Pick<PrintOrderRow, 'vendorBoxNumber' | 'vendorShippingFee'>> = {};
+    if (patch.vendorBoxNumber !== null) set.vendorBoxNumber = patch.vendorBoxNumber;
+    if (patch.vendorShippingFee !== null) set.vendorShippingFee = patch.vendorShippingFee;
+    if (Object.keys(set).length === 0) return;
+
+    await this.dbService.run(
+      (trx) =>
+        trx
+          .update(t)
+          .set({ ...set, updatedAt: new Date() })
+          .where(eq(t.id, id)),
+      tx,
+    );
   }
 
   trackable(limit: number, tx?: DbTx): Promise<PrintOrderRow[]> {

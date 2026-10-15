@@ -17,20 +17,42 @@ export interface WowpressReceiver {
   dlvymsg: string;
 }
 
-export interface WowpressOrderInput {
+export interface WowpressOrderItem {
   spec: WowpressLineSpec;
   qty: number;
-  ordtitle: string;
   ordbody: string;
   ordkey: string;
+}
+
+export interface WowpressOrderInput {
+  items: WowpressOrderItem[];
+  ordtitle: string;
   receiver: WowpressReceiver;
+}
+
+export interface WowpressPlacedOrder {
+  ordnum: string;
+  dboxno: number | null;
+  prodno: number | null;
+}
+
+export interface WowpressBox {
+  dboxno: number;
+  dboxnum: string | null;
+  shippingFee: number | null;
+}
+
+export interface WowpressOrderResult {
+  orders: WowpressPlacedOrder[];
+  boxes: WowpressBox[];
 }
 
 export interface WowpressOrderDetail {
   ordstat: number;
   jobstat: number | null;
-  dlvyno: number | null;
-  dlvyinvc: string | null;
+  carrierCode: number | null;
+  trackingNumber: string | null;
+  boxNumber: string | null;
 }
 
 export interface WowpressRequest {

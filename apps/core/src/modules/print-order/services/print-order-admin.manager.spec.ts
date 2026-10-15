@@ -90,6 +90,8 @@ function row(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
     status: 'pending',
     testMemo: false,
     vendorOrderNumber: null,
+    vendorBoxNumber: null,
+    vendorShippingFee: null,
     attemptCount: 0,
     lastError: null,
     nextAttemptAt: new Date(),

@@ -28,6 +28,8 @@ export const printOrders = pgTable(
     status: varchar('status', { length: 16 }).$type<PrintOrderStatus>().notNull().default('pending'),
     testMemo: boolean('test_memo').notNull().default(false),
     vendorOrderNumber: varchar('vendor_order_number', { length: 64 }),
+    vendorBoxNumber: varchar('vendor_box_number', { length: 32 }),
+    vendorShippingFee: integer('vendor_shipping_fee'),
     attemptCount: integer('attempt_count').notNull().default(0),
     lastError: text('last_error'),
     nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
@@ -49,6 +51,7 @@ export const printOrders = pgTable(
   },
   (t) => ({
     uniqueLine: unique('uq_print_orders_sales_order_line').on(t.salesOrderLineId),
+    idxSalesOrder: index('ix_print_orders_sales_order').on(t.salesOrderId),
     idxStatusNext: index('idx_print_orders_status_next_attempt').on(t.status, t.nextAttemptAt),
   }),
 );

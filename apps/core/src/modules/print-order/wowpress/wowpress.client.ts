@@ -5,11 +5,15 @@ import { splitKoreanAddress } from './korean-address';
 import { httpsWowpressTransport } from './wowpress.transport';
 import {
   type WowpressLineSpec,
+  type WowpressBox,
   type WowpressOrderDetail,
   type WowpressOrderInput,
+  type WowpressOrderResult,
+  type WowpressPlacedOrder,
   type WowpressRequest,
   type WowpressResponse,
   type WowpressTransport,
+  WOWPRESS_CARRIER,
 } from './wowpress.types';
 
 const API_BASE = 'https://api.wowpress.co.kr';
@@ -133,29 +137,27 @@ export class WowpressClient {
     );
   }
 
-  async order(input: WowpressOrderInput): Promise<{ ordnum: string }> {
-    const { spec, receiver } = input;
+  async order(input: WowpressOrderInput): Promise<WowpressOrderResult> {
+    const { items, receiver } = input;
     const res = await this.call(
       {
         method: 'POST',
         url: `${API_BASE}/api/v1/ord/cjson_order`,
         json: {
           action: 'ord',
-          ordreq: [
-            [
-              {
-                prodno: spec.prodno,
-                ordqty: String(spec.qtyPerUnit * input.qty),
-                ordcnt: '1',
-                ordtitle: input.ordtitle,
-                ordbody: input.ordbody,
-                ordkey: input.ordkey,
-                jobpresetno: spec.jobpresetno,
-                prsjob: spec.prsjob,
-                awkjob: spec.awkjob,
-              },
-            ],
-          ],
+          ordreq: items.map(({ spec, qty, ordbody, ordkey }) => [
+            {
+              prodno: spec.prodno,
+              ordqty: String(spec.qtyPerUnit * qty),
+              ordcnt: '1',
+              ordtitle: input.ordtitle,
+              ordbody,
+              ordkey,
+              jobpresetno: spec.jobpresetno,
+              prsjob: spec.prsjob,
+              awkjob: spec.awkjob,
+            },
+          ]),
           dlvymcd: '4',
           dlvyfr: this.sender(),
           dlvyto: {
@@ -170,14 +172,38 @@ export class WowpressClient {
         },
       },
       false,
-      { name: 'cjson_order', ordkey: input.ordkey },
+      { name: 'cjson_order', ordkey: items.map((i) => i.ordkey).join(',') },
     );
-    // ponytail: ordnum 의 정확한 위치는 첫 실주문 응답으로 확인한다
+
     const resultMap = asRecord(res.resultMap);
-    const ordinfo = firstRecord(asRecord(resultMap?.cjson_order)?.ordinfo);
-    const ordnum = nonEmptyString(ordinfo?.ordnum) ?? nonEmptyString(resultMap?.ordnum);
-    if (!ordnum) throw new WowpressApiError('ordnum missing in cjson_order response');
-    return { ordnum };
+    const rawNested = resultMap?.cjson_order;
+    const nested = asRecord(rawNested);
+    if (rawNested != null && !nested)
+      throw new WowpressApiError('cjson_order is not an object in cjson_order response');
+
+    const container = nested ?? resultMap;
+    const ordinfo = recordArray.safeParse(container?.ordinfo);
+    if (!ordinfo.success || ordinfo.data.length !== items.length) {
+      throw new WowpressApiError('ordinfo count does not match items in cjson_order response');
+    }
+
+    const orders = ordinfo.data.map((row): WowpressPlacedOrder => {
+      const r = asRecord(row);
+      const ordnum = nonEmptyString(r?.ordnum);
+      if (!r || !ordnum) throw new WowpressApiError('ordnum missing in cjson_order response');
+      return { ordnum, dboxno: toNumber(r.dboxno), prodno: toNumber(r.prodno) };
+    });
+
+    const dlvinfo = recordArray.safeParse(container?.dlvinfo);
+    const boxes: WowpressBox[] = [];
+    for (const row of dlvinfo.success ? dlvinfo.data : []) {
+      const r = asRecord(row);
+      const dboxno = toNumber(r?.dboxno);
+      if (!r || dboxno === null) continue;
+      boxes.push({ dboxno, dboxnum: nonEmptyString(r.dboxnum), shippingFee: toNumber(r.dlvcost_bill) });
+    }
+
+    return { orders, boxes };
   }
 
   async uploadFileUrl(ordnum: string, filename: string, fileurl: string): Promise<void> {
@@ -191,7 +217,7 @@ export class WowpressClient {
     await this.call({ method: 'POST', url: `${API_BASE}/api/v1/ord/ord_cancel`, json: { ordnum } }, false);
   }
 
-  async findByOrdkey(ordkey: string, since: Date): Promise<{ ordnum: string } | null> {
+  async findByOrdkey(ordkey: string, since: Date): Promise<{ ordnum: string; dboxnum: string | null } | null> {
     const res = await this.call(
       {
         method: 'POST',
@@ -222,18 +248,22 @@ export class WowpressClient {
       }
       return { r, key: key === null ? null : String(key) };
     });
-    const ordnums = new Set<string>();
+    const ordnums = new Map<string, string | null>();
     for (const { r, key } of rows) {
       if (key !== ordkey) continue;
       const ordnum = nonEmptyString(r.ordnum);
       // null 은 재주문으로 이어지므로, 주문은 있는데 번호를 못 읽으면 중복 결제를 막으려 실패시킨다
       if (!ordnum) throw new WowpressApiError('ordnum missing for matching ordkey');
-      ordnums.add(ordnum);
+      ordnums.set(ordnum, ordnums.get(ordnum) ?? nonEmptyString(r.dboxnum));
     }
+
     const [first, ...rest] = ordnums;
     if (first === undefined) return null;
-    if (rest.length > 0) throw new WowpressApiError(`multiple ordnums for ordkey: ${[first, ...rest].join(', ')}`);
-    return { ordnum: first };
+    if (rest.length > 0) {
+      throw new WowpressApiError(`multiple ordnums for ordkey: ${[first, ...rest].map(([n]) => n).join(', ')}`);
+    }
+
+    return { ordnum: first[0], dboxnum: first[1] };
   }
 
   async detail(ordnum: string): Promise<WowpressOrderDetail> {
@@ -244,15 +274,29 @@ export class WowpressClient {
       },
       true,
     );
+
     const root = asRecord(res.resultMap);
-    const sources = [root, firstRecord(root?.ordinfo), firstRecord(root?.dlvinfo)];
+    const ordinfo = asRecord(root?.ordinfo) ?? firstRecord(root?.ordinfo);
+    const sources = [root, ordinfo];
     const ordstat = pick(sources, 'ordstat', toNumber);
     if (ordstat === null) throw new WowpressApiError(`ordstat missing in order detail ${ordnum}`);
+
+    const dlvybox = asRecord(ordinfo?.dlvybox);
+    const boxNumber = nonEmptyString(dlvybox?.dboxnum);
+    const codeFromBox = toNumber(boxNumber?.split('-')[1]);
+    const dlvyname = nonEmptyString(dlvybox?.dlvyname) ?? '';
+
+    let carrierCode: number | null = null;
+    if (codeFromBox !== null && codeFromBox in WOWPRESS_CARRIER) carrierCode = codeFromBox;
+    else if (dlvyname.includes('롯데')) carrierCode = 109;
+    else if (dlvyname.includes('CJ')) carrierCode = 156;
+
     return {
       ordstat,
       jobstat: pick(sources, 'jobstat', toNumber),
-      dlvyno: pick(sources, 'dlvyno', toNumber),
-      dlvyinvc: pick(sources, 'dlvyinvc', nonEmptyString),
+      carrierCode,
+      trackingNumber: nonEmptyString(dlvybox?.shipnum),
+      boxNumber,
     };
   }
 

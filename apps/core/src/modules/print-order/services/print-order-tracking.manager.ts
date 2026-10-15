@@ -30,13 +30,15 @@ export class PrintOrderTrackingManager {
       return this.repository.touch(row.id);
     }
 
+    await this.fillVendorBox(row, detail.boxNumber);
+
     const now = new Date();
-    const invoice = detail.dlvyinvc;
+    const invoice = detail.trackingNumber;
     const delivered = detail.ordstat === WOWPRESS_STATUS_DELIVERED;
     if (!invoice && !delivered) return this.repository.touch(row.id);
 
     const trackingNumber = invoice ?? row.trackingNumber;
-    const carrier = invoice ? (WOWPRESS_CARRIER[detail.dlvyno ?? -1] ?? null) : row.carrier;
+    const carrier = invoice ? (WOWPRESS_CARRIER[detail.carrierCode ?? -1] ?? null) : row.carrier;
     const status = delivered ? 'delivered' : 'shipped';
     const shippedAt = row.shippedAt ?? now;
     const deliveredAt = delivered ? (row.deliveredAt ?? now) : null;
@@ -58,5 +60,15 @@ export class PrintOrderTrackingManager {
     });
     if (!written)
       this.logger.log(`print order ${row.id} left tracking (now cancelling or cancelled); invoice not written`);
+  }
+
+  private async fillVendorBox(row: PrintOrderRow, boxNumber: string | null): Promise<void> {
+    if (!boxNumber || row.vendorBoxNumber) return;
+
+    try {
+      await this.repository.saveVendorBox(row.id, { vendorBoxNumber: boxNumber, vendorShippingFee: null });
+    } catch (error) {
+      this.logger.warn(`print order ${row.id} vendor box save failed: ${errorMessage(error)}`);
+    }
   }
 }

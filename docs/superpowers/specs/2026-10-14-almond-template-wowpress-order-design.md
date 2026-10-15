@@ -32,22 +32,33 @@
 - 고객 셀프 취소 판정은 core `store-sales-orders.service.ts` (`already_processing` 등).
 - core → Medusa 배송 반영 경로는 `CoreFulfillmentShipped`/`Delivered` → channel-adapter → Medusa order metadata(V1/V2 projection).
 
-## 3. 와우프레스 OPEN API 요약 (문서 Version 2026.09.30, `wowpress.co.kr/api/document`, 로그인 필요)
+## 3. 와우프레스 OPEN API 요약 (문서 Version 2026.10.14, `wowpress.co.kr/api/document`, 로그인 필요)
+
+2026-10-15 에 문서 원문을 다시 읽어 갱신했다. 절 번호(§6.x)는 와우프레스 문서 기준이다.
 
 | 항목 | 내용 |
 |---|---|
-| 서버 | **테스트 서버 없음.** 모든 호출이 운영 주문이 된다 |
+| 서버 | **테스트 서버 없음.** 모든 호출이 운영 주문이 된다. `devshop.wowpress.co.kr`(API 샘플 쇼핑몰)도 운영 API 에 붙어 있어 주문하면 실주문이다. 시험 수단은 `cjson_order` 의 `action:'cal'`(계산만)과 입금대기 상태 취소뿐 |
 | 토큰 | `GET api.wowpress.co.kr/api/login/issue` 본문 `{authUid, authPw}` → JWT, 1년 유효, refresh 없음. SNS 가입 계정은 문서 페이지에 표시되는 계정별 값을 쓴다 |
 | 헤더 | `authorization: Bearer <token>` |
 | 공통 응답 | `resultCode`(200/400), `errMsg`, `resultMap` |
-| 가격조회 | 주문 전 필수(가격조회가 안 되는 조합은 주문 불가) |
-| 주문 | `POST /api/v1/ord/cjson_order` `{action:'ord', ordreq:[[주제품, 부자재…]], dlvymcd, dlvyfr, dlvyto}`. 라인 필드 `prodno`, `ordqty`, `ordcnt`, `ordtitle`, `ordbody`(주문메모), `ordkey`(사용자 주문키), `prsjob`(옵션) |
-| 파일 | `POST file.wowpress.co.kr/api/v1/file/uploadurl` form-data `{ordnum, filename, fileurl}`. 파일이 없으면 접수되지 않는다 |
+| 가격조회 | `cjson_jobcost`(§6.4). 주문 전 필수(가격조회가 안 되는 조합은 주문 불가). 응답 `ordcost_price/dc/sup/tax/bill`, `dlvygrpno`(묶음배송그룹), `boxcnt`, `weight_*`, `exitdate`. **택배비는 없다**(`dlvcost_base: 0`) |
+| 주문 | `POST /api/v1/ord/cjson_order`(§6.5) `{action:'ord'\|'cal', ordreq, dlvymcd, dlvyfr, dlvyto}`. `ordreq` 의 **바깥 원소 하나 = 와우프레스 주문 하나**, 안쪽 배열 = `[주제품, 그 부자재…]`(부자재도 같은 `ordkey`). 다른 제품을 한 요청에 여럿 넣을 수 있고 "묶음가능한 제품은 자동 묶음배송"된다. 라인 필드 `prodno`, `ordqty`, `ordcnt`, `ordtitle`, `ordbody`(주문메모), `ordkey`(사용자 주문키), `prsjob`(옵션) |
+| 주문 응답 | 상위에 합계 `ordcost_*`, `dlvcost_price/dc/sup/tax/bill`, `cost_bill`. `ordinfo[]` 는 주문별(`ordnum`, `dboxno`, `prodno`, `dlvygrpno`), `dlvinfo[]` 는 배송박스별(`dboxno`, `dboxnum`, `ordcnt`, `ordcost_dlvyfree`, `dlvcost_*`). **`ordinfo` 에 `ordkey` 가 없다** — 줄↔`ordnum` 대응은 `ord_list(ordkey)` 로 확정한다(응답 순서 보장 문구 없음) |
+| 배송비 조회 | `POST /api/v1/ord/cjson_dlvycost`(§6.14). 파라미터는 주문과 동일, 선불택배만. 응답 `boxcnt`, `boxcost`, `dlvy_yn`, `addcost`(제주 도선료) |
+| 파일 | `POST file.wowpress.co.kr/api/v1/file/uploadurl` form-data `{ordnum, filename, fileurl}`(§6.8). **주문(ordnum)당 파일 하나**(§6.7). 파일이 없으면 접수되지 않는다. 에러처리 상태에서 같은 ordnum 으로 올리면 재접수 |
 | 결제 | API 주문은 입금대기로 들어간다. 선입금이 있으면 자동 정산 후 생산 |
-| 취소 | `POST /api/v1/ord/ord_cancel {ordnum}`. **입금대기·접수대기(접수 전)·에러 상태만** 가능. 라인 단위 |
-| 목록 | `POST /api/v1/ord/ord_list` — `ordkey`·`ordnum`·기간 검색, 최대 100행 |
-| 상세 | `GET /api/v1/ord/order/{ordnum}` — 주문·작업 상태, `dlvycomp`(택배사 코드), `dlvyinvc`(송장) |
-| 콜백 | 상태 변경 시 등록 URL 로 POST, 10초 간격 최대 10회. **이번엔 쓰지 않는다**(§8) |
+| 취소 | `POST /api/v1/ord/ord_cancel {ordnum}`(§6.10). **개별 주문 단위.** 입금대기·접수대기(접수 전)·에러 상태만 가능. 묶음배송된 주문을 취소하면 새 배송박스가 생기고 **남은 주문에 배송비가 부과(미납금)될 수 있다** |
+| 목록 | `POST /api/v1/ord/ord_list`(§6.12) — `ordkey`·`ordnum`·`dboxnum`·기간 검색, 최대 100행. 행 = 주문 단위(`ordnum`, `ordkey`, `dboxnum`, `dlvyno`, `shipnum`, `ordstat`) |
+| 상세 | `GET /api/v1/ord/order/{ordnum}`(§6.13) — 상태 `ordinfo.ordstat`/`jobstat`(주문 단위), 우리가 보낸 ordkey 는 `ordinfo.userordkey`. 택배 등 직배송이 아닌 주문은 출고완료(80)에서 끝난다(84·85 는 와우프레스 직배송만, §9.3). 배송은 **박스 단위** `ordinfo.dlvybox` `{dboxnum, dlvyname(택배사 이름), dlvystat, costdlvy, ordnum[], shipnum(송장)}`. `dlvyinvc`/`dlvycomp`/`dlvyno` 키는 **상세에 없다** |
+| 묶음배송 | 같은 묶음배송 그룹(`dlvygrpno`, 명함·스티커) 제품끼리만 자동 묶음(§7.8). 책자·봉투·자석·현수막·부자재 등은 묶음 불가 → 박스·택배비 따로. 다른 요청끼리는 자동으로 묶이지 않는다(수동 `POST /api/v1/dlvy/bdle {ordnum, dboxnum}`, 접수 전만) |
+| 선불택배 불가 | §7.6·§7.7 "사인제품은 선불택배불가", "대상은 현수막, 배너 제품 등". 배송 안내 페이지의 사인제품 선불 요금표와 어긋나므로 제품별 `prod_info.deliverinfo.dlvyprepay` 로 확인한다. devshop 배송방법 목록은 제품과 무관한 공통 목록이라 근거가 못 된다 |
+| 배송방법 | `dlvymcd`(§9.4): 0 방문, 1 배쑝와쑝, 2 대리배송, 3 착불택배, 4 선불택배, 5 화물, 6 착불퀵, 7 선불퀵, 8 고속버스, 9 항공, 10 선박. 선불택배 택배사는 주소로 자동(`dlvyno` 109 롯데, 156 CJ). 선불택배 가능 여부는 제품상세 `deliverinfo.dlvyprepay`(§7.6) |
+| 콜백 | 상태 변경 시 등록 URL 로 POST, 10초 간격 최대 10회. 주문 단위로 `dlvyno`, `dlvynum`, `dlvyinvc`, `dlvycomp` 를 준다. **이번엔 쓰지 않는다**(§8) |
+
+택배비(배송 안내 페이지, 부가세 별도): 명함 500매/8건 이하 2,700원·9~24건 4,200원, 스티커 500매/10건 이하 2,700원,
+그 밖은 20kg 이하 1박스 기준 2,700~4,200원. 무료택배는 등급별 공급가 문턱(명함·스티커 2~5만원, 그 외 5만원)을
+**배송박스 합계**로 판정한다(주문 응답 `dlvinfo.ordcost_dlvyfree`). 제주·도서산간은 무료택배 제외, 도선료 `addcost` 별도.
 
 파일 형식 조건은 메모리 `project_wowpress_print_file_acceptance` 정리를 따른다(PET·미니배너 CMYK JPG, 현수막 1/10 JPG 700dpi, 명함 PDF 등).
 
@@ -164,9 +175,10 @@ Medusa 결제 완료
 **`PrintOrderTrackingWorker`** (`@CronOnce('*/30 * * * *', { name: 'print-order-tracking' })`)
 
 - `submitted`·`shipped` 행을 `detail(ordnum)` 로 조회.
-- 송장(`dlvyinvc`)이 처음 생기면 `shipped`. `ordstat=85`(배송완료)면 `delivered`. 택배(선불택배 `dlvymcd=4`)는 와우프레스가
+- 송장(`ordinfo.dlvybox.shipnum`)이 처음 생기면 `shipped`. `ordstat=85`(배송완료)면 `delivered`. 택배(선불택배 `dlvymcd=4`)는 와우프레스가
   `ordstat=80`(출고완료)에서 끝나므로 보통 `shipped` 에 머문다 — 배송완료 추적은 이번 범위 밖.
-- 택배사: 와우프레스 `dlvyno` 109=롯데택배(`LOTTE`), 156=CJ대한통운(`CJ`). 그 밖의 값은 `carrier=null` 로 두고 송장만 보인다.
+  (처음 구현은 콜백 전용 키 `dlvyinvc`/`dlvyno` 를 상세에서 읽어 송장을 못 읽는다 — 2026-10-15 문서 재확인으로 발견, 묶음 발주 작업에서 고친다.)
+- 택배사: 상세의 `dlvybox.dlvyname`(이름) 또는 `dboxnum` 의 가운데 값(`4-156-…`)으로 판정한다. 109=롯데택배(`LOTTE`), 156=CJ대한통운(`CJ`). 그 밖의 값은 `carrier=null` 로 두고 송장만 보인다.
 - **반영 경로:** 고객 배송조회는 core `/store/orders/by-channel-order/:id/tracking`(`store-sales-orders.service.ts`)이 만든다.
   이 응답의 `shipments[]` 에 `print_orders` 의 송장을 한 항목씩(`fulfillmentOrderId` 자리에 `print_orders.id`) 덧붙이고,
   주문 액션 판정의 출고 증거에도 포함한다. Kafka 배송 이벤트·channel-adapter·Medusa metadata 는 건드리지 않는다

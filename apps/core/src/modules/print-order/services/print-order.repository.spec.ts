@@ -50,6 +50,8 @@ const snapshot: PrintOrderRow = {
   status: 'failed',
   testMemo: false,
   vendorOrderNumber: null,
+  vendorBoxNumber: null,
+  vendorShippingFee: null,
   attemptCount: 3,
   lastError: null,
   nextAttemptAt: new Date(),

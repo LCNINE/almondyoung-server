@@ -30,11 +30,11 @@ export class PrintOrderSubmitWorker {
     try {
       const stale = await this.repository.staleSubmitting(new Date(Date.now() - PRINT_ORDER_STALE_MS));
       for (const row of stale) await this.each(row.id, () => this.manager.recoverStale(row));
-      // 한 행씩 집어 선점 시각이 처리 직전에 찍히게 한다. 묶음으로 집으면 뒤쪽 행이 처리 전에 stale 이 된다
+      // 판매주문 하나씩 집어 선점 시각이 처리 직전에 찍히게 한다. 여러 판매주문을 한꺼번에 집으면 뒤쪽 주문이 처리 전에 stale 이 된다
       for (let i = 0; i < CLAIM_LIMIT; i++) {
-        const [row] = await this.repository.claimDue(1, new Date());
-        if (!row) break;
-        await this.each(row.id, () => this.manager.submit(row));
+        const rows = await this.repository.claimDueBatch(new Date());
+        if (rows.length === 0) break;
+        await this.each(rows.map((row) => row.id).join(','), () => this.manager.submitBatch(rows));
       }
     } catch (error) {
       this.logger.error(`print-order-submit failed: ${error instanceof Error ? error.message : String(error)}`);

@@ -1710,26 +1710,35 @@ function deriveOverallTrackingStatus(
 
 // 인쇄 외주 주문은 송장이 잡힌 것만 배송조회에 올린다 (외주사가 고객에게 직배송)
 function buildPrintShipments(rows: PrintOrderRow[]): StoreShipmentDto[] {
-  return rows.flatMap((row) => {
-    if (!row.trackingNumber) return [];
-    const carrier = row.carrier ?? '';
-    return [
-      {
-        shipmentId: null,
-        fulfillmentOrderId: row.id,
-        fulfillmentOrderIds: [row.id],
-        carrier,
-        carrierName: CARRIER_NAMES[carrier] ?? carrier,
-        trackingNumber: row.trackingNumber,
-        trackingUrl: buildTrackingUrl(carrier, row.trackingNumber),
-        status: row.status === 'delivered' ? 'delivered' : 'shipping',
-        shippedAt: row.shippedAt,
-        deliveredAt: row.deliveredAt,
-        eta: null,
-        trackingEvents: [],
-        lines: [],
-        dispatchAttempts: [],
-      },
-    ];
+  const byTracking = new Map<string, PrintOrderRow[]>();
+  for (const row of rows) {
+    if (!row.trackingNumber) continue;
+    byTracking.set(row.trackingNumber, [...(byTracking.get(row.trackingNumber) ?? []), row]);
+  }
+
+  return [...byTracking.entries()].map(([trackingNumber, group]) => {
+    const first = group[0];
+    const carrier = first.carrier ?? '';
+
+    const allDelivered = group.every((row) => row.status === 'delivered');
+    const shippedTimes = group.flatMap((row) => (row.shippedAt ? [row.shippedAt.getTime()] : []));
+    const deliveredTimes = group.flatMap((row) => (row.deliveredAt ? [row.deliveredAt.getTime()] : []));
+
+    return {
+      shipmentId: null,
+      fulfillmentOrderId: first.id,
+      fulfillmentOrderIds: group.map((row) => row.id),
+      carrier,
+      carrierName: CARRIER_NAMES[carrier] ?? carrier,
+      trackingNumber,
+      trackingUrl: buildTrackingUrl(carrier, trackingNumber),
+      status: allDelivered ? 'delivered' : 'shipping',
+      shippedAt: shippedTimes.length > 0 ? new Date(Math.min(...shippedTimes)) : null,
+      deliveredAt: allDelivered && deliveredTimes.length > 0 ? new Date(Math.max(...deliveredTimes)) : null,
+      eta: null,
+      trackingEvents: [],
+      lines: [],
+      dispatchAttempts: [],
+    };
   });
 }

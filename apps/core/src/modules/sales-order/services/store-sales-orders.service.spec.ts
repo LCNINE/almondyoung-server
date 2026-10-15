@@ -1683,6 +1683,52 @@ describe('StoreSalesOrdersService', () => {
       ]);
     });
 
+    it('merges print rows sharing a tracking number into one shipment', async () => {
+      const service = makeTrackingService(
+        [[makeSo()], []],
+        [
+          printRow({ id: 'po-1' }),
+          printRow({ id: 'po-2' }),
+          printRow({ id: 'po-3' }),
+          printRow({ id: 'po-4', trackingNumber: '9999' }),
+        ],
+      );
+
+      const result = await service.getTracking(SO_ID, CUSTOMER_ID);
+
+      expect(result.shipments).toHaveLength(2);
+      expect(result.shipments[0]).toMatchObject({
+        fulfillmentOrderId: 'po-1',
+        fulfillmentOrderIds: ['po-1', 'po-2', 'po-3'],
+        trackingNumber: '1234567890',
+      });
+      expect(result.shipments[1]).toMatchObject({ fulfillmentOrderIds: ['po-4'], trackingNumber: '9999' });
+    });
+
+    it('reports a merged print shipment as delivered only when every row is delivered', async () => {
+      const early = new Date('2026-10-14T01:00:00Z');
+      const late = new Date('2026-10-16T00:00:00Z');
+      const mixed = makeTrackingService(
+        [[makeSo()], []],
+        [
+          printRow({ id: 'po-1', status: 'delivered', shippedAt: late, deliveredAt: late }),
+          printRow({ id: 'po-2', shippedAt: early }),
+        ],
+      );
+      const mixedResult = await mixed.getTracking(SO_ID, CUSTOMER_ID);
+      expect(mixedResult.shipments[0]).toMatchObject({ status: 'shipping', shippedAt: early, deliveredAt: null });
+
+      const all = makeTrackingService(
+        [[makeSo()], []],
+        [
+          printRow({ id: 'po-1', status: 'delivered', shippedAt: early, deliveredAt: early }),
+          printRow({ id: 'po-2', status: 'delivered', shippedAt: late, deliveredAt: late }),
+        ],
+      );
+      const allResult = await all.getTracking(SO_ID, CUSTOMER_ID);
+      expect(allResult.shipments[0]).toMatchObject({ status: 'delivered', shippedAt: early, deliveredAt: late });
+    });
+
     it('keeps an empty carrier and null url for an unknown carrier, and reports delivered', async () => {
       const service = makeTrackingService(
         [[makeSo()], []],

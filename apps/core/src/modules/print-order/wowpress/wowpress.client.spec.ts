@@ -44,27 +44,63 @@ const ok =
   () => ({ status: 200, body: { resultCode: '200', ...extra } });
 const tokenOk = (token: string): Handler => ok({ token });
 const orderOk = ok({ resultMap: { cjson_order: { ordinfo: [{ ordnum: 'WP_SAMPLE_0001' }] } } });
+const orderOkTwo = ok({
+  resultMap: {
+    cjson_order: {
+      ordinfo: [
+        { ordnum: 'WP1', dboxno: 4343784, prodno: 40008 },
+        { ordnum: 'WP2', dboxno: 4343784, prodno: 40073 },
+      ],
+      dlvinfo: [{ dboxno: 4343784, dboxnum: '4-1-4343784', dlvcost_bill: 0 }],
+    },
+  },
+});
 
 function makeClient(routes: Record<string, Handler[]>, env: Record<string, string> = ENV) {
   const fake = fakeTransport(routes);
   return { client: new WowpressClient(new ConfigService(env), fake.transport), calls: fake.calls };
 }
 
-const ORDER_INPUT = {
-  spec: SPEC,
-  qty: 2,
-  ordtitle: '아몬드영 SO-1',
-  ordbody: '테스트 시안입니다. 혹시 이 시안대로 출력이 되나요?',
-  ordkey: '0190f1d2-0000-7000-8000-000000000001',
-  receiver: {
-    name: '홍길동',
-    tel: '010-1111-2222',
-    zipcode: '13529',
-    addr1: '경기도 성남시 분당구 판교역로 235',
-    addr2: '101호',
-    dlvymsg: '문 앞',
-  },
+const RECEIVER = {
+  name: '홍길동',
+  tel: '010-1111-2222',
+  zipcode: '13529',
+  addr1: '경기도 성남시 분당구 판교역로 235',
+  addr2: '101호',
+  dlvymsg: '문 앞',
 };
+
+const ORDER_INPUT = {
+  items: [
+    {
+      spec: SPEC,
+      qty: 2,
+      ordbody: '테스트 시안입니다. 혹시 이 시안대로 출력이 되나요?',
+      ordkey: '0190f1d2-0000-7000-8000-000000000001',
+    },
+  ],
+  ordtitle: '아몬드영 SO-1',
+  receiver: RECEIVER,
+};
+
+const BUNDLE_INPUT = {
+  items: [
+    { spec: SPEC, qty: 2, ordbody: '<TEST 메모>', ordkey: 'line-a' },
+    { spec: { ...SPEC, prodno: 40073 }, qty: 3, ordbody: '<TEST 메모2>', ordkey: 'line-b' },
+  ],
+  ordtitle: '아몬드영 SO-1',
+  receiver: RECEIVER,
+};
+
+function orderBody() {
+  return {
+    ordinfo: [
+      { ordnum: 'WP1', dboxno: 4343784, prodno: 40008 },
+      { ordnum: 'WP2', dboxno: 4343784, prodno: 40073 },
+    ],
+    dlvinfo: [{ dboxno: 4343784, dboxnum: '4-1-4343784', dlvcost_bill: 0 }],
+  };
+}
 
 describe('WowpressClient', () => {
   it('issues a token once and sends Bearer on order', async () => {
@@ -73,7 +109,10 @@ describe('WowpressClient', () => {
       [`${API}/api/v1/ord/cjson_order`]: [orderOk],
     });
 
-    await expect(client.order(ORDER_INPUT)).resolves.toEqual({ ordnum: 'WP_SAMPLE_0001' });
+    await expect(client.order(ORDER_INPUT)).resolves.toEqual({
+      orders: [{ ordnum: 'WP_SAMPLE_0001', dboxno: null, prodno: null }],
+      boxes: [],
+    });
     await client.order(ORDER_INPUT);
 
     const issues = calls.filter((c) => c.url.endsWith('/api/login/issue'));
@@ -253,22 +292,79 @@ describe('WowpressClient', () => {
     });
   });
 
-  it('fails the order when ordnum is missing', async () => {
+  it('sends one ordreq element per item with its own ordkey and ordbody', async () => {
+    const { client, calls } = makeClient({
+      [`${API}/api/login/issue`]: [tokenOk('tok')],
+      [`${API}/api/v1/ord/cjson_order`]: [orderOkTwo],
+    });
+    const logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+
+    await client.order(BUNDLE_INPUT);
+
+    const json = calls.find((c) => c.url.endsWith('/cjson_order'))?.json;
+    expect(json).toHaveProperty('ordreq', [
+      [expect.objectContaining({ ordkey: 'line-a', ordbody: '<TEST 메모>', ordqty: '200', prodno: 40026 })],
+      [expect.objectContaining({ ordkey: 'line-b', ordbody: '<TEST 메모2>', ordqty: '300', prodno: 40073 })],
+    ]);
+    expect(json).toHaveProperty('dlvymcd', '4');
+    expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain('ordkey=line-a,line-b');
+    logSpy.mockRestore();
+  });
+
+  it.each([
+    ['nested in cjson_order', { cjson_order: orderBody() }],
+    ['directly under resultMap', orderBody()],
+  ])('parses ordinfo and dlvinfo into orders and boxes (%s)', async (_label, resultMap) => {
     const { client } = makeClient({
       [`${API}/api/login/issue`]: [tokenOk('tok')],
-      [`${API}/api/v1/ord/cjson_order`]: [ok({ resultMap: { cjson_order: { ordinfo: [] } } })],
+      [`${API}/api/v1/ord/cjson_order`]: [ok({ resultMap })],
+    });
+
+    await expect(client.order(BUNDLE_INPUT)).resolves.toEqual({
+      orders: [
+        { ordnum: 'WP1', dboxno: 4343784, prodno: 40008 },
+        { ordnum: 'WP2', dboxno: 4343784, prodno: 40073 },
+      ],
+      boxes: [{ dboxno: 4343784, dboxnum: '4-1-4343784', shippingFee: 0 }],
+    });
+  });
+
+  it('throws when ordinfo count differs from items', async () => {
+    const { client } = makeClient({
+      [`${API}/api/login/issue`]: [tokenOk('tok')],
+      [`${API}/api/v1/ord/cjson_order`]: [ok({ resultMap: { cjson_order: { ordinfo: [{ ordnum: 'WP1' }] } } })],
+    });
+
+    await expect(client.order(BUNDLE_INPUT)).rejects.toBeInstanceOf(WowpressApiError);
+  });
+
+  it('does not fall back to root ordinfo when cjson_order lacks ordinfo', async () => {
+    const { client } = makeClient({
+      [`${API}/api/login/issue`]: [tokenOk('tok')],
+      [`${API}/api/v1/ord/cjson_order`]: [
+        ok({ resultMap: { cjson_order: { dlvinfo: [{ dboxno: 1 }] }, ordinfo: [{ ordnum: 'WP1' }] } }),
+      ],
+    });
+
+    await expect(client.order(ORDER_INPUT)).rejects.toBeInstanceOf(WowpressApiError);
+  });
+
+  it.each([[[]], ['bad']])('throws when cjson_order is not an object (%j)', async (bad) => {
+    const { client } = makeClient({
+      [`${API}/api/login/issue`]: [tokenOk('tok')],
+      [`${API}/api/v1/ord/cjson_order`]: [ok({ resultMap: { cjson_order: bad, ordinfo: [{ ordnum: 'WP1' }] } })],
+    });
+
+    await expect(client.order(ORDER_INPUT)).rejects.toBeInstanceOf(WowpressApiError);
+  });
+
+  it('throws when an ordinfo entry has no ordnum', async () => {
+    const { client } = makeClient({
+      [`${API}/api/login/issue`]: [tokenOk('tok')],
+      [`${API}/api/v1/ord/cjson_order`]: [ok({ resultMap: { cjson_order: { ordinfo: [{ ordnum: '' }] } } })],
     });
 
     await expect(client.order(ORDER_INPUT)).rejects.toThrow('ordnum missing in cjson_order response');
-  });
-
-  it('falls back to resultMap.ordnum', async () => {
-    const { client } = makeClient({
-      [`${API}/api/login/issue`]: [tokenOk('tok')],
-      [`${API}/api/v1/ord/cjson_order`]: [ok({ resultMap: { ordnum: 'WP9' } })],
-    });
-
-    await expect(client.order(ORDER_INPUT)).resolves.toEqual({ ordnum: 'WP9' });
   });
 
   it('refuses to call when credentials are not configured', async () => {
@@ -293,12 +389,29 @@ describe('WowpressClient', () => {
       ],
     });
 
-    await expect(client.findByOrdkey('k1', new Date('2026-10-13T16:00:00Z'))).resolves.toEqual({ ordnum: 'WP1' });
+    await expect(client.findByOrdkey('k1', new Date('2026-10-13T16:00:00Z'))).resolves.toEqual({
+      ordnum: 'WP1',
+      dboxnum: null,
+    });
     expect(calls.find((c) => c.url.endsWith('/ord_list'))?.json).toMatchObject({
       stdt: '2026-10-14',
       ordkey: 'k1',
       validord: 'N',
       recordCountPerPage: 100,
+    });
+  });
+
+  it('returns dboxnum from ord_list row', async () => {
+    const { client } = makeClient({
+      [`${API}/api/login/issue`]: [tokenOk('tok')],
+      [`${API}/api/v1/ord/ord_list`]: [
+        ok({ resultMap: { ord_list: [{ ordkey: 'line-a', ordnum: 'WP1', dboxnum: '4-156-9410333' }] } }),
+      ],
+    });
+
+    await expect(client.findByOrdkey('line-a', new Date())).resolves.toEqual({
+      ordnum: 'WP1',
+      dboxnum: '4-156-9410333',
     });
   });
 
@@ -451,30 +564,70 @@ describe('WowpressClient', () => {
 
       await expect(client.order(ORDER_INPUT)).rejects.toThrow('boom');
       expect(logged()).toContain('WP-LOST');
-      expect(logged()).toContain(ORDER_INPUT.ordkey);
+      expect(logged()).toContain(ORDER_INPUT.items[0].ordkey);
     });
   });
 
-  it('parses detail from ordinfo and dlvinfo with numeric strings', async () => {
+  const detailOf = async (resultMap: unknown) => {
     const { client, calls } = makeClient({
       [`${API}/api/login/issue`]: [tokenOk('tok')],
-      [`${API}/api/v1/ord/order/WP1`]: [
-        ok({
-          resultMap: { ordinfo: [{ ordstat: '80', jobstat: 30.0 }], dlvinfo: [{ dlvyno: '156', dlvyinvc: '1234' }] },
-        }),
-      ],
+      [`${API}/api/v1/ord/order/WP1`]: [ok({ resultMap })],
+    });
+    const detail = await client.detail('WP1');
+    return { detail, calls };
+  };
+
+  it('reads tracking from ordinfo.dlvybox', async () => {
+    const { detail, calls } = await detailOf({
+      ordinfo: {
+        ordstat: 80,
+        jobstat: null,
+        dlvybox: { dboxnum: '4-156-9410333', dlvyname: 'CJ대한통운', shipnum: '123456789012' },
+      },
     });
 
-    await expect(client.detail('WP1')).resolves.toEqual({ ordstat: 80, jobstat: 30, dlvyno: 156, dlvyinvc: '1234' });
+    expect(detail).toEqual({
+      ordstat: 80,
+      jobstat: null,
+      carrierCode: 156,
+      trackingNumber: '123456789012',
+      boxNumber: '4-156-9410333',
+    });
     expect(calls.find((c) => c.url.endsWith('/order/WP1'))?.method).toBe('GET');
   });
 
-  it('parses detail from resultMap root with missing delivery', async () => {
-    const { client } = makeClient({
-      [`${API}/api/login/issue`]: [tokenOk('tok')],
-      [`${API}/api/v1/ord/order/WP1`]: [ok({ resultMap: { ordstat: 1, dlvyinvc: null } })],
+  it.each([
+    ['롯데택배', 109],
+    ['CJ대한통운', 156],
+    ['한진택배', null],
+  ])('falls back to dlvyname when dboxnum has no carrier code (%s)', async (dlvyname, expected) => {
+    const { detail } = await detailOf({
+      ordinfo: { ordstat: 80, dlvybox: { dboxnum: null, dlvyname, shipnum: '1' } },
     });
 
-    await expect(client.detail('WP1')).resolves.toEqual({ ordstat: 1, jobstat: null, dlvyno: null, dlvyinvc: null });
+    expect(detail.carrierCode).toBe(expected);
+  });
+
+  it.each([
+    ['missing dlvybox', { ordinfo: { ordstat: 80 } }],
+    ['null shipnum', { ordinfo: { ordstat: 80, dlvybox: { dboxnum: '4-156-1', shipnum: null } } }],
+  ])('treats %s as no tracking', async (_label, resultMap) => {
+    const { detail } = await detailOf(resultMap);
+
+    expect(detail.trackingNumber).toBeNull();
+  });
+
+  it('accepts ordinfo as an array in detail', async () => {
+    const { detail } = await detailOf({
+      ordinfo: [{ ordstat: '80', jobstat: 30.0, dlvybox: { dboxnum: '4-109-5', shipnum: '999' } }],
+    });
+
+    expect(detail).toEqual({ ordstat: 80, jobstat: 30, carrierCode: 109, trackingNumber: '999', boxNumber: '4-109-5' });
+  });
+
+  it('parses detail from resultMap root with no delivery', async () => {
+    const { detail } = await detailOf({ ordstat: 1 });
+
+    expect(detail).toEqual({ ordstat: 1, jobstat: null, carrierCode: null, trackingNumber: null, boxNumber: null });
   });
 });
