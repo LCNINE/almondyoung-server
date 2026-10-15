@@ -119,11 +119,12 @@ describeIfDb('InboundReceiptKernel (PostgreSQL integration)', () => {
         const wiring = buildWiring(db);
         const receive = wiring.command.receive.bind(wiring.command) as typeof wiring.command.receive;
         const spy = jest.spyOn(wiring.command, 'receive').mockImplementation(async (input, trx) => {
-          const [locks] = await probe.begin(
-            (connection) => connection`
-            SELECT pg_try_advisory_xact_lock(hashtext(${variants[0].id})) AS first,
-                   pg_try_advisory_xact_lock(hashtext(${variants[1].id})) AS second
-          `,
+          const [locks] = await probe.begin((connection) =>
+            connection.unsafe<Array<{ first: boolean; second: boolean }>>(
+              `SELECT pg_try_advisory_xact_lock(hashtext($1)) AS first,
+                      pg_try_advisory_xact_lock(hashtext($2)) AS second`,
+              [variants[0].id, variants[1].id],
+            ),
           );
 
           expect(locks).toEqual({ first: false, second: false });
