@@ -620,6 +620,8 @@ export class ProductMatchingService {
             .select({
               variantId: wmsTables.salesVariantPolicies.variantId,
               availabilityOverride: wmsTables.salesVariantPolicies.availabilityOverride,
+              restockDate: wmsTables.salesVariantPolicies.restockDate,
+              restockApproximate: wmsTables.salesVariantPolicies.restockApproximate,
             })
             .from(wmsTables.salesVariantPolicies)
             .where(inArray(wmsTables.salesVariantPolicies.variantId, variantIds))
@@ -679,6 +681,8 @@ export class ProductMatchingService {
           preStockSellable: row.preStockSellable,
           alwaysSellableZeroStock: row.alwaysSellableZeroStock,
           availabilityOverride: policiesByVariantId.get(row.variantId)?.availabilityOverride ?? null,
+          restockDate: policiesByVariantId.get(row.variantId)?.restockDate ?? null,
+          restockApproximate: policiesByVariantId.get(row.variantId)?.restockApproximate ?? false,
         },
         isGift: false,
         createdAt: row.createdAt.toISOString(),

@@ -5,7 +5,13 @@ import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { DbTx, wmsSchema, wmsTables } from '../../schema/inventory.schema';
 import { InboundReceiptKernel } from './inbound-receipt.kernel';
-import { Database, inRollbackTx, makeInboundReceiptKernel } from '../services/__fixtures__/inbound-harness';
+import {
+  buildWiring,
+  Database,
+  inRollbackTx,
+  makeInboundReceiptKernel,
+} from '../services/__fixtures__/inbound-harness';
+import { productVariants } from '../../../catalog/schema/catalog.schema';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -86,6 +92,71 @@ describeIfDb('InboundReceiptKernel (PostgreSQL integration)', () => {
   }
 
   describe('recordArrival', () => {
+    it('첫 재고 변경 전에 모든 품목을 잠가 발주 취소와 반대 순서로 잠그지 않는다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const first = await seedWarehouseAndSku(tx, randomUUID());
+        const second = await seedWarehouseAndSku(tx, randomUUID());
+        const variants = await tx
+          .insert(productVariants)
+          .values([{ variantName: 'restock-lock-a' }, { variantName: 'restock-lock-b' }])
+          .returning();
+        const matchings = await tx
+          .insert(wmsTables.productMatchings)
+          .values(
+            variants.map((variant) => ({
+              variantId: variant.id,
+              status: 'matched' as const,
+              strategy: 'variant' as const,
+            })),
+          )
+          .returning();
+
+        await tx.insert(wmsTables.productVariantSkuLinks).values([
+          { productMatchingId: matchings[0].id, skuId: first.skuId },
+          { productMatchingId: matchings[1].id, skuId: second.skuId },
+        ]);
+
+        const wiring = buildWiring(db);
+        const receive = wiring.command.receive.bind(wiring.command) as typeof wiring.command.receive;
+        const spy = jest.spyOn(wiring.command, 'receive').mockImplementation(async (input, trx) => {
+          const [locks] = await probe.begin(
+            (connection) => connection`
+            SELECT pg_try_advisory_xact_lock(hashtext(${variants[0].id})) AS first,
+                   pg_try_advisory_xact_lock(hashtext(${variants[1].id})) AS second
+          `,
+          );
+
+          expect(locks).toEqual({ first: false, second: false });
+
+          return receive(input, trx);
+        });
+        const ordered = [
+          { skuId: first.skuId, variantId: variants[0].id },
+          { skuId: second.skuId, variantId: variants[1].id },
+        ].sort((a, b) => b.variantId.localeCompare(a.variantId));
+
+        try {
+          await new InboundReceiptKernel(
+            wiring.command,
+            wiring.location,
+            wiring.eventStore,
+            wiring.guard,
+          ).recordArrival(
+            {
+              source: 'direct',
+              method: 'simple',
+              warehouseId: first.warehouseId,
+              reason: 'simple_inbound',
+              lines: ordered.map((item) => ({ skuId: item.skuId, quantity: 1, eventKey: randomUUID() })),
+            },
+            tx,
+          );
+        } finally {
+          spy.mockRestore();
+        }
+      });
+    });
+
     it('source=purchase_order 도착은 method=planned 로 기록되고 라인 source 가 purchase_order 다', async () => {
       await inRollbackTx(db, async (tx) => {
         const fx = await seedWarehouseAndSku(tx, randomUUID());
@@ -209,17 +280,15 @@ describeIfDb('InboundReceiptKernel (PostgreSQL integration)', () => {
         tx,
       );
       const shipmentLineId = await seedShipmentLineFor(tx, { skuId: f.skuId, warehouseId: f.warehouseId, qty: 1 });
-      await tx
-        .insert(wmsTables.stockReservations)
-        .values({
-          targetType: 'SHIPMENT_LINE',
-          targetId: shipmentLineId,
-          shipmentLineId,
-          skuId: f.skuId,
-          warehouseId: f.warehouseId,
-          quantity: 1,
-          status: 'confirmed',
-        });
+      await tx.insert(wmsTables.stockReservations).values({
+        targetType: 'SHIPMENT_LINE',
+        targetId: shipmentLineId,
+        shipmentLineId,
+        skuId: f.skuId,
+        warehouseId: f.warehouseId,
+        quantity: 1,
+        status: 'confirmed',
+      });
       const before = {
         lines: await tx
           .select()

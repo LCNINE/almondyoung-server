@@ -103,7 +103,17 @@ export function calculateProductSellableQuantity(
   }
 
   if (input.availabilityOverride === 'manual_out_of_stock') {
-    return zero('MANUAL_OUT_OF_STOCK');
+    // 판매 차단과 실제 재고량을 분리한다. 입고 시 재입고 일정 해제는 실제 재고로 판단한다.
+    const components = componentResults(input.components);
+    const hasStockMatching = input.matching?.status === 'matched' && input.matching.strategy === 'variant';
+
+    return {
+      ...zero('MANUAL_OUT_OF_STOCK', components),
+      stockBoundQuantity:
+        hasStockMatching && components.length > 0
+          ? Math.min(...components.map((component) => component.componentSellableQuantity))
+          : 0,
+    };
   }
 
   // 출시예정 = "아직 물건이 없다"는 선언. 재고 없이 파는 모든 경로(선판매·항상판매·void)를

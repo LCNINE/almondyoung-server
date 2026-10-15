@@ -58,6 +58,26 @@ describe('calculateProductSellableQuantity', () => {
     expect(result.stockBoundQuantity).toBe(10);
   });
 
+  it('수동 품절도 실제 구성품 재고는 보존해 입고 시 재입고 일정을 해제할 수 있다', () => {
+    const result = calculateProductSellableQuantity(
+      makeInput({
+        availabilityOverride: 'manual_out_of_stock',
+        components: [
+          { skuId: 'sku-1', requiredQuantity: 2, availableQuantity: 10 },
+          { skuId: 'sku-2', requiredQuantity: 3, availableQuantity: 9 },
+        ],
+      }),
+      { now },
+    );
+
+    expect(result).toMatchObject({
+      stockBoundQuantity: 3,
+      sellableQuantity: 0,
+      isSellable: false,
+      reason: 'MANUAL_OUT_OF_STOCK',
+    });
+  });
+
   it('matched + void 전략은 SKU 링크 없이 재고 비제한 판매가능수량으로 계산한다', () => {
     const result = calculateProductSellableQuantity(
       makeInput({
