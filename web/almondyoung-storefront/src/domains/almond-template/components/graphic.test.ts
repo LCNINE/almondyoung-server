@@ -23,18 +23,21 @@ describe("textBoxFor", () => {
     expect(fittedFontSize(resized)).toBeCloseTo(56.5)
   })
 
-  it("줄이면 높이는 줄고 너비는 유지한다", () => {
+  it("상자를 글자 폭에 딱 맞추고 정렬 기준 자리는 지킨다", () => {
     expect(textBoxFor(layer, 10, paper)).toEqual({
       fontSize: 10,
-      width: 100,
+      x: 0,
+      width: 50,
       height: 12,
     })
+    expect(textBoxFor({ ...layer, align: "center" }, 10, paper).x).toBe(25)
+    expect(textBoxFor({ ...layer, align: "right" }, 10, paper).x).toBe(50)
   })
 
   it("키워도 상자가 저장 가능한 범위(용지의 2배)를 넘지 않는다", () => {
     const dashes = { ...layer, text: "-".repeat(67), width: 40, height: 6 }
     const grown = textBoxFor(dashes, 30.85, paper)
     expect(grown.width).toBe(420)
-    expect(textBoxFor({ ...dashes, ...grown }, 5, paper).width).toBe(420)
+    expect(textBoxFor({ ...dashes, ...grown }, 5, paper).width).toBe(201)
   })
 })

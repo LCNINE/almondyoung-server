@@ -1,23 +1,46 @@
 import { memo } from "react"
-import type { Layer, SideBackground } from "../lib/document"
+import {
+  SHAPE_TEXT_TYPES,
+  type Layer,
+  type SideBackground,
+} from "../lib/document"
 import { FRAME_PATHS, LEGACY_CLIPART } from "../lib/art-library"
 import { CLIPART_DATA } from "../lib/clipart-data"
 import { imageSrc } from "../lib/image-ref"
 import { fontStack } from "../lib/fonts"
 
-function textExtent(layer: Layer) {
+const widthRatio = (layer: Layer) =>
+  Math.max(10, Math.min(1000, layer.widthScale || 100)) / 100
+
+const HANGUL = /[\uac00-\ud7af]/
+let measurer: CanvasRenderingContext2D | null | undefined
+const measured = new Map<string, number>()
+if (typeof document !== "undefined")
+  // 웹폰트가 늦게 도착하면 대체 글꼴로 잰 값을 버린다
+  document.fonts?.addEventListener("loadingdone", () => measured.clear())
+
+// 한 줄의 폭을 글자 크기 1 기준(em)으로 잰다. 브라우저 밖(테스트·SSR)에선 한글 1, 그 외 0.6 어림값
+function lineEm(line: string, layer: Layer) {
+  const guess = () =>
+    Array.from(line).reduce((n, ch) => n + (HANGUL.test(ch) ? 1 : 0.6), 0)
+  if (typeof document === "undefined") return guess()
+  const font = `${layer.italic ? "italic " : ""}${layer.fontWeight === "bold" ? "bold " : ""}100px ${fontStack(layer.fontFamily)}`
+  const key = `${font}\u0000${line}`
+  const hit = measured.get(key)
+  if (hit !== undefined) return hit
+  measurer ??= document.createElement("canvas").getContext("2d")
+  if (!measurer) return guess()
+  measurer.font = font
+  const em = measurer.measureText(line).width / 100
+  measured.set(key, em)
+  return em
+}
+
+export function textExtent(layer: Layer, stretched = true) {
   const lines = (layer.text ?? "").split("\n")
-  const longest = Math.max(
-    1,
-    ...lines.map((line) =>
-      Array.from(line).reduce(
-        (n, ch) => n + (/[\uac00-\ud7af]/.test(ch) ? 1 : 0.6),
-        0
-      )
-    )
-  )
+  const longest = Math.max(0.5, ...lines.map((line) => lineEm(line, layer)))
   return {
-    width: longest * ((layer.widthScale ?? 100) / 100),
+    width: longest * (stretched ? widthRatio(layer) : 1),
     height: lines.length * ((layer.lineHeight ?? 120) / 100),
   }
 }
@@ -34,22 +57,27 @@ export function fittedFontSize(layer: Layer) {
   )
 }
 
+const ceil = (value: number) => Math.ceil(value * 10 - 1e-6) / 10
+
+// 상자를 글자 크기에 딱 맞춘다. 정렬 기준(왼쪽·가운데·오른쪽) 자리는 그대로 둔다
 export function textBoxFor(
   layer: Layer,
   fontSize: number,
   paper: { widthMm: number; heightMm: number }
 ) {
   const extent = textExtent(layer)
+  const width = Math.min(paper.widthMm * 2, ceil(extent.width * fontSize))
+  const shift =
+    layer.align === "center"
+      ? (layer.width - width) / 2
+      : layer.align === "right"
+        ? layer.width - width
+        : 0
   return {
     fontSize,
-    width: Math.min(
-      paper.widthMm * 2,
-      Math.max(layer.width, Math.round(extent.width * fontSize * 10) / 10)
-    ),
-    height: Math.min(
-      paper.heightMm * 2,
-      Math.round(extent.height * fontSize * 10) / 10
-    ),
+    x: Math.round((layer.x + shift) * 10) / 10,
+    width,
+    height: Math.min(paper.heightMm * 2, ceil(extent.height * fontSize)),
   }
 }
 
@@ -244,8 +272,95 @@ const shapePoints: Record<string, number[][]> = {
   ],
 }
 
+function EffectFilter({ layer, id }: { layer: Layer; id: string }) {
+  const size =
+    layer.type === "text"
+      ? fittedFontSize(layer)
+      : Math.min(layer.width, layer.height)
+  const offset = Math.max(0.2, size * 0.06)
+  return (
+    <filter id={id} x="-30%" y="-30%" width="160%" height="160%">
+      {layer.shadow && (
+        <>
+          <feGaussianBlur in="SourceAlpha" stdDeviation={offset * 0.6} />
+          <feOffset dx={offset} dy={offset} result="offset" />
+          <feFlood floodColor="#000000" floodOpacity="0.35" />
+          <feComposite in2="offset" operator="in" result="shadow" />
+        </>
+      )}
+      {layer.texture && (
+        <>
+          <feTurbulence
+            type="fractalNoise"
+            baseFrequency={Math.max(0.05, 60 / Math.max(size, 1)) / 4}
+            numOctaves="2"
+            seed="3"
+            result="noise"
+          />
+          <feColorMatrix
+            in="noise"
+            type="matrix"
+            values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.6 1.1"
+            result="speckle"
+          />
+          <feComposite
+            in="speckle"
+            in2="SourceGraphic"
+            operator="in"
+            result="grain"
+          />
+        </>
+      )}
+      <feMerge>
+        {layer.shadow && <feMergeNode in="shadow" />}
+        <feMergeNode in="SourceGraphic" />
+        {layer.texture && <feMergeNode in="grain" />}
+      </feMerge>
+    </filter>
+  )
+}
+
+export function shapeTextColor(layer: Layer) {
+  if (layer.textColor) return layer.textColor
+  const hex = /^#[0-9a-f]{6}$/i.test(layer.fill) ? layer.fill : "#ffffff"
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+  return r * 0.299 + g * 0.587 + b * 0.114 < 140 ? "#ffffff" : "#202020"
+}
+
+function ShapeText({ layer }: { layer: Layer }) {
+  const rows = (layer.text ?? "").split("\n")
+  const inner = {
+    ...layer,
+    width: layer.width * 0.84,
+    height: layer.height * 0.84,
+  }
+  const size = fittedFontSize(inner)
+  const step = size * ((layer.lineHeight ?? 120) / 100)
+  const cx = layer.x + layer.width / 2
+  const top =
+    layer.y + layer.height / 2 - (step * (rows.length - 1)) / 2 + size * 0.35
+  return (
+    <text
+      textAnchor="middle"
+      fill={shapeTextColor(layer)}
+      fontSize={size}
+      fontFamily={fontStack(layer.fontFamily)}
+      fontWeight={layer.fontWeight ?? "normal"}
+      fontStyle={layer.italic ? "italic" : "normal"}
+      style={{ whiteSpace: "pre" }}
+    >
+      {rows.map((row, i) => (
+        <tspan key={i} x={cx} y={top + step * i}>
+          {row}
+        </tspan>
+      ))}
+    </text>
+  )
+}
+
 function LayerGraphicView({ layer }: { layer: Layer }) {
   if (layer.visible === false) return null
+  const filterId = layer.shadow || layer.texture ? `fx-${layer.id}` : undefined
   const cx = layer.x + layer.width / 2,
     cy = layer.y + layer.height / 2
   const transform = `translate(${cx} ${cy}) rotate(${layer.rotation ?? 0}) scale(${layer.flipX ? -1 : 1} ${layer.flipY ? -1 : 1}) translate(${-cx} ${-cy})`
@@ -255,6 +370,12 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
     strokeWidth: layer.strokeWidth ?? 0,
   }
   const line = fittedFontSize(layer)
+  const textAnchorX =
+    layer.align === "center"
+      ? cx
+      : layer.align === "right"
+        ? layer.x + layer.width
+        : layer.x
   const shape = layer.frameShape ?? "rect"
   const qrSize = layer.qrSize ?? 0
   const imageScale = layer.imageScale ?? 1
@@ -268,134 +389,117 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
     CLIPART_DATA[LEGACY_CLIPART[layer.clipartId ?? ""] ?? layer.clipartId ?? ""]
   return (
     <g transform={transform} opacity={layer.opacity ?? 1}>
-      {layer.type === "rect" && layer.shapeVariant === "rounded" && (
-        <rect
-          x={layer.x}
-          y={layer.y}
-          width={layer.width}
-          height={layer.height}
-          rx={Math.min(layer.width, layer.height) * 0.16}
-          {...paint}
-        />
+      {filterId && (
+        <defs>
+          <EffectFilter layer={layer} id={filterId} />
+        </defs>
       )}
-      {layer.type === "rect" &&
-        layer.shapeVariant &&
-        shapePoints[layer.shapeVariant] && (
-          <polygon
-            points={polygonPoints(layer, shapePoints[layer.shapeVariant])}
-            {...paint}
-          />
-        )}
-      {layer.type === "rect" && !layer.shapeVariant && (
-        <rect
-          x={layer.x}
-          y={layer.y}
-          width={layer.width}
-          height={layer.height}
-          {...paint}
-        />
-      )}
-      {layer.type === "clipart" && clipartSource && (
-        <image
-          x={layer.x}
-          y={layer.y}
-          width={layer.width}
-          height={layer.height}
-          href={clipartSource}
-          preserveAspectRatio="xMidYMid meet"
-        />
-      )}
-      {layer.type === "ellipse" && (
-        <ellipse
-          cx={cx}
-          cy={cy}
-          rx={layer.width / 2}
-          ry={layer.height / 2}
-          {...paint}
-        />
-      )}
-      {layer.type === "triangle" && (
-        <polygon
-          points={polygonPoints(layer, [
-            [0.5, 0],
-            [1, 1],
-            [0, 1],
-          ])}
-          {...paint}
-        />
-      )}
-      {layer.type === "star" && (
-        <polygon points={polygonPoints(layer, star)} {...paint} />
-      )}
-      {layer.type === "line" && (
-        <line
-          x1={layer.x}
-          y1={cy}
-          x2={layer.x + layer.width}
-          y2={cy}
-          stroke={layer.stroke ?? layer.fill}
-          strokeWidth={Math.max(0.3, layer.strokeWidth ?? 1)}
-        />
-      )}
-      {layer.type === "heart" && (
-        <path
-          d={heart}
-          transform={`translate(${layer.x} ${layer.y}) scale(${layer.width} ${layer.height})`}
-          {...paint}
-          strokeWidth={
-            (layer.strokeWidth ?? 0) / Math.max(layer.width, layer.height)
-          }
-        />
-      )}
-      {layer.type === "image" && layer.image && (
-        <>
-          <defs>
-            <clipPath id={`clip-${layer.id}`}>
-              <rect
-                x={layer.x}
-                y={layer.y}
-                width={layer.width}
-                height={layer.height}
-              />
-            </clipPath>
-          </defs>
-          <image
-            href={imageSrc(layer.image)}
-            x={imageX}
-            y={imageY}
-            width={imageWidth}
-            height={imageHeight}
-            preserveAspectRatio="xMidYMid slice"
-            clipPath={`url(#clip-${layer.id})`}
-          />
-        </>
-      )}
-      {layer.type === "frame" && (
-        <>
-          <defs>
-            <clipPath id={`clip-${layer.id}`} clipPathUnits="objectBoundingBox">
-              {shape === "ellipse" ? (
-                <ellipse cx=".5" cy=".5" rx=".5" ry=".5" />
-              ) : FRAME_PATHS[shape] ? (
-                <path d={FRAME_PATHS[shape]} transform="scale(0.01)" />
-              ) : shape === "star" ? (
-                <polygon points={star.map((p) => p.join(",")).join(" ")} />
-              ) : shape === "heart" ? (
-                <path d={heart} />
-              ) : (
-                <rect width="1" height="1" />
-              )}
-            </clipPath>
-          </defs>
+      <g filter={filterId ? `url(#${filterId})` : undefined}>
+        {layer.type === "rect" && layer.shapeVariant === "rounded" && (
           <rect
             x={layer.x}
             y={layer.y}
             width={layer.width}
             height={layer.height}
-            fill="#e7e7e7"
-            clipPath={`url(#clip-${layer.id})`}
+            rx={Math.min(layer.width, layer.height) * 0.16}
+            {...paint}
           />
-          {layer.image ? (
+        )}
+        {layer.type === "rect" &&
+          layer.shapeVariant &&
+          shapePoints[layer.shapeVariant] && (
+            <polygon
+              points={polygonPoints(layer, shapePoints[layer.shapeVariant])}
+              {...paint}
+            />
+          )}
+        {layer.type === "rect" &&
+          layer.shapeVariant &&
+          !shapePoints[layer.shapeVariant] &&
+          FRAME_PATHS[layer.shapeVariant] && (
+            <path
+              d={FRAME_PATHS[layer.shapeVariant]}
+              transform={`translate(${layer.x} ${layer.y}) scale(${layer.width / 100} ${layer.height / 100})`}
+              {...paint}
+              strokeWidth={
+                ((layer.strokeWidth ?? 0) * 100) /
+                Math.max(layer.width, layer.height)
+              }
+            />
+          )}
+        {layer.type === "rect" && !layer.shapeVariant && (
+          <rect
+            x={layer.x}
+            y={layer.y}
+            width={layer.width}
+            height={layer.height}
+            {...paint}
+          />
+        )}
+        {layer.type === "clipart" && clipartSource && (
+          <image
+            x={layer.x}
+            y={layer.y}
+            width={layer.width}
+            height={layer.height}
+            href={clipartSource}
+            preserveAspectRatio="xMidYMid meet"
+          />
+        )}
+        {layer.type === "ellipse" && (
+          <ellipse
+            cx={cx}
+            cy={cy}
+            rx={layer.width / 2}
+            ry={layer.height / 2}
+            {...paint}
+          />
+        )}
+        {layer.type === "triangle" && (
+          <polygon
+            points={polygonPoints(layer, [
+              [0.5, 0],
+              [1, 1],
+              [0, 1],
+            ])}
+            {...paint}
+          />
+        )}
+        {layer.type === "star" && (
+          <polygon points={polygonPoints(layer, star)} {...paint} />
+        )}
+        {layer.type === "line" && (
+          <line
+            x1={layer.x}
+            y1={cy}
+            x2={layer.x + layer.width}
+            y2={cy}
+            stroke={layer.stroke ?? layer.fill}
+            strokeWidth={Math.max(0.3, layer.strokeWidth ?? 1)}
+          />
+        )}
+        {layer.type === "heart" && (
+          <path
+            d={heart}
+            transform={`translate(${layer.x} ${layer.y}) scale(${layer.width} ${layer.height})`}
+            {...paint}
+            strokeWidth={
+              (layer.strokeWidth ?? 0) / Math.max(layer.width, layer.height)
+            }
+          />
+        )}
+        {layer.type === "image" && layer.image && (
+          <>
+            <defs>
+              <clipPath id={`clip-${layer.id}`}>
+                <rect
+                  x={layer.x}
+                  y={layer.y}
+                  width={layer.width}
+                  height={layer.height}
+                />
+              </clipPath>
+            </defs>
             <image
               href={imageSrc(layer.image)}
               x={imageX}
@@ -405,88 +509,137 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
               preserveAspectRatio="xMidYMid slice"
               clipPath={`url(#clip-${layer.id})`}
             />
-          ) : (
-            <text
-              x={cx}
-              y={cy}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fill="#777"
-              fontSize={Math.min(layer.width / 6, layer.height / 6)}
-            >
-              이미지 넣기
-            </text>
-          )}
-        </>
-      )}
-      {layer.type === "qr" && qrSize > 0 && layer.qrBits && (
-        <>
-          <rect
-            x={layer.x}
-            y={layer.y}
-            width={layer.width}
-            height={layer.height}
-            fill="white"
-          />
-          {Array.from(layer.qrBits).map((bit, i) =>
-            bit === "1" ? (
-              <rect
-                key={i}
-                x={layer.x + (((i % qrSize) + 4) * layer.width) / (qrSize + 8)}
-                y={
-                  layer.y +
-                  ((Math.floor(i / qrSize) + 4) * layer.height) / (qrSize + 8)
-                }
-                width={layer.width / (qrSize + 8) + 0.01}
-                height={layer.height / (qrSize + 8) + 0.01}
-                fill={layer.fill}
+          </>
+        )}
+        {layer.type === "frame" && (
+          <>
+            <defs>
+              <clipPath
+                id={`clip-${layer.id}`}
+                clipPathUnits="objectBoundingBox"
+              >
+                {shape === "ellipse" ? (
+                  <ellipse cx=".5" cy=".5" rx=".5" ry=".5" />
+                ) : FRAME_PATHS[shape] ? (
+                  <path d={FRAME_PATHS[shape]} transform="scale(0.01)" />
+                ) : shape === "star" ? (
+                  <polygon points={star.map((p) => p.join(",")).join(" ")} />
+                ) : shape === "heart" ? (
+                  <path d={heart} />
+                ) : (
+                  <rect width="1" height="1" />
+                )}
+              </clipPath>
+            </defs>
+            <rect
+              x={layer.x}
+              y={layer.y}
+              width={layer.width}
+              height={layer.height}
+              fill="#e7e7e7"
+              clipPath={`url(#clip-${layer.id})`}
+            />
+            {layer.image ? (
+              <image
+                href={imageSrc(layer.image)}
+                x={imageX}
+                y={imageY}
+                width={imageWidth}
+                height={imageHeight}
+                preserveAspectRatio="xMidYMid slice"
+                clipPath={`url(#clip-${layer.id})`}
               />
-            ) : null
-          )}
-        </>
-      )}
-      {layer.type === "text" && (
-        <text
-          x={
-            layer.align === "center"
-              ? cx
-              : layer.align === "right"
-                ? layer.x + layer.width
-                : layer.x
-          }
-          y={layer.y + line}
-          textAnchor={
-            layer.align === "center"
-              ? "middle"
-              : layer.align === "right"
-                ? "end"
-                : "start"
-          }
-          fill={layer.fill}
-          fontSize={line}
-          fontFamily={fontStack(layer.fontFamily)}
-          fontWeight={layer.fontWeight ?? "normal"}
-          fontStyle={layer.italic ? "italic" : "normal"}
-          letterSpacing={layer.letterSpacing ?? 0}
-          style={{ whiteSpace: "pre" }}
-        >
-          {(layer.text ?? "").split("\n").map((row, i) => (
-            <tspan
-              key={i}
-              x={
-                layer.align === "center"
-                  ? cx
-                  : layer.align === "right"
-                    ? layer.x + layer.width
-                    : layer.x
-              }
-              dy={i ? line * ((layer.lineHeight ?? 120) / 100) : 0}
-            >
-              {row}
-            </tspan>
-          ))}
-        </text>
-      )}
+            ) : (
+              <text
+                x={cx}
+                y={cy}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fill="#777"
+                fontSize={Math.min(layer.width / 6, layer.height / 6)}
+              >
+                이미지 넣기
+              </text>
+            )}
+          </>
+        )}
+        {layer.type === "qr" && qrSize > 0 && layer.qrBits && (
+          <>
+            <rect
+              x={layer.x}
+              y={layer.y}
+              width={layer.width}
+              height={layer.height}
+              fill="white"
+            />
+            {Array.from(layer.qrBits).map((bit, i) =>
+              bit === "1" ? (
+                <rect
+                  key={i}
+                  x={
+                    layer.x + (((i % qrSize) + 4) * layer.width) / (qrSize + 8)
+                  }
+                  y={
+                    layer.y +
+                    ((Math.floor(i / qrSize) + 4) * layer.height) / (qrSize + 8)
+                  }
+                  width={layer.width / (qrSize + 8) + 0.01}
+                  height={layer.height / (qrSize + 8) + 0.01}
+                  fill={layer.fill}
+                />
+              ) : null
+            )}
+          </>
+        )}
+        {layer.type === "text" && (
+          <text
+            transform={
+              widthRatio(layer) === 1
+                ? undefined
+                : `translate(${textAnchorX}) scale(${widthRatio(layer)} 1) translate(${-textAnchorX})`
+            }
+            stroke={
+              layer.stroke && layer.stroke !== "none" ? layer.stroke : undefined
+            }
+            strokeWidth={
+              layer.stroke && layer.stroke !== "none"
+                ? (layer.strokeWidth ?? 0)
+                : undefined
+            }
+            strokeLinejoin="round"
+            paintOrder="stroke"
+            x={textAnchorX}
+            y={layer.y + line}
+            textAnchor={
+              layer.align === "center"
+                ? "middle"
+                : layer.align === "right"
+                  ? "end"
+                  : "start"
+            }
+            fill={layer.fill}
+            fontSize={line}
+            fontFamily={fontStack(layer.fontFamily)}
+            fontWeight={layer.fontWeight ?? "normal"}
+            fontStyle={layer.italic ? "italic" : "normal"}
+            letterSpacing={layer.letterSpacing ?? 0}
+            style={{ whiteSpace: "pre" }}
+          >
+            {(layer.text ?? "").split("\n").map((row, i) => (
+              <tspan
+                key={i}
+                x={textAnchorX}
+                dy={i ? line * ((layer.lineHeight ?? 120) / 100) : 0}
+              >
+                {row}
+              </tspan>
+            ))}
+          </text>
+        )}
+        {SHAPE_TEXT_TYPES.has(layer.type) && layer.text && (
+          <ShapeText layer={layer} />
+        )}
+      </g>
     </g>
   )
 }

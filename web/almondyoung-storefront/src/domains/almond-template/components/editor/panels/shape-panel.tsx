@@ -18,7 +18,17 @@ export function ShapePanel({
   shapeColumns: 1 | 2
   setShapeColumns: (value: 1 | 2) => void
 }) {
-  const { add } = editor
+  const { add, design } = editor
+  const side = Math.min(design.widthMm, design.heightMm) * 0.3
+  // 모양틀 윤곽은 동물·사물 모양이라 정사각으로 넣어야 찌그러지지 않는다
+  const square = shapeCategory.startsWith("모양틀")
+    ? {
+        x: Math.round(((design.widthMm - side) / 2) * 10) / 10,
+        y: Math.round(((design.heightMm - side) / 2) * 10) / 10,
+        width: Math.round(side * 10) / 10,
+        height: Math.round(side * 10) / 10,
+      }
+    : {}
   return (
     <>
       <div className="mb-4 flex items-center gap-2">
@@ -58,6 +68,7 @@ export function ShapePanel({
               className="flex h-[110px] items-center justify-center bg-[#f5f5f5] hover:outline hover:outline-2 hover:outline-[#5e9bd9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#5e9bd9]"
               onClick={() =>
                 add(type as Layer["type"], {
+                  ...square,
                   name: label,
                   shapeVariant: id === type ? undefined : id,
                   fill:

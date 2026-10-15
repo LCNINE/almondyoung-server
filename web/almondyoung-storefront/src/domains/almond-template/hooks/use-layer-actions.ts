@@ -7,6 +7,18 @@ import {
   type Layer,
 } from "../lib/document"
 import { makeLayer } from "../lib/layer"
+import { textBoxFor } from "../components/graphic"
+
+// 바뀌면 글자 덩치가 달라지는 속성. 이때 상자를 글자에 다시 맞춘다
+const TEXT_SHAPE_KEYS = new Set([
+  "text",
+  "fontFamily",
+  "fontWeight",
+  "italic",
+  "fontSize",
+  "lineHeight",
+  "widthScale",
+])
 import type { EditorMode } from "./use-template-storage"
 
 type Params = {
@@ -36,10 +48,27 @@ export function useLayerActions({
 }: Params) {
   const [copied, setCopied] = useState<Layer | null>(null)
 
-  const patch = (id: string, value: Partial<Layer>) =>
-    change(updateLayer(design, side, id, value))
+  const fitText = (layer: Layer): Layer =>
+    layer.type === "text"
+      ? { ...layer, ...textBoxFor(layer, layer.fontSize ?? 10, design) }
+      : layer
+  const patch = (id: string, value: Partial<Layer>) => {
+    const layer = layers.find((item) => item.id === id)
+    const reshapes =
+      layer?.type === "text" &&
+      !("width" in value) &&
+      Object.keys(value).some((key) => TEXT_SHAPE_KEYS.has(key))
+    change(
+      updateLayer(
+        design,
+        side,
+        id,
+        reshapes ? fitText({ ...layer, ...value }) : value
+      )
+    )
+  }
   const add = (type: Layer["type"], extra: Partial<Layer> = {}) => {
-    const layer = { ...makeLayer(type, design), ...extra }
+    const layer = fitText({ ...makeLayer(type, design), ...extra })
     change({ ...design, [side]: [...layers, layer] })
     setSelectedId(layer.id)
   }

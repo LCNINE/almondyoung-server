@@ -55,7 +55,14 @@ export type Layer = {
   visible?: boolean
   locked?: boolean
   editable?: boolean
+  textColor?: string
+  shadow?: boolean
+  texture?: boolean
 }
+
+export const SHAPE_TEXT_TYPES: ReadonlySet<Layer["type"]> = new Set<
+  Layer["type"]
+>(["rect", "ellipse", "triangle", "star", "heart"])
 
 export type Design = {
   version: 1
@@ -210,7 +217,11 @@ export function parseDesign(value: unknown): Design {
       typeof layer.name !== "string" ||
       layer.name.length > 100 ||
       typeof layer.fill !== "string" ||
-      !color.test(layer.fill) ||
+      !(
+        color.test(layer.fill) ||
+        (layer.fill === "none" && SHAPE_TEXT_TYPES.has(layer.type))
+      ) ||
+      (layer.textColor !== undefined && !color.test(layer.textColor)) ||
       (layer.stroke !== undefined &&
         layer.stroke !== "none" &&
         !color.test(layer.stroke)) ||
@@ -398,9 +409,46 @@ export function resizeLayerFromHandle(
   dx: number,
   dy: number,
   canvasWidth: number,
-  canvasHeight: number
+  canvasHeight: number,
+  keepRatio = false
 ): Partial<Layer> {
   const round = (value: number) => Math.round(value * 10) / 10
+  if (keepRatio) {
+    const corner = handle.length === 2
+    const sx = (layer.width + (handle.includes("w") ? -dx : dx)) / layer.width
+    const sy = (layer.height + (handle.includes("n") ? -dy : dy)) / layer.height
+    const wanted = corner
+      ? Math.max(sx, sy)
+      : handle === "e" || handle === "w"
+        ? sx
+        : sy
+    const s = Math.max(
+      2 / Math.min(layer.width, layer.height),
+      Math.min(
+        wanted,
+        (canvasWidth * 2) / layer.width,
+        (canvasHeight * 2) / layer.height
+      )
+    )
+    const width = layer.width * s
+    const height = layer.height * s
+    const x = handle.includes("w")
+      ? layer.x + layer.width - width
+      : handle.includes("e")
+        ? layer.x
+        : layer.x + (layer.width - width) / 2
+    const y = handle.includes("n")
+      ? layer.y + layer.height - height
+      : handle.includes("s")
+        ? layer.y
+        : layer.y + (layer.height - height) / 2
+    return {
+      x: round(x),
+      y: round(y),
+      width: round(width),
+      height: round(height),
+    }
+  }
   let { x, y, width, height } = layer
   if (handle.includes("w")) {
     x = Math.max(

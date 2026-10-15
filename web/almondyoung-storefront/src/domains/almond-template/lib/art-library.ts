@@ -25,7 +25,7 @@ export const FRAME_IDS: ReadonlySet<string> = new Set([
   ...Object.keys(FRAME_PATHS),
 ])
 
-export const SHAPES = {
+const BASIC_SHAPES = {
   기본도형: [
     ["line", "선", "line"],
     ["rect", "사각형", "rect"],
@@ -59,6 +59,30 @@ export const SHAPES = {
     ["flag", "깃발", "rect"],
   ],
 } as const
+
+const basicIds = new Set(
+  Object.values(BASIC_SHAPES)
+    .flat()
+    .map(([id]) => id as string)
+)
+
+// 모양틀 윤곽을 색을 채우는 도형으로도 쓴다. 기본 도형과 겹치는 모양은 뺀다
+export const SHAPES: Record<
+  string,
+  ReadonlyArray<readonly [string, string, string]>
+> = {
+  ...BASIC_SHAPES,
+  ...Object.fromEntries(
+    Object.entries(FRAME_LIBRARY).map(([category, items]) => [
+      category.replace("모양틀", "") === "기본"
+        ? "모양틀"
+        : `모양틀 · ${category.replace("모양틀", "")}`,
+      items
+        .filter(([id]) => !basicIds.has(id))
+        .map(([id, label]) => [id, label, "rect"] as const),
+    ])
+  ),
+}
 
 export const SHAPE_VARIANTS: ReadonlySet<string> = new Set(
   Object.values(SHAPES)

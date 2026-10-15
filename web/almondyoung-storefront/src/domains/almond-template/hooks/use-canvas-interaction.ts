@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type Dispatch,
@@ -12,6 +13,7 @@ import {
   type Layer,
 } from "../lib/document"
 import { mm } from "../lib/layer"
+import { textExtent } from "../components/graphic"
 import type { EditorMode } from "./use-template-storage"
 
 type Params = {
@@ -27,6 +29,27 @@ type Params = {
 }
 
 type Box = { x0: number; y0: number; x1: number; y1: number }
+
+export const MIN_ZOOM = 0.1
+export const MAX_ZOOM = 8
+
+// 텍스트는 상자를 꽉 채운다. 높이가 글자 크기를, 남는 가로 비율이 장평을 정한다
+function stretchText(layer: Layer, box: Partial<Layer>): Partial<Layer> {
+  if (layer.type !== "text" || !box.width || !box.height) return box
+  const plain = textExtent(layer, false)
+  const fontSize = Math.max(1, box.height / plain.height)
+  return {
+    ...box,
+    fontSize: Math.round(fontSize * 100) / 100,
+    widthScale:
+      Math.round(
+        Math.max(
+          10,
+          Math.min(1000, (box.width / (plain.width * fontSize)) * 100)
+        ) * 10
+      ) / 10,
+  }
+}
 
 function layerBounds(layer: Layer) {
   const rad = ((layer.rotation ?? 0) * Math.PI) / 180
@@ -68,6 +91,14 @@ export function useCanvasInteraction({
   const [marquee, setMarquee] = useState<Box | null>(null)
   const [panReady, setPanReady] = useState(false)
   const panning = moveMode || panReady
+  const panningRef = useRef(panning)
+  panningRef.current = panning
+  const zoomAnchor = useRef<{
+    x: number
+    y: number
+    u: number
+    v: number
+  } | null>(null)
 
   useEffect(() => {
     if (!canvasAreaRef.current) return
@@ -89,8 +120,11 @@ export function useCanvasInteraction({
       event.preventDefault()
       // 트랙패드는 작은 delta 를 잔뜩 쏘므로 이벤트당 고정 10% 대신 delta 에 비례시킨다
       const delta = Math.max(-100, Math.min(100, event.deltaY))
-      setZoom((value) =>
-        Math.max(0.4, Math.min(2, value * Math.exp(-delta * 0.0003)))
+      const rect = area.getBoundingClientRect()
+      zoomAt(
+        event.clientX - rect.left,
+        event.clientY - rect.top,
+        (value) => value * Math.exp(-delta * 0.002)
       )
     }
     area.addEventListener("wheel", zoomWheel, { passive: false })
@@ -119,9 +153,16 @@ export function useCanvasInteraction({
   }, [])
   useEffect(() => {
     const area = canvasAreaRef.current
-    if (!area || !panning) return
+    if (!area) return
+    area.style.cursor = panning ? "grab" : ""
+  }, [panning])
+  useEffect(() => {
+    const area = canvasAreaRef.current
+    if (!area) return
     let start: { x: number; y: number; left: number; top: number } | null = null
     const press = (event: PointerEvent) => {
+      if (!panningRef.current && event.button !== 1) return
+      event.preventDefault()
       event.stopPropagation()
       start = {
         x: event.clientX,
@@ -142,14 +183,12 @@ export function useCanvasInteraction({
     area.addEventListener("pointerdown", press, { capture: true })
     area.addEventListener("pointermove", move)
     area.addEventListener("pointerup", release)
-    area.style.cursor = "grab"
     return () => {
       area.removeEventListener("pointerdown", press, { capture: true })
       area.removeEventListener("pointermove", move)
       area.removeEventListener("pointerup", release)
-      area.style.cursor = ""
     }
-  }, [panning])
+  }, [])
 
   const point = (event: React.PointerEvent) => {
     const rect = svgRef.current!.getBoundingClientRect()
@@ -292,13 +331,17 @@ export function useCanvasInteraction({
               ),
             }
           : handle
-            ? resizeLayerFromHandle(
+            ? stretchText(
                 layer,
-                handle,
-                localDx,
-                localDy,
-                old.widthMm,
-                old.heightMm
+                resizeLayerFromHandle(
+                  layer,
+                  handle,
+                  localDx,
+                  localDy,
+                  old.widthMm,
+                  old.heightMm,
+                  event.shiftKey
+                )
               )
             : {
                 x: mm(
@@ -374,6 +417,63 @@ export function useCanvasInteraction({
     )
   )
   const handleSize = 9 / (canvasFit * zoom)
+  // 캔버스 둘레에 화면 한 장만큼 여백을 둬서 어느 방향으로든 끌어 옮길 수 있게 한다
+  const pad = {
+    x: Math.max(canvasSize.width, 0),
+    y: Math.max(canvasSize.height, 0),
+  }
+
+  // (x, y) 화면 지점 아래의 디자인 좌표가 확대 후에도 그 자리에 남게 스크롤을 맞춘다
+  function zoomAt(x: number, y: number, next: (value: number) => number) {
+    const area = canvasAreaRef.current
+    const svg = svgRef.current
+    if (!area || !svg) return
+    const rect = svg.getBoundingClientRect()
+    const areaRect = area.getBoundingClientRect()
+    zoomAnchor.current = {
+      x,
+      y,
+      u: (areaRect.left + x - rect.left) / rect.width,
+      v: (areaRect.top + y - rect.top) / rect.height,
+    }
+    setZoom((value) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, next(value))))
+  }
+  const zoomBy = (factor: number) => {
+    const area = canvasAreaRef.current
+    if (!area) return
+    zoomAt(
+      area.clientWidth / 2,
+      area.clientHeight / 2,
+      (value) => value * factor
+    )
+  }
+  const zoomReset = () => {
+    zoomAnchor.current = null
+    setZoom(1)
+    centerRef.current = true
+  }
+  const centerRef = useRef(true)
+  useLayoutEffect(() => {
+    centerRef.current = true
+  }, [canvasSize.width, canvasSize.height, design.widthMm, design.heightMm])
+  useLayoutEffect(() => {
+    const area = canvasAreaRef.current
+    const svg = svgRef.current
+    if (!area || !svg) return
+    const anchor = zoomAnchor.current
+    zoomAnchor.current = null
+    const width = design.widthMm * canvasFit * zoom
+    const height = design.heightMm * canvasFit * zoom
+    if (anchor && !centerRef.current) {
+      area.scrollLeft = pad.x + anchor.u * width - anchor.x
+      area.scrollTop = pad.y + anchor.v * height - anchor.y
+      return
+    }
+    if (!centerRef.current) return
+    centerRef.current = false
+    area.scrollLeft = pad.x + width / 2 - area.clientWidth / 2
+    area.scrollTop = pad.y + height / 2 - area.clientHeight / 2
+  })
 
   return {
     zoom,
@@ -390,5 +490,8 @@ export function useCanvasInteraction({
     canvasFit,
     handleSize,
     panning,
+    pad,
+    zoomBy,
+    zoomReset,
   }
 }

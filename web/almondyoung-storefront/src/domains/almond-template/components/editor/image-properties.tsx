@@ -1,5 +1,6 @@
 import { NumberInput } from "./number-input"
 import {
+  GripVertical,
   RotateCcw,
   FlipHorizontal,
   FlipVertical,
@@ -51,9 +52,15 @@ export function ImageProperties({
     <aside
       aria-label="이미지 속성"
       className="absolute top-[18%] right-5 z-20 max-h-[72%] w-[285px] overflow-y-auto border bg-white text-sm shadow-lg"
+      style={panel.panelStyle}
     >
-      <h2 className="border-b px-4 py-2 text-right text-xl font-light">
-        IMAGE
+      <h2
+        title="끌어서 옮기기"
+        onPointerDown={panel.startPanelDrag}
+        className="flex cursor-move items-center border-b px-4 py-2 text-xl font-light select-none"
+      >
+        <GripVertical size={16} className="text-slate-400" />
+        <span className="ml-auto">IMAGE</span>
       </h2>
       <div className="space-y-3 px-4 py-3">
         <button
