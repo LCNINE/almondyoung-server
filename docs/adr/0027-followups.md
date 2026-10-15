@@ -101,7 +101,7 @@
   (`getRecurringContractsByIds` 재활용).
 - **DLQ reprocess topic 자유입력** — `admin-operations.controller.ts:reprocessDlq`. RBAC 는 클래스
   `@MembershipAdminAuth`(admin/master)로 걸려 있음(확인됨). 남은 건 `topic` allowlist(payments.events.v1,
-  wallet.commands.v1) 하드닝뿐.
+  wallet.commands.v1) 하드닝뿐. → 라우트 자체가 #1016 8번에서 삭제됨.
 
 ### 이벤트 / 인프라
 - **DLQ 재발행이 원본 파티션 키를 잃음** — `dlq-handler.service.ts:171`. 순서 역전 가능(멱등 마커로 완화).

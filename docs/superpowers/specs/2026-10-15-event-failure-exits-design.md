@@ -8,6 +8,14 @@
 >
 > **계획 단계 정정 — 컨트롤러는 라이브러리에 두지 않는다.** §9 의 «라이브러리가 컨트롤러 모듈을 제공»은 #705 의 원칙과 어긋난다.
 > `EventTraceApiModule` 처럼 라이브러리는 조회·명령 서비스만 제공하고, 각 앱이 자기 인가 데코레이터와 함께 컨트롤러를 선언한다(앱마다 전역 가드가 다르다).
+>
+> **계획·구현 단계 결정.**
+> - §6.6 켜는 스위치 = 앱이 `EventFailuresModule` 을 import 한다(`startConsumer` 가 런타임을 찾아 붙인다).
+> - §6.3-3 파싱 실패 기록은 하지 않음 → 구현에서 바뀜: 파싱 불가 envelope 는 일반 경로로 기록되고, 파싱됐지만 종류가 다른 핸들러는 아무것도 하지 않는다(스키마 위반이 파티션을 막지 않게).
+> - §7.2 `startConsumer` 가 `new ServerKafka(...)` 를 직접 만들어 `{ strategy }` 로 넘긴다.
+> - §9 channel-adapter 컨트롤러에 `@UseFilters(GlobalExceptionFilter)`.
+> - §8.3 다시 보내기 중 죽은 lease 는 한도에 닿았으면 FAILED 로 되돌린다(`requeueStaleProcessingEvents`).
+> - 순서 lock 구분자는 NUL 이 아니라 U+001F(Postgres 가 NUL 거부).
 
 ## 1. 배경
 

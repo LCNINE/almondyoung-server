@@ -227,6 +227,10 @@ export class CustomDLQConsumer {
 }
 ```
 
+### 9. 실패 테이블 모드 (#1016 8번)
+
+`EventFailuresModule` 을 import 한 앱은 `.dlq` 토픽 대신 앱 DB 의 `event.dead_letters` 에 적는다. 같은 `aggregateId` 의 뒤 메시지는 보류된다. 출구는 앱의 `/event-failures` API 다. (옛 «원래 토픽으로 재발행» 재처리는 모든 구독자에게 중복을 내서 삭제했다.)
+
 ## 작동 원리
 
 1. **에러 발생**: 핸들러에서 에러가 throw됨

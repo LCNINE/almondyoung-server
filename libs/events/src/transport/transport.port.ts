@@ -18,7 +18,7 @@ export interface TransportMessage {
   headers?: Record<string, string>;
   /**
    * 대상 파티션 지정. 생략하면 어댑터가 `key` 로 결정한다.
-   * (`DLQHandler.reprocessDLQ` 만 명시적으로 쓴다.)
+   * (지금 명시적으로 쓰는 곳은 없다.)
    */
   partition?: number;
   /**
