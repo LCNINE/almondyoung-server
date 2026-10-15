@@ -1,6 +1,7 @@
 import {
   deriveFulfillmentPhase,
   isPickingStarted,
+  isReturnEligible,
   hasShippedEvidence,
   FulfillmentPhaseInput,
 } from './fulfillment-phase';
@@ -107,6 +108,26 @@ describe('deriveFulfillmentPhase — 인쇄 외주 행도 이행 단위', () => 
     expect(deriveFulfillmentPhase(input({ foCount: 0 })).phase).toBe('not_created');
     expect(deriveFulfillmentPhase(input({ allFoCanceled: true })).phase).toBe('canceled');
     expect(deriveFulfillmentPhase(input()).phase).toBe('preparing');
+  });
+});
+
+describe('isReturnEligible', () => {
+  it('창고 몫이 모두 배송완료면 택배로 shipped 에 머무는 인쇄 행이 있어도 연다', () => {
+    expect(isReturnEligible(input({ activeShipmentStatuses: ['delivered'], printStatuses: ['shipped'] }))).toBe(true);
+  });
+  it('인쇄 행이 아직 발송 전이면 열지 않는다', () => {
+    expect(isReturnEligible(input({ activeShipmentStatuses: ['delivered'], printStatuses: ['submitted'] }))).toBe(
+      false,
+    );
+  });
+  it('창고 몫이 아직 배송 중이면 열지 않는다', () => {
+    expect(isReturnEligible(input({ activeShipmentStatuses: ['in_transit'], printStatuses: ['delivered'] }))).toBe(
+      false,
+    );
+  });
+  it('인쇄만 있는 주문은 인쇄가 모두 배송완료일 때만 연다', () => {
+    expect(isReturnEligible(input({ foCount: 0, printStatuses: ['delivered'] }))).toBe(true);
+    expect(isReturnEligible(input({ foCount: 0, printStatuses: ['shipped'] }))).toBe(false);
   });
 });
 

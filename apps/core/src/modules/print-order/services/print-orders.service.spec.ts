@@ -97,6 +97,7 @@ const resolvedRow: PrintOrderRow = {
   cancelResolvedAt: new Date(),
   cancelResolvedBy: 'admin-1',
   salesCancelFailedAt: null,
+  fileDeliveredAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };

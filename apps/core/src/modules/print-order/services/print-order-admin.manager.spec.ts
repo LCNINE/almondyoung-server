@@ -108,6 +108,7 @@ function row(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
     cancelResolvedAt: null,
     cancelResolvedBy: null,
     salesCancelFailedAt: null,
+    fileDeliveredAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -249,7 +250,12 @@ describe('PrintOrderAdminManager', () => {
   });
 
   describe('resolveCancel', () => {
-    const refused = { status: 'cancel_refused' as const, vendorOrderNumber: 'WP-1', orderAttemptedAt: new Date() };
+    const refused = {
+      status: 'cancel_refused' as const,
+      vendorOrderNumber: 'WP-1',
+      orderAttemptedAt: new Date(),
+      fileDeliveredAt: new Date(),
+    };
 
     it('cancelled: marks the row cancelled with who resolved it and returns the full line to cancel', async () => {
       const { store, manager, add } = setup();
@@ -308,6 +314,14 @@ describe('PrintOrderAdminManager', () => {
       expect(store.get(r.id).cancelResolvedAt).toBeInstanceOf(Date);
       expect(store.get(r.id).cancelResolvedBy).toBe(ACTOR);
       expect(out.cancelSales).toBe(false);
+    });
+
+    it('proceed: sends a row whose file never reached WowPress back to the worker to deliver it', async () => {
+      const { store, manager, add } = setup();
+      const r = add({ ...refused, fileDeliveredAt: null });
+      await manager.resolveCancel(r.id, 'proceed', ACTOR);
+      expect(store.get(r.id)).toMatchObject({ status: 'pending', vendorOrderNumber: 'WP-1' });
+      expect(store.get(r.id).nextAttemptAt).toBeInstanceOf(Date);
     });
 
     it('proceed: returns the row to shipped when it already has a tracking number', async () => {

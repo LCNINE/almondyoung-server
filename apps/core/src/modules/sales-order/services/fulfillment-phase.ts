@@ -76,6 +76,20 @@ export function deriveFulfillmentPhase(input: FulfillmentPhaseInput): Fulfillmen
   return { phase: 'preparing', progress };
 }
 
+/**
+ * 반품·교환을 열 수 있는가. 창고 몫이 모두 배송완료이고 인쇄 몫은 발송만 됐으면 된다.
+ * 와우프레스 택배는 출고완료(ordstat=80)에서 끝나 인쇄 행이 shipped 에 머물므로, 배송완료 합의(deriveFulfillmentPhase)로 판정하면 영영 열리지 않는다.
+ */
+export function isReturnEligible(input: FulfillmentPhaseInput): boolean {
+  if (input.foCount === 0 || input.allFoCanceled) return deriveFulfillmentPhase(input).phase === 'delivered';
+  const warehouseUnits = [
+    ...input.activeShipmentStatuses.map(shipmentUnitPhase),
+    ...input.dropShipStatuses.map(dropShipUnitPhase),
+  ];
+  if (warehouseUnits.length === 0 || warehouseUnits.some((u) => u !== 'delivered')) return false;
+  return (input.printStatuses ?? []).every((s) => printUnitPhase(s) !== 'preparing');
+}
+
 /** 피킹/패킹 시작 여부 = FO status 'processing' (fulfillment-progress: "picking/packing/inspection has begun") */
 export function isPickingStarted(fos: { status: string }[]): boolean {
   return fos.some((fo) => fo.status === 'processing');

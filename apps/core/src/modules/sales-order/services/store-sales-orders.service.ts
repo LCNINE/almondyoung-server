@@ -44,6 +44,7 @@ import type { CancelRequestStatus } from '../channel-cancel-request/channel-canc
 import {
   deriveFulfillmentPhase,
   isPickingStarted,
+  isReturnEligible,
   hasShippedEvidence as hasShippedEvidenceFrom,
   MOVED_SHIPMENT_STATUSES,
   PhaseFoRow,
@@ -293,7 +294,9 @@ export class StoreSalesOrdersService {
    * 고객이 인쇄를 빼고 취소할 줄. 전체 취소 계획에서 취소되지 않은 인쇄 줄(실패·미지원도 재전송될 수 있다)과
    * 디지털 줄을 뺀다 — 부분 취소는 디지털 이용권을 회수하지 않으므로 디지털은 전체 취소로만 돌려준다
    */
-  private async linesWithoutPrint(salesOrderId: string): Promise<Array<{ salesOrderLineId: string; quantity: number }>> {
+  private async linesWithoutPrint(
+    salesOrderId: string,
+  ): Promise<Array<{ salesOrderLineId: string; quantity: number }>> {
     const printLineIds = new Set(
       (await this.printOrders.forSalesOrder(salesOrderId)).filter(isLivePrint).map((r) => r.salesOrderLineId),
     );
@@ -343,7 +346,9 @@ export class StoreSalesOrdersService {
     return { hasActivePrint: rows.some(isLivePrint), channelOrderId: so.channelOrderId };
   }
 
-  private async findMedusaOrderIdByIntent(intentId: string): Promise<{ id: string; channelOrderId: string } | undefined> {
+  private async findMedusaOrderIdByIntent(
+    intentId: string,
+  ): Promise<{ id: string; channelOrderId: string } | undefined> {
     return this.db.db
       .select({ id: inventoryTables.salesOrders.id, channelOrderId: inventoryTables.salesOrders.channelOrderId })
       .from(inventoryTables.salesOrders)
@@ -819,8 +824,7 @@ export class StoreSalesOrdersService {
       availableActions.push('receipt');
       cancelUnavailableReason = 'already_shipped';
       // return/exchange: 배송완료 상태 + 진행 중인 claim 없을 때만 허용
-      const isDelivered = fulfillmentStatus === 'delivered';
-      if (isDelivered) {
+      if (isReturnEligible(phaseInput)) {
         const [activeReturn, activeExchange] = await Promise.all([
           this.db.db
             .select({ id: returnExchangeTables.returnRequests.id })

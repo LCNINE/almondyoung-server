@@ -105,6 +105,7 @@ export class PrintOrderAdminManager {
     // 생산 진행도 운영자의 마무리다. 같은 취소 이벤트가 다시 와도 이 결정을 뒤집지 않게 남긴다
     const status = outcome === 'cancelled' ? 'cancelled' : this.proceedStatus(row);
     const patch: Partial<PrintOrderRow> = { status, cancelResolvedAt: new Date(), cancelResolvedBy: actorId };
+    if (status === 'pending') patch.nextAttemptAt = new Date();
     if (!(await this.repository.updateIfUntouched(row, patch))) {
       throw new ConflictError('Print order changed while resolving; reload and try again');
     }
@@ -131,7 +132,9 @@ export class PrintOrderAdminManager {
   private proceedStatus(row: PrintOrderRow): PrintOrderRow['status'] {
     if (row.status === 'shipped' || row.status === 'delivered') return row.status;
     if (!row.vendorOrderNumber) return 'failed';
-    return row.trackingNumber ? 'shipped' : 'submitted';
+    if (row.trackingNumber) return 'shipped';
+    // 발주 응답을 기다리는 사이 취소가 와서 파일을 못 보낸 주문이다. 워커가 번호로 파일 전달부터 이어 간다
+    return row.fileDeliveredAt ? 'submitted' : 'pending';
   }
 
   async salesCancelTarget(row: PrintOrderRow): Promise<PrintSalesCancelTarget | null> {

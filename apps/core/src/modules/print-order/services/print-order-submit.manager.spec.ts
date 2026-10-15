@@ -249,6 +249,7 @@ function makeRow(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
     cancelResolvedAt: null,
     cancelResolvedBy: null,
     salesCancelFailedAt: null,
+    fileDeliveredAt: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -566,6 +567,7 @@ describe('PrintOrderSubmitManager', () => {
     expect(wowpress.order).not.toHaveBeenCalled();
     expect(wowpress.uploadFileUrl).toHaveBeenCalledWith('W-9', 'print.jpg', 'https://s3/print.jpg');
     expect(repo.get('po-1').status).toBe('submitted');
+    expect(repo.get('po-1').fileDeliveredAt).toBeInstanceOf(Date);
   });
 
   it('saves the listed box number when a sent order is found via ordkey', async () => {

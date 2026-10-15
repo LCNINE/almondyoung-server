@@ -155,6 +155,7 @@ function row(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
     cancelResolvedAt: null,
     cancelResolvedBy: null,
     salesCancelFailedAt: null,
+    fileDeliveredAt: null,
     createdAt: new Date(Date.UTC(2026, 9, 14, 0, seq)),
     updatedAt: new Date(),
     ...overrides,
@@ -372,6 +373,15 @@ describe('PrintOrderCancellationManager', () => {
         expect(store.get(r.id).cancelRefusedAt).toBeInstanceOf(Date);
       },
     );
+
+    it('record of a partial quantity on a shipped row flags it too', async () => {
+      const r = row({ ...SUBMITTED, status: 'shipped', trackingNumber: '123' });
+      const { manager, store } = setup(r);
+      store.quantities.set(r.salesOrderLineId, 3);
+      await manager.cancelForOrder('so-1', 'record', [{ salesOrderLineId: r.salesOrderLineId, quantity: 1 }]);
+      expect(store.get(r.id)).toMatchObject({ status: 'shipped', lastError: SHIPPED_BEFORE_CANCEL_ERROR });
+      expect(store.get(r.id).cancelRefusedAt).toBeInstanceOf(Date);
+    });
 
     it('gate on a shipped row does not flag it (the cancel is refused instead)', async () => {
       const r = row({ ...SUBMITTED, status: 'shipped', trackingNumber: '123' });

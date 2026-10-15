@@ -411,13 +411,13 @@ export class PrintOrderCancellationManager {
   }
 
   private async record(row: PrintOrderRow, reason: string): Promise<Outcome> {
+    const run: Run = { mode: 'record', result: { vendorCancelled: [], locallyCancelled: [] }, keepOnRefusal: false };
+    // 일부 수량만 취소돼도 이미 떠난 인쇄물은 반품·환불을 운영자가 봐야 한다
+    if ((row.status === 'shipped' || row.status === 'delivered') && !needsOperator(row)) {
+      return this.flagShipped(row, run, 0);
+    }
     if (TERMINAL_FOR_CANCEL.includes(row.status) && !needsOperator(row)) return 'done';
-    return this.refuse(
-      row,
-      reason,
-      { mode: 'record', result: { vendorCancelled: [], locallyCancelled: [] }, keepOnRefusal: false },
-      0,
-    );
+    return this.refuse(row, reason, run, 0);
   }
 
   // 처음 읽은 뒤 다른 주문의 증거가 붙었을 수 있다. 끝났다고 답하기 직전에 다시 읽어 판정한다

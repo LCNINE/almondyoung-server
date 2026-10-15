@@ -269,6 +269,8 @@ export class PrintOrderSubmitManager {
 
   private async deliver(lane: Lane, ordnum: string, link: UgcPrintLink): Promise<void> {
     await this.wowpress.uploadFileUrl(ordnum, link.fileName, link.url);
+    // 그사이 취소 흐름이 행을 가져갔어도 파일은 이미 갔다. 소유 조건 없이 남겨야 운영자 마무리가 다시 올리지 않는다
+    await this.repository.update(lane.row.id, { fileDeliveredAt: new Date() });
     await lane.owned({ status: 'submitted' });
   }
 

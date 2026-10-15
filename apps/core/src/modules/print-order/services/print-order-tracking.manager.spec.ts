@@ -59,6 +59,7 @@ function row(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
     cancelResolvedAt: null,
     cancelResolvedBy: null,
     salesCancelFailedAt: null,
+    fileDeliveredAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,

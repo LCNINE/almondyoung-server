@@ -46,6 +46,7 @@ export const printOrders = pgTable(
     cancelResolvedAt: timestamp('cancel_resolved_at', { withTimezone: true }),
     cancelResolvedBy: uuid('cancel_resolved_by'),
     salesCancelFailedAt: timestamp('sales_cancel_failed_at', { withTimezone: true }),
+    fileDeliveredAt: timestamp('file_delivered_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
