@@ -8,7 +8,7 @@
  * ## 운영에서 escape 한 에러가 어떻게 처리되는가 — 이 하네스가 흉내내지 *않는* 부분
  *
  * 기본 `Server.handleEvent`(`server.js:100-118`)는 Observable 을 구독만 하고 기다리지 않지만,
- * Kafka 경로의 `ServerKafka` 는 그 메서드를 덮어써 `lastValueFrom` 으로 **기다린다**
+ * Kafka 경로의 `ServerKafka` 는 그 메서드를 덮어써 `lastValueFrom` 으로 기다린다
  * (`server-kafka.js:225-236`). 그래서 인터셉터를 탈출한 에러는 kafkajs `eachMessage` 까지 올라가고,
  * kafkajs 는 그 메시지를 resolve 하지 않은 채 재시도하다 컨슈머를 재시작한다. 커밋이 켜진 뒤(#1073)
  * 재시작한 컨슈머는 마지막 커밋 오프셋부터 다시 읽으므로 그 메시지를 다시 받는다. 커밋이 꺼져 있던
@@ -145,9 +145,10 @@ describe('핸들러 throw — 옛 배선 (forConsumer + connectMicroservice)', (
       payload: validCartPayload('cart-3'),
     });
 
-    // 파일 상단 주석 참조: 운영의 `handleEvent` 는 이 Observable 을 기다리지 않고
-    // 구독자 없는 Subject 에 흘려보내므로 에러가 어디에도 남지 않는다. 하네스는
-    // 동기 배달을 위해 기다리기 때문에 여기서만 보인다.
+    // 파일 상단 주석 참조: 운영의 `ServerKafka.handleEvent` 는 이 Observable 을 기다리므로,
+    // 인터셉터를 탈출한 에러는 kafkajs `eachMessage` 까지 올라간다. 커밋이 켜진 뒤(#1073)에는
+    // 재시작한 컨슈머가 그 메시지를 다시 받는다. 하네스는 같은 대기를 `lastValueFrom` 으로
+    // 흉내내 에러를 `broker.deliveryFailures` 에 남기므로 여기서 보인다.
     expect(broker.deliveryFailures).toHaveLength(1);
   });
 });
