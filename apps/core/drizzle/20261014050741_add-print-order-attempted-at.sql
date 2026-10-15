@@ -1,1 +1,0 @@
-ALTER TABLE "print_orders" ADD COLUMN "order_attempted_at" timestamp with time zone;

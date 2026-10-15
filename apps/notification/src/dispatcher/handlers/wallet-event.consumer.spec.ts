@@ -276,3 +276,27 @@ describe('WalletEventConsumer 환불 완료 알림', () => {
     expect(send).not.toHaveBeenCalled();
   });
 });
+
+describe('WalletEventConsumer 재전달 (#1073)', () => {
+  it('같은 메시지가 다시 오면 같은 멱등 키로 보낸다 — 디스패처가 두 번째를 버린다', async () => {
+    const { consumer, dispatcher } = makeConsumer();
+    const envelope = { correlationId: 'corr-1', messageId: 'msg-1' } as never;
+    const payload = {
+      cmsMemberId: 'A1',
+      billingMethodId: 'bm-1',
+      userId: 'user-1',
+      email: 'a@b.com',
+      userName: '정중식',
+      reasonCode: 'Q201',
+      reasonMessage: '원문 메시지',
+      occurredAt: '2026-08-26T00:00:00.000Z',
+    } as never;
+
+    await consumer.onCmsMemberRejected(envelope, payload);
+    await consumer.onCmsMemberRejected(envelope, payload);
+
+    const [first, second] = dispatcher.send.mock.calls.map(([dto]) => dto.idempotencyKey);
+    expect(first).toBeTruthy();
+    expect(second).toBe(first);
+  });
+});

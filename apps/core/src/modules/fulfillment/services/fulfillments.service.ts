@@ -11,6 +11,7 @@ import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.sch
 import { eq, inArray, desc, sql, count, and } from 'drizzle-orm';
 import { FULFILLMENT_EVENTS } from '../events';
 import { LineCompositionReader } from '../../product-matching/line-composition/line-composition.reader';
+import { selectLineCompositionViews } from '../../product-matching/line-composition/line-composition-views';
 import { LineCompositionManager } from '../../product-matching/line-composition/line-composition.manager';
 import {
   blocksFulfillment,
@@ -33,6 +34,7 @@ import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 import { FulfillmentProgressService } from './fulfillment-progress.service';
 import { selectEntrancePassword } from './entrance-password.selection';
+import { compatibleShippingProfileId } from './shipping-profile';
 
 type FulfillmentStatus = (typeof wmsTables.fulfillmentOrders.status.enumValues)[number];
 
@@ -45,7 +47,6 @@ type FulfillmentOrderItemInsert = {
   fulfillmentOrderId: string;
   salesOrderId: string | null;
   salesOrderLineId: string | null;
-  mappingSnapshotId: string | null;
   variantId: string | null;
   skuId: string;
   qty: number;
@@ -177,7 +178,6 @@ export class FulfillmentsService {
           return {
             salesOrderId: null,
             salesOrderLineId: null,
-            mappingSnapshotId: item.mappingSnapshotId ?? null,
             variantId: item.variantId ?? null,
             skuId: item.skuId,
             qty: item.quantity,
@@ -195,7 +195,6 @@ export class FulfillmentsService {
           return {
             salesOrderId: null,
             salesOrderLineId: null,
-            mappingSnapshotId: null,
             variantId: null,
             skuId: line.skuId,
             qty: line.quantity,
@@ -278,12 +277,7 @@ export class FulfillmentsService {
         .values(itemsToInsert.map((item) => ({ ...item, fulfillmentOrderId: fo.id })))
         .returning();
 
-      const profileIds = skuRows.map((row) => row.deliveryProfileId);
-      const profiles = new Set(profileIds);
-      const compatibleProfileId =
-        profileIds.every((profileId): profileId is string => profileId !== null) && profiles.size === 1
-          ? profileIds[0]
-          : null;
+      const compatibleProfileId = compatibleShippingProfileId(skuRows.map((row) => row.deliveryProfileId));
       const [shipment] = await trx
         .insert(wmsTables.shipments)
         .values({
@@ -475,7 +469,6 @@ export class FulfillmentsService {
         items.push({
           salesOrderId,
           salesOrderLineId: line.id,
-          mappingSnapshotId: null,
           variantId: line.variantId,
           skuId: item.skuId,
           qty: fulfillableQuantity * item.qtyPerUnit,
@@ -943,11 +936,16 @@ export class FulfillmentsService {
         reservedQty: lines.reduce((total, line) => total + line.reservedQty, 0),
       };
     });
+    const salesOrderLineIds = uniqueStrings(
+      itemsWithSku.map((item) => item.salesOrderLineId).filter((lineId): lineId is string => lineId !== null),
+    );
+    const lineViews = await selectLineCompositionViews(db, salesOrderLineIds);
     return {
       ...fulfillmentOrder,
       progress,
       shipments: shipmentList,
       items: itemsWithSku,
+      lines: lineViews,
       reservations: v2Reservations,
       adminAvailableActions,
       blockedReasons,

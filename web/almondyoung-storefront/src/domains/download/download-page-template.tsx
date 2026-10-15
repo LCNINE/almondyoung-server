@@ -7,6 +7,11 @@ import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { DownloadCard } from "./components/download-card"
 import { DownloadFilters } from "./components/download-filters"
+import {
+  PendingDownloadNotice,
+  PendingDownloadOrders,
+} from "./components/pending-downloads"
+import type { PendingDigitalOrder } from "./pending-orders"
 import type { DigitalAssetOwnership } from "@lib/types/ui/library.ui"
 import { UserDetail } from "@/lib/types/ui/user"
 
@@ -17,15 +22,18 @@ interface DownloadPageTemplateProps {
   currentPage: number
   itemsPerPage: number
   is_exercised: string | null
+  pendingOrders: PendingDigitalOrder[]
+  pendingOrdersUnavailable: boolean
 }
 
 export default function DownloadPageTemplate({
-  user,
   ownerships,
   total,
   currentPage,
   itemsPerPage,
   is_exercised,
+  pendingOrders,
+  pendingOrdersUnavailable,
 }: DownloadPageTemplateProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -62,11 +70,28 @@ export default function DownloadPageTemplate({
             </p>
           </div>
 
+          <PendingDownloadNotice
+            hasPendingOrders={pendingOrders.length > 0}
+            unavailable={pendingOrdersUnavailable}
+          />
+
           {/* Filters */}
           <div className="mb-6 flex items-center justify-between">
             <div className="text-muted-foreground text-sm">
               총 <span className="text-foreground font-semibold">{total}</span>
               개의 상품
+              {pendingOrders.length > 0 && (
+                <span className="ml-3 border-l border-gray-200 pl-3">
+                  반영 대기{" "}
+                  <span className="text-foreground font-semibold">
+                    {pendingOrders.reduce(
+                      (count, order) => count + order.items.length,
+                      0
+                    )}
+                  </span>
+                  개
+                </span>
+              )}
             </div>
             <DownloadFilters
               currentFilter={filter}
@@ -79,6 +104,11 @@ export default function DownloadPageTemplate({
               }}
             />
           </div>
+
+          <PendingDownloadOrders
+            orders={pendingOrders}
+            unavailable={pendingOrdersUnavailable}
+          />
 
           {/* Products Grid */}
           {ownerships.length > 0 ? (
@@ -159,7 +189,7 @@ export default function DownloadPageTemplate({
                 </div>
               )}
             </>
-          ) : (
+          ) : pendingOrders.length === 0 && !pendingOrdersUnavailable ? (
             <div className="py-16 text-center">
               <div className="bg-muted mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full">
                 <Filter className="text-muted-foreground h-8 w-8" />
@@ -169,7 +199,7 @@ export default function DownloadPageTemplate({
                 선택한 필터에 해당하는 상품이 없습니다.
               </p>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

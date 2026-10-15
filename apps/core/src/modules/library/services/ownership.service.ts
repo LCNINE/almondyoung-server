@@ -11,10 +11,7 @@ import {
   productVariantDigitalAssetLinks,
 } from '../schema/library.schema';
 import { wmsTables } from '../../inventory/schema/inventory.schema';
-import {
-  OwnershipListResponseDto,
-  OwnershipResponseDto,
-} from '../dto/ownership-response.dto';
+import { OwnershipListResponseDto, OwnershipResponseDto } from '../dto/ownership-response.dto';
 import {
   AdminOwnershipListResponseDto,
   AdminOwnershipResponseDto,
@@ -36,6 +33,28 @@ export class OwnershipService {
 
   constructor(@InjectDb() private readonly dbService: DbService<LibrarySchema>) {}
 
+  async grantedMedusaOrderIds(customerId: string, channelOrderIds: string[]): Promise<string[]> {
+    if (channelOrderIds.length === 0) return [];
+
+    return this.dbService.run(async (trx) => {
+      // 목록의 페이지·사용 필터와 독립적으로 확인한다. 다른 고객/채널이나 회수된 권한은 완료 신호가 아니다.
+      const rows = await trx
+        .selectDistinct({ channelOrderId: wmsTables.salesOrders.channelOrderId })
+        .from(digitalAssetOwnerships)
+        .innerJoin(wmsTables.salesOrders, eq(digitalAssetOwnerships.salesOrderId, wmsTables.salesOrders.id))
+        .where(
+          and(
+            eq(digitalAssetOwnerships.customerId, customerId),
+            isNull(digitalAssetOwnerships.revokedAt),
+            eq(wmsTables.salesOrders.salesChannel, 'medusa'),
+            inArray(wmsTables.salesOrders.channelOrderId, channelOrderIds),
+          ),
+        );
+
+      return rows.map((row) => row.channelOrderId);
+    });
+  }
+
   async listForCustomer(
     customerId: string,
     opts: {
@@ -52,10 +71,7 @@ export class OwnershipService {
       const take = Math.min(100, Math.max(1, opts.take ?? 20));
       const filter = opts.filter ?? 'all';
 
-      const conditions = [
-        eq(digitalAssetOwnerships.customerId, customerId),
-        isNull(digitalAssetOwnerships.revokedAt),
-      ];
+      const conditions = [eq(digitalAssetOwnerships.customerId, customerId), isNull(digitalAssetOwnerships.revokedAt)];
       if (filter === 'new') conditions.push(isNull(digitalAssetOwnerships.exercisedAt));
       if (filter === 'used') conditions.push(isNotNull(digitalAssetOwnerships.exercisedAt));
       if (opts.salesOrderId) {
@@ -64,10 +80,7 @@ export class OwnershipService {
 
       const whereExpr = and(...conditions);
 
-      const [{ value: total }] = await trx
-        .select({ value: count() })
-        .from(digitalAssetOwnerships)
-        .where(whereExpr);
+      const [{ value: total }] = await trx.select({ value: count() }).from(digitalAssetOwnerships).where(whereExpr);
 
       const rows = await trx
         .select({
@@ -104,11 +117,7 @@ export class OwnershipService {
   /**
    * exercise: 이미 exercise 됐으면 idempotent 하게 성공 (현재 row 반환).
    */
-  async exercise(
-    ownershipId: string,
-    customerId: string,
-    tx?: LibraryTx,
-  ): Promise<OwnershipResponseDto> {
+  async exercise(ownershipId: string, customerId: string, tx?: LibraryTx): Promise<OwnershipResponseDto> {
     return this.dbService.run(async (trx) => {
       const ownership = await this._loadOwnedOrThrow(ownershipId, customerId, trx);
 
@@ -138,9 +147,7 @@ export class OwnershipService {
       const { ownership, asset } = await this._loadOwnedOrThrow(ownershipId, customerId, trx);
 
       if (!ownership.exercisedAt) {
-        throw new ForbiddenError(
-          `Ownership not exercised yet — exercise first before download: ${ownershipId}`,
-        );
+        throw new ForbiddenError(`Ownership not exercised yet — exercise first before download: ${ownershipId}`);
       }
       if (!asset.currentFileVersionId) {
         throw new NotFoundError(`Asset has no current file version: ${asset.id}`);
@@ -194,10 +201,7 @@ export class OwnershipService {
 
       const whereExpr = conditions.length ? and(...conditions) : undefined;
 
-      const [{ value: total }] = await trx
-        .select({ value: count() })
-        .from(digitalAssetOwnerships)
-        .where(whereExpr);
+      const [{ value: total }] = await trx.select({ value: count() }).from(digitalAssetOwnerships).where(whereExpr);
 
       const rows = await trx
         .select({
@@ -247,9 +251,7 @@ export class OwnershipService {
         throw new NotFoundError(`Sales order not found: ${dto.salesOrderId}`);
       }
       if (order.customerId !== dto.customerId) {
-        throw new BadRequestError(
-          `Customer ${dto.customerId} does not match sales order ${dto.salesOrderId}`,
-        );
+        throw new BadRequestError(`Customer ${dto.customerId} does not match sales order ${dto.salesOrderId}`);
       }
 
       const lines = await trx

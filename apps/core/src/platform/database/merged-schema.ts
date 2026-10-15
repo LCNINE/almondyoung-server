@@ -28,7 +28,7 @@ import { printOrderSchema } from '../../modules/print-order/schema/print-order.s
 // Phase 4: Product Matching — 테이블은 inventorySchema에 포함 (FK 참조로 분리 불가)
 
 // Phase 5: Sales Order — 테이블은 inventorySchema에 포함
-//   (product_matchings, product_sku_mapping_snapshots 등과의 FK 참조로 분리 불가)
+//   (product_matchings 등과의 FK 참조로 분리 불가)
 //   sales_orders, sales_order_lines, order_events, merge_groups → inventorySchema 내 포함됨
 
 // Phase 6: Fulfillment

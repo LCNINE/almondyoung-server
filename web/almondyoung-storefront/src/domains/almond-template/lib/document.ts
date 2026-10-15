@@ -182,7 +182,14 @@ export function parseDesign(value: unknown): Design {
     data.front.length + data.back.length > 150
   )
     throw new Error("레이어 수가 너무 많습니다.")
-  for (const layer of [...data.front, ...data.back]) {
+  for (const side of ["front", "back"] as const) {
+    const layers = data[side] ?? []
+    layers.forEach((layer, index) => {
+      const where = `${side === "front" ? "앞면" : "뒷면"} 레이어 목록 위에서 ${layers.length - index}번째${typeof layer?.name === "string" ? ` "${layer.name.slice(0, 30)}"` : ""}`
+      checkLayer(layer, where)
+    })
+  }
+  function checkLayer(layer: Layer, where: string) {
     if (
       !layer ||
       ![
@@ -208,14 +215,6 @@ export function parseDesign(value: unknown): Design {
         layer.stroke !== "none" &&
         !color.test(layer.stroke)) ||
       ![layer.x, layer.y, layer.width, layer.height].every(Number.isFinite) ||
-      layer.x < -(data.widthMm ?? 0) ||
-      layer.y < -(data.heightMm ?? 0) ||
-      layer.x > (data.widthMm ?? 0) * 2 ||
-      layer.y > (data.heightMm ?? 0) * 2 ||
-      layer.width <= 0 ||
-      layer.height <= 0 ||
-      layer.width > (data.widthMm ?? 0) * 2 ||
-      layer.height > (data.heightMm ?? 0) * 2 ||
       (layer.type === "text" && typeof layer.text !== "string") ||
       (layer.type === "image" && !layer.image) ||
       (layer.type === "clipart" && !CLIPART_IDS.has(layer.clipartId ?? "")) ||
@@ -269,8 +268,23 @@ export function parseDesign(value: unknown): Design {
           layer.qrBits.length > 177 * 177 ||
           layer.qrBits.length !== (layer.qrSize ?? 0) ** 2))
     ) {
-      throw new Error("레이어 데이터가 올바르지 않습니다.")
+      throw new Error(`${where} 레이어의 데이터가 올바르지 않습니다.`)
     }
+    const w = data.widthMm ?? 0
+    const h = data.heightMm ?? 0
+    if (
+      layer.x < -w ||
+      layer.y < -h ||
+      layer.x > w * 2 ||
+      layer.y > h * 2 ||
+      layer.width <= 0 ||
+      layer.height <= 0 ||
+      layer.width > w * 2 ||
+      layer.height > h * 2
+    )
+      throw new Error(
+        `${where} 레이어의 크기·위치가 허용 범위를 벗어났습니다. (가로 ${layer.width}mm, 세로 ${layer.height}mm)`
+      )
   }
   if (data.backBackground !== undefined) {
     if (

@@ -57,13 +57,16 @@ describeIfDb('PurchaseOrderReceivingManager (PostgreSQL concurrency)', () => {
       new InventoryIdempotencyService(dbService),
       new PurchaseOrderHeaderDeriver(),
       reader,
+      { recalculateAndPublishForSkus: jest.fn().mockResolvedValue([]) } as never,
     );
   }
 
   function buildPurchaseOrderManager(database: Database): PurchaseOrderManager {
     const dbService = dbServiceFor(database);
     const reader = new PurchaseOrderReader(dbService);
-    return new PurchaseOrderManager(dbService, reader, new PurchaseOrderHeaderDeriver());
+    return new PurchaseOrderManager(dbService, reader, new PurchaseOrderHeaderDeriver(), {
+      recalculateAndPublishForSkus: jest.fn().mockResolvedValue([]),
+    } as never);
   }
 
   interface Fixture {

@@ -427,6 +427,7 @@ describeIfDb('Inbound origin protection at the stock write boundary', () => {
         idempotency,
         new PurchaseOrderHeaderDeriver(),
         new PurchaseOrderReader(dbService),
+        { recalculateAndPublishForSkus: jest.fn().mockResolvedValue([]) } as never,
       );
       const received = await receiving.receive(
         po.id,

@@ -11,6 +11,7 @@ import { acquireStockAvailabilityLocks } from '../../shared/locks/stock-availabi
 import { BatchControlledStockGuard } from '../../core/services/batch-controlled-stock.guard';
 import { receiptActionPolicy } from '../services/inbound-receipt-policy';
 import { isTodaySeoul } from '../../shared/services/time.util';
+import { lockProductVariantsForSkus } from '../../product-sellable-quantity/services/product-variant-lock';
 
 export type DirectArrivalMethod = 'simple' | 'simple_fullscan' | 'individual';
 export type InboundReceiptSource = 'direct' | 'purchase_order';
@@ -101,6 +102,12 @@ export class InboundReceiptKernel {
         warehouseId: input.warehouseId,
       })),
     );
+    // SKU별 재계산이 잠금을 누적하기 전에 전체 품목을 같은 순서로 선점한다.
+    await lockProductVariantsForSkus(
+      tx,
+      input.lines.map((line) => line.skuId),
+    );
+
     const locationId = await this.resolveLocation(input.warehouseId, input.locationId ?? null, tx);
     const method = input.source === 'direct' ? input.method : 'planned';
 

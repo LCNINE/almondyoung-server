@@ -49,7 +49,6 @@ async function insertLine(
   salesOrderId: string,
   l: Partial<{
     status: 'pending' | 'matched' | 'stock_deducted' | 'stock_unavailable' | 'cancelled';
-    productMatchingId: string | null;
     productName: string;
   }> = {},
 ): Promise<void> {
@@ -60,7 +59,6 @@ async function insertLine(
     quantity: 1,
     unitPrice: 1000,
     status: l.status ?? 'pending',
-    productMatchingId: l.productMatchingId ?? null,
   });
 }
 
@@ -165,9 +163,9 @@ describeIfDb('SalesOrdersService.list — server-side filters (DB integration, r
         .insert(wmsTables.fulfillmentOrderCreationBacklogs)
         .values({ salesOrderId: waiting, status: 'awaiting_matching', waitingVariantIds: [] });
 
-      // 라인 product_matching_id 가 NULL 이어도 대기열이 끝났으면 «매칭안됨» 이 아니다 — 14번 행의 오탐
+      // 대기열이 끝난 주문은 «매칭안됨» 이 아니다 — 14번 행의 오탐은 옛 라인 칸으로 판정해서 생겼다
       const done = await insertOrder(tx, { channelOrderId: `${tag}-done` });
-      await insertLine(tx, done, { productMatchingId: null });
+      await insertLine(tx, done);
       await tx
         .insert(wmsTables.fulfillmentOrderCreationBacklogs)
         .values({ salesOrderId: done, status: 'completed', waitingVariantIds: [] });

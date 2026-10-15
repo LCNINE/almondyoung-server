@@ -1,11 +1,7 @@
 import { PgDialect } from 'drizzle-orm/pg-core';
 
 import { OwnershipService } from './ownership.service';
-import {
-  digitalAssets,
-  digitalAssetOwnerships,
-  productVariantDigitalAssetLinks,
-} from '../schema/library.schema';
+import { digitalAssets, digitalAssetOwnerships, productVariantDigitalAssetLinks } from '../schema/library.schema';
 import { wmsTables } from '../../inventory/schema/inventory.schema';
 
 /**
@@ -36,11 +32,7 @@ describe('OwnershipService.getDownloadable — currentFileVersionId 라우팅 (�
     currentFileVersionId: string | null;
   };
 
-  function makeFakeTx(state: {
-    ownership: Ownership;
-    asset: Asset;
-    versions: FileVersion[];
-  }) {
+  function makeFakeTx(state: { ownership: Ownership; asset: Asset; versions: FileVersion[] }) {
     let selectCallCount = 0;
 
     const tx: any = {
@@ -84,9 +76,7 @@ describe('OwnershipService.getDownloadable — currentFileVersionId 라우팅 (�
       asset: { id: ASSET_ID, name: 'x', mimeType: null, currentFileVersionId: V1.id },
       versions: [V1],
     });
-    await expect(service.getDownloadable(OWNERSHIP_ID, CUSTOMER, tx)).rejects.toThrow(
-      /not exercised/,
-    );
+    await expect(service.getDownloadable(OWNERSHIP_ID, CUSTOMER, tx)).rejects.toThrow(/not exercised/);
   });
 
   it('exercise 된 ownership: currentFileVersion=v1 → v1.fileId 반환', async () => {
@@ -151,9 +141,7 @@ describe('OwnershipService.getDownloadable — currentFileVersionId 라우팅 (�
       asset: { id: ASSET_ID, name: 'x', mimeType: null, currentFileVersionId: V1.id },
       versions: [V1],
     });
-    await expect(service.getDownloadable(OWNERSHIP_ID, CUSTOMER, tx)).rejects.toThrow(
-      /has been revoked/,
-    );
+    await expect(service.getDownloadable(OWNERSHIP_ID, CUSTOMER, tx)).rejects.toThrow(/has been revoked/);
   });
 });
 
@@ -489,5 +477,44 @@ describe('OwnershipService — 어드민 (#457)', () => {
       });
       await expect(service.grantManual(dto, tx)).rejects.toThrow(/not linked/i);
     });
+  });
+});
+
+describe('OwnershipService.grantedMedusaOrderIds — 자료실 반영 상태', () => {
+  it('본인·Medusa·요청 주문의 미회수 권한만 한 번에 조회한다', async () => {
+    let captured: any;
+    const tx: any = {
+      selectDistinct: () => ({
+        from: () => ({
+          innerJoin: () => ({
+            where: (where: any) => {
+              captured = where;
+              return [{ channelOrderId: 'order_1' }];
+            },
+          }),
+        }),
+      }),
+    };
+    const service = new OwnershipService({ run: (fn: any) => fn(tx) } as any);
+
+    expect(await service.grantedMedusaOrderIds('customer_1', ['order_1', 'order_2'])).toEqual(['order_1']);
+
+    const query = new PgDialect().sqlToQuery(captured);
+
+    expect(query.sql).toContain('"digital_asset_ownerships"."customer_id" =');
+    expect(query.sql).toContain('"digital_asset_ownerships"."revoked_at" is null');
+    expect(query.sql).toContain('"sales_orders"."sales_channel" =');
+    expect(query.sql).toContain('"sales_orders"."channel_order_id" in');
+    expect(query.params).toEqual(['customer_1', 'medusa', 'order_1', 'order_2']);
+  });
+
+  it('빈 주문 목록은 DB 에 요청하지 않는다', async () => {
+    const service = new OwnershipService({
+      run: () => {
+        throw new Error('unexpected DB query');
+      },
+    } as any);
+
+    expect(await service.grantedMedusaOrderIds('customer_1', [])).toEqual([]);
   });
 });

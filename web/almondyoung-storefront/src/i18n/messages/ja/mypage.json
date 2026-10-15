@@ -802,6 +802,7 @@
       "EXPIRED": "期限切れ"
     },
     "subscription": {
+      "temporaryPass": "一時利用券（{days}日間）",
       "monthly": "月額プラン",
       "annual": "年額プラン",
       "annualLong": "12ヶ月(年額)",
@@ -814,6 +815,11 @@
       "yearMonthFormat": "{year}年{month}月"
     },
     "billing": {
+      "paymentAmount": "支払金額",
+      "usageType": "利用タイプ",
+      "usageStartDate": "利用開始日",
+      "usageEndDate": "利用終了予定日",
+
       "autoStartDate": "自動決済開始日",
       "endDate": "サブスク終了日",
       "endDateLabel": "終了日",
@@ -827,6 +833,8 @@
       "expectedEndDate": "終了予定日",
       "trialEndAutoStart": "無料体験後の自動決済開始日: {date}",
       "nextBillingNotice": "次回決済予定日は {date} です",
+      "temporaryPassNoCharge": "手動付与・請求なし",
+      "temporaryPassNotice": "この利用券は自動更新されません。",
       "membershipEndNotice": "メンバーシップ利用終了予定日は {date} です",
       "membershipEndsNotice": "{date} まで利用後、自動終了します（自動更新なし）",
       "paymentActionNeeded": "お支払いの確認が必要です。決済手段をご確認いただくか、サポートまでお問い合わせください。",

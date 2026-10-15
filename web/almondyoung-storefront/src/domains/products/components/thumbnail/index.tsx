@@ -35,6 +35,7 @@ type ThumbnailProps = {
   overlay?: React.ReactNode
   /** 가로로 넘기는 줄 안에 든 카드는 손짓이 겹쳐 사진 넘기기를 끈다 */
   enableSwipe?: boolean
+  priority?: boolean
 }
 
 const Thumbnail: React.FC<ThumbnailProps> = ({
@@ -45,6 +46,7 @@ const Thumbnail: React.FC<ThumbnailProps> = ({
   "data-testid": dataTestid,
   overlay,
   enableSwipe = true,
+  priority,
 }) => {
   const shown = listPhotoUrls(thumbnail, images).slice(0, MAX_PREVIEW)
 
@@ -66,13 +68,17 @@ const Thumbnail: React.FC<ThumbnailProps> = ({
         <PhotoSwipeFrame
           count={shown.length}
           renderImage={(index) => (
-            <ThumbnailImage image={shown[index]} size={size} />
+            <ThumbnailImage
+              image={shown[index]}
+              size={size}
+              priority={priority && index === 0}
+            />
           )}
           itemClassName="aspect-square"
           enableSwipe={enableSwipe}
         />
       ) : (
-        <ImageOrPlaceholder image={shown[0]} size={size} />
+        <ImageOrPlaceholder image={shown[0]} size={size} priority={priority} />
       )}
 
 
@@ -84,9 +90,10 @@ const Thumbnail: React.FC<ThumbnailProps> = ({
 const ImageOrPlaceholder = ({
   image,
   size,
-}: Pick<ThumbnailProps, "size"> & { image?: string }) => {
+  priority,
+}: Pick<ThumbnailProps, "size" | "priority"> & { image?: string }) => {
   return image ? (
-    <ThumbnailImage image={image} size={size} />
+    <ThumbnailImage image={image} size={size} priority={priority} />
   ) : (
     <div className="absolute inset-0 flex h-full w-full items-center justify-center">
       <PlaceholderImage size={size === "small" ? 16 : 24} />

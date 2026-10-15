@@ -1,3 +1,4 @@
+import { lockProductVariants } from '../../inventory/product-sellable-quantity/services/product-variant-lock';
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
@@ -14,6 +15,7 @@ import { productMasterVersions, productVariants } from '../../catalog/schema/cat
 import { BadRequestError } from '@app/shared';
 import { MatchingLinkResolver } from './matching-link-resolver';
 import { lineResolvedSql } from '../line-composition/line-resolved.sql';
+import { selectCompositionItemViews } from '../line-composition/line-composition-views';
 
 export interface PimSkuComponent {
   skuId: string;
@@ -83,7 +85,12 @@ export class ProductMatchingService {
     options: { requireAvailabilityOverride?: boolean } = {},
   ) {
     const hasAvailabilityOverride = this.hasAvailabilityOverride(stockPolicy);
-    if (options.requireAvailabilityOverride && !hasAvailabilityOverride) {
+    if (
+      options.requireAvailabilityOverride &&
+      !hasAvailabilityOverride &&
+      !Object.prototype.hasOwnProperty.call(stockPolicy ?? {}, 'restockDate') &&
+      !Object.prototype.hasOwnProperty.call(stockPolicy ?? {}, 'restockApproximate')
+    ) {
       return;
     }
 
@@ -98,6 +105,13 @@ export class ProductMatchingService {
             stockPolicy?.availabilityOverride === 'coming_soon' ? (stockPolicy?.comingSoonDate ?? null) : null,
         }
       : {};
+    const restockPatch = {
+      ...(Object.prototype.hasOwnProperty.call(stockPolicy ?? {}, 'restockDate')
+        ? { restockDate: stockPolicy?.restockDate ?? null }
+        : {}),
+      ...(stockPolicy?.restockApproximate !== undefined ? { restockApproximate: stockPolicy.restockApproximate } : {}),
+    };
+
     const variantPolicyValues = {
       variantId,
       inventoryManagement: true,
@@ -105,6 +119,7 @@ export class ProductMatchingService {
       alwaysSellableZeroStock: stockPolicy?.alwaysSellableZeroStock ?? fallback.alwaysSellableZeroStock,
       ...availabilityOverridePatch,
       ...comingSoonDatePatch,
+      ...restockPatch,
       updatedAt: now,
     };
 
@@ -119,6 +134,7 @@ export class ProductMatchingService {
           alwaysSellableZeroStock: variantPolicyValues.alwaysSellableZeroStock,
           ...availabilityOverridePatch,
           ...comingSoonDatePatch,
+          ...restockPatch,
           updatedAt: now,
         },
       });
@@ -276,6 +292,11 @@ export class ProductMatchingService {
     this.logger.log(`Creating manual matching request for master ID: ${payload.masterId}`);
 
     return this.dbService.run(async (trx) => {
+      await lockProductVariants(
+        trx,
+        payload.variants.map((variant) => variant.id),
+      );
+
       let created = 0;
       let skipped = 0;
 
@@ -337,6 +358,11 @@ export class ProductMatchingService {
   ): Promise<{ created: number; skipped: number }> {
     this.logger.log(`Handling automatic matching for master ID: ${payload.masterId}`);
     return this.dbService.run(async (trx) => {
+      await lockProductVariants(
+        trx,
+        payload.variants.map((variant) => variant.id),
+      );
+
       let created = 0;
       let skipped = 0;
 
@@ -595,6 +621,8 @@ export class ProductMatchingService {
             .select({
               variantId: wmsTables.salesVariantPolicies.variantId,
               availabilityOverride: wmsTables.salesVariantPolicies.availabilityOverride,
+              restockDate: wmsTables.salesVariantPolicies.restockDate,
+              restockApproximate: wmsTables.salesVariantPolicies.restockApproximate,
             })
             .from(wmsTables.salesVariantPolicies)
             .where(inArray(wmsTables.salesVariantPolicies.variantId, variantIds))
@@ -654,6 +682,8 @@ export class ProductMatchingService {
           preStockSellable: row.preStockSellable,
           alwaysSellableZeroStock: row.alwaysSellableZeroStock,
           availabilityOverride: policiesByVariantId.get(row.variantId)?.availabilityOverride ?? null,
+          restockDate: policiesByVariantId.get(row.variantId)?.restockDate ?? null,
+          restockApproximate: policiesByVariantId.get(row.variantId)?.restockApproximate ?? false,
         },
         isGift: false,
         createdAt: row.createdAt.toISOString(),
@@ -809,6 +839,11 @@ export class ProductMatchingService {
         skusByMatchingId.get(link.productMatchingId)!.push(link);
       }
 
+      // 굳힌 라인은 상품매칭이 아니라 라인 구성을 보여 준다 — 개별 지정·상품매칭 변경 뒤에는 둘이 다르다
+      const compositionsByLine = await selectCompositionItemViews(
+        trx,
+        rows.filter((row) => row.compositionSource !== null).map((row) => row.lineId),
+      );
       const data = rows.map((row) => ({
         id: row.lineId,
         variantId: row.variantId,
@@ -826,6 +861,7 @@ export class ProductMatchingService {
         matchingStatus: row.matchingStatus ?? undefined,
         matchingStrategy: row.matchingStrategy ?? undefined,
         compositionSource: row.compositionSource ?? undefined,
+        composition: compositionsByLine.get(row.lineId) ?? [],
         matchedSkus: row.matchingId
           ? (skusByMatchingId.get(row.matchingId) ?? []).map((s) => ({
               skuId: s.skuId,
@@ -876,6 +912,8 @@ export class ProductMatchingService {
       return this.resolveMatchingAsVoid(matchingId, productMatching.variantId, stockPolicy, tx);
     } else if (hasSkuMappings) {
       return this.dbService.run(async (trx) => {
+        await lockProductVariants(trx, [productMatching.variantId]);
+
         let mappings: SkuQuantityMapping[];
 
         if (links && links.length > 0) {
@@ -948,6 +986,8 @@ export class ProductMatchingService {
     };
 
     return this.dbService.run(async (trx) => {
+      await lockProductVariants(trx, [variantId]);
+
       const [updatedMatching] = await trx
         .update(wmsTables.productMatchings)
         .set({
@@ -993,6 +1033,8 @@ export class ProductMatchingService {
       if (productMatching.status !== 'ignored') {
         throw new BadRequestException(`Product matching ${matchingId} is not a legacy ignored matching.`);
       }
+
+      await lockProductVariants(trx, [productMatching.variantId]);
 
       const existingLinks = await trx
         .select({
@@ -1133,6 +1175,8 @@ export class ProductMatchingService {
 
     if (productMatching.status === 'matched' && productMatching.strategy) {
       await this.dbService.run(async (trx) => {
+        await lockProductVariants(trx, [variantId]);
+
         if (!productMatching.strategy) {
           throw new BadRequestException('strategy 값이 null입니다.');
         }
@@ -1150,6 +1194,8 @@ export class ProductMatchingService {
       }, tx);
     } else {
       await this.dbService.run(async (trx) => {
+        await lockProductVariants(trx, [variantId]);
+
         await trx.delete(wmsTables.productMatchings).where(eq(wmsTables.productMatchings.id, productMatching.id));
         await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
       }, tx);
@@ -1185,6 +1231,8 @@ export class ProductMatchingService {
     }
 
     await this.dbService.run(async (trx) => {
+      await lockProductVariants(trx, [productMatching.variantId]);
+
       if (productMatching.strategy) {
         const oldStrategy = this.getStrategy(productMatching.strategy);
         const context: MatchingContext = {
@@ -1243,6 +1291,8 @@ export class ProductMatchingService {
     alwaysSellableZeroStock: boolean;
     availabilityOverride: 'manual_out_of_stock' | 'coming_soon' | null;
     comingSoonDate: string | null;
+    restockDate: string | null;
+    restockApproximate: boolean;
   } | null> {
     const { matching, policy } = await this.dbService.run(async (trx) => {
       const [row] = await trx
@@ -1257,6 +1307,8 @@ export class ProductMatchingService {
           alwaysSellableZeroStock: wmsTables.salesVariantPolicies.alwaysSellableZeroStock,
           availabilityOverride: wmsTables.salesVariantPolicies.availabilityOverride,
           comingSoonDate: wmsTables.salesVariantPolicies.comingSoonDate,
+          restockDate: wmsTables.salesVariantPolicies.restockDate,
+          restockApproximate: wmsTables.salesVariantPolicies.restockApproximate,
         })
         .from(wmsTables.salesVariantPolicies)
         .where(eq(wmsTables.salesVariantPolicies.variantId, variantId))
@@ -1273,11 +1325,25 @@ export class ProductMatchingService {
       alwaysSellableZeroStock: matching?.alwaysSellableZeroStock ?? policy?.alwaysSellableZeroStock ?? false,
       availabilityOverride: policy?.availabilityOverride ?? null,
       comingSoonDate: policy?.comingSoonDate ?? null,
+      restockDate: policy?.restockDate ?? null,
+      restockApproximate: policy?.restockApproximate ?? false,
     };
   }
 
   async updateStockPolicy(matchingId: string, stockPolicy: StockPolicyDto, tx?: DbTx) {
     const [updated] = await this.dbService.run(async (trx) => {
+      const [matching] = await trx
+        .select({ variantId: wmsTables.productMatchings.variantId })
+        .from(wmsTables.productMatchings)
+        .where(eq(wmsTables.productMatchings.id, matchingId))
+        .limit(1);
+
+      if (!matching) {
+        throw new NotFoundException(`Product matching with ID ${matchingId} not found.`);
+      }
+
+      await lockProductVariants(trx, [matching.variantId]);
+
       const matchingPolicyPatch = {
         ...(stockPolicy.preStockSellable !== undefined ? { preStockSellable: stockPolicy.preStockSellable } : {}),
         ...(stockPolicy.alwaysSellableZeroStock !== undefined
@@ -1307,6 +1373,8 @@ export class ProductMatchingService {
         {},
       );
 
+      await this.productSellableQuantity.recalculateAndPublishForVariant(updatedMatching.variantId, trx);
+
       return [updatedMatching];
     }, tx);
 
@@ -1315,7 +1383,6 @@ export class ProductMatchingService {
     }
 
     this.logger.log(`Updated stock policy for matching ${matchingId}: ${JSON.stringify(stockPolicy)}`);
-    await this.productSellableQuantity.recalculateAndPublishForVariant(updated.variantId, tx);
     return updated;
   }
 }

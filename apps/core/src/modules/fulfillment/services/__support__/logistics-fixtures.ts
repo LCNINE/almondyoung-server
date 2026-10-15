@@ -62,7 +62,7 @@ export async function receiveStock(
   );
 }
 
-// SO + 라인. 라인 mappingSnapshotId 는 default null → 라이브 매칭 경로 강제. variantId 는 임의 UUID.
+// SO + 라인. 라인 구성 출처는 default null → FO 생성이 그때의 상품매칭을 따른다. variantId 는 임의 UUID.
 export async function seedSalesOrder(
   tx: DbTx,
   args: { lines: Array<{ variantId: string; quantity: number; productName?: string }> },

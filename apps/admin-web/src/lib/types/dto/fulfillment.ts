@@ -1,6 +1,8 @@
 // src/lib/types/dto/fulfillment.ts
 // 풀필먼트(출고) 도메인 DTO 타입 — 통합 서버 컨트롤러 스키마와 1:1 대응
 
+import type { LineCompositionView } from './line-composition';
+
 // ===== Fulfillment Order =====
 
 export type FulfillmentMode = 'in_house' | '3pl' | 'drop_ship';
@@ -89,6 +91,8 @@ export interface FulfillmentOrderDetail extends FulfillmentOrder {
   progress?: FulfillmentV2Progress;
   /** V2는 하나의 FO에 여러 shipment가 존재하므로 이 목록을 기준으로 렌더한다. */
   shipments?: FulfillmentShipmentSummary[];
+  /** FO 항목이 가리키는 판매주문 라인과 구성. 옛 core 는 이 칸을 안 준다 */
+  lines?: LineCompositionView[];
 }
 
 /** GET /fulfillments 쿼리 파라미터 */

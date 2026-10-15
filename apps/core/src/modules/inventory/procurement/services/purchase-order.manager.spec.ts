@@ -39,6 +39,7 @@ describe('PurchaseOrderManager 공급사 기본 창고', () => {
       dbService as never,
       new PurchaseOrderReader(dbService as never),
       new PurchaseOrderHeaderDeriver(),
+      { recalculateAndPublishForSkus: jest.fn().mockResolvedValue([]) } as never,
     );
 
     await expect(manager.createPurchaseOrder(dto as never)).rejects.toThrow(/입고 창고/);

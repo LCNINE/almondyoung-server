@@ -63,10 +63,13 @@ export default function HistoryCard({
   const t = useTranslations("mypage.membership")
   const [open, setOpen] = useState(false)
 
+  const adminGrant = item.adminGrant
+
   const startDate = item.startDate ?? item.createdAt
   const cancelledEndDate = item.cancelledAt ?? item.endDate ?? null
   const today = new Date()
   const isInTrial =
+    !adminGrant &&
     !!item.billingDate &&
     item.status === "ACTIVE" &&
     new Date(item.billingDate) > today
@@ -110,9 +113,11 @@ export default function HistoryCard({
             <span className="text-foreground text-sm font-bold">
               {t("membershipName")}
             </span>
-            {item.plan && (
+            {(adminGrant || item.plan) && (
               <span className="text-muted-foreground text-xs">
-                {planLabel(item.plan.durationDays)}
+                {adminGrant
+                  ? t("subscription.temporaryPass", { days: adminGrant.days })
+                  : planLabel(item.plan?.durationDays)}
               </span>
             )}
           </div>
@@ -152,13 +157,19 @@ export default function HistoryCard({
         <div className="border-border border-t px-4 py-3">
           <div className="divide-border divide-y">
             <Row
-              label={t("billing.subscriptionAmount")}
+              label={t(
+                adminGrant
+                  ? "billing.paymentAmount"
+                  : "billing.subscriptionAmount"
+              )}
               value={
-                item.plan
-                  ? t("billing.amountWon", {
-                      amount: item.plan.price.toLocaleString(),
-                    })
-                  : "-"
+                adminGrant
+                  ? t("billing.temporaryPassNoCharge")
+                  : item.plan
+                    ? t("billing.amountWon", {
+                        amount: item.plan.price.toLocaleString(),
+                      })
+                    : "-"
               }
             />
             {/* 얼마 내고 얼마 아꼈는지가 나란히 보여야 재가입 판단이 된다 */}
@@ -177,37 +188,57 @@ export default function HistoryCard({
               }
             />
             <Row
-              label={t("billing.subscriptionType")}
-              value={item.plan ? planLabel(item.plan.durationDays) : "-"}
-            />
-            <Row
-              label={t("billing.recurring")}
+              label={t(
+                adminGrant ? "billing.usageType" : "billing.subscriptionType"
+              )}
               value={
-                item.autoRenewal === undefined
-                  ? "-"
-                  : item.autoRenewal
-                    ? t("billing.recurring")
-                    : t("billing.oneTime")
+                adminGrant
+                  ? t("subscription.temporaryPass", { days: adminGrant.days })
+                  : item.plan
+                    ? planLabel(item.plan.durationDays)
+                    : "-"
               }
             />
+            {!adminGrant && (
+              <Row
+                label={t("billing.recurring")}
+                value={
+                  item.autoRenewal === undefined
+                    ? "-"
+                    : item.autoRenewal
+                      ? t("billing.recurring")
+                      : t("billing.oneTime")
+                }
+              />
+            )}
             <Row
-              label={t("billing.subscriptionStartDate")}
+              label={t(
+                adminGrant
+                  ? "billing.usageStartDate"
+                  : "billing.subscriptionStartDate"
+              )}
               value={fmt(startDate)}
             />
             {item.status === "ACTIVE" ? (
               <>
                 <Row
-                  label={t("billing.expectedEndDate")}
+                  label={t(
+                    adminGrant
+                      ? "billing.usageEndDate"
+                      : "billing.expectedEndDate"
+                  )}
                   value={fmt(item.endDate)}
                 />
-                <Row
-                  label={
-                    isInTrial
-                      ? t("billing.autoStartDate")
-                      : t("billing.nextBillingDate")
-                  }
-                  value={fmt(displayNextBillingDate)}
-                />
+                {!adminGrant && (
+                  <Row
+                    label={
+                      isInTrial
+                        ? t("billing.autoStartDate")
+                        : t("billing.nextBillingDate")
+                    }
+                    value={fmt(displayNextBillingDate)}
+                  />
+                )}
               </>
             ) : (
               <Row

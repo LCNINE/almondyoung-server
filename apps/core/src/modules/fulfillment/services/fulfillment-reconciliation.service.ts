@@ -92,7 +92,7 @@ export class FulfillmentReconciliationService {
       SELECT 'FOI_QUANTITY'::text AS kind, foi.id::text AS resource_id,
              concat('qty=', foi.qty, ', shipped=', foi.shipped_qty, ', canceled=', foi.canceled_qty) AS message
         FROM fulfillment_order_items foi
-       WHERE foi.qty <= 0 OR foi.shipped_qty < 0 OR foi.canceled_qty < 0
+       WHERE foi.qty < 0 OR foi.shipped_qty < 0 OR foi.canceled_qty < 0
           OR foi.shipped_qty + foi.canceled_qty > foi.qty
       UNION ALL
       SELECT 'ACTIVE_LINE_QUANTITY', foi.id::text,

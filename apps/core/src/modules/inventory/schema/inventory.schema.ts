@@ -1258,6 +1258,7 @@ export const productVariantSkuLinks = pgTable(
   },
   (t) => ({
     pk: primaryKey(t.productMatchingId, t.skuId),
+    idxSku: index('idx_product_variant_sku_links_sku').on(t.skuId, t.productMatchingId),
   }),
 );
 
@@ -1275,6 +1276,9 @@ export const productSellableQuantityProjections = pgTable(
     // 표시 전용 출시예정일. 여기 담아두는 이유는 변경 감지 때문이다 — 날짜만 고친 경우
     // reason 이 그대로라 이 컬럼이 없으면 "변경 없음"으로 접혀 Medusa 까지 전파되지 않는다.
     comingSoonDate: date('coming_soon_date'),
+    inboundDate: date('inbound_date'),
+    inboundApproximate: boolean('inbound_approximate').notNull().default(false),
+    restockCalculatedAt: timestamp('restock_calculated_at', { withTimezone: true }),
     calculatedAt: timestamp('calculated_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1282,6 +1286,12 @@ export const productSellableQuantityProjections = pgTable(
   (t) => ({
     idxSellable: index('idx_product_sellable_qty_sellable').on(t.isSellable),
     idxUpdatedAt: index('idx_product_sellable_qty_updated_at').on(t.updatedAt),
+    idxRestockDate: index('idx_product_sellable_qty_restock_date')
+      .on(t.inboundDate)
+      .where(sql`${t.inboundDate} IS NOT NULL`),
+    idxRestockUninitialized: index('idx_product_sellable_qty_restock_uninitialized')
+      .on(t.variantId)
+      .where(sql`${t.restockCalculatedAt} IS NULL`),
   }),
 );
 
@@ -1362,10 +1372,6 @@ export const salesOrderLines = pgTable(
       .references(() => salesOrders.id, { onDelete: 'cascade' })
       .notNull(),
     variantId: uuid('variant_id').notNull(), // PIM의 Variant ID
-    productMatchingId: uuid('product_matching_id').references(() => productMatchings.id, { onDelete: 'set null' }), // 매칭 정보
-    mappingSnapshotId: uuid('mapping_snapshot_id').references(() => productSkuMappingSnapshots.id, {
-      onDelete: 'restrict',
-    }), // SO 확정 시점 스냅샷
     // #1063: 이 라인에 적용할 SKU 구성을 굳혔는지·누가 굳혔는지. NULL 이면 아직 현재 상품매칭을 따른다.
     // 구성 행은 sales_order_line_compositions 에 있고, 출처가 있으면 행이 1개 이상이다(LineCompositionManager 만 쓴다).
     compositionSource: varchar('composition_source', { length: 16 }).$type<'matching' | 'operator'>(),
@@ -1398,7 +1404,6 @@ export const salesOrderLines = pgTable(
   },
   (t) => ({
     idxSalesOrderId: index('idx_sales_order_lines_sales_order_id').on(t.salesOrderId), // EXISTS/조인 주문별 라인 조회
-    idxMappingSnapshot: index('idx_sales_order_lines_snapshot').on(t.mappingSnapshotId),
     idxVariant: index('idx_sales_order_lines_variant').on(t.variantId),
     idxChannelOrderItem: index('idx_sales_order_lines_channel_order_item').on(t.channelOrderItemId),
     idxChannelProduct: index('idx_sales_order_lines_channel_product').on(t.channelProductId),
@@ -1976,6 +1981,8 @@ export const salesVariantPolicies = pgTable('sales_variant_policies', {
   // 출시예정 안내에 띄울 날짜. 판매 개시를 트리거하지 않는 **표시 전용** 값이다
   // (판매를 여는 건 입고 — ADR-0028). 비우면 스토어프론트가 "곧 출시 예정"만 띄운다.
   comingSoonDate: date('coming_soon_date'),
+  restockDate: date('restock_date'),
+  restockApproximate: boolean('restock_approximate').notNull().default(false),
   effectiveFrom: timestamp('effective_from', { withTimezone: true }),
   effectiveTo: timestamp('effective_to', { withTimezone: true }),
   updatedBy: uuid('updated_by'),
@@ -2343,6 +2350,11 @@ export const purchaseOrderLines = pgTable(
   },
   (t) => ({
     pk: primaryKey(t.poId, t.skuId),
+    idxRestockArrival: index('idx_po_lines_restock_arrival')
+      .on(t.skuId, t.expectedArrival)
+      .where(
+        sql`${t.status} = 'ordered' AND ${t.closedAt} IS NULL AND ${t.receivedQty} < COALESCE(${t.orderedQty}, 0) AND ${t.expectedArrival} IS NOT NULL`,
+      ),
     // 실발주 전에는 받을 수 없고, 실발주를 넘겨 받을 수 없다(D7). CHECK 는 NULL 을 통과시키므로 COALESCE.
     ckReceived: check(
       'ck_po_lines_received',
@@ -2656,32 +2668,6 @@ export const productSkuMappingItems = pgTable(
   }),
 );
 
-/**
- * 주문시점 매핑 스냅샷 (불변)
- */
-export const productSkuMappingSnapshots = pgTable(
-  'product_sku_mapping_snapshots',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    productId: varchar('product_id', { length: 255 }).notNull(),
-    sourceVersion: integer('source_version').notNull(),
-    warehouseId: uuid('warehouse_id')
-      .references(() => warehouses.id, { onDelete: 'restrict' })
-      .notNull(),
-    snapshotData: json('snapshot_data').notNull(), // { items: [{ skuId, qtyPerProduct }] }
-
-    // 에러 로그에서 필요한 추가 컬럼들
-    variantId: uuid('variant_id').notNull(), // PIM variant ID
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }),
-    quantity: integer('quantity').notNull(),
-    mappingId: uuid('mapping_id').references(() => productSkuMappings.id, { onDelete: 'restrict' }),
-
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    idxProduct: index('idx_product_sku_mapping_snapshots_product').on(t.productId),
-  }),
-);
 
 /*───────────────────────────
  * FULFILLMENT ORDER ITEMS (FOI) - 핵심 확장
@@ -2701,9 +2687,6 @@ export const fulfillmentOrderItems = pgTable(
     // 추적 정보 (nullable: 명시적 라인 전달 시 SO 정보가 없을 수 있음)
     salesOrderId: varchar('sales_order_id', { length: 255 }), // 원본 SO ID
     salesOrderLineId: varchar('sales_order_line_id', { length: 255 }), // 원본 SOL ID
-    mappingSnapshotId: uuid('mapping_snapshot_id').references(() => productSkuMappingSnapshots.id, {
-      onDelete: 'restrict',
-    }),
     variantId: uuid('variant_id'), // PIM Variant ID - 정책 평가용
 
     // 실제 출고 정보
@@ -2727,7 +2710,8 @@ export const fulfillmentOrderItems = pgTable(
     idxSalesOrder: index('idx_fulfillment_order_items_so').on(t.salesOrderId),
     idxSku: index('idx_fulfillment_order_items_sku').on(t.skuId),
     idxVariant: index('idx_fulfillment_order_items_variant').on(t.variantId),
-    ckQtyPositive: check('ck_fulfillment_order_items_qty_positive', sql`${t.qty} > 0`),
+    // #1063: 라인 구성 변경으로 SKU 가 빠지면 그 항목의 수요는 0 이 된다 — canceledQty 는 고객 취소 전용이라 qty 를 줄인다
+    ckQtyNonnegative: check('ck_fulfillment_order_items_qty_nonnegative', sql`${t.qty} >= 0`),
     ckProgressNonnegative: check(
       'ck_fulfillment_order_items_progress_nonnegative',
       sql`${t.reservedQty} >= 0 AND ${t.pickedQty} >= 0 AND ${t.shippedQty} >= 0 AND ${t.canceledQty} >= 0`,
@@ -3032,10 +3016,7 @@ export const demoCarrierShipments = pgTable(
     uqDemoCarrierRequestKey: unique('uq_demo_carrier_request_key').on(t.requestKey),
     uqDemoCarrierWaybillNo: unique('uq_demo_carrier_waybill_no').on(t.waybillNo),
     ckDemoCarrierRequestHash: check('ck_demo_carrier_request_hash', sql`length(${t.requestHash}) = 64`),
-    ckDemoCarrierStatus: check(
-      'ck_demo_carrier_status',
-      sql`${t.status} IN ('allocated', 'registered', 'canceled')`,
-    ),
+    ckDemoCarrierStatus: check('ck_demo_carrier_status', sql`${t.status} IN ('allocated', 'registered', 'canceled')`),
   }),
 );
 
@@ -3629,7 +3610,6 @@ export const wmsTables = {
   // FOI 기반 확장 스키마
   productSkuMappings,
   productSkuMappingItems,
-  productSkuMappingSnapshots,
   fulfillmentOrderItems,
   inspectionIssues,
   outboundBatches,
@@ -3774,7 +3754,6 @@ export const skusRelations = relations(skus, ({ one, many }) => ({
   productVariantSkuLinks: many(productVariantSkuLinks),
   // Mapping relations
   productSkuMappingItems: many(productSkuMappingItems),
-  productSkuMappingSnapshots: many(productSkuMappingSnapshots),
 }));
 
 export const skuSuppliersRelations = relations(skuSuppliers, ({ one }) => ({
@@ -3861,7 +3840,6 @@ export const warehousesRelations = relations(warehouses, ({ many }) => ({
     relationName: 'destinationWarehouse',
   }),
   productSkuMappings: many(productSkuMappings),
-  productSkuMappingSnapshots: many(productSkuMappingSnapshots),
   settings: many(settings),
   shipments: many(shipments),
   totes: many(totes),
@@ -3990,7 +3968,6 @@ export const stockReservationsRelations = relations(stockReservations, ({ one })
 // Product Matching Relations
 export const productMatchingsRelations = relations(productMatchings, ({ one, many }) => ({
   productVariantSkuLinks: many(productVariantSkuLinks),
-  salesOrderLines: many(salesOrderLines),
 }));
 
 export const productVariantSkuLinksRelations = relations(productVariantSkuLinks, ({ one }) => ({
@@ -4020,10 +3997,6 @@ export const salesOrderLinesRelations = relations(salesOrderLines, ({ one }) => 
   salesOrder: one(salesOrders, {
     fields: [salesOrderLines.salesOrderId],
     references: [salesOrders.id],
-  }),
-  productMatching: one(productMatchings, {
-    fields: [salesOrderLines.productMatchingId],
-    references: [productMatchings.id],
   }),
 }));
 
@@ -4079,10 +4052,6 @@ export const fulfillmentOrderItemsRelations = relations(fulfillmentOrderItems, (
   sku: one(skus, {
     fields: [fulfillmentOrderItems.skuId],
     references: [skus.id],
-  }),
-  mappingSnapshot: one(productSkuMappingSnapshots, {
-    fields: [fulfillmentOrderItems.mappingSnapshotId],
-    references: [productSkuMappingSnapshots.id],
   }),
   stockReservations: many(stockReservations),
   shipmentLines: many(shipmentLines),
@@ -4494,21 +4463,6 @@ export const productSkuMappingItemsRelations = relations(productSkuMappingItems,
   }),
 }));
 
-export const productSkuMappingSnapshotsRelations = relations(productSkuMappingSnapshots, ({ one, many }) => ({
-  warehouse: one(warehouses, {
-    fields: [productSkuMappingSnapshots.warehouseId],
-    references: [warehouses.id],
-  }),
-  sku: one(skus, {
-    fields: [productSkuMappingSnapshots.skuId],
-    references: [skus.id],
-  }),
-  mapping: one(productSkuMappings, {
-    fields: [productSkuMappingSnapshots.mappingId],
-    references: [productSkuMappings.id],
-  }),
-  fulfillmentOrderItems: many(fulfillmentOrderItems),
-}));
 
 // Settings Relations
 export const settingsRelations = relations(settings, ({ one }) => ({
@@ -4644,7 +4598,6 @@ export const wmsRelations = {
   // Product-SKU Mapping Relations
   productSkuMappingsRelations,
   productSkuMappingItemsRelations,
-  productSkuMappingSnapshotsRelations,
 
   // Settings Relations
   settingsRelations,
@@ -4890,8 +4843,6 @@ export type NewProductSkuMapping = InferInsertModel<typeof productSkuMappings>;
 export type ProductSkuMappingItem = InferSelectModel<typeof productSkuMappingItems>;
 export type NewProductSkuMappingItem = InferInsertModel<typeof productSkuMappingItems>;
 
-export type ProductSkuMappingSnapshot = InferSelectModel<typeof productSkuMappingSnapshots>;
-export type NewProductSkuMappingSnapshot = InferInsertModel<typeof productSkuMappingSnapshots>;
 
 // Waybill Types
 export type Waybill = InferSelectModel<typeof waybills>;

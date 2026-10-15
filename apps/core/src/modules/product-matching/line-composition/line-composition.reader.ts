@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { eq, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { DbTx, SalesOrderLine, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { ProductSkuMappingService } from '../services/product-sku-mapping.service';
 import {
@@ -10,6 +10,7 @@ import {
   LineCompositionResolution,
   resolveLineComposition,
 } from './line-composition';
+import { selectFrozenCompositions } from './frozen-compositions';
 import { sumCancelledByLine } from './partial-cancellation';
 
 export interface ResolvedSalesOrderLine {
@@ -39,25 +40,10 @@ export class LineCompositionReader {
         .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId));
       if (lines.length === 0) return [];
 
-      const frozenRows = await trx
-        .select({
-          salesOrderLineId: wmsTables.salesOrderLineCompositions.salesOrderLineId,
-          skuId: wmsTables.salesOrderLineCompositions.skuId,
-          qtyPerUnit: wmsTables.salesOrderLineCompositions.qtyPerUnit,
-        })
-        .from(wmsTables.salesOrderLineCompositions)
-        .where(
-          inArray(
-            wmsTables.salesOrderLineCompositions.salesOrderLineId,
-            lines.map((line) => line.id),
-          ),
-        );
-      const frozenByLine = new Map<string, CompositionItem[]>();
-      for (const row of frozenRows) {
-        const items = frozenByLine.get(row.salesOrderLineId) ?? [];
-        items.push({ skuId: row.skuId, qtyPerUnit: row.qtyPerUnit });
-        frozenByLine.set(row.salesOrderLineId, items);
-      }
+      const frozenByLine = await selectFrozenCompositions(
+        trx,
+        lines.map((line) => line.id),
+      );
 
       const cancellations = await trx
         .select({ metadata: wmsTables.salesOrderCancellations.metadata })

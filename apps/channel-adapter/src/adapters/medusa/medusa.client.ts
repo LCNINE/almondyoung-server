@@ -14,10 +14,7 @@ import {
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts';
 import type { ChannelCancelRefundMode } from '@packages/event-contracts/streams';
 import { LIFECYCLE_PAYMENT_STATUSES, PAYMENT_ACCEPTED_STATUSES } from './medusa-order-status';
-import {
-  recordAutoIssueOutcome,
-  recordAutoIssueFailure,
-} from '../../observability/coupon-issue.metrics';
+import { recordAutoIssueOutcome, recordAutoIssueFailure } from '../../observability/coupon-issue.metrics';
 
 type CoreShippingProjectionStatus = 'partially_shipped' | 'shipped' | 'partially_delivered' | 'delivered' | 'recalled';
 
@@ -191,7 +188,12 @@ function isCollectableOrder(order: MedusaOrder): boolean {
   return isPaymentAcceptedOrder(order) || isLifecycleOrder(order);
 }
 
-const PROJECTION_OWNED_VARIANT_METADATA_KEYS = ['comingSoon', 'comingSoonDate', 'inboundDate', 'inboundApproximate'] as const;
+const PROJECTION_OWNED_VARIANT_METADATA_KEYS = [
+  'comingSoon',
+  'comingSoonDate',
+  'inboundDate',
+  'inboundApproximate',
+] as const;
 
 const ORDER_FIELDS = [
   'id',
@@ -799,7 +801,8 @@ export class MedusaClient {
 
       // 같은 값이어도 키가 실려 있으면 Medusa 가 부모 이동으로 보고 형제 맨 뒤로 보낸다.
       const currentParentId = verified.parent_category_id ?? null;
-      const desiredParentId = 'parent_category_id' in parentUpdate ? parentUpdate.parent_category_id ?? null : undefined;
+      const desiredParentId =
+        'parent_category_id' in parentUpdate ? (parentUpdate.parent_category_id ?? null) : undefined;
       const parentPatch =
         desiredParentId !== undefined && desiredParentId !== currentParentId
           ? { parent_category_id: desiredParentId }
@@ -1422,8 +1425,7 @@ export class MedusaClient {
       const projectionSku = toMedusaProductSellableInventorySku(pimVariantId);
       const projectionLink = inventoryLinks.find((link) => {
         const inventory = link.inventory as
-          | { sku?: string | null; metadata?: Record<string, unknown> | null }
-          | undefined;
+          { sku?: string | null; metadata?: Record<string, unknown> | null } | undefined;
         return (
           link.inventory_item_id &&
           (inventory?.sku === projectionSku ||
@@ -1543,8 +1545,7 @@ export class MedusaClient {
     for (const variant of latest.variants || []) {
       for (const link of ((variant as any).inventory_items || []) as any[]) {
         const inventory = link.inventory as
-          | { sku?: string | null; metadata?: Record<string, unknown> | null }
-          | undefined;
+          { sku?: string | null; metadata?: Record<string, unknown> | null } | undefined;
         if (link.inventory_item_id && inventory && isMedusaProductSellableInventoryItem(inventory)) {
           deletePayload.push({
             inventory_item_id: link.inventory_item_id,
@@ -1734,9 +1735,18 @@ export class MedusaClient {
     const previousMetadata = (medusaVariant.metadata ?? {}) as Record<string, unknown>;
     const desiredComingSoon = comingSoon ? true : undefined;
     const desiredComingSoonDate = comingSoon ? (input.comingSoonDate ?? undefined) : undefined;
+    // 필드 생략은 이전 생산자 이벤트다. 명시된 null만 재입고 표시를 제거한다.
+    const hasRestockProjection = Object.prototype.hasOwnProperty.call(input, 'inboundDate');
+    const desiredInboundDate = input.inboundDate ?? undefined;
+    const desiredInboundApproximate = desiredInboundDate ? (input.inboundApproximate ?? false) : undefined;
+    const restockChanged =
+      hasRestockProjection &&
+      (previousMetadata.inboundDate !== desiredInboundDate ||
+        previousMetadata.inboundApproximate !== desiredInboundApproximate);
     if (
       previousMetadata.comingSoon !== desiredComingSoon ||
-      previousMetadata.comingSoonDate !== desiredComingSoonDate
+      previousMetadata.comingSoonDate !== desiredComingSoonDate ||
+      restockChanged
     ) {
       const metadata = { ...previousMetadata };
       // 해제 시엔 키를 남기지 않는다 — 남으면 다음 품절 때 "곧 출시 예정" 이 되살아난다.
@@ -1744,6 +1754,16 @@ export class MedusaClient {
       delete metadata.comingSoonDate;
       if (desiredComingSoon) metadata.comingSoon = true;
       if (desiredComingSoonDate) metadata.comingSoonDate = desiredComingSoonDate;
+      if (hasRestockProjection) {
+        // batchVariants는 metadata를 교체하므로 기존 키를 보존한 객체에서 재입고 키만 제거한다.
+        delete metadata.inboundDate;
+        delete metadata.inboundApproximate;
+        if (desiredInboundDate) {
+          metadata.inboundDate = desiredInboundDate;
+          metadata.inboundApproximate = desiredInboundApproximate;
+        }
+      }
+
       variantUpdate.metadata = metadata;
     }
     if (Object.keys(variantUpdate).length > 1) {
@@ -1969,7 +1989,11 @@ export class MedusaClient {
     try {
       response = await this.postAdmin(path, { refundMode: input.refundMode });
     } catch (error) {
-      return { kind: 'transient', failureCode: 'network', message: error instanceof Error ? error.message : String(error) };
+      return {
+        kind: 'transient',
+        failureCode: 'network',
+        message: error instanceof Error ? error.message : String(error),
+      };
     }
     const { status, body } = response;
     const message = typeof body.message === 'string' ? body.message : `status ${status}`;
@@ -2493,7 +2517,9 @@ export class MedusaClient {
       this.logger.log(`Updated email for customer ${customerId}`);
     } catch (error) {
       const fetchError = error as FetchError;
-      this.logger.warn(`Failed to update email for customer ${customerId}: ${fetchError.message} (status=${fetchError.status})`);
+      this.logger.warn(
+        `Failed to update email for customer ${customerId}: ${fetchError.message} (status=${fetchError.status})`,
+      );
       throw error;
     }
   }
@@ -2520,11 +2546,17 @@ export class MedusaClient {
       const status = fetchError.status;
       const isPermanent = typeof status === 'number' && status >= 400 && status < 500 && status !== 429;
       if (isPermanent) {
-        this.logger.error(`withdrawCustomer permanent failure (userId=${almondUserId}, status=${status}): ${fetchError.message}`);
+        this.logger.error(
+          `withdrawCustomer permanent failure (userId=${almondUserId}, status=${status}): ${fetchError.message}`,
+        );
       } else {
-        this.logger.warn(`withdrawCustomer transient failure (userId=${almondUserId}, status=${status ?? 'n/a'}): ${fetchError.message}`);
+        this.logger.warn(
+          `withdrawCustomer transient failure (userId=${almondUserId}, status=${status ?? 'n/a'}): ${fetchError.message}`,
+        );
       }
-      throw new Error(`Medusa withdrawCustomer failed (status=${status ?? 'n/a'}): ${fetchError.message}`, { cause: fetchError });
+      throw new Error(`Medusa withdrawCustomer failed (status=${status ?? 'n/a'}): ${fetchError.message}`, {
+        cause: fetchError,
+      });
     }
   }
 
@@ -2578,7 +2610,9 @@ export class MedusaClient {
           `issuePromotionsByTrigger transient failure (customerId=${customerId}, trigger=${trigger}, status=${status ?? 'n/a'}): ${fetchError.message}`,
         );
       }
-      throw new Error(`Medusa issuePromotionsByTrigger failed (status=${status ?? 'n/a'}): ${fetchError.message}`, { cause: fetchError });
+      throw new Error(`Medusa issuePromotionsByTrigger failed (status=${status ?? 'n/a'}): ${fetchError.message}`, {
+        cause: fetchError,
+      });
     }
   }
 
@@ -2640,7 +2674,11 @@ export class MedusaClient {
         refundMode: input.refundMode,
       });
     } catch (error) {
-      return { kind: 'transient', failureCode: 'network', message: error instanceof Error ? error.message : String(error) };
+      return {
+        kind: 'transient',
+        failureCode: 'network',
+        message: error instanceof Error ? error.message : String(error),
+      };
     }
     const { status, body } = response;
     const message = typeof body.message === 'string' ? body.message : `status ${status}`;
@@ -2675,7 +2713,10 @@ export class MedusaClient {
     if (status === 400 || (status === 404 && body.type === 'not_found')) {
       return { kind: 'not_cancelable', failureCode: medusaErrorCode(status, body), message };
     }
-    this.logger.error(`Failed to partial-cancel Medusa order: ${orderId} (status=${status}, type=${String(body.type)})`, message);
+    this.logger.error(
+      `Failed to partial-cancel Medusa order: ${orderId} (status=${status}, type=${String(body.type)})`,
+      message,
+    );
     return { kind: 'transient', failureCode: `http_${status}`, message };
   }
 
@@ -2683,17 +2724,26 @@ export class MedusaClient {
    * 관리자 POST 를 네이티브 fetch 로 보낸다. SDK 의 FetchError 는 본문에서 message 만 남기고 type·code 를 버리는데, 취소 응답은
    * 그 둘로 갈린다. HTTP 상태로는 던지지 않는다(분류는 호출부의 일). 연결 실패는 원래 오류를 cause 로 달아 던진다.
    */
-  private async postAdmin(path: string, body?: Record<string, unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
+  private async postAdmin(
+    path: string,
+    body?: Record<string, unknown>,
+  ): Promise<{ status: number; body: Record<string, unknown> }> {
     const encodedKey = Buffer.from(`${this.apiKey}:`).toString('base64');
     let res: Response;
     try {
       res = await fetch(`${this.apiUrl}${path}`, {
         method: 'POST',
-        headers: { Authorization: `Basic ${encodedKey}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers: {
+          Authorization: `Basic ${encodedKey}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
         body: JSON.stringify(body ?? {}),
       });
     } catch (error) {
-      throw new Error(`Medusa POST ${path} 연결 실패: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+      throw new Error(`Medusa POST ${path} 연결 실패: ${error instanceof Error ? error.message : String(error)}`, {
+        cause: error,
+      });
     }
     const parsed: unknown = await res.json().catch(() => undefined);
     return { status: res.status, body: isJsonObject(parsed) ? parsed : {} };

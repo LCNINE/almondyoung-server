@@ -390,8 +390,8 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
       const foiBase = { fulfillmentOrderId: f.fulfillmentOrder.id, skuId: f.sku.id };
       await expectViolation(
         tx,
-        (sp) => sp.insert(wmsTables.fulfillmentOrderItems).values({ ...foiBase, qty: 0 }),
-        'ck_fulfillment_order_items_qty_positive',
+        (sp) => sp.insert(wmsTables.fulfillmentOrderItems).values({ ...foiBase, qty: -1 }),
+        'ck_fulfillment_order_items_qty_nonnegative',
       );
       await expectViolation(
         tx,

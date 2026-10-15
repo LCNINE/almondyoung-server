@@ -307,4 +307,29 @@ describe("아몬드템플릿", () => {
       "뒷면 배경 이미지 해상도가 300dpi보다 낮습니다."
     )
   })
+  it("잘못된 레이어를 레이어 목록 기준 위치와 이름으로 짚는다", () => {
+    const design = newDesign("card")
+    const layer = {
+      id: "a",
+      type: "text" as const,
+      name: "점선",
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 5,
+      fill: "#000000",
+      text: "---",
+    }
+    design.front = [
+      { ...layer, width: 9999 },
+      { ...layer, id: "b", name: "제목" },
+    ]
+    expect(() => parseDesign(design)).toThrow(
+      '앞면 레이어 목록 위에서 2번째 "점선" 레이어의 크기·위치가 허용 범위를 벗어났습니다. (가로 9999mm, 세로 5mm)'
+    )
+    design.front = [{ ...layer, fill: "red" }]
+    expect(() => parseDesign(design)).toThrow(
+      '앞면 레이어 목록 위에서 1번째 "점선" 레이어의 데이터가 올바르지 않습니다.'
+    )
+  })
 })

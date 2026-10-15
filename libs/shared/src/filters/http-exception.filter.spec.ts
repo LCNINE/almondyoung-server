@@ -23,21 +23,23 @@ describe('domain error response contract', () => {
   });
 });
 
+// 응답 필터를 거친 본문만 돌려주는 가짜 reply/host. details 허용목록 describe 들이 공유한다
+function render(code: string, details: unknown) {
+  let body: unknown;
+  const reply = {
+    status: () => reply,
+    send: (value: unknown) => {
+      body = value;
+    },
+  };
+  const host = {
+    switchToHttp: () => ({ getResponse: () => reply, getRequest: () => ({ method: 'POST', url: '/' }) }),
+  } as ArgumentsHost;
+  new GlobalExceptionFilter().catch(new ConflictException({ code, message: 'blocked', details }), host);
+  return body;
+}
+
 describe('preparation details allowlist', () => {
-  function render(code: string, details: unknown) {
-    let body: unknown;
-    const reply = {
-      status: () => reply,
-      send: (value: unknown) => {
-        body = value;
-      },
-    };
-    const host = {
-      switchToHttp: () => ({ getResponse: () => reply, getRequest: () => ({ method: 'POST', url: '/' }) }),
-    } as ArgumentsHost;
-    new GlobalExceptionFilter().catch(new ConflictException({ code, details }), host);
-    return body;
-  }
   it('preserves known preparation action details without arbitrary fields', () => {
     expect(
       render('SIMPLE_OUTBOUND_PLAN_INVALIDATED', {
@@ -66,6 +68,37 @@ describe('preparation details allowlist', () => {
     ['SIMPLE_OUTBOUND_PLAN_INVALIDATED', { reasonCode: 'DB_ERROR', recovery: 'retry_preparation' }],
     ['SIMPLE_OUTBOUND_PLAN_INVALIDATED', { reasonCode: 'SOURCE_INSUFFICIENT', recovery: 'unknown' }],
   ])('drops unrecognized %s details', (code, details) => {
+    expect(render(String(code), details)).not.toHaveProperty('details');
+  });
+});
+
+describe('line box details allowlist (#1063)', () => {
+  const box = { shipmentId: 's-1', status: 'planned', batchId: 'b-1', hasActiveWaybill: false };
+
+  it('passes the blocking boxes so the screen can link to the batch', () => {
+    expect(render('LINE_BOX_NOT_DRAFT', { fulfillmentOrderId: 'fo-1', boxes: [box] })).toMatchObject({
+      code: 'LINE_BOX_NOT_DRAFT',
+      details: { fulfillmentOrderId: 'fo-1', boxes: [box] },
+    });
+  });
+
+  it('accepts a null fulfillmentOrderId and drops fields outside the shape', () => {
+    const body = render('LINE_BOX_NOT_DRAFT', {
+      fulfillmentOrderId: null,
+      secret: 'hidden',
+      boxes: [{ ...box, batchId: null, secret: 'hidden' }],
+    });
+    expect(body).toMatchObject({ details: { fulfillmentOrderId: null, boxes: [{ ...box, batchId: null }] } });
+    expect(JSON.stringify(body)).not.toContain('hidden');
+  });
+
+  it.each([
+    ['OTHER', { fulfillmentOrderId: 'fo-1', boxes: [box] }],
+    ['LINE_BOX_NOT_DRAFT', { fulfillmentOrderId: 'fo-1' }],
+    ['LINE_BOX_NOT_DRAFT', { fulfillmentOrderId: 7, boxes: [box] }],
+    ['LINE_BOX_NOT_DRAFT', { fulfillmentOrderId: 'fo-1', boxes: [{ ...box, hasActiveWaybill: 'no' }] }],
+    ['LINE_BOX_NOT_DRAFT', { fulfillmentOrderId: 'fo-1', boxes: [null] }],
+  ])('drops malformed %s details', (code, details) => {
     expect(render(String(code), details)).not.toHaveProperty('details');
   });
 });

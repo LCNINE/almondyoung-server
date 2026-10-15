@@ -107,6 +107,7 @@ export default function ProductCard({
   isWishlisted = false,
   onClick,
   enablePhotoSwipe = true,
+  priority,
 }: {
   product: HttpTypes.StoreProduct
   isMembership: boolean
@@ -117,6 +118,8 @@ export default function ProductCard({
   onClick?: () => void
   /** 가로로 넘기는 줄 안에서는 사진 넘기기가 줄 넘기기와 겹쳐 끈다 */
   enablePhotoSwipe?: boolean
+  /** 첫 화면에 보이는 카드. 썸네일을 lazy 없이 먼저 받는다 */
+  priority?: boolean
 }) {
   const { cheapestPrice, cheapestVariant } = getProductPrice({
     product,
@@ -179,6 +182,7 @@ export default function ProductCard({
             images={product.images}
             size="full"
             enableSwipe={enablePhotoSwipe}
+            priority={priority}
             overlay={
               <>
                 {overlay}

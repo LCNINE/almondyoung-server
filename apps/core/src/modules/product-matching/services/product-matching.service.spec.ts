@@ -1,6 +1,7 @@
 import { BadRequestError } from '@app/shared';
 import { ProductMatchingService } from './product-matching.service';
 import { ResolveMatchingDto } from '../dto/resolve-matching.dto';
+import type { DbTx } from '../../inventory/schema/inventory.schema';
 
 const matching = {
   id: '11111111-1111-1111-1111-111111111111',
@@ -62,6 +63,7 @@ function makeTx(selectRowsQueue: unknown[][] = [[]]) {
   const deletes: unknown[] = [];
 
   const tx = {
+    execute: jest.fn().mockResolvedValue([]),
     inserts,
     updates,
     deletes,
@@ -115,6 +117,36 @@ function makeTx(selectRowsQueue: unknown[][] = [[]]) {
 }
 
 describe('ProductMatchingService strategy semantics', () => {
+  it('매칭 목록은 편집 후에도 재입고 일정을 보존하도록 날짜와 변동 여부를 반환한다', async () => {
+    const { service } = makeService();
+    const tx = makeTx([
+      [{ total: 1 }],
+      [
+        {
+          ...matching,
+          status: 'matched',
+          priority: 'normal',
+          strategy: 'variant',
+          preStockSellable: false,
+          alwaysSellableZeroStock: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+      [],
+      [],
+      [{ variantId: matching.variantId, restockDate: '2099-01-01', restockApproximate: true }],
+      [],
+    ]);
+
+    const result = await service.getMatchings({}, tx as unknown as DbTx);
+
+    expect(result.data[0].stockPolicy).toMatchObject({
+      restockDate: '2099-01-01',
+      restockApproximate: true,
+    });
+  });
+
   it('maps legacy ignore=true input to matched + void without SKU links', async () => {
     const { service, productSellableQuantity, fulfillmentBacklog } = makeService();
     const tx = makeTx([[matching]]);
@@ -688,6 +720,8 @@ describe('ProductMatchingService strategy semantics', () => {
       alwaysSellableZeroStock: false,
       availabilityOverride: 'manual_out_of_stock',
       comingSoonDate: null,
+      restockDate: null,
+      restockApproximate: false,
     });
   });
 

@@ -63,3 +63,17 @@ describe('UgcEventConsumer 문의 답변 알림', () => {
     expect(noMail.send).not.toHaveBeenCalled();
   });
 });
+
+describe('UgcEventConsumer 재전달 (#1073)', () => {
+  it('같은 메시지가 다시 오면 같은 멱등 키로 보낸다 — 디스패처가 두 번째를 버린다', async () => {
+    const { consumer, send } = make(true, 'buyer@example.com');
+    const redelivered = { ...envelope, messageId: 'msg-1' } as typeof envelope;
+
+    await consumer.onQuestionAnswered(redelivered, answered);
+    await consumer.onQuestionAnswered(redelivered, answered);
+
+    const [first, second] = send.mock.calls.map(([dto]) => dto.idempotencyKey);
+    expect(first).toBeTruthy();
+    expect(second).toBe(first);
+  });
+});

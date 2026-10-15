@@ -153,6 +153,18 @@ interface FulfillmentSummary {
   items: Array<{ id: string; skuId: string; shippedQty: number }>;
 }
 
+/**
+ * 출고 완료 투영의 항목. 구성 변경(#1063)으로 대체된 qty 0 항목은 나간 것이 없어 뺀다 — 계약이 shippedQty 양수를 요구해
+ * 그대로 실으면 출고 트랜잭션이 통째로 실패한다. 합계는 0 을 빼도 같다.
+ */
+export function shippedItemsForCompletion(
+  items: ReadonlyArray<{ id: string; skuId: string; shippedQty: number }>,
+): FulfillmentShippedPayload['shippedItems'] {
+  return items
+    .filter((item) => item.shippedQty > 0)
+    .map((item) => ({ fulfillmentItemId: item.id, skuId: item.skuId, shippedQty: item.shippedQty }));
+}
+
 @Injectable()
 export class ShipmentDispatchService {
   constructor(
@@ -1192,11 +1204,7 @@ export class ShipmentDispatchService {
           channelOrderId: eventLine.channelOrderId,
           trackingInfo: { carrier: waybill.carrier, trackingNumber: waybill.trackingNo },
           shippedAt: dispatchedAt.toISOString(),
-          shippedItems: summary.items.map((item) => ({
-            fulfillmentItemId: item.id,
-            skuId: item.skuId,
-            shippedQty: item.shippedQty,
-          })),
+          shippedItems: shippedItemsForCompletion(summary.items),
         };
         await this.fulfillmentsV1.enqueue(
           fulfillmentShippedV1OutboxEvent(v1Payload, { ...summary, salesOrderId: summary.salesOrderId }),

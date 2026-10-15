@@ -1,6 +1,9 @@
 import {
   blocksFulfillment,
+  compositionFromMatching,
+  compositionItemsProblem,
   isOutsourcedLine,
+  sameComposition,
   isDigitalFulfillmentLine,
   LineForComposition,
   matchingFailureReason,
@@ -120,5 +123,58 @@ describe('blocksFulfillment', () => {
     expect(blocksFulfillment({ fulfillableQuantity: 1, resolution: missing })).toBe(true);
     expect(blocksFulfillment({ fulfillableQuantity: 0, resolution: missing })).toBe(false);
     expect(blocksFulfillment({ fulfillableQuantity: 1, resolution: { kind: 'void' } })).toBe(false);
+  });
+});
+
+describe('compositionFromMatching', () => {
+  it('실물 링크가 있으면 follow(SKU 순, 수량 0 은 1)', () => {
+    const matching = variant([
+      { skuId: 'b', quantity: 2 },
+      { skuId: 'a', quantity: 0 },
+    ]);
+    expect(compositionFromMatching(matching)).toEqual({
+      kind: 'follow',
+      items: [
+        { skuId: 'a', qtyPerUnit: 1 },
+        { skuId: 'b', qtyPerUnit: 2 },
+      ],
+    });
+  });
+  it('매칭이 없으면 missing', () => {
+    expect(compositionFromMatching(null)).toEqual({ kind: 'missing', reason: 'NO_PRODUCT_SKU_MATCHING' });
+  });
+});
+
+describe('sameComposition', () => {
+  it('순서와 무관하게 같은 (SKU, 1개당 수량) 집합이면 같다', () => {
+    expect(
+      sameComposition(
+        [
+          { skuId: 'a', qtyPerUnit: 1 },
+          { skuId: 'b', qtyPerUnit: 2 },
+        ],
+        [
+          { skuId: 'b', qtyPerUnit: 2 },
+          { skuId: 'a', qtyPerUnit: 1 },
+        ],
+      ),
+    ).toBe(true);
+    expect(sameComposition([{ skuId: 'a', qtyPerUnit: 1 }], [{ skuId: 'a', qtyPerUnit: 2 }])).toBe(false);
+    expect(sameComposition([{ skuId: 'a', qtyPerUnit: 1 }], [])).toBe(false);
+  });
+});
+
+describe('compositionItemsProblem', () => {
+  it('비었거나 SKU 가 겹치거나 수량이 양의 정수가 아니면 사유를 낸다', () => {
+    expect(compositionItemsProblem([])).toMatch(/empty/);
+    expect(
+      compositionItemsProblem([
+        { skuId: 'a', qtyPerUnit: 1 },
+        { skuId: 'a', qtyPerUnit: 2 },
+      ]),
+    ).toMatch(/duplicate/);
+    expect(compositionItemsProblem([{ skuId: 'a', qtyPerUnit: 0 }])).toMatch(/positive/);
+    expect(compositionItemsProblem([{ skuId: 'a', qtyPerUnit: 1.5 }])).toMatch(/positive/);
+    expect(compositionItemsProblem([{ skuId: 'a', qtyPerUnit: 3 }])).toBeNull();
   });
 });

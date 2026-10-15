@@ -34,12 +34,22 @@ export function fittedFontSize(layer: Layer) {
   )
 }
 
-export function textBoxFor(layer: Layer, fontSize: number) {
+export function textBoxFor(
+  layer: Layer,
+  fontSize: number,
+  paper: { widthMm: number; heightMm: number }
+) {
   const extent = textExtent(layer)
   return {
     fontSize,
-    width: Math.max(layer.width, Math.round(extent.width * fontSize * 10) / 10),
-    height: Math.round(extent.height * fontSize * 10) / 10,
+    width: Math.min(
+      paper.widthMm * 2,
+      Math.max(layer.width, Math.round(extent.width * fontSize * 10) / 10)
+    ),
+    height: Math.min(
+      paper.heightMm * 2,
+      Math.round(extent.height * fontSize * 10) / 10
+    ),
   }
 }
 

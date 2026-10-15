@@ -26,21 +26,25 @@ export default function MemberDetails({
   const countryCode =
     typeof params.countryCode === "string" ? params.countryCode : "kr"
 
+  const adminGrant = membershipData?.adminGrant
+
   // 선적용: 계좌 심사 대기 중이면 "은행 확인 중" 배너(접수 SMS 오인 방지)
   const [hasPendingMandate, setHasPendingMandate] = useState(false)
   useEffect(() => {
-    if (!isInvoiceBillingEnabled()) return
+    if (adminGrant || !isInvoiceBillingEnabled()) return
     if (membershipData?.autoRenewal !== true) return
     getCmsBillingMethodStatuses()
       .then((statuses) =>
         setHasPendingMandate(
           statuses.some(
-            (s) => s.billingMethodStatus === "ACTIVE" && s.cmsMemberStatus === "PENDING"
+            (s) =>
+              s.billingMethodStatus === "ACTIVE" &&
+              s.cmsMemberStatus === "PENDING"
           )
         )
       )
       .catch(() => {})
-  }, [membershipData?.autoRenewal])
+  }, [adminGrant, membershipData?.autoRenewal])
 
   const fmt = (d?: string | null) => formatDate(d, DATE_FORMATS.KO_LONG)
 
@@ -48,14 +52,14 @@ export default function MemberDetails({
   const billingDate = membershipData?.billingDate
     ? new Date(membershipData.billingDate)
     : null
-  const isInTrial = !!billingDate && billingDate > today
+  const isInTrial = !adminGrant && !!billingDate && billingDate > today
   const trialDaysRemaining = isInTrial
     ? differenceInCalendarDays(billingDate, today)
     : 0
 
   // 정기결제는 다음 결제일이 있고, 1회결제는 없음(null) → 이용 종료일만 존재
   const recurringNextBillingDate = membershipData?.nextBillingDate ?? null
-  const isRecurring = isInTrial || !!recurringNextBillingDate
+  const isRecurring = !adminGrant && (isInTrial || !!recurringNextBillingDate)
   const membershipEndDate =
     membershipData?.currentPeriodEnd ?? membershipData?.endDate ?? null
 
@@ -68,25 +72,41 @@ export default function MemberDetails({
 
   return (
     <div className="flex w-full flex-col items-center gap-4">
-      {membershipData?.paymentActionNeeded && (
+      {!adminGrant && membershipData?.paymentActionNeeded && (
         <div className="w-full rounded-md bg-amber-50 px-3 py-2 text-center text-sm text-amber-800">
           <p>{t("billing.paymentActionNeeded")}</p>
           <button
             type="button"
-            onClick={() => router.push(`/${countryCode}/mypage/membership/payment-method`)}
+            onClick={() =>
+              router.push(`/${countryCode}/mypage/membership/payment-method`)
+            }
             className="mt-1 text-xs font-semibold underline underline-offset-2"
           >
             {t("billing.paymentActionCta")}
           </button>
         </div>
       )}
-      {!membershipData?.paymentActionNeeded && hasPendingMandate && (
-        <p className="w-full rounded-md bg-sky-50 px-3 py-2 text-center text-sm text-sky-800">
-          {t("billing.mandatePendingNotice")}
-        </p>
-      )}
+      {!adminGrant &&
+        !membershipData?.paymentActionNeeded &&
+        hasPendingMandate && (
+          <p className="w-full rounded-md bg-sky-50 px-3 py-2 text-center text-sm text-sky-800">
+            {t("billing.mandatePendingNotice")}
+          </p>
+        )}
       {/* 1. 계정 상태 및 플랜 관리 */}
-      {isInTrial ? (
+      {adminGrant ? (
+        <figcaption className="flex flex-col items-center gap-1.5 text-center text-sm">
+          <strong>
+            {t("subscription.temporaryPass", { days: adminGrant.days })}
+          </strong>
+          <p>
+            {t("billing.membershipEndNotice", { date: fmt(membershipEndDate) })}
+          </p>
+          <p className="text-muted-foreground">
+            {t("billing.temporaryPassNotice")}
+          </p>
+        </figcaption>
+      ) : isInTrial ? (
         <figcaption className="flex flex-col items-center gap-1.5 font-['Pretendard']">
           <span className="bg-primary/10 text-primary inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold">
             {t("subscription.freeTrialRemaining", { days: trialDaysRemaining })}

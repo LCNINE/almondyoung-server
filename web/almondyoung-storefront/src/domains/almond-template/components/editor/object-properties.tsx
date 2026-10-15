@@ -27,7 +27,7 @@ export function ObjectProperties({
   panel: PropertyPanelState
   selected: Layer
 }) {
-  const { patch, editable, setOrder } = editor
+  const { patch, editable, setOrder, design } = editor
   const selectedImageInputRef = useRef<HTMLInputElement>(null)
   const { setObjectMoreId, objectMoreOpen } = panel
   return (
@@ -78,7 +78,7 @@ export function ObjectProperties({
                   value={selected.fontSize ?? 10}
                   disabled={!editable}
                   onValue={(value) =>
-                    patch(selected.id, textBoxFor(selected, value))
+                    patch(selected.id, textBoxFor(selected, value, design))
                   }
                 />
               </label>

@@ -10,6 +10,7 @@ import {
   SalesOrderAmendmentDeltaType,
 } from '../dto/create-sales-order-amendment.dto';
 import { CHANNEL_ORDER_MODIFIED_REASON, type RecordedChannelDelta } from '../channel-order-change/channel-order-change.types';
+import type { CompositionItem } from '../../product-matching/line-composition/line-composition';
 
 type BusinessLinkInsert = InferInsertModel<typeof wmsTables.businessLinks>;
 type SalesOrderAmendmentRow = typeof wmsTables.salesOrderAmendments.$inferSelect;
@@ -264,6 +265,65 @@ export class SalesOrderAmendmentsService {
           ne(table.id, input.id),
         ),
       );
+  }
+
+  /**
+   * 라인 구성 변경 한 건(#1063 스펙 §7.1-6). 상거래 변경이 아니라 출고 지시만 바뀌므로 fulfillment_only, 이미 박스에 반영된
+   * 기록이라 applied. 델타 모양은 쓰는 쪽(LineCompositionEditManager)이 보장한다 — 운영자 DTO 검증을 거치지 않는다.
+   */
+  async recordLineCompositionChange(
+    input: {
+      salesOrderId: string;
+      salesOrderLineId: string;
+      before: readonly CompositionItem[];
+      after: readonly CompositionItem[];
+      shipmentIds: readonly string[];
+      reasonCode: string;
+      note: string | null;
+      actorId: string;
+    },
+    tx: DbTx,
+  ): Promise<string> {
+    const deltas = [
+      {
+        type: 'line_composition',
+        salesOrderLineId: input.salesOrderLineId,
+        before: input.before,
+        after: input.after,
+        shipmentIds: input.shipmentIds,
+      },
+    ];
+    const [amendment] = await tx
+      .insert(wmsTables.salesOrderAmendments)
+      .values({
+        salesOrderId: input.salesOrderId,
+        amendmentKind: 'fulfillment_only',
+        reasonCode: input.reasonCode,
+        note: input.note,
+        deltas,
+        metadata: {},
+        createdBy: input.actorId,
+        origin: 'operator',
+        status: 'applied',
+      })
+      .returning();
+    await tx.insert(wmsTables.businessLinks).values({
+      sourceType: SALES_ORDER_REF_TYPE,
+      sourceId: input.salesOrderId,
+      sourceExternalRef: null,
+      targetType: AMENDMENT_REF_TYPE,
+      targetId: amendment.id,
+      targetExternalRef: null,
+      relationName: 'opened_amendment',
+      metadata: {
+        amendmentKind: 'fulfillment_only',
+        origin: 'operator',
+        status: 'applied',
+        deltaTypes: ['line_composition'],
+      },
+      occurredAt: amendment.occurredAt,
+    });
+    return amendment.id;
   }
 
   /** 대기 목록(#1016 5번 행 화면). 끝난 판매주문의 행은 뺀다 — Medusa 취소 직전 스냅샷이 남긴 pending 이 거기 남는다. */
