@@ -80,6 +80,11 @@ export class PrintOrderSubmitManager {
       return;
     }
     try {
+      // 파일까지 보냈는데 submitted 로 바꾸기 전에 멈춘 행이다. 업로드는 되풀이하지 않는다
+      if (lane.state.ordnum && row.fileDeliveredAt) {
+        await lane.owned({ status: 'submitted' });
+        return;
+      }
       const line = await this.lineSpec(lane);
       if (!line) return;
       const ordnum = lane.state.ordnum ?? (await this.confirmSentOrder(row));

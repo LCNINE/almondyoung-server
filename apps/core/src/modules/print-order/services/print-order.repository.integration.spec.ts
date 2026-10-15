@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { wmsTables, type DbTx } from '../../inventory/schema/inventory.schema';
 import { makeDb, makeDbService } from '../../fulfillment/services/__support__';
-import { PrintOrderRepository } from './print-order.repository';
+import { PrintOrderRepository, SHIPPED_TRACKING_WINDOW_MS } from './print-order.repository';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -395,6 +395,31 @@ describeIfDb('PrintOrderRepository.claimDueBatch', () => {
       const found = await repo.findById(row.id, tx);
 
       expect(found).toMatchObject({ vendorBoxNumber: 'BOX-1', vendorShippingFee: 3000 });
+    });
+  });
+
+  it('trackable stops polling shipped rows once the tracking window has passed', async () => {
+    await inRollbackConn(async (tx, repo) => {
+      const longAgo = new Date(Date.now() - SHIPPED_TRACKING_WINDOW_MS - 60_000);
+      const rows = [
+        rowOf(randomUUID(), new Date('1960-01-01T00:00:00Z'), { status: 'submitted', vendorOrderNumber: 'W-1' }),
+        rowOf(randomUUID(), new Date('1960-01-01T00:00:00Z'), {
+          status: 'shipped',
+          vendorOrderNumber: 'W-2',
+          shippedAt: new Date(),
+        }),
+        rowOf(randomUUID(), new Date('1960-01-01T00:00:00Z'), {
+          status: 'shipped',
+          vendorOrderNumber: 'W-3',
+          shippedAt: longAgo,
+        }),
+      ];
+      await tx.insert(wmsTables.printOrders).values(rows);
+
+      const ids = (await repo.trackable(10_000, tx)).map((r) => r.id);
+
+      expect(ids).toEqual(expect.arrayContaining([rows[0].id, rows[1].id]));
+      expect(ids).not.toContain(rows[2].id);
     });
   });
 });

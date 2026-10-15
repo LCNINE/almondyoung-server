@@ -421,7 +421,9 @@ describe('OrderEventsConsumer', () => {
       } as any,
       { messageId: 'msg-p', correlationId: 'c' } as any,
     );
-    expect(mocks.printCancel.cancelForOrder).toHaveBeenCalledWith('so-1', 'record', undefined, { redelivery: false });
+    expect(mocks.printCancel.cancelForOrder).toHaveBeenCalledWith('so-1', 'record', undefined, {
+      redeliveredSince: undefined,
+    });
     expect(order).toEqual(['commit', 'print']);
   });
 
@@ -447,7 +449,7 @@ describe('OrderEventsConsumer', () => {
       'so-1',
       'record',
       [{ salesOrderLineId: 'line-1', quantity: 1 }],
-      { redelivery: false },
+      { redeliveredSince: undefined },
     );
   });
 
@@ -456,6 +458,10 @@ describe('OrderEventsConsumer', () => {
     const consumer = makeConsumer(mocks);
     mocks.salesOrders.findByChannelOrderId.mockResolvedValue({ id: 'so-1' } as any);
     mocks.fakeTx.query.orderEvents.findFirst.mockResolvedValue({ eventId: 'msg-r' });
+    const firstSeen = new Date('2026-10-07T00:00:01.000Z');
+    mocks.fakeTx.select = () => ({
+      from: () => ({ where: () => ({ limit: () => Promise.resolve([{ createdAt: firstSeen }]) }) }),
+    });
     await consumer.handleOrderCancelled(
       {
         orderId: 'ord-1',
@@ -469,7 +475,9 @@ describe('OrderEventsConsumer', () => {
       { messageId: 'msg-r', correlationId: 'c' } as any,
     );
     expect(mocks.salesOrders.cancel).not.toHaveBeenCalled();
-    expect(mocks.printCancel.cancelForOrder).toHaveBeenCalledWith('so-1', 'record', undefined, { redelivery: true });
+    expect(mocks.printCancel.cancelForOrder).toHaveBeenCalledWith('so-1', 'record', undefined, {
+      redeliveredSince: firstSeen,
+    });
   });
 
   it('해석된 줄이 없는 OrderCancelled 는 인쇄 줄도 건드리지 않는다', async () => {

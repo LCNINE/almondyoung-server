@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
-import { and, asc, eq, inArray, isNotNull, isNull, lt, lte, not, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, lte, not, or, sql, type SQL } from 'drizzle-orm';
 import { wmsSchema, wmsTables, type DbTx } from '../../inventory/schema/inventory.schema';
 import { type PrintOrderRow, type PrintOrderStatus } from '../schema/print-order.schema';
 
@@ -11,6 +11,8 @@ export const LATE_ORDNUM_ERROR_PREFIX = 'order placed after cancel';
 // 와우프레스에 우리가 모르는 주문이 살아 있을 수 있다는 기록. 덮지 않고, 재전송·취소 마무리를 막는다
 const PRESERVED_ERROR_PREFIXES = [DUPLICATE_ORDER_ERROR_PREFIX, UNSAVED_ORDNUM_ERROR_PREFIX, LATE_ORDNUM_ERROR_PREFIX];
 const TRACKED_STATUSES: PrintOrderStatus[] = ['submitted', 'shipped'];
+// 택배는 출고완료(80)에서 끝나 shipped 에 머문다. 송장이 잡힌 뒤 이 기간만 배송완료(85)를 더 본다
+export const SHIPPED_TRACKING_WINDOW_MS = 14 * 24 * 60 * 60_000;
 const CANCEL_FLOW_STATUSES: PrintOrderStatus[] = ['cancelling', 'cancelled', 'cancel_refused'];
 
 export function lateOrdnumError(ordnum: string): string {
@@ -113,12 +115,19 @@ export class PrintOrderRepository {
 
   trackable(limit: number, tx?: DbTx): Promise<PrintOrderRow[]> {
     const t = wmsTables.printOrders;
+    const shippedSince = new Date(Date.now() - SHIPPED_TRACKING_WINDOW_MS);
     return this.dbService.run(
       (trx) =>
         trx
           .select()
           .from(t)
-          .where(and(inArray(t.status, TRACKED_STATUSES), isNotNull(t.vendorOrderNumber)))
+          .where(
+            and(
+              inArray(t.status, TRACKED_STATUSES),
+              isNotNull(t.vendorOrderNumber),
+              or(eq(t.status, 'submitted'), isNull(t.shippedAt), gte(t.shippedAt, shippedSince)),
+            ),
+          )
           .orderBy(asc(t.updatedAt))
           .limit(limit),
       tx,

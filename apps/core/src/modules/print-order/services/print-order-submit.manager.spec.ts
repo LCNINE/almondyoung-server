@@ -570,6 +570,16 @@ describe('PrintOrderSubmitManager', () => {
     expect(repo.get('po-1').fileDeliveredAt).toBeInstanceOf(Date);
   });
 
+  it('finishes a row whose file was already delivered without uploading it again', async () => {
+    const { repo, wowpress, manager } = setup(
+      CONFIRMED_VARIANT,
+      makeRow({ orderAttemptedAt: ATTEMPTED, vendorOrderNumber: 'W-9', fileDeliveredAt: ATTEMPTED }),
+    );
+    await manager.submit(repo.claim('po-1'));
+    expect(wowpress.uploadFileUrl).not.toHaveBeenCalled();
+    expect(repo.get('po-1').status).toBe('submitted');
+  });
+
   it('saves the listed box number when a sent order is found via ordkey', async () => {
     const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT, makeRow({ orderAttemptedAt: ATTEMPTED }));
     wowpress.findByOrdkey.mockResolvedValueOnce({ ordnum: 'W-LOST', dboxnum: 'BOX-L' });

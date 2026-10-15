@@ -760,10 +760,11 @@ describe('PrintOrderCancellationManager', () => {
       },
     );
 
-    it('a redelivered OrderCancelled does not reopen a row the operator resolved with proceed', async () => {
+    it('a redelivered OrderCancelled does not reopen a row the operator resolved for that event', async () => {
+      const seen = new Date(Date.now() - 60_000);
       const r = row({ ...SUBMITTED, status: 'submitted', cancelResolvedAt: new Date(), cancelResolvedBy: 'op-1' });
       const { manager, store, wowpress } = setup(r);
-      await expect(manager.cancelForOrder('so-1', 'record', undefined, { redelivery: true })).resolves.toEqual(
+      await expect(manager.cancelForOrder('so-1', 'record', undefined, { redeliveredSince: seen })).resolves.toEqual(
         NOTHING_CANCELLED,
       );
       expect(wowpress.cancel).not.toHaveBeenCalled();
@@ -774,9 +775,17 @@ describe('PrintOrderCancellationManager', () => {
     it('a new (not redelivered) record cancel still tries to cancel a row the operator resolved with proceed', async () => {
       const r = row({ ...SUBMITTED, status: 'submitted', cancelResolvedAt: new Date(), cancelResolvedBy: 'op-1' });
       const { manager, store, wowpress } = setup(r);
-      await manager.cancelForOrder('so-1', 'record', undefined, { redelivery: false });
+      await manager.cancelForOrder('so-1', 'record');
       expect(wowpress.cancel).toHaveBeenCalledTimes(1);
       expect(store.get(r.id)).toMatchObject({ status: 'cancelled', cancelResolvedAt: null, cancelResolvedBy: null });
+    });
+
+    it('a redelivered later cancel still tries to cancel when the operator resolved an earlier one', async () => {
+      const resolvedAt = new Date(Date.now() - 60_000);
+      const r = row({ ...SUBMITTED, status: 'submitted', cancelResolvedAt: resolvedAt, cancelResolvedBy: 'op-1' });
+      const { manager, wowpress } = setup(r);
+      await manager.cancelForOrder('so-1', 'record', undefined, { redeliveredSince: new Date() });
+      expect(wowpress.cancel).toHaveBeenCalledTimes(1);
     });
 
     it('a gate (new admin cancel) still tries to cancel a row the operator resolved with proceed', async () => {
