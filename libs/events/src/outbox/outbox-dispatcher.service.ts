@@ -162,6 +162,8 @@ export class OutboxDispatcher {
             this.pauseCondition(),
             // 파티션 순서 보장도 같은 이유로 선택 단계에서 건다 (Task 6-C-3).
             this.partitionOrderCondition(),
+            // 같은 주문의 순서 (#1016 7번). 선택 단계에서 거는 이유는 위 두 조건과 같다.
+            this.aggregateSequenceCondition(),
           ),
         )
         .orderBy(outbox_events.createdAt)
@@ -229,6 +231,30 @@ export class OutboxDispatcher {
       from ${outbox_events} previous
       where previous.partition_key = ${outbox_events.partitionKey}
         and previous.status in ('PENDING', 'PROCESSING')
+        and (
+          previous.created_at < ${outbox_events.createdAt}
+          or (previous.created_at = ${outbox_events.createdAt} and previous.id < ${outbox_events.id})
+        )
+    )`;
+  }
+
+  /**
+   * 같은 `(topic, aggregate_id)` 의 **더 이른** 미발행·굳은 행이 있으면 후보에서 뺀다 (#1016 7번, 스펙 §8.2).
+   *
+   * 키가 `partition_key` 가 아니라 `aggregate_id` 인 이유: channel-adapter 는 주문 이벤트의 파티션 키가 채널
+   * 이름이라 그 키로 막으면 채널 전체가 멈춘다. 주문 하나를 가리키는 것은 `aggregate_id` 다.
+   * `FAILED` 를 막는 것이 `partitionOrderCondition` 과 반대인 이유는 `OutboxConfig.sequenceByAggregate` 주석.
+   * 새 인덱스 없이 기존 `outbox_status_idx (status, created_at)` 가 받는다 — 미발행 상태만 보고 `PUBLISHED` 는 7일 뒤 지워진다.
+   */
+  private aggregateSequenceCondition(): SQL | undefined {
+    if (!this.config.sequenceByAggregate) return undefined;
+
+    return sql`not exists (
+      select 1
+      from ${outbox_events} previous
+      where previous.topic = ${outbox_events.topic}
+        and previous.aggregate_id = ${outbox_events.aggregateId}
+        and previous.status in ('PENDING', 'PROCESSING', 'FAILED')
         and (
           previous.created_at < ${outbox_events.createdAt}
           or (previous.created_at = ${outbox_events.createdAt} and previous.id < ${outbox_events.id})
