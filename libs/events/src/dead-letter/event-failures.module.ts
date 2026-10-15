@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { DeadLetterRedriver } from './dead-letter.redriver';
 import { DeadLetterRuntime } from './dead-letter.runtime';
 import { DeadLetterStore } from './dead-letter.store';
 import { FailureActionLog } from './failure-action.log';
@@ -11,7 +12,7 @@ import { FailureActionLog } from './failure-action.log';
  * 컨트롤러는 없다 — 앱마다 전역 가드가 달라 라우팅·인가는 앱이 소유한다(#705, `EventTraceApiModule` 과 같은 이유).
  */
 @Module({
-  providers: [DeadLetterStore, FailureActionLog, DeadLetterRuntime],
-  exports: [DeadLetterStore, FailureActionLog, DeadLetterRuntime],
+  providers: [DeadLetterStore, FailureActionLog, DeadLetterRuntime, DeadLetterRedriver],
+  exports: [DeadLetterStore, FailureActionLog, DeadLetterRuntime, DeadLetterRedriver],
 })
 export class EventFailuresModule {}
