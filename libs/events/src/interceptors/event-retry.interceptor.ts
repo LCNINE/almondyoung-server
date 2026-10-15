@@ -142,10 +142,19 @@ export class EventRetryInterceptor implements NestInterceptor {
     // ── 실패 테이블 모드 (#1016 8번, 스펙 §6) ──
     // `EventTypeGuard` 는 클래스 레벨이라 이 전역 인터셉터보다 **안쪽**에서 돈다. 즉 여기는 같은 토픽의 모든 핸들러에
     // 대해 돈다. 이벤트 종류를 직접 비교하지 않으면 남의 이벤트를 이 핸들러 이름으로 보류하는 가짜 행이 생긴다(스펙 §6.1).
+    //
+    // 종류가 다르면 `next.handle()` 로도 넘기지 않고 **아무것도 하지 않는다.** 안쪽 체인에는 전역
+    // `SchemaValidationInterceptor` 가 있고 그건 `EventTypeGuard` 보다 바깥이라, 넘기면 남의 이벤트를 검증하다
+    // 던진 `SchemaValidationError` 가 이 재시도망 밖으로 샌다. Nest 는 한 패턴의 핸들러들을 forkJoin 하므로 그 한
+    // 핸들러 때문에 메시지 전체가 에러 → 커밋되지 않음 → 영영 다시 온다. 스키마 위반은 종류가 맞는 핸들러가 자기
+    // 이름으로 기록한다.
+    //
+    // envelope 를 읽지 못한 메시지는 «종류가 다르다»가 아니라 «모른다»다 — 아래 일반 경로로 보낸다. 순서 키가 null
+    // 이라 보류되지 않고, 안쪽에서 터진 에러가 최종 실패로 원본 그대로(`{ raw }`) 기록된다.
     const envelope = tryParseEnvelope(kafkaContext.getMessage().value);
     const expectedEventType = this.reflector.get<string | undefined>(EVENT_TYPE_FILTER, handler);
-    if (expectedEventType && envelope?.messageType !== expectedEventType) {
-      return next.handle(); // 안쪽 EventTypeGuard 가 조용히 거른다
+    if (expectedEventType && envelope && envelope.messageType !== expectedEventType) {
+      return of(undefined);
     }
 
     const handlerId = handlerIdOf(context.getClass(), handler);

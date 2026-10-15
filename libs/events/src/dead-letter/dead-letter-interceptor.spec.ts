@@ -19,7 +19,7 @@ const TOPIC = CART_STREAM.topic.topic;
 
 /** 메모리 recorder — SQL 은 Task 4 통합 스펙이 본다. 여기선 «인터셉터가 언제 무엇을 부르나»만 본다 */
 class MemoryRecorder implements DeadLetterRecorder {
-  rows: Array<DeadLetterMessage & { id: number; status: string; error?: string }> = [];
+  rows: Array<DeadLetterMessage & { id: number; status: string; error?: string; errorName?: string }> = [];
   private nextId = 1;
   holdIfBlocked(m: DeadLetterMessage) {
     const blocked = this.rows.some(
@@ -31,7 +31,7 @@ class MemoryRecorder implements DeadLetterRecorder {
     return Promise.resolve(blocked);
   }
   recordFailure(m: DeadLetterMessage, e: Error) {
-    this.rows.push({ ...m, id: this.nextId++, status: 'failed', error: e.message });
+    this.rows.push({ ...m, id: this.nextId++, status: 'failed', error: e.message, errorName: e.name });
     return Promise.resolve();
   }
   markRedriven(id: number) {
@@ -148,6 +148,32 @@ describe('EventRetryInterceptor — dead letter 모드 (#1016 8번)', () => {
     // onUpdated 는 CartCreated 를 받지 않고, onCreated·onCreatedAudit 는 CartUpdated 를 받지 않는다
     const heldHandlers = recorder.rows.filter((r) => r.status === 'held').map((r) => r.handler);
     expect(heldHandlers).toEqual(['CartConsumer.onUpdated']);
+  });
+
+  it('스키마 위반 메시지는 받는 핸들러마다 failed 로 적히고 커밋된다 — 이벤트 종류가 다른 핸들러가 파티션을 막지 않는다', async () => {
+    // 발행 경로는 validateOnPublish 로 막히므로, 정상 envelope 를 하나 얻어 payload 만 깨뜨려 «다른 서비스가 보낸» 것처럼 넣는다
+    await publisher.publishEvent({ eventType: 'CartCreated', aggregateId: 'cart-0', payload: cart('cart-0') });
+    const valid = broker.envelopesOn<{ messageId: string; source: { aggregateId: string }; payload: unknown }>(
+      TOPIC,
+    )[0];
+    calls.length = 0;
+
+    await broker.inject(
+      TOPIC,
+      { ...valid, messageId: 'invalid-1', source: { ...valid.source, aggregateId: 'cart-9' }, payload: { id: 123 } },
+      { key: 'cart-9' },
+    );
+
+    // 이 토픽의 핸들러는 셋이다. CartCreated 를 받는 둘(onCreated·onCreatedAudit)은 각자 안쪽 스키마 검증에서
+    // SchemaValidationError(재시도 불가)를 맞고 자기 이름으로 failed 행을 남긴다 — 같은 메시지라도 핸들러별로 결과가
+    // 따로인 것이 행의 키(handler)다. onUpdated 는 이벤트 종류가 달라 아무것도 하지 않는다 — 예전엔 여기서
+    // next.handle() 로 넘겨 바깥 스키마 검증 에러가 재시도망 밖으로 새어 메시지 전체가 영영 커밋되지 않았다.
+    expect(calls).toEqual([]);
+    expect(broker.deliveryFailures).toHaveLength(0);
+    expect(recorder.rows.map((r) => [r.handler, r.status, r.errorName, r.sequenceKey]).sort()).toEqual([
+      ['CartAuditConsumer.onCreatedAudit', 'failed', 'SchemaValidationError', 'cart-9'],
+      ['CartConsumer.onCreated', 'failed', 'SchemaValidationError', 'cart-9'],
+    ]);
   });
 
   it('기록이 실패하면 에러가 파이프라인을 탈출한다 — 커밋되지 않아 다시 온다', async () => {
