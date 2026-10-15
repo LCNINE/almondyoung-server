@@ -10,6 +10,7 @@ import { useIntersection } from "@/hooks/use-intersection"
 import { ProductDescriptionMarkdown } from "./product-description-markdown"
 import { shouldShowFloatingCollapse } from "./floating-collapse"
 import { optimizeDescriptionHtmlImages } from "./description-html-images"
+import { formatProductInfoText } from "./format-product-info-text"
 
 type ProductInfo = {
   productNumber?: string
@@ -46,7 +47,8 @@ export function ProductDetailInfo({
   const t = useTranslations("productDetail.info")
   const [isExpanded, setIsExpanded] = useState(false)
   const optimizedDescriptionHtml = useMemo(
-    () => (descriptionHtml ? optimizeDescriptionHtmlImages(descriptionHtml) : ""),
+    () =>
+      descriptionHtml ? optimizeDescriptionHtmlImages(descriptionHtml) : "",
     [descriptionHtml]
   )
 
@@ -81,36 +83,42 @@ export function ProductDetailInfo({
   ]
 
   return (
-    <article ref={sectionRef} className="scroll-mt-20 bg-white px-0 py-6 md:px-6">
-      <header>
-        <h3 className="mb-4 text-lg font-bold">{t("title")}</h3>
-      </header>
+    <article
+      ref={sectionRef}
+      className="scroll-mt-20 bg-white px-0 py-6 md:px-6"
+    >
+      <div className="mx-auto max-w-[500px]">
+        <header>
+          <h3 className="mb-6 text-center text-2xl font-bold">{t("title")}</h3>
+        </header>
 
-      {/* 상품 정보 테이블 */}
-      <dl className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2">
-        {infoFields.map(({ key, label }) => {
-          const value = productInfo[key] || ""
-          const isFullWidth = key === "material" || key === "usage"
+        <table className="w-full table-fixed border-collapse text-sm">
+          <caption className="sr-only">{t("title")}</caption>
+          <colgroup>
+            <col className="w-[30%]" />
+            <col className="w-[70%]" />
+          </colgroup>
+          <tbody>
+            {infoFields.map(({ key, label }) => {
+              const value = formatProductInfoText(productInfo[key] || "")
 
-          return (
-            <div
-              key={key}
-              className={`border-b pb-2 ${isFullWidth ? "md:col-span-2" : ""}`}
-            >
-              <div className="flex">
-                <dt
-                  className={`text-gray-500 ${isFullWidth ? "mb-1 w-32" : "w-32"}`}
-                >
-                  {label}
-                </dt>
-                <dd className={`text-gray-900 ${isFullWidth ? "" : "flex-1"}`}>
-                  {value}
-                </dd>
-              </div>
-            </div>
-          )
-        })}
-      </dl>
+              return (
+                <tr key={key}>
+                  <th
+                    scope="row"
+                    className="border border-[#ddd] bg-[#ebebeb] px-2 py-2 text-left align-middle font-semibold text-black"
+                  >
+                    {label}
+                  </th>
+                  <td className="border border-[#ddd] px-2 py-2 text-left align-middle leading-relaxed [overflow-wrap:anywhere] break-keep whitespace-pre-line text-gray-900">
+                    {value}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
 
       {/* 상품 상세 정보 (접힘/펼침) */}
       <div className="relative mt-8">
@@ -145,15 +153,16 @@ export function ProductDetailInfo({
                 <figure key={idx} className="w-full overflow-hidden rounded-lg">
                   <Image
                     src={image}
-                    alt={t("detailImageAlt", { name: productName, index: idx + 1 })}
+                    alt={t("detailImageAlt", {
+                      name: productName,
+                      index: idx + 1,
+                    })}
                     className="h-auto w-full object-contain"
                     loading="lazy"
                     width={350}
                     height={350}
                     sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                    onError={(e) =>
-                      console.error(t("imageLoadFail"), image, e)
-                    }
+                    onError={(e) => console.error(t("imageLoadFail"), image, e)}
                   />
                 </figure>
               ))}
@@ -198,7 +207,6 @@ export function ProductDetailInfo({
           </div>
         </div>
       )}
-
     </article>
   )
 }
