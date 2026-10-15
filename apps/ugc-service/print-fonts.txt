@@ -1,0 +1,27 @@
+# 아몬드템플릿 인쇄 변환(rsvg-convert)용 글꼴. 스토어프론트 lib/fonts.ts 의 웹폰트와 같아야
+# 고객이 화면에서 고른 글꼴이 인쇄 파일에도 그대로 나온다. 웹에서 받는 굵기만 넣는다.
+# 경로는 github.com/google/fonts 의 ofl/ 아래. 같은 커밋에 고정해 빌드마다 같은 파일을 받는다.
+commit b7c8331cf620346575487ef8db0e2c729f014675
+nanumgothic/NanumGothic-Regular.ttf
+nanumgothic/NanumGothic-Bold.ttf
+nanummyeongjo/NanumMyeongjo-Regular.ttf
+nanummyeongjo/NanumMyeongjo-Bold.ttf
+gothica1/GothicA1-Regular.ttf
+gothica1/GothicA1-Bold.ttf
+ibmplexsanskr/IBMPlexSansKR-Regular.ttf
+ibmplexsanskr/IBMPlexSansKR-Bold.ttf
+gowunbatang/GowunBatang-Regular.ttf
+gowunbatang/GowunBatang-Bold.ttf
+gowundodum/GowunDodum-Regular.ttf
+blackhansans/BlackHanSans-Regular.ttf
+dohyeon/DoHyeon-Regular.ttf
+jua/Jua-Regular.ttf
+songmyung/SongMyung-Regular.ttf
+dongle/Dongle-Regular.ttf
+dongle/Dongle-Bold.ttf
+sunflower/Sunflower-Light.ttf
+sunflower/Sunflower-Bold.ttf
+nanumpenscript/NanumPenScript-Regular.ttf
+nanumbrushscript/NanumBrushScript-Regular.ttf
+gamjaflower/GamjaFlower-Regular.ttf
+himelody/HiMelody-Regular.ttf

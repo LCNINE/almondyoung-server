@@ -28,9 +28,21 @@ COPY apps/ugc-service/ ./apps/ugc-service/
 
 RUN npm run build:ugc-service
 
+# === 인쇄용 글꼴 (apps/ugc-service/print-fonts.txt) ===
+FROM --platform=$BUILDPLATFORM node:22-alpine AS print-fonts
+COPY apps/ugc-service/print-fonts.txt /tmp/print-fonts.txt
+RUN set -eu; mkdir -p /fonts; \
+  sha=$(sed -n 's/^commit //p' /tmp/print-fonts.txt); \
+  grep -v -e '^#' -e '^commit ' -e '^$' /tmp/print-fonts.txt | while read -r path; do \
+    wget -q -O "/fonts/${path##*/}" "https://raw.githubusercontent.com/google/fonts/$sha/ofl/$path"; \
+  done
+
 # === 프로덕션 단계 ===
 FROM base AS runner
 RUN apk add --no-cache ghostscript rsvg-convert fontconfig font-noto-cjk
+COPY --from=print-fonts /fonts /usr/share/fonts/almond
+COPY apps/ugc-service/print-fonts.conf /etc/fonts/conf.d/60-almond-print.conf
+RUN fc-cache -f
 # 런타임 이미지에서는 이미 deps 레이어에서 설치한 node_modules를 재사용하여 중복 설치를 피함
 COPY --from=deps-prod /app/node_modules ./node_modules
 COPY package*.json ./
