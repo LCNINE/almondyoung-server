@@ -3,6 +3,7 @@ import {
   OAuthClientAlreadyExistsException,
   OAuthClientNotFoundException,
 } from './exceptions/oauth-clients.exceptions';
+import { PublicClientOriginsCache } from '../../oauth/cors/public-client-origins.cache';
 import { OAuthClientsManager } from './oauth-clients.manager';
 import { OAuthClientsReader } from './oauth-clients.reader';
 import { OAuthClientRow, OAuthClientsRepository } from './oauth-clients.repository';
@@ -28,6 +29,7 @@ function makeRow(overrides: Partial<OAuthClientRow> = {}): OAuthClientRow {
 describe('OAuthClientsManager', () => {
   let repo: jest.Mocked<OAuthClientsRepository>;
   let reader: OAuthClientsReader;
+  let publicClientOrigins: { invalidate: jest.Mock };
   let manager: OAuthClientsManager;
 
   beforeEach(() => {
@@ -40,7 +42,8 @@ describe('OAuthClientsManager', () => {
       clearPreviousSecret: jest.fn(),
     } as unknown as jest.Mocked<OAuthClientsRepository>;
     reader = new OAuthClientsReader(repo);
-    manager = new OAuthClientsManager(repo, reader);
+    publicClientOrigins = { invalidate: jest.fn() };
+    manager = new OAuthClientsManager(repo, reader, publicClientOrigins as unknown as PublicClientOriginsCache);
   });
 
   describe('createClient', () => {
@@ -130,6 +133,8 @@ describe('OAuthClientsManager', () => {
       const result = await manager.deactivateClient('daview');
       expect(result.isActive).toBe(false);
       expect(result.deactivatedAt).toBeInstanceOf(Date);
+      // 비활성 공개 클라이언트의 origin 이 CORS 캐시에 TTL 동안 남지 않게 한다.
+      expect(publicClientOrigins.invalidate).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -140,6 +145,7 @@ describe('OAuthClientsManager', () => {
       const result = await manager.updateClient('daview', { allowedScopes: [] });
       expect(repo.update).toHaveBeenCalledWith('daview', expect.objectContaining({ allowedScopes: null }));
       expect(result.allowedScopes).toBeNull();
+      expect(publicClientOrigins.invalidate).toHaveBeenCalledTimes(1);
     });
   });
 });

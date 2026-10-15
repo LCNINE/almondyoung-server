@@ -7,6 +7,7 @@ import {
   OAuthClientWithSecretResponseDto,
   UpdateOAuthClientDto,
 } from './dto/oauth-clients.dto';
+import { PublicClientOriginsCache } from '../../oauth/cors/public-client-origins.cache';
 import { OAuthClientAlreadyExistsException } from './exceptions/oauth-clients.exceptions';
 import { OAuthClientsReader, toResponseDto } from './oauth-clients.reader';
 import { OAuthClientsRepository } from './oauth-clients.repository';
@@ -29,6 +30,7 @@ export class OAuthClientsManager {
   constructor(
     private readonly repo: OAuthClientsRepository,
     private readonly reader: OAuthClientsReader,
+    private readonly publicClientOrigins: PublicClientOriginsCache,
   ) {}
 
   async createClient(dto: CreateOAuthClientDto): Promise<OAuthClientWithSecretResponseDto> {
@@ -49,6 +51,7 @@ export class OAuthClientsManager {
       postLogoutRedirectUris: dto.postLogoutRedirectUris ?? null,
       allowedScopes: dto.allowedScopes ?? null,
     });
+    this.publicClientOrigins.invalidate();
     return { ...toResponseDto(row), clientSecret };
   }
 
@@ -67,6 +70,7 @@ export class OAuthClientsManager {
       patch.deactivatedAt = dto.isActive ? null : new Date();
     }
     const updated = await this.repo.update(clientId, patch);
+    this.publicClientOrigins.invalidate();
     return toResponseDto(updated);
   }
 
@@ -90,6 +94,7 @@ export class OAuthClientsManager {
   async deactivateClient(clientId: string): Promise<OAuthClientResponseDto> {
     await this.reader.getRowOrThrow(clientId);
     const updated = await this.repo.update(clientId, { isActive: false, deactivatedAt: new Date() });
+    this.publicClientOrigins.invalidate();
     return toResponseDto(updated);
   }
 }

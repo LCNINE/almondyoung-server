@@ -18,6 +18,7 @@ import { userServiceSchema as baseUserServiceSchema } from '../database/drizzle/
 import { AdminModule } from './api/admin/admin.module';
 import { AuthModule } from './api/auth/auth.module';
 import { OAuthModule } from './api/oauth/oauth.module';
+import { OAuthCorsModule } from './api/oauth/cors/oauth-cors.module';
 import { WellKnownModule } from './api/well-known/well-known.module';
 import { BusinessLicensesModule } from './api/business-licenses/business-licenses.module';
 import { Cafe24Module } from './api/cafe24/cafe24.module';
@@ -140,6 +141,7 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
     }),
     AuthModule.register(),
     OAuthModule,
+    OAuthCorsModule,
     WellKnownModule,
     UsersModule,
     EmailVerificationModule,
