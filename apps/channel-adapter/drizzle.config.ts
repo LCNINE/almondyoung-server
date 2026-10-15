@@ -9,6 +9,7 @@ export default defineConfig({
     './apps/channel-adapter/src/schema.ts',
     'libs/events/src/outbox/outbox.schema.ts',
     'libs/events/src/tracking/tracking.schema.ts',
+    'libs/events/src/dead-letter/dead-letter.schema.ts',
     'libs/authorization/src/database/auth.schema.ts',
     'libs/cron-once/src/cron-runs.schema.ts',
   ],

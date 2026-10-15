@@ -12,6 +12,7 @@ export default defineConfig({
     './apps/core/src/modules/archive/schema/archive.schema.ts',
     './libs/events/src/outbox/outbox.schema.ts',
     './libs/events/src/tracking/tracking.schema.ts',
+    './libs/events/src/dead-letter/dead-letter.schema.ts',
     './libs/cron-once/src/cron-runs.schema.ts',
     './libs/authorization/src/database/auth.schema.ts',
   ],

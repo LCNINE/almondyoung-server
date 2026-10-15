@@ -8,6 +8,16 @@
 >
 > **계획 단계 정정 — 컨트롤러는 라이브러리에 두지 않는다.** §9 의 «라이브러리가 컨트롤러 모듈을 제공»은 #705 의 원칙과 어긋난다.
 > `EventTraceApiModule` 처럼 라이브러리는 조회·명령 서비스만 제공하고, 각 앱이 자기 인가 데코레이터와 함께 컨트롤러를 선언한다(앱마다 전역 가드가 다르다).
+>
+> **계획·구현 단계 결정.**
+> - §6.6 켜는 스위치 = 앱이 `EventFailuresModule` 을 import 한다(`startConsumer` 가 런타임을 찾아 붙인다).
+> - §6.3-3 파싱 실패 기록은 하지 않음 → 구현에서 바뀜: 파싱 불가 envelope 는 일반 경로로 기록되고, 파싱됐지만 종류가 다른 핸들러는 아무것도 하지 않는다(스키마 위반이 파티션을 막지 않게).
+> - §7.2 `startConsumer` 가 `new ServerKafka(...)` 를 직접 만들어 `{ strategy }` 로 넘긴다.
+> - §9 channel-adapter 컨트롤러에 `@UseFilters(GlobalExceptionFilter)`.
+> - §8.3 다시 보내기 중 죽은 lease 는 한도에 닿았으면 FAILED 로 되돌린다(`requeueStaleProcessingEvents`).
+> - 순서 lock 구분자는 NUL 이 아니라 U+001F(Postgres 가 NUL 거부).
+> - **순서(outbox 선택 조건·컨슈머 보류)는 앱이 고른 주문 생애 토픽에만 건다**(최종 리뷰 B) — `OutboxConfig.sequencedTopics`, `EventFailuresModule.forRoot({ sequencedTopics })`. D8 의 뜻은 «같은 주문»이었다. 모든 토픽에 걸면 «마지막 값이 이긴다» 스트림(`ProductSellableQuantityChanged`, 키=품목)이 주기마다 품목당 한 행만 나가 적체가 쌓이고, 한 번의 실패가 더 새 재고 값을 몇 시간씩 묶는다. 목록 밖 토픽의 컨슈머 실패도 `failed` 로 기록은 되고, 그 행은 키 없는 행처럼 혼자 한 순서다. 아래 §8.1·§8.2·§11 의 `sequenceByAggregate` 는 이 목록으로 읽는다.
+> - 실패 테이블이 없으면(마이그 전 배포) `startConsumer` 가 실패 테이블 모드를 켜지 않고 옛 `.dlq` 경로로 돈다(최종 리뷰 A). 순서는 여전히 `migrate → deploy`.
 
 ## 1. 배경
 

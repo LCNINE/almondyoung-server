@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return --
    테스트 픽스처가 TestConsumer.prototype.handleX 를 unbound 로 전달하는 것이 이 스펙의 핵심 설계(실핸들러 메타데이터 조회 검증)이고, jest mock 접근은 기존 spec 관례와 동일 계열. */
-import { CallHandler } from '@nestjs/common';
+import { CallHandler, SetMetadata } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host';
 import { KafkaContext, KafkaHeaders } from '@nestjs/microservices';
@@ -9,7 +9,9 @@ import { defer, lastValueFrom, Observable } from 'rxjs';
 import { SchemaValidationError } from '@packages/event-contracts/types';
 import { RetryPolicy, DisableDLQ } from '../retry/retry-policy.decorator';
 import { DLQHandler } from '../dlq/dlq-handler.service';
-import { DlqDeliveryError, EventRetryInterceptor } from './event-retry.interceptor';
+import { EVENT_TYPE_FILTER } from '../consumers/decorators';
+import { DEAD_LETTER_HEADERS, type DeadLetterMessage } from '../dead-letter/dead-letter.types';
+import { DlqDeliveryError, EventRetryInterceptor, type DeadLetterInterceptorOptions } from './event-retry.interceptor';
 
 class PermanentError extends Error {}
 class TransientError extends Error {}
@@ -111,7 +113,8 @@ describe('EventRetryInterceptor', () => {
 
   describe('클래스 레벨 @RetryPolicy (notification 재시도 가드의 기반)', () => {
     /** 세 테스트가 같은 impl 을 쓴다 — 1회 실패 후 성공. 결과 차이는 오직 정책 출처에서 온다. */
-    const failOnceThenSucceed = () => jest.fn().mockRejectedValueOnce(new TransientError('once')).mockResolvedValue('ok');
+    const failOnceThenSucceed = () =>
+      jest.fn().mockRejectedValueOnce(new TransientError('once')).mockResolvedValue('ok');
 
     it('대조군: 정책이 없으면 기본값으로 재시도한다 (호출 2회, DLQ 0)', async () => {
       const { ctx } = makeKafkaContext();
@@ -293,5 +296,117 @@ describe('EventRetryInterceptor', () => {
     await expect(run(TestConsumer.prototype.handleRetryable, nextFrom(impl), ctx)).resolves.toBeUndefined();
     expect(impl).toHaveBeenCalledTimes(1); // 재시도 없음
     expect(dlq.sendToDLQ).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** 실패 테이블 모드 픽스처 — `@On(stream, 'TestEvent')` 와 같은 메타데이터(이벤트 종류 필터)를 단다 */
+class TypedConsumer {
+  @SetMetadata(EVENT_TYPE_FILTER, 'TestEvent')
+  @RetryPolicy({ maxRetries: 0 })
+  async handleTyped() {}
+}
+
+describe('EventRetryInterceptor — 실패 테이블 모드의 입력 방어 (#1016 7·8번 최종 리뷰 D4·D5)', () => {
+  let interceptor: EventRetryInterceptor;
+  let recorder: {
+    holdIfBlocked: jest.Mock;
+    recordFailure: jest.Mock;
+    markRedriven: jest.Mock;
+    recordRedriveFailure: jest.Mock;
+  };
+
+  beforeEach(() => {
+    recorder = {
+      holdIfBlocked: jest.fn().mockResolvedValue(false),
+      recordFailure: jest.fn().mockResolvedValue(undefined),
+      markRedriven: jest.fn().mockResolvedValue(undefined),
+      recordRedriveFailure: jest.fn().mockResolvedValue(undefined),
+    };
+    const options: DeadLetterInterceptorOptions = {
+      recorder,
+      consumerGroup: 'spec-group',
+      sequencedTopics: ['test.topic.v1'],
+    };
+    interceptor = new EventRetryInterceptor(new Reflector(), undefined, options);
+  });
+
+  async function runTyped(next: CallHandler, kafkaCtx: KafkaContext) {
+    return lastValueFrom(
+      interceptor.intercept(makeRpcContext(TypedConsumer.prototype.handleTyped, kafkaCtx, TypedConsumer), next),
+      { defaultValue: undefined },
+    );
+  }
+
+  describe('D4 — messageType 이 문자열이 아닌 envelope 는 «모른다»다: 버리지 않고 일반 경로로', () => {
+    it.each([
+      ['messageType 이 없는 객체', { messageId: 'm-1', source: { aggregateId: 'agg-1' }, payload: {} }],
+      ['messageType 이 숫자인 객체', { messageType: 7, messageId: 'm-1', source: { aggregateId: 'agg-1' } }],
+    ])('%s → 핸들러 체인으로 넘기고, 실패는 순서 키 없이 원본 그대로 기록한다', async (_label, value) => {
+      const { ctx } = makeKafkaContext({ value: Buffer.from(JSON.stringify(value)) });
+      const impl = jest.fn().mockRejectedValue(new Error('boom'));
+
+      await expect(runTyped(nextFrom(impl), ctx)).resolves.toBeUndefined();
+
+      expect(impl).toHaveBeenCalledTimes(1);
+      expect(recorder.recordFailure).toHaveBeenCalledTimes(1);
+      const [message] = recorder.recordFailure.mock.calls[0] as [DeadLetterMessage, Error];
+      expect([message.sequenceKey, message.eventType, message.messageId]).toEqual([null, null, 'test.topic.v1:3:42']);
+      expect(message.envelope).toEqual({ raw: JSON.stringify(value) });
+    });
+
+    it('Nest 가 이미 파싱해 넘긴 객체(운영 모양)도 원본 객체 그대로 남긴다', async () => {
+      const value = { messageId: 'm-1', payload: { id: 'x' } };
+      const { ctx } = makeKafkaContext({ value } as unknown as Partial<KafkaMessage>);
+      const impl = jest.fn().mockRejectedValue(new Error('boom'));
+
+      await runTyped(nextFrom(impl), ctx);
+
+      const [message] = recorder.recordFailure.mock.calls[0] as [DeadLetterMessage, Error];
+      expect(message.envelope).toEqual(value);
+    });
+
+    it('대조군: messageType 이 문자열이고 다르면 아무것도 하지 않는다', async () => {
+      const { ctx } = makeKafkaContext({
+        value: Buffer.from(JSON.stringify({ ...ENVELOPE, messageType: 'OtherEvent' })),
+      });
+      const impl = jest.fn().mockResolvedValue(undefined);
+
+      await runTyped(nextFrom(impl), ctx);
+
+      expect(impl).not.toHaveBeenCalled();
+      expect(recorder.holdIfBlocked).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('D5 — 다시 넣기 헤더의 id 가 양의 정수가 아니면 보통 메시지로 처리한다', () => {
+    const headersWith = (id: string) => ({
+      [DEAD_LETTER_HEADERS.id]: Buffer.from(id),
+      [DEAD_LETTER_HEADERS.handler]: Buffer.from('TypedConsumer.handleTyped'),
+    });
+
+    it.each(['abc', '0', '-1', '1.5', '01', '1e3', '', '99999999999999999999'])(
+      'id=%p → 보류 검사를 거치는 보통 처리, 다시 넣기 결과를 어느 행에도 적지 않는다',
+      async (id) => {
+        const { ctx } = makeKafkaContext({ headers: headersWith(id) });
+        const impl = jest.fn().mockResolvedValue('ok');
+
+        await expect(runTyped(nextFrom(impl), ctx)).resolves.toBe('ok');
+
+        expect(impl).toHaveBeenCalledTimes(1);
+        expect(recorder.holdIfBlocked).toHaveBeenCalledTimes(1);
+        expect(recorder.markRedriven).not.toHaveBeenCalled();
+        expect(recorder.recordRedriveFailure).not.toHaveBeenCalled();
+      },
+    );
+
+    it('대조군: 양의 정수면 다시 넣기로 — 보류 검사 없이 한 번 돌리고 그 행에 적는다', async () => {
+      const { ctx } = makeKafkaContext({ headers: headersWith('17') });
+      const impl = jest.fn().mockResolvedValue('ok');
+
+      await runTyped(nextFrom(impl), ctx);
+
+      expect(recorder.holdIfBlocked).not.toHaveBeenCalled();
+      expect(recorder.markRedriven).toHaveBeenCalledWith(17);
+    });
   });
 });
