@@ -19,7 +19,7 @@ describeDb('DemoCarrierRepository transitions', () => {
   });
 
   afterAll(async () => {
-    await dbService?.onModuleDestroy();
+    await dbService?.onApplicationShutdown();
   });
 
   it('keeps cancel terminal and makes concurrent registration idempotent', async () => {

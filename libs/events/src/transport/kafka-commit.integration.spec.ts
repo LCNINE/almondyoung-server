@@ -96,7 +96,7 @@ describeIfKafka('컨슈머 오프셋 커밋 (실 브로커)', () => {
     let warm = 0;
     const warmed = await waitFor(() => {
       if (received.some((id) => id.startsWith(`warm-${run}`))) return true;
-      void publish(`warm-${run}-${warm++}`);
+      publish(`warm-${run}-${warm++}`).catch(() => undefined);
       return false;
     }, 60_000);
     expect(warmed).toBe(true);

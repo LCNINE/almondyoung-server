@@ -15,7 +15,7 @@ async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(UgcServiceModule, new FastifyAdapter(), {
     bufferLogs: true,
   });
-  // SIGTERM 때 Nest close() 가 컨슈머를 커밋하고 그룹에서 빼낸다 (#1073)
+  // SIGTERM 때 Nest close() 가 컨슈머를 멈추고(마지막 오프셋 커밋) 그룹에서 빼낸다 (#1073)
   app.enableShutdownHooks();
 
   const fastify: FastifyInstance = app.getHttpAdapter().getInstance();

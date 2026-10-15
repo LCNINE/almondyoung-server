@@ -14,7 +14,7 @@ async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(AnalyticsModule, new FastifyAdapter(), {
     bufferLogs: true,
   });
-  // SIGTERM 때 Nest close() 가 컨슈머를 커밋하고 그룹에서 빼낸다 (#1073)
+  // SIGTERM 때 Nest close() 가 컨슈머를 멈추고(마지막 오프셋 커밋) 그룹에서 빼낸다 (#1073)
   app.enableShutdownHooks();
 
   // HTTP 요청 하나 = 사슬 하나 (#612). CLS 컨텍스트가 없으면 한 요청 안의 두 발행이 서로

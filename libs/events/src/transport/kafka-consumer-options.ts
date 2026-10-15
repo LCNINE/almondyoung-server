@@ -56,8 +56,9 @@ export function buildKafkaConsumerServerOptions(
     subscribe: { fromBeginning: false },
     // 커밋은 끌 수 없다. `ServerKafka.handleEvent` 가 핸들러 Observable 을 `lastValueFrom` 으로
     // 기다리므로(`server-kafka.js:225-236`) kafkajs 는 `eachMessage` 가 끝난 메시지만 resolve 하고,
-    // 배치가 끝날 때마다 그 오프셋을 커밋한다. 핸들러가 던지면 그 메시지는 resolve 되지 않아
-    // 재시작 뒤 다시 온다. 꺼져 있던 동안에는 리밸런스마다 최신으로 점프해 메시지를 잃었다.
+    // 배치가 끝날 때, 5초마다, 100건마다(`autoCommitOffsetsIfNecessary`), eachMessage 가 던질 때(그 전까지
+    // 처리한 오프셋), 멈출 때 그 오프셋을 커밋한다. 크래시 뒤 다시 오는 창은 5초, 100건,
+    // 배치의 남은 부분 중 가장 작은 쪽이다. 핸들러가 던지면 그 메시지는 resolve 되지 않아 재시작 뒤 다시 온다. 꺼져 있던 동안에는 리밸런스마다 최신으로 점프해 메시지를 잃었다.
     run: {
       autoCommit: true,
       autoCommitInterval: 5000,
