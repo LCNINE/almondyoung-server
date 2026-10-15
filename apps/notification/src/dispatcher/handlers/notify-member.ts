@@ -17,6 +17,8 @@ export async function notifyMember(
     eventKey: string;
     userId: string;
     correlationId?: string;
+    // 이벤트 재전달 때 디스패처가 두 번째를 버리게 하는 키. 이벤트가 아닌 호출(HTTP)은 비운다.
+    idempotencyKey?: string;
     payload: object;
     variables: (contact: { email: string; username: string }) => Record<string, unknown>;
     email?: string;
@@ -48,6 +50,7 @@ export async function notifyMember(
     eventKey: mapping.eventKey,
     payload: { ...input.payload, email: contact.email },
     correlationId: input.correlationId,
+    idempotencyKey: input.idempotencyKey,
     priority: mapping.priority as NotificationPriority,
     variables: input.variables(contact),
   });

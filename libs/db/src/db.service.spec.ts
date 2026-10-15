@@ -32,3 +32,32 @@ describe('DbService.run', () => {
     expect(fn).toHaveBeenCalledWith('NEW_TX');
   });
 });
+
+describe('DbService 종료', () => {
+  function makeService(end: jest.Mock) {
+    const service = Object.create(DbService.prototype) as DbService;
+    (service as unknown as { _client: { end: jest.Mock } })._client = { end };
+    return service;
+  }
+
+  // 풀은 onApplicationShutdown 에서만 닫는다. 컨슈머·HTTP 는 destroy 훅 뒤 dispose() 에서 멈추므로
+  // onModuleDestroy 에서 풀을 닫으면 아직 처리 중인 컨슈머 메시지가 "connection ended" 로 실패한다 (#1073).
+  it('onModuleDestroy 로는 풀을 닫지 않는다', async () => {
+    const end = jest.fn(async () => undefined);
+    const service = makeService(end);
+
+    const hook = (service as unknown as { onModuleDestroy?: () => Promise<void> }).onModuleDestroy;
+    await hook?.call(service);
+
+    expect(end).not.toHaveBeenCalled();
+  });
+
+  it('onApplicationShutdown 에서 풀을 닫는다', async () => {
+    const end = jest.fn(async () => undefined);
+    const service = makeService(end);
+
+    await service.onApplicationShutdown();
+
+    expect(end).toHaveBeenCalledTimes(1);
+  });
+});

@@ -62,3 +62,25 @@ describe('MembershipEventConsumer — 고지 메일 변수', () => {
     expect(v.expiresAt).toBe('2026년 9월 1일');
   });
 });
+
+describe('MembershipEventConsumer 재전달 (#1073)', () => {
+  it('같은 메시지가 다시 오면 같은 멱등 키로 보낸다 — 디스패처가 두 번째를 버린다', async () => {
+    const { consumer, dispatcher } = makeConsumer('MEMBERSHIP_EXPIRY_UPCOMING');
+    const envelope = { correlationId: 'c2', messageId: 'msg-1' } as never;
+    const payload = {
+      userId: 'u1',
+      entitlementId: 'e1',
+      userName: '정중식',
+      planName: '아몬드영 멤버십',
+      expiresAt: '2026-09-01',
+      noticeDaysBefore: 7,
+    } as never;
+
+    await consumer.onExpiryUpcoming(envelope, payload);
+    await consumer.onExpiryUpcoming(envelope, payload);
+
+    const [first, second] = dispatcher.send.mock.calls.map(([dto]) => dto.idempotencyKey);
+    expect(first).toBeTruthy();
+    expect(second).toBe(first);
+  });
+});

@@ -41,15 +41,14 @@ import { EVENT_TRANSPORT, EventTransport } from './transport/transport.port';
 import { KafkaTransport } from './transport/kafka.transport';
 import { DerivedConsumerConfig, deriveConsumerConfig, discoverEventHandlers } from './consumers/consumer-discovery';
 import { buildConsumerInterceptors, EVENTS_CONSUMER_POLICY } from './consumers/consumer-interceptors';
+import {
+  buildKafkaConsumerServerOptions,
+  KAFKA_CONSUMER_GROUP_POSTFIX,
+  KafkaConsumerTuning,
+} from './transport/kafka-consumer-options';
 import { ConsumerLagCollector, registerConsumerLagCollector } from './consumers/consumer-lag.collector';
 
-/**
- * Nest `ServerKafka` 가 `consumer.groupId` 뒤에 붙이는 접미사 (`server-kafka.js:31`, `postfixId`
- * 기본값). 브로커에 실재하는 그룹 이름은 `<groupId>-server` 다 — `startConsumer` 가 이 상수를
- * `postfixId` 로 **명시**하고 lag 폴러(#815)도 같은 상수로 그룹 이름을 만든다. Nest 의 기본값이
- * 바뀌어도 두 쪽이 갈라지지 않는다. 값은 지금 라이브 그룹 이름과 같다.
- */
-export const KAFKA_CONSUMER_GROUP_POSTFIX = '-server';
+export { KAFKA_CONSUMER_GROUP_POSTFIX };
 
 /**
  * Kafka 로 나가는 유일한 통로 (ADR-0029 §7). `KAFKA_CLIENT` 를 감싸며,
@@ -107,14 +106,8 @@ export interface EventsAppOptions {
  * **구독 목록이 없다.** 소비 집합은 `@On` 데코레이터에서 도출된다.
  * 여기 남는 것은 코드에서 도출할 수 없는 사실 — 전송 설정뿐이다.
  */
-export interface StartConsumerOptions {
-  groupId: string;
+export interface StartConsumerOptions extends KafkaConsumerTuning {
   kafka?: KafkaConfig; // 없으면 환경변수에서 생성
-
-  sessionTimeout?: number; // ms (기본: 30000)
-  heartbeatInterval?: number; // ms (기본: 3000)
-  maxPollInterval?: number; // ms (기본: 300000)
-  autoCommit?: boolean; // 기본: false
 
   /** 도출된 토픽의 DLQ 토픽까지 부트스트랩할지 (기본: true) */
   enableAutoDLQ?: boolean;
@@ -394,39 +387,11 @@ export class EventsModule {
       await bootstrapKafkaTopics({ kafka, streams: derived.streams, includeDLQ: enableAutoDLQ });
     }
 
-    // subscribe.topics 를 만들지 않는다 — Nest 의 `ServerKafka.bindEvents()` 가
-    // 등록된 `@On` 패턴으로 어차피 덮어쓴다(`server-kafka.js:92`). 만들어 두면
-    // "이 목록이 구독을 결정한다"는 틀린 모델이 다시 자란다 (ADR-0029 §2).
     const microserviceOptions:
       | { strategy: CustomTransportStrategy }
       | { transport: Transport.KAFKA; options: unknown } = options.strategy
       ? { strategy: options.strategy }
-      : {
-          transport: Transport.KAFKA,
-          options: {
-            postfixId: KAFKA_CONSUMER_GROUP_POSTFIX,
-            client: {
-              clientId: kafka.clientId,
-              brokers: kafka.brokers,
-              ssl: kafka.ssl,
-              sasl: kafka.sasl,
-              retry: kafka.retry,
-            },
-            consumer: {
-              groupId: options.groupId,
-              sessionTimeout: options.sessionTimeout || 30000,
-              heartbeatInterval: options.heartbeatInterval || 3000,
-              maxPollInterval: options.maxPollInterval || 300000,
-              allowAutoTopicCreation: false,
-            },
-            subscribe: { fromBeginning: false },
-            run: {
-              autoCommit: options.autoCommit ?? false,
-              autoCommitInterval: 5000,
-              autoCommitThreshold: 100,
-            },
-          },
-        };
+      : { transport: Transport.KAFKA, options: buildKafkaConsumerServerOptions(kafka, options) };
 
     // deferInitialization 없이 부르면 Nest 가 즉시 리스너를 바인딩해버려
     // useGlobalInterceptors 가 늦는다. 미룬 뒤 인터셉터를 얹고, 비-defer 경로가

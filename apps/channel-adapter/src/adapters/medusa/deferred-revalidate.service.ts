@@ -43,11 +43,9 @@ export class DeferredRevalidateService implements OnModuleInit, OnModuleDestroy 
       clearInterval(this.timer);
       this.timer = null;
     }
-    // 이 앱은 app.enableShutdownHooks() 를 호출하지 않는다 (main.ts) — 즉 onModuleDestroy 는
-    // app.close() 가 실제로 불릴 때만 실행된다 (지금은 테스트뿐). ECS 배포로 인한 task
-    // replacement 는 SIGTERM 을 프로세스에 보낼 뿐 app.close() 를 거치지 않으므로, 그 경로에서는
-    // 여기 도달하지 못하고 버퍼가 유실된다. 최악의 경우도 flush 주기 1회분의
-    // pim-detail-{handle} 무효화가 늦어지는 것뿐이며, 1시간 캐시 TTL 로 자연 치유된다.
+    // SIGTERM → Nest close() → onModuleDestroy → flush (app.enableShutdownHooks, #1073).
+    // flush 자체가 실패하거나 끝나기 전에 SIGKILL 이 오면 버퍼가 유실된다. 최악은
+    // pim-detail-{handle} 무효화가 1시간 캐시 TTL 까지 늦어지는 것이다.
     await this.flush();
   }
 
