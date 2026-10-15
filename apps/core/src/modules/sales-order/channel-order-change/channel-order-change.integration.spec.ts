@@ -248,6 +248,46 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
     });
   });
 
+  it('배송지 — 와우프레스로 보낸 인쇄 줄이 있으면 판매주문 주소도 그대로이고 SHIPMENT_NOT_REVISABLE 대기', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const seed = await seedOrder(tx, w, { withFo: true });
+      await tx.insert(wmsTables.printOrders).values({
+        salesOrderId: seed.salesOrderId,
+        salesOrderLineId: randomUUID(),
+        almondDesignId: randomUUID(),
+        status: 'submitted',
+        vendorOrderNumber: 'W-1',
+        orderAttemptedAt: new Date(),
+      });
+      await w.manager.handle(seed.salesOrderId, payload(seed, { shippingAddress: NEXT }), `m-${randomUUID()}`, tx);
+      const [row] = await amendmentsOf(tx, seed.salesOrderId);
+      expect(row.deltas).toEqual([
+        expect.objectContaining({
+          blockers: [{ code: 'SHIPMENT_NOT_REVISABLE', detail: 'print order already sent to WowPress' }],
+        }),
+      ]);
+      const [so] = await tx.select().from(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, seed.salesOrderId));
+      expect(so.shippingAddress).not.toEqual(NEXT);
+    });
+  });
+
+  it('배송지 — 아직 발주 전인 인쇄 줄만 있으면 반영된다(발주할 때 새 주소를 읽는다)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const seed = await seedOrder(tx, w, { withFo: true });
+      await tx.insert(wmsTables.printOrders).values({
+        salesOrderId: seed.salesOrderId,
+        salesOrderLineId: randomUUID(),
+        almondDesignId: randomUUID(),
+        status: 'pending',
+      });
+      await w.manager.handle(seed.salesOrderId, payload(seed, { shippingAddress: NEXT }), `m-${randomUUID()}`, tx);
+      const [row] = await amendmentsOf(tx, seed.salesOrderId);
+      expect(row.status).toBe('applied');
+    });
+  });
+
   it('배송지 — 박스 수정이 도메인 거절이 아닌 예외(Error)로 실패하면 대기로 삼키지 않고 그대로 던진다(스펙 §11)', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wire(tx);

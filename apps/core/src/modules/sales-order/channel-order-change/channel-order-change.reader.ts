@@ -129,6 +129,27 @@ export class ChannelOrderChangeReader {
   }
 
   /** 주문의 출고지시가 하나 이상 있고, 끝나지 않은 출고지시도 아직 떠나지 않은 박스도 없는가(전량 출고). */
+  /**
+   * 와우프레스로 이미 보냈거나 보내는 중인 인쇄 줄이 있는가 — 그 인쇄물은 주문할 때 받은 옛 주소로 간다.
+   * 발주 워커와 엇갈리지 않게 이 주문의 인쇄 행을 잠근다. 잠긴 행은 워커가 건너뛰고 다음 차례에 새 주소로 발주한다
+   */
+  async hasPrintSentToVendor(salesOrderId: string, tx: DbTx): Promise<boolean> {
+    const rows = await tx
+      .select({
+        status: wmsTables.printOrders.status,
+        orderAttemptedAt: wmsTables.printOrders.orderAttemptedAt,
+        vendorOrderNumber: wmsTables.printOrders.vendorOrderNumber,
+      })
+      .from(wmsTables.printOrders)
+      .where(eq(wmsTables.printOrders.salesOrderId, salesOrderId))
+      .for('update');
+    return rows.some(
+      (r) =>
+        r.status !== 'cancelled' &&
+        (r.status === 'submitting' || r.orderAttemptedAt !== null || r.vendorOrderNumber !== null),
+    );
+  }
+
   async isFullyShipped(salesOrderId: string, tx: DbTx): Promise<boolean> {
     const fulfillmentOrders = await tx
       .select({ status: wmsTables.fulfillmentOrders.status })

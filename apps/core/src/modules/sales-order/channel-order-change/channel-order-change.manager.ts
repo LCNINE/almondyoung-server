@@ -135,6 +135,10 @@ export class ChannelOrderChangeManager {
       if (await this.reader.hasDropShipInProgress(order.id, sp)) {
         throw new Refused({ code: 'SHIPMENT_NOT_REVISABLE', detail: 'drop_ship already handed to supplier' });
       }
+      // 와우프레스 인쇄 주문은 받은 주소로 직배송된다. 판매주문만 고치면 «반영됨» 으로 보이고 인쇄물은 옛 주소로 간다
+      if (await this.reader.hasPrintSentToVendor(order.id, sp)) {
+        throw new Refused({ code: 'SHIPMENT_NOT_REVISABLE', detail: 'print order already sent to WowPress' });
+      }
       // 전량 출고 — 소포는 이미 옛 주소로 떠났다. 판매주문만 고치면 «반영됨» 으로 보여 정정이 묻힌다.
       if (await this.reader.isFullyShipped(order.id, sp)) {
         throw new Refused({ code: 'SHIPMENT_NOT_REVISABLE', detail: 'already shipped' });

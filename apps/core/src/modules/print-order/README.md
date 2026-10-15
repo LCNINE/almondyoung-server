@@ -11,6 +11,7 @@
 - `PrintOrderTrackingWorker` (30분): 주문상세로 송장·배송 상태 반영. 고객 배송조회(`/store/orders/by-channel-order/:id/tracking`)에 한 항목으로 덧붙는다.
 - 취소: `PrintOrderCancellation` 이 판매주문 취소 앞단에서 와우프레스 취소를 먼저 시도한다. 아래 취소·환불 경로 참고.
 - 운영자 보드: admin-web `주문 > 와우프레스 발주` (`/order/print-orders`).
+- 배송지 변경: Medusa 에서 주소를 고쳐도 와우프레스로 이미 보냈거나 보내는 중인 인쇄 줄이 있으면 반영하지 않고 운영자 확인(`SHIPMENT_NOT_REVISABLE`)으로 남긴다. 와우프레스 쪽 주소는 사람이 고친다. 발주 전 줄은 발주할 때 새 주소를 읽는다.
 
 ## 상태
 
