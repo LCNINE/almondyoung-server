@@ -54,6 +54,7 @@ export { FailureActionLog } from './dead-letter/failure-action.log';
 export type { FailureActionEntry, FailureActionRow } from './dead-letter/failure-action.log';
 export { DeadLetterRedriver } from './dead-letter/dead-letter.redriver';
 export type { RedriveResult, RedriveAllResult, RedriveStop } from './dead-letter/dead-letter.redriver';
+export * from './dead-letter/dead-letter.query';
 export { EventFailuresModule } from './dead-letter/event-failures.module';
 
 // Retry & Auto DLQ
