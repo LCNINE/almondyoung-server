@@ -20,15 +20,27 @@ import type { DeadLetterMessage } from './dead-letter.types';
 
 const TOPIC = CART_STREAM.topic.topic;
 const recorded: DeadLetterMessage[] = [];
+/** `startConsumer` 의 테이블 확인 질의가 돌려줄 값. `'throws'` 면 질의 자체가 실패한다 */
+let tables: boolean | 'throws' = true;
 
 /**
  * 앱에서는 `DbModule`(전역)과 `EventsModule.forApp({ enableOutbox: true })` 가 주는 것들. 이 스펙은 배선만 보므로
- * 껍데기로 채운다. `OutboxDispatcher` 는 Task 9 의 `OutboxFailuresService` 가 요구한다 — 지금 넣어 두면 Task 9 에서 이 스펙이 깨지지 않는다.
+ * 껍데기로 채운다. `execute` 는 `startConsumer` 의 테이블 확인(`checkDeadLetterTables`)만 부른다.
  */
 @Global()
 @Module({
   providers: [
-    { provide: DbService, useValue: { db: {} } },
+    {
+      provide: DbService,
+      useValue: {
+        db: {
+          execute: () =>
+            tables === 'throws'
+              ? Promise.reject(new Error('relation does not exist'))
+              : Promise.resolve([{ present: tables }]),
+        },
+      },
+    },
     { provide: OutboxDispatcher, useValue: {} },
   ],
   exports: [DbService, OutboxDispatcher],
@@ -50,7 +62,7 @@ describe('EventFailuresModule 배선 (#1016 8번)', () => {
   let app: INestApplication;
   let broker: InMemoryBroker;
 
-  beforeEach(async () => {
+  async function boot(): Promise<void> {
     process.env.KAFKA_BOOTSTRAP_TOPICS = 'false';
     recorded.length = 0;
     broker = new InMemoryBroker();
@@ -86,6 +98,19 @@ describe('EventFailuresModule 배선 (#1016 8번)', () => {
       strategy: new InMemoryServer(broker),
     });
     await app.init();
+  }
+
+  function publishFailing() {
+    return app.get<StreamPublisher<typeof CART_STREAM.events>>(EventsModule.getPublisherToken(TOPIC)).publishEvent({
+      eventType: 'CartCreated',
+      aggregateId: 'cart-9',
+      payload: { id: 'cart-9', customerId: 'c', regionId: 'r', createdAt: new Date().toISOString() },
+    });
+  }
+
+  beforeEach(async () => {
+    tables = true;
+    await boot();
   });
 
   afterEach(async () => {
@@ -97,15 +122,36 @@ describe('EventFailuresModule 배선 (#1016 8번)', () => {
   });
 
   it('실패가 .dlq 토픽이 아니라 store 로 가고, 그룹·핸들러가 채워진다', async () => {
-    await app.get<StreamPublisher<typeof CART_STREAM.events>>(EventsModule.getPublisherToken(TOPIC)).publishEvent({
-      eventType: 'CartCreated',
-      aggregateId: 'cart-9',
-      payload: { id: 'cart-9', customerId: 'c', regionId: 'r', createdAt: new Date().toISOString() },
-    });
+    await publishFailing();
 
     expect(recorded.map((m) => [m.consumerGroup, m.handler, m.sequenceKey])).toEqual([
       ['wiring-group', 'FailingConsumer.onCreated', 'cart-9'],
     ]);
     expect(broker.messagesOn(getDLQTopicName(TOPIC))).toHaveLength(0);
+  });
+
+  // 마이그 없이 배포된 경우(#1016 7·8번 최종 리뷰 A). 켜면 보류 검사가 매 메시지 던져 모든 파티션이 멈춘다.
+  describe.each([
+    ['테이블이 없으면', false as const],
+    ['확인 질의가 실패하면', 'throws' as const],
+  ])('%s 실패 테이블 모드를 켜지 않는다 — 옛 .dlq 경로', (_label, state) => {
+    beforeEach(async () => {
+      await app.close();
+      tables = state;
+      await boot();
+    });
+
+    it('실패가 .dlq 토픽으로 가고 store 는 아무것도 받지 않는다', async () => {
+      await publishFailing();
+      expect(recorded).toEqual([]);
+      expect(broker.messagesOn(getDLQTopicName(TOPIC))).toHaveLength(1);
+      expect(broker.deliveryFailures).toHaveLength(0);
+    });
+
+    it('런타임이 붙지 않고, 그것을 쓰는 API 는 마이그를 말하며 거부한다', () => {
+      const runtime = app.get(DeadLetterRuntime);
+      expect(runtime.isAttached).toBe(false);
+      expect(() => runtime.consumerGroup).toThrow(/add-event-dead-letters/);
+    });
   });
 });

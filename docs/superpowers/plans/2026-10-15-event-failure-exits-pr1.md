@@ -3840,7 +3840,7 @@ PR 본문에 배포 절차를 적고(아래), 머지되면 #1016 본문 «## 남
 
 ```markdown
 - [ ] 7·8번 배포 전 — #1074(#1073) 가 라이브인지 확인(컨슈머 커밋이 켜져 있어야 «기록 실패 → 다시 온다»가 참). `scripts/ops/1016-7-8-predeploy-check.js` ①②③ 실행: 옛 outbox `FAILED` 목록을 저장해 두고, ② 계획이 수백 ms 를 넘으면 배포를 멈추고 부분 인덱스를 먼저 더한다
-- [ ] 7·8번 배포 — core·channel-adapter `db:migrate`(`add-event-dead-letters`) → `sst deploy`. **순서가 바뀌면 새 코드가 없는 테이블에 써서 컨슈머 실패 기록이 매번 실패하고 커밋이 멈춘다.** membership 은 라우트 삭제만이라 순서 무관. 배포 뒤 core 로그 `Consumer started` 와 `/metrics` 의 `events_dead_letters` 시리즈 확인
+- [ ] 7·8번 배포 — core·channel-adapter `db:migrate`(`add-event-dead-letters`) → `sst deploy`. **`migrate → deploy` 가 필수 순서다.** 순서가 바뀌어도 소비는 멈추지 않는다 — `startConsumer` 가 테이블을 한 번 확인하고 없으면 실패 테이블 모드를 켜지 않아 옛 `.dlq` 경로로 돌며(로그 ERROR `add-event-dead-letters`), outbox 쪽(긴 재시도·순서)은 그대로 동작한다. 그 상태로는 컨슈머 실패 출구가 없으므로 `db:migrate` 뒤 재시작해야 켜진다(최종 리뷰 A). membership 은 라우트 삭제만이라 순서 무관. 배포 뒤 core 로그 `Consumer started` 와 `/metrics` 의 `events_dead_letters` 시리즈 확인
 - [ ] 7·8번 배포 직후 — 위 ①의 옛 `FAILED` 를 화면(PR 2)이나 API(`POST /event-failures/outbox/:id/resend|discard`)로 처리. 처리 전까지 같은 주문의 새 이벤트가 그 뒤에 막힌다
 - [ ] 7·8번 알림 — Grafana `events_outbox_failed_rows > 0`, `events_dead_letters{status="failed"} > 0`
 ```

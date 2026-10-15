@@ -4,6 +4,7 @@ import { DbService } from '@app/db';
 import { inArray, sql } from 'drizzle-orm';
 import { dead_letters } from './dead-letter.schema';
 import { setDeadLetterCount } from './dead-letter.metrics';
+import { DeadLetterRuntime } from './dead-letter.runtime';
 
 type UnresolvedStatus = 'failed' | 'held';
 
@@ -20,12 +21,25 @@ export class DeadLetterMetricsCollector {
   private readonly logger = new Logger(DeadLetterMetricsCollector.name);
   /** 한 번이라도 쓴 조합. 다음 tick 에 결과에서 빠지면 0 으로 되돌린다 — 낡은 값이 남지 않게. */
   private readonly known = new Map<string, { topic: string; status: UnresolvedStatus }>();
+  private loggedDetached = false;
 
-  constructor(private readonly dbService: DbService) {}
+  constructor(
+    private readonly dbService: DbService,
+    private readonly runtime: DeadLetterRuntime,
+  ) {}
 
   // cron-overlap-safe: 겹쳐도 게이지에 같은 값을 두 번 쓸 뿐인 멱등 갱신이다(#707, OutboxMetricsCollector 와 같음).
   @Cron('*/15 * * * * *')
   async refresh(): Promise<void> {
+    // 실패 테이블 모드가 꺼져 있으면(테이블이 없어 startConsumer 가 붙이지 않았다) 15초마다 실패 로그를 쌓지 않는다.
+    // 원인은 startConsumer 가 ERROR 로 한 번 말했다.
+    if (!this.runtime.isAttached) {
+      if (!this.loggedDetached) {
+        this.loggedDetached = true;
+        this.logger.warn('Dead letter metrics skipped — 실패 테이블 모드가 꺼져 있다(컨슈머 시작 전이거나 테이블 없음)');
+      }
+      return;
+    }
     try {
       const rows = await this.dbService.db
         .select({ topic: dead_letters.topic, status: dead_letters.status, count: sql<number>`count(*)::int` })
