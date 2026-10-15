@@ -55,9 +55,9 @@ curl -s -u "3066614:$TOKEN" https://prometheus-prod-49-prod-ap-northeast-0.grafa
 
 1. **한 번도 메시지를 받지 않은 파티션의 리밸런스** — 커밋은 «처리한» 메시지에만 생긴다. 켠 뒤 아직 메시지가 한 건도 안 온 파티션은 여전히 커밋이 없으므로, 그 파티션의 첫 메시지가 하필 리밸런스 창에 오면 오늘처럼 사라진다. 트래픽이 지나가면 스스로 닫히는 잔여 구멍이다. Task 2 스펙은 같은 키(=같은 파티션)로만 검증하고, Task 4 의 배포 후 점검이 `-1` 시리즈 감소로 이 구멍이 닫혀가는 것을 본다.
 2. **중복 재처리(at-least-once)** — 커밋 주기 사이(kafkajs 는 배치가 끝날 때마다 커밋)에 SIGKILL·crash 가 나면 처리했지만 커밋 못 한 메시지가 다시 온다. 오늘은 «유실», 켠 뒤엔 «드문 중복»이다. 중복이 고객에게 보이는 notification 은 Task 0 이 먼저 막는다. 나머지 앱은 부록 감사상 안전하다.
-3. **`DlqDeliveryError` 의 새 의미론** — 켠 뒤엔 DLQ 발행까지 실패하면 kafkajs 가 같은 메시지를 계속 다시 준다(파티션 정지). `event-retry.interceptor.ts` 주석이 «의도된 의미론»이라 적은 그대로다. 그 파티션이 멈춰 있는 동안 `events_consumer_lag` 가 오른다 — #815 알림이 그걸 잡는지 Task 4 에서 확인.
-4. **`app.close()` 가 컨슈머를 먼저 멈추는지** — `enableShutdownHooks` 뒤 SIGTERM 이 Nest `close()` 를 부르면 `ServerKafka.close()` → `consumer.disconnect()` 가 진행 중 배치를 끝내고 커밋한 뒤 그룹을 떠난다. Task 2 스펙의 «재시작 뒤 이미 처리한 메시지를 다시 받지 않는다»가 이 경로(`app.close()`)를 그대로 탄다.
-5. **supervisor 의 28초 안에 종료가 끝나는지** — 재시도 대기 중인 핸들러가 있으면 `disconnect` 가 그만큼 늦는다. 28초를 넘기면 SIGKILL 로 떨어지고 그 메시지는 다시 온다(중복, 유실 아님). Task 4 배포 후 로그에서 `graceful timeout reached; forcing SIGKILL` 가 남는지 본다.
+3. **`DlqDeliveryError` 의 새 의미론** — 켠 뒤엔 DLQ 발행이 결정적으로 실패하면 kafkajs 가 크래시·재시작하고 커밋된 오프셋 때문에 같은 메시지를 다시 받는다. 정지하는 것은 한 파티션이 아니라 **그 앱의 모든 토픽 컨슈머가 루프에 빠지는 것**이다(오늘은 재시작이 최신으로 점프해 «치유»됐다). `event-retry.interceptor.ts` 주석이 «의도된 의미론»이라 적은 그대로다. 알려진 트리거는 둘이다: `source` 가 없는 envelope(`DLQHandler` 가 `source?.aggregateId` 로 방어해 해결), 브로커 한도보다 큰 메시지(**잔여 위험**, 이 PR 은 자르기·포기 회로를 넣지 않는다). 신호: `dlq_send_failures_total > 0`, 앱 로그의 kafkajs `Crash:` 줄, `events_consumer_lag` 상승(#815 알림이 잡는지 Task 6 에서 확인).
+4. **`app.close()` 가 컨슈머를 먼저 멈추는지** — Nest 종료 순서는 destroy 훅, `dispose()`(HTTP 닫기, 이어서 `ServerKafka.close()` 의 `consumer.disconnect()`), shutdown 훅이다. `disconnect()` 가 진행 중 배치를 끝내고 커밋한 뒤 그룹을 떠난다. 그래서 DB 풀은 destroy 훅이 아니라 shutdown 훅(`DbService.onApplicationShutdown`)에서만 닫는다 — 이 PR 이 `onModuleDestroy` 를 없앴다. destroy 훅에서 닫으면 컨슈머가 멈추기 전의 처리 중 메시지가 "connection ended" 로 실패해 재시도·DLQ 로 간다(notification 은 maxRetries 0 이라 고객 알림이 DLQ 로 간다). Task 2 스펙의 «재시작 뒤 이미 처리한 메시지를 다시 받지 않는다»가 이 경로(`app.close()`)를 그대로 탄다.
+5. **supervisor 의 28초 안에 종료가 끝나는지** — 재시도 대기 중인 핸들러가 있으면 `disconnect` 가 그만큼 늦는다. 특히 channel-adapter 의 `InboxWorkerService.onModuleDestroy` 는 destroy 훅 단계에서 최대 25초 드레인한 **뒤에야** dispose() 가 컨슈머를 떠나게 하므로, 28초 예산 안에서 leave/commit 이 못 일어날 수 있다(그 앱은 중복 + 약 30초 리밸런스, 오늘과 같고 유실은 없다). 이 드레인은 바꾸지 않는다. 28초를 넘기면 SIGKILL 로 떨어지고 그 메시지는 다시 온다(중복, 유실 아님). Task 6 배포 로그에서 앱별로 SIGTERM 뒤 kafkajs leave/stop 로그를 본다.
 
 ---
 
@@ -705,11 +705,12 @@ git commit -m "docs(events): ServerKafka 는 핸들러를 기다린다 — 틀�
 
 마이그레이션 없음. 라이브러리 변경이라 모든 소비 앱이 같은 배포에 실린다 — SST 한 스택에는 앱 간 배포 순서가 없고, 이 변경은 순서가 필요 없다(앱마다 독립적으로 커밋을 시작한다).
 
-- [ ] **배포 직전:** 오래된 커밋 오프셋이 여전히 없는지 한 번 더 본다. `count by (group) (events_consumer_lag >= 0)` 가 빈 결과여야 한다. **결과가 있으면 멈춘다** — 그 그룹은 켜는 순간 그 오프셋부터 재처리한다. 그 경우 그룹을 비운 상태(해당 서비스 desired 0)에서 `docker exec redpanda rpk group seek <group> --to end` 로 맞춘 뒤 진행한다(SSM 은 사람이 `!` 로 실행).
+- [ ] **배포 직전:** 오래된 커밋 오프셋이 여전히 없는지 한 번 더 본다. 정본 확인은 `docker exec redpanda rpk group list` 와 그룹별 `docker exec redpanda rpk group describe <group>` 이다(커밋 오프셋이 비어 있어야 한다). Grafana `count by (group) (events_consumer_lag >= 0)` 가 빈 결과인지는 보조 확인이다. **결과가 있으면 멈춘다** — 그 그룹은 켜는 순간 그 오프셋부터 재처리한다. 그 경우 그룹을 비운 상태(해당 서비스 desired 0)에서 `docker exec redpanda rpk group seek <group> --to end` 로 맞춘 뒤 진행한다(SSM 은 사람이 `!` 로 실행).
 - [ ] **배포 직전:** Redpanda 오프셋 보존 설정을 기록한다: `docker exec redpanda rpk cluster config get group_offset_retention_sec`. 이미지가 `redpandadata/redpanda:latest` 라 버전이 고정돼 있지 않다 — 보존이 «빈 그룹에만 적용»인지(활성 그룹 오프셋이 만료되지 않는지) 버전 문서로 확인해 PR 에 남긴다.
 - [ ] **배포 직후 (~10분):** `count by (group) (events_consumer_lag >= 0)` 에 트래픽 있는 그룹부터 나타나기 시작해야 한다. `-1` 시리즈 수(`count(events_consumer_lag == -1)`)가 시간이 지나며 줄어야 한다 — 남는 `-1` 은 켠 뒤 메시지를 한 건도 안 받은 파티션이다(Review Focus 1).
-- [ ] **배포 직후:** `max by (group) (events_consumer_lag)` 가 0 근처로 머무는지. 계속 오르는 그룹은 Review Focus 3(DLQ 발행 실패로 파티션 정지) 후보 — 그 앱 로그에서 `DlqDeliveryError`·`Crash` 를 찾는다.
-- [ ] **배포 로그:** ServicesBundleA/B 로그에서 SIGTERM 뒤 `graceful timeout reached; forcing SIGKILL` 이 **안** 남는지, `rebalancing` 이 SIGTERM 직후(30초 뒤가 아니라) 찍히는지.
+- [ ] **배포 직후:** `max by (group) (events_consumer_lag)` 가 0 근처로 머무는지. 계속 오르는 그룹은 Review Focus 3(DLQ 발행 실패로 컨슈머 전체 크래시 루프) 후보 — 그 앱 로그에서 `DlqDeliveryError`·`Crash:` 를 찾는다.
+- [ ] **배포 창의 DLQ:** 배포 창의 DLQ 건수(`dlq_messages_total` 증가분)를 보고, `dlq_send_failures_total > 0` 이거나 kafkajs `Crash:` 로그가 있으면 즉시 멈추고 조사한다.
+- [ ] **배포 로그:** 앱별로 SIGTERM 뒤 kafkajs leave/stop 로그가 남는지, 리밸런스가 SIGTERM 직후(30초 뒤가 아니라) 일어나는지 본다. 프로세스가 SIGKILL 까지 남아 있을 수 있다 — telemetry 의 SIGTERM 리스너가 기본 종료를 막기 때문인데, 컨슈머가 이미 그룹을 떠났다면 무해하다.
 - [ ] **다음 배포 때 유실 판정:** 그 배포의 SIGTERM~리밸런스 창에 발행된 send 트레이스를 Tempo 로 뽑고, 구독자 span 이 없는 건은 **stdout 로그에서 trace_id 로 처리 여부를 교차확인**한다(실측 결과 5 — span 누락은 유실이 아닐 수 있다). 0건이면 #1073 을 닫는다.
 - [ ] **닫을 때:** #1016 7·8번 계획 작성을 재개할 수 있다고 그 이슈/메모에 남긴다.
 
@@ -717,7 +718,17 @@ git commit -m "docs(events): ServerKafka 는 핸들러를 기다린다 — 틀�
 
 커밋을 켠 버전이 한 번이라도 돈 뒤 커밋을 안 하는 옛 코드로 되돌리면, 커밋 오프셋이 **롤백 시점에서 얼어붙는다.** 옛 코드는 리밸런스·재시작마다 그 얼어붙은 오프셋부터 다시 읽으므로, 롤백이 길어질수록 매 재시작이 «롤백 이후 전부»를 재처리한다(notification 은 Task 0 키로 막히지만, 그것도 롤백 대상이면 중복 발송).
 
-- 롤백 배포와 **같은 작업 창에서** 그룹 오프셋을 지운다. 그룹이 비어 있어야 하므로(해당 서비스 desired 0 또는 배포 사이) SSM 으로 사람이 실행: `docker exec redpanda rpk group delete <group>` (그룹 목록: `docker exec redpanda rpk group list`, 이름은 `<groupId>-server`). 지운 그룹은 다음 합류 때 최신부터 시작한다 — 오늘과 같은 상태.
+이 위험은 **영구적**이다: #1073 이전의 어떤 이미지로든(ECS 를 이전 task-definition revision 으로 돌리는 것 포함) 되돌리면 생긴다. Task 0 이전 이미지로 돌아가면 재시작마다 롤백 이후의 모든 알림을 다시 보낸다. 롤백보다 **roll-forward** 나 이 브랜치를 롤백 이미지에 cherry-pick 하는 쪽을 택한다.
+
+순서가 있는 절차(SSM 으로 사람이 실행):
+
+1. 모든 소비 서비스의 desired count 를 0 으로 둔다(번들은 묶인 앱이 전부 멈춘다).
+2. `docker exec redpanda rpk group describe <group>` 가 `Empty` 가 될 때까지 기다린다.
+3. 모든 `<groupId>-server` 그룹을 `docker exec redpanda rpk group delete <group>` 로 지운다(또는 `rpk group seek <group> --to end`). 그룹 목록은 `docker exec redpanda rpk group list`.
+4. 옛 이미지/task-definition 을 배포한다.
+5. desired count 를 되돌린다.
+
+순서가 중요한 이유: 1 전에 지우면 커밋이 켜진 task 가 오프셋을 다시 쓴다. 4 뒤에 지우면 그룹이 비어 있지 않아 지워지지 않는다. 지운 그룹은 다음 합류 때 최신부터 시작한다 — 오늘과 같은 상태.
 - 판정: 롤백 뒤 `count(events_consumer_lag >= 0)` 가 0 으로 돌아가야 한다.
 - Task 1 이 `autoCommit` 옵션을 없앴으므로, 앞으로 «설정으로 커밋 끄기»라는 같은 함정은 코드로는 안 생긴다. 생기는 길은 이 롤백뿐이다.
 

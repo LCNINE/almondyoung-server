@@ -228,6 +228,8 @@ microservice.setIsInitHookCalled(true);
 `Server.handleEvent` 는 핸들러가 Observable 을 돌려주면 `connectable(...).connect()` 로 구독만 하고 기다리지 않으며(`server.js:105–117`), 그 connector 는 구독자 없는 `Subject` 라 에러가 들어와도 보고되지 않는다(rxjs 의 unhandled-error 경로조차 타지 않음 — 실행 확인). `handleEvent` 는 그 사이 정상 resolve 했으므로 offset 은 전진한다. **즉 지금까지 실패한 소비는 로그 한 줄 없이 사라져 왔다.** §8 이 "가장 치명적인 실수가 가장 조용하다"고 한 것의 네 번째 실례이며, 배선 스위치가 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽**이라는 근거이기도 하다.
 
 > **2026-10-15 정정 (#1073).** 위 문단은 기본 `Server.handleEvent` 를 근거로 했다. Kafka 경로의 `ServerKafka` 는 그 메서드를 덮어써 `lastValueFrom` 으로 기다린다(`server-kafka.js:225-236`) — 옛 배선에서도 escape 한 에러는 kafkajs 까지 올라갔다. 한편 표의 «삼킴 → offset commit» 은 그 시점에 거짓이었다: `startConsumer` 가 `autoCommit: false` 로 띄워 커밋이 한 번도 일어나지 않았고(라이브 전 그룹 커밋 오프셋 없음), 리밸런스마다 최신으로 점프해 메시지를 잃었다. #1073 이 커밋을 고정으로 켰다.
+>
+> **롤백 주의 (#1073).** #1073 이전 이미지로 되돌리면 커밋 오프셋이 롤백 시점에 얼어붙고, 이후 재시작마다 롤백 이후의 모든 메시지를 다시 처리한다. 반드시 `docs/superpowers/plans/2026-10-15-kafka-consumer-offset-commit-1073.md` 의 롤백 절차(전 소비 서비스 0 → 그룹 Empty 확인 → 그룹 삭제 → 옛 이미지 배포 → 복구)를 따른다.
 
 #### 검증 스위치(C)는 샘플링이 아니라 발행 경로를 닫아서 판정한다 (2026-08-09)
 
