@@ -5,12 +5,7 @@ import { inArray, sql } from 'drizzle-orm';
 import { dead_letters } from './dead-letter.schema';
 import { setDeadLetterCount } from './dead-letter.metrics';
 import { DeadLetterRuntime } from './dead-letter.runtime';
-
-type UnresolvedStatus = 'failed' | 'held';
-
-function isUnresolvedStatus(status: string): status is UnresolvedStatus {
-  return status === 'failed' || status === 'held';
-}
+import { isUnresolvedStatus, type UnresolvedDeadLetterStatus } from './dead-letter.types';
 
 /**
  * 안 푼 컨슈머 실패 건수를 15초마다 게이지에 쓴다 (#1016 8번).
@@ -20,7 +15,7 @@ function isUnresolvedStatus(status: string): status is UnresolvedStatus {
 export class DeadLetterMetricsCollector {
   private readonly logger = new Logger(DeadLetterMetricsCollector.name);
   /** 한 번이라도 쓴 조합. 다음 tick 에 결과에서 빠지면 0 으로 되돌린다 — 낡은 값이 남지 않게. */
-  private readonly known = new Map<string, { topic: string; status: UnresolvedStatus }>();
+  private readonly known = new Map<string, { topic: string; status: UnresolvedDeadLetterStatus }>();
   private loggedDetached = false;
 
   constructor(

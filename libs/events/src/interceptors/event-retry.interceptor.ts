@@ -80,12 +80,39 @@ function headerString(headers: Record<string, unknown>, name: string): string | 
   return undefined;
 }
 
-function tryParseEnvelope(value: unknown): MessageEnvelope | undefined {
+/**
+ * 알아볼 수 있는 envelope — 객체이고 `messageType` 이 문자열이다. 그 밖(파싱 불가·`null`·원시값·`messageType` 없는 객체)은
+ * «종류를 모른다»로 보고 undefined 를 준다. 그런 메시지는 종류 비교로 버리지 않고 일반 경로로 보낸다(최종 리뷰 D4).
+ */
+function recognizedEnvelope(value: unknown): MessageEnvelope | undefined {
+  let parsed: unknown;
   try {
-    return parseEnvelope(value);
+    parsed = parseEnvelope(value);
   } catch {
     return undefined;
   }
+  if (parsed === null || typeof parsed !== 'object') return undefined;
+  // 바로 아래 줄에서 `messageType` 이 문자열인지 확인한 뒤에만 envelope 로 쓴다
+  const candidate = parsed as MessageEnvelope;
+  return typeof candidate.messageType === 'string' ? candidate : undefined;
+}
+
+/** 알아볼 수 없는 메시지를 원본 그대로 남기는 모양. 객체면 그대로, Buffer 는 글자로(`String(Buffer)` 처럼 뭉개지 않게) */
+function unrecognizedEnvelope(value: unknown): unknown {
+  if (Buffer.isBuffer(value)) return { raw: value.toString('utf-8') };
+  if (value !== null && typeof value === 'object') return value;
+  return { raw: String(value) };
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+/** 다시 넣기 헤더의 행 id. 양의 정수 표기가 아니면 null — 다시 넣기로 다루지 않는다(최종 리뷰 D5) */
+function parseRedriveId(raw: string): number | null {
+  if (!/^[1-9][0-9]*$/.test(raw)) return null;
+  const id = Number(raw);
+  return Number.isSafeInteger(id) ? id : null;
 }
 
 @Injectable()
@@ -151,25 +178,38 @@ export class EventRetryInterceptor implements NestInterceptor {
     // 핸들러 때문에 메시지 전체가 에러 → 커밋되지 않음 → 영영 다시 온다. 스키마 위반은 종류가 맞는 핸들러가 자기
     // 이름으로 기록한다.
     //
-    // envelope 를 읽지 못한 메시지는 «종류가 다르다»가 아니라 «모른다»다 — 아래 일반 경로로 보낸다. 순서 키가 null
-    // 이라 보류되지 않고, 안쪽에서 터진 에러가 최종 실패로 원본 그대로(`{ raw }`) 기록된다.
-    const envelope = tryParseEnvelope(kafkaContext.getMessage().value);
+    // envelope 를 알아보지 못한 메시지(파싱 불가, `messageType` 이 문자열이 아닌 객체 등)는 «종류가 다르다»가 아니라
+    // «모른다»다 — 아래 일반 경로로 보낸다. 순서 키가 null 이라 보류되지 않고, 안쪽에서 터진 에러가 최종 실패로 원본
+    // 그대로 기록된다.
+    const rawValue: unknown = kafkaContext.getMessage().value;
+    const envelope = recognizedEnvelope(rawValue);
     const expectedEventType = this.reflector.get<string | undefined>(EVENT_TYPE_FILTER, handler);
     if (expectedEventType && envelope && envelope.messageType !== expectedEventType) {
       return of(undefined);
     }
 
     const handlerId = handlerIdOf(context.getClass(), handler);
-    const redriveId = headerString(headers, DEAD_LETTER_HEADERS.id);
-    if (redriveId !== undefined) {
+    const redriveHeader = headerString(headers, DEAD_LETTER_HEADERS.id);
+    const redriveId = redriveHeader === undefined ? null : parseRedriveId(redriveHeader);
+    if (redriveHeader !== undefined && redriveId === null) {
+      // 다시 넣기는 Kafka 를 거치지 않으므로 이 헤더는 진짜 메시지에 실려 올 일이 없다. 실려 왔다면 남이 붙인 것이다 —
+      // 다시 넣기로 다루면 엉뚱한 행을 고치거나 핸들러 이름 비교로 메시지를 버리게 되니 보통 메시지로 처리한다.
+      this.logger.warn({
+        msg: `Ignoring invalid ${DEAD_LETTER_HEADERS.id} header — processing as a normal message`,
+        header: redriveHeader.slice(0, 100),
+        topic: kafkaContext.getTopic(),
+        offset: kafkaContext.getMessage().offset,
+      });
+    }
+    if (redriveId !== null) {
       if (headerString(headers, DEAD_LETTER_HEADERS.handler) !== handlerId) {
         return of(undefined); // 같은 이벤트를 받는 다른 핸들러 — 이미 성공했으니 건드리지 않는다
       }
       const recorder = this.deadLetters.recorder;
-      return defer(() => this.executeRedrive(next, Number(redriveId), handlerId, recorder));
+      return defer(() => this.executeRedrive(next, redriveId, handlerId, recorder));
     }
 
-    const message = this.toDeadLetterMessage(kafkaContext, envelope, handlerId, this.deadLetters);
+    const message = this.toDeadLetterMessage(kafkaContext, envelope, rawValue, handlerId, this.deadLetters);
     const deadLetters = this.deadLetters;
     // 순서를 지키는 토픽만 보류한다. 그 밖의 토픽(«마지막 값이 이긴다» 스트림 등)은 실패를 기록만 한다 — 한 번의 실패가
     // 더 새 값을 붙잡지 않게(최종 리뷰 B, `EventFailuresOptions.sequencedTopics`).
@@ -183,6 +223,7 @@ export class EventRetryInterceptor implements NestInterceptor {
   private toDeadLetterMessage(
     kafkaContext: KafkaContext,
     envelope: MessageEnvelope | undefined,
+    rawValue: unknown,
     handlerId: string,
     deadLetters: DeadLetterInterceptorOptions,
   ): DeadLetterMessage {
@@ -193,11 +234,12 @@ export class EventRetryInterceptor implements NestInterceptor {
       consumerGroup: deadLetters.consumerGroup,
       handler: handlerId,
       topic,
-      sequenceKey: envelope?.source?.aggregateId || null,
+      // 타입은 계약이 말할 뿐 남이 보낸 메시지는 무엇이든 담을 수 있다 — 문자열일 때만 쓴다
+      sequenceKey: nonEmptyString(envelope?.source?.aggregateId),
       // 빈 messageId 는 유일 키를 무력화한다 — 위치로 대신한다
-      messageId: envelope?.messageId || `${topic}:${partition}:${offset}`,
+      messageId: nonEmptyString(envelope?.messageId) ?? `${topic}:${partition}:${offset}`,
       eventType: envelope?.messageType ?? null,
-      envelope: envelope ?? { raw: String(kafkaContext.getMessage().value) },
+      envelope: envelope ?? unrecognizedEnvelope(rawValue),
       kafkaPartition: partition,
       kafkaOffset: offset,
     };

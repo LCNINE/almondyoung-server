@@ -8,6 +8,12 @@
  */
 export type DeadLetterStatus = 'failed' | 'held' | 'redriven' | 'discarded';
 export const UNRESOLVED_DEAD_LETTER_STATUSES = ['failed', 'held'] as const;
+export type UnresolvedDeadLetterStatus = (typeof UNRESOLVED_DEAD_LETTER_STATUSES)[number];
+
+/** varchar 칸의 값을 좁힌다 — `as` 대신 */
+export function isUnresolvedStatus(status: string): status is UnresolvedDeadLetterStatus {
+  return (UNRESOLVED_DEAD_LETTER_STATUSES as readonly string[]).includes(status);
+}
 
 /** 다시 넣기로 들어온 메시지의 표시 (스펙 §6.4). 이 헤더가 있으면 보류 검사를 건너뛰고 한 번만 시도한다. */
 export const DEAD_LETTER_HEADERS = {

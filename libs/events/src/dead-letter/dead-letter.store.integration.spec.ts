@@ -6,12 +6,19 @@ import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { eq } from 'drizzle-orm';
 import { DeadLetterStore } from './dead-letter.store';
+import { tryLockSequence } from './sequence-lock';
 import { dead_letters } from './dead-letter.schema';
 import type { DeadLetterMessage } from './dead-letter.types';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 type Db = PostgresJsDatabase<Record<string, never>>;
+const GROUP = 'dead-letter-store-spec-group';
+/** 이 스펙의 행만 — 같은 DB 의 다른 행을 건드리거나 세지 않는다 */
+const mine = eq(dead_letters.consumerGroup, GROUP);
+
+/** 롤백용 — 트랜잭션을 되돌리려고 일부러 던진다 */
+class RollbackSentinel extends Error {}
 
 describeIfDb('DeadLetterStore (PostgreSQL 통합)', () => {
   jest.setTimeout(60_000);
@@ -27,10 +34,10 @@ describeIfDb('DeadLetterStore (PostgreSQL 통합)', () => {
   });
 
   async function inRollbackTx(run: (store: DeadLetterStore, tx: Db) => Promise<void>) {
-    const sentinel = Symbol('rollback');
+    const sentinel = new RollbackSentinel();
     try {
       await db.transaction(async (tx) => {
-        await tx.delete(dead_letters);
+        await tx.delete(dead_letters).where(mine);
         await run(new DeadLetterStore({ db: tx } as never), tx as never);
         throw sentinel;
       });
@@ -44,7 +51,7 @@ describeIfDb('DeadLetterStore (PostgreSQL 통합)', () => {
     sequenceKey: string | null = 'order-A',
     handler = 'C.onCreated',
   ): DeadLetterMessage => ({
-    consumerGroup: 'spec-group',
+    consumerGroup: GROUP,
     handler,
     topic: 'orders.events.v1',
     sequenceKey,
@@ -66,7 +73,7 @@ describeIfDb('DeadLetterStore (PostgreSQL 통합)', () => {
       await store.recordFailure(message('m1'), new Error('boom'));
       expect(await store.holdIfBlocked(message('m2'))).toBe(true);
 
-      const rows = await tx.select().from(dead_letters).orderBy(dead_letters.id);
+      const rows = await tx.select().from(dead_letters).where(mine).orderBy(dead_letters.id);
       expect(rows.map((r) => [r.messageId, r.status])).toEqual([
         ['m1', 'failed'],
         ['m2', 'held'],
@@ -87,7 +94,7 @@ describeIfDb('DeadLetterStore (PostgreSQL 통합)', () => {
     await inRollbackTx(async (store, tx) => {
       await store.recordFailure(message('m1'), new Error('boom'));
       expect(await store.holdIfBlocked(message('m1'))).toBe(true);
-      expect(await tx.select().from(dead_letters)).toHaveLength(1);
+      expect(await tx.select().from(dead_letters).where(mine)).toHaveLength(1);
     });
   });
 
@@ -95,7 +102,7 @@ describeIfDb('DeadLetterStore (PostgreSQL 통합)', () => {
     await inRollbackTx(async (store, tx) => {
       await store.recordFailure(message('m1'), new Error('first'));
       await store.recordFailure(message('m1'), new Error('second'));
-      const rows = await tx.select().from(dead_letters);
+      const rows = await tx.select().from(dead_letters).where(mine);
       expect(rows).toHaveLength(1);
       expect(rows[0].errorMessage).toBe('second');
     });
@@ -112,7 +119,7 @@ describeIfDb('DeadLetterStore (PostgreSQL 통합)', () => {
     await inRollbackTx(async (store, tx) => {
       await store.recordFailure(message('m1'), new Error('boom'));
       await store.holdIfBlocked(message('m2'));
-      const [first, second] = await tx.select().from(dead_letters).orderBy(dead_letters.id);
+      const [first, second] = await tx.select().from(dead_letters).where(mine).orderBy(dead_letters.id);
 
       await store.markRedriven(first.id);
       await store.recordRedriveFailure(second.id, new Error('again'));
@@ -122,5 +129,65 @@ describeIfDb('DeadLetterStore (PostgreSQL 통합)', () => {
       expect([a.status, a.redriveCount, a.resolvedAt !== null]).toEqual(['redriven', 1, true]);
       expect([b.status, b.redriveCount, b.errorMessage]).toEqual(['failed', 1, 'again']);
     });
+  });
+
+  it('나쁜 메시지도 기록이 실패하지 않는다 — NUL 을 지우고 칸 길이로 자른다(최종 리뷰 D6)', async () => {
+    await inRollbackTx(async (store, tx) => {
+      const nul = '\u0000';
+      await store.recordFailure(
+        {
+          ...message(`m${nul}1`, `order${nul}-A`),
+          handler: `H${'x'.repeat(300)}`,
+          eventType: `E${nul}${'y'.repeat(300)}`,
+          envelope: { [`k${nul}`]: `v${nul}`, nested: [`a${nul}b`, 1, null], literal: '\\u0000' },
+        },
+        Object.assign(new Error(`boom${nul}`), { name: `Name${nul}` }),
+      );
+      const [row] = await tx.select().from(dead_letters).where(mine);
+      expect([row.messageId, row.sequenceKey, row.errorName, row.errorMessage]).toEqual([
+        'm1',
+        'order-A',
+        'Name',
+        'boom',
+      ]);
+      expect([row.handler.length, row.eventType?.length]).toEqual([200, 100]);
+      // 백슬래시+글자 «\u0000»(6자)은 NUL 이 아니다 — 그대로 남는다
+      expect(row.envelope).toEqual({ k: 'v', nested: ['ab', 1, null], literal: '\\u0000' });
+    });
+  });
+
+  it('순서 lock 을 다른 연결이 오래 쥐고 있으면 기다리다 끊고 던진다 — 실시간 소비가 무한정 매달리지 않는다(D7)', async () => {
+    // 다시 넣기처럼 다른 연결이 같은 순서 lock 을 쥐고 놓지 않는다 — 테스트가 끝낼 때까지
+    const holderClient = postgres(DATABASE_URL as string, { max: 1 });
+    const otherClient = postgres(DATABASE_URL as string, { max: 1 });
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let signalHeld!: () => void;
+    const lockHeld = new Promise<void>((resolve) => (signalHeld = resolve));
+    const holding = drizzle(holderClient).transaction(async (tx) => {
+      expect(
+        await tryLockSequence(tx, { consumerGroup: GROUP, topic: 'orders.events.v1', sequenceKey: 'order-A' }),
+      ).toBe(true);
+      signalHeld();
+      await released;
+    });
+    try {
+      await lockHeld;
+      const store = new DeadLetterStore({ db: drizzle(otherClient) } as never);
+      const started = Date.now();
+      const failure: unknown = await store.holdIfBlocked(message('m1')).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(Date.now() - started).toBeLessThan(11_500);
+      // drizzle 이 감싼 에러의 원인이 Postgres 의 lock_not_available(55P03, «canceling statement due to lock timeout»)이다
+      expect(failure).toBeInstanceOf(Error);
+      expect(failure instanceof Error ? failure.cause : undefined).toMatchObject({ code: '55P03' });
+    } finally {
+      release();
+      await holding;
+      await holderClient.end();
+      await otherClient.end();
+    }
   });
 });
