@@ -33,6 +33,7 @@ import {
   PrintOrderSubmitManager,
   unsavedOrdnumError,
 } from './print-order-submit.manager';
+import { orderMayBeInFlight } from './print-order-board.rules';
 
 const CONFIRMED_VARIANT = '0190f1d2-0000-7000-8000-00000000a001';
 const DRAFT_VARIANT = '0190f1d2-0000-7000-8000-00000000a002';
@@ -585,6 +586,32 @@ describe('PrintOrderSubmitManager', () => {
       lastError: 'duplicate wowpress order suspected: W-1 / W-2',
     });
     expect(wowpress.order).not.toHaveBeenCalled();
+  });
+
+  it('does not upload when cancellation takes the row while the print link renders', async () => {
+    const { repo, wowpress, ugc, manager } = setup(
+      CONFIRMED_VARIANT,
+      makeRow({ orderAttemptedAt: ATTEMPTED, vendorOrderNumber: 'W-9' }),
+    );
+    const row = repo.claim('po-1');
+    ugc.printLink.mockImplementationOnce(() => {
+      repo.rows.set('po-1', { ...repo.get('po-1'), status: 'cancel_refused' });
+      return Promise.resolve({ url: 'https://s3/print.jpg', fileName: 'print.jpg' });
+    });
+
+    await manager.submit(row);
+
+    expect(wowpress.uploadFileUrl).not.toHaveBeenCalled();
+    expect(repo.get('po-1')).toMatchObject({ status: 'cancel_refused', fileDeliveredAt: null });
+  });
+
+  it('clears the in-flight marker once the submission completes', async () => {
+    const { repo, manager } = setup(CONFIRMED_VARIANT);
+
+    await manager.submit(repo.get('po-1'));
+
+    expect(repo.get('po-1')).toMatchObject({ status: 'submitted', submittingAt: null });
+    expect(orderMayBeInFlight(repo.get('po-1'), Date.now())).toBe(false);
   });
 
   it('finishes a row whose file was already delivered without uploading it again', async () => {
