@@ -244,7 +244,8 @@ export class OutboxDispatcher {
    * 키가 `partition_key` 가 아니라 `aggregate_id` 인 이유: channel-adapter 는 주문 이벤트의 파티션 키가 채널
    * 이름이라 그 키로 막으면 채널 전체가 멈춘다. 주문 하나를 가리키는 것은 `aggregate_id` 다.
    * `FAILED` 를 막는 것이 `partitionOrderCondition` 과 반대인 이유는 `OutboxConfig.sequenceByAggregate` 주석.
-   * 새 인덱스 없이 기존 `outbox_status_idx (status, created_at)` 가 받는다 — 미발행 상태만 보고 `PUBLISHED` 는 7일 뒤 지워진다.
+   * 인덱스는 더하지 않았다 — 조건이 미발행 상태만 보고 `PUBLISHED` 는 7일 뒤 지워지므로 작을 것으로 보지만 확인하지 않았다.
+   * 배포 전 `EXPLAIN ANALYZE` 가 게이트다 (스펙 §11). 느리면 `(topic, aggregate_id, created_at)` 부분 인덱스를 더한다.
    */
   private aggregateSequenceCondition(): SQL | undefined {
     if (!this.config.sequenceByAggregate) return undefined;
