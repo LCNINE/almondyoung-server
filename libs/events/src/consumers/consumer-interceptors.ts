@@ -13,7 +13,7 @@
  */
 
 import type { INestApplicationContext, NestInterceptor, Type } from '@nestjs/common';
-import { ModulesContainer, Reflector } from '@nestjs/core';
+import { ModuleRef, ModulesContainer, Reflector } from '@nestjs/core';
 import { ClsInterceptor } from 'nestjs-cls';
 import type { SchemaValidationOptions, StreamConfig } from '@packages/event-contracts/types';
 import { DLQHandler } from '../dlq/dlq-handler.service';
@@ -37,10 +37,16 @@ export interface EventsConsumerPolicy {
  *
  * Nest 11 의 `get()` 은 `optional` 옵션이 없고 못 찾으면 던진다. 던지는 조건이
  * "등록되지 않음" 하나뿐이므로 catch 로 흡수한다.
+ *
+ * **`app.get` 으로 찾지 않는다.** `NestFactory.create` 가 돌려준 앱은 메서드가 ExceptionsZone 프록시를 거쳐,
+ * 못 찾으면 예외가 이 catch 에 닿기 전에 `process.exit(1)` 한다(2026-10-15 라이브 — `EventFailuresModule` 을
+ * import 하지 않은 앱 전부가 `DeadLetterRuntime` 조회에서 부팅 중 죽어 ECS 가 롤백). `ModuleRef` 는 모든 모듈에
+ * 있어 `app.get` 이 실패하지 않고, `ModuleRef.get` 은 프록시 밖이라 던진 예외를 여기서 잡는다.
  */
 export function optionalGet<T>(app: INestApplicationContext, token: Type<T> | string): T | undefined {
+  const moduleRef = app.get(ModuleRef);
   try {
-    return app.get<T>(token, { strict: false });
+    return moduleRef.get<T>(token, { strict: false });
   } catch {
     return undefined;
   }
