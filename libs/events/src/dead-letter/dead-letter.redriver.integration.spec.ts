@@ -183,4 +183,45 @@ describeIfDb('DeadLetterRedriver (PostgreSQL 통합)', () => {
     expect(dispatched).toEqual(['u1']);
     expect(await statuses(UNSEQUENCED_TOPIC)).toEqual(['u1:redriven', 'u2:failed']);
   });
+
+  // 보류 검사와 다시 넣기의 «남은 게 없다» 판정이 같은 순서 lock 으로 직렬화되는지 (최종 리뷰 C2).
+  // A 가 lock 을 쥔 동안 B(실시간 보류 검사, 다른 연결)는 기다리고, A 가 커밋한 뒤의 상태로 판정한다.
+  describe('순서 lock 경쟁', () => {
+    const pending = Symbol('pending');
+    const settledWithin = <T>(promise: Promise<T>, ms: number) =>
+      Promise.race([promise, new Promise<typeof pending>((resolve) => setTimeout(() => resolve(pending), ms))]);
+
+    async function raceWithLockHolder(
+      resolveInsideLock: (tx: PostgresJsDatabase<Record<string, never>>) => Promise<void>,
+    ) {
+      let live!: Promise<boolean>;
+      await db.transaction(async (tx) => {
+        expect(await tryLockSequence(tx, { consumerGroup: GROUP, topic: TOPIC, sequenceKey: 'order-A' })).toBe(true);
+        live = store.holdIfBlocked(msg('m9'));
+        expect(await settledWithin(live, 300)).toBe(pending); // lock 을 기다린다
+        await resolveInsideLock(tx as never);
+      });
+      return live;
+    }
+
+    it('A 가 남은 행을 모두 풀고 커밋하면 B 는 보류하지 않는다(false)', async () => {
+      const [first] = await seed('m1');
+      const live = await raceWithLockHolder(async (tx) => {
+        await tx.update(dead_letters).set({ status: 'redriven' }).where(eq(dead_letters.id, first));
+      });
+      expect(await live).toBe(false);
+      expect(await statuses()).toEqual(['m1:redriven']);
+    });
+
+    it('A 가 커밋한 뒤에도 failed 가 남아 있으면 B 는 held 로 적는다(true)', async () => {
+      const [first, second] = await seed('m1', 'm2');
+      const live = await raceWithLockHolder(async (tx) => {
+        // 다시 넣기가 m1 은 성공하고 m2 에서 멈춘 모양 — m2 가 새 머리(failed)
+        await tx.update(dead_letters).set({ status: 'redriven' }).where(eq(dead_letters.id, first));
+        await tx.update(dead_letters).set({ status: 'failed' }).where(eq(dead_letters.id, second));
+      });
+      expect(await live).toBe(true);
+      expect(await statuses()).toEqual(['m1:redriven', 'm2:failed', 'm9:held']);
+    });
+  });
 });

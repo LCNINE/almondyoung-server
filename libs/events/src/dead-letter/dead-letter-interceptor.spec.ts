@@ -6,7 +6,7 @@ import { getDLQTopicName } from '@packages/event-contracts/types';
 import { EventsModule } from '../events.module';
 import { EventPayload, On } from '../consumers/decorators';
 import { EventTypeGuard } from '../guards/event-type.guard';
-import { RetryPolicy } from '../retry/retry-policy.decorator';
+import { DisableDLQ, RetryPolicy } from '../retry/retry-policy.decorator';
 import { StreamPublisher } from '../publishers/stream-publisher.service';
 import { EVENT_TRANSPORT } from '../transport/transport.port';
 import { InMemoryBroker } from '../transport/in-memory.broker';
@@ -273,5 +273,66 @@ describe('EventRetryInterceptor — dead letter 모드 (#1016 8번)', () => {
       .publishEvent({ eventType: 'CartCreated', aggregateId: 'cart-1', payload: cart('cart-1') });
 
     expect(broker.messagesOn(getDLQTopicName(TOPIC))).toHaveLength(1);
+  });
+});
+
+/** `@DisableDLQ` 는 «실패하면 버린다»는 선언이다 — 실패 테이블 모드에서도 기록하지 않는다 */
+@Controller()
+@UseInterceptors(EventTypeGuard)
+class DiscardingConsumer {
+  @DisableDLQ()
+  @RetryPolicy({ maxRetries: 0 })
+  @On(CART_STREAM, 'CartCreated')
+  onCreated(@EventPayload() payload: { id: string }) {
+    calls.push(`discarding:${payload.id}`);
+    throw new Error('discard me');
+  }
+}
+
+describe('EventRetryInterceptor — dead letter 모드의 @DisableDLQ (#1016 7·8번 최종 리뷰 C3)', () => {
+  let app: INestApplication;
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it('최종 실패를 기록하지 않고 .dlq 로도 보내지 않으며 커밋한다 — 같은 키의 뒤 메시지도 막지 않는다', async () => {
+    process.env.KAFKA_BOOTSTRAP_TOPICS = 'false';
+    calls.length = 0;
+    const broker = new InMemoryBroker();
+    const recorder = new MemoryRecorder();
+    const moduleRef = await Test.createTestingModule({
+      imports: [EventsModule.forApp({ publishes: [CART_STREAM], serviceName: 'dl-spec', kafka })],
+      controllers: [DiscardingConsumer],
+    })
+      .overrideProvider(EVENT_TRANSPORT)
+      .useValue(new InMemoryTransport(broker))
+      .compile();
+    app = moduleRef.createNestApplication({ logger: false });
+    const microservice = app.connectMicroservice(
+      { strategy: new InMemoryServer(broker) },
+      { deferInitialization: true },
+    ) as NestMicroservice;
+    microservice.useGlobalInterceptors(
+      ...buildConsumerInterceptors(app, [CART_STREAM], {
+        recorder,
+        consumerGroup: 'spec-group',
+        sequencedTopics: [TOPIC],
+      }),
+    );
+    microservice.registerListeners();
+    microservice.setIsInitialized(true);
+    microservice.setIsInitHookCalled(true);
+    await app.startAllMicroservices();
+    await app.init();
+    const publisher = app.get<StreamPublisher<typeof CART_STREAM.events>>(EventsModule.getPublisherToken(TOPIC));
+
+    await publisher.publishEvent({ eventType: 'CartCreated', aggregateId: 'cart-1', payload: cart('cart-1') });
+    await publisher.publishEvent({ eventType: 'CartCreated', aggregateId: 'cart-1', payload: cart('cart-1') });
+
+    expect(recorder.rows).toEqual([]);
+    expect(calls).toEqual(['discarding:cart-1', 'discarding:cart-1']);
+    expect(broker.messagesOn(getDLQTopicName(TOPIC))).toHaveLength(0);
+    expect(broker.deliveryFailures).toHaveLength(0);
   });
 });
