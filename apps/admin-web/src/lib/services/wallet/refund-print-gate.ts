@@ -12,24 +12,36 @@ export const partialCancelHref = (channelOrderId: string | null | undefined): st
 export const PRINT_UNCOLLECTED_NOTE =
   '주문이 아직 수집되지 않아 아몬드템플릿 인쇄 상품이 있는지 확인할 수 없습니다. 몇 분 뒤 새로고침해 주세요.';
 // 결제는 됐는데 Medusa 주문이 만들어지지 않은 결제는 수집될 주문이 없어 영영 수집 전으로 남는다.
-// 카트 완료가 아직 도는 중인 결제를 그렇게 오판하지 않게, 결제를 만든 뒤 이만큼 지나야 주문 없음을 믿는다
-// ponytail: 결제 생성 시각 기준이다. 결제창을 오래 열어 둔 결제는 더 일찍 열릴 수 있다 — 문제 되면 승인 시각으로 바꾼다
+// 카트 완료가 아직 도는 중인 결제를 그렇게 오판하지 않게, 승인된 뒤 이만큼 지나야 주문 없음을 믿는다
 export const ORPHAN_PAYMENT_AFTER_MS = 30 * 60_000;
+export const PRINT_ORPHAN_PAYMENT_NOTE =
+  '주문이 만들어지지 않은 결제입니다(승인 후 30분 넘게 주문 없음). 인쇄 발주가 없어 환불할 수 있습니다.';
 
 export interface MedusaSessionOrder {
   orderId: string | null;
   cartCompleted: boolean;
 }
 
+// 돈이 처음 오간 시각. 승인 없이 바로 매입되는 결제도 있어 둘 중 이른 것을 쓴다
+export const approvedAt = (
+  charges: ReadonlyArray<{ operation: string; status: string; createdAt: string }>
+): number | null => {
+  const times = charges
+    .filter((c) => (c.operation === 'AUTHORIZE' || c.operation === 'CAPTURE') && c.status === 'SUCCEEDED')
+    .map((c) => new Date(c.createdAt).getTime());
+  return times.length > 0 ? Math.min(...times) : null;
+};
+
 export const isOrphanPayment = (
   lookup: MedusaSessionOrder | undefined,
-  intentCreatedAt: string,
+  approvedAtMs: number | null,
   now: number
 ): boolean =>
   lookup !== undefined &&
   lookup.orderId === null &&
   !lookup.cartCompleted &&
-  now - new Date(intentCreatedAt).getTime() > ORPHAN_PAYMENT_AFTER_MS;
+  approvedAtMs !== null &&
+  now - approvedAtMs > ORPHAN_PAYMENT_AFTER_MS;
 export const PRINT_STATUS_UNKNOWN_NOTE = '인쇄 주문 상태를 확인하지 못해 환불·결제취소를 막았습니다. 새로고침해 주세요.';
 
 export type PrintRefundGate = 'open' | 'print' | 'uncollected' | 'unknown';

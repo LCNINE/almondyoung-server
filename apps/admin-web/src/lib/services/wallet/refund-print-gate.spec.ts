@@ -1,4 +1,4 @@
-import { isMoneyMoved, isOrphanPayment, partialCancelHref, printRefundGate } from './refund-print-gate';
+import { approvedAt, isMoneyMoved, isOrphanPayment, partialCancelHref, printRefundGate } from './refund-print-gate';
 
 describe('printRefundGate', () => {
   const opts = { medusaOrder: true, moneyCaptured: true, defectConfirmed: false };
@@ -32,16 +32,29 @@ describe('printRefundGate', () => {
     );
   });
 
-  it('주문 없음은 결제 후 30분이 지나고 카트도 완료되지 않았을 때만 믿는다', () => {
-    const createdAt = '2026-10-16T00:00:00Z';
-    const late = new Date(createdAt).getTime() + 31 * 60_000;
-    const early = new Date(createdAt).getTime() + 5 * 60_000;
+  it('주문 없음은 승인 30분 뒤에도 카트가 완료되지 않았을 때만 믿는다', () => {
+    const approved = new Date('2026-10-16T00:00:00Z').getTime();
+    const late = approved + 31 * 60_000;
+    const early = approved + 5 * 60_000;
     const none = { orderId: null, cartCompleted: false };
-    expect(isOrphanPayment(none, createdAt, late)).toBe(true);
-    expect(isOrphanPayment(none, createdAt, early)).toBe(false);
-    expect(isOrphanPayment({ orderId: null, cartCompleted: true }, createdAt, late)).toBe(false);
-    expect(isOrphanPayment({ orderId: 'order_1', cartCompleted: true }, createdAt, late)).toBe(false);
-    expect(isOrphanPayment(undefined, createdAt, late)).toBe(false);
+    expect(isOrphanPayment(none, approved, late)).toBe(true);
+    expect(isOrphanPayment(none, approved, early)).toBe(false);
+    expect(isOrphanPayment(none, null, late)).toBe(false);
+    expect(isOrphanPayment({ orderId: null, cartCompleted: true }, approved, late)).toBe(false);
+    expect(isOrphanPayment({ orderId: 'order_1', cartCompleted: true }, approved, late)).toBe(false);
+    expect(isOrphanPayment(undefined, approved, late)).toBe(false);
+  });
+
+  it('승인 시각은 성공한 승인·매입 중 가장 이른 것이다', () => {
+    expect(
+      approvedAt([
+        { operation: 'CAPTURE', status: 'SUCCEEDED', createdAt: '2026-10-16T00:10:00Z' },
+        { operation: 'AUTHORIZE', status: 'SUCCEEDED', createdAt: '2026-10-16T00:05:00Z' },
+        { operation: 'AUTHORIZE', status: 'FAILED', createdAt: '2026-10-16T00:01:00Z' },
+        { operation: 'REFUND', status: 'SUCCEEDED', createdAt: '2026-10-16T00:00:00Z' },
+      ])
+    ).toBe(new Date('2026-10-16T00:05:00Z').getTime());
+    expect(approvedAt([])).toBeNull();
   });
 
   it('입금 전 거절처럼 돈이 안 오간 취소나 Medusa 주문이 아닌 결제는 수집 여부와 상관없이 연다', () => {

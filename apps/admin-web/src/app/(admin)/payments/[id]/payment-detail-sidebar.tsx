@@ -13,12 +13,14 @@ import {
   usePrintStatusByIntent,
   useMedusaOrderBySession,
   isOrphanPayment,
+  approvedAt,
   printRefundGate,
   printRefundGateMessage,
   isMoneyMoved,
   PRINT_REFUND_RESTRICTED_NOTE,
   PRINT_PARTIAL_CANCEL_GUIDE,
   PRINT_DEFECT_OVERRIDE_LABEL,
+  PRINT_ORPHAN_PAYMENT_NOTE,
   partialCancelHref,
 } from '@/lib/services/wallet';
 import Link from 'next/link';
@@ -103,7 +105,7 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
   const sessionOrder = useMedusaOrderBySession(sessionId, uncollected);
   const gateFor = (
     status: typeof printStatus.data,
-    intent: Pick<typeof data, 'status' | 'metadata' | 'createdAt'>,
+    intent: Pick<typeof data, 'status' | 'metadata' | 'charges'>,
     action: 'refund' | 'cancel',
     order: typeof sessionOrder.data
   ) =>
@@ -111,9 +113,10 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
       medusaOrder: typeof intent.metadata?.medusaSessionId === 'string',
       moneyCaptured: action === 'refund' || isMoneyMoved(intent.status),
       defectConfirmed,
-      orphanPayment: isOrphanPayment(order, intent.createdAt, Date.now()),
+      orphanPayment: isOrphanPayment(order, approvedAt(intent.charges), Date.now()),
     });
   const refundGate = gateFor(printStatus.data, data, 'refund', sessionOrder.data);
+  const orphanPayment = uncollected && isOrphanPayment(sessionOrder.data, approvedAt(data.charges), Date.now());
   const cancelGate = gateFor(printStatus.data, data, 'cancel', sessionOrder.data);
   // 화면의 상태는 낡을 수 있다(수집 전에 연 화면, 그 사이 결제 완료 등). 누르는 순간 결제와 인쇄 상태를 둘 다 다시 읽어
   // 판정하고, 어느 쪽이든 읽지 못하면 막는다(실패한 refetch 는 이전 data 를 그대로 돌려준다)
@@ -254,7 +257,7 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
   return (
     <>
       <div className="p-4 space-y-2">
-        {(canRefund || canCancel) && (hasActivePrint !== false || refundGate === 'uncollected') && (
+        {(canRefund || canCancel) && (hasActivePrint !== false || refundGate === 'uncollected' || orphanPayment) && (
           <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3">
             {hasActivePrint === true ? (
               <>
@@ -273,6 +276,8 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
               </>
             ) : refundGate === 'uncollected' ? (
               <p className="text-xs text-amber-800">{printRefundGateMessage('uncollected')}</p>
+            ) : orphanPayment ? (
+              <p className="text-xs text-amber-800">{PRINT_ORPHAN_PAYMENT_NOTE}</p>
             ) : (
               <p className="text-xs text-amber-800">
                 {printStatus.isError ? printRefundGateMessage('unknown') : '인쇄 주문 상태를 확인하는 중입니다.'}
