@@ -2,6 +2,7 @@
 
 import { walletApi } from '@/lib/api/domains/wallet';
 import { salesOrders } from '@/lib/api/domains/orders';
+import { medusaOrderApi } from '@/lib/api/domains/medusa';
 import type {
   PaymentIntentListQuery,
   RefundListQuery,
@@ -226,5 +227,16 @@ export const usePrintStatusByIntent = (intentId: string) => {
     queryKey: [...walletQueryKeys.intentDetail(intentId), 'print-status'],
     queryFn: () => salesOrders.printStatusByIntent(intentId),
     staleTime: 30 * 1000,
+  });
+};
+
+// 수집 전 결제에만 켠다. Medusa 를 부르는 건 그 드문 화면에서뿐이다
+export const useMedusaOrderBySession = (sessionId: string | null, enabled: boolean) => {
+  return useQuery({
+    queryKey: ['medusa', 'payment-session-order', sessionId],
+    queryFn: () => medusaOrderApi.getOrderByPaymentSession(sessionId as string),
+    staleTime: 60 * 1000,
+    retry: false,
+    enabled: enabled && sessionId !== null,
   });
 };

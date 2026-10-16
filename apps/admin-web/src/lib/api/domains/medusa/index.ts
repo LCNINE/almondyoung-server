@@ -236,4 +236,17 @@ export const medusaOrderApi = {
     );
     return response.data;
   },
+
+  // 결제 세션으로 만들어진 주문 (결제는 됐는데 주문이 안 생긴 결제를 가린다)
+  getOrderByPaymentSession: async (
+    sessionId: string
+  ): Promise<{ orderId: string | null; cartCompleted: boolean }> => {
+    const response = await client.get<{
+      orderId: string | null;
+      cartCompleted: boolean;
+    }>(
+      `${MEDUSA_BASE_URL}/admin/payment-sessions/${encodeURIComponent(sessionId)}/order`
+    );
+    return response.data;
+  },
 };

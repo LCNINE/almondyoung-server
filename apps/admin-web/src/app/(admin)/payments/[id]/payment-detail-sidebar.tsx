@@ -11,13 +11,14 @@ import {
   useCancelIntent,
   useRefundIntent,
   usePrintStatusByIntent,
+  useMedusaOrderBySession,
+  isOrphanPayment,
   printRefundGate,
   printRefundGateMessage,
   isMoneyMoved,
   PRINT_REFUND_RESTRICTED_NOTE,
   PRINT_PARTIAL_CANCEL_GUIDE,
   PRINT_DEFECT_OVERRIDE_LABEL,
-  PRINT_NO_ORDER_OVERRIDE_LABEL,
   partialCancelHref,
 } from '@/lib/services/wallet';
 import Link from 'next/link';
@@ -96,20 +97,24 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
   const hasActivePrint = printStatus.data?.hasActivePrint;
   // 상품 하자 환불이면 와우프레스 주문은 그대로 두고 환불만 한다(인쇄 취소를 보내지 않는다)
   const [defectConfirmed, setDefectConfirmed] = useState(false);
-  const [noOrderConfirmed, setNoOrderConfirmed] = useState(false);
+  const sessionId = typeof data.metadata?.medusaSessionId === 'string' ? data.metadata.medusaSessionId : null;
+  // 수집 전 결제만 Medusa 에 주문이 있는지 묻는다. 주문 생성이 실패한 결제는 수집될 일이 없어 그대로 두면 영영 막힌다
+  const uncollected = printStatus.data?.hasActivePrint === false && printStatus.data.channelOrderId === null;
+  const sessionOrder = useMedusaOrderBySession(sessionId, uncollected);
   const gateFor = (
     status: typeof printStatus.data,
-    intent: Pick<typeof data, 'status' | 'metadata'>,
-    action: 'refund' | 'cancel'
+    intent: Pick<typeof data, 'status' | 'metadata' | 'createdAt'>,
+    action: 'refund' | 'cancel',
+    order: typeof sessionOrder.data
   ) =>
     printRefundGate(status, {
       medusaOrder: typeof intent.metadata?.medusaSessionId === 'string',
       moneyCaptured: action === 'refund' || isMoneyMoved(intent.status),
       defectConfirmed,
-      noOrderConfirmed,
+      orphanPayment: isOrphanPayment(order, intent.createdAt, Date.now()),
     });
-  const refundGate = gateFor(printStatus.data, data, 'refund');
-  const cancelGate = gateFor(printStatus.data, data, 'cancel');
+  const refundGate = gateFor(printStatus.data, data, 'refund', sessionOrder.data);
+  const cancelGate = gateFor(printStatus.data, data, 'cancel', sessionOrder.data);
   // 화면의 상태는 낡을 수 있다(수집 전에 연 화면, 그 사이 결제 완료 등). 누르는 순간 결제와 인쇄 상태를 둘 다 다시 읽어
   // 판정하고, 어느 쪽이든 읽지 못하면 막는다(실패한 refetch 는 이전 data 를 그대로 돌려준다)
   // 재조회를 기다리는 동안 mutation 의 isPending 은 아직 false 다. 연속 클릭이 둘 다 통과해 환불이 두 번 나가지 않게
@@ -129,8 +134,12 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
   };
   const confirmGate = async (action: 'refund' | 'cancel'): Promise<boolean> => {
     const [intent, print] = await Promise.all([intentQuery.refetch(), printStatus.refetch()]);
-    const gate =
-      intent.isError || print.isError || !intent.data ? 'unknown' : gateFor(print.data, intent.data, action);
+    let gate =
+      intent.isError || print.isError || !intent.data ? 'unknown' : gateFor(print.data, intent.data, action, undefined);
+    if (gate === 'uncollected' && intent.data && sessionId) {
+      const order = await sessionOrder.refetch();
+      gate = order.isError ? 'unknown' : gateFor(print.data, intent.data, action, order.data);
+    }
     if (gate === 'open') return true;
     toast.error(printRefundGateMessage(gate));
     return false;
@@ -245,7 +254,7 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
   return (
     <>
       <div className="p-4 space-y-2">
-        {(canRefund || canCancel) && (hasActivePrint !== false || refundGate === 'uncollected' || noOrderConfirmed) && (
+        {(canRefund || canCancel) && (hasActivePrint !== false || refundGate === 'uncollected') && (
           <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3">
             {hasActivePrint === true ? (
               <>
@@ -262,17 +271,8 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
                   {PRINT_DEFECT_OVERRIDE_LABEL}
                 </label>
               </>
-            ) : refundGate === 'uncollected' || noOrderConfirmed ? (
-              <>
-                <p className="text-xs text-amber-800">{printRefundGateMessage('uncollected')}</p>
-                <label className="flex items-center gap-2 text-xs text-amber-900">
-                  <Checkbox
-                    checked={noOrderConfirmed}
-                    onCheckedChange={(checked) => setNoOrderConfirmed(checked === true)}
-                  />
-                  {PRINT_NO_ORDER_OVERRIDE_LABEL}
-                </label>
-              </>
+            ) : refundGate === 'uncollected' ? (
+              <p className="text-xs text-amber-800">{printRefundGateMessage('uncollected')}</p>
             ) : (
               <p className="text-xs text-amber-800">
                 {printStatus.isError ? printRefundGateMessage('unknown') : '인쇄 주문 상태를 확인하는 중입니다.'}

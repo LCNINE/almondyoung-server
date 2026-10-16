@@ -1,4 +1,4 @@
-import { isMoneyMoved, partialCancelHref, printRefundGate } from './refund-print-gate';
+import { isMoneyMoved, isOrphanPayment, partialCancelHref, printRefundGate } from './refund-print-gate';
 
 describe('printRefundGate', () => {
   const opts = { medusaOrder: true, moneyCaptured: true, defectConfirmed: false };
@@ -24,12 +24,24 @@ describe('printRefundGate', () => {
     expect(printRefundGate(uncollected, { ...opts, defectConfirmed: true })).toBe('uncollected');
   });
 
-  it('주문이 만들어지지 않은 결제임을 운영자가 확인하면 수집 전이어도 연다. 인쇄가 있으면 그 확인으로는 열지 않는다', () => {
+  it('Medusa 에 주문이 없는 결제는 수집 전이어도 연다. 인쇄가 있으면 그것으로는 열지 않는다', () => {
     const uncollected = { hasActivePrint: false, channelOrderId: null };
-    expect(printRefundGate(uncollected, { ...opts, noOrderConfirmed: true })).toBe('open');
-    expect(printRefundGate({ hasActivePrint: true, channelOrderId: 'o' }, { ...opts, noOrderConfirmed: true })).toBe(
+    expect(printRefundGate(uncollected, { ...opts, orphanPayment: true })).toBe('open');
+    expect(printRefundGate({ hasActivePrint: true, channelOrderId: 'o' }, { ...opts, orphanPayment: true })).toBe(
       'print'
     );
+  });
+
+  it('주문 없음은 결제 후 30분이 지나고 카트도 완료되지 않았을 때만 믿는다', () => {
+    const createdAt = '2026-10-16T00:00:00Z';
+    const late = new Date(createdAt).getTime() + 31 * 60_000;
+    const early = new Date(createdAt).getTime() + 5 * 60_000;
+    const none = { orderId: null, cartCompleted: false };
+    expect(isOrphanPayment(none, createdAt, late)).toBe(true);
+    expect(isOrphanPayment(none, createdAt, early)).toBe(false);
+    expect(isOrphanPayment({ orderId: null, cartCompleted: true }, createdAt, late)).toBe(false);
+    expect(isOrphanPayment({ orderId: 'order_1', cartCompleted: true }, createdAt, late)).toBe(false);
+    expect(isOrphanPayment(undefined, createdAt, late)).toBe(false);
   });
 
   it('입금 전 거절처럼 돈이 안 오간 취소나 Medusa 주문이 아닌 결제는 수집 여부와 상관없이 연다', () => {
