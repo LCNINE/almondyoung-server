@@ -166,6 +166,7 @@ channelAdapterSchema
 ├── sync_statuses           — 채널별 동기화 상태 영속화 (channelId + dataType 유니크)
 ├── pending_orders          — (죽음) writer/reader 0. 삭제 대기 #642
 ├── order_collection_failures — 수집 실패 격리 (channel + externalOrderId + reason 유니크)
+├── order_reconcile_findings — 채널 대사 결과 (열린 행은 channel + externalOrderId + kind 당 1행, 부분 유니크)
 ├── inbox_events            — Inbox 패턴 이벤트 큐 (pending → processing → published/failed)
 ├── pim_medusa_mappings     — PIM ↔ Medusa 상품 매핑 (pimMasterId 유니크)
 ├── migration_progress      — 마이그레이션 진행 추적 (일회성 백필 스크립트용)
