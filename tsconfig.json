@@ -13,6 +13,7 @@
     "node_modules",
     "dist",
     "scripts/medusa-db-migration",
+    "scripts/night-maintenance",
     "apps/channel-adapter/scripts/legacy"
   ],
   "compilerOptions": {
