@@ -1,4 +1,5 @@
 import { validateLeaveBatch, assertLeaveOwner } from './attendance-calendar.service';
+import type { LeaveInput } from '@packages/domain-types/attendance';
 
 describe('shared leave calendar boundaries', () => {
   it('accepts mixed full-day and half-day schedules', () => {
@@ -22,7 +23,7 @@ describe('shared leave calendar boundaries', () => {
       [{ date: '2026-10-16', type: 'other' }],
     ].map((batch) => [batch]),
   )('blocks malformed and conflicting batch %#', (batch) => {
-    expect(() => validateLeaveBatch(batch as any)).toThrow();
+    expect(() => validateLeaveBatch(batch as unknown as LeaveInput[])).toThrow();
   });
 
   it('does not apply a deferred strict half-day time boundary', () => {

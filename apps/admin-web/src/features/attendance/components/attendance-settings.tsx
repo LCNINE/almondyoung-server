@@ -1,16 +1,23 @@
 'use client';
 
 import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { attendanceApi } from '@/lib/api/domains/attendance';
-import { useAttendance, useAttendanceAction } from '../hooks/use-attendance';
+import {
+  ATTENDANCE_KEY,
+  attendanceError,
+  useAttendance,
+  useAttendanceAction,
+} from '../hooks/use-attendance';
 import {
   normalSchedule,
   seoulDate,
   validatePlannedTimes,
   type AttendanceSettings,
+  type Worksite,
 } from '@packages/domain-types/attendance';
 
 export function AttendanceSettingsPage() {
@@ -194,66 +201,179 @@ function SettingsForm({ initial }: { initial: AttendanceSettings }) {
 }
 
 export function WorksiteSettings() {
-  const { data } = useAttendance();
-  const mutation = useAttendanceAction(
-    attendanceApi.createSite,
-    '근무지를 등록했어요.'
-  );
+  const me = useAttendance();
+  const sites = useQuery({
+    queryKey: [...ATTENDANCE_KEY, 'worksites'],
+    queryFn: attendanceApi.worksites,
+    enabled: !!me.data?.isMaster,
+  });
+
+  if (me.isError) {
+    return (
+      <p role="alert">
+        사용자 정보를 불러오지 못했어요.{' '}
+        <button onClick={() => me.refetch()}>다시 시도</button>
+      </p>
+    );
+  }
+
+  if (!me.data) {
+    return <p>근무지 설정을 불러오고 있어요.</p>;
+  }
+
+  if (!me.data.isMaster) {
+    return <p role="alert">근무지 설정은 관리자만 변경할 수 있어요.</p>;
+  }
 
   return (
     <section className="max-w-xl space-y-6">
       <div>
         <h1 className="text-2xl font-bold">근무지 설정</h1>
         <p className="mt-2 text-sm text-slate-400">
-          회사 좌표와 현장에서 확인한 허용 반경을 등록해요.
+          회사 좌표와 현장에서 확인한 허용 반경을 등록해요. 사용하지 않는
+          근무지는 비활성화할 수 있어요.
         </p>
       </div>
-      {data?.worksites.map((site) => (
-        <div key={site.id} className="rounded-xl border bg-white p-5">
-          <p className="font-semibold">{site.name}</p>
-          <p className="mt-2 text-sm text-slate-400">
-            허용 반경 {site.radiusMeters}m · 위치 정확도 {site.accuracyMeters}m
-            이하
-          </p>
+      {sites.isError ? (
+        <p role="alert" className="text-sm text-red-600">
+          근무지를 불러오지 못했어요.{' '}
+          <button onClick={() => sites.refetch()}>다시 시도</button>
+        </p>
+      ) : sites.isPending ? (
+        <p>근무지를 불러오고 있어요.</p>
+      ) : (
+        <div className="space-y-4">
+          {sites.data.map((site) => (
+            <WorksiteForm key={`${site.id}:${site.version}`} site={site} />
+          ))}
+          {!sites.data.length && (
+            <p className="text-sm text-slate-400">등록된 근무지가 없어요.</p>
+          )}
         </div>
-      ))}
-      <form
-        className="space-y-4 rounded-2xl border bg-white p-6"
-        onSubmit={(event) => {
-          event.preventDefault();
+      )}
+      <WorksiteForm />
+    </section>
+  );
+}
 
-          const form = new FormData(event.currentTarget);
+type WorksiteFields = Pick<
+  Worksite,
+  'name' | 'latitude' | 'longitude' | 'radiusMeters' | 'accuracyMeters'
+>;
 
-          mutation.mutate({
-            name: String(form.get('name')),
-            latitude: Number(form.get('latitude')),
-            longitude: Number(form.get('longitude')),
-            radiusMeters: Number(form.get('radiusMeters')),
-            accuracyMeters: Number(form.get('accuracyMeters')),
-          });
-        }}
-      >
-        {[
+function WorksiteForm({ site }: { site?: Worksite }) {
+  const queryClient = useQueryClient();
+  const [active, setActive] = useState(site?.active ?? true);
+  const mutation = useAttendanceAction(
+    async (input: WorksiteFields & { active: boolean }) => {
+      if (site) {
+        return attendanceApi.updateSite({ ...site, ...input });
+      }
+
+      return attendanceApi.createSite({
+        name: input.name,
+        latitude: input.latitude,
+        longitude: input.longitude,
+        radiusMeters: input.radiusMeters,
+        accuracyMeters: input.accuracyMeters,
+      });
+    },
+    site ? '근무지를 수정했어요.' : '근무지를 등록했어요.'
+  );
+
+  return (
+    <form
+      className="space-y-4 rounded-2xl border bg-white p-6"
+      onSubmit={(event) => {
+        event.preventDefault();
+
+        const form = new FormData(event.currentTarget);
+        const input = {
+          name: String(form.get('name')).trim(),
+          latitude: Number(form.get('latitude')),
+          longitude: Number(form.get('longitude')),
+          radiusMeters: Number(form.get('radiusMeters')),
+          accuracyMeters: Number(form.get('accuracyMeters')),
+          active,
+        };
+
+        mutation.mutate(input);
+      }}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-semibold">{site ? site.name : '새 근무지 등록'}</h2>
+        {site && (
+          <span className="text-xs text-slate-400">
+            {site.active ? '사용 중' : '비활성화됨'}
+          </span>
+        )}
+      </div>
+      {(
+        [
           ['name', '근무지 이름', 'text'],
           ['latitude', '위도', 'number'],
           ['longitude', '경도', 'number'],
           ['radiusMeters', '허용 반경(m)', 'number'],
           ['accuracyMeters', '허용 위치 오차(m)', 'number'],
-        ].map(([name, label, type]) => (
-          <label key={name} className="block space-y-2 text-xs">
-            {label}
-            <Input
-              name={name}
-              type={type}
-              step={
-                name === 'latitude' || name === 'longitude' ? 'any' : undefined
+        ] as const
+      ).map(([name, label, type]) => (
+        <label key={name} className="block space-y-2 text-xs">
+          {label}
+          <Input
+            name={name}
+            type={type}
+            defaultValue={site?.[name]}
+            step={
+              name === 'latitude' || name === 'longitude' ? 'any' : undefined
+            }
+            min={
+              name === 'latitude'
+                ? -90
+                : name === 'longitude'
+                  ? -180
+                  : type === 'number'
+                    ? 1
+                    : undefined
+            }
+            max={
+              name === 'latitude' ? 90 : name === 'longitude' ? 180 : undefined
+            }
+            required
+            disabled={mutation.isPending}
+          />
+        </label>
+      ))}
+      {site && (
+        <label className="flex items-center justify-between text-sm">
+          근무지 사용
+          <Switch
+            checked={active}
+            onCheckedChange={setActive}
+            disabled={mutation.isPending}
+          />
+        </label>
+      )}
+      {mutation.isError && (
+        <p role="alert" className="text-sm text-red-600">
+          {attendanceError(mutation.error)}{' '}
+          {site && (
+            <button
+              type="button"
+              className="underline"
+              onClick={() =>
+                queryClient.invalidateQueries({
+                  queryKey: [...ATTENDANCE_KEY, 'worksites'],
+                })
               }
-              required
-            />
-          </label>
-        ))}
-        <Button disabled={mutation.isPending}>근무지 등록</Button>
-      </form>
-    </section>
+            >
+              최신 근무지 정보 다시 불러오기
+            </button>
+          )}
+        </p>
+      )}
+      <Button type="submit" disabled={mutation.isPending}>
+        {mutation.isPending ? '저장 중…' : site ? '변경 저장' : '근무지 등록'}
+      </Button>
+    </form>
   );
 }

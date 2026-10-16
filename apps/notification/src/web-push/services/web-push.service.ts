@@ -2,7 +2,7 @@ import { DbService, InjectDb } from '@app/db';
 import { ConflictException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { createHash } from 'crypto';
-import webpush from 'web-push';
+import * as webpush from 'web-push';
 import {
   type NotificationSchema,
   webPushDeliveries,
@@ -85,7 +85,7 @@ export class WebPushService {
           .select()
           .from(webPushSubscriptions)
           .where(eq(webPushSubscriptions.id, subscription.id))
-          .for('share');
+          .for('update');
 
         if (!current.active || current.userId !== input.userId) {
           return;

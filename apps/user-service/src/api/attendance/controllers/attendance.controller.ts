@@ -12,8 +12,10 @@ import {
   Query,
   UseGuards,
   BadRequestException,
+  ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import {
   clockMinutes,
   isWorkDate,
@@ -26,7 +28,14 @@ import { AttendanceRepository, serializeSession } from '../repositories/attendan
 import { ActiveAttendanceStaffGuard } from '../guards/active-attendance-staff.guard';
 import { AttendanceService } from '../services/attendance.service';
 import { AttendanceCalendarService } from '../services/attendance-calendar.service';
-import { AttendanceSettingsDto, LeaveBatchDto, LeaveDayDto, PunchDto, WorksiteDto } from '../dto/attendance.dto';
+import {
+  AttendanceSettingsDto,
+  LeaveBatchDto,
+  LeaveDayDto,
+  PunchDto,
+  UpdateWorksiteDto,
+  WorksiteDto,
+} from '../dto/attendance.dto';
 
 @Controller('attendance')
 @UseGuards(RolesGuard('admin', 'master'), ActiveAttendanceStaffGuard)
@@ -71,8 +80,15 @@ export class AttendanceController {
   }
 
   @Get('records')
-  async records(@CurrentUser() user: JwtPayload) {
-    return (await this.repo.records(user.id)).map(serializeSession);
+  async records(
+    @CurrentUser() user: JwtPayload,
+    @Query('userId', new ParseUUIDPipe({ optional: true })) userId?: string,
+  ) {
+    if (userId && userId !== user.id && !user.roles.includes('master')) {
+      throw new ForbiddenException('다른 직원의 상세 기록은 마스터만 조회할 수 있어요.');
+    }
+
+    return (await this.repo.records(userId ?? user.id)).map(serializeSession);
   }
 
   @Get('calendar')
@@ -129,8 +145,17 @@ export class AttendanceController {
   }
 
   @Get('worksites')
-  sites() {
-    return this.repo.db.select().from(attendanceWorksites).where(eq(attendanceWorksites.active, true));
+  async sites(@CurrentUser() user: JwtPayload) {
+    const sites = await this.repo.db
+      .select()
+      .from(attendanceWorksites)
+      .where(user.roles.includes('master') ? undefined : eq(attendanceWorksites.active, true));
+
+    return sites.map((site) => ({
+      ...site,
+      latitude: Number(site.latitude),
+      longitude: Number(site.longitude),
+    }));
   }
 
   @Post('worksites')
@@ -151,6 +176,51 @@ export class AttendanceController {
         .values({ actorId: user.id, subjectId: user.id, kind: 'worksite.created', entityId: row.id, after: row });
 
       return row;
+    });
+  }
+
+  @Put('worksites/:id')
+  @UseGuards(MasterRoleGuard)
+  async updateSite(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateWorksiteDto,
+  ) {
+    if (dto.accuracyMeters >= dto.radiusMeters || !dto.name.trim()) {
+      throw new BadRequestException('근무지 이름과 반경·정확도를 확인해 주세요.');
+    }
+
+    return this.repo.db.transaction(async (tx) => {
+      const [before] = await tx.select().from(attendanceWorksites).where(eq(attendanceWorksites.id, id)).for('update');
+
+      if (!before || before.version !== dto.version) {
+        throw new ConflictException('근무지 설정이 변경됐어요. 새로 확인한 뒤 다시 저장해 주세요.');
+      }
+
+      const [row] = await tx
+        .update(attendanceWorksites)
+        .set({
+          name: dto.name,
+          latitude: String(dto.latitude),
+          longitude: String(dto.longitude),
+          radiusMeters: dto.radiusMeters,
+          accuracyMeters: dto.accuracyMeters,
+          active: dto.active,
+          version: before.version + 1,
+        })
+        .where(and(eq(attendanceWorksites.id, id), eq(attendanceWorksites.version, dto.version)))
+        .returning();
+
+      await tx.insert(attendanceAudit).values({
+        actorId: user.id,
+        subjectId: user.id,
+        kind: 'worksite.updated',
+        entityId: id,
+        before,
+        after: row,
+      });
+
+      return { ...row, latitude: Number(row.latitude), longitude: Number(row.longitude) };
     });
   }
 }

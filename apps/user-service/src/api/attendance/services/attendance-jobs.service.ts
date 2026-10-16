@@ -1,13 +1,7 @@
 import { CronOnce } from '@app/cron-once';
 import { Injectable, Logger } from '@nestjs/common';
 import { and, eq, gt, gte, inArray, isNull, lt, lte, or } from 'drizzle-orm';
-import {
-  seoulClock,
-  seoulDate,
-  type AiAttendanceReview,
-  type AttendanceSettings,
-  type LeaveType,
-} from '@packages/domain-types/attendance';
+import { seoulClock, seoulDate, type AttendanceSettings, type LeaveType } from '@packages/domain-types/attendance';
 import {
   attendanceAudit,
   attendanceJobs,
@@ -19,6 +13,7 @@ import {
   users,
 } from '../../../../database/drizzle/schema';
 import { AttendanceRepository } from '../repositories/attendance.repository';
+import { attendanceAiResponseSchema, unwrapAttendanceResponse } from '@packages/domain-types/attendance-review';
 
 interface ReminderContext {
   now: Date;
@@ -266,9 +261,9 @@ export class AttendanceJobsService {
       throw new Error('Attendance integration request failed');
     }
 
-    const raw = await response.json();
+    const raw: unknown = await response.json();
 
-    return raw.data ?? raw;
+    return unwrapAttendanceResponse(raw);
   }
 
   private async notify(userId: string, key: string, title: string, body: string, url: string) {
@@ -345,7 +340,7 @@ export class AttendanceJobsService {
           ),
         );
 
-      const result = await this.internalCall(
+      const response = await this.internalCall(
         process.env.AI_SERVICE_URL,
         process.env.AI_INTERNAL_KEY,
         '/internal/attendance/review',
@@ -360,10 +355,12 @@ export class AttendanceJobsService {
         },
       );
 
+      const result = attendanceAiResponseSchema.parse(response);
+
       await this.repo.withUserLock(request.userId, async (tx) => {
         const changed = await tx
           .update(attendanceRequests)
-          .set({ aiStatus: 'succeeded', aiResult: result.result as AiAttendanceReview })
+          .set({ aiStatus: 'succeeded', aiResult: result.result })
           .where(
             and(
               eq(attendanceRequests.id, request.id),
@@ -374,20 +371,18 @@ export class AttendanceJobsService {
           .returning({ id: attendanceRequests.id });
 
         if (changed.length) {
-          await tx
-            .insert(attendanceAudit)
-            .values({
-              actorId: request.userId,
-              subjectId: request.userId,
-              kind: 'request.ai_reviewed',
-              entityId: request.id,
-              after: {
-                inputVersion: request.version,
-                model: result.model,
-                promptVersion: result.promptVersion,
-                result: result.result,
-              },
-            });
+          await tx.insert(attendanceAudit).values({
+            actorId: request.userId,
+            subjectId: request.userId,
+            kind: 'request.ai_reviewed',
+            entityId: request.id,
+            after: {
+              inputVersion: request.version,
+              model: result.model,
+              promptVersion: result.promptVersion,
+              result: result.result,
+            },
+          });
         }
       });
 

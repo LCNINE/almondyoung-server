@@ -429,7 +429,9 @@ function CorrectionForm({
       toast.error('장당 10MB 이하의 JPG, PNG, WEBP 이미지를 첨부해 주세요.');
     } else if (chosen.length + files.length + retained.length > 3) {
       toast.error('최대 3장까지 첨부할 수 있어요.');
-    } else setFiles((current) => [...current, ...chosen]);
+    } else {
+      setFiles((current) => [...current, ...chosen]);
+    }
 
     event.target.value = '';
   }

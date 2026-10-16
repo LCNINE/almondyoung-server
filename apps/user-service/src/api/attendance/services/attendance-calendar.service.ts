@@ -224,7 +224,7 @@ export class AttendanceCalendarService {
       this.list(date, date),
     ]);
 
-    const people = staff.map(({ userId, name }) => {
+    const people = staff.map(({ userId, name }): StaffAttendance => {
       const owned = sessions.filter((session) => session.userId === userId);
       const session = owned.find((item) => !item.checkOut) ?? owned.find((item) => item.workDate === date);
       const leave = leaves.find((item) => item.userId === userId);
@@ -234,7 +234,7 @@ export class AttendanceCalendarService {
         name,
         status: session ? (session.checkOut ? 'done' : 'working') : 'before',
         leave: leave ? { type: leave.type, start: leave.start, end: leave.end } : null,
-      } as StaffAttendance;
+      };
     });
 
     return { date, updatedAt: now.toISOString(), people };

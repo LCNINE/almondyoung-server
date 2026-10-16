@@ -1,4 +1,11 @@
-import { halfDaySchedule, normalSchedule, seoulDate, validatePlannedTimes, verifyLocation, recommendPlannedClock } from './attendance';
+import {
+  halfDaySchedule,
+  normalSchedule,
+  seoulDate,
+  validatePlannedTimes,
+  verifyLocation,
+  recommendPlannedClock,
+} from './attendance';
 
 describe('attendance rules', () => {
   it('recommends only after enough consistent planned history', () => {
@@ -38,6 +45,7 @@ describe('attendance rules', () => {
     longitude: 127,
     radiusMeters: 150,
     accuracyMeters: 50,
+    active: true,
     version: 1,
   };
   const point = { latitude: 37.5, longitude: 127, accuracy: 20, timestamp: now.getTime() };

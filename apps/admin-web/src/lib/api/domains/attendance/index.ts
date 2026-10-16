@@ -12,6 +12,7 @@ import type {
   LeaveInput,
   LocationSample,
   StaffAttendance,
+  Worksite,
 } from '@packages/domain-types/attendance';
 
 const base = `${USER_SERVICE_BASE_URL}/attendance`;
@@ -25,8 +26,12 @@ export interface CorrectionInput {
 
 export const attendanceApi = {
   me: async () => (await client.get<AttendanceMe>(`${base}/me`)).data,
-  records: async () =>
-    (await client.get<AttendanceSession[]>(`${base}/records`)).data,
+  records: async (userId?: string) =>
+    (
+      await client.get<AttendanceSession[]>(`${base}/records`, {
+        params: userId ? { userId } : undefined,
+      })
+    ).data,
   calendar: async (from: string, to: string) =>
     (
       await client.get<CalendarLeave[]>(`${base}/calendar`, {
@@ -91,6 +96,10 @@ export const attendanceApi = {
       reason: string;
     }
   ) => (await client.post(`${base}/requests/${id}/decision`, input)).data,
+  worksites: async () =>
+    (await client.get<Worksite[]>(`${base}/worksites`)).data,
+  updateSite: async ({ id, ...site }: Worksite) =>
+    (await client.put<Worksite>(`${base}/worksites/${id}`, site)).data,
   createSite: async (site: {
     name: string;
     latitude: number;

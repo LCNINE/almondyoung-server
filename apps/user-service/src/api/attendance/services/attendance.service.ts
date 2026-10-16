@@ -39,7 +39,7 @@ export class AttendanceService {
 
       const open = await this.repo.findOpen(tx, userId);
 
-      let session;
+      let session: Awaited<ReturnType<AttendanceRepository['createSession']>> | undefined;
 
       if (dto.kind === 'in') {
         if (open || (await this.repo.findDay(tx, userId, seoulDate(now)))) {

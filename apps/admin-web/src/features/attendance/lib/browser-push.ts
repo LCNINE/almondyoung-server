@@ -95,8 +95,8 @@ export async function enableAttendancePush() {
 
   const { endpoint, keys } = subscription.toJSON();
 
-  await client.post(
-    `${NOTIFICATION_SERVICE_BASE_URL}/web-push/subscriptions`,
-    { endpoint, keys }
-  );
+  await client.post(`${NOTIFICATION_SERVICE_BASE_URL}/web-push/subscriptions`, {
+    endpoint,
+    keys,
+  });
 }

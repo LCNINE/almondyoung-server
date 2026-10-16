@@ -1,8 +1,20 @@
 import { AttendanceService } from './attendance.service';
+import { AttendanceRepository } from '../repositories/attendance.repository';
+import type { UserServiceTx } from '../../../../database/drizzle/schema';
 
 describe('AttendanceService punch', () => {
   const now = new Date('2026-10-16T04:00:00Z');
-  let repo: any;
+  let repo: Record<
+    | 'withUserLock'
+    | 'findPunch'
+    | 'findOpen'
+    | 'findDay'
+    | 'getSite'
+    | 'createSession'
+    | 'finishSession'
+    | 'appendPunch',
+    jest.Mock
+  >;
   let service: AttendanceService;
   const dto = {
     kind: 'in' as const,
@@ -13,7 +25,7 @@ describe('AttendanceService punch', () => {
 
   beforeEach(() => {
     repo = {
-      withUserLock: jest.fn(async (_id, fn) => fn({})),
+      withUserLock: jest.fn((_id: string, work: (tx: UserServiceTx) => Promise<unknown>) => work({} as UserServiceTx)),
       findPunch: jest.fn().mockResolvedValue(null),
       findOpen: jest.fn().mockResolvedValue(null),
       findDay: jest.fn().mockResolvedValue(null),
@@ -24,6 +36,7 @@ describe('AttendanceService punch', () => {
         longitude: 127,
         radiusMeters: 150,
         accuracyMeters: 50,
+        active: true,
         version: 1,
       }),
       createSession: jest
@@ -40,7 +53,7 @@ describe('AttendanceService punch', () => {
       appendPunch: jest.fn(),
     };
 
-    service = new AttendanceService(repo);
+    service = new AttendanceService(repo as unknown as AttendanceRepository);
   });
 
   it('records only after location succeeds', async () => {

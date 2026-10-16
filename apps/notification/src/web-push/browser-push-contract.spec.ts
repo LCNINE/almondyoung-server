@@ -1,7 +1,7 @@
 import { ValidationPipe } from '@nestjs/common';
-import { BrowserSubscriptionDto } from '../../../../../notification/src/web-push/dto/web-push.dto';
+import { BrowserSubscriptionDto } from './dto/web-push.dto';
 import { client } from '@/lib/api/client';
-import { enableAttendancePush } from './browser-push';
+import { enableAttendancePush } from '../../../admin-web/src/features/attendance/lib/browser-push';
 
 jest.mock('@/lib/api/client', () => ({ client: { get: jest.fn(), post: jest.fn() } }));
 

@@ -130,6 +130,15 @@ export class WorksiteDto {
   accuracyMeters: number;
 }
 
+export class UpdateWorksiteDto extends WorksiteDto {
+  @IsBoolean()
+  active: boolean;
+
+  @IsInt()
+  @Min(1)
+  version: number;
+}
+
 export class CreateRequestDto {
   @IsString()
   workDate: string;

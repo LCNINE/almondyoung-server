@@ -132,3 +132,34 @@
 ## Execution decision
 
 The user explicitly requested immediate implementation on a new branch after document synchronization. Proceed inline under executing-plans, without another plan approval prompt. Keep unfinished tasks unchecked and report actual verification results; do not call a partially implemented scope complete.
+
+## 2026-10-16 중단 복구 및 검증 기록
+
+컴퓨터 종료 후 `feat/attendance`의 변경분과 기존 작업 기록을 복구했다.
+사용자의 요청으로 `740626a9a`에 당시 변경분을 중간 저장하고 후속 수정을 진행했다.
+위 체크리스트는 최초 TDD 실행 순서를 보존한다.
+중단 전 RED 실행을 재현했다고 가정하지 않으며, 현재 구현과 이번 검증 결과는 아래에 별도로 기록한다.
+
+- [x] 공유 규칙과 출퇴근·정정·휴가·감사·소유권 구현을 복구하고 관련 단위/DB 통합 테스트를 실행했다.
+- [x] 마스터의 직원별 과거 기록 조회와 근무지 수정·비활성화·정책 버전 증가를 추가했다.
+- [x] 표준 브라우저 구독 JSON과 엄격한 DTO 사이의 계약 오류를 RED→GREEN으로 수정했다.
+- [x] 만료되거나 마지막 lease 중 종료된 AI 작업의 종료 상태를 RED→GREEN으로 수정했다.
+- [x] 잘못된 AI 응답과 첨부 메타데이터의 수신 검증을 RED→GREEN으로 보완했다.
+- [x] 실제 notification 마이그레이션 전체를 임시 PostgreSQL에 적용해 멱등 전송·만료·소유권·재시도를 검증했다.
+- [x] 푸시 모듈 import와 동시 만료 응답의 DB 교착을 회귀 테스트로 재현하고 수정했다.
+- [x] AI 503 중 수동 승인, 정상 재시도 결과·감사 기록, 보완 제출 후 이전 결과 무시를 실제 DB에서 확인했다.
+- [x] 전체 브랜치 독립 검토를 수행하고 중요 지적 4건을 수정했다.
+- [x] 두 서비스의 SQL/journal/snapshot 연결과 임시 DB 마이그레이션 적용을 확인했다.
+- [x] `docs/attendance-rollout.md`와 환경변수 예시를 작성했다.
+- [ ] 현장 좌표·반경 측정과 iOS/Android 실기기 위치·설치·푸시 검증은 출시 전 수행한다.
+
+최종 범위 테스트는 `REQUIRE_ATTENDANCE_DB=1`로 실행했으며 18개 suite, 141개 테스트가 모두 통과했다.
+어드민 TypeScript 검사와 user-service·ai·notification·file-service 빌드를 통과했다.
+린트의 실행 범위와 환경 제약은 운영 문서의 검증 기록에 남긴다.
+원격 DB 변경, 서비스 배포, push/merge는 실행하지 않았다.
+
+사용자의 추가 화면 수정 요청을 반영해 시안의 이미지 경로와 드롭다운 화살표 간격을 수정했다.
+종일 휴가 16~19일은 주 경계에서도 같은 색으로 이어지는 막대로 표시한다.
+기간 등록은 공통 종류·시간을 한 번 입력하고, 날짜별 수정·제외·복원은 접힌 조정 영역에서 처리한다.
+실제 `shared-calendar.tsx`의 연결 막대 및 공통 설정 구조와 시안을 맞췄다.
+시안 변경은 브라우저에서 확인했으며 실제 운영 기록을 생성하지 않았다.

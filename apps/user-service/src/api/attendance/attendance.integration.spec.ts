@@ -1,8 +1,13 @@
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { DbService } from '@app/db';
-import { sql } from 'drizzle-orm';
-import { attendanceJobs, attendanceRequests, userServiceSchema } from '../../../database/drizzle/schema';
+import { and, eq, ne, sql } from 'drizzle-orm';
+import {
+  attendanceAudit,
+  attendanceJobs,
+  attendanceRequests,
+  userServiceSchema,
+} from '../../../database/drizzle/schema';
 import { AttendanceRepository } from './repositories/attendance.repository';
 import { AttendanceService } from './services/attendance.service';
 import { AttendanceCalendarService } from './services/attendance-calendar.service';
@@ -56,6 +61,15 @@ run('attendance PostgreSQL transactions', () => {
       (${owner}, 'owner', '직원하나', 'owner', 'owner@example.test'),
       (${other}, 'other', '직원둘', 'other', 'other@example.test'),
       (${master}, 'master', '마스터', 'master', 'master@example.test');
+    `);
+
+    await database.db.execute(sql`INSERT INTO roles (name) VALUES ('admin'), ('master')`);
+
+    await database.db.execute(sql`
+      INSERT INTO user_roles (user_id, role_id)
+      SELECT id, role_id FROM users CROSS JOIN roles
+      WHERE (users.id = ${master} AND roles.name = 'master')
+         OR (users.id <> ${master} AND roles.name = 'admin')
     `);
 
     await database.db.execute(
@@ -284,6 +298,8 @@ run('attendance PostgreSQL transactions', () => {
       version: 1,
     };
 
+    // Metadata inspection reads the method reference without invoking it or losing its receiver.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(Reflect.getMetadata(GUARDS_METADATA, controller.updateSite)).toContain(MasterRoleGuard);
 
     const changed = await controller.updateSite(masterUser, site, input);
@@ -293,10 +309,267 @@ run('attendance PostgreSQL transactions', () => {
 
     const now = new Date('2026-10-15T00:00:00Z');
 
-    await expect(
-      service.punch(owner, punch('in', '00000000-0000-4000-8000-000000000017', now), now),
-    ).rejects.toThrow();
+    await expect(service.punch(owner, punch('in', '00000000-0000-4000-8000-000000000017', now), now)).rejects.toThrow();
 
     expect(await repo.records(owner)).toHaveLength(0);
+  });
+
+  describe('AI worker retry and request version boundaries', () => {
+    const environmentNames = ['AI_SERVICE_URL', 'AI_INTERNAL_KEY', 'APP_STAGE'] as const;
+    const attendanceAiResponse = {
+      result: {
+        summary: '출근 누락 사유와 제시된 근무 시각을 함께 검토해 주세요.',
+        evidence: ['직원이 실제 출근 시각을 제출했습니다.'],
+        questions: [],
+        opinion: 'reviewable',
+      },
+      model: 'integration-review-model',
+      promptVersion: 'attendance-review-v1',
+    };
+
+    let originalEnvironment: Record<string, string | undefined>;
+    let fetchSpy: jest.SpiedFunction<typeof fetch>;
+
+    beforeEach(() => {
+      originalEnvironment = Object.fromEntries(environmentNames.map((name) => [name, process.env[name]]));
+
+      process.env.AI_SERVICE_URL = 'http://attendance-ai.test';
+      process.env.AI_INTERNAL_KEY = 'test-key';
+      process.env.APP_STAGE = 'test';
+
+      fetchSpy = jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Unexpected external request'));
+    });
+
+    afterEach(() => {
+      fetchSpy.mockRestore();
+
+      for (const name of environmentNames) {
+        const original = originalEnvironment[name];
+
+        if (original === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = original;
+        }
+      }
+    });
+
+    it('preserves records after AI 503, permits manual decisions and persists a successful retry with its audit', async () => {
+      const retryRequest = await requests.create(owner, {
+        workDate: '2026-10-15',
+        checkIn: '2026-10-15T00:00:00Z',
+        reason: '출근 기록 누락',
+      });
+      const manualRequest = await requests.create(other, {
+        workDate: '2026-10-15',
+        checkIn: '2026-10-15T01:00:00Z',
+        reason: '출근 기록 수동 확인 요청',
+      });
+
+      await database.db.execute(sql`DELETE FROM attendance_jobs WHERE kind <> 'ai'`);
+
+      fetchSpy.mockImplementation(() => Promise.resolve(new Response('Service unavailable', { status: 503 })));
+
+      const worker = new AttendanceJobsService(repo);
+
+      await worker.tick();
+
+      const failedAttempts = await database.db.select().from(attendanceJobs);
+      const pendingRequests = await database.db.select().from(attendanceRequests);
+
+      expect(failedAttempts).toHaveLength(2);
+      expect(failedAttempts.every((job) => job.status === 'pending' && job.attempts === 1)).toBe(true);
+      expect(pendingRequests.every((request) => request.status === 'pending' && request.aiResult === null)).toBe(true);
+      expect(await repo.records(owner)).toHaveLength(0);
+      expect(await repo.records(other)).toHaveLength(0);
+      expect(
+        await database.db.select().from(attendanceAudit).where(eq(attendanceAudit.kind, 'request.ai_reviewed')),
+      ).toHaveLength(0);
+
+      const decision = await requests.decide(master, ['master'], manualRequest.id, {
+        version: 1,
+        status: 'approved',
+        reason: 'AI 응답 지연 중 담당자가 실제 근무를 확인했습니다.',
+      });
+
+      expect(decision).toMatchObject({ status: 'approved', version: 2 });
+      expect(await repo.records(other)).toHaveLength(1);
+
+      await database.db.update(attendanceJobs).set({ runAfter: new Date(Date.now() + 60_000) });
+
+      await database.db
+        .update(attendanceJobs)
+        .set({ runAfter: new Date(Date.now() - 1000) })
+        .where(eq(attendanceJobs.key, `ai:${retryRequest.id}:1`));
+
+      fetchSpy.mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ data: attendanceAiResponse }))));
+
+      await worker.tick();
+
+      const [reviewed] = await database.db
+        .select()
+        .from(attendanceRequests)
+        .where(eq(attendanceRequests.id, retryRequest.id));
+      const [retriedJob] = await database.db
+        .select()
+        .from(attendanceJobs)
+        .where(eq(attendanceJobs.key, `ai:${retryRequest.id}:1`));
+      const audit = await database.db
+        .select()
+        .from(attendanceAudit)
+        .where(and(eq(attendanceAudit.entityId, retryRequest.id), eq(attendanceAudit.kind, 'request.ai_reviewed')));
+
+      expect(reviewed).toMatchObject({
+        status: 'pending',
+        version: 1,
+        aiStatus: 'succeeded',
+        aiResult: attendanceAiResponse.result,
+      });
+      expect(retriedJob).toMatchObject({ status: 'done', attempts: 2, leaseUntil: null });
+      expect(audit).toHaveLength(1);
+      expect(audit[0]).toMatchObject({
+        actorId: owner,
+        subjectId: owner,
+        after: {
+          inputVersion: 1,
+          model: 'integration-review-model',
+          promptVersion: 'attendance-review-v1',
+          result: attendanceAiResponse.result,
+        },
+      });
+      expect(await repo.records(owner)).toHaveLength(0);
+    });
+
+    it('discards an in-flight AI result after a manual information request and resubmission creates a new version', async () => {
+      const request = await requests.create(owner, {
+        workDate: '2026-10-15',
+        checkIn: '2026-10-15T00:00:00Z',
+        reason: '출근 기록 누락',
+      });
+
+      await database.db.execute(sql`DELETE FROM attendance_jobs WHERE kind <> 'ai'`);
+
+      await database.db.update(attendanceJobs).set({ runAfter: new Date(Date.now() - 60_000) });
+
+      const [originalJob] = await database.db.select().from(attendanceJobs);
+
+      fetchSpy.mockImplementationOnce(async () => {
+        const [running] = await database.db
+          .select()
+          .from(attendanceRequests)
+          .where(eq(attendanceRequests.id, request.id));
+
+        expect(running).toMatchObject({ status: 'pending', version: 1, aiStatus: 'running' });
+
+        await requests.decide(master, ['master'], request.id, {
+          version: 1,
+          status: 'needs_information',
+          reason: '누락된 근무 내용을 보완해 주세요.',
+        });
+
+        await requests.resubmit(owner, request.id, {
+          workDate: '2026-10-15',
+          checkIn: '2026-10-15T00:10:00Z',
+          reason: '실제 출근 시각과 근무 내용을 보완했습니다.',
+        });
+
+        // Keep the next version queued while this tick finishes the previous response.
+        await database.db
+          .update(attendanceJobs)
+          .set({ runAfter: new Date(Date.now() + 60_000) })
+          .where(ne(attendanceJobs.id, originalJob.id));
+
+        return new Response(JSON.stringify(attendanceAiResponse));
+      });
+
+      await new AttendanceJobsService(repo).tick();
+
+      const [resubmitted] = await database.db
+        .select()
+        .from(attendanceRequests)
+        .where(eq(attendanceRequests.id, request.id));
+      const aiJobs = await database.db.select().from(attendanceJobs).where(eq(attendanceJobs.kind, 'ai'));
+      const audit = await database.db
+        .select()
+        .from(attendanceAudit)
+        .where(and(eq(attendanceAudit.entityId, request.id), eq(attendanceAudit.kind, 'request.ai_reviewed')));
+
+      expect(resubmitted).toMatchObject({
+        status: 'pending',
+        version: 3,
+        aiStatus: 'queued',
+        aiResult: null,
+        reason: '실제 출근 시각과 근무 내용을 보완했습니다.',
+      });
+      expect(resubmitted.checkIn?.toISOString()).toBe('2026-10-15T00:10:00.000Z');
+      expect(aiJobs).toHaveLength(2);
+      expect(aiJobs.find((job) => job.id === originalJob.id)).toMatchObject({
+        status: 'done',
+        attempts: 1,
+        leaseUntil: null,
+      });
+      expect(aiJobs.find((job) => job.key === `ai:${request.id}:3`)).toMatchObject({ status: 'pending', attempts: 0 });
+      expect(audit).toHaveLength(0);
+      expect(await repo.records(owner)).toHaveLength(0);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('retries malformed AI responses without persisting an unvalidated review', async () => {
+    await requests.create(owner, {
+      workDate: '2026-10-15',
+      checkIn: '2026-10-15T00:00:00Z',
+      reason: '기록 누락',
+    });
+
+    await database.db.execute(sql`DELETE FROM attendance_jobs WHERE kind <> 'ai'`);
+
+    const previousUrl = process.env.AI_SERVICE_URL;
+    const previousKey = process.env.AI_INTERNAL_KEY;
+
+    process.env.AI_SERVICE_URL = 'http://attendance-ai.test';
+    process.env.AI_INTERNAL_KEY = 'test-key';
+
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        new Response(JSON.stringify({ result: { opinion: 'approved' }, model: 'test', promptVersion: 'v1' })),
+      );
+
+    try {
+      const worker = new AttendanceJobsService(repo);
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await database.db.update(attendanceJobs).set({ runAfter: new Date(Date.now() - 1000) });
+
+        // Each response has its own body stream, as a real HTTP retry does.
+        fetchSpy.mockResolvedValueOnce(
+          new Response(JSON.stringify({ result: { opinion: 'approved' }, model: 'test', promptVersion: 'v1' })),
+        );
+
+        await worker.tick();
+      }
+
+      const [request] = await database.db.select().from(attendanceRequests);
+      const [job] = await database.db.select().from(attendanceJobs);
+
+      expect(request.aiResult).toBeNull();
+      expect(request.aiStatus).toBe('failed');
+      expect(job).toMatchObject({ status: 'failed', attempts: 3 });
+    } finally {
+      fetchSpy.mockRestore();
+
+      if (previousUrl === undefined) {
+        delete process.env.AI_SERVICE_URL;
+      } else {
+        process.env.AI_SERVICE_URL = previousUrl;
+      }
+
+      if (previousKey === undefined) {
+        delete process.env.AI_INTERNAL_KEY;
+      } else {
+        process.env.AI_INTERNAL_KEY = previousKey;
+      }
+    }
   });
 });

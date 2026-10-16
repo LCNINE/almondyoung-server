@@ -1,4 +1,5 @@
-import { validateCorrection, assertDecisionAllowed } from './attendance-request.manager';
+import { validateCorrection, assertDecisionAllowed, AttendanceRequestManager } from './attendance-request.manager';
+import type { AttendanceRepository } from '../repositories/attendance.repository';
 
 describe('attendance correction boundaries', () => {
   it('accepts optional attachments and preserves multiline reasons', () => {
@@ -29,5 +30,35 @@ describe('attendance correction boundaries', () => {
     expect(() => assertDecisionAllowed(['master'], 'pending', 2, 1)).toThrow();
 
     expect(() => assertDecisionAllowed(['master'], 'pending', 1, 1)).not.toThrow();
+  });
+
+  it('rejects malformed attachment metadata as an unusable attachment', async () => {
+    const previousUrl = process.env.FILE_SERVICE_URL;
+    const previousKey = process.env.FILE_SERVICE_INTERNAL_KEY;
+
+    process.env.FILE_SERVICE_URL = 'http://files.test';
+    process.env.FILE_SERVICE_INTERNAL_KEY = 'test-key';
+
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('null'));
+
+    try {
+      const manager = new AttendanceRequestManager({} as AttendanceRepository);
+
+      await expect(manager.verifyFiles('owner', ['image'])).rejects.toMatchObject({ status: 400 });
+    } finally {
+      fetchSpy.mockRestore();
+
+      if (previousUrl === undefined) {
+        delete process.env.FILE_SERVICE_URL;
+      } else {
+        process.env.FILE_SERVICE_URL = previousUrl;
+      }
+
+      if (previousKey === undefined) {
+        delete process.env.FILE_SERVICE_INTERNAL_KEY;
+      } else {
+        process.env.FILE_SERVICE_INTERNAL_KEY = previousKey;
+      }
+    }
   });
 });

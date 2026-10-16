@@ -2,16 +2,19 @@
 export type LeaveType = 'full' | 'am' | 'pm';
 export type AttendanceStatus = 'before' | 'working' | 'done';
 export type RequestStatus = 'pending' | 'needs_information' | 'approved' | 'rejected' | 'cancelled';
+
 export interface PlannedTimes {
   start: string;
   end: string;
 }
+
 export interface LocationSample {
   latitude: number;
   longitude: number;
   accuracy: number;
   timestamp: number;
 }
+
 export interface Worksite {
   id: string;
   name: string;
@@ -19,8 +22,10 @@ export interface Worksite {
   longitude: number;
   radiusMeters: number;
   accuracyMeters: number;
+  active: boolean;
   version: number;
 }
+
 export interface AttendanceSettings {
   normalStart: string;
   normalEnd: string;
@@ -32,6 +37,7 @@ export interface AttendanceSettings {
   skipDate: string | null;
   sound: boolean;
 }
+
 export const DEFAULT_ATTENDANCE_SETTINGS: AttendanceSettings = {
   normalStart: '09:00',
   normalEnd: '18:00',
@@ -43,6 +49,7 @@ export const DEFAULT_ATTENDANCE_SETTINGS: AttendanceSettings = {
   skipDate: null,
   sound: true,
 };
+
 export interface AttendanceSession {
   id: string;
   userId: string;
@@ -51,6 +58,7 @@ export interface AttendanceSession {
   checkOut: string | null;
   version: number;
 }
+
 export interface CalendarLeave {
   id: string;
   userId: string;
@@ -60,12 +68,14 @@ export interface CalendarLeave {
   start: string | null;
   end: string | null;
 }
+
 export interface LeaveInput {
   date: string;
   type: LeaveType;
   start?: string;
   end?: string;
 }
+
 export interface AttendanceMe {
   userId: string;
   name: string;
@@ -77,12 +87,14 @@ export interface AttendanceMe {
   worksites: Worksite[];
   isMaster: boolean;
 }
+
 export interface StaffAttendance {
   userId: string;
   name: string;
   status: AttendanceStatus;
   leave: Pick<CalendarLeave, 'type' | 'start' | 'end'> | null;
 }
+
 export interface AttendanceRequest {
   id: string;
   userId: string;
@@ -113,6 +125,7 @@ export interface AttendanceRequestHistory {
   checkIn?: string;
   checkOut?: string;
 }
+
 export interface AiAttendanceReview {
   summary: string;
   evidence: string[];
@@ -121,6 +134,7 @@ export interface AiAttendanceReview {
 }
 
 export const LEAVE_LABELS: Record<LeaveType, string> = { full: '종일 휴가', am: '오전 반차', pm: '오후 반차' };
+
 export const STATUS_LABELS: Record<AttendanceStatus, string> = {
   before: '출근 기록 없음',
   working: '근무 중',
@@ -138,7 +152,11 @@ export function clockMinutes(value: string): number | null {
 }
 
 export function recommendPlannedClock(history: string[]): string | null {
-  const values = history.slice(0, 10).map(clockMinutes).filter((value): value is number => value !== null).sort((a, b) => a - b);
+  const values = history
+    .slice(0, 10)
+    .map(clockMinutes)
+    .filter((value): value is number => value !== null)
+    .sort((a, b) => a - b);
 
   if (values.length < 5) {
     return null;

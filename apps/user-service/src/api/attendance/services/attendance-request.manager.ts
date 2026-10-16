@@ -17,6 +17,15 @@ import {
 } from '../../../../database/drizzle/schema';
 import { AttendanceRepository } from '../repositories/attendance.repository';
 import { CreateRequestDto, DecisionDto } from '../dto/attendance.dto';
+import { unwrapAttendanceResponse } from '@packages/domain-types/attendance-review';
+import { z } from 'zod';
+
+const attachmentMetadataSchema = z.object({
+  uploadedBy: z.string(),
+  contextId: z.string(),
+  status: z.string(),
+  mimeType: z.string(),
+});
 
 export function validateCorrection(dto: CreateRequestDto, now = new Date()) {
   if (
@@ -148,16 +157,14 @@ export class AttendanceRequestManager {
         .where(eq(attendanceRequests.id, id))
         .returning();
 
-      await tx
-        .insert(attendanceAudit)
-        .values({
-          actorId: userId,
-          subjectId: userId,
-          kind: 'request.cancelled',
-          entityId: id,
-          before: request,
-          after: changed,
-        });
+      await tx.insert(attendanceAudit).values({
+        actorId: userId,
+        subjectId: userId,
+        kind: 'request.cancelled',
+        entityId: id,
+        before: request,
+        after: changed,
+      });
 
       return changed;
     });
@@ -191,9 +198,15 @@ export class AttendanceRequestManager {
         throw new BadRequestException('첨부 파일을 확인하지 못했어요.');
       }
 
-      const raw = await response.json();
+      const raw: unknown = await response.json();
 
-      const file = raw.data ?? raw;
+      const parsed = attachmentMetadataSchema.safeParse(unwrapAttendanceResponse(raw));
+
+      if (!parsed.success) {
+        throw new BadRequestException('첨부 파일을 확인하지 못했어요.');
+      }
+
+      const file = parsed.data;
 
       if (
         file.uploadedBy !== userId ||
