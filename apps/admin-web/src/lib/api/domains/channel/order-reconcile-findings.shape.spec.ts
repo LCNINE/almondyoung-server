@@ -34,7 +34,9 @@ describe('toMismatchList', () => {
   it('인터셉터가 벗긴 배열·envelope·data 한 겹을 모두 읽는다', () => {
     const expected = { data: [finding], truncated: false };
     expect(toMismatchList([finding])).toEqual(expected);
-    expect(toMismatchList({ success: true, data: [finding] })).toEqual(expected);
+    expect(toMismatchList({ success: true, data: [finding] })).toEqual(
+      expected
+    );
     expect(toMismatchList({ data: [finding] })).toEqual(expected);
   });
   it('상한에 닿으면 truncated', () => {
@@ -49,25 +51,39 @@ describe('toMismatchList', () => {
 });
 
 describe('toMismatchSummary', () => {
-  const summary = { open: 3, human: 1, gaveUp: 1, oldestFirstSeenAt: '2026-10-16T09:30:00.000Z' };
+  const summary = {
+    open: 3,
+    human: 1,
+    gaveUp: 1,
+    oldestFirstSeenAt: '2026-10-16T09:30:00.000Z',
+  };
   it('벗긴 몸통과 envelope 둘 다 읽는다', () => {
     expect(toMismatchSummary(summary)).toEqual(summary);
-    expect(toMismatchSummary({ success: true, data: summary, timestamp: 'x' })).toEqual(summary);
+    expect(
+      toMismatchSummary({ success: true, data: summary, timestamp: 'x' })
+    ).toEqual(summary);
   });
   it('oldestFirstSeenAt 이 문자열이 아니면 null 로 둔다', () => {
-    expect(toMismatchSummary({ ...summary, oldestFirstSeenAt: null })).toEqual({ ...summary, oldestFirstSeenAt: null });
+    expect(toMismatchSummary({ ...summary, oldestFirstSeenAt: null })).toEqual({
+      ...summary,
+      oldestFirstSeenAt: null,
+    });
   });
   it('건수가 숫자가 아니면 null — 0 으로 보면 «정상»으로 읽힌다', () => {
     expect(toMismatchSummary('x')).toBeNull();
     expect(toMismatchSummary({ open: 3 })).toBeNull();
-    expect(toMismatchSummary({ quarantined: 3, oldestCreatedAt: null })).toBeNull();
+    expect(
+      toMismatchSummary({ quarantined: 3, oldestCreatedAt: null })
+    ).toBeNull();
   });
 });
 
 describe('toRedeliverResult', () => {
   it('인터셉터를 안 거친 { result } 와 감싼 모양 둘 다', () => {
     expect(toRedeliverResult({ result: 'enqueued' })).toBe('enqueued');
-    expect(toRedeliverResult({ success: true, data: { result: 'not_found' } })).toBe('not_found');
+    expect(
+      toRedeliverResult({ success: true, data: { result: 'not_found' } })
+    ).toBe('not_found');
   });
   it('모양이 다르면 null', () => {
     expect(toRedeliverResult({})).toBeNull();
@@ -77,7 +93,11 @@ describe('toRedeliverResult', () => {
 
 describe('toClosedFinding', () => {
   it('{ data: 행 } 과 행 자체 둘 다', () => {
-    const closed = { ...finding, status: 'closed' as const, closeMemo: '셀메이트로 나감' };
+    const closed = {
+      ...finding,
+      status: 'closed' as const,
+      closeMemo: '셀메이트로 나감',
+    };
     expect(toClosedFinding({ data: closed })).toEqual(closed);
     expect(toClosedFinding(closed)).toEqual(closed);
   });
