@@ -11,6 +11,9 @@ export const partialCancelHref = (channelOrderId: string | null | undefined): st
 
 export const PRINT_UNCOLLECTED_NOTE =
   '주문이 아직 수집되지 않아 아몬드템플릿 인쇄 상품이 있는지 확인할 수 없습니다. 몇 분 뒤 새로고침해 주세요.';
+// 결제는 됐는데 Medusa 주문이 만들어지지 않은 결제는 수집될 주문이 없어 영영 수집 전으로 남는다. 운영자가 확인하면 연다
+export const PRINT_NO_ORDER_OVERRIDE_LABEL =
+  'Medusa 주문 내역에 이 결제의 주문이 없음을 확인했습니다 (주문 생성 실패 결제)';
 export const PRINT_STATUS_UNKNOWN_NOTE = '인쇄 주문 상태를 확인하지 못해 환불·결제취소를 막았습니다. 새로고침해 주세요.';
 
 export type PrintRefundGate = 'open' | 'print' | 'uncollected' | 'unknown';
@@ -24,11 +27,13 @@ export type PrintRefundGate = 'open' | 'print' | 'uncollected' | 'unknown';
  */
 export function printRefundGate(
   status: { hasActivePrint: boolean; channelOrderId: string | null } | undefined,
-  opts: { medusaOrder: boolean; moneyCaptured: boolean; defectConfirmed: boolean }
+  opts: { medusaOrder: boolean; moneyCaptured: boolean; defectConfirmed: boolean; noOrderConfirmed?: boolean }
 ): PrintRefundGate {
   if (!status) return 'unknown';
   if (status.hasActivePrint) return opts.defectConfirmed ? 'open' : 'print';
-  if (opts.medusaOrder && opts.moneyCaptured && status.channelOrderId === null) return 'uncollected';
+  if (opts.medusaOrder && opts.moneyCaptured && status.channelOrderId === null && !opts.noOrderConfirmed) {
+    return 'uncollected';
+  }
   return 'open';
 }
 

@@ -17,6 +17,7 @@ import {
   PRINT_REFUND_RESTRICTED_NOTE,
   PRINT_PARTIAL_CANCEL_GUIDE,
   PRINT_DEFECT_OVERRIDE_LABEL,
+  PRINT_NO_ORDER_OVERRIDE_LABEL,
   partialCancelHref,
 } from '@/lib/services/wallet';
 import Link from 'next/link';
@@ -95,6 +96,7 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
   const hasActivePrint = printStatus.data?.hasActivePrint;
   // 상품 하자 환불이면 와우프레스 주문은 그대로 두고 환불만 한다(인쇄 취소를 보내지 않는다)
   const [defectConfirmed, setDefectConfirmed] = useState(false);
+  const [noOrderConfirmed, setNoOrderConfirmed] = useState(false);
   const gateFor = (
     status: typeof printStatus.data,
     intent: Pick<typeof data, 'status' | 'metadata'>,
@@ -104,6 +106,7 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
       medusaOrder: typeof intent.metadata?.medusaSessionId === 'string',
       moneyCaptured: action === 'refund' || isMoneyMoved(intent.status),
       defectConfirmed,
+      noOrderConfirmed,
     });
   const refundGate = gateFor(printStatus.data, data, 'refund');
   const cancelGate = gateFor(printStatus.data, data, 'cancel');
@@ -242,7 +245,7 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
   return (
     <>
       <div className="p-4 space-y-2">
-        {(canRefund || canCancel) && (hasActivePrint !== false || refundGate === 'uncollected') && (
+        {(canRefund || canCancel) && (hasActivePrint !== false || refundGate === 'uncollected' || noOrderConfirmed) && (
           <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3">
             {hasActivePrint === true ? (
               <>
@@ -259,8 +262,17 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
                   {PRINT_DEFECT_OVERRIDE_LABEL}
                 </label>
               </>
-            ) : refundGate === 'uncollected' ? (
-              <p className="text-xs text-amber-800">{printRefundGateMessage('uncollected')}</p>
+            ) : refundGate === 'uncollected' || noOrderConfirmed ? (
+              <>
+                <p className="text-xs text-amber-800">{printRefundGateMessage('uncollected')}</p>
+                <label className="flex items-center gap-2 text-xs text-amber-900">
+                  <Checkbox
+                    checked={noOrderConfirmed}
+                    onCheckedChange={(checked) => setNoOrderConfirmed(checked === true)}
+                  />
+                  {PRINT_NO_ORDER_OVERRIDE_LABEL}
+                </label>
+              </>
             ) : (
               <p className="text-xs text-amber-800">
                 {printStatus.isError ? printRefundGateMessage('unknown') : '인쇄 주문 상태를 확인하는 중입니다.'}

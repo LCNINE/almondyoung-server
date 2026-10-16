@@ -24,6 +24,14 @@ describe('printRefundGate', () => {
     expect(printRefundGate(uncollected, { ...opts, defectConfirmed: true })).toBe('uncollected');
   });
 
+  it('주문이 만들어지지 않은 결제임을 운영자가 확인하면 수집 전이어도 연다. 인쇄가 있으면 그 확인으로는 열지 않는다', () => {
+    const uncollected = { hasActivePrint: false, channelOrderId: null };
+    expect(printRefundGate(uncollected, { ...opts, noOrderConfirmed: true })).toBe('open');
+    expect(printRefundGate({ hasActivePrint: true, channelOrderId: 'o' }, { ...opts, noOrderConfirmed: true })).toBe(
+      'print'
+    );
+  });
+
   it('입금 전 거절처럼 돈이 안 오간 취소나 Medusa 주문이 아닌 결제는 수집 여부와 상관없이 연다', () => {
     const uncollected = { hasActivePrint: false, channelOrderId: null };
     expect(printRefundGate(uncollected, { ...opts, moneyCaptured: false })).toBe('open');
