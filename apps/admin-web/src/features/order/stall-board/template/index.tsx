@@ -3,7 +3,10 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useOrderProgressSummary } from '@/lib/services/orders/queries';
-import { useQuarantineSummary } from '@/lib/services/channel/queries';
+import {
+  useMismatchSummary,
+  useQuarantineSummary,
+} from '@/lib/services/channel/queries';
 import {
   BOARD_STAGES,
   BoardStageKey,
@@ -12,6 +15,7 @@ import {
 } from '@/lib/api/domains/orders/order-progress.shape';
 import { StageBand, BandCell } from '../components/stage-band';
 import { StageOrders } from '../components/stage-orders';
+import { collectCell, known } from '../collect-cell';
 import { cn } from '@/lib/utils/ui';
 
 export default function StallBoardTemplate() {
@@ -23,22 +27,13 @@ export default function StallBoardTemplate() {
   }, []);
   const summary = useOrderProgressSummary();
   const quarantine = useQuarantineSummary();
+  const mismatch = useMismatchSummary();
 
   const stages = summary.data?.stages ?? [];
   const hasSummary = summary.data !== undefined;
-  const qCount = quarantine.isSuccess
-    ? quarantine.data?.quarantined
-    : undefined;
+  const collect = collectCell(known(quarantine), known(mismatch));
   const cells: BandCell[] = [
-    {
-      key: 'collect',
-      open: cellCount(qCount, quarantine.isSuccess),
-      stuck: qCount ?? 0, // 격리는 전부 사람 일(스펙 §6)
-      gaveUp: 0,
-      oldestAt: quarantine.isSuccess
-        ? (quarantine.data?.oldestCreatedAt ?? null)
-        : null,
-    },
+    collect.cell,
     ...BOARD_STAGES.slice(1, 9).map((b) => {
       const s = stages.find((x) => x.stage === b.key);
       return {
@@ -87,12 +82,26 @@ export default function StallBoardTemplate() {
         now={now}
       />
       {selected === 'collect' ? (
-        <Link
-          href="/mall/channel-listings"
-          className="rounded-lg border bg-white px-4 py-10 text-center text-sm"
-        >
-          수집 격리 목록으로
-        </Link>
+        <div className="flex flex-wrap gap-2 rounded-lg border bg-white px-4 py-6 text-sm">
+          {collect.links.length === 0 ? (
+            <span className="text-muted-foreground">없음</span>
+          ) : (
+            collect.links.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="rounded-md border px-3 py-2 hover:border-slate-400"
+              >
+                {link.label}
+                {link.count !== null && (
+                  <b className="ml-1.5 tabular-nums">
+                    {link.count.toLocaleString('ko-KR')}
+                  </b>
+                )}
+              </Link>
+            ))
+          )}
+        </div>
       ) : (
         <StageOrders
           key={selected}
