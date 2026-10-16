@@ -45,6 +45,38 @@ describe('scoped review cleanup', () => {
     expect(f.calls).toEqual([]);
   });
 
+  it('skips a small number of independently confirmed preexisting soft deletes', async () => {
+    const f = fixture();
+    f.rows[0].deletedAt = 'deleted before this job';
+
+    expect(await runReviews(f.manifest, f.dependencies)).toMatchObject({
+      status: 'complete',
+      deleted: 5,
+      preexistingDeleted: 1,
+    });
+    expect(f.calls).not.toContain('id-0');
+  });
+
+  it('limits preexisting drift across the entire operation, including restarts', async () => {
+    const f = fixture();
+    const done = Object.fromEntries(f.rows.slice(0, 3).map((row) => [row.id, { httpStatus: null, preexisting: true }]));
+    f.rows.forEach((row) => {
+      row.deletedAt = 'independently deleted';
+    });
+    await f.dependencies.store.write('review-progress.json', { done, pilotVerified: 0 });
+
+    await expect(runReviews(f.manifest, f.dependencies)).rejects.toThrow('scope');
+    expect(f.calls).toEqual([]);
+  });
+
+  it('does not excuse an undeleted review removed from the eligibility query', async () => {
+    const f = fixture();
+    f.dependencies.repository.eligible = async () => f.rows.slice(1);
+
+    await expect(runReviews(f.manifest, f.dependencies)).rejects.toThrow('scope');
+    expect(f.calls).toEqual([]);
+  });
+
   it('rejects an added eligible review before issuing any DELETE', async () => {
     const f = fixture();
     f.rows.push({ ...f.rows[0], id: 'not-approved' });

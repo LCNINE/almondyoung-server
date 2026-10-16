@@ -23,7 +23,7 @@ export interface ReviewDependencies extends RunControls {
 }
 
 interface ReviewProgress {
-  done: Record<string, { httpStatus: number | null; recovered?: boolean }>;
+  done: Record<string, { httpStatus: number | null; recovered?: boolean; preexisting?: boolean }>;
   inFlightId?: string;
   pilotVerified: number;
   pilotCompleted?: boolean;
@@ -59,7 +59,37 @@ export async function runReviews(manifest: ReviewManifest, deps: ReviewDependenc
   }
 
   const live = await deps.repository.eligible();
-  const remaining = manifest.targets.filter((row) => !progress.done[row.id]);
+  let remaining = manifest.targets.filter((row) => !progress.done[row.id]);
+  const persistedPreexisting = Object.values(progress.done).filter((row) => row.preexisting).length;
+  if (persistedPreexisting > 5) throw new Error('Stored review scope drift exceeds the operation limit');
+  const liveIds = new Set(live.map((row) => row.id));
+  const missing = remaining.filter((row) => !liveIds.has(row.id));
+  // A few targets may have been independently soft-deleted since approval. Confirm each row;
+  // larger drift, changed eligibility and any newly eligible ID still stop the operation.
+  if (missing.length > 0 && persistedPreexisting + missing.length <= 5 && live.every((row) => approved.has(row.id))) {
+    const confirmed = await Promise.all(missing.map((row) => deps.repository.find(row.id)));
+    if (
+      confirmed.every(
+        (row, index) =>
+          row?.deletedAt &&
+          row.provider === 'admin' &&
+          row.status === 'active' &&
+          row.rating === missing[index].rating &&
+          row.productId === missing[index].productId,
+      )
+    ) {
+      for (const target of missing) progress.done[target.id] = { httpStatus: null, preexisting: true };
+      if (!deps.dryRun) await deps.store.write(progressKey, progress);
+      deps.log({
+        phase: 'preexisting-soft-deletes-confirmed',
+        count: missing.length,
+        ids: missing.map((row) => row.id),
+      });
+      remaining = manifest.targets.filter((row) => !progress.done[row.id]);
+    }
+  }
+  const preexistingDeleted = Object.values(progress.done).filter((row) => row.preexisting).length;
+  const ownDeleted = () => Object.keys(progress.done).length - preexistingDeleted;
   const expectedLive = new Map(remaining.map((row) => [row.id, row]));
 
   if (
@@ -77,12 +107,31 @@ export async function runReviews(manifest: ReviewManifest, deps: ReviewDependenc
       );
     })
   ) {
-    throw new Error('Live review scope differs from approved manifest and verified progress');
+    const mismatched = live.filter((row) => {
+      const expected = expectedLive.get(row.id);
+      return (
+        expected &&
+        (row.productId !== expected.productId ||
+          row.rating !== expected.rating ||
+          row.provider !== 'admin' ||
+          row.status !== 'active' ||
+          !!row.deletedAt)
+      );
+    });
+    throw new Error(
+      `Live review scope differs from approved manifest and verified progress: ${JSON.stringify({
+        expected: remaining.length,
+        actual: live.length,
+        extra: live.filter((row) => !expectedLive.has(row.id)).length,
+        missing: remaining.filter((row) => !live.some((current) => current.id === row.id)).length,
+        mismatched: mismatched.length,
+        sample: mismatched.slice(0, 1),
+      })}`,
+    );
   }
 
   await deps.checkLoad();
-  if (deps.dryRun)
-    return { status: 'dry-run', deleted: Object.keys(progress.done).length, remaining: remaining.length };
+  if (deps.dryRun) return { status: 'dry-run', deleted: ownDeleted(), preexistingDeleted, remaining: remaining.length };
 
   const verifyPilot = async () => {
     if (progress.pilotVerified < 5 || progress.pilotCompleted) return;
@@ -148,7 +197,8 @@ export async function runReviews(manifest: ReviewManifest, deps: ReviewDependenc
 
   return {
     status: outstanding.length ? 'partial' : 'complete',
-    deleted: Object.keys(progress.done).length,
+    deleted: ownDeleted(),
+    preexistingDeleted,
     remaining: outstanding.length,
     sourceStatistics: deps.verifyStatistics ? 'verified' : 'not-verified',
     searchIndexPropagation: 'not-independently-verified',

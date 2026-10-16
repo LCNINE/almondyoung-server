@@ -1,29 +1,28 @@
-/// <reference path="../../../../.sst/platform/config.d.ts" />
-import type { Input } from '@pulumi/pulumi';
-import type { SharedInfra } from './shared';
+/// <reference path="../../../.sst/platform/config.d.ts" />
+
 import settings from './night-maintenance-settings.json';
 
-export function setupNightMaintenance(
-  infra: SharedInfra,
-  userServiceUrl: Input<string>,
-  monitoredServices: Input<string>[],
-) {
-  const parent = new sst.Linkable('NightMaintenance', { properties: { purpose: 'approved-dated-maintenance' } });
+interface MaintenanceInfra {
+  cluster: sst.aws.Cluster;
+  privateSubnets: string[];
+  securityGroups: string[];
+  dbHost: string;
+  dbSecretArn: string;
+}
+
+export function setupNightMaintenance(infra: MaintenanceInfra) {
+  const parent = new $util.ComponentResource('almondyoung:ops:Maintenance', 'NightMaintenance', {});
   const options = { parent };
   const bucket = new sst.aws.Bucket('NightMaintenanceArtifacts', { versioning: true }, options);
   const adminSecret = new aws.secretsmanager.Secret(
     'NightMaintenanceAdminCredentials',
     {
+      namePrefix: `${$app.name}-${$app.stage}-admin-`,
       description: 'Approved maintenance administrator login JSON; value populated outside source control.',
     },
     options,
   );
-  if (!infra.db.nodes.instance) throw new Error('Night maintenance requires the managed live database');
-  const dbSecretArn = infra.db.nodes.instance.tags.apply((tags) => {
-    const arn = tags?.['sst:lookup:password'];
-    if (!arn) throw new Error('RDS credential secret reference is unavailable');
-    return arn;
-  });
+  const dbSecretArn = infra.dbSecretArn;
   const region = aws.getRegionOutput().name;
   const task = new sst.aws.Task(
     'NightMaintenanceRunner',
@@ -39,14 +38,14 @@ export function setupNightMaintenance(
         ARTIFACT_BUCKET: bucket.name,
         ADMIN_SECRET_ARN: adminSecret.arn,
         DB_SECRET_ARN: dbSecretArn,
-        DB_HOST: infra.db.host,
-        DB_PORT: infra.db.port.apply(String),
+        DB_HOST: infra.dbHost,
+        DB_PORT: '5432',
         DB_CA_FILE: '/app/rds-ca.pem',
         CLUSTER_NAME: infra.cluster.nodes.cluster.name,
-        MONITORED_SERVICES: $util.all(monitoredServices).apply((names) => JSON.stringify(names)),
-        CORE_URL: infra.url('core'),
-        UGC_URL: infra.url('ugc'),
-        USER_SERVICE_URL: userServiceUrl,
+        MONITORED_SERVICES: JSON.stringify(['Core', 'Medusa', 'ServicesBundleA', 'ServicesBundleB']),
+        CORE_URL: 'https://core.almondyoung.com',
+        UGC_URL: 'https://ugc.almondyoung.com',
+        USER_SERVICE_URL: 'https://user.almondyoung.com',
         DRY_RUN: 'true',
         RUN_DATE: settings.runDate,
         OPERATION_ID: settings.operationId,
@@ -61,7 +60,11 @@ export function setupNightMaintenance(
     },
     options,
   );
-  const group = new aws.scheduler.ScheduleGroup('NightMaintenanceScheduleGroup', {}, options);
+  const group = new aws.scheduler.ScheduleGroup(
+    'NightMaintenanceScheduleGroup',
+    { name: `${$app.name}-${$app.stage}-night` },
+    options,
+  );
   const account = aws.getCallerIdentityOutput().accountId;
   const schedulerRole = new aws.iam.Role(
     'NightMaintenanceSchedulerRole',
@@ -119,6 +122,7 @@ export function setupNightMaintenance(
     return new aws.scheduler.Schedule(
       `NightMaintenance${kind === 'reviews' ? 'Reviews' : 'Products'}`,
       {
+        name: `${$app.name}-${$app.stage}-${kind}`,
         groupName: group.name,
         scheduleExpression: `at(${settings.runDate}T${hour}:00:00)`,
         scheduleExpressionTimezone: 'Asia/Seoul',
@@ -135,8 +139,8 @@ export function setupNightMaintenance(
             taskCount: 1,
             launchType: 'FARGATE',
             networkConfiguration: {
-              subnets: infra.vpc.privateSubnets,
-              securityGroups: infra.vpc.securityGroups,
+              subnets: infra.privateSubnets,
+              securityGroups: infra.securityGroups,
               assignPublicIp: false,
             },
           },
@@ -188,12 +192,14 @@ export function setupNightMaintenance(
       policy: aws.iam.getPolicyDocumentOutput({
         statements: [
           {
+            sid: 'EventBridgeTaskEvents',
             actions: ['SNS:Publish'],
             resources: [alerts.arn],
             principals: [{ type: 'Service', identifiers: ['events.amazonaws.com'] }],
             conditions: [{ test: 'ArnEquals', variable: 'aws:SourceArn', values: [taskStopped.arn] }],
           },
           {
+            sid: 'CloudWatchLaunchAlarms',
             actions: ['SNS:Publish'],
             resources: [alerts.arn],
             principals: [{ type: 'Service', identifiers: ['cloudwatch.amazonaws.com'] }],

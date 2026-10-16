@@ -1,0 +1,8 @@
+{
+  "clusterArn": "arn:aws:ecs:ap-northeast-2:640168413575:cluster/lcnine-services-live-ClusterCluster-zbwvckhv",
+  "vpcId": "vpc-02b9244671fc8e00c",
+  "privateSubnets": ["subnet-0876c0d713db1f262", "subnet-037513dfc2db756d0"],
+  "securityGroups": ["sg-0b6926d27482653e6"],
+  "dbHost": "lcnine-services-live-dbinstance-rwhrcsxm.cn6saa0y0err.ap-northeast-2.rds.amazonaws.com",
+  "dbSecretArn": "arn:aws:secretsmanager:ap-northeast-2:640168413575:secret:lcnine-services-live-DbProxySecret-bazfzmnx-ms8VWS"
+}

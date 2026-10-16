@@ -1,7 +1,6 @@
 /// <reference path="../../../../.sst/platform/config.d.ts" />
 
 import type { SharedInfra } from './shared';
-import { setupNightMaintenance } from './night-maintenance';
 
 export function setup(infra: SharedInfra) {
   const {
@@ -436,7 +435,7 @@ export function setup(infra: SharedInfra) {
   });
 
   // 태스크 A: analytics + channel-adapter + membership (타깃그룹 3개 ≤ 5)
-  const maintenanceBundleA = createBundleService('ServicesBundleA', {
+  createBundleService('ServicesBundleA', {
     architecture: 'arm64',
     dockerfile: 'deployments/lcnine/services/bundle/Dockerfile',
     cpu: '0.25 vCPU',
@@ -457,7 +456,7 @@ export function setup(infra: SharedInfra) {
   });
 
   // 태스크 B: notification + search + ugc (타깃그룹 3개 ≤ 5)
-  const maintenanceBundleB = createBundleService('ServicesBundleB', {
+  createBundleService('ServicesBundleB', {
     architecture: 'arm64',
     dockerfile: 'deployments/lcnine/services/bundle/Dockerfile',
     cpu: '0.25 vCPU',
@@ -520,7 +519,7 @@ export function setup(infra: SharedInfra) {
     },
   });
 
-  const maintenanceCore = createService('Core', {
+  createService('Core', {
     // arm64(Graviton) Fargate — 동일 성능에 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
     architecture: 'arm64',
     dockerfile: 'apps/core/Dockerfile',
@@ -749,7 +748,7 @@ export function setup(infra: SharedInfra) {
 
   // store — 손님 읽기·체크아웃·결제 웹훅(/hooks). subscriber·job·BullMQ 워커를 띄우지 않는다.
   // migrate 는 admin 이 돈다 (Medusa schema migration 은 잠금이 없어 동시 실행이 경쟁한다).
-  const maintenanceMedusa = createService('Medusa', {
+  createService('Medusa', {
     ...medusaCommon,
     priority: 210,
     transform: {
@@ -1091,13 +1090,4 @@ export function setup(infra: SharedInfra) {
       allowOverwrite: true,
     });
   }
-
-  return $app.stage === 'live'
-    ? setupNightMaintenance(infra, idpUserServiceUrl, [
-        maintenanceBundleA.nodes.service.name,
-        maintenanceBundleB.nodes.service.name,
-        maintenanceCore.nodes.service.name,
-        maintenanceMedusa.nodes.service.name,
-      ])
-    : {};
 }

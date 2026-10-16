@@ -47,9 +47,8 @@ export default $config({
     const shared = await import('./infra/shared');
     const services = await import('./infra/services');
     const infra = shared.setup();
-    const serviceOutputs = services.setup(infra);
+    services.setup(infra);
     return {
-      ...serviceOutputs,
       dbHost: infra.db.host,
       medusaUrl: infra.url('medusa'),
       walletUrl: infra.url('wallet'),
