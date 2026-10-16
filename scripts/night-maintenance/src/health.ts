@@ -18,9 +18,16 @@ export function assertHealthy(load: LoadSnapshot): void {
     load.ugcPending > 100 ||
     load.ugcOldestSeconds > 60 ||
     load.newUgcFailures ||
-    load.newChannelFailures ||
-    load.cpuPercent > 70
+    load.newChannelFailures
   ) {
     throw new Error('Maintenance stopped to protect live traffic');
   }
+}
+
+export function pacedDelay(baseMs: number, cpuPercent: number): number {
+  if (!Number.isFinite(cpuPercent)) throw new Error('Load measurements unavailable');
+  const multiplier = cpuPercent >= 90 ? 2 : cpuPercent >= 70 ? 1.5 : 1;
+
+  // Batch rests stay fixed. Only the per-review and per-product spacing adapts.
+  return baseMs === 200 || baseMs === 5000 ? Math.round(baseMs * multiplier) : baseMs;
 }

@@ -27,3 +27,7 @@ The chat description above was approved for implementation. Local tests and depl
 - Scope on resume is the original allowlist minus verified own deletions, plus a single persisted in-flight operation reconciled against DB state. Extra live eligible IDs always stop the run.
 - Business writes stop before the hard deadline. A timed-out API may still commit server-side, so logs retain unresolved operations; process exit is not proof of transaction cancellation.
 - CloudWatch alarms and S3 reports do not themselves deliver chat messages. Notification destination is being clarified separately; do not claim this chat receives automatic completion messages.
+
+## User update: overnight CPU tolerance
+
+The user explicitly allows elevated off-hours load while asking to minimize it. CPU alone must not abort: adapt item spacing to 1.5× from70% and2× from90%; retain serial execution and five-minute product batch rests. Actual API failures, membership delay, queue failures, scope drift, lock/state failures and dated windows still stop. Persist load snapshots in reports so a stopped run is diagnosable.

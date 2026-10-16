@@ -1,7 +1,7 @@
 import { AdminApi, ApiError } from './api';
 import { CloudLoadProbe } from './cloud-load';
 import { ReadonlyDatabases, secretJson } from './database';
-import { assertHealthy } from './health';
+import { assertHealthy, LoadSnapshot, pacedDelay } from './health';
 import { assertWriteWindow, JobWindow } from './policy';
 import { RunControls } from './ports';
 import { ProductProposal, ProductVersion, runProducts } from './products';
@@ -39,6 +39,7 @@ async function main(): Promise<void> {
   if (!/^[a-zA-Z0-9-]+$/.test(operationId)) throw new Error('Invalid operation ID');
   const store = new S3StateStore(required('ARTIFACT_BUCKET'), `runs/${operationId}/${kind}`, region);
   const reportKey = dryRun ? 'dry-run-report.json' : 'report.json';
+  let lastLoad: LoadSnapshot | undefined;
   let runtimePhase = 'manifest';
   let lastVerifiedOperation: Record<string, unknown> | undefined;
   let databases: ReadonlyDatabases | undefined;
@@ -83,6 +84,7 @@ async function main(): Promise<void> {
         return false;
       }
     };
+    let lastLoadLogAt = 0;
     const controls: RunControls = {
       dryRun,
       canWrite,
@@ -97,12 +99,19 @@ async function main(): Promise<void> {
       },
       checkLoad: async () => {
         const load = { ...(await db.load()), cpuPercent: await cloud.cpu() };
+        lastLoad = load;
         assertHealthy(load);
+        if (Date.now() - lastLoadLogAt >= 60000) {
+          log({ phase: 'load-check', load, cpuPolicy: 'pace-without-cpu-abort' });
+          lastLoadLogAt = Date.now();
+        }
       },
       sleep: async (ms) => {
         const remaining = Date.parse(window.endsAt) - Date.now();
         if (remaining <= 0) return;
-        await new Promise((resolve) => setTimeout(resolve, Math.min(ms, remaining)));
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.min(pacedDelay(ms, lastLoad?.cpuPercent ?? 0), remaining)),
+        );
       },
     };
     const api = new AdminApi({
@@ -228,6 +237,8 @@ async function main(): Promise<void> {
       finishedAt: new Date().toISOString(),
       window,
       notificationDelivery: 'not-configured',
+      load: lastLoad,
+      cpuPolicy: 'pace-without-cpu-abort',
     };
     await store.write(reportKey, report);
     log({ phase: 'finished', ...report });
@@ -242,6 +253,7 @@ async function main(): Promise<void> {
       phase: runtimePhase,
       lastVerifiedOperation,
       durableStatePrefix: `runs/${operationId}/${kind}`,
+      load: lastLoad,
       errorName: error instanceof Error ? error.name : 'UnknownError',
       httpStatus: error instanceof ApiError ? error.status : undefined,
       // Never serialize raw login, HTTP response, database config or AWS credential errors.

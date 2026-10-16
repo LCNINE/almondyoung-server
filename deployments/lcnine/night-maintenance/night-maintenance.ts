@@ -42,7 +42,7 @@ export function setupNightMaintenance(infra: MaintenanceInfra) {
         DB_PORT: '5432',
         DB_CA_FILE: '/app/rds-ca.pem',
         CLUSTER_NAME: infra.cluster.nodes.cluster.name,
-        MONITORED_SERVICES: JSON.stringify(['Core', 'Medusa', 'ServicesBundleA', 'ServicesBundleB']),
+        MONITORED_SERVICES: JSON.stringify(['Core', 'Medusa', 'MedusaAdmin', 'ServicesBundleA', 'ServicesBundleB']),
         CORE_URL: 'https://core.almondyoung.com',
         UGC_URL: 'https://ugc.almondyoung.com',
         USER_SERVICE_URL: 'https://user.almondyoung.com',
