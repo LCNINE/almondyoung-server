@@ -27,7 +27,7 @@ export function PaymentMethodCard({
   const regionLabel = getRegionLabel(region);
 
   return (
-    <SectionCard title="결제 수단">
+    <SectionCard title="결제 방식">
       <>
         {methods.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-8 text-center">
@@ -47,6 +47,8 @@ export function PaymentMethodCard({
               return (
                 <button
                   key={m.id}
+                  type="button"
+                  aria-pressed={isSelected}
                   onClick={() => onSelect(m.id)}
                   className={[
                     'w-full flex items-center gap-3 rounded-lg border px-4 py-3.5 text-left transition-colors',

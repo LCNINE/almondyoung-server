@@ -78,7 +78,9 @@ export class AuthService {
   private get frontendUrl(): string {
     const isProd = this.configService.get('NODE_ENV') === 'production';
 
-    return isProd ? this.configService.getOrThrow('FRONTEND_URL') : 'http://localhost:8001';
+    return isProd
+      ? this.configService.getOrThrow('FRONTEND_URL')
+      : this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:8001';
   }
 
   private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction) {
