@@ -27,6 +27,7 @@ import {
   OrderSyncFetch,
   ReplayableChannelOrderProvider,
   SyncableChannelOrderProvider,
+  isSyncableProvider,
 } from './channel-order-provider.interface';
 import { channelAdapterSchema, wmsOrderMappings } from '../../schema';
 import {
@@ -453,7 +454,7 @@ export class OrderPollerOrchestrator {
       return { outcome: 'channel_inactive' };
     }
     const provider = this.providers.find((candidate) => candidate.channel === channel);
-    if (!provider || !this.isSyncableProvider(provider)) {
+    if (!provider || !isSyncableProvider(provider)) {
       throw new Error(`No syncable order provider registered for channel: ${channel}`);
     }
     try {
@@ -501,7 +502,7 @@ export class OrderPollerOrchestrator {
 
     if (failure.reason === ORDER_COLLECTION_PROCESSING_FAILED) {
       const provider = this.providers.find((candidate) => candidate.channel === failure.channel);
-      if (!provider || !this.isSyncableProvider(provider)) {
+      if (!provider || !isSyncableProvider(provider)) {
         throw new Error(`No syncable order provider registered for channel: ${failure.channel}`);
       }
       // 수동 replay 는 상한을 보지 않는다 — 소진된 행을 사람이 되살리는 길이다 (스펙 §6.5).
@@ -519,7 +520,7 @@ export class OrderPollerOrchestrator {
     // 매핑을 고친 뒤에도 그 주문의 취소·환불이 영영 Core 에 가지 않는다.
     let fetched: OrderFetchOutcome | null;
     let lifecycle: OrderLifecycleEventItem[] = [];
-    if (this.isSyncableProvider(provider)) {
+    if (isSyncableProvider(provider)) {
       let syncFetch: OrderSyncFetch | null;
       try {
         syncFetch = await provider.fetchOrderForSync(failure.externalOrderId);
@@ -878,10 +879,6 @@ export class OrderPollerOrchestrator {
   }
 
   // 타입 가드 — 선택 메서드의 존재만 본다(isReplayableProvider 와 같은 관례).
-  private isSyncableProvider(provider: ChannelOrderProvider): provider is SyncableChannelOrderProvider {
-    return typeof (provider as SyncableChannelOrderProvider).fetchOrderForSync === 'function';
-  }
-
   /**
    * 즉시 끌어오기·자동 재시도·수동 replay 가 함께 쓰는 처리부 — 같은 주문을 되살리는 길이 하나다 (스펙 §6.3).
    * 주문을 먼저 처리해야 그 주문의 lifecycle 이 매핑을 찾는다(폴링 정렬의 order < lifecycle 과 같다).
@@ -919,7 +916,7 @@ export class OrderPollerOrchestrator {
 
   /** 채널 주기 끝의 자동 재시도 (스펙 §6.1·§6.2). syncable 이 아닌 provider 는 행을 그대로 둔다. */
   private async retryProcessingFailures(provider: ChannelOrderProvider, cycleStartedAt: Date): Promise<void> {
-    if (!this.isSyncableProvider(provider)) {
+    if (!isSyncableProvider(provider)) {
       return;
     }
     const rows = await this.orderCollectionFailureService.findRetryableProcessingFailures(
