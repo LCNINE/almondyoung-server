@@ -9,6 +9,8 @@ import {
   QUARANTINE_LIST_LIMIT,
   orderCollectionFailuresClient,
 } from '@/lib/api/domains/channel/order-collection-failures.client';
+import { orderReconcileFindingsClient } from '@/lib/api/domains/channel/order-reconcile-findings.client';
+import type { MismatchListScope } from '@/lib/api/domains/channel/order-reconcile-findings.shape';
 
 /**
  * 격리 목록. 반환값은 `{ count, data, limit, truncated }` — 표와 배지가 같은 판을 공유한다.
@@ -39,6 +41,28 @@ export function useQuarantineSummary() {
   return useQuery({
     queryKey: channelQueryKeys.summary,
     queryFn: () => orderCollectionFailuresClient.summary(),
+    refetchInterval: 60_000,
+  });
+}
+
+/** 정체 보드 0단계 — 열린 «채널과 어긋남» 요약. 못 읽으면 isError 로 남는다(0 으로 보지 않는다). */
+export function useMismatchSummary() {
+  return useQuery({
+    queryKey: channelQueryKeys.mismatchSummary,
+    queryFn: () => orderReconcileFindingsClient.summary(),
+    refetchInterval: 60_000,
+  });
+}
+
+/**
+ * «채널과 어긋남» 목록. 기본은 열린 것만, 토글로 해소·종결까지.
+ * 전역 기본(staleTime 5분·포커스 재조회 끔)이면 대사 주기가 해소한 행이 버튼을 단 채 남고,
+ * 504(서버는 계속 처리) 뒤에도 새로 읽지 않는다 — 요약과 같은 60초로 스스로 따라잡게 한다.
+ */
+export function useMismatches(scope: MismatchListScope) {
+  return useQuery({
+    queryKey: channelQueryKeys.mismatchList(scope),
+    queryFn: () => orderReconcileFindingsClient.list(scope),
     refetchInterval: 60_000,
   });
 }
