@@ -8,6 +8,7 @@ export class ActiveAttendanceStaffGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext) {
     const user = context.switchToHttp().getRequest<{ user: JwtPayload }>().user;
+
     if (!(await this.repo.staff()).some((person) => person.userId === user?.id)) {
       throw new ForbiddenException('활성 직원 계정으로 이용해 주세요.');
     }

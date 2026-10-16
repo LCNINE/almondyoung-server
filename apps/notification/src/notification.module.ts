@@ -1,5 +1,6 @@
 // apps/notification/src/notification.module.ts
 import { Module } from '@nestjs/common';
+import { WebPushModule } from './web-push/web-push.module';
 import { APP_GUARD } from '@nestjs/core';
 import { AdminRealmGuard, AuthorizationModule, JwtAuthGuard } from '@app/authorization';
 import { LoggerModule } from 'nestjs-pino';
@@ -63,6 +64,7 @@ import { EventTraceController } from './shared/controllers/event-trace.controlle
     // Demo delivers immediately through the mock provider and has no Redis resource.
     ...(process.env.APP_STAGE === 'demo' ? [] : [BulkModule]),
     DeviceModule,
+    WebPushModule,
     SCHEDULE_ROOT,
     CronOnceModule,
     SmsGateModule,

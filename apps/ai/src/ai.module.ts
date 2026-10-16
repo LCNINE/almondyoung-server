@@ -5,6 +5,7 @@ import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
 import { loggerConfig } from '@app/shared/observability/logger.config';
 import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 import { Module } from '@nestjs/common';
+import { AttendanceAiModule } from './attendance/attendance.module';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
@@ -54,6 +55,7 @@ const combinedSchema = { ...aiSchema, ...authorizationSchema };
     AssistantModule,
     FilesModule,
     ProductDescriptionModule,
+    AttendanceAiModule,
   ],
   controllers: [AiController],
   providers: [

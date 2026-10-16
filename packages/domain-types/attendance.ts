@@ -100,6 +100,18 @@ export interface AttendanceRequest {
   createdAt: string;
   aiStatus: string;
   aiResult?: AiAttendanceReview | null;
+  original?: { checkIn: string; checkOut: string | null; version: number } | null;
+}
+
+export interface AttendanceRequestHistory {
+  id: string;
+  kind: string;
+  actor: string;
+  createdAt: string;
+  status?: string;
+  reason?: string;
+  checkIn?: string;
+  checkOut?: string;
 }
 export interface AiAttendanceReview {
   summary: string;
@@ -116,15 +128,39 @@ export const STATUS_LABELS: Record<AttendanceStatus, string> = {
 };
 
 export function clockMinutes(value: string): number | null {
-  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) return null;
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
+    return null;
+  }
+
   const [hour, minute] = value.split(':').map(Number);
 
   return hour * 60 + minute;
 }
 
+export function recommendPlannedClock(history: string[]): string | null {
+  const values = history.slice(0, 10).map(clockMinutes).filter((value): value is number => value !== null).sort((a, b) => a - b);
+
+  if (values.length < 5) {
+    return null;
+  }
+
+  const median = values[Math.floor(values.length / 2)];
+  const consistent = values.filter((value) => Math.abs(value - median) <= 30).length;
+
+  if (consistent / values.length < 0.8) {
+    return null;
+  }
+
+  return `${String(Math.floor(median / 60)).padStart(2, '0')}:${String(median % 60).padStart(2, '0')}`;
+}
+
 function addHours(start: string, hours: number): string {
   const minutes = clockMinutes(start);
-  if (minutes === null || minutes + hours * 60 >= 1440) throw new Error('같은 날짜 안의 근무 시각을 입력해 주세요.');
+
+  if (minutes === null || minutes + hours * 60 >= 1440) {
+    throw new Error('같은 날짜 안의 근무 시각을 입력해 주세요.');
+  }
+
   const total = minutes + hours * 60;
 
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
@@ -136,8 +172,14 @@ export function normalSchedule(start: string): PlannedTimes {
 
 export function halfDaySchedule(normalStart: string, type: LeaveType): PlannedTimes {
   const normal = normalSchedule(normalStart);
-  if (type === 'am') return { start: addHours(normalStart, 4), end: normal.end };
-  if (type === 'pm') return { start: normalStart, end: '' };
+
+  if (type === 'am') {
+    return { start: addHours(normalStart, 4), end: normal.end };
+  }
+
+  if (type === 'pm') {
+    return { start: normalStart, end: '' };
+  }
 
   return { start: '', end: '' };
 }
@@ -145,14 +187,23 @@ export function halfDaySchedule(normalStart: string, type: LeaveType): PlannedTi
 export function validatePlannedTimes(start: string, end: string): string | null {
   const a = clockMinutes(start);
   const b = clockMinutes(end);
-  if (a === null || b === null) return '출근·퇴근 예정 시각을 입력해 주세요.';
-  if (b <= a) return '퇴근 예정은 출근 예정 이후로 입력해 주세요.';
+
+  if (a === null || b === null) {
+    return '출근·퇴근 예정 시각을 입력해 주세요.';
+  }
+
+  if (b <= a) {
+    return '퇴근 예정은 출근 예정 이후로 입력해 주세요.';
+  }
 
   return null;
 }
 
 export function isWorkDate(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+
   const date = new Date(value + 'T00:00:00Z');
 
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
@@ -175,9 +226,17 @@ export function verifyLocation(point: LocationSample, site: Worksite, now: Date)
   ) {
     throw new Error('유효한 위치를 확인하지 못했어요.');
   }
+
   const age = now.getTime() - point.timestamp;
-  if (age > 60000 || age < -10000) throw new Error('위치를 다시 확인해 주세요.');
-  if (point.accuracy > site.accuracyMeters) throw new Error('위치 정확도가 부족해요. 창가 등에서 다시 시도해 주세요.');
+
+  if (age > 60000 || age < -10000) {
+    throw new Error('위치를 다시 확인해 주세요.');
+  }
+
+  if (point.accuracy > site.accuracyMeters) {
+    throw new Error('위치 정확도가 부족해요. 창가 등에서 다시 시도해 주세요.');
+  }
+
   const radians = (degrees: number) => (degrees * Math.PI) / 180;
   const deltaLat = radians(point.latitude - site.latitude);
   const deltaLng = radians(point.longitude - site.longitude);
@@ -185,6 +244,8 @@ export function verifyLocation(point: LocationSample, site: Worksite, now: Date)
     Math.sin(deltaLat / 2) ** 2 +
     Math.cos(radians(site.latitude)) * Math.cos(radians(point.latitude)) * Math.sin(deltaLng / 2) ** 2;
   const distance = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
-  if (distance + point.accuracy > site.radiusMeters)
+
+  if (distance + point.accuracy > site.radiusMeters) {
     throw new Error('회사 위치를 확인하지 못했어요. 다시 시도하거나 예외 요청을 남겨 주세요.');
+  }
 }

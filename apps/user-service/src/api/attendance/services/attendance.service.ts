@@ -16,13 +16,20 @@ export class AttendanceService {
   async punch(userId: string, dto: PunchInput, now = new Date()) {
     return this.repo.withUserLock(userId, async (tx) => {
       const previous = await this.repo.findPunch(tx, userId, dto.requestId);
+
       if (previous) {
-        if (previous.kind !== dto.kind) throw new ConflictException('이미 다른 기록에 사용한 요청이에요.');
+        if (previous.kind !== dto.kind) {
+          throw new ConflictException('이미 다른 기록에 사용한 요청이에요.');
+        }
 
         return previous.result;
       }
+
       const site = await this.repo.getSite(tx, dto.siteId);
-      if (!site) throw new ServiceUnavailableException('등록된 근무지가 없어요. 마스터에게 문의해 주세요.');
+
+      if (!site) {
+        throw new ServiceUnavailableException('등록된 근무지가 없어요. 마스터에게 문의해 주세요.');
+      }
 
       try {
         verifyLocation(dto.location, site, now);
@@ -31,19 +38,33 @@ export class AttendanceService {
       }
 
       const open = await this.repo.findOpen(tx, userId);
+
       let session;
+
       if (dto.kind === 'in') {
         if (open || (await this.repo.findDay(tx, userId, seoulDate(now)))) {
           throw new ConflictException('이미 출근 기록이 있어요. 현재 상태를 새로 확인해 주세요.');
         }
+
         session = await this.repo.createSession(tx, userId, seoulDate(now), now);
       } else {
-        if (!open) throw new ConflictException('퇴근할 출근 기록이 없어요.');
-        if (open.checkIn >= now) throw new ConflictException('출근 이후에 퇴근을 기록해 주세요.');
+        if (!open) {
+          throw new ConflictException('퇴근할 출근 기록이 없어요.');
+        }
+
+        if (open.checkIn >= now) {
+          throw new ConflictException('출근 이후에 퇴근을 기록해 주세요.');
+        }
+
         session = await this.repo.finishSession(tx, open.id, now);
       }
-      if (!session) throw new ConflictException('기록이 변경됐어요. 다시 확인해 주세요.');
+
+      if (!session) {
+        throw new ConflictException('기록이 변경됐어요. 다시 확인해 주세요.');
+      }
+
       const result = serializeSession(session);
+
       await this.repo.appendPunch(tx, {
         userId,
         requestId: dto.requestId,

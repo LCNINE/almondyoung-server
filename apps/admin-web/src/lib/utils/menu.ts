@@ -44,7 +44,11 @@ const allMenus: MainMenu[] = [
             path: '/company/my-account',
             children: [
               { id: 'sub-users', title: '하부사용자 관리', isComingSoon: true },
-              { id: 'attendance', title: '출퇴근', isComingSoon: true },
+              {
+                id: 'attendance',
+                title: '내 출퇴근',
+                path: '/company/attendance/records',
+              },
             ],
           },
           {
@@ -61,7 +65,16 @@ const allMenus: MainMenu[] = [
         children: [
           { id: 'operation-docs', title: '운영문서', isComingSoon: true },
           { id: 'resolutions', title: '결의서', isComingSoon: true },
-          { id: 'leave-attendance', title: '휴가/근태', isComingSoon: true },
+          {
+            id: 'staff-attendance',
+            title: '직원 근무 현황',
+            path: '/company/attendance',
+          },
+          {
+            id: 'leave-attendance',
+            title: '공유 휴가 캘린더',
+            path: '/company/attendance/calendar',
+          },
         ],
       },
       {

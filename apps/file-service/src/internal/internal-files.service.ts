@@ -48,6 +48,23 @@ export class InternalFilesService {
     };
   }
 
+  async attendanceEvidence(fileId: string) {
+    const file = await this.repo.findById(fileId);
+
+    if (!file || file.status !== 'active' || file.isPublic || file.contextId !== 'attendance-request-image') {
+      throw new NotFoundError('Attendance evidence not found');
+    }
+
+    const signed = await this.storage.getSignedUrl({
+      key: file.filePath,
+      expiresIn: 120,
+      operation: 'get',
+      isPublic: false,
+    });
+
+    return { url: signed.signedUrl, uploadedBy: file.uploadedBy, mimeType: file.mimeType };
+  }
+
   /** 행만 deleted 로 바꾼다. S3 객체는 남는다. */
   async softDelete(fileId: string): Promise<{ success: boolean }> {
     const file = await this.repo.findById(fileId);

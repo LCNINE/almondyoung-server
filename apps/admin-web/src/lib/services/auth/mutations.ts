@@ -2,6 +2,7 @@
 
 import { authApi } from '@/lib/api';
 import { useMutation } from '@tanstack/react-query';
+import { disableAttendancePush } from '@/features/attendance/lib/browser-push';
 
 export const useSignin = () => {
   return useMutation({
@@ -19,6 +20,14 @@ export const useSignin = () => {
 
 export const useSignout = () => {
   return useMutation({
-    mutationFn: () => authApi.signout(),
+    mutationFn: async () => {
+      try {
+        await disableAttendancePush();
+      } catch {
+        // Sign-out still clears authentication. The worker also verifies the current account before display.
+      }
+
+      return authApi.signout();
+    },
   });
 };

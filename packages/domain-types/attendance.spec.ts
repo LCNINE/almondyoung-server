@@ -1,6 +1,11 @@
-import { halfDaySchedule, normalSchedule, seoulDate, validatePlannedTimes, verifyLocation } from './attendance';
+import { halfDaySchedule, normalSchedule, seoulDate, validatePlannedTimes, verifyLocation, recommendPlannedClock } from './attendance';
 
 describe('attendance rules', () => {
+  it('recommends only after enough consistent planned history', () => {
+    expect(recommendPlannedClock(['14:00', '14:00'])).toBeNull();
+    expect(recommendPlannedClock(['14:00', '14:10', '13:50', '14:00', '14:00'])).toBe('14:00');
+    expect(recommendPlannedClock(['09:00', '12:00', '14:00', '16:00', '18:00'])).toBeNull();
+  });
   it('preserves the normal finish time for morning leave', () => {
     expect(normalSchedule('09:00')).toEqual({ start: '09:00', end: '18:00' });
     expect(normalSchedule('10:00')).toEqual({ start: '10:00', end: '19:00' });

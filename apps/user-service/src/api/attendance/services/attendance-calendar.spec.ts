@@ -31,6 +31,7 @@ describe('shared leave calendar boundaries', () => {
 
   it('does not let another admin edit someone else’s leave', () => {
     expect(() => assertLeaveOwner('owner', 'other')).toThrow();
+
     expect(() => assertLeaveOwner('owner', 'owner')).not.toThrow();
   });
 });

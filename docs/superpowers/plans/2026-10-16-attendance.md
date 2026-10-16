@@ -21,6 +21,7 @@
 - 첨부 0~3개, 10MB, JPG/PNG/WEBP; 사유 줄바꿈 보존, AI는 최종 판단 금지.
 - Yarn 루트 실행, Node 22, Jest --runInBand. 현재 머신 Yarn은 `corepack yarn`, Node 22는 `npm exec --package=node@22 --`로 제공한다.
 - 모듈 아래 controllers/services/guards/dto/repositories 디렉터리를 사용한다. 조회·변경 책임이 복잡해지면 Reader/Manager를 분리한다(사용자 추가 지시).
+- 프런트·백엔드 모두 명령문을 한 줄에 압축하지 않는다. 계산/검증/DB호출/반환을 빈 줄로 구분하고 긴 쿼리·인자·데코레이터·JSX를 여러 줄로 정리한다. 설명 문서는 문장별 줄바꿈을 적용한다. Prettier 외 수동 가독성 검토를 수행한다.
 - 사용자 지시: 기존 체크아웃에서 `feat/attendance` 브랜치 생성 및 구현 착수. 별도 worktree/중간 승인 없이 인라인 진행.
 
 ## Review Focus

@@ -296,6 +296,7 @@
     "tsid-ts": "^0.0.9",
     "ulid": "^3.0.1",
     "uuid": "^11.1.0",
+    "web-push": "3.6.7",
     "zod": "^4.1.11"
   },
   "devDependencies": {
@@ -325,6 +326,7 @@
     "@types/pg": "^8.15.4",
     "@types/supertest": "^6.0.3",
     "@types/uuid": "^10.0.0",
+    "@types/web-push": "^3.6.4",
     "@typescript-eslint/parser": "^8.42.0",
     "dotenv-cli": "^11.0.0",
     "drizzle-kit": "^0.31.4",

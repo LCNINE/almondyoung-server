@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AttendanceJobsService } from './services/attendance-jobs.service';
 import { AttendanceRequestsController } from './controllers/attendance-requests.controller';
 import { AttendanceRequestManager } from './services/attendance-request.manager';
 import { AttendanceController } from './controllers/attendance.controller';
@@ -10,6 +11,7 @@ import { AttendanceCalendarService } from './services/attendance-calendar.servic
 @Module({
   controllers: [AttendanceController, AttendanceRequestsController],
   providers: [
+    AttendanceJobsService,
     AttendanceRepository,
     AttendanceService,
     AttendanceCalendarService,

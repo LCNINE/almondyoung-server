@@ -13,6 +13,8 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import { webPushTables } from './web-push.schema';
+export * from './web-push.schema';
 
 export const channelEnum = pgEnum('channel', ['EMAIL', 'SMS', 'KAKAO', 'PUSH']);
 export const languageEnum = pgEnum('language', ['ko', 'en']);
@@ -563,6 +565,7 @@ export interface CampaignStats {
 
 // Export tables
 export const notificationTables = {
+  ...webPushTables,
   templates,
   notifications,
   notificationCampaigns,

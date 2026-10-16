@@ -26,7 +26,7 @@ import { AttendanceRepository, serializeSession } from '../repositories/attendan
 import { ActiveAttendanceStaffGuard } from '../guards/active-attendance-staff.guard';
 import { AttendanceService } from '../services/attendance.service';
 import { AttendanceCalendarService } from '../services/attendance-calendar.service';
-import { AttendanceSettingsDto, LeaveBatchDto, PunchDto, WorksiteDto } from '../dto/attendance.dto';
+import { AttendanceSettingsDto, LeaveBatchDto, LeaveDayDto, PunchDto, WorksiteDto } from '../dto/attendance.dto';
 
 @Controller('attendance')
 @UseGuards(RolesGuard('admin', 'master'), ActiveAttendanceStaffGuard)
@@ -40,6 +40,7 @@ export class AttendanceController {
   @Get('me')
   async me(@CurrentUser() user: JwtPayload): Promise<AttendanceMe> {
     const today = seoulDate(new Date());
+
     const [session, settings, leaves, sites, staff] = await Promise.all([
       this.repo.withUserLock(
         user.id,
@@ -79,6 +80,11 @@ export class AttendanceController {
     return this.calendar.list(from, to);
   }
 
+  @Get('recommendations')
+  recommendations(@CurrentUser() user: JwtPayload) {
+    return this.calendar.recommendations(user.id);
+  }
+
   @Post('leaves')
   saveLeaves(@CurrentUser() user: JwtPayload, @Body() dto: LeaveBatchDto) {
     return this.calendar.save(user.id, dto.days);
@@ -89,6 +95,11 @@ export class AttendanceController {
     return this.calendar.remove(user.id, id);
   }
 
+  @Put('leaves/:id')
+  updateLeave(@CurrentUser() user: JwtPayload, @Param('id', ParseUUIDPipe) id: string, @Body() dto: LeaveDayDto) {
+    return this.calendar.update(user.id, id, dto);
+  }
+
   @Get('overview')
   overview() {
     return this.calendar.overview();
@@ -97,6 +108,7 @@ export class AttendanceController {
   @Put('settings')
   async saveSettings(@CurrentUser() user: JwtPayload, @Body() dto: AttendanceSettingsDto) {
     const message = validatePlannedTimes(dto.normalStart, dto.normalEnd);
+
     if (
       message ||
       clockMinutes(dto.inTime) === null ||
@@ -105,6 +117,7 @@ export class AttendanceController {
     ) {
       throw new BadRequestException(message ?? '알림 시각과 날짜를 확인해 주세요.');
     }
+
     await this.repo.withUserLock(user.id, async (tx) => {
       await tx
         .insert(attendancePreferences)
@@ -123,14 +136,16 @@ export class AttendanceController {
   @Post('worksites')
   @UseGuards(MasterRoleGuard)
   async createSite(@CurrentUser() user: JwtPayload, @Body() dto: WorksiteDto) {
-    if (dto.accuracyMeters >= dto.radiusMeters || !dto.name.trim())
+    if (dto.accuracyMeters >= dto.radiusMeters || !dto.name.trim()) {
       throw new BadRequestException('근무지 이름과 반경·정확도를 확인해 주세요.');
+    }
 
     return this.repo.db.transaction(async (tx) => {
       const [row] = await tx
         .insert(attendanceWorksites)
         .values({ ...dto, latitude: String(dto.latitude), longitude: String(dto.longitude) })
         .returning();
+
       await tx
         .insert(attendanceAudit)
         .values({ actorId: user.id, subjectId: user.id, kind: 'worksite.created', entityId: row.id, after: row });

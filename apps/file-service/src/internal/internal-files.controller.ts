@@ -21,6 +21,11 @@ export class InternalFilesController {
     return this.service.describe(fileId);
   }
 
+  @Get(':fileId/attendance-evidence')
+  attendanceEvidence(@Param('fileId', ParseUUIDPipe) fileId: string) {
+    return this.service.attendanceEvidence(fileId);
+  }
+
   @Delete(':fileId')
   async softDelete(@Param('fileId', ParseUUIDPipe) fileId: string) {
     return this.service.softDelete(fileId);

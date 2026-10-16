@@ -73,7 +73,11 @@ export function MainLayout({ children }: MainLayoutProps) {
   }
 
   // 모바일 전용 페이지들 (/mobile로 시작하는 모든 경로)은 PC 레이아웃 제외
-  if (pathname.startsWith('/mobile')) {
+  if (
+    pathname.startsWith('/mobile') ||
+    pathname === '/attendance' ||
+    pathname.startsWith('/attendance/')
+  ) {
     return (
       <>
         {demoBanner}
