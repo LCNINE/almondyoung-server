@@ -30,6 +30,7 @@ import { ChannelCancelSettler } from './channel-cancel-request/channel-cancel-se
 import { ChannelCancelRequestReader } from './channel-cancel-request/channel-cancel-request.reader';
 import { ChannelCancelRequestManager } from './channel-cancel-request/channel-cancel-request.manager';
 import { ChannelCancelRequestService } from './channel-cancel-request/channel-cancel-request.service';
+import { INTERNAL_KEY_ENV } from '@app/authorization';
 import { SalesOrdersInternalController } from './internal/sales-orders-internal.controller';
 import { SalesOrderLookupReader } from './internal/sales-order-lookup.reader';
 import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
@@ -111,6 +112,8 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
     // 채널 대사(#1016 45번)의 묶음 조회 — 호출자는 channel-adapter
     SalesOrderLookupReader,
     SalesOrderLookupService,
+    // `SalesOrdersInternalController` 의 InternalKeyGuard 가 읽을 env 이름. core 로 들어오는 서비스 간 호출은 이 키 하나를 쓴다.
+    { provide: INTERNAL_KEY_ENV, useValue: 'CORE_INTERNAL_KEY' },
 
     // 만료된 공동현관 비번 파기 배치. `ScheduleModule` 을 여기서 다시 import 하지 않는다 —
     // 전역으로 이미 떠 있는 단 하나의 `SCHEDULE_ROOT`(CoreInventoryModule 이 import)의
