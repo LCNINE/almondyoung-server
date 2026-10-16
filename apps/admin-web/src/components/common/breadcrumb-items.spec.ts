@@ -1,6 +1,12 @@
 import { getBreadcrumbItems } from './breadcrumb-items';
 
 describe('admin breadcrumb items', () => {
+  it('labels the channel mismatch list under order management', () => {
+    expect(
+      getBreadcrumbItems('/order/channel-mismatches').map((item) => item.label)
+    ).toEqual(['홈', '주문/출고관리', '채널과 어긋남']);
+  });
+
   it('labels mall product pages as product management', () => {
     expect(
       getBreadcrumbItems('/mall/products-list').map((item) => item.label)

@@ -81,6 +81,8 @@ export const getBreadcrumbItems = (pathname: string): BreadcrumbItem[] => {
       items.push({ label: '피킹리스트' });
     } else if (pathname.includes('/inspection')) {
       items.push({ label: '검수발송' });
+    } else if (pathname.includes('/channel-mismatches')) {
+      items.push({ label: '채널과 어긋남' });
     }
   }
   // 재고 관련 페이지들
