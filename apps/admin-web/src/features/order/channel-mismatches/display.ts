@@ -9,6 +9,8 @@ import type {
   ReconcileFindingDto,
 } from '@/lib/api/domains/channel/order-reconcile-findings.shape';
 
+import { actionErrorText } from '@/features/events/failures/display';
+
 // 409 문구 그대로·504 는 «처리 중» — 이벤트 실패 화면과 같은 규칙이다
 export {
   actionErrorText,
@@ -112,4 +114,26 @@ export function memoError(memo: string): string | null {
 
 export function emptyText(scope: MismatchListScope): string {
   return scope === 'open' ? '어긋난 주문 없음' : '기록 없음';
+}
+
+function statusCodeOf(error: unknown): number | null {
+  return error &&
+    typeof error === 'object' &&
+    'statusCode' in error &&
+    typeof error.statusCode === 'number'
+    ? error.statusCode
+    : null;
+}
+
+/**
+ * 조치(다시 배달·종결) 실패. 404 는 그 사이 대사 주기가 해소했거나 누가 종결한 행이다 — 서버 문구는 영어
+ * (`Open reconcile finding not found`)라 한국어로 바꾸고, `gone` 이면 대화상자를 닫는다(다시 눌러도 또 404).
+ */
+export function mismatchActionError(error: unknown): {
+  text: string;
+  gone: boolean;
+} {
+  if (statusCodeOf(error) === 404)
+    return { text: '이미 해소·종결된 행입니다', gone: true };
+  return { text: actionErrorText(error), gone: false };
 }

@@ -36,12 +36,13 @@ export function useRedeliverMismatch() {
   });
 }
 
+/** 종결. 실패(404 — 그 사이 해소·종결됨)여도 무효화해 그 행이 버튼을 단 채 남지 않게 한다 */
 export function useCloseMismatch() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, memo }: { id: string; memo: string }) =>
       orderReconcileFindingsClient.close(id, memo),
-    onSuccess: () => {
+    onSettled: () => {
       void queryClient.invalidateQueries({
         queryKey: channelQueryKeys.mismatches,
       });

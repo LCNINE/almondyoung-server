@@ -9,6 +9,7 @@ import {
   kindLabel,
   lastResultText,
   memoError,
+  mismatchActionError,
   orderNoOf,
   redeliverOutcome,
 } from './display';
@@ -188,5 +189,28 @@ describe('그 밖', () => {
     expect(actionErrorText(timeout)).toBe(
       '서버에서 계속 처리 중입니다 — 잠시 뒤 새로 읽으세요'
     );
+  });
+});
+
+describe('mismatchActionError — 조치 실패', () => {
+  it('404 는 그 사이 대사가 해소했거나 누가 종결한 것 — 한국어로 알리고 대화상자를 닫는다', () => {
+    const gone = Object.assign(
+      new Error('Open reconcile finding not found: f1'),
+      { statusCode: 404 }
+    );
+    expect(mismatchActionError(gone)).toEqual({
+      text: '이미 해소·종결된 행입니다',
+      gone: true,
+    });
+  });
+  it('그 밖은 이벤트 실패 화면과 같은 규칙(409 문구 그대로)이고 대화상자는 남긴다', () => {
+    const conflict = Object.assign(
+      new Error('이 주문의 이벤트가 아직 나가는 중이다'),
+      { statusCode: 409 }
+    );
+    expect(mismatchActionError(conflict)).toEqual({
+      text: '이 주문의 이벤트가 아직 나가는 중이다',
+      gone: false,
+    });
   });
 });

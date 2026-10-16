@@ -11,7 +11,6 @@ import {
   useRedeliverMismatch,
 } from '@/lib/services/channel/mutations';
 import {
-  actionErrorText,
   canAct,
   emptyText,
   firstSeenText,
@@ -19,6 +18,7 @@ import {
   kindLabel,
   lastResultText,
   loadErrorText,
+  mismatchActionError,
   orderNoOf,
   redeliverOutcome,
 } from '../display';
@@ -46,7 +46,7 @@ export default function ChannelMismatchesTemplate() {
         if (outcome.tone === 'success') toast.success(outcome.text);
         else toast.error(outcome.text);
       },
-      (e) => toast.error(actionErrorText(e))
+      (e) => toast.error(mismatchActionError(e).text)
     );
 
   const onClose = (memo: string) => {
@@ -56,7 +56,11 @@ export default function ChannelMismatchesTemplate() {
         setCloseTarget(null);
         toast.success('종결');
       },
-      (e) => toast.error(actionErrorText(e))
+      (e) => {
+        const failure = mismatchActionError(e);
+        if (failure.gone) setCloseTarget(null);
+        toast.error(failure.text);
+      }
     );
   };
 

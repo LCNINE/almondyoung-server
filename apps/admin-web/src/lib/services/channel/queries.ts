@@ -54,10 +54,15 @@ export function useMismatchSummary() {
   });
 }
 
-/** «채널과 어긋남» 목록. 기본은 열린 것만, 토글로 해소·종결까지 */
+/**
+ * «채널과 어긋남» 목록. 기본은 열린 것만, 토글로 해소·종결까지.
+ * 전역 기본(staleTime 5분·포커스 재조회 끔)이면 대사 주기가 해소한 행이 버튼을 단 채 남고,
+ * 504(서버는 계속 처리) 뒤에도 새로 읽지 않는다 — 요약과 같은 60초로 스스로 따라잡게 한다.
+ */
 export function useMismatches(scope: MismatchListScope) {
   return useQuery({
     queryKey: channelQueryKeys.mismatchList(scope),
     queryFn: () => orderReconcileFindingsClient.list(scope),
+    refetchInterval: 60_000,
   });
 }
