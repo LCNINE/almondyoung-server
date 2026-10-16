@@ -25,8 +25,8 @@ export class ChannelCancelRequestService {
     return this.manager.request(input);
   }
 
-  precheck(salesOrderId: string, lines?: CancelRequestInput['lines']): Promise<void> {
-    return this.manager.precheck(salesOrderId, lines);
+  precheck(salesOrderId: string, lines?: CancelRequestInput['lines'], alreadyRefundedAmount?: number): Promise<void> {
+    return this.manager.precheck(salesOrderId, lines, alreadyRefundedAmount);
   }
 
   findBySourceKey(salesOrderId: string, sourceKey: string): Promise<CancelRequestView | null> {

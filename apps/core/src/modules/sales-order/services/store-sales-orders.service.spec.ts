@@ -1136,9 +1136,20 @@ describe('StoreSalesOrdersService', () => {
         await expect(service.adminCancelRequest(SO_ID, { lines, fulfillmentCommandContext: ctx })).rejects.toThrow(
           '취소 수량(99개)',
         );
-        expect(cancelRequestsMock.precheck).toHaveBeenCalledWith(SO_ID, lines);
+        expect(cancelRequestsMock.precheck).toHaveBeenCalledWith(SO_ID, lines, undefined);
         expect(printCancel).not.toHaveBeenCalled();
         expect(cancelRequestsMock.request).not.toHaveBeenCalled();
+      });
+
+      it('Medusa 주문 — 이미 환불한 금액이 범위상 거절되면 인쇄를 취소하기 전에 거절된다', async () => {
+        const { service, cancelRequestsMock, printCancel } = makeAdminContext();
+        cancelRequestsMock.precheck.mockRejectedValue(new Error('이미 환불한 금액은 부분취소에만 적을 수 있습니다.'));
+        const lines = [{ salesOrderLineId: 'print-line', quantity: 1 }];
+        await expect(
+          service.adminCancelRequest(SO_ID, { lines, alreadyRefundedAmount: 5000, fulfillmentCommandContext: ctx }),
+        ).rejects.toThrow('부분취소에만');
+        expect(cancelRequestsMock.precheck).toHaveBeenCalledWith(SO_ID, lines, 5000);
+        expect(printCancel).not.toHaveBeenCalled();
       });
 
       it('Medusa 주문 — 같은 Idempotency-Key 재전송은 판정·인쇄 취소 없이 지난 요청을 돌려준다', async () => {

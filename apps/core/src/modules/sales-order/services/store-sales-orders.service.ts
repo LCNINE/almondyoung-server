@@ -177,7 +177,7 @@ export class StoreSalesOrdersService {
           convertedFromFull: replay.convertedFromFull,
         };
       }
-      await this.cancelRequests.precheck(so.id, dto.lines);
+      await this.cancelRequests.precheck(so.id, dto.lines, dto.alreadyRefundedAmount);
       const printed = await this.printCancellation.cancelForOrder(so.id, 'gate', dto.lines);
       const view = await this.afterPrintCancel(printed, () =>
         this.cancelRequests.request({

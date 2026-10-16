@@ -51,6 +51,24 @@ const EXTERNAL_REFUND_FAILURE_PREFIX = 'external_refund_';
 
 export type SettlementFailedFact = Pick<ChannelOrderSettlementFailedPayload, 'requestId' | 'retryable' | 'failureCode' | 'message' | 'at'>;
 
+function cancelScope(
+  lines: CancelRequestInput['lines'],
+  plan: { hasShippedQuantity: boolean; leavesNothing: boolean },
+  requesterKind: CancelRequester['kind'],
+): { scope: 'full' | 'partial'; convertedFromFull: boolean } {
+  const convertedFromFull = !lines && plan.hasShippedQuantity && requesterKind === 'operator';
+  const scope = convertedFromFull ? 'partial' : !lines || plan.leavesNothing ? 'full' : 'partial';
+  return { scope, convertedFromFull };
+}
+
+// 상계는 Medusa 부분취소만 안다(ADR-0043) — 전체취소는 «캡처 − 환불»을 돌려주므로 상계할 게 없다.
+function assertAlreadyRefundedAllowed(salesChannel: string, scope: 'full' | 'partial'): void {
+  if (salesChannel !== 'medusa') {
+    throw new BadRequestError('이미 환불한 금액은 Medusa 주문 부분취소에만 적을 수 있습니다.');
+  }
+  if (scope !== 'partial') throw new BadRequestError('이미 환불한 금액은 부분취소에만 적을 수 있습니다.');
+}
+
 /** 확정이 취소할 수 있는 박스 — 아직 떠나지 않은 상자(취소 코드가 빼는 대상과 같다) */
 const OPEN_SHIPMENT_STATUSES = ['draft', 'planned', 'recovery_required'] as const;
 
@@ -73,9 +91,23 @@ export class ChannelCancelRequestManager {
   ) {}
 
   // 잠그지 않고 요청이 받을 범위를 미리 판정한다. 되돌릴 수 없는 외부 취소(인쇄 업체)를 먼저 하는 호출부가 쓴다
-  async precheck(salesOrderId: string, lines: CancelRequestInput['lines'], tx?: DbTx): Promise<void> {
+  // 인쇄 취소는 되돌릴 수 없어 그 전에 부른다. request 가 범위로 거절할 것도 여기서 먼저 거절한다
+  async precheck(
+    salesOrderId: string,
+    lines: CancelRequestInput['lines'],
+    alreadyRefundedAmount?: number,
+    tx?: DbTx,
+  ): Promise<void> {
     await this.db.run(async (trx) => {
-      await this.salesOrders.planCancellation(salesOrderId, lines, trx);
+      const plan = await this.salesOrders.planCancellation(salesOrderId, lines, trx);
+      if (alreadyRefundedAmount === undefined) return;
+      const [so] = await trx
+        .select({ salesChannel: wmsTables.salesOrders.salesChannel })
+        .from(wmsTables.salesOrders)
+        .where(eq(wmsTables.salesOrders.id, salesOrderId));
+      if (!so) throw new NotFoundError(`Sales order ${salesOrderId} not found`);
+      // 상계 금액은 운영자만 적는다
+      assertAlreadyRefundedAllowed(so.salesChannel, cancelScope(lines, plan, 'operator').scope);
     }, tx);
   }
 
@@ -98,20 +130,8 @@ export class ChannelCancelRequestManager {
       await this.lockFulfillmentOrderItems(so.id, trx);
       await this.lockOpenShipments(so.id, trx);
       const plan = await this.salesOrders.planCancellation(so.id, input.lines, trx);
-      const convertedFromFull = !input.lines && plan.hasShippedQuantity && input.requester.kind === 'operator';
-      const scope: 'full' | 'partial' = convertedFromFull
-        ? 'partial'
-        : !input.lines || plan.leavesNothing
-          ? 'full'
-          : 'partial';
-
-      // 상계는 Medusa 부분취소만 안다(ADR-0043) — 전체취소는 «캡처 − 환불»을 돌려주므로 상계할 게 없다.
-      if (input.alreadyRefundedAmount !== undefined) {
-        if (so.salesChannel !== 'medusa') {
-          throw new BadRequestError('이미 환불한 금액은 Medusa 주문 부분취소에만 적을 수 있습니다.');
-        }
-        if (scope !== 'partial') throw new BadRequestError('이미 환불한 금액은 부분취소에만 적을 수 있습니다.');
-      }
+      const { scope, convertedFromFull } = cancelScope(input.lines, plan, input.requester.kind);
+      if (input.alreadyRefundedAmount !== undefined) assertAlreadyRefundedAllowed(so.salesChannel, scope);
 
       const channelItems = await this.channelItemIds(so.id, trx);
       const lines: CancelRequestLine[] = plan.lines.map((line) => ({
