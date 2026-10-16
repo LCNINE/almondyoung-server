@@ -95,6 +95,15 @@ import { CouponIssueReconciliationService } from './services/coupon-issue-reconc
 import { InternalMembershipController } from './controllers/internal-membership.controller';
 import { OrderCollectionFailuresController } from './controllers/order-collection-failures.controller';
 import { ChannelOrderSyncController } from './controllers/channel-order-sync.controller';
+import { OrderReconcileFindingsController } from './controllers/order-reconcile-findings.controller';
+import { OrderReconcileSweepController } from './controllers/order-reconcile-sweep.controller';
+import { CoreSalesOrderLookupClient } from './services/clients/core-sales-order-lookup.client';
+import { OrderReconcileFindingRepository } from './services/order-reconcile/order-reconcile-finding.repository';
+import { ChannelOrderRedeliveryManager } from './services/order-reconcile/channel-order-redelivery.manager';
+import { ChannelOrderReconcileManager } from './services/order-reconcile/channel-order-reconcile.manager';
+import { ChannelOrderReconcileService } from './services/order-reconcile/channel-order-reconcile.service';
+import { ChannelOrderReconcileJob } from './services/order-reconcile/channel-order-reconcile.job';
+import { RECONCILE_ORDER_SOURCES } from './services/order-reconcile/reconcile-order-sources';
 import { ChannelOrdersCommandConsumer } from './consumers/channel-orders-command.consumer';
 import { ChannelDispatchOperationsController } from './controllers/channel-dispatch-operations.controller';
 import { CHANNEL_ORDER_PROVIDER } from './services/order-collection/channel-order-provider.interface';
@@ -263,6 +272,8 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
           PaymentEventsConsumer,
           OrderCollectionFailuresController,
           ChannelOrderSyncController,
+          OrderReconcileFindingsController,
+          OrderReconcileSweepController,
           ChannelOrdersCommandConsumer,
         ]),
   ],
@@ -348,6 +359,23 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
       : [{ provide: CHANNEL_ORDER_PROVIDER, useValue: [] }]),
     OrderPollerOrchestrator,
     OrderCollectionFailureService,
+
+    // 채널 주문 대사 (#1016 45번). source 는 «since 이후 갱신 전부»를 주는 열린 질의만 — 지금은 Medusa.
+    ...(!IS_SAFE_DEMO_MODE
+      ? [
+          {
+            provide: RECONCILE_ORDER_SOURCES,
+            useFactory: (medusa: MedusaOrderSource) => [medusa],
+            inject: [MedusaOrderSource],
+          },
+          CoreSalesOrderLookupClient,
+          OrderReconcileFindingRepository,
+          ChannelOrderRedeliveryManager,
+          ChannelOrderReconcileManager,
+          ChannelOrderReconcileService,
+          ChannelOrderReconcileJob,
+        ]
+      : []),
 
     // Firebase 멤버십 동기화
     ...(!IS_SAFE_DEMO_MODE
