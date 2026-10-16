@@ -1,6 +1,6 @@
 # Approved overnight maintenance
 
-These jobs are dated, single-run tasks. The committed configuration starts disabled. No schedule is active until deployed, both ECS dry runs finish successfully, and the dated schedules are explicitly enabled.
+These jobs are dated, single-run tasks. Reservations are introduced disabled and enabled only after both deployed ECS dry runs finish successfully. The committed dated settings and implementation ledger record the current reservation state.
 
 ## Deployment and verification
 

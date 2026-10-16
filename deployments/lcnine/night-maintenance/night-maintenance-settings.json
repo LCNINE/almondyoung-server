@@ -1,6 +1,6 @@
 {
   "runDate": "2026-10-17",
-  "enabled": false,
+  "enabled": true,
   "operationId": "approved-maintenance-202610",
   "reviews": {
     "key": "inputs/approved-maintenance-202610/reviews.json",
