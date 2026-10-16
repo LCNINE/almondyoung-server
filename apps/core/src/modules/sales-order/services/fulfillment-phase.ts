@@ -81,7 +81,8 @@ export function deriveFulfillmentPhase(input: FulfillmentPhaseInput): Fulfillmen
  * 와우프레스 택배는 출고완료(ordstat=80)에서 끝나 인쇄 행이 shipped 에 머물므로, 배송완료 합의(deriveFulfillmentPhase)로 판정하면 영영 열리지 않는다.
  */
 export function isReturnEligible(input: FulfillmentPhaseInput): boolean {
-  if (input.foCount === 0 || input.allFoCanceled) return deriveFulfillmentPhase(input).phase === 'delivered';
+  // 인쇄 줄은 반품·교환을 받지 않는다(주문제작). 창고 몫이 없으면 고를 줄이 없어 신청할 수 없으니 고객센터로 보낸다
+  if (input.foCount === 0 || input.allFoCanceled) return false;
   const warehouseUnits = [
     ...input.activeShipmentStatuses.map(shipmentUnitPhase),
     ...input.dropShipStatuses.map(dropShipUnitPhase),

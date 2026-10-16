@@ -125,9 +125,9 @@ describe('isReturnEligible', () => {
       false,
     );
   });
-  it('인쇄만 있는 주문은 인쇄가 모두 배송완료일 때만 연다', () => {
-    expect(isReturnEligible(input({ foCount: 0, printStatuses: ['delivered'] }))).toBe(true);
-    expect(isReturnEligible(input({ foCount: 0, printStatuses: ['shipped'] }))).toBe(false);
+  it('인쇄만 남은 주문은 고를 줄이 없어 열지 않는다', () => {
+    expect(isReturnEligible(input({ foCount: 0, printStatuses: ['delivered'] }))).toBe(false);
+    expect(isReturnEligible(input({ allFoCanceled: true, printStatuses: ['delivered'] }))).toBe(false);
   });
 });
 
