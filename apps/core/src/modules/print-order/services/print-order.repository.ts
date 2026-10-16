@@ -337,18 +337,19 @@ export class PrintOrderRepository {
     return row ?? null;
   }
 
-  // 판매주문 취소와 같은 트랜잭션에서, 아직 주문권을 쓰지 않은 대기 행을 발주 워커가 집지 못하게 미룬다.
+  // 판매주문 취소와 같은 트랜잭션에서, 아직 주문권을 쓰지 않은 행을 발주 워커가 집지 못하게 미룬다.
+  // 이미 집혀 시안·견적을 준비 중인 행은 선점을 거둔다 — submittingAt 이 바뀌어 그 워커의 takeOrderRight 가 0행이 된다.
   // 취소 처리(cancelForOrder)는 nextAttemptAt 을 보지 않으므로 그대로 취소·운영자 확인으로 넘긴다
   async holdUnsentForCancel(salesOrderId: string, lineIds: string[] | undefined, tx: DbTx): Promise<void> {
     const t = wmsTables.printOrders;
     await tx
       .update(t)
-      .set({ nextAttemptAt: PRINT_HELD_FOR_CANCEL_UNTIL, updatedAt: new Date() })
+      .set({ status: 'pending', submittingAt: null, nextAttemptAt: PRINT_HELD_FOR_CANCEL_UNTIL, updatedAt: new Date() })
       .where(
         and(
           eq(t.salesOrderId, salesOrderId),
           lineIds ? inArray(t.salesOrderLineId, lineIds) : undefined,
-          eq(t.status, 'pending'),
+          inArray(t.status, ['pending', 'submitting']),
           isNull(t.orderAttemptedAt),
           isNull(t.vendorOrderNumber),
         ),

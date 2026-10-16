@@ -386,6 +386,24 @@ describeIfDb('PrintOrderRepository.claimDueBatch', () => {
     });
   });
 
+  it('holdUnsentForCancel revokes a claim still preparing so its worker cannot take the order right', async () => {
+    await inRollbackConn(async (tx, repo) => {
+      const claimedAt = new Date('2026-10-16T00:00:00Z');
+      const row = rowOf(randomUUID(), new Date('1960-01-01T00:00:00Z'), {
+        status: 'submitting',
+        submittingAt: claimedAt,
+      });
+      await tx.insert(wmsTables.printOrders).values(row);
+
+      await repo.holdUnsentForCancel(row.salesOrderId, undefined, tx);
+
+      expect(await repo.takeOrderRight(row.id, claimedAt, {}, tx)).toBe(false);
+      expect(await repo.claimDueBatch(new Date(), tx)).toEqual([]);
+      const [held] = await tx.select().from(wmsTables.printOrders).where(eq(wmsTables.printOrders.id, row.id));
+      expect(held).toMatchObject({ status: 'pending', submittingAt: null, orderAttemptedAt: null });
+    });
+  });
+
   it('claimDueBatch ignores rows whose next_attempt_at is in the future', async () => {
     await inRollbackConn(async (tx, repo) => {
       const a = randomUUID();
