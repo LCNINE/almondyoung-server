@@ -37,6 +37,9 @@ export function hasPreservedLastError(): SQL {
   return sql`(${sql.join(matches, sql` OR `)})`;
 }
 
+// ponytail: 날짜로 붙잡는다. 취소 이벤트가 끝내 처리되지 않으면 운영자 재시도 전까지 발주되지 않는 쪽이 안전하다
+export const PRINT_HELD_FOR_CANCEL_UNTIL = new Date('9999-12-31T00:00:00Z');
+
 export interface PrintOrderLineContext {
   line: { id: string; variantId: string; quantity: number };
   order: { channelOrderId: string; customerId: string | null; shippingAddress: unknown };
@@ -332,6 +335,24 @@ export class PrintOrderRepository {
     const t = wmsTables.printOrders;
     const [row] = await this.dbService.run((trx) => trx.select().from(t).where(eq(t.id, id)), tx);
     return row ?? null;
+  }
+
+  // 판매주문 취소와 같은 트랜잭션에서, 아직 주문권을 쓰지 않은 대기 행을 발주 워커가 집지 못하게 미룬다.
+  // 취소 처리(cancelForOrder)는 nextAttemptAt 을 보지 않으므로 그대로 취소·운영자 확인으로 넘긴다
+  async holdUnsentForCancel(salesOrderId: string, lineIds: string[] | undefined, tx: DbTx): Promise<void> {
+    const t = wmsTables.printOrders;
+    await tx
+      .update(t)
+      .set({ nextAttemptAt: PRINT_HELD_FOR_CANCEL_UNTIL, updatedAt: new Date() })
+      .where(
+        and(
+          eq(t.salesOrderId, salesOrderId),
+          lineIds ? inArray(t.salesOrderLineId, lineIds) : undefined,
+          eq(t.status, 'pending'),
+          isNull(t.orderAttemptedAt),
+          isNull(t.vendorOrderNumber),
+        ),
+      );
   }
 
   async lineQuantities(salesOrderId: string, lineIds: string[], tx?: DbTx): Promise<Map<string, number>> {

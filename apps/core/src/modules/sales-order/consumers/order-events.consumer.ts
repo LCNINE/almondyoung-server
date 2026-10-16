@@ -261,6 +261,7 @@ export class OrderEventsConsumer {
           },
           tx,
         );
+        await this.printCancellation.holdUnsent(salesOrderId, lines, tx);
         // 우리가 낸 취소 요청을 닫는다 — 정산 중 행(확정 때 적용, 위 cancel() 은 이미 취소된 주문이라 아무것도 안 했다). 줄 단위 취소(마켓)는 요청과 무관하다.
         if (!lines) await this.cancelSettler.settleCancelled(salesOrderId, tx);
 

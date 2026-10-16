@@ -368,6 +368,24 @@ describeIfDb('PrintOrderRepository.claimDueBatch', () => {
     }
   });
 
+  it('holdUnsentForCancel keeps only unsent pending rows of the cancelled lines from the submit worker', async () => {
+    await inRollbackConn(async (tx, repo) => {
+      const a = randomUUID();
+      const rows = [
+        rowOf(a, new Date('1960-01-01T00:00:00Z')),
+        rowOf(a, new Date('1960-01-01T00:01:00Z')),
+        rowOf(a, new Date('1960-01-01T00:02:00Z'), { orderAttemptedAt: new Date() }),
+      ];
+      await tx.insert(wmsTables.printOrders).values(rows);
+
+      await repo.holdUnsentForCancel(a, [rows[0].salesOrderLineId, rows[2].salesOrderLineId], tx);
+      const claimed = await repo.claimDueBatch(new Date(), tx);
+
+      // 주문권을 쓴 행은 ordkey 조회만 하므로 붙잡지 않는다. 취소하지 않은 줄은 그대로 발주된다
+      expect(claimed.map((r) => r.id).sort()).toEqual([rows[1].id, rows[2].id].sort());
+    });
+  });
+
   it('claimDueBatch ignores rows whose next_attempt_at is in the future', async () => {
     await inRollbackConn(async (tx, repo) => {
       const a = randomUUID();

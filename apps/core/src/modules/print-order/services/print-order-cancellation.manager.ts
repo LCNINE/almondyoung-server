@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { BadRequestError, ConflictError, UpstreamUnavailableError } from '@app/shared';
+import { type DbTx } from '../../inventory/schema/inventory.schema';
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { WowpressApiError, WowpressClient, WowpressUnauthorizedError } from '../wowpress/wowpress.client';
 import { WOWPRESS_CANCELLABLE, WOWPRESS_STATUS_CANCELLED, type WowpressOrderDetail } from '../wowpress/wowpress.types';
@@ -184,6 +185,15 @@ export class PrintOrderCancellationManager {
       throw error;
     }
     return run.result;
+  }
+
+  // record 전에 판매주문 취소와 같은 트랜잭션에서 부른다. 커밋 뒤 cancelForOrder 까지의 틈에 발주되지 않게 한다
+  holdUnsent(salesOrderId: string, lines: PrintCancelLine[] | undefined, tx: DbTx): Promise<void> {
+    return this.repository.holdUnsentForCancel(
+      salesOrderId,
+      lines?.map((l) => l.salesOrderLineId),
+      tx,
+    );
   }
 
   // 인쇄를 멈춘 뒤 판매주문 취소가 실패한 마지막 시각과 사유를 남긴다. 보드 판정은 판매주문 줄의 남은 수량으로 한다

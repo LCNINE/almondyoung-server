@@ -39,7 +39,7 @@ describe('OrderEventsConsumer', () => {
     channelOrderChanges: jest.Mocked<Pick<ChannelOrderChangeService, 'handle'>>;
     cancelSettler: { settleCancelled: jest.Mock };
     cancelRequests: { recordSettlementFailure: jest.Mock };
-    printCancel: { cancelForOrder: jest.Mock };
+    printCancel: { cancelForOrder: jest.Mock; holdUnsent: jest.Mock };
     txInserts: Array<{ table: unknown; values: unknown }>;
     // Rows returned by the businessLinks idempotency guard's `select(...)` lookup. Empty by
     // default (no existing link); push a row to simulate a refund link already recorded.
@@ -96,7 +96,10 @@ describe('OrderEventsConsumer', () => {
       channelOrderChanges: { handle: jest.fn().mockResolvedValue(undefined) },
       cancelSettler: { settleCancelled: jest.fn().mockResolvedValue(undefined) },
       cancelRequests: { recordSettlementFailure: jest.fn().mockResolvedValue(undefined) },
-      printCancel: { cancelForOrder: jest.fn().mockResolvedValue(undefined) },
+      printCancel: {
+        cancelForOrder: jest.fn().mockResolvedValue(undefined),
+        holdUnsent: jest.fn().mockResolvedValue(undefined),
+      },
       txInserts,
       businessLinkRows,
       fakeTx,
@@ -395,7 +398,7 @@ describe('OrderEventsConsumer', () => {
     );
   });
 
-  it('OrderCancelled 는 판매주문 취소를 커밋한 뒤 인쇄 줄을 record 로 정리한다', async () => {
+  it('OrderCancelled 는 취소 트랜잭션 안에서 미발주 인쇄를 붙잡고, 커밋한 뒤 인쇄 줄을 record 로 정리한다', async () => {
     const mocks = makeMocks();
     const consumer = makeConsumer(mocks);
     mocks.salesOrders.findByChannelOrderId.mockResolvedValue({ id: 'so-1' } as any);
@@ -404,6 +407,10 @@ describe('OrderEventsConsumer', () => {
       const value = await fn(mocks.fakeTx);
       order.push('commit');
       return value;
+    });
+    mocks.printCancel.holdUnsent.mockImplementation(() => {
+      order.push('hold');
+      return Promise.resolve();
     });
     mocks.printCancel.cancelForOrder.mockImplementation(() => {
       order.push('print');
@@ -424,7 +431,8 @@ describe('OrderEventsConsumer', () => {
     expect(mocks.printCancel.cancelForOrder).toHaveBeenCalledWith('so-1', 'record', undefined, {
       redeliveredSince: undefined,
     });
-    expect(order).toEqual(['commit', 'print']);
+    expect(mocks.printCancel.holdUnsent).toHaveBeenCalledWith('so-1', undefined, mocks.fakeTx);
+    expect(order).toEqual(['hold', 'commit', 'print']);
   });
 
   it('줄 단위 OrderCancelled 는 그 줄만 record 로 정리한다', async () => {
@@ -450,6 +458,11 @@ describe('OrderEventsConsumer', () => {
       'record',
       [{ salesOrderLineId: 'line-1', quantity: 1 }],
       { redeliveredSince: undefined },
+    );
+    expect(mocks.printCancel.holdUnsent).toHaveBeenCalledWith(
+      'so-1',
+      [{ salesOrderLineId: 'line-1', quantity: 1 }],
+      mocks.fakeTx,
     );
   });
 
