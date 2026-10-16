@@ -1,5 +1,5 @@
 import { NumberInput } from "./number-input"
-import { RotateCcw, FlipHorizontal, FlipVertical } from "lucide-react"
+import { RotateCcw } from "lucide-react"
 import type { Layer } from "../../lib/document"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import type { RefObject } from "react"
@@ -169,24 +169,6 @@ export function ObjectPropertiesMore({
         </div>
       )}
       <div className="flex gap-2">
-        <button
-          title="좌우반전"
-          aria-label="좌우반전"
-          disabled={!editable}
-          className="border p-2"
-          onClick={() => patch(selected.id, { flipX: !selected.flipX })}
-        >
-          <FlipHorizontal size={18} />
-        </button>
-        <button
-          title="상하반전"
-          aria-label="상하반전"
-          disabled={!editable}
-          className="border p-2"
-          onClick={() => patch(selected.id, { flipY: !selected.flipY })}
-        >
-          <FlipVertical size={18} />
-        </button>
         <button
           title="회전 초기화"
           aria-label="회전 초기화"

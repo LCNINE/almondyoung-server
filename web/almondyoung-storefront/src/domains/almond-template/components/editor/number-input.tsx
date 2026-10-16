@@ -5,7 +5,8 @@ type Props = Omit<
   InputHTMLAttributes<HTMLInputElement>,
   "value" | "onChange" | "type"
 > & {
-  value: number
+  // 여러 요소의 값이 서로 다르면 null 로 비워 두고, 입력하면 모두에 같은 값이 들어간다
+  value: number | null
   onValue: (value: number) => void
 }
 
@@ -45,14 +46,15 @@ export function NumberInput({
     <input
       {...rest}
       type="number"
-      value={draft ?? value}
+      value={draft ?? value ?? ""}
       onChange={(event) => {
         const typed = (event.nativeEvent as InputEvent).inputType
         const raw = event.target.value
-        if (!typed) return commit({ raw, from: value, apply: onValue })
+        const from = value ?? NaN
+        if (!typed) return commit({ raw, from, apply: onValue })
         pending.current = pending.current
           ? { ...pending.current, raw }
-          : { raw, from: value, apply: onValue }
+          : { raw, from, apply: onValue }
         setDraft(raw)
       }}
       onBlur={(event) => {

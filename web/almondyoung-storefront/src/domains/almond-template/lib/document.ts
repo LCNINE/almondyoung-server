@@ -1,6 +1,7 @@
 import { PRINT_SPECS, type PrintKind } from "./catalog"
 import { CLIPART_IDS, FRAME_IDS, SHAPE_VARIANTS } from "./art-library"
 import { FILE_IMAGE_REF } from "./image-ref"
+import type { PathPoint } from "./path-shape"
 import { fittedFontSize } from "../components/graphic"
 
 export type Layer = {
@@ -17,6 +18,7 @@ export type Layer = {
     | "frame"
     | "qr"
     | "clipart"
+    | "path"
   name: string
   x: number
   y: number
@@ -56,15 +58,30 @@ export type Layer = {
   locked?: boolean
   editable?: boolean
   textColor?: string
+  strokeDash?: "dashed" | "dotted"
+  strokeRound?: boolean
   shadow?: boolean
+  shadowX?: number
+  shadowY?: number
+  shadowBlur?: number
+  shadowColor?: string
+  shadowOpacity?: number
   texture?: boolean
+  bevel?: boolean
+  bevelSize?: number
+  bevelDepth?: number
+  bevelAngle?: number
+  starPoints?: number
+  starRatio?: number
+  pathPoints?: PathPoint[]
+  pathClosed?: boolean
   crop?: { x: number; y: number; w: number; h: number }
   groupId?: string
 }
 
 export const SHAPE_TEXT_TYPES: ReadonlySet<Layer["type"]> = new Set<
   Layer["type"]
->(["rect", "ellipse", "triangle", "star", "heart"])
+>(["rect", "ellipse", "triangle", "star", "heart", "path"])
 
 export type Design = {
   version: 1
@@ -213,6 +230,7 @@ export function parseDesign(value: unknown): Design {
         "frame",
         "qr",
         "clipart",
+        "path",
       ].includes(layer.type) ||
       typeof layer.id !== "string" ||
       !/^[a-zA-Z0-9_-]{1,100}$/.test(layer.id) ||
@@ -278,6 +296,8 @@ export function parseDesign(value: unknown): Design {
         (!Number.isFinite(layer.strokeWidth) ||
           layer.strokeWidth < 0 ||
           layer.strokeWidth > 50)) ||
+      !validEffects(layer) ||
+      (layer.type === "path" && !validPath(layer)) ||
       (layer.qrData !== undefined &&
         (typeof layer.qrData !== "string" || layer.qrData.length > 2000)) ||
       (layer.qrBits &&
@@ -391,6 +411,64 @@ export function resizeDesign(
     front: design.front.map(resize),
     back: design.back.map(resize),
   }
+}
+
+const within = (value: unknown, min: number, max: number) =>
+  typeof value === "number" &&
+  Number.isFinite(value) &&
+  value >= min &&
+  value <= max
+const optional = (value: unknown, check: (value: unknown) => boolean) =>
+  value === undefined || check(value)
+const isBool = (value: unknown) => typeof value === "boolean"
+
+function validEffects(layer: Layer) {
+  return (
+    optional(layer.strokeDash, (v) => v === "dashed" || v === "dotted") &&
+    optional(layer.strokeRound, isBool) &&
+    optional(layer.shadowX, (v) => within(v, -50, 50)) &&
+    optional(layer.shadowY, (v) => within(v, -50, 50)) &&
+    optional(layer.shadowBlur, (v) => within(v, 0, 20)) &&
+    optional(
+      layer.shadowColor,
+      (v) => typeof v === "string" && color.test(v)
+    ) &&
+    optional(layer.shadowOpacity, (v) => within(v, 0, 1)) &&
+    optional(layer.bevel, isBool) &&
+    optional(layer.bevelSize, (v) => within(v, 0.05, 20)) &&
+    optional(layer.bevelDepth, (v) => within(v, 0, 100)) &&
+    optional(layer.bevelAngle, (v) => within(v, -360, 360)) &&
+    optional(
+      layer.starPoints,
+      (v) => Number.isInteger(v) && within(v, 3, 20)
+    ) &&
+    optional(layer.starRatio, (v) => within(v, 0.05, 1))
+  )
+}
+
+// 핸들은 곡선 상자 밖으로 나갈 수 있어 0~1 보다 넓게 받는다
+function validPath(layer: Layer) {
+  const points = layer.pathPoints
+  const coord = (v: unknown) => within(v, -10, 11)
+  return (
+    Array.isArray(points) &&
+    points.length >= 2 &&
+    points.length <= 400 &&
+    optional(layer.pathClosed, isBool) &&
+    points.every(
+      (p) =>
+        !!p &&
+        typeof p === "object" &&
+        coord(p.x) &&
+        coord(p.y) &&
+        (p.ix === undefined) === (p.iy === undefined) &&
+        (p.ox === undefined) === (p.oy === undefined) &&
+        optional(p.ix, coord) &&
+        optional(p.iy, coord) &&
+        optional(p.ox, coord) &&
+        optional(p.oy, coord)
+    )
+  )
 }
 
 function validCrop(crop: Layer["crop"]) {

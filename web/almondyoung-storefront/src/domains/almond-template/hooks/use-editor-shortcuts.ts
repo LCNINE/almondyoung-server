@@ -25,9 +25,43 @@ type Params = {
   cutSelected: () => void
   removeSelected: () => void
   nudgeSelected: (dx: number, dy: number) => void
+  flipSelected: (axis: "x" | "y") => void
+  togglePen: () => void
+  togglePencil: () => void
   canSave: boolean
   save: () => void
   saveNamed: () => void
+}
+
+// 글자를 치는 칸에서는 방향키·Delete 가 그 칸의 몫이다
+const TEXT_INPUTS = new Set([
+  "text",
+  "number",
+  "search",
+  "email",
+  "url",
+  "tel",
+  "password",
+])
+// 슬라이더에 포커스가 남아도 글자 단축키는 편집기가 받는다. 값을 움직이는 키만 슬라이더 몫이다
+const SLIDER_KEYS = /^(Arrow|Page|Home$|End$)/
+function typing(event: KeyboardEvent) {
+  const target = event.target
+  if (target instanceof HTMLInputElement)
+    return target.type === "range"
+      ? SLIDER_KEYS.test(event.key)
+      : TEXT_INPUTS.has(target.type)
+  return (
+    target instanceof HTMLTextAreaElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  )
+}
+
+// 한글 자판이면 event.key 가 "ㅔ"·"ㅖ" 로 와서 P 를 못 알아본다. 글자 단축키는 자판 위치로 읽는다
+function letter(event: KeyboardEvent) {
+  return /^Key[A-Z]$/.test(event.code)
+    ? event.code.slice(3).toLowerCase()
+    : event.key.toLowerCase()
 }
 
 export function useEditorShortcuts({
@@ -54,6 +88,9 @@ export function useEditorShortcuts({
   cutSelected,
   removeSelected,
   nudgeSelected,
+  flipSelected,
+  togglePen,
+  togglePencil,
   canSave,
   save,
   saveNamed,
@@ -62,7 +99,7 @@ export function useEditorShortcuts({
   latestSave.current = save
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+      if ((event.metaKey || event.ctrlKey) && letter(event) === "s") {
         event.preventDefault()
         if (!canSave || event.repeat) return
         if (saveDialog) saveNamed()
@@ -84,12 +121,8 @@ export function useEditorShortcuts({
         }
         return
       }
-      if (
-        event.target instanceof HTMLInputElement ||
-        event.target instanceof HTMLTextAreaElement ||
-        event.target instanceof HTMLSelectElement
-      )
-        return
+      // 체크박스·버튼·select 에 포커스가 남아 있어도 캔버스 단축키는 그대로 받는다
+      if (typing(event)) return
       if (event.key === "Escape") {
         setSelectedId(null)
         setPreview(false)
@@ -109,28 +142,41 @@ export function useEditorShortcuts({
       )
         return
       const command = event.metaKey || event.ctrlKey
-      if (command && event.key.toLowerCase() === "z") {
+      if (command && letter(event) === "z") {
         event.preventDefault()
         if (event.shiftKey) redo()
         else undo()
-      } else if (command && event.key.toLowerCase() === "y") {
+      } else if (command && letter(event) === "y") {
         event.preventDefault()
         redo()
-      } else if (command && event.key.toLowerCase() === "c") {
+      } else if (command && letter(event) === "c") {
         if (selected || hasGroup) {
           event.preventDefault()
           copySelected()
         }
-      } else if (command && event.key.toLowerCase() === "v") {
+      } else if (command && letter(event) === "v") {
         if (copied.length) {
           event.preventDefault()
           pasteCopied()
         }
-      } else if (command && event.key.toLowerCase() === "x") {
+      } else if (command && letter(event) === "x") {
         if (editable) {
           event.preventDefault()
           cutSelected()
         }
+      } else if (
+        !command &&
+        event.shiftKey &&
+        (letter(event) === "h" || letter(event) === "v")
+      ) {
+        if (editable) {
+          event.preventDefault()
+          flipSelected(letter(event) === "h" ? "x" : "y")
+        }
+      } else if (!command && letter(event) === "p") {
+        event.preventDefault()
+        if (event.shiftKey) togglePencil()
+        else togglePen()
       } else if (event.key.startsWith("Arrow") && editable) {
         event.preventDefault()
         const step = event.shiftKey ? 10 : 1

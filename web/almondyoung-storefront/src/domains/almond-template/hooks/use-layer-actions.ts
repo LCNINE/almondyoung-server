@@ -1,12 +1,8 @@
 import { useState } from "react"
 import { PRINT_PRODUCTS, PRINT_SPECS } from "../lib/catalog"
-import {
-  newDesign,
-  updateLayer,
-  type Design,
-  type Layer,
-} from "../lib/document"
-import { makeLayer } from "../lib/layer"
+import { newDesign, type Design, type Layer } from "../lib/document"
+import { makeLayer, mm } from "../lib/layer"
+import { unionBounds } from "../lib/canvas-math"
 import { textBoxFor } from "../components/graphic"
 
 // 바뀌면 글자 덩치가 달라지는 속성. 이때 상자를 글자에 다시 맞춘다
@@ -56,19 +52,44 @@ export function useLayerActions({
     layer.type === "text"
       ? { ...layer, ...textBoxFor(layer, layer.fontSize ?? 10, design) }
       : layer
-  const patch = (id: string, value: Partial<Layer>) => {
-    const layer = layers.find((item) => item.id === id)
-    const reshapes =
-      layer?.type === "text" &&
-      !("width" in value) &&
-      Object.keys(value).some((key) => TEXT_SHAPE_KEYS.has(key))
-    change(
-      updateLayer(
-        design,
-        side,
-        id,
-        reshapes ? fitText({ ...layer, ...value }) : value
-      )
+  const canEdit = (layer: Layer) =>
+    !layer.locked && (mode === "designer" || layer.editable !== false)
+  const patchLayers = (
+    ids: string[],
+    value: Partial<Layer> | ((layer: Layer) => Partial<Layer>)
+  ) =>
+    change({
+      ...design,
+      [side]: layers.map((layer) => {
+        if (!ids.includes(layer.id)) return layer
+        const next = typeof value === "function" ? value(layer) : value
+        const reshapes =
+          layer.type === "text" &&
+          !("width" in next) &&
+          Object.keys(next).some((key) => TEXT_SHAPE_KEYS.has(key))
+        return reshapes ? fitText({ ...layer, ...next }) : { ...layer, ...next }
+      }),
+    })
+  const patch = (id: string, value: Partial<Layer>) => patchLayers([id], value)
+  // 화면 기준으로 뒤집는다. 회전한 요소는 각도도 거울 쪽으로 바꾸고, 여러 개면 묶음 가운데를 축으로 자리도 바꾼다
+  const flipLayers = (targets: Layer[], axis: "x" | "y") => {
+    const movable = targets.filter(canEdit)
+    if (!movable.length) return
+    const box = unionBounds(movable)
+    patchLayers(
+      movable.map((layer) => layer.id),
+      (layer) => ({
+        ...(axis === "x"
+          ? {
+              flipX: !layer.flipX,
+              x: mm(box.x0 + box.x1 - layer.x - layer.width),
+            }
+          : {
+              flipY: !layer.flipY,
+              y: mm(box.y0 + box.y1 - layer.y - layer.height),
+            }),
+        rotation: layer.rotation ? -layer.rotation : layer.rotation,
+      })
     )
   }
   const add = (type: Layer["type"], extra: Partial<Layer> = {}) => {
@@ -195,6 +216,9 @@ export function useLayerActions({
   return {
     copied,
     patch,
+    patchLayers,
+    flipLayers,
+    canEdit,
     add,
     editable,
     removeSelected,

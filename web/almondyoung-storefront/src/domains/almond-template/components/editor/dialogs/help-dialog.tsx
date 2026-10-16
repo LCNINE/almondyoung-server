@@ -24,6 +24,9 @@ import {
   Trash2,
   Type,
   Undo2,
+  FlipHorizontal,
+  PenTool,
+  Pencil,
   type LucideIcon,
 } from "lucide-react"
 import type { ReactNode } from "react"
@@ -98,7 +101,7 @@ const SHORTCUTS: Item[] = [
   [
     MousePointerClick,
     "여러 개 선택 [ Shift + 클릭 / 빈 곳 드래그 ]",
-    "골라 둔 것들을 한 번에 옮기고 크기를 바꾸고 복사(Ctrl + C·V)할 수 있습니다.",
+    "끌어서 만든 네모 안에 다 들어온 것만 골라집니다. 골라 둔 것들을 한 번에 옮기고 크기를 바꾸고 복사(Ctrl + C·V)할 수 있습니다.",
   ],
   [Trash2, "삭제 [ Delete ]", "선택한 객체를 삭제합니다."],
   [
@@ -113,6 +116,26 @@ const SHORTCUTS: Item[] = [
   ],
   [Save, "저장 [ Ctrl + S ]", "저장한 디자인이면 바로 덮어씁니다."],
   [Type, "방향키 / Shift + 방향키", "선택한 객체를 조금씩 / 크게 움직입니다."],
+  [
+    FlipHorizontal,
+    "좌우·상하 반전 [ Shift + H / Shift + V ]",
+    "선택한 객체를 뒤집습니다. 여러 개면 묶음 가운데를 기준으로 뒤집습니다.",
+  ],
+  [
+    PenTool,
+    "펜 [ P ]",
+    "클릭하면 꺾인 점, 끌면 곡선 점을 찍습니다. 첫 점을 누르면 닫히고 Enter 로 한 선을 끝냅니다. 펜은 계속 켜져 있으니 Esc 나 위쪽 막대의 ✕ 로 끕니다.",
+  ],
+  [
+    Pencil,
+    "연필 [ Shift + P ]",
+    "손으로 긋듯 자유롭게 그립니다. 떨린 선은 매끈한 곡선으로 다듬고, 위쪽 막대의 '보정'으로 다듬는 세기를 고릅니다. 시작점 가까이에서 떼면 닫힌 도형이 됩니다.",
+  ],
+  [
+    PenTool,
+    "점 편집 [ 펜 도형 더블클릭 ]",
+    "점과 핸들을 끌어 모양을 바꿉니다. 점을 두 번 누르면 곡선↔꺾기, Alt + 끌기는 핸들을 따로 움직입니다. 기본 도형은 속성의 '점 편집'으로 바꿀 수 있습니다.",
+  ],
 ]
 
 const TABS = [

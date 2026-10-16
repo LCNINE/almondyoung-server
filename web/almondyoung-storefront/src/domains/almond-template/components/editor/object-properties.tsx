@@ -18,78 +18,15 @@ import { OrderIcon } from "./order-icon"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import type { PropertyPanelState } from "../../hooks/use-property-panel"
 import { ObjectPropertiesMore } from "./object-properties-more"
-import { FONT_OPTIONS, fontStack } from "../../lib/fonts"
-
-function FontSelect({
-  editor,
-  selected,
-}: {
-  editor: AlmondEditor
-  selected: Layer
-}) {
-  const { patch, editable } = editor
-  return (
-    <label className="flex items-center gap-2">
-      <span className="w-9 shrink-0">폰트</span>
-      <select
-        aria-label="폰트"
-        className="min-w-0 flex-1 border px-2 py-1"
-        value={fontStack(selected.fontFamily)}
-        disabled={!editable}
-        onChange={(event) => {
-          const family = event.target.value
-          // 아직 안 받은 웹폰트로 재면 대체 글꼴 폭으로 상자가 맞춰진다
-          document.fonts
-            .load(`16px ${family}`)
-            .catch(() => undefined)
-            .finally(() => patch(selected.id, { fontFamily: family }))
-        }}
-      >
-        {FONT_OPTIONS.map((font) => (
-          <option
-            key={font.value}
-            value={font.value}
-            style={{ fontFamily: font.value }}
-          >
-            {font.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  )
-}
-
-function EffectToggles({
-  editor,
-  selected,
-}: {
-  editor: AlmondEditor
-  selected: Layer
-}) {
-  const { patch, editable } = editor
-  return (
-    <div className="flex items-center gap-2">
-      <span className="w-9 shrink-0">효과</span>
-      {(
-        [
-          ["shadow", "그림자"],
-          ["texture", "질감"],
-        ] as const
-      ).map(([field, label]) => (
-        <button
-          key={field}
-          type="button"
-          aria-pressed={!!selected[field]}
-          disabled={!editable}
-          onClick={() => patch(selected.id, { [field]: !selected[field] })}
-          className={`border px-2 py-1 ${selected[field] ? "border-blue-600 text-blue-600" : ""}`}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  )
-}
+import { shapeOutline } from "../../lib/path-shape"
+import {
+  EffectControls,
+  FlipControls,
+  FontSelect,
+  StarControls,
+  StrokeLineControls,
+  type StyleTarget,
+} from "./style-controls"
 
 // 도형 윤곽을 그대로 사진 틀로 쓴다 (예전 모양틀 기능)
 function ShapePhoto({
@@ -185,8 +122,17 @@ export function ObjectProperties({
   selected: Layer
   inline?: boolean
 }) {
-  const { patch, editable, setOrder } = editor
+  const { patch, editable, setOrder, flipLayers, startPointEdit } = editor
   const selectedImageInputRef = useRef<HTMLInputElement>(null)
+  const target: StyleTarget = {
+    layers: [selected],
+    apply: (value) => patch(selected.id, value),
+    disabled: !editable,
+    placement: inline ? "left" : "right",
+  }
+  const flip = (axis: "x" | "y") => flipLayers([selected], axis)
+  const pointEditable =
+    selected.type === "path" || shapeOutline(selected) !== null
   const { setObjectMoreId, objectMoreOpen } = panel
   const shapeText = SHAPE_TEXT_TYPES.has(selected.type)
   const noStroke = !selected.stroke || selected.stroke === "none"
@@ -221,13 +167,13 @@ export function ObjectProperties({
       <div className="space-y-3 px-4 py-3 text-xs">
         {selected.type === "text" ? (
           <>
-            <FontSelect editor={editor} selected={selected} />
+            <FontSelect target={target} />
             <div className="flex items-center gap-2">
               <label className="flex min-w-0 flex-1 items-center gap-1">
                 크기
                 <NumberInput
                   aria-label="글자 크기"
-                  min="2"
+                  min="1"
                   step="0.5"
                   className="w-16 border p-1 text-right"
                   value={selected.fontSize ?? 10}
@@ -338,7 +284,8 @@ export function ObjectProperties({
                 </button>
               )}
             </div>
-            <EffectToggles editor={editor} selected={selected} />
+            <FlipControls onFlip={flip} disabled={!editable} />
+            <EffectControls target={target} />
           </>
         ) : (
           <>
@@ -423,6 +370,32 @@ export function ObjectProperties({
                 />
               </label>
             )}
+            {(selected.type === "line" ||
+              (shapeText && !noStroke && !!selected.strokeWidth)) && (
+              <StrokeLineControls target={target} />
+            )}
+            {selected.type === "star" && (
+              <StarControls
+                layer={selected}
+                apply={target.apply}
+                disabled={!editable}
+              />
+            )}
+            {pointEditable && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={!editable}
+                  onClick={startPointEdit}
+                  className="border px-2 py-1"
+                >
+                  점 편집
+                </button>
+                <span className="text-[11px] text-slate-500">
+                  꼭짓점을 끌어 모양을 바꿉니다
+                </span>
+              </div>
+            )}
             {shapeText && (
               <div className="space-y-2 border-t pt-3">
                 <label className="block">
@@ -441,7 +414,7 @@ export function ObjectProperties({
                 </label>
                 {selected.text && (
                   <>
-                    <FontSelect editor={editor} selected={selected} />
+                    <FontSelect target={target} />
                     <div className="flex items-center gap-2">
                       <PrintColorPicker
                         label="글자색"
@@ -477,7 +450,7 @@ export function ObjectProperties({
             )}
             {shapeText && <ShapePhoto editor={editor} selected={selected} />}
             {(shapeText || selected.type === "line") && (
-              <EffectToggles editor={editor} selected={selected} />
+              <EffectControls target={target} />
             )}
             {selected.type === "frame" && (
               <button
@@ -523,7 +496,7 @@ export function ObjectProperties({
                 />
               </label>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <span className="w-9 shrink-0">순서</span>
               {(
                 [
@@ -544,6 +517,9 @@ export function ObjectProperties({
                   <OrderIcon position={position} />
                 </button>
               ))}
+              <div className="ml-auto">
+                <FlipControls onFlip={flip} disabled={!editable} />
+              </div>
             </div>
           </>
         )}
