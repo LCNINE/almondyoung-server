@@ -228,7 +228,7 @@ export class ChannelOrderChangeManager {
       .where(
         and(
           eq(t.salesOrderLineId, salesOrderLineId),
-          inArray(t.status, ['pending', 'submitting', 'failed']),
+          inArray(t.status, ['pending', 'submitting', 'failed', 'unsupported']),
           isNull(t.orderAttemptedAt),
           isNull(t.vendorOrderNumber),
         ),
