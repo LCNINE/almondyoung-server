@@ -1,4 +1,4 @@
-import { memo } from "react"
+import { Fragment, memo } from "react"
 import {
   SHAPE_TEXT_TYPES,
   type Layer,
@@ -8,6 +8,13 @@ import { FRAME_PATHS, LEGACY_CLIPART } from "../lib/art-library"
 import { CLIPART_DATA } from "../lib/clipart-data"
 import { useImageSrc } from "../lib/image-previews"
 import { fontStack } from "../lib/fonts"
+import {
+  HEART_PATH as heart,
+  SHAPE_POINTS as shapePoints,
+  STAR as star,
+  layerPathData,
+  starOf,
+} from "../lib/path-shape"
 
 const widthRatio = (layer: Layer) =>
   Math.max(10, Math.min(1000, layer.widthScale || 100)) / 100
@@ -89,205 +96,113 @@ function polygonPoints(layer: Layer, points: number[][]) {
     .join(" ")
 }
 
-const star = [
-  [0.5, 0],
-  [0.62, 0.35],
-  [1, 0.35],
-  [0.69, 0.57],
-  [0.81, 1],
-  [0.5, 0.74],
-  [0.19, 1],
-  [0.31, 0.57],
-  [0, 0.35],
-  [0.38, 0.35],
-]
-const heart =
-  "M .5 .95 C .38 .83 0 .55 0 .3 C 0 .02 .35 -.07 .5 .18 C .65 -.07 1 .02 1 .3 C 1 .55 .62 .83 .5 .95 Z"
-const shapePoints: Record<string, number[][]> = {
-  diamond: [
-    [0.5, 0],
-    [1, 0.5],
-    [0.5, 1],
-    [0, 0.5],
-  ],
-  pentagon: [
-    [0.5, 0],
-    [1, 0.38],
-    [0.81, 1],
-    [0.19, 1],
-    [0, 0.38],
-  ],
-  hexagon: [
-    [0.25, 0],
-    [0.75, 0],
-    [1, 0.5],
-    [0.75, 1],
-    [0.25, 1],
-    [0, 0.5],
-  ],
-  octagon: [
-    [0.3, 0],
-    [0.7, 0],
-    [1, 0.3],
-    [1, 0.7],
-    [0.7, 1],
-    [0.3, 1],
-    [0, 0.7],
-    [0, 0.3],
-  ],
-  trapezoid: [
-    [0.25, 0],
-    [0.75, 0],
-    [1, 1],
-    [0, 1],
-  ],
-  parallelogram: [
-    [0.25, 0],
-    [1, 0],
-    [0.75, 1],
-    [0, 1],
-  ],
-  arrow: [
-    [0, 0.25],
-    [0.58, 0.25],
-    [0.58, 0],
-    [1, 0.5],
-    [0.58, 1],
-    [0.58, 0.75],
-    [0, 0.75],
-  ],
-  chevron: [
-    [0, 0],
-    [0.55, 0],
-    [1, 0.5],
-    [0.55, 1],
-    [0, 1],
-    [0.45, 0.5],
-  ],
-  cross: [
-    [0.35, 0],
-    [0.65, 0],
-    [0.65, 0.35],
-    [1, 0.35],
-    [1, 0.65],
-    [0.65, 0.65],
-    [0.65, 1],
-    [0.35, 1],
-    [0.35, 0.65],
-    [0, 0.65],
-    [0, 0.35],
-    [0.35, 0.35],
-  ],
-  speech: [
-    [0, 0],
-    [1, 0],
-    [1, 0.78],
-    [0.4, 0.78],
-    [0.2, 1],
-    [0.2, 0.78],
-    [0, 0.78],
-  ],
-  "rounded-pentagon": [
-    [0.5, 0],
-    [0.96, 0.33],
-    [0.78, 1],
-    [0.22, 1],
-    [0.04, 0.33],
-  ],
-  "arrow-left": [
-    [1, 0.25],
-    [0.42, 0.25],
-    [0.42, 0],
-    [0, 0.5],
-    [0.42, 1],
-    [0.42, 0.75],
-    [1, 0.75],
-  ],
-  "arrow-up": [
-    [0.25, 1],
-    [0.25, 0.42],
-    [0, 0.42],
-    [0.5, 0],
-    [1, 0.42],
-    [0.75, 0.42],
-    [0.75, 1],
-  ],
-  "arrow-down": [
-    [0.25, 0],
-    [0.75, 0],
-    [0.75, 0.58],
-    [1, 0.58],
-    [0.5, 1],
-    [0, 0.58],
-    [0.25, 0.58],
-  ],
-  shield: [
-    [0.5, 0],
-    [1, 0.2],
-    [0.92, 0.68],
-    [0.5, 1],
-    [0.08, 0.68],
-    [0, 0.2],
-  ],
-  heptagon: [
-    [0.5, 0],
-    [0.89, 0.19],
-    [1, 0.61],
-    [0.72, 1],
-    [0.28, 1],
-    [0, 0.61],
-    [0.11, 0.19],
-  ],
-  decagon: Array.from({ length: 10 }, (_, n) => [
-    0.5 + 0.5 * Math.sin((n * Math.PI) / 5),
-    0.5 - 0.5 * Math.cos((n * Math.PI) / 5),
-  ]),
-  burst: Array.from({ length: 16 }, (_, n) => {
-    const radius = n % 2 ? 0.34 : 0.5
-    return [
-      0.5 + radius * Math.sin((n * Math.PI) / 8),
-      0.5 - radius * Math.cos((n * Math.PI) / 8),
-    ]
-  }),
-  tag: [
-    [0, 0],
-    [0.74, 0],
-    [1, 0.5],
-    [0.74, 1],
-    [0, 1],
-  ],
-  bookmark: [
-    [0.1, 0],
-    [0.9, 0],
-    [0.9, 1],
-    [0.5, 0.72],
-    [0.1, 1],
-  ],
-  flag: [
-    [0.1, 0],
-    [0.9, 0],
-    [0.7, 0.5],
-    [0.9, 1],
-    [0.1, 1],
-  ],
+const effectSize = (layer: Layer) =>
+  layer.type === "text"
+    ? fittedFontSize(layer)
+    : Math.min(layer.width, layer.height)
+
+// 값을 비워 둔 그림자는 예전처럼 크기에 비례한 오른쪽 아래 그림자다
+export function shadowOf(layer: Layer) {
+  const offset = Math.max(0.2, effectSize(layer) * 0.06)
+  return {
+    x: layer.shadowX ?? Math.round(offset * 10) / 10,
+    y: layer.shadowY ?? Math.round(offset * 10) / 10,
+    blur: layer.shadowBlur ?? Math.round(offset * 6) / 10,
+    color: layer.shadowColor ?? "#000000",
+    opacity: layer.shadowOpacity ?? 0.35,
+  }
+}
+
+export function bevelOf(layer: Layer) {
+  return {
+    size:
+      layer.bevelSize ??
+      Math.round(Math.max(0.2, effectSize(layer) * 0.05) * 10) / 10,
+    depth: layer.bevelDepth ?? 60,
+    angle: layer.bevelAngle ?? 135,
+  }
+}
+
+// 필터는 회전·반전한 도형 안쪽 좌표로 그려진다. 그림자·빛 방향은 화면 기준이어야 하니 거꾸로 돌려 둔다
+function toLayerSpace(layer: Layer, dx: number, dy: number) {
+  const rad = (-(layer.rotation ?? 0) * Math.PI) / 180
+  return {
+    dx: (dx * Math.cos(rad) - dy * Math.sin(rad)) * (layer.flipX ? -1 : 1),
+    dy: (dx * Math.sin(rad) + dy * Math.cos(rad)) * (layer.flipY ? -1 : 1),
+  }
+}
+
+// 입체는 조명 필터 대신 흐린 윤곽을 빛 쪽·반대쪽으로 민 차이로 만든다.
+// 조명 필터는 화면 픽셀 단위로 기울기를 재서 확대율·인쇄 해상도마다 세기가 달라진다
+function BevelPrimitives({ layer }: { layer: Layer }) {
+  const { size, depth, angle } = bevelOf(layer)
+  const rad = (angle * Math.PI) / 180
+  const { dx: lx, dy: ly } = toLayerSpace(
+    layer,
+    Math.cos(rad) * size * 0.6,
+    -Math.sin(rad) * size * 0.6
+  )
+  const k = depth / 50
+  return (
+    <>
+      <feGaussianBlur in="SourceAlpha" stdDeviation={size} result="bevelBlur" />
+      <feOffset in="bevelBlur" dx={lx} dy={ly} result="bevelLit" />
+      <feOffset in="bevelBlur" dx={-lx} dy={-ly} result="bevelDark" />
+      {(
+        [
+          ["bevelLit", "bevelDark", "#ffffff", "bevelHi"],
+          ["bevelDark", "bevelLit", "#000000", "bevelSh"],
+        ] as const
+      ).map(([a, b, tone, result]) => (
+        <Fragment key={result}>
+          <feComposite
+            in={a}
+            in2={b}
+            operator="arithmetic"
+            k2={k}
+            k3={-k}
+            result={`${result}Mask`}
+          />
+          <feFlood floodColor={tone} />
+          <feComposite in2={`${result}Mask`} operator="in" />
+          <feComposite in2="SourceAlpha" operator="in" result={result} />
+        </Fragment>
+      ))}
+    </>
+  )
 }
 
 function EffectFilter({ layer, id }: { layer: Layer; id: string }) {
-  const size =
-    layer.type === "text"
-      ? fittedFontSize(layer)
-      : Math.min(layer.width, layer.height)
-  const offset = Math.max(0.2, size * 0.06)
+  const size = effectSize(layer)
+  const shadow = shadowOf(layer)
+  const offset = toLayerSpace(layer, shadow.x, shadow.y)
+  const bevel = bevelOf(layer)
+  // 그림자를 멀리 밀어도 잘리지 않게 필터 영역을 실제 좌표로 넉넉히 잡는다
+  const pad =
+    (layer.shadow
+      ? Math.max(Math.abs(shadow.x), Math.abs(shadow.y)) + shadow.blur * 3
+      : 0) +
+    (layer.bevel ? bevel.size : 0) +
+    (layer.strokeWidth ?? 0) +
+    Math.max(1, size * 0.2)
   return (
-    <filter id={id} x="-30%" y="-30%" width="160%" height="160%">
+    <filter
+      id={id}
+      filterUnits="userSpaceOnUse"
+      x={layer.x - pad}
+      y={layer.y - pad}
+      width={layer.width + pad * 2}
+      height={layer.height + pad * 2}
+    >
       {layer.shadow && (
         <>
-          <feGaussianBlur in="SourceAlpha" stdDeviation={offset * 0.6} />
-          <feOffset dx={offset} dy={offset} result="offset" />
-          <feFlood floodColor="#000000" floodOpacity="0.35" />
+          <feGaussianBlur in="SourceAlpha" stdDeviation={shadow.blur} />
+          <feOffset dx={offset.dx} dy={offset.dy} result="offset" />
+          <feFlood floodColor={shadow.color} floodOpacity={shadow.opacity} />
           <feComposite in2="offset" operator="in" result="shadow" />
         </>
       )}
+      {layer.bevel && <BevelPrimitives layer={layer} />}
       {layer.texture && (
         <>
           <feTurbulence
@@ -314,6 +229,8 @@ function EffectFilter({ layer, id }: { layer: Layer; id: string }) {
       <feMerge>
         {layer.shadow && <feMergeNode in="shadow" />}
         <feMergeNode in="SourceGraphic" />
+        {layer.bevel && <feMergeNode in="bevelSh" />}
+        {layer.bevel && <feMergeNode in="bevelHi" />}
         {layer.texture && <feMergeNode in="grain" />}
       </feMerge>
     </filter>
@@ -358,7 +275,32 @@ function ShapeText({ layer }: { layer: Layer }) {
   )
 }
 
-type Paint = { fill?: string; stroke?: string; strokeWidth?: number }
+type Paint = {
+  fill?: string
+  stroke?: string
+  strokeWidth?: number
+  strokeDasharray?: string
+  strokeLinecap?: "butt" | "round"
+  strokeLinejoin?: "miter" | "round"
+}
+
+// 점선 간격은 선 두께에 비례한다. 점선은 끝이 둥글어야 점으로 보인다
+export function strokeStyle(layer: Layer, width: number): Paint {
+  const round = !!layer.strokeRound || layer.strokeDash === "dotted"
+  return {
+    strokeDasharray: !width
+      ? undefined
+      : layer.strokeDash === "dashed"
+        ? `${mmRound(width * 3)} ${mmRound(width * 2)}`
+        : layer.strokeDash === "dotted"
+          ? `0 ${mmRound(width * 2)}`
+          : undefined,
+    strokeLinecap: round ? "round" : "butt",
+    strokeLinejoin: layer.strokeRound ? "round" : "miter",
+  }
+}
+
+const mmRound = (value: number) => Math.round(value * 1000) / 1000
 
 // 색을 칠하는 도형의 윤곽. 사진을 넣으면 같은 윤곽이 사진의 잘라내기 틀이 된다
 function ShapeBody({ layer, paint }: { layer: Layer; paint: Paint }) {
@@ -369,10 +311,17 @@ function ShapeBody({ layer, paint }: { layer: Layer; paint: Paint }) {
     height: layer.height,
   }
   const variant = layer.shapeVariant
-  const scaledStroke = (unit: number) =>
-    paint.strokeWidth === undefined
-      ? undefined
-      : (paint.strokeWidth * unit) / Math.max(layer.width, layer.height)
+  // 상자 크기로 늘린 패스는 선 두께·점선 간격도 같이 늘어나므로 미리 줄여 둔다
+  const scaled = (unit: number): Paint => {
+    if (paint.strokeWidth === undefined) return paint
+    const width =
+      (paint.strokeWidth * unit) / Math.max(layer.width, layer.height)
+    return {
+      ...paint,
+      strokeWidth: width,
+      ...(paint.strokeDasharray ? strokeStyle(layer, width) : {}),
+    }
+  }
   if (layer.type === "rect" && variant === "rounded")
     return (
       <rect
@@ -390,8 +339,7 @@ function ShapeBody({ layer, paint }: { layer: Layer; paint: Paint }) {
       <path
         d={FRAME_PATHS[variant]}
         transform={`translate(${layer.x} ${layer.y}) scale(${layer.width / 100} ${layer.height / 100})`}
-        {...paint}
-        strokeWidth={scaledStroke(100)}
+        {...scaled(100)}
       />
     )
   if (layer.type === "rect") return <rect {...box} {...paint} />
@@ -417,16 +365,16 @@ function ShapeBody({ layer, paint }: { layer: Layer; paint: Paint }) {
       />
     )
   if (layer.type === "star")
-    return <polygon points={polygonPoints(layer, star)} {...paint} />
+    return <polygon points={polygonPoints(layer, starOf(layer))} {...paint} />
   if (layer.type === "heart")
     return (
       <path
         d={heart}
         transform={`translate(${layer.x} ${layer.y}) scale(${layer.width} ${layer.height})`}
-        {...paint}
-        strokeWidth={scaledStroke(1)}
+        {...scaled(1)}
       />
     )
+  if (layer.type === "path") return <path d={layerPathData(layer)} {...paint} />
   return null
 }
 
@@ -459,7 +407,8 @@ export function photoBox(layer: Layer) {
 function LayerGraphicView({ layer }: { layer: Layer }) {
   const imageSrc = useImageSrc()
   if (layer.visible === false) return null
-  const filterId = layer.shadow || layer.texture ? `fx-${layer.id}` : undefined
+  const filterId =
+    layer.shadow || layer.texture || layer.bevel ? `fx-${layer.id}` : undefined
   const cx = layer.x + layer.width / 2,
     cy = layer.y + layer.height / 2
   const transform = `translate(${cx} ${cy}) rotate(${layer.rotation ?? 0}) scale(${layer.flipX ? -1 : 1} ${layer.flipY ? -1 : 1}) translate(${-cx} ${-cy})`
@@ -467,6 +416,7 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
     fill: layer.fill,
     stroke: layer.stroke ?? "none",
     strokeWidth: layer.strokeWidth ?? 0,
+    ...strokeStyle(layer, layer.strokeWidth ?? 0),
   }
   const line = fittedFontSize(layer)
   const textAnchorX =
@@ -525,6 +475,7 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
             y2={cy}
             stroke={layer.stroke ?? layer.fill}
             strokeWidth={Math.max(0.3, layer.strokeWidth ?? 1)}
+            {...strokeStyle(layer, Math.max(0.3, layer.strokeWidth ?? 1))}
           />
         )}
         {layer.type === "image" && layer.image && (

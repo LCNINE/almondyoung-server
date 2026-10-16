@@ -508,14 +508,15 @@ export function useCanvasInteraction({
       marqueeStart.current = null
       setMarquee(null)
       if (!marquee) return
+      // 걸치기만 해도 고르면 종이를 덮는 큰 요소가 늘 딸려 온다. 네모 안에 다 들어온 것만 고른다
       const hits = design[side].filter((layer) => {
         if (layer.visible === false || !movable(layer)) return false
         const b = layerBounds(layer)
         return (
-          b.x0 < marquee.x1 &&
-          b.x1 > marquee.x0 &&
-          b.y0 < marquee.y1 &&
-          b.y1 > marquee.y0
+          b.x0 >= marquee.x0 &&
+          b.x1 <= marquee.x1 &&
+          b.y0 >= marquee.y0 &&
+          b.y1 <= marquee.y1
         )
       })
       const groups = new Set(hits.map((layer) => layer.groupId).filter(Boolean))

@@ -7,6 +7,12 @@ import { CanvasGuides } from "./canvas-guides"
 import { useLeaveWarning } from "../../hooks/use-leave-warning"
 import { useImageSrc } from "../../lib/image-previews"
 import {
+  DrawToolbar,
+  PencilOverlay,
+  PenOverlay,
+  PointEditOverlay,
+} from "./pen-overlay"
+import {
   layerImageDpi,
   SHAPE_TEXT_TYPES,
   sideBackground,
@@ -74,6 +80,11 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
     mergeGroup,
     splitGroup,
     showOverflow,
+    penActive,
+    pencilActive,
+    pointEditLayer,
+    finishPointEdit,
+    startPointEdit,
   } = editor
   const cropping = !!selected && cropId === selected.id
   const groupBox = group.length > 1 ? unionBounds(group) : null
@@ -147,7 +158,11 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
             onPointerUp={endDrag}
             onPointerCancel={endDrag}
             onDoubleClick={() =>
-              selected?.type === "image" ? startCrop() : startTextEdit()
+              selected?.type === "image"
+                ? startCrop()
+                : selected?.type === "path"
+                  ? startPointEdit()
+                  : startTextEdit()
             }
           >
             <defs>
@@ -191,7 +206,7 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                 )
               )}
             </g>
-            {selected && selected.visible !== false && (
+            {selected && selected.visible !== false && !pointEditLayer && (
               <g
                 id="selection-outline"
                 transform={`translate(${selected.x + selected.width / 2} ${selected.y + selected.height / 2}) rotate(${selected.rotation ?? 0}) scale(${selected.flipX ? -1 : 1} ${selected.flipY ? -1 : 1}) translate(${-selected.x - selected.width / 2} ${-selected.y - selected.height / 2})`}
@@ -386,36 +401,45 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
             {(showRuler || showCutline || showSafety) && (
               <CanvasGuides editor={editor} />
             )}
+            {penActive && <PenOverlay editor={editor} />}
+            {pencilActive && <PencilOverlay editor={editor} />}
+            {pointEditLayer && <PointEditOverlay editor={editor} />}
           </svg>
-          {selected && selected.visible !== false && editable && !editing && (
-            <div
-              className="absolute z-20 flex -translate-x-1/2 -translate-y-1/2 gap-1"
-              style={quickActionsAt(selected, scale)}
-            >
-              {textEditable && (
+          {selected &&
+            selected.visible !== false &&
+            editable &&
+            !editing &&
+            !pointEditLayer && (
+              <div
+                className="absolute z-20 flex -translate-x-1/2 -translate-y-1/2 gap-1"
+                style={quickActionsAt(selected, scale)}
+              >
+                {textEditable && (
+                  <button
+                    type="button"
+                    aria-label="문구 수정"
+                    title={
+                      selected.type === "text"
+                        ? "문구 수정"
+                        : "도형에 글자 넣기"
+                    }
+                    onClick={startTextEdit}
+                    className="flex size-6 items-center justify-center rounded bg-white text-[#10a8a1] shadow"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                )}
                 <button
                   type="button"
-                  aria-label="문구 수정"
-                  title={
-                    selected.type === "text" ? "문구 수정" : "도형에 글자 넣기"
-                  }
-                  onClick={startTextEdit}
+                  aria-label="선택 요소 삭제"
+                  title="삭제"
+                  onClick={removeSelected}
                   className="flex size-6 items-center justify-center rounded bg-white text-[#10a8a1] shadow"
                 >
-                  <Pencil size={14} />
+                  <Trash2 size={14} />
                 </button>
-              )}
-              <button
-                type="button"
-                aria-label="선택 요소 삭제"
-                title="삭제"
-                onClick={removeSelected}
-                className="flex size-6 items-center justify-center rounded bg-white text-[#10a8a1] shadow"
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
-          )}
+              </div>
+            )}
           {groupBox && (
             <div
               className="absolute z-20 flex -translate-x-full -translate-y-1/2 gap-1"
@@ -444,6 +468,20 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                 className="flex size-6 items-center justify-center rounded bg-white text-[#10a8a1] shadow"
               >
                 <Trash2 size={14} />
+              </button>
+            </div>
+          )}
+          {(penActive || pencilActive) && <DrawToolbar editor={editor} />}
+          {pointEditLayer && (
+            <div className="absolute -top-11 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded bg-[#303030] px-3 py-1.5 text-xs whitespace-nowrap text-white shadow">
+              점·핸들을 끌어 모양을 바꾸세요 · 점 두 번 클릭: 곡선↔꺾기 ·
+              Alt+끌기: 핸들 따로 · 방향키: 점 옮기기 · Delete: 점 지우기
+              <button
+                type="button"
+                onClick={finishPointEdit}
+                className="flex items-center gap-1 rounded bg-white px-2 py-0.5 font-semibold text-[#303030]"
+              >
+                <Check size={12} /> 완료
               </button>
             </div>
           )}

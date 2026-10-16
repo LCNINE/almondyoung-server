@@ -15,6 +15,7 @@ import { useDesignHistory } from "./use-design-history"
 import { useEditorShortcuts } from "./use-editor-shortcuts"
 import { useImageTools } from "./use-image-tools"
 import { useLayerActions } from "./use-layer-actions"
+import { usePenTool } from "./use-pen-tool"
 import { useAuthRetry } from "./use-auth-retry"
 import { useDesignOrder } from "./use-design-order"
 import { useTemplateExport } from "./use-template-export"
@@ -276,6 +277,23 @@ export function useAlmondEditor({
     group,
     setGroupIds,
   })
+  const pen = usePenTool({
+    design,
+    setDesign,
+    change,
+    commit,
+    side,
+    selected,
+    editable: actions.editable,
+    setSelectedId,
+    svgRef: canvas.svgRef,
+    handleSize: canvas.handleSize,
+  })
+  const flipSelected = (axis: "x" | "y") =>
+    actions.flipLayers(
+      group.length > 1 ? group : selected ? [selected] : [],
+      axis
+    )
   const images = useImageTools({
     design,
     side,
@@ -358,6 +376,9 @@ export function useAlmondEditor({
         y: clamp(selected.y + dy * px, design.heightMm),
       })
     },
+    flipSelected,
+    togglePen: pen.togglePen,
+    togglePencil: pen.togglePencil,
     canSave: true,
     save: storage.save,
     saveNamed: storage.saveNamed,
@@ -436,6 +457,7 @@ export function useAlmondEditor({
     ...canvas,
     ...actions,
     ...images,
+    ...pen,
     ...exporter,
     ...order,
     ...auth,

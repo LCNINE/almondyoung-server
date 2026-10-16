@@ -2,8 +2,6 @@ import { NumberInput } from "./number-input"
 import {
   GripVertical,
   RotateCcw,
-  FlipHorizontal,
-  FlipVertical,
   Link,
   Unlink,
   Crop,
@@ -12,6 +10,7 @@ import {
 } from "lucide-react"
 import type { Layer } from "../../lib/document"
 import { OrderIcon } from "./order-icon"
+import { FlipControls } from "./style-controls"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import type { PropertyPanelState } from "../../hooks/use-property-panel"
 import { useImageSrc } from "../../lib/image-previews"
@@ -35,6 +34,7 @@ export function ImageProperties({
     setOrder,
     setGeometry,
     applyImageFilter,
+    flipLayers,
   } = editor
   const {
     brightnessOpen,
@@ -167,6 +167,12 @@ export function ImageProperties({
               <OrderIcon position={position} />
             </button>
           ))}
+          <div className="ml-auto">
+            <FlipControls
+              onFlip={(axis) => flipLayers([selected], axis)}
+              disabled={!editable}
+            />
+          </div>
         </div>
         {imageMoreOpen && (
           <div className="space-y-3">
@@ -254,24 +260,6 @@ export function ImageProperties({
               </div>
             )}
             <div className="flex gap-2 border-t pt-3">
-              <button
-                type="button"
-                aria-label="좌우반전"
-                disabled={!editable}
-                onClick={() => patch(selected.id, { flipX: !selected.flipX })}
-                className="border p-1"
-              >
-                <FlipHorizontal size={16} />
-              </button>
-              <button
-                type="button"
-                aria-label="상하반전"
-                disabled={!editable}
-                onClick={() => patch(selected.id, { flipY: !selected.flipY })}
-                className="border p-1"
-              >
-                <FlipVertical size={16} />
-              </button>
               <button
                 type="button"
                 aria-label="회전 초기화"
