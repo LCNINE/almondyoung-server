@@ -219,6 +219,8 @@ function toCancelReason(reasonCode: string | null | undefined): OrderCancelledPa
     : 'ADMIN_CANCEL';
 }
 
+export const PRINT_PAYMENT_UNCONFIRMED_ERROR = 'payment not confirmed — verify payment, then retry';
+
 @Injectable()
 export class SalesOrdersService {
   private readonly logger = new Logger(SalesOrdersService.name);
@@ -241,7 +243,9 @@ export class SalesOrdersService {
     @Optional() private readonly moduleRef?: ModuleRef,
   ) {}
 
-  async create(dto: CreateSalesOrderDto, tx?: DbTx) {
+  // paymentConfirmed: 결제 확정을 모르는 주문의 인쇄는 발주하지 않되 빠뜨리지도 않는다.
+  // failed 로 만들어 워커는 집지 않고, 보드 발주 실패 탭에서 운영자가 결제를 확인한 뒤 재전송한다
+  async create(dto: CreateSalesOrderDto, tx?: DbTx, opts: { paymentConfirmed?: boolean } = {}) {
     this.assertUniqueTrustedChannelOrderItemIds(dto.salesChannel, Array.isArray(dto.lines) ? dto.lines : []);
 
     const timer = this.metrics?.startOrderTimer('create');
@@ -327,7 +331,17 @@ export class SalesOrdersService {
 
           const printRows = insertedLines.flatMap(({ id, almondDesignId }) =>
             almondDesignId
-              ? [{ salesOrderId: order.id, salesOrderLineId: id, almondDesignId, status: 'pending' as const }]
+              ? [
+                  opts.paymentConfirmed
+                    ? { salesOrderId: order.id, salesOrderLineId: id, almondDesignId, status: 'pending' as const }
+                    : {
+                        salesOrderId: order.id,
+                        salesOrderLineId: id,
+                        almondDesignId,
+                        status: 'failed' as const,
+                        lastError: PRINT_PAYMENT_UNCONFIRMED_ERROR,
+                      },
+                ]
               : [],
           );
           if (printRows.length > 0) {
@@ -1366,7 +1380,7 @@ export class SalesOrdersService {
       lines: this.convertOrderItems(payload.items),
       walletIntentId: payload.walletIntentId,
     };
-    return this.create(dto, tx);
+    return this.create(dto, tx, { paymentConfirmed: payload.status === 'confirmed' });
   }
 
   /**

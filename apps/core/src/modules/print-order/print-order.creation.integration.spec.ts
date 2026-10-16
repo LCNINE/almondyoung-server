@@ -43,6 +43,9 @@ function makeConsumer(tx: DbTx): OrderEventsConsumer {
       }),
   };
   const unused = {};
+  // 결제 확정 주문만 인쇄 대기열에 들어가므로 확정 경로의 출고 적재·보유권 부여는 아무것도 하지 않게 둔다
+  const noFulfillment = { shouldEnqueueFo: () => false };
+  const noGrant = { grantOwnershipsForOrder: () => Promise.resolve(undefined) };
   const service = new SalesOrdersService(
     dbService,
     policies as unknown as PoliciesService,
@@ -55,9 +58,9 @@ function makeConsumer(tx: DbTx): OrderEventsConsumer {
   );
   return new OrderEventsConsumer(
     service,
-    unused as unknown as LibraryService,
+    noGrant as unknown as LibraryService,
     unused as unknown as FulfillmentOrderCreationBacklogService,
-    unused as unknown as FulfillmentWorkflowGate,
+    noFulfillment as unknown as FulfillmentWorkflowGate,
     dbService,
     unused as unknown as ChannelOrderChangeService,
     unused as unknown as ChannelCancelSettler,
@@ -110,7 +113,7 @@ function payload(items: OrderCreatedPayload['items']): OrderCreatedPayload {
       roadAddress: '어딘가',
       detailAddress: '101호',
     },
-    status: 'pending',
+    status: 'confirmed',
     createdAt: new Date().toISOString(),
   });
 }

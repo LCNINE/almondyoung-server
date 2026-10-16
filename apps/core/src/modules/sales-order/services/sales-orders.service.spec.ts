@@ -1,7 +1,7 @@
 import { wmsTables } from '../../inventory/schema/inventory.schema';
 import { printOrders } from '../../print-order/schema/print-order.schema';
 import { SalesOrderAmendmentsService } from './sales-order-amendments.service';
-import { SalesOrdersService } from './sales-orders.service';
+import { PRINT_PAYMENT_UNCONFIRMED_ERROR, SalesOrdersService } from './sales-orders.service';
 import {
   CORE_ORDER_STREAM,
   FULFILLMENT_STREAM,
@@ -205,6 +205,25 @@ describe('SalesOrdersService external order-line identity', () => {
     for (const row of state.printOrders) {
       expect(row.salesOrderLineId).toBe(idByDesign.get(row.almondDesignId));
     }
+  });
+
+  it('keeps the print of an unconfirmed-payment order off the queue but on the board', async () => {
+    const { service, state } = makeService();
+
+    await service.createFromEvent({
+      ...payload([item({ almondDesignId: '12121212-1212-4212-8212-121212121212' })]),
+      status: 'pending',
+    });
+
+    expect(state.printOrders).toEqual([
+      {
+        salesOrderId,
+        salesOrderLineId: 'sales-order-line-1',
+        almondDesignId: '12121212-1212-4212-8212-121212121212',
+        status: 'failed',
+        lastError: PRINT_PAYMENT_UNCONFIRMED_ERROR,
+      },
+    ]);
   });
 
   it('does not touch print_orders when no line has an almond design', async () => {
