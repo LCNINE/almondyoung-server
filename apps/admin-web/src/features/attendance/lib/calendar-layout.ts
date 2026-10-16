@@ -1,6 +1,20 @@
 import type { CalendarLeave } from '@packages/domain-types/attendance';
 import type { LeaveDraft } from './attendance-model';
 
+export type CalendarScope = 'personal' | 'shared';
+
+export function calendarLeavesForScope(
+  leaves: CalendarLeave[],
+  userId: string | undefined,
+  scope: CalendarScope
+): CalendarLeave[] {
+  if (scope === 'shared') {
+    return leaves;
+  }
+
+  return leaves.filter((leave) => leave.userId === userId);
+}
+
 export function shiftCalendarDate(date: string, days: number): string {
   const result = new Date(`${date}T00:00:00Z`);
 

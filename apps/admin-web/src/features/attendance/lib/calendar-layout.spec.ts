@@ -3,6 +3,7 @@ import {
   buildCalendarWeeks,
   calendarDays,
   resolveRangeDrafts,
+  calendarLeavesForScope,
 } from './calendar-layout';
 
 function leave(
@@ -22,6 +23,16 @@ function leave(
 }
 
 describe('shared calendar ranges', () => {
+  it('keeps personal view limited to the current employee and shows colleagues only in shared view', () => {
+    const leaves = [leave('2026-10-16'), leave('2026-10-16', 'two')];
+
+    expect(calendarLeavesForScope(leaves, 'one', 'personal')).toEqual([
+      leaves[0],
+    ]);
+    expect(calendarLeavesForScope(leaves, 'one', 'shared')).toEqual(leaves);
+    expect(calendarLeavesForScope(leaves, undefined, 'personal')).toEqual([]);
+  });
+
   it('joins consecutive full leaves and continues them across a week boundary', () => {
     const weeks = buildCalendarWeeks('2026-10', [
       leave('2026-10-16'),

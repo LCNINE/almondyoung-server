@@ -289,7 +289,9 @@ export function AttendanceCard({ mobile = false }: { mobile?: boolean }) {
           )}
           <div className="mt-5 flex flex-wrap gap-x-4 gap-y-3 text-xs font-medium text-slate-500">
             <Link href={`${links}/records`}>내 기록</Link>
-            <Link href={`${links}/calendar`}>공유 캘린더</Link>
+            <Link href={`${links}/calendar`}>
+              {mobile ? '내 일정' : '공유 캘린더'}
+            </Link>
             <Link href={`${links}/requests`}>정정 / 예외 요청</Link>
             <Link href={`${links}/settings`}>알림 설정</Link>
           </div>

@@ -8,7 +8,7 @@ export default function Page() {
         <Link href="/attendance" className="text-sm text-indigo-600">
           ← 오늘의 근무
         </Link>
-        <SharedCalendar />
+        <SharedCalendar initialScope="personal" />
       </div>
     </main>
   );

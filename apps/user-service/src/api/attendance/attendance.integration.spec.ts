@@ -142,6 +142,33 @@ run('attendance PostgreSQL transactions', () => {
     expect(rows[0]).not.toHaveProperty('reason');
   });
 
+  it('shares multiple staff schedules while only permitting the owner to edit or remove each leave', async () => {
+    const [ownLeave] = await calendar.save(owner, [{ date: '2026-10-16', type: 'full' }]);
+    const [otherLeave] = await calendar.save(other, [{ date: '2026-10-16', type: 'am', start: '13:00', end: '18:00' }]);
+
+    const controller = new AttendanceController(service, repo, calendar);
+    const shared = await controller.calendarList('2026-10-16', '2026-10-16');
+
+    expect(shared).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: ownLeave.id, userId: owner, name: '직원하나' }),
+        expect.objectContaining({ id: otherLeave.id, userId: other, name: '직원둘' }),
+      ]),
+    );
+    expect(shared).toHaveLength(2);
+    expect(Object.keys(shared[0]).sort()).toEqual(['date', 'end', 'id', 'name', 'start', 'type', 'userId']);
+
+    await expect(calendar.update(owner, otherLeave.id, { date: otherLeave.date, type: 'full' })).rejects.toThrow();
+    await expect(calendar.remove(owner, otherLeave.id)).rejects.toThrow();
+    await expect(calendar.remove(master, otherLeave.id)).rejects.toThrow();
+
+    await calendar.remove(owner, ownLeave.id);
+
+    expect(await calendar.list('2026-10-16', '2026-10-16')).toEqual([
+      expect.objectContaining({ id: otherLeave.id, userId: other, type: 'am' }),
+    ]);
+  });
+
   it('accepts simultaneous and lost-response leave retries without duplicate rows or audit events', async () => {
     const days = [
       { date: '2026-10-16', type: 'full' as const },

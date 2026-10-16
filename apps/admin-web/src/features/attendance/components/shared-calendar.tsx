@@ -10,7 +10,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from '@/components/ui/dialog';
 import { attendanceApi } from '@/lib/api/domains/attendance';
 import {
@@ -35,6 +34,8 @@ import {
   calendarDays,
   resolveRangeDrafts,
   shiftCalendarDate,
+  calendarLeavesForScope,
+  type CalendarScope,
 } from '../lib/calendar-layout';
 import { LeaveScheduleFields } from './leave-schedule-fields';
 
@@ -44,11 +45,16 @@ const LEAVE_COLORS: Record<LeaveType, string> = {
   pm: 'bg-sky-100 text-sky-900',
 };
 
-export function SharedCalendar() {
+export function SharedCalendar({
+  initialScope = 'shared',
+}: {
+  initialScope?: CalendarScope;
+}) {
   const { data: me } = useAttendance();
   const today = seoulDate(new Date());
   const [month, setMonth] = useState(today.slice(0, 7));
   const [selected, setSelected] = useState(today);
+  const [scope, setScope] = useState<CalendarScope>(initialScope);
   const [editor, setEditor] = useState<{
     day: string;
     existing?: CalendarLeave;
@@ -62,13 +68,17 @@ export function SharedCalendar() {
         shiftCalendarDate(visibleDays[visibleDays.length - 1], 1)
       ),
   });
-  const weeks = buildCalendarWeeks(month, query.data ?? []);
+  const visibleLeaves = calendarLeavesForScope(
+    query.data ?? [],
+    me?.userId,
+    scope
+  );
+  const weeks = buildCalendarWeeks(month, visibleLeaves);
   const remove = useAttendanceAction(
     attendanceApi.removeLeave,
     '일정을 삭제했어요.'
   );
-  const selectedLeaves =
-    query.data?.filter((item) => item.date === selected) ?? [];
+  const selectedLeaves = visibleLeaves.filter((item) => item.date === selected);
   const selectedLabel = new Intl.DateTimeFormat('ko-KR', {
     month: 'long',
     day: 'numeric',
@@ -91,14 +101,30 @@ export function SharedCalendar() {
     <section className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">출결·휴가 캘린더</h1>
+          <h1 className="text-2xl font-bold">
+            {scope === 'personal'
+              ? '내 휴가·반차 일정'
+              : '직원 휴가·반차 캘린더'}
+          </h1>
           <p className="mt-2 text-sm text-slate-600">
-            직원들의 휴가와 반차를 함께 확인해요.
+            {scope === 'personal'
+              ? '내 일정을 확인하고 등록·수정해요.'
+              : '직원들의 휴가와 반차를 함께 확인해요.'}
           </p>
         </div>
-        <Button onClick={() => setEditor({ day: selected })} disabled={!me}>
-          내 휴가 / 반차 등록
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() =>
+              setScope(scope === 'personal' ? 'shared' : 'personal')
+            }
+          >
+            {scope === 'personal' ? '다른 직원 일정 보기' : '내 일정만 보기'}
+          </Button>
+          <Button onClick={() => setEditor({ day: selected })} disabled={!me}>
+            내 휴가 / 반차 등록
+          </Button>
+        </div>
       </div>
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white lg:grid lg:grid-cols-[minmax(0,1fr)_280px]">
         <div className="min-w-0">
@@ -166,8 +192,9 @@ export function SharedCalendar() {
                 className="relative grid grid-cols-7 border-b border-slate-200 last:border-b-0"
               >
                 {week.days.map((day, weekday) => {
-                  const leaves =
-                    query.data?.filter((item) => item.date === day) ?? [];
+                  const leaves = visibleLeaves.filter(
+                    (item) => item.date === day
+                  );
                   const extra = week.segments.filter(
                     (segment) =>
                       segment.lane >= 3 &&
@@ -455,10 +482,12 @@ function LeaveEditor({
         }
       }}
     >
-      <DialogContent className="flex max-h-[90dvh] max-w-lg flex-col gap-0 overflow-hidden p-0">
+      <DialogContent
+        aria-describedby={undefined}
+        className="flex max-h-[90dvh] max-w-lg flex-col gap-0 overflow-hidden p-0"
+      >
         <DialogHeader className="shrink-0 border-b px-6 py-5">
           <DialogTitle>휴가 / 반차 {existing ? '수정' : '등록'}</DialogTitle>
-          <DialogDescription>경리나라 승인 후 등록해 주세요.</DialogDescription>
         </DialogHeader>
         <form
           id="leave-editor-form"
