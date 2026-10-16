@@ -254,6 +254,7 @@ export class PaymentIntentAdminService {
       errorCode: c.errorCode ?? null,
       errorMessage: c.errorMessage ?? null,
       createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
     }));
 
     // Refunds (charge → payment_method join으로 manualConfirmable 계산 — 목록과 같은 조회·매핑)

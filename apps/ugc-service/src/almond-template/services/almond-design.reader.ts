@@ -5,7 +5,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { almondDesigns, type UgcServiceSchema, type UgcTx } from '../../db/schema';
 import { ALMOND_PRINT_FILE_SCALE } from '../constants/almond-template.constants';
 import { toFileScale } from '../print/almond-print-svg';
-import { type AlmondDesignPrintSource, type AlmondDesignView } from '../types/almond-design.types';
+import { type AlmondDesignInfo, type AlmondDesignPrintSource, type AlmondDesignView } from '../types/almond-design.types';
 
 const viewColumns = {
   id: almondDesigns.id,
@@ -35,6 +35,25 @@ export class AlmondDesignReader {
   async findById(id: string, tx?: UgcTx): Promise<AlmondDesignView> {
     return this.db.run(async (trx) => {
       const [row] = await trx.select(viewColumns).from(almondDesigns).where(eq(almondDesigns.id, id)).limit(1);
+      if (!row) throw new NotFoundError(`Almond design not found: ${id}`);
+      return row;
+    }, tx);
+  }
+
+  async findInfo(id: string, tx?: UgcTx): Promise<AlmondDesignInfo> {
+    return this.db.run(async (trx) => {
+      const [row] = await trx
+        .select({
+          id: almondDesigns.id,
+          userId: almondDesigns.userId,
+          productId: almondDesigns.productId,
+          widthMm: almondDesigns.widthMm,
+          heightMm: almondDesigns.heightMm,
+          hasBack: viewColumns.hasBack,
+        })
+        .from(almondDesigns)
+        .where(eq(almondDesigns.id, id))
+        .limit(1);
       if (!row) throw new NotFoundError(`Almond design not found: ${id}`);
       return row;
     }, tx);

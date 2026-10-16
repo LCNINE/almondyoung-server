@@ -3,7 +3,13 @@ import { DbService, InjectTypedDb } from '@app/db';
 import { eq } from 'drizzle-orm';
 import { DbTx, SalesOrderLine, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { ProductSkuMappingService } from '../services/product-sku-mapping.service';
-import { isDigitalFulfillmentLine, LineCompositionResolution, resolveLineComposition } from './line-composition';
+import {
+  CompositionItem,
+  isDigitalFulfillmentLine,
+  isOutsourcedLine,
+  LineCompositionResolution,
+  resolveLineComposition,
+} from './line-composition';
 import { selectFrozenCompositions } from './frozen-compositions';
 import { sumCancelledByLine } from './partial-cancellation';
 
@@ -48,7 +54,7 @@ export class LineCompositionReader {
       const resolved: ResolvedSalesOrderLine[] = [];
       for (const line of lines) {
         // 굳힌 라인·디지털 라인은 상품매칭을 읽지 않는다 — 판정에 안 쓰는 조회를 줄인다
-        const needsMatching = line.compositionSource === null && !isDigitalFulfillmentLine(line);
+        const needsMatching = line.compositionSource === null && !isDigitalFulfillmentLine(line) && !isOutsourcedLine(line);
         const matching = needsMatching ? await this.productSkuMapping.getByVariant(line.variantId, trx) : null;
         resolved.push({
           line,

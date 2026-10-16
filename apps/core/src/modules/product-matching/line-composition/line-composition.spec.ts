@@ -2,6 +2,7 @@ import {
   blocksFulfillment,
   compositionFromMatching,
   compositionItemsProblem,
+  isOutsourcedLine,
   sameComposition,
   isDigitalFulfillmentLine,
   LineForComposition,
@@ -14,6 +15,7 @@ const physical: LineForComposition = {
   fulfillmentKind: null,
   requiresShipping: null,
   compositionSource: null,
+  almondDesignId: null,
 };
 const variant = (links: Array<{ skuId: string; quantity: number }>) => ({
   status: 'matched',
@@ -25,6 +27,14 @@ describe('resolveLineComposition', () => {
   it('디지털 라인은 매칭을 보지 않고 digital', () => {
     expect(resolveLineComposition({ ...physical, fulfillmentKind: 'digital' }, [], null)).toEqual({ kind: 'digital' });
     expect(resolveLineComposition({ ...physical, requiresShipping: false }, [], null)).toEqual({ kind: 'digital' });
+  });
+
+  it('resolves an almond line as outsourced even without matching', () => {
+    const line = { ...physical, almondDesignId: 'd1' };
+    expect(resolveLineComposition(line, [], null)).toEqual({ kind: 'outsourced' });
+    expect(isOutsourcedLine(line)).toBe(true);
+    expect(isOutsourcedLine(physical)).toBe(false);
+    expect(isOutsourcedLine({})).toBe(false);
   });
 
   it('굳힌 라인은 상품매칭이 무엇이든 굳힌 구성을 쓴다(SKU 순 정렬)', () => {

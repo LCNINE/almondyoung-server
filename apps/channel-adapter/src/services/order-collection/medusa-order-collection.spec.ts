@@ -208,6 +208,192 @@ describe('Medusa order collection (source + translator)', () => {
     expect(dig).toMatchObject({ fulfillmentKind: 'digital', requiresShipping: false });
   });
 
+  it('carries line metadata.almond_design_id into the OrderCreated line', async () => {
+    const provider = makeProvider({
+      listOrders: jest.fn().mockResolvedValue([
+        {
+          id: 'order_almond_1',
+          payment_status: 'authorized',
+          customer_id: 'cus_1',
+          currency_code: 'KRW',
+          total: 10000,
+          subtotal: 10000,
+          shipping_total: 0,
+          discount_total: 0,
+          created_at: '2026-06-24T01:00:00.000Z',
+          updated_at: '2026-06-24T01:05:00.000Z',
+          items: [
+            {
+              id: 'item_almond',
+              title: 'Business card',
+              quantity: 1,
+              unit_price: 10000,
+              variant_id: 'v_card',
+              metadata: { almond_design_id: '0b7c1d2e-4f5a-4b6c-8d7e-9f0a1b2c3d4e' },
+              variant: {
+                metadata: { pimVariantId: 'pv_card' },
+                product: { metadata: { pimMasterId: 'm1', pimVersionId: 'ver1' } },
+              },
+            },
+          ],
+          shipping_address: {
+            first_name: 'Jane',
+            last_name: 'Kim',
+            phone: '010',
+            postal_code: '12345',
+            address_1: 'Seoul',
+            address_2: '',
+          },
+        },
+      ]),
+    } as any);
+
+    const result = await provider.fetchOrders(null);
+    const item = result.orders[0].createPayload.items[0];
+
+    expect(item.almondDesignId).toBe('0b7c1d2e-4f5a-4b6c-8d7e-9f0a1b2c3d4e');
+  });
+
+  it('drops a non-uuid almond_design_id', async () => {
+    const provider = makeProvider({
+      listOrders: jest.fn().mockResolvedValue([
+        {
+          id: 'order_almond_1',
+          payment_status: 'authorized',
+          customer_id: 'cus_1',
+          currency_code: 'KRW',
+          total: 10000,
+          subtotal: 10000,
+          shipping_total: 0,
+          discount_total: 0,
+          created_at: '2026-06-24T01:00:00.000Z',
+          updated_at: '2026-06-24T01:05:00.000Z',
+          items: [
+            {
+              id: 'item_almond',
+              title: 'Business card',
+              quantity: 1,
+              unit_price: 10000,
+              variant_id: 'v_card',
+              metadata: { almond_design_id: 'abc' },
+              variant: {
+                metadata: { pimVariantId: 'pv_card' },
+                product: { metadata: { pimMasterId: 'm1', pimVersionId: 'ver1' } },
+              },
+            },
+          ],
+          shipping_address: {
+            first_name: 'Jane',
+            last_name: 'Kim',
+            phone: '010',
+            postal_code: '12345',
+            address_1: 'Seoul',
+            address_2: '',
+          },
+        },
+      ]),
+    } as any);
+
+    const result = await provider.fetchOrders(null);
+    const item = result.orders[0].createPayload.items[0];
+
+    expect(item).not.toHaveProperty('almondDesignId');
+  });
+
+  it('drops a 36-char non-uuid almond_design_id', async () => {
+    const provider = makeProvider({
+      listOrders: jest.fn().mockResolvedValue([
+        {
+          id: 'order_almond_1',
+          payment_status: 'authorized',
+          customer_id: 'cus_1',
+          currency_code: 'KRW',
+          total: 10000,
+          subtotal: 10000,
+          shipping_total: 0,
+          discount_total: 0,
+          created_at: '2026-06-24T01:00:00.000Z',
+          updated_at: '2026-06-24T01:05:00.000Z',
+          items: [
+            {
+              id: 'item_almond',
+              title: 'Business card',
+              quantity: 1,
+              unit_price: 10000,
+              variant_id: 'v_card',
+              metadata: { almond_design_id: 'a'.repeat(36) },
+              variant: {
+                metadata: { pimVariantId: 'pv_card' },
+                product: { metadata: { pimMasterId: 'm1', pimVersionId: 'ver1' } },
+              },
+            },
+          ],
+          shipping_address: {
+            first_name: 'Jane',
+            last_name: 'Kim',
+            phone: '010',
+            postal_code: '12345',
+            address_1: 'Seoul',
+            address_2: '',
+          },
+        },
+      ]),
+    } as any);
+
+    const result = await provider.fetchOrders(null);
+    const item = result.orders[0].createPayload.items[0];
+
+    expect(item).not.toHaveProperty('almondDesignId');
+  });
+
+  it('accepts an uppercase uuid and keeps almondDesignId out of the change-hash input', async () => {
+    const provider = makeProvider({
+      listOrders: jest.fn().mockResolvedValue([
+        {
+          id: 'order_almond_1',
+          payment_status: 'authorized',
+          customer_id: 'cus_1',
+          currency_code: 'KRW',
+          total: 10000,
+          subtotal: 10000,
+          shipping_total: 0,
+          discount_total: 0,
+          created_at: '2026-06-24T01:00:00.000Z',
+          updated_at: '2026-06-24T01:05:00.000Z',
+          items: [
+            {
+              id: 'item_almond',
+              title: 'Business card',
+              quantity: 1,
+              unit_price: 10000,
+              variant_id: 'v_card',
+              metadata: { almond_design_id: '0B7C1D2E-4F5A-4B6C-8D7E-9F0A1B2C3D4E' },
+              variant: {
+                metadata: { pimVariantId: 'pv_card' },
+                product: { metadata: { pimMasterId: 'm1', pimVersionId: 'ver1' } },
+              },
+            },
+          ],
+          shipping_address: {
+            first_name: 'Jane',
+            last_name: 'Kim',
+            phone: '010',
+            postal_code: '12345',
+            address_1: 'Seoul',
+            address_2: '',
+          },
+        },
+      ]),
+    } as any);
+
+    const result = await provider.fetchOrders(null);
+    const item = result.orders[0].createPayload.items[0];
+
+    expect(item.almondDesignId).toBe('0B7C1D2E-4F5A-4B6C-8D7E-9F0A1B2C3D4E');
+    const changeItem = result.orders[0].changes.items[0];
+    expect(changeItem).not.toHaveProperty('almondDesignId');
+  });
+
   it('line item requires_shipping 이 있으면 product metadata 보다 fulfillmentKind 판별에 우선한다', async () => {
     const provider = makeProvider({
       listOrders: jest.fn().mockResolvedValue([

@@ -116,6 +116,8 @@ export interface StoreCancelOrderRequest {
     | "DELAY"
     | "OTHER"
   reasonDetail?: string
+  /** 인쇄 상품을 빼고 나머지만 취소 — 첫 요청이 PRINT_PARTIAL_CANCEL_AVAILABLE 일 때 고객 동의 뒤 */
+  excludePrint?: boolean
 }
 
 /** Medusa order ID 기반 — 스토어프론트에서 주로 사용 */
@@ -150,7 +152,7 @@ export async function getOrderActionsBatchByMedusaId(
 
 export type StoreCancelOrderResult =
   | { success: true; actions: StoreOrderActionsResponse }
-  | { success: false; error: string }
+  | { success: false; error: string; code?: string }
 
 /**
  * Medusa order ID 기반 취소 — 스토어프론트에서 주로 사용
@@ -180,7 +182,7 @@ export async function cancelOrderByMedusaId(
   } catch (error) {
     if (error instanceof ApiAuthError) throw error
     if (error instanceof HttpApiError)
-      return { success: false, error: error.message }
+      return { success: false, error: error.message, code: error.data?.code }
     throw error
   }
 }
@@ -205,6 +207,8 @@ export interface StoreOrderLine {
   unitPrice: number | null
   totalPrice: number | null
   variantId: string
+  /** 주문제작(아몬드템플릿 인쇄) 상품 — 반품·교환 신청 대상이 아니다 */
+  customMade?: boolean
 }
 
 export interface StoreOrderLinesResponse {

@@ -8,6 +8,7 @@ import { ChevronRight, Folder, FileText } from 'lucide-react';
 import { type MenuItem } from '@/lib/utils/menu';
 import { Badge } from '@/components/ui/badge';
 import { QuarantineMenuBadge } from './quarantine-menu-badge';
+import { PrintOrderMenuBadge } from './print-order-menu-badge';
 import { IconComponent } from '@/lib/utils/icons';
 import {
   Collapsible,
@@ -131,6 +132,7 @@ export function SidebarMenuItemRecursive({
                 </Badge>
               )}
               {item.hasQuarantineBadge && <QuarantineMenuBadge />}
+              {item.hasPrintOrderBadge && <PrintOrderMenuBadge />}
             </Link>
           </SidebarMenuButton>
         ) : (
@@ -154,6 +156,7 @@ export function SidebarMenuItemRecursive({
               </Badge>
             )}
             {item.hasQuarantineBadge && <QuarantineMenuBadge />}
+            {item.hasPrintOrderBadge && <PrintOrderMenuBadge />}
           </SidebarMenuButton>
         )}
       </SidebarMenuItem>

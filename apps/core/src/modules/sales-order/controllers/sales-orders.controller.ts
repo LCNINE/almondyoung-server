@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -22,7 +23,12 @@ import { SalesOrderResponseDto } from '../dto/sales-order-response.dto';
 import { DailyStatsQueryDto } from '../dto/daily-stats-query.dto';
 import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 import { CreateBusinessLinkDto } from '../dto/create-business-link.dto';
-import { CancelSalesOrderDto, CancelByIntentDto, RetryCancelSettlementDto } from '../dto/cancel-sales-order.dto';
+import {
+  CancelSalesOrderDto,
+  CancelByIntentDto,
+  PrintGateByIntentDto,
+  RetryCancelSettlementDto,
+} from '../dto/cancel-sales-order.dto';
 
 @ApiTags('Sales Orders')
 @Controller('sales-orders')
@@ -97,8 +103,28 @@ export class SalesOrdersController {
     });
   }
 
+  @Post('print-gate-by-intent')
+  @HttpCode(200)
+  @ApiOperation({ summary: '무통장 환불 승인 전 확인 — 살아 있는 인쇄 줄이 있으면 409 PRINT_NEEDS_PARTIAL_CANCEL' })
+  @ApiResponse({ status: 200, description: '{ ok: true } — 인쇄 줄이 없거나 모두 취소됨' })
+  @ApiResponse({ status: 409, description: '인쇄 상품이 있는 주문 — 승인하지 말고 부분 취소로 처리' })
+  printGateByIntent(@Body() dto: PrintGateByIntentDto) {
+    return this.storeSalesOrders.printGateByWalletIntent(dto.walletIntentId);
+  }
+
+  @Get('print-status-by-intent/:walletIntentId')
+  @ApiOperation({
+    summary: '결제의 주문에 와우프레스로 제작이 접수됐을 수 있는 인쇄 줄이 있는가 — 결제 상세 환불 제한 판단',
+  })
+  @ApiResponse({ status: 200, description: '{ hasActivePrint } — 주문·인쇄 줄이 없으면 false' })
+  printStatusByIntent(@Param('walletIntentId') walletIntentId: string) {
+    return this.storeSalesOrders.printStatusByWalletIntent(walletIntentId);
+  }
+
   @Post(':id/cancel-request/:requestId/retry')
-  @ApiOperation({ summary: '채널 취소 정산 다시 시도 — 환불 지연·거절인 요청에 같은 requestId 로 명령을 다시 낸다(#1016 36번 재설계)' })
+  @ApiOperation({
+    summary: '채널 취소 정산 다시 시도 — 환불 지연·거절인 요청에 같은 requestId 로 명령을 다시 낸다(#1016 36번 재설계)',
+  })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
   @ApiParam({ name: 'requestId', description: '취소 요청 ID' })
   retryCancelSettlement(
@@ -110,7 +136,9 @@ export class SalesOrdersController {
   }
 
   @Post(':id/cancel-request/:requestId/manual-refund')
-  @ApiOperation({ summary: '채널 취소를 계좌 송금으로 환불 — wallet 에 송금 대기 행을 만든다. 송금 뒤 결제 상세에서 완료 처리' })
+  @ApiOperation({
+    summary: '채널 취소를 계좌 송금으로 환불 — wallet 에 송금 대기 행을 만든다. 송금 뒤 결제 상세에서 완료 처리',
+  })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
   @ApiParam({ name: 'requestId', description: '취소 요청 ID' })
   manualRefundCancelSettlement(@Param('id') id: string, @Param('requestId') requestId: string) {
@@ -133,7 +161,10 @@ export class SalesOrdersController {
   }
 
   @Get('stats/daily')
-  @ApiOperation({ summary: '일별 주문처리 현황', description: '주문일(KST) 기준 일별 상태별 건수와 교환·반품 접수 건수' })
+  @ApiOperation({
+    summary: '일별 주문처리 현황',
+    description: '주문일(KST) 기준 일별 상태별 건수와 교환·반품 접수 건수',
+  })
   getDailyStatusStats(@Query() query: DailyStatsQueryDto) {
     return this.service.getDailyStatusStats(query.from, query.to);
   }

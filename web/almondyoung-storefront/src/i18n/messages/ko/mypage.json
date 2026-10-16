@@ -586,6 +586,7 @@
       "cancelGoBack": "돌아가기",
       "cancelError": "취소 처리 중 오류가 발생했습니다.",
       "cancelCompleted": "주문이 취소되었습니다.",
+      "cancelFailedConfirm": "확인",
       "contactCs": "고객센터 문의",
       "bankTransferCancelGuide": "무통장입금 주문의 취소·환불은 ‘환불 신청’ 버튼으로 신청해 주세요.",
       "bankTransferRefundNotice": "입금 전 미입금 주문은 입금 기한(7일) 경과 시 자동 취소됩니다. 입금 후 취소·환불은 ‘환불 신청’에서 환불 계좌(은행·계좌번호·예금주)를 입력해 주세요. 관리자 확인 후 입력하신 계좌로 환불되며(약 2영업일), 예금주명이 정확해야 합니다.",
@@ -594,12 +595,18 @@
         "cancel_requested": "취소 처리 중입니다.",
         "already_shipped": "이미 출고된 주문이라 취소가 불가합니다. 반품 신청을 이용해 주세요.",
         "channel_order": "채널 주문은 해당 채널에서 취소해 주세요.",
-        "already_processing": "피킹이 시작되어 직접 취소가 불가합니다. 고객센터로 문의해 주세요.",
+        "already_processing": "상품 준비가 시작되어 직접 취소할 수 없습니다. 고객센터로 문의해 주세요.",
         "digital_downloaded": "이미 다운로드하신 디지털 상품이 포함되어 있어 직접 취소가 불가합니다. 고객센터로 문의해 주세요."
       },
       "writeReview": "리뷰 작성하기",
       "addToCartSuccess": "장바구니에 담았습니다.",
-      "goToCart": "장바구니 보기"
+      "goToCart": "장바구니 보기",
+      "printPartialCancel": {
+        "title": "인쇄 상품은 취소할 수 없어요",
+        "description": "주문하신 인쇄 상품은 이미 제작에 들어가 취소할 수 없습니다.\n인쇄 상품을 뺀 나머지 상품만 취소할까요? 인쇄 상품은 그대로 제작해 보내 드립니다.",
+        "keep": "취소하지 않기",
+        "confirm": "나머지 상품만 취소"
+      }
     },
     "delivery": {
       "paid": "결제완료",
@@ -679,7 +686,8 @@
       "reasonWrongItem": "오배송",
       "reasonDamagedInShipping": "배송 중 파손",
       "reasonOther": "기타",
-      "noLines": "주문 상품 정보를 찾을 수 없습니다."
+      "noLines": "주문 상품 정보를 찾을 수 없습니다.",
+      "customMadeNotAllowed": "주문제작 인쇄 상품은 반품·교환 신청을 받지 않습니다. 인쇄 불량은 받으신 날부터 5일 안에 고객센터로 문의해 주세요."
     },
     "paymentStatus": {
       "awaiting": "결제 대기",

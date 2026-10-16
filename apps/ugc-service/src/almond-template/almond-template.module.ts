@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PrintFileClient } from './clients/print-file.client';
 import { PublicFileClient } from './clients/public-file.client';
 import { AdminAlmondDesignsController } from './controllers/admin-almond-designs.controller';
+import { InternalAlmondDesignsController } from './controllers/internal-almond-designs.controller';
 import { AdminAlmondTemplatesController } from './controllers/admin-almond-templates.controller';
 import { AlmondDesignsController } from './controllers/almond-designs.controller';
 import { AlmondSavedDesignsController } from './controllers/almond-saved-designs.controller';
@@ -26,6 +27,7 @@ import { AlmondTemplatesService } from './services/almond-templates.service';
     AdminAlmondTemplatesController,
     AlmondDesignsController,
     AdminAlmondDesignsController,
+    InternalAlmondDesignsController,
     AlmondSavedDesignsController,
     AlmondSavedDesignWithdrawalConsumer,
   ],

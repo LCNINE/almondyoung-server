@@ -1,6 +1,14 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { getTableName } from 'drizzle-orm';
 import { StoreSalesOrdersService } from './store-sales-orders.service';
+import { PrintOrderReader } from '../../print-order/services/print-order.reader';
+import {
+  PRINT_IN_PRODUCTION_MESSAGE,
+  PrintInProductionError,
+  PrintNeedsPartialCancelError,
+  PrintOrderCancellationManager,
+  PrintPartialCancelAvailableError,
+} from '../../print-order/services/print-order-cancellation.manager';
 import { WalletRefundClient, WalletRefundOutcome } from './wallet-refund.client';
 
 // ─── Shared fixtures ─────────────────────────────────────────────────────────
@@ -37,11 +45,41 @@ function makeSo(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function printReaderMock(rows: Array<Record<string, unknown>> = [], allOutsourced = false): PrintOrderReader {
+  const fake = {
+    forSalesOrder: jest.fn().mockResolvedValue(rows),
+    isAllOutsourced: jest.fn().mockResolvedValue(allOutsourced),
+  };
+  // 클래스의 private db 필드 때문에 구조 대입이 안 되는 부분 가짜
+  return fake as unknown as PrintOrderReader;
+}
+
+const PRINT_RESULT = { vendorCancelled: ['po-1'], locallyCancelled: [] };
+
+function printCancelMock(
+  cancelForOrder: jest.Mock = jest.fn().mockResolvedValue(PRINT_RESULT),
+  noteSalesCancelFailed: jest.Mock = jest.fn().mockResolvedValue(undefined),
+) {
+  // 클래스의 private 필드 때문에 구조 대입이 안 되는 부분 가짜
+  return {
+    cancelForOrder,
+    noteSalesCancelFailed,
+  } as unknown as PrintOrderCancellationManager;
+}
+
 function makeContext(
   options: {
     so?: ReturnType<typeof makeSo>;
     fos?: { status: string; directShipStatus?: string | null; fulfillmentMode?: string | null }[];
     activeShipmentStatuses?: string[];
+    printOrders?: Array<Record<string, unknown>>;
+    allOutsourced?: boolean;
+    /** 판매주문이 아직 없다(수집 전) */
+    noSalesOrder?: boolean;
+    /** 인쇄가 아닌 판매주문 줄이 있는가 */
+    nonPrintLine?: boolean;
+    /** 전체 취소 계획의 남은 줄 */
+    planLines?: Array<{ salesOrderLineId: string; quantity: number }>;
     walletOutcome?: WalletRefundOutcome;
     cancelError?: Error;
     businessLinkError?: Error;
@@ -55,10 +93,13 @@ function makeContext(
     settlementFacts?: Array<Record<string, unknown>>;
     /** wallet 환불 목록. null = 실패·시간 초과 */
     walletRefunds?: Array<Record<string, unknown>> | null;
+    printCancel?: jest.Mock;
   } = {},
 ) {
   const so = options.so ?? makeSo();
   let currentSo = so;
+  const printCancel = options.printCancel ?? jest.fn().mockResolvedValue(PRINT_RESULT);
+  const printNote = jest.fn().mockResolvedValue(undefined);
   const fos = (options.fos ?? []).map((fo) => ({
     directShipStatus: null,
     fulfillmentMode: null,
@@ -107,8 +148,12 @@ function makeContext(
                         ? [{ id: 'own-1' }]
                         : []
                       : tableName === 'sales_orders'
-                        ? [currentSo]
-                        : [],
+                        ? options.noSalesOrder
+                          ? []
+                          : [currentSo]
+                        : tableName === 'sales_order_lines' && options.nonPrintLine
+                          ? [{ id: 'normal-line' }]
+                          : [],
                   ),
                 ),
               }),
@@ -153,13 +198,16 @@ function makeContext(
           recordedRefundMetadata = dto.metadata;
           return Promise.resolve(undefined);
         }),
+    planCancellation: jest.fn().mockResolvedValue({
+      lines: options.planLines ?? [],
+      hasShippedQuantity: false,
+      leavesNothing: true,
+    }),
   };
 
   const walletClientMock: Partial<WalletRefundClient> = {
     refundByIntent: jest.fn().mockResolvedValue(walletOutcome),
-    listRefundsByIntent: jest
-      .fn()
-      .mockResolvedValue(options.walletRefunds === undefined ? [] : options.walletRefunds),
+    listRefundsByIntent: jest.fn().mockResolvedValue(options.walletRefunds === undefined ? [] : options.walletRefunds),
   };
 
   const cancelRequestsMock = {
@@ -179,6 +227,7 @@ function makeContext(
         refundMode: 'auto',
       });
     }),
+    precheck: jest.fn().mockResolvedValue(undefined),
     // 같은 키의 행이 보인다 = 그 키의 확정 트랜잭션이 커밋됐다 — 그 뒤에 다시 읽는 판매주문은 soAfterRequest 다.
     findBySourceKey: jest.fn().mockImplementation(() => {
       if (options.replayView) currentSo = options.soAfterRequest ?? currentSo;
@@ -191,14 +240,48 @@ function makeContext(
     salesOrdersServiceMock as any,
     walletClientMock as WalletRefundClient,
     cancelRequestsMock as any,
+    printReaderMock(options.printOrders, options.allOutsourced),
+    printCancelMock(printCancel, printNote),
   );
 
-  return { service, dbMock, salesOrdersServiceMock, walletClientMock, cancelRequestsMock };
+  return { service, dbMock, salesOrdersServiceMock, walletClientMock, cancelRequestsMock, printCancel, printNote };
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe('StoreSalesOrdersService', () => {
+  describe('printStatusByWalletIntent — 결제 상세 환불 제한', () => {
+    it('결제의 주문에 제작 접수된 인쇄 줄이 있으면 hasActivePrint=true', async () => {
+      const { service } = makeContext({
+        printOrders: [
+          { status: 'cancelled', orderAttemptedAt: new Date() },
+          { status: 'submitted', orderAttemptedAt: new Date() },
+        ],
+      });
+      await expect(service.printStatusByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({ hasActivePrint: true, channelOrderId: 'medusa-order-001' });
+    });
+
+    it('아직 안 보낸 실패 행도 재전송되면 제작되므로 true', async () => {
+      const { service } = makeContext({ printOrders: [{ status: 'failed', orderAttemptedAt: null }] });
+      await expect(service.printStatusByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({
+        hasActivePrint: true,
+        channelOrderId: 'medusa-order-001',
+      });
+    });
+
+    it('인쇄 줄이 모두 취소됐으면 false', async () => {
+      const { service } = makeContext({
+        printOrders: [{ status: 'cancelled', orderAttemptedAt: new Date() }],
+      });
+      await expect(service.printStatusByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({ hasActivePrint: false, channelOrderId: 'medusa-order-001' });
+    });
+
+    it('인쇄 줄이 없으면 false', async () => {
+      const { service } = makeContext({ printOrders: [] });
+      await expect(service.printStatusByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({ hasActivePrint: false, channelOrderId: 'medusa-order-001' });
+    });
+  });
+
   describe('cancelRequestByChannelOrder', () => {
     it('이미 취소된 주문에 중복 취소 요청 시 400', async () => {
       const { service, cancelRequestsMock } = makeContext({ so: makeSo({ status: 'cancelled' }) });
@@ -285,6 +368,143 @@ describe('StoreSalesOrdersService', () => {
       );
       expect(cancelRequestsMock.request).toHaveBeenCalled();
       expect(r.orderStatus).toBe('confirmed');
+    });
+
+    it('고객 취소는 요청 전에 인쇄 줄을 gate 로 먼저 취소한다', async () => {
+      const order: string[] = [];
+      const printCancel = jest.fn(() => {
+        order.push('print');
+        return Promise.resolve(PRINT_RESULT);
+      });
+      const { service, cancelRequestsMock } = makeContext({ printCancel });
+      cancelRequestsMock.request.mockImplementation(() => {
+        order.push('request');
+        return Promise.resolve({ id: 'req-1', status: 'settling', scope: 'full', convertedFromFull: false });
+      });
+      await service.cancelRequestByChannelOrder(
+        CHANNEL_ORDER_ID,
+        CUSTOMER_ID,
+        {},
+        { idempotencyKey: 'k', actorId: CUSTOMER_ID, actorRoles: [] },
+      );
+      expect(printCancel).toHaveBeenCalledWith(SO_ID, 'gate', undefined, { keepOnRefusal: true });
+      expect(order).toEqual(['print', 'request']);
+    });
+
+    it('인쇄가 제작 중이고 다른 상품이 남아 있으면 PRINT_PARTIAL_CANCEL_AVAILABLE(409) 로 고객 동의를 묻는다', async () => {
+      const printCancel = jest.fn().mockRejectedValue(new PrintInProductionError());
+      const { service, cancelRequestsMock } = makeContext({
+        printCancel,
+        printOrders: [{ status: 'submitted', orderAttemptedAt: new Date(), salesOrderLineId: 'print-line' }],
+        planLines: [
+          { salesOrderLineId: 'print-line', quantity: 1 },
+          { salesOrderLineId: 'normal-line', quantity: 2 },
+        ],
+      });
+      const error = await service
+        .cancelRequestByChannelOrder(
+          CHANNEL_ORDER_ID,
+          CUSTOMER_ID,
+          {},
+          { idempotencyKey: 'k', actorId: CUSTOMER_ID, actorRoles: [] },
+        )
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(PrintPartialCancelAvailableError);
+      expect((error as PrintPartialCancelAvailableError).getHttpStatus()).toBe(409);
+      expect((error as PrintPartialCancelAvailableError).getErrorCode()).toBe('PRINT_PARTIAL_CANCEL_AVAILABLE');
+      expect(cancelRequestsMock.request).not.toHaveBeenCalled();
+    });
+
+    it('excludePrint 면 인쇄 줄을 뺀 남은 수량만 부분 취소로 요청한다', async () => {
+      const { service, cancelRequestsMock, printCancel } = makeContext({
+        printOrders: [{ status: 'submitted', orderAttemptedAt: new Date(), salesOrderLineId: 'print-line' }],
+        planLines: [
+          { salesOrderLineId: 'print-line', quantity: 1 },
+          { salesOrderLineId: 'normal-line', quantity: 2 },
+        ],
+      });
+      await service.cancelRequestByChannelOrder(
+        CHANNEL_ORDER_ID,
+        CUSTOMER_ID,
+        { excludePrint: true },
+        { idempotencyKey: 'k', actorId: CUSTOMER_ID, actorRoles: [] },
+      );
+      const lines = [{ salesOrderLineId: 'normal-line', quantity: 2 }];
+      expect(cancelRequestsMock.precheck).toHaveBeenCalledWith(SO_ID, lines);
+      expect(printCancel).toHaveBeenCalledWith(SO_ID, 'gate', lines, { keepOnRefusal: true });
+      expect(cancelRequestsMock.request).toHaveBeenCalledWith(expect.objectContaining({ lines }));
+    });
+
+    it('excludePrint 인데 남은 상품이 인쇄뿐이면 제작 중 안내로 막는다', async () => {
+      const { service, cancelRequestsMock } = makeContext({
+        printOrders: [{ status: 'submitted', orderAttemptedAt: new Date(), salesOrderLineId: 'print-line' }],
+        planLines: [{ salesOrderLineId: 'print-line', quantity: 1 }],
+      });
+      const error = await service
+        .cancelRequestByChannelOrder(
+          CHANNEL_ORDER_ID,
+          CUSTOMER_ID,
+          { excludePrint: true },
+          { idempotencyKey: 'k', actorId: CUSTOMER_ID, actorRoles: [] },
+        )
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(PrintInProductionError);
+      expect(cancelRequestsMock.request).not.toHaveBeenCalled();
+    });
+
+    it('와우프레스가 인쇄 취소를 거절하고 남은 상품이 인쇄뿐이면 고객 취소 전체를 막고 안내 문구를 그대로 돌려준다', async () => {
+      const printCancel = jest.fn().mockRejectedValue(new PrintInProductionError());
+      const { service, cancelRequestsMock } = makeContext({ printCancel });
+      const error = await service
+        .cancelRequestByChannelOrder(
+          CHANNEL_ORDER_ID,
+          CUSTOMER_ID,
+          {},
+          { idempotencyKey: 'k', actorId: CUSTOMER_ID, actorRoles: [] },
+        )
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(PrintInProductionError);
+      expect((error as Error).message).toBe(PRINT_IN_PRODUCTION_MESSAGE);
+      expect(cancelRequestsMock.request).not.toHaveBeenCalled();
+    });
+
+    it('인쇄를 멈춘 뒤 취소 요청이 실패하면 인쇄 행에 실패를 남기고 원래 오류를 다시 던진다', async () => {
+      const { service, cancelRequestsMock, printNote } = makeContext();
+      const failure = new Error('채널 줄 번호가 없는 줄은 채널에 취소를 요청할 수 없습니다');
+      cancelRequestsMock.request.mockRejectedValue(failure);
+      await expect(
+        service.cancelRequestByChannelOrder(
+          CHANNEL_ORDER_ID,
+          CUSTOMER_ID,
+          {},
+          { idempotencyKey: 'k', actorId: CUSTOMER_ID, actorRoles: [] },
+        ),
+      ).rejects.toBe(failure);
+      expect(printNote).toHaveBeenCalledWith(PRINT_RESULT, failure);
+    });
+
+    it('판매주문 취소 판정이 거절할 요청이면 와우프레스를 부르지 않는다', async () => {
+      const { service, cancelRequestsMock, printCancel } = makeContext();
+      cancelRequestsMock.precheck.mockRejectedValue(
+        new Error('Sales order has no outstanding physical quantity to cancel'),
+      );
+      await expect(
+        service.cancelRequestByChannelOrder(
+          CHANNEL_ORDER_ID,
+          CUSTOMER_ID,
+          {},
+          { idempotencyKey: 'k', actorId: CUSTOMER_ID, actorRoles: [] },
+        ),
+      ).rejects.toThrow('no outstanding');
+      expect(cancelRequestsMock.precheck).toHaveBeenCalledWith(SO_ID, undefined);
+      expect(printCancel).not.toHaveBeenCalled();
+      expect(cancelRequestsMock.request).not.toHaveBeenCalled();
+    });
+
+    it('앞선 거절 사유(출고 등)에 걸리면 와우프레스를 부르지 않는다', async () => {
+      const { service, printCancel } = makeContext({ fos: [{ status: 'shipped' }] });
+      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow('이미 출고');
+      expect(printCancel).not.toHaveBeenCalled();
     });
 
     it('고객 취소는 요청 하나로 끝난다 — 이 서비스는 core 취소·Wallet 을 직접 부르지 않는다(확정은 요청 안에서)', async () => {
@@ -399,6 +619,8 @@ describe('StoreSalesOrdersService', () => {
         { cancel: jest.fn(), createBusinessLink: jest.fn() } as any,
         { refundByIntent: jest.fn() } as any,
         { settlementFactsFor: jest.fn().mockResolvedValue([]) } as any,
+        printReaderMock(),
+        printCancelMock(),
       );
       return { service, dbMock };
     }
@@ -428,14 +650,20 @@ describe('StoreSalesOrdersService', () => {
       const cancelled = () => makeSo({ status: 'cancelled' });
 
       it('정산 중 → refundStatus·refundSummary.status 모두 pending', async () => {
-        const { service } = makeContext({ so: cancelled(), settlementFacts: [{ status: 'settling', mode: 'auto', phase: 'in_progress' }] });
+        const { service } = makeContext({
+          so: cancelled(),
+          settlementFacts: [{ status: 'settling', mode: 'auto', phase: 'in_progress' }],
+        });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
         expect(r.refundStatus).toBe('pending');
         expect(r.refundSummary?.status).toBe('pending');
       });
 
       it('지연 → delayed, 안내 문장은 null(스토어프론트 i18n 이 정본 — PR 4 넘길 것 4)', async () => {
-        const { service } = makeContext({ so: cancelled(), settlementFacts: [{ status: 'settling', mode: 'auto', phase: 'refused' }] });
+        const { service } = makeContext({
+          so: cancelled(),
+          settlementFacts: [{ status: 'settling', mode: 'auto', phase: 'refused' }],
+        });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
         expect(r.refundStatus).toBe('delayed');
         expect(r.refundSummary).toMatchObject({ status: 'delayed', expectedProcessingMessage: null });
@@ -454,8 +682,14 @@ describe('StoreSalesOrdersService', () => {
       });
 
       it('wallet 실패·시간 초과 → transfer_pending(«완료»라고 하지 않는다)', async () => {
-        const { service } = makeContext({ so: cancelled(), settlementFacts: [{ status: 'applied', mode: 'manual' }], walletRefunds: null });
-        expect((await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID)).refundStatus).toBe('transfer_pending');
+        const { service } = makeContext({
+          so: cancelled(),
+          settlementFacts: [{ status: 'applied', mode: 'manual' }],
+          walletRefunds: null,
+        });
+        expect((await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID)).refundStatus).toBe(
+          'transfer_pending',
+        );
       });
 
       it('수동 송금 끝 → 기존 도출(수집된 환불이면 succeeded)', async () => {
@@ -463,7 +697,9 @@ describe('StoreSalesOrdersService', () => {
           so: cancelled(),
           settlementFacts: [{ status: 'applied', mode: 'manual' }],
           walletRefunds: [{ id: 'r1', status: 'SUCCEEDED', execution: 'MANUAL', amount: 50000 }],
-          refundLinks: [{ relationName: 'order_lifecycle_refund_collected', metadata: { amount: 50000 }, createdAt: new Date() }],
+          refundLinks: [
+            { relationName: 'order_lifecycle_refund_collected', metadata: { amount: 50000 }, createdAt: new Date() },
+          ],
         });
         expect((await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID)).refundStatus).toBe('succeeded');
       });
@@ -480,7 +716,9 @@ describe('StoreSalesOrdersService', () => {
       });
 
       it('운영자 부분취소 정산(판매주문은 살아 있음)에도 같은 값을 둘 다 싣는다(PR 4 넘길 것 3)', async () => {
-        const { service } = makeContext({ settlementFacts: [{ status: 'settling', mode: 'auto', phase: 'in_progress' }] });
+        const { service } = makeContext({
+          settlementFacts: [{ status: 'settling', mode: 'auto', phase: 'in_progress' }],
+        });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
         expect(r.orderStatus).toBe('confirmed');
         expect(r.refundStatus).toBe('pending');
@@ -600,6 +838,55 @@ describe('StoreSalesOrdersService', () => {
     });
 
     describe('buildActionsView fulfillmentStatus (V2)', () => {
+      it('전 라인 외주 + 인쇄 전량 delivered → delivered, 반품/교환은 열지 않는다(주문제작)', async () => {
+        const { service } = makeContext({
+          fos: [],
+          printOrders: [{ status: 'delivered' }],
+          allOutsourced: true,
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('delivered');
+        expect(r.availableActions).not.toContain('return');
+        expect(r.availableActions).not.toContain('exchange');
+      });
+      it('전 라인 외주 + 인쇄 하나라도 shipped → shipping + already_shipped', async () => {
+        const { service } = makeContext({
+          fos: [],
+          printOrders: [{ status: 'shipped' }, { status: 'submitted' }],
+          allOutsourced: true,
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('shipping');
+        expect(r.cancelUnavailableReason).toBe('already_shipped');
+      });
+      it('혼합 주문: 인쇄 shipped 는 출고 증거이자 이행 단위다 — 창고가 준비중이어도 shipping', async () => {
+        const { service } = makeContext({
+          fos: [{ status: 'ready' }],
+          printOrders: [{ status: 'shipped' }],
+          allOutsourced: false,
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('shipping');
+        expect(r.cancelUnavailableReason).toBe('already_shipped');
+      });
+      it('혼합 주문: 창고 상자 delivered + 인쇄 submitted → delivered 가 아니라 shipping, 반품·교환 미노출', async () => {
+        const { service } = makeContext({
+          so: makeSo({ status: 'processing' }),
+          fos: [{ status: 'shipped' }],
+          activeShipmentStatuses: ['delivered'],
+          printOrders: [{ status: 'submitted' }],
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('shipping');
+        expect(r.availableActions).not.toContain('return');
+        expect(r.availableActions).not.toContain('exchange');
+      });
+      it('인쇄 주문이 없으면 기존 결과와 같다 (회귀)', async () => {
+        const { service } = makeContext({ fos: [{ status: 'ready' }] });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('preparing');
+        expect(r.availableActions).toContain('cancel');
+      });
       it('FO 없음 → not_created', async () => {
         const { service } = makeContext({ fos: [] });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
@@ -615,6 +902,24 @@ describe('StoreSalesOrdersService', () => {
         const { service } = makeContext({ fos: [{ status: 'processing' }] });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
         expect(r.fulfillmentStatus).toBe('preparing');
+        expect(r.availableActions).not.toContain('cancel');
+        expect(r.cancelUnavailableReason).toBe('already_processing');
+      });
+      it('와우프레스 취소 거절 행이 있어도 인쇄 말고 다른 상품이 있으면 취소를 연다(인쇄 제외 취소를 묻는다)', async () => {
+        const { service } = makeContext({
+          fos: [{ status: 'ready' }],
+          printOrders: [{ id: 'po-1', status: 'cancel_refused', trackingNumber: null }],
+          nonPrintLine: true,
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.availableActions).toContain('cancel');
+      });
+      it('와우프레스 취소 거절(cancel_refused) 행만 있으면 already_processing (셀프취소 불가)', async () => {
+        const { service } = makeContext({
+          fos: [{ status: 'ready' }],
+          printOrders: [{ id: 'po-1', status: 'cancel_refused', trackingNumber: null }],
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
         expect(r.availableActions).not.toContain('cancel');
         expect(r.cancelUnavailableReason).toBe('already_processing');
       });
@@ -679,9 +984,13 @@ describe('StoreSalesOrdersService', () => {
       walletOutcome?: WalletRefundOutcome;
       cancelError?: Error;
       orderLines?: Array<{ id: string; quantity: number; unitPrice: number | null }>;
+      printCancel?: jest.Mock;
+      businessLinkError?: Error;
     } = {},
   ) {
     const so = options.so ?? makeSo();
+    const printCancel = options.printCancel ?? jest.fn().mockResolvedValue(PRINT_RESULT);
+    const printNote = jest.fn().mockResolvedValue(undefined);
     // Default order lines matching the cancelled line in tests
     const orderLines = options.orderLines ?? [{ id: 'line-001', quantity: 2, unitPrice: 25000 }];
     const walletOutcome = options.walletOutcome ?? {
@@ -700,6 +1009,7 @@ describe('StoreSalesOrdersService', () => {
       ],
     };
 
+    const selectInTx = (): unknown => (dbMock.db.select as jest.Mock<unknown, []>)();
     const dbMock = {
       db: {
         select: jest.fn().mockImplementation(() => ({
@@ -719,14 +1029,18 @@ describe('StoreSalesOrdersService', () => {
             })),
           })),
         })),
+        // 부분취소는 판매 취소와 환불 검토 기록을 한 트랜잭션에서 한다. 가짜 트랜잭션은 같은 select 를 쓴다
+        transaction: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn({ select: selectInTx })),
       },
     };
 
     const salesOrdersServiceMock = {
       cancel: options.cancelError
-        ? jest.fn().mockRejectedValue(options.cancelError)
-        : jest.fn().mockResolvedValue(undefined),
-      createBusinessLink: jest.fn().mockResolvedValue(undefined),
+        ? jest.fn<Promise<unknown>, unknown[]>().mockRejectedValue(options.cancelError)
+        : jest.fn<Promise<unknown>, unknown[]>().mockResolvedValue(undefined),
+      createBusinessLink: options.businessLinkError
+        ? jest.fn<Promise<unknown>, unknown[]>().mockRejectedValue(options.businessLinkError)
+        : jest.fn<Promise<unknown>, unknown[]>().mockResolvedValue(undefined),
     };
 
     const walletClientMock: Partial<WalletRefundClient> = {
@@ -745,6 +1059,7 @@ describe('StoreSalesOrdersService', () => {
         outcome: null,
       }),
       findBySourceKey: jest.fn().mockResolvedValue(null),
+      precheck: jest.fn().mockResolvedValue(undefined),
     };
 
     const service = new StoreSalesOrdersService(
@@ -752,12 +1067,152 @@ describe('StoreSalesOrdersService', () => {
       salesOrdersServiceMock as any,
       walletClientMock as WalletRefundClient,
       cancelRequestsMock as any,
+      printReaderMock(),
+      printCancelMock(printCancel, printNote),
     );
 
-    return { service, dbMock, salesOrdersServiceMock, walletClientMock, cancelRequestsMock };
+    return {
+      service,
+      dbMock,
+      salesOrdersServiceMock,
+      walletClientMock,
+      cancelRequestsMock,
+      printCancel,
+      printNote,
+    };
   }
 
   describe('adminCancelRequest', () => {
+    describe('인쇄 외주(와우프레스) 취소 게이트', () => {
+      const ctx = { idempotencyKey: 'k-p', actorId: 'admin-1', actorRoles: ['admin'] };
+
+      it('Medusa 주문 — 요청 전에 범위 안 인쇄 줄을 gate 로 먼저 취소한다', async () => {
+        const order: string[] = [];
+        const printCancel = jest.fn(() => {
+          order.push('print');
+          return Promise.resolve(PRINT_RESULT);
+        });
+        const { service, cancelRequestsMock } = makeAdminContext({ printCancel });
+        cancelRequestsMock.request.mockImplementation(() => {
+          order.push('request');
+          return Promise.resolve({ id: 'req-1', status: 'requested', scope: 'partial', convertedFromFull: false });
+        });
+        const lines = [{ salesOrderLineId: 'line-001', quantity: 2 }];
+        await service.adminCancelRequest(SO_ID, { lines, fulfillmentCommandContext: ctx });
+        expect(printCancel).toHaveBeenCalledWith(SO_ID, 'gate', lines);
+        expect(order).toEqual(['print', 'request']);
+      });
+
+      it('Medusa 주문 — 와우프레스가 거절하면 취소 요청을 만들지 않는다', async () => {
+        const printCancel = jest.fn().mockRejectedValue(new PrintInProductionError());
+        const { service, cancelRequestsMock } = makeAdminContext({ printCancel });
+        await expect(service.adminCancelRequest(SO_ID, { fulfillmentCommandContext: ctx })).rejects.toThrow(
+          PRINT_IN_PRODUCTION_MESSAGE,
+        );
+        expect(cancelRequestsMock.request).not.toHaveBeenCalled();
+      });
+
+      it('Medusa 주문 — 요청이 거절되면 인쇄 행에 실패를 남기고 다시 던진다', async () => {
+        const { service, cancelRequestsMock, printNote } = makeAdminContext();
+        const failure = new Error('취소 수량(4개)이 취소 가능 수량(3개)을 초과합니다.');
+        cancelRequestsMock.request.mockRejectedValue(failure);
+        await expect(service.adminCancelRequest(SO_ID, { fulfillmentCommandContext: ctx })).rejects.toBe(failure);
+        expect(printNote).toHaveBeenCalledWith(PRINT_RESULT, failure);
+      });
+
+      it('core 경로 — core 취소가 실패하면 인쇄 행에 실패를 남기고 다시 던진다', async () => {
+        const failure = new Error('재고 부족');
+        const { service, printNote } = makeAdminContext({ so: makeSo({ salesChannel: '3pl' }), cancelError: failure });
+        await expect(service.adminCancelRequest(SO_ID, {})).rejects.toBe(failure);
+        expect(printNote).toHaveBeenCalledWith(PRINT_RESULT, failure);
+      });
+
+      it('Medusa 주문 — 인쇄 1개 + 일반 99개(주문 1개) 요청은 와우프레스를 부르기 전에 거절된다', async () => {
+        const { service, cancelRequestsMock, printCancel } = makeAdminContext();
+        cancelRequestsMock.precheck.mockRejectedValue(new Error('취소 수량(99개)이 취소 가능 수량(1개)을 초과합니다.'));
+        const lines = [
+          { salesOrderLineId: 'print-line', quantity: 1 },
+          { salesOrderLineId: 'normal-line', quantity: 99 },
+        ];
+        await expect(service.adminCancelRequest(SO_ID, { lines, fulfillmentCommandContext: ctx })).rejects.toThrow(
+          '취소 수량(99개)',
+        );
+        expect(cancelRequestsMock.precheck).toHaveBeenCalledWith(SO_ID, lines, undefined);
+        expect(printCancel).not.toHaveBeenCalled();
+        expect(cancelRequestsMock.request).not.toHaveBeenCalled();
+      });
+
+      it('Medusa 주문 — 이미 환불한 금액이 범위상 거절되면 인쇄를 취소하기 전에 거절된다', async () => {
+        const { service, cancelRequestsMock, printCancel } = makeAdminContext();
+        cancelRequestsMock.precheck.mockRejectedValue(new Error('이미 환불한 금액은 부분취소에만 적을 수 있습니다.'));
+        const lines = [{ salesOrderLineId: 'print-line', quantity: 1 }];
+        await expect(
+          service.adminCancelRequest(SO_ID, { lines, alreadyRefundedAmount: 5000, fulfillmentCommandContext: ctx }),
+        ).rejects.toThrow('부분취소에만');
+        expect(cancelRequestsMock.precheck).toHaveBeenCalledWith(SO_ID, lines, 5000);
+        expect(printCancel).not.toHaveBeenCalled();
+      });
+
+      it('Medusa 주문 — 같은 Idempotency-Key 재전송은 판정·인쇄 취소 없이 지난 요청을 돌려준다', async () => {
+        const { service, cancelRequestsMock, printCancel } = makeAdminContext();
+        cancelRequestsMock.findBySourceKey.mockResolvedValue({
+          id: 'req-0',
+          status: 'settled',
+          scope: 'full',
+          convertedFromFull: false,
+        });
+        const result = await service.adminCancelRequest(SO_ID, { fulfillmentCommandContext: ctx });
+        expect(result).toEqual({ requestId: 'req-0', status: 'settled', scope: 'full', convertedFromFull: false });
+        expect(cancelRequestsMock.precheck).not.toHaveBeenCalled();
+        expect(printCancel).not.toHaveBeenCalled();
+      });
+
+      it('core 경로 — 이전 부분취소로 줄어든 잔여 수량을 넘으면 와우프레스를 부르기 전에 거절된다', async () => {
+        const order: string[] = [];
+        const { service, cancelRequestsMock, printCancel, salesOrdersServiceMock } = makeAdminContext({
+          so: makeSo({ salesChannel: '3pl' }),
+        });
+        cancelRequestsMock.precheck.mockImplementation(() => {
+          order.push('precheck');
+          return Promise.reject(new Error('취소 수량(2개)이 취소 가능 수량(1개)을 초과합니다.'));
+        });
+        const lines = [{ salesOrderLineId: 'print-line', quantity: 2 }];
+        await expect(service.adminCancelRequest(SO_ID, { lines })).rejects.toThrow('취소 수량(2개)');
+        expect(cancelRequestsMock.precheck).toHaveBeenCalledWith(SO_ID, lines);
+        expect(order).toEqual(['precheck']);
+        expect(printCancel).not.toHaveBeenCalled();
+        expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+      });
+
+      it('core 경로 — 판정이 통과하면 인쇄 gate 다음에 core 취소를 한다', async () => {
+        const order: string[] = [];
+        const printCancel = jest.fn(() => {
+          order.push('print');
+          return Promise.resolve(PRINT_RESULT);
+        });
+        const { service, cancelRequestsMock } = makeAdminContext({ so: makeSo({ salesChannel: '3pl' }), printCancel });
+        cancelRequestsMock.precheck.mockImplementation(() => {
+          order.push('precheck');
+          return Promise.resolve(undefined);
+        });
+        await service.adminCancelRequest(SO_ID, {});
+        expect(cancelRequestsMock.precheck).toHaveBeenCalledWith(SO_ID, undefined);
+        expect(order).toEqual(['precheck', 'print']);
+      });
+
+      it('core 경로 — 거절이면 core 취소·환불을 하지 않는다', async () => {
+        const printCancel = jest.fn().mockRejectedValue(new PrintInProductionError());
+        const { service, salesOrdersServiceMock, walletClientMock } = makeAdminContext({
+          so: makeSo({ salesChannel: '3pl' }),
+          printCancel,
+        });
+        await expect(service.adminCancelRequest(SO_ID, {})).rejects.toBeInstanceOf(PrintInProductionError);
+        expect(printCancel).toHaveBeenCalledWith(SO_ID, 'gate', undefined);
+        expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+        expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
+      });
+    });
+
     const CORE_SO = () => makeSo({ salesChannel: '3pl' });
 
     it('core 경로(3pl) — lines 없으면 전체취소 — Wallet 환불 호출, refundStatus=succeeded', async () => {
@@ -787,8 +1242,33 @@ describe('StoreSalesOrdersService', () => {
       expect(salesOrdersServiceMock.cancel).toHaveBeenCalledWith(
         SO_ID,
         expect.objectContaining({ lines, cancelledBy: 'admin' }),
+        expect.anything(),
       );
       expect(result).toMatchObject({ refundStatus: 'manual_pending', manualReason: 'CHANNEL_ORDER' });
+    });
+
+    it('core 경로 부분취소 — 판매 취소와 환불 검토 기록을 같은 트랜잭션에 쓴다', async () => {
+      const { service, dbMock, salesOrdersServiceMock } = makeAdminContext({ so: CORE_SO() });
+      const lines = [{ salesOrderLineId: 'line-001', quantity: 1 }];
+
+      await service.adminCancelRequest(SO_ID, { lines });
+
+      expect(dbMock.db.transaction).toHaveBeenCalledTimes(1);
+      const cancelCall = salesOrdersServiceMock.cancel.mock.calls[0] ?? [];
+      const linkCall = salesOrdersServiceMock.createBusinessLink.mock.calls[0] ?? [];
+      expect(cancelCall[2]).toBeDefined();
+      expect(linkCall[2]).toBe(cancelCall[2]);
+      expect(linkCall[1]).toMatchObject({ metadata: { refundStatus: 'manual_pending' } });
+    });
+
+    it('core 경로 부분취소 — 환불 검토 기록이 실패하면 판매 취소도 함께 실패한다(로그만 남기고 성공하지 않는다)', async () => {
+      const { service, dbMock } = makeAdminContext({ so: CORE_SO(), businessLinkError: new Error('db down') });
+      const lines = [{ salesOrderLineId: 'line-001', quantity: 1 }];
+
+      await expect(service.adminCancelRequest(SO_ID, { lines })).rejects.toThrow('db down');
+      // 트랜잭션 콜백이 던져 롤백된다 — 같은 트랜잭션 안의 판매 취소도 커밋되지 않는다
+      const txResult: unknown = dbMock.db.transaction.mock.results[0]?.value;
+      await expect(txResult).rejects.toThrow('db down');
     });
 
     it.each([
@@ -857,6 +1337,29 @@ describe('StoreSalesOrdersService', () => {
     });
   });
 
+  describe('printGateByWalletIntent (무통장 환불 승인 전)', () => {
+    it('살아 있는 인쇄 줄이 있으면 PrintNeedsPartialCancelError(409) — 와우프레스 취소는 시도하지 않는다', async () => {
+      const { service, printCancel } = makeContext({
+        printOrders: [{ status: 'submitted', orderAttemptedAt: new Date() }],
+      });
+      const error = await service.printGateByWalletIntent(WALLET_INTENT_ID).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(PrintNeedsPartialCancelError);
+      expect((error as PrintNeedsPartialCancelError).getHttpStatus()).toBe(409);
+      expect((error as PrintNeedsPartialCancelError).getErrorCode()).toBe('PRINT_NEEDS_PARTIAL_CANCEL');
+      expect(printCancel).not.toHaveBeenCalled();
+    });
+
+    it('판매주문이 아직 없으면 통과시킨다(환불 신청된 주문은 수집되지 않아 막으면 풀리지 않는다)', async () => {
+      const { service } = makeContext({ noSalesOrder: true });
+      await expect(service.printGateByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({ ok: true });
+    });
+
+    it('인쇄 줄이 없거나 모두 취소됐으면 ok', async () => {
+      const { service } = makeContext({ printOrders: [{ status: 'cancelled', orderAttemptedAt: new Date() }] });
+      await expect(service.printGateByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({ ok: true });
+    });
+  });
+
   describe('cancelByWalletIntentAfterRefund', () => {
     it('Medusa 주문은 wallet 승인 요청자로 전체취소를 요청한다 — core 취소·Wallet 없음', async () => {
       const { service, salesOrdersServiceMock, walletClientMock, cancelRequestsMock } = makeAdminContext();
@@ -870,6 +1373,22 @@ describe('StoreSalesOrdersService', () => {
       expect(result).toEqual({ status: 'requested', requestId: 'req-1' });
       expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
       expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
+    });
+
+    it('환불이 이미 나갔으므로 인쇄 줄은 record 로 먼저 멈추고(거절은 보드로) 취소를 요청한다', async () => {
+      const order: string[] = [];
+      const printCancel = jest.fn((_id: string, mode: string) => {
+        order.push(`print:${mode}`);
+        return Promise.resolve(PRINT_RESULT);
+      });
+      const { service, cancelRequestsMock } = makeAdminContext({ printCancel });
+      cancelRequestsMock.request.mockImplementation(() => {
+        order.push('request');
+        return Promise.resolve({ id: 'req-1', status: 'requested', scope: 'full', convertedFromFull: false });
+      });
+      await service.cancelByWalletIntentAfterRefund(WALLET_INTENT_ID);
+      expect(printCancel).toHaveBeenCalledWith(SO_ID, 'record');
+      expect(order).toEqual(['print:record', 'request']);
     });
 
     it('이미 취소·출고면 지금처럼 건너뛴다', async () => {
@@ -994,6 +1513,7 @@ describe('StoreSalesOrdersService', () => {
         outcome: null,
       }),
       findBySourceKey: jest.fn().mockResolvedValue(null),
+      precheck: jest.fn().mockResolvedValue(undefined),
     };
 
     const service = new StoreSalesOrdersService(
@@ -1001,6 +1521,8 @@ describe('StoreSalesOrdersService', () => {
       salesOrdersServiceMock as any,
       walletClientMock as WalletRefundClient,
       cancelRequestsMock as any,
+      printReaderMock(),
+      printCancelMock(),
     );
 
     return { service, walletClientMock, cancelRequestsMock };
@@ -1058,7 +1580,9 @@ describe('StoreSalesOrdersService', () => {
 
     it('링크 없음 → 새 key로 Wallet 호출 (첫 실패 시 링크 없는 경우 포함)', async () => {
       // currentRefundStatus undefined → refundLink 없음 (채널 경로가 아닌 주문 — 채널 경로는 아래에서 400)
-      const { service, walletClientMock } = makeRetryContext({ so: makeSo({ status: 'cancelled', salesChannel: 'manual' }) });
+      const { service, walletClientMock } = makeRetryContext({
+        so: makeSo({ status: 'cancelled', salesChannel: 'manual' }),
+      });
       const result = await service.retryWalletRefund(SO_ID);
       expect(walletClientMock.refundByIntent).toHaveBeenCalledWith(
         WALLET_INTENT_ID,
@@ -1092,7 +1616,7 @@ describe('StoreSalesOrdersService', () => {
   });
 
   describe('tracking query V2 graph', () => {
-    function makeTrackingService(rowsBySelect: unknown[][]) {
+    function makeTrackingService(rowsBySelect: unknown[][], printRows: Array<Record<string, unknown>> = []) {
       let call = 0;
       const dbMock = {
         db: {
@@ -1111,7 +1635,14 @@ describe('StoreSalesOrdersService', () => {
           })),
         },
       };
-      return new StoreSalesOrdersService(dbMock as never, {} as never, {} as WalletRefundClient, {} as never);
+      return new StoreSalesOrdersService(
+        dbMock as never,
+        {} as never,
+        {} as WalletRefundClient,
+        {} as never,
+        printReaderMock(printRows),
+        printCancelMock(),
+      );
     }
 
     const fo = (id: string, overrides: Record<string, unknown> = {}) => ({
@@ -1128,6 +1659,126 @@ describe('StoreSalesOrdersService', () => {
       salesOrderLineId,
     });
     const shipment = { id: 'shipment-shared', status: 'in_transit' };
+
+    const printRow = (overrides: Record<string, unknown> = {}) => ({
+      id: 'po-1',
+      salesOrderId: SO_ID,
+      status: 'shipped',
+      carrier: 'LOTTE',
+      trackingNumber: '1234567890',
+      shippedAt: new Date('2026-10-14T01:00:00Z'),
+      deliveredAt: null,
+      ...overrides,
+    });
+
+    it('includes print_order shipments in tracking response and counts them as shipped evidence', async () => {
+      const service = makeTrackingService(
+        [[makeSo()], []],
+        [printRow(), printRow({ id: 'po-2', trackingNumber: null })],
+      );
+
+      const result = await service.getTracking(SO_ID, CUSTOMER_ID);
+
+      expect(result.status).toBe('shipping');
+      expect(result.shipments).toEqual([
+        expect.objectContaining({
+          shipmentId: null,
+          fulfillmentOrderId: 'po-1',
+          carrier: 'LOTTE',
+          carrierName: '롯데택배',
+          trackingNumber: '1234567890',
+          trackingUrl: 'https://www.lotteglogis.com/mobile/reservation/tracking/linkView?InvNo=1234567890',
+          status: 'shipping',
+          eta: null,
+          trackingEvents: [],
+        }),
+      ]);
+    });
+
+    it('merges print rows sharing a tracking number into one shipment', async () => {
+      const service = makeTrackingService(
+        [[makeSo()], []],
+        [
+          printRow({ id: 'po-1' }),
+          printRow({ id: 'po-2' }),
+          printRow({ id: 'po-3' }),
+          printRow({ id: 'po-4', trackingNumber: '9999' }),
+        ],
+      );
+
+      const result = await service.getTracking(SO_ID, CUSTOMER_ID);
+
+      expect(result.shipments).toHaveLength(2);
+      expect(result.shipments[0]).toMatchObject({
+        fulfillmentOrderId: 'po-1',
+        fulfillmentOrderIds: ['po-1', 'po-2', 'po-3'],
+        trackingNumber: '1234567890',
+      });
+      expect(result.shipments[1]).toMatchObject({ fulfillmentOrderIds: ['po-4'], trackingNumber: '9999' });
+    });
+
+    it('reports a merged print shipment as delivered only when every row is delivered', async () => {
+      const early = new Date('2026-10-14T01:00:00Z');
+      const late = new Date('2026-10-16T00:00:00Z');
+      const mixed = makeTrackingService(
+        [[makeSo()], []],
+        [
+          printRow({ id: 'po-1', status: 'delivered', shippedAt: late, deliveredAt: late }),
+          printRow({ id: 'po-2', shippedAt: early }),
+        ],
+      );
+      const mixedResult = await mixed.getTracking(SO_ID, CUSTOMER_ID);
+      expect(mixedResult.shipments[0]).toMatchObject({ status: 'shipping', shippedAt: early, deliveredAt: null });
+
+      const all = makeTrackingService(
+        [[makeSo()], []],
+        [
+          printRow({ id: 'po-1', status: 'delivered', shippedAt: early, deliveredAt: early }),
+          printRow({ id: 'po-2', status: 'delivered', shippedAt: late, deliveredAt: late }),
+        ],
+      );
+      const allResult = await all.getTracking(SO_ID, CUSTOMER_ID);
+      expect(allResult.shipments[0]).toMatchObject({ status: 'delivered', shippedAt: early, deliveredAt: late });
+    });
+
+    it('keeps an empty carrier and null url for an unknown carrier, and reports delivered', async () => {
+      const service = makeTrackingService(
+        [[makeSo()], []],
+        [printRow({ carrier: null, status: 'delivered', deliveredAt: new Date('2026-10-15T00:00:00Z') })],
+      );
+
+      const result = await service.getTracking(SO_ID, CUSTOMER_ID);
+
+      expect(result.status).toBe('delivered');
+      expect(result.shipments[0]).toMatchObject({
+        carrier: '',
+        carrierName: '',
+        trackingUrl: null,
+        status: 'delivered',
+      });
+    });
+
+    it('does not report delivered while another active print order has no tracking yet', async () => {
+      const delivered = printRow({ status: 'delivered', deliveredAt: new Date() });
+      const waiting = printRow({
+        id: 'po-2',
+        status: 'submitted',
+        carrier: null,
+        trackingNumber: null,
+        shippedAt: null,
+      });
+      const service = makeTrackingService([[makeSo()], []], [delivered, waiting]);
+      expect((await service.getTracking(SO_ID, CUSTOMER_ID)).status).toBe('shipping');
+
+      const onlyWaiting = makeTrackingService([[makeSo()], []], [waiting]);
+      expect((await onlyWaiting.getTracking(SO_ID, CUSTOMER_ID)).status).toBe('not_shipped');
+    });
+
+    it('still reports not_shipped for an order without FO and without print shipments', async () => {
+      const service = makeTrackingService([[makeSo()], []]);
+      const result = await service.getTracking(SO_ID, CUSTOMER_ID);
+      expect(result).toMatchObject({ status: 'not_shipped', shipments: [] });
+    });
 
     it('합배송 shipment에서 해당 SO line만 보여주고 recalled attempt와 재출고 tracking을 모두 보존한다', async () => {
       const oldDispatchedAt = new Date('2026-07-14T01:00:00Z');

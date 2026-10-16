@@ -586,6 +586,7 @@
       "cancelGoBack": "Go Back",
       "cancelError": "An error occurred during cancellation.",
       "cancelCompleted": "Your order has been cancelled.",
+      "cancelFailedConfirm": "OK",
       "contactCs": "Contact Support",
       "bankTransferCancelGuide": "To cancel or refund a bank transfer order, please use the ‘Request refund’ button.",
       "bankTransferRefundNotice": "Unpaid orders are automatically canceled after the deposit deadline (7 days). To cancel or refund after deposit, enter your refund account (bank, account number, account holder) via ‘Request refund’. After admin review, the refund is sent to that account (about 2 business days). The account holder name must match exactly.",
@@ -594,12 +595,18 @@
         "cancel_requested": "Cancellation is in progress.",
         "already_shipped": "This order has already shipped and cannot be canceled. Please use the return request instead.",
         "channel_order": "Please cancel this order on the channel where it was placed.",
-        "already_processing": "Picking has started, so self-cancellation is unavailable. Please contact customer support.",
+        "already_processing": "Order preparation has started, so self-cancellation is unavailable. Please contact customer support.",
         "digital_downloaded": "This order includes a digital item you already downloaded, so self-cancellation is unavailable. Please contact customer support."
       },
       "writeReview": "Write a review",
       "addToCartSuccess": "Added to cart.",
-      "goToCart": "View cart"
+      "goToCart": "View cart",
+      "printPartialCancel": {
+        "title": "The print item can't be canceled",
+        "description": "Your print item is already in production and can't be canceled.\nCancel only the other items? The print item will still be made and shipped to you.",
+        "keep": "Keep order",
+        "confirm": "Cancel other items"
+      }
     },
     "delivery": {
       "paid": "Paid",
@@ -679,7 +686,8 @@
       "reasonWrongItem": "Wrong item",
       "reasonDamagedInShipping": "Damaged in shipping",
       "reasonOther": "Other",
-      "noLines": "No order items found."
+      "noLines": "No order items found.",
+      "customMadeNotAllowed": "Custom print items can't be returned or exchanged. For a printing defect, contact customer service within 5 days of receiving it."
     },
     "paymentStatus": {
       "awaiting": "Payment Pending",

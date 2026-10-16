@@ -4,11 +4,20 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
 import { Download, Loader2 } from 'lucide-react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import {
   almondDesignsClient,
   type AlmondPrintFormat,
 } from '@/lib/api/domains/products/almond-templates.client';
+import {
+  PRINT_ORDER_STATUS_LABEL,
+  type PrintOrderBoardItem,
+} from '@/lib/api/domains/orders/print-orders.client';
+import {
+  usePrintOrderByLine,
+  usePrintOrdersByDesign,
+} from '@/lib/services/orders/print-orders.queries';
 
 type Guide = { format: AlmondPrintFormat; dpi?: number; note: string };
 
@@ -28,7 +37,57 @@ const FORMATS: { format: AlmondPrintFormat; label: string }[] = [
   { format: 'jpg', label: 'JPG' },
 ];
 
-export function AlmondDesignPrintCard({ designId }: { designId: string }) {
+function PrintOrderLine({ item }: { item: PrintOrderBoardItem }) {
+  return (
+    <div className="text-xs text-gray-700">
+      <div className="font-semibold text-gray-900">
+        와우프레스 발주 · {PRINT_ORDER_STATUS_LABEL[item.status]}
+        {item.testMemo && ' (테스트)'}
+      </div>
+      {item.vendorOrderNumber && <div>주문번호 {item.vendorOrderNumber}</div>}
+      {item.trackingNumber && (
+        <div>
+          송장 {item.carrier ?? ''} {item.trackingNumber}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PrintOrderBlock({ items }: { items: PrintOrderBoardItem[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-2 space-y-1.5 rounded border border-gray-200 bg-white p-2">
+      {items.map((item) => (
+        <PrintOrderLine key={item.id} item={item} />
+      ))}
+      <Link
+        href="/order/print-orders"
+        className="inline-block text-xs text-gray-700 underline"
+      >
+        와우프레스 발주 페이지
+      </Link>
+    </div>
+  );
+}
+
+function PrintOrderByLine({ lineId }: { lineId: string }) {
+  const { data } = usePrintOrderByLine(lineId);
+  return <PrintOrderBlock items={data ? [data] : []} />;
+}
+
+function PrintOrderByDesign({ designId }: { designId: string }) {
+  const { data } = usePrintOrdersByDesign(designId);
+  return <PrintOrderBlock items={data ?? []} />;
+}
+
+export function AlmondDesignPrintCard({
+  designId,
+  lineId,
+}: {
+  designId: string;
+  lineId?: string;
+}) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ['almond-design', designId],
     queryFn: () => almondDesignsClient.get(designId),
@@ -97,6 +156,11 @@ export function AlmondDesignPrintCard({ designId }: { designId: string }) {
           )
         )}
       </div>
+      {lineId ? (
+        <PrintOrderByLine lineId={lineId} />
+      ) : (
+        <PrintOrderByDesign designId={designId} />
+      )}
       {guide && (
         <p className="mt-2 text-[11px] text-gray-500">권장 · {guide.note}</p>
       )}

@@ -34,9 +34,7 @@ export class ChannelOrderTranslator {
     const eligibleForOrderCreation = snapshot.paymentState === 'accepted';
     const lifecycle = this.buildLifecycleItems(snapshot);
 
-    const resolutions = await Promise.all(
-      snapshot.lines.map((line) => this.identityResolver.resolve(channel, line)),
-    );
+    const resolutions = await Promise.all(snapshot.lines.map((line) => this.identityResolver.resolve(channel, line)));
 
     // 유료 주문 라인이 미식별이면 조용히 넘기지 않고 격리한다 (CONTEXT §채널 상품 식별 실패).
     // 이미 종결된 스냅샷(취소/환불 관측)은 판매주문을 만들지 않으므로 식별을 요구하지 않는다.
@@ -80,7 +78,12 @@ export class ChannelOrderTranslator {
     });
     // 계약에는 살아있는 라인만 넣는다. 해시는 전 라인으로 계산해 취소가 modification 으로 세지지 않게 한다.
     const items = allItems.filter((entry) => !entry.cancelled).map((entry) => entry.item);
-    const changeItems = allItems.map((entry) => entry.item);
+    // almondDesignId 는 해시 입력에서 뺀다 — 이미 수집된 주문의 해시가 배포로 바뀌어 오격리되는 걸 막는다.
+    const changeItems = allItems.map(({ item }) => {
+      const rest = { ...item };
+      delete rest.almondDesignId;
+      return rest;
+    });
 
     const createPayload: OrderCreatedPayload = {
       orderId: uuidv4(),
@@ -163,6 +166,7 @@ export class ChannelOrderTranslator {
       totalPrice: line.unitPrice * line.quantity,
       ...(line.fulfillmentKind ? { fulfillmentKind: line.fulfillmentKind } : {}),
       ...(line.requiresShipping !== undefined ? { requiresShipping: line.requiresShipping } : {}),
+      ...(line.almondDesignId ? { almondDesignId: line.almondDesignId } : {}),
     };
   }
 
@@ -175,10 +179,7 @@ export class ChannelOrderTranslator {
    * 풀려 캐스팅이 필요해지는데, 계약이 잡아 줄 것을 캐스팅으로 덮는 것이 ADR-0029 가 없애려던
    * 실패 모드 그 자체다.
    */
-  private toLifecycleItem(
-    snapshot: ChannelOrderSnapshot,
-    observation: LifecycleObservation,
-  ): OrderLifecycleEventItem {
+  private toLifecycleItem(snapshot: ChannelOrderSnapshot, observation: LifecycleObservation): OrderLifecycleEventItem {
     const base = {
       externalOrderId: snapshot.externalOrderId,
       sourceUpdatedAt: snapshot.sourceUpdatedAt,

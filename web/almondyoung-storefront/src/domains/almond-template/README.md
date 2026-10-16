@@ -33,4 +33,4 @@
 ## 한계
 
 - 서버액션 본문 상한(`next.config.js` 의 `serverActions.bodySizeLimit`)이 12MB 라, 큰 이미지를 넣은 시안은 저장이 거절될 수 있다.
-- SVG·JSON 은 인쇄 접수용 AI/EPS 가 아니다. 실제 발주 연결에는 와우프레스 파일 검수 통과와 주문별 디자인 파일 보관·결제 완료 이벤트 연동이 필요하다.
+- SVG·JSON 은 인쇄 접수용 AI/EPS 가 아니다. 와우프레스 발주는 core `print-order` 가 결제 후 자동으로 처리한다. 품목 여는 절차와 운영은 [`apps/core/src/modules/print-order/README.md`](../../../../../apps/core/src/modules/print-order/README.md) 를 본다.

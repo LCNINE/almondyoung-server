@@ -1,5 +1,10 @@
 "use client"
 
+import { useCancelFailureAlert } from "@/components/orders/cancel-failure-alert"
+import {
+  PRINT_PARTIAL_CANCEL_AVAILABLE,
+  usePrintPartialCancelDialog,
+} from "@/components/orders/print-partial-cancel-dialog"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import OrderItemCartButton from "@/components/orders/order-card/order-item-cart-button"
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
@@ -69,6 +74,9 @@ export const OrderDetailsDesktop = ({
   const tLabels = useTranslations("mypage.order.labels")
   const tStatus = useTranslations("mypage.order.status")
   const tActions = useTranslations("mypage.order.actions")
+  const { showCancelFailure, cancelFailureAlert } = useCancelFailureAlert()
+  const { askPrintPartialCancel, printPartialCancelDialog } =
+    usePrintPartialCancelDialog(() => runCancel(true))
   const tPaymentStatus = useTranslations("mypage.order.paymentStatus")
   const tRefundInfo = useTranslations("mypage.order.refundInfo")
   const tRefundRequest = useTranslations("mypage.order.refundRequest")
@@ -178,18 +186,26 @@ export const OrderDetailsDesktop = ({
   const refundGuidance = tRefundInfo(`guidance.${refundStatus}`)
   const showRefundSection = refundStatus !== "none"
 
-  const handleCancelConfirm = () => {
+  const handleCancelConfirm = () => runCancel(false)
+
+  const runCancel = (excludePrint: boolean) => {
     startCancelTransition(async () => {
       try {
         const result = await cancelOrderByMedusaId(order.id, {
           reasonCode: cancelReasonCode,
+          ...(excludePrint ? { excludePrint: true } : {}),
           reasonDetail:
             cancelReasonCode === "OTHER" && cancelReasonDetail
               ? cancelReasonDetail
               : undefined,
         })
         if (!result.success) {
-          toast.error(result.error)
+          setShowCancelDialog(false)
+          if (result.code === PRINT_PARTIAL_CANCEL_AVAILABLE) {
+            askPrintPartialCancel()
+            return
+          }
+          showCancelFailure(result.error)
           return
         }
         setShowCancelDialog(false)
@@ -199,7 +215,8 @@ export const OrderDetailsDesktop = ({
       } catch (err: unknown) {
         // 인증 실패는 error.tsx 가 토큰 복구를 처리하도록 전파
         if ((err as { digest?: string }).digest === "UNAUTHORIZED") throw err
-        toast.error(tActions("cancelError"))
+        setShowCancelDialog(false)
+        showCancelFailure(tActions("cancelError"))
       }
     })
   }
@@ -566,6 +583,8 @@ export const OrderDetailsDesktop = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {cancelFailureAlert}
+      {printPartialCancelDialog}
     </div>
   )
 }

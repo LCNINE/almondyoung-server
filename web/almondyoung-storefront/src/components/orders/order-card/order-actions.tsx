@@ -1,5 +1,10 @@
 "use client"
 
+import { useCancelFailureAlert } from "@/components/orders/cancel-failure-alert"
+import {
+  PRINT_PARTIAL_CANCEL_AVAILABLE,
+  usePrintPartialCancelDialog,
+} from "@/components/orders/print-partial-cancel-dialog"
 import {
   CancelReasonForm,
   type CancelReasonCode,
@@ -94,6 +99,9 @@ export default function OrderActions({
     coreActions?.cancelUnavailableReason ?? cancelUnavailableReasonProp
   const channelInfo = coreActions?.channelInfo ?? channelInfoProp
   const tActions = useTranslations("mypage.order.actions")
+  const { showCancelFailure, cancelFailureAlert } = useCancelFailureAlert()
+  const { askPrintPartialCancel, printPartialCancelDialog } =
+    usePrintPartialCancelDialog(() => runCancel(true))
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [isConfirmed, setIsConfirmed] = useState(false)
@@ -155,18 +163,26 @@ export default function OrderActions({
   const handleTrack = () =>
     toast.info("배송 조회는 준비 중이에요. 고객센터로 문의해 주세요.")
 
-  const handleCancelConfirm = () => {
+  const handleCancelConfirm = () => runCancel(false)
+
+  const runCancel = (excludePrint: boolean) => {
     startCancelTransition(async () => {
       try {
         const result = await cancelOrderByMedusaId(orderId, {
           reasonCode: cancelReasonCode,
+          ...(excludePrint ? { excludePrint: true } : {}),
           reasonDetail:
             cancelReasonCode === "OTHER" && cancelReasonDetail
               ? cancelReasonDetail
               : undefined,
         })
         if (!result.success) {
-          toast.error(result.error)
+          setShowCancelDialog(false)
+          if (result.code === PRINT_PARTIAL_CANCEL_AVAILABLE) {
+            askPrintPartialCancel()
+            return
+          }
+          showCancelFailure(result.error)
           return
         }
         setShowCancelDialog(false)
@@ -176,7 +192,8 @@ export default function OrderActions({
       } catch (err: unknown) {
         // 인증 실패는 error.tsx 가 토큰 복구를 처리하도록 전파
         if ((err as { digest?: string }).digest === "UNAUTHORIZED") throw err
-        toast.error(tActions("cancelError"))
+        setShowCancelDialog(false)
+        showCancelFailure(tActions("cancelError"))
       }
     })
   }
@@ -466,6 +483,8 @@ export default function OrderActions({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {cancelFailureAlert}
+      {printPartialCancelDialog}
     </>
   )
 }
