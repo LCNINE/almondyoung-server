@@ -20,6 +20,7 @@
 - 반차 시각의 엄격한 구간 제한은 보류; 퇴근 예정≤출근 예정은 차단.
 - 첨부 0~3개, 10MB, JPG/PNG/WEBP; 사유 줄바꿈 보존, AI는 최종 판단 금지.
 - Yarn 루트 실행, Node 22, Jest --runInBand. 현재 머신 Yarn은 `corepack yarn`, Node 22는 `npm exec --package=node@22 --`로 제공한다.
+- 모듈 아래 controllers/services/guards/dto/repositories 디렉터리를 사용한다. 조회·변경 책임이 복잡해지면 Reader/Manager를 분리한다(사용자 추가 지시).
 - 사용자 지시: 기존 체크아웃에서 `feat/attendance` 브랜치 생성 및 구현 착수. 별도 worktree/중간 승인 없이 인라인 진행.
 
 ## Review Focus
@@ -34,7 +35,7 @@
 
 - `packages/domain-types/attendance.ts`: DTO 공유 타입과 순수 시간·위치·상태 규칙.
 - `apps/user-service/database/drizzle/attendance.schema.ts`: 출결·감사·일정·설정·작업함 테이블. 기존 schema에서 합성해 순환 참조를 피한다.
-- `apps/user-service/src/api/attendance/{attendance.module,attendance.controller,attendance.service,attendance.repository,attendance.dto,attendance.jobs}.ts`: 인증, 입력, 트랜잭션, 조회, 배경 작업.
+- `apps/user-service/src/api/attendance/attendance.module.ts`와 `controllers/`, `services/`, `guards/`, `dto/`, `repositories/`: 인증, 입력, 트랜잭션, 조회, 배경 작업. 테스트는 해당 책임 디렉터리에 둔다. 이후 Task의 클래스 이름은 이 구조에서의 파일을 뜻한다.
 - `apps/admin-web/src/lib/api/domains/attendance/index.ts`: 타입 지정 API 호출.
 - `apps/admin-web/src/features/attendance/`: 쿼리, 근무 카드, 모바일 화면, 공유 캘린더, 등록창, 요청창, 마스터 검토, 설정/현황.
 - `apps/admin-web/src/app/attendance/`: 독립 모바일/PWA 화면·manifest.

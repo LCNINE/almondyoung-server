@@ -64,6 +64,13 @@
       "when": 1791421788465,
       "tag": "20261008010948_add-beautytop-growth-notes",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792133349373,
+      "tag": "20261016064909_attendance",
+      "breakpoints": true
     }
   ]
 }

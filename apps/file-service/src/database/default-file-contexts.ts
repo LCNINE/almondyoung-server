@@ -71,6 +71,17 @@ export function fileContextMatchesSeed(row: FileContextSeedRow | undefined, seed
 
 export const FILE_CONTEXTS: FileContextSeed[] = [
   {
+    id: 'attendance-request-image',
+    name: 'Attendance request evidence',
+    description: '출결 정정·예외 참고 이미지',
+    allowPublic: false,
+    allowPrivate: true,
+    allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+    maxFileSize: 10485760,
+    pathPrefix: 'attendance/evidence',
+    isActive: true,
+  },
+  {
     id: 'banner-image',
     name: 'Banner Image',
     description: '배너 이미지',

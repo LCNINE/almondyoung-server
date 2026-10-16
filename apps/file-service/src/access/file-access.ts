@@ -68,6 +68,9 @@ export class FileAccess {
     if (!(await this.isMasterOrOwner(file, user))) {
       throw new ForbiddenError('You do not have permission to delete this file');
     }
+    if (file.contextId === 'attendance-request-image') {
+      throw new ForbiddenError('출결 참고 이미지는 보관 정책에 따라 관리됩니다.');
+    }
     await this.repo.softDelete(fileId);
     return { success: true, message: 'File deleted successfully' };
   }
