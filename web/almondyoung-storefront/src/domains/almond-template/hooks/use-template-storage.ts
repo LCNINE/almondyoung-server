@@ -197,10 +197,13 @@ export function useTemplateStorage({
       "front",
       0
     )
-    const [stored, thumbnailSvg] = await Promise.all([
-      uploadDesignImages(named, uploadFile),
-      rasterThumbnail(markup),
-    ])
+    const stored = await uploadDesignImages(named, uploadFile, {
+      backfill: true,
+    })
+    const thumbnailSvg = await rasterThumbnail(
+      markup,
+      stored.imagePreviews ?? {}
+    )
     const result = await remote.upsert({ id, design: stored, thumbnailSvg })
     if ("conflict" in result) {
       setMessage(

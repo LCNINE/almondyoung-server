@@ -65,6 +65,20 @@ describe("아몬드템플릿", () => {
     ).toThrow()
   })
 
+  it("화면용 축소본 목록은 file: 참조 쌍만 남긴다", () => {
+    const original = "file:01a143cf-1e12-713c-9f50-431542f3fd0c"
+    const preview = "file:01a143ce-fa94-7348-ad63-85721f2dd5d0"
+    const design = {
+      ...newDesign("card"),
+      imagePreviews: {
+        [original]: preview,
+        "data:image/png;base64,AA==": preview,
+        [preview]: "https://example.com/track.png",
+      },
+    }
+    expect(parseDesign(design).imagePreviews).toEqual({ [original]: preview })
+  })
+
   it("필터 원복용 원본 이미지를 저장하고 잘못된 필터를 거부한다", () => {
     const design = newDesign("card")
     design.front = [

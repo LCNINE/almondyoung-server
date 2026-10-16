@@ -8,6 +8,7 @@ import {
 } from "../lib/document"
 import { makeLayer } from "../lib/layer"
 import { imageBlob } from "../lib/image-ref"
+import { rememberPreview } from "../lib/image-previews"
 
 type Params = {
   design: Design
@@ -74,38 +75,39 @@ export function useImageTools({
       const bitmap = await createImageBitmap(file)
       const pixelWidth = bitmap.width,
         pixelHeight = bitmap.height
-      bitmap.close()
-      const reader = new FileReader()
-      reader.onload = () => {
-        const image = String(reader.result)
-        if (target !== "background")
-          setUploadedImages((items) => [
-            ...items.slice(-19),
-            { image, pixelWidth, pixelHeight },
-          ])
-        if (target === "background")
-          change(
-            withSideBackground(design, side, {
-              background: sideBackground(design, side).background,
-              backgroundImage: image,
-              backgroundPixelWidth: pixelWidth,
-              backgroundPixelHeight: pixelHeight,
-            })
-          )
-        else if (target === "frame" && selected)
-          patch(selected.id, {
-            image,
-            pixelWidth,
-            pixelHeight,
-            originalImage: undefined,
-            imageFilter: undefined,
+      const image = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result))
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+      await rememberPreview(image, bitmap).finally(() => bitmap.close())
+      if (target !== "background")
+        setUploadedImages((items) => [
+          ...items.slice(-19),
+          { image, pixelWidth, pixelHeight },
+        ])
+      if (target === "background")
+        change(
+          withSideBackground(design, side, {
+            background: sideBackground(design, side).background,
+            backgroundImage: image,
+            backgroundPixelWidth: pixelWidth,
+            backgroundPixelHeight: pixelHeight,
           })
-        else
-          setMessage(
-            "내 라이브러리에 사진을 추가했습니다. 사진을 누르거나 자동담기를 사용하세요."
-          )
-      }
-      reader.readAsDataURL(file)
+        )
+      else if (target === "frame" && selected)
+        patch(selected.id, {
+          image,
+          pixelWidth,
+          pixelHeight,
+          originalImage: undefined,
+          imageFilter: undefined,
+        })
+      else
+        setMessage(
+          "내 라이브러리에 사진을 추가했습니다. 사진을 누르거나 자동담기를 사용하세요."
+        )
     } catch {
       setMessage(
         "이미지를 읽지 못했습니다. 다른 PNG 또는 JPG 파일을 사용하세요."
@@ -201,6 +203,7 @@ export function useImageTools({
         return setMessage(
           "결과 이미지가 너무 큽니다. 작은 이미지를 사용하세요."
         )
+      await rememberPreview(image, canvas)
       patch(selected.id, {
         image,
         originalImage: undefined,
@@ -260,6 +263,7 @@ export function useImageTools({
       const image = canvas.toDataURL("image/png")
       if (image.length > (MAX_IMAGE_FILE_BYTES * 4) / 3)
         return setMessage("필터 결과가 너무 큽니다. 작은 이미지를 사용하세요.")
+      await rememberPreview(image, canvas)
       patch(selected.id, {
         image,
         originalImage: selected.originalImage ?? selected.image,

@@ -6,7 +6,7 @@ import {
 } from "../lib/document"
 import { FRAME_PATHS, LEGACY_CLIPART } from "../lib/art-library"
 import { CLIPART_DATA } from "../lib/clipart-data"
-import { imageSrc } from "../lib/image-ref"
+import { useImageSrc } from "../lib/image-previews"
 import { fontStack } from "../lib/fonts"
 
 const widthRatio = (layer: Layer) =>
@@ -457,6 +457,7 @@ export function photoBox(layer: Layer) {
 }
 
 function LayerGraphicView({ layer }: { layer: Layer }) {
+  const imageSrc = useImageSrc()
   if (layer.visible === false) return null
   const filterId = layer.shadow || layer.texture ? `fx-${layer.id}` : undefined
   const cx = layer.x + layer.width / 2,
@@ -685,6 +686,7 @@ export function Backdrop({
   width?: number | string
   height?: number | string
 }) {
+  const imageSrc = useImageSrc()
   return (
     <>
       <rect width={width} height={height} fill={value.background} />

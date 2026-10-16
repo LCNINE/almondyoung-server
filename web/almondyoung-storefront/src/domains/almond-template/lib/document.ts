@@ -81,6 +81,8 @@ export type Design = {
   backgroundPixelWidth?: number
   backgroundPixelHeight?: number
   backBackground?: SideBackground
+  // 원본 file: 참조 → 편집 화면용 축소본 file: 참조
+  imagePreviews?: Record<string, string>
   front: Layer[]
   back: Layer[]
 }
@@ -321,7 +323,23 @@ export function parseDesign(value: unknown): Design {
         ? { ...layer, name: textLayerName(layer.text) }
         : layer
     )
-  return { ...design, front: named(design.front), back: named(design.back) }
+  const imagePreviews =
+    design.imagePreviews && typeof design.imagePreviews === "object"
+      ? Object.fromEntries(
+          Object.entries(design.imagePreviews).filter(
+            ([original, preview]) =>
+              FILE_IMAGE_REF.test(original) &&
+              typeof preview === "string" &&
+              FILE_IMAGE_REF.test(preview)
+          )
+        )
+      : undefined
+  return {
+    ...design,
+    imagePreviews,
+    front: named(design.front),
+    back: named(design.back),
+  }
 }
 
 function checkBackgroundImage(data: Partial<SideBackground>) {

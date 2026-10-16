@@ -3,7 +3,7 @@ import type { Layer } from "../../lib/document"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import type { RefObject } from "react"
 import type { PropertyPanelState } from "../../hooks/use-property-panel"
-import { imageSrc } from "../../lib/image-ref"
+import { useImageSrc } from "../../lib/image-previews"
 
 export function FrameOptions({
   editor,
@@ -16,6 +16,7 @@ export function FrameOptions({
   selected: Layer
   selectedImageInputRef: RefObject<HTMLInputElement>
 }) {
+  const imageSrc = useImageSrc()
   const { setMessage, patch, editable, imageFile, applyImageFilter } = editor
   const { brightnessOpen, setBrightnessOpen, brightness, setBrightness } = panel
   return (

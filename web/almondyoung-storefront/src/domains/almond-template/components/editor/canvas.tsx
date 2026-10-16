@@ -5,7 +5,7 @@ import { currentCrop, unionBounds } from "../../lib/canvas-math"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import { CanvasGuides } from "./canvas-guides"
 import { useLeaveWarning } from "../../hooks/use-leave-warning"
-import { imageSrc } from "../../lib/image-ref"
+import { useImageSrc } from "../../lib/image-previews"
 import {
   layerImageDpi,
   SHAPE_TEXT_TYPES,
@@ -33,6 +33,7 @@ function seeThrough(layer: Layer) {
 }
 
 export function Canvas({ editor }: { editor: AlmondEditor }) {
+  const imageSrc = useImageSrc()
   const {
     mode,
     design,

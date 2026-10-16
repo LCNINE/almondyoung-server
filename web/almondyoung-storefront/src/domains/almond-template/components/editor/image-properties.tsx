@@ -14,7 +14,7 @@ import type { Layer } from "../../lib/document"
 import { OrderIcon } from "./order-icon"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import type { PropertyPanelState } from "../../hooks/use-property-panel"
-import { imageSrc } from "../../lib/image-ref"
+import { useImageSrc } from "../../lib/image-previews"
 
 export function ImageProperties({
   editor,
@@ -25,6 +25,7 @@ export function ImageProperties({
   panel: PropertyPanelState
   selected: Layer
 }) {
+  const imageSrc = useImageSrc()
   const {
     mode,
     selectedLowDpi,

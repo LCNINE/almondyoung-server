@@ -1,9 +1,10 @@
 import { X } from "lucide-react"
 import { imageBox } from "../../../lib/layer"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
-import { imageSrc } from "../../../lib/image-ref"
+import { useImageSrc } from "../../../lib/image-previews"
 
 export function ImagePanel({ editor }: { editor: AlmondEditor }) {
+  const imageSrc = useImageSrc()
   const {
     design,
     add,
