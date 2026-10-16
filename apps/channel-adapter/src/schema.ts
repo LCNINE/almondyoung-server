@@ -271,6 +271,42 @@ export const orderCollectionFailures = pgTable(
   ],
 );
 
+// 🔹 채널 주문 대사 결과 (#1016 45번). 채널엔 있는데 core 에 없거나(`missing_order`) 채널 취소가 core 에 안 닿은(`cancel_not_applied`) 주문.
+// 열린 행은 (channel, external_order_id, kind) 당 하나다(부분 unique). 사람이 닫은 뒤 같은 어긋남이 다시 생기면 새 행이다.
+export const orderReconcileFindings = pgTable(
+  'order_reconcile_findings',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    channel: varchar('channel', { length: 50 }).notNull(),
+    externalOrderId: varchar('external_order_id', { length: 255 }).notNull(),
+    displayOrderNo: varchar('display_order_no', { length: 64 }),
+    kind: varchar('kind', { length: 30 }).notNull(),
+    status: varchar('status', { length: 20 }).notNull().default('open'),
+    handling: varchar('handling', { length: 10 }).notNull(),
+    humanReason: varchar('human_reason', { length: 30 }),
+    coreStatus: varchar('core_status', { length: 30 }),
+    channelCreatedAt: timestamp('channel_created_at', { withTimezone: true }).notNull(),
+    mode: varchar('mode', { length: 10 }).notNull(),
+    lastResult: varchar('last_result', { length: 200 }),
+    attemptCount: integer('attempt_count').notNull().default(0),
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    closedBy: varchar('closed_by', { length: 100 }),
+    closeMemo: text('close_memo'),
+  },
+  (table) => [
+    uniqueIndex('uq_order_reconcile_findings_open')
+      .on(table.channel, table.externalOrderId, table.kind)
+      .where(sql`status = 'open'`),
+    index('order_reconcile_findings_status_handling_idx').on(table.status, table.handling),
+  ],
+);
+
 // ⚠️ IMPORTANT: This is the INBOX pattern (event reception/processing)
 // NOT to be confused with the shared Outbox pattern (libs/events/src/outbox/)
 //
@@ -628,6 +664,7 @@ export const channelAdapterSchema = {
   syncStatuses,
   pendingOrders,
   orderCollectionFailures,
+  orderReconcileFindings,
   inboxEvents,
   channelDispatchOperations,
   demoRuns,
