@@ -18,7 +18,10 @@ describe('attendance calendar audience and edit controls', () => {
     jest.useRealTimers();
   });
 
-  function render(page: ReturnType<typeof createElement>) {
+  function render(
+    page: ReturnType<typeof createElement>,
+    additionalLeaves: CalendarLeave[] = []
+  ) {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
@@ -52,6 +55,7 @@ describe('attendance calendar audience and edit controls', () => {
         start: '13:00',
         end: '18:00',
       },
+      ...additionalLeaves,
     ];
 
     client.setQueryData(['attendance', 'me'], me);
@@ -87,5 +91,34 @@ describe('attendance calendar audience and edit controls', () => {
     expect(html.match(/>삭제<\/button>/g)).toHaveLength(1);
     expect(html).toContain('내 일정만 보기');
     expect(html).not.toContain('경리나라');
+  });
+
+  it('provides a distinct accessible action to open the complete list when a day exceeds three staff', () => {
+    const html = render(
+      createElement(SharedCalendar, { initialScope: 'shared' }),
+      [
+        {
+          id: 'third',
+          userId: 'third',
+          name: '오하린',
+          date: '2026-10-16',
+          type: 'full',
+          start: null,
+          end: null,
+        },
+        {
+          id: 'fourth',
+          userId: 'fourth',
+          name: '박봄',
+          date: '2026-10-16',
+          type: 'full',
+          start: null,
+          end: null,
+        },
+      ]
+    );
+
+    expect(html).toContain('aria-label="2026-10-16 전체 일정 4명 보기"');
+    expect(html).toContain('+1명 더 보기');
   });
 });

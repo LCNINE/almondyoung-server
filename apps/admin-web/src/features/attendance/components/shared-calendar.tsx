@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -54,6 +55,7 @@ export function SharedCalendar({
   const today = seoulDate(new Date());
   const [month, setMonth] = useState(today.slice(0, 7));
   const [selected, setSelected] = useState(today);
+  const [expandedDay, setExpandedDay] = useState<string | null>(null);
   const [scope, setScope] = useState<CalendarScope>(initialScope);
   const [editor, setEditor] = useState<{
     day: string;
@@ -79,6 +81,16 @@ export function SharedCalendar({
     '일정을 삭제했어요.'
   );
   const selectedLeaves = visibleLeaves.filter((item) => item.date === selected);
+  const expandedLeaves = visibleLeaves.filter(
+    (item) => item.date === expandedDay
+  );
+  const expandedLabel = expandedDay
+    ? new Intl.DateTimeFormat('ko-KR', {
+        month: 'long',
+        day: 'numeric',
+        weekday: 'long',
+      }).format(new Date(`${expandedDay}T12:00:00`))
+    : '';
   const selectedLabel = new Intl.DateTimeFormat('ko-KR', {
     month: 'long',
     day: 'numeric',
@@ -204,25 +216,35 @@ export function SharedCalendar({
                   const inMonth = day.startsWith(month);
 
                   return (
-                    <button
-                      key={day}
-                      type="button"
-                      aria-label={`${day} 휴가·반차 ${leaves.length}명${leaves.length ? ': ' + leaves.map((item) => `${item.name} ${LEAVE_LABELS[item.type]}`).join(', ') : ''}`}
-                      aria-pressed={selected === day}
-                      onClick={() => setSelected(day)}
-                      className={`relative flex min-h-32 min-w-0 flex-col items-center pt-2 pb-1 transition-colors focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-indigo-600 sm:min-h-36 ${selected === day ? 'bg-slate-100' : 'bg-white hover:bg-slate-50'}`}
-                    >
-                      <span
-                        className={`flex size-6 items-center justify-center rounded-full text-xs ${day === today ? 'bg-slate-900 font-semibold text-white' : !inMonth ? 'text-slate-400' : weekday === 0 ? 'text-rose-600' : weekday === 6 ? 'text-sky-700' : 'text-slate-600'}`}
+                    <div key={day} className="relative min-w-0">
+                      <button
+                        type="button"
+                        aria-label={`${day} 휴가·반차 ${leaves.length}명${leaves.length ? ': ' + leaves.map((item) => `${item.name} ${LEAVE_LABELS[item.type]}`).join(', ') : ''}`}
+                        aria-pressed={selected === day}
+                        onClick={() => setSelected(day)}
+                        className={`relative flex min-h-32 w-full min-w-0 flex-col items-center pt-2 pb-1 transition-colors focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-indigo-600 sm:min-h-36 ${selected === day ? 'bg-slate-100' : 'bg-white hover:bg-slate-50'}`}
                       >
-                        {Number(day.slice(-2))}
-                      </span>
-                      {extra > 0 && (
-                        <span className="absolute bottom-1 text-[10px] font-medium text-slate-600">
-                          +{extra}명
+                        <span
+                          className={`flex size-6 items-center justify-center rounded-full text-xs ${day === today ? 'bg-slate-900 font-semibold text-white' : !inMonth ? 'text-slate-400' : weekday === 0 ? 'text-rose-600' : weekday === 6 ? 'text-sky-700' : 'text-slate-600'}`}
+                        >
+                          {Number(day.slice(-2))}
                         </span>
+                      </button>
+                      {extra > 0 && (
+                        <button
+                          type="button"
+                          aria-label={`${day} 전체 일정 ${leaves.length}명 보기`}
+                          aria-haspopup="dialog"
+                          className="absolute bottom-1 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded px-1 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-indigo-600"
+                          onClick={() => {
+                            setSelected(day);
+                            setExpandedDay(day);
+                          }}
+                        >
+                          +{extra}명 더 보기
+                        </button>
                       )}
-                    </button>
+                    </div>
                   );
                 })}
                 <div
@@ -325,6 +347,47 @@ export function SharedCalendar({
           )}
         </aside>
       </div>
+      <Dialog
+        open={expandedDay !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setExpandedDay(null);
+          }
+        }}
+      >
+        <DialogContent className="flex max-h-[85dvh] flex-col overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>{expandedLabel} 전체 일정</DialogTitle>
+            <DialogDescription>
+              휴가·반차 {expandedLeaves.length}명
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 space-y-3 overflow-y-auto overscroll-contain">
+            {expandedLeaves.map((item) => (
+              <div key={item.id} className="rounded-xl border p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-semibold">{item.name}</p>
+                  <span
+                    className={`rounded-md px-2 py-1 text-[11px] font-medium ${LEAVE_COLORS[item.type]}`}
+                  >
+                    {LEAVE_LABELS[item.type]}
+                  </span>
+                </div>
+                {item.type !== 'full' && (
+                  <p className="mt-2 text-xs text-slate-600">
+                    근무 예정 {item.start}–{item.end}
+                  </p>
+                )}
+              </div>
+            ))}
+            {expandedLeaves.length === 0 && (
+              <p className="py-6 text-sm text-slate-600">
+                등록된 휴가·반차가 없어요.
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
       {editor && me && (
         <LeaveEditor
           initial={editor.day}
