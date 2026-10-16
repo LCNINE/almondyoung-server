@@ -73,7 +73,8 @@ export class OrderReconcileFindingRepository {
             humanReason: input.humanReason,
             coreStatus: input.coreStatus,
             mode: input.mode,
-            lastResult: input.lastResult,
+            // 사람 행은 마지막 시도 결과(왜 포기했는지)를 지우지 않는다 — 매 주기 'skipped' 로 덮으면 사유가 30분 만에 사라진다(리뷰 I-6)
+            lastResult: sql`case when excluded.handling = 'human' and ${orderReconcileFindings.lastResult} is not null then ${orderReconcileFindings.lastResult} else excluded.last_result end`,
             lastSeenAt: input.seenAt,
           },
         })
@@ -183,19 +184,49 @@ export class OrderReconcileFindingRepository {
     return new Set(rows.map((row) => row.externalOrderId));
   }
 
-  /** 7·8번이 같은 주문(`aggregate_id`)의 뒤 이벤트를 보류한다 — 굳은 행이 있으면 다시 보내도 그 뒤에 묶인다(스펙 D8). */
-  async wmsOrderIdsWithFailedOutbox(wmsOrderIds: string[]): Promise<Set<string>> {
-    if (wmsOrderIds.length === 0) return new Set();
+  /**
+   * 그 주문(`aggregate_id` = wmsOrderId)의 주문 생애 outbox 상태.
+   * - `failed`: 7·8번이 같은 주문의 뒤 이벤트를 보류한다 — 다시 보내도 그 뒤에 묶인다(스펙 D8).
+   * - `inFlight`: PENDING·PROCESSING — 아직 나가는 중이다. outbox 재시도 창(약 2시간)이 유예(30분)보다 길어 판정하면 거짓 양성이다(리뷰 I-8).
+   */
+  async outboxStateByWmsOrderId(wmsOrderIds: string[]): Promise<{ failed: Set<string>; inFlight: Set<string> }> {
+    const state = { failed: new Set<string>(), inFlight: new Set<string>() };
+    if (wmsOrderIds.length === 0) return state;
     const rows = await this.db
-      .selectDistinct({ aggregateId: outbox_events.aggregateId })
+      .selectDistinct({ aggregateId: outbox_events.aggregateId, status: outbox_events.status })
       .from(outbox_events)
       .where(
         and(
           eq(outbox_events.topic, ORDER_STREAM.topic.topic),
-          eq(outbox_events.status, 'FAILED'),
+          inArray(outbox_events.status, ['FAILED', 'PENDING', 'PROCESSING']),
           inArray(outbox_events.aggregateId, wmsOrderIds),
         ),
       );
-    return new Set(rows.map((row) => row.aggregateId));
+    for (const row of rows) (row.status === 'FAILED' ? state.failed : state.inFlight).add(row.aggregateId);
+    return state;
+  }
+
+  /**
+   * (주문, 종류)별 마지막 사람 종결 시각. 키는 `${externalOrderId}:${kind}`. 종결 뒤 채널이 바뀌지 않은 주문을
+   * 다시 열지 않으려고 쓴다 — 그러지 않으면 3일 창 안의 종결이 30분 만에 되살아난다(리뷰 I-1).
+   */
+  async latestClosedAt(channel: string, externalOrderIds: string[]): Promise<Map<string, Date>> {
+    if (externalOrderIds.length === 0) return new Map();
+    const rows = await this.db
+      .select({
+        externalOrderId: orderReconcileFindings.externalOrderId,
+        kind: orderReconcileFindings.kind,
+        closedAt: sql<Date>`max(${orderReconcileFindings.closedAt})`.mapWith(orderReconcileFindings.closedAt),
+      })
+      .from(orderReconcileFindings)
+      .where(
+        and(
+          eq(orderReconcileFindings.channel, channel),
+          eq(orderReconcileFindings.status, 'closed'),
+          inArray(orderReconcileFindings.externalOrderId, externalOrderIds),
+        ),
+      )
+      .groupBy(orderReconcileFindings.externalOrderId, orderReconcileFindings.kind);
+    return new Map(rows.map((row) => [`${row.externalOrderId}:${row.kind}`, row.closedAt]));
   }
 }

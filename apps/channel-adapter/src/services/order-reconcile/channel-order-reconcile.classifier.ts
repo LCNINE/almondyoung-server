@@ -12,6 +12,11 @@ export const MAX_REDELIVERY_ATTEMPTS = 3;
 /** 셀메이트 스크립트가 쓴 `shipped` 등에 취소를 보내면 core 가 거절한다(스펙 D6). */
 const AUTO_CANCEL_CORE_STATUSES: ReadonlySet<string> = new Set(['pending', 'confirmed']);
 
+/** core 가 채널 취소를 받아 확정할 수 있는 SO 상태인가. 아니면 보낸 취소가 dead letter 가 되어 그 주문 키를 막는다(리뷰 I-5). */
+export function coreCanAcceptCancel(salesOrderStatus: string | null): boolean {
+  return AUTO_CANCEL_CORE_STATUSES.has(salesOrderStatus ?? '');
+}
+
 export const RECONCILE_RULES: Record<FindingKind, { mode: ReconcileMode }> = {
   missing_order: new MissingOrderRule(),
   cancel_not_applied: new CancelNotAppliedRule(),
@@ -22,6 +27,8 @@ export interface ClassifyInput {
   wmsOrderId: string | null;
   openQuarantine: boolean;
   adapterOutboxFailed: boolean;
+  /** 어댑터 outbox 에 그 주문의 PENDING·PROCESSING 행이 있다 — 아직 나가는 중이라 판정하지 않는다(리뷰 I-8). */
+  adapterOutboxInFlight: boolean;
   core: { salesOrderStatus: string | null; openEventFailure: boolean };
   /** 이미 열린 행의 시도 수. 종류는 판정 뒤에야 알므로 함수로 받는다. */
   attemptCountFor: (kind: FindingKind) => number;
@@ -37,18 +44,28 @@ export interface ClassifyVerdict {
 }
 
 /**
+ * 아직 폴링·전달 중일 수 있는 주문을 거른다. 두 기준(갱신 30분 전, 폴러 워터마크 − 2분) 중 «이른» 쪽보다 뒤면
+ * 판정하지 않는다(계획 정정 1). 워터마크가 없으면(폴러가 한 번도 안 돎) 판정하지 않는다.
+ */
+export function isJudgeable(
+  snapshot: Pick<ChannelOrderSnapshot, 'sourceUpdatedAt'>,
+  pollWatermark: Date | null,
+  now: Date,
+): boolean {
+  if (!pollWatermark) return false;
+  const cutoff = Math.min(now.getTime() - RECONCILE_GRACE_MS, pollWatermark.getTime() - POLL_LOOKBACK_MS);
+  return new Date(snapshot.sourceUpdatedAt).getTime() <= cutoff;
+}
+
+/**
  * 채널 스냅샷 하나를 «core 에 있어야 하는 모양»과 비교한다(스펙 §5.3·§5.4). 기대값은 폴러가 쓰는 스냅샷 해석
  * (`paymentState`·lifecycle 관측) 그대로다 — 수집 조건을 여기서 다시 구현하지 않는다.
  * null = 정상이거나 아직 판정할 때가 아니다.
  */
 export function classifyChannelOrder(input: ClassifyInput): ClassifyVerdict | null {
   const { snapshot, core, now } = input;
-  if (input.openQuarantine) return null;
-  if (!input.pollWatermark) return null;
-
-  // 두 기준 중 «이른» 쪽보다 뒤면 아직 폴링·전달 중일 수 있다(계획 정정 1).
-  const cutoff = Math.min(now.getTime() - RECONCILE_GRACE_MS, input.pollWatermark.getTime() - POLL_LOOKBACK_MS);
-  if (new Date(snapshot.sourceUpdatedAt).getTime() > cutoff) return null;
+  if (input.openQuarantine || input.adapterOutboxInFlight) return null;
+  if (!isJudgeable(snapshot, input.pollWatermark, now)) return null;
 
   const cancelledOnChannel = snapshot.lifecycle.some((observation) => observation.eventType === 'OrderCancelled');
   const soStatus = core.salesOrderStatus;
@@ -79,7 +96,7 @@ function handlingFor(
     const age = input.now.getTime() - new Date(input.snapshot.createdAt).getTime();
     if (age > RECONCILE_WINDOW_MS) return human('out_of_window');
   }
-  if (kind === 'cancel_not_applied' && !AUTO_CANCEL_CORE_STATUSES.has(input.core.salesOrderStatus ?? '')) {
+  if (kind === 'cancel_not_applied' && !coreCanAcceptCancel(input.core.salesOrderStatus)) {
     return human('core_status');
   }
   return { handling: 'auto', humanReason: null };

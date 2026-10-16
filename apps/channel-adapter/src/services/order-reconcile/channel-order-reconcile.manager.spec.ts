@@ -13,12 +13,24 @@ const snapshot = (id: string, over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-function setup(opts: { core?: 'down' | Record<string, string | null>; open?: unknown[]; redeliverThrows?: boolean } = {}) {
-  const source = { channel: 'medusa', fetchOrders: jest.fn(async () => [snapshot('a'), snapshot('b')]) };
+interface SetupOptions {
+  core?: 'down' | Record<string, string | null>;
+  open?: unknown[];
+  redeliverThrows?: boolean;
+  snapshots?: ReturnType<typeof snapshot>[];
+  mappings?: Record<string, string>;
+  quarantined?: string[];
+  inFlight?: string[];
+  closedAt?: Record<string, Date>;
+}
+
+function setup(opts: SetupOptions = {}) {
+  const source = { channel: 'medusa', fetchOrders: jest.fn(async () => opts.snapshots ?? [snapshot('a'), snapshot('b')]) };
   const repo = {
-    mappingsByExternalOrderId: jest.fn(async () => new Map()),
-    openQuarantineExternalOrderIds: jest.fn(async () => new Set()),
-    wmsOrderIdsWithFailedOutbox: jest.fn(async () => new Set()),
+    mappingsByExternalOrderId: jest.fn(async () => new Map(Object.entries(opts.mappings ?? {}))),
+    openQuarantineExternalOrderIds: jest.fn(async () => new Set(opts.quarantined ?? [])),
+    outboxStateByWmsOrderId: jest.fn(async () => ({ failed: new Set<string>(), inFlight: new Set(opts.inFlight ?? []) })),
+    latestClosedAt: jest.fn(async () => new Map(Object.entries(opts.closedAt ?? {}))),
     findOpenByOrders: jest.fn(async () => []),
     upsertOpen: jest.fn(async (input: { externalOrderId: string; kind: string }) => ({
       id: `f-${input.externalOrderId}`,
@@ -128,5 +140,86 @@ describe('ChannelOrderReconcileManager', () => {
     const report = await run(manager);
     expect(repo.markResolved).toHaveBeenCalledWith(['o1', 'o2'], NOW);
     expect(report.resolved).toBe(2);
+  });
+
+  it('종결 뒤 채널이 바뀌지 않은 주문은 다시 열지 않는다 (리뷰 I-1)', async () => {
+    const { manager, repo } = setup({ closedAt: { 'a:missing_order': new Date(NOW.getTime() - HOUR) } });
+    await run(manager);
+    expect(repo.upsertOpen).not.toHaveBeenCalled();
+  });
+
+  it('종결 뒤 채널이 바뀐 주문은 새로 연다 (리뷰 I-1)', async () => {
+    const { manager, repo } = setup({ closedAt: { 'a:missing_order': new Date(NOW.getTime() - 5 * HOUR) } });
+    await run(manager);
+    expect(repo.upsertOpen).toHaveBeenCalledWith(expect.objectContaining({ externalOrderId: 'a' }));
+  });
+
+  it('더는 어긋남이 아닌 열린 행은 닫는다 — pending 이 된 주문, 수집 격리된 주문 (리뷰 I-2)', async () => {
+    const open = [
+      { id: 'o-c', externalOrderId: 'c', kind: 'missing_order' },
+      { id: 'o-q', externalOrderId: 'q', kind: 'missing_order' },
+    ];
+    const { manager, repo } = setup({
+      snapshots: [snapshot('c', { paymentState: 'pending' }), snapshot('q')],
+      quarantined: ['q'],
+      core: { c: null, q: null },
+      open,
+    });
+    await run(manager);
+    expect(repo.markResolved).toHaveBeenCalledWith(['o-c', 'o-q'], NOW);
+  });
+
+  it('아직 판정할 때가 아니거나 outbox 가 나가는 중이면 열린 행을 닫지 않는다 (리뷰 I-2·I-8)', async () => {
+    const open = [
+      { id: 'o-r', externalOrderId: 'r', kind: 'missing_order' },
+      { id: 'o-f', externalOrderId: 'f', kind: 'missing_order' },
+    ];
+    const { manager, repo } = setup({
+      snapshots: [snapshot('r', { sourceUpdatedAt: new Date(NOW.getTime() - 60_000).toISOString() }), snapshot('f')],
+      mappings: { f: 'wms-f' },
+      inFlight: ['wms-f'],
+      core: { r: null, f: null },
+      open,
+    });
+    await run(manager);
+    expect(repo.upsertOpen).not.toHaveBeenCalled();
+    expect(repo.markResolved).toHaveBeenCalledWith([], NOW);
+  });
+
+  describe('manualRedeliveryBlock (리뷰 I-3·I-5)', () => {
+    const finding = (externalOrderId: string, kind: string) => ({ channel: 'medusa', externalOrderId, kind });
+
+    it('막을 이유가 없으면 null', async () => {
+      const { manager } = setup({ core: { a: null } });
+      await expect(manager.manualRedeliveryBlock(finding('a', 'missing_order'))).resolves.toBeNull();
+    });
+
+    it('어댑터 outbox 가 FAILED·나가는 중이면 막는다', async () => {
+      const { manager, repo } = setup({ core: { a: null }, mappings: { a: 'wms-a' } });
+      repo.outboxStateByWmsOrderId.mockResolvedValueOnce({ failed: new Set(['wms-a']), inFlight: new Set() });
+      await expect(manager.manualRedeliveryBlock(finding('a', 'missing_order'))).resolves.toBe('event_failure_open');
+      repo.outboxStateByWmsOrderId.mockResolvedValueOnce({ failed: new Set(), inFlight: new Set(['wms-a']) });
+      await expect(manager.manualRedeliveryBlock(finding('a', 'missing_order'))).resolves.toBe('in_flight');
+    });
+
+    it('core 이벤트 실패가 열려 있으면 막는다(wmsOrderId 로 묻는다)', async () => {
+      const { manager, lookup } = setup({ core: { a: null }, mappings: { a: 'wms-a' } });
+      lookup.lookup.mockResolvedValueOnce(
+        new Map([['a', { externalOrderId: 'a', salesOrder: null, openEventFailure: true }]]),
+      );
+      await expect(manager.manualRedeliveryBlock(finding('a', 'missing_order'))).resolves.toBe('event_failure_open');
+      expect(lookup.lookup).toHaveBeenCalledWith('medusa', [{ externalOrderId: 'a', wmsOrderId: 'wms-a' }]);
+    });
+
+    it('이미 core 에 맞게 있으면 막는다', async () => {
+      const { manager } = setup({ core: { a: 'confirmed', b: 'cancelled' } });
+      await expect(manager.manualRedeliveryBlock(finding('a', 'missing_order'))).resolves.toBe('already_in_core');
+      await expect(manager.manualRedeliveryBlock(finding('b', 'cancel_not_applied'))).resolves.toBe('already_in_core');
+    });
+
+    it('core 가 취소를 받을 수 없는 상태(셀메이트 shipped)면 막는다', async () => {
+      const { manager } = setup({ core: { a: 'shipped' } });
+      await expect(manager.manualRedeliveryBlock(finding('a', 'cancel_not_applied'))).resolves.toBe('core_status');
+    });
   });
 });

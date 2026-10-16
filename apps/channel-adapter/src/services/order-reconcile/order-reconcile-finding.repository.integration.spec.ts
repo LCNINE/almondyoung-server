@@ -2,6 +2,8 @@
 import postgres = require('postgres');
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq } from 'drizzle-orm';
+import { outbox_events } from '@app/events';
+import { ORDER_STREAM } from '@packages/event-contracts/streams';
 import { channelAdapterSchema, orderReconcileFindings } from '../../schema';
 import { OrderReconcileFindingRepository, UpsertFindingInput } from './order-reconcile-finding.repository';
 
@@ -42,6 +44,7 @@ describeIfDb('OrderReconcileFindingRepository (PostgreSQL integration)', () => {
   });
   afterEach(async () => {
     await db.delete(orderReconcileFindings).where(eq(orderReconcileFindings.channel, channel));
+    await db.delete(outbox_events).where(eq(outbox_events.aggregateType, channel));
   });
   afterAll(async () => {
     await client.end({ timeout: 0 });
@@ -89,5 +92,40 @@ describeIfDb('OrderReconcileFindingRepository (PostgreSQL integration)', () => {
     expect(summary.open).toBeGreaterThanOrEqual(2);
     expect(summary.human).toBeGreaterThanOrEqual(1);
     expect(summary.gaveUp).toBeGreaterThanOrEqual(1);
+  });
+
+  it('사람 행으로 갱신할 땐 마지막 시도 결과를 덮지 않는다 (리뷰 I-6)', async () => {
+    const row = await repo.upsertOpen(input());
+    await repo.recordAttempt(row.id, 'error: outbox down');
+    const again = await repo.upsertOpen(input({ handling: 'human', humanReason: 'attempts_exhausted', lastResult: 'skipped' }));
+    expect(again.lastResult).toBe('error: outbox down');
+  });
+
+  it('종류별 마지막 종결 시각을 준다 (리뷰 I-1)', async () => {
+    const row = await repo.upsertOpen(input());
+    await repo.close(row.id, null, '메모');
+    const closed = await repo.latestClosedAt(channel, ['order_1', 'order_2']);
+    expect(closed.get('order_1:missing_order')).toBeInstanceOf(Date);
+    expect(closed.has('order_2:missing_order')).toBe(false);
+  });
+
+  it('주문 생애 토픽의 outbox 를 FAILED 와 나가는 중으로 가른다 (리뷰 I-8)', async () => {
+    const row = (aggregateId: string, status: string) => ({
+      topic: ORDER_STREAM.topic.topic,
+      aggregateType: channel,
+      aggregateId,
+      eventType: 'OrderCreated',
+      payload: {},
+      status,
+    });
+    await db.insert(outbox_events).values([
+      row(`${channel}-a`, 'FAILED'),
+      row(`${channel}-b`, 'PENDING'),
+      row(`${channel}-c`, 'PROCESSING'),
+      row(`${channel}-d`, 'PUBLISHED'),
+    ]);
+    const state = await repo.outboxStateByWmsOrderId([`${channel}-a`, `${channel}-b`, `${channel}-c`, `${channel}-d`]);
+    expect([...state.failed]).toEqual([`${channel}-a`]);
+    expect([...state.inFlight].sort()).toEqual([`${channel}-b`, `${channel}-c`]);
   });
 });

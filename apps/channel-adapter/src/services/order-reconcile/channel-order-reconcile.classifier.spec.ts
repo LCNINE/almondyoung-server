@@ -1,5 +1,5 @@
 import type { LifecycleObservation } from '../order-collection/channel-order-source.interface';
-import { ClassifyInput, classifyChannelOrder } from './channel-order-reconcile.classifier';
+import { ClassifyInput, classifyChannelOrder, isJudgeable } from './channel-order-reconcile.classifier';
 
 const NOW = new Date('2026-10-16T12:00:00Z');
 const HOUR = 60 * 60 * 1000;
@@ -31,6 +31,7 @@ const base = (over: Partial<ClassifyInput> = {}): ClassifyInput => ({
   wmsOrderId: null,
   openQuarantine: false,
   adapterOutboxFailed: false,
+  adapterOutboxInFlight: false,
   core: { salesOrderStatus: null, openEventFailure: false },
   attemptCountFor: () => 0,
   pollWatermark: new Date(NOW.getTime() - 60_000),
@@ -162,5 +163,19 @@ describe('classifyChannelOrder', () => {
       },
     );
     expect(classifyChannelOrder(input)).toMatchObject({ kind: 'cancel_not_applied', handling: 'auto' });
+  });
+
+  it('어댑터 outbox 에 아직 나가는 중인 행이 있으면 판정하지 않는다 (I-8)', () => {
+    expect(classifyChannelOrder(base({ wmsOrderId: 'w1', adapterOutboxInFlight: true }))).toBeNull();
+  });
+});
+
+describe('isJudgeable', () => {
+  const snap = { sourceUpdatedAt: new Date(NOW.getTime() - 2 * HOUR).toISOString() };
+  it('유예·워터마크를 지난 주문만 판정 대상이다', () => {
+    expect(isJudgeable(snap, new Date(NOW.getTime() - 60_000), NOW)).toBe(true);
+    expect(isJudgeable(snap, null, NOW)).toBe(false);
+    expect(isJudgeable(snap, new Date(NOW.getTime() - 5 * HOUR), NOW)).toBe(false);
+    expect(isJudgeable({ sourceUpdatedAt: new Date(NOW.getTime() - 60_000).toISOString() }, NOW, NOW)).toBe(false);
   });
 });

@@ -61,6 +61,9 @@ export class ChannelOrderRedeliveryManager {
     }
 
     if (fetched.outcome.kind === 'failure') return this.done(finding.id, 'identification_failed');
+    // 매핑 없는 경로(`syncOrder`)와 같은 자격 검사다 — 취소 없이 환불·입금 대기가 된 주문을 confirmed SO 로 만들면
+    // 환불된 주문이 출고 대상이 된다(리뷰 I-4). 채널 취소가 있으면 SO 를 만들어 바로 취소해야 하므로 보낸다(스펙 §5.3).
+    if (fetched.outcome.order.eligibleForOrderCreation === false && !cancel) return this.done(finding.id, 'not_eligible');
     const createPayload = { ...fetched.outcome.order.createPayload, orderId: wmsOrderId };
     return this.dbService.run(async (tx) => {
       await this.ordersPublisher.enqueue(

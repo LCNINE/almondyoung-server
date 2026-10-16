@@ -11,8 +11,8 @@ const cancelItem = {
   rawEvent: {},
   payload: { reason: 'ADMIN_CANCEL', cancelledBy: 'medusa', cancelledAt: '2026-10-16T00:00:00Z', refundRequired: false },
 };
-const fetched = (lifecycle: unknown[] = []): OrderSyncFetch =>
-  ({ outcome: { kind: 'order', order: { createPayload } }, lifecycle }) as unknown as OrderSyncFetch;
+const fetched = (lifecycle: unknown[] = [], eligibleForOrderCreation = true): OrderSyncFetch =>
+  ({ outcome: { kind: 'order', order: { createPayload, eligibleForOrderCreation } }, lifecycle }) as unknown as OrderSyncFetch;
 
 function setup(opts: { mapping?: string; fetch?: OrderSyncFetch | null; enqueueThrows?: boolean } = {}) {
   const enqueue = jest.fn(async (_event: { eventType: string }, _tx?: unknown) => {
@@ -102,5 +102,18 @@ describe('ChannelOrderRedeliveryManager', () => {
     const { manager, recordAttempt } = setup({ mapping: 'wms-1', fetch: fetched(), enqueueThrows: true });
     await expect(manager.redeliver(finding('missing_order'))).rejects.toThrow('outbox down');
     expect(recordAttempt).not.toHaveBeenCalled();
+  });
+
+  it('다시 가져온 주문이 이제 수집 대상이 아니면(취소 없는 환불 등) 보내지 않는다 (리뷰 I-4)', async () => {
+    const { manager, enqueue, recordAttempt } = setup({ mapping: 'wms-1', fetch: fetched([], false) });
+    await expect(manager.redeliver(finding('missing_order'))).resolves.toBe('not_eligible');
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(recordAttempt).toHaveBeenCalledWith('f1', 'not_eligible');
+  });
+
+  it('수집 대상이 아니어도 채널 취소가 있으면 SO 를 만들고 바로 취소한다(스펙 §5.3)', async () => {
+    const { manager, enqueue } = setup({ mapping: 'wms-1', fetch: fetched([cancelItem], false) });
+    await expect(manager.redeliver(finding('missing_order'))).resolves.toBe('enqueued');
+    expect(enqueue.mock.calls.map((call) => call[0].eventType)).toEqual(['OrderCreated', 'OrderCancelled']);
   });
 });
