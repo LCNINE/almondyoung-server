@@ -384,9 +384,11 @@ export class PrintOrderCancellationManager {
   // 와우프레스가 직접 취소를 거절했다. keepOnRefusal 이면 우리가 잡은 cancelling 표시만 풀어 원래대로 진행시킨다
   private async vendorRefused(row: PrintOrderRow, reason: string, run: Run, depth: number): Promise<Outcome> {
     if (!run.keepOnRefusal) return this.refuse(row, reason, run, depth);
-    const status = row.trackingNumber ? 'shipped' : 'submitted';
+    // 파일을 아직 못 보낸 주문은 제출 워커가 번호로 파일 전달부터 이어 가도록 대기열로 돌린다(운영자 생산 진행과 같은 판정)
+    const status = row.trackingNumber ? 'shipped' : row.fileDeliveredAt ? 'submitted' : 'pending';
+    const patch: Partial<PrintOrderRow> = status === 'pending' ? { status, nextAttemptAt: new Date() } : { status };
     // 기다리는 사이 중복 의심·번호 미저장 기록이 붙었으면 되돌리지 않는다. 다시 읽으면 운영자에게 넘어간다
-    if (!(await this.repository.compareAndSetUnprotected(row, { status }))) return this.reread(row, run, depth);
+    if (!(await this.repository.compareAndSetUnprotected(row, patch))) return this.reread(row, run, depth);
     this.logger.warn(`print order ${row.id} cancel refused (${run.mode}); kept as ${status}: ${reason}`);
     return 'refused';
   }

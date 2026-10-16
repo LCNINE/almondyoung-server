@@ -268,7 +268,7 @@ describe('PrintOrderCancellationManager', () => {
     });
 
     it('keepOnRefusal (customer cancel) puts a refused row back to submitted instead of cancel_refused', async () => {
-      const r = row(SUBMITTED);
+      const r = row({ ...SUBMITTED, fileDeliveredAt: new Date() });
       const { manager, store, wowpress } = setup(r);
       wowpress.cancel.mockRejectedValue(new WowpressApiError('취소할 수 없는 상태입니다'));
       wowpress.detail.mockResolvedValue(IN_PRODUCTION);
@@ -279,6 +279,22 @@ describe('PrintOrderCancellationManager', () => {
       expect(store.get(r.id).status).toBe('submitted');
       expect(store.get(r.id).cancelRefusedAt).toBeNull();
     });
+
+    it.each(['pending', 'failed'] as const)(
+      'keepOnRefusal requeues a %s row whose file was never delivered so the worker uploads it',
+      async (status) => {
+        const r = row({ ...SUBMITTED, status, fileDeliveredAt: null });
+        const { manager, store, wowpress } = setup(r);
+        wowpress.cancel.mockRejectedValue(new WowpressApiError('취소할 수 없는 상태입니다'));
+        wowpress.detail.mockResolvedValue(IN_PRODUCTION);
+
+        await expect(manager.cancelForOrder('so-1', 'gate', undefined, { keepOnRefusal: true })).rejects.toBeInstanceOf(
+          PrintInProductionError,
+        );
+        expect(store.get(r.id).status).toBe('pending');
+        expect(store.get(r.id).cancelRefusedAt).toBeNull();
+      },
+    );
 
     it('keepOnRefusal hands the row to the operator when duplicate evidence lands while waiting on wowpress', async () => {
       const r = row(SUBMITTED);
