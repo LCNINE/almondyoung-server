@@ -147,6 +147,9 @@ export class AdminChargeResponseDto {
 
   @ApiProperty()
   createdAt: Date;
+
+  @ApiProperty({ description: '마지막 상태 전이 시각. SUCCEEDED 행이면 승인 시각이다' })
+  updatedAt: Date;
 }
 
 export class AdminPaymentMethodSummaryDto {

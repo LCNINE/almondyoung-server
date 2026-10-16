@@ -45,13 +45,13 @@ describe('printRefundGate', () => {
     expect(isOrphanPayment(undefined, approved, late)).toBe(false);
   });
 
-  it('승인 시각은 성공한 승인·매입 중 가장 이른 것이다', () => {
+  it('승인 시각은 성공한 승인·매입이 성공으로 바뀐 시각 중 가장 이른 것이다', () => {
     expect(
       approvedAt([
-        { operation: 'CAPTURE', status: 'SUCCEEDED', createdAt: '2026-10-16T00:10:00Z' },
-        { operation: 'AUTHORIZE', status: 'SUCCEEDED', createdAt: '2026-10-16T00:05:00Z' },
-        { operation: 'AUTHORIZE', status: 'FAILED', createdAt: '2026-10-16T00:01:00Z' },
-        { operation: 'REFUND', status: 'SUCCEEDED', createdAt: '2026-10-16T00:00:00Z' },
+        { operation: 'CAPTURE', status: 'SUCCEEDED', updatedAt: '2026-10-16T00:10:00Z' },
+        { operation: 'AUTHORIZE', status: 'SUCCEEDED', updatedAt: '2026-10-16T00:05:00Z' },
+        { operation: 'AUTHORIZE', status: 'FAILED', updatedAt: '2026-10-16T00:01:00Z' },
+        { operation: 'REFUND', status: 'SUCCEEDED', updatedAt: '2026-10-16T00:00:00Z' },
       ])
     ).toBe(new Date('2026-10-16T00:05:00Z').getTime());
     expect(approvedAt([])).toBeNull();

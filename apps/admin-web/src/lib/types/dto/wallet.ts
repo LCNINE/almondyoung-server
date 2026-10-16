@@ -82,6 +82,7 @@ export interface ChargeDto {
   errorCode: string | null;
   errorMessage: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 
 // ─── Refund ─────────────────────────────────────────────────────────────────

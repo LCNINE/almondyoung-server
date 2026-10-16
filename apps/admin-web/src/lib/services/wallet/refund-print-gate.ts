@@ -22,13 +22,15 @@ export interface MedusaSessionOrder {
   cartCompleted: boolean;
 }
 
-// 돈이 처음 오간 시각. 승인 없이 바로 매입되는 결제도 있어 둘 중 이른 것을 쓴다
+// 돈이 처음 오간 시각. 승인 없이 바로 매입되는 결제도 있어 둘 중 이른 것을 쓴다.
+// Toss 는 결제창을 열 때 만든 행을 승인 시 SUCCEEDED 로 바꾸므로 createdAt 은 결제창 연 시각이다.
+// SUCCEEDED 뒤로는 REFUNDED 로만 가므로 SUCCEEDED 행의 updatedAt 이 승인 시각이다
 export const approvedAt = (
-  charges: ReadonlyArray<{ operation: string; status: string; createdAt: string }>
+  charges: ReadonlyArray<{ operation: string; status: string; updatedAt: string }>
 ): number | null => {
   const times = charges
     .filter((c) => (c.operation === 'AUTHORIZE' || c.operation === 'CAPTURE') && c.status === 'SUCCEEDED')
-    .map((c) => new Date(c.createdAt).getTime());
+    .map((c) => new Date(c.updatedAt).getTime());
   return times.length > 0 ? Math.min(...times) : null;
 };
 
