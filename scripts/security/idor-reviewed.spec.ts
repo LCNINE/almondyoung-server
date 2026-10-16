@@ -153,9 +153,15 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core GET /library/ownerships': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/library/services/ownership.service.ts:56',
+    evidence: 'apps/core/src/modules/library/services/ownership.service.ts:79',
     predicate: 'eq(digitalAssetOwnerships.customerId, customerId),',
     note: 'OwnershipController.list -> service.listForCustomer(customerId, ...); customerId 는 컨트롤러의 _requireUserId(req) 로 획득.',
+  },
+  'core POST /library/ownerships/order-status': {
+    verdict: 'SAFE',
+    evidence: 'apps/core/src/modules/library/services/ownership.service.ts:47',
+    predicate: 'eq(digitalAssetOwnerships.customerId, customerId),',
+    note: 'OwnershipController.orderStatus -> service.grantedMedusaOrderIds(customerId, body.channelOrderIds); customerId 는 _requireUserId(req). 요청한 주문 ID 는 inArray 필터일 뿐이고 본인 소유·미회수 권한만 돌려주므로 남의 주문 ID 를 넣어도 빈 결과다.',
   },
   'core GET /library/ownerships/:id/download': {
     verdict: 'SAFE',
@@ -954,15 +960,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(152);
+    expect(targets).toHaveLength(153);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(152);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(151);
+    expect(new Set(targets.map(keyOf)).size).toBe(153);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(152);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

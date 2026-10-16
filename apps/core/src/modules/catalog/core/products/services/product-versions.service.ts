@@ -59,6 +59,7 @@ import { AuditChanges, diffFields, recordProductAudit } from './product-audit-lo
  * 부르므로 출처는 호출부가 넘겨야 한다 — 넘기지 않으면 payload 에 키가 생기지 않는다.
  */
 export interface PublishVersionOptions {
+  expectedActiveVersionId?: string;
   origin?: ProductPublishOrigin;
   importSessionId?: string;
 }
@@ -289,6 +290,19 @@ export class ProductVersionsService {
       if (version.status !== 'draft' && version.status !== 'inactive') {
         throw new BadRequestException('Only draft or inactive versions can be published');
       }
+      if (options?.expectedActiveVersionId) {
+        // The active row lock also orders a concurrent ordinary publish, which updates this row.
+        const [active] = await tx
+          .select({ id: productMasterVersions.id })
+          .from(productMasterVersions)
+          .where(and(eq(productMasterVersions.masterId, version.masterId), eq(productMasterVersions.status, 'active')))
+          .for('update');
+
+        if (active?.id !== options.expectedActiveVersionId) {
+          throw new ConflictError('활성 버전이 변경되어 발행하지 않았습니다. 최신 상품을 다시 확인해 주세요.');
+        }
+      }
+
       const changeReason = version.status === 'inactive' ? 'rollback' : 'published';
 
       let previousActiveVersion: ProductMasterVersion | null = null;

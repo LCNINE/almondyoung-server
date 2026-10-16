@@ -24,8 +24,11 @@ export function StatusBar({ editor }: { editor: AlmondEditor }) {
     setShowCutline,
     showSafety,
     setShowSafety,
+    showOverflow,
+    setShowOverflow,
     zoom,
-    setZoom,
+    zoomBy,
+    zoomReset,
   } = editor
   return (
     <>
@@ -47,15 +50,19 @@ export function StatusBar({ editor }: { editor: AlmondEditor }) {
       <div className="flex h-12 shrink-0 items-center gap-3 border-t bg-white px-4 text-sm">
         <button
           className="rounded border px-2"
-          onClick={() => setZoom(Math.max(0.4, zoom - 0.2))}
+          onClick={() => zoomBy(1 / 1.25)}
         >
           −
         </button>
-        <span className="w-12 text-center">{Math.round(zoom * 100)}%</span>
         <button
-          className="rounded border px-2"
-          onClick={() => setZoom(Math.min(2, zoom + 0.2))}
+          type="button"
+          title="화면에 맞추기"
+          className="w-12 text-center"
+          onClick={zoomReset}
         >
+          {Math.round(zoom * 100)}%
+        </button>
+        <button className="rounded border px-2" onClick={() => zoomBy(1.25)}>
           +
         </button>
         <span className="mx-2 h-5 border-l" />
@@ -142,6 +149,7 @@ export function StatusBar({ editor }: { editor: AlmondEditor }) {
                 ["눈금자", showRuler, setShowRuler],
                 ["재단선", showCutline, setShowCutline],
                 ["안전선", showSafety, setShowSafety],
+                ["영역 밖 보기", showOverflow, setShowOverflow],
               ] as const
             ).map(([label, checked, set]) => (
               <label key={label} className="mb-2 flex items-center gap-2">

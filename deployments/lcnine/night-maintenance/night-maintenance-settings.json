@@ -1,0 +1,13 @@
+{
+  "runDate": "2026-10-17",
+  "enabled": true,
+  "operationId": "approved-maintenance-202610",
+  "reviews": {
+    "key": "inputs/approved-maintenance-202610/reviews.json",
+    "sha256": "0a36e1257869308ab507fe8d437804fe692140dc17844d5137fb7c302ad33b87"
+  },
+  "products": {
+    "key": "inputs/approved-maintenance-202610/products.json",
+    "sha256": "a9c505c2345901a2b652e8f13851831b9a6d7d086c7cfb5e05c17ab99aab8a62"
+  }
+}

@@ -13,6 +13,8 @@ import { Logger as PinoLogger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { FILE_SIZE_LIMIT } from './constants/file.constants';
 import { mountEventChainContext } from '@app/events';
+import { createCorsDelegator } from './api/oauth/cors/public-client-cors';
+import { PublicClientOriginsCache } from './api/oauth/cors/public-client-origins.cache';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -43,7 +45,7 @@ async function bootstrap() {
 
   logger.log('CORS:', corsOrigins);
 
-  await app.register(fastifyCors, {
+  const staticCorsOptions = {
     origin:
       process.env.NODE_ENV === 'production'
         ? corsOrigins
@@ -61,6 +63,17 @@ async function bootstrap() {
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cookie', 'Set-Cookie'],
     exposedHeaders: ['Set-Cookie'],
+  };
+
+  // 위 목록은 모든 경로에서 credentials 를 연다. 그 밖에 공개 OAuth 클라이언트(SPA)의 redirect_uri
+  // origin 은 /oauth/token 등 OAuth 엔드포인트에 한해 credentials 없이 연다 — public-client-cors.ts.
+  const publicClientOrigins = app.get(PublicClientOriginsCache);
+  await app.register(fastifyCors, {
+    delegator: createCorsDelegator({
+      staticOptions: staticCorsOptions,
+      isPublicClientOrigin: (origin) => publicClientOrigins.isAllowed(origin),
+      onLookupError: (error) => logger.warn(`공개 클라이언트 CORS origin 조회 실패: ${String(error)}`),
+    }),
   });
 
   await app.register(fastifyHelmet);

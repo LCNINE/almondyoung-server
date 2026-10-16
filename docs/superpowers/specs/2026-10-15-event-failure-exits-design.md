@@ -8,6 +8,18 @@
 >
 > **계획 단계 정정 — 컨트롤러는 라이브러리에 두지 않는다.** §9 의 «라이브러리가 컨트롤러 모듈을 제공»은 #705 의 원칙과 어긋난다.
 > `EventTraceApiModule` 처럼 라이브러리는 조회·명령 서비스만 제공하고, 각 앱이 자기 인가 데코레이터와 함께 컨트롤러를 선언한다(앱마다 전역 가드가 다르다).
+>
+> **계획·구현 단계 결정.**
+> - §6.6 켜는 스위치 = 앱이 `EventFailuresModule` 을 import 한다(`startConsumer` 가 런타임을 찾아 붙인다).
+> - §6.3-3 파싱 실패 기록은 하지 않음 → 구현에서 바뀜: 파싱 불가 envelope 는 일반 경로로 기록되고, 파싱됐지만 종류가 다른 핸들러는 아무것도 하지 않는다(스키마 위반이 파티션을 막지 않게).
+> - §7.2 `startConsumer` 가 `new ServerKafka(...)` 를 직접 만들어 `{ strategy }` 로 넘긴다.
+> - §9 channel-adapter 컨트롤러에 `@UseFilters(GlobalExceptionFilter)`.
+> - §8.3 다시 보내기 중 죽은 lease 는 한도에 닿았으면 FAILED 로 되돌린다(`requeueStaleProcessingEvents`).
+> - 순서 lock 구분자는 NUL 이 아니라 U+001F(Postgres 가 NUL 거부).
+> - **순서(outbox 선택 조건·컨슈머 보류)는 앱이 고른 주문 생애 토픽에만 건다**(최종 리뷰 B) — `OutboxConfig.sequencedTopics`, `EventFailuresModule.forRoot({ sequencedTopics })`. D8 의 뜻은 «같은 주문»이었다. 모든 토픽에 걸면 «마지막 값이 이긴다» 스트림(`ProductSellableQuantityChanged`, 키=품목)이 주기마다 품목당 한 행만 나가 적체가 쌓이고, 한 번의 실패가 더 새 재고 값을 몇 시간씩 묶는다. 목록 밖 토픽의 컨슈머 실패도 `failed` 로 기록은 되고, 그 행은 키 없는 행처럼 혼자 한 순서다. 아래 §8.1·§8.2·§11 의 `sequenceByAggregate` 는 이 목록으로 읽는다.
+> - 실패 테이블이 없으면(마이그 전 배포) `startConsumer` 가 실패 테이블 모드를 켜지 않고 옛 `.dlq` 경로로 돈다(최종 리뷰 A). 순서는 여전히 `migrate → deploy`.
+> - **§10 화면(PR 2, 사용자 결정 2026-10-15).** 경로는 `/system/event-failures` 가 아니라 **`/events/failures`**(기존 `/events/trace` 옆), 메뉴는 «시스템» 그룹 대신 **«주문/출고관리 › 정체 보드» 바로 아래 «이벤트 실패»**(admin·master) — «시스템» 그룹은 없다.
+>   확인 UX: 단건 다시 넣기·다시 보내기는 확인 없이 바로(한 번만 시도), 종결은 사유 대화상자(필수·500자) + «뒤 N건이 이어서 처리됩니다», 전체 다시 넣기·보내기는 건수를 보여 주는 확인 대화상자. 토픽 거르기 UI 는 두지 않는다. 계획 `docs/superpowers/plans/2026-10-15-event-failure-exits-pr2.md`.
 
 ## 1. 배경
 
@@ -297,7 +309,7 @@ unlock
 
 ## 10. 화면 (admin-web)
 
-경로 `/system/event-failures`, 사이드바 «시스템» 그룹. 프록시는 core `/proxy/api`, channel-adapter `/proxy/channel`.
+경로 `/system/event-failures`, 사이드바 «시스템» 그룹(→ 머리 블록: `/events/failures`, 주문/출고관리 › 정체 보드 아래). 프록시는 core `/proxy/api`, channel-adapter `/proxy/channel`.
 
 - 서비스 탭(core · channel-adapter), 탭 배지 = `summary` 의 안 푼 건수 합
 - 탭 안에 «받다 실패»(dead letter, 순서 단위)와 «보내다 실패»(outbox) 두 목록

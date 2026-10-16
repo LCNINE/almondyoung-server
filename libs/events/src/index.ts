@@ -20,6 +20,7 @@ export * from './transport/kafka.transport';
 export * from './transport/in-memory.broker';
 export * from './transport/in-memory.transport';
 export * from './transport/in-memory.server';
+export * from './transport/kafka-context.factory';
 
 // Publisher
 export * from './publishers/stream-publisher.service';
@@ -43,6 +44,21 @@ export * from './consumers/consumer-lag.collector';
 // DLQ
 export * from './dlq/dlq.types';
 export * from './dlq/dlq-handler.service';
+
+// 컨슈머 실패 기록 (#1016 8번) — 인터셉터가 쓰는 port 와 다시 넣기 헤더
+export * from './dead-letter/dead-letter.types';
+export * from './dead-letter/dead-letter.schema';
+export { DeadLetterStore } from './dead-letter/dead-letter.store';
+export { DeadLetterRuntime } from './dead-letter/dead-letter.runtime';
+export { FailureActionLog } from './dead-letter/failure-action.log';
+export type { FailureActionEntry, FailureActionRow } from './dead-letter/failure-action.log';
+export { DeadLetterRedriver } from './dead-letter/dead-letter.redriver';
+export type { RedriveResult, RedriveAllResult, RedriveStop } from './dead-letter/dead-letter.redriver';
+export * from './dead-letter/dead-letter.query';
+export { EventFailuresModule } from './dead-letter/event-failures.module';
+export { EVENT_FAILURES_OPTIONS } from './dead-letter/event-failures.options';
+export type { EventFailuresOptions } from './dead-letter/event-failures.options';
+export * from './dead-letter/event-failures.http';
 
 // Retry & Auto DLQ
 export * from './retry/retry-policy.types';
@@ -68,6 +84,7 @@ export * from './outbox/outbox-writer.port';
 export * from './outbox/outbox-dispatch-gate.port';
 export * from './outbox/outbox-publisher.service';
 export * from './outbox/outbox-dispatcher.service';
+export * from './outbox/outbox-failures.service';
 export * from './outbox/outbox.metrics';
 export * from './outbox/outbox-metrics.collector';
 

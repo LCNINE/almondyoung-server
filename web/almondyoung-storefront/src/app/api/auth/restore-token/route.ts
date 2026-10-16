@@ -53,7 +53,9 @@ type OidcTokenResponse = {
  * 표준 OIDC refresh_token grant 로 user-service 의 access/refresh 를 회전한다.
  * RFC 6749 §6. 기존의 user-service 자체 /auth/restore-token (비표준) 호출을 대체.
  */
-async function refreshOidcTokens(refreshToken: string): Promise<OidcTokenResponse> {
+async function refreshOidcTokens(
+  refreshToken: string
+): Promise<OidcTokenResponse> {
   const issuer =
     process.env.OIDC_ISSUER_URL ?? process.env.NEXT_PUBLIC_USER_SERVICE_URL
   const clientId = process.env.OIDC_CLIENT_ID ?? "medusa-storefront"
@@ -92,7 +94,9 @@ async function refreshOidcTokens(refreshToken: string): Promise<OidcTokenRespons
  * Medusa 표준 /auth/token/refresh — 기존 _medusa_jwt 를 Bearer 로 받아 새 JWT 발급.
  * user-service refresh 와 같은 호출 안에서 함께 회전시켜 두 토큰 라이프사이클을 묶는다.
  */
-async function refreshMedusaJwt(currentMedusaJwt: string): Promise<string | null> {
+async function refreshMedusaJwt(
+  currentMedusaJwt: string
+): Promise<string | null> {
   try {
     const baseUrl = requireBackendBaseUrl("medusa")
     const publishableKey = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY ?? ""
@@ -201,8 +205,9 @@ async function restoreTokens(
       }
     }
 
-    const isJsonFailure =
-      failureResponse.headers.get("content-type")?.includes("application/json")
+    const isJsonFailure = failureResponse.headers
+      .get("content-type")
+      ?.includes("application/json")
 
     if (isJsonFailure) {
       const response = NextResponse.json(
@@ -239,10 +244,13 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const returnTo = normalizeReturnTo(request.nextUrl.searchParams.get("return_to"))
+  const returnTo = normalizeReturnTo(
+    request.nextUrl.searchParams.get("return_to")
+  )
   return restoreTokens(
     request,
     NextResponse.redirect(new URL(returnTo, request.url)),
-    NextResponse.redirect(new URL("/", request.url))
+    // 갱신에 실패해도(쿠키는 지운 채) 보던 주소로 돌려보낸다. 로그인이 필요한 화면은 그 화면이 로그인으로 보낸다
+    NextResponse.redirect(new URL(returnTo, request.url))
   )
 }

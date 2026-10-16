@@ -134,6 +134,9 @@ export const getBreadcrumbItems = (pathname: string): BreadcrumbItem[] => {
     if (resType && resId) items.push({ label: `${resType} / ${resId}` });
   } else if (pathname === '/events/trace') {
     items.push({ label: '이벤트 추적' });
+  } else if (pathname === '/events/failures') {
+    items.push({ label: '주문/출고관리' });
+    items.push({ label: '이벤트 실패' });
   }
 
   return items;

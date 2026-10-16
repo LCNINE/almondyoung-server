@@ -60,25 +60,3 @@ export interface DLQStats {
     total: number;
   };
 }
-
-/**
- * 재처리 옵션
- */
-export interface ReprocessOptions {
-  skipValidation?: boolean;
-  targetPartition?: number;
-  delayMs?: number;
-}
-
-/**
- * 일괄 재처리 결과
- */
-export interface BatchReprocessResult {
-  total: number;
-  succeeded: number;
-  failed: number;
-  errors: Array<{
-    dlqMessageId: string;
-    error: string;
-  }>;
-}

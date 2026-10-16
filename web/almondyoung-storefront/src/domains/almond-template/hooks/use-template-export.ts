@@ -13,7 +13,13 @@ function download(name: string, content: BlobPart, type: string) {
 export function svgMarkup(source: SVGSVGElement, design: Design) {
   const clone = source.cloneNode(true) as SVGSVGElement
   clone.querySelector("#print-guides")?.remove()
-  clone.querySelector("#selection-outline")?.remove()
+  for (const id of [
+    "selection-outline",
+    "overflow-ghost",
+    "group-outline",
+    "snap-guides",
+  ])
+    clone.querySelector(`#${id}`)?.remove()
   clone.setAttribute("xmlns", "http://www.w3.org/2000/svg")
   clone.setAttribute("width", `${design.widthMm}mm`)
   clone.setAttribute("height", `${design.heightMm}mm`)
@@ -47,9 +53,7 @@ export function useTemplateExport({
     )
   const exportSvg = () => {
     const source = preview
-      ? (document.querySelector(
-          '[aria-label="시안 미리보기"] svg'
-        ) as SVGSVGElement | null)
+      ? (document.querySelector("#almond-proof") as SVGSVGElement | null)
       : svgRef.current
     if (!source) return
     download(
@@ -62,9 +66,7 @@ export function useTemplateExport({
     )
   }
   const printProof = () => {
-    const svg = document.querySelector(
-      '[aria-label="시안 미리보기"] svg'
-    ) as SVGSVGElement | null
+    const svg = document.querySelector("#almond-proof") as SVGSVGElement | null
     if (!svg) return
     const page = window.open("", "_blank")
     if (!page)

@@ -7,7 +7,7 @@ import { outbox_events } from './outbox.schema';
 import { OutboxConfig } from './outbox.types';
 import { recordOutboxFailed, recordOutboxPublished } from './outbox.metrics';
 import type { OutboxDispatchGate } from './outbox-dispatch-gate.port';
-import { eq, inArray, and, lt, lte, or, isNull, not, ilike, sql, type SQL } from 'drizzle-orm';
+import { eq, inArray, notInArray, and, lt, lte, or, isNull, not, ilike, sql, type SQL } from 'drizzle-orm';
 
 /**
  * 실패 후 다음 시도까지의 대기(초). core 로컬 판본
@@ -17,11 +17,23 @@ import { eq, inArray, and, lt, lte, or, isNull, not, ilike, sql, type SQL } from
 export const OUTBOX_RETRY_DELAYS_SECONDS = [10, 30, 60, 300] as const;
 
 /**
+ * 주문 경로 앱(core·channel-adapter)이 쓰는 긴 간격표 (#1016 7번, 스펙 D4). `maxRetries` 8 과 짝이고 합이 약 1시간 52분이다 —
+ * 그 안에 끝나는 장애는 사람 없이 풀린다. 마지막 시도까지 기다리는 횟수는 `maxRetries - 1` 이다.
+ */
+export const LONG_OUTBOX_RETRY_DELAYS_SECONDS = [10, 30, 60, 300, 900, 1800, 3600] as const;
+export const LONG_OUTBOX_MAX_RETRIES = 8;
+
+/** `retryCount` 는 실패 **후** 값이다. 표를 넘으면 마지막 값을 유지한다. */
+export function nextAttemptDelaySeconds(retryCount: number, delays: readonly number[]): number {
+  return delays[Math.min(retryCount - 1, delays.length - 1)];
+}
+
+/**
  * `acquireEventBatch` 가 고른 한 행. select 투영과 같은 모양이며, 이 타입이 있어서
  * `processEvent`/`handleFailure` 가 `any` 를 받지 않아도 된다 — `partitionKey` 처럼 **없을 수도
  * 있는** 컬럼이 새로 생겼기 때문에, 옵셔널 여부를 타입이 말해 주는 편이 낫다.
  */
-type AcquiredOutboxRow = {
+export type OutboxDispatchRow = {
   id: number;
   topic: string;
   aggregateType: string;
@@ -82,6 +94,10 @@ export class OutboxDispatcher {
     private readonly dispatchGate?: OutboxDispatchGate,
   ) {
     this.publisherMap = publisherMap;
+    const retryDelaysSeconds = config?.retryDelaysSeconds ?? OUTBOX_RETRY_DELAYS_SECONDS;
+    if (retryDelaysSeconds.length === 0 || retryDelaysSeconds.some((s) => !(s > 0))) {
+      throw new Error('OutboxConfig.retryDelaysSeconds 는 양수 하나 이상이어야 한다 — 빈 표는 0초 재시도 폭주가 된다');
+    }
     this.config = {
       dispatchIntervalMs: config?.dispatchIntervalMs ?? 5000,
       batchSize: config?.batchSize ?? 100,
@@ -89,6 +105,8 @@ export class OutboxDispatcher {
       processingTimeoutMs: config?.processingTimeoutMs ?? 300_000,
       cleanupDays: config?.cleanupDays ?? 7,
       strictPartitionOrdering: config?.strictPartitionOrdering ?? false,
+      retryDelaysSeconds,
+      sequencedTopics: [...(config?.sequencedTopics ?? [])],
     };
   }
 
@@ -144,6 +162,8 @@ export class OutboxDispatcher {
             this.pauseCondition(),
             // 파티션 순서 보장도 같은 이유로 선택 단계에서 건다 (Task 6-C-3).
             this.partitionOrderCondition(),
+            // 같은 주문의 순서 (#1016 7번, `sequencedTopics` 토픽만). 선택 단계에서 거는 이유는 위 두 조건과 같다.
+            this.aggregateSequenceCondition(),
           ),
         )
         .orderBy(outbox_events.createdAt)
@@ -219,6 +239,41 @@ export class OutboxDispatcher {
   }
 
   /**
+   * `sequencedTopics` 토픽의 행은 같은 `(topic, aggregate_id)` 의 **더 이른** 미발행·굳은 행이 있으면 후보에서 뺀다
+   * (#1016 7번, 스펙 §8.2). 목록 밖 토픽의 행은 조건의 첫 갈래(`topic not in`)로 그대로 통과한다. 목록이 비면 `undefined`.
+   *
+   * 키가 `partition_key` 가 아니라 `aggregate_id` 인 이유: channel-adapter 는 주문 이벤트의 파티션 키가 채널
+   * 이름이라 그 키로 막으면 채널 전체가 멈춘다. 주문 하나를 가리키는 것은 `aggregate_id` 다.
+   * `FAILED` 를 막는 것이 `partitionOrderCondition` 과 반대인 이유·토픽을 고르는 이유는 `OutboxConfig.sequencedTopics` 주석.
+   * 인덱스는 더하지 않았다 — 조건이 미발행 상태만 보고 `PUBLISHED` 는 7일 뒤 지워지므로 작을 것으로 보지만 확인하지 않았다.
+   * 배포 전 `EXPLAIN ANALYZE` 가 게이트다 (스펙 §11). 느리면 `(topic, aggregate_id, created_at)` 부분 인덱스를 더한다.
+   */
+  private aggregateSequenceCondition(): SQL | undefined {
+    const topics = this.config.sequencedTopics;
+    if (topics.length === 0) return undefined;
+
+    return or(
+      notInArray(outbox_events.topic, [...topics]),
+      sql`not exists (
+        select 1
+        from ${outbox_events} previous
+        where previous.topic = ${outbox_events.topic}
+          and previous.aggregate_id = ${outbox_events.aggregateId}
+          and previous.status in ('PENDING', 'PROCESSING', 'FAILED')
+          and (
+            previous.created_at < ${outbox_events.createdAt}
+            or (previous.created_at = ${outbox_events.createdAt} and previous.id < ${outbox_events.id})
+          )
+      )`,
+    );
+  }
+
+  /** 순서를 지키는 토픽 — `OutboxFailuresService` 가 «뒤에서 기다리는 수»를 셀 때 같은 목록을 쓴다 */
+  get sequencedTopics(): readonly string[] {
+    return this.config.sequencedTopics;
+  }
+
+  /**
    * lease 만료 회수. 발행 도중 프로세스가 죽으면 행이 `PROCESSING` 에 남으므로,
    * `processingTimeoutMs` 가 지난 것을 다시 `PENDING` 으로 돌린다.
    *
@@ -231,6 +286,15 @@ export class OutboxDispatcher {
     const threshold = new Date(now.getTime() - this.config.processingTimeoutMs);
     const timeoutSeconds = Math.floor(this.config.processingTimeoutMs / 1000);
 
+    const stale = and(
+      eq(outbox_events.status, 'PROCESSING'),
+      or(isNull(outbox_events.processingStartedAt), lte(outbox_events.processingStartedAt, threshold)),
+    );
+
+    // 사람의 «다시 보내기»는 `FAILED → PROCESSING` 으로 lease 하되 `retry_count` 를 한도(maxRetries)에 둔 채로 둔다.
+    // 그 도중 프로세스가 죽으면 PENDING 으로 되돌리면 안 된다 — acquire 가 `retry_count < maxRetries` 만 고르므로
+    // 영영 선택되지 않고, FAILED 도 아니라 목록·다시 보내기·종결 어디에도 안 보이며, 같은 주문 뒤 행을 계속 막는다.
+    // 그래서 한도에 닿은 행은 FAILED 로 돌려보낸다. 다른 앱 경로는 한도에 닿은 행을 lease 하지 않으므로 동작이 그대로다.
     const result = await this.db
       .update(outbox_events)
       .set({
@@ -239,14 +303,23 @@ export class OutboxDispatcher {
         nextAttemptAt: now,
         errorMessage: `Requeued after ${timeoutSeconds}s processing timeout`,
       })
-      .where(
-        and(
-          eq(outbox_events.status, 'PROCESSING'),
-          or(isNull(outbox_events.processingStartedAt), lte(outbox_events.processingStartedAt, threshold)),
-        ),
-      )
+      .where(and(stale, lt(outbox_events.retryCount, this.config.maxRetries)))
       .returning({ id: outbox_events.id });
 
+    const backToFailed = await this.db
+      .update(outbox_events)
+      .set({
+        status: 'FAILED',
+        processingStartedAt: null,
+        failedAt: now,
+        errorMessage: `Requeued after ${timeoutSeconds}s processing timeout during manual resend`,
+      })
+      .where(stale)
+      .returning({ id: outbox_events.id });
+
+    if (backToFailed.length > 0) {
+      this.logger.warn(`Returned ${backToFailed.length} stale manual-resend outbox events to FAILED`);
+    }
     if (result.length > 0) {
       this.logger.warn(`Requeued ${result.length} stale outbox events`);
     }
@@ -265,45 +338,70 @@ export class OutboxDispatcher {
     return resolved;
   }
 
-  private async processEvent(event: AcquiredOutboxRow) {
+  private async processEvent(event: OutboxDispatchRow) {
     try {
-      const publisher = this.publisherFor(event.topic);
-
-      if (!publisher) {
-        throw new Error(`No publisher found for topic: ${event.topic}`);
-      }
-
-      // 검증을 탄다 (ADR-0029 §5). `enqueue` 를 지나지 않은 행 — 이 변경 이전에 적재된 PENDING
-      // 행 — 이 스키마를 위반하면 여기서 실패로 기록되고 재시도 후 FAILED 로 남는다. 발행돼서
-      // 소비자 DLQ 에 쌓이는 것보다 발행 측에 남는 편이 진단에 가깝다.
-      //
-      // partitionKey 는 ADR-0029 §5-1 로 승격된 컬럼이다. 비어 있으면 aggregateId 로 폴백하며,
-      // 그것이 컬럼이 생기기 전의 동작이다 — 현재 적재기(`OutboxPublisher.write`)는 아직 이
-      // 컬럼을 채우지 않으므로 라이브 동작은 그대로다.
-      // `payload` 컬럼은 jsonb 라 drizzle 이 `unknown` 으로 준다. 이 행에 실린 것이 조립·검증을
-      // 마친 envelope 라는 것은 적재 쪽(`OutboxWriter.write`)의 계약이므로 여기서 좁힌다.
-      await publisher.publishStoredEnvelope(event.payload as MessageEnvelope, event.partitionKey ?? event.aggregateId);
-
-      await this.db
-        .update(outbox_events)
-        .set({
-          status: 'PUBLISHED',
-          processingStartedAt: null,
-          publishedAt: new Date(),
-        })
-        .where(eq(outbox_events.id, event.id));
-
-      recordOutboxPublished(event.topic);
-      this.logger.log(`Event ${event.id} published: ${event.eventType}`);
+      await this.publishAndMark(event);
     } catch (error) {
       await this.handleFailure(event, error);
+    }
+  }
+
+  /** 발행 + `PUBLISHED` 표시. 디스패처 주기와 사람의 «다시 보내기»가 같은 길을 탄다(검증 포함). */
+  private async publishAndMark(event: OutboxDispatchRow): Promise<void> {
+    const publisher = this.publisherFor(event.topic);
+
+    if (!publisher) {
+      throw new Error(`No publisher found for topic: ${event.topic}`);
+    }
+
+    // 검증을 탄다 (ADR-0029 §5). `enqueue` 를 지나지 않은 행 — 이 변경 이전에 적재된 PENDING
+    // 행 — 이 스키마를 위반하면 여기서 실패로 기록되고 재시도 후 FAILED 로 남는다. 발행돼서
+    // 소비자 DLQ 에 쌓이는 것보다 발행 측에 남는 편이 진단에 가깝다.
+    //
+    // partitionKey 는 ADR-0029 §5-1 로 승격된 컬럼이다. 비어 있으면 aggregateId 로 폴백하며,
+    // 그것이 컬럼이 생기기 전의 동작이다 — 현재 적재기(`OutboxPublisher.write`)는 아직 이
+    // 컬럼을 채우지 않으므로 라이브 동작은 그대로다.
+    // `payload` 컬럼은 jsonb 라 drizzle 이 `unknown` 으로 준다. 이 행에 실린 것이 조립·검증을
+    // 마친 envelope 라는 것은 적재 쪽(`OutboxWriter.write`)의 계약이므로 여기서 좁힌다.
+    await publisher.publishStoredEnvelope(event.payload as MessageEnvelope, event.partitionKey ?? event.aggregateId);
+
+    await this.db
+      .update(outbox_events)
+      .set({
+        status: 'PUBLISHED',
+        processingStartedAt: null,
+        publishedAt: new Date(),
+      })
+      .where(eq(outbox_events.id, event.id));
+
+    recordOutboxPublished(event.topic);
+    this.logger.log(`Event ${event.id} published: ${event.eventType}`);
+  }
+
+  /**
+   * 사람이 선점(`FAILED → PROCESSING`)한 행을 **한 번** 보낸다 (#1016 7번, 스펙 §8.3). 실패하면 `FAILED` 로 되돌리고
+   * 오류만 갱신한다 — `retry_count` 를 그대로 두는 이유는 다시 2시간 재시도 일정에 태우지 않기 위해서다.
+   */
+  async publishLeasedRow(event: OutboxDispatchRow): Promise<{ ok: true } | { ok: false; error: string }> {
+    try {
+      await this.publishAndMark(event);
+      return { ok: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.db
+        .update(outbox_events)
+        .set({ status: 'FAILED', processingStartedAt: null, errorMessage: message, failedAt: new Date() })
+        .where(eq(outbox_events.id, event.id));
+      recordOutboxFailed(event.topic, true);
+      this.logger.error(`Event ${event.id} resend failed: ${message}`);
+      return { ok: false, error: message };
     }
   }
 
   /**
    * `retryCount` 가 증가하는 **유일한** 지점.
    */
-  private async handleFailure(event: AcquiredOutboxRow, error: unknown) {
+  private async handleFailure(event: OutboxDispatchRow, error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     const newRetryCount = event.retryCount + 1;
     const isFinalFailure = newRetryCount >= this.config.maxRetries;
@@ -328,7 +426,7 @@ export class OutboxDispatcher {
   }
 
   private calculateNextAttempt(retryCount: number): Date {
-    const delay = OUTBOX_RETRY_DELAYS_SECONDS[Math.min(retryCount - 1, OUTBOX_RETRY_DELAYS_SECONDS.length - 1)];
+    const delay = nextAttemptDelaySeconds(retryCount, this.config.retryDelaysSeconds);
     return new Date(Date.now() + delay * 1000);
   }
 

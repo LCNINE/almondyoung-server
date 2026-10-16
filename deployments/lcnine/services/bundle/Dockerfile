@@ -46,10 +46,26 @@ RUN npm run build:analytics \
   && npm run build:search \
   && npm run build:ugc-service
 
+# === 인쇄용 글꼴 (apps/ugc-service/print-fonts.txt) ===
+FROM --platform=$BUILDPLATFORM node:22-alpine AS print-fonts
+COPY apps/ugc-service/print-fonts.txt /tmp/print-fonts.txt
+RUN set -eu; mkdir -p /fonts; \
+  sha=$(sed -n 's/^commit //p' /tmp/print-fonts.txt); \
+  grep -v -e '^#' -e '^commit ' -e '^$' /tmp/print-fonts.txt | while read -r path; do \
+    for try in 1 2 3 4 5; do \
+      wget -q -T 60 -O "/fonts/${path##*/}" "https://raw.githubusercontent.com/google/fonts/$sha/ofl/$path" && break; \
+      sleep 5; \
+    done; \
+    [ -s "/fonts/${path##*/}" ] || { echo "글꼴을 받지 못했습니다: $path" >&2; exit 1; }; \
+  done
+
 # === 런타임 ===
 FROM base AS runner
 # ugc-service 아몬드템플릿 미리보기·인쇄 파일 변환(rsvg-convert → gs)과 한글 글꼴. apps/ugc-service/Dockerfile 과 같다.
 RUN apk add --no-cache ghostscript rsvg-convert fontconfig font-noto-cjk
+COPY --from=print-fonts /fonts /usr/share/fonts/almond
+COPY apps/ugc-service/print-fonts.conf /etc/fonts/conf.d/60-almond-print.conf
+RUN fc-cache -f
 COPY --from=deps-prod /app/node_modules ./node_modules
 COPY package*.json ./
 COPY --from=builder /app/dist ./dist

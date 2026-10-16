@@ -7,6 +7,18 @@ import {
   type Layer,
 } from "../lib/document"
 import { makeLayer } from "../lib/layer"
+import { textBoxFor } from "../components/graphic"
+
+// 바뀌면 글자 덩치가 달라지는 속성. 이때 상자를 글자에 다시 맞춘다
+const TEXT_SHAPE_KEYS = new Set([
+  "text",
+  "fontFamily",
+  "fontWeight",
+  "italic",
+  "fontSize",
+  "lineHeight",
+  "widthScale",
+])
 import type { EditorMode } from "./use-template-storage"
 
 type Params = {
@@ -20,6 +32,8 @@ type Params = {
   size: string
   setSelectedId: (id: string | null) => void
   setMessage: (message: string) => void
+  group: Layer[]
+  setGroupIds: (ids: string[]) => void
 }
 
 export function useLayerActions({
@@ -33,13 +47,32 @@ export function useLayerActions({
   size,
   setSelectedId,
   setMessage,
+  group,
+  setGroupIds,
 }: Params) {
-  const [copied, setCopied] = useState<Layer | null>(null)
+  const [copied, setCopied] = useState<Layer[]>([])
 
-  const patch = (id: string, value: Partial<Layer>) =>
-    change(updateLayer(design, side, id, value))
+  const fitText = (layer: Layer): Layer =>
+    layer.type === "text"
+      ? { ...layer, ...textBoxFor(layer, layer.fontSize ?? 10, design) }
+      : layer
+  const patch = (id: string, value: Partial<Layer>) => {
+    const layer = layers.find((item) => item.id === id)
+    const reshapes =
+      layer?.type === "text" &&
+      !("width" in value) &&
+      Object.keys(value).some((key) => TEXT_SHAPE_KEYS.has(key))
+    change(
+      updateLayer(
+        design,
+        side,
+        id,
+        reshapes ? fitText({ ...layer, ...value }) : value
+      )
+    )
+  }
   const add = (type: Layer["type"], extra: Partial<Layer> = {}) => {
-    const layer = { ...makeLayer(type, design), ...extra }
+    const layer = fitText({ ...makeLayer(type, design), ...extra })
     change({ ...design, [side]: [...layers, layer] })
     setSelectedId(layer.id)
   }
@@ -55,23 +88,44 @@ export function useLayerActions({
     })
     setSelectedId(null)
   }
+  // 여러 개를 골랐으면 그 묶음을 통째로 복사한다. 합친 묶음은 붙여넣은 쪽도 새 묶음으로 합쳐 둔다
   const copySelected = () => {
-    if (selected) setCopied(selected)
+    if (group.length > 1) setCopied(group)
+    else if (selected) setCopied([selected])
   }
   const pasteCopied = () => {
-    if (copied)
-      add(copied.type, {
-        ...copied,
-        id: crypto.randomUUID(),
-        x: copied.x + 5,
-        y: copied.y + 5,
-        name: `${copied.name} 복사`,
-        locked: false,
-      })
+    if (!copied.length) return
+    const groupIds = new Map<string, string>()
+    const pasted = copied.map((layer) => ({
+      ...layer,
+      id: crypto.randomUUID(),
+      x: layer.x + 5,
+      y: layer.y + 5,
+      name: `${layer.name} 복사`,
+      locked: false,
+      groupId:
+        layer.groupId &&
+        (groupIds.get(layer.groupId) ??
+          groupIds.set(layer.groupId, crypto.randomUUID()).get(layer.groupId)),
+    }))
+    change({ ...design, [side]: [...layers, ...pasted] })
+    // 다시 붙이면 또 5mm 옆에 놓이게 복사본을 따라간다
+    setCopied(pasted)
+    if (pasted.length === 1) setSelectedId(pasted[0].id)
+    else {
+      setSelectedId(null)
+      setGroupIds(pasted.map((layer) => layer.id))
+    }
   }
   const cutSelected = () => {
     copySelected()
-    removeSelected()
+    if (group.length > 1) {
+      change({
+        ...design,
+        [side]: layers.filter((layer) => !group.includes(layer)),
+      })
+      setSelectedId(null)
+    } else removeSelected()
   }
   const setOrder = (position: "top" | "up" | "down" | "bottom") => {
     if (!selected) return

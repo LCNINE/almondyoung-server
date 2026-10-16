@@ -8,7 +8,8 @@ type Params = {
   saveDialog: boolean
   loadDialog: boolean
   selected: Layer | undefined
-  copied: Layer | null
+  copied: Layer[]
+  hasGroup: boolean
   editable: boolean | undefined
   setSelectedId: (id: string | null) => void
   setPreview: (open: boolean) => void
@@ -37,6 +38,7 @@ export function useEditorShortcuts({
   loadDialog,
   selected,
   copied,
+  hasGroup,
   editable,
   setSelectedId,
   setPreview,
@@ -115,12 +117,12 @@ export function useEditorShortcuts({
         event.preventDefault()
         redo()
       } else if (command && event.key.toLowerCase() === "c") {
-        if (selected) {
+        if (selected || hasGroup) {
           event.preventDefault()
           copySelected()
         }
       } else if (command && event.key.toLowerCase() === "v") {
-        if (copied) {
+        if (copied.length) {
           event.preventDefault()
           pasteCopied()
         }

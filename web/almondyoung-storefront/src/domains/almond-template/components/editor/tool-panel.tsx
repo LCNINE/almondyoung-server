@@ -4,7 +4,6 @@ import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import { useQrBuilder } from "../../hooks/use-qr-builder"
 import { BackgroundPanel } from "./panels/background-panel"
 import { ClipartPanel } from "./panels/clipart-panel"
-import { FramePanel } from "./panels/frame-panel"
 import { ImagePanel } from "./panels/image-panel"
 import { LayersPanel } from "./panels/layers-panel"
 import { QrPanel } from "./panels/qr-panel"
@@ -22,8 +21,6 @@ export function ToolPanel({ editor }: { editor: AlmondEditor }) {
   const [clipartCategory, setClipartCategory] =
     useState<keyof typeof CLIPART>("크리스마스")
   const [clipartColumns, setClipartColumns] = useState<1 | 2>(2)
-  const [frameCategory, setFrameCategory] = useState("기본모양틀")
-  const [frameColumns, setFrameColumns] = useState<1 | 2>(2)
   const qr = useQrBuilder({
     add,
     patch,
@@ -34,7 +31,7 @@ export function ToolPanel({ editor }: { editor: AlmondEditor }) {
   return (
     <aside
       hidden={!panelOpen}
-      className={`relative z-10 w-[300px] shrink-0 border-r bg-white p-5 ${tool === "background" ? "overflow-visible" : "overflow-y-auto"}`}
+      className={`relative z-10 w-[300px] shrink-0 border-r bg-white p-5 ${tool === "background" || tool === "text" ? "overflow-visible" : "overflow-y-auto"}`}
     >
       {tool === "spec" && <SpecPanel editor={editor} />}
       {tool === "text" && <TextPanel editor={editor} />}
@@ -63,15 +60,6 @@ export function ToolPanel({ editor }: { editor: AlmondEditor }) {
           setClipartCategory={setClipartCategory}
           clipartColumns={clipartColumns}
           setClipartColumns={setClipartColumns}
-        />
-      )}
-      {tool === "frame" && (
-        <FramePanel
-          editor={editor}
-          frameCategory={frameCategory}
-          setFrameCategory={setFrameCategory}
-          frameColumns={frameColumns}
-          setFrameColumns={setFrameColumns}
         />
       )}
       {tool === "qr" && <QrPanel qr={qr} />}

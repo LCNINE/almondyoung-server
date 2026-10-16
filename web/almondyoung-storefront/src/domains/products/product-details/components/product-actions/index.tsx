@@ -37,6 +37,7 @@ import { ProductShippingNotice } from "../product-shipping-notice"
 import CartAddedModal from "./cart-added-modal"
 import MobileActions from "./mobile-actions"
 import OptionSelect from "./option-select"
+import { AlmondDesignNotice } from "./almond-design-notice"
 import SelectedItemRow from "./selected-item-row"
 import { SelectedItem } from "./types"
 import { RestockNotice, hasStockNotice } from "./restock-notice"
@@ -308,6 +309,15 @@ export default function ProductActions({
     !!templateVariant &&
     !!printSize &&
     printSize.join("x") !== almondDesignSize
+  const almondDesignShown =
+    hasAlmondTemplate &&
+    !!almondDesignId &&
+    /^[0-9a-f-]{36}$/.test(almondDesignId)
+  const almondSizeHint = almondSizeMismatch
+    ? t("almondDesignSizeHint", {
+        size: (almondDesignSize ?? "").replace("x", "×"),
+      })
+    : undefined
   const almondDesignMetadata =
     !almondSizeMismatch &&
     hasAlmondTemplate &&
@@ -494,6 +504,14 @@ export default function ProductActions({
 
           <Separator />
 
+          {almondDesignShown && (
+            <AlmondDesignNotice
+              designId={almondDesignId}
+              attached={!!almondDesignMetadata}
+              hint={almondSizeHint}
+            />
+          )}
+
           {/* 옵션 선택 - variant가 2개 이상일 때만 표시 */}
           {!isSimple && (
             <div className="flex flex-col gap-y-4 py-2">
@@ -575,18 +593,6 @@ export default function ProductActions({
                 아몬드템플릿으로 디자인
               </Button>
             </LocalizedClientLink>
-          )}
-          {almondDesignMetadata && (
-            <p className="text-muted-foreground text-center text-xs">
-              {t("almondDesignAttached")}
-            </p>
-          )}
-          {almondSizeMismatch && (
-            <p className="text-muted-foreground text-center text-xs">
-              {t("almondDesignSizeHint", {
-                size: almondDesignSize.replace("x", "×"),
-              })}
-            </p>
           )}
           {hasAlmondTemplate && <CustomOrderNotice />}
           <div className="flex w-full gap-x-3">
@@ -683,6 +689,8 @@ export default function ProductActions({
         templateHref={templateHref}
         designAttached={!!almondDesignMetadata}
         showCustomOrderNotice={hasAlmondTemplate}
+        almondDesignId={almondDesignShown ? almondDesignId : undefined}
+        almondDesignHint={almondSizeHint}
         blockedLabel={
           almondSizeMismatch ? t("almondDesignSizeMismatch") : undefined
         }

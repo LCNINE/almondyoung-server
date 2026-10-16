@@ -1,3 +1,4 @@
+import { X } from "lucide-react"
 import { imageBox } from "../../../lib/layer"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
 import { imageSrc } from "../../../lib/image-ref"
@@ -7,6 +8,7 @@ export function ImagePanel({ editor }: { editor: AlmondEditor }) {
     design,
     add,
     imageLibrary,
+    removeFromLibrary,
     imageFile,
     fillFrames,
     removeWhiteBackground,
@@ -18,18 +20,19 @@ export function ImagePanel({ editor }: { editor: AlmondEditor }) {
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           e.preventDefault()
-          const file = e.dataTransfer.files[0]
-          if (file) void imageFile(file)
+          for (const file of Array.from(e.dataTransfer.files))
+            void imageFile(file)
         }}
       >
         + 내 PC 이미지 불러오기
         <input
           type="file"
           accept="image/png,image/jpeg,image/webp"
+          multiple
           hidden
           onChange={(event) => {
-            const file = event.target.files?.[0]
-            if (file) void imageFile(file)
+            for (const file of Array.from(event.target.files ?? []))
+              void imageFile(file)
             event.target.value = ""
           }}
         />
@@ -65,24 +68,34 @@ export function ImagePanel({ editor }: { editor: AlmondEditor }) {
           </h3>
           <div className="mt-3 grid grid-cols-2 gap-2">
             {imageLibrary.map((item, index) => (
-              <button
-                key={`${index}-${item.image.length}`}
-                aria-label={`업로드 이미지 ${index + 1} 추가`}
-                onClick={() =>
-                  add("image", {
-                    ...item,
-                    ...imageBox(design, item.pixelWidth, item.pixelHeight),
-                    fill: "#ffffff",
-                  })
-                }
-                className="flex h-24 items-center justify-center border bg-slate-50"
-              >
-                <img
-                  src={imageSrc(item.image)}
-                  alt={`업로드 이미지 ${index + 1}`}
-                  className="max-h-full max-w-full object-contain"
-                />
-              </button>
+              <div key={`${index}-${item.image.length}`} className="relative">
+                <button
+                  aria-label={`업로드 이미지 ${index + 1} 추가`}
+                  onClick={() =>
+                    add("image", {
+                      ...item,
+                      ...imageBox(design, item.pixelWidth, item.pixelHeight),
+                      fill: "#ffffff",
+                    })
+                  }
+                  className="flex h-24 w-full items-center justify-center border bg-slate-50"
+                >
+                  <img
+                    src={imageSrc(item.image)}
+                    alt={`업로드 이미지 ${index + 1}`}
+                    className="max-h-full max-w-full object-contain"
+                  />
+                </button>
+                <button
+                  type="button"
+                  aria-label={`업로드 이미지 ${index + 1} 라이브러리에서 빼기`}
+                  title="라이브러리에서 빼기"
+                  onClick={() => removeFromLibrary(item.image)}
+                  className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                >
+                  <X size={12} />
+                </button>
+              </div>
             ))}
           </div>
         </>

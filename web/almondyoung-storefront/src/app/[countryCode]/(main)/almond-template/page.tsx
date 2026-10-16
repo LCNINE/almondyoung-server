@@ -5,14 +5,14 @@ import {
   PRINT_SPECS,
   type PrintKind,
 } from "@/domains/almond-template/lib/catalog"
-import { HttpApiError } from "@/lib/api/api-error"
+import { ApiAuthError, HttpApiError } from "@/lib/api/api-error"
 import { parseDesign } from "@/domains/almond-template/lib/document"
 import {
   getAdminAlmondTemplate,
   listAdminAlmondTemplates,
   listAlmondTemplates,
 } from "@/lib/api/ugc/almond-templates"
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 
 type Props = {
   params: Promise<{ countryCode: string }>
@@ -65,6 +65,15 @@ export default async function AlmondTemplatePage({
   const editing = await (
     template ? getAdminAlmondTemplate(template) : listAdminAlmondTemplates()
   ).catch((error) => {
+    // 토큰이 없거나 만료돼 갱신도 안 되면 에러 화면 대신 바로 로그인으로 보낸다.
+    // 돌아올 주소에 template 을 남겨야 로그인 뒤 빈 편집기가 아니라 그 시안이 열린다
+    if (error instanceof ApiAuthError) {
+      const back = new URLSearchParams({ mode: "designer" })
+      if (template) back.set("template", template)
+      redirect(
+        `/${countryCode}/login?redirect_to=${encodeURIComponent(`/${countryCode}/almond-template?${back}`)}`
+      )
+    }
     if (
       error instanceof HttpApiError &&
       (error.status === 403 || error.status === 404)

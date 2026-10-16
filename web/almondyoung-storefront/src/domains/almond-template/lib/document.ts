@@ -55,7 +55,16 @@ export type Layer = {
   visible?: boolean
   locked?: boolean
   editable?: boolean
+  textColor?: string
+  shadow?: boolean
+  texture?: boolean
+  crop?: { x: number; y: number; w: number; h: number }
+  groupId?: string
 }
+
+export const SHAPE_TEXT_TYPES: ReadonlySet<Layer["type"]> = new Set<
+  Layer["type"]
+>(["rect", "ellipse", "triangle", "star", "heart"])
 
 export type Design = {
   version: 1
@@ -210,7 +219,15 @@ export function parseDesign(value: unknown): Design {
       typeof layer.name !== "string" ||
       layer.name.length > 100 ||
       typeof layer.fill !== "string" ||
-      !color.test(layer.fill) ||
+      !(
+        color.test(layer.fill) ||
+        (layer.fill === "none" && SHAPE_TEXT_TYPES.has(layer.type))
+      ) ||
+      (layer.textColor !== undefined && !color.test(layer.textColor)) ||
+      (layer.groupId !== undefined &&
+        (typeof layer.groupId !== "string" ||
+          !/^[a-zA-Z0-9_-]{1,100}$/.test(layer.groupId))) ||
+      (layer.crop !== undefined && !validCrop(layer.crop)) ||
       (layer.stroke !== undefined &&
         layer.stroke !== "none" &&
         !color.test(layer.stroke)) ||
@@ -376,6 +393,41 @@ export function resizeDesign(
   }
 }
 
+function validCrop(crop: Layer["crop"]) {
+  if (!crop || typeof crop !== "object") return false
+  const { x, y, w, h } = crop
+  return (
+    [x, y, w, h].every(Number.isFinite) &&
+    x >= 0 &&
+    y >= 0 &&
+    w > 0 &&
+    h > 0 &&
+    x + w <= 1.0001 &&
+    y + h <= 1.0001
+  )
+}
+
+// 사진이 실제로 쓰는 픽셀로 잰 해상도. 잘라낸 사진은 남은 구간의 픽셀만 인쇄에 쓰인다
+export function layerImageDpi(kind: PrintKind, layer: Layer) {
+  if (!layer.image || !layer.pixelWidth || !layer.pixelHeight) return Infinity
+  if (layer.crop)
+    return imageDpi(
+      kind,
+      layer.pixelWidth * layer.crop.w,
+      layer.pixelHeight * layer.crop.h,
+      layer.width,
+      layer.height
+    )
+  return imageDpi(
+    kind,
+    layer.pixelWidth,
+    layer.pixelHeight,
+    layer.width,
+    layer.height,
+    layer.imageScale
+  )
+}
+
 export function imageDpi(
   kind: PrintKind,
   pixelWidth: number,
@@ -398,9 +450,46 @@ export function resizeLayerFromHandle(
   dx: number,
   dy: number,
   canvasWidth: number,
-  canvasHeight: number
+  canvasHeight: number,
+  keepRatio = false
 ): Partial<Layer> {
   const round = (value: number) => Math.round(value * 10) / 10
+  if (keepRatio) {
+    const corner = handle.length === 2
+    const sx = (layer.width + (handle.includes("w") ? -dx : dx)) / layer.width
+    const sy = (layer.height + (handle.includes("n") ? -dy : dy)) / layer.height
+    const wanted = corner
+      ? Math.max(sx, sy)
+      : handle === "e" || handle === "w"
+        ? sx
+        : sy
+    const s = Math.max(
+      2 / Math.min(layer.width, layer.height),
+      Math.min(
+        wanted,
+        (canvasWidth * 2) / layer.width,
+        (canvasHeight * 2) / layer.height
+      )
+    )
+    const width = layer.width * s
+    const height = layer.height * s
+    const x = handle.includes("w")
+      ? layer.x + layer.width - width
+      : handle.includes("e")
+        ? layer.x
+        : layer.x + (layer.width - width) / 2
+    const y = handle.includes("n")
+      ? layer.y + layer.height - height
+      : handle.includes("s")
+        ? layer.y
+        : layer.y + (layer.height - height) / 2
+    return {
+      x: round(x),
+      y: round(y),
+      width: round(width),
+      height: round(height),
+    }
+  }
   let { x, y, width, height } = layer
   if (handle.includes("w")) {
     x = Math.max(
@@ -432,30 +521,46 @@ export function resizeLayerFromHandle(
 
 const MIN_PRINT_TEXT_MM = 1.76
 
-export function printIssues(design: Design): string[] {
-  const issues: string[] = []
+// 주문을 막지는 않고 "흐리게 인쇄될 수 있다"고 한 번 더 묻는 항목. 그대로 진행하면 고객 책임이다
+export function printWarnings(design: Design): string[] {
+  const warnings: string[] = []
   const minDpi = PRINT_SPECS[design.kind].minImageDpi
-  if (!design.front.length) issues.push("앞면에 인쇄할 내용이 없습니다.")
+  const low = (dpi: number) =>
+    `해상도 ${Math.floor(dpi)}dpi — 권장 ${minDpi}dpi보다 낮아 흐리게 인쇄될 수 있습니다.`
   for (const [label, side] of [
     ["앞면", "front"],
     ["뒷면", "back"],
   ] as const) {
     const bg = sideBackground(design, side)
     if (side === "back" && !printsBack(design)) continue
-    if (
-      bg.backgroundImage &&
-      (!bg.backgroundPixelWidth ||
-        !bg.backgroundPixelHeight ||
-        imageDpi(
-          design.kind,
-          bg.backgroundPixelWidth,
-          bg.backgroundPixelHeight,
-          design.widthMm,
-          design.heightMm
-        ) < minDpi)
-    )
-      issues.push(`${label} 배경 이미지 해상도가 ${minDpi}dpi보다 낮습니다.`)
+    if (!bg.backgroundImage) continue
+    const dpi =
+      bg.backgroundPixelWidth && bg.backgroundPixelHeight
+        ? imageDpi(
+            design.kind,
+            bg.backgroundPixelWidth,
+            bg.backgroundPixelHeight,
+            design.widthMm,
+            design.heightMm
+          )
+        : 0
+    if (dpi < minDpi) warnings.push(`${label} 배경 이미지: ${low(dpi)}`)
   }
+  for (const [side, layers] of [
+    ["앞면", design.front],
+    ["뒷면", design.back],
+  ] as const)
+    for (const layer of layers) {
+      if (layer.visible === false || !layer.image) continue
+      const dpi = layerImageDpi(design.kind, layer)
+      if (dpi < minDpi) warnings.push(`${side}의 ${layer.name}: ${low(dpi)}`)
+    }
+  return warnings
+}
+
+export function printIssues(design: Design): string[] {
+  const issues: string[] = []
+  if (!design.front.length) issues.push("앞면에 인쇄할 내용이 없습니다.")
   for (const [side, layers] of [
     ["앞면", design.front],
     ["뒷면", design.back],
@@ -464,23 +569,6 @@ export function printIssues(design: Design): string[] {
       if (layer.visible === false) continue
       if (layer.type === "frame" && !layer.image)
         issues.push(`${side}의 ${layer.name}: 사진을 넣어 주세요.`)
-      if (
-        (layer.type === "frame" || layer.type === "image") &&
-        layer.image &&
-        layer.pixelWidth &&
-        layer.pixelHeight &&
-        imageDpi(
-          design.kind,
-          layer.pixelWidth,
-          layer.pixelHeight,
-          layer.width,
-          layer.height,
-          layer.imageScale
-        ) < minDpi
-      )
-        issues.push(
-          `${side}의 ${layer.name}: 이미지 해상도가 ${minDpi}dpi보다 낮습니다.`
-        )
       if (layer.type === "text" && !(layer.text ?? "").trim())
         issues.push(`${side}의 ${layer.name}: 문구가 비어 있습니다.`)
       if (

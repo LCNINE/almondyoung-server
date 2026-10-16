@@ -5,6 +5,7 @@ import {
   newDesign,
   parseDesign,
   printIssues,
+  printWarnings,
   printsBack,
   reorderLayer,
   resizeDesign,
@@ -155,8 +156,8 @@ describe("아몬드템플릿", () => {
       pixelWidth: 500,
       pixelHeight: 500,
     }
-    expect(printIssues(design)).toContain(
-      "앞면의 사진: 이미지 해상도가 350dpi보다 낮습니다."
+    expect(printWarnings(design).join("\n")).toContain(
+      "권장 350dpi보다 낮아 흐리게 인쇄될 수 있습니다."
     )
   })
 
@@ -183,6 +184,55 @@ describe("아몬드템플릿", () => {
       width: 140,
       height: 100,
     })
+  })
+
+  it("Shift 로 크기를 바꾸면 비율을 지키고 반대쪽을 고정한다", () => {
+    const layer = {
+      id: "a",
+      type: "rect" as const,
+      name: "도형",
+      x: 20,
+      y: 20,
+      width: 40,
+      height: 20,
+      fill: "#ffffff",
+    }
+    expect(resizeLayerFromHandle(layer, "se", 40, 2, 90, 50, true)).toEqual({
+      x: 20,
+      y: 20,
+      width: 80,
+      height: 40,
+    })
+    expect(resizeLayerFromHandle(layer, "nw", -20, 0, 90, 50, true)).toEqual({
+      x: 0,
+      y: 10,
+      width: 60,
+      height: 30,
+    })
+    expect(resizeLayerFromHandle(layer, "e", 20, 0, 90, 50, true)).toEqual({
+      x: 20,
+      y: 15,
+      width: 60,
+      height: 30,
+    })
+  })
+
+  it("도형만 채우기 없음을 허용한다", () => {
+    const design = newDesign("pet")
+    const shape = {
+      id: "s",
+      type: "ellipse" as const,
+      name: "원",
+      x: 5,
+      y: 5,
+      width: 10,
+      height: 10,
+      fill: "none",
+    }
+    design.front = [shape]
+    expect(parseDesign(design).front[0].fill).toBe("none")
+    design.front = [{ ...shape, type: "text", text: "가" }]
+    expect(() => parseDesign(design)).toThrow()
   })
 
   it("오브젝트를 인쇄 영역 밖에 배치해도 저장과 규격 변경을 유지한다", () => {
@@ -303,8 +353,8 @@ describe("아몬드템플릿", () => {
       backgroundPixelHeight: 100,
     })
     expect(printsBack(withImage)).toBe(true)
-    expect(printIssues(withImage)).toContain(
-      "뒷면 배경 이미지 해상도가 300dpi보다 낮습니다."
+    expect(printWarnings(withImage).join("\n")).toContain(
+      "뒷면 배경 이미지: 해상도"
     )
   })
   it("잘못된 레이어를 레이어 목록 기준 위치와 이름으로 짚는다", () => {

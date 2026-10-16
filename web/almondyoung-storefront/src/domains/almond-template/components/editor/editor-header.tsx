@@ -78,19 +78,19 @@ export function EditorHeader({ editor }: { editor: AlmondEditor }) {
           {
             label: "잘라내기",
             icon: Scissors,
-            disabled: !editable,
+            disabled: !editable && group.length < 2,
             click: cutSelected,
           },
           {
             label: "복사",
             icon: Copy,
-            disabled: !selected,
+            disabled: !selected && group.length < 2,
             click: copySelected,
           },
           {
             label: "붙여넣기",
             icon: Clipboard,
-            disabled: !copied,
+            disabled: !copied.length,
             click: pasteCopied,
           },
           {

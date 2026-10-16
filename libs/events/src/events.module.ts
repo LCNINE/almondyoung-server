@@ -10,6 +10,8 @@ import {
   ClientsModule,
   CustomTransportStrategy,
   NestMicroservice,
+  Server,
+  ServerKafka,
   Transport,
 } from '@nestjs/microservices';
 import { APP_INTERCEPTOR, ModuleRef } from '@nestjs/core';
@@ -18,7 +20,7 @@ import { ClsModule } from 'nestjs-cls';
 import { StreamPublisher } from './publishers/stream-publisher.service';
 import { getPublisherToken } from './publishers/publisher-token';
 import { DLQHandler } from './dlq/dlq-handler.service';
-import { EventRetryInterceptor } from './interceptors/event-retry.interceptor';
+import { DeadLetterInterceptorOptions, EventRetryInterceptor } from './interceptors/event-retry.interceptor';
 import { GracefulShutdownService } from './shutdown/graceful-shutdown.service';
 import { EventChainService } from './tracking/event-chain.service';
 import { EventTrackingService } from './tracking/event-tracking.service';
@@ -40,7 +42,11 @@ import { DbService } from '@app/db';
 import { EVENT_TRANSPORT, EventTransport } from './transport/transport.port';
 import { KafkaTransport } from './transport/kafka.transport';
 import { DerivedConsumerConfig, deriveConsumerConfig, discoverEventHandlers } from './consumers/consumer-discovery';
-import { buildConsumerInterceptors, EVENTS_CONSUMER_POLICY } from './consumers/consumer-interceptors';
+import { buildConsumerInterceptors, EVENTS_CONSUMER_POLICY, optionalGet } from './consumers/consumer-interceptors';
+import { DeadLetterRuntime } from './dead-letter/dead-letter.runtime';
+import { DeadLetterStore } from './dead-letter/dead-letter.store';
+import { checkDeadLetterTables, DEAD_LETTER_MIGRATION_NAME } from './dead-letter/dead-letter-tables';
+import { EVENT_FAILURES_OPTIONS, type EventFailuresOptions } from './dead-letter/event-failures.options';
 import {
   buildKafkaConsumerServerOptions,
   KAFKA_CONSUMER_GROUP_POSTFIX,
@@ -119,7 +125,7 @@ export interface StartConsumerOptions extends KafkaConsumerTuning {
    * 파이프라인(인터셉터·가드·파라미터 데코레이터·DI)을 그대로 탄다. 전략을 넘기면
    * Kafka 토픽 부트스트랩은 건너뛴다 — 붙을 브로커가 없다.
    */
-  strategy?: CustomTransportStrategy;
+  strategy?: CustomTransportStrategy & Server;
 }
 
 @Global()
@@ -387,21 +393,27 @@ export class EventsModule {
       await bootstrapKafkaTopics({ kafka, streams: derived.streams, includeDLQ: enableAutoDLQ });
     }
 
-    const microserviceOptions:
-      | { strategy: CustomTransportStrategy }
-      | { transport: Transport.KAFKA; options: unknown } = options.strategy
-      ? { strategy: options.strategy }
-      : { transport: Transport.KAFKA, options: buildKafkaConsumerServerOptions(kafka, options) };
+    // 서버를 직접 만든다 (#1016 8번). 다시 넣기가 이 서버의 `getHandlerByPattern` 을 써야 하는데
+    // `NestMicroservice` 의 서버 인스턴스는 private 이다. `{ strategy }` 분기는 `{ transport, options }` 와
+    // 같은 서버를 만든다(`nest-microservice.js` createServer → `ServerFactory.create` 는 `new ServerKafka(options)` 뿐).
+    const server: CustomTransportStrategy & Server =
+      options.strategy ?? new ServerKafka(buildKafkaConsumerServerOptions(kafka, options));
 
     // deferInitialization 없이 부르면 Nest 가 즉시 리스너를 바인딩해버려
     // useGlobalInterceptors 가 늦는다. 미룬 뒤 인터셉터를 얹고, 비-defer 경로가
     // 하던 일(리스너 바인딩 + 초기화 플래그)을 직접 한다 — 플래그를 세우지 않으면
     // listen() 이 registerModules() 를 타면서 onModuleInit 이 두 번 실행된다.
-    const microservice = app.connectMicroservice(microserviceOptions, {
-      deferInitialization: true,
-    }) as NestMicroservice;
+    const microservice = app.connectMicroservice(
+      { strategy: server },
+      {
+        deferInitialization: true,
+      },
+    ) as NestMicroservice;
 
-    microservice.useGlobalInterceptors(...buildConsumerInterceptors(app, derived.streams));
+    // 실패 테이블 (#1016 8번). 앱이 `EventFailuresModule` 을 import 했을 때만 있다.
+    const deadLetters = await this.enableDeadLetters(app, options.groupId, server, logger);
+
+    microservice.useGlobalInterceptors(...buildConsumerInterceptors(app, derived.streams, deadLetters));
     microservice.registerListeners();
     microservice.setIsInitialized(true);
     microservice.setIsInitHookCalled(true);
@@ -420,6 +432,40 @@ export class EventsModule {
     }
 
     return derived;
+  }
+
+  /**
+   * 실패 테이블 모드를 켠다 (#1016 8번). 테이블이 없으면 **켜지 않는다** — 마이그 없이 배포되면 보류 검사가 매 메시지
+   * 던져 모든 파티션이 멈추기 때문이다(이 저장소는 10-10 에 마이그 없는 배포로 두 시간 장애를 냈다). 끄면 옛 `.dlq` 경로로
+   * 돌고 outbox 쪽은 그대로 동작한다. 순서는 여전히 `migrate → deploy` 다 — 이건 그 순서가 어긋났을 때의 안전망이다.
+   */
+  private static async enableDeadLetters(
+    app: INestApplication,
+    consumerGroup: string,
+    server: Server,
+    logger: Logger,
+  ): Promise<DeadLetterInterceptorOptions | undefined> {
+    const runtime = optionalGet(app, DeadLetterRuntime);
+    if (!runtime) return undefined;
+
+    const tables = await checkDeadLetterTables(app.get(DbService, { strict: false }));
+    if (!tables.present) {
+      logger.error(
+        `실패 테이블 모드를 켜지 않는다 — event.dead_letters·event.failure_actions 가 없다` +
+          `${tables.queryError ? ` (확인 질의 실패: ${tables.queryError})` : ''}. ` +
+          `마이그 \`${DEAD_LETTER_MIGRATION_NAME}\` 이 이 앱 DB 에 적용되지 않았다. 결과: 컨슈머 최종 실패는 옛 \`.dlq\` 토픽으로 가고, ` +
+          `보류(같은 순서 키 지키기)는 꺼지며, /event-failures 의 컨슈머 실패 다시 넣기·종결은 쓸 수 없다. ` +
+          `db:migrate 후 재시작하면 켜진다.`,
+      );
+      return undefined;
+    }
+
+    runtime.attach({ consumerGroup, server });
+    return {
+      recorder: app.get(DeadLetterStore, { strict: false }),
+      consumerGroup,
+      sequencedTopics: app.get<EventFailuresOptions>(EVENT_FAILURES_OPTIONS, { strict: false }).sequencedTopics,
+    };
   }
 
   /**

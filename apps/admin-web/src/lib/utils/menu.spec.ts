@@ -107,4 +107,20 @@ describe('admin menu navigation', () => {
       ids.indexOf('inventory-replenishment') + 1
     );
   });
+
+  it('이벤트 실패는 주문/출고관리의 정체 보드 바로 아래에 있고 admin·master 만 본다', () => {
+    const order = getMenuById('order-shipment');
+    const ids = order?.children.map((item) => item.id) ?? [];
+
+    expect(ids.indexOf('event-failures')).toBe(ids.indexOf('stall-board') + 1);
+    expect(order?.children.find((item) => item.id === 'event-failures')).toMatchObject({
+      title: '이벤트 실패',
+      path: '/events/failures',
+      requireRole: ['admin', 'master'],
+    });
+    expect(getActiveMenuAndItem('/events/failures')).toEqual({
+      menuId: 'order-shipment',
+      itemId: 'event-failures',
+    });
+  });
 });

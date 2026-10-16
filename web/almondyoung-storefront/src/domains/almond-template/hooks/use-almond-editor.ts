@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react"
 import { PRINT_PRODUCTS, PRINT_SPECS } from "../lib/catalog"
 import {
-  imageDpi,
+  layerImageDpi,
+  updateLayer,
   newDesign,
   printIssues,
+  printWarnings,
   printsBack,
   type Design,
 } from "../lib/document"
@@ -28,7 +30,6 @@ export type EditorTool =
   | "layers"
   | "shape"
   | "clipart"
-  | "frame"
   | "qr"
 export type AlmondEditorProps = {
   productId?: string
@@ -159,8 +160,7 @@ export function useAlmondEditor({
     setGroupIds([])
   }
   const spec = PRINT_SPECS[design.kind]
-  const selectedImage =
-    selected && (selected.type === "image" || selected.type === "frame")
+  const selectedImage = !!selected?.image
   const selectedOverPrintArea =
     !!selectedImage &&
     (selected.x < 0 ||
@@ -168,20 +168,70 @@ export function useAlmondEditor({
       selected.x + selected.width > design.widthMm ||
       selected.y + selected.height > design.heightMm)
   const selectedLowDpi =
-    !!selectedImage &&
-    !!selected.image &&
-    !!selected.pixelWidth &&
-    !!selected.pixelHeight &&
-    imageDpi(
-      design.kind,
-      selected.pixelWidth,
-      selected.pixelHeight,
-      selected.width,
-      selected.height,
-      selected.imageScale
-    ) < spec.minImageDpi
+    !!selected?.image && layerImageDpi(design.kind, selected) < spec.minImageDpi
   const selectedPrintWarning = selectedOverPrintArea || selectedLowDpi
 
+  const [cropId, setCropId] = useState<string | null>(null)
+  const [showOverflow, setShowOverflow] = useState(true)
+  useEffect(() => {
+    if (cropId && cropId !== selectedId) setCropId(null)
+  }, [selectedId, cropId])
+  useEffect(() => {
+    if (!cropId) return
+    const finish = (event: KeyboardEvent) => {
+      if (event.key === "Enter") setCropId(null)
+    }
+    window.addEventListener("keydown", finish)
+    return () => window.removeEventListener("keydown", finish)
+  }, [cropId])
+  const startCrop = () => {
+    if (!selected || selected.type !== "image" || !selected.image) return
+    if (selected.rotation)
+      return setMessage("회전을 0°로 되돌린 뒤 자를 수 있습니다.")
+    setCropId(selected.id)
+  }
+  const resetCrop = () => {
+    if (!selected?.crop) return
+    const { crop } = selected
+    const width = selected.width / crop.w
+    const height = selected.height / crop.h
+    change(
+      updateLayer(design, side, selected.id, {
+        x: mm(selected.x - crop.x * width),
+        y: mm(selected.y - crop.y * height),
+        width: mm(width),
+        height: mm(height),
+        crop: { x: 0, y: 0, w: 1, h: 1 },
+      })
+    )
+  }
+  // 합친 레이어는 같은 groupId 를 갖고, 하나를 누르면 함께 선택·이동·크기 조절된다
+  const mergedGroup =
+    group.length > 1 &&
+    !!group[0].groupId &&
+    group.every((layer) => layer.groupId === group[0].groupId)
+  const mergeGroup = () => {
+    if (group.length < 2) return
+    const groupId = crypto.randomUUID()
+    change({
+      ...design,
+      [side]: layers.map((layer) =>
+        groupIds.includes(layer.id) ? { ...layer, groupId } : layer
+      ),
+    })
+    setMessage(
+      `${group.length}개 요소를 하나로 합쳤습니다. 풀기로 다시 나눌 수 있습니다.`
+    )
+  }
+  const splitGroup = () => {
+    change({
+      ...design,
+      [side]: layers.map((layer) =>
+        groupIds.includes(layer.id) ? { ...layer, groupId: undefined } : layer
+      ),
+    })
+    setMessage("합친 요소를 풀었습니다.")
+  }
   const canvas = useCanvasInteraction({
     design,
     setDesign,
@@ -192,6 +242,8 @@ export function useAlmondEditor({
     setSelectedId,
     groupIds,
     setGroupIds,
+    cropId,
+    selectedId,
   })
   const auth = useAuthRetry(setMessage)
   const storage = useTemplateStorage({
@@ -221,6 +273,8 @@ export function useAlmondEditor({
     size,
     setSelectedId,
     setMessage,
+    group,
+    setGroupIds,
   })
   const images = useImageTools({
     design,
@@ -248,18 +302,25 @@ export function useAlmondEditor({
     templateId,
     runAuthed: auth.runAuthed,
   })
-  const complete = () => {
-    const found = printIssues(design)
-    if (found.length) {
-      setIssues(found)
-      return
-    }
+  // 막는 문제(빈 문구·안전영역 등)는 고쳐야 넘어가고, 해상도만 낮으면 확인 후 그대로 진행할 수 있다
+  const [warnings, setWarnings] = useState<string[]>([])
+  const openPreview = () => {
+    setIssues([])
+    setWarnings([])
     setPreviewSide(side)
     setPreview(true)
   }
+  const complete = () => {
+    const found = printIssues(design)
+    const warned = printWarnings(design)
+    setWarnings(warned)
+    if (found.length) return setIssues(found)
+    if (warned.length) return setIssues(warned)
+    openPreview()
+  }
   useEffect(() => {
-    if (selected?.type !== "qr") return
-    setTool("qr")
+    if (selected?.type !== "qr" && selected?.type !== "text") return
+    setTool(selected.type)
     setPanelOpen(true)
   }, [selectedId, selected?.type])
   useEditorShortcuts({
@@ -270,6 +331,7 @@ export function useAlmondEditor({
     loadDialog: storage.loadDialog,
     selected,
     copied: actions.copied,
+    hasGroup: group.length > 1,
     editable: group.length > 1 || actions.editable,
     setSelectedId,
     setPreview,
@@ -285,7 +347,8 @@ export function useAlmondEditor({
     cutSelected: actions.cutSelected,
     removeSelected: group.length > 1 ? removeGroup : actions.removeSelected,
     nudgeSelected: (dx, dy) => {
-      const px = 1 / (canvas.canvasFit * canvas.zoom)
+      // 화면 1px 은 작은 규격에서 0.1mm 도 안 돼 움직이지 않는 것처럼 보인다
+      const px = Math.max(1 / (canvas.canvasFit * canvas.zoom), 0.5)
       if (group.length > 1) return moveGroup(dx * px, dy * px)
       if (!selected) return
       const clamp = (value: number, size: number) =>
@@ -358,6 +421,17 @@ export function useAlmondEditor({
     selectedLowDpi,
     selectedPrintWarning,
     complete,
+    warnings,
+    openPreview,
+    cropId,
+    setCropId,
+    startCrop,
+    resetCrop,
+    mergedGroup,
+    mergeGroup,
+    splitGroup,
+    showOverflow,
+    setShowOverflow,
     ...storage,
     ...canvas,
     ...actions,

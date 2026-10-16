@@ -92,6 +92,13 @@
       "when": 1791386734140,
       "tag": "20261007152534_add-order-processing-failure-columns",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792046132580,
+      "tag": "20261015063532_add-event-dead-letters",
+      "breakpoints": true
     }
   ]
 }

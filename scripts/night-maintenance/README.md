@@ -1,0 +1,30 @@
+# Approved overnight maintenance
+
+These jobs are dated, single-run tasks. Reservations are introduced disabled and enabled only after both deployed ECS dry runs finish successfully. The committed dated settings and implementation ledger record the current reservation state.
+
+## Deployment and verification
+
+1. Run serial runner/Core tests and typechecks; build the ARM64 container.
+2. Generate immutable manifests with `dist/seed.cjs <audit-folder> <session-folder> <review-csv> <output-folder>`. This reads no authentication files. Match manifest hashes to `night-maintenance-settings.json`.
+3. With operator AWS authentication, inspect the existing Core component scope and deploy its API addition. Deploy the separate `deployments/lcnine/night-maintenance/sst.config.ts` app; it only references existing live cluster/VPC/DB resources and manages its own maintenance resources. SST cannot target a component that does not exist in state, so its initial deployment uses the complete maintenance-only app. Do not deploy unrelated services or storefront builds.
+4. Put administrator `{loginId,password}` JSON into the dedicated Secrets Manager secret from memory, without a plaintext file or command-line secret argument. Upload only the two generated manifests to the private artifact bucket. Never upload old session `auth.json`.
+5. Launch one ECS task per job, serially, with `DRY_RUN=true`, the correct JOB_KIND, INPUT_KEY and INPUT_SHA256. Use the exact Scheduler private network/task role configuration. Check task exit code and S3 dry-run reports. This validates actual task-role access, secrets, verified DB TLS/read-only sessions, shared lock, admin login/read scope, current review scope, product read shapes and load probes. It performs no DELETE or catalog writes.
+6. Only after both pass, update the dated configuration to enabled and deploy only `NightMaintenance`. Verify both AWS schedules, dates/timezone, exact task definition, override environment, private network, no automatic retry and IAM roles. Do not claim a reservation based on source configuration alone.
+
+## Runtime
+
+Reviews: 02:00–02:45 KST writes; verify/report by 02:50. Products: 03:00–05:50 writes; verify/report by 06:00. Outside the committed RUN_DATE writes fail closed. Each task is serial. Reviews pause 200ms; products pause 5s and 5min after each 20 candidates. One product night handles only a fraction of the remaining candidates; it reports partial progress rather than automatically scheduling more days.
+
+Each request rechecks the window, lock, S3 stop marker and load. Gate on eligible membership backlog, stale processing leases, unmarked foreground product backlog, UGC outbox failures/backlog and five live services' CPU (including the Medusa administrator that processes product updates). Per user approval, CPU alone never aborts an overnight run: at 70% use 1.5× item spacing, and at 90% use 2× spacing (reviews 300/400ms; products 7.5/10s). Existing error, membership-delay and queue-failure guards still stop the run. DB sessions enforce default_transaction_read_only. Administrator credentials come from Secrets Manager; tokens live only in process memory. Re-login once after 401; no other automatic mutation retries.
+
+S3 state is under `runs/<operationId>/<reviews|products>/`. To halt new mutations, write `{"stop":true}` to that job's `control.json`, and disable the schedule. An in-flight API may already have committed; inspect durable intent and DB/API state before resuming. Lost lock, network ambiguity, storage failure, changed live scope or overload stops the job.
+
+Review progress records every verified HTTP status and in-flight ID. Review eligibility is provider=admin, ratings 2/3, undeleted, immutable CSV membership. At most five previously approved rows in the entire operation may be skipped after independently confirming unchanged provider/product/rating/status and existing deleted_at. Any larger cumulative drift, new eligible row or changed eligibility stops the run. Report these preexisting deletes separately from this job’s deletions. Recovered ambiguous DELETEs after a completed pilot use DB confirmation and never repeat a confirmed deletion. An ambiguous pilot result stays blocked across restarts until an operator reconciles the missing HTTP evidence. Five successful HTTP204/deleted_at canaries and source aggregate API verification precede further deletion. Review stats are published asynchronously to Kafka by the existing API; source aggregate checks do not independently prove search-index propagation.
+
+Product state records the original snapshot, approved fields, owned draft and phases. Unknown draft creation or unresolved publication requires operator reconciliation, never blind repeat. Only empty approved productInfo fields are filled; active head drift and unrelated draft changes stop/skip. Publish passes bulk_import and a server-side expected-head check. Legacy unfinished operations are held for manual reconciliation. Do not roll back automatically: discuss reward/statistics compensation for reviews, and check the current active product head before any catalog rollback.
+
+## Reports and alerts
+
+CloudWatch logs and private S3 `report.json` / `dry-run-report.json` contain counts, phase, last verified operation and state references without credentials. Exit0 means completed/dry-run; exit2 means partial; exit1 means failed. EventBridge forwards task STOPPED events to SNS, Scheduler failures alarm and go to a DLQ. SNS has no subscriber by default: this does **not** automatically message the user or this chat. A delivery destination must be configured and tested separately. Task launch failure detection is limited to Scheduler delivery errors; inspect ECS launch results and scheduled task liveness operationally.
+
+Resumption uses the same operation ID and immutable inputs so verified work is not repeated. Use a newly authorized dated window and run both dry runs again before enabling a resumed run. Never delete S3 progress to force a retry. Restore/reconcile ambiguous states explicitly.

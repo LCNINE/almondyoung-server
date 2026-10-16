@@ -36,8 +36,6 @@
  *
  * - **토픽에 남아 있는 옛 메시지.** 발행 코드가 지금 옳아도 계약 이전에 쌓인 메시지는 모양이 다를 수
  *   있다. 이 논증은 "앞으로 발행될 것"만 덮는다. retention 을 넘긴 뒤에야 완결된다.
- *   `DLQHandler.reprocessDLQ`(관리자 수동 재처리)가 이 한계와 같은 성질이라 아래에서 면제된다 —
- *   그 토픽에 이미 있던 메시지를 되돌려 보낼 뿐 새 모양을 만들지 않는다.
  * - **레포 밖 발행자.** Medusa 등 다른 프로세스가 같은 토픽에 쓰면 이 논증 밖이다. 현재 확인된
  *   외부 발행자는 없다.
  * - `SEND_PATHS` 는 **손으로 유지하는 목록이다.** 그래서 `--gate` 가 실제 호출 지점을 세어 이
@@ -86,13 +84,6 @@ const SEND_PATHS: Array<{ site: string; what: string; validated: boolean }> = [
   {
     site: 'libs/events/src/dlq/dlq-handler.service.ts',
     what: 'DLQHandler.sendToDLQ — DLQ 토픽으로만 나간다. 계약 토픽이 아니므로 소비 검증 대상이 아니다',
-    validated: true,
-  },
-  {
-    site: 'libs/events/src/dlq/dlq-handler.service.ts',
-    what:
-      'DLQHandler.reprocessDLQ — 관리자 수동 재처리. 원본 토픽으로 되돌려 보내지만 ' +
-      '**그 토픽에 이미 있던 메시지**뿐이라 새 모양을 만들지 않는다 (위 "한계" 의 옛 메시지와 같은 성질)',
     validated: true,
   },
 ];

@@ -1,0 +1,23 @@
+{
+  "name": "almondyoung-night-maintenance",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/main.ts src/seed.ts --bundle --platform=node --target=node22 --external:pg-native --outdir=dist --out-extension:.js=.cjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1152.0",
+    "@aws-sdk/client-secrets-manager": "3.1152.0",
+    "pg": "8.23.1",
+    "@aws-sdk/client-cloudwatch": "3.1152.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.7",
+    "@types/pg": "8.23.1",
+    "esbuild": "0.25.12",
+    "typescript": "5.7.3",
+    "@types/jest": "29.5.14"
+  },
+  "packageManager": "yarn@1.22.22"
+}

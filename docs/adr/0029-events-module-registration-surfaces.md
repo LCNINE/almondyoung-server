@@ -285,7 +285,7 @@ microservice.setIsInitHookCalled(true);
 
 **증명의 모양이 바뀌었으므로 게이트도 바뀌었다.** 옛 게이트는 "우회 경로 2곳이 무엇을 실어 나를 수 있는가"를 계산했다. 이제 우회가 없으므로 게이트가 지키는 것은 **우회가 다시 생기지 않는 것**이다 — `transport.send` 호출 지점 집합, `StreamPublisher.sendMessage` 를 부르는 메서드 집합, `validateOnPublish: false` 의 부재, `publishRawEnvelope` 의 부재. 넷 다 AST 로 세며, 앞의 둘은 손으로 유지하는 목록과 대조한다. 실제로 무는 것은 확인했다(새 `sendMessage` 호출자를 심어 exit 1, `validateOnPublish: false` 를 심어 exit 1).
 
-**`DLQHandler.reprocessDLQ` 는 명시적으로 면제한다.** 이 관리자 수동 경로는 DLQ 메시지를 원본 토픽으로 되돌려 보내며 `StreamPublisher` 를 지나지 않는다. 면제 근거는 "그 토픽에 이미 있던 메시지만 다시 보낸다 — 새 모양을 만들지 않는다"이며, 이는 이 증명이 원래부터 덮지 못한다고 선언한 "토픽에 남아 있는 옛 메시지"와 같은 한계다. 면제를 목록에 적어 두었으므로 조용히 늘어날 수 없다.
+**`DLQHandler.reprocessDLQ` 는 명시적으로 면제한다.** 이 관리자 수동 경로는 DLQ 메시지를 원본 토픽으로 되돌려 보내며 `StreamPublisher` 를 지나지 않는다. 면제 근거는 "그 토픽에 이미 있던 메시지만 다시 보낸다 — 새 모양을 만들지 않는다"이며, 이는 이 증명이 원래부터 덮지 못한다고 선언한 "토픽에 남아 있는 옛 메시지"와 같은 한계다. 면제를 목록에 적어 두었으므로 조용히 늘어날 수 없다. **2026-10 삭제(#1016 8번).** 원래 토픽 재발행은 모든 구독자에게 중복을 내서 지웠다 — 면제 목록에서도 빠졌다.
 
 **계약의 구멍이 하나 드러났고 고쳤다 — `CategoryChanged.ancestors`.** payload 인터페이스에는 처음부터 있었는데 zod 스키마에만 빠져 있었다. 검증이 발행 경로에 없던 동안은 무증상이었지만, 적재 시점 검증이 켜지면 zod 가 미선언 키를 **조용히 떼어낸다**. channel-adapter 의 Medusa 카테고리 동기화가 `ancestors` 로 부모를 먼저 보장하므로(`pim-medusa-sync.service.ts:662`), 그 손실은 자식 카테고리를 최상위로 붙이는 버그가 됐을 것이다. 스키마에 optional 로 추가했다(additive — 옛 producer 를 깨지 않는다). **이것이 이 변경의 실질적 위험이 어디에 있는지 보여준다**: 검증 실패는 시끄럽지만 *strip* 은 조용하다. 그래서 회귀 네트는 "통과하는가"가 아니라 **"손실 없이 통과하는가"**(`parse(payload)` 가 `payload` 와 deep-equal)를 단언한다 — `projection-snapshot.assembler.spec.ts` 와 `categories.service.spec.ts` 에 실 조립 결과로 걸어 두었다.
 

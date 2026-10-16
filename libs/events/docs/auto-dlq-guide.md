@@ -227,6 +227,14 @@ export class CustomDLQConsumer {
 }
 ```
 
+### 9. 실패 테이블 모드 (#1016 8번)
+
+`EventFailuresModule.forRoot({ sequencedTopics })` 를 import 한 앱은 `.dlq` 토픽 대신 앱 DB 의 `event.dead_letters` 에 적는다. 출구는 앱의 `/event-failures` API 다(목록·상세·다시 넣기·종결, `?topic=` 으로 거르기).
+
+- **보류는 허용 목록의 토픽에서만.** `sequencedTopics` 에 든 토픽(주문 생애 스트림)만 같은 `aggregateId` 의 뒤 메시지를 보류한다. 그 밖의 토픽(«마지막 값이 이긴다» 스트림 — 예: 판매 가능 수량)은 실패를 기록만 하고 뒤 메시지를 막지 않는다 — 한 번의 실패가 더 새 값을 몇 시간씩 붙잡지 않게. 그런 행은 다시 넣기에서도 혼자 한 순서다. outbox 쪽도 `OutboxConfig.sequencedTopics` 로 같은 범위만 순서를 지킨다.
+- **마이그 전 배포의 안전판.** `startConsumer` 가 `event.dead_letters`·`event.failure_actions` 가 있는지 한 번 본다. 없으면(또는 확인 쿼리가 실패하면) 실패 테이블 모드를 켜지 않고 옛 `.dlq` 경로로 소비를 계속하며, ERROR 로그에 빠진 마이그(`add-event-dead-letters`)를 적는다. 그래도 순서는 `migrate → deploy` 다 — 안전판은 소비가 멈추지 않게 할 뿐, 그동안의 실패는 `.dlq` 로 가서 이 API 로 다시 넣을 수 없다.
+- **`EventFailuresModule` 이 없는 앱에는 재처리 경로가 없다.** 옛 «`.dlq` 를 원래 토픽으로 재발행» 재처리(membership `POST /admin/dlq/reprocess`, `DLQHandler.reprocessDLQ`)는 그 토픽의 모든 구독자에게 중복을 내서 삭제했다(#1016 8번). 그런 앱의 최종 실패는 `.dlq` 토픽에 남을 뿐이다 — 다시 처리할 출구가 필요하면 그 앱도 `EventFailuresModule` 을 켠다.
+
 ## 작동 원리
 
 1. **에러 발생**: 핸들러에서 에러가 throw됨
