@@ -476,6 +476,21 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     );
   });
 
+  it('rejects a stale expected active head before making publication changes', async () => {
+    const { service } = makeService();
+    jest
+      .spyOn(service as any, 'getVersionById')
+      .mockResolvedValue({ id: 'draft', masterId: 'master', status: 'draft' });
+    const lock = jest.fn().mockResolvedValue([{ id: 'operator-new-head' }]);
+    const tx = { select: jest.fn(() => ({ from: () => ({ where: () => ({ for: lock }) }) })), update: jest.fn() };
+
+    await expect(
+      service.publishVersion('draft', 'user', tx as any, { expectedActiveVersionId: 'old' }),
+    ).rejects.toThrow('활성 버전이 변경');
+    expect(lock).toHaveBeenCalledWith('update');
+    expect(tx.update).not.toHaveBeenCalled();
+  });
+
   it('일괄 세션에 잠기지 않은 draft 는 그대로 발행된다', async () => {
     const { service } = makeService();
     const version = {

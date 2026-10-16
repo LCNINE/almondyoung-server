@@ -15,7 +15,12 @@ import { User } from '@app/authorization';
 import { ProductVersionsService } from '../services/product-versions.service';
 import { ProductMastersService } from '../services/product-masters.service';
 import { ProductVariantsService } from '../services/product-variants.service';
-import { CreateDraftVersionDto, VersionTreeResponseDto, VersionDiffItemDto } from '../dto/versions';
+import {
+  CreateDraftVersionDto,
+  VersionTreeResponseDto,
+  VersionDiffItemDto,
+  PublishProductVersionDto,
+} from '../dto/versions';
 import { UpdateProductMasterDto, UpdateProductVariantDto, UpdateVariantBulkDto } from '../dto';
 import { ProductVersionMapper } from '../mappers/product-version.mapper';
 
@@ -200,9 +205,10 @@ export class ProductMasterVersionsController {
     @Param('masterId') masterId: string,
     @Param('versionId') versionId: string,
     @User() user: { userId: string },
+    @Body() dto: PublishProductVersionDto = {},
   ) {
-    await this.productVersionsService.publishVersion(versionId, user.userId);
-    return { message: 'Version published successfully' };
+    await this.productVersionsService.publishVersion(versionId, user.userId, undefined, dto);
+    return { message: 'Version published successfully', ...(dto.origin ? { origin: dto.origin } : {}) };
   }
 
   @Get(':versionId/compare/:compareVersionId')
