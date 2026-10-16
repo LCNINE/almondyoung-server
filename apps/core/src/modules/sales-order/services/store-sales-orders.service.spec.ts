@@ -838,7 +838,7 @@ describe('StoreSalesOrdersService', () => {
     });
 
     describe('buildActionsView fulfillmentStatus (V2)', () => {
-      it('전 라인 외주 + 인쇄 전량 delivered → delivered + 반품/교환 노출', async () => {
+      it('전 라인 외주 + 인쇄 전량 delivered → delivered, 반품/교환은 열지 않는다(주문제작)', async () => {
         const { service } = makeContext({
           fos: [],
           printOrders: [{ status: 'delivered' }],
@@ -846,7 +846,8 @@ describe('StoreSalesOrdersService', () => {
         });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
         expect(r.fulfillmentStatus).toBe('delivered');
-        expect(r.availableActions).toEqual(expect.arrayContaining(['return', 'exchange']));
+        expect(r.availableActions).not.toContain('return');
+        expect(r.availableActions).not.toContain('exchange');
       });
       it('전 라인 외주 + 인쇄 하나라도 shipped → shipping + already_shipped', async () => {
         const { service } = makeContext({

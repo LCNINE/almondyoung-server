@@ -158,17 +158,17 @@ const allMenus: MainMenu[] = [
         path: '/order/stall-board',
       },
       {
-        id: 'print-orders',
-        title: '와우프레스 발주',
-        path: '/order/print-orders',
-        hasPrintOrderBadge: true,
-      },
-      {
         // 주문 경로 양 끝(core·channel-adapter)의 메시지 실패 (#1016 7·8번). 페이지가 admin·master 전용이다.
         id: 'event-failures',
         title: '이벤트 실패',
         path: '/events/failures',
         requireRole: ['admin', 'master'],
+      },
+      {
+        id: 'print-orders',
+        title: '와우프레스 발주',
+        path: '/order/print-orders',
+        hasPrintOrderBadge: true,
       },
       {
         id: 'shipment',
