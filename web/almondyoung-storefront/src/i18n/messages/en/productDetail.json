@@ -116,6 +116,8 @@
     "membersOnlyCta": "Join membership to purchase",
     "almondDesignAttached": "Your edited Almond Template design will be added with this item.",
     "almondDesignSizeMismatch": "Size doesn't match",
+    "almondDesignTitle": "Your design",
+    "almondDesignChooseOption": "Choose an option and this design will be added with it.",
     "almondDesignSizeHint": "Choose the option that matches your design size ({size}mm)."
   },
   "cartModal": {

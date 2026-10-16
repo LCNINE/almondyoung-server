@@ -49,7 +49,10 @@ function buildLoginRedirect(request: NextRequest): NextResponse {
   const segments = request.nextUrl.pathname.split("/").filter(Boolean)
   const country = segments[0] || DEFAULT_REGION
   const url = new URL(`/${country}/login`, request.nextUrl.origin)
-  url.searchParams.set("redirect_to", request.nextUrl.pathname + request.nextUrl.search)
+  url.searchParams.set(
+    "redirect_to",
+    request.nextUrl.pathname + request.nextUrl.search
+  )
   return NextResponse.redirect(url, 307)
 }
 
@@ -76,7 +79,10 @@ function isJwtExpired(token?: string, skewSeconds = 30): boolean {
 
 function buildRestoreTokenRedirect(request: NextRequest): NextResponse {
   const url = new URL("/api/auth/restore-token", request.nextUrl.origin)
-  url.searchParams.set("return_to", request.nextUrl.pathname + request.nextUrl.search)
+  url.searchParams.set(
+    "return_to",
+    request.nextUrl.pathname + request.nextUrl.search
+  )
   return NextResponse.redirect(url, 307)
 }
 
@@ -233,7 +239,8 @@ async function resolveStorefrontNotFound(
   if (!kind || !(kind in STORE_LOOKUPS)) return
 
   // /category/대분류/중분류 는 마지막 세그먼트가 실제 카테고리, /products/{handle} 는 하나뿐
-  const handle = kind === "category" ? segments[segments.length - 1] : segments[2]
+  const handle =
+    kind === "category" ? segments[segments.length - 1] : segments[2]
   if (!handle || segments.length < 3) return
 
   const cacheKey = `${kind}:${handle}`
@@ -351,6 +358,7 @@ export async function middleware(request: NextRequest) {
     // pathname을 헤더에 추가하여 layout에서 사용 가능하도록 설정
     const requestHeaders = new Headers(request.headers)
     requestHeaders.set("x-pathname", request.nextUrl.pathname)
+    requestHeaders.set("x-search", request.nextUrl.search)
 
     // requestHeaders 는 클라이언트 요청 헤더의 복사본이므로, 외부에서 실어 보낸
     // APP_CONTEXT_HEADER 를 먼저 지운다. 지우지 않으면 아무나 헤더를 위조해
@@ -390,6 +398,7 @@ export async function middleware(request: NextRequest) {
     // pathname을 헤더에 추가하여 layout에서 사용 가능하도록 설정
     const requestHeaders = new Headers(request.headers)
     requestHeaders.set("x-pathname", request.nextUrl.pathname)
+    requestHeaders.set("x-search", request.nextUrl.search)
 
     // requestHeaders 는 클라이언트 요청 헤더의 복사본이므로, 외부에서 실어 보낸
     // APP_CONTEXT_HEADER 를 먼저 지운다. 지우지 않으면 아무나 헤더를 위조해

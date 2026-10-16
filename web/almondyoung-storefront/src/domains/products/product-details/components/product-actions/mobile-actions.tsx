@@ -9,6 +9,7 @@ import { ShoppingCart } from "lucide-react"
 import React, { useState } from "react"
 import { useTranslations } from "next-intl"
 import OptionSelect from "./option-select"
+import { AlmondDesignNotice } from "./almond-design-notice"
 import SelectedItemRow from "./selected-item-row"
 import { RestockNotice, hasStockNotice } from "./restock-notice"
 import { SelectedItem } from "./types"
@@ -34,6 +35,8 @@ type MobileActionsProps = {
   show: boolean
   templateHref?: string
   designAttached?: boolean
+  almondDesignId?: string
+  almondDesignHint?: string
   blockedLabel?: string
 }
 
@@ -57,6 +60,8 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   show,
   templateHref,
   designAttached,
+  almondDesignId,
+  almondDesignHint,
   blockedLabel,
 }) => {
   const t = useTranslations("productDetail.options")
@@ -91,10 +96,12 @@ const MobileActions: React.FC<MobileActionsProps> = ({
               </Button>
             </LocalizedClientLink>
           )}
-          {designAttached && (
-            <p className="text-muted-foreground text-center text-xs">
-              {t("almondDesignAttached")}
-            </p>
+          {almondDesignId && (
+            <AlmondDesignNotice
+              designId={almondDesignId}
+              attached={!!designAttached}
+              hint={almondDesignHint}
+            />
           )}
           <div className="flex w-full gap-x-3">
             {/* TODO: 재입고 알림 기능 추가 후 활성화

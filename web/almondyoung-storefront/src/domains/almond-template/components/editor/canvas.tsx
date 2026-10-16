@@ -7,6 +7,7 @@ import { CanvasGuides } from "./canvas-guides"
 import { useLeaveWarning } from "../../hooks/use-leave-warning"
 import { imageSrc } from "../../lib/image-ref"
 import {
+  layerImageDpi,
   SHAPE_TEXT_TYPES,
   sideBackground,
   type Layer,
@@ -19,6 +20,16 @@ function quickActionsAt(layer: Layer, scale: number) {
   const x = layer.x + layer.width / 2 + dx * Math.cos(rad) - dy * Math.sin(rad)
   const y = layer.y + layer.height / 2 + dx * Math.sin(rad) + dy * Math.cos(rad)
   return { left: `${x * scale}px`, top: `${y * scale}px` }
+}
+
+// 채우기 없는 도형은 안쪽이 클릭을 받지 않아 뒤에 깔린 요소를 누를 수 있다. 테두리 선은 그대로 잡힌다
+function seeThrough(layer: Layer) {
+  return (
+    SHAPE_TEXT_TYPES.has(layer.type) &&
+    layer.fill === "none" &&
+    !layer.image &&
+    !layer.text
+  )
 }
 
 export function Canvas({ editor }: { editor: AlmondEditor }) {
@@ -166,13 +177,15 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                     }
                   >
                     <LayerGraphic layer={layer} />
-                    <rect
-                      x={layer.x}
-                      y={layer.y}
-                      width={layer.width}
-                      height={layer.height}
-                      fill="transparent"
-                    />
+                    {!seeThrough(layer) && (
+                      <rect
+                        x={layer.x}
+                        y={layer.y}
+                        width={layer.width}
+                        height={layer.height}
+                        fill="transparent"
+                      />
+                    )}
                   </g>
                 )
               )}
@@ -490,13 +503,18 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                   ? "사진을 현재 크기로 인쇄하기에는 해상도가 낮습니다."
                   : "인쇄 영역 밖의 부분은 출력되지 않습니다."
               }
-              className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2 bg-white px-2 py-1 text-xs font-semibold text-red-600 shadow"
+              // 사진을 가리지 않게 사진 아래쪽 바깥에 붙인다 (위쪽엔 회전 손잡이·버튼이 있다)
+              className="pointer-events-none absolute z-20 -translate-x-1/2 bg-white px-2 py-1 text-xs font-semibold whitespace-nowrap text-red-600 shadow"
               style={{
-                left: `${Math.max(0, Math.min(design.widthMm, selected.x + selected.width / 2)) * canvasFit * zoom}px`,
-                top: `${Math.max(0, Math.min(design.heightMm, selected.y + selected.height / 2)) * canvasFit * zoom}px`,
+                left: `${(selected.x + selected.width / 2) * scale}px`,
+                // 종이 밖으로 크게 넘친 사진은 사진 끝 대신 종이 아래에 붙여야 화면에 보인다
+                top: `${Math.min(layerBounds(selected).y1, design.heightMm) * scale + 10}px`,
               }}
             >
-              ⚠ 인쇄 비권장
+              ⚠ 인쇄 비권장 ·{" "}
+              {selectedLowDpi
+                ? `${Math.floor(layerImageDpi(design.kind, selected))}dpi (권장 ${spec.minImageDpi}dpi 이상)`
+                : "작업선 밖으로 나감"}
             </div>
           )}
           <div

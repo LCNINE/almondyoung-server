@@ -1,4 +1,5 @@
 import {
+  MousePointerClick,
   Magnet,
   Crop,
   Scaling,
@@ -93,6 +94,11 @@ const SHORTCUTS: Item[] = [
     Scaling,
     "정비율 크기 조절 [ Shift + 모서리 드래그 ]",
     "가로세로 비율을 유지한 채 늘리거나 줄입니다.",
+  ],
+  [
+    MousePointerClick,
+    "여러 개 선택 [ Shift + 클릭 / 빈 곳 드래그 ]",
+    "골라 둔 것들을 한 번에 옮기고 크기를 바꾸고 복사(Ctrl + C·V)할 수 있습니다.",
   ],
   [Trash2, "삭제 [ Delete ]", "선택한 객체를 삭제합니다."],
   [

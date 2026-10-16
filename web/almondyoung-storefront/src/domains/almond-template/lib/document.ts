@@ -521,30 +521,46 @@ export function resizeLayerFromHandle(
 
 const MIN_PRINT_TEXT_MM = 1.76
 
-export function printIssues(design: Design): string[] {
-  const issues: string[] = []
+// 주문을 막지는 않고 "흐리게 인쇄될 수 있다"고 한 번 더 묻는 항목. 그대로 진행하면 고객 책임이다
+export function printWarnings(design: Design): string[] {
+  const warnings: string[] = []
   const minDpi = PRINT_SPECS[design.kind].minImageDpi
-  if (!design.front.length) issues.push("앞면에 인쇄할 내용이 없습니다.")
+  const low = (dpi: number) =>
+    `해상도 ${Math.floor(dpi)}dpi — 권장 ${minDpi}dpi보다 낮아 흐리게 인쇄될 수 있습니다.`
   for (const [label, side] of [
     ["앞면", "front"],
     ["뒷면", "back"],
   ] as const) {
     const bg = sideBackground(design, side)
     if (side === "back" && !printsBack(design)) continue
-    if (
-      bg.backgroundImage &&
-      (!bg.backgroundPixelWidth ||
-        !bg.backgroundPixelHeight ||
-        imageDpi(
-          design.kind,
-          bg.backgroundPixelWidth,
-          bg.backgroundPixelHeight,
-          design.widthMm,
-          design.heightMm
-        ) < minDpi)
-    )
-      issues.push(`${label} 배경 이미지 해상도가 ${minDpi}dpi보다 낮습니다.`)
+    if (!bg.backgroundImage) continue
+    const dpi =
+      bg.backgroundPixelWidth && bg.backgroundPixelHeight
+        ? imageDpi(
+            design.kind,
+            bg.backgroundPixelWidth,
+            bg.backgroundPixelHeight,
+            design.widthMm,
+            design.heightMm
+          )
+        : 0
+    if (dpi < minDpi) warnings.push(`${label} 배경 이미지: ${low(dpi)}`)
   }
+  for (const [side, layers] of [
+    ["앞면", design.front],
+    ["뒷면", design.back],
+  ] as const)
+    for (const layer of layers) {
+      if (layer.visible === false || !layer.image) continue
+      const dpi = layerImageDpi(design.kind, layer)
+      if (dpi < minDpi) warnings.push(`${side}의 ${layer.name}: ${low(dpi)}`)
+    }
+  return warnings
+}
+
+export function printIssues(design: Design): string[] {
+  const issues: string[] = []
+  if (!design.front.length) issues.push("앞면에 인쇄할 내용이 없습니다.")
   for (const [side, layers] of [
     ["앞면", design.front],
     ["뒷면", design.back],
@@ -553,10 +569,6 @@ export function printIssues(design: Design): string[] {
       if (layer.visible === false) continue
       if (layer.type === "frame" && !layer.image)
         issues.push(`${side}의 ${layer.name}: 사진을 넣어 주세요.`)
-      if (layer.image && layerImageDpi(design.kind, layer) < minDpi)
-        issues.push(
-          `${side}의 ${layer.name}: 이미지 해상도가 ${minDpi}dpi보다 낮습니다.`
-        )
       if (layer.type === "text" && !(layer.text ?? "").trim())
         issues.push(`${side}의 ${layer.name}: 문구가 비어 있습니다.`)
       if (

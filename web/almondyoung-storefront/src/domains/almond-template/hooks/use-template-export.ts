@@ -53,9 +53,7 @@ export function useTemplateExport({
     )
   const exportSvg = () => {
     const source = preview
-      ? (document.querySelector(
-          '[aria-label="시안 미리보기"] svg'
-        ) as SVGSVGElement | null)
+      ? (document.querySelector("#almond-proof") as SVGSVGElement | null)
       : svgRef.current
     if (!source) return
     download(
@@ -68,9 +66,7 @@ export function useTemplateExport({
     )
   }
   const printProof = () => {
-    const svg = document.querySelector(
-      '[aria-label="시안 미리보기"] svg'
-    ) as SVGSVGElement | null
+    const svg = document.querySelector("#almond-proof") as SVGSVGElement | null
     if (!svg) return
     const page = window.open("", "_blank")
     if (!page)

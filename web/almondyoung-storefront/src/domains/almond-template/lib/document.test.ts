@@ -5,6 +5,7 @@ import {
   newDesign,
   parseDesign,
   printIssues,
+  printWarnings,
   printsBack,
   reorderLayer,
   resizeDesign,
@@ -155,8 +156,8 @@ describe("아몬드템플릿", () => {
       pixelWidth: 500,
       pixelHeight: 500,
     }
-    expect(printIssues(design)).toContain(
-      "앞면의 사진: 이미지 해상도가 350dpi보다 낮습니다."
+    expect(printWarnings(design).join("\n")).toContain(
+      "권장 350dpi보다 낮아 흐리게 인쇄될 수 있습니다."
     )
   })
 
@@ -352,8 +353,8 @@ describe("아몬드템플릿", () => {
       backgroundPixelHeight: 100,
     })
     expect(printsBack(withImage)).toBe(true)
-    expect(printIssues(withImage)).toContain(
-      "뒷면 배경 이미지 해상도가 300dpi보다 낮습니다."
+    expect(printWarnings(withImage).join("\n")).toContain(
+      "뒷면 배경 이미지: 해상도"
     )
   })
   it("잘못된 레이어를 레이어 목록 기준 위치와 이름으로 짚는다", () => {

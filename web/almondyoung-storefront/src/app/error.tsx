@@ -30,7 +30,10 @@ export default function Error({
         const isMainPage = /^\/[a-z]{2}\/?$/.test(pathname)
         const countryCode = extractCountryCodeFromPath(pathname, "kr")
         const loginPath = toLocalizedPath(countryCode, "/login")
-        const redirectPath = encodeURIComponent(normalizeRedirectPath(pathname))
+        // 쿼리를 빼면 로그인 뒤 다른 화면으로 돌아온다 (예: 아몬드템플릿 편집기의 template=)
+        const redirectPath = encodeURIComponent(
+          normalizeRedirectPath(pathname + window.location.search)
+        )
         const restoreAttemptKey = `auth:restore-attempted:${pathname}`
 
         if (sessionStorage.getItem(restoreAttemptKey) === "1") {

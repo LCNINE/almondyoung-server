@@ -53,6 +53,7 @@ export function PreviewDialog({ editor }: { editor: AlmondEditor }) {
       </div>
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-slate-100 p-8">
         <svg
+          id="almond-proof"
           viewBox={`0 0 ${design.widthMm} ${design.heightMm}`}
           style={{
             width:

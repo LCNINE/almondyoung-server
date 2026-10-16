@@ -37,6 +37,7 @@ type Params = {
   groupIds: string[]
   setGroupIds: (ids: string[]) => void
   cropId: string | null
+  selectedId: string | null
 }
 
 export const MIN_ZOOM = 0.1
@@ -71,6 +72,7 @@ export function useCanvasInteraction({
   groupIds,
   setGroupIds,
   cropId,
+  selectedId,
 }: Params) {
   const [guides, setGuides] = useState<Guides | null>(null)
   const [zoom, setZoom] = useState(1)
@@ -208,6 +210,16 @@ export function useCanvasInteraction({
   }
   const startDrag = (event: React.PointerEvent<SVGGElement>, layer: Layer) => {
     event.stopPropagation()
+    if (event.shiftKey) {
+      // Shift+클릭으로 하나씩 더하거나 뺀다
+      const base = groupIds.length ? groupIds : selectedId ? [selectedId] : []
+      const next = base.includes(layer.id)
+        ? base.filter((id) => id !== layer.id)
+        : [...base, layer.id]
+      setSelectedId(next.length === 1 ? next[0] : null)
+      if (next.length > 1) setGroupIds(next)
+      return
+    }
     const merged = layer.groupId
       ? design[side].filter(
           (item) => item.groupId === layer.groupId && item.visible !== false

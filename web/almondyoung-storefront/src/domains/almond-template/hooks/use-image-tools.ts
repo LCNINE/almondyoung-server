@@ -33,6 +33,12 @@ export function useImageTools({
   const [uploadedImages, setUploadedImages] = useState<
     Array<{ image: string; pixelWidth: number; pixelHeight: number }>
   >([])
+  // 라이브러리에서만 뺀다. 이미 디자인에 넣은 사진은 디자인에 그대로 남는다
+  const [hiddenImages, setHiddenImages] = useState<string[]>([])
+  const removeFromLibrary = (image: string) => {
+    setUploadedImages((items) => items.filter((item) => item.image !== image))
+    setHiddenImages((items) => [...items, image])
+  }
   const imageLibrary = [
     ...uploadedImages,
     ...[...design.front, ...design.back]
@@ -50,6 +56,7 @@ export function useImageTools({
       })),
   ].filter(
     (item, index, items) =>
+      !hiddenImages.includes(item.image) &&
       items.findIndex((other) => other.image === item.image) === index
   )
   const imageFile = async (
@@ -268,6 +275,7 @@ export function useImageTools({
 
   return {
     imageLibrary,
+    removeFromLibrary,
     imageFile,
     fillFrames,
     removeWhiteBackground,

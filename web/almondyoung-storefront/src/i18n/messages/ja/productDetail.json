@@ -116,6 +116,8 @@
     "membersOnlyCta": "メンバーシップに加入して購入",
     "almondDesignAttached": "編集したアーモンドテンプレートのデザインが一緒に追加されます。",
     "almondDesignSizeMismatch": "サイズが合いません",
+    "almondDesignTitle": "編集したデザイン",
+    "almondDesignChooseOption": "オプションを選ぶとこのデザインも一緒に追加されます。",
     "almondDesignSizeHint": "デザインのサイズ({size}mm)と同じオプションを選んでください。"
   },
   "cartModal": {

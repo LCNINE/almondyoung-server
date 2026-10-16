@@ -5,6 +5,7 @@ import {
   updateLayer,
   newDesign,
   printIssues,
+  printWarnings,
   printsBack,
   type Design,
 } from "../lib/document"
@@ -242,6 +243,7 @@ export function useAlmondEditor({
     groupIds,
     setGroupIds,
     cropId,
+    selectedId,
   })
   const auth = useAuthRetry(setMessage)
   const storage = useTemplateStorage({
@@ -271,6 +273,8 @@ export function useAlmondEditor({
     size,
     setSelectedId,
     setMessage,
+    group,
+    setGroupIds,
   })
   const images = useImageTools({
     design,
@@ -298,14 +302,21 @@ export function useAlmondEditor({
     templateId,
     runAuthed: auth.runAuthed,
   })
-  const complete = () => {
-    const found = printIssues(design)
-    if (found.length) {
-      setIssues(found)
-      return
-    }
+  // 막는 문제(빈 문구·안전영역 등)는 고쳐야 넘어가고, 해상도만 낮으면 확인 후 그대로 진행할 수 있다
+  const [warnings, setWarnings] = useState<string[]>([])
+  const openPreview = () => {
+    setIssues([])
+    setWarnings([])
     setPreviewSide(side)
     setPreview(true)
+  }
+  const complete = () => {
+    const found = printIssues(design)
+    const warned = printWarnings(design)
+    setWarnings(warned)
+    if (found.length) return setIssues(found)
+    if (warned.length) return setIssues(warned)
+    openPreview()
   }
   useEffect(() => {
     if (selected?.type !== "qr" && selected?.type !== "text") return
@@ -320,6 +331,7 @@ export function useAlmondEditor({
     loadDialog: storage.loadDialog,
     selected,
     copied: actions.copied,
+    hasGroup: group.length > 1,
     editable: group.length > 1 || actions.editable,
     setSelectedId,
     setPreview,
@@ -409,6 +421,8 @@ export function useAlmondEditor({
     selectedLowDpi,
     selectedPrintWarning,
     complete,
+    warnings,
+    openPreview,
     cropId,
     setCropId,
     startCrop,
