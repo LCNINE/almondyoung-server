@@ -110,6 +110,9 @@ export class ChannelOrderChangeManager {
       return this.tryAddress(order, delta, ctx.amendmentId, tx);
     }
     if (isDecrease(delta)) {
+      // 아래 어느 길로든 인쇄 줄의 감소는 대기로 남아 운영자 몫이 된다. 그사이 원래 수량으로 주문되지 않게,
+      // 거절이 되돌리는 savepoint 밖에서 아직 안 보낸 인쇄를 먼저 붙잡는다
+      await this.holdUnsentPrint(delta.salesOrderLineId, tx);
       if (ctx.allRemoved) return { ...delta, outcome: 'pending', blockers: [{ code: 'ALL_LINES_REMOVED' }] };
       // V1 cancelPartial 은 판매주문 status 를 보지 않는다 — 시도하면 이미 나간 수량을 «안 나간 몫» 으로 줄이고
       // awaiting_matching 백로그를 pending 으로 되돌려 매칭을 다시 시도시킨다.
@@ -179,8 +182,6 @@ export class ChannelOrderChangeManager {
     tx: DbTx,
   ): Promise<RecordedChannelDelta> {
     const sourceEventId = `${ctx.amendmentId}:${delta.salesOrderLineId}`;
-    // 인쇄 줄의 감소는 아래에서 거절돼 운영자 몫이 된다. 그사이 원래 수량으로 주문되지 않게, 거절이 되돌리는 savepoint 밖에서 붙잡는다
-    await this.holdUnsentPrint(delta.salesOrderLineId, tx);
     const refusal = await this.attempt(tx, async (sp) => {
       // 판매주문 취소는 외주 줄을 그냥 통과시킨다. 인쇄 줄을 줄이면 와우프레스는 원래 수량대로 주문·제작된다
       if (await this.reader.hasActivePrintOrder(delta.salesOrderLineId, sp)) {
