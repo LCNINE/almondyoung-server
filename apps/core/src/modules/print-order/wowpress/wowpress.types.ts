@@ -5,6 +5,8 @@ export interface WowpressLineSpec {
   awkjob: Record<string, unknown>[];
   qtyPerUnit: number;
   file: { format: 'jpg' | 'pdf' | 'eps'; dpi: number };
+  // 이 품목에 맞는 시안. 시안 ID 는 장바구니 메타데이터로 들어와 고객이 다른 상품·크기의 시안을 붙일 수 있다
+  design: { productId: string; widthMm: number; heightMm: number };
   confirmed: boolean;
 }
 

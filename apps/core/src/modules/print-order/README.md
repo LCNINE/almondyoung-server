@@ -69,7 +69,7 @@
 새 인쇄 품목을 자동 발주 대상으로 열 때마다 반복한다.
 
 1. 와우프레스 제품상세 API 로 옵션 코드(`prodno`, `jobpresetno`, `prsjob`, `awkjob`)를 확인한다.
-2. `wowpress/wowpress-products.ts` 의 `WOWPRESS_PRODUCTS` 에 PIM variant id 키로 한 줄 추가한다. `confirmed: false`. 가드 스펙이 키 중복·필수 필드를 검사한다.
+2. `wowpress/wowpress-products.ts` 의 `WOWPRESS_PRODUCTS` 에 PIM variant id 키로 한 줄 추가한다. `confirmed: false`. `design` 에는 이 품목에 맞는 아몬드템플릿 상품 키와 시안 크기(mm)를 적는다 — 다른 시안이 붙은 주문은 발주하지 않고 `failed` 로 남는다. 가드 스펙이 키 중복·필수 필드를 검사한다.
 3. 배포한다. 첫 품목이면 `PRINT_ORDER_SUBMIT_ENABLED=true` 로 바꿔 배포한다.
 4. 와우프레스 선입금 0 상태에서 그 품목을 실제로 주문한다. `confirmed:false` 건은 테스트 메모가 붙어 입금대기로 들어간다.
 5. 와우프레스에 전화로 그 주문이 의도대로 들어왔는지 확인한다. 보드 `테스트 확인대기` 탭에서 `확인 완료` + 결과 메모를 남긴다.

@@ -20,6 +20,7 @@ export const ORDER_UNCONFIRMED_ERROR = 'order sent but not confirmed — verify 
 export const ORDER_LOOKUP_PENDING_ERROR = 'order sent but response lost — looking up by ordkey before giving up';
 export const ORDER_LOOKUP_DELAY_MS = 5 * 60_000;
 export const DESIGN_OWNER_MISMATCH_ERROR = 'almond design does not belong to the ordering customer — not ordered';
+export const DESIGN_SPEC_MISMATCH_ERROR = 'almond design does not match the purchased print product or size — not ordered';
 const TEST_MEMO = '테스트 시안입니다. 혹시 이 시안대로 출력이 되나요?';
 
 const shippingAddress = z.object({
@@ -155,6 +156,14 @@ export class PrintOrderSubmitManager {
     const design = await this.ugc.design(lane.row.almondDesignId);
     if (design.userId !== ctx.order.customerId) {
       await lane.owned({ status: 'failed', lastError: DESIGN_OWNER_MISMATCH_ERROR });
+      return null;
+    }
+    if (
+      design.productId !== spec.design.productId ||
+      design.widthMm !== spec.design.widthMm ||
+      design.heightMm !== spec.design.heightMm
+    ) {
+      await lane.owned({ status: 'failed', lastError: DESIGN_SPEC_MISMATCH_ERROR });
       return null;
     }
 

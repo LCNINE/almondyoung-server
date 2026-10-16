@@ -25,6 +25,7 @@ import {
 } from './print-order.repository';
 import {
   DESIGN_OWNER_MISMATCH_ERROR,
+  DESIGN_SPEC_MISMATCH_ERROR,
   ORDER_LOOKUP_DELAY_MS,
   ORDER_LOOKUP_PENDING_ERROR,
   ORDER_UNCONFIRMED_ERROR,
@@ -52,6 +53,7 @@ function mockSpec(confirmed: boolean): WowpressLineSpec {
     awkjob: [],
     qtyPerUnit: 100,
     file: { format: 'jpg', dpi: 350 },
+    design: { productId: 'p', widthMm: 90, heightMm: 50 },
     confirmed,
   };
 }
@@ -316,6 +318,28 @@ describe('PrintOrderSubmitManager', () => {
 
     expect(wowpress.order.mock.calls[0]?.[0].items[0]?.ordbody).toBe(TEST_MEMO);
     expect(repo.get('po-1')).toMatchObject({ status: 'submitted', testMemo: true });
+  });
+
+  it.each([
+    ['product', { productId: 'other' }],
+    ['size', { widthMm: 100 }],
+  ])('fails without ordering when the design is for another %s', async (_, diff) => {
+    const { repo, wowpress, ugc, manager } = setup(CONFIRMED_VARIANT);
+    ugc.design.mockResolvedValue({
+      userId: CUSTOMER_ID,
+      productId: 'p',
+      widthMm: 90,
+      heightMm: 50,
+      hasBack: false,
+      ...diff,
+    });
+
+    await manager.submit(repo.get('po-1'));
+
+    expect(repo.get('po-1')).toMatchObject({ status: 'failed', lastError: DESIGN_SPEC_MISMATCH_ERROR });
+    expect(repo.get('po-1').orderAttemptedAt).toBeNull();
+    expect(ugc.printLink).not.toHaveBeenCalled();
+    expect(wowpress.order).not.toHaveBeenCalled();
   });
 
   it('fails without ordering when the design belongs to another customer', async () => {

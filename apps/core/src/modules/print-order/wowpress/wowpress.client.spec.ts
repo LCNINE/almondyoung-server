@@ -21,6 +21,7 @@ const SPEC: WowpressLineSpec = {
   awkjob: [{ jobno: 2 }],
   qtyPerUnit: 100,
   file: { format: 'jpg', dpi: 350 },
+  design: { productId: 'p', widthMm: 90, heightMm: 50 },
   confirmed: false,
 };
 

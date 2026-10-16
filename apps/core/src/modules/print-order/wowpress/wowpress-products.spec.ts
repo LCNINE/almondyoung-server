@@ -29,6 +29,7 @@ describe('WOWPRESS_PRODUCTS guard', () => {
       awkjob: [],
       qtyPerUnit: 0,
       file: { format: 'jpg', dpi: 900 },
+      design: { productId: 'p', widthMm: 90, heightMm: 50 },
       confirmed: false,
     };
     expect(problems('not-a-uuid', bad)).toHaveLength(4);
