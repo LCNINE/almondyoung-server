@@ -145,3 +145,8 @@ export interface ChannelOrderProvider {
   readonly channel: SalesChannel;
   fetchOrders(since: Date | null): Promise<FetchOrdersResult>;
 }
+
+/** 즉시 끌어오기·다시 배달이 함께 쓰는 좁힘. `fetchOrderForSync` 는 선택 메서드라 존재로만 가른다. */
+export function isSyncableProvider(provider: ChannelOrderProvider): provider is SyncableChannelOrderProvider {
+  return typeof (provider as SyncableChannelOrderProvider).fetchOrderForSync === 'function';
+}

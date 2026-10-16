@@ -92,6 +92,12 @@ OrderPollerOrchestrator (@Cron 5분)
 - 주문 하나를 지금 다시 끌어오는 입구: `POST /adapter/orders/:channel/:externalOrderId/sync`(내부 키, 본문 `{ force?: boolean }`). 폴링과 같은 `processOrderItem` + lifecycle 을 타고 워터마크는 건드리지 않는다. `force` 는 해시가 같아도 `OrderModified` 를 낸다(백필 전용). 지원 `medusa`·`naver`, 비활성 채널은 409.
 - core 는 이 앱을 직접 부르지 않는다. 채널 쪽 일을 원하면 `channel-orders.commands.v1` 에 명령을 낸다 — `ResyncChannelOrder`(#1016 6번 행), `CancelChannelOrder`(35번 행·36번 재설계: 전체취소는 Medusa `channel-cancel`(기본 `/cancel` 은 환불 오류를 삼킨다), 부분취소는 `partial-cancel` 을 `refundMode` 와 함께 부르고, 정산이 끝나지 못하면 `ChannelOrderSettlementFailed`(`retryable`) 를 낸다 — 사실을 낸 뒤 명령을 ack 하고, 다시 부르는 건 core 리컨실러(#36)다, `services/order-cancel/`). 소비자는 `consumers/channel-orders-command.consumer.ts`.
 
+### 3-5a. 채널 주문 대사 (#1016 45번)
+`services/order-reconcile/` 가 30분마다 최근 3일 갱신된 Medusa 주문을 core 판매주문과 맞춰 «core 에 없음»(`missing_order`)·«취소 미반영»(`cancel_not_applied`)을 `order_reconcile_findings` 에 남긴다.
+기대값은 폴러와 같은 스냅샷 해석(`paymentState`·lifecycle)이라 수집 조건을 다시 구현하지 않는다. 조치는 «다시 끌어오기»가 아니라 «다시 배달하기»다 —
+`syncOrder` 는 매핑 있는 주문엔 `OrderModified` 만, 취소엔 `claimFirstSeen` 이라 force 로도 다시 안 낸다. 규칙 모드는 `rules/*.rule.ts`(관찰 → 실행 전환은 규칙마다 PR).
+설계 `docs/superpowers/specs/2026-10-16-channel-order-reconcile-design.md`.
+
 ### 3-5b. 채널 능력 레지스트리 (ADR-0031)
 `src/services/channel-capabilities.ts` 의 `CHANNEL_CAPABILITIES` 가 채널 차이의 **유일한 선언
 자리**다. 채널을 등급(퍼스트/서드파티)으로 나누지 않고 능력 벡터로 적는다.
@@ -147,6 +153,7 @@ Core(구 PIM) (Kafka) → PimProductEventConsumer → inbox_events
 | user-service | `UserServiceClient` | 사용자 정보 조회 |
 | PIM (channel-listing) | `ChannelListingClient` | 채널 리스팅 매핑 조회 |
 | Core (내부 라우트) | `SalesChannelClient` | 활성 판매채널 `site` 목록 조회 (수집 게이트, `CORE_INTERNAL_KEY` 필요) |
+| Core (내부 라우트) | `CoreSalesOrderLookupClient` | 채널 대사의 판매주문 묶음 조회 `POST /internal/sales-orders/lookup` (`CORE_INTERNAL_KEY`). 실패는 «SO 없음»이 아니라 그 주기 건너뛰기 |
 
 ## 5. 스키마 구조
 
@@ -159,6 +166,7 @@ channelAdapterSchema
 ├── sync_statuses           — 채널별 동기화 상태 영속화 (channelId + dataType 유니크)
 ├── pending_orders          — (죽음) writer/reader 0. 삭제 대기 #642
 ├── order_collection_failures — 수집 실패 격리 (channel + externalOrderId + reason 유니크)
+├── order_reconcile_findings — 채널 대사 결과 (열린 행은 channel + externalOrderId + kind 당 1행, 부분 유니크)
 ├── inbox_events            — Inbox 패턴 이벤트 큐 (pending → processing → published/failed)
 ├── pim_medusa_mappings     — PIM ↔ Medusa 상품 매핑 (pimMasterId 유니크)
 ├── migration_progress      — 마이그레이션 진행 추적 (일회성 백필 스크립트용)
