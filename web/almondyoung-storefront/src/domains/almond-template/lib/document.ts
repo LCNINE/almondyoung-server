@@ -2,6 +2,7 @@ import { PRINT_SPECS, type PrintKind } from "./catalog"
 import { CLIPART_IDS, FRAME_IDS, SHAPE_VARIANTS } from "./art-library"
 import { FILE_IMAGE_REF } from "./image-ref"
 import { fittedFontSize } from "../components/graphic"
+import { isAutoTextName, textLayerName } from "./layer"
 
 export type Layer = {
   id: string
@@ -313,7 +314,14 @@ export function parseDesign(value: unknown): Design {
     checkBackgroundImage(data.backBackground)
   }
   checkBackgroundImage(data)
-  return data as Design
+  const design = data as Design
+  const named = (layers: Layer[]) =>
+    layers.map((layer) =>
+      isAutoTextName(layer)
+        ? { ...layer, name: textLayerName(layer.text) }
+        : layer
+    )
+  return { ...design, front: named(design.front), back: named(design.back) }
 }
 
 function checkBackgroundImage(data: Partial<SideBackground>) {

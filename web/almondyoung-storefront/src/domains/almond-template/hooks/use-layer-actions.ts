@@ -6,7 +6,7 @@ import {
   type Design,
   type Layer,
 } from "../lib/document"
-import { makeLayer } from "../lib/layer"
+import { isAutoTextName, makeLayer, textLayerName } from "../lib/layer"
 import { textBoxFor } from "../components/graphic"
 
 // 바뀌면 글자 덩치가 달라지는 속성. 이때 상자를 글자에 다시 맞춘다
@@ -58,21 +58,30 @@ export function useLayerActions({
       : layer
   const patch = (id: string, value: Partial<Layer>) => {
     const layer = layers.find((item) => item.id === id)
+    const named =
+      layer && "text" in value && !("name" in value) && isAutoTextName(layer)
+        ? { ...value, name: textLayerName(value.text) }
+        : value
     const reshapes =
       layer?.type === "text" &&
       !("width" in value) &&
-      Object.keys(value).some((key) => TEXT_SHAPE_KEYS.has(key))
+      Object.keys(named).some((key) => TEXT_SHAPE_KEYS.has(key))
     change(
       updateLayer(
         design,
         side,
         id,
-        reshapes ? fitText({ ...layer, ...value }) : value
+        reshapes ? fitText({ ...layer, ...named }) : named
       )
     )
   }
   const add = (type: Layer["type"], extra: Partial<Layer> = {}) => {
-    const layer = fitText({ ...makeLayer(type, design), ...extra })
+    const base = { ...makeLayer(type, design), ...extra }
+    const layer = fitText(
+      type === "text" && !extra.name
+        ? { ...base, name: textLayerName(base.text) }
+        : base
+    )
     change({ ...design, [side]: [...layers, layer] })
     setSelectedId(layer.id)
   }

@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { Eye, Lock, LockOpen, EyeOff } from "lucide-react"
 import { LayerGraphic } from "../../graphic"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
@@ -5,12 +6,18 @@ import type { AlmondEditor } from "../../../hooks/use-almond-editor"
 export function LayersPanel({ editor }: { editor: AlmondEditor }) {
   const { design, change, side, selectedId, setSelectedId, layers, patch } =
     editor
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const rename = (id: string, current: string, value: string) => {
+    setRenamingId(null)
+    const name = value.trim().slice(0, 100)
+    if (name && name !== current) patch(id, { name })
+  }
   return (
     <div className="border-t">
       {[...layers].reverse().map((layer) => (
         <div
           key={layer.id}
-          draggable
+          draggable={renamingId !== layer.id}
           onDragStart={(event) => {
             event.dataTransfer.effectAllowed = "move"
             event.dataTransfer.setData("application/x-almond-layer", layer.id)
@@ -38,10 +45,16 @@ export function LayersPanel({ editor }: { editor: AlmondEditor }) {
           title="끌어서 레이어 순서 변경"
           className={`flex h-[49px] w-full items-center gap-1 border-b px-1 text-left text-xs ${selectedId === layer.id ? "bg-[#d4d4d4]" : "hover:bg-[#eee]"}`}
         >
-          <button
+          <div
+            role="button"
+            tabIndex={0}
             aria-label={`레이어 ${layer.name} 선택`}
             className="flex min-w-0 flex-1 items-center gap-2 text-left"
             onClick={() => setSelectedId(layer.id)}
+            onKeyDown={(event) => {
+              if (event.target === event.currentTarget && event.key === "Enter")
+                setSelectedId(layer.id)
+            }}
           >
             <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden bg-[#f5f5f5]">
               <svg viewBox="0 0 40 40" className="h-7 w-7" aria-hidden="true">
@@ -58,8 +71,36 @@ export function LayersPanel({ editor }: { editor: AlmondEditor }) {
                 />
               </svg>
             </span>
-            <span className="truncate italic">{layer.name}</span>
-          </button>
+            {renamingId === layer.id ? (
+              <input
+                autoFocus
+                aria-label="레이어 이름"
+                defaultValue={layer.name}
+                maxLength={100}
+                onFocus={(event) => event.currentTarget.select()}
+                onBlur={(event) =>
+                  rename(layer.id, layer.name, event.currentTarget.value)
+                }
+                onKeyDown={(event) => {
+                  if (event.key === "Escape")
+                    event.currentTarget.value = layer.name
+                  if (event.key === "Enter" || event.key === "Escape")
+                    event.currentTarget.blur()
+                }}
+                className="min-w-0 flex-1 rounded border bg-white px-1 py-0.5 not-italic"
+              />
+            ) : (
+              <span
+                className="truncate italic"
+                title="더블클릭해서 이름 바꾸기"
+                onDoubleClick={() => {
+                  if (!layer.locked) setRenamingId(layer.id)
+                }}
+              >
+                {layer.name}
+              </span>
+            )}
+          </div>
           <button
             title={layer.visible === false ? "표시" : "숨기기"}
             aria-label={`${layer.name} ${layer.visible === false ? "표시" : "숨기기"}`}

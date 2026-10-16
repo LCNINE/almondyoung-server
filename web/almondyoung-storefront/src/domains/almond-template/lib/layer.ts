@@ -19,6 +19,19 @@ function layerName(type: Layer["type"]) {
   }[type]
 }
 
+// 텍스트 레이어는 문구 첫 줄이 곧 이름이다. 사용자가 이름을 직접 바꾸면 그 뒤로는 따라가지 않는다
+export function textLayerName(text = "") {
+  return text.trim().split("\n")[0].trim().slice(0, 30) || layerName("text")
+}
+
+export function isAutoTextName(layer: Layer) {
+  return (
+    layer.type === "text" &&
+    (layer.name === layerName("text") ||
+      layer.name === textLayerName(layer.text))
+  )
+}
+
 export function makeLayer(type: Layer["type"], design: Design): Layer {
   const fontSize = Math.max(3, mm(design.widthMm / 13))
   if (type === "clipart" || type === "qr") {
@@ -35,10 +48,11 @@ export function makeLayer(type: Layer["type"], design: Design): Layer {
     }
   }
   const width = type === "text" ? design.widthMm * 0.8 : design.widthMm * 0.35
+  const text = type === "text" ? "문구를 입력하세요" : undefined
   return {
     id: crypto.randomUUID(),
     type,
-    name: layerName(type),
+    name: type === "text" ? textLayerName(text) : layerName(type),
     x: mm((design.widthMm - width) / 2),
     y: mm(design.heightMm * 0.3),
     width: mm(width),
@@ -48,7 +62,7 @@ export function makeLayer(type: Layer["type"], design: Design): Layer {
         : design.heightMm * 0.2
     ),
     fill: "#202020",
-    text: type === "text" ? "문구를 입력하세요" : undefined,
+    text,
     fontSize,
     fontFamily: SANS_FONT,
     opacity: 1,
