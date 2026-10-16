@@ -33,6 +33,8 @@ export interface OrderItem {
   // optional — 기존 외부 채널 이벤트(네이버/쿠팡)와의 호환을 위해 미지정 시 물리로 간주한다.
   fulfillmentKind?: FulfillmentKind;
   requiresShipping?: boolean;
+  /** 아몬드템플릿 시안 id. 장바구니 라인 metadata.almond_design_id 에서 온다. */
+  almondDesignId?: string;
 }
 
 export interface ShippingAddress {
@@ -285,6 +287,7 @@ const OrderItemSchema = z.object({
   totalPrice: z.number().nonnegative(),
   fulfillmentKind: z.enum(['physical', 'digital']).optional(),
   requiresShipping: z.boolean().optional(),
+  almondDesignId: z.string().uuid().optional(),
 });
 
 const ShippingAddressSchema = z.object({

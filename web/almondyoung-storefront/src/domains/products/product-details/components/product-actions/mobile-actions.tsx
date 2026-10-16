@@ -13,6 +13,7 @@ import { AlmondDesignNotice } from "./almond-design-notice"
 import SelectedItemRow from "./selected-item-row"
 import { RestockNotice, hasStockNotice } from "./restock-notice"
 import { SelectedItem } from "./types"
+import { CustomOrderNotice } from "@/domains/almond-template/components/custom-order-notice"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 
 type MobileActionsProps = {
@@ -38,6 +39,7 @@ type MobileActionsProps = {
   almondDesignId?: string
   almondDesignHint?: string
   blockedLabel?: string
+  showCustomOrderNotice?: boolean
 }
 
 const MobileActions: React.FC<MobileActionsProps> = ({
@@ -63,6 +65,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   almondDesignId,
   almondDesignHint,
   blockedLabel,
+  showCustomOrderNotice = false,
 }) => {
   const t = useTranslations("productDetail.options")
   const [open, setOpen] = useState(false)
@@ -103,6 +106,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
               hint={almondDesignHint}
             />
           )}
+          {showCustomOrderNotice && <CustomOrderNotice />}
           <div className="flex w-full gap-x-3">
             {/* TODO: 재입고 알림 기능 추가 후 활성화
           {isSimple && !inStock ? (
@@ -255,6 +259,11 @@ const MobileActions: React.FC<MobileActionsProps> = ({
               <p className="text-muted-foreground mb-2 text-center text-xs">
                 {t("almondDesignAttached")}
               </p>
+            )}
+            {showCustomOrderNotice && (
+              <div className="mb-2">
+                <CustomOrderNotice />
+              </div>
             )}
             <div className="flex gap-x-3">
               {/* TODO: 재입고 알림 기능 추가 후 활성화

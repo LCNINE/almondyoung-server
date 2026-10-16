@@ -35,6 +35,11 @@ export class CreateSalesOrderLineDto {
   @IsNotEmpty()
   variantId: string;
 
+  @ApiProperty({ description: '아몬드템플릿 시안 ID (인쇄 발주 대상 라인)', required: false })
+  @IsUUID()
+  @IsOptional()
+  almondDesignId?: string;
+
   @ApiProperty({ description: '상품명', required: false })
   @IsString()
   @IsOptional()

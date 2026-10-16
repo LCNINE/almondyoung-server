@@ -457,7 +457,13 @@ export class FulfillmentsService {
       }
       if (fulfillableQuantity <= 0) continue;
       // 디지털 라인은 물리 출고 대상이 아니다 — digital-only 주문은 결과가 비어 backlog not_required 로 닫힌다
-      if (resolution.kind === 'digital' || resolution.kind === 'void' || resolution.kind === 'missing') continue;
+      if (
+        resolution.kind === 'digital' ||
+        resolution.kind === 'outsourced' ||
+        resolution.kind === 'void' ||
+        resolution.kind === 'missing'
+      )
+        continue;
       if (resolution.kind === 'follow') freeze.push({ salesOrderLineId: line.id, items: resolution.items });
       for (const item of resolution.items) {
         items.push({

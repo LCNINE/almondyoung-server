@@ -10,6 +10,7 @@ export default defineConfig({
     './apps/core/src/modules/library/schema/library.schema.ts',
     './apps/core/src/modules/customer-service/schema/customer-service.schema.ts',
     './apps/core/src/modules/archive/schema/archive.schema.ts',
+    './apps/core/src/modules/print-order/schema/print-order.schema.ts',
     './libs/events/src/outbox/outbox.schema.ts',
     './libs/events/src/tracking/tracking.schema.ts',
     './libs/events/src/dead-letter/dead-letter.schema.ts',

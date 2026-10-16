@@ -22,6 +22,9 @@ import { customerServiceSchema } from '../../modules/customer-service/schema/cus
 // Archive: 사내 문서 아카이브
 import { archiveSchema } from '../../modules/archive/schema/archive.schema';
 
+// Print Order: 인쇄 발주 (wmsTables 에도 실려 있다)
+import { printOrderSchema } from '../../modules/print-order/schema/print-order.schema';
+
 // Phase 4: Product Matching — 테이블은 inventorySchema에 포함 (FK 참조로 분리 불가)
 
 // Phase 5: Sales Order — 테이블은 inventorySchema에 포함
@@ -40,6 +43,7 @@ export const mergedSchema = {
   ...librarySchema,
   ...customerServiceSchema,
   ...archiveSchema,
+  ...printOrderSchema,
   // Phase 4: matchingSchema tables already in inventorySchema
   // Phase 5+: ...salesOrderSchema,
   // Phase 6+: ...fulfillmentSchema,

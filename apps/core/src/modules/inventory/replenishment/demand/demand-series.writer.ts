@@ -99,6 +99,7 @@ export class DemandSeriesWriter {
           AND sol.status <> 'cancelled'
           AND COALESCE(sol.fulfillment_kind, 'physical') <> 'digital'
           AND COALESCE(sol.requires_shipping, true)
+          AND sol.almond_design_id IS NULL
           AND (o.order_date AT TIME ZONE 'Asia/Seoul')::date BETWEEN ${from}::date AND ${to}::date
       ),
       links AS (

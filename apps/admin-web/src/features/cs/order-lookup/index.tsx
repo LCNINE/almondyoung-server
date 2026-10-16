@@ -245,7 +245,10 @@ export default function CsOrderLookup() {
                 {almondDesignId && (
                   <tr className="border-b border-gray-100">
                     <td colSpan={6} className="px-2 pb-3">
-                      <AlmondDesignPrintCard designId={almondDesignId} />
+                      <AlmondDesignPrintCard
+                        designId={almondDesignId}
+                        lineId={line.id}
+                      />
                     </td>
                   </tr>
                 )}

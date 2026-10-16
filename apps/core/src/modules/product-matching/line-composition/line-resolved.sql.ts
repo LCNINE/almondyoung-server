@@ -28,3 +28,8 @@ export function lineResolvedSql(): SQL<boolean> {
       )
   ))`;
 }
+
+// 외주(아몬드) 라인은 매칭 대상이 아니므로 화면 배지에서는 해결된 것으로 본다. 판정 술어(lineResolvedSql)는 그대로 둔다.
+export function lineMatchingBadgeResolvedSql(): SQL<boolean> {
+  return sql<boolean>`(${wmsTables.salesOrderLines.almondDesignId} IS NOT NULL OR ${lineResolvedSql()})`;
+}

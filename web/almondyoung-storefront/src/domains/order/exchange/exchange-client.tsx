@@ -294,17 +294,22 @@ export function ExchangeClient({ orderId, type }: ExchangeClientProps) {
                           )}
                         </p>
                       </div>
-                      <CustomButton
-                        type="button"
-                        variant={sel.selected ? "fill" : "outline"}
-                        color="secondary"
-                        size="xs"
-                        fullWidth={false}
-                        onClick={() => toggleLine(line.id)}
-                      >
-                        {sel.selected ? t("lineDeselect") : t("lineSelect")}
-                      </CustomButton>
+                      {!line.customMade && (
+                        <CustomButton
+                          type="button"
+                          variant={sel.selected ? "fill" : "outline"}
+                          color="secondary"
+                          size="xs"
+                          fullWidth={false}
+                          onClick={() => toggleLine(line.id)}
+                        >
+                          {sel.selected ? t("lineDeselect") : t("lineSelect")}
+                        </CustomButton>
+                      )}
                     </div>
+                    {line.customMade && (
+                      <p className="mt-2 text-xs text-gray-500">{t("customMadeNotAllowed")}</p>
+                    )}
                     {sel.selected && (
                       <div className="mt-3 flex items-center gap-2">
                         <label className="text-xs text-gray-600">{t("requestQuantity")}</label>

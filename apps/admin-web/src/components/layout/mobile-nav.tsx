@@ -22,6 +22,7 @@ import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils/ui';
 import { mainMenus, type MainMenu, type MenuItem } from '@/lib/utils/menu';
 import { QuarantineMenuBadge } from './quarantine-menu-badge';
+import { PrintOrderMenuBadge } from './print-order-menu-badge';
 
 const iconMap: Record<string, React.ElementType> = {
   Users,
@@ -81,6 +82,7 @@ function NavSection({
           )}
         </span>
         {item.hasQuarantineBadge && <QuarantineMenuBadge />}
+        {item.hasPrintOrderBadge && <PrintOrderMenuBadge />}
       </button>
     );
   }

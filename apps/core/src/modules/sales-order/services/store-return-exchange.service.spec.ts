@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { inventoryTables, returnExchangeTables, wmsTables } from '../../inventory/schema/inventory.schema';
-import { StoreReturnExchangeService } from './store-return-exchange.service';
+import { CUSTOM_MADE_CLAIM_MESSAGE, StoreReturnExchangeService } from './store-return-exchange.service';
 
 /** 반품 완료 종점이 아웃박스에 적재하는 발행자. 스펙에서는 적재 호출만 세면 된다. */
 const makeCoreOrdersPublisher = () => ({ enqueue: jest.fn().mockResolvedValue(undefined) });
@@ -487,6 +487,21 @@ describe('StoreReturnExchangeService.createExchangeRequest', () => {
     const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
 
     await expect(service.createExchangeRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(ConflictException);
+  });
+
+  it('rejects a custom-made (print) line before creating the request', async () => {
+    const mockDb = makeMockDb((table) => {
+      if (table === inventoryTables.salesOrders) return [makeSo()];
+      if (table === wmsTables.salesOrderLines) return [{ id: LINE_ID, salesOrderId: ORDER_ID, quantity: 1 }];
+      return [];
+    });
+
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
+
+    await expect(service.createExchangeRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(
+      CUSTOM_MADE_CLAIM_MESSAGE,
+    );
+    expect((mockDb as any).db.transaction).not.toHaveBeenCalled();
   });
 });
 

@@ -28,11 +28,7 @@ describe('OrderEventsConsumer', () => {
     salesOrders: jest.Mocked<
       Pick<
         SalesOrdersService,
-        | 'findByChannelOrderId'
-        | 'createFromEvent'
-        | 'getOne'
-        | 'cancel'
-        | 'findLineIdsByChannelOrderItemIds'
+        'findByChannelOrderId' | 'createFromEvent' | 'getOne' | 'cancel' | 'findLineIdsByChannelOrderItemIds'
       >
     >;
     library: jest.Mocked<Pick<LibraryService, 'grantOwnershipsForOrder' | 'revokeOwnershipsForOrder'>>;
@@ -43,6 +39,7 @@ describe('OrderEventsConsumer', () => {
     channelOrderChanges: jest.Mocked<Pick<ChannelOrderChangeService, 'handle'>>;
     cancelSettler: { settleCancelled: jest.Mock };
     cancelRequests: { recordSettlementFailure: jest.Mock };
+    printCancel: { cancelForOrder: jest.Mock; holdUnsent: jest.Mock };
     txInserts: Array<{ table: unknown; values: unknown }>;
     // Rows returned by the businessLinks idempotency guard's `select(...)` lookup. Empty by
     // default (no existing link); push a row to simulate a refund link already recorded.
@@ -99,6 +96,10 @@ describe('OrderEventsConsumer', () => {
       channelOrderChanges: { handle: jest.fn().mockResolvedValue(undefined) },
       cancelSettler: { settleCancelled: jest.fn().mockResolvedValue(undefined) },
       cancelRequests: { recordSettlementFailure: jest.fn().mockResolvedValue(undefined) },
+      printCancel: {
+        cancelForOrder: jest.fn().mockResolvedValue(undefined),
+        holdUnsent: jest.fn().mockResolvedValue(undefined),
+      },
       txInserts,
       businessLinkRows,
       fakeTx,
@@ -116,6 +117,7 @@ describe('OrderEventsConsumer', () => {
       mocks.channelOrderChanges as any,
       mocks.cancelSettler as any,
       mocks.cancelRequests as any,
+      mocks.printCancel as any,
     );
   }
 
@@ -373,9 +375,7 @@ describe('OrderEventsConsumer', () => {
     const mocks = makeMocks();
     const consumer = makeConsumer(mocks);
     mocks.salesOrders.findByChannelOrderId.mockResolvedValue({ id: 'so-1' } as any);
-    mocks.salesOrders.findLineIdsByChannelOrderItemIds.mockResolvedValue(
-      new Map([['2026081900001', 'sol-1']]),
-    );
+    mocks.salesOrders.findLineIdsByChannelOrderItemIds.mockResolvedValue(new Map([['2026081900001', 'sol-1']]));
 
     await consumer.handleOrderCancelled(
       {
@@ -398,12 +398,136 @@ describe('OrderEventsConsumer', () => {
     );
   });
 
+  it('OrderCancelled 는 취소 트랜잭션 안에서 미발주 인쇄를 붙잡고, 커밋한 뒤 인쇄 줄을 record 로 정리한다', async () => {
+    const mocks = makeMocks();
+    const consumer = makeConsumer(mocks);
+    mocks.salesOrders.findByChannelOrderId.mockResolvedValue({ id: 'so-1' } as any);
+    const order: string[] = [];
+    mocks.dbService.run.mockImplementation(async (fn: (tx: any) => Promise<unknown>) => {
+      const value = await fn(mocks.fakeTx);
+      order.push('commit');
+      return value;
+    });
+    mocks.printCancel.holdUnsent.mockImplementation(() => {
+      order.push('hold');
+      return Promise.resolve();
+    });
+    mocks.printCancel.cancelForOrder.mockImplementation(() => {
+      order.push('print');
+      return Promise.resolve();
+    });
+    await consumer.handleOrderCancelled(
+      {
+        orderId: 'ord-1',
+        salesChannel: 'medusa',
+        externalOrderId: 'order_1',
+        reason: 'ADMIN_CANCEL',
+        cancelledBy: 'medusa',
+        cancelledAt: '2026-10-07T00:00:00.000Z',
+        refundRequired: false,
+      } as any,
+      { messageId: 'msg-p', correlationId: 'c' } as any,
+    );
+    expect(mocks.printCancel.cancelForOrder).toHaveBeenCalledWith('so-1', 'record', undefined, {
+      redeliveredSince: undefined,
+    });
+    expect(mocks.printCancel.holdUnsent).toHaveBeenCalledWith('so-1', undefined, mocks.fakeTx);
+    expect(order).toEqual(['hold', 'commit', 'print']);
+  });
+
+  it('줄 단위 OrderCancelled 는 그 줄만 record 로 정리한다', async () => {
+    const mocks = makeMocks();
+    const consumer = makeConsumer(mocks);
+    mocks.salesOrders.findByChannelOrderId.mockResolvedValue({ id: 'so-1' } as any);
+    mocks.salesOrders.findLineIdsByChannelOrderItemIds.mockResolvedValue(new Map([['ci-1', 'line-1']]));
+    await consumer.handleOrderCancelled(
+      {
+        orderId: 'ord-1',
+        salesChannel: 'medusa',
+        externalOrderId: 'o1',
+        reason: 'ADMIN_CANCEL',
+        cancelledBy: 'medusa',
+        cancelledAt: '2026-10-07T00:00:00.000Z',
+        refundRequired: true,
+        cancelledLines: [{ channelOrderItemId: 'ci-1', quantity: 1 }],
+      } as any,
+      { messageId: 'msg-pl', correlationId: 'c' } as any,
+    );
+    expect(mocks.printCancel.cancelForOrder).toHaveBeenCalledWith(
+      'so-1',
+      'record',
+      [{ salesOrderLineId: 'line-1', quantity: 1 }],
+      { redeliveredSince: undefined },
+    );
+    expect(mocks.printCancel.holdUnsent).toHaveBeenCalledWith(
+      'so-1',
+      [{ salesOrderLineId: 'line-1', quantity: 1 }],
+      mocks.fakeTx,
+    );
+  });
+
+  it('재전달된 OrderCancelled 도 인쇄 정리를 다시 부른다 (정리는 멱등이고, 지난 처리 도중 끊겼을 수 있다)', async () => {
+    const mocks = makeMocks();
+    const consumer = makeConsumer(mocks);
+    mocks.salesOrders.findByChannelOrderId.mockResolvedValue({ id: 'so-1' } as any);
+    mocks.fakeTx.query.orderEvents.findFirst.mockResolvedValue({ eventId: 'msg-r' });
+    const firstSeen = new Date('2026-10-07T00:00:01.000Z');
+    mocks.fakeTx.select = () => ({
+      from: () => ({ where: () => ({ limit: () => Promise.resolve([{ createdAt: firstSeen }]) }) }),
+    });
+    await consumer.handleOrderCancelled(
+      {
+        orderId: 'ord-1',
+        salesChannel: 'medusa',
+        externalOrderId: 'order_1',
+        reason: 'ADMIN_CANCEL',
+        cancelledBy: 'medusa',
+        cancelledAt: '2026-10-07T00:00:00.000Z',
+        refundRequired: false,
+      } as any,
+      { messageId: 'msg-r', correlationId: 'c' } as any,
+    );
+    expect(mocks.salesOrders.cancel).not.toHaveBeenCalled();
+    expect(mocks.printCancel.cancelForOrder).toHaveBeenCalledWith('so-1', 'record', undefined, {
+      redeliveredSince: firstSeen,
+    });
+  });
+
+  it('해석된 줄이 없는 OrderCancelled 는 인쇄 줄도 건드리지 않는다', async () => {
+    const mocks = makeMocks();
+    const consumer = makeConsumer(mocks);
+    mocks.salesOrders.findByChannelOrderId.mockResolvedValue({ id: 'so-1' } as any);
+    mocks.salesOrders.findLineIdsByChannelOrderItemIds.mockResolvedValue(new Map());
+    await consumer.handleOrderCancelled(
+      {
+        orderId: 'ord-1',
+        salesChannel: 'medusa',
+        externalOrderId: 'o1',
+        reason: 'ADMIN_CANCEL',
+        cancelledBy: 'medusa',
+        cancelledAt: '2026-10-07T00:00:00.000Z',
+        refundRequired: true,
+        cancelledLines: [{ channelOrderItemId: 'unknown', quantity: 1 }],
+      } as any,
+      { messageId: 'msg-n', correlationId: 'c' } as any,
+    );
+    expect(mocks.printCancel.cancelForOrder).not.toHaveBeenCalled();
+  });
+
   it('전체 OrderCancelled 는 취소 뒤 정산 중 요청을 닫으러 간다', async () => {
     const mocks = makeMocks();
     const consumer = makeConsumer(mocks);
     mocks.salesOrders.findByChannelOrderId.mockResolvedValue({ id: 'so-1' } as any);
     await consumer.handleOrderCancelled(
-      { orderId: 'ord-1', salesChannel: 'medusa', externalOrderId: 'order_1', reason: 'ADMIN_CANCEL', cancelledBy: 'medusa', cancelledAt: '2026-10-07T00:00:00.000Z', refundRequired: false } as any,
+      {
+        orderId: 'ord-1',
+        salesChannel: 'medusa',
+        externalOrderId: 'order_1',
+        reason: 'ADMIN_CANCEL',
+        cancelledBy: 'medusa',
+        cancelledAt: '2026-10-07T00:00:00.000Z',
+        refundRequired: false,
+      } as any,
       { messageId: 'msg-c', correlationId: 'c' } as any,
     );
     expect(mocks.cancelSettler.settleCancelled).toHaveBeenCalledWith('so-1', mocks.fakeTx);
@@ -415,7 +539,16 @@ describe('OrderEventsConsumer', () => {
     mocks.salesOrders.findByChannelOrderId.mockResolvedValue({ id: 'so-1' } as any);
     mocks.salesOrders.findLineIdsByChannelOrderItemIds.mockResolvedValue(new Map([['ci-1', 'line-1']]));
     await consumer.handleOrderCancelled(
-      { orderId: 'ord-1', salesChannel: 'naver', externalOrderId: 'n1', reason: 'CUSTOMER_REQUEST', cancelledBy: 'naver', cancelledAt: '2026-10-07T00:00:00.000Z', refundRequired: true, cancelledLines: [{ channelOrderItemId: 'ci-1', quantity: 1 }] } as any,
+      {
+        orderId: 'ord-1',
+        salesChannel: 'naver',
+        externalOrderId: 'n1',
+        reason: 'CUSTOMER_REQUEST',
+        cancelledBy: 'naver',
+        cancelledAt: '2026-10-07T00:00:00.000Z',
+        refundRequired: true,
+        cancelledLines: [{ channelOrderItemId: 'ci-1', quantity: 1 }],
+      } as any,
       { messageId: 'msg-l', correlationId: 'c' } as any,
     );
     expect(mocks.cancelSettler.settleCancelled).not.toHaveBeenCalled();
@@ -476,9 +609,7 @@ describe('OrderEventsConsumer', () => {
     const mocks = makeMocks();
     const consumer = makeConsumer(mocks);
     mocks.salesOrders.findByChannelOrderId.mockResolvedValue({ id: 'so-1' } as any);
-    mocks.salesOrders.findLineIdsByChannelOrderItemIds.mockResolvedValue(
-      new Map([['known-1', 'sol-1']]),
-    );
+    mocks.salesOrders.findLineIdsByChannelOrderItemIds.mockResolvedValue(new Map([['known-1', 'sol-1']]));
 
     await consumer.handleOrderCancelled(
       {

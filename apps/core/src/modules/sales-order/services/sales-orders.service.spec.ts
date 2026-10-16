@@ -1,6 +1,7 @@
 import { wmsTables } from '../../inventory/schema/inventory.schema';
+import { printOrders } from '../../print-order/schema/print-order.schema';
 import { SalesOrderAmendmentsService } from './sales-order-amendments.service';
-import { SalesOrdersService } from './sales-orders.service';
+import { PRINT_PAYMENT_UNCONFIRMED_ERROR, SalesOrdersService } from './sales-orders.service';
 import {
   CORE_ORDER_STREAM,
   FULFILLMENT_STREAM,
@@ -54,10 +55,12 @@ describe('SalesOrdersService external order-line identity', () => {
     };
   }
 
-  function makeService() {
+  function makeService(returnOrder: <T>(rows: T[]) => T[] = (rows) => rows) {
     const state = {
       salesOrders: [] as Array<Record<string, any>>,
       salesOrderLines: [] as Array<Record<string, any>>,
+      printOrders: [] as Array<{ salesOrderLineId: string; almondDesignId: string }>,
+      printOrderConflictTargets: [] as unknown[],
     };
     const tx: any = {
       insert: jest.fn((table: unknown) => ({
@@ -69,12 +72,22 @@ describe('SalesOrdersService external order-line identity', () => {
           }
           if (table === wmsTables.salesOrderLines) {
             const rows = Array.isArray(values) ? values : [values];
-            state.salesOrderLines.push(
-              ...rows.map((row, index) => ({
-                id: `sales-order-line-${index + 1}`,
-                ...row,
-              })),
-            );
+            const stored = rows.map((row, index) => ({
+              id: `sales-order-line-${index + 1}`,
+              ...row,
+            }));
+            state.salesOrderLines.push(...stored);
+            return { returning: jest.fn().mockResolvedValue(returnOrder(stored)) };
+          }
+          if (table === printOrders) {
+            const rows = Array.isArray(values) ? values : [values];
+            state.printOrders.push(...rows);
+            return {
+              onConflictDoNothing: jest.fn((config: { target: unknown }) => {
+                state.printOrderConflictTargets.push(config.target);
+                return Promise.resolve();
+              }),
+            };
           }
           return Promise.resolve();
         },
@@ -149,6 +162,76 @@ describe('SalesOrdersService external order-line identity', () => {
     expect(SHIPMENT_STREAM.events.ShipmentShipped.schema!.parse(shipmentEvent)).toEqual(shipmentEvent);
     expect(shipmentEvent.orders[0].lines[0].channelOrderItemId).toBe(orderEvent.items[0].orderItemId);
     expect(state.salesOrderLines[0].channelProductId).toBe(orderEvent.items[0].channelProductId);
+  });
+
+  it('creates one pending print_orders row per almond line with onConflictDoNothing', async () => {
+    const { service, state } = makeService();
+    const designId = '12121212-1212-4212-8212-121212121212';
+
+    await service.createFromEvent(
+      payload([
+        item({ orderItemId: 'item-almond', almondDesignId: designId }),
+        item({ orderItemId: 'item-plain', variantId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }),
+      ]),
+    );
+
+    expect(state.salesOrderLines[0]).toMatchObject({ almondDesignId: designId });
+    expect(state.salesOrderLines[1].almondDesignId).toBeNull();
+    expect(state.printOrders).toEqual([
+      {
+        salesOrderId,
+        salesOrderLineId: 'sales-order-line-1',
+        almondDesignId: designId,
+        status: 'pending',
+      },
+    ]);
+    expect(state.printOrderConflictTargets).toEqual([printOrders.salesOrderLineId]);
+  });
+
+  it('pairs each print_order with its own line even when RETURNING order differs from input order', async () => {
+    const { service, state } = makeService((rows) => [...rows].reverse());
+    const designA = '12121212-1212-4212-8212-121212121212';
+    const designB = '34343434-3434-4434-8434-343434343434';
+
+    await service.createFromEvent(
+      payload([
+        item({ orderItemId: 'item-a', almondDesignId: designA }),
+        item({ orderItemId: 'item-b', variantId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', almondDesignId: designB }),
+      ]),
+    );
+
+    const idByDesign = new Map(state.salesOrderLines.map((l) => [l.almondDesignId, l.id]));
+    expect(state.printOrders).toHaveLength(2);
+    for (const row of state.printOrders) {
+      expect(row.salesOrderLineId).toBe(idByDesign.get(row.almondDesignId));
+    }
+  });
+
+  it('keeps the print of an unconfirmed-payment order off the queue but on the board', async () => {
+    const { service, state } = makeService();
+
+    await service.createFromEvent({
+      ...payload([item({ almondDesignId: '12121212-1212-4212-8212-121212121212' })]),
+      status: 'pending',
+    });
+
+    expect(state.printOrders).toEqual([
+      {
+        salesOrderId,
+        salesOrderLineId: 'sales-order-line-1',
+        almondDesignId: '12121212-1212-4212-8212-121212121212',
+        status: 'failed',
+        lastError: PRINT_PAYMENT_UNCONFIRMED_ERROR,
+      },
+    ]);
+  });
+
+  it('does not touch print_orders when no line has an almond design', async () => {
+    const { service, state } = makeService();
+
+    await service.createFromEvent(payload([item()]));
+
+    expect(state.printOrders).toHaveLength(0);
   });
 
   it('stores absent legacy/manual identity as null without using channelOrderId', async () => {
@@ -268,8 +351,13 @@ function rejectRawDeleteSql(statement: unknown) {
 describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
   const salesOrderId = '11111111-1111-1111-1111-111111111111';
 
-  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
-    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } };
+  function rows<T>(
+    value: T[],
+  ): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
+    const result = [...value] as T[] & {
+      limit: (count: number) => Promise<T[]>;
+      orderBy: () => { limit: (count: number) => Promise<T[]> };
+    };
     result.limit = (count: number) => Promise.resolve(result.slice(0, count));
     // getOne 이 최근 취소 요청 행을 정렬해 읽는다 — 이 가짜는 정렬하지 않는다
     result.orderBy = () => ({ limit: result.limit });
@@ -498,8 +586,13 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
 describe('SalesOrdersService.update accepted contract immutability', () => {
   const salesOrderId = '22222222-2222-4222-8222-222222222222';
 
-  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
-    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } };
+  function rows<T>(
+    value: T[],
+  ): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
+    const result = [...value] as T[] & {
+      limit: (count: number) => Promise<T[]>;
+      orderBy: () => { limit: (count: number) => Promise<T[]> };
+    };
     result.limit = (count: number) => Promise.resolve(result.slice(0, count));
     // getOne 이 최근 취소 요청 행을 정렬해 읽는다 — 이 가짜는 정렬하지 않는다
     result.orderBy = () => ({ limit: result.limit });
@@ -639,8 +732,13 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
   const fulfillmentOrderItemId = '55555555-5555-4555-8555-555555555555';
   const reservationId = '66666666-6666-4666-8666-666666666666';
 
-  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
-    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } };
+  function rows<T>(
+    value: T[],
+  ): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
+    const result = [...value] as T[] & {
+      limit: (count: number) => Promise<T[]>;
+      orderBy: () => { limit: (count: number) => Promise<T[]> };
+    };
     result.limit = (count: number) => Promise.resolve(result.slice(0, count));
     // getOne 이 최근 취소 요청 행을 정렬해 읽는다 — 이 가짜는 정렬하지 않는다
     result.orderBy = () => ({ limit: result.limit });
@@ -652,6 +750,8 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
       fulfillmentOrders?: Array<Record<string, any>>;
       fulfillmentOrderItems?: Array<Record<string, any>>;
       fulfillmentOrderCreationBacklogs?: Array<Record<string, any>>;
+      lineOverrides?: { almondDesignId?: string };
+      v2History?: boolean;
     } = {},
   ) {
     const state = {
@@ -674,6 +774,7 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
           quantity: 3,
           unitPrice: 5000,
           totalPrice: 15000,
+          ...options.lineOverrides,
         },
       ] as Array<Record<string, any>>,
       fulfillmentOrders:
@@ -737,11 +838,15 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
     };
 
     const tx: any = {
-      execute: jest.fn().mockResolvedValue([]),
+      execute: jest.fn().mockResolvedValue(options.v2History ? [{ id: 'shipment-1' }] : []),
       select: jest.fn((selection?: Record<string, unknown>) => ({
-        from: (table: unknown) => ({
-          where: () => rows(selectRowsFor(table, selection)),
-        }),
+        from: (table: unknown) => {
+          const chain: { innerJoin: () => unknown; where: () => unknown } = {
+            innerJoin: () => chain,
+            where: () => rows(selectRowsFor(table, selection)),
+          };
+          return chain;
+        },
       })),
       update: jest.fn((table: unknown) => ({
         set: (set: Record<string, unknown>) => ({
@@ -808,6 +913,11 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
       {} as any,
       productSellableQuantity as any,
       {} as any,
+      undefined,
+      undefined,
+      undefined,
+      // 생성자 파라미터가 ModuleRef 라 최소 더블(get 만)을 넘긴다
+      options.v2History ? ({ get: () => ({}) } as any) : undefined,
     );
 
     return { service, state, tx, outbox, productSellableQuantity };
@@ -911,6 +1021,27 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
           relationName: 'cancellation_linked_wallet_refund',
           linkedEntity: { type: 'wallet_refund', id: null, externalRef: 'wallet:refund:rf_partial_1' },
           effectStatus: { owner: 'wallet', value: 'PENDING' },
+        }),
+      ]),
+    );
+  });
+
+  it('cancels an outsourced line with no fulfillment item as no physical adjustment', async () => {
+    const { service, state } = makeService({
+      fulfillmentOrders: [],
+      fulfillmentOrderItems: [],
+      lineOverrides: { almondDesignId: '5a1d1d1d-0000-4000-8000-000000000001' },
+      v2History: true,
+    });
+
+    await service.cancel(salesOrderId, { lines: [{ salesOrderLineId, quantity: 1 }], reasonCode: 'CUSTOMER_REQUEST' });
+
+    expect(state.salesOrderCancellations[0].effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'no_physical_fulfillment_adjustment_required',
+          targetId: salesOrderLineId,
+          metadata: { cancelledQuantity: 1, fulfillmentKind: 'outsourced' },
         }),
       ]),
     );
@@ -1551,8 +1682,13 @@ describe('SalesOrderAmendmentsService.create', () => {
   const lineId = '44444444-4444-4444-8444-444444444444';
   const amendmentId = '55555555-5555-4555-8555-555555555555';
 
-  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
-    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } };
+  function rows<T>(
+    value: T[],
+  ): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
+    const result = [...value] as T[] & {
+      limit: (count: number) => Promise<T[]>;
+      orderBy: () => { limit: (count: number) => Promise<T[]> };
+    };
     result.limit = (count: number) => Promise.resolve(result.slice(0, count));
     // getOne 이 최근 취소 요청 행을 정렬해 읽는다 — 이 가짜는 정렬하지 않는다
     result.orderBy = () => ({ limit: result.limit });
@@ -1707,8 +1843,13 @@ describe('SalesOrdersService business links', () => {
   const amendmentId = '44444444-4444-4444-8444-444444444444';
   const cancellationId = '55555555-5555-4555-8555-555555555555';
 
-  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
-    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } };
+  function rows<T>(
+    value: T[],
+  ): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
+    const result = [...value] as T[] & {
+      limit: (count: number) => Promise<T[]>;
+      orderBy: () => { limit: (count: number) => Promise<T[]> };
+    };
     result.limit = (count: number) => Promise.resolve(result.slice(0, count));
     // getOne 이 최근 취소 요청 행을 정렬해 읽는다 — 이 가짜는 정렬하지 않는다
     result.orderBy = () => ({ limit: result.limit });
@@ -1913,8 +2054,13 @@ describe('SalesOrdersService business links', () => {
 describe('SalesOrdersService.cancel full cancel shipped evidence guard', () => {
   const salesOrderId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
-  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
-    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } };
+  function rows<T>(
+    value: T[],
+  ): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
+    const result = [...value] as T[] & {
+      limit: (count: number) => Promise<T[]>;
+      orderBy: () => { limit: (count: number) => Promise<T[]> };
+    };
     result.limit = (count: number) => Promise.resolve(result.slice(0, count));
     // getOne 이 최근 취소 요청 행을 정렬해 읽는다 — 이 가짜는 정렬하지 않는다
     result.orderBy = () => ({ limit: result.limit });

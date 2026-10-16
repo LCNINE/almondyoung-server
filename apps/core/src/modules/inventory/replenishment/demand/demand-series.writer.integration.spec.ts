@@ -58,6 +58,7 @@ describeIfDb('DemandSeriesWriter (DB integration)', () => {
         status?: 'pending' | 'matched' | 'cancelled';
         fulfillmentKind?: 'physical' | 'digital';
         requiresShipping?: boolean;
+        almondDesignId?: string;
       }>;
     },
   ): Promise<string> {
@@ -81,6 +82,7 @@ describeIfDb('DemandSeriesWriter (DB integration)', () => {
         status: l.status ?? 'pending',
         fulfillmentKind: l.fulfillmentKind ?? null,
         requiresShipping: l.requiresShipping ?? null,
+        almondDesignId: l.almondDesignId ?? null,
       })),
     );
     return order.id;
@@ -139,7 +141,7 @@ describeIfDb('DemandSeriesWriter (DB integration)', () => {
     });
   });
 
-  it('취소 주문 · timeout 주문 · 취소 라인 · 디지털 라인은 빠지고 pending 주문은 들어간다', async () => {
+  it('취소 주문 · timeout 주문 · 취소 라인 · 디지털 라인 · 외주(almond) 라인은 빠지고 pending 주문은 들어간다', async () => {
     await inRollbackTx(db, async (trx) => {
       const { holderId } = await seedHolder(trx);
       const { skuId } = await seedSku(trx, holderId);
@@ -165,6 +167,10 @@ describeIfDb('DemandSeriesWriter (DB integration)', () => {
       await seedOrder(trx, {
         orderedAtUtc: '2026-09-01T03:00:00Z',
         lines: [{ variantId, quantity: 100, totalPrice: 1, requiresShipping: false }],
+      });
+      await seedOrder(trx, {
+        orderedAtUtc: '2026-09-01T03:00:00Z',
+        lines: [{ variantId, quantity: 100, totalPrice: 1, almondDesignId: randomUUID() }],
       });
       await seedOrder(trx, {
         orderedAtUtc: '2026-09-01T03:00:00Z',

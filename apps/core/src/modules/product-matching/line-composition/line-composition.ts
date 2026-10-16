@@ -20,6 +20,7 @@ export type MatchingFailureReason =
 
 export type LineCompositionResolution =
   | { kind: 'digital' }
+  | { kind: 'outsourced' }
   | { kind: 'frozen'; source: CompositionSource; items: CompositionItem[] }
   | { kind: 'follow'; items: CompositionItem[] }
   | { kind: 'void' }
@@ -30,6 +31,7 @@ export interface LineForComposition {
   fulfillmentKind: string | null;
   requiresShipping: boolean | null;
   compositionSource: CompositionSource | null;
+  almondDesignId: string | null;
 }
 
 // null(미지정 — 기존 데이터·외부 채널)은 물리로 간주한다.
@@ -38,6 +40,11 @@ export function isDigitalFulfillmentLine(line: {
   requiresShipping?: boolean | null;
 }): boolean {
   return line.fulfillmentKind === 'digital' || line.requiresShipping === false;
+}
+
+// 아몬드템플릿 인쇄 라인은 외주사가 고객에게 직배송한다 — 창고 재고·출고와 무관하다.
+export function isOutsourcedLine(line: { almondDesignId?: string | null }): boolean {
+  return line.almondDesignId != null;
 }
 
 export function matchingFailureReason(matching: MatchingForFulfillment): MatchingFailureReason {
@@ -95,6 +102,7 @@ export function resolveLineComposition(
   matching: MatchingForFulfillment,
 ): LineCompositionResolution {
   if (isDigitalFulfillmentLine(line)) return { kind: 'digital' };
+  if (isOutsourcedLine(line)) return { kind: 'outsourced' };
   if (line.compositionSource !== null) {
     // 출처가 있는데 행이 없으면 쓰는 쪽(LineCompositionManager)의 결함이다 — 상품매칭으로 슬쩍 대신하면 결함이 숨는다
     if (frozen.length === 0) {

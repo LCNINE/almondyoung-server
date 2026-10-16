@@ -32,7 +32,8 @@ import {
   type SQL,
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { lineResolvedSql } from '../../product-matching/line-composition/line-resolved.sql';
+import { lineMatchingBadgeResolvedSql } from '../../product-matching/line-composition/line-resolved.sql';
+import { isDigitalFulfillmentLine, isOutsourcedLine } from '../../product-matching/line-composition/line-composition';
 import { selectFrozenCompositions } from '../../product-matching/line-composition/frozen-compositions';
 import { outstandingSalesUnits, physicalCancellationByItem } from './v2-cancellation-units';
 import { PoliciesService } from './policies.service';
@@ -171,7 +172,8 @@ const CANCEL_MSG_ALREADY_CANCELLED = '이미 전체 취소된 주문입니다.';
 const CANCEL_MSG_FULL_CANCELLATION_EXISTS = '이미 전체 취소 처리된 주문입니다.';
 const CANCEL_MSG_SHIPPED_FULFILLMENT =
   '출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다. 부분 취소로 진행해 주세요.';
-const CANCEL_MSG_SHIPPED_ITEMS = '출고 수량이 있는 항목이 포함되어 전체 취소를 할 수 없습니다. 부분 취소로 진행해 주세요.';
+const CANCEL_MSG_SHIPPED_ITEMS =
+  '출고 수량이 있는 항목이 포함되어 전체 취소를 할 수 없습니다. 부분 취소로 진행해 주세요.';
 const cancelQuantityExceedsMessage = (requested: number, remaining: number) =>
   `취소 수량(${requested}개)이 취소 가능 수량(${remaining}개)을 초과합니다.`;
 const SALES_ORDER_REF_TYPE = 'sales_order';
@@ -217,6 +219,8 @@ function toCancelReason(reasonCode: string | null | undefined): OrderCancelledPa
     : 'ADMIN_CANCEL';
 }
 
+export const PRINT_PAYMENT_UNCONFIRMED_ERROR = 'payment not confirmed — verify payment, then retry';
+
 @Injectable()
 export class SalesOrdersService {
   private readonly logger = new Logger(SalesOrdersService.name);
@@ -239,7 +243,9 @@ export class SalesOrdersService {
     @Optional() private readonly moduleRef?: ModuleRef,
   ) {}
 
-  async create(dto: CreateSalesOrderDto, tx?: DbTx) {
+  // paymentConfirmed: 결제 확정을 모르는 주문의 인쇄는 발주하지 않되 빠뜨리지도 않는다.
+  // failed 로 만들어 워커는 집지 않고, 보드 발주 실패 탭에서 운영자가 결제를 확인한 뒤 재전송한다
+  async create(dto: CreateSalesOrderDto, tx?: DbTx, opts: { paymentConfirmed?: boolean } = {}) {
     this.assertUniqueTrustedChannelOrderItemIds(dto.salesChannel, Array.isArray(dto.lines) ? dto.lines : []);
 
     const timer = this.metrics?.startOrderTimer('create');
@@ -311,13 +317,39 @@ export class SalesOrdersService {
               totalPrice: l.totalPrice ?? null,
               fulfillmentKind: l.fulfillmentKind ?? null,
               requiresShipping: l.requiresShipping ?? null,
+              almondDesignId: l.almondDesignId ?? null,
               status: 'pending',
               suggestedQuantity: acceptanceByPolicy ? l.quantity : null,
               unavailableSkuIds: null,
               deductedAt: null,
             });
           }
-          await trx.insert(wmsTables.salesOrderLines).values(values);
+          const insertedLines = await trx
+            .insert(wmsTables.salesOrderLines)
+            .values(values)
+            .returning({ id: wmsTables.salesOrderLines.id, almondDesignId: wmsTables.salesOrderLines.almondDesignId });
+
+          const printRows = insertedLines.flatMap(({ id, almondDesignId }) =>
+            almondDesignId
+              ? [
+                  opts.paymentConfirmed
+                    ? { salesOrderId: order.id, salesOrderLineId: id, almondDesignId, status: 'pending' as const }
+                    : {
+                        salesOrderId: order.id,
+                        salesOrderLineId: id,
+                        almondDesignId,
+                        status: 'failed' as const,
+                        lastError: PRINT_PAYMENT_UNCONFIRMED_ERROR,
+                      },
+                ]
+              : [],
+          );
+          if (printRows.length > 0) {
+            await trx
+              .insert(wmsTables.printOrders)
+              .values(printRows)
+              .onConflictDoNothing({ target: wmsTables.printOrders.salesOrderLineId });
+          }
         }
 
         await this.audit?.logResourceChange(
@@ -744,7 +776,7 @@ export class SalesOrdersService {
     if (!order) return null;
     // 라인 배지(«매칭 대기»)는 이 값을 본다(#1063)
     const lines = await db
-      .select({ ...getTableColumns(wmsTables.salesOrderLines), matchingResolved: lineResolvedSql() })
+      .select({ ...getTableColumns(wmsTables.salesOrderLines), matchingResolved: lineMatchingBadgeResolvedSql() })
       .from(wmsTables.salesOrderLines)
       .where(eq(wmsTables.salesOrderLines.salesOrderId, id));
     const { links: businessLinks, context } = await this.loadBusinessTimelineLinks(id, db);
@@ -1102,7 +1134,7 @@ export class SalesOrdersService {
 
       const orderIds = orders.map((o) => o.id);
       const lines = await trx
-        .select({ ...getTableColumns(S.salesOrderLines), matchingResolved: lineResolvedSql() })
+        .select({ ...getTableColumns(S.salesOrderLines), matchingResolved: lineMatchingBadgeResolvedSql() })
         .from(S.salesOrderLines)
         .where(inArray(S.salesOrderLines.salesOrderId, orderIds));
 
@@ -1130,7 +1162,10 @@ export class SalesOrdersService {
     }, tx);
   }
 
-  async getDailyStatusStats(from: string, to: string): Promise<{ range: { from: string; to: string }; series: DailyOrderStatusPoint[] }> {
+  async getDailyStatusStats(
+    from: string,
+    to: string,
+  ): Promise<{ range: { from: string; to: string }; series: DailyOrderStatusPoint[] }> {
     if (from > to) throw new BadRequestException(`조회 기간이 뒤집혔습니다: ${from} > ${to}`);
 
     const start = sql`(${from}::date)::timestamp AT TIME ZONE 'Asia/Seoul'`;
@@ -1309,12 +1344,7 @@ export class SalesOrdersService {
       })
       .from(wmsTables.salesOrders)
       .innerJoin(wmsTables.salesOrderLines, eq(wmsTables.salesOrderLines.salesOrderId, wmsTables.salesOrders.id))
-      .where(
-        and(
-          gte(wmsTables.salesOrders.orderDate, fourteenDaysAgo),
-          eq(wmsTables.salesOrders.status, 'confirmed'),
-        ),
-      )
+      .where(and(gte(wmsTables.salesOrders.orderDate, fourteenDaysAgo), eq(wmsTables.salesOrders.status, 'confirmed')))
       .groupBy(wmsTables.salesOrders.id)
       .having(sql`bool_or(${wmsTables.salesOrderLines.status} = 'stock_unavailable')`)
       .as('blocked');
@@ -1350,7 +1380,7 @@ export class SalesOrdersService {
       lines: this.convertOrderItems(payload.items),
       walletIntentId: payload.walletIntentId,
     };
-    return this.create(dto, tx);
+    return this.create(dto, tx, { paymentConfirmed: payload.status === 'confirmed' });
   }
 
   /**
@@ -1667,7 +1697,13 @@ export class SalesOrdersService {
       ? salesOrderLines.flatMap((line) => {
           const items = fulfillmentItems.filter((item) => item.salesOrderLineId === line.id);
           if (items.length === 0) {
-            if (line.fulfillmentKind === 'digital' || line.requiresShipping === false) return [];
+            // 인쇄(외주) 줄은 창고 항목이 없어도 판매·환불 대상이다. 남은 판매 수량을 넣고 출고 정리만 아래에서 건너뛴다.
+            // 빼 버리면 전체 취소가 부분 취소로 바뀔 때 와우프레스는 취소됐는데 인쇄분이 환불되지 않는다
+            if (isOutsourcedLine(line)) {
+              const remaining = line.quantity - (prior.cancelledByLine.get(line.id) ?? 0);
+              return remaining > 0 ? [{ salesOrderLineId: line.id, quantity: remaining }] : [];
+            }
+            if (isDigitalFulfillmentLine(line)) return [];
             throw new ConflictException(`V2 fulfillment item is missing for SalesOrder line ${line.id}`);
           }
           return [
@@ -1732,7 +1768,7 @@ export class SalesOrdersService {
       const salesLine = salesLineById.get(request.salesOrderLineId)!;
       const requestedItems = fulfillmentItems.filter((item) => item.salesOrderLineId === request.salesOrderLineId);
       if (requestedItems.length === 0) {
-        if (salesLine.fulfillmentKind === 'digital' || salesLine.requiresShipping === false) continue;
+        if (isDigitalFulfillmentLine(salesLine) || isOutsourcedLine(salesLine)) continue;
         throw new ConflictException(`V2 fulfillment item is missing for SalesOrder line ${salesLine.id}`);
       }
       for (const { itemId, qty: physicalQty } of physicalCancellationByItem(
@@ -1821,14 +1857,17 @@ export class SalesOrdersService {
     for (const request of requestedSalesLines) {
       const salesLine = salesLineById.get(request.salesOrderLineId)!;
       if (
-        (salesLine.fulfillmentKind === 'digital' || salesLine.requiresShipping === false) &&
+        (isDigitalFulfillmentLine(salesLine) || isOutsourcedLine(salesLine)) &&
         !fulfillmentItems.some((item) => item.salesOrderLineId === salesLine.id)
       ) {
         operationEffects.push({
           type: 'no_physical_fulfillment_adjustment_required',
           targetType: 'sales_order_line',
           targetId: salesLine.id,
-          metadata: { cancelledQuantity: request.quantity, fulfillmentKind: 'digital' },
+          metadata: {
+            cancelledQuantity: request.quantity,
+            fulfillmentKind: isDigitalFulfillmentLine(salesLine) ? 'digital' : 'outsourced',
+          },
         });
       }
     }
@@ -2058,7 +2097,9 @@ export class SalesOrdersService {
         .select()
         .from(wmsTables.fulfillmentOrders)
         .where(eq(wmsTables.fulfillmentOrders.salesOrderId, salesOrderId));
-      if (fulfillmentOrders.some((fo) => fo.status === 'shipped' || fo.status === 'completed' || fo.shippedAt != null)) {
+      if (
+        fulfillmentOrders.some((fo) => fo.status === 'shipped' || fo.status === 'completed' || fo.shippedAt != null)
+      ) {
         throw new BadRequestException(CANCEL_MSG_SHIPPED_FULFILLMENT);
       }
       if (fulfillmentOrders.length > 0) {
@@ -2087,7 +2128,9 @@ export class SalesOrdersService {
     for (const request of requested) {
       const line = byId.get(request.salesOrderLineId);
       if (!line) {
-        throw new BadRequestException(`Sales order line ${request.salesOrderLineId} does not belong to ${salesOrderId}`);
+        throw new BadRequestException(
+          `Sales order line ${request.salesOrderLineId} does not belong to ${salesOrderId}`,
+        );
       }
       const remaining = remainingOf(line);
       if (request.quantity > remaining) {
@@ -2970,6 +3013,7 @@ export class SalesOrdersService {
       totalPrice: item.totalPrice,
       fulfillmentKind: item.fulfillmentKind,
       requiresShipping: item.requiresShipping,
+      almondDesignId: item.almondDesignId,
     }));
   }
 

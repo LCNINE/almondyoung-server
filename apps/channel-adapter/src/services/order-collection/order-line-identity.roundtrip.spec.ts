@@ -18,39 +18,39 @@ describe('external order-line identity real component round trip', () => {
     const skuId = '11111111-1111-4111-8111-111111111111';
     const provider = createOrderProvider(
       new MedusaOrderSource({
-      listOrders: jest.fn().mockResolvedValue([
-        {
-          id: 'order_medusa_1',
-          payment_status: 'authorized',
-          currency_code: 'KRW',
-          total: 1000,
-          subtotal: 1000,
-          shipping_total: 0,
-          discount_total: 0,
-          created_at: '2026-07-14T01:00:00.000Z',
-          updated_at: '2026-07-14T01:01:00.000Z',
-          items: [
-            {
-              id: rawOrderItemId,
-              variant_id: rawChannelProductId,
-              title: 'Round-trip product',
-              quantity: 1,
-              unit_price: 1000,
-              variant: {
-                metadata: { pimVariantId: skuId },
-                product: { metadata: { pimMasterId: 'master-1', pimVersionId: 'version-1' } },
+        listOrders: jest.fn().mockResolvedValue([
+          {
+            id: 'order_medusa_1',
+            payment_status: 'authorized',
+            currency_code: 'KRW',
+            total: 1000,
+            subtotal: 1000,
+            shipping_total: 0,
+            discount_total: 0,
+            created_at: '2026-07-14T01:00:00.000Z',
+            updated_at: '2026-07-14T01:01:00.000Z',
+            items: [
+              {
+                id: rawOrderItemId,
+                variant_id: rawChannelProductId,
+                title: 'Round-trip product',
+                quantity: 1,
+                unit_price: 1000,
+                variant: {
+                  metadata: { pimVariantId: skuId },
+                  product: { metadata: { pimMasterId: 'master-1', pimVersionId: 'version-1' } },
+                },
               },
+            ],
+            shipping_address: {
+              first_name: 'Recipient',
+              phone: '',
+              postal_code: '',
+              address_1: '',
+              address_2: '',
             },
-          ],
-          shipping_address: {
-            first_name: 'Recipient',
-            phone: '',
-            postal_code: '',
-            address_1: '',
-            address_2: '',
           },
-        },
-      ]),
+        ]),
       } as never),
       new ChannelOrderTranslator(
         new ChannelLineIdentityResolver({
@@ -151,8 +151,13 @@ describe('external order-line identity real component round trip', () => {
             };
           }
           if (table === wmsTables.salesOrderLines) {
-            const lines = Array.isArray(values) ? values : [values];
+            const lines: Array<Record<string, unknown>> = Array.isArray(values) ? values : [values];
             storedLines.push(...lines.map((line) => ({ id: salesOrderLineId, ...line })));
+            const returned = lines.map((line) => ({
+              id: salesOrderLineId,
+              almondDesignId: line['almondDesignId'] ?? null,
+            }));
+            return { returning: jest.fn().mockResolvedValue(returned) };
           }
           return Promise.resolve();
         },

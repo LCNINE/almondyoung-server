@@ -21,7 +21,7 @@ import { PoliciesService } from '../services/policies.service';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
 import { ChannelOrderChangeReader } from './channel-order-change.reader';
-import { ChannelOrderChangeManager } from './channel-order-change.manager';
+import { ChannelOrderChangeManager, PRINT_HELD_FOR_DECREASE } from './channel-order-change.manager';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -48,9 +48,15 @@ function wire(tx: DbTx) {
   );
   const amendments = new SalesOrderAmendmentsService(dbService);
   const reader = new ChannelOrderChangeReader(salesOrders);
-  const manager = new ChannelOrderChangeManager(reader, salesOrders, amendments, {
-    get: () => outbound.planning,
-  } as never, new ChannelCancelSettler(new ChannelCancelRequestReader()));
+  const manager = new ChannelOrderChangeManager(
+    reader,
+    salesOrders,
+    amendments,
+    {
+      get: () => outbound.planning,
+    } as never,
+    new ChannelCancelSettler(new ChannelCancelRequestReader()),
+  );
   return { logistics, outbound, salesOrders, manager };
 }
 
@@ -248,6 +254,46 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
     });
   });
 
+  it('배송지 — 와우프레스로 보낸 인쇄 줄이 있으면 판매주문 주소도 그대로이고 SHIPMENT_NOT_REVISABLE 대기', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const seed = await seedOrder(tx, w, { withFo: true });
+      await tx.insert(wmsTables.printOrders).values({
+        salesOrderId: seed.salesOrderId,
+        salesOrderLineId: randomUUID(),
+        almondDesignId: randomUUID(),
+        status: 'submitted',
+        vendorOrderNumber: 'W-1',
+        orderAttemptedAt: new Date(),
+      });
+      await w.manager.handle(seed.salesOrderId, payload(seed, { shippingAddress: NEXT }), `m-${randomUUID()}`, tx);
+      const [row] = await amendmentsOf(tx, seed.salesOrderId);
+      expect(row.deltas).toEqual([
+        expect.objectContaining({
+          blockers: [{ code: 'SHIPMENT_NOT_REVISABLE', detail: 'print order already sent to WowPress' }],
+        }),
+      ]);
+      const [so] = await tx.select().from(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, seed.salesOrderId));
+      expect(so.shippingAddress).not.toEqual(NEXT);
+    });
+  });
+
+  it('배송지 — 아직 발주 전인 인쇄 줄만 있으면 반영된다(발주할 때 새 주소를 읽는다)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const seed = await seedOrder(tx, w, { withFo: true });
+      await tx.insert(wmsTables.printOrders).values({
+        salesOrderId: seed.salesOrderId,
+        salesOrderLineId: randomUUID(),
+        almondDesignId: randomUUID(),
+        status: 'pending',
+      });
+      await w.manager.handle(seed.salesOrderId, payload(seed, { shippingAddress: NEXT }), `m-${randomUUID()}`, tx);
+      const [row] = await amendmentsOf(tx, seed.salesOrderId);
+      expect(row.status).toBe('applied');
+    });
+  });
+
   it('배송지 — 박스 수정이 도메인 거절이 아닌 예외(Error)로 실패하면 대기로 삼키지 않고 그대로 던진다(스펙 §11)', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wire(tx);
@@ -301,6 +347,35 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
         .from(wmsTables.salesOrderCancellations)
         .where(eq(wmsTables.salesOrderCancellations.salesOrderId, seed.salesOrderId));
       expect(JSON.stringify(cancellations.map((c) => c.effects))).not.toContain('wallet_refund');
+    });
+  });
+
+  it('감소 — 인쇄 줄이면 판매주문 취소 없이 CANCEL_NOT_IMMEDIATE 대기(와우프레스는 원래 수량으로 발주된다)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const seed = await seedOrder(tx, w, { withFo: false });
+      await tx.insert(wmsTables.printOrders).values({
+        salesOrderId: seed.salesOrderId,
+        salesOrderLineId: seed.lineIds[0],
+        almondDesignId: randomUUID(),
+        status: 'pending',
+      });
+      const p = payload(seed, {});
+      p.snapshot.lines[0].quantity = 1;
+      await w.manager.handle(seed.salesOrderId, p, `m-${randomUUID()}`, tx);
+      const [row] = await amendmentsOf(tx, seed.salesOrderId);
+      expect(row.deltas).toEqual([
+        expect.objectContaining({
+          blockers: [{ code: 'CANCEL_NOT_IMMEDIATE', detail: 'print order on this line — decide on WowPress' }],
+        }),
+      ]);
+      expect(await w.salesOrders.getCancelledQuantityByLine(seed.salesOrderId, tx)).toEqual(new Map());
+      // 거절 savepoint 가 되돌려도 아직 안 보낸 인쇄는 운영자 확인으로 붙잡혀, 워커가 원래 수량으로 주문하지 않는다
+      const [print] = await tx
+        .select()
+        .from(wmsTables.printOrders)
+        .where(eq(wmsTables.printOrders.salesOrderLineId, seed.lineIds[0]));
+      expect(print).toMatchObject({ status: 'cancel_refused', lastError: PRINT_HELD_FOR_DECREASE });
     });
   });
 
@@ -517,7 +592,12 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
     const [row] = await tx
       .select({ id: wmsTables.salesOrderAmendments.id })
       .from(wmsTables.salesOrderAmendments)
-      .where(and(eq(wmsTables.salesOrderAmendments.salesOrderId, salesOrderId), eq(wmsTables.salesOrderAmendments.status, 'pending')))
+      .where(
+        and(
+          eq(wmsTables.salesOrderAmendments.salesOrderId, salesOrderId),
+          eq(wmsTables.salesOrderAmendments.status, 'pending'),
+        ),
+      )
       .orderBy(desc(wmsTables.salesOrderAmendments.createdAt))
       .limit(1);
     await tx
@@ -532,7 +612,13 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
       const w = wire(tx);
       const seed = await seedOrder(tx, w, { withFo: false });
       const increased = payload(seed, {
-        lines: seed.lines.map((line, i) => ({ channelOrderItemId: line.item, channelProductId: `cp-${line.item}`, quantity: i === 0 ? 5 : line.qty, unitPrice: 1000, cancelled: false })),
+        lines: seed.lines.map((line, i) => ({
+          channelOrderItemId: line.item,
+          channelProductId: `cp-${line.item}`,
+          quantity: i === 0 ? 5 : line.qty,
+          unitPrice: 1000,
+          cancelled: false,
+        })),
       });
       await w.manager.handle(seed.salesOrderId, increased, `msg-${randomUUID()}`, tx);
       const dismissedId = await dismissLatestPending(tx, seed.salesOrderId);
@@ -550,7 +636,13 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
       const w = wire(tx);
       const seed = await seedOrder(tx, w, { withFo: false });
       const lineOf = (qty0: number, qty1: number) =>
-        seed.lines.map((line, i) => ({ channelOrderItemId: line.item, channelProductId: `cp-${line.item}`, quantity: i === 0 ? qty0 : qty1, unitPrice: 1000, cancelled: false }));
+        seed.lines.map((line, i) => ({
+          channelOrderItemId: line.item,
+          channelProductId: `cp-${line.item}`,
+          quantity: i === 0 ? qty0 : qty1,
+          unitPrice: 1000,
+          cancelled: false,
+        }));
       await w.manager.handle(seed.salesOrderId, payload(seed, { lines: lineOf(5, 1) }), `msg-${randomUUID()}`, tx);
       await dismissLatestPending(tx, seed.salesOrderId);
 
@@ -566,11 +658,22 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
     await inRollbackTx(db, async (tx) => {
       const w = wire(tx);
       const seed = await seedOrder(tx, w, { withFo: false });
-      const increasedLines = seed.lines.map((line, i) => ({ channelOrderItemId: line.item, channelProductId: `cp-${line.item}`, quantity: i === 0 ? 5 : line.qty, unitPrice: 1000, cancelled: false }));
+      const increasedLines = seed.lines.map((line, i) => ({
+        channelOrderItemId: line.item,
+        channelProductId: `cp-${line.item}`,
+        quantity: i === 0 ? 5 : line.qty,
+        unitPrice: 1000,
+        cancelled: false,
+      }));
       await w.manager.handle(seed.salesOrderId, payload(seed, { lines: increasedLines }), `msg-${randomUUID()}`, tx);
       const dismissedId = await dismissLatestPending(tx, seed.salesOrderId);
 
-      await w.manager.handle(seed.salesOrderId, payload(seed, { lines: increasedLines, shippingAddress: NEXT }), `msg-${randomUUID()}`, tx);
+      await w.manager.handle(
+        seed.salesOrderId,
+        payload(seed, { lines: increasedLines, shippingAddress: NEXT }),
+        `msg-${randomUUID()}`,
+        tx,
+      );
 
       const rows = await amendmentsOf(tx, seed.salesOrderId);
       expect(rows.filter((row) => row.status === 'pending')).toHaveLength(0);

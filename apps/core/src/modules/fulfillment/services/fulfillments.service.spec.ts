@@ -479,6 +479,20 @@ describe('FulfillmentsService', () => {
     expect(productSkuMapping.getByVariant).not.toHaveBeenCalled();
   });
 
+  it('creates no fulfillment order item for an outsourced line', async () => {
+    const { service, state, productSkuMapping, shipmentReservation } = makeService({
+      lines: [{ id: salesOrderLineId, salesOrderId, variantId, quantity: 1, almondDesignId: 'd1' }],
+    });
+
+    const result = await service.create({ salesOrderId, warehouseId });
+
+    expect(result).toBeNull();
+    expect(state.fulfillmentOrders).toHaveLength(0);
+    expect(state.fulfillmentOrderItems).toHaveLength(0);
+    expect(productSkuMapping.getByVariant).not.toHaveBeenCalled();
+    expect(shipmentReservation.reservePartial).not.toHaveBeenCalled();
+  });
+
   it('디지털 라인과 물리 라인이 섞이면 물리 FO가 필요하다고 판별한다 (디지털 라인은 제외)', async () => {
     const { service } = makeService({
       lines: [
