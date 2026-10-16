@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { randomUUID } from 'crypto';
-import { and, eq, notInArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull, notInArray } from 'drizzle-orm';
 import type { OrderModifiedPayload, ShippingAddress } from '@packages/event-contracts/streams';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { ShipmentPlanningService } from '../../fulfillment/services/shipment-planning.service';
@@ -31,6 +31,8 @@ const CHANNEL_ACTOR = { id: FULFILLMENT_SYSTEM_ACTOR_ID, roles: ['master'] };
  */
 const MARKED_SHIPPED_STATUSES: ReadonlySet<string> = new Set(['shipped', 'delivered']);
 const MARKED_SHIPPED_DETAIL = 'sales order marked shipped';
+export const PRINT_HELD_FOR_DECREASE =
+  'channel decreased quantity before the print was ordered — confirm quantity, then proceed';
 
 /** savepoint 를 되돌리려고 던지는 표지. 밖으로 새지 않는다. */
 class Refused extends Error {
@@ -177,6 +179,8 @@ export class ChannelOrderChangeManager {
     tx: DbTx,
   ): Promise<RecordedChannelDelta> {
     const sourceEventId = `${ctx.amendmentId}:${delta.salesOrderLineId}`;
+    // 인쇄 줄의 감소는 아래에서 거절돼 운영자 몫이 된다. 그사이 원래 수량으로 주문되지 않게, 거절이 되돌리는 savepoint 밖에서 붙잡는다
+    await this.holdUnsentPrint(delta.salesOrderLineId, tx);
     const refusal = await this.attempt(tx, async (sp) => {
       // 판매주문 취소는 외주 줄을 그냥 통과시킨다. 인쇄 줄을 줄이면 와우프레스는 원래 수량대로 주문·제작된다
       if (await this.reader.hasActivePrintOrder(delta.salesOrderLineId, sp)) {
@@ -205,6 +209,30 @@ export class ChannelOrderChangeManager {
       if (followUp) throw new Refused({ code: 'CANCEL_NOT_IMMEDIATE', detail: followUp });
     });
     return refusal ? { ...delta, outcome: 'pending', blockers: [refusal] } : { ...delta, outcome: 'applied' };
+  }
+
+  /** 아직 주문권을 쓰지 않은 인쇄만 운영자 확인(cancel_refused)으로 넘긴다. 이미 보낸 주문은 와우프레스에서 판단한다. */
+  private async holdUnsentPrint(salesOrderLineId: string, tx: DbTx): Promise<void> {
+    const t = wmsTables.printOrders;
+    const now = new Date();
+    await tx
+      .update(t)
+      .set({
+        status: 'cancel_refused',
+        cancelRefusedAt: now,
+        cancelResolvedAt: null,
+        cancelResolvedBy: null,
+        lastError: PRINT_HELD_FOR_DECREASE,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(t.salesOrderLineId, salesOrderLineId),
+          inArray(t.status, ['pending', 'submitting', 'failed']),
+          isNull(t.orderAttemptedAt),
+          isNull(t.vendorOrderNumber),
+        ),
+      );
   }
 
   /** 판매주문과 끝나지 않은 출고지시의 배송지. `shipping_address_hash` 는 건드리지 않는다(스펙 §7.1 2). */

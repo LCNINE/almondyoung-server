@@ -21,7 +21,7 @@ import { PoliciesService } from '../services/policies.service';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
 import { ChannelOrderChangeReader } from './channel-order-change.reader';
-import { ChannelOrderChangeManager } from './channel-order-change.manager';
+import { ChannelOrderChangeManager, PRINT_HELD_FOR_DECREASE } from './channel-order-change.manager';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -370,6 +370,12 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
         }),
       ]);
       expect(await w.salesOrders.getCancelledQuantityByLine(seed.salesOrderId, tx)).toEqual(new Map());
+      // 거절 savepoint 가 되돌려도 아직 안 보낸 인쇄는 운영자 확인으로 붙잡혀, 워커가 원래 수량으로 주문하지 않는다
+      const [print] = await tx
+        .select()
+        .from(wmsTables.printOrders)
+        .where(eq(wmsTables.printOrders.salesOrderLineId, seed.lineIds[0]));
+      expect(print).toMatchObject({ status: 'cancel_refused', lastError: PRINT_HELD_FOR_DECREASE });
     });
   });
 
