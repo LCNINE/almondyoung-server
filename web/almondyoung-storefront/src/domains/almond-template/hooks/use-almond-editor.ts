@@ -9,7 +9,6 @@ import {
   type Design,
 } from "../lib/document"
 import { mm } from "../lib/layer"
-import { uploadedFontValue, type FontOption } from "../lib/fonts"
 import { useCanvasInteraction } from "./use-canvas-interaction"
 import { useDesignHistory } from "./use-design-history"
 import { useEditorShortcuts } from "./use-editor-shortcuts"
@@ -313,29 +312,6 @@ export function useAlmondEditor({
     setTool(selected.type)
     setPanelOpen(true)
   }, [selectedId, selected?.type])
-  const [customFonts, setCustomFonts] = useState<FontOption[]>([])
-  const addFontFile = async (file: File) => {
-    const value = uploadedFontValue(file.name)
-    const family = value.slice(1, value.indexOf("'", 1))
-    try {
-      const face = new FontFace(family, await file.arrayBuffer())
-      document.fonts.add(await face.load())
-    } catch {
-      setMessage(
-        "글꼴 파일을 읽을 수 없습니다. TTF·OTF·WOFF 파일을 골라 주세요."
-      )
-      return null
-    }
-    setCustomFonts((list) =>
-      list.some((font) => font.value === value)
-        ? list
-        : [...list, { label: family, value }]
-    )
-    setMessage(
-      "내 PC 글꼴은 이 브라우저에서만 보입니다. 다른 기기·인쇄 파일에서는 기본 글꼴로 바뀝니다."
-    )
-    return value
-  }
   useEditorShortcuts({
     preview,
     textDialog,
@@ -442,8 +418,6 @@ export function useAlmondEditor({
     splitGroup,
     showOverflow,
     setShowOverflow,
-    customFonts,
-    addFontFile,
     ...storage,
     ...canvas,
     ...actions,

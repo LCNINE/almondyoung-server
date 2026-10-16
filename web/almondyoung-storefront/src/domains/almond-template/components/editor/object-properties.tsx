@@ -27,33 +27,25 @@ function FontSelect({
   editor: AlmondEditor
   selected: Layer
 }) {
-  const { patch, editable, customFonts, addFontFile } = editor
-  const fileRef = useRef<HTMLInputElement>(null)
-  const current = fontStack(selected.fontFamily)
-  const options = [...FONT_OPTIONS, ...customFonts]
-  if (!options.some((font) => font.value === current))
-    options.push({ label: current.split("'")[1] ?? current, value: current })
+  const { patch, editable } = editor
   return (
     <label className="flex items-center gap-2">
       <span className="w-9 shrink-0">폰트</span>
       <select
         aria-label="폰트"
         className="min-w-0 flex-1 border px-2 py-1"
-        value={current}
+        value={fontStack(selected.fontFamily)}
         disabled={!editable}
         onChange={(event) => {
-          if (event.target.value === "upload") fileRef.current?.click()
-          else {
-            const family = event.target.value
-            // 아직 안 받은 웹폰트로 재면 대체 글꼴 폭으로 상자가 맞춰진다
-            document.fonts
-              .load(`16px ${family}`)
-              .catch(() => undefined)
-              .finally(() => patch(selected.id, { fontFamily: family }))
-          }
+          const family = event.target.value
+          // 아직 안 받은 웹폰트로 재면 대체 글꼴 폭으로 상자가 맞춰진다
+          document.fonts
+            .load(`16px ${family}`)
+            .catch(() => undefined)
+            .finally(() => patch(selected.id, { fontFamily: family }))
         }}
       >
-        {options.map((font) => (
+        {FONT_OPTIONS.map((font) => (
           <option
             key={font.value}
             value={font.value}
@@ -62,21 +54,7 @@ function FontSelect({
             {font.label}
           </option>
         ))}
-        <option value="upload">+ 내 PC 글꼴 불러오기…</option>
       </select>
-      <input
-        ref={fileRef}
-        type="file"
-        hidden
-        accept=".ttf,.otf,.woff,.woff2"
-        onChange={async (event) => {
-          const file = event.target.files?.[0]
-          event.target.value = ""
-          if (!file) return
-          const value = await addFontFile(file)
-          if (value) patch(selected.id, { fontFamily: value })
-        }}
-      />
     </label>
   )
 }

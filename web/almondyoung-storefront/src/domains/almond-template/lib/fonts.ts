@@ -39,21 +39,9 @@ export const FONT_OPTIONS: FontOption[] = [
 
 export const FONT_STYLESHEET = `https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&family=Noto+Serif+KR:wght@400;700&${GOOGLE_FONTS.map(([, , query]) => `family=${query}`).join("&")}&display=swap`
 
-// 내 PC 글꼴은 브라우저에만 올라간다. 문서엔 이름만 남아 다른 PC·인쇄 서버에선 기본 글꼴로 대체된다
-export const UPLOADED_FONT = /^'[^'"<>&\\]{1,60}', sans-serif$/
-
-export function uploadedFontValue(fileName: string) {
-  const name = fileName
-    .replace(/\.[^.]+$/, "")
-    .replace(/['"<>&\\]/g, "")
-    .slice(0, 60)
-  return `'${name || "내 글꼴"}', sans-serif`
-}
-
 export function fontStack(family: string | undefined) {
   if (family && FONT_OPTIONS.some((font) => font.value === family))
     return family
-  if (family && UPLOADED_FONT.test(family)) return family
   return family && /serif/i.test(family) && !/sans-serif/i.test(family)
     ? SERIF_FONT
     : SANS_FONT
