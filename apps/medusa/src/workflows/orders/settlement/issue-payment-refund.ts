@@ -4,9 +4,11 @@ import { refundPaymentWorkflow } from '@medusajs/medusa/core-flows';
 
 import {
   withManualRefund,
+  withRefundKind,
   withoutExternalRefund,
   withoutManualRefund,
   withRefundAttempt,
+  type WalletRefundKind,
 } from '../../../modules/almond-payment/refund-data';
 import { describeError } from '../../../utils/describe-error';
 import { writePaymentData } from './payment-data';
@@ -23,11 +25,14 @@ import type { RefundMode } from './refund-mode';
  */
 export async function issuePaymentRefund(
   container: MedusaContainer,
-  input: { paymentId: string; amount: number; note: string; mode: RefundMode; actorId?: string },
+  input: { paymentId: string; amount: number; note: string; mode: RefundMode; kind: WalletRefundKind; actorId?: string },
 ): Promise<void> {
   const paymentModule = container.resolve(Modules.PAYMENT);
   const fresh = await paymentModule.retrievePayment(input.paymentId, { select: ['id', 'data'] });
-  const marked = withoutExternalRefund(withRefundAttempt(fresh.data ?? {}, { note: input.note, amount: input.amount }));
+  // 종류 표식도 이번 시도의 값으로 덮어쓴다(금액이 붙어 있어 앞 시도의 표식은 다른 금액의 환불에 붙지 못한다)
+  const marked = withoutExternalRefund(
+    withRefundKind(withRefundAttempt(fresh.data ?? {}, { note: input.note, amount: input.amount }), { kind: input.kind, amount: input.amount }),
+  );
   await writePaymentData(
     paymentModule,
     input.paymentId,
@@ -50,5 +55,5 @@ export async function issuePaymentRefund(
     }
     throw error;
   }
-  await writePaymentData(paymentModule, input.paymentId, { refundAttempt: null });
+  await writePaymentData(paymentModule, input.paymentId, { refundAttempt: null, refundKind: null });
 }

@@ -257,4 +257,34 @@ describe('almond-payment refundPayment', () => {
       expect(spy).not.toHaveBeenCalled();
     });
   });
+
+  describe('환불 종류 표식(#1016 40번)', () => {
+    it('표식 금액이 같으면 바디에 kind 를 더하고 reasonCode 는 그대로 두며 표식을 지운다', async () => {
+      const svc = makeService();
+      const spy = jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({ refunds: [ok('wr1', 3000)] });
+      const out = await svc.refundPayment({
+        data: { intentId: 'i1', refundKind: { kind: 'ITEM_CANCEL', amount: 3000 } },
+        amount: 3000,
+      } as any);
+      expect(JSON.parse((spy.mock.calls[0][1] as any).body)).toEqual({ amount: 3000, reasonCode: 'MEDUSA_REFUND', kind: 'ITEM_CANCEL' });
+      expect(out.data).toEqual({ intentId: 'i1', refundKind: null, walletRefundIds: ['wr1'] });
+    });
+
+    it('표식 금액이 환불 금액과 다르면 kind 를 보내지 않는다(앞 시도가 남긴 표식)', async () => {
+      const svc = makeService();
+      const spy = jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({ refunds: [ok('wr2', 3000)] });
+      await svc.refundPayment({
+        data: { intentId: 'i1', refundKind: { kind: 'ITEM_CANCEL', amount: 5000 } },
+        amount: 3000,
+      } as any);
+      expect(JSON.parse((spy.mock.calls[0][1] as any).body)).toEqual({ amount: 3000, reasonCode: 'MEDUSA_REFUND' });
+    });
+
+    it('표식이 없으면 kind 를 보내지 않는다', async () => {
+      const svc = makeService();
+      const spy = jest.spyOn(svc as any, 'walletFetch').mockResolvedValue({ refunds: [ok('wr3', 3000)] });
+      await svc.refundPayment({ data: { intentId: 'i1' }, amount: 3000 } as any);
+      expect(JSON.parse((spy.mock.calls[0][1] as any).body)).toEqual({ amount: 3000, reasonCode: 'MEDUSA_REFUND' });
+    });
+  });
 });

@@ -1,5 +1,5 @@
 import {
-  judgeWalletRefund, readWalletRefundIds, withWalletRefundIds, readExternalRefund, withExternalRefund, withoutExternalRefund, readManualRefund, withManualRefund, withoutManualRefund, readRefundAttempt, withRefundAttempt,
+  judgeWalletRefund, readWalletRefundIds, withWalletRefundIds, readExternalRefund, withExternalRefund, withoutExternalRefund, readManualRefund, withManualRefund, withoutManualRefund, readRefundAttempt, withRefundAttempt, readRefundKind, withRefundKind, withoutRefundKind,
 } from '../refund-data';
 
 describe('refund-data', () => {
@@ -85,5 +85,17 @@ describe('환불 시도 표식 (#1016 36번 재설계 §6.2 보강)', () => {
 
   it.each([undefined, null, {}, { note: 'x' }, { amount: 1 }, { note: 1, amount: 1 }])('모양이 다르면 없는 것으로(%p) — 지운 표식은 null 로 남는다', (v) => {
     expect(readRefundAttempt({ refundAttempt: v })).toBeNull();
+  });
+  it('환불 종류 표식을 쓰고 읽고 지운다', () => {
+    const d = withRefundKind({ intentId: 'i' }, { kind: 'ITEM_CANCEL', amount: 3000 });
+    expect(readRefundKind(d)).toEqual({ kind: 'ITEM_CANCEL', amount: 3000 });
+    expect(withoutRefundKind(d)).toEqual({ intentId: 'i', refundKind: null });
+    expect(readRefundKind(withoutRefundKind(d))).toBeNull();
+  });
+  it('모양이 틀린 종류 표식은 없는 것으로 본다', () => {
+    expect(readRefundKind(undefined)).toBeNull();
+    expect(readRefundKind({ refundKind: { kind: 'NOPE', amount: 1 } })).toBeNull();
+    expect(readRefundKind({ refundKind: { kind: 'RETURN', amount: '1' } })).toBeNull();
+    expect(readRefundKind({ refundKind: 'RETURN' })).toBeNull();
   });
 });
