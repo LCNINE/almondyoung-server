@@ -39,19 +39,26 @@ function makeMethod(type: string = 'TOSS') {
 }
 
 function makeInsertedRefund(
-  overrides: Partial<{ amount: number; reasonCode: string | null; execution: 'AUTO' | 'MANUAL' }> = {},
+  overrides: Partial<{
+    amount: number;
+    reasonCode: string | null;
+    execution: 'AUTO' | 'MANUAL';
+    kind: string | null;
+    status: string;
+  }> = {},
 ) {
   return {
     id: REFUND_ID,
     chargeId: CHARGE_ID,
     intentId: INTENT_ID,
-    status: 'PENDING',
+    status: overrides.status ?? 'PENDING',
     amount: overrides.amount ?? 5000,
     currency: 'KRW',
     reasonCode: overrides.reasonCode ?? null,
     reasonMessage: null,
     providerRefundId: null,
     execution: overrides.execution ?? 'AUTO',
+    kind: overrides.kind ?? null,
     failureCode: null,
     failureRetryable: null,
     createdAt: new Date(),
@@ -78,6 +85,7 @@ function makeContext(
       retryable?: boolean;
     };
     pendingRefund?: ReturnType<typeof makeInsertedRefund>; // for confirmManual tests
+    ambiguousRefund?: ReturnType<typeof makeInsertedRefund>; // 되살릴 응답 끊긴 행
     intentMetadata?: Record<string, unknown>; // payment_intents.metadata for assertRefundable/getIntentUserId
   } = {},
 ) {
@@ -90,6 +98,7 @@ function makeContext(
   const succeededRefundedAmount = options.succeededRefundedAmount ?? 0;
   const providerResult = options.providerResult ?? { status: 'SUCCEEDED', providerRefundId: 'prov-rf-001' };
   const pendingRefund = options.pendingRefund;
+  const ambiguousRefund = options.ambiguousRefund;
 
   // Track update calls
   const updateCalls: Array<{ set: Record<string, unknown> }> = [];
@@ -110,7 +119,7 @@ function makeContext(
           // 되살릴 «응답 끊긴» 행 조회(orderBy().limit()) 는 없다고 답한다
           where: () =>
             Object.assign([{ amount: selectAmount }], {
-              orderBy: () => ({ limit: () => Promise.resolve([]) }),
+              orderBy: () => ({ limit: () => Promise.resolve(ambiguousRefund ? [ambiguousRefund] : []) }),
             }),
         }),
       })),
@@ -121,7 +130,12 @@ function makeContext(
             returning: jest
               .fn()
               .mockResolvedValue([
-                makeInsertedRefund({ amount: vals.amount, reasonCode: vals.reasonCode, execution: vals.execution }),
+                makeInsertedRefund({
+                  amount: vals.amount,
+                  reasonCode: vals.reasonCode,
+                  execution: vals.execution,
+                  kind: vals.kind,
+                }),
               ]),
           };
         },
@@ -404,6 +418,35 @@ describe('RefundsService', () => {
         detail: 'Charge not found: missing',
         retryable: false,
       });
+    });
+  });
+
+  describe('PG 취소 사유 (#1016 40번)', () => {
+    it("kind 가 있는 행은 종류 이름('반품')을 cancelReason 으로 보낸다", async () => {
+      const { service, provider } = makeContext();
+
+      await service.create({ chargeId: CHARGE_ID, amount: 5000, reasonCode: 'MEDUSA_REFUND', kind: 'RETURN' });
+
+      expect(provider.refund).toHaveBeenCalledWith(expect.objectContaining({ cancelReason: '반품' }));
+    });
+
+    it('kind 가 없으면 reasonCode 를 그대로 보낸다', async () => {
+      const { service, provider } = makeContext();
+
+      await service.create({ chargeId: CHARGE_ID, amount: 5000, reasonCode: '엘라 품절' });
+
+      expect(provider.refund).toHaveBeenCalledWith(expect.objectContaining({ cancelReason: '엘라 품절' }));
+    });
+
+    it('응답 끊긴 행을 되살리면 그 행의 종류가 PG 사유가 된다 — 이번 요청의 kind 가 아니다', async () => {
+      const ambiguous = makeInsertedRefund({ kind: 'RETURN', status: 'FAILED' });
+      const { service, provider, insertCalls } = makeContext({ ambiguousRefund: ambiguous });
+      jest.spyOn(service, 'findByIdOrThrow').mockResolvedValue(ambiguous as never);
+
+      await service.create({ chargeId: CHARGE_ID, amount: 5000, kind: 'PRICE_ADJUSTMENT' });
+
+      expect(provider.refund).toHaveBeenCalledWith(expect.objectContaining({ cancelReason: '반품' }));
+      expect(insertCalls).toHaveLength(0);
     });
   });
 

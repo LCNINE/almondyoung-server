@@ -1,7 +1,16 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { and, asc, eq, gt, inArray, lt, sql, SQL } from 'drizzle-orm';
-import { WalletSchema, charges as chargesTable, refunds, paymentIntents, paymentMethods as paymentMethodsTable, RefundExecution, RefundKind } from '../schema';
+import {
+  WalletSchema,
+  charges as chargesTable,
+  refunds,
+  paymentIntents,
+  paymentMethods as paymentMethodsTable,
+  RefundExecution,
+  RefundKind,
+} from '../schema';
+import { pgCancelReason } from './refund-kind';
 import { Charge, DbTx, PaymentMethod, Refund } from '../types';
 import { ChargesService } from '../charges/charges.service';
 import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
@@ -218,7 +227,7 @@ export class RefundsService {
         currency: charge.currency,
         idempotencyKey,
         correlationId,
-        reasonCode: refund.reasonCode ?? undefined,
+        cancelReason: pgCancelReason(refund),
         providerData: method.providerData,
         refundReceiveAccount: ctx.refundReceiveAccount,
       });

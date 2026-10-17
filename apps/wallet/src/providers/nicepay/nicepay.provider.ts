@@ -155,7 +155,7 @@ export class NicepayPaymentProvider implements PaymentProvider {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        reason: params.reasonCode ?? '고객 요청',
+        reason: params.cancelReason ?? '고객 요청',
         orderId,
         cancelAmt: params.amount,
       }),

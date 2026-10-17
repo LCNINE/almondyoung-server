@@ -167,7 +167,7 @@ export class BankTransferPaymentProvider implements PaymentProvider {
 
     const result = await this.tossApi.cancelPayment(
       paymentKey,
-      params.reasonCode ?? '고객 요청',
+      params.cancelReason ?? '고객 요청',
       params.amount,
       params.idempotencyKey,
       params.refundReceiveAccount,

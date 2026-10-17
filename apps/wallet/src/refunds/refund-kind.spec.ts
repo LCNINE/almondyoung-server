@@ -1,5 +1,5 @@
 import { refundKindEnum } from '../schema';
-import { REFUND_KIND_LABELS, isRefundKind } from './refund-kind';
+import { REFUND_KIND_LABELS, isRefundKind, pgCancelReason } from './refund-kind';
 
 describe('refund-kind', () => {
   it('라벨 키는 enum 값과 정확히 같다', () => {
@@ -21,5 +21,17 @@ describe('refund-kind', () => {
     expect(isRefundKind('item_cancel')).toBe(false);
     expect(isRefundKind(null)).toBe(false);
     expect(isRefundKind(undefined)).toBe(false);
+  });
+});
+
+describe("pgCancelReason", () => {
+  it("종류가 있으면 reasonCode 와 상관없이 종류 이름", () => {
+    expect(pgCancelReason({ kind: "ITEM_CANCEL", reasonCode: "MEDUSA_REFUND" })).toBe("품목 취소");
+  });
+  it("종류가 없으면 reasonCode 그대로", () => {
+    expect(pgCancelReason({ kind: null, reasonCode: "엘라 품절" })).toBe("엘라 품절");
+  });
+  it("둘 다 없으면 undefined — provider 기본값이 쓰인다", () => {
+    expect(pgCancelReason({ kind: null, reasonCode: null })).toBeUndefined();
   });
 });

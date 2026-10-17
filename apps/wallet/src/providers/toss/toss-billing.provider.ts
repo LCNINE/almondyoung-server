@@ -124,7 +124,7 @@ export class TossBillingProvider implements PaymentProvider {
 
     const result = await this.tossApi.cancelPayment(
       paymentKey,
-      params.reasonCode ?? '환불',
+      params.cancelReason ?? '환불',
       params.amount,
       params.idempotencyKey,
     );
