@@ -1,5 +1,5 @@
 // wallet 환불 종류(#1016 40번). 정본은 apps/wallet/src/schema.ts 의 refundKindEnum —
-// admin-web 은 wallet 을 import 할 수 없어 사본을 둔다. 값을 바꾸면 거기와 함께 고칠 것.
+// admin-web 은 wallet 을 import 할 수 없어 사본을 둔다. 값을 바꾸면 거기와 함께 고칠 것 — `apps/wallet/src/refunds/refund-kind-copies.spec.ts` 가 지킨다.
 export const REFUND_KINDS = ['ITEM_CANCEL', 'RETURN', 'PRICE_ADJUSTMENT', 'SUBSCRIPTION_FEE', 'PAYMENT_ERROR'] as const;
 
 export type RefundKind = (typeof REFUND_KINDS)[number];
