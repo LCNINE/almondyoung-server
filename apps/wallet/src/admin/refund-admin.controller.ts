@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
   HttpCode,
@@ -7,12 +8,16 @@ import {
   InternalServerErrorException,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PaymentIntentAdminService } from './payment-intent-admin.service';
-import { AdminRefundListQueryDto } from './dto';
+import { AdminRefundListQueryDto, ChangeRefundKindDto } from './dto';
+import type { AuthenticatedRequest } from '../wallet.module';
+import { toRefundResponse } from '../refunds/refund-response';
 import { WalletAdminAuth } from '../wallet-admin-auth.decorator';
 import { RefundsService } from '../refunds/refunds.service';
 
@@ -48,5 +53,15 @@ export class RefundAdminController {
       if (msg.match(/already|invalid|pending|status/)) throw new BadRequestException(e.message);
       throw new InternalServerErrorException(e.message);
     }
+  }
+
+  @Patch(':id/kind')
+  @ApiOperation({
+    summary:
+      '환불 종류 고치기 (admin) — null 은 «모름»으로 비우기. 변경 이력이 남는다. PG 로 다시 나갈 수 있는 행(AUTO PENDING·응답 끊긴 FAILED)은 409',
+  })
+  async changeKind(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: ChangeRefundKindDto) {
+    const refund = await this.refundsService.changeKind(id, dto.kind, req.jwtUserId ?? 'admin');
+    return toRefundResponse(refund);
   }
 }

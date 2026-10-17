@@ -178,6 +178,7 @@ export class RefundRequestsService {
       intentId: req.intentId,
       amount: req.amount,
       reasonCode: 'CUSTOMER_REFUND_REQUEST',
+      kind: 'ITEM_CANCEL',
       reasonMessage: req.reason ?? undefined,
       allowMembershipRefund: true,
       refundReceiveAccount: {

@@ -1,7 +1,14 @@
-import { IsBoolean, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { RefundExecution, RefundStatus, refundExecutionEnum, refundStatusEnum } from '../../schema';
+import {
+  RefundExecution,
+  RefundKind,
+  RefundStatus,
+  refundExecutionEnum,
+  refundKindEnum,
+  refundStatusEnum,
+} from '../../schema';
 
 export class RefundReceiveAccountDto {
   @ApiProperty({ description: '토스 2자리 은행코드 (예: 국민 06)' })
@@ -46,6 +53,14 @@ export class CreateRefundDto {
   @IsOptional()
   @IsString()
   reasonMessage?: string;
+
+  @ApiPropertyOptional({
+    enum: refundKindEnum.enumValues,
+    description: '무엇을 되돌린 돈인가. 생략하면 null(모름)',
+  })
+  @IsOptional()
+  @IsIn(refundKindEnum.enumValues)
+  kind?: RefundKind;
 
   @ApiPropertyOptional({
     description: '멤버십 결제 환불 차단을 우회 (admin 강제취소 예외 환불 전용). 일반/셀프 환불에서는 절대 설정 금지.',
@@ -145,6 +160,13 @@ export class RefundResponseDto {
   execution: RefundExecution;
 
   @ApiPropertyOptional({
+    enum: refundKindEnum.enumValues,
+    nullable: true,
+    description: '무엇을 되돌린 돈인가. null 은 모름',
+  })
+  kind: RefundKind | null;
+
+  @ApiPropertyOptional({
     type: String,
     nullable: true,
     description: 'FAILED 일 때 실패 코드(토스 오류 코드 등). 그 밖엔 null',
@@ -178,6 +200,9 @@ export class RefundListItemDto {
 
   @ApiProperty({ enum: refundExecutionEnum.enumValues })
   execution: RefundExecution;
+
+  @ApiPropertyOptional({ enum: refundKindEnum.enumValues, nullable: true })
+  kind: RefundKind | null;
 
   @ApiProperty()
   createdAt: Date;

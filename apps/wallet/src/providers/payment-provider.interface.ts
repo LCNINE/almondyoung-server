@@ -47,7 +47,7 @@ export interface RefundParams {
   currency: string;
   idempotencyKey: string;
   correlationId: string;
-  reasonCode?: string;
+  cancelReason?: string;
   providerData?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   /** 무통장(가상계좌) 입금 후 환불에 필요. 미제공 시 provider 는 수동환불(PENDING) 로 폴백. */

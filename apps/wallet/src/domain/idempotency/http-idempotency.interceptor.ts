@@ -32,6 +32,22 @@ function redactForStorage(operation: string, body: unknown): unknown {
   return copy;
 }
 
+const REFUND_CREATION_PATH =
+  /^\/v1\/(?:payment-intents\/[^/]+\/refund|admin\/payment-intents\/[^/]+\/refund|refunds)\/?$/;
+
+/**
+ * 멱등 해시에 넣을 바디. 환불 생성 경로에서는 최상위 `kind` 를 뺀다.
+ * kind 는 «무엇을 되돌린 돈인가» 라벨일 뿐 돈의 내용이 아니다 — 배포 전에 kind 없이 보낸 요청을
+ * 같은 키로 재시도할 때 해시가 달라 409 가 나면, 호출자(core)가 «환불 안 됨»으로 읽고 새 키로
+ * 또 환불한다(이중 환불).
+ */
+export function bodyForRequestHash(method: string, path: string, body: unknown): unknown {
+  if (method !== 'POST' || !REFUND_CREATION_PATH.test(path)) return body;
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) return body;
+  const { kind: _kind, ...rest } = body as Record<string, unknown>;
+  return rest;
+}
+
 @Injectable()
 export class HttpIdempotencyInterceptor implements NestInterceptor {
   constructor(private readonly idempotencyService: IdempotencyService) {}
@@ -71,7 +87,7 @@ export class HttpIdempotencyInterceptor implements NestInterceptor {
       actorId,
       requestMethod: method,
       requestPath,
-      requestBody: request.body ?? null,
+      requestBody: bodyForRequestHash(method, requestPath, request.body ?? null),
     });
 
     if (decision.kind === 'REPLAY') {

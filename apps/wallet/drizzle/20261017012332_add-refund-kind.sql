@@ -1,0 +1,2 @@
+CREATE TYPE "public"."refund_kind" AS ENUM('ITEM_CANCEL', 'RETURN', 'PRICE_ADJUSTMENT', 'SUBSCRIPTION_FEE', 'PAYMENT_ERROR');--> statement-breakpoint
+ALTER TABLE "refunds" ADD COLUMN "kind" "refund_kind";

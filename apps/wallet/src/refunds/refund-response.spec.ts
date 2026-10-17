@@ -12,6 +12,7 @@ const row = (overrides: Partial<Refund> = {}): Refund => ({
   reasonMessage: null,
   providerRefundId: 'pk-1',
   execution: 'AUTO',
+  kind: null,
   failureCode: null,
   failureRetryable: null,
   createdAt: new Date('2026-10-11T00:00:00Z'),
@@ -33,9 +34,16 @@ describe('toRefundResponse', () => {
       createdAt: new Date('2026-10-11T00:00:00Z'),
       manualConfirmable: false,
       execution: 'AUTO',
+      kind: null,
       failureCode: null,
       retryable: null,
     });
+  });
+
+  it('kind 를 그대로 싣는다', () => {
+    expect(toRefundResponse(row({ kind: 'RETURN' })).kind).toBe('RETURN');
+    expect(toRefundListItem(row({ kind: 'PAYMENT_ERROR' })).kind).toBe('PAYMENT_ERROR');
+    expect(toRefundListItem(row()).kind).toBeNull();
   });
 
   it('분류된 FAILED 행은 failureCode 와 retryable 을 싣는다', () => {
@@ -62,7 +70,7 @@ describe('toRefundResponse', () => {
 });
 
 describe('toRefundListItem', () => {
-  it('스펙 §6.5 의 일곱 칸만 낸다', () => {
+  it('스펙 §6.5 의 일곱 칸에 kind 를 더해 낸다', () => {
     expect(toRefundListItem(row({ status: 'PENDING', execution: 'MANUAL' }))).toEqual({
       id: 'rf-1',
       chargeId: 'ch-1',
@@ -70,6 +78,7 @@ describe('toRefundListItem', () => {
       amount: 5000,
       reasonCode: 'MEDUSA_REFUND',
       execution: 'MANUAL',
+      kind: null,
       createdAt: new Date('2026-10-11T00:00:00Z'),
     });
   });

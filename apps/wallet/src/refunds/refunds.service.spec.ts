@@ -1,4 +1,4 @@
-import { BadRequestException, HttpException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpException, NotFoundException } from '@nestjs/common';
 import { RefundsService } from './refunds.service';
 import { splitRefundOverRemaining } from './refund-plan';
 import type { Refund } from '../types';
@@ -39,19 +39,26 @@ function makeMethod(type: string = 'TOSS') {
 }
 
 function makeInsertedRefund(
-  overrides: Partial<{ amount: number; reasonCode: string | null; execution: 'AUTO' | 'MANUAL' }> = {},
+  overrides: Partial<{
+    amount: number;
+    reasonCode: string | null;
+    execution: 'AUTO' | 'MANUAL';
+    kind: string | null;
+    status: string;
+  }> = {},
 ) {
   return {
     id: REFUND_ID,
     chargeId: CHARGE_ID,
     intentId: INTENT_ID,
-    status: 'PENDING',
+    status: overrides.status ?? 'PENDING',
     amount: overrides.amount ?? 5000,
     currency: 'KRW',
     reasonCode: overrides.reasonCode ?? null,
     reasonMessage: null,
     providerRefundId: null,
     execution: overrides.execution ?? 'AUTO',
+    kind: overrides.kind ?? null,
     failureCode: null,
     failureRetryable: null,
     createdAt: new Date(),
@@ -78,6 +85,7 @@ function makeContext(
       retryable?: boolean;
     };
     pendingRefund?: ReturnType<typeof makeInsertedRefund>; // for confirmManual tests
+    ambiguousRefund?: ReturnType<typeof makeInsertedRefund>; // 되살릴 응답 끊긴 행
     intentMetadata?: Record<string, unknown>; // payment_intents.metadata for assertRefundable/getIntentUserId
   } = {},
 ) {
@@ -90,6 +98,7 @@ function makeContext(
   const succeededRefundedAmount = options.succeededRefundedAmount ?? 0;
   const providerResult = options.providerResult ?? { status: 'SUCCEEDED', providerRefundId: 'prov-rf-001' };
   const pendingRefund = options.pendingRefund;
+  const ambiguousRefund = options.ambiguousRefund;
 
   // Track update calls
   const updateCalls: Array<{ set: Record<string, unknown> }> = [];
@@ -110,7 +119,7 @@ function makeContext(
           // 되살릴 «응답 끊긴» 행 조회(orderBy().limit()) 는 없다고 답한다
           where: () =>
             Object.assign([{ amount: selectAmount }], {
-              orderBy: () => ({ limit: () => Promise.resolve([]) }),
+              orderBy: () => ({ limit: () => Promise.resolve(ambiguousRefund ? [ambiguousRefund] : []) }),
             }),
         }),
       })),
@@ -121,7 +130,12 @@ function makeContext(
             returning: jest
               .fn()
               .mockResolvedValue([
-                makeInsertedRefund({ amount: vals.amount, reasonCode: vals.reasonCode, execution: vals.execution }),
+                makeInsertedRefund({
+                  amount: vals.amount,
+                  reasonCode: vals.reasonCode,
+                  execution: vals.execution,
+                  kind: vals.kind,
+                }),
               ]),
           };
         },
@@ -228,6 +242,39 @@ function makeContext(
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('RefundsService', () => {
+  describe('환불 종류 kind (#1016 40번)', () => {
+    it('create: kind 를 insert 에 남긴다', async () => {
+      const { service, insertCalls } = makeContext();
+      await service.create({ chargeId: CHARGE_ID, amount: 5000, kind: 'RETURN' });
+      expect(insertCalls).toEqual([expect.objectContaining({ kind: 'RETURN' })]);
+    });
+
+    it('create: kind 가 없으면 null — 모름', async () => {
+      const { service, insertCalls } = makeContext();
+      await service.create({ chargeId: CHARGE_ID, amount: 5000 });
+      expect(insertCalls).toEqual([expect.objectContaining({ kind: null })]);
+    });
+
+    it('createByIntent: 결제분마다 같은 kind 로 create 한다', async () => {
+      const { service, chargesService } = makeContext();
+      (chargesService as any).findRefundableByIntent = jest.fn().mockResolvedValue([{ id: 'c1' }, { id: 'c2' }]);
+      const svc = service as any;
+      svc.planIntentRefund = jest.fn().mockResolvedValue([
+        { chargeId: 'c1', amount: 3000, methodType: 'TOSS', execution: 'AUTO' },
+        { chargeId: 'c2', amount: 2000, methodType: 'POINTS', execution: 'AUTO' },
+      ]);
+      svc.settleAmbiguousBeforePlan = jest.fn().mockResolvedValue(undefined);
+      const create = jest
+        .spyOn(service, 'create')
+        .mockResolvedValue({ id: 'r', status: 'SUCCEEDED', amount: 1 } as unknown as Refund);
+
+      await service.createByIntent(INTENT_ID, { amount: 5000, kind: 'ITEM_CANCEL' });
+
+      expect(create).toHaveBeenCalledTimes(2);
+      expect(create.mock.calls.map(([dto]) => dto.kind)).toEqual(['ITEM_CANCEL', 'ITEM_CANCEL']);
+    });
+  });
+
   describe('수동 실행 create() (#1016 36번 PR 1)', () => {
     it('MANUAL 은 provider 를 부르지 않고 PENDING·MANUAL 행을 돌려준다', async () => {
       const { service, provider, insertCalls, stateTransitionService } = makeContext({ method: makeMethod('TOSS') });
@@ -371,6 +418,35 @@ describe('RefundsService', () => {
         detail: 'Charge not found: missing',
         retryable: false,
       });
+    });
+  });
+
+  describe('PG 취소 사유 (#1016 40번)', () => {
+    it("kind 가 있는 행은 종류 이름('반품')을 cancelReason 으로 보낸다", async () => {
+      const { service, provider } = makeContext();
+
+      await service.create({ chargeId: CHARGE_ID, amount: 5000, reasonCode: 'MEDUSA_REFUND', kind: 'RETURN' });
+
+      expect(provider.refund).toHaveBeenCalledWith(expect.objectContaining({ cancelReason: '반품' }));
+    });
+
+    it('kind 가 없으면 reasonCode 를 그대로 보낸다', async () => {
+      const { service, provider } = makeContext();
+
+      await service.create({ chargeId: CHARGE_ID, amount: 5000, reasonCode: '엘라 품절' });
+
+      expect(provider.refund).toHaveBeenCalledWith(expect.objectContaining({ cancelReason: '엘라 품절' }));
+    });
+
+    it('응답 끊긴 행을 되살리면 그 행의 종류가 PG 사유가 된다 — 이번 요청의 kind 가 아니다', async () => {
+      const ambiguous = makeInsertedRefund({ kind: 'RETURN', status: 'FAILED' });
+      const { service, provider, insertCalls } = makeContext({ ambiguousRefund: ambiguous });
+      jest.spyOn(service, 'findByIdOrThrow').mockResolvedValue(ambiguous as never);
+
+      await service.create({ chargeId: CHARGE_ID, amount: 5000, kind: 'PRICE_ADJUSTMENT' });
+
+      expect(provider.refund).toHaveBeenCalledWith(expect.objectContaining({ cancelReason: '반품' }));
+      expect(insertCalls).toHaveLength(0);
     });
   });
 
@@ -817,6 +893,7 @@ describe('RefundsService', () => {
           reasonMessage: null,
           providerRefundId: null,
           execution: options?.execution ?? 'AUTO',
+          kind: dto.kind ?? null,
           failureCode: null,
           failureRetryable: null,
           createdAt: new Date(),
@@ -1118,5 +1195,136 @@ describe('RefundsService', () => {
             }
       expect(violations).toEqual([]);
     });
+  });
+});
+
+describe('RefundsService.changeKind — 관리자가 종류를 고친다 (#1016 40번)', () => {
+  /**
+   * `ambiguous` = 「응답 끊긴 환불」 조건(`ambiguousWhere`)에 이 행이 걸리는가. 목 DB 는 SQL 을 평가하지 못하니 그 질의의
+   * 결과를 테스트가 정한다 — 첫 select(…for('update')) 는 행 잠금, 그 밖의 select(…limit) 는 이 조건 질의다.
+   */
+  function setup(
+    row: { status: string; kind: string | null; execution?: 'AUTO' | 'MANUAL'; failureCode?: string | null } | null,
+    { ambiguous = false }: { ambiguous?: boolean } = {},
+  ) {
+    const updates: Array<Record<string, unknown>> = [];
+    const inserts: Array<Record<string, unknown>> = [];
+    const stored = row ? { id: REFUND_ID, execution: 'AUTO', failureCode: null, ...row } : null;
+    const tx = {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            for: () => ({ limit: () => Promise.resolve(stored ? [stored] : []) }),
+            limit: () => Promise.resolve(ambiguous && stored ? [{ id: stored.id }] : []),
+          }),
+        }),
+      }),
+      update: () => ({
+        set: (v: Record<string, unknown>) => ({
+          where: () => ({
+            returning: () => {
+              updates.push(v);
+              return Promise.resolve([{ ...stored, ...v }]);
+            },
+          }),
+        }),
+      }),
+      insert: () => ({
+        values: (v: Record<string, unknown>) => {
+          inserts.push(v);
+          return Promise.resolve();
+        },
+      }),
+    };
+    const db = { db: { transaction: jest.fn().mockImplementation(async (fn: (t: unknown) => unknown) => fn(tx)) } };
+    const service = new RefundsService(db as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+    return { service, updates, inserts };
+  }
+
+  it('ITEM_CANCEL → PRICE_ADJUSTMENT: 행을 바꾸고 이력에 fromKind/toKind 와 사람을 남긴다', async () => {
+    const { service, updates, inserts } = setup({ status: 'SUCCEEDED', kind: 'ITEM_CANCEL' });
+    const out = await service.changeKind(REFUND_ID, 'PRICE_ADJUSTMENT', 'admin-7');
+    expect(updates).toEqual([expect.objectContaining({ kind: 'PRICE_ADJUSTMENT' })]);
+    expect(out.kind).toBe('PRICE_ADJUSTMENT');
+    expect(inserts).toEqual([
+      expect.objectContaining({
+        entityType: 'REFUND',
+        entityId: REFUND_ID,
+        previousStatus: 'SUCCEEDED',
+        newStatus: 'SUCCEEDED',
+        reasonCode: 'KIND_CHANGED',
+        triggeredByType: 'ADMIN',
+        triggeredById: 'admin-7',
+        payload: { fromKind: 'ITEM_CANCEL', toKind: 'PRICE_ADJUSTMENT' },
+        correlationId: expect.stringMatching(new RegExp(`^kind-change:${REFUND_ID}:\\d+$`)),
+      }),
+    ]);
+  });
+
+  it('RETURN → null(비우기)도 허용하고 기록한다', async () => {
+    const { service, updates, inserts } = setup({ status: 'FAILED', kind: 'RETURN' });
+    await service.changeKind(REFUND_ID, null, 'admin-7');
+    expect(updates).toEqual([expect.objectContaining({ kind: null })]);
+    expect(inserts[0]).toMatchObject({ payload: { fromKind: 'RETURN', toKind: null }, previousStatus: 'FAILED' });
+  });
+
+  it('같은 값이면 아무것도 쓰지 않는다 — PG 로 다시 나갈 수 있는 행(AUTO PENDING)이어도 거절하지 않는다', async () => {
+    const { service, updates, inserts } = setup({ status: 'PENDING', kind: 'RETURN', execution: 'AUTO' });
+    const out = await service.changeKind(REFUND_ID, 'RETURN', 'admin-7');
+    expect(out.kind).toBe('RETURN');
+    expect(updates).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
+  });
+
+  describe('PG 로 다시 나갈 수 있는 행은 409 — 같은 토스 키로 사유가 달라지면 안 된다(스펙 §5.1)', () => {
+    it('AUTO PENDING(멈추면 refund-stuck-resend 가 다시 보낸다) → 409, 쓰지 않는다', async () => {
+      const { service, updates, inserts } = setup({ status: 'PENDING', kind: 'ITEM_CANCEL', execution: 'AUTO' });
+      const err = await service.changeKind(REFUND_ID, 'RETURN', 'admin-7').catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ConflictException);
+      expect((err as ConflictException).getStatus()).toBe(409);
+      expect((err as ConflictException).getResponse()).toMatchObject({
+        message: expect.stringContaining('PG 결과가 확정된 뒤 종류를 고칠 수 있습니다'),
+      });
+      expect(updates).toHaveLength(0);
+      expect(inserts).toHaveLength(0);
+    });
+
+    it('응답 끊긴 FAILED(ambiguousWhere 에 걸림 — 요청 경로가 같은 키로 되살린다) → 409, 쓰지 않는다', async () => {
+      const { service, updates, inserts } = setup(
+        { status: 'FAILED', kind: null, execution: 'AUTO', failureCode: 'PROVIDER_EXCEPTION' },
+        { ambiguous: true },
+      );
+      await expect(service.changeKind(REFUND_ID, 'RETURN', 'admin-7')).rejects.toBeInstanceOf(ConflictException);
+      expect(updates).toHaveLength(0);
+      expect(inserts).toHaveLength(0);
+    });
+
+    it('MANUAL PENDING(PG 를 부르지 않는다) → 허용', async () => {
+      const { service, updates, inserts } = setup({ status: 'PENDING', kind: null, execution: 'MANUAL' });
+      const out = await service.changeKind(REFUND_ID, 'RETURN', 'admin-7');
+      expect(out.kind).toBe('RETURN');
+      expect(updates).toHaveLength(1);
+      expect(inserts).toHaveLength(1);
+    });
+
+    it('SUCCEEDED(PG 결과 확정) → 허용', async () => {
+      const { service, updates } = setup({ status: 'SUCCEEDED', kind: null, execution: 'AUTO' });
+      await service.changeKind(REFUND_ID, 'PAYMENT_ERROR', 'admin-7');
+      expect(updates).toEqual([expect.objectContaining({ kind: 'PAYMENT_ERROR' })]);
+    });
+
+    it('다시 나가지 않는 FAILED(ambiguousWhere 에 안 걸림 — 영구 실패·14일 지남 등) → 허용', async () => {
+      const { service, updates } = setup(
+        { status: 'FAILED', kind: null, execution: 'AUTO', failureCode: 'REFUND_FAILED' },
+        { ambiguous: false },
+      );
+      await service.changeKind(REFUND_ID, 'RETURN', 'admin-7');
+      expect(updates).toHaveLength(1);
+    });
+  });
+
+  it('없는 id 는 NotFoundException', async () => {
+    const { service } = setup(null);
+    await expect(service.changeKind('nope', 'RETURN', 'a')).rejects.toBeInstanceOf(NotFoundException);
   });
 });

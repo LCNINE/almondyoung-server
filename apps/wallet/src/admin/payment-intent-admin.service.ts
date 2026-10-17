@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { PaginatedResponseDto } from '@app/shared';
-import { and, asc, count, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import { GatewayEventType, buildPaymentIntentEventPayload } from '../messaging/gateway-event.builder';
 import {
@@ -23,7 +23,7 @@ import {
   AdminChargeResponseDto,
   AdminPaymentMethodSummaryDto,
 } from './dto/admin-payment-intent.dto';
-import { AdminRefundListQueryDto } from './dto/admin-refund.dto';
+import { AdminRefundListQueryDto, REFUND_KIND_FILTER_UNKNOWN } from './dto/admin-refund.dto';
 import { StateTransitionResponseDto } from './dto/state-transition.dto';
 import { RefundResponseDto } from '../refunds/dto';
 import { isManuallyConfirmable } from '../refunds/manual-confirmable';
@@ -51,6 +51,7 @@ function refundRowsQuery(db: DbService<WalletSchema>['db']) {
       reasonMessage: refunds.reasonMessage,
       createdAt: refunds.createdAt,
       execution: refunds.execution,
+      kind: refunds.kind,
       failureCode: refunds.failureCode,
       failureRetryable: refunds.failureRetryable,
       paymentMethodType: paymentMethods.type,
@@ -80,6 +81,7 @@ function toAdminRefund(r: AdminRefundRow): RefundResponseDto {
       methodType: r.paymentMethodType ?? null,
     }),
     execution: r.execution,
+    kind: r.kind ?? null,
     failureCode: r.failureCode ?? null,
     retryable: r.failureRetryable ?? null,
   };
@@ -435,6 +437,8 @@ export class PaymentIntentAdminService {
         entityId: paymentStateTransitions.entityId,
         previousStatus: paymentStateTransitions.previousStatus,
         newStatus: paymentStateTransitions.newStatus,
+        reasonCode: paymentStateTransitions.reasonCode,
+        payload: paymentStateTransitions.payload,
         triggeredByType: paymentStateTransitions.triggeredByType,
         triggeredById: paymentStateTransitions.triggeredById,
         correlationId: paymentStateTransitions.correlationId,
@@ -455,6 +459,8 @@ export class PaymentIntentAdminService {
       entityId: r.entityId,
       previousStatus: r.previousStatus,
       newStatus: r.newStatus,
+      reasonCode: r.reasonCode ?? null,
+      payload: r.payload ?? null,
       triggeredByType: r.triggeredByType,
       triggeredById: r.triggeredById ?? null,
       correlationId: r.correlationId,
@@ -554,6 +560,12 @@ export class PaymentIntentAdminService {
 
     if (query.intentId) {
       conditions.push(eq(refunds.intentId, query.intentId));
+    }
+
+    if (query.kind === REFUND_KIND_FILTER_UNKNOWN) {
+      conditions.push(isNull(refunds.kind));
+    } else if (query.kind) {
+      conditions.push(eq(refunds.kind, query.kind));
     }
 
     if (query.dateFrom) {

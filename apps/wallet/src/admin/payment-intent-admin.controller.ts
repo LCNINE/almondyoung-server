@@ -12,7 +12,8 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
-import { IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
+import { IsEnum, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
+import { RefundKind, refundKindEnum } from '../schema';
 import { Type } from 'class-transformer';
 import { RefundReceiveAccountDto } from '../refunds/dto';
 import { PaymentIntentAdminService } from './payment-intent-admin.service';
@@ -39,6 +40,10 @@ class AdminRefundDto {
   @IsOptional()
   @IsString()
   reasonMessage?: string;
+
+  @IsOptional()
+  @IsIn(refundKindEnum.enumValues)
+  kind?: RefundKind;
 
   @IsOptional()
   @ValidateNested()
@@ -206,6 +211,7 @@ export class PaymentIntentAdminController {
         intentId: id,
         reasonCode: dto.reasonCode,
         reasonMessage: dto.reasonMessage,
+        kind: dto.kind,
         refundReceiveAccount: dto.refundReceiveAccount,
         allowMembershipRefund: true, // admin 환불은 정책상 멤버십 차단을 우회하는 강제 환불
       });

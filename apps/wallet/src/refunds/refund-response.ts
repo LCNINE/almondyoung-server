@@ -15,6 +15,7 @@ export function toRefundResponse(refund: Refund, manualConfirmable = false): Ref
     createdAt: refund.createdAt,
     manualConfirmable,
     execution: refund.execution,
+    kind: refund.kind,
     failureCode: refund.failureCode,
     retryable: refund.failureRetryable,
   };
@@ -28,6 +29,7 @@ export function toRefundListItem(refund: Refund): RefundListItemDto {
     amount: refund.amount,
     reasonCode: refund.reasonCode,
     execution: refund.execution,
+    kind: refund.kind,
     createdAt: refund.createdAt,
   };
 }
