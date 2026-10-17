@@ -1,4 +1,4 @@
-import { BadRequestException, HttpException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpException, NotFoundException } from '@nestjs/common';
 import { RefundsService } from './refunds.service';
 import { splitRefundOverRemaining } from './refund-plan';
 import type { Refund } from '../types';
@@ -1199,13 +1199,25 @@ describe('RefundsService', () => {
 });
 
 describe('RefundsService.changeKind — 관리자가 종류를 고친다 (#1016 40번)', () => {
-  function setup(row: { status: string; kind: string | null } | null) {
+  /**
+   * `ambiguous` = 「응답 끊긴 환불」 조건(`ambiguousWhere`)에 이 행이 걸리는가. 목 DB 는 SQL 을 평가하지 못하니 그 질의의
+   * 결과를 테스트가 정한다 — 첫 select(…for('update')) 는 행 잠금, 그 밖의 select(…limit) 는 이 조건 질의다.
+   */
+  function setup(
+    row: { status: string; kind: string | null; execution?: 'AUTO' | 'MANUAL'; failureCode?: string | null } | null,
+    { ambiguous = false }: { ambiguous?: boolean } = {},
+  ) {
     const updates: Array<Record<string, unknown>> = [];
     const inserts: Array<Record<string, unknown>> = [];
-    const stored = row ? { id: REFUND_ID, ...row } : null;
+    const stored = row ? { id: REFUND_ID, execution: 'AUTO', failureCode: null, ...row } : null;
     const tx = {
       select: () => ({
-        from: () => ({ where: () => ({ for: () => ({ limit: () => Promise.resolve(stored ? [stored] : []) }) }) }),
+        from: () => ({
+          where: () => ({
+            for: () => ({ limit: () => Promise.resolve(stored ? [stored] : []) }),
+            limit: () => Promise.resolve(ambiguous && stored ? [{ id: stored.id }] : []),
+          }),
+        }),
       }),
       update: () => ({
         set: (v: Record<string, unknown>) => ({
@@ -1256,12 +1268,59 @@ describe('RefundsService.changeKind — 관리자가 종류를 고친다 (#1016 
     expect(inserts[0]).toMatchObject({ payload: { fromKind: 'RETURN', toKind: null }, previousStatus: 'FAILED' });
   });
 
-  it('같은 값이면 아무것도 쓰지 않는다', async () => {
-    const { service, updates, inserts } = setup({ status: 'PENDING', kind: 'RETURN' });
+  it('같은 값이면 아무것도 쓰지 않는다 — PG 로 다시 나갈 수 있는 행(AUTO PENDING)이어도 거절하지 않는다', async () => {
+    const { service, updates, inserts } = setup({ status: 'PENDING', kind: 'RETURN', execution: 'AUTO' });
     const out = await service.changeKind(REFUND_ID, 'RETURN', 'admin-7');
     expect(out.kind).toBe('RETURN');
     expect(updates).toHaveLength(0);
     expect(inserts).toHaveLength(0);
+  });
+
+  describe('PG 로 다시 나갈 수 있는 행은 409 — 같은 토스 키로 사유가 달라지면 안 된다(스펙 §5.1)', () => {
+    it('AUTO PENDING(멈추면 refund-stuck-resend 가 다시 보낸다) → 409, 쓰지 않는다', async () => {
+      const { service, updates, inserts } = setup({ status: 'PENDING', kind: 'ITEM_CANCEL', execution: 'AUTO' });
+      const err = await service.changeKind(REFUND_ID, 'RETURN', 'admin-7').catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ConflictException);
+      expect((err as ConflictException).getStatus()).toBe(409);
+      expect((err as ConflictException).getResponse()).toMatchObject({
+        message: expect.stringContaining('PG 결과가 확정된 뒤 종류를 고칠 수 있습니다'),
+      });
+      expect(updates).toHaveLength(0);
+      expect(inserts).toHaveLength(0);
+    });
+
+    it('응답 끊긴 FAILED(ambiguousWhere 에 걸림 — 요청 경로가 같은 키로 되살린다) → 409, 쓰지 않는다', async () => {
+      const { service, updates, inserts } = setup(
+        { status: 'FAILED', kind: null, execution: 'AUTO', failureCode: 'PROVIDER_EXCEPTION' },
+        { ambiguous: true },
+      );
+      await expect(service.changeKind(REFUND_ID, 'RETURN', 'admin-7')).rejects.toBeInstanceOf(ConflictException);
+      expect(updates).toHaveLength(0);
+      expect(inserts).toHaveLength(0);
+    });
+
+    it('MANUAL PENDING(PG 를 부르지 않는다) → 허용', async () => {
+      const { service, updates, inserts } = setup({ status: 'PENDING', kind: null, execution: 'MANUAL' });
+      const out = await service.changeKind(REFUND_ID, 'RETURN', 'admin-7');
+      expect(out.kind).toBe('RETURN');
+      expect(updates).toHaveLength(1);
+      expect(inserts).toHaveLength(1);
+    });
+
+    it('SUCCEEDED(PG 결과 확정) → 허용', async () => {
+      const { service, updates } = setup({ status: 'SUCCEEDED', kind: null, execution: 'AUTO' });
+      await service.changeKind(REFUND_ID, 'PAYMENT_ERROR', 'admin-7');
+      expect(updates).toEqual([expect.objectContaining({ kind: 'PAYMENT_ERROR' })]);
+    });
+
+    it('다시 나가지 않는 FAILED(ambiguousWhere 에 안 걸림 — 영구 실패·14일 지남 등) → 허용', async () => {
+      const { service, updates } = setup(
+        { status: 'FAILED', kind: null, execution: 'AUTO', failureCode: 'REFUND_FAILED' },
+        { ambiguous: false },
+      );
+      await service.changeKind(REFUND_ID, 'RETURN', 'admin-7');
+      expect(updates).toHaveLength(1);
+    });
   });
 
   it('없는 id 는 NotFoundException', async () => {

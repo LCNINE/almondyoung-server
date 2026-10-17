@@ -95,6 +95,7 @@
 - provider 가 PG 를 안 부른 PENDING 은 `RefundResult.manualTransfer` 를 붙이고 wallet 이 그 행을 `MANUAL` 로 적는다(무통장 계좌 없음 폴백)
 - `GET /v1/payment-intents/:id/refunds` — 환불 목록(상태 무관, 만든 순서). 정산 직전 장부 맞추기가 읽는다
 - `refunds.kind` = 무엇을 되돌렸나(선택, null=모름). `reason_code` 는 출처 표지·고객 사유로 남는다
+  - 관리자 종류 고치기(`changeKind`)는 PG 로 다시 나갈 수 있는 행(AUTO PENDING·응답 끊긴 FAILED)을 409 로 거절한다 — 재전송 PG 사유가 종류에서 나와 같은 키의 사유가 바뀐다
 
 ### 멱등성
 - HTTP `Idempotency-Key` 헤더 → SHA256(body)와 조합하여 `idempotency_keys` 테이블에 기록

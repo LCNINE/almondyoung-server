@@ -56,7 +56,10 @@ export class RefundAdminController {
   }
 
   @Patch(':id/kind')
-  @ApiOperation({ summary: '환불 종류 고치기 (admin) — 상태와 무관, null 은 «모름»으로 비우기. 변경 이력이 남는다' })
+  @ApiOperation({
+    summary:
+      '환불 종류 고치기 (admin) — null 은 «모름»으로 비우기. 변경 이력이 남는다. PG 로 다시 나갈 수 있는 행(AUTO PENDING·응답 끊긴 FAILED)은 409',
+  })
   async changeKind(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: ChangeRefundKindDto) {
     const refund = await this.refundsService.changeKind(id, dto.kind, req.jwtUserId ?? 'admin');
     return toRefundResponse(refund);
