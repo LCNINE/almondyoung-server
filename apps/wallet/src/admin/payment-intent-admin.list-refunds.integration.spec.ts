@@ -76,4 +76,15 @@ describeIfDb('PaymentIntentAdminService.listRefunds — manualConfirmable (실 P
     expect(byId.get(refundIds.doneManual)).toBe(false);
     expect(list.total).toBe(4);
   });
+
+  it('종류 필터 — kind=RETURN 은 그 행만, kind=UNKNOWN 은 kind 가 null 인 행만', async () => {
+    await db.update(refunds).set({ kind: 'RETURN' }).where(inArray(refunds.id, [refundIds.manualToss]));
+    const ret = await service.listRefunds({ intentId, kind: 'RETURN', page: 1, limit: 20 } as never);
+    expect(ret.data.map((r) => r.id)).toEqual([refundIds.manualToss]);
+    const unknown = await service.listRefunds({ intentId, kind: 'UNKNOWN', page: 1, limit: 20 } as never);
+    expect(unknown.data.map((r) => r.id).sort()).toEqual(
+      [refundIds.autoToss, refundIds.autoBank, refundIds.doneManual].sort(),
+    );
+    expect(unknown.total).toBe(3);
+  });
 });

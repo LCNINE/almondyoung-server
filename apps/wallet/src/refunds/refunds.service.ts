@@ -6,6 +6,7 @@ import {
   charges as chargesTable,
   refunds,
   paymentIntents,
+  paymentStateTransitions,
   paymentMethods as paymentMethodsTable,
   RefundExecution,
   RefundKind,
@@ -697,6 +698,40 @@ export class RefundsService {
       });
     }
     return refund;
+  }
+
+  /**
+   * 관리자가 환불 종류를 고친다 (스펙 §6.1). 상태와 무관하게 허용한다 — 종류는 돈을 바꾸지 않는다.
+   * 이미 PG 로 나간 취소 사유는 바뀌지 않는다. 같은 값이면 아무것도 쓰지 않고, 다르면 누가 무엇에서 무엇으로
+   * 바꿨는지 `payment_state_transitions` 에 남긴다(기계가 붙인 값과 사람이 고친 값을 거기서 가른다).
+   */
+  async changeKind(refundId: string, kind: RefundKind | null, actorId: string): Promise<Refund> {
+    return this.dbService.db.transaction(async (tx) => {
+      const [current] = await tx.select().from(refunds).where(eq(refunds.id, refundId)).for('update').limit(1);
+      if (!current) {
+        throw new NotFoundException({ error: 'REFUND_NOT_FOUND', message: `Refund not found: ${refundId}` });
+      }
+      if (current.kind === kind) return current;
+
+      const [updated] = await tx
+        .update(refunds)
+        .set({ kind, updatedAt: new Date() })
+        .where(eq(refunds.id, refundId))
+        .returning();
+      await tx.insert(paymentStateTransitions).values({
+        entityType: 'REFUND',
+        entityId: refundId,
+        previousStatus: current.status,
+        newStatus: current.status,
+        reasonCode: 'KIND_CHANGED',
+        triggeredByType: 'ADMIN',
+        triggeredById: actorId,
+        correlationId: `kind-change:${refundId}:${Date.now()}`,
+        occurredAt: new Date(),
+        payload: { fromKind: current.kind, toKind: kind },
+      });
+      return updated;
+    });
   }
 
   /**

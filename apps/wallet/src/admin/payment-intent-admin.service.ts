@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { PaginatedResponseDto } from '@app/shared';
-import { and, asc, count, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import { GatewayEventType, buildPaymentIntentEventPayload } from '../messaging/gateway-event.builder';
 import {
@@ -23,7 +23,7 @@ import {
   AdminChargeResponseDto,
   AdminPaymentMethodSummaryDto,
 } from './dto/admin-payment-intent.dto';
-import { AdminRefundListQueryDto } from './dto/admin-refund.dto';
+import { AdminRefundListQueryDto, REFUND_KIND_FILTER_UNKNOWN } from './dto/admin-refund.dto';
 import { StateTransitionResponseDto } from './dto/state-transition.dto';
 import { RefundResponseDto } from '../refunds/dto';
 import { isManuallyConfirmable } from '../refunds/manual-confirmable';
@@ -556,6 +556,12 @@ export class PaymentIntentAdminService {
 
     if (query.intentId) {
       conditions.push(eq(refunds.intentId, query.intentId));
+    }
+
+    if (query.kind === REFUND_KIND_FILTER_UNKNOWN) {
+      conditions.push(isNull(refunds.kind));
+    } else if (query.kind) {
+      conditions.push(eq(refunds.kind, query.kind));
     }
 
     if (query.dateFrom) {

@@ -1197,3 +1197,75 @@ describe('RefundsService', () => {
     });
   });
 });
+
+describe('RefundsService.changeKind — 관리자가 종류를 고친다 (#1016 40번)', () => {
+  function setup(row: { status: string; kind: string | null } | null) {
+    const updates: Array<Record<string, unknown>> = [];
+    const inserts: Array<Record<string, unknown>> = [];
+    const stored = row ? { id: REFUND_ID, ...row } : null;
+    const tx = {
+      select: () => ({
+        from: () => ({ where: () => ({ for: () => ({ limit: () => Promise.resolve(stored ? [stored] : []) }) }) }),
+      }),
+      update: () => ({
+        set: (v: Record<string, unknown>) => ({
+          where: () => ({
+            returning: () => {
+              updates.push(v);
+              return Promise.resolve([{ ...stored, ...v }]);
+            },
+          }),
+        }),
+      }),
+      insert: () => ({
+        values: (v: Record<string, unknown>) => {
+          inserts.push(v);
+          return Promise.resolve();
+        },
+      }),
+    };
+    const db = { db: { transaction: jest.fn().mockImplementation(async (fn: (t: unknown) => unknown) => fn(tx)) } };
+    const service = new RefundsService(db as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+    return { service, updates, inserts };
+  }
+
+  it('ITEM_CANCEL → PRICE_ADJUSTMENT: 행을 바꾸고 이력에 fromKind/toKind 와 사람을 남긴다', async () => {
+    const { service, updates, inserts } = setup({ status: 'SUCCEEDED', kind: 'ITEM_CANCEL' });
+    const out = await service.changeKind(REFUND_ID, 'PRICE_ADJUSTMENT', 'admin-7');
+    expect(updates).toEqual([expect.objectContaining({ kind: 'PRICE_ADJUSTMENT' })]);
+    expect(out.kind).toBe('PRICE_ADJUSTMENT');
+    expect(inserts).toEqual([
+      expect.objectContaining({
+        entityType: 'REFUND',
+        entityId: REFUND_ID,
+        previousStatus: 'SUCCEEDED',
+        newStatus: 'SUCCEEDED',
+        reasonCode: 'KIND_CHANGED',
+        triggeredByType: 'ADMIN',
+        triggeredById: 'admin-7',
+        payload: { fromKind: 'ITEM_CANCEL', toKind: 'PRICE_ADJUSTMENT' },
+        correlationId: expect.stringMatching(new RegExp(`^kind-change:${REFUND_ID}:\\d+$`)),
+      }),
+    ]);
+  });
+
+  it('RETURN → null(비우기)도 허용하고 기록한다', async () => {
+    const { service, updates, inserts } = setup({ status: 'FAILED', kind: 'RETURN' });
+    await service.changeKind(REFUND_ID, null, 'admin-7');
+    expect(updates).toEqual([expect.objectContaining({ kind: null })]);
+    expect(inserts[0]).toMatchObject({ payload: { fromKind: 'RETURN', toKind: null }, previousStatus: 'FAILED' });
+  });
+
+  it('같은 값이면 아무것도 쓰지 않는다', async () => {
+    const { service, updates, inserts } = setup({ status: 'PENDING', kind: 'RETURN' });
+    const out = await service.changeKind(REFUND_ID, 'RETURN', 'admin-7');
+    expect(out.kind).toBe('RETURN');
+    expect(updates).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
+  });
+
+  it('없는 id 는 NotFoundException', async () => {
+    const { service } = setup(null);
+    await expect(service.changeKind('nope', 'RETURN', 'a')).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
