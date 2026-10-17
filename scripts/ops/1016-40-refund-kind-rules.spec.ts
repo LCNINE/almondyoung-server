@@ -68,6 +68,9 @@ describe('classifyOldRefund (#1016 40번 §7)', () => {
         candidate: 'PAYMENT_ERROR',
       });
     });
+    it.each(['중복결제', '중복주문', '중복 주문'])('«%s» 도 PAYMENT_ERROR 후보 — 띄어쓰기와 무관', (reasonMessage) => {
+      expect(classifyOldRefund(make({ reasonMessage }))).toMatchObject({ step: 2, candidate: 'PAYMENT_ERROR' });
+    });
     it('차액 은 PRICE_ADJUSTMENT 후보', () => {
       expect(classifyOldRefund(make({ reasonMessage: '차액 환불' }))).toMatchObject({
         step: 2,

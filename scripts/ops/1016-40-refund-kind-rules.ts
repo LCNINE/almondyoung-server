@@ -64,7 +64,7 @@ function classifyByText(r: OldRefund): Verdict {
   }
   if (/차액|보상|배송비/.test(text)) hits.push({ kind: 'PRICE_ADJUSTMENT', why: '차액·보상·배송비' });
   if (/반품/.test(text)) hits.push({ kind: 'RETURN', why: '반품' });
-  if (/중복 결제|중복 주문/.test(text)) hits.push({ kind: 'PAYMENT_ERROR', why: '중복 결제·중복 주문' });
+  if (/중복\s?(결제|주문)/.test(text)) hits.push({ kind: 'PAYMENT_ERROR', why: '중복 결제·중복 주문' });
 
   if (hits.length === 0) return { step: 3, why: '걸리는 키워드 없음' };
   if (hits.length > 1) return { step: 3, why: `여러 규칙이 걸림: ${hits.map((h) => h.why).join(' / ')}` };
