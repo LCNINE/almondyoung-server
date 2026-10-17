@@ -1218,7 +1218,11 @@ describe('StoreSalesOrdersService', () => {
     it('core 경로(3pl) — lines 없으면 전체취소 — Wallet 환불 호출, refundStatus=succeeded', async () => {
       const { service, walletClientMock } = makeAdminContext({ so: CORE_SO() });
       const result = await service.adminCancelRequest(SO_ID, {});
-      expect(walletClientMock.refundByIntent).toHaveBeenCalled();
+      expect(walletClientMock.refundByIntent).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ kind: 'ITEM_CANCEL' }),
+      );
       expect(result).toMatchObject({ refundStatus: 'succeeded' });
       expect(result).toMatchObject({ status: 'cancelled' });
     });
@@ -1566,6 +1570,7 @@ describe('StoreSalesOrdersService', () => {
         WALLET_INTENT_ID,
         50000,
         expect.objectContaining({
+          kind: 'ITEM_CANCEL',
           correlationId: expect.stringMatching(/^cancel:so-001:retry:/),
         }),
       );
@@ -1588,6 +1593,7 @@ describe('StoreSalesOrdersService', () => {
         WALLET_INTENT_ID,
         50000,
         expect.objectContaining({
+          kind: 'ITEM_CANCEL',
           correlationId: expect.stringMatching(/^cancel:so-001:retry:/),
         }),
       );
