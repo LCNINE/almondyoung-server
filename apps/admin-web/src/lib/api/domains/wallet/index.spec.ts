@@ -79,4 +79,15 @@ describe('walletApi payment config writes', () => {
       idempotencyConfig
     );
   });
+
+  // wallet 의 전역 HttpIdempotencyInterceptor 는 PATCH 에 키가 없으면 컨트롤러 전에 400 IDEMPOTENCY_KEY_REQUIRED 로 끊는다
+  it('sends an Idempotency-Key when changing a refund kind', async () => {
+    await walletApi.changeRefundKind('rf/1', 'RETURN');
+
+    expect(mockedClient.patch).toHaveBeenCalledWith(
+      '/wallet/v1/admin/refunds/rf%2F1/kind',
+      { kind: 'RETURN' },
+      idempotencyConfig
+    );
+  });
 });

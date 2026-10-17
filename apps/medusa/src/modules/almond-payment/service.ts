@@ -27,8 +27,10 @@ import {
   judgeWalletRefund,
   readExternalRefund,
   readManualRefund,
+  readRefundKind,
   withoutExternalRefund,
   withoutManualRefund,
+  withoutRefundKind,
   withWalletRefundIds,
   type WalletRefundRow,
 } from './refund-data';
@@ -286,6 +288,10 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     const manual = readManualRefund(data);
     const isManual = manual !== null && manual.amount === refundAmount;
 
+    // 환불 종류 표식 — 금액이 같을 때만 싣는다(앞 시도가 남긴 표식이 다른 금액의 환불에 붙지 않게). reasonCode 는 건드리지 않는다
+    const kindMarker = readRefundKind(data);
+    const kind = kindMarker !== null && kindMarker.amount === refundAmount ? kindMarker.kind : undefined;
+
     // Medusa 결제 모듈이 refund 행 id 를 idempotency_key 로 준다 — 같은 환불의 재시도가 wallet 에서 한 번으로 접힌다.
     const idempotencyKey = (input as { context?: { idempotency_key?: string } }).context?.idempotency_key;
     let res: { refunds?: WalletRefundRow[] };
@@ -294,7 +300,7 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
         method: 'POST',
         signal: AbortSignal.timeout(WALLET_REFUND_TIMEOUT_MS),
         ...(idempotencyKey ? { headers: { 'Idempotency-Key': `medusa-refund:${idempotencyKey}` } } : {}),
-        body: JSON.stringify({ amount: refundAmount, reasonCode: 'MEDUSA_REFUND', ...(isManual ? { execution: 'MANUAL' } : {}) }),
+        body: JSON.stringify({ amount: refundAmount, reasonCode: 'MEDUSA_REFUND', ...(isManual ? { execution: 'MANUAL' } : {}), ...(kind ? { kind } : {}) }),
       });
     } catch (error) {
       // 영구 거절(retryable: false)만 표지 붙은 NOT_ALLOWED 로 바꾼다 — 그 밖을 바꾸면 다시 불러야 할 실패가 «거절»로 닫힌다
@@ -314,7 +320,8 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
       if (verdict.refusal) throw walletRefundRefusedError(verdict.refusal.code, verdict.refusal.message);
       throw new Error(`wallet 환불 실패(intentId=${intentId}, 요청 ${refundAmount}): ${verdict.reason}`);
     }
-    return { data: withWalletRefundIds(isManual ? withoutManualRefund(data) : data, verdict.ids) };
+    const settled = isManual ? withoutManualRefund(data) : data;
+    return { data: withWalletRefundIds(kind ? withoutRefundKind(settled) : settled, verdict.ids) };
   }
 
   async retrievePayment(input: RetrievePaymentInput): Promise<RetrievePaymentOutput> {

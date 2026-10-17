@@ -835,7 +835,7 @@ describe('StoreReturnExchangeService.completeReturnRequest', () => {
     expect(walletClient.refundByIntent).toHaveBeenCalledWith(
       'intent-abc',
       25000,
-      expect.objectContaining({ reasonCode: 'RETURN_COMPLETED' }),
+      expect.objectContaining({ kind: 'RETURN', reasonCode: 'RETURN_COMPLETED' }),
     );
   });
 
@@ -863,7 +863,7 @@ describe('StoreReturnExchangeService.completeReturnRequest', () => {
     expect(walletClient.refundByIntent).toHaveBeenCalledWith(
       'intent-123',
       5000,
-      expect.objectContaining({ reasonCode: 'RETURN_COMPLETED' }),
+      expect.objectContaining({ kind: 'RETURN', reasonCode: 'RETURN_COMPLETED' }),
     );
   });
 });

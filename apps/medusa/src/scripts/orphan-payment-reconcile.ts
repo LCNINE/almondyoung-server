@@ -183,7 +183,7 @@ export default async function orphanPaymentReconcile({ container }: ExecArgs): P
 
         await walletFetch(`/v1/payment-intents/${intentId}/refund`, {
           method: 'POST',
-          body: JSON.stringify({ amount: intent.payableAmount, reasonCode: 'ORPHAN_PAYMENT_RECONCILE' }),
+          body: JSON.stringify({ amount: intent.payableAmount, reasonCode: 'ORPHAN_PAYMENT_RECONCILE', kind: 'PAYMENT_ERROR' }),
         });
         summary.refunded++;
         logger.error(

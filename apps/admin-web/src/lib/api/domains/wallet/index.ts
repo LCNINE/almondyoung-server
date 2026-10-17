@@ -1,6 +1,7 @@
 'use client';
 
 import { WALLET_SERVICE_BASE_URL } from '@/const';
+import type { RefundKind } from './refund-kind';
 import {
   PaymentIntentListItem,
   PaymentIntentDetail,
@@ -129,7 +130,7 @@ export const walletApi = {
     dto: {
       chargeId: string;
       amount: number;
-      reasonCode?: string;
+      kind?: RefundKind;
       reasonMessage?: string;
       refundReceiveAccount?: { bank: string; accountNumber: string; holderName: string };
     }
@@ -151,6 +152,15 @@ export const walletApi = {
       `${BASE}/v1/admin/refunds/${encodeURIComponent(id)}/confirm`,
       undefined,
       { headers: { 'Idempotency-Key': crypto.randomUUID() } }
+    );
+    return res.data;
+  },
+
+  changeRefundKind: async (id: string, kind: RefundKind | null): Promise<RefundDto> => {
+    const res = await client.patch(
+      `${BASE}/v1/admin/refunds/${encodeURIComponent(id)}/kind`,
+      { kind },
+      idempotencyConfig()
     );
     return res.data;
   },

@@ -345,7 +345,7 @@ async function refund(
         const refunded = (p.refunds ?? []).reduce((s, x) => s + toNumber(x.amount), 0);
         const take = Math.min(captured - refunded, left);
         if (!(take > 0)) return;
-        await issuePaymentRefund(container, { paymentId, amount: take, note, mode, actorId });
+        await issuePaymentRefund(container, { paymentId, amount: take, note, mode, kind: 'ITEM_CANCEL', actorId });
         left -= take;
       },
       { timeout: PAYMENT_LOCK_TIMEOUT_SECONDS },

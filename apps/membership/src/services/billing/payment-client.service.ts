@@ -519,7 +519,8 @@ export class PaymentClientService {
         // 멤버십 결제는 wallet 에서 환불 차단됨. 이 경로는 정책상 예외 환불(admin 강제취소,
         // 셀프해지 중 이번 주기 혜택 미사용 건)이므로 차단을 우회한다.
         // refundReceiveAccount 는 무통장(가상계좌) 결제 환불 시 필수 — 없으면 wallet 이 수동환불(PENDING)로 폴백.
-        { amount, reasonCode, reasonMessage, allowMembershipRefund: true, refundReceiveAccount },
+        // kind: 이 클라이언트의 환불은 전부 구독료다. 값 정본은 apps/wallet/src/schema.ts `refundKindEnum`(`apps/wallet/src/refunds/refund-kind-copies.spec.ts` 가 지킨다).
+        { amount, kind: 'SUBSCRIPTION_FEE', reasonCode, reasonMessage, allowMembershipRefund: true, refundReceiveAccount },
         {
           headers: {
             Authorization: `Bearer ${walletApiKey}`,
