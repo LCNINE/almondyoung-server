@@ -28,6 +28,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { PaymentMethodTypeCell } from '@/components/table/table-cells/wallet/payment-method-type-cell';
 import { UserDetailGeneralContent } from '@/app/(admin)/users/[id]/user-detail-general';
 import { toast } from 'sonner';
+import { refundFormError, REFUND_KINDS, refundKindLabel, type RefundKind } from '@/lib/api/domains/wallet/refund-kind';
 import { pendingRefundToast } from '@/lib/api/domains/wallet/refund-execution';
 import {
   Dialog,
@@ -151,7 +152,7 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundChargeId, setRefundChargeId] = useState('');
   const [refundAmount, setRefundAmount] = useState<number | ''>('');
-  const [refundReasonCode, setRefundReasonCode] = useState('');
+  const [refundKind, setRefundKind] = useState<RefundKind | ''>('');
   const [refundReasonMessage, setRefundReasonMessage] = useState('');
   // 무통장(가상계좌) 환불은 토스에 환불받을 계좌를 넘겨야 자동 송금된다.
   const [refundBank, setRefundBank] = useState('');
@@ -207,7 +208,7 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
     setRefundOpen(false);
     setRefundChargeId('');
     setRefundAmount('');
-    setRefundReasonCode('');
+    setRefundKind('');
     setRefundReasonMessage('');
     setRefundBank('');
     setRefundAccountNumber('');
@@ -216,13 +217,13 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
 
   const handleRefund = () => exclusive(refundNow);
   const refundNow = async () => {
-    if (refundGate !== 'open' || !refundChargeId || !refundAmount || !bankRefundReady) return;
+    if (refundGate !== 'open' || !refundChargeId || !refundKind || refundFormError({ kind: refundKind, amount: refundAmount }) || !bankRefundReady) return;
     if (!(await confirmGate('refund'))) return;
     try {
       const result = await refund.mutateAsync({
         chargeId: refundChargeId,
         amount: refundAmount as number,
-        reasonCode: refundReasonCode || undefined,
+        kind: refundKind,
         reasonMessage: refundReasonMessage || undefined,
         // 무통장 환불계좌 (있으면 토스가 해당 계좌로 자동 송금)
         refundReceiveAccount: isBankTransfer
@@ -230,7 +231,7 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
           : undefined,
       });
       if (result.status === 'FAILED') {
-        toast.error(`환불 실패: ${result.reasonMessage ?? result.reasonCode ?? 'PG 오류'}`);
+        toast.error(`환불 실패: ${result.reasonMessage ?? result.failureCode ?? 'PG 오류'}`);
         return;
       }
       if (result.status === 'PENDING') {
@@ -418,15 +419,22 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
               />
             </div>
             <div className="space-y-2">
-              <Label>사유 코드 (선택)</Label>
-              <Input
-                value={refundReasonCode}
-                onChange={(e) => setRefundReasonCode(e.target.value)}
-                placeholder="ADMIN_REFUND"
-              />
+              <Label>종류</Label>
+              <select
+                className="w-full border rounded p-2 text-sm"
+                value={refundKind}
+                onChange={(e) => setRefundKind(e.target.value as RefundKind | '')}
+              >
+                <option value="">선택하세요</option>
+                {REFUND_KINDS.map((k) => (
+                  <option key={k} value={k}>
+                    {refundKindLabel(k)}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="space-y-2">
-              <Label>사유 메시지 (선택)</Label>
+              <Label>메모 (선택)</Label>
               <Input
                 value={refundReasonMessage}
                 onChange={(e) => setRefundReasonMessage(e.target.value)}
@@ -479,7 +487,7 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
             </Button>
             <Button
               onClick={handleRefund}
-              disabled={busy || refund.isPending || refundGate !== 'open' || !refundChargeId || !refundAmount || !bankRefundReady}
+              disabled={busy || refund.isPending || refundGate !== 'open' || !refundChargeId || refundFormError({ kind: refundKind, amount: refundAmount }) !== null || !bankRefundReady}
             >
               {refund.isPending ? '처리 중...' : '환불 실행'}
             </Button>

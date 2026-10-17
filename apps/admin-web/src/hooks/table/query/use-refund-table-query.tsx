@@ -11,16 +11,17 @@ export const useRefundTableQuery = ({
   pageSize = 20,
 }: UseRefundTableQueryProps) => {
   const queryObject = useQueryParams(
-    ['page', 'status', 'intentId', 'dateFrom', 'dateTo'],
+    ['page', 'status', 'kind', 'intentId', 'dateFrom', 'dateTo'],
     prefix,
   );
 
-  const { page, status, intentId, dateFrom, dateTo } = queryObject;
+  const { page, status, kind, intentId, dateFrom, dateTo } = queryObject;
 
   const searchParams: RefundListQuery = {
     limit: pageSize,
     page: page ? Number(page) : 1,
     status,
+    kind,
     intentId,
     dateFrom,
     dateTo,

@@ -1,3 +1,5 @@
+import type { RefundKind } from '@/lib/api/domains/wallet/refund-kind';
+
 // ─── Payment Intent ─────────────────────────────────────────────────────────
 
 export interface PaymentIntentListItem {
@@ -96,6 +98,8 @@ export interface RefundDto {
   currency: string;
   reasonCode: string | null;
   reasonMessage: string | null;
+  /** 환불 종류. null 은 모름(옛 행) */
+  kind?: RefundKind | null;
   createdAt: string;
   manualConfirmable: boolean;
   /** wallet PR 1 — 'MANUAL' 은 PG 없이 송금 대기 */
@@ -128,6 +132,9 @@ export interface StateTransitionDto {
   triggeredById: string | null;
   correlationId: string;
   occurredAt: string;
+  /** 'KIND_CHANGED' 등 전이 사유 */
+  reasonCode?: string | null;
+  payload?: Record<string, unknown> | null;
 }
 
 // ─── Bank Transfer ──────────────────────────────────────────────────────────
@@ -222,6 +229,7 @@ export interface RefundListQuery {
   page?: number;
   limit?: number;
   status?: string;
+  kind?: string;
   intentId?: string;
   dateFrom?: string;
   dateTo?: string;

@@ -30,6 +30,8 @@ import type {
   OrderDiscountDto,
 } from '@/lib/types/dto/wallet';
 import { Empty } from '@/components/admin-ui-experimental/common/empty';
+import { RefundKindCell } from '@/features/payments/components/refund-table/kind-cell';
+import { stateTransitionLabel } from '@/lib/api/domains/wallet/refund-kind';
 
 function KVRow({
   label,
@@ -401,6 +403,7 @@ function RefundsTableContent({ intentId }: { intentId: string }) {
             <th className="px-4 py-2 font-medium text-left">ID</th>
             <th className="px-4 py-2 font-medium text-right">금액</th>
             <th className="px-4 py-2 font-medium text-left">상태</th>
+            <th className="px-4 py-2 font-medium text-left">종류</th>
             <th className="px-4 py-2 font-medium text-left">사유</th>
             <th className="px-4 py-2 font-medium text-left">생성일</th>
             <th className="px-4 py-2 font-medium text-left">액션</th>
@@ -409,7 +412,7 @@ function RefundsTableContent({ intentId }: { intentId: string }) {
         <tbody>
           {data.refunds.length === 0 ? (
             <tr>
-              <td colSpan={6}>
+              <td colSpan={7}>
                 <Empty message="환불 없음" />
               </td>
             </tr>
@@ -424,6 +427,9 @@ function RefundsTableContent({ intentId }: { intentId: string }) {
                 </td>
                 <td className="px-4 py-2">
                   <StatusBadgeCell value={r.status} type="refund" />
+                </td>
+                <td className="px-4 py-2">
+                  <RefundKindCell refund={r} />
                 </td>
                 <td className="px-4 py-2 text-xs">{r.reasonCode ?? '-'}</td>
                 <td className="px-4 py-2 text-xs text-muted-foreground">
@@ -487,9 +493,13 @@ function StateTransitionTimelineContent({ intentId }: { intentId: string }) {
           </div>
           <div>
             <span className="font-medium">[{t.entityType}]</span>{' '}
-            <span className="text-muted-foreground">{t.previousStatus}</span>
-            {' → '}
-            <span className="font-medium">{t.newStatus}</span>
+            {stateTransitionLabel(t) ?? (
+              <>
+                <span className="text-muted-foreground">{t.previousStatus}</span>
+                {' → '}
+                <span className="font-medium">{t.newStatus}</span>
+              </>
+            )}
           </div>
         </div>
       ))}
