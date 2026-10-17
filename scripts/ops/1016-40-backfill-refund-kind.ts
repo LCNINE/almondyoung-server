@@ -14,23 +14,37 @@
  *   npx sst shell --stage live -- npx tsx ../../../scripts/ops/1016-40-backfill-refund-kind.ts --apply               # 1단계만 적용
  *   npx sst shell --stage live -- npx tsx ../../../scripts/ops/1016-40-backfill-refund-kind.ts --apply --from x.csv  # CSV 에 남은 행의 candidate 적용
  *
- * CSV 는 `--out` 이 없으면 현재 작업 디렉터리의 `refund-kind-step2-candidates.csv` 로 저장한다.
+ * CSV 는 조회만 모드에서만 만든다. `--out` 이 없으면 현재 작업 디렉터리의 `refund-kind-step2-candidates.csv` 이고,
+ * 이미 있으면 덮어쓰지 않고 거절한다(사람이 고치는 파일). `--from` 은 `--apply` 와 함께만 쓴다.
+ * `--from`/`--out` 은 값이 필수다. `--apply --from` 은 전 행을 먼저 검증한 뒤 한 트랜잭션으로 쓴다.
  * 컬럼: id,amount,created_at,reason_code,reason_message,candidate
  * 전제: wallet `refunds.kind` 컬럼이 이미 배포·마이그레이션되어 있어야 한다(없으면 조회가 실패한다).
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import postgres from 'postgres';
 import { Resource } from 'sst';
 import { classifyOldRefund, isKind, Kind, OldRefund } from './1016-40-refund-kind-rules';
 
 const APPLY = process.argv.includes('--apply');
 
+function fail(message: string): never {
+  console.error(message);
+  process.exit(1);
+}
+
 function argValue(flag: string): string | undefined {
   const i = process.argv.indexOf(flag);
-  return i >= 0 ? process.argv[i + 1] : undefined;
+  if (i < 0) return undefined;
+  const value = process.argv[i + 1];
+  if (value === undefined || value.startsWith('--')) fail(`${flag} 에는 값이 필요하다`);
+  return value;
 }
+const STEP3_EXAMPLES = 20;
 const FROM = argValue('--from');
 const OUT = argValue('--out') ?? 'refund-kind-step2-candidates.csv';
+// DB 에 붙기 전에 거른다 — --from 은 검토한 CSV 를 «적용»하는 용도뿐이다.
+if (!APPLY && existsSync(OUT)) fail(`${OUT} 가 이미 있다 — 검토 중인 파일을 덮어쓰지 않는다. --out 으로 다른 경로를 주거나 파일을 지울 것`);
+if (FROM !== undefined && !APPLY) fail('--from 은 --apply 와 함께만 쓴다 (조회만 모드에서는 CSV 를 새로 만든다)');
 
 type Conn = { host: string; port: number; username: string; password: string };
 type WalletRow = {
@@ -98,21 +112,30 @@ async function applyFromCsv(wallet: postgres.Sql, path: string) {
   const candCol = header.indexOf('candidate');
   if (idCol < 0 || candCol < 0) throw new Error('CSV 에 id / candidate 컬럼이 없다');
 
-  let applied = 0;
-  let skipped = 0;
+  // 쓰기 전에 전 행을 먼저 검증한다 — 하나라도 틀리면 아무것도 쓰지 않는다.
+  const todo: { id: string; kind: Kind }[] = [];
+  let blank = 0;
   for (const row of rows) {
     const id = row[idCol];
     const candidate = (row[candCol] ?? '').trim();
     if (!id || candidate === '') {
-      skipped++; // 사람이 candidate 를 비웠다 — 건너뛴다
+      blank++; // 사람이 candidate 를 비웠다 — 건너뛴다
       continue;
     }
-    if (!isKind(candidate)) throw new Error(`알 수 없는 종류 '${candidate}' (id ${id}) — 적용을 중단한다`);
-    const result = await wallet`UPDATE refunds SET kind = ${candidate} WHERE id = ${id} AND kind IS NULL`;
-    applied += result.count;
-    if (result.count === 0) skipped++;
+    if (!isKind(candidate)) throw new Error(`알 수 없는 종류 '${candidate}' (id ${id}) — 아무것도 쓰지 않고 중단한다`);
+    todo.push({ id, kind: candidate });
   }
-  console.log(`CSV 적용: ${applied}건 (건너뜀 ${skipped}건 — 비움·이미 값 있음·없는 id)`);
+
+  // postgres 의 TransactionSql 타입 선언은 태그 호출을 잃는다(scripts/sellmate/* 와 같은 이유로 캐스팅).
+  let applied = 0;
+  await wallet.begin(async (trxRaw) => {
+    const trx = trxRaw as unknown as postgres.Sql;
+    for (const { id, kind } of todo) {
+      const result = await trx`UPDATE refunds SET kind = ${kind} WHERE id = ${id} AND kind IS NULL`;
+      applied += result.count;
+    }
+  });
+  console.log(`CSV 적용: ${applied}건 (비움 ${blank}건, 이미 값 있음·없는 id ${todo.length - applied}건)`);
 }
 
 async function main() {
@@ -144,21 +167,23 @@ async function main() {
         SELECT p.data->'walletRefundIds' AS wallet_refund_ids, r.note
           FROM payment p
           JOIN refund r ON r.payment_id = p.id
-         WHERE jsonb_typeof(p.data->'walletRefundIds') = 'array'
+         WHERE p.deleted_at IS NULL
+           AND r.deleted_at IS NULL
+           AND jsonb_typeof(p.data->'walletRefundIds') = 'array'
            AND p.data->'walletRefundIds' ?| ${medusaIds}::text[]`;
       for (const f of found) {
         for (const id of f.wallet_refund_ids) {
-          if (f.note === null) continue;
           const list = notesById.get(id) ?? [];
-          list.push(f.note);
+          // 노트 없는 환불은 «품목 취소임을 증명 못 함» — 접두사 검사를 통과 못 하는 '' 로 남겨 3단계로 보낸다.
+          list.push(f.note ?? '');
           notesById.set(id, list);
         }
       }
     }
 
-    const step1: { id: string; kind: Kind }[] = [];
-    const step2: { row: WalletRow; candidate: Kind }[] = [];
-    let step3 = 0;
+    const step1: { id: string; kind: Kind; why: string }[] = [];
+    const step2: { row: WalletRow; candidate: Kind; why: string }[] = [];
+    const step3: { id: string; why: string }[] = [];
     for (const row of rows) {
       const old: OldRefund = {
         id: row.id,
@@ -168,28 +193,35 @@ async function main() {
         medusaNotes: row.reason_code === 'MEDUSA_REFUND' ? (notesById.get(row.id) ?? null) : null,
       };
       const verdict = classifyOldRefund(old);
-      if (verdict.step === 1) step1.push({ id: row.id, kind: verdict.kind });
-      else if (verdict.step === 2) step2.push({ row, candidate: verdict.candidate });
-      else step3++;
+      if (verdict.step === 1) step1.push({ id: row.id, kind: verdict.kind, why: verdict.why });
+      else if (verdict.step === 2) step2.push({ row, candidate: verdict.candidate, why: verdict.why });
+      else step3.push({ id: row.id, why: verdict.why });
     }
 
     console.log(`kind 가 null 인 행: ${rows.length}건`);
     console.log(`  1단계(확정): ${step1.length}건`);
     console.log(`  2단계(후보, 사람 검토): ${step2.length}건`);
-    console.log(`  3단계(미분류로 남김): ${step3}건`);
+    console.log(`  3단계(미분류로 남김): ${step3.length}건`);
 
-    const lines = [CSV_HEADER.join(',')];
-    for (const { row, candidate } of step2) {
-      lines.push(
-        [row.id, row.amount, row.created_at.toISOString(), row.reason_code ?? '', row.reason_message ?? '', candidate]
-          .map(csvCell)
-          .join(','),
-      );
-    }
-    writeFileSync(OUT, `${lines.join('\n')}\n`, 'utf8');
-    console.log(`\n2단계 후보 CSV 저장: ${OUT}`);
-
+    // 판정 근거(스펙 §7). 1·2단계는 전부, 3단계는 앞 N건만 — 나머지는 건수로 본다.
     if (!APPLY) {
+      console.log('\n[1단계] id · kind · 근거');
+      for (const v of step1) console.log(`  ${v.id} · ${v.kind} · ${v.why}`);
+      console.log('\n[2단계] id · candidate · 근거');
+      for (const v of step2) console.log(`  ${v.row.id} · ${v.candidate} · ${v.why}`);
+      console.log(`\n[3단계] 앞 ${STEP3_EXAMPLES}건 (전체 ${step3.length}건)`);
+      for (const v of step3.slice(0, STEP3_EXAMPLES)) console.log(`  ${v.id} · ${v.why}`);
+
+      const lines = [CSV_HEADER.join(',')];
+      for (const { row, candidate } of step2) {
+        lines.push(
+          [row.id, row.amount, row.created_at.toISOString(), row.reason_code ?? '', row.reason_message ?? '', candidate]
+            .map(csvCell)
+            .join(','),
+        );
+      }
+      writeFileSync(OUT, `${lines.join('\n')}\n`, { encoding: 'utf8', flag: 'wx' });
+      console.log(`\n2단계 후보 CSV 저장: ${OUT}`);
       console.log('\n조회만 했다. 1단계를 적용하려면 --apply, 검토한 CSV 를 적용하려면 --apply --from <csv>.');
       return;
     }

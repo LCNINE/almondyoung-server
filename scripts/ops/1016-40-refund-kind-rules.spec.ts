@@ -45,6 +45,9 @@ describe('classifyOldRefund (#1016 40번 §7)', () => {
       expect(
         classifyOldRefund(make({ reasonCode: 'MEDUSA_REFUND', medusaNotes: ['partial-cancel:a', 'wallet:x'] })),
       ).toMatchObject({ step: 3 });
+      expect(
+        classifyOldRefund(make({ reasonCode: 'MEDUSA_REFUND', medusaNotes: ['partial-cancel:r1', ''] })),
+      ).toMatchObject({ step: 3 });
       expect(classifyOldRefund(make({ reasonCode: 'MEDUSA_REFUND', medusaNotes: null }))).toMatchObject({ step: 3 });
       expect(classifyOldRefund(make({ reasonCode: 'MEDUSA_REFUND', medusaNotes: [] }))).toMatchObject({ step: 3 });
     });
