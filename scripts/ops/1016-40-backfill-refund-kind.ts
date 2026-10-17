@@ -54,6 +54,7 @@ type WalletRow = {
   reason_code: string | null;
   reason_message: string | null;
   purpose: string;
+  membership_intent: boolean;
 };
 
 const CSV_HEADER = ['id', 'amount', 'created_at', 'reason_code', 'reason_message', 'candidate'];
@@ -153,7 +154,8 @@ async function main() {
     }
 
     const rows = await wallet<WalletRow[]>`
-      SELECT r.id, r.amount::text AS amount, r.created_at, r.reason_code, r.reason_message, pi.purpose::text AS purpose
+      SELECT r.id, r.amount::text AS amount, r.created_at, r.reason_code, r.reason_message, pi.purpose::text AS purpose,
+             (pi.metadata ? 'planId') AS membership_intent
         FROM refunds r
         JOIN payment_intents pi ON pi.id = r.intent_id
        WHERE r.kind IS NULL
@@ -190,6 +192,7 @@ async function main() {
         reasonCode: row.reason_code,
         reasonMessage: row.reason_message,
         intentPurpose: row.purpose,
+        membershipIntent: row.membership_intent === true,
         medusaNotes: row.reason_code === 'MEDUSA_REFUND' ? (notesById.get(row.id) ?? null) : null,
       };
       const verdict = classifyOldRefund(old);

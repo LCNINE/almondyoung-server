@@ -16,6 +16,8 @@ export type OldRefund = {
   reasonCode: string | null;
   reasonMessage: string | null;
   intentPurpose: string;
+  /** 결제 intent metadata 에 planId 가 있다 — 멤버십 첫 결제는 purpose 가 PURCHASE 라 purpose 만으로는 못 가른다 */
+  membershipIntent: boolean;
   medusaNotes: string[] | null;
 };
 
@@ -38,6 +40,7 @@ const MEDUSA_ITEM_CANCEL_NOTE = /^(partial-cancel|channel-cancel):/;
 
 function classifyByCode(r: OldRefund): Verdict | null {
   if (r.intentPurpose === 'SUBSCRIPTION') return { step: 1, kind: 'SUBSCRIPTION_FEE', why: 'intent purpose SUBSCRIPTION' };
+  if (r.membershipIntent) return { step: 1, kind: 'SUBSCRIPTION_FEE', why: 'intent metadata planId (멤버십 결제)' };
   const code = r.reasonCode;
   if (code === 'RETURN_COMPLETED') return { step: 1, kind: 'RETURN', why: 'reason_code RETURN_COMPLETED' };
   if (code && ITEM_CANCEL_CODES.has(code)) return { step: 1, kind: 'ITEM_CANCEL', why: `reason_code ${code}` };
