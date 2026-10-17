@@ -5,6 +5,7 @@ const base: OldRefund = {
   reasonCode: null,
   reasonMessage: null,
   intentPurpose: 'PURCHASE',
+  membershipIntent: false,
   medusaNotes: null,
 };
 const make = (o: Partial<OldRefund>): OldRefund => ({ ...base, ...o });
@@ -13,6 +14,13 @@ describe('classifyOldRefund (#1016 40번 §7)', () => {
   describe('1단계 — 코드로 확정', () => {
     it('SUBSCRIPTION 의도는 SUBSCRIPTION_FEE', () => {
       expect(classifyOldRefund(make({ reasonCode: 'NOT_USING', intentPurpose: 'SUBSCRIPTION' }))).toMatchObject({
+        step: 1,
+        kind: 'SUBSCRIPTION_FEE',
+      });
+    });
+    // 라이브 10-17: 멤버십 첫 결제는 purpose PURCHASE 로 만들어진다 — metadata 의 planId 로 알아본다
+    it.each(['NOT_USING', 'LACK_OF_BENEFITS', 'OTHER'])('멤버십 결제(planId)의 %s 는 SUBSCRIPTION_FEE — 고객 취소 코드보다 먼저', (code) => {
+      expect(classifyOldRefund(make({ reasonCode: code, membershipIntent: true }))).toMatchObject({
         step: 1,
         kind: 'SUBSCRIPTION_FEE',
       });
