@@ -228,6 +228,39 @@ function makeContext(
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('RefundsService', () => {
+  describe('환불 종류 kind (#1016 40번)', () => {
+    it('create: kind 를 insert 에 남긴다', async () => {
+      const { service, insertCalls } = makeContext();
+      await service.create({ chargeId: CHARGE_ID, amount: 5000, kind: 'RETURN' });
+      expect(insertCalls).toEqual([expect.objectContaining({ kind: 'RETURN' })]);
+    });
+
+    it('create: kind 가 없으면 null — 모름', async () => {
+      const { service, insertCalls } = makeContext();
+      await service.create({ chargeId: CHARGE_ID, amount: 5000 });
+      expect(insertCalls).toEqual([expect.objectContaining({ kind: null })]);
+    });
+
+    it('createByIntent: 결제분마다 같은 kind 로 create 한다', async () => {
+      const { service, chargesService } = makeContext();
+      (chargesService as any).findRefundableByIntent = jest.fn().mockResolvedValue([{ id: 'c1' }, { id: 'c2' }]);
+      const svc = service as any;
+      svc.planIntentRefund = jest.fn().mockResolvedValue([
+        { chargeId: 'c1', amount: 3000, methodType: 'TOSS', execution: 'AUTO' },
+        { chargeId: 'c2', amount: 2000, methodType: 'POINTS', execution: 'AUTO' },
+      ]);
+      svc.settleAmbiguousBeforePlan = jest.fn().mockResolvedValue(undefined);
+      const create = jest
+        .spyOn(service, 'create')
+        .mockResolvedValue({ id: 'r', status: 'SUCCEEDED', amount: 1 } as unknown as Refund);
+
+      await service.createByIntent(INTENT_ID, { amount: 5000, kind: 'ITEM_CANCEL' });
+
+      expect(create).toHaveBeenCalledTimes(2);
+      expect(create.mock.calls.map(([dto]) => dto.kind)).toEqual(['ITEM_CANCEL', 'ITEM_CANCEL']);
+    });
+  });
+
   describe('수동 실행 create() (#1016 36번 PR 1)', () => {
     it('MANUAL 은 provider 를 부르지 않고 PENDING·MANUAL 행을 돌려준다', async () => {
       const { service, provider, insertCalls, stateTransitionService } = makeContext({ method: makeMethod('TOSS') });
@@ -817,6 +850,7 @@ describe('RefundsService', () => {
           reasonMessage: null,
           providerRefundId: null,
           execution: options?.execution ?? 'AUTO',
+          kind: dto.kind ?? null,
           failureCode: null,
           failureRetryable: null,
           createdAt: new Date(),

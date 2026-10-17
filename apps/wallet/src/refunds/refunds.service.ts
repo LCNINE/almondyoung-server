@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { and, asc, eq, gt, inArray, lt, sql, SQL } from 'drizzle-orm';
-import { WalletSchema, charges as chargesTable, refunds, paymentIntents, paymentMethods as paymentMethodsTable, RefundExecution } from '../schema';
+import { WalletSchema, charges as chargesTable, refunds, paymentIntents, paymentMethods as paymentMethodsTable, RefundExecution, RefundKind } from '../schema';
 import { Charge, DbTx, PaymentMethod, Refund } from '../types';
 import { ChargesService } from '../charges/charges.service';
 import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
@@ -159,6 +159,7 @@ export class RefundsService {
           reasonMessage: dto.reasonMessage ?? null,
           providerRefundId: null,
           execution,
+          kind: dto.kind ?? null,
         })
         .returning();
       const row = inserted[0];
@@ -468,6 +469,7 @@ export class RefundsService {
       amount: number;
       reasonCode?: string;
       reasonMessage?: string;
+      kind?: RefundKind;
       allowMembershipRefund?: boolean;
       refundReceiveAccount?: CreateRefundDto['refundReceiveAccount'];
       execution?: RefundExecution;
@@ -502,6 +504,7 @@ export class RefundsService {
             amount: leg.amount,
             reasonCode: dto.reasonCode,
             reasonMessage: dto.reasonMessage,
+            kind: dto.kind,
             allowMembershipRefund: dto.allowMembershipRefund,
             refundReceiveAccount: dto.refundReceiveAccount,
           },

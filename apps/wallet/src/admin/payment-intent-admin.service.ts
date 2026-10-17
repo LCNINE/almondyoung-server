@@ -51,6 +51,7 @@ function refundRowsQuery(db: DbService<WalletSchema>['db']) {
       reasonMessage: refunds.reasonMessage,
       createdAt: refunds.createdAt,
       execution: refunds.execution,
+      kind: refunds.kind,
       failureCode: refunds.failureCode,
       failureRetryable: refunds.failureRetryable,
       paymentMethodType: paymentMethods.type,
@@ -80,6 +81,7 @@ function toAdminRefund(r: AdminRefundRow): RefundResponseDto {
       methodType: r.paymentMethodType ?? null,
     }),
     execution: r.execution,
+    kind: r.kind ?? null,
     failureCode: r.failureCode ?? null,
     retryable: r.failureRetryable ?? null,
   };

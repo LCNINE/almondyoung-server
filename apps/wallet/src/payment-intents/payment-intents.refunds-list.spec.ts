@@ -19,6 +19,7 @@ const refund = (id: string, status: Refund['status'], execution: Refund['executi
   reasonMessage: null,
   providerRefundId: null,
   execution,
+  kind: null,
   failureCode: null,
   failureRetryable: null,
   createdAt: new Date('2026-10-11T00:00:00Z'),
