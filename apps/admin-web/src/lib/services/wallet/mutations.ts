@@ -1,6 +1,7 @@
 'use client';
 
 import { walletApi } from '@/lib/api/domains/wallet';
+import type { RefundKind } from '@/lib/api/domains/wallet/refund-kind';
 import { salesOrders } from '@/lib/api/domains/orders';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { walletQueryKeys } from './query-keys';
@@ -50,7 +51,7 @@ export const useRefundIntent = (intentId: string) => {
     mutationFn: (dto: {
       chargeId: string;
       amount: number;
-      reasonCode?: string;
+      kind?: RefundKind;
       reasonMessage?: string;
       refundReceiveAccount?: { bank: string; accountNumber: string; holderName: string };
     }) => walletApi.refundIntent(intentId, dto),
@@ -314,6 +315,20 @@ export const useConfirmRefund = () => {
       queryClient.invalidateQueries({ queryKey: walletQueryKeys.intentDetail(intentId) });
       queryClient.invalidateQueries({ queryKey: walletQueryKeys.stateTransitions(intentId) });
       queryClient.invalidateQueries({ queryKey: walletQueryKeys.refunds() });
+    },
+  });
+};
+
+/** 환불 종류 고치기. 응답의 manualConfirmable 은 항상 false 라 캐시를 덮지 않고 다시 읽는다 */
+export const useChangeRefundKind = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ refundId, kind }: { refundId: string; intentId: string; kind: RefundKind | null }) =>
+      walletApi.changeRefundKind(refundId, kind),
+    onSuccess: (_data, { intentId }) => {
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.refunds() });
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.intentDetail(intentId) });
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.stateTransitions(intentId) });
     },
   });
 };

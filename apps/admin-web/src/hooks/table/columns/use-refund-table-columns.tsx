@@ -4,6 +4,7 @@ import type { RefundDto } from '@/lib/types/dto/wallet';
 import { IdCell, DateCell } from '@/components/table/table-cells/common';
 import { StatusBadgeCell, AmountCell } from '@/components/table/table-cells/wallet';
 import Link from 'next/link';
+import { RefundKindCell } from '@/features/payments/components/refund-table/kind-cell';
 import { RefundConfirmCell } from '@/features/payments/components/refund-table/confirm-cell';
 import { refundExecutionLabel, refundFailureLabel } from '@/lib/api/domains/wallet/refund-execution';
 
@@ -40,6 +41,11 @@ export const useRefundTableColumns = () => {
       columnHelper.accessor('execution', {
         header: '방식',
         cell: ({ getValue }) => <span className="text-sm">{refundExecutionLabel(getValue())}</span>,
+      }),
+      columnHelper.display({
+        id: 'kind',
+        header: '종류',
+        cell: ({ row }) => <RefundKindCell refund={row.original} />,
       }),
       columnHelper.accessor('reasonCode', {
         header: '사유 코드',
