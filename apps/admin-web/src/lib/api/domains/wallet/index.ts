@@ -157,7 +157,11 @@ export const walletApi = {
   },
 
   changeRefundKind: async (id: string, kind: RefundKind | null): Promise<RefundDto> => {
-    const res = await client.patch(`${BASE}/v1/admin/refunds/${encodeURIComponent(id)}/kind`, { kind });
+    const res = await client.patch(
+      `${BASE}/v1/admin/refunds/${encodeURIComponent(id)}/kind`,
+      { kind },
+      idempotencyConfig()
+    );
     return res.data;
   },
 
