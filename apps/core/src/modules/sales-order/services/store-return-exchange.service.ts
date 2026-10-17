@@ -968,6 +968,7 @@ export class StoreReturnExchangeService {
     let outcome: WalletRefundOutcome;
     try {
       outcome = await this.walletRefundClient.refundByIntent(claim.walletIntentId, attempt.amount, {
+        kind: 'RETURN',
         reasonCode: 'RETURN_COMPLETED',
         correlationId: attempt.idempotencyKey,
       });

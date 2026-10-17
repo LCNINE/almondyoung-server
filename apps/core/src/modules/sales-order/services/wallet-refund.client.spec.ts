@@ -173,3 +173,31 @@ describe('WalletRefundClient.listRefundsByIntent — 수동 송금 여부(#1016 
     expect(await new WalletRefundClient().listRefundsByIntent('intent-1')).toBeNull();
   });
 });
+
+describe('WalletRefundClient — 환불 종류(kind)', () => {
+  const OLD_ENV = process.env;
+  const okBody = { intentId: 'intent-1', refunds: [] };
+
+  beforeEach(() => {
+    process.env = { ...OLD_ENV, WALLET_BASE_URL: 'http://wallet', WALLET_API_KEY: 'test-key' };
+  });
+
+  afterEach(() => {
+    process.env = OLD_ENV;
+    jest.restoreAllMocks();
+  });
+
+  it('kind 를 요청 바디에 싣는다', async () => {
+    global.fetch = mockFetch(200, okBody);
+    await new WalletRefundClient().refundByIntent('intent-1', 1000, { kind: 'RETURN', correlationId: 'c1' });
+    const [, init] = (global.fetch as jest.Mock).mock.calls[0] as [string, { body: string }];
+    expect(JSON.parse(init.body)).toMatchObject({ kind: 'RETURN' });
+  });
+
+  it('kind 가 없으면 바디에 kind 키가 없다', async () => {
+    global.fetch = mockFetch(200, okBody);
+    await new WalletRefundClient().refundByIntent('intent-1', 1000, { correlationId: 'c1' });
+    const [, init] = (global.fetch as jest.Mock).mock.calls[0] as [string, { body: string }];
+    expect(JSON.parse(init.body)).not.toHaveProperty('kind');
+  });
+});

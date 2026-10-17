@@ -1039,6 +1039,7 @@ export class StoreSalesOrdersService {
     }
 
     const outcome = await this.walletRefundClient.refundByIntent(so.walletIntentId, amount, {
+      kind: 'ITEM_CANCEL',
       reasonCode: dto.reasonCode ?? 'CUSTOMER_CANCEL',
       reasonMessage: dto.reasonDetail,
       correlationId,
