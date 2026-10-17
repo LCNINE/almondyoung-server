@@ -18,7 +18,7 @@ describe('issuePaymentRefund — 표식 정규화', () => {
     const container = { resolve: jest.fn((key: string) => (key === 'payment' ? payment : logger)) } as any;
     return { container, payment, logger };
   };
-  const input = (mode: 'auto' | 'manual') => ({ paymentId: 'pay_1', amount: 3000, note: 'channel-cancel:o1', mode });
+  const input = (mode: 'auto' | 'manual') => ({ paymentId: 'pay_1', amount: 3000, note: 'channel-cancel:o1', mode, kind: 'ITEM_CANCEL' as const });
 
   beforeEach(() => run.mockReset());
 
@@ -31,6 +31,7 @@ describe('issuePaymentRefund — 표식 정규화', () => {
       data: {
         intentId: 'i1',
         refundAttempt: { note: 'channel-cancel:o1', amount: 3000 },
+        refundKind: { kind: 'ITEM_CANCEL', amount: 3000 },
         externalRefund: null,
         manualRefund: null,
       },
@@ -51,6 +52,7 @@ describe('issuePaymentRefund — 표식 정규화', () => {
     expect(payment.updatePayment.mock.calls[0][0].data).toEqual({
       intentId: 'i1',
       refundAttempt: { note: 'channel-cancel:o1', amount: 3000 },
+      refundKind: { kind: 'ITEM_CANCEL', amount: 3000 },
       externalRefund: null,
       manualRefund: { requestId: 'channel-cancel:o1', amount: 3000 },
     });
@@ -71,5 +73,12 @@ describe('issuePaymentRefund — 표식 정규화', () => {
     payment.updatePayment.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('db down'));
     await expect(issuePaymentRefund(container, input('manual'))).rejects.toBe(original);
     expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('db down'));
+  });
+
+  it('성공하면 시도 표식과 종류 표식을 함께 null 로 지운다', async () => {
+    const { container, payment } = makeContainer({ intentId: 'i1', refundKind: { kind: 'RETURN', amount: 1 } });
+    run.mockResolvedValue({});
+    await issuePaymentRefund(container, input('auto'));
+    expect(payment.updatePayment).toHaveBeenLastCalledWith({ id: 'pay_1', data: { refundAttempt: null, refundKind: null } });
   });
 });

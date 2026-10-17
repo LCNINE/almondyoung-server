@@ -146,6 +146,7 @@ async function refundRemaining(container: MedusaContainer, input: ChannelCancelI
           amount,
           note: refundNote(input.orderId),
           mode: input.refundMode,
+          kind: 'ITEM_CANCEL',
           actorId: input.actorId,
         });
       },
