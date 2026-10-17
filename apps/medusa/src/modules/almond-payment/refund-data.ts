@@ -141,7 +141,7 @@ export function withRefundAttempt(data: Record<string, unknown>, attempt: Refund
 
 /**
  * 환불 종류 표식(#1016 40번). 정산이 refundPaymentWorkflow 직전에 쓰면 refundPayment 가 wallet 환불 바디의 `kind` 로 싣는다.
- * 값의 철자·집합의 정본은 `apps/wallet/src/schema.ts` 의 `refundKindEnum` — Medusa 는 import 할 수 없어 같은 철자를 옮겨 둔다.
+ * 값의 철자·집합의 정본은 `apps/wallet/src/schema.ts` 의 `refundKindEnum` — Medusa 는 import 할 수 없어 같은 철자를 옮겨 둔다(`apps/wallet/src/refunds/refund-kind-copies.spec.ts` 가 지킨다).
  * `reasonCode` 와는 별개다(MEDUSA_REFUND 는 Medusa 투영이 «우리가 낸 환불»을 가리는 데 쓴다).
  * 금액이 붙는 이유는 manualRefund 와 같다: 앞 시도가 죽으며 남긴 표식이 금액이 다른 다음 환불에 붙으면 안 된다.
  */

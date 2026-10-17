@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 
 /**
  * 환불 종류. 정본: apps/wallet/src/schema.ts `refundKindEnum` — 앱 간 import 를 피해 여기 복제한다.
- * 값을 바꾸면 정본과 같이 고칠 것.
+ * 값을 바꾸면 정본과 같이 고칠 것 — `apps/wallet/src/refunds/refund-kind-copies.spec.ts` 가 지킨다.
  */
 export type WalletRefundKind = 'ITEM_CANCEL' | 'RETURN' | 'PRICE_ADJUSTMENT' | 'SUBSCRIPTION_FEE' | 'PAYMENT_ERROR';
 
