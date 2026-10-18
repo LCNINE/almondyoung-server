@@ -13,7 +13,6 @@ export {
   mergeGroups,
   salesOrderAmendments,
   orderStatusEnum,
-  orderItemStatusEnum,
   salesChannelEnum,
   eventTypeOrderEnum,
   type SalesOrder,

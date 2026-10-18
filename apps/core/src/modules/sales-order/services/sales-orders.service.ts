@@ -36,7 +36,6 @@ import { lineMatchingBadgeResolvedSql } from '../../product-matching/line-compos
 import { isDigitalFulfillmentLine, isOutsourcedLine } from '../../product-matching/line-composition/line-composition';
 import { selectFrozenCompositions } from '../../product-matching/line-composition/frozen-compositions';
 import { outstandingSalesUnits, physicalCancellationByItem } from './v2-cancellation-units';
-import { PoliciesService } from './policies.service';
 import { MOVED_SHIPMENT_STATUSES } from './fulfillment-phase';
 import type { OrderProgressStage } from '../../fulfillment/order-progress/order-progress.thresholds';
 import { computeEntrancePasswordExpiry } from './entrance-password-expiry';
@@ -181,23 +180,6 @@ const cancelQuantityExceedsMessage = (requested: number, remaining: number) =>
   `취소 수량(${requested}개)이 취소 가능 수량(${remaining}개)을 초과합니다.`;
 const SALES_ORDER_REF_TYPE = 'sales_order';
 
-/**
- * 응답 라인에서 뺀 컬럼 — 라인 상태(status)와 그 부속 셋은 쓰는 생산자가 없다(#1016 15번 §5.1).
- * DB 컬럼은 ⓑ-2 에서 지운다. 그때까지 응답에서만 숨겨 새 화면이 죽은 값을 읽지 않게 한다.
- */
-function responseLineColumns() {
-  /* eslint-disable @typescript-eslint/no-unused-vars -- 빼려고 구조분해하는 것이라 변수는 안 쓴다 */
-  const {
-    status: _status,
-    suggestedQuantity: _sq,
-    unavailableSkuIds: _us,
-    deductedAt: _da,
-    ...columns
-  } = getTableColumns(wmsTables.salesOrderLines);
-  /* eslint-enable @typescript-eslint/no-unused-vars */
-  return columns;
-}
-
 /** 단계 행이 없는 주문(SQL 이 존재하는 주문마다 한 행을 내므로 일어나지 않는다)에 던지는 대신 쓰는 중립값 */
 const FALLBACK_SHIPMENT_PHASE: OrderShipmentPhase = 'preparing';
 const ORDER_CANCELLATION_REF_TYPE = 'order_cancellation';
@@ -251,7 +233,6 @@ export class SalesOrdersService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>()
     private readonly db: DbService<typeof wmsSchema>,
-    private readonly policies: PoliciesService,
     @InjectPublisher(FULFILLMENT_STREAM)
     private readonly fulfillmentsV1: PublisherFor<typeof FULFILLMENT_STREAM>,
     @InjectPublisher(CORE_ORDER_STREAM)
@@ -338,8 +319,6 @@ export class SalesOrdersService {
               fulfillmentKind: l.fulfillmentKind ?? null,
               requiresShipping: l.requiresShipping ?? null,
               almondDesignId: l.almondDesignId ?? null,
-              // status·suggestedQuantity·unavailableSkuIds·deductedAt 는 쓰지 않는다 — 읽는 곳도 쓰는 곳도 없는
-              // 죽은 컬럼이다(#1016 15번 §5.3). DB 기본값(status=pending)·null 이 채운다. 컬럼은 ⓑ-2 에서 지운다.
             });
           }
           const insertedLines = await trx
@@ -809,7 +788,7 @@ export class SalesOrdersService {
     if (!order) return null;
     // 라인 배지(«매칭 대기»)는 이 값을 본다(#1063)
     const lines = await db
-      .select({ ...responseLineColumns(), matchingResolved: lineMatchingBadgeResolvedSql() })
+      .select({ ...getTableColumns(wmsTables.salesOrderLines), matchingResolved: lineMatchingBadgeResolvedSql() })
       .from(wmsTables.salesOrderLines)
       .where(eq(wmsTables.salesOrderLines.salesOrderId, id));
     const shipmentPhase = (await this.loadShipmentPhases([id], db)).get(id) ?? FALLBACK_SHIPMENT_PHASE;
@@ -957,13 +936,6 @@ export class SalesOrdersService {
       switch (params.typeGroup) {
         case 'pending':
           conditions.push(eq(S.salesOrders.status, 'pending'));
-          break;
-        // ready·partial·hold 는 라인 상태(재고 차감·재고 부족)로 가르던 구분이다. 그 상태를 쓰는
-        // 생산자가 없어(#1016 15번) 옛 화면이 보내도 400 이 아니라 «빈 결과» 가 되게 값만 남긴다. ⓑ-2 에서 값을 지운다.
-        case 'ready':
-        case 'partial':
-        case 'hold':
-          conditions.push(sql`false`);
           break;
         case 'unmatched': // 매칭안됨: 매칭이 없어 FO 생성을 기다리는 주문. 대기열이 라인 구성 판정의 결과다(#1063 스펙 D8)
           conditions.push(
@@ -1154,7 +1126,7 @@ export class SalesOrdersService {
 
       const orderIds = orders.map((o) => o.id);
       const lines = await trx
-        .select({ ...responseLineColumns(), matchingResolved: lineMatchingBadgeResolvedSql() })
+        .select({ ...getTableColumns(S.salesOrderLines), matchingResolved: lineMatchingBadgeResolvedSql() })
         .from(S.salesOrderLines)
         .where(inArray(S.salesOrderLines.salesOrderId, orderIds));
       // 페이지 주문 전부를 한 번에 — 주문마다 부르면 N+1 이다

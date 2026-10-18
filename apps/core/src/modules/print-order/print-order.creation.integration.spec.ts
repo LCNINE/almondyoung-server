@@ -7,7 +7,6 @@ import { wmsSchema, wmsTables, DbTx } from '../inventory/schema/inventory.schema
 import { makeDb, inRollbackTx } from '../fulfillment/services/__support__';
 import { SalesOrdersService } from '../sales-order/services/sales-orders.service';
 import { OrderEventsConsumer } from '../sales-order/consumers/order-events.consumer';
-import type { PoliciesService } from '../sales-order/services/policies.service';
 import type { ReservationLifecycleService } from '../inventory/shared/services/reservation-lifecycle.service';
 import type { ProductSkuMappingService } from '../product-matching/services/product-sku-mapping.service';
 import type { ProductSellableQuantityService } from '../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
@@ -34,21 +33,12 @@ function makeDbServiceInTx(tx: DbTx): DbService<typeof wmsSchema> {
 function makeConsumer(tx: DbTx): OrderEventsConsumer {
   const dbService = makeDbServiceInTx(tx);
   const outbox = { enqueue: () => Promise.resolve(undefined) };
-  const policies = {
-    getVariantPolicy: () =>
-      Promise.resolve({
-        inventoryManagement: false,
-        preStockSellable: false,
-        alwaysSellableZeroStock: false,
-      }),
-  };
   const unused = {};
   // 결제 확정 주문만 인쇄 대기열에 들어가므로 확정 경로의 출고 적재·보유권 부여는 아무것도 하지 않게 둔다
   const noFulfillment = { shouldEnqueueFo: () => false };
   const noGrant = { grantOwnershipsForOrder: () => Promise.resolve(undefined) };
   const service = new SalesOrdersService(
     dbService,
-    policies as unknown as PoliciesService,
     outbox as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
     outbox as unknown as PublisherFor<typeof CORE_ORDER_STREAM>,
     unused as unknown as ReservationLifecycleService,

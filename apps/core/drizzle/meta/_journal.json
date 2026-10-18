@@ -848,6 +848,13 @@
       "when": 1792323320692,
       "tag": "20261018113520_add-shipment-line-demand-requested-at",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1792348634830,
+      "tag": "20261018183714_drop-dead-sales-order-line-status",
+      "breakpoints": true
     }
   ]
 }

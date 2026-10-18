@@ -4,7 +4,6 @@ import { eq } from 'drizzle-orm';
 import { CORE_ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { findCompositionInvariantViolations } from '../../product-matching/line-composition/__support__/composition-invariant';
-import { PoliciesService } from '../../sales-order/services/policies.service';
 import { SalesOrdersService } from '../../sales-order/services/sales-orders.service';
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
 import { inRollbackTx, makeDb, seedSalesOrder, wireLogistics } from '../services/__support__';
@@ -28,7 +27,6 @@ function wire(tx: DbTx) {
   const outbound = assembleOutbound(tx);
   const salesOrders = new SalesOrdersService(
     dbService,
-    new PoliciesService(dbService),
     outboxPublisherFor(FULFILLMENT_STREAM, dbService),
     outboxPublisherFor(CORE_ORDER_STREAM, dbService),
     logistics.lifecycle,

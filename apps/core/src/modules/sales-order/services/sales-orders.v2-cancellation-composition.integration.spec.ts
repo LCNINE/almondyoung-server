@@ -17,7 +17,6 @@ import {
 import { ambientDbService, assembleOutbound } from '../../fulfillment/services/__support__/simple-outbound-wiring';
 import { outboxPublisherFor } from '../../fulfillment/outbox/__support__/outbox-publisher.factory';
 import { canonicalFulfillmentRequestHash } from '../../fulfillment/services/fulfillment-command.service';
-import { PoliciesService } from './policies.service';
 import { SalesOrdersService } from './sales-orders.service';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -30,7 +29,6 @@ function wire(tx: DbTx) {
   const outbound = assembleOutbound(tx);
   const salesOrders = new SalesOrdersService(
     dbService,
-    new PoliciesService(dbService),
     outboxPublisherFor(FULFILLMENT_STREAM, dbService),
     outboxPublisherFor(CORE_ORDER_STREAM, dbService),
     logistics.lifecycle,

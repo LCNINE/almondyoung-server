@@ -25,7 +25,6 @@ import {
   locationTypeEnum,
   systemLocationRoleEnum,
   orderStatusEnum,
-  orderItemStatusEnum,
   salesChannelEnum,
   eventTypeOrderEnum,
   taskPriorityEnum,
@@ -118,9 +117,6 @@ export type SystemLocationRoleEnum = (typeof systemLocationRoleValues)[number];
 
 export const orderStatusValues = orderStatusEnum.enumValues;
 export type OrderStatusEnum = (typeof orderStatusValues)[number];
-
-export const orderItemStatusValues = orderItemStatusEnum.enumValues;
-export type OrderItemStatusEnum = (typeof orderItemStatusValues)[number];
 
 export const salesChannelValues = salesChannelEnum.enumValues;
 export type SalesChannelEnum = (typeof salesChannelValues)[number];

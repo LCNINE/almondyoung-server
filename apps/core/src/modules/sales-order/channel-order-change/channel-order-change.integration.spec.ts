@@ -17,7 +17,6 @@ import {
 } from '../../fulfillment/services/__support__';
 import { ambientDbService, assembleOutbound } from '../../fulfillment/services/__support__/simple-outbound-wiring';
 import { outboxPublisherFor } from '../../fulfillment/outbox/__support__/outbox-publisher.factory';
-import { PoliciesService } from '../services/policies.service';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
 import { ChannelOrderChangeReader } from './channel-order-change.reader';
@@ -34,7 +33,6 @@ function wire(tx: DbTx) {
   const outbound = assembleOutbound(tx);
   const salesOrders = new SalesOrdersService(
     dbService,
-    new PoliciesService(dbService),
     outboxPublisherFor(FULFILLMENT_STREAM, dbService),
     outboxPublisherFor(CORE_ORDER_STREAM, dbService),
     logistics.lifecycle,

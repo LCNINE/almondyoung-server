@@ -5,7 +5,6 @@ import { inRollbackTx, makeDb, seedHolder, seedSku, wireLogistics } from '../../
 import { ambientDbService, assembleOutbound } from '../../fulfillment/services/__support__/simple-outbound-wiring';
 import { outboxPublisherFor } from '../../fulfillment/outbox/__support__/outbox-publisher.factory';
 import { CORE_ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
-import { PoliciesService } from '../services/policies.service';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { markLineShipped, seedChannelOrder } from './__support__/cancel-request.fixtures';
 
@@ -18,7 +17,6 @@ function wireSalesOrders(tx: DbTx) {
   const outbound = assembleOutbound(tx);
   const salesOrders = new SalesOrdersService(
     dbService,
-    new PoliciesService(dbService),
     outboxPublisherFor(FULFILLMENT_STREAM, dbService),
     outboxPublisherFor(CORE_ORDER_STREAM, dbService),
     logistics.lifecycle,
