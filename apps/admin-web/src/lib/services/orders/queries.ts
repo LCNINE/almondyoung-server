@@ -10,6 +10,7 @@ import {
 } from '@tanstack/react-query';
 import { orderQueryKeys } from './query-keys';
 import { orders } from '@/lib/api/domains';
+import { normalizeDailyOrderStatus } from '@/lib/api/domains/orders/daily-status.shape';
 import type {
   MatchingsQuery,
   VariantSkuLookupDto,
@@ -364,6 +365,7 @@ export const useDailyOrderStatus = (from: string, to: string) => {
   return useQuery({
     queryKey: orderQueryKeys.dailyOrderStatus(from, to),
     queryFn: () => orders.salesOrders.getDailyStatusStats(from, to),
+    select: normalizeDailyOrderStatus,
     staleTime: 60 * 1000,
   });
 };

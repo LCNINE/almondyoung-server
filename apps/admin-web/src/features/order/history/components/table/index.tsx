@@ -814,13 +814,6 @@ export default function OrderTable() {
             >
               주문추가
             </button>
-            <button
-              disabled
-              className="h-7 px-2 rounded border border-gray-200 bg-gray-50 whitespace-nowrap text-xs text-gray-400 cursor-not-allowed"
-              title="준비 중: Core 주문분할 API 필요"
-            >
-              수량나누기
-            </button>
             <Button
               variant="outline"
               size="sm"
@@ -1031,14 +1024,6 @@ export default function OrderTable() {
                 ? '선불'
                 : `${(r.shippingFee ?? 0).toLocaleString()}원`}
             </span>
-            {/* stub: Core 주문분할 API 미구현 */}
-            <button
-              disabled
-              className="h-6 px-2 rounded border border-gray-200 bg-gray-50 text-gray-400 text-[11px] w-fit cursor-not-allowed"
-              title="준비 중: Core 주문분할 API 필요"
-            >
-              나누기
-            </button>
           </div>
         ),
       },
