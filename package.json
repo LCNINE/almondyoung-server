@@ -28,6 +28,7 @@
     "db:setup:lcnine-auth": "npx tsx scripts/seeding/index.ts --deployment lcnine-auth",
     "db:bootstrap": "npx tsx scripts/seeding/bootstrap.ts",
     "db:migrate": "npx tsx scripts/seeding/migrate.ts",
+    "deploy:preflight": "npx tsx scripts/ops/batch-deploy-preflight.ts",
     "db:migrate:local": "./scripts/local/migrate-all.sh",
     "dev:core:reset": "ts-node -r tsconfig-paths/register --transpile-only scripts/local/seed-dev-core/index.ts",
     "dev:seed-file-contexts": "ts-node -r tsconfig-paths/register --transpile-only scripts/local/seed-file-contexts.ts",
