@@ -8,7 +8,7 @@ import {
 import { InjectTypedDb, DbService } from '@app/db';
 import { AuthorizationService } from '@app/authorization';
 import type { ShippingAddress } from '@packages/event-contracts/streams';
-import { and, asc, eq, gt, inArray, ne, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import {
@@ -22,8 +22,8 @@ import {
   SplitShipmentDto,
 } from '../dto/shipment-planning.dto';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
-import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import { BoxWithdrawalService, WorkItemRow } from './box-withdrawal.service';
+import { assessCancelReadiness, CancelReadiness } from './cancel-readiness';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
@@ -465,13 +465,25 @@ export class ShipmentPlanningService {
         await this.invariant.assertFulfillmentOrders(aggregate.fulfillmentOrderIds, tx);
         const after = this.snapshot(await this.loadAggregate(shipmentId, tx));
         await this.completeOperation(tx, operation.id, [{ shipmentId, role: 'target', before, after }]);
-        await this.auditCommand(tx, actor, 'shipment.revise_recipient_from_channel', operation.id, 'CHANNEL_ORDER_MODIFIED', {
-          shipmentId,
-          salesOrderId,
-          before,
-          after,
-        });
-        return { response: { changed: true }, resourceType: 'shipment', resourceId: shipmentId, operationId: operation.id };
+        await this.auditCommand(
+          tx,
+          actor,
+          'shipment.revise_recipient_from_channel',
+          operation.id,
+          'CHANNEL_ORDER_MODIFIED',
+          {
+            shipmentId,
+            salesOrderId,
+            before,
+            after,
+          },
+        );
+        return {
+          response: { changed: true },
+          resourceType: 'shipment',
+          resourceId: shipmentId,
+          operationId: operation.id,
+        };
       },
       tx,
     );
@@ -605,8 +617,17 @@ export class ShipmentPlanningService {
           before,
         );
 
+        const readiness = await assessCancelReadiness(
+          this.withdrawals,
+          { aggregate, ownOperationId: null, lock: true },
+          tx,
+        );
+
         // 전체 취소 연결(E10, 스펙 §8): 시작된 배치의 박스를 전량 취소하면 대기가 아니라 이탈로 끝낸다.
-        const withdrawal = await this.withdrawalTarget(aggregate, requestedLines, tx);
+        const withdrawal =
+          readiness.kind === 'started_batch'
+            ? await this.withdrawalTarget(aggregate, requestedLines, readiness, tx)
+            : null;
         if (withdrawal) {
           await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_REOPEN);
           await this.recordPendingIntent(tx, operation.id, aggregate, dto, requestedLines, before);
@@ -644,7 +665,9 @@ export class ShipmentPlanningService {
           return { response, resourceType: 'shipment_operation', resourceId: operation.id, operationId: operation.id };
         }
 
-        if (await this.requiresDurableReplan(aggregate, tx)) {
+        // 시작된 배치의 상자(E10 이 아닌 일부 취소 등)와 막힘 있는 상자는 지금처럼 대기한다(스펙 §4.1).
+        const settleable = readiness.kind === 'ready' && ['draft', 'planned'].includes(aggregate.shipment.status);
+        if (!settleable) {
           await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_REOPEN);
           await this.markActiveWorkItemWaitingForCancellation(shipmentId, operation.id, tx);
           await tx
@@ -668,10 +691,21 @@ export class ShipmentPlanningService {
           return { response, resourceType: 'shipment_operation', resourceId: operation.id, operationId: operation.id };
         }
 
-        if (aggregate.shipment.status !== 'draft') {
+        // planned 를 draft 로 되돌리는 일이라 대기 갈래와 같은 권한을 요구한다. 손질 없는 draft 즉시 취소는 지금처럼 검사 없음.
+        if (aggregate.shipment.status === 'planned' || readiness.unstartedWorkItem || readiness.voidWaybill) {
+          await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_REOPEN);
+        }
+        await this.settleForCancellation(
+          aggregate,
+          readiness,
+          { actor, operationId: operation.id, reason: dto.reason },
+          tx,
+        );
+        const settled = await this.loadAggregate(shipmentId, tx);
+        if (settled.shipment.status !== 'draft') {
           throw this.conflict('SHIPMENT_NOT_DRAFT', 'Only Draft outstanding can be canceled immediately');
         }
-        await this.applyDraftCancellation(aggregate, selected, operation.id, dto, actor, tx);
+        await this.applyDraftCancellation(settled, selected, operation.id, dto, actor, tx, before);
         const after = this.snapshot(await this.loadAggregate(shipmentId, tx));
         const response = {
           operationId: operation.id,
@@ -1105,14 +1139,15 @@ export class ShipmentPlanningService {
   }
 
   /**
-   * 전체 취소 연결의 대상(정한 것 10) — 박스 전량 취소, 시작된 배치의 활성 작업 항목, 활성 송장이 나갈 때 무효화할 수 있음
-   * (없거나 `registered` — `BoxWithdrawalService.exitWaybill`), 이탈을 막는 사유 없음.
+   * 전체 취소 연결의 대상(정한 것 10) — 박스 전량 취소, 시작된 배치의 활성 작업 항목(준비도가 FOR UPDATE 로 잡아 넘긴다),
+   * 활성 송장이 나갈 때 무효화할 수 있음(없거나 `registered` — `BoxWithdrawalService.exitWaybill`), 이탈을 막는 사유 없음.
    * 아니면 null — 옛 CANCEL_REPLAN_PENDING 대기(부분 취소는 E11, 세션 recovery_required·무효화할 수 없는 송장 등은 운영자 몫).
-   * 작업 항목을 FOR UPDATE 로 잡는다(구성요소 다음 — 스펙 §13 순서). 이미 빼는 중이면 begin 이 canceled 로 올린다.
+   * 이미 빼는 중이면 begin 이 canceled 로 올린다.
    */
   private async withdrawalTarget(
     aggregate: ShipmentAggregate,
     requestedLines: CancelShipmentOutstandingDto['lines'],
+    started: Extract<CancelReadiness, { kind: 'started_batch' }>,
     tx: DbTx,
   ): Promise<{ batchId: string; workItem: WorkItemRow } | null> {
     const requestedByLine = new Map(requestedLines.map((line) => [line.shipmentLineId, line.qty]));
@@ -1120,40 +1155,60 @@ export class ShipmentPlanningService {
       requestedLines.length === aggregate.lines.length &&
       aggregate.lines.every((line) => requestedByLine.get(line.id) === line.qty);
     if (!whole) return null;
-    const [workItem] = await tx
-      .select()
-      .from(wmsTables.outboundBatchWorkItems)
-      .where(
-        and(
-          eq(wmsTables.outboundBatchWorkItems.shipmentId, aggregate.shipment.id),
-          inArray(wmsTables.outboundBatchWorkItems.status, [...ACTIVE_WORK_ITEM_STATUSES]),
-        ),
-      )
-      .limit(1)
-      .for('update');
-    if (!workItem) return null;
-    const [batch] = await tx
-      .select({ startedAt: wmsTables.outboundBatches.startedAt })
-      .from(wmsTables.outboundBatches)
-      .where(eq(wmsTables.outboundBatches.id, workItem.batchId))
-      .limit(1);
-    if (!batch?.startedAt) return null;
+    const { workItem, batchId } = started;
     // 이미 빼는 중이면 canceled 로 올린다 — 이 트랜잭션에서 나가지 않으니 송장 조건이 취소를 되돌리지 않는다. 옛 대기로 보내면
     // draft 로 나간 뒤 재개가 SHIPMENT_ACTIVE_INVOICE·CANCELLATION_LINE_CHANGED(PACKED 에서 뺄 때마다 line_version 이 오른다)에 막힌다.
-    if (workItem.status === 'withdrawing') return { batchId: workItem.batchId, workItem };
+    if (workItem.status === 'withdrawing') return { batchId, workItem };
     // 나갈 때 무효화할 수 없는 송장(`pending`·`allocated` 등)이면 이탈로 들이지 않는다 — 집은 게 없는 박스는 이 트랜잭션에서
     // 나가며 WITHDRAWAL_WAYBILL_NOT_VOIDABLE 로 취소 전체(판매 주문 취소 포함)를 되돌린다. 옛 대기가 그 취소를 받는다.
     if (!(await this.withdrawals.exitWaybill(aggregate.shipment.id, tx)).voidable) return null;
     const checked = await this.withdrawals.blockerOf(
-      {
-        batchId: workItem.batchId,
-        shipmentId: aggregate.shipment.id,
-        shipmentStatus: aggregate.shipment.status,
-        workItem,
-      },
+      { batchId, shipmentId: aggregate.shipment.id, shipmentStatus: aggregate.shipment.status, workItem },
       tx,
     );
-    return 'blocker' in checked ? null : { batchId: workItem.batchId, workItem };
+    return 'blocker' in checked ? null : { batchId, workItem };
+  }
+
+  /**
+   * 막힘 없음 갈래의 손질(스펙 §4.1 ①~③) — 즉시 취소와 대기 재개가 같이 쓴다. 시작 전 배치의 작업 항목을 빼고, `registered`
+   * 송장을 로컬 무효화하고(E10 과 같은 `waybills.void`, 한진 접수는 건드리지 않는다), planned 면 draft 로 되돌린다.
+   * 줄·manifestVersion 은 건드리지 않는다 — 그건 뒤따르는 draft 취소의 몫이다.
+   */
+  private async settleForCancellation(
+    aggregate: ShipmentAggregate,
+    ready: Extract<CancelReadiness, { kind: 'ready' }>,
+    ctx: { actor: ShipmentPlanningActor; operationId: string; reason: string },
+    tx: DbTx,
+  ): Promise<void> {
+    const shipmentId = aggregate.shipment.id;
+    if (ready.unstartedWorkItem) {
+      const excluded = await this.withdrawals.excludeUnstarted(ready.unstartedWorkItem, ctx.reason, tx);
+      await this.auditCommand(
+        tx,
+        ctx.actor,
+        'outbound_batch.shipment.exclude_for_cancel',
+        ctx.operationId,
+        ctx.reason,
+        {
+          shipmentId,
+          workItemId: excluded.id,
+          batchId: excluded.batchId,
+        },
+      );
+    }
+    if (ready.voidWaybill) {
+      await this.withdrawals.voidWaybillForCancel(
+        shipmentId,
+        { actorId: ctx.actor.id, idempotencyKey: `cancel-exit:${ctx.operationId}:${shipmentId}`, reason: 'canceled' },
+        tx,
+      );
+    }
+    if (aggregate.shipment.status === 'planned') {
+      await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'draft', plannedAt: null, lastUpdated: new Date() })
+        .where(eq(wmsTables.shipments.id, shipmentId));
+    }
   }
 
   private async applyDraftCancellation(
@@ -1458,64 +1513,6 @@ export class ShipmentPlanningService {
       .from(wmsTables.salesOrders)
       .where(inArray(wmsTables.salesOrders.id, ids));
     return rows.map((row) => row.shippingAddress);
-  }
-
-  private async requiresDurableReplan(aggregate: ShipmentAggregate, tx: DbTx): Promise<boolean> {
-    if (aggregate.shipment.status !== 'draft') return true;
-    if (aggregate.lines.some((line) => line.inspectedQty > 0)) return true;
-    const [waybill, workItem, consolidation, sessionBalance] = await Promise.all([
-      tx
-        .select({ id: wmsTables.waybills.id })
-        .from(wmsTables.waybills)
-        .where(
-          and(
-            eq(wmsTables.waybills.shipmentId, aggregate.shipment.id),
-            notInArray(wmsTables.waybills.status, [...WAYBILL_TERMINAL_STATUSES]),
-          ),
-        )
-        .limit(1),
-      tx
-        .select({ id: wmsTables.outboundBatchWorkItems.id })
-        .from(wmsTables.outboundBatchWorkItems)
-        .where(
-          and(
-            eq(wmsTables.outboundBatchWorkItems.shipmentId, aggregate.shipment.id),
-            inArray(wmsTables.outboundBatchWorkItems.status, [...ACTIVE_WORK_ITEM_STATUSES]),
-          ),
-        )
-        .limit(1),
-      tx
-        .select({ id: wmsTables.shipmentOperations.id })
-        .from(wmsTables.shipmentOperationMembers)
-        .innerJoin(
-          wmsTables.shipmentOperations,
-          eq(wmsTables.shipmentOperations.id, wmsTables.shipmentOperationMembers.operationId),
-        )
-        .where(
-          and(
-            eq(wmsTables.shipmentOperationMembers.shipmentId, aggregate.shipment.id),
-            eq(wmsTables.shipmentOperationMembers.role, 'target'),
-            eq(wmsTables.shipmentOperations.type, 'consolidate'),
-            eq(wmsTables.shipmentOperations.status, 'completed'),
-          ),
-        )
-        .limit(1),
-      tx
-        .select({ id: wmsTables.batchInventorySessionBalances.id })
-        .from(wmsTables.batchInventorySessionBalances)
-        .where(
-          and(
-            inArray(
-              wmsTables.batchInventorySessionBalances.shipmentLineId,
-              aggregate.lines.map((line) => line.id),
-            ),
-            gt(wmsTables.batchInventorySessionBalances.qty, 0),
-            ne(wmsTables.batchInventorySessionBalances.custodyType, 'SETTLED'),
-          ),
-        )
-        .limit(1),
-    ]);
-    return Boolean(waybill[0] || workItem[0] || consolidation[0] || sessionBalance[0]);
   }
 
   private assertRecipientComplete(value: unknown): void {

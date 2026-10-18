@@ -11,6 +11,56 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 const actor = { id: randomUUID(), roles: ['master'] };
 
+async function cancel(
+  wiring: ReturnType<typeof assembleOutbound>,
+  box: PickableShipmentFixture,
+  tx: DbTx,
+  qty?: number,
+) {
+  const [shipment] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, box.shipmentId));
+  const [line] = await tx
+    .select()
+    .from(wmsTables.shipmentLines)
+    .where(eq(wmsTables.shipmentLines.id, box.shipmentLineId));
+  return wiring.planning.cancelOutstanding(
+    box.shipmentId,
+    {
+      expectedManifestVersion: shipment.manifestVersion,
+      reason: '고객 취소',
+      lines: [{ shipmentLineId: line.id, expectedLineVersion: line.lineVersion, qty: qty ?? line.qty }],
+    },
+    `c-${randomUUID()}`,
+    actor,
+    tx,
+  );
+}
+
+async function workItemOf(tx: DbTx, workItemId: string) {
+  const [item] = await tx
+    .select()
+    .from(wmsTables.outboundBatchWorkItems)
+    .where(eq(wmsTables.outboundBatchWorkItems.id, workItemId));
+  return item;
+}
+
+async function shipmentOf(tx: DbTx, shipmentId: string) {
+  const [shipment] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, shipmentId));
+  return shipment;
+}
+
+async function waybillOf(tx: DbTx, waybillId: string) {
+  const [waybill] = await tx.select().from(wmsTables.waybills).where(eq(wmsTables.waybills.id, waybillId));
+  return waybill;
+}
+
+async function confirmedReservationQty(tx: DbTx, shipmentLineId: string) {
+  const rows = await tx
+    .select()
+    .from(wmsTables.stockReservations)
+    .where(eq(wmsTables.stockReservations.shipmentLineId, shipmentLineId));
+  return rows.filter((row) => row.status === 'confirmed').reduce((sum, row) => sum + row.quantity, 0);
+}
+
 describeIfDb('전체 취소 → 이탈 (스펙 §8 E10, PR 3)', () => {
   const { sql, db } = makeDb(DATABASE_URL as string);
   afterAll(async () => {
@@ -25,30 +75,6 @@ describeIfDb('전체 취소 → 이탈 (스펙 §8 E10, PR 3)', () => {
       tx,
     );
     return { first, second, wiring, sessionId: run.sessionId };
-  }
-
-  async function cancel(
-    wiring: ReturnType<typeof assembleOutbound>,
-    box: PickableShipmentFixture,
-    tx: DbTx,
-    qty?: number,
-  ) {
-    const [shipment] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, box.shipmentId));
-    const [line] = await tx
-      .select()
-      .from(wmsTables.shipmentLines)
-      .where(eq(wmsTables.shipmentLines.id, box.shipmentLineId));
-    return wiring.planning.cancelOutstanding(
-      box.shipmentId,
-      {
-        expectedManifestVersion: shipment.manifestVersion,
-        reason: '고객 취소',
-        lines: [{ shipmentLineId: line.id, expectedLineVersion: line.lineVersion, qty: qty ?? line.qty }],
-      },
-      `c-${randomUUID()}`,
-      actor,
-      tx,
-    );
   }
 
   const pickAll = (
@@ -243,6 +269,81 @@ describeIfDb('전체 취소 → 이탈 (스펙 §8 E10, PR 3)', () => {
         .from(wmsTables.shipments)
         .where(eq(wmsTables.shipments.id, second.shipmentId));
       expect(shipment.recoveryCode).toBe('CANCEL_REPLAN_PENDING');
+    });
+  });
+});
+
+// #1016 30번 — 시작 전 배치의 상자는 빠질 배치가 «시작되기 전»이라 이탈(E10)이 아니라 그 자리에서 끝낸다(스펙 §4.1).
+describeIfDb('시작 전 배치의 상자 취소 → 배치에서 빼고 그 자리에서 끝낸다 (#1016 30번)', () => {
+  const { sql, db } = makeDb(DATABASE_URL as string);
+  afterAll(async () => {
+    await sql.end({ timeout: 5 });
+  });
+
+  it('전량 취소하면 작업 항목 excluded·송장 voided·상자 canceled — 같은 배치의 다른 상자로 배치가 시작된다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, second } = await seedTwoBoxBatch(tx, 1, 10);
+      const wiring = assembleOutbound(tx);
+
+      const result = await cancel(wiring, first, tx);
+
+      expect(result.operationStatus).toBe('completed');
+      expect(await workItemOf(tx, first.workItemId)).toMatchObject({
+        status: 'excluded',
+        exclusionReason: '고객 취소',
+      });
+      expect(await shipmentOf(tx, first.shipmentId)).toMatchObject({ status: 'canceled', recoveryCode: null });
+      expect((await waybillOf(tx, first.waybillId)).status).toBe('voided');
+      expect(await confirmedReservationQty(tx, first.shipmentLineId)).toBe(0);
+      const [operation] = await tx
+        .select()
+        .from(wmsTables.shipmentOperations)
+        .where(eq(wmsTables.shipmentOperations.id, result.operationId));
+      expect(operation.status).toBe('completed');
+
+      const run = await wiring.picking.start(
+        { batchId: first.batchId, actorId: first.actorId, idempotencyKey: `s-${randomUUID()}` },
+        tx,
+      );
+      expect(run.sessionId).toBeTruthy();
+      const allocated = await tx
+        .select({ shipmentId: wmsTables.outboundBatchWorkItems.shipmentId })
+        .from(wmsTables.pickingSourceAllocations)
+        .innerJoin(
+          wmsTables.outboundBatchWorkItems,
+          eq(wmsTables.outboundBatchWorkItems.id, wmsTables.pickingSourceAllocations.workItemId),
+        )
+        .where(eq(wmsTables.outboundBatchWorkItems.batchId, first.batchId));
+      expect(new Set(allocated.map((row) => row.shipmentId))).toEqual(new Set([second.shipmentId]));
+      await assertFulfillmentInvariantsFor(tx, [first.shipmentId, second.shipmentId]);
+    });
+  });
+
+  it('일부 취소하면 배치에서 빠지고 draft 로 돌아간다 — 남은 몫은 다시 계획해야 한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first } = await seedTwoBoxBatch(tx, 1, 10);
+      const wiring = assembleOutbound(tx);
+
+      const result = await cancel(wiring, first, tx, 1); // 첫 박스는 수량 2
+
+      expect(result.operationStatus).toBe('completed');
+      expect(await workItemOf(tx, first.workItemId)).toMatchObject({
+        status: 'excluded',
+        exclusionReason: '고객 취소',
+      });
+      expect(await shipmentOf(tx, first.shipmentId)).toMatchObject({
+        status: 'draft',
+        plannedAt: null,
+        recoveryCode: null,
+      });
+      expect((await waybillOf(tx, first.waybillId)).status).toBe('voided');
+      const [line] = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.id, first.shipmentLineId));
+      expect(line).toMatchObject({ qty: 1, reservedQty: 1 });
+      expect(await confirmedReservationQty(tx, first.shipmentLineId)).toBe(1);
+      await assertFulfillmentInvariantsFor(tx, [first.shipmentId]);
     });
   });
 });

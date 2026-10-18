@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { and, eq, inArray } from 'drizzle-orm';
 import * as postgres from 'postgres';
@@ -18,7 +18,7 @@ import {
   wireLogistics,
   Wired,
 } from './__support__';
-import { FulfillmentCommandService } from './fulfillment-command.service';
+import { canonicalFulfillmentRequestHash, FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentPlanningService } from './shipment-planning.service';
@@ -119,7 +119,12 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
     };
   }
 
-  async function seedActiveWorkItem(tx: DbTx, warehouseId: string, shipmentId: string, waitingOperationId?: string) {
+  async function seedActiveWorkItem(
+    tx: DbTx,
+    warehouseId: string,
+    shipmentId: string,
+    options: { waitingOperationId?: string } = {},
+  ) {
     const [batch] = await tx
       .insert(wmsTables.outboundBatches)
       .values({
@@ -128,11 +133,79 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         pickingMethod: 'individual',
       })
       .returning();
+    const { waitingOperationId } = options;
     const [workItem] = await tx
       .insert(wmsTables.outboundBatchWorkItems)
       .values({ batchId: batch.id, shipmentId, waitingOperationId })
       .returning();
     return workItem;
+  }
+
+  async function seedWaybill(
+    tx: DbTx,
+    shipment: typeof wmsTables.shipments.$inferSelect,
+    status: 'registered' | 'pending',
+  ) {
+    const [waybill] = await tx
+      .insert(wmsTables.waybills)
+      .values({
+        shipmentId: shipment.id,
+        // manual 송장은 registered·used·voided 만 허용된다(ck_waybills_manual_status) — 발급 중은 carrier 로 심는다.
+        source: status === 'pending' ? 'carrier' : 'manual',
+        carrier: 'HANJIN',
+        status,
+        trackingNo: `planning-tracking-${randomUUID()}`,
+        manifestVersion: shipment.manifestVersion,
+        recipientHash: canonicalFulfillmentRequestHash(shipment.recipientSnapshot),
+      })
+      .returning();
+    return waybill;
+  }
+
+  /** 어느 배치에도 없는 planned 상자(전량 예약) — 송장은 status 로 심는다. */
+  async function plannedFixture(tx: DbTx, quantity: number, waybillStatus: 'registered' | 'pending' = 'registered') {
+    const fixture = await physicalFixture(tx, quantity, quantity);
+    const [shipment] = await tx
+      .update(wmsTables.shipments)
+      .set({ status: 'planned', plannedAt: new Date() })
+      .where(eq(wmsTables.shipments.id, fixture.shipment.id))
+      .returning();
+    const waybill = await seedWaybill(tx, shipment, waybillStatus);
+    return { ...fixture, shipment, waybill };
+  }
+
+  function cancelDto(
+    fixture: { shipment: { manifestVersion: number }; line: { id: string; lineVersion: number; qty: number } },
+    qty = fixture.line.qty,
+  ) {
+    return {
+      expectedManifestVersion: fixture.shipment.manifestVersion,
+      reason: '고객 취소',
+      lines: [{ shipmentLineId: fixture.line.id, expectedLineVersion: fixture.line.lineVersion, qty }],
+    };
+  }
+
+  async function confirmedQty(tx: DbTx, lineId: string): Promise<number> {
+    const rows = await tx
+      .select()
+      .from(wmsTables.stockReservations)
+      .where(
+        and(
+          eq(wmsTables.stockReservations.shipmentLineId, lineId),
+          eq(wmsTables.stockReservations.status, 'confirmed'),
+        ),
+      );
+    return rows.reduce((sum, row) => sum + row.quantity, 0);
+  }
+
+  async function shipmentRow(tx: DbTx, shipmentId: string) {
+    const [row] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, shipmentId));
+    return row;
+  }
+
+  async function waybillRow(tx: DbTx, waybillId: string) {
+    const [row] = await tx.select().from(wmsTables.waybills).where(eq(wmsTables.waybills.id, waybillId));
+    return row;
   }
 
   it('splits 10 into 6/4 unreserved-first, replays, and rejects a changed request for the same key', async () => {
@@ -343,14 +416,12 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
     });
   });
 
-  it('stores a durable cancellation intent when a Planned shipment must reopen', async () => {
+  // #1016 30번 이후 시작된 배치 밖 planned 상자는 그 자리에서 끝나므로, 대기는 «막힘»(여기선 발급 중인 송장)이 있을 때만 남는다.
+  // 시작된 배치의 일부 취소 대기는 batch-cancel-withdraw.integration.spec 의 E11 이 지킨다.
+  it('stores a durable cancellation intent when a Planned shipment must wait for its issuing waybill', async () => {
     await inRollbackTx(db, async (tx) => {
-      const fixture = await physicalFixture(tx, 3, 3);
+      const fixture = await plannedFixture(tx, 3, 'pending');
       const workItem = await seedActiveWorkItem(tx, fixture.warehouseId, fixture.shipment.id);
-      await tx
-        .update(wmsTables.shipments)
-        .set({ status: 'planned' })
-        .where(eq(wmsTables.shipments.id, fixture.shipment.id));
       const key = `pending-cancel-${randomUUID()}`;
       const result = await planning.cancelOutstanding(
         fixture.shipment.id,
@@ -408,7 +479,9 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         idempotencyKey: `existing-wait-${randomUUID()}`,
         requestHash: '0'.repeat(64),
       });
-      const workItem = await seedActiveWorkItem(tx, fixture.warehouseId, fixture.shipment.id, existingOperationId);
+      const workItem = await seedActiveWorkItem(tx, fixture.warehouseId, fixture.shipment.id, {
+        waitingOperationId: existingOperationId,
+      });
       await tx
         .update(wmsTables.shipments)
         .set({ status: 'planned' })
@@ -453,6 +526,155 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
       expect(unchangedWorkItem.waitingOperationId).toBe(existingOperationId);
       expect(unchangedShipment.status).toBe('planned');
       expect(rolledBackCommand).toBeUndefined();
+    });
+  });
+
+  // #1016 30번 — 시작된 배치 밖 상자의 취소는 그 자리에서 끝난다(스펙 §4.1).
+  it('cancels a planned shipment outside any batch immediately and voids its registered waybill', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await plannedFixture(tx, 3);
+
+      const result = await planning.cancelOutstanding(
+        fixture.shipment.id,
+        cancelDto(fixture),
+        `immediate-planned-cancel-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      expect(result.operationStatus).toBe('completed');
+      expect(await shipmentRow(tx, fixture.shipment.id)).toMatchObject({ status: 'canceled', recoveryCode: null });
+      expect((await waybillRow(tx, fixture.waybill.id)).status).toBe('voided');
+      expect(await confirmedQty(tx, fixture.line.id)).toBe(0);
+      const [operation] = await tx
+        .select()
+        .from(wmsTables.shipmentOperations)
+        .where(eq(wmsTables.shipmentOperations.id, result.operationId));
+      expect(operation.status).toBe('completed');
+    });
+  });
+
+  it('partial cancel of a planned shipment returns it to draft', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await plannedFixture(tx, 3);
+
+      const result = await planning.cancelOutstanding(
+        fixture.shipment.id,
+        cancelDto(fixture, 1),
+        `partial-planned-cancel-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      expect(result.operationStatus).toBe('completed');
+      expect(await shipmentRow(tx, fixture.shipment.id)).toMatchObject({
+        status: 'draft',
+        plannedAt: null,
+        recoveryCode: null,
+      });
+      expect((await waybillRow(tx, fixture.waybill.id)).status).toBe('voided');
+      const [line] = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.id, fixture.line.id));
+      expect(line).toMatchObject({ qty: 2, reservedQty: 2 });
+      expect(await confirmedQty(tx, fixture.line.id)).toBe(2);
+    });
+  });
+
+  it('voids a registered waybill on a draft box and cancels immediately', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await physicalFixture(tx, 2, 2);
+      const waybill = await seedWaybill(tx, fixture.shipment, 'registered');
+
+      const result = await planning.cancelOutstanding(
+        fixture.shipment.id,
+        cancelDto(fixture),
+        `draft-waybill-cancel-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      expect(result.operationStatus).toBe('completed');
+      expect((await shipmentRow(tx, fixture.shipment.id)).status).toBe('canceled');
+      expect((await waybillRow(tx, waybill.id)).status).toBe('voided');
+    });
+  });
+
+  it('keeps a planned shipment pending while its waybill is still being issued', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await plannedFixture(tx, 2, 'pending');
+
+      const result = await planning.cancelOutstanding(
+        fixture.shipment.id,
+        cancelDto(fixture),
+        `issuing-waybill-cancel-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      expect(result.operationStatus).toBe('pending');
+      expect(await shipmentRow(tx, fixture.shipment.id)).toMatchObject({
+        status: 'recovery_required',
+        recoveryCode: 'CANCEL_REPLAN_PENDING',
+      });
+      expect((await waybillRow(tx, fixture.waybill.id)).status).toBe('pending');
+      expect(await confirmedQty(tx, fixture.line.id)).toBe(2);
+    });
+  });
+
+  it('replays an immediate planned cancellation without voiding twice', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await plannedFixture(tx, 2);
+      const key = `replay-planned-cancel-${randomUUID()}`;
+
+      const first = await planning.cancelOutstanding(fixture.shipment.id, cancelDto(fixture), key, actor, tx);
+      const second = await planning.cancelOutstanding(fixture.shipment.id, cancelDto(fixture), key, actor, tx);
+
+      expect(first.operationStatus).toBe('completed');
+      expect(second).toEqual(first);
+      const voided = await tx
+        .select()
+        .from(wmsTables.waybills)
+        .where(and(eq(wmsTables.waybills.shipmentId, fixture.shipment.id), eq(wmsTables.waybills.status, 'voided')));
+      expect(voided).toHaveLength(1);
+      const voidCommands = await tx
+        .select()
+        .from(wmsTables.fulfillmentCommandRequests)
+        .where(
+          eq(
+            wmsTables.fulfillmentCommandRequests.idempotencyKey,
+            `cancel-exit:${first.operationId}:${fixture.shipment.id}`,
+          ),
+        );
+      expect(voidCommands).toHaveLength(1);
+    });
+  });
+
+  it('requires SHIPMENT_REOPEN to cancel a planned shipment immediately', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await plannedFixture(tx, 2);
+      // makePlanningService 의 스코프 조회는 master 만 안다 — 다른 역할은 SHIPMENT_REOPEN 이 없다.
+      const worker = { id: randomUUID(), roles: ['logistics_worker'] };
+
+      let error: unknown;
+      try {
+        await tx.transaction((nestedTx) =>
+          planning.cancelOutstanding(
+            fixture.shipment.id,
+            cancelDto(fixture),
+            `unscoped-planned-cancel-${randomUUID()}`,
+            worker,
+            nestedTx as unknown as DbTx,
+          ),
+        );
+      } catch (caught) {
+        error = caught;
+      }
+
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect((await shipmentRow(tx, fixture.shipment.id)).status).toBe('planned');
+      expect((await waybillRow(tx, fixture.waybill.id)).status).toBe('registered');
     });
   });
 
