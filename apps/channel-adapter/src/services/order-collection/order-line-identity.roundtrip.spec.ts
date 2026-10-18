@@ -164,16 +164,8 @@ describe('external order-line identity real component round trip', () => {
       })),
     };
     const coreDb = { run: jest.fn((fn: (tx: unknown) => unknown) => fn(coreTx)) };
-    const policies = {
-      getVariantPolicy: jest.fn().mockResolvedValue({
-        inventoryManagement: false,
-        preStockSellable: false,
-        alwaysSellableZeroStock: false,
-      }),
-    };
     const salesOrders = new SalesOrdersService(
       coreDb as never,
-      policies as never,
       { enqueue: jest.fn().mockResolvedValue(undefined) } as never,
       { enqueue: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,

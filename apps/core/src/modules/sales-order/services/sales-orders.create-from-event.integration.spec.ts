@@ -11,13 +11,13 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 
 /**
- * createFromEvent 는 라인 없이 부르면 policies·매칭 계열을 타지 않는다. 실제로 쓰는 건
+ * createFromEvent 는 라인 없이 부르면 매칭 계열을 타지 않는다. 실제로 쓰는 건
  * db 와 아웃박스 enqueue 뿐이라 나머지는 빈 목으로 충분하다.
  */
 function makeService(db: PostgresJsDatabase<typeof wmsSchema>): SalesOrdersService {
   const noop = {} as never;
   const outbox = { enqueue: async () => undefined } as never;
-  return new SalesOrdersService(makeDbService(db), noop, outbox, noop, noop, noop, noop, noop);
+  return new SalesOrdersService(makeDbService(db), outbox, noop, noop, noop, noop, noop);
 }
 
 function payload(over: Partial<OrderCreatedPayload> = {}): OrderCreatedPayload {

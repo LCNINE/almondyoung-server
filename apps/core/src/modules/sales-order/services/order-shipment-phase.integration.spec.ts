@@ -169,7 +169,6 @@ describeIfDb('orderShipmentPhaseSql (PostgreSQL integration)', () => {
         {} as never,
         {} as never,
         {} as never,
-        {} as never,
       );
       const pointOf = async () => (await service.getDailyStatusStats(bucket, bucket)).series[0];
       const before = await pointOf();

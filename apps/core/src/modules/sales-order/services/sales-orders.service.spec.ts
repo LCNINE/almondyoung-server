@@ -94,17 +94,9 @@ describe('SalesOrdersService external order-line identity', () => {
       })),
     };
     const db = { run: jest.fn((fn: (trx: any) => unknown, explicitTx?: any) => fn(explicitTx ?? tx)) };
-    const policies = {
-      getVariantPolicy: jest.fn().mockResolvedValue({
-        inventoryManagement: false,
-        preStockSellable: false,
-        alwaysSellableZeroStock: false,
-      }),
-    };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const service = new SalesOrdersService(
       db as any,
-      policies as any,
       outbox as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
       outbox as unknown as PublisherFor<typeof CORE_ORDER_STREAM>,
       {} as any,
@@ -482,7 +474,6 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
 
     const service = new SalesOrdersService(
       db as any,
-      {} as any,
       outbox as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
       outbox as unknown as PublisherFor<typeof CORE_ORDER_STREAM>,
       reservationLifecycle as any,
@@ -670,7 +661,6 @@ describe('SalesOrdersService.update accepted contract immutability', () => {
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const service = new SalesOrdersService(
       db as any,
-      {} as any,
       outbox as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
       outbox as unknown as PublisherFor<typeof CORE_ORDER_STREAM>,
       {} as any,
@@ -908,7 +898,6 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
     const productSellableQuantity = { recalculateAndPublishForSku: jest.fn().mockResolvedValue(undefined) };
     const service = new SalesOrdersService(
       db as any,
-      {} as any,
       outbox as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
       outbox as unknown as PublisherFor<typeof CORE_ORDER_STREAM>,
       {} as any,
@@ -1921,7 +1910,6 @@ describe('SalesOrdersService business links', () => {
     };
     const service = new SalesOrdersService(
       db as any,
-      {} as any,
       {} as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
       {} as unknown as PublisherFor<typeof CORE_ORDER_STREAM>,
       {} as any,
@@ -2149,7 +2137,6 @@ describe('SalesOrdersService.cancel full cancel shipped evidence guard', () => {
 
     const service = new SalesOrdersService(
       db as any,
-      {} as any,
       outbox as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
       outbox as unknown as PublisherFor<typeof CORE_ORDER_STREAM>,
       reservationLifecycle as any,
@@ -2234,7 +2221,6 @@ describe('SalesOrdersService.confirm() state guard', () => {
 
     const service = new SalesOrdersService(
       db as any,
-      {} as any,
       outbox as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
       outbox as unknown as PublisherFor<typeof CORE_ORDER_STREAM>,
       {} as any,
@@ -2309,7 +2295,6 @@ describe('SalesOrdersService.confirm() state guard', () => {
     };
     const service = new SalesOrdersService(
       db as any,
-      {} as any,
       {} as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
       {} as unknown as PublisherFor<typeof CORE_ORDER_STREAM>,
       {} as any,
@@ -2384,7 +2369,6 @@ describe('SalesOrdersService.getStats() — 출고완료 FO 도출 (작업 15)',
     const db = { db: { select: () => builder() } };
     return new SalesOrdersService(
       db as any,
-      {} as any,
       {} as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
       {} as unknown as PublisherFor<typeof CORE_ORDER_STREAM>,
       {} as any,

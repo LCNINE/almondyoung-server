@@ -173,14 +173,6 @@ export const orderStatusEnum = pgEnum('order_status', [
   'timeout', // 타임아웃
 ]);
 
-export const orderItemStatusEnum = pgEnum('order_item_status', [
-  'pending', // 대기 중
-  'matched', // 재고 매칭 완료
-  'stock_deducted', // 재고 차감 완료
-  'stock_unavailable', // 재고 부족
-  'cancelled', // 취소
-]);
-
 export const salesChannelEnum = pgEnum('sales_channel', [
   'medusa', // 메두사 (자체 몰)
   'naver', // 네이버 스마트스토어
@@ -1395,12 +1387,6 @@ export const salesOrderLines = pgTable(
     // TODO(outbound-v2-contract Task 25): trusted post-cutover channel orders require channelOrderItemId.
     channelOrderItemId: varchar('channel_order_item_id', { length: 255 }),
     channelProductId: varchar('channel_product_id', { length: 255 }),
-
-    status: orderItemStatusEnum('status').notNull().default('pending'),
-    suggestedQuantity: integer('suggested_quantity'), // 부분 수량 제안
-    unavailableSkuIds: json('unavailable_sku_ids'), // 부족한 SKU 정보
-
-    deductedAt: timestamp('deducted_at', { withTimezone: true }), // 재고 차감 시간
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

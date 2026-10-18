@@ -12,7 +12,7 @@ const describeIfDb = DATABASE_URL ? describe : describe.skip;
 // list() 는 this.db.run(fn, tx) 만 쓰므로 나머지 의존성은 미사용 → 빈 목으로 충분.
 function makeService(db: PostgresJsDatabase<typeof wmsSchema>): SalesOrdersService {
   const noop = {} as never;
-  return new SalesOrdersService(makeDbService(db), noop, noop, noop, noop, noop, noop, noop);
+  return new SalesOrdersService(makeDbService(db), noop, noop, noop, noop, noop, noop);
 }
 
 async function insertOrder(
@@ -48,7 +48,6 @@ async function insertLine(
   tx: DbTx,
   salesOrderId: string,
   l: Partial<{
-    status: 'pending' | 'matched' | 'stock_deducted' | 'stock_unavailable' | 'cancelled';
     productName: string;
   }> = {},
 ): Promise<void> {
@@ -58,7 +57,6 @@ async function insertLine(
     productName: l.productName ?? 'IT Product',
     quantity: 1,
     unitPrice: 1000,
-    status: l.status ?? 'pending',
   });
 }
 
@@ -131,24 +129,6 @@ describeIfDb('SalesOrdersService.list — server-side filters (DB integration, r
     });
   });
 
-  it('typeGroup: ready / partial / hold 는 죽은 라인 상태 필터라 늘 빈 결과다(옛 화면이 400 을 받지 않게 값은 남긴다)', async () => {
-    await run(async (tx, svc, tag) => {
-      const ready = await insertOrder(tx, { channelOrderId: `${tag}-ready` });
-      await insertLine(tx, ready, { status: 'stock_deducted' });
-      const partial = await insertOrder(tx, { channelOrderId: `${tag}-partial` });
-      await insertLine(tx, partial, { status: 'stock_deducted' });
-      await insertLine(tx, partial, { status: 'pending' });
-      const hold = await insertOrder(tx, { channelOrderId: `${tag}-hold` });
-      await insertLine(tx, hold, { status: 'stock_unavailable' });
-
-      for (const typeGroup of ['ready', 'partial', 'hold'] as const) {
-        const res = await listByKeyword(svc, tx, { keyword: tag, typeGroup });
-        expect(res.data).toEqual([]);
-        expect(res.total).toBe(0);
-      }
-    });
-  });
-
   it('목록 data[].shipmentPhase — 페이지 주문마다 출고 단계가 실린다', async () => {
     await run(async (tx, svc, tag) => {
       const pending = await insertOrder(tx, { channelOrderId: `${tag}-p`, status: 'pending' });
@@ -163,25 +143,6 @@ describeIfDb('SalesOrdersService.list — server-side filters (DB integration, r
       expect(phaseById.get(preparing)).toBe('preparing');
       expect(phaseById.get(cancelled)).toBe('cancelled');
       expect(phaseById.get(external)).toBe('external_shipped');
-    });
-  });
-
-  it('응답 라인에는 죽은 라인 상태 필드가 없다(목록·상세 모두)', async () => {
-    await run(async (tx, svc, tag) => {
-      const id = await insertOrder(tx, { channelOrderId: `${tag}-l`, status: 'confirmed' });
-      await insertLine(tx, id, { status: 'stock_unavailable' });
-      const dead = ['status', 'suggestedQuantity', 'unavailableSkuIds', 'deductedAt'];
-
-      const list = await listByKeyword(svc, tx, { keyword: tag });
-      const listLine = list.data[0].lines[0] as Record<string, unknown>;
-      const one = await svc.getOne(id, tx);
-      const oneLine = one!.lines[0] as Record<string, unknown>;
-      for (const key of dead) {
-        expect(listLine).not.toHaveProperty(key);
-        expect(oneLine).not.toHaveProperty(key);
-      }
-      expect(listLine).toHaveProperty('matchingResolved');
-      expect(oneLine).toHaveProperty('matchingResolved');
     });
   });
 
