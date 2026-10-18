@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { databaseNow } from '../picking/allocation/allocation.queries';
@@ -11,7 +11,7 @@ import { BoxAllocationManager } from './box-allocation.manager';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { ShortPickExitService } from './short-pick-exit.service';
 import { ToteLifecycleService } from './tote-lifecycle.service';
-import { WITHDRAWABLE_WORK_ITEM_STATUSES, WorkItemExitTo } from './work-item-status';
+import { ACTIVE_WORK_ITEM_STATUSES, WITHDRAWABLE_WORK_ITEM_STATUSES, WorkItemExitTo } from './work-item-status';
 
 export type WorkItemRow = typeof wmsTables.outboundBatchWorkItems.$inferSelect;
 const WI = wmsTables.outboundBatchWorkItems;
@@ -48,6 +48,9 @@ function conflict(code: string, message: string): ConflictException {
  * 되돌림 바구니로 들어갈 때 배정이 준다 — 배정 합이 0 이 되는 트랜잭션에서 나간다.
  * 호출자: 운영자 빼기(`OutboundBatchOrchestrator.excludeShipment`), 전체 취소(`ShipmentPlanningService.cancelOutstanding`),
  * 되돌림(`BoxReturnService`, 토탈피킹 전략의 카트 여분). PR 4 의 «결품 못 채움» 도 여기로 온다.
+ *
+ * 시작 전 배치에서 빼기(`excludeUnstarted`)와 취소 송장의 로컬 무효화(`voidWaybillForCancel`)도 여기 있다 — 운영자 빼기와
+ * 출고 취소가 같은 동작을 쓰게 하려고.
  *
  * 계획·오케스트레이터를 모른다(그 둘이 이 서비스를 주입받는다). 그래서 `canceled` 로 나간 박스의 취소 완료
  * (`ShipmentPlanningService.finishWithdrawnCancellation`)와 `draft` 로 나간 박스의 대기 오퍼레이션 재개는 호출자가 한다.
@@ -215,7 +218,17 @@ export class BoxWithdrawalService {
     );
     // canceled 로 나가는 박스의 종이는 영영 쓰이지 않는다 — 로컬 무효화(캐리어 호출 없음, 결품 처리와 같다).
     // 취소 오퍼레이션의 완료는 호출자가 이어서 한다(ShipmentPlanningService.finishWithdrawnCancellation).
-    if (excluded.exitTo === 'canceled') await this.voidWaybillForCanceledExit(excluded.shipmentId, ctx, trx);
+    if (excluded.exitTo === 'canceled') {
+      await this.voidWaybillForCancel(
+        excluded.shipmentId,
+        {
+          actorId: ctx.actorId,
+          idempotencyKey: `withdrawal-exit:${ctx.operationId}:${excluded.shipmentId}`,
+          reason: 'withdrawn:canceled',
+        },
+        trx,
+      );
+    }
     if (shortPick) await this.shortPicks.finish(shortPick, ctx, trx);
     await this.audit.logUserActionRequired(
       'outbound_batch.shipment.exit',
@@ -260,9 +273,13 @@ export class BoxWithdrawalService {
     return { active, voidable: isVoidableOnExit(active) };
   }
 
-  private async voidWaybillForCanceledExit(
+  /**
+   * 취소로 끝나는 박스의 송장을 로컬 무효화한다(캐리어 호출 없음). 활성 송장이 없으면 아무것도 하지 않고, `registered` 가
+   * 아니면 `WITHDRAWAL_WAYBILL_NOT_VOIDABLE`. 멱등 키·사유는 호출자가 정한다 — 같은 키로 다시 부르면 무효화 명령이 재생된다.
+   */
+  async voidWaybillForCancel(
     shipmentId: string,
-    ctx: { actorId: string; operationId: string },
+    ctx: { actorId: string; idempotencyKey: string; reason: string },
     trx: DbTx,
   ): Promise<void> {
     const { active, voidable } = await this.exitWaybill(shipmentId, trx);
@@ -275,11 +292,113 @@ export class BoxWithdrawalService {
     }
     await this.waybills.void(
       active.id,
-      { reason: 'withdrawn:canceled' },
-      `withdrawal-exit:${ctx.operationId}:${shipmentId}`,
+      { reason: ctx.reason },
+      ctx.idempotencyKey,
       { id: ctx.actorId, roles: [] },
       trx,
     );
+  }
+
+  /** 시작 전 배치에서 빼는 걸 막는 사유. 없으면 null. 호출자가 구성요소를 잠갔다. */
+  async unstartedExitBlocker(
+    input: { shipmentId: string; shipmentStatus: string; lines: ReadonlyArray<{ inspectedQty: number }> },
+    trx: DbTx,
+  ): Promise<{ code: string; message: string } | null> {
+    const [attempt, custody, allocated, toteAssignment] = await Promise.all([
+      trx
+        .select({ id: wmsTables.dispatchAttempts.id })
+        .from(wmsTables.dispatchAttempts)
+        .where(
+          and(
+            eq(wmsTables.dispatchAttempts.shipmentId, input.shipmentId),
+            ne(wmsTables.dispatchAttempts.status, 'recalled'),
+          ),
+        )
+        .limit(1),
+      this.hasUnsettledCustody(input.shipmentId, trx),
+      this.hasLiveAllocation(input.shipmentId, trx),
+      trx
+        .select({ id: wmsTables.shipmentToteAssignments.id })
+        .from(wmsTables.shipmentToteAssignments)
+        .where(
+          and(
+            eq(wmsTables.shipmentToteAssignments.shipmentId, input.shipmentId),
+            isNull(wmsTables.shipmentToteAssignments.releasedAt),
+          ),
+        )
+        .limit(1),
+    ]);
+    if (attempt[0] || ['shipped', 'in_transit', 'delivered'].includes(input.shipmentStatus)) {
+      return { code: 'WORK_ITEM_DISPATCH_EXISTS', message: 'A dispatched shipment cannot be excluded from a batch' };
+    }
+    if (custody || input.lines.some((line) => line.inspectedQty > 0)) {
+      return {
+        code: 'WORK_ITEM_UNPICK_REQUIRED',
+        message: 'Shipment custody must be returned by the batch inventory session before exclusion',
+      };
+    }
+    if (toteAssignment[0]) {
+      return {
+        code: 'WORK_ITEM_TOTE_RELEASE_REQUIRED',
+        message: 'Active physical tote assignments must be released before exclusion',
+      };
+    }
+    if (allocated) {
+      return { code: 'WORK_ITEM_ALLOCATED', message: 'Work item holds picking allocations; use short-pick recovery' };
+    }
+    return null;
+  }
+
+  /** 활성 작업 항목(완료·제외 아님)에 남은 배정이 있는가. 옛 «활성 계획 구성원» 검사의 자리다(ADR-0041). */
+  async hasLiveAllocation(shipmentId: string, trx: DbTx): Promise<boolean> {
+    const [row] = await trx
+      .select({ id: A.id })
+      .from(A)
+      .innerJoin(WI, eq(WI.id, A.workItemId))
+      .where(and(eq(WI.shipmentId, shipmentId), notInArray(WI.status, ['completed', 'excluded']), gt(A.qty, 0)))
+      .limit(1);
+    return Boolean(row);
+  }
+
+  /** 박스의 줄에 정산 안 된 배치 보관이 남았는가. */
+  async hasUnsettledCustody(shipmentId: string, trx: DbTx): Promise<boolean> {
+    const B = wmsTables.batchInventorySessionBalances;
+    const [row] = await trx
+      .select({ id: B.id })
+      .from(B)
+      .innerJoin(wmsTables.shipmentLines, eq(wmsTables.shipmentLines.id, B.shipmentLineId))
+      .where(and(eq(wmsTables.shipmentLines.shipmentId, shipmentId), gt(B.qty, 0), ne(B.custodyType, 'SETTLED')))
+      .limit(1);
+    return Boolean(row);
+  }
+
+  /**
+   * 시작 전 배치의 작업 항목을 그 자리에서 `excluded` 로 둔다 — 반납할 배정이 없으니 이탈(`begin`)을 거치지 않는다.
+   * 호출자가 배치가 시작 전임을 확인하고 `unstartedExitBlocker` 를 통과시켰다. 그새 바뀌었으면 `WORK_ITEM_STALE_LEASE_VERSION`.
+   */
+  async excludeUnstarted(workItem: WorkItemRow, reason: string, trx: DbTx): Promise<WorkItemRow> {
+    const now = await databaseNow(trx);
+    const [excluded] = await trx
+      .update(WI)
+      .set({
+        status: 'excluded',
+        exclusionReason: reason,
+        pickerReleasedAt: workItem.status === 'picking' ? now : workItem.pickerReleasedAt,
+        packerReleasedAt: workItem.status === 'packing' ? now : workItem.packerReleasedAt,
+        leaseExpiresAt: null,
+        leaseVersion: workItem.leaseVersion + 1,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(WI.id, workItem.id),
+          eq(WI.leaseVersion, workItem.leaseVersion),
+          inArray(WI.status, [...ACTIVE_WORK_ITEM_STATUSES]),
+        ),
+      )
+      .returning();
+    if (!excluded) throw conflict('WORK_ITEM_STALE_LEASE_VERSION', `Work item ${workItem.id} claim version changed`);
+    return excluded;
   }
 
   /** 이미 빼는 중 — 전체 취소만 draft → canceled 로 올린다(정한 것 5). 결품을 기다리던 박스는 취소가 넘겨받는다(PR 4 계획이 정함 7). */
