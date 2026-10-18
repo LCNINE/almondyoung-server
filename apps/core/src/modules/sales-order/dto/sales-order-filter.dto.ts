@@ -13,9 +13,10 @@ type SalesChannelEnum = (typeof salesChannelValues)[number];
 export const ORDER_TYPE_GROUPS = [
   'all', // 전체
   'pending', // 주문 미확정
-  'ready', // 완전출고 (모든 라인 재고차감)
-  'partial', // 부분출고 (일부 라인만 재고차감)
-  'hold', // 출고불가 (재고부족 라인 존재)
+  // ready·partial·hold 는 옛 화면 호환용이다 — 라인 상태를 쓰는 생산자가 없어 늘 빈 결과를 낸다(#1016 15번). ⓑ-2 에서 제거.
+  'ready', // (옛) 완전출고
+  'partial', // (옛) 부분출고
+  'hold', // (옛) 출고불가
   'unmatched', // 매칭안됨 (매칭이 없어 FO 생성을 기다리는 주문)
   'direct', // 직배송 (drop_ship FO 존재)
 ] as const;

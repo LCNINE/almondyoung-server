@@ -35,44 +35,6 @@ import { orders } from '@/lib/api/domains';
 import type { UpdateSalesOrderDto } from '@/lib/types/dto/orders';
 
 /**
- * 주문 분할 (나누기)
- * 한 주문을 여러 주문으로 분할
- * - 동일한 주문번호 유지 (channelOrderId는 동일)
- * - 수령자명 뒤에 -1, -2 등 추가
- *
- * TODO: Core에 주문 분할/출고 조정 워크플로우 추가 필요
- */
-export const splitOrder = async (params: {
-  orderId: string;
-  selectedLineIds: string[];
-  originalOrder: any;
-}): Promise<{ success: boolean; newOrderId?: string; error?: string }> => {
-  // TODO: Core 워크플로우 API 추가 후 구현
-  return {
-    success: false,
-    error: 'Core API 추가 필요: 주문 분할/출고 조정 워크플로우',
-  };
-};
-
-/**
- * 수량 나누기
- * 특정 상품의 수량을 새 주문으로 분리
- *
- * TODO: Core에 주문 분할/출고 조정 워크플로우 추가 필요
- */
-export const splitQuantity = async (params: {
-  orderId: string;
-  splits: Array<{ lineId: string; splitQty: number }>;
-  originalOrder: any;
-}): Promise<{ success: boolean; newOrderId?: string; error?: string }> => {
-  // TODO: Core 워크플로우 API 추가 후 구현
-  return {
-    success: false,
-    error: 'Core API 추가 필요: 주문 분할/출고 조정 워크플로우',
-  };
-};
-
-/**
  * 주문 정보 수정 (입력확인)
  *
  * 현재는 메모만 수정 가능

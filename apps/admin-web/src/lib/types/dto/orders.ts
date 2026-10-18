@@ -93,6 +93,8 @@ export interface SalesOrderDto {
   isMerged: boolean;
   orderDate: Date;
   walletIntentId?: string | null;
+  /** 출고 단계 — core 가 정해 싣는다. 읽을 땐 toShipmentPhase 로 좁힌다(옛 응답엔 없다) */
+  shipmentPhase?: string;
   lines: {
     variantId: string;
     matchingResolved?: boolean;
@@ -409,6 +411,8 @@ export interface DailyOrderStatusDto {
     preparing: number;
     shipping: number;
     delivered: number;
+    /** 외부(셀메이트 등)에서 출고·배송완료 처리된 주문 — 준비중·배송중·배송완료에는 세지 않는다 */
+    externalShipped: number;
     cancelled: number;
     exchange: number;
     return: number;
@@ -431,9 +435,6 @@ export interface OrderStatsDto {
 export type OrderTypeGroup =
   | 'all'
   | 'pending'
-  | 'ready'
-  | 'partial'
-  | 'hold'
   | 'unmatched'
   | 'direct';
 export type OrderKeywordType =

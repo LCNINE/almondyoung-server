@@ -123,7 +123,7 @@ function setup() {
   const add = (overrides: Partial<PrintOrderRow> = {}) => {
     const r = row(overrides);
     store.put(r);
-    store.lines.set(r.salesOrderLineId, { salesOrderStatus: 'confirmed', lineStatus: 'pending', quantity: 2 });
+    store.lines.set(r.salesOrderLineId, { salesOrderStatus: 'confirmed', quantity: 2 });
     return r;
   };
   return { store, repo, manager, add };
@@ -274,7 +274,7 @@ describe('PrintOrderAdminManager', () => {
     it('cancelled: skips the sales cancel when the sales order is already cancelled (channel cancel)', async () => {
       const { store, manager, add } = setup();
       const r = add(refused);
-      store.lines.set(r.salesOrderLineId, { salesOrderStatus: 'cancelled', lineStatus: 'cancelled', quantity: 2 });
+      store.lines.set(r.salesOrderLineId, { salesOrderStatus: 'cancelled', quantity: 2 });
       const out = await manager.resolveCancel(r.id, 'cancelled', ACTOR);
       expect(store.get(r.id).status).toBe('cancelled');
       await expect(manager.salesCancelTarget(out.row)).resolves.toBeNull();

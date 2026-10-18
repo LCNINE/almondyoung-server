@@ -11,16 +11,8 @@ import { orders } from '@/lib/api/domains';
 import { useVariantsBatch } from '@/lib/services/products';
 import { formatCustomerOrderNo } from '@/features/order/history/utils/customer-order-no';
 import { AlmondDesignPrintCard } from '@/features/orders/almond-design/almond-design-print-card';
+import { shipmentPhaseLabel, toShipmentPhase } from '@/lib/api/domains/orders/shipment-phase.shape';
 import { useMedusaOrderById } from '@/lib/services/medusa-customers/queries';
-
-// orderItemStatus enum → 한글 라벨
-const LINE_STATUS_LABEL: Record<string, string> = {
-  pending: '매칭대기',
-  matched: '매칭완료',
-  stock_deducted: '재고차감(출고가능)',
-  stock_unavailable: '재고부족',
-  cancelled: '취소',
-};
 
 function formatWon(v?: number | null): string {
   if (v === undefined || v === null) return '-';
@@ -160,6 +152,13 @@ export default function CsOrderLookup() {
           <Field label="내부 주문 ID" value={order.channelOrderId ?? '-'} />
           <Field label="판매채널" value={formatChannel(order.salesChannel)} />
           <Field label="주문상태" value={order.status} />
+          {/* 단계는 core 가 정한다. 옛 응답이면 «모름» — 빈 칸 대신 칸을 감춘다. */}
+          {shipmentPhaseLabel(toShipmentPhase(order.shipmentPhase)) && (
+            <Field
+              label="출고 단계"
+              value={shipmentPhaseLabel(toShipmentPhase(order.shipmentPhase))}
+            />
+          )}
           <Field
             label="주문일시"
             value={
@@ -204,13 +203,12 @@ export default function CsOrderLookup() {
               <th className="p-2 text-right">수량</th>
               <th className="p-2 text-right">단가</th>
               <th className="p-2 text-right">금액</th>
-              <th className="p-2">상태</th>
             </tr>
           </thead>
           <tbody>
             {lines.length === 0 && (
               <tr>
-                <td colSpan={6} className="p-4 text-center text-gray-400">
+                <td colSpan={5} className="p-4 text-center text-gray-400">
                   상품 정보가 없습니다.
                 </td>
               </tr>
@@ -236,15 +234,10 @@ export default function CsOrderLookup() {
                   <td className="p-2 text-right">{line.quantity ?? '-'}</td>
                   <td className="p-2 text-right">{formatWon(line.unitPrice)}</td>
                   <td className="p-2 text-right">{formatWon(line.totalPrice)}</td>
-                  <td className="p-2 text-gray-600">
-                    {LINE_STATUS_LABEL[line.status as string] ??
-                      line.status ??
-                      '-'}
-                  </td>
                 </tr>
                 {almondDesignId && (
                   <tr className="border-b border-gray-100">
-                    <td colSpan={6} className="px-2 pb-3">
+                    <td colSpan={5} className="px-2 pb-3">
                       <AlmondDesignPrintCard
                         designId={almondDesignId}
                         lineId={line.id}

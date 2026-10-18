@@ -1,4 +1,5 @@
 import { filterRefundIssueRows } from './refund-filter.utils';
+import type { ShipmentPhase } from '@/lib/api/domains/orders/shipment-phase.shape';
 
 // filterRefundIssueRows가 실제로 사용하는 필드만 포함한 최소 타입
 type OrderLineRow = {
@@ -6,8 +7,7 @@ type OrderLineRow = {
     lineIndex: number; orderLineCount: number; isFirstOfOrder: boolean;
     orderNo: string; orderDate: string; channel: string; orderStatus: string;
     variantId: string; productName: string; quantity: number;
-    isMatched: boolean; lineStatus: string; isReadyToShip: boolean;
-    isUnavailable: boolean; isDirect: boolean; isOrderFullyAllocated: boolean;
+    isMatched: boolean; isDirect: boolean; shipmentPhase: ShipmentPhase | null;
     lines: unknown[]; refundStatus?: string;
     phone?: string; customerName?: string; receiverName?: string;
     address?: string; totalAmount?: number; shippingFee?: number;
@@ -32,11 +32,8 @@ function makeRow(overrides: Partial<OrderLineRow> & { orderId: string }): OrderL
         productName: '상품',
         quantity: 1,
         isMatched: true,
-        lineStatus: 'stock_deducted',
-        isReadyToShip: true,
-        isUnavailable: false,
         isDirect: false,
-        isOrderFullyAllocated: true,
+        shipmentPhase: 'preparing',
         lines: [],
         ...overrides,
     } as OrderLineRow;

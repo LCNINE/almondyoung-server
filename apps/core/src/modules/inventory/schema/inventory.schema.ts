@@ -160,12 +160,15 @@ export const systemLocationRoleEnum = pgEnum('system_location_role', [
 export const orderStatusEnum = pgEnum('order_status', [
   'pending', // 주문 생성 (결제 대기)
   'confirmed', // 주문 확정 (결제 완료)
-  // DEAD 값(producer 0, 작업 15) — SO 출고/배송 진실은 FO(fulfillmentOrders.status + shippedAt)
-  // 도출이 SoT 다(ADR-0017). SO.status 의 실 전이는 pending→confirmed→cancelled 뿐이다(timeout 도 현재 producer 0 인 예약 값).
-  // 재사용 금지. 물리 제거(pgEnum recast)는 destructive·저가치라 비목표(구 8b 판례).
-  'processing', // [DEAD] 미사용 — 도달 불가
-  'shipped', // [DEAD] 미사용 — FO 도출로 대체
-  'delivered', // [DEAD] 미사용 — FO 도출로 대체
+  // SO 출고/배송 진실은 FO(fulfillmentOrders.status + shippedAt) 도출이 SoT 다(ADR-0017).
+  // SO.status 의 실 전이는 pending→confirmed→cancelled 와, 셀메이트 스크립트의 pending→shipped 뿐이다
+  // (timeout 은 현재 producer 0 인 예약 값). 물리 제거(pgEnum recast)는 destructive·저가치라 비목표(구 8b 판례).
+  'processing', // [DEAD] 미사용 — 도달 불가. 재사용 금지
+  // 'shipped'·'delivered' — core 코드 producer 0. 셀메이트 스크립트(scripts/sellmate/mark-shipped-from-csv.ts)가
+  // pending 행에 'shipped' 만 쓰고 'delivered' 는 쓰는 곳이 없다. 읽는 곳은 둘 다 «core 밖에서 나갔다(외부 출고)»
+  // 뜻으로 읽는다 — 정체 보드 D3. core 출고의 진실은 FO·상자다(ADR-0017)
+  'shipped', // 외부 출고(셀메이트) — 위 주석
+  'delivered', // 쓰는 곳 없음, 읽기는 외부 출고와 같은 뜻 — 위 주석
   'cancelled', // 취소
   'timeout', // 타임아웃
 ]);

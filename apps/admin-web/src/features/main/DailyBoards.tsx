@@ -258,6 +258,7 @@ const ORDER_COLUMNS = [
   { key: 'preparing', label: '상품준비중' },
   { key: 'shipping', label: '배송중' },
   { key: 'delivered', label: '배송완료' },
+  { key: 'externalShipped', label: '외부 출고' },
   { key: 'cancelled', label: '취소' },
   { key: 'exchange', label: '교환' },
   { key: 'return', label: '반품' },

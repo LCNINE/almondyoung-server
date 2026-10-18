@@ -19,6 +19,7 @@ import {
 } from 'drizzle-orm';
 import { wmsSchema, wmsTables, type DbTx } from '../../inventory/schema/inventory.schema';
 import { type PrintOrderRow } from '../schema/print-order.schema';
+import { cancelledQuantitySql } from '../../sales-order/services/cancelled-quantity.sql';
 
 export const PRINT_ORDER_TABS = ['cancel_refused', 'test_pending', 'failed', 'unsupported', 'all'] as const;
 export type PrintOrderTab = (typeof PRINT_ORDER_TABS)[number];
@@ -67,23 +68,6 @@ export function storedPhoneDigits(column: SQLWrapper): SQL {
   return sql`(CASE WHEN starts_with(${digits}, ${COUNTRY_CODE}) AND length(${digits}) >= ${MIN_INTERNATIONAL_DIGITS} THEN '0' || substr(${digits}, ${COUNTRY_CODE.length + 1}) ELSE ${digits} END)`;
 }
 
-// 판매주문 부분취소가 줄마다 취소한 수량. SalesOrdersService.getCancelledQuantityByLine 과 같은 계산(partial 취소 metadata.cancelledLines 합)이다
-export function cancelledQuantitySql(salesOrderId: SQLWrapper, salesOrderLineId: SQLWrapper): SQL {
-  const c = wmsTables.salesOrderCancellations;
-  return sql`coalesce((
-    select sum((cl.value->>'quantity')::numeric)
-    from ${c}
-    cross join lateral jsonb_array_elements(
-      case when jsonb_typeof(${c.metadata}->'cancelledLines') = 'array' then ${c.metadata}->'cancelledLines' else '[]'::jsonb end
-    ) as cl(value)
-    where ${c.salesOrderId} = ${salesOrderId}
-      and ${c.cancellationScope} = 'partial'
-      and jsonb_typeof(cl.value) = 'object'
-      and jsonb_typeof(cl.value->'quantity') = 'number'
-      and cl.value->>'salesOrderLineId' = (${salesOrderLineId})::text
-  ), 0)`;
-}
-
 // 인쇄는 취소됐는데 판매주문 줄에 아직 취소되지 않은 수량이 남은 행(환불이 열리지 않음). 기록이 아니라 지금 상태에서 구한다
 export function refundNotOpenedSql(): SQL {
   const t = wmsTables.printOrders;
@@ -94,7 +78,6 @@ export function refundNotOpenedSql(): SQL {
 
 export interface PrintSalesLineState {
   salesOrderStatus: string;
-  lineStatus: string;
   quantity: number;
 }
 
@@ -220,7 +203,7 @@ export class PrintOrderReader {
     const [row] = await this.dbService.run(
       (trx) =>
         trx
-          .select({ salesOrderStatus: orders.status, lineStatus: lines.status, quantity: lines.quantity })
+          .select({ salesOrderStatus: orders.status, quantity: lines.quantity })
           .from(lines)
           .innerJoin(orders, eq(orders.id, lines.salesOrderId))
           .where(eq(lines.id, salesOrderLineId)),

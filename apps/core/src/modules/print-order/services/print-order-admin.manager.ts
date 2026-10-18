@@ -139,7 +139,7 @@ export class PrintOrderAdminManager {
 
   async salesCancelTarget(row: PrintOrderRow): Promise<PrintSalesCancelTarget | null> {
     const line = await this.reader.salesLine(row.salesOrderLineId);
-    if (!line || line.salesOrderStatus === 'cancelled' || line.lineStatus === 'cancelled') return null;
+    if (!line || line.salesOrderStatus === 'cancelled') return null;
     return { salesOrderId: row.salesOrderId, salesOrderLineId: row.salesOrderLineId, lineQuantity: line.quantity };
   }
 
