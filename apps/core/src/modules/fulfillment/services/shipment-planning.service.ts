@@ -476,25 +476,13 @@ export class ShipmentPlanningService {
         await this.invariant.assertFulfillmentOrders(aggregate.fulfillmentOrderIds, tx);
         const after = this.snapshot(await this.loadAggregate(shipmentId, tx));
         await this.completeOperation(tx, operation.id, [{ shipmentId, role: 'target', before, after }]);
-        await this.auditCommand(
-          tx,
-          actor,
-          'shipment.revise_recipient_from_channel',
-          operation.id,
-          'CHANNEL_ORDER_MODIFIED',
-          {
-            shipmentId,
-            salesOrderId,
-            before,
-            after,
-          },
-        );
-        return {
-          response: { changed: true },
-          resourceType: 'shipment',
-          resourceId: shipmentId,
-          operationId: operation.id,
-        };
+        await this.auditCommand(tx, actor, 'shipment.revise_recipient_from_channel', operation.id, 'CHANNEL_ORDER_MODIFIED', {
+          shipmentId,
+          salesOrderId,
+          before,
+          after,
+        });
+        return { response: { changed: true }, resourceType: 'shipment', resourceId: shipmentId, operationId: operation.id };
       },
       tx,
     );
