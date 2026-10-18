@@ -9,7 +9,7 @@ import {
 import { ModuleRef } from '@nestjs/core';
 import { ApplicationException, ConflictError } from '@app/shared';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, desc, eq, gt, inArray, isNull, ne, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, notInArray, or, sql } from 'drizzle-orm';
 import {
   ClaimBatchWorkItemDto,
   CreateOutboundBatchV2Dto,
@@ -371,28 +371,11 @@ export class OutboundBatchOrchestrator {
           const response = { operationId: commandRequestId, workItem: this.workItemResponse(outcome.workItem) };
           return { response, resourceType: 'outbound_batch_work_item', resourceId: outcome.workItem.id };
         }
-        await this.assertExcludable(aggregate, trx);
-        const now = await this.databaseNow(trx);
-        const [excluded] = await trx
-          .update(wmsTables.outboundBatchWorkItems)
-          .set({
-            status: 'excluded',
-            exclusionReason: reason,
-            pickerReleasedAt: workItem.status === 'picking' ? now : workItem.pickerReleasedAt,
-            packerReleasedAt: workItem.status === 'packing' ? now : workItem.packerReleasedAt,
-            leaseExpiresAt: null,
-            leaseVersion: workItem.leaseVersion + 1,
-            updatedAt: now,
-          })
-          .where(
-            and(
-              eq(wmsTables.outboundBatchWorkItems.id, workItem.id),
-              eq(wmsTables.outboundBatchWorkItems.leaseVersion, workItem.leaseVersion),
-              inArray(wmsTables.outboundBatchWorkItems.status, [...ACTIVE_WORK_ITEM_STATUSES]),
-            ),
-          )
-          .returning();
-        if (!excluded) throw this.staleLease(workItem.id);
+        const blocker = await this.withdrawals.unstartedExitBlocker(aggregate, trx);
+
+        if (blocker) throw this.conflict(blocker.code, blocker.message);
+
+        const excluded = await this.withdrawals.excludeUnstarted(workItem, reason, trx);
 
         await this.auditCommand(trx, actor, 'outbound_batch.shipment.exclude', excluded.id, {
           commandRequestId,
@@ -1333,83 +1316,6 @@ export class OutboundBatchOrchestrator {
     }
   }
 
-  private async assertExcludable(aggregate: EligibilityAggregate, tx: DbTx): Promise<void> {
-    const [attempt, custody, allocated, toteAssignment] = await Promise.all([
-      tx
-        .select({ id: wmsTables.dispatchAttempts.id })
-        .from(wmsTables.dispatchAttempts)
-        .where(
-          and(
-            eq(wmsTables.dispatchAttempts.shipmentId, aggregate.shipment.id),
-            ne(wmsTables.dispatchAttempts.status, 'recalled'),
-          ),
-        )
-        .limit(1),
-      tx
-        .select({ id: wmsTables.batchInventorySessionBalances.id })
-        .from(wmsTables.batchInventorySessionBalances)
-        .where(
-          and(
-            inArray(
-              wmsTables.batchInventorySessionBalances.shipmentLineId,
-              aggregate.lines.map((line) => line.id),
-            ),
-            gt(wmsTables.batchInventorySessionBalances.qty, 0),
-            ne(wmsTables.batchInventorySessionBalances.custodyType, 'SETTLED'),
-          ),
-        )
-        .limit(1),
-      this.liveAllocation(aggregate.shipment.id, tx),
-      tx
-        .select({ id: wmsTables.shipmentToteAssignments.id })
-        .from(wmsTables.shipmentToteAssignments)
-        .where(
-          and(
-            eq(wmsTables.shipmentToteAssignments.shipmentId, aggregate.shipment.id),
-            isNull(wmsTables.shipmentToteAssignments.releasedAt),
-          ),
-        )
-        .limit(1),
-    ]);
-    if (attempt[0] || ['shipped', 'in_transit', 'delivered'].includes(aggregate.shipment.status)) {
-      throw this.conflict('WORK_ITEM_DISPATCH_EXISTS', 'A dispatched shipment cannot be excluded from a batch');
-    }
-    if (custody[0] || aggregate.lines.some((line) => line.inspectedQty > 0)) {
-      throw this.conflict(
-        'WORK_ITEM_UNPICK_REQUIRED',
-        'Shipment custody must be returned by the batch inventory session before exclusion',
-      );
-    }
-    if (toteAssignment[0]) {
-      throw this.conflict(
-        'WORK_ITEM_TOTE_RELEASE_REQUIRED',
-        'Active physical tote assignments must be released before exclusion',
-      );
-    }
-    if (allocated[0]) {
-      throw this.conflict('WORK_ITEM_ALLOCATED', 'Work item holds picking allocations; use short-pick recovery');
-    }
-  }
-
-  /** 활성 작업 항목(완료·제외 아님)에 남은 배정. 옛 «활성 계획 구성원» 검사의 자리다(ADR-0041). */
-  private liveAllocation(shipmentId: string, tx: DbTx) {
-    return tx
-      .select({ id: wmsTables.pickingSourceAllocations.id })
-      .from(wmsTables.pickingSourceAllocations)
-      .innerJoin(
-        wmsTables.outboundBatchWorkItems,
-        eq(wmsTables.outboundBatchWorkItems.id, wmsTables.pickingSourceAllocations.workItemId),
-      )
-      .where(
-        and(
-          eq(wmsTables.outboundBatchWorkItems.shipmentId, shipmentId),
-          notInArray(wmsTables.outboundBatchWorkItems.status, ['completed', 'excluded']),
-          gt(wmsTables.pickingSourceAllocations.qty, 0),
-        ),
-      )
-      .limit(1);
-  }
-
   /** 박스가 배치를 떠난 뒤 그 작업 항목이 기다리던 오퍼레이션을 이어 간다. 되돌림 명령(BoxReturnService)도 draft 로 나간 박스에 대해 커밋 뒤에 부른다. */
   async resumeWaitingOperation(operationId: string, shipmentId: string, tx?: DbTx): Promise<void> {
     return this.dbService.run(async (trx) => {
@@ -1430,24 +1336,12 @@ export class OutboundBatchOrchestrator {
       }
       if (operation.type === 'cancel') {
         const [allocated, custody] = await Promise.all([
-          this.liveAllocation(shipmentId, trx),
-          trx
-            .select({ id: wmsTables.batchInventorySessionBalances.id })
-            .from(wmsTables.batchInventorySessionBalances)
-            .innerJoin(
-              wmsTables.shipmentLines,
-              eq(wmsTables.shipmentLines.id, wmsTables.batchInventorySessionBalances.shipmentLineId),
-            )
-            .where(
-              and(
-                eq(wmsTables.shipmentLines.shipmentId, shipmentId),
-                gt(wmsTables.batchInventorySessionBalances.qty, 0),
-                ne(wmsTables.batchInventorySessionBalances.custodyType, 'SETTLED'),
-              ),
-            )
-            .limit(1),
+          this.withdrawals.hasLiveAllocation(shipmentId, trx),
+          this.withdrawals.hasUnsettledCustody(shipmentId, trx),
         ]);
-        if (allocated[0] || custody[0]) return;
+
+        if (allocated || custody) return;
+
         await this.moduleRef
           .get(ShipmentPlanningService, { strict: false })
           .resumePendingCancellation(operationId, trx);

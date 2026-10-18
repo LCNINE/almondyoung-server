@@ -379,7 +379,7 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
     });
   });
 
-  it('감소 — draft 박스면 즉시 반영, planned 박스면 되돌리고 CANCEL_NOT_IMMEDIATE(박스 무변경)', async () => {
+  it('감소 — draft 박스도, 시작된 배치 밖의 planned 박스도 즉시 반영한다(planned 는 draft 로 돌아간다, #1016 30번)', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wire(tx);
       const seed = await seedOrder(tx, w, { withFo: true });
@@ -396,16 +396,14 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
       second.snapshot.lines[1].quantity = 0;
       await w.manager.handle(seed.salesOrderId, second, `m-${randomUUID()}`, tx);
       const rows = await amendmentsOf(tx, seed.salesOrderId);
-      const latest = rows.find((row) => row.status === 'pending');
-      expect(latest?.deltas).toEqual([
-        expect.objectContaining({
-          salesOrderLineId: seed.lineIds[1],
-          outcome: 'pending',
-          blockers: [expect.objectContaining({ code: 'CANCEL_NOT_IMMEDIATE' })],
-        }),
-      ]);
+      expect(rows.map((row) => row.status)).toEqual(['applied', 'applied']);
+      expect(rows.flatMap((row) => row.deltas)).toContainEqual(
+        expect.objectContaining({ salesOrderLineId: seed.lineIds[1], outcome: 'applied' }),
+      );
+
       const boxes = await boxesOf(tx, seed.salesOrderId);
-      expect(boxes.every((box) => box.status === 'planned')).toBe(true);
+      // 일부 취소는 남은 줄의 상자를 draft 로 되돌리고, 취소한 줄은 canceled 비석 상자로 떼어 낸다
+      expect(boxes.map((box) => box.status).sort()).toEqual(['canceled', 'draft']);
     });
   });
 

@@ -877,7 +877,7 @@ describeIfDb('Outbound V2 release scenarios', () => {
       await planShipment(tx, world, target.id);
       const issuedBeforeCancellation = await seedRegisteredWaybill(tx, target.id);
       const [plannedTarget] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, target.id));
-      const pendingCancellation = await productionServices(tx).planning.cancelOutstanding(
+      const cancellation = await productionServices(tx).planning.cancelOutstanding(
         target.id,
         {
           expectedManifestVersion: plannedTarget.manifestVersion,
@@ -899,17 +899,13 @@ describeIfDb('Outbound V2 release scenarios', () => {
         actor,
         tx,
       );
-      expect(pendingCancellation.operationStatus).toBe('pending');
-      const services = productionServices(tx);
-      // waybill void 는 동기 tx-local — 구 async invoice-void→resume saga 를 대체한다.
-      await services.waybills.void(
-        issuedBeforeCancellation.id,
-        { reason: 'cancel source order and replan target' },
-        `scenario-cancel-void-${randomUUID()}`,
-        actor,
-        tx,
-      );
-      await services.planning.resumePendingCancellation(pendingCancellation.operationId, tx);
+      // #1016 30번: 배치 밖 planned 상자의 일부 취소는 그 자리에서 끝난다 — registered 송장은 같은 트랜잭션에서 로컬
+      // 무효화되고 상자는 draft 로 돌아간다(스펙 §4.1). 구 async invoice-void→resume saga 의 수동 void·resume 이 사라진다.
+      expect(cancellation.operationStatus).toBe('completed');
+      expect(
+        (await tx.select().from(wmsTables.waybills).where(eq(wmsTables.waybills.id, issuedBeforeCancellation.id)))[0]
+          .status,
+      ).toBe('voided');
       await planShipment(tx, world, target.id);
       // replan 후 최신 manifest 로 registered waybill 재발급(voided 옛 waybill 과 공존).
       await seedRegisteredWaybill(tx, target.id);
