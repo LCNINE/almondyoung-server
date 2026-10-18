@@ -89,6 +89,8 @@ export interface ReserveShortageView {
   shipmentId: string;
   manifestVersion: number;
   consolidated: boolean;
+  /** 대표 상자에 확정 예약이 있다 — 없으면(전부 미예약) 나눠도 409 라 버튼을 내지 않는다. 옛 core 응답엔 없다 → false */
+  splittable: boolean;
   skuKinds: number;
   shortSkuKinds: number;
   items: ReserveShortageItemView[];
@@ -139,6 +141,7 @@ export function toShortageView(value: unknown): ReserveShortageView | null {
     shipmentId,
     manifestVersion,
     consolidated,
+    splittable: value.splittable === true,
     skuKinds,
     shortSkuKinds,
     items: parsed as ReserveShortageItemView[],
@@ -307,10 +310,22 @@ export function arrivalLabel(expectedArrival: string | null): string {
   return m ? `입고 ${m[1]}` : '';
 }
 
-/** 합포장 상자는 다른 주문의 라인이 섞여 있어 여기서 나누지 않는다. 나머지 거절(전부 미예약 등)은 서버가 409 로 한다. */
+/**
+ * 합포장 상자는 다른 주문의 라인이 섞여 있어 여기서 나누지 않고, 예약된 몫이 하나도 없으면 나눌 게 없다(서버가
+ * SHIPMENT_NOTHING_RESERVED 409). 나머지 거절(다 예약됨 등)은 서버가 한다.
+ */
 export function canSplitShortage(s: ReserveShortageView): boolean {
-  return !s.consolidated;
+  return !s.consolidated && s.splittable;
 }
+
+/** 예약 줄 오른쪽에 무엇을 낼지 — 버튼, 합포장 안내, 아니면 입고를 기다리는 중(나눌 몫이 없음). */
+export function shortageActionKind(s: ReserveShortageView): 'split' | 'consolidated' | 'waiting' {
+  if (s.consolidated) return 'consolidated';
+  return s.splittable ? 'split' : 'waiting';
+}
+
+export const SHORTAGE_WAITING_LABEL = '입고 대기';
+export const SHORTAGE_CONSOLIDATED_LABEL = '합포장 — FO 상세에서';
 
 export const SPLIT_QTY_ERROR =
   '분할 수량은 1 이상, 라인 수량 이하여야 하고 상자에 수량이 남아야 합니다';

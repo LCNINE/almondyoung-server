@@ -22,9 +22,15 @@ import { cn } from '@/lib/utils/ui';
 
 export default function StallBoardTemplate() {
   const searchParams = useSearchParams();
+  const stageParam = searchParams.get('stage');
   const [selected, setSelected] = useState<BoardStageKey>(() =>
-    initialBoardStage(searchParams.get('stage'))
+    initialBoardStage(stageParam)
   );
+  // 보드에 있는 채로 «출고불가» 링크(?stage=reserve)를 따라오면 URL 만 바뀌고 화면은 안 바뀐다 —
+  // 주소가 바뀔 때마다 그 단계로 간다. 칸을 직접 누른 선택은 주소가 그대로면 건드리지 않는다.
+  useEffect(() => {
+    setSelected(initialBoardStage(stageParam));
+  }, [stageParam]);
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 15_000);

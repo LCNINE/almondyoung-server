@@ -16,7 +16,9 @@ import { Label } from '@/components/ui/label';
 import {
   ReserveShortageView,
   arrivalLabel,
-  canSplitShortage,
+  SHORTAGE_CONSOLIDATED_LABEL,
+  SHORTAGE_WAITING_LABEL,
+  shortageActionKind,
   splitUnreservedErrorText,
 } from '@/lib/api/domains/orders/order-progress.shape';
 import { parseServerError } from '@/lib/api/server-error';
@@ -24,7 +26,7 @@ import { useSplitUnreservedShipment } from '@/lib/services/orders/mutations';
 
 /**
  * 예약 줄의 «있는 것 먼저» — 예약된 몫은 그대로 보내고 모자란 몫만 새 상자로 뗀다(#1016 15번).
- * 합포장은 다른 주문 라인이 섞여 있어 FO 상세에서만 나눈다.
+ * 합포장은 다른 주문 라인이 섞여 있어 FO 상세에서만 나누고, 예약된 몫이 없으면 입고를 기다릴 뿐이다.
  */
 export function ShortageSplitAction(props: { shortage: ReserveShortageView }) {
   const { shortage } = props;
@@ -36,10 +38,13 @@ export function ShortageSplitAction(props: { shortage: ReserveShortageView }) {
   // 다이얼로그는 포털이어도 React 트리로는 이 span 의 자손이라 클릭이 표 행으로 버블된다
   const stop = (e: MouseEvent) => e.stopPropagation();
 
-  if (!canSplitShortage(shortage)) {
+  const kind = shortageActionKind(shortage);
+  if (kind !== 'split') {
     return (
       <span className="text-xs text-muted-foreground">
-        합포장 — FO 상세에서
+        {kind === 'consolidated'
+          ? SHORTAGE_CONSOLIDATED_LABEL
+          : SHORTAGE_WAITING_LABEL}
       </span>
     );
   }

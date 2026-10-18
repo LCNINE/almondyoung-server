@@ -2,6 +2,8 @@ import {
   BOARD_STAGES,
   arrivalLabel,
   canSplitShortage,
+  SHORTAGE_WAITING_LABEL,
+  shortageActionKind,
   cardAlertText,
   initialBoardStage,
   isSplitQtyAllowed,
@@ -203,6 +205,7 @@ describe('자동 멈춤 표시 (#1016 12번)', () => {
       shipmentId: 'sh1',
       manifestVersion: 3,
       consolidated: false,
+      splittable: true,
       skuKinds: 10,
       shortSkuKinds: 1,
       items: [{ skuId: 'k1', skuName: '헤어클립 세트', shortQty: 2, expectedArrival: '2026-10-25' }],
@@ -242,9 +245,25 @@ describe('자동 멈춤 표시 (#1016 12번)', () => {
       expect(arrivalLabel('내일')).toBe('');
     });
 
-    it('canSplitShortage: 합포장이면 막는다', () => {
+    it('toProgressPage: splittable 이 없는 옛 core 응답은 false (버튼을 내지 않는다)', () => {
+      const base = { salesOrderId: 'so', orderNo: 'A', channelOrderId: 'c', salesChannel: 'medusa', customerName: null, orderedAt: 'x', state: 'created', stageEnteredAt: 'x', stuck: false };
+      const { splittable: _omit, ...old } = shortage();
+      const page = toProgressPage({ items: [{ ...base, shortage: old }], nextCursor: null });
+      expect(page.items[0].shortage).toEqual(shortage({ splittable: false }));
+    });
+
+    it('canSplitShortage: 합포장이거나 예약된 몫이 없으면 막는다', () => {
       expect(canSplitShortage(shortage())).toBe(true);
       expect(canSplitShortage(shortage({ consolidated: true }))).toBe(false);
+      expect(canSplitShortage(shortage({ splittable: false }))).toBe(false);
+    });
+
+    it('shortageActionKind: 합포장 > 나눌 몫 없음(입고 대기) > 나누기', () => {
+      expect(shortageActionKind(shortage())).toBe('split');
+      expect(shortageActionKind(shortage({ splittable: false }))).toBe('waiting');
+      expect(shortageActionKind(shortage({ consolidated: true }))).toBe('consolidated');
+      expect(shortageActionKind(shortage({ consolidated: true, splittable: false }))).toBe('consolidated');
+      expect(SHORTAGE_WAITING_LABEL).toBe('입고 대기');
     });
 
     it('initialBoardStage: 보드에 있는 키만, 아니면 fo', () => {

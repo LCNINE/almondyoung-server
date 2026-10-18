@@ -595,6 +595,8 @@ export const useSplitUnreservedShipment = () => {
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['order-progress'] });
     queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
+    // 메인·통계·주문내역의 «출고 불가» 카드가 같은 집합을 센다 — 나누면 숫자가 줄어야 한다
+    queryClient.invalidateQueries({ queryKey: orderQueryKeys.orderStats });
   };
   return useMutation({
     mutationFn: ({
