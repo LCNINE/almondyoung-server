@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { getTableName } from 'drizzle-orm';
 import { StoreSalesOrdersService } from './store-sales-orders.service';
 import { PrintOrderReader } from '../../print-order/services/print-order.reader';
@@ -336,6 +336,26 @@ describe('StoreSalesOrdersService', () => {
         activeShipmentStatuses: ['shipped', 'draft'],
       });
       await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow('이미 출고');
+      expect(cancelRequestsMock.request).not.toHaveBeenCalled();
+    });
+
+    it('복구 중 상자가 있는 주문은 셀프 취소 시 409 가 아니라 400 — 인쇄·취소 요청을 부르지 않는다 (#1016 33번)', async () => {
+      const { service, cancelRequestsMock, printCancel } = makeContext({
+        fos: [{ status: 'recovery_required' }],
+        activeShipmentStatuses: ['recovery_required', 'draft'],
+      });
+      const error = await service
+        .cancelRequestByChannelOrder(
+          CHANNEL_ORDER_ID,
+          CUSTOMER_ID,
+          {},
+          { idempotencyKey: 'k', actorId: CUSTOMER_ID, actorRoles: [] },
+        )
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as Error).message).toBe('처리 중인 주문이라 직접 취소할 수 없습니다. 고객센터로 문의해 주세요.');
+      expect(cancelRequestsMock.precheck).not.toHaveBeenCalled();
+      expect(printCancel).not.toHaveBeenCalled();
       expect(cancelRequestsMock.request).not.toHaveBeenCalled();
     });
 
@@ -950,14 +970,15 @@ describe('StoreSalesOrdersService', () => {
         expect(r.availableActions).not.toContain('cancel');
         expect(r.cancelUnavailableReason).toBe('already_shipped');
       });
-      it('recovery_required 이나 출고된 박스 없음 → preparing + cancel 가능', async () => {
+      it('복구 중 상자가 있고 출고된 박스 없음 → preparing, 취소 버튼 없이 already_processing (#1016 33번)', async () => {
         const { service } = makeContext({
           fos: [{ status: 'recovery_required' }],
-          activeShipmentStatuses: ['recovery_required'],
+          activeShipmentStatuses: ['recovery_required', 'draft'],
         });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
         expect(r.fulfillmentStatus).toBe('preparing');
-        expect(r.availableActions).toContain('cancel');
+        expect(r.availableActions).toEqual(['receipt']);
+        expect(r.cancelUnavailableReason).toBe('already_processing');
       });
       it('직배(drop_ship) forwarded → shipping (loader dropShipStatuses 추출)', async () => {
         const { service } = makeContext({
