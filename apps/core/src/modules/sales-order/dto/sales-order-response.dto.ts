@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { SALES_CHANNELS } from '@packages/event-contracts/streams';
+import type { OrderShipmentPhase } from '../services/order-shipment-phase.sql';
 
 export class SalesOrderLineResponseDto {
   @ApiProperty({ description: '주문 라인 ID' })
@@ -29,21 +30,6 @@ export class SalesOrderLineResponseDto {
 
   @ApiProperty({ description: '총 가격', nullable: true })
   totalPrice: number | null;
-
-  @ApiProperty({
-    description: '주문 아이템 상태',
-    enum: ['pending', 'matched', 'stock_deducted', 'stock_unavailable', 'cancelled'],
-  })
-  status: string;
-
-  @ApiProperty({ description: '제안 수량', nullable: true })
-  suggestedQuantity: number | null;
-
-  @ApiProperty({ description: '부족한 SKU 정보', nullable: true })
-  unavailableSkuIds: any | null;
-
-  @ApiProperty({ description: '재고 차감 시간', nullable: true })
-  deductedAt: Date | null;
 
   @ApiProperty({ description: '생성 일시' })
   createdAt: Date;
@@ -176,6 +162,13 @@ export class SalesOrderResponseDto {
 
   @ApiProperty({ description: '수정 일시' })
   updatedAt: Date;
+
+  @ApiProperty({
+    description:
+      '출고 단계 — 일별 통계와 같은 정의 한 벌. pending 미확정 / preparing 준비 중 / shipping 배송 중 / delivered 배송 완료 / external_shipped core 밖(셀메이트)에서 출고 / cancelled 취소',
+    enum: ['pending', 'preparing', 'shipping', 'delivered', 'external_shipped', 'cancelled'],
+  })
+  shipmentPhase: OrderShipmentPhase;
 
   @ApiProperty({ description: '주문 라인 목록', type: [SalesOrderLineResponseDto] })
   lines: SalesOrderLineResponseDto[];

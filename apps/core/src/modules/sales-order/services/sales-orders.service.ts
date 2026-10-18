@@ -11,7 +11,6 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import {
   eq,
-  ne,
   gt,
   asc,
   inArray,
@@ -59,7 +58,7 @@ import { extractDisplayOrderNo } from '../utils/display-order-no.util';
 import { ChannelCancelRequestReader } from '../channel-cancel-request/channel-cancel-request.reader';
 import { toCancelRequestView } from '../channel-cancel-request/channel-cancel-request.types';
 import { buildDailyOrderStatusSeries, DailyOrderStatusPoint } from '../utils/daily-order-status';
-import { orderShipmentPhaseSql } from './order-shipment-phase.sql';
+import { orderShipmentPhaseSql, type OrderShipmentPhase } from './order-shipment-phase.sql';
 import { BusinessLinkReferenceDto, CreateBusinessLinkDto } from '../dto/create-business-link.dto';
 import { CancelSalesOrderDto } from '../dto/cancel-sales-order.dto';
 import { AddressDto } from '../dto/address.dto';
@@ -181,6 +180,26 @@ const CANCEL_MSG_SHIPPED_ITEMS =
 const cancelQuantityExceedsMessage = (requested: number, remaining: number) =>
   `취소 수량(${requested}개)이 취소 가능 수량(${remaining}개)을 초과합니다.`;
 const SALES_ORDER_REF_TYPE = 'sales_order';
+
+/**
+ * 응답 라인에서 뺀 컬럼 — 라인 상태(status)와 그 부속 셋은 쓰는 생산자가 없다(#1016 15번 §5.1).
+ * DB 컬럼은 ⓑ-2 에서 지운다. 그때까지 응답에서만 숨겨 새 화면이 죽은 값을 읽지 않게 한다.
+ */
+function responseLineColumns() {
+  /* eslint-disable @typescript-eslint/no-unused-vars -- 빼려고 구조분해하는 것이라 변수는 안 쓴다 */
+  const {
+    status: _status,
+    suggestedQuantity: _sq,
+    unavailableSkuIds: _us,
+    deductedAt: _da,
+    ...columns
+  } = getTableColumns(wmsTables.salesOrderLines);
+  /* eslint-enable @typescript-eslint/no-unused-vars */
+  return columns;
+}
+
+/** 단계 행이 없는 주문(SQL 이 존재하는 주문마다 한 행을 내므로 일어나지 않는다)에 던지는 대신 쓰는 중립값 */
+const FALLBACK_SHIPMENT_PHASE: OrderShipmentPhase = 'preparing';
 const ORDER_CANCELLATION_REF_TYPE = 'order_cancellation';
 const SALES_ORDER_AMENDMENT_REF_TYPE = 'sales_order_amendment';
 const CS_CASE_REF_TYPE = 'cs_case';
@@ -774,20 +793,37 @@ export class SalesOrdersService {
     }, tx);
   }
 
+  /**
+   * 주문 id 들의 출고 단계를 한 번에 읽는다. 단계 정의는 일별 통계와 같은 `orderShipmentPhaseSql` 한 벌이다.
+   * 반환 맵에 없는 id 는 주문이 없다는 뜻이다(SQL 은 존재하는 주문마다 정확히 한 행을 낸다).
+   */
+  private async loadShipmentPhases(orderIds: string[], db: DbTx | WmsDb): Promise<Map<string, OrderShipmentPhase>> {
+    if (orderIds.length === 0) return new Map();
+    const ids = sql.join(
+      orderIds.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    );
+    const rows = await db.execute(orderShipmentPhaseSql(sql`SELECT x.id FROM unnest(ARRAY[${ids}]::uuid[]) AS x(id)`));
+    type PhaseRow = { sales_order_id: string; phase: OrderShipmentPhase };
+    return new Map(Array.from(rows as unknown as ArrayLike<PhaseRow>).map((r) => [r.sales_order_id, r.phase]));
+  }
+
   async getOne(id: string, tx?: DbTx) {
     const db = tx ?? this.db.db;
     const [order] = await db.select().from(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, id)).limit(1);
     if (!order) return null;
     // 라인 배지(«매칭 대기»)는 이 값을 본다(#1063)
     const lines = await db
-      .select({ ...getTableColumns(wmsTables.salesOrderLines), matchingResolved: lineMatchingBadgeResolvedSql() })
+      .select({ ...responseLineColumns(), matchingResolved: lineMatchingBadgeResolvedSql() })
       .from(wmsTables.salesOrderLines)
       .where(eq(wmsTables.salesOrderLines.salesOrderId, id));
+    const shipmentPhase = (await this.loadShipmentPhases([id], db)).get(id) ?? FALLBACK_SHIPMENT_PHASE;
     const { links: businessLinks, context } = await this.loadBusinessTimelineLinks(id, db);
     // 리더는 상태가 없다 — 생성자에 넣으면 이 서비스를 위치 인자로 만드는 통합 스펙이 깨진다
     const cancelRequestRow = await new ChannelCancelRequestReader().latestFor(id, db);
     return {
       ...order,
+      shipmentPhase,
       lines,
       businessTimeline: this.toBusinessTimeline(context, businessLinks),
       // 채널 주문 취소 요청(#1016 35번) — admin-web 이 «취소 요청됨»·«취소 실패»를 그린다
@@ -896,20 +932,9 @@ export class SalesOrdersService {
     return this.db.run(async (trx) => {
       const S = wmsTables;
 
-      // ── 상관 서브쿼리 헬퍼: 현재 주문의 라인 존재/부재 조건 ──
-      const lineExists = (cond?: SQL) =>
+      // ── 상관 서브쿼리 헬퍼: 현재 주문에 조건을 만족하는 라인이 있다 ──
+      const lineExists = (cond: SQL) =>
         exists(
-          trx
-            .select({ x: sql`1` })
-            .from(S.salesOrderLines)
-            .where(
-              cond
-                ? and(eq(S.salesOrderLines.salesOrderId, S.salesOrders.id), cond)
-                : eq(S.salesOrderLines.salesOrderId, S.salesOrders.id),
-            ),
-        );
-      const lineNotExists = (cond: SQL) =>
-        notExists(
           trx
             .select({ x: sql`1` })
             .from(S.salesOrderLines)
@@ -938,16 +963,12 @@ export class SalesOrdersService {
         case 'pending':
           conditions.push(eq(S.salesOrders.status, 'pending'));
           break;
-        case 'ready': // 완전출고: 라인 존재 + 모든 라인 stock_deducted
-          conditions.push(lineExists());
-          conditions.push(lineNotExists(ne(S.salesOrderLines.status, 'stock_deducted')));
-          break;
-        case 'partial': // 부분출고: 일부만 stock_deducted
-          conditions.push(lineExists(eq(S.salesOrderLines.status, 'stock_deducted')));
-          conditions.push(lineExists(ne(S.salesOrderLines.status, 'stock_deducted')));
-          break;
-        case 'hold': // 출고불가: 재고부족 라인 존재
-          conditions.push(lineExists(eq(S.salesOrderLines.status, 'stock_unavailable')));
+        // ready·partial·hold 는 라인 상태(stock_deducted·stock_unavailable)로 가르던 구분이다. 그 상태를 쓰는
+        // 생산자가 없어(#1016 15번) 옛 화면이 보내도 400 이 아니라 «빈 결과» 가 되게 값만 남긴다. ⓑ-2 에서 값을 지운다.
+        case 'ready':
+        case 'partial':
+        case 'hold':
+          conditions.push(sql`false`);
           break;
         case 'unmatched': // 매칭안됨: 매칭이 없어 FO 생성을 기다리는 주문. 대기열이 라인 구성 판정의 결과다(#1063 스펙 D8)
           conditions.push(
@@ -1138,9 +1159,11 @@ export class SalesOrdersService {
 
       const orderIds = orders.map((o) => o.id);
       const lines = await trx
-        .select({ ...getTableColumns(S.salesOrderLines), matchingResolved: lineMatchingBadgeResolvedSql() })
+        .select({ ...responseLineColumns(), matchingResolved: lineMatchingBadgeResolvedSql() })
         .from(S.salesOrderLines)
         .where(inArray(S.salesOrderLines.salesOrderId, orderIds));
+      // 페이지 주문 전부를 한 번에 — 주문마다 부르면 N+1 이다
+      const phaseByOrderId = await this.loadShipmentPhases(orderIds, trx);
 
       const linesByOrderId = new Map<string, typeof lines>();
       for (const line of lines) {
@@ -1152,6 +1175,7 @@ export class SalesOrdersService {
 
       const data = orders.map((order) => ({
         ...order,
+        shipmentPhase: phaseByOrderId.get(order.id) ?? FALLBACK_SHIPMENT_PHASE,
         lines: linesByOrderId.get(order.id) || [],
       }));
 

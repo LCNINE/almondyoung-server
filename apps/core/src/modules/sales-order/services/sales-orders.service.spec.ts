@@ -506,7 +506,7 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
       cancelledBy: 'admin-1',
     });
 
-    expect(tx.execute).toHaveBeenCalledTimes(4); // SO lock + V2 history probe + FO/FOI locks
+    expect(tx.execute).toHaveBeenCalledTimes(5); // SO lock + V2 history probe + FO/FOI locks + 응답 getOne 의 출고 단계 조회
     expect(state.salesOrders[0].status).toBe('cancelled');
     expect(state.salesOrderLines).toEqual(originalLines);
     expect(state.salesOrderCancellations).toEqual([
@@ -576,7 +576,7 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
 
     await service.cancel(salesOrderId);
 
-    expect(tx.execute).toHaveBeenCalledTimes(2); // SO lock + V2 history probe
+    expect(tx.execute).toHaveBeenCalledTimes(3); // SO lock + V2 history probe + 응답 getOne 의 출고 단계 조회
     expect(backlog.closeOpenForSalesOrder).toHaveBeenCalledWith(salesOrderId, tx);
     expect(state.salesOrderCancellations).toHaveLength(1);
     expect(outbox.enqueue).not.toHaveBeenCalled();
@@ -644,6 +644,8 @@ describe('SalesOrdersService.update accepted contract immutability', () => {
     };
 
     const tx: any = {
+      // getOne 이 출고 단계를 raw SQL 한 번으로 읽는다 — 행이 없으면 중립값으로 떨어진다
+      execute: jest.fn().mockResolvedValue([]),
       select: jest.fn(() => ({
         from: (table: unknown) => ({
           where: () => rows(selectRowsFor(table)),
@@ -1884,6 +1886,8 @@ describe('SalesOrdersService business links', () => {
     };
 
     const tx: any = {
+      // getOne 이 출고 단계를 raw SQL 한 번으로 읽는다 — 행이 없으면 중립값으로 떨어진다
+      execute: jest.fn().mockResolvedValue([]),
       select: jest.fn(() => ({
         from: (table: unknown) => ({
           where: () => {

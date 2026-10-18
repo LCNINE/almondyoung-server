@@ -18,7 +18,7 @@ function makeService(db: PostgresJsDatabase<typeof wmsSchema>): SalesOrdersServi
 async function insertOrder(
   tx: DbTx,
   o: Partial<{
-    status: 'pending' | 'confirmed' | 'cancelled' | 'timeout';
+    status: 'pending' | 'confirmed' | 'cancelled' | 'timeout' | 'shipped' | 'delivered';
     orderDate: Date;
     channelOrderId: string;
     customerName: string | null;
@@ -131,27 +131,69 @@ describeIfDb('SalesOrdersService.list — server-side filters (DB integration, r
     });
   });
 
-  it('typeGroup: ready / partial / hold 를 라인 상태로 구분한다', async () => {
+  it('typeGroup: ready / partial / hold 는 죽은 라인 상태 필터라 늘 빈 결과다(옛 화면이 400 을 받지 않게 값은 남긴다)', async () => {
     await run(async (tx, svc, tag) => {
       const ready = await insertOrder(tx, { channelOrderId: `${tag}-ready` });
       await insertLine(tx, ready, { status: 'stock_deducted' });
-      await insertLine(tx, ready, { status: 'stock_deducted' });
-
       const partial = await insertOrder(tx, { channelOrderId: `${tag}-partial` });
       await insertLine(tx, partial, { status: 'stock_deducted' });
       await insertLine(tx, partial, { status: 'pending' });
-
       const hold = await insertOrder(tx, { channelOrderId: `${tag}-hold` });
       await insertLine(tx, hold, { status: 'stock_unavailable' });
 
-      const readyRes = await listByKeyword(svc, tx, { keyword: tag, typeGroup: 'ready' });
-      expect(readyRes.data.map((d: { id: string }) => d.id)).toEqual([ready]);
+      for (const typeGroup of ['ready', 'partial', 'hold'] as const) {
+        const res = await listByKeyword(svc, tx, { keyword: tag, typeGroup });
+        expect(res.data).toEqual([]);
+        expect(res.total).toBe(0);
+      }
+    });
+  });
 
-      const partialRes = await listByKeyword(svc, tx, { keyword: tag, typeGroup: 'partial' });
-      expect(partialRes.data.map((d: { id: string }) => d.id)).toEqual([partial]);
+  it('목록 data[].shipmentPhase — 페이지 주문마다 출고 단계가 실린다', async () => {
+    await run(async (tx, svc, tag) => {
+      const pending = await insertOrder(tx, { channelOrderId: `${tag}-p`, status: 'pending' });
+      const preparing = await insertOrder(tx, { channelOrderId: `${tag}-r`, status: 'confirmed' });
+      const cancelled = await insertOrder(tx, { channelOrderId: `${tag}-c`, status: 'cancelled' });
+      const external = await insertOrder(tx, { channelOrderId: `${tag}-e`, status: 'shipped' });
+      for (const id of [pending, preparing, cancelled, external]) await insertLine(tx, id);
 
-      const holdRes = await listByKeyword(svc, tx, { keyword: tag, typeGroup: 'hold' });
-      expect(holdRes.data.map((d: { id: string }) => d.id)).toEqual([hold]);
+      const res = await listByKeyword(svc, tx, { keyword: tag });
+      const phaseById = new Map(res.data.map((d: { id: string; shipmentPhase: string }) => [d.id, d.shipmentPhase]));
+      expect(phaseById.get(pending)).toBe('pending');
+      expect(phaseById.get(preparing)).toBe('preparing');
+      expect(phaseById.get(cancelled)).toBe('cancelled');
+      expect(phaseById.get(external)).toBe('external_shipped');
+    });
+  });
+
+  it('응답 라인에는 죽은 라인 상태 필드가 없다(목록·상세 모두)', async () => {
+    await run(async (tx, svc, tag) => {
+      const id = await insertOrder(tx, { channelOrderId: `${tag}-l`, status: 'confirmed' });
+      await insertLine(tx, id, { status: 'stock_unavailable' });
+      const dead = ['status', 'suggestedQuantity', 'unavailableSkuIds', 'deductedAt'];
+
+      const list = await listByKeyword(svc, tx, { keyword: tag });
+      const listLine = list.data[0].lines[0] as Record<string, unknown>;
+      const one = await svc.getOne(id, tx);
+      const oneLine = one!.lines[0] as Record<string, unknown>;
+      for (const key of dead) {
+        expect(listLine).not.toHaveProperty(key);
+        expect(oneLine).not.toHaveProperty(key);
+      }
+      expect(listLine).toHaveProperty('matchingResolved');
+      expect(oneLine).toHaveProperty('matchingResolved');
+    });
+  });
+
+  it('getOne(id).shipmentPhase — 상세에도 같은 단계가 실린다', async () => {
+    await run(async (tx, svc, tag) => {
+      const id = await insertOrder(tx, { channelOrderId: `${tag}-d`, status: 'confirmed' });
+      await insertLine(tx, id);
+      const ext = await insertOrder(tx, { channelOrderId: `${tag}-x`, status: 'delivered' });
+      await insertLine(tx, ext);
+
+      expect((await svc.getOne(id, tx))!.shipmentPhase).toBe('preparing');
+      expect((await svc.getOne(ext, tx))!.shipmentPhase).toBe('external_shipped');
     });
   });
 
