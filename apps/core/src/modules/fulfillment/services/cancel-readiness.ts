@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
-import { BoxWithdrawalService, WorkItemRow } from './box-withdrawal.service';
+import { BoxWithdrawalService, unstartedExitBlockerOf, WorkItemRow } from './box-withdrawal.service';
 import { ShipmentAggregate } from './shipment-aggregate';
 import { ACTIVE_WORK_ITEM_STATUSES } from './work-item-status';
 
@@ -76,18 +76,21 @@ export async function assessCancelReadiness(
     if (batch?.startedAt) return { kind: 'started_batch', workItem, batchId: workItem.batchId };
   }
 
+  const [exitFacts, { active, voidable }] = await Promise.all([
+    withdrawals.unstartedExitFacts(aggregate, tx),
+    withdrawals.exitWaybill(shipmentId, tx),
+  ]);
   const codes: string[] = [];
   if (workItem?.waitingOperationId && workItem.waitingOperationId !== input.ownOperationId) {
     codes.push(CANCEL_BLOCKER.WORK_ITEM_WAITING_OTHER);
   }
-  const { active, voidable } = await withdrawals.exitWaybill(shipmentId, tx);
   if (!voidable) codes.push(CANCEL_BLOCKER.WAYBILL_NOT_VOIDABLE);
   // 뒤의 둘은 세션이 시작돼야 생기므로 시작된 배치 밖에선 나오지 않는다 — 방어선이다(스펙 §4.1).
-  if (aggregate.lines.some((line) => line.inspectedQty > 0)) codes.push(CANCEL_BLOCKER.INSPECTED_QTY);
-  if (await withdrawals.hasUnsettledCustody(shipmentId, tx)) codes.push(CANCEL_BLOCKER.UNSETTLED_CUSTODY);
+  if (exitFacts.inspected) codes.push(CANCEL_BLOCKER.INSPECTED_QTY);
+  if (exitFacts.unsettledCustody) codes.push(CANCEL_BLOCKER.UNSETTLED_CUSTODY);
   if (codes.length) return { kind: 'blocked', codes: codes.sort() };
-  // 막힘 다음에 본다 — 빼기 검사도 보관·검수 수량을 보지만(`WORK_ITEM_UNPICK_REQUIRED`) 그 둘은 409 가 아니라 대기다.
-  const exitBlocker = workItem ? await withdrawals.unstartedExitBlocker(aggregate, tx) : null;
+  // 막힘 다음에 본다 — 빼기 판정도 보관·검수 수량을 보지만(`WORK_ITEM_UNPICK_REQUIRED`) 그 둘은 409 가 아니라 대기다.
+  const exitBlocker = workItem ? unstartedExitBlockerOf(exitFacts) : null;
   if (exitBlocker) return { kind: 'unexcludable', blocker: exitBlocker };
   return { kind: 'ready', unstartedWorkItem: workItem ?? null, voidWaybill: active !== null };
 }
