@@ -339,7 +339,7 @@ export class SalesOrdersService {
               requiresShipping: l.requiresShipping ?? null,
               almondDesignId: l.almondDesignId ?? null,
               // status·suggestedQuantity·unavailableSkuIds·deductedAt 는 쓰지 않는다 — 읽는 곳도 쓰는 곳도 없는
-              // 죽은 컬럼이다(#1016 15번 §5.1). DB 기본값(status=pending)·null 이 채운다. 컬럼은 ⓑ-2 에서 지운다.
+              // 죽은 컬럼이다(#1016 15번 §5.3). DB 기본값(status=pending)·null 이 채운다. 컬럼은 ⓑ-2 에서 지운다.
             });
           }
           const insertedLines = await trx
@@ -958,7 +958,7 @@ export class SalesOrdersService {
         case 'pending':
           conditions.push(eq(S.salesOrders.status, 'pending'));
           break;
-        // ready·partial·hold 는 라인 상태(stock_deducted·stock_unavailable)로 가르던 구분이다. 그 상태를 쓰는
+        // ready·partial·hold 는 라인 상태(재고 차감·재고 부족)로 가르던 구분이다. 그 상태를 쓰는
         // 생산자가 없어(#1016 15번) 옛 화면이 보내도 400 이 아니라 «빈 결과» 가 되게 값만 남긴다. ⓑ-2 에서 값을 지운다.
         case 'ready':
         case 'partial':
