@@ -454,6 +454,63 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
     });
   });
 
+  it('keeps the oldest demand moment on a coalesced line (demand_requested_at, falling back to created_at)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await baseFixture(tx, 6);
+      const fixture = await createOrderShipment(tx, base, { quantity: 10 });
+      const demandAt = new Date(fixture.line.createdAt.getTime() - 3_600_000);
+      await tx
+        .update(wmsTables.shipmentLines)
+        .set({ qty: 6, demandRequestedAt: demandAt })
+        .where(eq(wmsTables.shipmentLines.id, fixture.line.id));
+      // 두 번째 몫은 demand 가 없고 created_at 이 더 늦다 — coalesce 한 값 중 가장 이른 것은 첫 몫의 demandAt
+      const [secondShipment] = await tx
+        .insert(wmsTables.shipments)
+        .values({
+          warehouseId: base.warehouseId,
+          status: 'draft',
+          shippingProfileId: base.profileId,
+          recipientSnapshot: RECIPIENT,
+          openedBy: actor.id,
+        })
+        .returning();
+      await tx.insert(wmsTables.shipmentLines).values({
+        shipmentId: secondShipment.id,
+        fulfillmentOrderItemId: fixture.fulfillmentOrderItemId,
+        skuId: base.skuId,
+        qty: 4,
+        createdFromLineId: fixture.line.id,
+        createdAt: new Date(fixture.line.createdAt.getTime() - 60_000),
+      });
+      const result = await consolidation.consolidate(
+        {
+          sources: [
+            {
+              shipmentId: fixture.shipment.id,
+              expectedManifestVersion: fixture.shipment.manifestVersion,
+              expectedReservationVersion: fixture.shipment.reservationVersion,
+            },
+            {
+              shipmentId: secondShipment.id,
+              expectedManifestVersion: secondShipment.manifestVersion,
+              expectedReservationVersion: secondShipment.reservationVersion,
+            },
+          ],
+          recipientSourceShipmentId: fixture.shipment.id,
+          reason: 'merge keeps demand moment',
+        },
+        `coalesce-demand-${randomUUID()}`,
+        actor,
+        tx,
+      );
+      const [targetLine] = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.shipmentId, result.targetShipmentId!));
+      expect(targetLine.demandRequestedAt?.getTime()).toBe(demandAt.getTime());
+    });
+  });
+
   it('returns only conservative same-recipient groups while allowing mixed sales channels', async () => {
     await inRollbackTx(db, async (tx) => {
       const base = await baseFixture(tx);
