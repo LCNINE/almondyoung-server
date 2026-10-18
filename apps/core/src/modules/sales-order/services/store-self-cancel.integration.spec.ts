@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { BadRequestException } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -12,6 +12,9 @@ import {
   seedSku,
   seedWarehouseWithZone,
 } from '../../fulfillment/services/__support__';
+import { canonicalFulfillmentRequestHash } from '../../fulfillment/services/fulfillment-command.service';
+import { seedChannelOrder, wireCancelRequest } from '../channel-cancel-request/__support__/cancel-request.fixtures';
+import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
 import { WalletRefundClient } from './wallet-refund.client';
 import { StoreSalesOrdersService } from './store-sales-orders.service';
 
@@ -120,6 +123,94 @@ describeIfDb('셀프취소 판정 — 복구 중 상자 (DB integration, rollbac
         .from(wmsTables.fulfillmentOrders)
         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
       expect(fo.status).toBe('recovery_required');
+    });
+  });
+
+  // 스펙 §6.10: 버튼 판정 → 요청 → 취소 요청 경로(ChannelCancelRequestManager)까지 실제로 탄다. 끝은 §6.1 과 같다.
+  it('planned 상자만 있는 주문은 버튼이 보이고, 요청하면 송장 voided·상자 canceled·예약 0·판매주문 cancelled 로 끝난다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const customerId = randomUUID();
+      const w = wireCancelRequest(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: true });
+      await tx.update(wmsTables.salesOrders).set({ customerId }).where(eq(wmsTables.salesOrders.id, seed.salesOrderId));
+      const boxLines = await tx
+        .select({ id: wmsTables.shipmentLines.id, shipmentId: wmsTables.shipmentLines.shipmentId })
+        .from(wmsTables.shipmentLines)
+        .innerJoin(
+          wmsTables.fulfillmentOrderItems,
+          eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+        )
+        .where(eq(wmsTables.fulfillmentOrderItems.salesOrderId, seed.salesOrderId));
+      const shipmentIds = [...new Set(boxLines.map((line) => line.shipmentId))];
+      expect(shipmentIds).toHaveLength(1);
+      const [shipment] = await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'planned', plannedAt: new Date() })
+        .where(eq(wmsTables.shipments.id, shipmentIds[0]))
+        .returning();
+      const [waybill] = await tx
+        .insert(wmsTables.waybills)
+        .values({
+          shipmentId: shipment.id,
+          source: 'manual',
+          carrier: 'HANJIN',
+          status: 'registered',
+          trackingNo: `self-cancel-tracking-${randomUUID()}`,
+          manifestVersion: shipment.manifestVersion,
+          recipientHash: canonicalFulfillmentRequestHash(shipment.recipientSnapshot),
+        })
+        .returning();
+      const service = new StoreSalesOrdersService(
+        { db: tx } as never,
+        w.salesOrders,
+        {} as WalletRefundClient,
+        new ChannelCancelRequestService(w.dbService, w.manager, w.reader),
+        { forSalesOrder: () => Promise.resolve([]) } as never,
+        {
+          cancelForOrder: jest.fn().mockResolvedValue({ vendorCancelled: [], locallyCancelled: [] }),
+          noteSalesCancelFailed: jest.fn(),
+        } as never,
+      );
+
+      const before = await service.getActionsByChannelOrder(seed.externalOrderId, customerId);
+      expect(before.availableActions).toContain('cancel');
+      expect(before.cancelUnavailableReason).toBeUndefined();
+
+      await service.cancelRequestByChannelOrder(
+        seed.externalOrderId,
+        customerId,
+        {},
+        { idempotencyKey: `self-cancel-${randomUUID()}`, actorId: customerId, actorRoles: [] },
+      );
+
+      const [salesOrder] = await tx
+        .select({ status: wmsTables.salesOrders.status })
+        .from(wmsTables.salesOrders)
+        .where(eq(wmsTables.salesOrders.id, seed.salesOrderId));
+      expect(salesOrder.status).toBe('cancelled');
+      const [boxAfter] = await tx
+        .select({ status: wmsTables.shipments.status, recoveryCode: wmsTables.shipments.recoveryCode })
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, shipment.id));
+      expect(boxAfter).toEqual({ status: 'canceled', recoveryCode: null });
+      const [waybillAfter] = await tx
+        .select({ status: wmsTables.waybills.status })
+        .from(wmsTables.waybills)
+        .where(eq(wmsTables.waybills.id, waybill.id));
+      expect(waybillAfter.status).toBe('voided');
+      const confirmed = await tx
+        .select({ id: wmsTables.stockReservations.id })
+        .from(wmsTables.stockReservations)
+        .where(
+          and(
+            inArray(
+              wmsTables.stockReservations.shipmentLineId,
+              boxLines.map((line) => line.id),
+            ),
+            eq(wmsTables.stockReservations.status, 'confirmed'),
+          ),
+        );
+      expect(confirmed).toEqual([]);
     });
   });
 });
