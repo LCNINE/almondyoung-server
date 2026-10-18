@@ -1,8 +1,11 @@
+import { inventoryTables } from '../../inventory/schema/inventory.schema';
 import { StoreCancelUnavailableReason } from '../dto/store-order-actions.dto';
 
+type SalesOrderRow = typeof inventoryTables.salesOrders.$inferSelect;
+
 export interface SelfCancelFacts {
-  orderStatus: string;
-  salesChannel: string;
+  orderStatus: SalesOrderRow['status'];
+  salesChannel: SalesOrderRow['salesChannel'];
   hasShippedEvidence: boolean;
   pickingStarted: boolean;
   hasRecoveryBox: boolean;
