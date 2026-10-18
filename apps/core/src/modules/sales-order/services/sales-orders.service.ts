@@ -25,6 +25,7 @@ import {
   sql,
   ilike,
   isNotNull,
+  isNull,
   exists,
   notExists,
   getTableColumns,
@@ -37,6 +38,8 @@ import { isDigitalFulfillmentLine, isOutsourcedLine } from '../../product-matchi
 import { selectFrozenCompositions } from '../../product-matching/line-composition/frozen-compositions';
 import { outstandingSalesUnits, physicalCancellationByItem } from './v2-cancellation-units';
 import { PoliciesService } from './policies.service';
+import { MOVED_SHIPMENT_STATUSES } from './fulfillment-phase';
+import type { OrderProgressStage } from '../../fulfillment/order-progress/order-progress.thresholds';
 import { computeEntrancePasswordExpiry } from './entrance-password-expiry';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
 import { AuditService } from '../../inventory/shared/services/audit.service';
@@ -1281,8 +1284,7 @@ export class SalesOrdersService {
           ),
 
         // 출고 불가와 그중 일부 출고는 같은 주문 집합을 두 번 묻는 질문이라 한 번에 센다.
-        // 옛 구현은 출고 불가 주문 id 를 전부 받아 두 번째 쿼리에 inArray 로 되물었다.
-        this.shipBlockCounts(fourteenDaysAgo),
+        this.shipBlockCounts(),
 
         db
           .select({ cnt: count() })
@@ -1333,28 +1335,33 @@ export class SalesOrdersService {
   }
 
   /**
-   * 최근 14일 confirmed 주문 중 출고 불가(재고 없는 라인 보유) 건수와,
-   * 그중 일부는 이미 차감돼 부분 출고인 건수. 주문 단위로 한 번 접어 두 숫자를 같이 센다.
+   * 출고 불가 = 정체 보드 «예약» 단계에 있는 진행 중 주문 수(스펙 D9) — 보드 칸의 `open` 과 같은 값이다.
+   * 부분 출고 = 그중 그 주문 라인이 든 상자 하나라도 이미 움직인(shipped·in_transit·failed·delivered) 주문 수.
+   * 보드가 상자 단위로 «예약»을 판정하므로(미예약 draft 상자) 라인 상태 조인은 더 필요 없다.
+   * 14일·`confirmed` 창이 없는 건 보드와 같은 값을 내기 위해서다.
    */
-  private async shipBlockCounts(fourteenDaysAgo: Date) {
-    const blocked = this.db.db
-      .select({
-        id: wmsTables.salesOrders.id,
-        hasDeducted: sql<boolean>`bool_or(${wmsTables.salesOrderLines.status} = 'stock_deducted')`.as('has_deducted'),
-      })
-      .from(wmsTables.salesOrders)
-      .innerJoin(wmsTables.salesOrderLines, eq(wmsTables.salesOrderLines.salesOrderId, wmsTables.salesOrders.id))
-      .where(and(gte(wmsTables.salesOrders.orderDate, fourteenDaysAgo), eq(wmsTables.salesOrders.status, 'confirmed')))
-      .groupBy(wmsTables.salesOrders.id)
-      .having(sql`bool_or(${wmsTables.salesOrderLines.status} = 'stock_unavailable')`)
-      .as('blocked');
-
+  private async shipBlockCounts() {
+    const t = wmsTables.orderProgress;
+    const reserveStage: OrderProgressStage = 'reserve';
+    const movedStatuses = sql.join(
+      [...MOVED_SHIPMENT_STATUSES].map((status) => sql`${status}`),
+      sql`, `,
+    );
+    // 바깥 행은 테이블 이름으로 가리킨다 — ${t.salesOrderId} 는 테이블 없이 찍혀 서브쿼리 안의 같은 이름 칸에 묶인다
     return this.db.db
       .select({
         cannotShip: sql<number>`count(*)::int`,
-        partialOutbound: sql<number>`count(*) filter (where ${blocked.hasDeducted})::int`,
+        partialOutbound: sql<number>`(count(*) FILTER (WHERE EXISTS (
+          SELECT 1 FROM ${wmsTables.shipmentLines} sl
+            JOIN ${wmsTables.shipments} sh ON sh.id = sl.shipment_id
+            JOIN ${wmsTables.fulfillmentOrderItems} foi ON foi.id = sl.fulfillment_order_item_id
+            JOIN ${wmsTables.fulfillmentOrders} fo ON fo.id = foi.fulfillment_order_id
+           WHERE fo.sales_order_id = order_progress.sales_order_id
+             AND sh.status::text IN (${movedStatuses})
+        )))::int`,
       })
-      .from(blocked);
+      .from(t)
+      .where(and(isNull(t.outcome), eq(t.stage, reserveStage)));
   }
 
   async createFromEvent(payload: OrderCreatedPayload, tx?: DbTx) {

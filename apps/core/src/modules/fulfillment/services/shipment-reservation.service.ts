@@ -21,6 +21,7 @@ type LineContext = {
   skuId: string;
   qty: number;
   createdAt: Date;
+  demandRequestedAt: Date | null;
   warehouseId: string;
   shipmentStatus: string;
 };
@@ -362,7 +363,12 @@ export class ShipmentReservationService {
           ),
         );
       const reservations = await this.loadConfirmedReservations(line.id, trx);
-      const demandRequestedAt = normalizeReservationDemandAt(releasedShortPickDemand?.requestedAt, line.createdAt);
+      // 분할로 생긴 라인은 원래 라인의 대기 순번(demand_requested_at)으로 예약을 잡는다 — created_at(분할 시각)으로
+      // 잡으면 일부만 예약받는 순간 큐 키가 «지금» 으로 밀려 뒤에 온 주문 뒤에 선다.
+      const demandRequestedAt = normalizeReservationDemandAt(
+        releasedShortPickDemand?.requestedAt,
+        line.demandRequestedAt ?? line.createdAt,
+      );
       const confirmedQty = reservations.reduce((total, row) => total + row.quantity, 0);
       const outstandingQty = Math.max(0, line.qty - confirmedQty);
       const availableQty = await this.unifiedReservation.getAvailableQuantity(line.skuId, line.warehouseId, trx);
@@ -1139,6 +1145,7 @@ export class ShipmentReservationService {
         skuId: wmsTables.shipmentLines.skuId,
         qty: wmsTables.shipmentLines.qty,
         createdAt: wmsTables.shipmentLines.createdAt,
+        demandRequestedAt: wmsTables.shipmentLines.demandRequestedAt,
         warehouseId: wmsTables.shipments.warehouseId,
         shipmentStatus: wmsTables.shipments.status,
       })

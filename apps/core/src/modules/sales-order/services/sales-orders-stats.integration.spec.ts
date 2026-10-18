@@ -9,14 +9,15 @@ jest.mock(
 import { randomUUID } from 'crypto';
 import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { wmsTables } from '../../inventory/schema/inventory.schema';
+import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
+import * as f from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
 import { SalesOrdersService } from './sales-orders.service';
 
 /**
  * 주문 현황 칩(관리자 메인 + 통계 종합 탭)이 세는 7개 숫자를 실 Postgres 로 고정한다.
  *
- * 이 숫자들은 화면의 첫 인상이라 정의가 조용히 바뀌면 티가 안 난다. 특히 출고 불가/부분 출고는
- * 주문 하나가 여러 라인을 갖는 집합 질문이라, 라인 단위로 세면 조용히 부풀어 오른다.
+ * 이 숫자들은 화면의 첫 인상이라 정의가 조용히 바뀌면 티가 안 난다. 출고 불가/부분 출고는
+ * 정체 보드(`order_progress`)의 «예약» 단계에서 센다 — 보드 칸 숫자와 같은 값이어야 한다(스펙 D9).
  *
  * 기존 행이 남아 있는 DB 에서도 돌 수 있게 **넣기 전/후의 차이**를 본다.
  * 각 테스트는 트랜잭션 안에서 픽스처를 넣고 항상 롤백한다 — DB 에 아무것도 남지 않는다.
@@ -51,13 +52,13 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
   /** 트랜잭션 안에서 픽스처를 넣고 stats 를 재고 항상 롤백한다. */
   async function withFixtures(
     seed: (t: {
+      trx: DbTx;
       order: (o: {
         status: string;
         orderDate: Date;
-        lineStatuses?: string[];
         fo?: { mode?: string; status?: string; shippedAt?: Date | null };
         backlogStatus?: string;
-      }) => Promise<void>;
+      }) => Promise<string>;
     }) => Promise<void>,
   ) {
     const db = drizzle(sql);
@@ -80,7 +81,8 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
         before = await service.getStats();
 
         await seed({
-          order: async ({ status, orderDate, lineStatuses = [], fo, backlogStatus }) => {
+          trx: trx as unknown as DbTx,
+          order: async ({ status, orderDate, fo, backlogStatus }) => {
             const [row] = await trx
               .insert(wmsTables.salesOrders)
               .values({
@@ -91,16 +93,6 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
                 orderDate,
               })
               .returning({ id: wmsTables.salesOrders.id });
-
-            for (const lineStatus of lineStatuses) {
-              await trx.insert(wmsTables.salesOrderLines).values({
-                salesOrderId: row.id,
-                variantId: randomUUID(),
-                productName: 'fixture',
-                quantity: 1,
-                status: lineStatus as never,
-              });
-            }
 
             if (fo) {
               await trx.insert(wmsTables.fulfillmentOrders).values({
@@ -117,6 +109,8 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
                 status: backlogStatus as never,
               });
             }
+
+            return row.id;
           },
         });
 
@@ -134,38 +128,109 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
     return delta;
   }
 
-  it('출고 불가는 주문 단위로 센다 — 못 나가는 라인이 여러 개여도 주문 하나다', async () => {
-    const delta = await withFixtures(async ({ order }) => {
-      // 못 나가는 라인 3개짜리 주문 하나. 라인 단위로 세면 3 이 된다.
-      await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(1), lineStatuses: ['stock_unavailable', 'stock_unavailable', 'stock_unavailable'] });
+  /** 주문의 첫 라인 id — seedFo 가 라인 구성을 굳히는 데 쓴다 */
+  async function lineOf(trx: DbTx, salesOrderId: string): Promise<string> {
+    const [line] = await trx
+      .insert(wmsTables.salesOrderLines)
+      .values({ salesOrderId, variantId: randomUUID(), productName: 'fixture', quantity: 1 })
+      .returning({ id: wmsTables.salesOrderLines.id });
+    return line.id;
+  }
+
+  /** 보드 투영 행 하나. stage 를 안 주면 종료(outcome) 행이다 */
+  async function progress(
+    trx: DbTx,
+    salesOrderId: string,
+    row: { stage: string | null; outcome?: string | null },
+  ): Promise<void> {
+    const now = new Date();
+    await trx.insert(wmsTables.orderProgress).values({
+      salesOrderId,
+      salesChannel: 'medusa',
+      orderedAt: now,
+      stage: row.stage,
+      state: row.stage ? 'created' : null,
+      stageEnteredAt: now,
+      outcome: row.outcome ?? null,
+      closedAt: row.outcome ? now : null,
+      evaluatedAt: now,
     });
+  }
 
-    expect(delta.cannotShip).toBe(1);
-    expect(delta.partialOutbound).toBe(0);
-  });
-
-  it('부분 출고는 출고 불가 주문 중 이미 차감된 라인이 있는 것만이다', async () => {
-    const delta = await withFixtures(async ({ order }) => {
-      // 못 나가는 라인 + 이미 차감된 라인 → 출고 불가이면서 부분 출고
-      await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(1), lineStatuses: ['stock_unavailable', 'stock_deducted'] });
-      // 못 나가는 라인만 → 출고 불가지만 부분 출고는 아님
-      await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(2), lineStatuses: ['stock_unavailable'] });
-      // 차감된 라인만 → 어느 쪽도 아님
-      await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(3), lineStatuses: ['stock_deducted'] });
+  it('출고 불가는 보드 «예약» 단계의 진행 중 주문 수다 — 기간·주문 상태 창이 없다', async () => {
+    const delta = await withFixtures(async ({ trx, order }) => {
+      // 14일보다 오래된 주문이어도, confirmed 가 아니어도 보드 «예약» 칸에 있으면 센다
+      const a = await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(1) });
+      const b = await order({ status: 'pending', orderDate: kstDaysAgoNoon(30) });
+      // 다른 단계의 진행 중 주문은 아니다
+      const plan = await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(1) });
+      // 종료된 주문은 아니다(stage 가 NULL 이거나 outcome 이 있다)
+      const closed = await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(1) });
+      await progress(trx, a, { stage: 'reserve' });
+      await progress(trx, b, { stage: 'reserve' });
+      await progress(trx, plan, { stage: 'plan' });
+      await progress(trx, closed, { stage: null, outcome: 'shipped_external' });
     });
 
     expect(delta.cannotShip).toBe(2);
-    expect(delta.partialOutbound).toBe(1);
+    expect(delta.partialOutbound).toBe(0);
   });
 
-  it('기간 밖과 confirmed 아닌 주문은 출고 불가에서 빠진다', async () => {
-    const delta = await withFixtures(async ({ order }) => {
-      await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(30), lineStatuses: ['stock_unavailable'] });
-      await order({ status: 'pending', orderDate: kstDaysAgoNoon(1), lineStatuses: ['stock_unavailable'] });
+  it('부분 출고는 그중 다른 상자가 이미 움직인 주문이다', async () => {
+    const delta = await withFixtures(async ({ trx, order }) => {
+      const w = await f.seedWorld(trx);
+
+      // «예약» 단계 주문마다 미예약 draft 상자 하나 + 다른 상자 하나를 둔다
+      const reserveOrderWith = async (
+        otherBox: 'shipped' | 'in_transit' | 'failed' | 'delivered' | 'draft' | 'canceled' | null,
+      ) => {
+        const id = await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(1) });
+        const fo = await f.seedFo(trx, w, { salesOrderId: id, lineId: await lineOf(trx, id) }, { status: 'created' });
+        await f.seedBox(trx, w, [fo.foItemId], { status: 'draft' });
+        if (otherBox) await f.seedBox(trx, w, [fo.foItemId], { status: otherBox });
+        await progress(trx, id, { stage: 'reserve' });
+        return { id, fo };
+      };
+
+      // 움직인 상자 넷은 각각 부분 출고다
+      await reserveOrderWith('shipped');
+      await reserveOrderWith('in_transit');
+      await reserveOrderWith('failed');
+      await reserveOrderWith('delivered');
+      // 움직이지 않았거나(draft·canceled) 상자가 하나뿐이면 아니다
+      await reserveOrderWith('draft');
+      await reserveOrderWith('canceled');
+      await reserveOrderWith(null);
+
+      // «예약» 이 아닌 단계의 주문은 상자가 움직였어도 센 쪽에 들지 않는다
+      const planId = await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(1) });
+      const planFo = await f.seedFo(
+        trx,
+        w,
+        { salesOrderId: planId, lineId: await lineOf(trx, planId) },
+        { status: 'processing' },
+      );
+      await f.seedBox(trx, w, [planFo.foItemId], { status: 'shipped' });
+      await progress(trx, planId, { stage: 'plan' });
     });
 
-    expect(delta.cannotShip).toBe(0);
-    expect(delta.partialOutbound).toBe(0);
+    expect(delta.cannotShip).toBe(7);
+    expect(delta.partialOutbound).toBe(4);
+  });
+
+  it('상자가 둘 이상 움직였어도 주문 하나로 센다', async () => {
+    const delta = await withFixtures(async ({ trx, order }) => {
+      const w = await f.seedWorld(trx);
+      const id = await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(1) });
+      const fo = await f.seedFo(trx, w, { salesOrderId: id, lineId: await lineOf(trx, id) }, { status: 'created' });
+      await f.seedBox(trx, w, [fo.foItemId], { status: 'draft' });
+      await f.seedBox(trx, w, [fo.foItemId], { status: 'shipped' });
+      await f.seedBox(trx, w, [fo.foItemId], { status: 'delivered' });
+      await progress(trx, id, { stage: 'reserve' });
+    });
+
+    expect(delta.cannotShip).toBe(1);
+    expect(delta.partialOutbound).toBe(1);
   });
 
   it('출고완료는 FO 의 출고 증거로 판정한다 — status 든 shippedAt 이든 하나면 된다', async () => {
@@ -173,7 +238,11 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
       await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(1), fo: { status: 'shipped' } });
       await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(2), fo: { status: 'completed' } });
       // status 는 아직 created 지만 출고 시각이 찍혔다
-      await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(3), fo: { status: 'created', shippedAt: kstDaysAgoNoon(3) } });
+      await order({
+        status: 'confirmed',
+        orderDate: kstDaysAgoNoon(3),
+        fo: { status: 'created', shippedAt: kstDaysAgoNoon(3) },
+      });
       // 출고 증거 없음
       await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(4), fo: { status: 'created' } });
     });

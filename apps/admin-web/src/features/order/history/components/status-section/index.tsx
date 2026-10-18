@@ -1,16 +1,20 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 import { useOrderStats } from '@/lib/services/orders';
+import { STALL_BOARD_RESERVE_HREF } from '@/lib/api/domains/orders/order-progress.shape';
 
 function StatCard({
   label,
   value,
   color,
+  href,
 }: {
   label: string;
   value: number | undefined;
   color?: 'blue' | 'red' | 'green' | 'default';
+  href?: string;
 }) {
   const textColor =
     color === 'blue'
@@ -21,13 +25,22 @@ function StatCard({
           ? 'text-green-600'
           : 'text-gray-800';
 
-  return (
-    <div className="flex min-w-[100px] flex-1 flex-col items-center justify-center rounded-xl border bg-white px-4 py-3 shadow-sm">
+  const body = (
+    <>
       <span className="mb-1 whitespace-nowrap text-xs text-gray-500">{label}</span>
       <span className={`text-2xl font-bold ${textColor}`}>
         {value != null ? value.toLocaleString() : '-'}
       </span>
-    </div>
+    </>
+  );
+  const box =
+    'flex min-w-[100px] flex-1 flex-col items-center justify-center rounded-xl border bg-white px-4 py-3 shadow-sm';
+  return href ? (
+    <Link href={href} className={`${box} hover:border-slate-400`}>
+      {body}
+    </Link>
+  ) : (
+    <div className={box}>{body}</div>
   );
 }
 
@@ -57,7 +70,7 @@ export function OrderStatusSection() {
           <div className="flex flex-1 flex-wrap gap-2">
             <StatCard label="출고요청" value={stats?.outboundRequested} color="blue" />
             <StatCard label="직배송" value={stats?.directShip} />
-            <StatCard label="출고불가" value={stats?.cannotShip} color="red" />
+            <StatCard label="출고불가" value={stats?.cannotShip} color="red" href={STALL_BOARD_RESERVE_HREF} />
             <StatCard label="부분출고" value={stats?.partialOutbound} color="red" />
             <StatCard label="매칭대기" value={stats?.waitingMatching} />
             <StatCard label="출고완료" value={stats?.outboundComplete} color="green" />

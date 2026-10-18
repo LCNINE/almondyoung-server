@@ -1891,6 +1891,9 @@ export const shipmentLines = pgTable(
       onDelete: 'set null',
     }),
     forced: boolean('forced').notNull().default(false),
+    // 분할로 새로 생긴 라인이 원래 라인의 재고 대기 순번을 이어받는 값 — NULL 이면 created_at.
+    // 안 이어받으면 나눠 보낸 미예약 몫이 «지금» 줄 맨 뒤로 가서, 나눈 것 때문에 더 늦게 받는다.
+    demandRequestedAt: timestamp('demand_requested_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

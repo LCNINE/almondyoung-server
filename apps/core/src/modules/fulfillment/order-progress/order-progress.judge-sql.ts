@@ -1,6 +1,7 @@
 import { SQL, sql } from 'drizzle-orm';
 import { CHANNEL_CANCEL_REQUEST_REASON } from '../../sales-order/channel-cancel-request/channel-cancel-request.types';
 import { SETTLE_DELAYED_AFTER_MS } from './order-progress.thresholds';
+import { shipmentReservationTotalsSql } from './shipment-reservation-totals.sql';
 
 /** 대표 단위를 고르는 순서: 분류 안 됨 > 취소 > 가장 뒤처진 단계. 주문으로 접을 때와 상자로 접을 때 같은 순서를 쓴다 */
 const unitStagePriority = (stage: SQL) => sql`CASE ${stage}
@@ -32,19 +33,31 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
         FROM fulfillment_orders f
         JOIN so ON so.id = f.sales_order_id
     ),
-    -- 상자 하나 × 그 상자에 라인이 있는 판매주문 하나. 합포장 상자는 주문마다 한 행씩 나온다.
-    box AS (
-      SELECT fo.sales_order_id, s.id AS shipment_id, s.status::text AS status, s.recovery_code,
-             s.opened_at, s.planned_at, s.shipped_at,
-             bool_or(fo.status IN ('created', 'partially_reserved')) AS under_reserved,
-             bool_or(fo.status = 'partially_reserved') AS partially_reserved,
-             min(fo.created_at) AS fo_created_at
-        FROM shipments s
-        JOIN shipment_lines sl ON sl.shipment_id = s.id
+    -- 판정 대상 주문의 FO 에 걸린 상자 라인(상자 × 주문). shipment_lines 를 한 번만 읽도록 box_res 의 범위와 box 가 함께 쓴다.
+    box_line AS (
+      SELECT sl.shipment_id, fo.sales_order_id, fo.created_at AS fo_created_at
+        FROM shipment_lines sl
         JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
         JOIN fo ON fo.id = foi.fulfillment_order_id
+    ),
+    -- 그 상자들의 «라인 수량 vs 확정 예약» 합. 상자 전체로 센다 — 합포장 상자는 다른 주문 라인도 센다(D13).
+    -- 정의는 shipmentReservationTotalsSql 한 벌이다. 범위(판정 대상 주문의 상자)는 인자로 넘겨 집계 앞에서 건다 — 뒤에서 거르면 전 상자를 집계한다.
+    box_res AS (
+      ${shipmentReservationTotalsSql(sql`SELECT bl.shipment_id FROM box_line bl`)}
+    ),
+    -- 상자 하나 × 그 상자에 라인이 있는 판매주문 하나. 합포장 상자는 주문마다 한 행씩 나온다.
+    -- «예약 단계»는 FO 상태가 아니라 상자의 예약으로 정한다 — 한 FO 의 상자 둘 중 하나만 덜 예약일 수 있다(#1016 15번).
+    box AS (
+      SELECT bl.sales_order_id, s.id AS shipment_id, s.status::text AS status, s.recovery_code,
+             s.opened_at, s.planned_at, s.shipped_at,
+             bool_or(br.unreserved_qty > 0) AS under_reserved,
+             bool_or(br.reserved_qty > 0 AND br.unreserved_qty > 0) AS partially_reserved,
+             min(bl.fo_created_at) AS fo_created_at
+        FROM shipments s
+        JOIN box_line bl ON bl.shipment_id = s.id
+        JOIN box_res br ON br.shipment_id = s.id
        WHERE s.status NOT IN ('canceled', 'superseded')
-       GROUP BY fo.sales_order_id, s.id
+       GROUP BY bl.sales_order_id, s.id
     ),
     -- 활성 작업 항목이 있으면 그것, 없으면 마지막 completed. excluded(배치에서 빠짐)는 보지 않는다.
     wi AS (

@@ -700,6 +700,10 @@ export class ConsolidationService {
           reservedQty: lines.reduce((total, line) => total + (confirmedByLine.get(line.id) ?? 0), 0),
           createdFromLineId: lines.length === 1 ? lines[0].id : null,
           createdAt: new Date(Math.min(...lines.map((line) => line.createdAt.getTime()))),
+          // 예약 대기열의 순서 키 — 합쳐도 가장 오래 기다린 몫의 순간을 잃지 않는다(created_at 으로 대체하면 줄이 뒤로 밀린다)
+          demandRequestedAt: new Date(
+            Math.min(...lines.map((line) => (line.demandRequestedAt ?? line.createdAt).getTime())),
+          ),
         })
         .returning();
       await tx
@@ -843,6 +847,7 @@ export class ConsolidationService {
         lineVersion: wmsTables.shipmentLines.lineVersion,
         createdFromLineId: wmsTables.shipmentLines.createdFromLineId,
         forced: wmsTables.shipmentLines.forced,
+        demandRequestedAt: wmsTables.shipmentLines.demandRequestedAt,
         createdAt: wmsTables.shipmentLines.createdAt,
         fulfillmentOrderId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
         salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,

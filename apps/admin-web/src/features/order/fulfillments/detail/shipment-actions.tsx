@@ -25,6 +25,10 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { usePermission } from '@/hooks/use-permission';
 import {
+  SPLIT_QTY_ERROR,
+  isSplitQtyAllowed,
+} from '@/lib/api/domains/orders/order-progress.shape';
+import {
   useCancelShipmentOutstanding,
   canRecallShipment,
   createIdempotentCommand,
@@ -205,13 +209,13 @@ export function ShipmentActions({
       if (action === 'split') {
         if (
           !line ||
-          !Number.isInteger(quantity) ||
-          quantity < 1 ||
-          quantity >= line.qty
+          !isSplitQtyAllowed(
+            quantity,
+            line.qty,
+            shipment.lines.reduce((sum, entry) => sum + entry.qty, 0)
+          )
         ) {
-          toast.error(
-            '분할 수량은 1 이상이며 원본 라인 수량보다 작아야 합니다.'
-          );
+          toast.error(SPLIT_QTY_ERROR);
           return;
         }
         if (!reason.trim()) {

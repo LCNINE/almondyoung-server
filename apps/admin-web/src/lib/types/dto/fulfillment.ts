@@ -753,6 +753,10 @@ export interface SplitShipmentRequest extends ShipmentCommandReason {
   moves: ShipmentSplitMove[];
 }
 
+export interface SplitUnreservedShipmentRequest extends ShipmentCommandReason {
+  expectedManifestVersion: number;
+}
+
 export interface ReviseShipmentRecipientRequest extends ShipmentCommandReason {
   expectedManifestVersion: number;
   /**

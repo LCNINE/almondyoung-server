@@ -57,6 +57,13 @@ export class SplitShipmentDto extends ShipmentCommandReasonDto {
   moves: ShipmentSplitMoveDto[];
 }
 
+/** 미예약 몫 전부를 새 상자로 나눈다 — 몫은 서버가 잠금 뒤에 정하므로 라인을 받지 않는다. */
+export class SplitUnreservedShipmentDto extends ShipmentCommandReasonDto {
+  @IsInt()
+  @Min(1)
+  expectedManifestVersion: number;
+}
+
 export class ReviseShipmentRecipientDto extends ShipmentCommandReasonDto {
   @IsInt()
   @Min(1)

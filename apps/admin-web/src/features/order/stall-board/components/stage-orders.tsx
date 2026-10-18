@@ -8,11 +8,14 @@ import {
   BoardStageKey,
   StageSummary,
   formatDwell,
+  arrivalLabel,
   gaveUpBadge,
+  shortageSummary,
   stateLabel,
 } from '@/lib/api/domains/orders/order-progress.shape';
 import { settlementReason, settlementTiming } from '@/lib/api/domains/orders/cancel-request.shape';
 import { SettlementActions } from '@/features/order/cancel-settlement/settlement-actions';
+import { ShortageSplitAction } from './shortage-split-action';
 import { cn } from '@/lib/utils/ui';
 
 /** 아래 목록 — 세부 상태 칩, 갇힘만, 채널, 정렬. 체류 긴 순이 기본(스펙 D7). 행은 주문내역 지목 검색으로 간다. */
@@ -26,6 +29,7 @@ export function StageOrders(props: {
   const [channel, setChannel] = useState('');
   const [sort, setSort] = useState<'dwell' | 'ordered'>('dwell');
   const isCancelRequest = props.stage === 'cancel_request';
+  const isReserve = props.stage === 'reserve';
   const q = useOrderProgressOrders({
     stage: props.stage,
     state,
@@ -120,8 +124,11 @@ export function StageOrders(props: {
               <th className="px-4 py-2 text-left font-medium">고객</th>
               <th className="px-4 py-2 text-left font-medium">주문일</th>
               <th className="px-4 py-2 text-left font-medium">세부 상태</th>
+              {isReserve && (
+                <th className="px-4 py-2 text-left font-medium">모자람</th>
+              )}
               <th className="px-4 py-2 text-right font-medium">체류</th>
-              {isCancelRequest && (
+              {(isCancelRequest || isReserve) && (
                 <th className="px-4 py-2 text-right font-medium">조치</th>
               )}
             </tr>
@@ -167,6 +174,20 @@ export function StageOrders(props: {
                       </div>
                     )}
                   </td>
+                  {isReserve && (
+                    <td className="px-4 py-2">
+                      {r.shortage && (
+                        <>
+                          {shortageSummary(r.shortage)}
+                          {arrivalLabel(r.shortage.items[0].expectedArrival) && (
+                            <span className="ml-1.5 text-xs text-muted-foreground">
+                              {arrivalLabel(r.shortage.items[0].expectedArrival)}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </td>
+                  )}
                   <td
                     className={cn(
                       'px-4 py-2 text-right tabular-nums',
@@ -177,6 +198,11 @@ export function StageOrders(props: {
                       props.now.getTime() - new Date(r.stageEnteredAt).getTime()
                     )}
                   </td>
+                  {isReserve && (
+                    <td className="px-4 py-2 text-right whitespace-nowrap">
+                      {r.shortage ? <ShortageSplitAction shortage={r.shortage} /> : null}
+                    </td>
+                  )}
                   {isCancelRequest && (
                     <td className="px-4 py-2 text-right whitespace-nowrap">
                       {r.settlement ? (

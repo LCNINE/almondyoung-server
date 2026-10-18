@@ -4,6 +4,7 @@ import { OrderProgressManager } from './order-progress.manager';
 import { OrderProgressReader } from './order-progress.reader';
 import { OrderProgressRefreshJob } from './order-progress.refresh.job';
 import { OrderProgressService } from './order-progress.service';
+import { ReserveShortageReader } from './reserve-shortage.reader';
 
 /**
  * 정체 보드 — 주문 진행 투영(스펙 docs/superpowers/specs/2026-10-06-order-stall-board-design.md).
@@ -12,7 +13,13 @@ import { OrderProgressService } from './order-progress.service';
  */
 @Module({
   controllers: [OrderProgressController],
-  providers: [OrderProgressReader, OrderProgressManager, OrderProgressRefreshJob, OrderProgressService],
+  providers: [
+    OrderProgressReader,
+    OrderProgressManager,
+    OrderProgressRefreshJob,
+    OrderProgressService,
+    ReserveShortageReader,
+  ],
   exports: [OrderProgressReader],
 })
 export class OrderProgressModule {}

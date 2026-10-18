@@ -80,6 +80,7 @@ export {
   useCreateFulfillmentOrder,
   useCancelFulfillment,
   useSplitShipment,
+  useSplitUnreservedShipment,
   useReviseShipmentRecipient,
   usePlanShipment,
   useCancelShipmentOutstanding,

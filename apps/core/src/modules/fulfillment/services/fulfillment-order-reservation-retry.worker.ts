@@ -6,6 +6,7 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { eq, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
+import { reservationQueueKeySql } from './reservation-queue-key';
 import { ShipmentReservationService } from './shipment-reservation.service';
 
 /**
@@ -74,6 +75,7 @@ export class FulfillmentOrderReservationRetryWorker {
   /**
    * 후보: 미예약 수량이 남은 active draft shipment line 중 SKU 에 가용재고가 있는 것.
    * 원 요청 시각(requested_at, short-pick 해제 이력 포함) asc — 오래된 요청부터.
+   * 예약 이력이 없는 분할 라인은 원래 라인에서 물려받은 순번(demand_requested_at)을 쓴다.
    */
   async findCandidates(limit: number, tx?: DbTx): Promise<Array<{ id: string }>> {
     if (!this.workflowGate.shouldRunReservationRetry()) {
@@ -96,19 +98,7 @@ export class FulfillmentOrderReservationRetryWorker {
               AND reservation.shipment_line_id = sl.id
               AND reservation.status = 'confirmed'
          ), 0)
-       ORDER BY COALESCE((
-         SELECT MIN(COALESCE(reservation.requested_at, reservation.created_at))
-           FROM stock_reservations reservation
-          WHERE reservation.target_type = 'SHIPMENT_LINE'
-            AND reservation.shipment_line_id = sl.id
-            AND (
-              reservation.status = 'confirmed'
-              OR (
-                reservation.status = 'released'
-                AND reservation.state_reason LIKE 'short-pick:%'
-              )
-            )
-       ), sl.created_at), sl.id
+       ORDER BY ${reservationQueueKeySql(sql`sl`)}, sl.id
        LIMIT ${limit}
     `);
     return rows as unknown as Array<{ id: string }>;
