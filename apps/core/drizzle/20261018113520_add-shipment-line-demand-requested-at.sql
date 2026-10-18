@@ -1,0 +1,1 @@
+ALTER TABLE "shipment_lines" ADD COLUMN "demand_requested_at" timestamp with time zone;

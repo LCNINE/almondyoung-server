@@ -843,6 +843,7 @@ export class ConsolidationService {
         lineVersion: wmsTables.shipmentLines.lineVersion,
         createdFromLineId: wmsTables.shipmentLines.createdFromLineId,
         forced: wmsTables.shipmentLines.forced,
+        demandRequestedAt: wmsTables.shipmentLines.demandRequestedAt,
         createdAt: wmsTables.shipmentLines.createdAt,
         fulfillmentOrderId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
         salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,

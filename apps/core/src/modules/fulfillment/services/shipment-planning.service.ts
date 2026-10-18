@@ -34,6 +34,7 @@ import {
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
+import { loadReservationQueueKey } from './reservation-queue-key';
 import { ShipmentReservationService } from './shipment-reservation.service';
 import { ACTIVE_WORK_ITEM_STATUSES } from './work-item-status';
 import {
@@ -278,6 +279,9 @@ export class ShipmentPlanningService {
             continue;
           }
 
+          // 원래 라인의 재고 대기 순번은 예약을 옮기기 «전에» 읽는다 — 새 라인이 «지금» 으로
+          // 줄 맨 뒤에 서면, 나눠 보낸 것 때문에 이 주문이 뒤에 온 주문보다 늦게 재고를 받는다.
+          const demandRequestedAt = await loadReservationQueueKey(tx, line.id);
           await tx
             .update(wmsTables.shipmentLines)
             .set({ qty: line.qty - move.qty, lineVersion: line.lineVersion + 1 })
@@ -290,6 +294,7 @@ export class ShipmentPlanningService {
               skuId: line.skuId,
               qty: move.qty,
               createdFromLineId: line.id,
+              demandRequestedAt,
             })
             .returning();
           if (targetReservedQty > 0) {
