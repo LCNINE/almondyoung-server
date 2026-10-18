@@ -106,9 +106,6 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
       dbService,
     ),
   );
-  // orchestrator 의 moduleRef 는 대기 오퍼레이션 재개(ConsolidationService)에만 쓰인다.
-  // 단순출고 경로는 그 분기에 닿지 않으므로 no-op stub 이면 된다.
-  const moduleRef = { get: () => ({ resumePending: async () => {} }) } as never;
   const boxes = new BoxAllocationManager(sessions, controlled);
   const totes = new ToteLifecycleService(dbService);
   const shortPicks = new ShortPickExitService(shipmentReservations, waybills, audit);
@@ -123,6 +120,11 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     workflowGate,
     withdrawals,
   );
+  // orchestrator 의 moduleRef 는 배치를 떠난 박스의 대기 오퍼레이션 재개에만 쓰인다 — 취소는 위의 계획 서비스가 잇고,
+  // 합포장(ConsolidationService)은 단순출고 경로가 닿지 않으므로 no-op stub 이면 된다.
+  const moduleRef = {
+    get: (type: unknown) => (type === ShipmentPlanningService ? planning : { resumePending: async () => {} }),
+  } as never;
   const batches = new OutboundBatchOrchestrator(
     dbService,
     commands,

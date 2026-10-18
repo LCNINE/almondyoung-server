@@ -197,6 +197,44 @@ describeIfDb('전체 취소 → 이탈 (스펙 §8 E10, PR 3)', () => {
     });
   });
 
+  // 스펙 §4.2: 대기 상자가 배치를 떠나면 재개가 §4.1 과 같은 손질을 한다 — E10 이 이탈 때 송장을 무효화하는 것과 같다.
+  it('부분 취소 대기(E11) 뒤 운영자가 박스를 draft 로 빼면 재개가 registered 송장을 로컬 무효화하고 취소를 끝낸다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, wiring } = await started(tx);
+      const pending = await cancel(wiring, first, tx, 1); // 첫 박스는 수량 2
+      expect(pending.operationStatus).toBe('pending');
+
+      const excluded = await wiring.batches.excludeShipment(
+        first.batchId,
+        first.shipmentId,
+        { reason: '취소 대기 상자 빼기' },
+        `x-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      expect(excluded.workItem).toMatchObject({ status: 'excluded', exitTo: 'draft' });
+      expect(await shipmentOf(tx, first.shipmentId)).toMatchObject({
+        status: 'draft',
+        plannedAt: null,
+        recoveryCode: null,
+      });
+      expect((await waybillOf(tx, first.waybillId)).status).toBe('voided');
+      const [line] = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.id, first.shipmentLineId));
+      expect(line).toMatchObject({ qty: 1, reservedQty: 1 });
+      expect(await confirmedReservationQty(tx, first.shipmentLineId)).toBe(1);
+      const [operation] = await tx
+        .select()
+        .from(wmsTables.shipmentOperations)
+        .where(eq(wmsTables.shipmentOperations.id, pending.operationId));
+      expect(operation.status).toBe('completed');
+      await assertFulfillmentInvariantsFor(tx, [first.shipmentId]);
+    });
+  });
+
   it('활성 송장이 registered 가 아니면(pending) 이탈하지 않고 지금처럼 대기한다 — 취소가 NOT_VOIDABLE 로 되돌려지지 않는다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { second, wiring } = await started(tx);
