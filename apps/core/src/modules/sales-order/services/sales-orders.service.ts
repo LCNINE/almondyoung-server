@@ -59,6 +59,7 @@ import { extractDisplayOrderNo } from '../utils/display-order-no.util';
 import { ChannelCancelRequestReader } from '../channel-cancel-request/channel-cancel-request.reader';
 import { toCancelRequestView } from '../channel-cancel-request/channel-cancel-request.types';
 import { buildDailyOrderStatusSeries, DailyOrderStatusPoint } from '../utils/daily-order-status';
+import { orderShipmentPhaseSql } from './order-shipment-phase.sql';
 import { BusinessLinkReferenceDto, CreateBusinessLinkDto } from '../dto/create-business-link.dto';
 import { CancelSalesOrderDto } from '../dto/cancel-sales-order.dto';
 import { AddressDto } from '../dto/address.dto';
@@ -1176,46 +1177,25 @@ export class SalesOrdersService {
     const db = this.db.db;
 
     const [orderRows, exchangeRows, returnRows] = await Promise.all([
+      // 단계 정의는 주문 목록·상세 뱃지와 같은 한 벌(orderShipmentPhaseSql)을 읽는다 — 숫자와 뱃지가 어긋나지 않게.
       db.execute(sql`
-        WITH so AS (
-          SELECT id, status::text AS status, ((order_date AT TIME ZONE 'Asia/Seoul')::date)::text AS day
+        WITH ranged AS (
+          SELECT id, ((order_date AT TIME ZONE 'Asia/Seoul')::date)::text AS day
             FROM sales_orders
            WHERE order_date >= ${start} AND order_date < ${end}
         ),
-        units AS (
-          SELECT DISTINCT fo.sales_order_id, s.id AS unit_id, s.status::text AS st
-            FROM shipments s
-            JOIN shipment_lines sl ON sl.shipment_id = s.id
-            JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
-            JOIN fulfillment_orders fo ON fo.id = foi.fulfillment_order_id
-            JOIN so ON so.id = fo.sales_order_id
-           WHERE s.status NOT IN ('canceled', 'superseded')
-          UNION ALL
-          SELECT fo.sales_order_id, fo.id,
-                 CASE fo.direct_ship_status WHEN 'completed' THEN 'delivered' WHEN 'forwarded' THEN 'shipped' ELSE 'draft' END
-            FROM fulfillment_orders fo
-            JOIN so ON so.id = fo.sales_order_id
-           WHERE fo.fulfillment_mode = 'drop_ship'
-             AND fo.direct_ship_status IS NOT NULL
-             AND fo.direct_ship_status <> 'canceled'
-        ),
-        phase AS (
-          SELECT sales_order_id,
-                 bool_and(st = 'delivered') AS all_delivered,
-                 bool_or(st IN ('shipped', 'in_transit', 'failed', 'delivered')) AS any_moved
-            FROM units
-           GROUP BY sales_order_id
-        )
-        SELECT so.day,
-               count(*) FILTER (WHERE so.status = 'pending')::int AS pending,
-               count(*) FILTER (WHERE so.status NOT IN ('pending', 'cancelled', 'timeout') AND NOT coalesce(p.any_moved, false))::int AS preparing,
-               count(*) FILTER (WHERE so.status NOT IN ('pending', 'cancelled', 'timeout') AND p.any_moved AND NOT p.all_delivered)::int AS shipping,
-               count(*) FILTER (WHERE so.status NOT IN ('pending', 'cancelled', 'timeout') AND p.all_delivered)::int AS delivered,
-               count(*) FILTER (WHERE so.status IN ('cancelled', 'timeout'))::int AS cancelled,
+        ph AS (${orderShipmentPhaseSql(sql`SELECT id FROM ranged`)})
+        SELECT ranged.day,
+               count(*) FILTER (WHERE ph.phase = 'pending')::int AS pending,
+               count(*) FILTER (WHERE ph.phase = 'preparing')::int AS preparing,
+               count(*) FILTER (WHERE ph.phase = 'shipping')::int AS shipping,
+               count(*) FILTER (WHERE ph.phase = 'delivered')::int AS delivered,
+               count(*) FILTER (WHERE ph.phase = 'external_shipped')::int AS "externalShipped",
+               count(*) FILTER (WHERE ph.phase = 'cancelled')::int AS cancelled,
                count(*)::int AS total
-          FROM so
-          LEFT JOIN phase p ON p.sales_order_id = so.id
-         GROUP BY so.day
+          FROM ranged
+          JOIN ph ON ph.sales_order_id = ranged.id
+         GROUP BY ranged.day
       `),
       db.execute(sql`
         SELECT ((created_at AT TIME ZONE 'Asia/Seoul')::date)::text AS day, count(*)::int AS count

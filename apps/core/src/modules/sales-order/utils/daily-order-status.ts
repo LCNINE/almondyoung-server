@@ -4,13 +4,18 @@ export interface DailyOrderStatusPoint {
   preparing: number;
   shipping: number;
   delivered: number;
+  /** 셀메이트 등 core 밖에서 나간 주문(sales_orders.status shipped·delivered) */
+  externalShipped: number;
   cancelled: number;
   exchange: number;
   return: number;
   total: number;
 }
 
-type OrderRow = Pick<DailyOrderStatusPoint, 'pending' | 'preparing' | 'shipping' | 'delivered' | 'cancelled' | 'total'> & {
+type OrderRow = Pick<
+  DailyOrderStatusPoint,
+  'pending' | 'preparing' | 'shipping' | 'delivered' | 'externalShipped' | 'cancelled' | 'total'
+> & {
   day: string;
 };
 
@@ -36,6 +41,7 @@ export function buildDailyOrderStatusSeries(
       preparing: row?.preparing ?? 0,
       shipping: row?.shipping ?? 0,
       delivered: row?.delivered ?? 0,
+      externalShipped: row?.externalShipped ?? 0,
       cancelled: row?.cancelled ?? 0,
       exchange: exchangeByDay.get(bucket) ?? 0,
       return: returnByDay.get(bucket) ?? 0,

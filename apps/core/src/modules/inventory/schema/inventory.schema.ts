@@ -164,8 +164,9 @@ export const orderStatusEnum = pgEnum('order_status', [
   // 도출이 SoT 다(ADR-0017). SO.status 의 실 전이는 pending→confirmed→cancelled 뿐이다(timeout 도 현재 producer 0 인 예약 값).
   // 재사용 금지. 물리 제거(pgEnum recast)는 destructive·저가치라 비목표(구 8b 판례).
   'processing', // [DEAD] 미사용 — 도달 불가
-  'shipped', // [DEAD] 미사용 — FO 도출로 대체
-  'delivered', // [DEAD] 미사용 — FO 도출로 대체
+  // 'shipped'·'delivered' — 코드 producer 0. 셀메이트 스크립트(scripts/sellmate/mark-shipped-from-csv.ts)가 쓴다. 읽는 곳은 «core 밖에서 나갔다(외부 출고)» 뜻으로 읽는다 — 정체 보드 D3. core 출고의 진실은 FO·상자다(ADR-0017)
+  'shipped', // 외부 출고(셀메이트) — 위 주석
+  'delivered', // 외부 출고(셀메이트) — 위 주석
   'cancelled', // 취소
   'timeout', // 타임아웃
 ]);
