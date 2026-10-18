@@ -214,25 +214,9 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
         ],
       };
       const cancelKey = `cancel-consolidated-source-${randomUUID()}`;
-      const pendingCancellation = await planning.cancelOutstanding(targetShipmentId, cancelDto, cancelKey, actor, tx);
-      expect(pendingCancellation).toMatchObject({
-        operationStatus: 'pending',
-        shipmentId: targetShipmentId,
-        manifestVersion: consolidated.target!.manifestVersion,
-      });
-      const [waitingTarget] = await tx
-        .select()
-        .from(wmsTables.shipments)
-        .where(eq(wmsTables.shipments.id, targetShipmentId));
-      expect(waitingTarget).toMatchObject({
-        status: 'recovery_required',
-        recoveryCode: 'CANCEL_REPLAN_PENDING',
-        manifestVersion: consolidated.target!.manifestVersion,
-      });
-
-      const cancellation = await planning.resumePendingCancellation(pendingCancellation.operationId, tx);
-      expect(cancellation.operationStatus).toBe('completed');
-      expect(await planning.resumePendingCancellation(pendingCancellation.operationId, tx)).toEqual(cancellation);
+      // #1016 30번: 완료된 합포장의 대상이라는 것은 더 이상 막힘이 아니다 — 대기 없이 그 자리에서 끝난다(스펙 §4.1).
+      const cancellation = await planning.cancelOutstanding(targetShipmentId, cancelDto, cancelKey, actor, tx);
+      expect(cancellation).toMatchObject({ operationStatus: 'completed', shipmentId: targetShipmentId });
       expect(await planning.cancelOutstanding(targetShipmentId, cancelDto, cancelKey, actor, tx)).toEqual(cancellation);
 
       const [targetAfterCancellation] = await tx

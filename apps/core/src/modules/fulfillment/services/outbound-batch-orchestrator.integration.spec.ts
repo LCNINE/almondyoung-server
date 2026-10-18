@@ -1112,11 +1112,16 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       `resume-add-${randomUUID()}`,
       master,
     );
+    // #1016 30번 이후 시작 전 배치의 상자는 그 자리에서 취소된다 — 대기는 막힘(발급 중인 송장)이 있을 때만 남는다.
+    await db
+      .update(wmsTables.waybills)
+      .set({ source: 'carrier', status: 'pending' })
+      .where(eq(wmsTables.waybills.id, fixture.waybill.id));
     const cancellation = await services.planning.cancelOutstanding(
       fixture.shipment.id,
       {
         expectedManifestVersion: fixture.shipment.manifestVersion,
-        reason: 'remove one item after label void',
+        reason: 'remove one item while the label is still issuing',
         lines: [{ shipmentLineId: fixture.line.id, expectedLineVersion: fixture.line.lineVersion, qty: 1 }],
       },
       `resume-cancel-${randomUUID()}`,
@@ -1129,25 +1134,22 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       .where(eq(wmsTables.outboundBatchWorkItems.id, added.workItem.id));
     expect(waiting.waitingOperationId).toBe(cancellation.operationId);
 
-    // 플랜3: cancelOutstanding 의 resume 분기(exclusion 이 트리거)는 assertNoActiveWaybill 게이트를 통과해야 한다
-    // (구 invoice-active 게이트의 waybill 등가물). eligibleFixture 가 dispatchable 을 위해 registered waybill 을
-    // 심으므로("remove one item after label void" 의도대로) exclusion 전에 그 활성 waybill 을 void 한다.
-    await services.waybills.void(
-      fixture.waybill.id,
-      { reason: 'void active label before cancelling one item' },
-      `resume-waybill-void-${randomUUID()}`,
-      master,
-    );
+    // 캐리어 접수가 끝나 송장이 registered 로 굳었다. 운영자가 손으로 빼면 재개가 그 송장을 무효화하고 취소를 끝낸다(스펙 §4.2)
+    // — 옛 방식은 운영자가 송장을 먼저 무효화해야만 풀렸다(SHIPMENT_ACTIVE_INVOICE).
+    await db
+      .update(wmsTables.waybills)
+      .set({ status: 'registered' })
+      .where(eq(wmsTables.waybills.id, fixture.waybill.id));
     const excluded = await services.batches.excludeShipment(
       batch.batchId,
       fixture.shipment.id,
-      { reason: 'label voided — resume should proceed immediately' },
+      { reason: 'label registered — resume should void it and proceed' },
       `resume-exclude-${randomUUID()}`,
       master,
     );
     expect(excluded.workItem).toMatchObject({ status: 'excluded', waitingOperationId: cancellation.operationId });
 
-    const [[operation], [line], reservations] = await Promise.all([
+    const [[operation], [line], reservations, [waybill]] = await Promise.all([
       db
         .select()
         .from(wmsTables.shipmentOperations)
@@ -1157,8 +1159,10 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
         .select()
         .from(wmsTables.stockReservations)
         .where(eq(wmsTables.stockReservations.shipmentLineId, fixture.line.id)),
+      db.select().from(wmsTables.waybills).where(eq(wmsTables.waybills.id, fixture.waybill.id)),
     ]);
     expect(operation).toMatchObject({ id: cancellation.operationId, type: 'cancel', status: 'completed' });
+    expect(waybill.status).toBe('voided');
     expect(line.qty).toBe(1);
     expect(reservations).toEqual(
       expect.arrayContaining([expect.objectContaining({ status: 'confirmed', quantity: 1 })]),
@@ -1198,11 +1202,18 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
     }
 
     const cancellationResult = (cancelResult as PromiseFulfilledResult<{ operationId: string }>).value;
+    // #1016 30번: 어느 쪽이 먼저든 취소는 그 자리에서 끝난다 — 취소가 먼저면 add 가 SHIPMENT_NOT_PLANNED 로 지고(작업 항목 없음),
+    // add 가 먼저면 취소가 시작 전 배치에서 뺀다(excluded). 활성 작업 항목은 어느 경우에도 남지 않는다.
     const [operation] = await db
       .select()
       .from(wmsTables.shipmentOperations)
       .where(eq(wmsTables.shipmentOperations.id, cancellationResult.operationId));
-    expect(operation).toMatchObject({ idempotencyKey: cancellationKey, type: 'cancel', status: 'pending' });
+    expect(operation).toMatchObject({ idempotencyKey: cancellationKey, type: 'cancel', status: 'completed' });
+    const [shipment] = await db
+      .select()
+      .from(wmsTables.shipments)
+      .where(eq(wmsTables.shipments.id, fixture.shipment.id));
+    expect(shipment).toMatchObject({ status: 'draft', recoveryCode: null });
     const workItems = await db
       .select()
       .from(wmsTables.outboundBatchWorkItems)
@@ -1212,9 +1223,7 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
           eq(wmsTables.outboundBatchWorkItems.batchId, batch.batchId),
         ),
       );
-    if (workItems.length) {
-      expect(workItems).toHaveLength(1);
-      expect(workItems[0].waitingOperationId).toBe(cancellationResult.operationId);
-    }
+    expect(workItems.length).toBeLessThanOrEqual(1);
+    for (const workItem of workItems) expect(workItem.status).toBe('excluded');
   });
 });

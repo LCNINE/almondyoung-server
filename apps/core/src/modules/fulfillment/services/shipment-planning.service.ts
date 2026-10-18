@@ -817,109 +817,107 @@ export class ShipmentPlanningService {
     | { outcome: 'blocked'; aggregate: ShipmentAggregate; blockers: string[] }
   > {
     this.workflowGate.assertV2MutationAllowed('shipment.cancel_outstanding.resume');
-    {
-      const [optimisticOperation] = await trx
-        .select()
-        .from(wmsTables.shipmentOperations)
-        .where(eq(wmsTables.shipmentOperations.id, operationId))
-        .limit(1);
-      if (!optimisticOperation || optimisticOperation.type !== 'cancel') {
-        throw new NotFoundException(`Cancellation operation ${operationId} not found`);
-      }
-      if (optimisticOperation.status === 'completed') {
-        return { outcome: 'already_completed', response: await this.completedCancellationResponse(operationId, trx) };
-      }
-      if (optimisticOperation.status !== 'pending') {
-        throw this.conflict(
-          'CANCELLATION_OPERATION_NOT_PENDING',
-          `Cancellation operation ${operationId} is ${optimisticOperation.status}`,
-        );
-      }
-
-      const pending = this.pendingCancellationIntent(optimisticOperation.afterManifestSnapshot);
-      const aggregate = await this.lockAggregate(pending.shipmentId, trx);
-      const [operation] = await trx
-        .select()
-        .from(wmsTables.shipmentOperations)
-        .where(eq(wmsTables.shipmentOperations.id, operationId))
-        .limit(1)
-        .for('update');
-      if (!operation || operation.type !== 'cancel') {
-        throw new NotFoundException(`Cancellation operation ${operationId} not found`);
-      }
-      if (operation.status === 'completed') {
-        return { outcome: 'already_completed', response: await this.completedCancellationResponse(operationId, trx) };
-      }
-      if (operation.status !== 'pending') {
-        throw this.conflict(
-          'CANCELLATION_OPERATION_NOT_PENDING',
-          `Cancellation operation ${operationId} is ${operation.status}`,
-        );
-      }
-      const lockedPending = this.pendingCancellationIntent(operation.afterManifestSnapshot);
-      if (JSON.stringify(lockedPending) !== JSON.stringify(pending)) {
-        throw this.conflict('CANCELLATION_OPERATION_CHANGED_RETRY', 'Cancellation intent changed; retry resume');
-      }
-      const [member] = await trx
-        .select({ shipmentId: wmsTables.shipmentOperationMembers.shipmentId })
-        .from(wmsTables.shipmentOperationMembers)
-        .where(
-          and(
-            eq(wmsTables.shipmentOperationMembers.operationId, operationId),
-            eq(wmsTables.shipmentOperationMembers.shipmentId, pending.shipmentId),
-            eq(wmsTables.shipmentOperationMembers.role, 'source'),
-          ),
-        )
-        .limit(1);
-      if (!member) {
-        throw this.conflict(
-          'CANCELLATION_OPERATION_MEMBER_MISSING',
-          `Cancellation operation ${operationId} is not attached to shipment ${pending.shipmentId}`,
-        );
-      }
-      if (
-        aggregate.shipment.status !== 'recovery_required' ||
-        aggregate.shipment.recoveryCode !== 'CANCEL_REPLAN_PENDING'
-      ) {
-        throw this.conflict(
-          'CANCELLATION_SOURCE_STATE_CHANGED',
-          `Shipment ${pending.shipmentId} is not waiting for cancellation replan`,
-        );
-      }
-      this.assertShipmentVersion(aggregate.shipment, pending.expectedManifestVersion);
-      const lineById = new Map(aggregate.lines.map((line) => [line.id, line]));
-      const selected = pending.lines.map((request) => {
-        const line = lineById.get(request.shipmentLineId);
-        if (!line) {
-          throw this.conflict(
-            'CANCELLATION_LINE_CHANGED',
-            `Shipment line ${request.shipmentLineId} is no longer in ${pending.shipmentId}`,
-          );
-        }
-        if (line.lineVersion !== request.expectedLineVersion || request.qty > line.qty) {
-          throw this.conflict('CANCELLATION_LINE_CHANGED', `Shipment line ${line.id} changed before resume`);
-        }
-        return { request, line };
-      });
-
-      const readiness = await assessCancelReadiness(
-        this.withdrawals,
-        { aggregate, ownOperationId: operationId, lock: true },
-        trx,
-      );
-      // 쓰기 전에 돌아간다 — 호출자가 준 트랜잭션에 반쯤 손질된 상자를 남기지 않는다.
-      if (readiness.kind !== 'ready') return { outcome: 'blocked', aggregate, blockers: cancelBlockers(readiness) };
-      await this.settleForCancellation(
-        aggregate,
-        readiness,
-        { actor: { id: operation.operatorId, roles: [] }, operationId, reason: pending.reason },
-        trx,
-      );
-      await this.assertNoActiveWaybill(pending.shipmentId, trx);
-      await this.assertNoCustodyOrActiveWork(aggregate, trx);
-      const response = await this.applyPendingCancellation(operation, pending, aggregate, selected, trx);
-      return { outcome: 'completed', response };
+    const [optimisticOperation] = await trx
+      .select()
+      .from(wmsTables.shipmentOperations)
+      .where(eq(wmsTables.shipmentOperations.id, operationId))
+      .limit(1);
+    if (!optimisticOperation || optimisticOperation.type !== 'cancel') {
+      throw new NotFoundException(`Cancellation operation ${operationId} not found`);
     }
+    if (optimisticOperation.status === 'completed') {
+      return { outcome: 'already_completed', response: await this.completedCancellationResponse(operationId, trx) };
+    }
+    if (optimisticOperation.status !== 'pending') {
+      throw this.conflict(
+        'CANCELLATION_OPERATION_NOT_PENDING',
+        `Cancellation operation ${operationId} is ${optimisticOperation.status}`,
+      );
+    }
+
+    const pending = this.pendingCancellationIntent(optimisticOperation.afterManifestSnapshot);
+    const aggregate = await this.lockAggregate(pending.shipmentId, trx);
+    const [operation] = await trx
+      .select()
+      .from(wmsTables.shipmentOperations)
+      .where(eq(wmsTables.shipmentOperations.id, operationId))
+      .limit(1)
+      .for('update');
+    if (!operation || operation.type !== 'cancel') {
+      throw new NotFoundException(`Cancellation operation ${operationId} not found`);
+    }
+    if (operation.status === 'completed') {
+      return { outcome: 'already_completed', response: await this.completedCancellationResponse(operationId, trx) };
+    }
+    if (operation.status !== 'pending') {
+      throw this.conflict(
+        'CANCELLATION_OPERATION_NOT_PENDING',
+        `Cancellation operation ${operationId} is ${operation.status}`,
+      );
+    }
+    const lockedPending = this.pendingCancellationIntent(operation.afterManifestSnapshot);
+    if (JSON.stringify(lockedPending) !== JSON.stringify(pending)) {
+      throw this.conflict('CANCELLATION_OPERATION_CHANGED_RETRY', 'Cancellation intent changed; retry resume');
+    }
+    const [member] = await trx
+      .select({ shipmentId: wmsTables.shipmentOperationMembers.shipmentId })
+      .from(wmsTables.shipmentOperationMembers)
+      .where(
+        and(
+          eq(wmsTables.shipmentOperationMembers.operationId, operationId),
+          eq(wmsTables.shipmentOperationMembers.shipmentId, pending.shipmentId),
+          eq(wmsTables.shipmentOperationMembers.role, 'source'),
+        ),
+      )
+      .limit(1);
+    if (!member) {
+      throw this.conflict(
+        'CANCELLATION_OPERATION_MEMBER_MISSING',
+        `Cancellation operation ${operationId} is not attached to shipment ${pending.shipmentId}`,
+      );
+    }
+    if (
+      aggregate.shipment.status !== 'recovery_required' ||
+      aggregate.shipment.recoveryCode !== 'CANCEL_REPLAN_PENDING'
+    ) {
+      throw this.conflict(
+        'CANCELLATION_SOURCE_STATE_CHANGED',
+        `Shipment ${pending.shipmentId} is not waiting for cancellation replan`,
+      );
+    }
+    this.assertShipmentVersion(aggregate.shipment, pending.expectedManifestVersion);
+    const lineById = new Map(aggregate.lines.map((line) => [line.id, line]));
+    const selected = pending.lines.map((request) => {
+      const line = lineById.get(request.shipmentLineId);
+      if (!line) {
+        throw this.conflict(
+          'CANCELLATION_LINE_CHANGED',
+          `Shipment line ${request.shipmentLineId} is no longer in ${pending.shipmentId}`,
+        );
+      }
+      if (line.lineVersion !== request.expectedLineVersion || request.qty > line.qty) {
+        throw this.conflict('CANCELLATION_LINE_CHANGED', `Shipment line ${line.id} changed before resume`);
+      }
+      return { request, line };
+    });
+
+    const readiness = await assessCancelReadiness(
+      this.withdrawals,
+      { aggregate, ownOperationId: operationId, lock: true },
+      trx,
+    );
+    // 쓰기 전에 돌아간다 — 호출자가 준 트랜잭션에 반쯤 손질된 상자를 남기지 않는다.
+    if (readiness.kind !== 'ready') return { outcome: 'blocked', aggregate, blockers: cancelBlockers(readiness) };
+    await this.settleForCancellation(
+      aggregate,
+      readiness,
+      { actor: { id: operation.operatorId, roles: [] }, operationId, reason: pending.reason },
+      trx,
+    );
+    await this.assertNoActiveWaybill(pending.shipmentId, trx);
+    await this.assertNoCustodyOrActiveWork(aggregate, trx);
+    const response = await this.applyPendingCancellation(operation, pending, aggregate, selected, trx);
+    return { outcome: 'completed', response };
   }
 
   /**

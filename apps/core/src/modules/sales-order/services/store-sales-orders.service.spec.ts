@@ -918,6 +918,13 @@ describe('StoreSalesOrdersService', () => {
         expect(r.fulfillmentStatus).toBe('preparing');
         expect(r.availableActions).toContain('cancel');
       });
+      it('planned 상자만 있는 주문은 취소 버튼이 보인다 — 서버가 그 자리에서 취소한다 (#1016 30번)', async () => {
+        const { service } = makeContext({ fos: [{ status: 'ready' }], activeShipmentStatuses: ['planned'] });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('preparing');
+        expect(r.availableActions).toContain('cancel');
+        expect(r.cancelUnavailableReason).toBeUndefined();
+      });
       it('FO processing → preparing + already_processing (셀프취소 불가)', async () => {
         const { service } = makeContext({ fos: [{ status: 'processing' }] });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
