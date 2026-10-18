@@ -1,4 +1,4 @@
-import { selfCancelBlock, SelfCancelFacts } from './self-cancel-block';
+import { selfCancelBlock, SelfCancelBlock, SelfCancelFacts } from './self-cancel-block';
 
 const open: SelfCancelFacts = {
   orderStatus: 'confirmed',
@@ -24,24 +24,25 @@ describe('selfCancelBlock', () => {
     expect(await selfCancelBlock(open, notDownloaded)).toBeNull();
   });
 
-  // 스펙 §4.4 표: 모든 사실을 켠 뒤 위에서부터 하나씩 끄면 사유가 표의 순서대로 내려온다
+  // 스펙 §4.4 표: 모든 사실을 켠 뒤 위에서부터 하나씩 끄면 사유가 표의 순서대로 내려온다.
+  // 4·5번은 사유가 같아 문구로 가린다 — 둘의 순서가 바뀌면 문구가 엇갈린다.
   it('사실을 위에서부터 하나씩 끄면 표의 순서대로 사유가 나온다', async () => {
-    const reasons: Array<string | null> = [];
+    const blocks: Array<SelfCancelBlock | null> = [];
     const facts = { ...blocked };
-    reasons.push((await selfCancelBlock(facts, downloaded))?.reason ?? null);
+    blocks.push(await selfCancelBlock(facts, downloaded));
     facts.orderStatus = 'confirmed';
-    reasons.push((await selfCancelBlock(facts, downloaded))?.reason ?? null);
+    blocks.push(await selfCancelBlock(facts, downloaded));
     facts.hasShippedEvidence = false;
-    reasons.push((await selfCancelBlock(facts, downloaded))?.reason ?? null);
+    blocks.push(await selfCancelBlock(facts, downloaded));
     facts.salesChannel = 'medusa';
-    reasons.push((await selfCancelBlock(facts, downloaded))?.reason ?? null);
+    blocks.push(await selfCancelBlock(facts, downloaded));
     facts.pickingStarted = false;
-    reasons.push((await selfCancelBlock(facts, downloaded))?.reason ?? null);
+    blocks.push(await selfCancelBlock(facts, downloaded));
     facts.hasRecoveryBox = false;
-    reasons.push((await selfCancelBlock(facts, downloaded))?.reason ?? null);
-    reasons.push((await selfCancelBlock(facts, notDownloaded))?.reason ?? null);
+    blocks.push(await selfCancelBlock(facts, downloaded));
+    blocks.push(await selfCancelBlock(facts, notDownloaded));
 
-    expect(reasons).toEqual([
+    expect(blocks.map((block) => block?.reason ?? null)).toEqual([
       'already_cancelled',
       'already_shipped',
       'channel_order',
@@ -50,6 +51,8 @@ describe('selfCancelBlock', () => {
       'digital_downloaded',
       null,
     ]);
+    expect(blocks[3]?.message).toBe('피킹이 시작된 주문은 직접 취소할 수 없습니다. 고객센터로 문의해 주세요.');
+    expect(blocks[4]?.message).toBe('처리 중인 주문이라 직접 취소할 수 없습니다. 고객센터로 문의해 주세요.');
   });
 
   it.each<[string, Partial<SelfCancelFacts>, string]>([
