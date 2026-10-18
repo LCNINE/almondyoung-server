@@ -28,7 +28,7 @@ export const CANCEL_BLOCKER = {
 export type CancelBlockerCode = (typeof CANCEL_BLOCKER)[keyof typeof CANCEL_BLOCKER] | UnstartedExitBlockerCode;
 
 /**
- * 상자 하나의 취소 준비도 — 즉시 취소(`cancelOutstanding`)와 대기 재개(`resumePendingCancellation`)가 같은 판정을 쓴다.
+ * 상자 하나의 취소 준비도. 즉시 취소와 대기 재개가 같은 판정을 보도록 한 곳에 둔다.
  * - `ready`: 막힘 없음. `steps`(시작 전 배치 빼기·`registered` 송장 무효화·planned→draft)를 하면 draft 취소로 끝난다.
  *   비면 손질 없는 draft 취소다.
  * - `started_batch`: 시작된 배치의 활성 작업 항목이 있다 — 취소는 E10 이탈이거나 대기다. 손질 대상이 아니다.
@@ -52,11 +52,11 @@ export type CancelReadinessInput = {
   aggregate: ShipmentAggregate;
   /** 재개에서 «이 취소를 기다리는» 작업 항목은 막힘이 아니다. 즉시 취소에선 null. */
   ownOperationId: string | null;
-  /** 쓰기 경로는 작업 항목을 FOR UPDATE 로 잡는다. 리컨실러의 읽기 판정은 잠그지 않는다. */
+  /** 쓰기 경로는 작업 항목을 FOR UPDATE 로 잡는다. 읽기 판정은 잠그지 않는다. */
   lock: boolean;
 };
 
-/** 판정을 «막힘 목록» 하나로 접는다 — 읽기 API 와 지문이 쓴다. `ready` 면 빈 배열. */
+/** 판정을 «막힘 목록» 하나로 접는다. `ready` 면 빈 배열. */
 export function cancelBlockers(readiness: CancelReadiness): CancelBlockerCode[] {
   if (readiness.kind === 'ready') return [];
   if (readiness.kind === 'started_batch') return [CANCEL_BLOCKER.STARTED_BATCH];

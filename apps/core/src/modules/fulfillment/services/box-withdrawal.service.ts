@@ -362,12 +362,12 @@ export class BoxWithdrawalService {
     );
   }
 
-  /** 시작 전 배치에서 빼는 걸 막는 사유. 없으면 null. 호출자가 구성요소를 잠갔다. */
+  /** 호출자가 구성요소를 잠갔다. */
   async unstartedExitBlocker(box: ExitCheckedBox, trx: DbTx): Promise<UnstartedExitBlocker | null> {
     return unstartedExitBlockerOf(await this.unstartedExitFacts(box, trx));
   }
 
-  /** `unstartedExitBlockerOf` 의 재료. 호출자가 구성요소를 잠갔다. */
+  /** 호출자가 구성요소를 잠갔다. */
   async unstartedExitFacts(box: ExitCheckedBox, trx: DbTx): Promise<UnstartedExitFacts> {
     const shipmentId = box.shipment.id;
     const [attempt, unsettledCustody, liveAllocation, toteAssignment] = await Promise.all([
@@ -412,7 +412,6 @@ export class BoxWithdrawalService {
     return Boolean(row);
   }
 
-  /** 박스의 줄에 정산 안 된 배치 보관이 남았는가. */
   async hasUnsettledCustody(shipmentId: string, trx: DbTx): Promise<boolean> {
     const B = wmsTables.batchInventorySessionBalances;
     const [row] = await trx

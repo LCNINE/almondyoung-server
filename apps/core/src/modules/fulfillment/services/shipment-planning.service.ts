@@ -63,7 +63,7 @@ type CancelResponse = {
   shipment?: ShipmentManifestSnapshot;
 };
 
-/** 대기 중 취소를 지금 재개하면 무엇이 막는지(cancellationResumeReadiness). 리컨실러 30번이 check·지문에 쓴다 */
+/** 대기 중 취소를 재개하면 무엇이 막는지(cancellationResumeReadiness) */
 export type CancellationResumeReadiness = {
   operationId: string;
   shipmentId: string;
@@ -673,7 +673,7 @@ export class ShipmentPlanningService {
 
         if (readiness.kind === 'unexcludable') throw this.conflict(readiness.blocker.code, readiness.blocker.message);
 
-        // 시작된 배치의 상자(E10 이 아닌 일부 취소 등)와 막힘 있는 상자는 지금처럼 대기한다(스펙 §4.1).
+        // 시작된 배치의 상자(E10 이 아닌 일부 취소 등)와 막힘 있는 상자는 대기한다(스펙 §4.1).
         const settleable = readiness.kind === 'ready' && ['draft', 'planned'].includes(aggregate.shipment.status);
         if (!settleable) {
           await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_REOPEN);
@@ -730,7 +730,7 @@ export class ShipmentPlanningService {
   /**
    * Resume the exact durable cancellation after invoice/work/custody/picking prerequisites have cleared.
    * 시작된 배치 밖이면 §4.1 과 같은 손질(시작 전 배치 빼기·`registered` 송장 무효화)을 먼저 한다 — 손으로 뺀 대기 상자가
-   * 송장 때문에 막히지 않는다(스펙 §4.2). 남은 막힘은 지금의 코드로 던진다.
+   * 송장 때문에 막히지 않는다(스펙 §4.2). 남은 막힘은 재개 사전조건의 코드(`SHIPMENT_ACTIVE_INVOICE` 등)로 던진다.
    */
   async resumePendingCancellation(operationId: string, tx?: DbTx): Promise<CancelResponse> {
     return this.dbService.run(async (trx) => {
@@ -745,7 +745,7 @@ export class ShipmentPlanningService {
     }, tx);
   }
 
-  /** 이 상자를 원본으로 둔 대기 중 취소 오퍼레이션(가장 이른 것). 없으면 null. 리컨실러 30번이 쓴다. */
+  /** 이 상자를 원본으로 둔 대기 중 취소 오퍼레이션(가장 이른 것). 없으면 null. */
   async findPendingCancellationOperationId(shipmentId: string, tx?: DbTx): Promise<string | null> {
     return this.dbService.run(async (trx) => {
       const [pending] = await trx
@@ -770,8 +770,8 @@ export class ShipmentPlanningService {
   }
 
   /**
-   * 대기 중 취소를 지금 재개하면 무엇이 막는지 — 재개가 잠근 뒤 쓰는 판정(`assessCancelReadiness`)을 잠그지 않고 부른다.
-   * 리컨실러 규칙의 check·지문이 도메인과 엇갈리지 않게. 오퍼레이션이 없거나 대기 중이 아니면 null. 막힘이 없으면 빈 배열.
+   * 대기 중 취소를 재개하면 무엇이 막는지 — 재개가 잠근 뒤 쓰는 판정(`assessCancelReadiness`)을 잠그지 않고 불러, 읽기와
+   * 재개가 엇갈리지 않게 한다. 오퍼레이션이 없거나 대기 중이 아니면 null. 막힘이 없으면 빈 배열.
    */
   async cancellationResumeReadiness(operationId: string, tx?: DbTx): Promise<CancellationResumeReadiness | null> {
     return this.dbService.run(async (trx) => {
@@ -1276,7 +1276,7 @@ export class ShipmentPlanningService {
   }
 
   /**
-   * 막힘 없음 갈래의 손질(스펙 §4.1 ①~③) — 즉시 취소와 대기 재개가 같이 쓴다. 시작 전 배치의 작업 항목을 빼고, `registered`
+   * 막힘 없음 갈래의 손질(스펙 §4.1 ①~③). 시작 전 배치의 작업 항목을 빼고, `registered`
    * 송장을 로컬 무효화하고(E10 과 같은 `waybills.void`, 한진 접수는 건드리지 않는다), planned 면 draft 로 되돌린다.
    * 줄·manifestVersion 은 건드리지 않는다 — 그건 뒤따르는 draft 취소의 몫이다.
    */

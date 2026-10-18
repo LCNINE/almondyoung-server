@@ -8,7 +8,7 @@ import { ReconcileMode } from '../order-reconcile.state';
 
 /**
  * #1016 30번 행: 막힘(발급 중인 송장 등) 때문에 CANCEL_REPLAN_PENDING 으로 멈춘 취소를, 막힘이 풀린 뒤 재개한다.
- * 송장이 registered·failed 로 굳어도 재개 신호가 없었다(스펙 §4.2).
+ * 송장이 registered·failed 로 굳는 것에는 재개 신호가 없다(스펙 §4.2).
  */
 @Injectable()
 export class ResumePendingCancellationRule implements ShipmentReconcileRule {
@@ -41,7 +41,10 @@ export class ResumePendingCancellationRule implements ShipmentReconcileRule {
     return readiness !== null && readiness.blockers.length === 0;
   }
 
-  /** 막힘이 그새 생겼거나 이미 끝났으면 noop — 시도로 세지 않는다(D13). 상태가 갈린 CANCELLATION_* 충돌은 던져 틀이 물러서게 한다 */
+  /**
+   * 막힘이 그새 생겼거나 이미 끝났으면 noop — 시도로 세지 않는다(D13). 상태가 갈린 CANCELLATION_* 충돌과
+   * 시작 전 배치 빼기 사유는 던져 틀이 물러서게 한다.
+   */
   async act(shipmentId: string, tx: DbTx): Promise<ReconcileActResult> {
     const operationId = await this.planning.findPendingCancellationOperationId(shipmentId, tx);
     if (!operationId) return 'noop';
