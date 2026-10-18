@@ -158,6 +158,16 @@ describeIfDb('SalesOrdersService.list — server-side filters (DB integration, r
     });
   });
 
+  it('getOne(id).lines[] — 상세 라인에도 matchingResolved 가 실린다', async () => {
+    await run(async (tx, svc, tag) => {
+      const id = await insertOrder(tx, { channelOrderId: `${tag}-m`, status: 'confirmed' });
+      await insertLine(tx, id);
+
+      const one = await svc.getOne(id, tx);
+      expect(one!.lines[0]).toHaveProperty('matchingResolved');
+    });
+  });
+
   it('typeGroup: unmatched 는 매칭이 없어 FO 생성을 기다리는 주문만(라인 칸이 아니라 출고 대기열 기준)', async () => {
     await run(async (tx, svc, tag) => {
       const waiting = await insertOrder(tx, { channelOrderId: `${tag}-waiting` });

@@ -19,7 +19,6 @@ import { EntrancePasswordCleaner } from './services/entrance-password-cleaner';
 import { SalesOrdersService } from './services/sales-orders.service';
 import { SalesOrderAmendmentsService } from './services/sales-order-amendments.service';
 import { SalesOrderQueryService } from './services/sales-order-query.service';
-import { PoliciesService } from './services/policies.service';
 import { StoreSalesOrdersService } from './services/store-sales-orders.service';
 import { StoreReturnExchangeService } from './services/store-return-exchange.service';
 import { WalletRefundClient } from './services/wallet-refund.client';
@@ -96,7 +95,6 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
     SalesOrdersService,
     SalesOrderAmendmentsService,
     SalesOrderQueryService,
-    PoliciesService,
     StoreSalesOrdersService,
     StoreReturnExchangeService,
     WalletRefundClient,
