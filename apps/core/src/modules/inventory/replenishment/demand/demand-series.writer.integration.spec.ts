@@ -55,7 +55,8 @@ describeIfDb('DemandSeriesWriter (DB integration)', () => {
         variantId: string;
         quantity: number;
         totalPrice: number | null;
-        status?: 'pending' | 'matched' | 'cancelled';
+        /** 부분취소로 줄인 수량 — sales_order_cancellations(partial).metadata.cancelledLines 에 적는다(#1016 15번 §1.1) */
+        partialCancelledQty?: number;
         fulfillmentKind?: 'physical' | 'digital';
         requiresShipping?: boolean;
         almondDesignId?: string;
@@ -72,19 +73,32 @@ describeIfDb('DemandSeriesWriter (DB integration)', () => {
         orderDate: new Date(input.orderedAtUtc),
       })
       .returning({ id: wmsTables.salesOrders.id });
-    await trx.insert(wmsTables.salesOrderLines).values(
-      input.lines.map((l) => ({
-        salesOrderId: order.id,
-        variantId: l.variantId,
-        productName: 'IT Product',
-        quantity: l.quantity,
-        totalPrice: l.totalPrice,
-        status: l.status ?? 'pending',
-        fulfillmentKind: l.fulfillmentKind ?? null,
-        requiresShipping: l.requiresShipping ?? null,
-        almondDesignId: l.almondDesignId ?? null,
-      })),
+    const insertedLines = await trx
+      .insert(wmsTables.salesOrderLines)
+      .values(
+        input.lines.map((l) => ({
+          salesOrderId: order.id,
+          variantId: l.variantId,
+          productName: 'IT Product',
+          quantity: l.quantity,
+          totalPrice: l.totalPrice,
+          fulfillmentKind: l.fulfillmentKind ?? null,
+          requiresShipping: l.requiresShipping ?? null,
+          almondDesignId: l.almondDesignId ?? null,
+        })),
+      )
+      .returning({ id: wmsTables.salesOrderLines.id });
+    // returning 은 values 순서대로 돌려준다 — 줄 i 의 부분취소를 i 번째 id 로 적는다
+    const cancelledLines = input.lines.flatMap((l, i) =>
+      l.partialCancelledQty ? [{ salesOrderLineId: insertedLines[i].id, quantity: l.partialCancelledQty }] : [],
     );
+    if (cancelledLines.length > 0) {
+      await trx.insert(wmsTables.salesOrderCancellations).values({
+        salesOrderId: order.id,
+        cancellationScope: 'partial',
+        metadata: { cancelledLines },
+      });
+    }
     return order.id;
   }
 
@@ -141,7 +155,7 @@ describeIfDb('DemandSeriesWriter (DB integration)', () => {
     });
   });
 
-  it('취소 주문 · timeout 주문 · 취소 라인 · 디지털 라인 · 외주(almond) 라인은 빠지고 pending 주문은 들어간다', async () => {
+  it('취소 주문 · timeout 주문 · 디지털 라인 · 외주(almond) 라인은 빠지고 pending 주문은 들어간다', async () => {
     await inRollbackTx(db, async (trx) => {
       const { holderId } = await seedHolder(trx);
       const { skuId } = await seedSku(trx, holderId);
@@ -155,10 +169,6 @@ describeIfDb('DemandSeriesWriter (DB integration)', () => {
         orderedAtUtc: '2026-09-01T03:00:00Z',
         status: 'timeout',
         lines: [{ variantId, quantity: 100, totalPrice: 1 }],
-      });
-      await seedOrder(trx, {
-        orderedAtUtc: '2026-09-01T03:00:00Z',
-        lines: [{ variantId, quantity: 100, totalPrice: 1, status: 'cancelled' }],
       });
       await seedOrder(trx, {
         orderedAtUtc: '2026-09-01T03:00:00Z',
@@ -312,6 +322,53 @@ describeIfDb('DemandSeriesWriter (DB integration)', () => {
       // 로컬 DB 에 더 오래된 주문이 있을 수 있어 from 은 ≤ 2026-03-01 만 확인한다.
       expect(result.from !== null && result.from <= '2026-03-01').toBe(true);
       expect((await readSeries(trx, [skuId])).map((r) => r.demandDate)).toEqual(['2026-03-01']);
+    });
+  });
+
+  describe('부분취소 반영 (#1016 15번 §1.1)', () => {
+    it('부분취소된 수량만큼 수요가 준다 — qty 5, 부분취소 2 → 3', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { holderId } = await seedHolder(trx);
+        const { skuId } = await seedSku(trx, holderId);
+        const variantId = await seedMatching(trx, [{ skuId, quantity: 1 }]);
+        await seedOrder(trx, {
+          orderedAtUtc: '2026-09-01T03:00:00Z',
+          lines: [{ variantId, quantity: 5, totalPrice: 5000, partialCancelledQty: 2 }],
+        });
+        await new DemandSeriesWriter(boundDbService(trx)).rebuildCoreWindow(WINDOW, trx);
+        // 금액은 건드리지 않는다(금액 비례 조정은 범위 밖)
+        expect(await readSeries(trx, [skuId])).toEqual([
+          { skuId, demandDate: '2026-09-01', qty: 3, amount: 5000, source: 'core' },
+        ]);
+      });
+    });
+
+    it('전량 부분취소된 라인은 수요에 없다 — qty 2, 부분취소 2', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { holderId } = await seedHolder(trx);
+        const { skuId } = await seedSku(trx, holderId);
+        const variantId = await seedMatching(trx, [{ skuId, quantity: 1 }]);
+        await seedOrder(trx, {
+          orderedAtUtc: '2026-09-01T03:00:00Z',
+          lines: [{ variantId, quantity: 2, totalPrice: 2000, partialCancelledQty: 2 }],
+        });
+        await new DemandSeriesWriter(boundDbService(trx)).rebuildCoreWindow(WINDOW, trx);
+        expect(await readSeries(trx, [skuId])).toEqual([]);
+      });
+    });
+
+    it('묶음 상품 라인은 줄인 수량으로 SKU 에 펼친다 — qty 2, 취소 1, 링크 ×3 → SKU 3', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { holderId } = await seedHolder(trx);
+        const { skuId } = await seedSku(trx, holderId);
+        const variantId = await seedMatching(trx, [{ skuId, quantity: 3 }]);
+        await seedOrder(trx, {
+          orderedAtUtc: '2026-09-01T03:00:00Z',
+          lines: [{ variantId, quantity: 2, totalPrice: 6000, partialCancelledQty: 1 }],
+        });
+        await new DemandSeriesWriter(boundDbService(trx)).rebuildCoreWindow(WINDOW, trx);
+        expect((await readSeries(trx, [skuId])).map((r) => r.qty)).toEqual([3]);
+      });
     });
   });
 });

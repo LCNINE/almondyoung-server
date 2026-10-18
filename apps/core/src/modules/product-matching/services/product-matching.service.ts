@@ -790,7 +790,6 @@ export class ProductMatchingService {
           quantity: salesOrderLines.quantity,
           unitPrice: salesOrderLines.unitPrice,
           totalPrice: salesOrderLines.totalPrice,
-          lineStatus: salesOrderLines.status,
           lineCreatedAt: salesOrderLines.createdAt,
           salesOrderId: salesOrders.id,
           channelOrderId: salesOrders.channelOrderId,

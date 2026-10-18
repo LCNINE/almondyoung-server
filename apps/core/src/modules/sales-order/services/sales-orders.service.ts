@@ -326,9 +326,6 @@ export class SalesOrdersService {
         if (lines.length > 0) {
           const values: SalesOrderLineInsert[] = [];
           for (const l of lines) {
-            const policy = await this.policies.getVariantPolicy(l.variantId, trx);
-            const acceptanceByPolicy =
-              !policy.inventoryManagement || policy.preStockSellable || policy.alwaysSellableZeroStock;
             values.push({
               salesOrderId: order.id,
               channelOrderItemId: l.channelOrderItemId ?? null,
@@ -341,10 +338,8 @@ export class SalesOrdersService {
               fulfillmentKind: l.fulfillmentKind ?? null,
               requiresShipping: l.requiresShipping ?? null,
               almondDesignId: l.almondDesignId ?? null,
-              status: 'pending',
-              suggestedQuantity: acceptanceByPolicy ? l.quantity : null,
-              unavailableSkuIds: null,
-              deductedAt: null,
+              // status·suggestedQuantity·unavailableSkuIds·deductedAt 는 쓰지 않는다 — 읽는 곳도 쓰는 곳도 없는
+              // 죽은 컬럼이다(#1016 15번 §5.1). DB 기본값(status=pending)·null 이 채운다. 컬럼은 ⓑ-2 에서 지운다.
             });
           }
           const insertedLines = await trx
