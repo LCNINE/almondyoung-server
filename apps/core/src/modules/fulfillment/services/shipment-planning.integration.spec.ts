@@ -678,6 +678,94 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
     });
   });
 
+  // 스펙 §4.2 — 재개가 §4.1 의 «막힘 없음» 갈래와 같은 손질을 한다. 손으로 뺀 대기 상자가 송장 때문에 막히지 않는다.
+  it('resume voids a registered waybill left by a manual unstarted-batch exclusion', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await plannedFixture(tx, 2, 'pending');
+      const workItem = await seedActiveWorkItem(tx, fixture.warehouseId, fixture.shipment.id);
+      const pending = await planning.cancelOutstanding(
+        fixture.shipment.id,
+        cancelDto(fixture),
+        `manual-exclusion-cancel-${randomUUID()}`,
+        actor,
+        tx,
+      );
+      expect(pending.operationStatus).toBe('pending');
+      expect(
+        (
+          await tx
+            .select()
+            .from(wmsTables.outboundBatchWorkItems)
+            .where(eq(wmsTables.outboundBatchWorkItems.id, workItem.id))
+        )[0].waitingOperationId,
+      ).toBe(pending.operationId);
+
+      // 캐리어 접수가 끝나 송장이 registered 로 굳었고, 운영자가 작업 항목을 손으로 뺐다(옛 방식의 대기 → 빼기).
+      await tx
+        .update(wmsTables.waybills)
+        .set({ status: 'registered' })
+        .where(eq(wmsTables.waybills.id, fixture.waybill.id));
+      await tx
+        .update(wmsTables.outboundBatchWorkItems)
+        .set({ status: 'excluded', exclusionReason: '손으로 뺌' })
+        .where(eq(wmsTables.outboundBatchWorkItems.id, workItem.id));
+
+      const resumed = await planning.resumePendingCancellation(pending.operationId, tx);
+
+      expect(resumed.operationStatus).toBe('completed');
+      expect(await shipmentRow(tx, fixture.shipment.id)).toMatchObject({ status: 'canceled', recoveryCode: null });
+      expect((await waybillRow(tx, fixture.waybill.id)).status).toBe('voided');
+      expect(await confirmedQty(tx, fixture.line.id)).toBe(0);
+    });
+  });
+
+  it('reports why a pending cancellation cannot resume and resumes it once the waybill settles', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await plannedFixture(tx, 2, 'pending');
+      const workItem = await seedActiveWorkItem(tx, fixture.warehouseId, fixture.shipment.id);
+      const pending = await planning.cancelOutstanding(
+        fixture.shipment.id,
+        cancelDto(fixture),
+        `readiness-cancel-${randomUUID()}`,
+        actor,
+        tx,
+      );
+      expect(pending.operationStatus).toBe('pending');
+
+      expect(await planning.findPendingCancellationOperationId(fixture.shipment.id, tx)).toBe(pending.operationId);
+      expect(await planning.cancellationResumeReadiness(pending.operationId, tx)).toEqual({
+        operationId: pending.operationId,
+        shipmentId: fixture.shipment.id,
+        blockers: ['WAYBILL_NOT_VOIDABLE'],
+      });
+      expect(await planning.tryResumePendingCancellation(pending.operationId, tx)).toBe('blocked');
+      expect((await waybillRow(tx, fixture.waybill.id)).status).toBe('pending');
+
+      await tx
+        .update(wmsTables.waybills)
+        .set({ status: 'registered' })
+        .where(eq(wmsTables.waybills.id, fixture.waybill.id));
+      expect(await planning.cancellationResumeReadiness(pending.operationId, tx)).toMatchObject({ blockers: [] });
+
+      expect(await planning.tryResumePendingCancellation(pending.operationId, tx)).toBe('completed');
+      // 시작 전 배치의 작업 항목은 재개가 뺀다 — 이 취소를 기다리던 항목은 막힘이 아니다.
+      expect(
+        (
+          await tx
+            .select()
+            .from(wmsTables.outboundBatchWorkItems)
+            .where(eq(wmsTables.outboundBatchWorkItems.id, workItem.id))
+        )[0],
+      ).toMatchObject({ status: 'excluded', waitingOperationId: pending.operationId });
+      expect(await shipmentRow(tx, fixture.shipment.id)).toMatchObject({ status: 'canceled', recoveryCode: null });
+      expect((await waybillRow(tx, fixture.waybill.id)).status).toBe('voided');
+
+      expect(await planning.tryResumePendingCancellation(pending.operationId, tx)).toBe('already_completed');
+      expect(await planning.cancellationResumeReadiness(pending.operationId, tx)).toBeNull();
+      expect(await planning.findPendingCancellationOperationId(fixture.shipment.id, tx)).toBeNull();
+    });
+  });
+
   it('rejects dispatched shipment cancellation instead of mutating shipped quantity', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await physicalFixture(tx, 2, 2);

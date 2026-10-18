@@ -23,7 +23,7 @@ import {
 } from '../dto/shipment-planning.dto';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { BoxWithdrawalService, WorkItemRow } from './box-withdrawal.service';
-import { assessCancelReadiness, CancelReadiness } from './cancel-readiness';
+import { assessCancelReadiness, cancelBlockers, CancelReadiness } from './cancel-readiness';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
@@ -55,6 +55,17 @@ type CancelResponse = {
   manifestVersion: number;
   shipment?: ShipmentManifestSnapshot;
 };
+
+/** 대기 중 취소를 지금 재개하면 무엇이 막는지(cancellationResumeReadiness). 리컨실러 30번이 check·지문에 쓴다 */
+export type CancellationResumeReadiness = {
+  operationId: string;
+  shipmentId: string;
+  /** `cancelBlockers` 의 코드 + 대기 상자가 아니면 `SOURCE_STATE_CHANGED`. 비어 있으면 재개할 수 있다 */
+  blockers: string[];
+};
+
+/** 재개 호출 하나의 결과 — completed 만 «이번 호출로 끝냈다»이다 */
+export type CancellationResumeOutcome = 'completed' | 'blocked' | 'already_completed';
 
 type PendingCancellationIntent = {
   kind: 'cancel_outstanding';
@@ -720,10 +731,93 @@ export class ShipmentPlanningService {
     );
   }
 
-  /** Resume the exact durable cancellation after invoice/work/custody/picking prerequisites have cleared. */
+  /**
+   * Resume the exact durable cancellation after invoice/work/custody/picking prerequisites have cleared.
+   * 시작된 배치 밖이면 §4.1 과 같은 손질(시작 전 배치 빼기·`registered` 송장 무효화)을 먼저 한다 — 손으로 뺀 대기 상자가
+   * 송장 때문에 막히지 않는다(스펙 §4.2). 남은 막힘은 지금의 코드로 던진다.
+   */
   async resumePendingCancellation(operationId: string, tx?: DbTx): Promise<CancelResponse> {
-    this.workflowGate.assertV2MutationAllowed('shipment.cancel_outstanding.resume');
     return this.dbService.run(async (trx) => {
+      const result = await this.resumeCancellation(operationId, trx);
+      if (result.outcome !== 'blocked') return result.response;
+      await this.assertNoActiveWaybill(result.aggregate.shipment.id, trx);
+      await this.assertNoCustodyOrActiveWork(result.aggregate, trx);
+      throw this.conflict(
+        'CANCELLATION_BLOCKED',
+        `Shipment ${result.aggregate.shipment.id} cannot resume cancellation: ${result.blockers.join(',')}`,
+      );
+    }, tx);
+  }
+
+  /** 이 상자를 원본으로 둔 대기 중 취소 오퍼레이션(가장 이른 것). 없으면 null. 리컨실러 30번이 쓴다. */
+  async findPendingCancellationOperationId(shipmentId: string, tx?: DbTx): Promise<string | null> {
+    return this.dbService.run(async (trx) => {
+      const [pending] = await trx
+        .select({ operationId: wmsTables.shipmentOperations.id })
+        .from(wmsTables.shipmentOperationMembers)
+        .innerJoin(
+          wmsTables.shipmentOperations,
+          eq(wmsTables.shipmentOperations.id, wmsTables.shipmentOperationMembers.operationId),
+        )
+        .where(
+          and(
+            eq(wmsTables.shipmentOperationMembers.shipmentId, shipmentId),
+            eq(wmsTables.shipmentOperationMembers.role, 'source'),
+            eq(wmsTables.shipmentOperations.type, 'cancel'),
+            eq(wmsTables.shipmentOperations.status, 'pending'),
+          ),
+        )
+        .orderBy(asc(wmsTables.shipmentOperations.createdAt))
+        .limit(1);
+      return pending?.operationId ?? null;
+    }, tx);
+  }
+
+  /**
+   * 대기 중 취소를 지금 재개하면 무엇이 막는지 — 재개가 잠근 뒤 쓰는 판정(`assessCancelReadiness`)을 잠그지 않고 부른다.
+   * 리컨실러 규칙의 check·지문이 도메인과 엇갈리지 않게. 오퍼레이션이 없거나 대기 중이 아니면 null. 막힘이 없으면 빈 배열.
+   */
+  async cancellationResumeReadiness(operationId: string, tx?: DbTx): Promise<CancellationResumeReadiness | null> {
+    return this.dbService.run(async (trx) => {
+      const [operation] = await trx
+        .select()
+        .from(wmsTables.shipmentOperations)
+        .where(eq(wmsTables.shipmentOperations.id, operationId))
+        .limit(1);
+      if (!operation || operation.type !== 'cancel' || operation.status !== 'pending') return null;
+      const pending = this.pendingCancellationIntent(operation.afterManifestSnapshot);
+      const aggregate = await this.loadAggregate(pending.shipmentId, trx);
+      const readiness = await assessCancelReadiness(
+        this.withdrawals,
+        { aggregate, ownOperationId: operationId, lock: false },
+        trx,
+      );
+      const blockers = cancelBlockers(readiness);
+      // 대기 상자가 아니면(E10 이탈 중인 planned 상자 등) 재개가 CANCELLATION_SOURCE_STATE_CHANGED 로 던진다 — 미리 적는다.
+      if (
+        aggregate.shipment.status !== 'recovery_required' ||
+        aggregate.shipment.recoveryCode !== 'CANCEL_REPLAN_PENDING'
+      ) {
+        blockers.push('SOURCE_STATE_CHANGED');
+      }
+      return { operationId, shipmentId: pending.shipmentId, blockers };
+    }, tx);
+  }
+
+  /** 재개하되 막힘이면 'blocked' 로 접는다 — 리컨실러의 act 가 쓴다. 상태가 갈린 것(CANCELLATION_* 충돌)은 그대로 던진다. */
+  async tryResumePendingCancellation(operationId: string, tx?: DbTx): Promise<CancellationResumeOutcome> {
+    return this.dbService.run(async (trx) => (await this.resumeCancellation(operationId, trx)).outcome, tx);
+  }
+
+  private async resumeCancellation(
+    operationId: string,
+    trx: DbTx,
+  ): Promise<
+    | { outcome: 'completed' | 'already_completed'; response: CancelResponse }
+    | { outcome: 'blocked'; aggregate: ShipmentAggregate; blockers: string[] }
+  > {
+    this.workflowGate.assertV2MutationAllowed('shipment.cancel_outstanding.resume');
+    {
       const [optimisticOperation] = await trx
         .select()
         .from(wmsTables.shipmentOperations)
@@ -733,7 +827,7 @@ export class ShipmentPlanningService {
         throw new NotFoundException(`Cancellation operation ${operationId} not found`);
       }
       if (optimisticOperation.status === 'completed') {
-        return this.completedCancellationResponse(operationId, trx);
+        return { outcome: 'already_completed', response: await this.completedCancellationResponse(operationId, trx) };
       }
       if (optimisticOperation.status !== 'pending') {
         throw this.conflict(
@@ -754,7 +848,7 @@ export class ShipmentPlanningService {
         throw new NotFoundException(`Cancellation operation ${operationId} not found`);
       }
       if (operation.status === 'completed') {
-        return this.completedCancellationResponse(operationId, trx);
+        return { outcome: 'already_completed', response: await this.completedCancellationResponse(operationId, trx) };
       }
       if (operation.status !== 'pending') {
         throw this.conflict(
@@ -808,10 +902,24 @@ export class ShipmentPlanningService {
         return { request, line };
       });
 
+      const readiness = await assessCancelReadiness(
+        this.withdrawals,
+        { aggregate, ownOperationId: operationId, lock: true },
+        trx,
+      );
+      // 쓰기 전에 돌아간다 — 호출자가 준 트랜잭션에 반쯤 손질된 상자를 남기지 않는다.
+      if (readiness.kind !== 'ready') return { outcome: 'blocked', aggregate, blockers: cancelBlockers(readiness) };
+      await this.settleForCancellation(
+        aggregate,
+        readiness,
+        { actor: { id: operation.operatorId, roles: [] }, operationId, reason: pending.reason },
+        trx,
+      );
       await this.assertNoActiveWaybill(pending.shipmentId, trx);
       await this.assertNoCustodyOrActiveWork(aggregate, trx);
-      return this.applyPendingCancellation(operation, pending, aggregate, selected, trx);
-    }, tx);
+      const response = await this.applyPendingCancellation(operation, pending, aggregate, selected, trx);
+      return { outcome: 'completed', response };
+    }
   }
 
   /**
