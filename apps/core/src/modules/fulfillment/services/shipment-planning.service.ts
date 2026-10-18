@@ -634,6 +634,7 @@ export class ShipmentPlanningService {
           readiness.kind === 'started_batch'
             ? await this.withdrawalTarget(aggregate, requestedLines, readiness, tx)
             : null;
+
         if (withdrawal) {
           await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_REOPEN);
           await this.recordPendingIntent(tx, operation.id, aggregate, dto, requestedLines, before);
@@ -675,6 +676,7 @@ export class ShipmentPlanningService {
 
         // 시작된 배치의 상자(E10 이 아닌 일부 취소 등)와 막힘 있는 상자는 대기한다(스펙 §4.1).
         const settleable = readiness.kind === 'ready' && ['draft', 'planned'].includes(aggregate.shipment.status);
+
         if (!settleable) {
           await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_REOPEN);
           await this.markActiveWorkItemWaitingForCancellation(shipmentId, operation.id, tx);
@@ -702,6 +704,7 @@ export class ShipmentPlanningService {
         // 손질(배치 빼기·송장 무효화·planned→draft)은 상자를 다시 여는 일이라 대기 갈래와 같은 권한을 요구한다.
         // 손질 없는 draft 즉시 취소는 권한을 묻지 않는다.
         if (readiness.steps.length) await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_REOPEN);
+
         await this.settleForCancellation(
           shipmentId,
           readiness.steps,
@@ -709,9 +712,11 @@ export class ShipmentPlanningService {
           tx,
         );
         const settled = await this.loadAggregate(shipmentId, tx);
+
         if (settled.shipment.status !== 'draft') {
           throw this.conflict('SHIPMENT_NOT_DRAFT', 'Only Draft outstanding can be canceled immediately');
         }
+
         await this.applyDraftCancellation(settled, selected, operation.id, dto, actor, tx, before);
         const after = this.snapshot(await this.loadAggregate(shipmentId, tx));
         const response = {
@@ -735,9 +740,12 @@ export class ShipmentPlanningService {
   async resumePendingCancellation(operationId: string, tx?: DbTx): Promise<CancelResponse> {
     return this.dbService.run(async (trx) => {
       const result = await this.resumeCancellation(operationId, trx);
+
       if (result.outcome !== 'blocked') return result.response;
+
       await this.assertNoActiveWaybill(result.aggregate.shipment.id, trx);
       await this.assertNoCustodyOrActiveWork(result.aggregate, trx);
+
       throw this.conflict(
         'CANCELLATION_BLOCKED',
         `Shipment ${result.aggregate.shipment.id} cannot resume cancellation: ${result.blockers.join(',')}`,
@@ -765,6 +773,7 @@ export class ShipmentPlanningService {
         )
         .orderBy(asc(wmsTables.shipmentOperations.createdAt))
         .limit(1);
+
       return pending?.operationId ?? null;
     }, tx);
   }
@@ -780,7 +789,9 @@ export class ShipmentPlanningService {
         .from(wmsTables.shipmentOperations)
         .where(eq(wmsTables.shipmentOperations.id, operationId))
         .limit(1);
+
       if (!operation || operation.type !== 'cancel' || operation.status !== 'pending') return null;
+
       const pending = this.pendingCancellationIntent(operation.afterManifestSnapshot);
       const aggregate = await this.loadAggregate(pending.shipmentId, trx);
       const readiness = await assessCancelReadiness(
@@ -789,6 +800,7 @@ export class ShipmentPlanningService {
         trx,
       );
       const blockers = cancelBlockers(readiness);
+
       // 대기 상자가 아니면(E10 이탈 중인 planned 상자 등) 재개가 CANCELLATION_SOURCE_STATE_CHANGED 로 던진다 — 미리 적는다.
       if (
         aggregate.shipment.status !== 'recovery_required' ||
@@ -796,6 +808,7 @@ export class ShipmentPlanningService {
       ) {
         blockers.push(CANCEL_BLOCKER.SOURCE_STATE_CHANGED);
       }
+
       return { operationId, shipmentId: pending.shipmentId, blockers };
     }, tx);
   }
@@ -821,12 +834,15 @@ export class ShipmentPlanningService {
       .from(wmsTables.shipmentOperations)
       .where(eq(wmsTables.shipmentOperations.id, operationId))
       .limit(1);
+
     if (!optimisticOperation || optimisticOperation.type !== 'cancel') {
       throw new NotFoundException(`Cancellation operation ${operationId} not found`);
     }
+
     if (optimisticOperation.status === 'completed') {
       return { outcome: 'already_completed', response: await this.completedCancellationResponse(operationId, trx) };
     }
+
     if (optimisticOperation.status !== 'pending') {
       throw this.conflict(
         'CANCELLATION_OPERATION_NOT_PENDING',
@@ -842,22 +858,28 @@ export class ShipmentPlanningService {
       .where(eq(wmsTables.shipmentOperations.id, operationId))
       .limit(1)
       .for('update');
+
     if (!operation || operation.type !== 'cancel') {
       throw new NotFoundException(`Cancellation operation ${operationId} not found`);
     }
+
     if (operation.status === 'completed') {
       return { outcome: 'already_completed', response: await this.completedCancellationResponse(operationId, trx) };
     }
+
     if (operation.status !== 'pending') {
       throw this.conflict(
         'CANCELLATION_OPERATION_NOT_PENDING',
         `Cancellation operation ${operationId} is ${operation.status}`,
       );
     }
+
     const lockedPending = this.pendingCancellationIntent(operation.afterManifestSnapshot);
+
     if (JSON.stringify(lockedPending) !== JSON.stringify(pending)) {
       throw this.conflict('CANCELLATION_OPERATION_CHANGED_RETRY', 'Cancellation intent changed; retry resume');
     }
+
     const [member] = await trx
       .select({ shipmentId: wmsTables.shipmentOperationMembers.shipmentId })
       .from(wmsTables.shipmentOperationMembers)
@@ -869,12 +891,14 @@ export class ShipmentPlanningService {
         ),
       )
       .limit(1);
+
     if (!member) {
       throw this.conflict(
         'CANCELLATION_OPERATION_MEMBER_MISSING',
         `Cancellation operation ${operationId} is not attached to shipment ${pending.shipmentId}`,
       );
     }
+
     if (
       aggregate.shipment.status !== 'recovery_required' ||
       aggregate.shipment.recoveryCode !== 'CANCEL_REPLAN_PENDING'
@@ -888,15 +912,18 @@ export class ShipmentPlanningService {
     const lineById = new Map(aggregate.lines.map((line) => [line.id, line]));
     const selected = pending.lines.map((request) => {
       const line = lineById.get(request.shipmentLineId);
+
       if (!line) {
         throw this.conflict(
           'CANCELLATION_LINE_CHANGED',
           `Shipment line ${request.shipmentLineId} is no longer in ${pending.shipmentId}`,
         );
       }
+
       if (line.lineVersion !== request.expectedLineVersion || request.qty > line.qty) {
         throw this.conflict('CANCELLATION_LINE_CHANGED', `Shipment line ${line.id} changed before resume`);
       }
+
       return { request, line };
     });
 
@@ -905,9 +932,12 @@ export class ShipmentPlanningService {
       { aggregate, ownOperationId: operationId, lock: true },
       trx,
     );
+
     if (readiness.kind === 'unexcludable') throw this.conflict(readiness.blocker.code, readiness.blocker.message);
+
     // 쓰기 전에 돌아간다 — 호출자가 준 트랜잭션에 반쯤 손질된 상자를 남기지 않는다.
     if (readiness.kind !== 'ready') return { outcome: 'blocked', aggregate, blockers: cancelBlockers(readiness) };
+
     await this.settleForCancellation(
       pending.shipmentId,
       readiness.steps,
@@ -917,6 +947,7 @@ export class ShipmentPlanningService {
     await this.assertNoActiveWaybill(pending.shipmentId, trx);
     await this.assertNoCustodyOrActiveWork(aggregate, trx);
     const response = await this.applyPendingCancellation(operation, pending, aggregate, selected, trx);
+
     return { outcome: 'completed', response };
   }
 
@@ -1257,21 +1288,27 @@ export class ShipmentPlanningService {
     tx: DbTx,
   ): Promise<{ batchId: string; workItem: WorkItemRow } | null> {
     const requestedByLine = new Map(requestedLines.map((line) => [line.shipmentLineId, line.qty]));
+
     const whole =
       requestedLines.length === aggregate.lines.length &&
       aggregate.lines.every((line) => requestedByLine.get(line.id) === line.qty);
     if (!whole) return null;
+
     const { workItem, batchId } = started;
+
     // 이미 빼는 중이면 canceled 로 올린다 — 이 트랜잭션에서 나가지 않으니 송장 조건이 취소를 되돌리지 않는다. 옛 대기로 보내면
     // draft 로 나간 뒤 재개가 SHIPMENT_ACTIVE_INVOICE·CANCELLATION_LINE_CHANGED(PACKED 에서 뺄 때마다 line_version 이 오른다)에 막힌다.
     if (workItem.status === 'withdrawing') return { batchId, workItem };
+
     // 나갈 때 무효화할 수 없는 송장(`pending`·`allocated` 등)이면 이탈로 들이지 않는다 — 집은 게 없는 박스는 이 트랜잭션에서
     // 나가며 WITHDRAWAL_WAYBILL_NOT_VOIDABLE 로 취소 전체(판매 주문 취소 포함)를 되돌린다. 옛 대기가 그 취소를 받는다.
     if (!(await this.withdrawals.exitWaybill(aggregate.shipment.id, tx)).voidable) return null;
+
     const checked = await this.withdrawals.blockerOf(
       { batchId, shipmentId: aggregate.shipment.id, shipmentStatus: aggregate.shipment.status, workItem },
       tx,
     );
+
     return 'blocker' in checked ? null : { batchId, workItem };
   }
 

@@ -26,8 +26,11 @@ export class ResumePendingCancellationRule implements ShipmentReconcileRule {
 
   async fingerprint(shipmentId: string, tx: DbTx): Promise<string> {
     const operationId = await this.planning.findPendingCancellationOperationId(shipmentId, tx);
+
     if (!operationId) return 'none';
+
     const readiness = await this.planning.cancellationResumeReadiness(operationId, tx);
+
     return readiness ? cancellationReadinessFingerprint(readiness) : `${operationId}|not_pending`;
   }
 
@@ -35,9 +38,13 @@ export class ResumePendingCancellationRule implements ShipmentReconcileRule {
   async check(shipmentId: string, tx: DbTx): Promise<boolean> {
     // 정비 모드는 몇 시간 이어질 수 있다 — 시도로 세면 포기가 잘못 찍힌다
     if (!this.workflowGate.allowsOperationalMutations()) return false;
+
     const operationId = await this.planning.findPendingCancellationOperationId(shipmentId, tx);
+
     if (!operationId) return false;
+
     const readiness = await this.planning.cancellationResumeReadiness(operationId, tx);
+
     return readiness !== null && readiness.blockers.length === 0;
   }
 
@@ -47,7 +54,9 @@ export class ResumePendingCancellationRule implements ShipmentReconcileRule {
    */
   async act(shipmentId: string, tx: DbTx): Promise<ReconcileActResult> {
     const operationId = await this.planning.findPendingCancellationOperationId(shipmentId, tx);
+
     if (!operationId) return 'noop';
+
     return (await this.planning.tryResumePendingCancellation(operationId, tx)) === 'completed' ? 'acted' : 'noop';
   }
 }

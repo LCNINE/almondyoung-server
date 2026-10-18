@@ -346,13 +346,16 @@ export class BoxWithdrawalService {
     trx: DbTx,
   ): Promise<void> {
     const { active, voidable } = await this.exitWaybill(shipmentId, trx);
+
     if (!active) return;
+
     if (!voidable) {
       throw conflict(
         'WITHDRAWAL_WAYBILL_NOT_VOIDABLE',
         `Waybill ${active.id} is ${active.status}; resolve it before the canceled box can leave its batch`,
       );
     }
+
     await this.waybills.void(
       active.id,
       { reason: ctx.reason },
@@ -409,6 +412,7 @@ export class BoxWithdrawalService {
       .innerJoin(WI, eq(WI.id, A.workItemId))
       .where(and(eq(WI.shipmentId, shipmentId), notInArray(WI.status, ['completed', 'excluded']), gt(A.qty, 0)))
       .limit(1);
+
     return Boolean(row);
   }
 
@@ -420,6 +424,7 @@ export class BoxWithdrawalService {
       .innerJoin(wmsTables.shipmentLines, eq(wmsTables.shipmentLines.id, B.shipmentLineId))
       .where(and(eq(wmsTables.shipmentLines.shipmentId, shipmentId), gt(B.qty, 0), ne(B.custodyType, 'SETTLED')))
       .limit(1);
+
     return Boolean(row);
   }
 
@@ -448,7 +453,9 @@ export class BoxWithdrawalService {
         ),
       )
       .returning();
+
     if (!excluded) throw conflict('WORK_ITEM_STALE_LEASE_VERSION', `Work item ${workItem.id} claim version changed`);
+
     return excluded;
   }
 

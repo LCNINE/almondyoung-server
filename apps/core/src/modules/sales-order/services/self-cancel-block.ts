@@ -26,32 +26,38 @@ export async function selfCancelBlock(
   digitalDownloaded: () => Promise<boolean>,
 ): Promise<SelfCancelBlock | null> {
   if (facts.orderStatus === 'cancelled') return { reason: 'already_cancelled', message: '이미 취소된 주문입니다.' };
+
   if (facts.hasShippedEvidence) {
     return { reason: 'already_shipped', message: '이미 출고된 주문은 취소할 수 없습니다. 고객센터로 문의해 주세요.' };
   }
+
   if (facts.salesChannel !== 'medusa') {
     return {
       reason: 'channel_order',
       message: `${facts.salesChannel} 채널 주문은 해당 채널에서 직접 취소해 주세요.`,
     };
   }
+
   if (facts.pickingStarted) {
     return {
       reason: 'already_processing',
       message: '피킹이 시작된 주문은 직접 취소할 수 없습니다. 고객센터로 문의해 주세요.',
     };
   }
+
   if (facts.hasRecoveryBox) {
     return {
       reason: 'already_processing',
       message: '처리 중인 주문이라 직접 취소할 수 없습니다. 고객센터로 문의해 주세요.',
     };
   }
+
   if (await digitalDownloaded()) {
     return {
       reason: 'digital_downloaded',
       message: '이미 다운로드한 디지털 상품이 포함된 주문입니다. 직접 취소가 불가하니 고객센터로 문의해 주세요.',
     };
   }
+
   return null;
 }

@@ -815,6 +815,7 @@ export class StoreSalesOrdersService {
 
     const cancelUnavailableReason =
       so.status === 'timeout' ? undefined : await this.cancelUnavailableReasonOf(so, foRows, phaseInput);
+
     if (so.status === 'timeout') {
       // 아무 액션 없음
     } else if (cancelUnavailableReason === 'already_shipped') {
@@ -884,12 +885,15 @@ export class StoreSalesOrdersService {
     phaseInput: FulfillmentPhaseInput,
   ): Promise<StoreCancelUnavailableReason | undefined> {
     const block = await this.selfCancelBlockOf(so, foRows, phaseInput);
+
     if (block) return block.reason;
+
     // 와우프레스가 인쇄 취소를 거절했고 인쇄 말고 취소할 상품이 없으면 버튼을 숨긴다. 다른 상품이 있으면 열어 두고 요청이
     // PRINT_PARTIAL_CANCEL_AVAILABLE 로 인쇄 제외 취소를 묻는다 — 서버는 판정이 아니라 인쇄 취소 단계에서 거절한다
     if (phaseInput.printStatuses?.includes('cancel_refused') && !(await this.hasNonPrintLine(so.id))) {
       return 'already_processing';
     }
+
     return undefined;
   }
 
@@ -943,8 +947,10 @@ export class StoreSalesOrdersService {
       if (replay) return this.buildActionsView(await this.findSoOrThrow({ id: so.id }));
     }
     if (so.status === 'timeout') throw new BadRequestException('타임아웃된 주문은 취소할 수 없습니다.');
+
     const foRows = await this.loadFoRows(so.id);
     const block = await this.selfCancelBlockOf(so, foRows, await this.loadFulfillmentPhaseInput(so.id, foRows));
+
     if (block) throw new BadRequestException(block.message);
 
     if (!fulfillmentCommandContext) throw new BadRequestException('Idempotency-Key header is required');

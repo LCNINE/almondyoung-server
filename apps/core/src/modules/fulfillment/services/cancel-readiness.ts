@@ -59,8 +59,11 @@ export type CancelReadinessInput = {
 /** 판정을 «막힘 목록» 하나로 접는다. `ready` 면 빈 배열. */
 export function cancelBlockers(readiness: CancelReadiness): CancelBlockerCode[] {
   if (readiness.kind === 'ready') return [];
+
   if (readiness.kind === 'started_batch') return [CANCEL_BLOCKER.STARTED_BATCH];
+
   if (readiness.kind === 'unexcludable') return [readiness.blocker.code];
+
   return [...readiness.codes];
 }
 
@@ -84,12 +87,14 @@ export async function assessCancelReadiness(
     .orderBy(asc(WI.id))
     .limit(1);
   const [workItem] = input.lock ? await activeWorkItems.for('update') : await activeWorkItems;
+
   if (workItem) {
     const [batch] = await tx
       .select({ startedAt: wmsTables.outboundBatches.startedAt })
       .from(wmsTables.outboundBatches)
       .where(eq(wmsTables.outboundBatches.id, workItem.batchId))
       .limit(1);
+
     if (batch?.startedAt) return { kind: 'started_batch', workItem, batchId: workItem.batchId };
   }
 
@@ -97,6 +102,7 @@ export async function assessCancelReadiness(
     withdrawals.unstartedExitFacts(aggregate, tx),
     withdrawals.exitWaybill(shipmentId, tx),
   ]);
+
   const codes: CancelBlockerCode[] = [];
   if (workItem?.waitingOperationId && workItem.waitingOperationId !== input.ownOperationId) {
     codes.push(CANCEL_BLOCKER.WORK_ITEM_WAITING_OTHER);
@@ -105,13 +111,18 @@ export async function assessCancelReadiness(
   // 뒤의 둘은 세션이 시작돼야 생기므로 시작된 배치 밖에선 나오지 않는다 — 방어선이다(스펙 §4.1).
   if (exitFacts.inspected) codes.push(CANCEL_BLOCKER.INSPECTED_QTY);
   if (exitFacts.unsettledCustody) codes.push(CANCEL_BLOCKER.UNSETTLED_CUSTODY);
+
   if (codes.length) return { kind: 'blocked', codes: codes.sort() };
+
   // 막힘 다음에 본다 — 빼기 판정도 보관·검수 수량을 보지만(`WORK_ITEM_UNPICK_REQUIRED`) 그 둘은 409 가 아니라 대기다.
   const exitBlocker = workItem ? unstartedExitBlockerOf(exitFacts) : null;
+
   if (exitBlocker) return { kind: 'unexcludable', blocker: exitBlocker };
+
   const steps: CancelSettleStep[] = [];
   if (workItem) steps.push({ kind: 'exclude_unstarted', workItem });
   if (active) steps.push({ kind: 'void_waybill' });
   if (aggregate.shipment.status === 'planned') steps.push({ kind: 'revert_planned' });
+
   return { kind: 'ready', steps };
 }
