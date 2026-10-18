@@ -14,7 +14,6 @@ import { OrderProgressManager } from '../../order-progress/order-progress.manage
 import { OrderProgressReader } from '../../order-progress/order-progress.reader';
 import { FulfillmentWorkflowGate } from '../../services/fulfillment-workflow-gate.service';
 import { OrderReconcileRepository } from '../order-reconcile.repository';
-import { RunnableReconcileRule } from '../order-reconcile.rule';
 import { OrderReconcileRunner } from '../order-reconcile.runner';
 import { ShipmentReconcileRepository } from '../shipment-reconcile.repository';
 import { ResumePendingConsolidationRule } from './resume-pending-consolidation.rule';
@@ -26,18 +25,6 @@ const gate = (mode: 'v2' | 'maintenance') =>
   new FulfillmentWorkflowGate(
     new ConfigService({ FULFILLMENT_WORKFLOW_MODE: mode, FULFILLMENT_V2_CUTOVER_AT: '1970-01-01T00:00:00.000Z' }),
   );
-
-/** 관찰 모드 규칙을 실행 모드로 감싼다 — 실행 전환 PR 뒤의 동작을 미리 본다 */
-const acting = (rule: ResumePendingConsolidationRule): RunnableReconcileRule => ({
-  name: rule.name,
-  row: rule.row,
-  mode: 'act',
-  subject: rule.subject,
-  situation: rule.situation,
-  fingerprint: (id, tx) => rule.fingerprint(id, tx),
-  check: (id, tx) => rule.check(id, tx),
-  act: (id, tx) => rule.act(id, tx),
-});
 
 describeIfDb('ResumePendingConsolidationRule (PostgreSQL integration)', () => {
   jest.setTimeout(120_000);
@@ -123,10 +110,10 @@ describeIfDb('ResumePendingConsolidationRule (PostgreSQL integration)', () => {
     });
   });
 
-  it('투영 → 러너 → 규칙 끝까지: 관찰 모드는 두 원본에 would_act 만 남기고, 실행 모드는 한 번만 합포장한다', async () => {
+  it('투영 → 러너 → 규칙 끝까지: 실행 모드라 먼저 온 원본이 재개해 한 번만 합포장한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { dbs, w, consolidation, rule, runner } = wire();
-      expect(rule.mode).toBe('observe');
+      expect(rule.mode).toBe('act');
       const p = await pendingConsolidationBlockedByWaybill(tx, w, consolidation);
       await p.voidWaybill();
       const now = new Date('2099-06-01T00:00:00.000Z');
@@ -138,11 +125,6 @@ describeIfDb('ResumePendingConsolidationRule (PostgreSQL integration)', () => {
           .sort();
 
       await runner.runRule(rule, now, tx);
-      expect(await ours()).toEqual(['would_act', 'would_act']);
-      expect(await consolidation.findPendingOperationIdForSource(p.first.shipment.id, tx)).toBe(p.operationId);
-
-      // 10분 뒤 다시 볼 때가 된다. 먼저 온 원본이 재개해 끝내고, 다른 원본은 대체돼 게이트에서 걸러진다
-      await runner.runRule(acting(rule), new Date('2099-06-01T00:11:00.000Z'), tx);
       expect(await ours()).toEqual(['acted', 'not_needed']);
       expect(await targets(tx, p.base)).toHaveLength(1);
     });
@@ -161,7 +143,7 @@ describeIfDb('ResumePendingConsolidationRule (PostgreSQL integration)', () => {
       await project(tx, dbs, [p.first.salesOrderId, p.second.salesOrderId], now);
 
       expect(await rule.check(p.first.shipment.id, tx)).toBe(false);
-      await runner.runRule(acting(rule), now, tx);
+      await runner.runRule(rule, now, tx);
 
       expect(await consolidation.findPendingOperationIdForSource(p.first.shipment.id, tx)).toBe(p.operationId);
       expect(await targets(tx, p.base)).toHaveLength(0);
@@ -182,7 +164,7 @@ describeIfDb('ResumePendingConsolidationRule (PostgreSQL integration)', () => {
       await project(tx, dbs, [p.first.salesOrderId, p.second.salesOrderId], now);
 
       expect(await rule.check(p.first.shipment.id, tx)).toBe(false);
-      await runner.runRule(acting(rule), now, tx);
+      await runner.runRule(rule, now, tx);
 
       expect(await consolidation.findPendingOperationIdForSource(p.first.shipment.id, tx)).toBe(p.operationId);
       expect(await targets(tx, p.base)).toHaveLength(0);
