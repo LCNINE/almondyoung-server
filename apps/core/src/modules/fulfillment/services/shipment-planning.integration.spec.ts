@@ -766,6 +766,53 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
     });
   });
 
+  // 스펙 §4.1: 시작 전 배치에서 빼는 검사는 빼기 직전에 그대로 부른다 — 재개도 즉시 취소처럼 그 코드로 409, 읽기는 막힘으로 적는다.
+  it('resume rejects with the unstarted-batch exit blocker code and leaves the waiting box as it was', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await plannedFixture(tx, 2, 'pending');
+      const workItem = await seedActiveWorkItem(tx, fixture.warehouseId, fixture.shipment.id);
+      const pending = await planning.cancelOutstanding(
+        fixture.shipment.id,
+        cancelDto(fixture),
+        `exit-blocked-resume-${randomUUID()}`,
+        actor,
+        tx,
+      );
+      await tx
+        .update(wmsTables.waybills)
+        .set({ status: 'registered' })
+        .where(eq(wmsTables.waybills.id, fixture.waybill.id));
+      await tx.insert(wmsTables.dispatchAttempts).values({
+        shipmentId: fixture.shipment.id,
+        attemptNo: 1,
+        idempotencyKey: `exit-blocked-dispatch-${randomUUID()}`,
+        status: 'pending',
+      });
+
+      expect(await planning.cancellationResumeReadiness(pending.operationId, tx)).toMatchObject({
+        blockers: ['WORK_ITEM_DISPATCH_EXISTS'],
+      });
+      const error = await tx
+        .transaction((nestedTx) =>
+          planning.tryResumePendingCancellation(pending.operationId, nestedTx as unknown as DbTx),
+        )
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).getResponse()).toMatchObject({ code: 'WORK_ITEM_DISPATCH_EXISTS' });
+      expect(await shipmentRow(tx, fixture.shipment.id)).toMatchObject({
+        status: 'recovery_required',
+        recoveryCode: 'CANCEL_REPLAN_PENDING',
+      });
+      const [itemAfter] = await tx
+        .select()
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.id, workItem.id));
+      expect(itemAfter).toMatchObject({ status: workItem.status, waitingOperationId: pending.operationId });
+      expect((await waybillRow(tx, fixture.waybill.id)).status).toBe('registered');
+    });
+  });
+
   it('rejects dispatched shipment cancellation instead of mutating shipped quantity', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await physicalFixture(tx, 2, 2);

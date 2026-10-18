@@ -664,6 +664,8 @@ export class ShipmentPlanningService {
           return { response, resourceType: 'shipment_operation', resourceId: operation.id, operationId: operation.id };
         }
 
+        if (readiness.kind === 'unexcludable') throw this.conflict(readiness.blocker.code, readiness.blocker.message);
+
         // 시작된 배치의 상자(E10 이 아닌 일부 취소 등)와 막힘 있는 상자는 지금처럼 대기한다(스펙 §4.1).
         const settleable = readiness.kind === 'ready' && ['draft', 'planned'].includes(aggregate.shipment.status);
         if (!settleable) {
@@ -792,7 +794,10 @@ export class ShipmentPlanningService {
     }, tx);
   }
 
-  /** 재개하되 막힘이면 'blocked' 로 접는다 — 리컨실러의 act 가 쓴다. 상태가 갈린 것(CANCELLATION_* 충돌)은 그대로 던진다. */
+  /**
+   * 재개하되 막힘이면 'blocked' 로 접는다. 상태가 갈린 것(CANCELLATION_* 충돌)과 시작 전 배치에서 뺄 수 없는 것
+   * (`unstartedExitBlocker` 의 코드)은 409 로 던진다.
+   */
   async tryResumePendingCancellation(operationId: string, tx?: DbTx): Promise<CancellationResumeOutcome> {
     return this.dbService.run(async (trx) => (await this.resumeCancellation(operationId, trx)).outcome, tx);
   }
@@ -894,6 +899,7 @@ export class ShipmentPlanningService {
       { aggregate, ownOperationId: operationId, lock: true },
       trx,
     );
+    if (readiness.kind === 'unexcludable') throw this.conflict(readiness.blocker.code, readiness.blocker.message);
     // 쓰기 전에 돌아간다 — 호출자가 준 트랜잭션에 반쯤 손질된 상자를 남기지 않는다.
     if (readiness.kind !== 'ready') return { outcome: 'blocked', aggregate, blockers: cancelBlockers(readiness) };
     await this.settleForCancellation(

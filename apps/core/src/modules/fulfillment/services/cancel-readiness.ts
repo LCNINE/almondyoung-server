@@ -22,11 +22,14 @@ export const STARTED_BATCH_BLOCKER = 'STARTED_BATCH';
  * - `ready`: 막힘 없음. 손질(시작 전 배치 빼기·`registered` 송장 무효화·planned→draft)만 하면 draft 취소로 끝난다.
  * - `started_batch`: 시작된 배치의 활성 작업 항목이 있다 — 취소는 E10 이탈이거나 대기다. 손질 대상이 아니다.
  * - `blocked`: 시작된 배치 밖인데 막힘이 있다 — 대기로 간다.
+ * - `unexcludable`: 시작 전 배치에서 뺄 수 없다(`unstartedExitBlocker`). 시작된 배치 밖에선 늘 통과하는 방어선이라 쓰기 경로는
+ *   대기로 보내지 않고 그 코드로 409 를 낸다 — 대기 상자는 «안의 상자가 전부 planned» 를 깨 배치 전체의 시작을 막는다.
  */
 export type CancelReadiness =
   | { kind: 'ready'; unstartedWorkItem: WorkItemRow | null; voidWaybill: boolean }
   | { kind: 'started_batch'; workItem: WorkItemRow; batchId: string }
-  | { kind: 'blocked'; codes: string[] };
+  | { kind: 'blocked'; codes: string[] }
+  | { kind: 'unexcludable'; blocker: { code: string; message: string } };
 
 export type CancelReadinessInput = {
   aggregate: ShipmentAggregate;
@@ -40,6 +43,7 @@ export type CancelReadinessInput = {
 export function cancelBlockers(readiness: CancelReadiness): string[] {
   if (readiness.kind === 'ready') return [];
   if (readiness.kind === 'started_batch') return [STARTED_BATCH_BLOCKER];
+  if (readiness.kind === 'unexcludable') return [readiness.blocker.code];
   return readiness.codes;
 }
 
@@ -73,21 +77,22 @@ export async function assessCancelReadiness(
   }
 
   const codes: string[] = [];
-  if (workItem) {
-    if (workItem.waitingOperationId && workItem.waitingOperationId !== input.ownOperationId) {
-      codes.push(CANCEL_BLOCKER.WORK_ITEM_WAITING_OTHER);
-    }
-    const blocker = await withdrawals.unstartedExitBlocker(
-      { shipmentId, shipmentStatus: aggregate.shipment.status, lines: aggregate.lines },
-      tx,
-    );
-    if (blocker) codes.push(blocker.code);
+  if (workItem?.waitingOperationId && workItem.waitingOperationId !== input.ownOperationId) {
+    codes.push(CANCEL_BLOCKER.WORK_ITEM_WAITING_OTHER);
   }
   const { active, voidable } = await withdrawals.exitWaybill(shipmentId, tx);
   if (!voidable) codes.push(CANCEL_BLOCKER.WAYBILL_NOT_VOIDABLE);
   // 뒤의 둘은 세션이 시작돼야 생기므로 시작된 배치 밖에선 나오지 않는다 — 방어선이다(스펙 §4.1).
   if (aggregate.lines.some((line) => line.inspectedQty > 0)) codes.push(CANCEL_BLOCKER.INSPECTED_QTY);
   if (await withdrawals.hasUnsettledCustody(shipmentId, tx)) codes.push(CANCEL_BLOCKER.UNSETTLED_CUSTODY);
-  if (codes.length) return { kind: 'blocked', codes: [...new Set(codes)].sort() };
+  if (codes.length) return { kind: 'blocked', codes: codes.sort() };
+  // 막힘 다음에 본다 — 빼기 검사도 보관·검수 수량을 보지만(`WORK_ITEM_UNPICK_REQUIRED`) 그 둘은 409 가 아니라 대기다.
+  const exitBlocker = workItem
+    ? await withdrawals.unstartedExitBlocker(
+        { shipmentId, shipmentStatus: aggregate.shipment.status, lines: aggregate.lines },
+        tx,
+      )
+    : null;
+  if (exitBlocker) return { kind: 'unexcludable', blocker: exitBlocker };
   return { kind: 'ready', unstartedWorkItem: workItem ?? null, voidWaybill: active !== null };
 }
