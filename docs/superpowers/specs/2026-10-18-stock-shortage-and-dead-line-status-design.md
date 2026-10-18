@@ -23,7 +23,7 @@ enum `order_item_status` 는 `pending`·`matched`·`stock_deducted`·`stock_unav
 | 주문내역 줄 배지 «출고가능·출고불가» (`table/index.tsx:86-97`), `isReadyToShip`·`isUnavailable` (`hooks/use-order-rows.ts:272-275`) | 안 뜬다 |
 | 주문내역 줄 선택 `isOrderSelectable` = 전 라인 `stock_deducted` (`table/index.tsx:711-712`) | 아무 줄도 선택 안 됨. 선택을 쓰는 일괄 동작도 없다 |
 | 발주 수요 `demand-series.writer.ts:99` `sol.status <> 'cancelled'` | **결함.** 늘 참이라 부분취소된 수량이 수요에 남는다 |
-| 인쇄주문 취소 대상 `print-order-admin.manager.ts:142` `lineStatus === 'cancelled'` | **결함.** 늘 거짓이라 부분취소된 라인을 못 거른다 |
+| 인쇄주문 취소 대상 `print-order-admin.manager.ts:142` `lineStatus === 'cancelled'` | 늘 거짓인 죽은 조건. 동작 결함은 아니다 — 뒤이은 `PrintCancelRemainingReader.remaining` 이 부분취소를 뺀 남은 수량으로 판정한다 |
 | `product-matching.service.ts:793` `lineStatus` | 응답에 실어 보낼 뿐 |
 | CS 주문조회 `cs/order-lookup/index.tsx:20-21,240` — `line.status` 를 «재고차감(출고가능)»·«재고부족» 라벨로 | 늘 «대기» |
 
@@ -192,7 +192,7 @@ enum `order_item_status` 는 `pending`·`matched`·`stock_deducted`·`stock_unav
 
 `getStats` 의 `cannotShip`·`partialOutbound` 를 `order_progress` 에서 센다(라인 상태 조인 제거). 지금의 «최근 14일·`confirmed`» 창은 보드와 맞지 않으므로
 보드 «예약» 칸 숫자와 **같은 값**이 되게 한다. 메인·통계 개요·주문내역 상단 카드는 보드 `/order/stall-board` 의 «예약» 칸으로 링크한다.
-`order_progress` 를 읽지 못하면(테이블 없음 등) 0 이 아니라 «모름»을 보인다.
+읽기가 실패하면 카드는 지금처럼 오류 표시를 한다(0 으로 보이지 않게).
 
 ## 5. 죽은 상태 정리 (갈래 ⓑ)
 
@@ -206,8 +206,8 @@ enum `order_item_status` 는 `pending`·`matched`·`stock_deducted`·`stock_unav
   «주문 나누기» 껍데기 모달(`split-order-modal.tsx`, `split-quantity-modal.tsx`)과 그 버튼도 지운다 — 나누기는 보드·FO 상세에 있다.
 - **발주 수요:** `sol.status <> 'cancelled'` 를 지우고, `line_qty` 를 `sol.quantity − cancelledQuantitySql(o.id, sol.id)` 로 바꾼다(0 이하 라인은 뺀다).
   SKU 로 펼치는 것은 지금처럼 그 뒤에 한다.
-- **인쇄주문 취소 판정:** `lineStatus === 'cancelled'` 대신 «라인 수량 − 부분취소 합 ≤ 0». 인쇄 쪽은 이미 `print-cancel-remaining.reader.ts` 가
-  같은 계산으로 남은 수량을 구한다 — 그것을 쓴다.
+- **인쇄주문 취소 판정:** `lineStatus === 'cancelled'` 조건과 `PrintOrderReader.salesLine` 의 `lineStatus` 를 지운다. 판정은 바뀌지 않는다 —
+  남은 수량은 이미 `print-cancel-remaining.reader.ts` 가 같은 계산으로 구한다.
 - **CS 주문조회:** 라인 상태 라벨을 지우고 주문 단위 «출고 단계» 배지(§5.2)를 보인다.
 - **필터 값 호환:** `sales-order-filter.dto.ts:53` 이 `@IsIn(ORDER_TYPE_GROUPS)` 로 검증하므로 core 에서 값을 바로 지우면 옛 admin-web 이 400 을 받는다.
   ⓑ-1 에서는 `ready`·`partial`·`hold` 를 계속 받고 **빈 결과**를 돌려준다(조건을 빼서 전체를 돌려주면 안 된다). 지금도 늘 0건이라 옛 화면의 동작이 같다.
