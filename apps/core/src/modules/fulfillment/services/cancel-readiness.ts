@@ -29,14 +29,21 @@ export type CancelBlockerCode = (typeof CANCEL_BLOCKER)[keyof typeof CANCEL_BLOC
 
 /**
  * 상자 하나의 취소 준비도 — 즉시 취소(`cancelOutstanding`)와 대기 재개(`resumePendingCancellation`)가 같은 판정을 쓴다.
- * - `ready`: 막힘 없음. 손질(시작 전 배치 빼기·`registered` 송장 무효화·planned→draft)만 하면 draft 취소로 끝난다.
+ * - `ready`: 막힘 없음. `steps`(시작 전 배치 빼기·`registered` 송장 무효화·planned→draft)를 하면 draft 취소로 끝난다.
+ *   비면 손질 없는 draft 취소다.
  * - `started_batch`: 시작된 배치의 활성 작업 항목이 있다 — 취소는 E10 이탈이거나 대기다. 손질 대상이 아니다.
  * - `blocked`: 시작된 배치 밖인데 막힘이 있다 — 대기로 간다.
  * - `unexcludable`: 시작 전 배치에서 뺄 수 없다(`unstartedExitBlocker`). 시작된 배치 밖에선 늘 통과하는 방어선이라 쓰기 경로는
  *   대기로 보내지 않고 그 코드로 409 를 낸다 — 대기 상자는 «안의 상자가 전부 planned» 를 깨 배치 전체의 시작을 막는다.
  */
+/** 막힘 없음 갈래의 손질 한 걸음(스펙 §4.1 ①~③). 즉시 취소의 권한 검사와 손질이 같은 목록을 본다. */
+export type CancelSettleStep =
+  | { kind: 'exclude_unstarted'; workItem: WorkItemRow }
+  | { kind: 'void_waybill' }
+  | { kind: 'revert_planned' };
+
 export type CancelReadiness =
-  | { kind: 'ready'; unstartedWorkItem: WorkItemRow | null; voidWaybill: boolean }
+  | { kind: 'ready'; steps: CancelSettleStep[] }
   | { kind: 'started_batch'; workItem: WorkItemRow; batchId: string }
   | { kind: 'blocked'; codes: CancelBlockerCode[] }
   | { kind: 'unexcludable'; blocker: UnstartedExitBlocker };
@@ -102,5 +109,9 @@ export async function assessCancelReadiness(
   // 막힘 다음에 본다 — 빼기 판정도 보관·검수 수량을 보지만(`WORK_ITEM_UNPICK_REQUIRED`) 그 둘은 409 가 아니라 대기다.
   const exitBlocker = workItem ? unstartedExitBlockerOf(exitFacts) : null;
   if (exitBlocker) return { kind: 'unexcludable', blocker: exitBlocker };
-  return { kind: 'ready', unstartedWorkItem: workItem ?? null, voidWaybill: active !== null };
+  const steps: CancelSettleStep[] = [];
+  if (workItem) steps.push({ kind: 'exclude_unstarted', workItem });
+  if (active) steps.push({ kind: 'void_waybill' });
+  if (aggregate.shipment.status === 'planned') steps.push({ kind: 'revert_planned' });
+  return { kind: 'ready', steps };
 }

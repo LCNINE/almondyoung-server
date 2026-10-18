@@ -29,6 +29,7 @@ import {
   CancelBlockerCode,
   cancelBlockers,
   CancelReadiness,
+  CancelSettleStep,
 } from './cancel-readiness';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
@@ -698,13 +699,12 @@ export class ShipmentPlanningService {
           return { response, resourceType: 'shipment_operation', resourceId: operation.id, operationId: operation.id };
         }
 
-        // planned 를 draft 로 되돌리는 일이라 대기 갈래와 같은 권한을 요구한다. 손질 없는 draft 즉시 취소는 지금처럼 검사 없음.
-        if (aggregate.shipment.status === 'planned' || readiness.unstartedWorkItem || readiness.voidWaybill) {
-          await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_REOPEN);
-        }
+        // 손질(배치 빼기·송장 무효화·planned→draft)은 상자를 다시 여는 일이라 대기 갈래와 같은 권한을 요구한다.
+        // 손질 없는 draft 즉시 취소는 권한을 묻지 않는다.
+        if (readiness.steps.length) await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_REOPEN);
         await this.settleForCancellation(
-          aggregate,
-          readiness,
+          shipmentId,
+          readiness.steps,
           { actor, operationId: operation.id, reason: dto.reason },
           tx,
         );
@@ -909,8 +909,8 @@ export class ShipmentPlanningService {
     // 쓰기 전에 돌아간다 — 호출자가 준 트랜잭션에 반쯤 손질된 상자를 남기지 않는다.
     if (readiness.kind !== 'ready') return { outcome: 'blocked', aggregate, blockers: cancelBlockers(readiness) };
     await this.settleForCancellation(
-      aggregate,
-      readiness,
+      pending.shipmentId,
+      readiness.steps,
       { actor: { id: operation.operatorId, roles: [] }, operationId, reason: pending.reason },
       trx,
     );
@@ -1281,39 +1281,46 @@ export class ShipmentPlanningService {
    * 줄·manifestVersion 은 건드리지 않는다 — 그건 뒤따르는 draft 취소의 몫이다.
    */
   private async settleForCancellation(
-    aggregate: ShipmentAggregate,
-    ready: Extract<CancelReadiness, { kind: 'ready' }>,
+    shipmentId: string,
+    steps: CancelSettleStep[],
     ctx: { actor: ShipmentPlanningActor; operationId: string; reason: string },
     tx: DbTx,
   ): Promise<void> {
-    const shipmentId = aggregate.shipment.id;
-    if (ready.unstartedWorkItem) {
-      const excluded = await this.withdrawals.excludeUnstarted(ready.unstartedWorkItem, ctx.reason, tx);
-      await this.auditCommand(
-        tx,
-        ctx.actor,
-        'outbound_batch.shipment.exclude_for_cancel',
-        ctx.operationId,
-        ctx.reason,
-        {
-          shipmentId,
-          workItemId: excluded.id,
-          batchId: excluded.batchId,
-        },
-      );
-    }
-    if (ready.voidWaybill) {
-      await this.withdrawals.voidWaybillForCancel(
-        shipmentId,
-        { actorId: ctx.actor.id, idempotencyKey: `cancel-exit:${ctx.operationId}:${shipmentId}`, reason: 'canceled' },
-        tx,
-      );
-    }
-    if (aggregate.shipment.status === 'planned') {
-      await tx
-        .update(wmsTables.shipments)
-        .set({ status: 'draft', plannedAt: null, lastUpdated: new Date() })
-        .where(eq(wmsTables.shipments.id, shipmentId));
+    for (const step of steps) {
+      switch (step.kind) {
+        case 'exclude_unstarted': {
+          const excluded = await this.withdrawals.excludeUnstarted(step.workItem, ctx.reason, tx);
+
+          await this.auditCommand(
+            tx,
+            ctx.actor,
+            'outbound_batch.shipment.exclude_for_cancel',
+            ctx.operationId,
+            ctx.reason,
+            { shipmentId, workItemId: excluded.id, batchId: excluded.batchId },
+          );
+          break;
+        }
+
+        case 'void_waybill':
+          await this.withdrawals.voidWaybillForCancel(
+            shipmentId,
+            {
+              actorId: ctx.actor.id,
+              idempotencyKey: `cancel-exit:${ctx.operationId}:${shipmentId}`,
+              reason: 'canceled',
+            },
+            tx,
+          );
+          break;
+
+        case 'revert_planned':
+          await tx
+            .update(wmsTables.shipments)
+            .set({ status: 'draft', plannedAt: null, lastUpdated: new Date() })
+            .where(eq(wmsTables.shipments.id, shipmentId));
+          break;
+      }
     }
   }
 
