@@ -9,6 +9,7 @@ import {
   ShipmentDetailResponseDto,
   FulfillmentOperationResponseDto,
   SplitShipmentDto,
+  SplitUnreservedShipmentDto,
 } from '../dto/shipment-planning.dto';
 import { ShipmentPlanningService } from '../services/shipment-planning.service';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
@@ -34,6 +35,17 @@ export class ShipmentPlanningController {
     @User() user: AuthenticatedUser,
   ) {
     return this.planning.split(shipmentId, dto, idempotencyKey ?? '', this.actor(user));
+  }
+
+  @Post(':id/split-unreserved')
+  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
+  splitUnreserved(
+    @Param('id') shipmentId: string,
+    @Body() dto: SplitUnreservedShipmentDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @User() user: AuthenticatedUser,
+  ) {
+    return this.planning.splitUnreserved(shipmentId, dto, idempotencyKey ?? '', this.actor(user));
   }
 
   @Patch(':id/recipient')

@@ -19,7 +19,10 @@ import {
   ShipmentDetailResponseDto,
   ShipmentSummaryResponseDto,
   FulfillmentOperationResponseDto,
+  ShipmentCommandReasonDto,
+  ShipmentSplitMoveDto,
   SplitShipmentDto,
+  SplitUnreservedShipmentDto,
 } from '../dto/shipment-planning.dto';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { BoxWithdrawalService, WorkItemRow } from './box-withdrawal.service';
@@ -237,101 +240,90 @@ export class ShipmentPlanningService {
           reservationTargets.set(line.id, requested);
         }
 
-        const before = this.snapshot(aggregate);
-        const operation = await this.createOperation(
-          tx,
-          'split',
+        return this.applySplit(tx, {
+          aggregate,
+          selected,
+          reservationTargets,
           actor,
-          dto.reason,
-          dto.csCaseId,
-          dto.note,
+          meta: dto,
+          action: 'shipment.split',
           idempotencyKey,
           requestHash,
-          before,
-        );
-        const [target] = await tx
-          .insert(wmsTables.shipments)
-          .values({
-            warehouseId: aggregate.shipment.warehouseId,
-            status: 'draft',
-            shippingProfileId: aggregate.shipment.shippingProfileId,
-            recipientSnapshot: aggregate.shipment.recipientSnapshot,
-            // 분할된 상자도 같은 문 앞에 선다 — 비번을 안 물려주면 이 상자의 송장에만
-            // 현관 정보가 빠진 채 나가고 기사가 문을 못 연다. 주소를 복사하면서 비번을
-            // 빠뜨리는 것이 정확히 그 사고다.
-            entrancePassword: aggregate.shipment.entrancePassword,
-            manifestVersion: 1,
-            reservationVersion: 1,
-            openedBy: actor.id,
-            openedAt: new Date(),
-          })
-          .returning();
-
-        let wholeLineReservationMove = false;
-        for (const { move, line } of selected) {
-          const targetReservedQty = reservationTargets.get(line.id) ?? 0;
-          if (move.qty === line.qty) {
-            await tx
-              .update(wmsTables.shipmentLines)
-              .set({ shipmentId: target.id, lineVersion: line.lineVersion + 1 })
-              .where(eq(wmsTables.shipmentLines.id, line.id));
-            wholeLineReservationMove ||= targetReservedQty > 0;
-            continue;
-          }
-
-          // 원래 라인의 재고 대기 순번은 예약을 옮기기 «전에» 읽는다 — 새 라인이 «지금» 으로
-          // 줄 맨 뒤에 서면, 나눠 보낸 것 때문에 이 주문이 뒤에 온 주문보다 늦게 재고를 받는다.
-          const demandRequestedAt = await loadReservationQueueKey(tx, line.id);
-          await tx
-            .update(wmsTables.shipmentLines)
-            .set({ qty: line.qty - move.qty, lineVersion: line.lineVersion + 1 })
-            .where(eq(wmsTables.shipmentLines.id, line.id));
-          const [targetLine] = await tx
-            .insert(wmsTables.shipmentLines)
-            .values({
-              shipmentId: target.id,
-              fulfillmentOrderItemId: line.fulfillmentOrderItemId,
-              skuId: line.skuId,
-              qty: move.qty,
-              createdFromLineId: line.id,
-              demandRequestedAt,
-            })
-            .returning();
-          if (targetReservedQty > 0) {
-            await this.reservations.transfer(line.id, targetLine.id, targetReservedQty, tx);
-          }
-        }
-
-        if (wholeLineReservationMove) {
-          await tx
-            .update(wmsTables.shipments)
-            .set({ reservationVersion: sql`${wmsTables.shipments.reservationVersion} + 1` })
-            .where(inArray(wmsTables.shipments.id, [shipmentId, target.id]));
-        }
-        await tx
-          .update(wmsTables.shipments)
-          .set({ manifestVersion: aggregate.shipment.manifestVersion + 1, lastUpdated: new Date() })
-          .where(eq(wmsTables.shipments.id, shipmentId));
-
-        await this.reservations.recompute(shipmentId, tx);
-        await this.reservations.recompute(target.id, tx);
-        const sourceAfter = await this.loadAggregate(shipmentId, tx);
-        const targetAfter = await this.loadAggregate(target.id, tx);
-        const sourceSnapshot = this.snapshot(sourceAfter);
-        const targetSnapshot = this.snapshot(targetAfter);
-        await this.completeOperation(tx, operation.id, [
-          { shipmentId, role: 'source', before, after: sourceSnapshot },
-          { shipmentId: target.id, role: 'target', before: null, after: targetSnapshot },
-        ]);
-        await this.auditCommand(tx, actor, 'shipment.split', operation.id, dto.reason, {
-          sourceShipmentId: shipmentId,
-          targetShipmentId: target.id,
-          before,
-          after: { source: sourceSnapshot, target: targetSnapshot },
         });
+      },
+      tx,
+    );
+  }
 
-        const response = { operationId: operation.id, source: sourceSnapshot, target: targetSnapshot };
-        return { response, resourceType: 'shipment', resourceId: target.id, operationId: operation.id };
+  /**
+   * 재고가 모자란 상자에서 «있는 것» 은 두고 미예약 몫 전부를 새 draft 상자로 나눈다.
+   * 몫은 화면이 아니라 잠금 «뒤» 의 확정 예약으로 계산한다 — 화면이 본 뒤 워커가 예약을 더 잡았을 수 있다.
+   * 예약 0 라인은 통째로(라인 id 유지), 일부 예약 라인은 미예약 몫만 새 라인으로 옮긴다.
+   */
+  async splitUnreserved(
+    shipmentId: string,
+    dto: SplitUnreservedShipmentDto,
+    idempotencyKey: string,
+    actor: ShipmentPlanningActor,
+    tx?: DbTx,
+  ) {
+    this.workflowGate.assertV2MutationAllowed('shipment.split_unreserved');
+    this.assertReason(dto.reason);
+
+    return this.commands.execute(
+      {
+        commandType: 'shipment.split_unreserved',
+        idempotencyKey,
+        canonicalRequest: { actorId: actor.id, shipmentId, ...dto },
+      },
+      async (tx, _commandRequestId, requestHash) => {
+        const aggregate = await this.lockAggregate(shipmentId, tx);
+        this.assertShipmentVersion(aggregate.shipment, dto.expectedManifestVersion);
+        if (aggregate.shipment.status !== 'draft') {
+          throw this.conflict('SHIPMENT_NOT_DRAFT', `Shipment ${shipmentId} must be Draft to split`);
+        }
+        const baseOrderId = aggregate.lines[0]?.salesOrderId;
+        if (aggregate.lines.some((line) => line.salesOrderId !== baseOrderId)) {
+          throw this.conflict('SHIPMENT_CONSOLIDATED', `Shipment ${shipmentId} carries lines of another sales order`);
+        }
+        await this.assertNoCustodyOrActiveWork(aggregate, tx);
+        await this.assertNoActiveWaybill(shipmentId, tx);
+
+        const confirmedByLine = await this.confirmedReservationQtyByLine(
+          aggregate.lines.map((line) => line.id),
+          tx,
+        );
+        const lines = [...aggregate.lines].sort((a, b) => a.id.localeCompare(b.id));
+        const unreservedOf = (line: ShipmentLineRow) => line.qty - (confirmedByLine.get(line.id) ?? 0);
+        const totalUnreserved = lines.reduce((total, line) => total + unreservedOf(line), 0);
+        const totalConfirmed = lines.reduce((total, line) => total + (confirmedByLine.get(line.id) ?? 0), 0);
+        if (totalUnreserved <= 0) {
+          throw this.conflict('SHIPMENT_FULLY_RESERVED', `Shipment ${shipmentId} has no unreserved quantity to split`);
+        }
+        if (totalConfirmed <= 0) {
+          throw this.conflict(
+            'SHIPMENT_NOTHING_RESERVED',
+            `Shipment ${shipmentId} has no reserved quantity to keep; nothing would remain in the source`,
+          );
+        }
+
+        const selected = lines
+          .filter((line) => unreservedOf(line) > 0)
+          .map((line) => ({
+            move: { shipmentLineId: line.id, expectedLineVersion: line.lineVersion, qty: unreservedOf(line) },
+            line,
+          }));
+        const reservationTargets = new Map(selected.map(({ line }) => [line.id, 0]));
+        return this.applySplit(tx, {
+          aggregate,
+          selected,
+          reservationTargets,
+          actor,
+          meta: dto,
+          action: 'shipment.split_unreserved',
+          idempotencyKey,
+          requestHash,
+        });
       },
       tx,
     );
@@ -1449,6 +1441,123 @@ export class ShipmentPlanningService {
 
   private snapshot(aggregate: ShipmentAggregate): ShipmentManifestSnapshot {
     return shipmentSnapshot(aggregate);
+  }
+
+  /**
+   * 상자의 한 몫을 새 draft 상자로 옮기는 공통 몸통. `split`(운영자가 몫을 고른다)과 `splitUnreserved`(미예약 몫 전부)가 같이 쓴다.
+   * 잠금·버전·draft·작업 없음 검증은 부르는 쪽 몫이고, 여기서는 operation 기록부터 감사 로그까지를 한 번에 한다.
+   * 일부만 옮기는 라인은 원래 라인의 재고 대기 순번을 새 라인이 이어받는다.
+   */
+  private async applySplit(
+    tx: DbTx,
+    args: {
+      aggregate: ShipmentAggregate;
+      selected: Array<{ move: ShipmentSplitMoveDto; line: ShipmentAggregate['lines'][number] }>;
+      reservationTargets: Map<string, number>;
+      actor: ShipmentPlanningActor;
+      meta: ShipmentCommandReasonDto;
+      action: 'shipment.split' | 'shipment.split_unreserved';
+      idempotencyKey: string;
+      requestHash: string;
+    },
+  ) {
+    const { aggregate, selected, reservationTargets, actor, meta, action, idempotencyKey, requestHash } = args;
+    const shipmentId = aggregate.shipment.id;
+    const before = this.snapshot(aggregate);
+    const operation = await this.createOperation(
+      tx,
+      'split',
+      actor,
+      meta.reason,
+      meta.csCaseId,
+      meta.note,
+      idempotencyKey,
+      requestHash,
+      before,
+    );
+    const [target] = await tx
+      .insert(wmsTables.shipments)
+      .values({
+        warehouseId: aggregate.shipment.warehouseId,
+        status: 'draft',
+        shippingProfileId: aggregate.shipment.shippingProfileId,
+        recipientSnapshot: aggregate.shipment.recipientSnapshot,
+        // 분할된 상자도 같은 문 앞에 선다 — 비번을 안 물려주면 이 상자의 송장에만
+        // 현관 정보가 빠진 채 나가고 기사가 문을 못 연다. 주소를 복사하면서 비번을
+        // 빠뜨리는 것이 정확히 그 사고다.
+        entrancePassword: aggregate.shipment.entrancePassword,
+        manifestVersion: 1,
+        reservationVersion: 1,
+        openedBy: actor.id,
+        openedAt: new Date(),
+      })
+      .returning();
+
+    let wholeLineReservationMove = false;
+    for (const { move, line } of selected) {
+      const targetReservedQty = reservationTargets.get(line.id) ?? 0;
+      if (move.qty === line.qty) {
+        await tx
+          .update(wmsTables.shipmentLines)
+          .set({ shipmentId: target.id, lineVersion: line.lineVersion + 1 })
+          .where(eq(wmsTables.shipmentLines.id, line.id));
+        wholeLineReservationMove ||= targetReservedQty > 0;
+        continue;
+      }
+
+      // 원래 라인의 재고 대기 순번은 예약을 옮기기 «전에» 읽는다 — 새 라인이 «지금» 으로
+      // 줄 맨 뒤에 서면, 나눠 보낸 것 때문에 이 주문이 뒤에 온 주문보다 늦게 재고를 받는다.
+      const demandRequestedAt = await loadReservationQueueKey(tx, line.id);
+      await tx
+        .update(wmsTables.shipmentLines)
+        .set({ qty: line.qty - move.qty, lineVersion: line.lineVersion + 1 })
+        .where(eq(wmsTables.shipmentLines.id, line.id));
+      const [targetLine] = await tx
+        .insert(wmsTables.shipmentLines)
+        .values({
+          shipmentId: target.id,
+          fulfillmentOrderItemId: line.fulfillmentOrderItemId,
+          skuId: line.skuId,
+          qty: move.qty,
+          createdFromLineId: line.id,
+          demandRequestedAt,
+        })
+        .returning();
+      if (targetReservedQty > 0) {
+        await this.reservations.transfer(line.id, targetLine.id, targetReservedQty, tx);
+      }
+    }
+
+    if (wholeLineReservationMove) {
+      await tx
+        .update(wmsTables.shipments)
+        .set({ reservationVersion: sql`${wmsTables.shipments.reservationVersion} + 1` })
+        .where(inArray(wmsTables.shipments.id, [shipmentId, target.id]));
+    }
+    await tx
+      .update(wmsTables.shipments)
+      .set({ manifestVersion: aggregate.shipment.manifestVersion + 1, lastUpdated: new Date() })
+      .where(eq(wmsTables.shipments.id, shipmentId));
+
+    await this.reservations.recompute(shipmentId, tx);
+    await this.reservations.recompute(target.id, tx);
+    const sourceAfter = await this.loadAggregate(shipmentId, tx);
+    const targetAfter = await this.loadAggregate(target.id, tx);
+    const sourceSnapshot = this.snapshot(sourceAfter);
+    const targetSnapshot = this.snapshot(targetAfter);
+    await this.completeOperation(tx, operation.id, [
+      { shipmentId, role: 'source', before, after: sourceSnapshot },
+      { shipmentId: target.id, role: 'target', before: null, after: targetSnapshot },
+    ]);
+    await this.auditCommand(tx, actor, action, operation.id, meta.reason, {
+      sourceShipmentId: shipmentId,
+      targetShipmentId: target.id,
+      before,
+      after: { source: sourceSnapshot, target: targetSnapshot },
+    });
+
+    const response = { operationId: operation.id, source: sourceSnapshot, target: targetSnapshot };
+    return { response, resourceType: 'shipment', resourceId: target.id, operationId: operation.id };
   }
 
   private async createOperation(

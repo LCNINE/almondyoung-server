@@ -1069,4 +1069,223 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
       });
     }
   });
+  describe('splitUnreserved', () => {
+    /** 한 주문·한 상자에 라인 셋: L1 수량2 재고2, L2 수량3 재고2, L3 수량1 재고0 → 예약 2 / 2 / 0 */
+    async function shortageBox(tx: DbTx, reservedPerLine: [number, number, number] = [2, 2, 0]) {
+      const { warehouseId, locationId } = await seedWarehouseWithZone(tx);
+      const { holderId } = await seedHolder(tx);
+      const quantities = [2, 3, 1];
+      const skuIds: string[] = [];
+      const variantIds: string[] = [];
+      for (let i = 0; i < 3; i += 1) {
+        const { skuId } = await seedSku(tx, holderId);
+        skuIds.push(skuId);
+        variantIds.push(randomUUID());
+        if (reservedPerLine[i] > 0) {
+          await tx.insert(wmsTables.stockLedgers).values({
+            skuId,
+            warehouseId,
+            locationId,
+            stockState: 'ON_HAND',
+            qty: reservedPerLine[i],
+          });
+        }
+      }
+      const { salesOrderId, lineIds } = await seedSalesOrder(tx, {
+        lines: variantIds.map((variantId, i) => ({ variantId, quantity: quantities[i] })),
+      });
+      await tx
+        .update(wmsTables.salesOrders)
+        .set({ shippingAddress: COMPLETE_RECIPIENT })
+        .where(eq(wmsTables.salesOrders.id, salesOrderId));
+      for (const lineId of lineIds) {
+        await tx
+          .update(wmsTables.salesOrderLines)
+          .set({ channelOrderItemId: `item-${randomUUID()}`, channelProductId: `product-${randomUUID()}` })
+          .where(eq(wmsTables.salesOrderLines.id, lineId));
+      }
+      for (let i = 0; i < 3; i += 1) await seedMatching(tx, { variantId: variantIds[i], skuId: skuIds[i] });
+      await wired.fulfillments.create({ salesOrderId, warehouseId }, tx);
+      const lines = await tx
+        .select({ line: wmsTables.shipmentLines })
+        .from(wmsTables.shipmentLines)
+        .where(inArray(wmsTables.shipmentLines.skuId, skuIds))
+        .then((rows) => rows.map((row) => row.line));
+      const bySku = (skuId: string) => {
+        const found = lines.find((line) => line.skuId === skuId);
+        if (!found) throw new Error(`no shipment line for sku ${skuId}`);
+        return found;
+      };
+      const [l1, l2, l3] = skuIds.map(bySku);
+      const shipment = await shipmentRow(tx, l1.shipmentId);
+      return { warehouseId, locationId, skuIds, salesOrderId, shipment, l1, l2, l3 };
+    }
+
+    function qtyAndReserved(snapshot: { lines: Array<{ id: string; qty: number; reservedQty: number }> }) {
+      return snapshot.lines.map((line) => [line.qty, line.reservedQty]);
+    }
+
+    function dtoOf(box: { shipment: { manifestVersion: number } }) {
+      return { expectedManifestVersion: box.shipment.manifestVersion, reason: '고객 동의 — 있는 것 먼저' };
+    }
+
+    it('미예약 몫 전부를 새 draft 상자로 옮긴다 — 예약 0 라인은 통째로, 일부 예약 라인은 미예약 몫만', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const box = await shortageBox(tx);
+        expect(new Set([box.l1.shipmentId, box.l2.shipmentId, box.l3.shipmentId]).size).toBe(1);
+        const result = await planning.splitUnreserved(
+          box.shipment.id,
+          dtoOf(box),
+          `split-unreserved-${randomUUID()}`,
+          actor,
+          tx,
+        );
+
+        const byId = (snapshot: typeof result.source) => new Map(snapshot.lines.map((line) => [line.id, line]));
+        const source = byId(result.source);
+        expect(source.size).toBe(2);
+        expect(source.get(box.l1.id)).toMatchObject({ qty: 2, reservedQty: 2 });
+        expect(source.get(box.l2.id)).toMatchObject({ qty: 2, reservedQty: 2 });
+        expect(qtyAndReserved(result.target).sort()).toEqual([
+          [1, 0],
+          [1, 0],
+        ]);
+        // 예약 0 라인은 통째 이동 — 라인 id 를 유지한다
+        expect(byId(result.target).get(box.l3.id)).toMatchObject({ qty: 1, reservedQty: 0 });
+        // 일부 예약 라인의 미예약 몫은 새 라인으로, 순번을 이어받는다
+        const moved = result.target.lines.find((line) => line.id !== box.l3.id);
+        expect(moved).toBeDefined();
+        const [movedRow] = await tx
+          .select()
+          .from(wmsTables.shipmentLines)
+          .where(eq(wmsTables.shipmentLines.id, (moved as { id: string }).id));
+        expect(movedRow.createdFromLineId).toBe(box.l2.id);
+        expect(movedRow.demandRequestedAt).not.toBeNull();
+
+        expect(result.target.status).toBe('draft');
+        const [operation] = await tx
+          .select()
+          .from(wmsTables.shipmentOperations)
+          .where(eq(wmsTables.shipmentOperations.id, result.operationId));
+        expect(operation.type).toBe('split');
+      });
+    });
+
+    it('같은 키 재시도는 같은 결과, 새 키로 다시 누르면 SHIPMENT_FULLY_RESERVED', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const box = await shortageBox(tx);
+        const key = `split-unreserved-${randomUUID()}`;
+        const first = await planning.splitUnreserved(box.shipment.id, dtoOf(box), key, actor, tx);
+        const replay = await planning.splitUnreserved(box.shipment.id, dtoOf(box), key, actor, tx);
+        expect(replay.target.shipmentId).toBe(first.target.shipmentId);
+        expect(replay.operationId).toBe(first.operationId);
+
+        const after = await shipmentRow(tx, box.shipment.id);
+        let error: unknown;
+        try {
+          await planning.splitUnreserved(
+            box.shipment.id,
+            { expectedManifestVersion: after.manifestVersion, reason: '다시' },
+            `split-unreserved-${randomUUID()}`,
+            actor,
+            tx,
+          );
+        } catch (caught) {
+          error = caught;
+        }
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).getResponse()).toMatchObject({ code: 'SHIPMENT_FULLY_RESERVED' });
+      });
+    });
+
+    it('화면이 본 뒤 워커가 예약을 더 잡았으면 잠금 뒤 숫자로 옮긴다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const box = await shortageBox(tx);
+        // 화면이 본 뒤: L2 에 재고 1 이 들어와 예약 1 이 더 잡힌다 (예약 2 → 3, 미예약 1 → 0)
+        await tx
+          .update(wmsTables.stockLedgers)
+          .set({ qty: 3 })
+          .where(
+            and(
+              eq(wmsTables.stockLedgers.skuId, box.l2.skuId),
+              eq(wmsTables.stockLedgers.warehouseId, box.warehouseId),
+              eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
+            ),
+          );
+        await wired.shipmentReservations.reservePartial(box.l2.id, 1, tx);
+        expect(await confirmedQty(tx, box.l2.id)).toBe(3);
+
+        const fresh = await shipmentRow(tx, box.shipment.id);
+        const result = await planning.splitUnreserved(
+          box.shipment.id,
+          { expectedManifestVersion: fresh.manifestVersion, reason: '고객 동의 — 있는 것 먼저' },
+          `split-unreserved-${randomUUID()}`,
+          actor,
+          tx,
+        );
+        expect(result.target.lines.map((line) => line.id)).toEqual([box.l3.id]);
+        expect(result.source.lines.find((line) => line.id === box.l2.id)).toMatchObject({ qty: 3, reservedQty: 3 });
+      });
+    });
+
+    it('전부 미예약 상자는 SHIPMENT_NOTHING_RESERVED, 새 상자를 만들지 않는다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const box = await shortageBox(tx, [0, 0, 0]);
+        const before = await tx
+          .select({ id: wmsTables.shipments.id })
+          .from(wmsTables.shipments)
+          .where(eq(wmsTables.shipments.warehouseId, box.warehouseId));
+        let error: unknown;
+        try {
+          await planning.splitUnreserved(box.shipment.id, dtoOf(box), `split-unreserved-${randomUUID()}`, actor, tx);
+        } catch (caught) {
+          error = caught;
+        }
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).getResponse()).toMatchObject({ code: 'SHIPMENT_NOTHING_RESERVED' });
+        const after = await tx
+          .select({ id: wmsTables.shipments.id })
+          .from(wmsTables.shipments)
+          .where(eq(wmsTables.shipments.warehouseId, box.warehouseId));
+        expect(after).toHaveLength(before.length);
+      });
+    });
+
+    it('다른 판매주문 라인이 든 상자는 SHIPMENT_CONSOLIDATED', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const box = await shortageBox(tx);
+        const other = await shortageBox(tx);
+        await tx
+          .update(wmsTables.shipmentLines)
+          .set({ shipmentId: box.shipment.id })
+          .where(eq(wmsTables.shipmentLines.id, other.l3.id));
+        let error: unknown;
+        try {
+          await planning.splitUnreserved(box.shipment.id, dtoOf(box), `split-unreserved-${randomUUID()}`, actor, tx);
+        } catch (caught) {
+          error = caught;
+        }
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).getResponse()).toMatchObject({ code: 'SHIPMENT_CONSOLIDATED' });
+      });
+    });
+
+    it('planned 상자는 SHIPMENT_NOT_DRAFT', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const box = await shortageBox(tx, [2, 3, 1]);
+        await tx
+          .update(wmsTables.shipments)
+          .set({ status: 'planned', plannedAt: new Date() })
+          .where(eq(wmsTables.shipments.id, box.shipment.id));
+        let error: unknown;
+        try {
+          await planning.splitUnreserved(box.shipment.id, dtoOf(box), `split-unreserved-${randomUUID()}`, actor, tx);
+        } catch (caught) {
+          error = caught;
+        }
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).getResponse()).toMatchObject({ code: 'SHIPMENT_NOT_DRAFT' });
+      });
+    });
+  });
 });
