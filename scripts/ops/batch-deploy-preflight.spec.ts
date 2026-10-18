@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { getServiceRegistry } from '../seeding/lib/service-registry';
@@ -7,55 +8,37 @@ import {
   EcsServiceSnapshot,
   judgeDeployment,
   migrationsOutDir,
+  migrationStatus,
   parseJournal,
-  pendingEntries,
   PendingMigration,
   rolloutProblems,
   uncheckedDeployLines,
 } from './batch-deploy-preflight.lib';
 
 const ROOT = resolve(__dirname, '../..');
+const repoSql = (path: string) => readFileSync(join(ROOT, path), 'utf8');
 
 describe('classifyMigration', () => {
   it('drizzle 가 만든 실제 contract 마이그(#1063 PR 4)는 contract — lock_timeout·DROP CONSTRAINT·DROP INDEX 는 섞임으로 세지 않는다', () => {
-    const sql = readFileSync(
-      join(ROOT, 'apps/core/drizzle/20261014162912_drop-legacy-line-matching-columns.sql'),
-      'utf8',
-    );
-    expect(classifyMigration(sql)).toEqual({ kind: 'contract', contract: ['DROP TABLE', 'DROP COLUMN'], expand: [] });
-  });
-
-  it('새 칸·새 표는 expand', () => {
-    const sql = [
-      'CREATE TABLE "event"."event_dead_letters" ("id" uuid PRIMARY KEY NOT NULL);',
-      'ALTER TABLE "refunds" ADD COLUMN "kind" "refund_kind";',
-      'ALTER TYPE "public"."order_status" ADD VALUE \'settling\';',
-    ].join('--> statement-breakpoint\n');
-    expect(classifyMigration(sql).kind).toBe('expand');
-  });
-
-  it('한 파일에서 칸을 더하고 지우면 mixed — drizzle 가 rename 을 DROP + ADD 로 만든 모양이다', () => {
-    const sql =
-      'ALTER TABLE "a" ADD COLUMN "new_name" text;--> statement-breakpoint\nALTER TABLE "a" DROP COLUMN "old_name";';
-    expect(classifyMigration(sql)).toEqual({ kind: 'mixed', contract: ['DROP COLUMN'], expand: ['ADD COLUMN'] });
-  });
-
-  it.each([
-    ['SET NOT NULL', 'ALTER TABLE "a" ALTER COLUMN "b" SET NOT NULL;'],
-    ['컬럼 타입 변경', 'ALTER TABLE "a" ALTER COLUMN "b" SET DATA TYPE integer;'],
-    ['RENAME', 'ALTER TABLE "a" RENAME COLUMN "b" TO "c";'],
-  ])('%s 는 contract', (label, sql) => {
-    expect(classifyMigration(sql)).toEqual({ kind: 'contract', contract: [label], expand: [] });
-  });
-
-  it('주석 속 단어는 세지 않는다', () => {
-    const sql = '-- 다음 배치에서 DROP TABLE 한다\n/* RENAME TO 금지 */\nCREATE TABLE "a" ("b" text);';
-    expect(classifyMigration(sql)).toEqual({ kind: 'expand', contract: [], expand: ['CREATE TABLE'] });
+    const cls = classifyMigration(repoSql('apps/core/drizzle/20261014162912_drop-legacy-line-matching-columns.sql'));
+    expect(cls.kind).toBe('contract');
+    expect(cls.contract).toEqual(expect.arrayContaining(['DROP TABLE', 'DROP COLUMN']));
   });
 
   it('contract 마이그가 남은 칸에 인덱스를 다시 걸어도 섞임이 아니다(#724 PR-C 실제 파일)', () => {
-    const sql = readFileSync(join(ROOT, 'apps/core/drizzle/20260826113617_purchase-order-contract-phase.sql'), 'utf8');
-    expect(classifyMigration(sql).kind).toBe('contract');
+    expect(classifyMigration(repoSql('apps/core/drizzle/20260826113617_purchase-order-contract-phase.sql')).kind).toBe(
+      'contract',
+    );
+  });
+
+  it('새 칸·새 표·enum 값·기본값 있는 NOT NULL 칸은 expand', () => {
+    const sql = [
+      'CREATE TABLE "event"."event_dead_letters" ("id" uuid PRIMARY KEY NOT NULL);',
+      'ALTER TABLE "refunds" ADD COLUMN "kind" "refund_kind";',
+      'ALTER TABLE "refunds" ADD COLUMN "execution" "refund_execution" DEFAULT \'AUTO\' NOT NULL;',
+      'ALTER TYPE "public"."order_status" ADD VALUE \'settling\';',
+    ].join('--> statement-breakpoint\n');
+    expect(classifyMigration(sql).kind).toBe('expand');
   });
 
   it('유니크 인덱스·유니크 제약은 expand — 새 코드의 ON CONFLICT 가 기댄다', () => {
@@ -63,25 +46,80 @@ describe('classifyMigration', () => {
     expect(classifyMigration('ALTER TABLE "a" ADD CONSTRAINT "uq_a_b" UNIQUE("b");').kind).toBe('expand');
   });
 
-  it('데이터만 고치는 마이그는 neutral', () => {
+  it('한 파일에서 칸을 더하고 지우면 mixed — drizzle 가 rename 을 DROP + ADD 로 만든 모양이다', () => {
+    const cls = classifyMigration(
+      'ALTER TABLE "a" ADD COLUMN "new_name" text;--> statement-breakpoint\nALTER TABLE "a" DROP COLUMN "old_name";',
+    );
+    expect(cls.kind).toBe('mixed');
+  });
+
+  it('유니크 제약을 부분 유니크 인덱스로 바꾸면 mixed — 옛 코드의 ON CONFLICT 가 깨진다(실제 파일)', () => {
+    expect(classifyMigration(repoSql('apps/core/drizzle/20260630155417_shipments-active-unique.sql')).kind).toBe(
+      'mixed',
+    );
+  });
+
+  it('기존 표에 기본값 없는 NOT NULL 칸을 붙이면 한 걸음으로 안전한 순서가 없다', () => {
+    expect(classifyMigration('ALTER TABLE "a" ADD COLUMN "b" text NOT NULL;').kind).toBe('mixed');
+  });
+
+  it.each([
+    ['SET NOT NULL', 'ALTER TABLE "a" ALTER COLUMN "b" SET NOT NULL;'],
+    ['타입 변경', 'ALTER TABLE "a" ALTER COLUMN "b" SET DATA TYPE integer;'],
+    ['RENAME COLUMN', 'ALTER TABLE "a" RENAME COLUMN "b" TO "c";'],
+    ['COLUMN 없는 RENAME', 'ALTER TABLE "a" RENAME "b" TO "c";'],
+    ['COLUMN 없는 DROP', 'ALTER TABLE "a" DROP "b";'],
+    ['SET SCHEMA', 'ALTER TABLE "a" SET SCHEMA "archive";'],
+    ['DROP SEQUENCE', 'DROP SEQUENCE "a_seq";'],
+    ['DROP SCHEMA', 'DROP SCHEMA "legacy" CASCADE;'],
+    ['다시 만들지 않는 DROP VIEW', 'DROP VIEW "public"."stock_summary_view";'],
+    ["문자열 '--' 뒤의 DROP", 'UPDATE "a" SET "b" = \'--\'; ALTER TABLE "a" DROP COLUMN "c";'],
+  ])('%s 는 contract', (_label, sql) => {
+    expect(classifyMigration(sql).kind).toBe('contract');
+  });
+
+  it('같은 이름으로 다시 만드는 뷰는 파괴가 아니다', () => {
+    const sql =
+      'DROP VIEW "stock_summary_view";--> statement-breakpoint\nCREATE VIEW "public"."stock_summary_view" AS (select 1);';
+    expect(classifyMigration(sql).kind).toBe('neutral');
+  });
+
+  it('주석 속 단어는 세지 않는다', () => {
+    const cls = classifyMigration(
+      '-- 다음 배치에서 DROP TABLE 한다\n/* RENAME TO 금지 */\nCREATE TABLE "a" ("b" text);',
+    );
+    expect(cls).toEqual({ kind: 'expand', contract: [], expand: ['CREATE TABLE'] });
+  });
+
+  it('데이터만 고치거나 NOT NULL 을 푸는 마이그는 neutral', () => {
     expect(classifyMigration('UPDATE "a" SET "b" = 1 WHERE "b" IS NULL;').kind).toBe('neutral');
+    expect(classifyMigration('ALTER TABLE "a" ALTER COLUMN "b" DROP NOT NULL;').kind).toBe('neutral');
   });
 });
 
-describe('pendingEntries', () => {
+describe('migrationStatus', () => {
   const entries = [
     { idx: 0, when: 100, tag: 'a' },
-    { idx: 1, when: 200, tag: 'b' },
-    { idx: 2, when: 300, tag: 'c' },
+    { idx: 1, when: 150, tag: 'b' },
+    { idx: 2, when: 200, tag: 'c' },
+    { idx: 3, when: 300, tag: 'd' },
   ];
+  const tags = (list: { tag: string }[]) => list.map((e) => e.tag);
 
-  it('적용 이력보다 늦은 항목만 대기다', () => {
-    expect(pendingEntries(entries, 200).map((e) => e.tag)).toEqual(['c']);
-    expect(pendingEntries(entries, 300)).toEqual([]);
+  it('가장 늦은 적용 이력보다 늦은 항목이 대기다', () => {
+    const status = migrationStatus(entries, [100, 150, 200]);
+    expect(tags(status.pending)).toEqual(['d']);
+    expect(status.skipped).toEqual([]);
+  });
+
+  it('이력보다 이른데 적용되지 않은 항목은 대기가 아니라 «건너뜀»이다 — drizzle 가 영영 적용하지 않는다', () => {
+    const status = migrationStatus(entries, [100, 200]);
+    expect(tags(status.skipped)).toEqual(['b']);
+    expect(tags(status.pending)).toEqual(['d']);
   });
 
   it('이력이 없으면 전부 대기다', () => {
-    expect(pendingEntries(entries, null).map((e) => e.tag)).toEqual(['a', 'b', 'c']);
+    expect(tags(migrationStatus(entries, []).pending)).toEqual(['a', 'b', 'c', 'd']);
   });
 });
 
@@ -133,14 +171,15 @@ describe('uncheckedDeployLines', () => {
     expect(uncheckedDeployLines(body)).toEqual(['35번 행 창고 앱 배포', '30·25번 배포 전 대상 건수 확인']);
   });
 
-  it('절이 없으면 빈 목록', () => {
-    expect(uncheckedDeployLines('## 표\n- [ ] 배포')).toEqual([]);
+  it('절이 없으면 «없음»이 아니라 null — 머리글이 바뀐 것을 초록으로 읽지 않는다', () => {
+    expect(uncheckedDeployLines('## 표\n- [ ] 배포')).toBeNull();
   });
 });
 
 describe('rolloutProblems', () => {
   const td = (rev: number) => `arn:aws:ecs:ap-northeast-2:1:task-definition/lcnine-services-live-Cluster-Core:${rev}`;
   const svc = (patch: Partial<EcsServiceSnapshot>): EcsServiceSnapshot => ({
+    deployment: 'lcnine-services',
     cluster: 'lcnine-services-live-Cluster',
     service: 'Core',
     running: td(254),
@@ -150,22 +189,26 @@ describe('rolloutProblems', () => {
   });
 
   it('최신 리비전으로 COMPLETED 면 문제 없음', () => {
-    expect(rolloutProblems([svc({})])).toEqual([]);
+    expect(rolloutProblems([svc({})], ['lcnine-services'])).toEqual([]);
   });
 
   it('새 리비전을 등록해 놓고 옛 리비전이 돌면 롤백이다(2026-10-15)', () => {
-    expect(rolloutProblems([svc({ running: td(248), latest: td(249) })])).toEqual([
-      'lcnine-services-live-Cluster/Core: 최신 리비전(lcnine-services-live-Cluster-Core:249)이 아니라 lcnine-services-live-Cluster-Core:248 이 돈다 — 롤백됐다',
-    ]);
+    const [problem] = rolloutProblems([svc({ running: td(248), latest: td(249) })], ['lcnine-services']);
+    expect(problem).toContain('Core:249');
+    expect(problem).toContain('Core:248');
   });
 
   it('배포가 둘 이상이거나 COMPLETED 가 아니면 아직 끝나지 않았다', () => {
-    expect(rolloutProblems([svc({ rolloutStates: ['IN_PROGRESS', 'COMPLETED'] })])).toHaveLength(1);
-    expect(rolloutProblems([svc({ rolloutStates: ['FAILED'] })])).toHaveLength(1);
+    expect(rolloutProblems([svc({ rolloutStates: ['IN_PROGRESS', 'COMPLETED'] })], ['lcnine-services'])).toHaveLength(
+      1,
+    );
+    expect(rolloutProblems([svc({ rolloutStates: ['FAILED'] })], ['lcnine-services'])).toHaveLength(1);
   });
 
-  it('서비스를 하나도 못 찾으면 통과시키지 않는다', () => {
-    expect(rolloutProblems([])).toHaveLength(1);
+  it('배포 하나의 서비스를 하나도 못 찾으면 그 배포는 확인되지 않은 것이다', () => {
+    const problems = rolloutProblems([svc({})], ['lcnine-services', 'lcnine-auth']);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('lcnine-auth');
   });
 });
 
@@ -176,15 +219,29 @@ describe('deployTagName', () => {
   });
 });
 
-describe('배포마다 drizzle 서비스의 journal 을 찾을 수 있다', () => {
+describe('저장소의 drizzle 마이그', () => {
   const services = ['lcnine-services', 'lcnine-auth'].flatMap((d) =>
     getServiceRegistry(d, 'live').filter((s) => s.drizzleConfig),
   );
+  const dirOf = (config: string) => join(ROOT, migrationsOutDir(repoSql(config)));
 
-  it.each(services.map((s) => [s.name, s.drizzleConfig ?? ''] as const))('%s', (_name, config) => {
-    const dir = join(ROOT, migrationsOutDir(readFileSync(join(ROOT, config), 'utf8')));
-    const entries = parseJournal(readFileSync(join(dir, 'meta/_journal.json'), 'utf8'));
-    expect(entries.length).toBeGreaterThan(0);
-    expect(entries.filter((e) => !existsSync(join(dir, `${e.tag}.sql`)))).toEqual([]);
+  it.each(services.map((s) => [s.name, s.drizzleConfig ?? ''] as const))(
+    '%s — journal 의 when 이 순서대로 늘고 SQL 파일이 다 있다(줄어들면 drizzle 가 그 마이그를 영영 건너뛴다)',
+    (_name, config) => {
+      const entries = parseJournal(readFileSync(join(dirOf(config), 'meta/_journal.json'), 'utf8'));
+      expect(entries.length).toBeGreaterThan(0);
+      expect(entries.filter((e, i) => i > 0 && e.when <= entries[i - 1].when).map((e) => e.tag)).toEqual([]);
+      expect(entries.filter((e) => !existsSync(join(dirOf(config), `${e.tag}.sql`))).map((e) => e.tag)).toEqual([]);
+    },
+  );
+
+  it('파괴 구문이 든 마이그는 하나도 expand·neutral 로 새지 않는다', () => {
+    const destructive = /\bDROP\s+(TABLE|COLUMN|TYPE)\b|\bRENAME\b|\bSET\s+NOT\s+NULL\b/i;
+    const leaked = execFileSync('git', ['ls-files', 'apps/*.sql'], { cwd: ROOT, encoding: 'utf8' })
+      .split('\n')
+      .filter((path) => path && !path.startsWith('apps/medusa/'))
+      .filter((path) => destructive.test(repoSql(path).replace(/--.*$/gm, '')))
+      .filter((path) => ['expand', 'neutral'].includes(classifyMigration(repoSql(path)).kind));
+    expect(leaked).toEqual([]);
   });
 });

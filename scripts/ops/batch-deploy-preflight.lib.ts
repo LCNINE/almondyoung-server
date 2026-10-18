@@ -5,14 +5,54 @@ import { z } from 'zod';
  * DB·git·gh·aws 를 부르는 껍데기는 `batch-deploy-preflight.ts` 에 있다.
  */
 
+interface Rule {
+  label: string;
+  test: (sql: string) => boolean;
+}
+
+const re = (label: string, pattern: RegExp): Rule => ({ label, test: (sql) => pattern.test(sql) });
+
+/** 기존 표에 붙이는 NOT NULL 칸은 옛 코드의 INSERT 를 깨고, 그 칸을 쓰는 새 코드는 마이그 전에 깨진다 — 한 걸음으로는 안전한 순서가 없다 */
+function addsRequiredColumn(sql: string): boolean {
+  return [...sql.matchAll(/\bADD\s+COLUMN\b([^;]*)/gi)]
+    .flatMap((m) => m[1].split(/,(?=\s*ADD\b)/i))
+    .some((clause) => /\bNOT\s+NULL\b/i.test(clause) && !/\b(DEFAULT|GENERATED)\b/i.test(clause));
+}
+
+const VIEW_NAME = String.raw`(?:IF\s+(?:NOT\s+)?EXISTS\s+)?((?:"?\w+"?\.)?"?\w+"?)`;
+
+function viewNames(sql: string, verb: RegExp): Set<string> {
+  const pattern = new RegExp(String.raw`${verb.source}\s+(?:MATERIALIZED\s+)?VIEW\s+${VIEW_NAME}`, 'gi');
+  return new Set([...sql.matchAll(pattern)].map((m) => m[1].replace(/"/g, '').replace(/^public\./i, '')));
+}
+
+/** 뷰는 컬럼을 바꾸려면 DROP 후 CREATE 로 다시 만든다 — 같은 이름을 다시 만들면 파괴도 추가도 아니다 */
+function viewDelta(sql: string): { dropped: string[]; created: string[] } {
+  const dropped = viewNames(sql, /\bDROP/);
+  const created = viewNames(sql, /\bCREATE(?:\s+OR\s+REPLACE)?/);
+  return {
+    dropped: [...dropped].filter((name) => !created.has(name)),
+    created: [...created].filter((name) => !dropped.has(name)),
+  };
+}
+
 /** ADR-0005 §5 의 destructive 변경 — 옛 코드가 새 schema 를 만나면 깨진다. 그래서 `deploy → migrate` 다 */
-const CONTRACT_PATTERNS: ReadonlyArray<readonly [label: string, pattern: RegExp]> = [
-  ['DROP TABLE', /\bDROP\s+TABLE\b/i],
-  ['DROP COLUMN', /\bDROP\s+COLUMN\b/i],
-  ['DROP TYPE', /\bDROP\s+TYPE\b/i],
-  ['RENAME', /\bRENAME\s+(TO|COLUMN|CONSTRAINT|VALUE)\b/i],
-  ['SET NOT NULL', /\bSET\s+NOT\s+NULL\b/i],
-  ['컬럼 타입 변경', /\bALTER\s+COLUMN\s+"?[^"\s]+"?\s+(SET\s+DATA\s+)?TYPE\b/i],
+const CONTRACT_RULES: readonly Rule[] = [
+  re('DROP TABLE', /\bDROP\s+TABLE\b/i),
+  re(
+    'DROP COLUMN',
+    /\bDROP\s+COLUMN\b|\bALTER\s+TABLE\b[^;]*\bDROP\s+(?!CONSTRAINT\b|COLUMN\b|NOT\s+NULL\b|DEFAULT\b|IDENTITY\b|EXPRESSION\b)["\w]/i,
+  ),
+  re('DROP TYPE', /\bDROP\s+TYPE\b/i),
+  re('DROP SCHEMA·SEQUENCE', /\bDROP\s+(SCHEMA|SEQUENCE)\b/i),
+  { label: 'DROP VIEW', test: (sql) => viewDelta(sql).dropped.length > 0 },
+  re('RENAME', /\bRENAME\b/i),
+  re('SET SCHEMA', /\bSET\s+SCHEMA\b/i),
+  re('SET NOT NULL', /\bSET\s+NOT\s+NULL\b/i),
+  re('컬럼 타입 변경', /\bALTER\s+COLUMN\s+"?[^"\s]+"?\s+(SET\s+DATA\s+)?TYPE\b/i),
+  // 옛 코드의 `ON CONFLICT (칸)` 이 기대는 유니크다. 이름으로만 알아본다(drizzle `<표>_<칸>_unique`, 손으로 지은 `uq_`·`unique_`)
+  re('유니크 제거', /\bDROP\s+(?:CONSTRAINT|INDEX)\s+(?:IF\s+EXISTS\s+)?"?(?:uq_|unique_|\w+_unique\b)/i),
+  { label: '기본값 없는 NOT NULL 칸 추가', test: addsRequiredColumn },
 ];
 
 /**
@@ -20,13 +60,14 @@ const CONTRACT_PATTERNS: ReadonlyArray<readonly [label: string, pattern: RegExp]
  * 평범한 인덱스와 CHECK·FK 는 넣지 않는다: contract 마이그도 남은 칸에 인덱스를 다시 걸고(#724 PR-C) 좁힌 타입에 CHECK 를 단다.
  * 유니크는 넣는다 — 새 코드의 `ON CONFLICT` 가 기댈 수 있다.
  */
-const EXPAND_PATTERNS: ReadonlyArray<readonly [label: string, pattern: RegExp]> = [
-  ['CREATE TABLE', /\bCREATE\s+TABLE\b/i],
-  ['ADD COLUMN', /\bADD\s+COLUMN\b/i],
-  ['유니크 인덱스', /\bCREATE\s+UNIQUE\s+INDEX\b/i],
-  ['유니크 제약', /\bADD\s+CONSTRAINT\s+"?[^"\s]+"?\s+UNIQUE\b/i],
-  ['enum 값 추가', /\bALTER\s+TYPE\b[^;]*\bADD\s+VALUE\b/i],
-  ['CREATE SCHEMA·SEQUENCE·VIEW', /\bCREATE\s+(SCHEMA|SEQUENCE|(OR\s+REPLACE\s+)?VIEW)\b/i],
+const EXPAND_RULES: readonly Rule[] = [
+  re('CREATE TABLE', /\bCREATE\s+TABLE\b/i),
+  re('ADD COLUMN', /\bADD\s+COLUMN\b/i),
+  re('유니크 인덱스', /\bCREATE\s+UNIQUE\s+INDEX\b/i),
+  re('유니크 제약', /\bADD\s+CONSTRAINT\s+"?[^"\s]+"?\s+UNIQUE\b/i),
+  re('enum 값 추가', /\bALTER\s+TYPE\b[^;]*\bADD\s+VALUE\b/i),
+  re('CREATE SCHEMA·SEQUENCE', /\bCREATE\s+(SCHEMA|SEQUENCE)\b/i),
+  { label: 'CREATE VIEW', test: (sql) => viewDelta(sql).created.length > 0 },
 ];
 
 /** 둘 다 아닌 것(SET LOCAL·인덱스·CHECK·FK·DROP NOT NULL·데이터 UPDATE 등)만 있으면 `neutral` — 순서를 강제하지 않는다 */
@@ -39,18 +80,36 @@ export interface MigrationClass {
   expand: string[];
 }
 
+/** 주석만 지운다. 문자열 안의 `--` 는 주석이 아니다 — 지우면 같은 줄 뒤의 DROP 까지 사라진다 */
 function stripComments(sql: string): string {
-  return sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--.*$/gm, ' ');
-}
-
-function matched(sql: string, patterns: ReadonlyArray<readonly [string, RegExp]>): string[] {
-  return patterns.filter(([, pattern]) => pattern.test(sql)).map(([label]) => label);
+  let out = '';
+  let i = 0;
+  while (i < sql.length) {
+    if (sql[i] === "'") {
+      const end = sql.indexOf("'", i + 1);
+      const stop = end < 0 ? sql.length : end + 1;
+      out += sql.slice(i, stop);
+      i = stop;
+    } else if (sql.startsWith('--', i)) {
+      const end = sql.indexOf('\n', i);
+      i = end < 0 ? sql.length : end;
+      out += ' ';
+    } else if (sql.startsWith('/*', i)) {
+      const end = sql.indexOf('*/', i + 2);
+      i = end < 0 ? sql.length : end + 2;
+      out += ' ';
+    } else {
+      out += sql[i];
+      i += 1;
+    }
+  }
+  return out;
 }
 
 export function classifyMigration(sql: string): MigrationClass {
   const body = stripComments(sql);
-  const contract = matched(body, CONTRACT_PATTERNS);
-  const expand = matched(body, EXPAND_PATTERNS);
+  const contract = CONTRACT_RULES.filter((r) => r.test(body)).map((r) => r.label);
+  const expand = EXPAND_RULES.filter((r) => r.test(body)).map((r) => r.label);
   const kind: MigrationKind =
     contract.length && expand.length ? 'mixed' : contract.length ? 'contract' : expand.length ? 'expand' : 'neutral';
   return { kind, contract, expand };
@@ -75,11 +134,20 @@ export function parseJournal(source: string): JournalEntry[] {
 }
 
 /**
- * drizzle migrator 와 같은 규칙: 적용 이력의 가장 늦은 `created_at` 보다 `when` 이 큰 항목만 적용한다.
- * 이력이 없으면(null) 전부 대기다. 이력보다 이른데 빠진 항목은 drizzle 도 영영 적용하지 않으므로 대기로 세지 않는다.
+ * drizzle migrator 의 규칙(`drizzle-orm/pg-core/dialect.js` migrate): 적용 이력의 가장 늦은 `created_at` 보다 `when` 이 큰 항목만
+ * 적용하고, 적용하면 `created_at` 에 그 `when` 을 적는다. 그래서 가장 늦은 이력보다 이른데 이력에 없는 항목은 **영영 적용되지 않는다** —
+ * 더 늦게 만든 마이그가 먼저 배포된 뒤에 머지된 PR 의 마이그가 그렇다. 대기가 아니라 «건너뜀»이다.
  */
-export function pendingEntries(entries: readonly JournalEntry[], lastAppliedAt: number | null): JournalEntry[] {
-  return entries.filter((entry) => lastAppliedAt === null || entry.when > lastAppliedAt);
+export function migrationStatus(
+  entries: readonly JournalEntry[],
+  appliedAt: readonly number[],
+): { pending: JournalEntry[]; skipped: JournalEntry[] } {
+  const applied = new Set(appliedAt);
+  const last = appliedAt.length ? Math.max(...appliedAt) : null;
+  return {
+    pending: entries.filter((e) => last === null || e.when > last),
+    skipped: entries.filter((e) => last !== null && e.when <= last && !applied.has(e.when)),
+  };
 }
 
 export interface PendingMigration extends MigrationClass {
@@ -123,12 +191,12 @@ export function judgeDeployment(pending: readonly PendingMigration[]): Deploymen
 }
 
 /**
- * 추적 이슈 «## 남은 운영 작업» 절의 체크 안 된 줄 중 제목(첫 « — » 앞)에 «배포»가 든 것.
- * 제목만 돌려준다 — 줄 전체는 수백 자라 목록으로 읽히지 않는다.
+ * 추적 이슈 «## 남은 운영 작업» 절의 체크 안 된 줄 중 제목(첫 « — » 앞)에 «배포»가 든 것. 제목만 돌려준다 — 줄 전체는 수백 자다.
+ * 절을 못 찾으면 null — 머리글이 바뀐 것을 «남은 배포 없음»으로 읽으면 안 된다.
  */
-export function uncheckedDeployLines(issueBody: string): string[] {
+export function uncheckedDeployLines(issueBody: string): string[] | null {
   const section = /^## 남은 운영 작업\s*$([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(issueBody);
-  if (!section) return [];
+  if (!section) return null;
   return section[1]
     .split('\n')
     .filter((line) => line.startsWith('- [ ] '))
@@ -137,6 +205,7 @@ export function uncheckedDeployLines(issueBody: string): string[] {
 }
 
 export interface EcsServiceSnapshot {
+  deployment: string;
   cluster: string;
   service: string;
   /** 서비스가 지금 돌리는 태스크 정의 ARN */
@@ -150,17 +219,22 @@ export interface EcsServiceSnapshot {
  * 배포가 «정말 라이브인가». 회로 차단기 롤백은 새 리비전을 등록해 둔 채 서비스를 옛 리비전으로 되돌린다(2026-10-15) —
  * 롤아웃 상태만 보면 COMPLETED 라 «돌고 있는 것 = 가장 최근 리비전»까지 봐야 잡힌다.
  */
-export function rolloutProblems(services: readonly EcsServiceSnapshot[]): string[] {
-  if (!services.length) return ['ECS 서비스를 하나도 찾지 못했다 — 스테이지·클러스터 이름을 확인한다'];
-  return services.flatMap((s) => {
-    const where = `${s.cluster}/${s.service}`;
-    if (s.rolloutStates.length !== 1) return [`${where}: 배포가 ${s.rolloutStates.length}개 진행 중이다`];
-    if (s.rolloutStates[0] !== 'COMPLETED') return [`${where}: 롤아웃이 ${s.rolloutStates[0]} 이다`];
-    if (s.running !== s.latest) {
-      return [`${where}: 최신 리비전(${revisionOf(s.latest)})이 아니라 ${revisionOf(s.running)} 이 돈다 — 롤백됐다`];
-    }
-    return [];
-  });
+export function rolloutProblems(services: readonly EcsServiceSnapshot[], deployments: readonly string[]): string[] {
+  const missing = deployments
+    .filter((d) => !services.some((s) => s.deployment === d))
+    .map((d) => `${d}: ECS 서비스를 하나도 찾지 못했다 — 클러스터 이름이 바뀌었으면 이 배포는 확인되지 않은 것이다`);
+  return [
+    ...missing,
+    ...services.flatMap((s) => {
+      const where = `${s.cluster}/${s.service}`;
+      if (s.rolloutStates.length !== 1) return [`${where}: 배포가 ${s.rolloutStates.length}개 진행 중이다`];
+      if (s.rolloutStates[0] !== 'COMPLETED') return [`${where}: 롤아웃이 ${s.rolloutStates[0]} 이다`];
+      if (s.running !== s.latest) {
+        return [`${where}: 최신 리비전(${revisionOf(s.latest)})이 아니라 ${revisionOf(s.running)} 이 돈다 — 롤백됐다`];
+      }
+      return [];
+    }),
+  ];
 }
 
 function revisionOf(taskDefinitionArn: string): string {
