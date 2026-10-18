@@ -1,7 +1,7 @@
 // src/features/order/history/components/table/index.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { MouseEvent } from 'react';
 import {
   cancelActionOf,
@@ -11,6 +11,11 @@ import {
   settlementReason,
   settlementTiming,
 } from '@/lib/api/domains/orders/cancel-request.shape';
+import {
+  badgeKindOf,
+  shipmentPhaseLabel,
+  type ShipmentPhase,
+} from '@/lib/api/domains/orders/shipment-phase.shape';
 import { SettlementActions } from '@/features/order/cancel-settlement/settlement-actions';
 import { cn } from '@/lib/utils/ui';
 import dayjs from 'dayjs';
@@ -40,9 +45,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
-import SplitOrderModal from '../modals/split-order-modal';
 import { EditOrderModal } from '../modals/edit-order-modal';
-import { SplitQuantityModal } from '../modals/split-quantity-modal';
 import { AddOrderItemModal } from '../modals/add-order-item-modal';
 import { MemoModal } from '../modals/memo-modal';
 import { CancelOrderModal } from '../modals/cancel-order-modal';
@@ -75,36 +78,33 @@ function CopyableId({ value }: { value: string }) {
 }
 
 /* ── 상태 배지 ────────────────────────────────────────────── */
+const PHASE_BADGE_CLASS: Record<ShipmentPhase, string> = {
+  pending: 'bg-gray-100 text-gray-600',
+  preparing: 'bg-blue-100 text-blue-700',
+  shipping: 'bg-sky-100 text-sky-700',
+  delivered: 'bg-green-100 text-green-700',
+  external_shipped: 'bg-green-100 text-green-700',
+  cancelled: 'bg-gray-100 text-gray-500',
+};
+
 function StatusBadge({ row }: { row: OrderLineRow }) {
-  const { orderStatus, isMatched, lineStatus } = row;
-  if (orderStatus === 'shipped' || orderStatus === 'delivered')
-    return (
-      <span className="inline-flex rounded-full bg-green-100 text-green-700 text-[11px] font-medium px-2 py-0.5 whitespace-nowrap">
-        출고완료
-      </span>
-    );
-  if (lineStatus === 'stock_deducted')
-    return (
-      <span className="inline-flex rounded-full bg-blue-100 text-blue-700 text-[11px] font-medium px-2 py-0.5 whitespace-nowrap">
-        출고가능
-      </span>
-    );
-  if (lineStatus === 'stock_unavailable')
-    return (
-      <span className="inline-flex rounded-full bg-red-100 text-red-600 text-[11px] font-medium px-2 py-0.5 whitespace-nowrap">
-        출고불가
-      </span>
-    );
-  if (!isMatched)
+  const { shipmentPhase, isMatched } = row;
+  const kind = badgeKindOf(shipmentPhase, isMatched);
+  if (kind === 'unmatched')
     return (
       <span className="inline-flex rounded-full bg-orange-100 text-orange-600 text-[11px] font-medium px-2 py-0.5 whitespace-nowrap">
         매칭 대기
       </span>
     );
-  // 매칭 완료 · 재고차감 전 (pending/matched)
+  if (kind === 'none' || shipmentPhase === null) return null;
   return (
-    <span className="inline-flex rounded-full bg-gray-100 text-gray-600 text-[11px] font-medium px-2 py-0.5 whitespace-nowrap">
-      출고 대기
+    <span
+      className={cn(
+        'inline-flex rounded-full text-[11px] font-medium px-2 py-0.5 whitespace-nowrap',
+        PHASE_BADGE_CLASS[shipmentPhase]
+      )}
+    >
+      {shipmentPhaseLabel(shipmentPhase)}
     </span>
   );
 }
@@ -699,22 +699,8 @@ export default function OrderTable() {
   // 한 페이지 = 주문 ≤ PAGE_SIZE (라인 rowspan 병합은 테이블이 처리).
   const rows: OrderLineRow[] = data?.items ?? [];
 
-  /* 선택 상태 (groupKey = orderId 기준) */
-  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(
-    new Set()
-  );
-  // 검색/필터 변경 시 선택 초기화 — 서버 페이지네이션에서 다른 페이지의 유령 선택 방지
-  useEffect(() => {
-    setSelectedOrderIds(new Set());
-  }, [searchToken]);
-
-  const isOrderSelectable = (r: OrderLineRow) =>
-    r.isOrderFullyAllocated && r.orderStatus === 'confirmed';
-
   /* 모달 상태 */
-  const [showSplitModal, setShowSplitModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showQuantityModal, setShowQuantityModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showMemoModal, setShowMemoModal] = useState(false);
   const [showTimelineModal, setShowTimelineModal] = useState(false);
@@ -1057,23 +1043,20 @@ export default function OrderTable() {
         ),
       },
       {
-        key: 'lineStatus',
+        key: 'csStatus',
         label: 'C/S 상태',
-        render: (_, r) =>
-          r.lineStatus === 'stock_unavailable' ? (
-            <span className="text-gray-500">입고 후 발송</span>
-          ) : (
-            <button
-              className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs"
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedOrder(r);
-                setShowMemoModal(true);
-              }}
-            >
-              메모추가
-            </button>
-          ),
+        render: (_, r) => (
+          <button
+            className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedOrder(r);
+              setShowMemoModal(true);
+            }}
+          >
+            메모추가
+          </button>
+        ),
       },
     ],
     []
@@ -1128,12 +1111,6 @@ export default function OrderTable() {
           rowKey="rowId"
           groupKey="orderId"
           stickyHeader
-          selectable
-          mergeCheckbox
-          selectedRowKeys={selectedOrderIds}
-          onSelectedRowKeysChange={setSelectedOrderIds}
-          isRowSelectable={isOrderSelectable}
-          selectedRowClassName="bg-orange-50"
           emptyMessage={
             '조회된 주문이 없습니다. "검색" 버튼을 눌러 조회하세요.'
           }
@@ -1160,24 +1137,10 @@ export default function OrderTable() {
       </div>
 
       {selectedOrder && (
-        <SplitOrderModal
-          order={selectedOrder}
-          open={showSplitModal}
-          onOpenChange={setShowSplitModal}
-        />
-      )}
-      {selectedOrder && (
         <EditOrderModal
           order={selectedOrder}
           open={showEditModal}
           onOpenChange={setShowEditModal}
-        />
-      )}
-      {selectedOrder && (
-        <SplitQuantityModal
-          order={selectedOrder}
-          open={showQuantityModal}
-          onOpenChange={setShowQuantityModal}
         />
       )}
       {selectedOrder && (

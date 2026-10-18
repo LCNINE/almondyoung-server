@@ -5,6 +5,8 @@ import { customerApi, orders } from '@/lib/api/domains';
 import { useVariantsBatch } from '@/lib/services/products';
 import type { SalesOrdersQuery } from '@/lib/types/dto/orders';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { toShipmentPhase } from '@/lib/api/domains/orders/shipment-phase.shape';
+import type { ShipmentPhase } from '@/lib/api/domains/orders/shipment-phase.shape';
 import { formatCustomerOrderNo } from '../utils/customer-order-no';
 import { isOrderLineMatched } from './demo-order-line';
 import { awaitsSettlementResult, toCancelRequestView } from '@/lib/api/domains/orders/cancel-request.shape';
@@ -64,15 +66,12 @@ export type OrderLineRow = {
   imageUrl?: string;
   skuId?: string;
 
-  // 매칭/재고 상태
+  // 매칭 상태
   isMatched: boolean;
-  lineStatus: string; // pending / matched / stock_deducted / stock_unavailable / cancelled
-  isReadyToShip: boolean;
-  isUnavailable: boolean;
   isDirect: boolean;
 
-  // 주문 완전출고 여부 (행 선택 기준)
-  isOrderFullyAllocated: boolean;
+  /** 주문 «출고 단계» — core 가 정한다. 옛 응답·모르는 값은 null (배지를 그리지 않는다) */
+  shipmentPhase: ShipmentPhase | null;
 
   // 취소 주문 환불 상태
   refundStatus?: string;
@@ -99,7 +98,6 @@ export type OrderLineRow = {
     unitPrice?: number;
     totalPrice?: number;
     skuId?: string;
-    status: string;
   }>;
 };
 
@@ -256,10 +254,10 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
       const lines: any[] =
         detail?.lines?.length ? detail.lines : (listItem.lines ?? []);
 
-      // 주문의 모든 라인이 stock_deducted인지 확인
-      const isOrderFullyAllocated =
-        lines.length > 0 &&
-        lines.every((l: any) => l.status === 'stock_deducted');
+      // 목록·상세 둘 다 같은 값을 싣지만, 상세가 더 최신일 수 있어 상세를 우선한다.
+      const shipmentPhase = toShipmentPhase(
+        detail?.shipmentPhase ?? listItem.shipmentPhase
+      );
 
       const orderLineCount = lines.length || 1;
 
@@ -269,10 +267,7 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           : undefined;
         const optionName = variant?.optionLabel ?? line.optionName;
 
-        const lineStatus: string = line.status ?? 'pending';
         const isMatched = isOrderLineMatched(line, process.env.NEXT_PUBLIC_APP_STAGE);
-        const isReadyToShip = lineStatus === 'stock_deducted';
-        const isUnavailable = lineStatus === 'stock_unavailable';
 
         // 환불 상태 추출 (첫 번째 라인에서만 계산, 나머지는 공유)
         // cancelled 외에도 부분취소(partial)로 manual_pending이 생길 수 있으므로 상태 무관하게 조회
@@ -366,12 +361,9 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           skuId: line.skuId,
 
           isMatched,
-          lineStatus,
-          isReadyToShip,
-          isUnavailable,
           isDirect: !!line.isDirect,
 
-          isOrderFullyAllocated,
+          shipmentPhase,
 
           refundStatus,
           refundLinkId,
@@ -391,7 +383,6 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
             unitPrice: l.unitPrice,
             totalPrice: l.totalPrice,
             skuId: l.skuId,
-            status: l.status ?? 'pending',
           })),
         };
         lineRows.push(row);
@@ -429,11 +420,8 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           productName: '(상품 정보 없음)',
           quantity: 0,
           isMatched: false,
-          lineStatus: 'pending',
-          isReadyToShip: false,
-          isUnavailable: false,
           isDirect: false,
-          isOrderFullyAllocated: false,
+          shipmentPhase: toShipmentPhase(detail?.shipmentPhase ?? listItem.shipmentPhase),
           lines: [], // 빈 배열
         });
       }

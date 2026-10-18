@@ -8,13 +8,10 @@ import { pointedOrderNo } from '../utils/pointed-order';
 
 export type QuickDateOption = 'today' | 'yesterday' | 'week' | 'month' | '3m' | 'custom';
 
-/** 구분 필터 - 재고/매칭 상태 기반 */
+/** 구분 필터 - 매칭 상태 기반 (완전출고·부분출고·출고불가는 라인 상태가 죽으며 없어졌다 — #1016 15번) */
 export type OrderTypeFilter =
     | 'pending'     // 주문 미확정 (기본값)
     | 'all'         // 전체
-    | 'hold'        // 출고불가
-    | 'partial'     // 부분출고
-    | 'ready'       // 완전출고
     | 'unmatched'   // 매칭안됨
     | 'direct';     // 직배송
 
