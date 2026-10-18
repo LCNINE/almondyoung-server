@@ -131,6 +131,19 @@ describeIfDb('재고 대기 순번 (reservation queue key, DB integration)', () 
     });
   }
 
+  async function confirmedQty(tx: DbTx, lineId: string): Promise<number> {
+    const rows = await tx
+      .select()
+      .from(wmsTables.stockReservations)
+      .where(
+        and(
+          eq(wmsTables.stockReservations.shipmentLineId, lineId),
+          eq(wmsTables.stockReservations.status, 'confirmed'),
+        ),
+      );
+    return rows.reduce((sum, row) => sum + row.quantity, 0);
+  }
+
   async function candidateIds(tx: DbTx): Promise<string[]> {
     return (await wired.retryWorker.findCandidates(100_000, tx)).map((row) => row.id);
   }
@@ -166,6 +179,51 @@ describeIfDb('재고 대기 순번 (reservation queue key, DB integration)', () 
 
       await addStock(tx, world, 1);
 
+      const ids = (await candidateIds(tx)).filter((id) => id === aTargetLineId || id === b.line.id);
+      expect(ids).toEqual([aTargetLineId, b.line.id]);
+    });
+  });
+
+  it('이어받은 라인이 재시도로 일부만 예약받아도 순번을 유지한다 — 남은 몫은 여전히 뒤에 온 주문보다 앞이다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      // 주문 A(2026-10-01): 수량 4, 재고 2 → 확정 예약 2 · 미예약 2. 미예약 2 를 새 상자로 나눈다.
+      const world = await seedWorld(tx, 4, 2);
+      await setCreatedAt(tx, world.line.id, new Date('2026-10-01T00:00:00Z'));
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ requestedAt: new Date('2026-10-01T00:00:00Z') })
+        .where(eq(wmsTables.stockReservations.shipmentLineId, world.line.id));
+      const split = await planning.split(
+        world.shipment.id,
+        {
+          expectedManifestVersion: world.shipment.manifestVersion,
+          reason: '재고 부족 나눠 보내기',
+          moves: [
+            {
+              shipmentLineId: world.line.id,
+              expectedLineVersion: world.line.lineVersion,
+              qty: 2,
+              targetReservedQty: 0,
+            },
+          ],
+        },
+        `split-${randomUUID()}`,
+        actor,
+        tx,
+      );
+      const aTargetLineId = split.target.lines[0].id;
+
+      // 주문 B(2026-10-05): 같은 SKU 수량 1, 예약 0
+      const b = await addOrder(tx, world, 1);
+      await setCreatedAt(tx, b.line.id, new Date('2026-10-05T00:00:00Z'));
+
+      // 재고 1 이 들어와 A 몫이 2 중 1 만 예약받는다.
+      await addStock(tx, world, 1);
+      await wired.retryWorker.retryOne(aTargetLineId, tx);
+      expect(await confirmedQty(tx, aTargetLineId)).toBe(1);
+
+      // 또 1 이 들어오면 남은 1 은 B 보다 먼저 받아야 한다 — 예약 행의 requested_at 이 «분할 시각» 이면 B 뒤로 밀린다.
+      await addStock(tx, world, 1);
       const ids = (await candidateIds(tx)).filter((id) => id === aTargetLineId || id === b.line.id);
       expect(ids).toEqual([aTargetLineId, b.line.id]);
     });
