@@ -2,6 +2,7 @@
 import { Type } from '@nestjs/common';
 import { ReconcileRule } from './order-reconcile.rule';
 import { RetryChannelSettlementRule } from './rules/retry-channel-settlement.rule';
+import { ResumePendingCancellationRule } from './rules/resume-pending-cancellation.rule';
 import { ResumePendingConsolidationRule } from './rules/resume-pending-consolidation.rule';
 import { WakeAwaitingMatchingRule } from './rules/wake-awaiting-matching.rule';
 
@@ -12,5 +13,6 @@ import { WakeAwaitingMatchingRule } from './rules/wake-awaiting-matching.rule';
 export const ORDER_RECONCILE_RULE_CLASSES: Type<ReconcileRule>[] = [
   WakeAwaitingMatchingRule, // #1016 12번
   ResumePendingConsolidationRule, // #1016 25번
+  ResumePendingCancellationRule, // #1016 30번
   RetryChannelSettlementRule, // #1016 36번
 ];
