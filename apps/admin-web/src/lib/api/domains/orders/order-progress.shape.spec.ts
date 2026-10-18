@@ -1,6 +1,15 @@
 import {
   BOARD_STAGES,
+  arrivalLabel,
+  canSplitShortage,
   cardAlertText,
+  initialBoardStage,
+  isSplitQtyAllowed,
+  shortageSummary,
+  splitUnreservedErrorText,
+  SPLIT_QTY_ERROR,
+  STALL_BOARD_RESERVE_HREF,
+  type ReserveShortageView,
   gaveUpBadge,
   formatDwell,
   cellCount,
@@ -187,5 +196,88 @@ describe('자동 멈춤 표시 (#1016 12번)', () => {
     });
     expect(page.items[0]).toMatchObject({ walletIntentId: 'int-1', settlement: { requestId: 'r1', phase: 'refused' } });
     expect(page.items[1]).toMatchObject({ walletIntentId: null, settlement: null });
+  });
+
+  describe('예약 단계 부족 정보(#1016 15번)', () => {
+    const shortage = (over: Partial<ReserveShortageView> = {}): ReserveShortageView => ({
+      shipmentId: 'sh1',
+      manifestVersion: 3,
+      consolidated: false,
+      skuKinds: 10,
+      shortSkuKinds: 1,
+      items: [{ skuId: 'k1', skuName: '헤어클립 세트', shortQty: 2, expectedArrival: '2026-10-25' }],
+      ...over,
+    });
+    const item = (n: number) => ({ skuId: `k${n}`, skuName: `품목${n}`, shortQty: n, expectedArrival: null });
+
+    it('toProgressPage: shortage 가 있으면 읽고, 없음·형식 틀림은 null', () => {
+      const base = { salesOrderId: 'so', orderNo: 'A', channelOrderId: 'c', salesChannel: 'medusa', customerName: null, orderedAt: 'x', state: 'created', stageEnteredAt: 'x', stuck: false };
+      const page = toProgressPage({
+        items: [
+          { ...base, shortage: shortage() },
+          { ...base },
+          { ...base, shortage: null },
+          { ...base, shortage: { shipmentId: 'sh1' } },
+          { ...base, shortage: { ...shortage(), items: [{ skuId: 'k', skuName: 'n', shortQty: 'x', expectedArrival: null }] } },
+          { ...base, shortage: { ...shortage(), items: [] } },
+          { ...base, shortage: 'oops' },
+        ],
+        nextCursor: null,
+      });
+      expect(page.items[0].shortage).toEqual(shortage());
+      expect(page.items.slice(1).map((i) => i.shortage)).toEqual([null, null, null, null, null, null]);
+    });
+
+    it('shortageSummary: «N종 중 M종 · 품목 수량»', () => {
+      expect(shortageSummary(shortage())).toBe('10종 중 1종 · 헤어클립 세트 2개');
+      expect(shortageSummary(shortage({ shortSkuKinds: 2, items: [item(3), item(1)] }))).toBe('10종 중 2종 · 품목3 3개, 품목1 1개');
+      expect(shortageSummary(shortage({ shortSkuKinds: 3, items: [item(3), item(2), item(1)] }))).toBe('10종 중 3종 · 품목3 3개 외 2');
+    });
+
+    it('arrivalLabel: YYYY-MM-DD 를 Date 없이 MM-DD 로, 없으면 빈 문자열', () => {
+      expect(arrivalLabel('2026-10-25')).toBe('입고 10-25');
+      expect(arrivalLabel('2026-01-01')).toBe('입고 01-01');
+      expect(arrivalLabel(null)).toBe('');
+      expect(arrivalLabel('')).toBe('');
+      expect(arrivalLabel('내일')).toBe('');
+    });
+
+    it('canSplitShortage: 합포장이면 막는다', () => {
+      expect(canSplitShortage(shortage())).toBe(true);
+      expect(canSplitShortage(shortage({ consolidated: true }))).toBe(false);
+    });
+
+    it('initialBoardStage: 보드에 있는 키만, 아니면 fo', () => {
+      expect(initialBoardStage('reserve')).toBe('reserve');
+      expect(initialBoardStage('collect')).toBe('collect');
+      expect(initialBoardStage('nope')).toBe('fo');
+      expect(initialBoardStage('')).toBe('fo');
+      expect(initialBoardStage(null)).toBe('fo');
+    });
+
+    it('isSplitQtyAllowed: 1 이상, 라인 수량 이하, 상자에 수량이 남아야', () => {
+      expect(isSplitQtyAllowed(1, 3, 3)).toBe(true);
+      expect(isSplitQtyAllowed(2, 3, 5)).toBe(true);
+      expect(isSplitQtyAllowed(3, 3, 5)).toBe(true); // 라인 전부여도 상자에 다른 라인이 남으면 된다
+      expect(isSplitQtyAllowed(3, 3, 3)).toBe(false); // 상자가 비게 된다
+      expect(isSplitQtyAllowed(0, 3, 5)).toBe(false);
+      expect(isSplitQtyAllowed(4, 3, 5)).toBe(false);
+      expect(isSplitQtyAllowed(1.5, 3, 5)).toBe(false);
+      expect(isSplitQtyAllowed(Number.NaN, 3, 5)).toBe(false);
+    });
+
+    it('splitUnreservedErrorText: 409 코드별 문구, 모르는 코드는 서버 문구', () => {
+      expect(splitUnreservedErrorText('SHIPMENT_FULLY_RESERVED', 'x')).toBe('이미 다 예약됨');
+      expect(splitUnreservedErrorText('SHIPMENT_NOTHING_RESERVED', 'x')).toBe('예약된 수량이 없어 나눌 수 없음');
+      expect(splitUnreservedErrorText('SHIPMENT_CONSOLIDATED', 'x')).toBe('합포장 상자는 FO 상세에서 나눠야 함');
+      expect(splitUnreservedErrorText('SHIPMENT_NOT_DRAFT', 'x')).toBe('이미 계획이 진행된 상자');
+      expect(splitUnreservedErrorText(null, '서버 문구')).toBe('서버 문구');
+      expect(splitUnreservedErrorText('SOMETHING_ELSE', '서버 문구')).toBe('서버 문구');
+    });
+
+    it('상수: 오류 문구와 입구 링크', () => {
+      expect(SPLIT_QTY_ERROR).toBe('분할 수량은 1 이상, 라인 수량 이하여야 하고 상자에 수량이 남아야 합니다');
+      expect(STALL_BOARD_RESERVE_HREF).toBe('/order/stall-board?stage=reserve');
+    });
   });
 });

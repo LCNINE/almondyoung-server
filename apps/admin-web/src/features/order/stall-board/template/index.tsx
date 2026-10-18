@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useOrderProgressSummary } from '@/lib/services/orders/queries';
 import {
@@ -12,6 +13,7 @@ import {
   BoardStageKey,
   cellCount,
   headerStatus,
+  initialBoardStage,
 } from '@/lib/api/domains/orders/order-progress.shape';
 import { StageBand, BandCell } from '../components/stage-band';
 import { StageOrders } from '../components/stage-orders';
@@ -19,7 +21,10 @@ import { collectCell, known } from '../collect-cell';
 import { cn } from '@/lib/utils/ui';
 
 export default function StallBoardTemplate() {
-  const [selected, setSelected] = useState<BoardStageKey>('fo');
+  const searchParams = useSearchParams();
+  const [selected, setSelected] = useState<BoardStageKey>(() =>
+    initialBoardStage(searchParams.get('stage'))
+  );
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 15_000);

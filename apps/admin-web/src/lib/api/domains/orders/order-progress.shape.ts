@@ -75,6 +75,23 @@ export interface ProgressItem {
   /** 정산 중 요청의 정산 정보(#1016 36번 재설계). 옛 core 응답엔 없다 → null */
   settlement: SettlementView | null;
   walletIntentId: string | null;
+  /** 예약 단계의 부족 품목·입고 예정(#1016 15번). 옛 core 응답엔 없다 → null */
+  shortage: ReserveShortageView | null;
+}
+export interface ReserveShortageItemView {
+  skuId: string;
+  skuName: string;
+  shortQty: number;
+  /** YYYY-MM-DD. Date 로 바꾸지 않는다 — 시간대가 하루를 옮긴다 */
+  expectedArrival: string | null;
+}
+export interface ReserveShortageView {
+  shipmentId: string;
+  manifestVersion: number;
+  consolidated: boolean;
+  skuKinds: number;
+  shortSkuKinds: number;
+  items: ReserveShortageItemView[];
 }
 export interface ProgressPage {
   items: ProgressItem[];
@@ -100,17 +117,46 @@ export function toProgressSummary(body: unknown): ProgressSummary {
   };
 }
 
+function toShortageItem(value: unknown): ReserveShortageItemView | null {
+  if (!isRecord(value)) return null;
+  const { skuId, skuName, shortQty, expectedArrival } = value;
+  if (typeof skuId !== 'string' || typeof skuName !== 'string') return null;
+  if (typeof shortQty !== 'number' || !Number.isFinite(shortQty)) return null;
+  if (expectedArrival !== null && typeof expectedArrival !== 'string') return null;
+  return { skuId, skuName, shortQty, expectedArrival };
+}
+
+/** 형식이 하나라도 틀리면 null — 옛 core 응답이거나 계약이 바뀐 것이니 부분만 그리지 않는다. */
+export function toShortageView(value: unknown): ReserveShortageView | null {
+  if (!isRecord(value)) return null;
+  const { shipmentId, manifestVersion, consolidated, skuKinds, shortSkuKinds, items } = value;
+  if (typeof shipmentId !== 'string' || typeof consolidated !== 'boolean') return null;
+  if (typeof manifestVersion !== 'number' || typeof skuKinds !== 'number' || typeof shortSkuKinds !== 'number') return null;
+  if (!Array.isArray(items) || items.length === 0) return null;
+  const parsed = items.map(toShortageItem);
+  if (parsed.some((i) => i === null)) return null;
+  return {
+    shipmentId,
+    manifestVersion,
+    consolidated,
+    skuKinds,
+    shortSkuKinds,
+    items: parsed as ReserveShortageItemView[],
+  };
+}
+
 export function toProgressPage(body: unknown): ProgressPage {
   const v = unwrap(body);
   if (!isRecord(v) || !Array.isArray(v.items))
     return { items: [], nextCursor: null };
   return {
     items: v.items.map((item) => {
-      const row = item as ProgressItem & { settlement?: unknown; walletIntentId?: unknown };
+      const row = item as ProgressItem & { settlement?: unknown; walletIntentId?: unknown; shortage?: unknown };
       return {
         ...row,
         settlement: toSettlementView(row.settlement),
         walletIntentId: typeof row.walletIntentId === 'string' ? row.walletIntentId : null,
+        shortage: toShortageView(row.shortage),
       };
     }),
     nextCursor: typeof v.nextCursor === 'string' ? v.nextCursor : null,
@@ -234,4 +280,67 @@ export function gaveUpBadge(
       .map((m) => `#${m.row} ${m.lastError}`)
       .join('\n'),
   };
+}
+
+/** 메인·통계·주문내역의 «출고 불가» 카드가 가는 곳 — 카드 숫자와 보드 예약 칸이 같은 집합이다. */
+export const STALL_BOARD_RESERVE_HREF = '/order/stall-board?stage=reserve';
+
+/** `?stage=` 로 들어온 값을 시작 단계로. 보드에 없는 값이면 기본(FO 생성). */
+export function initialBoardStage(param: string | null): BoardStageKey {
+  const hit = BOARD_STAGES.find((s) => s.key === param);
+  return hit ? hit.key : 'fo';
+}
+
+/** «10종 중 1종 · 헤어클립 세트 2개». 품목이 셋 이상이면 «… 외 N». */
+export function shortageSummary(s: ReserveShortageView): string {
+  const line = (i: ReserveShortageItemView) => `${i.skuName} ${i.shortQty.toLocaleString('ko-KR')}개`;
+  const items =
+    s.items.length <= 2
+      ? s.items.map(line).join(', ')
+      : `${line(s.items[0])} 외 ${s.items.length - 1}`;
+  return `${s.skuKinds}종 중 ${s.shortSkuKinds}종 · ${items}`;
+}
+
+/** «입고 10-25». 입고 예정이 없으면 빈 문자열(작은 글씨 최소화). 날짜 문자열을 쪼개 쓴다 — Date 는 시간대로 하루가 밀린다. */
+export function arrivalLabel(expectedArrival: string | null): string {
+  const m = expectedArrival ? /^\d{4}-(\d{2}-\d{2})$/.exec(expectedArrival) : null;
+  return m ? `입고 ${m[1]}` : '';
+}
+
+/** 합포장 상자는 다른 주문의 라인이 섞여 있어 여기서 나누지 않는다. 나머지 거절(전부 미예약 등)은 서버가 409 로 한다. */
+export function canSplitShortage(s: ReserveShortageView): boolean {
+  return !s.consolidated;
+}
+
+export const SPLIT_QTY_ERROR =
+  '분할 수량은 1 이상, 라인 수량 이하여야 하고 상자에 수량이 남아야 합니다';
+
+/** FO 상세 분할 검사. 라인 전부를 옮겨도 상자에 다른 수량이 남으면 된다(상자가 비는 것만 막는다). */
+export function isSplitQtyAllowed(
+  moveQty: number,
+  lineQty: number,
+  shipmentTotalQty: number
+): boolean {
+  return (
+    Number.isInteger(moveQty) &&
+    moveQty >= 1 &&
+    moveQty <= lineQty &&
+    moveQty < shipmentTotalQty
+  );
+}
+
+/** split-unreserved 409 코드별 토스트 문구. 모르는 코드(낡은 manifest 버전 등)는 서버 문구를 그대로. */
+export function splitUnreservedErrorText(code: string | null, serverMessage: string): string {
+  switch (code) {
+    case 'SHIPMENT_FULLY_RESERVED':
+      return '이미 다 예약됨';
+    case 'SHIPMENT_NOTHING_RESERVED':
+      return '예약된 수량이 없어 나눌 수 없음';
+    case 'SHIPMENT_CONSOLIDATED':
+      return '합포장 상자는 FO 상세에서 나눠야 함';
+    case 'SHIPMENT_NOT_DRAFT':
+      return '이미 계획이 진행된 상자';
+    default:
+      return serverMessage;
+  }
 }

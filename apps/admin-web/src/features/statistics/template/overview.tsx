@@ -35,6 +35,7 @@ import { useExchangeRequests, useReturnRequests } from '@/lib/services/return-ex
 import { useQuestions } from '@/lib/services/qna/queries';
 import { toLocalDateString } from '@/lib/utils/date';
 import { cn } from '@/lib/utils/ui';
+import { STALL_BOARD_RESERVE_HREF } from '@/lib/api/domains/orders/order-progress.shape';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatisticsShell, TABS } from '../components/shell';
 import { ChartCard, KpiTile } from '../components/widgets';
@@ -171,7 +172,7 @@ export default function OverviewStatisticsTemplate() {
   const opsTiles = [
     { id: 'today-orders', label: '오늘 주문', count: orderStats.data?.todayCount, href: '/order/history', isLoading: orderStats.isLoading, isError: orderStats.isError },
     { id: 'outbound-requested', label: '출고 요청 대기', count: orderStats.data?.outboundRequested, href: '/order/fulfillments', isLoading: orderStats.isLoading, isError: orderStats.isError },
-    { id: 'cannot-ship', label: '출고 불가(재고)', count: orderStats.data?.cannotShip, href: '/order/fulfillments', isLoading: orderStats.isLoading, isError: orderStats.isError },
+    { id: 'cannot-ship', label: '출고 불가(재고)', count: orderStats.data?.cannotShip, href: STALL_BOARD_RESERVE_HREF, isLoading: orderStats.isLoading, isError: orderStats.isError },
     { id: 'waiting-matching', label: '매칭 대기', count: orderStats.data?.waitingMatching, href: '/order/matching', isLoading: orderStats.isLoading, isError: orderStats.isError },
     { id: 'bank-transfers', label: '입금 대기', count: bankTransfers.data?.total, href: '/payments/bank-transfers', isLoading: bankTransfers.isLoading, isError: bankTransfers.isError },
     { id: 'refund-requests', label: '환불 요청', count: refundRequests.data?.total, href: '/payments/refund-requests', isLoading: refundRequests.isLoading, isError: refundRequests.isError },

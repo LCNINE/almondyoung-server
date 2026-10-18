@@ -21,6 +21,7 @@ import type {
   ShipmentAdminDetail,
   FulfillmentOperation,
   SplitShipmentRequest,
+  SplitUnreservedShipmentRequest,
   ReviseShipmentRecipientRequest,
   PlanShipmentRequest,
   CancelShipmentOutstandingRequest,
@@ -95,6 +96,20 @@ export const fulfillmentOrder = {
   ): Promise<ShipmentPlanningCommandResponse> => {
     const response = await client.post(
       `${ALMONDYOUNG_API_BASE_URL}/shipments/${encodeURIComponent(shipmentId)}/splits`,
+      data,
+      { headers: { 'Idempotency-Key': idempotencyKey } }
+    );
+    return response.data;
+  },
+
+  /** 덜 예약된 상자에서 예약 안 된 몫을 한 번에 새 상자로 나눈다(#1016 15번). 어디가 몇 개인지는 서버가 정한다. */
+  splitUnreservedShipment: async (
+    shipmentId: string,
+    data: SplitUnreservedShipmentRequest,
+    idempotencyKey: string
+  ): Promise<ShipmentPlanningCommandResponse> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/${encodeURIComponent(shipmentId)}/split-unreserved`,
       data,
       { headers: { 'Idempotency-Key': idempotencyKey } }
     );

@@ -26,6 +26,7 @@ import type {
   CreateStandaloneFulfillmentRequest,
   InspectByScanRequest,
   SplitShipmentRequest,
+  SplitUnreservedShipmentRequest,
   ReviseShipmentRecipientRequest,
   PlanShipmentRequest,
   CancelShipmentOutstandingRequest,
@@ -582,6 +583,41 @@ export const useSplitShipment = () => {
       ),
     onSuccess: (_, { shipmentId }) =>
       invalidateShipment(queryClient, shipmentId),
+  });
+};
+
+/**
+ * 정체 보드 예약 줄의 «있는 것 먼저». 409(이미 다 예약됨·합포장·상자가 바뀜)는 행이 낡았다는 뜻이라
+ * 성공이든 실패든 보드 목록·요약을 다시 읽는다 — 안 그러면 같은 행이 같은 버튼을 계속 보여준다.
+ */
+export const useSplitUnreservedShipment = () => {
+  const queryClient = useQueryClient();
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['order-progress'] });
+    queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
+  };
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      data,
+      idempotencyKey,
+    }: {
+      shipmentId: string;
+      data: SplitUnreservedShipmentRequest;
+      idempotencyKey?: string;
+    }) =>
+      orders.fulfillmentOrder.splitUnreservedShipment(
+        shipmentId,
+        data,
+        commandKey(idempotencyKey)
+      ),
+    onSuccess: (_, { shipmentId }) => {
+      refresh();
+      invalidateShipment(queryClient, shipmentId);
+    },
+    onError: (error) => {
+      if (isConflict(error)) refresh();
+    },
   });
 };
 

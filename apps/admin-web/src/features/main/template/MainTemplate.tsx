@@ -21,6 +21,7 @@ import { BoardHeader } from '@/features/main/BoardHeader';
 import { GrowthGoalCard } from '@/features/main/GrowthGoalCard';
 import { toLocalDateString } from '@/lib/utils/date';
 import { cn } from '@/lib/utils/ui';
+import { STALL_BOARD_RESERVE_HREF } from '@/lib/api/domains/orders/order-progress.shape';
 
 /** 메인은 기간 선택기를 두지 않는다 — 기간을 바꿔 보려면 통계 탭으로 간다. */
 const MAIN_RANGE_DAYS = 7;
@@ -118,7 +119,7 @@ export default function MainTemplate() {
       tone: 'order',
       label: '출고 불가',
       count: orderStats.data?.cannotShip,
-      href: '/order/fulfillments',
+      href: STALL_BOARD_RESERVE_HREF,
       isLoading: orderStats.isLoading,
       isError: orderStats.isError,
     },
