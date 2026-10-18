@@ -8,6 +8,7 @@ import {
   SettlementView,
   toSettlementView,
 } from '../../sales-order/channel-cancel-request/channel-cancel-request.types';
+import { ReserveShortage } from './reserve-shortage.reader';
 import { decodeCursor, encodeCursor } from './order-progress.cursor';
 import { judgedRowsSql, judgedShipmentsSql, openShipmentScopeSql, shipmentScopeSql } from './order-progress.judge-sql';
 import { GaveUpBadge, OrderProgressSummary, assembleSummary, groupGaveUpMarks } from './order-progress.summary';
@@ -81,6 +82,8 @@ export type OrderProgressItem = {
   /** 취소 요청 단계의 정산 중 요청(가장 나쁜 것, #1016 36번 재설계). 그 밖은 null */
   settlement: SettlementView | null;
   walletIntentId: string | null;
+  /** 예약 단계의 부족 품목·입고 예정(#1016 15번). 서비스가 채운다 — 리더는 늘 null 로 낸다 */
+  shortage: ReserveShortage | null;
 };
 export type OrderProgressPage = { items: OrderProgressItem[]; nextCursor: string | null };
 
@@ -255,6 +258,7 @@ export class OrderProgressReader {
           gaveUp: gaveUpBy.get(row.salesOrderId) ?? [],
           settlement: settlements.get(row.salesOrderId) ?? null,
           walletIntentId: row.walletIntentId ?? null,
+          shortage: null,
         })),
         nextCursor:
           rows.length > query.limit && last

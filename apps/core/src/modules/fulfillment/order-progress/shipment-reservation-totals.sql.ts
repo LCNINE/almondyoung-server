@@ -1,6 +1,17 @@
 import { SQL, sql } from 'drizzle-orm';
 
 /**
+ * «상자 라인에 걸린 확정 예약»의 술어 — 상자 합(아래)과 라인별 합(재고 부족 읽기)이 같은 필터를 쓰도록
+ * 한 곳에 둔다. 예약 테이블 별칭은 r.
+ */
+export const CONFIRMED_LINE_RESERVATION_WHERE: SQL = sql`r.target_type = 'SHIPMENT_LINE' AND r.status = 'confirmed'`;
+
+/** 상자 라인 하나(lineId 식)에 걸린 확정 예약 수량 합. 상자 합과 같은 필터다 */
+export function lineReservedQtySql(lineId: SQL): SQL {
+  return sql`(SELECT coalesce(sum(r.quantity), 0)::int FROM stock_reservations r WHERE r.shipment_line_id = ${lineId} AND ${CONFIRMED_LINE_RESERVATION_WHERE})`;
+}
+
+/**
  * 상자별 «라인 수량 합 vs 확정 예약 합» — «덜 예약된 상자»의 유일한 정의다(#1016 15번).
  * 정체 보드의 판정(order-progress.judge-sql)과 재고 부족 읽기가 같이 쓴다. 두 곳이 따로 세면 보드의
  * «예약» 단계에 있는 상자와 «나눠 보내기» 대상이 어긋난다.
@@ -31,7 +42,7 @@ export function shipmentReservationTotalsSql(scopeShipmentIds?: SQL): SQL {
           LEFT JOIN LATERAL (
             SELECT sum(r.quantity) AS quantity
               FROM stock_reservations r
-             WHERE r.shipment_line_id = sl.id AND r.target_type = 'SHIPMENT_LINE' AND r.status = 'confirmed'
+             WHERE r.shipment_line_id = sl.id AND ${CONFIRMED_LINE_RESERVATION_WHERE}
           ) res ON true
          WHERE sl.shipment_id = sc.shipment_id
       ) t

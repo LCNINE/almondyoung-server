@@ -48,6 +48,29 @@ export class OrderProgressSettlementDto {
   lastFailure!: OrderProgressSettlementFailureDto | null;
 }
 
+export class ReserveShortageItemDto {
+  @ApiProperty() skuId!: string;
+  @ApiProperty() skuName!: string;
+  @ApiProperty({ description: '이 SKU 의 부족 수량(상자 라인 수량 − 확정 예약, 라인 합)' }) shortQty!: number;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: '열린 발주 중 가장 이른 도착예정일(YYYY-MM-DD). 없으면 null',
+  })
+  expectedArrival!: string | null;
+}
+
+export class ReserveShortageDto {
+  @ApiProperty({ description: '대표 상자(가장 오래된 덜 예약된 draft 상자)' }) shipmentId!: string;
+  @ApiProperty({ description: 'split-unreserved 의 expectedManifestVersion 으로 보낸다' }) manifestVersion!: number;
+  @ApiProperty({ description: '다른 판매주문 라인을 가진 합포장 상자 — 화면이 나눠 보내기를 막는다' })
+  consolidated!: boolean;
+  @ApiProperty({ description: '대표 상자의 SKU 종 수' }) skuKinds!: number;
+  @ApiProperty({ description: '그중 덜 예약된 종 수' }) shortSkuKinds!: number;
+  @ApiProperty({ type: [ReserveShortageItemDto], description: 'SKU 별 합, 부족 수량 큰 순' })
+  items!: ReserveShortageItemDto[];
+}
+
 export class OrderProgressItemDto {
   @ApiProperty() salesOrderId!: string;
   @ApiProperty({ description: 'display_order_no ?? channel_order_id' }) orderNo!: string;
@@ -66,6 +89,12 @@ export class OrderProgressItemDto {
   })
   settlement!: OrderProgressSettlementDto | null;
   @ApiProperty({ nullable: true, type: String }) walletIntentId!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: ReserveShortageDto,
+    description: '예약 단계의 부족 품목·입고 예정. 그 밖 단계이거나 덜 예약된 상자가 없으면 null',
+  })
+  shortage!: ReserveShortageDto | null;
 }
 
 export class OrderProgressPageDto {
