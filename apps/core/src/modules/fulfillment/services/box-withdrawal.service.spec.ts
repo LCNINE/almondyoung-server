@@ -1,6 +1,6 @@
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { DbTx } from '../../inventory/schema/inventory.schema';
-import { BoxWithdrawalService } from './box-withdrawal.service';
+import { BoxWithdrawalService, ExitCheckedBox } from './box-withdrawal.service';
 
 class QueryResult implements PromiseLike<unknown[]> {
   constructor(
@@ -34,9 +34,8 @@ class QueryResult implements PromiseLike<unknown[]> {
 }
 
 const service = new BoxWithdrawalService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
-const box = {
-  shipmentId: '55555555-5555-4555-8555-555555555555',
-  shipmentStatus: 'ready',
+const box: ExitCheckedBox = {
+  shipment: { id: '55555555-5555-4555-8555-555555555555', status: 'planned' },
   lines: [{ inspectedQty: 0 }],
 };
 

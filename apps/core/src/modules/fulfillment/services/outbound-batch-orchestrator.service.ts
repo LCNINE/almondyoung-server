@@ -371,10 +371,7 @@ export class OutboundBatchOrchestrator {
           const response = { operationId: commandRequestId, workItem: this.workItemResponse(outcome.workItem) };
           return { response, resourceType: 'outbound_batch_work_item', resourceId: outcome.workItem.id };
         }
-        const blocker = await this.withdrawals.unstartedExitBlocker(
-          { shipmentId, shipmentStatus: aggregate.shipment.status, lines: aggregate.lines },
-          trx,
-        );
+        const blocker = await this.withdrawals.unstartedExitBlocker(aggregate, trx);
         if (blocker) throw this.conflict(blocker.code, blocker.message);
         const excluded = await this.withdrawals.excludeUnstarted(workItem, reason, trx);
 

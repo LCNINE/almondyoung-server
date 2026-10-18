@@ -87,12 +87,7 @@ export async function assessCancelReadiness(
   if (await withdrawals.hasUnsettledCustody(shipmentId, tx)) codes.push(CANCEL_BLOCKER.UNSETTLED_CUSTODY);
   if (codes.length) return { kind: 'blocked', codes: codes.sort() };
   // 막힘 다음에 본다 — 빼기 검사도 보관·검수 수량을 보지만(`WORK_ITEM_UNPICK_REQUIRED`) 그 둘은 409 가 아니라 대기다.
-  const exitBlocker = workItem
-    ? await withdrawals.unstartedExitBlocker(
-        { shipmentId, shipmentStatus: aggregate.shipment.status, lines: aggregate.lines },
-        tx,
-      )
-    : null;
+  const exitBlocker = workItem ? await withdrawals.unstartedExitBlocker(aggregate, tx) : null;
   if (exitBlocker) return { kind: 'unexcludable', blocker: exitBlocker };
   return { kind: 'ready', unstartedWorkItem: workItem ?? null, voidWaybill: active !== null };
 }

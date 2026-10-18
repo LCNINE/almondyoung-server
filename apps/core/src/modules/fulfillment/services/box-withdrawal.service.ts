@@ -14,6 +14,13 @@ import { ToteLifecycleService } from './tote-lifecycle.service';
 import { ACTIVE_WORK_ITEM_STATUSES, WITHDRAWABLE_WORK_ITEM_STATUSES, WorkItemExitTo } from './work-item-status';
 
 export type WorkItemRow = typeof wmsTables.outboundBatchWorkItems.$inferSelect;
+
+/** 시작 전 배치 빼기 판정이 읽는 상자. 계획의 `ShipmentAggregate` 도, 오케스트레이터의 적격 집합도 이 모양이다. */
+export type ExitCheckedBox = {
+  shipment: Pick<typeof wmsTables.shipments.$inferSelect, 'id' | 'status'>;
+  lines: ReadonlyArray<{ inspectedQty: number }>;
+};
+
 const WI = wmsTables.outboundBatchWorkItems;
 const A = wmsTables.pickingSourceAllocations;
 
@@ -300,38 +307,33 @@ export class BoxWithdrawalService {
   }
 
   /** 시작 전 배치에서 빼는 걸 막는 사유. 없으면 null. 호출자가 구성요소를 잠갔다. */
-  async unstartedExitBlocker(
-    input: { shipmentId: string; shipmentStatus: string; lines: ReadonlyArray<{ inspectedQty: number }> },
-    trx: DbTx,
-  ): Promise<{ code: string; message: string } | null> {
+  async unstartedExitBlocker(box: ExitCheckedBox, trx: DbTx): Promise<{ code: string; message: string } | null> {
+    const shipmentId = box.shipment.id;
     const [attempt, custody, allocated, toteAssignment] = await Promise.all([
       trx
         .select({ id: wmsTables.dispatchAttempts.id })
         .from(wmsTables.dispatchAttempts)
         .where(
-          and(
-            eq(wmsTables.dispatchAttempts.shipmentId, input.shipmentId),
-            ne(wmsTables.dispatchAttempts.status, 'recalled'),
-          ),
+          and(eq(wmsTables.dispatchAttempts.shipmentId, shipmentId), ne(wmsTables.dispatchAttempts.status, 'recalled')),
         )
         .limit(1),
-      this.hasUnsettledCustody(input.shipmentId, trx),
-      this.hasLiveAllocation(input.shipmentId, trx),
+      this.hasUnsettledCustody(shipmentId, trx),
+      this.hasLiveAllocation(shipmentId, trx),
       trx
         .select({ id: wmsTables.shipmentToteAssignments.id })
         .from(wmsTables.shipmentToteAssignments)
         .where(
           and(
-            eq(wmsTables.shipmentToteAssignments.shipmentId, input.shipmentId),
+            eq(wmsTables.shipmentToteAssignments.shipmentId, shipmentId),
             isNull(wmsTables.shipmentToteAssignments.releasedAt),
           ),
         )
         .limit(1),
     ]);
-    if (attempt[0] || ['shipped', 'in_transit', 'delivered'].includes(input.shipmentStatus)) {
+    if (attempt[0] || ['shipped', 'in_transit', 'delivered'].includes(box.shipment.status)) {
       return { code: 'WORK_ITEM_DISPATCH_EXISTS', message: 'A dispatched shipment cannot be excluded from a batch' };
     }
-    if (custody || input.lines.some((line) => line.inspectedQty > 0)) {
+    if (custody || box.lines.some((line) => line.inspectedQty > 0)) {
       return {
         code: 'WORK_ITEM_UNPICK_REQUIRED',
         message: 'Shipment custody must be returned by the batch inventory session before exclusion',

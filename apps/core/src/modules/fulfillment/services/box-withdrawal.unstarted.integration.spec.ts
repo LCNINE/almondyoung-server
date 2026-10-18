@@ -35,12 +35,7 @@ describeIfDb('시작 전 배치에서 빼기·송장 로컬 무효화 (BoxWithdr
     await inRollbackTx(db, async (tx) => {
       const { box, shipment, lines, workItem, wiring } = await unstartedBox(tx);
 
-      await expect(
-        wiring.withdrawals.unstartedExitBlocker(
-          { shipmentId: box.shipmentId, shipmentStatus: shipment.status, lines },
-          tx,
-        ),
-      ).resolves.toBeNull();
+      await expect(wiring.withdrawals.unstartedExitBlocker({ shipment, lines }, tx)).resolves.toBeNull();
       await expect(wiring.withdrawals.hasLiveAllocation(box.shipmentId, tx)).resolves.toBe(false);
 
       const excluded = await wiring.withdrawals.excludeUnstarted(workItem, '고객 취소', tx);
@@ -66,12 +61,9 @@ describeIfDb('시작 전 배치에서 빼기·송장 로컬 무효화 (BoxWithdr
       );
 
       await expect(wiring.withdrawals.hasLiveAllocation(box.shipmentId, tx)).resolves.toBe(true);
-      await expect(
-        wiring.withdrawals.unstartedExitBlocker(
-          { shipmentId: box.shipmentId, shipmentStatus: shipment.status, lines },
-          tx,
-        ),
-      ).resolves.toMatchObject({ code: 'WORK_ITEM_ALLOCATED' });
+      await expect(wiring.withdrawals.unstartedExitBlocker({ shipment, lines }, tx)).resolves.toMatchObject({
+        code: 'WORK_ITEM_ALLOCATED',
+      });
     });
   });
 
