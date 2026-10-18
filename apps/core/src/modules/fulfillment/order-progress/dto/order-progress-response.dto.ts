@@ -65,6 +65,11 @@ export class ReserveShortageDto {
   @ApiProperty({ description: 'split-unreserved 의 expectedManifestVersion 으로 보낸다' }) manifestVersion!: number;
   @ApiProperty({ description: '다른 판매주문 라인을 가진 합포장 상자 — 화면이 나눠 보내기를 막는다' })
   consolidated!: boolean;
+  @ApiProperty({
+    description:
+      '대표 상자에 확정 예약이 하나라도 있다. false 면 나눠도 남는 몫이 없어(전부 미예약) 화면이 버튼을 내지 않는다',
+  })
+  splittable!: boolean;
   @ApiProperty({ description: '대표 상자의 SKU 종 수' }) skuKinds!: number;
   @ApiProperty({ description: '그중 덜 예약된 종 수' }) shortSkuKinds!: number;
   @ApiProperty({ type: [ReserveShortageItemDto], description: 'SKU 별 합, 부족 수량 큰 순' })

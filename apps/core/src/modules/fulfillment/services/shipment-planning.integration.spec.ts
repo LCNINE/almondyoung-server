@@ -1251,6 +1251,33 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
       });
     });
 
+    it('draft 인데 복구 코드가 있는 상자(재계획 대기)는 SHIPMENT_RECOVERY_IN_PROGRESS, 새 상자를 만들지 않는다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const box = await shortageBox(tx);
+        await tx
+          .update(wmsTables.shipments)
+          .set({ recoveryCode: 'CANCEL_REPLAN_PENDING' })
+          .where(eq(wmsTables.shipments.id, box.shipment.id));
+        const before = await tx
+          .select({ id: wmsTables.shipments.id })
+          .from(wmsTables.shipments)
+          .where(eq(wmsTables.shipments.warehouseId, box.warehouseId));
+        let error: unknown;
+        try {
+          await planning.splitUnreserved(box.shipment.id, dtoOf(box), `split-unreserved-${randomUUID()}`, actor, tx);
+        } catch (caught) {
+          error = caught;
+        }
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as ConflictException).getResponse()).toMatchObject({ code: 'SHIPMENT_RECOVERY_IN_PROGRESS' });
+        const after = await tx
+          .select({ id: wmsTables.shipments.id })
+          .from(wmsTables.shipments)
+          .where(eq(wmsTables.shipments.warehouseId, box.warehouseId));
+        expect(after).toHaveLength(before.length);
+      });
+    });
+
     it('다른 판매주문 라인이 든 상자는 SHIPMENT_CONSOLIDATED', async () => {
       await inRollbackTx(db, async (tx) => {
         const box = await shortageBox(tx);

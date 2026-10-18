@@ -19,6 +19,11 @@ export type ReserveShortage = {
   manifestVersion: number;
   /** 다른 판매주문 라인을 가진 상자 — 화면이 나눠 보내기 버튼을 막는다(D13) */
   consolidated: boolean;
+  /**
+   * 대표 상자에 확정 예약이 하나라도 있다 — 나눠도 원 상자에 남는 몫이 있다.
+   * 없으면(전부 미예약) split-unreserved 는 SHIPMENT_NOTHING_RESERVED 409 라 화면이 버튼을 내지 않는다.
+   */
+  splittable: boolean;
   /** 대표 상자의 SKU 종 수와 그중 덜 예약된 종 수 («10종 중 1종») */
   skuKinds: number;
   shortSkuKinds: number;
@@ -30,6 +35,7 @@ type RawRow = {
   sales_order_id: string;
   shipment_id: string;
   manifest_version: number;
+  box_reserved_qty: number;
   line_order_id: string;
   sku_id: string;
   sku_name: string;
@@ -41,7 +47,7 @@ type RawRow = {
 /**
  * 정체 보드 «예약» 줄의 부족 품목(#1016 15번 · D13). 주문 묶음 하나를 SQL 한 번으로 읽는다.
  * 대표 상자 = 그 주문 라인이 있는 draft · recovery_code NULL 상자 중 «덜 예약된» 것, opened_at 오래된 하나.
- * «덜 예약된»의 정의는 상자 합 한 벌(shipmentReservationTotalsSql)이고 판정 SQL 과 같다.
+ * «덜 예약된»(unreserved_qty > 0)의 정의는 상자 합 한 벌(shipmentReservationTotalsSql)이고 판정 SQL 과 같다.
  * 품목별 부족은 라인별 확정 예약(같은 필터, lineReservedQtySql)을 SKU 로 합친 값이다.
  */
 @Injectable()
@@ -70,14 +76,14 @@ export class ReserveShortageReader {
           ${shipmentReservationTotalsSql(sql`SELECT c.shipment_id FROM cand c`)}
         ),
         rep AS (
-          SELECT DISTINCT ON (c.sales_order_id) c.sales_order_id, s.id AS shipment_id, s.manifest_version
+          SELECT DISTINCT ON (c.sales_order_id) c.sales_order_id, s.id AS shipment_id, s.manifest_version, br.reserved_qty AS box_reserved_qty
             FROM cand c
             JOIN box_res br ON br.shipment_id = c.shipment_id
             JOIN shipments s ON s.id = c.shipment_id
-           WHERE br.line_qty > br.reserved_qty
+           WHERE br.unreserved_qty > 0
            ORDER BY c.sales_order_id, s.opened_at, s.id
         )
-        SELECT rep.sales_order_id, rep.shipment_id, rep.manifest_version,
+        SELECT rep.sales_order_id, rep.shipment_id, rep.manifest_version, rep.box_reserved_qty,
                bfo.sales_order_id AS line_order_id,
                sl.sku_id, k.name AS sku_name, sl.qty,
                ${lineReservedQtySql(sql`sl.id`)} AS reserved_qty,
@@ -129,6 +135,7 @@ function assemble(rows: RawRow[]): Map<string, ReserveShortage> {
       shipmentId: first.shipment_id,
       manifestVersion: Number(first.manifest_version),
       consolidated: lines.some((l) => l.line_order_id !== orderId),
+      splittable: Number(first.box_reserved_qty) > 0,
       skuKinds: bySku.size,
       shortSkuKinds: items.length,
       items,

@@ -282,6 +282,10 @@ export class ShipmentPlanningService {
         if (aggregate.shipment.status !== 'draft') {
           throw this.conflict('SHIPMENT_NOT_DRAFT', `Shipment ${shipmentId} must be Draft to split`);
         }
+        // draft 인데 복구 코드가 있는 상자(CANCEL_REPLAN_PENDING 등)는 복구 규칙이 다루는 중이다 — 나누면 길을 막는다
+        if (aggregate.shipment.recoveryCode) {
+          throw this.conflict('SHIPMENT_RECOVERY_IN_PROGRESS', `Shipment ${shipmentId} is already in recovery`);
+        }
         const baseOrderId = aggregate.lines[0]?.salesOrderId;
         if (aggregate.lines.some((line) => line.salesOrderId !== baseOrderId)) {
           throw this.conflict('SHIPMENT_CONSOLIDATED', `Shipment ${shipmentId} carries lines of another sales order`);
@@ -294,7 +298,9 @@ export class ShipmentPlanningService {
           tx,
         );
         const lines = [...aggregate.lines].sort((a, b) => a.id.localeCompare(b.id));
-        const unreservedOf = (line: ShipmentLineRow) => line.qty - (confirmedByLine.get(line.id) ?? 0);
+        // 넘치게 예약된 라인이 다른 라인의 미예약 몫을 상쇄하지 않게 0 밑을 자른다(상자 합·판정과 같은 정의).
+        // 불변식 검사가 잠금 단계에서 초과 예약을 막으므로 방어선이다 — 스펙으로는 닿지 않는다.
+        const unreservedOf = (line: ShipmentLineRow) => Math.max(0, line.qty - (confirmedByLine.get(line.id) ?? 0));
         const totalUnreserved = lines.reduce((total, line) => total + unreservedOf(line), 0);
         const totalConfirmed = lines.reduce((total, line) => total + (confirmedByLine.get(line.id) ?? 0), 0);
         if (totalUnreserved <= 0) {

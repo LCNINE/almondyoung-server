@@ -50,8 +50,8 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
     box AS (
       SELECT bl.sales_order_id, s.id AS shipment_id, s.status::text AS status, s.recovery_code,
              s.opened_at, s.planned_at, s.shipped_at,
-             bool_or(br.line_qty > br.reserved_qty) AS under_reserved,
-             bool_or(br.reserved_qty > 0 AND br.line_qty > br.reserved_qty) AS partially_reserved,
+             bool_or(br.unreserved_qty > 0) AS under_reserved,
+             bool_or(br.reserved_qty > 0 AND br.unreserved_qty > 0) AS partially_reserved,
              min(bl.fo_created_at) AS fo_created_at
         FROM shipments s
         JOIN box_line bl ON bl.shipment_id = s.id

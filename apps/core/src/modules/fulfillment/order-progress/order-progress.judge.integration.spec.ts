@@ -189,6 +189,25 @@ describeIfDb('order-progress 판정 (PostgreSQL integration)', () => {
     expect(r).toMatchObject({ stage: 'reserve', state: 'partially_reserved' });
   });
 
+  // 상자 합만 비교하면 넘치게 예약된 라인이 모자란 라인을 가린다 — plan 의 assertFullyReserved 는 라인별이다
+  it('한 라인이 넘치게 예약돼도 다른 라인이 덜 예약이면 상자는 «예약»(부분 예약)', async () => {
+    const r = await one(async (tx, w) => {
+      const o = await f.seedOrder(tx);
+      await f.seedBacklog(tx, o.salesOrderId, 'completed');
+      const fo = await f.seedFo(tx, w, o, { status: 'partially_reserved' });
+      const second = await addFoItem(tx, w, o, fo.foId);
+      const box = await f.seedBox(tx, w, [fo.foItemId, second], { status: 'draft', qty: [1, 1] });
+      await f.seedConfirmedReservation(tx, w, {
+        foId: fo.foId,
+        foItemId: fo.foItemId,
+        shipmentLineId: box.lineIds[0],
+        quantity: 2,
+      });
+      return o.salesOrderId;
+    });
+    expect(r).toMatchObject({ stage: 'reserve', state: 'partially_reserved' });
+  });
+
   it('라인 수량만큼 예약되면(qty 3, 예약 3) «계획 대기»', async () => {
     const r = await one(async (tx, w) => {
       const o = await f.seedOrder(tx);

@@ -12,13 +12,17 @@ export function lineReservedQtySql(lineId: SQL): SQL {
 }
 
 /**
- * 상자별 «라인 수량 합 vs 확정 예약 합» — «덜 예약된 상자»의 유일한 정의다(#1016 15번).
+ * 상자별 «라인 수량 vs 확정 예약» — «덜 예약된 상자»의 유일한 정의다(#1016 15번).
  * 정체 보드의 판정(order-progress.judge-sql)과 재고 부족 읽기가 같이 쓴다. 두 곳이 따로 세면 보드의
  * «예약» 단계에 있는 상자와 «나눠 보내기» 대상이 어긋난다.
  *
  * 상자 하나가 한 행이다: shipment_id, line_qty(shipment_lines.qty 합), reserved_qty(그 라인들에 걸린
- * target_type='SHIPMENT_LINE' · status='confirmed' 인 stock_reservations.quantity 합).
- * 상자 «전체»로 잰다 — 합포장 상자는 어느 주문의 라인이든 모두 센다. 덜 예약 = line_qty > reserved_qty.
+ * target_type='SHIPMENT_LINE' · status='confirmed' 인 stock_reservations.quantity 합), unreserved_qty(라인별
+ * max(0, 라인 수량 − 그 라인의 확정 예약)의 합).
+ * 상자 «전체»로 잰다 — 합포장 상자는 어느 주문의 라인이든 모두 센다.
+ * 덜 예약 = unreserved_qty > 0 이다. line_qty > reserved_qty 로 재면 넘치게 예약된 라인이 모자란 라인을
+ * 가려서(상자 합은 같아 보인다) plan 의 라인별 «다 예약됐나» 검사(assertFullyReserved)와 어긋난다.
+ * reserved_qty 는 «예약이 하나라도 있나»(나눌 수 있나·부분 예약 표기)에만 쓴다.
  *
  * 상자마다 LATERAL 로 그 상자의 라인만 읽고(idx_shipment_lines_shipment), 라인마다 예약을 LATERAL 로 합친다
  * (예약 행을 라인에 그대로 조인해 line_qty 를 곱하지 않는다 · idx_stock_reservations_shipment_line).
@@ -33,11 +37,12 @@ export function shipmentReservationTotalsSql(scopeShipmentIds?: SQL): SQL {
     ? sql`SELECT DISTINCT x.shipment_id FROM (${scopeShipmentIds}) x(shipment_id)`
     : sql`SELECT id AS shipment_id FROM shipments`;
   return sql`
-    SELECT sc.shipment_id, t.line_qty, t.reserved_qty
+    SELECT sc.shipment_id, t.line_qty, t.reserved_qty, t.unreserved_qty
       FROM (${drive}) sc
       CROSS JOIN LATERAL (
         SELECT coalesce(sum(sl.qty), 0)::int AS line_qty,
-               coalesce(sum(res.quantity), 0)::int AS reserved_qty
+               coalesce(sum(res.quantity), 0)::int AS reserved_qty,
+               coalesce(sum(greatest(sl.qty - coalesce(res.quantity, 0), 0)), 0)::int AS unreserved_qty
           FROM shipment_lines sl
           LEFT JOIN LATERAL (
             SELECT sum(r.quantity) AS quantity

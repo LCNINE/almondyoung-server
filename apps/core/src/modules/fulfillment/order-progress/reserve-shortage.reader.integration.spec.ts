@@ -156,10 +156,39 @@ describeIfDb('ReserveShortageReader (PostgreSQL integration)', () => {
         shipmentId: box.shipmentId,
         manifestVersion: 1,
         consolidated: false,
+        splittable: true,
         skuKinds: 3,
         shortSkuKinds: 1,
         items: [{ skuId: s3, skuName: '헤어클립 세트', shortQty: 2, expectedArrival: '2026-10-25' }],
       });
+    });
+  });
+
+  it('상자에 확정 예약이 하나도 없으면 splittable: false — 나눠 봐야 409 다', async () => {
+    await rollback(async (tx, reader) => {
+      const w = await f.seedWorld(tx);
+      const s = await seedSku(tx, w, '클립');
+      const { order, foId } = await seedOrderFo(tx, w);
+      await seedBoxOf(tx, w, [{ order, foId, skuId: s, qty: 2, reserved: 0 }]);
+      const got = (await reader.forOrders([order.salesOrderId], tx)).get(order.salesOrderId);
+      expect(got?.splittable).toBe(false);
+      expect(got?.consolidated).toBe(false);
+    });
+  });
+
+  it('한 라인이 넘치게 예약돼도 다른 라인이 덜 예약이면 대표 상자로 읽고, 부족은 그 라인 몫이다', async () => {
+    await rollback(async (tx, reader) => {
+      const w = await f.seedWorld(tx);
+      const a = await seedSku(tx, w, '가');
+      const b = await seedSku(tx, w, '나');
+      const { order, foId } = await seedOrderFo(tx, w);
+      await seedBoxOf(tx, w, [
+        { order, foId, skuId: a, qty: 1, reserved: 2 },
+        { order, foId, skuId: b, qty: 1, reserved: 0 },
+      ]);
+      const got = (await reader.forOrders([order.salesOrderId], tx)).get(order.salesOrderId);
+      expect(got?.splittable).toBe(true);
+      expect(got?.items.map((i) => [i.skuId, i.shortQty])).toEqual([[b, 1]]);
     });
   });
 
