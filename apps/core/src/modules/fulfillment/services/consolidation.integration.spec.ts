@@ -294,6 +294,97 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
     });
   });
 
+  // 스펙 §6.4: 합포장 대상이 planned 여도 «완료된 합포장의 대상»은 막힘이 아니다 — 대기 없이 그 자리에서 끝난다.
+  it("cancels one source order's line on a planned consolidated target immediately", async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await baseFixture(tx);
+      const canceledSource = await createOrderShipment(tx, base, { quantity: 3 });
+      const survivingSource = await createOrderShipment(tx, base, { quantity: 2 });
+      const consolidated = await consolidation.consolidate(
+        {
+          sources: requestFor(canceledSource, survivingSource),
+          recipientSourceShipmentId: canceledSource.shipment.id,
+          reason: 'consolidate before planning',
+        },
+        `consolidate-before-plan-${randomUUID()}`,
+        actor,
+        tx,
+      );
+      const targetShipmentId = consolidated.targetShipmentId!;
+      await tx
+        .update(wmsTables.deliveryProfiles)
+        .set({
+          senderSnapshot: { name: 'Sender' },
+          originAddressSnapshot: { address: 'Origin' },
+          returnAddressSnapshot: { address: 'Return' },
+          carrierAccountRef: 'consolidation-carrier-account',
+        })
+        .where(eq(wmsTables.deliveryProfiles.id, base.profileId));
+      const [draftTarget] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, targetShipmentId));
+      const planned = await planning.plan(
+        targetShipmentId,
+        {
+          shippingProfileId: base.profileId,
+          expectedManifestVersion: draftTarget.manifestVersion,
+          expectedReservationVersion: draftTarget.reservationVersion,
+        },
+        `plan-consolidated-target-${randomUUID()}`,
+        actor,
+        tx,
+      );
+      expect(planned.shipment).toMatchObject({ shipmentId: targetShipmentId, status: 'planned' });
+      const targetLines = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.shipmentId, targetShipmentId));
+      const canceledTargetLine = targetLines.find(
+        (line) => line.fulfillmentOrderItemId === canceledSource.fulfillmentOrderItemId,
+      );
+
+      const cancellation = await planning.cancelOutstanding(
+        targetShipmentId,
+        {
+          expectedManifestVersion: planned.shipment.manifestVersion,
+          reason: 'source order canceled after planning',
+          lines: [
+            {
+              shipmentLineId: canceledTargetLine!.id,
+              expectedLineVersion: canceledTargetLine!.lineVersion,
+              qty: canceledTargetLine!.qty,
+            },
+          ],
+        },
+        `cancel-planned-consolidated-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      expect(cancellation).toMatchObject({ operationStatus: 'completed', shipmentId: targetShipmentId });
+      const [targetAfter] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, targetShipmentId));
+      expect(targetAfter).toMatchObject({ status: 'draft', plannedAt: null, recoveryCode: null });
+      const remainingLines = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.shipmentId, targetShipmentId));
+      expect(remainingLines).toHaveLength(1);
+      expect(remainingLines[0]).toMatchObject({
+        fulfillmentOrderItemId: survivingSource.fulfillmentOrderItemId,
+        qty: 2,
+        reservedQty: 2,
+      });
+      await new FulfillmentInvariantService().assertFulfillmentOrders(
+        [canceledSource.fulfillmentOrderId, survivingSource.fulfillmentOrderId],
+        tx,
+      );
+    });
+  });
+
   it('coalesces split lines of the same FOI and preserves reservation fairness', async () => {
     await inRollbackTx(db, async (tx) => {
       const base = await baseFixture(tx, 6);
