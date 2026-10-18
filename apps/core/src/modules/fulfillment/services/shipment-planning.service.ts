@@ -23,7 +23,13 @@ import {
 } from '../dto/shipment-planning.dto';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { BoxWithdrawalService, WorkItemRow } from './box-withdrawal.service';
-import { assessCancelReadiness, cancelBlockers, CancelReadiness } from './cancel-readiness';
+import {
+  assessCancelReadiness,
+  CANCEL_BLOCKER,
+  CancelBlockerCode,
+  cancelBlockers,
+  CancelReadiness,
+} from './cancel-readiness';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
@@ -61,7 +67,7 @@ export type CancellationResumeReadiness = {
   operationId: string;
   shipmentId: string;
   /** `cancelBlockers` 의 코드 + 대기 상자가 아니면 `SOURCE_STATE_CHANGED`. 비어 있으면 재개할 수 있다 */
-  blockers: string[];
+  blockers: CancelBlockerCode[];
 };
 
 /** 재개 호출 하나의 결과 — completed 만 «이번 호출로 끝냈다»이다 */
@@ -788,7 +794,7 @@ export class ShipmentPlanningService {
         aggregate.shipment.status !== 'recovery_required' ||
         aggregate.shipment.recoveryCode !== 'CANCEL_REPLAN_PENDING'
       ) {
-        blockers.push('SOURCE_STATE_CHANGED');
+        blockers.push(CANCEL_BLOCKER.SOURCE_STATE_CHANGED);
       }
       return { operationId, shipmentId: pending.shipmentId, blockers };
     }, tx);
@@ -807,7 +813,7 @@ export class ShipmentPlanningService {
     trx: DbTx,
   ): Promise<
     | { outcome: 'completed' | 'already_completed'; response: CancelResponse }
-    | { outcome: 'blocked'; aggregate: ShipmentAggregate; blockers: string[] }
+    | { outcome: 'blocked'; aggregate: ShipmentAggregate; blockers: CancelBlockerCode[] }
   > {
     this.workflowGate.assertV2MutationAllowed('shipment.cancel_outstanding.resume');
     const [optimisticOperation] = await trx

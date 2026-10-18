@@ -21,6 +21,17 @@ export type ExitCheckedBox = {
   lines: ReadonlyArray<{ inspectedQty: number }>;
 };
 
+export const UNSTARTED_EXIT_BLOCKER = {
+  DISPATCH_EXISTS: 'WORK_ITEM_DISPATCH_EXISTS',
+  UNPICK_REQUIRED: 'WORK_ITEM_UNPICK_REQUIRED',
+  TOTE_RELEASE_REQUIRED: 'WORK_ITEM_TOTE_RELEASE_REQUIRED',
+  ALLOCATED: 'WORK_ITEM_ALLOCATED',
+} as const;
+
+export type UnstartedExitBlockerCode = (typeof UNSTARTED_EXIT_BLOCKER)[keyof typeof UNSTARTED_EXIT_BLOCKER];
+
+export type UnstartedExitBlocker = { code: UnstartedExitBlockerCode; message: string };
+
 /**
  * 시작 전 배치 빼기 판정의 재료. 취소 준비도도 보관·검수 수량을 여기서 읽는다 — 같은 사실을 두 번 묻지 않게.
  */
@@ -34,27 +45,33 @@ export type UnstartedExitFacts = {
 };
 
 /** 시작 전 배치에서 빼는 걸 막는 사유. 없으면 null. */
-export function unstartedExitBlockerOf(facts: UnstartedExitFacts): { code: string; message: string } | null {
+export function unstartedExitBlockerOf(facts: UnstartedExitFacts): UnstartedExitBlocker | null {
   if (facts.dispatched) {
-    return { code: 'WORK_ITEM_DISPATCH_EXISTS', message: 'A dispatched shipment cannot be excluded from a batch' };
+    return {
+      code: UNSTARTED_EXIT_BLOCKER.DISPATCH_EXISTS,
+      message: 'A dispatched shipment cannot be excluded from a batch',
+    };
   }
 
   if (facts.unsettledCustody || facts.inspected) {
     return {
-      code: 'WORK_ITEM_UNPICK_REQUIRED',
+      code: UNSTARTED_EXIT_BLOCKER.UNPICK_REQUIRED,
       message: 'Shipment custody must be returned by the batch inventory session before exclusion',
     };
   }
 
   if (facts.toteAssigned) {
     return {
-      code: 'WORK_ITEM_TOTE_RELEASE_REQUIRED',
+      code: UNSTARTED_EXIT_BLOCKER.TOTE_RELEASE_REQUIRED,
       message: 'Active physical tote assignments must be released before exclusion',
     };
   }
 
   if (facts.liveAllocation) {
-    return { code: 'WORK_ITEM_ALLOCATED', message: 'Work item holds picking allocations; use short-pick recovery' };
+    return {
+      code: UNSTARTED_EXIT_BLOCKER.ALLOCATED,
+      message: 'Work item holds picking allocations; use short-pick recovery',
+    };
   }
 
   return null;
@@ -346,7 +363,7 @@ export class BoxWithdrawalService {
   }
 
   /** 시작 전 배치에서 빼는 걸 막는 사유. 없으면 null. 호출자가 구성요소를 잠갔다. */
-  async unstartedExitBlocker(box: ExitCheckedBox, trx: DbTx): Promise<{ code: string; message: string } | null> {
+  async unstartedExitBlocker(box: ExitCheckedBox, trx: DbTx): Promise<UnstartedExitBlocker | null> {
     return unstartedExitBlockerOf(await this.unstartedExitFacts(box, trx));
   }
 

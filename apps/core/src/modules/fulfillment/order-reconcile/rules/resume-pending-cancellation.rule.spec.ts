@@ -1,7 +1,13 @@
+import { CancelBlockerCode } from '../../services/cancel-readiness';
+import { CancellationResumeReadiness } from '../../services/shipment-planning.service';
 import { cancellationReadinessFingerprint } from './resume-pending-cancellation.rule';
 
 describe('cancellationReadinessFingerprint', () => {
-  const base = { operationId: 'op', shipmentId: 'box', blockers: ['WAYBILL_NOT_VOIDABLE', 'SOURCE_STATE_CHANGED'] };
+  const base: CancellationResumeReadiness = {
+    operationId: 'op',
+    shipmentId: 'box',
+    blockers: ['WAYBILL_NOT_VOIDABLE', 'SOURCE_STATE_CHANGED'],
+  };
 
   it('막힘 순서에 흔들리지 않는다', () => {
     expect(cancellationReadinessFingerprint({ ...base, blockers: [...base.blockers].reverse() })).toBe(
@@ -21,7 +27,7 @@ describe('cancellationReadinessFingerprint', () => {
   });
 
   it('부르는 쪽의 막힘 배열을 바꾸지 않는다', () => {
-    const blockers = ['WAYBILL_NOT_VOIDABLE', 'INSPECTED_QTY'];
+    const blockers: CancelBlockerCode[] = ['WAYBILL_NOT_VOIDABLE', 'INSPECTED_QTY'];
     cancellationReadinessFingerprint({ ...base, blockers });
     expect(blockers).toEqual(['WAYBILL_NOT_VOIDABLE', 'INSPECTED_QTY']);
   });

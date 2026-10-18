@@ -1,10 +1,16 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
-import { BoxWithdrawalService, unstartedExitBlockerOf, WorkItemRow } from './box-withdrawal.service';
+import {
+  BoxWithdrawalService,
+  UnstartedExitBlocker,
+  UnstartedExitBlockerCode,
+  unstartedExitBlockerOf,
+  WorkItemRow,
+} from './box-withdrawal.service';
 import { ShipmentAggregate } from './shipment-aggregate';
 import { ACTIVE_WORK_ITEM_STATUSES } from './work-item-status';
 
-/** 시작된 배치 밖 상자의 취소를 막는 것(스펙 §4.1 «막힘»). `unstartedExitBlocker` 의 코드도 그대로 섞인다. */
+/** 취소 준비도가 막힘으로 적는 코드. 앞의 넷이 대기로 보내는 막힘이고, 뒤의 둘은 읽기만 적는다. */
 export const CANCEL_BLOCKER = {
   /** 시작 전 배치의 작업 항목이 다른 오퍼레이션을 기다린다 */
   WORK_ITEM_WAITING_OTHER: 'WORK_ITEM_WAITING_OTHER',
@@ -12,10 +18,14 @@ export const CANCEL_BLOCKER = {
   WAYBILL_NOT_VOIDABLE: 'WAYBILL_NOT_VOIDABLE',
   INSPECTED_QTY: 'INSPECTED_QTY',
   UNSETTLED_CUSTODY: 'UNSETTLED_CUSTODY',
+  /** 시작된 배치의 활성 작업 항목 — 배치에서 빠질 때 기존 신호로 재개된다 */
+  STARTED_BATCH: 'STARTED_BATCH',
+  /** 대기 상자가 아니다 — 재개가 `CANCELLATION_SOURCE_STATE_CHANGED` 로 던진다 */
+  SOURCE_STATE_CHANGED: 'SOURCE_STATE_CHANGED',
 } as const;
 
-/** 읽기 API 가 `started_batch` 를 막힘 목록에 적을 때 쓰는 코드. */
-export const STARTED_BATCH_BLOCKER = 'STARTED_BATCH';
+/** 막힘 코드 전부 — 준비도의 코드와 시작 전 배치 빼기 판정(`unstartedExitBlockerOf`)의 코드. */
+export type CancelBlockerCode = (typeof CANCEL_BLOCKER)[keyof typeof CANCEL_BLOCKER] | UnstartedExitBlockerCode;
 
 /**
  * 상자 하나의 취소 준비도 — 즉시 취소(`cancelOutstanding`)와 대기 재개(`resumePendingCancellation`)가 같은 판정을 쓴다.
@@ -28,8 +38,8 @@ export const STARTED_BATCH_BLOCKER = 'STARTED_BATCH';
 export type CancelReadiness =
   | { kind: 'ready'; unstartedWorkItem: WorkItemRow | null; voidWaybill: boolean }
   | { kind: 'started_batch'; workItem: WorkItemRow; batchId: string }
-  | { kind: 'blocked'; codes: string[] }
-  | { kind: 'unexcludable'; blocker: { code: string; message: string } };
+  | { kind: 'blocked'; codes: CancelBlockerCode[] }
+  | { kind: 'unexcludable'; blocker: UnstartedExitBlocker };
 
 export type CancelReadinessInput = {
   aggregate: ShipmentAggregate;
@@ -40,11 +50,11 @@ export type CancelReadinessInput = {
 };
 
 /** 판정을 «막힘 목록» 하나로 접는다 — 읽기 API 와 지문이 쓴다. `ready` 면 빈 배열. */
-export function cancelBlockers(readiness: CancelReadiness): string[] {
+export function cancelBlockers(readiness: CancelReadiness): CancelBlockerCode[] {
   if (readiness.kind === 'ready') return [];
-  if (readiness.kind === 'started_batch') return [STARTED_BATCH_BLOCKER];
+  if (readiness.kind === 'started_batch') return [CANCEL_BLOCKER.STARTED_BATCH];
   if (readiness.kind === 'unexcludable') return [readiness.blocker.code];
-  return readiness.codes;
+  return [...readiness.codes];
 }
 
 /**
@@ -80,7 +90,7 @@ export async function assessCancelReadiness(
     withdrawals.unstartedExitFacts(aggregate, tx),
     withdrawals.exitWaybill(shipmentId, tx),
   ]);
-  const codes: string[] = [];
+  const codes: CancelBlockerCode[] = [];
   if (workItem?.waitingOperationId && workItem.waitingOperationId !== input.ownOperationId) {
     codes.push(CANCEL_BLOCKER.WORK_ITEM_WAITING_OTHER);
   }
