@@ -73,7 +73,8 @@ describeIfDb('order-progress 갱신 upsert (PostgreSQL integration)', () => {
         .set({ status: 'completed' })
         .where(eq(wmsTables.fulfillmentOrderCreationBacklogs.salesOrderId, o.salesOrderId));
       const fo = await f.seedFo(tx, w, o, { status: 'ready' });
-      await f.seedBox(tx, w, [fo.foItemId], { status: 'draft' });
+      const box = await f.seedBox(tx, w, [fo.foItemId], { status: 'draft' });
+      await f.seedFullReservations(tx, w, { foId: fo.foId, foItemIds: [fo.foItemId], box });
       await manager.refreshScope(only(o.salesOrderId), new Date('2026-10-06T00:05:00.000Z'), tx);
       const row = await read(tx, o.salesOrderId);
       expect(row.stage).toBe('plan');

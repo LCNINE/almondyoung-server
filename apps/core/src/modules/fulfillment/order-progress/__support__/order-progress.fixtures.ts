@@ -108,6 +108,8 @@ export async function seedBox(
     openedAt?: Date;
     plannedAt?: Date;
     shippedAt?: Date;
+    /** 라인별 수량(foItemIds 와 같은 순서). 안 주면 라인마다 1 */
+    qty?: number[];
   },
 ): Promise<{ shipmentId: string; lineIds: string[] }> {
   const [s] = await tx
@@ -122,10 +124,10 @@ export async function seedBox(
     })
     .returning();
   const lineIds: string[] = [];
-  for (const fulfillmentOrderItemId of foItemIds) {
+  for (const [i, fulfillmentOrderItemId] of foItemIds.entries()) {
     const [l] = await tx
       .insert(wmsTables.shipmentLines)
-      .values({ shipmentId: s.id, fulfillmentOrderItemId, skuId: w.skuId, qty: 1 })
+      .values({ shipmentId: s.id, fulfillmentOrderItemId, skuId: w.skuId, qty: args.qty?.[i] ?? 1 })
       .returning();
     lineIds.push(l.id);
   }
@@ -174,7 +176,7 @@ export async function seedWaybill(
 export async function seedConfirmedReservation(
   tx: DbTx,
   w: World,
-  args: { foId: string; foItemId: string; shipmentLineId: string },
+  args: { foId: string; foItemId: string; shipmentLineId: string; quantity?: number },
 ): Promise<void> {
   await tx.insert(wmsTables.stockReservations).values({
     targetType: 'SHIPMENT_LINE',
@@ -183,9 +185,25 @@ export async function seedConfirmedReservation(
     shipmentLineId: args.shipmentLineId,
     skuId: w.skuId,
     warehouseId: w.warehouseId,
-    quantity: 1,
+    quantity: args.quantity ?? 1,
     status: 'confirmed',
   });
+}
+
+/** 상자의 모든 라인을 라인 수량만큼 확정 예약한다 — FO 가 ready/processing 인 실제 상자는 예약이 다 걸려 있다 */
+export async function seedFullReservations(
+  tx: DbTx,
+  w: World,
+  args: { foId: string; foItemIds: string[]; box: { lineIds: string[] }; qty?: number[] },
+): Promise<void> {
+  for (const [i, shipmentLineId] of args.box.lineIds.entries()) {
+    await seedConfirmedReservation(tx, w, {
+      foId: args.foId,
+      foItemId: args.foItemIds[i],
+      shipmentLineId,
+      quantity: args.qty?.[i] ?? 1,
+    });
+  }
 }
 
 export async function seedCancellation(tx: DbTx, salesOrderId: string, occurredAt: Date): Promise<void> {

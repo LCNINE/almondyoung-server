@@ -1,4 +1,5 @@
 import * as postgres from 'postgres';
+import { eq } from 'drizzle-orm';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { makeDbService } from '../services/__support__';
@@ -89,7 +90,14 @@ describeIfDb('order-progress 판정 (PostgreSQL integration)', () => {
       const o = await f.seedOrder(tx);
       await f.seedBacklog(tx, o.salesOrderId, 'completed');
       const fo = await f.seedFo(tx, w, o, { status: 'partially_reserved', createdAt: at });
-      await f.seedBox(tx, w, [fo.foItemId], { status: 'draft' });
+      // 라인 2개 중 1개만 예약됐다 — 부분 예약은 FO 상태가 아니라 상자의 예약으로 정해진다
+      const box = await f.seedBox(tx, w, [fo.foItemId], { status: 'draft', qty: [2] });
+      await f.seedConfirmedReservation(tx, w, {
+        foId: fo.foId,
+        foItemId: fo.foItemId,
+        shipmentLineId: box.lineIds[0],
+        quantity: 1,
+      });
       return o.salesOrderId;
     });
     expect(r).toMatchObject({ stage: 'reserve', state: 'partially_reserved', estimatedEnteredAt: at.toISOString() });
@@ -101,10 +109,158 @@ describeIfDb('order-progress 판정 (PostgreSQL integration)', () => {
       const o = await f.seedOrder(tx);
       await f.seedBacklog(tx, o.salesOrderId, 'completed');
       const fo = await f.seedFo(tx, w, o, { status: 'ready' });
-      await f.seedBox(tx, w, [fo.foItemId], { status: 'draft', openedAt: at });
+      const box = await f.seedBox(tx, w, [fo.foItemId], { status: 'draft', openedAt: at });
+      await f.seedFullReservations(tx, w, { foId: fo.foId, foItemIds: [fo.foItemId], box });
       return o.salesOrderId;
     });
     expect(r).toMatchObject({ stage: 'plan', state: 'awaiting_plan', estimatedEnteredAt: at.toISOString() });
+  });
+
+  /** 같은 FO 에 품목을 하나 더 단다(판매주문당 FO 는 하나라, 한 FO 의 상자 둘은 품목 둘로 나눈다) */
+  async function addFoItem(tx: DbTx, w: f.World, o: { salesOrderId: string; lineId: string }, foId: string) {
+    const [item] = await tx
+      .insert(wmsTables.fulfillmentOrderItems)
+      .values({
+        fulfillmentOrderId: foId,
+        salesOrderId: o.salesOrderId,
+        salesOrderLineId: o.lineId,
+        skuId: w.skuId,
+        qty: 1,
+      })
+      .returning();
+    return item.id;
+  }
+
+  /** 시나리오를 만들고 주문 판정과 상자별 판정을 함께 본다 */
+  async function judgeOrderAndBoxes(
+    build: (tx: DbTx, w: f.World) => Promise<{ orderId: string; boxIds: string[] }>,
+  ): Promise<{ order: JudgedRow; boxes: Map<string, Awaited<ReturnType<OrderProgressReader['judgeShipment']>>> }> {
+    let order: JudgedRow | undefined;
+    const boxes = new Map<string, Awaited<ReturnType<OrderProgressReader['judgeShipment']>>>();
+    await expect(
+      db.transaction(async (raw) => {
+        const tx = raw as unknown as DbTx;
+        const w = await f.seedWorld(tx);
+        const { orderId, boxIds } = await build(tx, w);
+        [order] = await reader.judge([orderId], now, tx);
+        for (const id of boxIds) boxes.set(id, await reader.judgeShipment(id, tx));
+        throw new Rollback();
+      }),
+    ).rejects.toBeInstanceOf(Rollback);
+    return { order: order!, boxes };
+  }
+
+  // 판정은 FO 상태가 아니라 «상자 라인 수량 vs 그 라인의 확정 예약 합»으로 한다(#1016 15번)
+  it('한 FO 의 두 상자 — 다 예약된 상자는 «계획 대기», 미예약 상자는 «예약», 주문 대표는 «예약»', async () => {
+    const { order, boxes } = await judgeOrderAndBoxes(async (tx, w) => {
+      const o = await f.seedOrder(tx);
+      await f.seedBacklog(tx, o.salesOrderId, 'completed');
+      const fo = await f.seedFo(tx, w, o, { status: 'partially_reserved' });
+      const second = await addFoItem(tx, w, o, fo.foId);
+      const boxA = await f.seedBox(tx, w, [fo.foItemId], { status: 'draft' });
+      const boxB = await f.seedBox(tx, w, [second], { status: 'draft' });
+      await f.seedConfirmedReservation(tx, w, {
+        foId: fo.foId,
+        foItemId: fo.foItemId,
+        shipmentLineId: boxA.lineIds[0],
+      });
+      return { orderId: o.salesOrderId, boxIds: [boxA.shipmentId, boxB.shipmentId] };
+    });
+    const [boxA, boxB] = [...boxes.keys()];
+    expect(order).toMatchObject({ stage: 'reserve', state: 'created' });
+    expect(boxes.get(boxA)).toMatchObject({ stage: 'plan', state: 'awaiting_plan' });
+    expect(boxes.get(boxB)).toMatchObject({ stage: 'reserve', state: 'created' });
+  });
+
+  it('일부 예약 라인(qty 3, 예약 2)은 «부분 예약»', async () => {
+    const r = await one(async (tx, w) => {
+      const o = await f.seedOrder(tx);
+      await f.seedBacklog(tx, o.salesOrderId, 'completed');
+      const fo = await f.seedFo(tx, w, o, { status: 'partially_reserved' });
+      const box = await f.seedBox(tx, w, [fo.foItemId], { status: 'draft', qty: [3] });
+      await f.seedConfirmedReservation(tx, w, {
+        foId: fo.foId,
+        foItemId: fo.foItemId,
+        shipmentLineId: box.lineIds[0],
+        quantity: 2,
+      });
+      return o.salesOrderId;
+    });
+    expect(r).toMatchObject({ stage: 'reserve', state: 'partially_reserved' });
+  });
+
+  it('라인 수량만큼 예약되면(qty 3, 예약 3) «계획 대기»', async () => {
+    const r = await one(async (tx, w) => {
+      const o = await f.seedOrder(tx);
+      const fo = await f.seedFo(tx, w, o, { status: 'created' });
+      const box = await f.seedBox(tx, w, [fo.foItemId], { status: 'draft', qty: [3] });
+      await f.seedConfirmedReservation(tx, w, {
+        foId: fo.foId,
+        foItemId: fo.foItemId,
+        shipmentLineId: box.lineIds[0],
+        quantity: 3,
+      });
+      return o.salesOrderId;
+    });
+    expect(r).toMatchObject({ stage: 'plan', state: 'awaiting_plan' });
+  });
+
+  it('FO 가 processing 이어도 draft 상자가 덜 예약이면 «예약»', async () => {
+    const r = await one(async (tx, w) => {
+      const o = await f.seedOrder(tx);
+      await f.seedBacklog(tx, o.salesOrderId, 'completed');
+      const fo = await f.seedFo(tx, w, o, { status: 'processing' });
+      await f.seedBox(tx, w, [fo.foItemId], { status: 'draft' });
+      return o.salesOrderId;
+    });
+    expect(r).toMatchObject({ stage: 'reserve', state: 'created' });
+  });
+
+  it('취소·해제된 예약은 세지 않는다 — 확정(confirmed)만 센다', async () => {
+    const r = await one(async (tx, w) => {
+      const o = await f.seedOrder(tx);
+      const fo = await f.seedFo(tx, w, o, { status: 'ready' });
+      const box = await f.seedBox(tx, w, [fo.foItemId], { status: 'draft' });
+      await f.seedConfirmedReservation(tx, w, { foId: fo.foId, foItemId: fo.foItemId, shipmentLineId: box.lineIds[0] });
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ status: 'released' })
+        .where(eq(wmsTables.stockReservations.shipmentLineId, box.lineIds[0]));
+      return o.salesOrderId;
+    });
+    expect(r).toMatchObject({ stage: 'reserve', state: 'created' });
+  });
+
+  it('합포장 상자 — 한 주문 라인만 예약돼도 상자 전체가 덜 예약이면 두 주문 모두 «예약»(D13)', async () => {
+    const rows = await judgeIn(async (tx, w) => {
+      const a = await f.seedOrder(tx);
+      const fa = await f.seedFo(tx, w, a, { status: 'ready' });
+      const b = await f.seedOrder(tx);
+      const fb = await f.seedFo(tx, w, b, { status: 'ready' });
+      const box = await f.seedBox(tx, w, [fa.foItemId, fb.foItemId], { status: 'draft' });
+      await f.seedConfirmedReservation(tx, w, { foId: fa.foId, foItemId: fa.foItemId, shipmentLineId: box.lineIds[0] });
+      return [a.salesOrderId, b.salesOrderId];
+    });
+    expect(rows.map((r) => [r.stage, r.state])).toEqual([
+      ['reserve', 'partially_reserved'],
+      ['reserve', 'partially_reserved'],
+    ]);
+  });
+
+  it('취소 대기(CANCEL_REPLAN_PENDING) 상자와 직배 단위의 판정은 그대로다', async () => {
+    const ids: string[] = [];
+    const rows = await judgeIn(async (tx, w) => {
+      const a = await f.seedOrder(tx);
+      const fa = await f.seedFo(tx, w, a, { status: 'created' });
+      await f.seedBox(tx, w, [fa.foItemId], { status: 'draft', recoveryCode: 'CANCEL_REPLAN_PENDING' });
+      const b = await f.seedOrder(tx);
+      await f.seedFo(tx, w, b, { dropShip: 'pending' });
+      ids.push(a.salesOrderId, b.salesOrderId);
+      return ids;
+    });
+    const byId = new Map(rows.map((r) => [r.salesOrderId, r]));
+    expect(byId.get(ids[0])).toMatchObject({ stage: 'cancel', state: 'CANCEL_REPLAN_PENDING' });
+    expect(byId.get(ids[1])).toMatchObject({ stage: 'dispatch', state: 'drop_ship_pending' });
   });
 
   it('planned + 송장 없음 → waybill/none / registered → pick/awaiting_batch', async () => {
@@ -169,7 +325,8 @@ describeIfDb('order-progress 판정 (PostgreSQL integration)', () => {
       const o = await f.seedOrder(tx);
       const fo = await f.seedFo(tx, w, o, { status: 'ready' });
       await f.seedBox(tx, w, [fo.foItemId], { status: 'shipped', shippedAt: new Date('2026-10-05T00:00:00.000Z') });
-      await f.seedBox(tx, w, [fo.foItemId], { status: 'draft' });
+      const draft = await f.seedBox(tx, w, [fo.foItemId], { status: 'draft' });
+      await f.seedFullReservations(tx, w, { foId: fo.foId, foItemIds: [fo.foItemId], box: draft });
       return o.salesOrderId;
     });
     expect(r).toMatchObject({ stage: 'plan' });
@@ -441,7 +598,9 @@ describeIfDb('order-progress 판정 (PostgreSQL integration)', () => {
       const fa = await f.seedFo(tx, w, a, { status: 'ready' });
       const b = await f.seedOrder(tx);
       const fb = await f.seedFo(tx, w, b, { status: 'ready' });
-      await f.seedBox(tx, w, [fa.foItemId, fb.foItemId], { status: 'draft' });
+      const box = await f.seedBox(tx, w, [fa.foItemId, fb.foItemId], { status: 'draft' });
+      await f.seedConfirmedReservation(tx, w, { foId: fa.foId, foItemId: fa.foItemId, shipmentLineId: box.lineIds[0] });
+      await f.seedConfirmedReservation(tx, w, { foId: fb.foId, foItemId: fb.foItemId, shipmentLineId: box.lineIds[1] });
       return [a.salesOrderId, b.salesOrderId];
     });
     expect(rows).toHaveLength(2);

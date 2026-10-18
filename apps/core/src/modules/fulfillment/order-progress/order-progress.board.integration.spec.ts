@@ -177,6 +177,16 @@ describeIfDb('정체 보드 요약·목록 (PostgreSQL integration)', () => {
         const foA = await f.seedFo(tx, w, a);
         const foB = await f.seedFo(tx, w, b);
         const shared = await f.seedBox(tx, w, [foA.foItemId, foB.foItemId], { status: 'draft' });
+        await f.seedConfirmedReservation(tx, w, {
+          foId: foA.foId,
+          foItemId: foA.foItemId,
+          shipmentLineId: shared.lineIds[0],
+        });
+        await f.seedConfirmedReservation(tx, w, {
+          foId: foB.foId,
+          foItemId: foB.foItemId,
+          shipmentLineId: shared.lineIds[1],
+        });
         const ids = [a.salesOrderId, b.salesOrderId];
         await manager.refreshScope(
           sql`SELECT unnest(ARRAY[${sql.join(
