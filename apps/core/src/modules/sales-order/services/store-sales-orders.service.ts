@@ -50,6 +50,7 @@ import {
   PhaseFoRow,
   FulfillmentPhaseInput,
 } from './fulfillment-phase';
+import { selfCancelBlock, SelfCancelBlock } from './self-cancel-block';
 
 type SalesOrderRow = typeof inventoryTables.salesOrders.$inferSelect;
 
@@ -693,13 +694,11 @@ export class StoreSalesOrdersService {
     const phaseInput = await this.loadFulfillmentPhaseInput(so.id, foRows);
     const { phase: fulfillmentStatus, progress } = deriveFulfillmentPhase(phaseInput);
     const shipmentProgress: ShipmentProgressDto | undefined = progress.total > 0 ? progress : undefined;
-    const hasShippedEvidence = hasShippedEvidenceFrom(phaseInput);
     const isChannelOrder = so.salesChannel !== 'medusa';
     // 채널 주문의 정산 상태가 환불 배지를 정한다(#1016 36번 재설계 판정 5) — 정산이 할 말이 없으면 null 이고 아래 도출을 쓴다
     const settlementRefund = so.salesChannel === 'medusa' ? await this.channelSettlementRefundStatus(so) : null;
 
     const availableActions: StoreOrderAction[] = [];
-    let cancelUnavailableReason: StoreCancelUnavailableReason | undefined;
     let refundStatus: StoreRefundStatus = overrideRefundStatus ?? 'none';
     let claimStatus: StoreClaimStatus = 'none';
     let refundSummary: RefundSummaryDto | undefined;
@@ -814,15 +813,13 @@ export class StoreSalesOrdersService {
       });
     }
 
+    const cancelUnavailableReason =
+      so.status === 'timeout' ? undefined : await this.cancelUnavailableReasonOf(so, foRows, phaseInput);
     if (so.status === 'timeout') {
       // 아무 액션 없음
-    } else if (so.status === 'cancelled') {
-      availableActions.push('receipt');
-      cancelUnavailableReason = 'already_cancelled';
-    } else if (hasShippedEvidence) {
+    } else if (cancelUnavailableReason === 'already_shipped') {
       availableActions.push('track');
       availableActions.push('receipt');
-      cancelUnavailableReason = 'already_shipped';
       // return/exchange: 배송완료 상태 + 진행 중인 claim 없을 때만 허용
       if (isReturnEligible(phaseInput)) {
         const [activeReturn, activeExchange] = await Promise.all([
@@ -856,21 +853,8 @@ export class StoreSalesOrdersService {
           availableActions.push('exchange');
         }
       }
-    } else if (isChannelOrder) {
+    } else if (cancelUnavailableReason) {
       availableActions.push('receipt');
-      cancelUnavailableReason = 'channel_order';
-    } else if (
-      isPickingStarted(foRows) ||
-      (phaseInput.printStatuses?.includes('cancel_refused') && !(await this.hasNonPrintLine(so.id)))
-    ) {
-      // 피킹 시작 이후·와우프레스가 인쇄 취소를 거절했고 인쇄 말고 취소할 상품이 없으면 고객 셀프 취소 불가 — 고객센터 문의 안내.
-      // 다른 상품이 있으면 취소를 열어 두고, 요청이 PRINT_PARTIAL_CANCEL_AVAILABLE 로 인쇄 제외 취소를 묻는다
-      availableActions.push('receipt');
-      cancelUnavailableReason = 'already_processing';
-    } else if (await this.hasExercisedDigitalAsset(so.id)) {
-      // 이미 다운로드한 디지털 상품은 회수가 불가 — 셀프 취소 대신 고객센터 문의
-      availableActions.push('receipt');
-      cancelUnavailableReason = 'digital_downloaded';
     } else {
       availableActions.push('cancel');
       availableActions.push('receipt');
@@ -892,6 +876,39 @@ export class StoreSalesOrdersService {
       paymentStatus: so.walletIntentId ? 'paid' : undefined,
       channelInfo: isChannelOrder ? { channel: so.salesChannel, ...CHANNEL_CANCEL_URLS[so.salesChannel] } : undefined,
     };
+  }
+
+  private async cancelUnavailableReasonOf(
+    so: SalesOrderRow,
+    foRows: PhaseFoRow[],
+    phaseInput: FulfillmentPhaseInput,
+  ): Promise<StoreCancelUnavailableReason | undefined> {
+    const block = await this.selfCancelBlockOf(so, foRows, phaseInput);
+    if (block) return block.reason;
+    // 와우프레스가 인쇄 취소를 거절했고 인쇄 말고 취소할 상품이 없으면 버튼을 숨긴다. 다른 상품이 있으면 열어 두고 요청이
+    // PRINT_PARTIAL_CANCEL_AVAILABLE 로 인쇄 제외 취소를 묻는다 — 서버는 판정이 아니라 인쇄 취소 단계에서 거절한다
+    if (phaseInput.printStatuses?.includes('cancel_refused') && !(await this.hasNonPrintLine(so.id))) {
+      return 'already_processing';
+    }
+    return undefined;
+  }
+
+  private selfCancelBlockOf(
+    so: SalesOrderRow,
+    foRows: PhaseFoRow[],
+    phaseInput: FulfillmentPhaseInput,
+  ): Promise<SelfCancelBlock | null> {
+    return selfCancelBlock(
+      {
+        orderStatus: so.status,
+        salesChannel: so.salesChannel,
+        hasShippedEvidence: hasShippedEvidenceFrom(phaseInput),
+        pickingStarted: isPickingStarted(foRows),
+        // 상자가 복구 중이면 예약 재계산이 FO 를 recovery_required 로 투영해 loadFulfillmentPhaseInput 이 상자 상태를 읽어 온다
+        hasRecoveryBox: phaseInput.activeShipmentStatuses.includes('recovery_required'),
+      },
+      () => this.hasExercisedDigitalAsset(so.id),
+    );
   }
 
   private async channelSettlementRefundStatus(so: SalesOrderRow): Promise<StoreRefundStatus | null> {
@@ -925,25 +942,10 @@ export class StoreSalesOrdersService {
       const replay = await this.cancelRequests.findBySourceKey(so.id, fulfillmentCommandContext.idempotencyKey);
       if (replay) return this.buildActionsView(await this.findSoOrThrow({ id: so.id }));
     }
-    if (so.status === 'cancelled') throw new BadRequestException('이미 취소된 주문입니다.');
     if (so.status === 'timeout') throw new BadRequestException('타임아웃된 주문은 취소할 수 없습니다.');
-    if (so.salesChannel !== 'medusa') {
-      throw new BadRequestException(`${so.salesChannel} 채널 주문은 해당 채널에서 직접 취소해 주세요.`);
-    }
-
     const foRows = await this.loadFoRows(so.id);
-    const phaseInput = await this.loadFulfillmentPhaseInput(so.id, foRows);
-    if (hasShippedEvidenceFrom(phaseInput)) {
-      throw new BadRequestException('이미 출고된 주문은 취소할 수 없습니다. 고객센터로 문의해 주세요.');
-    }
-    if (isPickingStarted(foRows)) {
-      throw new BadRequestException('피킹이 시작된 주문은 직접 취소할 수 없습니다. 고객센터로 문의해 주세요.');
-    }
-    if (await this.hasExercisedDigitalAsset(so.id)) {
-      throw new BadRequestException(
-        '이미 다운로드한 디지털 상품이 포함된 주문입니다. 직접 취소가 불가하니 고객센터로 문의해 주세요.',
-      );
-    }
+    const block = await this.selfCancelBlockOf(so, foRows, await this.loadFulfillmentPhaseInput(so.id, foRows));
+    if (block) throw new BadRequestException(block.message);
 
     if (!fulfillmentCommandContext) throw new BadRequestException('Idempotency-Key header is required');
     // 고객이 인쇄 상품을 빼고 나머지만 취소하겠다고 동의한 두 번째 요청이다

@@ -21,8 +21,8 @@ export class ResumePendingConsolidationRule implements ShipmentReconcileRule {
   readonly name = 'resume-pending-consolidation';
   readonly row = 25;
   readonly subject = 'shipment' as const;
-  // 관찰로 배포해 거짓 양성 0건을 확인한 뒤 실행으로 바꾼다(스펙 D5·§7)
-  readonly mode: ReconcileMode = 'observe';
+  // 컷오버 예외: core 출고가 라이브이기 전엔 이 상태가 생기지 않아 관찰로는 아무것도 증명되지 않는다(스펙 §4.3)
+  readonly mode: ReconcileMode = 'act';
   readonly situation: ShipmentReconcileSituation = { stage: 'pick', states: ['CONSOLIDATION_PENDING'] };
 
   constructor(
