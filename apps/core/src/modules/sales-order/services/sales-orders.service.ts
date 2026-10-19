@@ -72,6 +72,7 @@ import { ProductSellableQuantityService } from '../../inventory/product-sellable
 import { ModuleRef } from '@nestjs/core';
 import { ShipmentPlanningService } from '../../fulfillment/services/shipment-planning.service';
 import { canonicalFulfillmentRequestHash } from '../../fulfillment/services/fulfillment-command.service';
+import type { CancellationEffect } from '../cancellation-record/cancellation-lines';
 
 type SalesOrderLineInsert = InferInsertModel<typeof wmsTables.salesOrderLines>;
 type BusinessLinkInsert = InferInsertModel<typeof wmsTables.businessLinks>;
@@ -112,14 +113,6 @@ type CancelSalesOrderOptions = CancelSalesOrderDto & {
 type PartialCancellationLine = {
   salesOrderLineId: string;
   quantity: number;
-};
-type CancellationEffect = {
-  type: string;
-  targetType?: string;
-  targetId?: string;
-  targetExternalRef?: string;
-  count?: number;
-  metadata?: Record<string, unknown>;
 };
 type PostShipmentHandoffType = 'return' | 'recovery' | 'refund' | 'compensation';
 type PostShipmentHandoffOptions = NonNullable<CancelSalesOrderOptions['postShipmentHandoff']>;
