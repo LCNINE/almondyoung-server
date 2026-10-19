@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -282,6 +282,7 @@ type WorksiteFields = Pick<
 >;
 
 function WorksiteForm({ site }: { site?: Worksite }) {
+  const formId = useId();
   const queryClient = useQueryClient();
   const [active, setActive] = useState(site?.active ?? true);
   const [fields, setFields] = useState({
@@ -352,7 +353,7 @@ function WorksiteForm({ site }: { site?: Worksite }) {
 
   return (
     <form
-      className="space-y-4 rounded-2xl border bg-white p-6"
+      className="space-y-6 rounded-2xl border bg-white p-5 sm:p-6"
       onSubmit={(event) => {
         event.preventDefault();
 
@@ -403,58 +404,71 @@ function WorksiteForm({ site }: { site?: Worksite }) {
           </p>
         )}
       </div>
-      {(
-        [
-          ['name', '근무지 이름', 'text'],
-          ['latitude', '위도', 'number'],
-          ['longitude', '경도', 'number'],
-          ['radiusMeters', '허용 반경(m)', 'number'],
-          ['accuracyMeters', '허용 위치 오차(m)', 'number'],
-        ] as const
-      ).map(([name, label, type]) => (
-        <label key={name} className="block space-y-2 text-xs">
-          {label}
-          <Input
-            name={name}
-            type={type}
-            className="h-11 min-w-0"
-            value={fields[name]}
-            onChange={(event) =>
-              setFields((current) => ({
-                ...current,
-                [name]: event.target.value,
-              }))
-            }
-            step={
-              name === 'latitude' || name === 'longitude' ? 'any' : undefined
-            }
-            min={
-              name === 'latitude'
-                ? -90
-                : name === 'longitude'
-                  ? -180
-                  : type === 'number'
-                    ? name === 'radiusMeters'
-                      ? 10
-                      : 1
-                    : undefined
-            }
-            max={
-              name === 'latitude'
-                ? 90
-                : name === 'longitude'
-                  ? 180
-                  : name === 'radiusMeters'
-                    ? 1000
-                    : name === 'accuracyMeters'
-                      ? 500
+      <div className="grid gap-5">
+        {(
+          [
+            ['name', '근무지 이름', 'text'],
+            ['latitude', '위도', 'number'],
+            ['longitude', '경도', 'number'],
+            ['radiusMeters', '허용 반경(m)', 'number'],
+            ['accuracyMeters', '허용 위치 오차(m)', 'number'],
+          ] as const
+        ).map(([name, label, type]) => (
+          <div key={name} className="relative min-w-0">
+            <Input
+              id={`${formId}-${name}`}
+              name={name}
+              type={type}
+              placeholder=" "
+              className="peer h-16 min-w-0 rounded-lg px-4 pt-7 pb-2 text-base md:text-base"
+              value={fields[name]}
+              onChange={(event) =>
+                setFields((current) => ({
+                  ...current,
+                  [name]: event.target.value,
+                }))
+              }
+              step={
+                name === 'latitude' || name === 'longitude' ? 'any' : undefined
+              }
+              min={
+                name === 'latitude'
+                  ? -90
+                  : name === 'longitude'
+                    ? -180
+                    : type === 'number'
+                      ? name === 'radiusMeters'
+                        ? 10
+                        : 1
                       : undefined
-            }
-            required
-            disabled={mutation.isPending}
-          />
-        </label>
-      ))}
+              }
+              max={
+                name === 'latitude'
+                  ? 90
+                  : name === 'longitude'
+                    ? 180
+                    : name === 'radiusMeters'
+                      ? 1000
+                      : name === 'accuracyMeters'
+                        ? 500
+                        : undefined
+              }
+              required
+              disabled={mutation.isPending}
+            />
+            <label
+              htmlFor={`${formId}-${name}`}
+              className={`pointer-events-none absolute left-4 text-slate-500 transition-all peer-focus:top-2 peer-focus:translate-y-0 peer-focus:text-xs peer-focus:text-indigo-600 peer-disabled:opacity-50 motion-reduce:transition-none ${
+                fields[name] !== ''
+                  ? 'top-2 text-xs'
+                  : 'top-1/2 -translate-y-1/2 text-base'
+              }`}
+            >
+              {label}
+            </label>
+          </div>
+        ))}
+      </div>
       {site && (
         <label className="flex items-center justify-between text-sm">
           근무지 사용
