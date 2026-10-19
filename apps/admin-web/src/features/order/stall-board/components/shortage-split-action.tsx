@@ -22,6 +22,7 @@ import {
   splitUnreservedErrorText,
 } from '@/lib/api/domains/orders/order-progress.shape';
 import { parseServerError } from '@/lib/api/server-error';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { useSplitUnreservedShipment } from '@/lib/services/orders/mutations';
 
 /**
@@ -31,6 +32,7 @@ import { useSplitUnreservedShipment } from '@/lib/services/orders/mutations';
 export function ShortageSplitAction(props: { shortage: ReserveShortageView }) {
   const { shortage } = props;
   const split = useSplitUnreservedShipment();
+  const canSplit = usePermissionCheck().canRun(useSplitUnreservedShipment);
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
   // 다이얼로그를 열 때 한 번 정한다 — 응답을 못 받고 다시 눌러도 같은 키라 서버가 한 번만 나눈다
@@ -48,6 +50,9 @@ export function ShortageSplitAction(props: { shortage: ReserveShortageView }) {
       </span>
     );
   }
+
+  // 나누기 권한이 없으면 버튼을 그리지 않는다(상태 문구는 위에서 이미 보였다)
+  if (!canSplit) return null;
 
   const submit = () => {
     if (!reason.trim()) {

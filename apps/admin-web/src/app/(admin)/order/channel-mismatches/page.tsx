@@ -6,7 +6,7 @@ import ChannelMismatchesTemplate from '@/features/order/channel-mismatches/templ
 
 export default function ChannelMismatchesPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/order/channel-mismatches">
       <ChannelMismatchesTemplate />
     </RouteGuard>
   );

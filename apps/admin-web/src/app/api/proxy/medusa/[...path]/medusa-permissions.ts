@@ -20,6 +20,7 @@ export const MEDUSA_PERMISSIONS: readonly Rule[] = [
   rule('DELETE', 'admin/customers/:id/addresses/:addressId', 'customer.profile.write'),
   rule('GET', 'admin/orders', 'order.order.read'),
   rule('GET', 'admin/orders/:id', 'order.order.read'),
+  rule('GET', 'admin/payment-sessions/:id/order', 'payment.payment.read'),
   rule('GET', 'admin/products', 'catalog.product.read', 'marketing.promotion.read'),
   rule('GET', 'admin/collections', 'catalog.product.read', 'marketing.promotion.read'),
   rule('GET', 'admin/product-categories', 'catalog.product.read', 'marketing.promotion.read'),

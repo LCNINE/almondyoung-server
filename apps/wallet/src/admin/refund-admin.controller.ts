@@ -58,6 +58,7 @@ export class RefundAdminController {
     }
   }
 
+  @RequirePermission('payment.refund.execute')
   @Patch(':id/kind')
   @ApiOperation({
     summary:

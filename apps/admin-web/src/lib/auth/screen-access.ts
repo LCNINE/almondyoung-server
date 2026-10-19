@@ -23,6 +23,8 @@ export const SCREEN_ACCESS: Readonly<Record<string, ScreenAccess>> = {
   '/account/change-password': SIGNED_IN,
   '/company/my-account': SIGNED_IN,
   '/demo/manual': SIGNED_IN,
+  // 개발 서버 전용 시안 미리보기 — 배포 빌드에서는 페이지가 404 를 낸다
+  '/restock-preview': OPEN,
 
   // 회사/조직
   '/users': any('iam.role.read'),
@@ -37,6 +39,8 @@ export const SCREEN_ACCESS: Readonly<Record<string, ScreenAccess>> = {
 
   // 주문/출고
   '/order/matching': any('order.order.read'),
+  '/order/print-orders': any('order.order.read'),
+  '/order/channel-mismatches': any('channel.account.read'),
   '/order/manual-single': any('order.order.write'),
   '/order/manual-bulk': any('order.order.write'),
   '/order/fulfillment-manual': any('fulfillment.order.write'),
@@ -136,6 +140,7 @@ export const SCREEN_ACCESS: Readonly<Record<string, ScreenAccess>> = {
   // 문서·운영
   '/archive': any('archive.page.read'),
   '/events/trace': any('system.operations.read'),
+  '/events/failures': any('system.operations.read'),
   '/demo': any('system.operations.read'),
 };
 

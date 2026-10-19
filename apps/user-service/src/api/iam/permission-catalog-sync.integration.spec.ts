@@ -47,7 +47,7 @@ describeIfDb('permission catalog sync against a real database', () => {
   beforeEach(cleanup);
   afterAll(async () => {
     await cleanup();
-    await dbService.onModuleDestroy();
+    await dbService.onApplicationShutdown();
   });
 
   it('grants once even when two instances boot together', async () => {

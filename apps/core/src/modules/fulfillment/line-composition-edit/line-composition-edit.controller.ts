@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, UnauthorizedException } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { RequirePermission, User } from '@app/authorization';
 import {
   ApplyToExistingLinesResponseDto,
   ExistingLinesImpactResponseDto,
@@ -23,6 +23,7 @@ function actorOf(user: AuthenticatedUser | undefined): { id: string } {
 export class SalesOrderLineCompositionController {
   constructor(private readonly edits: LineCompositionEditService) {}
 
+  @RequirePermission('order.matching.write')
   @Put(':id/lines/:lineId/composition')
   @ApiOperation({
     summary:
@@ -45,6 +46,7 @@ export class SalesOrderLineCompositionController {
 export class MatchingExistingLinesController {
   constructor(private readonly edits: LineCompositionEditService) {}
 
+  @RequirePermission('order.order.read')
   @Get('variants/:variantId/existing-lines-impact')
   @ApiOperation({ summary: '상품매칭 변경이 이미 굳힌 출고 라인에 미칠 영향(미리보기)' })
   @ApiOkResponse({ type: ExistingLinesImpactResponseDto })
@@ -52,6 +54,7 @@ export class MatchingExistingLinesController {
     return this.edits.previewExistingLines(variantId);
   }
 
+  @RequirePermission('order.matching.write')
   @Post('variants/:variantId/apply-to-existing-lines')
   @ApiOperation({ summary: '상품매칭을 기존 출고(작성 중 박스)에도 적용 — 개별 지정·작업 중 박스는 건너뛴다' })
   @ApiOkResponse({ type: ApplyToExistingLinesResponseDto })

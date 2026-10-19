@@ -32,6 +32,7 @@ import { ShipmentTab } from '../../detail/shipment-tab';
 import { DirectShipTab } from '../../detail/direct-ship-tab';
 import { HistoryTab } from '../../detail/history-tab';
 import { LineCompositions } from '../../detail/line-compositions';
+import { useAssignLineComposition } from '@/lib/services/orders/line-composition';
 import { foItemStatusLabel } from '../../../line-composition/line-composition-view';
 
 // 출고/취소가 불가능한 종료 상태
@@ -203,7 +204,7 @@ export function FulfillmentDetail({ id }: { id: string }) {
         )}
       </Container>
 
-      <LineCompositions fo={fo} canEdit={canOperate && !isTerminal} />
+      <LineCompositions fo={fo} canEdit={canRun(useAssignLineComposition) && !isTerminal} />
 
       {/* FOI 라인 */}
       <Container>

@@ -351,3 +351,4 @@ export const useChangeRefundKind = () => {
     },
   });
 };
+useChangeRefundKind.permission = ['payment.refund.execute'] as const satisfies PermissionRequirement;

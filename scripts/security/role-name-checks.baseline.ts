@@ -21,6 +21,7 @@ export type RoleLiteralKind =
 export const ROLE_LITERAL_BASELINE: Readonly<Record<string, { count: number; kind: RoleLiteralKind }>> = {
   // 관리자 화면: 역할 필터 옵션·표시 정렬·상품 출처(master/version)·리뷰 출처·URL 세그먼트 — 판정은 없다.
   'apps/admin-web/src/app/api/proxy/medusa/[...path]/route.ts': { count: 1, kind: 'data-value' },
+  'apps/admin-web/src/app/api/proxy/ugc/[...path]/route.ts': { count: 1, kind: 'data-value' },
   'apps/admin-web/src/components/table/table-cells/user/role-cell.tsx': { count: 2, kind: 'data-value' },
   'apps/admin-web/src/features/cs/review/lib/review-tabs.ts': { count: 1, kind: 'data-value' },
   'apps/admin-web/src/features/mall/products-detail/components/draft-completion-checklist/draft-completion-checklist-model.ts': { count: 1, kind: 'data-value' },
@@ -107,6 +108,7 @@ export const ROLE_LITERAL_BASELINE: Readonly<Record<string, { count: number; kin
   'apps/notification/src/dispatcher/handlers/order-event.consumer.ts': { count: 1, kind: 'data-value' },
   'apps/notification/src/provider/dto/update-provider.dto.ts': { count: 1, kind: 'data-value' },
   'apps/notification/src/template/dto/create-template.dto.ts': { count: 1, kind: 'data-value' },
+  'apps/ugc-service/src/almond-template/clients/service-token.ts': { count: 1, kind: 'system-identity' },
   'apps/ugc-service/src/review-permissions/review-permission.service.ts': { count: 2, kind: 'data-value' },
   'apps/ugc-service/src/review-permissions/types.ts': { count: 1, kind: 'data-value' },
   'apps/ugc-service/src/reviews/dto/admin-review-response.dto.ts': { count: 2, kind: 'data-value' },
@@ -135,6 +137,7 @@ export const ROLE_LITERAL_BASELINE: Readonly<Record<string, { count: number; kin
   'apps/user-service/src/api/shop/shop.controller.ts': { count: 4, kind: 'legacy-route-guard' },
   'apps/user-service/src/api/users/users.controller.ts': { count: 3, kind: 'legacy-route-guard' },
   'apps/user-service/src/app.module.ts': { count: 5, kind: 'role-mapping' },
+  'apps/wallet/src/admin/refund-admin.controller.ts': { count: 1, kind: 'data-value' },
   'apps/wallet/src/admin/refund-requests-admin.controller.ts': { count: 2, kind: 'data-value' },
   'apps/wallet/src/wallet.module.ts': { count: 2, kind: 'legacy-route-guard' },
   'libs/authorization/src/guards/admin-realm.guard.ts': { count: 2, kind: 'legacy-library' },

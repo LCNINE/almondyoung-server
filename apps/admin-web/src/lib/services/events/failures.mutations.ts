@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { eventQueryKeys } from './query-keys';
 import { eventFailuresClient, type EventFailureService } from '../../api/domains/events';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 /**
  * 성공·실패와 무관하게(onSettled) 그 서비스의 실패 쿼리를 전부 다시 읽는다.
@@ -20,6 +21,7 @@ export function useRedriveDeadLetter(service: EventFailureService) {
     onSettled: invalidate,
   });
 }
+useRedriveDeadLetter.permission = ['system.operations.write'] as const satisfies PermissionRequirement;
 
 export function useDiscardDeadLetter(service: EventFailureService) {
   const invalidate = useInvalidateFailures(service);
@@ -29,6 +31,7 @@ export function useDiscardDeadLetter(service: EventFailureService) {
     onSettled: invalidate,
   });
 }
+useDiscardDeadLetter.permission = ['system.operations.write'] as const satisfies PermissionRequirement;
 
 export function useRedriveAllDeadLetters(service: EventFailureService) {
   const invalidate = useInvalidateFailures(service);
@@ -37,6 +40,7 @@ export function useRedriveAllDeadLetters(service: EventFailureService) {
     onSettled: invalidate,
   });
 }
+useRedriveAllDeadLetters.permission = ['system.operations.write'] as const satisfies PermissionRequirement;
 
 export function useResendOutbox(service: EventFailureService) {
   const invalidate = useInvalidateFailures(service);
@@ -45,6 +49,7 @@ export function useResendOutbox(service: EventFailureService) {
     onSettled: invalidate,
   });
 }
+useResendOutbox.permission = ['system.operations.write'] as const satisfies PermissionRequirement;
 
 export function useDiscardOutbox(service: EventFailureService) {
   const invalidate = useInvalidateFailures(service);
@@ -54,6 +59,7 @@ export function useDiscardOutbox(service: EventFailureService) {
     onSettled: invalidate,
   });
 }
+useDiscardOutbox.permission = ['system.operations.write'] as const satisfies PermissionRequirement;
 
 export function useResendAllOutbox(service: EventFailureService) {
   const invalidate = useInvalidateFailures(service);
@@ -62,3 +68,4 @@ export function useResendAllOutbox(service: EventFailureService) {
     onSettled: invalidate,
   });
 }
+useResendAllOutbox.permission = ['system.operations.write'] as const satisfies PermissionRequirement;

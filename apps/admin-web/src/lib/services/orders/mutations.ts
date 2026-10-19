@@ -493,6 +493,7 @@ export const useSplitUnreservedShipment = () => {
     },
   });
 };
+useSplitUnreservedShipment.permission = ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement;
 
 export const useReviseShipmentRecipient = () => {
   const queryClient = useQueryClient();

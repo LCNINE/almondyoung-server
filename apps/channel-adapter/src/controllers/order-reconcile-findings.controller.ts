@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { IsString, MaxLength, MinLength } from 'class-validator';
-import { User } from '@app/authorization';
+import { RequirePermission, User } from '@app/authorization';
 import { actorIdOf } from '@app/events';
 import { GlobalExceptionFilter } from '@app/shared';
 import { ChannelOrderReconcileService } from '../services/order-reconcile/channel-order-reconcile.service';
@@ -47,6 +47,7 @@ const clampInt = (value: string | undefined, fallback: number, max: number) => {
 export class OrderReconcileFindingsController {
   constructor(private readonly service: ChannelOrderReconcileService) {}
 
+  @RequirePermission('channel.account.read')
   @Get()
   @ApiOperation({ summary: '채널과 어긋난 주문 목록 (기본 open)' })
   @ApiQuery({ name: 'status', required: false, enum: ['open', 'resolved', 'closed', 'all'] })
@@ -62,12 +63,14 @@ export class OrderReconcileFindingsController {
   }
 
   // `:id` 보다 먼저 선언해야 한다 — 뒤에 두면 'summary' 가 id 로 잡힌다.
+  @RequirePermission('channel.account.read')
   @Get('summary')
   @ApiOperation({ summary: '채널과 어긋남 요약 (정체 보드 0단계)' })
   async summary() {
     return { success: true, data: await this.service.summary(), timestamp: new Date().toISOString() };
   }
 
+  @RequirePermission('order.order.write')
   @Post(':id/redeliver')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '사람의 [다시 배달] — 창·모드와 무관하게 한 번' })
@@ -75,6 +78,7 @@ export class OrderReconcileFindingsController {
     return this.service.redeliverFinding(id);
   }
 
+  @RequirePermission('order.order.write')
   @Post(':id/close')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '메모를 남기고 종결' })

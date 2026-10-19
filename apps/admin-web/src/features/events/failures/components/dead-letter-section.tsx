@@ -2,7 +2,9 @@
 
 import { Fragment, useState } from 'react';
 import { toast } from 'sonner';
+import { Can } from '@/components/auth/can';
 import { Button } from '@/components/ui/button';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { DeadLetterSequenceItem, EventFailureService } from '@/lib/api/domains/events';
 import {
   useDeadLetterDetail,
@@ -45,6 +47,8 @@ export function DeadLetterSection({ service, now }: SectionProps) {
   const redrive = useRedriveDeadLetter(service);
   const discard = useDiscardDeadLetter(service);
   const redriveAll = useRedriveAllDeadLetters(service);
+  // 다시 넣기·종결은 같은 권한이다 — 없으면 버튼을 그리지 않는다(조회는 그대로)
+  const canAct = usePermissionCheck().canRun(useRedriveDeadLetter);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [discardTarget, setDiscardTarget] = useState<DiscardTarget | null>(null);
   const [confirmAll, setConfirmAll] = useState(false);
@@ -87,7 +91,7 @@ export function DeadLetterSection({ service, now }: SectionProps) {
     <section className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold">받다 실패</h2>
-        {items.length > 0 && (
+        {items.length > 0 && canAct && (
           <Button
             size="sm"
             variant="outline"
@@ -142,6 +146,8 @@ export function DeadLetterSection({ service, now }: SectionProps) {
                   </td>
                   <td>{item.heldBehind > 0 ? item.heldBehind : ''}</td>
                   <td className="text-right" onClick={(e) => e.stopPropagation()}>
+                    {canAct && (
+                      <>
                     <Button
                       size="sm"
                       variant="outline"
@@ -163,6 +169,8 @@ export function DeadLetterSection({ service, now }: SectionProps) {
                     >
                       종결
                     </Button>
+                      </>
+                    )}
                   </td>
                 </tr>
                 {expanded === item.id && (
@@ -252,6 +260,7 @@ function DeadLetterDetailView({
               <span className="w-20">{dwellSince(r.firstFailedAt, now)}</span>
               {/* 머리는 목록 행의 버튼으로 종결한다. 머리 아닌 행 종결은 아무것도 흐르게 하지 않는다(스펙 §7.5) */}
               {isUnresolved(r.status) && r.id !== head.id && (
+                <Can run={useDiscardDeadLetter}>
                 <Button
                   size="sm"
                   variant="ghost"
@@ -262,6 +271,7 @@ function DeadLetterDetailView({
                 >
                   종결
                 </Button>
+                </Can>
               )}
             </li>
           ))}

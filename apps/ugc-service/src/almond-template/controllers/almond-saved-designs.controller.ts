@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { StoreRoute, User } from '@app/authorization';
 import {
   AlmondSavedDesignDetailResponseDto,
   AlmondSavedDesignSummaryResponseDto,
@@ -16,6 +16,7 @@ import { AlmondSavedDesignsService } from '../services/almond-saved-designs.serv
 export class AlmondSavedDesignsController {
   constructor(private readonly service: AlmondSavedDesignsService) {}
 
+  @StoreRoute()
   @Get()
   @ApiOperation({ summary: '내 디자인 보관함 목록', description: 'productId·size 로 좁힌다. 최근 저장순' })
   @ApiResponse({ status: 200, type: [AlmondSavedDesignSummaryResponseDto] })
@@ -26,6 +27,7 @@ export class AlmondSavedDesignsController {
     return this.service.list(userId, query);
   }
 
+  @StoreRoute()
   @Get(':id')
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiOperation({ summary: '내 디자인 상세 (남의 것은 404)' })
@@ -38,6 +40,7 @@ export class AlmondSavedDesignsController {
     return this.service.get(userId, id);
   }
 
+  @StoreRoute()
   @Get(':id/thumbnail')
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiOperation({ summary: '내 디자인 썸네일 SVG (남의 것은 404)' })
@@ -50,6 +53,7 @@ export class AlmondSavedDesignsController {
     return this.service.getThumbnail(userId, id);
   }
 
+  @StoreRoute()
   @Put()
   @ApiOperation({
     summary: '내 디자인 저장',
@@ -68,6 +72,7 @@ export class AlmondSavedDesignsController {
     return this.service.upsert(userId, dto);
   }
 
+  @StoreRoute()
   @Delete(':id')
   @HttpCode(204)
   @ApiParam({ name: 'id', format: 'uuid' })

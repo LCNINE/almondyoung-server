@@ -42,6 +42,7 @@ import {
 import { formatDateTime } from '@/lib/utils/date';
 import { cn } from '@/lib/utils/ui';
 import { PrintDefectGuide } from './defect-guide';
+import { usePermissionCheck } from '@/hooks/use-permission';
 
 type Action =
   | {
@@ -280,6 +281,8 @@ function PrintOrderRow({
   onAction: (a: Action) => void;
 }) {
   const [open, setOpen] = useState(false);
+  // 재전송·확인·마무리는 같은 권한이다 — 없으면 이 칸의 버튼을 그리지 않는다
+  const canWrite = usePermissionCheck().canRun(useRetryPrintOrder);
   const showSalesRetry =
     row.resolvable && row.status === 'cancelled' && row.salesCancelFailed;
   const showResolve = row.resolvable && !showSalesRetry;
@@ -352,7 +355,7 @@ function PrintOrderRow({
         </td>
         <td className="p-2">
           <div className="flex flex-wrap gap-1.5">
-            {showSalesRetry && (
+            {canWrite && showSalesRetry && (
               <Button
                 size="sm"
                 onClick={() =>
@@ -362,7 +365,7 @@ function PrintOrderRow({
                 판매주문 취소 다시 시도
               </Button>
             )}
-            {showResolve && (
+            {canWrite && showResolve && (
               <>
                 {!shipped && (
                   <Button
@@ -385,7 +388,7 @@ function PrintOrderRow({
                 </Button>
               </>
             )}
-            {awaitingTest && (
+            {canWrite && awaitingTest && (
               <Button
                 size="sm"
                 onClick={() => onAction({ kind: 'confirm', row })}
@@ -393,7 +396,8 @@ function PrintOrderRow({
                 확인 완료
               </Button>
             )}
-            {retryable &&
+            {canWrite &&
+              retryable &&
               (blocked ? (
                 <Tooltip>
                   <TooltipTrigger asChild>

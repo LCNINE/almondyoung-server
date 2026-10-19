@@ -86,7 +86,7 @@ describe('permission catalog', () => {
       Object.keys(expected).map((key) => [key, findPermission(key)?.grantOnFirstRegistration ?? null]),
     );
     expect(actual).toEqual(expected);
-    expect(PERMISSION_CATALOG).toHaveLength(102);
+    expect(PERMISSION_CATALOG).toHaveLength(103);
   });
 
   it('registers the handler checkpoint keys with today-equivalent grants', () => {

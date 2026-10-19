@@ -37,6 +37,7 @@ export function useRedeliverMismatch() {
     },
   });
 }
+useRedeliverMismatch.permission = ['order.order.write'] as const satisfies PermissionRequirement;
 
 /** 종결. 실패(404 — 그 사이 해소·종결됨)여도 무효화해 그 행이 버튼을 단 채 남지 않게 한다 */
 export function useCloseMismatch() {
@@ -51,3 +52,4 @@ export function useCloseMismatch() {
     },
   });
 }
+useCloseMismatch.permission = ['order.order.write'] as const satisfies PermissionRequirement;

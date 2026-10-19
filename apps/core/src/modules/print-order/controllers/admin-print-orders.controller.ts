@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { RequirePermission, User } from '@app/authorization';
 import {
   ConfirmPrintTestDto,
   ListPrintOrdersQueryDto,
@@ -15,12 +15,14 @@ import { PrintOrdersService, type PrintOrderActor } from '../services/print-orde
 export class AdminPrintOrdersController {
   constructor(private readonly service: PrintOrdersService) {}
 
+  @RequirePermission('order.order.read')
   @Get('summary')
   @ApiOperation({ summary: '와우프레스 발주 탭별 처리할 건수' })
   summary() {
     return this.service.summary();
   }
 
+  @RequirePermission('order.order.read')
   @Get()
   @ApiOperation({ summary: '와우프레스 발주 목록' })
   list(@Query() query: ListPrintOrdersQueryDto) {
@@ -32,6 +34,7 @@ export class AdminPrintOrdersController {
     });
   }
 
+  @RequirePermission('order.order.read')
   @Get('by-line/:lineId')
   @ApiOperation({ summary: '판매주문 라인의 와우프레스 발주' })
   @ApiParam({ name: 'lineId', description: '판매주문 라인 ID' })
@@ -39,6 +42,7 @@ export class AdminPrintOrdersController {
     return this.service.byLine(lineId);
   }
 
+  @RequirePermission('order.order.read')
   @Get('by-design/:almondDesignId')
   @ApiOperation({ summary: '아몬드템플릿 시안의 와우프레스 발주 (최신 순)' })
   @ApiParam({ name: 'almondDesignId', description: '아몬드템플릿 시안 ID' })
@@ -46,6 +50,7 @@ export class AdminPrintOrdersController {
     return this.service.byDesign(almondDesignId);
   }
 
+  @RequirePermission('order.order.write')
   @Post(':id/retry')
   @HttpCode(200)
   @ApiOperation({ summary: '발주 실패·미지원 건 재전송' })
@@ -53,6 +58,7 @@ export class AdminPrintOrdersController {
     return this.service.retry(id, admin, dto.confirmNoWowpressOrder === true);
   }
 
+  @RequirePermission('order.order.write')
   @Post(':id/confirm-test')
   @HttpCode(200)
   @ApiOperation({ summary: '테스트 건 전화 확인 완료' })
@@ -64,6 +70,7 @@ export class AdminPrintOrdersController {
     return this.service.confirmTest(id, admin, dto.note);
   }
 
+  @RequirePermission('order.order.write')
   @Post(':id/resolve-cancel')
   @HttpCode(200)
   @ApiOperation({ summary: '취소 거절·결과 미상 건 마무리' })

@@ -485,6 +485,12 @@ export const PERMISSION_CATALOG = [
     owners: ['core', 'user-service', 'membership', 'wallet', 'notification', 'channel-adapter'],
     grant: ADMIN,
   }),
+  permission(
+    'system.operations.write',
+    '실패 이벤트 처리',
+    '처리하지 못한 이벤트를 다시 넣거나 다시 보내고, 종결한다',
+    { owners: ['core', 'channel-adapter'], grant: ADMIN, ...DANGEROUS },
+  ),
 
   // 문서·AI
   permission('archive.page.read', '문서 조회', '아카이브 문서를 본다', { owners: ['core'], grant: ADMIN_INTERN }),
