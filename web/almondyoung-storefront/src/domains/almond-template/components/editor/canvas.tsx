@@ -1,7 +1,23 @@
-import { Check, Combine, Pencil, Split, Trash2 } from "lucide-react"
-import { useRef, useState } from "react"
+import {
+  Check,
+  Combine,
+  Copy,
+  Crop,
+  ImageUp,
+  Lock,
+  LockOpen,
+  Pencil,
+  Split,
+  Trash2,
+} from "lucide-react"
+import { type ReactNode, useEffect, useRef, useState } from "react"
 import { Backdrop, LayerGraphic, photoBox } from "../graphic"
-import { currentCrop, unionBounds } from "../../lib/canvas-math"
+import {
+  currentCrop,
+  gaps,
+  layerBounds as boxOf,
+  unionBounds,
+} from "../../lib/canvas-math"
 import { layerPathData } from "../../lib/path-shape"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import { CanvasGuides } from "./canvas-guides"
@@ -21,13 +37,32 @@ import {
   type Layer,
 } from "../../lib/document"
 
+// 돌리거나 뒤집어도 화면에 보이는 상자의 오른쪽 바깥에 붙어 핸들을 가리지 않는다
 function quickActionsAt(layer: Layer, scale: number) {
-  const rad = ((layer.rotation ?? 0) * Math.PI) / 180
-  const dx = (44 / scale) * (layer.flipX ? -1 : 1)
-  const dy = (-layer.height / 2 - 16 / scale) * (layer.flipY ? -1 : 1)
-  const x = layer.x + layer.width / 2 + dx * Math.cos(rad) - dy * Math.sin(rad)
-  const y = layer.y + layer.height / 2 + dx * Math.sin(rad) + dy * Math.cos(rad)
-  return { left: `${x * scale}px`, top: `${y * scale}px` }
+  const box = boxOf(layer)
+  return { left: `${box.x1 * scale + 10}px`, top: `${box.y0 * scale}px` }
+}
+
+function QuickAction({
+  label,
+  onClick,
+  children,
+}: {
+  label: string
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className="text-muted-foreground hover:bg-muted hover:text-foreground flex size-7 items-center justify-center rounded"
+    >
+      {children}
+    </button>
+  )
 }
 
 // 채우기 없는 도형은 안쪽이 클릭을 받지 않아 뒤에 깔린 요소를 누를 수 있다. 테두리 선은 그대로 잡힌다
@@ -87,7 +122,10 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
     pointEditLayer,
     finishPointEdit,
     startPointEdit,
+    duplicateSelected,
+    imageFile,
   } = editor
+  const replaceImageRef = useRef<HTMLInputElement>(null)
   const cropping = !!selected && cropId === selected.id
   const groupBox = group.length > 1 ? unionBounds(group) : null
   const handles = [
@@ -105,6 +143,36 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
   )
   const cancelEdit = useRef(false)
   const scale = canvasFit * zoom
+  const [alt, setAlt] = useState(false)
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => setAlt(event.altKey)
+    const reset = () => setAlt(false)
+    window.addEventListener("keydown", key)
+    window.addEventListener("keyup", key)
+    window.addEventListener("blur", reset)
+    return () => {
+      window.removeEventListener("keydown", key)
+      window.removeEventListener("keyup", key)
+      window.removeEventListener("blur", reset)
+    }
+  }, [])
+  const measured = groupBox ?? (selected ? layerBounds(selected) : null)
+  const hovered = layers.find(
+    (layer) =>
+      layer.id === hoveredId &&
+      layer.id !== selected?.id &&
+      !group.some((item) => item.id === layer.id)
+  )
+  const measurements =
+    alt && measured
+      ? gaps(
+          measured,
+          hovered
+            ? layerBounds(hovered)
+            : { x0: 0, y0: 0, x1: design.widthMm, y1: design.heightMm }
+        )
+      : []
   const editingLayer = editing
     ? layers.find((layer) => layer.id === editing.id)
     : undefined
@@ -187,6 +255,8 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                   <g
                     key={layer.id}
                     onPointerDown={(event) => startDrag(event, layer)}
+                    onPointerEnter={() => setHoveredId(layer.id)}
+                    onPointerLeave={() => setHoveredId(null)}
                     className={
                       layer.locked ||
                       (mode === "customer" && layer.editable === false)
@@ -415,6 +485,43 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                 pointerEvents="none"
               />
             )}
+            {measurements.length > 0 && (
+              <g id="gap-measurements" pointerEvents="none">
+                {measurements.map((gap) => {
+                  const cx = (gap.x1 + gap.x2) / 2
+                  const cy = (gap.y1 + gap.y2) / 2
+                  const label = `${gap.mm}mm`
+                  return (
+                    <g key={`${gap.x1},${gap.y1},${gap.x2},${gap.y2}`}>
+                      <line
+                        {...gap}
+                        stroke="#ff2d87"
+                        strokeWidth={1 / scale}
+                        strokeDasharray={`${4 / scale} ${2 / scale}`}
+                      />
+                      <rect
+                        x={cx - (label.length * 3.6 + 4) / scale}
+                        y={cy - 8 / scale}
+                        width={(label.length * 7.2 + 8) / scale}
+                        height={16 / scale}
+                        rx={3 / scale}
+                        fill="#ff2d87"
+                      />
+                      <text
+                        x={cx}
+                        y={cy}
+                        fill="#ffffff"
+                        fontSize={11 / scale}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                      >
+                        {label}
+                      </text>
+                    </g>
+                  )
+                })}
+              </g>
+            )}
             {(showRuler || showCutline || showSafety) && (
               <CanvasGuides editor={editor} />
             )}
@@ -424,37 +531,80 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
           </svg>
           {selected &&
             selected.visible !== false &&
-            editable &&
+            (editable ||
+              (selected.locked &&
+                (mode === "designer" || selected.editable !== false))) &&
             !editing &&
-            !pointEditLayer && (
+            !pointEditLayer &&
+            !cropping && (
               <div
-                className="absolute z-20 flex -translate-x-1/2 -translate-y-1/2 gap-1"
+                role="toolbar"
+                aria-label="선택 요소 빠른 작업"
+                className="absolute z-20 flex flex-col gap-0.5 rounded-lg border bg-white p-1 shadow"
                 style={quickActionsAt(selected, scale)}
               >
-                {textEditable && (
-                  <button
-                    type="button"
-                    aria-label="문구 수정"
-                    title={
-                      selected.type === "text"
-                        ? "문구 수정"
-                        : "도형에 글자 넣기"
-                    }
-                    onClick={startTextEdit}
-                    className="flex size-6 items-center justify-center rounded bg-white text-[#10a8a1] shadow"
+                {selected.locked ? (
+                  <QuickAction
+                    label="잠금 풀기"
+                    onClick={() => patch(selected.id, { locked: false })}
                   >
-                    <Pencil size={14} />
-                  </button>
+                    <LockOpen size={16} />
+                  </QuickAction>
+                ) : (
+                  <>
+                    {textEditable && (
+                      <QuickAction
+                        label={
+                          selected.type === "text"
+                            ? "문구 수정"
+                            : "도형에 글자 넣기"
+                        }
+                        onClick={startTextEdit}
+                      >
+                        <Pencil size={16} />
+                      </QuickAction>
+                    )}
+                    {selected.type === "image" && (
+                      <QuickAction label="사진 자르기" onClick={startCrop}>
+                        <Crop size={16} />
+                      </QuickAction>
+                    )}
+                    {(selected.type === "frame" ||
+                      (SHAPE_TEXT_TYPES.has(selected.type) &&
+                        !!selected.image)) && (
+                      <QuickAction
+                        label="사진 바꾸기"
+                        onClick={() => replaceImageRef.current?.click()}
+                      >
+                        <ImageUp size={16} />
+                      </QuickAction>
+                    )}
+                    <QuickAction
+                      label="잠그기"
+                      onClick={() => patch(selected.id, { locked: true })}
+                    >
+                      <Lock size={16} />
+                    </QuickAction>
+                    <span className="mx-1 my-0.5 border-t" />
+                    <QuickAction label="복제" onClick={duplicateSelected}>
+                      <Copy size={16} />
+                    </QuickAction>
+                    <QuickAction label="삭제" onClick={removeSelected}>
+                      <Trash2 size={16} />
+                    </QuickAction>
+                  </>
                 )}
-                <button
-                  type="button"
-                  aria-label="선택 요소 삭제"
-                  title="삭제"
-                  onClick={removeSelected}
-                  className="flex size-6 items-center justify-center rounded bg-white text-[#10a8a1] shadow"
-                >
-                  <Trash2 size={14} />
-                </button>
+                <input
+                  ref={replaceImageRef}
+                  type="file"
+                  hidden
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0]
+                    event.target.value = ""
+                    if (file) void imageFile(file, "frame")
+                  }}
+                />
               </div>
             )}
           {groupBox && (

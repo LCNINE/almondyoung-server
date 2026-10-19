@@ -54,14 +54,12 @@ export function ShapePanel({
         />
       </div>
       <div
-        className={`grid gap-2 border-t pt-5 ${shapeColumns === 1 ? "grid-cols-1" : "grid-cols-2"}`}
+        className={`grid gap-2 border-t pt-5 ${shapeColumns === 1 ? "grid-cols-1 group-data-[wide]/panel:grid-cols-2" : "grid-cols-2 group-data-[wide]/panel:grid-cols-4"}`}
       >
         {SHAPES[shapeCategory].map(([id, label, type], index) => (
           <Fragment key={id}>
             {index === 4 && shapeCategory === "기본도형" && (
-              <div
-                className={`${shapeColumns === 2 ? "col-span-2" : ""} border-t pt-2`}
-              />
+              <div className={`col-span-full border-t pt-2`} />
             )}
             <button
               aria-label={`${label} 추가`}

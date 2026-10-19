@@ -12,7 +12,7 @@ import {
 } from "lucide-react"
 import { PrintColorPicker } from "../color-picker"
 import { shapeTextColor } from "../graphic"
-import { mm } from "../../lib/layer"
+import { mm, swapColor } from "../../lib/layer"
 import { SHAPE_TEXT_TYPES, type Layer } from "../../lib/document"
 import { OrderIcon } from "./order-icon"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
@@ -122,11 +122,17 @@ export function ObjectProperties({
   selected: Layer
   inline?: boolean
 }) {
-  const { patch, editable, setOrder, flipLayers, startPointEdit } = editor
+  const { patch, editable, setOrder, flipLayers, startPointEdit, replaceAll } =
+    editor
+  const everywhere = (from: string | undefined) =>
+    from && from !== "none"
+      ? (to: string) => replaceAll((layer) => swapColor(layer, from, to))
+      : undefined
   const selectedImageInputRef = useRef<HTMLInputElement>(null)
   const target: StyleTarget = {
     layers: [selected],
     apply: (value) => patch(selected.id, value),
+    everywhere: replaceAll,
     disabled: !editable,
     placement: inline ? "left" : "right",
   }
@@ -187,6 +193,7 @@ export function ObjectProperties({
               <PrintColorPicker
                 label="글자색"
                 value={selected.fill}
+                onApplyEverywhere={everywhere(selected.fill)}
                 compact
                 placement={inline ? "left" : "right"}
                 disabled={!editable}
@@ -245,6 +252,9 @@ export function ObjectProperties({
               <PrintColorPicker
                 label="테두리"
                 value={noStroke ? "#ffffff" : (selected.stroke ?? "#ffffff")}
+                onApplyEverywhere={
+                  noStroke ? undefined : everywhere(selected.stroke)
+                }
                 compact
                 placement={inline ? "left" : "right"}
                 disabled={!editable}
@@ -301,6 +311,7 @@ export function ObjectProperties({
                   <PrintColorPicker
                     label="채우기"
                     value={selected.fill === "none" ? "#ffffff" : selected.fill}
+                    onApplyEverywhere={everywhere(selected.fill)}
                     compact
                     placement={inline ? "left" : "right"}
                     disabled={!editable}
@@ -312,6 +323,9 @@ export function ObjectProperties({
                     label="테두리"
                     value={
                       noStroke ? "#333333" : (selected.stroke ?? "#333333")
+                    }
+                    onApplyEverywhere={
+                      noStroke ? undefined : everywhere(selected.stroke)
                     }
                     compact
                     placement={inline ? "left" : "right"}
@@ -427,6 +441,7 @@ export function ObjectProperties({
                       <PrintColorPicker
                         label="글자색"
                         value={shapeTextColor(selected)}
+                        onApplyEverywhere={everywhere(shapeTextColor(selected))}
                         compact
                         placement={inline ? "left" : "right"}
                         disabled={!editable}

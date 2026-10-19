@@ -12,15 +12,27 @@ export function TemplatePanel({
   templateSearch: string
   setTemplateSearch: (value: string) => void
 }) {
-  const { productId, mode, publishedTemplates, loadPublished, applyStarter } =
-    editor
+  const {
+    design,
+    productId,
+    mode,
+    publishedTemplates,
+    loadPublished,
+    applyStarter,
+  } = editor
   const [previewing, setPreviewing] = useState<{
     item: PublishedTemplate
     top: number
     left: number
   } | null>(null)
   const [applying, setApplying] = useState(false)
+  const confirmReplace = (title: string) =>
+    !(design.front.length || design.back.length) ||
+    window.confirm(
+      `지금 디자인이 「${title}」 시안으로 바뀝니다. 바꾼 뒤에도 실행 취소(⌘Z)로 되돌릴 수 있어요.`
+    )
   const apply = async (item: PublishedTemplate) => {
+    if (!confirmReplace(item.title)) return
     setApplying(true)
     await loadPublished(item)
     setApplying(false)
@@ -31,7 +43,7 @@ export function TemplatePanel({
       {mode === "customer" ? (
         <>
           {publishedTemplates.length ? (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2 group-data-[wide]/panel:grid-cols-4">
               {publishedTemplates.map((item) => (
                 <button
                   key={item.id}
@@ -101,7 +113,7 @@ export function TemplatePanel({
             aria-label="템플릿 검색"
             className="mb-4 w-full border p-2 text-sm"
           />
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2 group-data-[wide]/panel:grid-cols-4">
             {Object.entries(PRINT_PRODUCTS)
               .filter(
                 ([id, item]) =>
@@ -114,7 +126,7 @@ export function TemplatePanel({
                   key={id}
                   title={item.title}
                   aria-label={`${item.title} 시작 시안 불러오기`}
-                  onClick={() => applyStarter(id)}
+                  onClick={() => confirmReplace(item.title) && applyStarter(id)}
                   className="group flex h-40 items-center justify-center bg-[#f5f5f5] p-2 hover:outline hover:outline-2 hover:outline-[#5e9bd9]"
                 >
                   <svg

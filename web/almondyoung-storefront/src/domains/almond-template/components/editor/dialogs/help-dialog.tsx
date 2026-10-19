@@ -1,4 +1,5 @@
 import {
+  Combine,
   MousePointerClick,
   Magnet,
   Crop,
@@ -16,6 +17,7 @@ import {
   PaintBucket,
   QrCode,
   Redo2,
+  Ruler,
   Save,
   Scissors,
   Search,
@@ -105,9 +107,30 @@ const SHORTCUTS: Item[] = [
   ],
   [Trash2, "삭제 [ Delete ]", "선택한 객체를 삭제합니다."],
   [
+    MousePointerClick,
+    "전체 선택 [ Ctrl + A ]",
+    "잠그거나 숨긴 것을 뺀 이 면의 모든 객체를 고릅니다.",
+  ],
+  [
+    Combine,
+    "그룹 / 그룹 풀기 [ Ctrl + G / Ctrl + Shift + G ]",
+    "여러 개 고른 객체를 한 덩어리로 묶거나 풉니다.",
+  ],
+  [
+    Layers,
+    "순서 [ Ctrl + ] / Ctrl + [ ]",
+    "선택한 객체를 한 칸 앞·뒤로 보냅니다. Shift 를 함께 누르면 맨 앞·맨 뒤로 보냅니다.",
+  ],
+  [Type, "텍스트 추가 [ T ]", "새 텍스트 입력 창을 엽니다."],
+  [
     Magnet,
     "자동 맞춤 [ 끌기 / Alt + 끌기 ]",
     "끌 때 종이·다른 요소의 시작·가운데·끝에 분홍 선과 함께 붙습니다. Alt 를 누르면 붙지 않습니다.",
+  ],
+  [
+    Ruler,
+    "간격 보기 [ 선택 후 Alt ]",
+    "Alt 를 누른 채 다른 객체를 가리키면 그 객체까지, 빈 곳을 가리키면 종이 끝까지의 거리를 mm 로 보여 줍니다.",
   ],
   [
     Crop,

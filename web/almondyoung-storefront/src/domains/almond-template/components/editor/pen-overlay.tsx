@@ -189,6 +189,7 @@ export function DrawToolbar({ editor }: { editor: AlmondEditor }) {
         <PrintColorPicker
           label="색"
           compact
+          instant
           value={drawStyle.stroke ?? "#202020"}
           onApply={(color) => setInk({ color })}
         />

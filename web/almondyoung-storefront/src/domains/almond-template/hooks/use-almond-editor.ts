@@ -395,6 +395,21 @@ export function useAlmondEditor({
     flipSelected,
     togglePen: pen.togglePen,
     togglePencil: pen.togglePencil,
+    mergedGroup,
+    mergeGroup,
+    splitGroup,
+    setOrder: actions.setOrder,
+    selectAll: () =>
+      selectLayers(
+        layers
+          .filter(
+            (layer) =>
+              layer.visible !== false &&
+              !layer.locked &&
+              !(mode === "customer" && layer.editable === false)
+          )
+          .map((layer) => layer.id)
+      ),
     canSave: true,
     save: storage.save,
     saveNamed: storage.saveNamed,

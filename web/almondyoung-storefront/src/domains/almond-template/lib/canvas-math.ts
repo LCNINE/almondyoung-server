@@ -165,3 +165,48 @@ export function panCrop(layer: Layer, dx: number, dy: number): Partial<Layer> {
     },
   }
 }
+
+export type Gap = { x1: number; y1: number; x2: number; y2: number; mm: number }
+
+function spans(a0: number, a1: number, b0: number, b1: number) {
+  if (a1 <= b0) return [[a1, b0]]
+  if (b1 <= a0) return [[b1, a0]]
+  if (a0 >= b0 && a1 <= b1)
+    return [
+      [b0, a0],
+      [a1, b1],
+    ]
+  if (b0 >= a0 && b1 <= a1)
+    return [
+      [a0, b0],
+      [b1, a1],
+    ]
+  return []
+}
+
+// 고른 상자 a 와 가리킨 상자 b 사이 거리. 떨어져 있으면 그 사이, 한쪽이 안에 들면 네 변까지 잰다
+export function gaps(a: Box, b: Box): Gap[] {
+  const across = (a0: number, a1: number, b0: number, b1: number) =>
+    a1 > b0 && b1 > a0
+      ? (Math.max(a0, b0) + Math.min(a1, b1)) / 2
+      : (a0 + a1) / 2
+  const y = across(a.y0, a.y1, b.y0, b.y1)
+  const x = across(a.x0, a.x1, b.x0, b.x1)
+  const length = (from: number, to: number) => Math.round((to - from) * 10) / 10
+  return [
+    ...spans(a.x0, a.x1, b.x0, b.x1).map(([from, to]) => ({
+      x1: from,
+      y1: y,
+      x2: to,
+      y2: y,
+      mm: length(from, to),
+    })),
+    ...spans(a.y0, a.y1, b.y0, b.y1).map(([from, to]) => ({
+      x1: x,
+      y1: from,
+      x2: x,
+      y2: to,
+      mm: length(from, to),
+    })),
+  ].filter((gap) => gap.mm > 0)
+}

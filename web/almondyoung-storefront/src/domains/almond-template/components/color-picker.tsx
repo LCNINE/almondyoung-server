@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { cmykFromHex, hexFromCmyk, validHex } from "../lib/color"
 
 const PALETTE = [
@@ -17,6 +17,8 @@ const PALETTE = [
 export function PrintColorPicker({
   value,
   onApply,
+  onApplyEverywhere,
+  instant = false,
   label,
   disabled = false,
   compact = false,
@@ -24,6 +26,8 @@ export function PrintColorPicker({
 }: {
   value: string
   onApply: (color: string) => void
+  onApplyEverywhere?: (color: string) => void
+  instant?: boolean
   label: string
   disabled?: boolean
   compact?: boolean
@@ -31,8 +35,21 @@ export function PrintColorPicker({
 }) {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState(value)
+  const [everywhere, setEverywhere] = useState(false)
   const cmyk = cmykFromHex(validHex(draft) ? draft : value)
-  const selectColor = (color: string) => setDraft(color)
+  const root = useRef<HTMLDivElement>(null)
+  const selectColor = (color: string) => {
+    setDraft(color)
+    if (instant && validHex(color)) onApply(color.toLowerCase())
+  }
+  useEffect(() => {
+    if (!open || !instant) return
+    const close = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener("pointerdown", close)
+    return () => document.removeEventListener("pointerdown", close)
+  }, [open, instant])
 
   const pickWithEyedropper = async () => {
     const Picker = (
@@ -49,7 +66,7 @@ export function PrintColorPicker({
   }
 
   return (
-    <div className="relative">
+    <div ref={root} className="relative">
       <button
         type="button"
         aria-label={`${label} 선택`}
@@ -150,7 +167,7 @@ export function PrintColorPicker({
               aria-label={`${label} HEX`}
               value={draft.replace(/^#/, "")}
               maxLength={6}
-              onChange={(event) => setDraft(`#${event.target.value}`)}
+              onChange={(event) => selectColor(`#${event.target.value}`)}
               className="min-w-0 flex-1 border p-1 font-mono"
             />
             <input
@@ -164,7 +181,19 @@ export function PrintColorPicker({
           {!validHex(draft) && (
             <p className="mt-1 text-xs text-red-600">HEX 6자리를 입력하세요.</p>
           )}
-          <div className="mt-3 flex justify-end gap-2">
+          <div
+            className={`mt-3 flex items-center justify-end gap-2 ${instant ? "hidden" : ""}`}
+          >
+            {onApplyEverywhere && (
+              <label className="mr-auto flex items-center gap-1 text-xs">
+                <input
+                  type="checkbox"
+                  checked={everywhere}
+                  onChange={(event) => setEverywhere(event.target.checked)}
+                />
+                같은 색 모두 변경
+              </label>
+            )}
             <button
               type="button"
               onClick={() => setOpen(false)}
@@ -176,7 +205,9 @@ export function PrintColorPicker({
               type="button"
               disabled={!validHex(draft)}
               onClick={() => {
-                onApply(draft.toLowerCase())
+                const color = draft.toLowerCase()
+                if (everywhere && onApplyEverywhere) onApplyEverywhere(color)
+                else onApply(color)
                 setOpen(false)
               }}
               className="bg-[#333] px-3 py-1 text-xs text-white disabled:opacity-40"

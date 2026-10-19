@@ -28,6 +28,11 @@ type Params = {
   flipSelected: (axis: "x" | "y") => void
   togglePen: () => void
   togglePencil: () => void
+  mergedGroup: boolean
+  mergeGroup: () => void
+  splitGroup: () => void
+  setOrder: (position: "top" | "up" | "down" | "bottom") => void
+  selectAll: () => void
   canSave: boolean
   save: () => void
   saveNamed: () => void
@@ -91,6 +96,11 @@ export function useEditorShortcuts({
   flipSelected,
   togglePen,
   togglePencil,
+  mergedGroup,
+  mergeGroup,
+  splitGroup,
+  setOrder,
+  selectAll,
   canSave,
   save,
   saveNamed,
@@ -164,6 +174,29 @@ export function useEditorShortcuts({
           event.preventDefault()
           cutSelected()
         }
+      } else if (command && letter(event) === "a") {
+        event.preventDefault()
+        selectAll()
+      } else if (command && letter(event) === "g") {
+        event.preventDefault()
+        if (event.shiftKey) {
+          if (mergedGroup) splitGroup()
+        } else if (hasGroup && !mergedGroup) mergeGroup()
+      } else if (
+        command &&
+        (event.code === "BracketRight" || event.code === "BracketLeft")
+      ) {
+        // 브라우저의 뒤로·앞으로 가기로 새지 않게 고른 게 없어도 막는다
+        event.preventDefault()
+        if ((selected || hasGroup) && editable) {
+          const up = event.code === "BracketRight"
+          setOrder(
+            event.shiftKey ? (up ? "top" : "bottom") : up ? "up" : "down"
+          )
+        }
+      } else if (!command && !event.shiftKey && letter(event) === "t") {
+        event.preventDefault()
+        setTextDialog("")
       } else if (
         !command &&
         event.shiftKey &&

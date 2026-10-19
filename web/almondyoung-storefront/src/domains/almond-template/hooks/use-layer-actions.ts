@@ -1,7 +1,13 @@
 import { useState } from "react"
 import { PRINT_PRODUCTS, PRINT_SPECS } from "../lib/catalog"
 import { newDesign, type Design, type Layer } from "../lib/document"
-import { isAutoTextName, makeLayer, mm, textLayerName } from "../lib/layer"
+import {
+  isAutoTextName,
+  makeLayer,
+  mm,
+  replaceEverywhere,
+  textLayerName,
+} from "../lib/layer"
 import { unionBounds } from "../lib/canvas-math"
 import { textBoxFor } from "../components/graphic"
 
@@ -54,6 +60,17 @@ export function useLayerActions({
       : layer
   const canEdit = (layer: Layer) =>
     !layer.locked && (mode === "designer" || layer.editable !== false)
+  // 하나씩 바꿀 때처럼 글꼴이 바뀐 글상자는 새 글꼴 폭에 맞춰 다시 잰다
+  const replaceAll = (patchOf: (layer: Layer) => Partial<Layer>) =>
+    change(
+      replaceEverywhere(design, canEdit, (layer) => {
+        const given = patchOf(layer)
+        return layer.type === "text" &&
+          Object.keys(given).some((key) => TEXT_SHAPE_KEYS.has(key))
+          ? fitText({ ...layer, ...given })
+          : given
+      })
+    )
   const patchLayers = (
     ids: string[],
     value: Partial<Layer> | ((layer: Layer) => Partial<Layer>)
@@ -123,10 +140,10 @@ export function useLayerActions({
     if (group.length > 1) setCopied(group)
     else if (selected) setCopied([selected])
   }
-  const pasteCopied = () => {
-    if (!copied.length) return
+  const pasteLayers = (items: Layer[], followCopy: boolean) => {
+    if (!items.length) return
     const groupIds = new Map<string, string>()
-    const pasted = copied.map((layer) => ({
+    const pasted = items.map((layer) => ({
       ...layer,
       id: crypto.randomUUID(),
       x: layer.x + 5,
@@ -139,14 +156,17 @@ export function useLayerActions({
           groupIds.set(layer.groupId, crypto.randomUUID()).get(layer.groupId)),
     }))
     change({ ...design, [side]: [...layers, ...pasted] })
-    // 다시 붙이면 또 5mm 옆에 놓이게 복사본을 따라간다
-    setCopied(pasted)
+    // 다시 붙이면 또 5mm 옆에 놓이게 복사본을 따라간다. 복제는 복사해 둔 것을 건드리지 않는다
+    if (followCopy) setCopied(pasted)
     if (pasted.length === 1) setSelectedId(pasted[0].id)
     else {
       setSelectedId(null)
       setGroupIds(pasted.map((layer) => layer.id))
     }
   }
+  const pasteCopied = () => pasteLayers(copied, true)
+  const duplicateSelected = () =>
+    pasteLayers(group.length > 1 ? group : selected ? [selected] : [], false)
   const cutSelected = () => {
     copySelected()
     if (group.length > 1) {
@@ -157,25 +177,32 @@ export function useLayerActions({
       setSelectedId(null)
     } else removeSelected()
   }
+  // 여럿이면 서로의 순서는 그대로 둔 채 한 덩어리로 옮긴다
   const setOrder = (position: "top" | "up" | "down" | "bottom") => {
-    if (!selected) return
-    const next = [...layers]
-    const index = next.findIndex((item) => item.id === selected.id)
-    next.splice(index, 1)
+    const targets =
+      group.length > 1 ? group.filter(canEdit) : selected ? [selected] : []
+    if (!targets.length) return
+    const moving = layers.filter((layer) => targets.includes(layer))
+    const rest = layers.filter((layer) => !targets.includes(layer))
+    const restBelow = (layer: Layer) =>
+      rest.filter((item) => layers.indexOf(item) < layers.indexOf(layer)).length
+    const from = restBelow(moving[0])
     const target =
       position === "top"
-        ? next.length
+        ? rest.length
         : position === "bottom"
           ? 0
           : position === "up"
-            ? Math.min(index + 1, next.length)
-            : Math.max(0, index - 1)
-    next.splice(target, 0, selected)
+            ? Math.min(restBelow(moving[moving.length - 1]) + 1, rest.length)
+            : Math.max(0, from - 1)
+    const next = [...rest.slice(0, target), ...moving, ...rest.slice(target)]
     change({ ...design, [side]: next })
     setMessage(
-      index === target
+      next.every((layer, i) => layer === layers[i])
         ? "이미 해당 위치에 있습니다."
-        : `${selected.name}: ${target + 1}/${next.length}번째 레이어로 이동했습니다.`
+        : moving.length > 1
+          ? `${moving.length}개 요소를 옮겼습니다.`
+          : `${moving[0].name}: ${target + 1}/${next.length}번째 레이어로 이동했습니다.`
     )
   }
   const applyStarter = (id: string) => {
@@ -226,6 +253,7 @@ export function useLayerActions({
     copied,
     patch,
     patchLayers,
+    replaceAll,
     flipLayers,
     canEdit,
     add,
@@ -233,6 +261,7 @@ export function useLayerActions({
     removeSelected,
     copySelected,
     pasteCopied,
+    duplicateSelected,
     cutSelected,
     setOrder,
     applyStarter,

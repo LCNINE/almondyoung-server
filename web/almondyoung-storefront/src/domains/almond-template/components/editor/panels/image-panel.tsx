@@ -67,7 +67,7 @@ export function ImagePanel({ editor }: { editor: AlmondEditor }) {
           <h3 className="mt-5 border-b pb-2 text-sm font-semibold">
             내 라이브러리
           </h3>
-          <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="mt-3 grid grid-cols-2 gap-2 group-data-[wide]/panel:grid-cols-4">
             {imageLibrary.map((item, index) => (
               <div key={`${index}-${item.image.length}`} className="relative">
                 <button

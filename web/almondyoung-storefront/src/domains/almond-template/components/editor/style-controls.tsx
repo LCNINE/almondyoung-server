@@ -1,7 +1,14 @@
-import { useSyncExternalStore } from "react"
-import { FlipHorizontal, FlipVertical } from "lucide-react"
+import { useState, useSyncExternalStore } from "react"
+import { ChevronDown, FlipHorizontal, FlipVertical } from "lucide-react"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import type { Layer } from "../../lib/document"
 import {
+  FONT_CATEGORIES,
+  type FontCategory,
   fontOptions,
   fontStack,
   loadUploadedFont,
@@ -15,6 +22,7 @@ import { NumberInput } from "./number-input"
 export type StyleTarget = {
   layers: Layer[]
   apply: (value: Partial<Layer>) => void
+  everywhere?: (patchOf: (layer: Layer) => Partial<Layer>) => void
   disabled: boolean
   placement: "left" | "right"
 }
@@ -102,47 +110,146 @@ function Field({
 }
 
 export function FontSelect({ target }: { target: StyleTarget }) {
-  const { layers, apply, disabled } = target
+  const { layers, apply, everywhere, disabled } = target
   const value = common(layers, (layer) => fontStack(layer.fontFamily))
+  const [replaceSame, setReplaceSame] = useState(false)
   const options = useSyncExternalStore(
     subscribeFontOptions,
     fontOptions,
     fontOptions
   )
+  const [open, setOpen] = useState(false)
+  const [category, setCategory] = useState<FontCategory | null>(null)
+  const current = options.find((font) => font.value === value)
+  const categories = FONT_CATEGORIES.filter((name) =>
+    options.some((font) => font.category === name)
+  )
+  const choose = (family: string) => {
+    setOpen(false)
+    // 아직 안 받은 웹폰트로 재면 대체 글꼴 폭으로 상자가 맞춰진다
+    ;(loadUploadedFont(family) ?? document.fonts.load(`16px ${family}`))
+      .catch(() => undefined)
+      .finally(() =>
+        replaceSame && everywhere && value
+          ? everywhere((layer) =>
+              layer.text !== undefined && fontStack(layer.fontFamily) === value
+                ? { fontFamily: family }
+                : {}
+            )
+          : apply({ fontFamily: family })
+      )
+  }
   return (
-    <label className="flex items-center gap-2">
+    <div className="flex items-center gap-2">
       <span className="w-9 shrink-0">폰트</span>
-      <select
-        aria-label="폰트"
-        className="min-w-0 flex-1 border px-2 py-1"
-        value={value ?? ""}
-        disabled={disabled}
-        onChange={(event) => {
-          const family = event.target.value
-          // 고른 뒤에도 포커스가 남으면 방향키가 요소 대신 글꼴을 넘긴다
-          event.target.blur()
-          // 아직 안 받은 웹폰트로 재면 대체 글꼴 폭으로 상자가 맞춰진다
-          ;(loadUploadedFont(family) ?? document.fonts.load(`16px ${family}`))
-            .catch(() => undefined)
-            .finally(() => apply({ fontFamily: family }))
-        }}
-      >
-        {value === null && (
-          <option value="" disabled>
-            혼합
-          </option>
-        )}
-        {options.map((font) => (
-          <option
-            key={font.value}
-            value={font.value}
-            style={{ fontFamily: font.value }}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label="폰트"
+            disabled={disabled}
+            className="flex min-w-0 flex-1 items-center justify-between gap-1 border px-2 py-1 text-left disabled:opacity-50"
           >
-            {font.label}
-          </option>
-        ))}
-      </select>
-    </label>
+            <span
+              className="truncate"
+              style={current ? { fontFamily: current.value } : undefined}
+            >
+              {current?.label ?? "혼합"}
+            </span>
+            <ChevronDown className="size-4 shrink-0" aria-hidden="true" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          className="z-[10001] w-72 p-0"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault()
+            const list = event.currentTarget as HTMLElement
+            ;(
+              list.querySelector<HTMLElement>('[aria-selected="true"]') ??
+              list.querySelector<HTMLElement>('[role="option"]')
+            )?.focus()
+          }}
+          // 열린 동안 누른 키는 편집기 단축키(방향키 이동·Space 화면 이동·Esc 선택 해제)로 가지 않는다
+          onKeyDown={(event) => {
+            event.stopPropagation()
+            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return
+            event.preventDefault()
+            const items = Array.from(
+              event.currentTarget.querySelectorAll<HTMLElement>(
+                '[role="option"]'
+              )
+            )
+            const at = items.indexOf(document.activeElement as HTMLElement)
+            items[
+              Math.max(
+                0,
+                Math.min(
+                  items.length - 1,
+                  at + (event.key === "ArrowDown" ? 1 : -1)
+                )
+              )
+            ]?.focus()
+          }}
+        >
+          <div
+            role="group"
+            aria-label="폰트 분류"
+            className="flex flex-wrap gap-1 border-b p-2"
+          >
+            {[null, ...categories].map((name) => (
+              <button
+                key={name ?? "전체"}
+                type="button"
+                aria-pressed={category === name}
+                onClick={() => setCategory(name)}
+                className={`rounded-full border px-2.5 py-0.5 text-xs ${category === name ? "border-foreground bg-foreground text-white" : "text-muted-foreground"}`}
+              >
+                {name ?? "전체"}
+              </button>
+            ))}
+          </div>
+          <ul
+            role="listbox"
+            aria-label="폰트 목록"
+            className="max-h-72 overflow-y-auto py-1"
+          >
+            {options
+              .filter((font) => !category || font.category === category)
+              .map((font) => (
+                <li key={font.value}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={font.value === value}
+                    onClick={() => choose(font.value)}
+                    className={`hover:bg-muted flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left ${font.value === value ? "bg-secondary" : ""}`}
+                  >
+                    <span className="truncate text-sm">{font.label}</span>
+                    <span
+                      className="shrink-0 text-base"
+                      style={{ fontFamily: font.value }}
+                      aria-hidden="true"
+                    >
+                      한글 Abc
+                    </span>
+                  </button>
+                </li>
+              ))}
+          </ul>
+          {everywhere && value && (
+            <label className="flex items-center gap-1.5 border-t px-3 py-2 text-xs">
+              <input
+                type="checkbox"
+                checked={replaceSame}
+                onChange={(event) => setReplaceSame(event.target.checked)}
+              />
+              같은 폰트 모두 변경
+            </label>
+          )}
+        </PopoverContent>
+      </Popover>
+    </div>
   )
 }
 
