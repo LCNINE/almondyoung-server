@@ -40,6 +40,7 @@ import {
   lockAndAssertPickerClaim,
 } from './allocation/allocation.queries';
 import { ShipmentCustodyBalance, WorkItemRow, uniqueSorted } from './allocation/allocation.types';
+import { runForwardWorkItemCommand, WorkItemCommandDeps } from './work-item-command';
 
 type ToteRow = typeof wmsTables.totes.$inferSelect;
 type ToteAssignmentRow = typeof wmsTables.shipmentToteAssignments.$inferSelect;
@@ -64,6 +65,10 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
     private readonly audit: AuditService,
     private readonly labels: LabelCurrencyGuard,
   ) {}
+
+  private forwardDeps(): WorkItemCommandDeps {
+    return { commands: this.commands, workflowGate: this.workflowGate, labels: this.labels };
+  }
 
   async registerTote(input: ToteRegistrationInput, tx?: DbTx): Promise<ToteRegistrationResult> {
     this.workflowGate.assertV2MutationAllowed('picking.pick_to_tote.register_tote');
@@ -108,12 +113,12 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
   }
 
   async assignTote(input: ToteAssignmentInput, tx?: DbTx): Promise<ToteAssignmentResult> {
-    this.workflowGate.assertV2MutationAllowed('picking.pick_to_tote.assign_tote');
     const toteBarcode = this.requiredToteBarcode(input.toteBarcode);
-    return this.commands.execute<ToteAssignmentResult>(
+    return runForwardWorkItemCommand<ToteAssignmentResult>(
+      this.forwardDeps(),
       {
+        strategy: this.capabilities.name,
         commandType: 'picking.pick_to_tote.assign_tote',
-        idempotencyKey: input.idempotencyKey,
         canonicalRequest: {
           batchId: input.batchId,
           sessionId: input.sessionId,
@@ -123,19 +128,17 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
           actorId: input.actor.id,
           expectedLeaseVersion: input.expectedLeaseVersion,
         },
+        target: {
+          batchId: input.batchId,
+          sessionId: input.sessionId,
+          workItemId: input.workItemId,
+          shipmentId: input.shipmentId,
+          actor: input.actor,
+          expectedLeaseVersion: input.expectedLeaseVersion,
+          idempotencyKey: input.idempotencyKey,
+        },
       },
       async (trx, commandRequestId) => {
-        await lockAndAssertPickerClaim(
-          trx,
-          input.workItemId,
-          input.batchId,
-          input.shipmentId,
-          input.actor.id,
-          input.expectedLeaseVersion,
-        );
-        // 낡은 송장으로는 진행하지 않는다(스펙 I5). 작업 항목 잠금 뒤, 명령 핸들러 안.
-        await this.labels.assertCurrent(input.workItemId, trx);
-        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         await this.acquireToteLock(toteBarcode, trx);
         const tote = await this.loadToteForBatch(toteBarcode, input.batchId, trx);
         const assignments = await this.loadActiveToteAssignments(tote.id, trx);
@@ -203,13 +206,13 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
   }
 
   async toteScan(input: ToteScanPickingInput, tx?: DbTx): Promise<ToteScanResult> {
-    this.workflowGate.assertV2MutationAllowed('picking.pick_to_tote.scan');
     assertPositiveQuantity(input.quantity);
     const toteBarcode = this.requiredToteBarcode(input.toteBarcode);
-    return this.commands.execute<ToteScanResult>(
+    return runForwardWorkItemCommand<ToteScanResult>(
+      this.forwardDeps(),
       {
+        strategy: this.capabilities.name,
         commandType: 'picking.pick_to_tote.scan',
-        idempotencyKey: input.idempotencyKey,
         canonicalRequest: {
           strategy: this.capabilities.name,
           batchId: input.batchId,
@@ -225,19 +228,17 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
           expectedLeaseVersion: input.expectedLeaseVersion,
           stage: 'AT_SOURCE_TO_TOTE',
         },
+        target: {
+          batchId: input.batchId,
+          sessionId: input.sessionId,
+          workItemId: input.workItemId,
+          shipmentId: input.shipmentId,
+          actor: input.actor,
+          expectedLeaseVersion: input.expectedLeaseVersion,
+          idempotencyKey: input.idempotencyKey,
+        },
       },
       async (trx, commandRequestId) => {
-        await lockAndAssertPickerClaim(
-          trx,
-          input.workItemId,
-          input.batchId,
-          input.shipmentId,
-          input.actor.id,
-          input.expectedLeaseVersion,
-        );
-        // 낡은 송장으로는 진행하지 않는다(스펙 I5). 작업 항목 잠금 뒤, 명령 핸들러 안.
-        await this.labels.assertCurrent(input.workItemId, trx);
-        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         await this.acquireToteLock(toteBarcode, trx);
         const tote = await this.loadToteForBatch(toteBarcode, input.batchId, trx);
         this.assertToteInUse(tote);
@@ -599,11 +600,11 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
   }
 
   async completePick(input: CompletePickInput, tx?: DbTx): Promise<InspectionReadyOutput> {
-    this.workflowGate.assertV2MutationAllowed('picking.pick_to_tote.complete');
-    return this.commands.execute(
+    return runForwardWorkItemCommand(
+      this.forwardDeps(),
       {
+        strategy: this.capabilities.name,
         commandType: 'picking.pick_to_tote.complete',
-        idempotencyKey: input.idempotencyKey,
         canonicalRequest: {
           strategy: this.capabilities.name,
           batchId: input.batchId,
@@ -613,19 +614,17 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
           actorId: input.actor.id,
           expectedLeaseVersion: input.expectedLeaseVersion,
         },
+        target: {
+          batchId: input.batchId,
+          sessionId: input.sessionId,
+          workItemId: input.workItemId,
+          shipmentId: input.shipmentId,
+          actor: input.actor,
+          expectedLeaseVersion: input.expectedLeaseVersion,
+          idempotencyKey: input.idempotencyKey,
+        },
       },
       async (trx, commandRequestId) => {
-        await lockAndAssertPickerClaim(
-          trx,
-          input.workItemId,
-          input.batchId,
-          input.shipmentId,
-          input.actor.id,
-          input.expectedLeaseVersion,
-        );
-        // 낡은 송장으로는 진행하지 않는다(스펙 I5). 작업 항목 잠금 뒤, 명령 핸들러 안.
-        await this.labels.assertCurrent(input.workItemId, trx);
-        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         const allocations = await loadWorkItemAllocations(trx, input.workItemId);
         const packingRef = `${PACKING_REF_PREFIX}${input.workItemId}`;
         const activeToteRefs = await this.loadActiveShipmentToteRefs(input.shipmentId, trx);
