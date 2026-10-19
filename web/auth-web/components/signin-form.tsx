@@ -71,6 +71,7 @@ export function SignInForm({
           id="loginId"
           name="loginId"
           label="아이디"
+          clearable
           autoComplete="username"
           required
           minLength={4}
@@ -83,6 +84,7 @@ export function SignInForm({
         id="password"
         name="password"
         label="비밀번호"
+        clearable
         placeholder=" "
         className={floatingInputClass}
         autoComplete="current-password"
