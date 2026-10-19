@@ -119,7 +119,10 @@ function verify(product: ProductVersion, state: ProductProgress, prices: boolean
   }
 }
 
-async function processProduct(proposal: ProductProposal, deps: ProductDependencies): Promise<'verified' | 'skipped'> {
+async function processProduct(
+  proposal: ProductProposal,
+  deps: ProductDependencies,
+): Promise<'verified' | 'already-verified' | 'skipped'> {
   const key = `products/${proposal.masterId}.json`;
   let state = await deps.store.read<ProductProgress>(key);
   let current = await deps.api.current(proposal.masterId);
@@ -127,7 +130,8 @@ async function processProduct(proposal: ProductProposal, deps: ProductDependenci
   if (state?.phase === 'verified') {
     if (current.id !== state.draftId) return 'skipped';
     verify(current, state, true);
-    return 'verified';
+
+    return 'already-verified';
   }
   if (!state) {
     if (current.status !== 'active' || current.id !== proposal.expectedActiveVersionId) return 'skipped';
@@ -226,15 +230,29 @@ export async function runProducts(proposals: ProductProposal[], deps: ProductDep
 
   let verified = 0;
   let skipped = 0;
+  let pacedCandidates = 0;
+
   for (let index = 0; index < proposals.length; index++) {
     if (!deps.canWrite()) break;
     await deps.checkWrite();
     await deps.checkLoad();
     const result = await processProduct(proposals[index], deps);
+
+    if (result === 'already-verified') {
+      verified++;
+
+      continue;
+    }
+
     if (result === 'verified') verified++;
     else skipped++;
+
+    pacedCandidates++;
     await deps.sleep(5000);
-    if ((index + 1) % 20 === 0 && index + 1 < proposals.length) await deps.sleep(300000);
+
+    if (pacedCandidates % 20 === 0 && index + 1 < proposals.length) {
+      await deps.sleep(300000);
+    }
   }
 
   const remaining = proposals.length - verified - skipped;

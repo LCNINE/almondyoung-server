@@ -48,3 +48,32 @@ Window/DST/delayed launches; concurrent/duplicate invocations; expired authentic
 
 - Final verification 2026-10-16 11:38KST: task6 review and product dry runs both STOPPED/exit0 with observed CPU97.2%, zero membership/backlog/failure gates. Reviews: own deleted0, preexisting deleted3, eligible3659. Products: candidates5119, six legacy operations held. Both one-time schedules ENABLED for2026-10-17 02:00/03:00 Asia/Seoul, exact tested task6, private subnets, serial task count1, no launch retry. Core251 rollout COMPLETED; expected-head/bulk DTO and existing event-failure APIs verified. Final source settings match AWS. No review deletion or product publication was performed during setup.
 - Durable verification: `/Users/FD/Library/Application Support/AlmondyoungNightMaintenance/2026-10-16/reservation-verification.json`, plus task6 dry-run reports; private/versioned S3 holds immutable JSON manifests and original CSV. Local/operator login is not needed by scheduled tasks. Completion email/chat delivery remains unconfigured because no recipient was supplied; SNS/CloudWatch/S3 execution records are available. No automatic follow-up product night was created; remaining work is reported as partial.
+
+
+## 2026-10-19 resumption
+
+- User requested the next dated review run at 2026-10-20 01:00 KST and the product run at 03:00 KST.
+  Review writes now close at 01:45, with verification/reporting by 01:50.
+  Product writes retain the 05:50 cutoff and 06:00 reporting deadline.
+- The October 17 review task stopped on its first DELETE with HTTP 400.
+  The runner attached `content-type: application/json` without a DELETE body, which Fastify rejected before the handler.
+  A real Fastify regression test reproduced the failure before the header fix and passed afterward.
+- Reconciled only the failed review's persisted `inFlightId` after verifying the original HTTP 400 report and an authenticated live GET showing unchanged approved product/rating/provider/status and `deletedAt=null`.
+  The prior S3 object version and complete before/after evidence are preserved in `runs/approved-maintenance-202610/reviews/reconciliation-20261019.json`.
+  Conditional S3 `IfMatch` prevented overwriting concurrent progress, and all three preexisting deletion records were retained.
+  No review DELETE was issued during reconciliation.
+- The October 17 product task ended at its write cutoff with 419 verified, one skipped and 4,699 remaining, plus six held legacy operations.
+  On resumption, completed products retain their existing head/metadata/price verification but no longer consume mutation pacing or batch rests.
+  Unfinished candidates retain their serial write pacing and batch rests.
+- Local verification: all 37 runner tests pass serially, including in the Node 22 ARM64 container; runner typecheck, formatting and diff checks pass.
+  Independent review found no remaining code blocker after the persisted review marker was reconciled.
+  Work is isolated from the user's active `feat/attendance` branch in `fix/night-maintenance-resume-20261020`, based on the latest `develop`.
+- Final task definition revision 8 passed both serial AWS dry runs with exit 0.
+  Reviews confirmed 3,659 eligible targets, zero job deletions and three preexisting deletions.
+  Products confirmed the 5,119-candidate immutable manifest and six held legacy operations through its five-product read sample.
+- Both one-time AWS schedules are ENABLED for 2026-10-20 01:00/03:00 in Asia/Seoul and target the exact tested task revision 8.
+  Live verification confirmed private networking, task count one, no launch retries, unchanged operation/manifests, and the expected date/runtime windows.
+  The final enablement deployment changed only the two schedule states.
+  No review deletion or product publication was issued during this setup session.
+- Durable verification is in `/Users/FD/Library/Application Support/AlmondyoungNightMaintenance/2026-10-19/reservation-verification.json`, alongside task/launch details, dry-run reports and reconciliation evidence.
+  The next product run remains bounded by 05:50; remaining work is reported without automatically reserving another night.

@@ -2,7 +2,7 @@ import { AdminApi, ApiError } from './api';
 import { CloudLoadProbe } from './cloud-load';
 import { ReadonlyDatabases, secretJson } from './database';
 import { assertHealthy, LoadSnapshot, pacedDelay } from './health';
-import { assertWriteWindow, JobWindow } from './policy';
+import { assertWriteWindow, jobWindow } from './policy';
 import { RunControls } from './ports';
 import { ProductProposal, ProductVersion, runProducts } from './products';
 import { ReviewManifest, runReviews } from './reviews';
@@ -12,15 +12,6 @@ function required(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing configuration: ${name}`);
   return value;
-}
-
-function jobWindow(date: string, job: string): JobWindow {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Invalid dated run');
-  const toUtc = (time: string) => new Date(`${date}T${time}:00+09:00`).toISOString();
-
-  return job === 'reviews'
-    ? { startsAt: toUtc('02:00'), writesStopAt: toUtc('02:45'), endsAt: toUtc('02:50') }
-    : { startsAt: toUtc('03:00'), writesStopAt: toUtc('05:50'), endsAt: toUtc('06:00') };
 }
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;

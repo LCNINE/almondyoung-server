@@ -4,6 +4,18 @@ export interface JobWindow {
   endsAt: string;
 }
 
+export function jobWindow(date: string, job: string): JobWindow {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error('Invalid dated run');
+  }
+
+  const toUtc = (time: string) => new Date(`${date}T${time}:00+09:00`).toISOString();
+
+  return job === 'reviews'
+    ? { startsAt: toUtc('01:00'), writesStopAt: toUtc('01:45'), endsAt: toUtc('01:50') }
+    : { startsAt: toUtc('03:00'), writesStopAt: toUtc('05:50'), endsAt: toUtc('06:00') };
+}
+
 export interface ReviewTarget {
   id: string;
   productId: string;

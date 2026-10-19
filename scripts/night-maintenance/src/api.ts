@@ -66,6 +66,8 @@ export class AdminApi {
     }
 
     const writes = !['GET', 'HEAD'].includes(method);
+    const hasJsonBody = writes && method !== 'DELETE';
+
     if (writes && this.options.dryRun) throw new Error('Mutations disabled in dry run');
     if (!this.token) await this.login();
 
@@ -77,8 +79,11 @@ export class AdminApi {
       try {
         response = await this.fetcher(url, {
           method,
-          headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/json' },
-          body: writes && method !== 'DELETE' ? JSON.stringify(body ?? {}) : undefined,
+          headers: {
+            authorization: `Bearer ${this.token}`,
+            ...(hasJsonBody ? { 'content-type': 'application/json' } : {}),
+          },
+          body: hasJsonBody ? JSON.stringify(body ?? {}) : undefined,
           signal: AbortSignal.timeout(60000),
         });
       } catch {

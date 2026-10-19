@@ -118,7 +118,7 @@ export function setupNightMaintenance(infra: MaintenanceInfra) {
   );
 
   const schedules = (['reviews', 'products'] as const).map((kind) => {
-    const hour = kind === 'reviews' ? '02' : '03';
+    const hour = kind === 'reviews' ? '01' : '03';
     return new aws.scheduler.Schedule(
       `NightMaintenance${kind === 'reviews' ? 'Reviews' : 'Products'}`,
       {

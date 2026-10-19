@@ -69,6 +69,30 @@ function fixture() {
 }
 
 describe('preserving product metadata backfill', () => {
+  it('rechecks completed products without consuming the next night through mutation pacing', async () => {
+    const f = fixture();
+
+    await runProducts(f.proposals, f.deps);
+
+    const sleeps: number[] = [];
+    f.deps.sleep = async (ms) => {
+      sleeps.push(ms);
+    };
+    f.operations.length = 0;
+
+    const completed = f.state.get('products/m.json');
+    const proposals = Array.from({ length: 21 }, (_, index) => {
+      const masterId = `completed-${index}`;
+      f.state.set(`products/${masterId}.json`, completed);
+
+      return { ...f.proposals[0], masterId };
+    });
+
+    expect(await runProducts(proposals, f.deps)).toMatchObject({ verified: 21, remaining: 0 });
+    expect(f.operations).toEqual([]);
+    expect(sleeps).toEqual([]);
+  });
+
   it('never creates a draft during dry-run', async () => {
     const f = fixture();
     f.deps.dryRun = true;

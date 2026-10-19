@@ -1,4 +1,5 @@
 import { AdminApi, ApiError } from './api';
+import fastify from 'fastify';
 
 function response(status: number, data?: unknown) {
   return new Response(status === 204 ? null : JSON.stringify(data ?? {}), {
@@ -20,6 +21,35 @@ function makeApi(fetcher: typeof fetch, extra: Record<string, unknown> = {}) {
 }
 
 describe('administrator API authentication and write boundary', () => {
+  it('sends bodyless DELETE requests that Fastify accepts before invoking the handler', async () => {
+    const server = fastify();
+    let deleted = false;
+
+    server.post('/auth/signin', async () => ({ accessToken: 'test-token' }));
+    server.delete('/reviews/admin/reviews/test-review', async (_, reply) => {
+      deleted = true;
+
+      return reply.code(204).send();
+    });
+
+    const address = await server.listen({ host: '127.0.0.1', port: 0 });
+    const fetcher: typeof fetch = async (url, options) => {
+      return fetch(new URL(new URL(String(url)).pathname, address), options);
+    };
+
+    try {
+      const result = await makeApi(fetcher).request(
+        'https://ugc.almondyoung.com/reviews/admin/reviews/test-review',
+        'DELETE',
+      );
+
+      expect(result.status).toBe(204);
+      expect(deleted).toBe(true);
+    } finally {
+      await server.close();
+    }
+  });
+
   it('logs in with memory credentials and reauthenticates exactly once after 401', async () => {
     const requests: Array<{ url: string; authorization?: string }> = [];
     let loginCount = 0;

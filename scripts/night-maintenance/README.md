@@ -13,7 +13,13 @@ These jobs are dated, single-run tasks. Reservations are introduced disabled and
 
 ## Runtime
 
-Reviews: 02:00–02:45 KST writes; verify/report by 02:50. Products: 03:00–05:50 writes; verify/report by 06:00. Outside the committed RUN_DATE writes fail closed. Each task is serial. Reviews pause 200ms; products pause 5s and 5min after each 20 candidates. One product night handles only a fraction of the remaining candidates; it reports partial progress rather than automatically scheduling more days.
+Reviews: 01:00–01:45 KST writes; verify/report by 01:50.
+Products: 03:00–05:50 writes; verify/report by 06:00.
+Outside the committed RUN_DATE writes fail closed.
+Each task is serial.
+Reviews pause 200ms; products pause 5s and 5min after each 20 candidates.
+On resumption, already verified products are rechecked without mutation pacing or batch rests, preserving the window for unfinished candidates.
+One product night handles only a fraction of the remaining candidates; it reports partial progress rather than automatically scheduling more days.
 
 Each request rechecks the window, lock, S3 stop marker and load. Gate on eligible membership backlog, stale processing leases, unmarked foreground product backlog, UGC outbox failures/backlog and five live services' CPU (including the Medusa administrator that processes product updates). Per user approval, CPU alone never aborts an overnight run: at 70% use 1.5× item spacing, and at 90% use 2× spacing (reviews 300/400ms; products 7.5/10s). Existing error, membership-delay and queue-failure guards still stop the run. DB sessions enforce default_transaction_read_only. Administrator credentials come from Secrets Manager; tokens live only in process memory. Re-login once after 401; no other automatic mutation retries.
 

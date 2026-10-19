@@ -1,4 +1,4 @@
-import { assertWriteWindow, emptyApprovedFields, validateReviewManifest } from './policy';
+import { assertWriteWindow, emptyApprovedFields, jobWindow, validateReviewManifest } from './policy';
 
 const window = {
   startsAt: '2026-10-16T17:00:00.000Z',
@@ -7,6 +7,27 @@ const window = {
 };
 
 describe('dated maintenance policy', () => {
+  it('allows the rescheduled 01:00 KST review run and closes writes at 01:45', () => {
+    const reviewWindow = jobWindow('2026-10-20', 'reviews');
+
+    expect(reviewWindow).toEqual({
+      startsAt: '2026-10-19T16:00:00.000Z',
+      writesStopAt: '2026-10-19T16:45:00.000Z',
+      endsAt: '2026-10-19T16:50:00.000Z',
+    });
+
+    expect(() => assertWriteWindow(reviewWindow, new Date('2026-10-20T01:00:00+09:00'))).not.toThrow();
+    expect(() => assertWriteWindow(reviewWindow, new Date('2026-10-20T01:45:00+09:00'))).toThrow();
+  });
+
+  it('keeps product writes within the approved 03:00–05:50 KST window', () => {
+    expect(jobWindow('2026-10-20', 'products')).toEqual({
+      startsAt: '2026-10-19T18:00:00.000Z',
+      writesStopAt: '2026-10-19T20:50:00.000Z',
+      endsAt: '2026-10-19T21:00:00.000Z',
+    });
+  });
+
   it('allows the intended KST night but rejects daytime, late and subsequent-day invocations', () => {
     expect(() => assertWriteWindow(window, new Date('2026-10-17T02:00:00+09:00'))).not.toThrow();
     for (const value of ['2026-10-16T16:00:00+09:00', '2026-10-17T02:45:00+09:00', '2026-10-18T02:00:00+09:00']) {
