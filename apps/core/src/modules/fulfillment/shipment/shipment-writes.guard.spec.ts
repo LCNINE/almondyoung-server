@@ -8,7 +8,13 @@ import * as ts from 'typescript';
  * (2) 재개봉 리셋·버전 증가 규칙, (3) 커스터디·송장 가드 순서가 다시 호출자마다 복사되어 갈린다.
  * 이 가드는 «커널 밖에서 상자를 insert·delete 하거나, 허용 목록 밖의 키를 update 하거나, 별칭(update·insert·delete 인자로 쓰이거나 export 되는 것)·raw SQL 로 우회하는 곳이
  * 없다»를 지킨다. 허용 목록은 파일 경로 단위다 — 예약 버전·출입 비밀번호 비움·검수 흔적처럼 상태가 아닌 부수 필드만 연다.
- * 알려진 한계: 구조분해한 tx 의 별칭 호출, 문자열을 조립해 만든 SQL 은 잡지 못한다.
+ * 알려진 한계(잡지 못한다):
+ * - 매개변수로 테이블을 받는 헬퍼
+ * - `wmsTables['shipments']` 같은 대괄호 접근
+ * - 스코프를 무시한 이름 매칭(같은 이름의 다른 식별자도 별칭으로 본다)
+ * - 템플릿 보간으로 만든 테이블명
+ * - `sql.raw` 로 조립한 SQL
+ * - 구조분해한 tx 의 별칭 호출
  */
 const ROOT = join(__dirname, '../../../../../..');
 const SRC = join(ROOT, 'apps/core/src');
@@ -21,7 +27,7 @@ const BOX_ALLOCATION = 'fulfillment/services/box-allocation.manager.ts';
 const TRACKING = 'fulfillment/services/shipment-delivery-tracking.service.ts';
 const PASSWORD_CLEANER = 'sales-order/services/entrance-password-cleaner.ts';
 
-const RAW_SQL = /\b(update|insert\s+into|delete\s+from)\s+"?shipment(s|_lines)\b/i;
+const RAW_SQL = /\b(update|insert\s+into|delete\s+from)\s+(only\s+)?(("?public"?\s*\.\s*)?)"?shipment(s|_lines)\b/i;
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -51,6 +57,11 @@ function tableOf(node: ts.Expression | undefined, aliases: Aliases): Table | nul
 function collectAliases(src: ts.SourceFile): Aliases {
   const aliases: Aliases = new Map();
   const visit = (node: ts.Node): void => {
+    // 테이블을 직접 import 한 로컬 식별자(`import { shipments as s }` 포함). import 자체는 읽기에 쓸 수 있어 위반이 아니다.
+    if (ts.isImportSpecifier(node)) {
+      const imported = (node.propertyName ?? node.name).text;
+      if (imported === 'shipments' || imported === 'shipmentLines') aliases.set(node.name.text, imported);
+    }
     if (ts.isVariableDeclaration(node) && node.initializer) {
       if (ts.isIdentifier(node.name)) {
         const table = tableOf(node.initializer, new Map());
