@@ -1268,7 +1268,8 @@ export class ShipmentReservationService {
     }
   }
 
-  private async bumpReservationVersions(shipmentIds: readonly string[], tx: DbTx): Promise<void> {
+  /** 상자들의 reservationVersion 을 SQL 증가식으로 올린다(id 정렬). 분할의 통째 이동처럼 예약이 줄째 상자를 옮길 때도 부른다. */
+  async bumpReservationVersions(shipmentIds: readonly string[], tx: DbTx): Promise<void> {
     for (const shipmentId of [...new Set(shipmentIds)].sort()) {
       await tx
         .update(wmsTables.shipments)
