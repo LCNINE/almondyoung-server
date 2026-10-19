@@ -4,6 +4,10 @@ import { SANS_FONT } from "./fonts"
 
 export const mm = (value: number) => Math.round(value * 10) / 10
 
+// 망고보드 수치(1080px 캔버스 기준 px)를 규격 짧은 변에 비례한 mm 로 바꾸는 배율
+export const pxUnit = (design: { widthMm: number; heightMm: number }) =>
+  Math.min(design.widthMm, design.heightMm) / 1080
+
 function layerName(type: Layer["type"]) {
   return {
     text: "텍스트",

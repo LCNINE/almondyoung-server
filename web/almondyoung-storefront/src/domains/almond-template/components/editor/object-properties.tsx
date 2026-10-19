@@ -1,4 +1,3 @@
-import { NumberInput } from "./number-input"
 import { useRef } from "react"
 import {
   Bold,
@@ -11,14 +10,20 @@ import {
 } from "lucide-react"
 import { PrintColorPicker } from "../color-picker"
 import { shapeTextColor } from "../graphic"
-import { mm, swapColor } from "../../lib/layer"
+import { mm, pxUnit, swapColor } from "../../lib/layer"
+import { LineProperties } from "./line-properties"
+import { DRAW_ART } from "../../lib/draw-art"
 import { SHAPE_TEXT_TYPES, type Layer } from "../../lib/document"
 import {
   AlignOrderSection,
   NumberBox,
+  OpacitySection,
+  PrintEffectRows,
   PropHeader,
   PropSection,
   PropSlider,
+  SettingBox,
+  ShadowRow,
   SizeSection,
 } from "./prop-sections"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
@@ -26,12 +31,13 @@ import type { PropertyPanelState } from "../../hooks/use-property-panel"
 import { ObjectPropertiesMore } from "./object-properties-more"
 import { shapeOutline } from "../../lib/path-shape"
 import {
-  EffectControls,
   FontSelect,
   StarControls,
   StrokeLineControls,
   type StyleTarget,
 } from "./style-controls"
+
+const round2 = (value: number) => Math.round(value * 100) / 100
 
 function FormatButton({
   label,
@@ -61,6 +67,28 @@ function FormatButton({
   )
 }
 
+// 망고보드 회색 버튼 (그룹으로 묶기 등)
+export function GrayButton({
+  disabled,
+  onClick,
+  children,
+}: {
+  disabled?: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="flex h-9 w-full items-center justify-center rounded-[6px] bg-[#E2E7ED] text-[14px] text-[#3F4250] hover:bg-[#d6dce4] disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      {children}
+    </button>
+  )
+}
+
 // 도형 윤곽을 그대로 사진 틀로 쓴다 (예전 모양틀 기능)
 function ShapePhoto({
   editor,
@@ -72,20 +100,16 @@ function ShapePhoto({
   const { patch, editable, imageFile } = editor
   const fileRef = useRef<HTMLInputElement>(null)
   return (
-    <div className="space-y-2 border-t pt-3">
-      <div className="flex items-center gap-2">
-        <span className="w-9 shrink-0">사진</span>
-        <button
-          type="button"
+    <PropSection className="space-y-[15px] py-5">
+      <div className="flex gap-[10px]">
+        <GrayButton
           disabled={!editable}
           onClick={() => fileRef.current?.click()}
-          className="border px-2 py-1"
         >
           {selected.image ? "사진 바꾸기" : "도형에 사진 넣기"}
-        </button>
+        </GrayButton>
         {selected.image && (
-          <button
-            type="button"
+          <GrayButton
             disabled={!editable}
             onClick={() =>
               patch(selected.id, {
@@ -98,49 +122,44 @@ function ShapePhoto({
                 imageOffsetY: undefined,
               })
             }
-            className="border px-2 py-1"
           >
-            빼기
-          </button>
+            사진 빼기
+          </GrayButton>
         )}
-        <input
-          ref={fileRef}
-          type="file"
-          hidden
-          accept="image/png,image/jpeg,image/webp"
-          onChange={(event) => {
-            const file = event.target.files?.[0]
-            event.target.value = ""
-            if (file) void imageFile(file, "frame")
-          }}
-        />
       </div>
+      <input
+        ref={fileRef}
+        type="file"
+        hidden
+        accept="image/png,image/jpeg,image/webp"
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          event.target.value = ""
+          if (file) void imageFile(file, "frame")
+        }}
+      />
       {selected.image &&
         (
           [
-            ["imageScale", "사진 확대", 1, 3, 0.05],
-            ["imageOffsetX", "가로 위치", 0, 1, 0.02],
-            ["imageOffsetY", "세로 위치", 0, 1, 0.02],
+            ["imageScale", "사진 확대", 100, 300, 1],
+            ["imageOffsetX", "가로 위치", 0, 100, 1],
+            ["imageOffsetY", "세로 위치", 0, 100, 1],
           ] as const
         ).map(([field, label, min, max, step]) => (
-          <label key={field} className="flex items-center gap-2">
-            <span className="w-14 shrink-0">{label}</span>
-            <input
-              type="range"
-              aria-label={label}
-              min={min}
-              max={max}
-              step={step}
-              value={selected[field] ?? (field === "imageScale" ? 1 : 0.5)}
-              disabled={!editable}
-              onChange={(event) =>
-                patch(selected.id, { [field]: Number(event.target.value) })
-              }
-              className="min-w-0 flex-1"
-            />
-          </label>
+          <PropSlider
+            key={field}
+            label={label}
+            min={min}
+            max={max}
+            step={step}
+            value={Math.round(
+              (selected[field] ?? (field === "imageScale" ? 1 : 0.5)) * 100
+            )}
+            disabled={!editable}
+            onValue={(value) => patch(selected.id, { [field]: value / 100 })}
+          />
         ))}
-    </div>
+    </PropSection>
   )
 }
 
@@ -173,9 +192,11 @@ export function ObjectProperties({
   const { setObjectMoreId, objectMoreOpen } = panel
   const shapeText = SHAPE_TEXT_TYPES.has(selected.type)
   // 열린 펜·연필 선은 속이 없어서 채우기·도형 안 글자·사진 칸을 보이지 않는다
+  const art = DRAW_ART[selected.shapeVariant ?? ""]
   const filled =
-    shapeText && !(selected.type === "path" && !selected.pathClosed)
+    shapeText && !art && !(selected.type === "path" && !selected.pathClosed)
   const noStroke = !selected.stroke || selected.stroke === "none"
+  const unit = pxUnit(editor.design)
   return (
     <aside
       aria-label="오브젝트 속성"
@@ -198,7 +219,7 @@ export function ObjectProperties({
                   ? "QR코드"
                   : selected.type === "line"
                     ? "기본 선"
-                    : selected.brush
+                    : selected.brush || art
                       ? "그리기"
                       : "도형"
         }
@@ -206,12 +227,15 @@ export function ObjectProperties({
       <AlignOrderSection
         editor={editor}
         layer={selected}
-        canFlip={selected.type !== "text"}
+        canFlip={selected.type !== "text" && selected.type !== "line"}
       />
       <SizeSection
         editor={editor}
         layer={selected}
-        heightLocked={selected.type === "text"}
+        heightLocked={
+          selected.type === "text" ||
+          (selected.type === "line" && !selected.linePath)
+        }
       />
       {selected.type === "text" ? (
         <>
@@ -367,221 +391,182 @@ export function ObjectProperties({
                 <StrokeLineControls target={target} />
               </div>
             )}
-            <EffectControls target={target} />
+            <ShadowRow target={target} unit={unit} />
+            <PrintEffectRows target={target} />
           </PropSection>
+          <OpacitySection
+            value={selected.opacity}
+            disabled={!editable}
+            onValue={(opacity) => patch(selected.id, { opacity })}
+          />
+        </>
+      ) : selected.type === "line" ? (
+        <>
+          <LineProperties editor={editor} selected={selected} />
           <PropSection className="py-5">
-            <PropSlider
-              label="불투명도"
-              min={10}
-              max={100}
-              value={Math.round((selected.opacity ?? 1) * 100)}
-              disabled={!editable}
-              onValue={(value) =>
-                patch(selected.id, {
-                  opacity: Math.max(0.1, Math.min(1, value / 100)),
-                })
-              }
-            />
+            <ShadowRow target={target} unit={unit} />
           </PropSection>
+          <OpacitySection
+            value={selected.opacity}
+            disabled={!editable}
+            onValue={(opacity) => patch(selected.id, { opacity })}
+          />
         </>
       ) : (
-        <div className="space-y-3 px-4 py-5 text-[13px] text-[#3F4250]">
-          <>
-            {selected.type !== "clipart" && (
-              <div className="flex items-center gap-3">
-                {(filled || !shapeText) && (
-                  <PrintColorPicker
-                    label="채우기"
-                    value={selected.fill === "none" ? "#ffffff" : selected.fill}
-                    onApplyEverywhere={everywhere(selected.fill)}
-                    compact
-                    placement={inline ? "left" : "right"}
-                    disabled={!editable}
-                    onApply={(color) => patch(selected.id, { fill: color })}
-                  />
-                )}
-                {!["frame", "qr"].includes(selected.type) && (
-                  <PrintColorPicker
-                    label="테두리"
-                    value={
-                      noStroke ? "#333333" : (selected.stroke ?? "#333333")
-                    }
-                    onApplyEverywhere={
-                      noStroke ? undefined : everywhere(selected.stroke)
-                    }
-                    compact
-                    placement={inline ? "left" : "right"}
-                    disabled={!editable}
-                    onApply={(color) =>
-                      patch(selected.id, {
-                        stroke: color,
-                        strokeWidth: selected.strokeWidth || 1,
-                      })
-                    }
-                  />
-                )}
-              </div>
-            )}
-            {filled && (
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1">
-                  <input
-                    type="checkbox"
-                    checked={selected.fill === "none"}
-                    disabled={!editable}
-                    onChange={(event) =>
-                      patch(selected.id, {
-                        fill: event.target.checked ? "none" : "#ffffff",
-                      })
-                    }
-                  />
-                  채우기 없음
-                </label>
-                <label className="flex items-center gap-1">
-                  <input
-                    type="checkbox"
-                    checked={noStroke || !selected.strokeWidth}
-                    disabled={!editable}
-                    onChange={(event) =>
-                      patch(
-                        selected.id,
-                        event.target.checked
-                          ? { stroke: "none", strokeWidth: 0 }
-                          : { stroke: "#333333", strokeWidth: 1 }
-                      )
-                    }
-                  />
-                  테두리 없음
-                </label>
-              </div>
-            )}
-            {!["clipart", "qr", "frame"].includes(selected.type) && (
-              <label className="flex items-center gap-2">
-                선두께
-                <NumberInput
-                  aria-label="선두께"
-                  min="0"
-                  max="50"
-                  step="0.2"
-                  value={selected.strokeWidth ?? 0}
-                  disabled={!editable}
-                  onValue={(value) =>
-                    patch(selected.id, {
-                      strokeWidth: value,
-                    })
+        <>
+          {(selected.type !== "clipart" || pointEditable) && (
+            <PropSection className="space-y-[15px] py-5">
+              {selected.type !== "clipart" && (filled || !shapeText || art) && (
+                <PrintColorPicker
+                  label={art ? "색상" : "채우기 색상"}
+                  value={selected.fill}
+                  onApplyEverywhere={everywhere(selected.fill)}
+                  onClear={
+                    filled
+                      ? () => patch(selected.id, { fill: "none" })
+                      : undefined
                   }
-                  className="w-16 border p-1 text-right"
-                />
-              </label>
-            )}
-            {(selected.type === "line" ||
-              (shapeText && !noStroke && !!selected.strokeWidth)) && (
-              <StrokeLineControls target={target} />
-            )}
-            {selected.type === "star" && (
-              <StarControls
-                layer={selected}
-                apply={target.apply}
-                disabled={!editable}
-              />
-            )}
-            {pointEditable && (
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
                   disabled={!editable}
-                  onClick={startPointEdit}
-                  className="border px-2 py-1"
-                >
-                  점 편집
-                </button>
-                <span className="text-[11px] text-slate-500">
-                  꼭짓점을 끌어 모양을 바꿉니다
-                </span>
-              </div>
-            )}
-            {filled && (
-              <div className="space-y-2 border-t pt-3">
-                <label className="block">
-                  도형 안 글자
-                  <textarea
-                    aria-label="도형 안 글자"
-                    className="mt-1 h-14 w-full resize-none border p-1"
-                    placeholder="도형을 두 번 눌러도 입력할 수 있어요"
-                    maxLength={500}
-                    value={selected.text ?? ""}
-                    disabled={!editable}
-                    onChange={(event) =>
-                      patch(selected.id, { text: event.target.value })
-                    }
-                  />
-                </label>
-                {selected.text && (
-                  <>
-                    <FontSelect target={target} />
-                    <div className="flex items-center gap-2">
-                      <PrintColorPicker
-                        label="글자색"
-                        value={shapeTextColor(selected)}
-                        onApplyEverywhere={everywhere(shapeTextColor(selected))}
-                        compact
-                        placement={inline ? "left" : "right"}
+                  onApply={(color) => patch(selected.id, { fill: color })}
+                />
+              )}
+              {!["clipart", "frame", "qr"].includes(selected.type) &&
+                art?.mode !== "stroke" && (
+                  <div>
+                    <PrintColorPicker
+                      label="테두리"
+                      value={
+                        noStroke || !selected.strokeWidth
+                          ? "none"
+                          : (selected.stroke ?? "#333333")
+                      }
+                      onApplyEverywhere={
+                        noStroke ? undefined : everywhere(selected.stroke)
+                      }
+                      onClear={() =>
+                        patch(selected.id, { stroke: "none", strokeWidth: 0 })
+                      }
+                      disabled={!editable}
+                      onApply={(color) =>
+                        patch(selected.id, {
+                          stroke: color,
+                          strokeWidth:
+                            selected.strokeWidth || round2(3 * unit) || 0.1,
+                        })
+                      }
+                    />
+                    {!noStroke && !!selected.strokeWidth && (
+                      <SettingBox
+                        title="테두리 설정"
                         disabled={!editable}
-                        onApply={(color) =>
-                          patch(selected.id, { textColor: color })
+                        onClear={() =>
+                          patch(selected.id, { stroke: "none", strokeWidth: 0 })
                         }
-                      />
-                      <button
-                        type="button"
-                        aria-label="굵게"
-                        aria-pressed={selected.fontWeight === "bold"}
-                        disabled={!editable}
-                        onClick={() =>
-                          patch(selected.id, {
-                            fontWeight:
-                              selected.fontWeight === "bold"
-                                ? "normal"
-                                : "bold",
-                          })
-                        }
-                        className={`p-1 ${selected.fontWeight === "bold" ? "text-blue-600" : ""}`}
                       >
-                        <Bold size={18} />
-                      </button>
-                    </div>
-                  </>
+                        <PropSlider
+                          label="테두리 두께"
+                          min={1}
+                          max={100}
+                          value={Math.max(
+                            1,
+                            Math.round((selected.strokeWidth ?? 0) / unit)
+                          )}
+                          disabled={!editable}
+                          onValue={(value) =>
+                            patch(selected.id, {
+                              strokeWidth: Math.min(50, round2(value * unit)),
+                            })
+                          }
+                        />
+                        <StrokeLineControls target={target} />
+                      </SettingBox>
+                    )}
+                  </div>
                 )}
-              </div>
-            )}
-            {filled && <ShapePhoto editor={editor} selected={selected} />}
-            {(shapeText || selected.type === "line") && (
-              <EffectControls target={target} />
-            )}
-            {selected.type === "frame" && (
-              <button
-                type="button"
-                className="w-full border p-2 text-left"
-                onClick={() => selectedImageInputRef.current?.click()}
-              >
-                프레임에 사진 넣기
-              </button>
-            )}
-            <div className="-mx-4 border-t border-[#e6e7ea] px-[13px] pt-5">
-              <PropSlider
-                label="불투명도"
-                min={10}
-                max={100}
-                value={Math.round((selected.opacity ?? 1) * 100)}
+              {selected.type === "star" && (
+                <StarControls
+                  layer={selected}
+                  apply={target.apply}
+                  disabled={!editable}
+                />
+              )}
+              {pointEditable && (
+                <GrayButton disabled={!editable} onClick={startPointEdit}>
+                  점 편집 · 꼭짓점을 끌어 모양 바꾸기
+                </GrayButton>
+              )}
+              {selected.type === "frame" && (
+                <GrayButton
+                  disabled={!editable}
+                  onClick={() => selectedImageInputRef.current?.click()}
+                >
+                  프레임에 사진 넣기
+                </GrayButton>
+              )}
+            </PropSection>
+          )}
+          {filled && (
+            <PropSection className="space-y-[15px] py-[25px]">
+              <h3 className="text-[16px] font-medium text-[#20232A]">
+                도형 안 글자
+              </h3>
+              <textarea
+                aria-label="도형 안 글자"
+                className="h-[76px] w-full resize-none rounded-[6px] border border-[#e0e1e5] p-[10px] text-[14px] text-[#3F4250] outline-none placeholder:text-[#AAACB0]"
+                placeholder="도형을 두 번 눌러도 입력할 수 있어요"
+                maxLength={500}
+                value={selected.text ?? ""}
                 disabled={!editable}
-                onValue={(value) =>
-                  patch(selected.id, {
-                    opacity: Math.max(0.1, Math.min(1, value / 100)),
-                  })
+                onChange={(event) =>
+                  patch(selected.id, { text: event.target.value })
                 }
               />
-            </div>
-          </>
-        </div>
+              {selected.text && (
+                <>
+                  <div className="flex items-center gap-[11px]">
+                    <div className="min-w-0 flex-1">
+                      <FontSelect target={target} bare />
+                    </div>
+                    <FormatButton
+                      label="굵게"
+                      pressed={selected.fontWeight === "bold"}
+                      disabled={!editable}
+                      onClick={() =>
+                        patch(selected.id, {
+                          fontWeight:
+                            selected.fontWeight === "bold" ? "normal" : "bold",
+                        })
+                      }
+                    >
+                      <Bold size={18} />
+                    </FormatButton>
+                  </div>
+                  <PrintColorPicker
+                    label="글자 색상"
+                    value={shapeTextColor(selected)}
+                    onApplyEverywhere={everywhere(shapeTextColor(selected))}
+                    disabled={!editable}
+                    onApply={(color) =>
+                      patch(selected.id, { textColor: color })
+                    }
+                  />
+                </>
+              )}
+            </PropSection>
+          )}
+          {filled && <ShapePhoto editor={editor} selected={selected} />}
+          {shapeText && (
+            <PropSection className="space-y-[15px] py-5">
+              <ShadowRow target={target} unit={unit} />
+              <PrintEffectRows target={target} />
+            </PropSection>
+          )}
+          <OpacitySection
+            value={selected.opacity}
+            disabled={!editable}
+            onValue={(opacity) => patch(selected.id, { opacity })}
+          />
+        </>
       )}
       <ObjectPropertiesMore
         editor={editor}

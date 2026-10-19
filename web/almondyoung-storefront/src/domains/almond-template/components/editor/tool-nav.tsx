@@ -61,12 +61,12 @@ export function ToolNav({ editor }: { editor: AlmondEditor }) {
                   setPanelOpen(true)
                   setTool(id)
                 }}
-                className={`relative flex h-[53px] w-[42px] flex-col items-center gap-y-[3px] rounded-[6px] pt-[5px] before:absolute before:top-0 before:left-[4px] before:h-[32px] before:w-[34px] before:rounded-[6px] before:transition-[background-color] before:duration-200 hover:before:bg-[#fede29] ${on ? "before:bg-[#fede29]" : "before:bg-transparent"}`}
+                className={`group/nav relative flex h-[53px] w-[42px] flex-col items-center gap-y-[3px] rounded-[6px] pt-[5px] before:absolute before:top-0 before:left-[4px] before:h-[32px] before:w-[34px] before:rounded-[6px] before:transition-[background-color] before:duration-200 hover:before:bg-primary ${on ? "before:bg-primary" : "before:bg-transparent"}`}
               >
                 <NavIcon
                   size={22}
                   strokeWidth={1.6}
-                  className="relative text-[#20232A]"
+                  className={`relative transition-colors duration-200 group-hover/nav:text-white ${on ? "text-white" : "text-[#20232A]"}`}
                 />
                 <span className="relative h-[22px] text-[12px] leading-[22px] font-semibold whitespace-nowrap text-[#4E5255]">
                   {navLabel}

@@ -229,6 +229,15 @@ function CustomTab({
   )
 }
 
+// 망고보드 「없음」: 흰 바탕에 빨간 대각선
+const swatchStyle = (value: string) =>
+  value === "none"
+    ? {
+        background:
+          "linear-gradient(to top right, #fff calc(50% - 1px), #FE6767 calc(50% - 1px), #FE6767 calc(50% + 1px), #fff calc(50% + 1px))",
+      }
+    : { backgroundColor: value || "#fff" }
+
 export function PrintColorPicker({
   value,
   onApply,
@@ -236,10 +245,12 @@ export function PrintColorPicker({
   label,
   disabled = false,
   compact = false,
+  onClear,
 }: {
   value: string
   onApply: (color: string) => void
   onApplyEverywhere?: (color: string) => void
+  onClear?: () => void
   instant?: boolean
   label: string
   disabled?: boolean
@@ -254,7 +265,7 @@ export function PrintColorPicker({
   const [at, setAt] = useState({ left: 0, top: 0 })
   const trigger = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
-  useEffect(() => setHex(value), [value])
+  useEffect(() => setHex(value === "none" ? "transparent" : value), [value])
   useEffect(() => {
     if (!open) return
     const close = (event: PointerEvent) => {
@@ -322,9 +333,11 @@ export function PrintColorPicker({
         <span>{label}</span>
         <span className="rounded-[3px] border border-[#e0e1e5] p-[2px]">
           <span
-            className={`block rounded-[4px] ${compact ? "size-[24px]" : "size-[30px]"}`}
-            style={{ backgroundColor: value }}
-          />
+            className={`flex items-center justify-center rounded-[4px] text-[15px] text-[#70777F] ${compact ? "size-[24px]" : "size-[30px]"}`}
+            style={swatchStyle(value)}
+          >
+            {value === "" && "?"}
+          </span>
         </span>
       </button>
       {open &&
@@ -339,7 +352,7 @@ export function PrintColorPicker({
             <div className="flex h-[61px] items-center gap-2 border-b border-[#e6e7ea] px-[19px] py-[13px]">
               <span
                 className="size-[25px] shrink-0 rounded-[3px] border border-[#e0e1e5]"
-                style={{ backgroundColor: value }}
+                style={swatchStyle(value)}
               />
               <input
                 aria-label={`${label} HEX`}
@@ -476,6 +489,19 @@ export function PrintColorPicker({
                   />
                   같은 색상 모두 변경
                 </label>
+              )}
+              {onClear && (
+                <button
+                  type="button"
+                  onClick={onClear}
+                  className="ml-auto flex items-center gap-[6px] text-[14px] text-[#70777F]"
+                >
+                  <span
+                    className="size-[25px] rounded-[3px] border border-[#e0e1e5]"
+                    style={swatchStyle("none")}
+                  />
+                  색상 없음
+                </button>
               )}
             </div>
           </div>,

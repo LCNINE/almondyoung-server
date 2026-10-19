@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react"
 import {
   Circle,
+  CircleHelp,
   Eraser,
   Highlighter,
   Minus,
@@ -17,6 +18,7 @@ import {
 } from "../../../hooks/use-pen-tool"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
 import { PrintColorPicker } from "../../color-picker"
+import { GRAPHIC_ART, HAND_ART, type DrawArt } from "../../../lib/draw-art"
 
 type Tool = BrushKind | "eraser" | "shapes"
 
@@ -114,6 +116,74 @@ function ColorRow({
     <div className="flex h-[50px] items-center border-b border-[#E6E7EA] [&_button>span:first-child]:text-[15px] [&_button>span:first-child]:text-[#20232A]">
       <PrintColorPicker label="색상" value={value} onApply={onValue} />
     </div>
+  )
+}
+
+function ShapeSection({
+  title,
+  help,
+  children,
+}: {
+  title: string
+  help: string
+  children: ReactNode
+}) {
+  return (
+    <section className="mt-[25px]">
+      <h4 className="mb-5 flex items-center gap-[5px] text-[15px] font-normal text-[#20232A]">
+        {title}
+        <span className="group/help relative">
+          <CircleHelp size={15} className="text-[#AAACB0]" aria-label={help} />
+          <span className="pointer-events-none absolute top-1/2 left-full z-20 ml-2 hidden w-max max-w-[220px] -translate-y-1/2 rounded-[6px] bg-[rgba(42,41,47,0.95)] px-[10px] py-[7px] text-[13px] leading-[18px] font-medium text-[#F4F5F7] group-hover/help:block">
+            {help}
+          </span>
+        </span>
+      </h4>
+      <div className="flex flex-wrap justify-center gap-[10px] rounded-[7px] bg-[#F6F7F9] py-5">
+        {children}
+      </div>
+    </section>
+  )
+}
+
+function ShapeTile({
+  label,
+  selected,
+  onClick,
+  children,
+}: {
+  label: string
+  selected: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={selected}
+      title={label}
+      onClick={onClick}
+      className={`flex size-[50px] items-center justify-center rounded-[6px] bg-white text-[#3F4250] ${selected ? "ring-1 ring-[#3F4248]" : ""}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+function ArtIcon({ art }: { art: DrawArt }) {
+  return (
+    <svg width="28" height="28" viewBox="0 0 100 100" aria-hidden="true">
+      <path
+        d={art.d}
+        fill={art.mode === "fill" ? "currentColor" : "none"}
+        stroke={art.mode === "stroke" ? "currentColor" : "none"}
+        strokeWidth={art.width ?? 7}
+        strokeDasharray={art.dash}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   )
 }
 
@@ -241,24 +311,51 @@ export function DrawPanel({ editor }: { editor: AlmondEditor }) {
       )}
       {tool === "shapes" && (
         <>
-          <h4 className="mt-[25px] mb-5 text-[15px] font-normal text-[#20232A]">
-            그리기-기본 선과 도형
-          </h4>
-          <div className="flex flex-wrap justify-center gap-[10px] rounded-[7px] bg-[#F6F7F9] py-5">
-            {BASIC_SHAPES.map(([id, label, Icon]) => (
-              <button
+          <ShapeSection
+            title="삐뚤빼뚤 손그림"
+            help="가로 세로 비율을 고정한 채 사용 할 수 있습니다."
+          >
+            {Object.entries(HAND_ART).map(([id, art]) => (
+              <ShapeTile
                 key={id}
-                type="button"
-                aria-label={label}
-                aria-pressed={shapeKind === id}
-                title={label}
+                label={art.label}
+                selected={shapeKind === id}
+                onClick={() => chooseShape(id as DrawShape)}
+              >
+                <ArtIcon art={art} />
+              </ShapeTile>
+            ))}
+          </ShapeSection>
+          <ShapeSection
+            title="그리기-기본 선과 도형"
+            help="선의 모양, 두께 등을 설정할 수 있습니다."
+          >
+            {BASIC_SHAPES.map(([id, label, Icon]) => (
+              <ShapeTile
+                key={id}
+                label={label}
+                selected={shapeKind === id}
                 onClick={() => chooseShape(id)}
-                className={`flex size-[50px] items-center justify-center rounded-[6px] bg-white text-[#3F4250] ${shapeKind === id ? "ring-1 ring-[#3F4248]" : ""}`}
               >
                 <Icon size={28} strokeWidth={1.5} />
-              </button>
+              </ShapeTile>
             ))}
-          </div>
+          </ShapeSection>
+          <ShapeSection
+            title="그리기-그래픽"
+            help="세로 비율을 고정한 채 가로 너비를 조절하며 사용할 수 있습니다."
+          >
+            {Object.entries(GRAPHIC_ART).map(([id, art]) => (
+              <ShapeTile
+                key={id}
+                label={art.label}
+                selected={shapeKind === id}
+                onClick={() => chooseShape(id as DrawShape)}
+              >
+                <ArtIcon art={art} />
+              </ShapeTile>
+            ))}
+          </ShapeSection>
           {stateBar}
           <div className="mt-[25px] border-t border-[#E6E7EA]">
             <ColorRow

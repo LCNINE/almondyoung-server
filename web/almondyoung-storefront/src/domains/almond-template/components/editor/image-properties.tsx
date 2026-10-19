@@ -1,16 +1,16 @@
-import { NumberInput } from "./number-input"
-import {
-  GripVertical,
-  RotateCcw,
-  Link,
-  Unlink,
-  Crop,
-  ChevronDown,
-  ChevronUp,
-} from "lucide-react"
+import { Link, Unlink, Crop } from "lucide-react"
 import type { Layer } from "../../lib/document"
-import { OrderIcon } from "./order-icon"
-import { FlipControls } from "./style-controls"
+import { GrayButton } from "./object-properties"
+import {
+  AlignOrderSection,
+  NumberBox,
+  OpacitySection,
+  PropHeader,
+  PropSection,
+  PropSlider,
+  SettingBox,
+  Toggle,
+} from "./prop-sections"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import type { PropertyPanelState } from "../../hooks/use-property-panel"
 import { useImageSrc } from "../../lib/image-previews"
@@ -33,22 +33,26 @@ export function ImageProperties({
     selectedPrintWarning,
     patch,
     editable,
-    setOrder,
-    setGeometry,
     applyImageFilter,
-    flipLayers,
   } = editor
   const {
     brightnessOpen,
     setBrightnessOpen,
-    imageMoreOpen,
-    setImageMoreOpen,
     imageSizeLinked,
     setImageSizeLinked,
     brightness,
     setBrightness,
     setImageSize,
   } = panel
+  const disabled = !editable
+  const filters = [
+    ["원본", "none"],
+    ["흑백", "grayscale"],
+    ["엠보스", "emboss"],
+    ["흐림", "boxblur"],
+    ["밝기", "brightness"],
+    ["세피아", "sepia"],
+  ] as const
   return (
     <aside
       aria-label="이미지 속성"
@@ -59,303 +63,161 @@ export function ImageProperties({
       }
       style={inline ? undefined : panel.panelStyle}
     >
-      <h2
-        title={inline ? undefined : "끌어서 옮기기"}
-        onPointerDown={inline ? undefined : panel.startPanelDrag}
-        className={`flex items-center border-b px-4 py-2 text-xl font-light select-none ${inline ? "" : "cursor-move"}`}
-      >
-        {!inline && <GripVertical size={16} className="text-slate-400" />}
-        <span className="ml-auto">IMAGE</span>
-      </h2>
-      <div className="space-y-3 px-4 py-3">
+      <PropHeader title="사진" />
+      <AlignOrderSection editor={editor} layer={selected} />
+      <PropSection className="flex items-end gap-[6px] py-5">
+        <NumberBox
+          label="너비"
+          value={selected.width}
+          step={0.5}
+          min={1}
+          width={82}
+          disabled={disabled}
+          onValue={(value) => setImageSize("width", value)}
+        />
         <button
           type="button"
-          aria-label="이미지 자르기"
-          aria-pressed={editor.cropId === selected.id}
-          disabled={!editable}
-          className="flex w-full items-center gap-3 border-b pb-3 text-left"
+          aria-label={imageSizeLinked ? "비율 연결 해제" : "비율 연결"}
+          aria-pressed={imageSizeLinked}
+          onClick={() => setImageSizeLinked(!imageSizeLinked)}
+          className="mb-[12px] text-[#70777F]"
+        >
+          {imageSizeLinked ? <Link size={15} /> : <Unlink size={15} />}
+        </button>
+        <NumberBox
+          label="높이"
+          value={selected.height}
+          step={0.5}
+          min={1}
+          width={82}
+          disabled={disabled}
+          onValue={(value) => setImageSize("height", value)}
+        />
+        <NumberBox
+          label="회전"
+          value={selected.rotation ?? 0}
+          min={-360}
+          max={360}
+          width={70}
+          disabled={disabled}
+          onValue={(value) => patch(selected.id, { rotation: value })}
+        />
+        <span className="pb-[10px] text-[14px] text-[#70777F]">mm</span>
+      </PropSection>
+      <PropSection className="py-5">
+        <GrayButton
+          disabled={disabled}
           onClick={() =>
             editor.cropId === selected.id
               ? editor.setCropId(null)
               : editor.startCrop()
           }
         >
-          <Crop size={19} strokeWidth={1.5} />
-          {editor.cropId === selected.id ? "자르기 완료" : "자르기"}
-          <span className="ml-auto text-xs text-slate-400">더블클릭</span>
-        </button>
-        <div className="flex items-end gap-1">
-          <span className="mb-1.5 w-14 shrink-0 text-xs">크기(mm)</span>
-          <NumberInput
-            aria-label="이미지 너비"
-            step="0.1"
-            min="1"
-            value={selected.width}
-            disabled={!editable}
-            onValue={(value) => setImageSize("width", value)}
-            className="min-w-0 flex-1 border px-1 py-1 text-right"
-          />
-          <button
-            type="button"
-            aria-label={imageSizeLinked ? "비율 연결 해제" : "비율 연결"}
-            aria-pressed={imageSizeLinked}
-            onClick={() => setImageSizeLinked(!imageSizeLinked)}
-            className="mb-1 p-1"
-          >
-            {imageSizeLinked ? <Link size={15} /> : <Unlink size={15} />}
-          </button>
-          <NumberInput
-            aria-label="이미지 높이"
-            step="0.1"
-            min="1"
-            value={selected.height}
-            disabled={!editable}
-            onValue={(value) => setImageSize("height", value)}
-            className="min-w-0 flex-1 border px-1 py-1 text-right"
-          />
-        </div>
-        <div className="flex items-center gap-2 border-t pt-3 text-xs">
-          <label className="flex flex-1 items-center gap-1">
-            투명도
-            <select
-              aria-label="이미지 투명도"
-              value={Math.round((selected.opacity ?? 1) * 100)}
-              disabled={!editable}
-              onChange={(event) =>
-                patch(selected.id, {
-                  opacity: Number(event.target.value) / 100,
-                })
-              }
-              className="min-w-0 flex-1 border p-1"
-            >
-              {[100, 90, 80, 70, 60, 50, 40, 30, 20, 10].map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-1 items-center gap-1">
-            회전
-            <NumberInput
-              aria-label="이미지 회전"
-              min="-360"
-              max="360"
-              value={selected.rotation ?? 0}
-              disabled={!editable}
-              onValue={(value) =>
-                patch(selected.id, {
-                  rotation: Math.max(-360, Math.min(360, value)),
-                })
-              }
-              className="w-14 min-w-0 border p-1 text-right"
-            />
-          </label>
-        </div>
-        <div className="flex items-center gap-2 border-b pb-3">
-          <span className="w-14 shrink-0 text-xs">순서</span>
-          {(
-            [
-              ["top", "맨 앞으로"],
-              ["up", "앞으로"],
-              ["down", "뒤로"],
-              ["bottom", "맨 뒤로"],
-            ] as const
-          ).map(([position, label]) => (
-            <button
-              key={position}
-              type="button"
-              title={label}
-              aria-label={label}
-              onClick={() => setOrder(position)}
-              className="p-1 hover:bg-slate-100"
-            >
-              <OrderIcon position={position} />
-            </button>
-          ))}
-          <div className="ml-auto">
-            <FlipControls
-              onFlip={(axis) => flipLayers([selected], axis)}
-              disabled={!editable}
-            />
-          </div>
-        </div>
-        {imageMoreOpen && (
-          <div className="space-y-3">
-            <div className="flex gap-2">
-              <span className="w-14 shrink-0 text-xs">필터</span>
-              <div className="grid min-w-0 flex-1 grid-cols-3 gap-2">
-                {(
-                  [
-                    ["No filter", "none"],
-                    ["Grayscale", "grayscale"],
-                    ["Emboss", "emboss"],
-                    ["BoxBlur", "boxblur"],
-                    ["Brightness", "brightness"],
-                    ["Sepia", "sepia"],
-                  ] as const
-                ).map(([label, filter]) => (
-                  <button
-                    key={label}
-                    type="button"
-                    aria-label={`${label} 필터`}
-                    aria-pressed={(selected.imageFilter ?? "none") === filter}
-                    disabled={!editable}
-                    onClick={() => {
-                      if (filter === "none") {
-                        if (selected.originalImage)
-                          patch(selected.id, {
-                            image: selected.originalImage,
-                            originalImage: undefined,
-                            imageFilter: undefined,
-                          })
-                        setBrightnessOpen(false)
-                      } else if (filter === "brightness")
-                        setBrightnessOpen(true)
-                      else {
-                        setBrightnessOpen(false)
-                        void applyImageFilter(filter)
-                      }
-                    }}
-                    className={`min-w-0 text-center text-[10px] ${(selected.imageFilter ?? "none") === filter ? "font-bold text-blue-600" : ""}`}
-                  >
-                    <img
-                      src={imageSrc(
-                        selected.originalImage ?? selected.image ?? ""
-                      )}
-                      alt=""
-                      className="h-12 w-full object-cover"
-                      style={{
-                        filter: {
-                          none: "none",
-                          grayscale: "grayscale(1)",
-                          emboss: "grayscale(1) contrast(2)",
-                          boxblur: "blur(2px)",
-                          brightness: "brightness(1.3)",
-                          sepia: "sepia(1)",
-                        }[filter],
-                      }}
-                    />
-                    <span className="block truncate">{label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-            {brightnessOpen && (
-              <div className="pl-16 text-xs">
-                <input
-                  aria-label="밝기 조절"
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={brightness}
-                  onChange={(event) =>
-                    setBrightness(Number(event.target.value))
-                  }
-                  className="w-full"
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    void applyImageFilter("brightness", brightness)
-                  }
-                  className="w-full border py-1"
-                >
-                  밝기 적용
-                </button>
-              </div>
-            )}
-            <div className="flex gap-2 border-t pt-3">
+          <Crop size={16} strokeWidth={1.5} className="mr-[6px]" />
+          {editor.cropId === selected.id ? "자르기 완료" : "자르기 (더블클릭)"}
+        </GrayButton>
+      </PropSection>
+      <PropSection className="space-y-[15px] py-[25px]">
+        <h3 className="text-[16px] font-medium text-[#20232A]">필터</h3>
+        <div className="grid grid-cols-3 gap-[10px]">
+          {filters.map(([label, filter]) => {
+            const active = (selected.imageFilter ?? "none") === filter
+            return (
               <button
+                key={filter}
                 type="button"
-                aria-label="회전 초기화"
-                disabled={!editable}
-                onClick={() => patch(selected.id, { rotation: 0 })}
-                className="border p-1"
-              >
-                <RotateCcw size={16} />
-              </button>
-            </div>
-            <label className="block text-xs">
-              이름{" "}
-              <input
-                aria-label="이미지 이름"
-                value={selected.name}
-                disabled={!editable}
-                onChange={(event) =>
-                  patch(selected.id, { name: event.target.value })
-                }
-                className="mt-1 w-full border p-1"
-              />
-            </label>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              {(["x", "y"] as const).map((field) => (
-                <label key={field}>
-                  {field.toUpperCase()} 위치
-                  <NumberInput
-                    aria-label={`${field.toUpperCase()} 위치`}
-                    step="0.1"
-                    value={selected[field]}
-                    disabled={!editable}
-                    onValue={(value) => setGeometry(field, value)}
-                    className="mt-1 w-full border p-1"
-                  />
-                </label>
-              ))}
-            </div>
-            {mode === "designer" && (
-              <div className="space-y-1 text-xs">
-                <label className="block">
-                  <input
-                    type="checkbox"
-                    checked={selected.editable !== false}
-                    onChange={(event) =>
+                aria-label={`${label} 필터`}
+                aria-pressed={active}
+                disabled={disabled}
+                onClick={() => {
+                  if (filter === "none") {
+                    if (selected.originalImage)
                       patch(selected.id, {
-                        editable: event.target.checked,
+                        image: selected.originalImage,
+                        originalImage: undefined,
+                        imageFilter: undefined,
                       })
-                    }
-                  />{" "}
-                  고객 편집 허용
-                </label>
-                <label className="block">
-                  <input
-                    type="checkbox"
-                    checked={!!selected.locked}
-                    onChange={(event) =>
-                      patch(selected.id, { locked: event.target.checked })
-                    }
-                  />{" "}
-                  위치 잠금
-                </label>
-              </div>
-            )}
-            {selectedPrintWarning && (
-              <p className="text-xs text-red-600">
-                {selectedLowDpi
-                  ? "현재 크기에서 사진 해상도가 낮습니다."
-                  : "인쇄 영역 밖의 부분은 출력되지 않습니다."}
-              </p>
-            )}
-          </div>
+                    setBrightnessOpen(false)
+                  } else if (filter === "brightness") setBrightnessOpen(true)
+                  else {
+                    setBrightnessOpen(false)
+                    void applyImageFilter(filter)
+                  }
+                }}
+                className="text-center text-[12px] text-[#3F4250]"
+              >
+                <span
+                  className={`block overflow-hidden rounded-[7px] border-2 ${active ? "border-[#6f717c]" : "border-transparent"}`}
+                >
+                  <img
+                    src={imageSrc(
+                      selected.originalImage ?? selected.image ?? ""
+                    )}
+                    alt=""
+                    className="h-[70px] w-full bg-[#f6f7f9] object-cover"
+                    style={{
+                      filter: {
+                        none: "none",
+                        grayscale: "grayscale(1)",
+                        emboss: "grayscale(1) contrast(2)",
+                        boxblur: "blur(2px)",
+                        brightness: "brightness(1.3)",
+                        sepia: "sepia(1)",
+                      }[filter],
+                    }}
+                  />
+                </span>
+                <span className="mt-1 block truncate">{label}</span>
+              </button>
+            )
+          })}
+        </div>
+        {brightnessOpen && (
+          <SettingBox
+            title="밝기 설정"
+            onClear={() => setBrightnessOpen(false)}
+          >
+            <PropSlider
+              label="밝기"
+              min={0}
+              max={100}
+              value={brightness}
+              onValue={setBrightness}
+            />
+            <GrayButton
+              onClick={() => void applyImageFilter("brightness", brightness)}
+            >
+              밝기 적용
+            </GrayButton>
+          </SettingBox>
         )}
-      </div>
-      <button
-        type="button"
-        aria-label={imageMoreOpen ? "SIMPLE" : "MORE"}
-        aria-expanded={imageMoreOpen}
-        onClick={() => setImageMoreOpen(!imageMoreOpen)}
-        className="flex w-full items-center justify-center gap-1 border-t py-1 text-xs"
-      >
-        {imageMoreOpen ? (
-          <>
-            <ChevronUp size={14} /> SIMPLE
-          </>
-        ) : (
-          <>
-            <ChevronDown size={14} /> MORE
-          </>
-        )}
-      </button>
+      </PropSection>
+      <OpacitySection
+        value={selected.opacity}
+        disabled={disabled}
+        onValue={(opacity) => patch(selected.id, { opacity })}
+      />
+      {mode === "designer" && (
+        <PropSection className="py-[15px]">
+          <Toggle
+            label="고객 편집 허용"
+            checked={selected.editable !== false}
+            onChange={(checked) => patch(selected.id, { editable: checked })}
+          />
+          <Toggle
+            label="위치 잠금"
+            checked={!!selected.locked}
+            onChange={(checked) => patch(selected.id, { locked: checked })}
+          />
+        </PropSection>
+      )}
+      {selectedPrintWarning && (
+        <p className="px-[13px] py-[15px] text-[13px] text-[#FE6767]">
+          {selectedLowDpi
+            ? "현재 크기에서 사진 해상도가 낮습니다."
+            : "인쇄 영역 밖의 부분은 출력되지 않습니다."}
+        </p>
+      )}
     </aside>
   )
 }

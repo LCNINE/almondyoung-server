@@ -13,6 +13,7 @@ import {
   type Layer,
 } from "../lib/document"
 import { mm } from "../lib/layer"
+import { lineFromPoints, lineWidth, lineWorldPoints } from "../lib/line-shape"
 import { textExtent } from "../components/graphic"
 import {
   cropToBox,
@@ -419,6 +420,30 @@ export function useCanvasInteraction({
       (dx * Math.cos(rad) + dy * Math.sin(rad)) * (layer.flipX ? -1 : 1)
     const localDy =
       (-dx * Math.sin(rad) + dy * Math.cos(rad)) * (layer.flipY ? -1 : 1)
+    // 선 끝점·꺾임점: 끈 점만 옮기고 상자·회전은 점들에서 다시 만든다
+    if (handle?.startsWith("line-")) {
+      const points = lineWorldPoints(layer)
+      const index = Number(handle.slice(5))
+      if (points.length === 2)
+        points.splice(1, 0, {
+          x: (points[0].x + points[1].x) / 2,
+          y: (points[0].y + points[1].y) / 2,
+        })
+      points[index] = { x: points[index].x + dx, y: points[index].y + dy }
+      const bent = index === 1 || !!layer.linePath
+      setDesign((old) =>
+        updateLayer(
+          old,
+          side,
+          layer.id,
+          lineFromPoints(
+            bent ? points : [points[0], points[2]],
+            lineWidth(layer) * 5
+          )
+        )
+      )
+      return
+    }
     if (cropId === layer.id && handle !== "rotate") {
       setDesign((old) =>
         updateLayer(

@@ -60,17 +60,18 @@ export function ToolPanel({ editor }: { editor: AlmondEditor }) {
   return (
     <div className="relative z-10 flex shrink-0">
       <div
-        className={`shrink-0 transition-[width] duration-200 ease-[ease] ${moving || !panelOpen ? "overflow-hidden" : ""}`}
+        className={`relative shrink-0 transition-[width] duration-200 ease-[ease] ${moving || !panelOpen ? "overflow-hidden" : ""}`}
         style={{ width }}
         onTransitionEnd={(event) => {
           if (event.target === event.currentTarget) setMoving(false)
         }}
       >
         <aside
+          data-tool-panel
           inert={!panelOpen}
           data-wide={wide || undefined}
           style={{ width: wide ? 696 : 360 }}
-          className={`group/panel relative h-full border-r border-[#e0e1e5] bg-white ${inspecting ? "overflow-y-auto" : `p-5 ${tool === "background" ? "overflow-visible" : "overflow-y-auto"}`}`}
+          className={`group/panel relative h-full border-r border-[#e0e1e5] bg-white ${inspecting ? "overflow-y-auto [&::-webkit-scrollbar]:w-5 [&::-webkit-scrollbar-thumb]:min-h-[50px] [&::-webkit-scrollbar-thumb]:rounded-[14px] [&::-webkit-scrollbar-thumb]:border-[7px] [&::-webkit-scrollbar-thumb]:border-solid [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding hover:[&::-webkit-scrollbar-thumb]:bg-[#e6e7ea] [&::-webkit-scrollbar-thumb:hover]:bg-[#222]" : `p-5 ${tool === "background" ? "overflow-visible" : "overflow-y-auto"}`}`}
         >
           {inspecting && <PropertyPanel editor={editor} />}
           {/* 선택을 풀면 메뉴가 스크롤·탭 그대로 돌아오도록 숨기기만 한다 */}

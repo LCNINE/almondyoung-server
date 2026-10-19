@@ -49,6 +49,36 @@ const GOOGLE_FONTS = [
   ],
   ["감자꽃", "Gamja Flower", "Gamja+Flower", "cursive", "손글씨"],
   ["하이멜로디", "Hi Melody", "Hi+Melody", "cursive", "손글씨"],
+  [
+    "나눔고딕코딩",
+    "Nanum Gothic Coding",
+    "Nanum+Gothic+Coding:wght@400;700",
+    "sans-serif",
+    "고딕",
+  ],
+  ["스타일리쉬", "Stylish", "Stylish", "sans-serif", "고딕"],
+  ["오르빗", "Orbit", "Orbit", "sans-serif", "고딕"],
+  ["디필레이아", "Diphylleia", "Diphylleia", "serif", "명조"],
+  ["그랜디플로라", "Grandiflora One", "Grandiflora+One", "serif", "명조"],
+  ["베이글", "Bagel Fat One", "Bagel+Fat+One", "sans-serif", "제목"],
+  ["가석", "Gasoek One", "Gasoek+One", "sans-serif", "제목"],
+  ["개구쟁이", "Gaegu", "Gaegu:wght@400;700", "cursive", "손글씨"],
+  ["서툰이야기", "Poor Story", "Poor+Story", "cursive", "손글씨"],
+  ["귀여운 폰트", "Cute Font", "Cute+Font", "cursive", "손글씨"],
+  ["동해 독도", "East Sea Dokdo", "East+Sea+Dokdo", "cursive", "손글씨"],
+  ["독도", "Dokdo", "Dokdo", "cursive", "손글씨"],
+  ["연성", "Yeon Sung", "Yeon+Sung", "cursive", "장식"],
+  ["구기", "Gugi", "Gugi", "cursive", "장식"],
+  ["싱글데이", "Single Day", "Single+Day", "cursive", "장식"],
+  ["기랑해랑", "Kirang Haerang", "Kirang+Haerang", "cursive", "장식"],
+  ["모이라이", "Moirai One", "Moirai+One", "cursive", "장식"],
+  [
+    "흑백사진",
+    "Black And White Picture",
+    "Black+And+White+Picture",
+    "sans-serif",
+    "레트로",
+  ],
 ] as const
 
 export const FONT_CATEGORIES = [
@@ -56,6 +86,8 @@ export const FONT_CATEGORIES = [
   "명조",
   "제목",
   "손글씨",
+  "장식",
+  "레트로",
   "내 글꼴",
 ] as const
 

@@ -8,7 +8,9 @@ import {
   type SetStateAction,
 } from "react"
 import { updateLayer, type Design, type Layer } from "../lib/document"
-import { makeLayer, mm } from "../lib/layer"
+import { makeLayer, mm, pxUnit } from "../lib/layer"
+import { lineFromPoints } from "../lib/line-shape"
+import { DRAW_ART } from "../lib/draw-art"
 import {
   fitPath,
   refitPathLayer,
@@ -109,7 +111,13 @@ export type BrushKind = "pen" | "highlighter"
 
 export type BrushSetting = { color: string; size: number; opacity: number }
 
-export type DrawShape = "arrow" | "dash" | "circle" | "square" | "triangle"
+export type DrawShape =
+  | "arrow"
+  | "dash"
+  | "circle"
+  | "square"
+  | "triangle"
+  | `${"hand" | "graphic"}-${string}`
 
 // 망고보드 그리기 도구 기본값. size 는 1080px 캔버스 기준 두께(1~100)라 규격 짧은 변에 비례해 mm 로 바꾼다
 export const BRUSHES: Record<
@@ -288,35 +296,57 @@ export function usePenTool({
     setShapeDrag(null)
     if (!drag) return
     const { from, to } = drag
+    const art = shapeKind ? DRAW_ART[shapeKind] : undefined
+    if (shapeKind && art) {
+      // 누르기만 하면 짧은 변의 1/4 크기로 그 자리에 놓는다. 손그림은 가로세로 비율을 고정한다
+      const dragged = dist(from, to) >= handleSize
+      const fallback = Math.min(design.widthMm, design.heightMm) / 4
+      const square = Math.max(Math.abs(to.x - from.x), Math.abs(to.y - from.y))
+      const hand = shapeKind.startsWith("hand")
+      const width = dragged
+        ? hand
+          ? square
+          : Math.abs(to.x - from.x)
+        : fallback
+      const height = dragged
+        ? hand
+          ? square
+          : Math.max(1, Math.abs(to.y - from.y))
+        : fallback
+      const layer: Layer = {
+        ...makeLayer("rect", design),
+        name: art.label,
+        shapeVariant: shapeKind,
+        fill: brushes.pen.color,
+        stroke: "none",
+        strokeWidth: 0,
+        text: undefined,
+        opacity: shapeSetting.opacity / 100,
+        x: mm(dragged ? Math.min(from.x, to.x) : from.x - width / 2),
+        y: mm(dragged ? Math.min(from.y, to.y) : from.y - height / 2),
+        width: mm(Math.max(1, width)),
+        height: mm(height),
+      }
+      change({ ...design, [side]: [...design[side], layer] })
+      return setSelectedId(layer.id)
+    }
     // 거의 안 끌었으면 그리지 않고 고른 것만 푼다
     if (!shapeKind || dist(from, to) < handleSize) return setSelectedId(null)
-    const width = mm(
-      Math.max(0.1, (10 * Math.min(design.widthMm, design.heightMm)) / 1080)
-    )
+    const width = Math.max(0.1, Math.round(10 * pxUnit(design) * 100) / 100)
     const style = {
       stroke: shapeSetting.color,
       strokeWidth: width,
       opacity: shapeSetting.opacity / 100,
     }
-    const length = dist(from, to)
-    const height = Math.max(width * 4, 1)
     const layer: Layer =
       shapeKind === "arrow" || shapeKind === "dash"
         ? {
             ...makeLayer("line", design),
             ...style,
             name: shapeKind === "arrow" ? "화살표" : "점선",
-            x: mm((from.x + to.x) / 2 - length / 2),
-            y: mm((from.y + to.y) / 2 - height / 2),
-            width: mm(length),
-            height: mm(height),
-            rotation:
-              Math.round(
-                ((Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI) *
-                  10
-              ) / 10,
+            ...lineFromPoints([from, to], width * 5),
             lineEnd: shapeKind === "arrow" ? "arrow" : undefined,
-            strokeDash: shapeKind === "dash" ? "dashed" : undefined,
+            lineDash: shapeKind === "dash" ? [4, 2] : undefined,
           }
         : {
             ...makeLayer(

@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { almondFonts, type UgcServiceSchema, type UgcTx } from '../../db/schema';
 import { PublicFileClient } from '../clients/public-file.client';
 import { type AlmondFontEntity } from '../types/almond-font.types';
+
+const squash = (value: string) => value.replace(/\s/g, '').toLowerCase();
 
 @Injectable()
 export class AlmondFontManager {
@@ -18,6 +20,18 @@ export class AlmondFontManager {
     const { format } = await this.files.fetchFont(fileId);
     if (!format) throw new BadRequestError('글꼴 파일이 아닙니다. TTF·OTF·WOFF·WOFF2 만 올릴 수 있습니다.');
     return this.db.run(async (trx) => {
+      // 띄어쓰기·대소문자만 다른 이름도 같은 글꼴로 본다
+      const [same] = await trx
+        .select({ name: almondFonts.name })
+        .from(almondFonts)
+        .where(
+          and(
+            isNull(almondFonts.deletedAt),
+            sql`lower(regexp_replace(${almondFonts.name}, '\\s', '', 'g')) = ${squash(name)}`,
+          ),
+        )
+        .limit(1);
+      if (same) throw new ConflictError(`이미 있는 글꼴입니다. (${same.name})`);
       const [created] = await trx
         .insert(almondFonts)
         .values({ fileId, name: name.trim(), format, createdBy: userId, licenseConfirmedAt: new Date() })

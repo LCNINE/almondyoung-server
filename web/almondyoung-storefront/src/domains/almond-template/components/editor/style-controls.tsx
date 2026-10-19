@@ -1,14 +1,7 @@
-import { useState, useSyncExternalStore } from "react"
+import { useRef, useState, useSyncExternalStore } from "react"
 import { ChevronDown, FlipHorizontal, FlipVertical } from "lucide-react"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
 import type { Layer } from "../../lib/document"
 import {
-  FONT_CATEGORIES,
-  type FontCategory,
   fontOptions,
   fontStack,
   loadUploadedFont,
@@ -17,6 +10,8 @@ import {
 import { PrintColorPicker } from "../color-picker"
 import { bevelOf, shadowOf, strokeRounded } from "../graphic"
 import { NumberInput } from "./number-input"
+import { PropSlider } from "./prop-sections"
+import { FontPicker } from "./font-picker"
 
 // 하나를 골랐든 여럿을 골랐든 같은 컨트롤을 쓴다. apply 는 고른 요소 모두에 들어간다
 export type StyleTarget = {
@@ -40,6 +35,7 @@ export function common<T>(
 const pressed = (on: boolean) =>
   `border px-2 py-1 ${on ? "border-blue-600 text-blue-600" : ""}`
 
+// 망고보드 세그먼트: 회색 트랙 안에서 고른 칸만 흰 바탕 + 노랑 테두리
 function Segmented<T extends string>({
   label,
   options,
@@ -54,9 +50,13 @@ function Segmented<T extends string>({
   disabled: boolean
 }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="w-12 shrink-0">{label}</span>
-      <div role="group" aria-label={label} className="flex">
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-[15px] text-[#3F4250]">{label}</span>
+      <div
+        role="group"
+        aria-label={label}
+        className="flex rounded-[7px] bg-[#e2e7ed]"
+      >
         {options.map(([option, text]) => (
           <button
             key={option}
@@ -64,7 +64,7 @@ function Segmented<T extends string>({
             aria-pressed={value === option}
             disabled={disabled}
             onClick={() => onPick(option)}
-            className={`${pressed(value === option)} -ml-px first:ml-0`}
+            className={`h-[34px] min-w-[56px] rounded-[7px] border-2 px-2 text-[14px] ${value === option ? "border-[#fede29] bg-white text-[#20232A]" : "border-transparent text-[#70777F]"}`}
           >
             {text}
           </button>
@@ -125,13 +125,9 @@ export function FontSelect({
     fontOptions
   )
   const [open, setOpen] = useState(false)
-  const [category, setCategory] = useState<FontCategory | null>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
   const current = options.find((font) => font.value === value)
-  const categories = FONT_CATEGORIES.filter((name) =>
-    options.some((font) => font.category === name)
-  )
   const choose = (family: string) => {
-    setOpen(false)
     // 아직 안 받은 웹폰트로 재면 대체 글꼴 폭으로 상자가 맞춰진다
     ;(loadUploadedFont(family) ?? document.fonts.load(`16px ${family}`))
       .catch(() => undefined)
@@ -148,117 +144,32 @@ export function FontSelect({
   return (
     <div className="flex items-center gap-2">
       {!bare && <span className="w-9 shrink-0">폰트</span>}
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            aria-label="폰트"
-            disabled={disabled}
-            className={
-              bare
-                ? "flex h-[38px] min-w-0 flex-1 items-center justify-between gap-1 rounded-[6px] border border-[#e0e1e5] px-[10px] text-left text-[14px] text-[#3F4250] disabled:opacity-50"
-                : "flex min-w-0 flex-1 items-center justify-between gap-1 border px-2 py-1 text-left disabled:opacity-50"
-            }
-          >
-            <span
-              className="truncate"
-              style={current ? { fontFamily: current.value } : undefined}
-            >
-              {current?.label ?? "혼합"}
-            </span>
-            <ChevronDown className="size-4 shrink-0" aria-hidden="true" />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent
-          align="start"
-          className="z-[10001] w-72 p-0"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault()
-            const list = event.currentTarget as HTMLElement
-            ;(
-              list.querySelector<HTMLElement>('[aria-selected="true"]') ??
-              list.querySelector<HTMLElement>('[role="option"]')
-            )?.focus()
-          }}
-          // 열린 동안 누른 키는 편집기 단축키(방향키 이동·Space 화면 이동·Esc 선택 해제)로 가지 않는다
-          onKeyDown={(event) => {
-            event.stopPropagation()
-            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return
-            event.preventDefault()
-            const items = Array.from(
-              event.currentTarget.querySelectorAll<HTMLElement>(
-                '[role="option"]'
-              )
-            )
-            const at = items.indexOf(document.activeElement as HTMLElement)
-            items[
-              Math.max(
-                0,
-                Math.min(
-                  items.length - 1,
-                  at + (event.key === "ArrowDown" ? 1 : -1)
-                )
-              )
-            ]?.focus()
-          }}
+      <button
+        ref={trigger}
+        type="button"
+        aria-label="폰트"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+        className="flex h-[38px] min-w-0 flex-1 items-center justify-between gap-1 rounded-[6px] border border-[#e0e1e5] px-[10px] text-left text-[14px] text-[#3F4250] disabled:opacity-50"
+      >
+        <span
+          className="truncate"
+          style={current ? { fontFamily: current.value } : undefined}
         >
-          <div
-            role="group"
-            aria-label="폰트 분류"
-            className="flex flex-wrap gap-1 border-b p-2"
-          >
-            {[null, ...categories].map((name) => (
-              <button
-                key={name ?? "전체"}
-                type="button"
-                aria-pressed={category === name}
-                onClick={() => setCategory(name)}
-                className={`rounded-full border px-2.5 py-0.5 text-xs ${category === name ? "border-foreground bg-foreground text-white" : "text-muted-foreground"}`}
-              >
-                {name ?? "전체"}
-              </button>
-            ))}
-          </div>
-          <ul
-            role="listbox"
-            aria-label="폰트 목록"
-            className="max-h-72 overflow-y-auto py-1"
-          >
-            {options
-              .filter((font) => !category || font.category === category)
-              .map((font) => (
-                <li key={font.value}>
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={font.value === value}
-                    onClick={() => choose(font.value)}
-                    className={`hover:bg-muted flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left ${font.value === value ? "bg-secondary" : ""}`}
-                  >
-                    <span className="truncate text-sm">{font.label}</span>
-                    <span
-                      className="shrink-0 text-base"
-                      style={{ fontFamily: font.value }}
-                      aria-hidden="true"
-                    >
-                      한글 Abc
-                    </span>
-                  </button>
-                </li>
-              ))}
-          </ul>
-          {everywhere && value && (
-            <label className="flex items-center gap-1.5 border-t px-3 py-2 text-xs">
-              <input
-                type="checkbox"
-                checked={replaceSame}
-                onChange={(event) => setReplaceSame(event.target.checked)}
-              />
-              같은 폰트 모두 변경
-            </label>
-          )}
-        </PopoverContent>
-      </Popover>
+          {current?.label ?? "혼합"}
+        </span>
+        <ChevronDown className="size-4 shrink-0" aria-hidden="true" />
+      </button>
+      <FontPicker
+        open={open}
+        value={value}
+        anchor={trigger.current}
+        onPick={choose}
+        onClose={() => setOpen(false)}
+        replaceSame={replaceSame}
+        onReplaceSame={everywhere && value ? setReplaceSame : undefined}
+      />
     </div>
   )
 }
@@ -476,41 +387,27 @@ export function StarControls({
   const points = layer.starPoints ?? 5
   const ratio = layer.starRatio ?? 0.38
   return (
-    <div className="flex items-center gap-2">
-      <label className="flex items-center gap-1 whitespace-nowrap">
-        꼭짓점
-        <NumberInput
-          aria-label="별 꼭짓점 수"
-          min={3}
-          max={20}
-          step={1}
-          className="w-12 border p-1 text-right"
-          value={points}
-          disabled={disabled}
-          onValue={(value) =>
-            apply({ starPoints: Math.round(value), starRatio: ratio })
-          }
-        />
-      </label>
-      <label className="flex min-w-0 flex-1 items-center gap-1 whitespace-nowrap">
-        뾰족함
-        <input
-          type="range"
-          aria-label="별 뾰족함"
-          min={0}
-          max={95}
-          step={1}
-          value={Math.round((1 - ratio) * 100)}
-          disabled={disabled}
-          onChange={(event) =>
-            apply({
-              starPoints: points,
-              starRatio: 1 - Number(event.target.value) / 100,
-            })
-          }
-          className="min-w-0 flex-1"
-        />
-      </label>
+    <div className="grid grid-cols-2 gap-[30px]">
+      <PropSlider
+        label="꼭짓점"
+        min={3}
+        max={20}
+        value={points}
+        disabled={disabled}
+        onValue={(value) =>
+          apply({ starPoints: Math.round(value), starRatio: ratio })
+        }
+      />
+      <PropSlider
+        label="뾰족함"
+        min={0}
+        max={95}
+        value={Math.round((1 - ratio) * 100)}
+        disabled={disabled}
+        onValue={(value) =>
+          apply({ starPoints: points, starRatio: 1 - value / 100 })
+        }
+      />
     </div>
   )
 }

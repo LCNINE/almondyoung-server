@@ -14,6 +14,9 @@ import { layerBounds } from "../../lib/canvas-math"
 import type { Layer } from "../../lib/document"
 import { mm } from "../../lib/layer"
 import { OrderIcon } from "./order-icon"
+import { PrintColorPicker } from "../color-picker"
+import { bevelOf, shadowOf } from "../graphic"
+import { common, type StyleTarget } from "./style-controls"
 
 // 망고보드 속성 패널 부품. 섹션은 아래 1px #e6e7ea 선으로 나뉜다
 
@@ -89,7 +92,9 @@ export function AlignOrderSection({
   canFlip?: boolean
 }) {
   const { design, patch, editable, setOrder, flipLayers } = editor
-  const align = (kind: "left" | "hcenter" | "right" | "top" | "vcenter" | "bottom") => {
+  const align = (
+    kind: "left" | "hcenter" | "right" | "top" | "vcenter" | "bottom"
+  ) => {
     const box = layerBounds(layer)
     const dx =
       kind === "left"
@@ -194,7 +199,10 @@ export function NumberBox({
   const commit = (raw: string) => {
     const parsed = Number(raw)
     if (!Number.isFinite(parsed)) return setDraft(String(value))
-    const clamped = Math.max(min ?? -Infinity, Math.min(max ?? Infinity, parsed))
+    const clamped = Math.max(
+      min ?? -Infinity,
+      Math.min(max ?? Infinity, parsed)
+    )
     onValue(clamped)
   }
   const nudge = (delta: number) =>
@@ -202,7 +210,9 @@ export function NumberBox({
   return (
     <label className="flex flex-col gap-[5px]">
       {label && (
-        <span className="h-4 text-[13px] leading-4 text-[#70777F]">{label}</span>
+        <span className="h-4 text-[13px] leading-4 text-[#70777F]">
+          {label}
+        </span>
       )}
       <span className="flex items-center gap-1">
         <span className="relative" style={{ width }}>
@@ -387,5 +397,206 @@ export function Toggle({
         />
       </button>
     </label>
+  )
+}
+
+// 망고보드 아코디언 안쪽 박스: 「OO 설정」 + 해제 밑줄 링크
+export function SettingBox({
+  title,
+  onClear,
+  disabled = false,
+  children,
+}: {
+  title: string
+  onClear: () => void
+  disabled?: boolean
+  children: ReactNode
+}) {
+  return (
+    <div className="mt-[15px] space-y-[15px] rounded-[7px] bg-[#f6f7f9] px-[15px] py-5">
+      <div className="flex items-center justify-between">
+        <span className="text-[15px] text-[#20232A]">{title}</span>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onClear}
+          className="text-[15px] text-[#3F4250] underline"
+        >
+          해제
+        </button>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+// 그림자 행: 스와치로 색을 고르면 켜지고 설정 박스가 펼쳐진다. 값은 1080px 화면 기준 px 로 보이고 mm 로 저장한다
+export function ShadowRow({
+  target,
+  unit,
+}: {
+  target: StyleTarget
+  unit: number
+}) {
+  const { layers, apply, disabled } = target
+  const on = layers.every((layer) => !!layer.shadow)
+  const read = <K extends keyof ReturnType<typeof shadowOf>>(key: K) =>
+    common(layers, (layer) => shadowOf(layer)[key])
+  const px = (value: number | null) =>
+    value === null ? 0 : Math.round(value / unit)
+  const opacity = read("opacity")
+  return (
+    <div>
+      <PrintColorPicker
+        label="그림자"
+        value={on ? (read("color") ?? "#000000") : "none"}
+        disabled={disabled}
+        onClear={() => apply({ shadow: false })}
+        onApply={(color) =>
+          apply(
+            on
+              ? { shadowColor: color }
+              : {
+                  shadow: true,
+                  shadowColor: color,
+                  shadowX: Math.round(5 * unit * 100) / 100,
+                  shadowY: Math.round(5 * unit * 100) / 100,
+                  shadowBlur: Math.round(5 * unit * 100) / 100,
+                  shadowOpacity: 0.5,
+                }
+          )
+        }
+      />
+      <div
+        className={`grid transition-[grid-template-rows] duration-300 ${on ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+      >
+        <div className="overflow-hidden">
+          <SettingBox
+            title="그림자 설정"
+            disabled={disabled}
+            onClear={() => apply({ shadow: false })}
+          >
+            <div className="flex items-end gap-[10px]">
+              {(
+                [
+                  ["x", "가로", "shadowX", -50, 50],
+                  ["y", "세로", "shadowY", -50, 50],
+                  ["blur", "블러", "shadowBlur", 0, 20],
+                ] as const
+              ).map(([key, label, field, min, max]) => (
+                <NumberBox
+                  key={key}
+                  label={label}
+                  value={px(read(key))}
+                  width={73}
+                  disabled={disabled}
+                  onValue={(value) =>
+                    apply({
+                      [field]: Math.max(
+                        min,
+                        Math.min(max, Math.round(value * unit * 100) / 100)
+                      ),
+                    })
+                  }
+                />
+              ))}
+              <span className="pb-[10px] text-[14px] text-[#70777F]">px</span>
+            </div>
+            <PropSlider
+              label="그림자 불투명도"
+              min={0}
+              max={100}
+              value={opacity === null ? 0 : Math.round(opacity * 100)}
+              disabled={disabled}
+              onValue={(value) => apply({ shadowOpacity: value / 100 })}
+            />
+          </SettingBox>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 입체·질감은 망고보드에 없는 인쇄용 효과라 토글 행으로 둔다
+export function PrintEffectRows({ target }: { target: StyleTarget }) {
+  const { layers, apply, disabled } = target
+  const on = (field: "bevel" | "texture") =>
+    layers.every((layer) => !!layer[field])
+  const bevel = <K extends keyof ReturnType<typeof bevelOf>>(key: K) =>
+    common(layers, (layer) => bevelOf(layer)[key]) ?? 0
+  return (
+    <>
+      <Toggle
+        label="입체"
+        checked={on("bevel")}
+        disabled={disabled}
+        onChange={(checked) => apply({ bevel: checked })}
+      />
+      {on("bevel") && (
+        <SettingBox
+          title="입체 설정"
+          disabled={disabled}
+          onClear={() => apply({ bevel: false })}
+        >
+          <PropSlider
+            label="크기"
+            min={0.1}
+            max={20}
+            step={0.1}
+            value={bevel("size")}
+            disabled={disabled}
+            onValue={(value) => apply({ bevelSize: value })}
+          />
+          <PropSlider
+            label="세기"
+            min={0}
+            max={100}
+            value={bevel("depth")}
+            disabled={disabled}
+            onValue={(value) => apply({ bevelDepth: value })}
+          />
+          <PropSlider
+            label="빛 방향"
+            min={-180}
+            max={180}
+            step={15}
+            value={bevel("angle")}
+            disabled={disabled}
+            onValue={(value) => apply({ bevelAngle: value })}
+          />
+        </SettingBox>
+      )}
+      <Toggle
+        label="질감"
+        checked={on("texture")}
+        disabled={disabled}
+        onChange={(checked) => apply({ texture: checked })}
+      />
+    </>
+  )
+}
+
+export function OpacitySection({
+  value,
+  disabled,
+  onValue,
+}: {
+  value: number | undefined
+  disabled: boolean
+  onValue: (opacity: number) => void
+}) {
+  return (
+    <PropSection className="py-5">
+      <PropSlider
+        label="불투명도"
+        min={10}
+        max={100}
+        value={Math.round((value ?? 1) * 100)}
+        disabled={disabled}
+        onValue={(percent) =>
+          onValue(Math.max(0.1, Math.min(1, percent / 100)))
+        }
+      />
+    </PropSection>
   )
 }

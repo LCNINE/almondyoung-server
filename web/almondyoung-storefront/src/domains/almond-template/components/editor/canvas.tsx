@@ -19,6 +19,7 @@ import {
   unionBounds,
 } from "../../lib/canvas-math"
 import { layerPathData } from "../../lib/path-shape"
+import { lineLocalPoints } from "../../lib/line-shape"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import { CanvasGuides } from "./canvas-guides"
 import { useLeaveWarning } from "../../hooks/use-leave-warning"
@@ -96,6 +97,77 @@ function SelectionHandle({
         />
       )}
     </g>
+  )
+}
+
+// 망고보드 선 핸들: 양끝 흰 사각(끝점 이동), 가운데 흰 원(꺾임점). 곡선이면 제어선을 점선으로 보인다
+function LineHandles({
+  layer,
+  scale,
+  onPointerDown,
+}: {
+  layer: Layer
+  scale: number
+  onPointerDown: (event: React.PointerEvent<SVGElement>, index: number) => void
+}) {
+  const points = lineLocalPoints(layer)
+  const [start, end] = [points[0], points[points.length - 1]]
+  const bend = points.length === 3 ? points[1] : null
+  const middle = bend ?? {
+    x: (start.x + end.x) / 2,
+    y: (start.y + end.y) / 2,
+  }
+  const size = 7 / scale
+  return (
+    <>
+      {bend && layer.lineCurved && (
+        <path
+          d={`M${start.x},${start.y} L${bend.x},${bend.y} L${end.x},${end.y}`}
+          fill="none"
+          stroke="#70777F"
+          strokeWidth={1 / scale}
+          strokeDasharray={`${4 / scale} ${4 / scale}`}
+          pointerEvents="none"
+        />
+      )}
+      {[start, end].map((p, i) => (
+        <g
+          key={i}
+          role="button"
+          aria-label={i ? "선 끝점 이동" : "선 시작점 이동"}
+          className="cursor-move"
+          onPointerDown={(event) => onPointerDown(event, i ? 2 : 0)}
+        >
+          <circle cx={p.x} cy={p.y} r={12 / scale} fill="transparent" />
+          <rect
+            x={p.x - size / 2}
+            y={p.y - size / 2}
+            width={size}
+            height={size}
+            rx={1.5 / scale}
+            fill="#fff"
+            stroke="#3F4250"
+            strokeWidth={1 / scale}
+          />
+        </g>
+      ))}
+      <g
+        role="button"
+        aria-label="선 꺾기"
+        className="cursor-move"
+        onPointerDown={(event) => onPointerDown(event, 1)}
+      >
+        <circle cx={middle.x} cy={middle.y} r={12 / scale} fill="transparent" />
+        <circle
+          cx={middle.x}
+          cy={middle.y}
+          r={6 / scale}
+          fill="#fff"
+          stroke="#b9bcc3"
+          strokeWidth={1 / scale}
+        />
+      </g>
+    </>
   )
 }
 
@@ -451,6 +523,8 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                 )
               )}
             </g>
+            {/* 그리는 중에도 방금 그린 선의 핸들은 잡혀야 하므로 오버레이를 선택 핸들 아래에 둔다 */}
+            {shapeActive && <ShapeOverlay editor={editor} />}
             {selected && selected.visible !== false && !pointEditLayer && (
               <g
                 id="selection-outline"
@@ -484,29 +558,41 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                     />
                   </>
                 )}
-                <rect
-                  x={selected.x}
-                  y={selected.y}
-                  width={selected.width}
-                  height={selected.height}
-                  fill="none"
-                  stroke="#42dfe5"
-                  strokeWidth={1 / scale}
-                  pointerEvents="none"
-                />
-                {handles.map(([handle, rx, ry]) => (
-                  <SelectionHandle
-                    key={handle}
-                    handle={handle}
-                    x={selected.x + selected.width * rx}
-                    y={selected.y + selected.height * ry}
+                {selected.type === "line" ? (
+                  <LineHandles
+                    layer={selected}
                     scale={scale}
-                    label={`${handle} 크기 조절`}
-                    onPointerDown={(event) =>
-                      startResize(event, selected, handle)
+                    onPointerDown={(event, index) =>
+                      startResize(event, selected, `line-${index}`)
                     }
                   />
-                ))}
+                ) : (
+                  <rect
+                    x={selected.x}
+                    y={selected.y}
+                    width={selected.width}
+                    height={selected.height}
+                    fill="none"
+                    stroke="#42dfe5"
+                    strokeWidth={1 / scale}
+                    pointerEvents="none"
+                  />
+                )}
+                {(selected.type === "line" ? [] : handles).map(
+                  ([handle, rx, ry]) => (
+                    <SelectionHandle
+                      key={handle}
+                      handle={handle}
+                      x={selected.x + selected.width * rx}
+                      y={selected.y + selected.height * ry}
+                      scale={scale}
+                      label={`${handle} 크기 조절`}
+                      onPointerDown={(event) =>
+                        startResize(event, selected, handle)
+                      }
+                    />
+                  )
+                )}
                 <RotateHandle
                   x={selected.x + selected.width / 2}
                   y={selected.y}
@@ -525,7 +611,7 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                   width={groupBox.x1 - groupBox.x0}
                   height={groupBox.y1 - groupBox.y0}
                   fill="none"
-                  stroke="#42dfe5"
+                  stroke={mergedGroup ? "#f03fb8" : "#42dfe5"}
                   strokeWidth={1 / scale}
                   strokeDasharray={`${4 / scale} ${3 / scale}`}
                   pointerEvents="none"
@@ -658,7 +744,6 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
             )}
             {penActive && <PenOverlay editor={editor} />}
             {pencilActive && <PencilOverlay editor={editor} />}
-            {shapeActive && <ShapeOverlay editor={editor} />}
             {pointEditLayer && <PointEditOverlay editor={editor} />}
           </svg>
           {selected &&
