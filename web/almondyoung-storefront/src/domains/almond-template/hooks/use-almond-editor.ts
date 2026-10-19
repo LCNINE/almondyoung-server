@@ -32,6 +32,8 @@ export type EditorTool =
   | "shape"
   | "clipart"
   | "qr"
+  | "mywork"
+  | "draw"
 export type AlmondEditorProps = {
   productId?: string
   mode?: EditorMode
@@ -399,6 +401,11 @@ export function useAlmondEditor({
     mergeGroup,
     splitGroup,
     setOrder: actions.setOrder,
+    duplicateSelected: actions.duplicateSelected,
+    toggleLock: () =>
+      selected &&
+      (mode === "designer" || selected.editable !== false) &&
+      actions.patch(selected.id, { locked: !selected.locked }),
     selectAll: () =>
       selectLayers(
         layers

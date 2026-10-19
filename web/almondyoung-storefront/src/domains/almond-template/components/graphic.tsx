@@ -476,17 +476,36 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
             preserveAspectRatio="xMidYMid meet"
           />
         )}
-        {layer.type === "line" && (
-          <line
-            x1={layer.x}
-            y1={cy}
-            x2={layer.x + layer.width}
-            y2={cy}
-            stroke={layer.stroke ?? layer.fill}
-            strokeWidth={Math.max(0.3, layer.strokeWidth ?? 1)}
-            {...strokeStyle(layer, Math.max(0.3, layer.strokeWidth ?? 1))}
-          />
-        )}
+        {layer.type === "line" &&
+          (() => {
+            const width = Math.max(0.3, layer.strokeWidth ?? 1)
+            const color = layer.stroke ?? layer.fill
+            // 망고보드 화살촉 비율: 길이 3.04배, 반높이 1.67배 두께. 선은 촉 안쪽에서 끊어 끝이 삐져나오지 않게 한다
+            const head =
+              layer.lineEnd === "arrow"
+                ? Math.min(width * 3.04, layer.width * 0.5)
+                : 0
+            const end = layer.x + layer.width
+            return (
+              <>
+                <line
+                  x1={layer.x}
+                  y1={cy}
+                  x2={end - head * 0.8}
+                  y2={cy}
+                  stroke={color}
+                  strokeWidth={width}
+                  {...strokeStyle(layer, width)}
+                />
+                {head > 0 && (
+                  <path
+                    d={`M${end - head},${cy - width * 1.67} L${end},${cy} L${end - head},${cy + width * 1.67} z`}
+                    fill={color}
+                  />
+                )}
+              </>
+            )
+          })()}
         {layer.type === "image" && layer.image && (
           <>
             <defs>

@@ -16,7 +16,6 @@ import { PreviewDialog } from "./dialogs/preview-dialog"
 import { SaveDialog } from "./dialogs/save-dialog"
 import { TextDialog } from "./dialogs/text-dialog"
 import { EditorHeader } from "./editor-header"
-import { PropertyPanel } from "./property-panel"
 import { StatusBar } from "./status-bar"
 import { ToolNav } from "./tool-nav"
 import { ToolPanel } from "./tool-panel"
@@ -55,7 +54,6 @@ export function AlmondTemplateEditor(props: AlmondEditorProps) {
             <Canvas editor={editor} />
             <StatusBar editor={editor} />
           </main>
-          <PropertyPanel editor={editor} />
         </div>
         {message && (
           <p

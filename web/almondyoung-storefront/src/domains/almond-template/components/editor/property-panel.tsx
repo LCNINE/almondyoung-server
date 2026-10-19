@@ -4,19 +4,21 @@ import { ImageProperties } from "./image-properties"
 import { ObjectProperties } from "./object-properties"
 import { GroupProperties } from "./group-properties"
 
+// 요소를 고르면 왼쪽 메뉴 패널 자리에 그 요소의 속성이 들어온다(망고보드). 선택을 풀면 메뉴로 돌아간다
 export function PropertyPanel({ editor }: { editor: AlmondEditor }) {
   const panel = usePropertyPanel(editor)
-  const { selected, tool, panelOpen, group } = editor
-  const inTextPanel = selected?.type === "text" && tool === "text" && panelOpen
-  return (
-    <>
-      {selected?.type === "image" && (
-        <ImageProperties editor={editor} panel={panel} selected={selected} />
-      )}
-      {selected && selected.type !== "image" && !inTextPanel && (
-        <ObjectProperties editor={editor} panel={panel} selected={selected} />
-      )}
-      {group.length > 1 && <GroupProperties editor={editor} panel={panel} />}
-    </>
+  const { selected, group } = editor
+  if (group.length > 1)
+    return <GroupProperties editor={editor} panel={panel} inline />
+  if (!selected) return null
+  return selected.type === "image" ? (
+    <ImageProperties editor={editor} panel={panel} selected={selected} inline />
+  ) : (
+    <ObjectProperties
+      editor={editor}
+      panel={panel}
+      selected={selected}
+      inline
+    />
   )
 }

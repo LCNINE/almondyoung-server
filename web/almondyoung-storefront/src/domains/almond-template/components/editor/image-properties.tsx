@@ -19,10 +19,12 @@ export function ImageProperties({
   editor,
   panel,
   selected,
+  inline = false,
 }: {
   editor: AlmondEditor
   panel: PropertyPanelState
   selected: Layer
+  inline?: boolean
 }) {
   const imageSrc = useImageSrc()
   const {
@@ -50,15 +52,19 @@ export function ImageProperties({
   return (
     <aside
       aria-label="이미지 속성"
-      className="absolute top-[18%] right-5 z-20 max-h-[72%] w-[285px] overflow-y-auto border bg-white text-sm shadow-lg"
-      style={panel.panelStyle}
+      className={
+        inline
+          ? "w-full bg-white text-sm"
+          : "absolute top-[18%] right-5 z-20 max-h-[72%] w-[285px] overflow-y-auto border bg-white text-sm shadow-lg"
+      }
+      style={inline ? undefined : panel.panelStyle}
     >
       <h2
-        title="끌어서 옮기기"
-        onPointerDown={panel.startPanelDrag}
-        className="flex cursor-move items-center border-b px-4 py-2 text-xl font-light select-none"
+        title={inline ? undefined : "끌어서 옮기기"}
+        onPointerDown={inline ? undefined : panel.startPanelDrag}
+        className={`flex items-center border-b px-4 py-2 text-xl font-light select-none ${inline ? "" : "cursor-move"}`}
       >
-        <GripVertical size={16} className="text-slate-400" />
+        {!inline && <GripVertical size={16} className="text-slate-400" />}
         <span className="ml-auto">IMAGE</span>
       </h2>
       <div className="space-y-3 px-4 py-3">

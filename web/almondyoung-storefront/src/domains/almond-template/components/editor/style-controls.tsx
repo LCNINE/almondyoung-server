@@ -109,7 +109,13 @@ function Field({
   )
 }
 
-export function FontSelect({ target }: { target: StyleTarget }) {
+export function FontSelect({
+  target,
+  bare = false,
+}: {
+  target: StyleTarget
+  bare?: boolean
+}) {
   const { layers, apply, everywhere, disabled } = target
   const value = common(layers, (layer) => fontStack(layer.fontFamily))
   const [replaceSame, setReplaceSame] = useState(false)
@@ -141,14 +147,18 @@ export function FontSelect({ target }: { target: StyleTarget }) {
   }
   return (
     <div className="flex items-center gap-2">
-      <span className="w-9 shrink-0">폰트</span>
+      {!bare && <span className="w-9 shrink-0">폰트</span>}
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button
             type="button"
             aria-label="폰트"
             disabled={disabled}
-            className="flex min-w-0 flex-1 items-center justify-between gap-1 border px-2 py-1 text-left disabled:opacity-50"
+            className={
+              bare
+                ? "flex h-[38px] min-w-0 flex-1 items-center justify-between gap-1 rounded-[6px] border border-[#e0e1e5] px-[10px] text-left text-[14px] text-[#3F4250] disabled:opacity-50"
+                : "flex min-w-0 flex-1 items-center justify-between gap-1 border px-2 py-1 text-left disabled:opacity-50"
+            }
           >
             <span
               className="truncate"

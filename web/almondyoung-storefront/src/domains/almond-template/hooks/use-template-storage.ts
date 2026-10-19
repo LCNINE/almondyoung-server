@@ -325,11 +325,13 @@ export function useTemplateStorage({
       await persist(named, before, same?.id)
     })
   }
-  const openLoad = () => {
-    setLoadDialog(true)
+  const refreshSaved = () =>
     serverTask(async () => {
       setSavedItems((await remote.list()).filter(matchesRoute))
     }, "저장된 시안 목록을 불러오지 못했습니다.")
+  const openLoad = () => {
+    setLoadDialog(true)
+    refreshSaved()
   }
   const loadNamed = (item: SavedItem) =>
     serverTask(async () => {
@@ -390,6 +392,7 @@ export function useTemplateStorage({
     saveAs,
     saveNamed,
     openLoad,
+    refreshSaved,
     loadNamed,
     deleteNamed,
     togglePublished,

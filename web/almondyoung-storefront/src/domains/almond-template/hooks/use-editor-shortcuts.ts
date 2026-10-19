@@ -33,6 +33,8 @@ type Params = {
   splitGroup: () => void
   setOrder: (position: "top" | "up" | "down" | "bottom") => void
   selectAll: () => void
+  duplicateSelected: () => void
+  toggleLock: () => void
   canSave: boolean
   save: () => void
   saveNamed: () => void
@@ -101,6 +103,8 @@ export function useEditorShortcuts({
   splitGroup,
   setOrder,
   selectAll,
+  duplicateSelected,
+  toggleLock,
   canSave,
   save,
   saveNamed,
@@ -174,6 +178,12 @@ export function useEditorShortcuts({
           event.preventDefault()
           cutSelected()
         }
+      } else if (command && letter(event) === "d") {
+        event.preventDefault()
+        if (editable) duplicateSelected()
+      } else if (command && event.code === "Digit2") {
+        event.preventDefault()
+        if (selected) toggleLock()
       } else if (command && letter(event) === "a") {
         event.preventDefault()
         selectAll()

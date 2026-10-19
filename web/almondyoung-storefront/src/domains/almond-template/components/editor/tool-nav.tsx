@@ -1,4 +1,5 @@
 import {
+  FolderOpen,
   Type,
   ImageIcon,
   PaintBucket,
@@ -8,66 +9,73 @@ import {
   Smile,
   QrCode,
   PenTool,
-  Pencil,
+  Ruler,
+  type LucideIcon,
 } from "lucide-react"
-import type { AlmondEditor } from "../../hooks/use-almond-editor"
+import type { AlmondEditor, EditorTool } from "../../hooks/use-almond-editor"
+
+// 망고보드 레일: 기능 묶음마다 테두리 박스 하나
+const GROUPS: [EditorTool, LucideIcon, string][][] = [
+  [
+    ["template", LayoutTemplate, "템플릿"],
+    ["shape", Shapes, "도형"],
+    ["clipart", Smile, "클립아트"],
+    ["text", Type, "텍스트"],
+    ["background", PaintBucket, "배경"],
+    ["qr", QrCode, "QR코드"],
+    ["draw", PenTool, "그리기"],
+  ],
+  [
+    ["image", ImageIcon, "업로드"],
+    ["mywork", FolderOpen, "나의작업"],
+  ],
+  [
+    ["layers", Layers, "레이어"],
+    ["spec", Ruler, "규격"],
+  ],
+]
 
 export function ToolNav({ editor }: { editor: AlmondEditor }) {
-  const {
-    tool,
-    setTool,
-    panelOpen,
-    setPanelOpen,
-    drawMode,
-    pencilActive,
-    togglePen,
-    exitDrawing,
-  } = editor
+  const { tool, setTool, setPanelOpen, drawMode, exitDrawing } = editor
   return (
     <nav
       aria-label="편집 도구"
-      className="flex w-[56px] shrink-0 flex-col overflow-y-auto border-r bg-white"
+      className="w-[78px] shrink-0 overflow-y-auto bg-white py-[10px] pl-[10px]"
     >
-      {(
-        [
-          ["text", Type, "텍스트"],
-          ["image", ImageIcon, "이미지"],
-          ["background", PaintBucket, "배경색"],
-          ["template", LayoutTemplate, "템플릿"],
-          ["layers", Layers, "레이어"],
-          ["shape", Shapes, "도형"],
-          ["pen", PenTool, "펜"],
-          ["clipart", Smile, "클립아트"],
-          ["qr", QrCode, "QR코드"],
-          ["spec", LayoutTemplate, "규격"],
-        ] as const
-      ).map(([id, NavIcon, navLabel]) => {
-        // 펜 칸은 마지막에 고른 그리기 도구(펜/연필)를 보여 주고, 누르면 그리기를 켜고 끈다
-        const drawing = id === "pen"
-        const Icon = drawing && pencilActive ? Pencil : NavIcon
-        const label = drawing && pencilActive ? "연필" : navLabel
-        const on = drawing ? !!drawMode : tool === id && panelOpen
-        return (
-          <button
-            key={id}
-            type="button"
-            title={drawing ? `${label} (P / Shift+P)` : label}
-            aria-label={label}
-            aria-pressed={on}
-            onClick={() => {
-              if (drawing) return drawMode ? exitDrawing() : togglePen()
-              setPanelOpen(tool === id ? !panelOpen : true)
-              setTool(id)
-            }}
-            className={`flex h-[56px] shrink-0 flex-col items-center justify-center gap-0.5 border-b ${on ? "bg-[#3972d5] text-white" : "text-[#333] hover:bg-slate-100"}`}
-          >
-            <Icon size={23} strokeWidth={1.6} />
-            <span className="text-[10px] leading-none tracking-tight">
-              {label}
-            </span>
-          </button>
-        )
-      })}
+      {GROUPS.map((group, index) => (
+        <div
+          key={index}
+          className="mb-[10px] flex w-[58px] flex-col items-center gap-y-[14px] rounded-[8px] border border-[#e0e1e5] px-[7px] pt-[10px] pb-[14px]"
+        >
+          {group.map(([id, NavIcon, navLabel]) => {
+            const on = tool === id
+            return (
+              <button
+                key={id}
+                type="button"
+                title={navLabel}
+                aria-label={navLabel}
+                aria-pressed={on}
+                onClick={() => {
+                  if (drawMode && id !== "draw") exitDrawing()
+                  setPanelOpen(true)
+                  setTool(id)
+                }}
+                className={`relative flex h-[53px] w-[42px] flex-col items-center gap-y-[3px] rounded-[6px] pt-[5px] before:absolute before:top-0 before:left-[4px] before:h-[32px] before:w-[34px] before:rounded-[6px] before:transition-[background-color] before:duration-200 hover:before:bg-[#fede29] ${on ? "before:bg-[#fede29]" : "before:bg-transparent"}`}
+              >
+                <NavIcon
+                  size={22}
+                  strokeWidth={1.6}
+                  className="relative text-[#20232A]"
+                />
+                <span className="relative h-[22px] text-[12px] leading-[22px] font-semibold whitespace-nowrap text-[#4E5255]">
+                  {navLabel}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      ))}
     </nav>
   )
 }

@@ -25,8 +25,10 @@ import { useLeaveWarning } from "../../hooks/use-leave-warning"
 import { useImageSrc } from "../../lib/image-previews"
 import {
   DrawToolbar,
+  ERASER_CURSOR,
   PencilOverlay,
   PenOverlay,
+  ShapeOverlay,
   PointEditOverlay,
   layerTransform,
 } from "./pen-overlay"
@@ -40,15 +42,131 @@ import {
 // 돌리거나 뒤집어도 화면에 보이는 상자의 오른쪽 바깥에 붙어 핸들을 가리지 않는다
 function quickActionsAt(layer: Layer, scale: number) {
   const box = boxOf(layer)
-  return { left: `${box.x1 * scale + 10}px`, top: `${box.y0 * scale}px` }
+  return { left: `${box.x1 * scale + 16}px`, top: `${box.y0 * scale}px` }
 }
 
+// 망고보드 선택 핸들: 모서리는 흰 테두리 시안 원, 변은 작은 회색 알약
+function SelectionHandle({
+  handle,
+  x,
+  y,
+  scale,
+  label,
+  onPointerDown,
+}: {
+  handle: string
+  x: number
+  y: number
+  scale: number
+  label: string
+  onPointerDown: (event: React.PointerEvent<SVGElement>) => void
+}) {
+  const corner = handle.length === 2
+  const vertical = handle === "e" || handle === "w"
+  return (
+    <g
+      role="button"
+      aria-label={label}
+      style={{ cursor: `${handle}-resize` }}
+      onPointerDown={onPointerDown}
+    >
+      <circle cx={x} cy={y} r={12 / scale} fill="transparent" />
+      {corner ? (
+        <circle
+          cx={x}
+          cy={y}
+          r={5.5 / scale}
+          fill="#42dfe5"
+          stroke="#fff"
+          strokeWidth={3 / scale}
+          style={{
+            filter: `drop-shadow(${1 / scale}px ${1 / scale}px 0 rgba(0,0,0,0.15))`,
+          }}
+        />
+      ) : (
+        <rect
+          x={x - (vertical ? 3 : 8) / scale}
+          y={y - (vertical ? 8 : 3) / scale}
+          width={(vertical ? 6 : 16) / scale}
+          height={(vertical ? 16 : 6) / scale}
+          rx={3 / scale}
+          fill="#fff"
+          stroke="#b9bcc3"
+          strokeWidth={1 / scale}
+        />
+      )}
+    </g>
+  )
+}
+
+function RotateHandle({
+  x,
+  y,
+  scale,
+  onPointerDown,
+}: {
+  x: number
+  y: number
+  scale: number
+  onPointerDown: (event: React.PointerEvent<SVGElement>) => void
+}) {
+  const cy = y - 27.5 / scale
+  const r = 10 / scale
+  return (
+    <>
+      <line
+        x1={x}
+        y1={y}
+        x2={x}
+        y2={y - 17.5 / scale}
+        stroke="#c2d7db"
+        strokeWidth={1 / scale}
+        strokeDasharray={`${3 / scale} ${2 / scale}`}
+        pointerEvents="none"
+      />
+      <g
+        role="button"
+        aria-label="요소 회전"
+        className="cursor-grab"
+        onPointerDown={onPointerDown}
+      >
+        <circle
+          cx={x}
+          cy={cy}
+          r={r}
+          fill="#fff"
+          stroke="#e0e1e5"
+          strokeWidth={1 / scale}
+        />
+        <path
+          d={`M${x + r * 0.45},${cy - r * 0.35} A${r * 0.5},${r * 0.5} 0 1 0 ${x + r * 0.5},${cy + r * 0.15}`}
+          fill="none"
+          stroke="#3F4250"
+          strokeWidth={1.4 / scale}
+          strokeLinecap="round"
+        />
+        <path
+          d={`M${x + r * 0.15},${cy - r * 0.45} L${x + r * 0.5},${cy - r * 0.4} L${x + r * 0.45},${cy - r * 0.05}`}
+          fill="none"
+          stroke="#3F4250"
+          strokeWidth={1.4 / scale}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </g>
+    </>
+  )
+}
+
+// 망고보드 툴팁: 지연·페이드 없이 바로 뜨고, 단축키는 회색 둘째 줄
 function QuickAction({
   label,
+  shortcut,
   onClick,
   children,
 }: {
   label: string
+  shortcut?: string
   onClick: () => void
   children: ReactNode
 }) {
@@ -56,11 +174,14 @@ function QuickAction({
     <button
       type="button"
       aria-label={label}
-      title={label}
       onClick={onClick}
-      className="text-muted-foreground hover:bg-muted hover:text-foreground flex size-7 items-center justify-center rounded"
+      className="group/qa relative m-1 flex size-[30px] items-center justify-center rounded-[6px] p-1 text-[#3F4250] first:mt-[5px] hover:bg-[#F3F5F8]"
     >
       {children}
+      <span className="pointer-events-none absolute top-1/2 left-full z-30 ml-2 hidden -translate-y-1/2 rounded-[6px] bg-[rgba(42,41,47,0.95)] px-[10px] py-[7px] text-left text-[13px] leading-[18px] font-medium whitespace-nowrap text-[#F4F5F7] group-hover/qa:block">
+        {label}
+        {shortcut && <span className="block text-[#9a9ca3]">{shortcut}</span>}
+      </span>
     </button>
   )
 }
@@ -102,7 +223,6 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
     moveDrag,
     endDrag,
     canvasFit,
-    handleSize,
     editable,
     patch,
     removeSelected,
@@ -119,6 +239,9 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
     showOverflow,
     penActive,
     pencilActive,
+    eraserActive,
+    shapeActive,
+    change,
     pointEditLayer,
     finishPointEdit,
     startPointEdit,
@@ -210,6 +333,30 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
           startMarquee(event)
       }}
     >
+      {(pencilActive || eraserActive || shapeActive) && (
+        <div className="pointer-events-none absolute top-3 left-1/2 z-30 min-w-[405px] -translate-x-1/2 rounded-[6px] bg-[rgba(28,29,31,0.95)] p-2 px-4 text-center text-[14px] leading-[28px] whitespace-nowrap text-white">
+          <p>
+            <span className="rounded-[5px] bg-[#FEE869] pt-[2px] pr-[5px] pb-[3px] pl-[7px] text-[#20232A]">
+              ESC
+            </span>{" "}
+            를 누르면 {eraserActive ? "지우개" : "그리기"} 모드가 종료됩니다.
+          </p>
+          <p>
+            {eraserActive ? (
+              <span className="text-[#FEE869]">
+                펜이나 형광펜으로 그린 단일 요소만 지울 수 있습니다.
+              </span>
+            ) : (
+              <>
+                그리기 요소를{" "}
+                <span className="text-[#FEE869]">
+                  그룹화(Ctrl + G)한 뒤 즐겨찾기에 저장할 수 있습니다.
+                </span>
+              </>
+            )}
+          </p>
+        </div>
+      )}
       <div className="w-max" style={{ padding: `${pad.y}px ${pad.x}px` }}>
         <div className="relative shrink-0">
           <svg
@@ -221,6 +368,7 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
               width: `${design.widthMm * canvasFit * zoom}px`,
               height: `${design.heightMm * canvasFit * zoom}px`,
               overflow: "visible",
+              cursor: eraserActive ? ERASER_CURSOR : undefined,
             }}
             className="block shrink-0 touch-none bg-white shadow-xl outline outline-1 outline-offset-2 outline-[#222] select-none"
             onPointerDown={startMarquee}
@@ -254,9 +402,19 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                 layer.visible === false ? null : (
                   <g
                     key={layer.id}
-                    onPointerDown={(event) => startDrag(event, layer)}
+                    onPointerDown={(event) => {
+                      if (!eraserActive) return startDrag(event, layer)
+                      // 지우개는 펜·형광펜으로 그린 획만 통째로 지운다
+                      event.stopPropagation()
+                      if (layer.brush && !layer.locked)
+                        change({
+                          ...design,
+                          [side]: layers.filter((item) => item.id !== layer.id),
+                        })
+                    }}
                     onPointerEnter={() => setHoveredId(layer.id)}
                     onPointerLeave={() => setHoveredId(null)}
+                    style={eraserActive ? { cursor: ERASER_CURSOR } : undefined}
                     className={
                       layer.locked ||
                       (mode === "customer" && layer.editable === false)
@@ -332,58 +490,27 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                   width={selected.width}
                   height={selected.height}
                   fill="none"
-                  stroke="#10c9c1"
-                  strokeWidth={1 / (canvasFit * zoom)}
+                  stroke="#42dfe5"
+                  strokeWidth={1 / scale}
                   pointerEvents="none"
                 />
-                {(
-                  [
-                    ["nw", 0, 0],
-                    ["n", 0.5, 0],
-                    ["ne", 1, 0],
-                    ["e", 1, 0.5],
-                    ["se", 1, 1],
-                    ["s", 0.5, 1],
-                    ["sw", 0, 1],
-                    ["w", 0, 0.5],
-                  ] as const
-                ).map(([handle, rx, ry]) => (
-                  <rect
+                {handles.map(([handle, rx, ry]) => (
+                  <SelectionHandle
                     key={handle}
-                    role="button"
-                    aria-label={`${handle} 크기 조절`}
-                    x={selected.x + selected.width * rx - handleSize / 2}
-                    y={selected.y + selected.height * ry - handleSize / 2}
-                    width={handleSize}
-                    height={handleSize}
-                    fill="white"
-                    stroke="#10c9c1"
-                    strokeWidth={1 / (canvasFit * zoom)}
-                    className="cursor-pointer"
+                    handle={handle}
+                    x={selected.x + selected.width * rx}
+                    y={selected.y + selected.height * ry}
+                    scale={scale}
+                    label={`${handle} 크기 조절`}
                     onPointerDown={(event) =>
                       startResize(event, selected, handle)
                     }
                   />
                 ))}
-                <line
-                  x1={selected.x + selected.width / 2}
-                  y1={selected.y}
-                  x2={selected.x + selected.width / 2}
-                  y2={selected.y - handleSize * 2}
-                  stroke="#10c9c1"
-                  strokeWidth={1 / (canvasFit * zoom)}
-                  pointerEvents="none"
-                />
-                <circle
-                  role="button"
-                  aria-label="요소 회전"
-                  cx={selected.x + selected.width / 2}
-                  cy={selected.y - handleSize * 2}
-                  r={handleSize / 2}
-                  fill="white"
-                  stroke="#10c9c1"
-                  strokeWidth={1 / (canvasFit * zoom)}
-                  className="cursor-grab"
+                <RotateHandle
+                  x={selected.x + selected.width / 2}
+                  y={selected.y}
+                  scale={scale}
                   onPointerDown={(event) =>
                     startResize(event, selected, "rotate")
                   }
@@ -398,32 +525,19 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                   width={groupBox.x1 - groupBox.x0}
                   height={groupBox.y1 - groupBox.y0}
                   fill="none"
-                  stroke="#10c9c1"
+                  stroke="#42dfe5"
                   strokeWidth={1 / scale}
                   strokeDasharray={`${4 / scale} ${3 / scale}`}
                   pointerEvents="none"
                 />
                 {handles.map(([handle, rx, ry]) => (
-                  <rect
+                  <SelectionHandle
                     key={handle}
-                    role="button"
-                    aria-label={`묶음 ${handle} 크기 조절`}
-                    x={
-                      groupBox.x0 +
-                      (groupBox.x1 - groupBox.x0) * rx -
-                      handleSize / 2
-                    }
-                    y={
-                      groupBox.y0 +
-                      (groupBox.y1 - groupBox.y0) * ry -
-                      handleSize / 2
-                    }
-                    width={handleSize}
-                    height={handleSize}
-                    fill="white"
-                    stroke="#10c9c1"
-                    strokeWidth={1 / scale}
-                    className="cursor-pointer"
+                    handle={handle}
+                    x={groupBox.x0 + (groupBox.x1 - groupBox.x0) * rx}
+                    y={groupBox.y0 + (groupBox.y1 - groupBox.y0) * ry}
+                    scale={scale}
+                    label={`묶음 ${handle} 크기 조절`}
                     onPointerDown={(event) => startGroupResize(event, handle)}
                   />
                 ))}
@@ -485,6 +599,23 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                 pointerEvents="none"
               />
             )}
+            {eraserActive &&
+              hovered?.brush &&
+              (() => {
+                const box = boxOf(hovered)
+                return (
+                  <rect
+                    x={box.x0}
+                    y={box.y0}
+                    width={box.x1 - box.x0}
+                    height={box.y1 - box.y0}
+                    fill="none"
+                    stroke="#5ED6E6"
+                    strokeWidth={1 / scale}
+                    pointerEvents="none"
+                  />
+                )
+              })()}
             {measurements.length > 0 && (
               <g id="gap-measurements" pointerEvents="none">
                 {measurements.map((gap) => {
@@ -527,6 +658,7 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
             )}
             {penActive && <PenOverlay editor={editor} />}
             {pencilActive && <PencilOverlay editor={editor} />}
+            {shapeActive && <ShapeOverlay editor={editor} />}
             {pointEditLayer && <PointEditOverlay editor={editor} />}
           </svg>
           {selected &&
@@ -540,7 +672,7 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
               <div
                 role="toolbar"
                 aria-label="선택 요소 빠른 작업"
-                className="absolute z-20 flex flex-col gap-0.5 rounded-lg border bg-white p-1 shadow"
+                className="absolute z-20 flex w-[38px] flex-col rounded-[7px] bg-white shadow-[0_0_5px_#d3d4d8]"
                 style={quickActionsAt(selected, scale)}
               >
                 {selected.locked ? (
@@ -580,16 +712,25 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                       </QuickAction>
                     )}
                     <QuickAction
-                      label="잠그기"
+                      label="잠금"
+                      shortcut="Cmd + 2"
                       onClick={() => patch(selected.id, { locked: true })}
                     >
                       <Lock size={16} />
                     </QuickAction>
-                    <span className="mx-1 my-0.5 border-t" />
-                    <QuickAction label="복제" onClick={duplicateSelected}>
+                    <span className="mx-1 border-t border-[#E6E7EA]" />
+                    <QuickAction
+                      label="복제"
+                      shortcut="Cmd + D"
+                      onClick={duplicateSelected}
+                    >
                       <Copy size={16} />
                     </QuickAction>
-                    <QuickAction label="삭제" onClick={removeSelected}>
+                    <QuickAction
+                      label="삭제"
+                      shortcut="Delete / Backspace"
+                      onClick={removeSelected}
+                    >
                       <Trash2 size={16} />
                     </QuickAction>
                   </>
@@ -638,7 +779,7 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
               </button>
             </div>
           )}
-          {(penActive || pencilActive) && <DrawToolbar editor={editor} />}
+          {penActive && <DrawToolbar editor={editor} />}
           {pointEditLayer && (
             <div className="absolute -top-11 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded bg-[#303030] px-3 py-1.5 text-xs whitespace-nowrap text-white shadow">
               점·핸들을 끌어 모양을 바꾸세요 · 점 두 번 클릭: 곡선↔꺾기 ·

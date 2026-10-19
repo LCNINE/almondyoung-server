@@ -1,4 +1,4 @@
-import { format, isValid, parseISO } from "date-fns"
+import { format, formatDistanceToNowStrict, isValid, parseISO } from "date-fns"
 import { ko } from "date-fns/locale"
 
 export type DateInput = string | number | Date | null | undefined
@@ -46,4 +46,14 @@ export function formatDate(
   const date = toDate(input)
   if (!date) return fallback
   return format(date, pattern, { locale: ko })
+}
+
+/** "3분 전" 처럼 지금부터 얼마나 지났는지 */
+export function formatTimeAgo(
+  input: DateInput,
+  fallback: string = "-"
+): string {
+  const date = toDate(input)
+  if (!date) return fallback
+  return formatDistanceToNowStrict(date, { addSuffix: true, locale: ko })
 }

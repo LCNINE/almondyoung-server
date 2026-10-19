@@ -21,9 +21,11 @@ const EFFECTED = (layer: Layer) => STROKED(layer) || layer.type === "text"
 export function GroupProperties({
   editor,
   panel,
+  inline = false,
 }: {
   editor: AlmondEditor
   panel: PropertyPanelState
+  inline?: boolean
 }) {
   const { group, patchLayers, flipLayers, canEdit } = editor
   const layers = group.filter(canEdit)
@@ -49,15 +51,19 @@ export function GroupProperties({
   return (
     <aside
       aria-label="여러 요소 속성"
-      style={panel.panelStyle}
-      className="absolute top-[18%] right-5 z-20 w-[290px] overflow-visible border bg-white text-sm shadow-lg"
+      style={inline ? undefined : panel.panelStyle}
+      className={
+        inline
+          ? "w-full overflow-visible bg-white text-sm"
+          : "absolute top-[18%] right-5 z-20 w-[290px] overflow-visible border bg-white text-sm shadow-lg"
+      }
     >
       <h2
-        title="끌어서 옮기기"
-        onPointerDown={panel.startPanelDrag}
-        className="flex cursor-move items-center border-b px-4 py-2 text-xl font-light select-none"
+        title={inline ? undefined : "끌어서 옮기기"}
+        onPointerDown={inline ? undefined : panel.startPanelDrag}
+        className={`flex items-center border-b px-4 py-2 text-xl font-light select-none ${inline ? "" : "cursor-move"}`}
       >
-        <GripVertical size={16} className="text-slate-400" />
+        {!inline && <GripVertical size={16} className="text-slate-400" />}
         <span className="ml-auto text-base">{group.length}개 선택</span>
       </h2>
       <div className="space-y-3 px-4 py-3 text-xs">

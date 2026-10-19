@@ -79,6 +79,8 @@ export type Layer = {
   crop?: { x: number; y: number; w: number; h: number }
   groupId?: string
   groupName?: string
+  brush?: "pen" | "highlighter"
+  lineEnd?: "arrow"
 }
 
 export const SHAPE_TEXT_TYPES: ReadonlySet<Layer["type"]> = new Set<
@@ -454,6 +456,8 @@ function validEffects(layer: Layer) {
     optional(layer.strokeDash, (v) => v === "dashed" || v === "dotted") &&
     optional(layer.strokeRound, isBool) &&
     optional(layer.groupName, (v) => typeof v === "string" && v.length <= 40) &&
+    optional(layer.brush, (v) => v === "pen" || v === "highlighter") &&
+    optional(layer.lineEnd, (v) => v === "arrow") &&
     optional(layer.shadowX, (v) => within(v, -50, 50)) &&
     optional(layer.shadowY, (v) => within(v, -50, 50)) &&
     optional(layer.shadowBlur, (v) => within(v, 0, 20)) &&

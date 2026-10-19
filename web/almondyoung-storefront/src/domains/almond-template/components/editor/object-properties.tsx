@@ -8,25 +8,58 @@ import {
   AlignRight,
   ChevronDown,
   ChevronUp,
-  GripVertical,
 } from "lucide-react"
 import { PrintColorPicker } from "../color-picker"
 import { shapeTextColor } from "../graphic"
 import { mm, swapColor } from "../../lib/layer"
 import { SHAPE_TEXT_TYPES, type Layer } from "../../lib/document"
-import { OrderIcon } from "./order-icon"
+import {
+  AlignOrderSection,
+  NumberBox,
+  PropHeader,
+  PropSection,
+  PropSlider,
+  SizeSection,
+} from "./prop-sections"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import type { PropertyPanelState } from "../../hooks/use-property-panel"
 import { ObjectPropertiesMore } from "./object-properties-more"
 import { shapeOutline } from "../../lib/path-shape"
 import {
   EffectControls,
-  FlipControls,
   FontSelect,
   StarControls,
   StrokeLineControls,
   type StyleTarget,
 } from "./style-controls"
+
+function FormatButton({
+  label,
+  pressed,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string
+  pressed: boolean
+  disabled: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      aria-pressed={pressed}
+      disabled={disabled}
+      onClick={onClick}
+      className={`flex size-[28px] items-center justify-center rounded-[6px] text-[#3F4250] hover:bg-[#F3F5F8] disabled:opacity-40 ${pressed ? "bg-[#e2e7ed]" : ""}`}
+    >
+      {children}
+    </button>
+  )
+}
 
 // 도형 윤곽을 그대로 사진 틀로 쓴다 (예전 모양틀 기능)
 function ShapePhoto({
@@ -122,8 +155,7 @@ export function ObjectProperties({
   selected: Layer
   inline?: boolean
 }) {
-  const { patch, editable, setOrder, flipLayers, startPointEdit, replaceAll } =
-    editor
+  const { patch, editable, startPointEdit, replaceAll } = editor
   const everywhere = (from: string | undefined) =>
     from && from !== "none"
       ? (to: string) => replaceAll((layer) => swapColor(layer, from, to))
@@ -136,7 +168,6 @@ export function ObjectProperties({
     disabled: !editable,
     placement: inline ? "left" : "right",
   }
-  const flip = (axis: "x" | "y") => flipLayers([selected], axis)
   const pointEditable =
     selected.type === "path" || shapeOutline(selected) !== null
   const { setObjectMoreId, objectMoreOpen } = panel
@@ -151,81 +182,77 @@ export function ObjectProperties({
       style={inline ? undefined : panel.panelStyle}
       className={
         inline
-          ? "mt-4 w-full border bg-white text-sm"
+          ? "w-full bg-white text-sm"
           : "absolute top-[18%] right-5 z-20 w-[290px] overflow-visible border bg-white text-sm shadow-lg"
       }
     >
-      <h2
-        title={inline ? undefined : "끌어서 옮기기"}
-        onPointerDown={inline ? undefined : panel.startPanelDrag}
-        className={`flex items-center border-b px-4 py-2 text-xl font-light uppercase select-none ${inline ? "" : "cursor-move"}`}
-      >
-        {!inline && <GripVertical size={16} className="text-slate-400" />}
-        <span className="ml-auto">
-          {selected.type === "text"
-            ? "TEXT"
+      <PropHeader
+        title={
+          selected.type === "text"
+            ? "텍스트"
             : selected.type === "clipart"
-              ? "IMAGE"
+              ? "클립아트"
               : selected.type === "frame"
-                ? "FRAME"
+                ? "프레임"
                 : selected.type === "qr"
-                  ? "QR"
-                  : "FIGURE"}
-        </span>
-      </h2>
-      <div className="space-y-3 px-4 py-3 text-xs">
-        {selected.type === "text" ? (
-          <>
-            <FontSelect target={target} />
-            <div className="flex items-center gap-2">
-              <label className="flex min-w-0 flex-1 items-center gap-1">
-                크기
-                <NumberInput
-                  aria-label="글자 크기"
-                  min="1"
-                  step="0.5"
-                  className="w-16 border p-1 text-right"
-                  value={selected.fontSize ?? 10}
-                  disabled={!editable}
-                  onValue={(value) => patch(selected.id, { fontSize: value })}
-                />
-              </label>
-              <PrintColorPicker
-                label="글자색"
-                value={selected.fill}
-                onApplyEverywhere={everywhere(selected.fill)}
-                compact
-                placement={inline ? "left" : "right"}
+                  ? "QR코드"
+                  : selected.type === "line"
+                    ? "기본 선"
+                    : selected.brush
+                      ? "그리기"
+                      : "도형"
+        }
+      />
+      <AlignOrderSection
+        editor={editor}
+        layer={selected}
+        canFlip={selected.type !== "text"}
+      />
+      <SizeSection
+        editor={editor}
+        layer={selected}
+        heightLocked={selected.type === "text"}
+      />
+      {selected.type === "text" ? (
+        <>
+          <PropSection className="py-[25px]">
+            <h3 className="mb-[5px] text-[16px] font-medium text-[#20232A]">
+              폰트
+            </h3>
+            <div className="flex items-center gap-[11px]">
+              <div className="min-w-0 flex-1">
+                <FontSelect target={target} bare />
+              </div>
+              <NumberBox
+                value={selected.fontSize ?? 10}
+                min={1}
+                step={0.5}
+                width={75}
                 disabled={!editable}
-                onApply={(color) => patch(selected.id, { fill: color })}
+                onValue={(value) => patch(selected.id, { fontSize: value })}
               />
             </div>
-            <div className="flex items-center gap-1 pr-2">
-              <span className="w-9 shrink-0">정렬</span>
+            <div className="mt-[15px] flex items-center gap-[2px]">
               {(
                 [
-                  ["left", AlignLeft],
-                  ["center", AlignCenter],
-                  ["right", AlignRight],
+                  ["left", AlignLeft, "왼쪽 맞춤"],
+                  ["center", AlignCenter, "가운데 맞춤"],
+                  ["right", AlignRight, "오른쪽 맞춤"],
                 ] as const
-              ).map(([align, Icon]) => (
-                <button
+              ).map(([align, Icon, label]) => (
+                <FormatButton
                   key={align}
-                  type="button"
-                  aria-label={`${align} 정렬`}
-                  aria-pressed={selected.align === align}
+                  label={label}
+                  pressed={(selected.align ?? "left") === align}
                   disabled={!editable}
                   onClick={() => patch(selected.id, { align })}
-                  className={`p-1 ${selected.align === align ? "text-blue-600" : ""}`}
                 >
                   <Icon size={18} />
-                </button>
+                </FormatButton>
               ))}
-              <span className="ml-auto whitespace-nowrap">스타일</span>
-              <button
-                type="button"
-                aria-label="굵게"
-                aria-pressed={selected.fontWeight === "bold"}
+              <FormatButton
+                label="굵게"
+                pressed={selected.fontWeight === "bold"}
                 disabled={!editable}
                 onClick={() =>
                   patch(selected.id, {
@@ -233,77 +260,132 @@ export function ObjectProperties({
                       selected.fontWeight === "bold" ? "normal" : "bold",
                   })
                 }
-                className={`p-1 ${selected.fontWeight === "bold" ? "text-blue-600" : ""}`}
               >
                 <Bold size={18} />
-              </button>
-              <button
-                type="button"
-                aria-label="기울임"
-                aria-pressed={!!selected.italic}
+              </FormatButton>
+              <FormatButton
+                label="기울임"
+                pressed={!!selected.italic}
                 disabled={!editable}
                 onClick={() => patch(selected.id, { italic: !selected.italic })}
-                className={`p-1 ${selected.italic ? "text-blue-600" : ""}`}
               >
                 <Italic size={18} />
-              </button>
+              </FormatButton>
             </div>
-            <div className="flex items-center gap-2">
-              <PrintColorPicker
-                label="테두리"
-                value={noStroke ? "#ffffff" : (selected.stroke ?? "#ffffff")}
-                onApplyEverywhere={
-                  noStroke ? undefined : everywhere(selected.stroke)
-                }
-                compact
-                placement={inline ? "left" : "right"}
+            <div className="mt-[15px] grid grid-cols-3 gap-[18px]">
+              <PropSlider
+                label="자간"
+                min={-100}
+                max={700}
+                value={Math.round(
+                  ((selected.letterSpacing ?? 0) / (selected.fontSize ?? 10)) *
+                    1000
+                )}
                 disabled={!editable}
-                onApply={(color) =>
+                onValue={(value) =>
                   patch(selected.id, {
-                    stroke: color,
-                    strokeWidth:
-                      selected.strokeWidth ||
-                      Math.max(0.2, mm((selected.fontSize ?? 10) * 0.08)),
+                    letterSpacing:
+                      Math.round(
+                        ((value * (selected.fontSize ?? 10)) / 1000) * 1000
+                      ) / 1000,
                   })
                 }
               />
-              <label className="flex items-center gap-1 whitespace-nowrap">
-                두께
-                <NumberInput
-                  aria-label="글자 테두리 두께"
-                  min="0"
-                  max="50"
-                  step="0.1"
-                  className="w-14 border p-1 text-right"
-                  value={noStroke ? 0 : (selected.strokeWidth ?? 0)}
-                  disabled={!editable || noStroke}
+              <PropSlider
+                label="행간"
+                min={0.5}
+                max={3}
+                step={0.1}
+                value={(selected.lineHeight ?? 120) / 100}
+                disabled={!editable}
+                onValue={(value) =>
+                  patch(selected.id, { lineHeight: Math.round(value * 100) })
+                }
+              />
+              <PropSlider
+                label="장평"
+                min={30}
+                max={200}
+                value={selected.widthScale ?? 100}
+                disabled={!editable}
+                onValue={(value) => patch(selected.id, { widthScale: value })}
+              />
+            </div>
+          </PropSection>
+          <PropSection className="space-y-[15px] py-5">
+            <PrintColorPicker
+              label="텍스트 색상"
+              value={selected.fill}
+              onApplyEverywhere={everywhere(selected.fill)}
+              disabled={!editable}
+              onApply={(color) => patch(selected.id, { fill: color })}
+            />
+            <PrintColorPicker
+              label="윤곽선"
+              value={noStroke ? "#ffffff" : (selected.stroke ?? "#ffffff")}
+              onApplyEverywhere={
+                noStroke ? undefined : everywhere(selected.stroke)
+              }
+              disabled={!editable}
+              onApply={(color) =>
+                patch(selected.id, {
+                  stroke: color,
+                  strokeWidth:
+                    selected.strokeWidth ||
+                    Math.max(0.2, mm((selected.fontSize ?? 10) * 0.08)),
+                })
+              }
+            />
+            {!noStroke && !!selected.strokeWidth && (
+              <div className="space-y-3 rounded-[7px] bg-[#f6f7f9] px-[15px] py-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[15px] text-[#20232A]">
+                    윤곽선 설정
+                  </span>
+                  <button
+                    type="button"
+                    disabled={!editable}
+                    onClick={() =>
+                      patch(selected.id, { stroke: "none", strokeWidth: 0 })
+                    }
+                    className="text-[15px] text-[#3F4250] underline"
+                  >
+                    해제
+                  </button>
+                </div>
+                <PropSlider
+                  label="윤곽선 두께"
+                  min={0.1}
+                  max={5}
+                  step={0.1}
+                  value={selected.strokeWidth ?? 0}
+                  disabled={!editable}
                   onValue={(value) =>
                     patch(selected.id, { strokeWidth: value })
                   }
                 />
-              </label>
-              {!noStroke && (
-                <button
-                  type="button"
-                  title="글자 테두리 빼기"
-                  aria-label="글자 테두리 빼기"
-                  className="ml-auto border px-2 py-1 whitespace-nowrap"
-                  disabled={!editable}
-                  onClick={() =>
-                    patch(selected.id, { stroke: "none", strokeWidth: 0 })
-                  }
-                >
-                  빼기
-                </button>
-              )}
-            </div>
-            {!noStroke && !!selected.strokeWidth && (
-              <StrokeLineControls target={target} />
+                <StrokeLineControls target={target} />
+              </div>
             )}
-            <FlipControls onFlip={flip} disabled={!editable} />
             <EffectControls target={target} />
-          </>
-        ) : (
+          </PropSection>
+          <PropSection className="py-5">
+            <PropSlider
+              label="불투명도"
+              min={10}
+              max={100}
+              value={Math.round((selected.opacity ?? 1) * 100)}
+              disabled={!editable}
+              onValue={(value) =>
+                patch(selected.id, {
+                  opacity: Math.max(0.1, Math.min(1, value / 100)),
+                })
+              }
+            />
+          </PropSection>
+        </>
+      ) : (
+        <div className="space-y-3 px-4 py-5 text-[13px] text-[#3F4250]">
           <>
             {selected.type !== "clipart" && (
               <div className="flex items-center gap-3">
@@ -484,69 +566,23 @@ export function ObjectProperties({
                 프레임에 사진 넣기
               </button>
             )}
-            <div className="flex items-center gap-2">
-              <label className="flex min-w-0 flex-1 items-center gap-1">
-                투명도
-                <NumberInput
-                  aria-label="오브젝트 투명도"
-                  min="10"
-                  max="100"
-                  step="10"
-                  value={Math.round((selected.opacity ?? 1) * 100)}
-                  disabled={!editable}
-                  onValue={(value) =>
-                    patch(selected.id, {
-                      opacity: Math.max(0.1, Math.min(1, value / 100)),
-                    })
-                  }
-                  className="w-14 border p-1 text-right"
-                />
-              </label>
-              <label className="flex min-w-0 flex-1 items-center gap-1">
-                회전
-                <NumberInput
-                  aria-label="오브젝트 회전"
-                  min="-360"
-                  max="360"
-                  value={selected.rotation ?? 0}
-                  disabled={!editable}
-                  onValue={(value) =>
-                    patch(selected.id, {
-                      rotation: Math.max(-360, Math.min(360, value)),
-                    })
-                  }
-                  className="w-14 border p-1 text-right"
-                />
-              </label>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="w-9 shrink-0">순서</span>
-              {(
-                [
-                  ["top", "맨 앞으로"],
-                  ["up", "앞으로"],
-                  ["down", "뒤로"],
-                  ["bottom", "맨 뒤로"],
-                ] as const
-              ).map(([position, label]) => (
-                <button
-                  key={position}
-                  type="button"
-                  title={label}
-                  aria-label={label}
-                  onClick={() => setOrder(position)}
-                  className="p-1 hover:bg-slate-100"
-                >
-                  <OrderIcon position={position} />
-                </button>
-              ))}
-              <div className="ml-auto">
-                <FlipControls onFlip={flip} disabled={!editable} />
-              </div>
+            <div className="-mx-4 border-t border-[#e6e7ea] px-[13px] pt-5">
+              <PropSlider
+                label="불투명도"
+                min={10}
+                max={100}
+                value={Math.round((selected.opacity ?? 1) * 100)}
+                disabled={!editable}
+                onValue={(value) =>
+                  patch(selected.id, {
+                    opacity: Math.max(0.1, Math.min(1, value / 100)),
+                  })
+                }
+              />
             </div>
           </>
-        )}
-      </div>
+        </div>
+      )}
       <ObjectPropertiesMore
         editor={editor}
         panel={panel}
