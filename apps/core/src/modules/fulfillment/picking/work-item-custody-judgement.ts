@@ -26,7 +26,10 @@ export function spotsOf(entries: ReadonlyArray<{ custodyType: string; refs: Read
   };
 }
 
-/** 세 전략의 현재 상수(`work-item:`)와 같아야 한다. */
+/**
+ * 검수 대기 PACKING custodyRef 의 정본 — 세 전략과 커널이 모두 `packingRefOf` 로 만든다. DB 에 이미 쓰인 잔량 행의
+ * custodyRef 와 같아야 하므로 값을 바꾸지 않는다.
+ */
 export const PACKING_REF_PREFIX = 'work-item:';
 
 export function packingRefOf(workItemId: string): string {
@@ -85,10 +88,13 @@ export function judgeUnpickCustody(input: {
     return offending ? { ok: false, code: 'PICKING_CUSTODY_OWNER_MISMATCH', balanceId: offending.id } : { ok: true };
   }
   const packingRef = packingRefOf(input.workItemId);
-  // discrete 의 길이 검사를 그대로 옮겼다. uq_batch_inventory_session_balance_grain 이
-  // (session, sku, source, custodyType, custodyRef, line) 유일이라, 전부 같은 PACKING ref 이고
-  // grain 검사를 통과했다면 grain 당 잔량은 최대 1행이다. 그래서 길이 == 배정 수 는
-  // 「모든 배정에 잔량이 있다」와 같다.
+  // discrete 의 길이 검사를 그대로 옮겼다. aggregate 의 옛 `balances.length === 0` 과 동치인 근거:
+  // - uq_batch_inventory_session_balance_grain 이 (session, sku, source, custodyType, custodyRef, line) 유일이고
+  //   ① 이 sku 를 배정 SKU 로 고정했으므로, 전부 같은 PACKING ref 이면 grain(line, source) 당 잔량은 최대 1행이다.
+  // - uq_picking_source_allocations_work_item_grain 이 (workItem, line, source) 유일이라 배정도 grain 당 1행이다.
+  // - loadWorkItemAllocations 는 qty > 0 인 배정만 돌려주고(하나도 없으면 PICKING_WORK_ITEM_NOT_ALLOCATED 로 던진다)
+  //   잔량도 qty > 0 만 오므로, 「grain 마다 귀속량 == 배정량」이면 배정 grain 마다 잔량이 정확히 1행 있다.
+  // 그래서 길이 == 배정 수 는 나머지 두 조건이 참일 때 아무것도 더 거르지 않는다.
   const incomplete =
     balances.length !== allocations.length ||
     balances.some((balance) => balance.custodyType !== 'PACKING' || balance.custodyRef !== packingRef) ||

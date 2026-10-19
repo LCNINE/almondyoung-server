@@ -27,16 +27,20 @@ Accepted (2026-10-19). **부분 대체:** [[0030-picking-plan-layer-extraction]]
 
 1. **전진 문 `runForwardWorkItemCommand`.** 작업 항목을 잠그고 전진시키는 7개 명령(discrete `scan`·`completePick`, tote `assignTote`·`toteScan`·`completePick`,
    aggregate `sortScan`·`completePick`)이 모두 지난다. 순서는 커널이 고정한다: `workflowGate.assertV2MutationAllowed(commandType)` → `commands.execute` →
-   **선행 advisory 락**(문자열 키 목록, 순서대로. aggregate `sortScan` 은 작업 항목 잠금보다 카트 락 `aggregate-cart:{cartId}` 를 먼저 잡는다) →
+   **선행 advisory 락**(문자열 키 목록, 순서대로. aggregate `sortScan` 은 작업 항목 잠금보다 카트 락 `aggregate-cart:{cartId}` 를 먼저 잡는다. 키는 `cartLockKey`, SQL 은 `advisoryXactLock` 한 벌) →
    `lockAndAssertPickerClaim` → `labels.assertCurrent` → `assertActiveBatchSession` → 본문. 커널은 `lockAndAssertPickerClaim` 을 **부르기만** 한다.
 2. **공통 본문 `completeWorkItemPick` · `unpickWorkItemShipment` · `handoffWorkItemPicker`.** 세 전략의 같은 이름 메서드는 정책(`PickingCustodyPolicy`)을 넘기는
-   한 줄 위임이다. 판정 함수는 `work-item-custody-judgement.ts` 의 순수 함수다.
+   한 줄 위임(`return completeWorkItemPick(deps, policy, input, tx)` 꼴)이다. 되돌림·인계 본문은 송장 게이트가 없는 deps
+   (`RollbackCommandDeps`, `labels` 없음)를 받는다 — 게이트는 빠지는 박스를 거절하므로, 되돌림이 게이트를 지나면 빼는 일이 끝나지 않는다. 판정 함수는 `work-item-custody-judgement.ts` 의 순수 함수다.
 
-**전략이 넘기는 것(`PickingCustodyPolicy`)**: 전략명(→`commandType`), 내부 `moveCustody` 멱등 키 접두사 넷, **소유자 조회**
+**전략이 넘기는 것(`PickingCustodyPolicy`)**: 전략명(→`commandType`), 멱등 키 접두사(완료·되돌림 `moveCustody`, 인계 클레임), **소유자 조회**
 `loadHeldSpots`(이 박스 custody 를 지금 들고 있어도 되는 자리), 완료 때 PACKING 으로 옮길 출발 custody(`WORKER`/`TOTE`/`SORTING`), tote 만의 «허용 자리가 비었음»
-에러, 인계 때 custody 가 사람을 따라가는지(`handoffCustody`, tote 는 없음), 되돌림 후처리(`afterUnpick`, tote 의 `releaseEmptyShipmentTotes`), 에러 문구.
+에러, 인계 때 custody 가 사람을 따라가는지(`handoffCustody` — 그 자리의 ref 규칙과 인계 `moveCustody` 키·불완전 문구를 함께 든다. tote 는 없음), 되돌림 후처리(`afterUnpick`, tote 의 `releaseEmptyShipmentTotes`), 에러 문구.
 **소유자 조회는 순수 값이 아니다** — tote 의 조회는 토트 advisory 락과 배정 행 `FOR UPDATE` 를 잡는다. 그래서 조회는 허용 자리만 돌려주고 판정은 커널이 하며,
 **호출 위치는 커널이 고정한다**(`unpick` 은 `picking` 상태에서만 부른다). 그래야 락 순서가 예전과 같다. PACKING ref `work-item:{workItemId}` 는 커널이 소유한다.
+소유자 조회 값 하나가 세 판정(완료의 배정 grain 허용 자리, `picking` 되돌림의 소유, 인계 전·후의 배타 소유)에 쓰인다. 완료·인계의 이동 루프는
+허용된 행 중 이 작업 항목의 PACKING 행만 건너뛰고, 그 밖의 «허용됐는데 옮길 종류가 아닌» 행은 정책 불일치로 보고 내부 오류(500)로 던진다 —
+조용히 건너뛰면 PACKING 아닌 잔량을 남긴 채 완료되거나 옛 사람 자리에 잔량이 남는다. 오늘 세 정책으로는 도달 불가다.
 
 **커널에 넣지 않은 것**: `releaseTote`·`toteHandoff`(작업 항목 둘을 잠근다)·`cartHandoff`(카트 단위)·`returnCartSurplus`, 그리고 `scan` 계열 본문(discrete
 `scan`, tote `assignTote`·`toteScan`, aggregate `sortScan`·`bulkCartScan`). 이들은 잠그는 단위나 분기가 달라 하나의 틀에 넣으면 분기투성이가 된다 — 0026 이
@@ -57,28 +61,44 @@ Accepted (2026-10-19). **부분 대체:** [[0030-picking-plan-layer-extraction]]
   상태 모두에서 소유자를 검사했다. 받아들이는 요청과 거부하는 요청은 같고, 바뀌는 것은 **aggregate 의 깨진 상태에서 나오는 에러 코드**뿐이다(예: `ready_to_pack` 인데
   잔량이 남의 PACKING 자리에 있으면 `PICKING_CUSTODY_OWNER_MISMATCH` → `PICKING_PACKING_CUSTODY_INCOMPLETE`, 위반이 여럿이면 grain 위반이 먼저). 사용자 결정(2026-10-19).
 
-동작을 바꾸지 않는 정리 둘: discrete `handoff` 의 인계 뒤 `PICKING_WORK_ITEM_CLOSED` 검사는 `batches.handoff` 가 `status = 'picking'` 일 때만 성공하므로 도달 불가라
-뺐다. ready_to_pack 되돌림 검사 `balances.length !== allocations.length`(discrete·tote) 대 `balances.length === 0`(aggregate)은 `uq_batch_inventory_session_balance_grain`
-유니크로 PACKING 행이 grain 당 하나라 동치여서 하나로 합쳤다.
+동작을 바꾸지 않는 정리(각각 근거 불변식과 함께):
+
+- discrete `handoff` 의 인계 뒤 `PICKING_WORK_ITEM_CLOSED` 검사 — `batches.handoff` 가 `status = 'picking'` 일 때만 성공하므로 도달 불가라 뺐다.
+- ready_to_pack 되돌림 검사 `balances.length !== allocations.length`(discrete·tote) 대 `balances.length === 0`(aggregate) — 하나로 합쳤다.
+  `uq_batch_inventory_session_balance_grain`(session·sku·source·custodyType·custodyRef·line 유일)으로 같은 PACKING ref 의 잔량은 grain 당 최대 1행,
+  `uq_picking_source_allocations_work_item_grain`(workItem·line·source 유일)으로 배정도 grain 당 1행, `loadWorkItemAllocations` 가 `qty > 0` 배정만
+  돌려주므로(비면 던진다) «grain 마다 귀속량 == 배정량»이면 행 수 == 배정 수다.
+- discrete `completePick` 의 `balances.length !== 1` — 뺐다. 판정은 «합 == 배정량 이고 모든 행이 WORKER/피커 자리»다. 같은 grain·같은 WORKER ref 의
+  잔량은 `uq_batch_inventory_session_balance_grain` 으로 최대 1행이고(shipment line 이 SKU 를 정하므로 sku 열이 갈라 놓지 못한다), 배정 qty > 0 이라
+  합 == 배정량이면 최소 1행이다 — 정확히 1행.
+- aggregate 완료 잔량 조회(`loadPositiveAllocationCustody`)의 `skuId = allocation.skuId` 조건 — 뺐다. shipment line 이 SKU 를 정하고(배정의 `skuId` 는
+  그 줄의 SKU), 잔량의 `shipmentLineId` 가 같으면 SKU 도 같다.
+- tote `completePick` 의 `balances.length === 0` — 뺐다. 배정 qty > 0(`loadWorkItemAllocations` 의 `qty > 0` 필터)이라 «합 == 배정량»이 이미 1행 이상을 요구한다.
 
 ## Why
 - 가로지르는 규칙을 넣을 곳이 한 곳이다. 송장 게이트 같은 규칙은 커널 한 곳에만 넣으면 세 전략 모두에 적용된다.
 - 복사본 점검 가드는 이미 알려진 규칙 하나만 지켰다. 이제 가드는 «주인 말고는 아무도 직접 하지 않는다» 꼴(`work-item-command.guard.spec.ts`)이라 규칙이 늘어도
-  가드 수가 늘지 않는다. 가드가 지키는 것: 전진 문과 송장 게이트·피커 클레임 호출은 커널 파일뿐(검수·발송 `shipment-dispatch.service.ts` 의 `assertCurrent` 만 예외),
-  작업 항목 `ready_to_pack`·`queued` 쓰기와 PACKING 목적지 `moveCustody` 는 커널과 aggregate `sortScan` 뿐, 커널의 되돌림 진입 메서드 본문에는 `labels.assertCurrent(` 가 없다.
+  가드 수가 늘지 않는다. 가드가 지키는 것: 송장 게이트(`assertCurrent`)·피커 클레임(`lockAndAssertPickerClaim`) 호출은 커널 파일뿐(검수·발송
+  `shipment-dispatch.service.ts` 의 `assertCurrent` 만 예외). 전진 문 `runForwardWorkItemCommand` 를 부르는 곳은 도출해 고정한 다섯 곳 — 전략의 discrete `scan`,
+  tote `assignTote`·`toteScan`, aggregate `sortScan` 과 커널의 `completeWorkItemPick` — 이라 되돌림이 문에 들어오거나 전진 명령이 문을 떠나면 빨갛다.
+  작업 항목 `ready_to_pack`·`queued` 상태 쓰기는 커널 파일뿐이고, PACKING 목적지 `moveCustody` 는 커널과 aggregate `sortScan`(목적지를 고를 수 있는 전략 고유
+  명령) 뿐이다. aggregate 카트 락 키는 `cartLockKey` 하나가 만들어 `sortScan` 의 선행 락과 다른 카트 명령의 `acquireCartLock` 이 같은 키를 쓴다. 되돌림 본문
+  안의 간접 게이트 호출은 가드가 아니라 타입(`RollbackCommandDeps`)이 막는다.
 - 되돌림을 커널에 넣고 틀 밖에 둔 것이 갈린 기준은 «같은 락 순서·판정으로 설명되나»다. 설명되는 셋은 넣었고 나머지는 구조가 달라 넣지 않았다.
 - 특성 테스트가 먼저였다. 되돌림·인계에는 실제 DB 테스트가 없었으므로 K1b-1 이 지금 코드 그대로 36개를 채웠고(`picking-rollback.characterization.integration.spec.ts`),
   K1b-2 는 D1·D3 의 aggregate 행 외에는 그 기대값을 고치지 않았다.
 
 ## Consequences
-- **입력 검증이 워크플로 게이트보다 먼저 돈다(통제자 판정 R6).** 예전에는 일부 전략에서 게이트(`assertV2MutationAllowed`)와 `commands.execute` 사이에 입력 검증(400)이 있었다.
-  커널은 게이트를 가장 앞에 고정하므로, 그 검증은 게이트 앞으로 올라왔다. 달라지는 것은 **점검(maintenance) 모드에서 입력이 틀린 요청의 에러 우선순위**뿐이다 —
+- **입력 검증이 워크플로 게이트보다 먼저 돈다(통제자 판정 R6).** 예전에는 전진 명령 넷 — discrete `scan`(`assertPositiveQuantity`), tote `assignTote`
+  (`requiredToteBarcode`), tote `toteScan`(`assertPositiveQuantity`·`requiredToteBarcode`), aggregate `sortScan`(`assertPositiveQuantity`·`requiredCartId`·
+  `destinationCustody` 검사) — 에서 게이트(`assertV2MutationAllowed`)와 `commands.execute` 사이에 입력 검증(400)이 있었다.
+  커널은 게이트를 `commands.execute` 바로 앞에 고정하므로, 그 검증은 게이트 앞으로 올라왔다. 달라지는 것은 **점검(maintenance) 모드에서 입력이 틀린 요청의 에러 우선순위**뿐이다 —
   전에는 점검 에러, 이제는 400. 점검 모드가 아니면 관측 차이가 없다.
 - **가드의 알려진 한계.** 가드는 소스 텍스트·AST 를 보므로 우회가 가능하다: (1) 원시 SQL(`sql\`UPDATE … status\``)로 작업 항목 상태를 쓰는 경우, (2) 객체 스프레드
   (`{ ...base, status: 'ready_to_pack' }`)로 상태를 전달하는 경우, (3) `moveCustody` 를 구조분해해 다른 이름으로 부르는 경우. 이들은 잡지 못한다 — 막으려면 쓰기 경로
   자체를 좁혀야 하고, 가드는 실수를 잡는 그물이지 방어선이 아니다.
 - 새 가로지르는 규칙은 커널 한 곳에 넣는다. 네 번째 피킹 방식은 `scan` 과 `PickingCustodyPolicy` 를 넘기면 된다.
 - 0030 의 «custody 층의 세 벌이 측정상 수렴하면 다시 검토한다» 조건은 이 ADR 로 소진됐다. 정책을 더 넓게 만들고 싶어질 때(예: `custodyFlow` 집행)는 새 측정과 새 ADR 이 먼저다.
-- 측정 재실행(구현 뒤): `handoff`·`completePick`·`unpickShipment` 의 세 쌍 diff 는 모두 0 이다(전략 파일에는 세 줄짜리 위임만 남는다). 같은 스크립트가 `scan` 에 내는
+- 측정 재실행(구현 뒤): `handoff`·`completePick`·`unpickShipment` 의 세 쌍 diff 는 모두 0 이다(전략 파일에는 한 줄 위임만 남는다). 같은 스크립트가 `scan` 에 내는
   큰 값은 의미가 없다 — 세 전략의 `scan` 이 구조가 달라(discrete 만 본문을 갖고 나머지는 전략 고유 명령으로 대체) 비교 대상이 아니다.
 - 마이그레이션이 없다. API 응답 모양은 불변이고 core 단독 배포로 충분하다.
