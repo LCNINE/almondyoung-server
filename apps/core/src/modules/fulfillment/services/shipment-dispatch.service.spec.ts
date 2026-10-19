@@ -442,7 +442,7 @@ describe('ShipmentDispatchService', () => {
           },
         };
       }),
-      update: jest.fn(() => new Mutation()),
+      update: jest.fn(() => new Mutation([{ id: IDS.shipment }])), // 전이 함수가 .returning() 으로 한 행을 받아야 한다
     } as any;
 
     const result = await (service as any).dispatchLocked(locked, { id: IDS.actor, roles: ['logistics_worker'] }, tx, {

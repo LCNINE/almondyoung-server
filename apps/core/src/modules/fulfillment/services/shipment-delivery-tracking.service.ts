@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { transitionShipments } from '../shipment/shipment-lifecycle';
 import { DbService } from '@app/db';
 import { and, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { FULFILLMENT_STREAM, SHIPMENT_STREAM } from '@packages/event-contracts/streams';
@@ -208,20 +209,21 @@ export class ShipmentDeliveryTrackingService {
           }
 
           if (input.status === 'in_transit') {
-            await trx
-              .update(wmsTables.shipments)
-              .set({ status: 'in_transit', lastUpdated: occurredAt })
-              .where(and(eq(wmsTables.shipments.id, attempt.shipmentId), eq(wmsTables.shipments.status, 'shipped')));
+            await transitionShipments(trx, {
+              shipmentIds: [attempt.shipmentId],
+              from: ['shipped'],
+              to: 'in_transit',
+              at: occurredAt,
+              stale: 'ignore',
+            });
           } else {
-            await trx
-              .update(wmsTables.shipments)
-              .set({ status: 'delivered', deliveredAt: occurredAt, lastUpdated: occurredAt })
-              .where(
-                and(
-                  eq(wmsTables.shipments.id, attempt.shipmentId),
-                  inArray(wmsTables.shipments.status, ['shipped', 'in_transit']),
-                ),
-              );
+            await transitionShipments(trx, {
+              shipmentIds: [attempt.shipmentId],
+              from: ['shipped', 'in_transit'],
+              to: 'delivered',
+              at: occurredAt,
+              stale: 'ignore',
+            });
             // ⚠️ 이 두 줄의 **순서는 임의가 아니다.** 파기는 `emitDeliveredProjections` 보다
             // 먼저 와야 한다 — 그쪽이 `fulfillment_orders` 에 `FOR UPDATE` 를 건다.
             // 파기를 뒤로 옮기면 배송완료 경로의 잠금 순서가 `FO → sales_orders` 가 되는데,

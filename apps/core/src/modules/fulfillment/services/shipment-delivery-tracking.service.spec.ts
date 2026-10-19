@@ -56,7 +56,8 @@ function makeHarness(selectResults: unknown[][], insertResults: unknown[][] = [[
           capture.values = values;
           return builder;
         }),
-        where: jest.fn(() => Promise.resolve(undefined)),
+        // 전이 함수는 .where(...).returning() 으로 끝난다. 직접 await 하는 쪽도 그대로 동작해야 한다.
+        where: jest.fn(() => Object.assign(Promise.resolve(undefined), { returning: () => Promise.resolve([]) })),
       };
       return builder;
     }),

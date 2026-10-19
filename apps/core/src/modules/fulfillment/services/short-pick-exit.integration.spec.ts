@@ -152,7 +152,7 @@ describeIfDb('결품 이탈의 마무리 (스펙 §9-5, PR 4)', () => {
     });
   });
 
-  it('K2 특성: 결품 이탈은 manifest +1, 줄 버전 +1, 검수는 이미 0', async () => {
+  it('K2 특성(D1): 결품 이탈은 manifest +1, 줄 버전 그대로', async () => {
     await inRollbackTx(db, async (tx) => {
       const readBox = async (shipmentId: string) => {
         const [shipment] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, shipmentId));
@@ -176,7 +176,7 @@ describeIfDb('결품 이탈의 마무리 (스펙 §9-5, PR 4)', () => {
       expect(after.lines).toHaveLength(before.lines.length);
       for (const line of after.lines) {
         const prev = before.lines.find((l) => l.id === line.id)!;
-        expect(line.lineVersion - prev.lineVersion).toBe(1);
+        expect(line.lineVersion - prev.lineVersion).toBe(0);
       }
     });
   });

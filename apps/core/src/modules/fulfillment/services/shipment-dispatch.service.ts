@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { transitionShipments } from '../shipment/shipment-lifecycle';
 import { LabelCurrencyGuard } from '../waybill/label-currency.guard';
 import {
   BadRequestException,
@@ -834,10 +835,13 @@ export class ShipmentDispatchService {
     // seam 순서: dispatchLocked 상단의 assertDispatchable 이 이미 staleness 를 검증했으므로 여기서는 CAS 만.
     // markUsed 는 staleness 를 재검하지 않는다(registered/used → used 엄격 CAS).
     await this.waybills.markUsed(aggregate.shipment.id, tx);
-    await tx
-      .update(wmsTables.shipments)
-      .set({ status: 'shipped', shippedAt: dispatchedAt, lastUpdated: dispatchedAt })
-      .where(eq(wmsTables.shipments.id, aggregate.shipment.id));
+    await transitionShipments(tx, {
+      shipmentIds: [aggregate.shipment.id],
+      from: ['planned'],
+      to: 'shipped',
+      at: dispatchedAt,
+      stale: 'unreachable',
+    });
     await tx
       .update(wmsTables.outboundBatchWorkItems)
       .set({ status: 'completed', completedAt: dispatchedAt, updatedAt: dispatchedAt })
