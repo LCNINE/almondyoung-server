@@ -9,8 +9,16 @@ import {
   Pencil,
   Split,
   Trash2,
+  X,
 } from "lucide-react"
-import { type ReactNode, useEffect, useRef, useState } from "react"
+import {
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react"
+import { createPortal } from "react-dom"
 import { Backdrop, LayerGraphic, photoBox } from "../graphic"
 import {
   currentCrop,
@@ -54,6 +62,7 @@ function SelectionHandle({
   scale,
   label,
   onPointerDown,
+  hidden = false,
 }: {
   handle: string
   x: number
@@ -61,6 +70,7 @@ function SelectionHandle({
   scale: number
   label: string
   onPointerDown: (event: React.PointerEvent<SVGElement>) => void
+  hidden?: boolean
 }) {
   const corner = handle.length === 2
   const vertical = handle === "e" || handle === "w"
@@ -72,7 +82,7 @@ function SelectionHandle({
       onPointerDown={onPointerDown}
     >
       <circle cx={x} cy={y} r={12 / scale} fill="transparent" />
-      {corner ? (
+      {hidden ? null : corner ? (
         <circle
           cx={x}
           cy={y}
@@ -230,6 +240,94 @@ function RotateHandle({
   )
 }
 
+// 망고보드 이미지 조절: 편집기 화면 전체를 어둡게 덮고 자르는 틀만 밝게 뚫는다. 버튼은 틀 바로 아래
+function CropShade({
+  frameRef,
+  layer,
+  onApply,
+  onCancel,
+  onReset,
+}: {
+  frameRef: React.RefObject<SVGRectElement>
+  layer: Layer
+  onApply: () => void
+  onCancel: () => void
+  onReset: () => void
+}) {
+  const [rect, setRect] = useState<DOMRect | null>(null)
+  useLayoutEffect(() => {
+    const measure = () => {
+      const next = frameRef.current?.getBoundingClientRect() ?? null
+      setRect((prev) =>
+        prev &&
+        next &&
+        prev.x === next.x &&
+        prev.y === next.y &&
+        prev.width === next.width &&
+        prev.height === next.height
+          ? prev
+          : next
+      )
+    }
+    measure()
+    window.addEventListener("resize", measure)
+    window.addEventListener("scroll", measure, true)
+    return () => {
+      window.removeEventListener("resize", measure)
+      window.removeEventListener("scroll", measure, true)
+    }
+  }, [frameRef, layer])
+  if (!rect) return null
+  return createPortal(
+    <>
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed z-[10001]"
+        style={{
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+          boxShadow: "0 0 0 100vmax rgba(0,0,0,0.45)",
+        }}
+      />
+      <div
+        role="toolbar"
+        aria-label="이미지 조절"
+        className="fixed z-[10002] flex -translate-x-1/2 items-center gap-2"
+        style={{ left: rect.left + rect.width / 2, top: rect.bottom + 14 }}
+      >
+        <button
+          type="button"
+          aria-label="자르기 적용"
+          title="적용 (Enter)"
+          onClick={onApply}
+          className="flex size-9 items-center justify-center rounded-full bg-white text-[#2e86c1] shadow-[0_0_5px_#d3d4d8]"
+        >
+          <Check size={20} strokeWidth={2.4} />
+        </button>
+        <button
+          type="button"
+          aria-label="자르기 취소"
+          title="취소"
+          onClick={onCancel}
+          className="flex size-9 items-center justify-center rounded-full bg-white text-[#ef4d4d] shadow-[0_0_5px_#d3d4d8]"
+        >
+          <X size={20} strokeWidth={2.4} />
+        </button>
+        <button
+          type="button"
+          onClick={onReset}
+          className="h-9 rounded-full bg-white px-4 text-[14px] whitespace-nowrap text-[#20232A] shadow-[0_0_5px_#d3d4d8]"
+        >
+          원본이미지
+        </button>
+      </div>
+    </>,
+    document.body
+  )
+}
+
 // 망고보드 툴팁: 지연·페이드 없이 바로 뜨고, 단축키는 회색 둘째 줄
 function QuickAction({
   label,
@@ -305,6 +403,7 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
     setCropId,
     startCrop,
     resetCrop,
+    cancelCrop,
     mergedGroup,
     mergeGroup,
     splitGroup,
@@ -322,6 +421,7 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
   } = editor
   const replaceImageRef = useRef<HTMLInputElement>(null)
   const cropping = !!selected && cropId === selected.id
+  const cropFrameRef = useRef<SVGRectElement>(null)
   const groupBox = group.length > 1 ? unionBounds(group) : null
   const handles = [
     ["nw", 0, 0],
@@ -530,35 +630,41 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                 id="selection-outline"
                 transform={`translate(${selected.x + selected.width / 2} ${selected.y + selected.height / 2}) rotate(${selected.rotation ?? 0}) scale(${selected.flipX ? -1 : 1} ${selected.flipY ? -1 : 1}) translate(${-selected.x - selected.width / 2} ${-selected.y - selected.height / 2})`}
               >
-                {cropping && selected.image && (
-                  <>
-                    <image
-                      href={imageSrc(selected.image)}
-                      {...photoBox({
-                        ...selected,
-                        crop: currentCrop(selected),
-                      })}
-                      opacity={0.35}
-                      pointerEvents="none"
-                    />
-                    <rect
-                      {...(({ x, y, width, height }) => ({
-                        x,
-                        y,
-                        width,
-                        height,
-                      }))(
-                        photoBox({ ...selected, crop: currentCrop(selected) })
-                      )}
-                      fill="none"
-                      stroke="#555"
-                      strokeWidth={1 / scale}
-                      strokeDasharray={`${4 / scale} ${3 / scale}`}
-                      pointerEvents="none"
-                    />
-                  </>
-                )}
-                {selected.type === "line" ? (
+                {cropping &&
+                  selected.image &&
+                  (() => {
+                    // 망고보드 이미지 조절: 사진 전체를 보이고, 틀 밖(화면 전체)은 CropShade 가 어둡게 덮는다
+                    const full = photoBox({
+                      ...selected,
+                      crop: currentCrop(selected),
+                    })
+                    const { x, y, width: w, height: h } = selected
+                    const arm = 14 / scale
+                    return (
+                      <g pointerEvents="none">
+                        <image href={imageSrc(selected.image)} {...full} />
+                        <rect
+                          ref={cropFrameRef}
+                          x={x}
+                          y={y}
+                          width={w}
+                          height={h}
+                          fill="none"
+                          stroke="#fff"
+                          strokeWidth={1 / scale}
+                          strokeDasharray={`${4 / scale} ${3 / scale}`}
+                        />
+                        <path
+                          d={`M${x},${y + arm}V${y}H${x + arm} M${x + w - arm},${y}H${x + w}V${y + arm} M${x + w},${y + h - arm}V${y + h}H${x + w - arm} M${x + arm},${y + h}H${x}V${y + h - arm}`}
+                          fill="none"
+                          stroke="#fff"
+                          strokeWidth={3 / scale}
+                          strokeLinecap="square"
+                        />
+                      </g>
+                    )
+                  })()}
+                {cropping ? null : selected.type === "line" ? (
                   <LineHandles
                     layer={selected}
                     scale={scale}
@@ -587,21 +693,37 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                       y={selected.y + selected.height * ry}
                       scale={scale}
                       label={`${handle} 크기 조절`}
+                      hidden={cropping}
                       onPointerDown={(event) =>
                         startResize(event, selected, handle)
                       }
                     />
                   )
                 )}
-                <RotateHandle
-                  x={selected.x + selected.width / 2}
-                  y={selected.y}
-                  scale={scale}
-                  onPointerDown={(event) =>
-                    startResize(event, selected, "rotate")
-                  }
-                />
+                {!cropping && (
+                  <RotateHandle
+                    x={selected.x + selected.width / 2}
+                    y={selected.y}
+                    scale={scale}
+                    onPointerDown={(event) =>
+                      startResize(event, selected, "rotate")
+                    }
+                  />
+                )}
               </g>
+            )}
+            {editor.backgroundSelected && (
+              <rect
+                id="background-outline"
+                x={0}
+                y={0}
+                width={design.widthMm}
+                height={design.heightMm}
+                fill="none"
+                stroke="#42dfe5"
+                strokeWidth={2 / scale}
+                pointerEvents="none"
+              />
             )}
             {groupBox && (
               <g id="group-outline">
@@ -879,23 +1001,13 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
             </div>
           )}
           {cropping && (
-            <div className="absolute -top-11 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded bg-[#303030] px-3 py-1.5 text-xs whitespace-nowrap text-white shadow">
-              모서리를 끌어 자르고, 안쪽을 끌어 사진 위치를 옮기세요
-              <button
-                type="button"
-                onClick={resetCrop}
-                className="rounded border border-white/40 px-2 py-0.5"
-              >
-                원래대로
-              </button>
-              <button
-                type="button"
-                onClick={() => setCropId(null)}
-                className="flex items-center gap-1 rounded bg-white px-2 py-0.5 font-semibold text-[#303030]"
-              >
-                <Check size={12} /> 완료
-              </button>
-            </div>
+            <CropShade
+              frameRef={cropFrameRef}
+              layer={selected}
+              onApply={() => setCropId(null)}
+              onCancel={cancelCrop}
+              onReset={resetCrop}
+            />
           )}
           {editingLayer && editing && (
             <textarea

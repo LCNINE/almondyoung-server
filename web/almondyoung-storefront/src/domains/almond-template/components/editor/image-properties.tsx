@@ -1,6 +1,7 @@
-import { Link, Unlink, Crop } from "lucide-react"
+import { Link, Unlink, Crop, Eraser } from "lucide-react"
 import type { Layer } from "../../lib/document"
 import { GrayButton } from "./object-properties"
+import { PrintColorPicker } from "../color-picker"
 import {
   AlignOrderSection,
   NumberBox,
@@ -116,6 +117,31 @@ export function ImageProperties({
           <Crop size={16} strokeWidth={1.5} className="mr-[6px]" />
           {editor.cropId === selected.id ? "자르기 완료" : "자르기 (더블클릭)"}
         </GrayButton>
+        <div className="mt-[10px]">
+          <GrayButton
+            disabled={disabled}
+            onClick={() => void editor.removeWhiteBackground()}
+          >
+            <Eraser size={16} strokeWidth={1.5} className="mr-[6px]" />
+            배경 지우기
+          </GrayButton>
+        </div>
+        <p className="mt-2 text-[13px] leading-[19px] text-[#70777F]">
+          가장자리와 이어진 바탕색을 투명하게 만듭니다. 로고·도장처럼 단색 바탕
+          위 그림에 맞고, 풍경 사진처럼 복잡한 바탕은 지워지지 않습니다.
+        </p>
+      </PropSection>
+      <PropSection className="py-5">
+        <PrintColorPicker
+          label="색 입히기"
+          value={selected.imageTint ?? "none"}
+          disabled={disabled}
+          onClear={() => patch(selected.id, { imageTint: undefined })}
+          onApply={(color) => patch(selected.id, { imageTint: color })}
+        />
+        <p className="mt-2 text-[13px] leading-[19px] text-[#70777F]">
+          배경이 투명한 로고·아이콘에 쓰면 모양은 그대로 두고 색만 바뀝니다.
+        </p>
       </PropSection>
       <PropSection className="space-y-[15px] py-[25px]">
         <h3 className="text-[16px] font-medium text-[#20232A]">필터</h3>

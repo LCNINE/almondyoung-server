@@ -7,6 +7,7 @@ import {
   Minus,
   MoveRight,
   PenLine,
+  PenTool,
   Shapes,
   Square,
   Triangle,
@@ -20,7 +21,7 @@ import type { AlmondEditor } from "../../../hooks/use-almond-editor"
 import { PrintColorPicker } from "../../color-picker"
 import { GRAPHIC_ART, HAND_ART, type DrawArt } from "../../../lib/draw-art"
 
-type Tool = BrushKind | "eraser" | "shapes"
+type Tool = BrushKind | "nib" | "eraser" | "shapes"
 
 function Tile({
   label,
@@ -42,7 +43,7 @@ function Tile({
         aria-label={label}
         aria-pressed={selected}
         onClick={onClick}
-        className={`flex size-[72px] items-center justify-center rounded-[9px] border-2 ${selected ? "border-[#FEDE29] bg-white text-[#F5C400]" : "border-white bg-[#F6F7F9] text-[#70777F] hover:border-[#FEDE29] hover:bg-white hover:text-[#F5C400]"}`}
+        className={`flex size-[55px] items-center justify-center rounded-[9px] border-2 ${selected ? "border-[#FEDE29] bg-white text-[#F5C400]" : "border-white bg-[#F6F7F9] text-[#70777F] hover:border-[#FEDE29] hover:bg-white hover:text-[#F5C400]"}`}
       >
         {children}
       </button>
@@ -198,6 +199,8 @@ const BASIC_SHAPES: [DrawShape, string, typeof Circle][] = [
 export function DrawPanel({ editor }: { editor: AlmondEditor }) {
   const {
     pencilActive,
+    penActive,
+    togglePen,
     eraserActive,
     shapeActive,
     shapeKind,
@@ -213,13 +216,19 @@ export function DrawPanel({ editor }: { editor: AlmondEditor }) {
   } = editor
   const tool: Tool | null = shapeActive
     ? "shapes"
-    : eraserActive
-      ? "eraser"
-      : pencilActive
-        ? brushKind
-        : null
+    : penActive
+      ? "nib"
+      : eraserActive
+        ? "eraser"
+        : pencilActive
+          ? brushKind
+          : null
   const setting = brushes[brushKind]
-  const drawing = tool === "pen" || tool === "highlighter" || tool === "shapes"
+  const drawing =
+    tool === "pen" ||
+    tool === "highlighter" ||
+    tool === "nib" ||
+    tool === "shapes"
   const stateBar = (
     <button
       type="button"
@@ -236,18 +245,25 @@ export function DrawPanel({ editor }: { editor: AlmondEditor }) {
       <hr className="my-[15px] h-px border-0 bg-[#E6E7EA]" />
       <div className="flex gap-[9px] after:mt-[25px]">
         <Tile
-          label="펜"
+          label="펜 (Shift+P)"
           selected={tool === "pen"}
           onClick={() => chooseBrush("pen")}
         >
-          <PenLine size={32} strokeWidth={1.5} />
+          <PenLine size={26} strokeWidth={1.5} />
         </Tile>
         <Tile
           label="형광펜"
           selected={tool === "highlighter"}
           onClick={() => chooseBrush("highlighter")}
         >
-          <Highlighter size={32} strokeWidth={1.5} />
+          <Highlighter size={26} strokeWidth={1.5} />
+        </Tile>
+        <Tile
+          label="펜촉 (P)"
+          selected={tool === "nib"}
+          onClick={() => (penActive ? exitDrawing() : togglePen())}
+        >
+          <PenTool size={26} strokeWidth={1.5} />
         </Tile>
         <Tile
           label="지우개"
@@ -255,7 +271,7 @@ export function DrawPanel({ editor }: { editor: AlmondEditor }) {
           onClick={chooseEraser}
           className="after:absolute after:top-1/2 after:-right-[11px] after:h-3/4 after:w-px after:-translate-y-1/2 after:bg-[#F6F7F9] after:transition-[height] after:duration-300"
         >
-          <Eraser size={32} strokeWidth={1.5} />
+          <Eraser size={26} strokeWidth={1.5} />
         </Tile>
         <Tile
           label="선과 도형"
@@ -263,7 +279,7 @@ export function DrawPanel({ editor }: { editor: AlmondEditor }) {
           onClick={() => chooseShape(shapeKind)}
           className="ml-[9px]"
         >
-          <Shapes size={32} strokeWidth={1.5} />
+          <Shapes size={26} strokeWidth={1.5} />
         </Tile>
       </div>
       {tool !== "shapes" && stateBar}

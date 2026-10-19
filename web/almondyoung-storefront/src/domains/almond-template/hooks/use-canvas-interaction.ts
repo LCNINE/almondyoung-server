@@ -39,6 +39,8 @@ type Params = {
   setGroupIds: (ids: string[]) => void
   cropId: string | null
   selectedId: string | null
+  // 빈 곳을 눌렀다 뗐을 때(끌지 않고). 종이 안이면 true
+  onPaperClick?: (onPaper: boolean) => void
 }
 
 export const MIN_ZOOM = 0.1
@@ -74,6 +76,7 @@ export function useCanvasInteraction({
   setGroupIds,
   cropId,
   selectedId,
+  onPaperClick,
 }: Params) {
   const [guides, setGuides] = useState<Guides | null>(null)
   const [zoom, setZoom] = useState(1)
@@ -531,9 +534,16 @@ export function useCanvasInteraction({
   const endDrag = () => {
     setGuides(null)
     if (marqueeStart.current) {
+      const start = marqueeStart.current
       marqueeStart.current = null
       setMarquee(null)
-      if (!marquee) return
+      if (!marquee)
+        return onPaperClick?.(
+          start.x >= 0 &&
+            start.y >= 0 &&
+            start.x <= design.widthMm &&
+            start.y <= design.heightMm
+        )
       // 걸치기만 해도 고르면 종이를 덮는 큰 요소가 늘 딸려 온다. 네모 안에 다 들어온 것만 고른다
       const hits = design[side].filter((layer) => {
         if (layer.visible === false || !movable(layer)) return false

@@ -12,7 +12,6 @@ export function ImagePanel({ editor }: { editor: AlmondEditor }) {
     removeFromLibrary,
     imageFile,
     fillFrames,
-    removeWhiteBackground,
   } = editor
   return (
     <>
@@ -38,13 +37,6 @@ export function ImagePanel({ editor }: { editor: AlmondEditor }) {
           }}
         />
       </label>
-      <button
-        className="mt-2 w-full bg-[#303030] py-2 text-sm text-white"
-        title="선택한 사진의 흰색 배경을 투명하게 만듭니다"
-        onClick={() => void removeWhiteBackground()}
-      >
-        배경이미지 제거 ⓘ
-      </button>
       <div className="my-6 border-t pt-5 text-[11px] leading-6 text-[#555]">
         <p>
           사진과 벡터 파일의 해상도·글꼴·색상은 인쇄 전에 확인해 주세요. 화면

@@ -7,6 +7,7 @@ import {
   type Layer,
 } from "../lib/document"
 import { makeLayer } from "../lib/layer"
+import { removeEdgeBackground } from "../lib/background-removal"
 import { imageBlob } from "../lib/image-ref"
 import { rememberPreview } from "../lib/image-previews"
 
@@ -179,23 +180,14 @@ export function useImageTools({
       context.drawImage(bitmap, 0, 0)
       bitmap.close()
       const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
-      let changed = 0
-      for (let i = 0; i < pixels.data.length; i += 4) {
-        const white = Math.min(
-          pixels.data[i],
-          pixels.data[i + 1],
-          pixels.data[i + 2]
-        )
-        if (white > 225) {
-          pixels.data[i + 3] = Math.round(
-            (pixels.data[i + 3] * (245 - white)) / 20
-          )
-          changed++
-        }
-      }
+      const changed = removeEdgeBackground(
+        pixels.data,
+        canvas.width,
+        canvas.height
+      )
       if (!changed)
         return setMessage(
-          "흰색 배경이 보이지 않습니다. 투명 PNG를 업로드하세요."
+          "지울 바탕을 찾지 못했습니다. 이미 투명하거나 가장자리가 그림으로 꽉 찬 사진입니다."
         )
       context.putImageData(pixels, 0, 0)
       const image = canvas.toDataURL("image/png")
@@ -209,7 +201,7 @@ export function useImageTools({
         originalImage: undefined,
         imageFilter: undefined,
       })
-      setMessage("흰색 배경을 투명하게 바꿨습니다. 가장자리를 확인하세요.")
+      setMessage("배경을 투명하게 바꿨습니다. 가장자리를 확인하세요.")
     } catch {
       setMessage("배경을 제거하지 못했습니다. 투명 PNG를 사용하세요.")
     }

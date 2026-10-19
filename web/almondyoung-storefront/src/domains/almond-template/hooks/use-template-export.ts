@@ -18,6 +18,7 @@ export function svgMarkup(source: SVGSVGElement, design: Design) {
     "overflow-ghost",
     "group-outline",
     "snap-guides",
+    "background-outline",
   ])
     clone.querySelector(`#${id}`)?.remove()
   clone.setAttribute("xmlns", "http://www.w3.org/2000/svg")

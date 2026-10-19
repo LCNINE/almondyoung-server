@@ -7,7 +7,10 @@ import {
   printIssues,
   printWarnings,
   printsBack,
+  sideBackground,
+  withSideBackground,
   type Design,
+  type Layer,
 } from "../lib/document"
 import { mm } from "../lib/layer"
 import { useCanvasInteraction } from "./use-canvas-interaction"
@@ -71,9 +74,12 @@ export function useAlmondEditor({
   > | null>(null)
   const [selectedId, selectOne] = useState<string | null>(null)
   const [groupIds, setGroupIds] = useState<string[]>([])
+  // 배경 이미지는 레이어가 아니라서 따로 고른다. 요소·그룹을 고르거나 선택을 풀면 같이 풀린다
+  const [backgroundSelected, setBackgroundSelected] = useState(false)
   const setSelectedId = useCallback((id: string | null) => {
     selectOne(id)
     setGroupIds([])
+    setBackgroundSelected(false)
   }, [])
   const [guideMenuOpen, setGuideMenuOpen] = useState(false)
   const [noticeOpen, setNoticeOpen] = useState(false)
@@ -175,6 +181,11 @@ export function useAlmondEditor({
   const selectedPrintWarning = selectedOverPrintArea || selectedLowDpi
 
   const [cropId, setCropId] = useState<string | null>(null)
+  // ✕(취소)로 자르기 전 모습으로 되돌리려고, 자르기를 시작할 때의 자리·크기·자른 범위를 둔다
+  const [cropBefore, setCropBefore] = useState<Pick<
+    Layer,
+    "x" | "y" | "width" | "height" | "crop"
+  > | null>(null)
   const [showOverflow, setShowOverflow] = useState(true)
   useEffect(() => {
     if (cropId && cropId !== selectedId) setCropId(null)
@@ -191,7 +202,19 @@ export function useAlmondEditor({
     if (!selected || selected.type !== "image" || !selected.image) return
     if (selected.rotation)
       return setMessage("회전을 0°로 되돌린 뒤 자를 수 있습니다.")
+    setCropBefore({
+      x: selected.x,
+      y: selected.y,
+      width: selected.width,
+      height: selected.height,
+      crop: selected.crop,
+    })
     setCropId(selected.id)
+  }
+  const cancelCrop = () => {
+    if (cropId && cropBefore)
+      change(updateLayer(design, side, cropId, cropBefore))
+    setCropId(null)
   }
   const resetCrop = () => {
     if (!selected?.crop) return
@@ -261,7 +284,22 @@ export function useAlmondEditor({
     setGroupIds,
     cropId,
     selectedId,
+    onPaperClick: (onPaper) => {
+      const picked = onPaper && !!sideBackground(design, side).backgroundImage
+      setBackgroundSelected(picked)
+      if (picked) {
+        setTool("background")
+        setPanelOpen(true)
+      }
+    },
   })
+  const removeBackgroundImage = () => {
+    const bg = sideBackground(design, side)
+    if (!bg.backgroundImage) return
+    change(withSideBackground(design, side, { background: bg.background }))
+    setBackgroundSelected(false)
+    setMessage("배경 이미지를 지웠습니다. 되돌리려면 Ctrl+Z")
+  }
   const auth = useAuthRetry(setMessage)
   const storage = useTemplateStorage({
     mode,
@@ -368,7 +406,7 @@ export function useAlmondEditor({
     selected,
     copied: actions.copied,
     hasGroup: group.length > 1,
-    editable: group.length > 1 || actions.editable,
+    editable: backgroundSelected || group.length > 1 || actions.editable,
     setSelectedId,
     setPreview,
     setTextDialog,
@@ -381,7 +419,11 @@ export function useAlmondEditor({
     copySelected: actions.copySelected,
     pasteCopied: actions.pasteCopied,
     cutSelected: actions.cutSelected,
-    removeSelected: group.length > 1 ? removeGroup : actions.removeSelected,
+    removeSelected: backgroundSelected
+      ? removeBackgroundImage
+      : group.length > 1
+        ? removeGroup
+        : actions.removeSelected,
     nudgeSelected: (dx, dy) => {
       // 화면 1px 은 작은 규격에서 0.1mm 도 안 돼 움직이지 않는 것처럼 보인다
       const px = Math.max(1 / (canvas.canvasFit * canvas.zoom), 0.5)
@@ -441,6 +483,9 @@ export function useAlmondEditor({
     restoreBack,
     selectedId,
     setSelectedId,
+    backgroundSelected,
+    setBackgroundSelected,
+    removeBackgroundImage,
     group,
     removeGroup,
     guideMenuOpen,
@@ -484,6 +529,7 @@ export function useAlmondEditor({
     openPreview,
     cropId,
     setCropId,
+    cancelCrop,
     startCrop,
     resetCrop,
     mergedGroup,

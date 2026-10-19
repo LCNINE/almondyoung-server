@@ -432,6 +432,26 @@ export function photoBox(layer: Layer) {
   }
 }
 
+// 색 입히기: 그림의 모양(투명도)은 그대로 두고 칠한 부분만 고른 한 색으로 바꾼다. 로고·아이콘용
+function TintFilter({ layer }: { layer: Layer }) {
+  if (!layer.imageTint) return null
+  return (
+    <defs>
+      <filter
+        id={`tint-${layer.id}`}
+        x="0"
+        y="0"
+        width="100%"
+        height="100%"
+        colorInterpolationFilters="sRGB"
+      >
+        <feFlood floodColor={layer.imageTint} />
+        <feComposite in2="SourceAlpha" operator="in" />
+      </filter>
+    </defs>
+  )
+}
+
 function LayerGraphicView({ layer }: { layer: Layer }) {
   const imageSrc = useImageSrc()
   // 올린 글꼴은 늦게 도착하므로, 도착하면 잰 폭을 버리고 이 레이어를 다시 그린다
@@ -488,14 +508,18 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
           </>
         )}
         {layer.type === "clipart" && clipartSource && (
-          <image
-            x={layer.x}
-            y={layer.y}
-            width={layer.width}
-            height={layer.height}
-            href={clipartSource}
-            preserveAspectRatio="xMidYMid meet"
-          />
+          <>
+            <TintFilter layer={layer} />
+            <image
+              x={layer.x}
+              y={layer.y}
+              width={layer.width}
+              height={layer.height}
+              href={clipartSource}
+              preserveAspectRatio="xMidYMid meet"
+              filter={layer.imageTint ? `url(#tint-${layer.id})` : undefined}
+            />
+          </>
         )}
         {layer.type === "line" &&
           (() => {
@@ -538,10 +562,12 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
                 />
               </clipPath>
             </defs>
+            <TintFilter layer={layer} />
             <image
               href={imageSrc(layer.image)}
               {...photoBox(layer)}
               clipPath={`url(#clip-${layer.id})`}
+              filter={layer.imageTint ? `url(#tint-${layer.id})` : undefined}
             />
           </>
         )}

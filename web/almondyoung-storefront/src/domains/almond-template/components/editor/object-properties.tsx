@@ -414,6 +414,17 @@ export function ObjectProperties({
         </>
       ) : (
         <>
+          {selected.type === "clipart" && (
+            <PropSection className="py-5">
+              <PrintColorPicker
+                label="색 입히기"
+                value={selected.imageTint ?? "none"}
+                disabled={!editable}
+                onClear={() => patch(selected.id, { imageTint: undefined })}
+                onApply={(color) => patch(selected.id, { imageTint: color })}
+              />
+            </PropSection>
+          )}
           {(selected.type !== "clipart" || pointEditable) && (
             <PropSection className="space-y-[15px] py-5">
               {selected.type !== "clipart" && (filled || !shapeText || art) && (

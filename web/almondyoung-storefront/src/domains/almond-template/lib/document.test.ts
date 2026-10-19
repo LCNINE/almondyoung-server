@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { PRINT_PRODUCTS, PRINT_SPECS, sizeFromOption } from "./catalog"
+import { makeLayer } from "./layer"
+import { CLIPART_IDS } from "./art-library"
 import {
   imageDpi,
   newDesign,
@@ -395,5 +397,26 @@ describe("아몬드템플릿", () => {
     expect(() => parseDesign(design)).toThrow(
       '앞면 레이어 목록 위에서 1번째 "점선" 레이어의 데이터가 올바르지 않습니다.'
     )
+  })
+})
+
+describe("색 입히기", () => {
+  it("이미지·클립아트의 imageTint 는 #rrggbb 만 받는다", () => {
+    const design = newDesign("card")
+    design.front = [
+      {
+        ...makeLayer("rect", design),
+        type: "clipart",
+        clipartId: Array.from(CLIPART_IDS)[0],
+        imageTint: "#ff6600",
+      },
+    ]
+    expect(parseDesign(design).front[0].imageTint).toBe("#ff6600")
+    expect(() =>
+      parseDesign({
+        ...design,
+        front: [{ ...design.front[0], imageTint: "red" }],
+      })
+    ).toThrow()
   })
 })

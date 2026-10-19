@@ -32,6 +32,7 @@ export type Layer = {
   image?: string
   originalImage?: string
   imageFilter?: "grayscale" | "emboss" | "boxblur" | "brightness" | "sepia"
+  imageTint?: string
   pixelWidth?: number
   pixelHeight?: number
   imageScale?: number
@@ -256,6 +257,7 @@ export function parseDesign(value: unknown): Design {
         (layer.fill === "none" && SHAPE_TEXT_TYPES.has(layer.type))
       ) ||
       (layer.textColor !== undefined && !color.test(layer.textColor)) ||
+      (layer.imageTint !== undefined && !color.test(layer.imageTint)) ||
       (layer.groupId !== undefined &&
         (typeof layer.groupId !== "string" ||
           !/^[a-zA-Z0-9_-]{1,100}$/.test(layer.groupId))) ||
