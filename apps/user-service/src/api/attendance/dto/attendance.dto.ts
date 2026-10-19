@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
+  ArrayUnique,
   IsArray,
   IsBoolean,
   IsIn,
@@ -59,6 +60,28 @@ export class LeaveDayDto {
   @IsOptional()
   @IsString()
   end?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  showDday?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @ArrayUnique()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(525600, { each: true })
+  reminderMinutes?: number[];
+}
+
+export class LeaveRecurrenceDto {
+  @IsIn(['none', 'weekly', 'monthly', 'yearly'])
+  frequency: 'none' | 'weekly' | 'monthly' | 'yearly';
+
+  @IsOptional()
+  @IsString()
+  until?: string;
 }
 
 export class LeaveBatchDto {
@@ -68,6 +91,24 @@ export class LeaveBatchDto {
   @ValidateNested({ each: true })
   @Type(() => LeaveDayDto)
   days: LeaveDayDto[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LeaveRecurrenceDto)
+  recurrence?: LeaveRecurrenceDto;
+
+  @IsOptional()
+  @IsBoolean()
+  showDday?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @ArrayUnique()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(525600, { each: true })
+  reminderMinutes?: number[];
 }
 
 export class AttendanceSettingsDto {
@@ -108,6 +149,11 @@ export class WorksiteDto {
   @IsString()
   @MaxLength(80)
   name: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  address?: string | null;
 
   @IsNumber()
   @Min(-90)

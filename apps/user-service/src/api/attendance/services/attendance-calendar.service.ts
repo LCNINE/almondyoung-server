@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { and, between, desc, eq, isNull, lt, or } from 'drizzle-orm';
 import {
   isWorkDate,
@@ -6,10 +7,13 @@ import {
   seoulDate,
   validatePlannedTimes,
   type LeaveInput,
+  type LeaveBatchOptions,
   type StaffAttendance,
 } from '@packages/domain-types/attendance';
 import { attendanceAudit, attendanceLeaves, attendanceSessions, users } from '../../../../database/drizzle/schema';
 import { AttendanceRepository } from '../repositories/attendance.repository';
+import { expandLeaveRecurrence } from './leave-recurrence';
+import { validateLeaveReminderMinutes } from './leave-reminders';
 
 export function validateLeaveBatch(batch: LeaveInput[]): void {
   if (!Array.isArray(batch) || !batch.length || batch.length > 366) {
@@ -24,6 +28,14 @@ export function validateLeaveBatch(batch: LeaveInput[]): void {
     }
 
     dates.add(item.date);
+
+    if (item.showDday !== undefined && typeof item.showDday !== 'boolean') {
+      throw new BadRequestException('디데이 표시 설정을 확인해 주세요.');
+    }
+
+    if (item.reminderMinutes !== undefined) {
+      validateLeaveReminderMinutes(item.reminderMinutes);
+    }
 
     if (item.type !== 'full') {
       const message = validatePlannedTimes(item.start ?? '', item.end ?? '');
@@ -93,6 +105,10 @@ export class AttendanceCalendarService {
         type: attendanceLeaves.type,
         start: attendanceLeaves.start,
         end: attendanceLeaves.end,
+        seriesId: attendanceLeaves.seriesId,
+        recurrence: attendanceLeaves.recurrence,
+        showDday: attendanceLeaves.showDday,
+        reminderMinutes: attendanceLeaves.reminderMinutes,
       })
       .from(attendanceLeaves)
       .innerJoin(users, eq(users.id, attendanceLeaves.userId))
@@ -100,8 +116,32 @@ export class AttendanceCalendarService {
       .orderBy(attendanceLeaves.date, users.username);
   }
 
-  async save(userId: string, items: LeaveInput[]) {
+  async save(userId: string, items: LeaveInput[], options: LeaveBatchOptions = {}) {
     validateLeaveBatch(items);
+
+    if (options.showDday !== undefined && typeof options.showDday !== 'boolean') {
+      throw new BadRequestException('디데이 표시 설정을 확인해 주세요.');
+    }
+
+    if (options.reminderMinutes !== undefined) {
+      validateLeaveReminderMinutes(options.reminderMinutes);
+    }
+
+    const firstDate = items.reduce((first, item) => (item.date < first ? item.date : first), items[0].date);
+    const prepared =
+      options.reminderMinutes === undefined
+        ? items
+        : items.map((item) => ({
+            ...item,
+            reminderMinutes: item.date === firstDate ? options.reminderMinutes : [],
+          }));
+    const expanded = expandLeaveRecurrence(prepared, options.recurrence);
+
+    validateLeaveBatch(expanded);
+
+    const seriesId = randomUUID();
+    const recurrence = options.recurrence?.frequency !== 'none' ? (options.recurrence ?? null) : null;
+    const reminderSetAt = new Date();
 
     return this.repo.withUserLock(userId, async (tx) => {
       const existing = await tx
@@ -112,7 +152,7 @@ export class AttendanceCalendarService {
       const byDate = new Map(existing.map((row) => [row.date, row]));
       const result: (typeof attendanceLeaves.$inferSelect)[] = [];
 
-      for (const item of items) {
+      for (const item of expanded) {
         const saved = byDate.get(item.date);
 
         if (saved) {
@@ -129,6 +169,11 @@ export class AttendanceCalendarService {
             type: item.type,
             start: item.type === 'full' ? null : item.start,
             end: item.type === 'full' ? null : item.end,
+            seriesId,
+            recurrence,
+            showDday: options.showDday ?? item.showDday ?? false,
+            reminderMinutes: item.reminderMinutes ?? [],
+            reminderSetAt: item.reminderMinutes?.length ? reminderSetAt : null,
           })
           .returning();
 
@@ -189,12 +234,21 @@ export class AttendanceCalendarService {
         throw new BadRequestException('날짜를 바꾸려면 기존 일정을 삭제한 뒤 등록해 주세요.');
       }
 
+      const start = item.type === 'full' ? null : item.start;
+      const end = item.type === 'full' ? null : item.end;
+      const reminderMinutes = item.reminderMinutes ?? row.reminderMinutes;
+      const reminderChanged =
+        item.reminderMinutes !== undefined || row.type !== item.type || row.start !== start || row.end !== end;
+
       const [changed] = await tx
         .update(attendanceLeaves)
         .set({
           type: item.type,
-          start: item.type === 'full' ? null : item.start,
-          end: item.type === 'full' ? null : item.end,
+          start,
+          end,
+          showDday: item.showDday,
+          reminderMinutes: item.reminderMinutes,
+          reminderSetAt: reminderChanged ? (reminderMinutes.length ? new Date() : null) : undefined,
         })
         .where(eq(attendanceLeaves.id, id))
         .returning();

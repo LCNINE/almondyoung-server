@@ -1,6 +1,11 @@
 import { sql } from 'drizzle-orm';
 import { boolean, date, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import type { AiAttendanceReview, AttendanceSession, AttendanceSettings } from '@packages/domain-types/attendance';
+import type {
+  AiAttendanceReview,
+  AttendanceSession,
+  AttendanceSettings,
+  LeaveRecurrence,
+} from '@packages/domain-types/attendance';
 import { users } from './schema';
 
 const instant = (name: string) => timestamp(name, { withTimezone: true });
@@ -12,6 +17,7 @@ const userId = () =>
 export const attendanceWorksites = pgTable('attendance_worksites', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: text('name').notNull(),
+  address: text('address'),
   latitude: text('latitude').notNull(),
   longitude: text('longitude').notNull(),
   radiusMeters: integer('radius_meters').notNull(),
@@ -73,6 +79,11 @@ export const attendanceLeaves = pgTable(
     type: text('type').$type<'full' | 'am' | 'pm'>().notNull(),
     start: text('start'),
     end: text('end'),
+    seriesId: uuid('series_id'),
+    recurrence: jsonb('recurrence').$type<LeaveRecurrence>(),
+    showDday: boolean('show_dday').notNull().default(false),
+    reminderMinutes: jsonb('reminder_minutes').$type<number[]>().notNull().default([]),
+    reminderSetAt: instant('reminder_set_at'),
     deletedAt: instant('deleted_at'),
     createdAt: instant('created_at').notNull().defaultNow(),
   },

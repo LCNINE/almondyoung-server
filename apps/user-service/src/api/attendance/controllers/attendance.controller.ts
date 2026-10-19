@@ -103,7 +103,11 @@ export class AttendanceController {
 
   @Post('leaves')
   saveLeaves(@CurrentUser() user: JwtPayload, @Body() dto: LeaveBatchDto) {
-    return this.calendar.save(user.id, dto.days);
+    return this.calendar.save(user.id, dto.days, {
+      recurrence: dto.recurrence,
+      showDday: dto.showDday,
+      reminderMinutes: dto.reminderMinutes,
+    });
   }
 
   @Delete('leaves/:id')
@@ -201,6 +205,7 @@ export class AttendanceController {
         .update(attendanceWorksites)
         .set({
           name: dto.name,
+          address: dto.address,
           latitude: String(dto.latitude),
           longitude: String(dto.longitude),
           radiusMeters: dto.radiusMeters,

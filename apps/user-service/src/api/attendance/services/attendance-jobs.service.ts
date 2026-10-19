@@ -1,6 +1,6 @@
 import { CronOnce } from '@app/cron-once';
 import { Injectable, Logger } from '@nestjs/common';
-import { and, eq, gt, gte, inArray, isNull, lt, lte, or } from 'drizzle-orm';
+import { and, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { seoulClock, seoulDate, type AttendanceSettings, type LeaveType } from '@packages/domain-types/attendance';
 import {
   attendanceAudit,
@@ -14,6 +14,7 @@ import {
 } from '../../../../database/drizzle/schema';
 import { AttendanceRepository } from '../repositories/attendance.repository';
 import { attendanceAiResponseSchema, unwrapAttendanceResponse } from '@packages/domain-types/attendance-review';
+import { dueLeaveReminders, LEAVE_REMINDER_GRACE_MS, MAX_LEAVE_REMINDER_MINUTES } from './leave-reminders';
 
 interface ReminderContext {
   now: Date;
@@ -59,6 +60,8 @@ export class AttendanceJobsService {
     }
 
     await this.scheduleReminders();
+
+    await this.scheduleVacationReminders();
 
     for (let index = 0; index < 10; index++) {
       const job = await this.claim();
@@ -126,11 +129,60 @@ export class AttendanceJobsService {
         await this.repo.db
           .insert(attendanceJobs)
           .values({
-            key: `reminder:${employee.userId}:${context.date}:${kind}`,
+            key: `reminder:${employee.userId}:${context.date}:${kind}:${context.clock}`,
             kind: 'reminder',
             userId: employee.userId,
             payload: { date: context.date, clock: context.clock, kind },
             expiresAt: new Date(Math.floor(now.getTime() / 60000) * 60000 + 60000),
+          })
+          .onConflictDoNothing();
+      }
+    }
+  }
+
+  private async scheduleVacationReminders(now = new Date()) {
+    const staff = await this.repo.staff();
+
+    if (!staff.length) {
+      return;
+    }
+
+    const leaves = await this.repo.db
+      .select()
+      .from(attendanceLeaves)
+      .where(
+        and(
+          inArray(
+            attendanceLeaves.userId,
+            staff.map((person) => person.userId),
+          ),
+          isNull(attendanceLeaves.deletedAt),
+          gte(attendanceLeaves.date, seoulDate(new Date(now.getTime() - LEAVE_REMINDER_GRACE_MS))),
+          lte(attendanceLeaves.date, seoulDate(new Date(now.getTime() + MAX_LEAVE_REMINDER_MINUTES * 60000))),
+          sql`jsonb_array_length(${attendanceLeaves.reminderMinutes}) > 0`,
+        ),
+      );
+
+    const settingsByUser = new Map<string, AttendanceSettings>();
+
+    for (const leave of leaves) {
+      let settings = settingsByUser.get(leave.userId);
+
+      if (!settings) {
+        settings = await this.repo.settings(leave.userId);
+
+        settingsByUser.set(leave.userId, settings);
+      }
+
+      for (const trigger of dueLeaveReminders(leave, settings.normalStart, now)) {
+        await this.repo.db
+          .insert(attendanceJobs)
+          .values({
+            key: `leave-reminder:${leave.id}:${trigger.startAt}:${trigger.minutes}`,
+            kind: 'leave-reminder',
+            userId: leave.userId,
+            payload: { leaveId: leave.id, ...trigger },
+            expiresAt: new Date(new Date(trigger.scheduledFor).getTime() + LEAVE_REMINDER_GRACE_MS),
           })
           .onConflictDoNothing();
       }
@@ -290,6 +342,39 @@ export class AttendanceJobsService {
       return;
     }
 
+    if (job.kind === 'leave-reminder') {
+      const [leave] = await this.repo.db
+        .select()
+        .from(attendanceLeaves)
+        .where(and(eq(attendanceLeaves.id, String(job.payload.leaveId)), isNull(attendanceLeaves.deletedAt)));
+
+      if (!leave || leave.userId !== job.userId) {
+        return;
+      }
+
+      const settings = await this.repo.settings(job.userId);
+      const trigger = dueLeaveReminders(leave, settings.normalStart, now).find(
+        (item) =>
+          item.minutes === job.payload.minutes &&
+          item.startAt === job.payload.startAt &&
+          item.scheduledFor === job.payload.scheduledFor,
+      );
+
+      if (!trigger) {
+        return;
+      }
+
+      await this.notify(
+        job.userId,
+        job.key,
+        '휴가 일정 알림',
+        `${leave.date} ${seoulClock(new Date(trigger.startAt))}에 시작하는 휴가를 확인해 주세요.`,
+        '/attendance/calendar',
+      );
+
+      return;
+    }
+
     if (job.kind === 'reminder') {
       const context = await this.context(job.userId, now);
 
@@ -307,8 +392,10 @@ export class AttendanceJobsService {
       await this.notify(
         job.userId,
         job.key,
-        kind === 'in' ? '출근 기록을 확인해 주세요' : '퇴근 기록을 확인해 주세요',
-        '출결 페이지에서 오늘의 기록을 확인해 주세요.',
+        kind === 'in' ? '출근 시간이에요' : '퇴근 시간이에요',
+        kind === 'in'
+          ? '오늘도 좋은 하루 보내세요. 출근했다면 출근 기록을 남겨 주세요.'
+          : '오늘도 수고하셨어요. 업무를 마쳤다면 퇴근 기록을 남겨 주세요.',
         '/attendance',
       );
 

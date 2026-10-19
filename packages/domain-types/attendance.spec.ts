@@ -54,6 +54,14 @@ describe('attendance rules', () => {
     expect(() => verifyLocation(point, site, now)).not.toThrow();
   });
 
+  it('allows a nearby location with GPS error under the relaxed worksite defaults', () => {
+    const nearbySite = { ...site, radiusMeters: 300, accuracyMeters: 100 };
+    const nearbyPoint = { ...point, latitude: 37.5015, accuracy: 100 };
+
+    expect(() => verifyLocation(nearbyPoint, nearbySite, now)).not.toThrow();
+    expect(() => verifyLocation({ ...nearbyPoint, latitude: 37.504 }, nearbySite, now)).toThrow();
+  });
+
   it.each([
     { ...point, latitude: NaN },
     { ...point, longitude: 181 },

@@ -2,9 +2,13 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testconta
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { DbService } from '@app/db';
 import { and, eq, ne, sql } from 'drizzle-orm';
+import { createServer } from 'node:http';
+import { seoulDate } from '@packages/domain-types/attendance';
 import {
   attendanceAudit,
   attendanceJobs,
+  attendanceLeaves,
+  attendancePreferences,
   attendanceRequests,
   userServiceSchema,
 } from '../../../database/drizzle/schema';
@@ -86,6 +90,36 @@ run('attendance PostgreSQL transactions', () => {
     };
   }
 
+  it('schedules a changed checkout reminder again on the same day without duplicating the same time', async () => {
+    const settings = { ...(await repo.settings(owner)), outEnabled: true, outTime: '16:52' };
+
+    await database.db.insert(attendancePreferences).values({ userId: owner, settings });
+    await database.db.execute(sql`
+      INSERT INTO attendance_sessions (user_id, work_date, check_in)
+      VALUES (${owner}, '2026-10-19', '2026-10-19T00:00:00Z')
+    `);
+
+    const worker = new AttendanceJobsService(repo) as unknown as {
+      scheduleReminders: (now: Date) => Promise<void>;
+    };
+
+    await worker.scheduleReminders(new Date('2026-10-19T16:52:00+09:00'));
+    await database.db.update(attendanceJobs).set({ status: 'done' });
+    await database.db
+      .update(attendancePreferences)
+      .set({ settings: { ...settings, outTime: '17:01' } })
+      .where(eq(attendancePreferences.userId, owner));
+
+    await worker.scheduleReminders(new Date('2026-10-19T17:01:00+09:00'));
+    await worker.scheduleReminders(new Date('2026-10-19T17:01:30+09:00'));
+
+    const jobs = await database.db.select().from(attendanceJobs).where(eq(attendanceJobs.userId, owner));
+
+    expect(jobs).toHaveLength(2);
+    expect(jobs.map((job) => job.payload.clock).sort()).toEqual(['16:52', '17:01']);
+    expect(jobs.filter((job) => job.status === 'done')).toHaveLength(1);
+  });
+
   it('serializes concurrent check-ins into one session and immutable punch event', async () => {
     const now = new Date('2026-10-15T00:00:00Z');
 
@@ -142,6 +176,163 @@ run('attendance PostgreSQL transactions', () => {
     expect(rows[0]).not.toHaveProperty('reason');
   });
 
+  it('persists recurring leave and D-day while preserving metadata on a single-day edit', async () => {
+    const recurrence = { frequency: 'weekly' as const, until: '2026-10-30' };
+    const rows = await calendar.save(owner, [{ date: '2026-10-16', type: 'full' }], {
+      recurrence,
+      showDday: true,
+    });
+
+    expect(rows.map((row) => row.date)).toEqual(['2026-10-16', '2026-10-23', '2026-10-30']);
+    expect(new Set(rows.map((row) => row.seriesId)).size).toBe(1);
+    expect(rows[0].seriesId).toEqual(expect.any(String));
+
+    const listed = await calendar.list('2026-10-16', '2026-10-30');
+
+    expect(listed).toHaveLength(3);
+    expect(listed.every((row) => row.showDday && row.recurrence?.frequency === 'weekly')).toBe(true);
+
+    const changed = await calendar.update(owner, rows[0].id, {
+      date: '2026-10-16',
+      type: 'am',
+      start: '13:00',
+      end: '18:00',
+    });
+
+    expect(changed).toMatchObject({ recurrence, seriesId: rows[0].seriesId, showDday: true });
+
+    const hidden = await calendar.update(owner, rows[0].id, { date: '2026-10-16', type: 'full', showDday: false });
+
+    expect(hidden).toMatchObject({ recurrence, seriesId: rows[0].seriesId, showDday: false });
+    await expect(
+      calendar.update(other, rows[1].id, { date: '2026-10-23', type: 'full', showDday: false }),
+    ).rejects.toThrow();
+  });
+
+  it('preserves existing dates when adding a recurring vacation', async () => {
+    const [existing] = await calendar.save(owner, [{ date: '2026-10-23', type: 'full', showDday: false }]);
+
+    await calendar.save(owner, [{ date: '2026-10-16', type: 'am', start: '13:00', end: '18:00' }], {
+      recurrence: { frequency: 'weekly', until: '2026-10-30' },
+      showDday: true,
+    });
+
+    const rows = await calendar.list('2026-10-16', '2026-10-30');
+
+    expect(rows[1]).toMatchObject({ id: existing.id, type: 'full', showDday: false, recurrence: null });
+  });
+
+  it('stores reminders only on the first day of each repeated vacation and supports clearing them', async () => {
+    const rows = await calendar.save(
+      owner,
+      [
+        { date: '2030-10-16', type: 'full' },
+        { date: '2030-10-17', type: 'full' },
+      ],
+      {
+        recurrence: { frequency: 'weekly', until: '2030-10-23' },
+        reminderMinutes: [10, 60],
+      },
+    );
+
+    expect(rows.map((row) => row.reminderMinutes)).toEqual([[10, 60], [], [10, 60], []]);
+
+    const listed = await calendar.list('2030-10-16', '2030-10-24');
+
+    expect(listed[0].reminderMinutes).toEqual([10, 60]);
+
+    const preserved = await calendar.update(owner, rows[0].id, { date: '2030-10-16', type: 'full', showDday: true });
+
+    expect(preserved.reminderMinutes).toEqual([10, 60]);
+
+    const cleared = await calendar.update(owner, rows[0].id, { date: '2030-10-16', type: 'full', reminderMinutes: [] });
+
+    expect(cleared.reminderMinutes).toEqual([]);
+    expect(cleared.reminderSetAt).toBeNull();
+  });
+
+  it('deduplicates vacation jobs and sends through the push transport while rechecking cancelled alerts', async () => {
+    const now = new Date();
+    const date = seoulDate(new Date(now.getTime() + 86400000));
+    const start = new Date(`${date}T09:00:00+09:00`);
+    const due = Math.floor(now.getTime() / 60000) * 60000;
+    const minutes = (start.getTime() - due) / 60000;
+    const [leave] = await calendar.save(owner, [{ date, type: 'full' }], { reminderMinutes: [minutes] });
+
+    await database.db
+      .update(attendanceLeaves)
+      .set({ reminderSetAt: new Date(due - 60000) })
+      .where(eq(attendanceLeaves.id, leave.id));
+
+    let sentPayload: unknown;
+    let sends = 0;
+    const server = createServer((request, response) => {
+      let body = '';
+
+      request.on('data', (chunk: Buffer) => {
+        body += chunk.toString();
+      });
+      request.on('end', () => {
+        sentPayload = JSON.parse(body) as unknown;
+        sends++;
+        response.writeHead(200, { 'Content-Type': 'application/json' });
+        response.end('{}');
+      });
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+    const address = server.address();
+
+    if (!address || typeof address === 'string') {
+      throw new Error('The local notification fixture did not open a TCP port.');
+    }
+
+    const originalUrl = process.env.NOTIFICATION_SERVICE_URL;
+    const originalKey = process.env.NOTIFICATION_INTERNAL_KEY;
+
+    process.env.NOTIFICATION_SERVICE_URL = `http://127.0.0.1:${address.port}`;
+    process.env.NOTIFICATION_INTERNAL_KEY = 'isolated-integration-key';
+
+    try {
+      const worker = new AttendanceJobsService(repo) as unknown as {
+        scheduleVacationReminders: (now: Date) => Promise<void>;
+        run: (job: typeof attendanceJobs.$inferSelect) => Promise<void>;
+      };
+
+      await worker.scheduleVacationReminders(now);
+      await worker.scheduleVacationReminders(now);
+
+      const jobs = await database.db.select().from(attendanceJobs).where(eq(attendanceJobs.kind, 'leave-reminder'));
+
+      expect(jobs).toHaveLength(1);
+
+      await worker.run(jobs[0]);
+
+      expect(sends).toBe(1);
+      expect(sentPayload).toMatchObject({ userId: owner, title: '휴가 일정 알림', url: '/attendance/calendar' });
+
+      await calendar.update(owner, leave.id, { date, type: 'full', reminderMinutes: [] });
+      await worker.run(jobs[0]);
+
+      expect(sends).toBe(1);
+    } finally {
+      if (originalUrl === undefined) {
+        delete process.env.NOTIFICATION_SERVICE_URL;
+      } else {
+        process.env.NOTIFICATION_SERVICE_URL = originalUrl;
+      }
+
+      if (originalKey === undefined) {
+        delete process.env.NOTIFICATION_INTERNAL_KEY;
+      } else {
+        process.env.NOTIFICATION_INTERNAL_KEY = originalKey;
+      }
+
+      await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+    }
+  });
+
   it('shares multiple staff schedules while only permitting the owner to edit or remove each leave', async () => {
     const [ownLeave] = await calendar.save(owner, [{ date: '2026-10-16', type: 'full' }]);
     const [otherLeave] = await calendar.save(other, [{ date: '2026-10-16', type: 'am', start: '13:00', end: '18:00' }]);
@@ -156,7 +347,19 @@ run('attendance PostgreSQL transactions', () => {
       ]),
     );
     expect(shared).toHaveLength(2);
-    expect(Object.keys(shared[0]).sort()).toEqual(['date', 'end', 'id', 'name', 'start', 'type', 'userId']);
+    expect(Object.keys(shared[0]).sort()).toEqual([
+      'date',
+      'end',
+      'id',
+      'name',
+      'recurrence',
+      'reminderMinutes',
+      'seriesId',
+      'showDday',
+      'start',
+      'type',
+      'userId',
+    ]);
 
     await expect(calendar.update(owner, otherLeave.id, { date: otherLeave.date, type: 'full' })).rejects.toThrow();
     await expect(calendar.remove(owner, otherLeave.id)).rejects.toThrow();
@@ -394,6 +597,9 @@ run('attendance PostgreSQL transactions', () => {
       });
 
       await database.db.execute(sql`DELETE FROM attendance_jobs WHERE kind <> 'ai'`);
+
+      // Keep eligibility independent of small database/application clock offsets.
+      await database.db.update(attendanceJobs).set({ runAfter: new Date(Date.now() - 1000) });
 
       fetchSpy.mockImplementation(() => Promise.resolve(new Response('Service unavailable', { status: 503 })));
 

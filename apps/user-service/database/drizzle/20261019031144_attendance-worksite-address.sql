@@ -1,0 +1,1 @@
+ALTER TABLE "attendance_worksites" ADD COLUMN "address" text;

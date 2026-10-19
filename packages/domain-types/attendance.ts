@@ -18,6 +18,7 @@ export interface LocationSample {
 export interface Worksite {
   id: string;
   name: string;
+  address?: string | null;
   latitude: number;
   longitude: number;
   radiusMeters: number;
@@ -41,8 +42,8 @@ export interface AttendanceSettings {
 export const DEFAULT_ATTENDANCE_SETTINGS: AttendanceSettings = {
   normalStart: '09:00',
   normalEnd: '18:00',
-  inEnabled: false,
-  outEnabled: false,
+  inEnabled: true,
+  outEnabled: true,
   inTime: '09:00',
   outTime: '18:00',
   weekdays: [1, 2, 3, 4, 5],
@@ -67,6 +68,21 @@ export interface CalendarLeave {
   type: LeaveType;
   start: string | null;
   end: string | null;
+  seriesId?: string | null;
+  recurrence?: LeaveRecurrence | null;
+  showDday?: boolean;
+  reminderMinutes?: number[];
+}
+
+export interface LeaveRecurrence {
+  frequency: 'none' | 'weekly' | 'monthly' | 'yearly';
+  until?: string;
+}
+
+export interface LeaveBatchOptions {
+  recurrence?: LeaveRecurrence;
+  showDday?: boolean;
+  reminderMinutes?: number[];
 }
 
 export interface LeaveInput {
@@ -74,6 +90,8 @@ export interface LeaveInput {
   type: LeaveType;
   start?: string;
   end?: string;
+  showDday?: boolean;
+  reminderMinutes?: number[];
 }
 
 export interface AttendanceMe {

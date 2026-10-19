@@ -14,6 +14,20 @@ describe('attendance reminder conditions', () => {
     hasOpenSession: true,
   };
 
+  it('schedules both reminders for a user who has not saved preferences yet', () => {
+    expect(
+      reminderDue('in', {
+        ...context,
+        settings: DEFAULT_ATTENDANCE_SETTINGS,
+        clock: '09:00',
+        hasTodayRecord: false,
+        hasOpenSession: false,
+      }),
+    ).toBe(true);
+
+    expect(reminderDue('out', { ...context, settings: DEFAULT_ATTENDANCE_SETTINGS })).toBe(true);
+  });
+
   it('uses the normal end for AM leave instead of adding hours to actual arrival', () => {
     expect(reminderDue('out', { ...context, leave: { type: 'am', start: '13:00', end: '18:00' } })).toBe(true);
 
