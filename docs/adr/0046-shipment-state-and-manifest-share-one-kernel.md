@@ -22,7 +22,7 @@ Accepted (2026-10-19). 설계 스펙 `docs/superpowers/specs/2026-10-19-k2-shipm
 `fulfillment/shipment/` 에 커널을 둔다. 두 부분과 그것을 지키는 가드다.
 
 1. **전이 함수 `transitionShipments`**(`shipment-lifecycle.ts`). 상자 상태를 바꾸는 쓰기는 모두 이 함수를 지난다. 전이표 `SHIPMENT_TRANSITIONS`
-   (`shipment-transitions.ts`)는 지금 코드에서 도출한 **14행**이다(from → to, `recovery_required` 는 코드별). 표에 없는 전이는 SQL 전에 `Error`(프로그래밍
+   (`shipment-transitions.ts`)는 지금 코드에서 도출한 **14행**(작성 시점, 정본은 `SHIPMENT_TRANSITIONS`)이다(from → to, `recovery_required` 는 코드별). 표에 없는 전이는 SQL 전에 `Error`(프로그래밍
    오류, 500)다. 함수는 `WHERE id IN (…) AND status IN (from…)` 으로 CAS 하고(호출자가 `recoveryCode`·`manifestVersion` 기대값도 더할 수 있다), 목표
    상태의 효과(`transitionEffect`)를 적용한다: 전이 시각(`plannedAt`·`shippedAt`·`deliveredAt`·`supersededAt`), 비울 칼럼, `manifestVersion` 증가, 검수 리셋.
    `recoveryCode` 는 커널이 소유하는 유니언(`RECOVERY_CODES`)이고, `recovery_required` 로 가는 전이는 코드 없이 부를 수 없으며 거기서 나가는 전이는 항상 비운다.
@@ -41,6 +41,7 @@ Accepted (2026-10-19). 설계 스펙 `docs/superpowers/specs/2026-10-19-k2-shipm
    비밀번호만 바뀐 상자는 올리지 않는다** — 주소가 그대로인데 버전이 움직이면 멀쩡한 송장이 stale 로 무효화된다(`setEntrancePassword` 는 `last_updated` 만
    찍는다). **줄이 바뀐 상자만 예약을 재계산한다** — 수령인 정정은 지금도 재계산하지 않으므로 문도 부르지 않는다. 이로써 `draft-line-shrink.ts` 의
    «호출자 몫»이 사라졌다. 버전은 모두 SQL 증가식(`col + 1`)으로 쓴다 — 메모리의 옛 값 + 1 은 같은 트랜잭션의 앞선 증가를 지운다.
+   합배송 활성화도 이제 문을 지나며 custody/work·waybill 가드를 탄다 — `collectBlockers` 가 더 넓은 조건이라 막히는 요청은 늘지 않는다.
 5. **예약 누수 두 곳을 예약 서비스로 돌렸다.** 합배송의 «줄 여럿의 확정 예약을 새 줄 하나로 옮긴다»는 `ShipmentReservationService.retargetConfirmed`,
    `reservationVersion` 직접 증가는 `bumpReservationVersions`(둘 다 공개 메서드)다.
 6. **가드 `shipment-writes.guard.spec.ts`(G3).** 커널 폴더 밖에서 `shipments`·`shipmentLines` 의 insert·delete, 그리고 허용 목록 밖의 칼럼을 `.set` 하는

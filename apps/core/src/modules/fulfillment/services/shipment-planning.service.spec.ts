@@ -177,7 +177,7 @@ describe('resolveRecipientRevision', () => {
     expect(outcome.snapshotChanged).toBe(false);
   });
 
-  it('7키 스냅샷 위에 6키 스냅샷을 되보내면 통관부호가 지워지고 manifestVersion 이 오른다', () => {
+  it('7키 스냅샷 위에 6키 스냅샷을 되보내면 통관부호가 지워진 것으로 판정한다(snapshotChanged), 버전은 문이 올린다', () => {
     // 이래서 admin-web 은 비번만 고칠 때 recipientSnapshot 을 아예 보내지 않는다.
     // 서버 whitelist:true 가 personalCustomsCode 를 떨어뜨리므로 되보내기로는 못 지킨다.
     const outcome = resolveRecipientRevision(
@@ -202,7 +202,7 @@ describe('resolveRecipientRevision', () => {
     expect(outcome.snapshotChanged).toBe(false);
   });
 
-  it('스냅샷이 바뀌면 manifestVersion 을 올린다', () => {
+  it('스냅샷이 바뀌면 snapshotChanged 로 판정한다, 버전은 문이 올린다', () => {
     const next = { ...RECIPIENT, detailAddress: '102동 1002호' };
     const outcome = resolveRecipientRevision(current, { recipientSnapshot: next });
 

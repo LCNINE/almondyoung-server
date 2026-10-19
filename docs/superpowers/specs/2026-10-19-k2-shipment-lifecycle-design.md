@@ -201,6 +201,7 @@ dispatch 는 예약 그래프 락(`lockShipmentGraphForDispatch`)이고, 회수�
 | 취소 경로(`revert_planned`·취소 재개)가 줄 `inspectedQty` 를 안 지움 | 준비도가 검수 흔적을 막힘으로 판정한다(`cancel-readiness.ts:112` `INSPECTED_QTY`). 즉시 적용·재개는 `ready` 일 때만이다. 리뷰가 코드로 확인, 특성 테스트로 고정한다 | 지운다(no-op) |
 | 결품 이탈이 지우는 `inspectedQty` | 결품 이탈은 `exitIfDrained`(`box-withdrawal.service.ts:263`)가 배정 합 0 일 때만 부르고, PACKED 를 빼는 쪽이 검수도 함께 내린다(`box-allocation.manager.ts:635-652`) → 이 시점의 줄은 이미 전부 0 이다 | 지운다(no-op). 줄 버전은 D1 |
 | 취소 즉시 갈래가 `assertShipmentHasNoActiveWaybill` 을 따로 안 부름 | 손질이 `registered` 송장을 무효화하고, 무효화할 수 없는 송장은 준비도가 막는다(`cancel-readiness.ts:110` `WAYBILL_NOT_VOIDABLE`). 리뷰가 코드로 확인 | 문이 부른다. 즉시 갈래는 문을 통해 보관(custody)·작업 가드(`assertShipmentHasNoCustodyOrActiveWork`)도 이제 지나는데, 준비도가 이미 `ready` 일 때만 이 갈래에 들어오므로 막힘이 없다(준비도가 덮는다) |
+| 합배송 활성화가 custody/work·waybill 가드를 안 탐 | 활성화는 자기 여러-상자 잠금만 쓰고 두 가드를 부르지 않았다 | 이제 문을 지나며 두 가드를 탄다. 합배송의 `collectBlockers` 가 더 넓은 조건이라 이미 막힌 요청만 걸려, 막히는 요청은 늘지 않는다 |
 
 **구현 중 더한 것(2026-10-19):**
 - 취소 재개·이탈 취소 완료는 재개봉 앞의 호출자 가드(송장 → 보관 순)를 그대로 두고, 재개봉 뒤 문이 같은 가드를 다시 확인한다. 위반이 여럿일 때 나오는 에러 우선순위를 보존하려고 일부러 중복으로 뒀다.

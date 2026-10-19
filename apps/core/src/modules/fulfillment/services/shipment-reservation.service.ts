@@ -1268,7 +1268,6 @@ export class ShipmentReservationService {
     }
   }
 
-  /** 상자들의 reservationVersion 을 SQL 증가식으로 올린다(id 정렬). 분할의 통째 이동처럼 예약이 줄째 상자를 옮길 때도 부른다. */
   /**
    * 원본 줄들의 확정 예약을 대상 줄로 옮기고(targetId·shipmentLineId), 원본 줄 reserved_qty 를 0 으로(합배송).
    * 예약 수량은 그대로 — 행의 주인만 바뀐다. 상자·FO 잠금은 부르는 쪽이 이미 쥐고 있다.
@@ -1292,6 +1291,7 @@ export class ShipmentReservationService {
       .where(inArray(wmsTables.shipmentLines.id, [...sourceLineIds]));
   }
 
+  /** 상자들의 reservationVersion 을 SQL 증가식으로 올린다(id 정렬). 분할의 통째 이동처럼 예약이 줄째 상자를 옮길 때도 부른다. */
   async bumpReservationVersions(shipmentIds: readonly string[], tx: DbTx): Promise<void> {
     for (const shipmentId of [...new Set(shipmentIds)].sort()) {
       await tx

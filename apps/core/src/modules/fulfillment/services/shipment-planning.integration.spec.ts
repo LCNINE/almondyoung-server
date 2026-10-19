@@ -629,10 +629,13 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         .select()
         .from(wmsTables.stockReservations)
         .where(eq(wmsTables.stockReservations.shipmentLineId, fixture.line.id));
-      const { id: _id, ...reservationCols } = firstReservation;
-      await tx
-        .insert(wmsTables.stockReservations)
-        .values({ ...reservationCols, shipmentLineId: untouched.id, fulfillmentOrderItemId: secondItem.id, quantity: 2 });
+      await tx.insert(wmsTables.stockReservations).values({
+        ...firstReservation,
+        id: undefined,
+        shipmentLineId: untouched.id,
+        fulfillmentOrderItemId: secondItem.id,
+        quantity: 2,
+      });
       await tx
         .update(wmsTables.shipmentLines)
         .set({ reservedQty: 2 })
