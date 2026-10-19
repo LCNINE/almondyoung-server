@@ -285,9 +285,15 @@ type Paint = {
   strokeLinejoin?: "miter" | "round"
 }
 
+// 글자 테두리는 예전부터 둥근 모서리였으므로 각지게를 고른 때(false)만 각지게 그린다
+type StrokeShape = Pick<Layer, "type" | "strokeRound" | "strokeDash">
+
+export const strokeRounded = (layer: StrokeShape) =>
+  layer.type === "text" ? layer.strokeRound !== false : !!layer.strokeRound
+
 // 점선 간격은 선 두께에 비례한다. 점선은 끝이 둥글어야 점으로 보인다
-export function strokeStyle(layer: Layer, width: number): Paint {
-  const round = !!layer.strokeRound || layer.strokeDash === "dotted"
+export function strokeStyle(layer: StrokeShape, width: number): Paint {
+  const round = strokeRounded(layer) || layer.strokeDash === "dotted"
   return {
     strokeDasharray: !width
       ? undefined
@@ -297,7 +303,7 @@ export function strokeStyle(layer: Layer, width: number): Paint {
           ? `0 ${mmRound(width * 2)}`
           : undefined,
     strokeLinecap: round ? "round" : "butt",
-    strokeLinejoin: layer.strokeRound ? "round" : "miter",
+    strokeLinejoin: strokeRounded(layer) ? "round" : "miter",
   }
 }
 
@@ -591,7 +597,7 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
                 ? (layer.strokeWidth ?? 0)
                 : undefined
             }
-            strokeLinejoin="round"
+            strokeLinejoin={strokeRounded(layer) ? "round" : "miter"}
             paintOrder="stroke"
             x={textAnchorX}
             y={layer.y + line}

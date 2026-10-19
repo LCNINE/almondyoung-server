@@ -473,8 +473,8 @@ export function smoothStroke(
   level: number
 ): { points: PathPoint[]; closed: boolean } {
   // 세기를 올릴수록 이웃을 넓게, 여러 번 평균 내서 떨림뿐 아니라 굽이도 펴 준다
-  const radius = Math.round(level / 10)
-  const passes = level > 60 ? 3 : level > 20 ? 2 : 1
+  const radius = Math.round(level / 20)
+  const passes = level > 60 ? 3 : level > 30 ? 2 : 1
   let averaged = raw
   for (let pass = 0; pass < passes; pass++)
     averaged = averaged.map((p, i, all) => {
@@ -492,9 +492,9 @@ export function smoothStroke(
   // 끝을 시작점 가까이에서 뗐으면 닫힌 도형으로 본다
   const closed =
     raw.length > 3 &&
-    gap(raw[0], raw[raw.length - 1]) <= px * 12 &&
+    gap(raw[0], raw[raw.length - 1]) <= px * 6 &&
     travelled > px * 60
-  let kept = simplify(averaged, px * (0.3 + level * 0.15))
+  let kept = simplify(averaged, px * (0.2 + level * 0.06))
   if (closed && kept.length > 3) kept = kept.slice(0, -1)
   if (kept.length < 3)
     return { points: kept.map((p) => ({ ...p })), closed: false }

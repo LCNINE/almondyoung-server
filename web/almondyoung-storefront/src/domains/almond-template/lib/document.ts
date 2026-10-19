@@ -78,6 +78,7 @@ export type Layer = {
   pathClosed?: boolean
   crop?: { x: number; y: number; w: number; h: number }
   groupId?: string
+  groupName?: string
 }
 
 export const SHAPE_TEXT_TYPES: ReadonlySet<Layer["type"]> = new Set<
@@ -452,6 +453,7 @@ function validEffects(layer: Layer) {
   return (
     optional(layer.strokeDash, (v) => v === "dashed" || v === "dotted") &&
     optional(layer.strokeRound, isBool) &&
+    optional(layer.groupName, (v) => typeof v === "string" && v.length <= 40) &&
     optional(layer.shadowX, (v) => within(v, -50, 50)) &&
     optional(layer.shadowY, (v) => within(v, -50, 50)) &&
     optional(layer.shadowBlur, (v) => within(v, 0, 20)) &&

@@ -239,6 +239,8 @@ export function useCanvasInteraction({
       svgRef.current?.setPointerCapture(event.pointerId)
       return
     }
+    // 잠긴 요소(대개 종이를 덮는 배경) 위에서 끌면 여러 개 고르기를 시작한다. 안 그러면 배경 때문에 끌어서 고를 자리가 없다
+    if (layer.locked && !moveMode) return startMarquee(event)
     setSelectedId(layer.id)
     if (
       moveMode ||

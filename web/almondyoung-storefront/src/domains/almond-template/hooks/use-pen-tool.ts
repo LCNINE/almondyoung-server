@@ -8,7 +8,7 @@ import {
   type SetStateAction,
 } from "react"
 import { updateLayer, type Design, type Layer } from "../lib/document"
-import { makeLayer } from "../lib/layer"
+import { makeLayer, mm } from "../lib/layer"
 import {
   fitPath,
   refitPathLayer,
@@ -103,6 +103,20 @@ export function toggleSmooth(
   )
 }
 
+type Ink = { color: string; width?: number }
+
+export type BrushKind = "pencil" | "marker" | "highlighter"
+
+// 캔바 그리기처럼 연필 종류를 고른다. 두께는 규격 기본 두께의 배수다
+export const BRUSHES: Record<
+  BrushKind,
+  { label: string; width: number; round: boolean; opacity?: number }
+> = {
+  pencil: { label: "연필", width: 1.5, round: true },
+  marker: { label: "마커", width: 4, round: true },
+  highlighter: { label: "형광펜", width: 6, round: false, opacity: 0.4 },
+}
+
 export function usePenTool({
   design,
   setDesign,
@@ -118,10 +132,16 @@ export function usePenTool({
   const [drawMode, setDrawMode] = useState<"pen" | "pencil" | null>(null)
   const penActive = drawMode === "pen"
   const pencilActive = drawMode === "pencil"
-  const [smoothing, setSmoothing] = useState(50)
+  const [smoothing, setSmoothing] = useState(0)
   // 방금 그은 연필 선의 원래 궤적. 보정을 바꾸면 이걸로 다시 다듬는다
   const lastStroke = useRef<{ id: string; raw: Point[] } | null>(null)
-  const lastDrawnId = useRef<string | null>(null)
+  const [brushKind, setBrushKind] = useState<BrushKind>("pencil")
+  const [inks, setInks] = useState<Record<"pen" | "pencil", Ink>>({
+    pen: { color: "#202020" },
+    pencil: { color: "#202020" },
+  })
+  // 연필을 켜고 끌 때까지 그은 획. 두 번째 획부터 하나의 그룹으로 묶어 레이어 목록이 획마다 쌓이지 않게 한다
+  const sketch = useRef<{ ids: string[]; group?: Partial<Layer> }>({ ids: [] })
   const [stroke, setStroke] = useState<Point[] | null>(null)
   const [draft, setDraft] = useState<PathPoint[]>([])
   const [cursor, setCursor] = useState<Point | null>(null)
@@ -169,36 +189,65 @@ export function usePenTool({
     setDrawMode(null)
     setCursor(null)
   }
+  // mm 고정 두께는 입간판(600mm)에서 머리카락처럼 흐려서 규격 짧은 변에 비례시킨다(명함 0.75mm, 입간판 5mm)
+  const penWidth = mm(
+    Math.max(0.4, Math.min(design.widthMm, design.heightMm) / 120)
+  )
+  // 다음에 그을 선의 색·두께는 그리기 도구 막대에서 고른다. 두께를 안 고르면 규격에 맞춘 기본값이다
+  const brush = BRUSHES[brushKind]
+  const pencilStyle: Partial<Layer> = {
+    name: `${brush.label} 선`,
+    stroke: inks.pencil.color,
+    strokeWidth: inks.pencil.width ?? mm(penWidth * brush.width),
+    strokeRound: brush.round,
+    opacity: brush.opacity,
+  }
+  const penStyle: Partial<Layer> = {
+    stroke: inks.pen.color,
+    strokeWidth: inks.pen.width ?? penWidth,
+  }
+  const drawStyle = drawMode === "pen" ? penStyle : pencilStyle
+  const setInk = (change: Partial<Ink>) => {
+    if (drawMode)
+      setInks((current) => ({
+        ...current,
+        [drawMode]: { ...current[drawMode], ...change },
+      }))
+  }
+  const chooseBrush = (kind: BrushKind) => {
+    setBrushKind(kind)
+    setInks((current) => ({
+      ...current,
+      pencil: { ...current.pencil, width: undefined },
+    }))
+  }
   const addPath = (
     points: PathPoint[],
     closed: boolean,
-    extra: Partial<Layer>
+    extra: Partial<Layer>,
+    join: string[] = []
   ) => {
-    // 펜·연필로 마지막에 그은 선의 선 스타일을 다음 선이 물려받는다 (그 선을 지웠으면 기본값)
-    const last = design[side].find((item) => item.id === lastDrawnId.current)
-    const inherited: Partial<Layer> = last
-      ? {
-          stroke: last.stroke,
-          strokeWidth: last.strokeWidth,
-          strokeDash: last.strokeDash,
-          strokeRound: last.strokeRound,
-          opacity: last.opacity,
-        }
-      : extra
     const layer: Layer = {
       ...makeLayer("path", design),
       ...fitPath(points, closed),
       fill: "none",
-      stroke: "#202020",
-      strokeWidth: 0.4,
       pathClosed: closed,
       text: undefined,
       ...extra,
-      ...inherited,
     }
-    change({ ...design, [side]: [...design[side], layer] })
-    setSelectedId(layer.id)
-    lastDrawnId.current = layer.id
+    change({
+      ...design,
+      [side]: [
+        ...design[side].map((item) =>
+          join.includes(item.id)
+            ? { ...item, groupId: extra.groupId, groupName: extra.groupName }
+            : item
+        ),
+        layer,
+      ],
+    })
+    // 그은 선을 고르면 핸들이 다음 획을 가린다. 다듬으려면 도구를 끄고 고른다
+    setSelectedId(null)
     return layer.id
   }
   // 하나를 완성해도 펜은 켜 둔다. 끄는 것은 Esc(그리던 선이 없을 때)나 도구 막대의 닫기다
@@ -208,9 +257,10 @@ export function usePenTool({
       (p, i) => i === 0 || dist(p, draft[i - 1]) > handleSize / 4
     )
     clearDraft()
-    if (points.length >= 2) addPath(points, closed, {})
+    if (points.length >= 2) addPath(points, closed, penStyle)
   }
   const chooseTool = (mode: "pen" | "pencil") => {
+    sketch.current = { ids: [] }
     if (draft.length >= 2) finishDraft(false)
     else clearDraft()
     if (drawMode === mode) return stopDrawing()
@@ -245,19 +295,33 @@ export function usePenTool({
     if (!raw || raw.length < 2) return
     const { points, closed } = smoothStroke(raw, px, smoothing)
     if (points.length < 2) return
-    const id = addPath(points, closed, {
-      name: "연필 선",
-      strokeWidth: 0.6,
-      strokeRound: true,
-    })
+    const session = sketch.current
+    if (session.ids.length && !session.group) {
+      const drawn = new Set(
+        design[side]
+          .filter((item) => item.groupName?.startsWith("연필 그림"))
+          .map((item) => item.groupId)
+      ).size
+      session.group = {
+        groupId: crypto.randomUUID(),
+        groupName: `연필 그림 ${drawn + 1}`,
+      }
+    }
+    const id = addPath(
+      points,
+      closed,
+      { ...pencilStyle, ...session.group },
+      session.ids
+    )
+    session.ids.push(id)
     lastStroke.current = { id, raw }
   }
   // 방금 그은 선이 골라져 있으면 새 보정 세기로 바로 다시 다듬어 보여 준다
   const changeSmoothing = (level: number) => {
     setSmoothing(level)
     const last = lastStroke.current
-    if (!last || selected?.id !== last.id) return
-    if (selected.rotation || selected.flipX || selected.flipY) return
+    const drawn = design[side].find((item) => item.id === last?.id)
+    if (!last || !drawn || drawn.rotation || drawn.flipX || drawn.flipY) return
     const { points, closed } = smoothStroke(last.raw, px, level)
     if (points.length < 2) return
     setDesign((old) =>
@@ -502,6 +566,12 @@ export function usePenTool({
     smoothing,
     changeSmoothing,
     stroke,
+    pencilStyle,
+    drawStyle,
+    penWidth,
+    brushKind,
+    chooseBrush,
+    setInk,
     pencilDown,
     pencilMove,
     pencilUp,

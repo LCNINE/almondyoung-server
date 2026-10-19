@@ -87,7 +87,7 @@ export function PrintColorPicker({
           aria-label={`${label} 색상 설정`}
           className={
             compact
-              ? `absolute top-full z-50 mt-2 w-[280px] border bg-white p-3 shadow-lg ${placement === "right" ? "right-0" : "left-0"}`
+              ? `absolute top-full z-50 mt-2 w-[280px] border bg-white p-3 text-[#1a1c20] shadow-lg ${placement === "right" ? "right-0" : "left-0"}`
               : "mt-2 border bg-white p-3 shadow-lg"
           }
         >

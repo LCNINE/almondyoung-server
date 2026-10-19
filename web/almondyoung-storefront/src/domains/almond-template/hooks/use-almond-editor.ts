@@ -206,32 +206,46 @@ export function useAlmondEditor({
       })
     )
   }
-  // 합친 레이어는 같은 groupId 를 갖고, 하나를 누르면 함께 선택·이동·크기 조절된다
+  // 그룹으로 묶은 레이어는 같은 groupId 를 갖고, 하나를 누르면 함께 선택·이동·크기 조절된다
   const mergedGroup =
     group.length > 1 &&
     !!group[0].groupId &&
     group.every((layer) => layer.groupId === group[0].groupId)
+  // 묶은 레이어는 레이어 목록에서도 한 덩어리로 보이게, 맨 위 레이어 자리로 모은다
   const mergeGroup = () => {
     if (group.length < 2) return
     const groupId = crypto.randomUUID()
+    const groupName = `그룹 ${new Set(layers.map((layer) => layer.groupId).filter(Boolean)).size + 1}`
+    const top = Math.max(...group.map((layer) => layers.indexOf(layer)))
+    const rest = layers.filter((layer) => !groupIds.includes(layer.id))
+    const at = rest.filter((layer) => layers.indexOf(layer) < top).length
     change({
       ...design,
-      [side]: layers.map((layer) =>
-        groupIds.includes(layer.id) ? { ...layer, groupId } : layer
-      ),
+      [side]: [
+        ...rest.slice(0, at),
+        ...group.map((layer) => ({ ...layer, groupId, groupName })),
+        ...rest.slice(at),
+      ],
     })
     setMessage(
-      `${group.length}개 요소를 하나로 합쳤습니다. 풀기로 다시 나눌 수 있습니다.`
+      `${group.length}개 요소를 "${groupName}"으로 묶었습니다. 하나를 누르면 함께 선택됩니다.`
     )
   }
   const splitGroup = () => {
     change({
       ...design,
       [side]: layers.map((layer) =>
-        groupIds.includes(layer.id) ? { ...layer, groupId: undefined } : layer
+        groupIds.includes(layer.id)
+          ? { ...layer, groupId: undefined, groupName: undefined }
+          : layer
       ),
     })
-    setMessage("합친 요소를 풀었습니다.")
+    setMessage("그룹을 풀었습니다.")
+  }
+  const selectLayers = (ids: string[]) => {
+    if (ids.length === 1) return setSelectedId(ids[0])
+    setSelectedId(null)
+    setGroupIds(ids)
   }
   const canvas = useCanvasInteraction({
     design,
@@ -337,8 +351,10 @@ export function useAlmondEditor({
     openPreview()
   }
   useEffect(() => {
-    if (selected?.type !== "qr" && selected?.type !== "text") return
-    setTool(selected.type)
+    const kind = selected?.type
+    if (kind !== "qr" && kind !== "text") return
+    // 레이어 패널에서 고를 때는 패널을 그대로 둔다. 바꾸면 이름 바꾸기·순서 끌기를 못 한다
+    setTool((current) => (current === "layers" ? current : kind))
     setPanelOpen(true)
   }, [selectedId, selected?.type])
   useEditorShortcuts({
@@ -451,6 +467,8 @@ export function useAlmondEditor({
     mergedGroup,
     mergeGroup,
     splitGroup,
+    groupIds,
+    selectLayers,
     showOverflow,
     setShowOverflow,
     ...storage,

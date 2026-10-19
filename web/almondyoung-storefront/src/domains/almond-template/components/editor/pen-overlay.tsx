@@ -2,6 +2,10 @@ import type { PointerEvent, SVGProps } from "react"
 import { Pencil, PenTool, X } from "lucide-react"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import type { Layer } from "../../lib/document"
+import { mm } from "../../lib/layer"
+import { BRUSHES, type BrushKind } from "../../hooks/use-pen-tool"
+import { PrintColorPicker } from "../color-picker"
+import { strokeStyle } from "../graphic"
 import { pathData, type PathPoint } from "../../lib/path-shape"
 
 const ACCENT = "#10c9c1"
@@ -15,7 +19,7 @@ const penCursor = (closing: boolean) => {
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 2 2, crosshair`
 }
 
-const layerTransform = (layer: Layer) => {
+export const layerTransform = (layer: Layer) => {
   const cx = layer.x + layer.width / 2
   const cy = layer.y + layer.height / 2
   return `translate(${cx} ${cy}) rotate(${layer.rotation ?? 0}) scale(${layer.flipX ? -1 : 1} ${layer.flipY ? -1 : 1}) translate(${-cx} ${-cy})`
@@ -82,7 +86,7 @@ const PENCIL_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(
 )}") 2 22, crosshair`
 
 export function PencilOverlay({ editor }: { editor: AlmondEditor }) {
-  const { design, stroke, pencilDown, pencilMove, pencilUp, canvasFit, zoom } =
+  const { design, stroke, pencilStyle, pencilDown, pencilMove, pencilUp } =
     editor
   return (
     <g id="pencil-draft">
@@ -102,10 +106,13 @@ export function PencilOverlay({ editor }: { editor: AlmondEditor }) {
         <polyline
           points={stroke.map((p) => `${p.x},${p.y}`).join(" ")}
           fill="none"
-          stroke="#202020"
-          strokeWidth={Math.max(0.6, 1.5 / (canvasFit * zoom))}
-          strokeLinecap="round"
-          strokeLinejoin="round"
+          stroke={pencilStyle.stroke}
+          strokeWidth={pencilStyle.strokeWidth}
+          opacity={pencilStyle.opacity}
+          {...strokeStyle(
+            { type: "path", ...pencilStyle },
+            pencilStyle.strokeWidth ?? 0
+          )}
           pointerEvents="none"
         />
       )}
@@ -123,7 +130,13 @@ export function DrawToolbar({ editor }: { editor: AlmondEditor }) {
     exitDrawing,
     smoothing,
     changeSmoothing,
+    drawStyle,
+    penWidth,
+    brushKind,
+    chooseBrush,
+    setInk,
   } = editor
+  const width = drawStyle.strokeWidth ?? penWidth
   const tool = (
     on: boolean,
     Icon: typeof PenTool,
@@ -134,7 +147,11 @@ export function DrawToolbar({ editor }: { editor: AlmondEditor }) {
     <button
       type="button"
       aria-pressed={on}
-      title={`${label} (${key})`}
+      title={
+        label === "펜"
+          ? "펜 (P) — 클릭: 꺾인 점 · 끌기: 곡선 · 첫 점: 닫기 · Enter: 끝내기"
+          : `${label} (${key})`
+      }
       onClick={() => !on && pick()}
       className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 ${on ? "bg-[#3972d5] text-white" : "hover:bg-white/10"}`}
     >
@@ -152,9 +169,47 @@ export function DrawToolbar({ editor }: { editor: AlmondEditor }) {
       {tool(penActive, PenTool, "펜", "P", togglePen)}
       {tool(pencilActive, Pencil, "연필", "⇧P", togglePencil)}
       <span className="mx-1 h-5 border-l border-white/20" />
-      {pencilActive ? (
+      {pencilActive && (
+        <>
+          {(Object.keys(BRUSHES) as BrushKind[]).map((kind) => (
+            <button
+              key={kind}
+              type="button"
+              aria-pressed={brushKind === kind}
+              onClick={() => chooseBrush(kind)}
+              className={`rounded-md px-2 py-1 ${brushKind === kind ? "bg-white/20" : "hover:bg-white/10"}`}
+            >
+              {BRUSHES[kind].label}
+            </button>
+          ))}
+          <span className="mx-1 h-5 border-l border-white/20" />
+        </>
+      )}
+      <div className="px-1">
+        <PrintColorPicker
+          label="색"
+          compact
+          value={drawStyle.stroke ?? "#202020"}
+          onApply={(color) => setInk({ color })}
+        />
+      </div>
+      <label className="flex items-center gap-2 px-1" title="선 두께">
+        두께
+        <input
+          type="range"
+          aria-label="선 두께"
+          min={mm(penWidth * 0.25)}
+          max={mm(penWidth * 12)}
+          step={mm(penWidth * 0.25)}
+          value={width}
+          onChange={(event) => setInk({ width: Number(event.target.value) })}
+          className="w-24"
+        />
+        <span className="w-12 text-right text-white/70">{width}mm</span>
+      </label>
+      {pencilActive && (
         <label
-          title="손떨림을 얼마나 다듬을지 정합니다. 방금 그은 선이 골라져 있으면 바로 다시 다듬습니다."
+          title="손떨림을 얼마나 다듬을지 정합니다. 0 이면 그은 그대로입니다."
           className="flex items-center gap-2 px-1"
         >
           보정
@@ -166,13 +221,9 @@ export function DrawToolbar({ editor }: { editor: AlmondEditor }) {
             step={5}
             value={smoothing}
             onChange={(event) => changeSmoothing(Number(event.target.value))}
-            className="w-24"
+            className="w-20"
           />
         </label>
-      ) : (
-        <span className="px-1 text-white/70">
-          클릭: 꺾인 점 · 끌기: 곡선 · 첫 점: 닫기 · Enter: 끝내기
-        </span>
       )}
       <button
         type="button"

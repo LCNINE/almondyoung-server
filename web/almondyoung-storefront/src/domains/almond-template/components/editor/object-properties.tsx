@@ -135,6 +135,9 @@ export function ObjectProperties({
     selected.type === "path" || shapeOutline(selected) !== null
   const { setObjectMoreId, objectMoreOpen } = panel
   const shapeText = SHAPE_TEXT_TYPES.has(selected.type)
+  // 열린 펜·연필 선은 속이 없어서 채우기·도형 안 글자·사진 칸을 보이지 않는다
+  const filled =
+    shapeText && !(selected.type === "path" && !selected.pathClosed)
   const noStroke = !selected.stroke || selected.stroke === "none"
   return (
     <aside
@@ -284,6 +287,9 @@ export function ObjectProperties({
                 </button>
               )}
             </div>
+            {!noStroke && !!selected.strokeWidth && (
+              <StrokeLineControls target={target} />
+            )}
             <FlipControls onFlip={flip} disabled={!editable} />
             <EffectControls target={target} />
           </>
@@ -291,14 +297,16 @@ export function ObjectProperties({
           <>
             {selected.type !== "clipart" && (
               <div className="flex items-center gap-3">
-                <PrintColorPicker
-                  label="채우기"
-                  value={selected.fill === "none" ? "#ffffff" : selected.fill}
-                  compact
-                  placement={inline ? "left" : "right"}
-                  disabled={!editable}
-                  onApply={(color) => patch(selected.id, { fill: color })}
-                />
+                {(filled || !shapeText) && (
+                  <PrintColorPicker
+                    label="채우기"
+                    value={selected.fill === "none" ? "#ffffff" : selected.fill}
+                    compact
+                    placement={inline ? "left" : "right"}
+                    disabled={!editable}
+                    onApply={(color) => patch(selected.id, { fill: color })}
+                  />
+                )}
                 {!["frame", "qr"].includes(selected.type) && (
                   <PrintColorPicker
                     label="테두리"
@@ -318,7 +326,7 @@ export function ObjectProperties({
                 )}
               </div>
             )}
-            {shapeText && (
+            {filled && (
               <div className="flex items-center gap-3">
                 <label className="flex items-center gap-1">
                   <input
@@ -396,7 +404,7 @@ export function ObjectProperties({
                 </span>
               </div>
             )}
-            {shapeText && (
+            {filled && (
               <div className="space-y-2 border-t pt-3">
                 <label className="block">
                   도형 안 글자
@@ -448,7 +456,7 @@ export function ObjectProperties({
                 )}
               </div>
             )}
-            {shapeText && <ShapePhoto editor={editor} selected={selected} />}
+            {filled && <ShapePhoto editor={editor} selected={selected} />}
             {(shapeText || selected.type === "line") && (
               <EffectControls target={target} />
             )}

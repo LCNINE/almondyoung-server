@@ -8,7 +8,7 @@ import {
   subscribeFontOptions,
 } from "../../lib/fonts"
 import { PrintColorPicker } from "../color-picker"
-import { bevelOf, shadowOf } from "../graphic"
+import { bevelOf, shadowOf, strokeRounded } from "../graphic"
 import { NumberInput } from "./number-input"
 
 // 하나를 골랐든 여럿을 골랐든 같은 컨트롤을 쓴다. apply 는 고른 요소 모두에 들어간다
@@ -149,22 +149,25 @@ export function FontSelect({ target }: { target: StyleTarget }) {
 export function StrokeLineControls({ target }: { target: StyleTarget }) {
   const { layers, apply, disabled } = target
   const lineOnly = layers.every((layer) => layer.type === "line")
-  const round = common(layers, (layer) => !!layer.strokeRound)
+  const textOnly = layers.every((layer) => layer.type === "text")
+  const round = common(layers, strokeRounded)
   return (
     <>
-      <Segmented
-        label="선 모양"
-        options={[
-          ["solid", "실선"],
-          ["dashed", "파선"],
-          ["dotted", "점선"],
-        ]}
-        value={common(layers, (layer) => layer.strokeDash ?? "solid")}
-        disabled={disabled}
-        onPick={(dash) =>
-          apply({ strokeDash: dash === "solid" ? undefined : dash })
-        }
-      />
+      {!textOnly && (
+        <Segmented
+          label="선 모양"
+          options={[
+            ["solid", "실선"],
+            ["dashed", "파선"],
+            ["dotted", "점선"],
+          ]}
+          value={common(layers, (layer) => layer.strokeDash ?? "solid")}
+          disabled={disabled}
+          onPick={(dash) =>
+            apply({ strokeDash: dash === "solid" ? undefined : dash })
+          }
+        />
+      )}
       <Segmented
         label={lineOnly ? "선 끝" : "모서리"}
         options={[
@@ -173,7 +176,7 @@ export function StrokeLineControls({ target }: { target: StyleTarget }) {
         ]}
         value={round === null ? null : round ? "round" : "miter"}
         disabled={disabled}
-        onPick={(join) => apply({ strokeRound: join === "round" || undefined })}
+        onPick={(join) => apply({ strokeRound: join === "round" })}
       />
     </>
   )

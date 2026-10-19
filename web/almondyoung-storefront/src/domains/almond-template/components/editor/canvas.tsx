@@ -2,6 +2,7 @@ import { Check, Combine, Pencil, Split, Trash2 } from "lucide-react"
 import { useRef, useState } from "react"
 import { Backdrop, LayerGraphic, photoBox } from "../graphic"
 import { currentCrop, unionBounds } from "../../lib/canvas-math"
+import { layerPathData } from "../../lib/path-shape"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import { CanvasGuides } from "./canvas-guides"
 import { useLeaveWarning } from "../../hooks/use-leave-warning"
@@ -11,6 +12,7 @@ import {
   PencilOverlay,
   PenOverlay,
   PointEditOverlay,
+  layerTransform,
 } from "./pen-overlay"
 import {
   layerImageDpi,
@@ -193,6 +195,21 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                     }
                   >
                     <LayerGraphic layer={layer} />
+                    {seeThrough(layer) && layer.type === "path" && (
+                      // 속이 빈 펜·연필 선은 화면 1~2px 선만 잡혀 끌 수가 없어서, 둘레에 안 보이는 잡기 영역을 둔다
+                      <path
+                        d={layerPathData(layer)}
+                        transform={layerTransform(layer)}
+                        fill="none"
+                        stroke="transparent"
+                        strokeWidth={Math.max(
+                          layer.strokeWidth ?? 0,
+                          10 / (canvasFit * zoom)
+                        )}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    )}
                     {!seeThrough(layer) && (
                       <rect
                         x={layer.x}
@@ -451,14 +468,14 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
               <button
                 type="button"
                 aria-label={
-                  mergedGroup ? "합친 요소 풀기" : "선택한 요소 합치기"
+                  mergedGroup ? "그룹 풀기" : "선택한 요소 그룹으로 묶기"
                 }
-                title={mergedGroup ? "풀기" : "합치기"}
+                title={mergedGroup ? "그룹 풀기" : "그룹으로 묶기"}
                 onClick={mergedGroup ? splitGroup : mergeGroup}
                 className="flex h-6 items-center gap-1 rounded bg-white px-1.5 text-xs whitespace-nowrap text-[#10a8a1] shadow"
               >
                 {mergedGroup ? <Split size={14} /> : <Combine size={14} />}
-                {mergedGroup ? "풀기" : "합치기"}
+                {mergedGroup ? "그룹 풀기" : "그룹"}
               </button>
               <button
                 type="button"
