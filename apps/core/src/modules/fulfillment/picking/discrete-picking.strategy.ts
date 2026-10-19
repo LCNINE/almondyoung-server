@@ -29,6 +29,7 @@ import {
   lockAndAssertPickerClaim,
 } from './allocation/allocation.queries';
 import { ShipmentCustodyBalance } from './allocation/allocation.types';
+import { runForwardWorkItemCommand, WorkItemCommandDeps } from './work-item-command';
 
 const PACKING_REF_PREFIX = 'work-item:';
 
@@ -50,16 +51,20 @@ export class DiscretePickingStrategy implements PickingStrategy {
     private readonly labels: LabelCurrencyGuard,
   ) {}
 
+  private forwardDeps(): WorkItemCommandDeps {
+    return { commands: this.commands, workflowGate: this.workflowGate, labels: this.labels };
+  }
+
   async scan(input: ScanPickingInput, tx?: DbTx): Promise<PickingScanResult> {
     if (input.strategy === 'aggregate_then_sort' || input.strategy === 'pick_to_tote') {
       throw new BadRequestException('Discrete picking accepts only strategy=discrete, stage=source scans');
     }
-    this.workflowGate.assertV2MutationAllowed('picking.discrete.scan');
     assertPositiveQuantity(input.quantity);
-    return this.commands.execute(
+    return runForwardWorkItemCommand(
+      this.forwardDeps(),
       {
+        strategy: this.capabilities.name,
         commandType: 'picking.discrete.scan',
-        idempotencyKey: input.idempotencyKey,
         canonicalRequest: {
           strategy: this.capabilities.name,
           batchId: input.batchId,
@@ -75,19 +80,17 @@ export class DiscretePickingStrategy implements PickingStrategy {
           stage: 'AT_SOURCE_TO_WORKER',
           destinationRef: input.actor.id,
         },
+        target: {
+          batchId: input.batchId,
+          sessionId: input.sessionId,
+          workItemId: input.workItemId,
+          shipmentId: input.shipmentId,
+          actor: input.actor,
+          expectedLeaseVersion: input.expectedLeaseVersion,
+          idempotencyKey: input.idempotencyKey,
+        },
       },
       async (trx, commandRequestId) => {
-        await lockAndAssertPickerClaim(
-          trx,
-          input.workItemId,
-          input.batchId,
-          input.shipmentId,
-          input.actor.id,
-          input.expectedLeaseVersion,
-        );
-        // 낡은 송장으로는 진행하지 않는다(스펙 I5). 작업 항목 잠금 뒤, 명령 핸들러 안.
-        await this.labels.assertCurrent(input.workItemId, trx);
-        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         const [line] = await trx
           .select({ shipmentId: wmsTables.shipmentLines.shipmentId, skuId: wmsTables.shipmentLines.skuId })
           .from(wmsTables.shipmentLines)
@@ -273,11 +276,11 @@ export class DiscretePickingStrategy implements PickingStrategy {
   }
 
   async completePick(input: CompletePickInput, tx?: DbTx): Promise<InspectionReadyOutput> {
-    this.workflowGate.assertV2MutationAllowed('picking.discrete.complete');
-    return this.commands.execute(
+    return runForwardWorkItemCommand(
+      this.forwardDeps(),
       {
+        strategy: this.capabilities.name,
         commandType: 'picking.discrete.complete',
-        idempotencyKey: input.idempotencyKey,
         canonicalRequest: {
           strategy: this.capabilities.name,
           batchId: input.batchId,
@@ -287,19 +290,17 @@ export class DiscretePickingStrategy implements PickingStrategy {
           actorId: input.actor.id,
           expectedLeaseVersion: input.expectedLeaseVersion,
         },
+        target: {
+          batchId: input.batchId,
+          sessionId: input.sessionId,
+          workItemId: input.workItemId,
+          shipmentId: input.shipmentId,
+          actor: input.actor,
+          expectedLeaseVersion: input.expectedLeaseVersion,
+          idempotencyKey: input.idempotencyKey,
+        },
       },
       async (trx, commandRequestId) => {
-        await lockAndAssertPickerClaim(
-          trx,
-          input.workItemId,
-          input.batchId,
-          input.shipmentId,
-          input.actor.id,
-          input.expectedLeaseVersion,
-        );
-        // 낡은 송장으로는 진행하지 않는다(스펙 I5). 작업 항목 잠금 뒤, 명령 핸들러 안.
-        await this.labels.assertCurrent(input.workItemId, trx);
-        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         const allocations = await loadWorkItemAllocations(trx, input.workItemId);
         const packingRef = `${PACKING_REF_PREFIX}${input.workItemId}`;
         for (const allocation of allocations) {
