@@ -33,7 +33,6 @@ function PasswordInput({
         <ClearInputButton
           inputId={id}
           label={typeof label === "string" ? label : "비밀번호"}
-          className="right-11 w-11 justify-end pr-1"
         />
       )}
       {label && (
@@ -46,7 +45,7 @@ function PasswordInput({
         onClick={() => setVisible((v) => !v)}
         className={cn(
           "absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none",
-          clearable && "justify-start pl-3"
+          clearable && "right-11 justify-end pr-1"
         )}
         aria-label={visible ? "비밀번호 숨기기" : "비밀번호 표시"}
         aria-pressed={visible}
