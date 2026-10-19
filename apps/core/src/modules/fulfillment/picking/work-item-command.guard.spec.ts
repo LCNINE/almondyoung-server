@@ -50,6 +50,83 @@ function functionBody(path: string, name: string): string {
   return body;
 }
 
+function pickingFiles(): string[] {
+  return walk(join(ROOT, PICKING));
+}
+
+function parse(path: string): ts.SourceFile {
+  return ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true);
+}
+
+function enclosingName(node: ts.Node): string {
+  for (let cur: ts.Node | undefined = node; cur; cur = cur.parent) {
+    if ((ts.isMethodDeclaration(cur) || ts.isFunctionDeclaration(cur)) && cur.name && ts.isIdentifier(cur.name)) {
+      return cur.name.text;
+    }
+  }
+  return '<top>';
+}
+
+function propOf(obj: ts.Expression | undefined, name: string): ts.Expression | undefined {
+  if (!obj || !ts.isObjectLiteralExpression(obj)) return undefined;
+  for (const p of obj.properties) {
+    if (ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && p.name.text === name) return p.initializer;
+    if (ts.isShorthandPropertyAssignment(p) && p.name.text === name) return p.name;
+  }
+  return undefined;
+}
+
+/** `.set({ status: 'ready_to_pack' | 'queued', ... })` 를 가진 picking/ 비-spec 파일. */
+function filesWritingPackOrQueuedStatus(): string[] {
+  return pickingFiles()
+    .filter((path) => {
+      let found = false;
+      const visit = (node: ts.Node): void => {
+        if (
+          ts.isCallExpression(node) &&
+          ts.isPropertyAccessExpression(node.expression) &&
+          node.expression.name.text === 'set'
+        ) {
+          const status = propOf(node.arguments[0], 'status');
+          if (status && ts.isStringLiteralLike(status) && ['ready_to_pack', 'queued'].includes(status.text)) {
+            found = true;
+          }
+        }
+        node.forEachChild(visit);
+      };
+      visit(parse(path));
+      return found;
+    })
+    .map((path) => relative(ROOT, path))
+    .sort();
+}
+
+/** picking/ 의 moveCustody 호출 중 목적지가 리터럴 'PACKING' 이거나 리터럴이 아닌 곳. `calls` 는 전체 호출 수. */
+function packingDestinationMoves(): { hits: string[]; calls: number } {
+  const hits = new Set<string>();
+  let calls = 0;
+  for (const path of pickingFiles()) {
+    const rel = relative(ROOT, path);
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isPropertyAccessExpression(node.expression) &&
+        node.expression.name.text === 'moveCustody'
+      ) {
+        calls += 1;
+        const custodyType = propOf(propOf(node.arguments[0], 'to'), 'custodyType');
+        // 커널은 파일 통째로 허용 대상이라 메서드까지 쪼개지 않는다(handoff 는 같은 보관 종류 안에서 소유자만 바꾼다).
+        if (!custodyType || !ts.isStringLiteralLike(custodyType)) {
+          hits.add(rel.endsWith('/work-item-command.ts') ? rel : `${rel}#${enclosingName(node)}`);
+        } else if (custodyType.text === 'PACKING') hits.add(rel);
+      }
+      node.forEachChild(visit);
+    };
+    visit(parse(path));
+  }
+  return { hits: [...hits].sort(), calls };
+}
+
 describe('작업 항목 명령 커널 배선', () => {
   it('lockAndAssertPickerClaim 을 부르는 비-spec 파일은 커널과 정의 파일뿐이다', () => {
     expect(filesMatching(/\blockAndAssertPickerClaim\(/)).toEqual([
@@ -87,5 +164,28 @@ describe('작업 항목 명령 커널 배선', () => {
     const body = methodBodies(join(ROOT, PICKING, 'aggregate-then-sort.strategy.ts')).get('sortScan') ?? '';
     expect(body).toContain('locksBefore:');
     expect(body).toContain('aggregate-cart:');
+  });
+
+  it('picking/ 에서 작업 항목을 ready_to_pack·queued 로 쓰는 비-spec 파일은 커널뿐이다', () => {
+    // 2026-10-19 실측: 전환 전 세 전략의 복사본이 커널로 모였고, allocation/ 등 다른 파일은 없다.
+    expect(filesWritingPackOrQueuedStatus()).toEqual([`${PICKING}/work-item-command.ts`]);
+  });
+
+  it('picking/ 에서 PACKING 을 목적지로 moveCustody 하는 곳은 커널과 aggregate sortScan 뿐이다', () => {
+    const { hits, calls } = packingDestinationMoves();
+    expect(calls).toBeGreaterThan(0); // 걷기가 비면 아래 단언이 공허하게 통과한다
+    expect(hits).toEqual([
+      `${PICKING}/aggregate-then-sort.strategy.ts#sortScan`, // 목적지가 input.destinationCustody — 리터럴이 아니다
+      `${PICKING}/work-item-command.ts`,
+    ]);
+  });
+
+  it('커널의 되돌림 진입(unpickWorkItemShipment·handoffWorkItemPicker) 본문에는 assertCurrent 가 없다', () => {
+    const path = join(ROOT, PICKING, 'work-item-command.ts');
+    for (const name of ['unpickWorkItemShipment', 'handoffWorkItemPicker']) {
+      const body = functionBody(path, name);
+      expect(body).not.toBe('');
+      expect(body).not.toContain('assertCurrent(');
+    }
   });
 });
