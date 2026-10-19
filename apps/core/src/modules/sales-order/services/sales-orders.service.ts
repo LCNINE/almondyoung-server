@@ -73,6 +73,7 @@ import { ModuleRef } from '@nestjs/core';
 import { ShipmentPlanningService } from '../../fulfillment/services/shipment-planning.service';
 import { canonicalFulfillmentRequestHash } from '../../fulfillment/services/fulfillment-command.service';
 import type { CancellationEffect } from '../cancellation-record/cancellation-lines';
+import { recordSalesOrderCancellation } from '../cancellation-record/record-cancellation';
 
 type SalesOrderLineInsert = InferInsertModel<typeof wmsTables.salesOrderLines>;
 type BusinessLinkInsert = InferInsertModel<typeof wmsTables.businessLinks>;
@@ -665,7 +666,7 @@ export class SalesOrdersService {
         metadata: options.metadata ?? {},
         occurredAt,
       };
-      const [cancellation] = await trx.insert(wmsTables.salesOrderCancellations).values(cancellationValues).returning();
+      const cancellation = await recordSalesOrderCancellation(trx, cancellationValues);
 
       await trx
         .update(wmsTables.salesOrders)
@@ -1565,7 +1566,7 @@ export class SalesOrdersService {
       },
       occurredAt,
     };
-    const [cancellation] = await trx.insert(wmsTables.salesOrderCancellations).values(cancellationValues).returning();
+    const cancellation = await recordSalesOrderCancellation(trx, cancellationValues);
 
     await this.linkCancellationEffects(salesOrderId, cancellation.id, 'partial', effects, occurredAt, trx);
 
@@ -1885,25 +1886,23 @@ export class SalesOrdersService {
 
     const occurredAt = options.occurredAt ? new Date(options.occurredAt) : new Date();
     const cancellationScope = isFullCancel ? 'full' : 'partial';
-    const [cancellation] = await tx
-      .insert(wmsTables.salesOrderCancellations)
-      .values({
-        salesOrderId,
-        cancellationScope,
-        status: 'applied',
-        reasonCode: options.reasonCode ?? null,
-        reasonDetail: options.reasonDetail ?? null,
-        cancelledBy: options.cancelledBy ?? null,
-        effects: operationEffects,
-        metadata: {
-          ...(options.metadata ?? {}),
-          cancelledLines: requestedSalesLines,
-          fulfillmentCommandSourceKey: this.explicitV2CancellationSourceKey(options),
-          fulfillmentCommandRequestHash: this.v2CancellationRequestHash(salesOrderId, options),
-        },
-        occurredAt,
-      })
-      .returning();
+    const cancellationValues: SalesOrderCancellationInsert = {
+      salesOrderId,
+      cancellationScope,
+      status: 'applied',
+      reasonCode: options.reasonCode ?? null,
+      reasonDetail: options.reasonDetail ?? null,
+      cancelledBy: options.cancelledBy ?? null,
+      effects: operationEffects,
+      metadata: {
+        ...(options.metadata ?? {}),
+        cancelledLines: requestedSalesLines,
+        fulfillmentCommandSourceKey: this.explicitV2CancellationSourceKey(options),
+        fulfillmentCommandRequestHash: this.v2CancellationRequestHash(salesOrderId, options),
+      },
+      occurredAt,
+    };
+    const cancellation = await recordSalesOrderCancellation(tx, cancellationValues);
     if (isFullCancel) {
       await tx
         .update(wmsTables.salesOrders)
