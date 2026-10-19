@@ -12,7 +12,7 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { FILE_SIZE_LIMIT } from './constants/file.constants';
-import { mountEventChainContext } from '@app/events';
+import { EventsModule, mountEventChainContext } from '@app/events';
 import { createCorsDelegator } from './api/oauth/cors/public-client-cors';
 import { PublicClientOriginsCache } from './api/oauth/cors/public-client-origins.cache';
 
@@ -127,6 +127,11 @@ async function bootstrap() {
       transformOptions: { enableImplicitConversion: true },
     }),
   );
+
+  // 다른 서비스가 적재한 개인정보 접속기록(`PiiAccessed`)을 받는다. 소비 집합은 `@On` 에서 도출된다.
+  await EventsModule.startConsumer(app, { groupId: 'user-service-consumer' });
+  // 이게 없으면 종료 때 onApplicationShutdown 이 불리지 않아 컨슈머가 그룹을 떠나지 않는다.
+  app.enableShutdownHooks();
 
   await app.listen(port, '0.0.0.0');
   console.log(`포트 ${port}이 열린 순간... 누군가 눈을 떴어요.`);

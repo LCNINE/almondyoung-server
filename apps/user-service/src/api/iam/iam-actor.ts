@@ -1,4 +1,4 @@
-import type { JwtPayload } from '@app/authorization';
+import { staffClientOf, type JwtPayload } from '@app/authorization';
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 
@@ -9,6 +9,8 @@ export interface IamActor {
   readonly roles: readonly string[];
   readonly userAgent: string | null;
   readonly requestId: string | null;
+  /** 관리자 화면 프록시가 넘긴 직원 단말 주소(없으면 null). */
+  readonly ip: string | null;
 }
 
 const header = (request: FastifyRequest, name: string): string | null => {
@@ -23,6 +25,7 @@ export function actorFrom(request: FastifyRequest & { user: JwtPayload }): IamAc
     roles: request.user.roles ?? [],
     userAgent: header(request, 'user-agent'),
     requestId: header(request, 'x-request-id'),
+    ip: staffClientOf(request).claimedIp,
   };
 }
 

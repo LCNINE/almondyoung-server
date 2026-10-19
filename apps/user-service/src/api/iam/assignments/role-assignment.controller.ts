@@ -1,4 +1,4 @@
-import { RequirePermission, RequireScopes } from '@app/authorization';
+import { RequirePermission, RequireScopes, PiiResponse } from '@app/authorization';
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentIamActor, type IamActor } from '../iam-actor';
@@ -51,6 +51,7 @@ export class RoleAssignmentController {
   }
 
   @ApiOperation({ summary: '역할을 가진 사람(기간 지난 부여 포함)' })
+  @PiiResponse({ fields: { '[].username': 'name' }, subjects: [{ path: '[].userId', type: 'user' }] })
   @RequirePermission('iam.role.read')
   @Get('admin/roles/:roleId/members')
   @RequireScopes('master')

@@ -13,6 +13,15 @@ import { IamRepository } from './iam.repository';
 import { IamService } from './iam.service';
 import { MePermissionsController } from './me-permissions.controller';
 import { MyPermissionsReader } from './my-permissions.reader';
+import { PiiAccessLogController } from './pii-access/pii-access-log.controller';
+import { PiiAccessRecordController } from './pii-access/pii-access-record.controller';
+import { PiiAccessRetentionCron } from './pii-access/pii-access-retention.cron';
+import { PiiAccessConsumer } from './pii-access/pii-access.consumer';
+import { PiiAccessCreator } from './pii-access/pii-access.creator';
+import { PiiAccessManager } from './pii-access/pii-access.manager';
+import { PiiAccessReader } from './pii-access/pii-access.reader';
+import { PiiAccessRepository } from './pii-access/pii-access.repository';
+import { PiiAccessService } from './pii-access/pii-access.service';
 import { PermissionCatalogSyncBootstrap } from './permission-catalog-sync.bootstrap';
 import { PermissionCatalogSyncManager } from './permission-catalog-sync.manager';
 import { RolePermissionsReader } from './role-permissions.reader';
@@ -29,6 +38,9 @@ import { RoleRepository } from './roles/role.repository';
     RoleAdminController,
     RoleAssignmentController,
     IamAuditController,
+    PiiAccessLogController,
+    PiiAccessRecordController,
+    PiiAccessConsumer,
   ],
   providers: [
     IamRepository,
@@ -48,7 +60,13 @@ import { RoleRepository } from './roles/role.repository';
     RoleAssignmentReader,
     RoleAssignmentManager,
     RoleAssignmentService,
+    PiiAccessRepository,
+    PiiAccessCreator,
+    PiiAccessReader,
+    PiiAccessManager,
+    PiiAccessService,
+    PiiAccessRetentionCron,
   ],
-  exports: [IamService, RoleAssignmentManager],
+  exports: [IamService, RoleAssignmentManager, PiiAccessCreator],
 })
 export class IamModule {}

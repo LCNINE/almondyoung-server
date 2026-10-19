@@ -13,12 +13,17 @@ describe('actorFrom', () => {
         { 'user-agent': 'ua', 'x-request-id': 'r-1' },
       ),
     );
-    expect(actor).toEqual({ userId: 'u-1', loginId: 'boss', roles: ['master'], userAgent: 'ua', requestId: 'r-1' });
+    expect(actor).toEqual({ userId: 'u-1', loginId: 'boss', roles: ['master'], userAgent: 'ua', requestId: 'r-1', ip: null });
   });
 
   it('leaves out what the request did not carry and ignores repeated headers', () => {
     const actor = actorFrom(request({ id: 'u-1', email: 'a@b.c', roles: [] }, { 'x-request-id': ['a', 'b'] }));
-    expect(actor).toEqual({ userId: 'u-1', loginId: null, roles: [], userAgent: null, requestId: null });
+    expect(actor).toEqual({ userId: 'u-1', loginId: null, roles: [], userAgent: null, requestId: null, ip: null });
+  });
+
+  it('fills the audit ip from the proxy header', () => {
+    const actor = actorFrom(request({ id: 'u-1', email: 'a@b.c', roles: [] }, { 'x-staff-client-ip': '203.0.113.7' }));
+    expect(actor.ip).toBe('203.0.113.7');
   });
 
   it('caps a very long header', () => {

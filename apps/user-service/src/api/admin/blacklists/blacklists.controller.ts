@@ -1,4 +1,4 @@
-import { RequireScopes, JwtPayload, RequirePermission } from '@app/authorization';
+import { RequireScopes, JwtPayload, RequirePermission, PiiResponse } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -21,6 +21,10 @@ export class BlacklistsController {
   @ApiQuery({ name: 'userId', description: '사용자 ID', required: false })
   @ApiQuery({ name: 'q', description: '검색어 (사용자명, 이메일)', required: false })
   @ApiResponse({ status: 200, description: '블랙리스트 조회 성공' })
+  @PiiResponse({
+    fields: { 'data[].user.username': 'name', 'data[].user.email': 'email', 'data[].reason': 'text', 'data[].internalNote': 'text' },
+    subjects: [{ path: 'data[].userId', type: 'user' }],
+  })
   @RequirePermission('customer.profile.read')
   @Get()
   @RequireScopes('master', 'admin:users:read')
@@ -45,6 +49,7 @@ export class BlacklistsController {
   })
   @ApiParam({ name: 'userId', description: '블랙리스트 ID' })
   @ApiResponse({ status: 200, description: '블랙리스트 조회 성공 (미등록 회원은 null)' })
+  @PiiResponse({ fields: { reason: 'text', internalNote: 'text' }, subjects: [{ param: 'userId', type: 'user' }], reveal: true })
   @RequirePermission('customer.profile.read')
   @Get(':userId')
   @RequireScopes('master', 'admin:users:read')

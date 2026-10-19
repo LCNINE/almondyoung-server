@@ -1,4 +1,4 @@
-import { RequireScopes, JwtPayload, StoreRoute, RequirePermission } from '@app/authorization';
+import { RequireScopes, JwtPayload, StoreRoute, RequirePermission, PiiResponse } from '@app/authorization';
 import { Body, Controller, Get, NotFoundException, Param, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ConsentsService } from './consents.service';
@@ -81,6 +81,11 @@ export class ConsentsController {
     status: 200,
     description: '사용자 프로필 조회 성공',
   })
+  @PiiResponse({
+    fields: { email: 'email', name: 'name', phoneNumber: 'phone' },
+    subjects: [{ param: 'userId', type: 'user' }],
+    reveal: true,
+  })
   @RequirePermission('customer.profile.read')
   @Get('profile/:userId')
   @RequireScopes('master', 'admin:users:read')
@@ -96,6 +101,10 @@ export class ConsentsController {
   @ApiResponse({
     status: 200,
     description: '사용자 목록 조회 성공',
+  })
+  @PiiResponse({
+    fields: { 'users[].email': 'email', 'users[].name': 'name', 'users[].phoneNumber': 'phone' },
+    subjects: [{ path: 'users[].userId', type: 'user' }],
   })
   @RequirePermission('customer.profile.read')
   @Post('search')

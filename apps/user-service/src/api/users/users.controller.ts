@@ -1,4 +1,4 @@
-import { RequireScopes, JwtPayload, RequirePermission, StoreRoute } from '@app/authorization';
+import { RequireScopes, JwtPayload, RequirePermission, StoreRoute, PiiResponse } from '@app/authorization';
 import {
   BadRequestException,
   Body,
@@ -43,6 +43,7 @@ export class UsersController {
     type: UserResponseDto,
   })
   @ApiQuery({ name: 'email', description: '찾고자 하는 사용자의 이메일' })
+  @PiiResponse({ fields: { username: 'name', email: 'email' }, subjects: [{ path: 'id', type: 'user' }] })
   @RequirePermission('customer.profile.read')
   @Get('find-by-email')
   // 이메일 하나로 loginId·실명이 나오므로 공개하면 익명 열거가 된다.

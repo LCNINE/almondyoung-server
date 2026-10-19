@@ -12,7 +12,7 @@ export interface IamAuditFilter {
   readonly from?: Date;
   readonly to?: Date;
   readonly actorUserId?: string;
-  readonly targetType?: 'role' | 'user';
+  readonly targetType?: 'role' | 'user' | 'pii_access_log';
   readonly targetId?: string;
   readonly roleId?: string;
   readonly action?: string;

@@ -54,6 +54,7 @@ describeIfDb('role assignments against a real database', () => {
     roles: [SYSTEM_ROLE_NAME],
     userAgent: null,
     requestId: null,
+    ip: null,
   });
   const cleanup = async () => {
     const ids = (

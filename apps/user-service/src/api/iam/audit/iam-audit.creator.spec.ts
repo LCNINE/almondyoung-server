@@ -5,7 +5,7 @@ import { IamAuditRepository } from './iam-audit.repository';
 describe('IamAuditCreator', () => {
   const repository = { insert: jest.fn() };
   const tx = { insert: jest.fn() };
-  const actor = { userId: 'u-1', loginId: 'boss', roles: ['master'], userAgent: 'ua', requestId: 'req-1' };
+  const actor = { userId: 'u-1', loginId: 'boss', roles: ['master'], userAgent: 'ua', requestId: 'req-1', ip: '203.0.113.7' };
   let creator: IamAuditCreator;
 
   beforeEach(async () => {
@@ -35,7 +35,7 @@ describe('IamAuditCreator', () => {
         targetLabel: '인턴',
         before: { displayName: '인턴' },
         after: { displayName: '인턴(여름)' },
-        ip: null,
+        ip: '203.0.113.7',
         userAgent: 'ua',
         requestId: 'req-1',
       },

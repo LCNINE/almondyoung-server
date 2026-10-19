@@ -11,12 +11,13 @@ export const IAM_AUDIT_ACTIONS = [
   'role.members.add',
   'role.member.remove',
   'admin_user.create',
+  'pii_access_log.view',
 ] as const;
 export type IamAuditAction = (typeof IAM_AUDIT_ACTIONS)[number];
 
 export interface IamAuditEntry {
   readonly action: IamAuditAction;
-  readonly targetType: 'role' | 'user';
+  readonly targetType: 'role' | 'user' | 'pii_access_log';
   readonly targetId: string;
   readonly targetLabel: string;
   readonly before: unknown;
@@ -39,7 +40,7 @@ export class IamAuditCreator {
         targetLabel: entry.targetLabel.slice(0, 100),
         before: entry.before ?? null,
         after: entry.after ?? null,
-        ip: null,
+        ip: actor.ip,
         userAgent: actor.userAgent,
         requestId: actor.requestId,
       },

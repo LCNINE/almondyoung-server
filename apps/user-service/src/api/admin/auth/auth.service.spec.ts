@@ -106,7 +106,7 @@ describe('AuthService.createAccount', () => {
     assignUserRole: jest.fn(),
   };
   const assignments = { assignOnCreate: jest.fn() };
-  const actor = { userId: 'u-boss', loginId: 'boss', roles: ['master'], userAgent: null, requestId: null };
+  const actor = { userId: 'u-boss', loginId: 'boss', roles: ['master'], userAgent: null, requestId: null, ip: null };
   let service: AuthService;
 
   beforeEach(async () => {

@@ -51,7 +51,7 @@ describe('RoleAdminManager', () => {
   const myPermissions = { forRoles: jest.fn() };
   const tx = { marker: 'tx' };
   const run = jest.fn(async (work: (t: unknown) => Promise<unknown>) => work(tx));
-  const actor = { userId: 'u-master', loginId: 'boss', roles: ['master'], userAgent: null, requestId: null };
+  const actor = { userId: 'u-master', loginId: 'boss', roles: ['master'], userAgent: null, requestId: null, ip: null };
   let manager: RoleAdminManager;
 
   beforeEach(async () => {

@@ -10,7 +10,9 @@ import {
   PermissionGuard,
   PermissionModule,
   ScopeGuard,
+  piiMaskingProviders,
 } from '@app/authorization';
+import { LocalPiiAccessRecorder } from './api/iam/pii-access/local-pii-access.recorder';
 import { ResponseInterceptor } from '@app/shared';
 import { Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
@@ -177,6 +179,8 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
     { provide: APP_GUARD, useClass: DemoBoundaryGuard },
     // 그림자 판정 통과 표시 — 전역 인터셉터 맨 앞(앞선 인터셉터가 응답을 바로 돌려주면 표시를 못 한다).
     { provide: APP_INTERCEPTOR, useClass: AuthzShadowInterceptor },
+    // 개인정보 표시 제한 — 다른 응답 인터셉터보다 바깥에서 최종 본문을 본다.
+    ...piiMaskingProviders({ service: 'user-service', recorder: LocalPiiAccessRecorder, envelope: 'success-data' }),
     {
       provide: APP_INTERCEPTOR,
       useClass: ResponseInterceptor,

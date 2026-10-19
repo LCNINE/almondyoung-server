@@ -193,6 +193,64 @@ export const iamAuditLogs = pgTable(
   }),
 );
 
+// 개인정보 접속기록 — 직원에게 개인정보 원문이 나간 응답마다 1행. 원문 값은 담지 않는다(대상 식별자·종류·건수만).
+// 쓰기는 insert 뿐이고 보관 기간이 지난 행만 정리 크론이 지운다.
+export const piiAccessLogs = pgTable(
+  'pii_access_logs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // 보낸 쪽이 만든 id — 이벤트가 다시 와도 한 번만 남는다.
+    eventId: uuid('event_id').notNull(),
+    occurredAt: timestamp('occurred_at', { precision: 3 }).notNull(),
+    actorUserId: uuid('actor_user_id').notNull(),
+    actorLoginId: varchar('actor_login_id', { length: 30 }),
+    // 관리자 화면 프록시가 넘긴 직원 단말 주소와, 서비스가 본 연결 주소를 따로 남긴다.
+    claimedIp: varchar('claimed_ip', { length: 45 }),
+    peerIp: varchar('peer_ip', { length: 45 }),
+    forwardedFor: text('forwarded_for'),
+    userAgent: text('user_agent'),
+    requestId: varchar('request_id', { length: 100 }),
+    sourceService: varchar('source_service', { length: 40 }).notNull(),
+    method: varchar('method', { length: 10 }).notNull(),
+    route: text('route').notNull(),
+    action: varchar('action', { length: 10 }).notNull(),
+    subjects: jsonb('subjects').notNull(),
+    subjectCount: integer('subject_count').notNull(),
+    kinds: text('kinds').array().notNull(),
+    queryKeys: text('query_keys').array().notNull(),
+    reason: text('reason'),
+    recordedAt: timestamp('recorded_at', { precision: 3 })
+      .default(sql`now()`)
+      .notNull(),
+  },
+  (table) => ({
+    eventIdx: uniqueIndex('pii_access_logs_event_id_idx').on(table.eventId),
+    occurredIdx: index('pii_access_logs_occurred_at_idx').on(table.occurredAt),
+    actorIdx: index('pii_access_logs_actor_idx').on(table.actorUserId, table.occurredAt),
+    subjectsIdx: index('pii_access_logs_subjects_idx').using('gin', sql`${table.subjects} jsonb_path_ops`),
+  }),
+);
+
+// 접속기록 점검 기록 — 점검 주기는 내부 관리계획이 정하므로 기간을 자유롭게 적는다.
+export const piiAccessReviews = pgTable(
+  'pii_access_reviews',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    period: varchar('period', { length: 40 }).notNull(),
+    rangeFrom: timestamp('range_from', { precision: 3 }).notNull(),
+    rangeTo: timestamp('range_to', { precision: 3 }).notNull(),
+    reviewedBy: uuid('reviewed_by').notNull(),
+    reviewedByLoginId: varchar('reviewed_by_login_id', { length: 30 }),
+    reviewedAt: timestamp('reviewed_at', { precision: 3 })
+      .default(sql`now()`)
+      .notNull(),
+    note: text('note'),
+  },
+  (table) => ({
+    reviewedIdx: index('pii_access_reviews_reviewed_at_idx').on(table.reviewedAt),
+  }),
+);
+
 // 사용자-역할 할당 테이블
 export const userRoleAssignments = pgTable(
   'user_roles',
@@ -798,6 +856,8 @@ export const userServiceTables = {
   iamPermissions,
   iamRolePermissions,
   iamAuditLogs,
+  piiAccessLogs,
+  piiAccessReviews,
   userRoleAssignments,
   userIdentities,
   businessLicenses,

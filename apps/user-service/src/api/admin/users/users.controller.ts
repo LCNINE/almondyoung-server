@@ -1,4 +1,4 @@
-import { RequireScopes, RequirePermission } from '@app/authorization';
+import { RequireScopes, RequirePermission, PiiResponse } from '@app/authorization';
 import {
   Body,
   Controller,
@@ -26,6 +26,10 @@ import { UserConsent } from '../../consents/types/consent.type';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
+  @PiiResponse({
+    fields: { 'data[].username': 'name', 'data[].email': 'email', 'data[].phoneNumber': 'phone' },
+    subjects: [{ path: 'data[].id', type: 'user' }],
+  })
   @RequirePermission('customer.profile.read')
   @Get()
   @RequireScopes('master', 'admin:users:read', 'admin:access')
@@ -92,6 +96,18 @@ export class UsersController {
     return await this.usersService.getUserConsentByUserId(userId);
   }
 
+  @PiiResponse({
+    fields: {
+      username: 'name',
+      email: 'email',
+      'profile.phoneNumber': 'phone',
+      // 주소는 객체로도 JSON 문자열로도 저장돼 있어 통째로 가린다.
+      'profile.address': 'redact',
+      'profile.birthDate': 'redact',
+    },
+    subjects: [{ path: 'id', type: 'user' }],
+    reveal: true,
+  })
   @RequirePermission('customer.profile.read')
   @Get(':userId')
   @RequireScopes('master', 'admin:users:read')
@@ -116,6 +132,7 @@ export class UsersController {
 
   @ApiOperation({ summary: '사용자 정보 수정' })
   @ApiResponse({ status: 200, description: '프로필 수정 성공' })
+  @PiiResponse({ fields: { username: 'name', email: 'email' }, subjects: [{ param: 'userId', type: 'user' }] })
   @RequirePermission('customer.profile.write')
   @Patch(':userId')
   @RequireScopes('master', 'admin:users:modify')

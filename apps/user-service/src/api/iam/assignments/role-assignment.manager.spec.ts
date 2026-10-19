@@ -47,8 +47,8 @@ describe('RoleAssignmentManager', () => {
   const snapshots = { snapshot: jest.fn() };
   const tx = { marker: 'tx' };
   const run = jest.fn(async (work: (t: unknown) => Promise<unknown>) => work(tx));
-  const master = { userId: 'u-boss', loginId: 'boss', roles: ['master'], userAgent: null, requestId: null };
-  const adminActor = { userId: 'u-adm', loginId: 'adm', roles: ['admin'], userAgent: null, requestId: null };
+  const master = { userId: 'u-boss', loginId: 'boss', roles: ['master'], userAgent: null, requestId: null, ip: null };
+  const adminActor = { userId: 'u-adm', loginId: 'adm', roles: ['admin'], userAgent: null, requestId: null, ip: null };
   let manager: RoleAssignmentManager;
 
   beforeEach(async () => {

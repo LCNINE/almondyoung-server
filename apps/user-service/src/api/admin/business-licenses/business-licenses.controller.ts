@@ -1,4 +1,4 @@
-import { RequireScopes, RequirePermission } from '@app/authorization';
+import { RequireScopes, RequirePermission, PiiResponse } from '@app/authorization';
 import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { BusinessLicenseResponseDto } from '../../business-licenses/dto/business-license.response.dto';
@@ -14,6 +14,11 @@ import { DateRangeQueryDto } from '../users/dto/date-range-query.dto';
 export class BusinessLicensesController {
   constructor(private readonly businessLicensesService: BusinessLicensesService) {}
 
+  @PiiResponse({
+    fields: { representativeName: 'name', fileUrl: 'redact', 'metadata.ntsValidate.requested': 'redact' },
+    subjects: [{ param: 'userId', type: 'user' }],
+    reveal: true,
+  })
   @RequirePermission('customer.profile.read')
   @Get('/user/:userId')
   @ApiOperation({
@@ -29,6 +34,10 @@ export class BusinessLicensesController {
     return this.businessLicensesService.getBusinessLicensesByUserId(userId);
   }
 
+  @PiiResponse({
+    fields: { representativeName: 'name', fileUrl: 'redact', 'metadata.ntsValidate.requested': 'redact' },
+    subjects: [{ param: 'userId', type: 'user' }],
+  })
   @RequirePermission('customer.business_verification.review')
   @Post('/user/:userId')
   @RequireScopes('master', 'admin:users:modify')
@@ -56,6 +65,15 @@ export class BusinessLicensesController {
     return this.businessLicensesService.getDailyApplications(query.from, query.to);
   }
 
+  @PiiResponse({
+    fields: {
+      'data[].userName': 'name',
+      'data[].representativeName': 'name',
+      'data[].fileUrl': 'redact',
+      'data[].metadata.ntsValidate.requested': 'redact',
+    },
+    subjects: [{ path: 'data[].userId', type: 'user' }],
+  })
   @RequirePermission('customer.profile.read')
   @Get()
   @RequireScopes('master', 'admin:users:read')
@@ -71,6 +89,11 @@ export class BusinessLicensesController {
   }
 
   // 사업자 등록 정보 상세 조회 기능
+  @PiiResponse({
+    fields: { userName: 'name', representativeName: 'name', fileUrl: 'redact', 'metadata.ntsValidate.requested': 'redact' },
+    subjects: [{ path: 'userId', type: 'user' }],
+    reveal: true,
+  })
   @RequirePermission('customer.profile.read')
   @Get(':id')
   @RequireScopes('master', 'admin:users:read')
