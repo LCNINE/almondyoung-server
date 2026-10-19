@@ -1,4 +1,104 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
-  <rect width="192" height="192" rx="44" fill="#4f46e5"/>
-  <path d="M52 105l29 29 60-68" fill="none" stroke="white" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#FCFAF5"/>
+  <svg x="0" y="0" width="512" height="512" viewBox="80 15 300 300" overflow="hidden">
+<defs>
+<clipPath id="icon-clock-shirt">
+<path d="M178 202 Q194 209 210 198 L221 242 Q203 254 178 240 Z">
+</path>
+</clipPath>
+<filter id="icon-clock-shadow" x="-30%" y="-30%" width="160%" height="180%">
+<feGaussianBlur stdDeviation="4">
+</feGaussianBlur>
+</filter>
+</defs>
+<g fill="none" stroke="#443D37" stroke-linecap="round" stroke-linejoin="round">
+<ellipse cx="277" cy="114" rx="334" ry="279" transform="rotate(-8 277 114)" fill="#DCD5CB" stroke="none">
+</ellipse>
+<ellipse cx="273" cy="100" rx="334" ry="279" transform="rotate(-8 273 100)" fill="#FCFAF5" stroke-width="4.5">
+</ellipse>
+<ellipse cx="273" cy="100" rx="323" ry="267" transform="rotate(-8 273 100)" stroke="white" stroke-width="3">
+</ellipse>
+<ellipse cx="199" cy="295" rx="45" ry="11" transform="rotate(-20 199 295)" fill="#6F6254" opacity=".09" stroke="none" filter="url(#icon-clock-shadow)">
+</ellipse>
+<g class="attendance-clock-second" stroke-width="3">
+<path d="M280 89 L105 296">
+</path>
+<path d="M277 93 L116 291" stroke="#BFB5A8" stroke-width="8" opacity=".16" transform="translate(4 6)">
+</path>
+</g>
+<g class="attendance-clock-hand">
+<path d="M281 91 L76 185" stroke="#BFB5A8" stroke-width="12" opacity=".2" transform="translate(8 10)">
+</path>
+<path d="M281 89 L96 171" stroke-width="7">
+</path>
+<path d="M108 159 Q91 158 77 173 Q57 190 28 197 Q71 192 92 184 Q110 179 113 167 Z" fill="#443D37" stroke-width="3">
+</path>
+<g class="attendance-clock-mascot" stroke-width="4">
+<path d="M181 209 Q166 182 161 150" stroke-width="10" stroke="#443D37">
+</path>
+<path d="M181 209 Q166 182 161 150" stroke-width="5.5" stroke="#FCFAF5">
+</path>
+<path d="M207 204 Q217 167 205 132" stroke-width="10" stroke="#443D37">
+</path>
+<path d="M207 204 Q217 167 205 132" stroke-width="5.5" stroke="#FCFAF5">
+</path>
+<g class="attendance-clock-leg-left" fill="#DC8068">
+<path d="M181 239 L199 249 L190 273 Q185 282 176 275 L158 263 Q152 256 158 253 Q163 250 170 258 L179 261 Z">
+</path>
+<path d="M174 257 l9 9" stroke="#B96251" stroke-width="2">
+</path>
+</g>
+<g class="attendance-clock-leg-right" fill="#DC8068">
+<path d="M201 241 L215 237 L232 257 Q242 264 249 253 Q253 245 258 249 Q264 257 255 268 Q248 277 236 271 L216 260 Z">
+</path>
+<path d="M223 254 l10 8" stroke="#B96251" stroke-width="2">
+</path>
+</g>
+<path d="M178 202 Q194 209 210 198 L221 242 Q203 254 178 240 Z" fill="#FFFDF8">
+</path>
+<g clip-path="url(#icon-clock-shirt)" stroke="#EFB473" stroke-width="6">
+<path d="M168 211 Q193 225 219 209 M169 224 Q194 238 223 222 M173 237 Q197 250 224 235">
+</path>
+</g>
+<path d="M178 202 Q194 209 210 198 L221 242 Q203 254 178 240 Z">
+</path>
+<path d="M166 182 C163 166 177 154 190 154 C207 150 222 163 220 181 C219 201 204 214 186 209 C173 206 167 195 166 182 Z" fill="#FFFDF8">
+</path>
+<path d="M188 155 q-9 -13 -15 -3 M194 154 q2 -9 7 -7" stroke-width="3">
+</path>
+<g stroke="none" fill="#F1B6AF">
+<ellipse cx="179" cy="190" rx="5" ry="3.5" transform="rotate(-16 179 190)">
+</ellipse>
+<ellipse cx="207" cy="184" rx="5" ry="3.5" transform="rotate(-16 207 184)">
+</ellipse>
+</g>
+<g class="attendance-clock-eyes" stroke-width="3.5">
+<path d="M176 177 q5 -6 10 -2 M197 172 q5 -6 10 -2">
+</path>
+<path d="M181 177 l0 2 M202 172 l0 2">
+</path>
+</g>
+<path d="M190 187 q4 4 8 -2" stroke-width="2.5">
+</path>
+<path d="M186 182 l4 -2" stroke-width="2">
+</path>
+<path d="M156 155 Q152 146 157 141 Q163 137 167 144 L168 150" fill="#FFFDF8" stroke-width="3.5">
+</path>
+<path d="M199 138 Q195 129 200 124 Q206 120 210 126 L211 132" fill="#FFFDF8" stroke-width="3.5">
+</path>
+</g>
+</g>
+<g stroke-width="4.5">
+<path d="M248 71 L248 99 Q248 113 280 113 Q312 112 312 98 L312 70" fill="#443D37">
+</path>
+<path d="M249 87 Q281 101 312 86 M249 98 Q281 111 311 96" stroke="#6A5B4B" stroke-width="2">
+</path>
+<ellipse cx="280" cy="69" rx="32" ry="18" fill="#FCFAF5">
+</ellipse>
+<path d="M263 60 q9 -4 18 -3" stroke="white" stroke-width="6">
+</path>
+</g>
+</g>
+
+  </svg>
 </svg>

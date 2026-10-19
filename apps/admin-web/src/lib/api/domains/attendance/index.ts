@@ -9,6 +9,7 @@ import type {
   AttendanceSession,
   AttendanceSettings,
   CalendarLeave,
+  LeaveBatchOptions,
   LeaveInput,
   LocationSample,
   StaffAttendance,
@@ -46,8 +47,8 @@ export const attendanceApi = {
         people: StaffAttendance[];
       }>(`${base}/overview`)
     ).data,
-  saveLeaves: async (days: LeaveInput[]) =>
-    (await client.post(`${base}/leaves`, { days })).data,
+  saveLeaves: async (days: LeaveInput[], options: LeaveBatchOptions = {}) =>
+    (await client.post(`${base}/leaves`, { days, ...options })).data,
   removeLeave: async (id: string) =>
     (await client.delete(`${base}/leaves/${id}`)).data,
   updateLeave: async (id: string, day: LeaveInput) =>
@@ -102,6 +103,7 @@ export const attendanceApi = {
     (await client.put<Worksite>(`${base}/worksites/${id}`, site)).data,
   createSite: async (site: {
     name: string;
+    address?: string | null;
     latitude: number;
     longitude: number;
     radiusMeters: number;

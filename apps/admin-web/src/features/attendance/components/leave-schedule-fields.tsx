@@ -1,6 +1,6 @@
 'use client';
 
-import { Input } from '@/components/ui/input';
+import { AttendanceTimeField } from './attendance-time-field';
 import {
   LEAVE_LABELS,
   type LeaveType,
@@ -34,9 +34,9 @@ export function LeaveScheduleFields({
   const error = submitted && required ? validateDraft(day) : null;
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <div>
-        <p className="mb-2 text-xs font-medium">휴가 종류</p>
+        <p className="mb-3 text-sm font-medium">휴가 종류</p>
         <div className="grid grid-cols-3 gap-1 rounded-lg bg-slate-100 p-1">
           {(Object.entries(LEAVE_LABELS) as [LeaveType, string][]).map(
             ([type, label]) => (
@@ -57,39 +57,30 @@ export function LeaveScheduleFields({
       </div>
       {day.type !== 'full' && (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 sm:gap-3">
-            <label className="block min-w-0 space-y-2 text-xs font-medium">
-              출근 예정
-              <Input
-                id={`leave-start-${id}`}
-                type="time"
-                className="h-11 sm:h-9"
-                required={required}
-                value={day.start ?? ''}
-                onChange={(event) =>
-                  onChange(changeStart(day, event.target.value, normalEnd))
-                }
-              />
-            </label>
-            <label className="block min-w-0 space-y-2 text-xs font-medium">
-              퇴근 예정
-              {day.type === 'am' && (
-                <span className="ml-1 text-[10px] font-normal text-indigo-600">
-                  {day.manualEnd ? '직접 수정' : '자동'}
-                </span>
-              )}
-              <Input
+          <div className="grid min-w-0 grid-cols-1 gap-5 sm:grid-cols-2">
+            <AttendanceTimeField
+              id={`leave-start-${id}`}
+              label="출근 예정"
+              required={required}
+              value={day.start ?? ''}
+              onChange={(value) => onChange(changeStart(day, value, normalEnd))}
+            />
+            <div className="min-w-0 space-y-2">
+              <AttendanceTimeField
                 id={`leave-end-${id}`}
-                type="time"
-                className="h-11 sm:h-9"
+                label="퇴근 예정"
                 required={required}
-                aria-invalid={!!error}
                 value={day.end ?? ''}
-                onChange={(event) =>
-                  onChange({ ...day, end: event.target.value, manualEnd: true })
+                onChange={(value) =>
+                  onChange({ ...day, end: value, manualEnd: true })
                 }
               />
-            </label>
+              {day.type === 'am' && (
+                <p className="text-xs text-indigo-600">
+                  {day.manualEnd ? '직접 수정한 시각' : '자동으로 계산한 시각'}
+                </p>
+              )}
+            </div>
           </div>
           {recommendation && (
             <button

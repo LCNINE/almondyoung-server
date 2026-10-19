@@ -1,12 +1,12 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useId, useRef } from 'react';
 import Image from 'next/image';
 import { useQuery } from '@tanstack/react-query';
-import { Plus, X } from 'lucide-react';
+import { CalendarDays, Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
   DialogContent,
@@ -32,6 +32,10 @@ import {
   type RequestStatus,
 } from '@packages/domain-types/attendance';
 import { toast } from 'sonner';
+import { AttendanceTimeField } from './attendance-time-field';
+
+const PHOTO_EXAMPLE_BLUR_DATA_URL =
+  'data:image/webp;base64,UklGRkoAAABXRUJQVlA4ID4AAACwAQCdASoIAAgAA8BgJZwAAvxVXVeAAPvJN4RXbCqkb/EooHAAo1sq0a0oNxsWWXY2sUzBATgwoL+Q3AAAAA==';
 
 const labels: Record<RequestStatus, string> = {
   pending: '검토 중',
@@ -91,7 +95,7 @@ export function CorrectionRequests({
   }
 
   return (
-    <section className="min-w-0 space-y-6">
+    <section className="min-w-0 space-y-6" aria-busy={query.isPending}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           {showHeading && (
@@ -123,7 +127,38 @@ export function CorrectionRequests({
         </p>
       )}
       {query.isPending && (
-        <p className="py-8 text-sm text-slate-400">요청을 불러오고 있어요.</p>
+        <>
+          <p role="status" className="sr-only">
+            요청을 불러오고 있어요.
+          </p>
+          {Array.from({ length: 2 }, (_, index) => (
+            <div
+              key={index}
+              aria-hidden="true"
+              className="min-w-0 space-y-4 rounded-2xl border bg-white p-4 sm:p-6"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <Skeleton className="h-6 w-32 motion-reduce:animate-none" />
+                <Skeleton className="h-6 w-20 rounded-full motion-reduce:animate-none" />
+              </div>
+              <Skeleton className="h-5 w-56 max-w-full motion-reduce:animate-none" />
+              {review && (
+                <Skeleton className="h-14 w-full rounded-xl motion-reduce:animate-none" />
+              )}
+              <div className="space-y-2 py-1">
+                <Skeleton className="h-5 w-full motion-reduce:animate-none" />
+                <Skeleton className="h-5 w-3/4 motion-reduce:animate-none" />
+              </div>
+              {review && (
+                <Skeleton className="h-24 w-full rounded-xl motion-reduce:animate-none" />
+              )}
+              <Skeleton className="h-11 w-24 motion-reduce:animate-none" />
+              <div className="border-t pt-3">
+                <Skeleton className="h-11 w-20 motion-reduce:animate-none" />
+              </div>
+            </div>
+          ))}
+        </>
       )}
       {query.data?.map((request) => (
         <article
@@ -306,9 +341,20 @@ function RequestHistory({ requestId }: { requestId: string }) {
         처리 이력 {open ? '접기' : '보기'}
       </button>
       {open && (
-        <div className="mt-3 space-y-3">
+        <div className="mt-3 space-y-3" aria-busy={query.isPending}>
           {query.isPending ? (
-            <p className="text-xs text-slate-400">이력을 불러오고 있어요.</p>
+            <>
+              <p role="status" className="sr-only">
+                이력을 불러오고 있어요.
+              </p>
+              {Array.from({ length: 2 }, (_, index) => (
+                <div key={index} aria-hidden="true" className="space-y-2 py-1">
+                  <Skeleton className="h-4 w-full max-w-sm motion-reduce:animate-none" />
+                  <Skeleton className="h-4 w-3/4 max-w-xs motion-reduce:animate-none" />
+                  <Skeleton className="h-4 w-1/2 motion-reduce:animate-none" />
+                </div>
+              ))}
+            </>
           ) : query.isError ? (
             <p className="text-xs text-red-600">이력을 불러오지 못했어요.</p>
           ) : (
@@ -350,12 +396,24 @@ function DecisionForm({
 
   return (
     <div className="space-y-3 border-t pt-4">
-      <Textarea
-        placeholder="직원에게 전달할 처리 사유"
-        aria-label="처리 사유"
-        value={reason}
-        onChange={(event) => setReason(event.target.value)}
-      />
+      <label className="group relative block">
+        <span
+          className={`pointer-events-none absolute left-3 z-10 text-slate-500 transition-all group-focus-within:top-3 group-focus-within:text-xs group-focus-within:text-indigo-600 motion-reduce:transition-none ${reason ? 'top-3 text-xs' : 'top-4 text-base'}`}
+        >
+          처리 사유
+        </span>
+        <Textarea
+          aria-label="처리 사유"
+          className="min-h-28 rounded-xl bg-white pt-9"
+          disabled={disabled}
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+        />
+      </label>
+      <p className="text-xs leading-6 text-slate-500">
+        직원에게 전달할 내용을 적어 주세요. 추가 확인이나 반려 시에는 사유가
+        필요해요.
+      </p>
       <div className="grid gap-2 sm:flex sm:flex-wrap">
         <Button
           className="min-h-11 sm:min-h-9"
@@ -393,6 +451,149 @@ function localInput(instant: string | null | undefined): string {
     : '';
 }
 
+function CorrectionDateField({
+  label,
+  displayLabel,
+  value,
+  onChange,
+  required = false,
+  disabled = false,
+}: {
+  label: string;
+  displayLabel?: string;
+  value: string;
+  onChange: (value: string) => void;
+  required?: boolean;
+  disabled?: boolean;
+}) {
+  const id = useId();
+  const pickerRef = useRef<HTMLInputElement>(null);
+  const dateLabel = value
+    ? value.split('-').map(Number).join('. ') + '.'
+    : '날짜 선택';
+
+  function openPicker() {
+    const picker = pickerRef.current;
+
+    if (!picker || disabled) {
+      return;
+    }
+
+    try {
+      if (picker.showPicker) {
+        picker.showPicker();
+
+        return;
+      }
+    } catch {
+      // Older mobile browsers use the native input click instead.
+    }
+
+    picker.focus();
+    picker.click();
+  }
+
+  return (
+    <div className="group relative h-16 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-input bg-white shadow-xs focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-200">
+      <button
+        type="button"
+        aria-label={label}
+        aria-describedby={`${id}-value`}
+        aria-haspopup="dialog"
+        disabled={disabled}
+        onClick={openPicker}
+        className="relative flex h-full w-full min-w-0 items-end px-3 pt-6 pr-9 pb-2.5 text-left text-sm outline-none disabled:opacity-50"
+      >
+        <span className="pointer-events-none absolute top-2.5 left-3 text-xs text-slate-500">
+          {displayLabel ?? label}
+        </span>
+        <span id={`${id}-value`} className="min-w-0 truncate tabular-nums">
+          {dateLabel}
+        </span>
+        <CalendarDays
+          className="absolute top-1/2 right-3 size-4 -translate-y-1/2 text-slate-400"
+          aria-hidden
+        />
+      </button>
+      <input
+        ref={pickerRef}
+        id={id}
+        aria-label={`${label} 직접 선택`}
+        type="date"
+        tabIndex={-1}
+        className="absolute inset-0 h-full w-full min-w-0 max-w-full cursor-pointer appearance-none opacity-0 disabled:cursor-not-allowed"
+        required={required}
+        disabled={disabled}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
+  );
+}
+
+export function correctionTimestamp(
+  date: string,
+  time: string,
+  fallbackDate: string
+): string {
+  if (!time) {
+    return '';
+  }
+
+  return `${date || fallbackDate}T${time}`;
+}
+
+export function CorrectionDateTimeFields({
+  label,
+  value,
+  fallbackDate,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  fallbackDate: string;
+  onChange: (value: string) => void;
+}) {
+  const [dateDraft, setDateDraft] = useState('');
+  const [savedDate, time = ''] = value.split('T');
+  const date = savedDate || dateDraft || fallbackDate;
+
+  return (
+    <div className="min-w-0 space-y-3">
+      <p className="text-sm font-medium text-slate-700">{label}</p>
+      <div className="grid min-w-0 grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] gap-3">
+        <CorrectionDateField
+          label={`${label} 날짜`}
+          displayLabel="날짜"
+          value={date}
+          onChange={(next) => {
+            setDateDraft(next);
+
+            if (time) {
+              onChange(
+                next ? correctionTimestamp(next, time, fallbackDate) : ''
+              );
+            }
+          }}
+        />
+        <AttendanceTimeField
+          label={`${label} 시각`}
+          displayLabel="시각"
+          value={time}
+          clearable
+          onChange={(next) => {
+            if (!next) {
+              setDateDraft('');
+            }
+
+            onChange(correctionTimestamp(date, next, fallbackDate));
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function CorrectionForm({
   existing,
   onClose,
@@ -407,6 +608,8 @@ function CorrectionForm({
   const [files, setFiles] = useState<File[]>([]);
   const [example, setExample] = useState(false);
   const [retained, setRetained] = useState(existing?.fileIds ?? []);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const submitLock = useRef(false);
   const thumbnails = useMemo(
     () => files.map((file) => URL.createObjectURL(file)),
     [files]
@@ -470,166 +673,214 @@ function CorrectionForm({
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open && !mutation.isPending) {
+        if (!open && !submitLock.current && !mutation.isPending) {
           onClose();
         }
       }}
     >
-      <DialogContent className="flex max-h-[90dvh] w-[calc(100%-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0 [&>[data-slot=dialog-close]]:top-2 [&>[data-slot=dialog-close]]:right-2 [&>[data-slot=dialog-close]]:flex [&>[data-slot=dialog-close]]:size-11 [&>[data-slot=dialog-close]]:items-center [&>[data-slot=dialog-close]]:justify-center">
-        <DialogHeader className="shrink-0 border-b px-4 py-5 pr-12 sm:pr-14 sm:pl-6">
-          <DialogTitle>정정 / 예외 요청</DialogTitle>
-          <DialogDescription>
-            실제 근무 시각과 상황을 알려 주세요.
+      <DialogContent
+        showCloseButton={false}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          titleRef.current?.focus();
+        }}
+        onEscapeKeyDown={(event) => {
+          if (submitLock.current) {
+            event.preventDefault();
+          }
+        }}
+        className="inset-x-0 top-auto bottom-0 left-0 flex h-dvh max-h-dvh w-full min-w-0 max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:h-auto sm:max-h-[90dvh] sm:w-[calc(100%-2rem)] sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border"
+      >
+        <DialogHeader className="w-full min-w-0 shrink-0 px-3 pt-[env(safe-area-inset-top)] sm:px-4">
+          <div className="grid min-h-16 grid-cols-[56px_minmax(0,1fr)_56px] items-center gap-2">
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-11 rounded-full"
+              aria-label="정정 요청 창 닫기"
+              disabled={mutation.isPending}
+              onClick={() => {
+                if (!submitLock.current) {
+                  onClose();
+                }
+              }}
+            >
+              <X className="size-5" aria-hidden />
+            </Button>
+            <DialogTitle
+              ref={titleRef}
+              tabIndex={-1}
+              className="text-center text-base outline-none"
+            >
+              정정 / 예외 요청
+            </DialogTitle>
+            <Button
+              type="submit"
+              form="correction-form"
+              variant="ghost"
+              className="h-11 px-2 text-base font-semibold text-indigo-600"
+              disabled={
+                mutation.isPending || !reason.trim() || (!checkIn && !checkOut)
+              }
+            >
+              {mutation.isPending ? '접수 중' : '요청'}
+            </Button>
+          </div>
+          <DialogDescription className="sr-only">
+            수정할 출퇴근 시각과 사유를 입력해 주세요.
           </DialogDescription>
         </DialogHeader>
         <form
           id="correction-form"
-          className="min-h-0 space-y-5 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6"
+          className="min-h-0 w-full min-w-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-4 pt-2 pb-[max(24px,env(safe-area-inset-bottom))] sm:flex-initial sm:px-6"
           onSubmit={(event) => {
             event.preventDefault();
+
+            if (submitLock.current || mutation.isPending) {
+              return;
+            }
+
+            submitLock.current = true;
 
             void mutation
               .mutateAsync()
               .then(onClose)
-              .catch(() => undefined);
+              .catch(() => undefined)
+              .finally(() => {
+                submitLock.current = false;
+              });
           }}
         >
-          <label className="block space-y-2 text-xs">
-            근무일
-            <Input
+          <fieldset
+            disabled={mutation.isPending}
+            className="m-0 w-full min-w-0 max-w-full space-y-5 border-0 p-0"
+          >
+            <CorrectionDateField
+              label="근무일"
               required
-              type="date"
-              className="h-11 sm:h-9"
               value={day}
               disabled={!!existing}
-              onChange={(event) => setDay(event.target.value)}
+              onChange={setDay}
             />
-          </label>
-          <div className="space-y-4">
-            <label className="block space-y-2 text-xs">
-              실제 출근 시각
-              <Input
-                type="datetime-local"
-                className="h-11 sm:h-9"
+            <div className="space-y-4">
+              <CorrectionDateTimeFields
+                label="실제 출근"
                 value={checkIn}
-                onChange={(event) => setCheckIn(event.target.value)}
+                fallbackDate={day}
+                onChange={setCheckIn}
               />
-            </label>
-            <label className="block space-y-2 text-xs">
-              실제 퇴근 시각
-              <Input
-                type="datetime-local"
-                className="h-11 sm:h-9"
+              <CorrectionDateTimeFields
+                label="실제 퇴근"
                 value={checkOut}
-                onChange={(event) => setCheckOut(event.target.value)}
+                fallbackDate={day}
+                onChange={setCheckOut}
               />
-            </label>
-          </div>
-          <p className="text-xs text-slate-400">
-            수정할 시각만 입력해 주세요. 다음 날 퇴근했다면 날짜도 바꿔 주세요.
-          </p>
-          <label className="block space-y-2 text-xs">
-            상세 사유
-            <Textarea
-              required
-              maxLength={5000}
-              rows={5}
-              placeholder="기록을 남기지 못한 상황과 실제 근무 내용을 적어 주세요."
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-            />
-          </label>
-          <div>
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-medium">
-                참고 이미지 <span className="ml-1 text-slate-400">선택</span>
-              </p>
-              <button
-                type="button"
-                className="min-h-11 text-xs text-indigo-600"
-                onClick={() => setExample(true)}
-              >
-                예시 보기 ›
-              </button>
             </div>
-            <p className="my-3 text-xs leading-6 text-slate-400">
-              상황 확인에 도움이 되는 사진이나 스크린샷을 첨부해 주세요.
-              <br />
-              첨부하지 않아도 요청할 수 있어요.
+            <p className="text-xs leading-6 text-slate-500">
+              수정할 시각만 선택하세요. 다음 날 퇴근했다면 날짜도 바꿔 주세요.
             </p>
-            <div className="flex flex-wrap gap-3">
-              {retained.map((id, index) => (
+            <div className="space-y-2">
+              <label className="group relative block">
+                <span
+                  className={`pointer-events-none absolute left-3 z-10 text-slate-500 transition-all group-focus-within:top-3 group-focus-within:text-xs group-focus-within:text-indigo-600 motion-reduce:transition-none ${reason ? 'top-3 text-xs' : 'top-4 text-base'}`}
+                >
+                  상세 사유
+                </span>
+                <Textarea
+                  aria-label="상세 사유"
+                  aria-describedby="correction-reason-help"
+                  required
+                  maxLength={5000}
+                  rows={3}
+                  className="min-h-28 w-full min-w-0 max-w-full resize-none rounded-xl bg-white pt-9 text-base"
+                  value={reason}
+                  onChange={(event) => setReason(event.target.value)}
+                />
+              </label>
+              <p
+                id="correction-reason-help"
+                className="text-xs leading-6 text-slate-500"
+              >
+                기록을 수정해야 하는 상황을 적어 주세요.
+              </p>
+            </div>
+            <div>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium">
+                  참고 이미지 <span className="ml-1 text-slate-400">선택</span>
+                </p>
                 <button
                   type="button"
-                  key={id}
-                  className="rounded-lg border p-3 text-xs"
-                  onClick={() =>
-                    setRetained((current) =>
-                      current.filter((value) => value !== id)
-                    )
-                  }
+                  className="min-h-11 text-xs text-indigo-600"
+                  onClick={() => setExample(true)}
                 >
-                  기존 이미지 {index + 1} ×
+                  예시 보기 ›
                 </button>
-              ))}
-              {thumbnails.map((url, index) => (
-                <div key={url} className="relative">
-                  <Image
-                    unoptimized
-                    src={url}
-                    width={80}
-                    height={80}
-                    className="size-20 rounded-lg object-cover"
-                    alt={`첨부 ${index + 1}`}
-                  />
+              </div>
+
+              <div className="flex min-w-0 flex-wrap gap-3 pt-2">
+                {retained.map((id, index) => (
                   <button
                     type="button"
-                    aria-label={`첨부 ${index + 1} 제거`}
-                    className="absolute -top-2 -right-2 flex size-11 items-center justify-center rounded-full bg-white shadow"
+                    key={id}
+                    className="rounded-lg border p-3 text-xs"
                     onClick={() =>
-                      setFiles((current) =>
-                        current.filter((_, i) => i !== index)
+                      setRetained((current) =>
+                        current.filter((value) => value !== id)
                       )
                     }
                   >
-                    <X className="size-3" />
+                    기존 이미지 {index + 1} ×
                   </button>
-                </div>
-              ))}
-              {files.length + retained.length < 3 && (
-                <label className="flex size-20 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-indigo-200 text-xs text-indigo-500">
-                  <Plus className="size-4" />
-                  이미지 추가
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    multiple
-                    className="sr-only"
-                    onChange={addFiles}
-                  />
-                </label>
-              )}
+                ))}
+                {thumbnails.map((url, index) => (
+                  <div key={url} className="relative">
+                    <Image
+                      unoptimized
+                      src={url}
+                      width={80}
+                      height={80}
+                      className="size-20 rounded-lg object-cover"
+                      alt={`첨부 ${index + 1}`}
+                    />
+                    <button
+                      type="button"
+                      aria-label={`첨부 ${index + 1} 제거`}
+                      className="absolute -top-2 -right-2 flex size-11 items-center justify-center rounded-full bg-white shadow"
+                      onClick={() =>
+                        setFiles((current) =>
+                          current.filter((_, i) => i !== index)
+                        )
+                      }
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </div>
+                ))}
+                {files.length + retained.length < 3 && (
+                  <label className="flex size-20 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-indigo-200 text-xs text-indigo-500">
+                    <Plus className="size-4" />
+                    이미지 추가
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      multiple
+                      className="sr-only"
+                      onChange={addFiles}
+                    />
+                  </label>
+                )}
+              </div>
+              <p className="mt-3 text-[11px] text-slate-400">
+                최대 3장 · 장당 10MB · JPG, PNG, WEBP
+              </p>
             </div>
-            <p className="mt-3 text-[11px] text-slate-400">
-              최대 3장 · 장당 10MB · JPG, PNG, WEBP
+            <p className="pt-1 text-xs text-slate-400">
+              담당자 승인 후 기록에 반영돼요.
             </p>
-          </div>
+          </fieldset>
         </form>
-        <div className="flex shrink-0 flex-col gap-3 border-t px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <span className="text-xs text-slate-400">
-            담당자 승인 후 기록에 반영돼요.
-          </span>
-          <Button
-            type="submit"
-            form="correction-form"
-            className="min-h-11 sm:min-h-9"
-            disabled={
-              mutation.isPending || !reason.trim() || (!checkIn && !checkOut)
-            }
-          >
-            {mutation.isPending ? '접수 중' : '요청하기'}
-          </Button>
-        </div>
       </DialogContent>
       <Dialog open={example} onOpenChange={setExample}>
         <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-sm overflow-y-auto p-4 sm:p-6 [&>[data-slot=dialog-close]]:top-2 [&>[data-slot=dialog-close]]:right-2 [&>[data-slot=dialog-close]]:flex [&>[data-slot=dialog-close]]:size-11 [&>[data-slot=dialog-close]]:items-center [&>[data-slot=dialog-close]]:justify-center">
@@ -640,13 +891,18 @@ function CorrectionForm({
               오류 화면도 괜찮아요.
             </DialogDescription>
           </DialogHeader>
-          <Image
-            src="/attendance/photo-example.png"
-            width={600}
-            height={800}
-            alt="가상 인물이 얼굴과 사무실을 함께 담은 촬영 구도 예시"
-            className="max-h-[55dvh] w-full rounded-xl object-cover"
-          />
+          <div className="relative mx-auto aspect-square w-full max-w-[55dvh] overflow-hidden rounded-xl bg-slate-100">
+            <Image
+              src="/attendance/photo-example-portrait.webp"
+              placeholder="blur"
+              blurDataURL={PHOTO_EXAMPLE_BLUR_DATA_URL}
+              fill
+              sizes="(max-width: 640px) calc(100vw - 4rem), 336px"
+              loading="eager"
+              alt="가상 인물의 선명한 얼굴과 사무실이 함께 보이는 촬영 구도 예시"
+              className="object-cover"
+            />
+          </div>
           <p className="text-xs text-slate-400">
             AI 가상 인물 · 촬영 구도 예시 · 첨부는 선택이에요.
           </p>

@@ -80,15 +80,17 @@ describe('attendance calendar audience and edit controls', () => {
     expect(html).not.toContain('경리나라');
   });
 
-  it('shows both employees in shared view but exposes edit and delete only for the owner, including masters', () => {
+  it('shows both employees in shared view and keeps day details out of the month view', () => {
     const html = render(
       createElement(SharedCalendar, { initialScope: 'shared' })
     );
 
     expect(html).toContain('김아몬드');
     expect(html).toContain('이하늘');
-    expect(html.match(/>수정<\/button>/g)).toHaveLength(1);
-    expect(html.match(/>삭제<\/button>/g)).toHaveLength(1);
+    expect(html).not.toContain('>수정</button>');
+    expect(html).not.toContain('>삭제</button>');
+    expect(html).toContain('aria-label="2026-10-16 내 휴가·반차 등록"');
+    expect(html).toContain('좌우로 밀어 월을 넘기고');
     expect(html).toContain('내 일정만 보기');
     expect(html).not.toContain('경리나라');
   });

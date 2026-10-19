@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { attendanceApi } from '@/lib/api/domains/attendance';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ATTENDANCE_KEY, useAttendance } from '../hooks/use-attendance';
 import { formatAttendanceTime } from '../lib/attendance-model';
 
@@ -36,7 +37,7 @@ export function AttendanceRecords({
   }
 
   return (
-    <section className="min-w-0 space-y-6">
+    <section className="min-w-0 space-y-6" aria-busy={query.isPending}>
       <div>
         {showHeading && (
           <h1 className="text-2xl font-bold">
@@ -48,12 +49,13 @@ export function AttendanceRecords({
         </p>
       </div>
       {me.data?.isMaster && (
-        <div className="space-y-3">
+        <div className="space-y-3" aria-busy={people.isPending}>
           <label className="block space-y-2 text-sm">
             기록을 볼 직원
             <select
               className="block min-h-11 w-full min-w-0 max-w-sm rounded-md border bg-white p-2 text-base sm:text-sm"
               value={selectedUserId}
+              disabled={people.isPending}
               onChange={(event) => setSelectedUserId(event.target.value)}
             >
               <option value="">내 기록</option>
@@ -67,7 +69,9 @@ export function AttendanceRecords({
             </select>
           </label>
           {people.isPending && (
-            <p className="text-sm">직원 목록을 불러오고 있어요.</p>
+            <p role="status" className="sr-only">
+              직원 목록을 불러오고 있어요.
+            </p>
           )}
           {people.isError && (
             <p role="alert" className="text-sm text-red-600">
@@ -82,10 +86,13 @@ export function AttendanceRecords({
           기록을 불러오지 못했어요.{' '}
           <button onClick={() => query.refetch()}>다시 시도</button>
         </p>
-      ) : query.isPending ? (
-        <p>기록을 불러오고 있어요.</p>
       ) : (
         <div className="overflow-hidden rounded-xl border bg-white">
+          {query.isPending && (
+            <p role="status" className="sr-only">
+              기록을 불러오고 있어요.
+            </p>
+          )}
           <table className="w-full table-fixed text-left text-xs sm:text-sm">
             <thead className="bg-slate-50 text-xs text-slate-400">
               <tr>
@@ -95,7 +102,19 @@ export function AttendanceRecords({
               </tr>
             </thead>
             <tbody>
-              {query.data.map((session) => (
+              {query.isPending &&
+                Array.from({ length: 5 }, (_, row) => (
+                  <tr key={row} className="border-t" aria-hidden="true">
+                    {Array.from({ length: 3 }, (_, column) => (
+                      <td key={column} className="px-2 py-4 sm:px-4">
+                        <Skeleton
+                          className={`h-4 motion-reduce:animate-none sm:h-5 ${column === 0 ? 'w-20 max-w-full' : 'w-12 max-w-full'}`}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              {query.data?.map((session) => (
                 <tr key={session.id} className="border-t">
                   <td className="px-2 py-4 sm:px-4">{session.workDate}</td>
                   <td className="px-2 py-4 sm:px-4">
@@ -116,7 +135,7 @@ export function AttendanceRecords({
                   </td>
                 </tr>
               ))}
-              {!query.data.length && (
+              {query.isSuccess && !query.data.length && (
                 <tr>
                   <td colSpan={3} className="p-10 text-center text-slate-400">
                     아직 기록이 없어요.

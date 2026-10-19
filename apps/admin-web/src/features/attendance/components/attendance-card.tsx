@@ -21,6 +21,10 @@ import {
 import { describeStatus, formatAttendanceTime } from '../lib/attendance-model';
 import { toast } from 'sonner';
 import {
+  playAttendanceVoice,
+  prepareAttendanceVoice,
+} from '../lib/attendance-sound';
+import {
   LEAVE_LABELS,
   seoulClock,
   type LocationSample,
@@ -74,7 +78,7 @@ export function AttendanceCard() {
     const kind = me.status === 'working' ? 'out' : 'in';
     const site =
       me.worksites.find((item) => item.id === siteId) ?? me.worksites[0];
-    let sound: AudioContext | undefined;
+    let voiceReady = false;
 
     try {
       if (!site) {
@@ -85,9 +89,8 @@ export function AttendanceCard() {
 
       if (me.settings.sound) {
         try {
-          sound = new AudioContext();
-
-          await sound.resume();
+          prepareAttendanceVoice();
+          voiceReady = true;
         } catch {
           /* Recording works even if sound is unavailable. */
         }
@@ -136,30 +139,8 @@ export function AttendanceCard() {
         kind === 'in' ? '출근을 기록했어요.' : '퇴근을 기록했어요. 수고했어요!'
       );
 
-      if (sound) {
-        const gain = sound.createGain();
-
-        gain.gain.setValueAtTime(0.06, sound.currentTime);
-
-        gain.gain.exponentialRampToValueAtTime(0.001, sound.currentTime + 0.35);
-
-        const tone = sound.createOscillator();
-
-        tone.frequency.setValueAtTime(
-          kind === 'in' ? 660 : 520,
-          sound.currentTime
-        );
-
-        tone.frequency.setValueAtTime(
-          kind === 'in' ? 880 : 440,
-          sound.currentTime + 0.12
-        );
-
-        tone.connect(gain).connect(sound.destination);
-
-        tone.start();
-
-        tone.stop(sound.currentTime + 0.35);
+      if (voiceReady) {
+        void playAttendanceVoice(kind).catch(() => undefined);
       }
     } catch (error) {
       if (!punch.isError) {
@@ -168,10 +149,6 @@ export function AttendanceCard() {
 
       await query.refetch();
     } finally {
-      if (sound) {
-        window.setTimeout(() => void sound?.close(), 500);
-      }
-
       lock.current = false;
 
       setBusy(false);
@@ -330,6 +307,7 @@ export function AttendanceCard() {
             </p>
             {me.isMaster && !me.worksites.length && (
               <Link
+                prefetch={true}
                 href={`${links}/worksites`}
                 className="mt-3 flex min-h-11 items-center justify-center rounded-xl border border-indigo-200 px-4 py-2 text-sm font-semibold text-indigo-600 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
               >
@@ -341,10 +319,18 @@ export function AttendanceCard() {
             aria-label="출결 메뉴"
             className="mt-5 grid grid-cols-2 gap-2 text-sm font-medium text-slate-600 [&_a]:flex [&_a]:min-h-11 [&_a]:items-center [&_a]:justify-center [&_a]:rounded-lg [&_a]:bg-slate-50 [&_a]:px-2 [&_a]:py-2 [&_a]:text-center [&_a]:focus-visible:outline-none [&_a]:focus-visible:ring-2 [&_a]:focus-visible:ring-indigo-500 [&_a]:active:bg-slate-100"
           >
-            <Link href={`${links}/records`}>내 기록</Link>
-            <Link href={`${links}/calendar`}>내 일정</Link>
-            <Link href={`${links}/requests`}>정정 / 예외 요청</Link>
-            <Link href={`${links}/settings`}>알림 설정</Link>
+            <Link prefetch={true} href={`${links}/records`}>
+              내 기록
+            </Link>
+            <Link prefetch={true} href={`${links}/calendar`}>
+              내 일정
+            </Link>
+            <Link prefetch={true} href={`${links}/requests`}>
+              정정 / 예외 요청
+            </Link>
+            <Link prefetch={true} href={`${links}/settings`}>
+              알림 설정
+            </Link>
             {me.isMaster && me.worksites.length > 0 && (
               <Link className="col-span-2" href={`${links}/worksites`}>
                 근무지 관리

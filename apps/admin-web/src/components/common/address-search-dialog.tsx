@@ -33,15 +33,15 @@ export function AddressSearchDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md gap-0 overflow-hidden p-0">
-        <DialogHeader className="px-6 pb-2 pt-6">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md gap-0 overflow-hidden p-0 [&>button]:top-2 [&>button]:right-2 [&>button]:flex [&>button]:size-11 [&>button]:items-center [&>button]:justify-center">
+        <DialogHeader className="px-6 pt-6 pr-16 pb-3 text-left">
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         {open && (
           <DaumPostcodeEmbed
             onComplete={handleComplete}
             autoClose={false}
-            style={{ height: 470 }}
+            style={{ height: 'min(470px, calc(100dvh - 8rem))', width: '100%' }}
           />
         )}
       </DialogContent>

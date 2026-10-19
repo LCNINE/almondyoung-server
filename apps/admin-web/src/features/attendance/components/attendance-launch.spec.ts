@@ -53,6 +53,8 @@ describe('attendance PWA entry', () => {
 
       expect(html).toContain('오늘의 근무');
       expect(html).toContain('출근하기');
+      expect(html).not.toContain('출근음 테스트');
+      expect(html).not.toContain('퇴근음 테스트');
       expect(html).toContain('김아몬드');
       expect(html).not.toContain('오늘도 반가워요.');
       expect(html).not.toContain('홈 화면에 추가하면');

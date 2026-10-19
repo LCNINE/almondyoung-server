@@ -57,11 +57,11 @@ self.addEventListener('push', (event) => {
       }
 
       await self.registration.showNotification(
-        payload.title || '아몬드영 출결',
+        payload.title || '아몬드영 워크',
         {
-          body: payload.body || '출결 페이지에서 확인해 주세요.',
+          body: payload.body || '아몬드영 워크에서 확인해 주세요.',
           tag: payload.tag,
-          icon: '/attendance/icon.svg',
+          icon: '/attendance/icon-192.png?v=clock-2',
           data: { url: payload.url },
         }
       );

@@ -57,6 +57,10 @@ CHANNEL_ADAPTER_SERVICE_URL=http://localhost:3070
 # channel-adapter와 동일한 값이어야 하며 브라우저에 노출되는 NEXT_PUBLIC_*로 설정하면 안 됩니다.
 CHANNEL_ADAPTER_INTERNAL_KEY=replace-with-a-server-only-secret
 
+# === 근무지 주소를 위치로 변환 (카카오 Local API) ===
+# 서버 전용 REST API 키입니다. NEXT_PUBLIC_* 이름으로 노출하지 않습니다.
+KAKAO_REST_API_KEY=
+
 # === Development Settings ===
 NODE_ENV=development
 ```

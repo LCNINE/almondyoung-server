@@ -6,6 +6,7 @@ import { attendanceApi } from '@/lib/api/domains/attendance';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import { LEAVE_LABELS, STATUS_LABELS } from '@packages/domain-types/attendance';
 import { ATTENDANCE_KEY } from '../hooks/use-attendance';
 
@@ -33,7 +34,7 @@ export function StaffOverview() {
   ];
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-6" aria-busy={query.isPending}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">직원 근무 현황</h1>
@@ -62,9 +63,18 @@ export function StaffOverview() {
         ].map(([label, count]) => (
           <div key={label} className="rounded-xl border bg-white p-5">
             <p className="text-xs text-slate-400">{label}</p>
-            <p className="mt-3 text-3xl font-semibold">
-              {query.isPending || query.isError ? '—' : count}
-            </p>
+            <div className="mt-3 h-9 text-3xl font-semibold">
+              {query.isPending ? (
+                <Skeleton
+                  aria-hidden="true"
+                  className="h-9 w-12 motion-reduce:animate-none"
+                />
+              ) : query.isError ? (
+                '—'
+              ) : (
+                count
+              )}
+            </div>
           </div>
         ))}
       </div>
@@ -93,7 +103,21 @@ export function StaffOverview() {
           현황을 불러오지 못했어요. 새로고침해 주세요.
         </p>
       ) : query.isPending ? (
-        <p className="py-8 text-sm text-slate-400">현황을 불러오고 있어요.</p>
+        <div className="divide-y rounded-xl border bg-white">
+          <p role="status" className="sr-only">
+            현황을 불러오고 있어요.
+          </p>
+          {Array.from({ length: 5 }, (_, index) => (
+            <div
+              key={index}
+              aria-hidden="true"
+              className="flex flex-wrap items-center justify-between gap-3 p-5"
+            >
+              <Skeleton className="h-6 w-20 motion-reduce:animate-none" />
+              <Skeleton className="h-6 w-24 rounded-full motion-reduce:animate-none" />
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="divide-y rounded-xl border bg-white">
           {visible.map((person) => (

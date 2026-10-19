@@ -6,13 +6,16 @@ import { toast } from 'sonner';
 import {
   disableAttendancePush,
   enableAttendancePush,
+  sendAttendanceTestPush,
 } from '../lib/browser-push';
 
 export function BrowserPushSettings() {
-  const [busy, setBusy] = useState(false);
+  const [action, setAction] = useState<
+    'connect' | 'disconnect' | 'test' | null
+  >(null);
 
   async function change(enabled: boolean) {
-    setBusy(true);
+    setAction(enabled ? 'connect' : 'disconnect');
 
     try {
       await (enabled ? enableAttendancePush() : disableAttendancePush());
@@ -23,7 +26,21 @@ export function BrowserPushSettings() {
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
-      setBusy(false);
+      setAction(null);
+    }
+  }
+
+  async function sendTest() {
+    setAction('test');
+
+    try {
+      await sendAttendanceTestPush();
+
+      toast.success('테스트 알림을 보냈어요. 알림 센터를 확인해 주세요.');
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setAction(null);
     }
   }
 
@@ -35,10 +52,10 @@ export function BrowserPushSettings() {
         주세요. Android는 브라우저 메뉴에서 홈 화면 추가 또는 앱 설치를 선택해
         주세요. 알림 도착 시각은 기기와 네트워크 상태에 따라 달라질 수 있어요.
       </p>
-      <div className="flex flex-col gap-3 sm:flex-row">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
         <Button
           className="min-h-11"
-          disabled={busy}
+          disabled={action !== null}
           onClick={() => change(true)}
         >
           알림 연결하기
@@ -46,12 +63,23 @@ export function BrowserPushSettings() {
         <Button
           className="min-h-11"
           variant="outline"
-          disabled={busy}
+          disabled={action !== null}
+          onClick={sendTest}
+        >
+          {action === 'test' ? '보내는 중…' : '테스트 알림 보내기'}
+        </Button>
+        <Button
+          className="min-h-11"
+          variant="outline"
+          disabled={action !== null}
           onClick={() => change(false)}
         >
           이 기기 알림 끄기
         </Button>
       </div>
+      <p className="text-xs leading-6 text-slate-400">
+        알림을 연결한 뒤 테스트해 보세요. 이 기기로 테스트 알림을 보내요.
+      </p>
     </section>
   );
 }
