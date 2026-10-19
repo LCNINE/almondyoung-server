@@ -855,6 +855,13 @@
       "when": 1792348634830,
       "tag": "20261018183714_drop-dead-sales-order-line-status",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1792452873987,
+      "tag": "20261019233433_add-sales-order-cancellation-lines",
+      "breakpoints": true
     }
   ]
 }
