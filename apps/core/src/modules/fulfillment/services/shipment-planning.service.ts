@@ -39,6 +39,7 @@ import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { loadReservationQueueKey } from './reservation-queue-key';
 import { ShipmentReservationService } from './shipment-reservation.service';
+import { transitionShipments } from '../shipment/shipment-lifecycle';
 import { ACTIVE_WORK_ITEM_STATUSES } from './work-item-status';
 import {
   assertShipmentHasNoActiveWaybill,
@@ -537,19 +538,13 @@ export class ShipmentPlanningService {
           requestHash,
           before,
         );
-        const profileChanged = aggregate.shipment.shippingProfileId !== dto.shippingProfileId;
-        await tx
-          .update(wmsTables.shipments)
-          .set({
-            status: 'planned',
-            plannedAt: new Date(),
-            shippingProfileId: dto.shippingProfileId,
-            manifestVersion: profileChanged
-              ? aggregate.shipment.manifestVersion + 1
-              : aggregate.shipment.manifestVersion,
-            lastUpdated: new Date(),
-          })
-          .where(eq(wmsTables.shipments.id, shipmentId));
+        await transitionShipments(tx, {
+          shipmentIds: [shipmentId],
+          from: ['draft'],
+          to: 'planned',
+          shippingProfileId: dto.shippingProfileId,
+          stale: 'unreachable',
+        });
         await this.invariant.assertFulfillmentOrders(aggregate.fulfillmentOrderIds, tx);
         const after = this.snapshot(await this.loadAggregate(shipmentId, tx));
         await this.completeOperation(tx, operation.id, [{ shipmentId, role: 'target', before, after }]);
@@ -683,10 +678,13 @@ export class ShipmentPlanningService {
         if (!settleable) {
           await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_REOPEN);
           await this.markActiveWorkItemWaitingForCancellation(shipmentId, operation.id, tx);
-          await tx
-            .update(wmsTables.shipments)
-            .set({ status: 'recovery_required', recoveryCode: 'CANCEL_REPLAN_PENDING', lastUpdated: new Date() })
-            .where(eq(wmsTables.shipments.id, shipmentId));
+          await transitionShipments(tx, {
+            shipmentIds: [shipmentId],
+            from: [aggregate.shipment.status],
+            to: 'recovery_required',
+            recoveryCode: 'CANCEL_REPLAN_PENDING',
+            stale: 'unreachable',
+          });
           await this.reservations.recompute(shipmentId, tx);
           await this.invariant.assertFulfillmentOrders(aggregate.fulfillmentOrderIds, tx);
           await this.recordPendingIntent(tx, operation.id, aggregate, dto, requestedLines, before);
@@ -1195,10 +1193,13 @@ export class ShipmentPlanningService {
     tx: DbTx,
   ): Promise<CancelResponse> {
     const operationId = operation.id;
-    await tx
-      .update(wmsTables.shipments)
-      .set({ status: 'draft', recoveryCode: null, plannedAt: null, lastUpdated: new Date() })
-      .where(eq(wmsTables.shipments.id, pending.shipmentId));
+    await transitionShipments(tx, {
+      shipmentIds: [pending.shipmentId],
+      from: [aggregate.shipment.status],
+      to: 'draft',
+      expect: aggregate.shipment.status === 'recovery_required' ? { recoveryCode: 'CANCEL_REPLAN_PENDING' } : undefined,
+      stale: 'unreachable',
+    });
     await tx
       .delete(wmsTables.shipmentOperationMembers)
       .where(
@@ -1355,10 +1356,12 @@ export class ShipmentPlanningService {
           break;
 
         case 'revert_planned':
-          await tx
-            .update(wmsTables.shipments)
-            .set({ status: 'draft', plannedAt: null, lastUpdated: new Date() })
-            .where(eq(wmsTables.shipments.id, shipmentId));
+          await transitionShipments(tx, {
+            shipmentIds: [shipmentId],
+            from: ['planned'],
+            to: 'draft',
+            stale: 'unreachable',
+          });
           break;
       }
     }
@@ -1405,14 +1408,20 @@ export class ShipmentPlanningService {
         })
         .where(eq(wmsTables.fulfillmentOrderItems.id, fulfillmentOrderItemId));
     }
-    await tx
-      .update(wmsTables.shipments)
-      .set({
-        status: cancelWholeShipment ? 'canceled' : 'draft',
-        manifestVersion: aggregate.shipment.manifestVersion + 1,
-        lastUpdated: new Date(),
-      })
-      .where(eq(wmsTables.shipments.id, aggregate.shipment.id));
+    if (cancelWholeShipment) {
+      await transitionShipments(tx, {
+        shipmentIds: [aggregate.shipment.id],
+        from: ['draft'],
+        to: 'canceled',
+        stale: 'unreachable',
+      });
+    } else {
+      // 상태는 그대로 — SQL 증가식이라야 앞선 재개봉(D2)의 +1 이 지워지지 않는다.
+      await tx
+        .update(wmsTables.shipments)
+        .set({ manifestVersion: sql`${wmsTables.shipments.manifestVersion} + 1`, lastUpdated: new Date() })
+        .where(eq(wmsTables.shipments.id, aggregate.shipment.id));
+    }
 
     await this.reservations.recompute(aggregate.shipment.id, tx);
     if (tombstone) await this.reservations.recompute(tombstone.id, tx);

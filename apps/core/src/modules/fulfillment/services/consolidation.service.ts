@@ -19,6 +19,7 @@ import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
+import { transitionShipments } from '../shipment/shipment-lifecycle';
 
 const TERMINAL_OR_UNSAFE_SOURCE_STATUSES = new Set([
   'open',
@@ -511,10 +512,14 @@ export class ConsolidationService {
       .filter((aggregate) => aggregate.shipment.status !== 'draft')
       .map((aggregate) => ({ shipmentId: aggregate.shipment.id, codes: ['SHIPMENT_REOPEN_REQUIRED'] }));
     const allBlockers = this.mergeBlockers([...blockers, ...statusBlockers]);
-    await tx
-      .update(wmsTables.shipments)
-      .set({ status: 'recovery_required', recoveryCode: CONSOLIDATION_RECOVERY_CODE, lastUpdated: now })
-      .where(inArray(wmsTables.shipments.id, sourceIds));
+    await transitionShipments(tx, {
+      shipmentIds: sourceIds,
+      from: [...new Set(aggregates.map((aggregate) => aggregate.shipment.status))],
+      to: 'recovery_required',
+      recoveryCode: CONSOLIDATION_RECOVERY_CODE,
+      at: now,
+      stale: 'unreachable',
+    });
     const waitingWorkItems = await tx
       .select({
         id: wmsTables.outboundBatchWorkItems.id,

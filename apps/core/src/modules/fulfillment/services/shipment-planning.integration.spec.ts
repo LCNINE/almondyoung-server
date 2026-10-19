@@ -582,7 +582,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
     });
   });
 
-  it('K2 특성: 배치 밖 planned 전량 취소는 manifest +1', async () => {
+  it('K2 특성: 배치 밖 planned 전량 취소는 manifest +2 (D2)', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await plannedFixture(tx, 3);
       const before = await shipmentRow(tx, fixture.shipment.id);
@@ -598,11 +598,11 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
       expect(result.operationStatus).toBe('completed');
       const after = await shipmentRow(tx, fixture.shipment.id);
       expect(after.status).toBe('canceled');
-      expect(after.manifestVersion - before.manifestVersion).toBe(1);
+      expect(after.manifestVersion - before.manifestVersion).toBe(2);
     });
   });
 
-  it('K2 특성: planned 일부 취소는 manifest +1, 안 건드린 줄 버전 그대로', async () => {
+  it('K2 특성: planned 일부 취소는 manifest +2 (D2), 안 건드린 줄 버전 그대로', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await plannedFixture(tx, 3);
       // 줄이 하나뿐인 픽스처라 안 건드릴 둘째 줄을 같은 상자에 더한다.
@@ -657,7 +657,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
       expect(result.operationStatus).toBe('completed');
       const after = await shipmentRow(tx, fixture.shipment.id);
       expect(after.status).toBe('draft');
-      expect(after.manifestVersion - before.manifestVersion).toBe(1);
+      expect(after.manifestVersion - before.manifestVersion).toBe(2);
       const [untouchedAfter] = await tx
         .select()
         .from(wmsTables.shipmentLines)
