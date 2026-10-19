@@ -8,7 +8,10 @@ import * as ts from 'typescript';
  * (2) 재개봉 리셋·버전 증가 규칙, (3) 커스터디·송장 가드 순서가 다시 호출자마다 복사되어 갈린다.
  * 이 가드는 «커널 밖에서 상자를 insert·delete 하거나, 허용 목록 밖의 키를 update 하거나, 별칭(update·insert·delete 인자로 쓰이거나 export 되는 것)·raw SQL 로 우회하는 곳이
  * 없다»를 지킨다. 허용 목록은 파일 경로 단위다 — 예약 버전·출입 비밀번호 비움·검수 흔적처럼 상태가 아닌 부수 필드만 연다.
+ * 커널의 생성 도구 `insertShipment`·`insertShipmentLine`(shipment-lifecycle.ts)은 커널 폴더 밖에서 import(재export 포함)하면 위반이다.
+ * 다른 export(`openShipment` 등)는 허용한다.
  * 알려진 한계(잡지 못한다):
+ * - 범위는 `apps/core/src` 뿐이다 — `scripts/` 운영 스크립트(예: `scripts/sellmate/close-shipped-shipments.ts`)의 raw SQL 은 보지 않는다
  * - 매개변수로 테이블을 받는 헬퍼
  * - `wmsTables['shipments']` 같은 대괄호 접근
  * - 스코프를 무시한 이름 매칭(같은 이름의 다른 식별자도 별칭으로 본다)
@@ -83,6 +86,8 @@ function collectAliases(src: ts.SourceFile): Aliases {
   return aliases;
 }
 
+const KERNEL_ONLY_TOOLS = ['insertShipment', 'insertShipmentLine'];
+
 function callName(node: ts.CallExpression): string | null {
   return ts.isPropertyAccessExpression(node.expression) ? node.expression.name.text : null;
 }
@@ -141,6 +146,21 @@ function violationsIn(path: string): string[] {
   const at = (node: ts.Node) => `${file}:${src.getLineAndCharacterOfPosition(node.getStart(src)).line + 1}`;
 
   const visit = (node: ts.Node): void => {
+    // 커널의 생성 도구는 커널 밖에서 import·재export 할 수 없다(걷기 대상은 이미 커널 밖 파일뿐이다).
+    if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+      node.moduleSpecifier &&
+      ts.isStringLiteralLike(node.moduleSpecifier) &&
+      /(^|\/)shipment-lifecycle$/.test(node.moduleSpecifier.text)
+    ) {
+      const clause = ts.isImportDeclaration(node) ? node.importClause?.namedBindings : node.exportClause;
+      if (clause && (ts.isNamedImports(clause) || ts.isNamedExports(clause))) {
+        for (const el of clause.elements) {
+          const imported = (el.propertyName ?? el.name).text;
+          if (KERNEL_ONLY_TOOLS.includes(imported)) out.push(`${at(el)} — 커널 전용 ${imported} 를 밖에서 가져온다`);
+        }
+      }
+    }
     if (ts.isCallExpression(node)) {
       const name = callName(node);
       const table = tableOf(node.arguments[0], aliases);

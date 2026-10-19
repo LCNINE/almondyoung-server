@@ -94,7 +94,13 @@ export async function editShipmentManifest<T>(
   const S = wmsTables.shipments;
   const L = wmsTables.shipmentLines;
 
+  // 끝맺음 뒤에 writer 를 부르면 버전·재계산이 이미 지나가 구성이 조용히 어긋난다 — 거절한다.
+  let closed = false;
+  const assertOpen = (): void => {
+    if (closed) throw new Error('editShipmentManifest: writer used after the edit was finalized');
+  };
   const assertTarget = (shipmentId: string): void => {
+    assertOpen();
     if (!existing.has(shipmentId) && !created.includes(shipmentId)) {
       throw new Error(`editShipmentManifest: shipment ${shipmentId} is outside this edit`);
     }
@@ -107,6 +113,7 @@ export async function editShipmentManifest<T>(
 
   const writer: ManifestWriter = {
     async createShipment(box) {
+      assertOpen();
       const row = await insertShipment(tx, box);
       created.push(row.id);
       return row;
@@ -158,6 +165,7 @@ export async function editShipmentManifest<T>(
   };
 
   const result = await body(writer, aggregates);
+  closed = true;
 
   const now = new Date();
   for (const id of existingIds) {

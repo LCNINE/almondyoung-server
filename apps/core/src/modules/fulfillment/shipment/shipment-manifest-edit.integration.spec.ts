@@ -4,7 +4,7 @@ import { inRollbackTx, makeDb, makeDbService } from '../services/__support__';
 import { wireLogistics, Wired } from '../services/__support__/logistics-wiring';
 import { boxLinesOf, seedOrderWithDraftBox } from '../draft-box/__support__/draft-box-fixtures';
 import { FulfillmentInvariantService } from '../services/fulfillment-invariant.service';
-import { editShipmentManifest, ManifestEditDeps } from './shipment-manifest-edit';
+import { editShipmentManifest, ManifestEditDeps, ManifestWriter } from './shipment-manifest-edit';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -188,6 +188,59 @@ describeIfDb('editShipmentManifest', () => {
           tx,
         ),
       ).rejects.toThrow(/is not in shipment/);
+    });
+  });
+
+  it('기존 상자에 setShippingProfile 만 쓰면 manifest +1, 재계산 없음', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { deps, recompute, wired } = makeDeps();
+      const b = await box(tx, wired);
+      const s0 = await shipment(tx, b.shipmentId);
+      await editShipmentManifest(
+        deps,
+        { shipmentIds: [b.shipmentId], allow: ['draft'] },
+        (w) => w.setShippingProfile(b.shipmentId, null),
+        tx,
+      );
+      expect((await shipment(tx, b.shipmentId)).manifestVersion).toBe(s0.manifestVersion + 1);
+      expect(recompute).not.toHaveBeenCalled();
+    });
+  });
+
+  it('같은 상자에서 줄 수량과 수령인을 함께 바꿔도 manifest +1 한 번, 재계산 한 번', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { deps, recompute, wired } = makeDeps();
+      const b = await box(tx, wired);
+      const s0 = await shipment(tx, b.shipmentId);
+      await editShipmentManifest(
+        deps,
+        { shipmentIds: [b.shipmentId], allow: ['draft'] },
+        async (w) => {
+          await w.setLineQty(b.lineA, b.shipmentId, 2);
+          await w.reviseRecipient(b.shipmentId, { recipientName: 'New' });
+        },
+        tx,
+      );
+      expect((await shipment(tx, b.shipmentId)).manifestVersion).toBe(s0.manifestVersion + 1);
+      expect(recompute).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('끝맺음 뒤에 writer 를 부르면 Error', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { deps, wired } = makeDeps();
+      const b = await box(tx, wired);
+      let leaked: ManifestWriter | undefined;
+      await editShipmentManifest(
+        deps,
+        { shipmentIds: [b.shipmentId], allow: ['draft'] },
+        (w) => {
+          leaked = w;
+          return Promise.resolve();
+        },
+        tx,
+      );
+      await expect(leaked?.setLineQty(b.lineA, b.shipmentId, 1)).rejects.toThrow(/after the edit was finalized/);
     });
   });
 });

@@ -138,7 +138,7 @@ export async function openShipment(
   return { shipment, lines: inserted };
 }
 
-/** Task 6 의 쓰기 도구가 쓴다. 바깥에서 부르지 않는다(가드가 파일 단위로 허용). */
+/** Task 6 의 쓰기 도구가 쓴다. 커널 폴더 밖에서 import 하면 가드(shipment-writes.guard.spec.ts)가 위반으로 잡는다. */
 export async function insertShipment(tx: DbTx, box: NewShipment): Promise<ShipmentRow> {
   const [row] = await tx
     .insert(wmsTables.shipments)
