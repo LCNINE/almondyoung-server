@@ -790,6 +790,12 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '.where(and(eq(schema.userRecentViews.userId, userId), eq(schema.userRecentViews.id, recentViewId)));',
     note: '존재 확인(42행)과 실제 삭제(51행) 모두 userId AND id 로 스코프된다 — path 의 :recentViewId 단독으로는 삭제되지 않는다.',
   },
+  'user-service POST /iam/pii-access-logs': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/iam/pii-access/pii-access-record.controller.ts:25',
+    predicate: 'actorUserId: actor.userId,',
+    note: '행위자는 토큰에서만 정한다(본문 DTO 에 행위자 필드 없음, forbidNonWhitelisted). 기록 권한은 Manager 가 권한 사본으로 customer.pii.read 를 직접 본다.',
+  },
   'user-service GET //recent-views': {
     verdict: 'SAFE',
     evidence: 'apps/user-service/src/api/recent-views/recent-views.service.ts:31',
@@ -966,15 +972,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(154);
+    expect(targets).toHaveLength(155);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(154);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(153);
+    expect(new Set(targets.map(keyOf)).size).toBe(155);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(154);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

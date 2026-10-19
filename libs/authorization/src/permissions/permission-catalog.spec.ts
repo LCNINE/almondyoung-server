@@ -86,7 +86,14 @@ describe('permission catalog', () => {
       Object.keys(expected).map((key) => [key, findPermission(key)?.grantOnFirstRegistration ?? null]),
     );
     expect(actual).toEqual(expected);
-    expect(PERMISSION_CATALOG).toHaveLength(103);
+    expect(PERMISSION_CATALOG).toHaveLength(104);
+  });
+
+  it('declares the recipient permission for logistics and admin', () => {
+    const recipient = findPermission('fulfillment.recipient.read');
+    expect(recipient?.dangerous).toBe(true);
+    expect(recipient?.grantOnFirstRegistration).toEqual(['admin', 'logistics_worker', 'logistics_manager']);
+    expect(recipient?.requires).toEqual(['fulfillment.order.read']);
   });
 
   it('registers the handler checkpoint keys with today-equivalent grants', () => {

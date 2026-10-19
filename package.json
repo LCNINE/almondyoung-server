@@ -383,6 +383,7 @@
       "^@packages/shop-listing-markdown(|/.*)$": "<rootDir>/packages/shop-listing-markdown$1",
       "^@packages/web-observability(|/.*)$": "<rootDir>/packages/web-observability$1",
       "^@permission-catalog$": "<rootDir>/libs/authorization/src/permissions/index.ts",
+      "^@pii-masking$": "<rootDir>/libs/shared/src/pii/index.ts",
       "^apps/(.*)$": "<rootDir>/apps/$1"
     },
     "modulePathIgnorePatterns": [

@@ -42,6 +42,8 @@ const READ_VIA_WRITE_VERB: Record<string, string> = {
   'notification POST /sms-gate/campaigns/preview': '미리보기 — 발송하지 않는다',
   'notification POST /templates/preview/:id': '미리보기 — 발송하지 않는다',
   'user-service POST /consents/search': '본문 조건으로 조회한다',
+  'user-service POST /admin/iam/pii-access-reviews': '접속기록 점검 표시만 남긴다 — 개인정보·권한은 바뀌지 않는다',
+  'user-service POST /iam/pii-access-logs': '열람한 사실을 기록할 뿐 — 개인정보·권한은 바뀌지 않는다',
   'membership POST /admin/subscriptions/bulk': '여러 회원을 한 번에 조회한다',
 };
 

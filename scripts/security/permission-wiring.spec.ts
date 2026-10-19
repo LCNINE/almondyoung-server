@@ -92,4 +92,39 @@ describe('권한 판정 배선', () => {
     );
     expect(offenders).toEqual([]);
   });
+
+  /** providers 배열에서 그림자 인터셉터 «바로 다음» 원소가 `...piiMaskingProviders(` 펼침인지. */
+  function piiMaskingFollowsShadow(file: string): boolean {
+    const src = ts.createSourceFile(file, readFileSync(join(ROOT, file), 'utf8'), ts.ScriptTarget.Latest, true);
+    let found = false;
+    const visit = (node: ts.Node): void => {
+      if (ts.isArrayLiteralExpression(node)) {
+        node.elements.forEach((element, index) => {
+          if (!element.getText().includes('useClass: AuthzShadowInterceptor')) return;
+          const next = node.elements[index + 1];
+          if (next && ts.isSpreadElement(next) && next.expression.getText().startsWith('piiMaskingProviders(')) found = true;
+        });
+      }
+      node.forEachChild(visit);
+    };
+    src.forEachChild(visit);
+    return found;
+  }
+
+  const appsDeclaringPii = (): string[] => {
+    const out = execSync('grep -rl "@PiiResponse(" apps --include=*.ts || true', { cwd: ROOT, encoding: 'utf8' });
+    const apps = out
+      .trim()
+      .split('\n')
+      .filter((f) => f && !f.endsWith('.spec.ts'))
+      .map((f) => f.split('/')[1]);
+    return [...new Set(apps)].sort();
+  };
+
+  it('개인정보 응답을 선언한 앱은 가림 인터셉터를 그림자 인터셉터 바로 다음에 둔다', () => {
+    const declaring = appsDeclaringPii();
+    expect(declaring.length).toBeGreaterThan(0);
+    const missing = declaring.filter((app) => !ROOT_MODULES[app] || !piiMaskingFollowsShadow(ROOT_MODULES[app]));
+    expect(missing).toEqual([]);
+  });
 });

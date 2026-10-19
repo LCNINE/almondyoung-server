@@ -154,6 +154,12 @@ export const PERMISSION_CATALOG = [
     owners: ['core'],
     grant: ['admin', 'intern', ...LOGISTICS],
   }),
+  permission('fulfillment.recipient.read', '수령인 정보 보기', '출고 화면의 받는 분·주문자 이름·연락처·주소 원문을 본다(열람 기록이 남는다)', {
+    owners: ['core'],
+    grant: ADMIN_LOGISTICS,
+    dangerous: true,
+    requires: ['fulfillment.order.read'],
+  }),
   permission('fulfillment.order.write', '출고 요청 처리', '직배송을 전달·완료하고 출고 요청을 만들고 취소한다', {
     owners: ['core'],
     grant: ADMIN,

@@ -136,6 +136,7 @@ export const ROLE_LITERAL_BASELINE: Readonly<Record<string, { count: number; kin
   'apps/user-service/src/api/iam/audit/iam-audit.controller.ts': { count: 1, kind: 'legacy-route-guard' },
   'apps/user-service/src/api/iam/iam.constants.ts': { count: 1, kind: 'system-role-rule' },
   'apps/user-service/src/api/iam/roles/role-admin.controller.ts': { count: 6, kind: 'legacy-route-guard' },
+  'apps/user-service/src/api/iam/pii-access/pii-access-log.controller.ts': { count: 4, kind: 'legacy-route-guard' },
   'apps/user-service/src/api/shop/shop.controller.ts': { count: 4, kind: 'legacy-route-guard' },
   'apps/user-service/src/api/users/users.controller.ts': { count: 3, kind: 'legacy-route-guard' },
   'apps/user-service/src/app.module.ts': { count: 5, kind: 'role-mapping' },
