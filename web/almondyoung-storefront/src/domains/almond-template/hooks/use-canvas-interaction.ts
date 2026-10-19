@@ -13,6 +13,7 @@ import {
   type Layer,
 } from "../lib/document"
 import { mm } from "../lib/layer"
+import { lineFromPoints, lineWidth, lineWorldPoints } from "../lib/line-shape"
 import { textExtent } from "../components/graphic"
 import {
   cropToBox,
@@ -38,6 +39,8 @@ type Params = {
   setGroupIds: (ids: string[]) => void
   cropId: string | null
   selectedId: string | null
+  // 빈 곳을 눌렀다 뗐을 때(끌지 않고). 종이 안이면 true
+  onPaperClick?: (onPaper: boolean) => void
 }
 
 export const MIN_ZOOM = 0.1
@@ -73,6 +76,7 @@ export function useCanvasInteraction({
   setGroupIds,
   cropId,
   selectedId,
+  onPaperClick,
 }: Params) {
   const [guides, setGuides] = useState<Guides | null>(null)
   const [zoom, setZoom] = useState(1)
@@ -419,6 +423,29 @@ export function useCanvasInteraction({
       (dx * Math.cos(rad) + dy * Math.sin(rad)) * (layer.flipX ? -1 : 1)
     const localDy =
       (-dx * Math.sin(rad) + dy * Math.cos(rad)) * (layer.flipY ? -1 : 1)
+    // 선 끝점·꺾임점: 끈 점만 옮기고 상자·회전은 점들에서 다시 만든다
+    if (handle?.startsWith("line-")) {
+      const points = lineWorldPoints(layer)
+      const index = Number(handle.slice(5))
+      if (points.length === 2)
+        points.splice(1, 0, {
+          x: (points[0].x + points[1].x) / 2,
+          y: (points[0].y + points[1].y) / 2,
+        })
+      points[index] = { x: points[index].x + dx, y: points[index].y + dy }
+      const bent = index === 1 || !!layer.linePath
+      setDesign((old) =>
+        updateLayer(old, side, layer.id, {
+          ...lineFromPoints(
+            bent ? points : [points[0], points[2]],
+            lineWidth(layer) * 5
+          ),
+          flipX: undefined,
+          flipY: undefined,
+        })
+      )
+      return
+    }
     if (cropId === layer.id && handle !== "rotate") {
       setDesign((old) =>
         updateLayer(
@@ -507,9 +534,16 @@ export function useCanvasInteraction({
   const endDrag = () => {
     setGuides(null)
     if (marqueeStart.current) {
+      const start = marqueeStart.current
       marqueeStart.current = null
       setMarquee(null)
-      if (!marquee) return
+      if (!marquee)
+        return onPaperClick?.(
+          start.x >= 0 &&
+            start.y >= 0 &&
+            start.x <= design.widthMm &&
+            start.y <= design.heightMm
+        )
       // 걸치기만 해도 고르면 종이를 덮는 큰 요소가 늘 딸려 온다. 네모 안에 다 들어온 것만 고른다
       const hits = design[side].filter((layer) => {
         if (layer.visible === false || !movable(layer)) return false

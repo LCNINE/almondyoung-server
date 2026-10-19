@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "almond_fonts_active_name_unique" ON "almond_fonts" USING btree (lower(regexp_replace("name", '\s', '', 'g'))) WHERE "almond_fonts"."deleted_at" is null;

@@ -2,6 +2,7 @@ import legacyClipart from "../assets/legacy-clipart.json"
 import frameLibrary from "../assets/frame-library.json"
 export { CLIPART, CLIPART_ITEMS } from "./clipart-library"
 import { CLIPART_ITEMS } from "./clipart-library"
+import { DRAW_ART } from "./draw-art"
 
 // Designs saved with the earlier icon library still load.
 export const LEGACY_CLIPART: Record<string, string> = legacyClipart
@@ -84,9 +85,10 @@ export const SHAPES: Record<
   ),
 }
 
-export const SHAPE_VARIANTS: ReadonlySet<string> = new Set(
-  Object.values(SHAPES)
+export const SHAPE_VARIANTS: ReadonlySet<string> = new Set([
+  ...Object.values(SHAPES)
     .flat()
     .filter(([id, , type]) => id !== type)
-    .map(([id]) => id)
-)
+    .map(([id]) => id),
+  ...Object.keys(DRAW_ART),
+])

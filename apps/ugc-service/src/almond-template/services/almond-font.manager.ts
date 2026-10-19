@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { almondFonts, type UgcServiceSchema, type UgcTx } from '../../db/schema';
 import { PublicFileClient } from '../clients/public-file.client';
 import { type AlmondFontEntity } from '../types/almond-font.types';
+
+const squash = (value: string) => value.replace(/\s/g, '').toLowerCase();
 
 @Injectable()
 export class AlmondFontManager {
@@ -18,13 +20,24 @@ export class AlmondFontManager {
     const { format } = await this.files.fetchFont(fileId);
     if (!format) throw new BadRequestError('글꼴 파일이 아닙니다. TTF·OTF·WOFF·WOFF2 만 올릴 수 있습니다.');
     return this.db.run(async (trx) => {
+      // 같은 파일·같은 이름(띄어쓰기·대소문자 무시)은 DB 고유 인덱스가 막는다. 동시에 올려도 하나만 들어간다
       const [created] = await trx
         .insert(almondFonts)
         .values({ fileId, name: name.trim(), format, createdBy: userId, licenseConfirmedAt: new Date() })
         .onConflictDoNothing()
         .returning();
-      if (!created) throw new ConflictError('이미 등록한 글꼴 파일입니다.');
-      return created;
+      if (created) return created;
+      const [same] = await trx
+        .select({ name: almondFonts.name })
+        .from(almondFonts)
+        .where(
+          and(
+            isNull(almondFonts.deletedAt),
+            sql`lower(regexp_replace(${almondFonts.name}, '\\s', '', 'g')) = ${squash(name)}`,
+          ),
+        )
+        .limit(1);
+      throw new ConflictError(same ? `이미 있는 글꼴입니다. (${same.name})` : '이미 등록한 글꼴 파일입니다.');
     }, tx);
   }
 

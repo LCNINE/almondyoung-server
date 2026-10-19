@@ -262,6 +262,21 @@ class AggregateHarnessState {
       });
       return bulk ? [{ id: bulk.id, qty: bulk.qty }] : [];
     }
+    if (this.operation === 'picking.aggregate_then_sort.complete') {
+      // 커널의 완료가 배정 grain 마다 잔량을 직접 select 한다 — 옛 `loadPositiveAllocationCustody` spy 대신
+      // 같은 순서(작업 항목 배정 순)로 그 grain 의 잔량을 돌려준다.
+      const lineId = this.request.shipmentId === IDS.shipmentA ? IDS.lineA : IDS.lineB;
+      const allocation = this.allocationsForLine(lineId)[index];
+      if (!allocation) throw new Error(`Unexpected select ${index} during ${this.operation}`);
+      return this.assignedBalances(lineId)
+        .filter((balance) => balance.sourceLocationId === allocation.sourceLocationId)
+        .map((balance) => ({
+          id: balance.id,
+          custodyType: balance.custodyType,
+          custodyRef: balance.custodyRef,
+          qty: balance.qty,
+        }));
+    }
     throw new Error(`Unexpected select ${index} during ${this.operation}`);
   }
 
@@ -380,10 +395,6 @@ class AggregateHarnessState {
     return `sorting:${workItemId}:${workerId}`;
   }
 
-  packingRef(workItemId: string): string {
-    return `work-item:${workItemId}`;
-  }
-
   private balance(grain: Omit<CustodyBalance, 'id' | 'qty'>): CustodyBalance | undefined {
     return this.balances.find(
       (balance) =>
@@ -429,6 +440,7 @@ function createHarness(): AggregateHarness {
     select: jest.fn(() => new QueryResult(state.selectRows())),
     insert: jest.fn(() => new InsertResult(state)),
     update: jest.fn(() => new UpdateResult(state)),
+    execute: jest.fn(async () => undefined),
   };
   const commands = {
     execute: jest.fn(async (request, handler) => {
@@ -554,22 +566,6 @@ function createHarness(): AggregateHarness {
   jest
     .mocked(loadWorkItem)
     .mockImplementation(async (_trx, workItemId: string) => ({ ...state.workItems[workItemId] }) as never);
-  jest
-    .spyOn(strategy as any, 'assertAggregateAssignedCustody')
-    .mockImplementation(async (_sessionId: string, shipmentId: string, workItemId: string, ownerId: string) => {
-      const lineId = shipmentId === IDS.shipmentA ? IDS.lineA : IDS.lineB;
-      const balances = state.assignedBalances(lineId).map((balance) => ({ ...balance }));
-      if (
-        balances.some(
-          (balance) =>
-            (balance.custodyType !== 'SORTING' || balance.custodyRef !== state.sortingRef(workItemId, ownerId)) &&
-            (balance.custodyType !== 'PACKING' || balance.custodyRef !== state.packingRef(workItemId)),
-        )
-      ) {
-        throw new ConflictException({ code: 'PICKING_CUSTODY_OWNER_MISMATCH', message: 'wrong assigned owner' });
-      }
-      return balances;
-    });
   jest.mocked(databaseNow).mockResolvedValue(new Date('2026-07-15T00:10:00.000Z'));
 
   return { strategy, startDeps, state, sessions, controlledStock, invoices, batches };

@@ -8,7 +8,9 @@ import {
   type SetStateAction,
 } from "react"
 import { updateLayer, type Design, type Layer } from "../lib/document"
-import { makeLayer, mm } from "../lib/layer"
+import { makeLayer, mm, pxUnit } from "../lib/layer"
+import { lineFromPoints } from "../lib/line-shape"
+import { DRAW_ART } from "../lib/draw-art"
 import {
   fitPath,
   refitPathLayer,
@@ -105,16 +107,35 @@ export function toggleSmooth(
 
 type Ink = { color: string; width?: number }
 
-export type BrushKind = "pencil" | "marker" | "highlighter"
+export type BrushKind = "pen" | "highlighter"
 
-// 캔바 그리기처럼 연필 종류를 고른다. 두께는 규격 기본 두께의 배수다
+export type BrushSetting = { color: string; size: number; opacity: number }
+
+export type DrawShape =
+  | "arrow"
+  | "dash"
+  | "circle"
+  | "square"
+  | "triangle"
+  | `${"hand" | "graphic"}-${string}`
+
+// 망고보드 그리기 도구 기본값. size 는 1080px 캔버스 기준 두께(1~100)라 규격 짧은 변에 비례해 mm 로 바꾼다
 export const BRUSHES: Record<
   BrushKind,
-  { label: string; width: number; round: boolean; opacity?: number }
+  { label: string; round: boolean; presets: number[]; initial: BrushSetting }
 > = {
-  pencil: { label: "연필", width: 1.5, round: true },
-  marker: { label: "마커", width: 4, round: true },
-  highlighter: { label: "형광펜", width: 6, round: false, opacity: 0.4 },
+  pen: {
+    label: "펜",
+    round: true,
+    presets: [5, 8, 11],
+    initial: { color: "#068FFF", size: 8, opacity: 100 },
+  },
+  highlighter: {
+    label: "형광펜",
+    round: false,
+    presets: [25, 35, 45],
+    initial: { color: "#FFDD65", size: 35, opacity: 70 },
+  },
 }
 
 export function usePenTool({
@@ -129,16 +150,34 @@ export function usePenTool({
   svgRef,
   handleSize,
 }: Params) {
-  const [drawMode, setDrawMode] = useState<"pen" | "pencil" | null>(null)
+  const [drawMode, setDrawMode] = useState<
+    "pen" | "pencil" | "eraser" | "shape" | null
+  >(null)
   const penActive = drawMode === "pen"
   const pencilActive = drawMode === "pencil"
+  const eraserActive = drawMode === "eraser"
+  const shapeActive = drawMode === "shape"
+  const [shapeKind, setShapeKind] = useState<DrawShape | null>(null)
+  const [shapeSetting, setShapeSetting] = useState({
+    color: "#CCCCCC",
+    opacity: 100,
+  })
+  const [shapeDrag, setShapeDrag] = useState<{ from: Point; to: Point } | null>(
+    null
+  )
+  // 빨리 끌면 마지막 이동과 손 떼기 사이에 다시 그려지지 않아 state 가 옛 위치다
+  const shapeDragRef = useRef<{ from: Point; to: Point } | null>(null)
   const [smoothing, setSmoothing] = useState(0)
   // 방금 그은 연필 선의 원래 궤적. 보정을 바꾸면 이걸로 다시 다듬는다
   const lastStroke = useRef<{ id: string; raw: Point[] } | null>(null)
-  const [brushKind, setBrushKind] = useState<BrushKind>("pencil")
-  const [inks, setInks] = useState<Record<"pen" | "pencil", Ink>>({
+  const [brushKind, setBrushKind] = useState<BrushKind>("pen")
+  // 도구마다 색·두께·불투명도를 따로 기억한다
+  const [brushes, setBrushes] = useState<Record<BrushKind, BrushSetting>>({
+    pen: BRUSHES.pen.initial,
+    highlighter: BRUSHES.highlighter.initial,
+  })
+  const [inks, setInks] = useState<Record<"pen", Ink>>({
     pen: { color: "#202020" },
-    pencil: { color: "#202020" },
   })
   // 연필을 켜고 끌 때까지 그은 획. 두 번째 획부터 하나의 그룹으로 묶어 레이어 목록이 획마다 쌓이지 않게 한다
   const sketch = useRef<{ ids: string[]; group?: Partial<Layer> }>({ ids: [] })
@@ -195,31 +234,152 @@ export function usePenTool({
   )
   // 다음에 그을 선의 색·두께는 그리기 도구 막대에서 고른다. 두께를 안 고르면 규격에 맞춘 기본값이다
   const brush = BRUSHES[brushKind]
+  const setting = brushes[brushKind]
   const pencilStyle: Partial<Layer> = {
     name: `${brush.label} 선`,
-    stroke: inks.pencil.color,
-    strokeWidth: inks.pencil.width ?? mm(penWidth * brush.width),
+    brush: brushKind,
+    stroke: setting.color,
+    strokeWidth: mm(
+      Math.max(
+        0.1,
+        (setting.size * Math.min(design.widthMm, design.heightMm)) / 1080
+      )
+    ),
     strokeRound: brush.round,
-    opacity: brush.opacity,
+    opacity: setting.opacity / 100,
   }
   const penStyle: Partial<Layer> = {
     stroke: inks.pen.color,
     strokeWidth: inks.pen.width ?? penWidth,
   }
   const drawStyle = drawMode === "pen" ? penStyle : pencilStyle
-  const setInk = (change: Partial<Ink>) => {
-    if (drawMode)
-      setInks((current) => ({
-        ...current,
-        [drawMode]: { ...current[drawMode], ...change },
-      }))
-  }
+  const setInk = (change: Partial<Ink>) =>
+    setInks((current) => ({ pen: { ...current.pen, ...change } }))
+  const setBrush = (change: Partial<BrushSetting>) =>
+    setBrushes((current) => ({
+      ...current,
+      [brushKind]: { ...current[brushKind], ...change },
+    }))
+  // 그리기 패널의 펜·형광펜 타일. 이미 그리는 중이면 도구만 바꾸고 계속 그린다
   const chooseBrush = (kind: BrushKind) => {
     setBrushKind(kind)
-    setInks((current) => ({
-      ...current,
-      pencil: { ...current.pencil, width: undefined },
-    }))
+    if (drawMode === "pencil") return
+    chooseTool("pencil")
+  }
+  const chooseEraser = () => {
+    if (drawMode !== "eraser") chooseTool("eraser")
+  }
+  // 선과 도형: 타일을 고르면 캔버스를 끌어 그 자리·크기로 그린다
+  const chooseShape = (kind: DrawShape | null) => {
+    setShapeKind(kind)
+    if (drawMode !== "shape") chooseTool("shape")
+  }
+  const shapeDown = (event: PointerEvent<SVGElement>) => {
+    event.stopPropagation()
+    if (event.button !== 0) return
+    const p = point(event)
+    shapeDragRef.current = { from: p, to: p }
+    setShapeDrag(shapeDragRef.current)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+  const shapeMove = (event: PointerEvent<SVGElement>) => {
+    if (!shapeDragRef.current) return
+    shapeDragRef.current = { ...shapeDragRef.current, to: point(event) }
+    setShapeDrag(shapeDragRef.current)
+  }
+  const shapeUp = (event: PointerEvent<SVGElement>) => {
+    const drag = shapeDragRef.current && {
+      ...shapeDragRef.current,
+      to: point(event),
+    }
+    shapeDragRef.current = null
+    setShapeDrag(null)
+    if (!drag) return
+    const { from, to } = drag
+    const art = shapeKind ? DRAW_ART[shapeKind] : undefined
+    if (shapeKind && art) {
+      // 누르기만 하면 짧은 변의 1/4 크기로 그 자리에 놓는다. 손그림은 가로세로 비율을 고정한다
+      const dragged = dist(from, to) >= handleSize
+      const fallback = Math.min(design.widthMm, design.heightMm) / 4
+      // 저장 검증이 가로·세로를 규격의 2배까지만 받는다
+      const maxW = design.widthMm * 2
+      const maxH = design.heightMm * 2
+      const square = Math.min(
+        Math.max(Math.abs(to.x - from.x), Math.abs(to.y - from.y)),
+        maxW,
+        maxH
+      )
+      const hand = shapeKind.startsWith("hand")
+      const width = dragged
+        ? hand
+          ? square
+          : Math.abs(to.x - from.x)
+        : fallback
+      const height = dragged
+        ? hand
+          ? square
+          : Math.max(1, Math.abs(to.y - from.y))
+        : fallback
+      const layer: Layer = {
+        ...makeLayer("rect", design),
+        name: art.label,
+        shapeVariant: shapeKind,
+        fill: brushes.pen.color,
+        stroke: "none",
+        strokeWidth: 0,
+        text: undefined,
+        opacity: shapeSetting.opacity / 100,
+        x: mm(dragged ? Math.min(from.x, to.x) : from.x - width / 2),
+        y: mm(dragged ? Math.min(from.y, to.y) : from.y - height / 2),
+        width: mm(Math.min(maxW, Math.max(1, width))),
+        height: mm(Math.min(maxH, height)),
+      }
+      change({ ...design, [side]: [...design[side], layer] })
+      return setSelectedId(layer.id)
+    }
+    // 거의 안 끌었으면 그리지 않고 고른 것만 푼다
+    if (!shapeKind || dist(from, to) < handleSize) return setSelectedId(null)
+    const width = Math.max(0.1, Math.round(10 * pxUnit(design) * 100) / 100)
+    const style = {
+      stroke: shapeSetting.color,
+      strokeWidth: width,
+      opacity: shapeSetting.opacity / 100,
+    }
+    const layer: Layer =
+      shapeKind === "arrow" || shapeKind === "dash"
+        ? {
+            ...makeLayer("line", design),
+            ...style,
+            name: shapeKind === "arrow" ? "화살표" : "점선",
+            ...lineFromPoints([from, to], width * 5),
+            lineEnd: shapeKind === "arrow" ? "arrow" : undefined,
+            lineDash: shapeKind === "dash" ? [4, 2] : undefined,
+          }
+        : {
+            ...makeLayer(
+              shapeKind === "circle"
+                ? "ellipse"
+                : shapeKind === "square"
+                  ? "rect"
+                  : "triangle",
+              design
+            ),
+            ...style,
+            name:
+              shapeKind === "circle"
+                ? "원"
+                : shapeKind === "square"
+                  ? "사각형"
+                  : "삼각형",
+            fill: "none",
+            text: undefined,
+            x: mm(Math.min(from.x, to.x)),
+            y: mm(Math.min(from.y, to.y)),
+            width: mm(Math.abs(to.x - from.x)),
+            height: mm(Math.abs(to.y - from.y)),
+          }
+    change({ ...design, [side]: [...design[side], layer] })
+    setSelectedId(layer.id)
   }
   const addPath = (
     points: PathPoint[],
@@ -259,7 +419,7 @@ export function usePenTool({
     clearDraft()
     if (points.length >= 2) addPath(points, closed, penStyle)
   }
-  const chooseTool = (mode: "pen" | "pencil") => {
+  const chooseTool = (mode: "pen" | "pencil" | "eraser" | "shape") => {
     sketch.current = { ids: [] }
     if (draft.length >= 2) finishDraft(false)
     else clearDraft()
@@ -559,6 +719,19 @@ export function usePenTool({
     drawMode,
     penActive,
     pencilActive,
+    eraserActive,
+    chooseEraser,
+    shapeActive,
+    shapeKind,
+    chooseShape,
+    shapeSetting,
+    setShapeSetting,
+    shapeDrag,
+    shapeDown,
+    shapeMove,
+    shapeUp,
+    brushes,
+    setBrush,
     togglePen,
     togglePencil,
     stopDrawing,

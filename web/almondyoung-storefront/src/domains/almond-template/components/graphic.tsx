@@ -4,7 +4,9 @@ import {
   type Layer,
   type SideBackground,
 } from "../lib/document"
+import { lineDashArray, lineGeometry, lineWidth } from "../lib/line-shape"
 import { FRAME_PATHS, LEGACY_CLIPART } from "../lib/art-library"
+import { DRAW_ART } from "../lib/draw-art"
 import { CLIPART_DATA } from "../lib/clipart-data"
 import { useImageSrc } from "../lib/image-previews"
 import { fontStack } from "../lib/fonts"
@@ -337,6 +339,25 @@ function ShapeBody({ layer, paint }: { layer: Layer; paint: Paint }) {
         {...paint}
       />
     )
+  const art = variant ? DRAW_ART[variant] : undefined
+  if (layer.type === "rect" && art) {
+    return (
+      <path
+        d={art.d}
+        transform={`translate(${layer.x} ${layer.y}) scale(${layer.width / 100} ${layer.height / 100})`}
+        {...(art.mode === "fill"
+          ? scaled(100)
+          : {
+              fill: "none",
+              stroke: paint.fill,
+              strokeWidth: art.width ?? 6,
+              strokeDasharray: art.dash,
+              strokeLinecap: "round",
+              strokeLinejoin: "round",
+            })}
+      />
+    )
+  }
   if (layer.type === "rect" && variant && shapePoints[variant])
     return (
       <polygon points={polygonPoints(layer, shapePoints[variant])} {...paint} />
@@ -411,6 +432,26 @@ export function photoBox(layer: Layer) {
   }
 }
 
+// 색 입히기: 그림의 모양(투명도)은 그대로 두고 칠한 부분만 고른 한 색으로 바꾼다. 로고·아이콘용
+function TintFilter({ layer }: { layer: Layer }) {
+  if (!layer.imageTint) return null
+  return (
+    <defs>
+      <filter
+        id={`tint-${layer.id}`}
+        x="0"
+        y="0"
+        width="100%"
+        height="100%"
+        colorInterpolationFilters="sRGB"
+      >
+        <feFlood floodColor={layer.imageTint} />
+        <feComposite in2="SourceAlpha" operator="in" />
+      </filter>
+    </defs>
+  )
+}
+
 function LayerGraphicView({ layer }: { layer: Layer }) {
   const imageSrc = useImageSrc()
   // 올린 글꼴은 늦게 도착하므로, 도착하면 잰 폭을 버리고 이 레이어를 다시 그린다
@@ -467,26 +508,48 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
           </>
         )}
         {layer.type === "clipart" && clipartSource && (
-          <image
-            x={layer.x}
-            y={layer.y}
-            width={layer.width}
-            height={layer.height}
-            href={clipartSource}
-            preserveAspectRatio="xMidYMid meet"
-          />
+          <>
+            <TintFilter layer={layer} />
+            <image
+              x={layer.x}
+              y={layer.y}
+              width={layer.width}
+              height={layer.height}
+              href={clipartSource}
+              preserveAspectRatio="xMidYMid meet"
+              filter={layer.imageTint ? `url(#tint-${layer.id})` : undefined}
+            />
+          </>
         )}
-        {layer.type === "line" && (
-          <line
-            x1={layer.x}
-            y1={cy}
-            x2={layer.x + layer.width}
-            y2={cy}
-            stroke={layer.stroke ?? layer.fill}
-            strokeWidth={Math.max(0.3, layer.strokeWidth ?? 1)}
-            {...strokeStyle(layer, Math.max(0.3, layer.strokeWidth ?? 1))}
-          />
-        )}
+        {layer.type === "line" &&
+          (() => {
+            const width = lineWidth(layer)
+            const color = layer.stroke ?? layer.fill
+            const { d, caps } = lineGeometry(layer)
+            return (
+              <>
+                <path
+                  d={d}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={width}
+                  strokeDasharray={lineDashArray(layer)}
+                  strokeLinecap={layer.strokeRound ? "round" : "square"}
+                  strokeLinejoin={layer.strokeRound ? "round" : "miter"}
+                />
+                {caps.map((cap, index) => (
+                  <path
+                    key={index}
+                    d={cap.d}
+                    fill={cap.filled ? color : "none"}
+                    stroke={cap.stroked ? color : "none"}
+                    strokeWidth={cap.stroked ? width : undefined}
+                    strokeLinejoin="miter"
+                  />
+                ))}
+              </>
+            )
+          })()}
         {layer.type === "image" && layer.image && (
           <>
             <defs>
@@ -499,10 +562,12 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
                 />
               </clipPath>
             </defs>
+            <TintFilter layer={layer} />
             <image
               href={imageSrc(layer.image)}
               {...photoBox(layer)}
               clipPath={`url(#clip-${layer.id})`}
+              filter={layer.imageTint ? `url(#tint-${layer.id})` : undefined}
             />
           </>
         )}

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import type { Layer } from "./document"
 import {
   cropToBox,
+  gaps,
   currentCrop,
   panCrop,
   scaleIntoBox,
@@ -75,5 +76,30 @@ describe("사진 자르기", () => {
     }
     expect(panCrop(cropped, 5, 0).crop?.x).toBeCloseTo(0.125)
     expect(panCrop(cropped, 100, 0).crop?.x).toBe(0)
+  })
+})
+
+describe("gaps", () => {
+  it("떨어진 두 상자는 사이 거리 하나를 겹친 높이 가운데에 잰다", () => {
+    expect(
+      gaps({ x0: 0, y0: 0, x1: 10, y1: 10 }, { x0: 15, y0: 4, x1: 20, y1: 20 })
+    ).toEqual([{ x1: 10, y1: 7, x2: 15, y2: 7, mm: 5 }])
+  })
+
+  it("안에 든 상자는 바깥 상자 네 변까지 잰다", () => {
+    expect(
+      gaps({ x0: 2, y0: 3, x1: 8, y1: 9 }, { x0: 0, y0: 0, x1: 10, y1: 10 })
+    ).toEqual([
+      { x1: 0, y1: 6, x2: 2, y2: 6, mm: 2 },
+      { x1: 8, y1: 6, x2: 10, y2: 6, mm: 2 },
+      { x1: 5, y1: 0, x2: 5, y2: 3, mm: 3 },
+      { x1: 5, y1: 9, x2: 5, y2: 10, mm: 1 },
+    ])
+  })
+
+  it("한 축에서 비스듬히 겹치면 그 축은 재지 않는다", () => {
+    expect(
+      gaps({ x0: 0, y0: 0, x1: 10, y1: 10 }, { x0: 5, y0: 20, x1: 15, y1: 30 })
+    ).toEqual([{ x1: 7.5, y1: 10, x2: 7.5, y2: 20, mm: 10 }])
   })
 })

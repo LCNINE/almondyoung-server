@@ -675,7 +675,7 @@ describe('PickToTotePickingStrategy', () => {
     const { service, batches, sessions } = makeService();
     jest.mocked(loadWorkItem).mockResolvedValue(workItem() as never);
     jest.mocked(loadPositiveShipmentCustody).mockResolvedValue([]);
-    spy(service, 'assertExclusiveToteCustody', undefined);
+    spy(service, 'loadActiveShipmentToteRefs', new Set<string>());
     jest.mocked(assertActiveBatchSession).mockResolvedValue(undefined);
     batches.handoff.mockResolvedValue({
       workItem: workItem({ pickerId: IDS.otherActor, leaseVersion: 2 }),
@@ -717,6 +717,18 @@ describe('PickToTotePickingStrategy', () => {
     planSpy('assertActiveBatchSession', undefined);
     planSpy('loadWorkItemAllocations', [
       { shipmentLineId: IDS.shipmentLine, skuId: IDS.sku, sourceLocationId: IDS.source, qty: 2 },
+    ]);
+    // 커널의 되돌림이 박스 잔량을 공유 질의 함수로 읽는다 — 옛 인라인 select 큐 대신 이 stub 이 답한다.
+    planSpy('loadPositiveShipmentCustody', [
+      {
+        id: 'balance-a',
+        skuId: IDS.sku,
+        sourceLocationId: IDS.source,
+        custodyType: 'TOTE',
+        custodyRef: `tote:${IDS.toteA}`,
+        shipmentLineId: IDS.shipmentLine,
+        qty: 2,
+      },
     ]);
     spy(service, 'loadActiveShipmentToteRefs', new Set([`tote:${IDS.toteA}`]));
     spy(service, 'releaseEmptyShipmentTotes', undefined);
@@ -1108,6 +1120,12 @@ function createPickToToteContractFixture(): PickingStrategyContractFixture {
     inboundPendingBySku: new Map(),
   });
   jest.mocked(assertActiveBatchSession).mockResolvedValue(undefined);
+  // 커널의 되돌림·인계가 박스 잔량을 공유 질의 함수로 읽는다 — 상태 모델의 잔량으로 답한다.
+  jest
+    .mocked(loadPositiveShipmentCustody)
+    .mockImplementation(
+      async () => state.assignedBalances(PICKING_CONTRACT_IDS.lineA).map((balance) => ({ ...balance })) as never,
+    );
   jest.spyOn(strategy as any, 'acquireToteLock').mockResolvedValue(undefined);
   // 옛 계획 구성원 검사가 하던 «은퇴한 박스는 못 집는다»는 이제 작업 항목 상태가 말한다 —
   // 실제 `lockAndAssertPickerClaim` 은 `status !== 'picking'` 이면 PICKING_STALE_CLAIM 을 던진다.

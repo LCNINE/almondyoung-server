@@ -1,7 +1,12 @@
-import type { Design, Layer } from "./document"
+import { SHAPE_TEXT_TYPES, type Design, type Layer } from "./document"
+import { shapeTextColor } from "../components/graphic"
 import { SANS_FONT } from "./fonts"
 
 export const mm = (value: number) => Math.round(value * 10) / 10
+
+// 망고보드 수치(1080px 캔버스 기준 px)를 규격 짧은 변에 비례한 mm 로 바꾸는 배율
+export const pxUnit = (design: { widthMm: number; heightMm: number }) =>
+  Math.min(design.widthMm, design.heightMm) / 1080
 
 function layerName(type: Layer["type"]) {
   return {
@@ -90,4 +95,36 @@ export function imageBox(
     width: mm(width),
     height: mm(height),
   }
+}
+
+const COLOR_FIELDS = ["fill", "stroke", "textColor"] as const
+
+export function swapColor(layer: Layer, from: string, to: string) {
+  const patch: Partial<Layer> = {}
+  const shown = {
+    ...layer,
+    textColor:
+      layer.textColor ??
+      (SHAPE_TEXT_TYPES.has(layer.type) && layer.text
+        ? shapeTextColor(layer)
+        : undefined),
+  }
+  for (const field of COLOR_FIELDS)
+    if (shown[field]?.toLowerCase() === from.toLowerCase()) patch[field] = to
+  return patch
+}
+
+// 앞·뒷면 모든 요소에 patchOf 를 대 보고 바뀌는 것만 새 객체로 만든다. 한 번의 change 라 실행 취소도 한 번이다
+export function replaceEverywhere(
+  design: Design,
+  editable: (layer: Layer) => boolean,
+  patchOf: (layer: Layer) => Partial<Layer>
+): Design {
+  const side = (layers: Layer[]) =>
+    layers.map((layer) => {
+      if (!editable(layer)) return layer
+      const patch = patchOf(layer)
+      return Object.keys(patch).length ? { ...layer, ...patch } : layer
+    })
+  return { ...design, front: side(design.front), back: side(design.back) }
 }

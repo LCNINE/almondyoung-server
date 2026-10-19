@@ -2,9 +2,17 @@ import { useRef } from "react"
 import { PrintColorPicker } from "../../color-picker"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
 import { sideBackground, withSideBackground } from "../../../lib/document"
+import { GrayButton } from "../object-properties"
 
 export function BackgroundPanel({ editor }: { editor: AlmondEditor }) {
-  const { design, side, change, imageFile } = editor
+  const {
+    design,
+    side,
+    change,
+    imageFile,
+    backgroundSelected,
+    removeBackgroundImage,
+  } = editor
   const bg = sideBackground(design, side)
   const backgroundInputRef = useRef<HTMLInputElement>(null)
   return (
@@ -25,16 +33,18 @@ export function BackgroundPanel({ editor }: { editor: AlmondEditor }) {
         + 내 PC 이미지 불러오기
       </button>
       {bg.backgroundImage && (
-        <button
-          className="mt-2 w-full bg-[#303030] py-2 text-sm text-white"
-          onClick={() =>
-            change(
-              withSideBackground(design, side, { background: bg.background })
-            )
-          }
+        <div
+          className={`mt-3 rounded-[7px] p-3 ${backgroundSelected ? "bg-[#e9fbfc] ring-1 ring-[#42dfe5]" : "bg-[#f6f7f9]"}`}
         >
-          배경삭제
-        </button>
+          <p className="mb-2 text-[13px] leading-[19px] text-[#3F4250]">
+            {backgroundSelected
+              ? "배경 이미지를 골랐습니다. Delete 키로도 지울 수 있습니다."
+              : "캔버스의 빈 곳을 누르면 배경 이미지를 고를 수 있습니다."}
+          </p>
+          <GrayButton onClick={removeBackgroundImage}>
+            배경 이미지 삭제
+          </GrayButton>
+        </div>
       )}
       <input
         ref={backgroundInputRef}

@@ -26,7 +26,7 @@ export function ObjectPropertiesMore({
     layers,
     spec,
     patch,
-    add,
+    duplicateSelected,
     editable,
     setOrder,
     setGeometry,
@@ -248,15 +248,7 @@ export function ObjectPropertiesMore({
         <button
           className="rounded border p-2"
           disabled={!editable}
-          onClick={() =>
-            add(selected.type, {
-              ...selected,
-              id: crypto.randomUUID(),
-              x: selected.x + 5,
-              y: selected.y + 5,
-              name: `${selected.name} 복사`,
-            })
-          }
+          onClick={duplicateSelected}
         >
           복제
         </button>

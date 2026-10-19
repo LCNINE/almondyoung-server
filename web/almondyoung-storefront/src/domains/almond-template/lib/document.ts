@@ -2,6 +2,7 @@ import { PRINT_SPECS, type PrintKind } from "./catalog"
 import { CLIPART_IDS, FRAME_IDS, SHAPE_VARIANTS } from "./art-library"
 import { FILE_IMAGE_REF } from "./image-ref"
 import type { PathPoint } from "./path-shape"
+import { LINE_CAPS, type LineCap } from "./line-shape"
 import { fittedFontSize } from "../components/graphic"
 import { isAutoTextName, textLayerName } from "./layer"
 
@@ -31,6 +32,7 @@ export type Layer = {
   image?: string
   originalImage?: string
   imageFilter?: "grayscale" | "emboss" | "boxblur" | "brightness" | "sepia"
+  imageTint?: string
   pixelWidth?: number
   pixelHeight?: number
   imageScale?: number
@@ -79,6 +81,15 @@ export type Layer = {
   crop?: { x: number; y: number; w: number; h: number }
   groupId?: string
   groupName?: string
+  brush?: "pen" | "highlighter"
+  lineStart?: LineCap
+  lineEnd?: LineCap
+  lineStartSize?: number
+  lineEndSize?: number
+  lineDash?: [number, number]
+  lineDashCustom?: [number, number]
+  linePath?: { x: number; y: number }[]
+  lineCurved?: boolean
 }
 
 export const SHAPE_TEXT_TYPES: ReadonlySet<Layer["type"]> = new Set<
@@ -246,6 +257,7 @@ export function parseDesign(value: unknown): Design {
         (layer.fill === "none" && SHAPE_TEXT_TYPES.has(layer.type))
       ) ||
       (layer.textColor !== undefined && !color.test(layer.textColor)) ||
+      (layer.imageTint !== undefined && !color.test(layer.imageTint)) ||
       (layer.groupId !== undefined &&
         (typeof layer.groupId !== "string" ||
           !/^[a-zA-Z0-9_-]{1,100}$/.test(layer.groupId))) ||
@@ -448,12 +460,32 @@ const within = (value: unknown, min: number, max: number) =>
 const optional = (value: unknown, check: (value: unknown) => boolean) =>
   value === undefined || check(value)
 const isBool = (value: unknown) => typeof value === "boolean"
+const isCap = (value: unknown) => LINE_CAPS.includes(value as LineCap)
+const isPair = (value: unknown, min: number, max: number) =>
+  Array.isArray(value) &&
+  value.length === 2 &&
+  value.every((v) => within(v, min, max))
 
 function validEffects(layer: Layer) {
   return (
     optional(layer.strokeDash, (v) => v === "dashed" || v === "dotted") &&
     optional(layer.strokeRound, isBool) &&
     optional(layer.groupName, (v) => typeof v === "string" && v.length <= 40) &&
+    optional(layer.brush, (v) => v === "pen" || v === "highlighter") &&
+    optional(layer.lineStart, isCap) &&
+    optional(layer.lineEnd, isCap) &&
+    optional(layer.lineStartSize, (v) => within(v, 1, 5)) &&
+    optional(layer.lineEndSize, (v) => within(v, 1, 5)) &&
+    optional(layer.lineDash, (v) => isPair(v, 0, 20)) &&
+    optional(layer.lineDashCustom, (v) => isPair(v, 0, 500)) &&
+    optional(layer.lineCurved, isBool) &&
+    optional(
+      layer.linePath,
+      (v) =>
+        Array.isArray(v) &&
+        v.length === 3 &&
+        v.every((p) => within(p?.x, -1, 2) && within(p?.y, -1, 2))
+    ) &&
     optional(layer.shadowX, (v) => within(v, -50, 50)) &&
     optional(layer.shadowY, (v) => within(v, -50, 50)) &&
     optional(layer.shadowBlur, (v) => within(v, 0, 20)) &&

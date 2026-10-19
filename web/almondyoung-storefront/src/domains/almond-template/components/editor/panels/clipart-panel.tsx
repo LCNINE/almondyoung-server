@@ -41,7 +41,7 @@ export function ClipartPanel({
         />
       </div>
       <div
-        className={`grid gap-2 border-t pt-4 ${clipartColumns === 1 ? "grid-cols-1" : "grid-cols-2"}`}
+        className={`grid gap-2 border-t pt-4 ${clipartColumns === 1 ? "grid-cols-1 group-data-[wide]/panel:grid-cols-2" : "grid-cols-2 group-data-[wide]/panel:grid-cols-4"}`}
       >
         {CLIPART[clipartCategory].map(([id, label]) => (
           <button

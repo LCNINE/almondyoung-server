@@ -1,16 +1,43 @@
-import { Check, Combine, Pencil, Split, Trash2 } from "lucide-react"
-import { useRef, useState } from "react"
+import {
+  Check,
+  Combine,
+  Copy,
+  Crop,
+  ImageUp,
+  Lock,
+  LockOpen,
+  Pencil,
+  Split,
+  Trash2,
+  X,
+} from "lucide-react"
+import {
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react"
+import { createPortal } from "react-dom"
 import { Backdrop, LayerGraphic, photoBox } from "../graphic"
-import { currentCrop, unionBounds } from "../../lib/canvas-math"
+import {
+  currentCrop,
+  gaps,
+  layerBounds as boxOf,
+  unionBounds,
+} from "../../lib/canvas-math"
 import { layerPathData } from "../../lib/path-shape"
+import { lineLocalPoints } from "../../lib/line-shape"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import { CanvasGuides } from "./canvas-guides"
 import { useLeaveWarning } from "../../hooks/use-leave-warning"
 import { useImageSrc } from "../../lib/image-previews"
 import {
   DrawToolbar,
+  ERASER_CURSOR,
   PencilOverlay,
   PenOverlay,
+  ShapeOverlay,
   PointEditOverlay,
   layerTransform,
 } from "./pen-overlay"
@@ -21,13 +48,312 @@ import {
   type Layer,
 } from "../../lib/document"
 
+// 돌리거나 뒤집어도 화면에 보이는 상자의 오른쪽 바깥에 붙어 핸들을 가리지 않는다
 function quickActionsAt(layer: Layer, scale: number) {
-  const rad = ((layer.rotation ?? 0) * Math.PI) / 180
-  const dx = (44 / scale) * (layer.flipX ? -1 : 1)
-  const dy = (-layer.height / 2 - 16 / scale) * (layer.flipY ? -1 : 1)
-  const x = layer.x + layer.width / 2 + dx * Math.cos(rad) - dy * Math.sin(rad)
-  const y = layer.y + layer.height / 2 + dx * Math.sin(rad) + dy * Math.cos(rad)
-  return { left: `${x * scale}px`, top: `${y * scale}px` }
+  const box = boxOf(layer)
+  return { left: `${box.x1 * scale + 16}px`, top: `${box.y0 * scale}px` }
+}
+
+// 망고보드 선택 핸들: 모서리는 흰 테두리 시안 원, 변은 작은 회색 알약
+function SelectionHandle({
+  handle,
+  x,
+  y,
+  scale,
+  label,
+  onPointerDown,
+  hidden = false,
+}: {
+  handle: string
+  x: number
+  y: number
+  scale: number
+  label: string
+  onPointerDown: (event: React.PointerEvent<SVGElement>) => void
+  hidden?: boolean
+}) {
+  const corner = handle.length === 2
+  const vertical = handle === "e" || handle === "w"
+  return (
+    <g
+      role="button"
+      aria-label={label}
+      style={{ cursor: `${handle}-resize` }}
+      onPointerDown={onPointerDown}
+    >
+      <circle cx={x} cy={y} r={12 / scale} fill="transparent" />
+      {hidden ? null : corner ? (
+        <circle
+          cx={x}
+          cy={y}
+          r={5.5 / scale}
+          fill="#42dfe5"
+          stroke="#fff"
+          strokeWidth={3 / scale}
+          style={{
+            filter: `drop-shadow(${1 / scale}px ${1 / scale}px 0 rgba(0,0,0,0.15))`,
+          }}
+        />
+      ) : (
+        <rect
+          x={x - (vertical ? 3 : 8) / scale}
+          y={y - (vertical ? 8 : 3) / scale}
+          width={(vertical ? 6 : 16) / scale}
+          height={(vertical ? 16 : 6) / scale}
+          rx={3 / scale}
+          fill="#fff"
+          stroke="#b9bcc3"
+          strokeWidth={1 / scale}
+        />
+      )}
+    </g>
+  )
+}
+
+// 망고보드 선 핸들: 양끝 흰 사각(끝점 이동), 가운데 흰 원(꺾임점). 곡선이면 제어선을 점선으로 보인다
+function LineHandles({
+  layer,
+  scale,
+  onPointerDown,
+}: {
+  layer: Layer
+  scale: number
+  onPointerDown: (event: React.PointerEvent<SVGElement>, index: number) => void
+}) {
+  const points = lineLocalPoints(layer)
+  const [start, end] = [points[0], points[points.length - 1]]
+  const bend = points.length === 3 ? points[1] : null
+  const middle = bend ?? {
+    x: (start.x + end.x) / 2,
+    y: (start.y + end.y) / 2,
+  }
+  const size = 7 / scale
+  return (
+    <>
+      {bend && layer.lineCurved && (
+        <path
+          d={`M${start.x},${start.y} L${bend.x},${bend.y} L${end.x},${end.y}`}
+          fill="none"
+          stroke="#70777F"
+          strokeWidth={1 / scale}
+          strokeDasharray={`${4 / scale} ${4 / scale}`}
+          pointerEvents="none"
+        />
+      )}
+      {[start, end].map((p, i) => (
+        <g
+          key={i}
+          role="button"
+          aria-label={i ? "선 끝점 이동" : "선 시작점 이동"}
+          className="cursor-move"
+          onPointerDown={(event) => onPointerDown(event, i ? 2 : 0)}
+        >
+          <circle cx={p.x} cy={p.y} r={12 / scale} fill="transparent" />
+          <rect
+            x={p.x - size / 2}
+            y={p.y - size / 2}
+            width={size}
+            height={size}
+            rx={1.5 / scale}
+            fill="#fff"
+            stroke="#3F4250"
+            strokeWidth={1 / scale}
+          />
+        </g>
+      ))}
+      <g
+        role="button"
+        aria-label="선 꺾기"
+        className="cursor-move"
+        onPointerDown={(event) => onPointerDown(event, 1)}
+      >
+        <circle cx={middle.x} cy={middle.y} r={12 / scale} fill="transparent" />
+        <circle
+          cx={middle.x}
+          cy={middle.y}
+          r={6 / scale}
+          fill="#fff"
+          stroke="#b9bcc3"
+          strokeWidth={1 / scale}
+        />
+      </g>
+    </>
+  )
+}
+
+function RotateHandle({
+  x,
+  y,
+  scale,
+  onPointerDown,
+}: {
+  x: number
+  y: number
+  scale: number
+  onPointerDown: (event: React.PointerEvent<SVGElement>) => void
+}) {
+  const cy = y - 27.5 / scale
+  const r = 10 / scale
+  return (
+    <>
+      <line
+        x1={x}
+        y1={y}
+        x2={x}
+        y2={y - 17.5 / scale}
+        stroke="#c2d7db"
+        strokeWidth={1 / scale}
+        strokeDasharray={`${3 / scale} ${2 / scale}`}
+        pointerEvents="none"
+      />
+      <g
+        role="button"
+        aria-label="요소 회전"
+        className="cursor-grab"
+        onPointerDown={onPointerDown}
+      >
+        <circle
+          cx={x}
+          cy={cy}
+          r={r}
+          fill="#fff"
+          stroke="#e0e1e5"
+          strokeWidth={1 / scale}
+        />
+        <path
+          d={`M${x + r * 0.45},${cy - r * 0.35} A${r * 0.5},${r * 0.5} 0 1 0 ${x + r * 0.5},${cy + r * 0.15}`}
+          fill="none"
+          stroke="#3F4250"
+          strokeWidth={1.4 / scale}
+          strokeLinecap="round"
+        />
+        <path
+          d={`M${x + r * 0.15},${cy - r * 0.45} L${x + r * 0.5},${cy - r * 0.4} L${x + r * 0.45},${cy - r * 0.05}`}
+          fill="none"
+          stroke="#3F4250"
+          strokeWidth={1.4 / scale}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </g>
+    </>
+  )
+}
+
+// 망고보드 이미지 조절: 편집기 화면 전체를 어둡게 덮고 자르는 틀만 밝게 뚫는다. 버튼은 틀 바로 아래
+function CropShade({
+  frameRef,
+  layer,
+  onApply,
+  onCancel,
+  onReset,
+}: {
+  frameRef: React.RefObject<SVGRectElement>
+  layer: Layer
+  onApply: () => void
+  onCancel: () => void
+  onReset: () => void
+}) {
+  const [rect, setRect] = useState<DOMRect | null>(null)
+  useLayoutEffect(() => {
+    const measure = () => {
+      const next = frameRef.current?.getBoundingClientRect() ?? null
+      setRect((prev) =>
+        prev &&
+        next &&
+        prev.x === next.x &&
+        prev.y === next.y &&
+        prev.width === next.width &&
+        prev.height === next.height
+          ? prev
+          : next
+      )
+    }
+    measure()
+    window.addEventListener("resize", measure)
+    window.addEventListener("scroll", measure, true)
+    return () => {
+      window.removeEventListener("resize", measure)
+      window.removeEventListener("scroll", measure, true)
+    }
+  }, [frameRef, layer])
+  if (!rect) return null
+  return createPortal(
+    <>
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed z-[10001]"
+        style={{
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+          boxShadow: "0 0 0 100vmax rgba(0,0,0,0.45)",
+        }}
+      />
+      <div
+        role="toolbar"
+        aria-label="이미지 조절"
+        className="fixed z-[10002] flex -translate-x-1/2 items-center gap-2"
+        style={{ left: rect.left + rect.width / 2, top: rect.bottom + 14 }}
+      >
+        <button
+          type="button"
+          aria-label="자르기 적용"
+          title="적용 (Enter)"
+          onClick={onApply}
+          className="flex size-9 items-center justify-center rounded-full bg-white text-[#2e86c1] shadow-[0_0_5px_#d3d4d8]"
+        >
+          <Check size={20} strokeWidth={2.4} />
+        </button>
+        <button
+          type="button"
+          aria-label="자르기 취소"
+          title="취소"
+          onClick={onCancel}
+          className="flex size-9 items-center justify-center rounded-full bg-white text-[#ef4d4d] shadow-[0_0_5px_#d3d4d8]"
+        >
+          <X size={20} strokeWidth={2.4} />
+        </button>
+        <button
+          type="button"
+          onClick={onReset}
+          className="h-9 rounded-full bg-white px-4 text-[14px] whitespace-nowrap text-[#20232A] shadow-[0_0_5px_#d3d4d8]"
+        >
+          원본이미지
+        </button>
+      </div>
+    </>,
+    document.body
+  )
+}
+
+// 망고보드 툴팁: 지연·페이드 없이 바로 뜨고, 단축키는 회색 둘째 줄
+function QuickAction({
+  label,
+  shortcut,
+  onClick,
+  children,
+}: {
+  label: string
+  shortcut?: string
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      className="group/qa relative m-1 flex size-[30px] items-center justify-center rounded-[6px] p-1 text-[#3F4250] first:mt-[5px] hover:bg-[#F3F5F8]"
+    >
+      {children}
+      <span className="pointer-events-none absolute top-1/2 left-full z-30 ml-2 hidden -translate-y-1/2 rounded-[6px] bg-[rgba(42,41,47,0.95)] px-[10px] py-[7px] text-left text-[13px] leading-[18px] font-medium whitespace-nowrap text-[#F4F5F7] group-hover/qa:block">
+        {label}
+        {shortcut && <span className="block text-[#9a9ca3]">{shortcut}</span>}
+      </span>
+    </button>
+  )
 }
 
 // 채우기 없는 도형은 안쪽이 클릭을 받지 않아 뒤에 깔린 요소를 누를 수 있다. 테두리 선은 그대로 잡힌다
@@ -67,7 +393,6 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
     moveDrag,
     endDrag,
     canvasFit,
-    handleSize,
     editable,
     patch,
     removeSelected,
@@ -78,17 +403,25 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
     setCropId,
     startCrop,
     resetCrop,
+    cancelCrop,
     mergedGroup,
     mergeGroup,
     splitGroup,
     showOverflow,
     penActive,
     pencilActive,
+    eraserActive,
+    shapeActive,
+    change,
     pointEditLayer,
     finishPointEdit,
     startPointEdit,
+    duplicateSelected,
+    imageFile,
   } = editor
+  const replaceImageRef = useRef<HTMLInputElement>(null)
   const cropping = !!selected && cropId === selected.id
+  const cropFrameRef = useRef<SVGRectElement>(null)
   const groupBox = group.length > 1 ? unionBounds(group) : null
   const handles = [
     ["nw", 0, 0],
@@ -105,6 +438,36 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
   )
   const cancelEdit = useRef(false)
   const scale = canvasFit * zoom
+  const [alt, setAlt] = useState(false)
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => setAlt(event.altKey)
+    const reset = () => setAlt(false)
+    window.addEventListener("keydown", key)
+    window.addEventListener("keyup", key)
+    window.addEventListener("blur", reset)
+    return () => {
+      window.removeEventListener("keydown", key)
+      window.removeEventListener("keyup", key)
+      window.removeEventListener("blur", reset)
+    }
+  }, [])
+  const measured = groupBox ?? (selected ? layerBounds(selected) : null)
+  const hovered = layers.find(
+    (layer) =>
+      layer.id === hoveredId &&
+      layer.id !== selected?.id &&
+      !group.some((item) => item.id === layer.id)
+  )
+  const measurements =
+    alt && measured
+      ? gaps(
+          measured,
+          hovered
+            ? layerBounds(hovered)
+            : { x0: 0, y0: 0, x1: design.widthMm, y1: design.heightMm }
+        )
+      : []
   const editingLayer = editing
     ? layers.find((layer) => layer.id === editing.id)
     : undefined
@@ -142,6 +505,30 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
           startMarquee(event)
       }}
     >
+      {(pencilActive || eraserActive || shapeActive) && (
+        <div className="pointer-events-none absolute top-3 left-1/2 z-30 min-w-[405px] -translate-x-1/2 rounded-[6px] bg-[rgba(28,29,31,0.95)] p-2 px-4 text-center text-[14px] leading-[28px] whitespace-nowrap text-white">
+          <p>
+            <span className="rounded-[5px] bg-[#FEE869] pt-[2px] pr-[5px] pb-[3px] pl-[7px] text-[#20232A]">
+              ESC
+            </span>{" "}
+            를 누르면 {eraserActive ? "지우개" : "그리기"} 모드가 종료됩니다.
+          </p>
+          <p>
+            {eraserActive ? (
+              <span className="text-[#FEE869]">
+                펜이나 형광펜으로 그린 단일 요소만 지울 수 있습니다.
+              </span>
+            ) : (
+              <>
+                그리기 요소를{" "}
+                <span className="text-[#FEE869]">
+                  그룹화(Ctrl + G)한 뒤 즐겨찾기에 저장할 수 있습니다.
+                </span>
+              </>
+            )}
+          </p>
+        </div>
+      )}
       <div className="w-max" style={{ padding: `${pad.y}px ${pad.x}px` }}>
         <div className="relative shrink-0">
           <svg
@@ -153,6 +540,7 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
               width: `${design.widthMm * canvasFit * zoom}px`,
               height: `${design.heightMm * canvasFit * zoom}px`,
               overflow: "visible",
+              cursor: eraserActive ? ERASER_CURSOR : undefined,
             }}
             className="block shrink-0 touch-none bg-white shadow-xl outline outline-1 outline-offset-2 outline-[#222] select-none"
             onPointerDown={startMarquee}
@@ -186,7 +574,19 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                 layer.visible === false ? null : (
                   <g
                     key={layer.id}
-                    onPointerDown={(event) => startDrag(event, layer)}
+                    onPointerDown={(event) => {
+                      if (!eraserActive) return startDrag(event, layer)
+                      // 지우개는 펜·형광펜으로 그린 획만 통째로 지운다
+                      event.stopPropagation()
+                      if (layer.brush && !layer.locked)
+                        change({
+                          ...design,
+                          [side]: layers.filter((item) => item.id !== layer.id),
+                        })
+                    }}
+                    onPointerEnter={() => setHoveredId(layer.id)}
+                    onPointerLeave={() => setHoveredId(null)}
+                    style={eraserActive ? { cursor: ERASER_CURSOR } : undefined}
                     className={
                       layer.locked ||
                       (mode === "customer" && layer.editable === false)
@@ -223,102 +623,107 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                 )
               )}
             </g>
+            {/* 그리는 중에도 방금 그린 선의 핸들은 잡혀야 하므로 오버레이를 선택 핸들 아래에 둔다 */}
+            {shapeActive && <ShapeOverlay editor={editor} />}
             {selected && selected.visible !== false && !pointEditLayer && (
               <g
                 id="selection-outline"
                 transform={`translate(${selected.x + selected.width / 2} ${selected.y + selected.height / 2}) rotate(${selected.rotation ?? 0}) scale(${selected.flipX ? -1 : 1} ${selected.flipY ? -1 : 1}) translate(${-selected.x - selected.width / 2} ${-selected.y - selected.height / 2})`}
               >
-                {cropping && selected.image && (
-                  <>
-                    <image
-                      href={imageSrc(selected.image)}
-                      {...photoBox({
-                        ...selected,
-                        crop: currentCrop(selected),
-                      })}
-                      opacity={0.35}
-                      pointerEvents="none"
-                    />
-                    <rect
-                      {...(({ x, y, width, height }) => ({
-                        x,
-                        y,
-                        width,
-                        height,
-                      }))(
-                        photoBox({ ...selected, crop: currentCrop(selected) })
-                      )}
-                      fill="none"
-                      stroke="#555"
-                      strokeWidth={1 / scale}
-                      strokeDasharray={`${4 / scale} ${3 / scale}`}
-                      pointerEvents="none"
-                    />
-                  </>
-                )}
-                <rect
-                  x={selected.x}
-                  y={selected.y}
-                  width={selected.width}
-                  height={selected.height}
-                  fill="none"
-                  stroke="#10c9c1"
-                  strokeWidth={1 / (canvasFit * zoom)}
-                  pointerEvents="none"
-                />
-                {(
-                  [
-                    ["nw", 0, 0],
-                    ["n", 0.5, 0],
-                    ["ne", 1, 0],
-                    ["e", 1, 0.5],
-                    ["se", 1, 1],
-                    ["s", 0.5, 1],
-                    ["sw", 0, 1],
-                    ["w", 0, 0.5],
-                  ] as const
-                ).map(([handle, rx, ry]) => (
-                  <rect
-                    key={handle}
-                    role="button"
-                    aria-label={`${handle} 크기 조절`}
-                    x={selected.x + selected.width * rx - handleSize / 2}
-                    y={selected.y + selected.height * ry - handleSize / 2}
-                    width={handleSize}
-                    height={handleSize}
-                    fill="white"
-                    stroke="#10c9c1"
-                    strokeWidth={1 / (canvasFit * zoom)}
-                    className="cursor-pointer"
-                    onPointerDown={(event) =>
-                      startResize(event, selected, handle)
+                {cropping &&
+                  selected.image &&
+                  (() => {
+                    // 망고보드 이미지 조절: 사진 전체를 보이고, 틀 밖(화면 전체)은 CropShade 가 어둡게 덮는다
+                    const full = photoBox({
+                      ...selected,
+                      crop: currentCrop(selected),
+                    })
+                    const { x, y, width: w, height: h } = selected
+                    const arm = 14 / scale
+                    return (
+                      <g pointerEvents="none">
+                        <image href={imageSrc(selected.image)} {...full} />
+                        <rect
+                          ref={cropFrameRef}
+                          x={x}
+                          y={y}
+                          width={w}
+                          height={h}
+                          fill="none"
+                          stroke="#fff"
+                          strokeWidth={1 / scale}
+                          strokeDasharray={`${4 / scale} ${3 / scale}`}
+                        />
+                        <path
+                          d={`M${x},${y + arm}V${y}H${x + arm} M${x + w - arm},${y}H${x + w}V${y + arm} M${x + w},${y + h - arm}V${y + h}H${x + w - arm} M${x + arm},${y + h}H${x}V${y + h - arm}`}
+                          fill="none"
+                          stroke="#fff"
+                          strokeWidth={3 / scale}
+                          strokeLinecap="square"
+                        />
+                      </g>
+                    )
+                  })()}
+                {cropping ? null : selected.type === "line" ? (
+                  <LineHandles
+                    layer={selected}
+                    scale={scale}
+                    onPointerDown={(event, index) =>
+                      startResize(event, selected, `line-${index}`)
                     }
                   />
-                ))}
-                <line
-                  x1={selected.x + selected.width / 2}
-                  y1={selected.y}
-                  x2={selected.x + selected.width / 2}
-                  y2={selected.y - handleSize * 2}
-                  stroke="#10c9c1"
-                  strokeWidth={1 / (canvasFit * zoom)}
-                  pointerEvents="none"
-                />
-                <circle
-                  role="button"
-                  aria-label="요소 회전"
-                  cx={selected.x + selected.width / 2}
-                  cy={selected.y - handleSize * 2}
-                  r={handleSize / 2}
-                  fill="white"
-                  stroke="#10c9c1"
-                  strokeWidth={1 / (canvasFit * zoom)}
-                  className="cursor-grab"
-                  onPointerDown={(event) =>
-                    startResize(event, selected, "rotate")
-                  }
-                />
+                ) : (
+                  <rect
+                    x={selected.x}
+                    y={selected.y}
+                    width={selected.width}
+                    height={selected.height}
+                    fill="none"
+                    stroke="#42dfe5"
+                    strokeWidth={1 / scale}
+                    pointerEvents="none"
+                  />
+                )}
+                {(selected.type === "line" ? [] : handles).map(
+                  ([handle, rx, ry]) => (
+                    <SelectionHandle
+                      key={handle}
+                      handle={handle}
+                      x={selected.x + selected.width * rx}
+                      y={selected.y + selected.height * ry}
+                      scale={scale}
+                      label={`${handle} 크기 조절`}
+                      hidden={cropping}
+                      onPointerDown={(event) =>
+                        startResize(event, selected, handle)
+                      }
+                    />
+                  )
+                )}
+                {!cropping && (
+                  <RotateHandle
+                    x={selected.x + selected.width / 2}
+                    y={selected.y}
+                    scale={scale}
+                    onPointerDown={(event) =>
+                      startResize(event, selected, "rotate")
+                    }
+                  />
+                )}
               </g>
+            )}
+            {editor.backgroundSelected && (
+              <rect
+                id="background-outline"
+                x={0}
+                y={0}
+                width={design.widthMm}
+                height={design.heightMm}
+                fill="none"
+                stroke="#42dfe5"
+                strokeWidth={2 / scale}
+                pointerEvents="none"
+              />
             )}
             {groupBox && (
               <g id="group-outline">
@@ -328,32 +733,19 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                   width={groupBox.x1 - groupBox.x0}
                   height={groupBox.y1 - groupBox.y0}
                   fill="none"
-                  stroke="#10c9c1"
+                  stroke={mergedGroup ? "#f03fb8" : "#42dfe5"}
                   strokeWidth={1 / scale}
                   strokeDasharray={`${4 / scale} ${3 / scale}`}
                   pointerEvents="none"
                 />
                 {handles.map(([handle, rx, ry]) => (
-                  <rect
+                  <SelectionHandle
                     key={handle}
-                    role="button"
-                    aria-label={`묶음 ${handle} 크기 조절`}
-                    x={
-                      groupBox.x0 +
-                      (groupBox.x1 - groupBox.x0) * rx -
-                      handleSize / 2
-                    }
-                    y={
-                      groupBox.y0 +
-                      (groupBox.y1 - groupBox.y0) * ry -
-                      handleSize / 2
-                    }
-                    width={handleSize}
-                    height={handleSize}
-                    fill="white"
-                    stroke="#10c9c1"
-                    strokeWidth={1 / scale}
-                    className="cursor-pointer"
+                    handle={handle}
+                    x={groupBox.x0 + (groupBox.x1 - groupBox.x0) * rx}
+                    y={groupBox.y0 + (groupBox.y1 - groupBox.y0) * ry}
+                    scale={scale}
+                    label={`묶음 ${handle} 크기 조절`}
                     onPointerDown={(event) => startGroupResize(event, handle)}
                   />
                 ))}
@@ -415,6 +807,60 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                 pointerEvents="none"
               />
             )}
+            {eraserActive &&
+              hovered?.brush &&
+              (() => {
+                const box = boxOf(hovered)
+                return (
+                  <rect
+                    x={box.x0}
+                    y={box.y0}
+                    width={box.x1 - box.x0}
+                    height={box.y1 - box.y0}
+                    fill="none"
+                    stroke="#5ED6E6"
+                    strokeWidth={1 / scale}
+                    pointerEvents="none"
+                  />
+                )
+              })()}
+            {measurements.length > 0 && (
+              <g id="gap-measurements" pointerEvents="none">
+                {measurements.map((gap) => {
+                  const cx = (gap.x1 + gap.x2) / 2
+                  const cy = (gap.y1 + gap.y2) / 2
+                  const label = `${gap.mm}mm`
+                  return (
+                    <g key={`${gap.x1},${gap.y1},${gap.x2},${gap.y2}`}>
+                      <line
+                        {...gap}
+                        stroke="#ff2d87"
+                        strokeWidth={1 / scale}
+                        strokeDasharray={`${4 / scale} ${2 / scale}`}
+                      />
+                      <rect
+                        x={cx - (label.length * 3.6 + 4) / scale}
+                        y={cy - 8 / scale}
+                        width={(label.length * 7.2 + 8) / scale}
+                        height={16 / scale}
+                        rx={3 / scale}
+                        fill="#ff2d87"
+                      />
+                      <text
+                        x={cx}
+                        y={cy}
+                        fill="#ffffff"
+                        fontSize={11 / scale}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                      >
+                        {label}
+                      </text>
+                    </g>
+                  )
+                })}
+              </g>
+            )}
             {(showRuler || showCutline || showSafety) && (
               <CanvasGuides editor={editor} />
             )}
@@ -424,37 +870,89 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
           </svg>
           {selected &&
             selected.visible !== false &&
-            editable &&
+            (editable ||
+              (selected.locked &&
+                (mode === "designer" || selected.editable !== false))) &&
             !editing &&
-            !pointEditLayer && (
+            !pointEditLayer &&
+            !cropping && (
               <div
-                className="absolute z-20 flex -translate-x-1/2 -translate-y-1/2 gap-1"
+                role="toolbar"
+                aria-label="선택 요소 빠른 작업"
+                className="absolute z-20 flex w-[38px] flex-col rounded-[7px] bg-white shadow-[0_0_5px_#d3d4d8]"
                 style={quickActionsAt(selected, scale)}
               >
-                {textEditable && (
-                  <button
-                    type="button"
-                    aria-label="문구 수정"
-                    title={
-                      selected.type === "text"
-                        ? "문구 수정"
-                        : "도형에 글자 넣기"
-                    }
-                    onClick={startTextEdit}
-                    className="flex size-6 items-center justify-center rounded bg-white text-[#10a8a1] shadow"
+                {selected.locked ? (
+                  <QuickAction
+                    label="잠금 풀기"
+                    onClick={() => patch(selected.id, { locked: false })}
                   >
-                    <Pencil size={14} />
-                  </button>
+                    <LockOpen size={16} />
+                  </QuickAction>
+                ) : (
+                  <>
+                    {textEditable && (
+                      <QuickAction
+                        label={
+                          selected.type === "text"
+                            ? "문구 수정"
+                            : "도형에 글자 넣기"
+                        }
+                        onClick={startTextEdit}
+                      >
+                        <Pencil size={16} />
+                      </QuickAction>
+                    )}
+                    {selected.type === "image" && (
+                      <QuickAction label="사진 자르기" onClick={startCrop}>
+                        <Crop size={16} />
+                      </QuickAction>
+                    )}
+                    {(selected.type === "frame" ||
+                      (SHAPE_TEXT_TYPES.has(selected.type) &&
+                        !!selected.image)) && (
+                      <QuickAction
+                        label="사진 바꾸기"
+                        onClick={() => replaceImageRef.current?.click()}
+                      >
+                        <ImageUp size={16} />
+                      </QuickAction>
+                    )}
+                    <QuickAction
+                      label="잠금"
+                      shortcut="Cmd + 2"
+                      onClick={() => patch(selected.id, { locked: true })}
+                    >
+                      <Lock size={16} />
+                    </QuickAction>
+                    <span className="mx-1 border-t border-[#E6E7EA]" />
+                    <QuickAction
+                      label="복제"
+                      shortcut="Cmd + D"
+                      onClick={duplicateSelected}
+                    >
+                      <Copy size={16} />
+                    </QuickAction>
+                    <QuickAction
+                      label="삭제"
+                      shortcut="Delete / Backspace"
+                      onClick={removeSelected}
+                    >
+                      <Trash2 size={16} />
+                    </QuickAction>
+                  </>
                 )}
-                <button
-                  type="button"
-                  aria-label="선택 요소 삭제"
-                  title="삭제"
-                  onClick={removeSelected}
-                  className="flex size-6 items-center justify-center rounded bg-white text-[#10a8a1] shadow"
-                >
-                  <Trash2 size={14} />
-                </button>
+                <input
+                  ref={replaceImageRef}
+                  type="file"
+                  hidden
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0]
+                    event.target.value = ""
+                    if (file) void imageFile(file, "frame")
+                  }}
+                />
               </div>
             )}
           {groupBox && (
@@ -488,7 +986,7 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
               </button>
             </div>
           )}
-          {(penActive || pencilActive) && <DrawToolbar editor={editor} />}
+          {penActive && <DrawToolbar editor={editor} />}
           {pointEditLayer && (
             <div className="absolute -top-11 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded bg-[#303030] px-3 py-1.5 text-xs whitespace-nowrap text-white shadow">
               점·핸들을 끌어 모양을 바꾸세요 · 점 두 번 클릭: 곡선↔꺾기 ·
@@ -503,23 +1001,13 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
             </div>
           )}
           {cropping && (
-            <div className="absolute -top-11 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded bg-[#303030] px-3 py-1.5 text-xs whitespace-nowrap text-white shadow">
-              모서리를 끌어 자르고, 안쪽을 끌어 사진 위치를 옮기세요
-              <button
-                type="button"
-                onClick={resetCrop}
-                className="rounded border border-white/40 px-2 py-0.5"
-              >
-                원래대로
-              </button>
-              <button
-                type="button"
-                onClick={() => setCropId(null)}
-                className="flex items-center gap-1 rounded bg-white px-2 py-0.5 font-semibold text-[#303030]"
-              >
-                <Check size={12} /> 완료
-              </button>
-            </div>
+            <CropShade
+              frameRef={cropFrameRef}
+              layer={selected}
+              onApply={() => setCropId(null)}
+              onCancel={cancelCrop}
+              onReset={resetCrop}
+            />
           )}
           {editingLayer && editing && (
             <textarea

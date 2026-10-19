@@ -1,5 +1,5 @@
-import { useSyncExternalStore } from "react"
-import { FlipHorizontal, FlipVertical } from "lucide-react"
+import { useRef, useState, useSyncExternalStore } from "react"
+import { ChevronDown, FlipHorizontal, FlipVertical } from "lucide-react"
 import type { Layer } from "../../lib/document"
 import {
   fontOptions,
@@ -10,11 +10,14 @@ import {
 import { PrintColorPicker } from "../color-picker"
 import { bevelOf, shadowOf, strokeRounded } from "../graphic"
 import { NumberInput } from "./number-input"
+import { PropSlider } from "./prop-sections"
+import { FontPicker } from "./font-picker"
 
 // 하나를 골랐든 여럿을 골랐든 같은 컨트롤을 쓴다. apply 는 고른 요소 모두에 들어간다
 export type StyleTarget = {
   layers: Layer[]
   apply: (value: Partial<Layer>) => void
+  everywhere?: (patchOf: (layer: Layer) => Partial<Layer>) => void
   disabled: boolean
   placement: "left" | "right"
 }
@@ -32,6 +35,7 @@ export function common<T>(
 const pressed = (on: boolean) =>
   `border px-2 py-1 ${on ? "border-blue-600 text-blue-600" : ""}`
 
+// 망고보드 세그먼트: 회색 트랙 안에서 고른 칸만 흰 바탕 + 노랑 테두리
 function Segmented<T extends string>({
   label,
   options,
@@ -46,9 +50,13 @@ function Segmented<T extends string>({
   disabled: boolean
 }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="w-12 shrink-0">{label}</span>
-      <div role="group" aria-label={label} className="flex">
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-[15px] text-[#3F4250]">{label}</span>
+      <div
+        role="group"
+        aria-label={label}
+        className="flex rounded-[7px] bg-[#e2e7ed]"
+      >
         {options.map(([option, text]) => (
           <button
             key={option}
@@ -56,7 +64,7 @@ function Segmented<T extends string>({
             aria-pressed={value === option}
             disabled={disabled}
             onClick={() => onPick(option)}
-            className={`${pressed(value === option)} -ml-px first:ml-0`}
+            className={`h-[34px] min-w-[56px] rounded-[7px] border-2 px-2 text-[14px] ${value === option ? "border-[#fede29] bg-white text-[#20232A]" : "border-transparent text-[#70777F]"}`}
           >
             {text}
           </button>
@@ -101,48 +109,68 @@ function Field({
   )
 }
 
-export function FontSelect({ target }: { target: StyleTarget }) {
-  const { layers, apply, disabled } = target
+export function FontSelect({
+  target,
+  bare = false,
+}: {
+  target: StyleTarget
+  bare?: boolean
+}) {
+  const { layers, apply, everywhere, disabled } = target
   const value = common(layers, (layer) => fontStack(layer.fontFamily))
+  const [replaceSame, setReplaceSame] = useState(false)
   const options = useSyncExternalStore(
     subscribeFontOptions,
     fontOptions,
     fontOptions
   )
+  const [open, setOpen] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const current = options.find((font) => font.value === value)
+  const choose = (family: string) => {
+    // 아직 안 받은 웹폰트로 재면 대체 글꼴 폭으로 상자가 맞춰진다
+    ;(loadUploadedFont(family) ?? document.fonts.load(`16px ${family}`))
+      .catch(() => undefined)
+      .finally(() =>
+        replaceSame && everywhere && value
+          ? everywhere((layer) =>
+              layer.text !== undefined && fontStack(layer.fontFamily) === value
+                ? { fontFamily: family }
+                : {}
+            )
+          : apply({ fontFamily: family })
+      )
+  }
   return (
-    <label className="flex items-center gap-2">
-      <span className="w-9 shrink-0">폰트</span>
-      <select
+    <div className="flex items-center gap-2">
+      {!bare && <span className="w-9 shrink-0">폰트</span>}
+      <button
+        ref={trigger}
+        type="button"
         aria-label="폰트"
-        className="min-w-0 flex-1 border px-2 py-1"
-        value={value ?? ""}
+        aria-expanded={open}
         disabled={disabled}
-        onChange={(event) => {
-          const family = event.target.value
-          // 고른 뒤에도 포커스가 남으면 방향키가 요소 대신 글꼴을 넘긴다
-          event.target.blur()
-          // 아직 안 받은 웹폰트로 재면 대체 글꼴 폭으로 상자가 맞춰진다
-          ;(loadUploadedFont(family) ?? document.fonts.load(`16px ${family}`))
-            .catch(() => undefined)
-            .finally(() => apply({ fontFamily: family }))
-        }}
+        onClick={() => setOpen(true)}
+        className="flex h-[38px] min-w-0 flex-1 items-center justify-between gap-1 rounded-[6px] border border-[#e0e1e5] px-[10px] text-left text-[14px] text-[#3F4250] disabled:opacity-50"
       >
-        {value === null && (
-          <option value="" disabled>
-            혼합
-          </option>
-        )}
-        {options.map((font) => (
-          <option
-            key={font.value}
-            value={font.value}
-            style={{ fontFamily: font.value }}
-          >
-            {font.label}
-          </option>
-        ))}
-      </select>
-    </label>
+        <span
+          className="truncate"
+          style={current ? { fontFamily: current.value } : undefined}
+        >
+          {current?.label ?? "혼합"}
+        </span>
+        <ChevronDown className="size-4 shrink-0" aria-hidden="true" />
+      </button>
+      <FontPicker
+        open={open}
+        value={value}
+        anchor={trigger.current}
+        onPick={choose}
+        onClose={() => setOpen(false)}
+        replaceSame={replaceSame}
+        onReplaceSame={everywhere && value ? setReplaceSame : undefined}
+      />
+    </div>
   )
 }
 
@@ -164,7 +192,11 @@ export function StrokeLineControls({ target }: { target: StyleTarget }) {
           value={common(layers, (layer) => layer.strokeDash ?? "solid")}
           disabled={disabled}
           onPick={(dash) =>
-            apply({ strokeDash: dash === "solid" ? undefined : dash })
+            apply({
+              strokeDash: dash === "solid" ? undefined : dash,
+              lineDash: undefined,
+              lineDashCustom: undefined,
+            })
           }
         />
       )}
@@ -359,41 +391,27 @@ export function StarControls({
   const points = layer.starPoints ?? 5
   const ratio = layer.starRatio ?? 0.38
   return (
-    <div className="flex items-center gap-2">
-      <label className="flex items-center gap-1 whitespace-nowrap">
-        꼭짓점
-        <NumberInput
-          aria-label="별 꼭짓점 수"
-          min={3}
-          max={20}
-          step={1}
-          className="w-12 border p-1 text-right"
-          value={points}
-          disabled={disabled}
-          onValue={(value) =>
-            apply({ starPoints: Math.round(value), starRatio: ratio })
-          }
-        />
-      </label>
-      <label className="flex min-w-0 flex-1 items-center gap-1 whitespace-nowrap">
-        뾰족함
-        <input
-          type="range"
-          aria-label="별 뾰족함"
-          min={0}
-          max={95}
-          step={1}
-          value={Math.round((1 - ratio) * 100)}
-          disabled={disabled}
-          onChange={(event) =>
-            apply({
-              starPoints: points,
-              starRatio: 1 - Number(event.target.value) / 100,
-            })
-          }
-          className="min-w-0 flex-1"
-        />
-      </label>
+    <div className="grid grid-cols-2 gap-[30px]">
+      <PropSlider
+        label="꼭짓점"
+        min={3}
+        max={20}
+        value={points}
+        disabled={disabled}
+        onValue={(value) =>
+          apply({ starPoints: Math.round(value), starRatio: ratio })
+        }
+      />
+      <PropSlider
+        label="뾰족함"
+        min={0}
+        max={95}
+        value={Math.round((1 - ratio) * 100)}
+        disabled={disabled}
+        onValue={(value) =>
+          apply({ starPoints: points, starRatio: 1 - value / 100 })
+        }
+      />
     </div>
   )
 }

@@ -1,6 +1,6 @@
 # 피킹 계획 층은 전략 어댑터 바깥의 단일 순수 함수 모듈로 둔다
 
-> **부분 대체됨:** 계획 층 자체는 [[0041-picking-plan-absorbed-into-work-item-allocations]] 로 작업 항목 배정에 흡수됐다. 아래의 «3방식 diff ≤ 4 만 공유» 규칙은 `picking/allocation/` 에 그대로 적용된다.
+> **부분 대체됨:** custody 층 통합 여부는 [[0045-picking-custody-commands-share-one-kernel]] 가 대체한다(2026-10-19). 계획 층 자체는 [[0041-picking-plan-absorbed-into-work-item-allocations]] 로 작업 항목 배정에 흡수됐다. 아래의 «3방식 diff ≤ 4 만 공유» 규칙은 `picking/allocation/` 에 그대로 적용된다.
 
 출고작업 피킹의 세 전략 어댑터(`discrete` / `pick_to_tote` / `aggregate_then_sort`)가 **계획 층 전체를 손으로 복사**하고 있었다. 이 ADR 은 그 중복을 어디까지 어떤 형태로 통합할지에 대한 결정과 근거를 못 박는다. 설계 스펙은 `docs/superpowers/specs/2026-08-15-picking-plan-layer-design.md`.
 
@@ -19,7 +19,7 @@
 
   † `plan` 의 41줄은 의미 차이가 아니다 — `aggregate_then_sort` 만 `plannedResult()` 를 뽑아 썼고 나머지 둘은 인라인이다. `discrete↔pick_to_tote` 의 diff 4줄은 전부 문자열 리터럴(`'picking.discrete.plan'`)이다.
 
-  **custody 층은 통합하지 않는다.** completePick 의 diff 108/128 은 "복사 후 살짝 수정" 이 아니라 진짜 다른 로직(`BULK_CART → SORTING → PACKING` vs `WORKER → PACKING`)이다. 이걸 hook 으로 밀어 넣으면 ADR-0026 이 경계한 "본문이 전부 hook 인 과추상화" 가 된다.
+  **custody 층은 통합하지 않는다.** _(custody 층 통합 여부는 [[0045-picking-custody-commands-share-one-kernel]] 가 대체한다, 2026-10-19.)_ completePick 의 diff 108/128 은 "복사 후 살짝 수정" 이 아니라 진짜 다른 로직(`BULK_CART → SORTING → PACKING` vs `WORKER → PACKING`)이다. 이걸 hook 으로 밀어 넣으면 ADR-0026 이 경계한 "본문이 전부 hook 인 과추상화" 가 된다.
 
 - **계획 층은 전략에 의존하지 않는다는 사실이 이 경계의 근거다.** 옮길 메서드 안에서 `this.capabilities` 는 오직 `.name` 문자열로만 쓰인다(14 지점). `requiresPhysicalTote` / `supportsAggregateSourcePick` 로 분기하는 곳은 **0곳**. 따라서 `strategyName` 인자 하나면 전략 무관해진다.
 
