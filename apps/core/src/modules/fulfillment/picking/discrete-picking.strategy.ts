@@ -193,11 +193,17 @@ export class DiscretePickingStrategy implements PickingStrategy {
         complete: 'discrete-complete',
         unpick: 'discrete-unpick',
         handoffClaim: 'discrete-handoff-claim',
-        handoff: 'discrete-handoff',
       },
-      loadHeldSpots: async (_trx, ctx) => spotsOf([{ custodyType: 'WORKER', refs: new Set([ctx.pickerId]) }]),
+      // DB 를 읽지 않는 조회 — aggregate 와 같은 꼴(Promise.resolve)로 둔다.
+      loadHeldSpots: (_trx, ctx) =>
+        Promise.resolve(spotsOf([{ custodyType: 'WORKER', refs: new Set([ctx.pickerId]) }])),
       completeMovesFrom: 'WORKER',
-      handoffCustody: { custodyType: 'WORKER', refFor: (_workItemId, workerId) => workerId },
+      handoffCustody: {
+        custodyType: 'WORKER',
+        refFor: (_workItemId, workerId) => workerId,
+        key: 'discrete-handoff',
+        corruptMessage: (balanceId) => `Worker balance ${balanceId} is incomplete`,
+      },
       messages: {
         completeIncomplete: ({ shipmentLineId, sourceLocationId }) => ({
           code: 'PICKING_INCOMPLETE',
@@ -206,7 +212,6 @@ export class DiscretePickingStrategy implements PickingStrategy {
         ownerMismatchWhilePicking: () => 'Active pick custody must be held only by the current picker',
         handoffOwnerMismatch: ({ pickerId }) =>
           `Shipment attributed custody must be exclusively WORKER custody owned by ${pickerId}`,
-        handoffCorrupt: (balanceId) => `Worker balance ${balanceId} is incomplete`,
       },
     };
   }

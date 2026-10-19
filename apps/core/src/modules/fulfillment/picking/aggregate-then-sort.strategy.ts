@@ -577,8 +577,8 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
         complete: 'aggregate-complete',
         unpick: 'aggregate-unpick',
         handoffClaim: 'aggregate-handoff-claim',
-        handoff: 'aggregate-handoff',
       },
+      // DB 를 읽지 않는 조회 — discrete 와 같은 꼴(Promise.resolve)로 둔다.
       loadHeldSpots: (_trx, ctx) =>
         Promise.resolve(
           spotsOf([
@@ -590,6 +590,8 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
       handoffCustody: {
         custodyType: 'SORTING',
         refFor: (workItemId, workerId) => this.sortingRef(workItemId, workerId),
+        key: 'aggregate-handoff',
+        corruptMessage: (balanceId) => `Sorting balance ${balanceId} is incomplete`,
       },
       messages: {
         completeIncomplete: ({ shipmentLineId, sourceLocationId }) => ({
@@ -598,7 +600,6 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
         }),
         ownerMismatchWhilePicking: ({ balanceId }) => `Balance ${balanceId} has unexpected custody`,
         handoffOwnerMismatch: ({ pickerId }) => `Shipment assigned custody is not owned by picker ${pickerId}`,
-        handoffCorrupt: (balanceId) => `Sorting balance ${balanceId} is incomplete`,
       },
     };
   }

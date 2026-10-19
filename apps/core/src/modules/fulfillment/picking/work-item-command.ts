@@ -135,23 +135,40 @@ export interface HolderContext {
 export interface PickingCustodyPolicy {
   /** commandType = `picking.${strategy}.complete|unpick|handoff` */
   strategy: PickingStrategyName;
-  /** moveCustody·인계 클레임 멱등 키 접두사(':' 앞까지). 전략마다 불규칙하니 지금 코드에서 복사한다. */
-  keys: { complete: string; unpick: string; handoffClaim: string; handoff: string };
-  /** 들고 있어도 되는 자리. 판정은 하지 않는다. tote 는 락을 잡으므로 호출 위치를 커널이 고정한다. */
+  /**
+   * moveCustody·인계 클레임 멱등 키 접두사(':' 앞까지). 전략마다 불규칙하니 지금 코드에서 복사한다.
+   * 인계 이동 키는 이동이 있는 전략에만 있으므로 `handoffCustody.key` 에 있다.
+   */
+  keys: { complete: string; unpick: string; handoffClaim: string };
+  /**
+   * 들고 있어도 되는 자리. 판정은 하지 않는다. tote 는 락을 잡으므로 호출 위치를 커널이 고정한다.
+   * **이 값 하나가 세 판정에 쓰인다** — ① completePick 의 배정 grain 허용 자리, ② unpick(`picking` 상태)의 소유 판정,
+   * ③ handoff 전·후의 «박스 잔량 전부가 옛 소유자 자리에 있다» 판정. 한 판정을 위해 자리를 넓히면 나머지 둘도 넓어진다.
+   */
   loadHeldSpots(trx: DbTx, ctx: HolderContext): Promise<HeldSpots>;
-  /** completePick 에서 PACKING 으로 옮길 custodyType. 이미 PACKING 인 행은 옮기지 않는다. */
+  /**
+   * completePick 에서 PACKING 으로 옮길 custodyType. 허용 자리의 행 중 이 작업 항목의 PACKING ref 행(aggregate `sortScan` 이
+   * 바로 보낸 것)만 옮기지 않고 건너뛴다. 허용됐는데 둘 다 아닌 행은 정책이 잘못된 것이라 내부 오류(500)로 던진다.
+   */
   completeMovesFrom: 'WORKER' | 'TOTE' | 'SORTING';
   /** completePick 에서 허용 자리가 비었을 때(tote 만). */
   emptyHeldOnComplete?: { code: string; message: string };
-  /** 인계 때 custody 가 사람을 따라가면 그 자리의 ref 규칙. tote 는 없음. */
-  handoffCustody?: { custodyType: 'WORKER' | 'SORTING'; refFor(workItemId: string, workerId: string): string };
+  /**
+   * 인계 때 custody 가 사람을 따라가는 전략만 둔다(discrete·aggregate). tote 는 없음 — 인계가 아무것도 옮기지 않는다(`movedQty: 0`).
+   * `key` 는 인계 moveCustody 멱등 키 접두사, `corruptMessage` 는 옮길 행이 불완전할 때의 문구.
+   */
+  handoffCustody?: {
+    custodyType: 'WORKER' | 'SORTING';
+    refFor(workItemId: string, workerId: string): string;
+    key: string;
+    corruptMessage(balanceId: string): string;
+  };
   /** 되돌림 이동 뒤·재큐잉 전(tote: releaseEmptyShipmentTotes). */
   afterUnpick?(trx: DbTx, shipmentId: string): Promise<void>;
   messages: {
     completeIncomplete(a: { shipmentLineId: string; sourceLocationId: string }): { code: string; message: string };
     ownerMismatchWhilePicking(ctx: { balanceId: string; pickerId: string; shipmentId: string }): string;
     handoffOwnerMismatch(ctx: { pickerId: string; shipmentId: string }): string;
-    handoffCorrupt(balanceId: string): string;
   };
 }
 
@@ -262,8 +279,15 @@ export async function completeWorkItemPick(
           throw conflict(failure.code, failure.message);
         }
         for (const balance of balances) {
-          // custodyRef null 은 판정이 이미 거부했다 — 여기선 타입을 좁힐 뿐이다.
-          if (balance.custodyType !== policy.completeMovesFrom || balance.custodyRef === null) continue;
+          // 이 작업 항목의 PACKING 행은 이미 목적지에 있다(aggregate sortScan 이 바로 보낼 수 있다).
+          if (balance.custodyType === 'PACKING' && balance.custodyRef === packingRef) continue;
+          // 판정이 «허용 자리»만 통과시켰으므로 여기 오는 행은 completeMovesFrom 이어야 한다(custodyRef null 은 판정이 거부했다).
+          // 아니면 loadHeldSpots 와 completeMovesFrom 이 어긋난 정책이다 — 조용히 건너뛰면 PACKING 아닌 잔량을 남긴 채 완료된다.
+          if (balance.custodyType !== policy.completeMovesFrom || balance.custodyRef === null) {
+            throw new Error(
+              `completePick: held balance ${balance.id} is ${balance.custodyType}, not ${policy.completeMovesFrom} or this work item's PACKING`,
+            );
+          }
           await deps.sessions.moveCustody(
             {
               sessionId: input.sessionId,
@@ -523,15 +547,24 @@ export async function handoffWorkItemPicker(
       const custody = policy.handoffCustody;
       // 같은 작업자에게 인계하면 옮길 것이 없다(설계 D1).
       if (custody && oldOwnerId !== input.targetWorkerId) {
+        const packingRef = packingRefOf(input.workItemId);
         for (const balance of balances) {
-          if (balance.custodyType !== custody.custodyType) continue;
+          // 사람을 따라가지 않는 자리는 이 작업 항목의 PACKING 하나뿐이다(aggregate sortScan 이 바로 보낸 것).
+          if (balance.custodyType === 'PACKING' && balance.custodyRef === packingRef) continue;
+          // 인계 전·후 판정이 «옛 소유자 자리»만 통과시켰으므로 나머지는 custody.custodyType 이어야 한다.
+          // 아니면 loadHeldSpots 와 handoffCustody 가 어긋난 정책이다 — 조용히 건너뛰면 옛 사람 자리에 잔량이 남는다.
+          if (balance.custodyType !== custody.custodyType) {
+            throw new Error(
+              `handoff: held balance ${balance.id} is ${balance.custodyType}, not ${custody.custodyType} or this work item's PACKING`,
+            );
+          }
           if (!balance.sourceLocationId || !balance.custodyRef || !balance.shipmentLineId) {
-            throw conflict('PICKING_CUSTODY_CORRUPT', policy.messages.handoffCorrupt(balance.id));
+            throw conflict('PICKING_CUSTODY_CORRUPT', custody.corruptMessage(balance.id));
           }
           await deps.sessions.moveCustody(
             {
               sessionId: input.sessionId,
-              idempotencyKey: `${policy.keys.handoff}:${commandRequestId}:${balance.id}`,
+              idempotencyKey: `${custody.key}:${commandRequestId}:${balance.id}`,
               actorId: input.actor.id,
               quantity: balance.qty,
               from: {

@@ -563,7 +563,6 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
         complete: 'pick-to-tote-complete',
         unpick: 'pick_to_tote-unpick',
         handoffClaim: 'pick_to_tote-handoff-claim',
-        handoff: 'pick_to_tote-handoff',
       },
       loadHeldSpots: async (trx, ctx) =>
         spotsOf([{ custodyType: 'TOTE', refs: await this.loadActiveShipmentToteRefs(ctx.shipmentId, trx) }]),
@@ -578,7 +577,6 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
         ownerMismatchWhilePicking: () => 'Active pick custody must be held only by totes assigned to the shipment',
         handoffOwnerMismatch: ({ shipmentId }) =>
           `Shipment attributed custody must be held only in totes actively assigned to ${shipmentId}`,
-        handoffCorrupt: (balanceId) => `Assigned balance ${balanceId} is incomplete`,
       },
     };
   }

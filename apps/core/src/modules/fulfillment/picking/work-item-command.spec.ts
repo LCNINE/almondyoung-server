@@ -160,16 +160,20 @@ describe('custody command bodies (policy call positions)', () => {
 
   const policy = (over: Partial<PickingCustodyPolicy> = {}): PickingCustodyPolicy => ({
     strategy: 'discrete',
-    keys: { complete: 'k-complete', unpick: 'k-unpick', handoffClaim: 'k-handoff-claim', handoff: 'k-handoff' },
+    keys: { complete: 'k-complete', unpick: 'k-unpick', handoffClaim: 'k-handoff-claim' },
     loadHeldSpots,
     completeMovesFrom: 'WORKER',
-    handoffCustody: { custodyType: 'WORKER', refFor: (_workItemId, workerId) => workerId },
+    handoffCustody: {
+      custodyType: 'WORKER',
+      refFor: (_workItemId, workerId) => workerId,
+      key: 'k-handoff',
+      corruptMessage: (id) => `corrupt ${id}`,
+    },
     afterUnpick,
     messages: {
       completeIncomplete: () => ({ code: 'PICKING_INCOMPLETE', message: 'incomplete' }),
       ownerMismatchWhilePicking: () => 'owner mismatch',
       handoffOwnerMismatch: () => 'handoff owner mismatch',
-      handoffCorrupt: (id) => `corrupt ${id}`,
     },
     ...over,
   });
@@ -375,16 +379,50 @@ describe('custody command bodies (policy call positions)', () => {
     expect(assertCurrent).not.toHaveBeenCalled();
   });
 
-  it('commandType and moveCustody keys come from policy.strategy and policy.keys', async () => {
+  it('completePick refuses a held row that is neither completeMovesFrom nor this work item PACKING (policy mismatch)', async () => {
+    mockAllocations([allocation('line-1')]);
+    loadHeldSpots.mockResolvedValue(spotsOf([{ custodyType: 'TOTE', refs: new Set(['tote:t1']) }]));
+    selectRows = [balance('bal-1', 'TOTE', 'tote:t1')];
+    await expect(completeWorkItemPick(deps, policy({ completeMovesFrom: 'WORKER' }), target)).rejects.toThrow(
+      'completePick: held balance bal-1 is TOTE, not WORKER or this work item\'s PACKING',
+    );
+    expect(moveCustody).not.toHaveBeenCalled();
+  });
+
+  it('handoff skips only this work item PACKING row and refuses any other non-moving held row', async () => {
+    (loadWorkItem as jest.Mock).mockResolvedValue(workItem('picking', 'u-old'));
+    loadHeldSpots.mockResolvedValue(
+      spotsOf([
+        { custodyType: 'WORKER', refs: new Set(['u-old']) },
+        { custodyType: 'PACKING', refs: new Set(['work-item:w1']) },
+      ]),
+    );
+    mockShipmentCustody([balance('bal-1', 'PACKING', 'work-item:w1'), balance('bal-2', 'WORKER', 'u-old', 'line-2')]);
+    await handoffWorkItemPicker(deps, policy(), handoffInput);
+    expect(moveCustody.mock.calls.map(([move]) => move.idempotencyKey)).toEqual(['k-handoff:cmd-1:bal-2']);
+
+    moveCustody.mockClear();
+    loadHeldSpots.mockResolvedValue(spotsOf([{ custodyType: 'TOTE', refs: new Set(['tote:t1']) }]));
+    mockShipmentCustody([balance('bal-3', 'TOTE', 'tote:t1')]);
+    await expect(handoffWorkItemPicker(deps, policy(), handoffInput)).rejects.toThrow(
+      'handoff: held balance bal-3 is TOTE, not WORKER or this work item\'s PACKING',
+    );
+    expect(moveCustody).not.toHaveBeenCalled();
+  });
+
+  it('tote: commandType and moveCustody keys come from policy.strategy and policy.keys; handoff moves nothing', async () => {
     const tote = policy({
       strategy: 'pick_to_tote',
       keys: {
         complete: 'pick-to-tote-complete',
         unpick: 'pick_to_tote-unpick',
         handoffClaim: 'pick_to_tote-handoff-claim',
-        handoff: 'pick_to_tote-handoff',
       },
+      completeMovesFrom: 'TOTE',
+      handoffCustody: undefined,
     });
+    loadHeldSpots.mockImplementation(async () => spotsOf([{ custodyType: 'TOTE', refs: new Set(['tote:t1']) }]));
+    mockShipmentCustody([balance('bal-1', 'TOTE', 'tote:t1', 'line-1'), balance('bal-2', 'TOTE', 'tote:t1', 'line-2')]);
     await unpickWorkItemShipment(deps, tote, target);
     expect(assertV2MutationAllowed).toHaveBeenLastCalledWith('picking.pick_to_tote.unpick');
     expect(execute.mock.calls[0][0]).toEqual({
@@ -404,21 +442,47 @@ describe('custody command bodies (policy call positions)', () => {
     expect(moveCustody.mock.calls[0][0].idempotencyKey).toBe('pick_to_tote-unpick:cmd-1:bal-1');
 
     moveCustody.mockClear();
-    mockShipmentCustody([balance('bal-1', 'WORKER', 'u1')]);
-    await handoffWorkItemPicker(deps, tote, handoffInput);
+    const handedOff = await handoffWorkItemPicker(deps, tote, handoffInput);
     expect(assertV2MutationAllowed).toHaveBeenLastCalledWith('picking.pick_to_tote.handoff');
     expect(execute.mock.calls[1][0].commandType).toBe('picking.pick_to_tote.handoff');
     expect(execute.mock.calls[1][0].canonicalRequest).toMatchObject({ strategy: 'pick_to_tote', reason: 'r' });
     expect(batchHandoff.mock.calls[0][2]).toBe('pick_to_tote-handoff-claim:cmd-1');
     expect(batchHandoff.mock.calls[0][1]).toMatchObject({ reason: ' r ' });
-    expect(moveCustody.mock.calls[0][0].idempotencyKey).toBe('pick_to_tote-handoff:cmd-1:bal-1');
+    expect(moveCustody).not.toHaveBeenCalled();
+    expect(handedOff).toMatchObject({ movedQty: 0 });
 
-    moveCustody.mockClear();
     mockAllocations([allocation('line-1')]);
-    selectRows = [balance('bal-1', 'WORKER', 'u1')];
+    selectRows = [balance('bal-1', 'TOTE', 'tote:t1')];
     await completeWorkItemPick(deps, tote, target);
     expect(assertV2MutationAllowed).toHaveBeenLastCalledWith('picking.pick_to_tote.complete');
     expect(execute.mock.calls[2][0].commandType).toBe('picking.pick_to_tote.complete');
     expect(moveCustody.mock.calls[0][0].idempotencyKey).toBe('pick-to-tote-complete:cmd-1:bal-1');
+  });
+
+  it('aggregate: handoff moveCustody key and refs come from handoffCustody', async () => {
+    const aggregate = policy({
+      strategy: 'aggregate_then_sort',
+      keys: { complete: 'aggregate-complete', unpick: 'aggregate-unpick', handoffClaim: 'aggregate-handoff-claim' },
+      completeMovesFrom: 'SORTING',
+      handoffCustody: {
+        custodyType: 'SORTING',
+        refFor: (workItemId, workerId) => `sorting:${workItemId}:${workerId}`,
+        key: 'aggregate-handoff',
+        corruptMessage: (id) => `Sorting balance ${id} is incomplete`,
+      },
+    });
+    (loadWorkItem as jest.Mock).mockResolvedValue(workItem('picking', 'u-old'));
+    loadHeldSpots.mockImplementation(async (_trx, ctx: { workItemId: string; pickerId: string }) =>
+      spotsOf([{ custodyType: 'SORTING', refs: new Set([`sorting:${ctx.workItemId}:${ctx.pickerId}`]) }]),
+    );
+    mockShipmentCustody([balance('bal-1', 'SORTING', 'sorting:w1:u-old')]);
+    await handoffWorkItemPicker(deps, aggregate, handoffInput);
+    expect(execute.mock.calls[0][0].commandType).toBe('picking.aggregate_then_sort.handoff');
+    expect(batchHandoff.mock.calls[0][2]).toBe('aggregate-handoff-claim:cmd-1');
+    expect(moveCustody.mock.calls[0][0]).toMatchObject({
+      idempotencyKey: 'aggregate-handoff:cmd-1:bal-1',
+      from: { custodyType: 'SORTING', custodyRef: 'sorting:w1:u-old' },
+      to: { custodyType: 'SORTING', custodyRef: 'sorting:w1:u2' },
+    });
   });
 });
