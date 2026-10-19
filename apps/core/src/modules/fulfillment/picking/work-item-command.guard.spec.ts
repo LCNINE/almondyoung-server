@@ -3,9 +3,10 @@ import { join, relative } from 'path';
 import * as ts from 'typescript';
 
 /**
- * K1a — 박스의 «전진» 명령은 커널(`runForwardWorkItemCommand`)을 지난다. 작업 항목 잠금과 재출력 게이트의 순서는
- * 커널 한 곳이 고정한다. 전략이 이 둘을 직접 부르기 시작하면 복사본이 다시 생겨 순서가 갈린다 — 이 가드가
- * «커널 밖에서 부르는 곳이 없다»를 지킨다. 되돌림 명령은 커널을 지나지 않는다(스펙 §10.4).
+ * K1a — 박스의 «전진» 명령은 커널의 전진 문(`runForwardWorkItemCommand`)을 지난다. 작업 항목 잠금과 재출력 게이트의
+ * 순서는 그 문 한 곳이 고정한다. 전략이 이 둘을 직접 부르기 시작하면 복사본이 다시 생겨 순서가 갈린다 — 이 가드가
+ * «커널 밖에서 부르는 곳이 없다»를 지킨다. 되돌림 명령은 전진 문을 지나지 않는다(스펙 §10.4) — K1b 뒤 unpick·handoff 본문은
+ * 커널 파일에 있지만 전진 문 밖이고, 그래서 아래의 «전진 문을 부르는 곳» 도출 목록과 `RollbackCommandDeps`(labels 없음)가 지킨다.
  */
 const ROOT = join(__dirname, '../../../../../..');
 const SRC = join(ROOT, 'apps/core/src');
@@ -48,6 +49,31 @@ function functionBody(path: string, name: string): string {
   };
   visit(src);
   return body;
+}
+
+/**
+ * `runForwardWorkItemCommand` 를 참조하는 곳(호출·별칭·인자로 넘기기 모두)을 `<파일>#<감싼 메서드/함수>` 로.
+ * import·export 선언과 함수 선언 자신의 이름은 뺀다. 닫힌 쪽: 호출이 아니어도 이름이 나오면 잡는다.
+ */
+function forwardDoorReferences(): string[] {
+  const NAME = 'runForwardWorkItemCommand';
+  const hits = new Set<string>();
+  for (const path of walk(SRC)) {
+    const text = readFileSync(path, 'utf8');
+    if (!text.includes(NAME)) continue;
+    const rel = relative(ROOT, path);
+    const visit = (node: ts.Node): void => {
+      if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) return;
+      if (ts.isIdentifier(node) && node.text === NAME) {
+        const parent = node.parent;
+        const isOwnDeclaration = ts.isFunctionDeclaration(parent) && parent.name === node;
+        if (!isOwnDeclaration) hits.add(`${rel}#${enclosingName(node)}`);
+      }
+      node.forEachChild(visit);
+    };
+    visit(parse(path));
+  }
+  return [...hits].sort();
 }
 
 function pickingFiles(): string[] {
@@ -213,6 +239,18 @@ describe('작업 항목 명령 커널 배선', () => {
     const body = functionBody(join(ROOT, PICKING, 'work-item-command.ts'), 'runForwardWorkItemCommand');
     expect(body).toContain('advisoryXactLock(trx, key)');
     expect(body).not.toContain('pg_advisory_xact_lock');
+  });
+
+  it('전진 문(runForwardWorkItemCommand)을 부르는 곳은 도출 목록과 같다 — 되돌림이 들어오거나 전진 명령이 빠지면 빨갛다', () => {
+    // 2026-10-19 실측(HEAD). 되돌림(unpick·handoff·releaseTote·toteHandoff·cartHandoff·returnCartSurplus)은 없어야 한다 —
+    // 송장 게이트가 빠지는 박스를 거절하므로 되돌림이 문을 지나면 빼는 일이 끝나지 않는다.
+    expect(forwardDoorReferences()).toEqual([
+      `${PICKING}/aggregate-then-sort.strategy.ts#sortScan`,
+      `${PICKING}/discrete-picking.strategy.ts#scan`,
+      `${PICKING}/pick-to-tote.strategy.ts#assignTote`,
+      `${PICKING}/pick-to-tote.strategy.ts#toteScan`,
+      `${PICKING}/work-item-command.ts#completeWorkItemPick`,
+    ]);
   });
 
   it('picking/ 에서 작업 항목을 ready_to_pack·queued 로 쓰는 비-spec 파일은 커널뿐이다', () => {

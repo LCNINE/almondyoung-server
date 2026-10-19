@@ -117,7 +117,15 @@ export interface CustodyCommandDeps extends WorkItemCommandDeps {
   batches: Pick<OutboundBatchOrchestrator, 'handoff'>;
 }
 
-interface HolderContext {
+/**
+ * 되돌림·인계 본문이 받는 deps — `labels`(송장 게이트)가 없다. 게이트는 빠지는 박스를 거절하므로, 되돌림이 게이트를 지나면
+ * 빼는 일이 끝나지 않는다. 타입에서 빼 두었기 때문에 이 본문 안에서는 간접 `assertCurrent` 호출도, `runForwardWorkItemCommand(deps, …)`
+ * 로 전진 문에 들이는 것도 컴파일되지 않는다. 전략은 더 넓은 `CustodyCommandDeps` 를 그대로 넘겨도 된다.
+ */
+export type RollbackCommandDeps = Omit<CustodyCommandDeps, 'labels'>;
+
+/** 소유자 조회에 넘기는 값. handoff 에서는 `pickerId` 가 옛 소유자다. */
+export interface HolderContext {
   workItemId: string;
   shipmentId: string;
   pickerId: string;
@@ -330,7 +338,7 @@ export async function completeWorkItemPick(
 
 /** 되돌림: 박스 잔량 전부 AT_SOURCE 로, 작업 항목은 queued. 송장 게이트를 부르지 않는다. */
 export async function unpickWorkItemShipment(
-  deps: CustodyCommandDeps,
+  deps: RollbackCommandDeps,
   policy: PickingCustodyPolicy,
   input: UnpickShipmentInput,
   tx?: DbTx,
@@ -455,7 +463,7 @@ export async function unpickWorkItemShipment(
 
 /** 피커 인계: 인계 전·후로 박스 잔량이 옛 소유자 자리에 있는지 보고, custody 가 사람을 따라가면 옮긴다. */
 export async function handoffWorkItemPicker(
-  deps: CustodyCommandDeps,
+  deps: RollbackCommandDeps,
   policy: PickingCustodyPolicy,
   input: HandoffPickingInput,
   tx?: DbTx,
