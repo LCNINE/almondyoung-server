@@ -85,7 +85,6 @@ export function SignInForm({
         name="password"
         label="비밀번호"
         clearable
-        appearance="line"
         placeholder=" "
         className={floatingInputClass}
         autoComplete="current-password"
