@@ -40,7 +40,12 @@ import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { loadReservationQueueKey } from './reservation-queue-key';
 import { ShipmentReservationService } from './shipment-reservation.service';
 import { transitionShipments } from '../shipment/shipment-lifecycle';
-import { editShipmentManifest, ManifestEditDeps, ManifestWriter } from '../shipment/shipment-manifest-edit';
+import {
+  editShipmentManifest,
+  lockedAggregateOf,
+  ManifestEditDeps,
+  ManifestWriter,
+} from '../shipment/shipment-manifest-edit';
 import { ACTIVE_WORK_ITEM_STATUSES } from './work-item-status';
 import {
   assertShipmentHasNoActiveWaybill,
@@ -94,13 +99,6 @@ function uniqueSorted(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
 }
 
-/** 문이 넘긴 잠긴 상자들은 id 정렬 순이다 — 순서가 아니라 id 로 찾는다 */
-function lockedAggregateOf(aggregates: readonly ShipmentAggregate[], shipmentId: string): ShipmentAggregate {
-  const aggregate = aggregates.find((candidate) => candidate.shipment.id === shipmentId);
-  if (!aggregate) throw new Error(`Shipment ${shipmentId} was not locked by editShipmentManifest`);
-  return aggregate;
-}
-
 function assertPositiveSafeInteger(name: string, value: number): void {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new BadRequestException(`${name} must be a positive safe integer`);
@@ -126,11 +124,8 @@ function sameJson(left: unknown, right: unknown): boolean {
   return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
 }
 
-type RecipientRevisionUpdate = {
-  recipientSnapshot?: (typeof wmsTables.shipments.$inferInsert)['recipientSnapshot'];
-  manifestVersion?: number;
-  entrancePassword?: string;
-};
+/** manifestVersion 은 담지 않는다 — 구성 편집의 문이 reviseRecipient 를 보고 끝맺음에서 올린다 */
+export type RecipientRevisionUpdate = { recipientSnapshot?: unknown; entrancePassword?: string };
 
 export type RecipientRevisionOutcome = {
   update: RecipientRevisionUpdate;
@@ -142,8 +137,8 @@ export type RecipientRevisionOutcome = {
  * 수령인 정정 요청을 shipments update 패치로 바꾼다.
  *
  * 공동현관 비번은 recipient_snapshot 밖에 사는 크리덴셜이지 배송 지시가 아니다.
- * 그래서 비번만 정정하면 recipientSnapshot 도 manifestVersion 도 패치에 담지
- * 않는다 — 그 둘은 합배송 호환성(canonicalConsolidationRecipient)과 송장 멱등성
+ * 그래서 비번만 정정하면 recipientSnapshot 을 패치에 담지 않고(snapshotChanged=false),
+ * 문도 manifestVersion 을 올리지 않는다 — 그 둘은 합배송 호환성(canonicalConsolidationRecipient)과 송장 멱등성
  * (waybill.recipientHash / manifestVersion)의 입력이라, 주소가 그대로인데 값이
  * 움직이면 이미 발행된 멀쩡한 송장이 stale 로 무효화된다.
  *
@@ -151,16 +146,13 @@ export type RecipientRevisionOutcome = {
  * 치지 않는다(빈 값으로 지우는 경로는 이 커맨드의 범위 밖이다).
  */
 export function resolveRecipientRevision(
-  current: { recipientSnapshot: unknown; manifestVersion: number; entrancePassword: string | null },
+  current: { recipientSnapshot: unknown; entrancePassword: string | null },
   requested: { recipientSnapshot?: unknown; entrancePassword?: string },
 ): RecipientRevisionOutcome {
   const update: RecipientRevisionUpdate = {};
   const snapshotChanged =
     requested.recipientSnapshot !== undefined && !sameJson(current.recipientSnapshot, requested.recipientSnapshot);
-  if (snapshotChanged) {
-    update.recipientSnapshot = requested.recipientSnapshot;
-    update.manifestVersion = current.manifestVersion + 1;
-  }
+  if (snapshotChanged) update.recipientSnapshot = requested.recipientSnapshot;
 
   const nextPassword = requested.entrancePassword?.trim() ?? '';
   const passwordChanged = nextPassword !== '' && nextPassword !== current.entrancePassword;
@@ -380,43 +372,47 @@ export class ShipmentPlanningService {
         if (aggregate.shipment.status !== 'draft') {
           throw this.conflict('SHIPMENT_REOPEN_REQUIRED', 'Recipient can only be revised on a Draft shipment');
         }
-        await this.assertNoCustodyOrActiveWork(aggregate, tx);
-        await this.assertNoActiveWaybill(shipmentId, tx);
 
-        const revision = resolveRecipientRevision(
-          {
-            recipientSnapshot: aggregate.shipment.recipientSnapshot,
-            manifestVersion: aggregate.shipment.manifestVersion,
-            entrancePassword: aggregate.shipment.entrancePassword,
+        // manifestVersion +1(수령인이 바뀐 때만 — 비번만이면 그대로)은 문의 끝맺음이 한다
+        const { revision, overridesOrder, before, operation } = await editShipmentManifest(
+          this.manifestDeps(),
+          { shipmentIds: [shipmentId], allow: ['draft'] },
+          async (writer, aggregates) => {
+            const locked = lockedAggregateOf(aggregates, shipmentId);
+            const revision = resolveRecipientRevision(
+              {
+                recipientSnapshot: locked.shipment.recipientSnapshot,
+                entrancePassword: locked.shipment.entrancePassword,
+              },
+              dto,
+            );
+            if (!revision.snapshotChanged && !revision.passwordChanged) {
+              // 비번 값은 메시지에 싣지 않는다 — 크리덴셜이라 예외 본문·로그에 남으면 안 된다.
+              throw new BadRequestException('Recipient revision has no change');
+            }
+            // 배송 지시를 실제로 덮어쓸 때만 override 스코프를 요구한다. 비번만 고치는
+            // 정정은 주문의 배송지를 건드리지 않으므로 이 판정에 들어가지 않는다.
+            const orderRecipients = revision.snapshotChanged ? await this.loadOrderRecipientSnapshots(locked, tx) : [];
+            const overridesOrder = orderRecipients.some((recipient) => !sameJson(recipient, dto.recipientSnapshot));
+            if (overridesOrder) await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT);
+
+            const before = this.snapshot(locked);
+            const operation = await this.createOperation(
+              tx,
+              'recipient_revision',
+              actor,
+              dto.reason,
+              dto.csCaseId,
+              dto.note,
+              idempotencyKey,
+              requestHash,
+              before,
+            );
+            await this.writeRecipientRevision(writer, shipmentId, revision);
+            return { revision, overridesOrder, before, operation };
           },
-          dto,
-        );
-        if (!revision.snapshotChanged && !revision.passwordChanged) {
-          // 비번 값은 메시지에 싣지 않는다 — 크리덴셜이라 예외 본문·로그에 남으면 안 된다.
-          throw new BadRequestException('Recipient revision has no change');
-        }
-        // 배송 지시를 실제로 덮어쓸 때만 override 스코프를 요구한다. 비번만 고치는
-        // 정정은 주문의 배송지를 건드리지 않으므로 이 판정에 들어가지 않는다.
-        const orderRecipients = revision.snapshotChanged ? await this.loadOrderRecipientSnapshots(aggregate, tx) : [];
-        const overridesOrder = orderRecipients.some((recipient) => !sameJson(recipient, dto.recipientSnapshot));
-        if (overridesOrder) await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT);
-
-        const before = this.snapshot(aggregate);
-        const operation = await this.createOperation(
           tx,
-          'recipient_revision',
-          actor,
-          dto.reason,
-          dto.csCaseId,
-          dto.note,
-          idempotencyKey,
-          requestHash,
-          before,
         );
-        await tx
-          .update(wmsTables.shipments)
-          .set({ ...revision.update, lastUpdated: new Date() })
-          .where(eq(wmsTables.shipments.id, shipmentId));
         await this.invariant.assertFulfillmentOrders(aggregate.fulfillmentOrderIds, tx);
         const after = this.snapshot(await this.loadAggregate(shipmentId, tx));
         await this.completeOperation(tx, operation.id, [{ shipmentId, role: 'target', before, after }]);
@@ -439,7 +435,7 @@ export class ShipmentPlanningService {
 
   /**
    * 채널 변경(#1016 5번 행)이 박스 수령인을 따라가게 한다. `reviseRecipient`(운영자)와 같은 검사·같은 기록을 하되 둘이 다르다:
-   * 배치 밖 `planned` 도 받고(작업 항목은 `assertNoCustodyOrActiveWork` 가 막는다), 이 판매주문 밖의 라인을 실은 박스는 거절한다.
+   * 배치 밖 `planned` 도 받고(작업 항목은 구성 편집의 문이 `assertShipmentHasNoCustodyOrActiveWork` 로 막는다), 이 판매주문 밖의 라인을 실은 박스는 거절한다.
    * 거절은 `ConflictException({ code })` 다 — 호출자가 savepoint 를 되돌리고 대기로 남긴다.
    */
   async reviseRecipientFromChannel(
@@ -475,38 +471,44 @@ export class ShipmentPlanningService {
         if (aggregate.lines.some((line) => line.salesOrderId !== salesOrderId)) {
           throw this.conflict('SHIPMENT_CONSOLIDATED', `Shipment ${shipmentId} carries lines of another sales order`);
         }
-        await this.assertNoCustodyOrActiveWork(aggregate, tx);
-        await this.assertNoActiveWaybill(shipmentId, tx);
-        if (aggregate.shipment.status === 'planned') this.assertRecipientComplete(recipientSnapshot);
 
-        const revision = resolveRecipientRevision(
-          {
-            recipientSnapshot: aggregate.shipment.recipientSnapshot,
-            manifestVersion: aggregate.shipment.manifestVersion,
-            entrancePassword: aggregate.shipment.entrancePassword,
+        const revised = await editShipmentManifest(
+          this.manifestDeps(),
+          { shipmentIds: [shipmentId], allow: ['draft', 'planned'] },
+          async (writer, aggregates) => {
+            const locked = lockedAggregateOf(aggregates, shipmentId);
+            if (locked.shipment.status === 'planned') this.assertRecipientComplete(recipientSnapshot);
+
+            const revision = resolveRecipientRevision(
+              {
+                recipientSnapshot: locked.shipment.recipientSnapshot,
+                entrancePassword: locked.shipment.entrancePassword,
+              },
+              { recipientSnapshot },
+            );
+            if (!revision.snapshotChanged) return null;
+
+            const before = this.snapshot(locked);
+            const operation = await this.createOperation(
+              tx,
+              'recipient_revision',
+              actor,
+              'CHANNEL_ORDER_MODIFIED',
+              undefined,
+              undefined,
+              idempotencyKey,
+              requestHash,
+              before,
+            );
+            await this.writeRecipientRevision(writer, shipmentId, revision);
+            return { before, operation };
           },
-          { recipientSnapshot },
+          tx,
         );
-        if (!revision.snapshotChanged) {
+        if (!revised) {
           return { response: { changed: false }, resourceType: 'shipment', resourceId: shipmentId };
         }
-
-        const before = this.snapshot(aggregate);
-        const operation = await this.createOperation(
-          tx,
-          'recipient_revision',
-          actor,
-          'CHANNEL_ORDER_MODIFIED',
-          undefined,
-          undefined,
-          idempotencyKey,
-          requestHash,
-          before,
-        );
-        await tx
-          .update(wmsTables.shipments)
-          .set({ ...revision.update, lastUpdated: new Date() })
-          .where(eq(wmsTables.shipments.id, shipmentId));
+        const { before, operation } = revised;
         await this.invariant.assertFulfillmentOrders(aggregate.fulfillmentOrderIds, tx);
         const after = this.snapshot(await this.loadAggregate(shipmentId, tx));
         await this.completeOperation(tx, operation.id, [{ shipmentId, role: 'target', before, after }]);
@@ -1505,6 +1507,18 @@ export class ShipmentPlanningService {
 
   private snapshot(aggregate: ShipmentAggregate): ShipmentManifestSnapshot {
     return shipmentSnapshot(aggregate);
+  }
+
+  /** 수령인 정정 패치를 문의 쓰기 도구로 옮긴다. 수령인은 송장 내용(끝맺음이 manifest +1), 비번은 아니다. */
+  private async writeRecipientRevision(
+    writer: ManifestWriter,
+    shipmentId: string,
+    revision: RecipientRevisionOutcome,
+  ): Promise<void> {
+    if (revision.snapshotChanged) await writer.reviseRecipient(shipmentId, revision.update.recipientSnapshot);
+    if (revision.update.entrancePassword !== undefined) {
+      await writer.setEntrancePassword(shipmentId, revision.update.entrancePassword);
+    }
   }
 
   /** 구성 편집의 문이 쓰는 의존. 클래스 필드 초기화식에서 만들지 않는다(useDefineForClassFields). */

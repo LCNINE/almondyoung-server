@@ -32,6 +32,13 @@ export interface ManifestEdit {
   allow: readonly EditableStatus[];
 }
 
+/** 문이 넘긴 잠긴 상자들은 id 정렬 순이다 — 순서가 아니라 id 로 찾는다 */
+export function lockedAggregateOf(aggregates: readonly ShipmentAggregate[], shipmentId: string): ShipmentAggregate {
+  const aggregate = aggregates.find((candidate) => candidate.shipment.id === shipmentId);
+  if (!aggregate) throw new Error(`Shipment ${shipmentId} was not locked by editShipmentManifest`);
+  return aggregate;
+}
+
 export interface ManifestWriter {
   createShipment(box: NewShipment): Promise<ShipmentRow>;
   addLine(shipmentId: string, line: NewShipmentLine): Promise<ShipmentLineRecord>;
@@ -140,7 +147,8 @@ export async function editShipmentManifest<T>(
     },
     async setEntrancePassword(shipmentId, entrancePassword) {
       assertTarget(shipmentId);
-      await updateShipment(shipmentId, { entrancePassword });
+      // 비밀번호만 바뀐 상자는 끝맺음이 손대지 않으므로 last_updated 는 여기서 찍는다(수령인 정정의 옛 동작 보존)
+      await updateShipment(shipmentId, { entrancePassword, lastUpdated: new Date() });
     },
     async setShippingProfile(shipmentId, shippingProfileId) {
       assertTarget(shipmentId);

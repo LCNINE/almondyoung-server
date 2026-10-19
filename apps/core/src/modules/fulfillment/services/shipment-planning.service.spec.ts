@@ -159,7 +159,7 @@ describe('resolveRecipientRevision', () => {
 
     expect(outcome.update).toEqual({ entrancePassword: '#9999' });
     expect(outcome.update.recipientSnapshot).toBeUndefined();
-    expect(outcome.update.manifestVersion).toBeUndefined();
+    expect(outcome.update).not.toHaveProperty('manifestVersion');
     expect(outcome.snapshotChanged).toBe(false);
     expect(outcome.passwordChanged).toBe(true);
   });
@@ -185,8 +185,9 @@ describe('resolveRecipientRevision', () => {
       { recipientSnapshot: { ...RECIPIENT }, entrancePassword: '#9999' },
     );
 
+    // manifestVersion 은 패치가 아니라 구성 편집의 문이 reviseRecipient 를 보고 올린다
     expect(outcome.snapshotChanged).toBe(true);
-    expect(outcome.update.manifestVersion).toBe(4);
+    expect(outcome.update).not.toHaveProperty('manifestVersion');
   });
 
   it('저장된 deliveryNote 가 null 이어도 같은 스냅샷으로 본다', () => {
@@ -205,7 +206,8 @@ describe('resolveRecipientRevision', () => {
     const next = { ...RECIPIENT, detailAddress: '102동 1002호' };
     const outcome = resolveRecipientRevision(current, { recipientSnapshot: next });
 
-    expect(outcome.update).toEqual({ recipientSnapshot: next, manifestVersion: 4 });
+    expect(outcome.update).toEqual({ recipientSnapshot: next });
+    expect(outcome.update).not.toHaveProperty('manifestVersion');
     expect(outcome.snapshotChanged).toBe(true);
     expect(outcome.passwordChanged).toBe(false);
   });

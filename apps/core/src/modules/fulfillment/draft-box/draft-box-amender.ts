@@ -21,7 +21,7 @@ import {
   ShipmentOperationMember,
   ShipmentRow,
 } from '../services/shipment-aggregate';
-import { editShipmentManifest, ManifestWriter } from '../shipment/shipment-manifest-edit';
+import { editShipmentManifest, lockedAggregateOf, ManifestWriter } from '../shipment/shipment-manifest-edit';
 import { BoxTarget, diffBox } from './box-target';
 
 export interface AmendResult {
@@ -29,13 +29,6 @@ export interface AmendResult {
   operationId: string | null;
   manifestVersion: number;
   tombstoneShipmentId: string | null;
-}
-
-/** 문이 넘긴 잠긴 상자들은 id 정렬 순이다 — 순서가 아니라 id 로 찾는다 */
-function lockedAggregateOf(aggregates: readonly ShipmentAggregate[], shipmentId: string): ShipmentAggregate {
-  const aggregate = aggregates.find((candidate) => candidate.shipment.id === shipmentId);
-  if (!aggregate) throw new Error(`Shipment ${shipmentId} was not locked by editShipmentManifest`);
-  return aggregate;
 }
 
 /**
