@@ -31,6 +31,16 @@ export class UserServiceClient {
     return 'lcnine';
   }
 
+  private getInternalHeaders(): { Authorization: string } {
+    const internalKey = this.configService.get<string>('USER_SERVICE_INTERNAL_KEY');
+
+    if (!internalKey) {
+      throw new Error('USER_SERVICE_INTERNAL_KEY 가 설정되지 않아 user-service 를 조회할 수 없다.');
+    }
+
+    return { Authorization: `Bearer ${internalKey}` };
+  }
+
   /**
    * Cafe24 회원 ID로 userId + email 조회
    * GET /cafe24/internal/link-info?mallId=lcnine&cafe24MemberId=xxx
@@ -39,7 +49,11 @@ export class UserServiceClient {
     const mallId = this.getMallId();
     const url = `${this.getBaseUrl()}/cafe24/internal/link-info?mallId=${encodeURIComponent(mallId)}&cafe24MemberId=${encodeURIComponent(cafe24MemberId)}`;
     try {
-      const response = await firstValueFrom(this.httpService.get<{ success: boolean; data: Cafe24LinkInfo }>(url));
+      const response = await firstValueFrom(
+        this.httpService.get<{ success: boolean; data: Cafe24LinkInfo }>(url, {
+          headers: this.getInternalHeaders(),
+        }),
+      );
       // user-service ResponseInterceptor wraps responses in { success, data }
       return response.data?.data ?? null;
     } catch (error) {
@@ -60,7 +74,11 @@ export class UserServiceClient {
     const mallId = this.getMallId();
     const url = `${this.getBaseUrl()}/cafe24/internal/links?mallId=${encodeURIComponent(mallId)}`;
     try {
-      const response = await firstValueFrom(this.httpService.get<{ success: boolean; data: Cafe24LinkEntry[] }>(url));
+      const response = await firstValueFrom(
+        this.httpService.get<{ success: boolean; data: Cafe24LinkEntry[] }>(url, {
+          headers: this.getInternalHeaders(),
+        }),
+      );
       // user-service ResponseInterceptor wraps responses in { success, data }
       return response.data?.data ?? [];
     } catch (error) {

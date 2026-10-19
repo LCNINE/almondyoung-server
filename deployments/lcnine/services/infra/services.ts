@@ -324,6 +324,7 @@ export function setup(infra: SharedInfra) {
     ALMOND_AUTH_URL: 'https://asia-northeast3-almond-auth.cloudfunctions.net/api',
     MEMBERSHIP_SERVICE_URL: url('membership'),
     USER_SERVICE_URL: idpUserServiceUrl,
+    USER_SERVICE_INTERNAL_KEY: idpUserServiceInternalKey,
     PIM_API_URL: url('core'),
     NAVER_API_ENDPOINT: 'https://dummy.com',
     NAVER_CLIENT_ID: '1',
