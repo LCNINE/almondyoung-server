@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { and, eq, gt, sql } from 'drizzle-orm';
 import * as postgres from 'postgres';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -466,6 +466,211 @@ describeIfDb('피킹 되돌림 특성 테스트 (K1b-1) — 세 전략의 지금
         expect(await lineBalances(tx, picked)).toEqual([
           { id: balanceId, custodyType: 'PACKING', custodyRef: foreignPackingRef, qty: LINE_QTY },
         ]);
+      });
+    });
+  });
+
+  // ── Task 8: 전략 handoff (services.picking.handoff — batches.handoff 를 직접 부르지 않는다) ──
+
+  /** 인계 actor 는 logistics_manager 다(batches.handoff 가 요구). */
+  function handoff(picked: Picked, targetWorkerId: string, idempotencyKey = `char-handoff-${randomUUID()}`) {
+    return picked.services.picking.handoff({
+      batchId: picked.batchId,
+      sessionId: picked.sessionId,
+      workItemId: picked.workItemId,
+      shipmentId: picked.shipmentId,
+      targetWorkerId,
+      expectedLeaseVersion: picked.leaseVersion,
+      reason: 'shift boundary',
+      actor: { id: randomUUID(), roles: ['logistics_manager'] },
+      idempotencyKey,
+    });
+  }
+
+  describe.each(STRATEGIES)('%s handoff', (strategy) => {
+    it('handoff in picking to another worker moves the claim and, where custody follows the person, the custody', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const picked = await toPicking(tx, strategy);
+        const target = { id: randomUUID(), roles: ['warehouse_worker'] };
+        const before = await lineBalances(tx, picked);
+
+        const result = await handoff(picked, target.id);
+
+        const item = await loadWorkItemRow(tx, picked.workItemId);
+        expect(item).toMatchObject({ status: 'picking', pickerId: target.id });
+        expect(result).toMatchObject({
+          workItemId: picked.workItemId,
+          shipmentId: picked.shipmentId,
+          workerId: target.id,
+          leaseVersion: item.leaseVersion,
+          movedQty: strategy === 'pick_to_tote' ? 0 : LINE_QTY,
+        });
+        expect(item.leaseVersion).toBe(picked.leaseVersion + 1);
+        const after = await lineBalances(tx, picked);
+        if (strategy === 'discrete') {
+          expect(after).toEqual([
+            expect.objectContaining({ custodyType: 'WORKER', custodyRef: target.id, qty: LINE_QTY }),
+          ]);
+        } else if (strategy === 'aggregate_then_sort') {
+          expect(after).toEqual([
+            expect.objectContaining({
+              custodyType: 'SORTING',
+              custodyRef: `sorting:${picked.workItemId}:${target.id}`,
+              qty: LINE_QTY,
+            }),
+          ]);
+        } else {
+          expect(after).toEqual(before);
+        }
+      });
+    });
+
+    it('the new picker can complete with the lease returned by handoff', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const picked = await toPicking(tx, strategy);
+        const target = { id: randomUUID(), roles: ['warehouse_worker'] };
+        const handedOff = await handoff(picked, target.id);
+
+        const completed = await picked.services.picking.completePick({
+          batchId: picked.batchId,
+          sessionId: picked.sessionId,
+          workItemId: picked.workItemId,
+          shipmentId: picked.shipmentId,
+          actor: target,
+          expectedLeaseVersion: handedOff.leaseVersion,
+          idempotencyKey: `char-complete-after-handoff-${randomUUID()}`,
+        });
+
+        expect(completed).toMatchObject({
+          workItemId: picked.workItemId,
+          custodyType: 'PACKING',
+          custodyRef: `work-item:${picked.workItemId}`,
+          totalQty: LINE_QTY,
+        });
+        const item = await loadWorkItemRow(tx, picked.workItemId);
+        expect(item).toMatchObject({
+          status: 'ready_to_pack',
+          pickerId: target.id,
+          leaseVersion: handedOff.leaseVersion + 1,
+        });
+      });
+    });
+
+    it('handoff with custody under another holder is PICKING_CUSTODY_OWNER_MISMATCH', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const picked = await toPicking(tx, strategy);
+        await rewriteCustodyRef(tx, picked, HELD_CUSTODY[strategy], foreignHeldRef(picked));
+        const target = { id: randomUUID(), roles: ['warehouse_worker'] };
+
+        const message = {
+          discrete: `Shipment attributed custody must be exclusively WORKER custody owned by ${picked.worker.id}`,
+          pick_to_tote: `Shipment attributed custody must be held only in totes actively assigned to ${picked.shipmentId}`,
+          aggregate_then_sort: `Shipment assigned custody is not owned by picker ${picked.worker.id}`,
+        }[strategy];
+        await expectConflict(handoff(picked, target.id), { code: 'PICKING_CUSTODY_OWNER_MISMATCH', message });
+        const item = await loadWorkItemRow(tx, picked.workItemId);
+        expect(item).toMatchObject({
+          status: 'picking',
+          pickerId: picked.worker.id,
+          leaseVersion: picked.leaseVersion,
+        });
+      });
+    });
+  });
+
+  /**
+   * 설계 D1 — K1b-2 에서 aggregate_then_sort 행만 «성공, movedQty 0, 리스 갱신» 으로 바뀐다.
+   * 지금 aggregate 는 같은 사람으로의 SORTING→SORTING 이동을 건너뛰지 않아 moveCustody 가 400 을 던지고,
+   * 전략 handoff 트랜잭션 전체(batches.handoff 의 클레임 갱신 포함)가 되돌려진다.
+   */
+  describe('handoff to the same worker', () => {
+    type SameWorkerExpectation = { ok: true; movedQty: number } | { ok: false; badRequestMessage: string };
+    const SAME_WORKER_HANDOFF: Array<[StrategyName, string, SameWorkerExpectation]> = [
+      ['discrete', 'succeeds with movedQty 0', { ok: true, movedQty: 0 }],
+      ['pick_to_tote', 'succeeds with movedQty 0', { ok: true, movedQty: 0 }],
+      [
+        'aggregate_then_sort',
+        'is BadRequest Source and target custody must differ',
+        { ok: false, badRequestMessage: 'Source and target custody must differ' },
+      ],
+    ];
+
+    it.each(SAME_WORKER_HANDOFF)('%s %s', async (strategy, _label, expected) => {
+      await inRollbackTx(db, async (tx) => {
+        const picked = await toPicking(tx, strategy);
+        const before = await lineBalances(tx, picked);
+
+        if (expected.ok) {
+          const result = await handoff(picked, picked.worker.id);
+          const item = await loadWorkItemRow(tx, picked.workItemId);
+          expect(result).toMatchObject({
+            workerId: picked.worker.id,
+            leaseVersion: item.leaseVersion,
+            movedQty: expected.movedQty,
+          });
+          expect(item).toMatchObject({
+            status: 'picking',
+            pickerId: picked.worker.id,
+            leaseVersion: picked.leaseVersion + 1,
+          });
+        } else {
+          const error = await handoff(picked, picked.worker.id).then(
+            () => undefined,
+            (caught: unknown) => caught,
+          );
+          expect(error).toBeInstanceOf(BadRequestException);
+          if (!(error instanceof BadRequestException)) return;
+          expect(error.getResponse()).toMatchObject({ statusCode: 400, message: expected.badRequestMessage });
+          const item = await loadWorkItemRow(tx, picked.workItemId);
+          expect(item).toMatchObject({
+            status: 'picking',
+            pickerId: picked.worker.id,
+            leaseVersion: picked.leaseVersion,
+          });
+        }
+        expect(await lineBalances(tx, picked)).toEqual(before);
+      });
+    });
+  });
+
+  /** 설계 §6 마지막 행 — 배정 2 중 1 만 잡은 채 완료하면 전략별 지금 코드가 나온다. */
+  describe('completePick before every allocated unit is held returns the strategy incomplete code', () => {
+    const INCOMPLETE: Array<[StrategyName, string, (lineId: string, sourceLocationId: string) => string]> = [
+      [
+        'discrete',
+        'PICKING_INCOMPLETE',
+        (lineId, sourceLocationId) => `Allocation ${lineId}/${sourceLocationId} is not fully held by the picker`,
+      ],
+      [
+        'pick_to_tote',
+        'PICKING_INCOMPLETE',
+        (lineId, sourceLocationId) => `Allocation ${lineId}/${sourceLocationId} is not fully held in assigned totes`,
+      ],
+      [
+        'aggregate_then_sort',
+        'PICKING_UNSORTED_REMAINDER',
+        (lineId, sourceLocationId) => `Allocation ${lineId}/${sourceLocationId} is not fully sorted`,
+      ],
+    ];
+
+    it.each(INCOMPLETE)('%s → %s', async (strategy, code, messageFor) => {
+      await inRollbackTx(db, async (tx) => {
+        const picked = await toPicking(tx, strategy, 1);
+
+        await expectConflict(
+          picked.services.picking.completePick({
+            batchId: picked.batchId,
+            sessionId: picked.sessionId,
+            workItemId: picked.workItemId,
+            shipmentId: picked.shipmentId,
+            actor: picked.worker,
+            expectedLeaseVersion: picked.leaseVersion,
+            idempotencyKey: `char-complete-incomplete-${randomUUID()}`,
+          }),
+          { code, message: messageFor(picked.shipmentLineId, picked.world.locationId) },
+        );
+        const item = await loadWorkItemRow(tx, picked.workItemId);
+        expect(item).toMatchObject({ status: 'picking', leaseVersion: picked.leaseVersion });
       });
     });
   });
