@@ -37,7 +37,6 @@ import {
   loadPositiveShipmentCustody,
   loadWorkItem,
   loadWorkItemAllocations,
-  lockAndAssertPickerClaim,
 } from './allocation/allocation.queries';
 import { ShipmentCustodyBalance, WorkItemRow, uniqueSorted } from './allocation/allocation.types';
 import { runForwardWorkItemCommand, WorkItemCommandDeps } from './work-item-command';
