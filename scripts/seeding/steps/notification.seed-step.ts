@@ -541,11 +541,18 @@ const CS_TEMPLATES = [
     '문의 답변 완료',
     '[아몬드영] 문의하신 내용에 답변이 등록되었습니다',
     [
-      '문의하신 **{{title}}**에 답변이 등록되었습니다.',
+      '문의하신 「{{title}}」에 답변이 등록되었습니다.',
       '',
-      '답변 내용은 마이페이지 문의내역에서 확인하실 수 있습니다.',
+      '<div style="margin:16px 0;padding:12px 16px;border-left:3px solid #1a1c20;background:#f7f8f9;font-size:15px;line-height:24px;color:#1a1c20;white-space:pre-line">{{answer}}</div>',
+      '',
+      '[전체 답변 확인하기]({{inquiryUrl}})',
     ],
-    { name: { type: 'string', required: true }, title: { type: 'string', required: true } },
+    {
+      name: { type: 'string', required: true },
+      title: { type: 'string', required: true },
+      answer: { type: 'string', required: false },
+      inquiryUrl: { type: 'string', required: true },
+    },
   ),
 ];
 

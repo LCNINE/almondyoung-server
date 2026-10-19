@@ -599,6 +599,7 @@ export class QnaService {
               userId: question.userId,
               ...(question.productId ? { productId: question.productId } : {}),
               title: question.title,
+              answerContent: answer.content,
               answeredAt: answer.createdAt.toISOString(),
             },
           },

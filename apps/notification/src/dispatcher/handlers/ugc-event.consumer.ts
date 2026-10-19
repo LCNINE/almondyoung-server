@@ -9,6 +9,13 @@ import { EventMappingService } from '../../shared/services/event-mapping.service
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { eventNoticeKey } from './event-notice-key';
 
+const ANSWER_PREVIEW_LENGTH = 300;
+
+const truncate = (text: string, max: number) => {
+  const chars = Array.from(text.trim());
+  return chars.length > max ? `${chars.slice(0, max).join('').trimEnd()}…` : chars.join('');
+};
+
 @Controller()
 @UseInterceptors(EventTypeGuard)
 @RetryPolicy({ maxRetries: 0 })
@@ -48,7 +55,12 @@ export class UgcEventConsumer {
       correlationId: envelope.correlationId,
       idempotencyKey: eventNoticeKey(envelope.messageId, mapping.eventKey, payload.userId),
       priority: mapping.priority as NotificationPriority,
-      variables: { name: contact.username || '고객', title: payload.title },
+      variables: {
+        name: contact.username || '고객',
+        title: payload.title,
+        answer: truncate(payload.answerContent ?? '', ANSWER_PREVIEW_LENGTH),
+        inquiryUrl: `${process.env.STOREFRONT_URL ?? 'https://almondyoung.com'}/kr/mypage/inquiries?questionId=${payload.questionId}`,
+      },
     });
   }
 }

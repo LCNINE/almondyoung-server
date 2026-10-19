@@ -6,7 +6,7 @@ import { deleteQuestion, getMyQuestions } from "@/lib/api/ugc/qna"
 import type { Question } from "@/lib/types/ui/ugc"
 import { useTranslations } from "next-intl"
 import { useRouter, useSearchParams } from "next/navigation"
-import { useCallback, useState, useTransition } from "react"
+import { useCallback, useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { EditInquiryDialog } from "./edit-inquiry-dialog"
 import { MyInquiryCard } from "./my-inquiry-card"
@@ -31,13 +31,24 @@ export function MyInquiriesList({
   const [questions, setQuestions] = useState<Question[]>(initialQuestions)
   const [total, setTotal] = useState(initialTotal)
   const [currentPage, setCurrentPage] = useState(initialPage)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  // ponytail: 메일 링크의 questionId 는 현재 페이지에 있을 때만 펼친다. 오래된 문의까지 찾으려면 서버에서 해당 페이지를 계산해야 한다
+  const [expandedId, setExpandedId] = useState<string | null>(
+    searchParams.get("questionId")
+  )
   const [isDeleting, startDeleteTransition] = useTransition()
   const [isLoading, setIsLoading] = useState(false)
   const [editQuestion, setEditQuestion] = useState<Question | null>(null)
   const [isEditOpen, setIsEditOpen] = useState(false)
 
   const totalPages = Math.ceil(total / limit)
+
+  useEffect(() => {
+    const id = searchParams.get("questionId")
+    if (id)
+      document
+        .getElementById(`inquiry-${id}`)
+        ?.scrollIntoView({ block: "center" })
+  }, [searchParams])
 
   const fetchQuestions = useCallback(
     async (page: number) => {
@@ -121,7 +132,7 @@ export function MyInquiriesList({
 
       <ul>
         {questions.map((question, index) => (
-          <li key={question.id}>
+          <li key={question.id} id={`inquiry-${question.id}`}>
             <MyInquiryCard
               question={question}
               isExpanded={expandedId === question.id}

@@ -9,6 +9,7 @@ const answered = {
   questionId: '00000000-0000-4000-8000-000000000001',
   userId: '00000000-0000-4000-8000-000000000002',
   title: '배송 문의',
+  answerContent: '내일 출고됩니다.\n감사합니다.',
   answeredAt: '2026-09-22T01:00:00.000Z',
 };
 const envelope = { correlationId: 'c-1' } as EnvelopeOf<typeof UGC_EVENT_STREAM, 'QuestionAnswered'>;
@@ -48,9 +49,24 @@ describe('UgcEventConsumer 문의 답변 알림', () => {
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
         payload: expect.objectContaining({ email: 'buyer@example.com' }),
-        variables: { name: '홍길동', title: '배송 문의' },
+        variables: {
+          name: '홍길동',
+          title: '배송 문의',
+          answer: '내일 출고됩니다.\n감사합니다.',
+          inquiryUrl: `https://almondyoung.com/kr/mypage/inquiries?questionId=${answered.questionId}`,
+        },
       }),
     );
+  });
+
+  it('긴 답변은 300자에서 자르고, 답변이 없는 옛 이벤트는 빈 값으로 보낸다', async () => {
+    const { consumer, send } = make(true, 'buyer@example.com');
+
+    await consumer.onQuestionAnswered(envelope, { ...answered, answerContent: '가'.repeat(301) });
+    await consumer.onQuestionAnswered(envelope, { ...answered, answerContent: undefined });
+
+    expect(send.mock.calls[0][0].variables.answer).toBe(`${'가'.repeat(300)}…`);
+    expect(send.mock.calls[1][0].variables.answer).toBe('');
   });
 
   it('꺼져 있거나 메일을 못 찾으면 보내지 않는다', async () => {

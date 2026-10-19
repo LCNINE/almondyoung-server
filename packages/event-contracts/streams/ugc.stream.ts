@@ -77,6 +77,7 @@ export interface QuestionAnsweredPayload {
   userId: string;
   productId?: string;
   title: string;
+  answerContent?: string;
   answeredAt: string;
 }
 
@@ -125,6 +126,7 @@ const QuestionAnsweredSchema = z.object({
   userId: z.string().uuid(),
   productId: z.string().uuid().optional(),
   title: z.string().min(1),
+  answerContent: z.string().optional(),
   answeredAt: z.string().datetime(),
 });
 
