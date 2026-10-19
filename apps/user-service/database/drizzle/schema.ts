@@ -120,6 +120,10 @@ export const roles = pgTable('roles', {
   description: text('description'),
   // 화면 표시 이름. 비어 있으면 name 을 그대로 보여준다.
   displayName: varchar('display_name', { length: 100 }),
+  // 동시 편집 감지. 역할의 표시 정보·권한이 바뀔 때마다 오른다(사람↔역할 부여는 올리지 않는다).
+  version: integer('version').notNull().default(1),
+  // 이 역할로 로그인했을 때 처음 보낼 관리자 화면. 비어 있으면 권한으로 갈 수 있는 첫 메뉴.
+  landingPath: varchar('landing_path', { length: 200 }),
   ...timestampColumns,
 });
 
@@ -156,6 +160,36 @@ export const iamRolePermissions = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.roleId, table.permissionKey] }),
+  }),
+);
+
+// 역할·권한·부여 변경 이력. 변경과 같은 트랜잭션에서 쓴다(이력을 못 쓰면 변경도 없다).
+// 대상이 지워져도 읽히도록 이름(target_label·actor_login_id)을 그 시점 값으로 남긴다.
+export const iamAuditLogs = pgTable(
+  'iam_audit_logs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // ms 정밀도 — 이력 페이지 커서가 JS 시각(ms)으로 오가므로 같은 값을 저장한다.
+    occurredAt: timestamp('occurred_at', { precision: 3 })
+      .default(sql`now()`)
+      .notNull(),
+    actorUserId: uuid('actor_user_id').notNull(),
+    actorLoginId: varchar('actor_login_id', { length: 30 }),
+    action: varchar('action', { length: 50 }).notNull(),
+    targetType: varchar('target_type', { length: 20 }).notNull(),
+    targetId: uuid('target_id').notNull(),
+    targetLabel: varchar('target_label', { length: 100 }).notNull(),
+    before: jsonb('before'),
+    after: jsonb('after'),
+    // 요청자 주소. 관리자 화면 프록시가 원래 주소를 넘기기 전까지는 비어 있다.
+    ip: varchar('ip', { length: 45 }),
+    userAgent: text('user_agent'),
+    requestId: varchar('request_id', { length: 100 }),
+  },
+  (table) => ({
+    occurredIdx: index('iam_audit_logs_occurred_at_idx').on(table.occurredAt),
+    targetIdx: index('iam_audit_logs_target_idx').on(table.targetType, table.targetId, table.occurredAt),
+    actorIdx: index('iam_audit_logs_actor_idx').on(table.actorUserId, table.occurredAt),
   }),
 );
 
@@ -763,6 +797,7 @@ export const userServiceTables = {
   roles,
   iamPermissions,
   iamRolePermissions,
+  iamAuditLogs,
   userRoleAssignments,
   userIdentities,
   businessLicenses,

@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class GetUsersQueryDto {
   @ApiPropertyOptional({
@@ -36,6 +36,11 @@ export class GetUsersQueryDto {
   @IsOptional()
   @IsString()
   roleName?: string;
+
+  @ApiPropertyOptional({ enum: ['staff'], description: 'staff: 직원 역할(고객 역할 밖)을 지금 가진 사람만' })
+  @IsOptional()
+  @IsIn(['staff'])
+  audience?: 'staff';
 
   @ApiPropertyOptional({
     description: '정렬 필드',

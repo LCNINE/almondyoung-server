@@ -53,4 +53,28 @@ describe('MyPermissionsReader', () => {
     const result = await reader.forRoles(['constructor', 'toString']);
     expect(result.permissions).toEqual([]);
   });
+
+  it('takes the landing screen of the earliest created role that has one', async () => {
+    repository.findRolesByNames.mockResolvedValueOnce([
+      { name: 'cs_team', displayName: 'CS', landingPath: '/cs', createdAt: new Date('2026-10-02') },
+      { name: 'intern', displayName: '인턴', landingPath: '/order/history', createdAt: new Date('2026-10-01') },
+      { name: 'admin', displayName: '관리자', landingPath: null, createdAt: new Date('2026-01-01') },
+    ]);
+    const result = await reader.forRoles(['cs_team', 'intern', 'admin']);
+    expect(result.landingPath).toBe('/order/history');
+  });
+
+  it('breaks a tie between roles made at the same moment by role id', async () => {
+    const same = new Date('2026-10-01');
+    repository.findRolesByNames.mockResolvedValueOnce([
+      { name: 'zeta', displayName: 'Z', landingPath: '/z', createdAt: same },
+      { name: 'alpha', displayName: 'A', landingPath: '/a', createdAt: same },
+    ]);
+    expect((await reader.forRoles(['zeta', 'alpha'])).landingPath).toBe('/a');
+  });
+
+  it('has no landing screen when none of the roles sets one', async () => {
+    const result = await reader.forRoles(['admin', 'intern']);
+    expect(result.landingPath).toBeNull();
+  });
 });

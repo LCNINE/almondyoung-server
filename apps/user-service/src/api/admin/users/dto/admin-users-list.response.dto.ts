@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class AdminUserListItemDto {
   @ApiProperty()
@@ -40,6 +40,20 @@ export class AdminUserListItemDto {
 
   @ApiProperty({ type: [String] })
   roles: string[];
+
+  @ApiPropertyOptional({ type: () => [StaffRoleDto], description: 'audience=staff 일 때만' })
+  staffRoles?: StaffRoleDto[];
+}
+
+export class StaffRoleDto {
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty()
+  displayName: string;
+
+  @ApiProperty({ nullable: true, type: Date })
+  expiresAt: Date | null;
 }
 
 export class AdminUsersListResponseDto {

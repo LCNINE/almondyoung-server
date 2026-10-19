@@ -11,6 +11,15 @@ import { and, eq, inArray, isNotNull, isNull, notInArray } from 'drizzle-orm';
 
 export type NewIamPermission = typeof iamPermissions.$inferInsert;
 
+export interface PermissionDefinitionRow {
+  readonly key: string;
+  readonly domain: string;
+  readonly label: string;
+  readonly description: string;
+  readonly dangerous: boolean;
+  readonly systemOnly: boolean;
+}
+
 @Injectable()
 export class IamRepository {
   constructor(@InjectDb() private readonly dbService: DbService<UserServiceSchema>) {}
@@ -55,6 +64,18 @@ export class IamRepository {
       .from(iamPermissions);
   }
 
+  /** 역할 편집 검증용 — 권한마다 위험·시스템 전용·폐기 여부 */
+  findPermissionFlags(tx?: UserServiceTx) {
+    return this.client(tx)
+      .select({
+        key: iamPermissions.key,
+        dangerous: iamPermissions.dangerous,
+        systemOnly: iamPermissions.systemOnly,
+        deprecatedAt: iamPermissions.deprecatedAt,
+      })
+      .from(iamPermissions);
+  }
+
   async findRoleIdsByNames(names: string[], tx: UserServiceTx): Promise<Map<string, string>> {
     if (names.length === 0) return new Map();
     const rows = await tx
@@ -67,6 +88,32 @@ export class IamRepository {
   async insertGrants(rows: { roleId: string; permissionKey: string }[], tx: UserServiceTx): Promise<void> {
     if (rows.length === 0) return;
     await tx.insert(iamRolePermissions).values(rows).onConflictDoNothing();
+  }
+
+  findPermissionDefinitions(tx: UserServiceTx) {
+    return tx
+      .select({
+        key: iamPermissions.key,
+        domain: iamPermissions.domain,
+        label: iamPermissions.label,
+        description: iamPermissions.description,
+        dangerous: iamPermissions.dangerous,
+        systemOnly: iamPermissions.systemOnly,
+      })
+      .from(iamPermissions);
+  }
+
+  async updatePermissionDefinition(row: PermissionDefinitionRow, tx: UserServiceTx): Promise<void> {
+    await tx
+      .update(iamPermissions)
+      .set({
+        domain: row.domain,
+        label: row.label,
+        description: row.description,
+        dangerous: row.dangerous,
+        systemOnly: row.systemOnly,
+      })
+      .where(eq(iamPermissions.key, row.key));
   }
 
   findStaffGrants(excludedRoleNames: readonly string[], tx?: UserServiceTx) {
@@ -97,10 +144,17 @@ export class IamRepository {
     return rows.map((row) => row.key);
   }
 
-  findRolesByNames(names: string[]) {
-    if (names.length === 0) return Promise.resolve([]);
+  async findRolesByNames(
+    names: string[],
+  ): Promise<{ name: string; displayName: string | null; landingPath: string | null; createdAt: Date }[]> {
+    if (names.length === 0) return [];
     return this.dbService.db
-      .select({ name: roles.name, displayName: roles.displayName })
+      .select({
+        name: roles.name,
+        displayName: roles.displayName,
+        landingPath: roles.landingPath,
+        createdAt: roles.createdAt,
+      })
       .from(roles)
       .where(inArray(roles.name, names));
   }

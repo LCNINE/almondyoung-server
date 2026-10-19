@@ -13,6 +13,9 @@ type Options = {
   grant: readonly InitialGrantRole[];
   dangerous?: boolean;
   systemOnly?: boolean;
+  /** 같은 대상의 `.read` 가 없거나 다른 화면에서 쓰이는 동작의 조회 의존 */
+  requires?: readonly string[];
+  standalone?: boolean;
 };
 
 function permission<const K extends string>(key: K, label: string, description: string, options: Options) {
@@ -24,6 +27,8 @@ function permission<const K extends string>(key: K, label: string, description: 
     systemOnly: options.systemOnly ?? false,
     ownerServices: options.owners,
     grantOnFirstRegistration: options.grant,
+    requires: options.requires ?? [],
+    standalone: options.standalone ?? false,
   } satisfies PermissionDefinition;
 }
 
@@ -92,19 +97,23 @@ export const PERMISSION_CATALOG = [
     owners: ['user-service'],
     grant: ADMIN,
     ...DANGEROUS,
+    requires: ['customer.profile.read'],
   }),
   permission('customer.dormant.execute', '휴면 전환 실행', '휴면 대상 회원을 일괄 전환한다', {
     owners: ['user-service'],
     grant: NOBODY,
     ...DANGEROUS,
+    requires: ['customer.profile.read'],
   }),
   permission('customer.blacklist.write', '블랙리스트 관리', '블랙리스트에 올리고 내린다', {
     owners: ['user-service'],
     grant: ADMIN,
+    requires: ['customer.profile.read'],
   }),
   permission('customer.business_verification.review', '사업자 인증 검토', '사업자 인증 신청을 승인·반려한다', {
     owners: ['user-service'],
     grant: ADMIN,
+    requires: ['customer.profile.read'],
   }),
 
   // 주문
@@ -126,7 +135,11 @@ export const PERMISSION_CATALOG = [
     grant: ADMIN,
     ...DANGEROUS,
   }),
-  permission('order.matching.write', '주문 매칭', '수집한 주문을 상품과 매칭한다', { owners: ['core'], grant: ADMIN }),
+  permission('order.matching.write', '주문 매칭', '수집한 주문을 상품과 매칭한다', {
+    owners: ['core'],
+    grant: ADMIN,
+    requires: ['order.order.read'],
+  }),
   permission('order.claim.read', '반품·교환 조회', '반품·교환 접수 내역을 본다', {
     owners: ['core'],
     grant: ADMIN_INTERN,
@@ -152,6 +165,7 @@ export const PERMISSION_CATALOG = [
   permission('fulfillment.warehouse.operate', '출고 현장 작업', '일반 출고 계획·피킹·패킹·검수를 한다', {
     owners: ['core'],
     grant: ADMIN_LOGISTICS,
+    requires: ['fulfillment.shipment.read'],
   }),
   permission('fulfillment.shipment.consolidate', '합배송', '서로 다른 주문의 출고를 합친다', {
     owners: ['core'],
@@ -166,16 +180,19 @@ export const PERMISSION_CATALOG = [
   permission('fulfillment.reservation.transfer', '예약 이전', '출고 라인 예약을 옮기고 우선순위를 바꾼다', {
     owners: ['core'],
     grant: ADMIN_LOGISTICS_MANAGER,
+    requires: ['fulfillment.order.read'],
   }),
   permission('fulfillment.dispatch.force', '강제 출고', '출고를 강제로 완료한다', {
     owners: ['core'],
     grant: ADMIN_LOGISTICS_MANAGER,
     ...DANGEROUS,
+    requires: ['fulfillment.shipment.read'],
   }),
   permission('fulfillment.dispatch.recall', '출고 회수', '출고 시도를 되돌린다', {
     owners: ['core'],
     grant: ADMIN_LOGISTICS_MANAGER,
     ...DANGEROUS,
+    requires: ['fulfillment.order.read'],
   }),
   permission('fulfillment.shipment.reopen', '출고 재개방', '잠긴 출고를 다시 열고 송장을 무효로 한다', {
     owners: ['core'],
@@ -190,6 +207,7 @@ export const PERMISSION_CATALOG = [
     owners: ['core'],
     grant: ADMIN_LOGISTICS,
     ...DANGEROUS,
+    requires: ['fulfillment.shipment.read'],
   }),
   permission(
     'fulfillment.work.supervise',
@@ -198,6 +216,7 @@ export const PERMISSION_CATALOG = [
     {
       owners: ['core'],
       grant: ADMIN_LOGISTICS_MANAGER,
+      requires: ['fulfillment.shipment.read'],
     },
   ),
   permission('fulfillment.tracking.ingest', '배송 추적 수신', '배송사 추적 이벤트를 받는다(시스템 전용)', {
@@ -231,6 +250,7 @@ export const PERMISSION_CATALOG = [
   permission('inventory.warehouse.write', '창고 관리', '창고를 만들고 고치고 피킹 방식을 정한다', {
     owners: ['core'],
     grant: ['admin', ...LOGISTICS_MANAGER],
+    requires: ['inventory.stock.read'],
   }),
 
   // 상품
@@ -256,23 +276,28 @@ export const PERMISSION_CATALOG = [
     owners: ['core', 'admin-web'],
     grant: ADMIN,
     ...DANGEROUS,
+    requires: ['catalog.product.read'],
   }),
   permission('catalog.bulk.execute', '상품 일괄 작업', '엑셀 일괄 등록·수정과 일괄 작업을 실행한다', {
     owners: ['core'],
     grant: ADMIN,
     ...DANGEROUS,
+    requires: ['catalog.product.read'],
   }),
   permission('catalog.category.write', '카테고리 관리', '분류·카테고리·태그를 관리한다', {
     owners: ['core'],
     grant: ADMIN,
+    requires: ['catalog.product.read'],
   }),
   permission('catalog.channel_listing.write', '채널 노출 관리', '채널별 노출과 채널 카테고리를 관리한다', {
     owners: ['core', 'channel-adapter'],
     grant: ADMIN,
+    requires: ['catalog.product.read'],
   }),
   permission('catalog.digital_asset.write', '디지털 자산 관리', '디지털 자산과 사용권을 관리한다', {
     owners: ['core'],
     grant: ADMIN,
+    requires: ['catalog.product.read'],
   }),
 
   // 리뷰·CS — 오늘 ugc 의 admin:ugc:read/modify 를 admin 이 갖는다.
@@ -287,6 +312,7 @@ export const PERMISSION_CATALOG = [
   permission('cs.reward_policy.write', '리뷰 보상 정책', '리뷰 보상 규칙을 바꾼다', {
     owners: ['ugc-service'],
     grant: ADMIN,
+    requires: ['cs.review.read'],
   }),
   permission('cs.inquiry.read', '문의 조회', 'Q&A·CS 목록을 본다', {
     owners: ['ugc-service', 'core'],
@@ -296,7 +322,11 @@ export const PERMISSION_CATALOG = [
     owners: ['ugc-service', 'core'],
     grant: ADMIN,
   }),
-  permission('cs.chatbot.write', '챗봇 설정', '챗봇 설정을 바꾼다', { owners: ['ai', 'core'], grant: ADMIN }),
+  permission('cs.chatbot.write', '챗봇 설정', '챗봇 설정을 바꾼다', {
+    owners: ['ai', 'core'],
+    grant: ADMIN,
+    requires: ['cs.inquiry.read'],
+  }),
 
   // 마케팅
   permission('marketing.promotion.read', '프로모션 조회', '쿠폰·타임세일·이벤트·적립 정책을 본다', {
@@ -315,10 +345,15 @@ export const PERMISSION_CATALOG = [
     owners: ['core', 'admin-web'],
     grant: ADMIN_INTERN,
   }),
-  permission('marketing.notice.write', '공지 관리', '공지사항을 쓰고 고친다', { owners: ['core'], grant: ADMIN }),
+  permission('marketing.notice.write', '공지 관리', '공지사항을 쓰고 고친다', {
+    owners: ['core'],
+    grant: ADMIN,
+    requires: ['marketing.display.read'],
+  }),
   permission('marketing.shop_listing.write', '샵매매 관리', '샵매매 글을 작성·검토한다', {
     owners: ['ugc-service'],
     grant: ADMIN,
+    requires: ['cs.review.read'],
   }),
   permission('marketing.almond_template.write', '아몬드템플릿 관리', '아몬드템플릿 시안을 저장·게시·삭제한다', {
     owners: ['ugc-service'],
@@ -346,14 +381,17 @@ export const PERMISSION_CATALOG = [
   permission('messaging.template.write', '메시지 템플릿 관리', '문자·알림톡 템플릿을 등록하고 고친다', {
     owners: ['notification'],
     grant: ADMIN,
+    requires: ['messaging.message.read'],
   }),
   permission('messaging.device.write', '발송폰 관리', '발송폰 디바이스를 관리한다', {
     owners: ['notification'],
     grant: ADMIN,
+    requires: ['messaging.message.read'],
   }),
   permission('messaging.provider.write', '발송 채널 관리', '문자·알림톡 발송 프로바이더를 등록하고 전환한다', {
     owners: ['notification'],
     grant: ADMIN,
+    requires: ['messaging.message.read'],
   }),
 
   // 결제
@@ -376,20 +414,24 @@ export const PERMISSION_CATALOG = [
     owners: ['wallet'],
     grant: ADMIN,
     ...DANGEROUS,
+    requires: ['membership.member.read'],
   }),
   permission('payment.deposit.confirm', '무통장입금 확인', '입금을 확인 처리한다', {
     owners: ['wallet'],
     grant: ADMIN,
     ...DANGEROUS,
+    requires: ['payment.payment.read'],
   }),
   permission('payment.point.adjust', '적립금 지급·차감', '고객 적립금을 지급하거나 차감한다', {
     owners: ['wallet'],
     grant: ADMIN,
     ...DANGEROUS,
+    requires: ['payment.payment.read'],
   }),
   permission('payment.method.write', '결제수단 관리', '결제수단과 리전별 결제수단을 관리한다', {
     owners: ['wallet', 'admin-web'],
     grant: ADMIN,
+    requires: ['payment.payment.read'],
   }),
 
   // 멤버십 — 오늘 admin 은 billing.refund 만, override 는 master 만.
@@ -418,6 +460,7 @@ export const PERMISSION_CATALOG = [
   permission('membership.plan.write', '멤버십 플랜 관리', '플랜과 혜택을 관리한다', {
     owners: ['membership'],
     grant: ADMIN,
+    requires: ['membership.member.read'],
   }),
 
   // 통계
@@ -433,10 +476,12 @@ export const PERMISSION_CATALOG = [
   permission('analytics.setting.write', '경영 설정', '고정비·매출 목표·수수료율을 바꾼다', {
     owners: ['analytics'],
     grant: ADMIN,
+    requires: ['analytics.finance.read'],
   }),
   permission('analytics.keyword.write', '검색어 운영', '검색어 이슈를 표시하고 정리한다', {
     owners: ['search'],
     grant: ADMIN,
+    requires: ['analytics.report.read'],
   }),
 
   // 채널
@@ -470,16 +515,18 @@ export const PERMISSION_CATALOG = [
     owners: ['user-service'],
     grant: NOBODY,
     ...DANGEROUS,
+    standalone: true,
   }),
   permission('system.menu.write', '메뉴 커스터마이즈', '관리자 메뉴 구성을 바꾼다', {
     owners: ['admin-web'],
     grant: ADMIN,
+    standalone: true,
   }),
   permission(
     'system.file.manage',
     '모든 파일 열람·삭제',
     '올린 사람이 아니어도 비공개 파일을 열고 지운다(고객이 올린 서류 포함)',
-    { owners: ['file-service'], grant: NOBODY, ...DANGEROUS },
+    { owners: ['file-service'], grant: NOBODY, ...DANGEROUS, standalone: true },
   ),
   permission('system.operations.read', '운영 진단 조회', '이벤트 추적과 상세 헬스 정보를 본다', {
     owners: ['core', 'user-service', 'membership', 'wallet', 'notification', 'channel-adapter'],
@@ -498,6 +545,7 @@ export const PERMISSION_CATALOG = [
   permission('ai.assistant.use', 'AI 어시스턴트', 'AI 어시스턴트와 상품설명 초안을 쓴다(내 권한 범위 안에서만 동작)', {
     owners: ['ai'],
     grant: ADMIN,
+    standalone: true,
   }),
 ] as const;
 

@@ -106,6 +106,13 @@
       "when": 1791781676605,
       "tag": "20261012050756_seed-iam-roles",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791881352519,
+      "tag": "20261013084912_add-role-version-landing-and-iam-audit-logs",
+      "breakpoints": true
     }
   ]
 }

@@ -12,6 +12,8 @@ const def = (key: string, grant: PermissionDefinition['grantOnFirstRegistration'
   systemOnly: false,
   ownerServices: ['core'],
   grantOnFirstRegistration: grant,
+  requires: [],
+  standalone: false,
 });
 
 describe('PermissionCatalogSyncManager', () => {
@@ -22,6 +24,8 @@ describe('PermissionCatalogSyncManager', () => {
     clearDeprecated: jest.fn(),
     findRoleIdsByNames: jest.fn(),
     insertGrants: jest.fn(),
+    findPermissionDefinitions: jest.fn(),
+    updatePermissionDefinition: jest.fn(),
   };
   const tx = { marker: 'tx' };
   const run = jest.fn(async (work: (t: unknown) => Promise<unknown>) => work(tx));
@@ -33,6 +37,7 @@ describe('PermissionCatalogSyncManager', () => {
     repository.findPermissionStates.mockResolvedValue([]);
     repository.markDeprecated.mockResolvedValue(0);
     repository.clearDeprecated.mockResolvedValue(0);
+    repository.findPermissionDefinitions.mockResolvedValue([]);
     repository.findRoleIdsByNames.mockResolvedValue(
       new Map([
         ['admin', 'role-admin'],
@@ -113,5 +118,29 @@ describe('PermissionCatalogSyncManager', () => {
     ]);
     await manager.sync([], { scopePrefix: 'zz.' });
     expect(repository.markDeprecated).toHaveBeenCalledWith(['zz.old.read'], tx);
+  });
+
+  it('brings a stored label, description and flags back to the code values', async () => {
+    repository.insertMissingPermissions.mockResolvedValue([]);
+    repository.findPermissionDefinitions.mockResolvedValue([
+      { key: 'a.b.read', domain: 'a', label: '옛 이름', description: '옛 설명', dangerous: true, systemOnly: false },
+    ]);
+    const result = await manager.sync([def('a.b.read')]);
+    expect(repository.updatePermissionDefinition).toHaveBeenCalledWith(
+      { key: 'a.b.read', domain: 'a', label: 'a.b.read', description: 'a.b.read', dangerous: false, systemOnly: false },
+      tx,
+    );
+    expect(result.relabeled).toBe(1);
+  });
+
+  it('leaves a definition that already matches and one outside the catalog alone', async () => {
+    repository.insertMissingPermissions.mockResolvedValue([]);
+    repository.findPermissionDefinitions.mockResolvedValue([
+      { key: 'a.b.read', domain: 'a', label: 'a.b.read', description: 'a.b.read', dangerous: false, systemOnly: false },
+      { key: 'gone.x.read', domain: 'gone', label: '옛', description: '옛', dangerous: false, systemOnly: false },
+    ]);
+    const result = await manager.sync([def('a.b.read')]);
+    expect(repository.updatePermissionDefinition).not.toHaveBeenCalled();
+    expect(result.relabeled).toBe(0);
   });
 });

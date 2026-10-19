@@ -2,9 +2,11 @@ import { PermissionCheckpoints, ScopeGuard, type JwtPayload } from '@app/authori
 import { ConflictError, ForbiddenError, NotFoundError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
 import { Injectable, Logger } from '@nestjs/common';
-import { userServiceSchema, UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
+import { userServiceSchema, UserServiceSchema, type UserServiceTx } from 'apps/user-service/database/drizzle/schema';
 import { DbTransaction } from 'apps/user-service/src/commons/types';
 import * as bcrypt from 'bcrypt';
+import { RoleAssignmentManager } from '../../iam/assignments/role-assignment.manager';
+import type { IamActor } from '../../iam/iam-actor';
 import { CUSTOMER_ROLE_NAMES } from '../../iam/iam.constants';
 import { UsersService } from '../../users/users.service';
 import { CreateAccountDto } from './dto/create-account-dto';
@@ -20,13 +22,14 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly scopeGuard: ScopeGuard,
     private readonly checkpoints: PermissionCheckpoints,
+    private readonly roleAssignments: RoleAssignmentManager,
   ) {}
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.dbService.db;
   }
 
-  async createAccount(createAccountDto: CreateAccountDto, tx?: DbTransaction) {
+  async createAccount(createAccountDto: CreateAccountDto, actor: IamActor, tx?: UserServiceTx) {
     const { loginId, email } = createAccountDto;
 
     if (await this.usersService.findUserByLoginId(loginId)) {
@@ -36,13 +39,10 @@ export class AuthService {
       throw new ConflictError('이미 존재하는 이메일 입니다.');
     }
 
-    if (tx) {
-      return this._createAccountWithTransaction(createAccountDto, tx);
-    }
-    return this.dbService.db.transaction((newTx) => this._createAccountWithTransaction(createAccountDto, newTx));
+    return this.dbService.run((trx) => this._createAccountWithTransaction(createAccountDto, actor, trx), tx);
   }
 
-  private async _createAccountWithTransaction(createAccountDto: CreateAccountDto, tx: DbTransaction) {
+  private async _createAccountWithTransaction(createAccountDto: CreateAccountDto, actor: IamActor, tx: UserServiceTx) {
     const client = this.getClient(tx);
     const { loginId, roleId, phone_number, email, username, nickname } = createAccountDto;
 
@@ -62,7 +62,8 @@ export class AuthService {
       })
       .returning();
 
-    await this.usersService.assignUserRole(user.id, roleId, tx);
+    // 첫 역할도 부여 규칙(권한 상승 방지·시스템 역할)과 변경 이력을 같은 트랜잭션으로 탄다.
+    await this.roleAssignments.assignOnCreate(tx, actor, user.id, roleId);
     await this.usersService.updateMyProfile(user.id, { phoneNumber: phone_number }, tx);
 
     return {

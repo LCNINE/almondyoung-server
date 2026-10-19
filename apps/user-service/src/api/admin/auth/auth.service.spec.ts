@@ -8,6 +8,7 @@ import {
 import { register } from 'prom-client';
 import { ForbiddenError, NotFoundError } from '@app/shared';
 import { Test } from '@nestjs/testing';
+import { RoleAssignmentManager } from '../../iam/assignments/role-assignment.manager';
 import { UsersService } from '../../users/users.service';
 import { AuthService } from './auth.service';
 
@@ -35,6 +36,7 @@ describe('AuthService.changePassword', () => {
         { provide: DbService, useValue: { db } },
         { provide: UsersService, useValue: usersService },
         { provide: ScopeGuard, useValue: scopeGuard },
+        { provide: RoleAssignmentManager, useValue: { assignOnCreate: jest.fn() } },
         {
           provide: PermissionCheckpoints,
           useValue: createCheckpointsForTesting({ master: ['iam.admin_user.write'], admin: [] }),
@@ -88,5 +90,60 @@ describe('AuthService.changePassword', () => {
     usersService.getUserRoleNames.mockResolvedValue(['user']);
     await service.changePassword(request, admin);
     expect(await checkpointEvaluations('iam.staff_password_reset', 'match')).toBe(0);
+  });
+});
+
+describe('AuthService.createAccount', () => {
+  const tx = {
+    insert: jest.fn(() => ({ values: jest.fn(() => ({ returning: jest.fn(async () => [created]) })) })),
+  };
+  const created = { id: 'u-new', loginId: 'newbie', email: 'n@e.w', username: '새사람' };
+  const run = jest.fn(async (work: (t: unknown) => Promise<unknown>) => work(tx));
+  const usersService = {
+    findUserByLoginId: jest.fn(),
+    findUserByEmail: jest.fn(),
+    updateMyProfile: jest.fn(),
+    assignUserRole: jest.fn(),
+  };
+  const assignments = { assignOnCreate: jest.fn() };
+  const actor = { userId: 'u-boss', loginId: 'boss', roles: ['master'], userAgent: null, requestId: null };
+  let service: AuthService;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    run.mockImplementation(async (work: (t: unknown) => Promise<unknown>) => work(tx));
+    usersService.findUserByLoginId.mockResolvedValue(null);
+    usersService.findUserByEmail.mockResolvedValue(null);
+    const module = await Test.createTestingModule({
+      providers: [
+        AuthService,
+        { provide: DbService, useValue: { run } },
+        { provide: UsersService, useValue: usersService },
+        { provide: ScopeGuard, useValue: { getGrantedScopes: jest.fn() } },
+        { provide: RoleAssignmentManager, useValue: assignments },
+        { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting({}) },
+      ],
+    }).compile();
+    service = module.get(AuthService);
+  });
+
+  it('gives the first role through the role assignment rules in the same transaction', async () => {
+    await service.createAccount(
+      { username: '새사람', nickname: '새', loginId: 'newbie', email: 'n@e.w', roleId: 'r-intern' },
+      actor,
+    );
+    expect(assignments.assignOnCreate).toHaveBeenCalledWith(tx, actor, 'u-new', 'r-intern');
+    expect(usersService.assignUserRole).not.toHaveBeenCalled();
+  });
+
+  it('creates nothing when the role may not be given', async () => {
+    assignments.assignOnCreate.mockRejectedValueOnce(new ForbiddenError('no'));
+    await expect(
+      service.createAccount(
+        { username: '새사람', nickname: '새', loginId: 'newbie', email: 'n@e.w', roleId: 'r-master' },
+        actor,
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    expect(usersService.updateMyProfile).not.toHaveBeenCalled();
   });
 });

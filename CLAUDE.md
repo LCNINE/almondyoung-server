@@ -349,6 +349,10 @@ Medusa 를 새로 부르면 `medusa-permissions.ts` 에 경로를 더한다(`med
 `useX.permission` 을 선언하고, 그 동작을 부르는 화면은 `run={useX}` 로 판정한다(없으면 `mutation-guard.gate.spec.ts` 가
 빨갛다). admin-web 은 권한 목록을 `@permission-catalog` 별칭으로 원본 그대로 가져오므로 `libs/authorization/src/permissions` 는 폴더 밖을 import 하지 않는다.
 
+역할·권한·부여를 바꾸는 코드는 user-service `iam` 의 Manager 를 거친다 — 권한 상승 방지·시스템 역할·자기 자신·마지막
+시스템 역할 보유자 규칙과 변경 이력이 거기서 같은 트랜잭션으로 묶인다(ADR-0045 §24~28). 새 권한을 추가할 때 같은 대상의
+`.read` 가 없으면 `requires` 나 `standalone` 을 적는다(`permission-dependencies.spec.ts` 가 빨갛다).
+
 ### 크론 (`@app/cron-once`)
 
 앱의 크론은 `@nestjs/schedule` 의 `@Cron` 이 아니라 **`@CronOnce(expr, { name })`** 를 쓴다 (ADR-0036, #821).

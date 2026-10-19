@@ -18,7 +18,7 @@ export class PermissionCatalogSyncBootstrap implements OnApplicationBootstrap {
     try {
       const result = await this.manager.sync();
       this.logger.log(
-        `permission catalog synced: inserted=${result.inserted.length} deprecated=${result.deprecated} restored=${result.restored} grants=${result.grants}`,
+        `permission catalog synced: inserted=${result.inserted.length} deprecated=${result.deprecated} restored=${result.restored} grants=${result.grants} relabeled=${result.relabeled}`,
       );
       if (result.missingRoles.length > 0) {
         this.logger.warn(`initial grants skipped for missing roles: ${result.missingRoles.join(', ')}`);

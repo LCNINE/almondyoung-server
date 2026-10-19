@@ -2,7 +2,7 @@ import { DbService, InjectDb } from '@app/db';
 import { PERMISSION_CATALOG, type PermissionDefinition } from '@app/authorization';
 import { Injectable } from '@nestjs/common';
 import type { UserServiceSchema, UserServiceTx } from 'apps/user-service/database/drizzle/schema';
-import { IamRepository } from './iam.repository';
+import { IamRepository, type PermissionDefinitionRow } from './iam.repository';
 
 export interface CatalogSyncResult {
   inserted: string[];
@@ -10,7 +10,16 @@ export interface CatalogSyncResult {
   restored: number;
   grants: number;
   missingRoles: string[];
+  /** 이름·설명·표시가 코드와 달라 맞춘 권한 수 */
+  relabeled: number;
 }
+
+const sameDefinition = (a: PermissionDefinitionRow, b: PermissionDefinitionRow) =>
+  a.domain === b.domain &&
+  a.label === b.label &&
+  a.description === b.description &&
+  a.dangerous === b.dangerous &&
+  a.systemOnly === b.systemOnly;
 
 @Injectable()
 export class PermissionCatalogSyncManager {
@@ -31,17 +40,17 @@ export class PermissionCatalogSyncManager {
     scopePrefix: string | undefined,
     tx: UserServiceTx,
   ): Promise<CatalogSyncResult> {
-    const inserted = await this.repository.insertMissingPermissions(
-      catalog.map((p) => ({
+    const definitions = catalog.map(
+      (p): PermissionDefinitionRow => ({
         key: p.key,
         domain: p.key.split('.')[0],
         label: p.label,
         description: p.description,
         dangerous: p.dangerous,
         systemOnly: p.systemOnly,
-      })),
-      tx,
+      }),
     );
+    const inserted = await this.repository.insertMissingPermissions([...definitions], tx);
 
     const catalogKeys = new Set(catalog.map((p) => p.key));
     const allStates = await this.repository.findPermissionStates(tx);
@@ -56,8 +65,22 @@ export class PermissionCatalogSyncManager {
     );
 
     const { grants, missingRoles } = await this.grantFirstRegistrations(catalog, new Set(inserted), tx);
+    const relabeled = await this.relabel(definitions, tx);
 
-    return { inserted, deprecated, restored, grants, missingRoles };
+    return { inserted, deprecated, restored, grants, missingRoles, relabeled };
+  }
+
+  /** 목록의 원본은 코드다 — 이름·설명·위험 표시가 바뀌면 DB 도 따라간다(부여는 건드리지 않는다). */
+  private async relabel(definitions: readonly PermissionDefinitionRow[], tx: UserServiceTx): Promise<number> {
+    const stored = new Map((await this.repository.findPermissionDefinitions(tx)).map((row) => [row.key, row]));
+    let relabeled = 0;
+    for (const definition of definitions) {
+      const row = stored.get(definition.key);
+      if (!row || sameDefinition(row, definition)) continue;
+      await this.repository.updatePermissionDefinition(definition, tx);
+      relabeled += 1;
+    }
+    return relabeled;
   }
 
   private async grantFirstRegistrations(

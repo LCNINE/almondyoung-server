@@ -49,4 +49,11 @@ export interface PermissionDefinition {
   readonly ownerServices: readonly OwnerService[];
   /** 이 키가 DB 에 «처음» 들어갈 때 한 번만 부여한다. 이후엔 화면에서 바꾼 값이 원본이다. */
   readonly grantOnFirstRegistration: readonly InitialGrantRole[];
+  /**
+   * 이 권한을 켜려면 함께 있어야 하는 조회 권한. 같은 대상의 `.read` 는 적지 않아도 포함된다.
+   * 역할 편집 화면은 켤 때 함께 켜고, 서버는 빠진 집합을 거부한다.
+   */
+  readonly requires: readonly string[];
+  /** 쓰기·특수 동작인데 기대는 조회가 없다(진입 권한이 자기 자신이거나 조회 화면이 없다). */
+  readonly standalone: boolean;
 }

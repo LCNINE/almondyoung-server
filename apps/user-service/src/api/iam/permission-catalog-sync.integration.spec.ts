@@ -28,6 +28,8 @@ const def = (key: string, grant: PermissionDefinition['grantOnFirstRegistration'
   systemOnly: false,
   ownerServices: ['core'],
   grantOnFirstRegistration: grant,
+  requires: [],
+  standalone: false,
 });
 
 describeIfDb('permission catalog sync against a real database', () => {
