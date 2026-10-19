@@ -1,4 +1,14 @@
-import { BadRequestException, Body, Controller, Get, NotFoundException, Param, Post, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { Public } from '../../commons/decorator/public.decorator';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import { JwtPayload } from '@app/authorization';
@@ -7,6 +17,7 @@ import { Cafe24LinkService } from './cafe24-link.service';
 import { Cafe24MemberInfoRequestDto, Cafe24MemberInfoResponseDto } from './dto/member-info.dto';
 import { Cafe24MigrationItemDto, Cafe24MigrationListResponseDto } from './dto/migration.dto';
 import { Cafe24LinkRequestDto, Cafe24LinkResponseDto } from './dto/link.dto';
+import { InternalApiKeyGuard } from '../../commons/guards/internal-api-key.guard';
 
 @ApiTags('Cafe24 Link')
 @ApiBearerAuth('access-token')
@@ -169,6 +180,7 @@ export class Cafe24LinkController {
 
   @Get('internal/link-info')
   @Public()
+  @UseGuards(InternalApiKeyGuard)
   @ApiOperation({
     summary: '[Internal] Cafe24 회원 ID로 링크 정보 조회',
     description: 'mallId와 cafe24MemberId로 userId와 email을 조회합니다.',
@@ -189,6 +201,7 @@ export class Cafe24LinkController {
 
   @Get('internal/links')
   @Public()
+  @UseGuards(InternalApiKeyGuard)
   @ApiOperation({
     summary: '[Internal] mallId 기준 전체 연동 목록 조회',
     description: '활성 연동 전체 목록을 반환합니다.',
