@@ -429,6 +429,7 @@ function createHarness(): AggregateHarness {
     select: jest.fn(() => new QueryResult(state.selectRows())),
     insert: jest.fn(() => new InsertResult(state)),
     update: jest.fn(() => new UpdateResult(state)),
+    execute: jest.fn(async () => undefined),
   };
   const commands = {
     execute: jest.fn(async (request, handler) => {

@@ -41,6 +41,7 @@ import {
   lockAndAssertPickerClaim,
 } from './allocation/allocation.queries';
 import { ShipmentAllocation, ShipmentCustodyBalance } from './allocation/allocation.types';
+import { runForwardWorkItemCommand, WorkItemCommandDeps } from './work-item-command';
 
 const ASSIGNED_REF_PREFIX = 'work-item:';
 const BULK_CART_REF_PREFIX = 'bulk-cart:';
@@ -71,6 +72,10 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
     private readonly returnBins: ReturnBinService,
     private readonly returns: BoxReturnService,
   ) {}
+
+  private forwardDeps(): WorkItemCommandDeps {
+    return { commands: this.commands, workflowGate: this.workflowGate, labels: this.labels };
+  }
 
   async scan(input: ScanPickingInput, tx?: DbTx): Promise<ScanPickingResult> {
     if (input.strategy !== this.capabilities.name) {
@@ -295,17 +300,17 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
     if (input.strategy !== this.capabilities.name || input.stage !== 'sort') {
       throw new BadRequestException('Sort scan requires strategy=aggregate_then_sort, stage=sort');
     }
-    this.workflowGate.assertV2MutationAllowed('picking.aggregate_then_sort.sort');
     assertPositiveQuantity(input.quantity);
     const cartId = this.requiredCartId(input.cartId);
     if (input.destinationCustody !== 'SORTING' && input.destinationCustody !== 'PACKING') {
       throw new BadRequestException('destinationCustody must be SORTING or PACKING');
     }
     const cartRef = this.bulkCartRef(input.batchId, cartId, input.actor.id);
-    return this.commands.execute<AggregateSortScanResult>(
+    return runForwardWorkItemCommand<AggregateSortScanResult>(
+      this.forwardDeps(),
       {
+        strategy: this.capabilities.name,
         commandType: 'picking.aggregate_then_sort.sort',
-        idempotencyKey: input.idempotencyKey,
         canonicalRequest: {
           strategy: this.capabilities.name,
           stage: 'sort',
@@ -321,20 +326,18 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
           actorId: input.actor.id,
           expectedLeaseVersion: input.expectedLeaseVersion,
         },
+        target: {
+          batchId: input.batchId,
+          sessionId: input.sessionId,
+          workItemId: input.workItemId,
+          shipmentId: input.shipmentId,
+          actor: input.actor,
+          expectedLeaseVersion: input.expectedLeaseVersion,
+          idempotencyKey: input.idempotencyKey,
+        },
+        locksBefore: [`aggregate-cart:${cartId}`],
       },
       async (trx, commandRequestId) => {
-        await this.acquireCartLock(cartId, trx);
-        await lockAndAssertPickerClaim(
-          trx,
-          input.workItemId,
-          input.batchId,
-          input.shipmentId,
-          input.actor.id,
-          input.expectedLeaseVersion,
-        );
-        // 낡은 송장으로는 진행하지 않는다(스펙 I5). 작업 항목 잠금 뒤, 명령 핸들러 안.
-        await this.labels.assertCurrent(input.workItemId, trx);
-        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         await this.assertCartOwnedBy(input.sessionId, input.batchId, cartId, input.actor.id, trx, true);
         const [line] = await trx
           .select({ shipmentId: wmsTables.shipmentLines.shipmentId, skuId: wmsTables.shipmentLines.skuId })
@@ -645,11 +648,11 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
   }
 
   async completePick(input: CompletePickInput, tx?: DbTx): Promise<InspectionReadyOutput> {
-    this.workflowGate.assertV2MutationAllowed('picking.aggregate_then_sort.complete');
-    return this.commands.execute<InspectionReadyOutput>(
+    return runForwardWorkItemCommand<InspectionReadyOutput>(
+      this.forwardDeps(),
       {
+        strategy: this.capabilities.name,
         commandType: 'picking.aggregate_then_sort.complete',
-        idempotencyKey: input.idempotencyKey,
         canonicalRequest: {
           strategy: this.capabilities.name,
           batchId: input.batchId,
@@ -659,19 +662,17 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
           actorId: input.actor.id,
           expectedLeaseVersion: input.expectedLeaseVersion,
         },
+        target: {
+          batchId: input.batchId,
+          sessionId: input.sessionId,
+          workItemId: input.workItemId,
+          shipmentId: input.shipmentId,
+          actor: input.actor,
+          expectedLeaseVersion: input.expectedLeaseVersion,
+          idempotencyKey: input.idempotencyKey,
+        },
       },
       async (trx, commandRequestId) => {
-        await lockAndAssertPickerClaim(
-          trx,
-          input.workItemId,
-          input.batchId,
-          input.shipmentId,
-          input.actor.id,
-          input.expectedLeaseVersion,
-        );
-        // 낡은 송장으로는 진행하지 않는다(스펙 I5). 작업 항목 잠금 뒤, 명령 핸들러 안.
-        await this.labels.assertCurrent(input.workItemId, trx);
-        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         const allocations = await loadWorkItemAllocations(trx, input.workItemId);
         const sortingRef = this.sortingRef(input.workItemId, input.actor.id);
         const packingRef = this.packingRef(input.workItemId);
