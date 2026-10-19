@@ -64,6 +64,14 @@ export interface ForwardWorkItemCommand {
 }
 
 /**
+ * 트랜잭션 advisory 락 한 벌. 같은 키 문자열이면 서로 막는다 — 그래서 SQL 과 키 규칙을 한 곳에 둔다
+ * (aggregate 의 카트 락은 `cartLockKey`, `aggregate-then-sort.strategy.ts`).
+ */
+export async function advisoryXactLock(trx: DbTx, key: string): Promise<void> {
+  await trx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+}
+
+/**
  * 피킹 전진 명령의 문. 순서는 고정이다:
  * 워크플로 게이트 → 명령 멱등 실행 → 선행 advisory 락 → 피커 클레임 → 송장 최신성 → 활성 세션 → 본문.
  */
@@ -83,7 +91,7 @@ export async function runForwardWorkItemCommand<T>(
     },
     async (trx, commandRequestId) => {
       for (const key of command.locksBefore ?? []) {
-        await trx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+        await advisoryXactLock(trx, key);
       }
       await lockAndAssertPickerClaim(
         trx,

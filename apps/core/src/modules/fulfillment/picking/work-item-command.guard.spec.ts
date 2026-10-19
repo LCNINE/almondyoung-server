@@ -198,10 +198,21 @@ describe('작업 항목 명령 커널 배선', () => {
     );
   });
 
-  it('aggregate sortScan 은 카트 락을 선행 락 키로 넘긴다', () => {
-    const body = methodBodies(join(ROOT, PICKING, 'aggregate-then-sort.strategy.ts')).get('sortScan') ?? '';
-    expect(body).toContain('locksBefore:');
-    expect(body).toContain('aggregate-cart:');
+  it('aggregate 카트 락 키는 cartLockKey 하나가 만들고, sortScan 선행 락과 acquireCartLock 이 둘 다 그것을 쓴다', () => {
+    const path = join(ROOT, PICKING, 'aggregate-then-sort.strategy.ts');
+    const bodies = methodBodies(path);
+    // sortScan 의 상호 배제는 «다른 카트 명령과 같은 키»에 달려 있다 — 문자열을 손으로 다시 쓰면 갈린다.
+    expect(bodies.get('sortScan') ?? '').toContain('locksBefore: [cartLockKey(cartId)]');
+    expect(bodies.get('acquireCartLock') ?? '').toContain('advisoryXactLock(tx, cartLockKey(cartId))');
+    const text = readFileSync(path, 'utf8');
+    expect(text.split('aggregate-cart:').length - 1).toBe(1); // cartLockKey 본문 한 곳
+    expect(functionBody(path, 'cartLockKey')).toContain('aggregate-cart:');
+  });
+
+  it('커널 선행 락 루프는 공유 락 함수(advisoryXactLock)를 쓴다', () => {
+    const body = functionBody(join(ROOT, PICKING, 'work-item-command.ts'), 'runForwardWorkItemCommand');
+    expect(body).toContain('advisoryXactLock(trx, key)');
+    expect(body).not.toContain('pg_advisory_xact_lock');
   });
 
   it('picking/ 에서 작업 항목을 ready_to_pack·queued 로 쓰는 비-spec 파일은 커널뿐이다', () => {

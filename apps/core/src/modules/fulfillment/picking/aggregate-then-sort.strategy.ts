@@ -33,6 +33,7 @@ import { conflict } from './allocation/allocation.errors';
 import { assertActiveBatchSession, assertPositiveQuantity } from './allocation/allocation.queries';
 import { ShipmentAllocation, ShipmentCustodyBalance } from './allocation/allocation.types';
 import {
+  advisoryXactLock,
   completeWorkItemPick,
   CustodyCommandDeps,
   handoffWorkItemPicker,
@@ -44,6 +45,14 @@ import {
 import { packingRefOf, spotsOf } from './work-item-custody-judgement';
 
 const BULK_CART_REF_PREFIX = 'bulk-cart:';
+
+/**
+ * 물리 카트 advisory 락 키. `sortScan`(커널 선행 락 `locksBefore`)과 나머지 카트 명령(`acquireCartLock`)이 이 함수 하나로
+ * 키를 만든다 — 두 문자열이 갈리면 서로 막지 못한다.
+ */
+export function cartLockKey(cartId: string): string {
+  return `aggregate-cart:${cartId}`;
+}
 
 interface GlobalCartBalance extends ShipmentCustodyBalance {
   sessionId: string;
@@ -334,7 +343,7 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
           expectedLeaseVersion: input.expectedLeaseVersion,
           idempotencyKey: input.idempotencyKey,
         },
-        locksBefore: [`aggregate-cart:${cartId}`],
+        locksBefore: [cartLockKey(cartId)],
       },
       async (trx, commandRequestId) => {
         await this.assertCartOwnedBy(input.sessionId, input.batchId, cartId, input.actor.id, trx, true);
@@ -654,7 +663,7 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
   }
 
   private async acquireCartLock(cartId: string, tx: DbTx): Promise<void> {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`aggregate-cart:${cartId}`}, 0))`);
+    await advisoryXactLock(tx, cartLockKey(cartId));
   }
 
   private async loadGlobalCartBalances(cartId: string, tx: DbTx): Promise<GlobalCartBalance[]> {

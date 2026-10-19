@@ -1,3 +1,5 @@
+import { PgDialect } from 'drizzle-orm/pg-core';
+import { cartLockKey } from './aggregate-then-sort.strategy';
 import {
   completeWorkItemPick,
   CustodyCommandDeps,
@@ -104,9 +106,17 @@ describe('runForwardWorkItemCommand', () => {
     expect(fakeTrx.execute).not.toHaveBeenCalled();
   });
 
-  it('takes one advisory lock per key', async () => {
-    await runForwardWorkItemCommand(deps, { ...command, locksBefore: ['a', 'b'] }, body);
-    expect(fakeTrx.execute).toHaveBeenCalledTimes(2);
+  it('takes one advisory lock per key, in order, with the one lock SQL', async () => {
+    await runForwardWorkItemCommand(deps, { ...command, locksBefore: ['a', cartLockKey('c1')] }, body);
+    const dialect = new PgDialect();
+    const queries = fakeTrx.execute.mock.calls.map(([query]) => {
+      const { sql, params } = dialect.sqlToQuery(query);
+      return { sql, params };
+    });
+    expect(queries).toEqual([
+      { sql: 'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', params: ['a'] },
+      { sql: 'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', params: ['aggregate-cart:c1'] },
+    ]);
   });
 });
 
