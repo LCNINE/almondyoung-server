@@ -1,7 +1,12 @@
 import { InternalOnly } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import { Body, Controller, Delete, Get, Post } from '@nestjs/common';
-import { BrowserSubscriptionDto, RemoveSubscriptionDto, SendBrowserPushDto } from '../dto/web-push.dto';
+import {
+  BrowserSubscriptionDto,
+  RemoveSubscriptionDto,
+  SendBrowserPushDto,
+  TestBrowserPushDto,
+} from '../dto/web-push.dto';
 import { WebPushService } from '../services/web-push.service';
 
 @Controller('web-push')
@@ -21,6 +26,11 @@ export class WebPushController {
   @Delete('subscriptions')
   remove(@CurrentUser() user: { userId: string }, @Body() input: RemoveSubscriptionDto) {
     return this.service.remove(user.userId, input.endpoint);
+  }
+
+  @Post('test')
+  test(@CurrentUser() user: { userId: string }, @Body() input: TestBrowserPushDto) {
+    return this.service.sendTest(user.userId, input.endpoint);
   }
 }
 

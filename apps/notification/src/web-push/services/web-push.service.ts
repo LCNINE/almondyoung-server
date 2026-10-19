@@ -1,7 +1,7 @@
 import { DbService, InjectDb } from '@app/db';
-import { ConflictException, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import * as webpush from 'web-push';
 import {
   type NotificationSchema,
@@ -58,7 +58,34 @@ export class WebPushService {
     return { success: true };
   }
 
-  async send(input: SendBrowserPushDto) {
+  async sendTest(userId: string, endpoint: string) {
+    const key = `attendance-test:${randomUUID()}`;
+
+    await this.send(
+      {
+        userId,
+        key,
+        title: '아몬드영 워크 테스트 알림',
+        body: '이 기기에 알림이 잘 도착했어요. 알림을 누르면 출결 앱으로 이동해요.',
+        url: '/attendance/settings',
+      },
+      endpoint,
+    );
+
+    const [delivery] = await this.database.db
+      .select({ id: webPushDeliveries.id })
+      .from(webPushDeliveries)
+      .where(and(eq(webPushDeliveries.key, key), eq(webPushDeliveries.status, 'sent')))
+      .limit(1);
+
+    if (!delivery) {
+      throw new BadRequestException('이 기기에 연결된 알림이 없거나 만료됐어요. 알림 연결하기를 다시 눌러 주세요.');
+    }
+
+    return { success: true };
+  }
+
+  async send(input: SendBrowserPushDto, endpoint?: string) {
     safeAttendanceUrl(input.url);
 
     if (!this.config().configured) {
@@ -68,7 +95,13 @@ export class WebPushService {
     const subscriptions = await this.database.db
       .select()
       .from(webPushSubscriptions)
-      .where(and(eq(webPushSubscriptions.userId, input.userId), eq(webPushSubscriptions.active, true)));
+      .where(
+        and(
+          eq(webPushSubscriptions.userId, input.userId),
+          eq(webPushSubscriptions.active, true),
+          endpoint === undefined ? undefined : eq(webPushSubscriptions.endpoint, endpoint),
+        ),
+      );
 
     const topic = createHash('sha256').update(input.key).digest('base64url').slice(0, 32);
 

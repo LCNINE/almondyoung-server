@@ -114,6 +114,73 @@ run('WebPushService PostgreSQL delivery and subscription ownership', () => {
     };
   }
 
+  it('sends a test only to the selected device owned by the signed-in user', async () => {
+    const selected = subscription('test-device');
+
+    await service.register(owner, selected);
+    await service.register(owner, subscription('other-owned-device'));
+    await service.register(other, subscription('another-account'));
+
+    await expect(service.sendTest(owner, selected.endpoint)).resolves.toEqual({ success: true });
+
+    expect(sendNotification).toHaveBeenCalledTimes(1);
+    expect(sendNotification.mock.calls[0][0].endpoint).toBe(selected.endpoint);
+    expect(JSON.parse(sendNotification.mock.calls[0][1] as string)).toMatchObject({
+      userId: owner,
+      url: '/attendance/settings',
+    });
+
+    const deliveries = await database.db.select().from(webPushDeliveries);
+
+    expect(deliveries).toHaveLength(1);
+    expect(deliveries[0].status).toBe('sent');
+  });
+
+  it('does not report success or send to another account or a disconnected device', async () => {
+    const owned = subscription('disconnected-device');
+    const foreign = subscription('foreign-device');
+
+    await service.register(owner, owned);
+    await service.remove(owner, owned.endpoint);
+    await service.register(other, foreign);
+
+    for (const endpoint of [owned.endpoint, foreign.endpoint, 'https://web.push.apple.com/missing']) {
+      await expect(service.sendTest(owner, endpoint)).rejects.toMatchObject({ status: 400 });
+    }
+
+    expect(sendNotification).not.toHaveBeenCalled();
+    expect(await database.db.select().from(webPushDeliveries)).toHaveLength(0);
+  });
+
+  it.each([404, 410])('reports an expired test subscription as a reconnect error after HTTP %s', async (statusCode) => {
+    const expired = subscription('expired-test-device');
+
+    await service.register(owner, expired);
+
+    sendNotification.mockRejectedValueOnce(Object.assign(new Error('Expired'), { statusCode }));
+
+    await expect(service.sendTest(owner, expired.endpoint)).rejects.toMatchObject({ status: 400 });
+
+    const [stored] = await database.db.select().from(webPushSubscriptions);
+
+    expect(stored.active).toBe(false);
+  });
+
+  it('does not report a successful test when the push provider is unavailable', async () => {
+    const input = subscription('unavailable-test-device');
+    const unavailable = Object.assign(new Error('Push provider unavailable'), { statusCode: 503 });
+
+    await service.register(owner, input);
+
+    sendNotification.mockRejectedValueOnce(unavailable);
+
+    await expect(service.sendTest(owner, input.endpoint)).rejects.toBe(unavailable);
+
+    const [delivery] = await database.db.select().from(webPushDeliveries);
+
+    expect(delivery.status).toBe('pending');
+  });
+
   it.each(vapidVariables)('rejects registration and sending with 503 when %s is missing', async (name) => {
     await service.register(owner, subscription('existing-device'));
 

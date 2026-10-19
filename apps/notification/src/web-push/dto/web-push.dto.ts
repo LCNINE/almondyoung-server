@@ -27,6 +27,12 @@ export class RemoveSubscriptionDto {
   endpoint: string;
 }
 
+export class TestBrowserPushDto {
+  @IsString()
+  @MaxLength(4096)
+  endpoint: string;
+}
+
 export class SendBrowserPushDto {
   @IsUUID()
   userId: string;
