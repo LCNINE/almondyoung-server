@@ -384,7 +384,7 @@ describe('custody command bodies (policy call positions)', () => {
     loadHeldSpots.mockResolvedValue(spotsOf([{ custodyType: 'TOTE', refs: new Set(['tote:t1']) }]));
     selectRows = [balance('bal-1', 'TOTE', 'tote:t1')];
     await expect(completeWorkItemPick(deps, policy({ completeMovesFrom: 'WORKER' }), target)).rejects.toThrow(
-      'completePick: held balance bal-1 is TOTE, not WORKER or this work item\'s PACKING',
+      "completePick: held balance bal-1 is TOTE, not WORKER or this work item's PACKING",
     );
     expect(moveCustody).not.toHaveBeenCalled();
   });
@@ -405,7 +405,7 @@ describe('custody command bodies (policy call positions)', () => {
     loadHeldSpots.mockResolvedValue(spotsOf([{ custodyType: 'TOTE', refs: new Set(['tote:t1']) }]));
     mockShipmentCustody([balance('bal-3', 'TOTE', 'tote:t1')]);
     await expect(handoffWorkItemPicker(deps, policy(), handoffInput)).rejects.toThrow(
-      'handoff: held balance bal-3 is TOTE, not WORKER or this work item\'s PACKING',
+      "handoff: held balance bal-3 is TOTE, not WORKER or this work item's PACKING",
     );
     expect(moveCustody).not.toHaveBeenCalled();
   });
