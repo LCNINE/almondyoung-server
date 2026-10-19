@@ -49,19 +49,14 @@
 
 ## 남은 일
 
-### 1. 디자이너 전용 글꼴 업로드 (가장 큼, 백엔드·인프라 포함)
+### 1. 디자이너 전용 글꼴 업로드 — 구현됨, 배포 전
 
-시안 템플릿을 만드는 사람만 서버에 글꼴을 올리고, 그 글꼴로 만든 시안은 고객도 본다.
+설명은 `web/almondyoung-storefront/src/domains/almond-template/README.md` 의 "올린 글꼴".
+인쇄 경로(TTF·WOFF2 → PDF)는 alpine 컨테이너에서 실제 렌더러로 확인했다.
 
-- 업로드: 디자이너만. OTF/TTF/WOFF. "상업적 이용 + 웹 임베딩 허용"을 확인하는 체크와 누가 언제 체크했는지를 남긴다.
-  고객 브라우저가 글꼴 파일을 내려받으므로 상업적 이용만으로는 부족하다(웹폰트 배포가 된다)
-- 저장: file-service(S3) 파일 + ugc DB 에 글꼴 목록(표시 이름, 파일 안의 실제 family 이름, fileId, 올린 사람, 라이선스 확인 시각)
-- 에디터: 목록을 받아 `new FontFace(...)` 로 불러오고, `lib/fonts.ts` 의 `fontStack()` 화이트리스트에 합친다.
-  지금은 목록에 없는 글꼴을 Noto Sans 로 바꿔 버린다
-- 인쇄: `apps/ugc-service` 의 인쇄 렌더러는 rsvg-convert 라 SVG 안 `@font-face` 를 읽지 않는다.
-  글꼴은 Dockerfile 빌드 때 `print-fonts.txt` 로 굽는 구조다. 변환 전에 시안이 쓰는 업로드 글꼴을 임시 폴더에 받고
-  fontconfig 가 그 폴더를 보게 해야 한다. 그러지 않으면 화면과 달리 인쇄 PDF 는 기본 고딕으로 나간다
-- 글꼴 이름: 사람이 적은 이름 말고 파일에서 읽은 family 이름을 저장한다 (`print-fonts.conf` 의 Nanum Pen 별칭 같은 불일치 방지)
+- [ ] 로컬 브라우저로 업로드 → 글꼴 고르기 → 저장 → 고객 편집기에서 보이는지
+- [ ] 라이브 버킷 `almondyoung-demo` CORS 의 PUT 허용 출처에 `https://almondyoung.com` 추가 (지금은 admin·localhost:3000 만)
+- [ ] 배포: ugc-service `db:migrate` + 배포(Dockerfile 에 fonttools 추가), file-service 컨텍스트 행, 스토어프론트
 
 ### 2. 펜툴 — Figma 와의 차이
 

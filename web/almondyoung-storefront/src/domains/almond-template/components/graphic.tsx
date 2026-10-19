@@ -8,6 +8,7 @@ import { FRAME_PATHS, LEGACY_CLIPART } from "../lib/art-library"
 import { CLIPART_DATA } from "../lib/clipart-data"
 import { useImageSrc } from "../lib/image-previews"
 import { fontStack } from "../lib/fonts"
+import { useUploadedFont } from "../lib/use-uploaded-font"
 import {
   HEART_PATH as heart,
   SHAPE_POINTS as shapePoints,
@@ -406,6 +407,8 @@ export function photoBox(layer: Layer) {
 
 function LayerGraphicView({ layer }: { layer: Layer }) {
   const imageSrc = useImageSrc()
+  // 올린 글꼴은 늦게 도착하므로, 도착하면 잰 폭을 버리고 이 레이어를 다시 그린다
+  useUploadedFont(layer.fontFamily, () => measured.clear())
   if (layer.visible === false) return null
   const filterId =
     layer.shadow || layer.texture || layer.bevel ? `fx-${layer.id}` : undefined

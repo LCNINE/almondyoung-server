@@ -43,7 +43,8 @@ RUN set -eu; mkdir -p /fonts; \
 
 # === 프로덕션 단계 ===
 FROM base AS runner
-RUN apk add --no-cache ghostscript rsvg-convert fontconfig font-noto-cjk
+# py3-fonttools: 업로드 글꼴 WOFF·WOFF2 를 TTF 로 푼다(pango 가 WOFF2 를 못 읽는다)
+RUN apk add --no-cache ghostscript rsvg-convert fontconfig font-noto-cjk py3-fonttools py3-brotli
 COPY --from=print-fonts /fonts /usr/share/fonts/almond
 COPY apps/ugc-service/print-fonts.conf /etc/fonts/conf.d/60-almond-print.conf
 RUN fc-cache -f

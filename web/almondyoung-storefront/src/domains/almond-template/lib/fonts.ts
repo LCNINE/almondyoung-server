@@ -39,8 +39,71 @@ export const FONT_OPTIONS: FontOption[] = [
 
 export const FONT_STYLESHEET = `https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&family=Noto+Serif+KR:wght@400;700&${GOOGLE_FONTS.map(([, , query]) => `family=${query}`).join("&")}&display=swap`
 
+// 디자이너가 올린 글꼴. 이름(AF + fileId 32자리)은 ugc-service 의 almondFontFamily 와 같고 인쇄도 이 이름으로 찾는다
+const UPLOADED_FONT = new RegExp(`^'(AF([0-9a-f]{32}))', ${SANS_FONT}$`)
+
+export const uploadedFontValue = (family: string) => `'${family}', ${SANS_FONT}`
+
+export type UploadedFont = { id: string; name: string; family: string }
+
+let uploaded: UploadedFont[] = []
+let allOptions = FONT_OPTIONS
+const listeners = new Set<() => void>()
+
+export function setUploadedFonts(fonts: UploadedFont[]) {
+  uploaded = fonts
+  allOptions = [
+    ...FONT_OPTIONS,
+    ...fonts.map((font) => ({
+      label: font.name,
+      value: uploadedFontValue(font.family),
+    })),
+  ]
+  listeners.forEach((listener) => listener())
+}
+
+export function subscribeFontOptions(listener: () => void) {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
+export const fontOptions = () => allOptions
+export const uploadedFonts = () => uploaded
+
+const loading = new Map<string, Promise<void>>()
+
+// 쓰일 때만 받는다(한 글꼴이 수십 MB 일 수 있다). 목록에서 지운 글꼴도 이미 쓴 시안에선 계속 받는다
+export function loadUploadedFont(value: string | undefined) {
+  const match = value?.match(UPLOADED_FONT)
+  if (!match || typeof document === "undefined") return undefined
+  const [, family, hex] = match
+  let pending = loading.get(family)
+  if (!pending) {
+    const fileId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+    const face = new FontFace(
+      family,
+      `url(/api/almond-template/font/${fileId})`
+    )
+    document.fonts.add(face)
+    pending = face.load().then(
+      () => undefined,
+      () => {
+        loading.delete(family)
+      }
+    )
+    loading.set(family, pending)
+  }
+  return pending
+}
+
 export function fontStack(family: string | undefined) {
-  if (family && FONT_OPTIONS.some((font) => font.value === family))
+  if (
+    family &&
+    (FONT_OPTIONS.some((font) => font.value === family) ||
+      UPLOADED_FONT.test(family))
+  )
     return family
   return family && /serif/i.test(family) && !/sans-serif/i.test(family)
     ? SERIF_FONT

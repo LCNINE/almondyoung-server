@@ -678,6 +678,23 @@ export const almondSavedDesigns = pgTable(
   (table) => [index('almond_saved_designs_user_updated').on(table.userId, table.updatedAt)],
 );
 
+// 시안 디자이너가 올린 글꼴. 화면·인쇄의 글꼴 이름은 fileId 에서 나온다(almondFontFamily)
+export const almondFonts = pgTable(
+  'almond_fonts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: varchar('name', { length: 60 }).notNull(),
+    fileId: uuid('file_id').notNull(),
+    format: varchar('format', { length: 8 }).notNull(),
+    createdBy: uuid('created_by').notNull(),
+    licenseConfirmedAt: timestamp('license_confirmed_at').notNull(),
+    deletedAt: timestamp('deleted_at'),
+    deletedBy: uuid('deleted_by'),
+    ...timestampColumns,
+  },
+  (table) => [uniqueIndex('almond_fonts_file_unique').on(table.fileId)],
+);
+
 export const ugcServiceSchema = {
   reviews,
   reviewMedia,
@@ -701,6 +718,7 @@ export const ugcServiceSchema = {
   almondTemplates,
   almondDesigns,
   almondSavedDesigns,
+  almondFonts,
 } as const;
 
 export type UgcServiceSchema = typeof ugcServiceSchema;

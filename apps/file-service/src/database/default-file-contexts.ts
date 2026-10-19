@@ -30,6 +30,9 @@ export const LOGO_CONTEST_IMAGE_CONTEXT_ID = 'logo-contest-image';
 
 export const ALMOND_TEMPLATE_IMAGE_CONTEXT_ID = 'almond-template-image';
 
+/** 시안 디자이너가 올린 글꼴. 고객 편집기가 내려받아 쓰므로 공개다. */
+export const ALMOND_TEMPLATE_FONT_CONTEXT_ID = 'almond-template-font';
+
 /** 아몬드템플릿 고객 시안의 인쇄 파일. 어드민 Lambda 응답 상한(6MB)을 피해 S3 서명 URL 로 내려준다. */
 export const ALMOND_PRINT_FILE_CONTEXT_ID = 'almond-print-file';
 
@@ -295,6 +298,17 @@ export const FILE_CONTEXTS: FileContextSeed[] = [
     allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
     maxFileSize: 10485760,
     pathPrefix: 'almond-template/image',
+    isActive: true,
+  },
+  {
+    id: ALMOND_TEMPLATE_FONT_CONTEXT_ID,
+    name: 'Almond Template Font',
+    description: '아몬드템플릿 시안 디자이너가 올린 글꼴(TTF·OTF·WOFF·WOFF2)',
+    allowPublic: true,
+    allowPrivate: false,
+    allowedMimeTypes: ['font/ttf', 'font/otf', 'font/woff', 'font/woff2'],
+    maxFileSize: 52428800,
+    pathPrefix: 'almond-template/font',
     isActive: true,
   },
   {

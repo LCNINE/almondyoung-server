@@ -1,6 +1,12 @@
+import { useSyncExternalStore } from "react"
 import { FlipHorizontal, FlipVertical } from "lucide-react"
 import type { Layer } from "../../lib/document"
-import { FONT_OPTIONS, fontStack } from "../../lib/fonts"
+import {
+  fontOptions,
+  fontStack,
+  loadUploadedFont,
+  subscribeFontOptions,
+} from "../../lib/fonts"
 import { PrintColorPicker } from "../color-picker"
 import { bevelOf, shadowOf } from "../graphic"
 import { NumberInput } from "./number-input"
@@ -98,6 +104,11 @@ function Field({
 export function FontSelect({ target }: { target: StyleTarget }) {
   const { layers, apply, disabled } = target
   const value = common(layers, (layer) => fontStack(layer.fontFamily))
+  const options = useSyncExternalStore(
+    subscribeFontOptions,
+    fontOptions,
+    fontOptions
+  )
   return (
     <label className="flex items-center gap-2">
       <span className="w-9 shrink-0">폰트</span>
@@ -111,8 +122,7 @@ export function FontSelect({ target }: { target: StyleTarget }) {
           // 고른 뒤에도 포커스가 남으면 방향키가 요소 대신 글꼴을 넘긴다
           event.target.blur()
           // 아직 안 받은 웹폰트로 재면 대체 글꼴 폭으로 상자가 맞춰진다
-          document.fonts
-            .load(`16px ${family}`)
+          ;(loadUploadedFont(family) ?? document.fonts.load(`16px ${family}`))
             .catch(() => undefined)
             .finally(() => apply({ fontFamily: family }))
         }}
@@ -122,7 +132,7 @@ export function FontSelect({ target }: { target: StyleTarget }) {
             혼합
           </option>
         )}
-        {FONT_OPTIONS.map((font) => (
+        {options.map((font) => (
           <option
             key={font.value}
             value={font.value}

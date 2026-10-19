@@ -1,9 +1,10 @@
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
 import { usePropertyPanel } from "../../../hooks/use-property-panel"
+import { FontUpload } from "../font-upload"
 import { ObjectProperties } from "../object-properties"
 
 export function TextPanel({ editor }: { editor: AlmondEditor }) {
-  const { setTextDialog, selected } = editor
+  const { setTextDialog, selected, mode } = editor
   const panel = usePropertyPanel(editor)
   return (
     <>
@@ -21,6 +22,7 @@ export function TextPanel({ editor }: { editor: AlmondEditor }) {
           inline
         />
       )}
+      {mode === "designer" && <FontUpload editor={editor} />}
     </>
   )
 }

@@ -53,3 +53,13 @@ export interface UpsertAlmondSavedDesignDto {
   design: AlmondTemplateDesignDto
   thumbnailSvg: string
 }
+
+export const ALMOND_FONTS_TAG = "almond-fonts"
+
+export interface AlmondFontDto {
+  id: string
+  name: string
+  fileId: string
+  family: string
+  format: "ttf" | "otf" | "woff" | "woff2"
+}

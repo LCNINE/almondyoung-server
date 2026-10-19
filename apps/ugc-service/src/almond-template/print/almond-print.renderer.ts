@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -11,7 +11,19 @@ import {
   ALMOND_PRINT_SIDE_GAP_MM,
   ALMOND_PRINT_TIMEOUT_MS,
 } from '../constants/almond-template.constants';
+import { type AlmondFontFormat, almondFontsConfig } from './almond-print-fonts';
 import { composeSideBySide, readSvgSizeMm } from './almond-print-svg';
+
+export interface AlmondPrintFont {
+  family: string;
+  bytes: Buffer;
+  format: AlmondFontFormat;
+}
+
+type Exec = (bin: string, args: string[]) => Promise<void>;
+
+const UNPACK_FONT =
+  'import sys\nfrom fontTools.ttLib import TTFont\nf = TTFont(sys.argv[1])\nf.flavor = None\nf.save(sys.argv[2])';
 
 const execFileAsync = promisify(execFile);
 const STDERR_MAX_BUFFER = 10 * 1024 * 1024;
@@ -40,32 +52,39 @@ export class AlmondPrintRenderer {
   private readonly logger = new Logger(AlmondPrintRenderer.name);
   private readonly rsvgBin: string;
   private readonly gsBin: string;
+  private readonly pythonBin: string;
   private readonly iccProfile: string | undefined;
   private tail: Promise<unknown> = Promise.resolve();
 
   constructor(configService: ConfigService) {
     this.rsvgBin = configService.get<string>('RSVG_CONVERT_BIN') || 'rsvg-convert';
     this.gsBin = configService.get<string>('GHOSTSCRIPT_BIN') || 'gs';
+    this.pythonBin = configService.get<string>('FONTTOOLS_PYTHON_BIN') || 'python3';
     this.iccProfile = configService.get<string>('ALMOND_PRINT_ICC_PROFILE') || undefined;
   }
 
-  renderEps(frontSvg: string, backSvg: string | null): Promise<Buffer> {
-    return this.exclusive((dir) => this.convertEps(dir, frontSvg, backSvg));
+  renderEps(frontSvg: string, backSvg: string | null, fonts: readonly AlmondPrintFont[] = []): Promise<Buffer> {
+    return this.exclusive(fonts, (dir, exec) => this.convertEps(dir, exec, frontSvg, backSvg));
   }
 
-  renderPdf(frontSvg: string, backSvg: string | null): Promise<Buffer> {
-    return this.exclusive((dir) => this.convertPdf(dir, frontSvg, backSvg));
+  renderPdf(frontSvg: string, backSvg: string | null, fonts: readonly AlmondPrintFont[] = []): Promise<Buffer> {
+    return this.exclusive(fonts, (dir, exec) => this.convertPdf(dir, exec, frontSvg, backSvg));
   }
 
-  renderJpg(frontSvg: string, backSvg: string | null, dpi: number): Promise<Buffer> {
-    return this.exclusive((dir) => this.convertJpg(dir, frontSvg, backSvg, dpi));
+  renderJpg(
+    frontSvg: string,
+    backSvg: string | null,
+    dpi: number,
+    fonts: readonly AlmondPrintFont[] = [],
+  ): Promise<Buffer> {
+    return this.exclusive(fonts, (dir, exec) => this.convertJpg(dir, exec, frontSvg, backSvg, dpi));
   }
 
-  renderPreview(svg: string): Promise<Buffer> {
-    return this.exclusive((dir) => this.convertPreview(dir, svg));
+  renderPreview(svg: string, fonts: readonly AlmondPrintFont[] = []): Promise<Buffer> {
+    return this.exclusive(fonts, (dir, exec) => this.convertPreview(dir, exec, svg));
   }
 
-  private async convertPreview(dir: string, svg: string): Promise<Buffer> {
+  private async convertPreview(dir: string, exec: Exec, svg: string): Promise<Buffer> {
     const size = readSvgSizeMm(svg);
     if (!size) throw new Error('SVG 루트 크기를 읽을 수 없습니다');
     const dpi = Math.max(1, Math.floor((ALMOND_PREVIEW_LONG_SIDE_PX * 25.4) / Math.max(size.width, size.height)));
@@ -73,8 +92,8 @@ export class AlmondPrintRenderer {
     const pdfPath = join(dir, 'preview.pdf');
     const jpgPath = join(dir, 'preview.jpg');
     await writeFile(svgPath, svg, 'utf8');
-    await this.exec(this.rsvgBin, ['-f', 'pdf', '-o', pdfPath, svgPath]);
-    await this.exec(this.gsBin, [
+    await exec(this.rsvgBin, ['-f', 'pdf', '-o', pdfPath, svgPath]);
+    await exec(this.gsBin, [
       '-dSAFER',
       '-dBATCH',
       '-dNOPAUSE',
@@ -90,13 +109,19 @@ export class AlmondPrintRenderer {
     return readFile(jpgPath);
   }
 
-  private async convertJpg(dir: string, frontSvg: string, backSvg: string | null, dpi: number): Promise<Buffer> {
+  private async convertJpg(
+    dir: string,
+    exec: Exec,
+    frontSvg: string,
+    backSvg: string | null,
+    dpi: number,
+  ): Promise<Buffer> {
     const svgPath = join(dir, 'sheet.svg');
     const pdfPath = join(dir, 'sheet.pdf');
     const jpgPath = join(dir, 'print.jpg');
     await writeFile(svgPath, composeSideBySide(frontSvg, backSvg, ALMOND_PRINT_SIDE_GAP_MM), 'utf8');
-    await this.exec(this.rsvgBin, ['-f', 'pdf', '-o', pdfPath, svgPath]);
-    await this.exec(this.gsBin, [
+    await exec(this.rsvgBin, ['-f', 'pdf', '-o', pdfPath, svgPath]);
+    await exec(this.gsBin, [
       '-dSAFER',
       '-dBATCH',
       '-dNOPAUSE',
@@ -113,17 +138,17 @@ export class AlmondPrintRenderer {
     return withJpegDensity(await readFile(jpgPath), dpi);
   }
 
-  private async convertEps(dir: string, frontSvg: string, backSvg: string | null): Promise<Buffer> {
+  private async convertEps(dir: string, exec: Exec, frontSvg: string, backSvg: string | null): Promise<Buffer> {
     const svgPath = join(dir, 'sheet.svg');
     const pdfPath = join(dir, 'sheet.pdf');
     const epsPath = join(dir, 'print.eps');
     await writeFile(svgPath, composeSideBySide(frontSvg, backSvg, ALMOND_PRINT_SIDE_GAP_MM), 'utf8');
-    await this.exec(this.rsvgBin, ['-f', 'pdf', '-o', pdfPath, svgPath]);
-    await this.exec(this.gsBin, [...this.ghostscriptArgs('eps2write'), '-o', epsPath, pdfPath]);
+    await exec(this.rsvgBin, ['-f', 'pdf', '-o', pdfPath, svgPath]);
+    await exec(this.gsBin, [...this.ghostscriptArgs('eps2write'), '-o', epsPath, pdfPath]);
     return readFile(epsPath);
   }
 
-  private async convertPdf(dir: string, frontSvg: string, backSvg: string | null): Promise<Buffer> {
+  private async convertPdf(dir: string, exec: Exec, frontSvg: string, backSvg: string | null): Promise<Buffer> {
     const frontPath = join(dir, 'front.svg');
     const backPath = join(dir, 'back.svg');
     const pagesPath = join(dir, 'pages.pdf');
@@ -131,14 +156,8 @@ export class AlmondPrintRenderer {
     await writeFile(frontPath, frontSvg, 'utf8');
     if (backSvg !== null) await writeFile(backPath, backSvg, 'utf8');
     const inputs = backSvg === null ? [frontPath] : [frontPath, backPath];
-    await this.exec(this.rsvgBin, ['-f', 'pdf', '-o', pagesPath, ...inputs]);
-    await this.exec(this.gsBin, [
-      ...this.ghostscriptArgs('pdfwrite'),
-      '-dPDFSETTINGS=/prepress',
-      '-o',
-      outPath,
-      pagesPath,
-    ]);
+    await exec(this.rsvgBin, ['-f', 'pdf', '-o', pagesPath, ...inputs]);
+    await exec(this.gsBin, [...this.ghostscriptArgs('pdfwrite'), '-dPDFSETTINGS=/prepress', '-o', outPath, pagesPath]);
     return readFile(outPath);
   }
 
@@ -158,11 +177,12 @@ export class AlmondPrintRenderer {
     return this.iccProfile ? [`--permit-file-read=${this.iccProfile}`, `-sOutputICCProfile=${this.iccProfile}`] : [];
   }
 
-  private exclusive<T>(task: (dir: string) => Promise<T>): Promise<T> {
+  private exclusive<T>(fonts: readonly AlmondPrintFont[], task: (dir: string, exec: Exec) => Promise<T>): Promise<T> {
     const run = async (): Promise<T> => {
       const dir = await mkdtemp(join(tmpdir(), 'almond-print-'));
       try {
-        return await task(dir);
+        const env = await this.prepareFonts(dir, fonts);
+        return await task(dir, (bin, args) => this.exec(bin, args, env));
       } finally {
         await rm(dir, { recursive: true, force: true });
       }
@@ -172,9 +192,32 @@ export class AlmondPrintRenderer {
     return result;
   }
 
-  private async exec(bin: string, args: string[]): Promise<void> {
+  // rsvg-convert 는 SVG 안 웹폰트를 읽지 않으므로, 업로드 글꼴은 이번 변환에서만 fontconfig 에 얹는다
+  private async prepareFonts(dir: string, fonts: readonly AlmondPrintFont[]): Promise<NodeJS.ProcessEnv | undefined> {
+    if (!fonts.length) return undefined;
+    const fontDir = join(dir, 'fonts');
+    await mkdir(fontDir);
+    const files = new Map<string, string>();
+    for (const font of fonts) {
+      const path = join(fontDir, `${font.family}.ttf`);
+      if (font.format === 'ttf' || font.format === 'otf') {
+        await writeFile(path, font.bytes);
+      } else {
+        // pango 가 WOFF·WOFF2 를 읽지 못해 대체 글꼴로 조용히 바뀌므로 풀어서 넣는다
+        const packed = join(dir, `${font.family}.${font.format}`);
+        await writeFile(packed, font.bytes);
+        await this.exec(this.pythonBin, ['-c', UNPACK_FONT, packed, path]);
+      }
+      files.set(font.family, path);
+    }
+    const configPath = join(dir, 'fonts.conf');
+    await writeFile(configPath, almondFontsConfig(fontDir, join(dir, 'fontcache'), files), 'utf8');
+    return { ...process.env, FONTCONFIG_FILE: configPath };
+  }
+
+  private async exec(bin: string, args: string[], env?: NodeJS.ProcessEnv): Promise<void> {
     try {
-      await execFileAsync(bin, args, { timeout: ALMOND_PRINT_TIMEOUT_MS, maxBuffer: STDERR_MAX_BUFFER });
+      await execFileAsync(bin, args, { timeout: ALMOND_PRINT_TIMEOUT_MS, maxBuffer: STDERR_MAX_BUFFER, env });
     } catch (error: unknown) {
       if (isMissingBinary(error)) {
         throw new ServiceUnavailableError(`인쇄 파일 변환기(${bin})가 설치되어 있지 않습니다.`);

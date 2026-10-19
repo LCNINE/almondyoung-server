@@ -1,5 +1,7 @@
 "use client"
 
+import { useEffect } from "react"
+import { listAlmondFonts } from "@/lib/api/ugc/almond-fonts"
 import {
   useAlmondEditor,
   type AlmondEditorProps,
@@ -18,11 +20,16 @@ import { PropertyPanel } from "./property-panel"
 import { StatusBar } from "./status-bar"
 import { ToolNav } from "./tool-nav"
 import { ToolPanel } from "./tool-panel"
-import { FONT_STYLESHEET } from "../../lib/fonts"
+import { FONT_STYLESHEET, setUploadedFonts } from "../../lib/fonts"
 import { ImagePreviews } from "../../lib/image-previews"
 
 export function AlmondTemplateEditor(props: AlmondEditorProps) {
   const editor = useAlmondEditor(props)
+  useEffect(() => {
+    listAlmondFonts()
+      .then(setUploadedFonts)
+      .catch(() => undefined)
+  }, [])
   const {
     message,
     toastId,

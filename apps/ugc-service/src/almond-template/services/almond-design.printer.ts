@@ -3,7 +3,8 @@ import { BadRequestError } from '@app/shared';
 import { ALMOND_PRINT_MAX_JPG_PIXELS, ALMOND_PRINT_SIDE_GAP_MM } from '../constants/almond-template.constants';
 import { PublicFileClient } from '../clients/public-file.client';
 import { extractPublicFileIds, inlinePublicImages, readSvgSizeMm } from '../print/almond-print-svg';
-import { AlmondPrintRenderer } from '../print/almond-print.renderer';
+import { almondFontFamily, extractAlmondFontFileIds } from '../print/almond-print-fonts';
+import { type AlmondPrintFont, AlmondPrintRenderer } from '../print/almond-print.renderer';
 import {
   type AlmondDesignPrintSource,
   type AlmondPrintFile,
@@ -26,12 +27,13 @@ export class AlmondDesignPrinter {
   async print(source: AlmondDesignPrintSource, format: AlmondPrintFormat, dpi: number): Promise<AlmondPrintFile> {
     if (format === 'jpg') this.assertJpgSize(source, dpi);
     const [front, back] = await this.inline(source);
+    const fonts = await this.fonts([front, back]);
     const body =
       format === 'eps'
-        ? await this.renderer.renderEps(front, back)
+        ? await this.renderer.renderEps(front, back, fonts)
         : format === 'pdf'
-          ? await this.renderer.renderPdf(front, back)
-          : await this.renderer.renderJpg(front, back, dpi);
+          ? await this.renderer.renderPdf(front, back, fonts)
+          : await this.renderer.renderJpg(front, back, dpi, fonts);
 
     return { fileName: `almond-design-${source.id}.${format}`, contentType: CONTENT_TYPES[format], body };
   }
@@ -40,7 +42,19 @@ export class AlmondDesignPrinter {
     const svg = side === 'front' ? source.frontSvg : source.backSvg;
     if (svg === null) return null;
     const [inlined] = await this.inline({ ...source, frontSvg: svg, backSvg: null });
-    return this.renderer.renderPreview(inlined);
+    return this.renderer.renderPreview(inlined, await this.fonts([inlined]));
+  }
+
+  private async fonts(svgs: Array<string | null>): Promise<AlmondPrintFont[]> {
+    const fileIds = [...new Set(svgs.flatMap((svg) => (svg === null ? [] : extractAlmondFontFileIds(svg))))];
+    const fonts: AlmondPrintFont[] = [];
+    for (const fileId of fileIds) {
+      const { bytes, format } = await this.files.fetchFont(fileId);
+      // 글꼴 없이 그리면 기본 고딕으로 조용히 바뀐 인쇄물이 나가므로 실패시킨다
+      if (!format) throw new Error(`인쇄에 쓸 글꼴 파일이 아닙니다: ${fileId}`);
+      fonts.push({ family: almondFontFamily(fileId), bytes, format });
+    }
+    return fonts;
   }
 
   private async inline(source: AlmondDesignPrintSource): Promise<[string, string | null]> {

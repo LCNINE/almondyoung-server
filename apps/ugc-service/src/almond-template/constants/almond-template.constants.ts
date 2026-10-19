@@ -42,3 +42,6 @@ export const ALMOND_PREVIEW_LONG_SIDE_PX = 1200;
 export const ALMOND_PRINT_FILE_SCALE: Readonly<Record<string, number>> = { window: 0.1 };
 export const ALMOND_PRINT_MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 export const ALMOND_PRINT_IMAGE_FETCH_TIMEOUT_MS = 15_000;
+export const ALMOND_FONT_MAX_BYTES = 50 * 1024 * 1024;
+export const ALMOND_FONT_FETCH_TIMEOUT_MS = 60_000;
+export const ALMOND_FONT_MAX_NAME_LENGTH = 60;

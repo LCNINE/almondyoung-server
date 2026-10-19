@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrintFileClient } from './clients/print-file.client';
 import { PublicFileClient } from './clients/public-file.client';
+import { AlmondFontsController } from './controllers/almond-fonts.controller';
 import { AdminAlmondDesignsController } from './controllers/admin-almond-designs.controller';
 import { InternalAlmondDesignsController } from './controllers/internal-almond-designs.controller';
 import { AdminAlmondTemplatesController } from './controllers/admin-almond-templates.controller';
@@ -9,6 +10,9 @@ import { AlmondSavedDesignsController } from './controllers/almond-saved-designs
 import { AlmondSavedDesignWithdrawalConsumer } from './consumers/almond-saved-design-withdrawal.consumer';
 import { PublicAlmondTemplatesController } from './controllers/public-almond-templates.controller';
 import { AlmondPrintRenderer } from './print/almond-print.renderer';
+import { AlmondFontManager } from './services/almond-font.manager';
+import { AlmondFontReader } from './services/almond-font.reader';
+import { AlmondFontsService } from './services/almond-fonts.service';
 import { AlmondDesignManager } from './services/almond-design.manager';
 import { AlmondDesignPrinter } from './services/almond-design.printer';
 import { AlmondDesignReader } from './services/almond-design.reader';
@@ -30,6 +34,7 @@ import { AlmondTemplatesService } from './services/almond-templates.service';
     InternalAlmondDesignsController,
     AlmondSavedDesignsController,
     AlmondSavedDesignWithdrawalConsumer,
+    AlmondFontsController,
   ],
   providers: [
     AlmondTemplatesService,
@@ -46,6 +51,9 @@ import { AlmondTemplatesService } from './services/almond-templates.service';
     AlmondSavedDesignsService,
     AlmondSavedDesignReader,
     AlmondSavedDesignManager,
+    AlmondFontsService,
+    AlmondFontReader,
+    AlmondFontManager,
   ],
 })
 export class AlmondTemplateModule {}

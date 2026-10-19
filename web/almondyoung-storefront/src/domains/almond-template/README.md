@@ -20,8 +20,18 @@
 | PUT    | `/admin/almond-templates` (업서트)                                                    | `admin:template:write` |
 | PATCH  | `/admin/almond-templates/:id/status`                                                  | `admin:template:write` |
 | DELETE | `/admin/almond-templates/:id`                                                         | `admin:template:write` |
+| GET    | `/almond-fonts`                                                                       | 공개                   |
+| POST   | `/admin/almond-fonts` · DELETE `/admin/almond-fonts/:id`                              | `admin:template:write` |
 
 스토어프론트 호출부는 `src/lib/api/ugc/almond-templates.ts`. 저장 전에 `lib/document.ts` 의 `parseDesign` 으로 고객 편집기가 여는 것과 같은 형식 검사를 한다.
+
+## 올린 글꼴
+
+디자이너는 텍스트 패널 아래 `올린 글꼴` 에서 TTF·OTF·WOFF·WOFF2(50MB 까지)를 올린다. 파일은 file-service `almond-template-font` 컨텍스트로 브라우저가 S3 에 직접 PUT 하고(서버액션 Lambda 상한 회피), 목록은 ugc `almond_fonts` 에 있다. 상업적 이용·웹 임베딩 확인 체크가 없으면 등록이 거절된다.
+
+- 글꼴 이름은 `AF` + fileId 32자리다. 레이어 `fontFamily` 에 그대로 들어가고, 화면은 `FontFace` 로(`/api/almond-template/font/:id` 가 S3 로 302), 인쇄는 ugc-service 가 SVG 에서 이 이름을 찾아 파일을 받아 fontconfig 에 얹는다. 그래서 목록에서 뺀 글꼴도 이미 쓴 시안은 그대로 보이고 인쇄된다.
+- pango 는 WOFF·WOFF2 를 못 읽어 인쇄 직전에 fonttools 로 TTF 로 푼다(ugc-service 이미지의 `py3-fonttools`).
+- 목록 썸네일(`thumbnail.svg`)은 `<img>` 로 그려 웹폰트를 못 불러오므로 기본 고딕으로 보인다.
 
 ## 폴더
 
