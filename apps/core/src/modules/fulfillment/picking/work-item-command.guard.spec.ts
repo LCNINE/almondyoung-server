@@ -76,7 +76,40 @@ function propOf(obj: ts.Expression | undefined, name: string): ts.Expression | u
   return undefined;
 }
 
-/** `.set({ status: 'ready_to_pack' | 'queued', ... })` 를 가진 picking/ 비-spec 파일. */
+function unwrap(node: ts.Expression): ts.Expression {
+  let cur = node;
+  while (
+    ts.isAsExpression(cur) ||
+    ts.isSatisfiesExpression(cur) ||
+    ts.isParenthesizedExpression(cur) ||
+    ts.isTypeAssertionExpression(cur) ||
+    ts.isNonNullExpression(cur)
+  ) {
+    cur = cur.expression;
+  }
+  return cur;
+}
+
+/** 값이 취할 수 있는 문자열 리터럴 전부(삼항은 두 갈래). 정적으로 풀리지 않으면 null. */
+function literalValues(node: ts.Expression): string[] | null {
+  const value = unwrap(node);
+  if (ts.isStringLiteralLike(value)) return [value.text];
+  if (ts.isConditionalExpression(value)) {
+    const whenTrue = literalValues(value.whenTrue);
+    const whenFalse = literalValues(value.whenFalse);
+    return whenTrue && whenFalse ? [...whenTrue, ...whenFalse] : null;
+  }
+  return null;
+}
+
+/**
+ * 커널 밖 picking/ 비-spec 파일 중 작업 항목 상태를 쓸 수 있는 `.set(<patch>)` 를 가진 파일.
+ * 닫힌 쪽으로 실패한다: ready_to_pack·queued 리터럴(as const·괄호·삼항 포함)은 물론, `status` 값이 리터럴로
+ * 안 풀리거나(변수·shorthand) patch 가 객체 리터럴이 아니면 위반이다. 두 인자 `.set(k, v)`(Map)는 제외.
+ * 오늘 측정(2026-10-19): 커널 밖 1-인자 `.set` 중 status 를 쓰는 것은 pick-to-tote 의 tote 테이블
+ * ('in_use'|'available' 리터럴)뿐이라 허용 목록이 필요 없다.
+ * 알려진 한계: raw SQL `UPDATE … SET status`, 구조분해한 moveCustody 는 잡지 못한다.
+ */
 function filesWritingPackOrQueuedStatus(): string[] {
   return pickingFiles()
     .filter((path) => {
@@ -85,11 +118,16 @@ function filesWritingPackOrQueuedStatus(): string[] {
         if (
           ts.isCallExpression(node) &&
           ts.isPropertyAccessExpression(node.expression) &&
-          node.expression.name.text === 'set'
+          node.expression.name.text === 'set' &&
+          node.arguments.length === 1
         ) {
-          const status = propOf(node.arguments[0], 'status');
-          if (status && ts.isStringLiteralLike(status) && ['ready_to_pack', 'queued'].includes(status.text)) {
+          const patch = unwrap(node.arguments[0]);
+          if (!ts.isObjectLiteralExpression(patch)) {
             found = true;
+          } else {
+            const status = propOf(patch, 'status');
+            const values = status ? literalValues(status) : [];
+            if (values === null || values.some((v) => ['ready_to_pack', 'queued'].includes(v))) found = true;
           }
         }
         node.forEachChild(visit);
