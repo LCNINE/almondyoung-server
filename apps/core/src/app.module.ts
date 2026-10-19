@@ -12,7 +12,9 @@ import {
   JwtAuthGuard,
   PermissionGuard,
   PermissionModule,
+  piiMaskingProviders,
 } from '@app/authorization';
+import { OutboxPiiAccessRecorder } from '@app/authorization/recorders/outbox-pii-access.recorder';
 import { loggerConfig } from '@app/shared/observability/logger.config';
 import { validateAlmondyoungEnv } from './config/env.validation';
 import { mergedSchema } from './platform/database/merged-schema';
@@ -89,6 +91,8 @@ import { PrintOrderAdminModule } from './modules/print-order/print-order-admin.m
     // 권한 강제 — AUTHZ_ENFORCE=true 일 때만 일한다(기본 꺼짐). 기존 가드 뒤에 둔다.
     { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_INTERCEPTOR, useClass: AuthzShadowInterceptor },
+    // 개인정보 표시 제한 — 다른 응답 인터셉터보다 바깥에서 최종 본문을 본다.
+    ...piiMaskingProviders({ service: 'core', recorder: OutboxPiiAccessRecorder }),
   ],
 })
 export class AppModule {}

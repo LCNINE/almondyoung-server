@@ -9,7 +9,7 @@ import {
   OrderCollectionFailureReason,
 } from '../services/order-collection/channel-order-provider.interface';
 import { OrderCollectionFailureStatus } from '../types';
-import { RequirePermission } from '@app/authorization';
+import { RequirePermission, PiiResponse } from '@app/authorization';
 
 @ApiTags('adapter-order-collection-failures')
 @Controller('adapter/order-collection-failures')
@@ -19,6 +19,7 @@ export class OrderCollectionFailuresController {
     private readonly orderPoller: OrderPollerOrchestrator,
   ) {}
 
+  @PiiResponse({ fields: { 'data[].rawOrder': 'redact' }, subjects: [{ path: 'data[].id', type: 'event_record' }] })
   @RequirePermission('channel.account.read')
   @Get()
   @ApiOperation({ summary: '격리된 주문 수집 실패 목록 조회' })
@@ -72,6 +73,7 @@ export class OrderCollectionFailuresController {
     return { success: true, data, timestamp: new Date().toISOString() };
   }
 
+  @PiiResponse({ fields: { rawOrder: 'redact' }, subjects: [{ param: 'id', type: 'event_record' }], reveal: true })
   @RequirePermission('channel.account.read')
   @Get(':id')
   @ApiOperation({ summary: '격리된 주문 수집 실패 상세 조회' })

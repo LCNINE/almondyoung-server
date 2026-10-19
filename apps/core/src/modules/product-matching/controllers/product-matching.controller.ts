@@ -13,7 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBody } from '@nestjs/swagger';
-import { User, RequirePermission } from '@app/authorization';
+import { User, RequirePermission, PiiResponse } from '@app/authorization';
 import { ProductMatchingService } from '../services/product-matching.service';
 import { ResolveLegacyIgnoredMatchingDto, ResolveMatchingDto, StockPolicyDto } from '../dto/resolve-matching.dto';
 import { SetMatchingPriorityDto } from '../dto/set-matching-priority.dto';
@@ -69,6 +69,15 @@ export class ProductMatchingController {
     }
   }
 
+  @PiiResponse({
+    fields: {
+      'data[].customerName': 'name',
+      'data[].customerPhone': 'phone',
+    },
+    subjects: [
+      { path: 'data[].salesOrderId', type: 'sales_order' },
+    ],
+  })
   @RequirePermission('order.order.read')
   @Get('order-lines')
   @ApiOperation({ summary: '주문 라인별 매칭 현황 조회' })

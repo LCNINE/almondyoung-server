@@ -5,7 +5,7 @@ import { ChannelType } from '../adapters/channel-adapter.factory';
 import { ChannelQuery, OrderQuery } from '../types';
 import { ChannelDataReader } from '../services/channel-data.reader';
 import { ExchangeRequestsQueryDto, ExchangeRequestsResponseDto } from '../zods/controller/adapter.zod';
-import { RequirePermission } from '@app/authorization';
+import { RequirePermission, PiiResponse } from '@app/authorization';
 
 @ApiTags('Channel Adapter')
 @Controller('adapter')
@@ -48,6 +48,16 @@ export class ChannelAdapterController {
   // 조회 API
   // ═══════════════════════════════════════════════════════════════
 
+  @PiiResponse({
+    fields: {
+      'data[].buyer.name': 'name',
+      'data[].buyer.contact': 'phone',
+      'data[].buyer.address.postalCode': 'postal',
+      'data[].buyer.address.roadAddress': 'address',
+      'data[].buyer.address.detailAddress': 'text',
+    },
+    subjects: [{ param: 'identifier', type: 'channel_order' }],
+  })
   @RequirePermission('order.order.read')
   @Get(':channel/query/:queryType/:identifier')
   @ApiOperation({ summary: '채널별 주문 조회' })
@@ -77,6 +87,17 @@ export class ChannelAdapterController {
     };
   }
 
+  @PiiResponse({
+    fields: {
+      'data[].deliveryInfo.returnAddress.customerName': 'name',
+      'data[].deliveryInfo.returnAddress.address': 'address',
+      'data[].deliveryInfo.returnAddress.phone': 'phone',
+      'data[].deliveryInfo.deliveryAddress.customerName': 'name',
+      'data[].deliveryInfo.deliveryAddress.address': 'address',
+      'data[].deliveryInfo.deliveryAddress.phone': 'phone',
+    },
+    subjects: [{ path: 'data[].orderId', type: 'channel_order' }],
+  })
   @RequirePermission('order.order.read')
   @Get(':channel/query/exchange-requests')
   @ApiOperation({ summary: '교환 요청 목록 조회' })

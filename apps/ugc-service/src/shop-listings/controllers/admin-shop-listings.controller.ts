@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, User, RequirePermission } from '@app/authorization';
+import { RequireScopes, User, RequirePermission, PiiResponse } from '@app/authorization';
 import {
   AdminShopListingDetailResponseDto,
   AdminShopListingDto,
@@ -17,6 +17,7 @@ import { ShopListingsService } from '../shop-listings.service';
 export class AdminShopListingsController {
   constructor(private readonly service: ShopListingsService) {}
 
+  @PiiResponse({ fields: { '[].contactPhone': 'phone' }, subjects: [{ path: '[].id', type: 'shop_listing' }] })
   @RequirePermission('cs.review.read')
   @Get()
   @RequireScopes('admin:ugc:read')
@@ -26,6 +27,7 @@ export class AdminShopListingsController {
     return this.service.listForAdmin(query);
   }
 
+  @PiiResponse({ fields: { contactPhone: 'phone' }, subjects: [{ param: 'id', type: 'shop_listing' }], reveal: true })
   @RequirePermission('cs.review.read')
   @Get(':id')
   @RequireScopes('admin:ugc:read')

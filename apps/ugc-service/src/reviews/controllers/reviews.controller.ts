@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, HttpCode, HttpStatus, Param, Patch, Post, Get, Query } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags, ApiQuery } from '@nestjs/swagger';
-import { Public, RequireScopes, User, StoreRoute, RequirePermission } from '@app/authorization';
+import { Public, RequireScopes, User, StoreRoute, RequirePermission, PiiResponse } from '@app/authorization';
 import { ReviewsService } from '../services/reviews.service';
 import { AdminReviewResponseDto } from '../dto/admin-review-response.dto';
 import { AdminCreateReviewDto, CreateReviewDto } from '../dto/create-review.dto';
@@ -165,6 +165,7 @@ export class ReviewsController {
 
   // ─── 관리자용 작성 ───
 
+  @PiiResponse({ fields: { legacy_author_name: 'name' }, subjects: [{ path: 'id', type: 'review' }] })
   @RequirePermission('cs.review.moderate')
   @Post('admin/reviews')
   @RequireScopes('admin:ugc:modify')
@@ -182,6 +183,7 @@ export class ReviewsController {
 
   // ─── 관리자용 조회 ───
 
+  @PiiResponse({ fields: { 'data[].legacy_author_name': 'name' }, subjects: [{ path: 'data[].id', type: 'review' }] })
   @RequirePermission('cs.review.read')
   @Get('admin/reviews')
   @RequireScopes('admin:ugc:read')
@@ -240,6 +242,7 @@ export class ReviewsController {
     return this.reviewsService.getDailyCountsForAdmin(query.from, query.to);
   }
 
+  @PiiResponse({ fields: { legacy_author_name: 'name' }, subjects: [{ param: 'id', type: 'review' }], reveal: true })
   @RequirePermission('cs.review.read')
   @Get('admin/reviews/:id')
   @RequireScopes('admin:ugc:read')

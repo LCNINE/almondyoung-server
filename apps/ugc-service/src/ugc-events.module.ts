@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
 import { EventsModule } from '@app/events';
-import { UGC_COMMAND_STREAM, UGC_EVENT_STREAM } from '@packages/event-contracts/streams';
+import { UGC_COMMAND_STREAM, UGC_EVENT_STREAM, IAM_STREAM } from '@packages/event-contracts/streams';
 import { REVIEWS_OUTBOX_CONFIG } from './reviews/reviews-outbox.config';
 
 @Module({
   imports: [
     EventsModule.forApp({
-      publishes: [UGC_COMMAND_STREAM, UGC_EVENT_STREAM],
+      publishes: [UGC_COMMAND_STREAM, UGC_EVENT_STREAM, IAM_STREAM],
       serviceName: 'ugc-service',
       // 소비 검증 정책은 앱 전체에 하나. 다른 소비 앱과 같은 값이다.
       policy: { validateOnConsume: true },

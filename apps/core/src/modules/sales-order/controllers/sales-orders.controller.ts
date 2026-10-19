@@ -11,7 +11,7 @@ import {
   Query,
   UnauthorizedException,
 } from '@nestjs/common';
-import { User, RequirePermission } from '@app/authorization';
+import { User, RequirePermission, PiiResponse } from '@app/authorization';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
 import { SalesOrdersService } from '../services/sales-orders.service';
@@ -40,6 +40,26 @@ export class SalesOrdersController {
     private readonly cancelRequests: ChannelCancelRequestService,
   ) {}
 
+  @PiiResponse({
+    fields: {
+      'customerName': 'name',
+      'customerEmail': 'email',
+      'customerPhone': 'phone',
+      'shippingAddress.recipientName': 'name',
+      'shippingAddress.phone': 'phone',
+      'shippingAddress.postalCode': 'postal',
+      'shippingAddress.roadAddress': 'address',
+      'shippingAddress.detailAddress': 'text',
+      'shippingAddress.deliveryNote': 'text',
+      'shippingAddress.personalCustomsCode': 'secret',
+      'memo': 'text',
+      'entrancePassword': 'secret',
+    },
+    subjects: [
+      { path: 'id', type: 'sales_order' },
+      { path: 'customerId', type: 'user' },
+    ],
+  })
   @RequirePermission('order.order.write')
   @Post()
   @ApiOperation({ summary: '판매 주문 생성' })
@@ -49,6 +69,26 @@ export class SalesOrdersController {
     return this.service.create(dto);
   }
 
+  @PiiResponse({
+    fields: {
+      'customerName': 'name',
+      'customerEmail': 'email',
+      'customerPhone': 'phone',
+      'shippingAddress.recipientName': 'name',
+      'shippingAddress.phone': 'phone',
+      'shippingAddress.postalCode': 'postal',
+      'shippingAddress.roadAddress': 'address',
+      'shippingAddress.detailAddress': 'text',
+      'shippingAddress.deliveryNote': 'text',
+      'shippingAddress.personalCustomsCode': 'secret',
+      'memo': 'text',
+      'entrancePassword': 'secret',
+    },
+    subjects: [
+      { path: 'id', type: 'sales_order' },
+      { path: 'customerId', type: 'user' },
+    ],
+  })
   @RequirePermission('order.order.write')
   @Patch(':id')
   @ApiOperation({ summary: '판매 주문 수정' })
@@ -58,6 +98,26 @@ export class SalesOrdersController {
     return this.service.update(id, dto);
   }
 
+  @PiiResponse({
+    fields: {
+      'customerName': 'name',
+      'customerEmail': 'email',
+      'customerPhone': 'phone',
+      'shippingAddress.recipientName': 'name',
+      'shippingAddress.phone': 'phone',
+      'shippingAddress.postalCode': 'postal',
+      'shippingAddress.roadAddress': 'address',
+      'shippingAddress.detailAddress': 'text',
+      'shippingAddress.deliveryNote': 'text',
+      'shippingAddress.personalCustomsCode': 'secret',
+      'memo': 'text',
+      'entrancePassword': 'secret',
+    },
+    subjects: [
+      { path: 'id', type: 'sales_order' },
+      { path: 'customerId', type: 'user' },
+    ],
+  })
   @RequirePermission('order.order.write')
   @Post(':id/confirm')
   @ApiOperation({ summary: '판매 주문 확정' })
@@ -66,6 +126,26 @@ export class SalesOrdersController {
     return this.service.confirm(id);
   }
 
+  @PiiResponse({
+    fields: {
+      'customerName': 'name',
+      'customerEmail': 'email',
+      'customerPhone': 'phone',
+      'shippingAddress.recipientName': 'name',
+      'shippingAddress.phone': 'phone',
+      'shippingAddress.postalCode': 'postal',
+      'shippingAddress.roadAddress': 'address',
+      'shippingAddress.detailAddress': 'text',
+      'shippingAddress.deliveryNote': 'text',
+      'shippingAddress.personalCustomsCode': 'secret',
+      'memo': 'text',
+      'entrancePassword': 'secret',
+    },
+    subjects: [
+      { path: 'id', type: 'sales_order' },
+      { path: 'customerId', type: 'user' },
+    ],
+  })
   @RequirePermission('order.order.cancel')
   @Post(':id/cancel')
   @ApiOperation({ summary: '판매 주문 취소 (관리자 경로 — 채널 주문은 취소 요청, core 주문은 Wallet 환불 포함)' })
@@ -163,6 +243,16 @@ export class SalesOrdersController {
     return this.service.createBusinessLink(id, dto);
   }
 
+  @PiiResponse({
+    fields: {
+      '[].deltas[].before': 'redact',
+      '[].deltas[].after': 'redact',
+    },
+    subjects: [
+      { path: '[].id', type: 'sales_order_amendment' },
+      { param: 'id', type: 'sales_order' },
+    ],
+  })
   @RequirePermission('order.order.read')
   @Get(':id/amendments')
   @ApiOperation({ summary: '판매 주문 정정 목록 조회' })
@@ -188,6 +278,27 @@ export class SalesOrdersController {
     return this.service.getStats();
   }
 
+  @PiiResponse({
+    fields: {
+      'customerName': 'name',
+      'customerEmail': 'email',
+      'customerPhone': 'phone',
+      'shippingAddress.recipientName': 'name',
+      'shippingAddress.phone': 'phone',
+      'shippingAddress.postalCode': 'postal',
+      'shippingAddress.roadAddress': 'address',
+      'shippingAddress.detailAddress': 'text',
+      'shippingAddress.deliveryNote': 'text',
+      'shippingAddress.personalCustomsCode': 'secret',
+      'memo': 'text',
+      'entrancePassword': 'secret',
+    },
+    subjects: [
+      { path: 'id', type: 'sales_order' },
+      { path: 'customerId', type: 'user' },
+    ],
+    reveal: true,
+  })
   @RequirePermission('order.order.read')
   @Get(':id')
   @ApiOperation({ summary: '판매 주문 단건 조회' })
@@ -197,6 +308,26 @@ export class SalesOrdersController {
     return this.service.getOne(id);
   }
 
+  @PiiResponse({
+    fields: {
+      'data[].customerName': 'name',
+      'data[].customerEmail': 'email',
+      'data[].customerPhone': 'phone',
+      'data[].shippingAddress.recipientName': 'name',
+      'data[].shippingAddress.phone': 'phone',
+      'data[].shippingAddress.postalCode': 'postal',
+      'data[].shippingAddress.roadAddress': 'address',
+      'data[].shippingAddress.detailAddress': 'text',
+      'data[].shippingAddress.deliveryNote': 'text',
+      'data[].shippingAddress.personalCustomsCode': 'secret',
+      'data[].memo': 'text',
+      'data[].entrancePassword': 'secret',
+    },
+    subjects: [
+      { path: 'data[].id', type: 'sales_order' },
+      { path: 'data[].customerId', type: 'user' },
+    ],
+  })
   @RequirePermission('order.order.read')
   @Get()
   @ApiOperation({ summary: '판매 주문 목록 조회' })

@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Headers, Post, Query, UnauthorizedException, UseGuards } from '@nestjs/common';
-import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User, RequirePermission, PiiResponse, OPEN_WITH_RECIPIENT } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { ConsolidationActor, ConsolidationCandidateQueryDto, CreateConsolidationDto } from '../dto/consolidation.dto';
 import { ConsolidationService } from '../services/consolidation.service';
@@ -16,6 +16,29 @@ type AuthenticatedUser = {
 export class ConsolidationController {
   constructor(private readonly consolidation: ConsolidationService) {}
 
+  @PiiResponse({
+    fields: {
+      '[].recipientSnapshot.recipientName': 'name',
+      '[].recipientSnapshot.phone': 'phone',
+      '[].recipientSnapshot.postalCode': 'postal',
+      '[].recipientSnapshot.roadAddress': 'address',
+      '[].recipientSnapshot.detailAddress': 'text',
+      '[].recipientSnapshot.deliveryNote': 'text',
+      '[].recipientSnapshot.personalCustomsCode': 'secret',
+    },
+    subjects: [
+      { path: '[].shipmentId', type: 'shipment' },
+    ],
+    rawWithByField: {
+      '[].recipientSnapshot.recipientName': OPEN_WITH_RECIPIENT,
+      '[].recipientSnapshot.phone': OPEN_WITH_RECIPIENT,
+      '[].recipientSnapshot.postalCode': OPEN_WITH_RECIPIENT,
+      '[].recipientSnapshot.roadAddress': OPEN_WITH_RECIPIENT,
+      '[].recipientSnapshot.detailAddress': OPEN_WITH_RECIPIENT,
+      '[].recipientSnapshot.deliveryNote': OPEN_WITH_RECIPIENT,
+      '[].recipientSnapshot.personalCustomsCode': OPEN_WITH_RECIPIENT,
+    },
+  })
   @RequirePermission('fulfillment.shipment.read')
   @Get('consolidation-candidates')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)

@@ -1,3 +1,4 @@
+import { IAM_STREAM } from '@packages/event-contracts/streams';
 import { Module } from '@nestjs/common';
 import { EventsModule, LONG_OUTBOX_MAX_RETRIES, LONG_OUTBOX_RETRY_DELAYS_SECONDS } from '@app/events';
 import {
@@ -33,7 +34,7 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
 @Module({
   imports: [
     EventsModule.forApp({
-      publishes: [PRODUCT_STREAM],
+      publishes: [PRODUCT_STREAM, IAM_STREAM],
       serviceName: 'almondyoung',
       enableDLQ: true,
       enableOutbox: true,

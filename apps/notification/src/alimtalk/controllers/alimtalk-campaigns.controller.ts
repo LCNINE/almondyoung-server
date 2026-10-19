@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { RolesGuard, RequirePermission } from '@app/authorization';
+import { RolesGuard, RequirePermission, PiiResponse } from '@app/authorization';
 import { CurrentUser } from '../../shared/decorators/user.decorator';
 import { CreateAlimtalkCampaignDto, PreviewAlimtalkCampaignDto } from '../dto';
 import { AlimtalkCampaignsService } from '../services/alimtalk-campaigns.service';
@@ -38,6 +38,10 @@ export class AlimtalkCampaignsController {
     return this.service.create(dto, user.userId);
   }
 
+  @PiiResponse({
+    fields: { 'failures[].name': 'name', 'failures[].phone': 'phone' },
+    subjects: [{ path: 'failures[].userId', type: 'user' }, { param: 'id', type: 'notification' }],
+  })
   @RequirePermission('messaging.message.read')
   @Get(':id/results')
   results(@Param('id', ParseUUIDPipe) id: string) {

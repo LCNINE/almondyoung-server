@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { RequirePermission, User } from '@app/authorization';
+import { RequirePermission, User, PiiResponse } from '@app/authorization';
 import {
   ConfirmPrintTestDto,
   ListPrintOrdersQueryDto,
@@ -22,6 +22,15 @@ export class AdminPrintOrdersController {
     return this.service.summary();
   }
 
+  @PiiResponse({
+    fields: {
+      'items[].customerName': 'name',
+      'items[].customerPhone': 'phone',
+    },
+    subjects: [
+      { path: 'items[].id', type: 'print_order' },
+    ],
+  })
   @RequirePermission('order.order.read')
   @Get()
   @ApiOperation({ summary: '와우프레스 발주 목록' })
@@ -34,6 +43,15 @@ export class AdminPrintOrdersController {
     });
   }
 
+  @PiiResponse({
+    fields: {
+      'customerName': 'name',
+      'customerPhone': 'phone',
+    },
+    subjects: [
+      { path: 'id', type: 'print_order' },
+    ],
+  })
   @RequirePermission('order.order.read')
   @Get('by-line/:lineId')
   @ApiOperation({ summary: '판매주문 라인의 와우프레스 발주' })
@@ -42,6 +60,15 @@ export class AdminPrintOrdersController {
     return this.service.byLine(lineId);
   }
 
+  @PiiResponse({
+    fields: {
+      '[].customerName': 'name',
+      '[].customerPhone': 'phone',
+    },
+    subjects: [
+      { path: '[].id', type: 'print_order' },
+    ],
+  })
   @RequirePermission('order.order.read')
   @Get('by-design/:almondDesignId')
   @ApiOperation({ summary: '아몬드템플릿 시안의 와우프레스 발주 (최신 순)' })

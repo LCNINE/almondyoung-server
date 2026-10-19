@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { User, RequirePermission } from '@app/authorization';
+import { User, RequirePermission, PiiResponse } from '@app/authorization';
 import { ListSalesOrderAmendmentsQueryDto } from '../dto/list-sales-order-amendments.dto';
 import { CreateSalesOrderAmendmentDto } from '../dto/create-sales-order-amendment.dto';
 import { SalesOrderAmendmentResponseDto } from '../dto/sales-order-amendment-response.dto';
@@ -18,6 +18,16 @@ export class SalesOrderAmendmentsController {
     private readonly channelActions: ChannelAmendmentActionsService,
   ) {}
 
+  @PiiResponse({
+    fields: {
+      'deltas[].before': 'redact',
+      'deltas[].after': 'redact',
+    },
+    subjects: [
+      { path: 'id', type: 'sales_order_amendment' },
+      { path: 'salesOrderId', type: 'sales_order' },
+    ],
+  })
   @RequirePermission('order.order.write')
   @Post()
   @ApiOperation({ summary: 'Create a SalesOrderAmendment for a post-acceptance delta' })
@@ -26,6 +36,16 @@ export class SalesOrderAmendmentsController {
     return this.service.create(dto, this.getUserId(user));
   }
 
+  @PiiResponse({
+    fields: {
+      'items[].deltas[].before': 'redact',
+      'items[].deltas[].after': 'redact',
+    },
+    subjects: [
+      { path: 'items[].id', type: 'sales_order_amendment' },
+      { path: 'items[].salesOrderId', type: 'sales_order' },
+    ],
+  })
   @RequirePermission('order.order.read')
   @Get()
   @ApiOperation({ summary: '정정 목록 — 반영 대기 변경 화면' })
@@ -33,6 +53,17 @@ export class SalesOrderAmendmentsController {
     return this.service.list({ status: query.status, origin: query.origin, limit: query.limit ?? 50, cursor: query.cursor });
   }
 
+  @PiiResponse({
+    fields: {
+      'deltas[].before': 'redact',
+      'deltas[].after': 'redact',
+    },
+    subjects: [
+      { path: 'id', type: 'sales_order_amendment' },
+      { path: 'salesOrderId', type: 'sales_order' },
+    ],
+    reveal: true,
+  })
   @RequirePermission('order.order.read')
   @Get(':id')
   @ApiOperation({ summary: 'Get a SalesOrderAmendment' })

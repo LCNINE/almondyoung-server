@@ -13,7 +13,7 @@ import {
 import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { IsArray, IsOptional, IsString, MaxLength, ValidateNested, IsInt, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User, RequirePermission, PiiResponse } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { StoreReturnExchangeService } from '../services/store-return-exchange.service';
 import { StoreSalesOrdersService } from '../services/store-sales-orders.service';
@@ -121,6 +121,17 @@ export class AdminReturnExchangeController {
 
   // ── Return Requests ───────────────────────────────────────────────────────
 
+  @PiiResponse({
+    fields: {
+      'request.returnAddress': 'redact',
+      'request.reasonDetail': 'text',
+      'request.adminNote': 'text',
+    },
+    subjects: [
+      { path: 'request.id', type: 'return_request' },
+      { path: 'request.customerId', type: 'user' },
+    ],
+  })
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('sales-orders/:id/return-requests')
   @UseGuards(ScopeGuard)
@@ -155,6 +166,17 @@ export class AdminReturnExchangeController {
     return this.service.adminGetReturnEligibilityByChannelOrder(channelOrderId);
   }
 
+  @PiiResponse({
+    fields: {
+      'items[].request.returnAddress': 'redact',
+      'items[].request.reasonDetail': 'text',
+      'items[].request.adminNote': 'text',
+    },
+    subjects: [
+      { path: 'items[].request.id', type: 'return_request' },
+      { path: 'items[].request.customerId', type: 'user' },
+    ],
+  })
   @RequirePermission('order.claim.read')
   @Get('return-requests')
   @ApiQuery({ name: 'createdFrom', required: false, description: '접수 시각 하한 (ISO 8601, 포함)' })
@@ -182,6 +204,18 @@ export class AdminReturnExchangeController {
     });
   }
 
+  @PiiResponse({
+    fields: {
+      'request.returnAddress': 'redact',
+      'request.reasonDetail': 'text',
+      'request.adminNote': 'text',
+    },
+    subjects: [
+      { path: 'request.id', type: 'return_request' },
+      { path: 'request.customerId', type: 'user' },
+    ],
+    reveal: true,
+  })
   @RequirePermission('order.claim.read')
   @Get('return-requests/:id')
   @ApiOperation({ summary: '반품 요청 상세 조회 (관리자)' })
@@ -190,6 +224,17 @@ export class AdminReturnExchangeController {
     return this.service.adminGetReturnRequest(id);
   }
 
+  @PiiResponse({
+    fields: {
+      'request.returnAddress': 'redact',
+      'request.reasonDetail': 'text',
+      'request.adminNote': 'text',
+    },
+    subjects: [
+      { path: 'request.id', type: 'return_request' },
+      { path: 'request.customerId', type: 'user' },
+    ],
+  })
   @RequirePermission('order.claim.write')
   @Post('return-requests/:id/approve')
   @HttpCode(200)
@@ -199,6 +244,17 @@ export class AdminReturnExchangeController {
     return this.service.approveReturnRequest(id, admin.userId, dto.adminNote);
   }
 
+  @PiiResponse({
+    fields: {
+      'request.returnAddress': 'redact',
+      'request.reasonDetail': 'text',
+      'request.adminNote': 'text',
+    },
+    subjects: [
+      { path: 'request.id', type: 'return_request' },
+      { path: 'request.customerId', type: 'user' },
+    ],
+  })
   @RequirePermission('order.claim.write')
   @Post('return-requests/:id/reject')
   @HttpCode(200)
@@ -208,6 +264,17 @@ export class AdminReturnExchangeController {
     return this.service.rejectReturnRequest(id, admin.userId, dto.adminNote);
   }
 
+  @PiiResponse({
+    fields: {
+      'request.returnAddress': 'redact',
+      'request.reasonDetail': 'text',
+      'request.adminNote': 'text',
+    },
+    subjects: [
+      { path: 'request.id', type: 'return_request' },
+      { path: 'request.customerId', type: 'user' },
+    ],
+  })
   @RequirePermission('order.claim.write')
   @Post('return-requests/:id/collection-pending')
   @HttpCode(200)
@@ -217,6 +284,17 @@ export class AdminReturnExchangeController {
     return this.service.markCollectionPending(id, admin.userId);
   }
 
+  @PiiResponse({
+    fields: {
+      'request.returnAddress': 'redact',
+      'request.reasonDetail': 'text',
+      'request.adminNote': 'text',
+    },
+    subjects: [
+      { path: 'request.id', type: 'return_request' },
+      { path: 'request.customerId', type: 'user' },
+    ],
+  })
   @RequirePermission('order.claim.write')
   @Post('return-requests/:id/collected')
   @HttpCode(200)
@@ -226,6 +304,17 @@ export class AdminReturnExchangeController {
     return this.service.markCollected(id, admin.userId);
   }
 
+  @PiiResponse({
+    fields: {
+      'request.returnAddress': 'redact',
+      'request.reasonDetail': 'text',
+      'request.adminNote': 'text',
+    },
+    subjects: [
+      { path: 'request.id', type: 'return_request' },
+      { path: 'request.customerId', type: 'user' },
+    ],
+  })
   @RequirePermission('order.claim.write')
   @Post('return-requests/:id/inspected')
   @HttpCode(200)
@@ -235,6 +324,17 @@ export class AdminReturnExchangeController {
     return this.service.markInspected(id, admin.userId);
   }
 
+  @PiiResponse({
+    fields: {
+      'request.returnAddress': 'redact',
+      'request.reasonDetail': 'text',
+      'request.adminNote': 'text',
+    },
+    subjects: [
+      { path: 'request.id', type: 'return_request' },
+      { path: 'request.customerId', type: 'user' },
+    ],
+  })
   @RequirePermission('order.claim.write')
   @Post('return-requests/:id/complete')
   @HttpCode(200)
@@ -244,6 +344,17 @@ export class AdminReturnExchangeController {
     return this.service.completeReturnRequest(id, admin.userId);
   }
 
+  @PiiResponse({
+    fields: {
+      'request.returnAddress': 'redact',
+      'request.reasonDetail': 'text',
+      'request.adminNote': 'text',
+    },
+    subjects: [
+      { path: 'request.id', type: 'return_request' },
+      { path: 'request.customerId', type: 'user' },
+    ],
+  })
   @RequirePermission('payment.refund.execute')
   @Post('return-requests/:id/retry-refund')
   @HttpCode(200)
@@ -253,6 +364,17 @@ export class AdminReturnExchangeController {
     return this.service.retryReturnRefund(id, admin.userId);
   }
 
+  @PiiResponse({
+    fields: {
+      'request.returnAddress': 'redact',
+      'request.reasonDetail': 'text',
+      'request.adminNote': 'text',
+    },
+    subjects: [
+      { path: 'request.id', type: 'return_request' },
+      { path: 'request.customerId', type: 'user' },
+    ],
+  })
   @RequirePermission('order.claim.write')
   @Post('return-requests/:id/manual-complete')
   @HttpCode(200)
@@ -264,6 +386,16 @@ export class AdminReturnExchangeController {
 
   // ── Exchange Requests ─────────────────────────────────────────────────────
 
+  @PiiResponse({
+    fields: {
+      'items[].request.reasonDetail': 'text',
+      'items[].request.adminNote': 'text',
+    },
+    subjects: [
+      { path: 'items[].request.id', type: 'exchange_request' },
+      { path: 'items[].request.customerId', type: 'user' },
+    ],
+  })
   @RequirePermission('order.claim.read')
   @Get('exchange-requests')
   @ApiQuery({ name: 'createdFrom', required: false, description: '접수 시각 하한 (ISO 8601, 포함)' })
@@ -291,6 +423,17 @@ export class AdminReturnExchangeController {
     });
   }
 
+  @PiiResponse({
+    fields: {
+      'request.reasonDetail': 'text',
+      'request.adminNote': 'text',
+    },
+    subjects: [
+      { path: 'request.id', type: 'exchange_request' },
+      { path: 'request.customerId', type: 'user' },
+    ],
+    reveal: true,
+  })
   @RequirePermission('order.claim.read')
   @Get('exchange-requests/:id')
   @ApiOperation({ summary: '교환 요청 상세 조회 (관리자)' })

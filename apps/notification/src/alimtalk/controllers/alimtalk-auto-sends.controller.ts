@@ -13,7 +13,7 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import { LookupMembershipNoticesDto } from '../dto';
 import { AlimtalkAutoSendsService } from '../services/alimtalk-auto-sends.service';
-import { RequirePermission } from '@app/authorization';
+import { RequirePermission, PiiResponse } from '@app/authorization';
 
 /** 사건이 생겨 자동으로 나간 알림톡의 기록(관리자 캠페인과 별개). 읽기만 한다. */
 @ApiTags('alimtalk')
@@ -21,6 +21,10 @@ import { RequirePermission } from '@app/authorization';
 export class AlimtalkAutoSendsController {
   constructor(private readonly service: AlimtalkAutoSendsService) {}
 
+  @PiiResponse({
+    fields: { 'items[].recipientName': 'name', 'items[].phone': 'phone', 'items[].error': 'text' },
+    subjects: [{ path: 'items[].userId', type: 'user' }],
+  })
   @RequirePermission('messaging.message.read')
   @Get()
   list(@Query('before') before?: string) {

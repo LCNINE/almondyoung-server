@@ -2,7 +2,7 @@
 import { Controller, Get, Query, Param, ValidationPipe } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { NotificationLoggerService } from '../services/notification-logger.service';
-import { RequirePermission } from '@app/authorization';
+import { RequirePermission, PiiResponse } from '@app/authorization';
 
 @ApiTags('logs')
 @Controller('logs')
@@ -41,6 +41,10 @@ export class LogController {
     });
   }
 
+  @PiiResponse({
+    fields: { 'logs[].request': 'redact', 'logs[].response': 'redact' },
+    subjects: [{ path: 'logs[].notificationId', type: 'notification' }],
+  })
   @RequirePermission('messaging.message.read')
   @Get()
   @ApiOperation({ summary: '알림 로그 목록 조회', description: '알림 발송 로그 목록을 조회합니다.' })
@@ -95,6 +99,10 @@ export class LogController {
     });
   }
 
+  @PiiResponse({
+    fields: { '[].request': 'redact', '[].response': 'redact' },
+    subjects: [{ param: 'notificationId', type: 'notification' }],
+  })
   @RequirePermission('messaging.message.read')
   @Get('notifications/:notificationId')
   @ApiOperation({ summary: '특정 알림의 로그 조회', description: '특정 알림 ID의 모든 로그를 조회합니다.' })

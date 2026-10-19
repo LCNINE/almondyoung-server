@@ -4,7 +4,7 @@ import { CurrentUser } from '../../shared/decorators/user.decorator';
 import { SendSmsGateMessageDto } from '../dto';
 import { SmsGateEnabledGuard } from '../guards/sms-gate-enabled.guard';
 import { SmsMessagesService } from '../services/sms-messages.service';
-import { RequirePermission } from '@app/authorization';
+import { RequirePermission, PiiResponse } from '@app/authorization';
 
 @ApiTags('sms-gate')
 @Controller('sms-gate/messages')
@@ -24,6 +24,13 @@ export class SmsMessagesController {
     return this.service.capacity(deviceId);
   }
 
+  @PiiResponse({
+    fields: { '[].payload': 'redact', '[].renderedContent': 'redact', '[].metadata': 'redact' },
+    subjects: [
+      { path: '[].notificationId', type: 'notification' },
+      { path: '[].userId', type: 'user' },
+    ],
+  })
   @RequirePermission('messaging.message.read')
   @Get()
   find(@Query('ids') ids = '') {

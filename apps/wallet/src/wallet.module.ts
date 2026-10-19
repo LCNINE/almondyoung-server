@@ -15,7 +15,9 @@ import {
   JwtAuthGuard,
   PermissionGuard,
   PermissionModule,
+  piiMaskingProviders,
 } from '@app/authorization';
+import { OutboxPiiAccessRecorder } from '@app/authorization/recorders/outbox-pii-access.recorder';
 import { ConfigModule } from '@nestjs/config';
 import { HttpModule } from '@nestjs/axios';
 import { UserContactClient } from '@app/shared';
@@ -27,7 +29,7 @@ import { DbModule } from '@app/db';
 import { LoggerModule } from 'nestjs-pino';
 import { loggerConfig } from '@app/shared/observability/logger.config';
 import { EventsModule, EventTraceApiModule } from '@app/events';
-import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
+import { PAYMENT_STREAM, IAM_STREAM } from '@packages/event-contracts/streams';
 import { WALLET_OUTBOX_CONFIG } from './messaging/wallet-outbox.config';
 import { Observable, firstValueFrom, isObservable } from 'rxjs';
 import { validateWalletEnv } from './config/env';
@@ -402,7 +404,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     // 발행 능력 + 소비 정책을 한 자리에서. 옛 `forRoot`+`forConsumerModule` 두 벌에서
     // 합쳤다 — 소비 스트림 목록과 groupId 는 쓰이지 않던 선언이라 사라졌다 (ADR-0029 §1).
     EventsModule.forApp({
-      publishes: [PAYMENT_STREAM],
+      publishes: [PAYMENT_STREAM, IAM_STREAM],
       // 공용 아웃박스를 켠다 (ADR-0029 §5-1, Task 6-C-3). `OutboxPublisher`(적재기)와
       // `OutboxDispatcher`(발행기)가 등록되고, `PAYMENT_STREAM` 이 위 목록에 있으므로
       // 디스패처의 publisherMap 이 회수 대상 토픽을 처음부터 안다.
@@ -490,6 +492,8 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     { provide: APP_GUARD, useClass: PermissionGuard },
     // 그림자 판정 통과 표시 — 전역 인터셉터 맨 앞(앞선 인터셉터가 응답을 바로 돌려주면 표시를 못 한다).
     { provide: APP_INTERCEPTOR, useClass: AuthzShadowInterceptor },
+    // 개인정보 표시 제한 — 다른 응답 인터셉터보다 바깥에서 최종 본문을 본다.
+    ...piiMaskingProviders({ service: 'wallet', recorder: OutboxPiiAccessRecorder }),
     { provide: APP_INTERCEPTOR, useClass: HttpIdempotencyInterceptor },
 
     // Domain

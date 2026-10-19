@@ -3,7 +3,7 @@ import { Controller, Post, Get, Body, Param, Query, Logger, ValidationPipe } fro
 import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { BulkNotificationService } from '../services/bulk-notification.service';
 import { CreateBulkNotificationDto } from '../dto/create-bulk-notification.dto';
-import { RequirePermission } from '@app/authorization';
+import { RequirePermission, PiiResponse } from '@app/authorization';
 
 @ApiTags('bulk')
 @Controller('bulk-notifications')
@@ -75,6 +75,15 @@ export class BulkNotificationController {
     return result;
   }
 
+  @PiiResponse({
+    fields: {
+      'targetGroups[].userList[].email': 'email',
+      'targetGroups[].userList[].phoneNumber': 'phone',
+      'targetGroups[].userList[].name': 'name',
+      'metadata.payload': 'redact',
+    },
+    subjects: [{ path: 'targetGroups[].userList[].userId', type: 'user' }, { param: 'campaignId', type: 'notification' }],
+  })
   @RequirePermission('messaging.message.read')
   @Get(':campaignId')
   @ApiOperation({
@@ -102,6 +111,10 @@ export class BulkNotificationController {
     return this.bulkNotificationService.cancelCampaign(campaignId);
   }
 
+  @PiiResponse({
+    fields: { 'recipients[].metadata': 'redact', 'recipients[].errorMessage': 'text' },
+    subjects: [{ path: 'recipients[].userId', type: 'user' }],
+  })
   @RequirePermission('messaging.message.read')
   @Get(':campaignId/recipients')
   @ApiOperation({

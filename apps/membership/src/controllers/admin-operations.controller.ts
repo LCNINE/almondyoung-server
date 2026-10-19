@@ -19,7 +19,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { ApplicationException } from '@app/shared';
-import { AuthorizationService, PermissionCheckpoints, RequireScopes, RequirePermission } from '@app/authorization';
+import { AuthorizationService, PermissionCheckpoints, RequireScopes, RequirePermission, PiiResponse } from '@app/authorization';
 import { MEMBERSHIP_SCOPE } from '../shared/auth/membership-scopes';
 import { IdempotentAdminOp } from '../shared/idempotency/idempotent-admin-op.decorator';
 import { AdminOperationsService } from '../services/admin-operations.service';
@@ -549,6 +549,13 @@ export class AdminOperationsController {
   /**
    * 계약 이벤트 이력 조회
    */
+  @PiiResponse({
+    fields: {
+      // 환불 계좌·고객이 쓴 사유 등 이벤트마다 모양이 달라 통째로 가린다.
+      'events[].metadata': 'redact',
+    },
+    subjects: [{ path: 'events[].userId', type: 'user' }],
+  })
   @RequirePermission('membership.billing.read')
   @Get('subscriptions/:contractId/events')
   @ApiOperation({
@@ -1024,6 +1031,16 @@ export class AdminOperationsController {
    *
    * GET /admin/members/:userId
    */
+  @PiiResponse({
+    fields: {
+      'data.manualRefundAccount.accountNumber': 'account',
+      'data.manualRefundAccount.holderName': 'name',
+      'data.refundReceiveAccount.accountNumber': 'account',
+      'data.refundReceiveAccount.holderName': 'name',
+    },
+    subjects: [{ param: 'userId', type: 'user' }],
+    reveal: true,
+  })
   @RequirePermission('membership.member.read')
   @Get('members/:userId')
   @ApiOperation({ summary: '멤버십 회원 상세 조회' })
@@ -1069,6 +1086,13 @@ export class AdminOperationsController {
    *
    * GET /admin/contract-events?userId=xxx (또는 contractId=xxx for legacy)
    */
+  @PiiResponse({
+    fields: {
+      // 환불 계좌·고객이 쓴 사유 등 이벤트마다 모양이 달라 통째로 가린다.
+      'data[].metadata': 'redact',
+    },
+    subjects: [{ path: 'data[].userId', type: 'user' }],
+  })
   @RequirePermission('membership.billing.read')
   @Get('contract-events')
   @ApiOperation({ summary: '멤버십 계약 이벤트 로그 조회' })

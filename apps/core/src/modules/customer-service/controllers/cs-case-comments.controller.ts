@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { RolesGuard, User, RequirePermission } from '@app/authorization';
+import { RolesGuard, User, RequirePermission, PiiResponse } from '@app/authorization';
 import { CreateCsCommentDto } from '../dto/create-cs-comment.dto';
 import { EditCsCommentDto } from '../dto/edit-cs-comment.dto';
 import { CsCommentsService } from '../services/cs-comments.service';
@@ -14,6 +14,14 @@ type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefi
 export class CsCaseCommentsController {
   constructor(private readonly service: CsCommentsService) {}
 
+  @PiiResponse({
+    fields: {
+      'body': 'text',
+    },
+    subjects: [
+      { param: 'caseId', type: 'cs_case' },
+    ],
+  })
   @RequirePermission('cs.inquiry.write')
   @Post()
   @ApiOperation({ summary: '댓글 작성(멘션/첨부 포함)' })
@@ -22,6 +30,14 @@ export class CsCaseCommentsController {
     return this.service.addComment(caseId, dto, this.getUserId(user));
   }
 
+  @PiiResponse({
+    fields: {
+      'body': 'text',
+    },
+    subjects: [
+      { param: 'caseId', type: 'cs_case' },
+    ],
+  })
   @RequirePermission('cs.inquiry.write')
   @Patch(':commentId')
   @ApiOperation({ summary: '댓글 수정(작성자 본인만)' })

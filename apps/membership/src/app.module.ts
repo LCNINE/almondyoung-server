@@ -6,7 +6,7 @@ import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 import { CronOnceModule } from '@app/cron-once';
 import { DbModule } from '@app/db';
 import { EventsModule, EventTraceApiModule } from '@app/events';
-import { MEMBERSHIP_STREAM, PAYMENT_STREAM } from '@packages/event-contracts/streams';
+import { MEMBERSHIP_STREAM, PAYMENT_STREAM, IAM_STREAM } from '@packages/event-contracts/streams';
 import { WALLET_COMMAND_STREAM } from '@packages/event-contracts/streams/wallet-command.stream';
 import { BillingResultConsumer } from './consumers/billing-result.consumer';
 import { MembershipCheckoutConsumer } from './consumers/membership-checkout.consumer';
@@ -87,6 +87,7 @@ import { UserContactClient } from '@app/shared';
 import { AdminIdempotencyService } from './shared/idempotency/admin-idempotency.service';
 import { AdminIdempotencyInterceptor } from './shared/idempotency/admin-idempotency.interceptor';
 import { AuthorizationModule } from '@app/authorization';
+import { OutboxPiiAccessRecorder } from '@app/authorization/recorders/outbox-pii-access.recorder';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { MEMBERSHIP_ROLE_MAPPINGS, MEMBERSHIP_SCOPES } from './shared/auth/membership-scopes';
 import {
@@ -95,6 +96,7 @@ import {
   JwtAuthGuard,
   PermissionGuard,
   PermissionModule,
+  piiMaskingProviders,
   ScopeGuard,
 } from '@app/authorization';
 import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
@@ -128,7 +130,7 @@ import { EventTraceController } from './controllers/event-trace.controller';
     // 두 벌에서 합쳤다 — 소비 스트림 목록(`[PAYMENT_STREAM]`)과 groupId 는 쓰이지 않던
     // 선언이라 함께 사라졌다 (ADR-0029 §1·§3).
     EventsModule.forApp({
-      publishes: [MEMBERSHIP_STREAM, WALLET_COMMAND_STREAM, PAYMENT_STREAM],
+      publishes: [MEMBERSHIP_STREAM, WALLET_COMMAND_STREAM, PAYMENT_STREAM, IAM_STREAM],
       serviceName: 'membership',
       enableDLQ: true,
       // 트랜잭셔널 아웃박스: 신규 구독 생성 시 MembershipStatusChanged 를 엔타이틀먼트와
@@ -189,6 +191,8 @@ import { EventTraceController } from './controllers/event-trace.controller';
     // 권한 강제 — AUTHZ_ENFORCE=true 일 때만 일한다(기본 꺼짐). 기존 가드 뒤에 둔다.
     { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_INTERCEPTOR, useClass: AuthzShadowInterceptor },
+    // 개인정보 표시 제한 — 다른 응답 인터셉터보다 바깥에서 최종 본문을 본다.
+    ...piiMaskingProviders({ service: 'membership', recorder: OutboxPiiAccessRecorder }),
     InternalApiKeyGuard,
     // Business Layer (Services)
     PlanService,

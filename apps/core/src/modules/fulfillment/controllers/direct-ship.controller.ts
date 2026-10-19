@@ -4,7 +4,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from 
 import { DirectShipService, DirectShipOrder } from '../services/direct-ship.service';
 import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
 import { z } from 'zod';
-import { RequirePermission } from '@app/authorization';
+import { RequirePermission, PiiResponse, OPEN_WITH_RECIPIENT } from '@app/authorization';
 
 const ForwardOrdersSchema = z.object({
   fulfillmentOrderIds: z.array(z.string().uuid()).min(1),
@@ -40,6 +40,34 @@ export class DirectShipController {
     return this.directShipService.getCompanyList();
   }
 
+  @PiiResponse({
+    fields: {
+      '[].customerInfo.customerName': 'name',
+      '[].customerInfo.customerEmail': 'email',
+      '[].customerInfo.customerPhone': 'phone',
+      '[].customerInfo.shippingAddress.recipientName': 'name',
+      '[].customerInfo.shippingAddress.phone': 'phone',
+      '[].customerInfo.shippingAddress.postalCode': 'postal',
+      '[].customerInfo.shippingAddress.roadAddress': 'address',
+      '[].customerInfo.shippingAddress.detailAddress': 'text',
+      '[].customerInfo.shippingAddress.deliveryNote': 'text',
+      '[].customerInfo.shippingAddress.personalCustomsCode': 'secret',
+    },
+    subjects: [
+      { path: '[].salesOrderId', type: 'sales_order' },
+    ],
+    rawWithByField: {
+      '[].customerInfo.customerName': OPEN_WITH_RECIPIENT,
+      '[].customerInfo.customerPhone': OPEN_WITH_RECIPIENT,
+      '[].customerInfo.shippingAddress.recipientName': OPEN_WITH_RECIPIENT,
+      '[].customerInfo.shippingAddress.phone': OPEN_WITH_RECIPIENT,
+      '[].customerInfo.shippingAddress.postalCode': OPEN_WITH_RECIPIENT,
+      '[].customerInfo.shippingAddress.roadAddress': OPEN_WITH_RECIPIENT,
+      '[].customerInfo.shippingAddress.detailAddress': OPEN_WITH_RECIPIENT,
+      '[].customerInfo.shippingAddress.deliveryNote': OPEN_WITH_RECIPIENT,
+      '[].customerInfo.shippingAddress.personalCustomsCode': OPEN_WITH_RECIPIENT,
+    },
+  })
   @RequirePermission('fulfillment.order.read')
   @Get('orders')
   @ApiOperation({ summary: '직송 주문 목록' })
@@ -54,6 +82,34 @@ export class DirectShipController {
     return this.directShipService.getDirectShipOrders({ companyName, status, warehouseId });
   }
 
+  @PiiResponse({
+    fields: {
+      '*[].customerInfo.customerName': 'name',
+      '*[].customerInfo.customerEmail': 'email',
+      '*[].customerInfo.customerPhone': 'phone',
+      '*[].customerInfo.shippingAddress.recipientName': 'name',
+      '*[].customerInfo.shippingAddress.phone': 'phone',
+      '*[].customerInfo.shippingAddress.postalCode': 'postal',
+      '*[].customerInfo.shippingAddress.roadAddress': 'address',
+      '*[].customerInfo.shippingAddress.detailAddress': 'text',
+      '*[].customerInfo.shippingAddress.deliveryNote': 'text',
+      '*[].customerInfo.shippingAddress.personalCustomsCode': 'secret',
+    },
+    subjects: [
+      { path: '*[].salesOrderId', type: 'sales_order' },
+    ],
+    rawWithByField: {
+      '*[].customerInfo.customerName': OPEN_WITH_RECIPIENT,
+      '*[].customerInfo.customerPhone': OPEN_WITH_RECIPIENT,
+      '*[].customerInfo.shippingAddress.recipientName': OPEN_WITH_RECIPIENT,
+      '*[].customerInfo.shippingAddress.phone': OPEN_WITH_RECIPIENT,
+      '*[].customerInfo.shippingAddress.postalCode': OPEN_WITH_RECIPIENT,
+      '*[].customerInfo.shippingAddress.roadAddress': OPEN_WITH_RECIPIENT,
+      '*[].customerInfo.shippingAddress.detailAddress': OPEN_WITH_RECIPIENT,
+      '*[].customerInfo.shippingAddress.deliveryNote': OPEN_WITH_RECIPIENT,
+      '*[].customerInfo.shippingAddress.personalCustomsCode': OPEN_WITH_RECIPIENT,
+    },
+  })
   @RequirePermission('fulfillment.order.read')
   @Get('orders/by-company')
   async getDirectShipOrdersByCompany() {
@@ -83,6 +139,23 @@ export class DirectShipController {
     return { message: `Successfully completed ${dto.fulfillmentOrderIds.length} orders` };
   }
 
+  @PiiResponse({
+    fields: {
+      'orders[].customerInfo.customerName': 'name',
+      'orders[].customerInfo.customerEmail': 'email',
+      'orders[].customerInfo.customerPhone': 'phone',
+      'orders[].customerInfo.shippingAddress.recipientName': 'name',
+      'orders[].customerInfo.shippingAddress.phone': 'phone',
+      'orders[].customerInfo.shippingAddress.postalCode': 'postal',
+      'orders[].customerInfo.shippingAddress.roadAddress': 'address',
+      'orders[].customerInfo.shippingAddress.detailAddress': 'text',
+      'orders[].customerInfo.shippingAddress.deliveryNote': 'text',
+      'orders[].customerInfo.shippingAddress.personalCustomsCode': 'secret',
+    },
+    subjects: [
+      { path: 'orders[].salesOrderId', type: 'sales_order' },
+    ],
+  })
   @RequirePermission('order.order.export')
   @Get('export/:companyName')
   @ApiOperation({ summary: '주문 데이터 내보내기' })
@@ -102,6 +175,34 @@ export class DirectShipController {
     res.send(fileData.content);
   }
 
+  @PiiResponse({
+    fields: {
+      '[].customerInfo.customerName': 'name',
+      '[].customerInfo.customerEmail': 'email',
+      '[].customerInfo.customerPhone': 'phone',
+      '[].customerInfo.shippingAddress.recipientName': 'name',
+      '[].customerInfo.shippingAddress.phone': 'phone',
+      '[].customerInfo.shippingAddress.postalCode': 'postal',
+      '[].customerInfo.shippingAddress.roadAddress': 'address',
+      '[].customerInfo.shippingAddress.detailAddress': 'text',
+      '[].customerInfo.shippingAddress.deliveryNote': 'text',
+      '[].customerInfo.shippingAddress.personalCustomsCode': 'secret',
+    },
+    subjects: [
+      { path: '[].salesOrderId', type: 'sales_order' },
+    ],
+    rawWithByField: {
+      '[].customerInfo.customerName': OPEN_WITH_RECIPIENT,
+      '[].customerInfo.customerPhone': OPEN_WITH_RECIPIENT,
+      '[].customerInfo.shippingAddress.recipientName': OPEN_WITH_RECIPIENT,
+      '[].customerInfo.shippingAddress.phone': OPEN_WITH_RECIPIENT,
+      '[].customerInfo.shippingAddress.postalCode': OPEN_WITH_RECIPIENT,
+      '[].customerInfo.shippingAddress.roadAddress': OPEN_WITH_RECIPIENT,
+      '[].customerInfo.shippingAddress.detailAddress': OPEN_WITH_RECIPIENT,
+      '[].customerInfo.shippingAddress.deliveryNote': OPEN_WITH_RECIPIENT,
+      '[].customerInfo.shippingAddress.personalCustomsCode': OPEN_WITH_RECIPIENT,
+    },
+  })
   @RequirePermission('fulfillment.order.read')
   @Get('companies/:companyName/orders')
   async getCompanyOrders(

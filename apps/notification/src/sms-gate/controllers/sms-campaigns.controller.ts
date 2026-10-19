@@ -4,7 +4,7 @@ import { CurrentUser } from '../../shared/decorators/user.decorator';
 import { ContinueSmsCampaignDto, CreateSmsCampaignDto, PreviewSmsCampaignDto } from '../dto';
 import { SmsGateEnabledGuard } from '../guards/sms-gate-enabled.guard';
 import { SmsCampaignsService } from '../services/sms-campaigns.service';
-import { RequirePermission } from '@app/authorization';
+import { RequirePermission, PiiResponse } from '@app/authorization';
 
 @ApiTags('sms-gate')
 @Controller('sms-gate/campaigns')
@@ -37,6 +37,7 @@ export class SmsCampaignsController {
     return this.service.create(dto, user.userId);
   }
 
+  @PiiResponse({ fields: { '[].name': 'name', '[].phoneNumber': 'phone' }, subjects: [{ path: '[].userId', type: 'user' }] })
   @RequirePermission('messaging.message.read')
   @Get(':id/clicks')
   clicks(@Param('id', ParseUUIDPipe) id: string) {

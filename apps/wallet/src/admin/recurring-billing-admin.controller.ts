@@ -18,7 +18,7 @@ import {
   AdminRecurringBillingListQueryDto,
 } from './dto/admin-recurring-billing.dto';
 import { InvoiceExecutorService } from '../invoices/invoice-executor.service';
-import { RequirePermission } from '@app/authorization';
+import { RequirePermission, PiiResponse } from '@app/authorization';
 
 @ApiTags('Admin - Recurring Billing')
 @WalletAdminAuth()
@@ -30,6 +30,7 @@ export class RecurringBillingAdminController {
   ) {}
 
   // 인보이스(미수금) 뷰 — 청구의 권위 상태 목록(ADR-0027 §8-2).
+  @PiiResponse({ fields: { 'data[].billingMethodDisplayName': 'text' }, subjects: [{ path: 'data[].userId', type: 'user' }] })
   @RequirePermission('membership.billing.read')
   @Get('invoices')
   @ApiOperation({ summary: 'List invoices (admin, ADR-0027)' })

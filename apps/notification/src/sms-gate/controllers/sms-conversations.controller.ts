@@ -4,7 +4,7 @@ import { CurrentUser } from '../../shared/decorators/user.decorator';
 import { ListSmsConversationsDto, ReplySmsConversationDto } from '../dto';
 import { SmsGateEnabledGuard } from '../guards/sms-gate-enabled.guard';
 import { SmsConversationsService } from '../services/sms-conversations.service';
-import { RequirePermission } from '@app/authorization';
+import { RequirePermission, PiiResponse } from '@app/authorization';
 
 @ApiTags('sms-gate')
 @Controller('sms-gate/conversations')
@@ -12,12 +12,28 @@ import { RequirePermission } from '@app/authorization';
 export class SmsConversationsController {
   constructor(private readonly service: SmsConversationsService) {}
 
+  @PiiResponse({
+    fields: { 'items[].phoneNumber': 'phone', 'items[].name': 'name', 'items[].lastMessage.text': 'text' },
+    // 비회원 번호와의 대화는 회원 id 가 없다 — 번호를 해시로 남긴다.
+    subjects: [
+      { path: 'items[].userId', type: 'user' },
+      { path: 'items[].phoneNumber', type: 'sms_conversation', hash: true },
+    ],
+  })
   @RequirePermission('messaging.message.read')
   @Get()
   list(@Query() dto: ListSmsConversationsDto) {
     return this.service.list(dto);
   }
 
+  @PiiResponse({
+    fields: { phoneNumber: 'phone', name: 'name', 'messages[].text': 'text' },
+    subjects: [
+      { path: 'userId', type: 'user' },
+      { path: 'phoneNumber', type: 'sms_conversation', hash: true },
+    ],
+    reveal: true,
+  })
   @RequirePermission('messaging.message.read')
   @Get('messages')
   detail(@Query('phone') phone?: string) {

@@ -18,7 +18,7 @@ import { AuthenticatedRequest } from '../wallet.module';
 import { RefundRequestsService } from '../refunds/refund-requests.service';
 import { AdminPaymentIntentListQueryDto } from './dto';
 import { RefundRequestActionDto } from '../refunds/dto';
-import { RequirePermission } from '@app/authorization';
+import { RequirePermission, PiiResponse } from '@app/authorization';
 
 @ApiTags('Admin - Refund Requests')
 @WalletAdminAuth()
@@ -26,6 +26,15 @@ import { RequirePermission } from '@app/authorization';
 export class RefundRequestsAdminController {
   constructor(private readonly service: RefundRequestsService) {}
 
+  @PiiResponse({
+    fields: {
+      'data[].accountNumber': 'account',
+      'data[].holderName': 'name',
+      'data[].reason': 'text',
+      'data[].adminNote': 'text',
+    },
+    subjects: [{ path: 'data[].userId', type: 'user' }],
+  })
   @RequirePermission('payment.refund.read')
   @Get()
   @ApiOperation({ summary: '대기 중인 환불 요청 목록 (admin)' })
@@ -37,6 +46,10 @@ export class RefundRequestsAdminController {
     }
   }
 
+  @PiiResponse({
+    fields: { accountNumber: 'account', holderName: 'name', reason: 'text', adminNote: 'text' },
+    subjects: [{ path: 'userId', type: 'user' }],
+  })
   @RequirePermission('payment.refund.execute')
   @Post(':id/approve')
   @HttpCode(200)
@@ -52,6 +65,10 @@ export class RefundRequestsAdminController {
     }
   }
 
+  @PiiResponse({
+    fields: { accountNumber: 'account', holderName: 'name', reason: 'text', adminNote: 'text' },
+    subjects: [{ path: 'userId', type: 'user' }],
+  })
   @RequirePermission('payment.refund.execute')
   @Post(':id/reject')
   @HttpCode(200)

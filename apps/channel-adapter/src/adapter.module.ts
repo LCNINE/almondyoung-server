@@ -8,7 +8,10 @@ import {
   JwtAuthGuard,
   PermissionGuard,
   PermissionModule,
+  piiMaskingProviders,
+  UnavailablePiiAccessRecorder,
 } from '@app/authorization';
+import { OutboxPiiAccessRecorder } from '@app/authorization/recorders/outbox-pii-access.recorder';
 import { LoggerModule } from 'nestjs-pino';
 import { loggerConfig } from '@app/shared/observability/logger.config';
 import { HttpModule } from '@nestjs/axios';
@@ -52,6 +55,7 @@ import {
   SHIPMENT_STREAM,
   FULFILLMENT_V2_STREAM,
   CHANNEL_ORDERS_COMMAND_STREAM,
+  IAM_STREAM,
 } from '@packages/event-contracts/streams';
 import { FulfillmentEventsConsumer } from './consumers/fulfillment-events.consumer';
 import { ShipmentEventsConsumer } from './consumers/shipment-events.consumer';
@@ -203,6 +207,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
               PAYMENT_STREAM,
               SHIPMENT_STREAM,
               FULFILLMENT_V2_STREAM,
+              IAM_STREAM,
             ],
             serviceName: 'channel-adapter',
             kafka: createKafkaConfigFromEnv()!,
@@ -295,6 +300,8 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
     // 권한 강제 — AUTHZ_ENFORCE=true 일 때만 일한다(기본 꺼짐). 기존 가드 뒤에 둔다.
     { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_INTERCEPTOR, useClass: AuthzShadowInterceptor },
+    // 개인정보 표시 제한 — 다른 응답 인터셉터보다 바깥에서 최종 본문을 본다.
+    ...piiMaskingProviders({ service: 'channel-adapter', recorder: process.env.KAFKA_BROKERS ? OutboxPiiAccessRecorder : UnavailablePiiAccessRecorder }),
     SyncStatusService,
     ...(!IS_SAFE_DEMO_MODE
       ? [

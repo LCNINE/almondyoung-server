@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RolesGuard, User, RequirePermission } from '@app/authorization';
+import { RolesGuard, User, RequirePermission, PiiResponse } from '@app/authorization';
 import { CreateBusinessLinkDto } from '../../sales-order/dto/create-business-link.dto';
 import {
   AssignCsCaseDto,
@@ -31,6 +31,18 @@ type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefi
 export class CsCasesController {
   constructor(private readonly service: CsCasesService) {}
 
+  @PiiResponse({
+    fields: {
+      'customerName': 'name',
+      'subject': 'text',
+      'description': 'text',
+      'metadata': 'redact',
+    },
+    subjects: [
+      { path: 'id', type: 'cs_case' },
+      { path: 'customerId', type: 'user' },
+    ],
+  })
   @RequirePermission('cs.inquiry.write')
   @Post()
   @ApiOperation({ summary: 'CS Case 생성' })
@@ -39,6 +51,18 @@ export class CsCasesController {
     return this.service.create(dto, this.getUserId(user));
   }
 
+  @PiiResponse({
+    fields: {
+      '[].customerName': 'name',
+      '[].subject': 'text',
+      '[].description': 'text',
+      '[].metadata': 'redact',
+    },
+    subjects: [
+      { path: '[].id', type: 'cs_case' },
+      { path: '[].customerId', type: 'user' },
+    ],
+  })
   @RequirePermission('cs.inquiry.read')
   @Get()
   @ApiOperation({ summary: 'CS Case 목록 조회' })
@@ -48,6 +72,20 @@ export class CsCasesController {
     return this.service.list(limit);
   }
 
+  @PiiResponse({
+    fields: {
+      'customerName': 'name',
+      'subject': 'text',
+      'description': 'text',
+      'metadata': 'redact',
+      'timeline[].body': 'text',
+    },
+    subjects: [
+      { path: 'id', type: 'cs_case' },
+      { path: 'customerId', type: 'user' },
+    ],
+    reveal: true,
+  })
   @RequirePermission('cs.inquiry.read')
   @Get(':id')
   @ApiOperation({ summary: 'CS Case 단건 조회(타임라인 포함)' })
@@ -57,6 +95,18 @@ export class CsCasesController {
     return this.service.getOne(id);
   }
 
+  @PiiResponse({
+    fields: {
+      'customerName': 'name',
+      'subject': 'text',
+      'description': 'text',
+      'metadata': 'redact',
+    },
+    subjects: [
+      { path: 'id', type: 'cs_case' },
+      { path: 'customerId', type: 'user' },
+    ],
+  })
   @RequirePermission('cs.inquiry.write')
   @Patch(':id/status')
   @ApiOperation({ summary: 'CS Case 상태 변경(재오픈 포함)' })
@@ -66,6 +116,18 @@ export class CsCasesController {
     return this.service.updateStatus(id, dto.status, this.getUserId(user));
   }
 
+  @PiiResponse({
+    fields: {
+      'customerName': 'name',
+      'subject': 'text',
+      'description': 'text',
+      'metadata': 'redact',
+    },
+    subjects: [
+      { path: 'id', type: 'cs_case' },
+      { path: 'customerId', type: 'user' },
+    ],
+  })
   @RequirePermission('cs.inquiry.write')
   @Patch(':id/assignee')
   @ApiOperation({ summary: 'CS Case 담당자 배정/해제' })

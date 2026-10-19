@@ -11,7 +11,7 @@ import {
   UseFilters,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { RequirePermission, User } from '@app/authorization';
+import { RequirePermission, User, PiiResponse } from '@app/authorization';
 import { GlobalExceptionFilter } from '@app/shared';
 import {
   DeadLetterQueryService,
@@ -50,6 +50,10 @@ export class EventFailuresController {
     return this.deadLetters.listSequences(limit, cursor, topic);
   }
 
+  @PiiResponse({
+    fields: { 'row.envelope': 'redact', 'sequence[].envelope': 'redact' },
+    subjects: [{ param: 'id', type: 'event_record' }],
+  })
   @RequirePermission('system.operations.read')
   @Get('dead-letters/:id')
   @ApiOperation({ summary: '컨슈머 실패 상세 — envelope·같은 순서·조치 기록' })
@@ -88,6 +92,7 @@ export class EventFailuresController {
     return this.outbox.listFailed(limit, cursor);
   }
 
+  @PiiResponse({ fields: { payload: 'redact' }, subjects: [{ param: 'id', type: 'event_record' }] })
   @RequirePermission('system.operations.read')
   @Get('outbox/:id')
   @ApiOperation({ summary: 'outbox 행 상세 — 페이로드·오류·조치 기록' })

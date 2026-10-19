@@ -5,7 +5,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/s
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 import { ListUserNotificationsDto } from '../dto/list-user-notifications.dto';
-import { RequirePermission } from '@app/authorization';
+import { RequirePermission, PiiResponse } from '@app/authorization';
 
 @ApiTags('notifications')
 @Controller('notifications')
@@ -26,6 +26,14 @@ export class NotificationController {
     return this.dispatcherService.send(dto);
   }
 
+  @PiiResponse({
+    fields: { payload: 'redact', renderedContent: 'redact', metadata: 'redact', errorDetails: 'redact' },
+    subjects: [
+      { path: 'notificationId', type: 'notification' },
+      { path: 'userId', type: 'user' },
+    ],
+    reveal: true,
+  })
   @RequirePermission('messaging.message.read')
   @Get(':id')
   @ApiOperation({
@@ -39,6 +47,10 @@ export class NotificationController {
     return this.dispatcherService.getNotification(id);
   }
 
+  @PiiResponse({
+    fields: { 'items[].phoneNumber': 'phone', 'items[].body': 'text', 'items[].subject': 'text' },
+    subjects: [{ param: 'userId', type: 'user' }],
+  })
   @RequirePermission('messaging.message.read')
   @Get('users/:userId')
   @ApiOperation({
