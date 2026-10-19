@@ -482,7 +482,7 @@ export class AttendanceJobsService {
         job.key,
         '출결 요청에 답변이 있어요',
         '내 요청 내역에서 담당자의 답변을 확인해 주세요.',
-        '/company/attendance/requests',
+        '/attendance/requests',
       );
 
       return;
@@ -509,7 +509,7 @@ export class AttendanceJobsService {
           job.key,
           '새 출결 요청이 있어요',
           '요청 검토에서 내용을 확인해 주세요.',
-          '/company/attendance/review',
+          '/attendance/review',
         );
       }
     }
