@@ -301,7 +301,14 @@ export function usePenTool({
       // 누르기만 하면 짧은 변의 1/4 크기로 그 자리에 놓는다. 손그림은 가로세로 비율을 고정한다
       const dragged = dist(from, to) >= handleSize
       const fallback = Math.min(design.widthMm, design.heightMm) / 4
-      const square = Math.max(Math.abs(to.x - from.x), Math.abs(to.y - from.y))
+      // 저장 검증이 가로·세로를 규격의 2배까지만 받는다
+      const maxW = design.widthMm * 2
+      const maxH = design.heightMm * 2
+      const square = Math.min(
+        Math.max(Math.abs(to.x - from.x), Math.abs(to.y - from.y)),
+        maxW,
+        maxH
+      )
       const hand = shapeKind.startsWith("hand")
       const width = dragged
         ? hand
@@ -324,8 +331,8 @@ export function usePenTool({
         opacity: shapeSetting.opacity / 100,
         x: mm(dragged ? Math.min(from.x, to.x) : from.x - width / 2),
         y: mm(dragged ? Math.min(from.y, to.y) : from.y - height / 2),
-        width: mm(Math.max(1, width)),
-        height: mm(height),
+        width: mm(Math.min(maxW, Math.max(1, width))),
+        height: mm(Math.min(maxH, height)),
       }
       change({ ...design, [side]: [...design[side], layer] })
       return setSelectedId(layer.id)

@@ -3,6 +3,7 @@ import {
   lineDashArray,
   lineFromPoints,
   lineGeometry,
+  linePreset,
   lineWorldPoints,
 } from "./line-shape"
 import { newDesign, parseDesign } from "./document"
@@ -11,6 +12,13 @@ import { makeLayer } from "./layer"
 const base = { x: 0, y: 0, width: 100, height: 4, strokeWidth: 2 }
 
 describe("선 스타일 점선", () => {
+  it("예전 strokeDash 선도 같은 프리셋으로 읽는다", () => {
+    expect(linePreset({ strokeDash: "dashed" })).toEqual([4, 2])
+    expect(linePreset({ lineDash: [7, 3], strokeDash: "dashed" })).toEqual([
+      7, 3,
+    ])
+  })
+
   it("망고보드 공식 (a·sw − sw), (b·sw + sw)", () => {
     expect(lineDashArray({ ...base, strokeWidth: 10, lineDash: [7, 3] })).toBe(
       "60 40"
@@ -56,6 +64,14 @@ describe("점으로 선 상자 만들기", () => {
       expect(p.x).toBeCloseTo(points[i].x, 2)
       expect(p.y).toBeCloseTo(points[i].y, 2)
     })
+  })
+})
+
+describe("뒤집은 선", () => {
+  it("화면에 보이는 대로 끝점을 읽는다 (좌우 반전이면 시작점이 오른쪽)", () => {
+    const [start, end] = lineWorldPoints({ ...base, flipX: true })
+    expect(start.x).toBeCloseTo(100)
+    expect(end.x).toBeCloseTo(0)
   })
 })
 

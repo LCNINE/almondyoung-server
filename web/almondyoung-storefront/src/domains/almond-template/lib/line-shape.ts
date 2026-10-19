@@ -32,6 +32,8 @@ type LineLayer = Pick<
   | "width"
   | "height"
   | "rotation"
+  | "flipX"
+  | "flipY"
   | "strokeWidth"
   | "strokeDash"
   | "lineDash"
@@ -65,10 +67,14 @@ export function lineWorldPoints(layer: LineLayer): Point[] {
   const rad = ((layer.rotation ?? 0) * Math.PI) / 180
   const cos = Math.cos(rad)
   const sin = Math.sin(rad)
-  return lineLocalPoints(layer).map((p) => ({
-    x: cx + (p.x - cx) * cos - (p.y - cy) * sin,
-    y: cy + (p.x - cx) * sin + (p.y - cy) * cos,
-  }))
+  // 화면 변환과 같은 순서: 가운데 기준으로 뒤집고 나서 돌린다
+  const fx = layer.flipX ? -1 : 1
+  const fy = layer.flipY ? -1 : 1
+  return lineLocalPoints(layer).map((p) => {
+    const dx = (p.x - cx) * fx
+    const dy = (p.y - cy) * fy
+    return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos }
+  })
 }
 
 const round = (value: number) => Math.round(value * 1000) / 1000
@@ -115,15 +121,20 @@ export function lineFromPoints(
 }
 
 // 망고보드 규칙: 각진·둥근 끝이 양쪽으로 두께의 반씩 늘어나므로 dash 는 한 두께 줄이고 gap 은 한 두께 늘린다
+// 예전 선은 strokeDash(파선·점선)로 저장돼 있어 같은 프리셋으로 읽는다
+export const linePreset = (
+  layer: Pick<Layer, "lineDash" | "strokeDash">
+): [number, number] | undefined =>
+  layer.lineDash ??
+  (layer.strokeDash === "dashed"
+    ? [4, 2]
+    : layer.strokeDash === "dotted"
+      ? [1, 1]
+      : undefined)
+
 export function lineDashArray(layer: LineLayer): string | undefined {
   const sw = lineWidth(layer)
-  const preset =
-    layer.lineDash ??
-    (layer.strokeDash === "dashed"
-      ? [4, 2]
-      : layer.strokeDash === "dotted"
-        ? [1, 1]
-        : undefined)
+  const preset = linePreset(layer)
   const [dash, gap] = layer.lineDashCustom
     ? layer.lineDashCustom
     : preset

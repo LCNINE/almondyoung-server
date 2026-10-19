@@ -92,17 +92,6 @@ export function FontPicker({
     const frame = requestAnimationFrame(() => setShown(true))
     return () => cancelAnimationFrame(frame)
   }, [open])
-  useEffect(() => {
-    if (!open) return
-    const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation()
-        onClose()
-      }
-    }
-    window.addEventListener("keydown", key, true)
-    return () => window.removeEventListener("keydown", key, true)
-  }, [open, onClose])
 
   if (!open || !host) return null
 
@@ -155,6 +144,11 @@ export function FontPicker({
       <div
         role="dialog"
         aria-label="폰트 선택"
+        // 이 화면에서 누른 키는 편집기 단축키(방향키 이동·Delete 삭제)로 가지 않는다. Esc 는 이 화면만 닫는다
+        onKeyDown={(event) => {
+          event.stopPropagation()
+          if (event.key === "Escape") onClose()
+        }}
         className="pointer-events-auto absolute inset-0 flex flex-col bg-white pr-[23px] pl-[14px] transition-transform duration-500 ease-[ease]"
         style={{ transform: shown ? "translateX(0)" : "translateX(-100%)" }}
       >

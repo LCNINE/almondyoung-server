@@ -432,15 +432,14 @@ export function useCanvasInteraction({
       points[index] = { x: points[index].x + dx, y: points[index].y + dy }
       const bent = index === 1 || !!layer.linePath
       setDesign((old) =>
-        updateLayer(
-          old,
-          side,
-          layer.id,
-          lineFromPoints(
+        updateLayer(old, side, layer.id, {
+          ...lineFromPoints(
             bent ? points : [points[0], points[2]],
             lineWidth(layer) * 5
-          )
-        )
+          ),
+          flipX: undefined,
+          flipY: undefined,
+        })
       )
       return
     }

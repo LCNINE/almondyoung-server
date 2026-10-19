@@ -8,6 +8,7 @@ import {
   LINE_DASHES,
   lineDashArray,
   lineGeometry,
+  linePreset,
   lineWidth,
   type LineCap,
 } from "../../lib/line-shape"
@@ -193,8 +194,8 @@ export function LineProperties({
     ? CUSTOM
     : (LINE_DASHES.find(
         (dash) =>
-          dash?.[0] === selected.lineDash?.[0] &&
-          dash?.[1] === selected.lineDash?.[1]
+          dash?.[0] === linePreset(selected)?.[0] &&
+          dash?.[1] === linePreset(selected)?.[1]
       ) ?? null)
   const capOptions: (LineCap | undefined)[] = [...LINE_CAPS, undefined]
   const capText = (cap: LineCap | undefined, side: "start" | "end") =>
@@ -264,9 +265,14 @@ export function LineProperties({
                 dash === CUSTOM
                   ? {
                       lineDash: undefined,
+                      strokeDash: undefined,
                       lineDashCustom: [round2(10 * unit), round2(10 * unit)],
                     }
-                  : { lineDash: dash ?? undefined, lineDashCustom: undefined }
+                  : {
+                      lineDash: dash ?? undefined,
+                      strokeDash: undefined,
+                      lineDashCustom: undefined,
+                    }
               )
             }
           />
@@ -325,7 +331,8 @@ export function LineProperties({
                   disabled={disabled}
                   onValue={(value) => {
                     const next: [number, number] = [...selected.lineDashCustom!]
-                    next[index] = round2(value * unit)
+                    // 큰 규격에선 px 값이 검증 한도(500mm)를 넘을 수 있다
+                    next[index] = Math.min(500, round2(value * unit))
                     apply({ lineDashCustom: next })
                   }}
                 />

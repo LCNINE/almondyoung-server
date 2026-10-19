@@ -192,7 +192,11 @@ export function StrokeLineControls({ target }: { target: StyleTarget }) {
           value={common(layers, (layer) => layer.strokeDash ?? "solid")}
           disabled={disabled}
           onPick={(dash) =>
-            apply({ strokeDash: dash === "solid" ? undefined : dash })
+            apply({
+              strokeDash: dash === "solid" ? undefined : dash,
+              lineDash: undefined,
+              lineDashCustom: undefined,
+            })
           }
         />
       )}

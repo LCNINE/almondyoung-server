@@ -692,7 +692,13 @@ export const almondFonts = pgTable(
     deletedBy: uuid('deleted_by'),
     ...timestampColumns,
   },
-  (table) => [uniqueIndex('almond_fonts_file_unique').on(table.fileId)],
+  (table) => [
+    uniqueIndex('almond_fonts_file_unique').on(table.fileId),
+    // 띄어쓰기·대소문자만 다른 이름도 같은 글꼴이다. 동시에 올려도 하나만 들어가게 DB 가 막는다
+    uniqueIndex('almond_fonts_active_name_unique')
+      .on(sql`lower(regexp_replace(${table.name}, '\\s', '', 'g'))`)
+      .where(sql`${table.deletedAt} is null`),
+  ],
 );
 
 export const ugcServiceSchema = {
