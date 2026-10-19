@@ -67,6 +67,7 @@ export const channelAdapterEnvSchema = z
     // Firebase Membership Sync
     ALMOND_AUTH_URL: z.string().url().optional(),
     USER_SERVICE_URL: z.string().url().optional(),
+    USER_SERVICE_INTERNAL_KEY: z.string().optional(),
     CHANNEL_ADAPTER_INTERNAL_KEY: z.string().optional(),
     // core 의 서버 간 내부 라우트를 부를 때 싣는 키. 없으면 수집 게이트가 활성 판매채널을 조회하지
     // 못하고, 게이트는 fail-closed 라 폴링이 통째로 멈춘다 (#654).

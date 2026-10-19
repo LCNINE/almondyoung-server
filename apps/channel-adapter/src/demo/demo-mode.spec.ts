@@ -54,6 +54,7 @@ describe('channel-adapter demo mode', () => {
       COUPANG_VENDOR_ID: 'vendor',
       MEDUSA_API_URL: 'https://medusa.example.com',
       MEDUSA_API_KEY: 'medusa-key',
+      USER_SERVICE_INTERNAL_KEY: 'user-service-key',
     };
 
     expect(validateChannelAdapterEnv(config)).toMatchObject(config);
