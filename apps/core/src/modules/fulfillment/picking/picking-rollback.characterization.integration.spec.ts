@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { ConflictException } from '@nestjs/common';
 import { and, eq, gt, sql } from 'drizzle-orm';
 import * as postgres from 'postgres';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -443,8 +443,9 @@ describeIfDb('피킹 되돌림 특성 테스트 (K1b-1) — 세 전략의 지금
   });
 
   /**
-   * 설계 D3 — K1b-2 에서 aggregate_then_sort 행만 `PICKING_PACKING_CUSTODY_INCOMPLETE` 로 바뀐다.
-   * aggregate 는 지금 grain 루프 안에서 잔량마다 소유자를 검사하므로 남의 PACKING 이 OWNER_MISMATCH 로 먼저 걸린다.
+   * 설계 D3 — K1b-2 이전: aggregate_then_sort 는 grain 루프 안에서 잔량마다 소유자를 검사해 남의 PACKING 이
+   * `PICKING_CUSTODY_OWNER_MISMATCH` 로 먼저 걸렸다. 지금: 세 전략 모두 커널이 grain 검사 뒤 PACKING ref 하나로 판정해
+   * `PICKING_PACKING_CUSTODY_INCOMPLETE` 를 낸다.
    */
   describe('unpick in ready_to_pack with packing custody under another work item', () => {
     const READY_TO_PACK_FOREIGN_PACKING: Array<[StrategyName, string, (balanceId: string) => string]> = [
@@ -595,13 +596,12 @@ describeIfDb('피킹 되돌림 특성 테스트 (K1b-1) — 세 전략의 지금
   });
 
   /**
-   * 설계 D1 — K1b-2 에서 aggregate_then_sort 행만 «성공, movedQty 0, 리스 갱신» 으로 바뀐다.
-   * 지금 aggregate 는 같은 사람으로의 SORTING→SORTING 이동을 건너뛰지 않아 moveCustody 가 400 을 던지고,
-   * 전략 handoff 트랜잭션 전체(batches.handoff 의 클레임 갱신 포함)가 되돌려진다.
+   * 설계 D1 — K1b-2 이전: aggregate_then_sort 는 같은 사람으로의 SORTING→SORTING 이동을 건너뛰지 않아 moveCustody 가
+   * 400 을 던졌고 전략 handoff 트랜잭션 전체(batches.handoff 의 클레임 갱신 포함)가 되돌려졌다.
+   * 지금: 세 전략 모두 «성공, movedQty 0, 리스 갱신» 이다(커널이 같은 작업자면 이동을 건너뛴다).
    */
   describe('handoff to the same worker', () => {
-    type SameWorkerExpectation = { ok: true; movedQty: number } | { ok: false; badRequestMessage: string };
-    const SAME_WORKER_HANDOFF: Array<[StrategyName, string, SameWorkerExpectation]> = [
+    const SAME_WORKER_HANDOFF: Array<[StrategyName, string, { ok: true; movedQty: number }]> = [
       ['discrete', 'succeeds with movedQty 0', { ok: true, movedQty: 0 }],
       ['pick_to_tote', 'succeeds with movedQty 0', { ok: true, movedQty: 0 }],
       ['aggregate_then_sort', 'succeeds with movedQty 0', { ok: true, movedQty: 0 }], // 설계 D1
@@ -612,34 +612,18 @@ describeIfDb('피킹 되돌림 특성 테스트 (K1b-1) — 세 전략의 지금
         const picked = await toPicking(tx, strategy);
         const before = await lineBalances(tx, picked);
 
-        if (expected.ok) {
-          const result = await handoff(picked, picked.worker.id);
-          const item = await loadWorkItemRow(tx, picked.workItemId);
-          expect(result).toMatchObject({
-            workerId: picked.worker.id,
-            leaseVersion: item.leaseVersion,
-            movedQty: expected.movedQty,
-          });
-          expect(item).toMatchObject({
-            status: 'picking',
-            pickerId: picked.worker.id,
-            leaseVersion: picked.leaseVersion + 1,
-          });
-        } else {
-          const error = await handoff(picked, picked.worker.id).then(
-            () => undefined,
-            (caught: unknown) => caught,
-          );
-          expect(error).toBeInstanceOf(BadRequestException);
-          if (!(error instanceof BadRequestException)) return;
-          expect(error.getResponse()).toMatchObject({ statusCode: 400, message: expected.badRequestMessage });
-          const item = await loadWorkItemRow(tx, picked.workItemId);
-          expect(item).toMatchObject({
-            status: 'picking',
-            pickerId: picked.worker.id,
-            leaseVersion: picked.leaseVersion,
-          });
-        }
+        const result = await handoff(picked, picked.worker.id);
+        const item = await loadWorkItemRow(tx, picked.workItemId);
+        expect(result).toMatchObject({
+          workerId: picked.worker.id,
+          leaseVersion: item.leaseVersion,
+          movedQty: expected.movedQty,
+        });
+        expect(item).toMatchObject({
+          status: 'picking',
+          pickerId: picked.worker.id,
+          leaseVersion: picked.leaseVersion + 1,
+        });
         expect(await lineBalances(tx, picked)).toEqual(before);
       });
     });
