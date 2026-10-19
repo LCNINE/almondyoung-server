@@ -582,6 +582,93 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
     });
   });
 
+  it('K2 특성: 배치 밖 planned 전량 취소는 manifest +2 (D2)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await plannedFixture(tx, 3);
+      const before = await shipmentRow(tx, fixture.shipment.id);
+
+      const result = await planning.cancelOutstanding(
+        fixture.shipment.id,
+        cancelDto(fixture),
+        `k2-planned-cancel-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      expect(result.operationStatus).toBe('completed');
+      const after = await shipmentRow(tx, fixture.shipment.id);
+      expect(after.status).toBe('canceled');
+      expect(after.manifestVersion - before.manifestVersion).toBe(2);
+    });
+  });
+
+  it('K2 특성: planned 일부 취소는 manifest +2 (D2), 안 건드린 줄 버전 그대로', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await plannedFixture(tx, 3);
+      // 줄이 하나뿐인 픽스처라 안 건드릴 둘째 줄을 같은 상자에 더한다.
+      const [secondItem] = await tx
+        .insert(wmsTables.fulfillmentOrderItems)
+        .values({
+          fulfillmentOrderId: fixture.item.fulfillmentOrderId,
+          skuId: fixture.skuId,
+          qty: 2,
+          status: fixture.item.status,
+        })
+        .returning();
+      const [untouched] = await tx
+        .insert(wmsTables.shipmentLines)
+        .values({
+          shipmentId: fixture.shipment.id,
+          fulfillmentOrderItemId: secondItem.id,
+          skuId: fixture.skuId,
+          qty: 2,
+        })
+        .returning();
+      // planned 상자는 줄마다 확정 예약이 줄 수량만큼 있어야 한다 — 첫 줄의 예약을 본떠 둘째 줄에도 심는다.
+      const [firstReservation] = await tx
+        .select()
+        .from(wmsTables.stockReservations)
+        .where(eq(wmsTables.stockReservations.shipmentLineId, fixture.line.id));
+      await tx.insert(wmsTables.stockReservations).values({
+        ...firstReservation,
+        id: undefined,
+        shipmentLineId: untouched.id,
+        fulfillmentOrderItemId: secondItem.id,
+        quantity: 2,
+      });
+      await tx
+        .update(wmsTables.shipmentLines)
+        .set({ reservedQty: 2 })
+        .where(eq(wmsTables.shipmentLines.id, untouched.id));
+      await tx
+        .update(wmsTables.fulfillmentOrderItems)
+        .set({ reservedQty: 2 })
+        .where(eq(wmsTables.fulfillmentOrderItems.id, secondItem.id));
+      const before = await shipmentRow(tx, fixture.shipment.id);
+      const untouchedBefore = (
+        await tx.select().from(wmsTables.shipmentLines).where(eq(wmsTables.shipmentLines.id, untouched.id))
+      )[0];
+
+      const result = await planning.cancelOutstanding(
+        fixture.shipment.id,
+        cancelDto(fixture, 1),
+        `k2-partial-planned-cancel-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      expect(result.operationStatus).toBe('completed');
+      const after = await shipmentRow(tx, fixture.shipment.id);
+      expect(after.status).toBe('draft');
+      expect(after.manifestVersion - before.manifestVersion).toBe(2);
+      const [untouchedAfter] = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.id, untouched.id));
+      expect(untouchedAfter.lineVersion - untouchedBefore.lineVersion).toBe(0);
+    });
+  });
+
   it('voids a registered waybill on a draft box and cancels immediately', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await physicalFixture(tx, 2, 2);

@@ -134,6 +134,21 @@ describeIfDb('전체 취소 → 이탈 (스펙 §8 E10, PR 3)', () => {
     });
   });
 
+  it('K2 특성: 이탈로 끝나는 전량 취소는 manifest +2 (D2)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { second, wiring } = await started(tx);
+      const before = await shipmentOf(tx, second.shipmentId);
+      expect(before.status).toBe('planned');
+
+      const result = await cancel(wiring, second, tx);
+
+      expect(result.operationStatus).toBe('completed');
+      const after = await shipmentOf(tx, second.shipmentId);
+      expect(after.status).toBe('canceled');
+      expect(after.manifestVersion - before.manifestVersion).toBe(2);
+    });
+  });
+
   it('집은 게 있으면 pending — 박스는 planned 로 withdrawing(exit_to canceled)이 되고 취소 오퍼레이션을 기다린다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { second, wiring, sessionId } = await started(tx);
@@ -232,6 +247,36 @@ describeIfDb('전체 취소 → 이탈 (스펙 §8 E10, PR 3)', () => {
         .where(eq(wmsTables.shipmentOperations.id, pending.operationId));
       expect(operation.status).toBe('completed');
       await assertFulfillmentInvariantsFor(tx, [first.shipmentId]);
+    });
+  });
+
+  it('K2 특성: 대기 취소 재개는 manifest +2 (D2)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, wiring } = await started(tx);
+      const pending = await cancel(wiring, first, tx, 1); // 첫 박스는 수량 2
+      expect(pending.operationStatus).toBe('pending');
+      const atPending = await shipmentOf(tx, first.shipmentId);
+
+      await wiring.batches.excludeShipment(
+        first.batchId,
+        first.shipmentId,
+        { reason: '취소 대기 상자 빼기' },
+        `x-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      const after = await shipmentOf(tx, first.shipmentId);
+      expect(after.manifestVersion - atPending.manifestVersion).toBe(2);
+      // 재개 응답(resumePendingCancellation 이 돌려주는 CancelResponse)은 명령 요청 행에 저장된다.
+      const [request] = await tx
+        .select()
+        .from(wmsTables.fulfillmentCommandRequests)
+        .where(eq(wmsTables.fulfillmentCommandRequests.operationId, pending.operationId));
+      expect(request.responseSnapshot).toMatchObject({
+        operationStatus: 'completed',
+        manifestVersion: after.manifestVersion,
+      });
     });
   });
 

@@ -39,6 +39,13 @@ import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { loadReservationQueueKey } from './reservation-queue-key';
 import { ShipmentReservationService } from './shipment-reservation.service';
+import { transitionShipments } from '../shipment/shipment-lifecycle';
+import {
+  editShipmentManifest,
+  lockedAggregateOf,
+  ManifestEditDeps,
+  ManifestWriter,
+} from '../shipment/shipment-manifest-edit';
 import { ACTIVE_WORK_ITEM_STATUSES } from './work-item-status';
 import {
   assertShipmentHasNoActiveWaybill,
@@ -117,11 +124,8 @@ function sameJson(left: unknown, right: unknown): boolean {
   return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
 }
 
-type RecipientRevisionUpdate = {
-  recipientSnapshot?: (typeof wmsTables.shipments.$inferInsert)['recipientSnapshot'];
-  manifestVersion?: number;
-  entrancePassword?: string;
-};
+/** manifestVersion 은 담지 않는다 — 구성 편집의 문이 reviseRecipient 를 보고 끝맺음에서 올린다 */
+export type RecipientRevisionUpdate = { recipientSnapshot?: unknown; entrancePassword?: string };
 
 export type RecipientRevisionOutcome = {
   update: RecipientRevisionUpdate;
@@ -133,8 +137,8 @@ export type RecipientRevisionOutcome = {
  * 수령인 정정 요청을 shipments update 패치로 바꾼다.
  *
  * 공동현관 비번은 recipient_snapshot 밖에 사는 크리덴셜이지 배송 지시가 아니다.
- * 그래서 비번만 정정하면 recipientSnapshot 도 manifestVersion 도 패치에 담지
- * 않는다 — 그 둘은 합배송 호환성(canonicalConsolidationRecipient)과 송장 멱등성
+ * 그래서 비번만 정정하면 recipientSnapshot 을 패치에 담지 않고(snapshotChanged=false),
+ * 문도 manifestVersion 을 올리지 않는다 — 그 둘은 합배송 호환성(canonicalConsolidationRecipient)과 송장 멱등성
  * (waybill.recipientHash / manifestVersion)의 입력이라, 주소가 그대로인데 값이
  * 움직이면 이미 발행된 멀쩡한 송장이 stale 로 무효화된다.
  *
@@ -142,16 +146,13 @@ export type RecipientRevisionOutcome = {
  * 치지 않는다(빈 값으로 지우는 경로는 이 커맨드의 범위 밖이다).
  */
 export function resolveRecipientRevision(
-  current: { recipientSnapshot: unknown; manifestVersion: number; entrancePassword: string | null },
+  current: { recipientSnapshot: unknown; entrancePassword: string | null },
   requested: { recipientSnapshot?: unknown; entrancePassword?: string },
 ): RecipientRevisionOutcome {
   const update: RecipientRevisionUpdate = {};
   const snapshotChanged =
     requested.recipientSnapshot !== undefined && !sameJson(current.recipientSnapshot, requested.recipientSnapshot);
-  if (snapshotChanged) {
-    update.recipientSnapshot = requested.recipientSnapshot;
-    update.manifestVersion = current.manifestVersion + 1;
-  }
+  if (snapshotChanged) update.recipientSnapshot = requested.recipientSnapshot;
 
   const nextPassword = requested.entrancePassword?.trim() ?? '';
   const passwordChanged = nextPassword !== '' && nextPassword !== current.entrancePassword;
@@ -201,55 +202,61 @@ export class ShipmentPlanningService {
         if (aggregate.shipment.status !== 'draft') {
           throw this.conflict('SHIPMENT_NOT_DRAFT', `Shipment ${shipmentId} must be Draft to split`);
         }
-        await this.assertNoCustodyOrActiveWork(aggregate, tx);
-        await this.assertNoActiveWaybill(shipmentId, tx);
 
-        const lineById = new Map(aggregate.lines.map((line) => [line.id, line]));
-        const selected = moves.map((move) => {
-          const line = lineById.get(move.shipmentLineId);
-          if (!line) throw new BadRequestException(`Shipment line ${move.shipmentLineId} is not in ${shipmentId}`);
-          if (line.lineVersion !== move.expectedLineVersion) {
-            throw this.conflict('SHIPMENT_LINE_STALE_VERSION', `Shipment line ${line.id} has changed`);
-          }
-          if (move.qty > line.qty)
-            throw new BadRequestException(`Cannot move ${move.qty}; line ${line.id} has ${line.qty}`);
-          return { move, line };
-        });
-        const totalSourceQty = aggregate.lines.reduce((total, line) => total + line.qty, 0);
-        const totalMoveQty = selected.reduce((total, entry) => total + entry.move.qty, 0);
-        if (totalMoveQty >= totalSourceQty) {
-          throw new BadRequestException('A split must leave positive quantity in the source shipment');
-        }
+        const applied = await editShipmentManifest(
+          this.manifestDeps(),
+          { shipmentIds: [shipmentId], allow: ['draft'] },
+          async (writer, aggregates) => {
+            const locked = lockedAggregateOf(aggregates, shipmentId);
+            const lineById = new Map(locked.lines.map((line) => [line.id, line]));
+            const selected = moves.map((move) => {
+              const line = lineById.get(move.shipmentLineId);
+              if (!line) throw new BadRequestException(`Shipment line ${move.shipmentLineId} is not in ${shipmentId}`);
+              if (line.lineVersion !== move.expectedLineVersion) {
+                throw this.conflict('SHIPMENT_LINE_STALE_VERSION', `Shipment line ${line.id} has changed`);
+              }
+              if (move.qty > line.qty)
+                throw new BadRequestException(`Cannot move ${move.qty}; line ${line.id} has ${line.qty}`);
+              return { move, line };
+            });
+            const totalSourceQty = locked.lines.reduce((total, line) => total + line.qty, 0);
+            const totalMoveQty = selected.reduce((total, entry) => total + entry.move.qty, 0);
+            if (totalMoveQty >= totalSourceQty) {
+              throw new BadRequestException('A split must leave positive quantity in the source shipment');
+            }
 
-        const confirmedByLine = await this.confirmedReservationQtyByLine(
-          selected.map((entry) => entry.line.id),
+            const confirmedByLine = await this.confirmedReservationQtyByLine(
+              selected.map((entry) => entry.line.id),
+              tx,
+            );
+            const reservationTargets = new Map<string, number>();
+            for (const { move, line } of selected) {
+              const confirmed = confirmedByLine.get(line.id) ?? 0;
+              const unreserved = line.qty - confirmed;
+              const minimum = Math.max(0, move.qty - unreserved);
+              const maximum = Math.min(move.qty, confirmed);
+              const requested = move.targetReservedQty ?? minimum;
+              if (requested < minimum || requested > maximum) {
+                throw new BadRequestException(
+                  `targetReservedQty for line ${line.id} must be between ${minimum} and ${maximum}`,
+                );
+              }
+              reservationTargets.set(line.id, requested);
+            }
+
+            return this.applySplit(tx, writer, {
+              aggregate: locked,
+              selected,
+              reservationTargets,
+              actor,
+              meta: dto,
+              idempotencyKey,
+              requestHash,
+            });
+          },
           tx,
         );
-        const reservationTargets = new Map<string, number>();
-        for (const { move, line } of selected) {
-          const confirmed = confirmedByLine.get(line.id) ?? 0;
-          const unreserved = line.qty - confirmed;
-          const minimum = Math.max(0, move.qty - unreserved);
-          const maximum = Math.min(move.qty, confirmed);
-          const requested = move.targetReservedQty ?? minimum;
-          if (requested < minimum || requested > maximum) {
-            throw new BadRequestException(
-              `targetReservedQty for line ${line.id} must be between ${minimum} and ${maximum}`,
-            );
-          }
-          reservationTargets.set(line.id, requested);
-        }
-
-        return this.applySplit(tx, {
-          aggregate,
-          selected,
-          reservationTargets,
-          actor,
-          meta: dto,
-          action: 'shipment.split',
-          idempotencyKey,
-          requestHash,
-        });
+        return this.completeSplit(tx, applied, actor, dto, 'shipment.split');
       },
       tx,
     );
@@ -290,46 +297,55 @@ export class ShipmentPlanningService {
         if (aggregate.lines.some((line) => line.salesOrderId !== baseOrderId)) {
           throw this.conflict('SHIPMENT_CONSOLIDATED', `Shipment ${shipmentId} carries lines of another sales order`);
         }
-        await this.assertNoCustodyOrActiveWork(aggregate, tx);
-        await this.assertNoActiveWaybill(shipmentId, tx);
 
-        const confirmedByLine = await this.confirmedReservationQtyByLine(
-          aggregate.lines.map((line) => line.id),
+        const applied = await editShipmentManifest(
+          this.manifestDeps(),
+          { shipmentIds: [shipmentId], allow: ['draft'] },
+          async (writer, aggregates) => {
+            const locked = lockedAggregateOf(aggregates, shipmentId);
+            const confirmedByLine = await this.confirmedReservationQtyByLine(
+              locked.lines.map((line) => line.id),
+              tx,
+            );
+            const lines = [...locked.lines].sort((a, b) => a.id.localeCompare(b.id));
+            // 넘치게 예약된 라인이 다른 라인의 미예약 몫을 상쇄하지 않게 0 밑을 자른다(상자 합·판정과 같은 정의).
+            // 불변식 검사가 잠금 단계에서 초과 예약을 막으므로 방어선이다 — 스펙으로는 닿지 않는다.
+            const unreservedOf = (line: ShipmentLineRow) => Math.max(0, line.qty - (confirmedByLine.get(line.id) ?? 0));
+            const totalUnreserved = lines.reduce((total, line) => total + unreservedOf(line), 0);
+            const totalConfirmed = lines.reduce((total, line) => total + (confirmedByLine.get(line.id) ?? 0), 0);
+            if (totalUnreserved <= 0) {
+              throw this.conflict(
+                'SHIPMENT_FULLY_RESERVED',
+                `Shipment ${shipmentId} has no unreserved quantity to split`,
+              );
+            }
+            if (totalConfirmed <= 0) {
+              throw this.conflict(
+                'SHIPMENT_NOTHING_RESERVED',
+                `Shipment ${shipmentId} has no reserved quantity to keep; nothing would remain in the source`,
+              );
+            }
+
+            const selected = lines
+              .filter((line) => unreservedOf(line) > 0)
+              .map((line) => ({
+                move: { shipmentLineId: line.id, expectedLineVersion: line.lineVersion, qty: unreservedOf(line) },
+                line,
+              }));
+            const reservationTargets = new Map(selected.map(({ line }) => [line.id, 0]));
+            return this.applySplit(tx, writer, {
+              aggregate: locked,
+              selected,
+              reservationTargets,
+              actor,
+              meta: dto,
+              idempotencyKey,
+              requestHash,
+            });
+          },
           tx,
         );
-        const lines = [...aggregate.lines].sort((a, b) => a.id.localeCompare(b.id));
-        // 넘치게 예약된 라인이 다른 라인의 미예약 몫을 상쇄하지 않게 0 밑을 자른다(상자 합·판정과 같은 정의).
-        // 불변식 검사가 잠금 단계에서 초과 예약을 막으므로 방어선이다 — 스펙으로는 닿지 않는다.
-        const unreservedOf = (line: ShipmentLineRow) => Math.max(0, line.qty - (confirmedByLine.get(line.id) ?? 0));
-        const totalUnreserved = lines.reduce((total, line) => total + unreservedOf(line), 0);
-        const totalConfirmed = lines.reduce((total, line) => total + (confirmedByLine.get(line.id) ?? 0), 0);
-        if (totalUnreserved <= 0) {
-          throw this.conflict('SHIPMENT_FULLY_RESERVED', `Shipment ${shipmentId} has no unreserved quantity to split`);
-        }
-        if (totalConfirmed <= 0) {
-          throw this.conflict(
-            'SHIPMENT_NOTHING_RESERVED',
-            `Shipment ${shipmentId} has no reserved quantity to keep; nothing would remain in the source`,
-          );
-        }
-
-        const selected = lines
-          .filter((line) => unreservedOf(line) > 0)
-          .map((line) => ({
-            move: { shipmentLineId: line.id, expectedLineVersion: line.lineVersion, qty: unreservedOf(line) },
-            line,
-          }));
-        const reservationTargets = new Map(selected.map(({ line }) => [line.id, 0]));
-        return this.applySplit(tx, {
-          aggregate,
-          selected,
-          reservationTargets,
-          actor,
-          meta: dto,
-          action: 'shipment.split_unreserved',
-          idempotencyKey,
-          requestHash,
-        });
+        return this.completeSplit(tx, applied, actor, dto, 'shipment.split_unreserved');
       },
       tx,
     );
@@ -356,43 +372,47 @@ export class ShipmentPlanningService {
         if (aggregate.shipment.status !== 'draft') {
           throw this.conflict('SHIPMENT_REOPEN_REQUIRED', 'Recipient can only be revised on a Draft shipment');
         }
-        await this.assertNoCustodyOrActiveWork(aggregate, tx);
-        await this.assertNoActiveWaybill(shipmentId, tx);
 
-        const revision = resolveRecipientRevision(
-          {
-            recipientSnapshot: aggregate.shipment.recipientSnapshot,
-            manifestVersion: aggregate.shipment.manifestVersion,
-            entrancePassword: aggregate.shipment.entrancePassword,
+        // manifestVersion +1(수령인이 바뀐 때만 — 비번만이면 그대로)은 문의 끝맺음이 한다
+        const { revision, overridesOrder, before, operation } = await editShipmentManifest(
+          this.manifestDeps(),
+          { shipmentIds: [shipmentId], allow: ['draft'] },
+          async (writer, aggregates) => {
+            const locked = lockedAggregateOf(aggregates, shipmentId);
+            const revision = resolveRecipientRevision(
+              {
+                recipientSnapshot: locked.shipment.recipientSnapshot,
+                entrancePassword: locked.shipment.entrancePassword,
+              },
+              dto,
+            );
+            if (!revision.snapshotChanged && !revision.passwordChanged) {
+              // 비번 값은 메시지에 싣지 않는다 — 크리덴셜이라 예외 본문·로그에 남으면 안 된다.
+              throw new BadRequestException('Recipient revision has no change');
+            }
+            // 배송 지시를 실제로 덮어쓸 때만 override 스코프를 요구한다. 비번만 고치는
+            // 정정은 주문의 배송지를 건드리지 않으므로 이 판정에 들어가지 않는다.
+            const orderRecipients = revision.snapshotChanged ? await this.loadOrderRecipientSnapshots(locked, tx) : [];
+            const overridesOrder = orderRecipients.some((recipient) => !sameJson(recipient, dto.recipientSnapshot));
+            if (overridesOrder) await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT);
+
+            const before = this.snapshot(locked);
+            const operation = await this.createOperation(
+              tx,
+              'recipient_revision',
+              actor,
+              dto.reason,
+              dto.csCaseId,
+              dto.note,
+              idempotencyKey,
+              requestHash,
+              before,
+            );
+            await this.writeRecipientRevision(writer, shipmentId, revision);
+            return { revision, overridesOrder, before, operation };
           },
-          dto,
-        );
-        if (!revision.snapshotChanged && !revision.passwordChanged) {
-          // 비번 값은 메시지에 싣지 않는다 — 크리덴셜이라 예외 본문·로그에 남으면 안 된다.
-          throw new BadRequestException('Recipient revision has no change');
-        }
-        // 배송 지시를 실제로 덮어쓸 때만 override 스코프를 요구한다. 비번만 고치는
-        // 정정은 주문의 배송지를 건드리지 않으므로 이 판정에 들어가지 않는다.
-        const orderRecipients = revision.snapshotChanged ? await this.loadOrderRecipientSnapshots(aggregate, tx) : [];
-        const overridesOrder = orderRecipients.some((recipient) => !sameJson(recipient, dto.recipientSnapshot));
-        if (overridesOrder) await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT);
-
-        const before = this.snapshot(aggregate);
-        const operation = await this.createOperation(
           tx,
-          'recipient_revision',
-          actor,
-          dto.reason,
-          dto.csCaseId,
-          dto.note,
-          idempotencyKey,
-          requestHash,
-          before,
         );
-        await tx
-          .update(wmsTables.shipments)
-          .set({ ...revision.update, lastUpdated: new Date() })
-          .where(eq(wmsTables.shipments.id, shipmentId));
         await this.invariant.assertFulfillmentOrders(aggregate.fulfillmentOrderIds, tx);
         const after = this.snapshot(await this.loadAggregate(shipmentId, tx));
         await this.completeOperation(tx, operation.id, [{ shipmentId, role: 'target', before, after }]);
@@ -415,7 +435,7 @@ export class ShipmentPlanningService {
 
   /**
    * 채널 변경(#1016 5번 행)이 박스 수령인을 따라가게 한다. `reviseRecipient`(운영자)와 같은 검사·같은 기록을 하되 둘이 다르다:
-   * 배치 밖 `planned` 도 받고(작업 항목은 `assertNoCustodyOrActiveWork` 가 막는다), 이 판매주문 밖의 라인을 실은 박스는 거절한다.
+   * 배치 밖 `planned` 도 받고(작업 항목은 구성 편집의 문이 `assertShipmentHasNoCustodyOrActiveWork` 로 막는다), 이 판매주문 밖의 라인을 실은 박스는 거절한다.
    * 거절은 `ConflictException({ code })` 다 — 호출자가 savepoint 를 되돌리고 대기로 남긴다.
    */
   async reviseRecipientFromChannel(
@@ -451,48 +471,66 @@ export class ShipmentPlanningService {
         if (aggregate.lines.some((line) => line.salesOrderId !== salesOrderId)) {
           throw this.conflict('SHIPMENT_CONSOLIDATED', `Shipment ${shipmentId} carries lines of another sales order`);
         }
-        await this.assertNoCustodyOrActiveWork(aggregate, tx);
-        await this.assertNoActiveWaybill(shipmentId, tx);
-        if (aggregate.shipment.status === 'planned') this.assertRecipientComplete(recipientSnapshot);
 
-        const revision = resolveRecipientRevision(
-          {
-            recipientSnapshot: aggregate.shipment.recipientSnapshot,
-            manifestVersion: aggregate.shipment.manifestVersion,
-            entrancePassword: aggregate.shipment.entrancePassword,
+        const revised = await editShipmentManifest(
+          this.manifestDeps(),
+          { shipmentIds: [shipmentId], allow: ['draft', 'planned'] },
+          async (writer, aggregates) => {
+            const locked = lockedAggregateOf(aggregates, shipmentId);
+            if (locked.shipment.status === 'planned') this.assertRecipientComplete(recipientSnapshot);
+
+            const revision = resolveRecipientRevision(
+              {
+                recipientSnapshot: locked.shipment.recipientSnapshot,
+                entrancePassword: locked.shipment.entrancePassword,
+              },
+              { recipientSnapshot },
+            );
+            if (!revision.snapshotChanged) return null;
+
+            const before = this.snapshot(locked);
+            const operation = await this.createOperation(
+              tx,
+              'recipient_revision',
+              actor,
+              'CHANNEL_ORDER_MODIFIED',
+              undefined,
+              undefined,
+              idempotencyKey,
+              requestHash,
+              before,
+            );
+            await this.writeRecipientRevision(writer, shipmentId, revision);
+            return { before, operation };
           },
-          { recipientSnapshot },
+          tx,
         );
-        if (!revision.snapshotChanged) {
+        if (!revised) {
           return { response: { changed: false }, resourceType: 'shipment', resourceId: shipmentId };
         }
-
-        const before = this.snapshot(aggregate);
-        const operation = await this.createOperation(
-          tx,
-          'recipient_revision',
-          actor,
-          'CHANNEL_ORDER_MODIFIED',
-          undefined,
-          undefined,
-          idempotencyKey,
-          requestHash,
-          before,
-        );
-        await tx
-          .update(wmsTables.shipments)
-          .set({ ...revision.update, lastUpdated: new Date() })
-          .where(eq(wmsTables.shipments.id, shipmentId));
+        const { before, operation } = revised;
         await this.invariant.assertFulfillmentOrders(aggregate.fulfillmentOrderIds, tx);
         const after = this.snapshot(await this.loadAggregate(shipmentId, tx));
         await this.completeOperation(tx, operation.id, [{ shipmentId, role: 'target', before, after }]);
-        await this.auditCommand(tx, actor, 'shipment.revise_recipient_from_channel', operation.id, 'CHANNEL_ORDER_MODIFIED', {
-          shipmentId,
-          salesOrderId,
-          before,
-          after,
-        });
-        return { response: { changed: true }, resourceType: 'shipment', resourceId: shipmentId, operationId: operation.id };
+        await this.auditCommand(
+          tx,
+          actor,
+          'shipment.revise_recipient_from_channel',
+          operation.id,
+          'CHANNEL_ORDER_MODIFIED',
+          {
+            shipmentId,
+            salesOrderId,
+            before,
+            after,
+          },
+        );
+        return {
+          response: { changed: true },
+          resourceType: 'shipment',
+          resourceId: shipmentId,
+          operationId: operation.id,
+        };
       },
       tx,
     );
@@ -537,19 +575,13 @@ export class ShipmentPlanningService {
           requestHash,
           before,
         );
-        const profileChanged = aggregate.shipment.shippingProfileId !== dto.shippingProfileId;
-        await tx
-          .update(wmsTables.shipments)
-          .set({
-            status: 'planned',
-            plannedAt: new Date(),
-            shippingProfileId: dto.shippingProfileId,
-            manifestVersion: profileChanged
-              ? aggregate.shipment.manifestVersion + 1
-              : aggregate.shipment.manifestVersion,
-            lastUpdated: new Date(),
-          })
-          .where(eq(wmsTables.shipments.id, shipmentId));
+        await transitionShipments(tx, {
+          shipmentIds: [shipmentId],
+          from: ['draft'],
+          to: 'planned',
+          shippingProfileId: dto.shippingProfileId,
+          stale: 'unreachable',
+        });
         await this.invariant.assertFulfillmentOrders(aggregate.fulfillmentOrderIds, tx);
         const after = this.snapshot(await this.loadAggregate(shipmentId, tx));
         await this.completeOperation(tx, operation.id, [{ shipmentId, role: 'target', before, after }]);
@@ -683,10 +715,13 @@ export class ShipmentPlanningService {
         if (!settleable) {
           await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_REOPEN);
           await this.markActiveWorkItemWaitingForCancellation(shipmentId, operation.id, tx);
-          await tx
-            .update(wmsTables.shipments)
-            .set({ status: 'recovery_required', recoveryCode: 'CANCEL_REPLAN_PENDING', lastUpdated: new Date() })
-            .where(eq(wmsTables.shipments.id, shipmentId));
+          await transitionShipments(tx, {
+            shipmentIds: [shipmentId],
+            from: [aggregate.shipment.status],
+            to: 'recovery_required',
+            recoveryCode: 'CANCEL_REPLAN_PENDING',
+            stale: 'unreachable',
+          });
           await this.reservations.recompute(shipmentId, tx);
           await this.invariant.assertFulfillmentOrders(aggregate.fulfillmentOrderIds, tx);
           await this.recordPendingIntent(tx, operation.id, aggregate, dto, requestedLines, before);
@@ -1195,10 +1230,13 @@ export class ShipmentPlanningService {
     tx: DbTx,
   ): Promise<CancelResponse> {
     const operationId = operation.id;
-    await tx
-      .update(wmsTables.shipments)
-      .set({ status: 'draft', recoveryCode: null, plannedAt: null, lastUpdated: new Date() })
-      .where(eq(wmsTables.shipments.id, pending.shipmentId));
+    await transitionShipments(tx, {
+      shipmentIds: [pending.shipmentId],
+      from: [aggregate.shipment.status],
+      to: 'draft',
+      expect: aggregate.shipment.status === 'recovery_required' ? { recoveryCode: 'CANCEL_REPLAN_PENDING' } : undefined,
+      stale: 'unreachable',
+    });
     await tx
       .delete(wmsTables.shipmentOperationMembers)
       .where(
@@ -1318,7 +1356,8 @@ export class ShipmentPlanningService {
   /**
    * 막힘 없음 갈래의 손질(스펙 §4.1 ①~③). 시작 전 배치의 작업 항목을 빼고, `registered`
    * 송장을 로컬 무효화하고(E10 과 같은 `waybills.void`, 한진 접수는 건드리지 않는다), planned 면 draft 로 되돌린다.
-   * 줄·manifestVersion 은 건드리지 않는다 — 그건 뒤따르는 draft 취소의 몫이다.
+   * 줄은 건드리지 않는다(뒤따르는 draft 취소의 몫). 다만 `revert_planned` 는 재개봉이라(D2) manifestVersion 을 +1 하고
+   * 검수 흔적(inspectedQty·forced)을 지운다 — 뒤따르는 줄 줄이기의 +1 과 합쳐 planned 취소는 +2 가 된다.
    */
   private async settleForCancellation(
     shipmentId: string,
@@ -1355,10 +1394,12 @@ export class ShipmentPlanningService {
           break;
 
         case 'revert_planned':
-          await tx
-            .update(wmsTables.shipments)
-            .set({ status: 'draft', plannedAt: null, lastUpdated: new Date() })
-            .where(eq(wmsTables.shipments.id, shipmentId));
+          await transitionShipments(tx, {
+            shipmentIds: [shipmentId],
+            from: ['planned'],
+            to: 'draft',
+            stale: 'unreachable',
+          });
           break;
       }
     }
@@ -1374,48 +1415,67 @@ export class ShipmentPlanningService {
     operationBefore?: ShipmentManifestSnapshot,
   ): Promise<void> {
     const before = operationBefore ?? this.snapshot(aggregate);
-    const totalShipmentQty = aggregate.lines.reduce((total, line) => total + line.qty, 0);
-    const totalCanceledQty = selected.reduce((total, entry) => total + entry.request.qty, 0);
-    const cancelWholeShipment = totalShipmentQty === totalCanceledQty;
-    const { tombstone } = await shrinkDraftLines(
-      this.reservations,
-      {
-        shipment: aggregate.shipment,
-        lines: selected.map(({ request, line }) => ({ line, qty: request.qty })),
-        reason: dto.reason,
-        actorId: actor.id,
-        wholeShipment: cancelWholeShipment,
+    const shipmentId = aggregate.shipment.id;
+    // 일부 취소의 manifestVersion +1(SQL 증가식 — 앞선 재개봉 D2 의 +1 을 지우지 않는다)과 원본·묘비 재계산은 문의 끝맺음이 한다
+    const { tombstone, cancelWholeShipment } = await editShipmentManifest(
+      this.manifestDeps(),
+      { shipmentIds: [shipmentId], allow: ['draft'] },
+      async (writer, aggregates) => {
+        const locked = lockedAggregateOf(aggregates, shipmentId);
+        // 같은 줄을 문이 새로 잠근 값(최신 qty·lineVersion)으로 다시 맞춘다
+        const lockedLineById = new Map(locked.lines.map((line) => [line.id, line]));
+        const current = selected.map(({ request, line }) => {
+          const lockedLine = lockedLineById.get(line.id);
+          if (!lockedLine) throw new Error(`Shipment line ${line.id} is no longer in ${shipmentId}`);
+          return { request, line: lockedLine };
+        });
+        const totalShipmentQty = locked.lines.reduce((total, line) => total + line.qty, 0);
+        const totalCanceledQty = current.reduce((total, entry) => total + entry.request.qty, 0);
+        const wholeShipment = totalShipmentQty === totalCanceledQty;
+        const shrunk = await shrinkDraftLines(
+          this.reservations,
+          writer,
+          {
+            shipment: locked.shipment,
+            lines: current.map(({ request, line }) => ({ line, qty: request.qty })),
+            reason: dto.reason,
+            actorId: actor.id,
+            wholeShipment,
+          },
+          tx,
+        );
+
+        const canceledByFoi = new Map<string, number>();
+        for (const { request, line } of current) {
+          canceledByFoi.set(
+            line.fulfillmentOrderItemId,
+            (canceledByFoi.get(line.fulfillmentOrderItemId) ?? 0) + request.qty,
+          );
+        }
+        for (const [fulfillmentOrderItemId, canceledQty] of canceledByFoi) {
+          await tx
+            .update(wmsTables.fulfillmentOrderItems)
+            .set({
+              canceledQty: sql`${wmsTables.fulfillmentOrderItems.canceledQty} + ${canceledQty}`,
+              updatedAt: new Date(),
+            })
+            .where(eq(wmsTables.fulfillmentOrderItems.id, fulfillmentOrderItemId));
+        }
+        return { tombstone: shrunk.tombstone, cancelWholeShipment: wholeShipment };
       },
       tx,
     );
-
-    const canceledByFoi = new Map<string, number>();
-    for (const { request, line } of selected) {
-      canceledByFoi.set(
-        line.fulfillmentOrderItemId,
-        (canceledByFoi.get(line.fulfillmentOrderItemId) ?? 0) + request.qty,
-      );
+    if (cancelWholeShipment) {
+      await transitionShipments(tx, {
+        shipmentIds: [shipmentId],
+        from: ['draft'],
+        to: 'canceled',
+        stale: 'unreachable',
+      });
+      // 전량 취소는 줄을 옮기지 않아 문이 재계산하지 않는다 — 지금처럼 canceled 로 바꾼 뒤 부른다
+      await this.reservations.recompute(shipmentId, tx);
     }
-    for (const [fulfillmentOrderItemId, canceledQty] of canceledByFoi) {
-      await tx
-        .update(wmsTables.fulfillmentOrderItems)
-        .set({
-          canceledQty: sql`${wmsTables.fulfillmentOrderItems.canceledQty} + ${canceledQty}`,
-          updatedAt: new Date(),
-        })
-        .where(eq(wmsTables.fulfillmentOrderItems.id, fulfillmentOrderItemId));
-    }
-    await tx
-      .update(wmsTables.shipments)
-      .set({
-        status: cancelWholeShipment ? 'canceled' : 'draft',
-        manifestVersion: aggregate.shipment.manifestVersion + 1,
-        lastUpdated: new Date(),
-      })
-      .where(eq(wmsTables.shipments.id, aggregate.shipment.id));
 
-    await this.reservations.recompute(aggregate.shipment.id, tx);
-    if (tombstone) await this.reservations.recompute(tombstone.id, tx);
     const sourceAfter = this.snapshot(await this.loadAggregate(aggregate.shipment.id, tx));
     const members: ShipmentOperationMember[] = [
       { shipmentId: aggregate.shipment.id, role: 'source', before, after: sourceAfter },
@@ -1449,25 +1509,43 @@ export class ShipmentPlanningService {
     return shipmentSnapshot(aggregate);
   }
 
+  /** 수령인 정정 패치를 문의 쓰기 도구로 옮긴다. 수령인은 송장 내용(끝맺음이 manifest +1), 비번은 아니다. */
+  private async writeRecipientRevision(
+    writer: ManifestWriter,
+    shipmentId: string,
+    revision: RecipientRevisionOutcome,
+  ): Promise<void> {
+    if (revision.snapshotChanged) await writer.reviseRecipient(shipmentId, revision.update.recipientSnapshot);
+    if (revision.update.entrancePassword !== undefined) {
+      await writer.setEntrancePassword(shipmentId, revision.update.entrancePassword);
+    }
+  }
+
+  /** 구성 편집의 문이 쓰는 의존. 클래스 필드 초기화식에서 만들지 않는다(useDefineForClassFields). */
+  private manifestDeps(): ManifestEditDeps {
+    return { invariant: this.invariant, reservations: this.reservations };
+  }
+
   /**
    * 상자의 한 몫을 새 draft 상자로 옮기는 공통 몸통. `split`(운영자가 몫을 고른다)과 `splitUnreserved`(미예약 몫 전부)가 같이 쓴다.
-   * 잠금·버전·draft·작업 없음 검증은 부르는 쪽 몫이고, 여기서는 operation 기록부터 감사 로그까지를 한 번에 한다.
+   * 구성 편집의 문 안에서 부른다 — 잠금·버전·draft·작업 없음 검증은 부르는 쪽과 문의 몫이고, manifestVersion·예약 재계산은
+   * 문의 끝맺음이 한다. 여기서는 operation 을 열고 쓰기 도구로 줄을 옮긴다. 마무리는 문이 끝난 뒤 `completeSplit`.
    * 일부만 옮기는 라인은 원래 라인의 재고 대기 순번을 새 라인이 이어받는다.
    */
   private async applySplit(
     tx: DbTx,
+    writer: ManifestWriter,
     args: {
       aggregate: ShipmentAggregate;
       selected: Array<{ move: ShipmentSplitMoveDto; line: ShipmentAggregate['lines'][number] }>;
       reservationTargets: Map<string, number>;
       actor: ShipmentPlanningActor;
       meta: ShipmentCommandReasonDto;
-      action: 'shipment.split' | 'shipment.split_unreserved';
       idempotencyKey: string;
       requestHash: string;
     },
-  ) {
-    const { aggregate, selected, reservationTargets, actor, meta, action, idempotencyKey, requestHash } = args;
+  ): Promise<{ operationId: string; shipmentId: string; targetId: string; before: ShipmentManifestSnapshot }> {
+    const { aggregate, selected, reservationTargets, actor, meta, idempotencyKey, requestHash } = args;
     const shipmentId = aggregate.shipment.id;
     const before = this.snapshot(aggregate);
     const operation = await this.createOperation(
@@ -1481,32 +1559,24 @@ export class ShipmentPlanningService {
       requestHash,
       before,
     );
-    const [target] = await tx
-      .insert(wmsTables.shipments)
-      .values({
-        warehouseId: aggregate.shipment.warehouseId,
-        status: 'draft',
-        shippingProfileId: aggregate.shipment.shippingProfileId,
-        recipientSnapshot: aggregate.shipment.recipientSnapshot,
-        // 분할된 상자도 같은 문 앞에 선다 — 비번을 안 물려주면 이 상자의 송장에만
-        // 현관 정보가 빠진 채 나가고 기사가 문을 못 연다. 주소를 복사하면서 비번을
-        // 빠뜨리는 것이 정확히 그 사고다.
-        entrancePassword: aggregate.shipment.entrancePassword,
-        manifestVersion: 1,
-        reservationVersion: 1,
-        openedBy: actor.id,
-        openedAt: new Date(),
-      })
-      .returning();
+    const target = await writer.createShipment({
+      warehouseId: aggregate.shipment.warehouseId,
+      status: 'draft',
+      shippingProfileId: aggregate.shipment.shippingProfileId,
+      recipientSnapshot: aggregate.shipment.recipientSnapshot,
+      // 분할된 상자도 같은 문 앞에 선다 — 비번을 안 물려주면 이 상자의 송장에만
+      // 현관 정보가 빠진 채 나가고 기사가 문을 못 연다. 주소를 복사하면서 비번을
+      // 빠뜨리는 것이 정확히 그 사고다.
+      entrancePassword: aggregate.shipment.entrancePassword,
+      openedBy: actor.id,
+      openedAt: new Date(),
+    });
 
     let wholeLineReservationMove = false;
     for (const { move, line } of selected) {
       const targetReservedQty = reservationTargets.get(line.id) ?? 0;
       if (move.qty === line.qty) {
-        await tx
-          .update(wmsTables.shipmentLines)
-          .set({ shipmentId: target.id, lineVersion: line.lineVersion + 1 })
-          .where(eq(wmsTables.shipmentLines.id, line.id));
+        await writer.moveLine(line.id, shipmentId, target.id);
         wholeLineReservationMove ||= targetReservedQty > 0;
         continue;
       }
@@ -1514,56 +1584,51 @@ export class ShipmentPlanningService {
       // 원래 라인의 재고 대기 순번은 예약을 옮기기 «전에» 읽는다 — 새 라인이 «지금» 으로
       // 줄 맨 뒤에 서면, 나눠 보낸 것 때문에 이 주문이 뒤에 온 주문보다 늦게 재고를 받는다.
       const demandRequestedAt = await loadReservationQueueKey(tx, line.id);
-      await tx
-        .update(wmsTables.shipmentLines)
-        .set({ qty: line.qty - move.qty, lineVersion: line.lineVersion + 1 })
-        .where(eq(wmsTables.shipmentLines.id, line.id));
-      const [targetLine] = await tx
-        .insert(wmsTables.shipmentLines)
-        .values({
-          shipmentId: target.id,
-          fulfillmentOrderItemId: line.fulfillmentOrderItemId,
-          skuId: line.skuId,
-          qty: move.qty,
-          createdFromLineId: line.id,
-          demandRequestedAt,
-        })
-        .returning();
+      await writer.setLineQty(line.id, shipmentId, line.qty - move.qty);
+      const targetLine = await writer.addLine(target.id, {
+        fulfillmentOrderItemId: line.fulfillmentOrderItemId,
+        skuId: line.skuId,
+        qty: move.qty,
+        createdFromLineId: line.id,
+        demandRequestedAt,
+      });
       if (targetReservedQty > 0) {
         await this.reservations.transfer(line.id, targetLine.id, targetReservedQty, tx);
       }
     }
 
     if (wholeLineReservationMove) {
-      await tx
-        .update(wmsTables.shipments)
-        .set({ reservationVersion: sql`${wmsTables.shipments.reservationVersion} + 1` })
-        .where(inArray(wmsTables.shipments.id, [shipmentId, target.id]));
+      await this.reservations.bumpReservationVersions([shipmentId, target.id], tx);
     }
-    await tx
-      .update(wmsTables.shipments)
-      .set({ manifestVersion: aggregate.shipment.manifestVersion + 1, lastUpdated: new Date() })
-      .where(eq(wmsTables.shipments.id, shipmentId));
+    return { operationId: operation.id, shipmentId, targetId: target.id, before };
+  }
 
-    await this.reservations.recompute(shipmentId, tx);
-    await this.reservations.recompute(target.id, tx);
+  /** 분할의 마무리 — 문의 끝맺음(manifestVersion·재계산) 뒤의 상태로 operation·감사·응답을 쓴다. */
+  private async completeSplit(
+    tx: DbTx,
+    applied: { operationId: string; shipmentId: string; targetId: string; before: ShipmentManifestSnapshot },
+    actor: ShipmentPlanningActor,
+    meta: ShipmentCommandReasonDto,
+    action: 'shipment.split' | 'shipment.split_unreserved',
+  ) {
+    const { operationId, shipmentId, targetId, before } = applied;
     const sourceAfter = await this.loadAggregate(shipmentId, tx);
-    const targetAfter = await this.loadAggregate(target.id, tx);
+    const targetAfter = await this.loadAggregate(targetId, tx);
     const sourceSnapshot = this.snapshot(sourceAfter);
     const targetSnapshot = this.snapshot(targetAfter);
-    await this.completeOperation(tx, operation.id, [
+    await this.completeOperation(tx, operationId, [
       { shipmentId, role: 'source', before, after: sourceSnapshot },
-      { shipmentId: target.id, role: 'target', before: null, after: targetSnapshot },
+      { shipmentId: targetId, role: 'target', before: null, after: targetSnapshot },
     ]);
-    await this.auditCommand(tx, actor, action, operation.id, meta.reason, {
+    await this.auditCommand(tx, actor, action, operationId, meta.reason, {
       sourceShipmentId: shipmentId,
-      targetShipmentId: target.id,
+      targetShipmentId: targetId,
       before,
       after: { source: sourceSnapshot, target: targetSnapshot },
     });
 
-    const response = { operationId: operation.id, source: sourceSnapshot, target: targetSnapshot };
-    return { response, resourceType: 'shipment', resourceId: target.id, operationId: operation.id };
+    const response = { operationId, source: sourceSnapshot, target: targetSnapshot };
+    return { response, resourceType: 'shipment', resourceId: targetId, operationId };
   }
 
   private async createOperation(

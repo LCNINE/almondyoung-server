@@ -1,5 +1,6 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { and, eq, sql } from 'drizzle-orm';
+import { transitionShipments } from '../shipment/shipment-lifecycle';
+import { and, eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { WaybillService } from '../waybill/waybill.service';
@@ -80,31 +81,17 @@ export class ShortPickExitService {
       .where(eq(wmsTables.shipments.id, intent.shipmentId))
       .limit(1)
       .for('update');
-    const [drafted] = shipment
-      ? await trx
-          .update(wmsTables.shipments)
-          .set({
-            status: 'draft',
-            recoveryCode: null,
-            plannedAt: null,
-            manifestVersion: shipment.manifestVersion + 1,
-            lastUpdated: new Date(),
-          })
-          .where(
-            and(
-              eq(wmsTables.shipments.id, shipment.id),
-              eq(wmsTables.shipments.status, 'planned'),
-              eq(wmsTables.shipments.manifestVersion, shipment.manifestVersion),
-            ),
-          )
-          .returning()
-      : [];
-    if (!drafted)
+    if (!shipment) {
       throw conflict('SHIPMENT_STALE_MANIFEST_VERSION', `Shipment ${intent.shipmentId} changed before short-pick exit`);
-    await trx
-      .update(wmsTables.shipmentLines)
-      .set({ inspectedQty: 0, lineVersion: sql`${wmsTables.shipmentLines.lineVersion} + 1` })
-      .where(eq(wmsTables.shipmentLines.shipmentId, intent.shipmentId));
+    }
+    const [drafted] = await transitionShipments(trx, {
+      shipmentIds: [shipment.id],
+      from: ['planned'],
+      to: 'draft',
+      expect: { manifestVersion: shipment.manifestVersion },
+      stale: () =>
+        conflict('SHIPMENT_STALE_MANIFEST_VERSION', `Shipment ${intent.shipmentId} changed before short-pick exit`),
+    });
     // planned 박스는 확정 예약 = 수량이라(불변식) 부족분을 무효화하기 전에 draft 로 내린다 — 옛 결품 보고가 recovery_required 로 먼저 내린 것과 같다.
     for (const [shipmentLineId, qty] of [...shortByLine].sort(([l], [r]) => l.localeCompare(r))) {
       await this.reservations.invalidateForShortPick(shipmentLineId, qty, intent.operationId, trx);

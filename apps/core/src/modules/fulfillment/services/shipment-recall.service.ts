@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { transitionShipments } from '../shipment/shipment-lifecycle';
 import {
   BadRequestException,
   ConflictException,
@@ -16,7 +17,7 @@ import {
   ShipmentDispatchRecalledPayload,
 } from '@packages/event-contracts/streams';
 import { InjectPublisher, PublisherFor } from '@app/events';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { InventoryCommandService } from '../../inventory/core/services/inventory-command.service';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -248,12 +249,14 @@ export class ShipmentRecallService {
           )
           .returning({ id: wmsTables.dispatchAttempts.id });
         if (!quarantinedAttempt) throw this.conflict('SHIPMENT_RECALL_ATTEMPT_CHANGED', 'Dispatch attempt changed');
-        const [quarantinedShipment] = await tx
-          .update(wmsTables.shipments)
-          .set({ status: 'recovery_required', recoveryCode: 'DISPATCH_RECALL_PENDING', lastUpdated: now })
-          .where(and(eq(wmsTables.shipments.id, shipmentId), eq(wmsTables.shipments.status, 'shipped')))
-          .returning({ id: wmsTables.shipments.id });
-        if (!quarantinedShipment) throw this.conflict('SHIPMENT_RECALL_SHIPMENT_CHANGED', 'Shipment changed');
+        await transitionShipments(tx, {
+          shipmentIds: [shipmentId],
+          from: ['shipped'],
+          to: 'recovery_required',
+          recoveryCode: 'DISPATCH_RECALL_PENDING',
+          at: now,
+          stale: () => this.conflict('SHIPMENT_RECALL_SHIPMENT_CHANGED', 'Shipment changed'),
+        });
 
         // waybill used→voided. 동기 tx-local(carrier HTTP 없음) — 구 async invoice void saga 를 대체한다.
         await this.waybills.voidForRecall(
@@ -430,31 +433,14 @@ export class ShipmentRecallService {
         .set({ shippedQty: item.shippedQty - line.qty, updatedAt: recalledAt })
         .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
     }
-    await tx
-      .update(wmsTables.shipmentLines)
-      .set({ inspectedQty: 0, forced: false, lineVersion: sql`${wmsTables.shipmentLines.lineVersion} + 1` })
-      .where(eq(wmsTables.shipmentLines.shipmentId, intent.shipmentId));
-    const [updatedShipment] = await tx
-      .update(wmsTables.shipments)
-      .set({
-        status: 'draft',
-        recoveryCode: null,
-        plannedAt: null,
-        shippedAt: null,
-        deliveredAt: null,
-        manifestVersion: shipment.manifestVersion + 1,
-        lastUpdated: recalledAt,
-      })
-      .where(
-        and(
-          eq(wmsTables.shipments.id, shipment.id),
-          eq(wmsTables.shipments.status, 'recovery_required'),
-          eq(wmsTables.shipments.recoveryCode, 'DISPATCH_RECALL_PENDING'),
-          eq(wmsTables.shipments.manifestVersion, shipment.manifestVersion),
-        ),
-      )
-      .returning();
-    if (!updatedShipment) throw this.conflict('SHIPMENT_RECALL_SHIPMENT_CHANGED', 'Shipment changed during recall');
+    const [updatedShipment] = await transitionShipments(tx, {
+      shipmentIds: [shipment.id],
+      from: ['recovery_required'],
+      to: 'draft',
+      expect: { recoveryCode: 'DISPATCH_RECALL_PENDING', manifestVersion: shipment.manifestVersion },
+      at: recalledAt,
+      stale: () => this.conflict('SHIPMENT_RECALL_SHIPMENT_CHANGED', 'Shipment changed during recall'),
+    });
     const [recalledAttempt] = await tx
       .update(wmsTables.dispatchAttempts)
       .set({

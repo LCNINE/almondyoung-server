@@ -145,6 +145,32 @@ describeIfDb('reviseRecipientFromChannel (DB integration, rollback-only)', () =>
     });
   });
 
+  it('K2 특성: 활성 송장이 있는 planned 상자의 채널 정정은 거절된다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const box = await draftBox(tx);
+      await tx.update(wmsTables.shipments).set({ status: 'planned' }).where(eq(wmsTables.shipments.id, box.shipmentId));
+      const [before] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, box.shipmentId));
+      await tx.insert(wmsTables.waybills).values({
+        shipmentId: box.shipmentId,
+        source: 'manual',
+        carrier: 'HANJIN',
+        status: 'registered',
+        trackingNo: `T${Date.now()}`,
+        manifestVersion: before.manifestVersion,
+        recipientHash: canonicalFulfillmentRequestHash(ADDRESS),
+      });
+
+      expect(
+        await codeOf(
+          assembleOutbound(tx).planning.reviseRecipientFromChannel(box.shipmentId, box.salesOrderId, NEXT, `k-${randomUUID()}`, actor, tx),
+        ),
+      ).toBe('SHIPMENT_ACTIVE_INVOICE');
+
+      const [after] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, box.shipmentId));
+      expect(after).toEqual(before);
+    });
+  });
+
   it('다른 판매주문의 라인을 실은 박스는 SHIPMENT_CONSOLIDATED', async () => {
     await inRollbackTx(db, async (tx) => {
       const box = await draftBox(tx);

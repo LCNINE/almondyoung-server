@@ -18,7 +18,11 @@ describeIfDb('결품 이탈의 마무리 (스펙 §9-5, PR 4)', () => {
   });
 
   /** 박스(A 3개)를 시작하고 picked 개를 집은 뒤, 2개 결품(못 채움) 상태로 이탈을 시작한다. */
-  async function withdrawingForShortPick(tx: DbTx, picked: number) {
+  async function withdrawingForShortPick(
+    tx: DbTx,
+    picked: number,
+    beforeBegin?: (box: PickableShipmentFixture) => Promise<void>,
+  ) {
     const box = await seedPickableShipment(tx, 3);
     const wiring = assembleOutbound(tx);
     const run = await wiring.picking.start(
@@ -78,6 +82,7 @@ describeIfDb('결품 이탈의 마무리 (스펙 §9-5, PR 4)', () => {
       .from(wmsTables.outboundBatchWorkItems)
       .where(eq(wmsTables.outboundBatchWorkItems.id, box.workItemId))
       .for('update');
+    await beforeBegin?.(box);
     const outcome = await wiring.withdrawals.begin(
       {
         batchId: box.batchId,
@@ -144,6 +149,35 @@ describeIfDb('결품 이탈의 마무리 (스펙 §9-5, PR 4)', () => {
       expect(state.operation.afterManifestSnapshot).toMatchObject({ voidedWaybillId: box.waybillId });
       await expect(wiring.recovery.reconcile(sessionId, tx)).resolves.toMatchObject({ healthy: true });
       await assertFulfillmentInvariantsFor(tx, [box.shipmentId]);
+    });
+  });
+
+  it('K2 특성(D1): 결품 이탈은 manifest +1, 줄 버전 그대로', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const readBox = async (shipmentId: string) => {
+        const [shipment] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, shipmentId));
+        const lines = await tx
+          .select()
+          .from(wmsTables.shipmentLines)
+          .where(eq(wmsTables.shipmentLines.shipmentId, shipmentId));
+        return { shipment, lines };
+      };
+      let before: Awaited<ReturnType<typeof readBox>> | undefined;
+      const { box, outcome } = await withdrawingForShortPick(tx, 0, async (b) => {
+        before = await readBox(b.shipmentId);
+      });
+      expect(outcome.kind).toBe('exited');
+      if (!before) throw new Error('before snapshot missing');
+      expect(before.lines.length).toBeGreaterThan(0);
+      for (const line of before.lines) expect(line.inspectedQty).toBe(0);
+
+      const after = await readBox(box.shipmentId);
+      expect(after.shipment.manifestVersion - before.shipment.manifestVersion).toBe(1);
+      expect(after.lines).toHaveLength(before.lines.length);
+      for (const line of after.lines) {
+        const prev = before.lines.find((l) => l.id === line.id)!;
+        expect(line.lineVersion - prev.lineVersion).toBe(0);
+      }
     });
   });
 

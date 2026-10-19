@@ -55,20 +55,47 @@ function uniqueSorted(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
 }
 
+/** 상자판들의 구성 서명. 줄이 다른 상자로 옮겨지거나 다른 FO 항목이 되면 달라지고, 상자·줄 순서에는 둔감하다. */
+export function aggregateSignature(aggregates: readonly ShipmentAggregate[]): string {
+  return aggregates
+    .flatMap((aggregate) =>
+      aggregate.lines.map(
+        (line) => `${aggregate.shipment.id}:${line.id}:${line.fulfillmentOrderItemId}:${line.shipmentId}`,
+      ),
+    )
+    .sort()
+    .join(',');
+}
+
+/**
+ * 여러 상자판을 한 번에 잠근다. id 는 정렬·중복 제거하고, FO 잠금은 합집합을 한 번에 건다(교착 방지).
+ * 잠그는 사이 구성이 바뀌었으면 호출자가 정한 에러를 던진다.
+ */
+export async function lockShipmentAggregates(
+  tx: DbTx,
+  invariant: FulfillmentInvariantService,
+  shipmentIds: readonly string[],
+  onChanged: () => Error,
+): Promise<ShipmentAggregate[]> {
+  const ids = uniqueSorted(shipmentIds);
+  if (ids.length === 0) return [];
+  const optimistic: ShipmentAggregate[] = [];
+  for (const id of ids) optimistic.push(await loadShipmentAggregate(tx, id));
+  await invariant.assertFulfillmentOrders(uniqueSorted(optimistic.flatMap((a) => a.fulfillmentOrderIds)), tx);
+  const locked: ShipmentAggregate[] = [];
+  for (const id of ids) locked.push(await loadShipmentAggregate(tx, id));
+  if (aggregateSignature(optimistic) !== aggregateSignature(locked)) throw onChanged();
+  return locked;
+}
+
 export async function lockShipmentAggregate(
   tx: DbTx,
   invariant: FulfillmentInvariantService,
   shipmentId: string,
 ): Promise<ShipmentAggregate> {
-  const optimistic = await loadShipmentAggregate(tx, shipmentId);
-  await invariant.assertFulfillmentOrders(optimistic.fulfillmentOrderIds, tx);
-  const locked = await loadShipmentAggregate(tx, shipmentId);
-  if (
-    optimistic.lines.map((line) => `${line.id}:${line.shipmentId}`).join(',') !==
-    locked.lines.map((line) => `${line.id}:${line.shipmentId}`).join(',')
-  ) {
-    throw conflict('SHIPMENT_COMPONENT_CHANGED_RETRY', 'Shipment component changed while acquiring locks');
-  }
+  const [locked] = await lockShipmentAggregates(tx, invariant, [shipmentId], () =>
+    conflict('SHIPMENT_COMPONENT_CHANGED_RETRY', 'Shipment component changed while acquiring locks'),
+  );
   return locked;
 }
 

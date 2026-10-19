@@ -159,7 +159,7 @@ describe('resolveRecipientRevision', () => {
 
     expect(outcome.update).toEqual({ entrancePassword: '#9999' });
     expect(outcome.update.recipientSnapshot).toBeUndefined();
-    expect(outcome.update.manifestVersion).toBeUndefined();
+    expect(outcome.update).not.toHaveProperty('manifestVersion');
     expect(outcome.snapshotChanged).toBe(false);
     expect(outcome.passwordChanged).toBe(true);
   });
@@ -177,7 +177,7 @@ describe('resolveRecipientRevision', () => {
     expect(outcome.snapshotChanged).toBe(false);
   });
 
-  it('7키 스냅샷 위에 6키 스냅샷을 되보내면 통관부호가 지워지고 manifestVersion 이 오른다', () => {
+  it('7키 스냅샷 위에 6키 스냅샷을 되보내면 통관부호가 지워진 것으로 판정한다(snapshotChanged), 버전은 문이 올린다', () => {
     // 이래서 admin-web 은 비번만 고칠 때 recipientSnapshot 을 아예 보내지 않는다.
     // 서버 whitelist:true 가 personalCustomsCode 를 떨어뜨리므로 되보내기로는 못 지킨다.
     const outcome = resolveRecipientRevision(
@@ -185,8 +185,9 @@ describe('resolveRecipientRevision', () => {
       { recipientSnapshot: { ...RECIPIENT }, entrancePassword: '#9999' },
     );
 
+    // manifestVersion 은 패치가 아니라 구성 편집의 문이 reviseRecipient 를 보고 올린다
     expect(outcome.snapshotChanged).toBe(true);
-    expect(outcome.update.manifestVersion).toBe(4);
+    expect(outcome.update).not.toHaveProperty('manifestVersion');
   });
 
   it('저장된 deliveryNote 가 null 이어도 같은 스냅샷으로 본다', () => {
@@ -201,11 +202,12 @@ describe('resolveRecipientRevision', () => {
     expect(outcome.snapshotChanged).toBe(false);
   });
 
-  it('스냅샷이 바뀌면 manifestVersion 을 올린다', () => {
+  it('스냅샷이 바뀌면 snapshotChanged 로 판정한다, 버전은 문이 올린다', () => {
     const next = { ...RECIPIENT, detailAddress: '102동 1002호' };
     const outcome = resolveRecipientRevision(current, { recipientSnapshot: next });
 
-    expect(outcome.update).toEqual({ recipientSnapshot: next, manifestVersion: 4 });
+    expect(outcome.update).toEqual({ recipientSnapshot: next });
+    expect(outcome.update).not.toHaveProperty('manifestVersion');
     expect(outcome.snapshotChanged).toBe(true);
     expect(outcome.passwordChanged).toBe(false);
   });

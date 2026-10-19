@@ -306,4 +306,149 @@ describeIfDb('ShipmentDeliveryTrackingService (PostgreSQL integration)', () => {
       });
     }
   });
+
+  it('K2 특성: delivered 뒤 늦게 온 in_transit 은 던지지 않고 무시한다', async () => {
+    const suffix = randomUUID();
+    const dispatchedAt = new Date('2026-07-15T01:00:00.000Z');
+    const deliveredAt = new Date('2026-07-15T03:00:00.000Z');
+    const lateInTransitAt = new Date('2026-07-15T04:00:00.000Z');
+    const ids = await db.transaction(async (tx) => {
+      const [warehouse] = await tx
+        .insert(wmsTables.warehouses)
+        .values({ name: `late-wh-${suffix}` })
+        .returning();
+      const [holder] = await tx
+        .insert(wmsTables.holders)
+        .values({ name: `late-holder-${suffix}` })
+        .returning();
+      const [sku] = await tx
+        .insert(wmsTables.skus)
+        .values({ name: 'late sku', code: `LATE-${suffix}`, holderId: holder.id })
+        .returning();
+      const [location] = await tx
+        .insert(wmsTables.locations)
+        .values({ warehouseId: warehouse.id, code: `LATE-${suffix}`, locationType: 'zone' })
+        .returning();
+      const [salesOrder] = await tx
+        .insert(wmsTables.salesOrders)
+        .values({
+          channelOrderId: `late-order-${suffix}`,
+          salesChannel: 'naver',
+          shippingAddress: {},
+          orderDate: dispatchedAt,
+        })
+        .returning();
+      const [fulfillmentOrder] = await tx
+        .insert(wmsTables.fulfillmentOrders)
+        .values({ salesOrderId: salesOrder.id, warehouseId: warehouse.id, status: 'completed' })
+        .returning();
+      const [item] = await tx
+        .insert(wmsTables.fulfillmentOrderItems)
+        .values({ fulfillmentOrderId: fulfillmentOrder.id, skuId: sku.id, qty: 1, shippedQty: 1, status: 'shipped' })
+        .returning();
+      const [shipment] = await tx
+        .insert(wmsTables.shipments)
+        .values({
+          warehouseId: warehouse.id,
+          openedForFulfillmentOrderId: fulfillmentOrder.id,
+          status: 'shipped' as const,
+          shippedAt: dispatchedAt,
+        })
+        .returning();
+      const [line] = await tx
+        .insert(wmsTables.shipmentLines)
+        .values({ shipmentId: shipment.id, fulfillmentOrderItemId: item.id, skuId: sku.id, qty: 1, inspectedQty: 1 })
+        .returning();
+      const [journal] = await tx
+        .insert(wmsTables.stockJournals)
+        .values({ sourceType: 'dispatch', idempotencyKey: `late-journal-${suffix}` })
+        .returning();
+      const [attempt] = await tx
+        .insert(wmsTables.dispatchAttempts)
+        .values({
+          shipmentId: shipment.id,
+          attemptNo: 1,
+          status: 'dispatched' as const,
+          idempotencyKey: `late-attempt-${suffix}`,
+          stockJournalId: journal.id,
+          dispatchedAt,
+        })
+        .returning();
+      await tx
+        .insert(wmsTables.dispatchAttemptSources)
+        .values({ dispatchAttemptId: attempt.id, shipmentLineId: line.id, sourceLocationId: location.id, qty: 1 });
+      return { warehouse, holder, sku, location, salesOrder, fulfillmentOrder, item, shipment, line, journal, attempt };
+    });
+
+    const dbService = makeDbService(db);
+    const service = new ShipmentDeliveryTrackingService(
+      dbService,
+      outboxPublisherFor(SHIPMENT_STREAM, dbService),
+      outboxPublisherFor(FULFILLMENT_STREAM, dbService),
+      new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
+      new ShipmentReservationService(
+        dbService,
+        {} as never,
+        new FulfillmentProgressService(),
+        new FulfillmentInvariantService(),
+      ),
+    );
+
+    try {
+      await service.recordProviderEvent(ids.attempt.id, {
+        providerEventId: `late-delivered-${suffix}`,
+        status: 'delivered',
+        occurredAt: deliveredAt.toISOString(),
+      });
+      const [delivered] = await db
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, ids.shipment.id));
+      expect(delivered.status).toBe('delivered');
+
+      await expect(
+        service.recordProviderEvent(ids.attempt.id, {
+          providerEventId: `late-in-transit-${suffix}`,
+          status: 'in_transit',
+          occurredAt: lateInTransitAt.toISOString(),
+        }),
+      ).resolves.toBeDefined();
+
+      const [after] = await db.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, ids.shipment.id));
+      expect(after.status).toBe('delivered');
+      const lateRows = await db
+        .select()
+        .from(wmsTables.shipmentTracking)
+        .where(
+          and(
+            eq(wmsTables.shipmentTracking.dispatchAttemptId, ids.attempt.id),
+            eq(wmsTables.shipmentTracking.status, 'in_transit'),
+          ),
+        );
+      expect(lateRows).toHaveLength(1);
+    } finally {
+      await db.transaction(async (tx) => {
+        await tx
+          .delete(wmsTables.shipmentTracking)
+          .where(eq(wmsTables.shipmentTracking.dispatchAttemptId, ids.attempt.id));
+        await tx
+          .delete(outbox_events)
+          .where(inArray(outbox_events.aggregateId, [ids.shipment.id, ids.fulfillmentOrder.id]));
+        await tx
+          .delete(wmsTables.dispatchAttemptSources)
+          .where(eq(wmsTables.dispatchAttemptSources.dispatchAttemptId, ids.attempt.id));
+        await tx.delete(wmsTables.dispatchAttempts).where(eq(wmsTables.dispatchAttempts.id, ids.attempt.id));
+        await tx.delete(wmsTables.stockJournals).where(eq(wmsTables.stockJournals.id, ids.journal.id));
+        await tx.delete(wmsTables.shipmentLines).where(eq(wmsTables.shipmentLines.id, ids.line.id));
+        await tx.delete(wmsTables.shipments).where(eq(wmsTables.shipments.id, ids.shipment.id));
+        await tx.delete(wmsTables.fulfillmentOrderItems).where(eq(wmsTables.fulfillmentOrderItems.id, ids.item.id));
+        await tx.delete(wmsTables.fulfillmentOrders).where(eq(wmsTables.fulfillmentOrders.id, ids.fulfillmentOrder.id));
+        await tx.delete(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, ids.salesOrder.id));
+        await tx.delete(wmsTables.locations).where(eq(wmsTables.locations.id, ids.location.id));
+        await tx.delete(wmsTables.skus).where(eq(wmsTables.skus.id, ids.sku.id));
+        await tx.delete(wmsTables.holders).where(eq(wmsTables.holders.id, ids.holder.id));
+        await tx.delete(wmsTables.warehouses).where(eq(wmsTables.warehouses.id, ids.warehouse.id));
+      });
+    }
+  });
 });

@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { AuthorizationService } from '@app/authorization';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, eq, gt, inArray, ne, notInArray, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, ne, notInArray } from 'drizzle-orm';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
@@ -19,6 +19,9 @@ import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
+import { lockShipmentAggregates } from './shipment-aggregate';
+import { transitionShipments } from '../shipment/shipment-lifecycle';
+import { editShipmentManifest, ManifestEditDeps } from '../shipment/shipment-manifest-edit';
 
 const TERMINAL_OR_UNSAFE_SOURCE_STATUSES = new Set([
   'open',
@@ -292,10 +295,15 @@ export class ConsolidationService {
         canonicalRequest: { actorId: actor.id, ...dto, sources },
       },
       async (trx, _commandRequestId, requestHash) => {
-        const aggregates = await this.lockAggregates(
-          sources.map((source) => source.shipmentId),
+        const locked = await lockShipmentAggregates(
           trx,
+          this.invariant,
+          sources.map((source) => source.shipmentId),
+          () =>
+            this.conflict('CONSOLIDATION_COMPONENT_CHANGED_RETRY', 'Shipment membership changed while acquiring locks'),
         );
+        // 판정·대상 상자는 SKU·판매주문 칼럼이 붙은 이 서비스의 줄 모양을 쓴다 — 잠근 뒤 그 모양으로 다시 읽는다
+        const aggregates = await Promise.all(locked.map((aggregate) => this.loadAggregate(aggregate.shipment.id, trx)));
         this.assertExpectedVersions(aggregates, sources);
         await this.assertInitialSourceStatusesSafe(aggregates, trx);
         await this.assertCompatibleSources(aggregates, trx);
@@ -417,10 +425,14 @@ export class ConsolidationService {
       const pending = this.pendingIntent(optimisticOperation.afterManifestSnapshot);
       let aggregates: ShipmentAggregate[];
       try {
-        aggregates = await this.lockAggregates(
-          pending.sources.map((source) => source.shipmentId),
+        const locked = await lockShipmentAggregates(
           trx,
+          this.invariant,
+          pending.sources.map((source) => source.shipmentId),
+          () =>
+            this.conflict('CONSOLIDATION_COMPONENT_CHANGED_RETRY', 'Shipment membership changed while acquiring locks'),
         );
+        aggregates = await Promise.all(locked.map((aggregate) => this.loadAggregate(aggregate.shipment.id, trx)));
       } catch (error) {
         const [latest] = await trx
           .select({ status: wmsTables.shipmentOperations.status })
@@ -511,10 +523,14 @@ export class ConsolidationService {
       .filter((aggregate) => aggregate.shipment.status !== 'draft')
       .map((aggregate) => ({ shipmentId: aggregate.shipment.id, codes: ['SHIPMENT_REOPEN_REQUIRED'] }));
     const allBlockers = this.mergeBlockers([...blockers, ...statusBlockers]);
-    await tx
-      .update(wmsTables.shipments)
-      .set({ status: 'recovery_required', recoveryCode: CONSOLIDATION_RECOVERY_CODE, lastUpdated: now })
-      .where(inArray(wmsTables.shipments.id, sourceIds));
+    await transitionShipments(tx, {
+      shipmentIds: sourceIds,
+      from: [...new Set(aggregates.map((aggregate) => aggregate.shipment.status))],
+      to: 'recovery_required',
+      recoveryCode: CONSOLIDATION_RECOVERY_CODE,
+      at: now,
+      stale: 'unreachable',
+    });
     const waitingWorkItems = await tx
       .select({
         id: wmsTables.outboundBatchWorkItems.id,
@@ -625,122 +641,81 @@ export class ConsolidationService {
 
     const warehouseId = aggregates[0].shipment.warehouseId;
     const shippingProfileId = aggregates[0].shipment.shippingProfileId;
-    const [target] = await tx
-      .insert(wmsTables.shipments)
-      .values({
-        warehouseId,
-        status: 'draft',
-        shippingProfileId,
-        recipientSnapshot,
-        // 합배송 대상 상자가 원본들의 비번을 이어받는다. 안 이어받으면 묶인 순간 현관 정보가
-        // 사라져 이 한 장의 송장으로 나가는 모든 주문이 문 앞에서 막힌다. 값이 갈리면
-        // 최신 주문을 실은 상자가 이긴다 — 고객이 중간에 비번을 바꾼 것으로 해석한다.
-        entrancePassword: selectEntrancePasswordForMerge(
-          aggregates.map((aggregate) => ({
-            entrancePassword: aggregate.shipment.entrancePassword,
-            createdAt: aggregate.shipment.createdAt,
-            orderDates: aggregate.lines.map((line) => line.orderDate),
-          })),
-        ),
-        manifestVersion: 1,
-        reservationVersion: 1,
-        openedBy: actor.id,
-        openedAt: new Date(),
-      })
-      .returning();
-
-    const allLines = aggregates.flatMap((aggregate) => aggregate.lines);
-    const sourceLineIds = allLines.map((line) => line.id);
-    const confirmedReservations = await tx
-      .select({
-        shipmentLineId: wmsTables.stockReservations.shipmentLineId,
-        quantity: wmsTables.stockReservations.quantity,
-      })
-      .from(wmsTables.stockReservations)
-      .where(
-        and(
-          inArray(wmsTables.stockReservations.shipmentLineId, sourceLineIds),
-          eq(wmsTables.stockReservations.targetType, 'SHIPMENT_LINE'),
-          eq(wmsTables.stockReservations.status, 'confirmed'),
-        ),
-      )
-      .orderBy(asc(wmsTables.stockReservations.createdAt), asc(wmsTables.stockReservations.id));
-    const confirmedByLine = new Map<string, number>();
-    for (const reservation of confirmedReservations) {
-      if (!reservation.shipmentLineId) continue;
-      confirmedByLine.set(
-        reservation.shipmentLineId,
-        (confirmedByLine.get(reservation.shipmentLineId) ?? 0) + reservation.quantity,
-      );
-    }
-
-    const groupedLines = new Map<string, ShipmentLineRow[]>();
-    for (const line of allLines) {
-      groupedLines.set(line.fulfillmentOrderItemId, [...(groupedLines.get(line.fulfillmentOrderItemId) ?? []), line]);
-    }
-    const lineLineage: NonNullable<ConsolidationResponse['lineLineage']> = [];
-    for (const [fulfillmentOrderItemId, lines] of [...groupedLines.entries()].sort(([left], [right]) =>
-      left.localeCompare(right),
-    )) {
-      const skuIds = uniqueSorted(lines.map((line) => line.skuId));
-      if (skuIds.length !== 1) {
-        throw this.conflict(
-          'CONSOLIDATION_FOI_SKU_MISMATCH',
-          `FOI ${fulfillmentOrderItemId} is represented by multiple SKUs`,
-        );
-      }
-      const sourceIdsForLine = lines.map((line) => line.id).sort();
-      const [targetLine] = await tx
-        .insert(wmsTables.shipmentLines)
-        .values({
-          shipmentId: target.id,
-          fulfillmentOrderItemId,
-          skuId: skuIds[0],
-          qty: lines.reduce((total, line) => total + line.qty, 0),
-          reservedQty: lines.reduce((total, line) => total + (confirmedByLine.get(line.id) ?? 0), 0),
-          createdFromLineId: lines.length === 1 ? lines[0].id : null,
-          createdAt: new Date(Math.min(...lines.map((line) => line.createdAt.getTime()))),
-          // 예약 대기열의 순서 키 — 합쳐도 가장 오래 기다린 몫의 순간을 잃지 않는다(created_at 으로 대체하면 줄이 뒤로 밀린다)
-          demandRequestedAt: new Date(
-            Math.min(...lines.map((line) => (line.demandRequestedAt ?? line.createdAt).getTime())),
+    // 대상 줄 reserved_qty 와 대상 재계산은 문의 끝맺음이 한다 — 원본을 superseded 로 바꾼 «뒤»라야
+    // «planned 는 전량 예약» 불변식이 예약이 빠진 planned 원본을 보지 않는다
+    const { target, lineLineage, now } = await editShipmentManifest(
+      this.manifestDeps(),
+      { shipmentIds: sourceIds, allow: ['draft', 'planned', 'recovery_required'] },
+      async (writer) => {
+        const target = await writer.createShipment({
+          warehouseId,
+          status: 'draft',
+          shippingProfileId,
+          recipientSnapshot,
+          // 합배송 대상 상자가 원본들의 비번을 이어받는다. 안 이어받으면 묶인 순간 현관 정보가
+          // 사라져 이 한 장의 송장으로 나가는 모든 주문이 문 앞에서 막힌다. 값이 갈리면
+          // 최신 주문을 실은 상자가 이긴다 — 고객이 중간에 비번을 바꾼 것으로 해석한다.
+          entrancePassword: selectEntrancePasswordForMerge(
+            aggregates.map((aggregate) => ({
+              entrancePassword: aggregate.shipment.entrancePassword,
+              createdAt: aggregate.shipment.createdAt,
+              orderDates: aggregate.lines.map((line) => line.orderDate),
+            })),
           ),
-        })
-        .returning();
-      await tx
-        .update(wmsTables.stockReservations)
-        .set({ targetId: targetLine.id, shipmentLineId: targetLine.id, updatedAt: new Date() })
-        .where(
-          and(
-            inArray(wmsTables.stockReservations.shipmentLineId, sourceIdsForLine),
-            eq(wmsTables.stockReservations.targetType, 'SHIPMENT_LINE'),
-            eq(wmsTables.stockReservations.status, 'confirmed'),
-          ),
-        );
-      lineLineage.push({ targetLineId: targetLine.id, fulfillmentOrderItemId, sourceLineIds: sourceIdsForLine });
-    }
+          openedBy: actor.id,
+          openedAt: new Date(),
+        });
 
-    const now = new Date();
-    await tx
-      .update(wmsTables.shipmentLines)
-      .set({ reservedQty: 0 })
-      .where(inArray(wmsTables.shipmentLines.id, sourceLineIds));
-    await tx
-      .update(wmsTables.shipments)
-      .set({
-        status: 'superseded',
-        supersededAt: now,
-        recoveryCode: null,
-        manifestVersion: sql`${wmsTables.shipments.manifestVersion} + 1`,
-        reservationVersion: sql`${wmsTables.shipments.reservationVersion} + 1`,
-        lastUpdated: now,
-      })
-      .where(inArray(wmsTables.shipments.id, sourceIds));
-    await tx
-      .update(wmsTables.shipments)
-      .set({ reservationVersion: sql`${wmsTables.shipments.reservationVersion} + 1`, lastUpdated: now })
-      .where(eq(wmsTables.shipments.id, target.id));
+        const allLines = aggregates.flatMap((aggregate) => aggregate.lines);
+        const groupedLines = new Map<string, ShipmentLineRow[]>();
+        for (const line of allLines) {
+          groupedLines.set(line.fulfillmentOrderItemId, [
+            ...(groupedLines.get(line.fulfillmentOrderItemId) ?? []),
+            line,
+          ]);
+        }
+        const lineLineage: NonNullable<ConsolidationResponse['lineLineage']> = [];
+        for (const [fulfillmentOrderItemId, lines] of [...groupedLines.entries()].sort(([left], [right]) =>
+          left.localeCompare(right),
+        )) {
+          const skuIds = uniqueSorted(lines.map((line) => line.skuId));
+          if (skuIds.length !== 1) {
+            throw this.conflict(
+              'CONSOLIDATION_FOI_SKU_MISMATCH',
+              `FOI ${fulfillmentOrderItemId} is represented by multiple SKUs`,
+            );
+          }
+          const sourceIdsForLine = lines.map((line) => line.id).sort();
+          const targetLine = await writer.addLine(target.id, {
+            fulfillmentOrderItemId,
+            skuId: skuIds[0],
+            qty: lines.reduce((total, line) => total + line.qty, 0),
+            createdFromLineId: lines.length === 1 ? lines[0].id : null,
+            createdAt: new Date(Math.min(...lines.map((line) => line.createdAt.getTime()))),
+            // 예약 대기열의 순서 키 — 합쳐도 가장 오래 기다린 몫의 순간을 잃지 않는다(created_at 으로 대체하면 줄이 뒤로 밀린다)
+            demandRequestedAt: new Date(
+              Math.min(...lines.map((line) => (line.demandRequestedAt ?? line.createdAt).getTime())),
+            ),
+          });
+          await this.reservations.retargetConfirmed(sourceIdsForLine, targetLine.id, tx);
+          lineLineage.push({ targetLineId: targetLine.id, fulfillmentOrderItemId, sourceLineIds: sourceIdsForLine });
+        }
 
-    await this.reservations.recompute(target.id, tx);
+        const now = new Date();
+        await transitionShipments(tx, {
+          shipmentIds: sourceIds,
+          from: [...new Set(aggregates.map((aggregate) => aggregate.shipment.status))],
+          to: 'superseded',
+          expect: { recoveryCode: CONSOLIDATION_RECOVERY_CODE },
+          at: now,
+          stale: 'unreachable',
+        });
+        await this.reservations.bumpReservationVersions([...sourceIds, target.id], tx);
+        return { target, lineLineage, now };
+      },
+      tx,
+    );
+
     const sourceAfter = await Promise.all(sourceIds.map((shipmentId) => this.loadAggregate(shipmentId, tx)));
     const targetAfter = await this.loadAggregate(target.id, tx);
     const sourceSnapshots = sourceAfter.map((aggregate) => this.snapshot(aggregate));
@@ -805,27 +780,9 @@ export class ConsolidationService {
     return { response, resourceType: 'shipment', resourceId: target.id, operationId: operation.id };
   }
 
-  private async lockAggregates(shipmentIds: string[], tx: DbTx): Promise<ShipmentAggregate[]> {
-    const ids = uniqueSorted(shipmentIds);
-    const optimistic = await Promise.all(ids.map((shipmentId) => this.loadAggregate(shipmentId, tx)));
-    await this.invariant.assertFulfillmentOrders(
-      uniqueSorted(optimistic.flatMap((aggregate) => aggregate.fulfillmentOrderIds)),
-      tx,
-    );
-    const locked = await Promise.all(ids.map((shipmentId) => this.loadAggregate(shipmentId, tx)));
-    const signature = (aggregates: ShipmentAggregate[]) =>
-      aggregates
-        .flatMap((aggregate) =>
-          aggregate.lines.map(
-            (line) => `${aggregate.shipment.id}:${line.id}:${line.fulfillmentOrderItemId}:${line.shipmentId}`,
-          ),
-        )
-        .sort()
-        .join(',');
-    if (signature(optimistic) !== signature(locked)) {
-      throw this.conflict('CONSOLIDATION_COMPONENT_CHANGED_RETRY', 'Shipment membership changed while acquiring locks');
-    }
-    return locked;
+  /** 구성 편집의 문이 쓰는 의존. 클래스 필드 초기화식에서 만들지 않는다(useDefineForClassFields). */
+  private manifestDeps(): ManifestEditDeps {
+    return { invariant: this.invariant, reservations: this.reservations };
   }
 
   private async loadAggregate(shipmentId: string, tx: DbTx): Promise<ShipmentAggregate> {

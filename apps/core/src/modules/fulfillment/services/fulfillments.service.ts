@@ -35,6 +35,7 @@ import { ShipmentReservationService } from './shipment-reservation.service';
 import { FulfillmentProgressService } from './fulfillment-progress.service';
 import { selectEntrancePassword } from './entrance-password.selection';
 import { compatibleShippingProfileId } from './shipping-profile';
+import { openShipment } from '../shipment/shipment-lifecycle';
 
 type FulfillmentStatus = (typeof wmsTables.fulfillmentOrders.status.enumValues)[number];
 
@@ -278,9 +279,9 @@ export class FulfillmentsService {
         .returning();
 
       const compatibleProfileId = compatibleShippingProfileId(skuRows.map((row) => row.deliveryProfileId));
-      const [shipment] = await trx
-        .insert(wmsTables.shipments)
-        .values({
+      const { shipment, lines: shipmentLines } = await openShipment(
+        trx,
+        {
           warehouseId: dto.warehouseId,
           status: 'draft',
           shippingProfileId: compatibleProfileId ?? null,
@@ -288,19 +289,9 @@ export class FulfillmentsService {
           entrancePassword: selectEntrancePassword(
             salesOrder ? [{ orderDate: salesOrder.orderDate, entrancePassword: salesOrder.entrancePassword }] : [],
           ),
-        })
-        .returning();
-      const shipmentLines = await trx
-        .insert(wmsTables.shipmentLines)
-        .values(
-          insertedItems.map((item) => ({
-            shipmentId: shipment.id,
-            fulfillmentOrderItemId: item.id,
-            skuId: item.skuId,
-            qty: item.qty,
-          })),
-        )
-        .returning();
+        },
+        insertedItems.map((item) => ({ fulfillmentOrderItemId: item.id, skuId: item.skuId, qty: item.qty })),
+      );
 
       // Acquire every stock key first so multi-SKU orders cannot deadlock each
       // other by sales-order line order. reservePartial safely re-enters the locks.
