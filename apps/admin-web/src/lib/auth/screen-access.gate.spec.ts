@@ -75,6 +75,8 @@ const MASTER_ONLY_TODAY = new Set([
   '/users/roles',
   '/users/roles/[id]',
   '/company/integrations/oauth-clients',
+  // 새 화면이지만 같은 성격 — 개인정보 접속기록 조회 권한은 첫 부여가 없다(master 만).
+  '/users/pii-access-log',
 ]);
 
 describe('admin·master 화면 결과 불변(승인된 변화 제외)', () => {

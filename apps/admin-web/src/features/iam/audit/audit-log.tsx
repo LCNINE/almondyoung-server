@@ -42,6 +42,7 @@ const ACTION_LABELS: Record<IamAuditAction, string> = {
   'role.members.add': '역할 추가',
   'role.member.remove': '역할 회수',
   'admin_user.create': '관리자 계정 생성',
+  'pii_access_log.view': '개인정보 접속기록 조회',
 };
 const isAction = (v: string | null): v is IamAuditAction =>
   IAM_AUDIT_ACTIONS.some((a) => a === v);

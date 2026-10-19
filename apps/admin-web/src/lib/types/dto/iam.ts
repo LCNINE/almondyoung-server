@@ -85,6 +85,7 @@ export const IAM_AUDIT_ACTIONS = [
   'role.members.add',
   'role.member.remove',
   'admin_user.create',
+  'pii_access_log.view',
 ] as const;
 export type IamAuditAction = (typeof IAM_AUDIT_ACTIONS)[number];
 
@@ -94,7 +95,7 @@ export interface IamAuditLog {
   readonly actorUserId: string;
   readonly actorLoginId: string | null;
   readonly action: IamAuditAction;
-  readonly targetType: 'role' | 'user';
+  readonly targetType: 'role' | 'user' | 'pii_access_log';
   readonly targetId: string;
   readonly targetLabel: string;
   readonly before: unknown;
@@ -108,7 +109,7 @@ export interface IamAuditFilter {
   from?: string;
   to?: string;
   actorUserId?: string;
-  targetType?: 'role' | 'user';
+  targetType?: 'role' | 'user' | 'pii_access_log';
   targetId?: string;
   roleId?: string;
   action?: IamAuditAction;
@@ -129,3 +130,76 @@ export const IAM_ERROR_CODES = {
   systemRole: 'SYSTEM_ROLE_IMMUTABLE',
   nameTaken: 'ROLE_NAME_TAKEN',
 } as const;
+
+export type PiiAccessAction = 'view' | 'reveal' | 'export';
+
+export interface PiiAccessSubject {
+  readonly type: string;
+  readonly id: string;
+}
+
+export interface PiiAccessLog {
+  readonly id: string;
+  readonly occurredAt: string;
+  readonly actorUserId: string;
+  readonly actorLoginId: string | null;
+  readonly claimedIp: string | null;
+  readonly peerIp: string | null;
+  readonly userAgent: string | null;
+  readonly sourceService: string;
+  readonly method: string;
+  readonly route: string;
+  readonly action: PiiAccessAction;
+  readonly subjects: readonly PiiAccessSubject[];
+  readonly subjectCount: number;
+  readonly kinds: readonly string[];
+  readonly queryKeys: readonly string[];
+  readonly reason: string | null;
+}
+
+export interface PiiAccessFilter {
+  from?: string;
+  to?: string;
+  actorUserId?: string;
+  action?: PiiAccessAction;
+  subjectType?: string;
+  subjectId?: string;
+}
+
+export interface PiiAccessPage {
+  readonly items: readonly PiiAccessLog[];
+  readonly nextCursor: string | null;
+}
+
+export interface PiiAccessActorSummary {
+  readonly actorUserId: string;
+  readonly actorLoginId: string | null;
+  readonly accessCount: number;
+  readonly subjectTotal: number;
+  readonly exportCount: number;
+  readonly afterHoursCount: number;
+}
+
+export interface PiiAccessSummary {
+  readonly from: string;
+  readonly to: string;
+  readonly actors: readonly PiiAccessActorSummary[];
+}
+
+export interface PiiAccessReview {
+  readonly id: string;
+  readonly period: string;
+  readonly rangeFrom: string;
+  readonly rangeTo: string;
+  readonly reviewedBy: string;
+  readonly reviewedByLoginId: string | null;
+  readonly reviewedAt: string;
+  readonly note: string | null;
+}
+
+export interface CreatePiiAccessReviewInput {
+  readonly period: string;
+  readonly rangeFrom: string;
+  readonly rangeTo: string;
+  readonly note?: string;
+}

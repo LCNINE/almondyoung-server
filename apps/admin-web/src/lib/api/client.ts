@@ -4,6 +4,7 @@ import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
 import { CustomError } from './customError';
 import { permissionDeniedMessage } from '@/lib/auth/permission-check';
 import { readRequiredPermissions } from '@/lib/auth/permission-labels';
+import { consumeReveal, parsePiiHeaders, reportPiiResponse } from '@/lib/pii/pii-notices';
 
 const REFRESH_LOCK_NAME = 'admin-web:auth-refresh';
 const REFRESH_MARKER_KEY = 'admin-web:last-auth-refresh';
@@ -100,6 +101,10 @@ client.interceptors.request.use((config) => {
     // 필요시 서버에서 특정 origin을 명시적으로 허용하도록 수정해야 함
     config.withCredentials = false;
   }
+  // 개인정보 [보기] — 표시된 요청 한 번에만 원문을 요청한다(서버가 권한·기록을 다시 판정한다).
+  if (config.url && consumeReveal(config.url)) {
+    config.headers.set('x-pii-reveal', '1');
+  }
   return config;
 });
 
@@ -127,6 +132,15 @@ function readErrorMessage(data: unknown): string | null {
 
 client.interceptors.response.use(
   (response) => {
+    if (response.config.url) {
+      reportPiiResponse(
+        response.config.url,
+        parsePiiHeaders((name) => {
+          const value: unknown = response.headers[name];
+          return typeof value === 'string' ? value : undefined;
+        }),
+      );
+    }
     if (isApiEnvelope(response.data)) {
       response.data = response.data.data;
     }

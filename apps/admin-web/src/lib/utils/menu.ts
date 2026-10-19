@@ -61,6 +61,11 @@ const allMenus: MainMenu[] = [
             title: '권한 변경 이력',
             path: '/users/audit-log',
           },
+          {
+            id: 'iam-pii-access-log',
+            title: '개인정보 접속기록',
+            path: '/users/pii-access-log',
+          },
         ],
       },
       {

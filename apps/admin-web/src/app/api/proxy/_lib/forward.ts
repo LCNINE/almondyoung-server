@@ -11,9 +11,37 @@ const FORWARDED_REQUEST_HEADERS = [
   'accept-language',
   'user-agent',
   'idempotency-key',
+  // 개인정보 [보기]·내보내기 사유 — 백엔드가 권한·기록을 다시 판정한다.
+  'x-pii-reveal',
+  'x-pii-export-reason',
 ] as const;
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+
+/** 백엔드가 개인정보 표시 제한을 알리는 응답 헤더 — 화면이 «가림»을 구분하려면 그대로 넘겨야 한다. */
+const PII_RESPONSE_HEADERS = ['x-pii-masked', 'x-pii-mask-reason', 'x-pii-redacted', 'x-pii-revealable'] as const;
+
+const IPV4 = /^(\d{1,3})(\.\d{1,3}){3}$/;
+const IPV6 = /^[0-9a-fA-F:]+$/;
+
+/**
+ * 직원 단말 주소. X-Forwarded-For 는 신뢰 프록시마다 오른쪽에 한 주소를 덧붙이므로, 신뢰 프록시 수(N, 기본 1)만큼
+ * 오른쪽에서 센 N번째 주소가 그 프록시가 본 연결 주소다(그보다 왼쪽은 요청자가 꾸밀 수 있다).
+ * 원본 사슬도 함께 넘겨 사후에 다시 판단할 수 있게 한다.
+ */
+export function staffClientHeaders(request: NextRequest): Record<string, string> {
+  const chain = request.headers.get('x-forwarded-for');
+  if (!chain) return {};
+  const configured = Number.parseInt(process.env.ADMIN_WEB_TRUSTED_PROXY_HOPS ?? '1', 10);
+  const trustedProxies = Number.isInteger(configured) && configured > 0 ? configured : 1;
+  const addresses = chain.split(',').map((part) => part.trim()).filter(Boolean);
+  const candidate = addresses[addresses.length - trustedProxies];
+  const valid = candidate !== undefined && (IPV4.test(candidate) || (candidate.includes(':') && IPV6.test(candidate)));
+  return {
+    'x-staff-forwarded-for': chain.slice(0, 500),
+    ...(valid ? { 'x-staff-client-ip': candidate } : {}),
+  };
+}
 
 export interface ForwardOptions {
   extraHeaders?: Record<string, string>;
@@ -76,6 +104,10 @@ export async function forwardRequest(
   }
 
   if (forwardAuthCookie) {
+    // 우리 서비스에만 — 자체 인증을 쓰는 업스트림(Medusa)에는 보내지 않는다.
+    for (const [name, value] of Object.entries(staffClientHeaders(request))) {
+      headers.set(name, value);
+    }
     const accessToken = request.cookies.get('accessToken')?.value ?? '';
     const refreshToken = request.cookies.get('refreshToken')?.value ?? '';
     headers.set(
@@ -157,11 +189,16 @@ export async function forwardRequest(
 
   const data = await upstream.arrayBuffer();
 
+  const responseHeaders: Record<string, string> = {
+    'Content-Type': upstream.headers.get('Content-Type') ?? 'application/json',
+  };
+  for (const name of PII_RESPONSE_HEADERS) {
+    const value = upstream.headers.get(name);
+    if (value) responseHeaders[name] = value;
+  }
+
   return new Response(data, {
     status: upstream.status,
-    headers: {
-      'Content-Type':
-        upstream.headers.get('Content-Type') ?? 'application/json',
-    },
+    headers: responseHeaders,
   });
 }

@@ -68,6 +68,9 @@
       "@permission-catalog": [
         "../../libs/authorization/src/permissions/index.ts"
       ],
+      "@pii-masking": [
+        "../../libs/shared/src/pii/index.ts"
+      ],
       "react": [
         "./node_modules/@types/react"
       ],

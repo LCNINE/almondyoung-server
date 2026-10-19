@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { PermissionStatusBanner } from '@/components/auth/permission-status-banner';
+import { PiiMaskedBanner } from '@/components/pii/pii-masked-banner';
 import { usesStandaloneLayout } from './page-layout-mode';
 
 const AdminShell = dynamic(() =>
@@ -29,7 +30,12 @@ export function MainLayout({ children }: { children: ReactNode }) {
   );
 
   // 셸 밖 화면도 권한 조회 실패는 알린다(쓰기 버튼이 이유 없이 사라지지 않게)
-  const statusBanners = <PermissionStatusBanner />;
+  const statusBanners = (
+    <>
+      <PermissionStatusBanner />
+      <PiiMaskedBanner />
+    </>
+  );
 
   if (pathname.startsWith('/mall/marketing/time-sale')) {
     return (

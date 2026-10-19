@@ -9,6 +9,7 @@ const TABS = [
   { id: 'staff', label: '관리자', href: '/users' },
   { id: 'roles', label: '역할', href: '/users/roles' },
   { id: 'audit', label: '변경 이력', href: '/users/audit-log' },
+  { id: 'pii', label: '개인정보 접속기록', href: '/users/pii-access-log' },
 ] as const;
 
 export type IamTab = (typeof TABS)[number]['id'];
@@ -21,6 +22,7 @@ export function IamTabs({ current }: { current: IamTab }) {
     staff: open(useCanOpen('/users')),
     roles: open(useCanOpen('/users/roles')),
     audit: open(useCanOpen('/users/audit-log')),
+    pii: open(useCanOpen('/users/pii-access-log')),
   };
   return (
     <nav aria-label="관리자·권한" className="flex gap-1 border-b px-3">

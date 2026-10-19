@@ -104,4 +104,72 @@ describe('Medusa admin proxy', () => {
     expect((await GET(request(), paramsFor(...path))).status).toBe(403);
     expect(transport).not.toHaveBeenCalled();
   });
+
+  describe('개인정보 응답', () => {
+    const orderBody = { order: { id: 'order_1', email: 'abcd@x.com', shipping_address: { phone: '010-1234-5678' } } };
+    const medusaJson = () => new Response(JSON.stringify(orderBody), { status: 200, headers: { 'Content-Type': 'application/json' } });
+
+    beforeEach(() => {
+      process.env.USER_SERVICE_URL = 'http://user';
+    });
+
+    it('records through user-service and returns the raw order to a viewer with customer.pii.read', async () => {
+      mockedGetMyPermissions.mockResolvedValue(ready('order.order.read', 'customer.pii.read'));
+      transport.mockImplementation(async (url: unknown) =>
+        String(url).startsWith('http://user') ? new Response(null, { status: 204 }) : medusaJson(),
+      );
+
+      const res = await GET(request(), paramsFor('admin', 'orders', 'order_1'));
+      expect(await res.json()).toEqual(orderBody);
+      expect(res.headers.get('x-pii-masked')).toBe('none');
+      const recordCall = transport.mock.calls.find(([url]) => String(url) === 'http://user/iam/pii-access-logs');
+      expect(recordCall).toBeDefined();
+      expect(JSON.parse(String(recordCall?.[1]?.body))).toMatchObject({ route: 'admin/orders/:id', subjectCount: 1 });
+    });
+
+    it('masks the order for a viewer without customer.pii.read and records nothing', async () => {
+      mockedGetMyPermissions.mockResolvedValue(ready('order.order.read'));
+      transport.mockImplementation(async () => medusaJson());
+
+      const res = await GET(request(), paramsFor('admin', 'orders', 'order_1'));
+      const body = await res.json();
+      expect(body.order.email).toBe('ab***@x.com');
+      expect(res.headers.get('x-pii-mask-reason')).toBe('no-permission');
+      expect(transport).toHaveBeenCalledTimes(1);
+    });
+
+    it('masks when the access log cannot be written', async () => {
+      mockedGetMyPermissions.mockResolvedValue(ready('order.order.read', 'customer.pii.read'));
+      transport.mockImplementation(async (url: unknown) =>
+        String(url).startsWith('http://user') ? new Response('down', { status: 500 }) : medusaJson(),
+      );
+
+      const res = await GET(request(), paramsFor('admin', 'orders', 'order_1'));
+      expect((await res.json()).order.email).toBe('ab***@x.com');
+      expect(res.headers.get('x-pii-mask-reason')).toBe('record-failed');
+    });
+
+    it('masks a created (201) customer address for a viewer without customer.pii.read', async () => {
+      mockedGetMyPermissions.mockResolvedValue(ready('customer.profile.write'));
+      transport.mockResolvedValue(
+        new Response(JSON.stringify({ customer: { id: 'cus_1', addresses: [{ address_1: '서울특별시 송파구 중대로 135', phone: '010-1234-5678' }] } }), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+      const res = await POST(request('POST'), paramsFor('admin', 'customers', 'cus_1', 'addresses'));
+      expect(res.status).toBe(201);
+      expect((await res.json()).customer.addresses[0].phone).toBe('010-****-5678');
+      expect(res.headers.get('x-pii-mask-reason')).toBe('no-permission');
+    });
+
+    it('leaves non-personal Medusa responses byte for byte', async () => {
+      mockedGetMyPermissions.mockResolvedValue(ready('marketing.promotion.read'));
+      transport.mockResolvedValue(new Response('{"promotions":[{"id":"p1","email":"x"}]}', { status: 200, headers: { 'Content-Type': 'application/json' } }));
+
+      const res = await GET(request(), params);
+      expect(await res.text()).toBe('{"promotions":[{"id":"p1","email":"x"}]}');
+      expect(res.headers.get('x-pii-masked')).toBeNull();
+    });
+  });
 });

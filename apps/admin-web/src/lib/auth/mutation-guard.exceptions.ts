@@ -4,6 +4,7 @@
  */
 export const MASTER_ONLY_MUTATIONS: readonly string[] = [
   'lib/services/customers/mutations.ts#useSetUserRoles',
+  'lib/services/iam/mutations.ts#useCreatePiiAccessReview',
   'lib/services/oauth-clients/mutations.ts#useClearOAuthClientPreviousSecret',
   'lib/services/oauth-clients/mutations.ts#useCreateOAuthClient',
   'lib/services/oauth-clients/mutations.ts#useDeactivateOAuthClient',
