@@ -95,7 +95,7 @@
 **Interfaces:** Consumes Tasks1–4 through typed API; TanStack query key prefix `['attendance']`. Normal settings get persisted before deriving half-day default.
 
 - [ ] Write tests RED for UI models: actual status + leave badge coexist, exclude/restore dates, manual end remains, AM fixed end, reversed end error, recommendation explicit application, request reason linebreaks retained.
-- [ ] Build desktop independent right card, phone one-tap location and short optional WebAudio chime, shared calendar + owner-only controls, date exclusion/undo, inline leave kind buttons, fixed dialog header/footer with native Radix background lock, current staff overview/search/filters/refetch, records/request/review/settings.
+- [ ] Build standalone `/attendance` PWA work card (2026-10-19: remove the admin home card at every viewport), phone one-tap location and short optional WebAudio chime, shared calendar + owner-only controls, date exclusion/undo, inline leave kind buttons, fixed dialog header/footer with native Radix background lock, current staff overview/search/filters/refetch, records/request/review/settings.
 - [ ] Add route/menu access guards admin/master, master-only review actions. Display loading/error/retry instead of fabricated success/empty data on errors; actual punch success only after server response. Remove calculation basis entirely.
 - [ ] Run models/API tests, scoped lint/typecheck, visually inspect PC/mobile using computer-use. Commit `[admin-web] connect attendance workflow and shared calendar`.
 

@@ -1,8 +1,8 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { HelpCircle, Check, Loader2, Smartphone } from 'lucide-react';
+import { HelpCircle, Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -19,20 +19,47 @@ import {
 } from '../hooks/use-attendance';
 import { describeStatus, formatAttendanceTime } from '../lib/attendance-model';
 import { toast } from 'sonner';
-import type { LocationSample } from '@packages/domain-types/attendance';
+import {
+  LEAVE_LABELS,
+  seoulClock,
+  type LocationSample,
+} from '@packages/domain-types/attendance';
 
-export function AttendanceCard({ mobile = false }: { mobile?: boolean }) {
+export function AttendanceCard() {
   const query = useAttendance();
   const me = query.data;
   const punch = useAttendanceAction(attendanceApi.punch);
   const [busy, setBusy] = useState(false);
   const [complete, setComplete] = useState(false);
   const [siteId, setSiteId] = useState('');
+  const [now, setNow] = useState<Date | null>(null);
   const lock = useRef(false);
-  const links = mobile ? '/attendance' : '/company/attendance';
+  const links = '/attendance';
   const attempt = useRef<{ kind: 'in' | 'out'; requestId: string } | null>(
     null
   );
+
+  useEffect(() => {
+    const refreshClock = () => setNow(new Date());
+
+    refreshClock();
+
+    const timer = window.setInterval(refreshClock, 1000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const clock = now ? seoulClock(now) : '--:--';
+  const seconds = now ? String(now.getUTCSeconds()).padStart(2, '0') : '--';
+  const dateLabel = now
+    ? new Intl.DateTimeFormat('ko-KR', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        weekday: 'long',
+      }).format(now)
+    : (me?.today ?? '');
 
   async function record() {
     if (!me || lock.current || me.status === 'done') {
@@ -152,8 +179,8 @@ export function AttendanceCard({ mobile = false }: { mobile?: boolean }) {
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-lg font-bold">오늘의 근무</h2>
+      <div className="mb-6 flex items-center gap-2">
+        <h1 className="text-lg font-bold">오늘의 근무</h1>
         <Dialog>
           <DialogTrigger asChild>
             <Button size="icon" variant="ghost" aria-label="출퇴근 기록 안내">
@@ -180,6 +207,13 @@ export function AttendanceCard({ mobile = false }: { mobile?: boolean }) {
             </div>
           </DialogContent>
         </Dialog>
+        {me && (
+          <span
+            className={`ml-auto rounded-md px-2 py-1 text-xs font-medium ${me.status === 'working' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}
+          >
+            {describeStatus(me.status)}
+          </span>
+        )}
       </div>
       {query.isPending ? (
         <p className="py-8 text-sm text-slate-400">기록을 불러오고 있어요.</p>
@@ -198,21 +232,35 @@ export function AttendanceCard({ mobile = false }: { mobile?: boolean }) {
             </div>
             <div>
               <p className="font-semibold">{me.name}</p>
-              <p className="mt-1 text-xs text-slate-400">
-                {me.today} · {describeStatus(me.status, me.leave?.type)}
-              </p>
+              {me.leave && (
+                <p className="mt-1 text-xs text-slate-500">
+                  {LEAVE_LABELS[me.leave.type]}
+                </p>
+              )}
             </div>
           </div>
-          <div className="my-7 grid grid-cols-2 gap-4 rounded-xl bg-slate-50 p-4">
-            <div>
-              <p className="text-xs text-slate-400">출근</p>
-              <p className="mt-2 text-2xl font-semibold tabular-nums">
+          <div className="my-7">
+            <p
+              className="text-4xl font-semibold tracking-tight tabular-nums"
+              aria-label="현재 한국 시각"
+            >
+              {clock}
+              <span className="text-xl font-normal text-slate-400">
+                :{seconds}
+              </span>
+            </p>
+            <p className="mt-2 text-xs text-slate-500">{dateLabel}</p>
+          </div>
+          <div className="mb-6 divide-y border-y border-slate-100">
+            <div className="flex items-center justify-between py-4">
+              <p className="text-xs text-slate-500">출근</p>
+              <p className="text-sm font-medium tabular-nums">
                 {formatAttendanceTime(me.session?.checkIn)}
               </p>
             </div>
-            <div>
-              <p className="text-xs text-slate-400">퇴근</p>
-              <p className="mt-2 text-2xl font-semibold tabular-nums">
+            <div className="flex items-center justify-between py-4">
+              <p className="text-xs text-slate-500">퇴근</p>
+              <p className="text-sm font-medium tabular-nums">
                 {formatAttendanceTime(me.session?.checkOut)}
               </p>
             </div>
@@ -222,76 +270,59 @@ export function AttendanceCard({ mobile = false }: { mobile?: boolean }) {
               {me.session.workDate}에 시작한 근무예요.
             </p>
           )}
-          {mobile ? (
-            <>
-              {me.worksites.length > 1 && (
-                <label className="mb-4 block text-sm">
-                  근무지
-                  <select
-                    aria-label="근무지"
-                    className="mt-2 w-full rounded-lg border p-3"
-                    value={siteId || me.worksites[0].id}
-                    onChange={(event) => setSiteId(event.target.value)}
-                  >
-                    {me.worksites.map((site) => (
-                      <option key={site.id} value={site.id}>
-                        {site.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+          <>
+            {me.worksites.length > 1 && (
+              <label className="mb-4 block text-sm">
+                근무지
+                <select
+                  aria-label="근무지"
+                  className="mt-2 w-full rounded-lg border p-3"
+                  value={siteId || me.worksites[0].id}
+                  onChange={(event) => setSiteId(event.target.value)}
+                >
+                  {me.worksites.map((site) => (
+                    <option key={site.id} value={site.id}>
+                      {site.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <Button
+              className="h-12 w-full rounded-xl bg-indigo-600 text-base hover:bg-indigo-700"
+              disabled={busy || me.status === 'done' || !me.worksites.length}
+              onClick={record}
+            >
+              {busy ? (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  위치 확인 · 기록 중
+                </>
+              ) : me.status === 'done' ? (
+                <>
+                  <Check className="mr-2 size-4" />
+                  오늘 근무 완료
+                </>
+              ) : me.status === 'working' ? (
+                '퇴근하기'
+              ) : (
+                '출근하기'
               )}
-              <Button
-                className="h-14 w-full rounded-xl bg-indigo-600 text-base hover:bg-indigo-700"
-                disabled={busy || me.status === 'done' || !me.worksites.length}
-                onClick={record}
-              >
-                {busy ? (
-                  <>
-                    <Loader2 className="mr-2 size-4 animate-spin" />
-                    위치 확인 · 기록 중
-                  </>
-                ) : me.status === 'done' ? (
-                  <>
-                    <Check className="mr-2 size-4" />
-                    오늘 근무 완료
-                  </>
-                ) : me.status === 'working' ? (
-                  '퇴근하기'
-                ) : (
-                  '출근하기'
-                )}
-              </Button>
-              <p
-                className="mt-3 text-center text-xs leading-6 text-slate-400"
-                role="status"
-              >
-                {complete
-                  ? '기록이 저장됐어요.'
-                  : !me.worksites.length
-                    ? '마스터의 근무지 설정이 필요해요.'
-                    : '버튼을 누를 때만 현재 위치를 확인해요.'}
-              </p>
-            </>
-          ) : (
-            <div className="rounded-xl border border-dashed p-4">
-              <p className="mb-3 flex items-center gap-2 text-sm">
-                <Smartphone className="size-4" />
-                출퇴근은 개인 휴대폰에서 기록해요.
-              </p>
-              <Link
-                href="/attendance"
-                className="text-sm font-medium text-indigo-600"
-              >
-                모바일 출결 페이지 열기 →
-              </Link>
-            </div>
-          )}
+            </Button>
+            <p
+              className="mt-3 text-center text-xs leading-6 text-slate-400"
+              role="status"
+            >
+              {complete
+                ? '기록이 저장됐어요.'
+                : !me.worksites.length
+                  ? '마스터의 근무지 설정이 필요해요.'
+                  : '버튼을 누를 때만 현재 위치를 확인해요.'}
+            </p>
+          </>
           <div className="mt-5 flex flex-wrap gap-x-4 gap-y-3 text-xs font-medium text-slate-500">
             <Link href={`${links}/records`}>내 기록</Link>
-            <Link href={`${links}/calendar`}>
-              {mobile ? '내 일정' : '공유 캘린더'}
-            </Link>
+            <Link href={`${links}/calendar`}>내 일정</Link>
             <Link href={`${links}/requests`}>정정 / 예외 요청</Link>
             <Link href={`${links}/settings`}>알림 설정</Link>
           </div>

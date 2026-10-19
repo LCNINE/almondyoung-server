@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { AttendanceCard } from '@/features/attendance/components/attendance-card';
 import Link from 'next/link';
 import { Skeleton } from '@/components/ui/skeleton';
 import { HelpPopover } from '@/features/main/HelpPopover';
@@ -248,7 +247,7 @@ export default function MainTemplate() {
   });
 
   return (
-    <div className="grid items-start gap-6 px-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+    <div className="px-4">
       <div className="min-w-0 space-y-6">
         <section className={CARD_CLASS}>
           <div className="flex items-center gap-2 px-4 pt-3.5 pb-1.5">
@@ -308,9 +307,6 @@ export default function MainTemplate() {
 
         <QuickActionsCard />
       </div>
-      <aside className="xl:sticky xl:top-6">
-        <AttendanceCard />
-      </aside>
     </div>
   );
 }
