@@ -286,9 +286,10 @@ ADR-0041(2026-09-30)이 배정을 작업 항목으로 옮기면서 세 벌이 �
 - **먼저 하는 이유:** 측정 근거와 ADR 재검토 조건이 이미 있다. 범위가 작다. K2 의 연습이 된다.
 
 **K2. 상자 수명주기 (`ShipmentLifecycle`)**
-- **소유하는 것:** `transition(tx, id, { to, expected })` 가 전이표(from → to), 직전 상태 CAS, 목표 상태별 리셋 규칙(`manifestVersion`·`recoveryCode`·`plannedAt` 등)을 맡는다.
+- **소유하는 것:** 상태 전이 + 구성(줄·수령인·프로필·manifestVersion). 전이 함수 `transitionShipments` 가 전이표(from → to), 직전 상태 CAS, 목표 상태별 리셋 규칙(`manifestVersion`·`recoveryCode`·`plannedAt` 등)을 맡고, 구성 편집의 문 `editShipmentManifest` 가 잠금·전제 검사·`manifestVersion` 증가·예약 재계산을 맡는다.
 - **넣지 않는 것:** «언제 취소하나» 같은 업무 판단. 전이의 합법성만 넣는다.
 - **없애는 것:** §4.1 표의 서로 다른 리셋, §4.2 의 상태 쓰기 분산, 잠금 방식의 중복 구현.
+- **ADR-0046 으로 완료(2026-10-19).**
 
 **K3. FO 상태는 투영만**
 - 커널이라기보다 «FO status 는 아무도 직접 쓰지 않는다»는 규칙이다.

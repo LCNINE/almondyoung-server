@@ -200,7 +200,14 @@ dispatch 는 예약 그래프 락(`lockShipmentGraphForDispatch`)이고, 회수�
 | 잠금으로만 보호하던 전이에 CAS 추가 | `lockShipmentAggregate` 가 `shipments` 행을 `FOR UPDATE` 로 잡은 뒤 상태를 검사했다(`fulfillment-invariant.service.ts` 의 `assertFulfillmentOrders`) | CAS, 0행은 내부 오류 |
 | 취소 경로(`revert_planned`·취소 재개)가 줄 `inspectedQty` 를 안 지움 | 준비도가 검수 흔적을 막힘으로 판정한다(`cancel-readiness.ts:112` `INSPECTED_QTY`). 즉시 적용·재개는 `ready` 일 때만이다. 리뷰가 코드로 확인, 특성 테스트로 고정한다 | 지운다(no-op) |
 | 결품 이탈이 지우는 `inspectedQty` | 결품 이탈은 `exitIfDrained`(`box-withdrawal.service.ts:263`)가 배정 합 0 일 때만 부르고, PACKED 를 빼는 쪽이 검수도 함께 내린다(`box-allocation.manager.ts:635-652`) → 이 시점의 줄은 이미 전부 0 이다 | 지운다(no-op). 줄 버전은 D1 |
-| 취소 즉시 갈래가 `assertShipmentHasNoActiveWaybill` 을 따로 안 부름 | 손질이 `registered` 송장을 무효화하고, 무효화할 수 없는 송장은 준비도가 막는다(`cancel-readiness.ts:110` `WAYBILL_NOT_VOIDABLE`). 리뷰가 코드로 확인 | 문이 부른다 |
+| 취소 즉시 갈래가 `assertShipmentHasNoActiveWaybill` 을 따로 안 부름 | 손질이 `registered` 송장을 무효화하고, 무효화할 수 없는 송장은 준비도가 막는다(`cancel-readiness.ts:110` `WAYBILL_NOT_VOIDABLE`). 리뷰가 코드로 확인 | 문이 부른다. 즉시 갈래는 문을 통해 보관(custody)·작업 가드(`assertShipmentHasNoCustodyOrActiveWork`)도 이제 지나는데, 준비도가 이미 `ready` 일 때만 이 갈래에 들어오므로 막힘이 없다(준비도가 덮는다) |
+
+**구현 중 더한 것(2026-10-19):**
+- 취소 재개·이탈 취소 완료는 재개봉 앞의 호출자 가드(송장 → 보관 순)를 그대로 두고, 재개봉 뒤 문이 같은 가드를 다시 확인한다. 위반이 여럿일 때 나오는 에러 우선순위를 보존하려고 일부러 중복으로 뒀다.
+- 회수의 `lineVersion` 은 여전히 +2 다(예약 복원 +1, 재개봉 검수 리셋 +1). 예약 서비스의 복원이 줄 버전을 올리는 것은 가드 허용 목록에 `lineVersion`(`shipment-reservation.service.ts`)으로 남았다.
+- 구성 편집의 쓰기 도구 `setEntrancePassword` 는 `last_updated` 를 찍고(옛 동작 보존) 어떤 버전도 올리지 않는다.
+- 가드는 별칭 선언을 허용하되, 별칭이나 직접 import 한 `shipments`·`shipmentLines` 식별자가 `.update/.insert/.delete` 인자로 쓰이면 같은 칼럼 규칙을 적용하고, 그런 별칭을 export 하면 위반이다. raw SQL 은 `public.`·따옴표·`ONLY` 형태도 잡는다. 한계는 가드 파일 머리 주석이 정본이다.
+- 잠금 `lockShipmentAggregates`(여러 상자)는 `services/shipment-aggregate.ts` 에, 문이 넘긴 정렬된 잠금 결과에서 id 로 찾는 `lockedAggregateOf` 는 `shipment/shipment-manifest-edit.ts` 에 있다. `ShipmentReservationService` 는 `bumpReservationVersions`·`retargetConfirmed` 를 공개 메서드로 얻었다(§7).
 
 ## 9. 이름 붙은 동작 변경 (사용자 결정, 2026-10-19)
 
