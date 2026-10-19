@@ -7,6 +7,7 @@ const value: MyPermissions = {
   roles: [{ name: 'admin', displayName: '관리자' }],
   permissions: new Set(['order.order.read', 'order.order.write']),
   version: 'v1',
+  landingPath: null,
 };
 
 describe('myPermissionsSeed', () => {

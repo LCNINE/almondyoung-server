@@ -2,6 +2,7 @@
 // 사용자 관련 DTO 타입 정의
 
 import type { BaseUserInfo, UUID } from './common';
+import type { Assignment, StaffRoleBadge } from './iam';
 
 // ===== 기본 관리자 사용자 정보 =====
 interface User extends BaseUserInfo {}
@@ -48,6 +49,8 @@ interface AdminUsersQuery {
   username?: string;
   email?: string;
   roleName?: string;
+  /** staff: 직원 역할을 지금 가진 사람만(기간 부여 포함) */
+  audience?: 'staff';
   sort?: string;
   order?: string;
   ids?: string;
@@ -67,6 +70,8 @@ interface AdminUserDto {
   updatedAt: string;
   deletedAt: string | null;
   roles: string[];
+  /** audience=staff 일 때만 — 지금 유효한 직원 역할 */
+  staffRoles?: StaffRoleBadge[];
 }
 
 interface AdminUserProfileDto {
@@ -114,22 +119,8 @@ interface RoleDto {
   updatedAt: string;
 }
 
-interface CreateRoleDto {
-  name: string;
-  description?: string;
-}
-
-interface UpdateRoleDto {
-  name?: string;
-  description?: string;
-}
-
 interface AdminUserRolesResponseDto {
-  roles: RoleDto[];
-}
-
-interface ReplaceUserRolesDto {
-  roleIds: string[];
+  roles: Assignment[];
 }
 
 interface UpdateMyProfileDto {
@@ -147,9 +138,6 @@ export type {
   AdminUserDetailDto,
   AdminUsersResponse,
   RoleDto,
-  CreateRoleDto,
-  UpdateRoleDto,
   AdminUserRolesResponseDto,
-  ReplaceUserRolesDto,
   UpdateMyProfileDto,
 };

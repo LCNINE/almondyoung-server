@@ -28,6 +28,8 @@ export const SCREEN_ACCESS: Readonly<Record<string, ScreenAccess>> = {
 
   // 회사/조직
   '/users': any('iam.role.read'),
+  '/users/roles': any('iam.role.read'),
+  '/users/audit-log': any('iam.audit_log.read'),
   '/company/integrations/oauth-clients': any('system.oauth_client.write'),
 
   // 채널/고객

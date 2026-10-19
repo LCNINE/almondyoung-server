@@ -12,6 +12,9 @@ export async function MyPermissionsHydration({ children }: { children: React.Rea
   // 미리 넣기는 최적화일 뿐이다 — 조회가 던져도(인증 설정 누락 등) 레이아웃을 깨지 않고 브라우저가 직접 받게 둔다
   const state = await getMyPermissions().catch(() => null);
   if (state?.state !== 'ready') return <>{children}</>;
-  const seed = myPermissionsSeed({ roles: state.roles, permissions: state.permissions, version: state.version }, state.fetchedAt);
+  const seed = myPermissionsSeed(
+    { roles: state.roles, permissions: state.permissions, version: state.version, landingPath: state.landingPath },
+    state.fetchedAt,
+  );
   return <HydrationBoundary state={seed}>{children}</HydrationBoundary>;
 }

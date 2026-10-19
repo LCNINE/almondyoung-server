@@ -25,6 +25,11 @@ export async function getTokenPayload(): Promise<TokenPayload | null> {
   const token = cookieStore.get('accessToken')?.value;
 
   if (!token) return null;
+  return verifyAccessToken(token);
+}
+
+/** access token 문자열을 RS256 으로 검증해 payload 를 돌려준다(실패하면 null). */
+export async function verifyAccessToken(token: string): Promise<TokenPayload | null> {
   if (!JWKS || !OAUTH_ISSUER_URL || !OIDC_CLIENT_ID) {
     throw new Error('OIDC env (OAUTH_JWKS_URL, OAUTH_ISSUER_URL, OIDC_CLIENT_ID) not configured');
   }

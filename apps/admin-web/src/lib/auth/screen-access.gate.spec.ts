@@ -69,7 +69,13 @@ describe('화면 권한 게이트', () => {
 const ADMIN = new Set(PERMISSION_CATALOG.filter((p) => p.grantOnFirstRegistration.some((r) => r === 'admin')).map((p) => p.key));
 const MASTER = new Set(PERMISSION_CATALOG.filter((p) => !p.systemOnly).map((p) => p.key));
 /** 오늘 master 만 들어가던 화면(옛 `requireRole={['master']}`). */
-const MASTER_ONLY_TODAY = new Set(['/users', '/users/[id]', '/company/integrations/oauth-clients']);
+const MASTER_ONLY_TODAY = new Set([
+  '/users',
+  '/users/[id]',
+  '/users/roles',
+  '/users/roles/[id]',
+  '/company/integrations/oauth-clients',
+]);
 
 describe('admin·master 화면 결과 불변(승인된 변화 제외)', () => {
   const allowed = (route: string, held: ReadonlySet<string>) => {

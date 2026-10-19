@@ -1,6 +1,6 @@
 import { blockedReason, checkCan, permissionDeniedMessage, openState, permissionCheckFrom, runState, shouldRefreshPermissionsAfter403, showTrigger } from './permission-check';
 
-const data = { roles: [], permissions: new Set(['order.order.read']), version: 'v1' };
+const data = { roles: [], permissions: new Set(['order.order.read']), version: 'v1', landingPath: null };
 
 describe('checkCan', () => {
   it('does not turn loading or a failed load into a denial', () => {
@@ -65,7 +65,7 @@ describe('write triggers', () => {
   });
 
   it('treats a failed refresh as unknown even when an older copy is still cached', () => {
-    const writer = { roles: [], permissions: new Set(['order.order.cancel']), version: 'v1' };
+    const writer = { roles: [], permissions: new Set(['order.order.cancel']), version: 'v1', landingPath: null };
     const stale = { isPending: false, isError: true, data: writer };
     expect(showTrigger(runState(stale, [cancel]))).toBe(false);
     expect(blockedReason(runState(stale, [cancel]), [cancel])).toBe('권한 정보를 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.');
@@ -104,7 +104,7 @@ describe('write triggers', () => {
 
 describe('links to another screen', () => {
   it('shows a link only when the target screen would let the user in', () => {
-    const writer = { roles: [], permissions: new Set(['catalog.product.write']), version: 'v1' };
+    const writer = { roles: [], permissions: new Set(['catalog.product.write']), version: 'v1', landingPath: null };
     expect(showTrigger(openState({ isPending: false, isError: false, data: writer }, '/mall/product-registration'))).toBe(true);
     expect(showTrigger(openState({ isPending: false, isError: false, data }, '/mall/product-registration'))).toBe(false);
     expect(showTrigger(openState({ isPending: true, isError: false }, '/mall/product-registration'))).toBe(false);

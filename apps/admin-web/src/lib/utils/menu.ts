@@ -53,8 +53,13 @@ const allMenus: MainMenu[] = [
           },
           {
             id: 'admin-accounts',
-            title: '관리자 계정',
+            title: '관리자·권한',
             path: '/users',
+          },
+          {
+            id: 'iam-audit-log',
+            title: '권한 변경 이력',
+            path: '/users/audit-log',
           },
         ],
       },

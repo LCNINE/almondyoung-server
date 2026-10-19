@@ -1,6 +1,11 @@
 import { MyPermissionsCache, parseMyPermissions, rolesKey, type MyPermissions } from './my-permissions';
 
-const sample = (perms: string[]): MyPermissions => ({ roles: [{ name: 'admin', displayName: '관리자' }], permissions: new Set(perms), version: 'v1' });
+const sample = (perms: string[]): MyPermissions => ({
+  roles: [{ name: 'admin', displayName: '관리자' }],
+  permissions: new Set(perms),
+  version: 'v1',
+  landingPath: null,
+});
 
 describe('parseMyPermissions', () => {
   it('unwraps the response envelope and keeps the permission list as a set', () => {
@@ -11,6 +16,14 @@ describe('parseMyPermissions', () => {
 
   it('accepts a body without the envelope', () => {
     expect(parseMyPermissions({ roles: [], permissions: [], version: 'v1' }).permissions.size).toBe(0);
+  });
+
+  it('reads the landing screen a role set chose, and treats an old response without one as none', () => {
+    expect(parseMyPermissions({ roles: [], permissions: [], version: 'v1', landingPath: '/order/history' }).landingPath).toBe(
+      '/order/history',
+    );
+    expect(parseMyPermissions({ roles: [], permissions: [], version: 'v1' }).landingPath).toBeNull();
+    expect(parseMyPermissions({ roles: [], permissions: [], version: 'v1', landingPath: 'https://x.y' }).landingPath).toBeNull();
   });
 
   it('rejects malformed bodies instead of treating them as no permissions', () => {
@@ -103,6 +116,15 @@ describe('MyPermissionsCache', () => {
     clock = 35_002;
     await cache.get(['admin']);
     expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it('can fetch a missing copy with a one-off source and serves it to the next caller', async () => {
+    const shared = jest.fn(async () => sample(['shared']));
+    const cache = new MyPermissionsCache(shared);
+    const once = jest.fn(async () => sample(['once']));
+    expect([...((await cache.get(['admin'], once))?.permissions ?? [])]).toEqual(['once']);
+    expect([...((await cache.get(['admin']))?.permissions ?? [])]).toEqual(['once']);
+    expect(shared).not.toHaveBeenCalled();
   });
 
   it('does not hammer the source while it has never answered', async () => {

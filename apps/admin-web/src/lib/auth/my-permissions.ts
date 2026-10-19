@@ -14,6 +14,8 @@ export interface MyPermissions {
   readonly roles: readonly MyRole[];
   readonly permissions: ReadonlySet<string>;
   readonly version: string;
+  /** 역할이 지정한 로그인 첫 화면. user-service 가 아직 주지 않으면 null(배포 순서와 무관하게 읽힌다). */
+  readonly landingPath: string | null;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -21,7 +23,7 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 export function parseMyPermissions(body: unknown): MyPermissions {
   const data = isRecord(body) && 'data' in body && isRecord(body.data) ? body.data : body;
   if (!isRecord(data)) throw new Error('my-permissions body is malformed');
-  const { roles, permissions, version } = data;
+  const { roles, permissions, version, landingPath } = data;
   if (!Array.isArray(roles) || !Array.isArray(permissions) || typeof version !== 'string') {
     throw new Error('my-permissions body is malformed');
   }
@@ -33,7 +35,9 @@ export function parseMyPermissions(body: unknown): MyPermissions {
   });
   const keys = permissions.filter((p): p is string => typeof p === 'string');
   if (keys.length !== permissions.length) throw new Error('my-permissions holds a non-string permission');
-  return { roles: parsedRoles, permissions: new Set(keys), version };
+  // 화면 안 경로만 받는다 — 바깥 주소로 보내는 값은 버린다.
+  const landing = typeof landingPath === 'string' && /^\/(?!\/)/.test(landingPath) ? landingPath : null;
+  return { roles: parsedRoles, permissions: new Set(keys), version, landingPath: landing };
 }
 
 /** 역할 이름은 사람이 정한다 — 구분자로 잇지 않고 정렬한 배열을 JSON 으로. */
@@ -71,12 +75,15 @@ export class MyPermissionsCache {
    * null = 한 번도 받지 못했다(판정 불가). 실패하면 마지막 사본을 계속 주고, 원본은 재시도 간격이 지나야
    * 다시 부른다 — 원본이 죽었을 때 요청마다 타임아웃을 기다리지 않게.
    */
-  async get(roles: readonly string[]): Promise<MyPermissions | null> {
-    return (await this.getWithTime(roles))?.value ?? null;
+  async get(roles: readonly string[], fetcher = this.fetcher): Promise<MyPermissions | null> {
+    return (await this.getWithTime(roles, fetcher))?.value ?? null;
   }
 
   /** `get` 과 같고, 돌려주는 사본을 받은 시각을 함께 준다(브라우저 캐시에 그대로 넘길 때). */
-  async getWithTime(roles: readonly string[]): Promise<{ value: MyPermissions; fetchedAt: number } | null> {
+  async getWithTime(
+    roles: readonly string[],
+    fetcher = this.fetcher,
+  ): Promise<{ value: MyPermissions; fetchedAt: number } | null> {
     const key = rolesKey(roles);
     let entry = this.entries.get(key);
     if (!entry) {
@@ -86,7 +93,7 @@ export class MyPermissionsCache {
     }
     if (this.now() >= entry.nextAttemptAt) {
       const target = entry;
-      target.inFlight ??= this.fetcher(roles)
+      target.inFlight ??= fetcher(roles)
         .then((value) => {
           target.value = value;
           target.fetchedAt = this.now();
