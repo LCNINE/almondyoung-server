@@ -2,6 +2,12 @@
 
 import { useMemo, useState, useEffect, useId, useRef } from 'react';
 import Image from 'next/image';
+import { useController, useForm, useWatch } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import {
+  correctionFormSchema,
+  type CorrectionFormValues,
+} from '../lib/correction-form-schema';
 import { useQuery } from '@tanstack/react-query';
 import { CalendarDays, Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -601,10 +607,33 @@ function CorrectionForm({
   existing?: AttendanceRequest;
   onClose: () => void;
 }) {
-  const [day, setDay] = useState(existing?.workDate ?? seoulDate(new Date()));
-  const [checkIn, setCheckIn] = useState(localInput(existing?.checkIn));
-  const [checkOut, setCheckOut] = useState(localInput(existing?.checkOut));
-  const [reason, setReason] = useState(existing?.reason ?? '');
+  const form = useForm<CorrectionFormValues>({
+    resolver: zodResolver(correctionFormSchema),
+    defaultValues: {
+      day: existing?.workDate ?? seoulDate(new Date()),
+      checkIn: localInput(existing?.checkIn),
+      checkOut: localInput(existing?.checkOut),
+      reason: existing?.reason ?? '',
+    },
+    mode: 'onSubmit',
+    reValidateMode: 'onChange',
+    shouldFocusError: false,
+  });
+  const { field: dayField } = useController({
+    name: 'day',
+    control: form.control,
+  });
+  const { field: checkInField } = useController({
+    name: 'checkIn',
+    control: form.control,
+  });
+  const { field: checkOutField } = useController({
+    name: 'checkOut',
+    control: form.control,
+  });
+  const reason = useWatch({ name: 'reason', control: form.control });
+  const { errors, isSubmitting } = form.formState;
+  const formRef = useRef<HTMLFormElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [example, setExample] = useState(false);
   const [retained, setRetained] = useState(existing?.fileIds ?? []);
@@ -620,7 +649,7 @@ function CorrectionForm({
     [thumbnails]
   );
 
-  const mutation = useAttendanceAction(async () => {
+  const mutation = useAttendanceAction(async (values: CorrectionFormValues) => {
     const uploaded: string[] = [];
 
     for (const file of files) {
@@ -633,14 +662,14 @@ function CorrectionForm({
     }
 
     const body: CorrectionInput = {
-      workDate: day,
-      checkIn: checkIn
-        ? new Date(checkIn + ':00+09:00').toISOString()
+      workDate: values.day,
+      checkIn: values.checkIn
+        ? new Date(values.checkIn + ':00+09:00').toISOString()
         : undefined,
-      checkOut: checkOut
-        ? new Date(checkOut + ':00+09:00').toISOString()
+      checkOut: values.checkOut
+        ? new Date(values.checkOut + ':00+09:00').toISOString()
         : undefined,
-      reason,
+      reason: values.reason,
       fileIds: [...retained, ...uploaded],
     };
 
@@ -648,6 +677,14 @@ function CorrectionForm({
       ? attendanceApi.resubmit(existing.id, body)
       : attendanceApi.createRequest(body);
   }, '요청을 접수했어요.');
+
+  function changeTime(name: 'checkIn' | 'checkOut', value: string) {
+    form.setValue(name, value, { shouldDirty: true });
+
+    if (form.formState.isSubmitted) {
+      void form.trigger(['checkIn', 'checkOut']);
+    }
+  }
 
   function addFiles(event: React.ChangeEvent<HTMLInputElement>) {
     const chosen = Array.from(event.target.files ?? []);
@@ -720,9 +757,7 @@ function CorrectionForm({
               form="correction-form"
               variant="ghost"
               className="h-11 px-2 text-base font-semibold text-indigo-600"
-              disabled={
-                mutation.isPending || !reason.trim() || (!checkIn && !checkOut)
-              }
+              disabled={mutation.isPending || isSubmitting}
             >
               {mutation.isPending ? '접수 중' : '요청'}
             </Button>
@@ -734,53 +769,95 @@ function CorrectionForm({
         <form
           id="correction-form"
           className="min-h-0 w-full min-w-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-4 pt-2 pb-[max(24px,env(safe-area-inset-bottom))] sm:flex-initial sm:px-6"
-          onSubmit={(event) => {
-            event.preventDefault();
+          ref={formRef}
+          noValidate
+          onSubmit={form.handleSubmit(
+            async (values) => {
+              if (submitLock.current || mutation.isPending) {
+                return;
+              }
 
-            if (submitLock.current || mutation.isPending) {
-              return;
-            }
+              submitLock.current = true;
 
-            submitLock.current = true;
-
-            void mutation
-              .mutateAsync()
-              .then(onClose)
-              .catch(() => undefined)
-              .finally(() => {
+              try {
+                await mutation.mutateAsync(values);
+                onClose();
+              } catch {
+                // The mutation shows the server error and retains the user's input.
+              } finally {
                 submitLock.current = false;
-              });
-          }}
+              }
+            },
+            (invalidFields) => {
+              const first = (
+                ['day', 'checkIn', 'checkOut', 'reason'] as const
+              ).find((name) => invalidFields[name]);
+              const section =
+                first &&
+                formRef.current?.querySelector<HTMLElement>(
+                  `[data-correction-field="${first}"]`
+                );
+              const selector =
+                first === 'checkIn' || first === 'checkOut'
+                  ? 'button[aria-label$="시각"]'
+                  : 'button:not(:disabled), textarea, input:not(:disabled)';
+              const control = section?.querySelector<HTMLElement>(selector);
+
+              section?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+              control?.focus({ preventScroll: true });
+            }
+          )}
         >
           <fieldset
             disabled={mutation.isPending}
             className="m-0 w-full min-w-0 max-w-full space-y-5 border-0 p-0"
           >
-            <CorrectionDateField
-              label="근무일"
-              required
-              value={day}
-              disabled={!!existing}
-              onChange={setDay}
-            />
+            <div data-correction-field="day">
+              <CorrectionDateField
+                label="근무일"
+                required
+                value={dayField.value}
+                disabled={!!existing}
+                onChange={dayField.onChange}
+              />
+              {errors.day && (
+                <p role="alert" className="mt-2 text-sm text-red-600">
+                  {errors.day.message}
+                </p>
+              )}
+            </div>
             <div className="space-y-4">
-              <CorrectionDateTimeFields
-                label="실제 출근"
-                value={checkIn}
-                fallbackDate={day}
-                onChange={setCheckIn}
-              />
-              <CorrectionDateTimeFields
-                label="실제 퇴근"
-                value={checkOut}
-                fallbackDate={day}
-                onChange={setCheckOut}
-              />
+              <div data-correction-field="checkIn">
+                <CorrectionDateTimeFields
+                  label="실제 출근"
+                  value={checkInField.value}
+                  fallbackDate={dayField.value}
+                  onChange={(value) => changeTime('checkIn', value)}
+                />
+                {errors.checkIn && (
+                  <p role="alert" className="mt-2 text-sm text-red-600">
+                    {errors.checkIn.message}
+                  </p>
+                )}
+              </div>
+              <div data-correction-field="checkOut">
+                <CorrectionDateTimeFields
+                  label="실제 퇴근"
+                  value={checkOutField.value}
+                  fallbackDate={dayField.value}
+                  onChange={(value) => changeTime('checkOut', value)}
+                />
+                {errors.checkOut && (
+                  <p role="alert" className="mt-2 text-sm text-red-600">
+                    {errors.checkOut.message}
+                  </p>
+                )}
+              </div>
             </div>
             <p className="text-xs leading-6 text-slate-500">
               수정할 시각만 선택하세요. 다음 날 퇴근했다면 날짜도 바꿔 주세요.
             </p>
-            <div className="space-y-2">
+            <div className="space-y-2" data-correction-field="reason">
               <label className="group relative block">
                 <span
                   className={`pointer-events-none absolute left-3 z-10 text-slate-500 transition-all group-focus-within:top-3 group-focus-within:text-xs group-focus-within:text-indigo-600 motion-reduce:transition-none ${reason ? 'top-3 text-xs' : 'top-4 text-base'}`}
@@ -789,15 +866,24 @@ function CorrectionForm({
                 </span>
                 <Textarea
                   aria-label="상세 사유"
-                  aria-describedby="correction-reason-help"
+                  aria-describedby="correction-reason-help correction-reason-error"
+                  aria-invalid={!!errors.reason}
                   required
                   maxLength={5000}
                   rows={3}
                   className="min-h-28 w-full min-w-0 max-w-full resize-none rounded-xl bg-white pt-9 text-base"
-                  value={reason}
-                  onChange={(event) => setReason(event.target.value)}
+                  {...form.register('reason')}
                 />
               </label>
+              {errors.reason && (
+                <p
+                  id="correction-reason-error"
+                  role="alert"
+                  className="text-sm text-red-600"
+                >
+                  {errors.reason.message}
+                </p>
+              )}
               <p
                 id="correction-reason-help"
                 className="text-xs leading-6 text-slate-500"

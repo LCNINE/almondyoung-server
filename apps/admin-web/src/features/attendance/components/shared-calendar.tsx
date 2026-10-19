@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -41,6 +41,10 @@ import {
   calendarLeavesForScope,
   type CalendarScope,
 } from '../lib/calendar-layout';
+import {
+  calendarMonthOffset,
+  calendarSwipeDirection,
+} from '../lib/calendar-swipe';
 import { VacationPeriodFields } from './vacation-period-fields';
 import { vacationDdayLabel, vacationPeriodDays } from '../lib/vacation-period';
 
@@ -59,9 +63,13 @@ export function SharedCalendar({
   showHeading?: boolean;
   fitViewport?: boolean;
 }) {
-  const queryClient = useQueryClient();
   const swipeStart = useRef<{ x: number; y: number } | null>(null);
   const swipeMoved = useRef(false);
+  const swipeAxis = useRef<'horizontal' | 'vertical' | null>(null);
+  const slideTrack = useRef<HTMLDivElement>(null);
+  const slideRunning = useRef(false);
+  const slideCompletion = useRef<(() => void) | null>(null);
+  const slideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { data: me } = useAttendance();
   const today = seoulDate(new Date());
   const [month, setMonth] = useState(today.slice(0, 7));
@@ -86,18 +94,32 @@ export function SharedCalendar({
     };
   }
 
-  useEffect(() => {
-    for (const delta of [-1, 1]) {
-      const date = new Date(`${month}-15T12:00:00`);
-
-      date.setMonth(date.getMonth() + delta);
-
-      const adjacent = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-
-      void queryClient.prefetchQuery(calendarQuery(adjacent));
-    }
-  }, [month, queryClient]);
+  const previousMonth = calendarMonthOffset(month, -1);
+  const nextMonth = calendarMonthOffset(month, 1);
+  const previousQuery = useQuery(calendarQuery(previousMonth));
   const query = useQuery(calendarQuery(month));
+  const nextQuery = useQuery(calendarQuery(nextMonth));
+
+  useLayoutEffect(() => {
+    const track = slideTrack.current;
+
+    if (track) {
+      track.style.transition = 'none';
+      track.style.transform = 'translate3d(-100%, 0, 0)';
+    }
+
+    slideRunning.current = false;
+  }, [month]);
+
+  useEffect(
+    () => () => {
+      if (slideTimer.current) {
+        clearTimeout(slideTimer.current);
+      }
+    },
+    []
+  );
+
   const visibleLeaves = calendarLeavesForScope(
     query.data ?? [],
     me?.userId,
@@ -149,15 +171,160 @@ export function SharedCalendar({
   }
 
   function moveMonth(delta: number) {
-    const date = new Date(`${month}-15T12:00:00`);
-
-    date.setMonth(date.getMonth() + delta);
-
-    const next = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    const next = calendarMonthOffset(month, delta);
 
     setMonth(next);
-
     setSelected(`${next}-01`);
+  }
+
+  function completeSlide() {
+    const complete = slideCompletion.current;
+
+    slideCompletion.current = null;
+
+    if (slideTimer.current) {
+      clearTimeout(slideTimer.current);
+      slideTimer.current = null;
+    }
+
+    complete?.();
+  }
+
+  function settleSlide(direction: number) {
+    const track = slideTrack.current;
+
+    if (!track) {
+      return;
+    }
+
+    slideRunning.current = true;
+    slideCompletion.current = () => {
+      if (direction) {
+        moveMonth(direction);
+      } else {
+        slideRunning.current = false;
+      }
+    };
+
+    const reducedMotion = window.matchMedia(
+      '(prefers-reduced-motion: reduce)'
+    ).matches;
+
+    track.style.transition = reducedMotion
+      ? 'none'
+      : 'transform 240ms cubic-bezier(0.22, 1, 0.36, 1)';
+    track.style.transform = `translate3d(${-(direction + 1) * 100}%, 0, 0)`;
+
+    if (reducedMotion) {
+      completeSlide();
+    } else {
+      slideTimer.current = setTimeout(completeSlide, 300);
+    }
+  }
+
+  function renderMonthGrid(
+    targetMonth: string,
+    items: CalendarLeave[],
+    loading: boolean
+  ) {
+    const visibleLeaves = calendarLeavesForScope(items, me?.userId, scope);
+    const weeks = buildCalendarWeeks(targetMonth, visibleLeaves);
+
+    return (
+      <div
+        className="grid h-full min-h-0 w-full shrink-0 bg-white"
+        style={{ gridTemplateRows: `repeat(${weeks.length}, minmax(0, 1fr))` }}
+      >
+        {weeks.map((week) => (
+          <div
+            key={week.days[0]}
+            className="relative grid min-h-0 grid-cols-7 overflow-hidden border-b border-slate-200 last:border-b-0"
+          >
+            {week.days.map((day, weekday) => {
+              const leaves = visibleLeaves.filter((item) => item.date === day);
+              const extra = week.segments.filter(
+                (segment) =>
+                  segment.lane >= visibleLanes &&
+                  segment.from <= day &&
+                  segment.to >= day
+              ).length;
+              const inMonth = day.startsWith(targetMonth);
+
+              return (
+                <div
+                  key={day}
+                  className="relative min-h-0 min-w-0 border-r border-slate-100 last:border-r-0"
+                >
+                  <button
+                    type="button"
+                    aria-label={`${day} 휴가·반차 ${leaves.length}명${leaves.length ? ': ' + leaves.map((item) => `${item.name} ${LEAVE_LABELS[item.type]}`).join(', ') : ''}`}
+                    aria-pressed={selected === day}
+                    onClick={() => selectDay(day)}
+                    onDoubleClick={() => {
+                      setSelected(day);
+                      setDaySheetOpen(true);
+                    }}
+                    aria-haspopup="dialog"
+                    className={`relative flex h-full min-h-0 w-full min-w-0 flex-col items-center pt-0.5 pb-0 transition-colors focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-indigo-600 ${selected === day ? 'bg-slate-100' : 'bg-white hover:bg-slate-50'}`}
+                  >
+                    <span
+                      className={`flex size-5 items-center justify-center rounded-full text-xs ${day === today ? 'bg-slate-900 font-semibold text-white' : !inMonth ? 'text-slate-400' : weekday === 0 ? 'text-rose-600' : weekday === 6 ? 'text-sky-700' : 'text-slate-600'}`}
+                    >
+                      {Number(day.slice(-2))}
+                    </span>
+                  </button>
+                  {extra > 0 && (
+                    <button
+                      type="button"
+                      aria-label={`${day} 전체 일정 ${leaves.length}명 보기`}
+                      aria-haspopup="dialog"
+                      className="absolute inset-x-0 bottom-0 z-20 flex h-3.5 min-w-0 items-center justify-center rounded text-[10px] font-medium text-slate-600 hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-indigo-600 sm:inset-x-0.5"
+                      onClick={() => {
+                        setSelected(day);
+                        setDaySheetOpen(true);
+                      }}
+                    >
+                      <span className="sm:hidden">+{extra}</span>
+                      <span className="hidden sm:inline">
+                        +{extra}명 더 보기
+                      </span>
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 top-6 grid grid-cols-7 gap-y-px px-0.5"
+            >
+              {loading && (
+                <div className="col-span-7 space-y-px px-1">
+                  {Array.from({ length: visibleLanes }, (_, lane) => (
+                    <Skeleton key={lane} className="h-3 w-4/7" />
+                  ))}
+                </div>
+              )}
+              {week.segments
+                .filter((segment) => segment.lane < visibleLanes)
+                .map((segment) => (
+                  <span
+                    key={segment.id}
+                    style={{
+                      gridColumn: `${segment.column} / span ${segment.span}`,
+                      gridRow: segment.lane + 1,
+                    }}
+                    className={`mx-0.5 h-3 truncate px-1 text-[9px] font-medium leading-3 sm:text-[11px] ${segment.continuesBefore ? 'rounded-r-sm' : segment.continuesAfter ? 'rounded-l-sm' : 'rounded-sm'} ${LEAVE_COLORS[segment.type]}`}
+                  >
+                    {segment.continuesBefore ? '‹ ' : ''}
+                    {segment.name} · {LEAVE_LABELS[segment.type]}
+                    {segment.continuesAfter ? ' ›' : ''}
+                  </span>
+                ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
   }
 
   return (
@@ -222,7 +389,7 @@ export function SharedCalendar({
                 variant="ghost"
                 className="sr-only focus:not-sr-only focus:size-11 focus:rounded-full"
                 aria-label="지난달"
-                onClick={() => moveMonth(-1)}
+                onClick={() => settleSlide(-1)}
               >
                 <ChevronLeft className="size-4" />
               </Button>
@@ -231,7 +398,7 @@ export function SharedCalendar({
                 variant="ghost"
                 className="sr-only focus:not-sr-only focus:size-11 focus:rounded-full"
                 aria-label="다음 달"
-                onClick={() => moveMonth(1)}
+                onClick={() => settleSlide(1)}
               >
                 <ChevronRight className="size-4" />
               </Button>
@@ -261,150 +428,112 @@ export function SharedCalendar({
           <div
             ref={gridRef}
             onPointerDown={(event) => {
-              if (!event.isPrimary) {
+              if (
+                !event.isPrimary ||
+                event.button !== 0 ||
+                slideRunning.current
+              ) {
                 return;
               }
 
               swipeStart.current = { x: event.clientX, y: event.clientY };
+              swipeAxis.current = null;
               swipeMoved.current = false;
             }}
             onPointerMove={(event) => {
               const start = swipeStart.current;
+              const track = slideTrack.current;
 
-              if (!start) {
-                return;
-              }
-
-              const dx = Math.abs(event.clientX - start.x);
-              const dy = Math.abs(event.clientY - start.y);
-
-              if (dx > 12 && dx > dy * 1.5) {
-                swipeMoved.current = true;
-              }
-            }}
-            onPointerUp={(event) => {
-              const start = swipeStart.current;
-
-              swipeStart.current = null;
-
-              if (!start) {
+              if (!start || !track) {
                 return;
               }
 
               const dx = event.clientX - start.x;
               const dy = event.clientY - start.y;
 
-              if (Math.abs(dx) >= 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-                swipeMoved.current = true;
-                moveMonth(dx < 0 ? 1 : -1);
+              if (
+                !swipeAxis.current &&
+                Math.max(Math.abs(dx), Math.abs(dy)) > 8
+              ) {
+                swipeAxis.current =
+                  Math.abs(dx) > Math.abs(dy) * 1.5 ? 'horizontal' : 'vertical';
               }
+
+              if (swipeAxis.current !== 'horizontal') {
+                return;
+              }
+
+              swipeMoved.current = true;
+              event.currentTarget.setPointerCapture(event.pointerId);
+
+              const width = event.currentTarget.clientWidth;
+              const offset = Math.max(-width, Math.min(width, dx));
+
+              track.style.transition = 'none';
+              track.style.transform = `translate3d(calc(-100% + ${offset}px), 0, 0)`;
+            }}
+            onPointerUp={(event) => {
+              const start = swipeStart.current;
+
+              swipeStart.current = null;
+
+              if (!start || swipeAxis.current !== 'horizontal') {
+                return;
+              }
+
+              settleSlide(
+                calendarSwipeDirection(
+                  event.clientX - start.x,
+                  event.clientY - start.y,
+                  event.currentTarget.clientWidth
+                )
+              );
             }}
             onPointerCancel={() => {
               swipeStart.current = null;
-              swipeMoved.current = false;
+
+              if (swipeAxis.current === 'horizontal') {
+                settleSlide(0);
+              }
             }}
             onClickCapture={(event) => {
-              if (swipeMoved.current) {
+              if (swipeMoved.current || slideRunning.current) {
                 event.preventDefault();
                 event.stopPropagation();
                 swipeMoved.current = false;
               }
             }}
-            className="grid touch-pan-y select-none min-h-0 flex-1 border-t border-slate-200"
-            style={{
-              gridTemplateRows: `repeat(${weeks.length}, minmax(0, 1fr))`,
-            }}
+            className="relative min-h-0 flex-1 touch-pan-y overflow-hidden border-t border-slate-200 select-none"
           >
-            {weeks.map((week) => (
-              <div
-                key={week.days[0]}
-                className="relative grid min-h-0 grid-cols-7 overflow-hidden border-b border-slate-200 last:border-b-0"
-              >
-                {week.days.map((day, weekday) => {
-                  const leaves = visibleLeaves.filter(
-                    (item) => item.date === day
-                  );
-                  const extra = week.segments.filter(
-                    (segment) =>
-                      segment.lane >= visibleLanes &&
-                      segment.from <= day &&
-                      segment.to >= day
-                  ).length;
-                  const inMonth = day.startsWith(month);
-
-                  return (
-                    <div
-                      key={day}
-                      className="relative min-h-0 min-w-0 border-r border-slate-100 last:border-r-0"
-                    >
-                      <button
-                        type="button"
-                        aria-label={`${day} 휴가·반차 ${leaves.length}명${leaves.length ? ': ' + leaves.map((item) => `${item.name} ${LEAVE_LABELS[item.type]}`).join(', ') : ''}`}
-                        aria-pressed={selected === day}
-                        onClick={() => selectDay(day)}
-                        onDoubleClick={() => {
-                          setSelected(day);
-                          setDaySheetOpen(true);
-                        }}
-                        aria-haspopup="dialog"
-                        className={`relative flex h-full min-h-0 w-full min-w-0 flex-col items-center pt-0.5 pb-0 transition-colors focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-indigo-600 ${selected === day ? 'bg-slate-100' : 'bg-white hover:bg-slate-50'}`}
-                      >
-                        <span
-                          className={`flex size-5 items-center justify-center rounded-full text-xs ${day === today ? 'bg-slate-900 font-semibold text-white' : !inMonth ? 'text-slate-400' : weekday === 0 ? 'text-rose-600' : weekday === 6 ? 'text-sky-700' : 'text-slate-600'}`}
-                        >
-                          {Number(day.slice(-2))}
-                        </span>
-                      </button>
-                      {extra > 0 && (
-                        <button
-                          type="button"
-                          aria-label={`${day} 전체 일정 ${leaves.length}명 보기`}
-                          aria-haspopup="dialog"
-                          className="absolute inset-x-0 bottom-0 z-20 flex h-3.5 min-w-0 items-center justify-center rounded text-[10px] font-medium text-slate-600 hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-indigo-600 sm:inset-x-0.5"
-                          onClick={() => {
-                            setSelected(day);
-                            setDaySheetOpen(true);
-                          }}
-                        >
-                          <span className="sm:hidden">+{extra}</span>
-                          <span className="hidden sm:inline">
-                            +{extra}명 더 보기
-                          </span>
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-                <div
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-x-0 top-6 grid grid-cols-7 gap-y-px px-0.5"
-                >
-                  {query.isPending && (
-                    <div className="col-span-7 space-y-px px-1">
-                      {Array.from({ length: visibleLanes }, (_, lane) => (
-                        <Skeleton key={lane} className="h-3 w-4/7" />
-                      ))}
-                    </div>
-                  )}
-                  {week.segments
-                    .filter((segment) => segment.lane < visibleLanes)
-                    .map((segment) => (
-                      <span
-                        key={segment.id}
-                        style={{
-                          gridColumn: `${segment.column} / span ${segment.span}`,
-                          gridRow: segment.lane + 1,
-                        }}
-                        className={`mx-0.5 h-3 truncate px-1 text-[9px] font-medium leading-3 sm:text-[11px] ${segment.continuesBefore ? 'rounded-r-sm' : segment.continuesAfter ? 'rounded-l-sm' : 'rounded-sm'} ${LEAVE_COLORS[segment.type]}`}
-                      >
-                        {segment.continuesBefore ? '‹ ' : ''}
-                        {segment.name} · {LEAVE_LABELS[segment.type]}
-                        {segment.continuesAfter ? ' ›' : ''}
-                      </span>
-                    ))}
-                </div>
+            <div
+              ref={slideTrack}
+              className="flex h-full w-full will-change-transform"
+              style={{ transform: 'translate3d(-100%, 0, 0)' }}
+              onTransitionEnd={(event) => {
+                if (
+                  event.target === event.currentTarget &&
+                  event.propertyName === 'transform'
+                ) {
+                  completeSlide();
+                }
+              }}
+            >
+              <div aria-hidden inert className="h-full w-full shrink-0">
+                {renderMonthGrid(
+                  previousMonth,
+                  previousQuery.data ?? [],
+                  previousQuery.isPending
+                )}
               </div>
-            ))}
+              {renderMonthGrid(month, query.data ?? [], query.isPending)}
+              <div aria-hidden inert className="h-full w-full shrink-0">
+                {renderMonthGrid(
+                  nextMonth,
+                  nextQuery.data ?? [],
+                  nextQuery.isPending
+                )}
+              </div>
+            </div>
           </div>
           {query.isError && (
             <p role="alert" className="p-4 text-sm text-red-600">

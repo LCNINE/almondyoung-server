@@ -331,6 +331,15 @@ export function AttendanceCard() {
             <Link prefetch={true} href={`${links}/settings`}>
               알림 설정
             </Link>
+            {me.isMaster && (
+              <Link
+                prefetch={true}
+                className="col-span-2"
+                href={`${links}/review`}
+              >
+                요청 검토
+              </Link>
+            )}
             {me.isMaster && me.worksites.length > 0 && (
               <Link className="col-span-2" href={`${links}/worksites`}>
                 근무지 관리

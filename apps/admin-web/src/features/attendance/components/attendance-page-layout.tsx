@@ -4,6 +4,9 @@ import { ChevronLeft } from 'lucide-react';
 import { cn } from '@/lib/utils/ui';
 import { AttendanceRefreshButton } from './attendance-refresh-button';
 
+export const ATTENDANCE_CALENDAR_VIEWPORT_CLASS =
+  'h-[calc(100dvh-3.5rem-1px-env(safe-area-inset-top))] px-3 pt-2 pb-[max(8px,env(safe-area-inset-bottom))]';
+
 export function AttendancePageLayout({
   title,
   wide = false,
@@ -43,7 +46,7 @@ export function AttendancePageLayout({
         className={cn(
           'mx-auto min-w-0',
           fillViewport
-            ? 'h-[calc(100dvh-3.5rem-1px-env(safe-area-inset-top))] px-3 pt-2 pb-[max(8px,env(safe-area-inset-bottom))]'
+            ? ATTENDANCE_CALENDAR_VIEWPORT_CLASS
             : 'space-y-6 px-4 pt-6 pb-[max(24px,env(safe-area-inset-bottom))]',
           width
         )}
