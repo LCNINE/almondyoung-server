@@ -177,6 +177,73 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
     });
   });
 
+  it('K2 특성: 막힘 없는 planned 원본은 대기 없이 superseded 가 된다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await baseFixture(tx);
+      const plannedSource = await createOrderShipment(tx, base, { quantity: 3 });
+      const draftSource = await createOrderShipment(tx, base, { quantity: 2 });
+      await tx
+        .update(wmsTables.deliveryProfiles)
+        .set({
+          senderSnapshot: { name: 'Sender' },
+          originAddressSnapshot: { address: 'Origin' },
+          returnAddressSnapshot: { address: 'Return' },
+          carrierAccountRef: 'consolidation-carrier-account',
+        })
+        .where(eq(wmsTables.deliveryProfiles.id, base.profileId));
+      const [draftRow] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, plannedSource.shipment.id));
+      await planning.plan(
+        plannedSource.shipment.id,
+        {
+          shippingProfileId: base.profileId,
+          expectedManifestVersion: draftRow.manifestVersion,
+          expectedReservationVersion: draftRow.reservationVersion,
+        },
+        `k2-plan-source-${randomUUID()}`,
+        actor,
+        tx,
+      );
+      const [before] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, plannedSource.shipment.id));
+      expect(before.status).toBe('planned');
+
+      const result = await consolidation.consolidate(
+        {
+          sources: requestFor(plannedSource, draftSource),
+          recipientSourceShipmentId: plannedSource.shipment.id,
+          reason: 'k2 characterization',
+        },
+        `k2-consolidate-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      expect(result.operationStatus).toBe('completed');
+      const [operation] = await tx
+        .select()
+        .from(wmsTables.shipmentOperations)
+        .where(eq(wmsTables.shipmentOperations.id, result.operationId));
+      expect(operation.status).toBe('completed');
+      const [after] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, plannedSource.shipment.id));
+      expect(after).toMatchObject({ status: 'superseded', recoveryCode: null });
+      expect(after.plannedAt).not.toBeNull();
+      expect(after.manifestVersion - before.manifestVersion).toBe(1);
+      const [target] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, result.targetShipmentId!));
+      expect(target).toMatchObject({ status: 'draft', manifestVersion: 1 });
+    });
+  });
+
   it("cancels one source order's consolidated line and replans the surviving target", async () => {
     await inRollbackTx(db, async (tx) => {
       const base = await baseFixture(tx);

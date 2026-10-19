@@ -500,6 +500,58 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
     expect(itemAfterReplay.shippedQty).toBe(0);
   });
 
+  it('K2 특성: 회수 완료는 상자와 줄의 검수·출고 흔적을 지운다', async () => {
+    const fixture = await db.transaction((tx) => seedDispatchedRecallable(tx as unknown as DbTx));
+    const [shipmentBefore] = await db
+      .select()
+      .from(wmsTables.shipments)
+      .where(eq(wmsTables.shipments.id, fixture.shipment.id));
+    const linesBefore = await db
+      .select()
+      .from(wmsTables.shipmentLines)
+      .where(eq(wmsTables.shipmentLines.shipmentId, fixture.shipment.id));
+    expect(linesBefore.length).toBeGreaterThan(0);
+
+    const reported = await service.report(
+      fixture.shipment.id,
+      fixture.attempt.id,
+      {
+        dispatchAttemptId: fixture.attempt.id,
+        expectedManifestVersion: shipmentBefore.manifestVersion,
+        physicalRecoveryConfirmed: true as const,
+        reason: 'package_recovered' as const,
+      },
+      `recall-k2-${randomUUID()}`,
+      { id: fixture.actorId, roles: ['master'] },
+    );
+    fixture.operationId = reported.operationId;
+    expect(reported.operationStatus).toBe('completed');
+
+    const [shipmentAfter] = await db
+      .select()
+      .from(wmsTables.shipments)
+      .where(eq(wmsTables.shipments.id, fixture.shipment.id));
+    const linesAfter = await db
+      .select()
+      .from(wmsTables.shipmentLines)
+      .where(eq(wmsTables.shipmentLines.shipmentId, fixture.shipment.id));
+    expect(shipmentAfter).toMatchObject({
+      status: 'draft',
+      recoveryCode: null,
+      plannedAt: null,
+      shippedAt: null,
+      deliveredAt: null,
+    });
+    expect(shipmentAfter.manifestVersion - shipmentBefore.manifestVersion).toBe(1);
+    expect(linesAfter).toHaveLength(linesBefore.length);
+    for (const after of linesAfter) {
+      const before = linesBefore.find((l) => l.id === after.id)!;
+      expect(after).toMatchObject({ inspectedQty: 0, forced: false });
+      // restoreForRecall(shipment-reservation.service) 가 한 번, 회수 리셋(shipment-recall.service) 이 한 번 올려 +2.
+      expect(after.lineVersion - before.lineVersion).toBe(2);
+    }
+  });
+
   it.each([
     ['carrier accepted', 'accepted'],
     ['in-transit evidence', 'in_transit'],
