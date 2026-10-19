@@ -95,8 +95,8 @@ export function FontPicker({
 
   if (!open || !host) return null
 
-  const uploaded = fonts.filter((font) => font.category === "내 글꼴")
-  const builtIn = fonts.filter((font) => font.category !== "내 글꼴")
+  const uploaded = fonts.filter((font) => font.category === "추가 글꼴")
+  const builtIn = fonts.filter((font) => font.category !== "추가 글꼴")
   const recentFonts = recent
     .map((v) => fonts.find((font) => font.value === v))
     .filter((font): font is FontOption => !!font)
@@ -104,7 +104,7 @@ export function FontPicker({
     ["recent", "최근 사용 폰트", recentFonts],
     ["korean", "일반 폰트 - 한글", builtIn],
     ...(uploaded.length
-      ? [["uploaded", "올린 글꼴", uploaded] as [Group, string, FontOption[]]]
+      ? [["uploaded", "추가 글꼴", uploaded] as [Group, string, FontOption[]]]
       : []),
   ]
   const [, groupLabel, groupFonts] =
@@ -117,7 +117,7 @@ export function FontPicker({
       (!needle || font.label.toLowerCase().includes(needle))
   )
   const styleOptions = FONT_CATEGORIES.filter(
-    (name) => name !== "내 글꼴" && builtIn.some((f) => f.category === name)
+    (name) => name !== "추가 글꼴" && builtIn.some((f) => f.category === name)
   )
   const pick = (font: FontOption) => {
     const next = [font.value, ...recent.filter((v) => v !== font.value)].slice(
@@ -287,7 +287,7 @@ export function FontPicker({
                   >
                     {font.label}
                   </span>
-                  {font.category !== "내 글꼴" && (
+                  {font.category !== "추가 글꼴" && (
                     <>
                       <span className="flex size-[22px] shrink-0 items-center justify-center rounded-[5px] bg-[#FEE869] text-[11px] text-[#3F4250]">
                         한

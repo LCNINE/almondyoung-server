@@ -1,5 +1,5 @@
 import { useState, useSyncExternalStore } from "react"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronLeft, ChevronRight, FolderOpen } from "lucide-react"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
 import {
   FONT_CATEGORIES,
@@ -39,6 +39,7 @@ export function TextPanel({ editor }: { editor: AlmondEditor }) {
     <div className="flex flex-wrap gap-x-[9px] gap-y-[18px]">
       {categories.slice(0, limit).map((name) => {
         const sample = fonts.find((font) => font.category === name)
+        const extra = name === "추가 글꼴"
         return (
           <button
             key={name}
@@ -48,10 +49,22 @@ export function TextPanel({ editor }: { editor: AlmondEditor }) {
           >
             <span
               className="flex size-[74px] flex-col items-center justify-center rounded-[6px] bg-[#F6F7F9] text-[15px] leading-tight text-[#20232A] outline-1 outline-offset-[3px] outline-transparent transition-[outline-color] duration-200 group-hover/type:outline group-hover/type:outline-[#6f717c]"
-              style={{ fontFamily: sample?.value }}
+              style={extra ? undefined : { fontFamily: sample?.value }}
             >
-              <span>한글</span>
-              <span>Abc</span>
+              {extra ? (
+                // 디자이너가 더한 글꼴 묶음이라 견본 대신 폴더와 개수로 기본 분류와 구별한다
+                <>
+                  <FolderOpen size={24} strokeWidth={1.5} />
+                  <span className="mt-1 text-[12px] text-[#70777F]">
+                    {fonts.filter((font) => font.category === name).length}종
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span>한글</span>
+                  <span>Abc</span>
+                </>
+              )}
             </span>
             <span className="text-[12px] leading-[14.32px] tracking-[-0.025em] text-[#3F4250]">
               {name}

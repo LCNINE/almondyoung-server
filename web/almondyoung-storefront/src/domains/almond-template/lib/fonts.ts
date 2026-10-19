@@ -88,7 +88,7 @@ export const FONT_CATEGORIES = [
   "손글씨",
   "장식",
   "레트로",
-  "내 글꼴",
+  "추가 글꼴",
 ] as const
 
 export type FontCategory = (typeof FONT_CATEGORIES)[number]
@@ -129,7 +129,7 @@ export function setUploadedFonts(fonts: UploadedFont[]) {
     ...fonts.map((font) => ({
       label: font.name,
       value: uploadedFontValue(font.family),
-      category: "내 글꼴" as const,
+      category: "추가 글꼴" as const,
     })),
   ]
   listeners.forEach((listener) => listener())
