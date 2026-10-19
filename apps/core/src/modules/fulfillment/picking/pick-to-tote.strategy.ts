@@ -34,17 +34,22 @@ import {
   assertPositiveQuantity,
   assertWorkItemIdentity,
   databaseNow,
-  loadPositiveShipmentCustody,
   loadWorkItem,
-  loadWorkItemAllocations,
-  lockAndAssertPickerClaim,
 } from './allocation/allocation.queries';
-import { ShipmentCustodyBalance, WorkItemRow, uniqueSorted } from './allocation/allocation.types';
+import { WorkItemRow, uniqueSorted } from './allocation/allocation.types';
+import {
+  completeWorkItemPick,
+  CustodyCommandDeps,
+  handoffWorkItemPicker,
+  PickingCustodyPolicy,
+  runForwardWorkItemCommand,
+  unpickWorkItemShipment,
+  WorkItemCommandDeps,
+} from './work-item-command';
+import { spotsOf } from './work-item-custody-judgement';
 
 type ToteRow = typeof wmsTables.totes.$inferSelect;
 type ToteAssignmentRow = typeof wmsTables.shipmentToteAssignments.$inferSelect;
-
-const PACKING_REF_PREFIX = 'work-item:';
 
 @Injectable()
 export class PickToTotePickingStrategy implements PickToToteStrategy {
@@ -64,6 +69,10 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
     private readonly audit: AuditService,
     private readonly labels: LabelCurrencyGuard,
   ) {}
+
+  private forwardDeps(): WorkItemCommandDeps {
+    return { commands: this.commands, workflowGate: this.workflowGate, labels: this.labels };
+  }
 
   async registerTote(input: ToteRegistrationInput, tx?: DbTx): Promise<ToteRegistrationResult> {
     this.workflowGate.assertV2MutationAllowed('picking.pick_to_tote.register_tote');
@@ -108,12 +117,12 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
   }
 
   async assignTote(input: ToteAssignmentInput, tx?: DbTx): Promise<ToteAssignmentResult> {
-    this.workflowGate.assertV2MutationAllowed('picking.pick_to_tote.assign_tote');
     const toteBarcode = this.requiredToteBarcode(input.toteBarcode);
-    return this.commands.execute<ToteAssignmentResult>(
+    return runForwardWorkItemCommand<ToteAssignmentResult>(
+      this.forwardDeps(),
       {
+        strategy: this.capabilities.name,
         commandType: 'picking.pick_to_tote.assign_tote',
-        idempotencyKey: input.idempotencyKey,
         canonicalRequest: {
           batchId: input.batchId,
           sessionId: input.sessionId,
@@ -123,19 +132,17 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
           actorId: input.actor.id,
           expectedLeaseVersion: input.expectedLeaseVersion,
         },
+        target: {
+          batchId: input.batchId,
+          sessionId: input.sessionId,
+          workItemId: input.workItemId,
+          shipmentId: input.shipmentId,
+          actor: input.actor,
+          expectedLeaseVersion: input.expectedLeaseVersion,
+          idempotencyKey: input.idempotencyKey,
+        },
       },
       async (trx, commandRequestId) => {
-        await lockAndAssertPickerClaim(
-          trx,
-          input.workItemId,
-          input.batchId,
-          input.shipmentId,
-          input.actor.id,
-          input.expectedLeaseVersion,
-        );
-        // 낡은 송장으로는 진행하지 않는다(스펙 I5). 작업 항목 잠금 뒤, 명령 핸들러 안.
-        await this.labels.assertCurrent(input.workItemId, trx);
-        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         await this.acquireToteLock(toteBarcode, trx);
         const tote = await this.loadToteForBatch(toteBarcode, input.batchId, trx);
         const assignments = await this.loadActiveToteAssignments(tote.id, trx);
@@ -203,13 +210,13 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
   }
 
   async toteScan(input: ToteScanPickingInput, tx?: DbTx): Promise<ToteScanResult> {
-    this.workflowGate.assertV2MutationAllowed('picking.pick_to_tote.scan');
     assertPositiveQuantity(input.quantity);
     const toteBarcode = this.requiredToteBarcode(input.toteBarcode);
-    return this.commands.execute<ToteScanResult>(
+    return runForwardWorkItemCommand<ToteScanResult>(
+      this.forwardDeps(),
       {
+        strategy: this.capabilities.name,
         commandType: 'picking.pick_to_tote.scan',
-        idempotencyKey: input.idempotencyKey,
         canonicalRequest: {
           strategy: this.capabilities.name,
           batchId: input.batchId,
@@ -225,19 +232,17 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
           expectedLeaseVersion: input.expectedLeaseVersion,
           stage: 'AT_SOURCE_TO_TOTE',
         },
+        target: {
+          batchId: input.batchId,
+          sessionId: input.sessionId,
+          workItemId: input.workItemId,
+          shipmentId: input.shipmentId,
+          actor: input.actor,
+          expectedLeaseVersion: input.expectedLeaseVersion,
+          idempotencyKey: input.idempotencyKey,
+        },
       },
       async (trx, commandRequestId) => {
-        await lockAndAssertPickerClaim(
-          trx,
-          input.workItemId,
-          input.batchId,
-          input.shipmentId,
-          input.actor.id,
-          input.expectedLeaseVersion,
-        );
-        // 낡은 송장으로는 진행하지 않는다(스펙 I5). 작업 항목 잠금 뒤, 명령 핸들러 안.
-        await this.labels.assertCurrent(input.workItemId, trx);
-        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
         await this.acquireToteLock(toteBarcode, trx);
         const tote = await this.loadToteForBatch(toteBarcode, input.batchId, trx);
         this.assertToteInUse(tote);
@@ -536,376 +541,44 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
   }
 
   async handoff(input: HandoffPickingInput, tx?: DbTx): Promise<PickingHandoffResult> {
-    this.workflowGate.assertV2MutationAllowed('picking.pick_to_tote.handoff');
-    return this.commands.execute(
-      {
-        commandType: 'picking.pick_to_tote.handoff',
-        idempotencyKey: input.idempotencyKey,
-        canonicalRequest: {
-          strategy: this.capabilities.name,
-          batchId: input.batchId,
-          sessionId: input.sessionId,
-          workItemId: input.workItemId,
-          shipmentId: input.shipmentId,
-          targetWorkerId: input.targetWorkerId,
-          expectedLeaseVersion: input.expectedLeaseVersion,
-          reason: input.reason.trim(),
-          actorId: input.actor.id,
-          actorRoles: [...input.actor.roles].sort(),
-        },
-      },
-      async (trx, commandRequestId) => {
-        const item = await loadWorkItem(trx, input.workItemId);
-        assertWorkItemIdentity(item, input.batchId, input.shipmentId);
-        if (item.status !== 'picking' || !item.pickerId || item.leaseVersion !== input.expectedLeaseVersion) {
-          throw conflict('PICKING_HANDOFF_NOT_ACTIVE', 'Work item has no active picker to hand off');
-        }
-        const optimisticBalances = await loadPositiveShipmentCustody(trx, input.sessionId, input.shipmentId);
-        await this.assertExclusiveToteCustody(optimisticBalances, input.shipmentId, trx);
-        const handedOff = await this.batches.handoff(
-          input.workItemId,
-          {
-            claimType: 'picker',
-            targetWorkerId: input.targetWorkerId,
-            expectedLeaseVersion: input.expectedLeaseVersion,
-            reason: input.reason,
-          },
-          `pick_to_tote-handoff-claim:${commandRequestId}`,
-          input.actor,
-          trx,
-        );
-        if (
-          handedOff.workItem.batchId !== input.batchId ||
-          handedOff.workItem.shipmentId !== input.shipmentId ||
-          handedOff.workItem.pickerId !== input.targetWorkerId
-        ) {
-          throw conflict('PICKING_HANDOFF_STALE', 'Picker handoff returned an unexpected work item state');
-        }
-        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
-        const balances = await loadPositiveShipmentCustody(trx, input.sessionId, input.shipmentId);
-        await this.assertExclusiveToteCustody(balances, input.shipmentId, trx);
-        const response: PickingHandoffResult = {
-          operationId: commandRequestId,
-          workItemId: input.workItemId,
-          shipmentId: input.shipmentId,
-          workerId: input.targetWorkerId,
-          leaseVersion: handedOff.workItem.leaseVersion,
-          movedQty: 0,
-        };
-        return { response, resourceType: 'outbound_batch_work_item', resourceId: input.workItemId };
-      },
-      tx,
-    );
+    return handoffWorkItemPicker(this.custodyDeps(), this.custodyPolicy(), input, tx);
   }
 
   async completePick(input: CompletePickInput, tx?: DbTx): Promise<InspectionReadyOutput> {
-    this.workflowGate.assertV2MutationAllowed('picking.pick_to_tote.complete');
-    return this.commands.execute(
-      {
-        commandType: 'picking.pick_to_tote.complete',
-        idempotencyKey: input.idempotencyKey,
-        canonicalRequest: {
-          strategy: this.capabilities.name,
-          batchId: input.batchId,
-          sessionId: input.sessionId,
-          workItemId: input.workItemId,
-          shipmentId: input.shipmentId,
-          actorId: input.actor.id,
-          expectedLeaseVersion: input.expectedLeaseVersion,
-        },
-      },
-      async (trx, commandRequestId) => {
-        await lockAndAssertPickerClaim(
-          trx,
-          input.workItemId,
-          input.batchId,
-          input.shipmentId,
-          input.actor.id,
-          input.expectedLeaseVersion,
-        );
-        // 낡은 송장으로는 진행하지 않는다(스펙 I5). 작업 항목 잠금 뒤, 명령 핸들러 안.
-        await this.labels.assertCurrent(input.workItemId, trx);
-        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
-        const allocations = await loadWorkItemAllocations(trx, input.workItemId);
-        const packingRef = `${PACKING_REF_PREFIX}${input.workItemId}`;
-        const activeToteRefs = await this.loadActiveShipmentToteRefs(input.shipmentId, trx);
-        if (!activeToteRefs.size) {
-          throw conflict('TOTE_ASSIGNMENT_REQUIRED', 'Shipment has no active tote assignment');
-        }
-        for (const allocation of allocations) {
-          const balances = await trx
-            .select({
-              id: wmsTables.batchInventorySessionBalances.id,
-              custodyType: wmsTables.batchInventorySessionBalances.custodyType,
-              custodyRef: wmsTables.batchInventorySessionBalances.custodyRef,
-              qty: wmsTables.batchInventorySessionBalances.qty,
-            })
-            .from(wmsTables.batchInventorySessionBalances)
-            .where(
-              and(
-                eq(wmsTables.batchInventorySessionBalances.sessionId, input.sessionId),
-                eq(wmsTables.batchInventorySessionBalances.shipmentLineId, allocation.shipmentLineId),
-                eq(wmsTables.batchInventorySessionBalances.sourceLocationId, allocation.sourceLocationId),
-                ne(wmsTables.batchInventorySessionBalances.custodyType, 'SETTLED'),
-                gt(wmsTables.batchInventorySessionBalances.qty, 0),
-              ),
-            )
-            .orderBy(asc(wmsTables.batchInventorySessionBalances.id));
-          const total = balances.reduce((sum, balance) => sum + balance.qty, 0);
-          if (
-            total !== allocation.qty ||
-            balances.length === 0 ||
-            balances.some(
-              (balance) =>
-                balance.custodyType !== 'TOTE' || !balance.custodyRef || !activeToteRefs.has(balance.custodyRef),
-            )
-          ) {
-            throw conflict(
-              'PICKING_INCOMPLETE',
-              `Allocation ${allocation.shipmentLineId}/${allocation.sourceLocationId} is not fully held in assigned totes`,
-            );
-          }
-          for (const balance of balances) {
-            await this.sessions.moveCustody(
-              {
-                sessionId: input.sessionId,
-                idempotencyKey: `pick-to-tote-complete:${commandRequestId}:${balance.id}`,
-                actorId: input.actor.id,
-                quantity: balance.qty,
-                from: {
-                  skuId: allocation.skuId,
-                  sourceLocationId: allocation.sourceLocationId,
-                  custodyType: 'TOTE',
-                  custodyRef: balance.custodyRef!,
-                  shipmentLineId: allocation.shipmentLineId,
-                },
-                to: {
-                  skuId: allocation.skuId,
-                  sourceLocationId: allocation.sourceLocationId,
-                  custodyType: 'PACKING',
-                  custodyRef: packingRef,
-                  shipmentLineId: allocation.shipmentLineId,
-                },
-              },
-              trx,
-            );
-          }
-        }
-
-        const now = await databaseNow(trx);
-        const [completed] = await trx
-          .update(wmsTables.outboundBatchWorkItems)
-          .set({
-            status: 'ready_to_pack',
-            pickerReleasedAt: now,
-            leaseExpiresAt: null,
-            leaseVersion: input.expectedLeaseVersion + 1,
-            updatedAt: now,
-          })
-          .where(
-            and(
-              eq(wmsTables.outboundBatchWorkItems.id, input.workItemId),
-              eq(wmsTables.outboundBatchWorkItems.batchId, input.batchId),
-              eq(wmsTables.outboundBatchWorkItems.shipmentId, input.shipmentId),
-              eq(wmsTables.outboundBatchWorkItems.status, 'picking'),
-              eq(wmsTables.outboundBatchWorkItems.pickerId, input.actor.id),
-              eq(wmsTables.outboundBatchWorkItems.leaseVersion, input.expectedLeaseVersion),
-              gt(wmsTables.outboundBatchWorkItems.leaseExpiresAt, now),
-            ),
-          )
-          .returning({ id: wmsTables.outboundBatchWorkItems.id });
-        if (!completed) throw conflict('PICKING_STALE_CLAIM', 'Picker claim changed while completing pick');
-
-        const lines = allocations.map((allocation) => ({
-          shipmentLineId: allocation.shipmentLineId,
-          skuId: allocation.skuId,
-          sourceLocationId: allocation.sourceLocationId,
-          quantity: allocation.qty,
-        }));
-        const response: InspectionReadyOutput = {
-          operationId: commandRequestId,
-          workItemId: input.workItemId,
-          shipmentId: input.shipmentId,
-          custodyType: 'PACKING',
-          custodyRef: packingRef,
-          lines,
-          totalQty: lines.reduce((total, line) => total + line.quantity, 0),
-        };
-        return { response, resourceType: 'outbound_batch_work_item', resourceId: input.workItemId };
-      },
-      tx,
-    );
+    return completeWorkItemPick(this.custodyDeps(), this.custodyPolicy(), input, tx);
   }
 
   async unpickShipment(input: UnpickShipmentInput, tx?: DbTx): Promise<UnpickShipmentResult> {
-    this.workflowGate.assertV2MutationAllowed('picking.pick_to_tote.unpick');
-    return this.commands.execute(
-      {
-        commandType: 'picking.pick_to_tote.unpick',
-        idempotencyKey: input.idempotencyKey,
-        canonicalRequest: {
-          strategy: this.capabilities.name,
-          batchId: input.batchId,
-          sessionId: input.sessionId,
-          workItemId: input.workItemId,
-          shipmentId: input.shipmentId,
-          actorId: input.actor.id,
-          actorRoles: [...input.actor.roles].sort(),
-          expectedLeaseVersion: input.expectedLeaseVersion,
-        },
-      },
-      async (trx, commandRequestId) => {
-        const item = await loadWorkItem(trx, input.workItemId, true);
-        assertWorkItemIdentity(item, input.batchId, input.shipmentId);
-        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
-        if (item.leaseVersion !== input.expectedLeaseVersion) {
-          throw conflict('PICKING_STALE_CLAIM', `Work item ${item.id} lease version changed`);
-        }
-        const allocations = await loadWorkItemAllocations(trx, input.workItemId);
-        const privileged = input.actor.roles.some((role) => role === 'logistics_manager' || role === 'master');
-        const now = await databaseNow(trx);
-        if (item.status === 'picking') {
-          if (
-            item.pickerId !== input.actor.id ||
-            item.pickerReleasedAt ||
-            !item.leaseExpiresAt ||
-            item.leaseExpiresAt.getTime() <= now.getTime()
-          ) {
-            throw conflict('PICKING_STALE_CLAIM', 'Only the active picker may unpick this work item');
-          }
-        } else if (item.status === 'ready_to_pack') {
-          if (item.pickerId !== input.actor.id && !privileged) {
-            throw conflict('PICKING_UNPICK_FORBIDDEN', 'Only the previous picker or a manager may unpick');
-          }
-        } else {
-          throw conflict('PICKING_NOT_UNPICKABLE', `Work item ${item.id} is ${item.status}`);
-        }
+    return unpickWorkItemShipment(this.custodyDeps(), this.custodyPolicy(), input, tx);
+  }
 
-        const balances = await trx
-          .select({
-            id: wmsTables.batchInventorySessionBalances.id,
-            skuId: wmsTables.batchInventorySessionBalances.skuId,
-            sourceLocationId: wmsTables.batchInventorySessionBalances.sourceLocationId,
-            custodyType: wmsTables.batchInventorySessionBalances.custodyType,
-            custodyRef: wmsTables.batchInventorySessionBalances.custodyRef,
-            shipmentLineId: wmsTables.batchInventorySessionBalances.shipmentLineId,
-            qty: wmsTables.batchInventorySessionBalances.qty,
-          })
-          .from(wmsTables.batchInventorySessionBalances)
-          .innerJoin(
-            wmsTables.shipmentLines,
-            eq(wmsTables.shipmentLines.id, wmsTables.batchInventorySessionBalances.shipmentLineId),
-          )
-          .where(
-            and(
-              eq(wmsTables.batchInventorySessionBalances.sessionId, input.sessionId),
-              eq(wmsTables.shipmentLines.shipmentId, input.shipmentId),
-              gt(wmsTables.batchInventorySessionBalances.qty, 0),
-            ),
-          )
-          .orderBy(asc(wmsTables.batchInventorySessionBalances.id));
-        const allocationByGrain = new Map(
-          allocations.map((allocation) => [`${allocation.shipmentLineId}|${allocation.sourceLocationId}`, allocation]),
-        );
-        const attributedByGrain = new Map<string, number>();
-        for (const balance of balances) {
-          const grain = `${balance.shipmentLineId ?? ''}|${balance.sourceLocationId ?? ''}`;
-          const allocation = allocationByGrain.get(grain);
-          if (!allocation || allocation.skuId !== balance.skuId) {
-            throw conflict('PICKING_CUSTODY_GRAIN_MISMATCH', `Balance ${balance.id} is not a work item allocation`);
-          }
-          attributedByGrain.set(grain, (attributedByGrain.get(grain) ?? 0) + balance.qty);
-          if ((attributedByGrain.get(grain) ?? 0) > allocation.qty) {
-            throw conflict('PICKING_CUSTODY_OVERATTRIBUTED', `Balance grain ${grain} exceeds its allocation`);
-          }
-        }
-        if (item.status === 'picking') {
-          const activeToteRefs = await this.loadActiveShipmentToteRefs(input.shipmentId, trx);
-          if (
-            balances.some(
-              (balance) =>
-                balance.custodyType !== 'TOTE' || !balance.custodyRef || !activeToteRefs.has(balance.custodyRef),
-            )
-          ) {
-            throw conflict(
-              'PICKING_CUSTODY_OWNER_MISMATCH',
-              'Active pick custody must be held only by totes assigned to the shipment',
-            );
-          }
-        } else {
-          const packingRef = `${PACKING_REF_PREFIX}${input.workItemId}`;
-          if (
-            balances.length !== allocations.length ||
-            balances.some((balance) => balance.custodyType !== 'PACKING' || balance.custodyRef !== packingRef) ||
-            allocations.some((allocation) => {
-              const grain = `${allocation.shipmentLineId}|${allocation.sourceLocationId}`;
-              return attributedByGrain.get(grain) !== allocation.qty;
-            })
-          ) {
-            throw conflict(
-              'PICKING_PACKING_CUSTODY_INCOMPLETE',
-              'Ready-to-pack custody must exactly match every work item allocation',
-            );
-          }
-        }
-        let returnedToSourceQty = 0;
-        for (const balance of balances) {
-          if (!balance.sourceLocationId || !balance.custodyRef || !balance.shipmentLineId) {
-            throw conflict('PICKING_CUSTODY_CORRUPT', `Assigned balance ${balance.id} is incomplete`);
-          }
-          await this.sessions.moveCustody(
-            {
-              sessionId: input.sessionId,
-              idempotencyKey: `pick_to_tote-unpick:${commandRequestId}:${balance.id}`,
-              actorId: input.actor.id,
-              quantity: balance.qty,
-              from: {
-                skuId: balance.skuId,
-                sourceLocationId: balance.sourceLocationId,
-                custodyType: balance.custodyType,
-                custodyRef: balance.custodyRef,
-                shipmentLineId: balance.shipmentLineId,
-              },
-              to: {
-                skuId: balance.skuId,
-                sourceLocationId: balance.sourceLocationId,
-                custodyType: 'AT_SOURCE',
-              },
-            },
-            trx,
-          );
-          returnedToSourceQty += balance.qty;
-        }
-        await this.releaseEmptyShipmentTotes(input.shipmentId, trx);
-        const [requeued] = await trx
-          .update(wmsTables.outboundBatchWorkItems)
-          .set({
-            status: 'queued',
-            pickerReleasedAt: item.pickerReleasedAt ?? now,
-            leaseExpiresAt: null,
-            leaseVersion: item.leaseVersion + 1,
-            updatedAt: now,
-          })
-          .where(
-            and(
-              eq(wmsTables.outboundBatchWorkItems.id, item.id),
-              eq(wmsTables.outboundBatchWorkItems.leaseVersion, item.leaseVersion),
-              inArray(wmsTables.outboundBatchWorkItems.status, ['picking', 'ready_to_pack']),
-            ),
-          )
-          .returning({ id: wmsTables.outboundBatchWorkItems.id });
-        if (!requeued) throw conflict('PICKING_STALE_CLAIM', 'Work item changed while unpicking');
-        const response: UnpickShipmentResult = {
-          operationId: commandRequestId,
-          workItemId: input.workItemId,
-          shipmentId: input.shipmentId,
-          status: 'queued',
-          returnedToSourceQty,
-        };
-        return { response, resourceType: 'outbound_batch_work_item', resourceId: input.workItemId };
+  private custodyDeps(): CustodyCommandDeps {
+    return { ...this.forwardDeps(), sessions: this.sessions, batches: this.batches };
+  }
+
+  private custodyPolicy(): PickingCustodyPolicy {
+    return {
+      strategy: this.capabilities.name,
+      keys: {
+        complete: 'pick-to-tote-complete',
+        unpick: 'pick_to_tote-unpick',
+        handoffClaim: 'pick_to_tote-handoff-claim',
       },
-      tx,
-    );
+      loadHeldSpots: async (trx, ctx) =>
+        spotsOf([{ custodyType: 'TOTE', refs: await this.loadActiveShipmentToteRefs(ctx.shipmentId, trx) }]),
+      completeMovesFrom: 'TOTE',
+      emptyHeldOnComplete: { code: 'TOTE_ASSIGNMENT_REQUIRED', message: 'Shipment has no active tote assignment' },
+      afterUnpick: (trx, shipmentId) => this.releaseEmptyShipmentTotes(shipmentId, trx),
+      messages: {
+        completeIncomplete: ({ shipmentLineId, sourceLocationId }) => ({
+          code: 'PICKING_INCOMPLETE',
+          message: `Allocation ${shipmentLineId}/${sourceLocationId} is not fully held in assigned totes`,
+        }),
+        ownerMismatchWhilePicking: () => 'Active pick custody must be held only by totes assigned to the shipment',
+        handoffOwnerMismatch: ({ shipmentId }) =>
+          `Shipment attributed custody must be held only in totes actively assigned to ${shipmentId}`,
+      },
+    };
   }
 
   private async loadWorkItemsForUpdate(workItemIds: string[], tx: DbTx): Promise<Map<string, WorkItemRow>> {
@@ -920,24 +593,6 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
       .orderBy(asc(wmsTables.outboundBatchWorkItems.id))
       .for('update');
     return new Map(rows.map((row) => [row.id, row]));
-  }
-
-  private async assertExclusiveToteCustody(
-    balances: ShipmentCustodyBalance[],
-    shipmentId: string,
-    tx: DbTx,
-  ): Promise<void> {
-    const activeToteRefs = await this.loadActiveShipmentToteRefs(shipmentId, tx);
-    if (
-      balances.some(
-        (balance) => balance.custodyType !== 'TOTE' || !balance.custodyRef || !activeToteRefs.has(balance.custodyRef),
-      )
-    ) {
-      throw conflict(
-        'PICKING_CUSTODY_OWNER_MISMATCH',
-        `Shipment attributed custody must be held only in totes actively assigned to ${shipmentId}`,
-      );
-    }
   }
 
   private toteRef(toteId: string): string {

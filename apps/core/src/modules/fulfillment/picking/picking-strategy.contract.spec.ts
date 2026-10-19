@@ -13,6 +13,7 @@ import { assertStartEligibility, lockAggregate, lockSourceCapacities } from './a
 import {
   assertActiveBatchSession,
   databaseNow,
+  loadPositiveShipmentCustody,
   loadWorkItemAllocations,
   loadWorkItem,
   lockAndAssertPickerClaim,
@@ -627,6 +628,14 @@ function createProductionDiscreteFixture(): PickingStrategyContractFixture {
     inboundPendingBySku: new Map(),
   });
   jest.mocked(assertActiveBatchSession).mockResolvedValue(undefined);
+  // 이 계약을 import 하는 tote·aggregate 스펙은 `loadPositiveShipmentCustody` 를 jest.fn 으로 갈아 끼운다.
+  // 커널의 discrete 되돌림·인계는 그 함수를 부르므로, 이 fixture 는 실제 구현으로 되돌려 둔다.
+  if (jest.isMockFunction(loadPositiveShipmentCustody)) {
+    const actual = jest.requireActual<typeof import('./allocation/allocation.queries')>(
+      './allocation/allocation.queries',
+    ).loadPositiveShipmentCustody;
+    jest.mocked(loadPositiveShipmentCustody).mockImplementation(actual);
+  }
   // 옛 계획 구성원 검사가 하던 «은퇴한 박스는 못 집는다»는 이제 작업 항목 상태가 말한다 —
   // 실제 `lockAndAssertPickerClaim` 은 `status !== 'picking'` 이면 PICKING_STALE_CLAIM 을 던진다.
   jest.mocked(lockAndAssertPickerClaim).mockImplementation(async (_trx, workItemId: string) => {
