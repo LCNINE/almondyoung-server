@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Public, RequireScopes, User } from '@app/authorization';
+import { Public, RequirePermission, RequireScopes, User } from '@app/authorization';
 import { AlmondFontResponseDto, CreateAlmondFontDto } from '../dto/almond-font.dto';
 import { AlmondFontsService } from '../services/almond-fonts.service';
 
@@ -17,6 +17,7 @@ export class AlmondFontsController {
     return this.service.list();
   }
 
+  @RequirePermission('marketing.almond_template.write')
   @Post('admin/almond-fonts')
   @ApiBearerAuth()
   @RequireScopes('admin:template:write')
@@ -32,6 +33,7 @@ export class AlmondFontsController {
     return this.service.create(dto, userId);
   }
 
+  @RequirePermission('marketing.almond_template.write')
   @Delete('admin/almond-fonts/:id')
   @HttpCode(204)
   @ApiBearerAuth()
