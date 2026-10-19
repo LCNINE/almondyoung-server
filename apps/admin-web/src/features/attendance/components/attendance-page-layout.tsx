@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
 import { cn } from '@/lib/utils/ui';
+import { AttendanceRefreshButton } from './attendance-refresh-button';
 
 export function AttendancePageLayout({
   title,
@@ -33,7 +34,7 @@ export function AttendancePageLayout({
           <h1 className="min-w-0 text-center text-base font-semibold text-slate-900">
             {title}
           </h1>
-          <span className="size-11" aria-hidden />
+          <AttendanceRefreshButton />
         </div>
       </header>
       <div
