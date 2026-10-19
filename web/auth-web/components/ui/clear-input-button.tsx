@@ -8,10 +8,12 @@ export function ClearInputButton({
   inputId,
   label,
   className,
+  circled = false,
 }: {
   inputId: string
   label: string
   className?: string
+  circled?: boolean
 }) {
   function clearInput() {
     const input = document.getElementById(inputId)
@@ -48,7 +50,13 @@ export function ClearInputButton({
         className
       )}
     >
-      <X className="size-4" aria-hidden />
+      <X
+        className={cn(
+          "size-4",
+          circled && "rounded-full bg-current stroke-white p-0.5"
+        )}
+        aria-hidden
+      />
     </button>
   )
 }

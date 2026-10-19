@@ -14,30 +14,57 @@ function PasswordInput({
   label,
   id,
   clearable = false,
+  appearance = "floating",
   ...props
 }: Omit<React.ComponentProps<typeof Input>, "type"> & {
   label?: React.ReactNode
   clearable?: boolean
+  appearance?: "floating" | "line"
 }) {
   const [visible, setVisible] = React.useState(false)
+  const isLine = appearance === "line"
 
   return (
-    <div className="relative">
+    <div className="group relative">
       <Input
         id={id}
         type={visible ? "text" : "password"}
-        className={cn(className, "peer pr-11", clearable && "pr-[5.5rem]")}
+        className={cn(
+          className,
+          "peer pr-11",
+          clearable && "pr-[5.5rem]",
+          isLine &&
+            "h-16 rounded-none border-0 border-b border-slate-300 bg-transparent pt-7 pb-2 pl-0 caret-[#06c755] shadow-none group-focus-within:border-[#06c755] focus-visible:border-[#06c755] focus-visible:ring-0 aria-invalid:border-destructive aria-invalid:ring-0"
+        )}
         {...props}
       />
       {clearable && id && (
         <ClearInputButton
           inputId={id}
           label={typeof label === "string" ? label : "비밀번호"}
+          circled={isLine}
+          className={cn(
+            "right-11",
+            isLine &&
+              "top-5 justify-end pr-1 text-slate-300 hover:text-slate-500"
+          )}
         />
       )}
       {label && (
-        <Label htmlFor={id} className={floatingLabelClass}>
+        <Label
+          htmlFor={id}
+          className={
+            isLine
+              ? "pointer-events-none absolute top-1 left-0 text-xs text-muted-foreground peer-disabled:opacity-50"
+              : floatingLabelClass
+          }
+        >
           {label}
+          {isLine && props.required && (
+            <span className="ml-1 text-destructive" aria-hidden>
+              *
+            </span>
+          )}
         </Label>
       )}
       <button
@@ -45,11 +72,12 @@ function PasswordInput({
         onClick={() => setVisible((v) => !v)}
         className={cn(
           "absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none",
-          clearable && "right-11 justify-end pr-1"
+          isLine &&
+            "top-5 justify-start pl-3 text-slate-300 hover:text-slate-500"
         )}
         aria-label={visible ? "비밀번호 숨기기" : "비밀번호 표시"}
         aria-pressed={visible}
-        tabIndex={-1}
+        aria-controls={id}
       >
         {visible ? (
           <EyeOff className="size-4" aria-hidden />

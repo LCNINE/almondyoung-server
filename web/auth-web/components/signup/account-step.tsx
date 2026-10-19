@@ -92,6 +92,7 @@ export function AccountStep({
         name="password"
         label="비밀번호"
         clearable
+        appearance="line"
         placeholder=" "
         className={floatingInputClass}
         defaultValue={defaultValues.password}
@@ -115,6 +116,7 @@ export function AccountStep({
           name="passwordConfirm"
           label="비밀번호 확인"
           clearable
+          appearance="line"
           placeholder=" "
           className={floatingInputClass}
           defaultValue={defaultValues.passwordConfirm}
