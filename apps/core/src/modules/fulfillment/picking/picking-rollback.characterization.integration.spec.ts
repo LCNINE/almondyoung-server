@@ -56,7 +56,10 @@ interface Picked {
   workItemId: string;
   shipmentId: string;
   shipmentLineId: string;
-  /** 피커 클레임 직후의 리스 버전(`toPicking` 이 돌려줄 때 DB 의 값). */
+  /**
+   * 이 상태에서 다음 명령이 넘길 리스 버전 — 돌려줄 때의 DB 값이다.
+   * `toPicking` 은 피커 클레임 직후 값, `toReadyToPack` 은 completePick 뒤 값(+1)으로 덮어쓴다.
+   */
   leaseVersion: number;
   heldQty: number;
   toteIds: string[];
@@ -389,12 +392,16 @@ describeIfDb('피킹 되돌림 특성 테스트 (K1b-1) — 세 전략의 지금
       await inRollbackTx(db, async (tx) => {
         const picked = await toReadyToPack(tx, strategy);
         const otherWorker = { id: randomUUID(), roles: ['warehouse_worker'] };
+        const itemBefore = await loadWorkItemRow(tx, picked.workItemId);
+        const balancesBefore = await lineBalances(tx, picked);
 
         await expectConflict(unpick(picked, otherWorker), {
           code: 'PICKING_UNPICK_FORBIDDEN',
           message: 'Only the previous picker or a manager may unpick',
         });
-        expect((await loadWorkItemRow(tx, picked.workItemId)).status).toBe('ready_to_pack');
+        const itemAfter = await loadWorkItemRow(tx, picked.workItemId);
+        expect(itemAfter).toMatchObject({ status: 'ready_to_pack', leaseVersion: itemBefore.leaseVersion });
+        expect(await lineBalances(tx, picked)).toEqual(balancesBefore);
       });
     });
 
@@ -408,8 +415,12 @@ describeIfDb('피킹 되돌림 특성 테스트 (K1b-1) — 세 전략의 지금
           pick_to_tote: 'Active pick custody must be held only by totes assigned to the shipment',
           aggregate_then_sort: `Balance ${balanceId} has unexpected custody`,
         }[strategy];
+        const itemBefore = await loadWorkItemRow(tx, picked.workItemId);
+        const balancesBefore = await lineBalances(tx, picked);
         await expectConflict(unpick(picked, picked.worker), { code: 'PICKING_CUSTODY_OWNER_MISMATCH', message });
-        expect((await loadWorkItemRow(tx, picked.workItemId)).status).toBe('picking');
+        const itemAfter = await loadWorkItemRow(tx, picked.workItemId);
+        expect(itemAfter).toMatchObject({ status: 'picking', leaseVersion: itemBefore.leaseVersion });
+        expect(await lineBalances(tx, picked)).toEqual(balancesBefore);
       });
     });
 
@@ -567,13 +578,17 @@ describeIfDb('피킹 되돌림 특성 테스트 (K1b-1) — 세 전략의 지금
           pick_to_tote: `Shipment attributed custody must be held only in totes actively assigned to ${picked.shipmentId}`,
           aggregate_then_sort: `Shipment assigned custody is not owned by picker ${picked.worker.id}`,
         }[strategy];
+        const itemBefore = await loadWorkItemRow(tx, picked.workItemId);
+        const balancesBefore = await lineBalances(tx, picked);
         await expectConflict(handoff(picked, target.id), { code: 'PICKING_CUSTODY_OWNER_MISMATCH', message });
         const item = await loadWorkItemRow(tx, picked.workItemId);
         expect(item).toMatchObject({
           status: 'picking',
           pickerId: picked.worker.id,
-          leaseVersion: picked.leaseVersion,
+          leaseVersion: itemBefore.leaseVersion,
         });
+        expect(item.leaseVersion).toBe(picked.leaseVersion);
+        expect(await lineBalances(tx, picked)).toEqual(balancesBefore);
       });
     });
   });
