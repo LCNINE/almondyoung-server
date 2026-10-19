@@ -458,10 +458,11 @@ describeIfDb('피킹 되돌림 특성 테스트 (K1b-1) — 세 전략의 지금
         'PICKING_PACKING_CUSTODY_INCOMPLETE',
         () => 'Ready-to-pack custody must exactly match every work item allocation',
       ],
+      // 설계 D3
       [
         'aggregate_then_sort',
-        'PICKING_CUSTODY_OWNER_MISMATCH',
-        (balanceId) => `Balance ${balanceId} has unexpected custody`,
+        'PICKING_PACKING_CUSTODY_INCOMPLETE',
+        () => 'Ready-to-pack custody must exactly match every work item allocation',
       ],
     ];
 
@@ -603,11 +604,7 @@ describeIfDb('피킹 되돌림 특성 테스트 (K1b-1) — 세 전략의 지금
     const SAME_WORKER_HANDOFF: Array<[StrategyName, string, SameWorkerExpectation]> = [
       ['discrete', 'succeeds with movedQty 0', { ok: true, movedQty: 0 }],
       ['pick_to_tote', 'succeeds with movedQty 0', { ok: true, movedQty: 0 }],
-      [
-        'aggregate_then_sort',
-        'is BadRequest Source and target custody must differ',
-        { ok: false, badRequestMessage: 'Source and target custody must differ' },
-      ],
+      ['aggregate_then_sort', 'succeeds with movedQty 0', { ok: true, movedQty: 0 }], // 설계 D1
     ];
 
     it.each(SAME_WORKER_HANDOFF)('%s %s', async (strategy, _label, expected) => {

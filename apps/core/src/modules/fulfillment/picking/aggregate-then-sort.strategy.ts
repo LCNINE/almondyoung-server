@@ -30,19 +30,19 @@ import {
   UnpickShipmentResult,
 } from './picking-strategy.interface';
 import { conflict } from './allocation/allocation.errors';
-import {
-  assertActiveBatchSession,
-  assertPositiveQuantity,
-  assertWorkItemIdentity,
-  databaseNow,
-  loadPositiveShipmentCustody,
-  loadWorkItem,
-  loadWorkItemAllocations,
-} from './allocation/allocation.queries';
+import { assertActiveBatchSession, assertPositiveQuantity } from './allocation/allocation.queries';
 import { ShipmentAllocation, ShipmentCustodyBalance } from './allocation/allocation.types';
-import { runForwardWorkItemCommand, WorkItemCommandDeps } from './work-item-command';
+import {
+  completeWorkItemPick,
+  CustodyCommandDeps,
+  handoffWorkItemPicker,
+  PickingCustodyPolicy,
+  runForwardWorkItemCommand,
+  unpickWorkItemShipment,
+  WorkItemCommandDeps,
+} from './work-item-command';
+import { packingRefOf, spotsOf } from './work-item-custody-judgement';
 
-const ASSIGNED_REF_PREFIX = 'work-item:';
 const BULK_CART_REF_PREFIX = 'bulk-cart:';
 
 interface GlobalCartBalance extends ShipmentCustodyBalance {
@@ -353,7 +353,7 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
         const destinationRef =
           input.destinationCustody === 'SORTING'
             ? this.sortingRef(input.workItemId, input.actor.id)
-            : this.packingRef(input.workItemId);
+            : packingRefOf(input.workItemId);
         const moves: Array<{ allocation: ShipmentAllocation; quantity: number; sourceBalanceId: string }> = [];
         let remaining = input.quantity;
         for (const allocation of allocations) {
@@ -365,7 +365,7 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
                 !['SORTING', 'PACKING'].includes(balance.custodyType) ||
                 (balance.custodyType === 'SORTING' &&
                   balance.custodyRef !== this.sortingRef(input.workItemId, input.actor.id)) ||
-                (balance.custodyType === 'PACKING' && balance.custodyRef !== this.packingRef(input.workItemId)),
+                (balance.custodyType === 'PACKING' && balance.custodyRef !== packingRefOf(input.workItemId)),
             )
           ) {
             throw conflict('PICKING_CUSTODY_OWNER_MISMATCH', 'Line custody belongs to another sort destination');
@@ -546,367 +546,52 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
   }
 
   async handoff(input: HandoffPickingInput, tx?: DbTx): Promise<PickingHandoffResult> {
-    this.workflowGate.assertV2MutationAllowed('picking.aggregate_then_sort.handoff');
-    return this.commands.execute<PickingHandoffResult>(
-      {
-        commandType: 'picking.aggregate_then_sort.handoff',
-        idempotencyKey: input.idempotencyKey,
-        canonicalRequest: {
-          strategy: this.capabilities.name,
-          batchId: input.batchId,
-          sessionId: input.sessionId,
-          workItemId: input.workItemId,
-          shipmentId: input.shipmentId,
-          targetWorkerId: input.targetWorkerId,
-          expectedLeaseVersion: input.expectedLeaseVersion,
-          reason: input.reason.trim(),
-          actorId: input.actor.id,
-          actorRoles: [...input.actor.roles].sort(),
-        },
-      },
-      async (trx, commandRequestId) => {
-        const item = await loadWorkItem(trx, input.workItemId);
-        assertWorkItemIdentity(item, input.batchId, input.shipmentId);
-        if (item.status !== 'picking' || !item.pickerId || item.leaseVersion !== input.expectedLeaseVersion) {
-          throw conflict('PICKING_HANDOFF_NOT_ACTIVE', 'Work item has no active picker to hand off');
-        }
-        const oldOwnerId = item.pickerId;
-        await this.assertAggregateAssignedCustody(input.sessionId, input.shipmentId, input.workItemId, oldOwnerId, trx);
-        const handedOff = await this.batches.handoff(
-          input.workItemId,
-          {
-            claimType: 'picker',
-            targetWorkerId: input.targetWorkerId,
-            expectedLeaseVersion: input.expectedLeaseVersion,
-            reason: input.reason,
-          },
-          `aggregate-handoff-claim:${commandRequestId}`,
-          input.actor,
-          trx,
-        );
-        if (
-          handedOff.workItem.batchId !== input.batchId ||
-          handedOff.workItem.shipmentId !== input.shipmentId ||
-          handedOff.workItem.pickerId !== input.targetWorkerId
-        ) {
-          throw conflict('PICKING_HANDOFF_STALE', 'Picker handoff returned an unexpected work item state');
-        }
-        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
-        const balances = await this.assertAggregateAssignedCustody(
-          input.sessionId,
-          input.shipmentId,
-          input.workItemId,
-          oldOwnerId,
-          trx,
-        );
-        let movedQty = 0;
-        for (const balance of balances.filter((row) => row.custodyType === 'SORTING')) {
-          if (!balance.sourceLocationId || !balance.shipmentLineId) {
-            throw conflict('PICKING_CUSTODY_CORRUPT', `Sorting balance ${balance.id} is incomplete`);
-          }
-          await this.sessions.moveCustody(
-            {
-              sessionId: input.sessionId,
-              idempotencyKey: `aggregate-handoff:${commandRequestId}:${balance.id}`,
-              actorId: input.actor.id,
-              quantity: balance.qty,
-              from: {
-                skuId: balance.skuId,
-                sourceLocationId: balance.sourceLocationId,
-                custodyType: 'SORTING',
-                custodyRef: this.sortingRef(input.workItemId, oldOwnerId),
-                shipmentLineId: balance.shipmentLineId,
-              },
-              to: {
-                skuId: balance.skuId,
-                sourceLocationId: balance.sourceLocationId,
-                custodyType: 'SORTING',
-                custodyRef: this.sortingRef(input.workItemId, input.targetWorkerId),
-                shipmentLineId: balance.shipmentLineId,
-              },
-            },
-            trx,
-          );
-          movedQty += balance.qty;
-        }
-        return {
-          response: {
-            operationId: commandRequestId,
-            workItemId: input.workItemId,
-            shipmentId: input.shipmentId,
-            workerId: input.targetWorkerId,
-            leaseVersion: handedOff.workItem.leaseVersion,
-            movedQty,
-          },
-          resourceType: 'outbound_batch_work_item',
-          resourceId: input.workItemId,
-        };
-      },
-      tx,
-    );
+    return handoffWorkItemPicker(this.custodyDeps(), this.custodyPolicy(), input, tx);
   }
 
   async completePick(input: CompletePickInput, tx?: DbTx): Promise<InspectionReadyOutput> {
-    return runForwardWorkItemCommand<InspectionReadyOutput>(
-      this.forwardDeps(),
-      {
-        strategy: this.capabilities.name,
-        commandType: 'picking.aggregate_then_sort.complete',
-        canonicalRequest: {
-          strategy: this.capabilities.name,
-          batchId: input.batchId,
-          sessionId: input.sessionId,
-          workItemId: input.workItemId,
-          shipmentId: input.shipmentId,
-          actorId: input.actor.id,
-          expectedLeaseVersion: input.expectedLeaseVersion,
-        },
-        target: {
-          batchId: input.batchId,
-          sessionId: input.sessionId,
-          workItemId: input.workItemId,
-          shipmentId: input.shipmentId,
-          actor: input.actor,
-          expectedLeaseVersion: input.expectedLeaseVersion,
-          idempotencyKey: input.idempotencyKey,
-        },
-      },
-      async (trx, commandRequestId) => {
-        const allocations = await loadWorkItemAllocations(trx, input.workItemId);
-        const sortingRef = this.sortingRef(input.workItemId, input.actor.id);
-        const packingRef = this.packingRef(input.workItemId);
-        for (const allocation of allocations) {
-          const balances = await this.loadPositiveAllocationCustody(input.sessionId, allocation, trx);
-          const total = balances.reduce((sum, balance) => sum + balance.qty, 0);
-          if (
-            total !== allocation.qty ||
-            balances.some(
-              (balance) =>
-                (balance.custodyType !== 'SORTING' || balance.custodyRef !== sortingRef) &&
-                (balance.custodyType !== 'PACKING' || balance.custodyRef !== packingRef),
-            )
-          ) {
-            throw conflict(
-              'PICKING_UNSORTED_REMAINDER',
-              `Allocation ${allocation.shipmentLineId}/${allocation.sourceLocationId} is not fully sorted`,
-            );
-          }
-          for (const balance of balances.filter((row) => row.custodyType === 'SORTING')) {
-            await this.sessions.moveCustody(
-              {
-                sessionId: input.sessionId,
-                idempotencyKey: `aggregate-complete:${commandRequestId}:${balance.id}`,
-                actorId: input.actor.id,
-                quantity: balance.qty,
-                from: {
-                  skuId: allocation.skuId,
-                  sourceLocationId: allocation.sourceLocationId,
-                  custodyType: 'SORTING',
-                  custodyRef: sortingRef,
-                  shipmentLineId: allocation.shipmentLineId,
-                },
-                to: {
-                  skuId: allocation.skuId,
-                  sourceLocationId: allocation.sourceLocationId,
-                  custodyType: 'PACKING',
-                  custodyRef: packingRef,
-                  shipmentLineId: allocation.shipmentLineId,
-                },
-              },
-              trx,
-            );
-          }
-        }
-
-        const now = await databaseNow(trx);
-        const [completed] = await trx
-          .update(wmsTables.outboundBatchWorkItems)
-          .set({
-            status: 'ready_to_pack',
-            pickerReleasedAt: now,
-            leaseExpiresAt: null,
-            leaseVersion: input.expectedLeaseVersion + 1,
-            updatedAt: now,
-          })
-          .where(
-            and(
-              eq(wmsTables.outboundBatchWorkItems.id, input.workItemId),
-              eq(wmsTables.outboundBatchWorkItems.batchId, input.batchId),
-              eq(wmsTables.outboundBatchWorkItems.shipmentId, input.shipmentId),
-              eq(wmsTables.outboundBatchWorkItems.status, 'picking'),
-              eq(wmsTables.outboundBatchWorkItems.pickerId, input.actor.id),
-              eq(wmsTables.outboundBatchWorkItems.leaseVersion, input.expectedLeaseVersion),
-              gt(wmsTables.outboundBatchWorkItems.leaseExpiresAt, now),
-            ),
-          )
-          .returning({ id: wmsTables.outboundBatchWorkItems.id });
-        if (!completed) throw conflict('PICKING_STALE_CLAIM', 'Picker claim changed while completing pick');
-        const lines = allocations.map((allocation) => ({
-          shipmentLineId: allocation.shipmentLineId,
-          skuId: allocation.skuId,
-          sourceLocationId: allocation.sourceLocationId,
-          quantity: allocation.qty,
-        }));
-        return {
-          response: {
-            operationId: commandRequestId,
-            workItemId: input.workItemId,
-            shipmentId: input.shipmentId,
-            custodyType: 'PACKING',
-            custodyRef: packingRef,
-            lines,
-            totalQty: lines.reduce((total, line) => total + line.quantity, 0),
-          },
-          resourceType: 'outbound_batch_work_item',
-          resourceId: input.workItemId,
-        };
-      },
-      tx,
-    );
+    return completeWorkItemPick(this.custodyDeps(), this.custodyPolicy(), input, tx);
   }
 
   async unpickShipment(input: UnpickShipmentInput, tx?: DbTx): Promise<UnpickShipmentResult> {
-    this.workflowGate.assertV2MutationAllowed('picking.aggregate_then_sort.unpick');
-    return this.commands.execute<UnpickShipmentResult>(
-      {
-        commandType: 'picking.aggregate_then_sort.unpick',
-        idempotencyKey: input.idempotencyKey,
-        canonicalRequest: {
-          strategy: this.capabilities.name,
-          batchId: input.batchId,
-          sessionId: input.sessionId,
-          workItemId: input.workItemId,
-          shipmentId: input.shipmentId,
-          actorId: input.actor.id,
-          actorRoles: [...input.actor.roles].sort(),
-          expectedLeaseVersion: input.expectedLeaseVersion,
-        },
-      },
-      async (trx, commandRequestId) => {
-        const item = await loadWorkItem(trx, input.workItemId, true);
-        assertWorkItemIdentity(item, input.batchId, input.shipmentId);
-        await assertActiveBatchSession(trx, input.sessionId, input.batchId, this.capabilities.name);
-        if (item.leaseVersion !== input.expectedLeaseVersion) {
-          throw conflict('PICKING_STALE_CLAIM', `Work item ${item.id} lease version changed`);
-        }
-        const allocations = await loadWorkItemAllocations(trx, input.workItemId);
-        const privileged = input.actor.roles.some((role) => role === 'logistics_manager' || role === 'master');
-        const now = await databaseNow(trx);
-        if (item.status === 'picking') {
-          if (
-            item.pickerId !== input.actor.id ||
-            item.pickerReleasedAt ||
-            !item.leaseExpiresAt ||
-            item.leaseExpiresAt.getTime() <= now.getTime()
-          ) {
-            throw conflict('PICKING_STALE_CLAIM', 'Only the active picker may unpick this work item');
-          }
-        } else if (item.status === 'ready_to_pack') {
-          if (item.pickerId !== input.actor.id && !privileged) {
-            throw conflict('PICKING_UNPICK_FORBIDDEN', 'Only the previous picker or a manager may unpick');
-          }
-        } else {
-          throw conflict('PICKING_NOT_UNPICKABLE', `Work item ${item.id} is ${item.status}`);
-        }
+    return unpickWorkItemShipment(this.custodyDeps(), this.custodyPolicy(), input, tx);
+  }
 
-        const balances = await loadPositiveShipmentCustody(trx, input.sessionId, input.shipmentId);
-        const allocationByGrain = new Map(
-          allocations.map((allocation) => [`${allocation.shipmentLineId}|${allocation.sourceLocationId}`, allocation]),
-        );
-        const attributedByGrain = new Map<string, number>();
-        const expectedSortingRef = this.sortingRef(input.workItemId, item.pickerId ?? input.actor.id);
-        const expectedPackingRef = this.packingRef(input.workItemId);
-        for (const balance of balances) {
-          const grain = `${balance.shipmentLineId ?? ''}|${balance.sourceLocationId ?? ''}`;
-          const allocation = allocationByGrain.get(grain);
-          if (!allocation || allocation.skuId !== balance.skuId) {
-            throw conflict('PICKING_CUSTODY_GRAIN_MISMATCH', `Balance ${balance.id} is not a work item allocation`);
-          }
-          attributedByGrain.set(grain, (attributedByGrain.get(grain) ?? 0) + balance.qty);
-          if ((attributedByGrain.get(grain) ?? 0) > allocation.qty) {
-            throw conflict('PICKING_CUSTODY_OVERATTRIBUTED', `Balance grain ${grain} exceeds its allocation`);
-          }
-          if (
-            (balance.custodyType !== 'SORTING' || balance.custodyRef !== expectedSortingRef) &&
-            (balance.custodyType !== 'PACKING' || balance.custodyRef !== expectedPackingRef)
-          ) {
-            throw conflict('PICKING_CUSTODY_OWNER_MISMATCH', `Balance ${balance.id} has unexpected custody`);
-          }
-        }
-        if (
-          item.status === 'ready_to_pack' &&
-          (balances.length === 0 ||
-            balances.some((balance) => balance.custodyType !== 'PACKING') ||
-            allocations.some((allocation) => {
-              const grain = `${allocation.shipmentLineId}|${allocation.sourceLocationId}`;
-              return attributedByGrain.get(grain) !== allocation.qty;
-            }))
-        ) {
-          throw conflict(
-            'PICKING_PACKING_CUSTODY_INCOMPLETE',
-            'Ready-to-pack custody must exactly match every work item allocation',
-          );
-        }
-        let returnedToSourceQty = 0;
-        for (const balance of balances) {
-          if (!balance.sourceLocationId || !balance.custodyRef || !balance.shipmentLineId) {
-            throw conflict('PICKING_CUSTODY_CORRUPT', `Assigned balance ${balance.id} is incomplete`);
-          }
-          await this.sessions.moveCustody(
-            {
-              sessionId: input.sessionId,
-              idempotencyKey: `aggregate-unpick:${commandRequestId}:${balance.id}`,
-              actorId: input.actor.id,
-              quantity: balance.qty,
-              from: {
-                skuId: balance.skuId,
-                sourceLocationId: balance.sourceLocationId,
-                custodyType: balance.custodyType,
-                custodyRef: balance.custodyRef,
-                shipmentLineId: balance.shipmentLineId,
-              },
-              to: {
-                skuId: balance.skuId,
-                sourceLocationId: balance.sourceLocationId,
-                custodyType: 'AT_SOURCE',
-              },
-            },
-            trx,
-          );
-          returnedToSourceQty += balance.qty;
-        }
-        const [requeued] = await trx
-          .update(wmsTables.outboundBatchWorkItems)
-          .set({
-            status: 'queued',
-            pickerReleasedAt: item.pickerReleasedAt ?? now,
-            leaseExpiresAt: null,
-            leaseVersion: item.leaseVersion + 1,
-            updatedAt: now,
-          })
-          .where(
-            and(
-              eq(wmsTables.outboundBatchWorkItems.id, item.id),
-              eq(wmsTables.outboundBatchWorkItems.leaseVersion, item.leaseVersion),
-              inArray(wmsTables.outboundBatchWorkItems.status, ['picking', 'ready_to_pack']),
-            ),
-          )
-          .returning({ id: wmsTables.outboundBatchWorkItems.id });
-        if (!requeued) throw conflict('PICKING_STALE_CLAIM', 'Work item changed while unpicking');
-        return {
-          response: {
-            operationId: commandRequestId,
-            workItemId: input.workItemId,
-            shipmentId: input.shipmentId,
-            status: 'queued',
-            returnedToSourceQty,
-          },
-          resourceType: 'outbound_batch_work_item',
-          resourceId: input.workItemId,
-        };
+  private custodyDeps(): CustodyCommandDeps {
+    return { ...this.forwardDeps(), sessions: this.sessions, batches: this.batches };
+  }
+
+  private custodyPolicy(): PickingCustodyPolicy {
+    return {
+      strategy: this.capabilities.name,
+      keys: {
+        complete: 'aggregate-complete',
+        unpick: 'aggregate-unpick',
+        handoffClaim: 'aggregate-handoff-claim',
+        handoff: 'aggregate-handoff',
       },
-      tx,
-    );
+      loadHeldSpots: (_trx, ctx) =>
+        Promise.resolve(
+          spotsOf([
+            { custodyType: 'SORTING', refs: new Set([this.sortingRef(ctx.workItemId, ctx.pickerId)]) },
+            { custodyType: 'PACKING', refs: new Set([packingRefOf(ctx.workItemId)]) },
+          ]),
+        ),
+      completeMovesFrom: 'SORTING',
+      handoffCustody: {
+        custodyType: 'SORTING',
+        refFor: (workItemId, workerId) => this.sortingRef(workItemId, workerId),
+      },
+      messages: {
+        completeIncomplete: ({ shipmentLineId, sourceLocationId }) => ({
+          code: 'PICKING_UNSORTED_REMAINDER',
+          message: `Allocation ${shipmentLineId}/${sourceLocationId} is not fully sorted`,
+        }),
+        ownerMismatchWhilePicking: ({ balanceId }) => `Balance ${balanceId} has unexpected custody`,
+        handoffOwnerMismatch: ({ pickerId }) => `Shipment assigned custody is not owned by picker ${pickerId}`,
+        handoffCorrupt: (balanceId) => `Sorting balance ${balanceId} is incomplete`,
+      },
+    };
   }
 
   private async loadLineAllocations(
@@ -966,28 +651,6 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
         ),
       )
       .orderBy(asc(wmsTables.batchInventorySessionBalances.id));
-  }
-
-  private async assertAggregateAssignedCustody(
-    sessionId: string,
-    shipmentId: string,
-    workItemId: string,
-    ownerId: string,
-    tx: DbTx,
-  ): Promise<ShipmentCustodyBalance[]> {
-    const balances = await loadPositiveShipmentCustody(tx, sessionId, shipmentId);
-    const sortingRef = this.sortingRef(workItemId, ownerId);
-    const packingRef = this.packingRef(workItemId);
-    if (
-      balances.some(
-        (balance) =>
-          (balance.custodyType !== 'SORTING' || balance.custodyRef !== sortingRef) &&
-          (balance.custodyType !== 'PACKING' || balance.custodyRef !== packingRef),
-      )
-    ) {
-      throw conflict('PICKING_CUSTODY_OWNER_MISMATCH', `Shipment assigned custody is not owned by picker ${ownerId}`);
-    }
-    return balances;
   }
 
   private async acquireCartLock(cartId: string, tx: DbTx): Promise<void> {
@@ -1102,10 +765,6 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
 
   private sortingRef(workItemId: string, workerId: string): string {
     return `sorting:${workItemId}:${workerId}`;
-  }
-
-  private packingRef(workItemId: string): string {
-    return `${ASSIGNED_REF_PREFIX}${workItemId}`;
   }
 
   private requiredCartId(value: string): string {
