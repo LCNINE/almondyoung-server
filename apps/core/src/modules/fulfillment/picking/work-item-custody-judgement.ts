@@ -11,10 +11,13 @@ type QtyBalance = Pick<ShipmentCustodyBalance, 'custodyType' | 'custodyRef' | 'q
 /** 들고 있어도 되는 자리. custodyRef 가 null 이면 그 자리는 무효. */
 export interface HeldSpots {
   allows(balance: SpotProbe): boolean;
+  /** 허용 자리가 하나도 없다(tote: 활성 배정 0). */
+  readonly empty: boolean;
 }
 
 export function spotsOf(entries: ReadonlyArray<{ custodyType: string; refs: ReadonlySet<string> }>): HeldSpots {
   return {
+    empty: entries.every((entry) => entry.refs.size === 0),
     allows(balance) {
       const ref = balance.custodyRef;
       if (ref === null) return false;

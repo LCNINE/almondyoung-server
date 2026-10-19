@@ -33,6 +33,11 @@ describe('spotsOf / packingRefOf', () => {
     expect(worker.allows({ custodyType: 'WORKER', custodyRef: 'w2' })).toBe(false);
     expect(worker.allows({ custodyType: 'TOTE', custodyRef: 'w1' })).toBe(false);
   });
+  it('is empty only when no entry has a ref', () => {
+    expect(worker.empty).toBe(false);
+    expect(spotsOf([{ custodyType: 'TOTE', refs: new Set<string>() }]).empty).toBe(true);
+    expect(spotsOf([]).empty).toBe(true);
+  });
   it('packing ref keeps the strategies prefix', () => {
     expect(PACKING_REF_PREFIX).toBe('work-item:');
     expect(packingRefOf('x')).toBe('work-item:x');
