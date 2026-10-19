@@ -34,7 +34,7 @@ export function StaffOverview() {
 
   return (
     <section className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">직원 근무 현황</h1>
           <p className="mt-2 text-sm text-slate-400">
@@ -43,6 +43,7 @@ export function StaffOverview() {
         </div>
         <Button
           variant="outline"
+          className="min-h-11 sm:min-h-9"
           onClick={() => query.refetch()}
           disabled={query.isFetching}
         >
@@ -73,6 +74,7 @@ export function StaffOverview() {
             key={value}
             variant={filter === value ? 'default' : 'outline'}
             size="sm"
+            className="min-h-11 sm:min-h-8"
             onClick={() => setFilter(value)}
           >
             {label}
@@ -99,8 +101,10 @@ export function StaffOverview() {
               key={person.userId}
               className="flex flex-wrap items-center justify-between gap-3 p-5"
             >
-              <span className="font-medium">{person.name}</span>
-              <div className="flex gap-2">
+              <span className="min-w-0 break-words font-medium">
+                {person.name}
+              </span>
+              <div className="flex flex-wrap gap-2">
                 <Badge
                   variant="secondary"
                   className={

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { HelpCircle, Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
   DialogContent,
@@ -178,7 +179,10 @@ export function AttendanceCard() {
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <section
+      className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+      aria-busy={query.isPending}
+    >
       <div className="mb-6 flex items-center gap-2">
         <h1 className="text-lg font-bold">오늘의 근무</h1>
         <Dialog>
@@ -214,9 +218,12 @@ export function AttendanceCard() {
             {describeStatus(me.status)}
           </span>
         )}
+        {query.isPending && (
+          <Skeleton className="ml-auto h-6 w-20" aria-hidden />
+        )}
       </div>
       {query.isPending ? (
-        <p className="py-8 text-sm text-slate-400">기록을 불러오고 있어요.</p>
+        <AttendanceCardSkeleton />
       ) : query.isError ? (
         <div className="space-y-3">
           <p className="text-sm text-red-600">기록을 불러오지 못했어요.</p>
@@ -316,18 +323,71 @@ export function AttendanceCard() {
               {complete
                 ? '기록이 저장됐어요.'
                 : !me.worksites.length
-                  ? '마스터의 근무지 설정이 필요해요.'
+                  ? me.isMaster
+                    ? '근무지를 등록하면 출근을 기록할 수 있어요.'
+                    : '관리자가 근무지를 등록하면 출근을 기록할 수 있어요.'
                   : '버튼을 누를 때만 현재 위치를 확인해요.'}
             </p>
+            {me.isMaster && !me.worksites.length && (
+              <Link
+                href={`${links}/worksites`}
+                className="mt-3 flex min-h-11 items-center justify-center rounded-xl border border-indigo-200 px-4 py-2 text-sm font-semibold text-indigo-600 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              >
+                근무지 등록하기
+              </Link>
+            )}
           </>
-          <div className="mt-5 flex flex-wrap gap-x-4 gap-y-3 text-xs font-medium text-slate-500">
+          <nav
+            aria-label="출결 메뉴"
+            className="mt-5 grid grid-cols-2 gap-2 text-sm font-medium text-slate-600 [&_a]:flex [&_a]:min-h-11 [&_a]:items-center [&_a]:justify-center [&_a]:rounded-lg [&_a]:bg-slate-50 [&_a]:px-2 [&_a]:py-2 [&_a]:text-center [&_a]:focus-visible:outline-none [&_a]:focus-visible:ring-2 [&_a]:focus-visible:ring-indigo-500 [&_a]:active:bg-slate-100"
+          >
             <Link href={`${links}/records`}>내 기록</Link>
             <Link href={`${links}/calendar`}>내 일정</Link>
             <Link href={`${links}/requests`}>정정 / 예외 요청</Link>
             <Link href={`${links}/settings`}>알림 설정</Link>
-          </div>
+            {me.isMaster && me.worksites.length > 0 && (
+              <Link className="col-span-2" href={`${links}/worksites`}>
+                근무지 관리
+              </Link>
+            )}
+          </nav>
         </>
       ) : null}
     </section>
+  );
+}
+
+function AttendanceCardSkeleton() {
+  return (
+    <div className="motion-reduce:[&_[data-slot=skeleton]]:animate-none">
+      <span className="sr-only" role="status">
+        근무 기록을 불러오는 중이에요.
+      </span>
+      <div aria-hidden>
+        <div className="flex h-11 items-center gap-3">
+          <Skeleton className="size-11 shrink-0 rounded-full" />
+          <Skeleton className="h-5 w-28" />
+        </div>
+        <div className="my-7">
+          <Skeleton className="h-10 w-40" />
+          <Skeleton className="mt-2 h-4 w-36" />
+        </div>
+        <div className="mb-6 divide-y border-y border-slate-100">
+          {[0, 1].map((row) => (
+            <div key={row} className="flex items-center justify-between py-4">
+              <Skeleton className="h-5 w-8" />
+              <Skeleton className="h-5 w-14" />
+            </div>
+          ))}
+        </div>
+        <Skeleton className="h-12 w-full rounded-xl" />
+        <Skeleton className="mx-auto mt-3 h-6 w-48 max-w-full" />
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          {[0, 1, 2, 3].map((item) => (
+            <Skeleton key={item} className="h-11 w-full rounded-lg" />
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }

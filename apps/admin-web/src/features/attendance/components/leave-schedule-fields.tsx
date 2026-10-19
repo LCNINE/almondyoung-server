@@ -44,7 +44,7 @@ export function LeaveScheduleFields({
                 key={type}
                 type="button"
                 aria-pressed={day.type === type}
-                className={`rounded-md px-1 py-2.5 text-xs transition-colors ${day.type === type ? 'bg-white font-semibold text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                className={`min-h-11 rounded-md px-1 py-2.5 text-xs transition-colors ${day.type === type ? 'bg-white font-semibold text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                 onClick={() =>
                   onChange(changeLeaveType(day, type, normalStart, normalEnd))
                 }
@@ -57,12 +57,13 @@ export function LeaveScheduleFields({
       </div>
       {day.type !== 'full' && (
         <>
-          <div className="grid grid-cols-2 gap-3">
-            <label className="space-y-2 text-xs font-medium">
+          <div className="grid gap-4 sm:grid-cols-2 sm:gap-3">
+            <label className="block min-w-0 space-y-2 text-xs font-medium">
               출근 예정
               <Input
                 id={`leave-start-${id}`}
                 type="time"
+                className="h-11 sm:h-9"
                 required={required}
                 value={day.start ?? ''}
                 onChange={(event) =>
@@ -70,7 +71,7 @@ export function LeaveScheduleFields({
                 }
               />
             </label>
-            <label className="space-y-2 text-xs font-medium">
+            <label className="block min-w-0 space-y-2 text-xs font-medium">
               퇴근 예정
               {day.type === 'am' && (
                 <span className="ml-1 text-[10px] font-normal text-indigo-600">
@@ -80,6 +81,7 @@ export function LeaveScheduleFields({
               <Input
                 id={`leave-end-${id}`}
                 type="time"
+                className="h-11 sm:h-9"
                 required={required}
                 aria-invalid={!!error}
                 value={day.end ?? ''}
@@ -107,7 +109,7 @@ export function LeaveScheduleFields({
           {day.manualEnd && day.type === 'am' && (
             <button
               type="button"
-              className="text-xs text-indigo-700"
+              className="min-h-11 text-left text-xs text-indigo-700"
               onClick={() =>
                 onChange({ ...day, end: normalEnd, manualEnd: false })
               }

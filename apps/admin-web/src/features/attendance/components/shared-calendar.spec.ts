@@ -73,7 +73,7 @@ describe('attendance calendar audience and edit controls', () => {
   it('opens the mobile schedule as personal and provides an explicit colleague-view action', () => {
     const html = render(createElement(MobileCalendarPage));
 
-    expect(html).toContain('내 휴가·반차 일정');
+    expect(html).toContain('휴가·반차 일정');
     expect(html).toContain('다른 직원 일정 보기');
     expect(html).toContain('김아몬드');
     expect(html).not.toContain('이하늘');

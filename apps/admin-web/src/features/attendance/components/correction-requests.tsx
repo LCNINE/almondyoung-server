@@ -41,7 +41,13 @@ const labels: Record<RequestStatus, string> = {
   cancelled: '취소',
 };
 
-export function CorrectionRequests({ review = false }: { review?: boolean }) {
+export function CorrectionRequests({
+  review = false,
+  showHeading = true,
+}: {
+  review?: boolean;
+  showHeading?: boolean;
+}) {
   const { data: me } = useAttendance();
   const query = useQuery({
     queryKey: [...ATTENDANCE_KEY, 'requests', review],
@@ -85,19 +91,28 @@ export function CorrectionRequests({ review = false }: { review?: boolean }) {
   }
 
   return (
-    <section className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+    <section className="min-w-0 space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">
-            {review ? '출결 요청 검토' : '정정 / 예외 요청'}
-          </h1>
+          {showHeading && (
+            <h1 className="text-2xl font-bold">
+              {review ? '출결 요청 검토' : '정정 / 예외 요청'}
+            </h1>
+          )}
           <p className="mt-2 text-sm text-slate-400">
             {review
               ? '원래 기록과 요청 내용을 확인하고 처리해 주세요.'
               : '누락된 기록이나 위치 확인 오류를 알려 주세요.'}
           </p>
         </div>
-        {!review && <Button onClick={() => setForm('new')}>요청하기</Button>}
+        {!review && (
+          <Button
+            className="min-h-11 sm:min-h-9"
+            onClick={() => setForm('new')}
+          >
+            요청하기
+          </Button>
+        )}
       </div>
       {query.isError && (
         <p role="alert" className="text-sm text-red-600">
@@ -113,10 +128,10 @@ export function CorrectionRequests({ review = false }: { review?: boolean }) {
       {query.data?.map((request) => (
         <article
           key={request.id}
-          className="space-y-4 rounded-2xl border bg-white p-6"
+          className="min-w-0 space-y-4 rounded-2xl border bg-white p-4 sm:p-6"
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="font-semibold">
+            <h2 className="min-w-0 break-words font-semibold">
               {review ? `${request.name} · ` : ''}
               {request.workDate}
             </h2>
@@ -149,6 +164,7 @@ export function CorrectionRequests({ review = false }: { review?: boolean }) {
                 <Button
                   key={id}
                   size="sm"
+                  className="min-h-11 sm:min-h-8"
                   variant="outline"
                   onClick={() => showFile(id)}
                 >
@@ -160,7 +176,7 @@ export function CorrectionRequests({ review = false }: { review?: boolean }) {
           {request.decisionReason && (
             <div className="rounded-xl bg-slate-50 p-4">
               <p className="mb-1 text-xs text-slate-400">담당자 답변</p>
-              <p className="whitespace-pre-wrap text-sm leading-6">
+              <p className="whitespace-pre-wrap break-words text-sm leading-6">
                 {request.decisionReason}
               </p>
             </div>
@@ -172,11 +188,14 @@ export function CorrectionRequests({ review = false }: { review?: boolean }) {
               </h3>
               {request.aiResult ? (
                 <>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
+                  <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">
                     {request.aiResult.summary}
                   </p>
                   {request.aiResult.questions.map((question, index) => (
-                    <p key={index} className="mt-2 text-xs text-slate-500">
+                    <p
+                      key={index}
+                      className="mt-2 break-words text-xs text-slate-500"
+                    >
                       · {question}
                     </p>
                   ))}
@@ -204,7 +223,11 @@ export function CorrectionRequests({ review = false }: { review?: boolean }) {
             />
           )}
           {!review && request.status === 'needs_information' && (
-            <Button variant="outline" onClick={() => setForm(request)}>
+            <Button
+              className="min-h-11 sm:min-h-9"
+              variant="outline"
+              onClick={() => setForm(request)}
+            >
               보완해서 다시 요청
             </Button>
           )}
@@ -212,6 +235,7 @@ export function CorrectionRequests({ review = false }: { review?: boolean }) {
             ['pending', 'needs_information'].includes(request.status) && (
               <Button
                 size="sm"
+                className="min-h-11 sm:min-h-8"
                 variant="ghost"
                 disabled={cancel.isPending}
                 onClick={() =>
@@ -236,8 +260,8 @@ export function CorrectionRequests({ review = false }: { review?: boolean }) {
         />
       )}
       <Dialog open={!!preview} onOpenChange={() => setPreview(null)}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto p-4 sm:p-6 [&>[data-slot=dialog-close]]:top-2 [&>[data-slot=dialog-close]]:right-2 [&>[data-slot=dialog-close]]:flex [&>[data-slot=dialog-close]]:size-11 [&>[data-slot=dialog-close]]:items-center [&>[data-slot=dialog-close]]:justify-center">
+          <DialogHeader className="pr-10">
             <DialogTitle>참고 이미지</DialogTitle>
           </DialogHeader>
           {preview && (
@@ -276,7 +300,7 @@ function RequestHistory({ requestId }: { requestId: string }) {
       <button
         type="button"
         aria-expanded={open}
-        className="text-xs text-slate-400"
+        className="min-h-11 text-xs text-slate-400"
         onClick={() => setOpen(!open)}
       >
         처리 이력 {open ? '접기' : '보기'}
@@ -289,7 +313,10 @@ function RequestHistory({ requestId }: { requestId: string }) {
             <p className="text-xs text-red-600">이력을 불러오지 못했어요.</p>
           ) : (
             query.data?.map((entry) => (
-              <div key={entry.id} className="text-xs leading-6 text-slate-500">
+              <div
+                key={entry.id}
+                className="break-words text-xs leading-6 text-slate-500"
+              >
                 <p>
                   {names[entry.kind] ?? '기록 변경'} · {entry.actor} ·{' '}
                   {new Date(entry.createdAt).toLocaleString('ko-KR')}
@@ -329,8 +356,9 @@ function DecisionForm({
         value={reason}
         onChange={(event) => setReason(event.target.value)}
       />
-      <div className="flex flex-wrap gap-2">
+      <div className="grid gap-2 sm:flex sm:flex-wrap">
         <Button
+          className="min-h-11 sm:min-h-9"
           disabled={disabled}
           onClick={() => onSubmit('approved', reason)}
         >
@@ -338,6 +366,7 @@ function DecisionForm({
         </Button>
         <Button
           variant="outline"
+          className="min-h-11 sm:min-h-9"
           disabled={disabled || !reason.trim()}
           onClick={() => onSubmit('needs_information', reason)}
         >
@@ -345,6 +374,7 @@ function DecisionForm({
         </Button>
         <Button
           variant="outline"
+          className="min-h-11 sm:min-h-9"
           disabled={disabled || !reason.trim()}
           onClick={() => onSubmit('rejected', reason)}
         >
@@ -445,8 +475,8 @@ function CorrectionForm({
         }
       }}
     >
-      <DialogContent className="flex max-h-[90dvh] max-w-lg flex-col gap-0 overflow-hidden p-0">
-        <DialogHeader className="border-b px-6 py-5">
+      <DialogContent className="flex max-h-[90dvh] w-[calc(100%-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0 [&>[data-slot=dialog-close]]:top-2 [&>[data-slot=dialog-close]]:right-2 [&>[data-slot=dialog-close]]:flex [&>[data-slot=dialog-close]]:size-11 [&>[data-slot=dialog-close]]:items-center [&>[data-slot=dialog-close]]:justify-center">
+        <DialogHeader className="shrink-0 border-b px-4 py-5 pr-12 sm:pr-14 sm:pl-6">
           <DialogTitle>정정 / 예외 요청</DialogTitle>
           <DialogDescription>
             실제 근무 시각과 상황을 알려 주세요.
@@ -454,7 +484,7 @@ function CorrectionForm({
         </DialogHeader>
         <form
           id="correction-form"
-          className="space-y-5 overflow-y-auto overscroll-contain px-6 py-5"
+          className="min-h-0 space-y-5 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6"
           onSubmit={(event) => {
             event.preventDefault();
 
@@ -469,6 +499,7 @@ function CorrectionForm({
             <Input
               required
               type="date"
+              className="h-11 sm:h-9"
               value={day}
               disabled={!!existing}
               onChange={(event) => setDay(event.target.value)}
@@ -479,6 +510,7 @@ function CorrectionForm({
               실제 출근 시각
               <Input
                 type="datetime-local"
+                className="h-11 sm:h-9"
                 value={checkIn}
                 onChange={(event) => setCheckIn(event.target.value)}
               />
@@ -487,6 +519,7 @@ function CorrectionForm({
               실제 퇴근 시각
               <Input
                 type="datetime-local"
+                className="h-11 sm:h-9"
                 value={checkOut}
                 onChange={(event) => setCheckOut(event.target.value)}
               />
@@ -513,7 +546,7 @@ function CorrectionForm({
               </p>
               <button
                 type="button"
-                className="text-xs text-indigo-600"
+                className="min-h-11 text-xs text-indigo-600"
                 onClick={() => setExample(true)}
               >
                 예시 보기 ›
@@ -552,7 +585,7 @@ function CorrectionForm({
                   <button
                     type="button"
                     aria-label={`첨부 ${index + 1} 제거`}
-                    className="absolute -top-1 -right-1 rounded-full bg-white p-1 shadow"
+                    className="absolute -top-2 -right-2 flex size-11 items-center justify-center rounded-full bg-white shadow"
                     onClick={() =>
                       setFiles((current) =>
                         current.filter((_, i) => i !== index)
@@ -582,13 +615,14 @@ function CorrectionForm({
             </p>
           </div>
         </form>
-        <div className="flex shrink-0 items-center justify-between border-t px-6 py-4">
+        <div className="flex shrink-0 flex-col gap-3 border-t px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <span className="text-xs text-slate-400">
             담당자 승인 후 기록에 반영돼요.
           </span>
           <Button
             type="submit"
             form="correction-form"
+            className="min-h-11 sm:min-h-9"
             disabled={
               mutation.isPending || !reason.trim() || (!checkIn && !checkOut)
             }
@@ -598,8 +632,8 @@ function CorrectionForm({
         </div>
       </DialogContent>
       <Dialog open={example} onOpenChange={setExample}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-sm overflow-y-auto p-4 sm:p-6 [&>[data-slot=dialog-close]]:top-2 [&>[data-slot=dialog-close]]:right-2 [&>[data-slot=dialog-close]]:flex [&>[data-slot=dialog-close]]:size-11 [&>[data-slot=dialog-close]]:items-center [&>[data-slot=dialog-close]]:justify-center">
+          <DialogHeader className="pr-10">
             <DialogTitle>이렇게 찍어 주세요</DialogTitle>
             <DialogDescription>
               사진을 첨부한다면 얼굴과 근무 공간이 함께 보이도록 찍어 주세요.

@@ -6,7 +6,11 @@ import { attendanceApi } from '@/lib/api/domains/attendance';
 import { ATTENDANCE_KEY, useAttendance } from '../hooks/use-attendance';
 import { formatAttendanceTime } from '../lib/attendance-model';
 
-export function AttendanceRecords() {
+export function AttendanceRecords({
+  showHeading = true,
+}: {
+  showHeading?: boolean;
+}) {
   const me = useAttendance();
   const [selectedUserId, setSelectedUserId] = useState('');
   const userId = me.data?.isMaster ? selectedUserId || undefined : undefined;
@@ -32,11 +36,13 @@ export function AttendanceRecords() {
   }
 
   return (
-    <section className="space-y-6">
+    <section className="min-w-0 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">
-          {userId ? '직원 출퇴근 기록' : '내 출퇴근 기록'}
-        </h1>
+        {showHeading && (
+          <h1 className="text-2xl font-bold">
+            {userId ? '직원 출퇴근 기록' : '내 출퇴근 기록'}
+          </h1>
+        )}
         <p className="mt-2 text-sm text-slate-400">
           출근일을 기준으로 최근 90개 근무 기록을 보여줘요.
         </p>
@@ -46,7 +52,7 @@ export function AttendanceRecords() {
           <label className="block space-y-2 text-sm">
             기록을 볼 직원
             <select
-              className="block w-full max-w-sm rounded-md border bg-white p-2"
+              className="block min-h-11 w-full min-w-0 max-w-sm rounded-md border bg-white p-2 text-base sm:text-sm"
               value={selectedUserId}
               onChange={(event) => setSelectedUserId(event.target.value)}
             >
@@ -79,23 +85,23 @@ export function AttendanceRecords() {
       ) : query.isPending ? (
         <p>기록을 불러오고 있어요.</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border bg-white">
-          <table className="w-full text-left text-sm">
+        <div className="overflow-hidden rounded-xl border bg-white">
+          <table className="w-full table-fixed text-left text-xs sm:text-sm">
             <thead className="bg-slate-50 text-xs text-slate-400">
               <tr>
-                <th className="p-4">근무일</th>
-                <th className="p-4">출근</th>
-                <th className="p-4">퇴근</th>
+                <th className="px-2 py-4 sm:px-4">근무일</th>
+                <th className="px-2 py-4 sm:px-4">출근</th>
+                <th className="px-2 py-4 sm:px-4">퇴근</th>
               </tr>
             </thead>
             <tbody>
               {query.data.map((session) => (
                 <tr key={session.id} className="border-t">
-                  <td className="p-4">{session.workDate}</td>
-                  <td className="p-4">
+                  <td className="px-2 py-4 sm:px-4">{session.workDate}</td>
+                  <td className="px-2 py-4 sm:px-4">
                     {formatAttendanceTime(session.checkIn)}
                   </td>
-                  <td className="p-4">
+                  <td className="px-2 py-4 sm:px-4">
                     {formatAttendanceTime(session.checkOut)}
                     {session.checkOut &&
                       new Date(
@@ -103,7 +109,7 @@ export function AttendanceRecords() {
                       )
                         .toISOString()
                         .slice(0, 10) !== session.workDate && (
-                        <span className="ml-2 text-xs text-slate-400">
+                        <span className="mt-1 block text-[10px] text-slate-400 sm:mt-0 sm:ml-2 sm:inline sm:text-xs">
                           다음 날
                         </span>
                       )}

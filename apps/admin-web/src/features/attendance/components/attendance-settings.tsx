@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,7 +21,11 @@ import {
   type Worksite,
 } from '@packages/domain-types/attendance';
 
-export function AttendanceSettingsPage() {
+export function AttendanceSettingsPage({
+  showHeading = true,
+}: {
+  showHeading?: boolean;
+}) {
   const me = useAttendance();
 
   if (me.isError) {
@@ -36,10 +41,16 @@ export function AttendanceSettingsPage() {
     return <p className="text-sm text-slate-400">설정을 불러오고 있어요.</p>;
   }
 
-  return <SettingsForm initial={me.data.settings} />;
+  return <SettingsForm initial={me.data.settings} showHeading={showHeading} />;
 }
 
-function SettingsForm({ initial }: { initial: AttendanceSettings }) {
+function SettingsForm({
+  initial,
+  showHeading,
+}: {
+  initial: AttendanceSettings;
+  showHeading: boolean;
+}) {
   const [settings, setSettings] = useState(initial);
   const [error, setError] = useState<string | null>(null);
   const mutation = useAttendanceAction(
@@ -75,7 +86,9 @@ function SettingsForm({ initial }: { initial: AttendanceSettings }) {
   return (
     <section className="max-w-xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">내 근무·알림 설정</h1>
+        {showHeading && (
+          <h1 className="text-2xl font-bold">내 근무·알림 설정</h1>
+        )}
         <p className="mt-2 text-sm text-slate-400">
           평소 근무 시간과 필요한 알림을 설정해요.
         </p>
@@ -99,21 +112,23 @@ function SettingsForm({ initial }: { initial: AttendanceSettings }) {
       >
         <div className="space-y-5 rounded-2xl border bg-white p-6">
           <h2 className="text-sm font-semibold">평소 근무 시간</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <label className="space-y-2 text-xs">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <label className="flex min-w-0 flex-col gap-2 text-xs">
               출근
               <Input
                 type="time"
                 required
+                className="h-11 w-full min-w-0 max-w-full"
                 value={settings.normalStart}
                 onChange={(event) => startChanged(event.target.value)}
               />
             </label>
-            <label className="space-y-2 text-xs">
+            <label className="flex min-w-0 flex-col gap-2 text-xs">
               퇴근
               <Input
                 type="time"
                 required
+                className="h-11 w-full min-w-0 max-w-full"
                 value={settings.normalEnd}
                 onChange={(event) => patch('normalEnd', event.target.value)}
               />
@@ -138,6 +153,7 @@ function SettingsForm({ initial }: { initial: AttendanceSettings }) {
                 aria-label={`${kind === 'in' ? '출근' : '퇴근'} 알림 시각`}
                 type="time"
                 required
+                className="h-11 w-full min-w-0 max-w-full"
                 disabled={!settings[`${kind}Enabled`]}
                 value={settings[`${kind}Time`]}
                 onChange={(event) => patch(`${kind}Time`, event.target.value)}
@@ -200,7 +216,11 @@ function SettingsForm({ initial }: { initial: AttendanceSettings }) {
   );
 }
 
-export function WorksiteSettings() {
+export function WorksiteSettings({
+  showHeading = true,
+}: {
+  showHeading?: boolean;
+}) {
   const me = useAttendance();
   const sites = useQuery({
     queryKey: [...ATTENDANCE_KEY, 'worksites'],
@@ -228,7 +248,7 @@ export function WorksiteSettings() {
   return (
     <section className="max-w-xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">근무지 설정</h1>
+        {showHeading && <h1 className="text-2xl font-bold">근무지 설정</h1>}
         <p className="mt-2 text-sm text-slate-400">
           회사 좌표와 현장에서 확인한 허용 반경을 등록해요. 사용하지 않는
           근무지는 비활성화할 수 있어요.
@@ -264,6 +284,16 @@ type WorksiteFields = Pick<
 function WorksiteForm({ site }: { site?: Worksite }) {
   const queryClient = useQueryClient();
   const [active, setActive] = useState(site?.active ?? true);
+  const [fields, setFields] = useState({
+    name: site?.name ?? '',
+    latitude: site ? String(site.latitude) : '',
+    longitude: site ? String(site.longitude) : '',
+    radiusMeters: site ? String(site.radiusMeters) : '',
+    accuracyMeters: site ? String(site.accuracyMeters) : '',
+  });
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
   const mutation = useAttendanceAction(
     async (input: WorksiteFields & { active: boolean }) => {
       if (site) {
@@ -280,6 +310,45 @@ function WorksiteForm({ site }: { site?: Worksite }) {
     },
     site ? '근무지를 수정했어요.' : '근무지를 등록했어요.'
   );
+
+  async function fillCurrentLocation() {
+    setLocationError(null);
+
+    if (!navigator.geolocation) {
+      setLocationError('이 기기에서는 위치를 확인할 수 없어요.');
+
+      return;
+    }
+
+    setLocating(true);
+
+    try {
+      const position = await new Promise<GeolocationPosition>(
+        (resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            maximumAge: 0,
+            timeout: 15000,
+          });
+        }
+      );
+
+      setFields((current) => ({
+        ...current,
+        latitude: position.coords.latitude.toFixed(7),
+        longitude: position.coords.longitude.toFixed(7),
+      }));
+      setLocationAccuracy(Math.ceil(position.coords.accuracy));
+    } catch (error) {
+      setLocationError(
+        (error as GeolocationPositionError).code === 1
+          ? '위치 권한을 허용하고 다시 눌러 주세요.'
+          : '현재 위치를 확인하지 못했어요. 다시 시도하거나 좌표를 직접 입력해 주세요.'
+      );
+    } finally {
+      setLocating(false);
+    }
+  }
 
   return (
     <form
@@ -308,6 +377,32 @@ function WorksiteForm({ site }: { site?: Worksite }) {
           </span>
         )}
       </div>
+      <div className="space-y-2">
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-11 w-full sm:w-auto"
+          disabled={locating || mutation.isPending}
+          onClick={fillCurrentLocation}
+        >
+          {locating ? '현재 위치 확인 중…' : '현재 위치로 좌표 채우기'}
+        </Button>
+        <p className="text-xs leading-6 text-slate-500">
+          등록할 근무지 안에서 눌러 주세요. 좌표를 채운 뒤 이름과 허용 반경을
+          확인하고 등록해요.
+        </p>
+        {locationAccuracy !== null && (
+          <p role="status" className="text-xs leading-6 text-slate-500">
+            현재 위치의 예상 오차는 약 {locationAccuracy}m예요. 오차가 크면 창가
+            등에서 다시 확인해 주세요.
+          </p>
+        )}
+        {locationError && (
+          <p role="alert" className="text-xs leading-6 text-red-600">
+            {locationError}
+          </p>
+        )}
+      </div>
       {(
         [
           ['name', '근무지 이름', 'text'],
@@ -322,7 +417,14 @@ function WorksiteForm({ site }: { site?: Worksite }) {
           <Input
             name={name}
             type={type}
-            defaultValue={site?.[name]}
+            className="h-11 min-w-0"
+            value={fields[name]}
+            onChange={(event) =>
+              setFields((current) => ({
+                ...current,
+                [name]: event.target.value,
+              }))
+            }
             step={
               name === 'latitude' || name === 'longitude' ? 'any' : undefined
             }
@@ -332,11 +434,21 @@ function WorksiteForm({ site }: { site?: Worksite }) {
                 : name === 'longitude'
                   ? -180
                   : type === 'number'
-                    ? 1
+                    ? name === 'radiusMeters'
+                      ? 10
+                      : 1
                     : undefined
             }
             max={
-              name === 'latitude' ? 90 : name === 'longitude' ? 180 : undefined
+              name === 'latitude'
+                ? 90
+                : name === 'longitude'
+                  ? 180
+                  : name === 'radiusMeters'
+                    ? 1000
+                    : name === 'accuracyMeters'
+                      ? 500
+                      : undefined
             }
             required
             disabled={mutation.isPending}
@@ -371,9 +483,21 @@ function WorksiteForm({ site }: { site?: Worksite }) {
           )}
         </p>
       )}
-      <Button type="submit" disabled={mutation.isPending}>
+      <Button
+        className="min-h-11 w-full sm:w-auto"
+        type="submit"
+        disabled={mutation.isPending}
+      >
         {mutation.isPending ? '저장 중…' : site ? '변경 저장' : '근무지 등록'}
       </Button>
+      {mutation.isSuccess && (
+        <Link
+          href="/attendance"
+          className="flex min-h-11 items-center justify-center rounded-lg bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+        >
+          오늘의 근무로 돌아가기
+        </Link>
+      )}
     </form>
   );
 }

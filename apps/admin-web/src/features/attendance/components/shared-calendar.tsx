@@ -48,8 +48,10 @@ const LEAVE_COLORS: Record<LeaveType, string> = {
 
 export function SharedCalendar({
   initialScope = 'shared',
+  showHeading = true,
 }: {
   initialScope?: CalendarScope;
+  showHeading?: boolean;
 }) {
   const { data: me } = useAttendance();
   const today = seoulDate(new Date());
@@ -110,30 +112,37 @@ export function SharedCalendar({
   }
 
   return (
-    <section className="space-y-6">
+    <section className="min-w-0 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">
-            {scope === 'personal'
-              ? '내 휴가·반차 일정'
-              : '직원 휴가·반차 캘린더'}
-          </h1>
+          {showHeading && (
+            <h1 className="text-2xl font-bold">
+              {scope === 'personal'
+                ? '내 휴가·반차 일정'
+                : '직원 휴가·반차 캘린더'}
+            </h1>
+          )}
           <p className="mt-2 text-sm text-slate-600">
             {scope === 'personal'
               ? '내 일정을 확인하고 등록·수정해요.'
               : '직원들의 휴가와 반차를 함께 확인해요.'}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="grid w-full gap-2 sm:flex sm:w-auto sm:flex-wrap">
           <Button
             variant="outline"
+            className="min-h-11 sm:min-h-9"
             onClick={() =>
               setScope(scope === 'personal' ? 'shared' : 'personal')
             }
           >
             {scope === 'personal' ? '다른 직원 일정 보기' : '내 일정만 보기'}
           </Button>
-          <Button onClick={() => setEditor({ day: selected })} disabled={!me}>
+          <Button
+            className="min-h-11 sm:min-h-9"
+            onClick={() => setEditor({ day: selected })}
+            disabled={!me}
+          >
             내 휴가 / 반차 등록
           </Button>
         </div>
@@ -148,7 +157,7 @@ export function SharedCalendar({
               <Button
                 size="sm"
                 variant="outline"
-                className="mr-2 h-8 rounded-full px-4 text-xs"
+                className="mr-1 h-11 rounded-full px-4 text-xs sm:h-8"
                 onClick={() => {
                   setMonth(today.slice(0, 7));
                   setSelected(today);
@@ -159,7 +168,7 @@ export function SharedCalendar({
               <Button
                 size="icon"
                 variant="ghost"
-                className="size-8 rounded-full"
+                className="size-11 rounded-full sm:size-8"
                 aria-label="지난달"
                 onClick={() => moveMonth(-1)}
               >
@@ -168,7 +177,7 @@ export function SharedCalendar({
               <Button
                 size="icon"
                 variant="ghost"
-                className="size-8 rounded-full"
+                className="size-11 rounded-full sm:size-8"
                 aria-label="다음 달"
                 onClick={() => moveMonth(1)}
               >
@@ -222,7 +231,7 @@ export function SharedCalendar({
                         aria-label={`${day} 휴가·반차 ${leaves.length}명${leaves.length ? ': ' + leaves.map((item) => `${item.name} ${LEAVE_LABELS[item.type]}`).join(', ') : ''}`}
                         aria-pressed={selected === day}
                         onClick={() => setSelected(day)}
-                        className={`relative flex min-h-32 w-full min-w-0 flex-col items-center pt-2 pb-1 transition-colors focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-indigo-600 sm:min-h-36 ${selected === day ? 'bg-slate-100' : 'bg-white hover:bg-slate-50'}`}
+                        className={`relative flex min-h-36 w-full min-w-0 flex-col items-center pt-2 pb-1 transition-colors focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-indigo-600 ${selected === day ? 'bg-slate-100' : 'bg-white hover:bg-slate-50'}`}
                       >
                         <span
                           className={`flex size-6 items-center justify-center rounded-full text-xs ${day === today ? 'bg-slate-900 font-semibold text-white' : !inMonth ? 'text-slate-400' : weekday === 0 ? 'text-rose-600' : weekday === 6 ? 'text-sky-700' : 'text-slate-600'}`}
@@ -235,13 +244,16 @@ export function SharedCalendar({
                           type="button"
                           aria-label={`${day} 전체 일정 ${leaves.length}명 보기`}
                           aria-haspopup="dialog"
-                          className="absolute bottom-1 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded px-1 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-indigo-600"
+                          className="absolute inset-x-0 bottom-0 z-20 flex h-8 min-w-0 items-center justify-center rounded text-[10px] font-medium text-slate-600 hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-indigo-600 sm:inset-x-0.5"
                           onClick={() => {
                             setSelected(day);
                             setExpandedDay(day);
                           }}
                         >
-                          +{extra}명 더 보기
+                          <span className="sm:hidden">+{extra}</span>
+                          <span className="hidden sm:inline">
+                            +{extra}명 더 보기
+                          </span>
                         </button>
                       )}
                     </div>
@@ -296,7 +308,7 @@ export function SharedCalendar({
             <Button
               size="icon"
               variant="ghost"
-              className="size-8 rounded-full text-indigo-600"
+              className="size-11 shrink-0 rounded-full text-indigo-600 sm:size-8"
               aria-label="선택한 날짜에 내 휴가·반차 등록"
               disabled={!me}
               onClick={() => setEditor({ day: selected })}
@@ -307,7 +319,9 @@ export function SharedCalendar({
           {selectedLeaves.map((item) => (
             <div key={item.id} className="rounded-xl border bg-white p-4">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-sm font-semibold">{item.name}</p>
+                <p className="min-w-0 break-words text-sm font-semibold">
+                  {item.name}
+                </p>
                 <span
                   className={`rounded-md px-2 py-1 text-[11px] font-medium ${LEAVE_COLORS[item.type]}`}
                 >
@@ -322,7 +336,7 @@ export function SharedCalendar({
               {item.userId === me?.userId && (
                 <div className="mt-3 flex gap-3">
                   <button
-                    className="text-xs text-indigo-600"
+                    className="min-h-11 min-w-11 text-xs text-indigo-600"
                     onClick={() =>
                       setEditor({ day: item.date, existing: item })
                     }
@@ -330,7 +344,7 @@ export function SharedCalendar({
                     수정
                   </button>
                   <button
-                    className="text-xs text-slate-600"
+                    className="min-h-11 min-w-11 text-xs text-slate-600"
                     disabled={remove.isPending}
                     onClick={() => remove.mutate(item.id)}
                   >
@@ -355,8 +369,8 @@ export function SharedCalendar({
           }
         }}
       >
-        <DialogContent className="flex max-h-[85dvh] flex-col overflow-hidden">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[85dvh] w-[calc(100%-2rem)] flex-col overflow-hidden p-4 sm:p-6 [&>[data-slot=dialog-close]]:top-2 [&>[data-slot=dialog-close]]:right-2 [&>[data-slot=dialog-close]]:flex [&>[data-slot=dialog-close]]:size-11 [&>[data-slot=dialog-close]]:items-center [&>[data-slot=dialog-close]]:justify-center">
+          <DialogHeader className="pr-10">
             <DialogTitle>{expandedLabel} 전체 일정</DialogTitle>
             <DialogDescription>
               휴가·반차 {expandedLeaves.length}명
@@ -366,7 +380,9 @@ export function SharedCalendar({
             {expandedLeaves.map((item) => (
               <div key={item.id} className="rounded-xl border p-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-semibold">{item.name}</p>
+                  <p className="min-w-0 break-words text-sm font-semibold">
+                    {item.name}
+                  </p>
                   <span
                     className={`rounded-md px-2 py-1 text-[11px] font-medium ${LEAVE_COLORS[item.type]}`}
                   >
@@ -547,16 +563,16 @@ function LeaveEditor({
     >
       <DialogContent
         aria-describedby={undefined}
-        className="flex max-h-[90dvh] max-w-lg flex-col gap-0 overflow-hidden p-0"
+        className="flex max-h-[90dvh] w-[calc(100%-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0 [&>[data-slot=dialog-close]]:top-2 [&>[data-slot=dialog-close]]:right-2 [&>[data-slot=dialog-close]]:flex [&>[data-slot=dialog-close]]:size-11 [&>[data-slot=dialog-close]]:items-center [&>[data-slot=dialog-close]]:justify-center"
       >
-        <DialogHeader className="shrink-0 border-b px-6 py-5">
+        <DialogHeader className="shrink-0 border-b px-4 py-5 pr-12 sm:pr-14 sm:pl-6">
           <DialogTitle>휴가 / 반차 {existing ? '수정' : '등록'}</DialogTitle>
         </DialogHeader>
         <form
           id="leave-editor-form"
           onSubmit={submit}
           onInvalid={() => setSubmitted(true)}
-          className="overflow-y-auto overscroll-contain px-6 py-5"
+          className="min-h-0 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6"
         >
           <fieldset disabled={mutation.isPending} className="min-w-0 space-y-6">
             <p className="text-sm font-semibold">
@@ -565,11 +581,12 @@ function LeaveEditor({
                 내 일정
               </span>
             </p>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="space-y-2 text-xs font-medium">
+            <div className="grid gap-4 sm:grid-cols-2 sm:gap-3">
+              <label className="block min-w-0 space-y-2 text-xs font-medium">
                 시작일
                 <Input
                   type="date"
+                  className="h-11 sm:h-9"
                   required
                   disabled={!!existing}
                   value={from}
@@ -584,10 +601,11 @@ function LeaveEditor({
                   }}
                 />
               </label>
-              <label className="space-y-2 text-xs font-medium">
+              <label className="block min-w-0 space-y-2 text-xs font-medium">
                 종료일
                 <Input
                   type="date"
+                  className="h-11 sm:h-9"
                   min={from}
                   required
                   disabled={!!existing}
@@ -628,7 +646,7 @@ function LeaveEditor({
                 onToggle={(event) => setAdjusting(event.currentTarget.open)}
                 className="group rounded-xl border"
               >
-                <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
+                <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
                   날짜별 조정
                   <span className="flex items-center gap-2 text-xs font-normal text-slate-500">
                     제외 · 개별 변경
@@ -643,7 +661,7 @@ function LeaveEditor({
 
                     return (
                       <div key={date} className="py-3">
-                        <div className="flex items-center justify-between gap-2 text-xs">
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                           <div
                             className={day ? '' : 'text-slate-400 line-through'}
                           >
@@ -662,7 +680,7 @@ function LeaveEditor({
                             {day && !stored && (
                               <button
                                 type="button"
-                                className="text-indigo-600"
+                                className="min-h-11 min-w-11 text-indigo-600"
                                 onClick={() =>
                                   setEditingDate(editing ? null : date)
                                 }
@@ -673,7 +691,7 @@ function LeaveEditor({
                             {!stored && (
                               <button
                                 type="button"
-                                className="text-slate-600"
+                                className="flex min-h-11 min-w-11 items-center justify-center text-slate-600"
                                 aria-label={`${date} ${day ? '제외' : '다시 추가'}`}
                                 onClick={() =>
                                   setExcluded((current) =>
@@ -739,7 +757,7 @@ function LeaveEditor({
             )}
           </fieldset>
         </form>
-        <div className="flex shrink-0 items-center justify-between border-t px-6 py-4">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-t px-4 py-4 sm:px-6">
           <span className="text-xs text-slate-600">
             {existing ? '수정할 휴가' : '추가할 휴가'}{' '}
             <b className="text-slate-900">{total}일</b>
@@ -747,6 +765,7 @@ function LeaveEditor({
           <Button
             type="submit"
             form="leave-editor-form"
+            className="min-h-11 sm:min-h-9"
             disabled={
               !days.length ||
               mutation.isPending ||

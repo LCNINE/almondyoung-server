@@ -1,17 +1,12 @@
-import Link from 'next/link';
+import { AttendancePageLayout } from '@/features/attendance/components/attendance-page-layout';
 import { AttendanceSettingsPage } from '@/features/attendance/components/attendance-settings';
 import { BrowserPushSettings } from '@/features/attendance/components/browser-push-settings';
 
 export default function Page() {
   return (
-    <main className="min-h-dvh bg-slate-50 px-4 py-6">
-      <div className="mx-auto max-w-xl space-y-6">
-        <Link href="/attendance" className="text-sm text-indigo-600">
-          ← 오늘의 근무
-        </Link>
-        <AttendanceSettingsPage />
-        <BrowserPushSettings />
-      </div>
-    </main>
+    <AttendancePageLayout title="근무·알림 설정">
+      <AttendanceSettingsPage showHeading={false} />
+      <BrowserPushSettings />
+    </AttendancePageLayout>
   );
 }

@@ -35,11 +35,20 @@ export function BrowserPushSettings() {
         주세요. Android는 브라우저 메뉴에서 홈 화면 추가 또는 앱 설치를 선택해
         주세요. 알림 도착 시각은 기기와 네트워크 상태에 따라 달라질 수 있어요.
       </p>
-      <div className="flex gap-3">
-        <Button disabled={busy} onClick={() => change(true)}>
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <Button
+          className="min-h-11"
+          disabled={busy}
+          onClick={() => change(true)}
+        >
           알림 연결하기
         </Button>
-        <Button variant="outline" disabled={busy} onClick={() => change(false)}>
+        <Button
+          className="min-h-11"
+          variant="outline"
+          disabled={busy}
+          onClick={() => change(false)}
+        >
           이 기기 알림 끄기
         </Button>
       </div>
