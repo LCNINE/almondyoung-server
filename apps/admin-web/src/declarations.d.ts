@@ -7,6 +7,8 @@ declare module '@tanstack/react-table' {
     clickTogglesRowSelection?: boolean;
     /** 고정 열폭(px). 미지정 열이 남은 폭을 나눠 가진다. */
     width?: number;
+    /** 남은 폭을 채우고, 넘치는 글은 셀 안 truncate 로 자른다 (표를 가로로 밀어내지 않는다). */
+    fluid?: boolean;
     align?: 'left' | 'center' | 'right';
   }
 }

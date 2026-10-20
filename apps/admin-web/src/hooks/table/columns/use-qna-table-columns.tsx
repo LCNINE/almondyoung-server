@@ -89,6 +89,7 @@ export const useQnaTableColumns = ({
       columnHelper.display({
         id: 'question',
         header: '문의',
+        meta: { fluid: true },
         cell: ({ row }) => (
           <QuestionCell
             question={row.original}

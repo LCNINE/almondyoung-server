@@ -69,11 +69,11 @@ export function DataTableRoot<TData extends RowData>({
           {table.getHeaderGroups().map((headerGroup) => (
             <Table.Row key={headerGroup.id}>
               {headerGroup.headers.map((header) => {
-                const { width } = header.column.columnDef.meta ?? {};
+                const { width, fluid } = header.column.columnDef.meta ?? {};
                 return (
                   <Table.Head
                     key={header.id}
-                    style={width ? { width } : undefined}
+                    style={columnStyle(width, fluid)}
                   >
                     {flexRender(
                       header.column.columnDef.header,
@@ -118,12 +118,12 @@ export function DataTableRoot<TData extends RowData>({
                   onClick={href ? () => handleRowClick(href) : undefined}
                 >
                   {row.getVisibleCells().map((cell) => {
-                    const { clickTogglesRowSelection, width, align } =
+                    const { clickTogglesRowSelection, width, fluid, align } =
                       cell.column.columnDef.meta ?? {};
                     return (
                       <Table.Cell
                         key={cell.id}
-                        style={width ? { width } : undefined}
+                        style={columnStyle(width, fluid)}
                         className={align ? ALIGN_CLASS[align] : undefined}
                         onClick={
                           clickTogglesRowSelection
@@ -160,4 +160,13 @@ export function DataTableRoot<TData extends RowData>({
       />
     </div>
   );
+}
+
+// max-width:0 + width:100% — auto 레이아웃 표에서 이 열만 남은 폭을 갖고, 안쪽 truncate 가 실제로 자르게 한다
+function columnStyle(
+  width: number | undefined,
+  fluid: boolean | undefined
+): React.CSSProperties | undefined {
+  if (fluid) return { maxWidth: 0, width: '100%' };
+  return width ? { width } : undefined;
 }
