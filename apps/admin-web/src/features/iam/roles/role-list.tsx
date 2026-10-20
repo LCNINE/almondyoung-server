@@ -71,6 +71,11 @@ function Rows({ onCopy }: { onCopy: (role: RoleSummary) => void }) {
               )}
             </TableCell>
             <TableCell className="text-right">
+              {!r.isSystem && (
+                <Button size="sm" variant="ghost" asChild>
+                  <Link href={`/users/roles/${r.roleId}`}>권한 편집</Link>
+                </Button>
+              )}
               <Can run={useCreateRole}>
                 <Button size="sm" variant="ghost" onClick={() => onCopy(r)}>
                   복제

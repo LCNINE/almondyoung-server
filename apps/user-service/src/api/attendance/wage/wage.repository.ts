@@ -432,6 +432,158 @@ export class WageRepository {
     return row ?? null;
   }
 
+  async rate(tx: UserServiceTx, id: string): Promise<WageRateRow | null> {
+    const [row] = await tx.select().from(attendanceWageRates).where(eq(attendanceWageRates.id, id));
+
+    return row ?? null;
+  }
+
+  async updateRate(
+    tx: UserServiceTx,
+    id: string,
+    values: { effectiveFrom: string; hourlyWage: number },
+  ): Promise<WageRateRow> {
+    const [row] = await tx.update(attendanceWageRates).set(values).where(eq(attendanceWageRates.id, id)).returning();
+
+    if (!row) {
+      throw new Error('wage rate update returned no row');
+    }
+
+    return row;
+  }
+
+  async deleteRate(tx: UserServiceTx, id: string): Promise<boolean> {
+    return (await tx.delete(attendanceWageRates).where(eq(attendanceWageRates.id, id)).returning()).length > 0;
+  }
+
+  async schedule(tx: UserServiceTx, id: string): Promise<WorkScheduleRow | null> {
+    const [row] = await tx.select().from(attendanceWorkSchedules).where(eq(attendanceWorkSchedules.id, id));
+
+    return row ?? null;
+  }
+
+  async updateSchedule(
+    tx: UserServiceTx,
+    id: string,
+    values: Pick<WorkScheduleRow, 'effectiveFrom' | 'effectiveTo' | 'days'>,
+  ): Promise<WorkScheduleRow> {
+    const [row] = await tx
+      .update(attendanceWorkSchedules)
+      .set(values)
+      .where(eq(attendanceWorkSchedules.id, id))
+      .returning();
+
+    if (!row) {
+      throw new Error('work schedule update returned no row');
+    }
+
+    return row;
+  }
+
+  async deleteSchedule(tx: UserServiceTx, id: string): Promise<boolean> {
+    return (await tx.delete(attendanceWorkSchedules).where(eq(attendanceWorkSchedules.id, id)).returning()).length > 0;
+  }
+
+  async policy(tx: UserServiceTx, id: string): Promise<PayPolicyRow | null> {
+    const [row] = await tx.select().from(attendancePayPolicies).where(eq(attendancePayPolicies.id, id));
+
+    return row ?? null;
+  }
+
+  async updatePolicy(
+    tx: UserServiceTx,
+    id: string,
+    values: Pick<PayPolicyRow, 'effectiveFrom' | 'rules'>,
+  ): Promise<PayPolicyRow> {
+    const [row] = await tx
+      .update(attendancePayPolicies)
+      .set(values)
+      .where(eq(attendancePayPolicies.id, id))
+      .returning();
+
+    if (!row) {
+      throw new Error('pay policy update returned no row');
+    }
+
+    return row;
+  }
+
+  async deletePolicy(tx: UserServiceTx, id: string): Promise<boolean> {
+    return (await tx.delete(attendancePayPolicies).where(eq(attendancePayPolicies.id, id)).returning()).length > 0;
+  }
+
+  async updateMinimumWage(
+    tx: UserServiceTx,
+    effectiveFrom: string,
+    hourlyWage: number,
+  ): Promise<MinimumWageRow | null> {
+    const [row] = await tx
+      .update(attendanceMinimumWages)
+      .set({ hourlyWage })
+      .where(eq(attendanceMinimumWages.effectiveFrom, effectiveFrom))
+      .returning();
+
+    return row ?? null;
+  }
+
+  async deleteMinimumWage(tx: UserServiceTx, effectiveFrom: string): Promise<boolean> {
+    return (
+      (
+        await tx
+          .delete(attendanceMinimumWages)
+          .where(eq(attendanceMinimumWages.effectiveFrom, effectiveFrom))
+          .returning()
+      ).length > 0
+    );
+  }
+
+  async deleteWorker(tx: UserServiceTx, userId: string): Promise<boolean> {
+    return (await tx.delete(attendanceWorkers).where(eq(attendanceWorkers.userId, userId)).returning()).length > 0;
+  }
+
+  /** 근무자나 정산 기록이 걸린 그룹인가. */
+  async groupInUse(tx: UserServiceTx, groupId: string): Promise<boolean> {
+    const [worker] = await tx
+      .select({ id: attendanceWorkers.userId })
+      .from(attendanceWorkers)
+      .where(eq(attendanceWorkers.groupId, groupId))
+      .limit(1);
+    const [settlement] = await tx
+      .select({ id: attendancePaySettlements.id })
+      .from(attendancePaySettlements)
+      .where(eq(attendancePaySettlements.groupId, groupId))
+      .limit(1);
+
+    return !!worker || !!settlement;
+  }
+
+  async deleteGroup(tx: UserServiceTx, groupId: string): Promise<void> {
+    await tx.delete(attendancePayPolicies).where(eq(attendancePayPolicies.groupId, groupId));
+    await tx.delete(attendancePayGroups).where(eq(attendancePayGroups.id, groupId));
+  }
+
+  async deleteOvertimeDecision(
+    tx: UserServiceTx,
+    userId: string,
+    workDate: string,
+  ): Promise<OvertimeDecisionRow | null> {
+    const [row] = await tx
+      .delete(attendanceOvertimeDecisions)
+      .where(and(eq(attendanceOvertimeDecisions.userId, userId), eq(attendanceOvertimeDecisions.workDate, workDate)))
+      .returning();
+
+    return row ?? null;
+  }
+
+  async deleteAbsenceDecision(tx: UserServiceTx, userId: string, workDate: string): Promise<AbsenceDecisionRow | null> {
+    const [row] = await tx
+      .delete(attendanceAbsenceDecisions)
+      .where(and(eq(attendanceAbsenceDecisions.userId, userId), eq(attendanceAbsenceDecisions.workDate, workDate)))
+      .returning();
+
+    return row ?? null;
+  }
+
   /** 같은 그룹의 확정·다시 열기·설정 변경을 줄 세운다 — 확정이 읽은 값을 다른 변경이 사이에 바꾸지 못하게. */
   async lockGroup(tx: UserServiceTx, groupId: string): Promise<void> {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`attendance-wage:${groupId}`}, 0))`);
@@ -445,6 +597,42 @@ export class WageRepository {
       .limit(1);
 
     return !!row;
+  }
+
+  /** 이 사람이 들어 있는 확정 정산(어느 그룹이든) 중 이 날짜 이후까지 걸친 것이 있는가. */
+  async personConfirmedThrough(tx: UserServiceTx, userId: string, from: string): Promise<boolean> {
+    const rows = await tx.execute<{ found: number }>(sql`
+      SELECT 1 AS found FROM ${attendancePaySettlements}
+      WHERE ${attendancePaySettlements.status} = 'confirmed'
+        AND ${attendancePaySettlements.periodEnd} >= ${from}
+        AND jsonb_path_exists(${attendancePaySettlements.snapshot}, '$.people[*] ? (@.userId == $user)', jsonb_build_object('user', ${userId}::text))
+      LIMIT 1
+    `);
+
+    return [...rows].length > 0;
+  }
+
+  /** 이 사람이 들어 있는 확정 정산 중 이 날짜들 가운데 하나를 포함하는 것이 있는가. */
+  async personConfirmedCovering(tx: UserServiceTx, userId: string, dates: readonly string[]): Promise<boolean> {
+    if (dates.length === 0) {
+      return false;
+    }
+
+    const rows = await tx.execute<{ found: number }>(sql`
+      SELECT 1 AS found FROM ${attendancePaySettlements}
+      WHERE ${attendancePaySettlements.status} = 'confirmed'
+        AND (${sql.join(
+          dates.map(
+            (date) =>
+              sql`${date}::date BETWEEN ${attendancePaySettlements.periodStart} AND ${attendancePaySettlements.periodEnd}`,
+          ),
+          sql` OR `,
+        )})
+        AND jsonb_path_exists(${attendancePaySettlements.snapshot}, '$.people[*] ? (@.userId == $user)', jsonb_build_object('user', ${userId}::text))
+      LIMIT 1
+    `);
+
+    return [...rows].length > 0;
   }
 
   /** 이 날짜들 중 하나라도 확정 기간 안에 있는가. */

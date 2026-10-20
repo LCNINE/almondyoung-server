@@ -9,6 +9,7 @@ import { Can } from '@/components/auth/can';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  useClearWageDecision,
   useDecideAbsence,
   useDecideOvertime,
   useWageDecisions,
@@ -21,6 +22,7 @@ import {
   WagePeriodBar,
   useWagePeriod,
 } from './wage-ui';
+import { ConfirmDelete } from './confirm-delete';
 
 const ABSENCE_LABELS: Record<AbsenceKind, string> = {
   excused_paid: '사유 있음 · 유급',
@@ -113,6 +115,8 @@ function RowHeading({
   item: WageDecisionItem;
   label: string;
 }) {
+  const clear = useClearWageDecision();
+
   return (
     <p className="mb-3 text-sm">
       <span className="font-semibold text-slate-900">{item.name}</span>
@@ -120,6 +124,24 @@ function RowHeading({
       <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
         {label}
       </span>
+      {(item.overtime || item.absence) && (
+        <Can run={useClearWageDecision}>
+          <span className="ml-2">
+            <ConfirmDelete
+              label="판정 취소"
+              question="미판정으로 되돌릴까요?"
+              disabled={clear.isPending}
+              onConfirm={() =>
+                clear.mutate({
+                  kind: item.kind,
+                  userId: item.userId,
+                  workDate: item.workDate,
+                })
+              }
+            />
+          </span>
+        </Can>
+      )}
     </p>
   );
 }

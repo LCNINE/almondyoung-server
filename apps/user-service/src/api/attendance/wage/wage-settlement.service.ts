@@ -39,6 +39,10 @@ export class WageSettlementService {
     return this.manager.decideAbsence(actorId, userId, workDate, dto);
   }
 
+  clearDecision(actorId: string, kind: 'overtime' | 'absence', userId: string, workDate: string): Promise<void> {
+    return this.manager.clearDecision(actorId, kind, userId, workDate);
+  }
+
   preview(groupId: string, paydayMonth: string): Promise<SettlementResult> {
     return this.reader.preview(groupId, paydayMonth);
   }

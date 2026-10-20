@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import type {
   ScheduleDay,
+  WageRate,
   WageWorkerDetail,
   Weekday,
 } from '@packages/domain-types/attendance-wage';
@@ -13,10 +14,16 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   useAddWageRate,
   useAddWorkSchedule,
+  useDeleteWageRate,
+  useDeleteWorkSchedule,
   usePayGroups,
+  useRemoveWageWorker,
   useSaveWageWorker,
+  useUpdateWageRate,
+  useUpdateWorkSchedule,
   useWageWorker,
 } from '../hooks/use-attendance-wage';
+import { ConfirmDelete } from './confirm-delete';
 import { formatWon, seoulToday } from './lib/wage-format';
 import { scheduleSummary } from './wage-workers';
 import { fieldClass, panelClass, WageHeading } from './wage-ui';
@@ -87,6 +94,7 @@ export function WageWorkerDetailView({ userId }: { userId: string }) {
 function RosterForm({ worker }: { worker: WageWorkerDetail }) {
   const groups = usePayGroups();
   const save = useSaveWageWorker();
+  const remove = useRemoveWageWorker();
   const [groupId, setGroupId] = useState(worker.groupId ?? '');
   const [hireDate, setHireDate] = useState(worker.hireDate ?? '');
   const [leaveDate, setLeaveDate] = useState(worker.leaveDate ?? '');
@@ -168,6 +176,18 @@ function RosterForm({ worker }: { worker: WageWorkerDetail }) {
           {worker.onRoster ? '저장' : '명단에 추가'}
         </Button>
       </Can>
+      {worker.onRoster && (
+        <Can run={useRemoveWageWorker}>
+          <span className="ml-2">
+            <ConfirmDelete
+              label="명단에서 빼기"
+              question="확정한 정산은 그대로 남아요. 뺄까요?"
+              disabled={remove.isPending}
+              onConfirm={() => remove.mutate(worker.userId)}
+            />
+          </span>
+        </Can>
+      )}
     </section>
   );
 }
@@ -191,10 +211,7 @@ function RateSection({ worker }: { worker: WageWorkerDetail }) {
           <li className="py-2 text-slate-400">아직 시급이 없어요.</li>
         )}
         {[...worker.rates].reverse().map((rate) => (
-          <li key={rate.id} className="flex justify-between py-2">
-            <span>{rate.effectiveFrom}부터</span>
-            <span className="font-semibold">{formatWon(rate.hourlyWage)}</span>
-          </li>
+          <RateRow key={rate.id} userId={worker.userId} rate={rate} />
         ))}
       </ul>
       <Can run={useAddWageRate}>
@@ -239,13 +256,96 @@ function RateSection({ worker }: { worker: WageWorkerDetail }) {
   );
 }
 
+function RateRow({ userId, rate }: { userId: string; rate: WageRate }) {
+  const update = useUpdateWageRate();
+  const remove = useDeleteWageRate();
+  const [editing, setEditing] = useState(false);
+  const [effectiveFrom, setEffectiveFrom] = useState(rate.effectiveFrom);
+  const [wage, setWage] = useState(String(rate.hourlyWage));
+
+  if (editing) {
+    return (
+      <li className="flex flex-col gap-2 py-2 sm:flex-row sm:items-end">
+        <label className="text-xs text-slate-500">
+          적용 시작일
+          <input
+            type="date"
+            className={fieldClass}
+            value={effectiveFrom}
+            onChange={(event) => setEffectiveFrom(event.target.value)}
+          />
+        </label>
+        <label className="text-xs text-slate-500">
+          시급(원)
+          <input
+            type="number"
+            min={1}
+            className={fieldClass}
+            value={wage}
+            onChange={(event) => setWage(event.target.value)}
+          />
+        </label>
+        <Button
+          size="sm"
+          disabled={!effectiveFrom || !(Number(wage) > 0) || update.isPending}
+          onClick={() =>
+            update.mutate(
+              {
+                userId,
+                rateId: rate.id,
+                effectiveFrom,
+                hourlyWage: Math.floor(Number(wage)),
+              },
+              { onSuccess: () => setEditing(false) }
+            )
+          }
+        >
+          저장
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+          취소
+        </Button>
+      </li>
+    );
+  }
+
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-2 py-2">
+      <span>{rate.effectiveFrom}부터</span>
+      <span className="flex items-center gap-1">
+        <span className="font-semibold">{formatWon(rate.hourlyWage)}</span>
+        <Can run={useUpdateWageRate}>
+          <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
+            고치기
+          </Button>
+        </Can>
+        <Can run={useDeleteWageRate}>
+          <ConfirmDelete
+            disabled={remove.isPending}
+            onConfirm={() => remove.mutate({ userId, rateId: rate.id })}
+          />
+        </Can>
+      </span>
+    </li>
+  );
+}
+
 function ScheduleSection({ worker }: { worker: WageWorkerDetail }) {
   const add = useAddWorkSchedule();
+  const update = useUpdateWorkSchedule();
+  const remove = useDeleteWorkSchedule();
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [effectiveFrom, setEffectiveFrom] = useState(() =>
     seoulToday(new Date())
   );
   const [effectiveTo, setEffectiveTo] = useState('');
   const [days, setDays] = useState<ScheduleDay[]>([]);
+  const reset = () => {
+    setEditingId(null);
+    setEffectiveFrom(seoulToday(new Date()));
+    setEffectiveTo('');
+    setDays([]);
+  };
   const toggle = (weekday: Weekday) =>
     setDays((current) =>
       current.some((day) => day.weekday === weekday)
@@ -283,6 +383,31 @@ function ScheduleSection({ worker }: { worker: WageWorkerDetail }) {
             <span className="ml-2 text-slate-600">
               {scheduleSummary(schedule.days)}
             </span>
+            <Can run={useUpdateWorkSchedule}>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setEditingId(schedule.id);
+                  setEffectiveFrom(schedule.effectiveFrom);
+                  setEffectiveTo(schedule.effectiveTo ?? '');
+                  setDays(schedule.days);
+                }}
+              >
+                고치기
+              </Button>
+            </Can>
+            <Can run={useDeleteWorkSchedule}>
+              <ConfirmDelete
+                disabled={remove.isPending}
+                onConfirm={() =>
+                  remove.mutate({
+                    userId: worker.userId,
+                    scheduleId: schedule.id,
+                  })
+                }
+              />
+            </Can>
           </li>
         ))}
       </ul>
@@ -376,22 +501,40 @@ function ScheduleSection({ worker }: { worker: WageWorkerDetail }) {
                 </label>
               </div>
             ))}
-          <Button
-            disabled={!effectiveFrom || add.isPending}
-            onClick={() =>
-              add.mutate(
-                {
+          {editingId && (
+            <p className="text-sm font-semibold text-indigo-600">
+              고르신 시간표를 고치고 있어요.
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Button
+              disabled={!effectiveFrom || add.isPending || update.isPending}
+              onClick={() => {
+                const input = {
                   userId: worker.userId,
                   effectiveFrom,
                   effectiveTo: effectiveTo || null,
                   days,
-                },
-                { onSuccess: () => setDays([]) }
-              )
-            }
-          >
-            시간표 추가
-          </Button>
+                };
+
+                if (editingId) {
+                  update.mutate(
+                    { ...input, scheduleId: editingId },
+                    { onSuccess: reset }
+                  );
+                } else {
+                  add.mutate(input, { onSuccess: reset });
+                }
+              }}
+            >
+              {editingId ? '시간표 저장' : '시간표 추가'}
+            </Button>
+            {editingId && (
+              <Button variant="ghost" onClick={reset}>
+                고치기 취소
+              </Button>
+            )}
+          </div>
         </div>
       </Can>
     </section>

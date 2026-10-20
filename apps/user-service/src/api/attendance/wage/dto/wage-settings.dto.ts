@@ -168,3 +168,50 @@ export class CreateMinimumWageDto {
   @Max(1000000)
   hourlyWage: number;
 }
+
+export class UpdateWageRateDto {
+  @IsOptional()
+  @IsString()
+  effectiveFrom?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(1000000)
+  hourlyWage?: number;
+}
+
+export class UpdateWorkScheduleDto {
+  @IsOptional()
+  @IsString()
+  effectiveFrom?: string;
+
+  /** null 이면 종료일을 지운다(다음 시간표가 시작될 때까지). */
+  @IsOptional()
+  @IsString()
+  effectiveTo?: string | null;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(7)
+  @ValidateNested({ each: true })
+  @Type(() => ScheduleDayDto)
+  days?: ScheduleDayDto[];
+}
+
+export class UpdatePayPolicyDto {
+  @IsOptional()
+  @IsString()
+  effectiveFrom?: string;
+
+  @IsOptional()
+  @IsObject()
+  rules?: Record<string, unknown>;
+}
+
+export class UpdateMinimumWageDto {
+  @IsInt()
+  @Min(1)
+  @Max(1000000)
+  hourlyWage: number;
+}

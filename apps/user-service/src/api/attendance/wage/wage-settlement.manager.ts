@@ -2,7 +2,6 @@ import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { Inject, Injectable } from '@nestjs/common';
 import { seoulDate } from '@packages/domain-types/attendance';
 import {
-  DEFAULT_WAGE_RULES,
   type SettlementIssueKind,
   type SettlementRecord,
   type SettlementResult,
@@ -16,7 +15,6 @@ import type {
   ReopenSettlementDto,
 } from './dto/wage-settlement.dto';
 import { toSettlementRecord, WageSettlementReader } from './wage-settlement.reader';
-import { effectiveAt } from './wage-settings.reader';
 import { requireDate } from './wage-validation';
 import { WageRepository } from './wage.repository';
 
@@ -58,9 +56,9 @@ export class WageSettlementManager {
       WageRepository,
       | 'run'
       | 'worker'
-      | 'policies'
       | 'lockGroup'
       | 'confirmedCovering'
+      | 'personConfirmedCovering'
       | 'confirmedElsewhere'
       | 'overtimeDecision'
       | 'insertOvertimeDecision'
@@ -68,6 +66,8 @@ export class WageSettlementManager {
       | 'absenceDecision'
       | 'insertAbsenceDecision'
       | 'updateAbsenceDecision'
+      | 'deleteOvertimeDecision'
+      | 'deleteAbsenceDecision'
       | 'insertSettlement'
       | 'reopenSettlement'
       | 'settlement'
@@ -150,6 +150,32 @@ export class WageSettlementManager {
         entityId: after.id,
         before: before ? { ...before } : null,
         after: { ...after },
+      });
+    });
+  }
+
+  /** 판정을 지워 «미판정»으로 되돌린다. */
+  async clearDecision(actorId: string, kind: 'overtime' | 'absence', userId: string, workDate: string): Promise<void> {
+    requireDate(workDate, '근무일');
+
+    await this.repository.run(async (tx) => {
+      await this.requireOpenDate(tx, userId, workDate);
+
+      const before =
+        kind === 'overtime'
+          ? await this.repository.deleteOvertimeDecision(tx, userId, workDate)
+          : await this.repository.deleteAbsenceDecision(tx, userId, workDate);
+
+      if (!before) {
+        throw new NotFoundError('지울 판정이 없어요.');
+      }
+
+      await this.repository.audit(tx, {
+        actorId,
+        subjectId: userId,
+        kind: kind === 'overtime' ? 'wage.overtime.cleared' : 'wage.absence.cleared',
+        entityId: before.id,
+        before: { ...before },
       });
     });
   }
@@ -297,14 +323,18 @@ export class WageSettlementManager {
 
     await this.repository.lockGroup(tx, worker.groupId);
 
-    const policies = await this.repository.policies(worker.groupId, tx);
-    const rules = (effectiveAt(policies, workDate) ?? policies[0])?.rules ?? DEFAULT_WAGE_RULES;
+    const locked = await this.repository.worker(tx, userId);
+
+    if (!locked || locked.groupId !== worker.groupId) {
+      throw new ConflictError(STALE);
+    }
+
+    // 주가 어디서 시작하는지는 정산 기간의 규칙이 정한다 — 두 방식의 주 마지막 날을 모두 본다.
+    const dates = [workDate, weekEndOf(workDate, 1), weekEndOf(workDate, 7)];
 
     if (
-      await this.repository.confirmedCovering(tx, worker.groupId, [
-        workDate,
-        weekEndOf(workDate, rules.weeklyHoliday.weekStartsOn),
-      ])
+      (await this.repository.confirmedCovering(tx, worker.groupId, dates)) ||
+      (await this.repository.personConfirmedCovering(tx, userId, dates))
     ) {
       throw new ConflictError('확정한 기간 안의 판정은 바꿀 수 없어요. 정산을 다시 연 뒤 바꿔 주세요.');
     }
