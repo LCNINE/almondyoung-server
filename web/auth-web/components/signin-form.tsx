@@ -71,6 +71,7 @@ export function SignInForm({
           id="loginId"
           name="loginId"
           label="아이디"
+          clearable
           autoComplete="username"
           required
           minLength={4}
@@ -83,6 +84,7 @@ export function SignInForm({
         id="password"
         name="password"
         label="비밀번호"
+        clearable
         placeholder=" "
         className={floatingInputClass}
         autoComplete="current-password"
@@ -92,7 +94,7 @@ export function SignInForm({
         autoFocus={isReauth}
       />
       {!isReauth && (
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm">
           <Checkbox id="rememberMe" name="rememberMe" />
           자동 로그인 유지
         </label>
@@ -125,7 +127,7 @@ export function SignInForm({
         <div className="flex items-center justify-center text-sm">
           <Link
             href={findAccountHref}
-            className="rounded-md px-1 py-2 text-foreground transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="flex min-h-11 items-center rounded-md px-2 py-2 text-foreground transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             아이디·비밀번호 찾기
           </Link>

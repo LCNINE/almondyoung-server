@@ -96,6 +96,9 @@ export function setup(infra: SharedInfra) {
   // FileService 와 Ai 양쪽에 같은 값이 들어가야 한다. 한쪽만 배포되면 401 이고 수거가 멈춘다.
   const fileServiceInternalKey = new sst.Secret('FileServiceInternalKey');
 
+  // user-service의 출결 검토 호출과 같은 공유 키를 사용한다.
+  const aiInternalKey = new sst.Secret('AiInternalKey');
+
   // Notification
   const nhnAppKey = new sst.Secret('NhnAppKey');
   const nhnSecretKey = new sst.Secret('NhnSecretKey');
@@ -109,6 +112,8 @@ export function setup(infra: SharedInfra) {
   // 인증문자가 단말에 도달하지 못했을 때 대신 보내는 알림톡 템플릿 코드 (카카오 심사 통과 후 설정).
   const nhnVerificationTemplateCode = new sst.Secret('NhnVerificationTemplateCode');
   const notificationInternalKey = new sst.Secret('NotificationInternalKey');
+  const webPushPublicKey = new sst.Secret('WebPushPublicKey');
+  const webPushPrivateKey = new sst.Secret('WebPushPrivateKey');
   const resendApiKey = new sst.Secret('ResendApiKey');
   const resendWebhookSecret = new sst.Secret('ResendWebhookSecret');
   // 발송폰 오프라인·복구 알림을 받을 Google Chat 스페이스 웹훅. 비우면 오프라인 점검 크론이 돌지 않는다.
@@ -379,6 +384,9 @@ export function setup(infra: SharedInfra) {
     NHN_SMS_SEND_NO: nhnSmsSendNo.value,
     // user-service 가 /internal/sms/send 를 부를 때 쓰는 키. auth 배포에도 같은 값이 필요하다.
     NOTIFICATION_INTERNAL_KEY: notificationInternalKey.value,
+    WEB_PUSH_PUBLIC_KEY: webPushPublicKey.value,
+    WEB_PUSH_PRIVATE_KEY: webPushPrivateKey.value,
+    WEB_PUSH_SUBJECT: url('admin'),
     // 관리자 알림톡 «멤버십 회원만» 대상의 명단(membership internal active-all).
     MEMBERSHIP_SERVICE_URL: url('membership'),
     MEMBERSHIP_INTERNAL_KEY: membershipInternalKey.value,
@@ -517,6 +525,7 @@ export function setup(infra: SharedInfra) {
       // 도구가 부르는 곳. 인증은 부른 사람의 것을 그대로 싣는다.
       CORE_API_URL: url('core'),
       FILE_SERVICE_URL: url('file'),
+      AI_INTERNAL_KEY: aiInternalKey.value,
       ANTHROPIC_API_KEY: anthropicApiKey.value,
       // 검색 임베딩용 OpenAiApiKey 와 다른 키다 — 용도가 갈리므로 secret 도 나눠 둔 것이다.
       OPENAI_API_KEY: productAiOpenAiApiKey.value,

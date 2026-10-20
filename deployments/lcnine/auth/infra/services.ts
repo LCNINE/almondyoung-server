@@ -19,6 +19,10 @@ export function setup(infra: IdpInfra) {
   // notification 의 /internal/sms/send 호출 키. services 배포에도 같은 이름으로 세팅해야 한다.
   const notificationInternalKey = new sst.Secret('NotificationInternalKey');
 
+  // 출결 검토와 비공개 첨부 조회. services 앱에도 같은 값을 설정한다.
+  const aiInternalKey = new sst.Secret('AiInternalKey');
+  const fileServiceInternalKey = new sst.Secret('FileServiceInternalKey');
+
   const cafe24ClientId = new sst.Secret('Cafe24ClientId');
   const cafe24ClientSecret = new sst.Secret('Cafe24ClientSecret');
   const cafe24ServiceKey = new sst.Secret('Cafe24ServiceKey');
@@ -153,6 +157,10 @@ export function setup(infra: IdpInfra) {
       // 영구히 도달하지 못했다.
       NOTIFICATION_SERVICE_URL: url('notification'),
       NOTIFICATION_INTERNAL_KEY: notificationInternalKey.value,
+      AI_SERVICE_URL: url('ai'),
+      AI_INTERNAL_KEY: aiInternalKey.value,
+      FILE_SERVICE_URL: url('file'),
+      FILE_SERVICE_INTERNAL_KEY: fileServiceInternalKey.value,
       CAFE24_CLIENT_ID: cafe24ClientId.value,
       CAFE24_CLIENT_SECRET: cafe24ClientSecret.value,
       CAFE24_SERVICE_KEY: cafe24ServiceKey.value,

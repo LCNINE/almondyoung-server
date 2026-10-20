@@ -1,0 +1,2 @@
+ALTER TABLE "attendance_leaves" ADD COLUMN "reminder_minutes" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "attendance_leaves" ADD COLUMN "reminder_set_at" timestamp with time zone;

@@ -134,11 +134,11 @@ export function ProfileStep({
         />
       </Field>
 
-      <div className="flex items-start gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
         <FloatingField
           htmlFor="phoneNumber"
           label="휴대폰 번호"
-          className="flex-1"
+          className="w-full min-w-0 flex-1"
         >
           <PhoneNumberInput
             id="phoneNumber"
@@ -160,7 +160,7 @@ export function ProfileStep({
             // 최소 너비를 잡는다. 내용이 「인증번호 받기」 → 스피너 → 「재발송」 으로 바뀌는데
             // 너비를 내용에 맡기면 그때마다 옆 입력칸이 늘었다 줄어 화면이 흔들린다.
             // 고정(w-)이 아니라 최소(min-w-)인 이유: 문구가 길어지면 넘치는 대신 늘어나야 한다.
-            "h-14 min-w-[132px] shrink-0 rounded-lg px-4",
+            "h-14 w-full min-w-[132px] shrink-0 rounded-lg px-4 sm:w-auto",
             sending === "SMS" &&
               "disabled:bg-primary disabled:text-primary-foreground"
           )}
@@ -191,7 +191,7 @@ export function ProfileStep({
           onInput={(e) => e.currentTarget.setCustomValidity("")}
         />
       )}
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
         <FieldDescription>
           <span className="block font-medium text-foreground">
             {codeSent ? "문자가 오지 않나요?" : "문자 인증이 어려우신가요?"}
@@ -202,7 +202,7 @@ export function ProfileStep({
           type="button"
           onClick={() => sendCode("KAKAO")}
           disabled={sending !== null}
-          className="inline-flex h-11 shrink-0 cursor-pointer items-center gap-2 rounded-lg bg-[#FEE500] px-4 text-sm font-medium text-[#191600] transition-colors hover:bg-[#F2DA00] disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-11 w-full shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#FEE500] px-4 text-sm font-medium text-[#191600] transition-colors hover:bg-[#F2DA00] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
         >
           <MessageCircle className="size-4 fill-current" strokeWidth={0} />
           {sending === "KAKAO" ? "보내는 중…" : "카카오톡으로 받기"}

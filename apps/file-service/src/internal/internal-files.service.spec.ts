@@ -27,6 +27,7 @@ function setup(file: Record<string, unknown> | undefined) {
   } as unknown as FileRepository;
 
   const storage = {
+    getSignedUrl: () => Promise.resolve({ signedUrl: 'https://storage.example.test/private', expiresAt: new Date() }),
     delete: (req: unknown) => {
       storageDeleted.push(req);
       return Promise.resolve();
@@ -46,6 +47,30 @@ const deletedFile = (deletedAt: Date) => ({
 });
 
 describe('내부 파일 정리', () => {
+  it('출결 전용 비공개 이미지만 내부 AI 열람 URL을 발급한다', async () => {
+    const { service } = setup({
+      id: 'f1',
+      status: 'active',
+      contextId: 'attendance-request-image',
+      isPublic: false,
+      uploadedBy: 'owner',
+      mimeType: 'image/png',
+      filePath: 'attendance/evidence/f1.png',
+    });
+
+    await expect(service.attendanceEvidence('f1')).resolves.toMatchObject({
+      uploadedBy: 'owner',
+      url: 'https://storage.example.test/private',
+    });
+    await expect(
+      setup({
+        id: 'f1',
+        status: 'active',
+        contextId: 'business-verification-file',
+        isPublic: false,
+      }).service.attendanceEvidence('f1'),
+    ).rejects.toThrow();
+  });
   it('공모전이 확인할 수 있도록 이미지의 실제 크기를 반환한다', async () => {
     const { service } = setup({
       id: 'f1',

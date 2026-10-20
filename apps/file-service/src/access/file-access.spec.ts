@@ -63,6 +63,19 @@ describe('FileAccess', () => {
   });
 
   describe('loadReadable', () => {
+    it('keeps attendance evidence private to its owner and master', async () => {
+      repo.findById.mockResolvedValue({ ...baseFile, contextId: 'attendance-request-image' });
+      await expect(fileAccess.loadReadable(baseFile.id, adminUser)).rejects.toThrow(ForbiddenError);
+      await expect(fileAccess.loadReadable(baseFile.id, ownerUser)).resolves.toBeDefined();
+      await expect(fileAccess.loadReadable(baseFile.id, masterUser)).resolves.toBeDefined();
+    });
+
+    it('prevents generic deletion of attendance evidence even by its owner or master', async () => {
+      repo.findById.mockResolvedValue({ ...baseFile, contextId: 'attendance-request-image' });
+      await expect(fileAccess.delete(baseFile.id, ownerUser)).rejects.toThrow(ForbiddenError);
+      await expect(fileAccess.delete(baseFile.id, masterUser)).rejects.toThrow(ForbiddenError);
+      expect(repo.softDelete).not.toHaveBeenCalled();
+    });
     it('throws NotFoundError when file does not exist', async () => {
       repo.findById.mockResolvedValue(undefined as unknown as Upload);
       await expect(fileAccess.loadReadable('missing', ownerUser)).rejects.toBeInstanceOf(NotFoundError);

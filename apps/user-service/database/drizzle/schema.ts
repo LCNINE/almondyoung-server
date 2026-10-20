@@ -2,6 +2,8 @@
 
 import { relations, sql } from 'drizzle-orm';
 import type { TxFor } from '@app/db';
+import { attendanceTables } from './attendance.schema';
+export * from './attendance.schema';
 import {
   boolean,
   check,
@@ -717,6 +719,7 @@ export const blacklistsRelations = relations(blacklists, ({ one }) => ({
  * TABLES ONLY SCHEMA (enum 제외)
  *──────────────────────────*/
 export const userServiceTables = {
+  ...attendanceTables,
   users,
   roles,
   userRoleAssignments,

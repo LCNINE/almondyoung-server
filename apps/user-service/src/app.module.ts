@@ -1,4 +1,5 @@
 import { DemoBoundaryGuard } from './demo/demo-boundary.guard';
+import { AttendanceModule } from './api/attendance/attendance.module';
 import { DbModule } from '@app/db';
 import { EventsModule, EventTraceApiModule } from '@app/events';
 import { AuthorizationModule, authorizationSchema, ScopeGuard } from '@app/authorization';
@@ -151,6 +152,7 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
     WishlistModule,
     BeautytopShopsModule,
     GrowthNotesModule,
+    AttendanceModule,
     RecentViewsModule,
     FileModule,
     BusinessLicensesModule,

@@ -227,15 +227,17 @@ export function FindAccountForm({ redirectTo }: { redirectTo: string }) {
               {loginIds.map((loginId) => (
                 <li
                   key={loginId}
-                  className="flex items-center justify-between gap-2"
+                  className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <span className="font-medium text-foreground">{loginId}</span>
+                  <span className="min-w-0 font-medium break-all text-foreground">
+                    {loginId}
+                  </span>
                   <Button
                     type="button"
                     variant="outline"
                     disabled={pending}
                     onClick={() => startReset(loginId)}
-                    className="h-9 shrink-0 rounded-lg text-sm"
+                    className="h-11 shrink-0 rounded-lg text-sm"
                   >
                     비밀번호 재설정
                   </Button>
@@ -265,11 +267,11 @@ export function FindAccountForm({ redirectTo }: { redirectTo: string }) {
       onSubmit={verify}
       className="flex flex-1 flex-col gap-4"
     >
-      <div className="flex items-start gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
         <FloatingField
           htmlFor="phoneNumber"
           label="휴대폰 번호"
-          className="flex-1"
+          className="w-full min-w-0 flex-1"
         >
           <PhoneNumberInput
             ref={phoneRef}
@@ -291,7 +293,7 @@ export function FindAccountForm({ redirectTo }: { redirectTo: string }) {
           variant={codeSent ? "outline" : "default"}
           onClick={() => sendCode()}
           disabled={pending}
-          className="h-14 min-w-[132px] shrink-0 rounded-lg px-4"
+          className="h-14 w-full min-w-[132px] shrink-0 rounded-lg px-4 sm:w-auto"
         >
           {sendingChannel === "SMS"
             ? "보내는 중…"
@@ -309,7 +311,7 @@ export function FindAccountForm({ redirectTo }: { redirectTo: string }) {
         </p>
       )}
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
         <FieldDescription>
           <span className="block font-medium text-foreground">
             {codeSent ? "문자가 오지 않나요?" : "문자 인증이 어려우신가요?"}
@@ -320,7 +322,7 @@ export function FindAccountForm({ redirectTo }: { redirectTo: string }) {
           type="button"
           onClick={() => sendCode("KAKAO")}
           disabled={pending}
-          className="inline-flex h-11 shrink-0 cursor-pointer items-center gap-2 rounded-lg bg-[#FEE500] px-4 text-sm font-medium text-[#191600] transition-colors hover:bg-[#F2DA00] disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-11 w-full shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#FEE500] px-4 text-sm font-medium text-[#191600] transition-colors hover:bg-[#F2DA00] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
         >
           <MessageCircle className="size-4 fill-current" strokeWidth={0} />
           {sendingChannel === "KAKAO" ? "보내는 중…" : "카카오톡으로 받기"}
@@ -368,7 +370,7 @@ export function FindAccountForm({ redirectTo }: { redirectTo: string }) {
       <div className="flex items-center justify-center text-sm">
         <Link
           href={signinHref(redirectTo)}
-          className="rounded-md px-1 py-2 text-foreground transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="flex min-h-11 min-w-11 items-center justify-center rounded-md px-2 py-2 text-foreground transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           로그인
         </Link>

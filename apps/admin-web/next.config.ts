@@ -1,6 +1,17 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
+  async headers() {
+    return [
+      {
+        source: '/attendance/sw.js',
+        headers: [
+          { key: 'Service-Worker-Allowed', value: '/attendance' },
+          { key: 'Cache-Control', value: 'no-cache' },
+        ],
+      },
+    ];
+  },
   // 로컬에서 확인용으로 빌드·개발서버를 돌릴 때 배포가 쓰는 `.next` 를 덮어쓰지 않게 한다.
   // 값을 안 주면 기본값 그대로라 배포 경로는 달라지지 않는다.
   distDir: process.env.NEXT_DIST_DIR || '.next',

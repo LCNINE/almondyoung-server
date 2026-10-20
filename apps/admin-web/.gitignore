@@ -15,6 +15,8 @@
 
 # next.js
 /.next/
+# Local preview builds created with NEXT_DIST_DIR
+/.next-*/
 /out/
 
 # production

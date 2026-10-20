@@ -59,6 +59,7 @@ export function AccountStep({
           id="loginId"
           name="loginId"
           label="아이디"
+          clearable
           required
           minLength={4}
           maxLength={20}
@@ -90,6 +91,7 @@ export function AccountStep({
         id="password"
         name="password"
         label="비밀번호"
+        clearable
         placeholder=" "
         className={floatingInputClass}
         defaultValue={defaultValues.password}
@@ -99,7 +101,9 @@ export function AccountStep({
         autoComplete="new-password"
         pattern={`(?=.*[a-zA-Z])(?=.*\\d)(?=.*[!@#$%^&*()_+\\-=\\[\\]{};':"\\\\|,.<>\\/?]).+`}
         onInvalid={(e) =>
-          e.currentTarget.setCustomValidity(`비밀번호는 ${PASSWORD_RULE}로 입력해주세요.`)
+          e.currentTarget.setCustomValidity(
+            `비밀번호는 ${PASSWORD_RULE}로 입력해주세요.`
+          )
         }
         onInput={(e) => e.currentTarget.setCustomValidity("")}
       />
@@ -110,6 +114,7 @@ export function AccountStep({
           id="passwordConfirm"
           name="passwordConfirm"
           label="비밀번호 확인"
+          clearable
           placeholder=" "
           className={floatingInputClass}
           defaultValue={defaultValues.passwordConfirm}

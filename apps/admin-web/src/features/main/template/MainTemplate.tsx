@@ -9,13 +9,27 @@ import { useBusinessLicenses } from '@/lib/services/business-licenses';
 import { useOrderStats } from '@/lib/services/orders';
 import { useQuestions } from '@/lib/services/qna';
 import { useReviews } from '@/lib/services/review';
-import { useExchangeRequests, useReturnRequests } from '@/lib/services/return-exchange/queries';
+import {
+  useExchangeRequests,
+  useReturnRequests,
+} from '@/lib/services/return-exchange/queries';
 import { CLAIM_IN_PROGRESS } from '@/lib/api/domains/return-exchange';
-import { useKeywordStatistics, useZeroHitKeywords } from '@/lib/services/search';
-import { usePendingBankTransfers, useRefundRequests } from '@/lib/services/wallet';
+import {
+  useKeywordStatistics,
+  useZeroHitKeywords,
+} from '@/lib/services/search';
+import {
+  usePendingBankTransfers,
+  useRefundRequests,
+} from '@/lib/services/wallet';
 import { SalesBoard } from '@/features/main/sales/SalesBoard';
 import { RealtimeBoard } from '@/features/main/RealtimeBoard';
-import { CsBoard, MembersBoard, OrderStatusBoard, SkeletonRows } from '@/features/main/DailyBoards';
+import {
+  CsBoard,
+  MembersBoard,
+  OrderStatusBoard,
+  SkeletonRows,
+} from '@/features/main/DailyBoards';
 import { SourcingBoard } from '@/features/main/SourcingBoard';
 import { BoardHeader } from '@/features/main/BoardHeader';
 import { GrowthGoalCard } from '@/features/main/GrowthGoalCard';
@@ -47,7 +61,8 @@ const BOARD_TABS = [
 
 type BoardTabId = (typeof BOARD_TABS)[number]['id'];
 
-const CARD_CLASS = 'rounded-2xl bg-white shadow-[0_1px_2px_rgba(0,0,0,0.08),0_0_2px_rgba(0,0,0,0.05)]';
+const CARD_CLASS =
+  'rounded-2xl bg-white shadow-[0_1px_2px_rgba(0,0,0,0.08),0_0_2px_rgba(0,0,0,0.05)]';
 
 type TodoTone = 'order' | 'claim' | 'etc';
 
@@ -65,10 +80,26 @@ export default function MainTemplate() {
   const orderStats = useOrderStats();
   const bankTransfers = usePendingBankTransfers(1, 1);
   const refundRequests = useRefundRequests(1, 1);
-  const returnRequests = useReturnRequests({ status: 'requested', page: 1, limit: 1 });
-  const exchangeRequests = useExchangeRequests({ status: 'requested', page: 1, limit: 1 });
-  const returnsInProgress = useReturnRequests({ status: CLAIM_IN_PROGRESS, page: 1, limit: 1 });
-  const exchangesInProgress = useExchangeRequests({ status: CLAIM_IN_PROGRESS, page: 1, limit: 1 });
+  const returnRequests = useReturnRequests({
+    status: 'requested',
+    page: 1,
+    limit: 1,
+  });
+  const exchangeRequests = useExchangeRequests({
+    status: 'requested',
+    page: 1,
+    limit: 1,
+  });
+  const returnsInProgress = useReturnRequests({
+    status: CLAIM_IN_PROGRESS,
+    page: 1,
+    limit: 1,
+  });
+  const exchangesInProgress = useExchangeRequests({
+    status: CLAIM_IN_PROGRESS,
+    page: 1,
+    limit: 1,
+  });
   const unansweredQna = useQuestions({ status: 'active', page: 1, limit: 1 });
   // 이전 사이트에서 넘어온 리뷰 백로그는 "오늘 할 일"이 아니다 — 자체 작성분만 센다.
   // 전체(이관분 포함) 건수는 CS 현황 탭에서 따로 보여준다.
@@ -80,8 +111,17 @@ export default function MainTemplate() {
     limit: 1,
   });
   // limit 은 건수(total)만 쓰지만 user-service 가 최소 10 을 요구한다 (BusinessLicenseQueryDto @Min(10))
-  const businessLicenses = useBusinessLicenses({ limit: 10, status: 'under_review' });
-  const zeroHit = useZeroHitKeywords({ from: range.from, to: range.to, page: 1, limit: BOARD_ROWS, status: 'open' });
+  const businessLicenses = useBusinessLicenses({
+    limit: 10,
+    status: 'under_review',
+  });
+  const zeroHit = useZeroHitKeywords({
+    from: range.from,
+    to: range.to,
+    page: 1,
+    limit: BOARD_ROWS,
+    status: 'open',
+  });
 
   const chips: (React.ComponentProps<typeof TodoChip> & { id: string })[] = [
     {
@@ -208,62 +248,66 @@ export default function MainTemplate() {
   });
 
   return (
-    <div className="space-y-6 px-4">
-      <section className={CARD_CLASS}>
-        <div className="flex items-center gap-2 px-4 pt-3.5 pb-1.5">
-          <h2 className="text-base font-bold text-[#1C1C1C]">오늘의 할 일</h2>
-          <span className="text-xs text-[#757575]">{todayLabel}</span>
-          <HelpPopover
-            label="오늘의 할 일"
-            items={[
-              '오늘 처리해야 할 주문·클레임·CS 건수를 보여줍니다.',
-              '각 건수를 클릭하면 해당 목록으로 이동합니다.',
-              '0이면 처리할 일이 없다는 뜻입니다.',
-              '매칭 대기는 최근 14일 주문 중 출고가 막힌 것, 방치된 검색어는 7일 이상 처리하지 않은 것만 셉니다.',
-            ]}
-          />
-        </div>
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(80px,1fr))] gap-2 px-4 pb-4">
-          {chips.map((chip) => (
-            <TodoChip key={chip.id} {...chip} />
-          ))}
-        </div>
-      </section>
+    <div className="px-4">
+      <div className="min-w-0 space-y-6">
+        <section className={CARD_CLASS}>
+          <div className="flex items-center gap-2 px-4 pt-3.5 pb-1.5">
+            <h2 className="text-base font-bold text-[#1C1C1C]">오늘의 할 일</h2>
+            <span className="text-xs text-[#757575]">{todayLabel}</span>
+            <HelpPopover
+              label="오늘의 할 일"
+              items={[
+                '오늘 처리해야 할 주문·클레임·CS 건수를 보여줍니다.',
+                '각 건수를 클릭하면 해당 목록으로 이동합니다.',
+                '0이면 처리할 일이 없다는 뜻입니다.',
+                '매칭 대기는 최근 14일 주문 중 출고가 막힌 것, 방치된 검색어는 7일 이상 처리하지 않은 것만 셉니다.',
+              ]}
+            />
+          </div>
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(80px,1fr))] gap-2 px-4 pb-4">
+            {chips.map((chip) => (
+              <TodoChip key={chip.id} {...chip} />
+            ))}
+          </div>
+        </section>
 
-      <GrowthGoalCard className={CARD_CLASS} />
+        <GrowthGoalCard className={CARD_CLASS} />
 
-      <section className={CARD_CLASS}>
-        <div className="mx-4 flex overflow-x-auto overflow-y-hidden shadow-[inset_0_-1px_0_#EBEBEB]">
-          {BOARD_TABS.map((boardTab) => (
-            <button
-              key={boardTab.id}
-              type="button"
-              onClick={() => setTab(boardTab.id)}
-              aria-current={tab === boardTab.id ? 'page' : undefined}
-              className={cn(
-                'h-12 min-w-[139px] shrink-0 cursor-pointer whitespace-nowrap border-b-4 px-3 text-[15px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1A54F5]/50',
-                tab === boardTab.id
-                  ? 'border-[#1A54F5] font-bold text-[#1A54F5]'
-                  : 'border-transparent font-medium text-[#757575] hover:text-[#1C1C1C]',
-              )}
-            >
-              {boardTab.label}
-            </button>
-          ))}
-        </div>
-        <div className="px-4 pt-3 pb-6">
-          {/* 선택된 탭만 그린다 — 안 보는 탭의 요청까지 로그인 직후에 한꺼번에 나가지 않도록 */}
-          {tab === 'sales' ? <SalesBoard /> : null}
-          {tab === 'realtime' ? <RealtimeBoard /> : null}
-          {tab === 'sourcing' ? <SourcingBoard range={range} rangeDays={MAIN_RANGE_DAYS} /> : null}
-          {tab === 'keywords' ? <PopularKeywordsBoard range={range} /> : null}
-          {tab === 'orders' ? <OrderStatusBoard /> : null}
-          {tab === 'members' ? <MembersBoard /> : null}
-          {tab === 'cs' ? <CsBoard /> : null}
-        </div>
-      </section>
+        <section className={CARD_CLASS}>
+          <div className="mx-4 flex overflow-x-auto overflow-y-hidden shadow-[inset_0_-1px_0_#EBEBEB]">
+            {BOARD_TABS.map((boardTab) => (
+              <button
+                key={boardTab.id}
+                type="button"
+                onClick={() => setTab(boardTab.id)}
+                aria-current={tab === boardTab.id ? 'page' : undefined}
+                className={cn(
+                  'h-12 min-w-[139px] shrink-0 cursor-pointer whitespace-nowrap border-b-4 px-3 text-[15px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1A54F5]/50',
+                  tab === boardTab.id
+                    ? 'border-[#1A54F5] font-bold text-[#1A54F5]'
+                    : 'border-transparent font-medium text-[#757575] hover:text-[#1C1C1C]'
+                )}
+              >
+                {boardTab.label}
+              </button>
+            ))}
+          </div>
+          <div className="px-4 pt-3 pb-6">
+            {/* 선택된 탭만 그린다 — 안 보는 탭의 요청까지 로그인 직후에 한꺼번에 나가지 않도록 */}
+            {tab === 'sales' ? <SalesBoard /> : null}
+            {tab === 'realtime' ? <RealtimeBoard /> : null}
+            {tab === 'sourcing' ? (
+              <SourcingBoard range={range} rangeDays={MAIN_RANGE_DAYS} />
+            ) : null}
+            {tab === 'keywords' ? <PopularKeywordsBoard range={range} /> : null}
+            {tab === 'orders' ? <OrderStatusBoard /> : null}
+            {tab === 'members' ? <MembersBoard /> : null}
+            {tab === 'cs' ? <CsBoard /> : null}
+          </div>
+        </section>
 
-      <QuickActionsCard />
+        <QuickActionsCard />
+      </div>
     </div>
   );
 }
@@ -289,12 +333,21 @@ function TodoChip({
   isLoading?: boolean;
   isError?: boolean;
 }) {
-  const countLink = (value: number | undefined, name: string, target: { href?: string; onClick?: () => void }) => {
+  const countLink = (
+    value: number | undefined,
+    name: string,
+    target: { href?: string; onClick?: () => void }
+  ) => {
     if (isLoading) return <Skeleton className="h-[18px] w-6" />;
-    if (isError) return <span className="text-xs leading-[18px] text-gray-400">불러오지 못함</span>;
+    if (isError)
+      return (
+        <span className="text-xs leading-[18px] text-gray-400">
+          불러오지 못함
+        </span>
+      );
     const className = cn(
       'cursor-pointer text-[13px] font-bold leading-[18px] tabular-nums underline underline-offset-2',
-      TODO_TONE[tone].count,
+      TODO_TONE[tone].count
     );
     const text = value != null ? value.toLocaleString('ko-KR') : '-';
     const ariaLabel = `${name} ${text}건 목록 보기`;
@@ -306,15 +359,26 @@ function TodoChip({
       );
     }
     return (
-      <button type="button" onClick={target.onClick} aria-label={ariaLabel} className={className}>
+      <button
+        type="button"
+        onClick={target.onClick}
+        aria-label={ariaLabel}
+        className={className}
+      >
         {text}
       </button>
     );
   };
-  const labelClass = 'whitespace-nowrap text-[13px] font-medium leading-tight text-[#616161]';
+  const labelClass =
+    'whitespace-nowrap text-[13px] font-medium leading-tight text-[#616161]';
 
   return (
-    <div className={cn('flex min-h-[72px] flex-col justify-between rounded-md p-1.5', TODO_TONE[tone].box)}>
+    <div
+      className={cn(
+        'flex min-h-[72px] flex-col justify-between rounded-md p-1.5',
+        TODO_TONE[tone].box
+      )}
+    >
       {second ? (
         <>
           <span className="flex items-center justify-between gap-2 py-1">
@@ -323,14 +387,21 @@ function TodoChip({
           </span>
           <span className="flex items-center justify-between gap-2">
             <span className={labelClass}>{second.label}</span>
-            {countLink(second.count, `${label} ${second.label}`, { href: second.href ?? href, onClick })}
+            {countLink(second.count, `${label} ${second.label}`, {
+              href: second.href ?? href,
+              onClick,
+            })}
           </span>
         </>
       ) : (
         <>
           <span className={cn('py-1', labelClass)}>
             {label}
-            {hint ? <span className="block text-[11px] font-normal text-[#9E9E9E]">{hint}</span> : null}
+            {hint ? (
+              <span className="block text-[11px] font-normal text-[#9E9E9E]">
+                {hint}
+              </span>
+            ) : null}
           </span>
           <span>{countLink(count, label, { href, onClick })}</span>
         </>
@@ -339,11 +410,23 @@ function TodoChip({
   );
 }
 
-function PopularKeywordsBoard({ range }: { range: { from: string; to: string } }) {
-  const { data, isLoading, isError } = useKeywordStatistics({ from: range.from, to: range.to, limit: BOARD_ROWS });
+function PopularKeywordsBoard({
+  range,
+}: {
+  range: { from: string; to: string };
+}) {
+  const { data, isLoading, isError } = useKeywordStatistics({
+    from: range.from,
+    to: range.to,
+    limit: BOARD_ROWS,
+  });
 
   if (isError) {
-    return <p className="py-6 text-center text-xs text-[#D71952]">인기 검색어를 불러오지 못했습니다.</p>;
+    return (
+      <p className="py-6 text-center text-xs text-[#D71952]">
+        인기 검색어를 불러오지 못했습니다.
+      </p>
+    );
   }
 
   const rows = data?.top ?? [];
@@ -366,8 +449,12 @@ function PopularKeywordsBoard({ range }: { range: { from: string; to: string } }
               <th className="h-[41px] w-14 px-3 text-left font-medium">순위</th>
               <th className="h-[41px] px-3 text-left font-medium">검색어</th>
               <th className="h-[41px] px-3 text-right font-medium">검색 수</th>
-              <th className="h-[41px] px-3 text-right font-medium">결과 없음</th>
-              <th className="h-[41px] px-3 text-right font-medium">직전 대비</th>
+              <th className="h-[41px] px-3 text-right font-medium">
+                결과 없음
+              </th>
+              <th className="h-[41px] px-3 text-right font-medium">
+                직전 대비
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -381,20 +468,35 @@ function PopularKeywordsBoard({ range }: { range: { from: string; to: string } }
             ) : null}
             {rows.map((row, index) => (
               <tr key={row.keywordNorm} className="border-b border-[#EBEBEB]">
-                <td className="px-3 py-3 text-sm font-bold tabular-nums text-[#9E9E9E]">{index + 1}</td>
-                <td className="px-3 py-3 text-sm font-medium text-[#1C1C1C]">{row.keyword}</td>
+                <td className="px-3 py-3 text-sm font-bold tabular-nums text-[#9E9E9E]">
+                  {index + 1}
+                </td>
+                <td className="px-3 py-3 text-sm font-medium text-[#1C1C1C]">
+                  {row.keyword}
+                </td>
                 <td className="whitespace-nowrap px-3 py-3 text-right text-sm tabular-nums">
-                  <span className="font-bold text-[#2B2B2B]">{row.count.toLocaleString('ko-KR')}</span>
+                  <span className="font-bold text-[#2B2B2B]">
+                    {row.count.toLocaleString('ko-KR')}
+                  </span>
                   <span className="ml-0.5 text-[#757575]">회</span>
                 </td>
                 <td className="whitespace-nowrap px-3 py-3 text-right text-sm tabular-nums">
-                  <span className={row.zeroCount > 0 ? 'font-bold text-[#D71952]' : 'text-[#9E9E9E]'}>
+                  <span
+                    className={
+                      row.zeroCount > 0
+                        ? 'font-bold text-[#D71952]'
+                        : 'text-[#9E9E9E]'
+                    }
+                  >
                     {row.zeroCount.toLocaleString('ko-KR')}
                   </span>
                   <span className="ml-0.5 text-[#757575]">회</span>
                 </td>
                 <td className="whitespace-nowrap px-3 py-3 text-right text-sm tabular-nums">
-                  <KeywordChange current={row.count} previous={row.previousCount} />
+                  <KeywordChange
+                    current={row.count}
+                    previous={row.previousCount}
+                  />
                 </td>
               </tr>
             ))}
@@ -405,12 +507,23 @@ function PopularKeywordsBoard({ range }: { range: { from: string; to: string } }
   );
 }
 
-function KeywordChange({ current, previous }: { current: number; previous: number }) {
+function KeywordChange({
+  current,
+  previous,
+}: {
+  current: number;
+  previous: number;
+}) {
   if (previous === 0) return <span className="text-[#9E9E9E]">신규</span>;
   const rate = Math.round(((current - previous) / previous) * 100);
   if (rate === 0) return <span className="text-[#9E9E9E]">-</span>;
   return (
-    <span className={cn('font-bold', rate > 0 ? 'text-[#D71952]' : 'text-[#1779BA]')}>
+    <span
+      className={cn(
+        'font-bold',
+        rate > 0 ? 'text-[#D71952]' : 'text-[#1779BA]'
+      )}
+    >
       {rate > 0 ? '▲' : '▼'}
       {Math.abs(rate)}%
     </span>

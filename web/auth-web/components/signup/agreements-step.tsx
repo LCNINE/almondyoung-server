@@ -61,7 +61,7 @@ export function AgreementsStep({
       </ul>
 
       <div className="mt-auto flex flex-col gap-4 pt-4">
-        <label className="flex cursor-pointer items-center gap-3">
+        <label className="flex min-h-11 cursor-pointer items-center gap-3">
           <Checkbox
             checked={allChecked}
             onCheckedChange={(v) => setAll(v === true)}
@@ -99,7 +99,7 @@ function AgreementRow({
 
   return (
     <li className="flex items-center gap-3 py-3.5">
-      <label className="flex flex-1 cursor-pointer items-center gap-3">
+      <label className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-3">
         <Checkbox
           checked={checked}
           onCheckedChange={(v) => onCheckedChange(v === true)}
@@ -114,16 +114,18 @@ function AgreementRow({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-auto shrink-0 px-1 py-0 text-sm text-muted-foreground underline underline-offset-4"
+            className="h-11 min-w-11 shrink-0 px-2 text-sm text-muted-foreground underline underline-offset-4"
             onClick={() => setOpen(true)}
           >
             보기
           </Button>
-          <DialogContent className="max-h-[85vh] gap-4 sm:max-w-2xl">
+          <DialogContent className="max-h-[85svh] gap-4 sm:max-w-2xl [&>[data-slot=dialog-close]]:size-11">
             <DialogHeader>
-              <DialogTitle className="text-left">{agreement.name}</DialogTitle>
+              <DialogTitle className="pr-10 text-left leading-snug">
+                {agreement.name}
+              </DialogTitle>
             </DialogHeader>
-            <ScrollArea className="h-[60vh] pr-4">
+            <ScrollArea className="h-[min(50svh,24rem)] pr-4">
               <div className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
                 {agreement.content}
               </div>

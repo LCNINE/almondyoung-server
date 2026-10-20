@@ -42,7 +42,10 @@ function FilePicker({
 
       {file ? (
         <div className="flex items-center gap-3 rounded-xl border border-border bg-background p-3">
-          <ImageIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <ImageIcon
+            className="size-4 shrink-0 text-muted-foreground"
+            aria-hidden
+          />
           <div className="flex min-w-0 flex-1 flex-col">
             <span className="truncate text-sm font-medium">{file.name}</span>
             <span className="text-xs text-muted-foreground">
@@ -52,7 +55,8 @@ function FilePicker({
           <Button
             type="button"
             variant="ghost"
-            size="icon-sm"
+            size="icon"
+            className="size-11 shrink-0"
             onClick={clear}
             aria-label="첨부 파일 삭제"
           >
@@ -119,7 +123,9 @@ export function BusinessStep({
       <div className="flex flex-1 flex-col gap-6">
         <div className="flex flex-col gap-2">
           <h2 className="text-xl font-bold">
-            {approved ? "사업자 등록이 확인됐어요" : "사업자등록증을 접수했어요"}
+            {approved
+              ? "사업자 등록이 확인됐어요"
+              : "사업자등록증을 접수했어요"}
           </h2>
           <p className="text-sm text-muted-foreground">
             {approved
@@ -232,8 +238,8 @@ export function BusinessStep({
         </p>
         <p className="text-xs text-muted-foreground">
           법인사업자이시거나 위 정보로 확인이 안 되면, 사업자등록증·명함 등
-          사업자임을 확인할 수 있는 대체 인증수단을 첨부해 주세요. 담당자가 확인 후
-          처리해 드려요.
+          사업자임을 확인할 수 있는 대체 인증수단을 첨부해 주세요. 담당자가 확인
+          후 처리해 드려요.
         </p>
 
         <FilePicker file={file} onChange={setFile} />

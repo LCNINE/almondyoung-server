@@ -2,6 +2,7 @@
 
 import * as React from "react"
 
+import { ClearInputButton } from "@/components/ui/clear-input-button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
@@ -44,19 +45,27 @@ export function FloatingLabelInput({
   label,
   id,
   className,
+  clearable = false,
   ...props
 }: React.ComponentProps<typeof Input> & {
   label: React.ReactNode
   id: string
+  clearable?: boolean
 }) {
   return (
     <FloatingField htmlFor={id} label={label}>
       <Input
         id={id}
         placeholder=" "
-        className={cn(floatingInputClass, className)}
+        className={cn(floatingInputClass, clearable && "pr-12", className)}
         {...props}
       />
+      {clearable && (
+        <ClearInputButton
+          inputId={id}
+          label={typeof label === "string" ? label : "입력 내용"}
+        />
+      )}
     </FloatingField>
   )
 }

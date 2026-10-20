@@ -1,33 +1,33 @@
-"use client";
+"use client"
 
-import * as React from "react";
+import * as React from "react"
 
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils"
 
 // 높이/배경은 floating-label-input 의 인풋 규격(h-14, bg-muted)에 맞춘다 — 같은 줄에 나란히 서기 때문.
 const SELECT_CLASS =
-  "h-14 w-full min-w-0 rounded-lg border border-input bg-muted px-3 text-base transition-colors outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive";
+  "h-14 w-full min-w-0 rounded-lg border border-input bg-muted px-2 sm:px-3 text-base transition-colors outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive"
 
-const CURRENT_YEAR = new Date().getFullYear();
-const YEARS = Array.from({ length: 100 }, (_, i) => CURRENT_YEAR - i);
-const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
+const CURRENT_YEAR = new Date().getFullYear()
+const YEARS = Array.from({ length: 100 }, (_, i) => CURRENT_YEAR - i)
+const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
 
 function pad(value: number) {
-  return String(value).padStart(2, "0");
+  return String(value).padStart(2, "0")
 }
 
 function daysInMonth(year: string, month: string) {
-  if (!year || !month) return 31;
+  if (!year || !month) return 31
   // new Date(y, m, 0) → 해당 월의 마지막 날 (윤년 자동 반영)
-  return new Date(Number(year), Number(month), 0).getDate();
+  return new Date(Number(year), Number(month), 0).getDate()
 }
 
 type BirthdayInputProps = {
-  id?: string;
-  name: string;
-  required?: boolean;
-  defaultValue?: string;
-};
+  id?: string
+  name: string
+  required?: boolean
+  defaultValue?: string
+}
 
 export function BirthdayInput({
   id,
@@ -35,24 +35,26 @@ export function BirthdayInput({
   required,
   defaultValue = "",
 }: BirthdayInputProps) {
-  const [y0, m0, d0] = defaultValue.split("-");
-  const [year, setYear] = React.useState(y0 ?? "");
-  const [month, setMonth] = React.useState(m0 ? String(Number(m0)) : "");
-  const [day, setDay] = React.useState(d0 ? String(Number(d0)) : "");
+  const [y0, m0, d0] = defaultValue.split("-")
+  const [year, setYear] = React.useState(y0 ?? "")
+  const [month, setMonth] = React.useState(m0 ? String(Number(m0)) : "")
+  const [day, setDay] = React.useState(d0 ? String(Number(d0)) : "")
 
-  const dayCount = daysInMonth(year, month);
-  const days = Array.from({ length: dayCount }, (_, i) => i + 1);
+  const dayCount = daysInMonth(year, month)
+  const days = Array.from({ length: dayCount }, (_, i) => i + 1)
 
   // 월 변경 등으로 일수가 줄면 선택된 일을 보정
   React.useEffect(() => {
-    if (day && Number(day) > dayCount) setDay(String(dayCount));
-  }, [day, dayCount]);
+    if (day && Number(day) > dayCount) setDay(String(dayCount))
+  }, [day, dayCount])
 
   const composed =
-    year && month && day ? `${year}-${pad(Number(month))}-${pad(Number(day))}` : "";
+    year && month && day
+      ? `${year}-${pad(Number(month))}-${pad(Number(day))}`
+      : ""
 
   return (
-    <div className="grid grid-cols-3 gap-2">
+    <div className="grid grid-cols-[1.3fr_1fr_1fr] gap-2 sm:grid-cols-3">
       <input type="hidden" name={name} value={composed} required={required} />
       <select
         id={id}
@@ -104,5 +106,5 @@ export function BirthdayInput({
         ))}
       </select>
     </div>
-  );
+  )
 }

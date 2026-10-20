@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2017",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -19,24 +23,65 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"],
-      "@packages/web-observability": ["../../packages/web-observability"],
-      "@packages/web-observability/*": ["../../packages/web-observability/*"],
-      "@packages/product-description": ["../../packages/product-description"],
-      "@packages/product-description/*": ["../../packages/product-description/*"],
-      "@packages/shop-listing-markdown": ["../../packages/shop-listing-markdown"],
-      "@packages/shop-listing-markdown/*": ["../../packages/shop-listing-markdown/*"],
-      "@packages/email-layout": ["../../packages/email-layout"],
-      "@packages/email-layout/*": ["../../packages/email-layout/*"],
-      "@packages/event-contracts": ["../../packages/event-contracts"],
-      "@packages/event-contracts/*": ["../../packages/event-contracts/*"],
-      "@packages/domain-types": ["../../packages/domain-types"],
-      "@packages/domain-types/*": ["../../packages/domain-types/*"],
-      "@packages/time-sale-ui": ["../../packages/time-sale-ui"],
-      "react": ["./node_modules/@types/react"],
-      "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime"]
+      "@/*": [
+        "./src/*"
+      ],
+      "@packages/web-observability": [
+        "../../packages/web-observability"
+      ],
+      "@packages/web-observability/*": [
+        "../../packages/web-observability/*"
+      ],
+      "@packages/product-description": [
+        "../../packages/product-description"
+      ],
+      "@packages/product-description/*": [
+        "../../packages/product-description/*"
+      ],
+      "@packages/shop-listing-markdown": [
+        "../../packages/shop-listing-markdown"
+      ],
+      "@packages/shop-listing-markdown/*": [
+        "../../packages/shop-listing-markdown/*"
+      ],
+      "@packages/email-layout": [
+        "../../packages/email-layout"
+      ],
+      "@packages/email-layout/*": [
+        "../../packages/email-layout/*"
+      ],
+      "@packages/event-contracts": [
+        "../../packages/event-contracts"
+      ],
+      "@packages/event-contracts/*": [
+        "../../packages/event-contracts/*"
+      ],
+      "@packages/domain-types": [
+        "../../packages/domain-types"
+      ],
+      "@packages/domain-types/*": [
+        "../../packages/domain-types/*"
+      ],
+      "@packages/time-sale-ui": [
+        "../../packages/time-sale-ui"
+      ],
+      "react": [
+        "./node_modules/@types/react"
+      ],
+      "react/jsx-runtime": [
+        "./node_modules/@types/react/jsx-runtime"
+      ]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "e2e"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    "next-env.d.ts",
+    ".next-attendance/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "e2e"
+  ]
 }
