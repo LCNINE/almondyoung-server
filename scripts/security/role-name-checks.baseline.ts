@@ -142,7 +142,7 @@ export const ROLE_LITERAL_BASELINE: Readonly<Record<string, { count: number; kin
   'apps/user-service/src/app.module.ts': { count: 5, kind: 'role-mapping' },
   'apps/wallet/src/admin/refund-admin.controller.ts': { count: 1, kind: 'data-value' },
   'apps/wallet/src/admin/refund-requests-admin.controller.ts': { count: 2, kind: 'data-value' },
-  'apps/wallet/src/wallet.module.ts': { count: 2, kind: 'legacy-route-guard' },
+  'apps/wallet/src/wallet-auth.guard.ts': { count: 2, kind: 'legacy-route-guard' },
   'libs/authorization/src/guards/admin-realm.guard.ts': { count: 2, kind: 'legacy-library' },
   'libs/authorization/src/guards/master-role.guard.ts': { count: 1, kind: 'legacy-library' },
   'libs/authorization/src/guards/scope.guard.ts': { count: 2, kind: 'legacy-library' },

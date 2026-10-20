@@ -3,7 +3,7 @@ import { ExecutionContext, ForbiddenException, UnauthorizedException } from '@ne
 import { Reflector } from '@nestjs/core';
 import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host';
 import { WalletAdminAuth } from './wallet-admin-auth.decorator';
-import { AuthenticatedRequest, WalletAuthGuard } from './wallet.module';
+import { AuthenticatedRequest, WalletAuthGuard } from './wallet-auth.guard';
 
 class Routes {
   @WalletAdminAuth()
