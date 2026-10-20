@@ -29,7 +29,7 @@ function worker(responses: { status: number; data: unknown }[]) {
   };
 
   runInNewContext(
-    readFileSync('apps/admin-web/public/attendance/sw.js', 'utf8'),
+    readFileSync('apps/admin-web/public/attendance-sw.js', 'utf8'),
     { self, fetch, URL }
   );
 

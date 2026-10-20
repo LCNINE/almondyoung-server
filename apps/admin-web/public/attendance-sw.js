@@ -61,7 +61,7 @@ self.addEventListener('push', (event) => {
         {
           body: payload.body || '아몬드영 워크에서 확인해 주세요.',
           tag: payload.tag,
-          icon: '/attendance/icon-192.png?v=clock-2',
+          icon: '/pwa-attendance/icon-192.png?v=clock-2',
           data: { url: payload.url },
         }
       );

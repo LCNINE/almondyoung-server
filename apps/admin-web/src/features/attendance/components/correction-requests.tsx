@@ -776,7 +776,7 @@ function CorrectionForm({
           </DialogHeader>
           <div className="relative mx-auto aspect-square w-full max-w-[55dvh] overflow-hidden rounded-xl bg-slate-100">
             <Image
-              src="/attendance/photo-example-portrait.webp"
+              src="/pwa-attendance/photo-example-portrait.webp"
               placeholder="blur"
               blurDataURL={PHOTO_EXAMPLE_BLUR_DATA_URL}
               fill

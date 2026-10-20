@@ -58,7 +58,7 @@ export async function enableAttendancePush() {
   }
 
   const registration = await navigator.serviceWorker.register(
-    '/attendance/sw.js',
+    '/attendance-sw.js',
     { scope: '/attendance' }
   );
 

@@ -4,9 +4,8 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: '/attendance/sw.js',
+        source: '/attendance-sw.js',
         headers: [
-          { key: 'Service-Worker-Allowed', value: '/attendance' },
           { key: 'Cache-Control', value: 'no-cache' },
         ],
       },

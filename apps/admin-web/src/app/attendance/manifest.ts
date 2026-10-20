@@ -14,19 +14,19 @@ export default function manifest(): MetadataRoute.Manifest {
     lang: 'ko',
     icons: [
       {
-        src: '/attendance/icon-192.png?v=clock-2',
+        src: '/pwa-attendance/icon-192.png?v=clock-2',
         sizes: '192x192',
         type: 'image/png',
         purpose: 'any',
       },
       {
-        src: '/attendance/icon-512.png?v=clock-2',
+        src: '/pwa-attendance/icon-512.png?v=clock-2',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'any',
       },
       {
-        src: '/attendance/icon-512.png?v=clock-2',
+        src: '/pwa-attendance/icon-512.png?v=clock-2',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'maskable',
