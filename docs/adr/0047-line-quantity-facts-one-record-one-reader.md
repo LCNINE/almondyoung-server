@@ -27,8 +27,14 @@ K6 이 정하는 건 «어디에 기록하나»이고 «누가 기록하나»는
    그 단위는 되돌릴 수 없는 쪽으로 센다. 백필과 쓰기 문이 같은 함수를 쓰므로 규칙이 두 벌이 되지 않는다.
 4. **가드 `cancellation-write.guard.spec.ts`.** `sales_order_cancellation_lines` 의 쓰기가 `recordSalesOrderCancellation` 밖에 있거나, 취소 행 기록이 한 문 밖에서
    이뤄지면 빨갛다(K1·K2 가드와 같은 «주인 말고는 아무도 직접 쓰지 않는다» 꼴).
-5. **백필 `scripts/ops/k6-backfill-cancellation-lines.ts`.** 옛 취소 행을 주문별 시간순으로 재생해 라인 행을 만든다(옛 `cancelledLines` 와 V1 전체취소 역산).
-   옛 규칙과 교차 확인해 어긋나면 그 주문은 통째로 `ambiguous` 로 보고하고 쓰지 않는다(보고는 주문당 한 건이지만 그 주문의 취소는 전부 행이 없는 채 남는다). 조회 모드가 기본이고 `--apply` 로만 쓴다. `--verify`(읽기 전용)는 취소가 전부 라인 행을 가진 주문마다 `metadata`/`effects` 로 다시 도출해 저장된 행과 (취소, 라인, 갈래, 수량) 집합을 비교하고 어긋난 주문을 찍는다(기대 0). 대조용 SQL 은 따로 두지 않는다.
+5. **백필 `scripts/ops/k6-backfill-cancellation-lines.ts`.** 옛 취소 행을 주문별로 재생해 라인 행을 만든다(옛 `cancelledLines` 와 V1 전체취소 역산).
+   재생 순서는 partial 먼저(`created_at`·id 순), 전체 취소는 언제나 마지막이다 — `occurred_at` 은 호출자가 준 값이라 기록 순서를 대표하지 못한다.
+   백필이 확인하는 것은 둘뿐이다: `metadata.cancelledLines`·`effects` 가 기대한 모양으로 읽히는지(partial 인데 `cancelledLines` 가 없거나 항목 형식이 틀리면 실패),
+   그리고 도출 규칙 자체의 검사(모르는 라인, 출고 후 보존 효과의 수량 필드가 숫자가 아님, 나누어떨어지지 않는 구성 수량, 출고 후 수량 > 취소 수량, 라인 취소 합 > 주문 수량). 옛 행의 갈래는 그 행의 `effects`
+   (`preserved_shipped_fulfillment_order_item`)에서 가져오며 따로 교차 확인할 독립 근거는 없다. 하나라도 실패하면 그 주문은 통째로 `ambiguous` 로 보고하고 쓰지 않는다
+   (보고는 주문당 한 건이지만 그 주문의 취소는 전부 행이 없는 채 남는다). 그 밖의 예외는 프로그램 결함이라 그대로 올린다. 조회 모드가 기본이고 `--apply` 로만 쓴다.
+   `--verify`(읽기 전용)는 주문마다 저장된 행을 무시하고 `metadata`/`effects` 로 다시 도출해 저장된 행과 (취소, 라인, 갈래, 수량) 집합을 비교하고 어긋난 주문을 찍는다(기대 0).
+   행 없는 취소가 0행으로 도출되는 것뿐인 주문도 대조하고, 모호하거나 아직 백필되지 않은 주문만 사유별로 세어 건너뛴다. 대조용 SQL 은 따로 두지 않는다.
 
 **대체되는 것:** `metadata.cancelledLines` 를 읽는 파서 세 벌(`loadPriorPartialCancellationContext`, `cancelledQuantitySql`, `LineCompositionReader` 의 취소 합).
 이 PR 은 기록만 더한다(이중 기록). 파서는 아직 살아 있고 PR 6 에서 삭제한다.
