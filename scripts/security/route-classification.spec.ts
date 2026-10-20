@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { findPermission } from '@app/authorization';
 
 /**
- * 모든 라우트는 공개·고객·키·권한 중 «정확히 하나»로 분류된다(ADR-0047). 분류 없는 라우트는
+ * 모든 라우트는 공개·고객·키·권한 중 «정확히 하나»로 분류된다(ADR-0048). 분류 없는 라우트는
  * 권한 판정이 강제되는 순간 403 이 되므로, 새 라우트를 만들 때 여기서 먼저 걸린다.
  */
 const AUDIT = join(__dirname, 'route-authz-audit.js');

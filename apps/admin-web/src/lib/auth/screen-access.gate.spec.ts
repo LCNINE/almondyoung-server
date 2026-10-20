@@ -4,7 +4,7 @@ import { join, relative, sep } from 'node:path';
 import { canAccess, resolveScreenAccess } from './screen-access';
 
 /**
- * 모든 화면은 경로 권한표로 판정된다(ADR-0047). 페이지가 자기 경로를 `RouteGuard screen` 으로
+ * 모든 화면은 경로 권한표로 판정된다(ADR-0048). 페이지가 자기 경로를 `RouteGuard screen` 으로
  * 선언하고, 그 경로가 표에 있어야 한다. 역할 이름(`requireRole`)은 남지 않는다.
  */
 const APP = join(__dirname, '..', '..', 'app');

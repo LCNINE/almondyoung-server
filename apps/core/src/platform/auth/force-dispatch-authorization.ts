@@ -14,7 +14,7 @@ import { FULFILLMENT_SCOPE, SIMPLE_OUTBOUND_FORCE_SCOPES } from './fulfillment-s
  * 라우트(단순출고 강제완료)로 들어온 요청에만 존재하고, 관리자 전용 강제 발송 라우트로는 만들어지지 않는다.
  *
  * 판정을 누가 냈는지는 서비스의 판정 모드가 정한다: 그림자 모드는 옛 `ScopeGuard` 낙인, 새 권한 판정으로 넘어간
- * 서비스는 `PermissionGuard` 낙인. 한 모드는 그 모드의 낙인만 받는다(ADR-0047 §39). 낙인 키는 두 체계가 같은 문자열이다.
+ * 서비스는 `PermissionGuard` 낙인. 한 모드는 그 모드의 낙인만 받는다(ADR-0048 §39). 낙인 키는 두 체계가 같은 문자열이다.
  */
 export type ForceDispatchDecision = ScopeAuthorizationDecision | PermissionDecision;
 

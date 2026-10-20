@@ -91,7 +91,7 @@ function factsOf(request: unknown): RequestFacts {
 }
 
 /**
- * 개인정보 표시 제한. `@PiiResponse` 가 붙은 라우트에서만 돈다(ADR-0047).
+ * 개인정보 표시 제한. `@PiiResponse` 가 붙은 라우트에서만 돈다(ADR-0048).
  * 원문을 받는 직원: 응답 객체를 그대로 넘기고(다시 직렬화하지 않는다) 접속기록 1행을 «응답 전에» 남긴다 — 기록에
  * 실패하면 가린다. 권한이 없거나 권한 사본이 없으면 가린 사본을 넘기고 사유를 `X-Pii-Mask-Reason` 으로 알린다.
  */

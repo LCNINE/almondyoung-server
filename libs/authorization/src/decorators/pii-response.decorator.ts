@@ -45,7 +45,7 @@ export interface PiiSubjectPath {
 
 /**
  * 이 라우트 응답에서 개인정보가 실리는 경로와 대상 식별자 경로. 경로는 응답 감싸기(`{success,data}`) 전 본문 기준.
- * 권한이 없는 직원에게는 가린 값이, 원문을 받는 직원에게는 원문과 함께 접속기록 1행이 남는다(ADR-0047).
+ * 권한이 없는 직원에게는 가린 값이, 원문을 받는 직원에게는 원문과 함께 접속기록 1행이 남는다(ADR-0048).
  */
 export interface PiiResponseSpec {
   readonly fields: Readonly<Record<PiiPath, PiiKind>>;
