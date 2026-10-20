@@ -286,3 +286,29 @@ export const fieldCaptureKeys = {
 
 /** 관리자 현황 자동 새로고침 간격 */
 export const PROGRESS_REFETCH_MS = 60_000;
+
+/** 실시간 스캔 진단(`?scanDebug=1` 일 때만 보인다). 실기에서 실시간만 못 읽는 원인을 숫자로 보려고 둔다. */
+export type ScanDebugInfo = {
+  videoWidth: number;
+  videoHeight: number;
+  trackLabel: string;
+  focusMode: string | undefined;
+  attempts: number;
+  lastError: string | null;
+  lastDecodeMs: number | null;
+};
+
+export function scanDebugLine(i: ScanDebugInfo): string {
+  return [
+    `${i.videoWidth}×${i.videoHeight}`,
+    i.trackLabel || '(label 없음)',
+    `focus=${i.focusMode ?? '?'}`,
+    `시도 ${i.attempts}`,
+    i.lastError ?? '-',
+    i.lastDecodeMs === null ? '-' : `${i.lastDecodeMs}ms`,
+  ].join(' · ');
+}
+
+export function isScanDebug(search: string): boolean {
+  return new URLSearchParams(search).get('scanDebug') === '1';
+}

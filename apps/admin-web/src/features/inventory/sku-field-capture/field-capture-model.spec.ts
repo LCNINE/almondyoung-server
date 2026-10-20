@@ -10,6 +10,8 @@ import {
   fieldCaptureKeys,
   MANUFACTURER_BARCODE_FORMATS,
   SCANNER_VIDEO_CONSTRAINTS,
+  scanDebugLine,
+  isScanDebug,
   photoDecodeSize,
   reworkNotice,
   scanInputValue,
@@ -420,5 +422,44 @@ describe('scanner settings', () => {
     expect(photoDecodeSize(4032, 3024)).toEqual({ width: 2000, height: 1500 });
     expect(photoDecodeSize(3024, 4032)).toEqual({ width: 1500, height: 2000 });
     expect(photoDecodeSize(1200, 900)).toEqual({ width: 1200, height: 900 });
+  });
+});
+
+describe('scanDebugLine', () => {
+  it('summarises what the live scanner actually got', () => {
+    expect(
+      scanDebugLine({
+        videoWidth: 1080,
+        videoHeight: 1920,
+        trackLabel: 'camera2 2, facing back',
+        focusMode: 'continuous',
+        attempts: 37,
+        lastError: 'NotFoundException',
+        lastDecodeMs: 412,
+      })
+    ).toBe(
+      '1080×1920 · camera2 2, facing back · focus=continuous · 시도 37 · NotFoundException · 412ms'
+    );
+  });
+
+  it('marks unknown fields instead of hiding them', () => {
+    expect(
+      scanDebugLine({
+        videoWidth: 0,
+        videoHeight: 0,
+        trackLabel: '',
+        focusMode: undefined,
+        attempts: 0,
+        lastError: null,
+        lastDecodeMs: null,
+      })
+    ).toBe('0×0 · (label 없음) · focus=? · 시도 0 · - · -');
+  });
+
+  it('is on only with ?scanDebug=1', () => {
+    expect(isScanDebug('?scanDebug=1')).toBe(true);
+    expect(isScanDebug('?position=T-01-20&scanDebug=1')).toBe(true);
+    expect(isScanDebug('?scanDebug=0')).toBe(false);
+    expect(isScanDebug('')).toBe(false);
   });
 });

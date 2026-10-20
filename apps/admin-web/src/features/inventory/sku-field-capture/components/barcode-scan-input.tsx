@@ -8,8 +8,11 @@ import {
   cameraUnavailableReason,
   PHOTO_DECODE_FAILED,
   photoDecodeSize,
+  isScanDebug,
+  scanDebugLine,
   scanInputValue,
   SCANNER_VIDEO_CONSTRAINTS,
+  type ScanDebugInfo,
   type BarcodeFormatName,
 } from '../field-capture-model';
 
@@ -77,6 +80,8 @@ export function BarcodeScanInput({
   const [blocked, setBlocked] = useState<string | null | undefined>(undefined);
   const [hint, setHint] = useState<string | null>(null);
   const [readingPhoto, setReadingPhoto] = useState(false);
+  // ?scanDebug=1 일 때만 채운다 — 실기에서 실시간 스캔이 무엇을 받고 있는지 보려는 진단
+  const [debug, setDebug] = useState<ScanDebugInfo | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const photoRef = useRef<HTMLInputElement>(null);
   const onScanRef = useRef(onScan);
@@ -99,6 +104,9 @@ export function BarcodeScanInput({
     if (!scanning || !video) return;
     let controls: IScannerControls | null = null;
     let done = false;
+    const debugOn = isScanDebug(window.location.search);
+    let attempts = 0;
+    let lastAt: number | null = null;
     const stopNow = () => {
       done = true;
       controls?.stop();
@@ -108,7 +116,31 @@ export function BarcodeScanInput({
         reader.decodeFromConstraints(
           SCANNER_VIDEO_CONSTRAINTS,
           video,
-          (result, _err, c) => {
+          (result, err, c) => {
+            if (debugOn) {
+              attempts += 1;
+              const now = performance.now();
+              const track =
+                video.srcObject instanceof MediaStream
+                  ? video.srcObject.getVideoTracks()[0]
+                  : undefined;
+              const settings: Record<string, unknown> = {
+                ...track?.getSettings(),
+              };
+              setDebug({
+                videoWidth: video.videoWidth,
+                videoHeight: video.videoHeight,
+                trackLabel: track?.label ?? '',
+                focusMode:
+                  typeof settings.focusMode === 'string'
+                    ? settings.focusMode
+                    : undefined,
+                attempts,
+                lastError: err ? err.getKind() : null,
+                lastDecodeMs: lastAt === null ? null : Math.round(now - lastAt),
+              });
+              lastAt = now;
+            }
             if (!result || done) return;
             done = true;
             c.stop();
@@ -213,6 +245,11 @@ export function BarcodeScanInput({
         className="hidden"
         onChange={(e) => void readPhoto(e.target.files?.[0])}
       />
+      {debug && (
+        <p className="break-all font-mono text-[11px] text-gray-500">
+          {scanDebugLine(debug)}
+        </p>
+      )}
       {hint && <p className="text-xs text-amber-700">{hint}</p>}
       <form onSubmit={submit} className="flex gap-2">
         <input
