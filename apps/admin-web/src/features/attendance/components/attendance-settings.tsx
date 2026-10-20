@@ -427,7 +427,14 @@ export function WorksiteSettings({
         open={editingId !== null}
         onOpenChange={(open) => !open && setEditingId(null)}
       >
-        <DialogContent className="flex max-h-[90dvh] w-[calc(100%-2rem)] flex-col overflow-hidden rounded-2xl p-0 sm:max-w-xl [&>[data-slot=dialog-close]]:top-2 [&>[data-slot=dialog-close]]:right-2 [&>[data-slot=dialog-close]]:flex [&>[data-slot=dialog-close]]:size-11 [&>[data-slot=dialog-close]]:items-center [&>[data-slot=dialog-close]]:justify-center">
+        <DialogContent
+          // 첫 입력칸에 포커스가 가면 휴대폰에서 키보드가 바로 올라와 주소·위치 버튼을 가린다
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            (event.currentTarget as HTMLElement).focus();
+          }}
+          className="flex max-h-[90dvh] w-[calc(100%-2rem)] flex-col overflow-hidden rounded-2xl p-0 outline-none sm:max-w-xl [&>[data-slot=dialog-close]]:top-2 [&>[data-slot=dialog-close]]:right-2 [&>[data-slot=dialog-close]]:flex [&>[data-slot=dialog-close]]:size-11 [&>[data-slot=dialog-close]]:items-center [&>[data-slot=dialog-close]]:justify-center"
+        >
           <DialogHeader className="border-b px-5 pt-5 pr-16 pb-4 text-left sm:px-6 sm:pr-16">
             <DialogTitle>
               {selectedSite ? '근무지 수정' : '새 근무지 등록'}

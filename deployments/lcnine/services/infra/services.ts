@@ -149,6 +149,8 @@ export function setup(infra: SharedInfra) {
   const medusaOidcClientSecret = new sst.Secret('MedusaOidcClientSecret');
   // admin-web RP 의 OIDC client_secret. user-service 시드 시 등록된 값과 동일해야 한다.
   const adminWebOidcClientSecret = new sst.Secret('AdminWebOidcClientSecret');
+  // 출결 근무지의 주소 ↔ 좌표 변환(카카오 로컬 API). 카카오 앱에서 「카카오맵」 사용 설정을 켜야 403 이 안 난다.
+  const kakaoRestApiKey = new sst.Secret('KakaoRestApiKey', '');
   // wallet-web RP 의 OIDC client_secret. user-service 시드 시 등록된 값과 동일해야 한다.
   const walletWebOidcClientSecret = new sst.Secret('WalletWebOidcClientSecret');
   // ai 앱의 상품 상세설명 초안 생성용 Anthropic API key.
@@ -878,6 +880,7 @@ export function setup(infra: SharedInfra) {
       NEXT_PUBLIC_SMS_GATE_ENABLED: 'true',
       // AI 는 이제 별도 앱이다 — admin-web 은 프록시만 하므로 모델 키를 갖지 않는다.
       AI_SERVICE_URL: url('ai'),
+      KAKAO_REST_API_KEY: kakaoRestApiKey.value,
       // OTEL: Lambda(VPC 밖)라 Alloy 우회, Grafana Cloud OTLP 게이트웨이로 직접 전송.
       OTEL_SERVICE_NAME: 'admin-web',
       OTEL_EXPORTER_OTLP_ENDPOINT: grafanaCloudOtlpEndpoint.value,
