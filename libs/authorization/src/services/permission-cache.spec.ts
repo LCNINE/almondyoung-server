@@ -89,6 +89,27 @@ describe('PermissionCache', () => {
     expect(cache.permissionsFor(['a\nb'])?.has('order.order.write')).toBe(false);
   });
 
+  describe('rolesHolding', () => {
+    it('answers null before the first snapshot', () => {
+      expect(cache.rolesHolding('a.b.read')).toBeNull();
+    });
+
+    it('lists only roles that hold the permission', async () => {
+      source.next.push(snapshot('v1', { admin: ['a.b.read'], intern: [], constructor: ['a.b.read'] }));
+      await cache.refresh();
+      expect(cache.rolesHolding('a.b.read')).toEqual(['admin', 'constructor']);
+      expect(cache.rolesHolding('c.d.read')).toEqual([]);
+    });
+
+    it('follows a new snapshot', async () => {
+      source.next.push(snapshot('v1', { admin: ['a.b.read'], intern: [] }));
+      await cache.refresh();
+      source.next.push(snapshot('v2', { admin: ['a.b.read'], intern: ['a.b.read'] }));
+      await cache.refresh();
+      expect(cache.rolesHolding('a.b.read')).toEqual(['admin', 'intern']);
+    });
+  });
+
   it('sends the known version and keeps the copy on not-modified', async () => {
     source.next.push(snapshot('v1', { admin: ['a.b.read'] }));
     await cache.refresh();

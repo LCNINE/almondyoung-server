@@ -3,6 +3,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DEFAULT_ATTENDANCE_SETTINGS } from '@packages/domain-types/attendance';
 import { WorksiteSettings } from './attendance-settings';
+import {
+  ATTENDANCE_MANAGER_PERMISSIONS,
+  failPermissions,
+  failPermissionsRefetch,
+  seedPermissions,
+} from '../testing/seed-permissions';
 
 it('shows multiple worksites as summaries without expanding their registration forms', () => {
   const client = new QueryClient({
@@ -29,8 +35,10 @@ it('shows multiple worksites as summaries without expanding their registration f
     leave: null,
     settings: DEFAULT_ATTENDANCE_SETTINGS,
     worksites: sites,
-    isMaster: true,
+    // 옛 표식은 반대로 둔다 — 화면은 권한만 본다.
+    isMaster: false,
   });
+  seedPermissions(client, ATTENDANCE_MANAGER_PERMISSIONS);
   client.setQueryData(['attendance', 'worksites'], sites);
 
   try {
@@ -53,3 +61,59 @@ it('shows multiple worksites as summaries without expanding their registration f
     client.clear();
   }
 });
+
+it.each(['loading', 'error', 'refetch failed', 'denied'] as const)(
+  'decides worksite management by permission, not by the old flag (%s)',
+  async (state) => {
+    const client = new QueryClient({
+      // 실패한 조회를 화면이 처음 그릴 때 다시 시도하면 «확인 중»으로 돌아간다 — 실패 상태 그대로 그린다.
+      defaultOptions: {
+        queries: { retry: false, retryOnMount: false, gcTime: Infinity },
+      },
+    });
+
+    client.setQueryData(['attendance', 'me'], {
+      userId: 'owner',
+      name: '테스트 관리자',
+      today: '2026-10-19',
+      status: 'before',
+      session: null,
+      leave: null,
+      settings: DEFAULT_ATTENDANCE_SETTINGS,
+      worksites: [],
+      isMaster: true,
+    });
+    client.setQueryData(['attendance', 'worksites'], []);
+
+    if (state === 'error') {
+      await failPermissions(client);
+    }
+
+    if (state === 'denied') {
+      seedPermissions(client, ['attendance.own.write']);
+    }
+
+    if (state === 'refetch failed') {
+      await failPermissionsRefetch(client, ATTENDANCE_MANAGER_PERMISSIONS);
+    }
+
+    try {
+      const html = renderToStaticMarkup(
+        createElement(
+          QueryClientProvider,
+          { client },
+          createElement(WorksiteSettings)
+        )
+      );
+
+      expect(html.includes('근무지 설정을 바꿀 권한이 없어요')).toBe(
+        state === 'denied'
+      );
+      expect(html.includes('권한 정보를 불러오지 못했어요')).toBe(
+        state === 'error' || state === 'refetch failed'
+      );
+    } finally {
+      client.clear();
+    }
+  }
+);

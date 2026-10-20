@@ -7,11 +7,15 @@ import {
 } from '@packages/domain-types/attendance';
 import AttendancePage from '../../../app/attendance/page';
 import manifest from '../../../app/attendance/manifest';
+import {
+  ATTENDANCE_MANAGER_PERMISSIONS,
+  seedPermissions,
+} from '../testing/seed-permissions';
 
 describe('attendance PWA entry', () => {
   it.each([false, true])(
-    'shows request review only for a master (master=%s)',
-    (isMaster) => {
+    'shows request review only with the review permission (granted=%s)',
+    (granted) => {
       const client = new QueryClient({
         defaultOptions: { queries: { retry: false, gcTime: Infinity } },
       });
@@ -23,7 +27,8 @@ describe('attendance PWA entry', () => {
         session: null,
         leave: null,
         settings: DEFAULT_ATTENDANCE_SETTINGS,
-        isMaster,
+        // 옛 표식은 권한과 반대로 둔다 — 화면은 권한만 본다.
+        isMaster: !granted,
         worksites: [
           {
             id: 'site',
@@ -39,6 +44,10 @@ describe('attendance PWA entry', () => {
       };
 
       client.setQueryData(['attendance', 'me'], me);
+      seedPermissions(
+        client,
+        granted ? ATTENDANCE_MANAGER_PERMISSIONS : ['attendance.own.write']
+      );
 
       try {
         const entry = manifest().start_url;
@@ -53,8 +62,8 @@ describe('attendance PWA entry', () => {
           )
         );
 
-        expect(html.includes('href="/attendance/review"')).toBe(isMaster);
-        expect(html.includes('href="/attendance/statistics"')).toBe(isMaster);
+        expect(html.includes('href="/attendance/review"')).toBe(granted);
+        expect(html.includes('href="/attendance/statistics"')).toBe(granted);
         expect(html).toContain('오늘의 근무');
         expect(html).toContain('출근하기');
         expect(html).not.toContain('출근음 테스트');

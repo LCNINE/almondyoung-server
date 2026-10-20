@@ -1,5 +1,5 @@
 import { CronOnce } from '@app/cron-once';
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { seoulClock, seoulDate, type AttendanceSettings, type LeaveType } from '@packages/domain-types/attendance';
 import {
@@ -8,11 +8,9 @@ import {
   attendanceLeaves,
   attendanceRequests,
   attendanceSessions,
-  roles,
-  userRoleAssignments,
-  users,
 } from '../../../../database/drizzle/schema';
 import { AttendanceRepository } from '../repositories/attendance.repository';
+import { ATTENDANCE_REVIEWER_PERMISSION } from '../attendance-staff';
 import { attendanceAiResponseSchema, unwrapAttendanceResponse } from '@packages/domain-types/attendance-review';
 import { dueLeaveReminders, LEAVE_REMINDER_GRACE_MS, MAX_LEAVE_REMINDER_MINUTES } from './leave-reminders';
 
@@ -51,11 +49,24 @@ export function reminderDue(kind: 'in' | 'out', context: ReminderContext): boole
 export class AttendanceJobsService {
   private readonly logger = new Logger(AttendanceJobsService.name);
 
-  constructor(private readonly repo: AttendanceRepository) {}
+  constructor(
+    @Inject(AttendanceRepository)
+    private readonly repo: Pick<
+      AttendanceRepository,
+      'db' | 'permissionsLoaded' | 'staff' | 'holdersOf' | 'settings' | 'withUserLock'
+    >,
+  ) {}
 
   @CronOnce('*/30 * * * * *', { name: 'attendance-jobs', timeZone: 'Asia/Seoul' })
   async tick() {
     if (process.env.APP_STAGE === 'demo') {
+      return;
+    }
+
+    // 사본 없이 돌면 예약할 대상도, 꺼낸 작업의 수신자도 판정할 수 없다 — 회차를 통째로 건너뛴다.
+    if (!this.repo.permissionsLoaded()) {
+      this.logger.warn('Attendance jobs skipped: role permission copy is not loaded yet');
+
       return;
     }
 
@@ -489,23 +500,11 @@ export class AttendanceJobsService {
     }
 
     if (job.kind === 'new_request') {
-      const masters = await this.repo.db
-        .selectDistinct({ id: users.id })
-        .from(users)
-        .innerJoin(userRoleAssignments, eq(userRoleAssignments.userId, users.id))
-        .innerJoin(roles, eq(roles.roleId, userRoleAssignments.roleId))
-        .where(
-          and(
-            eq(roles.name, 'master'),
-            isNull(users.deletedAt),
-            isNull(users.dormantAt),
-            or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, now)),
-          ),
-        );
+      const reviewers = await this.repo.holdersOf(ATTENDANCE_REVIEWER_PERMISSION);
 
-      for (const master of masters) {
+      for (const reviewer of reviewers) {
         await this.notify(
-          master.id,
+          reviewer.userId,
           job.key,
           '새 출결 요청이 있어요',
           '요청 검토에서 내용을 확인해 주세요.',

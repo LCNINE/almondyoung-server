@@ -132,9 +132,6 @@ export const ROLE_LITERAL_BASELINE: Readonly<Record<string, { count: number; kin
   'apps/user-service/src/api/attendance/attendance-authz.ts': { count: 1, kind: 'legacy-checkpoint' },
   'apps/user-service/src/api/attendance/controllers/attendance-requests.controller.ts': { count: 2, kind: 'legacy-route-guard' },
   'apps/user-service/src/api/attendance/controllers/attendance.controller.ts': { count: 2, kind: 'legacy-route-guard' },
-  // 근태 직원(근태 화면을 쓰는 사람)·검토 알림 받을 사람을 역할 이름으로 고른다 — 학생 역할에 근태를 열기 전에 권한 기준으로 바꾼다.
-  'apps/user-service/src/api/attendance/repositories/attendance.repository.ts': { count: 2, kind: 'legacy-route-guard' },
-  'apps/user-service/src/api/attendance/services/attendance-jobs.service.ts': { count: 1, kind: 'legacy-checkpoint' },
   'apps/user-service/src/api/auth/auth.controller.ts': { count: 2, kind: 'legacy-route-guard' },
   'apps/user-service/src/api/consents/consents.controller.ts': { count: 3, kind: 'legacy-route-guard' },
   'apps/user-service/src/api/events/event-trace.controller.ts': { count: 2, kind: 'legacy-route-guard' },

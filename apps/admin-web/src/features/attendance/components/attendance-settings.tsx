@@ -28,6 +28,7 @@ import {
   useAttendance,
   useAttendanceAction,
 } from '../hooks/use-attendance';
+import { useAttendanceAccess } from '../hooks/use-attendance-access';
 import {
   normalSchedule,
   seoulDate,
@@ -321,10 +322,11 @@ export function WorksiteSettings({
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const me = useAttendance();
+  const { canManageWorksites, worksitesState } = useAttendanceAccess();
   const sites = useQuery({
     queryKey: [...ATTENDANCE_KEY, 'worksites'],
     queryFn: attendanceApi.worksites,
-    enabled: !!me.data?.isMaster,
+    enabled: canManageWorksites,
   });
 
   if (me.isError) {
@@ -336,12 +338,20 @@ export function WorksiteSettings({
     );
   }
 
-  if (!me.data) {
+  if (worksitesState.status === 'error') {
+    return (
+      <p role="alert">
+        권한 정보를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.
+      </p>
+    );
+  }
+
+  if (!me.data || worksitesState.status === 'loading') {
     return <WorksiteSettingsSkeleton showHeading={showHeading} />;
   }
 
-  if (!me.data.isMaster) {
-    return <p role="alert">근무지 설정은 관리자만 변경할 수 있어요.</p>;
+  if (!canManageWorksites) {
+    return <p role="alert">근무지 설정을 바꿀 권한이 없어요.</p>;
   }
 
   if (sites.isPending) {
