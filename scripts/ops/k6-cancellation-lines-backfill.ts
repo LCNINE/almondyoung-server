@@ -1,6 +1,7 @@
 import {
   CancellationEffect,
   CancellationLineContext,
+  CancellationLineDerivationError,
   CancellationLineDraft,
   deriveCancellationLines,
 } from '../../apps/core/src/modules/sales-order/cancellation-record/cancellation-lines';
@@ -12,7 +13,8 @@ export type BackfillCancellation = {
   metadata: unknown;
   /** jsonb 원본 — 런타임에 좁힌다. */
   effects: unknown;
-  occurredAt: Date;
+  /** 행이 쓰인 시각(DB `created_at`). `occurred_at` 은 호출자가 준 값이라 기록 순서를 대표하지 못한다. */
+  createdAt: Date;
   /** 이미 라인 행이 있는 취소(배포 뒤 새 취소)의 행. 비어 있으면 아직 없다. */
   existingLines: Array<{ salesOrderLineId: string; quantity: number }>;
 };
@@ -60,16 +62,31 @@ function readEffects(effects: unknown): CancellationEffect[] {
 }
 
 /**
- * 주문 하나의 옛 취소를 occurredAt·id 순으로 재생해 넣을 라인 행을 낸다 (순수 함수).
- * 하나라도 해석이 모호하면 그 주문은 한 행도 내지 않고 ambiguous 로 보고한다.
+ * 재생 순서: partial 먼저(created_at·id 순), 전체 취소는 언제나 마지막.
+ * - `occurred_at` 은 호출자가 준 값(OrderCancelled.cancelledAt·채널 ctx.occurredAt·now)이라 먼저 쓰인 partial 보다
+ *   이른 시각을 가진 전체 취소가 있다 — 그 순서로 재생하면 멀쩡한 주문이 ambiguous 가 되고 `--verify` 가 거짓 불일치를 낸다.
+ * - 전체 취소 뒤의 partial 은 쓰기 경로가 거절하므로 «전체 마지막»은 기록 순서와 같다. created_at 은 한 트랜잭션 안에서
+ *   같을 수 있지만 남는 동률은 partial 끼리뿐이고, partial 끼리는 순서가 결과를 바꾸지 않는다(각자 자기 cancelledLines).
+ */
+function replayOrder(a: BackfillCancellation, b: BackfillCancellation): number {
+  const scopeRank = (c: BackfillCancellation) => (c.scope === 'full' ? 1 : 0);
+  return (
+    scopeRank(a) - scopeRank(b) ||
+    a.createdAt.getTime() - b.createdAt.getTime() ||
+    (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  );
+}
+
+/**
+ * 주문 하나의 옛 취소를 `replayOrder` 순으로 재생해 넣을 라인 행을 낸다 (순수 함수).
+ * 하나라도 해석이 모호하면(형식 불량·도출 실패) 그 주문은 한 행도 내지 않고 ambiguous 로 보고한다.
+ * 그 밖의 예외는 옛 기록의 모호함이 아니라 프로그램 결함이라 그대로 올린다.
  */
 export function planOrderBackfill(
   lines: CancellationLineContext[],
   cancellations: BackfillCancellation[],
 ): OrderBackfillPlan {
-  const ordered = [...cancellations].sort(
-    (a, b) => a.occurredAt.getTime() - b.occurredAt.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
-  );
+  const ordered = [...cancellations].sort(replayOrder);
   const prior = new Map<string, number>();
   const addPrior = (lineId: string, quantity: number) => prior.set(lineId, (prior.get(lineId) ?? 0) + quantity);
   const inserts: Array<CancellationLineDraft & { cancellationId: string }> = [];
@@ -92,7 +109,7 @@ export function planOrderBackfill(
         inserts.push({ ...draft, cancellationId: cancellation.id });
       }
     } catch (error) {
-      if (error instanceof Error) {
+      if (error instanceof Ambiguous || error instanceof CancellationLineDerivationError) {
         return { kind: 'ambiguous', cancellationId: cancellation.id, reason: error.message };
       }
       throw error;
@@ -101,7 +118,12 @@ export function planOrderBackfill(
   return { kind: 'ok', inserts };
 }
 
-export type StoredLineRow = { cancellationId: string; salesOrderLineId: string; shipmentPhase: string; quantity: number };
+export type StoredLineRow = {
+  cancellationId: string;
+  salesOrderLineId: string;
+  shipmentPhase: string;
+  quantity: number;
+};
 
 /**
  * `--verify` 의 비교 (순수 함수). 다시 도출한 행 집합과 저장된 행 집합이 (취소, 라인, 갈래, 수량) 으로 같은지 본다.

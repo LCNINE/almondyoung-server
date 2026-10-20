@@ -9,7 +9,9 @@
  *   npx sst shell --stage live -- npx tsx ../../../scripts/ops/k6-backfill-cancellation-lines.ts          # 조회만 (기본)
  *   npx sst shell --stage live -- npx tsx ../../../scripts/ops/k6-backfill-cancellation-lines.ts --apply  # 실제 쓰기
  *   npx sst shell --stage live -- npx tsx ../../../scripts/ops/k6-backfill-cancellation-lines.ts --verify # 대조(읽기 전용)
- * --verify: 취소가 전부 라인 행을 가진 주문마다 metadata/effects 로 다시 도출해 저장된 행과 비교한다. 어긋난 주문 0 이 기대값.
+ * --verify: 주문마다 저장된 행을 무시하고 metadata/effects 로 다시 도출해 저장된 행과 비교한다. 어긋난 주문 0 이 기대값.
+ *   라인 행 없는 취소가 «0행으로 도출되는» 것뿐인 주문도 대조한다. 건너뛰는 것은 (가) 재도출이 모호한데 행 없는 취소가 있는 주문,
+ *   (나) 0행이 아닌 도출인데 행이 없는 취소가 있는 주문(아직 백필 안 됨)뿐이고, 사유별 수를 찍는다.
  * 로컬 스모크: DATABASE_URL=postgresql://… npx tsx scripts/ops/k6-backfill-cancellation-lines.ts
  */
 import postgres from 'postgres';
@@ -25,7 +27,7 @@ type CancellationRow = {
   scope: 'full' | 'partial';
   metadata: unknown;
   effects: unknown;
-  occurredAt: Date;
+  createdAt: Date;
 };
 type LineRow = {
   id: string;
@@ -68,11 +70,13 @@ function groupBy<T>(rows: T[], key: (row: T) => string): Map<string, T[]> {
 async function main() {
   const sql = connect();
   try {
-    console.log(`모드: ${APPLY ? '적용 (--apply)' : '조회만 — 적용하려면 --apply'}\n`);
+    console.log(
+      `모드: ${VERIFY ? '대조 (--verify, 읽기 전용)' : APPLY ? '적용 (--apply)' : '조회만 — 적용하려면 --apply'}\n`,
+    );
 
     const cancellations = await sql<CancellationRow[]>`
-      SELECT id, sales_order_id AS "salesOrderId", cancellation_scope AS scope, metadata, effects, occurred_at AS "occurredAt"
-      FROM sales_order_cancellations ORDER BY sales_order_id, occurred_at, id`;
+      SELECT id, sales_order_id AS "salesOrderId", cancellation_scope AS scope, metadata, effects, created_at AS "createdAt"
+      FROM sales_order_cancellations ORDER BY sales_order_id, created_at, id`;
     const orderIds = [...new Set(cancellations.map((c) => c.salesOrderId))];
     const lineRows =
       orderIds.length === 0
@@ -95,14 +99,10 @@ async function main() {
 
     if (VERIFY) {
       let checked = 0;
-      let skipped = 0;
+      let skippedAmbiguous = 0;
+      let skippedUnbackfilled = 0;
       const mismatched: Array<{ orderId: string; diffs: string[] }> = [];
       for (const [orderId, orderCancellations] of cancellationsByOrder) {
-        if (orderCancellations.some((c) => (existingByCancellation.get(c.id) ?? []).length === 0)) {
-          skipped += 1; // 라인 행 없는 취소가 있는 주문(ambiguous·0행 도출)은 대조 대상이 아니다
-          continue;
-        }
-        checked += 1;
         const lines = (linesByOrder.get(orderId) ?? []).map((l) => ({
           id: l.id,
           quantity: l.quantity,
@@ -113,19 +113,32 @@ async function main() {
           scope: c.scope,
           metadata: c.metadata,
           effects: c.effects,
-          occurredAt: c.occurredAt,
+          createdAt: c.createdAt,
           existingLines: [], // 저장된 행을 무시하고 옛 기록에서 다시 도출한다
         }));
+        const withoutRows = orderCancellations.filter((c) => (existingByCancellation.get(c.id) ?? []).length === 0);
         const plan = planOrderBackfill(lines, input);
         if (plan.kind === 'ambiguous') {
+          if (withoutRows.length > 0) {
+            skippedAmbiguous += 1; // 백필도 쓰지 않은 주문 — 게이트 (a) 쪽이다
+            continue;
+          }
           mismatched.push({ orderId, diffs: [`재도출 불가 (취소 ${plan.cancellationId}): ${plan.reason}`] });
           continue;
         }
+        const derivedIds = new Set(plan.inserts.map((i) => i.cancellationId));
+        if (withoutRows.some((c) => derivedIds.has(c.id))) {
+          skippedUnbackfilled += 1; // 행이 나와야 하는데 아직 없다 — --apply 전이다
+          continue;
+        }
+        checked += 1; // 행 없는 취소는 모두 0행 도출이라 저장 쪽과 그대로 비교할 수 있다
         const stored = orderCancellations.flatMap((c) => existingByCancellation.get(c.id) ?? []);
         const diffs = diffDerivedWithStored(plan.inserts, stored);
         if (diffs.length > 0) mismatched.push({ orderId, diffs });
       }
-      console.log(`대조 ${checked}주문 · 건너뜀(라인 행 없는 취소 있음) ${skipped} · 어긋난 주문 ${mismatched.length} (기대 0)`);
+      console.log(
+        `대조 ${checked}주문 · 건너뜀 ${skippedAmbiguous + skippedUnbackfilled} (모호·행 없는 취소 있음 ${skippedAmbiguous} · 아직 백필 안 됨 ${skippedUnbackfilled}) · 어긋난 주문 ${mismatched.length} (기대 0)`,
+      );
       for (const m of mismatched) for (const d of m.diffs) console.log(`  mismatch\t주문 ${m.orderId}\t${d}`);
       if (mismatched.length > 0) process.exitCode = 1;
       return;
@@ -152,7 +165,7 @@ async function main() {
         scope: c.scope,
         metadata: c.metadata,
         effects: c.effects,
-        occurredAt: c.occurredAt,
+        createdAt: c.createdAt,
         existingLines: (existingByCancellation.get(c.id) ?? []).map((e) => ({
           salesOrderLineId: e.salesOrderLineId,
           quantity: e.quantity,
@@ -186,21 +199,28 @@ async function main() {
 
     if (!APPLY) return;
 
-    let written = 0;
+    let inserted = 0;
     for (const { orderId, inserts } of writes) {
-      await sql.begin(async (trx) => {
+      inserted += await sql.begin(async (trx) => {
         // postgres.js 의 TransactionSql 은 Omit 으로 호출 시그니처를 잃는다(타입 결함) — 런타임은 Sql 과 같다
         const tx = trx as unknown as postgres.Sql;
+        let count = 0;
         for (const row of inserts) {
-          await tx`
+          const result = await tx`
             INSERT INTO sales_order_cancellation_lines (cancellation_id, sales_order_id, sales_order_line_id, quantity, shipment_phase)
             VALUES (${row.cancellationId}, ${orderId}, ${row.salesOrderLineId}, ${row.quantity}, ${row.shipmentPhase})
             ON CONFLICT (cancellation_id, sales_order_line_id, shipment_phase) DO NOTHING`;
+          count += result.count; // ON CONFLICT 로 건너뛴 행은 0
         }
+        return count;
       });
-      written += inserts.length;
     }
-    console.log(`\n처리한 행 ${written} / ${rowsToInsert} (이미 있던 행은 건너뜀)`);
+    console.log(
+      `\n처리한 행: 계획 ${rowsToInsert} · 실제 INSERT ${inserted}` +
+        (inserted < rowsToInsert
+          ? ` (차이 ${rowsToInsert - inserted} 는 그새 다른 실행이 넣은 행 — ON CONFLICT 로 건너뜀)`
+          : ''),
+    );
   } finally {
     await sql.end({ timeout: 5 });
   }

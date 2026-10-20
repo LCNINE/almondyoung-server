@@ -7,7 +7,7 @@ const partial = (id: string, day: number, over: Partial<BackfillCancellation> = 
   scope: 'partial',
   metadata: { cancelledLines: [{ salesOrderLineId: 'L1', quantity: 1 }] },
   effects: [],
-  occurredAt: at(day),
+  createdAt: at(day),
   existingLines: [],
   ...over,
 });
@@ -16,20 +16,37 @@ const full = (id: string, day: number, over: Partial<BackfillCancellation> = {})
   scope: 'full',
   metadata: {},
   effects: [],
-  occurredAt: at(day),
+  createdAt: at(day),
   existingLines: [],
   ...over,
 });
 
 describe('planOrderBackfill', () => {
   it('replays partial then v1 full in order', () => {
-    // 입력 순서를 섞어도 occurredAt 순으로 재생한다
+    // 입력 순서를 섞어도 created_at 순으로 재생한다
     expect(planOrderBackfill(lines, [full('c2', 2), partial('c1', 1)])).toEqual({
       kind: 'ok',
       inserts: [
         { cancellationId: 'c1', salesOrderLineId: 'L1', quantity: 1, shipmentPhase: 'before_shipment' },
         { cancellationId: 'c2', salesOrderLineId: 'L1', quantity: 2, shipmentPhase: 'before_shipment' },
       ],
+    });
+  });
+
+  it('replays partials before the full even when the full sorts earlier by time', () => {
+    // occurred_at 은 호출자가 준 값(OrderCancelled.cancelledAt·채널 시각)이라 전체 취소가 더 이를 수 있고,
+    // created_at 도 한 트랜잭션 안이면 같다. 전체 취소는 언제나 마지막이다 — 그 뒤의 partial 은 거절되기 때문이다.
+    expect(planOrderBackfill(lines, [full('c0', 1), partial('c1', 2)])).toEqual({
+      kind: 'ok',
+      inserts: [
+        { cancellationId: 'c1', salesOrderLineId: 'L1', quantity: 1, shipmentPhase: 'before_shipment' },
+        { cancellationId: 'c0', salesOrderLineId: 'L1', quantity: 2, shipmentPhase: 'before_shipment' },
+      ],
+    });
+    // created_at 이 같으면(같은 트랜잭션) id 가 앞서도 전체 취소가 뒤다
+    expect(planOrderBackfill(lines, [full('a', 1), partial('b', 1)])).toMatchObject({
+      kind: 'ok',
+      inserts: [{ cancellationId: 'b' }, { cancellationId: 'a' }],
     });
   });
 
@@ -70,6 +87,16 @@ describe('planOrderBackfill', () => {
       kind: 'ambiguous',
       cancellationId: 'c2',
     });
+  });
+
+  it('rethrows errors that are not about ambiguity of the legacy record', () => {
+    // 모호함(형식 불량·도출 실패)만 ambiguous 로 보고한다. 그 밖의 예외는 프로그램 결함이라 그대로 올린다.
+    const metadata = {
+      get cancelledLines(): unknown {
+        throw new TypeError('boom');
+      },
+    };
+    expect(() => planOrderBackfill(lines, [partial('c1', 1, { metadata })])).toThrow(TypeError);
   });
 
   it('post-shipment partial keeps its phase', () => {
