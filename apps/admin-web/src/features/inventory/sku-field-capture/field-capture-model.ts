@@ -312,3 +312,39 @@ export function scanDebugLine(i: ScanDebugInfo): string {
 export function isScanDebug(search: string): boolean {
   return new URLSearchParams(search).get('scanDebug') === '1';
 }
+
+const BACK_LENS = /back|rear|environment|후면/i;
+
+/**
+ * 실시간 스캔에 쓸 후면 렌즈. 갤럭시 크롬은 후면 렌즈를 `camera2 0, facing back`(메인)·`2`(초광각)·`3`(망원)으로
+ * 따로 내놓는데, facingMode 만 주면 초광각을 골라 가까운 바코드에 초점이 안 잡혔다(2026-10-21 S25 실측:
+ * `camera 2, facing back`, 미리보기 흐림, 시도는 계속 NotFound). 번호가 가장 작은 후면 렌즈가 보통 메인이다.
+ * 이름이 비어 있으면(권한 전) 고를 수 없다 — null.
+ */
+export function pickBackCamera(
+  devices: readonly { deviceId: string; label: string; kind: string }[]
+): string | null {
+  const back = devices
+    .filter((d) => d.kind === 'videoinput' && BACK_LENS.test(d.label))
+    // 'camera2 0, facing back' 의 앞 숫자(2)는 API 이름이라, 마지막 숫자를 렌즈 번호로 본다
+    .map((d) => ({
+      id: d.deviceId,
+      n: Number(d.label.match(/\d+/g)?.at(-1) ?? 0),
+    }))
+    .sort((a, b) => a.n - b.n);
+  return back[0]?.id ?? null;
+}
+
+/** 고른 렌즈가 있으면 그 렌즈를 정확히(해상도 요청은 그대로), 없으면 facingMode 로. */
+export function scannerConstraintsFor(
+  deviceId: string | null
+): MediaStreamConstraints {
+  if (!deviceId) return SCANNER_VIDEO_CONSTRAINTS;
+  return {
+    video: {
+      deviceId: { exact: deviceId },
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+    },
+  };
+}

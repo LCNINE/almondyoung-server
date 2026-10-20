@@ -11,6 +11,8 @@ import {
   MANUFACTURER_BARCODE_FORMATS,
   SCANNER_VIDEO_CONSTRAINTS,
   scanDebugLine,
+  pickBackCamera,
+  scannerConstraintsFor,
   isScanDebug,
   photoDecodeSize,
   reworkNotice,
@@ -461,5 +463,53 @@ describe('scanDebugLine', () => {
     expect(isScanDebug('?position=T-01-20&scanDebug=1')).toBe(true);
     expect(isScanDebug('?scanDebug=0')).toBe(false);
     expect(isScanDebug('')).toBe(false);
+  });
+});
+
+describe('pickBackCamera', () => {
+  const cam = (deviceId: string, label: string) => ({
+    deviceId,
+    label,
+    kind: 'videoinput' as const,
+  });
+
+  it('picks the lowest-numbered back lens (Samsung lists ultra-wide/tele as higher numbers)', () => {
+    expect(
+      pickBackCamera([
+        cam('a', 'camera2 1, facing front'),
+        cam('b', 'camera2 2, facing back'),
+        cam('c', 'camera2 0, facing back'),
+        cam('d', 'camera2 3, facing back'),
+      ])
+    ).toBe('c');
+  });
+
+  it('understands generic and Korean labels', () => {
+    expect(
+      pickBackCamera([cam('x', 'Front Camera'), cam('y', 'Back Camera')])
+    ).toBe('y');
+    expect(
+      pickBackCamera([cam('k', '후면 카메라 2'), cam('m', '후면 카메라')])
+    ).toBe('m');
+  });
+
+  it('gives up when labels are hidden (no permission yet) or there is no back lens', () => {
+    expect(pickBackCamera([cam('a', ''), cam('b', '')])).toBeNull();
+    expect(pickBackCamera([cam('w', 'HD Webcam')])).toBeNull();
+  });
+});
+
+describe('scannerConstraintsFor', () => {
+  it('opens the chosen lens exactly, keeping the resolution request', () => {
+    expect(scannerConstraintsFor('c')).toEqual({
+      video: {
+        deviceId: { exact: 'c' },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
+    });
+  });
+  it('falls back to facingMode without a chosen lens', () => {
+    expect(scannerConstraintsFor(null)).toBe(SCANNER_VIDEO_CONSTRAINTS);
   });
 });

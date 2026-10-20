@@ -9,9 +9,10 @@ import {
   PHOTO_DECODE_FAILED,
   photoDecodeSize,
   isScanDebug,
+  pickBackCamera,
   scanDebugLine,
+  scannerConstraintsFor,
   scanInputValue,
-  SCANNER_VIDEO_CONSTRAINTS,
   type ScanDebugInfo,
   type BarcodeFormatName,
 } from '../field-capture-model';
@@ -27,6 +28,20 @@ async function createReader(formats?: readonly BarcodeFormatName[]) {
   // DecodeHintType.POSSIBLE_FORMATS 를 reader 의 hints 에 넣는 setter
   if (formats) reader.possibleFormats = formats.map((f) => BarcodeFormat[f]);
   return reader;
+}
+
+// 한 번 고른 후면 메인 렌즈를 화면 사이에서 기억한다(같은 탭 안에서만).
+let preferredLens: string | null = null;
+// 고른 렌즈로 못 열었으면(기기가 바뀌었거나 그 렌즈를 못 쓰면) 이 탭에선 더 고르지 않고 facingMode 로 연다
+let lensPickDisabled = false;
+
+/** 렌즈 이름이 보이면(이미 권한을 줬으면) 메인 후면 렌즈를 고른다. 안 보이면 null. */
+async function findBackLens(): Promise<string | null> {
+  try {
+    return pickBackCamera(await navigator.mediaDevices.enumerateDevices());
+  } catch {
+    return null;
+  }
 }
 
 /** 폰 카메라 앱으로 찍은 정지 사진(자동 초점·원본 화소)에서 읽는다. 실시간 화면으로 안 읽힐 때의 길. */
@@ -82,6 +97,8 @@ export function BarcodeScanInput({
   const [readingPhoto, setReadingPhoto] = useState(false);
   // ?scanDebug=1 일 때만 채운다 — 실기에서 실시간 스캔이 무엇을 받고 있는지 보려는 진단
   const [debug, setDebug] = useState<ScanDebugInfo | null>(null);
+  // 메인 렌즈로 다시 열 때 올린다(처음엔 권한 전이라 렌즈 이름을 못 봐서 facingMode 로 연다)
+  const [reopen, setReopen] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const photoRef = useRef<HTMLInputElement>(null);
   const onScanRef = useRef(onScan);
@@ -111,57 +128,84 @@ export function BarcodeScanInput({
       done = true;
       controls?.stop();
     };
-    createReader(formats)
-      .then((reader) =>
-        reader.decodeFromConstraints(
-          SCANNER_VIDEO_CONSTRAINTS,
-          video,
-          (result, err, c) => {
-            if (debugOn) {
-              attempts += 1;
-              const now = performance.now();
-              const track =
-                video.srcObject instanceof MediaStream
-                  ? video.srcObject.getVideoTracks()[0]
-                  : undefined;
-              const settings: Record<string, unknown> = {
-                ...track?.getSettings(),
-              };
-              setDebug({
-                videoWidth: video.videoWidth,
-                videoHeight: video.videoHeight,
-                trackLabel: track?.label ?? '',
-                focusMode:
-                  typeof settings.focusMode === 'string'
-                    ? settings.focusMode
-                    : undefined,
-                attempts,
-                lastError: err ? err.getKind() : null,
-                lastDecodeMs: lastAt === null ? null : Math.round(now - lastAt),
-              });
-              lastAt = now;
-            }
-            if (!result || done) return;
-            done = true;
-            c.stop();
-            setScanning(false);
-            onScanRef.current(result.getText());
+    let lens: string | null = null;
+    (async () => {
+      lens = lensPickDisabled
+        ? null
+        : (preferredLens ?? (await findBackLens()));
+      const reader = await createReader(formats);
+      return reader.decodeFromConstraints(
+        scannerConstraintsFor(lens),
+        video,
+        (result, err, c) => {
+          if (debugOn) {
+            attempts += 1;
+            const now = performance.now();
+            const track =
+              video.srcObject instanceof MediaStream
+                ? video.srcObject.getVideoTracks()[0]
+                : undefined;
+            const settings: Record<string, unknown> = {
+              ...track?.getSettings(),
+            };
+            setDebug({
+              videoWidth: video.videoWidth,
+              videoHeight: video.videoHeight,
+              trackLabel: track?.label ?? '',
+              focusMode:
+                typeof settings.focusMode === 'string'
+                  ? settings.focusMode
+                  : undefined,
+              attempts,
+              lastError: err ? err.getKind() : null,
+              lastDecodeMs: lastAt === null ? null : Math.round(now - lastAt),
+            });
+            lastAt = now;
           }
-        )
-      )
-      .then((c) => {
+          if (!result || done) return;
+          done = true;
+          c.stop();
+          setScanning(false);
+          onScanRef.current(result.getText());
+        }
+      );
+    })()
+      .then(async (c) => {
         controls = c;
-        if (done) c.stop();
+        if (done) {
+          c.stop();
+          return;
+        }
+        if (lens) {
+          preferredLens = lens;
+          return;
+        }
+        // 권한을 막 받아 이제 렌즈 이름이 보인다 — 연 렌즈가 메인이 아니면 메인으로 한 번 다시 연다
+        const main = await findBackLens();
+        const track =
+          video.srcObject instanceof MediaStream
+            ? video.srcObject.getVideoTracks()[0]
+            : undefined;
+        if (main && !done && !lensPickDisabled) {
+          preferredLens = main;
+          if (track?.getSettings().deviceId !== main) setReopen((n) => n + 1);
+        }
       })
       .catch((e: unknown) => {
         if (done) return; // 이미 닫았다
+        if (lens) {
+          lensPickDisabled = true;
+          preferredLens = null;
+          setReopen((n) => n + 1);
+          return;
+        }
         const f = cameraFailure(e);
         setScanning(false);
         if (f.retryable) setHint(f.message);
         else setBlocked(f.message);
       });
     return stopNow;
-  }, [scanning, formats]);
+  }, [scanning, formats, reopen]);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
