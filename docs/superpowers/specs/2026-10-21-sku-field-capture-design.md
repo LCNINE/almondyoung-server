@@ -199,8 +199,19 @@ DRY_RUN 지원), 완료 이벤트 기록 여부.
    (`run.sh` 가 RDS·시크릿으로 `DATABASE_URL` 을 만든다 — `scripts/sellmate/README.md`. 매칭 안 된 SKU 코드 수를 확인한다.)
 4. **admin-web 배포.** 새 의존성 `@zxing/browser` 0.1.5, `@zxing/library` 0.21.3 — 머지 뒤 메인 체크아웃에서 `(cd apps/admin-web && npm ci)` 후 배포.
 5. **lcnine-auth 역할.** `logistics_worker` 역할 행이 라이브 user-service 에 있는지 확인한다(2026-09-25 에는 없었다). 없으면
-   `npm run db:seed:ref -- --stage live --deployment lcnine-auth --yes` 또는 어드민의 역할 관리로 만든다. 작업자 계정에 부여하고,
-   그 역할의 `landingPath` 를 `/mobile/sku-field-capture` 로 설정한다 (코드 변경 없음).
+   `npm run db:seed:ref -- --stage live --deployment lcnine-auth --yes` 또는 어드민의 역할 관리로 만든다.
+   **역할을 만드는 것만으로는 권한이 붙지 않는다.** 시드는 `roles` 행만 넣고(`scripts/seeding/steps/user-service.seed-step.ts`
+   의 `USER_SERVICE_REFERENCE_ROLES`, apply Step 1), 카탈로그의 `grant` 는 권한 키가 **처음 등록될 때 그 순간 있던 역할에만**
+   부여된다(`apps/user-service/src/api/iam/permission-catalog-sync.manager.ts` 의 `grantFirstRegistrations` — 없던 역할은
+   `missingRoles` 로 건너뛴다). `inventory.stock.*` 는 이미 등록돼 있으니 나중에 만든 `logistics_worker` 엔 아무것도 없다.
+   (스코프 `inventory.operate` 는 역할 이름 기준 매핑 `INVENTORY_ROLE_MAPPINGS` 라 따로 할 일이 없다.)
+   1. 어드민 역할 관리(`/users/roles` → `logistics_worker`)에서 `inventory.stock.read`(재고 조회)와
+      `inventory.stock.operate`(재고 현장 작업)를 부여한다.
+   2. 작업자 계정에 `logistics_worker` 를 부여하고, 그 역할의 `landingPath` 를 `/mobile/sku-field-capture` 로 설정한다 (코드 변경 없음).
+   3. **작업자 계정으로 로그인해 확인한다**(브라우저 로그인은 사용자가 직접):
+      `/mobile/sku-field-capture` 가 열리고 `GET /inventory/sku-field-capture/me/today` 가 200 이다.
+      관리자 현황 `/inventory/sku-field-capture`(API `GET /inventory/sku-field-capture/progress` —
+      `inventory.master.read` + 스코프 `inventory.manage`)은 **열리지 않아야** 한다.
 6. **실기 스모크 (iPhone·Android 각각):**
    - 카메라로 선반 바코드 스캔 → 그 위치의 SKU 목록.
    - 사진 3장 이상: 올라간 파일이 **원본 크기 그대로**인지 file-service 메타데이터로 확인 (압축·거부 없음). iPhone 사진이 JPEG 로 오는지(HEIC 아님).
