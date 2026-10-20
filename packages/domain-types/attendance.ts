@@ -285,3 +285,22 @@ export function verifyLocation(point: LocationSample, site: Worksite, now: Date)
     throw new Error('회사 위치를 확인하지 못했어요. 다시 시도하거나 예외 요청을 남겨 주세요.');
   }
 }
+
+export interface MonthlyAttendanceMetrics {
+  recordedDays: number;
+  completedDays: number;
+  recordedMinutes: number;
+  missingCheckoutDays: number;
+  ongoingDays: number;
+}
+
+export interface MonthlyAttendancePerson extends MonthlyAttendanceMetrics {
+  userId: string;
+  name: string;
+}
+
+export interface MonthlyAttendanceStatistics {
+  month: string;
+  people: MonthlyAttendancePerson[];
+  totals: MonthlyAttendanceMetrics & { employeeCount: number };
+}

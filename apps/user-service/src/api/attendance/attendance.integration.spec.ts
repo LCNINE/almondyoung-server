@@ -14,6 +14,7 @@ import {
 } from '../../../database/drizzle/schema';
 import { AttendanceRepository } from './repositories/attendance.repository';
 import { AttendanceService } from './services/attendance.service';
+import { AttendanceStatisticsService } from './services/attendance-statistics.service';
 import { AttendanceCalendarService } from './services/attendance-calendar.service';
 import { AttendanceRequestManager } from './services/attendance-request.manager';
 import { AttendanceJobsService } from './services/attendance-jobs.service';
@@ -79,6 +80,22 @@ run('attendance PostgreSQL transactions', () => {
     await database.db.execute(
       sql`INSERT INTO attendance_worksites (id, name, latitude, longitude, radius_meters, accuracy_meters) VALUES (${site}, '본사', '37.5', '127', 150, 50)`,
     );
+  });
+
+  it('filters sessions by work-date month and includes staff with no records', async () => {
+    await database.db.execute(sql`
+      INSERT INTO attendance_sessions (user_id, work_date, check_in, check_out) VALUES
+      (${owner}, '2026-09-30', '2026-09-30T13:00:00Z', '2026-09-30T17:00:00Z'),
+      (${owner}, '2026-10-31', '2026-10-31T13:00:00Z', '2026-10-31T17:00:00Z'),
+      (${owner}, '2026-11-01', '2026-11-01T00:00:00Z', '2026-11-01T09:00:00Z')
+    `);
+
+    const statistics = await new AttendanceStatisticsService(repo).monthly('2026-10');
+    const person = statistics.people.find((item) => item.userId === owner);
+
+    expect(person).toMatchObject({ recordedDays: 1, completedDays: 1, recordedMinutes: 240 });
+    expect(statistics.people.find((item) => item.userId === other)).toMatchObject({ recordedDays: 0 });
+    expect(statistics.totals.employeeCount).toBe(3);
   });
 
   function punch(kind: 'in' | 'out', requestId: string, now: Date) {
