@@ -6,7 +6,7 @@ import { PII_ROUTES, PII_WRITE_EXEMPT, PII_WRITE_ROUTES } from './pii-routes';
 
 /**
  * 개인정보 원문을 본문으로 받는 쓰기는 `@PiiWrite` 로 그 필드를 선언한다 — 원문을 볼 수 없는 사람이 가린 값을 그대로
- * 다시 저장하지 않게(ADR-0045). 목록과 선언이 양쪽으로 맞아야 하고, 선언한 앱은 개인정보 인터셉터를 등록해야 한다.
+ * 다시 저장하지 않게(ADR-0047). 목록과 선언이 양쪽으로 맞아야 하고, 선언한 앱은 개인정보 인터셉터를 등록해야 한다.
  */
 const ROOT = join(__dirname, '..', '..');
 const AUDIT = join(__dirname, 'route-authz-audit.js');

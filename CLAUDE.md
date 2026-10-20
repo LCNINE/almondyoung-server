@@ -335,7 +335,7 @@ Cross-BC **seam** services (those that legitimately span schemas, e.g. `ProductS
 - Nullable normalization: `string ?? ''`, `number ?? 0`, `date ?? undefined`
 - Use only enum values defined in schema
 
-### 라우트 권한 선언 (`@app/authorization`, ADR-0045)
+### 라우트 권한 선언 (`@app/authorization`, ADR-0047)
 
 새 HTTP 라우트는 반드시 넷 중 하나를 단다: `@Public`/`@InternalOnly`/`@OptionalAuth` · `@StoreRoute`(고객) ·
 `@KeyAuthRoute`(wallet 머천트 키) · `@RequirePermission('영역.대상.행동')`. 없으면 `route-classification.spec.ts`
@@ -352,13 +352,13 @@ Medusa 를 새로 부르면 `medusa-permissions.ts` 에 경로를 더한다(`med
 고객 개인정보(이름·연락처·이메일·주소·계좌)를 응답하는 새 관리자 라우트는 `@PiiResponse` 로 가릴 경로와 대상 식별자 경로를
 선언하고 `scripts/security/pii-routes.ts` 에 한 줄 더한다(없으면 `pii-routes.spec.ts` 가 빨갛다). 선언을 처음 다는 앱은 루트 모듈의
 `AuthzShadowInterceptor` 바로 다음에 `...piiMaskingProviders(...)` 를 펼친다(`permission-wiring.spec.ts`). 원문이 나간 응답마다
-접속기록이 남고 기록을 못 남기면 가린 값이 나간다 — 규칙은 ADR-0045 §29~36.
+접속기록이 남고 기록을 못 남기면 가린 값이 나간다 — 규칙은 ADR-0047 §29~36.
 
 역할·권한·부여를 바꾸는 코드는 user-service `iam` 의 Manager 를 거친다 — 권한 상승 방지·시스템 역할·자기 자신·마지막
-시스템 역할 보유자 규칙과 변경 이력이 거기서 같은 트랜잭션으로 묶인다(ADR-0045 §24~28). 새 권한을 추가할 때 같은 대상의
+시스템 역할 보유자 규칙과 변경 이력이 거기서 같은 트랜잭션으로 묶인다(ADR-0047 §24~28). 새 권한을 추가할 때 같은 대상의
 `.read` 가 없으면 `requires` 나 `standalone` 을 적는다(`permission-dependencies.spec.ts` 가 빨갛다).
 
-서비스별 `AUTHZ_ENFORCE=true` 면 그 서비스의 권한 라우트는 새 판정만 결정하고 옛 인가 가드는 물러난다(ADR-0045 §37~39) — 새 인가 판정은
+서비스별 `AUTHZ_ENFORCE=true` 면 그 서비스의 권한 라우트는 새 판정만 결정하고 옛 인가 가드는 물러난다(ADR-0047 §37~39) — 새 인가 판정은
 옛 가드(`RolesGuard`·`@RequireScopes`)가 아니라 `@RequirePermission`·판정 지점(`PermissionCheckpoints`)으로 쓴다. 개인정보 원문을 본문으로
 받는 새 쓰기 라우트는 `@PiiWrite` 와 `PII_WRITE_ROUTES` 한 줄을 더한다(없으면 `pii-write-routes.spec.ts` 가 빨갛다).
 

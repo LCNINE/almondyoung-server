@@ -5,7 +5,7 @@ import * as ts from 'typescript';
 import { PII_EXPORT_EXCEPTIONS, PII_ROUTES } from './pii-routes';
 
 /**
- * 개인정보를 응답하는 관리자 라우트는 `@PiiResponse` 로 가릴 경로를 선언한다(ADR-0045).
+ * 개인정보를 응답하는 관리자 라우트는 `@PiiResponse` 로 가릴 경로를 선언한다(ADR-0047).
  * 목록(`pii-routes.ts`)과 선언이 양쪽으로 맞아야 한다 — 선언만 있고 목록에 없거나, 목록에만 있으면 실패.
  */
 const ROOT = join(__dirname, '..', '..');

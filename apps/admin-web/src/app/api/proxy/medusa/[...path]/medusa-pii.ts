@@ -16,7 +16,7 @@ interface RuleEntry extends MedusaPiiRule {
 
 /**
  * 개인정보가 나오는 Medusa 경로. 응답 «경로»가 아니라 «키 이름»으로 가린다 — Medusa 는 `fields` 로 요청자가
- * 필드를 고를 수 있어서 경로를 미리 적어 두면 확장한 필드가 빠진다(ADR-0045).
+ * 필드를 고를 수 있어서 경로를 미리 적어 두면 확장한 필드가 빠진다(ADR-0047).
  */
 const RULES: readonly RuleEntry[] = [
   { method: 'GET', pattern: 'admin/customers', subjectType: 'medusa_customer', revealable: false },

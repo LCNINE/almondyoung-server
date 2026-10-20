@@ -5,7 +5,7 @@ import { ROLE_LITERAL_BASELINE } from './role-name-checks.baseline';
 import { countRoleLiterals, nonLiteralCheckpointCalls } from './role-name-scan';
 
 /**
- * 코드는 역할 이름이 아니라 권한만 본다(ADR-0045). 역할 이름 문자열은 기준 목록의 파일·개수만큼만 남아 있고,
+ * 코드는 역할 이름이 아니라 권한만 본다(ADR-0047). 역할 이름 문자열은 기준 목록의 파일·개수만큼만 남아 있고,
  * 옛 판정을 걷어 낼 때 목록을 줄인다. 새 역할 이름 판정이 생기면(같은 파일 안이어도) 개수가 늘어 여기서 걸린다.
  * 판정 지점 이름(지표 라벨)이 리터럴인지도 함께 본다.
  */
