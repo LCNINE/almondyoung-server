@@ -340,6 +340,11 @@ export function AttendanceCard() {
                 요청 검토
               </Link>
             )}
+            {me.isMaster && (
+              <Link className="col-span-2" href={`${links}/statistics`}>
+                월별 통계
+              </Link>
+            )}
             {me.isMaster && me.worksites.length > 0 && (
               <Link className="col-span-2" href={`${links}/worksites`}>
                 근무지 관리

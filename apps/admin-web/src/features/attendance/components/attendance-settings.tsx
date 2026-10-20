@@ -1,7 +1,7 @@
 'use client';
 
 import { useId, useState } from 'react';
-import { MapPin, Plus, Search } from 'lucide-react';
+import { Bell, Clock3, MapPin, Plus, Search, Volume2 } from 'lucide-react';
 import { AddressSearchDialog } from '@/components/common/address-search-dialog';
 import {
   AttendanceSettingsSkeleton,
@@ -99,20 +99,21 @@ function SettingsForm({
   }
 
   return (
-    <section className="max-w-xl space-y-6">
+    <section className="mx-auto w-full max-w-2xl space-y-6 sm:space-y-8">
       <div>
         {showHeading && (
-          <h1 className="text-2xl font-bold">내 근무·알림 설정</h1>
+          <h1 className="text-[28px] leading-10 font-bold tracking-tight text-slate-950">
+            내 근무·알림 설정
+          </h1>
         )}
-        <p className="mt-2 text-sm text-slate-400">
-          평소 근무 시간과 필요한 알림을 설정해요.
-        </p>
-        <p className="mt-2 text-xs leading-6 text-slate-500">
-          변경한 시각과 알림 설정은 아래의 설정 저장을 눌러야 적용돼요.
+        <p
+          className={`${showHeading ? 'mt-1' : ''} text-sm leading-6 text-slate-500`}
+        >
+          내 근무 리듬에 맞게 시간을 설정해 보세요.
         </p>
       </div>
       <form
-        className="space-y-6"
+        className="space-y-5"
         onSubmit={(event) => {
           event.preventDefault();
 
@@ -128,9 +129,21 @@ function SettingsForm({
           }
         }}
       >
-        <div className="space-y-5 rounded-2xl border bg-white p-6">
-          <h2 className="text-sm font-semibold">평소 근무 시간</h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="rounded-3xl border border-slate-200/70 bg-white p-5 sm:p-6">
+          <div className="mb-5 flex items-start gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
+              <Clock3 className="size-5" aria-hidden />
+            </span>
+            <div>
+              <h2 className="text-base font-bold leading-6 text-slate-900">
+                평소 근무 시간
+              </h2>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                반차 일정의 출퇴근 예정 시각으로 사용해요.
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <AttendanceTimeField
               label="출근 시각"
               required
@@ -144,83 +157,160 @@ function SettingsForm({
               onChange={(value) => patch('normalEnd', value)}
             />
           </div>
-          <p className="text-xs leading-6 text-slate-400">
-            반차 등록 시 예정 시각을 채우는 데 사용해요.
-          </p>
         </div>
-        <div className="space-y-6 rounded-2xl border bg-white p-6">
-          <h2 className="text-sm font-semibold">내 출퇴근 알림</h2>
-          {(['in', 'out'] as const).map((kind) => (
-            <div key={kind} className="space-y-3">
-              <label className="flex items-center justify-between text-sm">
-                {kind === 'in' ? '출근' : '퇴근'} 알림
-                <Switch
-                  checked={settings[`${kind}Enabled`]}
-                  onCheckedChange={(value) => patch(`${kind}Enabled`, value)}
-                />
-              </label>
-              <AttendanceTimeField
-                label={`${kind === 'in' ? '출근' : '퇴근'} 알림 시각`}
-                required
-                disabled={!settings[`${kind}Enabled`]}
-                value={settings[`${kind}Time`]}
-                onChange={(value) => patch(`${kind}Time`, value)}
-              />
-            </div>
-          ))}
-          <div>
-            <p className="mb-3 text-xs text-slate-400">알림 받을 요일</p>
-            <div className="flex flex-wrap gap-3">
-              {'일월화수목금토'.split('').map((label, day) => (
-                <label key={day} className="flex gap-1.5 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={settings.weekdays.includes(day)}
-                    onChange={(event) =>
-                      patch(
-                        'weekdays',
-                        event.target.checked
-                          ? [...settings.weekdays, day]
-                          : settings.weekdays.filter((item) => item !== day)
-                      )
-                    }
-                  />
-                  {label}
-                </label>
-              ))}
+        <div className="overflow-hidden rounded-3xl border border-slate-200/70 bg-white">
+          <div className="flex items-start gap-3 px-5 pt-5 pb-2 sm:px-6 sm:pt-6">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
+              <Bell className="size-5" aria-hidden />
+            </span>
+            <div>
+              <h2 className="text-base font-bold leading-6 text-slate-900">
+                출퇴근 알림
+              </h2>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                잊지 않도록 원하는 시각에 알려드려요.
+              </p>
             </div>
           </div>
-          <label className="flex items-center justify-between text-sm">
-            오늘은 알림 받지 않기
-            <Switch
+          <div className="divide-y divide-slate-100 px-5 sm:px-6">
+            {(['in', 'out'] as const).map((kind) => (
+              <div key={kind} className="pt-2 pb-5">
+                <SettingsToggleRow
+                  title={`${kind === 'in' ? '출근' : '퇴근'} 알림`}
+                  description={
+                    settings[`${kind}Enabled`]
+                      ? '설정한 시각에 알림을 받아요.'
+                      : '이 알림을 받지 않아요.'
+                  }
+                  checked={settings[`${kind}Enabled`]}
+                  onChange={(value) => patch(`${kind}Enabled`, value)}
+                />
+                <AttendanceTimeField
+                  label={`${kind === 'in' ? '출근' : '퇴근'} 알림 시각`}
+                  required
+                  disabled={!settings[`${kind}Enabled`]}
+                  value={settings[`${kind}Time`]}
+                  onChange={(value) => patch(`${kind}Time`, value)}
+                />
+              </div>
+            ))}
+            <div className="py-5">
+              <h3 className="text-sm font-semibold text-slate-800">
+                알림 받을 요일
+              </h3>
+              <div className="mt-4 grid grid-cols-7 gap-1.5">
+                {'일월화수목금토'.split('').map((label, day) => (
+                  <label key={day} className="relative min-w-0 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      aria-label={`${label}요일 알림`}
+                      className="peer sr-only"
+                      checked={settings.weekdays.includes(day)}
+                      onChange={(event) =>
+                        patch(
+                          'weekdays',
+                          event.target.checked
+                            ? [...settings.weekdays, day]
+                            : settings.weekdays.filter((item) => item !== day)
+                        )
+                      }
+                    />
+                    <span className="flex min-h-11 items-center justify-center rounded-xl bg-slate-100 text-sm font-semibold text-slate-400 transition-colors peer-checked:bg-indigo-600 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-500 peer-focus-visible:ring-offset-2">
+                      {label}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <SettingsToggleRow
+              title="오늘은 알림 받지 않기"
+              description="오늘 하루만 알림을 쉬어요."
               checked={settings.skipDate === seoulDate(new Date())}
-              onCheckedChange={(value) =>
+              onChange={(value) =>
                 patch('skipDate', value ? seoulDate(new Date()) : null)
               }
             />
-          </label>
-          <p className="text-xs leading-6 text-slate-400">
-            종일 휴가는 알림을 쉬어요. 반차인 날은 등록한 출퇴근 예정을
-            사용해요.
+          </div>
+          <p className="bg-slate-50/80 px-5 py-3 text-xs leading-6 text-slate-500 sm:px-6">
+            종일 휴가에는 알림을 쉬고, 반차에는 등록한 출퇴근 예정을 사용해요.
           </p>
         </div>
-        <label className="flex items-center justify-between rounded-2xl border bg-white p-6 text-sm">
-          출퇴근 완료음
-          <Switch
-            checked={settings.sound}
-            onCheckedChange={(value) => patch('sound', value)}
-          />
-        </label>
+        <div className="rounded-3xl border border-slate-200/70 bg-white px-5 sm:px-6">
+          <div className="flex items-center gap-3">
+            <Volume2 className="size-5 shrink-0 text-slate-400" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <SettingsToggleRow
+                title="출퇴근 완료음"
+                description="출퇴근이 기록되면 소리로 알려드려요."
+                checked={settings.sound}
+                onChange={(value) => patch('sound', value)}
+              />
+            </div>
+          </div>
+        </div>
         {error && (
-          <p role="alert" className="text-sm text-red-600">
+          <p
+            role="alert"
+            className="rounded-2xl bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-600"
+          >
             {error}
           </p>
         )}
-        <Button type="submit" disabled={mutation.isPending}>
-          설정 저장
-        </Button>
+        <div className="pt-1">
+          <p className="mb-3 text-center text-xs leading-6 text-slate-400">
+            시간과 알림 변경은 저장한 뒤 적용돼요.
+          </p>
+          <Button
+            type="submit"
+            disabled={mutation.isPending}
+            className="h-13 w-full rounded-2xl bg-indigo-600 text-base font-semibold hover:bg-indigo-700"
+          >
+            {mutation.isPending ? '저장 중…' : '설정 저장'}
+          </Button>
+        </div>
       </form>
     </section>
+  );
+}
+
+function SettingsToggleRow({
+  title,
+  description,
+  checked,
+  onChange,
+}: {
+  title: string;
+  description: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const id = useId();
+
+  return (
+    <label
+      htmlFor={id}
+      className="flex min-h-20 cursor-pointer items-center justify-between gap-4 py-4"
+    >
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold leading-6 text-slate-800">
+          {title}
+        </span>
+        <span
+          id={`${id}-description`}
+          className="mt-0.5 block text-xs leading-5 text-slate-500"
+        >
+          {description}
+        </span>
+      </span>
+      <Switch
+        id={id}
+        aria-label={title}
+        aria-describedby={`${id}-description`}
+        checked={checked}
+        onCheckedChange={onChange}
+        className="shrink-0 data-[state=checked]:bg-indigo-600"
+      />
+    </label>
   );
 }
 

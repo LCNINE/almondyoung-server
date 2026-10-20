@@ -16,6 +16,7 @@ export function AttendanceNavigation() {
     ...(data?.isMaster
       ? [
           ['요청 검토', '/company/attendance/review'],
+          ['월별 통계', '/company/attendance/statistics'],
           ['근무지 설정', '/company/attendance/worksites'],
         ]
       : []),

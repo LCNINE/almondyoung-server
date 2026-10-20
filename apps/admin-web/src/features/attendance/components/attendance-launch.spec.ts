@@ -54,6 +54,7 @@ describe('attendance PWA entry', () => {
         );
 
         expect(html.includes('href="/attendance/review"')).toBe(isMaster);
+        expect(html.includes('href="/attendance/statistics"')).toBe(isMaster);
         expect(html).toContain('오늘의 근무');
         expect(html).toContain('출근하기');
         expect(html).not.toContain('출근음 테스트');

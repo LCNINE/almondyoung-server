@@ -4,6 +4,7 @@ import { USER_SERVICE_BASE_URL } from '@/const/api-const';
 import { client } from '@/lib/api/client';
 import type {
   AttendanceMe,
+  MonthlyAttendanceStatistics,
   AttendanceRequest,
   AttendanceRequestHistory,
   AttendanceSession,
@@ -26,6 +27,13 @@ export interface CorrectionInput {
 }
 
 export const attendanceApi = {
+  monthlyStatistics: async (month: string) =>
+    (
+      await client.get<MonthlyAttendanceStatistics>(
+        `${base}/statistics/monthly`,
+        { params: { month } }
+      )
+    ).data,
   me: async () => (await client.get<AttendanceMe>(`${base}/me`)).data,
   records: async (userId?: string) =>
     (
