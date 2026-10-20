@@ -21,6 +21,7 @@ function layerName(type: Layer["type"]) {
     frame: "모양틀",
     qr: "QR코드",
     clipart: "클립아트",
+    effect: "효과",
     path: "펜 도형",
   }[type]
 }

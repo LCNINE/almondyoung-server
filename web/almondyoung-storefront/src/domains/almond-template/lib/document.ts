@@ -1,3 +1,10 @@
+import {
+  EFFECT_LAYERS,
+  validMotionMask,
+  type EffectKind,
+  type MotionMask,
+} from "./effect-layer"
+import { validPhotoEffects, type PhotoEffects } from "./photo-effects"
 import { PRINT_SPECS, type PrintKind } from "./catalog"
 import { CLIPART_IDS, FRAME_IDS, SHAPE_VARIANTS } from "./art-library"
 import { FILE_IMAGE_REF } from "./image-ref"
@@ -19,6 +26,7 @@ export type Layer = {
     | "heart"
     | "frame"
     | "qr"
+    | "effect"
     | "clipart"
     | "path"
   name: string
@@ -32,6 +40,12 @@ export type Layer = {
   image?: string
   originalImage?: string
   imageFilter?: "grayscale" | "emboss" | "boxblur" | "brightness" | "sepia"
+  effectKind?: EffectKind
+  effectDensity?: number
+  imageMotionMask?: MotionMask
+  photoEffects?: PhotoEffects
+  imageMotionBlur?: number
+  imageMotionMix?: number
   imageTint?: string
   pixelWidth?: number
   pixelHeight?: number
@@ -245,6 +259,7 @@ export function parseDesign(value: unknown): Design {
         "frame",
         "qr",
         "clipart",
+        "effect",
         "path",
       ].includes(layer.type) ||
       typeof layer.id !== "string" ||
@@ -286,6 +301,11 @@ export function parseDesign(value: unknown): Design {
         !["grayscale", "emboss", "boxblur", "brightness", "sepia"].includes(
           layer.imageFilter
         )) ||
+      [layer.imageMotionBlur, layer.imageMotionMix, layer.effectDensity].some(
+        (value) =>
+          value !== undefined &&
+          (!Number.isFinite(value) || value < 0 || value > 100)
+      ) ||
       (layer.pixelWidth !== undefined &&
         (!Number.isFinite(layer.pixelWidth) || layer.pixelWidth < 1)) ||
       (layer.pixelHeight !== undefined &&
@@ -313,6 +333,10 @@ export function parseDesign(value: unknown): Design {
           layer.strokeWidth < 0 ||
           layer.strokeWidth > 50)) ||
       !validEffects(layer) ||
+      !validPhotoEffects(layer.photoEffects) ||
+      !validMotionMask(layer.imageMotionMask) ||
+      (layer.type === "effect" &&
+        !EFFECT_LAYERS.some(([key]) => key === layer.effectKind)) ||
       (layer.type === "path" && !validPath(layer)) ||
       (layer.qrData !== undefined &&
         (typeof layer.qrData !== "string" || layer.qrData.length > 2000)) ||

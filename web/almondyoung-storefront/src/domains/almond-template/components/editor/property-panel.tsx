@@ -1,3 +1,4 @@
+import { EffectProperties } from "./effect-properties"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import { usePropertyPanel } from "../../hooks/use-property-panel"
 import { ImageProperties } from "./image-properties"
@@ -11,6 +12,8 @@ export function PropertyPanel({ editor }: { editor: AlmondEditor }) {
   if (group.length > 1)
     return <GroupProperties editor={editor} panel={panel} inline />
   if (!selected) return null
+  if (selected.type === "effect")
+    return <EffectProperties editor={editor} selected={selected} />
   return selected.type === "image" ? (
     <ImageProperties editor={editor} panel={panel} selected={selected} inline />
   ) : (

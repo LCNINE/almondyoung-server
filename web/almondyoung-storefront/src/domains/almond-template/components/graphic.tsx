@@ -1,3 +1,6 @@
+import { MotionMaskGraphic } from "./motion-mask"
+import { EffectLayerGraphic } from "./effect-layer"
+import { PhotoEffectsGraphic } from "./photo-effects"
 import { Fragment, memo } from "react"
 import {
   SHAPE_TEXT_TYPES,
@@ -452,6 +455,70 @@ function TintFilter({ layer }: { layer: Layer }) {
   )
 }
 
+// 사진의 크기에 비례해 번지므로 편집 화면과 출력물의 효과가 같다.
+function MotionPhoto({ layer, source }: { layer: Layer; source: string }) {
+  const amount = layer.imageMotionBlur ?? 0
+  const mix = (layer.imageMotionMix ?? 60) / 100
+  const active = amount > 0 && mix > 0
+  const id = `motion-${layer.id}`
+  const box = photoBox(layer)
+  const partial =
+    !!layer.imageMotionMask && layer.imageMotionMask.shape !== "full"
+  const maskId = `motion-mask-${layer.id}`
+  const radius = (layer.width * amount) / 2000
+
+  return (
+    <g clipPath={`url(#clip-${layer.id})`}>
+      {active && (
+        <defs>
+          <filter
+            id={id}
+            filterUnits="userSpaceOnUse"
+            x={box.x - radius * 4}
+            y={box.y}
+            width={box.width + radius * 8}
+            height={box.height}
+            colorInterpolationFilters="sRGB"
+          >
+            <feGaussianBlur
+              in="SourceGraphic"
+              stdDeviation={`${radius} 0`}
+              edgeMode="duplicate"
+              result="blurred"
+            />
+            <feComposite
+              in="blurred"
+              in2="SourceGraphic"
+              operator="arithmetic"
+              k2={mix}
+              k3={1 - mix}
+            />
+          </filter>
+        </defs>
+      )}
+      <MotionMaskGraphic layer={layer} id={maskId} />
+      <PhotoEffectsGraphic layer={layer}>
+        {active && partial && (
+          <image
+            href={source}
+            {...box}
+            filter={layer.imageTint ? `url(#tint-${layer.id})` : undefined}
+          />
+        )}
+        <g mask={active && partial ? `url(#${maskId})` : undefined}>
+          <g filter={active ? `url(#${id})` : undefined}>
+            <image
+              href={source}
+              {...box}
+              filter={layer.imageTint ? `url(#tint-${layer.id})` : undefined}
+            />
+          </g>
+        </g>
+      </PhotoEffectsGraphic>
+    </g>
+  )
+}
+
 function LayerGraphicView({ layer }: { layer: Layer }) {
   const imageSrc = useImageSrc()
   // 올린 글꼴은 늦게 도착하므로, 도착하면 잰 폭을 버리고 이 레이어를 다시 그린다
@@ -487,6 +554,7 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
         </defs>
       )}
       <g filter={filterId ? `url(#${filterId})` : undefined}>
+        {layer.type === "effect" && <EffectLayerGraphic layer={layer} />}
         {SHAPE_TEXT_TYPES.has(layer.type) && (
           <ShapeBody layer={layer} paint={paint} />
         )}
@@ -563,12 +631,7 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
               </clipPath>
             </defs>
             <TintFilter layer={layer} />
-            <image
-              href={imageSrc(layer.image)}
-              {...photoBox(layer)}
-              clipPath={`url(#clip-${layer.id})`}
-              filter={layer.imageTint ? `url(#tint-${layer.id})` : undefined}
-            />
+            <MotionPhoto layer={layer} source={imageSrc(layer.image)} />
           </>
         )}
         {layer.type === "frame" && (
@@ -600,11 +663,7 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
               clipPath={`url(#clip-${layer.id})`}
             />
             {layer.image ? (
-              <image
-                href={imageSrc(layer.image)}
-                {...photoBox(layer)}
-                clipPath={`url(#clip-${layer.id})`}
-              />
+              <MotionPhoto layer={layer} source={imageSrc(layer.image)} />
             ) : (
               <text
                 x={cx}

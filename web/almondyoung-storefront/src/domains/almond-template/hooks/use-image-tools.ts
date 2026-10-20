@@ -104,6 +104,10 @@ export function useImageTools({
           pixelHeight,
           originalImage: undefined,
           imageFilter: undefined,
+          crop: undefined,
+          imageScale: undefined,
+          imageOffsetX: undefined,
+          imageOffsetY: undefined,
         })
       else
         setMessage(

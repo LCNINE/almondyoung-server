@@ -1,3 +1,5 @@
+import { PhotoEffectControls } from "./photo-effect-controls"
+import { useRef } from "react"
 import { Link, Unlink, Crop, Eraser } from "lucide-react"
 import type { Layer } from "../../lib/document"
 import { GrayButton } from "./object-properties"
@@ -28,6 +30,7 @@ export function ImageProperties({
   inline?: boolean
 }) {
   const imageSrc = useImageSrc()
+  const replacementInput = useRef<HTMLInputElement>(null)
   const {
     mode,
     selectedLowDpi,
@@ -106,6 +109,27 @@ export function ImageProperties({
         <span className="pb-[10px] text-[14px] text-[#70777F]">mm</span>
       </PropSection>
       <PropSection className="py-5">
+        <input
+          ref={replacementInput}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
+          aria-label="교체할 사진"
+          disabled={disabled}
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            if (file) void editor.imageFile(file, "frame")
+            event.target.value = ""
+          }}
+        />
+        <div className="mb-[10px]">
+          <GrayButton
+            disabled={disabled}
+            onClick={() => replacementInput.current?.click()}
+          >
+            사진 교체
+          </GrayButton>
+        </div>
         <GrayButton
           disabled={disabled}
           onClick={() =>
@@ -218,6 +242,41 @@ export function ImageProperties({
           </SettingBox>
         )}
       </PropSection>
+      <PropSection className="space-y-[15px] py-5">
+        <h3 className="text-[16px] font-medium text-[#20232A]">가로 번짐</h3>
+        <PropSlider
+          label="번짐 강도"
+          min={0}
+          max={100}
+          value={selected.imageMotionBlur ?? 0}
+          disabled={disabled}
+          onValue={(value) => patch(selected.id, { imageMotionBlur: value })}
+        />
+        <PropSlider
+          label="효과 농도"
+          min={0}
+          max={100}
+          value={selected.imageMotionMix ?? 60}
+          disabled={disabled || !(selected.imageMotionBlur ?? 0)}
+          onValue={(value) => patch(selected.id, { imageMotionMix: value })}
+        />
+        <GrayButton
+          disabled={disabled || !(selected.imageMotionBlur ?? 0)}
+          onClick={() =>
+            patch(selected.id, {
+              imageMotionBlur: undefined,
+              imageMotionMix: undefined,
+            })
+          }
+        >
+          번짐 해제
+        </GrayButton>
+        <p className="text-[13px] leading-[19px] text-[#70777F]">
+          사진을 교체해도 번짐 설정은 유지됩니다. 글자와 도형에는 적용되지
+          않습니다.
+        </p>
+      </PropSection>
+      <PhotoEffectControls editor={editor} selected={selected} />
       <OpacitySection
         value={selected.opacity}
         disabled={disabled}
