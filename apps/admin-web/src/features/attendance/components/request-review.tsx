@@ -12,11 +12,8 @@ import {
 import { attendanceApi } from '@/lib/api/domains/attendance';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  ATTENDANCE_KEY,
-  useAttendance,
-  useAttendanceAction,
-} from '../hooks/use-attendance';
+import { ATTENDANCE_KEY, useAttendanceAction } from '../hooks/use-attendance';
+import { useAttendanceAccess } from '../hooks/use-attendance-access';
 import {
   REVIEW_STATUS,
   reviewBucket,
@@ -39,11 +36,11 @@ export function AttendanceRequestReview({
 }: {
   showHeading?: boolean;
 }) {
-  const { data: me } = useAttendance();
+  const { canReview, reviewState } = useAttendanceAccess();
   const query = useQuery({
     queryKey: [...ATTENDANCE_KEY, 'requests', true],
     queryFn: () => attendanceApi.requests(true),
-    enabled: !!me?.isMaster,
+    enabled: canReview,
   });
   const [bucket, setBucket] = useState<ReviewBucket>('pending');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -63,6 +60,32 @@ export function AttendanceRequestReview({
     },
     '요청을 처리했어요.'
   );
+
+  // 권한이 바뀌면 캐시에 남은 요청도 그리지 않는다.
+  if (reviewState.status === 'error') {
+    return (
+      <p role="alert" className="text-sm text-slate-600">
+        권한 정보를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.
+      </p>
+    );
+  }
+
+  if (reviewState.status === 'loading') {
+    return (
+      <Skeleton
+        className="h-48 w-full rounded-2xl"
+        aria-label="권한을 확인하고 있어요."
+      />
+    );
+  }
+
+  if (!canReview) {
+    return (
+      <p role="alert" className="text-sm text-slate-600">
+        출결 요청을 검토할 권한이 없어요.
+      </p>
+    );
+  }
 
   return (
     <section className="min-w-0" aria-busy={query.isPending}>

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { seoulDate } from '@packages/domain-types/attendance';
 import { ATTENDANCE_KEY, useAttendance } from '../hooks/use-attendance';
+import { useAttendanceAccess } from '../hooks/use-attendance-access';
 import { StatisticsPeople } from './statistics-people';
 import { StatisticsBasis, StatisticsSummary } from './statistics-summary';
 
@@ -27,12 +28,13 @@ export function AttendanceStatistics({
   initialMonth?: string;
 }) {
   const me = useAttendance();
+  const { canSeeStatistics, statisticsState } = useAttendanceAccess();
   const currentMonth = seoulDate(new Date()).slice(0, 7);
   const [month, setMonth] = useState(initialMonth ?? currentMonth);
   const query = useQuery({
     queryKey: [...ATTENDANCE_KEY, 'statistics', month],
     queryFn: () => attendanceApi.monthlyStatistics(month),
-    enabled: !!me.data?.isMaster,
+    enabled: canSeeStatistics,
   });
 
   if (me.isError) {
@@ -46,7 +48,15 @@ export function AttendanceStatistics({
     );
   }
 
-  if (me.isPending) {
+  if (statisticsState.status === 'error') {
+    return (
+      <p role="alert">
+        권한 정보를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.
+      </p>
+    );
+  }
+
+  if (me.isPending || statisticsState.status === 'loading') {
     return (
       <Skeleton
         className="h-48 w-full rounded-3xl"
@@ -55,13 +65,13 @@ export function AttendanceStatistics({
     );
   }
 
-  if (!me.data?.isMaster) {
+  if (!canSeeStatistics) {
     return (
       <p
         role="alert"
         className="rounded-2xl border bg-white p-6 text-sm text-slate-600"
       >
-        전체 직원의 월별 통계는 마스터만 볼 수 있어요.
+        전체 직원의 월별 통계를 볼 권한이 없어요.
       </p>
     );
   }

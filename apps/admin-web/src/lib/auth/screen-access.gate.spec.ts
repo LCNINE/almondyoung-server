@@ -85,6 +85,10 @@ const MASTER_ONLY_TODAY = new Set([
   '/company/attendance/review',
   '/company/attendance/worksites',
   '/attendance/review',
+  // 아래 셋은 옛날에 admin 도 들어와 화면 안의 «마스터만» 문구를 보던 곳이다 — 이제 들어오기 전에 막는다(승인된 변화).
+  '/company/attendance/statistics',
+  '/attendance/statistics',
+  '/attendance/worksites',
 ]);
 
 describe('admin·master 화면 결과 불변(승인된 변화 제외)', () => {

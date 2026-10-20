@@ -74,6 +74,18 @@ export class PermissionCache implements OnApplicationBootstrap, OnModuleDestroy 
     return merged;
   }
 
+  /** 이 권한을 가진 역할 이름(정렬). 사본이 없으면 null — «아무도 없음»과 섞지 않는다. */
+  rolesHolding(permission: string): readonly string[] | null {
+    if (!this.current) return null;
+
+    const holders: string[] = [];
+    for (const [role, keys] of this.current.byRole) {
+      if (keys.has(permission)) holders.push(role);
+    }
+
+    return holders.sort();
+  }
+
   status(now = Date.now()): PermissionCacheStatus {
     return {
       state: this.current ? 'ready' : this.source.isConfigured() ? 'cold' : 'disabled',

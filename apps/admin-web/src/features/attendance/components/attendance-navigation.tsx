@@ -2,23 +2,24 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useAttendance } from '../hooks/use-attendance';
+import { useAttendanceAccess } from '../hooks/use-attendance-access';
 
 export function AttendanceNavigation() {
   const pathname = usePathname();
-  const { data } = useAttendance();
+  const { canReview, canSeeStatistics, canManageWorksites } =
+    useAttendanceAccess();
   const links = [
     ['현황', '/company/attendance'],
     ['공유 캘린더', '/company/attendance/calendar'],
     ['내 기록', '/company/attendance/records'],
     ['정정 / 예외', '/company/attendance/requests'],
     ['내 설정', '/company/attendance/settings'],
-    ...(data?.isMaster
-      ? [
-          ['요청 검토', '/company/attendance/review'],
-          ['월별 통계', '/company/attendance/statistics'],
-          ['근무지 설정', '/company/attendance/worksites'],
-        ]
+    ...(canReview ? [['요청 검토', '/company/attendance/review']] : []),
+    ...(canSeeStatistics
+      ? [['월별 통계', '/company/attendance/statistics']]
+      : []),
+    ...(canManageWorksites
+      ? [['근무지 설정', '/company/attendance/worksites']]
       : []),
   ];
 

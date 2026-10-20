@@ -1,5 +1,7 @@
+import { PermissionCache, type Permission } from '@app/authorization';
 import { DbService, InjectDb } from '@app/db';
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { ATTENDANCE_STAFF_PERMISSION, rolesHoldingOrThrow, type RoleHolderLookup } from '../attendance-staff';
 import { and, desc, eq, inArray, isNull, or, gt, sql } from 'drizzle-orm';
 import {
   attendancePreferences,
@@ -21,7 +23,10 @@ import {
 
 @Injectable()
 export class AttendanceRepository {
-  constructor(@InjectDb() private readonly database: DbService<UserServiceSchema>) {}
+  constructor(
+    @InjectDb() private readonly database: DbService<UserServiceSchema>,
+    @Inject(PermissionCache) private readonly roleHolders: RoleHolderLookup,
+  ) {}
 
   get db() {
     return this.database.db;
@@ -35,7 +40,24 @@ export class AttendanceRepository {
     });
   }
 
+  /** 역할별 권한 사본을 받았는가. 받기 전에는 직원·알림 대상을 판정할 수 없다. */
+  permissionsLoaded(): boolean {
+    return this.roleHolders.rolesHolding(ATTENDANCE_STAFF_PERMISSION) !== null;
+  }
+
+  /** 근태 «직원» — 근태 권한을 가진 역할의 보유자(삭제·휴면 제외, 기간이 끝나지 않은 부여). */
   async staff() {
+    return this.holdersOf(ATTENDANCE_STAFF_PERMISSION);
+  }
+
+  /** 이 권한을 가진 역할의 보유자. 권한 사본이 없으면 `AttendanceStaffUnavailableError`. */
+  async holdersOf(permission: Permission): Promise<{ userId: string; name: string }[]> {
+    const roleNames = rolesHoldingOrThrow(this.roleHolders, permission);
+
+    if (roleNames.length === 0) {
+      return [];
+    }
+
     return this.db
       .selectDistinct({ userId: users.id, name: users.username })
       .from(users)
@@ -43,12 +65,43 @@ export class AttendanceRepository {
       .innerJoin(roles, eq(roles.roleId, userRoleAssignments.roleId))
       .where(
         and(
-          inArray(roles.name, ['admin', 'master']),
+          inArray(roles.name, [...roleNames]),
           isNull(users.deletedAt),
           isNull(users.dormantAt),
           or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, new Date())),
         ),
       );
+  }
+
+  /** 이 사람이 지금 근태 직원인가 — 그 사람의 부여만 읽는다. */
+  async isActiveStaff(userId: string | undefined): Promise<boolean> {
+    if (!userId) {
+      return false;
+    }
+
+    const roleNames = rolesHoldingOrThrow(this.roleHolders, ATTENDANCE_STAFF_PERMISSION);
+
+    if (roleNames.length === 0) {
+      return false;
+    }
+
+    const [row] = await this.db
+      .select({ userId: users.id })
+      .from(users)
+      .innerJoin(userRoleAssignments, eq(userRoleAssignments.userId, users.id))
+      .innerJoin(roles, eq(roles.roleId, userRoleAssignments.roleId))
+      .where(
+        and(
+          eq(users.id, userId),
+          inArray(roles.name, [...roleNames]),
+          isNull(users.deletedAt),
+          isNull(users.dormantAt),
+          or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, new Date())),
+        ),
+      )
+      .limit(1);
+
+    return row !== undefined;
   }
 
   async findPunch(tx: UserServiceTx, userId: string, requestId: string) {

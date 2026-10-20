@@ -18,6 +18,7 @@ import {
   useAttendanceAction,
   attendanceError,
 } from '../hooks/use-attendance';
+import { useAttendanceAccess } from '../hooks/use-attendance-access';
 import { describeStatus, formatAttendanceTime } from '../lib/attendance-model';
 import { toast } from 'sonner';
 import {
@@ -33,6 +34,8 @@ import {
 export function AttendanceCard() {
   const query = useAttendance();
   const me = query.data;
+  const { canReview, canSeeStatistics, canManageWorksites, worksitesState } =
+    useAttendanceAccess();
   const punch = useAttendanceAction(attendanceApi.punch);
   const [busy, setBusy] = useState(false);
   const [complete, setComplete] = useState(false);
@@ -300,12 +303,14 @@ export function AttendanceCard() {
               {complete
                 ? '기록이 저장됐어요.'
                 : !me.worksites.length
-                  ? me.isMaster
-                    ? '근무지를 등록하면 출근을 기록할 수 있어요.'
-                    : '관리자가 근무지를 등록하면 출근을 기록할 수 있어요.'
+                  ? worksitesState.status !== 'ready'
+                    ? '근무지가 등록되면 출근을 기록할 수 있어요.'
+                    : canManageWorksites
+                      ? '근무지를 등록하면 출근을 기록할 수 있어요.'
+                      : '관리자가 근무지를 등록하면 출근을 기록할 수 있어요.'
                   : '버튼을 누를 때만 현재 위치를 확인해요.'}
             </p>
-            {me.isMaster && !me.worksites.length && (
+            {canManageWorksites && !me.worksites.length && (
               <Link
                 prefetch={true}
                 href={`${links}/worksites`}
@@ -331,7 +336,7 @@ export function AttendanceCard() {
             <Link prefetch={true} href={`${links}/settings`}>
               알림 설정
             </Link>
-            {me.isMaster && (
+            {canReview && (
               <Link
                 prefetch={true}
                 className="col-span-2"
@@ -340,12 +345,12 @@ export function AttendanceCard() {
                 요청 검토
               </Link>
             )}
-            {me.isMaster && (
+            {canSeeStatistics && (
               <Link className="col-span-2" href={`${links}/statistics`}>
                 월별 통계
               </Link>
             )}
-            {me.isMaster && me.worksites.length > 0 && (
+            {canManageWorksites && me.worksites.length > 0 && (
               <Link className="col-span-2" href={`${links}/worksites`}>
                 근무지 관리
               </Link>

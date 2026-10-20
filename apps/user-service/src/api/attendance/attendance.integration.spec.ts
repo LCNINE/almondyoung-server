@@ -1,6 +1,11 @@
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import { createCheckpointsForTesting } from '@app/authorization';
+import {
+  createCheckpointsForTesting,
+  PermissionCache,
+  RolePermissionSource,
+  type SnapshotFetch,
+} from '@app/authorization';
 import { DbService } from '@app/db';
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { createServer } from 'node:http';
@@ -14,6 +19,9 @@ import {
   userServiceSchema,
 } from '../../../database/drizzle/schema';
 import { AttendanceRepository } from './repositories/attendance.repository';
+import { IamRepository } from '../iam/iam.repository';
+import { PermissionCatalogSyncManager } from '../iam/permission-catalog-sync.manager';
+import { RolePermissionsReader } from '../iam/role-permissions.reader';
 import { AttendanceService } from './services/attendance.service';
 import { AttendanceStatisticsService } from './services/attendance-statistics.service';
 import { AttendanceCalendarService } from './services/attendance-calendar.service';
@@ -29,6 +37,26 @@ const other = '00000000-0000-4000-8000-000000000002';
 const master = '00000000-0000-4000-8000-000000000003';
 const site = '00000000-0000-4000-8000-000000000004';
 
+/** 운영과 같은 경로로 사본을 만든다 — 권한 목록 동기화(첫 부여) → 역할별 스냅샷 → 사본. */
+class DatabaseRolePermissionSource extends RolePermissionSource {
+  constructor(private readonly reader: RolePermissionsReader) {
+    super();
+  }
+
+  isConfigured(): boolean {
+    return true;
+  }
+
+  async fetch(): Promise<SnapshotFetch> {
+    const snapshot = await this.reader.snapshot();
+
+    return {
+      status: 'loaded',
+      snapshot: { version: snapshot.version, roles: new Map(Object.entries(snapshot.roles)) },
+    };
+  }
+}
+
 run('attendance PostgreSQL transactions', () => {
   let container: StartedPostgreSqlContainer;
   let database: DbService<typeof userServiceSchema>;
@@ -36,6 +64,7 @@ run('attendance PostgreSQL transactions', () => {
   let service: AttendanceService;
   let calendar: AttendanceCalendarService;
   let requests: AttendanceRequestManager;
+  let permissionCache: PermissionCache;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer('postgres:16-alpine').start();
@@ -44,7 +73,18 @@ run('attendance PostgreSQL transactions', () => {
 
     await migrate(database.db, { migrationsFolder: 'apps/user-service/database/drizzle' });
 
-    repo = new AttendanceRepository(database);
+    permissionCache = new PermissionCache(
+      new DatabaseRolePermissionSource(new RolePermissionsReader(new IamRepository(database))),
+      {
+        service: 'user-service',
+        enforce: false,
+        refreshIntervalMs: 30000,
+        retryBaseMs: 1000,
+        summaryIntervalMs: 300000,
+      },
+    );
+
+    repo = new AttendanceRepository(database, permissionCache);
 
     service = new AttendanceService(repo);
 
@@ -69,7 +109,13 @@ run('attendance PostgreSQL transactions', () => {
       (${master}, 'master', '마스터', 'master', 'master@example.test');
     `);
 
-    await database.db.execute(sql`INSERT INTO roles (name) VALUES ('admin'), ('master')`);
+    await database.db.execute(sql`INSERT INTO roles (name) VALUES ('admin'), ('master'), ('intern')`);
+
+    await database.db.execute(sql`TRUNCATE iam_permissions CASCADE`);
+
+    await new PermissionCatalogSyncManager(new IamRepository(database), database).sync();
+
+    await permissionCache.refresh();
 
     await database.db.execute(sql`
       INSERT INTO user_roles (user_id, role_id)
@@ -80,6 +126,85 @@ run('attendance PostgreSQL transactions', () => {
 
     await database.db.execute(
       sql`INSERT INTO attendance_worksites (id, name, latitude, longitude, radius_meters, accuracy_meters) VALUES (${site}, '본사', '37.5', '127', 150, 50)`,
+    );
+  });
+
+  it('keeps the staff set equal to admin and master holders under the first-grant permissions', async () => {
+    expect(permissionCache.rolesHolding('attendance.own.write')).toEqual(['admin', 'master']);
+    expect(permissionCache.rolesHolding('attendance.request.review')).toEqual(['master']);
+
+    const intern = '00000000-0000-4000-8000-000000000011';
+    const expired = '00000000-0000-4000-8000-000000000012';
+    const dormant = '00000000-0000-4000-8000-000000000013';
+
+    await database.db.execute(sql`
+      INSERT INTO users (id, login_id, username, nickname, email, dormant_at) VALUES
+      (${intern}, 'intern', '인턴', 'intern', 'intern@example.test', NULL),
+      (${expired}, 'expired', '만료', 'expired', 'expired@example.test', NULL),
+      (${dormant}, 'dormant', '휴면', 'dormant', 'dormant@example.test', now())
+    `);
+
+    await database.db.execute(sql`
+      INSERT INTO user_roles (user_id, role_id, expires_at)
+      SELECT u.id, r.role_id, CASE WHEN u.id = ${expired} THEN now() - interval '1 day' ELSE NULL END
+      FROM users u JOIN roles r ON
+        (u.id = ${intern} AND r.name = 'intern') OR (u.id IN (${expired}, ${dormant}) AND r.name = 'admin')
+    `);
+
+    const legacy = await database.db.execute<{ id: string }>(sql`
+      SELECT DISTINCT u.id FROM users u
+      JOIN user_roles ur ON ur.user_id = u.id
+      JOIN roles r ON r.role_id = ur.role_id
+      WHERE r.name IN ('admin', 'master') AND u.deleted_at IS NULL AND u.dormant_at IS NULL
+        AND (ur.expires_at IS NULL OR ur.expires_at > now())
+    `);
+    const legacyIds = [...legacy].map((row) => row.id).sort();
+
+    const staffIds = (await repo.staff()).map((person) => person.userId).sort();
+
+    expect(staffIds).toEqual(legacyIds);
+    expect(staffIds).toEqual([owner, other, master].sort());
+
+    for (const id of [owner, other, master]) {
+      await expect(repo.isActiveStaff(id)).resolves.toBe(true);
+    }
+
+    for (const id of [intern, expired, dormant]) {
+      await expect(repo.isActiveStaff(id)).resolves.toBe(false);
+    }
+
+    expect((await repo.holdersOf('attendance.request.review')).map((person) => person.userId)).toEqual([master]);
+  });
+
+  it('follows grants changed after the first registration', async () => {
+    const intern = '00000000-0000-4000-8000-000000000011';
+
+    await database.db.execute(sql`
+      INSERT INTO users (id, login_id, username, nickname, email)
+      VALUES (${intern}, 'intern', '인턴', 'intern', 'intern@example.test')
+    `);
+    await database.db.execute(sql`
+      INSERT INTO user_roles (user_id, role_id) SELECT ${intern}, role_id FROM roles WHERE name = 'intern'
+    `);
+
+    // intern 에게 근태 직원 권한을, admin 에게 검토 권한을 주고 admin 의 근태 직원 권한은 거둔다.
+    await database.db.execute(sql`
+      INSERT INTO iam_role_permissions (role_id, permission_key)
+      SELECT role_id, 'attendance.own.write' FROM roles WHERE name = 'intern'
+      UNION ALL SELECT role_id, 'attendance.request.review' FROM roles WHERE name = 'admin'
+    `);
+    await database.db.execute(sql`
+      DELETE FROM iam_role_permissions
+      WHERE permission_key = 'attendance.own.write' AND role_id = (SELECT role_id FROM roles WHERE name = 'admin')
+    `);
+
+    await permissionCache.refresh();
+
+    expect((await repo.staff()).map((person) => person.userId).sort()).toEqual([intern, master].sort());
+    await expect(repo.isActiveStaff(owner)).resolves.toBe(false);
+    await expect(repo.isActiveStaff(intern)).resolves.toBe(true);
+    expect((await repo.holdersOf('attendance.request.review')).map((person) => person.userId).sort()).toEqual(
+      [owner, other, master].sort(),
     );
   });
 

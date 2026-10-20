@@ -37,8 +37,11 @@ export const SCREEN_ACCESS: Readonly<Record<string, ScreenAccess>> = {
   '/company/attendance': any('attendance.own.write'),
   '/company/attendance/review': any('attendance.request.review'),
   '/company/attendance/worksites': any('attendance.worksite.write'),
+  '/company/attendance/statistics': any('attendance.statistics.read'),
   '/attendance': any('attendance.own.write'),
   '/attendance/review': any('attendance.request.review'),
+  '/attendance/statistics': any('attendance.statistics.read'),
+  '/attendance/worksites': any('attendance.worksite.write'),
 
   // 채널/고객
   '/account/customer': any('customer.profile.read'),

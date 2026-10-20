@@ -1,4 +1,4 @@
-import { reminderDue } from './attendance-jobs.service';
+import { AttendanceJobsService, reminderDue } from './attendance-jobs.service';
 import { DEFAULT_ATTENDANCE_SETTINGS } from '@packages/domain-types/attendance';
 
 describe('attendance reminder conditions', () => {
@@ -50,5 +50,23 @@ describe('attendance reminder conditions', () => {
 
   it('does not send a reminder after its scheduled minute', () => {
     expect(reminderDue('out', { ...context, clock: '18:01' })).toBe(false);
+  });
+});
+
+describe('attendance job recipients', () => {
+  it('skips the run while the permission copy is missing', async () => {
+    const repo = {
+      get db(): never {
+        throw new Error('this test does not touch the database');
+      },
+      permissionsLoaded: () => false,
+      staff: () => Promise.reject(new Error('this test must not resolve staff')),
+      holdersOf: () => Promise.reject(new Error('this test must not resolve recipients')),
+      settings: () => Promise.reject(new Error('this test does not read settings')),
+      withUserLock: () => Promise.reject(new Error('this test does not lock')),
+    };
+    const service = new AttendanceJobsService(repo);
+
+    await expect(service.tick()).resolves.toBeUndefined();
   });
 });

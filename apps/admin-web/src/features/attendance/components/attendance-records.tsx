@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { attendanceApi } from '@/lib/api/domains/attendance';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ATTENDANCE_KEY, useAttendance } from '../hooks/use-attendance';
+import { useAttendanceAccess } from '../hooks/use-attendance-access';
 import { formatAttendanceTime } from '../lib/attendance-model';
 
 export function AttendanceRecords({
@@ -13,13 +14,14 @@ export function AttendanceRecords({
   showHeading?: boolean;
 }) {
   const me = useAttendance();
+  const { canReadStaff } = useAttendanceAccess();
   const [selectedUserId, setSelectedUserId] = useState('');
-  const userId = me.data?.isMaster ? selectedUserId || undefined : undefined;
+  const userId = canReadStaff ? selectedUserId || undefined : undefined;
 
   const people = useQuery({
     queryKey: [...ATTENDANCE_KEY, 'overview'],
     queryFn: attendanceApi.overview,
-    enabled: !!me.data?.isMaster,
+    enabled: canReadStaff,
   });
   const query = useQuery({
     queryKey: [...ATTENDANCE_KEY, 'records', userId ?? 'me'],
@@ -48,7 +50,7 @@ export function AttendanceRecords({
           출근일을 기준으로 최근 90개 근무 기록을 보여줘요.
         </p>
       </div>
-      {me.data?.isMaster && (
+      {canReadStaff && (
         <div className="space-y-3" aria-busy={people.isPending}>
           <label className="block space-y-2 text-sm">
             기록을 볼 직원
@@ -60,7 +62,7 @@ export function AttendanceRecords({
             >
               <option value="">내 기록</option>
               {people.data?.people
-                .filter((person) => person.userId !== me.data.userId)
+                .filter((person) => person.userId !== me.data?.userId)
                 .map((person) => (
                   <option key={person.userId} value={person.userId}>
                     {person.name}

@@ -8,6 +8,10 @@ import {
 } from '@packages/domain-types/attendance';
 import { SharedCalendar } from './shared-calendar';
 import MobileCalendarPage from '../../../app/attendance/calendar/page';
+import {
+  ATTENDANCE_MANAGER_PERMISSIONS,
+  seedPermissions,
+} from '../testing/seed-permissions';
 
 describe('attendance calendar audience and edit controls', () => {
   beforeEach(() => {
@@ -34,7 +38,8 @@ describe('attendance calendar audience and edit controls', () => {
       leave: null,
       settings: DEFAULT_ATTENDANCE_SETTINGS,
       worksites: [],
-      isMaster: true,
+      // 옛 표식은 반대로 둔다 — 화면은 권한만 본다.
+      isMaster: false,
     };
     const leaves: CalendarLeave[] = [
       {
@@ -59,6 +64,7 @@ describe('attendance calendar audience and edit controls', () => {
     ];
 
     client.setQueryData(['attendance', 'me'], me);
+    seedPermissions(client, ATTENDANCE_MANAGER_PERMISSIONS);
     client.setQueryData(['attendance', 'calendar', '2026-10'], leaves);
 
     try {
