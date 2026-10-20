@@ -1,11 +1,16 @@
 'use client';
 
 import { useState } from 'react';
+import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { sanitizeNoticeHtml } from '@/lib/utils/sanitize-notice-html';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
-import { DEFAULT_MOBILE_WIDTH, DEFAULT_PC_WIDTH, type SitePopupFormValue } from '../../form';
+import {
+  DEFAULT_MOBILE_WIDTH,
+  DEFAULT_PC_WIDTH,
+  type SitePopupFormValue,
+} from '../../form';
 
 type Device = 'pc' | 'mobile';
 
@@ -20,7 +25,8 @@ export function PopupPreview({ value }: { value: SitePopupFormValue }) {
     device === 'pc'
       ? (toSize(value.pcWidth) ?? DEFAULT_PC_WIDTH)
       : (toSize(value.mobileWidth) ?? DEFAULT_MOBILE_WIDTH);
-  const height = device === 'pc' ? toSize(value.pcHeight) : toSize(value.mobileHeight);
+  const height =
+    device === 'pc' ? toSize(value.pcHeight) : toSize(value.mobileHeight);
 
   const imageFileId =
     device === 'pc'
@@ -54,16 +60,27 @@ export function PopupPreview({ value }: { value: SitePopupFormValue }) {
 
       <div className="bg-muted/40 flex justify-center overflow-auto rounded-md border p-4">
         <div
-          className="bg-background flex shrink-0 flex-col overflow-hidden rounded-lg border shadow-lg"
-          style={{ width, height: height ?? undefined, maxWidth: '100%' }}
+          className="bg-background flex shrink-0 flex-col overflow-hidden rounded-2xl shadow-xl"
+          style={{ width, maxWidth: '100%' }}
         >
-          <div className="border-b px-5 py-4">
-            <p className="text-base leading-snug font-bold">
+          <div className="flex items-start gap-2 px-5 pt-5 pb-3">
+            <p className="flex-1 text-lg leading-snug font-bold break-keep">
               {value.title.trim() || '(제목 없음)'}
             </p>
+            <X
+              className="text-muted-foreground mt-0.5 size-5 shrink-0"
+              aria-hidden="true"
+            />
           </div>
 
-          <div className="min-h-0 flex-1 overflow-auto">
+          <div
+            className="min-h-0 flex-1 overflow-auto"
+            style={
+              value.contentType === 'image'
+                ? { height: height ?? undefined }
+                : { maxHeight: height ?? undefined }
+            }
+          >
             {value.contentType === 'image' ? (
               imageSrc ? (
                 // file-service 프록시 경유 임의 이미지라 next/image 대신 img 사용
@@ -72,7 +89,11 @@ export function PopupPreview({ value }: { value: SitePopupFormValue }) {
                   src={imageSrc}
                   alt={value.imageAlt || value.title}
                   className="block w-full"
-                  style={height ? { height: '100%', objectFit: 'contain' } : undefined}
+                  style={
+                    height
+                      ? { height: '100%', objectFit: 'contain' }
+                      : undefined
+                  }
                 />
               ) : (
                 <div className="text-muted-foreground p-6 text-center text-sm">
@@ -81,30 +102,41 @@ export function PopupPreview({ value }: { value: SitePopupFormValue }) {
               )
             ) : (
               <div
-                className="prose prose-sm max-w-none px-5 py-4 text-[15px] leading-7"
-                dangerouslySetInnerHTML={{ __html: sanitizeNoticeHtml(value.content) }}
+                className="prose prose-sm text-foreground max-w-none px-5 pb-5 text-[15px] leading-7 break-keep"
+                dangerouslySetInnerHTML={{
+                  __html: sanitizeNoticeHtml(value.content),
+                }}
               />
             )}
           </div>
 
-          <div className="flex items-center justify-between border-t px-5 py-3">
-            <span className="text-muted-foreground text-[13px]">
-              {value.dismissMode === 'none'
-                ? ''
-                : value.dismissMode === 'today'
-                  ? '오늘 하루 보지 않기'
-                  : `${value.dismissDays || 'N'}일간 보지 않기`}
-            </span>
+          <div className="pointer-events-none flex flex-col gap-3 px-5 pt-3 pb-4">
             <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                className="h-12 flex-1 rounded-xl text-base"
+                tabIndex={-1}
+              >
+                닫기
+              </Button>
               {value.noticeId && (
-                <Button type="button" size="sm" variant="outline" disabled>
+                <Button
+                  type="button"
+                  className="h-12 flex-1 rounded-xl text-base"
+                  tabIndex={-1}
+                >
                   자세히 보기
                 </Button>
               )}
-              <Button type="button" size="sm" disabled>
-                닫기
-              </Button>
             </div>
+            {value.dismissMode !== 'none' && (
+              <span className="text-muted-foreground self-center text-sm">
+                {value.dismissMode === 'today'
+                  ? '이 팝업 오늘 그만 보기'
+                  : `이 팝업 ${value.dismissDays || 'N'}일간 보지 않기`}
+              </span>
+            )}
           </div>
         </div>
       </div>
