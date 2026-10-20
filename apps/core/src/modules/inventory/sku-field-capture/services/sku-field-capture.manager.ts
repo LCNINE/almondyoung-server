@@ -42,6 +42,7 @@ export class SkuFieldCaptureManager {
 
   async removePhoto(skuId: string, photoId: string, tx?: DbTx): Promise<void> {
     return this.dbService.run(async (trx) => {
+      await this.lockSku(trx, skuId);
       const deleted = await trx
         .delete(wmsTables.skuReferencePhotos)
         .where(and(eq(wmsTables.skuReferencePhotos.id, photoId), eq(wmsTables.skuReferencePhotos.skuId, skuId)))
@@ -119,10 +120,17 @@ export class SkuFieldCaptureManager {
   }
 
   private async assertSkuExists(trx: DbTx, skuId: string): Promise<void> {
+    const sku = await this.lockSku(trx, skuId);
+    if (!sku || sku.isDeleted) throw new NotFoundError(`SKU 를 찾을 수 없습니다: ${skuId}`);
+  }
+
+  // 사진 연결·삭제·완료를 SKU 행 잠금으로 줄 세운다 — 완료가 센 사진 수와 sortOrder 가 동시 삭제·추가에 어긋나지 않게
+  private async lockSku(trx: DbTx, skuId: string): Promise<{ isDeleted: boolean } | undefined> {
     const [sku] = await trx
-      .select({ id: wmsTables.skus.id })
+      .select({ isDeleted: wmsTables.skus.isDeleted })
       .from(wmsTables.skus)
-      .where(and(eq(wmsTables.skus.id, skuId), eq(wmsTables.skus.isDeleted, false)));
-    if (!sku) throw new NotFoundError(`SKU 를 찾을 수 없습니다: ${skuId}`);
+      .where(eq(wmsTables.skus.id, skuId))
+      .for('update');
+    return sku;
   }
 }
