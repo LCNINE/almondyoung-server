@@ -74,3 +74,7 @@ export class FieldCaptureProgressDto {
   @ApiProperty() barcodeConflictSkus!: number;
   @ApiProperty({ type: () => [WorkerProgressDto] }) workers!: WorkerProgressDto[];
 }
+
+export class MyTodayDto {
+  @ApiProperty() today!: number;
+}

@@ -1999,6 +1999,10 @@ export interface WorkerProgressDto {
   total: number;
 }
 
+export interface MyTodayDto {
+  today: number;
+}
+
 export interface FieldCaptureProgressDto {
   remainingSkus: number;
   completedSkus: number;

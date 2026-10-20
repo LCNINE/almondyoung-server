@@ -165,5 +165,6 @@ export const fieldCaptureKeys = {
   detail: (skuId: string) => ['sku-field-capture', 'detail', skuId] as const,
   barcodeOwners: ['sku-field-capture', 'barcode-owner'] as const,
   barcodeOwner: (barcode: string) => ['sku-field-capture', 'barcode-owner', barcode] as const,
+  myToday: ['sku-field-capture', 'me', 'today'] as const,
   search: (term: string) => ['sku-field-capture', 'search', term] as const,
 };

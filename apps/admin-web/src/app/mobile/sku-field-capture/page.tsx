@@ -59,9 +59,20 @@ function FieldCaptureEntry() {
           prominent
         />
       </section>
+      <MyToday />
       <NameSearch onOpenSku={openSku} />
     </div>
   );
+}
+
+// 오늘 내가 끝낸 수 — 못 불러오면 아무것도 그리지 않는다(작업을 막지 않는다)
+function MyToday() {
+  const { data } = useQuery({
+    queryKey: fieldCaptureKeys.myToday,
+    queryFn: () => skuFieldCaptureClient.getMyToday(),
+  });
+  if (!data) return null;
+  return <p className="text-center text-sm text-gray-600">오늘 내가 끝낸 상품 {data.today}개</p>;
 }
 
 // ② 선반의 상품 목록

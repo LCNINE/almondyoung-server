@@ -7,6 +7,7 @@ import type {
   CompleteFieldCaptureRequest,
   FieldCaptureDetailDto,
   FieldCaptureProgressDto,
+  MyTodayDto,
   ShelfPositionDto,
 } from '../../../types/dto/inventory';
 
@@ -26,5 +27,6 @@ export const skuFieldCaptureClient = {
     (await client.delete(`${BASE}/skus/${seg(skuId)}/photos/${seg(photoId)}`)).data,
   complete: async (skuId: string, body: CompleteFieldCaptureRequest): Promise<FieldCaptureDetailDto> =>
     (await client.put(`${BASE}/skus/${seg(skuId)}/capture`, body)).data,
+  getMyToday: async (): Promise<MyTodayDto> => (await client.get(`${BASE}/me/today`)).data,
   getProgress: async (): Promise<FieldCaptureProgressDto> => (await client.get(`${BASE}/progress`)).data,
 };

@@ -7,6 +7,7 @@ import type {
   BarcodeOwnerDto,
   FieldCaptureDetailDto,
   FieldCaptureProgressDto,
+  MyTodayDto,
   ShelfPositionDto,
 } from '../dto/sku-field-capture.dto';
 
@@ -31,6 +32,10 @@ export class SkuFieldCaptureService {
 
   getProgress(): Promise<FieldCaptureProgressDto> {
     return this.reader.getProgress();
+  }
+
+  async getMyToday(actor: FieldCaptureActor): Promise<MyTodayDto> {
+    return { today: await this.reader.countWorkerToday(actor.workerId) };
   }
 
   async attachPhoto(skuId: string, fileId: string, actor: FieldCaptureActor): Promise<FieldCaptureDetailDto> {

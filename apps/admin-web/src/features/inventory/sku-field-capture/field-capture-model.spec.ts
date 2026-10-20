@@ -173,6 +173,10 @@ describe('fieldCaptureKeys', () => {
     expect(fieldCaptureKeys.position('X').slice(0, 2)).toEqual([...fieldCaptureKeys.positions]);
     expect(fieldCaptureKeys.positions).not.toContain(undefined);
   });
+  it('myToday 키는 정해진 모양이고 undefined 가 없다', () => {
+    expect(fieldCaptureKeys.myToday).toEqual(['sku-field-capture', 'me', 'today']);
+    expect(fieldCaptureKeys.myToday).not.toContain(undefined);
+  });
   it('바코드 주인 무효화 키는 주인 키의 접두사', () =>
     expect(fieldCaptureKeys.barcodeOwner('880').slice(0, 2)).toEqual([...fieldCaptureKeys.barcodeOwners]));
 });

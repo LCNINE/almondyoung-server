@@ -93,6 +93,7 @@ function CaptureForm({ detail }: { detail: FieldCaptureDetailDto }) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: fieldCaptureKeys.positions }),
         queryClient.invalidateQueries({ queryKey: fieldCaptureKeys.barcodeOwners }),
+        queryClient.invalidateQueries({ queryKey: fieldCaptureKeys.myToday }),
       ]);
       toast.success(`${d.name} 완료`);
       router.push(BASE);

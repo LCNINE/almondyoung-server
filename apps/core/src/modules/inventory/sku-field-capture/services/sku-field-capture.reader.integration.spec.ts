@@ -1,6 +1,6 @@
 import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { DbService } from '@app/db';
 import { NotFoundError } from '@app/shared';
@@ -200,6 +200,37 @@ describeIfDb('SkuFieldCaptureReader (DB integration)', () => {
       const after = await reader.getProgress(trx);
       expect(after.stickerNeededSkus - before.stickerNeededSkus).toBe(1);
       expect(after.barcodeConflictSkus - before.barcodeConflictSkus).toBe(1);
+    });
+  });
+
+  it('countWorkerToday 는 그 작업자가 오늘 완료한 SKU 를 중복 없이 센다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const { reader, manager } = build(trx);
+      const a = await seed(trx);
+      const b = await seed(trx);
+      const c = await seed(trx);
+      const me = { workerId: randomUUID(), workerLabel: 'me' };
+      const other = { workerId: randomUUID(), workerLabel: 'other' };
+      await complete(manager, a, trx, me);
+      await complete(manager, a, trx, me);
+      await complete(manager, b, trx, me);
+      await complete(manager, c, trx, other);
+      expect(await reader.countWorkerToday(me.workerId, trx)).toBe(2);
+      expect(await reader.countWorkerToday(other.workerId, trx)).toBe(1);
+    });
+  });
+
+  it('countWorkerToday 는 어제 완료는 세지 않는다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const { reader, manager } = build(trx);
+      const a = await seed(trx);
+      const me = { workerId: randomUUID(), workerLabel: 'me' };
+      await complete(manager, a, trx, me);
+      await trx
+        .update(wmsTables.skuFieldCaptureEvents)
+        .set({ completedAt: sql`now() - interval '1 day'` })
+        .where(eq(wmsTables.skuFieldCaptureEvents.workerId, me.workerId));
+      expect(await reader.countWorkerToday(me.workerId, trx)).toBe(0);
     });
   });
 });

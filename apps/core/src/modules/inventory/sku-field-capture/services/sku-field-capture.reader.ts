@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, count, desc, eq, gt, inArray, isNotNull, notInArray, sql } from 'drizzle-orm';
-import { alias } from 'drizzle-orm/pg-core';
+import { alias, AnyPgColumn } from 'drizzle-orm/pg-core';
 import { NotFoundError } from '@app/shared';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
@@ -19,6 +19,10 @@ function asBarcodeStatus(raw: string): FieldCaptureBarcodeStatus {
   if (raw === 'scanned' || raw === 'no_manufacturer' || raw === 'none') return raw;
   throw new Error(`unexpected barcode_status: ${raw}`);
 }
+
+/** 「오늘」은 KST. getProgress 의 작업자별 today 와 countWorkerToday 가 같은 식을 쓴다. */
+const completedTodayKst = (completedAt: AnyPgColumn) =>
+  sql`(${completedAt} at time zone 'Asia/Seoul')::date = (now() at time zone 'Asia/Seoul')::date`;
 
 @Injectable()
 export class SkuFieldCaptureReader {
@@ -153,6 +157,17 @@ export class SkuFieldCaptureReader {
     }, tx);
   }
 
+  async countWorkerToday(workerId: string, tx?: DbTx): Promise<number> {
+    return this.dbService.run(async (trx) => {
+      const ev = wmsTables.skuFieldCaptureEvents;
+      const [row] = await trx
+        .select({ n: sql<number>`count(distinct ${ev.skuId})`.mapWith(Number) })
+        .from(ev)
+        .where(and(eq(ev.workerId, workerId), completedTodayKst(ev.completedAt)));
+      return row?.n ?? 0;
+    }, tx);
+  }
+
   async getProgress(tx?: DbTx): Promise<FieldCaptureProgressDto> {
     return this.dbService.run(async (trx) => {
       const stocked = trx
@@ -194,7 +209,7 @@ export class SkuFieldCaptureReader {
           workerId: ev.workerId,
           workerLabel: sql<string>`(array_agg(${ev.workerLabel} order by ${ev.completedAt} desc, ${ev.id} desc))[1]`,
           today:
-            sql<number>`count(distinct ${ev.skuId}) filter (where (${ev.completedAt} at time zone 'Asia/Seoul')::date = (now() at time zone 'Asia/Seoul')::date)`.mapWith(
+            sql<number>`count(distinct ${ev.skuId}) filter (where ${completedTodayKst(ev.completedAt)})`.mapWith(
               Number,
             ),
           total: sql<number>`count(distinct ${ev.skuId})`.mapWith(Number),

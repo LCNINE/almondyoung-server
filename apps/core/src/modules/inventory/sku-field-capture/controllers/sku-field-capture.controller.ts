@@ -7,7 +7,7 @@ import { SkuFieldCaptureService } from '../services/sku-field-capture.service';
 import { fieldCaptureActorOf } from '../sku-field-capture.rules';
 import { AttachReferencePhotoDto } from '../dto/attach-reference-photo.dto';
 import { CompleteFieldCaptureDto } from '../dto/complete-field-capture.dto';
-import { FieldCaptureDetailDto, FieldCaptureProgressDto, ShelfPositionDto } from '../dto/sku-field-capture.dto';
+import { FieldCaptureDetailDto, FieldCaptureProgressDto, MyTodayDto, ShelfPositionDto } from '../dto/sku-field-capture.dto';
 
 type CaptureUser = NonNullable<WarehouseActor> & { email?: string; login_id?: string };
 
@@ -24,6 +24,15 @@ export class SkuFieldCaptureController {
   @ApiResponse({ status: 200, type: FieldCaptureProgressDto })
   getProgress(): Promise<FieldCaptureProgressDto> {
     return this.service.getProgress();
+  }
+
+  @RequirePermission('inventory.stock.read')
+  @Get('me/today')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
+  @ApiOperation({ summary: '내가 오늘 끝낸 SKU 수(작업자 본인)' })
+  @ApiResponse({ status: 200, type: MyTodayDto })
+  getMyToday(@User() user: CaptureUser): Promise<MyTodayDto> {
+    return this.service.getMyToday(fieldCaptureActorOf(user));
   }
 
   @RequirePermission('inventory.stock.read')
