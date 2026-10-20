@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
 import { eq } from 'drizzle-orm';
 import { DbTx, SalesOrderLine, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
+import { readLineQuantities } from '../../sales-order/line-quantities/line-quantities.reader';
 import { ProductSkuMappingService } from '../services/product-sku-mapping.service';
 import {
   CompositionItem,
@@ -11,11 +12,10 @@ import {
   resolveLineComposition,
 } from './line-composition';
 import { selectFrozenCompositions } from './frozen-compositions';
-import { sumCancelledByLine } from './partial-cancellation';
 
 export interface ResolvedSalesOrderLine {
   line: SalesOrderLine;
-  /** 주문 수량 − 부분 취소. 0 이하면 FO 대상이 아니다 */
+  /** 주문 수량 − 출고 전 취소(K6 라인 수량 문의 `demand`). 0 이하면 FO 대상이 아니다 */
   fulfillableQuantity: number;
   resolution: LineCompositionResolution;
 }
@@ -45,20 +45,21 @@ export class LineCompositionReader {
         lines.map((line) => line.id),
       );
 
-      const cancellations = await trx
-        .select({ metadata: wmsTables.salesOrderCancellations.metadata })
-        .from(wmsTables.salesOrderCancellations)
-        .where(eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId));
-      const cancelledByLine = sumCancelledByLine(cancellations.map((c) => c.metadata));
+      // 출고 뒤 취소는 이미 나간 수량이라 새 FO 수량에서 빼지 않는다(E2) — 문이 SQL 로 낸 demand 를 그대로 쓴다
+      const quantitiesByLine = await readLineQuantities(trx, salesOrderId);
 
       const resolved: ResolvedSalesOrderLine[] = [];
       for (const line of lines) {
         // 굳힌 라인·디지털 라인은 상품매칭을 읽지 않는다 — 판정에 안 쓰는 조회를 줄인다
-        const needsMatching = line.compositionSource === null && !isDigitalFulfillmentLine(line) && !isOutsourcedLine(line);
+        const needsMatching =
+          line.compositionSource === null && !isDigitalFulfillmentLine(line) && !isOutsourcedLine(line);
         const matching = needsMatching ? await this.productSkuMapping.getByVariant(line.variantId, trx) : null;
+        const quantities = quantitiesByLine.get(line.id);
+        // 같은 트랜잭션에서 같은 주문의 라인을 읽었으니 빠질 수 없다 — 빠졌다면 결함이라 주문 수량으로 덮지 않는다
+        if (!quantities) throw new Error(`라인 수량 문에 판매 라인이 없다: ${line.id} (sales order ${salesOrderId})`);
         resolved.push({
           line,
-          fulfillableQuantity: line.quantity - (cancelledByLine.get(line.id) ?? 0),
+          fulfillableQuantity: quantities.demand,
           resolution: resolveLineComposition(line, frozenByLine.get(line.id) ?? [], matching),
         });
       }
