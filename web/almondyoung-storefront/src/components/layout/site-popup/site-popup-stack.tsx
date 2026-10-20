@@ -77,17 +77,19 @@ export function SitePopupStack({ popups, countryCode }: Props) {
 
   const { width, height } = resolvePopupStackSize(popups, path, isDesktop)
 
-  const body =
-    current.contentType === "image" ? (
-      <PopupImage popup={current} isDesktop={isDesktop} />
-    ) : (
-      <div
-        className="rich-text-content text-muted-foreground px-6 py-5 text-[15px] leading-7"
-        dangerouslySetInnerHTML={{
-          __html: sanitizeNoticeHtml(current.content ?? ""),
-        }}
-      />
-    )
+  const isText = current.contentType !== "image"
+  const body = isText ? (
+    <div
+      className="rich-text-content text-foreground px-5 pb-5 text-[15px] leading-7 break-keep"
+      dangerouslySetInnerHTML={{
+        __html: sanitizeNoticeHtml(current.content ?? ""),
+      }}
+    />
+  ) : (
+    <PopupImage popup={current} isDesktop={isDesktop} />
+  )
+  const closeLabel = queue.length > 1 ? t("closeAll") : t("close")
+
   return (
     <Dialog
       open
@@ -97,36 +99,72 @@ export function SitePopupStack({ popups, countryCode }: Props) {
     >
       <DialogContent
         showCloseButton={false}
-        className="flex max-h-[90vh] flex-col gap-0 border-0 bg-transparent p-0 shadow-none sm:max-w-none"
+        className="flex max-h-[90vh] flex-col gap-0 overflow-hidden rounded-2xl border-0 p-0 shadow-xl sm:max-w-none"
         // 크기는 관리자가 px 로 정하는 값이라 클래스로 표현할 수 없다.
         // 화면보다 넓게 지정돼도 화면 안에 들어오도록 maxWidth 로 막는다.
-        style={{
-          width,
-          maxWidth: "calc(100vw - 2rem)",
-        }}
+        style={{ width, maxWidth: "calc(100vw - 2rem)" }}
       >
+        <DialogHeader className="shrink-0 flex-row items-start gap-2 space-y-0 px-5 pt-5 pb-3 text-left">
+          <DialogTitle className="text-foreground flex-1 text-lg leading-snug font-bold break-keep">
+            {current.title}
+          </DialogTitle>
+          {queue.length > 1 && (
+            <div className="text-muted-foreground flex shrink-0 items-center">
+              <button
+                type="button"
+                aria-label={t("previous")}
+                onClick={() =>
+                  setActiveIndex((index + queue.length - 1) % queue.length)
+                }
+                className="hover:bg-secondary focus-visible:ring-ring flex size-8 items-center justify-center rounded-full focus-visible:ring-2 focus-visible:outline-none"
+              >
+                <ChevronLeft className="size-4" />
+              </button>
+              <span className="text-xs tabular-nums" aria-live="polite">
+                {index + 1} / {queue.length}
+              </span>
+              <button
+                type="button"
+                aria-label={t("next")}
+                onClick={() => setActiveIndex((index + 1) % queue.length)}
+                className="hover:bg-secondary focus-visible:ring-ring flex size-8 items-center justify-center rounded-full focus-visible:ring-2 focus-visible:outline-none"
+              >
+                <ChevronRight className="size-4" />
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            aria-label={closeLabel}
+            onClick={closeAll}
+            className="text-muted-foreground hover:bg-secondary focus-visible:ring-ring -mt-1 -mr-2 flex size-8 shrink-0 items-center justify-center rounded-full focus-visible:ring-2 focus-visible:outline-none"
+          >
+            <X className="size-5" />
+          </button>
+        </DialogHeader>
+
         <div
-          className="bg-background flex min-h-0 flex-col overflow-hidden rounded-lg border shadow-lg"
-          style={{
-            height,
-            maxHeight: "calc(90vh - 7rem)",
-          }}
+          key={current.id}
+          className="min-h-0 flex-1 overflow-y-auto"
+          // 이미지는 관리자가 정한 높이를 지키고, 글은 내용만큼만 차지한다.
+          style={isText ? { maxHeight: height } : { height }}
         >
-          <DialogHeader className="shrink-0 space-y-0 px-5 py-3 text-left">
-            <DialogTitle className="text-foreground text-base leading-snug font-bold">
-              {current.title}
-            </DialogTitle>
-          </DialogHeader>
+          <PopupBodyLink popup={current} onNavigate={closeAll}>
+            {body}
+          </PopupBodyLink>
+        </div>
 
-          <div key={current.id} className="min-h-0 flex-1 overflow-y-auto">
-            <PopupBodyLink popup={current} onNavigate={closeAll}>
-              {body}
-            </PopupBodyLink>
-          </div>
-
-          {current.noticeId && (
-            <div className="border-border flex shrink-0 justify-end border-t px-5 py-3">
-              <Button variant="outline" asChild>
+        <div className="flex shrink-0 flex-col gap-3 px-5 pt-3 pb-4">
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              className="h-12 flex-1 rounded-xl text-base"
+              onClick={closeAll}
+            >
+              {closeLabel}
+            </Button>
+            {current.noticeId && (
+              <Button className="h-12 flex-1 rounded-xl text-base" asChild>
                 <LocalizedClientLink
                   href={`/cs?tab=notice&noticeId=${current.noticeId}`}
                   onClick={closeAll}
@@ -134,64 +172,19 @@ export function SitePopupStack({ popups, countryCode }: Props) {
                   {t("viewDetail")}
                 </LocalizedClientLink>
               </Button>
-            </div>
-          )}
-        </div>
-
-        <div className="grid shrink-0 grid-cols-[9.5rem_minmax(0,1fr)] grid-rows-2 items-center gap-2 pt-4 sm:grid-cols-[9.5rem_minmax(0,1fr)_7rem] sm:grid-rows-1">
-          <div className="bg-background col-start-1 row-start-1 flex h-11 w-[9.5rem] items-center rounded-full shadow-sm">
-            <button
-              type="button"
-              aria-label={t("previous")}
-              disabled={queue.length === 1}
-              onClick={() =>
-                setActiveIndex((index + queue.length - 1) % queue.length)
-              }
-              className="hover:bg-secondary focus-visible:ring-ring flex size-11 items-center justify-center rounded-full focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <ChevronLeft className="size-5" />
-            </button>
-            <span
-              className="min-w-16 text-center text-sm font-medium"
-              aria-live="polite"
-            >
-              {index + 1} / {queue.length}
-            </span>
-            <button
-              type="button"
-              aria-label={t("next")}
-              disabled={queue.length === 1}
-              onClick={() => setActiveIndex((index + 1) % queue.length)}
-              className="hover:bg-secondary focus-visible:ring-ring flex size-11 items-center justify-center rounded-full focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <ChevronRight className="size-5" />
-            </button>
+            )}
           </div>
           {current.dismissMode !== "none" && (
             <button
               type="button"
               onClick={handleDismiss}
-              className="bg-background hover:bg-secondary focus-visible:ring-ring col-span-2 col-start-1 row-start-2 h-11 w-full rounded-full px-2 text-xs shadow-sm focus-visible:ring-2 focus-visible:outline-none sm:col-span-1 sm:col-start-2 sm:row-start-1 sm:text-sm"
+              className="text-muted-foreground hover:text-foreground focus-visible:ring-ring self-center rounded px-1 text-sm underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:outline-none"
             >
               {current.dismissMode === "today"
                 ? t("hideThisForToday")
                 : t("hideThisForDays", { days: current.dismissDays ?? 1 })}
             </button>
           )}
-          {current.dismissMode === "none" && (
-            <span
-              className="col-span-2 col-start-1 row-start-2 h-11 sm:col-span-1 sm:col-start-2 sm:row-start-1"
-              aria-hidden="true"
-            />
-          )}
-          <button
-            type="button"
-            onClick={closeAll}
-            className="bg-background hover:bg-secondary focus-visible:ring-ring col-start-2 row-start-1 flex h-11 w-28 items-center justify-center gap-2 justify-self-end rounded-full px-2 text-sm font-medium shadow-sm focus-visible:ring-2 focus-visible:outline-none sm:col-start-3"
-          >
-            {queue.length > 1 ? t("closeAll") : t("close")}
-            <X className="size-4" aria-hidden="true" />
-          </button>
         </div>
       </DialogContent>
     </Dialog>
