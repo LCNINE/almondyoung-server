@@ -1,6 +1,6 @@
 import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { DbService } from '@app/db';
 import { BadRequestError, NotFoundError } from '@app/shared';
@@ -136,6 +136,11 @@ describeIfDb('SkuFieldCaptureManager (DB integration)', () => {
       await attach(m, skuId, 3, trx);
       const scanned = { ...input, barcodeStatus: 'scanned' as const, scannedBarcode: '8809692351773' };
       await m.complete(skuId, scanned, actor, trx);
+      // 한 트랜잭션 안에선 now() 가 같아 불변식이 검증되지 않는다 — 과거로 밀어 두고 본다.
+      await trx
+        .update(wmsTables.skuFieldCaptures)
+        .set({ firstCompletedAt: sql`now() - interval '1 day'`, lastCompletedAt: sql`now() - interval '1 day'` })
+        .where(eq(wmsTables.skuFieldCaptures.skuId, skuId));
       const [first] = await captures(trx, skuId);
       await m.complete(skuId, scanned, actor, trx);
       const bcs = await trx
@@ -151,7 +156,7 @@ describeIfDb('SkuFieldCaptureManager (DB integration)', () => {
       const [second] = await captures(trx, skuId);
       expect(second.barcodeConflictSkuId).toBeNull();
       expect(second.firstCompletedAt).toEqual(first.firstCompletedAt);
-      expect(second.lastCompletedAt.getTime()).toBeGreaterThanOrEqual(first.lastCompletedAt.getTime());
+      expect(second.lastCompletedAt.getTime()).toBeGreaterThan(first.lastCompletedAt.getTime());
     });
   });
 
