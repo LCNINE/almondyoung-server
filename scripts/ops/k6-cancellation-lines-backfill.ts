@@ -100,3 +100,24 @@ export function planOrderBackfill(
   }
   return { kind: 'ok', inserts };
 }
+
+export type StoredLineRow = { cancellationId: string; salesOrderLineId: string; shipmentPhase: string; quantity: number };
+
+/**
+ * `--verify` 의 비교 (순수 함수). 다시 도출한 행 집합과 저장된 행 집합이 (취소, 라인, 갈래, 수량) 으로 같은지 본다.
+ * 같으면 빈 배열, 다르면 어느 쪽에만 있는지 사람이 읽을 문장을 돌려준다.
+ */
+export function diffDerivedWithStored(
+  derived: Array<{ cancellationId: string; salesOrderLineId: string; shipmentPhase: string; quantity: number }>,
+  stored: StoredLineRow[],
+): string[] {
+  const key = (r: StoredLineRow) => `${r.cancellationId}|${r.salesOrderLineId}|${r.shipmentPhase}|${r.quantity}`;
+  const derivedKeys = new Map<string, number>();
+  for (const r of derived) derivedKeys.set(key(r), (derivedKeys.get(key(r)) ?? 0) + 1);
+  const storedKeys = new Map<string, number>();
+  for (const r of stored) storedKeys.set(key(r), (storedKeys.get(key(r)) ?? 0) + 1);
+  const diffs: string[] = [];
+  for (const [k, n] of derivedKeys) if ((storedKeys.get(k) ?? 0) < n) diffs.push(`도출에만 있음: ${k}`);
+  for (const [k, n] of storedKeys) if ((derivedKeys.get(k) ?? 0) < n) diffs.push(`저장에만 있음: ${k}`);
+  return diffs;
+}

@@ -1,4 +1,4 @@
-import { BackfillCancellation, planOrderBackfill } from './k6-cancellation-lines-backfill';
+import { BackfillCancellation, diffDerivedWithStored, planOrderBackfill } from './k6-cancellation-lines-backfill';
 
 const lines = [{ id: 'L1', quantity: 3, isDigital: false }];
 const at = (n: number) => new Date(Date.UTC(2026, 0, n));
@@ -92,5 +92,25 @@ describe('planOrderBackfill', () => {
       kind: 'ok',
       inserts: [{ cancellationId: 'c1', salesOrderLineId: 'L1', quantity: 1, shipmentPhase: 'after_shipment' }],
     });
+  });
+});
+
+describe('diffDerivedWithStored', () => {
+  const row = (quantity: number, shipmentPhase = 'before_shipment') => ({
+    cancellationId: 'c1',
+    salesOrderLineId: 'l1',
+    shipmentPhase,
+    quantity,
+  });
+
+  it('도출과 저장이 같으면 차이가 없다 (순서 무관)', () => {
+    expect(diffDerivedWithStored([row(1), row(2, 'after_shipment')], [row(2, 'after_shipment'), row(1)])).toEqual([]);
+  });
+
+  it('수량·갈래가 다르거나 한쪽에만 있으면 차이를 낸다', () => {
+    const diffs = diffDerivedWithStored([row(1)], [row(2), row(1, 'after_shipment')]);
+    expect(diffs).toHaveLength(3);
+    expect(diffs.filter((d) => d.startsWith('도출에만'))).toHaveLength(1);
+    expect(diffs.filter((d) => d.startsWith('저장에만'))).toHaveLength(2);
   });
 });
