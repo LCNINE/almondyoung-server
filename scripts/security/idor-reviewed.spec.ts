@@ -915,6 +915,18 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '',
     note: 'addToRecentViews(userId, {productId}) 는 조회 없이 insert().onConflictDoUpdate() 만 수행(16-22행) — 별도 WHERE 조회 predicate 가 없다. AddToRecentViewsDto 에는 productId 만 있고 userId 는 CurrentUser(JWT)에서만 오므로 다른 사용자의 행을 지정할 수 없다 — 생성/삽입 라우트라 IDOR 대상 기존 객체가 없음.',
   },
+  'user-service POST /auth/change-password': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/auth/auth.service.ts:960',
+    predicate: '.where(eq(userServiceSchema.users.id, userId))',
+    note: 'changePassword(current, next, userId) 의 userId 는 CurrentUser(JWT)에서만 온다. 조회(960행)와 갱신(988행) 모두 같은 predicate 로 본인 행만 건드리고, 현재 비밀번호를 bcrypt 로 확인한다.',
+  },
+  'user-service POST /auth/verify-password-for-pin-reset': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/auth/auth.service.ts:1015',
+    predicate: '.where(eq(userServiceSchema.users.id, userId))',
+    note: 'verifyPasswordAndIssuePinResetToken(password, userId) 는 checkPassword(1015행)로 본인 행의 비밀번호만 확인하고 sub=userId 토큰을 서명한다. userId 는 CurrentUser(JWT)에서만 온다.',
+  },
   'user-service POST /auth/payment-handoff': {
     verdict: 'N/A',
     evidence: 'apps/user-service/src/api/auth/auth.service.ts:127',
@@ -978,15 +990,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(156);
+    expect(targets).toHaveLength(158);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(156);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(155);
+    expect(new Set(targets.map(keyOf)).size).toBe(158);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(157);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

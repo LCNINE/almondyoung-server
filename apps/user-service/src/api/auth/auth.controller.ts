@@ -144,10 +144,11 @@ export class AuthController {
 
   @ApiOperation({ summary: '비밀번호 변경' })
   @ApiResponse({ status: 200, description: '비밀번호 변경 성공' })
+  // 본인 계정 동작이라 역할 스코프를 요구하지 않는다 — 서비스가 현재 비밀번호를 확인한다.
+  // 스코프를 걸면 새 권한 체계 역할만 가진 직원(예: logistics_worker)이 임시 비밀번호를 못 바꾼다.
   @StoreRoute()
   @Post('change-password')
   @UseGuards(AuthGuard('jwt'))
-  @RequireScopes('user:modify', 'master', 'admin:access')
   async changePassword(@Body(ValidationPipe) dto: ChangePasswordDto, @CurrentUser() user: JwtPayload) {
     return this.authService.changePassword(dto.currentPassword, dto.newPassword, user.id);
   }
@@ -272,7 +273,6 @@ export class AuthController {
   @StoreRoute()
   @Post('verify-password-for-pin-reset')
   @UseGuards(AuthGuard('jwt'))
-  @RequireScopes('user:modify', 'master', 'admin:access')
   async verifyPasswordForPinReset(
     @Body(ValidationPipe) { password }: { password: string },
     @CurrentUser() user: JwtPayload,
