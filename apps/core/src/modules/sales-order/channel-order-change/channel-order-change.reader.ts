@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, inArray, ne, notInArray, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
-import { SalesOrdersService } from '../services/sales-orders.service';
+import { readLineQuantities } from '../line-quantities/line-quantities.reader';
 import { toShippingAddress } from './channel-order-diff';
 import type { EffectiveSalesOrder } from './channel-order-change.types';
 
@@ -12,8 +12,6 @@ const HANDED_OFF_DIRECT_SHIP_STATUSES = ['forwarded', 'completed'] as const;
 
 @Injectable()
 export class ChannelOrderChangeReader {
-  constructor(private readonly salesOrders: SalesOrdersService) {}
-
   /** 그 판매주문의 가장 최근 «무시» 채널 행의 델타(스펙 §6.2). 없으면 null. */
   async latestDismissedChannelDeltas(salesOrderId: string, tx: DbTx): Promise<unknown[] | null> {
     const table = wmsTables.salesOrderAmendments;
@@ -50,7 +48,7 @@ export class ChannelOrderChangeReader {
       .from(wmsTables.salesOrderLines)
       .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId))
       .orderBy(asc(wmsTables.salesOrderLines.id));
-    const cancelled = await this.salesOrders.getCancelledQuantityByLine(salesOrderId, tx);
+    const lineQuantities = await readLineQuantities(tx, salesOrderId);
     return {
       id: order.id,
       status: order.status,
@@ -59,7 +57,7 @@ export class ChannelOrderChangeReader {
         id: line.id,
         channelOrderItemId: line.channelOrderItemId,
         channelProductId: line.channelProductId,
-        effectiveQuantity: Math.max(0, line.quantity - (cancelled.get(line.id) ?? 0)),
+        effectiveQuantity: Math.max(0, lineQuantities.get(line.id)?.remaining ?? 0),
         unitPrice: line.unitPrice,
       })),
     };

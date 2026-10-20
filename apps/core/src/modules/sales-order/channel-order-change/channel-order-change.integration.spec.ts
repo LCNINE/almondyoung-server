@@ -18,6 +18,8 @@ import {
 import { ambientDbService, assembleOutbound } from '../../fulfillment/services/__support__/simple-outbound-wiring';
 import { outboxPublisherFor } from '../../fulfillment/outbox/__support__/outbox-publisher.factory';
 import { SalesOrdersService } from '../services/sales-orders.service';
+import { readLineQuantities } from '../line-quantities/line-quantities.reader';
+import { seedCancellableOrder, wireCancellation } from '../cancellation-record/__support__/cancellation-scenarios';
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
 import { ChannelOrderChangeReader } from './channel-order-change.reader';
 import { ChannelOrderChangeManager, PRINT_HELD_FOR_DECREASE } from './channel-order-change.manager';
@@ -45,7 +47,7 @@ function wire(tx: DbTx) {
     { get: () => outbound.planning } as never,
   );
   const amendments = new SalesOrderAmendmentsService(dbService);
-  const reader = new ChannelOrderChangeReader(salesOrders);
+  const reader = new ChannelOrderChangeReader();
   const manager = new ChannelOrderChangeManager(
     reader,
     salesOrders,
@@ -300,7 +302,7 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
         reviseRecipientFromChannel: () => Promise.reject(new Error('boom')),
       };
       const manager = new ChannelOrderChangeManager(
-        new ChannelOrderChangeReader(w.salesOrders),
+        new ChannelOrderChangeReader(),
         w.salesOrders,
         new SalesOrderAmendmentsService(ambientDbService(tx)),
         { get: () => failingPlanning } as never,
@@ -337,9 +339,9 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
       await w.manager.handle(seed.salesOrderId, p, `m-${randomUUID()}`, tx);
       const [row] = await amendmentsOf(tx, seed.salesOrderId);
       expect(row.status).toBe('applied');
-      expect(await w.salesOrders.getCancelledQuantityByLine(seed.salesOrderId, tx)).toEqual(
-        new Map([[seed.lineIds[0], 1]]),
-      );
+      const lineQuantities = await readLineQuantities(tx, seed.salesOrderId);
+      expect(lineQuantities.get(seed.lineIds[0])?.canceled).toBe(1);
+      expect(lineQuantities.get(seed.lineIds[1])?.canceled).toBe(0);
       const cancellations = await tx
         .select()
         .from(wmsTables.salesOrderCancellations)
@@ -367,7 +369,10 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
           blockers: [{ code: 'CANCEL_NOT_IMMEDIATE', detail: 'print order on this line — decide on WowPress' }],
         }),
       ]);
-      expect(await w.salesOrders.getCancelledQuantityByLine(seed.salesOrderId, tx)).toEqual(new Map());
+      // 아무것도 취소되지 않았다 — 문은 모든 라인을 canceled 0 으로 낸다(빈 맵이 아니다)
+      expect([...(await readLineQuantities(tx, seed.salesOrderId)).values()].map((line) => line.canceled)).toEqual([
+        0, 0,
+      ]);
       // 거절 savepoint 가 되돌려도 아직 안 보낸 인쇄는 운영자 확인으로 붙잡혀, 워커가 원래 수량으로 주문하지 않는다
       const [print] = await tx
         .select()
@@ -452,7 +457,10 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
         .from(wmsTables.salesOrderCancellations)
         .where(eq(wmsTables.salesOrderCancellations.salesOrderId, seed.salesOrderId));
       expect(cancellations).toEqual([]);
-      expect(await w.salesOrders.getCancelledQuantityByLine(seed.salesOrderId, tx)).toEqual(new Map());
+      // 아무것도 취소되지 않았다 — 문은 모든 라인을 canceled 0 으로 낸다(빈 맵이 아니다)
+      expect([...(await readLineQuantities(tx, seed.salesOrderId)).values()].map((line) => line.canceled)).toEqual([
+        0, 0,
+      ]);
       const handoffLinks = await tx
         .select()
         .from(wmsTables.businessLinks)
@@ -509,9 +517,9 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
       p.snapshot.lines[1].cancelled = true;
       await w.manager.handle(seed.salesOrderId, p, `m-${randomUUID()}`, tx);
       expect(await amendmentsOf(tx, seed.salesOrderId)).toEqual([]);
-      expect(await w.salesOrders.getCancelledQuantityByLine(seed.salesOrderId, tx)).toEqual(
-        new Map([[seed.lineIds[1], 1]]),
-      );
+      const lineQuantities = await readLineQuantities(tx, seed.salesOrderId);
+      expect(lineQuantities.get(seed.lineIds[0])?.canceled).toBe(0);
+      expect(lineQuantities.get(seed.lineIds[1])?.canceled).toBe(1);
     });
   });
 
@@ -675,6 +683,37 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
       expect(rows.filter((row) => row.status === 'pending')).toHaveLength(0);
       expect(rows.filter((row) => row.status === 'applied')).toHaveLength(1);
       expect(rows.find((row) => row.id === dismissedId)?.status).toBe('dismissed');
+    });
+  });
+
+  it('effective quantity after a v2 full cancellation is zero', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancellation(tx);
+      const o = await seedCancellableOrder(tx, w, 2);
+      const [digital] = await tx
+        .insert(wmsTables.salesOrderLines)
+        .values({
+          salesOrderId: o.salesOrderId,
+          variantId: randomUUID(),
+          productName: 'IT Digital',
+          unitPrice: 1000,
+          quantity: 1,
+          fulfillmentKind: 'digital',
+          requiresShipping: false,
+        })
+        .returning();
+      await w.logistics.fulfillments.create({ salesOrderId: o.salesOrderId, warehouseId: o.warehouseId }, tx);
+      await w.salesOrders.cancel(
+        o.salesOrderId,
+        { cancelledBy: 'customer', metadata: { sourceEventId: `self-${randomUUID()}` } },
+        tx,
+      );
+
+      // E1: 옛 코드는 전체취소를 세지 않아 둘 다 주문 수량 그대로(2, 1)였다.
+      const effective = await new ChannelOrderChangeReader().lockEffectiveOrder(o.salesOrderId, tx);
+      const byId = new Map(effective?.lines.map((line) => [line.id, line.effectiveQuantity]));
+      expect(byId.get(o.lineId)).toBe(0);
+      expect(byId.get(digital.id)).toBe(0);
     });
   });
 });

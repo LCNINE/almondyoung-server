@@ -197,7 +197,7 @@ export function wireCancelRequest(tx: DbTx) {
   const settler = new ChannelCancelSettler(reader);
   const amendments = new SalesOrderAmendmentsService(dbService);
   const changes = new ChannelOrderChangeManager(
-    new ChannelOrderChangeReader(salesOrders),
+    new ChannelOrderChangeReader(),
     salesOrders,
     amendments,
     { get: () => outbound.planning } as never,

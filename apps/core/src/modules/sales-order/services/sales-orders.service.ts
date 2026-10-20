@@ -2157,19 +2157,6 @@ export class SalesOrdersService {
   }
 
   /**
-   * 라인별 이미 취소된 수량 — 채널 변경 diff 의 «유효 수량» 기준(#1016 5번 행)이 취소 경로와 같은 계산을 쓰게 한다.
-   * 옛 모양(취소가 있는 라인만 키)을 지킨다. 호출자를 읽는 문으로 옮기면서 지운다(K6 PR2a Task 3).
-   */
-  async getCancelledQuantityByLine(salesOrderId: string, tx: DbTx): Promise<Map<string, number>> {
-    const lineQuantities = await readLineQuantities(tx, salesOrderId);
-    return new Map(
-      [...lineQuantities.values()]
-        .filter((line) => line.canceled > 0)
-        .map((line) => [line.salesOrderLineId, line.canceled]),
-    );
-  }
-
-  /**
    * 이 주문의 이전 취소가 남긴 엔진 상태 (K6 PR2a).
    * `cancelledByLine` 은 라인 수량 문의 `canceled`(갈래·scope 무관 — 전체취소도 센다)다.
    * `preservedShippedByFulfillmentItem` 은 «어느 FOI 의 출고분을 이미 보존 처리했나»라는 FOI 단위 상태라
