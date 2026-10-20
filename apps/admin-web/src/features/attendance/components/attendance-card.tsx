@@ -336,6 +336,9 @@ export function AttendanceCard() {
             <Link prefetch={true} href={`${links}/settings`}>
               알림 설정
             </Link>
+            <Link className="col-span-2" href={`${links}/wage`}>
+              내 급여
+            </Link>
             {canReview && (
               <Link
                 prefetch={true}

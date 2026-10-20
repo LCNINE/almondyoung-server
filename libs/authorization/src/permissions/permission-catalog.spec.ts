@@ -86,7 +86,23 @@ describe('permission catalog', () => {
       Object.keys(expected).map((key) => [key, findPermission(key)?.grantOnFirstRegistration ?? null]),
     );
     expect(actual).toEqual(expected);
-    expect(PERMISSION_CATALOG).toHaveLength(109);
+    expect(PERMISSION_CATALOG).toHaveLength(112);
+  });
+
+  it('registers the wage permissions for master only', () => {
+    const expected: Record<string, readonly string[]> = {
+      'attendance.wage.read': ['attendance.staff.read'],
+      'attendance.wage.write': ['attendance.wage.read'],
+      'attendance.wage.export': ['attendance.wage.read'],
+    };
+
+    for (const [key, requires] of Object.entries(expected)) {
+      const permission = findPermission(key);
+
+      expect(permission?.grantOnFirstRegistration).toEqual([]);
+      expect(permission?.dangerous).toBe(true);
+      expect(permission?.requires).toEqual(requires);
+    }
   });
 
   it('registers attendance keys with today-equivalent grants', () => {

@@ -26,6 +26,7 @@ export function useAttendanceAccess() {
   const statistics = state('attendance.statistics.read');
   const worksites = state('attendance.worksite.write');
   const staff = state('attendance.staff.read');
+  const wage = state('attendance.wage.read');
 
   return {
     canReview: granted(review),
@@ -35,5 +36,6 @@ export function useAttendanceAccess() {
     canManageWorksites: granted(worksites),
     worksitesState: worksites,
     canReadStaff: granted(staff),
+    canSeeWage: granted(wage),
   };
 }

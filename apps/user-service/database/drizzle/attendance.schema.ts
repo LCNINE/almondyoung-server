@@ -6,6 +6,13 @@ import type {
   AttendanceSettings,
   LeaveRecurrence,
 } from '@packages/domain-types/attendance';
+import type {
+  AbsenceKind,
+  PayBasis,
+  ScheduleDay,
+  SettlementResult,
+  WageRules,
+} from '@packages/domain-types/attendance-wage';
 import { users } from './schema';
 
 const instant = (name: string) => timestamp(name, { withTimezone: true });
@@ -154,6 +161,156 @@ export const attendanceJobs = pgTable(
   (t) => [index('attendance_jobs_due').on(t.status, t.runAfter)],
 );
 
+export const attendancePayGroups = pgTable('attendance_pay_groups', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  name: text('name').notNull(),
+  payBasis: text('pay_basis').$type<PayBasis>().notNull(),
+  payday: integer('payday').notNull(),
+  periodCloseDay: integer('period_close_day').notNull(),
+  payMonthOffset: integer('pay_month_offset').$type<0 | 1>().notNull(),
+  active: boolean('active').notNull().default(true),
+  version: integer('version').notNull().default(1),
+  createdAt: instant('created_at').notNull().defaultNow(),
+  updatedAt: instant('updated_at').notNull().defaultNow(),
+});
+
+export const attendancePayPolicies = pgTable(
+  'attendance_pay_policies',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => attendancePayGroups.id),
+    effectiveFrom: date('effective_from').notNull(),
+    rules: jsonb('rules').$type<WageRules>().notNull(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: instant('created_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('attendance_pay_policy_effective').on(t.groupId, t.effectiveFrom)],
+);
+
+export const attendanceWorkers = pgTable(
+  'attendance_workers',
+  {
+    userId: userId().primaryKey(),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => attendancePayGroups.id),
+    hireDate: date('hire_date'),
+    leaveDate: date('leave_date'),
+    label: text('label'),
+    note: text('note'),
+    version: integer('version').notNull().default(1),
+    createdAt: instant('created_at').notNull().defaultNow(),
+    updatedAt: instant('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('attendance_workers_group').on(t.groupId)],
+);
+
+export const attendanceWageRates = pgTable(
+  'attendance_wage_rates',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: userId(),
+    hourlyWage: integer('hourly_wage').notNull(),
+    effectiveFrom: date('effective_from').notNull(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: instant('created_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('attendance_wage_rate_effective').on(t.userId, t.effectiveFrom)],
+);
+
+export const attendanceWorkSchedules = pgTable(
+  'attendance_work_schedules',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: userId(),
+    effectiveFrom: date('effective_from').notNull(),
+    effectiveTo: date('effective_to'),
+    days: jsonb('days').$type<ScheduleDay[]>().notNull(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: instant('created_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('attendance_work_schedule_effective').on(t.userId, t.effectiveFrom)],
+);
+
+export const attendanceOvertimeDecisions = pgTable(
+  'attendance_overtime_decisions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: userId(),
+    workDate: date('work_date').notNull(),
+    sessionId: uuid('session_id').references(() => attendanceSessions.id),
+    recordedMinutes: integer('recorded_minutes').notNull(),
+    recognizedMinutes: integer('recognized_minutes').notNull(),
+    status: text('status').$type<'recognized' | 'rejected'>().notNull(),
+    reason: text('reason'),
+    decidedBy: uuid('decided_by')
+      .notNull()
+      .references(() => users.id),
+    decidedAt: instant('decided_at').notNull().defaultNow(),
+    version: integer('version').notNull().default(1),
+  },
+  (t) => [uniqueIndex('attendance_overtime_decision_daily').on(t.userId, t.workDate)],
+);
+
+export const attendanceAbsenceDecisions = pgTable(
+  'attendance_absence_decisions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: userId(),
+    workDate: date('work_date').notNull(),
+    kind: text('kind').$type<AbsenceKind>().notNull(),
+    reason: text('reason'),
+    decidedBy: uuid('decided_by')
+      .notNull()
+      .references(() => users.id),
+    decidedAt: instant('decided_at').notNull().defaultNow(),
+    version: integer('version').notNull().default(1),
+  },
+  (t) => [uniqueIndex('attendance_absence_decision_daily').on(t.userId, t.workDate)],
+);
+
+export const attendancePaySettlements = pgTable(
+  'attendance_pay_settlements',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => attendancePayGroups.id),
+    periodStart: date('period_start').notNull(),
+    periodEnd: date('period_end').notNull(),
+    payday: date('payday').notNull(),
+    status: text('status').$type<'confirmed' | 'reopened'>().notNull(),
+    snapshot: jsonb('snapshot').$type<SettlementResult>().notNull(),
+    total: integer('total').notNull(),
+    confirmedBy: uuid('confirmed_by')
+      .notNull()
+      .references(() => users.id),
+    confirmedAt: instant('confirmed_at').notNull().defaultNow(),
+    reopenedBy: uuid('reopened_by').references(() => users.id),
+    reopenedAt: instant('reopened_at'),
+    reopenReason: text('reopen_reason'),
+  },
+  (t) => [
+    uniqueIndex('attendance_pay_settlement_confirmed')
+      .on(t.groupId, t.periodStart)
+      .where(sql`${t.status} = 'confirmed'`),
+    index('attendance_pay_settlement_group').on(t.groupId, t.periodStart),
+  ],
+);
+
+export const attendanceMinimumWages = pgTable('attendance_minimum_wages', {
+  effectiveFrom: date('effective_from').primaryKey(),
+  hourlyWage: integer('hourly_wage').notNull(),
+});
+
 export const attendanceTables = {
   attendanceWorksites,
   attendancePreferences,
@@ -163,4 +320,13 @@ export const attendanceTables = {
   attendanceRequests,
   attendanceAudit,
   attendanceJobs,
+  attendancePayGroups,
+  attendancePayPolicies,
+  attendanceWorkers,
+  attendanceWageRates,
+  attendanceWorkSchedules,
+  attendanceOvertimeDecisions,
+  attendanceAbsenceDecisions,
+  attendancePaySettlements,
+  attendanceMinimumWages,
 };
