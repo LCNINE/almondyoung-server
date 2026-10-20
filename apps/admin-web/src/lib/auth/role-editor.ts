@@ -6,6 +6,7 @@ import {
   withRequirements,
 } from '@permission-catalog';
 import { mainMenus, type MainMenu, type MenuItem } from '@/lib/utils/menu';
+import { MOBILE_SCREENS } from '@/lib/utils/mobile-menu';
 import {
   canAccess,
   filterMenuItems,
@@ -193,10 +194,16 @@ const leaves = (
 export function landingCandidates(
   held: ReadonlySet<string>
 ): { path: string; title: string }[] {
-  return leaves(mainMenus.flatMap((m) => m.children)).filter(({ path }) => {
-    const access = resolveScreenAccess(path);
-    return access?.kind === 'permission' && canAccess(access, held);
-  });
+  const mobile = MOBILE_SCREENS.map((s) => ({
+    path: s.path,
+    title: `모바일 · ${s.title}`,
+  }));
+  return [...leaves(mainMenus.flatMap((m) => m.children)), ...mobile].filter(
+    ({ path }) => {
+      const access = resolveScreenAccess(path);
+      return access?.kind === 'permission' && canAccess(access, held);
+    }
+  );
 }
 
 /** 편집 중인 권한으로 그린 사이드바 — 대리 로그인 없이 «이 역할이 보는 메뉴». */

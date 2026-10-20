@@ -107,6 +107,20 @@ describe('role editor', () => {
     expect(paths).not.toContain('/statistics/profit');
   });
 
+  it('offers mobile screens as landing screens when the role can open /mobile', () => {
+    const worker = landingCandidates(
+      new Set(['inventory.stock.read', 'inventory.stock.operate'])
+    );
+    expect(worker).toContainEqual({
+      path: '/mobile/sku-field-capture',
+      title: '모바일 · 실측',
+    });
+    const paths = landingCandidates(new Set(['order.order.read'])).map(
+      (c) => c.path
+    );
+    expect(paths.some((p) => p.startsWith('/mobile'))).toBe(false);
+  });
+
   it('draws the sidebar a permission set would see', () => {
     const paths = (menus: ReturnType<typeof previewMenu>) =>
       JSON.stringify(menus).match(/"path":"[^"]+"/g) ?? [];
