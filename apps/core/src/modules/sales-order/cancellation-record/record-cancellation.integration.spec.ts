@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { BadRequestException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { CORE_ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -217,6 +218,51 @@ describeIfDb('recordSalesOrderCancellation — 취소 행과 라인 행을 같�
       expect(await linesOf(tx, full!.id)).toEqual([
         { salesOrderLineId: o.lineId, quantity: 1, shipmentPhase: 'before_shipment' },
       ]);
+    });
+  });
+
+  it('v2 partial after a v2 full is rejected with 400 and writes nothing', async () => {
+    // 상자를 거치지 않는 디지털 줄은 박스 줄 배분 검사에 걸리지 않는다 — 전체 취소 행 확인이 없으면
+    // 이미 전체 취소가 뺀 줄을 다시 빼려다 쓰기 문 도출(합 > 주문 수량)이 터져 500 이 된다.
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const o = await seedOrder(tx, w, 2);
+      const [digitalLine] = await tx
+        .insert(wmsTables.salesOrderLines)
+        .values({
+          salesOrderId: o.salesOrderId,
+          variantId: randomUUID(),
+          productName: 'IT Digital',
+          quantity: 1,
+          unitPrice: 1000,
+          fulfillmentKind: 'digital',
+          requiresShipping: false,
+        })
+        .returning();
+      await w.logistics.fulfillments.create({ salesOrderId: o.salesOrderId, warehouseId: o.warehouseId }, tx);
+      await w.salesOrders.cancel(
+        o.salesOrderId,
+        { cancelledBy: 'customer', metadata: { sourceEventId: `self-${randomUUID()}` } },
+        tx,
+      );
+      const before = await cancellationsOf(tx, o.salesOrderId);
+      expect(before.map((row) => row.cancellationScope)).toEqual(['full']);
+
+      const error = await w.salesOrders
+        .cancel(
+          o.salesOrderId,
+          {
+            lines: [{ salesOrderLineId: digitalLine.id, quantity: 1 }],
+            cancelledBy: 'customer',
+            metadata: { sourceEventId: `self-${randomUUID()}` },
+          },
+          tx,
+        )
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(error instanceof Error ? error.message : '').toMatch(/이미 전체 취소/);
+      expect(await cancellationsOf(tx, o.salesOrderId)).toEqual(before);
     });
   });
 
