@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
 import {
@@ -15,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useChangePassword } from '@/lib/services/users';
+import { changePasswordErrorMessage } from '@/features/my-account/change-password-error';
 
 /**
  * 최초 로그인 강제 비밀번호 변경 페이지.
@@ -32,7 +32,6 @@ import { useChangePassword } from '@/lib/services/users';
  * user-service 최신 상태로 다시 발급받는 경로이므로 그대로 재사용해 토큰을 교체한 뒤 이동한다.
  */
 export default function ChangePasswordPage() {
-  const router = useRouter();
   const { mutateAsync: changePassword, isPending } = useChangePassword();
 
   const [currentPassword, setCurrentPassword] = useState('');
@@ -57,8 +56,8 @@ export default function ChangePasswordPage() {
 
     try {
       await changePassword({ currentPassword, newPassword });
-    } catch {
-      toast.error('비밀번호 변경에 실패했습니다. 현재 비밀번호를 확인해주세요.');
+    } catch (error) {
+      toast.error(changePasswordErrorMessage(error));
       return;
     }
 
@@ -76,7 +75,10 @@ export default function ChangePasswordPage() {
       if (!response.ok) {
         throw new Error(`refresh failed: ${response.status}`);
       }
-      router.replace('/');
+      // 화면 안 이동(router.replace)이 아니라 문서 전체를 다시 연다. 쿠키가 방금 바뀌었는데
+      // 클라이언트 라우터는 옛 쿠키 시절의 결과(→ 이 페이지로 되돌림)를 다시 쓸 수 있고, 그러면
+      // 같은 페이지 인스턴스가 「변경 중」 상태로 남아 멈춘다(2026-10-21 라이브).
+      window.location.replace('/');
     } catch {
       toast.error(
         '비밀번호는 변경되었지만 세션 갱신에 실패했습니다. 다시 로그인해주세요.'
