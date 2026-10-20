@@ -37,10 +37,20 @@ K6 이 정하는 건 «어디에 기록하나»이고 «누가 기록하나»는
    행 없는 취소가 0행으로 도출되는 것뿐인 주문도 대조하고, 모호하거나 아직 백필되지 않은 주문만 사유별로 세어 건너뛴다. 대조용 SQL 은 따로 두지 않는다.
 
 **대체되는 것:** `metadata.cancelledLines` 를 읽는 파서 세 벌(`loadPriorPartialCancellationContext`, `cancelledQuantitySql`, `LineCompositionReader` 의 취소 합).
-이 PR 은 기록만 더한다(이중 기록). 파서는 아직 살아 있고 PR 6 에서 삭제한다.
+PR 1 은 기록만 더했다(이중 기록). PR 2a 가 `cancelledQuantitySql`(파일째)·`getCancelledQuantityByLine`·`loadPriorPartialCancellationContext`(→ 문을 읽는 `loadPriorCancellationContext`)를 지우고
+구성 리더의 취소 합도 문으로 옮겼다. 남은 `sumCancelledByLine` 은 쓰기 문의 백필 전 대비와 백필 스크립트 둘이 쓰므로 PR 6 에서 지운다.
+
+**PR 2a 가 정한 것:** 읽는 문 `readLineQuantities`(`sales-order/line-quantities/line-quantities.reader.ts`)와 같은 정의의 SQL 조각(`line-quantities.sql.ts`: `lineCanceledQuantitySql`·`lineDemandSql`·`lineRemainingSql`).
+정의는 SQL 한 벌이고 TS 에서 뺄셈을 다시 하지 않는다. 가드 `line-quantity-read.guard.spec.ts` 가 취소 라인 테이블 이름을 쓰는 파일을 쓰기 문과 조각 파일 둘로 묶고 옛 파서 이름의 부활을 막는다.
+- **E1(사용자 확인).** 모든 소비자가 V1·V2 전체취소의 라인 행까지 센다(옛 파서는 `scope='partial'` 만 셌다).
+- **E2(사용자 확인).** 수요·FO 생성 수량은 출고 전 취소만 뺀다(`demand = ordered − canceledBeforeShipment`). 취소 엔진·채널 diff·인쇄의 «남은 수량»은 갈래 무관 `canceled` 를 뺀다.
+- `planCancellation`(전체)은 이미 전체 취소된 주문을 수량 계산 전에 400 `이미 전체 취소 처리된 주문입니다.` 로 거절한다(전에는 계획을 돌려줬다). 호출자가 `cancelled` 를 먼저 거르고, 되돌릴 수 없는 인쇄 업체 취소 앞에서 걸린다.
+- 취소 엔진의 FOI 별 `preservedShippedByFulfillmentItem` 은 계속 `effects` 에서 파싱한다 — 라인 행으로는 복원되지 않는 FOI 단위 엔진 상태다.
+- SQL 조각은 취소 라인 테이블을 열 이름을 바꾼 파생 테이블로 감싼다. drizzle 이 단일 테이블 select 의 열을 한정 없이 렌더해 안쪽 테이블이 바깥 `"id"` 를 가로채기 때문이다(일치 spec 이 잡았다). postgres 가 평탄화하고 `idx_sales_order_cancellation_lines_line` 을 탄다.
 
 **이후 PR(제안, 정본은 스펙 §9):**
-- PR 2 — 읽는 문(`LineQuantityReader` + 같은 정의의 SQL 조각)과 일치 spec, 취소·출고 소비자 전환.
+- PR 2a — (이 PR) 읽는 문·SQL 조각·일치 spec, 취소 소비자 여섯(취소 엔진·채널 diff·인쇄 둘·수요 통계·구성 리더) 전환, E1·E2.
+- PR 2b — 진행 단계 함수, 관리자 뱃지·일별 통계·카드 숫자(F10), 고객 actions, 셀메이트 F12·배송조회 F11, SKU 층 사실(`shipped`·`forwarded`·`delivered`·`cancellable`).
 - PR 3 — 청구(반품·교환) 게이트·환불 수량을 한 공식 `claimable` 로.
 - PR 4 — 운영자 «미처리 취소»(admin-web 버튼과 `POST /shipments/:id/cancellations`), FO 취소(`POST /fulfillments/:id/cancel`), 수동 배송완료
   (`POST /fulfillments/:id/deliver`) 제거. 셋 다 판매주문 기록 없이 상태만 바꾸거나 배송 사실을 추적 밖에서 만들어 «기록 위치 하나»와 충돌한다.
@@ -58,4 +68,5 @@ K6 이 정하는 건 «어디에 기록하나»이고 «누가 기록하나»는
   `--verify` 로 배포 후 확인한다.
 - **PR 2 착수의 차단 조건:** 라인 행이 없는 취소 수(게이트 SQL)가 백필 러너가 찍는 (a) ambiguous 주문에 속한 취소 수 + (b) 라인 0개로 도출된 취소 수의 합과 다르면 읽는 문을 만들지 않는다. 그 합만큼은 사람이 판단한 예외로 남는다.
 - 백필이 모호하다고 본 주문은 라인 행이 없다. 사람이 목록을 보고 결정한다.
+- PR 2a 로 라이브 취소 수량을 읽는 경로는 라인 행이 유일하다: 라인 행 없는 취소는 문에 보이지 않으므로 배포 전 게이트 SQL(라인 행 없는 취소 0)이 선행 조건이다.
 - 가드는 소스 텍스트를 정규식으로 훑으므로 우회가 가능하다. 실수를 잡는 그물이지 방어선이 아니다.
