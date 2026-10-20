@@ -8,6 +8,9 @@ import {
   useMismatchSummary,
   useQuarantineSummary,
 } from '@/lib/services/channel/queries';
+import { useCan } from '@/hooks/use-permission';
+import { CanOpen } from '@/components/auth/can';
+import { permissionLabel } from '@/lib/auth/permission-labels';
 import {
   BOARD_STAGES,
   BoardStageKey,
@@ -37,14 +40,21 @@ export default function StallBoardTemplate() {
     return () => clearInterval(id);
   }, []);
   const summary = useOrderProgressSummary();
-  const quarantine = useQuarantineSummary();
-  const mismatch = useMismatchSummary();
+  // 수집 칸(격리·채널과 어긋남)은 판매처 조회 권한이다 — 없으면 요청하지 않고 그 칸을 «가림»으로 그린다
+  const channelRead = useCan(['channel.account.read']);
+  const canReadChannel = channelRead.status === 'ready' && channelRead.allowed;
+  const quarantine = useQuarantineSummary({ enabled: canReadChannel });
+  const mismatch = useMismatchSummary({ enabled: canReadChannel });
+  const collectHidden =
+    channelRead.status === 'ready' && !channelRead.allowed
+      ? `${permissionLabel('channel.account.read')} 권한이 있어야 보입니다`
+      : null;
 
   const stages = summary.data?.stages ?? [];
   const hasSummary = summary.data !== undefined;
   const collect = collectCell(known(quarantine), known(mismatch));
   const cells: BandCell[] = [
-    collect.cell,
+    { ...collect.cell, hiddenReason: collectHidden },
     ...BOARD_STAGES.slice(1, 9).map((b) => {
       const s = stages.find((x) => x.stage === b.key);
       return {
@@ -94,22 +104,25 @@ export default function StallBoardTemplate() {
       />
       {selected === 'collect' ? (
         <div className="flex flex-wrap gap-2 rounded-lg border bg-white px-4 py-6 text-sm">
-          {collect.links.length === 0 ? (
+          {collectHidden ? (
+            <span className="text-muted-foreground">{collectHidden}</span>
+          ) : collect.links.length === 0 ? (
             <span className="text-muted-foreground">없음</span>
           ) : (
             collect.links.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="rounded-md border px-3 py-2 hover:border-slate-400"
-              >
-                {link.label}
-                {link.count !== null && (
-                  <b className="ml-1.5 tabular-nums">
-                    {link.count.toLocaleString('ko-KR')}
-                  </b>
-                )}
-              </Link>
+              <CanOpen key={link.href} screen={link.href}>
+                <Link
+                  href={link.href}
+                  className="rounded-md border px-3 py-2 hover:border-slate-400"
+                >
+                  {link.label}
+                  {link.count !== null && (
+                    <b className="ml-1.5 tabular-nums">
+                      {link.count.toLocaleString('ko-KR')}
+                    </b>
+                  )}
+                </Link>
+              </CanOpen>
             ))
           )}
         </div>

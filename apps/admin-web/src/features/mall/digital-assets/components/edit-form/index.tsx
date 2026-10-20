@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Can } from '@/components/auth/can';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -37,6 +39,7 @@ import type {
 import { getFileSignedUrlFromFileService } from '@/lib/api/domains/files/upload.client';
 import { Download, FileUp } from 'lucide-react';
 import { toast } from 'sonner';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { DigitalAssetFileUploadDialog } from '../file-upload-dialog';
 
 type Props = { assetId: string };
@@ -47,6 +50,7 @@ export function DigitalAssetEditForm({ assetId }: Props) {
   const updateMutation = useUpdateDigitalAsset();
   const addVersionMutation = useAddFileVersion();
   const rollbackMutation = useRollbackFileVersion();
+  const { canRun } = usePermissionCheck();
 
   const [form, setForm] = useState<UpdateDigitalAssetDto>({});
   const [newFileId, setNewFileId] = useState('');
@@ -138,6 +142,7 @@ export function DigitalAssetEditForm({ assetId }: Props) {
       <div className="grid gap-4 rounded-md border bg-background p-5">
         <h2 className="text-base font-medium">메타데이터</h2>
 
+        <PermissionReadOnly run={useUpdateDigitalAsset}>
         <div className="grid gap-2">
           <Label htmlFor="name">이름</Label>
           <Input
@@ -181,12 +186,15 @@ export function DigitalAssetEditForm({ assetId }: Props) {
             />
           </div>
         </div>
+        </PermissionReadOnly>
 
+        <Can run={useUpdateDigitalAsset}>
         <div className="flex justify-end">
           <Button onClick={handleSave} disabled={updateMutation.isPending}>
             저장
           </Button>
         </div>
+        </Can>
       </div>
 
       {/* 파일 버전 이력 */}
@@ -201,6 +209,7 @@ export function DigitalAssetEditForm({ assetId }: Props) {
           )}
         </div>
 
+        <Can run={useAddFileVersion}>
         <div className="grid gap-3 rounded-md border bg-muted/20 p-4">
           <h3 className="text-sm font-medium">새 파일 버전 등록 (파일 교체)</h3>
           <p className="text-xs text-muted-foreground">
@@ -250,6 +259,7 @@ export function DigitalAssetEditForm({ assetId }: Props) {
             </Button>
           </div>
         </div>
+        </Can>
 
         <Table>
           <TableHeader>
@@ -304,7 +314,7 @@ export function DigitalAssetEditForm({ assetId }: Props) {
                           <Download data-icon="inline-start" />
                           다운로드
                         </Button>
-                        {!isCurrent && (
+                        {!isCurrent && canRun(useRollbackFileVersion) && (
                           <Button
                             variant="outline"
                             size="sm"

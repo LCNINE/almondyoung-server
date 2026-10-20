@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { usePermission } from '@/hooks/use-permission';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   SPLIT_QTY_ERROR,
   isSplitQtyAllowed,
@@ -32,7 +32,6 @@ import {
   useCancelShipmentOutstanding,
   canRecallShipment,
   createIdempotentCommand,
-  FULFILLMENT_SCOPES,
   getServerDenyMessage,
   isRecoverableOperation,
   useFulfillmentOperation,
@@ -103,7 +102,7 @@ export function ShipmentActions({
 }: {
   shipment: ShipmentAdminDetail;
 }) {
-  const { hasScope, isPermissionLoading } = usePermission();
+  const { canRun } = usePermissionCheck();
   const split = useSplitShipment();
   const reviseRecipient = useReviseShipmentRecipient();
   const plan = usePlanShipment();
@@ -144,13 +143,8 @@ export function ShipmentActions({
     cancel.isPending ||
     recall.isPending;
 
-  const operate =
-    !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.operate]);
-  const overrideRecipient =
-    !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.overrideRecipient]);
   const canRecall =
-    !isPermissionLoading &&
-    !!hasScope([FULFILLMENT_SCOPES.recall]) &&
+    canRun(useRecallShipment) &&
     canRecallShipment(
       shipment.status,
       shipment.dispatchAttempts.map((attempt) => attempt.status)
@@ -366,7 +360,7 @@ export function ShipmentActions({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
-        {operate && (
+        {canRun(useSplitShipment) && (
           <Button
             size="sm"
             variant="outline"
@@ -375,7 +369,7 @@ export function ShipmentActions({
             분할
           </Button>
         )}
-        {overrideRecipient && (
+        {canRun(useReviseShipmentRecipient) && (
           <Button
             size="sm"
             variant="outline"
@@ -384,12 +378,12 @@ export function ShipmentActions({
             수령인 변경
           </Button>
         )}
-        {operate && (
+        {canRun(usePlanShipment) && (
           <Button size="sm" variant="outline" onClick={() => setAction('plan')}>
             계획 확정
           </Button>
         )}
-        {operate && (
+        {canRun(useCancelShipmentOutstanding) && (
           <Button
             size="sm"
             variant="destructive"

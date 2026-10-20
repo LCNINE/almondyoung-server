@@ -3,7 +3,7 @@ import BulkSessionsTabs from '@/features/mall/bulk-sessions';
 
 export default function BulkSessionsPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/mall/bulk-sessions">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <BulkSessionsTabs />
       </div>

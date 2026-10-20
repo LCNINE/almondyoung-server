@@ -46,109 +46,109 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   'analytics GET /summary': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/analytics-api/analytics.controller.ts:35',
-    predicate: '@UseGuards(JwtAuthGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard)',
     note: '대시보드 요약(오늘/어제 전사 매출 + 활성 멤버십 수) — 사용자 소유 리소스 파라미터가 없어 IDOR 대상 아님. JwtAuthGuard 로 인증 요구. 응답이 전사 매출 수치라 관리자 스코프 제한은 analytics 전반 스코프 도입과 함께 별도 검토.',
   },
   'analytics GET /statistics/sales': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/statistics/api/statistics.controller.ts:15',
-    predicate: '@UseGuards(JwtAuthGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard)',
     note: '기간별 전사 매출 집계 — 쿼리 파라미터가 날짜/채널뿐이라 IDOR 대상 아님. 컨트롤러 클래스에 JwtAuthGuard. 관리자 스코프는 위 /summary 와 같은 별도 검토 항목.',
   },
   'analytics GET /statistics/products': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/statistics/api/statistics.controller.ts:15',
-    predicate: '@UseGuards(JwtAuthGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard)',
     note: '상품별 전사 집계 — 사용자 소유 리소스 파라미터 없음. 컨트롤러 클래스에 JwtAuthGuard.',
   },
   'analytics GET /statistics/products/unsold': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/statistics/api/statistics.controller.ts:15',
-    predicate: '@UseGuards(JwtAuthGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard)',
     note: '기간 내 무판매 활성 상품 목록 — 쿼리 파라미터가 날짜/채널/limit 뿐이라 IDOR 대상 아님. 컨트롤러 클래스에 JwtAuthGuard.',
   },
   'analytics GET /statistics/customers': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/statistics/api/statistics.controller.ts:15',
-    predicate: '@UseGuards(JwtAuthGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard)',
     note: '고객·멤버십 전사 집계 — 개별 고객 식별자를 받지 않고 등급/버킷 단위로만 반환. 컨트롤러 클래스에 JwtAuthGuard.',
   },
   'analytics GET /statistics/customers/insights': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/statistics/api/customer-insights.controller.ts:15',
-    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)',
     note: '구매 기반 고객 분석(코호트·RFM·재구매·등급전환) — 쿼리 파라미터가 날짜/limit/minBuyers 뿐이고 응답도 버킷·집계 단위(개별 고객 식별자 없음)라 IDOR 대상 아님. 컨트롤러 클래스에 JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
   'analytics GET /statistics/profit': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/statistics/api/profit.controller.ts:13',
-    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)',
     note: '이익(수익성) 통계 — 쿼리 파라미터가 날짜/채널/정렬/페이지 뿐이고 응답도 상품 단위 집계(개별 고객 식별자 없음)라 IDOR 대상 아님. 컨트롤러 클래스에 JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
   'analytics GET /statistics/traffic': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/traffic/api/traffic.controller.ts:29',
-    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)',
     note: 'GA4 유입 통계(세션·랜딩페이지·기기·국가) — 쿼리 파라미터가 날짜/채널그룹/limit 뿐이고 응답도 전사 집계라 IDOR 대상 아님. 컨트롤러 클래스에 JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
   'analytics GET /statistics/traffic/realtime': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/traffic/api/traffic.controller.ts:29',
-    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)',
     note: 'GA4 실시간 접속(최근 30분 활성 사용자·페이지·기기) — 쿼리 파라미터가 limit 뿐이고 응답은 전사 집계라 사용자별 자원을 지목할 수단이 없다. GA4 는 개별 식별자를 주지 않는다. 같은 컨트롤러 클래스의 JwtAuthGuard + AdminRealmGuard(staff role 강제)를 그대로 받는다.',
   },
   'analytics GET /statistics/operating-costs': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/statistics/api/operating-cost.controller.ts:36',
-    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)',
     note: '월 고정비 설정 목록 — 전사 단일 설정이라 사용자·테넌트 소유 자원이 아니다. 파라미터도 없다. JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
   'analytics POST /statistics/operating-costs': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/statistics/api/operating-cost.controller.ts:36',
-    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)',
     note: '월 고정비 등록 — 전사 단일 설정이라 소유권 개념이 없다. 본문은 금액·적용일·메모뿐이고 식별자를 받지 않는다. JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
   'analytics DELETE /statistics/operating-costs/:id': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/statistics/api/operating-cost.controller.ts:36',
-    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)',
     note: ':id 를 받지만 전사 단일 설정 테이블의 행이라 사용자별 소유자가 없다 — staff 끼리는 같은 자원을 공유한다. 남의 자원을 넘겨다볼 경계 자체가 존재하지 않는다. JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
   'analytics GET /statistics/growth': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/growth/api/growth.controller.ts:21',
-    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)',
     note: '성장 분석 — 전사 자사몰 매출·회원 재구매 집계·GA4 리포트. 파라미터가 날짜·집계 단위뿐이고 고객 식별자를 받지도 내보내지도 않는다(건수·금액 집계만). JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
   'analytics GET /statistics/growth/summary': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/growth/api/growth.controller.ts:21',
-    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)',
     note: '성장 요약 — 올해 목표·일별 순매출·최근 고객 흐름 집계. 파라미터가 없고 응답에 고객 식별자가 없다. JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
   'analytics GET /statistics/revenue-goals': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/growth/api/revenue-goal.controller.ts:122',
-    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)',
     note: '연간 매출 목표 목록 — 전사 단일 설정이라 사용자·테넌트 소유 자원이 아니다. 파라미터는 연도뿐. JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
   'analytics POST /statistics/revenue-goals': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/growth/api/revenue-goal.controller.ts:122',
-    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)',
     note: '연간 매출 목표 등록 — 전사 단일 설정이라 소유권 개념이 없다. 본문은 연도·금액·월 배분·가정·메모뿐이고 식별자를 받지 않는다. JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
   'analytics DELETE /statistics/revenue-goals/:id': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/growth/api/revenue-goal.controller.ts:122',
-    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)',
     note: ':id 를 받지만 전사 단일 설정 표의 행이라 사용자별 소유자가 없다 — staff 끼리 같은 자원을 공유한다. JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
   'analytics GET /statistics/behavior': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/traffic/api/behavior.controller.ts:15',
-    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)',
     note: 'GA4 행동 통계(구매 퍼널·일별 전환율·상품별·기기별) — 쿼리 파라미터가 날짜/limit 뿐이고 응답도 전사 집계(개별 사용자 식별자 없음)라 IDOR 대상 아님. 컨트롤러 클래스에 JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
   'core GET /library/ownerships': {
@@ -291,25 +291,25 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'file-service DELETE /files/:fileId': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/access/file-access.ts:83',
+    evidence: 'apps/file-service/src/access/file-access.ts:115',
     predicate: 'if (file.uploadedBy === user.userId) return true;',
     note: 'LifecycleController.deleteFile -> FileAccess.delete(fileId, user) (file-access.ts:51) -> isMasterOrOwner(file, user) at file-access.ts:56 gates the softDelete call on the same file.uploadedBy === user.userId check; repo.softDelete(id) itself (file.repository.ts:44) only filters by eq(uploads.id, id), so all ownership enforcement lives in this application-layer check. Delete is NOT widened by the STAFF_READABLE_CONTEXT_IDS path added in 235197151 — that path lives in loadReadable only.',
   },
   'file-service GET /files/:fileId/download': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/access/file-access.ts:83',
+    evidence: 'apps/file-service/src/access/file-access.ts:115',
     predicate: 'if (file.uploadedBy === user.userId) return true;',
     note: "DownloadController.getSignedUrl -> DownloadService.getSignedUrl (apps/file-service/src/download/download.service.ts:21) -> FileAccess.loadReadable(fileId, user) (file-access.ts:26) -> isMasterOrOwner (file-access.ts:67-77) compares file.uploadedBy against caller's own userId before returning the row. 235197151 added a fourth allow path at file-access.ts:44 — a STAFF_ROLES caller may read any file whose contextId is in STAFF_READABLE_CONTEXT_IDS (digital-asset-file, archive-page-attachment). That is an intentional role-based grant for admin review, not an IDOR: it is scoped by context, not by object id, and file-access.spec.ts asserts admin still cannot read a business-license file. Everything else throws ForbiddenError.",
   },
   'file-service GET /files/:fileId/open': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/access/file-access.ts:83',
+    evidence: 'apps/file-service/src/access/file-access.ts:115',
     predicate: 'if (file.uploadedBy === user.userId) return true;',
     note: "DownloadController.openFile -> DownloadService.getSignedUrl (apps/file-service/src/download/download.service.ts:21) -> FileAccess.loadReadable(fileId, user) (file-access.ts:33) -> isMasterOrOwner (file-access.ts:74) compares file.uploadedBy against the caller's own userId before the row is returned; the route then 302s to a 5-minute signed URL for that same row. Same gate as GET /files/:fileId/download — this route only changes the response shape (redirect instead of JSON) so a plain anchor in archive body text can open a private attachment. The STAFF_READABLE_CONTEXT_IDS allow path (file-access.ts:44) covers archive-page-attachment: an intentional role-based grant scoped by context, not by object id, and file-access.spec.ts asserts a non-staff caller is still refused.",
   },
   'file-service GET /files/:fileId/metadata': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/access/file-access.ts:83',
+    evidence: 'apps/file-service/src/access/file-access.ts:115',
     predicate: 'if (file.uploadedBy === user.userId) return true;',
     note: 'DownloadController.getMetadata -> DownloadService.getMetadata (download.service.ts:50) -> FileAccess.loadReadable(fileId, user) -> same isMasterOrOwner ownership check as the download route, and the same STAFF_READABLE_CONTEXT_IDS allow path at file-access.ts:44.',
   },
@@ -549,25 +549,25 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   'search GET /search/admin/keywords/statistics': {
     verdict: 'N/A',
     evidence: 'apps/search/src/admin-keyword.controller.ts:23',
-    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)',
     note: '관리자 검색 키워드 통계 — 쿼리 파라미터가 날짜/limit 뿐이고 응답도 전사 키워드 집계라 IDOR 대상 아님. 컨트롤러 클래스에 JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
   'search GET /search/admin/keywords/zero-hit': {
     verdict: 'N/A',
     evidence: 'apps/search/src/admin-keyword.controller.ts:23',
-    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)',
     note: '관리자 0건 검색어 운영 목록 — 파라미터가 날짜/page/limit 뿐, 응답은 전사 키워드 집계 + 운영 상태(담당·메모)라 사용자 소유 리소스 식별자가 없어 IDOR 대상 아님. 컨트롤러 클래스에 JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
   'search GET /search/admin/keywords/detail': {
     verdict: 'N/A',
     evidence: 'apps/search/src/admin-keyword.controller.ts:23',
-    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)',
     note: '관리자 키워드 단건 드릴다운 — 파라미터가 keyword/날짜뿐이고 keyword 는 사용자 소유 리소스가 아니라 전사 검색 로그의 조회 축이라 IDOR 대상 아님. 컨트롤러 클래스에 JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
   'search PATCH /search/admin/keywords/issues/:keywordNorm': {
     verdict: 'N/A',
     evidence: 'apps/search/src/admin-keyword.controller.ts:23',
-    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    predicate: '@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)',
     note: '관리자 키워드 운영 상태 upsert — :keywordNorm 은 사용자 소유 리소스가 아니라 전사 검색 키워드 키다. 쓰기 대상(search_keyword_issues)도 운영 데이터라 소유권 개념이 없어 IDOR 대상 아님. staff 전체가 서로의 배정·메모를 수정하는 것은 의도(협업 도구). 컨트롤러 클래스에 JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
   'search GET /search/products': {
@@ -578,9 +578,9 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'search POST /search/products/internal/sales-counts': {
     verdict: 'N/A',
-    evidence: 'apps/search/src/internal-sales.controller.ts:37',
+    evidence: 'apps/search/src/internal-sales.controller.ts:40',
     predicate: "authorization !== `Bearer ${this.internalKey}`",
-    note: '서비스 간 내부 라우트 — Medusa 가 누적 판매 수량을 검색 색인에 밀어 넣는다. 사용자 토큰이 아니라 공유 시크릿(SEARCH_INTERNAL_KEY)으로 막으며(internal-sales.controller.ts:37-42), 키가 비어 있으면 라우트를 아예 잠근다(:37-39, fail-closed). 바디의 masterId 는 상품 마스터 ID 로 사용자 소유 리소스가 아니고 쓰기 대상(색인의 sales_count)도 전역 카탈로그 데이터라 소유권 개념이 없어 IDOR 대상 아님. 키가 새면 임의 상품의 판매량을 조작해 검색 랭킹을 흔들 수 있으므로(관련도 동점 구간 한정) 시크릿 취급은 결제 키에 준한다.',
+    note: '서비스 간 내부 라우트 — Medusa 가 누적 판매 수량을 검색 색인에 밀어 넣는다. 사용자 토큰이 아니라 공유 시크릿(SEARCH_INTERNAL_KEY)으로 막으며(internal-sales.controller.ts:40-45), 키가 비어 있으면 라우트를 아예 잠근다(:40-42, fail-closed). 바디의 masterId 는 상품 마스터 ID 로 사용자 소유 리소스가 아니고 쓰기 대상(색인의 sales_count)도 전역 카탈로그 데이터라 소유권 개념이 없어 IDOR 대상 아님. 키가 새면 임의 상품의 판매량을 조작해 검색 랭킹을 흔들 수 있으므로(관련도 동점 구간 한정) 시크릿 취급은 결제 키에 준한다.',
   },
   'search GET /search/products/suggestions': {
     verdict: 'N/A',
@@ -667,7 +667,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service GET /qna/questions/me': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/qna/qna.service.ts:472',
+    evidence: 'apps/ugc-service/src/qna/qna.service.ts:479',
     predicate: 'const conditions: SQL[] = [eq(questions.userId, userId), isNull(questions.deletedAt)];',
   },
   'ugc-service GET /reviews/eligibilities': {
@@ -790,6 +790,12 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '.where(and(eq(schema.userRecentViews.userId, userId), eq(schema.userRecentViews.id, recentViewId)));',
     note: '존재 확인(42행)과 실제 삭제(51행) 모두 userId AND id 로 스코프된다 — path 의 :recentViewId 단독으로는 삭제되지 않는다.',
   },
+  'user-service POST /iam/pii-access-logs': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/iam/pii-access/pii-access-record.controller.ts:25',
+    predicate: 'actorUserId: actor.userId,',
+    note: '행위자는 토큰에서만 정한다(본문 DTO 에 행위자 필드 없음, forbidNonWhitelisted). 기록 권한은 Manager 가 권한 사본으로 customer.pii.read 를 직접 본다.',
+  },
   'user-service GET //recent-views': {
     verdict: 'SAFE',
     evidence: 'apps/user-service/src/api/recent-views/recent-views.service.ts:31',
@@ -799,6 +805,12 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     verdict: 'SAFE',
     evidence: 'apps/user-service/src/api/business-licenses/business-licenses.service.ts:293',
     predicate: '.where(eq(businessLicenses.userId, userId))',
+  },
+  'user-service GET /me/permissions': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/iam/me-permissions.controller.ts:21',
+    predicate: 'this.iamService.forRoles(user.roles ?? [])',
+    note: '입력은 서명 검증된 토큰의 역할뿐이다. 다른 사용자를 지정하는 파라미터가 없고, 응답은 그 역할들의 권한 키 합집합과 역할 표시 이름이다.',
   },
   'user-service GET /cafe24/link': {
     verdict: 'SAFE',
@@ -960,15 +972,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(153);
+    expect(targets).toHaveLength(155);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(153);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(152);
+    expect(new Set(targets.map(keyOf)).size).toBe(155);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(154);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

@@ -8,7 +8,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AuthorizationService } from '@app/authorization';
+import { AuthorizationService, PermissionCheckpoints } from '@app/authorization';
 import { DbService, InjectTypedDb } from '@app/db';
 import {
   FULFILLMENT_V2_STREAM,
@@ -18,7 +18,9 @@ import {
 } from '@packages/event-contracts/streams';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import { and, asc, eq, inArray } from 'drizzle-orm';
+import { legacyHasFulfillmentScope } from '../../../platform/auth/fulfillment-authz';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { authzSubjectOf } from '../../../platform/auth/system-actor';
 import { InventoryCommandService } from '../../inventory/core/services/inventory-command.service';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
@@ -104,6 +106,7 @@ export class ShipmentRecallService {
     private readonly fulfillmentsV2: PublisherFor<typeof FULFILLMENT_V2_STREAM>,
     private readonly audit: AuditService,
     private readonly workflowGate: FulfillmentWorkflowGate,
+    private readonly checkpoints: PermissionCheckpoints,
   ) {}
 
   async report(
@@ -635,9 +638,14 @@ export class ShipmentRecallService {
   }
 
   private async requireScope(actor: ShipmentRecallActor): Promise<void> {
-    if (actor.roles.includes('master')) return;
-    const scopes = await this.authorization.getScopesByRoles(actor.roles);
-    if (!scopes.has(FULFILLMENT_SCOPE.DISPATCH_RECALL)) {
+    const legacy = await this.checkpoints.legacyVerdict(() =>
+      legacyHasFulfillmentScope(this.authorization, actor.roles, FULFILLMENT_SCOPE.DISPATCH_RECALL),
+    );
+    if (
+      !this.checkpoints.compare('fulfillment.dispatch_recall', legacy, authzSubjectOf(actor), [
+        'fulfillment.dispatch.recall',
+      ])
+    ) {
       throw new ForbiddenException(`Missing required scope: ${FULFILLMENT_SCOPE.DISPATCH_RECALL}`);
     }
   }

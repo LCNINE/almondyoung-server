@@ -7,7 +7,9 @@ import { useDataTable } from '@/hooks/use-data-table';
 import { useNoticesTableColumns } from '@/hooks/table/columns/use-notices-table-columns';
 import { useNoticesTableFilters } from '@/hooks/table/filters/use-notices-table-filters';
 import { useNoticesTableQuery } from '@/hooks/table/query/use-notices-table-query';
-import { useNotices, useDeleteNotice } from '@/lib/services/products';
+import { useNotices, useDeleteNotice, useCreateNotice } from '@/lib/services/products';
+import { Can } from '@/components/auth/can';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { NoticeDto } from '@/lib/types/dto/products';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -22,13 +24,14 @@ export function NoticesTable() {
   const { data, isLoading, isFetching } = useNotices(searchParams);
   const filters = useNoticesTableFilters();
   const deleteMutation = useDeleteNotice();
+  const { canRun } = usePermissionCheck();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<NoticeDto | null>(null);
 
   const columns = useNoticesTableColumns({
     onDetail: (row) => router.push(`/mall/notices/${row.id}`),
-    onDelete: setDeleteTarget,
+    onDelete: canRun(useDeleteNotice) ? setDeleteTarget : undefined,
   });
 
   const rows = data ?? [];
@@ -56,9 +59,11 @@ export function NoticesTable() {
   return (
     <>
       <div className="flex items-center gap-2 px-4 pt-4">
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          공지 등록
-        </Button>
+        <Can run={useCreateNotice}>
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            공지 등록
+          </Button>
+        </Can>
       </div>
 
       <DataTable

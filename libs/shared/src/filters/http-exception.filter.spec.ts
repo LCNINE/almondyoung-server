@@ -1,4 +1,4 @@
-import { ArgumentsHost, ConflictException } from '@nestjs/common';
+import { ArgumentsHost, ConflictException, ForbiddenException } from '@nestjs/common';
 import { GlobalExceptionFilter } from './http-exception.filter';
 
 describe('domain error response contract', () => {
@@ -100,5 +100,38 @@ describe('line box details allowlist (#1063)', () => {
     ['LINE_BOX_NOT_DRAFT', { fulfillmentOrderId: 'fo-1', boxes: [null] }],
   ])('drops malformed %s details', (code, details) => {
     expect(render(String(code), details)).not.toHaveProperty('details');
+  });
+});
+
+describe('required permissions on a permission denial', () => {
+  function render(exception: unknown) {
+    let body: unknown;
+    const reply = {
+      status: () => reply,
+      send: (value: unknown) => {
+        body = value;
+      },
+    };
+    const host = {
+      switchToHttp: () => ({ getResponse: () => reply, getRequest: () => ({ method: 'GET', url: '/' }) }),
+    } as ArgumentsHost;
+    new GlobalExceptionFilter().catch(exception, host);
+    return body;
+  }
+
+  it('keeps the permission keys a 403 names so the screen can say which one is missing', () => {
+    expect(
+      render(new ForbiddenException({ message: 'Permission required', requiredPermissions: ['order.order.write'] })),
+    ).toMatchObject({ requiredPermissions: ['order.order.write'] });
+  });
+
+  it('drops anything that is not a list of strings, and never adds it to other statuses', () => {
+    expect(render(new ForbiddenException({ message: 'x', requiredPermissions: 'order.order.write' }))).not.toHaveProperty(
+      'requiredPermissions',
+    );
+    expect(render(new ForbiddenException({ message: 'x', requiredPermissions: [1] }))).not.toHaveProperty('requiredPermissions');
+    expect(render(new ConflictException({ message: 'x', requiredPermissions: ['a.b.c'] }))).not.toHaveProperty(
+      'requiredPermissions',
+    );
   });
 });

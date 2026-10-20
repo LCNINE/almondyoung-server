@@ -1,16 +1,14 @@
-import { RequireScopes } from '@app/authorization';
+import { RequireScopes, RequirePermission, PiiResponse, PiiWrite } from '@app/authorization';
 import {
   Body,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
-  HttpException,
   InternalServerErrorException,
   NotFoundException,
   Param,
   Patch,
-  Put,
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -21,19 +19,18 @@ import { GetUsersQueryDto } from './dto/get-users-query.dto';
 import { DateRangeQueryDto } from './dto/date-range-query.dto';
 import { UsersService } from './users.service';
 import { UserConsent } from '../../consents/types/consent.type';
-import { ReplaceUserRolesDto, UserRolesResponseDto } from '../roles/dto/user-roles.dto';
-import { RolesService } from '../roles/roles.service';
-import { ApplicationException } from '@app/shared/filters/application.exception';
 
 @ApiTags('사용자 관리')
 @ApiBearerAuth('access-token')
 @Controller('admin/users')
 export class UsersController {
-  constructor(
-    private readonly usersService: UsersService,
-    private readonly rolesService: RolesService,
-  ) {}
+  constructor(private readonly usersService: UsersService) {}
 
+  @PiiResponse({
+    fields: { 'data[].username': 'name', 'data[].email': 'email', 'data[].phoneNumber': 'phone' },
+    subjects: [{ path: 'data[].id', type: 'user' }],
+  })
+  @RequirePermission('customer.profile.read')
   @Get()
   @RequireScopes('master', 'admin:users:read', 'admin:access')
   @ApiOperation({
@@ -49,6 +46,7 @@ export class UsersController {
     return await this.usersService.getUsers(query);
   }
 
+  @RequirePermission('customer.profile.read')
   @Get('stats/daily-signups')
   @RequireScopes('master', 'admin:users:read', 'admin:access')
   @ApiOperation({ summary: '일별 신규 가입자 수 — KST 달력일 귀속' })
@@ -56,6 +54,7 @@ export class UsersController {
     return this.usersService.getDailySignups(query.from, query.to);
   }
 
+  @RequirePermission('customer.profile.read')
   @Get('consents')
   @RequireScopes('master', 'admin:users:read')
   @ApiOperation({
@@ -82,6 +81,7 @@ export class UsersController {
     });
   }
 
+  @RequirePermission('customer.profile.read')
   @Get('consent/:userId')
   @RequireScopes('master', 'admin:users:read')
   @ApiOperation({
@@ -96,6 +96,19 @@ export class UsersController {
     return await this.usersService.getUserConsentByUserId(userId);
   }
 
+  @PiiResponse({
+    fields: {
+      username: 'name',
+      email: 'email',
+      'profile.phoneNumber': 'phone',
+      // 주소는 객체로도 JSON 문자열로도 저장돼 있어 통째로 가린다.
+      'profile.address': 'redact',
+      'profile.birthDate': 'redact',
+    },
+    subjects: [{ path: 'id', type: 'user' }],
+    reveal: true,
+  })
+  @RequirePermission('customer.profile.read')
   @Get(':userId')
   @RequireScopes('master', 'admin:users:read')
   @ApiOperation({
@@ -119,6 +132,9 @@ export class UsersController {
 
   @ApiOperation({ summary: '사용자 정보 수정' })
   @ApiResponse({ status: 200, description: '프로필 수정 성공' })
+  @PiiResponse({ fields: { username: 'name', email: 'email' }, subjects: [{ param: 'userId', type: 'user' }] })
+  @PiiWrite({ fields: ['username', 'phoneNumber', 'address'] })
+  @RequirePermission('customer.profile.write')
   @Patch(':userId')
   @RequireScopes('master', 'admin:users:modify')
   @HttpCode(HttpStatus.OK)
@@ -129,31 +145,5 @@ export class UsersController {
       throw new NotFoundException('해당 사용자를 찾을 수 없습니다.');
     }
     return updatedUser;
-  }
-
-  @ApiOperation({ summary: '사용자의 현재 역할 ID 조회' })
-  @ApiResponse({ status: 200, description: '역할 ID 목록 반환' })
-  @Get(':userId/roles')
-  @RequireScopes('master')
-  async getUserRoles(@Param('userId') userId: string): Promise<UserRolesResponseDto> {
-    try {
-      return await this.rolesService.getUserRoles(userId);
-    } catch (e: any) {
-      if (e instanceof ApplicationException) throw new HttpException(e.message, e.getHttpStatus());
-      throw new InternalServerErrorException(e.message);
-    }
-  }
-
-  @ApiOperation({ summary: '사용자 역할 전체 교체 (체크박스 저장)' })
-  @ApiResponse({ status: 200, description: '역할 교체 성공' })
-  @Put(':userId/roles')
-  @RequireScopes('master')
-  async replaceUserRoles(@Param('userId') userId: string, @Body() dto: ReplaceUserRolesDto): Promise<void> {
-    try {
-      return await this.rolesService.replaceUserRoles(userId, dto);
-    } catch (e: any) {
-      if (e instanceof ApplicationException) throw new HttpException(e.message, e.getHttpStatus());
-      throw new InternalServerErrorException(e.message);
-    }
   }
 }

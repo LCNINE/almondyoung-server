@@ -13,7 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBody } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { User, RequirePermission, PiiResponse } from '@app/authorization';
 import { ProductMatchingService } from '../services/product-matching.service';
 import { ResolveLegacyIgnoredMatchingDto, ResolveMatchingDto, StockPolicyDto } from '../dto/resolve-matching.dto';
 import { SetMatchingPriorityDto } from '../dto/set-matching-priority.dto';
@@ -27,6 +27,7 @@ import { NewSkuScopeGuard } from '../guards/new-sku-scope.guard';
 export class ProductMatchingController {
   constructor(private readonly productMatchingService: ProductMatchingService) {}
 
+  @RequirePermission('order.order.read')
   @Get()
   @ApiOperation({ summary: '상품매칭 목록 조회' })
   @ApiQuery({ name: 'status', required: false, enum: matchingStatusEnum.enumValues })
@@ -50,6 +51,7 @@ export class ProductMatchingController {
     }
   }
 
+  @RequirePermission('order.order.read')
   @Get('legacy-ignored')
   @ApiOperation({ summary: '레거시 ignored 상품매칭 감사 목록 조회' })
   @ApiQuery({ name: 'limit', required: false, type: Number })
@@ -67,6 +69,16 @@ export class ProductMatchingController {
     }
   }
 
+  @PiiResponse({
+    fields: {
+      'data[].customerName': 'name',
+      'data[].customerPhone': 'phone',
+    },
+    subjects: [
+      { path: 'data[].salesOrderId', type: 'sales_order' },
+    ],
+  })
+  @RequirePermission('order.order.read')
   @Get('order-lines')
   @ApiOperation({ summary: '주문 라인별 매칭 현황 조회' })
   @ApiQuery({ name: 'matchingStatus', required: false, enum: [...matchingStatusEnum.enumValues, 'unregistered'] })
@@ -108,6 +120,7 @@ export class ProductMatchingController {
     }
   }
 
+  @RequirePermission('order.matching.write')
   @Patch(':id/resolve')
   @UseGuards(NewSkuScopeGuard)
   @ApiOperation({ summary: '매칭 대기 해소 (SKU 구성 매칭 또는 void 전략)' })
@@ -125,6 +138,7 @@ export class ProductMatchingController {
     }
   }
 
+  @RequirePermission('order.matching.write')
   @Post(':id/legacy-ignored/resolve')
   @ApiOperation({ summary: '레거시 ignored 상품매칭 정리' })
   @ApiBody({ type: ResolveLegacyIgnoredMatchingDto })
@@ -149,6 +163,7 @@ export class ProductMatchingController {
     }
   }
 
+  @RequirePermission('order.matching.write')
   @Patch(':id/priority')
   @ApiOperation({ summary: '매칭 대기 우선순위 설정' })
   @ApiResponse({ status: 200, description: '매칭 우선순위가 설정되었습니다.' })
@@ -163,6 +178,7 @@ export class ProductMatchingController {
     }
   }
 
+  @RequirePermission('order.matching.write')
   @Patch(':id/strategy')
   @ApiOperation({ summary: '매칭 전략 변경' })
   @ApiResponse({ status: 200, description: '매칭 전략이 변경되었습니다.' })
@@ -178,6 +194,7 @@ export class ProductMatchingController {
     }
   }
 
+  @RequirePermission('order.matching.write')
   @Patch(':id/stock-policy')
   @ApiOperation({ summary: '매칭의 재고 정책 업데이트' })
   @ApiBody({ type: StockPolicyDto })
@@ -194,6 +211,7 @@ export class ProductMatchingController {
     }
   }
 
+  @RequirePermission('order.order.read')
   @Get('variants/:variantId/stock-policy')
   @ApiOperation({ summary: 'Variant의 재고 정책 조회' })
   @ApiResponse({ status: 200, description: '재고 정책을 반환합니다.' })
@@ -206,6 +224,7 @@ export class ProductMatchingController {
     return policy;
   }
 
+  @RequirePermission('order.order.read')
   @Post('variants/:variantId/sku-lookup')
   @ApiOperation({ summary: 'Variant의 SKU 조합 조회' })
   @ApiResponse({ status: 200, description: '선택된 옵션에 따른 SKU 목록을 반환합니다.' })

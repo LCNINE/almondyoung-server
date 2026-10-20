@@ -6,10 +6,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AuthorizationService } from '@app/authorization';
+import { AuthorizationService, PermissionCheckpoints } from '@app/authorization';
 import { DbService, InjectTypedDb } from '@app/db';
 import { and, asc, eq, gt, inArray, ne, notInArray } from 'drizzle-orm';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { legacyHasFulfillmentScope } from '../../../platform/auth/fulfillment-authz';
+import { FULFILLMENT_SCOPE, FulfillmentScope } from '../../../platform/auth/fulfillment-scopes';
+import { authzSubjectOf } from '../../../platform/auth/system-actor';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { ConsolidationActor, ConsolidationSourceDto, CreateConsolidationDto } from '../dto/consolidation.dto';
@@ -185,6 +187,7 @@ export class ConsolidationService {
     private readonly audit: AuditService,
     private readonly authorization: AuthorizationService,
     private readonly workflowGate: FulfillmentWorkflowGate,
+    private readonly checkpoints: PermissionCheckpoints,
   ) {}
 
   async findCandidates(warehouseId: string, sourceShipmentId?: string, tx?: DbTx) {
@@ -1153,10 +1156,13 @@ export class ConsolidationService {
     }
   }
 
-  private async requireScope(actor: ConsolidationActor, scope: string): Promise<void> {
-    if (actor.roles.includes('master')) return;
-    const scopes = await this.authorization.getScopesByRoles(actor.roles);
-    if (!scopes.has(scope)) throw new ForbiddenException(`Missing required scope: ${scope}`);
+  private async requireScope(actor: ConsolidationActor, scope: FulfillmentScope): Promise<void> {
+    const legacy = await this.checkpoints.legacyVerdict(() =>
+      legacyHasFulfillmentScope(this.authorization, actor.roles, scope),
+    );
+    if (!this.checkpoints.compare('fulfillment.consolidation_scope', legacy, authzSubjectOf(actor), [scope])) {
+      throw new ForbiddenException(`Missing required scope: ${scope}`);
+    }
   }
 
   private conflict(code: string, message: string): ConflictException {

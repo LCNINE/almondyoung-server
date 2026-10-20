@@ -15,7 +15,7 @@ interface Props {
   dragState: DragState;
   onToggleExpand: (id: string) => void;
   onSelect: (id: string) => void;
-  onAddChild: (parentId: string) => void;
+  onAddChild?: (parentId: string) => void;
   dragProps: (node: CategoryNode) => React.HTMLAttributes<HTMLDivElement> & {
     draggable: boolean;
   };
@@ -104,6 +104,7 @@ export function TreeNode({
 
         <span className="ml-auto" />
 
+        {onAddChild && (
         <button
           type="button"
           aria-label="자식 카테고리 추가"
@@ -115,6 +116,7 @@ export function TreeNode({
         >
           <Plus className="h-3.5 w-3.5" />
         </button>
+        )}
       </div>
 
       {isExpanded && hasChildren && (

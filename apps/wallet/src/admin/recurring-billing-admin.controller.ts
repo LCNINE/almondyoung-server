@@ -18,6 +18,7 @@ import {
   AdminRecurringBillingListQueryDto,
 } from './dto/admin-recurring-billing.dto';
 import { InvoiceExecutorService } from '../invoices/invoice-executor.service';
+import { RequirePermission, PiiResponse } from '@app/authorization';
 
 @ApiTags('Admin - Recurring Billing')
 @WalletAdminAuth()
@@ -29,6 +30,8 @@ export class RecurringBillingAdminController {
   ) {}
 
   // 인보이스(미수금) 뷰 — 청구의 권위 상태 목록(ADR-0027 §8-2).
+  @PiiResponse({ fields: { 'data[].billingMethodDisplayName': 'text' }, subjects: [{ path: 'data[].userId', type: 'user' }] })
+  @RequirePermission('membership.billing.read')
   @Get('invoices')
   @ApiOperation({ summary: 'List invoices (admin, ADR-0027)' })
   async listInvoices(@Query() query: AdminInvoiceListQueryDto) {
@@ -36,6 +39,7 @@ export class RecurringBillingAdminController {
   }
 
   // 인보이스 집행 수동 트리거 — due 스캔은 크론과 동일 경로, 단건은 관리자 수동 재시도.
+  @RequirePermission('payment.billing.execute')
   @Post('invoices/run-due')
   @HttpCode(200)
   @ApiOperation({ summary: 'Run due-invoice executor scan now (admin)' })
@@ -44,6 +48,7 @@ export class RecurringBillingAdminController {
     return { message: 'invoice executor run completed' };
   }
 
+  @RequirePermission('payment.billing.execute')
   @Post('invoices/:id/execute')
   @HttpCode(200)
   @ApiOperation({ summary: 'Execute a single schedulable invoice now (admin)' })
@@ -60,18 +65,21 @@ export class RecurringBillingAdminController {
     }
   }
 
+  @RequirePermission('membership.billing.read')
   @Get('finance')
   @ApiOperation({ summary: 'Monthly billed / collected / failed amounts for membership invoices (admin)' })
   async getFinance(@Query() query: AdminRecurringBillingFinanceQueryDto) {
     return this.service.getFinance(query.month ?? currentKstMonth(), query.months ?? 6);
   }
 
+  @RequirePermission('membership.billing.read')
   @Get('overview')
   @ApiOperation({ summary: 'Get recurring billing overview counts (admin)' })
   async getOverview() {
     return this.service.getOverview();
   }
 
+  @RequirePermission('membership.billing.read')
   @Get('items')
   @ApiOperation({
     summary: 'List recurring billing items by view (needs-action | members | withdrawals | contracts)',
@@ -80,6 +88,7 @@ export class RecurringBillingAdminController {
     return this.service.listItems(query);
   }
 
+  @RequirePermission('payment.billing.execute')
   @Post('providers/cms/members/:id/poll')
   @HttpCode(200)
   @ApiOperation({ summary: 'Poll CMS member registration status from provider (admin)' })
@@ -93,6 +102,7 @@ export class RecurringBillingAdminController {
     }
   }
 
+  @RequirePermission('payment.billing.execute')
   @Post('providers/cms/withdrawals/:id/poll')
   @HttpCode(200)
   @ApiOperation({ summary: 'Poll CMS withdrawal settlement status from provider (admin)' })
@@ -106,6 +116,7 @@ export class RecurringBillingAdminController {
     }
   }
 
+  @RequirePermission('membership.billing.read')
   @Get('agreement-state-by-refs')
   @ApiOperation({ summary: '계약 ID 목록으로 결제 계약 상태 일괄 조회' })
   async getAgreementStateByRefs(@Query('refs') refs: string | string[] | undefined) {

@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Spinner } from '@/components/ui/spinner';
+import { Can } from '@/components/auth/can';
 import { useCreateMasterDraftVersion } from '@/lib/services/products/mutations';
 import { formatVersionLifecycleError } from '../version-lifecycle-actions/version-lifecycle-actions-model';
 
@@ -51,6 +52,7 @@ export function CreateDraftAction({ masterId, versionId }: Props) {
   };
 
   return (
+    <Can run={useCreateMasterDraftVersion}>
     <AlertDialog open={open} onOpenChange={setOpen}>
       <button
         type="button"
@@ -92,5 +94,6 @@ export function CreateDraftAction({ masterId, versionId }: Props) {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+    </Can>
   );
 }

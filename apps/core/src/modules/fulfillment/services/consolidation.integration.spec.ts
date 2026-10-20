@@ -1,3 +1,4 @@
+import { createCheckpointsForTesting } from '@app/authorization';
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -56,6 +57,7 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
       { getScopesByRoles: () => Promise.resolve(new Set([FULFILLMENT_SCOPE.SHIPMENT_REOPEN])) } as never,
       new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
       assembleBoxWithdrawal(dbService),
+      createCheckpointsForTesting(),
     );
   });
 
@@ -625,6 +627,7 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
           getScopesByRoles: () => Promise.resolve(new Set([FULFILLMENT_SCOPE.SHIPMENT_CONSOLIDATE])),
         } as never,
         new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
+        createCheckpointsForTesting(),
       );
       await expect(
         withoutOverride.consolidate(dto, `override-denied-${randomUUID()}`, { ...actor, roles: ['limited'] }, tx),
@@ -754,6 +757,7 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
           ),
       } as never,
       new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
+      createCheckpointsForTesting(),
     );
     const key = `audit-rollback-${randomUUID()}`;
     await expect(
@@ -815,6 +819,7 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
             ),
         } as never,
         new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
+        createCheckpointsForTesting(),
       );
     };
     const dto = {

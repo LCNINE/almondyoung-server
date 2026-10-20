@@ -9,7 +9,9 @@ import { useDataTable } from '@/hooks/use-data-table';
 import { useSitePopupsTableColumns } from '@/hooks/table/columns/use-site-popups-table-columns';
 import { useSitePopupsTableFilters } from '@/hooks/table/filters/use-site-popups-table-filters';
 import { useSitePopupsTableQuery } from '@/hooks/table/query/use-site-popups-table-query';
-import { useDeleteSitePopup, useSitePopups } from '@/lib/services/products';
+import { useCreateSitePopup, useDeleteSitePopup, useSitePopups } from '@/lib/services/products';
+import { Can } from '@/components/auth/can';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { SitePopupDto } from '@/lib/types/dto/products';
 import { PopupCreateDialog } from '../create-dialog';
 import { PopupDeleteDialog } from '../delete-dialog';
@@ -22,13 +24,14 @@ export function PopupsTable() {
   const { data, isLoading, isFetching } = useSitePopups(searchParams);
   const filters = useSitePopupsTableFilters();
   const deleteMutation = useDeleteSitePopup();
+  const { canRun } = usePermissionCheck();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<SitePopupDto | null>(null);
 
   const columns = useSitePopupsTableColumns({
     onDetail: (row) => router.push(`/mall/popups/${row.id}`),
-    onDelete: setDeleteTarget,
+    onDelete: canRun(useDeleteSitePopup) ? setDeleteTarget : undefined,
   });
 
   const rows = data ?? [];
@@ -55,9 +58,11 @@ export function PopupsTable() {
   return (
     <>
       <div className="flex items-center gap-2 px-4 pt-4">
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          팝업 등록
-        </Button>
+        <Can run={useCreateSitePopup}>
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            팝업 등록
+          </Button>
+        </Can>
       </div>
 
       <DataTable

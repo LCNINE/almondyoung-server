@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { CreateDeliveryProfileDto } from '../dto/create-delivery-profile.dto';
 import { UpdateDeliveryProfileDto } from '../dto/update-delivery-profile.dto';
@@ -13,6 +13,7 @@ import { DeliveryProfileService } from '../services/delivery-profile.service';
 export class DeliveryProfileController {
   constructor(private readonly service: DeliveryProfileService) {}
 
+  @RequirePermission('inventory.stock.read')
   @Get()
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '배송 프로필 목록 (연결 SKU 수 포함)' })
@@ -21,6 +22,7 @@ export class DeliveryProfileController {
     return this.service.findAll();
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get(':id')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '배송 프로필 조회' })
@@ -29,6 +31,7 @@ export class DeliveryProfileController {
     return this.service.findOne(id);
   }
 
+  @RequirePermission('inventory.master.write')
   @Post()
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '배송 프로필 생성 — 계획 확정이 요구하는 필드를 전부 받는다' })
@@ -37,6 +40,7 @@ export class DeliveryProfileController {
     return this.service.create(dto);
   }
 
+  @RequirePermission('inventory.master.write')
   @Patch(':id')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '배송 프로필 수정 — 중첩 객체는 통째로 보낸다' })

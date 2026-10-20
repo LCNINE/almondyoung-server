@@ -6,7 +6,7 @@ import CsOrderLookup from '@/features/cs/order-lookup';
 // 주문 이력 목록의 주문번호 링크로 진입하는 CS 주문조회 페이지.
 export default function CsPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/cs">
       <div className="flex w-full max-w-[1100px] flex-col gap-y-2 p-3">
         <Suspense
           fallback={<div className="p-4 text-sm text-gray-500">불러오는 중…</div>}

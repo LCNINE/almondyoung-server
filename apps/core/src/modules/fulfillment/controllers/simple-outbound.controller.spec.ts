@@ -1,5 +1,10 @@
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
-import { getScopeAuthorizationDecision, REQUIRED_SCOPES_KEY, ScopeGuard } from '@app/authorization';
+import {
+  getScopeAuthorizationDecision,
+  REQUIRED_SCOPES_KEY,
+  ScopeGuard,
+  createCheckpointsForTesting,
+} from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { SimpleOutboundController } from './simple-outbound.controller';
 
@@ -15,7 +20,11 @@ describe('SimpleOutboundController', () => {
   function build() {
     const service = { scan: jest.fn().mockResolvedValue(state), forceComplete: jest.fn().mockResolvedValue(state) };
     const reader = { byTrackingNo: jest.fn().mockResolvedValue({ shipmentId: 's-1' }) };
-    return { service, reader, controller: new SimpleOutboundController(service as never, reader as never) };
+    return {
+      service,
+      reader,
+      controller: new SimpleOutboundController(service as never, reader as never, createCheckpointsForTesting()),
+    };
   }
 
   // Mirrors shipment.controller.spec.ts's requestAuthorizedByMappedRole: runs the real ScopeGuard so

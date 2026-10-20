@@ -7,6 +7,7 @@ import {
   printOrdersClient,
   type PrintOrderTab,
 } from '@/lib/api/domains/orders/print-orders.client';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export const printOrderKeys = {
   all: ['print-orders'] as const,
@@ -78,6 +79,7 @@ export function useRetryPrintOrder() {
     onSuccess: invalidate,
   });
 }
+useRetryPrintOrder.permission = ['order.order.write'] as const satisfies PermissionRequirement;
 
 export function useConfirmTestPrintOrder() {
   const invalidate = useInvalidate();
@@ -87,6 +89,7 @@ export function useConfirmTestPrintOrder() {
     onSuccess: invalidate,
   });
 }
+useConfirmTestPrintOrder.permission = ['order.order.write'] as const satisfies PermissionRequirement;
 
 export function useResolveCancelPrintOrder() {
   const invalidate = useInvalidate();
@@ -96,3 +99,4 @@ export function useResolveCancelPrintOrder() {
     onSuccess: invalidate,
   });
 }
+useResolveCancelPrintOrder.permission = ['order.order.write'] as const satisfies PermissionRequirement;

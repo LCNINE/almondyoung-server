@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
-import { AdminRealmGuard, JwtAuthGuard } from '@app/authorization';
+import { AdminRealmGuard, JwtAuthGuard, RequirePermission, PermissionGuard } from '@app/authorization';
 import { AdminKeywordStatisticsQueryDto, AdminKeywordStatisticsResponseDto } from './dto/admin-keyword-statistics.dto';
 import {
   AdminKeywordDetailQueryDto,
@@ -20,7 +20,7 @@ import { SearchKeywordService } from './search-keyword.service';
  * (notification/channel-adapter 와 같은 짝). AUTH_SECRET 또는 OIDC_ISSUER_URL
  * env 가 있어야 부팅된다 (AuthorizationModule 의 AUTH_CONFIG 팩토리).
  */
-@UseGuards(JwtAuthGuard, AdminRealmGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)
 @Controller('search/admin/keywords')
 export class AdminKeywordController {
   constructor(
@@ -28,6 +28,7 @@ export class AdminKeywordController {
     private readonly searchKeywordOpsService: SearchKeywordOpsService,
   ) {}
 
+  @RequirePermission('analytics.report.read')
   @Get('statistics')
   async getStatistics(@Query() query: AdminKeywordStatisticsQueryDto): Promise<AdminKeywordStatisticsResponseDto> {
     if (query.from > query.to) {
@@ -37,6 +38,7 @@ export class AdminKeywordController {
   }
 
   /** 0건 검색어 운영 목록 — "N일 지연" 방치 추적 + 색인 근거 + 담당·메모 */
+  @RequirePermission('analytics.report.read')
   @Get('zero-hit')
   async getZeroHitKeywords(@Query() query: AdminZeroHitKeywordsQueryDto): Promise<AdminZeroHitKeywordsResponseDto> {
     if (query.from > query.to) {
@@ -52,6 +54,7 @@ export class AdminKeywordController {
   }
 
   /** 특정 키워드 단건 드릴다운 — 검색수·0건수·일별 추이·전기간 비교 */
+  @RequirePermission('analytics.report.read')
   @Get('detail')
   async getKeywordDetail(@Query() query: AdminKeywordDetailQueryDto): Promise<AdminKeywordDetailResponseDto> {
     if (query.from > query.to) {
@@ -61,6 +64,7 @@ export class AdminKeywordController {
   }
 
   /** 키워드 운영 상태 upsert — 담당자 지정·메모·처리 상태 */
+  @RequirePermission('analytics.keyword.write')
   @Patch('issues/:keywordNorm')
   async upsertIssue(
     @Param('keywordNorm') keywordNorm: string,

@@ -1,3 +1,4 @@
+import { createCheckpointsForTesting } from '@app/authorization';
 import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
 import { ConfigService } from '@nestjs/config';
@@ -64,6 +65,7 @@ export function makeSeedDeps(db: PostgresJsDatabase<typeof wmsSchema>): SeedDeps
     { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
     workflowGate,
     assembleBoxWithdrawal(svc),
+    createCheckpointsForTesting(),
   );
   return {
     fulfillments: wired.fulfillments,

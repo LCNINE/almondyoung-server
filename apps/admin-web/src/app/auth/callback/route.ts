@@ -5,6 +5,8 @@ import {
   consumeStateCookie,
   setSessionCookies,
 } from "@/lib/auth/session-cookies";
+import { chooseLanding } from "@/lib/auth/landing";
+import { getMyPermissionsForToken } from "@/lib/auth/my-permissions.server";
 import {
   exchangeCodeForTokens,
   verifyIdToken,
@@ -61,7 +63,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
   }
 
-  const dest = new URL(stateRecord.redirectTo, request.nextUrl.origin);
+  const dest = new URL(await landingFor(stateRecord.redirectTo, tokens.accessToken), request.nextUrl.origin);
   const response = NextResponse.redirect(dest);
 
   // NextResponse.redirect 의 cookies API 는 .set 을 지원 — session-cookies 의 writeSessionCookies 가
@@ -70,6 +72,21 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   writeSessionCookies(response.cookies, tokens);
 
   return response;
+}
+
+/**
+ * 기본 목적지(`/`)로 가는 로그인이면 역할이 지정한 첫 화면으로 보낸다. 권한 조회는 역할 조합 캐시를 타고,
+ * 실패하면 가려던 곳 그대로 — 첫 화면은 편의라 로그인을 막지 않는다.
+ */
+async function landingFor(redirectTo: string, accessToken: string): Promise<string> {
+  if (redirectTo !== "/") return redirectTo;
+  try {
+    const mine = await getMyPermissionsForToken(accessToken);
+    return mine ? chooseLanding(mine, redirectTo) : redirectTo;
+  } catch (e) {
+    console.error("[oidc-callback] landing lookup failed", e);
+    return redirectTo;
+  }
 }
 
 function failRedirect(request: NextRequest, code: string): NextResponse {

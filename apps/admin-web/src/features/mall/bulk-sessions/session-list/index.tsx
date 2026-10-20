@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { createColumnHelper } from '@tanstack/react-table';
+import { Can } from '@/components/auth/can';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { Button } from '@/components/ui/button';
@@ -11,7 +12,10 @@ import { DateCell } from '@/components/table/table-cells/common';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useQueryParams } from '@/hooks/use-query-params';
 import { parseServerError } from '@/lib/api/server-error';
-import { useBulkSessionList } from '@/lib/services/products/bulk-session';
+import {
+  useBulkSessionList,
+  useUploadBulkSession,
+} from '@/lib/services/products/bulk-session';
 import type { BulkSessionSummary } from '@/lib/types/dto/bulk-session';
 import { phaseBadgeVariant, phaseLabel } from '../lib/session-labels';
 import { UploadModal } from './upload-modal';
@@ -85,9 +89,11 @@ export default function BulkSessionListTemplate() {
         title="엑셀 일괄 등록/수정"
         subtitle="엑셀 양식을 올려 여러 상품을 한 번에 등록하거나 수정합니다."
         right={
-          <Button variant="outline" onClick={() => setUploadOpen(true)}>
-            양식 업로드
-          </Button>
+          <Can run={useUploadBulkSession}>
+            <Button variant="outline" onClick={() => setUploadOpen(true)}>
+              양식 업로드
+            </Button>
+          </Can>
         }
       />
 

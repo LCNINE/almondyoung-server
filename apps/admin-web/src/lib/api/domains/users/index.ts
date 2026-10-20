@@ -1,7 +1,8 @@
 'use client';
 
 import { USER_SERVICE_BASE_URL } from '@/const';
-import { User, UserRolesResponseDto } from '@/lib/types';
+import { parseMyPermissions, type MyPermissions } from '@/lib/auth/my-permissions';
+import { User } from '@/lib/types';
 import {
   AdminUserDetailDto,
   AdminUsersQuery,
@@ -9,9 +10,9 @@ import {
   AdminUserRolesResponseDto,
   CreateAdminAccountDto,
   CreateAdminAccountResult,
-  ReplaceUserRolesDto,
   UpdateMyProfileDto,
 } from '@/lib/types/dto/user';
+import type { StaffAssignmentInput } from '@/lib/types/dto/iam';
 import { client } from '../../client';
 
 function buildQueryString(query: AdminUsersQuery): string {
@@ -48,11 +49,9 @@ export const userApi = {
     return response.data;
   },
 
-  getMyRoles: async (): Promise<UserRolesResponseDto> => {
-    const response = await client.get<UserRolesResponseDto>(
-      `${USER_SERVICE_BASE_URL}/users/roles`
-    );
-    return response.data;
+  getMyPermissions: async (): Promise<MyPermissions> => {
+    const response = await client.get<unknown>(`${USER_SERVICE_BASE_URL}/me/permissions`);
+    return parseMyPermissions(response.data);
   },
 
   // 해당 id로 관리자 사용자 정보 조회
@@ -96,15 +95,9 @@ export const userApi = {
     });
   },
 
-  // 어드민 - 사용자 역할 전체 교체
-  replaceUserRoles: async (
-    userId: string,
-    dto: ReplaceUserRolesDto
-  ): Promise<void> => {
-    await client.put(
-      `${USER_SERVICE_BASE_URL}/admin/users/${userId}/roles`,
-      dto
-    );
+  // 어드민 - 직원 역할만 교체(종료일 포함, 고객 역할은 그대로)
+  replaceStaffRoles: async (userId: string, assignments: StaffAssignmentInput[]): Promise<void> => {
+    await client.put(`${USER_SERVICE_BASE_URL}/admin/users/${userId}/staff-roles`, { assignments });
   },
 
   // 어드민(master 전용) - 관리자 계정 생성. 초기 비밀번호는 서버가 생성해 1회 반환한다.

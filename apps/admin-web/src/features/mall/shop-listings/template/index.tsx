@@ -17,6 +17,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
+import { CanOpen } from '@/components/auth/can';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   Select,
   SelectContent,
@@ -52,6 +54,7 @@ export default function ShopListingsTemplate() {
     buildAdminListQuery(tab, author, q)
   );
   const deleteMutation = useDeleteShopListing();
+  const { canRun } = usePermissionCheck();
   const [deleteTarget, setDeleteTarget] = useState<AdminShopListingDto | null>(
     null
   );
@@ -86,9 +89,11 @@ export default function ShopListingsTemplate() {
             회원·관리자가 올린 가게 양도/양수 글을 검토하고 관리하는 곳이에요.
           </p>
         </div>
-        <Button asChild>
-          <Link href="/mall/shop-listings/new">새 글 쓰기</Link>
-        </Button>
+        <CanOpen screen="/mall/shop-listings/new">
+          <Button asChild>
+            <Link href="/mall/shop-listings/new">새 글 쓰기</Link>
+          </Button>
+        </CanOpen>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -156,9 +161,11 @@ export default function ShopListingsTemplate() {
               : '조건에 맞는 글이 없어요.'}
           </p>
           {tab === 'all' && (
-            <Button asChild className="mt-4">
-              <Link href="/mall/shop-listings/new">첫 글 쓰기</Link>
-            </Button>
+            <CanOpen screen="/mall/shop-listings/new">
+              <Button asChild className="mt-4">
+                <Link href="/mall/shop-listings/new">첫 글 쓰기</Link>
+              </Button>
+            </CanOpen>
           )}
         </div>
       )}
@@ -222,13 +229,15 @@ export default function ShopListingsTemplate() {
                 <Button variant="outline" size="sm" asChild>
                   <Link href={`/mall/shop-listings/${listing.id}`}>열기</Link>
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setDeleteTarget(listing)}
-                >
-                  삭제
-                </Button>
+                {canRun(useDeleteShopListing) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setDeleteTarget(listing)}
+                  >
+                    삭제
+                  </Button>
+                )}
               </div>
             </li>
           );

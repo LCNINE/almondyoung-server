@@ -4,7 +4,7 @@ import ShopListingEditorTemplate from '@/features/mall/shop-listings/template/ed
 
 export default function ShopListingCreatePage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/mall/shop-listings/new">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <Suspense>
           <ShopListingEditorTemplate />

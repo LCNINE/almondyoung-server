@@ -10,6 +10,9 @@ import type {
 } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
 import { ActiveSwitch } from '@/components/common/active-switch';
+import { Can } from '@/components/auth/can';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { formatRatio } from '../../banner-image-guide';
 import {
   BANNER_GROUP_PRESETS,
@@ -34,6 +37,8 @@ const INPUT_CLASS =
 export function GroupForm({ group }: Props) {
   const [form, setForm] = useState<UpdateBannerGroupDto>({});
   const updateMutation = useUpdateBannerGroup();
+  const { blockedReason } = usePermissionCheck();
+  const readOnly = blockedReason(useUpdateBannerGroup) !== null;
   /** 자유 입력이라 MAIN / main / 메인 이 각각 탭이 된다 — 쓰던 값을 다시 고르게 한다 */
   const { data: groups = [] } = useBannerGroups();
   const usedCategories = [...new Set(groups.map((g) => g.category))].filter(
@@ -93,6 +98,7 @@ export function GroupForm({ group }: Props) {
   const preset = matchPreset(form);
 
   return (
+    <PermissionReadOnly run={useUpdateBannerGroup}>
     <BannerSection
       title="배너 그룹 정보"
       action={
@@ -109,14 +115,16 @@ export function GroupForm({ group }: Props) {
               {(form.isActive ?? true) ? '노출중' : '숨김'}
             </label>
           </div>
-          <Button
-            size="sm"
-            className="bg-[#f29219] hover:bg-[#df7b00]"
-            onClick={handleSave}
-            disabled={updateMutation.isPending}
-          >
-            저장
-          </Button>
+          <Can run={useUpdateBannerGroup}>
+            <Button
+              size="sm"
+              className="bg-[#f29219] hover:bg-[#df7b00]"
+              onClick={handleSave}
+              disabled={updateMutation.isPending}
+            >
+              저장
+            </Button>
+          </Can>
         </div>
       }
     >
@@ -178,6 +186,7 @@ export function GroupForm({ group }: Props) {
                           size="sm"
                           variant={selected ? 'default' : 'outline'}
                           className="h-7 rounded-full border text-xs"
+                          disabled={readOnly}
                           onClick={() =>
                             setForm((prev) => ({
                               ...prev,
@@ -255,6 +264,7 @@ export function GroupForm({ group }: Props) {
                     size="sm"
                     className="h-7 border text-xs"
                     title={p.hint}
+                    disabled={readOnly}
                     onClick={() =>
                       setForm((prev) => ({
                         ...prev,
@@ -280,6 +290,7 @@ export function GroupForm({ group }: Props) {
         </div>
       </div>
     </BannerSection>
+    </PermissionReadOnly>
   );
 }
 

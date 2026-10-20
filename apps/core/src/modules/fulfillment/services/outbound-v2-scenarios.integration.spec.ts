@@ -1,3 +1,4 @@
+import { createCheckpointsForTesting } from '@app/authorization';
 import { outbox_events } from '@app/events';
 import { assembleLabels } from '../waybill/__support__/label-fixtures';
 import { AddressDto } from '../dto/address.dto';
@@ -112,6 +113,7 @@ describeIfDb('Outbound V2 release scenarios', () => {
       scopes,
       workflow,
       assembleBoxWithdrawal(dbService),
+      createCheckpointsForTesting(),
     );
     consolidation = new ConsolidationService(
       dbService,
@@ -121,6 +123,7 @@ describeIfDb('Outbound V2 release scenarios', () => {
       audit,
       scopes,
       workflow,
+      createCheckpointsForTesting(),
     );
   });
 
@@ -362,6 +365,7 @@ describeIfDb('Outbound V2 release scenarios', () => {
       authorization,
       workflow,
       assembleBoxWithdrawal(dbService),
+      createCheckpointsForTesting(),
     );
     const localConsolidation = new ConsolidationService(
       dbService,
@@ -371,6 +375,7 @@ describeIfDb('Outbound V2 release scenarios', () => {
       audit,
       authorization,
       workflow,
+      createCheckpointsForTesting(),
     );
     // 플랜3: dispatch 는 WaybillService.assertDispatchable/markUsed 를, consolidation void 시나리오는
     // WaybillService.void(commands+repo+reader) 를 소비한다. carrier registry/issue machine/config 는 이

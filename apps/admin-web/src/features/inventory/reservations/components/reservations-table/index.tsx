@@ -6,6 +6,8 @@ import { useDataTable } from '@/hooks/use-data-table';
 import { useReservationsTableColumns } from '@/hooks/table/columns/use-reservations-table-columns';
 import type { ReservationDto } from '@/lib/types/dto/inventory';
 import { ReleaseReservationDialog } from '../release-reservation-dialog';
+import { useReleaseReservation } from '@/lib/services/inventory';
+import { usePermissionCheck } from '@/hooks/use-permission';
 
 const PAGE_SIZE = 20;
 
@@ -17,7 +19,8 @@ type Props = {
 export function ReservationsTable({ data, isLoading }: Props) {
   const [releaseRow, setReleaseRow] = useState<ReservationDto | null>(null);
 
-  const columns = useReservationsTableColumns({ onRelease: setReleaseRow });
+  const { canRun } = usePermissionCheck();
+  const columns = useReservationsTableColumns({ onRelease: canRun(useReleaseReservation) ? setReleaseRow : undefined });
 
   const { table } = useDataTable({
     data,

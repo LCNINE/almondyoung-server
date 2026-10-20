@@ -5,6 +5,7 @@ import { lineCompositionClient } from '@/lib/api/domains/orders/line-composition
 import type { PutLineCompositionRequest } from '@/lib/types/dto/line-composition';
 import { matchingQueryKeys } from '@/lib/services/matching/query-keys';
 import { orderQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 // 라인 구성이 바뀌면 FO 상세(박스·항목), 매칭체크 목록(개별 지정·해결 여부), 주문 목록(매칭 배지)이 같이 바뀐다
 function invalidateCompositionReaders(queryClient: QueryClient) {
@@ -24,6 +25,7 @@ export const useAssignLineComposition = () => {
     onSuccess: () => invalidateCompositionReaders(queryClient),
   });
 };
+useAssignLineComposition.permission = ['order.matching.write'] as const satisfies PermissionRequirement;
 
 export const useApplyToExistingLines = () => {
   const queryClient = useQueryClient();
@@ -32,3 +34,4 @@ export const useApplyToExistingLines = () => {
     onSuccess: () => invalidateCompositionReaders(queryClient),
   });
 };
+useApplyToExistingLines.permission = ['order.matching.write'] as const satisfies PermissionRequirement;

@@ -41,7 +41,8 @@ export function SendConfirmDialog({
   buttons: AlimtalkButton[];
   isSubmitting: boolean;
   onCancel: () => void;
-  onConfirm: () => void;
+  /** 넘기지 않으면 보내기 버튼을 그리지 않는다(권한 없음) */
+  onConfirm?: () => void;
 }) {
   const preview = state?.preview;
   const blocked =
@@ -112,9 +113,11 @@ export function SendConfirmDialog({
           <Button variant="outline" onClick={onCancel}>
             취소
           </Button>
-          <Button onClick={onConfirm} disabled={blocked || isSubmitting}>
-            {isSubmitting ? <Loader className="animate-spin" /> : '보내기'}
-          </Button>
+          {onConfirm && (
+            <Button onClick={onConfirm} disabled={blocked || isSubmitting}>
+              {isSubmitting ? <Loader className="animate-spin" /> : '보내기'}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

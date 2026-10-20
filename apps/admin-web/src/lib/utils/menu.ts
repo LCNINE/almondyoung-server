@@ -9,7 +9,6 @@ export interface MenuItem {
   children?: MenuItem[];
   isComingSoon?: boolean;
   path?: string;
-  requireRole?: string[];
   /**
    * 미매핑 주문(채널 수집 실패 격리) 건수를 메뉴 라벨 옆에 배지로 그린다.
    * 실제 카운트 조회는 렌더 컴포넌트(sidebar-menu-item.tsx의 데스크톱 사이드바,
@@ -54,9 +53,18 @@ const allMenus: MainMenu[] = [
           },
           {
             id: 'admin-accounts',
-            title: '관리자 계정',
+            title: '관리자·권한',
             path: '/users',
-            requireRole: ['master'],
+          },
+          {
+            id: 'iam-audit-log',
+            title: '권한 변경 이력',
+            path: '/users/audit-log',
+          },
+          {
+            id: 'iam-pii-access-log',
+            title: '개인정보 접속기록',
+            path: '/users/pii-access-log',
           },
         ],
       },
@@ -171,11 +179,10 @@ const allMenus: MainMenu[] = [
         path: '/order/stall-board',
       },
       {
-        // 주문 경로 양 끝(core·channel-adapter)의 메시지 실패 (#1016 7·8번). 페이지가 admin·master 전용이다.
+        // 주문 경로 양 끝(core·channel-adapter)의 메시지 실패 (#1016 7·8번). 보이기는 경로 권한표가 정한다.
         id: 'event-failures',
         title: '이벤트 실패',
         path: '/events/failures',
-        requireRole: ['admin', 'master'],
       },
       {
         id: 'print-orders',
@@ -810,7 +817,6 @@ export const mainMenus: MainMenu[] =
               id: 'demo-console',
               title: '시연 콘솔',
               path: '/demo',
-              requireRole: ['admin', 'master'],
             },
           ],
         },

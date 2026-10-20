@@ -28,7 +28,8 @@ interface Props {
   versions: MasterVersionDto[];
   selectedVersionId: string | null;
   onSelect: (versionId: string) => void;
-  onCreateDraft: () => void;
+  /** 넘기지 않으면 새 draft 버튼을 그리지 않는다(권한 없음). */
+  onCreateDraft?: () => void;
 }
 
 export function VersionSelector({ versions, selectedVersionId, onSelect, onCreateDraft }: Props) {
@@ -55,10 +56,12 @@ export function VersionSelector({ versions, selectedVersionId, onSelect, onCreat
           ))}
         </SelectContent>
       </Select>
-      <Button size="sm" variant="outline" onClick={onCreateDraft}>
-        <Plus className="mr-1 h-3 w-3" />
-        새 draft
-      </Button>
+      {onCreateDraft && (
+        <Button size="sm" variant="outline" onClick={onCreateDraft}>
+          <Plus className="mr-1 h-3 w-3" />
+          새 draft
+        </Button>
+      )}
     </div>
   );
 }

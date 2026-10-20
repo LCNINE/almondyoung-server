@@ -6,7 +6,8 @@ import { Header } from '@/components/admin-ui-experimental/common/header/header'
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { SmsDeviceStatus } from '@/lib/api/domains/sms-gate';
-import { useSmsDevices } from '@/lib/services/sms-gate';
+import { useCreateSmsDevice, useSmsDevices } from '@/lib/services/sms-gate';
+import { Can } from '@/components/auth/can';
 import { DeviceCard } from '../components/device-card';
 import { DeviceFormDialog } from '../components/device-form-dialog';
 
@@ -23,9 +24,11 @@ export default function SmsDevicesTemplate() {
           data ? `SMS Gate 앱이 설치된 발송폰의 연결 상태와 오늘 사용량입니다. 발송 대기 ${data.pendingCount.toLocaleString()}건` : undefined
         }
         right={
-          <Button variant="outline" onClick={() => setCreating(true)}>
-            디바이스 등록
-          </Button>
+          <Can run={useCreateSmsDevice}>
+            <Button variant="outline" onClick={() => setCreating(true)}>
+              디바이스 등록
+            </Button>
+          </Can>
         }
       />
 

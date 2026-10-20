@@ -18,6 +18,7 @@ import { AuthenticatedRequest } from '../wallet.module';
 import { RefundRequestsService } from '../refunds/refund-requests.service';
 import { AdminPaymentIntentListQueryDto } from './dto';
 import { RefundRequestActionDto } from '../refunds/dto';
+import { RequirePermission, PiiResponse } from '@app/authorization';
 
 @ApiTags('Admin - Refund Requests')
 @WalletAdminAuth()
@@ -25,6 +26,16 @@ import { RefundRequestActionDto } from '../refunds/dto';
 export class RefundRequestsAdminController {
   constructor(private readonly service: RefundRequestsService) {}
 
+  @PiiResponse({
+    fields: {
+      'data[].accountNumber': 'account',
+      'data[].holderName': 'name',
+      'data[].reason': 'text',
+      'data[].adminNote': 'text',
+    },
+    subjects: [{ path: 'data[].userId', type: 'user' }],
+  })
+  @RequirePermission('payment.refund.read')
   @Get()
   @ApiOperation({ summary: '대기 중인 환불 요청 목록 (admin)' })
   async list(@Query() query: AdminPaymentIntentListQueryDto) {
@@ -35,6 +46,11 @@ export class RefundRequestsAdminController {
     }
   }
 
+  @PiiResponse({
+    fields: { accountNumber: 'account', holderName: 'name', reason: 'text', adminNote: 'text' },
+    subjects: [{ path: 'userId', type: 'user' }],
+  })
+  @RequirePermission('payment.refund.execute')
   @Post(':id/approve')
   @HttpCode(200)
   @ApiOperation({ summary: '환불 요청 승인 — 저장된 계좌로 자동 환불 실행 (admin)' })
@@ -49,6 +65,11 @@ export class RefundRequestsAdminController {
     }
   }
 
+  @PiiResponse({
+    fields: { accountNumber: 'account', holderName: 'name', reason: 'text', adminNote: 'text' },
+    subjects: [{ path: 'userId', type: 'user' }],
+  })
+  @RequirePermission('payment.refund.execute')
   @Post(':id/reject')
   @HttpCode(200)
   @ApiOperation({ summary: '환불 요청 거절 (admin)' })

@@ -3,7 +3,7 @@ import TimeSaleFormTemplate from '@/features/mall/marketing/time-sale/template/t
 
 export default function MarketingTimeSaleCreatePage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/mall/marketing/time-sale/new">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <TimeSaleFormTemplate />
       </div>

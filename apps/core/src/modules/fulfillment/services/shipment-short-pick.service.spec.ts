@@ -1,3 +1,5 @@
+import { checkpointEvaluations, createCheckpointsForTesting, PermissionCheckpoints } from '@app/authorization';
+import { register } from 'prom-client';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { ReportShipmentShortPickDto } from '../dto/shipment-short-pick.dto';
@@ -5,7 +7,10 @@ import { ShipmentShortPickService } from './shipment-short-pick.service';
 
 /** 명령 실행 전에 끝나는 판정만 본다 — 트랜잭션 본문(부족 승인·재배정·이탈)은 통합 스펙이 본다. */
 describe('ShipmentShortPickService', () => {
-  function makeService(scopes = new Set<string>([FULFILLMENT_SCOPE.SHIPMENT_REOPEN])) {
+  function makeService(
+    scopes = new Set<string>([FULFILLMENT_SCOPE.SHIPMENT_REOPEN]),
+    checkpoints: PermissionCheckpoints = createCheckpointsForTesting(),
+  ) {
     const commands = { execute: jest.fn() };
     const service = new ShipmentShortPickService(
       commands as never,
@@ -14,6 +19,7 @@ describe('ShipmentShortPickService', () => {
       { assertV2MutationAllowed: jest.fn() } as never,
       {} as never,
       {} as never,
+      checkpoints,
     );
     return { service, commands };
   }
@@ -59,5 +65,16 @@ describe('ShipmentShortPickService', () => {
     const { service, commands } = makeService(new Set(['master']));
     await service.report('s', dto, 'k', { id: 'a', roles: ['logistics_worker'] });
     expect(commands.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('결품 판정을 권한과 나란히 비교한다 — 결과는 옛 판정 그대로', async () => {
+    register.resetMetrics();
+    const { service, commands } = makeService(
+      new Set([FULFILLMENT_SCOPE.SHIPMENT_SHORT_PICK]),
+      createCheckpointsForTesting({ logistics_worker: ['fulfillment.shipment.short_pick'] }),
+    );
+    await service.report('s', dto, 'k', { id: 'a', roles: ['logistics_worker'] });
+    expect(commands.execute).toHaveBeenCalledTimes(1);
+    expect(await checkpointEvaluations('fulfillment.short_pick_report', 'match')).toBe(1);
   });
 });

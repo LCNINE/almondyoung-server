@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseFilters, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard, User } from '@app/authorization';
+import { JwtAuthGuard, User, StoreRoute } from '@app/authorization';
 import { BadRequestError } from '@app/shared';
 import { ArrearsRepaymentService } from '../services/arrears/arrears-repayment.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
@@ -17,6 +17,7 @@ import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exce
 export class MeArrearsController {
   constructor(private readonly arrearsRepaymentService: ArrearsRepaymentService) {}
 
+  @StoreRoute()
   @Get()
   @ApiOperation({ summary: '내 미수(미납 멤버십 요금) 조회' })
   @UseGuards(JwtAuthGuard)
@@ -27,6 +28,7 @@ export class MeArrearsController {
   /**
    * 「지금 갚기」. 금액은 서버가 원장에서 더하고, 부분 청산은 받지 않는다(전액 한 번).
    */
+  @StoreRoute()
   @Post('checkout')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: '미수 청산 결제 시작' })

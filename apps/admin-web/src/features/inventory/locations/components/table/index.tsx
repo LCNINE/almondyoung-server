@@ -6,7 +6,13 @@ import { useDataTable } from '@/hooks/use-data-table';
 import { useLocationsTableColumns } from '@/hooks/table/columns/use-locations-table-columns';
 import { useLocationsTableFilters } from '@/hooks/table/filters/use-locations-table-filters';
 import { useLocationsTableQuery } from '@/hooks/table/query/use-locations-table-query';
-import { useLocations } from '@/lib/services/inventory';
+import {
+  useAddCustomBin,
+  useCreateRack,
+  useCreateZoneLocation,
+  useLocations,
+} from '@/lib/services/inventory';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { LocationDto } from '@/lib/types/dto/inventory';
 import { Button } from '@/components/ui/button';
 import { LocationDetailDrawer } from '../location-detail-drawer';
@@ -31,6 +37,7 @@ export function LocationsTable({ warehouseId }: Props) {
   const [zoneOpen, setZoneOpen] = useState(false);
   const [customBinOpen, setCustomBinOpen] = useState(false);
   const [columnsOpen, setColumnsOpen] = useState(false);
+  const { canRun } = usePermissionCheck();
 
   const columns = useLocationsTableColumns({ onDetail: setDetailRow });
 
@@ -51,15 +58,21 @@ export function LocationsTable({ warehouseId }: Props) {
         <Button size="sm" variant="outline" onClick={() => setColumnsOpen(true)}>
           열 관리
         </Button>
-        <Button size="sm" onClick={() => setRackOpen(true)}>
-          새 랙
-        </Button>
-        <Button size="sm" onClick={() => setZoneOpen(true)}>
-          새 구역
-        </Button>
-        <Button size="sm" variant="secondary" onClick={() => setCustomBinOpen(true)}>
-          커스텀 빈 추가
-        </Button>
+        {canRun(useCreateRack) && (
+          <Button size="sm" onClick={() => setRackOpen(true)}>
+            새 랙
+          </Button>
+        )}
+        {canRun(useCreateZoneLocation) && (
+          <Button size="sm" onClick={() => setZoneOpen(true)}>
+            새 구역
+          </Button>
+        )}
+        {canRun(useAddCustomBin) && (
+          <Button size="sm" variant="secondary" onClick={() => setCustomBinOpen(true)}>
+            커스텀 빈 추가
+          </Button>
+        )}
       </div>
 
       <DataTable

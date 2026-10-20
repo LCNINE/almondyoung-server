@@ -6,6 +6,7 @@ import {
   type CreateAdminReturnRequest,
 } from '@/lib/api/domains/return-exchange';
 import { returnExchangeQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export const useCreateReturnRequest = () => {
   const qc = useQueryClient();
@@ -22,6 +23,7 @@ export const useCreateReturnRequest = () => {
     },
   });
 };
+useCreateReturnRequest.permission = ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement;
 
 export const useApproveReturn = () => {
   const qc = useQueryClient();
@@ -32,6 +34,7 @@ export const useApproveReturn = () => {
       qc.invalidateQueries({ queryKey: returnExchangeQueryKeys.allReturns }),
   });
 };
+useApproveReturn.permission = ['order.claim.write'] as const satisfies PermissionRequirement;
 
 export const useRejectReturn = () => {
   const qc = useQueryClient();
@@ -42,6 +45,7 @@ export const useRejectReturn = () => {
       qc.invalidateQueries({ queryKey: returnExchangeQueryKeys.allReturns }),
   });
 };
+useRejectReturn.permission = ['order.claim.write'] as const satisfies PermissionRequirement;
 
 export const useMarkReturnCollectionPending = () => {
   const qc = useQueryClient();
@@ -52,6 +56,7 @@ export const useMarkReturnCollectionPending = () => {
       qc.invalidateQueries({ queryKey: returnExchangeQueryKeys.allReturns }),
   });
 };
+useMarkReturnCollectionPending.permission = ['order.claim.write'] as const satisfies PermissionRequirement;
 
 export const useMarkReturnCollected = () => {
   const qc = useQueryClient();
@@ -61,6 +66,7 @@ export const useMarkReturnCollected = () => {
       qc.invalidateQueries({ queryKey: returnExchangeQueryKeys.allReturns }),
   });
 };
+useMarkReturnCollected.permission = ['order.claim.write'] as const satisfies PermissionRequirement;
 
 export const useMarkReturnInspected = () => {
   const qc = useQueryClient();
@@ -70,6 +76,7 @@ export const useMarkReturnInspected = () => {
       qc.invalidateQueries({ queryKey: returnExchangeQueryKeys.allReturns }),
   });
 };
+useMarkReturnInspected.permission = ['order.claim.write'] as const satisfies PermissionRequirement;
 
 export const useCompleteReturn = () => {
   const qc = useQueryClient();
@@ -79,6 +86,7 @@ export const useCompleteReturn = () => {
       qc.invalidateQueries({ queryKey: returnExchangeQueryKeys.allReturns }),
   });
 };
+useCompleteReturn.permission = ['order.claim.write'] as const satisfies PermissionRequirement;
 
 export const useRetryReturnRefund = () => {
   const qc = useQueryClient();
@@ -88,6 +96,7 @@ export const useRetryReturnRefund = () => {
       qc.invalidateQueries({ queryKey: returnExchangeQueryKeys.allReturns }),
   });
 };
+useRetryReturnRefund.permission = ['payment.refund.execute'] as const satisfies PermissionRequirement;
 
 export const useManualCompleteReturn = () => {
   const qc = useQueryClient();
@@ -98,6 +107,7 @@ export const useManualCompleteReturn = () => {
       qc.invalidateQueries({ queryKey: returnExchangeQueryKeys.allReturns }),
   });
 };
+useManualCompleteReturn.permission = ['order.claim.write'] as const satisfies PermissionRequirement;
 
 export const useApproveExchange = () => {
   const qc = useQueryClient();
@@ -108,6 +118,7 @@ export const useApproveExchange = () => {
       qc.invalidateQueries({ queryKey: returnExchangeQueryKeys.allExchanges }),
   });
 };
+useApproveExchange.permission = ['order.claim.write'] as const satisfies PermissionRequirement;
 
 export const useRejectExchange = () => {
   const qc = useQueryClient();
@@ -118,6 +129,7 @@ export const useRejectExchange = () => {
       qc.invalidateQueries({ queryKey: returnExchangeQueryKeys.allExchanges }),
   });
 };
+useRejectExchange.permission = ['order.claim.write'] as const satisfies PermissionRequirement;
 
 export const useMarkExchangeCollectionPending = () => {
   const qc = useQueryClient();
@@ -128,6 +140,7 @@ export const useMarkExchangeCollectionPending = () => {
       qc.invalidateQueries({ queryKey: returnExchangeQueryKeys.allExchanges }),
   });
 };
+useMarkExchangeCollectionPending.permission = ['order.claim.write'] as const satisfies PermissionRequirement;
 
 export const useMarkExchangeCollected = () => {
   const qc = useQueryClient();
@@ -137,6 +150,7 @@ export const useMarkExchangeCollected = () => {
       qc.invalidateQueries({ queryKey: returnExchangeQueryKeys.allExchanges }),
   });
 };
+useMarkExchangeCollected.permission = ['order.claim.write'] as const satisfies PermissionRequirement;
 
 export const useMarkExchangeInspected = () => {
   const qc = useQueryClient();
@@ -146,6 +160,7 @@ export const useMarkExchangeInspected = () => {
       qc.invalidateQueries({ queryKey: returnExchangeQueryKeys.allExchanges }),
   });
 };
+useMarkExchangeInspected.permission = ['order.claim.write'] as const satisfies PermissionRequirement;
 
 export const useCompleteExchange = () => {
   const qc = useQueryClient();
@@ -155,3 +170,4 @@ export const useCompleteExchange = () => {
       qc.invalidateQueries({ queryKey: returnExchangeQueryKeys.allExchanges }),
   });
 };
+useCompleteExchange.permission = ['order.claim.write'] as const satisfies PermissionRequirement;

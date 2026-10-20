@@ -8,7 +8,7 @@ export default async function BusinessLicenseDetailPage({
 }) {
   const { id } = await params;
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/cs/business-licenses/[id]">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <BusinessLicenseDetail id={id} />
       </div>

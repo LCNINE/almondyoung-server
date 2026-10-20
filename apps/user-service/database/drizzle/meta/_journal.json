@@ -92,6 +92,34 @@
       "when": 1792387038848,
       "tag": "20261019051718_leave-reminders",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792479600000,
+      "tag": "20261020070000_add-iam-permission-tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792479601000,
+      "tag": "20261020070001_seed-iam-roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1792479602000,
+      "tag": "20261020070002_add-role-version-landing-and-iam-audit-logs",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1792479603000,
+      "tag": "20261020070003_add-pii-access-logs",
+      "breakpoints": true
     }
   ]
 }

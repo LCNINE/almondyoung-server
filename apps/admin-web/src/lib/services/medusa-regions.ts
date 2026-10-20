@@ -6,6 +6,7 @@ import {
   type CreateMedusaRegionPayload,
   type UpdateMedusaRegionPayload,
 } from '@/lib/api/domains/medusa/regions';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 const medusaRegionKeys = {
   all: ['medusa-regions'] as const,
@@ -30,6 +31,7 @@ export const useCreateMedusaRegion = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: medusaRegionKeys.all }),
   });
 };
+useCreateMedusaRegion.permission = ['system.region.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateMedusaRegion = () => {
   const qc = useQueryClient();
@@ -47,6 +49,7 @@ export const useUpdateMedusaRegion = () => {
     },
   });
 };
+useUpdateMedusaRegion.permission = ['system.region.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteMedusaRegion = () => {
   const qc = useQueryClient();
@@ -55,3 +58,4 @@ export const useDeleteMedusaRegion = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: medusaRegionKeys.all }),
   });
 };
+useDeleteMedusaRegion.permission = ['system.region.write'] as const satisfies PermissionRequirement;

@@ -4,12 +4,14 @@ import type { FastifyReply } from 'fastify';
 import { EXPORT_COLUMNS, DEFAULT_COLUMN_KEYS } from './product-export.columns';
 import { ProductExportService } from './product-export.service';
 import { ExportColumnDto, ProductExportRequestDto } from './dto/product-export.dto';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('Product Export')
 @Controller('masters/export')
 export class ProductExportController {
   constructor(private readonly service: ProductExportService) {}
 
+  @RequirePermission('catalog.product.read')
   @Get('columns')
   @ApiOperation({
     summary: '내보내기 가능 항목 목록',
@@ -23,6 +25,7 @@ export class ProductExportController {
     };
   }
 
+  @RequirePermission('catalog.product.export')
   @Post()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({

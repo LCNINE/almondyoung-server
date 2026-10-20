@@ -3,6 +3,7 @@
 import { Fragment, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { EventFailureService } from '@/lib/api/domains/events';
 import {
   useDiscardOutbox,
@@ -37,6 +38,8 @@ export function OutboxSection({ service, now }: SectionProps) {
   const resend = useResendOutbox(service);
   const discard = useDiscardOutbox(service);
   const resendAll = useResendAllOutbox(service);
+  // 다시 보내기·종결은 같은 권한이다 — 없으면 버튼을 그리지 않는다(조회는 그대로)
+  const canAct = usePermissionCheck().canRun(useResendOutbox);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [discardTarget, setDiscardTarget] = useState<DiscardTarget | null>(null);
   const [confirmAll, setConfirmAll] = useState(false);
@@ -77,7 +80,7 @@ export function OutboxSection({ service, now }: SectionProps) {
     <section className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold">보내다 실패</h2>
-        {items.length > 0 && (
+        {items.length > 0 && canAct && (
           <Button
             size="sm"
             variant="outline"
@@ -132,6 +135,8 @@ export function OutboxSection({ service, now }: SectionProps) {
                   </td>
                   <td>{item.waitingBehind > 0 ? item.waitingBehind : ''}</td>
                   <td className="text-right" onClick={(e) => e.stopPropagation()}>
+                    {canAct && (
+                      <>
                     <Button
                       size="sm"
                       variant="outline"
@@ -153,6 +158,8 @@ export function OutboxSection({ service, now }: SectionProps) {
                     >
                       종결
                     </Button>
+                      </>
+                    )}
                   </td>
                 </tr>
                 {expanded === item.id && (

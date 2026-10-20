@@ -1,3 +1,4 @@
+import { findPermission } from '@permission-catalog';
 import {
   buildChannelDispatchUpstreamUrl,
   canReadChannelDispatch,
@@ -25,12 +26,18 @@ describe('channel dispatch Admin BFF contract', () => {
     );
   });
 
-  it('allows only the fulfillment logistics role boundary or master', () => {
-    expect(canReadChannelDispatch(['logistics_worker'])).toBe(true);
-    expect(canReadChannelDispatch(['logistics_manager'])).toBe(true);
-    expect(canReadChannelDispatch(['master'])).toBe(true);
-    expect(canReadChannelDispatch(['admin'])).toBe(false);
-    expect(canReadChannelDispatch(undefined)).toBe(false);
+  it('reads the shipment permission, not role names', () => {
+    expect(canReadChannelDispatch(new Set(['fulfillment.shipment.read']))).toBe(true);
+    expect(canReadChannelDispatch(new Set(['order.order.read']))).toBe(false);
+    expect(canReadChannelDispatch(new Set(['master', 'logistics_manager']))).toBe(false);
+  });
+
+  it('is granted to the staff who work on shipments', () => {
+    expect(findPermission('fulfillment.shipment.read')?.grantOnFirstRegistration).toEqual([
+      'admin',
+      'logistics_worker',
+      'logistics_manager',
+    ]);
   });
 
   it('keeps only known fields and allowlisted statuses', () => {

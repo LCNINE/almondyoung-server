@@ -17,6 +17,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { useRefundRequests, useApproveRefundRequest, useRejectRefundRequest } from '@/lib/services/wallet';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { TOSS_BANKS } from '@/lib/constants/toss-banks';
 import type { RefundRequestDto } from '@/lib/types/dto/wallet';
 
@@ -31,6 +32,7 @@ export function RefundRequestsContent() {
   const { data, isLoading } = useRefundRequests(page, limit);
   const approve = useApproveRefundRequest();
   const reject = useRejectRefundRequest();
+  const { canRun } = usePermissionCheck();
 
   const rows = data?.data ?? [];
   const total = data?.total ?? 0;
@@ -120,6 +122,7 @@ export function RefundRequestsContent() {
                   <td className="p-3 text-muted-foreground">{new Date(r.createdAt).toLocaleString('ko-KR')}</td>
                   <td className="p-3">
                     <div className="flex justify-end gap-2">
+                      {canRun(useApproveRefundRequest) && (
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button size="sm" disabled={busy}>
@@ -143,6 +146,8 @@ export function RefundRequestsContent() {
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
+                      )}
+                      {canRun(useRejectRefundRequest) && (
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button size="sm" variant="outline" disabled={busy}>
@@ -163,6 +168,7 @@ export function RefundRequestsContent() {
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
+                      )}
                     </div>
                   </td>
                 </tr>

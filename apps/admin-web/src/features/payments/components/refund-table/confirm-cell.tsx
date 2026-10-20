@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useConfirmRefund } from '@/lib/services/wallet';
+import { Can } from '@/components/auth/can';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -39,33 +40,35 @@ export function RefundConfirmCell({ refund }: { refund: RefundDto }) {
     );
 
   return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger asChild>
-        <Button size="sm" variant="outline" className="h-7 text-xs" disabled={confirm.isPending} onClick={(e) => e.stopPropagation()}>
-          완료 처리
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent onClick={(e) => e.stopPropagation()}>
-        <AlertDialogHeader>
-          <AlertDialogTitle>수동 환불 완료 처리</AlertDialogTitle>
-          <AlertDialogDescription>
-            환불 금액 <span className="font-semibold text-foreground">{amount}</span> 을 실제로 고객 계좌에 송금했습니까? 실제 송금이 끝난
-            경우에만 처리하세요. 되돌릴 수 없습니다.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={confirm.isPending}>취소</AlertDialogCancel>
-          <AlertDialogAction
-            disabled={confirm.isPending}
-            onClick={(e) => {
-              e.preventDefault();
-              handleConfirm();
-            }}
-          >
-            {confirm.isPending ? '처리 중...' : '송금 완료 확인'}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <Can run={useConfirmRefund}>
+      <AlertDialog open={open} onOpenChange={setOpen}>
+        <AlertDialogTrigger asChild>
+          <Button size="sm" variant="outline" className="h-7 text-xs" disabled={confirm.isPending} onClick={(e) => e.stopPropagation()}>
+            완료 처리
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>수동 환불 완료 처리</AlertDialogTitle>
+            <AlertDialogDescription>
+              환불 금액 <span className="font-semibold text-foreground">{amount}</span> 을 실제로 고객 계좌에 송금했습니까? 실제 송금이 끝난
+              경우에만 처리하세요. 되돌릴 수 없습니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={confirm.isPending}>취소</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={confirm.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                handleConfirm();
+              }}
+            >
+              {confirm.isPending ? '처리 중...' : '송금 완료 확인'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Can>
   );
 }

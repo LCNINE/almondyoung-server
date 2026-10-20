@@ -1,6 +1,11 @@
 import { DbService, InjectDb } from '@app/db';
 import { Injectable, Logger } from '@nestjs/common';
-import { userServiceEnums, userServiceSchema, type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
+import {
+  userServiceEnums,
+  userServiceSchema,
+  type UserServiceSchema,
+  type UserServiceTx,
+} from 'apps/user-service/database/drizzle/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { DbTransaction } from '../../commons/types';
 
@@ -10,7 +15,7 @@ export class TokensService {
 
   constructor(@InjectDb() private readonly dbService: DbService<UserServiceSchema>) {}
 
-  private getClient(tx?: DbTransaction) {
+  private getClient(tx?: DbTransaction | UserServiceTx) {
     return tx ?? this.dbService.db;
   }
 
@@ -162,7 +167,7 @@ export class TokensService {
    * @param userId 사용자 ID
    * @param tx 트랜잭션 객체 (선택)
    */
-  async deleteAllTokens(userId: string, tx?: DbTransaction) {
+  async deleteAllTokens(userId: string, tx?: DbTransaction | UserServiceTx) {
     const client = this.getClient(tx);
 
     await client.delete(userServiceSchema.tokens).where(eq(userServiceSchema.tokens.userId, userId));

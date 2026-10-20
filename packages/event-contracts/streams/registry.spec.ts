@@ -19,6 +19,7 @@ describe('STREAM_REGISTRY', () => {
     'core.orders.events.v1',
     'fulfillments.events.v1',
     'fulfillments.events.v2',
+    'iam.events.v1',
     'inventory.events.v1',
     'membership.events.v1',
     'orders.events.v1',

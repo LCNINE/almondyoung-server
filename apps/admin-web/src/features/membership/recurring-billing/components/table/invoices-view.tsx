@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { walletApi } from '@/lib/api/domains/wallet';
 import { membershipApi } from '@/lib/api/domains/membership';
 import { membershipQueryKeys } from '@/lib/services/membership';
@@ -45,6 +46,9 @@ const STATUS_FILTER_OPTIONS: { value: '' | AdminRecurringInvoiceStatus; label: s
 export function RecurringInvoicesView() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
+  const { can } = usePermissionCheck();
+  const canExecute = can(['payment.billing.execute']);
+  const canReconcile = can(['membership.member.write']);
   // 요약 카드에서 status 필터를 걸어 진입할 수 있으므로 URL 값으로 초기화한다(미수 지표 딥링크).
   const urlStatus = searchParams.get('status');
   const initialStatus = STATUS_FILTER_OPTIONS.some((o) => o.value === urlStatus)
@@ -74,6 +78,7 @@ export function RecurringInvoicesView() {
   };
 
   const runDue = useMutation({
+    meta: { permission: ['payment.billing.execute'] },
     mutationFn: () => walletApi.runDueInvoices(),
     onSuccess: () => {
       invalidate();
@@ -84,6 +89,7 @@ export function RecurringInvoicesView() {
   });
 
   const execute = useMutation({
+    meta: { permission: ['payment.billing.execute'] },
     mutationFn: (id: string) => walletApi.executeInvoice(id),
     onSuccess: () => {
       invalidate();
@@ -95,6 +101,7 @@ export function RecurringInvoicesView() {
 
   // membership 이 자기 멱등키로 wallet 인보이스 권위 상태를 즉시 되물어 구독(자격)↔인보이스(결제) 발산을 해소.
   const reconcile = useMutation({
+    meta: { permission: ['membership.member.write'] },
     mutationFn: (contractId: string) => membershipApi.reconcileInvoice(contractId),
     onSuccess: (res) => {
       invalidate();
@@ -118,22 +125,24 @@ export function RecurringInvoicesView() {
           정기결제 청구의 권위 상태입니다(인보이스 모델). 재시도·최종 실패 판정은 인보이스가 소유하며,
           &ldquo;즉시 집행&rdquo;은 청구 대기/심사 대기/결제 실패 상태에서만 가능합니다.
         </p>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={runDue.isPending}
-          onClick={() => {
-            if (
-              window.confirm(
-                '만기된 모든 인보이스를 즉시 집행합니다. 유효한 결제수단이 있는 건은 실제 출금이 발생합니다. 진행할까요?',
-              )
-            ) {
-              runDue.mutate();
-            }
-          }}
-        >
-          {runDue.isPending ? '실행 중...' : '만기 인보이스 일괄 집행'}
-        </Button>
+        {canExecute && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={runDue.isPending}
+            onClick={() => {
+              if (
+                window.confirm(
+                  '만기된 모든 인보이스를 즉시 집행합니다. 유효한 결제수단이 있는 건은 실제 출금이 발생합니다. 진행할까요?',
+                )
+              ) {
+                runDue.mutate();
+              }
+            }}
+          >
+            {runDue.isPending ? '실행 중...' : '만기 인보이스 일괄 집행'}
+          </Button>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -264,7 +273,7 @@ export function RecurringInvoicesView() {
                     <td className="p-2 text-xs">{r.billingMethodDisplayName ?? '-'}</td>
                     <td className="p-2 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        {r.isExecutable ? (
+                        {r.isExecutable && canExecute ? (
                           <Button
                             variant="outline"
                             size="sm"
@@ -282,15 +291,17 @@ export function RecurringInvoicesView() {
                             즉시 집행
                           </Button>
                         ) : null}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={reconcile.isPending}
-                          title="wallet 인보이스 권위 상태를 되물어 자격을 즉시 정합화"
-                          onClick={() => reconcile.mutate(r.subscriberRef)}
-                        >
-                          정합화
-                        </Button>
+                        {canReconcile && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={reconcile.isPending}
+                            title="wallet 인보이스 권위 상태를 되물어 자격을 즉시 정합화"
+                            onClick={() => reconcile.mutate(r.subscriberRef)}
+                          >
+                            정합화
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>

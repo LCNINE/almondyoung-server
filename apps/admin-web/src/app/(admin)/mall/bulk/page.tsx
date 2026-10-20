@@ -3,7 +3,7 @@ import BulkTemplate from '@/features/mall/bulk/template';
 
 export default function BulkPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/mall/bulk">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <BulkTemplate />
       </div>

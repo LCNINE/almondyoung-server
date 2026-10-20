@@ -10,7 +10,9 @@ import { useInventoryStatusTableQuery } from '@/hooks/table/query/use-inventory-
 import {
   useStockSummary,
   useRebuildStockSummary,
+  useAdjustStock,
 } from '@/lib/services/inventory';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { StockSummaryDto } from '@/lib/types/dto/inventory';
 import { StockHistoryDrawer } from '../stock-history-drawer';
 import { AdjustStockDialog } from '../adjust-stock-dialog';
@@ -91,10 +93,12 @@ export function InventoryStatusTable() {
     [rebuildMutation]
   );
 
+  const { canRun } = usePermissionCheck();
+
   const columns = useInventoryStatusTableColumns({
     onHistory: setHistoryRow,
-    onAdjust: setAdjustRow,
-    onRebuild: handleRebuild,
+    onAdjust: canRun(useAdjustStock) ? setAdjustRow : undefined,
+    onRebuild: canRun(useRebuildStockSummary) ? handleRebuild : undefined,
   });
 
   const rows = data?.data ?? [];

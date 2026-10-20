@@ -114,8 +114,6 @@ export {
   useCompleteDirectShipOrders,
   useExportDirectShipFile,
   // 합포장 (D2)
-  useAnalyzeConsolidation,
-  useAutoConsolidate,
   // FO 액션 (Core /fulfillments canonical)
   useDeliverFulfillment,
   // 운송장(waybill) 발급
@@ -148,7 +146,6 @@ export {
   useMastersBatchStats,
   useVariantSkuMapping,
   useResolveMatching,
-  useResolveOptionMatching,
   useSetMatchingPriority,
   useChangeMatchingStrategy,
   useUpdateMatchingStockPolicy,

@@ -4,7 +4,7 @@ import PurchaseOrdersTemplate from '@/features/inventory/purchase-orders/templat
 
 export default function InventoryPurchaseOrdersPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/inventory/purchase-orders">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <Suspense>
           <PurchaseOrdersTemplate />

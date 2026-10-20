@@ -5,7 +5,7 @@ import PopupDetailTemplate from '@/features/mall/popup-detail/template';
 export default async function PopupDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/mall/popups/[id]">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <Suspense>
           <PopupDetailTemplate id={id} />

@@ -32,12 +32,14 @@ import {
   ReorderCategoriesDto,
 } from './dto';
 import { CategoryMapper } from './mappers';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('Categories')
 @Controller('categories')
 export class ProductCategoriesController {
   constructor(private readonly productCategoriesService: ProductCategoriesService) {}
 
+  @RequirePermission('catalog.category.write')
   @Post()
   @ApiOperation({
     summary: '카테고리 생성',
@@ -55,6 +57,7 @@ export class ProductCategoriesController {
     return this.productCategoriesService.createCategory(createCategoryDto);
   }
 
+  @RequirePermission('catalog.category.write')
   @Put(':id')
   @ApiOperation({
     summary: '카테고리 수정',
@@ -76,6 +79,7 @@ export class ProductCategoriesController {
     return this.productCategoriesService.updateCategory(id, updateCategoryDto);
   }
 
+  @RequirePermission('catalog.category.write')
   @Post('reorder')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
@@ -95,6 +99,7 @@ export class ProductCategoriesController {
     return this.productCategoriesService.reorderCategories(parentId, dto.categoryIds);
   }
 
+  @RequirePermission('catalog.category.write')
   @Delete(':id')
   @ApiOperation({
     summary: '카테고리 삭제',
@@ -116,6 +121,7 @@ export class ProductCategoriesController {
     return this.productCategoriesService.deleteCategory(id, moveProductsTo);
   }
 
+  @RequirePermission('catalog.product.read')
   @Get(':id')
   @ApiOperation({
     summary: '카테고리 상세 조회',
@@ -132,6 +138,7 @@ export class ProductCategoriesController {
     return this.productCategoriesService.getCategoryById(id);
   }
 
+  @RequirePermission('catalog.product.read')
   @Get()
   @ApiOperation({
     summary: '카테고리 트리 조회',
@@ -161,6 +168,7 @@ export class ProductCategoriesController {
     return this.productCategoriesService.getCategoryTree(maxDepth, includeInactive === 'true');
   }
 
+  @RequirePermission('catalog.product.read')
   @Get(':id/children')
   @ApiOperation({
     summary: '하위 카테고리 조회',
@@ -177,6 +185,7 @@ export class ProductCategoriesController {
     return this.productCategoriesService.getChildCategories(id);
   }
 
+  @RequirePermission('catalog.product.read')
   @Get(':id/path')
   @ApiOperation({
     summary: '카테고리 경로 조회',
@@ -193,6 +202,7 @@ export class ProductCategoriesController {
     return this.productCategoriesService.getCategoryPath(id);
   }
 
+  @RequirePermission('catalog.category.write')
   @Put(':id/move')
   @ApiOperation({
     summary: '카테고리 이동',
@@ -221,6 +231,7 @@ export class ProductCategoriesController {
     return this.productCategoriesService.moveCategory(id, newParentId);
   }
 
+  @RequirePermission('catalog.category.write')
   @Put(':id/products')
   @ApiOperation({
     summary: '상품들을 카테고리로 이동',
@@ -255,6 +266,7 @@ export class ProductCategoriesController {
   }
 
   // 고지훈 추가 - 기존 카테고리 유지하면서 추가
+  @RequirePermission('catalog.category.write')
   @Post(':id/products/add')
   @HttpCode(200)
   @ApiOperation({
@@ -291,6 +303,7 @@ export class ProductCategoriesController {
 
   // ===== Phase 2: Category Configuration Endpoints =====
 
+  @RequirePermission('catalog.category.write')
   @Patch(':id/display-settings')
   @ApiOperation({
     summary: '카테고리 표시 설정 업데이트',
@@ -311,6 +324,7 @@ export class ProductCategoriesController {
     return this.productCategoriesService.updateDisplaySettings(categoryId, dto);
   }
 
+  @RequirePermission('catalog.category.write')
   @Patch(':id/seo')
   @ApiOperation({
     summary: '카테고리 SEO 설정 업데이트',
@@ -331,6 +345,7 @@ export class ProductCategoriesController {
     return this.productCategoriesService.updateSeoConfig(categoryId, dto);
   }
 
+  @RequirePermission('catalog.category.write')
   @Patch(':id/template')
   @ApiOperation({
     summary: '카테고리 템플릿 설정 업데이트',
@@ -351,6 +366,7 @@ export class ProductCategoriesController {
     return this.productCategoriesService.updateTemplateConfig(categoryId, dto);
   }
 
+  @RequirePermission('catalog.category.write')
   @Patch(':id/visibility')
   @ApiOperation({
     summary: '카테고리 표시 여부 업데이트',
@@ -373,6 +389,7 @@ export class ProductCategoriesController {
 
   // ===== TAG GROUP MANAGEMENT =====
 
+  @RequirePermission('catalog.category.write')
   @Put(':categoryId/tag-groups')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
@@ -407,6 +424,7 @@ export class ProductCategoriesController {
     await this.productCategoriesService.replaceTagGroupLinks(categoryId, dto.links);
   }
 
+  @RequirePermission('catalog.product.read')
   @Get(':categoryId/tag-groups')
   @ApiOperation({
     summary: '카테고리 태그 그룹 조회',

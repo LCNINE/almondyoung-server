@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   useMaster,
   useMasterVersions,
@@ -95,6 +97,9 @@ export default function PricingDetailTemplate({ masterId }: Props) {
   const replaceRules = useReplaceVersionPricingRules();
   const deleteRules = useDeleteVersionPricingRules();
   const createDraft = useCreateMasterDraftVersion();
+  // 가격 룰 저장은 상품 수정과 다른 권한이다.
+  const { canRun } = usePermissionCheck();
+  const canSaveRules = canRun(useReplaceVersionPricingRules);
 
   const handleSave = (dto: ReplacePricingRulesDto) => {
     if (!selectedVersionId) return;
@@ -165,7 +170,11 @@ export default function PricingDetailTemplate({ masterId }: Props) {
             versions={versionsTree}
             selectedVersionId={selectedVersionId}
             onSelect={setVersionId}
-            onCreateDraft={() => setCreateDraftOpen(true)}
+            onCreateDraft={
+              canRun(useCreateMasterDraftVersion)
+                ? () => setCreateDraftOpen(true)
+                : undefined
+            }
           />
         </div>
       </Container>
@@ -185,16 +194,21 @@ export default function PricingDetailTemplate({ masterId }: Props) {
             {rulesLoading ? (
               <p className="p-6 text-center text-sm text-muted-foreground">룰 로딩 중...</p>
             ) : (
-              <RulesEditor
-                rules={rules}
-                readonly={isReadonly}
-                isSaving={replaceRules.isPending}
-                isDeleting={deleteRules.isPending}
-                optionGroups={selectedVersionDetail?.optionGroups ?? []}
-                variantOptions={variants}
-                onSave={handleSave}
-                onDelete={handleDelete}
-              />
+              <PermissionReadOnly run={useReplaceVersionPricingRules}>
+                <RulesEditor
+                  rules={rules}
+                  readonly={isReadonly}
+                  canSave={canSaveRules}
+                  isSaving={replaceRules.isPending}
+                  isDeleting={deleteRules.isPending}
+                  optionGroups={selectedVersionDetail?.optionGroups ?? []}
+                  variantOptions={variants}
+                  onSave={handleSave}
+                  onDelete={
+                    canRun(useDeleteVersionPricingRules) ? handleDelete : undefined
+                  }
+                />
+              </PermissionReadOnly>
             )}
           </Container>
 

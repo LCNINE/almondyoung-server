@@ -7,7 +7,7 @@ export default function AttendanceLayout({
   children: React.ReactNode;
 }) {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/company/attendance">
       <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-8">
         <AttendanceNavigation />
         {children}

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getTokenPayload } from '@/lib/auth/get-token-payload';
+import { getMyPermissions } from '@/lib/auth/my-permissions.server';
 import {
   resolveWorksiteAddress,
   resolveWorksiteCoordinates,
@@ -9,14 +10,29 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   const user = await getTokenPayload();
+  const state = user ? await getMyPermissions() : null;
 
-  if (
-    !user ||
-    !user.roles.some((role) => role === 'admin' || role === 'master')
-  ) {
+  if (!user || !state || state.state === 'unauthenticated') {
     return NextResponse.json(
       { message: '로그인이 필요해요.' },
       { status: 401 }
+    );
+  }
+
+  if (state.state === 'unavailable') {
+    return NextResponse.json(
+      { message: '잠시 후 다시 시도해 주세요.' },
+      { status: 503 }
+    );
+  }
+
+  if (!state.permissions.has('attendance.own.write')) {
+    return NextResponse.json(
+      {
+        message: '근태 권한이 필요해요.',
+        requiredPermissions: ['attendance.own.write'],
+      },
+      { status: 403 }
     );
   }
 

@@ -5,6 +5,8 @@ import {
   useReplenishmentSupplierRules,
   useUpsertSupplierRule,
 } from '@/lib/services/inventory';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   LeadTimeRulesTable,
   type LeadTimeRuleRow,
@@ -14,6 +16,7 @@ export function SuppliersTab() {
   const { data, isLoading } = useReplenishmentSupplierRules();
   const upsert = useUpsertSupplierRule();
   const remove = useDeleteSupplierRule();
+  const { canRun } = usePermissionCheck();
 
   if (isLoading || !data)
     return <p className="p-4 text-sm text-muted-foreground">로딩 중...</p>;
@@ -28,6 +31,7 @@ export function SuppliersTab() {
   }));
 
   return (
+    <PermissionReadOnly run={useUpsertSupplierRule}>
     <LeadTimeRulesTable
       description="L1 = 공급사 → 출발 창고 입고 리드타임. 관측이 최소 건수 이상 쌓이면 관측이 규칙보다 우선합니다. 규칙이 없으면 전역 기본을 쓰고 제안에 「기본 리드타임」 플래그가 붙습니다. 저장 즉시 제안에 반영됩니다."
       subjectHeader="공급사"
@@ -36,9 +40,10 @@ export function SuppliersTab() {
       emptyMessage="공급사가 없습니다."
       isSaving={upsert.isPending}
       isDeleting={remove.isPending}
-      onSave={(supplierId, dto) => upsert.mutateAsync({ supplierId, dto })}
-      onDelete={(supplierId) => remove.mutateAsync(supplierId)}
+      onSave={canRun(useUpsertSupplierRule) ? (supplierId, dto) => upsert.mutateAsync({ supplierId, dto }) : undefined}
+      onDelete={canRun(useDeleteSupplierRule) ? (supplierId) => remove.mutateAsync(supplierId) : undefined}
       deleteSuccessSuffix="전역 발주 기본으로 돌아갑니다."
     />
+    </PermissionReadOnly>
   );
 }

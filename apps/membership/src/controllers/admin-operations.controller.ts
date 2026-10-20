@@ -19,7 +19,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { ApplicationException } from '@app/shared';
-import { AuthorizationService, RequireScopes } from '@app/authorization';
+import { AuthorizationService, PermissionCheckpoints, RequireScopes, RequirePermission, PiiResponse } from '@app/authorization';
 import { MEMBERSHIP_SCOPE } from '../shared/auth/membership-scopes';
 import { IdempotentAdminOp } from '../shared/idempotency/idempotent-admin-op.decorator';
 import { AdminOperationsService } from '../services/admin-operations.service';
@@ -85,6 +85,7 @@ export class AdminOperationsController {
     private readonly authorizationService: AuthorizationService,
     private readonly arrearsReader: ArrearsReader,
     private readonly arrearsManager: ArrearsManager,
+    private readonly checkpoints: PermissionCheckpoints,
   ) {}
 
   private handleError(error: unknown, operation: string, context?: string): never {
@@ -128,6 +129,7 @@ export class AdminOperationsController {
   // Plan & Tier Management
   // ===================================================================
 
+  @RequirePermission('membership.plan.write')
   @Post('tiers')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
@@ -170,6 +172,7 @@ export class AdminOperationsController {
     }
   }
 
+  @RequirePermission('membership.plan.write')
   @Put('tiers/:tierId')
   @ApiOperation({
     summary: '티어 정보 수정',
@@ -221,6 +224,7 @@ export class AdminOperationsController {
     }
   }
 
+  @RequirePermission('membership.plan.write')
   @Post('plans')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.CREATED)
@@ -273,6 +277,7 @@ export class AdminOperationsController {
     }
   }
 
+  @RequirePermission('membership.plan.write')
   @Put('plans/:planId')
   @ApiOperation({
     summary: '플랜 정보 수정',
@@ -324,6 +329,7 @@ export class AdminOperationsController {
     }
   }
 
+  @RequirePermission('membership.plan.write')
   @Delete('plans/:planId')
   @ApiOperation({
     summary: '플랜 비활성화',
@@ -380,6 +386,7 @@ export class AdminOperationsController {
     }
   }
 
+  @RequirePermission('membership.member.read')
   @Get('tiers')
   @ApiOperation({ summary: '티어 + 플랜 전체 조회 (관리자용)' })
   @UseGuards(JwtAuthGuard)
@@ -396,6 +403,7 @@ export class AdminOperationsController {
   // Entitlement Management - 구독 권한 관리
   // ===================================================================
 
+  @RequirePermission('membership.member.write')
   @Post('entitlements/adjust')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -444,6 +452,7 @@ export class AdminOperationsController {
     }
   }
 
+  @RequirePermission('membership.billing.read')
   @Get('users/:userId/pause-history')
   @ApiOperation({
     summary: '사용자 일시정지 이력 조회',
@@ -540,6 +549,14 @@ export class AdminOperationsController {
   /**
    * 계약 이벤트 이력 조회
    */
+  @PiiResponse({
+    fields: {
+      // 환불 계좌·고객이 쓴 사유 등 이벤트마다 모양이 달라 통째로 가린다.
+      'events[].metadata': 'redact',
+    },
+    subjects: [{ path: 'events[].userId', type: 'user' }],
+  })
+  @RequirePermission('membership.billing.read')
   @Get('subscriptions/:contractId/events')
   @ApiOperation({
     summary: '계약 이벤트 이력 조회',
@@ -581,6 +598,7 @@ export class AdminOperationsController {
   /**
    * 강제 구독 취소
    */
+  @RequirePermission('membership.billing.refund')
   @Post('subscriptions/:contractId/force-cancel')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -626,9 +644,17 @@ export class AdminOperationsController {
       );
 
       // 정책 산정액 초과 환불 권한. master 는 ScopeGuard 와 동일하게 항상 통과한다.
-      const canOverridePolicyAmount =
-        (roles ?? []).includes('master') ||
-        (await this.authorizationService.hasScope({ roles: roles ?? [] }, MEMBERSHIP_SCOPE.BILLING_REFUND_OVERRIDE));
+      const legacyOverride = await this.checkpoints.legacyVerdict(
+        async () =>
+          (roles ?? []).includes('master') ||
+          (await this.authorizationService.hasScope({ roles: roles ?? [] }, MEMBERSHIP_SCOPE.BILLING_REFUND_OVERRIDE)),
+      );
+      const canOverridePolicyAmount = this.checkpoints.compare(
+        'membership.refund_override',
+        legacyOverride,
+        { roles: roles ?? [] },
+        ['membership.billing.refund_override'],
+      );
 
       const result = await this.cancellationService.forceCancelSubscription(
         contractId,
@@ -661,6 +687,7 @@ export class AdminOperationsController {
    * 고객 셀프해지의 '해지 예약' 과 같은 처리다. 예전처럼 auto-renewal 토글로 대신하면 청구만 멈추고
    * 해지 사유·해지 시각이 남지 않으며, 은행에 걸린 효성 자동이체 약정과 예정 출금이 살아남는다.
    */
+  @RequirePermission('membership.billing.refund')
   @Post('subscriptions/:contractId/schedule-cancel')
   @ApiOperation({
     summary: '해지 예약 (어드민)',
@@ -697,6 +724,7 @@ export class AdminOperationsController {
    * 효성 CMS 환불은 wallet 에 환불 행이 없어(PG 환불 API 자체가 없다) wallet 의 수동 완료 경로로
    * 닫을 수 없다. 계좌 송금을 끝낸 관리자가 여기서 완료 사실을 확정한다.
    */
+  @RequirePermission('membership.billing.refund')
   @Post('subscriptions/:contractId/refund/manual-complete')
   @ApiOperation({
     summary: '수동 송금 환불 완료 처리 (어드민)',
@@ -727,6 +755,7 @@ export class AdminOperationsController {
    * 강제취소 다이얼로그가 "지금 해지하면 정책상 얼마" 를 보여주기 위한 계산기.
    * 연간 중도해지 정산 내역(사용 개월·차감액)과 실제 환불 가능 수단까지 함께 내려준다.
    */
+  @RequirePermission('membership.member.read')
   @Get('subscriptions/:contractId/cancellation-quote')
   @ApiOperation({
     summary: '해지·환불 견적 조회 (어드민)',
@@ -759,6 +788,7 @@ export class AdminOperationsController {
    *   { id: "user_456", membership: null }
    * ]
    */
+  @RequirePermission('membership.member.read')
   @Post('subscriptions/bulk')
   async getBulkMemberships(@Body() dto: GetBulkSubscriptionsRequestDto) {
     try {
@@ -769,6 +799,7 @@ export class AdminOperationsController {
     }
   }
 
+  @RequirePermission('membership.plan.write')
   @Patch('plans/:planId/activate')
   @ApiOperation({ summary: '플랜 활성화 복구' })
   @UseGuards(JwtAuthGuard)
@@ -781,6 +812,7 @@ export class AdminOperationsController {
     }
   }
 
+  @RequirePermission('membership.member.write')
   @Post('members/subscribe')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: '관리자 신규 회원 구독 등록' })
@@ -795,6 +827,7 @@ export class AdminOperationsController {
     }
   }
 
+  @RequirePermission('membership.member.write')
   @Post('members/:userId/grant')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: '관리자 직접 구독 지급 (일수 + 메모)' })
@@ -820,6 +853,7 @@ export class AdminOperationsController {
     }
   }
 
+  @RequirePermission('membership.member.write')
   @Post('billing/retry/:contractId')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '결제 수동 재시도' })
@@ -840,6 +874,7 @@ export class AdminOperationsController {
    *
    * POST /admin/billing/reconcile-invoice/:contractId
    */
+  @RequirePermission('membership.member.write')
   @Post('billing/reconcile-invoice/:contractId')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'INVOICE 계약 강제 정합화 (구독↔인보이스 대조)' })
@@ -859,6 +894,7 @@ export class AdminOperationsController {
    *
    * GET /admin/members?page=1&limit=20&status=ACTIVE&q=userId&dateFrom=&dateTo=
    */
+  @RequirePermission('membership.member.read')
   @Get('members')
   @ApiOperation({
     summary: '멤버십 회원 목록 조회',
@@ -914,6 +950,7 @@ export class AdminOperationsController {
    * GET /admin/members/summary
    * `members/:userId` 보다 먼저 선언해야 "summary" 가 userId 로 잡히지 않는다.
    */
+  @RequirePermission('membership.member.read')
   @Get('members/summary')
   @ApiOperation({
     summary: '멤버십 회원 수 요약',
@@ -934,6 +971,7 @@ export class AdminOperationsController {
    * 각 숫자는 같은 축의 목록(`GET /admin/members?axis=`) total 과 같은 정의로 센다.
    * `members/:userId` 보다 먼저 선언해야 "insights" 가 userId 로 잡히지 않는다.
    */
+  @RequirePermission('membership.member.read')
   @Get('members/insights')
   @ApiOperation({ summary: '멤버십 회원 사람 축 요약' })
   @UseGuards(JwtAuthGuard)
@@ -949,6 +987,7 @@ export class AdminOperationsController {
   /**
    * 오늘(KST)부터 days 일 안에 결제일이 오는 자동갱신 계약 수와 플랜 정가 합계(추정). 정기결제 화면용.
    */
+  @RequirePermission('membership.billing.read')
   @Get('billing/upcoming')
   @ApiOperation({ summary: '다음 N일 청구 예정 (정기결제 화면)' })
   @UseGuards(JwtAuthGuard)
@@ -969,6 +1008,7 @@ export class AdminOperationsController {
    * 출금 실패·미납 처리 현황. month(한국 시간 'YYYY-MM')에 시작된 건의 흐름 + 지금 상태(보드·경보) + 최근 12주 추이.
    * 최근 24개월까지만 고를 수 있다 — 화면이 조회 범위를 무한히 넓히지 못하게.
    */
+  @RequirePermission('membership.billing.read')
   @Get('billing-recovery')
   @ApiOperation({ summary: '출금 실패·미납 처리 현황' })
   @UseGuards(JwtAuthGuard)
@@ -982,6 +1022,7 @@ export class AdminOperationsController {
   }
 
   /** 한 회원의 출금 실패·미납 건 전부 — 현황 화면에서 카드를 눌렀을 때 */
+  @RequirePermission('membership.billing.read')
   @Get('billing-recovery/users/:userId')
   @ApiOperation({ summary: '회원 한 명의 출금 실패·미납 이야기' })
   @UseGuards(JwtAuthGuard)
@@ -994,6 +1035,17 @@ export class AdminOperationsController {
    *
    * GET /admin/members/:userId
    */
+  @PiiResponse({
+    fields: {
+      'data.manualRefundAccount.accountNumber': 'account',
+      'data.manualRefundAccount.holderName': 'name',
+      'data.refundReceiveAccount.accountNumber': 'account',
+      'data.refundReceiveAccount.holderName': 'name',
+    },
+    subjects: [{ param: 'userId', type: 'user' }],
+    reveal: true,
+  })
+  @RequirePermission('membership.member.read')
   @Get('members/:userId')
   @ApiOperation({ summary: '멤버십 회원 상세 조회' })
   @UseGuards(JwtAuthGuard)
@@ -1015,6 +1067,7 @@ export class AdminOperationsController {
    *
    * GET /admin/billing-events?userId=xxx (또는 contractId=xxx for legacy)
    */
+  @RequirePermission('membership.billing.read')
   @Get('billing-events')
   @ApiOperation({ summary: '멤버십 결제 이벤트 조회' })
   @UseGuards(JwtAuthGuard)
@@ -1037,6 +1090,14 @@ export class AdminOperationsController {
    *
    * GET /admin/contract-events?userId=xxx (또는 contractId=xxx for legacy)
    */
+  @PiiResponse({
+    fields: {
+      // 환불 계좌·고객이 쓴 사유 등 이벤트마다 모양이 달라 통째로 가린다.
+      'data[].metadata': 'redact',
+    },
+    subjects: [{ path: 'data[].userId', type: 'user' }],
+  })
+  @RequirePermission('membership.billing.read')
   @Get('contract-events')
   @ApiOperation({ summary: '멤버십 계약 이벤트 로그 조회' })
   @UseGuards(JwtAuthGuard)
@@ -1059,6 +1120,7 @@ export class AdminOperationsController {
    *
    * GET /admin/billing-history?page=1&limit=20&dateFrom=&dateTo=&contractId=&userId=&eventType=
    */
+  @RequirePermission('membership.billing.read')
   @Get('billing-history')
   @ApiOperation({ summary: '정기결제 내역 전체 조회' })
   @UseGuards(JwtAuthGuard)
@@ -1092,6 +1154,7 @@ export class AdminOperationsController {
    *
    * PUT /admin/contracts/:contractId/auto-renewal
    */
+  @RequirePermission('membership.member.write')
   @Put('contracts/:contractId/auto-renewal')
   @ApiOperation({ summary: '자동 연장 설정 변경' })
   @UseGuards(JwtAuthGuard)
@@ -1110,6 +1173,7 @@ export class AdminOperationsController {
    *
    * GET /admin/recurring-contracts?page=1&limit=20&userId=xxx&contractId=xxx&status=ACTIVE
    */
+  @RequirePermission('membership.billing.read')
   @Get('recurring-contracts')
   @ApiOperation({ summary: '정기결제 계약 목록 조회 (autoRenewal=true)' })
   @UseGuards(JwtAuthGuard)
@@ -1144,6 +1208,7 @@ export class AdminOperationsController {
    *
    * GET /admin/recurring-contracts/by-ids?contractId=xxx&contractId=yyy
    */
+  @RequirePermission('membership.billing.read')
   @Get('recurring-contracts/by-ids')
   @ApiOperation({ summary: '정기결제 계약 요약 일괄 조회 (by contractId[])' })
   @UseGuards(JwtAuthGuard)
@@ -1163,6 +1228,7 @@ export class AdminOperationsController {
    *
    * GET /admin/stuck-billing-contracts?thresholdHours=48
    */
+  @RequirePermission('membership.billing.read')
   @Get('stuck-billing-contracts')
   @ApiOperation({ summary: '결제 대기 장기화 계약 목록 (billingInProgress 고착)' })
   @UseGuards(JwtAuthGuard)
@@ -1180,6 +1246,7 @@ export class AdminOperationsController {
    * 결제 실패 재시도 대기(dunning) 계약 목록 — 운영자 결제실패 대응용.
    * GET /admin/dunning
    */
+  @RequirePermission('membership.billing.read')
   @Get('dunning')
   @ApiOperation({ summary: '결제 실패 재시도 대기(dunning) 계약 목록' })
   @UseGuards(JwtAuthGuard)
@@ -1199,6 +1266,7 @@ export class AdminOperationsController {
    *
    * GET /admin/agreement-cleanup
    */
+  @RequirePermission('membership.billing.read')
   @Get('agreement-cleanup')
   @ApiOperation({ summary: '자동이체 약정 정리 큐 (미정리·포기 건)' })
   @UseGuards(JwtAuthGuard)
@@ -1217,6 +1285,7 @@ export class AdminOperationsController {
    *
    * POST /admin/contracts/:contractId/reset-billing-progress
    */
+  @RequirePermission('membership.member.write')
   @Post('contracts/:contractId/reset-billing-progress')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '결제 대기 플래그 수동 해제 (billingInProgress=false)' })
@@ -1238,6 +1307,7 @@ export class AdminOperationsController {
   /**
    * 한 계정의 미수(외상) 이력. 청산·면제분까지 함께 준다 — 면제 판단은 지나간 건을 봐야 선다.
    */
+  @RequirePermission('membership.member.read')
   @Get('arrears/:userId')
   @ApiOperation({ summary: '회원 미수 이력 조회' })
   @ApiParam({ name: 'userId', description: '회원 ID' })
@@ -1258,6 +1328,7 @@ export class AdminOperationsController {
    * 미수 면제. 오판정(정상 고객이 일시적 잔액부족으로 끊긴 경우)을 사람이 되돌리는 유일한 수단이다 —
    * 없으면 CS 가 DB 를 직접 만진다. 돈을 포기하는 결정이라 환불과 같은 스코프를 요구한다.
    */
+  @RequirePermission('membership.billing.refund')
   @Post('arrears/:arrearsId/waive')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '미수 면제' })
@@ -1287,6 +1358,7 @@ export class AdminOperationsController {
    * 미수 금액 조정. 인보이스 금액이 진실이지만 플랜가로 유도된 줄이나 부분 수금이 있었던 줄은
    * 사람이 고쳐야 한다. 0 이하로는 못 내린다 — 0 이면 면제가 맞는 표현이다.
    */
+  @RequirePermission('membership.billing.refund')
   @Patch('arrears/:arrearsId/amount')
   @ApiOperation({ summary: '미수 금액 조정' })
   @ApiParam({ name: 'arrearsId', description: '미수 원장 ID' })

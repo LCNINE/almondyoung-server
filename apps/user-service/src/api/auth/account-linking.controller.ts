@@ -1,4 +1,4 @@
-import { JwtPayload, RequireScopes } from '@app/authorization';
+import { JwtPayload, RequireScopes, StoreRoute } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import {
   BadRequestException,
@@ -58,6 +58,7 @@ export class AccountLinkingController {
 
   @ApiOperation({ summary: '카카오 계정 연결 시작' })
   @ApiResponse({ status: 302, description: '카카오 OAuth 페이지로 리다이렉트' })
+  @StoreRoute()
   @Get('link/kakao')
   @UseGuards(AuthGuard('jwt'))
   @RequireScopes('user:modify')
@@ -112,6 +113,7 @@ export class AccountLinkingController {
 
   @ApiOperation({ summary: '네이버 계정 연결 시작' })
   @ApiResponse({ status: 302, description: '네이버 OAuth 페이지로 리다이렉트' })
+  @StoreRoute()
   @Get('link/naver')
   @UseGuards(AuthGuard('jwt'))
   @RequireScopes('user:modify')
@@ -170,6 +172,7 @@ export class AccountLinkingController {
     description: '연결된 소셜 계정 목록',
     type: LinkedIdentitiesResponseDto,
   })
+  @StoreRoute()
   @Get('identities')
   @UseGuards(AuthGuard('jwt'))
   @RequireScopes('user:read')
@@ -194,6 +197,7 @@ export class AccountLinkingController {
     description: '연결 해제 성공',
     type: LinkIdentityResultDto,
   })
+  @StoreRoute()
   @Delete('identities/:provider')
   @UseGuards(AuthGuard('jwt'))
   @RequireScopes('user:modify')

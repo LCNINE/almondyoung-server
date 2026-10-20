@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Put, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiProduces, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
-import { RequireScopes, User } from '@app/authorization';
+import { RequireScopes, User, RequirePermission } from '@app/authorization';
 import { ALMOND_TEMPLATE_THUMBNAIL_HEADERS } from '../constants/almond-template.constants';
 import {
   AdminAlmondTemplateDetailResponseDto,
@@ -22,6 +22,7 @@ const THUMBNAIL_HEADERS = {
 export class AdminAlmondTemplatesController {
   constructor(private readonly service: AlmondTemplatesService) {}
 
+  @RequirePermission('marketing.almond_template.read')
   @Get()
   @RequireScopes('admin:template:write')
   @ApiOperation({ summary: '아몬드템플릿 전체 목록 (draft 포함)' })
@@ -30,6 +31,7 @@ export class AdminAlmondTemplatesController {
     return this.service.listForAdmin();
   }
 
+  @RequirePermission('marketing.almond_template.read')
   @Get(':id')
   @RequireScopes('admin:template:write')
   @ApiOperation({ summary: '아몬드템플릿 상세 (상태 무관)' })
@@ -38,6 +40,7 @@ export class AdminAlmondTemplatesController {
     return this.service.getForAdmin(id);
   }
 
+  @RequirePermission('marketing.almond_template.read')
   @Get(':id/thumbnail.svg')
   @RequireScopes('admin:template:write')
   @ApiParam({ name: 'id', format: 'uuid' })
@@ -54,6 +57,7 @@ export class AdminAlmondTemplatesController {
     return svg;
   }
 
+  @RequirePermission('marketing.almond_template.write')
   @Put()
   @RequireScopes('admin:template:write')
   @ApiOperation({
@@ -73,6 +77,7 @@ export class AdminAlmondTemplatesController {
     return this.service.upsert(dto, userId);
   }
 
+  @RequirePermission('marketing.almond_template.write')
   @Patch(':id/status')
   @RequireScopes('admin:template:write')
   @ApiOperation({ summary: '아몬드템플릿 게시 상태 변경 (draft ↔ published)' })
@@ -86,6 +91,7 @@ export class AdminAlmondTemplatesController {
     return this.service.updateStatus(id, dto.status, userId);
   }
 
+  @RequirePermission('marketing.almond_template.write')
   @Delete(':id')
   @HttpCode(204)
   @RequireScopes('admin:template:write')

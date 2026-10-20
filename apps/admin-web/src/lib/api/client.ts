@@ -2,6 +2,9 @@
 
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
 import { CustomError } from './customError';
+// 상대 경로로 둔다 — 다른 앱의 계약 테스트가 이 파일을 직접 import 한다.
+import { permissionDeniedMessage, readRequiredPermissions } from '../auth/permission-labels';
+import { consumeReveal, parsePiiHeaders, reportPiiResponse } from '../pii/pii-notices';
 
 const REFRESH_LOCK_NAME = 'admin-web:auth-refresh';
 const REFRESH_MARKER_KEY = 'admin-web:last-auth-refresh';
@@ -98,6 +101,10 @@ client.interceptors.request.use((config) => {
     // 필요시 서버에서 특정 origin을 명시적으로 허용하도록 수정해야 함
     config.withCredentials = false;
   }
+  // 개인정보 [보기] — 표시된 요청 한 번에만 원문을 요청한다(서버가 권한·기록을 다시 판정한다).
+  if (config.url && consumeReveal(config.url)) {
+    config.headers.set('x-pii-reveal', '1');
+  }
   return config;
 });
 
@@ -125,6 +132,15 @@ function readErrorMessage(data: unknown): string | null {
 
 client.interceptors.response.use(
   (response) => {
+    if (response.config.url) {
+      reportPiiResponse(
+        response.config.url,
+        parsePiiHeaders((name) => {
+          const value: unknown = response.headers[name];
+          return typeof value === 'string' ? value : undefined;
+        }),
+      );
+    }
     if (isApiEnvelope(response.data)) {
       response.data = response.data.data;
     }
@@ -156,7 +172,19 @@ client.interceptors.response.use(
     // (재시도 후 raw AxiosError를 던지면 토스트에 "Request failed with status code 409" 같은
     //  generic 문구만 떠서 운영자가 원인을 알 수 없다)
     if (err.response && err.response.status < 500) {
-      const message = readErrorMessage(err.response.data) || err.message || '요청 처리 중 오류가 발생했습니다.';
+      const serverMessage = readErrorMessage(err.response.data) || err.message || '요청 처리 중 오류가 발생했습니다.';
+      let message = serverMessage;
+      // 403 이면 내 권한을 다시 읽게 알리고(그사이 역할·매핑이 바뀌었을 수 있다), 서버가 필요한 권한을
+      // 알려 줬으면 그 이름으로 안내한다.
+      if (err.response.status === 403) {
+        const requiredPermissions = readRequiredPermissions(err.response.data);
+        message = permissionDeniedMessage(requiredPermissions, serverMessage);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('auth:permission-denied', { detail: { requiredPermissions, url: config?.url } })
+          );
+        }
+      }
 
       throw new CustomError({
         message,

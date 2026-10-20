@@ -5,6 +5,7 @@ import { IsArray, IsDateString, IsIn, IsInt, IsNotEmpty, IsOptional, IsPositive,
 import { PaginationQueryDto } from '@app/shared';
 import { PointsAdminService } from './points-admin.service';
 import { WalletAdminAuth } from '../wallet-admin-auth.decorator';
+import { RequirePermission } from '@app/authorization';
 
 class EarnPointsDto {
   @ApiProperty({ description: 'User ID', maxLength: 128 })
@@ -145,24 +146,28 @@ class TopUsersQueryDto {
 export class PointsAdminController {
   constructor(private readonly service: PointsAdminService) {}
 
+  @RequirePermission('payment.payment.read')
   @Get('balance')
   @ApiOperation({ summary: 'Get points balance for a user' })
   async getBalance(@Query('user_id') userId: string) {
     return this.service.getBalance(userId);
   }
 
+  @RequirePermission('payment.payment.read')
   @Get('stats')
   @ApiOperation({ summary: 'Get aggregated points statistics' })
   async getStats(@Query() query: StatsQueryDto) {
     return this.service.getStats({ dateFrom: query.dateFrom, dateTo: query.dateTo });
   }
 
+  @RequirePermission('payment.payment.read')
   @Get('events')
   @ApiOperation({ summary: 'Get point events for a user (paginated)' })
   async getEvents(@Query() query: PointsEventListQueryDto) {
     return this.service.getEventsPaginated(query.userId, query.page ?? 1, query.limit ?? 20);
   }
 
+  @RequirePermission('payment.payment.read')
   @Get('events/all')
   @ApiOperation({ summary: 'Get all point events across users (paginated, with filters)' })
   async getAllEvents(@Query() query: AllEventsQueryDto) {
@@ -174,6 +179,7 @@ export class PointsAdminController {
     });
   }
 
+  @RequirePermission('payment.payment.read')
   @Get('users/top')
   @ApiOperation({ summary: 'Get top users by points balance' })
   async getTopUsers(@Query() query: TopUsersQueryDto) {
@@ -181,6 +187,7 @@ export class PointsAdminController {
     return this.service.getTopUsersByBalance(limit);
   }
 
+  @RequirePermission('payment.point.adjust')
   @Post('earn')
   @HttpCode(201)
   @ApiOperation({ summary: 'Earn points for a user (admin)' })
@@ -189,6 +196,7 @@ export class PointsAdminController {
     return this.service.earn(dto.userId, dto.amount, dto.reasonCode, undefined, expiresAt);
   }
 
+  @RequirePermission('payment.point.adjust')
   @Post('earn/batch')
   @HttpCode(200)
   @ApiOperation({ summary: 'Batch earn points for multiple users (admin)' })
@@ -197,6 +205,7 @@ export class PointsAdminController {
     return this.service.batchEarn(dto.userIds, dto.amount, dto.reasonCode, expiresAt);
   }
 
+  @RequirePermission('payment.point.adjust')
   @Post('expire')
   @HttpCode(200)
   @ApiOperation({ summary: 'Process expired EARN events — creates EARN_CANCEL for unredeemed expired points' })
@@ -204,6 +213,7 @@ export class PointsAdminController {
     return this.service.processExpiredPoints();
   }
 
+  @RequirePermission('payment.point.adjust')
   @Post('deduct')
   @HttpCode(201)
   @ApiOperation({ summary: 'Deduct points from a user (admin)' })
@@ -211,6 +221,7 @@ export class PointsAdminController {
     return this.service.deduct(dto.userId, dto.amount, dto.reasonCode);
   }
 
+  @RequirePermission('payment.point.adjust')
   @Post('earn-cancel')
   @HttpCode(201)
   @ApiOperation({ summary: 'Cancel an EARN event (admin)' })

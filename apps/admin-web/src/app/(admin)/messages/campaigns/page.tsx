@@ -3,7 +3,7 @@ import SmsCampaignsTemplate from '@/features/messages/campaigns/template';
 
 export default function SmsCampaignsPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/messages/campaigns">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <SmsCampaignsTemplate />
       </div>

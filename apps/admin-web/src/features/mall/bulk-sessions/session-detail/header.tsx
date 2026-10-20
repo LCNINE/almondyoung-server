@@ -13,6 +13,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Can } from '@/components/auth/can';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -62,6 +63,7 @@ export function BulkSessionHeader({
               {phaseLabel(progress.phase)}
             </Badge>
             {canCancel && (
+              <Can run={useCancelBulkSession}>
               <AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>
                 <Button
                   type="button"
@@ -100,6 +102,7 @@ export function BulkSessionHeader({
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
+              </Can>
             )}
           </>
         }

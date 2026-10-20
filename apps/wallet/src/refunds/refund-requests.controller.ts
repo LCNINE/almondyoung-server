@@ -4,12 +4,14 @@ import { WalletJwtAuth } from '../wallet-auth.decorator';
 import { AuthenticatedRequest } from '../wallet.module';
 import { RefundRequestsService } from './refund-requests.service';
 import { CreateRefundRequestDto } from './dto';
+import { StoreRoute } from '@app/authorization';
 
 @ApiTags('Refund Requests')
 @Controller('v1/refund-requests')
 export class RefundRequestsController {
   constructor(private readonly service: RefundRequestsService) {}
 
+  @StoreRoute()
   @Post()
   @HttpCode(201)
   @WalletJwtAuth()
@@ -22,6 +24,7 @@ export class RefundRequestsController {
     return { id: request.id, status: request.status, createdAt: request.createdAt };
   }
 
+  @StoreRoute()
   @Get('by-intent/:intentId')
   @WalletJwtAuth()
   @ApiOperation({ summary: '해당 주문의 대기중 환불 요청 조회 (고객)' })

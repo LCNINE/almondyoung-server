@@ -4,7 +4,7 @@ import { CorrectionRequests } from '@/features/attendance/components/correction-
 
 export default function Page() {
   return (
-    <RouteGuard requireRole={['master']}>
+    <RouteGuard screen="/attendance/review">
       <AttendancePageLayout title="출결 요청 검토">
         <CorrectionRequests review showHeading={false} />
       </AttendancePageLayout>

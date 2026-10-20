@@ -7,7 +7,7 @@ import RouteGuard from '@/components/layout/route-guard';
 export default async function QnaDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/cs/qna/[id]">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <TwoColumnPage>
           <div className="flex flex-col gap-y-3">

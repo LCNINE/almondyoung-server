@@ -10,6 +10,7 @@ import {
   UpdateEmailLayoutDto,
 } from '../dto';
 import { EmailLayoutService } from '../services/email-layout.service';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('templates')
 @Controller('templates')
@@ -19,6 +20,7 @@ export class TemplateController {
   ) {}
 
   // 구체적인 라우트들을 먼저 정의
+  @RequirePermission('messaging.message.read')
   @Get('kakao/list')
   @ApiOperation({ summary: '카카오 템플릿 목록 조회', description: 'NHN 카카오 비즈메시지 템플릿 목록을 조회합니다.' })
   @ApiResponse({ status: 200, description: '카카오 템플릿 목록 조회 성공' })
@@ -27,6 +29,7 @@ export class TemplateController {
     return this.templateService.getKakaoTemplateList();
   }
 
+  @RequirePermission('messaging.message.read')
   @Get('sms/list')
   @ApiOperation({ summary: 'SMS 템플릿 목록 조회', description: 'SMS 템플릿 목록을 조회합니다.' })
   @ApiResponse({ status: 200, description: 'SMS 템플릿 목록 조회 성공' })
@@ -36,6 +39,7 @@ export class TemplateController {
   }
 
   // 기본 CRUD 엔드포인트들
+  @RequirePermission('messaging.message.read')
   @Get()
   @ApiOperation({ summary: '템플릿 목록 조회', description: '필터 조건에 따라 템플릿 목록을 조회합니다.' })
   @ApiQuery({ name: 'isActive', required: false, type: Boolean, description: '활성화 상태 필터' })
@@ -45,6 +49,7 @@ export class TemplateController {
     return this.templateService.findAllTemplates(filterDto);
   }
 
+  @RequirePermission('messaging.template.write')
   @Post()
   @ApiOperation({ summary: '템플릿 생성', description: '새로운 알림 템플릿을 생성합니다.' })
   @ApiBody({ type: CreateTemplateDto, description: '생성할 템플릿 정보' })
@@ -56,6 +61,7 @@ export class TemplateController {
   }
 
   // 파라미터 라우트들은 마지막에 정의
+  @RequirePermission('messaging.template.write')
   @Post('register-kakao/:key')
   @ApiOperation({ summary: '카카오 템플릿 등록', description: '카카오 비즈메시지 템플릿을 NHN에 등록합니다.' })
   @ApiParam({ name: 'key', description: '템플릿 키', type: 'string' })
@@ -67,6 +73,7 @@ export class TemplateController {
     return this.templateService.registerKakaoTemplate(templateKey, templateData);
   }
 
+  @RequirePermission('messaging.template.write')
   @Post('register-sms/:key')
   @ApiOperation({ summary: 'SMS 템플릿 등록', description: 'SMS 템플릿을 외부 서비스에 등록합니다.' })
   @ApiParam({ name: 'key', description: '템플릿 키', type: 'string' })
@@ -77,6 +84,7 @@ export class TemplateController {
     return this.templateService.registerSmsTemplate(templateKey);
   }
 
+  @RequirePermission('messaging.message.read')
   @Get('by-id/:id')
   @ApiOperation({ summary: '템플릿 상세 조회', description: 'ID로 특정 템플릿의 상세 정보를 조회합니다.' })
   @ApiParam({ name: 'id', description: '템플릿 ID', type: 'string' })
@@ -86,6 +94,7 @@ export class TemplateController {
     return this.templateService.findTemplateById(id);
   }
 
+  @RequirePermission('messaging.template.write')
   @Put('by-id/:id')
   @ApiOperation({ summary: '템플릿 수정', description: '기존 템플릿을 수정합니다.' })
   @ApiParam({ name: 'id', description: '템플릿 ID', type: 'string' })
@@ -97,6 +106,7 @@ export class TemplateController {
     return this.templateService.updateTemplate(id, updateTemplateDto);
   }
 
+  @RequirePermission('messaging.message.read')
   @Get('email-layout')
   @ApiOperation({ summary: '메일 양식 조회', description: '모든 알림 메일에 공통으로 씌우는 양식 설정입니다.' })
   @ApiResponse({ status: 200, description: '조회 성공' })
@@ -104,6 +114,7 @@ export class TemplateController {
     return this.emailLayoutService.get();
   }
 
+  @RequirePermission('messaging.template.write')
   @Put('email-layout')
   @ApiOperation({ summary: '메일 양식 수정' })
   @ApiBody({ type: UpdateEmailLayoutDto })
@@ -112,6 +123,7 @@ export class TemplateController {
     return this.emailLayoutService.update(dto);
   }
 
+  @RequirePermission('messaging.template.write')
   @Post('by-id/:id/reset-default')
   @ApiOperation({ summary: '기본 메시지 적용', description: '본문을 시드가 넣어 둔 기본 메시지로 되돌립니다.' })
   @ApiParam({ name: 'id', description: '템플릿 ID', type: 'string' })
@@ -121,6 +133,7 @@ export class TemplateController {
     return this.templateService.resetTemplateToDefault(id);
   }
 
+  @RequirePermission('messaging.template.write')
   @Delete('by-id/:id')
   @ApiOperation({ summary: '템플릿 삭제', description: '기존 템플릿을 삭제합니다.' })
   @ApiParam({ name: 'id', description: '템플릿 ID', type: 'string' })
@@ -130,6 +143,7 @@ export class TemplateController {
     return this.templateService.deleteTemplate(id);
   }
 
+  @RequirePermission('messaging.message.read')
   @Post('preview/:id')
   @ApiOperation({ summary: '템플릿 미리보기', description: '템플릿을 특정 채널로 미리보기합니다.' })
   @ApiParam({ name: 'id', description: '템플릿 ID', type: 'string' })
@@ -141,6 +155,7 @@ export class TemplateController {
     return this.templateService.previewTemplate(id, 'EMAIL', previewDto);
   }
 
+  @RequirePermission('messaging.message.send')
   @Post(':key/test/:channel')
   @ApiOperation({ summary: '템플릿 테스트', description: '특정 채널로 템플릿을 테스트 발송합니다.' })
   @ApiParam({ name: 'key', description: '템플릿 키', type: 'string' })
@@ -157,6 +172,7 @@ export class TemplateController {
     return this.templateService.previewTemplate(templateKey, channel, testDto);
   }
 
+  @RequirePermission('messaging.template.write')
   @Post('by-id/:id/kakao/sync')
   @ApiOperation({
     summary: '카카오 템플릿 상태 동기화',

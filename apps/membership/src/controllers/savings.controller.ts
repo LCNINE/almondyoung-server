@@ -6,7 +6,7 @@ import {
   type SavingsPeriodDetailDto,
 } from '../services/savings/savings.service';
 import { MonthlySavingsDto, RangeSavingsDto } from '../shared/dto/savings.dto';
-import { JwtAuthGuard, User } from '@app/authorization';
+import { JwtAuthGuard, User, StoreRoute } from '@app/authorization';
 
 /**
  * 멤버십 절약액 조회 컨트롤러
@@ -23,6 +23,7 @@ export class SavingsController {
   /**
    * 결제 주기별 절약액 목록 + 전체 누적
    */
+  @StoreRoute()
   @Get('overview')
   @ApiOperation({
     summary: '결제 주기별 절약액 조회',
@@ -36,6 +37,7 @@ export class SavingsController {
   /**
    * 특정 결제 주기의 절약 내역 (주문별 상세 포함)
    */
+  @StoreRoute()
   @Get('periods/:periodId')
   @ApiOperation({
     summary: '결제 주기 절약 상세 조회',
@@ -57,6 +59,7 @@ export class SavingsController {
    * @deprecated 신규 화면은 `overview` 를 쓴다. 배포 과도기에 옛 스토어프론트가 이 경로를 부르므로
    * 남겨둔다 — 지우면 롤아웃 중인 옛 화면의 절약액이 0으로 보인다.
    */
+  @StoreRoute()
   @Get('current-month')
   @ApiOperation({
     summary: '이번달 절약액 조회 (deprecated)',
@@ -74,6 +77,7 @@ export class SavingsController {
    *
    * @deprecated 달력 월은 환불 판정 기간과 경계가 다르다. 신규 화면은 `overview` 를 쓴다.
    */
+  @StoreRoute()
   @Get('month/:yearMonth')
   @ApiOperation({
     summary: '특정 월 절약액 조회 (deprecated)',
@@ -93,6 +97,7 @@ export class SavingsController {
   /**
    * 기간별 절약액 조회
    */
+  @StoreRoute()
   @Get('range')
   @ApiOperation({
     summary: '기간별 절약액 조회',

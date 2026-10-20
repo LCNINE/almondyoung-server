@@ -23,6 +23,7 @@ import type {
   ShipmentConsolidationCandidateQuery,
   OutboundBatchV2ListQuery,
 } from '@/lib/types/dto/fulfillment';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 // 주문 관련 쿼리
 export const useSalesOrders = (params?: any) => {
@@ -206,11 +207,11 @@ export const useFulfillmentOutboxEvents = (id: string) => {
   });
 };
 
-export const useFulfillmentShipments = (id: string) => {
+export const useFulfillmentShipments = (id: string, options?: { enabled?: boolean }) => {
   return useQuery({
     queryKey: orderQueryKeys.fulfillmentShipments(id),
     queryFn: () => orders.fulfillmentOrder.getShipments(id),
-    enabled: !!id,
+    enabled: !!id && (options?.enabled ?? true),
   });
 };
 
@@ -370,12 +371,13 @@ export const useDailyOrderStatus = (from: string, to: string) => {
   });
 };
 
-export const useOrderStats = () => {
+export const useOrderStats = (options: { enabled?: boolean } = {}) => {
   return useQuery({
     queryKey: orderQueryKeys.orderStats,
     queryFn: () => orders.salesOrders.getStats(),
     staleTime: 60 * 1000,
     refetchInterval: 5 * 60 * 1000,
+    enabled: options.enabled ?? true,
   });
 };
 
@@ -390,6 +392,7 @@ export const useConfirmSalesOrder = () => {
     },
   });
 };
+useConfirmSalesOrder.permission = ['order.order.write'] as const satisfies PermissionRequirement;
 
 // ===== 매칭 관련 쿼리 (WMS API 스펙 기반) =====
 

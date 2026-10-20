@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Can } from '@/components/auth/can';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -12,7 +13,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useDigitalAssets, useDeleteDigitalAsset } from '@/lib/services/library';
+import {
+  useCreateDigitalAsset,
+  useDigitalAssets,
+  useDeleteDigitalAsset,
+} from '@/lib/services/library';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { toast } from 'sonner';
 import { DigitalAssetCreateDialog } from '../create-dialog';
 
@@ -23,6 +29,7 @@ export function DigitalAssetsTable() {
 
   const { data, isLoading, isFetching } = useDigitalAssets({ q: q || undefined, limit: 50 });
   const deleteMutation = useDeleteDigitalAsset();
+  const { canRun } = usePermissionCheck();
 
   const rows = data?.data ?? [];
 
@@ -46,9 +53,11 @@ export function DigitalAssetsTable() {
           className="max-w-xs"
         />
         <div className="flex-1" />
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          자산 등록
-        </Button>
+        <Can run={useCreateDigitalAsset}>
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            자산 등록
+          </Button>
+        </Can>
       </div>
 
       <div className="px-4 pb-4">
@@ -101,15 +110,17 @@ export function DigitalAssetsTable() {
                     >
                       상세
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-destructive"
-                      onClick={() => handleDelete(row.id, row.name)}
-                      disabled={deleteMutation.isPending}
-                    >
-                      삭제
-                    </Button>
+                    {canRun(useDeleteDigitalAsset) && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive"
+                        onClick={() => handleDelete(row.id, row.name)}
+                        disabled={deleteMutation.isPending}
+                      >
+                        삭제
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))

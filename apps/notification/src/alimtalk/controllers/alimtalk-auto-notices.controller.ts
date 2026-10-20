@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Put, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { RolesGuard } from '@app/authorization';
+import { RolesGuard, RequirePermission } from '@app/authorization';
 import { LinkAlimtalkAutoNoticeDto } from '../dto';
 import { AlimtalkAutoNoticesService } from '../services/alimtalk-auto-notices.service';
 
@@ -12,17 +12,20 @@ const AdminOnly = () => UseGuards(RolesGuard('admin', 'master'));
 export class AlimtalkAutoNoticesController {
   constructor(private readonly service: AlimtalkAutoNoticesService) {}
 
+  @RequirePermission('messaging.message.read')
   @Get()
   list() {
     return this.service.list();
   }
 
+  @RequirePermission('messaging.template.write')
   @Put(':eventKey')
   @AdminOnly()
   link(@Param('eventKey') eventKey: string, @Body() dto: LinkAlimtalkAutoNoticeDto) {
     return this.service.link(eventKey, dto.templateCode, dto.replaceActive);
   }
 
+  @RequirePermission('messaging.template.write')
   @Delete(':eventKey')
   @AdminOnly()
   unlink(@Param('eventKey') eventKey: string) {

@@ -8,6 +8,7 @@ import {
 } from '@/lib/types/dto/review';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { reviewQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export const useUpdateReviewStatus = (reviewId: string) => {
   const queryClient = useQueryClient();
@@ -23,6 +24,7 @@ export const useUpdateReviewStatus = (reviewId: string) => {
     },
   });
 };
+useUpdateReviewStatus.permission = ['cs.review.moderate'] as const satisfies PermissionRequirement;
 
 export const useCreateReviewComment = (reviewId: string) => {
   const queryClient = useQueryClient();
@@ -38,6 +40,7 @@ export const useCreateReviewComment = (reviewId: string) => {
     },
   });
 };
+useCreateReviewComment.permission = ['cs.review.moderate'] as const satisfies PermissionRequirement;
 
 export const useUpdateReviewComment = (reviewId: string) => {
   const queryClient = useQueryClient();
@@ -53,6 +56,7 @@ export const useUpdateReviewComment = (reviewId: string) => {
     },
   });
 };
+useUpdateReviewComment.permission = ['cs.review.moderate'] as const satisfies PermissionRequirement;
 
 export const useDeleteReviewComment = (reviewId: string) => {
   const queryClient = useQueryClient();
@@ -67,6 +71,7 @@ export const useDeleteReviewComment = (reviewId: string) => {
     },
   });
 };
+useDeleteReviewComment.permission = ['cs.review.moderate'] as const satisfies PermissionRequirement;
 
 export const useDeleteReview = (reviewId: string) => {
   const queryClient = useQueryClient();
@@ -81,6 +86,7 @@ export const useDeleteReview = (reviewId: string) => {
     },
   });
 };
+useDeleteReview.permission = ['cs.review.moderate'] as const satisfies PermissionRequirement;
 
 export const useCreateAdminReview = () => {
   const queryClient = useQueryClient();
@@ -92,3 +98,4 @@ export const useCreateAdminReview = () => {
     },
   });
 };
+useCreateAdminReview.permission = ['cs.review.moderate'] as const satisfies PermissionRequirement;

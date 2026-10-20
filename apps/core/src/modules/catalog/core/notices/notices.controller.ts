@@ -1,4 +1,4 @@
-import { RolesGuard, Public } from '@app/authorization';
+import { RolesGuard, Public, RequirePermission } from '@app/authorization';
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CreateNoticeDto, NoticeListQueryDto, NoticeResponseDto, UpdateNoticeDto } from './dto';
@@ -9,6 +9,7 @@ import { NoticesService } from './notices.service';
 export class NoticesController {
   constructor(private readonly noticesService: NoticesService) {}
 
+  @RequirePermission('marketing.notice.write')
   @Post()
   @UseGuards(RolesGuard('master', 'admin'))
   @ApiBearerAuth()
@@ -19,6 +20,7 @@ export class NoticesController {
     return this.noticesService.createNotice(dto);
   }
 
+  @RequirePermission('marketing.display.read')
   @Get()
   @UseGuards(RolesGuard('master', 'admin'))
   @ApiBearerAuth()
@@ -56,6 +58,7 @@ export class NoticesController {
     return this.noticesService.getNoticeById(id);
   }
 
+  @RequirePermission('marketing.notice.write')
   @Put(':id')
   @UseGuards(RolesGuard('master', 'admin'))
   @ApiBearerAuth()
@@ -68,6 +71,7 @@ export class NoticesController {
     return this.noticesService.updateNotice(id, dto);
   }
 
+  @RequirePermission('marketing.notice.write')
   @Delete(':id')
   @UseGuards(RolesGuard('master', 'admin'))
   @ApiBearerAuth()

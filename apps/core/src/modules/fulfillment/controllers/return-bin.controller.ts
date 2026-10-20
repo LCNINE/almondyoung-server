@@ -12,7 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiCreatedResponse, ApiHeader, ApiOkResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import {
   RegisterReturnBinDto,
@@ -41,6 +41,7 @@ export class ReturnBinController {
     private readonly returns: BoxReturnService,
   ) {}
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('return-bins')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiCreatedResponse({ type: ReturnBinDto })
@@ -48,6 +49,7 @@ export class ReturnBinController {
     return this.returnBins.register(dto, this.actor(user));
   }
 
+  @RequirePermission('fulfillment.shipment.read')
   @Get('return-bins/:barcode')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: ReturnBinContentsDto })
@@ -59,6 +61,7 @@ export class ReturnBinController {
     return this.returnBins.lookup(barcode, warehouseId);
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('shipments/:shipmentId/return-bin-removals')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
@@ -73,6 +76,7 @@ export class ReturnBinController {
     return this.returns.removeToReturnBin(shipmentId, dto, this.actor(user), idempotencyKey);
   }
 
+  @RequirePermission('fulfillment.warehouse.operate')
   @Post('return-bins/:barcode/putaways')
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })

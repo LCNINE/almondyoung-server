@@ -16,8 +16,6 @@ import type {
   CreateCategoryDto,
   UpdateCategoryDto,
   MoveCategoryDto,
-  UpdateMasterDto,
-  UpdatePricingStrategyDto,
   CreateBannerGroupDto,
   UpdateBannerGroupDto,
   CreateBannerDto,
@@ -50,6 +48,7 @@ import type {
   UpdateMasterVersionDto,
   UpdateProductVariantDto,
 } from './products-detail.types';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 // ===== 카테고리 관련 뮤테이션 =====
 
@@ -68,6 +67,7 @@ export const useCreateCategory = () => {
     },
   });
 };
+useCreateCategory.permission = ['catalog.category.write'] as const satisfies PermissionRequirement;
 
 /**
  * 카테고리 수정
@@ -88,6 +88,7 @@ export const useUpdateCategory = () => {
     },
   });
 };
+useUpdateCategory.permission = ['catalog.category.write'] as const satisfies PermissionRequirement;
 
 /**
  * 카테고리 삭제
@@ -110,6 +111,7 @@ export const useDeleteCategory = () => {
     },
   });
 };
+useDeleteCategory.permission = ['catalog.category.write'] as const satisfies PermissionRequirement;
 
 /**
  * 카테고리 이동
@@ -130,6 +132,7 @@ export const useMoveCategory = () => {
     },
   });
 };
+useMoveCategory.permission = ['catalog.category.write'] as const satisfies PermissionRequirement;
 
 /**
  * 카테고리 순서 변경 (동일 부모 내)
@@ -151,6 +154,7 @@ export const useReorderCategories = () => {
     },
   });
 };
+useReorderCategories.permission = ['catalog.category.write'] as const satisfies PermissionRequirement;
 
 // ===== 제품 마스터 관련 뮤테이션 =====
 
@@ -169,26 +173,7 @@ export const useCreateMaster = () => {
     },
   });
 };
-
-/**
- * 제품 마스터 수정
- */
-export const useUpdateMaster = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: UpdateMasterDto }) =>
-      products.masters.update(id, data),
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.masters,
-      });
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.master(variables.id),
-      });
-    },
-  });
-};
+useCreateMaster.permission = ['catalog.product.write'] as const satisfies PermissionRequirement;
 
 /**
  * 멤버십가 공개 제한 변경 (draft 없이 즉시 적용)
@@ -217,6 +202,7 @@ export const useUpdateMembershipPriceVisibility = (
     },
   });
 };
+useUpdateMembershipPriceVisibility.permission = ['catalog.product.write'] as const satisfies PermissionRequirement;
 
 /**
  * 멤버십 회원 전용 노출 변경 (draft 없이 즉시 적용)
@@ -245,6 +231,7 @@ export const useUpdateMembersOnlyVisibility = (
     },
   });
 };
+useUpdateMembersOnlyVisibility.permission = ['catalog.product.write'] as const satisfies PermissionRequirement;
 
 /**
  * 해외직구 여부 변경 (draft 없이 즉시 적용)
@@ -270,6 +257,7 @@ export const useUpdateOverseas = (
     },
   });
 };
+useUpdateOverseas.permission = ['catalog.product.write'] as const satisfies PermissionRequirement;
 
 /**
  * 배송비 그룹 변경 (draft 없이 즉시 적용)
@@ -295,6 +283,7 @@ export const useUpdateShippingGroup = (
     },
   });
 };
+useUpdateShippingGroup.permission = ['catalog.product.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateRequiresMembership = (
   masterId: string,
@@ -317,6 +306,7 @@ export const useUpdateRequiresMembership = (
     },
   });
 };
+useUpdateRequiresMembership.permission = ['catalog.product.write'] as const satisfies PermissionRequirement;
 
 /**
  * @deprecated use useUpdateMembershipPriceVisibility
@@ -338,34 +328,7 @@ export const useDeleteMaster = () => {
     },
   });
 };
-
-/**
- * 가격 전략 변경
- */
-export const useUpdatePricingStrategy = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({
-      id,
-      data,
-    }: {
-      id: string;
-      data: UpdatePricingStrategyDto;
-    }) => products.masters.updatePricingStrategy(id, data),
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.masters,
-      });
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.master(variables.id),
-      });
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.masterPricePreview(variables.id),
-      });
-    },
-  });
-};
+useDeleteMaster.permission = ['catalog.product.delete'] as const satisfies PermissionRequirement;
 
 // ===== 채널별 제품 관련 뮤테이션 =====
 
@@ -383,6 +346,7 @@ export const useCreateBannerGroup = () => {
     },
   });
 };
+useCreateBannerGroup.permission = ['marketing.display.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateBannerGroup = () => {
   const queryClient = useQueryClient();
@@ -399,6 +363,7 @@ export const useUpdateBannerGroup = () => {
     },
   });
 };
+useUpdateBannerGroup.permission = ['marketing.display.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteBannerGroup = () => {
   const queryClient = useQueryClient();
@@ -411,6 +376,7 @@ export const useDeleteBannerGroup = () => {
     },
   });
 };
+useDeleteBannerGroup.permission = ['marketing.display.write'] as const satisfies PermissionRequirement;
 
 // ===== 배너 뮤테이션 =====
 
@@ -425,6 +391,7 @@ export const useCreateBanner = () => {
     },
   });
 };
+useCreateBanner.permission = ['marketing.display.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateBanner = () => {
   const queryClient = useQueryClient();
@@ -438,6 +405,7 @@ export const useUpdateBanner = () => {
     },
   });
 };
+useUpdateBanner.permission = ['marketing.display.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteBanner = () => {
   const queryClient = useQueryClient();
@@ -461,6 +429,7 @@ export const useDeleteBanner = () => {
     },
   });
 };
+useDeleteBanner.permission = ['marketing.display.write'] as const satisfies PermissionRequirement;
 
 // ===== 태그 그룹 뮤테이션 =====
 
@@ -473,6 +442,7 @@ export const useCreateTagGroup = () => {
     },
   });
 };
+useCreateTagGroup.permission = ['catalog.category.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateTagGroup = () => {
   const queryClient = useQueryClient();
@@ -487,6 +457,7 @@ export const useUpdateTagGroup = () => {
     },
   });
 };
+useUpdateTagGroup.permission = ['catalog.category.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteTagGroup = () => {
   const queryClient = useQueryClient();
@@ -497,6 +468,7 @@ export const useDeleteTagGroup = () => {
     },
   });
 };
+useDeleteTagGroup.permission = ['catalog.category.write'] as const satisfies PermissionRequirement;
 
 // ===== 태그 값 뮤테이션 =====
 
@@ -518,6 +490,7 @@ export const useCreateTagValue = () => {
     },
   });
 };
+useCreateTagValue.permission = ['catalog.category.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateTagValue = () => {
   const queryClient = useQueryClient();
@@ -539,6 +512,7 @@ export const useUpdateTagValue = () => {
     },
   });
 };
+useUpdateTagValue.permission = ['catalog.category.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteTagValue = () => {
   const queryClient = useQueryClient();
@@ -553,6 +527,7 @@ export const useDeleteTagValue = () => {
     },
   });
 };
+useDeleteTagValue.permission = ['catalog.category.write'] as const satisfies PermissionRequirement;
 
 // ===== 버전 관련 뮤테이션 =====
 
@@ -620,6 +595,7 @@ export const useCreateMasterDraftVersion = () => {
     },
   });
 };
+useCreateMasterDraftVersion.permission = ['catalog.product.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateMasterVersion = () => {
   const queryClient = useQueryClient();
@@ -655,6 +631,7 @@ export const useUpdateMasterVersion = () => {
     },
   });
 };
+useUpdateMasterVersion.permission = ['catalog.product.write'] as const satisfies PermissionRequirement;
 
 export const usePublishProductVersion = () => {
   const queryClient = useQueryClient();
@@ -676,6 +653,7 @@ export const usePublishProductVersion = () => {
     },
   });
 };
+usePublishProductVersion.permission = ['catalog.product.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteDraftProductVersion = () => {
   const queryClient = useQueryClient();
@@ -697,6 +675,7 @@ export const useDeleteDraftProductVersion = () => {
     },
   });
 };
+useDeleteDraftProductVersion.permission = ['catalog.product.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateDraftVariant = () => {
   const queryClient = useQueryClient();
@@ -722,6 +701,7 @@ export const useUpdateDraftVariant = () => {
     },
   });
 };
+useUpdateDraftVariant.permission = ['catalog.product.write'] as const satisfies PermissionRequirement;
 
 export const useBulkUpdateDraftVariants = () => {
   const queryClient = useQueryClient();
@@ -745,6 +725,7 @@ export const useBulkUpdateDraftVariants = () => {
     },
   });
 };
+useBulkUpdateDraftVariants.permission = ['catalog.product.write'] as const satisfies PermissionRequirement;
 
 // ===== 가격 관리 뮤테이션 =====
 
@@ -783,6 +764,7 @@ export const useReplaceVersionPricingRules = () => {
     },
   });
 };
+useReplaceVersionPricingRules.permission = ['catalog.price.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteVersionPricingRules = () => {
   const queryClient = useQueryClient();
@@ -798,6 +780,7 @@ export const useDeleteVersionPricingRules = () => {
     },
   });
 };
+useDeleteVersionPricingRules.permission = ['catalog.price.write'] as const satisfies PermissionRequirement;
 
 export const useCalculateVersionPrice = () => {
   return useMutation({
@@ -810,6 +793,7 @@ export const useCalculateVersionPrice = () => {
     }) => products.pricing.versions.calculate(versionId, dto),
   });
 };
+useCalculateVersionPrice.permission = ['catalog.product.read'] as const satisfies PermissionRequirement;
 
 export const useCalculateMasterPrice = () => {
   return useMutation({
@@ -822,6 +806,7 @@ export const useCalculateMasterPrice = () => {
     }) => products.pricing.masters.calculate(masterId, dto),
   });
 };
+useCalculateMasterPrice.permission = ['catalog.product.read'] as const satisfies PermissionRequirement;
 
 // ===== 채널 리스팅 =====
 
@@ -839,6 +824,7 @@ export const useCreateChannelListing = () => {
     },
   });
 };
+useCreateChannelListing.permission = ['catalog.channel_listing.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateChannelListing = () => {
   const queryClient = useQueryClient();
@@ -853,6 +839,7 @@ export const useUpdateChannelListing = () => {
     },
   });
 };
+useUpdateChannelListing.permission = ['catalog.channel_listing.write'] as const satisfies PermissionRequirement;
 
 export const useActivateChannelListing = () => {
   const queryClient = useQueryClient();
@@ -864,6 +851,7 @@ export const useActivateChannelListing = () => {
     },
   });
 };
+useActivateChannelListing.permission = ['catalog.channel_listing.write'] as const satisfies PermissionRequirement;
 
 export const useDeactivateChannelListing = () => {
   const queryClient = useQueryClient();
@@ -875,6 +863,7 @@ export const useDeactivateChannelListing = () => {
     },
   });
 };
+useDeactivateChannelListing.permission = ['catalog.channel_listing.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteChannelListing = () => {
   const queryClient = useQueryClient();
@@ -885,6 +874,7 @@ export const useDeleteChannelListing = () => {
     },
   });
 };
+useDeleteChannelListing.permission = ['catalog.channel_listing.write'] as const satisfies PermissionRequirement;
 
 // ===== 채널 카테고리 =====
 
@@ -900,6 +890,7 @@ export const useCreateChannelCategory = () => {
     },
   });
 };
+useCreateChannelCategory.permission = ['catalog.channel_listing.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateChannelCategory = () => {
   const queryClient = useQueryClient();
@@ -921,6 +912,7 @@ export const useUpdateChannelCategory = () => {
     },
   });
 };
+useUpdateChannelCategory.permission = ['catalog.channel_listing.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteChannelCategory = () => {
   const queryClient = useQueryClient();
@@ -934,6 +926,7 @@ export const useDeleteChannelCategory = () => {
     },
   });
 };
+useDeleteChannelCategory.permission = ['catalog.channel_listing.write'] as const satisfies PermissionRequirement;
 
 // ===== 일괄 작업 =====
 
@@ -946,6 +939,7 @@ export const useBulkUpdateMasters = () => {
     },
   });
 };
+useBulkUpdateMasters.permission = ['catalog.bulk.execute'] as const satisfies PermissionRequirement;
 
 export const useBulkDeleteMasters = () => {
   const queryClient = useQueryClient();
@@ -956,6 +950,7 @@ export const useBulkDeleteMasters = () => {
     },
   });
 };
+useBulkDeleteMasters.permission = ['catalog.bulk.execute'] as const satisfies PermissionRequirement;
 
 export const useBulkRestoreMasters = () => {
   const queryClient = useQueryClient();
@@ -966,6 +961,7 @@ export const useBulkRestoreMasters = () => {
     },
   });
 };
+useBulkRestoreMasters.permission = ['catalog.bulk.execute'] as const satisfies PermissionRequirement;
 
 export const useBulkUpdatePolicy = () => {
   const queryClient = useQueryClient();
@@ -976,6 +972,7 @@ export const useBulkUpdatePolicy = () => {
     },
   });
 };
+useBulkUpdatePolicy.permission = ['catalog.bulk.execute'] as const satisfies PermissionRequirement;
 
 // ===== 공지사항 뮤테이션 =====
 
@@ -988,6 +985,7 @@ export const useCreateNotice = () => {
     },
   });
 };
+useCreateNotice.permission = ['marketing.notice.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateNotice = () => {
   const queryClient = useQueryClient();
@@ -1002,6 +1000,7 @@ export const useUpdateNotice = () => {
     },
   });
 };
+useUpdateNotice.permission = ['marketing.notice.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteNotice = () => {
   const queryClient = useQueryClient();
@@ -1013,6 +1012,7 @@ export const useDeleteNotice = () => {
     },
   });
 };
+useDeleteNotice.permission = ['marketing.notice.write'] as const satisfies PermissionRequirement;
 
 // ===== 아몬드템플릿 뮤테이션 =====
 
@@ -1031,6 +1031,7 @@ export const useUpdateAlmondTemplateStatus = () => {
     onSuccess: () => invalidate(),
   });
 };
+useUpdateAlmondTemplateStatus.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteAlmondTemplate = () => {
   const invalidate = useInvalidateAlmondTemplates();
@@ -1039,6 +1040,7 @@ export const useDeleteAlmondTemplate = () => {
     onSuccess: () => invalidate(),
   });
 };
+useDeleteAlmondTemplate.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
 
 // ===== 샵매매 뮤테이션 =====
 
@@ -1057,6 +1059,7 @@ export const useCreateShopListing = () => {
     onSuccess: () => invalidate(),
   });
 };
+useCreateShopListing.permission = ['marketing.shop_listing.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateShopListing = () => {
   const invalidate = useInvalidateShopListings();
@@ -1066,6 +1069,7 @@ export const useUpdateShopListing = () => {
     onSuccess: (_, { id }) => invalidate(id),
   });
 };
+useUpdateShopListing.permission = ['marketing.shop_listing.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteShopListing = () => {
   const invalidate = useInvalidateShopListings();
@@ -1074,6 +1078,7 @@ export const useDeleteShopListing = () => {
     onSuccess: () => invalidate(),
   });
 };
+useDeleteShopListing.permission = ['marketing.shop_listing.write'] as const satisfies PermissionRequirement;
 
 export const useApproveShopListing = () => {
   const invalidate = useInvalidateShopListings();
@@ -1084,6 +1089,7 @@ export const useApproveShopListing = () => {
     onSettled: (_, __, { id }) => invalidate(id),
   });
 };
+useApproveShopListing.permission = ['marketing.shop_listing.write'] as const satisfies PermissionRequirement;
 
 export const useRejectShopListing = () => {
   const invalidate = useInvalidateShopListings();
@@ -1100,6 +1106,7 @@ export const useRejectShopListing = () => {
     onSettled: (_, __, { id }) => invalidate(id),
   });
 };
+useRejectShopListing.permission = ['marketing.shop_listing.write'] as const satisfies PermissionRequirement;
 
 export const useShopListingTransition = (kind: 'hide' | 'unhide' | 'close' | 'reopen') => {
   const invalidate = useInvalidateShopListings();
@@ -1108,6 +1115,7 @@ export const useShopListingTransition = (kind: 'hide' | 'unhide' | 'close' | 're
     onSettled: (_, __, id) => invalidate(id),
   });
 };
+useShopListingTransition.permission = ['marketing.shop_listing.write'] as const satisfies PermissionRequirement;
 
 // ===== 팝업 공지 뮤테이션 =====
 
@@ -1120,6 +1128,7 @@ export const useCreateSitePopup = () => {
     },
   });
 };
+useCreateSitePopup.permission = ['marketing.display.write'] as const satisfies PermissionRequirement;
 
 export const useUpdateSitePopup = () => {
   const queryClient = useQueryClient();
@@ -1134,6 +1143,7 @@ export const useUpdateSitePopup = () => {
     },
   });
 };
+useUpdateSitePopup.permission = ['marketing.display.write'] as const satisfies PermissionRequirement;
 
 export const useResetSitePopupDismissals = () => {
   const queryClient = useQueryClient();
@@ -1147,6 +1157,7 @@ export const useResetSitePopupDismissals = () => {
     },
   });
 };
+useResetSitePopupDismissals.permission = ['marketing.display.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteSitePopup = () => {
   const queryClient = useQueryClient();
@@ -1157,6 +1168,7 @@ export const useDeleteSitePopup = () => {
     },
   });
 };
+useDeleteSitePopup.permission = ['marketing.display.write'] as const satisfies PermissionRequirement;
 
 /**
  * 필터 결과 전체 선택. 버튼을 누른 순간에만 도는 일회성 조회라 useQuery 가 아니라
@@ -1167,3 +1179,4 @@ export const useMasterSelection = () => {
     mutationFn: (query: MastersQuery) => products.masters.getSelection(query),
   });
 };
+useMasterSelection.permission = ['catalog.product.read'] as const satisfies PermissionRequirement;

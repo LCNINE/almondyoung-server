@@ -8,6 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { MovementHistoryTable } from '../components/movement-history-table';
 import { MoveDialog } from '../components/move-dialog';
+import { Can } from '@/components/auth/can';
+import { useMoveImmediately } from '@/lib/services/inventory';
 
 type MovementTab = 'move' | 'history';
 
@@ -35,7 +37,9 @@ export default function MovementTemplate() {
         title="재고 이동"
         subtitle="동일 창고 내 위치 간 재고를 즉시 이동합니다."
         right={
-          <Button onClick={() => setMoveOpen(true)}>즉시 이동</Button>
+          <Can run={useMoveImmediately}>
+            <Button onClick={() => setMoveOpen(true)}>즉시 이동</Button>
+          </Can>
         }
       />
 
@@ -53,7 +57,9 @@ export default function MovementTemplate() {
               즉시 이동 버튼을 눌러 창고 내 SKU를 다른 위치로 이동하세요.
               이동은 단일 트랜잭션으로 즉시 반영됩니다.
             </p>
-            <Button onClick={() => setMoveOpen(true)}>즉시 이동 실행</Button>
+            <Can run={useMoveImmediately}>
+              <Button onClick={() => setMoveOpen(true)}>즉시 이동 실행</Button>
+            </Can>
           </div>
         </TabsContent>
 

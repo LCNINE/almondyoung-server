@@ -161,6 +161,7 @@ describe('custody command bodies (policy call positions)', () => {
   const policy = (over: Partial<PickingCustodyPolicy> = {}): PickingCustodyPolicy => ({
     strategy: 'discrete',
     keys: { complete: 'k-complete', unpick: 'k-unpick', handoffClaim: 'k-handoff-claim' },
+    supervises: () => false,
     loadHeldSpots,
     completeMovesFrom: 'WORKER',
     handoffCustody: {

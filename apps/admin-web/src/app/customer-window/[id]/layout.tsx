@@ -7,5 +7,5 @@ export default function CustomerWindowLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <RouteGuard requireRole={['admin', 'master']}>{children}</RouteGuard>;
+  return <RouteGuard screen="/customer-window/[id]">{children}</RouteGuard>;
 }

@@ -14,6 +14,7 @@ import {
 import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AiPromptsService, type AiPromptPresetRecord } from './ai-prompts.service';
 import { AiPromptPresetResponseDto, CreateAiPromptPresetDto, UpdateAiPromptPresetDto } from './dto/ai-prompt.dto';
+import { RequirePermission } from '@app/authorization';
 
 function toDto(row: AiPromptPresetRecord): AiPromptPresetResponseDto {
   return {
@@ -32,6 +33,7 @@ function toDto(row: AiPromptPresetRecord): AiPromptPresetResponseDto {
 export class AiPromptsController {
   constructor(private readonly aiPromptsService: AiPromptsService) {}
 
+  @RequirePermission('catalog.product.read')
   @Get()
   @ApiOperation({
     summary: 'AI 프롬프트 양식 목록',
@@ -46,6 +48,7 @@ export class AiPromptsController {
     return rows.map(toDto);
   }
 
+  @RequirePermission('catalog.product.write')
   @Post()
   @ApiOperation({ summary: 'AI 프롬프트 양식 저장' })
   @ApiQuery({ name: 'scope', description: '적용 범위' })
@@ -66,6 +69,7 @@ export class AiPromptsController {
     return toDto(row);
   }
 
+  @RequirePermission('catalog.product.write')
   @Put(':id')
   @ApiOperation({
     summary: 'AI 프롬프트 양식 수정',
@@ -78,6 +82,7 @@ export class AiPromptsController {
     return toDto(row);
   }
 
+  @RequirePermission('catalog.product.write')
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({

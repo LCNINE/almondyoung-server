@@ -1,4 +1,4 @@
-import { getScopeAuthorizationDecision } from '@app/authorization';
+import { getPermissionDecision, getScopeAuthorizationDecision } from '@app/authorization';
 import { AI_SCOPE, type AiScope } from './ai-scopes';
 
 const ALL_AI_SCOPES = Object.values(AI_SCOPE);
@@ -12,7 +12,11 @@ const ALL_AI_SCOPES = Object.values(AI_SCOPE);
  *
  * master 는 스코프 조회 없이 통과하는데, 그때 가드가 요구 스코프 전부를 통과로 기록하므로
  * 여기서도 전부 받는다 — 마스터가 모든 도구를 쓰는 것은 의도한 동작이다.
+ *
+ * 새 권한 판정으로 넘어간 서비스(`enforced`)에선 옛 가드가 물러나 그 낙인이 없다. 대신 라우트가 남긴
+ * `ai.assistant.use` 낙인으로 어드민 도구를 연다 — 고객용 스코프만 받는 스킬은 아직 없어 도구 목록은 같다.
  */
-export function grantedAiScopes(request: unknown): AiScope[] {
+export function grantedAiScopes(request: unknown, enforced: boolean): AiScope[] {
+  if (enforced) return getPermissionDecision(request, 'ai.assistant.use') ? [AI_SCOPE.ASSISTANT] : [];
   return ALL_AI_SCOPES.filter((scope) => getScopeAuthorizationDecision(request, scope)?.granted === true);
 }

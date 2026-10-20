@@ -1,3 +1,4 @@
+import { createCheckpointsForTesting } from '@app/authorization';
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
 import { assembleLabels } from '../waybill/__support__/label-fixtures';
 import {
@@ -145,6 +146,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       authorization,
       workflow,
       assembleBoxWithdrawal(dbService),
+      createCheckpointsForTesting(),
     );
     const serviceRefs: { recall?: ShipmentRecallService } = {};
     const moduleRef = {
@@ -181,6 +183,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       outboxPublisherFor(FULFILLMENT_V2_STREAM, dbService),
       audit,
       workflow,
+      createCheckpointsForTesting(),
     );
     serviceRefs.recall = recall;
     const dispatch = new ShipmentDispatchService(
@@ -209,6 +212,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       moduleRef as never,
       new BoxAllocationManager(sessions, new BatchControlledStockGuard()),
       assembleBoxWithdrawal(dbService),
+      createCheckpointsForTesting(),
     );
     return { batches, dispatch, waybills, planning, recall, reservations };
   }

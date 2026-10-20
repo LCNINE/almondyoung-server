@@ -3,6 +3,7 @@
 import { authApi } from '@/lib/api';
 import { useMutation } from '@tanstack/react-query';
 import { disableAttendancePush } from '@/features/attendance/lib/browser-push';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export const useSignin = () => {
   return useMutation({
@@ -17,6 +18,7 @@ export const useSignin = () => {
     }) => authApi.signin(loginId, password, rememberMe),
   });
 };
+useSignin.permission = 'self' as const satisfies PermissionRequirement;
 
 export const useSignout = () => {
   return useMutation({
@@ -31,3 +33,4 @@ export const useSignout = () => {
     },
   });
 };
+useSignout.permission = 'self' as const satisfies PermissionRequirement;

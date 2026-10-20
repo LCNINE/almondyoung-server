@@ -4,6 +4,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/s
 import { EventMappingService } from '../../shared/services/event-mapping.service';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { CreateEventDto, UpdateEventDto, TriggerEventDto } from '../../shared/dto/event.dto';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('event-handlers')
 @Controller('events')
@@ -13,6 +14,7 @@ export class EventController {
     private readonly notificationDispatcherService: NotificationDispatcherService,
   ) {}
 
+  @RequirePermission('messaging.message.send')
   @Post('trigger')
   @ApiOperation({
     summary: '이벤트 트리거',
@@ -34,6 +36,7 @@ export class EventController {
     });
   }
 
+  @RequirePermission('messaging.message.read')
   @Get()
   @ApiOperation({
     summary: '전체 이벤트 목록 조회',
@@ -44,6 +47,7 @@ export class EventController {
     return this.eventMappingService.getAllEvents();
   }
 
+  @RequirePermission('messaging.message.read')
   @Get(':eventKey')
   @ApiOperation({
     summary: '이벤트 상세 조회',
@@ -56,6 +60,7 @@ export class EventController {
     return this.eventMappingService.getEventByKey(eventKey);
   }
 
+  @RequirePermission('messaging.template.write')
   @Post()
   @ApiOperation({
     summary: '이벤트 생성',
@@ -69,6 +74,7 @@ export class EventController {
     return this.eventMappingService.createEvent(dto);
   }
 
+  @RequirePermission('messaging.template.write')
   @Put(':eventKey')
   @ApiOperation({
     summary: '이벤트 수정',

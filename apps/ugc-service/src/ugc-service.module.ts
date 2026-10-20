@@ -5,8 +5,19 @@ import { ConfigModule } from '@nestjs/config';
 import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 import { CronOnceModule } from '@app/cron-once';
 import { DbModule } from '@app/db';
-import { AuthorizationModule, authorizationSchema, JwtAuthGuard, ScopeGuard } from '@app/authorization';
-import { APP_GUARD } from '@nestjs/core';
+import {
+  AuthorizationModule,
+  authorizationSchema,
+  AuthzObserverGuard,
+  AuthzShadowInterceptor,
+  JwtAuthGuard,
+  PermissionGuard,
+  PermissionModule,
+  ScopeGuard,
+  piiMaskingProviders,
+} from '@app/authorization';
+import { OutboxPiiAccessRecorder } from '@app/authorization/recorders/outbox-pii-access.recorder';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { UgcServiceController } from './ugc-service.controller';
 import { UgcServiceService } from './ugc-service.service';
 import { ReviewsModule } from './reviews/reviews.module';
@@ -31,6 +42,7 @@ const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
       scopes: UGC_SCOPES,
       roleMappings: UGC_ROLE_MAPPINGS,
     }),
+    PermissionModule.forRoot({ service: 'ugc-service' }),
     DbModule.forRoot({
       config: {
         connectionString: process.env.DATABASE_URL ?? '',
@@ -48,6 +60,8 @@ const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
   controllers: [UgcServiceController],
   providers: [
     UgcServiceService,
+    // 그림자 판정 관찰 — 반드시 맨 앞(뒤 가드가 거부한 요청도 봐야 한다). 결과에 관여하지 않는다.
+    { provide: APP_GUARD, useClass: AuthzObserverGuard },
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
@@ -56,6 +70,11 @@ const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
       provide: APP_GUARD,
       useClass: ScopeGuard,
     },
+    // 권한 강제 — AUTHZ_ENFORCE=true 일 때만 일한다(기본 꺼짐). 기존 가드 뒤에 둔다.
+    { provide: APP_GUARD, useClass: PermissionGuard },
+    { provide: APP_INTERCEPTOR, useClass: AuthzShadowInterceptor },
+    // 개인정보 표시 제한 — 다른 응답 인터셉터보다 바깥에서 최종 본문을 본다.
+    ...piiMaskingProviders({ service: 'ugc-service', recorder: OutboxPiiAccessRecorder }),
   ],
 })
 export class UgcServiceModule {}

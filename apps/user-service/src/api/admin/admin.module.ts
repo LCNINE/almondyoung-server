@@ -4,7 +4,6 @@ import { BlacklistsModule } from './blacklists/blacklists.module';
 import { AdminBusinessLicensesModule } from './business-licenses/business-licenses.module';
 import { AdminDormantModule } from './dormant/dormant.module';
 import { AdminOAuthClientsModule } from './oauth-clients/oauth-clients.module';
-import { AdminRolesModule } from './roles/roles.module';
 import { AdminShopModule } from './shop/shop.modulet';
 import { AdminUserModule } from './users/users.module';
 
@@ -12,7 +11,6 @@ import { AdminUserModule } from './users/users.module';
   imports: [
     AdminAuthModule,
     AdminBusinessLicensesModule,
-    AdminRolesModule,
     AdminUserModule,
     AdminDormantModule,
     AdminOAuthClientsModule,

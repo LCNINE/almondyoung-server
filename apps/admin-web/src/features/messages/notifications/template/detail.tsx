@@ -23,6 +23,10 @@ import {
   useUpdateTemplateContents,
 } from '@/lib/services/notification';
 import { useAlimtalkTemplates } from '@/lib/services/alimtalk';
+import { Can } from '@/components/auth/can';
+import { BlockedReason } from '@/components/auth/blocked-reason';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { StatusBadge } from '../../alimtalk/components/status-badge';
 import { linkedTemplateNote } from '../../alimtalk/lib/alimtalk';
 import { NOTIFICATION_CATALOG } from '../catalog';
@@ -49,6 +53,9 @@ export default function NotificationDetailTemplate({ eventKey }: { eventKey: str
   const updateTemplate = useUpdateTemplateContents();
   const resetTemplate = useResetTemplateToDefault();
   const emailLayout = useEmailLayout();
+  const { canRun, blockedReason } = usePermissionCheck();
+  const channelBlocked = blockedReason(useUpdateNotificationEvent);
+  const canEditMail = canRun(useUpdateTemplateContents);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
   const event = events.data?.find((e) => e.eventKey === eventKey);
@@ -175,11 +182,16 @@ export default function NotificationDetailTemplate({ eventKey }: { eventKey: str
           <div className="flex items-center gap-4">
             <Label className="w-28 shrink-0">보내는 채널</Label>
             <label className="flex items-center gap-2 text-sm">
-              <Checkbox
-                checked={emailOn}
-                disabled={updateEvent.isPending}
-                onCheckedChange={(v) => setEmail(v === true)}
-              />
+              <BlockedReason reason={channelBlocked}>
+                {(blocked) => (
+                  <Checkbox
+                    {...blocked}
+                    checked={emailOn}
+                    disabled={updateEvent.isPending}
+                    onCheckedChange={channelBlocked ? undefined : (v) => setEmail(v === true)}
+                  />
+                )}
+              </BlockedReason>
               {CHANNEL_LABEL.EMAIL}
             </label>
             {PLANNED_CHANNELS.map(({ channel, reason }) =>
@@ -216,6 +228,7 @@ export default function NotificationDetailTemplate({ eventKey }: { eventKey: str
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <section className="flex flex-col gap-3">
             <h3 className="font-semibold">메일 수정</h3>
+            <PermissionReadOnly run={useUpdateTemplateContents}>
             <div className="flex flex-col gap-2">
               <Label htmlFor="mail-subject">제목</Label>
               <Input
@@ -227,7 +240,7 @@ export default function NotificationDetailTemplate({ eventKey }: { eventKey: str
             <div className="flex flex-1 flex-col gap-2">
               <div className="flex items-center justify-between gap-2">
                 <Label htmlFor="mail-body">본문 (마크다운)</Label>
-                <MailImageUploadButton onInsert={insertAtCursor} />
+                {canEditMail && <MailImageUploadButton onInsert={insertAtCursor} />}
               </div>
               <Textarea
                 id="mail-body"
@@ -244,6 +257,7 @@ export default function NotificationDetailTemplate({ eventKey }: { eventKey: str
                 에서 한 번에 바꿉니다.
               </p>
             </div>
+            {canEditMail && (
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-muted-foreground text-xs">변수 넣기</span>
               {known.map((name) => (
@@ -259,6 +273,7 @@ export default function NotificationDetailTemplate({ eventKey }: { eventKey: str
                 </Button>
               ))}
             </div>
+            )}
             {unknown.length > 0 && (
               <p className="text-destructive text-xs">
                 이 알림이 채워주지 않는 변수가 있습니다: {unknown.map((n) => `{{${n}}}`).join(', ')} — 발송하면 빈칸으로
@@ -266,14 +281,16 @@ export default function NotificationDetailTemplate({ eventKey }: { eventKey: str
               </p>
             )}
             <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={template.hasDefaultContents === false || resetTemplate.isPending}
-                onClick={resetToDefault}
-              >
-                {resetTemplate.isPending ? <Loader className="animate-spin" /> : '기본 메시지 적용'}
-              </Button>
+              {canRun(useResetTemplateToDefault) && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={template.hasDefaultContents === false || resetTemplate.isPending}
+                  onClick={resetToDefault}
+                >
+                  {resetTemplate.isPending ? <Loader className="animate-spin" /> : '기본 메시지 적용'}
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="outline"
@@ -282,10 +299,13 @@ export default function NotificationDetailTemplate({ eventKey }: { eventKey: str
               >
                 수정 초기화
               </Button>
-              <Button type="button" disabled={!dirty || !draft.body.trim() || updateTemplate.isPending} onClick={save}>
-                {updateTemplate.isPending ? <Loader className="animate-spin" /> : '저장'}
-              </Button>
+              <Can run={useUpdateTemplateContents}>
+                <Button type="button" disabled={!dirty || !draft.body.trim() || updateTemplate.isPending} onClick={save}>
+                  {updateTemplate.isPending ? <Loader className="animate-spin" /> : '저장'}
+                </Button>
+              </Can>
             </div>
+            </PermissionReadOnly>
           </section>
 
           <section className="flex flex-col gap-3">

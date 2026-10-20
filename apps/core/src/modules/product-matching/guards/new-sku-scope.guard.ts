@@ -1,6 +1,8 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable, Logger } from '@nestjs/common';
-import { AuthorizationService } from '@app/authorization';
+import { CanActivate, ExecutionContext, ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
+import { AuthorizationService, PermissionCheckpoints } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../platform/auth/inventory-scopes';
+
+const NEW_SKU_DENIED = '새 재고상품을 만들려면 inventory.manage 권한이 필요합니다.';
 
 /** payload 의 links 중 하나라도 새 재고상품 생성을 요구하는가. */
 export function bodyRequestsNewSku(body: unknown): boolean {
@@ -25,7 +27,10 @@ export function bodyRequestsNewSku(body: unknown): boolean {
 export class NewSkuScopeGuard implements CanActivate {
   private readonly logger = new Logger(NewSkuScopeGuard.name);
 
-  constructor(private readonly authService: AuthorizationService) {}
+  constructor(
+    @Inject(AuthorizationService) private readonly authService: Pick<AuthorizationService, 'getScopesByRoles'>,
+    private readonly checkpoints: PermissionCheckpoints,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<{ body?: unknown; user?: { roles?: unknown } }>();
@@ -35,27 +40,29 @@ export class NewSkuScopeGuard implements CanActivate {
     }
 
     const roles = request.user?.roles;
-    if (!Array.isArray(roles) || roles.length === 0) {
-      throw new ForbiddenException('새 재고상품을 만들려면 inventory.manage 권한이 필요합니다.');
-    }
-
-    const roleNames = roles.filter((role): role is string => typeof role === 'string');
-    if (roleNames.includes('master')) {
+    const roleNames = Array.isArray(roles) ? roles.filter((role): role is string => typeof role === 'string') : [];
+    const legacy = await this.legacyAllows(Array.isArray(roles) && roles.length > 0, roleNames);
+    if (this.checkpoints.compare('inventory.new_sku', legacy, { roles: roleNames }, ['inventory.master.write'])) {
       return true;
     }
+    throw new ForbiddenException(NEW_SKU_DENIED);
+  }
 
+  /**
+   * 옛 판정. 역할 조회 실패는 그림자 모드에선 지금처럼 바로 거부한다(비교하지 않는다). 새 판정이 결정하는
+   * 모드에선 옛 판정을 «거부»로 넘기고 결과는 판정 지점이 정한다 — 옛 표 조회 실패가 새 판정을 막지 않게.
+   */
+  private async legacyAllows(hasRoles: boolean, roleNames: string[]): Promise<boolean> {
+    if (!hasRoles) return false;
+    if (roleNames.includes('master')) return true;
     let scopes: Set<string>;
     try {
       scopes = await this.authService.getScopesByRoles(roleNames);
     } catch (error) {
       this.logger.error('Failed to fetch role-scope mappings from DB', error);
-      throw new ForbiddenException('새 재고상품을 만들려면 inventory.manage 권한이 필요합니다.');
+      if (this.checkpoints.enforced) return false;
+      throw new ForbiddenException(NEW_SKU_DENIED);
     }
-
-    if (scopes.has('master') || scopes.has(INVENTORY_SCOPE.MANAGE)) {
-      return true;
-    }
-
-    throw new ForbiddenException('새 재고상품을 만들려면 inventory.manage 권한이 필요합니다.');
+    return scopes.has('master') || scopes.has(INVENTORY_SCOPE.MANAGE);
   }
 }

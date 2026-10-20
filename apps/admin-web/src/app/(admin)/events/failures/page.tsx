@@ -3,7 +3,7 @@ import EventFailuresTemplate from '@/features/events/failures/template';
 
 export default function EventFailuresPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/events/failures">
       <EventFailuresTemplate />
     </RouteGuard>
   );

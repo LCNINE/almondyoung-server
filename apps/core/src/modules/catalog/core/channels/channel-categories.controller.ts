@@ -8,12 +8,14 @@ import {
   ChannelCategoryListResponseDto,
 } from './dto/channel-categories';
 import { ChannelCategoryMapper } from './mappers';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('Channel Categories')
 @Controller('channels/categories')
 export class ChannelCategoriesController {
   constructor(private readonly channelCategoriesService: ChannelCategoriesService) {}
 
+  @RequirePermission('catalog.product.read')
   @Get()
   @ApiOperation({
     summary: '판매처 분류 목록 조회',
@@ -30,6 +32,7 @@ export class ChannelCategoriesController {
     return { data };
   }
 
+  @RequirePermission('catalog.product.read')
   @Get(':id')
   @ApiOperation({
     summary: '판매처 분류 상세 조회',
@@ -50,6 +53,7 @@ export class ChannelCategoriesController {
     return ChannelCategoryMapper.toDto(category);
   }
 
+  @RequirePermission('catalog.channel_listing.write')
   @Post()
   @ApiOperation({
     summary: '판매처 분류 생성',
@@ -67,6 +71,7 @@ export class ChannelCategoriesController {
     return ChannelCategoryMapper.toDto(entity);
   }
 
+  @RequirePermission('catalog.channel_listing.write')
   @Put(':id')
   @ApiOperation({
     summary: '판매처 분류 수정',
@@ -92,6 +97,7 @@ export class ChannelCategoriesController {
     return ChannelCategoryMapper.toDto(entity);
   }
 
+  @RequirePermission('catalog.channel_listing.write')
   @Delete(':id')
   @ApiOperation({
     summary: '판매처 분류 삭제',

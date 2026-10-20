@@ -3,7 +3,7 @@ import PrintOrdersTemplate from '@/features/order/print-orders/template';
 
 export default function PrintOrdersPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/order/print-orders">
       <PrintOrdersTemplate />
     </RouteGuard>
   );

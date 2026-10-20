@@ -12,7 +12,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
-import { Public } from '@app/authorization';
+import { Public, RequirePermission } from '@app/authorization';
 import { ChannelListingService } from './channel-listing.service';
 import {
   CreateChannelListingDto,
@@ -113,6 +113,7 @@ export class ChannelListingController {
     return result.found ? { found: true, listing: result.listing } : { found: false, cause: result.cause };
   }
 
+  @RequirePermission('catalog.channel_listing.write')
   @Post()
   @ApiOperation({
     summary: '채널 매핑 생성',
@@ -135,6 +136,7 @@ export class ChannelListingController {
     return ChannelListingMapper.toDto(listing);
   }
 
+  @RequirePermission('catalog.product.read')
   @Get('by-variant/:variantId')
   @ApiOperation({
     summary: 'Variant의 채널 등록 현황 조회',
@@ -151,6 +153,7 @@ export class ChannelListingController {
     return listings.map((listing) => ChannelListingMapper.toWithChannelDto(listing));
   }
 
+  @RequirePermission('catalog.product.read')
   @Get(':id')
   @ApiOperation({
     summary: '채널 매핑 상세 조회',
@@ -171,6 +174,7 @@ export class ChannelListingController {
     return ChannelListingMapper.toDto(listing);
   }
 
+  @RequirePermission('catalog.channel_listing.write')
   @Put(':id')
   @ApiOperation({
     summary: '채널 매핑 수정',
@@ -192,6 +196,7 @@ export class ChannelListingController {
     return ChannelListingMapper.toDto(updated);
   }
 
+  @RequirePermission('catalog.channel_listing.write')
   @Put(':id/deactivate')
   @ApiOperation({
     summary: '채널 매핑 비활성화',
@@ -203,6 +208,7 @@ export class ChannelListingController {
     await this.channelListingService.deactivateListing(id);
   }
 
+  @RequirePermission('catalog.channel_listing.write')
   @Put(':id/activate')
   @ApiOperation({
     summary: '채널 매핑 활성화',
@@ -214,6 +220,7 @@ export class ChannelListingController {
     await this.channelListingService.activateListing(id);
   }
 
+  @RequirePermission('catalog.channel_listing.write')
   @Delete(':id')
   @ApiOperation({
     summary: '채널 매핑 삭제',

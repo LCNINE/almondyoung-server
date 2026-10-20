@@ -30,6 +30,7 @@ import {
   useUpsertShippingAreaTemplate,
 } from '@/lib/services/medusa-shipping-groups';
 import { useEffect, useState } from 'react';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { toast } from 'sonner';
 
 const won = (amount: number) => `${amount.toLocaleString('ko-KR')}원`;
@@ -170,6 +171,8 @@ function TemplateDialog({
 export function AreaTemplateSection() {
   const { data: templates, isLoading } = useShippingAreaTemplates();
   const deleteMutation = useDeleteShippingAreaTemplate();
+  const { canRun } = usePermissionCheck();
+  const canUpsert = canRun(useUpsertShippingAreaTemplate);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ShippingAreaTemplate | null>(null);
 
@@ -194,15 +197,17 @@ export function AreaTemplateSection() {
             제주·도서산간 추가 배송비를 모아둔 묶음입니다. 배송비 그룹이 템플릿을 골라 씁니다.
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => {
-            setEditTarget(null);
-            setDialogOpen(true);
-          }}
-        >
-          템플릿 추가
-        </Button>
+        {canUpsert && (
+          <Button
+            variant="outline"
+            onClick={() => {
+              setEditTarget(null);
+              setDialogOpen(true);
+            }}
+          >
+            템플릿 추가
+          </Button>
+        )}
       </div>
 
       {/* 컬럼이 4개뿐이라 전체 폭으로 늘리면 사이가 텅 빈다. */}
@@ -239,17 +244,19 @@ export function AreaTemplateSection() {
                 <TableCell className="text-right">{won(template.jejuExtraFee)}</TableCell>
                 <TableCell className="text-right">{won(template.islandExtraFee)}</TableCell>
                 <TableCell className="text-right">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setEditTarget(template);
-                      setDialogOpen(true);
-                    }}
-                  >
-                    수정
-                  </Button>
-                  {!isDefault && (
+                  {canUpsert && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setEditTarget(template);
+                        setDialogOpen(true);
+                      }}
+                    >
+                      수정
+                    </Button>
+                  )}
+                  {!isDefault && canRun(useDeleteShippingAreaTemplate) && (
                     <Button
                       variant="ghost"
                       size="sm"

@@ -7,9 +7,12 @@ import { Button } from '@/components/ui/button';
 import {
   useBannerGroup,
   useBannersByGroup,
+  useCreateBanner,
   useDeleteBanner,
   useUpdateBanner,
 } from '@/lib/services/products';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { BannerDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
 import { productQueryKeys } from '@/lib/services/products';
@@ -34,6 +37,9 @@ export function BannersTable({ groupId }: Props) {
   const deleteMutation = useDeleteBanner();
   const updateMutation = useUpdateBanner();
   const queryClient = useQueryClient();
+  const { canRun } = usePermissionCheck();
+  const canCreate = canRun(useCreateBanner);
+  const canDelete = canRun(useDeleteBanner);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<BannerDto | null>(null);
@@ -170,31 +176,36 @@ export function BannersTable({ groupId }: Props) {
                 </Button>
               </>
             )}
-            <Button
-              size="sm"
-              variant={dirtyIds.length > 0 ? 'default' : 'outline'}
-              className={
-                dirtyIds.length > 0
-                  ? 'bg-[#f29219] hover:bg-[#df7b00]'
-                  : 'bg-white'
-              }
-              disabled={dirtyIds.length === 0 || updateMutation.isPending}
-              onClick={handleSaveAll}
-            >
-              저장
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="bg-white"
-              onClick={() => setCreateOpen(true)}
-            >
-              <ImagePlus className="mr-1 h-4 w-4" />
-              배너 추가
-            </Button>
+            {canRun(useUpdateBanner) && (
+              <Button
+                size="sm"
+                variant={dirtyIds.length > 0 ? 'default' : 'outline'}
+                className={
+                  dirtyIds.length > 0
+                    ? 'bg-[#f29219] hover:bg-[#df7b00]'
+                    : 'bg-white'
+                }
+                disabled={dirtyIds.length === 0 || updateMutation.isPending}
+                onClick={handleSaveAll}
+              >
+                저장
+              </Button>
+            )}
+            {canCreate && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="bg-white"
+                onClick={() => setCreateOpen(true)}
+              >
+                <ImagePlus className="mr-1 h-4 w-4" />
+                배너 추가
+              </Button>
+            )}
           </div>
         }
       >
+        <PermissionReadOnly run={useUpdateBanner}>
         <div className="overflow-hidden rounded-[6px] border border-[#e4e4e7]">
           {isLoading ? (
             <div className="text-muted-foreground bg-white p-10 text-center text-sm">
@@ -205,14 +216,16 @@ export function BannersTable({ groupId }: Props) {
               <p className="text-muted-foreground text-sm">
                 등록된 배너가 없습니다.
               </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-3"
-                onClick={() => setCreateOpen(true)}
-              >
-                첫 배너 추가하기
-              </Button>
+              {canCreate && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => setCreateOpen(true)}
+                >
+                  첫 배너 추가하기
+                </Button>
+              )}
             </div>
           ) : (
             <>
@@ -244,7 +257,7 @@ export function BannersTable({ groupId }: Props) {
                   }
                   onEditImages={() => setEditTarget(banner)}
                   onEditList={() => setListTarget(banner)}
-                  onDelete={() => setDeleteTarget(banner)}
+                  onDelete={canDelete ? () => setDeleteTarget(banner) : undefined}
                   onPreview={() => setPreviewTarget(banner)}
                   onMove={(d) => handleMove(i, d)}
                 />
@@ -252,6 +265,7 @@ export function BannersTable({ groupId }: Props) {
             </>
           )}
         </div>
+        </PermissionReadOnly>
       </BannerSection>
 
       <BannerCreateDialog

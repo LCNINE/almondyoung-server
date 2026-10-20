@@ -1,6 +1,6 @@
 import { Controller, Get, Headers, HttpCode, Ip, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiHeader, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Public } from '@app/authorization';
+import { Public, StoreRoute } from '@app/authorization';
 import { PublicShopListingResponseDto, ShopListingContactResponseDto } from '../dto';
 import { ShopListingsService } from '../shop-listings.service';
 
@@ -31,6 +31,7 @@ export class PublicShopListingsController {
    * 로그인한 사람에게만. 공개 목록·상세에 섞으면 로그인 여부로 응답이 갈려 스토어프론트의
    * 한 벌 캐시(ADR-0038)를 못 쓴다. 크롤러는 구조적으로 여기 닿지 못한다.
    */
+  @StoreRoute()
   @Get(':slug/contact')
   @ApiBearerAuth()
   @ApiParam({ name: 'slug' })

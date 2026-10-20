@@ -35,7 +35,8 @@ function RoleRadioGroup({
 
   return (
     <RadioGroup value={roleId} onValueChange={onChange}>
-      {(allRoles ?? []).map((role) => (
+      {/* 관리자 계정에는 직원 역할만 — 고객 역할은 고객이 가입할 때 생긴다 */}
+      {(allRoles ?? []).filter((role) => role.audience === 'staff').map((role) => (
         <div key={role.roleId} className="flex items-start gap-2">
           <RadioGroupItem
             id={`admin-role-${role.roleId}`}
@@ -43,7 +44,7 @@ function RoleRadioGroup({
             className="mt-1"
           />
           <Label htmlFor={`admin-role-${role.roleId}`} className="font-normal">
-            {role.name}
+            {role.displayName}
             {role.description && (
               <span className="ml-1 text-xs text-muted-foreground">
                 {role.description}

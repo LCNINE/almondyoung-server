@@ -1,6 +1,6 @@
 import { BadRequestException, Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AdminRealmGuard, JwtAuthGuard } from '@app/authorization';
+import { AdminRealmGuard, JwtAuthGuard, RequirePermission, PermissionGuard } from '@app/authorization';
 import { toSeoulDateOnly } from '../../../shared/date.util';
 import { daysBetweenInclusive } from '../domain/period';
 import { CustomerFlowQuery } from '../read-model/customer-flow.query';
@@ -18,7 +18,7 @@ const MAX_RANGE_DAYS = 400;
  */
 @ApiTags('Statistics')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, AdminRealmGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)
 @Controller('statistics')
 export class GrowthController {
   constructor(
@@ -28,6 +28,7 @@ export class GrowthController {
     private readonly summary: GrowthSummaryQuery,
   ) {}
 
+  @RequirePermission('analytics.report.read')
   @Get('growth')
   @ApiOperation({
     summary: '성장 분석 — 기간의 매출 축·고객 축·GA4 축',
@@ -52,6 +53,7 @@ export class GrowthController {
     return { range: { from: query.from, to: query.to }, granularity, today, revenue, customers, ga4 };
   }
 
+  @RequirePermission('analytics.report.read')
   @Get('growth/summary')
   @ApiOperation({
     summary: '성장 요약 — 관리자 메인 «올해 목표» 카드·성장 탭 머리',

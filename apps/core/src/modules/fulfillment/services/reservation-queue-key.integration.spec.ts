@@ -1,3 +1,4 @@
+import { createCheckpointsForTesting } from '@app/authorization';
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { and, eq } from 'drizzle-orm';
@@ -54,6 +55,7 @@ describeIfDb('재고 대기 순번 (reservation queue key, DB integration)', () 
       { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
       new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
       assembleBoxWithdrawal(dbService),
+      createCheckpointsForTesting(),
     );
   });
 

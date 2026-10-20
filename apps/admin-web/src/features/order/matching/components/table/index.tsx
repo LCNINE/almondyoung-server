@@ -15,7 +15,12 @@ import {
   type SalesChannelType,
 } from '@/components/common/sales-channel-mark';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useChangeMatchingStrategy } from '@/lib/services/matching';
+import {
+  useChangeMatchingStrategy,
+  useResolveMatching,
+  useUpsertVariantMatching,
+} from '@/lib/services/matching';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { RefreshCw } from 'lucide-react';
 import {
   ExistingLinesDialog,
@@ -62,9 +67,10 @@ function MatchingContent({
   isResolvingAsVoid,
 }: {
   line: OrderLineDto;
-  onInventoryMatching: (line: OrderLineDto) => void;
-  onProductRegistration: (line: OrderLineDto) => void;
-  onResolveAsVoid: (matchingId: string) => void;
+  // 넘기지 않으면 그 버튼을 그리지 않는다(권한 없음)
+  onInventoryMatching?: (line: OrderLineDto) => void;
+  onProductRegistration?: (line: OrderLineDto) => void;
+  onResolveAsVoid?: (matchingId: string) => void;
   isResolvingAsVoid: boolean;
 }) {
   // 개별 지정 라인은 상품매칭 상태가 아니라 라인 구성을 보인다(스펙 §8)
@@ -87,13 +93,15 @@ function MatchingContent({
     return (
       <div className="flex items-center gap-3 py-1">
         <span className="text-red-500 font-bold text-sm">상품 없음</span>
+        {onProductRegistration && (
         <Button
           size="sm"
-          onClick={() => onProductRegistration(line)}
+          onClick={() => onProductRegistration?.(line)}
           className="bg-gray-800 hover:bg-gray-900 text-white h-7 px-3 text-xs"
         >
           상품 생성
         </Button>
+        )}
       </div>
     );
   }
@@ -107,14 +115,16 @@ function MatchingContent({
     return (
       <div className="flex items-center gap-3 py-1">
         <span className="text-red-500 font-bold text-sm">전략 미결정</span>
+        {onInventoryMatching && (
         <Button
           size="sm"
-          onClick={() => onInventoryMatching(line)}
+          onClick={() => onInventoryMatching?.(line)}
           className="bg-orange-500 hover:bg-orange-600 text-white h-7 px-3 text-xs flex items-center gap-1"
         >
           <RefreshCw className="w-3 h-3" />
           SKU 구성 매칭
         </Button>
+        )}
       </div>
     );
   }
@@ -125,15 +135,17 @@ function MatchingContent({
       return (
         <div className="flex items-center gap-3 py-1">
           <span className="text-gray-500 text-sm">재고상품 비매칭</span>
+          {onInventoryMatching && (
           <Button
             size="sm"
             variant="outline"
-            onClick={() => onInventoryMatching(line)}
+            onClick={() => onInventoryMatching?.(line)}
             className="h-7 px-3 text-xs flex items-center gap-1"
           >
             <RefreshCw className="w-3 h-3" />
             SKU 구성 매칭
           </Button>
+          )}
         </div>
       );
     }
@@ -142,15 +154,17 @@ function MatchingContent({
       return (
         <div className="flex items-center gap-3 py-1">
           <span className="text-orange-600 text-sm">전략 미결정</span>
+          {onInventoryMatching && (
           <Button
             size="sm"
             variant="outline"
-            onClick={() => onInventoryMatching(line)}
+            onClick={() => onInventoryMatching?.(line)}
             className="h-7 px-3 text-xs flex items-center gap-1"
           >
             <RefreshCw className="w-3 h-3" />
             SKU 구성 매칭
           </Button>
+          )}
         </div>
       );
     }
@@ -159,15 +173,17 @@ function MatchingContent({
       return (
         <div className="flex items-center gap-3 py-1">
           <span className="text-orange-600 text-sm">SKU 구성 매칭 불완전</span>
+          {onInventoryMatching && (
           <Button
             size="sm"
             variant="outline"
-            onClick={() => onInventoryMatching(line)}
+            onClick={() => onInventoryMatching?.(line)}
             className="h-7 px-3 text-xs flex items-center gap-1"
           >
             <RefreshCw className="w-3 h-3" />
             SKU 구성 매칭
           </Button>
+          )}
         </div>
       );
     }
@@ -191,23 +207,27 @@ function MatchingContent({
                 )}
               </span>
               <div className="flex items-center gap-1 shrink-0">
+                {onInventoryMatching && (
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => onInventoryMatching(line)}
+                  onClick={() => onInventoryMatching?.(line)}
                   className="h-6 px-2 text-xs flex items-center gap-1"
                 >
                   <RefreshCw className="w-3 h-3" />
                   SKU 재매칭
                 </Button>
+                )}
+                {onInventoryMatching && (
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => onInventoryMatching(line)}
+                  onClick={() => onInventoryMatching?.(line)}
                   className="h-6 px-2 text-xs"
                 >
                   SKU 구성 수정
                 </Button>
+                )}
               </div>
             </div>
             {/* 바코드/수량 정보 */}
@@ -221,15 +241,17 @@ function MatchingContent({
         ))}
         {/* 재고상품 비매칭 전환 + 가격 */}
         <div className="flex items-center gap-3 pt-1.5">
+          {onResolveAsVoid && (
           <Button
             size="sm"
             variant="outline"
-            onClick={() => line.matchingId && onResolveAsVoid(line.matchingId)}
+            onClick={() => line.matchingId && onResolveAsVoid?.(line.matchingId)}
             disabled={isResolvingAsVoid}
             className="h-6 px-2 text-xs text-gray-600 border-gray-300"
           >
             재고상품 비매칭
           </Button>
+          )}
           {line.unitPrice != null && (
             <span className="text-xs text-gray-500">
               판매가: {line.unitPrice.toLocaleString()}원
@@ -245,15 +267,17 @@ function MatchingContent({
     return (
       <div className="flex items-center gap-3 py-1">
         <span className="text-gray-500 text-sm">레거시 감사 대상</span>
+        {onInventoryMatching && (
         <Button
           size="sm"
           variant="outline"
-          onClick={() => onInventoryMatching(line)}
+          onClick={() => onInventoryMatching?.(line)}
           className="h-7 px-3 text-xs flex items-center gap-1"
         >
           <RefreshCw className="w-3 h-3" />
           SKU 구성 매칭
         </Button>
+        )}
       </div>
     );
   }
@@ -283,9 +307,9 @@ function OrderLineRows({
   variantInfo?: BatchVariantInfo;
   isSelected: boolean;
   onRowSelect: (id: string, checked: boolean) => void;
-  onInventoryMatching: (line: OrderLineDto) => void;
-  onProductRegistration: (line: OrderLineDto) => void;
-  onResolveAsVoid: (matchingId: string) => void;
+  onInventoryMatching?: (line: OrderLineDto) => void;
+  onProductRegistration?: (line: OrderLineDto) => void;
+  onResolveAsVoid?: (matchingId: string) => void;
   isResolvingAsVoid: boolean;
   onOverride: (line: OrderLineDto) => void;
 }) {
@@ -395,6 +419,7 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
   const changeMatchingStrategy = useChangeMatchingStrategy();
   const followUp = useExistingLinesFollowUp();
   const isResolvingAsVoid = changeMatchingStrategy.isPending;
+  const { canRun } = usePermissionCheck();
 
   const variantIds = useMemo(
     () => [...new Set(data.map((l) => l.variantId).filter(Boolean))],
@@ -532,9 +557,13 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
                   variantInfo={variantMap?.get(line.variantId)}
                   isSelected={selectedRows.has(line.id)}
                   onRowSelect={handleRowSelect}
-                  onInventoryMatching={handleInventoryMatching}
-                  onProductRegistration={handleProductRegistration}
-                  onResolveAsVoid={handleResolveAsVoid}
+                  onInventoryMatching={
+                    canRun(useResolveMatching, useUpsertVariantMatching, useChangeMatchingStrategy)
+                      ? handleInventoryMatching
+                      : undefined
+                  }
+                  onProductRegistration={canRun(useResolveMatching) ? handleProductRegistration : undefined}
+                  onResolveAsVoid={canRun(useChangeMatchingStrategy) ? handleResolveAsVoid : undefined}
                   isResolvingAsVoid={isResolvingAsVoid}
                   onOverride={(line) => setOverrideTarget(matchingRowTarget(line))}
                 />

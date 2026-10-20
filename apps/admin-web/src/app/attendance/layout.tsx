@@ -26,7 +26,7 @@ export default function MobileAttendanceLayout({
   children: React.ReactNode;
 }) {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/attendance">
       <AttendanceAppStartup>{children}</AttendanceAppStartup>
     </RouteGuard>
   );

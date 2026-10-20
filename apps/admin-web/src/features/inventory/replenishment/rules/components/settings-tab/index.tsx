@@ -9,6 +9,8 @@ import {
   useReplenishmentSettings,
   useUpdateReplenishmentSettings,
 } from '@/lib/services/inventory';
+import { Can } from '@/components/auth/can';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
 import {
   SETTINGS_SECTIONS,
   settingsFormFrom,
@@ -84,6 +86,7 @@ export function SettingsTab() {
   return (
     <div className="flex flex-col gap-6 p-4">
       {/* 반영 시점 문구는 절마다 한 번. 필드마다 배지를 붙이면 라벨보다 길어져 안 읽힌다. */}
+      <PermissionReadOnly run={useUpdateReplenishmentSettings}>
       {SETTINGS_SECTIONS.map((section) => (
         <section key={section.reflection} className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -110,10 +113,13 @@ export function SettingsTab() {
           </div>
         </section>
       ))}
+      </PermissionReadOnly>
       <div className="flex justify-end">
-        <Button onClick={() => void handleSave()} disabled={update.isPending}>
-          {update.isPending ? '저장 중...' : '저장'}
-        </Button>
+        <Can run={useUpdateReplenishmentSettings}>
+          <Button onClick={() => void handleSave()} disabled={update.isPending}>
+            {update.isPending ? '저장 중...' : '저장'}
+          </Button>
+        </Can>
       </div>
     </div>
   );

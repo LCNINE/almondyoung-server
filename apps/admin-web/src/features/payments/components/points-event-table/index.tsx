@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { usePointsEvents, useCancelEarnPoints } from '@/lib/services/wallet';
 import { useDataTable } from '@/hooks/use-data-table';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { usePointsEventTableColumns } from '@/hooks/table/columns/use-points-event-table-columns';
 import { DataTable } from '@/components/data-table';
 import { toast } from 'sonner';
@@ -19,6 +20,7 @@ export function PointsEventTable({ userId }: { userId: string }) {
   const [cancelingId, setCancelingId] = useState<string | null>(null);
   const { data, isLoading, isFetching, isError } = usePointsEvents(userId, page, PAGE_SIZE);
   const cancelMutation = useCancelEarnPoints();
+  const { canRun } = usePermissionCheck();
 
   const handleCancel = async (earnEventId: string) => {
     setCancelingId(earnEventId);
@@ -32,7 +34,10 @@ export function PointsEventTable({ userId }: { userId: string }) {
     }
   };
 
-  const columns = usePointsEventTableColumns({ onCancel: handleCancel, cancelingId });
+  const columns = usePointsEventTableColumns({
+    onCancel: canRun(useCancelEarnPoints) ? handleCancel : undefined,
+    cancelingId,
+  });
 
   const { table } = useDataTable({
     data: data?.data ?? [],

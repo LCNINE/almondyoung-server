@@ -1,3 +1,4 @@
+import { createCheckpointsForTesting } from '@app/authorization';
 import { randomUUID } from 'crypto';
 import { assembleLabels } from '../../waybill/__support__/label-fixtures';
 import { ConfigService } from '@nestjs/config';
@@ -119,6 +120,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
     workflowGate,
     withdrawals,
+    createCheckpointsForTesting(),
   );
   // orchestrator 의 moduleRef 는 배치를 떠난 박스의 대기 오퍼레이션 재개에만 쓰인다 — 취소는 위의 계획 서비스가 잇고,
   // 합포장(ConsolidationService)은 단순출고 경로가 닿지 않으므로 no-op stub 이면 된다.
@@ -135,9 +137,17 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     moduleRef,
     boxes,
     withdrawals,
+    createCheckpointsForTesting(),
   );
   const labelGuard = assembleLabels(dbService).guard;
-  const discrete = new DiscretePickingStrategy(commands, workflowGate, sessions, batches, labelGuard);
+  const discrete = new DiscretePickingStrategy(
+    commands,
+    workflowGate,
+    sessions,
+    batches,
+    labelGuard,
+    createCheckpointsForTesting(),
+  );
   const barcodes = new BarcodeService(dbService);
   const returnBins = new ReturnBinService(dbService, commands, workflowGate, sessions, barcodes, audit);
   const returns = new BoxReturnService(
@@ -160,6 +170,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     withdrawals,
     returnBins,
     returns,
+    createCheckpointsForTesting(),
   );
   const picking = new PickingProcessService(
     dbService,
@@ -221,6 +232,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
       workflowGate,
       boxes,
       withdrawals,
+      createCheckpointsForTesting(),
     ),
   };
 }

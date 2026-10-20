@@ -6,7 +6,7 @@ import StallBoardTemplate from '@/features/order/stall-board/template';
 
 export default function StallBoardPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/order/stall-board">
       {/* 템플릿이 useSearchParams 로 ?stage= 를 읽는다 */}
       <Suspense>
         <StallBoardTemplate />

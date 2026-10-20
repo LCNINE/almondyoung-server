@@ -1,5 +1,6 @@
 'use client';
 
+import { BlockedReason } from '@/components/auth/blocked-reason';
 import type {
   BulkSessionItemConflict,
   ConflictDecision,
@@ -8,10 +9,12 @@ import type {
 interface Props {
   conflict: BulkSessionItemConflict;
   disabled: boolean;
+  /** 권한이 없으면 고른 값은 보이고 바꾸지 못한다. */
+  blockedReason: string | null;
   onDecide: (field: string, decision: ConflictDecision) => void;
 }
 
-export function ConflictField({ conflict, disabled, onDecide }: Props) {
+export function ConflictField({ conflict, disabled, blockedReason, onDecide }: Props) {
   const name = `conflict-${conflict.field}`;
   return (
     <div className="flex flex-col gap-1 rounded border border-amber-300 bg-amber-50 p-2 text-sm">
@@ -22,23 +25,37 @@ export function ConflictField({ conflict, disabled, onDecide }: Props) {
         </span>
       </div>
       <label className="flex items-center gap-2">
-        <input
-          type="radio"
-          name={name}
-          disabled={disabled}
-          checked={conflict.decision === 'overwrite'}
-          onChange={() => onDecide(conflict.field, 'overwrite')}
-        />
+        <BlockedReason reason={blockedReason}>
+          {(blocked) => (
+            <input
+              {...blocked}
+              type="radio"
+              name={name}
+              disabled={disabled}
+              checked={conflict.decision === 'overwrite'}
+              onChange={() => {
+                if (!blockedReason) onDecide(conflict.field, 'overwrite');
+              }}
+            />
+          )}
+        </BlockedReason>
         <span>내 값 「{conflict.mine}」</span>
       </label>
       <label className="flex items-center gap-2">
-        <input
-          type="radio"
-          name={name}
-          disabled={disabled}
-          checked={conflict.decision === 'skip'}
-          onChange={() => onDecide(conflict.field, 'skip')}
-        />
+        <BlockedReason reason={blockedReason}>
+          {(blocked) => (
+            <input
+              {...blocked}
+              type="radio"
+              name={name}
+              disabled={disabled}
+              checked={conflict.decision === 'skip'}
+              onChange={() => {
+                if (!blockedReason) onDecide(conflict.field, 'skip');
+              }}
+            />
+          )}
+        </BlockedReason>
         <span>
           현재 값 「{conflict.current}」
           <span className="ml-1 text-muted-foreground">(남이 바꿈)</span>

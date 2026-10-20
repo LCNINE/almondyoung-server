@@ -11,7 +11,17 @@ import {
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { AdminTier, AdminPlan, AdminTierWithPlans } from '@/lib/api/domains/membership';
-import { useTiersWithPlans, useActivatePlan } from '@/lib/services/membership';
+import {
+  useTiersWithPlans,
+  useActivatePlan,
+  useCreatePlan,
+  useCreateTier,
+  useDeactivatePlan,
+  useUpdatePlan,
+  useUpdateTier,
+} from '@/lib/services/membership';
+import { Can } from '@/components/auth/can';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { TierFormDialog } from '../components/tier-form-dialog';
 import { PlanFormDialog } from '../components/plan-form-dialog';
 import { DeactivatePlanDialog } from '../components/deactivate-plan-dialog';
@@ -42,6 +52,7 @@ function TierCard({
   isActivating: boolean;
 }) {
   const { tier, plans } = item;
+  const { canRun } = usePermissionCheck();
 
   return (
     <div className="rounded-lg border border-border bg-card">
@@ -51,14 +62,18 @@ function TierCard({
           <Badge variant="outline">우선순위 {tier.priorityLevel}</Badge>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => onAction({ type: 'editTier', tier })}>
-            <Pencil className="h-3 w-3" />
-            티어 수정
-          </Button>
-          <Button size="sm" className="h-7 gap-1 text-xs" onClick={() => onAction({ type: 'createPlan', tier })}>
-            <Plus className="h-3 w-3" />
-            플랜 추가
-          </Button>
+          {canRun(useUpdateTier) && (
+            <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => onAction({ type: 'editTier', tier })}>
+              <Pencil className="h-3 w-3" />
+              티어 수정
+            </Button>
+          )}
+          {canRun(useCreatePlan) && (
+            <Button size="sm" className="h-7 gap-1 text-xs" onClick={() => onAction({ type: 'createPlan', tier })}>
+              <Plus className="h-3 w-3" />
+              플랜 추가
+            </Button>
+          )}
         </div>
       </div>
 
@@ -94,33 +109,39 @@ function TierCard({
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-1">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-6 px-2 text-xs"
-                      onClick={() => onAction({ type: 'editPlan', tier, plan })}
-                    >
-                      수정
-                    </Button>
+                    {canRun(useUpdatePlan) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-2 text-xs"
+                        onClick={() => onAction({ type: 'editPlan', tier, plan })}
+                      >
+                        수정
+                      </Button>
+                    )}
                     {plan.isActive ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 px-2 text-xs text-destructive hover:text-destructive"
-                        onClick={() => onAction({ type: 'deactivatePlan', plan })}
-                      >
-                        <Ban className="h-3 w-3" />
-                      </Button>
+                      canRun(useDeactivatePlan) && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-2 text-xs text-destructive hover:text-destructive"
+                          onClick={() => onAction({ type: 'deactivatePlan', plan })}
+                        >
+                          <Ban className="h-3 w-3" />
+                        </Button>
+                      )
                     ) : (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700"
-                        disabled={isActivating}
-                        onClick={() => onActivatePlan(plan.id)}
-                      >
-                        <RotateCcw className="h-3 w-3" />
-                      </Button>
+                      canRun(useActivatePlan) && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700"
+                          disabled={isActivating}
+                          onClick={() => onActivatePlan(plan.id)}
+                        >
+                          <RotateCcw className="h-3 w-3" />
+                        </Button>
+                      )
                     )}
                   </div>
                 </TableCell>
@@ -145,12 +166,14 @@ export function MembershipPlansTemplate() {
         subtitle="멤버십 티어와 플랜을 관리합니다."
       />
 
-      <div className="mb-4 flex justify-end">
-        <Button onClick={() => setDialog({ type: 'createTier' })} className="gap-1">
-          <Plus className="h-4 w-4" />
-          티어 추가
-        </Button>
-      </div>
+      <Can run={useCreateTier}>
+        <div className="mb-4 flex justify-end">
+          <Button onClick={() => setDialog({ type: 'createTier' })} className="gap-1">
+            <Plus className="h-4 w-4" />
+            티어 추가
+          </Button>
+        </div>
+      </Can>
 
       {isLoading ? (
         <div className="space-y-4">

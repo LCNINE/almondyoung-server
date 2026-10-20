@@ -8,6 +8,7 @@ import {
 } from '@/lib/api/domains/medusa';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { medusaCustomerQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 // 배송지 추가
 export const useCreateMedusaAddress = (customerId: string) => {
@@ -22,6 +23,7 @@ export const useCreateMedusaAddress = (customerId: string) => {
     },
   });
 };
+useCreateMedusaAddress.permission = ['customer.profile.write'] as const satisfies PermissionRequirement;
 
 // 배송지 수정
 export const useUpdateMedusaAddress = (customerId: string) => {
@@ -41,6 +43,7 @@ export const useUpdateMedusaAddress = (customerId: string) => {
     },
   });
 };
+useUpdateMedusaAddress.permission = ['customer.profile.write'] as const satisfies PermissionRequirement;
 
 // 배송지 삭제
 export const useDeleteMedusaAddress = (customerId: string) => {
@@ -55,3 +58,4 @@ export const useDeleteMedusaAddress = (customerId: string) => {
     },
   });
 };
+useDeleteMedusaAddress.permission = ['customer.profile.write'] as const satisfies PermissionRequirement;

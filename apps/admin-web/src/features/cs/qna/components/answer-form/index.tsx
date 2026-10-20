@@ -36,6 +36,8 @@ import {
   defaultTemplateId,
   renderAnswerTemplate,
 } from '../../answer-templates';
+import { Can } from '@/components/auth/can';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
 
 function AnswerFormContent({ questionId }: { questionId: string }) {
   const { data: question } = useQuestion(questionId);
@@ -156,86 +158,92 @@ function AnswerEditor({
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-base font-bold">
-            {hasAnswer ? '보낸 답변' : '답변 작성'}
-          </h3>
-          {hasAnswer && (
-            <p className="text-muted-foreground mt-0.5 text-[13px]">
-              {adminUser?.username ?? adminUser?.nickname ?? '관리자'} ·{' '}
-              {new Date(question.answer!.updatedAt).toLocaleString('ko-KR')}
-            </p>
-          )}
+      <PermissionReadOnly run={hasAnswer ? useUpdateAnswer : useCreateAnswer}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-bold">
+              {hasAnswer ? '보낸 답변' : '답변 작성'}
+            </h3>
+            {hasAnswer && (
+              <p className="text-muted-foreground mt-0.5 text-[13px]">
+                {adminUser?.username ?? adminUser?.nickname ?? '관리자'} ·{' '}
+                {new Date(question.answer!.updatedAt).toLocaleString('ko-KR')}
+              </p>
+            )}
+          </div>
+          <Select
+            value={templateId}
+            onValueChange={handleTemplateChange}
+            disabled={isLoading}
+          >
+            <SelectTrigger size="sm" className="w-36">
+              <span className="text-muted-foreground">양식</span>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {ANSWER_TEMPLATES.map((t) => (
+                <SelectItem key={t.id} value={t.id}>
+                  {t.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        <Select
-          value={templateId}
-          onValueChange={handleTemplateChange}
-          disabled={isLoading}
-        >
-          <SelectTrigger size="sm" className="w-36">
-            <span className="text-muted-foreground">양식</span>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {ANSWER_TEMPLATES.map((t) => (
-              <SelectItem key={t.id} value={t.id}>
-                {t.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
 
-      <Textarea
-        placeholder="고객에게 보낼 답변을 적어 주세요"
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-        rows={12}
-        disabled={isLoading}
-        className="mt-4 text-[15px] leading-7"
-      />
+        <Textarea
+          placeholder="고객에게 보낼 답변을 적어 주세요"
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          rows={12}
+          disabled={isLoading}
+          className="mt-4 text-[15px] leading-7"
+        />
+      </PermissionReadOnly>
 
       <div className="mt-4 flex items-center justify-between">
         {hasAnswer ? (
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground"
-                disabled={isLoading}
-              >
-                답변 삭제
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>답변을 삭제할까요?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  삭제하면 되돌릴 수 없어요.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>취소</AlertDialogCancel>
-                <AlertDialogAction onClick={handleDelete}>
-                  삭제
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <Can run={useDeleteAnswer}>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground"
+                  disabled={isLoading}
+                >
+                  답변 삭제
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>답변을 삭제할까요?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    삭제하면 되돌릴 수 없어요.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>취소</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleDelete}>
+                    삭제
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </Can>
         ) : (
           <span />
         )}
-        <Button onClick={handleSubmit} disabled={isLoading} className="min-w-28">
-          {isLoading ? (
-            <Spinner className="h-4 w-4" />
-          ) : hasAnswer ? (
-            '답변 수정하기'
-          ) : (
-            '답변 등록하기'
-          )}
-        </Button>
+        <Can run={hasAnswer ? useUpdateAnswer : useCreateAnswer}>
+          <Button onClick={handleSubmit} disabled={isLoading} className="min-w-28">
+            {isLoading ? (
+              <Spinner className="h-4 w-4" />
+            ) : hasAnswer ? (
+              '답변 수정하기'
+            ) : (
+              '답변 등록하기'
+            )}
+          </Button>
+        </Can>
       </div>
 
       <AlertDialog

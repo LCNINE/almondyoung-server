@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/require-await */
+import { checkpointEvaluations, createCheckpointsForTesting, PermissionCheckpoints } from '@app/authorization';
+import { register } from 'prom-client';
 import { ConflictException } from '@nestjs/common';
 import { PickToTotePickingStrategy } from './pick-to-tote.strategy';
 import {
@@ -192,7 +194,14 @@ function scanInput(overrides: Partial<ToteScanPickingInput> = {}): ToteScanPicki
   };
 }
 
-function makeService(options: { selects?: unknown[][]; inserts?: unknown[][]; updates?: unknown[][] } = {}) {
+function makeService(
+  options: {
+    selects?: unknown[][];
+    inserts?: unknown[][];
+    updates?: unknown[][];
+    checkpoints?: PermissionCheckpoints;
+  } = {},
+) {
   const selects = [...(options.selects ?? [])];
   const inserts = [...(options.inserts ?? [])];
   const updates = [...(options.updates ?? [])];
@@ -229,6 +238,7 @@ function makeService(options: { selects?: unknown[][]; inserts?: unknown[][]; up
     batches,
     audit,
     { assertCurrent: jest.fn(async () => undefined) },
+    options.checkpoints ?? createCheckpointsForTesting(),
   );
   return { service, commands, sessions, batches, audit, tx, insertBuilders, updateBuilders };
 }
@@ -586,6 +596,47 @@ describe('PickToTotePickingStrategy', () => {
         {},
       ),
     ).resolves.toBeUndefined();
+  });
+
+  it('compares work supervision only where it decides the tote release', async () => {
+    register.resetMetrics();
+    const checkpoints = createCheckpointsForTesting({
+      logistics_worker: [],
+      logistics_manager: ['fulfillment.work.supervise'],
+    });
+    const packing = workItem({
+      status: 'packing',
+      packerId: IDS.otherActor,
+      packerClaimedAt: new Date('2026-07-15T00:05:00.000Z'),
+      packerReleasedAt: null,
+      leaseVersion: 3,
+    });
+    planSpy('loadWorkItem', packing);
+    planSpy('databaseNow', new Date('2026-07-15T00:10:00.000Z'));
+    await expect(
+      (makeService({ checkpoints }).service as any).assertToteMutationAuthority(
+        assignmentInput({ actor: { id: IDS.otherActor, roles: ['logistics_worker'] }, expectedLeaseVersion: 3 }),
+        {},
+      ),
+    ).resolves.toBeUndefined();
+    expect(await checkpointEvaluations('fulfillment.work_supervise', 'match')).toBe(0);
+
+    const completed = workItem({ status: 'completed', leaseExpiresAt: null, leaseVersion: 4 });
+    planSpy('loadWorkItem', completed);
+    await expect(
+      (makeService({ checkpoints }).service as any).assertToteMutationAuthority(
+        assignmentInput({ expectedLeaseVersion: 4 }),
+        {},
+      ),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'TOTE_RELEASE_FORBIDDEN' }) });
+    await expect(
+      (makeService({ checkpoints }).service as any).assertToteMutationAuthority(
+        assignmentInput({ actor: { id: IDS.manager, roles: ['logistics_manager'] }, expectedLeaseVersion: 4 }),
+        {},
+      ),
+    ).resolves.toBeUndefined();
+    expect(await checkpointEvaluations('fulfillment.work_supervise', 'match')).toBe(2);
+    expect(await checkpointEvaluations('fulfillment.work_supervise', 'would_deny')).toBe(0);
   });
 
   it('hands an empty tote across shipments while preserving old assignment and required audit', async () => {
@@ -1074,6 +1125,7 @@ function createPickToToteContractFixture(): PickingStrategyContractFixture {
       logUserActionRequired: jest.fn(),
     },
     { assertCurrent: jest.fn(async () => undefined) },
+    createCheckpointsForTesting(),
   );
   const startDeps = {
     commands,

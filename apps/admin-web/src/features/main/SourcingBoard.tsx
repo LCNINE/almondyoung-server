@@ -5,6 +5,8 @@ import { STATUS_LABELS } from '@/features/keyword-ops/labels';
 import { BoardHeader } from '@/features/main/BoardHeader';
 import { SkeletonRows } from '@/features/main/DailyBoards';
 import { Skeleton } from '@/components/ui/skeleton';
+import { BlockedReason } from '@/components/auth/blocked-reason';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { KeywordIssueStatus, ZeroHitKeywordRow } from '@/lib/api/domains/search';
 import { KEYWORD_ISSUE_STATUSES } from '@/lib/api/domains/search';
 import { useUpsertKeywordIssue, useZeroHitKeywords } from '@/lib/services/search';
@@ -12,7 +14,7 @@ import { cn } from '@/lib/utils/ui';
 
 const ROWS = 10;
 const SELECT_CLASS =
-  'h-7 cursor-pointer rounded border border-[#BDBDBD] bg-white px-2 text-[13px] text-[#2B2B2B] disabled:cursor-default disabled:opacity-40';
+  'h-7 cursor-pointer rounded border border-[#BDBDBD] bg-white px-2 text-[13px] text-[#2B2B2B] disabled:cursor-default disabled:opacity-40 aria-disabled:cursor-default aria-disabled:opacity-40';
 
 export function SourcingBoard({ range, rangeDays }: { range: { from: string; to: string }; rangeDays: number }) {
   const zeroHit = useZeroHitKeywords({ from: range.from, to: range.to, page: 1, limit: ROWS, status: 'open' });
@@ -104,6 +106,8 @@ function SourcingRow({
   assigneeOptions: ReturnType<typeof useAssigneeOptions>;
 }) {
   const upsert = useUpsertKeywordIssue();
+  const { blockedReason } = usePermissionCheck();
+  const reason = blockedReason(useUpsertKeywordIssue);
 
   const changeStatus = (status: KeywordIssueStatus) => {
     upsert.mutate({ keywordNorm: row.keywordNorm, keyword: row.keyword, status });
@@ -136,35 +140,49 @@ function SourcingRow({
         {evidenceText(row)}
       </td>
       <td className="px-3 py-2">
-        <select
-          aria-label={`${row.keyword} 처리 상태`}
-          value={row.issue?.status ?? 'new'}
-          onChange={(event) => changeStatus(event.target.value as KeywordIssueStatus)}
-          disabled={upsert.isPending}
-          className={SELECT_CLASS}
-        >
-          {KEYWORD_ISSUE_STATUSES.map((value) => (
-            <option key={value} value={value}>
-              {STATUS_LABELS[value]}
-            </option>
-          ))}
-        </select>
+        <BlockedReason reason={reason}>
+          {(blocked) => (
+            <select
+              {...blocked}
+              aria-label={`${row.keyword} 처리 상태`}
+              value={row.issue?.status ?? 'new'}
+              onChange={(event) => {
+                if (!reason) changeStatus(event.target.value as KeywordIssueStatus);
+              }}
+              disabled={upsert.isPending}
+              className={SELECT_CLASS}
+            >
+              {KEYWORD_ISSUE_STATUSES.map((value) => (
+                <option key={value} value={value}>
+                  {STATUS_LABELS[value]}
+                </option>
+              ))}
+            </select>
+          )}
+        </BlockedReason>
       </td>
       <td className="px-3 py-2">
-        <select
-          aria-label={`${row.keyword} 담당자`}
-          value={row.issue?.assigneeId ?? ''}
-          onChange={(event) => changeAssignee(event.target.value)}
-          disabled={upsert.isPending}
-          className={cn(SELECT_CLASS, 'min-w-32')}
-        >
-          <option value="">미지정</option>
-          {assigneeOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.name}
-            </option>
-          ))}
-        </select>
+        <BlockedReason reason={reason}>
+          {(blocked) => (
+            <select
+              {...blocked}
+              aria-label={`${row.keyword} 담당자`}
+              value={row.issue?.assigneeId ?? ''}
+              onChange={(event) => {
+                if (!reason) changeAssignee(event.target.value);
+              }}
+              disabled={upsert.isPending}
+              className={cn(SELECT_CLASS, 'min-w-32')}
+            >
+              <option value="">미지정</option>
+              {assigneeOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </BlockedReason>
       </td>
     </tr>
   );

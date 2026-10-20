@@ -5,6 +5,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Inject,
   InternalServerErrorException,
   Logger,
   NotFoundException,
@@ -12,6 +13,7 @@ import {
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
+import { RoleAssignmentManager } from '../iam/assignments/role-assignment.manager';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as jwt from 'jsonwebtoken';
@@ -22,6 +24,7 @@ import {
   userServiceEnums,
   userServiceSchema,
   type UserServiceSchema,
+  type UserServiceTx,
 } from 'apps/user-service/database/drizzle/schema';
 import * as bcrypt from 'bcrypt';
 import { and, desc, eq, gt, isNull, or } from 'drizzle-orm';
@@ -68,6 +71,7 @@ export class AuthService {
     private readonly eventPublisher: PublisherFor<typeof USER_STREAM>,
     private readonly consentsService: ConsentsService,
     private readonly tokensService: TokensService,
+    @Inject(RoleAssignmentManager) private readonly roleAssignments: Pick<RoleAssignmentManager, 'assertCanLeave'>,
     @Optional() private readonly cafe24LinkService?: Cafe24LinkService,
   ) {}
 
@@ -1035,8 +1039,12 @@ export class AuthService {
    * customer 를 FK 로 참조하지 않고 주문자 이름·연락처·주소를 자체 스냅샷으로 들고 있어,
    * 이 익명화가 그 보관을 깨지 않는다.
    */
-  async softDeleteUser(userId: string, tx?: DbTransaction): Promise<void> {
-    return this.inTx(async (tx) => {
+  async softDeleteUser(userId: string, tx?: UserServiceTx): Promise<void> {
+    return this.dbService.run(async (tx) => {
+      // 기간 없이 시스템 역할을 가진 마지막 관리자는 떠날 수 없다 — 역할 관리를 고칠 사람이 없어진다. 같은 트랜잭션에서
+      // 그 역할 행을 잠그고 세므로 동시 탈퇴·회수가 차례로 판정된다.
+      await this.roleAssignments.assertCanLeave(userId, tx);
+
       // 탈퇴는 세션 종료까지 포함한다. 살아있는 refresh token 을 남기면 IdP 세션이 그대로
       // 유지돼, 탈퇴한 계정이 로그인 화면을 거치지 않고 silent SSO 로 다시 들어온다.
       await tx
@@ -1078,7 +1086,7 @@ export class AuthService {
    * password 를 null 로 만들어 비밀번호 대조 자체가 성립하지 않게 한다 — `signIn` 의 탈퇴 차단이
    * 어떤 이유로 우회되더라도 로그인이 되지 않는다.
    */
-  private async anonymizeIdentity(userId: string, tx: DbTransaction): Promise<void> {
+  private async anonymizeIdentity(userId: string, tx: UserServiceTx): Promise<void> {
     // 사용자 id 에서 파생해 충돌 없이 유일하고, 원본으로 되돌릴 수 없는 값.
     const token = userId.replace(/-/g, '');
 

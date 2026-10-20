@@ -50,18 +50,23 @@ function makeNewRule(layer: PricingLayer, order: number): PricingRuleInput {
 
 interface Props {
   rules: PricingRulesResponseDto | undefined;
+  /** 버전 상태(draft 아님) 때문에 편집할 수 없다. */
   readonly: boolean;
+  /** 저장 권한. 없으면 룰은 보기만 한다. */
+  canSave: boolean;
   isSaving: boolean;
   isDeleting: boolean;
   optionGroups: ProductOptionGroup[];
   variantOptions: ScopeTargetVariant[];
   onSave: (dto: ReplacePricingRulesDto) => void;
-  onDelete: () => void;
+  /** 넘기지 않으면 전체 삭제 버튼을 그리지 않는다(권한 없음). */
+  onDelete?: () => void;
 }
 
 export function RulesEditor({
   rules,
   readonly,
+  canSave,
   isSaving,
   isDeleting,
   optionGroups,
@@ -73,6 +78,7 @@ export function RulesEditor({
   const [membership, setMembership] = useState<PricingRuleInput[]>([]);
   const [tiered, setTiered] = useState<PricingRuleInput[]>([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const editable = !readonly && canSave;
 
   useEffect(() => {
     if (!rules) return;
@@ -162,7 +168,7 @@ export function RulesEditor({
                 index={i}
                 total={arr.length}
                 layer={layer}
-                readonly={readonly}
+                readonly={!editable}
                 optionGroups={optionGroups}
                 variantOptions={variantOptions}
                 onChange={mutators.onChange}
@@ -174,7 +180,7 @@ export function RulesEditor({
           </tbody>
         </table>
       )}
-      {!readonly && (
+      {editable && (
         <div className="mt-2 px-3">
           <Button size="sm" variant="ghost" onClick={mutators.onAdd}>
             <Plus className="mr-1 h-3 w-3" />
@@ -189,22 +195,26 @@ export function RulesEditor({
     <div>
       <div className="flex items-center justify-between px-4 py-3">
         <span className="text-sm font-semibold">가격 룰</span>
-        {!readonly && (
+        {!readonly && (onDelete || canSave) && (
           <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleteOpen(true)}
-              disabled={isDeleting || isSaving}
-            >
-              <Trash2 className="mr-1 h-3 w-3" />
-              전체 삭제
-            </Button>
-            <Button size="sm" onClick={handleSave} disabled={isSaving || isDeleting}>
-              <Save className="mr-1 h-3 w-3" />
-              {isSaving ? '저장 중...' : '저장'}
-            </Button>
+            {onDelete && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-destructive hover:text-destructive"
+                onClick={() => setDeleteOpen(true)}
+                disabled={isDeleting || isSaving}
+              >
+                <Trash2 className="mr-1 h-3 w-3" />
+                전체 삭제
+              </Button>
+            )}
+            {canSave && (
+              <Button size="sm" onClick={handleSave} disabled={isSaving || isDeleting}>
+                <Save className="mr-1 h-3 w-3" />
+                {isSaving ? '저장 중...' : '저장'}
+              </Button>
+            )}
           </div>
         )}
         {readonly && (
@@ -230,7 +240,7 @@ export function RulesEditor({
       <DeleteRulesDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        onConfirm={onDelete}
+        onConfirm={() => onDelete?.()}
         isPending={isDeleting}
       />
     </div>

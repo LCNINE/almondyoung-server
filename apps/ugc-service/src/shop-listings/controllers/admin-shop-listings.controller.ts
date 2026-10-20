@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, User } from '@app/authorization';
+import { RequireScopes, User, RequirePermission, PiiResponse } from '@app/authorization';
 import {
   AdminShopListingDetailResponseDto,
   AdminShopListingDto,
@@ -17,6 +17,8 @@ import { ShopListingsService } from '../shop-listings.service';
 export class AdminShopListingsController {
   constructor(private readonly service: ShopListingsService) {}
 
+  @PiiResponse({ fields: { '[].contactPhone': 'phone' }, subjects: [{ path: '[].id', type: 'shop_listing' }] })
+  @RequirePermission('cs.review.read')
   @Get()
   @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '매물 목록 (관리자)', description: 'status=pending 이면 제출 오래된 순' })
@@ -25,6 +27,8 @@ export class AdminShopListingsController {
     return this.service.listForAdmin(query);
   }
 
+  @PiiResponse({ fields: { contactPhone: 'phone' }, subjects: [{ param: 'id', type: 'shop_listing' }], reveal: true })
+  @RequirePermission('cs.review.read')
   @Get(':id')
   @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '매물 상세 + 판정 이력 (관리자)' })
@@ -33,6 +37,7 @@ export class AdminShopListingsController {
     return this.service.getForAdmin(id);
   }
 
+  @RequirePermission('marketing.shop_listing.write')
   @Post()
   @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '매물 등록 (관리자) — 바로 게시' })
@@ -42,6 +47,7 @@ export class AdminShopListingsController {
     return this.service.createByAdmin(dto, adminId);
   }
 
+  @RequirePermission('marketing.shop_listing.write')
   @Put(':id')
   @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '매물 수정 (관리자) — 상태 유지' })
@@ -55,6 +61,7 @@ export class AdminShopListingsController {
     return this.service.updateByAdmin(id, dto, adminId);
   }
 
+  @RequirePermission('marketing.shop_listing.write')
   @Post(':id/approve')
   @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '승인', description: 'expectedSubmittedAt 이 지금 글과 다르면 409 — 그사이 회원이 고쳤다' })
@@ -68,6 +75,7 @@ export class AdminShopListingsController {
     return this.service.approve(id, dto, adminId);
   }
 
+  @RequirePermission('marketing.shop_listing.write')
   @Post(':id/reject')
   @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '거절 (사유 필수)' })
@@ -81,6 +89,7 @@ export class AdminShopListingsController {
     return this.service.reject(id, dto, adminId);
   }
 
+  @RequirePermission('marketing.shop_listing.write')
   @Post(':id/hide')
   @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '숨김' })
@@ -89,6 +98,7 @@ export class AdminShopListingsController {
     return this.service.hide(id, adminId);
   }
 
+  @RequirePermission('marketing.shop_listing.write')
   @Post(':id/unhide')
   @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '숨김 해제' })
@@ -97,6 +107,7 @@ export class AdminShopListingsController {
     return this.service.unhide(id, adminId);
   }
 
+  @RequirePermission('marketing.shop_listing.write')
   @Post(':id/close')
   @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '거래완료로 표시 (관리자)' })
@@ -105,6 +116,7 @@ export class AdminShopListingsController {
     return this.service.setDealStatusByAdmin(id, 'close', adminId);
   }
 
+  @RequirePermission('marketing.shop_listing.write')
   @Post(':id/reopen')
   @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '거래완료 해제 (관리자)' })
@@ -113,6 +125,7 @@ export class AdminShopListingsController {
     return this.service.setDealStatusByAdmin(id, 'reopen', adminId);
   }
 
+  @RequirePermission('marketing.shop_listing.write')
   @Delete(':id')
   @HttpCode(204)
   @RequireScopes('admin:ugc:modify')

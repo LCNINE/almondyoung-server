@@ -1,6 +1,6 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { ReplenishmentSuggestionService } from '../suggestion/replenishment-suggestion.service';
 import {
@@ -18,6 +18,7 @@ import {
 export class ReplenishmentSuggestionController {
   constructor(private readonly service: ReplenishmentSuggestionService) {}
 
+  @RequirePermission('inventory.master.read')
   @Get('suggestions')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
@@ -32,6 +33,7 @@ export class ReplenishmentSuggestionController {
     return this.service.listSuggestions({ action: query.action ?? 'all', limit: query.limit ?? 200 });
   }
 
+  @RequirePermission('inventory.master.read')
   @Get('skus/:skuId')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({

@@ -14,6 +14,8 @@ import {
   useUpsertRouteRule,
   useWarehouses,
 } from '@/lib/services/inventory';
+import { PermissionReadOnly } from '@/components/auth/permission-read-only';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   NEW_ROUTE_DRAFT_KEY,
   ROUTE_ADD_ISSUE_LABELS,
@@ -33,6 +35,7 @@ export function RoutesTab() {
   const { data: warehouses } = useWarehouses();
   const upsert = useUpsertRouteRule();
   const remove = useDeleteRouteRule();
+  const { canRun } = usePermissionCheck();
   const [newFrom, setNewFrom] = useState('');
   const [newTo, setNewTo] = useState('');
 
@@ -111,6 +114,7 @@ export function RoutesTab() {
   };
 
   return (
+    <PermissionReadOnly run={useUpsertRouteRule}>
     <LeadTimeRulesTable
       description="L2 = 출발 창고 → 판매 창고 도착 리드타임. 지시서 선적·수령 관측이 쌓이면 관측이 우선합니다. 목록은 규칙이 있거나 관측이 있는 경로이며, 없는 경로는 아래 행에서 추가합니다. 저장 즉시 제안에 반영됩니다."
       subjectHeader="경로"
@@ -119,12 +123,19 @@ export function RoutesTab() {
       emptyMessage="규칙도 관측도 있는 경로가 없습니다."
       isSaving={upsert.isPending}
       isDeleting={remove.isPending}
-      onSave={(id, dto) =>
-        upsert.mutateAsync({ from: id.from, to: id.to, dto })
+      onSave={
+        canRun(useUpsertRouteRule)
+          ? (id, dto) => upsert.mutateAsync({ from: id.from, to: id.to, dto })
+          : undefined
       }
-      onDelete={(id) => remove.mutateAsync({ from: id.from, to: id.to })}
+      onDelete={
+        canRun(useDeleteRouteRule)
+          ? (id) => remove.mutateAsync({ from: id.from, to: id.to })
+          : undefined
+      }
       deleteSuccessSuffix="전역 이동 기본으로 돌아갑니다."
-      newRow={newRow}
+      newRow={canRun(useUpsertRouteRule) ? newRow : undefined}
     />
+    </PermissionReadOnly>
   );
 }

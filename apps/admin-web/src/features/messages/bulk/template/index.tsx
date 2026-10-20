@@ -17,6 +17,7 @@ import {
   useSmsAudience,
   useSmsRecipientGroups,
 } from '@/lib/services/sms-gate';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { HelpSheet } from '../../components/help-sheet';
 import { OfflineBanner } from '../../components/offline-banner';
 import { CategoryRadio } from '../../components/category-radio';
@@ -31,6 +32,7 @@ export default function SmsBulkTemplate() {
   const { data: groups } = useSmsRecipientGroups();
   const previewCampaign = usePreviewSmsCampaign();
   const createCampaign = useCreateSmsCampaign();
+  const { canRun } = usePermissionCheck();
   const [category, setCategory] = useState<SmsGateCategory>('INFORMATIONAL');
   const [name, setName] = useState('');
   const [content, setContent] = useState('');
@@ -189,7 +191,7 @@ export default function SmsBulkTemplate() {
         sendAt={preview?.request.sendAt ?? null}
         isSubmitting={createCampaign.isPending}
         onCancel={() => setPreview(null)}
-        onConfirm={handleConfirm}
+        onConfirm={canRun(useCreateSmsCampaign) ? handleConfirm : undefined}
       />
     </Container>
   );

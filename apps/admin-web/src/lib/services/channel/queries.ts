@@ -37,20 +37,22 @@ export function useQuarantinedFailures(
 // 상세 단건 조회가 필요해지면 `orderCollectionFailuresClient.get` 위에 새로 쓰면 된다.
 
 /** 정체 보드 0단계 — 격리 건수. 목록(상한 200)과 달리 진짜 건수다. */
-export function useQuarantineSummary() {
+export function useQuarantineSummary(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: channelQueryKeys.summary,
     queryFn: () => orderCollectionFailuresClient.summary(),
+    enabled: options?.enabled ?? true,
     refetchInterval: 60_000,
   });
 }
 
 /** 정체 보드 0단계 — 열린 «채널과 어긋남» 요약. 못 읽으면 isError 로 남는다(0 으로 보지 않는다). */
-export function useMismatchSummary() {
+export function useMismatchSummary(options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: channelQueryKeys.mismatchSummary,
     queryFn: () => orderReconcileFindingsClient.summary(),
     refetchInterval: 60_000,
+    enabled: options.enabled ?? true,
   });
 }
 

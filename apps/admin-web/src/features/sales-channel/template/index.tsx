@@ -5,6 +5,12 @@ import { toast } from 'sonner';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { Button } from '@/components/ui/button';
+import { Can } from '@/components/auth/can';
+import { usePermissionCheck } from '@/hooks/use-permission';
+import {
+  useCreateChannel,
+  useUpdateChannel,
+} from '@/lib/api/domains/sales-channel';
 import { SalesChannelTable } from '../components/table';
 import { SalesChannelForm } from '../components/form-dialog';
 import type { ChannelDto } from '@/lib/types/dto/products';
@@ -12,6 +18,7 @@ import type { ChannelDto } from '@/lib/types/dto/products';
 export default function SalesChannelTemplate() {
   const [editingChannel, setEditingChannel] = useState<ChannelDto | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const { canRun } = usePermissionCheck();
 
   const handleEdit = (channel: ChannelDto) => {
     setEditingChannel(channel);
@@ -38,12 +45,16 @@ export default function SalesChannelTemplate() {
           title="판매처 관리"
           subtitle="채널별 판매처를 관리하고 등록하세요"
           right={
-            <Button size="sm" onClick={handleNew}>
-              판매처 등록
-            </Button>
+            <Can run={useCreateChannel}>
+              <Button size="sm" onClick={handleNew}>
+                판매처 등록
+              </Button>
+            </Can>
           }
         />
-        <SalesChannelTable onEdit={handleEdit} />
+        <SalesChannelTable
+          onEdit={canRun(useUpdateChannel) ? handleEdit : undefined}
+        />
       </Container>
 
       <SalesChannelForm

@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { useClientPage } from './client-pager';
 import {
   Dialog,
@@ -23,6 +24,7 @@ export function StuckBillingView() {
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<StuckBillingContractItem | null>(null);
   const [reason, setReason] = useState('');
+  const { can } = usePermissionCheck();
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['stuck-billing-contracts', THRESHOLD_HOURS],
@@ -31,6 +33,7 @@ export function StuckBillingView() {
   });
 
   const resetMutation = useMutation({
+    meta: { permission: ['membership.member.write'] },
     mutationFn: ({ contractId, reason }: { contractId: string; reason: string }) =>
       membershipApi.resetBillingInProgress(contractId, reason),
     onSuccess: () => {
@@ -91,16 +94,18 @@ export function StuckBillingView() {
                   </td>
                   <td className="p-2">{r.nextBillingDate ?? '-'}</td>
                   <td className="p-2 text-right">
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => {
-                        setSelected(r);
-                        setReason('');
-                      }}
-                    >
-                      플래그 해제
-                    </Button>
+                    {can(['membership.member.write']) && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => {
+                          setSelected(r);
+                          setReason('');
+                        }}
+                      >
+                        플래그 해제
+                      </Button>
+                    )}
                   </td>
                 </tr>
               ))}

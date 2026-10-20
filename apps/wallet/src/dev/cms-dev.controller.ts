@@ -3,6 +3,7 @@ import { ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { WalletAdminAuth } from '../wallet-admin-auth.decorator';
 import { CmsDevStateService, DevCmsStateResponseDto } from './cms-dev-state.service';
+import { RequirePermission } from '@app/authorization';
 
 class IdTypeDto {
   @ApiProperty({ enum: ['cmsMemberId', 'id', 'billingMethodId'], default: 'cmsMemberId' })
@@ -61,6 +62,7 @@ export class CmsDevController {
     }
   }
 
+  @RequirePermission('payment.billing.execute')
   @Post(':id/mark-registered')
   @HttpCode(200)
   @ApiOperation({
@@ -81,6 +83,7 @@ export class CmsDevController {
     );
   }
 
+  @RequirePermission('payment.billing.execute')
   @Post(':id/mark-failed')
   @HttpCode(200)
   @ApiOperation({
@@ -95,6 +98,7 @@ export class CmsDevController {
     return this.service.markMemberFailed(id, body.idType ?? 'cmsMemberId', body.resultCode, body.resultMessage);
   }
 
+  @RequirePermission('payment.billing.execute')
   @Post(':id/mark-agreement-registered')
   @HttpCode(200)
   @ApiOperation({
@@ -109,6 +113,7 @@ export class CmsDevController {
     return this.service.markAgreementRegistered(id, body.idType ?? 'cmsMemberId');
   }
 
+  @RequirePermission('payment.billing.execute')
   @Post(':id/mark-agreement-failed')
   @HttpCode(200)
   @ApiOperation({
@@ -123,6 +128,7 @@ export class CmsDevController {
     return this.service.markAgreementFailed(id, body.idType ?? 'cmsMemberId', body.resultCode, body.resultMessage);
   }
 
+  @RequirePermission('payment.billing.execute')
   @Post(':id/reset-to-pending')
   @HttpCode(200)
   @ApiOperation({

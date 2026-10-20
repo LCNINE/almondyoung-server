@@ -20,9 +20,11 @@ import {
 } from '@/components/ui/table';
 import {
   useAdminOwnerships,
+  useGrantOwnership,
   useRevokeOwnership,
   useResendOwnership,
 } from '@/lib/services/library';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { AdminOwnershipStatus } from '@/lib/types/dto/library';
 import { toast } from 'sonner';
 import { OwnershipGrantDialog } from '../grant-dialog';
@@ -50,6 +52,7 @@ export function OwnershipsTable() {
   });
   const revokeMutation = useRevokeOwnership();
   const resendMutation = useResendOwnership();
+  const { canRun } = usePermissionCheck();
 
   const rows = data?.data ?? [];
 
@@ -108,9 +111,11 @@ export function OwnershipsTable() {
           </SelectContent>
         </Select>
         <div className="flex-1" />
-        <Button size="sm" onClick={() => setGrantOpen(true)}>
-          수동 부여
-        </Button>
+        {canRun(useGrantOwnership) && (
+          <Button size="sm" onClick={() => setGrantOpen(true)}>
+            수동 부여
+          </Button>
+        )}
       </div>
 
       <div className="px-4 pb-4">
@@ -160,6 +165,7 @@ export function OwnershipsTable() {
                     </TableCell>
                     <TableCell className="text-right">
                       {revoked ? (
+                        canRun(useResendOwnership) && (
                         <Button
                           size="sm"
                           variant="ghost"
@@ -168,7 +174,9 @@ export function OwnershipsTable() {
                         >
                           재발급
                         </Button>
+                        )
                       ) : (
+                        canRun(useRevokeOwnership) && (
                         <Button
                           size="sm"
                           variant="ghost"
@@ -178,6 +186,7 @@ export function OwnershipsTable() {
                         >
                           회수
                         </Button>
+                        )
                       )}
                     </TableCell>
                   </TableRow>

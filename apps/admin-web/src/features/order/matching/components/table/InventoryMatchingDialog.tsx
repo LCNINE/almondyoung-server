@@ -46,6 +46,7 @@ import {
   type PickedSku,
 } from '../../../line-composition/picked-skus';
 import { SearchDialog } from './SearchDialog';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   buildMatchingLinks,
   normalizeQuantity,
@@ -163,6 +164,7 @@ export function InventoryMatchingDialog({
 
   const createSupplier = useCreateSupplier();
   const createHolder = useCreateHolder();
+  const { canRun } = usePermissionCheck();
 
   // 판매 상품 정보 조회
   const { data: variant } = useVariant(line?.variantId || '');
@@ -879,7 +881,7 @@ export function InventoryMatchingDialog({
           onClose={() => setShowSupplierSearch(false)}
           type="supplier"
           onSelect={handleSupplierSelect}
-          onCreate={handleSupplierCreate}
+          onCreate={canRun(useCreateSupplier) ? handleSupplierCreate : undefined}
           searchResults={supplierSearchResults?.data || []}
           isLoading={searchingSuppliers}
           onSearch={handleSupplierSearch}
@@ -890,7 +892,7 @@ export function InventoryMatchingDialog({
           onClose={() => setShowHolderSearch(false)}
           type="holder"
           onSelect={handleHolderSelect}
-          onCreate={handleHolderCreate}
+          onCreate={canRun(useCreateHolder) ? handleHolderCreate : undefined}
           searchResults={holderSearchResults?.data || []}
           isLoading={searchingHolders}
           onSearch={handleHolderSearch}

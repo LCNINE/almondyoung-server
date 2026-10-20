@@ -3,7 +3,7 @@ import { WorksiteSettings } from '@/features/attendance/components/attendance-se
 
 export default function Page() {
   return (
-    <RouteGuard requireRole={['master']}>
+    <RouteGuard screen="/company/attendance/worksites">
       <WorksiteSettings />
     </RouteGuard>
   );

@@ -3,7 +3,7 @@ import SmsRecipientGroupsTemplate from '@/features/messages/groups/template';
 
 export default function SmsRecipientGroupsPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/messages/groups">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <SmsRecipientGroupsTemplate />
       </div>

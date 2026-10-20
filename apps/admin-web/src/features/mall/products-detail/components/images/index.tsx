@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { CardErrorBoundary } from '@/components/admin-ui-experimental/common/card-error-boundary';
 import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
+import { Can } from '@/components/auth/can';
 import { Button } from '@/components/ui/button';
 import {
   Drawer,
@@ -413,14 +414,16 @@ function ProductDetailImagesContent({ masterId, versionId }: Props) {
         }
         right={
           canEdit ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setEditOpen(true)}
-            >
-              <Pencil data-icon="inline-start" />
-              수정
-            </Button>
+            <Can run={useUpdateMasterVersion}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setEditOpen(true)}
+              >
+                <Pencil data-icon="inline-start" />
+                수정
+              </Button>
+            </Can>
           ) : null
         }
       />

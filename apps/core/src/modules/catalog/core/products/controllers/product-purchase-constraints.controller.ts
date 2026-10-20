@@ -3,12 +3,14 @@ import { ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/s
 import { PurchaseConstraintResponseDto, UpsertPurchaseConstraintDto } from '../dto/purchase-constraints';
 import { PurchaseConstraintMapper } from '../mappers/purchase-constraint.mapper';
 import { ProductPurchaseConstraintsService } from '../services/product-purchase-constraints.service';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('Product Purchase Constraints')
 @Controller('masters/:masterId/versions/:versionId/purchase-constraint')
 export class ProductPurchaseConstraintsController {
   constructor(private readonly purchaseConstraintsService: ProductPurchaseConstraintsService) {}
 
+  @RequirePermission('catalog.product.read')
   @Get()
   @ApiOperation({
     summary: '상품 버전 구매 제한 조회',
@@ -30,6 +32,7 @@ export class ProductPurchaseConstraintsController {
     return model ? PurchaseConstraintMapper.toResponseDto(model) : null;
   }
 
+  @RequirePermission('catalog.product.write')
   @Put()
   @ApiOperation({
     summary: 'Draft 버전 구매 제한 저장',
@@ -58,6 +61,7 @@ export class ProductPurchaseConstraintsController {
     return model ? PurchaseConstraintMapper.toResponseDto(model) : null;
   }
 
+  @RequirePermission('catalog.product.write')
   @Delete()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({

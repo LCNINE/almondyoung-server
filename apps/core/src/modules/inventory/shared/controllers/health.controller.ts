@@ -1,6 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { Public } from '@app/authorization';
+import { Public, RequirePermission } from '@app/authorization';
 import { HealthService } from '../services/health.service';
 
 @ApiTags('Health')
@@ -45,6 +45,7 @@ export class HealthController {
     return this.healthService.checkLiveness();
   }
 
+  @RequirePermission('system.operations.read')
   @Get('detailed')
   @ApiOperation({
     summary: '\uc0c1\uc138 \ud5ec\uc2a4\uccb4\ud06c',

@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { createColumnHelper } from '@tanstack/react-table';
 import { toast } from 'sonner';
+import { Can } from '@/components/auth/can';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { Button } from '@/components/ui/button';
@@ -61,6 +62,7 @@ function ActionCell({ item }: { item: FormExportSummary }) {
 
   if (state.action === 'retry') {
     return (
+      <Can run={useRetryFormExport}>
       <Button
         size="sm"
         variant="outline"
@@ -82,6 +84,7 @@ function ActionCell({ item }: { item: FormExportSummary }) {
       >
         다시 시도
       </Button>
+      </Can>
     );
   }
 

@@ -18,7 +18,9 @@ import type { AlimtalkTemplate } from '@/lib/api/domains/alimtalk';
 import {
   useAddAlimtalkComment,
   useAlimtalkTestSend,
+  useUpdateAlimtalkTemplate,
 } from '@/lib/services/alimtalk';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { COMMENT_STATUS_LABEL, renderVariables } from '../lib/alimtalk';
 import { AutoNoticeLink } from './auto-notice-link';
 import { KakaoBubble } from './kakao-bubble';
@@ -62,6 +64,8 @@ function DetailBody({
   const [values, setValues] = useState<Record<string, string>>({});
   const addComment = useAddAlimtalkComment();
   const testSend = useAlimtalkTestSend();
+  const { canRun } = usePermissionCheck();
+  const canComment = canRun(useAddAlimtalkComment);
   const approved = template.status === 'TSC03';
   const rejected = template.status === 'TSC04';
   const canTest =
@@ -143,6 +147,7 @@ function DetailBody({
             <p className="pt-1 whitespace-pre-wrap">{c.content}</p>
           </div>
         ))}
+        {canComment && (
         <Textarea
           rows={3}
           maxLength={1000}
@@ -154,25 +159,30 @@ function DetailBody({
           value={comment}
           onChange={(e) => setComment(e.target.value)}
         />
+        )}
         <div className="flex justify-end gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onEdit(template)}
-          >
-            {rejected ? '고쳐서 다시 요청' : '수정 요청'}
-          </Button>
-          <Button
-            type="button"
-            disabled={!comment.trim() || addComment.isPending}
-            onClick={submitComment}
-          >
-            {addComment.isPending ? (
-              <Loader className="animate-spin" />
-            ) : (
-              '문의 남기기'
-            )}
-          </Button>
+          {canRun(useUpdateAlimtalkTemplate) && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onEdit(template)}
+            >
+              {rejected ? '고쳐서 다시 요청' : '수정 요청'}
+            </Button>
+          )}
+          {canComment && (
+            <Button
+              type="button"
+              disabled={!comment.trim() || addComment.isPending}
+              onClick={submitComment}
+            >
+              {addComment.isPending ? (
+                <Loader className="animate-spin" />
+              ) : (
+                '문의 남기기'
+              )}
+            </Button>
+          )}
         </div>
       </section>
 
@@ -204,20 +214,22 @@ function DetailBody({
                 />
               </div>
             ))}
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={!canTest || testSend.isPending}
-                onClick={submitTest}
-              >
-                {testSend.isPending ? (
-                  <Loader className="animate-spin" />
-                ) : (
-                  '내 번호로 보내기'
-                )}
-              </Button>
-            </div>
+            {canRun(useAlimtalkTestSend) && (
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!canTest || testSend.isPending}
+                  onClick={submitTest}
+                >
+                  {testSend.isPending ? (
+                    <Loader className="animate-spin" />
+                  ) : (
+                    '내 번호로 보내기'
+                  )}
+                </Button>
+              </div>
+            )}
           </>
         )}
       </section>

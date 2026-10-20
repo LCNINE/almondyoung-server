@@ -2,7 +2,13 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { useSupplierCategories, useDeleteSupplierCategory } from '@/lib/services/inventory';
+import {
+  useSupplierCategories,
+  useDeleteSupplierCategory,
+  useCreateSupplierCategory,
+  useUpdateSupplierCategory,
+} from '@/lib/services/inventory';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { SupplierCategoryDto } from '@/lib/types/dto/inventory';
 import { CategoryFormDialog } from '../category-form-dialog';
 import { toast } from 'sonner';
@@ -11,6 +17,7 @@ import { Pencil, Trash2 } from 'lucide-react';
 export function SupplierCategoriesTable() {
   const { data: categories, isLoading } = useSupplierCategories();
   const deleteMutation = useDeleteSupplierCategory();
+  const { canRun } = usePermissionCheck();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editRow, setEditRow] = useState<SupplierCategoryDto | null>(null);
@@ -28,9 +35,11 @@ export function SupplierCategoriesTable() {
   return (
     <>
       <div className="flex items-center gap-2 px-4 pt-4">
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          분류 등록
-        </Button>
+        {canRun(useCreateSupplierCategory) && (
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            분류 등록
+          </Button>
+        )}
       </div>
 
       <div className="px-4 pb-4">
@@ -58,21 +67,25 @@ export function SupplierCategoriesTable() {
                   </td>
                   <td className="py-2.5">
                     <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setEditRow(cat)}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDelete(cat)}
-                        disabled={deleteMutation.isPending}
-                      >
-                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                      </Button>
+                      {canRun(useUpdateSupplierCategory) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditRow(cat)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {canRun(useDeleteSupplierCategory) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDelete(cat)}
+                          disabled={deleteMutation.isPending}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>

@@ -13,6 +13,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   serial,
   text,
   timestamp,
@@ -117,8 +118,138 @@ export const roles = pgTable('roles', {
   roleId: uuid('role_id').primaryKey().defaultRandom(),
   name: varchar('name', { length: 100 }).notNull().unique(),
   description: text('description'),
+  // 화면 표시 이름. 비어 있으면 name 을 그대로 보여준다.
+  displayName: varchar('display_name', { length: 100 }),
+  // 동시 편집 감지. 역할의 표시 정보·권한이 바뀔 때마다 오른다(사람↔역할 부여는 올리지 않는다).
+  version: integer('version').notNull().default(1),
+  // 이 역할로 로그인했을 때 처음 보낼 관리자 화면. 비어 있으면 권한으로 갈 수 있는 첫 메뉴.
+  landingPath: varchar('landing_path', { length: 200 }),
   ...timestampColumns,
 });
+
+// 권한 목록의 DB 반영. 원본은 코드(@app/authorization PERMISSION_CATALOG)이고,
+// 부팅 동기화가 새 키만 넣고 사라진 키엔 deprecated_at 만 찍는다(지우지 않는다).
+export const iamPermissions = pgTable('iam_permissions', {
+  key: varchar('key', { length: 100 }).primaryKey(),
+  domain: varchar('domain', { length: 50 }).notNull(),
+  label: varchar('label', { length: 100 }).notNull(),
+  description: text('description').notNull(),
+  dangerous: boolean('dangerous').notNull(),
+  systemOnly: boolean('system_only').notNull(),
+  registeredAt: timestamp('registered_at')
+    .default(sql`now()`)
+    .notNull(),
+  deprecatedAt: timestamp('deprecated_at'),
+});
+
+// 역할↔권한 매핑의 원본. 코드는 이 표를 덮어쓰지 않는다.
+export const iamRolePermissions = pgTable(
+  'iam_role_permissions',
+  {
+    roleId: uuid('role_id')
+      .references(() => roles.roleId, { onDelete: 'cascade' })
+      .notNull(),
+    permissionKey: varchar('permission_key', { length: 100 })
+      .references(() => iamPermissions.key)
+      .notNull(),
+    // null 이면 시스템(초기 부여)
+    grantedBy: uuid('granted_by'),
+    grantedAt: timestamp('granted_at')
+      .default(sql`now()`)
+      .notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.roleId, table.permissionKey] }),
+  }),
+);
+
+// 역할·권한·부여 변경 이력. 변경과 같은 트랜잭션에서 쓴다(이력을 못 쓰면 변경도 없다).
+// 대상이 지워져도 읽히도록 이름(target_label·actor_login_id)을 그 시점 값으로 남긴다.
+export const iamAuditLogs = pgTable(
+  'iam_audit_logs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // ms 정밀도 — 이력 페이지 커서가 JS 시각(ms)으로 오가므로 같은 값을 저장한다.
+    occurredAt: timestamp('occurred_at', { precision: 3 })
+      .default(sql`now()`)
+      .notNull(),
+    actorUserId: uuid('actor_user_id').notNull(),
+    actorLoginId: varchar('actor_login_id', { length: 30 }),
+    action: varchar('action', { length: 50 }).notNull(),
+    targetType: varchar('target_type', { length: 20 }).notNull(),
+    targetId: uuid('target_id').notNull(),
+    targetLabel: varchar('target_label', { length: 100 }).notNull(),
+    before: jsonb('before'),
+    after: jsonb('after'),
+    // 요청자 주소. 관리자 화면 프록시가 원래 주소를 넘기기 전까지는 비어 있다.
+    ip: varchar('ip', { length: 45 }),
+    userAgent: text('user_agent'),
+    requestId: varchar('request_id', { length: 100 }),
+  },
+  (table) => ({
+    occurredIdx: index('iam_audit_logs_occurred_at_idx').on(table.occurredAt),
+    targetIdx: index('iam_audit_logs_target_idx').on(table.targetType, table.targetId, table.occurredAt),
+    actorIdx: index('iam_audit_logs_actor_idx').on(table.actorUserId, table.occurredAt),
+  }),
+);
+
+// 개인정보 접속기록 — 직원에게 개인정보 원문이 나간 응답마다 1행. 원문 값은 담지 않는다(대상 식별자·종류·건수만).
+// 쓰기는 insert 뿐이고 보관 기간이 지난 행만 정리 크론이 지운다.
+export const piiAccessLogs = pgTable(
+  'pii_access_logs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // 보낸 쪽이 만든 id — 이벤트가 다시 와도 한 번만 남는다.
+    eventId: uuid('event_id').notNull(),
+    occurredAt: timestamp('occurred_at', { precision: 3 }).notNull(),
+    actorUserId: uuid('actor_user_id').notNull(),
+    actorLoginId: varchar('actor_login_id', { length: 30 }),
+    // 관리자 화면 프록시가 넘긴 직원 단말 주소와, 서비스가 본 연결 주소를 따로 남긴다.
+    claimedIp: varchar('claimed_ip', { length: 45 }),
+    peerIp: varchar('peer_ip', { length: 45 }),
+    forwardedFor: text('forwarded_for'),
+    userAgent: text('user_agent'),
+    requestId: varchar('request_id', { length: 100 }),
+    sourceService: varchar('source_service', { length: 40 }).notNull(),
+    method: varchar('method', { length: 10 }).notNull(),
+    route: text('route').notNull(),
+    action: varchar('action', { length: 10 }).notNull(),
+    subjects: jsonb('subjects').notNull(),
+    subjectCount: integer('subject_count').notNull(),
+    kinds: text('kinds').array().notNull(),
+    queryKeys: text('query_keys').array().notNull(),
+    reason: text('reason'),
+    recordedAt: timestamp('recorded_at', { precision: 3 })
+      .default(sql`now()`)
+      .notNull(),
+  },
+  (table) => ({
+    eventIdx: uniqueIndex('pii_access_logs_event_id_idx').on(table.eventId),
+    occurredIdx: index('pii_access_logs_occurred_at_idx').on(table.occurredAt),
+    actorIdx: index('pii_access_logs_actor_idx').on(table.actorUserId, table.occurredAt),
+    subjectsIdx: index('pii_access_logs_subjects_idx').using('gin', sql`${table.subjects} jsonb_path_ops`),
+  }),
+);
+
+// 접속기록 점검 기록 — 점검 주기는 내부 관리계획이 정하므로 기간을 자유롭게 적는다.
+export const piiAccessReviews = pgTable(
+  'pii_access_reviews',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    period: varchar('period', { length: 40 }).notNull(),
+    rangeFrom: timestamp('range_from', { precision: 3 }).notNull(),
+    rangeTo: timestamp('range_to', { precision: 3 }).notNull(),
+    reviewedBy: uuid('reviewed_by').notNull(),
+    reviewedByLoginId: varchar('reviewed_by_login_id', { length: 30 }),
+    reviewedAt: timestamp('reviewed_at', { precision: 3 })
+      .default(sql`now()`)
+      .notNull(),
+    note: text('note'),
+  },
+  (table) => ({
+    reviewedIdx: index('pii_access_reviews_reviewed_at_idx').on(table.reviewedAt),
+  }),
+);
 
 // 사용자-역할 할당 테이블
 export const userRoleAssignments = pgTable(
@@ -722,6 +853,11 @@ export const userServiceTables = {
   ...attendanceTables,
   users,
   roles,
+  iamPermissions,
+  iamRolePermissions,
+  iamAuditLogs,
+  piiAccessLogs,
+  piiAccessReviews,
   userRoleAssignments,
   userIdentities,
   businessLicenses,

@@ -2,6 +2,8 @@
 
 import { useMemo } from 'react';
 import { useUpsertKeywordIssue } from '@/lib/services/search';
+import { BlockedReason } from '@/components/auth/blocked-reason';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { useAdminUsers } from '@/lib/services/users/queries';
 import type { KeywordIssueStatus, ZeroHitKeywordRow } from '@/lib/api/domains/search';
 import { KEYWORD_ISSUE_STATUSES } from '@/lib/api/domains/search';
@@ -100,6 +102,8 @@ function ZeroHitRow({
   showMemo: boolean;
 }) {
   const upsert = useUpsertKeywordIssue();
+  const { blockedReason } = usePermissionCheck();
+  const reason = blockedReason(useUpsertKeywordIssue);
 
   // 바꾼 필드만 보낸다 — 서버 upsert 는 미전달 필드(담당·메모)를 그대로 보존한다.
   const changeStatus = (status: KeywordIssueStatus) => {
@@ -140,35 +144,49 @@ function ZeroHitRow({
         />
       </td>
       <td className="py-1.5">
-        <select
-          aria-label={`${row.keyword} 처리 상태`}
-          value={row.issue?.status ?? 'new'}
-          onChange={(event) => changeStatus(event.target.value as KeywordIssueStatus)}
-          disabled={upsert.isPending}
-          className="rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] disabled:opacity-40"
-        >
-          {KEYWORD_ISSUE_STATUSES.map((value) => (
-            <option key={value} value={value}>
-              {STATUS_LABELS[value]}
-            </option>
-          ))}
-        </select>
+        <BlockedReason reason={reason}>
+          {(blocked) => (
+            <select
+              {...blocked}
+              aria-label={`${row.keyword} 처리 상태`}
+              value={row.issue?.status ?? 'new'}
+              onChange={(event) => {
+                if (!reason) changeStatus(event.target.value as KeywordIssueStatus);
+              }}
+              disabled={upsert.isPending}
+              className="rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] disabled:opacity-40 aria-disabled:opacity-40"
+            >
+              {KEYWORD_ISSUE_STATUSES.map((value) => (
+                <option key={value} value={value}>
+                  {STATUS_LABELS[value]}
+                </option>
+              ))}
+            </select>
+          )}
+        </BlockedReason>
       </td>
       <td className="py-1.5">
-        <select
-          aria-label={`${row.keyword} 담당자`}
-          value={row.issue?.assigneeId ?? ''}
-          onChange={(event) => changeAssignee(event.target.value)}
-          disabled={upsert.isPending}
-          className="min-w-28 rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] disabled:opacity-40"
-        >
-          <option value="">미지정</option>
-          {assigneeOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        <BlockedReason reason={reason}>
+          {(blocked) => (
+            <select
+              {...blocked}
+              aria-label={`${row.keyword} 담당자`}
+              value={row.issue?.assigneeId ?? ''}
+              onChange={(event) => {
+                if (!reason) changeAssignee(event.target.value);
+              }}
+              disabled={upsert.isPending}
+              className="min-w-28 rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] disabled:opacity-40 aria-disabled:opacity-40"
+            >
+              <option value="">미지정</option>
+              {assigneeOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          )}
+        </BlockedReason>
       </td>
       {showMemo ? (
         <td className="max-w-48 truncate py-1.5 text-gray-500" title={row.issue?.memo ?? undefined}>

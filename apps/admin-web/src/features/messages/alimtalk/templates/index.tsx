@@ -15,7 +15,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import type { AlimtalkTemplate } from '@/lib/api/domains/alimtalk';
-import { useAlimtalkTemplates } from '@/lib/services/alimtalk';
+import { useAlimtalkTemplates, useCreateAlimtalkTemplate } from '@/lib/services/alimtalk';
+import { Can, CanOpen } from '@/components/auth/can';
 import { AlimtalkTemplateDetailSheet } from '../components/template-detail-sheet';
 import { AlimtalkTemplateFormDialog } from '../components/template-form-dialog';
 import { StatusBadge } from '../components/status-badge';
@@ -43,7 +44,9 @@ export default function AlimtalkTemplatesTemplate() {
             >
               심사 상태 새로고침
             </Button>
-            <Button onClick={() => setCreating(true)}>템플릿 만들기</Button>
+            <Can run={useCreateAlimtalkTemplate}>
+              <Button onClick={() => setCreating(true)}>템플릿 만들기</Button>
+            </Can>
           </div>
         }
       />
@@ -123,16 +126,18 @@ export default function AlimtalkTemplatesTemplate() {
             </Table>
           </div>
         )}
-        <p className="text-muted-foreground text-xs">
-          승인된 템플릿으로 여러 명에게 보내려면{' '}
-          <Link
-            href="/messages/alimtalk/send"
-            className="underline underline-offset-2"
-          >
-            알림톡 보내기
-          </Link>
-          를 쓰세요.
-        </p>
+        <CanOpen screen="/messages/alimtalk/send">
+          <p className="text-muted-foreground text-xs">
+            승인된 템플릿으로 여러 명에게 보내려면{' '}
+            <Link
+              href="/messages/alimtalk/send"
+              className="underline underline-offset-2"
+            >
+              알림톡 보내기
+            </Link>
+            를 쓰세요.
+          </p>
+        </CanOpen>
       </div>
 
       <AlimtalkTemplateDetailSheet

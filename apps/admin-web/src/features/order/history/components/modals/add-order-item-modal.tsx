@@ -58,6 +58,7 @@ export function AddOrderItemModal({ order, open, onOpenChange }: Props) {
     });
 
     const addMutation = useMutation({
+        meta: { permission: ['order.order.write'] },
         mutationFn: addOrderItem,
         onSuccess: (result) => {
             if (result.success) {

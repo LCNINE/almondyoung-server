@@ -8,7 +8,7 @@ import { Suspense } from 'react';
 export default function OrderHistoryPage() {
   return (
     <RouteGuard
-      requireRole={['admin', 'master']}
+      screen="/order/history"
     >
       <Suspense
         fallback={

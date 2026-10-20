@@ -23,6 +23,7 @@ import {
 } from '@/lib/services/return-exchange';
 import type { ExchangeRequest } from '@/lib/api/domains/return-exchange';
 import { getServerDenyMessage } from '@/lib/services/orders';
+import { usePermissionCheck } from '@/hooks/use-permission';
 
 const STATUS_LABELS: Record<ExchangeRequest['status'], string> = {
   requested: '신청',
@@ -77,6 +78,7 @@ export function ExchangeRequestsTable({
   const collected = useMarkExchangeCollected();
   const inspected = useMarkExchangeInspected();
   const complete = useCompleteExchange();
+  const { canRun } = usePermissionCheck();
 
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
@@ -153,6 +155,7 @@ export function ExchangeRequestsTable({
                     <div className="flex gap-1 justify-end flex-wrap">
                       {request.status === 'requested' && (
                         <>
+                          {canRun(useApproveExchange) && (
                           <Button
                             size="sm"
                             variant="default"
@@ -169,6 +172,8 @@ export function ExchangeRequestsTable({
                           >
                             승인
                           </Button>
+                          )}
+                          {canRun(useRejectExchange) && (
                           <Button
                             size="sm"
                             variant="destructive"
@@ -185,9 +190,10 @@ export function ExchangeRequestsTable({
                           >
                             거절
                           </Button>
+                          )}
                         </>
                       )}
-                      {request.status === 'approved' && (
+                      {request.status === 'approved' && canRun(useMarkExchangeCollectionPending) && (
                         <Button
                           size="sm"
                           variant="outline"
@@ -202,7 +208,7 @@ export function ExchangeRequestsTable({
                           수거 대기
                         </Button>
                       )}
-                      {request.status === 'collection_pending' && (
+                      {request.status === 'collection_pending' && canRun(useMarkExchangeCollected) && (
                         <Button
                           size="sm"
                           variant="outline"
@@ -217,7 +223,7 @@ export function ExchangeRequestsTable({
                           수거 완료
                         </Button>
                       )}
-                      {request.status === 'collected' && (
+                      {request.status === 'collected' && canRun(useMarkExchangeInspected) && (
                         <Button
                           size="sm"
                           variant="outline"
@@ -232,7 +238,7 @@ export function ExchangeRequestsTable({
                           검수 완료
                         </Button>
                       )}
-                      {request.status === 'inspected' && (
+                      {request.status === 'inspected' && canRun(useCompleteExchange) && (
                         <Button
                           size="sm"
                           variant="outline"

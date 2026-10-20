@@ -2,6 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useCategoryTree } from '@/lib/services/products/queries';
+import {
+  useCreateCategory,
+  useDeleteCategory,
+  useMoveCategory,
+  useReorderCategories,
+} from '@/lib/services/products/mutations';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { BRAND_ROOT_SLUG } from '../constants';
 import { useCategorySelection } from '../hooks/use-category-selection';
 import { usePendingTreeChanges } from '../hooks/use-pending-tree-changes';
@@ -19,6 +26,8 @@ export default function MallCategoriesTemplate() {
   const [formDirty, setFormDirty] = useState(false);
   const [search, setSearch] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const { canRun } = usePermissionCheck();
+  const canCreate = canRun(useCreateCategory);
 
   const tree = useMemo(() => {
     if (!data?.categories) return [];
@@ -113,8 +122,9 @@ export default function MallCategoriesTemplate() {
           search={search}
           onSearchChange={setSearch}
           onSelect={onSelect}
-          onAddRoot={onAddRoot}
-          onAddChild={onAddChild}
+          onAddRoot={canCreate ? onAddRoot : undefined}
+          onAddChild={canCreate ? onAddChild : undefined}
+          canRearrange={canRun(useMoveCategory, useReorderCategories)}
           pending={pending}
         />
       </div>
@@ -132,7 +142,7 @@ export default function MallCategoriesTemplate() {
             clear();
           }}
           onDirtyChange={setFormDirty}
-          onRequestDelete={setDeleteId}
+          onRequestDelete={canRun(useDeleteCategory) ? setDeleteId : undefined}
         />
       </div>
 

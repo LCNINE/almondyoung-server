@@ -6,7 +6,7 @@ import WaybillIssueTemplate from '@/features/order/waybill-issue/template/Waybil
 // 운송장 일괄 발급 페이지
 export default function OrderWaybillIssuePage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/order/waybill-issue">
       <WaybillIssueTemplate />
     </RouteGuard>
   );

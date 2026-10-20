@@ -6,7 +6,8 @@ import { useDataTable } from '@/hooks/use-data-table';
 import { useSuppliersTableColumns } from '@/hooks/table/columns/use-suppliers-table-columns';
 import { useSuppliersTableFilters } from '@/hooks/table/filters/use-suppliers-table-filters';
 import { useSuppliersTableQuery } from '@/hooks/table/query/use-suppliers-table-query';
-import { useSuppliers } from '@/lib/services/inventory';
+import { useCreateSupplier, useSuppliers } from '@/lib/services/inventory';
+import { Can } from '@/components/auth/can';
 import type { SupplierDto } from '@/lib/types/dto/inventory';
 import { Button } from '@/components/ui/button';
 import { SupplierDetailDrawer } from '../supplier-detail-drawer';
@@ -38,9 +39,11 @@ export function SuppliersTable() {
   return (
     <>
       <div className="flex items-center gap-2 px-4 pt-4">
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          공급처 등록
-        </Button>
+        <Can run={useCreateSupplier}>
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            공급처 등록
+          </Button>
+        </Can>
       </div>
 
       <DataTable

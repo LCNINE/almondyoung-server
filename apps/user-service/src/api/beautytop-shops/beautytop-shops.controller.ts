@@ -6,6 +6,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { User } from 'apps/user-service/database/drizzle/schema';
 import { BeautytopShopsService } from './beautytop-shops.service';
 import { BeautytopShopDto, SetMyShopDto, SHOP_KINDS } from './dto/beautytop-shops.dto';
+import { StoreRoute } from '@app/authorization';
 
 /** 로그인한 본인의 뷰티탑 «내 샵»·관심 샵. 대상 사용자는 토큰에서만 정한다. */
 @ApiTags('뷰티탑 저장 샵')
@@ -16,18 +17,21 @@ export class BeautytopShopsController {
   constructor(private readonly service: BeautytopShopsService) {}
 
   @ApiOperation({ summary: '내 샵과 관심 샵 조회' })
+  @StoreRoute()
   @Get()
   list(@CurrentUser() user: User) {
     return this.service.list(user.id);
   }
 
   @ApiOperation({ summary: '내 샵 지정(null 이면 해제)' })
+  @StoreRoute()
   @Put('my-shop')
   setMyShop(@CurrentUser() user: User, @Body() dto: SetMyShopDto) {
     return this.service.setMyShop(user.id, dto.shop ?? null);
   }
 
   @ApiOperation({ summary: '관심 샵 추가' })
+  @StoreRoute()
   @Post('watch')
   @HttpCode(HttpStatus.OK)
   addWatch(@CurrentUser() user: User, @Body() dto: BeautytopShopDto) {
@@ -35,6 +39,7 @@ export class BeautytopShopsController {
   }
 
   @ApiOperation({ summary: '관심 샵 삭제' })
+  @StoreRoute()
   @Delete('watch/:shopKind/:shopId')
   removeWatch(@CurrentUser() user: User, @Param('shopKind') shopKind: string, @Param('shopId') shopId: string) {
     const id = Number(shopId);

@@ -7,6 +7,7 @@ import { PassportModule } from '@nestjs/passport';
 import { ConsentsModule } from '../consents/consents.module';
 import { Cafe24LinkModule } from '../cafe24-link/cafe24-link.module';
 import { OAuthModule } from '../oauth/oauth.module';
+import { IamModule } from '../iam/iam.module';
 import { TokensModule } from '../tokens/tokens.module';
 import { UsersModule } from '../users/users.module';
 import { AccountLinkingController } from './account-linking.controller';
@@ -116,6 +117,7 @@ export class AuthModule {
         EventsModule,
         ConsentsModule,
         OAuthModule,
+        IamModule,
         ...(hasCafe24Config ? [Cafe24LinkModule] : []),
       ],
       providers,

@@ -1,6 +1,6 @@
 import { Controller, Delete, Param, ParseUUIDPipe } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam, ApiResponse, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { User, StoreRoute } from '@app/authorization';
 import { FileAccess } from '../access/file-access';
 import { DeleteResponseDto } from './dto/delete-response.dto';
 import { JwtPayload } from '../shared/types/jwt-payload.interface';
@@ -12,6 +12,7 @@ import { JwtPayload } from '../shared/types/jwt-payload.interface';
 export class LifecycleController {
   constructor(private readonly fileAccess: FileAccess) {}
 
+  @StoreRoute()
   @Delete(':fileId')
   @ApiOperation({ summary: 'Soft delete a file' })
   @ApiParam({ name: 'fileId', description: 'File ID', type: 'string' })

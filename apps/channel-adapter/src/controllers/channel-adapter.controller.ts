@@ -5,6 +5,7 @@ import { ChannelType } from '../adapters/channel-adapter.factory';
 import { ChannelQuery, OrderQuery } from '../types';
 import { ChannelDataReader } from '../services/channel-data.reader';
 import { ExchangeRequestsQueryDto, ExchangeRequestsResponseDto } from '../zods/controller/adapter.zod';
+import { RequirePermission, PiiResponse } from '@app/authorization';
 
 @ApiTags('Channel Adapter')
 @Controller('adapter')
@@ -25,6 +26,7 @@ export class ChannelAdapterController {
   // 기본 API
   // ═══════════════════════════════════════════════════════════════
 
+  @RequirePermission('order.order.read')
   @Get('health')
   @ApiOperation({ summary: '서비스 상태 확인' })
   @ApiResponse({ status: 200, description: '서비스 정상' })
@@ -46,6 +48,17 @@ export class ChannelAdapterController {
   // 조회 API
   // ═══════════════════════════════════════════════════════════════
 
+  @PiiResponse({
+    fields: {
+      'data[].buyer.name': 'name',
+      'data[].buyer.contact': 'phone',
+      'data[].buyer.address.postalCode': 'postal',
+      'data[].buyer.address.roadAddress': 'address',
+      'data[].buyer.address.detailAddress': 'text',
+    },
+    subjects: [{ param: 'identifier', type: 'channel_order' }],
+  })
+  @RequirePermission('order.order.read')
   @Get(':channel/query/:queryType/:identifier')
   @ApiOperation({ summary: '채널별 주문 조회' })
   @ApiParam({ name: 'channel', enum: ['naver_smartstore', 'coupang'] })
@@ -74,6 +87,18 @@ export class ChannelAdapterController {
     };
   }
 
+  @PiiResponse({
+    fields: {
+      'data[].deliveryInfo.returnAddress.customerName': 'name',
+      'data[].deliveryInfo.returnAddress.address': 'address',
+      'data[].deliveryInfo.returnAddress.phone': 'phone',
+      'data[].deliveryInfo.deliveryAddress.customerName': 'name',
+      'data[].deliveryInfo.deliveryAddress.address': 'address',
+      'data[].deliveryInfo.deliveryAddress.phone': 'phone',
+    },
+    subjects: [{ path: 'data[].orderId', type: 'channel_order' }],
+  })
+  @RequirePermission('order.order.read')
   @Get(':channel/query/exchange-requests')
   @ApiOperation({ summary: '교환 요청 목록 조회' })
   @ApiParam({ name: 'channel', enum: ['naver_smartstore', 'coupang'] })

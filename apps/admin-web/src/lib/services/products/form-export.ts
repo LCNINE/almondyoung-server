@@ -5,12 +5,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { products } from '@/lib/api/domains';
 import { formExportListRefetchInterval } from './form-export-model';
 import { productQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export function useRequestFormExport() {
   return useMutation({
     mutationFn: (masterIds: string[]) => products.formExport.request(masterIds),
   });
 }
+useRequestFormExport.permission = ['catalog.bulk.execute'] as const satisfies PermissionRequirement;
 
 export function useFormExportList(page: number, limit: number) {
   return useQuery({
@@ -31,3 +33,4 @@ export function useRetryFormExport() {
     },
   });
 }
+useRetryFormExport.permission = ['catalog.bulk.execute'] as const satisfies PermissionRequirement;

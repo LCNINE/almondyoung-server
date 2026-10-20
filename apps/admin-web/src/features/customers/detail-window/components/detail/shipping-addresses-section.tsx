@@ -17,6 +17,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { AddressSearchDialog } from '@/components/common/address-search-dialog';
 import {
   medusaCustomerApi,
@@ -72,6 +73,7 @@ export function ShippingAddressesSection({
   const createAddr = useCreateMedusaAddress(customerId);
   const updateAddr = useUpdateMedusaAddress(customerId);
   const deleteAddr = useDeleteMedusaAddress(customerId);
+  const { canRun } = usePermissionCheck();
 
   const [open, setOpen] = useState(false);
   const [addrDialogOpen, setAddrDialogOpen] = useState(false);
@@ -140,7 +142,7 @@ export function ShippingAddressesSection({
       title="배송지 정보"
       icon={<MapPin className="size-4 text-rose-500" />}
       action={
-        medusaCustomerId ? (
+        medusaCustomerId && canRun(useCreateMedusaAddress) ? (
           <Button type="button" size="sm" variant="outline" onClick={openAdd}>
             <Plus className="mr-1 h-3.5 w-3.5" />
             배송지 추가
@@ -185,25 +187,29 @@ export function ShippingAddressesSection({
                 </div>
               </div>
               <div className="flex gap-1 shrink-0">
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7"
-                  onClick={() => openEdit(a)}
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="text-red-500 h-7 w-7"
-                  onClick={() => handleDelete(a.id)}
-                  disabled={deleteAddr.isPending}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                {canRun(useUpdateMedusaAddress) && (
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7"
+                    onClick={() => openEdit(a)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+                {canRun(useDeleteMedusaAddress) && (
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="text-red-500 h-7 w-7"
+                    onClick={() => handleDelete(a.id)}
+                    disabled={deleteAddr.isPending}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
               </div>
             </div>
           ))}

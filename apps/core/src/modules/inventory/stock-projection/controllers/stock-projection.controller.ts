@@ -13,7 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { ApiOkResponsePaginated } from '../../shared/decorators/api-paginated-response.decorator';
 import { PaginatedResponseDto } from '../../shared/dto';
@@ -39,6 +39,7 @@ const SKU_ID_PIPE = new ParseUUIDPipe();
 export class StockProjectionController {
   constructor(private readonly stockProjection: StockProjectionService) {}
 
+  @RequirePermission('inventory.stock.read')
   @Get('/stocks')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
@@ -54,6 +55,7 @@ export class StockProjectionController {
     return this.stockProjection.getCurrentStock(query);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('/stocks/summary')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
@@ -77,6 +79,7 @@ export class StockProjectionController {
     return this.stockProjection.listStockSummaries(query);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('/stocks/sku/:skuId/total')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU별 총 재고 조회 (모든 창고 합계)' })
@@ -98,6 +101,7 @@ export class StockProjectionController {
     return this.stockProjection.getTotalBySku(skuId);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('/stocks/sku/:skuId/warehouse/:warehouseId')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU별 특정 창고 재고 상세 조회' })
@@ -108,6 +112,7 @@ export class StockProjectionController {
     return this.stockProjection.getBySkuAndWarehouse(skuId, warehouseId);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('/stocks/location/:locationId')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '로케이션 내용물 조회 (SKU·상태·수량)' })
@@ -118,6 +123,7 @@ export class StockProjectionController {
     return this.stockProjection.getLocationContents(locationId);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('/stocks/inbound-pipeline')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
@@ -148,6 +154,7 @@ export class StockProjectionController {
     return this.stockProjection.getInboundPipeline({ skuIds: ids, toWarehouseId: warehouseId });
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('/expected-arrivals')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
@@ -162,6 +169,7 @@ export class StockProjectionController {
     return this.stockProjection.listExpectedArrivals(warehouseId);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('/stocks/history')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '재고 이벤트 이력 조회 (SKU, 창고, 기간 기준)' })
@@ -180,6 +188,7 @@ export class StockProjectionController {
     return this.stockProjection.getHistory(skuId, warehouseId, startDate, endDate);
   }
 
+  @RequirePermission('inventory.stock.adjust')
   @Post('/stocks/summary/:skuId/:warehouseId/rebuild')
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequireScopes(INVENTORY_SCOPE.ADJUST)
@@ -192,6 +201,7 @@ export class StockProjectionController {
     await this.stockProjection.rebuildSummary(skuId, warehouseId);
   }
 
+  @RequirePermission('inventory.stock.adjust')
   @Delete('/stocks/events/:eventId/cancel')
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequireScopes(INVENTORY_SCOPE.ADJUST)
@@ -203,6 +213,7 @@ export class StockProjectionController {
     await this.stockProjection.cancelEvent(eventId, reason);
   }
 
+  @RequirePermission('inventory.stock.read')
   @Get('/skus/:id/stock-summary')
   @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU 재고 요약 (창고별 + 합계)' })

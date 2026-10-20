@@ -10,12 +10,14 @@ import {
 } from '../admin/points-admin.service';
 import { AuthenticatedRequest } from '../wallet.module';
 import { PointsHistoryQueryDto } from './dto/points-history-query.dto';
+import { StoreRoute } from '@app/authorization';
 
 @ApiTags('Points')
 @Controller('v1/points')
 export class PointsController {
   constructor(private readonly pointsAdminService: PointsAdminService) {}
 
+  @StoreRoute()
   @Get('balance')
   @WalletJwtAuth()
   @ApiOperation({ summary: "Get current user's points balance (JWT cookie auth)" })
@@ -26,6 +28,7 @@ export class PointsController {
     return this.pointsAdminService.getBalance(req.jwtUserId);
   }
 
+  @StoreRoute()
   @Get('expiring')
   @WalletJwtAuth()
   @ApiOperation({ summary: "Get current user's nearest upcoming points expiry (JWT cookie auth)" })
@@ -36,6 +39,7 @@ export class PointsController {
     return this.pointsAdminService.getUpcomingExpiry(req.jwtUserId);
   }
 
+  @StoreRoute()
   @Get('history')
   @WalletJwtAuth()
   @ApiOperation({ summary: "Get current user's points history (JWT cookie auth, paginated)" })

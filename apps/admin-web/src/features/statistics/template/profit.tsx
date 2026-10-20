@@ -16,6 +16,8 @@ import { ProfitSort } from '@/lib/api/domains/analytics';
 import { useProfitStatistics } from '@/lib/services/analytics';
 import { useFeeRates, useFeeSummary, useMembershipRevenue } from '@/lib/services/wallet/queries';
 import { useCreateFeeRate, useDeleteFeeRate } from '@/lib/services/wallet/mutations';
+import { Can } from '@/components/auth/can';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import type { FeeSummaryDto, MembershipRevenueDto, WalletPaymentMethodType } from '@/lib/types/dto/wallet';
 import { PaginationBar, PagingRows } from '../components/pagination';
 import { isPageChanging } from '../paging-state';
@@ -464,6 +466,7 @@ function FeeRateSettings() {
   const { data, isLoading, isError } = useFeeRates();
   const createFeeRate = useCreateFeeRate();
   const deleteFeeRate = useDeleteFeeRate();
+  const { canRun } = usePermissionCheck();
 
   const [methodType, setMethodType] = useState<WalletPaymentMethodType>('CARD');
   const [ratePercent, setRatePercent] = useState('');
@@ -501,68 +504,70 @@ function FeeRateSettings() {
 
   return (
     <div className="space-y-3 rounded-md border border-gray-200 bg-gray-50 p-3">
-      <div className="flex flex-wrap items-end gap-2 text-xs">
-        <label className="flex flex-col gap-1">
-          <span className="text-gray-500">결제수단</span>
-          <select
-            value={methodType}
-            onChange={(event) => setMethodType(event.target.value as WalletPaymentMethodType)}
-            className="rounded border border-gray-200 bg-white px-2 py-1.5"
+      <Can run={useCreateFeeRate}>
+        <div className="flex flex-wrap items-end gap-2 text-xs">
+          <label className="flex flex-col gap-1">
+            <span className="text-gray-500">결제수단</span>
+            <select
+              value={methodType}
+              onChange={(event) => setMethodType(event.target.value as WalletPaymentMethodType)}
+              className="rounded border border-gray-200 bg-white px-2 py-1.5"
+            >
+              {METHOD_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {METHOD_LABELS[type]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-gray-500">요율 (%)</span>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              max="100"
+              value={ratePercent}
+              onChange={(event) => setRatePercent(event.target.value)}
+              placeholder="2.9"
+              className="w-24 rounded border border-gray-200 bg-white px-2 py-1.5"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-gray-500">적용 시작일 (KST)</span>
+            <input
+              type="date"
+              value={effectiveFrom}
+              onChange={(event) => setEffectiveFrom(event.target.value)}
+              className="rounded border border-gray-200 bg-white px-2 py-1.5"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-gray-500">메모</span>
+            <input
+              type="text"
+              value={memo}
+              onChange={(event) => setMemo(event.target.value)}
+              placeholder="예: 인하 협상 반영"
+              maxLength={255}
+              className="w-44 rounded border border-gray-200 bg-white px-2 py-1.5"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={createFeeRate.isPending}
+            className="rounded bg-gray-800 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40"
           >
-            {METHOD_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {METHOD_LABELS[type]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-gray-500">요율 (%)</span>
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            max="100"
-            value={ratePercent}
-            onChange={(event) => setRatePercent(event.target.value)}
-            placeholder="2.9"
-            className="w-24 rounded border border-gray-200 bg-white px-2 py-1.5"
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-gray-500">적용 시작일 (KST)</span>
-          <input
-            type="date"
-            value={effectiveFrom}
-            onChange={(event) => setEffectiveFrom(event.target.value)}
-            className="rounded border border-gray-200 bg-white px-2 py-1.5"
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-gray-500">메모</span>
-          <input
-            type="text"
-            value={memo}
-            onChange={(event) => setMemo(event.target.value)}
-            placeholder="예: 인하 협상 반영"
-            maxLength={255}
-            className="w-44 rounded border border-gray-200 bg-white px-2 py-1.5"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={submit}
-          disabled={createFeeRate.isPending}
-          className="rounded bg-gray-800 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40"
-        >
-          등록
-        </button>
-      </div>
-      {formError ? <p className="text-xs text-red-500">{formError}</p> : null}
-      <p className="text-xs text-gray-400">
-        요율 변경은 기존 행 수정이 아니라 새 적용 시작일로 등록하세요 — 과거 기간 조회에 그 시점 요율이
-        유지됩니다.
-      </p>
+            등록
+          </button>
+        </div>
+        {formError ? <p className="text-xs text-red-500">{formError}</p> : null}
+        <p className="text-xs text-gray-400">
+          요율 변경은 기존 행 수정이 아니라 새 적용 시작일로 등록하세요 — 과거 기간 조회에 그 시점 요율이
+          유지됩니다.
+        </p>
+      </Can>
       {isError ? (
         <p className="text-xs text-red-500">요율 목록을 불러오지 못했습니다.</p>
       ) : isLoading ? (
@@ -588,14 +593,16 @@ function FeeRateSettings() {
                 </td>
                 <td className="py-1.5 text-gray-500">{rate.memo ?? ''}</td>
                 <td className="py-1.5 text-right">
-                  <button
-                    type="button"
-                    onClick={() => deleteFeeRate.mutate(rate.id)}
-                    disabled={deleteFeeRate.isPending}
-                    className="rounded border border-gray-200 px-2 py-0.5 text-gray-500 hover:bg-white disabled:opacity-40"
-                  >
-                    삭제
-                  </button>
+                  {canRun(useDeleteFeeRate) ? (
+                    <button
+                      type="button"
+                      onClick={() => deleteFeeRate.mutate(rate.id)}
+                      disabled={deleteFeeRate.isPending}
+                      className="rounded border border-gray-200 px-2 py-0.5 text-gray-500 hover:bg-white disabled:opacity-40"
+                    >
+                      삭제
+                    </button>
+                  ) : null}
                 </td>
               </tr>
             ))}

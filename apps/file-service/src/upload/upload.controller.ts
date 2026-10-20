@@ -17,7 +17,7 @@ import { UploadFileDto } from './dto/upload-file.dto';
 import { UploadResponseDto, BatchUploadResponseDto } from './dto/upload-response.dto';
 import { PresignUploadDto, PresignUploadResponseDto, ConfirmUploadDto } from './dto/presign-upload.dto';
 import { UPLOAD_MULTER_OPTIONS } from './multer-options';
-import { User } from '@app/authorization';
+import { User, StoreRoute } from '@app/authorization';
 
 interface JwtPayload {
   userId: string;
@@ -32,6 +32,7 @@ interface JwtPayload {
 export class UploadController {
   constructor(private readonly uploadService: UploadService) {}
 
+  @StoreRoute()
   @Post('upload')
   @HttpCode(200)
   @ApiOperation({ summary: 'Upload a single file' })
@@ -85,6 +86,7 @@ export class UploadController {
     return this.uploadService.uploadFile(file, dto, user.userId);
   }
 
+  @StoreRoute()
   @Post('upload/presign')
   @HttpCode(200)
   // 이 서비스는 전역 ValidationPipe 가 없다 — JSON body 라우트는 여기서 직접 건다
@@ -97,6 +99,7 @@ export class UploadController {
     return this.uploadService.presignUpload(dto, user.userId);
   }
 
+  @StoreRoute()
   @Post('upload/confirm')
   @HttpCode(200)
   @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
@@ -108,6 +111,7 @@ export class UploadController {
     return this.uploadService.confirmUpload(dto.fileId, user.userId);
   }
 
+  @StoreRoute()
   @Post('batch-upload')
   @HttpCode(200)
   @ApiOperation({ summary: 'Upload multiple files' })

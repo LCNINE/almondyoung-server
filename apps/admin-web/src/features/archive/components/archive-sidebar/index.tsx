@@ -22,6 +22,7 @@ import {
   siblingsOf,
   type ArchiveTreeNode,
 } from '../../lib/build-tree';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import { TreeItem, type DropZone, type TreeItemActions } from './tree-item';
 
 type Props = {
@@ -78,6 +79,10 @@ export function ArchiveSidebar({
   const createMutation = useCreateArchivePage();
   const moveMutation = useMoveArchivePage(space);
   const deleteMutation = useDeleteArchivePage(space);
+  const { canRun } = usePermissionCheck();
+  const canCreate = canRun(useCreateArchivePage);
+  const canMove = canRun(useMoveArchivePage);
+  const canDelete = canRun(useDeleteArchivePage);
 
   const flat = useMemo(() => nodes ?? [], [nodes]);
   const tree = useMemo(() => buildArchiveTree(flat), [flat]);
@@ -142,49 +147,61 @@ export function ArchiveSidebar({
     () => ({
       onSelect: openPage,
       onToggle: onToggleExpanded,
-      onCreateChild: (parentId) => void createPage(parentId),
-      onDelete: (node) => {
-        deleteMutation.mutate(node.id, {
-          onSuccess: () => {
-            toast.success('휴지통으로 옮겼습니다.', {
-              description: '휴지통에서 되돌릴 수 있어요.',
+      onCreateChild: canCreate
+        ? (parentId) => void createPage(parentId)
+        : undefined,
+      onDelete: canDelete
+        ? (node) => {
+            deleteMutation.mutate(node.id, {
+              onSuccess: () => {
+                toast.success('휴지통으로 옮겼습니다.', {
+                  description: '휴지통에서 되돌릴 수 있어요.',
+                });
+                if (activeId && collectSubtreeIds(node).has(activeId))
+                  router.push('/archive');
+              },
+              onError: () => toast.error('삭제하지 못했습니다.'),
             });
-            if (activeId && collectSubtreeIds(node).has(activeId))
-              router.push('/archive');
-          },
-          onError: () => toast.error('삭제하지 못했습니다.'),
-        });
-      },
-      onMoveStep: (node, direction) => {
-        const parentId = node.parentId ?? null;
-        const siblings = siblingsOf(flat, parentId);
-        const index = siblings.findIndex((sibling) => sibling.id === node.id);
-        const next = index + direction;
-        if (next < 0 || next >= siblings.length) return;
-        void requestMove(node.id, parentId, next);
-      },
-      onIndent: (node) => {
-        const siblings = siblingsOf(flat, node.parentId ?? null);
-        const index = siblings.findIndex((sibling) => sibling.id === node.id);
-        const previous = siblings[index - 1];
-        if (!previous) {
-          toast.info('바로 위에 페이지가 있어야 하위로 넣을 수 있어요.');
-          return;
-        }
-        onExpand([previous.id]);
-        void requestMove(node.id, previous.id);
-      },
-      onOutdent: (node) => {
-        if (!node.parentId) return;
-        const parent = flat.find((item) => item.id === node.parentId);
-        if (!parent) return;
-        const grandParentId = parent.parentId ?? null;
-        void requestMove(
-          node.id,
-          grandParentId,
-          positionAmongSiblings(node.id, grandParentId, parent.id, true)
-        );
-      },
+          }
+        : undefined,
+      move: canMove
+        ? {
+            onMoveStep: (node, direction) => {
+              const parentId = node.parentId ?? null;
+              const siblings = siblingsOf(flat, parentId);
+              const index = siblings.findIndex(
+                (sibling) => sibling.id === node.id
+              );
+              const next = index + direction;
+              if (next < 0 || next >= siblings.length) return;
+              void requestMove(node.id, parentId, next);
+            },
+            onIndent: (node) => {
+              const siblings = siblingsOf(flat, node.parentId ?? null);
+              const index = siblings.findIndex(
+                (sibling) => sibling.id === node.id
+              );
+              const previous = siblings[index - 1];
+              if (!previous) {
+                toast.info('바로 위에 페이지가 있어야 하위로 넣을 수 있어요.');
+                return;
+              }
+              onExpand([previous.id]);
+              void requestMove(node.id, previous.id);
+            },
+            onOutdent: (node) => {
+              if (!node.parentId) return;
+              const parent = flat.find((item) => item.id === node.parentId);
+              if (!parent) return;
+              const grandParentId = parent.parentId ?? null;
+              void requestMove(
+                node.id,
+                grandParentId,
+                positionAmongSiblings(node.id, grandParentId, parent.id, true)
+              );
+            },
+          }
+        : undefined,
       onDragStart: (node) => {
         draggingRef.current = { node, subtree: collectSubtreeIds(node) };
       },
@@ -194,12 +211,14 @@ export function ArchiveSidebar({
       canDropOn: (target) => {
         const dragging = draggingRef.current;
         // 자기 자신이나 자기 하위로는 옮길 수 없다 — 트리가 끊긴다.
-        return Boolean(dragging) && !dragging!.subtree.has(target.id);
+        return (
+          canMove && Boolean(dragging) && !dragging!.subtree.has(target.id)
+        );
       },
       onDrop: (target, zone: DropZone) => {
         const dragging = draggingRef.current;
         draggingRef.current = null;
-        if (!dragging || dragging.subtree.has(target.id)) return;
+        if (!canMove || !dragging || dragging.subtree.has(target.id)) return;
 
         if (zone === 'inside') {
           onExpand([target.id]);
@@ -222,6 +241,9 @@ export function ArchiveSidebar({
     }),
     [
       activeId,
+      canCreate,
+      canDelete,
+      canMove,
       createPage,
       deleteMutation,
       flat,
@@ -324,20 +346,22 @@ export function ArchiveSidebar({
       </ScrollArea>
 
       <div className="space-y-1 border-t border-sidebar-border p-3">
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={createMutation.isPending}
-          onClick={() => void createPage()}
-          className="h-9 w-full justify-start gap-2 px-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground lg:h-8"
-        >
-          {createMutation.isPending ? (
-            <Loader2 className="size-3.5 animate-spin" aria-hidden />
-          ) : (
-            <Plus className="size-3.5" aria-hidden />
-          )}
-          새 페이지
-        </Button>
+        {canCreate && (
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={createMutation.isPending}
+            onClick={() => void createPage()}
+            className="h-9 w-full justify-start gap-2 px-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground lg:h-8"
+          >
+            {createMutation.isPending ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+            ) : (
+              <Plus className="size-3.5" aria-hidden />
+            )}
+            새 페이지
+          </Button>
+        )}
         <Button
           type="button"
           variant="ghost"

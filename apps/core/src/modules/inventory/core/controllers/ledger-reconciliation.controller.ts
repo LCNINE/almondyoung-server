@@ -2,12 +2,14 @@ import { Controller, Get, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { LedgerReconciliationService } from '../services/ledger-reconciliation.service';
 import { LedgerReconciliationReportDto, ReservationDriftReportDto } from '../dto/ledger-reconciliation.dto';
+import { RequirePermission } from '@app/authorization';
 
 @ApiTags('Inventory - Ledger Reconciliation')
 @Controller('inventory/ledger-reconciliation')
 export class LedgerReconciliationController {
   constructor(private readonly reconciliationService: LedgerReconciliationService) {}
 
+  @RequirePermission('inventory.master.read')
   @Get()
   @ApiOperation({
     summary: '원장 대사 (탐지 전용)',
@@ -23,6 +25,7 @@ export class LedgerReconciliationController {
     return this.reconciliationService.reconcile({ warehouseId, skuId });
   }
 
+  @RequirePermission('inventory.master.read')
   @Get('reservations')
   @ApiOperation({
     summary: '예약 불변식 대사 (탐지 전용)',

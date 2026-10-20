@@ -4,7 +4,8 @@ import { USER_STREAM } from '@packages/event-contracts/streams';
 import { Injectable, Logger } from '@nestjs/common';
 import { CronExpression } from '@nestjs/schedule';
 import { CronOnce } from '@app/cron-once';
-import { and, eq, inArray, isNotNull, isNull, lt, or } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, lt, notExists, or, sql } from 'drizzle-orm';
+import { SYSTEM_ROLE_NAME } from '../../iam/iam.constants';
 import * as schema from '../../../../database/drizzle/schema';
 import { userServiceSchema, type UserServiceSchema } from '../../../../database/drizzle/schema';
 
@@ -21,7 +22,7 @@ export class DormantService {
   constructor(
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
     @InjectPublisher(USER_STREAM)
-    private readonly eventPublisher: PublisherFor<typeof USER_STREAM>,
+    private readonly eventPublisher: Pick<PublisherFor<typeof USER_STREAM>, 'publishEvent'>,
   ) {}
 
   @CronOnce(CronExpression.EVERY_DAY_AT_2AM, { name: 'dormant-accounts', timeZone: 'Asia/Seoul' })
@@ -46,23 +47,7 @@ export class DormantService {
     let totalProcessed = 0;
 
     while (true) {
-      const targetUsers = await this.dbService.db
-        .select({
-          id: schema.users.id,
-          email: schema.users.email,
-        })
-        .from(schema.users)
-        .innerJoin(schema.userRoleAssignments, eq(schema.userRoleAssignments.userId, schema.users.id))
-        .innerJoin(schema.roles, eq(schema.roles.roleId, schema.userRoleAssignments.roleId))
-        .where(
-          and(
-            lt(schema.users.lastActivityAt, oneMinuteAgo),
-            isNull(schema.users.deletedAt),
-            isNull(schema.users.dormantAt),
-            eq(schema.roles.name, 'user'),
-          ),
-        )
-        .limit(batchSize);
+      const targetUsers = await this.findDormantCandidates(oneMinuteAgo, batchSize);
 
       if (targetUsers.length === 0) {
         break;
@@ -112,6 +97,42 @@ export class DormantService {
     }
 
     return totalProcessed;
+  }
+
+  /**
+   * 휴면 전환 대상 — `cutoff` 이전에 마지막으로 활동한 회원. 시스템 역할을 기간 없이 가진 관리자는 고르지 않는다:
+   * 그 계정이 잠기면 역할 관리를 고칠 사람이 없어진다(비상 관리자 계정은 미사용 자동 정리 대상에서 뺀다).
+   */
+  findDormantCandidates(cutoff: Date, limit: number): Promise<{ id: string; email: string }[]> {
+    const permanentSystemHolder = this.dbService.db
+      .select({ one: sql`1` })
+      .from(schema.userRoleAssignments)
+      .innerJoin(schema.roles, eq(schema.roles.roleId, schema.userRoleAssignments.roleId))
+      .where(
+        and(
+          eq(schema.userRoleAssignments.userId, schema.users.id),
+          eq(schema.roles.name, SYSTEM_ROLE_NAME),
+          isNull(schema.userRoleAssignments.expiresAt),
+        ),
+      );
+    return this.dbService.db
+      .select({
+        id: schema.users.id,
+        email: schema.users.email,
+      })
+      .from(schema.users)
+      .innerJoin(schema.userRoleAssignments, eq(schema.userRoleAssignments.userId, schema.users.id))
+      .innerJoin(schema.roles, eq(schema.roles.roleId, schema.userRoleAssignments.roleId))
+      .where(
+        and(
+          lt(schema.users.lastActivityAt, cutoff),
+          isNull(schema.users.deletedAt),
+          isNull(schema.users.dormantAt),
+          eq(schema.roles.name, 'user'),
+          notExists(permanentSystemHolder),
+        ),
+      )
+      .limit(limit);
   }
 
   /**

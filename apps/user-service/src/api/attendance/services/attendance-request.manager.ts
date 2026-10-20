@@ -57,8 +57,8 @@ export function validateCorrection(dto: CreateRequestDto, now = new Date()) {
   };
 }
 
-export function assertDecisionAllowed(roles: string[], status: RequestStatus, current: number, expected: number) {
-  if (!roles.includes('master')) {
+export function assertDecisionAllowed(canReview: boolean, status: RequestStatus, current: number, expected: number) {
+  if (!canReview) {
     throw new ForbiddenException('마스터만 처리할 수 있어요.');
   }
 
@@ -94,11 +94,11 @@ export class AttendanceRequestManager {
     );
   }
 
-  async history(userId: string, isMaster: boolean, id: string) {
+  async history(userId: string, canReadStaff: boolean, id: string) {
     const [request] = await this.repo.db
       .select()
       .from(attendanceRequests)
-      .where(and(eq(attendanceRequests.id, id), isMaster ? undefined : eq(attendanceRequests.userId, userId)));
+      .where(and(eq(attendanceRequests.id, id), canReadStaff ? undefined : eq(attendanceRequests.userId, userId)));
 
     if (!request) {
       throw new NotFoundException('요청을 찾을 수 없어요.');
@@ -256,7 +256,7 @@ export class AttendanceRequestManager {
     });
   }
 
-  async decide(actorId: string, roles: string[], id: string, dto: DecisionDto) {
+  async decide(actorId: string, canReview: boolean, id: string, dto: DecisionDto) {
     const [target] = await this.repo.db.select().from(attendanceRequests).where(eq(attendanceRequests.id, id));
 
     if (!target) {
@@ -266,7 +266,7 @@ export class AttendanceRequestManager {
     return this.repo.withUserLock(target.userId, async (tx) => {
       const [request] = await tx.select().from(attendanceRequests).where(eq(attendanceRequests.id, id)).for('update');
 
-      assertDecisionAllowed(roles, request.status, request.version, dto.version);
+      assertDecisionAllowed(canReview, request.status, request.version, dto.version);
 
       if (dto.status !== 'approved' && !dto.reason.trim()) {
         throw new BadRequestException('처리 사유를 입력해 주세요.');

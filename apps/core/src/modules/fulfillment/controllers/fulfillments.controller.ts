@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiExtraModels, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { RequireScopes, ScopeGuard, RequirePermission, PiiResponse, OPEN_WITH_RECIPIENT } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { FulfillmentsService } from '../services/fulfillments.service';
 import { ShipmentPlanningService } from '../services/shipment-planning.service';
@@ -21,6 +21,30 @@ export class FulfillmentsController {
     private readonly shipmentPlanning: ShipmentPlanningService,
   ) {}
 
+  @PiiResponse({
+    fields: {
+      'shippingAddress.recipientName': 'name',
+      'shippingAddress.phone': 'phone',
+      'shippingAddress.postalCode': 'postal',
+      'shippingAddress.roadAddress': 'address',
+      'shippingAddress.detailAddress': 'text',
+      'shippingAddress.deliveryNote': 'text',
+      'shippingAddress.personalCustomsCode': 'secret',
+    },
+    subjects: [
+      { path: 'id', type: 'fulfillment_order' },
+    ],
+    rawWithByField: {
+      'shippingAddress.recipientName': OPEN_WITH_RECIPIENT,
+      'shippingAddress.phone': OPEN_WITH_RECIPIENT,
+      'shippingAddress.postalCode': OPEN_WITH_RECIPIENT,
+      'shippingAddress.roadAddress': OPEN_WITH_RECIPIENT,
+      'shippingAddress.detailAddress': OPEN_WITH_RECIPIENT,
+      'shippingAddress.deliveryNote': OPEN_WITH_RECIPIENT,
+      'shippingAddress.personalCustomsCode': OPEN_WITH_RECIPIENT,
+    },
+  })
+  @RequirePermission('fulfillment.order.write')
   @Post()
   @ApiOperation({ summary: '주문처리 생성' })
   @ApiResponse({ status: 201, description: '주문처리 생성 성공' })
@@ -28,6 +52,30 @@ export class FulfillmentsController {
     return this.service.create(dto);
   }
 
+  @PiiResponse({
+    fields: {
+      'shippingAddress.recipientName': 'name',
+      'shippingAddress.phone': 'phone',
+      'shippingAddress.postalCode': 'postal',
+      'shippingAddress.roadAddress': 'address',
+      'shippingAddress.detailAddress': 'text',
+      'shippingAddress.deliveryNote': 'text',
+      'shippingAddress.personalCustomsCode': 'secret',
+    },
+    subjects: [
+      { path: 'id', type: 'fulfillment_order' },
+    ],
+    rawWithByField: {
+      'shippingAddress.recipientName': OPEN_WITH_RECIPIENT,
+      'shippingAddress.phone': OPEN_WITH_RECIPIENT,
+      'shippingAddress.postalCode': OPEN_WITH_RECIPIENT,
+      'shippingAddress.roadAddress': OPEN_WITH_RECIPIENT,
+      'shippingAddress.detailAddress': OPEN_WITH_RECIPIENT,
+      'shippingAddress.deliveryNote': OPEN_WITH_RECIPIENT,
+      'shippingAddress.personalCustomsCode': OPEN_WITH_RECIPIENT,
+    },
+  })
+  @RequirePermission('fulfillment.order.write')
   @Post(':id/deliver')
   @ApiOperation({ summary: '배송 완료 처리 (고객 수령 확인, FulfillmentDelivered 이벤트 발행)' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
@@ -35,6 +83,30 @@ export class FulfillmentsController {
     return this.service.markDelivered(id);
   }
 
+  @PiiResponse({
+    fields: {
+      'shippingAddress.recipientName': 'name',
+      'shippingAddress.phone': 'phone',
+      'shippingAddress.postalCode': 'postal',
+      'shippingAddress.roadAddress': 'address',
+      'shippingAddress.detailAddress': 'text',
+      'shippingAddress.deliveryNote': 'text',
+      'shippingAddress.personalCustomsCode': 'secret',
+    },
+    subjects: [
+      { path: 'id', type: 'fulfillment_order' },
+    ],
+    rawWithByField: {
+      'shippingAddress.recipientName': OPEN_WITH_RECIPIENT,
+      'shippingAddress.phone': OPEN_WITH_RECIPIENT,
+      'shippingAddress.postalCode': OPEN_WITH_RECIPIENT,
+      'shippingAddress.roadAddress': OPEN_WITH_RECIPIENT,
+      'shippingAddress.detailAddress': OPEN_WITH_RECIPIENT,
+      'shippingAddress.deliveryNote': OPEN_WITH_RECIPIENT,
+      'shippingAddress.personalCustomsCode': OPEN_WITH_RECIPIENT,
+    },
+  })
+  @RequirePermission('fulfillment.order.write')
   @Post(':id/cancel')
   @ApiOperation({ summary: '주문처리 취소' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
@@ -42,6 +114,7 @@ export class FulfillmentsController {
     return this.service.cancel(id);
   }
 
+  @RequirePermission('fulfillment.order.read')
   @Get(':id/outbox-events')
   @ApiOperation({ summary: '주문처리 outbox 이벤트 조회' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
@@ -49,6 +122,31 @@ export class FulfillmentsController {
     return this.service.getOutboxEvents(id);
   }
 
+  @PiiResponse({
+    fields: {
+      'shippingAddress.recipientName': 'name',
+      'shippingAddress.phone': 'phone',
+      'shippingAddress.postalCode': 'postal',
+      'shippingAddress.roadAddress': 'address',
+      'shippingAddress.detailAddress': 'text',
+      'shippingAddress.deliveryNote': 'text',
+      'shippingAddress.personalCustomsCode': 'secret',
+    },
+    subjects: [
+      { path: 'id', type: 'fulfillment_order' },
+    ],
+    reveal: true,
+    rawWithByField: {
+      'shippingAddress.recipientName': OPEN_WITH_RECIPIENT,
+      'shippingAddress.phone': OPEN_WITH_RECIPIENT,
+      'shippingAddress.postalCode': OPEN_WITH_RECIPIENT,
+      'shippingAddress.roadAddress': OPEN_WITH_RECIPIENT,
+      'shippingAddress.detailAddress': OPEN_WITH_RECIPIENT,
+      'shippingAddress.deliveryNote': OPEN_WITH_RECIPIENT,
+      'shippingAddress.personalCustomsCode': OPEN_WITH_RECIPIENT,
+    },
+  })
+  @RequirePermission('fulfillment.order.read')
   @Get(':id')
   @ApiOperation({
     summary: '주문처리 상세 조회 (progress, shipments, items, reservations, adminAvailableActions 포함)',
@@ -59,6 +157,7 @@ export class FulfillmentsController {
     return this.service.getOne(id);
   }
 
+  @RequirePermission('fulfillment.shipment.read')
   @Get(':id/shipments')
   @UseGuards(ScopeGuard)
   @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
@@ -68,6 +167,30 @@ export class FulfillmentsController {
     return this.shipmentPlanning.getFulfillmentShipments(id);
   }
 
+  @PiiResponse({
+    fields: {
+      'data[].shippingAddress.recipientName': 'name',
+      'data[].shippingAddress.phone': 'phone',
+      'data[].shippingAddress.postalCode': 'postal',
+      'data[].shippingAddress.roadAddress': 'address',
+      'data[].shippingAddress.detailAddress': 'text',
+      'data[].shippingAddress.deliveryNote': 'text',
+      'data[].shippingAddress.personalCustomsCode': 'secret',
+    },
+    subjects: [
+      { path: 'data[].id', type: 'fulfillment_order' },
+    ],
+    rawWithByField: {
+      'data[].shippingAddress.recipientName': OPEN_WITH_RECIPIENT,
+      'data[].shippingAddress.phone': OPEN_WITH_RECIPIENT,
+      'data[].shippingAddress.postalCode': OPEN_WITH_RECIPIENT,
+      'data[].shippingAddress.roadAddress': OPEN_WITH_RECIPIENT,
+      'data[].shippingAddress.detailAddress': OPEN_WITH_RECIPIENT,
+      'data[].shippingAddress.deliveryNote': OPEN_WITH_RECIPIENT,
+      'data[].shippingAddress.personalCustomsCode': OPEN_WITH_RECIPIENT,
+    },
+  })
+  @RequirePermission('fulfillment.order.read')
   @Get()
   @ApiOperation({ summary: '주문처리 목록 조회' })
   @ApiQuery({ name: 'limit', required: false, type: String })

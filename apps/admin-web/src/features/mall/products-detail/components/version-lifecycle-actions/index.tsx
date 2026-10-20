@@ -22,6 +22,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
 import { products } from '@/lib/api/domains';
+import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   useDeleteDraftProductVersion,
   usePublishProductVersion,
@@ -49,6 +50,10 @@ export function VersionLifecycleActions({ masterId, versionId }: Props) {
   const deleteDraft = useDeleteDraftProductVersion();
   const [error, setError] = useState<VersionLifecycleError | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const { canRun } = usePermissionCheck();
+  const showPublish = actions.canPublish && canRun(usePublishProductVersion);
+  const showDeleteDraft =
+    actions.canDeleteDraft && canRun(useDeleteDraftProductVersion);
 
   // 세션 API 는 소유자 스코프라 남의 세션은 404/403 이다. 링크를 무조건 걸어놓고
   // 눌렀을 때 404 로 보내는 것보다, 조회해 보고 없으면 링크를 안 거는 편이 정직하다.
@@ -69,7 +74,7 @@ export function VersionLifecycleActions({ masterId, versionId }: Props) {
     retry: false,
   });
 
-  if (!actions.canPublish && !actions.canDeleteDraft && !bulkSessionId) {
+  if (!showPublish && !showDeleteDraft && !bulkSessionId) {
     return null;
   }
 
@@ -161,7 +166,7 @@ export function VersionLifecycleActions({ masterId, versionId }: Props) {
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          {actions.canPublish && (
+          {showPublish && (
             <Button onClick={handlePublish} disabled={isBusy}>
               {publish.isPending ? (
                 <Spinner size="sm" data-icon="inline-start" />
@@ -172,7 +177,7 @@ export function VersionLifecycleActions({ masterId, versionId }: Props) {
             </Button>
           )}
 
-          {actions.canDeleteDraft && (
+          {showDeleteDraft && (
             <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
               <Button
                 type="button"

@@ -11,7 +11,8 @@ const columnHelper = createColumnHelper<NoticeDto>();
 
 type RowActions = {
   onDetail: (row: NoticeDto) => void;
-  onDelete: (row: NoticeDto) => void;
+  /** 넘기지 않으면 삭제 버튼을 그리지 않는다(권한 없음) */
+  onDelete?: (row: NoticeDto) => void;
 };
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -83,14 +84,16 @@ export const useNoticesTableColumns = (actions: RowActions) => {
             <Button variant="outline" size="sm" onClick={() => actions.onDetail(row.original)}>
               상세
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-destructive hover:text-destructive"
-              onClick={() => actions.onDelete(row.original)}
-            >
-              삭제
-            </Button>
+            {actions.onDelete && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                onClick={() => actions.onDelete?.(row.original)}
+              >
+                삭제
+              </Button>
+            )}
           </div>
         ),
       }),

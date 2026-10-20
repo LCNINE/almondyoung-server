@@ -6,7 +6,7 @@ import { DemoConsole } from '@/features/demo/demo-console';
 export default function DemoPage() {
   if (!isDemoConsoleEnabled(process.env)) notFound();
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/demo">
       <DemoConsole />
     </RouteGuard>
   );

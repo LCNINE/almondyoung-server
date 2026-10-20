@@ -3,7 +3,7 @@ import BusinessLicenseListTemplate from '@/features/cs/business-licenses/templat
 
 export default function BusinessLicensesPage() {
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/cs/business-licenses">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <BusinessLicenseListTemplate />
       </div>

@@ -1,7 +1,7 @@
 import { DbService, InjectDb } from '@app/db';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
-import { and, asc, count, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, ilike, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm';
 import { buildDailyCountSeries, type DailyCountPoint, kstDayRangeCondition, kstDaySql } from '../../../commons/utils/daily-count';
 import * as schema from '../../../../database/drizzle/schema';
 import { AdminUserDetailResponseDto } from './dto/admin-user-detail.response.dto';
@@ -9,12 +9,25 @@ import { UpdateUserDto } from '../../users/dto/update-user.dto';
 import { AddressDto } from '../../../commons/dto/address.dto';
 import { DbTransaction } from 'apps/user-service/src/commons/types';
 import { UserConsent } from '../../consents/types/consent.type';
+import { CUSTOMER_ROLE_NAMES } from '../../iam/iam.constants';
+
+export interface StaffRole {
+  name: string;
+  displayName: string;
+  expiresAt: Date | null;
+}
 
 export type UserWithRoles = schema.UserWithoutPassword & {
   roles: string[];
+  /** `audience=staff` 일 때만 — 지금 유효한 직원 역할(기간 부여 포함) */
+  staffRoles?: StaffRole[];
   phoneNumber: string | null;
   marketingConsent: boolean;
 };
+
+/** 기간이 없거나 아직 끝나지 않은 부여 — 토큰 발급이 역할을 넣는 조건과 같다. */
+const liveAssignment = () =>
+  or(isNull(schema.userRoleAssignments.expiresAt), gt(schema.userRoleAssignments.expiresAt, new Date()));
 
 @Injectable()
 export class UsersService {
@@ -39,11 +52,41 @@ export class UsersService {
     return { range: { from, to }, series: buildDailyCountSeries(rows, from, to) };
   }
 
+  private async staffRolesOf(userIds: string[], client: DbTransaction): Promise<Map<string, StaffRole[]>> {
+    if (userIds.length === 0) return new Map();
+    const rows = await client
+      .select({
+        userId: schema.userRoleAssignments.userId,
+        name: schema.roles.name,
+        displayName: schema.roles.displayName,
+        expiresAt: schema.userRoleAssignments.expiresAt,
+      })
+      .from(schema.userRoleAssignments)
+      .innerJoin(schema.roles, eq(schema.userRoleAssignments.roleId, schema.roles.roleId))
+      .where(
+        and(
+          inArray(schema.userRoleAssignments.userId, userIds),
+          notInArray(schema.roles.name, [...CUSTOMER_ROLE_NAMES]),
+          liveAssignment(),
+        ),
+      )
+      .orderBy(schema.roles.createdAt, schema.roles.name);
+    const byUser = new Map<string, StaffRole[]>();
+    for (const row of rows) {
+      byUser.set(row.userId, [
+        ...(byUser.get(row.userId) ?? []),
+        { name: row.name, displayName: row.displayName ?? row.name, expiresAt: row.expiresAt },
+      ]);
+    }
+    return byUser;
+  }
+
   async getUsers(filters: {
     q?: string;
     page?: number;
     limit?: number;
     roleName?: string;
+    audience?: 'staff';
     status?: 'active' | 'withdrawn' | 'dormant';
     sort?: 'createdAt' | 'username' | 'email' | 'lastActivityAt' | 'phoneNumber';
     order?: 'asc' | 'desc';
@@ -127,6 +170,15 @@ export class UsersService {
         }
       }
 
+      if (filters?.audience === 'staff') {
+        const staffUserIds = client
+          .select({ userId: schema.userRoleAssignments.userId })
+          .from(schema.userRoleAssignments)
+          .innerJoin(schema.roles, eq(schema.userRoleAssignments.roleId, schema.roles.roleId))
+          .where(and(notInArray(schema.roles.name, [...CUSTOMER_ROLE_NAMES]), liveAssignment()));
+        conditions.push(inArray(schema.users.id, staffUserIds));
+      }
+
       const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
       // total count
@@ -197,10 +249,14 @@ export class UsersService {
         rolesByUserId.set(row.userId, list);
       }
 
+      const staffByUser =
+        filters?.audience === 'staff' ? await this.staffRolesOf(userIds, client) : new Map<string, StaffRole[]>();
+
       const data: UserWithRoles[] = users.map((u) => ({
         ...u,
         marketingConsent: u.marketingConsent ?? false,
         roles: rolesByUserId.get(u.id) ?? [],
+        ...(filters?.audience === 'staff' ? { staffRoles: staffByUser.get(u.id) ?? [] } : {}),
       }));
 
       return { data, total, page, limit };

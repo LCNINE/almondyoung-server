@@ -1,8 +1,14 @@
+"use client"
+
 import * as React from "react"
+
+import { usePermissionReadOnly } from "@/components/auth/permission-read-only-context"
 
 import { cn } from "@/lib/utils/index"
 
-function Input({ className, type, ...props }: React.ComponentProps<"input">) {
+function Input({ className, type, readOnly, ...props }: React.ComponentProps<"input">) {
+  // 권한 때문에 읽기 전용인 편집 폼 안이면 값은 보이고 고칠 수 없다(포커스·복사·낭독은 된다)
+  const permissionReadOnly = usePermissionReadOnly() !== null
   return (
     <input
       type={type}
@@ -14,6 +20,7 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
         className
       )}
       {...props}
+      readOnly={readOnly || permissionReadOnly}
     />
   )
 }

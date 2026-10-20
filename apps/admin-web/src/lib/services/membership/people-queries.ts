@@ -7,6 +7,7 @@ import {
   membershipPeopleApi,
 } from '@/lib/api/domains/membership/people';
 import { membershipQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export const useMembershipInsights = () =>
   useQuery({
@@ -63,6 +64,7 @@ export const useWaiveArrears = (userId: string) => {
     onSettled: invalidate,
   });
 };
+useWaiveArrears.permission = ['membership.billing.refund'] as const satisfies PermissionRequirement;
 
 export const useAdjustArrearsAmount = (userId: string) => {
   const invalidate = useInvalidateArrears(userId);
@@ -79,3 +81,4 @@ export const useAdjustArrearsAmount = (userId: string) => {
     onSettled: invalidate,
   });
 };
+useAdjustArrearsAmount.permission = ['membership.billing.refund'] as const satisfies PermissionRequirement;

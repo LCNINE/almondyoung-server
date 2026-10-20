@@ -4,7 +4,7 @@ import NotificationDetailTemplate from '@/features/messages/notifications/templa
 export default async function NotificationDetailPage({ params }: { params: Promise<{ eventKey: string }> }) {
   const { eventKey } = await params;
   return (
-    <RouteGuard requireRole={['admin', 'master']}>
+    <RouteGuard screen="/mall/marketing/messages/[eventKey]">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <NotificationDetailTemplate eventKey={eventKey} />
       </div>

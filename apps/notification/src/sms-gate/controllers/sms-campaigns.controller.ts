@@ -4,6 +4,7 @@ import { CurrentUser } from '../../shared/decorators/user.decorator';
 import { ContinueSmsCampaignDto, CreateSmsCampaignDto, PreviewSmsCampaignDto } from '../dto';
 import { SmsGateEnabledGuard } from '../guards/sms-gate-enabled.guard';
 import { SmsCampaignsService } from '../services/sms-campaigns.service';
+import { RequirePermission, PiiResponse } from '@app/authorization';
 
 @ApiTags('sms-gate')
 @Controller('sms-gate/campaigns')
@@ -11,32 +12,39 @@ import { SmsCampaignsService } from '../services/sms-campaigns.service';
 export class SmsCampaignsController {
   constructor(private readonly service: SmsCampaignsService) {}
 
+  @RequirePermission('messaging.message.read')
   @Get()
   list() {
     return this.service.list();
   }
 
+  @RequirePermission('messaging.message.read')
   @Get('audience')
   audience() {
     return this.service.audience();
   }
 
+  @RequirePermission('messaging.message.read')
   @Post('preview')
   @HttpCode(HttpStatus.OK)
   preview(@Body() dto: PreviewSmsCampaignDto) {
     return this.service.preview(dto);
   }
 
+  @RequirePermission('messaging.message.bulk_send')
   @Post()
   create(@Body() dto: CreateSmsCampaignDto, @CurrentUser() user: { userId: string }) {
     return this.service.create(dto, user.userId);
   }
 
+  @PiiResponse({ fields: { '[].name': 'name', '[].phoneNumber': 'phone' }, subjects: [{ path: '[].userId', type: 'user' }] })
+  @RequirePermission('messaging.message.read')
   @Get(':id/clicks')
   clicks(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.clicks(id);
   }
 
+  @RequirePermission('messaging.message.bulk_send')
   @Post(':id/continue')
   continueWith(
     @Param('id', ParseUUIDPipe) id: string,
@@ -46,6 +54,7 @@ export class SmsCampaignsController {
     return this.service.continueWith(id, dto, user.userId);
   }
 
+  @RequirePermission('messaging.message.bulk_send')
   @Post(':id/stop')
   @HttpCode(HttpStatus.OK)
   stop(@Param('id', ParseUUIDPipe) id: string) {

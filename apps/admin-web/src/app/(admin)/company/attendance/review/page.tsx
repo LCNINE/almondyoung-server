@@ -3,7 +3,7 @@ import { CorrectionRequests } from '@/features/attendance/components/correction-
 
 export default function Page() {
   return (
-    <RouteGuard requireRole={['master']}>
+    <RouteGuard screen="/company/attendance/review">
       <CorrectionRequests review />
     </RouteGuard>
   );

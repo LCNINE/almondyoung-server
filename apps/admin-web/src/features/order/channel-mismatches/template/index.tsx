@@ -23,6 +23,7 @@ import {
   redeliverOutcome,
 } from '../display';
 import { CloseDialog, type CloseTarget } from '../components/close-dialog';
+import { usePermissionCheck } from '@/hooks/use-permission';
 
 export default function ChannelMismatchesTemplate() {
   const [now, setNow] = useState(() => new Date());
@@ -34,6 +35,8 @@ export default function ChannelMismatchesTemplate() {
   const list = useMismatches(scope);
   const redeliver = useRedeliverMismatch();
   const close = useCloseMismatch();
+  // 다시 배달·종결은 같은 권한이다 — 없으면 행 버튼을 그리지 않는다
+  const canWrite = usePermissionCheck().canRun(useRedeliverMismatch);
   const [closeTarget, setCloseTarget] = useState<CloseTarget | null>(null);
 
   const rows = list.data?.data ?? [];
@@ -126,7 +129,7 @@ export default function ChannelMismatchesTemplate() {
                   {lastResultText(f.lastResult)}
                 </td>
                 <td className="text-right">
-                  {canAct(f) && (
+                  {canWrite && canAct(f) && (
                     <>
                       <Button
                         size="sm"

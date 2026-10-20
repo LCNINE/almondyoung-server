@@ -6,6 +6,7 @@ import {
 } from '@/lib/api/domains/blacklists';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { blacklistQueryKeys } from './query-keys';
+import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export const useCreateBlacklist = () => {
   const queryClient = useQueryClient();
@@ -19,6 +20,7 @@ export const useCreateBlacklist = () => {
     },
   });
 };
+useCreateBlacklist.permission = ['customer.blacklist.write'] as const satisfies PermissionRequirement;
 
 export const useDeleteBlacklist = () => {
   const queryClient = useQueryClient();
@@ -32,3 +34,4 @@ export const useDeleteBlacklist = () => {
     },
   });
 };
+useDeleteBlacklist.permission = ['customer.blacklist.write'] as const satisfies PermissionRequirement;

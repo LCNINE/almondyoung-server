@@ -1,4 +1,4 @@
-import { RequireScopes, JwtPayload } from '@app/authorization';
+import { RequireScopes, JwtPayload, StoreRoute, RequirePermission, PiiResponse } from '@app/authorization';
 import { Body, Controller, Get, NotFoundException, Param, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ConsentsService } from './consents.service';
@@ -22,6 +22,7 @@ export class ConsentsController {
     status: 404,
     description: '내 동의 정보를 찾을 수 없음',
   })
+  @StoreRoute()
   @Get()
   @RequireScopes('user:read')
   async getMyConsent(@CurrentUser() user: JwtPayload): Promise<UserConsent | null> {
@@ -33,6 +34,7 @@ export class ConsentsController {
     status: 201,
     description: '사용자 동의 정보 생성 성공',
   })
+  @StoreRoute()
   @Post()
   @RequireScopes('user:modify')
   async createConsent(@CurrentUser() user: JwtPayload, @Body() createConsentDto: CreateConsentDto): Promise<void> {
@@ -42,6 +44,7 @@ export class ConsentsController {
   @ApiOperation({ summary: '내 광고성 정보 수신 동의 변경' })
   @ApiResponse({ status: 200, description: '변경 결과와 처리 시각' })
   @ApiResponse({ status: 404, description: '동의 정보가 없음' })
+  @StoreRoute()
   @Patch('marketing')
   @RequireScopes('user:modify')
   async updateMyMarketingConsent(
@@ -65,6 +68,7 @@ export class ConsentsController {
       },
     },
   })
+  @RequirePermission('customer.profile.read')
   @Get('marketing/:userId')
   @RequireScopes('master', 'admin:users:read')
   async getMarketingConsent(@Param('userId') userId: string): Promise<{ isMarketingEnabled: boolean }> {
@@ -77,6 +81,12 @@ export class ConsentsController {
     status: 200,
     description: '사용자 프로필 조회 성공',
   })
+  @PiiResponse({
+    fields: { email: 'email', name: 'name', phoneNumber: 'phone' },
+    subjects: [{ param: 'userId', type: 'user' }],
+    reveal: true,
+  })
+  @RequirePermission('customer.profile.read')
   @Get('profile/:userId')
   @RequireScopes('master', 'admin:users:read')
   async getUserProfile(@Param('userId') userId: string) {
@@ -92,6 +102,11 @@ export class ConsentsController {
     status: 200,
     description: '사용자 목록 조회 성공',
   })
+  @PiiResponse({
+    fields: { 'users[].email': 'email', 'users[].name': 'name', 'users[].phoneNumber': 'phone' },
+    subjects: [{ path: 'users[].userId', type: 'user' }],
+  })
+  @RequirePermission('customer.profile.read')
   @Post('search')
   @RequireScopes('master', 'admin:users:read')
   async getUsersByCriteria(@Body() criteria: any) {
