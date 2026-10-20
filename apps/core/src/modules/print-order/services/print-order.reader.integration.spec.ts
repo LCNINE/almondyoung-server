@@ -6,6 +6,7 @@ import { CANCEL_CLAIM_STALE_MS } from './print-order-cancellation.manager';
 import { phoneDigits, PrintOrderReader, storedPhoneDigits } from './print-order.reader';
 import { eq, sql } from 'drizzle-orm';
 import { PrintOrderRepository } from './print-order.repository';
+import { recordSalesOrderCancellation } from '../../sales-order/cancellation-record/record-cancellation';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -180,7 +181,7 @@ describeIfDb('PrintOrderReader board (tabs, summary)', () => {
           (i) => i.id,
         );
       const partial = (quantity: number) =>
-        tx.insert(wmsTables.salesOrderCancellations).values({
+        recordSalesOrderCancellation(tx, {
           salesOrderId,
           cancellationScope: 'partial',
           metadata: { cancelledLines: [{ salesOrderLineId: lineId, quantity }] },
@@ -218,6 +219,26 @@ describeIfDb('PrintOrderReader board (tabs, summary)', () => {
         .update(wmsTables.salesOrders)
         .set({ status: 'cancelled' })
         .where(eq(wmsTables.salesOrders.id, salesOrderId));
+      expect(await reader.refundNotOpened(print?.id ?? '', tx)).toBe(false);
+    });
+  });
+
+  // E1 — 전체취소도 센다. SO status 가 cancelled 가 아니어도 전체취소 라인 행이 라인 수량 전부면 남은 수량이 없다
+  it('a full cancellation on a non-cancelled sales order closes refund-not-opened', async () => {
+    await inRollbackTx(conn.db, async (tx) => {
+      const service = makeDbService(conn.db);
+      const reader = new PrintOrderReader(service);
+      const { salesOrderId, lineId } = await seedOrder(tx, randomUUID(), undefined, { quantity: 3 });
+      const [print] = await tx
+        .insert(wmsTables.printOrders)
+        .values({ salesOrderId, salesOrderLineId: lineId, almondDesignId: randomUUID(), status: 'cancelled' })
+        .returning({ id: wmsTables.printOrders.id });
+      expect(await reader.refundNotOpened(print?.id ?? '', tx)).toBe(true);
+      await recordSalesOrderCancellation(tx, {
+        salesOrderId,
+        cancellationScope: 'full',
+        metadata: { cancelledLines: [{ salesOrderLineId: lineId, quantity: 3 }] },
+      });
       expect(await reader.refundNotOpened(print?.id ?? '', tx)).toBe(false);
     });
   });

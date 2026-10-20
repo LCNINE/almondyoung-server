@@ -19,7 +19,7 @@ import {
 } from 'drizzle-orm';
 import { wmsSchema, wmsTables, type DbTx } from '../../inventory/schema/inventory.schema';
 import { type PrintOrderRow } from '../schema/print-order.schema';
-import { cancelledQuantitySql } from '../../sales-order/services/cancelled-quantity.sql';
+import { lineCanceledQuantitySql } from '../../sales-order/line-quantities/line-quantities.sql';
 
 export const PRINT_ORDER_TABS = ['cancel_refused', 'test_pending', 'failed', 'unsupported', 'all'] as const;
 export type PrintOrderTab = (typeof PRINT_ORDER_TABS)[number];
@@ -73,7 +73,7 @@ export function refundNotOpenedSql(): SQL {
   const t = wmsTables.printOrders;
   const orders = wmsTables.salesOrders;
   const lines = wmsTables.salesOrderLines;
-  return sql`(${t.status} = 'cancelled' and ${orders.status} <> 'cancelled' and ${lines.quantity} > ${cancelledQuantitySql(t.salesOrderId, lines.id)})`;
+  return sql`(${t.status} = 'cancelled' and ${orders.status} <> 'cancelled' and ${lines.quantity} > ${lineCanceledQuantitySql(lines.id, 'any')})`;
 }
 
 export interface PrintSalesLineState {
