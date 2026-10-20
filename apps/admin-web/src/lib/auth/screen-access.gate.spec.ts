@@ -89,6 +89,12 @@ const MASTER_ONLY_TODAY = new Set([
   '/company/attendance/statistics',
   '/attendance/statistics',
   '/attendance/worksites',
+  // 새 화면 — 급여 권한은 첫 부여가 없다(master 만).
+  '/company/attendance/wage',
+  '/company/attendance/wage/decisions',
+  '/company/attendance/wage/workers',
+  '/company/attendance/wage/workers/[userId]',
+  '/company/attendance/wage/settings',
 ]);
 
 describe('admin·master 화면 결과 불변(승인된 변화 제외)', () => {

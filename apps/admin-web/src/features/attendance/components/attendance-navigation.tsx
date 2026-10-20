@@ -6,7 +6,7 @@ import { useAttendanceAccess } from '../hooks/use-attendance-access';
 
 export function AttendanceNavigation() {
   const pathname = usePathname();
-  const { canReview, canSeeStatistics, canManageWorksites } =
+  const { canReview, canSeeStatistics, canManageWorksites, canSeeWage } =
     useAttendanceAccess();
   const links = [
     ['현황', '/company/attendance'],
@@ -21,6 +21,8 @@ export function AttendanceNavigation() {
     ...(canManageWorksites
       ? [['근무지 설정', '/company/attendance/worksites']]
       : []),
+    ['내 급여', '/company/attendance/wage/me'],
+    ...(canSeeWage ? [['급여 정산', '/company/attendance/wage']] : []),
   ];
 
   return (

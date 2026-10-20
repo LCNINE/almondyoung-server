@@ -16,6 +16,24 @@ import type {
   StaffAttendance,
   Worksite,
 } from '@packages/domain-types/attendance';
+import type {
+  AbsenceKind,
+  MinimumWage,
+  MyWage,
+  PayBasis,
+  PayGroup,
+  PayPolicy,
+  ScheduleDay,
+  SettlementRecord,
+  SettlementResult,
+  SettlementSummary,
+  WageDecisions,
+  WageRate,
+  WageRules,
+  WageWorker,
+  WageWorkerDetail,
+  WorkSchedule,
+} from '@packages/domain-types/attendance-wage';
 
 const base = `${USER_SERVICE_BASE_URL}/attendance`;
 export interface CorrectionInput {
@@ -117,4 +135,165 @@ export const attendanceApi = {
     radiusMeters: number;
     accuracyMeters: number;
   }) => (await client.post(`${base}/worksites`, site)).data,
+};
+
+const wageBase = `${base}/wage`;
+
+export interface PayGroupInput {
+  name: string;
+  payBasis: PayBasis;
+  payday: number;
+  periodCloseDay: number;
+  payMonthOffset: 0 | 1;
+  rules?: WageRules;
+  rulesEffectiveFrom?: string;
+}
+
+export interface WorkerInput {
+  groupId: string;
+  hireDate?: string | null;
+  leaveDate?: string | null;
+  label?: string | null;
+  note?: string | null;
+  version?: number;
+}
+
+export interface OvertimeDecisionInput {
+  status: 'recognized' | 'rejected';
+  recognizedMinutes: number;
+  recordedMinutes: number;
+  reason?: string;
+  version?: number;
+}
+
+export interface AbsenceDecisionInput {
+  kind: AbsenceKind;
+  reason?: string;
+  version?: number;
+}
+
+export const attendanceWageApi = {
+  groups: async () => (await client.get<PayGroup[]>(`${wageBase}/groups`)).data,
+  decisionGroups: async () =>
+    (await client.get<PayGroup[]>(`${wageBase}/decisions/groups`)).data,
+  createGroup: async (input: PayGroupInput) =>
+    (await client.post<PayGroup>(`${wageBase}/groups`, input)).data,
+  updateGroup: async ({
+    id,
+    ...input
+  }: Partial<PayGroupInput> & {
+    id: string;
+    version: number;
+    active?: boolean;
+  }) => (await client.patch<PayGroup>(`${wageBase}/groups/${id}`, input)).data,
+  policies: async (groupId: string) =>
+    (await client.get<PayPolicy[]>(`${wageBase}/groups/${groupId}/policies`))
+      .data,
+  addPolicy: async ({
+    groupId,
+    ...input
+  }: {
+    groupId: string;
+    effectiveFrom: string;
+    rules: WageRules;
+  }) =>
+    (
+      await client.post<PayPolicy>(
+        `${wageBase}/groups/${groupId}/policies`,
+        input
+      )
+    ).data,
+  workers: async () =>
+    (await client.get<WageWorker[]>(`${wageBase}/workers`)).data,
+  worker: async (userId: string) =>
+    (await client.get<WageWorkerDetail>(`${wageBase}/workers/${userId}`)).data,
+  saveWorker: async ({ userId, ...input }: WorkerInput & { userId: string }) =>
+    (await client.put<WageWorkerDetail>(`${wageBase}/workers/${userId}`, input))
+      .data,
+  addRate: async ({
+    userId,
+    ...input
+  }: {
+    userId: string;
+    effectiveFrom: string;
+    hourlyWage: number;
+  }) =>
+    (await client.post<WageRate>(`${wageBase}/workers/${userId}/rates`, input))
+      .data,
+  addSchedule: async ({
+    userId,
+    ...input
+  }: {
+    userId: string;
+    effectiveFrom: string;
+    effectiveTo: string | null;
+    days: ScheduleDay[];
+  }) =>
+    (
+      await client.post<WorkSchedule>(
+        `${wageBase}/workers/${userId}/schedules`,
+        input
+      )
+    ).data,
+  minimumWages: async () =>
+    (await client.get<MinimumWage[]>(`${wageBase}/minimum-wages`)).data,
+  addMinimumWage: async (input: MinimumWage) =>
+    (await client.post<MinimumWage>(`${wageBase}/minimum-wages`, input)).data,
+  decisions: async (groupId: string, paydayMonth: string) =>
+    (
+      await client.get<WageDecisions>(`${wageBase}/decisions`, {
+        params: { groupId, paydayMonth },
+      })
+    ).data,
+  decideOvertime: async ({
+    userId,
+    workDate,
+    ...input
+  }: OvertimeDecisionInput & { userId: string; workDate: string }) =>
+    (await client.put(`${wageBase}/overtime/${userId}/${workDate}`, input))
+      .data,
+  decideAbsence: async ({
+    userId,
+    workDate,
+    ...input
+  }: AbsenceDecisionInput & { userId: string; workDate: string }) =>
+    (await client.put(`${wageBase}/absences/${userId}/${workDate}`, input))
+      .data,
+  preview: async (groupId: string, paydayMonth: string) =>
+    (
+      await client.get<SettlementResult>(`${wageBase}/settlements/preview`, {
+        params: { groupId, paydayMonth },
+      })
+    ).data,
+  settlements: async (groupId: string) =>
+    (
+      await client.get<SettlementSummary[]>(`${wageBase}/settlements`, {
+        params: { groupId },
+      })
+    ).data,
+  settlement: async (id: string) =>
+    (await client.get<SettlementRecord>(`${wageBase}/settlements/${id}`)).data,
+  confirm: async (input: { groupId: string; paydayMonth: string }) =>
+    (await client.post<SettlementRecord>(`${wageBase}/settlements`, input))
+      .data,
+  reopen: async ({ id, reason }: { id: string; reason: string }) =>
+    (
+      await client.post<SettlementRecord>(
+        `${wageBase}/settlements/${id}/reopen`,
+        { reason }
+      )
+    ).data,
+  exportSettlement: async (id: string) =>
+    (await client.get<SettlementRecord>(`${wageBase}/settlements/${id}/export`))
+      .data,
+  exportPreview: async (input: { groupId: string; paydayMonth: string }) =>
+    (
+      await client.get<SettlementResult>(
+        `${wageBase}/settlements/preview/export`,
+        { params: input }
+      )
+    ).data,
+  mine: async (paydayMonth: string) =>
+    (await client.get<MyWage>(`${wageBase}/me`, { params: { paydayMonth } }))
+      .data,
 };

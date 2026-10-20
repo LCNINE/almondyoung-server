@@ -84,6 +84,11 @@ const allMenus: MainMenu[] = [
             title: '공유 휴가 캘린더',
             path: '/company/attendance/calendar',
           },
+          {
+            id: 'wage-settlement',
+            title: '급여 정산',
+            path: '/company/attendance/wage',
+          },
         ],
       },
       {

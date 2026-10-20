@@ -577,6 +577,25 @@ export const PERMISSION_CATALOG = [
     grant: NOBODY,
     requires: ['attendance.staff.read'],
   }),
+  // 급여 — 시급·급여는 처음엔 master 만 본다(본인 급여는 `attendance.own.write` + 본인 판정)
+  permission('attendance.wage.read', '급여 조회', '근무자 명단·시급·급여 정산을 본다', {
+    owners: ['user-service'],
+    grant: NOBODY,
+    requires: ['attendance.staff.read'],
+    ...DANGEROUS,
+  }),
+  permission('attendance.wage.write', '급여 설정', '급여 그룹·계산 규칙·명단·시급·근무 시간표를 바꾸고 정산을 확정한다', {
+    owners: ['user-service'],
+    grant: NOBODY,
+    requires: ['attendance.wage.read'],
+    ...DANGEROUS,
+  }),
+  permission('attendance.wage.export', '급여 내려받기', '급여 정산을 엑셀로 내려받는다', {
+    owners: ['user-service'],
+    grant: NOBODY,
+    requires: ['attendance.wage.read'],
+    ...DANGEROUS,
+  }),
 ] as const;
 
 export type Permission = (typeof PERMISSION_CATALOG)[number]['key'];

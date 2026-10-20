@@ -38,10 +38,17 @@ export const SCREEN_ACCESS: Readonly<Record<string, ScreenAccess>> = {
   '/company/attendance/review': any('attendance.request.review'),
   '/company/attendance/worksites': any('attendance.worksite.write'),
   '/company/attendance/statistics': any('attendance.statistics.read'),
+  '/company/attendance/wage': any('attendance.wage.read'),
+  '/company/attendance/wage/decisions': any('attendance.request.review'),
+  '/company/attendance/wage/workers': any('attendance.wage.read'),
+  '/company/attendance/wage/workers/[userId]': any('attendance.wage.read'),
+  '/company/attendance/wage/settings': any('attendance.wage.read'),
+  '/company/attendance/wage/me': any('attendance.own.write'),
   '/attendance': any('attendance.own.write'),
   '/attendance/review': any('attendance.request.review'),
   '/attendance/statistics': any('attendance.statistics.read'),
   '/attendance/worksites': any('attendance.worksite.write'),
+  '/attendance/wage': any('attendance.own.write'),
 
   // 채널/고객
   '/account/customer': any('customer.profile.read'),

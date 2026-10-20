@@ -784,6 +784,12 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: 'eq(reactions.userId, userId),',
     note: '존재확인/삭제/삽입 모두 reactions.userId를 토큰 userId로 스코프. ToggleReactionDto에 userId 필드 없음(바디로 덮어쓸 수 없음).',
   },
+  'user-service GET /attendance/wage/me': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/attendance/wage/wage.repository.ts:126',
+    predicate: 'filter.userId ? eq(attendanceWorkers.userId, filter.userId) : undefined',
+    note: '경로·쿼리에 사람을 고르는 값이 없다 — 핸들러가 토큰의 user.id 만 넘기고(wage-me.controller.ts:18), 명단 조회가 SQL 에서 그 사람으로 좁혀 그 사람의 기록만 읽는다. 확정본도 jsonb_path_query_first 로 같은 userId 의 몫만 꺼낸다(wage.repository.ts confirmedShare).',
+  },
   'user-service DELETE //recent-views/:recentViewId': {
     verdict: 'SAFE',
     evidence: 'apps/user-service/src/api/recent-views/recent-views.service.ts:51',
@@ -972,15 +978,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(155);
+    expect(targets).toHaveLength(156);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(155);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(154);
+    expect(new Set(targets.map(keyOf)).size).toBe(156);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(155);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

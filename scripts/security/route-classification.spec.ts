@@ -64,6 +64,11 @@ const NON_READ_GET: Record<string, string> = {
   'user-service GET /attendance/overview': '근태 사용자들이 함께 보는 오늘 근무 현황이다',
   'user-service GET /attendance/worksites': '출퇴근 화면이 쓰는 근무지 목록이다',
   'user-service GET /attendance/review': '검토 권한자의 작업 목록이다',
+  'user-service GET /attendance/wage/me': '근태 사용자 자신의 급여다',
+  'user-service GET /attendance/wage/decisions': '연장·부재 판정 권한자의 작업 목록이다',
+  'user-service GET /attendance/wage/decisions/groups': '판정 화면이 고르는 급여 그룹 목록이다(금액·규칙 없음)',
+  'user-service GET /attendance/wage/settlements/preview/export': '내보내기다',
+  'user-service GET /attendance/wage/settlements/:id/export': '내보내기다',
   'notification GET /web-push/config': '근태 알림 등록에 쓰는 공개 키다',
 };
 

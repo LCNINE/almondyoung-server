@@ -120,6 +120,20 @@
       "when": 1792479603000,
       "tag": "20261020070003_add-pii-access-logs",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792485413951,
+      "tag": "20261020083653_add-attendance-wage",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792485415628,
+      "tag": "20261020083655_seed-minimum-wage-2026",
+      "breakpoints": true
     }
   ]
 }
