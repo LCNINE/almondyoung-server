@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, Search, Package, List, Bell } from 'lucide-react';
+import { Home, Search, Package, List, Bell, Ruler } from 'lucide-react';
 import { LucideIcon } from 'lucide-react';
 
 interface NavigationItem {
@@ -41,6 +41,12 @@ const MOBILE_NAVIGATION_ITEMS: NavigationItem[] = [
     label: '피킹리스트',
     icon: List,
     path: '/mobile/pick', // 명백한 모바일 전용 페이지 경로
+  },
+  {
+    id: 'sku-field-capture',
+    label: '실측',
+    icon: Ruler,
+    path: '/mobile/sku-field-capture',
   },
   {
     id: 'schedule',
