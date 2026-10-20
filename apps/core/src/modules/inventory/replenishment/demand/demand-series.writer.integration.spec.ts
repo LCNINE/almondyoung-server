@@ -7,6 +7,7 @@ import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { makeDb, inRollbackTx, seedHolder, seedSku } from '../../../fulfillment/services/__support__';
 import { DemandSeriesWriter } from './demand-series.writer';
 import { recordSalesOrderCancellation } from '../../../sales-order/cancellation-record/record-cancellation';
+import { readLineQuantities } from '../../../sales-order/line-quantities/line-quantities.reader';
 
 /**
  * 스펙 §10 「demand-series.writer」: 취소 제외 · 디지털 제외 · 링크 수량 환산 · 창 재계산 멱등 · D0 경계.
@@ -398,6 +399,11 @@ describeIfDb('DemandSeriesWriter (DB integration)', () => {
               },
             },
           ],
+        });
+        // 전제: 라인 행이 실제로 after_shipment 로 기록됐다 (행이 없어도 아래 단언은 통과하므로)
+        expect((await readLineQuantities(trx, orderId)).get(lineId)).toMatchObject({
+          canceledAfterShipment: 2,
+          canceledBeforeShipment: 0,
         });
         await new DemandSeriesWriter(boundDbService(trx)).rebuildCoreWindow(WINDOW, trx);
         expect(await readSeries(trx, [skuId])).toEqual([

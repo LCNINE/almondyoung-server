@@ -46,7 +46,7 @@ PR 1 은 기록만 더했다(이중 기록). PR 2a 가 `cancelledQuantitySql`(�
 - **E2(사용자 확인).** 수요·FO 생성 수량은 출고 전 취소만 뺀다(`demand = ordered − canceledBeforeShipment`). 취소 엔진·채널 diff·인쇄의 «남은 수량»은 갈래 무관 `canceled` 를 뺀다.
 - `planCancellation`(전체)은 이미 전체 취소된 주문을 수량 계산 전에 400 `이미 전체 취소 처리된 주문입니다.` 로 거절한다(전에는 계획을 돌려줬다). 호출자가 `cancelled` 를 먼저 거르고, 되돌릴 수 없는 인쇄 업체 취소 앞에서 걸린다.
 - 취소 엔진의 FOI 별 `preservedShippedByFulfillmentItem` 은 계속 `effects` 에서 파싱한다 — 라인 행으로는 복원되지 않는 FOI 단위 엔진 상태다.
-- SQL 조각은 취소 라인 테이블을 열 이름을 바꾼 파생 테이블로 감싼다. drizzle 이 단일 테이블 select 의 열을 한정 없이 렌더해 안쪽 테이블이 바깥 `"id"` 를 가로채기 때문이다(일치 spec 이 잡았다). postgres 가 평탄화하고 `idx_sales_order_cancellation_lines_line` 을 탄다.
+- SQL 조각은 취소 라인 테이블을 열 이름을 바꾼 파생 테이블로 감싼다. drizzle 이 단일 테이블 select 의 열을 한정 없이 렌더해 안쪽 테이블이 바깥 `"id"` 를 가로채기 때문이다(일치 spec 이 잡았다). postgres 가 파생 테이블을 평탄화해 필터가 테이블에 바로 붙는다 — 인덱스(`idx_sales_order_cancellation_lines_line`)를 쓸 수 있는 모양이다(실측은 행이 적어 seq scan).
 
 **이후 PR(제안, 정본은 스펙 §9):**
 - PR 2a — (이 PR) 읽는 문·SQL 조각·일치 spec, 취소 소비자 여섯(취소 엔진·채널 diff·인쇄 둘·수요 통계·구성 리더) 전환, E1·E2.
