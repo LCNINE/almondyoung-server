@@ -123,7 +123,7 @@ export function PopupPreview({ value }: { value: SitePopupFormValue }) {
               {value.noticeId && (
                 <Button
                   type="button"
-                  className="h-12 flex-1 rounded-xl text-base"
+                  className="h-12 flex-1 rounded-xl bg-[#ff6600] text-base text-white"
                   tabIndex={-1}
                 >
                   자세히 보기
