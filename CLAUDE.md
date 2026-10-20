@@ -459,6 +459,11 @@ Canonical defaults (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-
 
 Single-context layout (`CONTEXT.md` + `docs/adr/` at repo root; created lazily by `/grill-with-docs`). See `docs/agents/domain.md`.
 
+### 멤버십 결제수단 수수료
+
+효성 카드·토스 카드·효성 CMS·가상계좌의 실측 수수료, 월구독 결제수단 변천, 카드 재도입 근거는
+`apps/membership/docs/결제수단_수수료_및_카드_재도입_근거.md`. 수수료를 물으면 시중 평균이 아니라 이 문서와 그 안의 조회법으로 답한다.
+
 ### 검색 0건 미취급 키워드 리포트
 
 고객이 검색했는데 0건이었고 시중엔 파는 상품을 뽑아 소싱 후보 엑셀로 만든다.
