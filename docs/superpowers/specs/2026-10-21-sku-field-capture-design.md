@@ -93,7 +93,7 @@ core 는 상품의 실제 선반 위치를 모른다. 셀메이트 재고를 들
 
 목업: `.superpowers/brainstorm/*/content/flow.html`, `flow-v2.html` (git 무시 경로, 로컬 참고용).
 
-**① 시작** — 큰 「선반 바코드 찍기」 버튼, 「위치 직접 입력」, 「이름·코드로 찾기」. 내가 오늘 끝낸 수.
+**① 시작** — 큰 「선반 바코드 찍기」 버튼, 「위치 직접 입력」, 「이름·코드로 찾기」. 「오늘 내가 끝낸 상품 N개」 — `GET inventory/sku-field-capture/me/today` (작업자 본인 범위, stock.read + OPERATE).
 
 **② 선반 T-01-20** — 그 위치의 SKU 목록. 각 줄에 셀메이트 대표 이미지(있으면), 이름, 코드,
 **완료 여부 + 완료했다면 누가·언제**. 상품이 하나뿐이어도 목록을 보여 줄지 바로 ③으로 갈지는 구현자 몫이지만,
@@ -109,6 +109,8 @@ core 는 상품의 실제 선반 위치를 모른다. 셀메이트 재고를 들
 - **사진 (자유 촬영, 3장 이상) + 「여섯 면이 모두 한 장 이상에 나왔어요」 체크 하나** (사용자 선택 A).
   찍은 사진은 썸네일로 보이고 지울 수 있다.
 - 「완료 → 다음 선반」은 위 조건이 다 찼을 때만 누를 수 있다.
+- **사진은 올리는 즉시 SKU 에 붙는다** (완료 전에도). 완료 판정의 «3장 이상»은 서버에 붙은 사진 수로 센다.
+- **재작업:** 마지막 기록의 mm·바코드가 초안으로 채워지지만 「여섯 면」 체크는 다시 눌러야 한다.
 
 **스캔:** admin-web 에는 카메라 바코드 스캔이 아직 없다. 폰 카메라로 선반 바코드와 제조사 바코드를 읽어야 한다.
 iOS Safari 는 브라우저 `BarcodeDetector` 가 없어 라이브러리가 필요하다 — 고르는 건 구현자 몫. 블루투스 스캐너
@@ -165,6 +167,7 @@ iOS Safari 는 브라우저 `BarcodeDetector` 가 없어 라이브러리가 필�
   (Claude 판단 — 셀메이트 백업이 아니라 core 기준. 셀메이트 재고는 전부 한 창고로 들어와 있어 창고 구분은 지금 차이가 없다.
   재고 0 SKU 를 완료하면 「완료」에는 잡히지만 「남은 SKU」 분모에는 안 들어간다.)
 - **완료** 수, **스티커 필요** 수(바코드 아예 없음으로 완료된 SKU).
+- **바코드 충돌** 수 (찍은 바코드가 다른 SKU 에 이미 붙어 있던 건).
 - **작업자별 오늘·누적 완료 수.** 「오늘」은 KST 기준.
 - 숫자는 DB 에서 집계해 돌려준다 (클라이언트에서 행을 세지 않는다).
 - 「스티커 필요」 목록을 클릭해 볼 수 있으면 좋다 — 구현자 판단.
@@ -182,8 +185,31 @@ DRY_RUN 지원), 완료 이벤트 기록 여부.
 
 ## 10. 배포 체크리스트
 
-1. core 마이그 `migrate → deploy` (추가만).
-2. file-service `db:seed:ref` (새 file context).
-3. 위치 적재 스크립트를 라이브에 1회 (DRY_RUN 먼저).
-4. lcnine-auth 에 `logistics_worker` 역할 확인·생성, 작업자 계정에 부여, 그 역할의 `landingPath` 를 작업자 페이지로.
-5. 실기 스모크: iPhone·Android 각각 선반 스캔 → 사진 3장(원본 크기 확인) → 제조사 바코드 → 완료 → 현황 반영.
+순서가 중요하다 (CLAUDE.md «Expand phase»: `migrate → deploy`). 라이브 작업은 터널(`cd deployments/lcnine/services && npx sst tunnel --stage live`)을 사용자가 먼저 띄운 상태에서 한다.
+배포 직전 `npm run deploy:preflight -- --stage live` 로 대기 마이그를 확인한다.
+
+1. **core 마이그 (추가만, 배포보다 먼저).** 파일 `apps/core/drizzle/20261020180759_add-sku-field-capture.sql`.
+   `npm run db:migrate -- --stage live --deployment lcnine-services --yes` → 그 다음 `sst deploy` (services).
+2. **file-service context 시드.** file-service 는 `lcnine-services` 배포 소유(`deployments/lcnine/services/infra/services.ts`).
+   새 context `sku-reference-photo` 는 시드라 마이그로 안 들어간다 — 없으면 업로드 404.
+   `npm run db:seed:ref -- --stage live --deployment lcnine-services --yes` (코드: `apps/file-service/src/database/default-file-contexts.ts`).
+3. **위치 적재 스크립트 1회** (마이그 적용 뒤). 셀메이트 재고 백업 CSV 로 — DRY_RUN 먼저, 통계 확인 후 실제 반영. 같은 파일을 다시 돌려도 안전(sku_id upsert).
+   `DRY_RUN=1 bash scripts/sellmate/run.sh live load-shelf-positions ~/다운로드/01_현재고_전체_YYYYMMDD.csv`
+   `bash scripts/sellmate/run.sh live load-shelf-positions ~/다운로드/01_현재고_전체_YYYYMMDD.csv`
+   (`run.sh` 가 RDS·시크릿으로 `DATABASE_URL` 을 만든다 — `scripts/sellmate/README.md`. 매칭 안 된 SKU 코드 수를 확인한다.)
+4. **admin-web 배포.** 새 의존성 `@zxing/browser` 0.1.5, `@zxing/library` 0.21.3 — 머지 뒤 메인 체크아웃에서 `(cd apps/admin-web && npm ci)` 후 배포.
+5. **lcnine-auth 역할.** `logistics_worker` 역할 행이 라이브 user-service 에 있는지 확인한다(2026-09-25 에는 없었다). 없으면
+   `npm run db:seed:ref -- --stage live --deployment lcnine-auth --yes` 또는 어드민의 역할 관리로 만든다. 작업자 계정에 부여하고,
+   그 역할의 `landingPath` 를 `/mobile/sku-field-capture` 로 설정한다 (코드 변경 없음).
+6. **실기 스모크 (iPhone·Android 각각):**
+   - 카메라로 선반 바코드 스캔 → 그 위치의 SKU 목록.
+   - 사진 3장 이상: 올라간 파일이 **원본 크기 그대로**인지 file-service 메타데이터로 확인 (압축·거부 없음). iPhone 사진이 JPEG 로 오는지(HEIC 아님).
+   - 제조사 바코드 카메라 스캔. 12자리 UPC 상품이 있으면 핸드 스캐너 값과 같은지.
+   - 「여섯 면」 체크 → 완료 → 관리자 현황(`/inventory/sku-field-capture`)에 반영.
+   - 폰 폭 360px 에서 하단 내비가 잘리지 않는지.
+
+## 11. 로컬 검증 메모
+
+통합 스펙(`sku-field-capture.manager|reader.integration.spec.ts`)은 로컬 스크래치 DB `core_skufc` 에서 돌렸다 —
+공유 로컬 `core` DB 의 마이그레이션 저널이 낡아 새 마이그를 얹을 수 없었다.
+`DATABASE_URL=postgresql://postgres:postgres@localhost:5432/core_skufc npx jest --runTestsByPath <두 스펙>`.
