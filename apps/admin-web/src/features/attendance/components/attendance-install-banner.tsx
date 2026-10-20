@@ -38,6 +38,13 @@ type InstallPromptEvent = Event & {
 const ICON = '/pwa-attendance/icon-192.png?v=clock-2';
 const ATTENDANCE_URL = 'https://admin.almondyoung.com/attendance';
 
+const PREVIEW_KINDS: InstallBannerKind[] = [
+  'ios',
+  'android',
+  'inapp-ios',
+  'inapp-android',
+];
+
 function isStandalone() {
   return (
     window.matchMedia('(display-mode: standalone)').matches ||
@@ -59,6 +66,14 @@ export function AttendanceInstallBanner() {
   const [guideOpen, setGuideOpen] = useState(false);
 
   useEffect(() => {
+    // ?install=ios 처럼 붙이면 PC 에서도 그 기기의 띠·안내를 볼 수 있다(튜토리얼 캡처용)
+    const preview = new URLSearchParams(window.location.search).get('install');
+    if (PREVIEW_KINDS.includes(preview as InstallBannerKind)) {
+      setKind(preview as InstallBannerKind);
+
+      return;
+    }
+
     if (wasDismissed()) return;
 
     const onPrompt = (event: Event) => {
