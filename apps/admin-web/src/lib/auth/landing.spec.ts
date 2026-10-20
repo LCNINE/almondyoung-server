@@ -1,4 +1,6 @@
-import { chooseLanding } from './landing';
+import { chooseLanding, homeRedirect } from './landing';
+import { firstAccessiblePath } from './screen-access';
+import { mainMenus } from '@/lib/utils/menu';
 
 const mine = (landingPath: string | null, permissions: string[]) => ({
   roles: [],
@@ -37,5 +39,27 @@ describe('chooseLanding', () => {
 
   it('stays on the default when no role sets a landing screen', () => {
     expect(chooseLanding(mine(null, ['order.order.read']), '/')).toBe('/');
+  });
+});
+
+describe('homeRedirect', () => {
+  // `/`(대시보드)를 못 여는 사람이 `/` 에 왔을 때 — 첫 비밀번호 변경 뒤나 로고 클릭.
+  it('prefers the role landing screen over the first sidebar menu', () => {
+    expect(
+      homeRedirect(
+        mine('/mobile/sku-field-capture', ['inventory.stock.read']),
+        mainMenus
+      )
+    ).toBe('/mobile/sku-field-capture');
+  });
+
+  it('falls back to the first sidebar menu without a usable landing screen', () => {
+    const held = ['inventory.stock.read'];
+    expect(homeRedirect(mine(null, held), mainMenus)).toBe(
+      firstAccessiblePath(mainMenus, new Set(held))
+    );
+    expect(homeRedirect(mine('/statistics/profit', held), mainMenus)).toBe(
+      firstAccessiblePath(mainMenus, new Set(held))
+    );
   });
 });
