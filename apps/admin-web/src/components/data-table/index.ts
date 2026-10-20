@@ -10,3 +10,5 @@ export {
   useFilterContext,
 } from './data-table-filter';
 export type { Filter, FilterOption } from './data-table-filter';
+export { DataTableTabs } from './data-table-tabs';
+export type { DataTableTabsConfig } from './data-table-tabs';

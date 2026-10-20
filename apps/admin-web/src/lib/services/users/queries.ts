@@ -37,12 +37,16 @@ export const useAllUserCount = () => {
   });
 };
 
-export const useAdminUsers = (query: AdminUsersQuery) => {
+export const useAdminUsers = (
+  query: AdminUsersQuery,
+  { enabled = true }: { enabled?: boolean } = {}
+) => {
   return useQuery({
     queryKey: usersQueryKeys.list(query),
     queryFn: () => userApi.getAdminUsers(query),
     staleTime: 30 * 1000, // 30초
     placeholderData: keepPreviousData,
+    enabled,
   });
 };
 

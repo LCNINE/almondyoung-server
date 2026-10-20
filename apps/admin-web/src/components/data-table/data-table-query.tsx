@@ -28,7 +28,7 @@ export function DataTableQuery({
   if (!hasFilters && !hasOrderBy && !search) return null;
 
   return (
-    <div className="flex items-center justify-between gap-4 p-2">
+    <div className="flex items-center justify-between gap-4 px-6 py-3">
       <div className="flex flex-wrap items-center flex-1 gap-2">
         {hasFilters && <DataTableFilter filters={filters} prefix={prefix} />}
       </div>

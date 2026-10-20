@@ -10,8 +10,8 @@ const statusConfig: Record<
     variant: 'default' | 'secondary' | 'destructive' | 'outline';
   }
 > = {
-  active: { label: STATUS_LABELS.active, variant: 'secondary' },
-  answered: { label: STATUS_LABELS.answered, variant: 'default' },
+  active: { label: STATUS_LABELS.active, variant: 'default' },
+  answered: { label: STATUS_LABELS.answered, variant: 'secondary' },
 };
 
 type QnaStatusCellProps = {
@@ -21,7 +21,7 @@ type QnaStatusCellProps = {
 
 export function QnaStatusCell({ status, deletedAt }: QnaStatusCellProps) {
   if (deletedAt) {
-    return <Badge variant="destructive">{STATUS_LABELS.deleted}</Badge>;
+    return <Badge variant="outline">{STATUS_LABELS.deleted}</Badge>;
   }
   if (!status) return <span className="text-muted-foreground">-</span>;
   const config = statusConfig[status as QuestionStatus];

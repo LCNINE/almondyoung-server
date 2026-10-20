@@ -60,7 +60,8 @@ export function DataTableFilter({ filters, prefix }: DataTableFilterProps) {
       removeFilter={removeFilter}
       removeAllFilters={(keys) => keys.forEach(removeFilter)}
     >
-      <div className="flex flex-wrap items-center gap-2">
+      {/* 아직 안 건 필터는 빈 PopoverAnchor 만 남겨 gap 만큼 밀어낸다 */}
+      <div className="flex flex-wrap items-center gap-2 [&>:empty]:hidden">
         {filters.map((filter) => {
           const isOpen = openFilter === filter.key;
           const onOpenChange = handleOpenChange(filter.key);

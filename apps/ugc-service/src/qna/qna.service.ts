@@ -16,7 +16,7 @@ import { QuestionListQueryDto, MyQuestionListQueryDto } from './dto/question-lis
 import { CreateAnswerDto } from './dto/create-answer.dto';
 import { type AnswerEntity, type QuestionEntity, type QuestionWithDetailsEntity } from './types';
 import { PaginatedResponseDto } from '@app/shared/dto';
-import { MAX_QUESTION_MEDIA_COUNT, type QuestionCategory } from './constants';
+import { MAX_QUESTION_MEDIA_COUNT, type QuestionCategory, type QuestionSource } from './constants';
 import { isNotNull } from 'drizzle-orm';
 import {
   assertDailyRange,
@@ -380,9 +380,11 @@ export class QnaService {
       page?: number;
       limit?: number;
       category?: QuestionCategory;
+      source?: QuestionSource;
       status?: 'active' | 'answered' | 'deleted';
       sort?: string;
       q?: string;
+      authorIds?: string[];
       userId?: string;
       createdFrom?: string;
       createdTo?: string;
@@ -411,6 +413,10 @@ export class QnaService {
         conditions.push(eq(questions.category, query.category as QuestionCategory));
       }
 
+      if (query.source) {
+        conditions.push(query.source === 'inquiry' ? isNotNull(questions.category) : isNull(questions.category));
+      }
+
       conditions.push(...createdRangeConditions(questions.createdAt, query));
 
       // 작성자(회원) 필터
@@ -421,8 +427,9 @@ export class QnaService {
       // 검색어 (제목, 내용, 닉네임)
       if (query.q) {
         const searchTerm = `%${query.q}%`;
+        const textMatch = sql`(${questions.title} ILIKE ${searchTerm} OR ${questions.content} ILIKE ${searchTerm} OR ${questions.nickname} ILIKE ${searchTerm})`;
         conditions.push(
-          sql`(${questions.title} ILIKE ${searchTerm} OR ${questions.content} ILIKE ${searchTerm} OR ${questions.nickname} ILIKE ${searchTerm})`,
+          query.authorIds?.length ? sql`(${textMatch} OR ${inArray(questions.userId, query.authorIds)})` : textMatch,
         );
       }
 

@@ -25,10 +25,10 @@ export function QuestionDeleteButton({ questionId }: { questionId: string }) {
   const handleConfirm = async () => {
     try {
       await deleteQuestion.mutateAsync();
-      toast.success('문의가 삭제되었습니다.');
+      toast.success('문의를 삭제했어요');
       router.push('/cs/qna');
     } catch {
-      toast.error('문의 삭제에 실패했습니다.');
+      toast.error('문의를 삭제하지 못했어요. 다시 시도해 주세요.');
     } finally {
       setOpen(false);
     }
@@ -37,22 +37,22 @@ export function QuestionDeleteButton({ questionId }: { questionId: string }) {
   return (
     <>
       <Button
-        variant="destructive"
+        variant="ghost"
         size="sm"
+        className="text-muted-foreground"
         onClick={() => setOpen(true)}
         disabled={deleteQuestion.isPending}
       >
         <Trash2 className="h-4 w-4" />
-        삭제
+        문의 삭제
       </Button>
 
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>문의 삭제</AlertDialogTitle>
+            <AlertDialogTitle>이 문의를 삭제할까요?</AlertDialogTitle>
             <AlertDialogDescription>
-              이 문의를 삭제하시겠습니까? 삭제된 문의는 사용자에게 더 이상
-              노출되지 않습니다.
+              삭제하면 고객에게 더 이상 보이지 않아요.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

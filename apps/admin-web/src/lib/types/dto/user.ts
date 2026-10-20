@@ -59,6 +59,8 @@ interface AdminUserDto {
   username: string;
   nickname: string | null;
   email: string;
+  // 목록(/admin/users)에만 실린다. 상세는 profile.phoneNumber
+  phoneNumber?: string | null;
   isEmailVerified: boolean;
   lastActivityAt: string | null;
   createdAt: string;

@@ -2,16 +2,14 @@
 
 import React, { Suspense, useState } from 'react';
 import { Container } from '@/components/admin-ui-experimental/common/container';
-import { Header } from '@/components/admin-ui-experimental/common/header';
 import { Spinner } from '@/components/ui/spinner';
 import { useQuestion } from '@/lib/services/qna';
-import { useMastersByIds } from '@/lib/services/products/queries';
-import { useOptionalAdminUser } from '@/lib/services/users/queries';
 import {
   CATEGORY_LABELS,
+  SOURCE_LABELS,
   STATUS_LABELS,
-  QuestionCategory,
-  QuestionStatus,
+  SUB_CATEGORY_LABELS,
+  getQuestionSource,
 } from '@/lib/types/dto/qna';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -23,29 +21,65 @@ import {
   CarouselNext,
   type CarouselApi,
 } from '@/components/ui/carousel';
-import { LockIcon } from 'lucide-react';
+import { ChevronRight, LockIcon, PackageIcon } from 'lucide-react';
+import Link from 'next/link';
+import { useMastersByIds } from '@/lib/services/products/queries';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import Image from 'next/image';
-import { QuestionDeleteButton } from '../question-delete-button';
+
+function Chip({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="bg-muted text-foreground inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-xs font-medium">
+      {children}
+    </span>
+  );
+}
+
+function ProductStrip({ productId }: { productId: string }) {
+  const { data, isLoading } = useMastersByIds([productId]);
+  const product = data?.data?.[0];
+  const thumbnail = resolvePublicFileUrl(product?.thumbnail);
+  // active 버전이 없는 상품은 GET /masters/:id 가 404 라 versionId 로 연다 (상품 목록과 같은 규칙)
+  const href =
+    product && product.status !== 'active'
+      ? `/mall/products-list/${productId}?versionId=${product.versionId}`
+      : `/mall/products-list/${productId}`;
+
+  return (
+    <Link
+      href={href}
+      target="_blank"
+      className="hover:bg-muted/60 mb-5 flex items-center gap-3 rounded-lg border p-3 transition-colors"
+    >
+      <div className="bg-muted relative flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md">
+        {thumbnail ? (
+          <Image src={thumbnail} alt="" fill className="object-cover" />
+        ) : (
+          <PackageIcon className="text-muted-foreground size-5" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-muted-foreground text-xs">
+          {product?.brand || '문의한 상품'}
+        </p>
+        <p className="truncate text-sm font-medium">
+          {product?.name ??
+            (isLoading ? '불러오는 중…' : '상품 정보를 불러오지 못했어요')}
+        </p>
+      </div>
+      <ChevronRight className="text-muted-foreground size-4 shrink-0" />
+    </Link>
+  );
+}
 
 function QuestionDetailContent({ questionId }: { questionId: string }) {
   const { data } = useQuestion(questionId);
-  const { data: author } = useOptionalAdminUser(data.userId);
-  // 상품 문의면 productId(=masterId)로 상품명 조회. 일반 문의(null)면 배치가 빈 배열이라 호출 안 됨.
-  const { data: products } = useMastersByIds(
-    data.productId ? [data.productId] : []
-  );
-  const productName = products?.data?.[0]?.name;
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [carouselApi, setCarouselApi] = useState<CarouselApi>();
 
   const imageUrls = data.mediaFileIds.map(
     (fileId) => resolvePublicFileUrl(fileId) ?? ''
   );
-
-  const handleImageClick = (index: number) => {
-    setSelectedIndex(index);
-  };
 
   // 캐러셀이 열릴 때 선택한 이미지로 이동
   React.useEffect(() => {
@@ -54,91 +88,71 @@ function QuestionDetailContent({ questionId }: { questionId: string }) {
     }
   }, [carouselApi, selectedIndex]);
 
-  const rows: { key: string; value: React.ReactNode }[] = [
-    { key: '작성자', value: author?.username || data.nickname },
-    ...(data.productId
-      ? [
-          {
-            key: '문의 상품',
-            value: (
-              <span title={data.productId}>
-                {productName ?? data.productId}
-              </span>
-            ),
-          },
-        ]
-      : []),
-    {
-      key: '카테고리',
-      value: data.category ? CATEGORY_LABELS[data.category] : '-',
-    },
-    {
-      key: '비밀글',
-      value: data.isSecret ? (
-        <span className="flex items-center gap-1">
-          <LockIcon className="h-4 w-4" /> 비밀글
-        </span>
-      ) : (
-        '공개'
-      ),
-    },
-    {
-      key: '상태',
-      value: data.deletedAt ? (
-        <Badge variant="destructive">{STATUS_LABELS.deleted}</Badge>
-      ) : (
-        <Badge variant={data.status === 'answered' ? 'default' : 'secondary'}>
-          {STATUS_LABELS[data.status]}
-        </Badge>
-      ),
-    },
-    { key: '작성일', value: new Date(data.createdAt).toLocaleString('ko-KR') },
-  ];
+  const category = data.category
+    ? [
+        CATEGORY_LABELS[data.category],
+        data.subCategory &&
+          (SUB_CATEGORY_LABELS[data.category][data.subCategory] ??
+            data.subCategory),
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : null;
 
   return (
-    <article className="divide-y">
-      <header className="p-4">
-        <h2 className="text-lg font-semibold">{data.title}</h2>
-      </header>
-      <dl>
-        {rows.map(({ key, value }) => (
-          <div key={key} className="grid grid-cols-3 p-3">
-            <dt className="text-sm font-medium text-gray-500">{key}</dt>
-            <dd className="col-span-2 text-sm">{value ?? '-'}</dd>
-          </div>
-        ))}
-      </dl>
-      <section className="p-4">
-        <h3 className="text-sm font-medium text-gray-500 mb-2">문의 내용</h3>
-        <p className="whitespace-pre-wrap text-sm bg-gray-50 p-4 rounded-md">
-          {data.content}
+    <article className="p-6">
+      {data.deletedAt && (
+        <p className="bg-muted text-muted-foreground mb-4 rounded-md px-4 py-3 text-sm">
+          고객에게 보이지 않는 삭제된 문의예요
         </p>
-      </section>
+      )}
+
+      {data.productId && <ProductStrip productId={data.productId} />}
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Badge variant={data.status === 'answered' ? 'secondary' : 'default'}>
+          {STATUS_LABELS[data.status]}
+        </Badge>
+        <Chip>{SOURCE_LABELS[getQuestionSource(data)]}</Chip>
+        {category && <Chip>{category}</Chip>}
+        {data.isSecret && (
+          <Chip>
+            <LockIcon className="size-3" /> 비밀글
+          </Chip>
+        )}
+      </div>
+
+      <h2 className="mt-3 text-xl leading-snug font-bold break-keep">
+        {data.title}
+      </h2>
+      <p className="text-muted-foreground mt-1 text-sm">
+        {new Date(data.createdAt).toLocaleString('ko-KR')}
+      </p>
+
+      <p className="mt-6 text-[15px] leading-7 break-keep whitespace-pre-wrap">
+        {data.content}
+      </p>
+
       {imageUrls.length > 0 && (
-        <section className="p-4">
-          <h3 className="text-sm font-medium text-gray-500 mb-2">
-            첨부파일 ({imageUrls.length}개)
-          </h3>
-          <ul className="flex flex-wrap gap-3">
-            {imageUrls.map((url, index) => (
-              <li key={url}>
-                <button
-                  type="button"
-                  onClick={() => handleImageClick(index)}
-                  className="cursor-pointer"
-                >
-                  <Image
-                    width={96}
-                    height={96}
-                    src={url}
-                    alt={`첨부 이미지 ${index + 1}`}
-                    className="aspect-square object-cover rounded-md border hover:opacity-80 transition-opacity"
-                  />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <ul className="mt-6 flex flex-wrap gap-2">
+          {imageUrls.map((url, index) => (
+            <li key={url}>
+              <button
+                type="button"
+                onClick={() => setSelectedIndex(index)}
+                className="cursor-pointer"
+              >
+                <Image
+                  width={96}
+                  height={96}
+                  src={url}
+                  alt={`첨부 이미지 ${index + 1}`}
+                  className="aspect-square rounded-md border object-cover transition-opacity hover:opacity-80"
+                />
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
 
       <Dialog
@@ -172,14 +186,10 @@ function QuestionDetailContent({ questionId }: { questionId: string }) {
 
 export function QuestionDetail({ questionId }: { questionId: string }) {
   return (
-    <Container className="divide-y">
-      <Header
-        title="문의 상세"
-        right={<QuestionDeleteButton questionId={questionId} />}
-      />
+    <Container>
       <Suspense
         fallback={
-          <div className="flex justify-center p-4">
+          <div className="flex justify-center p-6">
             <Spinner />
           </div>
         }

@@ -7,12 +7,16 @@ import {
 } from '@tanstack/react-query';
 import { qnaQueryKeys } from './query-keys';
 
-export const useQuestions = (query: QnaListQuery) => {
+export const useQuestions = (
+  query: QnaListQuery,
+  { enabled = true }: { enabled?: boolean } = {}
+) => {
   return useQuery({
     queryKey: qnaQueryKeys.list(query),
     queryFn: () => qnaApi.getQuestions(query),
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,
+    enabled,
   });
 };
 

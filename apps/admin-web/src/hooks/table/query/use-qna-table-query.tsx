@@ -12,20 +12,22 @@ export const useQnaTableQuery = ({
   pageSize = 20,
 }: UseQnaTableQueryProps) => {
   const queryObject = useQueryParams(
-    ['page', 'q', 'category', 'status', 'sort', 'order', 'createdAt'],
+    ['page', 'q', 'source', 'category', 'status', 'sort', 'order', 'createdAt'],
     prefix
   );
 
-  const { page, q, category, status, sort, createdAt } = queryObject;
+  const { page, q, source, category, status, order, createdAt } = queryObject;
   const { from: createdFrom, to: createdTo } = parseDateRangeParam(createdAt);
 
   const searchParams: QnaListQuery = {
     limit: pageSize,
     page: page ? Number(page) : 1,
     q,
+    source: source as QnaListQuery['source'],
     category: category as QnaListQuery['category'],
     status: status as QnaListQuery['status'],
-    sort: sort as QnaListQuery['sort'],
+    // ugc 는 작성일 정렬만 latest/oldest 로 받는다 — 테이블의 order(asc/desc)를 옮긴다
+    sort: order === 'asc' ? 'oldest' : 'latest',
     createdFrom,
     createdTo,
   };

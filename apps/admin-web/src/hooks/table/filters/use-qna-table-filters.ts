@@ -1,13 +1,22 @@
 import type { Filter } from '@/components/data-table';
 import {
   CATEGORY_LABELS,
-  STATUS_LABELS,
+  SOURCE_LABELS,
   QUESTION_CATEGORIES,
-  QUESTION_STATUS_FILTERS,
+  QUESTION_SOURCES,
 } from '@/lib/types/dto/qna';
 
 export function useQnaTableFilters(): Filter[] {
   return [
+    {
+      key: 'source',
+      label: '출처',
+      type: 'select',
+      options: QUESTION_SOURCES.map((source) => ({
+        label: SOURCE_LABELS[source],
+        value: source,
+      })),
+    },
     {
       key: 'category',
       label: '카테고리',
@@ -15,15 +24,6 @@ export function useQnaTableFilters(): Filter[] {
       options: QUESTION_CATEGORIES.map((cat) => ({
         label: CATEGORY_LABELS[cat],
         value: cat,
-      })),
-    },
-    {
-      key: 'status',
-      label: '상태',
-      type: 'select',
-      options: QUESTION_STATUS_FILTERS.map((status) => ({
-        label: STATUS_LABELS[status],
-        value: status,
       })),
     },
     {

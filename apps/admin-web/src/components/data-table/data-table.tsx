@@ -5,6 +5,7 @@ import { type Row, type RowData, type Table } from '@tanstack/react-table';
 import { DataTableQuery } from './data-table-query';
 import { DataTableRoot } from './data-table-root';
 import type { Filter } from './data-table-filter/types';
+import { DataTableTabs, type DataTableTabsConfig } from './data-table-tabs';
 
 type DataTableProps<TData extends RowData> = {
   table: Table<TData>;
@@ -25,6 +26,8 @@ type DataTableProps<TData extends RowData> = {
   variant?: 'plain' | 'grid';
   rowClassName?: (row: Row<TData>) => string | undefined;
   toolbar?: React.ReactNode;
+  /** 필터 줄 위에 놓는 상태 탭. URL 파라미터로 동작한다 */
+  tabs?: DataTableTabsConfig;
 };
 
 export function DataTable<TData extends RowData>({
@@ -45,9 +48,11 @@ export function DataTable<TData extends RowData>({
   variant,
   rowClassName,
   toolbar,
+  tabs,
 }: DataTableProps<TData>) {
   return (
     <div>
+      {tabs && <DataTableTabs tabs={tabs} prefix={prefix} />}
       <DataTableQuery
         filters={filters}
         orderBy={orderBy}

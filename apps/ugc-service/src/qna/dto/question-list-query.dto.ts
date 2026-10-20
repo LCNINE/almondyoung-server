@@ -2,7 +2,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsIn, IsISO8601, IsOptional, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '@app/shared/dto';
-import { QUESTION_CATEGORIES, type QuestionCategory } from '../constants';
+import { QUESTION_CATEGORIES, QUESTION_SOURCES, type QuestionCategory, type QuestionSource } from '../constants';
 
 export const QUESTION_SORT_OPTIONS = ['latest', 'oldest'] as const;
 export type QuestionSortOption = (typeof QUESTION_SORT_OPTIONS)[number];
@@ -105,6 +105,14 @@ export class AdminQuestionListQueryDto extends PaginationQueryDto {
   category?: QuestionCategory;
 
   @ApiPropertyOptional({
+    description: '문의 출처 필터 (product_qna: 상품 Q&A, inquiry: 1:1 문의)',
+    enum: QUESTION_SOURCES,
+  })
+  @IsOptional()
+  @IsIn(QUESTION_SOURCES)
+  source?: QuestionSource;
+
+  @ApiPropertyOptional({
     description: '상태 필터',
     enum: ['active', 'answered', 'deleted'],
   })
@@ -126,6 +134,16 @@ export class AdminQuestionListQueryDto extends PaginationQueryDto {
   })
   @IsOptional()
   q?: string;
+
+  @ApiPropertyOptional({
+    description: 'q 와 OR 로 묶을 작성자 ID 목록 (UUID 콤마 구분). 어드민이 아이디·메일·전화번호로 찾은 회원',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.split(',').filter(Boolean) : value,
+  )
+  @IsUUID('all', { each: true })
+  authorIds?: string[];
 
   @ApiPropertyOptional({
     description: '작성자(회원) ID (UUID) - 특정 회원의 문의만 조회 시',
