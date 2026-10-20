@@ -1,5 +1,6 @@
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
+import { createCheckpointsForTesting } from '@app/authorization';
 import { DbService } from '@app/db';
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { createServer } from 'node:http';
@@ -354,7 +355,7 @@ run('attendance PostgreSQL transactions', () => {
     const [ownLeave] = await calendar.save(owner, [{ date: '2026-10-16', type: 'full' }]);
     const [otherLeave] = await calendar.save(other, [{ date: '2026-10-16', type: 'am', start: '13:00', end: '18:00' }]);
 
-    const controller = new AttendanceController(service, repo, calendar);
+    const controller = new AttendanceController(service, repo, calendar, createCheckpointsForTesting());
     const shared = await controller.calendarList('2026-10-16', '2026-10-16');
 
     expect(shared).toEqual(
@@ -428,8 +429,8 @@ run('attendance PostgreSQL transactions', () => {
     });
 
     const results = await Promise.allSettled([
-      requests.decide(master, ['master'], request.id, { version: 1, status: 'approved', reason: '확인' }),
-      requests.decide(master, ['master'], request.id, { version: 1, status: 'approved', reason: '재시도' }),
+      requests.decide(master, true, request.id, { version: 1, status: 'approved', reason: '확인' }),
+      requests.decide(master, true, request.id, { version: 1, status: 'approved', reason: '재시도' }),
     ]);
 
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
@@ -457,7 +458,7 @@ run('attendance PostgreSQL transactions', () => {
     await service.punch(owner, punch('in', '00000000-0000-4000-8000-000000000015', now), now);
 
     await expect(
-      requests.decide(master, ['master'], request.id, { version: 1, status: 'approved', reason: '' }),
+      requests.decide(master, true, request.id, { version: 1, status: 'approved', reason: '' }),
     ).rejects.toThrow();
 
     expect((await repo.records(owner))[0].checkIn.toISOString()).toBe(now.toISOString());
@@ -483,7 +484,7 @@ run('attendance PostgreSQL transactions', () => {
     await expect(requests.history(other, false, request.id)).rejects.toThrow();
 
     await expect(
-      requests.decide(master, ['master'], request.id, { version: 2, status: 'approved', reason: '' }),
+      requests.decide(master, true, request.id, { version: 2, status: 'approved', reason: '' }),
     ).rejects.toThrow();
   });
 
@@ -519,7 +520,7 @@ run('attendance PostgreSQL transactions', () => {
 
     await service.punch(owner, punch('in', '00000000-0000-4000-8000-000000000016', now), now);
 
-    const controller = new AttendanceController(service, repo, calendar);
+    const controller = new AttendanceController(service, repo, calendar, createCheckpointsForTesting());
     const masterUser = { id: master, roles: ['master'] } as JwtPayload;
     const otherUser = { id: other, roles: ['admin'] } as JwtPayload;
 
@@ -533,7 +534,7 @@ run('attendance PostgreSQL transactions', () => {
   });
 
   it('versions worksite corrections and rejects punches at a disabled site', async () => {
-    const controller = new AttendanceController(service, repo, calendar);
+    const controller = new AttendanceController(service, repo, calendar, createCheckpointsForTesting());
     const masterUser = { id: master, roles: ['master'] } as JwtPayload;
     const input = {
       name: '이전 본사',
@@ -636,7 +637,7 @@ run('attendance PostgreSQL transactions', () => {
         await database.db.select().from(attendanceAudit).where(eq(attendanceAudit.kind, 'request.ai_reviewed')),
       ).toHaveLength(0);
 
-      const decision = await requests.decide(master, ['master'], manualRequest.id, {
+      const decision = await requests.decide(master, true, manualRequest.id, {
         version: 1,
         status: 'approved',
         reason: 'AI 응답 지연 중 담당자가 실제 근무를 확인했습니다.',
@@ -711,7 +712,7 @@ run('attendance PostgreSQL transactions', () => {
 
         expect(running).toMatchObject({ status: 'pending', version: 1, aiStatus: 'running' });
 
-        await requests.decide(master, ['master'], request.id, {
+        await requests.decide(master, true, request.id, {
           version: 1,
           status: 'needs_information',
           reason: '누락된 근무 내용을 보완해 주세요.',

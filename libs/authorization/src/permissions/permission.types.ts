@@ -15,6 +15,7 @@ export const PERMISSION_DOMAINS = {
   system: '설정',
   archive: '문서',
   ai: 'AI',
+  attendance: '근태',
 } as const;
 
 export type PermissionDomain = keyof typeof PERMISSION_DOMAINS;

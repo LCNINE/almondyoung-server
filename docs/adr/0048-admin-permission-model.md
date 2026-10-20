@@ -114,7 +114,7 @@ Accepted (2026-10-12). 적용은 단계별로 한다 — 이 ADR 시점에는 �
 36. **접속기록은 쓰고 읽기만 한다.** 고치는 경로가 없고, 보관 기간(`PII_ACCESS_LOG_RETENTION_DAYS`, 기본 2년)이 지난 행만 정리 크론이
     지운다. 접속기록을 보는 것도 변경 이력에 남긴다. 점검 기록은 기간·점검자·메모를 남긴다(주기는 내부 관리계획이 정한다).
 37. **`AUTHZ_ENFORCE=true` 는 판정 주체를 바꾼다.** 그 서비스의 권한 분류 라우트(`@RequirePermission`)에서는 기존 인가
-    가드(`AdminRealmGuard`·`ScopeGuard`·`RolesGuard`·wallet 관리자 분기)가 물러나고 `PermissionGuard` 만 결정한다. 공개·고객·키·
+    가드(`AdminRealmGuard`·`ScopeGuard`·`RolesGuard`·`MasterRoleGuard`·wallet 관리자 분기)가 물러나고 `PermissionGuard` 만 결정한다. 공개·고객·키·
     내부 라우트는 기존 가드가 계속 판정한다. 끄면 기존 판정으로 돌아간다. 옛 가드가 물러날지는 `PermissionAuthority` 한 곳이 답한다.
 38. **판정 지점도 같은 스위치를 따른다** — 켜면 `PermissionCheckpoints.compare`·`compareDecision` 이 새 판정을 돌려준다(판정 불가는 거부).
     비교 기록은 두 모드 모두 남기고, 로그에 `mode` 를 적는다.

@@ -553,6 +553,30 @@ export const PERMISSION_CATALOG = [
     grant: ADMIN,
     standalone: true,
   }),
+  // 근태 — 본인 근태는 직원 누구나, 남의 기록·검토·통계·근무지는 관리자
+  permission('attendance.own.write', '내 근태', '내 출퇴근·휴가·근태 신청을 기록하고 내 근태 알림을 받는다', {
+    owners: ['user-service', 'notification'],
+    grant: ADMIN,
+    standalone: true,
+  }),
+  permission('attendance.staff.read', '직원 근태 조회', '다른 직원의 근태 기록·신청 이력과 쉬는 근무지를 본다', {
+    owners: ['user-service'],
+    grant: NOBODY,
+  }),
+  permission('attendance.request.review', '근태 신청 검토', '직원의 근태 신청을 검토하고 승인·반려한다', {
+    owners: ['user-service'],
+    grant: NOBODY,
+    requires: ['attendance.staff.read'],
+  }),
+  permission('attendance.statistics.read', '근태 통계', '직원별 월간 근태 통계를 본다', {
+    owners: ['user-service'],
+    grant: NOBODY,
+  }),
+  permission('attendance.worksite.write', '근무지 관리', '근무지를 등록하고 고친다', {
+    owners: ['user-service'],
+    grant: NOBODY,
+    requires: ['attendance.staff.read'],
+  }),
 ] as const;
 
 export type Permission = (typeof PERMISSION_CATALOG)[number]['key'];

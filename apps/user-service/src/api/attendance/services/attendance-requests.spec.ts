@@ -23,13 +23,13 @@ describe('attendance correction boundaries', () => {
   });
 
   it('rejects stale, completed, and non-master decisions, but permits master self approval', () => {
-    expect(() => assertDecisionAllowed(['admin'], 'pending', 1, 1)).toThrow();
+    expect(() => assertDecisionAllowed(false, 'pending', 1, 1)).toThrow();
 
-    expect(() => assertDecisionAllowed(['master'], 'approved', 1, 1)).toThrow();
+    expect(() => assertDecisionAllowed(true, 'approved', 1, 1)).toThrow();
 
-    expect(() => assertDecisionAllowed(['master'], 'pending', 2, 1)).toThrow();
+    expect(() => assertDecisionAllowed(true, 'pending', 2, 1)).toThrow();
 
-    expect(() => assertDecisionAllowed(['master'], 'pending', 1, 1)).not.toThrow();
+    expect(() => assertDecisionAllowed(true, 'pending', 1, 1)).not.toThrow();
   });
 
   it('rejects malformed attachment metadata as an unusable attachment', async () => {

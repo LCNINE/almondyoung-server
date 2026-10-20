@@ -9,7 +9,7 @@ import { PermissionAuthority } from '../services/permission-authority';
 import { PermissionRuntimeOptions } from '../services/permission-runtime.options';
 import { RouteRequirementResolver } from '../services/route-requirement.resolver';
 import { AdminRealmGuard } from './admin-realm.guard';
-import { RolesGuard } from './master-role.guard';
+import { MasterRoleGuard, RolesGuard } from './master-role.guard';
 import { ScopeGuard } from './scope.guard';
 
 /** 공용 JWT 전략이 남기는 실제 모양 — `id` 가 아니라 `userId`·`sub`. */
@@ -52,6 +52,7 @@ const guards: [string, (a?: PermissionAuthority) => CanActivate, keyof Routes][]
   ['AdminRealmGuard', (a) => new AdminRealmGuard(new Reflector(), a), 'permissionOnlyRoute'],
   ['ScopeGuard', (a) => new ScopeGuard(new Reflector(), noScopes, a), 'permissionRoute'],
   ['RolesGuard', (a) => new (RolesGuard('admin', 'master'))(a), 'permissionRoute'],
+  ['MasterRoleGuard', (a) => new MasterRoleGuard(a), 'permissionRoute'],
 ];
 
 const verdict = async (guard: CanActivate, context: ExecutionContext): Promise<boolean> => {

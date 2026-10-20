@@ -86,7 +86,20 @@ describe('permission catalog', () => {
       Object.keys(expected).map((key) => [key, findPermission(key)?.grantOnFirstRegistration ?? null]),
     );
     expect(actual).toEqual(expected);
-    expect(PERMISSION_CATALOG).toHaveLength(104);
+    expect(PERMISSION_CATALOG).toHaveLength(109);
+  });
+
+  it('registers attendance keys with today-equivalent grants', () => {
+    // 내 근태는 오늘 근태를 쓰는 admin, 관리(남의 기록·검토·통계·근무지)는 오늘처럼 master 만
+    expect(findPermission('attendance.own.write')?.grantOnFirstRegistration).toEqual(['admin']);
+    for (const key of [
+      'attendance.staff.read',
+      'attendance.request.review',
+      'attendance.statistics.read',
+      'attendance.worksite.write',
+    ]) {
+      expect(findPermission(key)?.grantOnFirstRegistration).toEqual([]);
+    }
   });
 
   it('declares the recipient permission for logistics and admin', () => {

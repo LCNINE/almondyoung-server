@@ -45,6 +45,11 @@ describe('admin-web write actions', () => {
     expect(MASTER_ONLY_MUTATIONS.filter((key) => !blocked.includes(key))).toEqual([]);
   });
 
+  it('counts a layout guard as the guard of every page under it', () => {
+    expect(analysis.consumers.has('features/attendance/components/attendance-card.tsx')).toBe(true);
+    expect(analysis.uncovered.filter((u) => u.startsWith('features/attendance/'))).toEqual([]);
+  });
+
   it('checks the permission of every mutation a screen runs', () => {
     const allowed = new Set(UNGUARDED_MUTATIONS.map((e) => e.entry));
     expect(analysis.uncovered.filter((u) => !allowed.has(u))).toEqual([]);

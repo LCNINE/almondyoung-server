@@ -33,6 +33,13 @@ export const SCREEN_ACCESS: Readonly<Record<string, ScreenAccess>> = {
   '/users/pii-access-log': any('iam.pii_access_log.read'),
   '/company/integrations/oauth-clients': any('system.oauth_client.write'),
 
+  // 근태 — 화면 안 관리 기능(남의 기록·통계)은 그 화면이 내 근태 응답의 관리 표시로 가른다
+  '/company/attendance': any('attendance.own.write'),
+  '/company/attendance/review': any('attendance.request.review'),
+  '/company/attendance/worksites': any('attendance.worksite.write'),
+  '/attendance': any('attendance.own.write'),
+  '/attendance/review': any('attendance.request.review'),
+
   // 채널/고객
   '/account/customer': any('customer.profile.read'),
   '/account/blacklist': any('customer.profile.read'),

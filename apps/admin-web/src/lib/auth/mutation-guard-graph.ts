@@ -102,6 +102,18 @@ export function analyzeAdminWeb(srcDir: string, screenKeys: (screen: string) => 
       importers.get(m)!.add(file);
     }
   }
+  // Next 레이아웃은 같은 폴더·하위 폴더의 페이지를 감싼다 — 레이아웃의 화면 판정도 그 페이지의 판정이다.
+  for (const file of fileSet) {
+    if (!/(^|\/)page\.tsx$/.test(file)) continue;
+    for (let dir = dirname(file); dir !== '.' && dir !== ''; dir = dirname(dir)) {
+      const layout = `${dir}/layout.tsx`;
+      if (fileSet.has(layout)) {
+        if (!importers.has(file)) importers.set(file, new Set());
+        importers.get(file)!.add(layout);
+      }
+      if (dir === 'app') break;
+    }
+  }
   const ancestors = (file: string): Set<string> => {
     const seen = new Set([file]);
     const stack = [file];

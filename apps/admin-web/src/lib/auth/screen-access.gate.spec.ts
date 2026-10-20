@@ -26,7 +26,12 @@ const routeOf = (file: string) =>
     .join('/');
 
 /** 하위 페이지가 클라이언트 컴포넌트라 레이아웃이 가드하는 경로. */
-const LAYOUT_GUARDED: Record<string, string> = { '/mobile': 'mobile/layout.tsx', '/customer-window/[id]': 'customer-window/[id]/layout.tsx' };
+const LAYOUT_GUARDED: Record<string, string> = {
+  '/mobile': 'mobile/layout.tsx',
+  '/customer-window/[id]': 'customer-window/[id]/layout.tsx',
+  '/attendance': 'attendance/layout.tsx',
+  '/company/attendance': '(admin)/company/attendance/layout.tsx',
+};
 /** redirect() 만 하는 페이지 — 도착 화면이 판정한다. */
 const REDIRECT_ONLY = new Set(['/mall/marketing/campaigns', '/statistics']);
 
@@ -77,6 +82,9 @@ const MASTER_ONLY_TODAY = new Set([
   '/company/integrations/oauth-clients',
   // 새 화면이지만 같은 성격 — 개인정보 접속기록 조회 권한은 첫 부여가 없다(master 만).
   '/users/pii-access-log',
+  '/company/attendance/review',
+  '/company/attendance/worksites',
+  '/attendance/review',
 ]);
 
 describe('admin·master 화면 결과 불변(승인된 변화 제외)', () => {

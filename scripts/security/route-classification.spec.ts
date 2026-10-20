@@ -55,6 +55,16 @@ const NON_READ_GET: Record<string, string> = {
   'user-service GET //admin/oauth-clients/:clientId': '시스템 설정 화면 전체가 관리 권한 하나다',
   'ai GET /assistant/sessions': '어시스턴트 사용자 자신의 대화 목록이다',
   'ai GET /assistant/sessions/:sessionId/messages': '어시스턴트 사용자 자신의 대화다',
+  'user-service GET /attendance/me': '근태 사용자 자신의 오늘 근태다',
+  'user-service GET /attendance/requests': '근태 사용자 자신의 신청 목록이다',
+  'user-service GET /attendance/requests/:id/history': '자기 신청 이력이다(남의 이력은 판정 지점이 직원 근태 조회로 연다)',
+  'user-service GET /attendance/records': '자기 근태 기록이다(남의 기록은 판정 지점이 직원 근태 조회로 연다)',
+  'user-service GET /attendance/calendar': '근태 사용자들이 함께 보는 휴가 달력이다',
+  'user-service GET /attendance/recommendations': '근태 사용자 자신의 휴가 추천이다',
+  'user-service GET /attendance/overview': '근태 사용자들이 함께 보는 오늘 근무 현황이다',
+  'user-service GET /attendance/worksites': '출퇴근 화면이 쓰는 근무지 목록이다',
+  'user-service GET /attendance/review': '검토 권한자의 작업 목록이다',
+  'notification GET /web-push/config': '근태 알림 등록에 쓰는 공개 키다',
 };
 
 describe('라우트 분류', () => {

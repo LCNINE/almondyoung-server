@@ -1,4 +1,10 @@
-import { RolesGuard, type JwtPayload, MasterRoleGuard } from '@app/authorization';
+import {
+  RolesGuard,
+  type JwtPayload,
+  MasterRoleGuard,
+  PermissionCheckpoints,
+  RequirePermission,
+} from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import {
   Body,
@@ -36,6 +42,7 @@ import {
   UpdateWorksiteDto,
   WorksiteDto,
 } from '../dto/attendance.dto';
+import { legacyAttendanceManager } from '../attendance-authz';
 
 @Controller('attendance')
 @UseGuards(RolesGuard('admin', 'master'), ActiveAttendanceStaffGuard)
@@ -44,9 +51,11 @@ export class AttendanceController {
     private readonly service: AttendanceService,
     private readonly repo: AttendanceRepository,
     private readonly calendar: AttendanceCalendarService,
+    private readonly checkpoints: PermissionCheckpoints,
   ) {}
 
   @Get('me')
+  @RequirePermission('attendance.own.write')
   async me(@CurrentUser() user: JwtPayload): Promise<AttendanceMe> {
     const today = seoulDate(new Date());
 
@@ -70,21 +79,37 @@ export class AttendanceController {
       leave: leaves.find((item) => item.userId === user.id) ?? null,
       settings,
       worksites: sites.map((site) => ({ ...site, latitude: Number(site.latitude), longitude: Number(site.longitude) })),
-      isMaster: user.roles.includes('master'),
+      isMaster: this.checkpoints.compare(
+        'attendance.manager_view',
+        legacyAttendanceManager(user.roles),
+        { roles: user.roles ?? [] },
+        ['attendance.staff.read'],
+      ),
     };
   }
 
   @Post('punch')
+  @RequirePermission('attendance.own.write')
   punch(@CurrentUser() user: JwtPayload, @Body() dto: PunchDto) {
     return this.service.punch(user.id, dto);
   }
 
   @Get('records')
+  @RequirePermission('attendance.own.write')
   async records(
     @CurrentUser() user: JwtPayload,
     @Query('userId', new ParseUUIDPipe({ optional: true })) userId?: string,
   ) {
-    if (userId && userId !== user.id && !user.roles.includes('master')) {
+    if (
+      userId &&
+      userId !== user.id &&
+      !this.checkpoints.compare(
+        'attendance.staff_records',
+        legacyAttendanceManager(user.roles),
+        { roles: user.roles ?? [] },
+        ['attendance.staff.read'],
+      )
+    ) {
       throw new ForbiddenException('다른 직원의 상세 기록은 마스터만 조회할 수 있어요.');
     }
 
@@ -92,16 +117,19 @@ export class AttendanceController {
   }
 
   @Get('calendar')
+  @RequirePermission('attendance.own.write')
   calendarList(@Query('from') from: string, @Query('to') to: string) {
     return this.calendar.list(from, to);
   }
 
   @Get('recommendations')
+  @RequirePermission('attendance.own.write')
   recommendations(@CurrentUser() user: JwtPayload) {
     return this.calendar.recommendations(user.id);
   }
 
   @Post('leaves')
+  @RequirePermission('attendance.own.write')
   saveLeaves(@CurrentUser() user: JwtPayload, @Body() dto: LeaveBatchDto) {
     return this.calendar.save(user.id, dto.days, {
       recurrence: dto.recurrence,
@@ -111,21 +139,25 @@ export class AttendanceController {
   }
 
   @Delete('leaves/:id')
+  @RequirePermission('attendance.own.write')
   removeLeave(@CurrentUser() user: JwtPayload, @Param('id', ParseUUIDPipe) id: string) {
     return this.calendar.remove(user.id, id);
   }
 
   @Put('leaves/:id')
+  @RequirePermission('attendance.own.write')
   updateLeave(@CurrentUser() user: JwtPayload, @Param('id', ParseUUIDPipe) id: string, @Body() dto: LeaveDayDto) {
     return this.calendar.update(user.id, id, dto);
   }
 
   @Get('overview')
+  @RequirePermission('attendance.own.write')
   overview() {
     return this.calendar.overview();
   }
 
   @Put('settings')
+  @RequirePermission('attendance.own.write')
   async saveSettings(@CurrentUser() user: JwtPayload, @Body() dto: AttendanceSettingsDto) {
     const message = validatePlannedTimes(dto.normalStart, dto.normalEnd);
 
@@ -149,11 +181,21 @@ export class AttendanceController {
   }
 
   @Get('worksites')
+  @RequirePermission('attendance.own.write')
   async sites(@CurrentUser() user: JwtPayload) {
     const sites = await this.repo.db
       .select()
       .from(attendanceWorksites)
-      .where(user.roles.includes('master') ? undefined : eq(attendanceWorksites.active, true));
+      .where(
+        this.checkpoints.compare(
+          'attendance.worksite_inactive',
+          legacyAttendanceManager(user.roles),
+          { roles: user.roles ?? [] },
+          ['attendance.staff.read'],
+        )
+          ? undefined
+          : eq(attendanceWorksites.active, true),
+      );
 
     return sites.map((site) => ({
       ...site,
@@ -164,6 +206,7 @@ export class AttendanceController {
 
   @Post('worksites')
   @UseGuards(MasterRoleGuard)
+  @RequirePermission('attendance.worksite.write')
   async createSite(@CurrentUser() user: JwtPayload, @Body() dto: WorksiteDto) {
     if (dto.accuracyMeters >= dto.radiusMeters || !dto.name.trim()) {
       throw new BadRequestException('근무지 이름과 반경·정확도를 확인해 주세요.');
@@ -185,6 +228,7 @@ export class AttendanceController {
 
   @Put('worksites/:id')
   @UseGuards(MasterRoleGuard)
+  @RequirePermission('attendance.worksite.write')
   async updateSite(
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseUUIDPipe) id: string,

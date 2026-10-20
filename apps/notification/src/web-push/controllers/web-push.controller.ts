@@ -1,4 +1,4 @@
-import { InternalOnly } from '@app/authorization';
+import { InternalOnly, RequirePermission } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import { Body, Controller, Delete, Get, Post } from '@nestjs/common';
 import {
@@ -14,21 +14,25 @@ export class WebPushController {
   constructor(private readonly service: WebPushService) {}
 
   @Get('config')
+  @RequirePermission('attendance.own.write')
   config() {
     return this.service.config();
   }
 
   @Post('subscriptions')
+  @RequirePermission('attendance.own.write')
   register(@CurrentUser() user: { userId: string }, @Body() input: BrowserSubscriptionDto) {
     return this.service.register(user.userId, input);
   }
 
   @Delete('subscriptions')
+  @RequirePermission('attendance.own.write')
   remove(@CurrentUser() user: { userId: string }, @Body() input: RemoveSubscriptionDto) {
     return this.service.remove(user.userId, input.endpoint);
   }
 
   @Post('test')
+  @RequirePermission('attendance.own.write')
   test(@CurrentUser() user: { userId: string }, @Body() input: TestBrowserPushDto) {
     return this.service.sendTest(user.userId, input.endpoint);
   }
