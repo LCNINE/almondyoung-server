@@ -197,6 +197,29 @@ describeIfDb('recordSalesOrderCancellation — 취소 행과 라인 행을 같�
     });
   });
 
+  it('v1 full after a legacy partial (metadata only, no line rows) counts the legacy partial as prior', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const o = await seedOrder(tx, w, 2);
+      // 배포 전 옛 partial — 쓰기 문을 거치지 않아 라인 행이 없고 metadata.cancelledLines 만 있다.
+      // 백필 전 옛 데이터를 흉내 내는 픽스처라 쓰기 문을 일부러 우회한다(가드는 스펙을 보지 않는다).
+      await tx.insert(wmsTables.salesOrderCancellations).values({
+        salesOrderId: o.salesOrderId,
+        cancellationScope: 'partial',
+        effects: [],
+        metadata: { cancelledLines: [{ salesOrderLineId: o.lineId, quantity: 1 }] },
+      });
+
+      await w.salesOrders.cancel(o.salesOrderId, { cancelledBy: 'naver' }, tx);
+
+      const full = (await cancellationsOf(tx, o.salesOrderId)).find((row) => row.cancellationScope === 'full');
+      expect(full).toBeDefined();
+      expect(await linesOf(tx, full!.id)).toEqual([
+        { salesOrderLineId: o.lineId, quantity: 1, shipmentPhase: 'before_shipment' },
+      ]);
+    });
+  });
+
   it('rejects over-cancellation', async () => {
     await inRollbackTx(db, async (tx) => {
       const { salesOrderId, lineIds } = await seedSalesOrder(tx, { lines: [{ variantId: randomUUID(), quantity: 1 }] });
