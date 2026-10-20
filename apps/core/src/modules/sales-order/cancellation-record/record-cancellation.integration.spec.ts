@@ -1,95 +1,14 @@
 import { randomUUID } from 'crypto';
 import { BadRequestException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import { CORE_ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
-import {
-  inRollbackTx,
-  makeDb,
-  receiveStock,
-  Rollback,
-  seedHolder,
-  seedMatching,
-  seedSalesOrder,
-  seedSku,
-  seedWarehouseWithZone,
-  wireLogistics,
-} from '../../fulfillment/services/__support__';
-import { ambientDbService, assembleOutbound } from '../../fulfillment/services/__support__/simple-outbound-wiring';
-import { outboxPublisherFor } from '../../fulfillment/outbox/__support__/outbox-publisher.factory';
-import { SalesOrdersService } from '../services/sales-orders.service';
+import { inRollbackTx, makeDb, Rollback, seedSalesOrder } from '../../fulfillment/services/__support__';
+import { seedCancellableOrder, seedShippedV1Fulfillment, wireCancellation } from './__support__/cancellation-scenarios';
 import { CancellationLineDerivationError } from './cancellation-lines';
 import { recordSalesOrderCancellation } from './record-cancellation';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
-const ADDRESS = { recipientName: '김', phone: '010-1', postalCode: '12345', roadAddress: '서울', detailAddress: '101' };
-
-function wire(tx: DbTx) {
-  const dbService = ambientDbService(tx);
-  const logistics = wireLogistics(dbService);
-  const outbound = assembleOutbound(tx);
-  const salesOrders = new SalesOrdersService(
-    dbService,
-    outboxPublisherFor(FULFILLMENT_STREAM, dbService),
-    outboxPublisherFor(CORE_ORDER_STREAM, dbService),
-    logistics.lifecycle,
-    logistics.productSkuMapping,
-    logistics.sellable,
-    logistics.backlog,
-    undefined,
-    undefined,
-    undefined,
-    { get: () => outbound.planning } as never,
-  );
-  return { logistics, salesOrders };
-}
-
-/** 라인 하나(주문 수량 quantity), 매칭 SKU 하나 × 1, 재고 넉넉. */
-async function seedOrder(tx: DbTx, w: ReturnType<typeof wire>, quantity: number) {
-  const { warehouseId, locationId } = await seedWarehouseWithZone(tx);
-  const { holderId } = await seedHolder(tx);
-  const { skuId } = await seedSku(tx, holderId);
-  await receiveStock(w.logistics.command, tx, { skuId, warehouseId, locationId, quantity: 100 });
-  const variantId = randomUUID();
-  await seedMatching(tx, { variantId, skuId, quantity: 1 });
-  const { salesOrderId, lineIds } = await seedSalesOrder(tx, { lines: [{ variantId, quantity }] });
-  await tx
-    .update(wmsTables.salesOrders)
-    .set({ shippingAddress: ADDRESS })
-    .where(eq(wmsTables.salesOrders.id, salesOrderId));
-  return { salesOrderId, lineId: lineIds[0], warehouseId, skuId };
-}
-
-/**
- * 상자 없는 옛(V1) FO 를 두고 셀메이트 스크립트(scripts/ops/cellmate-local/mark-core-shipped.js)처럼 출고로 표시한다 —
- * FO status='shipped'·shipped_at, FOI shipped_qty=qty·status='shipped'. 상자가 없으니 취소는 V1 경로를 탄다.
- */
-async function seedShippedV1Fulfillment(
-  tx: DbTx,
-  o: { salesOrderId: string; lineId: string; warehouseId: string; skuId: string },
-  qty: number,
-) {
-  const [fo] = await tx
-    .insert(wmsTables.fulfillmentOrders)
-    .values({ salesOrderId: o.salesOrderId, warehouseId: o.warehouseId, totalItems: 1, totalQty: qty })
-    .returning();
-  await tx.insert(wmsTables.fulfillmentOrderItems).values({
-    fulfillmentOrderId: fo.id,
-    salesOrderId: o.salesOrderId,
-    salesOrderLineId: o.lineId,
-    skuId: o.skuId,
-    qty,
-  });
-  await tx
-    .update(wmsTables.fulfillmentOrders)
-    .set({ status: 'shipped', shippedAt: new Date(), updatedAt: new Date() })
-    .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
-  await tx
-    .update(wmsTables.fulfillmentOrderItems)
-    .set({ shippedQty: qty, status: 'shipped', updatedAt: new Date() })
-    .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fo.id));
-}
 
 async function cancellationsOf(tx: DbTx, salesOrderId: string) {
   return tx
@@ -119,8 +38,8 @@ describeIfDb('recordSalesOrderCancellation — 취소 행과 라인 행을 같�
 
   it('v1 partial before FO writes before_shipment lines', async () => {
     await inRollbackTx(db, async (tx) => {
-      const w = wire(tx);
-      const o = await seedOrder(tx, w, 3);
+      const w = wireCancellation(tx);
+      const o = await seedCancellableOrder(tx, w, 3);
 
       await w.salesOrders.cancel(
         o.salesOrderId,
@@ -139,8 +58,8 @@ describeIfDb('recordSalesOrderCancellation — 취소 행과 라인 행을 같�
 
   it('v1 partial after shipment writes after_shipment lines', async () => {
     await inRollbackTx(db, async (tx) => {
-      const w = wire(tx);
-      const o = await seedOrder(tx, w, 3);
+      const w = wireCancellation(tx);
+      const o = await seedCancellableOrder(tx, w, 3);
       await seedShippedV1Fulfillment(tx, o, 3);
 
       await w.salesOrders.cancel(
@@ -158,8 +77,8 @@ describeIfDb('recordSalesOrderCancellation — 취소 행과 라인 행을 같�
 
   it('v1 full writes every remainder', async () => {
     await inRollbackTx(db, async (tx) => {
-      const w = wire(tx);
-      const o = await seedOrder(tx, w, 2);
+      const w = wireCancellation(tx);
+      const o = await seedCancellableOrder(tx, w, 2);
 
       await w.salesOrders.cancel(
         o.salesOrderId,
@@ -179,8 +98,8 @@ describeIfDb('recordSalesOrderCancellation — 취소 행과 라인 행을 같�
 
   it('v2 full writes outstanding lines', async () => {
     await inRollbackTx(db, async (tx) => {
-      const w = wire(tx);
-      const o = await seedOrder(tx, w, 2);
+      const w = wireCancellation(tx);
+      const o = await seedCancellableOrder(tx, w, 2);
       await w.logistics.fulfillments.create({ salesOrderId: o.salesOrderId, warehouseId: o.warehouseId }, tx);
 
       await w.salesOrders.cancel(
@@ -200,8 +119,8 @@ describeIfDb('recordSalesOrderCancellation — 취소 행과 라인 행을 같�
 
   it('v1 full after a legacy partial (metadata only, no line rows) counts the legacy partial as prior', async () => {
     await inRollbackTx(db, async (tx) => {
-      const w = wire(tx);
-      const o = await seedOrder(tx, w, 2);
+      const w = wireCancellation(tx);
+      const o = await seedCancellableOrder(tx, w, 2);
       // 배포 전 옛 partial — 쓰기 문을 거치지 않아 라인 행이 없고 metadata.cancelledLines 만 있다.
       // 백필 전 옛 데이터를 흉내 내는 픽스처라 쓰기 문을 일부러 우회한다(가드는 스펙을 보지 않는다).
       await tx.insert(wmsTables.salesOrderCancellations).values({
@@ -225,8 +144,8 @@ describeIfDb('recordSalesOrderCancellation — 취소 행과 라인 행을 같�
     // 상자를 거치지 않는 디지털 줄은 박스 줄 배분 검사에 걸리지 않는다 — 전체 취소 행 확인이 없으면
     // 이미 전체 취소가 뺀 줄을 다시 빼려다 쓰기 문 도출(합 > 주문 수량)이 터져 500 이 된다.
     await inRollbackTx(db, async (tx) => {
-      const w = wire(tx);
-      const o = await seedOrder(tx, w, 2);
+      const w = wireCancellation(tx);
+      const o = await seedCancellableOrder(tx, w, 2);
       const [digitalLine] = await tx
         .insert(wmsTables.salesOrderLines)
         .values({
