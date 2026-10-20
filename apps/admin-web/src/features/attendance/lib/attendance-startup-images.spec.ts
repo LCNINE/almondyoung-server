@@ -1,36 +1,14 @@
-import sharp from 'sharp';
-
-// The root Jest transform disables esModuleInterop; retain the real native renderer.
-jest.mock('sharp', () => ({
-  __esModule: true,
-  default: jest.requireActual('sharp'),
-}));
 import {
   attendanceStartupImages,
-  renderAttendanceStartupImage,
+  renderAttendanceStartupSvg,
 } from './attendance-startup-images';
 
-it('serves a real native launch PNG at the exact iPhone screen resolution', async () => {
-  const image = await renderAttendanceStartupImage(390, 844, 3);
-  const metadata = await sharp(image).metadata();
+it('draws the launch image at the exact iPhone screen resolution', () => {
+  const svg = renderAttendanceStartupSvg(390, 844, 3);
 
-  expect(metadata.format).toBe('png');
-  expect(metadata.width).toBe(1170);
-  expect(metadata.height).toBe(2532);
-
-  const { data, info } = await sharp(image)
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  const at = (x: number, y: number) =>
-    Array.from(
-      data.subarray(
-        (y * info.width + x) * info.channels,
-        (y * info.width + x) * info.channels + 3
-      )
-    );
-
-  expect(at(0, 0)).toEqual([255, 251, 245]);
-  expect(data.some((value) => value < 100)).toBe(true);
+  expect(svg).toContain('width="1170" height="2532"');
+  expect(svg).toContain('fill="#FFFBF5"');
+  expect(svg).not.toContain('__CLOCK_ID__');
 });
 
 it('advertises portrait and landscape launch images without requiring login', () => {
@@ -51,8 +29,8 @@ it('advertises portrait and landscape launch images without requiring login', ()
   ).toBe(true);
 });
 
-it('rejects arbitrary image dimensions instead of allocating unbounded images', async () => {
-  await expect(renderAttendanceStartupImage(50000, 50000, 3)).rejects.toThrow(
+it('rejects arbitrary image dimensions instead of allocating unbounded images', () => {
+  expect(() => renderAttendanceStartupSvg(50000, 50000, 3)).toThrow(
     'Unsupported startup image'
   );
 });

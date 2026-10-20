@@ -1,4 +1,6 @@
-import { renderAttendanceStartupImage } from '@/features/attendance/lib/attendance-startup-images';
+import { ImageResponse } from 'next/og';
+import { createElement } from 'react';
+import { renderAttendanceStartupSvg } from '@/features/attendance/lib/attendance-startup-images';
 
 export const runtime = 'nodejs';
 
@@ -9,11 +11,14 @@ export async function GET(request: Request) {
   const scale = Number(params.get('scale'));
 
   try {
-    const image = await renderAttendanceStartupImage(width, height, scale);
+    const svg = renderAttendanceStartupSvg(width, height, scale);
+    const src = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+    const size = { width: width * scale, height: height * scale };
 
-    return new Response(new Uint8Array(image), {
+    // OpenNext 가 Lambda 서버 번들에서 sharp 를 빼므로 next/og(resvg wasm)로 PNG 를 만든다
+    return new ImageResponse(createElement('img', { src, ...size }), {
+      ...size,
       headers: {
-        'Content-Type': 'image/png',
         'Cache-Control': 'public, max-age=86400',
         'X-Content-Type-Options': 'nosniff',
       },

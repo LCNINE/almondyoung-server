@@ -43,7 +43,7 @@ export const attendanceStartupImages = screens.flatMap(
     })
 );
 
-export async function renderAttendanceStartupImage(
+export function renderAttendanceStartupSvg(
   width: number,
   height: number,
   scale: number
@@ -78,7 +78,5 @@ export async function renderAttendanceStartupImage(
     </svg>
   `;
 
-  // ponytail: OpenNext 가 Lambda 번들에서 sharp 를 빼므로, 최상단 import 면 이 파일을 쓰는 /attendance 전체가 500 이 된다
-  const { default: sharp } = await import('sharp');
-  return sharp(Buffer.from(svg)).png().toBuffer();
+  return svg;
 }
