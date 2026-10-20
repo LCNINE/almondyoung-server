@@ -1,4 +1,4 @@
-export type InstallBannerKind = 'ios' | 'inapp' | 'android';
+export type InstallBannerKind = 'ios' | 'android' | 'inapp-ios' | 'inapp-android';
 
 export const INSTALL_BANNER_DISMISSED_KEY = 'attendance-install-banner-dismissed';
 
@@ -9,12 +9,10 @@ export function installBannerKind({
   userAgent,
   maxTouchPoints,
   standalone,
-  hasInstallPrompt,
 }: {
   userAgent: string;
   maxTouchPoints: number;
   standalone: boolean;
-  hasInstallPrompt: boolean;
 }): InstallBannerKind | null {
   if (standalone) return null;
 
@@ -22,10 +20,15 @@ export function installBannerKind({
     /iPhone|iPad|iPod/.test(userAgent) ||
     (/Macintosh/.test(userAgent) && maxTouchPoints > 1);
 
-  if (IN_APP.test(userAgent)) return ios || /Android/.test(userAgent) ? 'inapp' : null;
+  const android = /Android/.test(userAgent);
+
+  if (IN_APP.test(userAgent)) {
+    if (ios) return 'inapp-ios';
+    if (android) return 'inapp-android';
+  }
   if (ios) return 'ios';
-  // Chrome 은 이미 설치했으면 beforeinstallprompt 를 안 쏜다 — 이벤트가 곧 「미설치」 신호다
-  if (hasInstallPrompt && /Android/.test(userAgent)) return 'android';
+  // 설치 창(beforeinstallprompt)은 삼성 인터넷·조건 미충족이면 안 와서, 안 와도 띠는 띄우고 메뉴 안내로 받는다
+  if (android) return 'android';
 
   return null;
 }

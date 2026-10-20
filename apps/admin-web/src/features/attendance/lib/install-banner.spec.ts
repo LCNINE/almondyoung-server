@@ -10,7 +10,7 @@ const ANDROID_CHROME =
 const DESKTOP_CHROME =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36';
 
-const base = { maxTouchPoints: 5, standalone: false, hasInstallPrompt: false };
+const base = { maxTouchPoints: 5, standalone: false };
 
 it('hides the banner inside the installed app', () => {
   expect(
@@ -23,15 +23,18 @@ it('guides iPhone Safari, including iPad in desktop mode', () => {
   expect(installBannerKind({ ...base, userAgent: IPAD_DESKTOP_MODE })).toBe('ios');
 });
 
-it('asks in-app browsers to open Safari first', () => {
-  expect(installBannerKind({ ...base, userAgent: IPHONE_KAKAO })).toBe('inapp');
+it('asks in-app browsers to open the system browser first', () => {
+  expect(installBannerKind({ ...base, userAgent: IPHONE_KAKAO })).toBe('inapp-ios');
+  expect(
+    installBannerKind({ ...base, userAgent: `${ANDROID_CHROME} KAKAOTALK 10.9.0` })
+  ).toBe('inapp-android');
 });
 
-it('offers Android install only when Chrome says the app is not installed', () => {
-  expect(installBannerKind({ ...base, userAgent: ANDROID_CHROME })).toBeNull();
+it('shows the Android banner even when Chrome sends no install prompt', () => {
+  expect(installBannerKind({ ...base, userAgent: ANDROID_CHROME })).toBe('android');
   expect(
-    installBannerKind({ ...base, userAgent: ANDROID_CHROME, hasInstallPrompt: true })
-  ).toBe('android');
+    installBannerKind({ ...base, userAgent: ANDROID_CHROME, standalone: true })
+  ).toBeNull();
 });
 
 it('stays out of the way on desktop', () => {
@@ -40,7 +43,6 @@ it('stays out of the way on desktop', () => {
       ...base,
       userAgent: DESKTOP_CHROME,
       maxTouchPoints: 0,
-      hasInstallPrompt: true,
     })
   ).toBeNull();
 });

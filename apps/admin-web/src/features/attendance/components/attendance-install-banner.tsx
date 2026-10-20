@@ -5,10 +5,13 @@ import {
   Bookmark,
   ChevronLeft,
   Copy,
+  EllipsisVertical,
   FileSearch,
   Menu,
+  Plus,
   RotateCw,
   Share,
+  Smartphone,
   SquarePlus,
   Star,
   X,
@@ -58,23 +61,19 @@ export function AttendanceInstallBanner() {
   useEffect(() => {
     if (wasDismissed()) return;
 
-    const detect = (hasInstallPrompt: boolean) =>
-      setKind(
-        installBannerKind({
-          userAgent: navigator.userAgent,
-          maxTouchPoints: navigator.maxTouchPoints,
-          standalone: isStandalone(),
-          hasInstallPrompt,
-        })
-      );
     const onPrompt = (event: Event) => {
       event.preventDefault();
       setPrompt(event as InstallPromptEvent);
-      detect(true);
     };
     const onInstalled = () => setKind(null);
 
-    detect(false);
+    setKind(
+      installBannerKind({
+        userAgent: navigator.userAgent,
+        maxTouchPoints: navigator.maxTouchPoints,
+        standalone: isStandalone(),
+      })
+    );
     window.addEventListener('beforeinstallprompt', onPrompt);
     window.addEventListener('appinstalled', onInstalled);
 
@@ -135,11 +134,19 @@ export function AttendanceInstallBanner() {
           <X className="size-4" />
         </button>
       </div>
-      {kind === 'ios' && (
-        <IosInstallGuide open={guideOpen} onOpenChange={setGuideOpen} />
+      {(kind === 'ios' || kind === 'android') && (
+        <InstallGuide
+          steps={kind === 'ios' ? IOS_STEPS : ANDROID_STEPS}
+          open={guideOpen}
+          onOpenChange={setGuideOpen}
+        />
       )}
-      {kind === 'inapp' && (
-        <InAppNotice open={guideOpen} onOpenChange={setGuideOpen} />
+      {(kind === 'inapp-ios' || kind === 'inapp-android') && (
+        <InAppNotice
+          browser={kind === 'inapp-ios' ? 'Safari' : 'Chrome'}
+          open={guideOpen}
+          onOpenChange={setGuideOpen}
+        />
       )}
     </>
   );
@@ -206,7 +213,7 @@ function AppHeader() {
   );
 }
 
-const IOS_STEPS = [
+const IOS_STEPS: GuideStep[] = [
   {
     title: '주소창 왼쪽 ≡ 버튼을 눌러요',
     hint: '화면 맨 아래 주소창에 있어요.',
@@ -267,16 +274,64 @@ const IOS_STEPS = [
   },
 ];
 
-function IosInstallGuide({
+const ANDROID_STEPS: GuideStep[] = [
+  {
+    title: '오른쪽 위 ⋮ 버튼을 눌러요',
+    hint: '삼성 인터넷은 아래쪽 ≡ 버튼이에요.',
+    art: (
+      <>
+        <div className="absolute inset-0 bg-gradient-to-b from-white to-slate-100" />
+        <div className="absolute inset-x-3 top-4 flex h-10 items-center gap-2 rounded-full bg-slate-200/80 pr-2 pl-4 text-[13px]">
+          <span className="flex-1 truncate">admin.almondyoung.com/attendance</span>
+          <span className="grid size-7 place-items-center rounded-full ring-[2.5px] ring-red-500">
+            <EllipsisVertical className="size-4" />
+          </span>
+        </div>
+      </>
+    ),
+  },
+  {
+    title: '「홈 화면에 추가」를 눌러요',
+    hint: '「앱 설치」로 보이면 그걸 누르면 돼요.',
+    art: (
+      <div className="absolute top-3 right-3 w-52 rounded-2xl bg-white p-1.5 shadow-lg">
+        <Row icon={Plus} label="새 탭" />
+        <Row icon={Bookmark} label="북마크" />
+        <Row icon={Share} label="공유" />
+        <Row icon={Smartphone} label="홈 화면에 추가" highlight />
+      </div>
+    ),
+  },
+  {
+    title: '「설치」를 누르면 끝이에요',
+    hint: '홈 화면에 아몬드영 워크 아이콘이 생겨요.',
+    art: (
+      <div className="absolute inset-x-5 top-1/2 -translate-y-1/2 rounded-2xl bg-white p-4 shadow-lg">
+        <p className="mb-3 text-[15px] font-semibold">앱 설치</p>
+        <AppHeader />
+        <div className="mt-3 flex justify-end gap-4 text-sm font-semibold text-[#1a73e8]">
+          <span className="px-1 py-0.5">취소</span>
+          <span className="rounded-lg px-2 py-0.5 ring-[2.5px] ring-red-500">설치</span>
+        </div>
+      </div>
+    ),
+  },
+];
+
+type GuideStep = { title: string; hint: string; art: React.ReactNode };
+
+function InstallGuide({
+  steps,
   open,
   onOpenChange,
 }: {
+  steps: GuideStep[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const [step, setStep] = useState(0);
-  const current = IOS_STEPS[step];
-  const last = step === IOS_STEPS.length - 1;
+  const current = steps[step];
+  const last = step === steps.length - 1;
 
   function changeOpen(next: boolean) {
     onOpenChange(next);
@@ -288,10 +343,10 @@ function IosInstallGuide({
       <DrawerContent className="mx-auto w-full max-w-md rounded-t-3xl px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         <DrawerTitle className="sr-only">홈 화면에 추가하기</DrawerTitle>
         <DrawerDescription className="sr-only">
-          Safari 메뉴에서 아몬드영 워크를 홈 화면에 추가하는 방법
+          브라우저 메뉴에서 아몬드영 워크를 홈 화면에 추가하는 방법
         </DrawerDescription>
         <div className="mt-4 mb-3.5 flex gap-1.5" aria-hidden>
-          {IOS_STEPS.map((item, index) => (
+          {steps.map((item, index) => (
             <i
               key={item.title}
               className={`h-1 flex-1 rounded-full ${index <= step ? 'bg-indigo-600' : 'bg-slate-200'}`}
@@ -336,16 +391,18 @@ function IosInstallGuide({
 }
 
 function InAppNotice({
+  browser,
   open,
   onOpenChange,
 }: {
+  browser: 'Safari' | 'Chrome';
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   async function copy() {
     try {
       await navigator.clipboard.writeText(ATTENDANCE_URL);
-      toast.success('주소를 복사했어요. Safari 주소창에 붙여 넣어 주세요.');
+      toast.success(`주소를 복사했어요. ${browser} 주소창에 붙여 넣어 주세요.`);
       onOpenChange(false);
     } catch {
       toast.error(`복사하지 못했어요. ${ATTENDANCE_URL} 을 직접 입력해 주세요.`);
@@ -355,12 +412,12 @@ function InAppNotice({
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
       <DrawerContent className="mx-auto w-full max-w-md rounded-t-3xl px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-        <DrawerTitle className="mt-5 text-lg">Safari로 열어 주세요</DrawerTitle>
+        <DrawerTitle className="mt-5 text-lg">{browser}로 열어 주세요</DrawerTitle>
         <DrawerDescription className="mt-1 mb-4 text-[13px] text-slate-500">
           이 브라우저에서는 홈 화면에 추가할 수 없어요.
         </DrawerDescription>
         <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] leading-6 text-amber-800">
-          오른쪽 아래 <b>⋯</b> → <b>다른 브라우저로 열기</b>를 누른 뒤, Safari에서
+          오른쪽 아래 <b>⋯</b> → <b>다른 브라우저로 열기</b>를 누른 뒤, {browser}에서
           「설치」를 다시 눌러 주세요.
         </p>
         <Button
