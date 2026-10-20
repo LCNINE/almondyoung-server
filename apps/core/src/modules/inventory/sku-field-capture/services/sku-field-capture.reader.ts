@@ -1,0 +1,230 @@
+import { Injectable } from '@nestjs/common';
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, notInArray, sql } from 'drizzle-orm';
+import { alias, AnyPgColumn } from 'drizzle-orm/pg-core';
+import { NotFoundError } from '@app/shared';
+import { InjectTypedDb, DbService } from '@app/db';
+import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
+import { normalizePositionCode } from '../position-code';
+import { FieldCaptureBarcodeStatus } from '../sku-field-capture.rules';
+import {
+  BarcodeOwnerDto,
+  FieldCaptureDetailDto,
+  FieldCaptureProgressDto,
+  FieldCaptureSkuSummaryDto,
+  ShelfPositionDto,
+} from '../dto/sku-field-capture.dto';
+
+/** DB 의 varchar 는 TS 에서 string 이라, CHECK 제약이 보장하는 값 집합으로 좁히는 자리. */
+function asBarcodeStatus(raw: string): FieldCaptureBarcodeStatus {
+  if (raw === 'scanned' || raw === 'no_manufacturer' || raw === 'none') return raw;
+  throw new Error(`unexpected barcode_status: ${raw}`);
+}
+
+/** 「오늘」은 KST. getProgress 의 작업자별 today 와 countWorkerToday 가 같은 식을 쓴다. */
+const completedTodayKst = (completedAt: AnyPgColumn) =>
+  sql`(${completedAt} at time zone 'Asia/Seoul')::date = (now() at time zone 'Asia/Seoul')::date`;
+
+@Injectable()
+export class SkuFieldCaptureReader {
+  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
+
+  async findByPosition(rawCode: string, tx?: DbTx): Promise<ShelfPositionDto> {
+    const positionCode = normalizePositionCode(rawCode);
+    return this.dbService.run(async (trx) => {
+      const rows = await trx
+        .select({
+          skuId: wmsTables.skus.id,
+          code: wmsTables.skus.code,
+          name: wmsTables.skus.name,
+          imageUrl: wmsTables.skuShelfPositions.imageUrl,
+          barcodeStatus: wmsTables.skuFieldCaptures.barcodeStatus,
+          lastWorkerLabel: wmsTables.skuFieldCaptures.lastWorkerLabel,
+          lastCompletedAt: wmsTables.skuFieldCaptures.lastCompletedAt,
+        })
+        .from(wmsTables.skuShelfPositions)
+        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.skuShelfPositions.skuId))
+        .leftJoin(wmsTables.skuFieldCaptures, eq(wmsTables.skuFieldCaptures.skuId, wmsTables.skus.id))
+        .where(and(eq(wmsTables.skuShelfPositions.positionCode, positionCode), eq(wmsTables.skus.isDeleted, false)))
+        .orderBy(asc(wmsTables.skus.code), asc(wmsTables.skus.id));
+      const skus: FieldCaptureSkuSummaryDto[] = rows.map((r) => ({
+        skuId: r.skuId,
+        code: r.code,
+        name: r.name,
+        imageUrl: r.imageUrl,
+        completion:
+          r.barcodeStatus && r.lastWorkerLabel && r.lastCompletedAt
+            ? {
+                barcodeStatus: asBarcodeStatus(r.barcodeStatus),
+                lastWorkerLabel: r.lastWorkerLabel,
+                lastCompletedAt: r.lastCompletedAt.toISOString(),
+              }
+            : null,
+      }));
+      return { positionCode, skus };
+    }, tx);
+  }
+
+  async getDetail(skuId: string, tx?: DbTx): Promise<FieldCaptureDetailDto> {
+    return this.dbService.run(async (trx) => {
+      const conflictSku = alias(wmsTables.skus, 'conflict_sku');
+      const [row] = await trx
+        .select({
+          skuId: wmsTables.skus.id,
+          code: wmsTables.skus.code,
+          name: wmsTables.skus.name,
+          packageWidthMm: wmsTables.skus.packageWidthMm,
+          packageLengthMm: wmsTables.skus.packageLengthMm,
+          packageHeightMm: wmsTables.skus.packageHeightMm,
+          positionCode: wmsTables.skuShelfPositions.positionCode,
+          imageUrl: wmsTables.skuShelfPositions.imageUrl,
+          barcodeStatus: wmsTables.skuFieldCaptures.barcodeStatus,
+          scannedBarcode: wmsTables.skuFieldCaptures.scannedBarcode,
+          allFacesConfirmed: wmsTables.skuFieldCaptures.allFacesConfirmed,
+          lastWorkerLabel: wmsTables.skuFieldCaptures.lastWorkerLabel,
+          lastCompletedAt: wmsTables.skuFieldCaptures.lastCompletedAt,
+          conflictId: conflictSku.id,
+          conflictCode: conflictSku.code,
+          conflictName: conflictSku.name,
+        })
+        .from(wmsTables.skus)
+        .leftJoin(wmsTables.skuShelfPositions, eq(wmsTables.skuShelfPositions.skuId, wmsTables.skus.id))
+        .leftJoin(wmsTables.skuFieldCaptures, eq(wmsTables.skuFieldCaptures.skuId, wmsTables.skus.id))
+        .leftJoin(conflictSku, eq(conflictSku.id, wmsTables.skuFieldCaptures.barcodeConflictSkuId))
+        .where(and(eq(wmsTables.skus.id, skuId), eq(wmsTables.skus.isDeleted, false)));
+      if (!row) throw new NotFoundError(`SKU 를 찾을 수 없습니다: ${skuId}`);
+
+      const barcodes = await trx
+        .select({ barcode: wmsTables.skuBarcodes.barcode })
+        .from(wmsTables.skuBarcodes)
+        .where(eq(wmsTables.skuBarcodes.skuId, skuId))
+        .orderBy(asc(wmsTables.skuBarcodes.createdAt), asc(wmsTables.skuBarcodes.id));
+
+      const photos = await trx
+        .select()
+        .from(wmsTables.skuReferencePhotos)
+        .where(eq(wmsTables.skuReferencePhotos.skuId, skuId))
+        .orderBy(
+          asc(wmsTables.skuReferencePhotos.sortOrder),
+          asc(wmsTables.skuReferencePhotos.createdAt),
+          asc(wmsTables.skuReferencePhotos.id),
+        );
+
+      const conflict: BarcodeOwnerDto | null =
+        row.conflictId && row.conflictCode && row.conflictName
+          ? { skuId: row.conflictId, code: row.conflictCode, name: row.conflictName }
+          : null;
+
+      return {
+        skuId: row.skuId,
+        code: row.code,
+        name: row.name,
+        imageUrl: row.imageUrl,
+        positionCode: row.positionCode,
+        packageWidthMm: row.packageWidthMm,
+        packageLengthMm: row.packageLengthMm,
+        packageHeightMm: row.packageHeightMm,
+        barcodes: barcodes.map((b) => b.barcode),
+        photos: photos.map((p) => ({
+          id: p.id,
+          fileId: p.fileId,
+          sortOrder: p.sortOrder,
+          takenByLabel: p.takenByLabel,
+          createdAt: p.createdAt.toISOString(),
+        })),
+        completion:
+          row.barcodeStatus && row.lastWorkerLabel && row.lastCompletedAt && row.allFacesConfirmed !== null
+            ? {
+                barcodeStatus: asBarcodeStatus(row.barcodeStatus),
+                lastWorkerLabel: row.lastWorkerLabel,
+                lastCompletedAt: row.lastCompletedAt.toISOString(),
+                scannedBarcode: row.scannedBarcode,
+                barcodeConflict: conflict,
+                allFacesConfirmed: row.allFacesConfirmed,
+              }
+            : null,
+      };
+    }, tx);
+  }
+
+  async findBarcodeOwner(barcode: string, tx?: DbTx): Promise<BarcodeOwnerDto | null> {
+    return this.dbService.run(async (trx) => {
+      const [row] = await trx
+        .select({ skuId: wmsTables.skus.id, code: wmsTables.skus.code, name: wmsTables.skus.name })
+        .from(wmsTables.skuBarcodes)
+        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.skuBarcodes.skuId))
+        .where(eq(wmsTables.skuBarcodes.barcode, barcode.trim()));
+      return row ?? null;
+    }, tx);
+  }
+
+  async countWorkerToday(workerId: string, tx?: DbTx): Promise<number> {
+    return this.dbService.run(async (trx) => {
+      const ev = wmsTables.skuFieldCaptureEvents;
+      const [row] = await trx
+        .select({ n: sql<number>`count(distinct ${ev.skuId})`.mapWith(Number) })
+        .from(ev)
+        .where(and(eq(ev.workerId, workerId), completedTodayKst(ev.completedAt)));
+      return row?.n ?? 0;
+    }, tx);
+  }
+
+  async getProgress(tx?: DbTx): Promise<FieldCaptureProgressDto> {
+    return this.dbService.run(async (trx) => {
+      const stocked = trx
+        .select({ skuId: wmsTables.stockLedgers.skuId })
+        .from(wmsTables.stockLedgers)
+        .where(eq(wmsTables.stockLedgers.stockState, 'ON_HAND'))
+        .groupBy(wmsTables.stockLedgers.skuId)
+        .having(gt(sql`sum(${wmsTables.stockLedgers.qty})`, 0));
+      const captured = trx.select({ skuId: wmsTables.skuFieldCaptures.skuId }).from(wmsTables.skuFieldCaptures);
+
+      const [remaining] = await trx
+        .select({ n: count() })
+        .from(wmsTables.skus)
+        .where(
+          and(
+            eq(wmsTables.skus.isDeleted, false),
+            inArray(wmsTables.skus.id, stocked),
+            notInArray(wmsTables.skus.id, captured),
+          ),
+        );
+
+      const [totals] = await trx
+        .select({
+          completed: count(),
+          sticker: sql<number>`count(*) filter (where ${wmsTables.skuFieldCaptures.barcodeStatus} = 'none')`.mapWith(
+            Number,
+          ),
+        })
+        .from(wmsTables.skuFieldCaptures);
+
+      const [conflicts] = await trx
+        .select({ n: count() })
+        .from(wmsTables.skuFieldCaptures)
+        .where(isNotNull(wmsTables.skuFieldCaptures.barcodeConflictSkuId));
+
+      const ev = wmsTables.skuFieldCaptureEvents;
+      const workers = await trx
+        .select({
+          workerId: ev.workerId,
+          workerLabel: sql<string>`(array_agg(${ev.workerLabel} order by ${ev.completedAt} desc, ${ev.id} desc))[1]`,
+          today:
+            sql<number>`count(distinct ${ev.skuId}) filter (where ${completedTodayKst(ev.completedAt)})`.mapWith(
+              Number,
+            ),
+          total: sql<number>`count(distinct ${ev.skuId})`.mapWith(Number),
+        })
+        .from(ev)
+        .groupBy(ev.workerId)
+        .orderBy(desc(sql`count(distinct ${ev.skuId})`), asc(ev.workerId));
+
+      return {
+        remainingSkus: remaining?.n ?? 0,
+        completedSkus: totals?.completed ?? 0,
+        stickerNeededSkus: totals?.sticker ?? 0,
+        barcodeConflictSkus: conflicts?.n ?? 0,
+        workers,
+      };
+    }, tx);
+  }
+}

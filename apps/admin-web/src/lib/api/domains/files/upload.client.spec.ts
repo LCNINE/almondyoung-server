@@ -104,8 +104,12 @@ describe('uploadFileToFileService', () => {
     await expect(
       uploadFileToFileService(smallFile(), { contextId: 'banner-image', isPublic: true })
     ).rejects.toThrow('File size too large');
+    // 화면(errorMessageOf)이 이 이름으로 «거부»를 알아보고 사유를 보여 준다
+    await expect(
+      uploadFileToFileService(smallFile(), { contextId: 'banner-image', isPublic: true })
+    ).rejects.toMatchObject({ name: 'UploadRejectedError' });
 
-    expect(mockedFetchWithRefresh).toHaveBeenCalledTimes(1);
+    expect(mockedFetchWithRefresh).toHaveBeenCalledTimes(2);
     expect(mockedFetch).not.toHaveBeenCalled();
   });
 

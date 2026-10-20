@@ -355,4 +355,15 @@ export const FILE_CONTEXTS: FileContextSeed[] = [
     pathPrefix: 'users/documents',
     isActive: true,
   },
+  {
+    id: 'sku-reference-photo',
+    name: 'SKU Reference Photo',
+    description: 'SKU 실물 사진(실측 작업)',
+    allowPublic: true,
+    allowPrivate: false,
+    allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+    maxFileSize: 26214400,
+    pathPrefix: 'inventory/sku-reference-photos',
+    isActive: true,
+  },
 ];

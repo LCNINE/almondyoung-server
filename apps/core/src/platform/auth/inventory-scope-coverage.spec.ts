@@ -25,7 +25,7 @@ const HTTP_METHODS = new Set(['Get', 'Post', 'Put', 'Patch', 'Delete', 'All', 'H
 const S = INVENTORY_SCOPE;
 
 const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
-  // ── inventory.operate (67) ──────────────────────────────────────────
+  // ── inventory.operate (79 = OPERATE 78 + 진단 MANAGE 1) ──────────────────────────────────────────
   'GET /inventory/work-context': S.OPERATE,
   'GET /inventory/diagnostics-access': S.MANAGE,
   'GET /holders': S.OPERATE,
@@ -53,6 +53,13 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'GET /inventory/reservations/summary/:warehouseId': S.OPERATE,
   'GET /inventory/returns': S.OPERATE,
   'GET /inventory/returns/:id': S.OPERATE,
+  'GET /inventory/sku-field-capture/barcodes/:barcode/owner': S.OPERATE,
+  'GET /inventory/sku-field-capture/me/today': S.OPERATE,
+  'GET /inventory/sku-field-capture/positions/:positionCode': S.OPERATE,
+  'GET /inventory/sku-field-capture/skus/:skuId': S.OPERATE,
+  'POST /inventory/sku-field-capture/skus/:skuId/photos': S.OPERATE,
+  'DELETE /inventory/sku-field-capture/skus/:skuId/photos/:photoId': S.OPERATE,
+  'PUT /inventory/sku-field-capture/skus/:skuId/capture': S.OPERATE,
   'GET /inventory/sku-groups': S.OPERATE,
   'GET /inventory/sku-groups/:id': S.OPERATE,
   'GET /inventory/sku-groups/:id/members': S.OPERATE,
@@ -99,7 +106,7 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'POST /stocktaking/sessions/:id/start': S.OPERATE,
   'GET /stocktaking/sessions/:id/variances': S.OPERATE,
 
-  // ── inventory.manage (74) ──────────────────────────────────────────
+  // ── inventory.manage (75) ──────────────────────────────────────────
   'POST /barcode-generation/custom': S.MANAGE,
   'POST /barcode-generation/fulfillment-order': S.MANAGE,
   'POST /barcode-generation/location': S.MANAGE,
@@ -110,6 +117,7 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'PUT /holders/:id': S.MANAGE,
   'POST /inventory/delivery-profiles': S.MANAGE,
   'PATCH /inventory/delivery-profiles/:id': S.MANAGE,
+  'GET /inventory/sku-field-capture/progress': S.MANAGE,
   'POST /inventory/sku-groups': S.MANAGE,
   'DELETE /inventory/sku-groups/:id': S.MANAGE,
   'PUT /inventory/sku-groups/:id': S.MANAGE,

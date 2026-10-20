@@ -89,3 +89,14 @@ bash scripts/sellmate/run.sh live import-demand-history apps/core/tmp/ --core-si
 - 미매칭 품목은 중단하지 않고 `apps/core/tmp/demand-unmatched-<ts>.csv` 로 남긴다.
 - 헤더가 다르면 `COL_ITEM_CODE` / `COL_ORDER_DATE` / `COL_QTY` / `COL_AMOUNT` 로 지정.
 - 시드 뒤 `POST /replenishment/profiles/recompute?series=full` 로 프로필을 다시 만든다.
+
+## 선반 위치 적재 (`load-shelf-positions.ts`)
+
+셀메이트 재고 백업 CSV 의 `상품위치`(+`대표이미지주소`)를 core `sku_shelf_positions` 에 넣는다 (실측 작업의 선반 조회용).
+`옵션정보일련번호` 로 `skus.code` 와 맞추고, 위치는 앞뒤 공백 제거 + 대문자화한다. 위치가 빈 행은 건너뛴다.
+이 스크립트는 `sku_shelf_positions` 만 건드리며 sku_id 기준 upsert 라 다시 돌려도 안전하다. 매칭 안 된 SKU 코드 수를 출력한다.
+
+```bash
+DRY_RUN=1 npx tsx scripts/sellmate/load-shelf-positions.ts ~/다운로드/01_현재고_전체_YYYYMMDD.csv   # 먼저 통계만
+DATABASE_URL=postgres://... npx tsx scripts/sellmate/load-shelf-positions.ts <csv>                 # 반영 (마이그 적용 뒤)
+```

@@ -39,3 +39,4 @@ export { holdersClient } from './holders.client';
 export { locationsClient } from './locations.client';
 export { purchaseOrdersClient } from './purchase-orders.client';
 export { expectedArrivalsClient } from './expected-arrivals.client';
+export { skuFieldCaptureClient } from './sku-field-capture.client';

@@ -10,6 +10,7 @@ import { SuppliersModule } from './suppliers/suppliers.module';
 import { SharedModule } from './shared/shared.module';
 import { WarehouseModule } from './warehouse/warehouse.module';
 import { DeliveryProfileModule } from './delivery-profile/delivery-profile.module';
+import { SkuFieldCaptureModule } from './sku-field-capture/sku-field-capture.module';
 import { SkuGroupModule } from './sku-group/sku-group.module';
 import { StockProjectionModule } from './stock-projection/stock-projection.module';
 import { StockValuationModule } from './stock-valuation/stock-valuation.module';
@@ -29,6 +30,7 @@ import { ReplenishmentModule } from './replenishment/replenishment.module';
     CoreInventoryModule,
     WarehouseModule,
     DeliveryProfileModule,
+    SkuFieldCaptureModule,
     SkuGroupModule,
     StockProjectionModule,
     StockValuationModule,
