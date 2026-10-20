@@ -1590,6 +1590,43 @@ export const salesOrderCancellations = pgTable(
   }),
 );
 
+/** 취소가 출고 전에 닿았는지 후에 닿았는지 — 라인 수량 사실의 갈래. */
+export type CancellationShipmentPhase = 'before_shipment' | 'after_shipment';
+
+/** 취소 한 건이 어느 판매주문 라인에서 몇 개를 어느 갈래로 뺐는지 (K6). */
+export const salesOrderCancellationLines = pgTable(
+  'sales_order_cancellation_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    cancellationId: uuid('cancellation_id')
+      .references(() => salesOrderCancellations.id, { onDelete: 'cascade' })
+      .notNull(),
+    salesOrderId: uuid('sales_order_id')
+      .references(() => salesOrders.id, { onDelete: 'cascade' })
+      .notNull(),
+    salesOrderLineId: uuid('sales_order_line_id')
+      .references(() => salesOrderLines.id, { onDelete: 'cascade' })
+      .notNull(),
+    quantity: integer('quantity').notNull(),
+    shipmentPhase: varchar('shipment_phase', { length: 32 }).$type<CancellationShipmentPhase>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqCancellationLinePhase: uniqueIndex('uniq_sales_order_cancellation_lines_cancellation_line_phase').on(
+      t.cancellationId,
+      t.salesOrderLineId,
+      t.shipmentPhase,
+    ),
+    idxLine: index('idx_sales_order_cancellation_lines_line').on(t.salesOrderLineId),
+    idxOrder: index('idx_sales_order_cancellation_lines_order').on(t.salesOrderId),
+    ckQuantityPositive: check('ck_sales_order_cancellation_lines_quantity_positive', sql`${t.quantity} > 0`),
+    ckPhase: check(
+      'ck_sales_order_cancellation_lines_phase',
+      sql`${t.shipmentPhase} IN ('before_shipment', 'after_shipment')`,
+    ),
+  }),
+);
+
 // 합배송 그룹 테이블 추가
 export const mergeGroups = pgTable('merge_groups', {
   id: varchar('id', { length: 64 }).primaryKey(), // G-{sequence} 형태
@@ -3565,6 +3602,7 @@ export const wmsTables = {
   orderReconcileState,
   shipmentReconcileState,
   salesOrderCancellations,
+  salesOrderCancellationLines,
   mergeGroups,
   stockReservations,
   fulfillmentOrders,

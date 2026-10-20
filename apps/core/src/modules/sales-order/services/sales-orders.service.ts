@@ -72,6 +72,8 @@ import { ProductSellableQuantityService } from '../../inventory/product-sellable
 import { ModuleRef } from '@nestjs/core';
 import { ShipmentPlanningService } from '../../fulfillment/services/shipment-planning.service';
 import { canonicalFulfillmentRequestHash } from '../../fulfillment/services/fulfillment-command.service';
+import type { CancellationEffect } from '../cancellation-record/cancellation-lines';
+import { recordSalesOrderCancellation } from '../cancellation-record/record-cancellation';
 
 type SalesOrderLineInsert = InferInsertModel<typeof wmsTables.salesOrderLines>;
 type BusinessLinkInsert = InferInsertModel<typeof wmsTables.businessLinks>;
@@ -112,14 +114,6 @@ type CancelSalesOrderOptions = CancelSalesOrderDto & {
 type PartialCancellationLine = {
   salesOrderLineId: string;
   quantity: number;
-};
-type CancellationEffect = {
-  type: string;
-  targetType?: string;
-  targetId?: string;
-  targetExternalRef?: string;
-  count?: number;
-  metadata?: Record<string, unknown>;
 };
 type PostShipmentHandoffType = 'return' | 'recovery' | 'refund' | 'compensation';
 type PostShipmentHandoffOptions = NonNullable<CancelSalesOrderOptions['postShipmentHandoff']>;
@@ -672,7 +666,7 @@ export class SalesOrdersService {
         metadata: options.metadata ?? {},
         occurredAt,
       };
-      const [cancellation] = await trx.insert(wmsTables.salesOrderCancellations).values(cancellationValues).returning();
+      const cancellation = await recordSalesOrderCancellation(trx, cancellationValues);
 
       await trx
         .update(wmsTables.salesOrders)
@@ -1572,7 +1566,7 @@ export class SalesOrdersService {
       },
       occurredAt,
     };
-    const [cancellation] = await trx.insert(wmsTables.salesOrderCancellations).values(cancellationValues).returning();
+    const cancellation = await recordSalesOrderCancellation(trx, cancellationValues);
 
     await this.linkCancellationEffects(salesOrderId, cancellation.id, 'partial', effects, occurredAt, trx);
 
@@ -1637,6 +1631,31 @@ export class SalesOrdersService {
   }
 
   /**
+   * 부분 취소 요청을 전체 취소 뒤에 받으면 `cancelPartial`·`planCancellation` 과 같은 순서·문구로 400 거절한다.
+   * V2 는 박스 줄 배분 검사가 대부분을 거르지만 상자를 거치지 않는 줄(디지털·외주)은 그 검사를 지나가서,
+   * 이 확인이 없으면 쓰기 문 도출(라인 합 > 주문 수량)이 터져 500 이 된다.
+   */
+  private async assertNoFullCancellation(salesOrderId: string, tx: DbTx): Promise<void> {
+    const [salesOrder] = await tx
+      .select({ status: wmsTables.salesOrders.status })
+      .from(wmsTables.salesOrders)
+      .where(eq(wmsTables.salesOrders.id, salesOrderId))
+      .limit(1);
+    if (salesOrder?.status === 'cancelled') throw new BadRequestException(CANCEL_MSG_ALREADY_CANCELLED);
+    const [fullCancellation] = await tx
+      .select({ id: wmsTables.salesOrderCancellations.id })
+      .from(wmsTables.salesOrderCancellations)
+      .where(
+        and(
+          eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId),
+          eq(wmsTables.salesOrderCancellations.cancellationScope, 'full'),
+        ),
+      )
+      .limit(1);
+    if (fullCancellation) throw new BadRequestException(CANCEL_MSG_FULL_CANCELLATION_EXISTS);
+  }
+
+  /**
    * V2 취소의 계획 — 요청 줄 → 박스 줄 배분과 거절 사유. 읽기만 한다(스펙 §5.2). 거절 문구는 옮기기 전과 같다.
    * `cancelV2Outstanding`(적용)과 `planCancellation`(요청 때 판정)이 함께 쓴다.
    */
@@ -1646,6 +1665,7 @@ export class SalesOrdersService {
     isFullCancel: boolean,
     tx: DbTx,
   ): Promise<V2OutstandingPlan> {
+    if (!isFullCancel) await this.assertNoFullCancellation(salesOrderId, tx);
     const salesOrderLines = await tx
       .select()
       .from(wmsTables.salesOrderLines)
@@ -1892,25 +1912,23 @@ export class SalesOrdersService {
 
     const occurredAt = options.occurredAt ? new Date(options.occurredAt) : new Date();
     const cancellationScope = isFullCancel ? 'full' : 'partial';
-    const [cancellation] = await tx
-      .insert(wmsTables.salesOrderCancellations)
-      .values({
-        salesOrderId,
-        cancellationScope,
-        status: 'applied',
-        reasonCode: options.reasonCode ?? null,
-        reasonDetail: options.reasonDetail ?? null,
-        cancelledBy: options.cancelledBy ?? null,
-        effects: operationEffects,
-        metadata: {
-          ...(options.metadata ?? {}),
-          cancelledLines: requestedSalesLines,
-          fulfillmentCommandSourceKey: this.explicitV2CancellationSourceKey(options),
-          fulfillmentCommandRequestHash: this.v2CancellationRequestHash(salesOrderId, options),
-        },
-        occurredAt,
-      })
-      .returning();
+    const cancellationValues: SalesOrderCancellationInsert = {
+      salesOrderId,
+      cancellationScope,
+      status: 'applied',
+      reasonCode: options.reasonCode ?? null,
+      reasonDetail: options.reasonDetail ?? null,
+      cancelledBy: options.cancelledBy ?? null,
+      effects: operationEffects,
+      metadata: {
+        ...(options.metadata ?? {}),
+        cancelledLines: requestedSalesLines,
+        fulfillmentCommandSourceKey: this.explicitV2CancellationSourceKey(options),
+        fulfillmentCommandRequestHash: this.v2CancellationRequestHash(salesOrderId, options),
+      },
+      occurredAt,
+    };
+    const cancellation = await recordSalesOrderCancellation(tx, cancellationValues);
     if (isFullCancel) {
       await tx
         .update(wmsTables.salesOrders)
