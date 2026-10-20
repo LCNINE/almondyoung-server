@@ -37,8 +37,8 @@ describe('취소 기록 쓰기 문', () => {
   });
 
   it('only the recorder inserts cancellation lines', () => {
-    expect(
-      filesMatching((source) => /salesOrderCancellationLines/.test(source) && /insert\(/.test(source)),
-    ).toEqual([RECORDER]);
+    expect(filesMatching((source) => /salesOrderCancellationLines/.test(source) && /insert\(/.test(source))).toEqual([
+      RECORDER,
+    ]);
   });
 });
