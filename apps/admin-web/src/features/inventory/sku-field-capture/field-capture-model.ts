@@ -1,8 +1,10 @@
+import { CustomError } from '@/lib/api/customError';
 import type {
   BarcodeOwnerDto,
   CompleteFieldCaptureRequest,
   FieldCaptureBarcodeStatus,
   FieldCaptureCompletionDto,
+  FieldCaptureDetailDto,
 } from '@/lib/types/dto/inventory';
 
 // core 의 MIN_REFERENCE_PHOTOS 와 같은 값 (앱이 달라 상수 공유 불가)
@@ -127,24 +129,30 @@ export function barcodeConflictWarning(owner: BarcodeOwnerDto | null, currentSku
   return `이 바코드는 ${owner.name}(${owner.code}) 상품에 이미 붙어 있어요. 이 상품엔 붙이지 않고 기록만 남겨요`;
 }
 
-/** axios 오류의 서버 message(검증 오류 배열 포함) → 문자열. */
-export function errorMessageOf(e: unknown, fallback: string): string {
-  if (typeof e === 'object' && e !== null) {
-    const message = 'response' in e ? messageField(e.response) : undefined;
-    if (message) return message;
-    if (e instanceof Error && e.message) return e.message;
-  }
-  return fallback;
+/**
+ * 오류 안내. 언제나 «무엇이 안 됐는지» 문장으로 시작하고, 서버가 준 사유가 있을 때만 괄호로 붙인다.
+ * admin-web axios 인터셉터는 모든 실패를 CustomError(message 는 비지 않음)로 던진다 — 네트워크 실패면
+ * 서버 본문 없이 statusCode 500 + 'Network Error' 라, 그 문구는 작업자에게 보이지 않는다.
+ * fetch 기반 업로드 오류(CustomError 아님)도 상황 문장만 보인다.
+ */
+export function errorMessageOf(e: unknown, context: string): string {
+  const fromServer = e instanceof CustomError && (e.response !== undefined || e.statusCode < 500);
+  return fromServer ? `${context} (${e.message})` : context;
 }
 
-function messageField(response: unknown): string | undefined {
-  if (typeof response !== 'object' || response === null || !('data' in response)) return undefined;
-  const data = response.data;
-  if (typeof data !== 'object' || data === null || !('message' in data)) return undefined;
-  const m = data.message;
-  if (typeof m === 'string' && m !== '') return m;
-  if (Array.isArray(m) && m.length > 0) return m.map(String).join(', ');
-  return undefined;
+/** 재작업이면 지난 실측값을 채운다. 여섯 면 확인은 매번 다시 받는다. 사진 수는 서버 수치. */
+export function draftFromDetail(detail: FieldCaptureDetailDto): CaptureDraft {
+  const mm = (v: number | null) => (v === null ? '' : String(v));
+  const c = detail.completion;
+  return {
+    widthMm: mm(detail.packageWidthMm),
+    lengthMm: mm(detail.packageLengthMm),
+    heightMm: mm(detail.packageHeightMm),
+    barcodeStatus: c?.barcodeStatus ?? null,
+    scannedBarcode: c?.barcodeStatus === 'scanned' ? (c.scannedBarcode ?? '') : '',
+    photoCount: detail.photos.length,
+    allFacesConfirmed: false,
+  };
 }
 
 /**
@@ -155,6 +163,7 @@ export const fieldCaptureKeys = {
   positions: ['sku-field-capture', 'position'] as const,
   position: (code: string) => ['sku-field-capture', 'position', code] as const,
   detail: (skuId: string) => ['sku-field-capture', 'detail', skuId] as const,
+  barcodeOwners: ['sku-field-capture', 'barcode-owner'] as const,
   barcodeOwner: (barcode: string) => ['sku-field-capture', 'barcode-owner', barcode] as const,
   search: (term: string) => ['sku-field-capture', 'search', term] as const,
 };

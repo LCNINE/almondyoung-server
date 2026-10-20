@@ -15,6 +15,7 @@ import { ReferencePhotoField } from '@/features/inventory/sku-field-capture/comp
 import {
   barcodeConflictWarning,
   completedByText,
+  draftFromDetail,
   errorMessageOf,
   fieldCaptureKeys,
   missingRequirements,
@@ -23,17 +24,6 @@ import {
 } from '@/features/inventory/sku-field-capture/field-capture-model';
 
 const BASE = '/mobile/sku-field-capture';
-
-type DraftFields = Omit<CaptureDraft, 'photoCount'>;
-
-const EMPTY_DRAFT: DraftFields = {
-  widthMm: '',
-  lengthMm: '',
-  heightMm: '',
-  barcodeStatus: null,
-  scannedBarcode: '',
-  allFacesConfirmed: false,
-};
 
 const NO_SCAN_OPTIONS: { value: FieldCaptureBarcodeStatus; label: string }[] = [
   { value: 'no_manufacturer', label: '제조사 바코드 없음 · 자체 스티커 있음' },
@@ -65,7 +55,7 @@ export default function SkuFieldCaptureWorkPage() {
       </div>
     );
   }
-  return <CaptureForm detail={detail} />;
+  return <CaptureForm key={detail.skuId} detail={detail} />;
 }
 
 // ③ 상품 작업 — 바코드·크기·사진을 한 화면에서
@@ -73,12 +63,14 @@ function CaptureForm({ detail }: { detail: FieldCaptureDetailDto }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const skuId = detail.skuId;
-  const [draft, setDraft] = useState<DraftFields>(EMPTY_DRAFT);
+  // 초안은 상세가 처음 왔을 때 한 번만 만든다 — 사진 응답마다 상세가 바뀌어도 입력을 덮지 않는다
+  const [draft, setDraft] = useState<CaptureDraft>(() => draftFromDetail(detail));
   // 사진 연결·완료는 inventory.stock.operate (core 가 강제한다 — 여기선 버튼만 막는다)
   const canOperate = useCan(['inventory.stock.operate']);
   const writeBlocked = blockedReason(canOperate, [{ permission: ['inventory.stock.operate'] }]);
-  const set = (patch: Partial<DraftFields>) => setDraft((d) => ({ ...d, ...patch }));
+  const set = (patch: Partial<CaptureDraft>) => setDraft((d) => ({ ...d, ...patch }));
 
+  // 사진 수는 언제나 지금 서버 상세의 수
   const fullDraft: CaptureDraft = { ...draft, photoCount: detail.photos.length };
   const missing = missingRequirements(fullDraft);
 
@@ -87,6 +79,7 @@ function CaptureForm({ detail }: { detail: FieldCaptureDetailDto }) {
     queryKey: fieldCaptureKeys.barcodeOwner(scanned),
     queryFn: () => skuFieldCaptureClient.getBarcodeOwner(scanned),
     enabled: scanned !== '',
+    staleTime: 0, // 방금 다른 SKU 에 붙은 바코드를 옛 «주인 없음»으로 보여 주지 않게
   });
   const conflict = barcodeConflictWarning(ownerData?.owner ?? null, skuId);
 
@@ -97,7 +90,10 @@ function CaptureForm({ detail }: { detail: FieldCaptureDetailDto }) {
     meta: { permission: ['inventory.stock.operate'] },
     onSuccess: async (d) => {
       setDetail(d);
-      await queryClient.invalidateQueries({ queryKey: fieldCaptureKeys.positions });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: fieldCaptureKeys.positions }),
+        queryClient.invalidateQueries({ queryKey: fieldCaptureKeys.barcodeOwners }),
+      ]);
       toast.success(`${d.name} 완료`);
       router.push(BASE);
     },

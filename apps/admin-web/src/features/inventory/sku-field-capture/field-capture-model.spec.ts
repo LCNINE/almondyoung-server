@@ -1,8 +1,11 @@
+import { CustomError } from '@/lib/api/customError';
+import type { FieldCaptureDetailDto } from '@/lib/types/dto/inventory';
 import {
   barcodeConflictWarning,
   cameraFailure,
   cameraUnavailableReason,
   completedByText,
+  draftFromDetail,
   errorMessageOf,
   fieldCaptureKeys,
   reworkNotice,
@@ -137,14 +140,28 @@ describe('barcodeConflictWarning', () => {
 });
 
 describe('errorMessageOf', () => {
-  it('서버 message 를 쓴다', () =>
-    expect(errorMessageOf({ response: { data: { message: '사진이 3장 미만입니다' } } }, '실패')).toBe(
-      '사진이 3장 미만입니다',
+  const ctx = '사진을 상품에 연결하지 못했어요. 다시 찍어 주세요';
+  it('네트워크 실패(응답 없음)엔 상황 문장만', () =>
+    expect(errorMessageOf(new CustomError({ message: 'Network Error', statusCode: 500 }), ctx)).toBe(ctx));
+  it('서버가 준 message 는 상황 문장 뒤에 붙인다', () =>
+    expect(
+      errorMessageOf(
+        new CustomError({ message: '사진이 3장 미만입니다', statusCode: 400, response: { message: '사진이 3장 미만입니다' } }),
+        ctx,
+      ),
+    ).toBe(`${ctx} (사진이 3장 미만입니다)`));
+  it('5xx 라도 서버 본문이 있으면 붙인다', () =>
+    expect(
+      errorMessageOf(new CustomError({ message: 'Internal server error', statusCode: 500, response: {} }), ctx),
+    ).toBe(`${ctx} (Internal server error)`));
+  it('인증 만료(본문 없는 401)는 붙인다', () =>
+    expect(errorMessageOf(new CustomError({ message: '인증이 만료되었습니다.', statusCode: 401 }), ctx)).toBe(
+      `${ctx} (인증이 만료되었습니다.)`,
     ));
-  it('검증 오류 배열은 이어 붙인다', () =>
-    expect(errorMessageOf({ response: { data: { message: ['a', 'b'] } } }, '실패')).toBe('a, b'));
-  it('Error 면 그 message', () => expect(errorMessageOf(new Error('네트워크'), '실패')).toBe('네트워크'));
-  it('모르면 기본 문구', () => expect(errorMessageOf(undefined, '실패')).toBe('실패'));
+  it('fetch 업로드 오류·모르는 값엔 상황 문장만', () => {
+    expect(errorMessageOf(new TypeError('Failed to fetch'), ctx)).toBe(ctx);
+    expect(errorMessageOf(undefined, ctx)).toBe(ctx);
+  });
 });
 
 describe('fieldCaptureKeys', () => {
@@ -156,4 +173,82 @@ describe('fieldCaptureKeys', () => {
     expect(fieldCaptureKeys.position('X').slice(0, 2)).toEqual([...fieldCaptureKeys.positions]);
     expect(fieldCaptureKeys.positions).not.toContain(undefined);
   });
+  it('바코드 주인 무효화 키는 주인 키의 접두사', () =>
+    expect(fieldCaptureKeys.barcodeOwner('880').slice(0, 2)).toEqual([...fieldCaptureKeys.barcodeOwners]));
+});
+
+describe('draftFromDetail', () => {
+  const base: FieldCaptureDetailDto = {
+    skuId: 'sku-1',
+    code: 'C1',
+    name: 'N',
+    imageUrl: null,
+    positionCode: 'T-01-20',
+    packageWidthMm: null,
+    packageLengthMm: null,
+    packageHeightMm: null,
+    barcodes: [],
+    photos: [],
+    completion: null,
+  };
+  const photo = (id: string) => ({ id, fileId: `f-${id}`, sortOrder: 0, takenByLabel: 'w', createdAt: '2026-10-21T00:00:00.000Z' });
+  const completion = {
+    barcodeStatus: 'scanned' as const,
+    lastWorkerLabel: 'worker01',
+    lastCompletedAt: '2026-10-21T05:05:00.000Z',
+    scannedBarcode: '8801234567890',
+    barcodeConflict: null,
+    allFacesConfirmed: true,
+  };
+
+  it('완료·치수 없는 SKU 는 빈 초안', () =>
+    expect(draftFromDetail(base)).toEqual({
+      widthMm: '',
+      lengthMm: '',
+      heightMm: '',
+      barcodeStatus: null,
+      scannedBarcode: '',
+      photoCount: 0,
+      allFacesConfirmed: false,
+    }));
+
+  it('재작업은 치수·바코드를 채우고 여섯 면 확인은 다시 받는다', () =>
+    expect(
+      draftFromDetail({
+        ...base,
+        packageWidthMm: 120,
+        packageLengthMm: 45,
+        packageHeightMm: 30,
+        photos: [photo('a'), photo('b'), photo('c')],
+        completion,
+      }),
+    ).toEqual({
+      widthMm: '120',
+      lengthMm: '45',
+      heightMm: '30',
+      barcodeStatus: 'scanned',
+      scannedBarcode: '8801234567890',
+      photoCount: 3,
+      allFacesConfirmed: false,
+    }));
+
+  it('스캔이 아닌 완료는 바코드 값을 비운다', () => {
+    const d = draftFromDetail({ ...base, completion: { ...completion, barcodeStatus: 'none', scannedBarcode: null } });
+    expect(d.barcodeStatus).toBe('none');
+    expect(d.scannedBarcode).toBe('');
+  });
+
+  it('재작업 초안은 여섯 면 체크 하나만 남는다', () =>
+    expect(
+      missingRequirements(
+        draftFromDetail({
+          ...base,
+          packageWidthMm: 120,
+          packageLengthMm: 45,
+          packageHeightMm: 30,
+          photos: [photo('a'), photo('b'), photo('c')],
+          completion,
+        }),
+      ),
+    ).toEqual(['여섯 면이 다 나왔는지 확인해 주세요']));
 });

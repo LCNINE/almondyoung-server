@@ -21,47 +21,64 @@ type Props = {
 export function ReferencePhotoField({ skuId, photos, onDetail, disabled = false }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(0);
-  const [removing, setRemoving] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<ReadonlySet<string>>(new Set());
+  // 서버 쓰기(연결·해제)는 한 줄로 세운다. 응답마다 상세 캐시를 통째로 갈아끼우므로, 병렬이면 늦게 온
+  // 옛 응답이 이겨 사진 수가 줄거나 지운 사진이 되살아난다. 파일 업로드 자체는 병렬로 둔다(계속 찍게).
+  const writes = useRef<Promise<void>>(Promise.resolve());
+  const serially = (write: () => Promise<FieldCaptureDetailDto>, failure: string): Promise<void> => {
+    const run = writes.current.then(async () => {
+      try {
+        onDetail(await write());
+      } catch (err) {
+        toast.error(errorMessageOf(err, failure));
+      }
+    });
+    writes.current = run;
+    return run;
+  };
 
-  const addFiles = async (e: ChangeEvent<HTMLInputElement>) => {
+  const addOne = async (file: File) => {
+    setUploading((n) => n + 1);
+    try {
+      let fileId: string;
+      try {
+        ({ id: fileId } = await uploadFileToFileService(file, {
+          contextId: REFERENCE_PHOTO_CONTEXT_ID,
+          isPublic: true,
+          compress: false,
+        }));
+      } catch (err) {
+        toast.error(errorMessageOf(err, '사진을 올리지 못했어요. 다시 찍어 주세요'));
+        return;
+      }
+      // 올라갔어도 연결이 안 되면 화면에도 안 보인다 — 다시 찍게 한다
+      await serially(
+        () => skuFieldCaptureClient.attachPhoto(skuId, fileId),
+        '사진을 상품에 연결하지 못했어요. 다시 찍어 주세요',
+      );
+    } finally {
+      setUploading((n) => n - 1);
+    }
+  };
+
+  const addFiles = (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     e.target.value = ''; // 같은 파일을 다시 골라도 onChange 가 오게
     for (const file of files) {
       const reason = photoRejectionReason(file);
-      if (reason) {
-        toast.error(reason);
-        continue;
-      }
-      setUploading((n) => n + 1);
-      try {
-        const uploaded = await uploadFileToFileService(file, {
-          contextId: REFERENCE_PHOTO_CONTEXT_ID,
-          isPublic: true,
-          compress: false,
-        });
-        try {
-          onDetail(await skuFieldCaptureClient.attachPhoto(skuId, uploaded.id));
-        } catch (err) {
-          // 올라갔지만 이 상품에 연결되지 않았다 — 화면에도 안 보이니 다시 찍게 한다
-          toast.error(errorMessageOf(err, '사진을 상품에 연결하지 못했어요. 다시 찍어 주세요'));
-        }
-      } catch (err) {
-        toast.error(errorMessageOf(err, '사진을 올리지 못했어요. 다시 찍어 주세요'));
-      } finally {
-        setUploading((n) => n - 1);
-      }
+      if (reason) toast.error(reason);
+      else void addOne(file);
     }
   };
 
   const remove = async (photoId: string) => {
-    setRemoving(photoId);
-    try {
-      onDetail(await skuFieldCaptureClient.removePhoto(skuId, photoId));
-    } catch (err) {
-      toast.error(errorMessageOf(err, '사진을 지우지 못했어요'));
-    } finally {
-      setRemoving(null);
-    }
+    setRemoving((s) => new Set(s).add(photoId));
+    await serially(() => skuFieldCaptureClient.removePhoto(skuId, photoId), '사진을 지우지 못했어요');
+    setRemoving((s) => {
+      const next = new Set(s);
+      next.delete(photoId);
+      return next;
+    });
   };
 
   return (
@@ -78,11 +95,11 @@ export function ReferencePhotoField({ skuId, photos, onDetail, disabled = false 
               <button
                 type="button"
                 onClick={() => remove(p.id)}
-                disabled={disabled || removing !== null}
+                disabled={disabled || removing.has(p.id)}
                 aria-label="사진 지우기"
                 className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white disabled:opacity-50"
               >
-                {removing === p.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                {removing.has(p.id) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
               </button>
             </div>
           );
