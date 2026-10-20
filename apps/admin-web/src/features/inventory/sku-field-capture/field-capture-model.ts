@@ -166,5 +166,9 @@ export const fieldCaptureKeys = {
   barcodeOwners: ['sku-field-capture', 'barcode-owner'] as const,
   barcodeOwner: (barcode: string) => ['sku-field-capture', 'barcode-owner', barcode] as const,
   myToday: ['sku-field-capture', 'me', 'today'] as const,
+  progress: ['sku-field-capture', 'progress'] as const,
   search: (term: string) => ['sku-field-capture', 'search', term] as const,
 };
+
+/** 관리자 현황 자동 새로고침 간격 */
+export const PROGRESS_REFETCH_MS = 60_000;

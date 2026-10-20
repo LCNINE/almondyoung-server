@@ -392,6 +392,11 @@ const allMenus: MainMenu[] = [
         path: '/inventory/delivery-profiles',
       },
       {
+        id: 'inventory-sku-field-capture',
+        title: '실측 작업 현황',
+        path: '/inventory/sku-field-capture',
+      },
+      {
         id: 'inventory-holders',
         title: '재고 소유자 관리',
         path: '/inventory/holders',
