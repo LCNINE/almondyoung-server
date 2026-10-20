@@ -30,6 +30,7 @@ import {
   useDeleteAnswer,
 } from '@/lib/services/qna';
 import { useOptionalAdminUser } from '@/lib/services/users';
+import { useNotificationEvents } from '@/lib/services/notification';
 import { toast } from 'sonner';
 import {
   ANSWER_TEMPLATES,
@@ -84,6 +85,12 @@ function AnswerEditor({
     null
   );
   const hasAnswer = question.answer !== null;
+  const [confirmMailOpen, setConfirmMailOpen] = useState(false);
+  // 설정을 읽을 권한이 없어 모르면 켜진 쪽으로 보고 묻는다
+  const { data: notificationEvents } = useNotificationEvents();
+  const answerMailOff =
+    notificationEvents?.find((e) => e.eventKey === 'QNA_ANSWERED')?.isActive ===
+    false;
 
   const { data: adminUser } = useOptionalAdminUser(
     question.answer?.adminUserId
@@ -102,12 +109,19 @@ function AnswerEditor({
     else setPendingTemplateId(id);
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!content.trim()) {
       toast.error('답변 내용을 입력해 주세요.');
       return;
     }
+    if (!hasAnswer && !answerMailOff) {
+      setConfirmMailOpen(true);
+      return;
+    }
+    void submit();
+  };
 
+  const submit = async () => {
     try {
       if (hasAnswer) {
         await updateAnswer.mutateAsync({ content });
@@ -245,6 +259,21 @@ function AnswerEditor({
           </Button>
         </Can>
       </div>
+
+      <AlertDialog open={confirmMailOpen} onOpenChange={setConfirmMailOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>답변을 등록할까요?</AlertDialogTitle>
+            <AlertDialogDescription>
+              등록하면 {customerName}님에게 답변 이메일이 가요.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void submit()}>확인</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={pendingTemplateId !== null}
