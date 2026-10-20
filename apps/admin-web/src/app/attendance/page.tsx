@@ -1,4 +1,5 @@
 import { AttendanceCard } from '@/features/attendance/components/attendance-card';
+import { AttendanceInstallBanner } from '@/features/attendance/components/attendance-install-banner';
 import { AttendanceRefreshButton } from '@/features/attendance/components/attendance-refresh-button';
 
 export default function Page() {
@@ -8,6 +9,7 @@ export default function Page() {
         <div className="mb-2 flex justify-end">
           <AttendanceRefreshButton />
         </div>
+        <AttendanceInstallBanner />
         <AttendanceCard />
       </div>
     </main>
