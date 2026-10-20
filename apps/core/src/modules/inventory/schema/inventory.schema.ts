@@ -642,6 +642,10 @@ export const skus = pgTable(
     dimensionWidth: integer('dimension_width'), // in cm
     dimensionHeight: integer('dimension_height'), // in cm
     dimensionDepth: integer('dimension_depth'), // in cm
+    // 포장 실측(mm) — 창고 현장에서 잰 값. 위 dimension_* 는 건드리지 않는다.
+    packageWidthMm: integer('package_width_mm'),
+    packageLengthMm: integer('package_length_mm'),
+    packageHeightMm: integer('package_height_mm'),
     productMaterial: text('product_material'),
 
     // 추가 메타데이터
@@ -730,6 +734,80 @@ export const skuBarcodes = pgTable(
       'ck_sku_barcodes_packing_unit_positive',
       sql`${t.packingUnit} IS NULL OR ${t.packingUnit} >= 1`,
     ),
+  }),
+);
+
+// ===== SKU 실측 작업 (포장 크기·실물 사진·제조사 바코드) =====
+export const skuShelfPositions = pgTable(
+  'sku_shelf_positions',
+  {
+    skuId: uuid('sku_id')
+      .primaryKey()
+      .references(() => skus.id, { onDelete: 'cascade' }),
+    positionCode: varchar('position_code', { length: 64 }).notNull(),
+    imageUrl: text('image_url'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxCode: index('idx_sku_shelf_positions_code').on(t.positionCode),
+  }),
+);
+
+export const skuReferencePhotos = pgTable(
+  'sku_reference_photos',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    skuId: uuid('sku_id')
+      .notNull()
+      .references(() => skus.id, { onDelete: 'cascade' }),
+    fileId: uuid('file_id').notNull(),
+    sortOrder: integer('sort_order').notNull(),
+    takenById: uuid('taken_by_id').notNull(),
+    takenByLabel: varchar('taken_by_label', { length: 255 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxSkuSort: index('idx_sku_reference_photos_sku_sort').on(t.skuId, t.sortOrder),
+  }),
+);
+
+export const skuFieldCaptures = pgTable(
+  'sku_field_captures',
+  {
+    skuId: uuid('sku_id')
+      .primaryKey()
+      .references(() => skus.id, { onDelete: 'cascade' }),
+    barcodeStatus: varchar('barcode_status', { length: 20 }).notNull(),
+    scannedBarcode: varchar('scanned_barcode', { length: 64 }),
+    barcodeConflictSkuId: uuid('barcode_conflict_sku_id').references(() => skus.id, { onDelete: 'set null' }),
+    allFacesConfirmed: boolean('all_faces_confirmed').notNull(),
+    lastWorkerId: uuid('last_worker_id').notNull(),
+    lastWorkerLabel: varchar('last_worker_label', { length: 255 }).notNull(),
+    firstCompletedAt: timestamp('first_completed_at', { withTimezone: true }).notNull(),
+    lastCompletedAt: timestamp('last_completed_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    ckBarcodeStatus: check(
+      'ck_sku_field_captures_barcode_status',
+      sql`${t.barcodeStatus} IN ('scanned','no_manufacturer','none')`,
+    ),
+  }),
+);
+
+export const skuFieldCaptureEvents = pgTable(
+  'sku_field_capture_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    skuId: uuid('sku_id')
+      .notNull()
+      .references(() => skus.id, { onDelete: 'cascade' }),
+    workerId: uuid('worker_id').notNull(),
+    workerLabel: varchar('worker_label', { length: 255 }).notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxWorkerDay: index('idx_sku_field_capture_events_worker_completed').on(t.workerId, t.completedAt),
   }),
 );
 
@@ -3575,6 +3653,10 @@ export const wmsTables = {
   skus,
   skuSuppliers,
   skuBarcodes,
+  skuShelfPositions,
+  skuReferencePhotos,
+  skuFieldCaptures,
+  skuFieldCaptureEvents,
   skuImages,
   categories,
   skuCategories,
