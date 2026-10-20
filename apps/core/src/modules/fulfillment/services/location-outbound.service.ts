@@ -7,7 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { isScopeAuthorizationDecision, ScopeAuthorizationDecision } from '@app/authorization';
+import { isAdminForceDispatchDecision, type ForceDispatchDecision } from '../../../platform/auth/force-dispatch-authorization';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
@@ -193,11 +193,11 @@ export class LocationOutboundService {
     input: LocationOutboundConfirmInput,
     actor: LocationOutboundActor,
     idempotencyKey: string,
-    authorization: ScopeAuthorizationDecision | undefined,
+    authorization: ForceDispatchDecision | undefined,
     tx?: DbTx,
   ): Promise<PreparedOutboundResult<LocationOutboundState>> {
     // Recheck authorization even for a completed command replay.
-    if (!isScopeAuthorizationDecision(authorization, FULFILLMENT_SCOPE.DISPATCH_FORCE)) {
+    if (!isAdminForceDispatchDecision(authorization)) {
       throw new ForbiddenException({
         code: 'FULFILLMENT_DISPATCH_FORCE_FORBIDDEN',
         message: 'Force dispatch scope is required',

@@ -3,7 +3,8 @@
 import type { PermissionedAction } from '@/lib/auth/mutation-permission';
 import { blockedReason } from '@/lib/auth/permission-check';
 import { useCanRun } from '@/hooks/use-permission';
-import { PermissionReadOnlyContext } from './permission-read-only-context';
+import { useId } from 'react';
+import { PermissionReadOnlyContext, PermissionReadOnlyNoteContext } from './permission-read-only-context';
 
 const isActionList = (run: PermissionedAction | readonly PermissionedAction[]): run is readonly PermissionedAction[] => Array.isArray(run);
 
@@ -16,14 +17,18 @@ export function PermissionReadOnly({ run, children }: { run: PermissionedAction 
   const list = isActionList(run) ? run : [run];
   const state = useCanRun(...list);
   const reason = blockedReason(state, list);
+  const noteId = useId();
+  const showNote = reason !== null && state.status !== 'loading';
   return (
     <PermissionReadOnlyContext.Provider value={reason}>
-      {reason !== null && state.status !== 'loading' && (
-        <p role="note" className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          보기 전용 — {reason}
-        </p>
-      )}
-      {children}
+      <PermissionReadOnlyNoteContext.Provider value={showNote ? noteId : null}>
+        {showNote && (
+          <p id={noteId} role="note" className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            보기 전용 — {reason}
+          </p>
+        )}
+        {children}
+      </PermissionReadOnlyNoteContext.Provider>
     </PermissionReadOnlyContext.Provider>
   );
 }

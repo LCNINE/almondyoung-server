@@ -638,7 +638,9 @@ export class ShipmentRecallService {
   }
 
   private async requireScope(actor: ShipmentRecallActor): Promise<void> {
-    const legacy = await legacyHasFulfillmentScope(this.authorization, actor.roles, FULFILLMENT_SCOPE.DISPATCH_RECALL);
+    const legacy = await this.checkpoints.legacyVerdict(() =>
+      legacyHasFulfillmentScope(this.authorization, actor.roles, FULFILLMENT_SCOPE.DISPATCH_RECALL),
+    );
     if (
       !this.checkpoints.compare('fulfillment.dispatch_recall', legacy, authzSubjectOf(actor), [
         'fulfillment.dispatch.recall',

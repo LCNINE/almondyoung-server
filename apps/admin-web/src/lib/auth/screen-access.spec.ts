@@ -18,6 +18,13 @@ describe('resolveScreenAccess', () => {
     expect(resolveScreenAccess('/cs/reviews/new')).toEqual({ kind: 'permission', anyOf: ['cs.review.moderate'] });
   });
 
+  it('opens a send-only screen with the send permission, not with the read', () => {
+    expect(resolveScreenAccess('/messages/send')).toEqual({ kind: 'permission', anyOf: ['messaging.message.send'] });
+    expect(resolveScreenAccess('/messages/alimtalk/send')).toEqual({ kind: 'permission', anyOf: ['messaging.message.bulk_send'] });
+    expect(resolveScreenAccess('/messages/bulk')).toEqual({ kind: 'permission', anyOf: ['messaging.message.bulk_send'] });
+    expect(resolveScreenAccess('/messages/inbox')).toEqual({ kind: 'permission', anyOf: ['messaging.message.read'] });
+  });
+
   it('never falls back to the dashboard entry', () => {
     expect(resolveScreenAccess('/no-such-area/page')).toBeUndefined();
   });

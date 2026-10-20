@@ -1,3 +1,5 @@
+import { RoleAssignmentManager } from '../iam/assignments/role-assignment.manager';
+import { IamLastMasterError } from '../iam/iam.errors';
 import { DbService } from '@app/db';
 import { ConflictException, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -91,6 +93,7 @@ describe('AuthService - signUp', () => {
         { provide: 'STREAM_PUBLISHER_users.events.v1', useValue: { publishEvent: jest.fn() } },
         { provide: ConsentsService, useValue: {} },
         { provide: TokensService, useValue: {} },
+        { provide: RoleAssignmentManager, useValue: { assertCanLeave: jest.fn() } },
         {
           provide: Cafe24LinkService,
           useValue: {
@@ -230,14 +233,17 @@ describe('AuthService - 탈퇴 익명화', () => {
   let updates: { table: unknown; set: Record<string, unknown> }[];
   let deletes: unknown[];
   let publishEvent: jest.Mock;
+  let tx: object;
+  const leaving = { assertCanLeave: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    leaving.assertCanLeave.mockResolvedValue(undefined);
     updates = [];
     deletes = [];
     publishEvent = jest.fn();
 
-    const tx = {
+    tx = {
       update: jest.fn((table: unknown) => ({
         set: jest.fn((set: Record<string, unknown>) => {
           updates.push({ table, set });
@@ -263,12 +269,16 @@ describe('AuthService - 탈퇴 익명화', () => {
         { provide: ConfigService, useValue: { get: jest.fn(), getOrThrow: jest.fn() } },
         {
           provide: DbService,
-          useValue: { db: { transaction: jest.fn().mockImplementation((cb: Function) => cb(tx)) } },
+          useValue: {
+            db: { transaction: jest.fn().mockImplementation((cb: Function) => cb(tx)) },
+            run: jest.fn((cb: Function, outer?: unknown) => cb(outer ?? tx)),
+          },
         },
         { provide: 'STREAM_PUBLISHER_users.events.v1', useValue: { publishEvent } },
         { provide: ConsentsService, useValue: {} },
         { provide: TokensService, useValue: { deleteAllTokens: jest.fn().mockResolvedValue(undefined) } },
         { provide: Cafe24LinkService, useValue: {} },
+        { provide: RoleAssignmentManager, useValue: leaving },
       ],
     }).compile();
 
@@ -331,4 +341,17 @@ describe('AuthService - 탈퇴 익명화', () => {
       }),
     );
   });
+
+  it('refuses to withdraw the last permanent system role holder', async () => {
+    leaving.assertCanLeave.mockRejectedValue(new IamLastMasterError());
+    await expect(service.softDeleteUser(USER_ID)).rejects.toBeInstanceOf(IamLastMasterError);
+    expect(updates).toHaveLength(0);
+    expect(publishEvent).not.toHaveBeenCalled();
+  });
+
+  it('checks the last system role holder inside the withdrawal transaction', async () => {
+    await service.softDeleteUser(USER_ID);
+    expect(leaving.assertCanLeave).toHaveBeenCalledWith(USER_ID, tx);
+  });
 });
+

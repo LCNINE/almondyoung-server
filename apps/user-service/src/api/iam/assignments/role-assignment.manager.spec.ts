@@ -24,7 +24,7 @@ const ALL = Object.values(ROLES).map((r) => ({
   updatedAt: at,
 }));
 const GRANTS: Record<string, string[]> = {
-  master: ['a.b.read', 'a.b.write', 'c.d.read'],
+  master: ['a.b.read', 'a.b.write', 'c.d.read', 'customer.profile.write'],
   admin: ['a.b.read', 'a.b.write'],
   intern: ['a.b.read'],
 };
@@ -125,10 +125,27 @@ describe('RoleAssignmentManager', () => {
     await expect(manager.replaceStaff(adminActor, 'u-target', [])).rejects.toBeInstanceOf(IamEscalationError);
   });
 
-  it('lets anyone who can assign roles hand out a customer role', async () => {
+  it('requires customer.profile.write to change a customer role', async () => {
     held();
-    await manager.replaceAll(adminActor, 'u-target', ['r-membership']);
+    await expect(manager.replaceAll(adminActor, 'u-target', ['r-membership'])).rejects.toBeInstanceOf(IamEscalationError);
+    expect(roles.insertAssignments).not.toHaveBeenCalled();
+  });
+
+  it('lets a master change a customer role as before', async () => {
+    held();
+    await manager.replaceAll(master, 'u-target', ['r-membership']);
     expect(roles.insertAssignments).toHaveBeenCalledWith('u-target', [{ roleId: 'r-membership', expiresAt: null }], tx);
+  });
+
+  it('asks for it when a customer role is removed', async () => {
+    held({ role: 'membership' });
+    await expect(manager.replaceAll(adminActor, 'u-target', [])).rejects.toBeInstanceOf(IamEscalationError);
+  });
+
+  it('does not ask for it when only staff roles change', async () => {
+    held({ role: 'membership' });
+    await manager.replaceAll(adminActor, 'u-target', ['r-membership', 'r-intern']);
+    expect(roles.insertAssignments).toHaveBeenCalledWith('u-target', [{ roleId: 'r-intern', expiresAt: null }], tx);
   });
 
   it('keeps at least one permanent holder of the system role', async () => {
@@ -278,4 +295,24 @@ describe('RoleAssignmentManager', () => {
     );
     expect(audit.record).toHaveBeenCalledTimes(2);
   });
+
+  it('refuses to withdraw the last permanent system role holder', async () => {
+    held({ role: 'master' });
+    roles.countPermanentHolders.mockResolvedValue(0);
+    await expect(manager.assertCanLeave('u-target')).rejects.toBeInstanceOf(IamLastMasterError);
+    expect(roles.lockRole).toHaveBeenCalled();
+  });
+
+  it('lets another master withdraw when one remains', async () => {
+    held({ role: 'master' });
+    roles.countPermanentHolders.mockResolvedValue(1);
+    await expect(manager.assertCanLeave('u-target')).resolves.toBeUndefined();
+  });
+
+  it('lets someone without the system role withdraw without locking it', async () => {
+    held({ role: 'membership' });
+    await expect(manager.assertCanLeave('u-target')).resolves.toBeUndefined();
+    expect(roles.lockRole).not.toHaveBeenCalled();
+  });
 });
+

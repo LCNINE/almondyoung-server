@@ -11,7 +11,7 @@ import {
   Query,
   UnauthorizedException,
 } from '@nestjs/common';
-import { User, RequirePermission, PiiResponse } from '@app/authorization';
+import { User, RequirePermission, PiiResponse, PiiWrite } from '@app/authorization';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
 import { SalesOrdersService } from '../services/sales-orders.service';
@@ -89,6 +89,7 @@ export class SalesOrdersController {
       { path: 'customerId', type: 'user' },
     ],
   })
+  @PiiWrite({ fields: ['customer.name', 'customer.email', 'customer.phone', 'shippingAddress', 'memo'] })
   @RequirePermission('order.order.write')
   @Patch(':id')
   @ApiOperation({ summary: '판매 주문 수정' })

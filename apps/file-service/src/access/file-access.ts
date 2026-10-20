@@ -113,7 +113,7 @@ export class FileAccess {
 
   private async isMasterOrOwner(file: Upload, user: JwtPayload): Promise<boolean> {
     if (file.uploadedBy === user.userId) return true;
-    const legacy = await this.legacyOwnerException(user);
+    const legacy = await this.checkpoints.legacyVerdict(() => this.legacyOwnerException(user));
     return this.checkpoints.compare('file.owner_exception', legacy, this.subjectOf(user), ['system.file.manage']);
   }
 

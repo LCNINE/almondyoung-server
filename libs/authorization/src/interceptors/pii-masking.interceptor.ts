@@ -1,11 +1,14 @@
 import {
   BadRequestException,
   CallHandler,
+  ForbiddenException,
+  ServiceUnavailableException,
   ExecutionContext,
   Inject,
   Injectable,
   Logger,
   NestInterceptor,
+  Optional,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { createHash, randomUUID } from 'node:crypto';
@@ -15,11 +18,14 @@ import {
   DEFAULT_PII_RAW_WITH,
   isPiiExport,
   piiResponseOf,
+  piiWriteOf,
+  type PiiWriteSpec,
   type PiiResponseSpec,
   type PiiSubjectType,
 } from '../decorators/pii-response.decorator';
 import type { OwnerService } from '../permissions/permission.types';
 import { PII_ACCESS_SUBJECT_CAP, PiiAccessRecorder, type PiiAccessAction } from '../services/pii-access-recorder';
+import { PermissionAuthority } from '../services/permission-authority';
 import { PermissionCache } from '../services/permission-cache';
 import { methodOf, rawResponseOf, rolesOf } from '../services/request-identity';
 import { staffClientOf } from '../services/staff-client';
@@ -98,10 +104,14 @@ export class PiiMaskingInterceptor implements NestInterceptor {
     @Inject(PermissionCache) private readonly cache: Pick<PermissionCache, 'permissionsFor'>,
     @Inject(PiiAccessRecorder) private readonly recorder: PiiAccessRecorder,
     @Inject(PII_MASKING_OPTIONS) private readonly options: PiiMaskingOptions,
+    /** 권한 사본이 없을 때 쓰기를 막을지 — 새 판정이 결정하는 서비스만 막는다(라우트 판정과 같은 규칙). */
+    @Optional() @Inject(PermissionAuthority) private readonly authority?: Pick<PermissionAuthority, 'enforced'>,
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (context.getType() !== 'http') return next.handle();
+    const write = piiWriteOf(this.reflector, context.getHandler());
+    if (write) this.assertCanWrite(write, context.switchToHttp().getRequest<unknown>());
     const spec = piiResponseOf(this.reflector, context.getHandler());
     if (!spec) return next.handle();
     const exporting = isPiiExport(this.reflector, context.getHandler());
@@ -109,6 +119,29 @@ export class PiiMaskingInterceptor implements NestInterceptor {
     const request = http.getRequest<unknown>();
     const response = http.getResponse<unknown>();
     return next.handle().pipe(mergeMap((body) => from(this.apply(spec, exporting, request, response, body))));
+  }
+
+  /** 본문에 개인정보 필드 값이 있는데 그 원문을 볼 권한이 없으면 핸들러를 부르지 않는다. */
+  private assertCanWrite(spec: PiiWriteSpec, request: unknown): void {
+    const body = isRecord(request) ? request.body : undefined;
+    // 값을 비우는 것(null·빈 문자열)도 고치는 것이다. 그 필드를 담은 객체를 null 로 보내는 것도 같다.
+    const sent = spec.fields.filter((path) => {
+      const parts = path.split('.');
+      for (let depth = 1; depth < parts.length; depth += 1) {
+        if (readPathValues(body, parts.slice(0, depth).join('.')).some((value) => value === null)) return true;
+      }
+      return readPathValues(body, path).length > 0;
+    });
+    if (sent.length === 0) return;
+    const facts = factsOf(request);
+    const rawWith = spec.rawWith ?? DEFAULT_PII_RAW_WITH;
+    const permissions = facts.roles === undefined ? new Set<string>() : this.cache.permissionsFor(facts.roles);
+    if (permissions === null) {
+      if (this.authority?.enforced !== true) return;
+      throw new ServiceUnavailableException('Permission data is not loaded yet');
+    }
+    if (rawWith.some((permission) => permissions.has(permission))) return;
+    throw new ForbiddenException({ message: 'Permission required', requiredPermissions: rawWith });
   }
 
   private async apply(

@@ -1157,7 +1157,9 @@ export class ConsolidationService {
   }
 
   private async requireScope(actor: ConsolidationActor, scope: FulfillmentScope): Promise<void> {
-    const legacy = await legacyHasFulfillmentScope(this.authorization, actor.roles, scope);
+    const legacy = await this.checkpoints.legacyVerdict(() =>
+      legacyHasFulfillmentScope(this.authorization, actor.roles, scope),
+    );
     if (!this.checkpoints.compare('fulfillment.consolidation_scope', legacy, authzSubjectOf(actor), [scope])) {
       throw new ForbiddenException(`Missing required scope: ${scope}`);
     }

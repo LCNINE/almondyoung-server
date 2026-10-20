@@ -10,11 +10,10 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { adminForceDispatchDecisionFrom, type ForceDispatchDecision } from '../../../platform/auth/force-dispatch-authorization';
 import { ApiCreatedResponse, ApiHeader, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import {
-  getScopeAuthorizationDecision,
   RequireScopes,
-  ScopeAuthorizationDecision,
   ScopeGuard,
   User,
   RequirePermission,
@@ -41,7 +40,7 @@ interface ShipmentDispatchCommandAdapter {
     input: ForceShipmentDispatchDto & {
       actor: ShipmentDispatchActor;
       idempotencyKey: string;
-      authorization: ScopeAuthorizationDecision | undefined;
+      authorization: ForceDispatchDecision | undefined;
     },
   ): Promise<unknown>;
 }
@@ -98,8 +97,9 @@ export class ShipmentController {
     @Req() request?: unknown,
   ) {
     this.workflowGate.assertV2MutationAllowed('shipment.dispatch.force');
-    const authorization = getScopeAuthorizationDecision(request, FULFILLMENT_SCOPE.DISPATCH_FORCE);
-    this.checkpoints.compareDecision('fulfillment.force_dispatch_decision', authorization !== undefined, request, [
+    const authorization = adminForceDispatchDecisionFrom(request, this.checkpoints.enforced);
+    const legacy = adminForceDispatchDecisionFrom(request, false) !== undefined;
+    this.checkpoints.compareDecision('fulfillment.force_dispatch_decision', legacy, request, [
       'fulfillment.dispatch.force',
     ]);
     return this.shipmentDispatch.forceDispatch(id, {

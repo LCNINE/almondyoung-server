@@ -1,4 +1,4 @@
-import { RequireScopes, RequirePermission, PiiResponse } from '@app/authorization';
+import { RequireScopes, RequirePermission, PiiResponse, PiiWrite } from '@app/authorization';
 import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { BusinessLicenseResponseDto } from '../../business-licenses/dto/business-license.response.dto';
@@ -38,6 +38,7 @@ export class BusinessLicensesController {
     fields: { representativeName: 'name', fileUrl: 'redact', 'metadata.ntsValidate.requested': 'redact' },
     subjects: [{ param: 'userId', type: 'user' }],
   })
+  @PiiWrite({ fields: ['representativeName'] })
   @RequirePermission('customer.business_verification.review')
   @Post('/user/:userId')
   @RequireScopes('master', 'admin:users:modify')

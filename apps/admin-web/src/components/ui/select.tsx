@@ -5,15 +5,17 @@ import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react"
 import { Select as SelectPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils/index"
-import { usePermissionReadOnly } from "@/components/auth/permission-read-only-context"
+import { useReadOnlyControl } from "@/components/auth/permission-read-only-context"
+import { blockKeysWhileReadOnly, blockWhileReadOnly } from "@/lib/auth/read-only-control"
 
 function Select({
   disabled,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Root>) {
-  // 권한 때문에 읽기 전용인 편집 폼 안이면 값만 보인다
-  const permissionReadOnly = usePermissionReadOnly() !== null
-  return <SelectPrimitive.Root data-slot="select" {...props} disabled={disabled || permissionReadOnly} />
+  // 권한 때문에 읽기 전용인 편집 폼 안이면 값만 보인다 — 트리거에 포커스는 남기고 목록은 열지 않는다
+  const { blocked, disabled: controlDisabled } = useReadOnlyControl(disabled)
+  const closed = blocked ? { open: false, onOpenChange: () => undefined } : {}
+  return <SelectPrimitive.Root data-slot="select" {...props} {...closed} disabled={controlDisabled} />
 }
 
 function SelectGroup({
@@ -32,19 +34,26 @@ function SelectTrigger({
   className,
   size = "default",
   children,
+  onKeyDown,
+  onPointerDown,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
   size?: "sm" | "default"
 }) {
+  const control = useReadOnlyControl()
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       data-size={size}
       className={cn(
-        "flex w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-sm whitespace-nowrap shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 data-[placeholder]:text-muted-foreground data-[size=default]:h-9 data-[size=sm]:h-8 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 dark:bg-input/30 dark:hover:bg-input/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
+        "flex w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-sm whitespace-nowrap shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 data-[placeholder]:text-muted-foreground data-[size=default]:h-9 data-[size=sm]:h-8 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 dark:bg-input/30 dark:hover:bg-input/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
         className
       )}
       {...props}
+      aria-disabled={control['aria-disabled']}
+      aria-describedby={control['aria-describedby'] ?? props['aria-describedby']}
+      onKeyDown={blockKeysWhileReadOnly(control.blocked, onKeyDown)}
+      onPointerDown={blockWhileReadOnly(control.blocked, onPointerDown)}
     >
       {children}
       <SelectPrimitive.Icon asChild>

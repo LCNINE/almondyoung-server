@@ -4,15 +4,17 @@ import * as React from "react"
 import * as SwitchPrimitive from "@radix-ui/react-switch"
 
 import { cn } from "@/lib/utils/ui"
-import { usePermissionReadOnly } from "@/components/auth/permission-read-only-context"
+import { useReadOnlyControl } from "@/components/auth/permission-read-only-context"
+import { blockWhileReadOnly } from "@/lib/auth/read-only-control"
 
 function Switch({
   className,
   disabled,
+  onClick,
   ...props
 }: React.ComponentProps<typeof SwitchPrimitive.Root>) {
-  // 권한 때문에 읽기 전용인 편집 폼 안이면 값만 보인다
-  const permissionReadOnly = usePermissionReadOnly() !== null
+  // 권한 때문에 읽기 전용인 편집 폼 안이면 값만 보인다(포커스는 남기고 값 변경만 막는다)
+  const { blocked, ...control } = useReadOnlyControl(disabled)
   return (
     <SwitchPrimitive.Root
       data-slot="switch"
@@ -21,7 +23,8 @@ function Switch({
         className
       )}
       {...props}
-      disabled={disabled || permissionReadOnly}
+      {...control}
+      onClick={blockWhileReadOnly(blocked, onClick)}
     >
       <SwitchPrimitive.Thumb
         data-slot="switch-thumb"

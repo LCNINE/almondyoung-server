@@ -6,6 +6,7 @@ import {
   ScopeGuard,
   createCheckpointsForTesting,
   PermissionCheckpoints,
+  recordPermissionDecisions,
 } from '@app/authorization';
 import { Test } from '@nestjs/testing';
 import { validateSync } from 'class-validator';
@@ -214,5 +215,38 @@ describe('ShipmentController V2 dispatch commands', () => {
     expect(Reflect.getMetadata(REQUIRED_SCOPES_KEY, ShipmentController.prototype.forceDispatch)).toEqual([
       FULFILLMENT_SCOPE.DISPATCH_FORCE,
     ]);
+  });
+});
+
+describe('ShipmentController force-dispatch decision source', () => {
+  const dto = { reason: 'verified damaged scan gun', csCaseId: '11111111-1111-4111-8111-111111111111', note: 'case' };
+  const user = { userId: 'jwt-actor', sub: 'jwt-actor', roles: ['admin'] };
+  const run = async (enforce: boolean, request: object) => {
+    const forceDispatch = jest.fn().mockResolvedValue({ shipmentId: 'shipment-1', dispatchAttemptId: 'attempt-1' });
+    const controller = new ShipmentController(
+      { assertV2MutationAllowed: jest.fn() } as never,
+      { inspectionScan: jest.fn(), forceDispatch },
+      createCheckpointsForTesting({ admin: ['fulfillment.dispatch.force'] }, { enforce }),
+    );
+    await controller.forceDispatch('shipment-1', dto, 'force-key', user, request);
+    return forceDispatch.mock.calls[0][1].authorization;
+  };
+
+  it('ignores the permission stamp while the switch is off', async () => {
+    const request = {};
+    recordPermissionDecisions(request, ['fulfillment.dispatch.force']);
+    expect(await run(false, request)).toBeUndefined();
+  });
+
+  it('passes the permission stamp once enforced', async () => {
+    const request = {};
+    recordPermissionDecisions(request, ['fulfillment.dispatch.force']);
+    expect(await run(true, request)).toMatchObject({ permission: 'fulfillment.dispatch.force', granted: true });
+  });
+
+  it('keeps a station stamp out of the admin route once enforced', async () => {
+    const request = {};
+    recordPermissionDecisions(request, ['fulfillment.dispatch.station_force']);
+    expect(await run(true, request)).toBeUndefined();
   });
 });

@@ -5,15 +5,17 @@ import { CheckIcon } from "lucide-react"
 import { Checkbox as CheckboxPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils/index"
-import { usePermissionReadOnly } from "@/components/auth/permission-read-only-context"
+import { useReadOnlyControl } from "@/components/auth/permission-read-only-context"
+import { blockWhileReadOnly } from "@/lib/auth/read-only-control"
 
 function Checkbox({
   className,
   disabled,
+  onClick,
   ...props
 }: React.ComponentProps<typeof CheckboxPrimitive.Root>) {
-  // 권한 때문에 읽기 전용인 편집 폼 안이면 값만 보인다
-  const permissionReadOnly = usePermissionReadOnly() !== null
+  // 권한 때문에 읽기 전용인 편집 폼 안이면 값만 보인다(포커스는 남기고 값 변경만 막는다)
+  const { blocked, ...control } = useReadOnlyControl(disabled)
   return (
     <CheckboxPrimitive.Root
       data-slot="checkbox"
@@ -22,7 +24,8 @@ function Checkbox({
         className
       )}
       {...props}
-      disabled={disabled || permissionReadOnly}
+      {...control}
+      onClick={blockWhileReadOnly(blocked, onClick)}
     >
       <CheckboxPrimitive.Indicator
         data-slot="checkbox-indicator"

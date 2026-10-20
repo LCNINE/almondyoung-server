@@ -100,6 +100,7 @@ describe('AuthzShadowRecorder', () => {
     expect(JSON.parse(String(warn.mock.calls[0][0]))).toEqual({
       event: 'authz_shadow_mismatch',
       service: 'core',
+      mode: 'shadow',
       route: 'GET /orders',
       roles: ['intern'],
       legacy: 'allow',
@@ -192,6 +193,18 @@ describe('AuthzShadowRecorder', () => {
     build({ admin: [] });
     recorder.flush();
     expect(log).not.toHaveBeenCalled();
+  });
+
+  it('labels logs with the mode', () => {
+    const c = cache({ intern: [] });
+    recorder = new AuthzShadowRecorder(new PermissionDecider(c), c, { ...options, enforce: true });
+    const { request, response, finish } = exchange({ roles: ['intern'] });
+    recorder.observe(request, response, 'GET /orders', order);
+    recorder.markPassed(request);
+    finish(200);
+    expect(JSON.parse(String(warn.mock.calls[0][0])).mode).toBe('enforce');
+    recorder.flush();
+    expect(JSON.parse(String(log.mock.calls.at(-1)?.[0])).mode).toBe('enforce');
   });
 });
 

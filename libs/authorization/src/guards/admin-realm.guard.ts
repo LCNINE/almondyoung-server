@@ -1,9 +1,10 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Inject, Injectable, Optional } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { IS_OPTIONAL_AUTH_KEY } from '../decorators/optional-auth.decorator';
 import { IS_STORE_ROUTE_KEY } from '../decorators/store-route.decorator';
 import { REQUIRED_SCOPES_KEY } from '../decorators/require-scopes.decorator';
+import { PermissionAuthority } from '../services/permission-authority';
 
 /** 직원으로 인정하는 역할. 세분화 전까지 모든 내부 직원은 최소 `admin` 을 갖는다. */
 export const STAFF_ROLES: readonly string[] = ['admin', 'master'];
@@ -26,16 +27,23 @@ export const STAFF_ROLES: readonly string[] = ['admin', 'master'];
  *
  * 그 외에는 403. 즉 **새 라우트는 아무 표시도 없으면 직원 전용**이 기본값이다.
  *
+ * 그 서비스가 새 권한 판정으로 넘어갔으면(`AUTHZ_ENFORCE=true`) 권한 분류 라우트에서는 물러난다 — 결정은
+ * `PermissionGuard` 가 한다.
+ *
  * 조건 3은 `@RequireScopes` 가 실제로 `ScopeGuard` 와 짝지어져 있을 때만 안전하다. 메타데이터만
  * 있고 가드가 없으면 아무것도 막지 못한다 — 이 짝이 유지되는지는 앱별 회귀 테스트가 검증한다
  * (core: `apps/core/src/platform/auth/scope-guard-binding.spec.ts`).
  */
 @Injectable()
 export class AdminRealmGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(
+    private readonly reflector: Reflector,
+    @Optional() @Inject(PermissionAuthority) private readonly authority?: Pick<PermissionAuthority, 'decides'>,
+  ) {}
 
   canActivate(context: ExecutionContext): boolean {
     if (context.getType() !== 'http') return true;
+    if (this.authority?.decides(context)) return true;
 
     const targets = [context.getHandler(), context.getClass()];
     const isFlagged = (key: string): boolean => this.reflector.getAllAndOverride<boolean>(key, targets) === true;

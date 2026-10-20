@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Headers, Param, Patch, Post, UnauthorizedException, UseGuards } from '@nestjs/common';
-import { RequireScopes, ScopeGuard, User, RequirePermission, PiiResponse, OPEN_WITH_RECIPIENT } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User, RequirePermission, PiiResponse, PiiWrite, OPEN_WITH_RECIPIENT } from '@app/authorization';
 import { ApiOkResponse } from '@nestjs/swagger';
 import {
   CancelShipmentOutstandingDto,
@@ -119,6 +119,7 @@ export class ShipmentPlanningController {
       'shipment.recipientSnapshot.personalCustomsCode': OPEN_WITH_RECIPIENT,
     },
   })
+  @PiiWrite({ fields: ['recipientSnapshot', 'entrancePassword'], rawWith: OPEN_WITH_RECIPIENT })
   @RequirePermission('fulfillment.shipment.override_recipient')
   @Patch(':id/recipient')
   @RequireScopes(FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT)

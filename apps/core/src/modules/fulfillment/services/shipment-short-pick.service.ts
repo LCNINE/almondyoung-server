@@ -450,7 +450,7 @@ export class ShipmentShortPickService {
 
   /** 관리자(reopen) 또는 스테이션 작업자(short_pick) — 스펙 U7. ScopeGuard 를 거치지 않은 직접 호출도 같은 규칙. */
   private async requireScope(actor: ShipmentShortPickActor): Promise<void> {
-    const legacy = await legacyHasShortPickScope(this.authorization, actor.roles);
+    const legacy = await this.checkpoints.legacyVerdict(() => legacyHasShortPickScope(this.authorization, actor.roles));
     if (
       !this.checkpoints.compare('fulfillment.short_pick_report', legacy, authzSubjectOf(actor), [
         'fulfillment.shipment.reopen',

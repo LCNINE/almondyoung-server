@@ -1,4 +1,4 @@
-import { RequireScopes, RequirePermission, PiiResponse } from '@app/authorization';
+import { RequireScopes, RequirePermission, PiiResponse, PiiWrite } from '@app/authorization';
 import {
   Body,
   Controller,
@@ -133,6 +133,7 @@ export class UsersController {
   @ApiOperation({ summary: '사용자 정보 수정' })
   @ApiResponse({ status: 200, description: '프로필 수정 성공' })
   @PiiResponse({ fields: { username: 'name', email: 'email' }, subjects: [{ param: 'userId', type: 'user' }] })
+  @PiiWrite({ fields: ['username', 'phoneNumber', 'address'] })
   @RequirePermission('customer.profile.write')
   @Patch(':userId')
   @RequireScopes('master', 'admin:users:modify')

@@ -60,8 +60,9 @@ export class AssistantChatController {
   ) {
     const turn = await readTurn(request);
     const headers = callerAuthHeaders(request);
-    const grantedScopes = grantedAiScopes(request);
-    this.checkpoints.compareDecision('ai.assistant_tools', grantedScopes.includes(AI_SCOPE.ASSISTANT), request, [
+    const grantedScopes = grantedAiScopes(request, this.checkpoints.enforced);
+    const legacy = grantedAiScopes(request, false).includes(AI_SCOPE.ASSISTANT);
+    this.checkpoints.compareDecision('ai.assistant_tools', legacy, request, [
       'ai.assistant.use',
     ]);
 

@@ -1,6 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host';
+import { RequirePermission } from './decorators/require-permission.decorator';
+import { RolesGuard } from './guards/master-role.guard';
+import { PermissionAuthority } from './services/permission-authority';
 import { Test } from '@nestjs/testing';
 import { AuthzObserverGuard } from './guards/authz-observer.guard';
 import { PermissionGuard } from './guards/permission.guard';
@@ -80,4 +84,33 @@ describe('PermissionModule', () => {
     expect(await enforced('true')).toBe(true);
     expect(await enforced('1')).toBe(false);
   });
+
+  it('exports the authority for app-level guards', async () => {
+    class Routes {
+      @RequirePermission('order.order.read')
+      read(): void {}
+    }
+    const AdminOnly = RolesGuard('admin', 'master');
+    const module = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ ignoreEnvFile: true, ignoreEnvVars: true, load: [() => ({ AUTHZ_ENFORCE: 'true' })] }),
+        PermissionModule.forRoot({ service: 'core', source: StubSource }),
+      ],
+      providers: [AdminOnly],
+    }).compile();
+    const context = new ExecutionContextHost([{ user: { userId: 'u', sub: 'u', roles: ['intern'] } }, {}], Routes, Routes.prototype.read);
+    context.setType('http');
+    expect(module.get(PermissionAuthority).enforced).toBe(true);
+    expect(module.get(AdminOnly).canActivate(context)).toBe(true);
+  });
+
+  it('logs the authz mode once at boot', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const module = await build({ AUTHZ_ENFORCE: 'true' });
+    await module.createNestApplication().init();
+    const lines = log.mock.calls.map((call) => String(call[0])).filter((line) => line.startsWith('authz mode'));
+    expect(lines).toEqual(['authz mode: enforce (core)']);
+    log.mockRestore();
+  });
 });
+

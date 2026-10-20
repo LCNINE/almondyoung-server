@@ -4,7 +4,7 @@ import { CurrentUser } from '../../shared/decorators/user.decorator';
 import { ListSmsConversationsDto, ReplySmsConversationDto } from '../dto';
 import { SmsGateEnabledGuard } from '../guards/sms-gate-enabled.guard';
 import { SmsConversationsService } from '../services/sms-conversations.service';
-import { RequirePermission, PiiResponse } from '@app/authorization';
+import { RequirePermission, PiiResponse, PiiWrite } from '@app/authorization';
 
 @ApiTags('sms-gate')
 @Controller('sms-gate/conversations')
@@ -49,6 +49,7 @@ export class SmsConversationsController {
     return this.service.delete(phone);
   }
 
+  @PiiWrite({ fields: ['phoneNumber'] })
   @RequirePermission('messaging.message.send')
   @Post('reply')
   reply(@Body() dto: ReplySmsConversationDto, @CurrentUser() user: { userId: string }) {

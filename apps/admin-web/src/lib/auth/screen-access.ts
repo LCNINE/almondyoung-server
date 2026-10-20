@@ -129,6 +129,10 @@ export const SCREEN_ACCESS: Readonly<Record<string, ScreenAccess>> = {
   '/mall/shipping-groups': any('system.shipping_profile.read'),
   '/mall/regions': any('system.region.read'),
   '/messages': any('messaging.message.read'),
+  // 보내기만 하는 화면은 보낼 수 있는 사람만 연다(쓰기 전용 화면 = 그 쓰기 권한).
+  '/messages/send': any('messaging.message.send'),
+  '/messages/alimtalk/send': any('messaging.message.bulk_send'),
+  '/messages/bulk': any('messaging.message.bulk_send'),
 
   // 결제
   '/payments': any('payment.payment.read'),

@@ -140,6 +140,60 @@ describeIfDb('role assignments against a real database', () => {
     expect(Number(left?.n)).toBe(1);
   });
 
+  it('lets only one of the last two permanent holders withdraw at the same time', async () => {
+    const system = await roleId(SYSTEM_ROLE_NAME);
+    const [others] = await dbService.db
+      .select({ n: count() })
+      .from(userRoleAssignments)
+      .innerJoin(users, eq(users.id, userRoleAssignments.userId))
+      .where(
+        and(
+          eq(userRoleAssignments.roleId, system),
+          isNull(userRoleAssignments.expiresAt),
+          isNull(users.deletedAt),
+          isNull(users.dormantAt),
+          notLike(users.loginId, `${PREFIX}%`),
+        ),
+      );
+    if (Number(others?.n ?? 0) > 0) {
+      console.warn('skipped: this database already has a permanent system-role holder; use a scratch database');
+      return;
+    }
+    const a = await makeUser('wa');
+    const b = await makeUser('wb');
+    await dbService.db.insert(userRoleAssignments).values([
+      { userId: a, roleId: system },
+      { userId: b, roleId: system },
+    ]);
+    const withdraw = (tx: Parameters<Parameters<typeof dbService.run>[0]>[0], userId: string) =>
+      tx.update(users).set({ deletedAt: new Date() }).where(eq(users.id, userId));
+
+    // 앞 탈퇴가 검사(잠금)를 마치고 익명화 중인 동안 뒤 탈퇴는 기다려야 하고, 앞이 커밋되면 거절돼야 한다.
+    let settled = false;
+    let outcome: unknown;
+    await dbService.run(async (tx) => {
+      await manager.assertCanLeave(a, tx);
+      const pending = dbService
+        .run(async (tx2) => {
+          await manager.assertCanLeave(b, tx2);
+          await withdraw(tx2, b);
+        })
+        .then(
+          () => (outcome = 'withdrawn'),
+          (error: unknown) => (outcome = error),
+        );
+      void pending.finally(() => (settled = true));
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(settled).toBe(false);
+      await withdraw(tx, a);
+    });
+    for (let i = 0; i < 50 && !settled; i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(outcome).toBeInstanceOf(IamLastMasterError);
+    const [b_] = await dbService.db.select({ deletedAt: users.deletedAt }).from(users).where(eq(users.id, b));
+    expect(b_?.deletedAt).toBeNull();
+  });
+
   it('keeps the end date and assignment time of a role the save did not change', async () => {
     const boss = await makeUser('boss');
     const target = await makeUser('c');

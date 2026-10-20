@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { RolesGuard, User, RequirePermission, PiiResponse } from '@app/authorization';
+import { RolesGuard, User, RequirePermission, PiiResponse, PiiWrite } from '@app/authorization';
 import { CreateCsCommentDto } from '../dto/create-cs-comment.dto';
 import { EditCsCommentDto } from '../dto/edit-cs-comment.dto';
 import { CsCommentsService } from '../services/cs-comments.service';
@@ -38,6 +38,7 @@ export class CsCaseCommentsController {
       { param: 'caseId', type: 'cs_case' },
     ],
   })
+  @PiiWrite({ fields: ['body'] })
   @RequirePermission('cs.inquiry.write')
   @Patch(':commentId')
   @ApiOperation({ summary: '댓글 수정(작성자 본인만)' })

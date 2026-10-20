@@ -75,4 +75,4 @@ export const useSetUserRoles = (userId: string) => {
     },
   });
 };
-useSetUserRoles.permission = ['iam.role.assign'] as const satisfies PermissionRequirement;
+useSetUserRoles.permission = { allOf: [['iam.role.assign'], ['customer.profile.write']] } as const satisfies PermissionRequirement;

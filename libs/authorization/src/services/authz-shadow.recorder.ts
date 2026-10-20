@@ -79,6 +79,7 @@ export class AuthzShadowRecorder implements OnModuleInit, OnModuleDestroy {
         JSON.stringify({
           event: 'authz_shadow_summary',
           service: this.options.service,
+          mode: this.mode(),
           windowSeconds: Math.round((now - this.windowStartedAt) / 1_000),
           ...this.totals,
           snapshotVersion: status.version,
@@ -90,6 +91,11 @@ export class AuthzShadowRecorder implements OnModuleInit, OnModuleDestroy {
     this.window = new Map();
     this.totals = emptyTotals();
     this.windowStartedAt = now;
+  }
+
+  /** 강제 모드에선 옛 가드가 권한 라우트에서 물러나므로 «옛 결과»는 새 판정이 정한 결과다 — 로그를 읽는 쪽이 구분하게 남긴다. */
+  private mode(): 'shadow' | 'enforce' {
+    return this.options.enforce ? 'enforce' : 'shadow';
   }
 
   private settle(request: object, state: ObservedRequest, statusCode: number): void {
@@ -131,6 +137,7 @@ export class AuthzShadowRecorder implements OnModuleInit, OnModuleDestroy {
       JSON.stringify({
         event: 'authz_shadow_mismatch',
         service: this.options.service,
+        mode: this.mode(),
         route: state.route,
         roles: sortedRoles,
         legacy,

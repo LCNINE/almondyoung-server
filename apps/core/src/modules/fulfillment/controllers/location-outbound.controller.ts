@@ -13,9 +13,9 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { adminForceDispatchDecisionFrom } from '../../../platform/auth/force-dispatch-authorization';
 import { ApiHeader, ApiTags } from '@nestjs/swagger';
 import {
-  getScopeAuthorizationDecision,
   PermissionCheckpoints,
   RequireScopes,
   ScopeGuard,
@@ -90,8 +90,9 @@ export class LocationOutboundController {
     @User() user: AuthenticatedUser,
     @Req() request: unknown,
   ) {
-    const authorization = getScopeAuthorizationDecision(request, FULFILLMENT_SCOPE.DISPATCH_FORCE);
-    this.checkpoints.compareDecision('fulfillment.force_dispatch_decision', authorization !== undefined, request, [
+    const authorization = adminForceDispatchDecisionFrom(request, this.checkpoints.enforced);
+    const legacy = adminForceDispatchDecisionFrom(request, false) !== undefined;
+    this.checkpoints.compareDecision('fulfillment.force_dispatch_decision', legacy, request, [
       'fulfillment.dispatch.force',
     ]);
     return unwrapPreparedOutbound(

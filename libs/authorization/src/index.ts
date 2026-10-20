@@ -34,6 +34,7 @@ export * from './services/request-identity';
 export * from './services/system-principal';
 export * from './services/permission-decision';
 export * from './services/permission-checkpoints';
+export * from './services/permission-authority';
 export * from './testing/checkpoints';
 export * from './decorators/pii-response.decorator';
 export * from './interceptors/pii-masking.interceptor';

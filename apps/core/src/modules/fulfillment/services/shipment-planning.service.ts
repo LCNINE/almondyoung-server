@@ -1904,7 +1904,9 @@ export class ShipmentPlanningService {
   }
 
   private async requireScope(actor: ShipmentPlanningActor, scope: FulfillmentScope): Promise<void> {
-    const legacy = await legacyHasFulfillmentScope(this.authorization, actor.roles, scope);
+    const legacy = await this.checkpoints.legacyVerdict(() =>
+      legacyHasFulfillmentScope(this.authorization, actor.roles, scope),
+    );
     if (!this.checkpoints.compare('fulfillment.planning_scope', legacy, authzSubjectOf(actor), [scope])) {
       throw new ForbiddenException(`Missing required scope: ${scope}`);
     }

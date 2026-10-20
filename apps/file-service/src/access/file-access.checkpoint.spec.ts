@@ -78,4 +78,31 @@ describe('FileAccess permission comparison', () => {
       expect(await checkpointEvaluations('file.owner_exception', outcome)).toBe(0);
     }
   });
+
+  it('lets the permission decide when the legacy scope lookup fails once enforced', async () => {
+    const make = async (enforce: boolean) => {
+      const module = await Test.createTestingModule({
+        providers: [
+          FileAccess,
+          { provide: FileRepository, useValue: { findById: jest.fn(async () => file), softDelete: jest.fn() } },
+          {
+            provide: AuthorizationService,
+            useValue: {
+              hasScope: jest.fn(async () => {
+                throw new Error('mapping lookup failed');
+              }),
+            },
+          },
+          {
+            provide: PermissionCheckpoints,
+            useValue: createCheckpointsForTesting({ file_keeper: ['system.file.manage'] }, { enforce }),
+          },
+        ],
+      }).compile();
+      return module.get(FileAccess);
+    };
+    await expect((await make(true)).delete('f-1', user('keeper', ['file_keeper']))).resolves.toMatchObject({ success: true });
+    await expect((await make(false)).delete('f-1', user('keeper', ['file_keeper']))).rejects.toThrow('mapping lookup failed');
+  });
 });
+

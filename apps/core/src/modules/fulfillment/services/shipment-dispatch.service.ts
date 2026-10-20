@@ -9,8 +9,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { isForceDispatchDecision } from '../../../platform/auth/force-dispatch-authorization';
-import { ScopeAuthorizationDecision } from '@app/authorization';
+import {
+  forceDispatchDecisionKey,
+  forceDispatchDecisionSource,
+  isForceDispatchDecision,
+  type ForceDispatchDecision,
+} from '../../../platform/auth/force-dispatch-authorization';
 import {
   FULFILLMENT_STREAM,
   FULFILLMENT_V2_STREAM,
@@ -63,7 +67,7 @@ export interface ForceShipmentDispatchInput {
   note?: string;
   actor: ShipmentDispatchActor;
   idempotencyKey: string;
-  authorization: ScopeAuthorizationDecision | undefined;
+  authorization: ForceDispatchDecision | undefined;
 }
 
 export interface ShipmentDispatchResponse {
@@ -124,6 +128,7 @@ interface ForceDispatchContext {
   note: string | null;
   commandRequestId: string;
   authorizationScope: string;
+  authorizationSource: 'scope_guard' | 'permission_guard';
   beforeLineManifest: DispatchLineManifestEvidence[];
 }
 
@@ -402,7 +407,8 @@ export class ShipmentDispatchService {
           csCaseId: input.csCaseId?.trim() || null,
           note: input.note?.trim() || null,
           commandRequestId,
-          authorizationScope: authorization.scope,
+          authorizationScope: forceDispatchDecisionKey(authorization),
+          authorizationSource: forceDispatchDecisionSource(authorization),
           beforeLineManifest,
         });
         return {
@@ -885,7 +891,7 @@ export class ShipmentDispatchService {
         { userId: actor.id },
         {
           commandRequestId: force.commandRequestId,
-          authorization: { scope: force.authorizationScope, granted: true, source: 'scope_guard' },
+          authorization: { scope: force.authorizationScope, granted: true, source: force.authorizationSource },
           reason: force.reason,
           csCaseId: force.csCaseId,
           note: force.note,

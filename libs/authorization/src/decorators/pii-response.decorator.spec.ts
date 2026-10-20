@@ -1,5 +1,5 @@
 import { Reflector } from '@nestjs/core';
-import { PiiExport, PiiResponse, isPiiExport, piiResponseOf } from './pii-response.decorator';
+import { PiiExport, PiiResponse, PiiWrite, isPiiExport, piiResponseOf } from './pii-response.decorator';
 
 describe('PiiResponse', () => {
   it('reads the spec back through the reflector', () => {
@@ -69,4 +69,12 @@ describe('PiiExport', () => {
     expect(isPiiExport(new Reflector(), Controller.prototype.download)).toBe(true);
     expect(isPiiExport(new Reflector(), Controller.prototype.plain)).toBe(false);
   });
+
+  it('accepts only plain dotted body paths for a write declaration', () => {
+    expect(() => PiiWrite({ fields: ['items[].phone'] })).toThrow();
+    expect(() => PiiWrite({ fields: ['*.phone'] })).toThrow();
+    expect(() => PiiWrite({ fields: [] })).toThrow();
+    expect(() => PiiWrite({ fields: ['customer.phone'] })).not.toThrow();
+  });
 });
+

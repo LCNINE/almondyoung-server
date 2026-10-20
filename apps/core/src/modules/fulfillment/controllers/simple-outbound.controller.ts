@@ -93,8 +93,9 @@ export class SimpleOutboundController {
     @User() user: AuthenticatedUser,
     @Req() request: unknown,
   ): Promise<SimpleOutboundStateDto> {
-    const authorization = forceDispatchDecisionFrom(request);
-    this.checkpoints.compareDecision('fulfillment.force_dispatch_decision', authorization !== undefined, request, [
+    const authorization = forceDispatchDecisionFrom(request, this.checkpoints.enforced);
+    const legacy = forceDispatchDecisionFrom(request, false) !== undefined;
+    this.checkpoints.compareDecision('fulfillment.force_dispatch_decision', legacy, request, [
       'fulfillment.dispatch.force',
       'fulfillment.dispatch.station_force',
     ]);

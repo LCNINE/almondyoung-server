@@ -52,4 +52,29 @@ describe('NewSkuScopeGuard permission comparison', () => {
     await expect(guard.canActivate(contextFor(['logistics_worker'], { links: [] }))).resolves.toBe(true);
     expect(await checkpointEvaluations('inventory.new_sku', 'match')).toBe(0);
   });
+
+  it('lets the permission decide when the legacy lookup fails once enforced', async () => {
+    const guard = new NewSkuScopeGuard(
+      auth(new Error('db down')),
+      createCheckpointsForTesting({ admin: ['inventory.master.write'] }, { enforce: true }),
+    );
+    await expect(guard.canActivate(contextFor(['admin']))).resolves.toBe(true);
+  });
+
+  it('denies a new SKU without inventory.master.write once enforced', async () => {
+    const guard = new NewSkuScopeGuard(
+      auth(new Set(['inventory.manage'])),
+      createCheckpointsForTesting({ admin: [] }, { enforce: true }),
+    );
+    await expect(guard.canActivate(contextFor(['admin']))).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('still denies on a lookup failure while off', async () => {
+    const guard = new NewSkuScopeGuard(
+      auth(new Error('db down')),
+      createCheckpointsForTesting({ admin: ['inventory.master.write'] }, { enforce: false }),
+    );
+    await expect(guard.canActivate(contextFor(['admin']))).rejects.toBeInstanceOf(ForbiddenException);
+  });
 });
+

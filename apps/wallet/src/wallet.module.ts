@@ -2,8 +2,10 @@ import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
+  Inject,
   Injectable,
   Module,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import {
@@ -13,6 +15,7 @@ import {
   AuthzShadowInterceptor,
   JwtAccessStrategy,
   JwtAuthGuard,
+  PermissionAuthority,
   PermissionGuard,
   PermissionModule,
   piiMaskingProviders,
@@ -184,10 +187,12 @@ export interface AuthenticatedRequest {
 // ─── Auth guard (API key + JWT cookie) ───────────────────────────────────────
 
 @Injectable()
-class WalletAuthGuard implements CanActivate {
+export class WalletAuthGuard implements CanActivate {
   constructor(
-    private readonly jwtAuthGuard: JwtAuthGuard,
+    @Inject(JwtAuthGuard) private readonly jwtAuthGuard: Pick<JwtAuthGuard, 'canActivate'>,
     private readonly reflector: Reflector,
+    /** 새 권한 판정으로 넘어갔으면 관리자 라우트의 역할 비교를 건너뛴다(인증은 그대로). */
+    @Optional() @Inject(PermissionAuthority) private readonly authority?: Pick<PermissionAuthority, 'decides'>,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -215,6 +220,8 @@ class WalletAuthGuard implements CanActivate {
       if (!(await this.tryJwtAuth(context, request))) {
         throw new UnauthorizedException({ error: 'UNAUTHORIZED', message: 'Missing or invalid JWT cookie' });
       }
+
+      if (this.authority?.decides(context)) return true;
 
       const roles: string[] = (request.user as any)?.roles ?? [];
       if (!roles.some((r) => r === 'admin' || r === 'master')) {

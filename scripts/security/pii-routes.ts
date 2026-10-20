@@ -110,3 +110,30 @@ export const PII_EXPORT_EXCEPTIONS: Readonly<Record<string, string>> = {
   // 공급사별 직배송 주문 JSON — 레포 밖 호출자가 있을 수 있어 사유 헤더를 강제하면 그 호출이 깨진다. 가림·접속기록은 건다.
   'core GET /direct-ship/export/:companyName': '레포 밖 호출자 확인 전까지 사유를 강제하지 않는다',
 };
+
+/**
+ * 요청 본문으로 개인정보 원문을 받는 직원용 쓰기 라우트 — `@PiiWrite` 를 선언해야 하고, 선언한 라우트는 여기 있어야
+ * 한다(`pii-write-routes.spec.ts`). 그 화면이 가린 값을 채워 보내는 쓰기면 여기에 한 줄 더한다.
+ */
+export const PII_WRITE_ROUTES: readonly string[] = [
+  'core PATCH /cs-cases/:caseId/comments/:commentId',
+  'core PATCH /sales-orders/:id',
+  'core PATCH /shipments/:id/recipient',
+  'notification POST /sms-gate/conversations/reply',
+  'user-service PATCH /admin/users/:userId',
+  'user-service POST /admin/business-licenses//user/:userId',
+];
+
+/**
+ * 응답에서 가리는 필드를 본문으로 받지만 `@PiiWrite` 를 달지 않는 쓰기 — 새 값을 입력하는 만들기·메모 남기기라 이미
+ * 저장된 값을 다시 보내지 않는다. 기존 값을 채워 고치는 화면이 생기면 여기서 빼고 선언한다.
+ */
+export const PII_WRITE_EXEMPT: Readonly<Record<string, string>> = {
+  'core POST /cs-cases': '새 상담을 입력한다',
+  'core POST /cs-cases/:caseId/comments': '새 댓글을 입력한다',
+  'core POST /fulfillments': '주문에서 출고 요청을 만든다',
+  'core POST /sales-order-amendments': '새 주문 변경을 접수한다',
+  'core POST /sales-orders': '새 주문을 입력한다',
+  'wallet POST /v1/admin/refund-requests/:id/approve': '처리 메모를 새로 남긴다',
+  'wallet POST /v1/admin/refund-requests/:id/reject': '처리 메모를 새로 남긴다',
+};

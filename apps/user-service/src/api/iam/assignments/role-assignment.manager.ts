@@ -1,3 +1,4 @@
+import type { Permission } from '@app/authorization';
 import { DbService, InjectDb } from '@app/db';
 import { BadRequestError, NotFoundError } from '@app/shared';
 import { Injectable } from '@nestjs/common';
@@ -18,6 +19,9 @@ interface WantedAssignment {
 }
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** 고객 역할(회원 등급)을 바꾸는 데 필요한 권한. */
+const CUSTOMER_ROLE_CHANGE_PERMISSION: Permission = 'customer.profile.write';
 
 /** `YYYY-MM-DD` → 그날 23:59:59.999(한국 시각). 오늘 이후가 아니면 400. */
 export function endOfKoreanDay(date: string, now: Date = new Date()): Date {
@@ -114,6 +118,18 @@ export class RoleAssignmentManager {
     });
   }
 
+  /**
+   * 탈퇴 전 확인 — 기간 없이 시스템 역할을 가진 마지막 사람은 떠날 수 없다. 그 역할 행을 잠그고 세므로 탈퇴 트랜잭션
+   * 안에서 부른다(`tx`) — 잠금이 탈퇴가 끝날 때까지 남아 동시 탈퇴·회수가 차례로 판정된다.
+   */
+  async assertCanLeave(userId: string, tx?: UserServiceTx): Promise<void> {
+    await this.dbService.run(async (tx) => {
+      const held = await this.roles.assignmentsOf(userId, tx);
+      if (!held.some((h) => isSystemRole(h.name) && h.expiresAt === null)) return;
+      await this.assertSystemRoleSurvives(tx, { id: userId, canSignIn: false }, new Map());
+    }, tx);
+  }
+
   /** 관리자 계정을 만들 때의 첫 역할 — 같은 규칙, 같은 트랜잭션. */
   assignOnCreate(tx: UserServiceTx, actor: IamActor, userId: string, roleId: string): Promise<void> {
     return this.apply(tx, actor, userId, [], [{ roleId, expiresAt: null }], 'admin_user.create');
@@ -182,6 +198,12 @@ export class RoleAssignmentManager {
       this.actorRoles(tx, actor).then((names) => this.myPermissions.forRoles(names)),
     ]);
     const held = new Set(mine.permissions);
+    // 고객 역할(회원 등급)을 바꾸는 것은 고객 정보를 고치는 일이다 — 고객 정보를 고칠 수 있는 사람만 바꾼다.
+    if (roleNames.some(isCustomerRole) && !held.has(CUSTOMER_ROLE_CHANGE_PERMISSION)) {
+      throw new IamEscalationError(
+        `고객 역할을 주거나 회수하려면 '${CUSTOMER_ROLE_CHANGE_PERMISSION}' 권한이 필요합니다.`,
+      );
+    }
     for (const name of new Set(roleNames)) {
       const grants = Object.hasOwn(snapshot.roles, name) ? snapshot.roles[name] : [];
       const beyond = grants.filter((key) => !held.has(key));

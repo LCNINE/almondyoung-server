@@ -644,10 +644,14 @@ export class AdminOperationsController {
       );
 
       // 정책 산정액 초과 환불 권한. master 는 ScopeGuard 와 동일하게 항상 통과한다.
+      const legacyOverride = await this.checkpoints.legacyVerdict(
+        async () =>
+          (roles ?? []).includes('master') ||
+          (await this.authorizationService.hasScope({ roles: roles ?? [] }, MEMBERSHIP_SCOPE.BILLING_REFUND_OVERRIDE)),
+      );
       const canOverridePolicyAmount = this.checkpoints.compare(
         'membership.refund_override',
-        (roles ?? []).includes('master') ||
-          (await this.authorizationService.hasScope({ roles: roles ?? [] }, MEMBERSHIP_SCOPE.BILLING_REFUND_OVERRIDE)),
+        legacyOverride,
         { roles: roles ?? [] },
         ['membership.billing.refund_override'],
       );

@@ -358,6 +358,10 @@ Medusa 를 새로 부르면 `medusa-permissions.ts` 에 경로를 더한다(`med
 시스템 역할 보유자 규칙과 변경 이력이 거기서 같은 트랜잭션으로 묶인다(ADR-0045 §24~28). 새 권한을 추가할 때 같은 대상의
 `.read` 가 없으면 `requires` 나 `standalone` 을 적는다(`permission-dependencies.spec.ts` 가 빨갛다).
 
+서비스별 `AUTHZ_ENFORCE=true` 면 그 서비스의 권한 라우트는 새 판정만 결정하고 옛 인가 가드는 물러난다(ADR-0045 §37~39) — 새 인가 판정은
+옛 가드(`RolesGuard`·`@RequireScopes`)가 아니라 `@RequirePermission`·판정 지점(`PermissionCheckpoints`)으로 쓴다. 개인정보 원문을 본문으로
+받는 새 쓰기 라우트는 `@PiiWrite` 와 `PII_WRITE_ROUTES` 한 줄을 더한다(없으면 `pii-write-routes.spec.ts` 가 빨갛다).
+
 ### 크론 (`@app/cron-once`)
 
 앱의 크론은 `@nestjs/schedule` 의 `@Cron` 이 아니라 **`@CronOnce(expr, { name })`** 를 쓴다 (ADR-0036, #821).

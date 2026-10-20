@@ -48,7 +48,10 @@ export class NewSkuScopeGuard implements CanActivate {
     throw new ForbiddenException(NEW_SKU_DENIED);
   }
 
-  /** 옛 판정. 역할 조회 실패는 지금처럼 바로 거부한다(비교하지 않는다). */
+  /**
+   * 옛 판정. 역할 조회 실패는 그림자 모드에선 지금처럼 바로 거부한다(비교하지 않는다). 새 판정이 결정하는
+   * 모드에선 옛 판정을 «거부»로 넘기고 결과는 판정 지점이 정한다 — 옛 표 조회 실패가 새 판정을 막지 않게.
+   */
   private async legacyAllows(hasRoles: boolean, roleNames: string[]): Promise<boolean> {
     if (!hasRoles) return false;
     if (roleNames.includes('master')) return true;
@@ -57,6 +60,7 @@ export class NewSkuScopeGuard implements CanActivate {
       scopes = await this.authService.getScopesByRoles(roleNames);
     } catch (error) {
       this.logger.error('Failed to fetch role-scope mappings from DB', error);
+      if (this.checkpoints.enforced) return false;
       throw new ForbiddenException(NEW_SKU_DENIED);
     }
     return scopes.has('master') || scopes.has(INVENTORY_SCOPE.MANAGE);

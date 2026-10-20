@@ -452,6 +452,7 @@ describe('ShipmentDispatchService', () => {
       note: 'shift lead present',
       commandRequestId: 'command-1',
       authorizationScope: FULFILLMENT_SCOPE.DISPATCH_FORCE,
+      authorizationSource: 'scope_guard',
       beforeLineManifest: [
         {
           shipmentLineId: IDS.line,

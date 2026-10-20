@@ -25,7 +25,8 @@ const emptyTotals = () => ({ evaluated: 0, match: 0, wouldDeny: 0, wouldAllow: 0
 /**
  * 핸들러 «안»의 판정(역할 이름·옛 스코프·옛 판정 낙인)을 권한 판정과 나란히 계산해 비교한다.
  *
- * 결과를 바꾸지 않는다 — `compare`·`compareDecision` 은 언제나 옛 판정을 그대로 돌려준다(대조군/후보 실험).
+ * 그림자 모드에선 결과를 바꾸지 않는다 — `compare`·`compareDecision` 은 옛 판정을 그대로 돌려준다(대조군/후보 실험).
+ * `AUTHZ_ENFORCE=true` 면 새 판정을 돌려준다(판정 불가는 거부). 비교 기록은 두 모드 모두 남긴다.
  * 호출하는 쪽은 옛 판정을 끝까지 계산하고 그 값을 넘긴다 — 옛 판정이 조회 실패로 던지면 여기까지 오지 않고,
  * 그건 인가 판정이 아니므로 비교하지 않는다. 요청 경로에서 하는 일은 메모리 조회뿐이다.
  */
@@ -52,7 +53,7 @@ export class PermissionCheckpoints implements OnModuleInit, OnModuleDestroy {
     if (this.timer) clearInterval(this.timer);
   }
 
-  /** 주체의 권한으로 새 판정을 계산해 옛 판정과 비교한다. 옛 판정을 그대로 반환한다. */
+  /** 주체의 권한으로 새 판정을 계산해 옛 판정과 비교한다. 그림자에선 옛 판정, 강제에선 새 판정을 반환한다. */
   compare(
     point: CheckpointName,
     legacy: boolean,
@@ -63,10 +64,10 @@ export class PermissionCheckpoints implements OnModuleInit, OnModuleDestroy {
       ? ALLOW
       : this.decider.decide({ kind: 'permission', anyOf }, subject?.roles);
     this.record(point, legacy, verdict, this.subjectLabel(subject), anyOf);
-    return legacy;
+    return this.decide(legacy, verdict);
   }
 
-  /** 라우트가 이 요청에 남긴 권한 판정 낙인으로 새 판정을 계산해 비교한다. 옛 판정을 그대로 반환한다. */
+  /** 라우트가 이 요청에 남긴 권한 판정 낙인으로 새 판정을 계산해 비교한다. 그림자에선 옛 판정, 강제에선 새 판정을 반환한다. */
   compareDecision(point: CheckpointName, legacy: boolean, request: unknown, anyOf: readonly Permission[]): boolean {
     const verdict: Verdict =
       this.cache.status().state !== 'ready'
@@ -75,7 +76,26 @@ export class PermissionCheckpoints implements OnModuleInit, OnModuleDestroy {
           ? ALLOW
           : { allowed: false, reason: 'missing_permission' };
     this.record(point, legacy, verdict, 'route-decision', anyOf);
-    return legacy;
+    return this.decide(legacy, verdict);
+  }
+
+  /**
+   * 옛 판정 계산(옛 스코프 표 조회 등). 그림자 모드에선 조회 실패를 지금처럼 던진다. 새 판정이 결정하는 모드에선
+   * «옛 거부»로 넘긴다 — 결과는 새 판정이 정하므로 옛 표 조회 실패가 그 판정을 막지 않게.
+   */
+  async legacyVerdict(compute: () => boolean | Promise<boolean>): Promise<boolean> {
+    try {
+      return await compute();
+    } catch (error) {
+      if (!this.options.enforce) throw error;
+      this.logger.warn(`legacy authorization lookup failed while the permission decides: ${String(error)}`);
+      return false;
+    }
+  }
+
+  /** 판정 지점의 결과를 새 판정이 정하는가. */
+  get enforced(): boolean {
+    return this.options.enforce;
   }
 
   flush(now = Date.now()): void {
@@ -84,6 +104,7 @@ export class PermissionCheckpoints implements OnModuleInit, OnModuleDestroy {
         JSON.stringify({
           event: 'authz_checkpoint_summary',
           service: this.options.service,
+          mode: this.mode(),
           windowSeconds: Math.round((now - this.windowStartedAt) / 1_000),
           ...this.totals,
           mismatches: [...this.window.values()],
@@ -93,6 +114,14 @@ export class PermissionCheckpoints implements OnModuleInit, OnModuleDestroy {
     this.window = new Map();
     this.totals = emptyTotals();
     this.windowStartedAt = now;
+  }
+
+  private decide(legacy: boolean, verdict: Verdict): boolean {
+    return this.options.enforce ? verdict.allowed : legacy;
+  }
+
+  private mode(): 'shadow' | 'enforce' {
+    return this.options.enforce ? 'enforce' : 'shadow';
   }
 
   private subjectLabel(subject: AuthzSubject | undefined): string | readonly string[] {
@@ -140,6 +169,7 @@ export class PermissionCheckpoints implements OnModuleInit, OnModuleDestroy {
       JSON.stringify({
         event: 'authz_checkpoint_mismatch',
         service: this.options.service,
+        mode: this.mode(),
         checkpoint: point,
         subject,
         legacy: legacy ? 'allow' : 'deny',

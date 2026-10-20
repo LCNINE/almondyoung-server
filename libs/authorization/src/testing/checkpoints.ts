@@ -5,9 +5,12 @@ import { PermissionDecider } from '../services/permission-decider';
 
 /**
  * 판정 지점을 가진 클래스를 스펙에서 만들 때 쓴다. 판정 지점은 옛 판정을 그대로 돌려주므로 사본이 없어도(기본)
- * 그 클래스의 동작은 같다. 비교 결과까지 보려면 역할별 권한을 넘긴다.
+ * 그 클래스의 동작은 같다. 비교 결과까지 보려면 역할별 권한을, 강제 모드를 보려면 `{ enforce: true }` 를 넘긴다.
  */
-export function createCheckpointsForTesting(byRole: Record<string, string[]> | null = null): PermissionCheckpoints {
+export function createCheckpointsForTesting(
+  byRole: Record<string, string[]> | null = null,
+  { enforce = false }: { enforce?: boolean } = {},
+): PermissionCheckpoints {
   const cache: Pick<PermissionCache, 'permissionsFor' | 'status'> = {
     permissionsFor: (roles) => (byRole === null ? null : new Set(roles.flatMap((role) => byRole[role] ?? []))),
     status: () => ({
@@ -19,7 +22,7 @@ export function createCheckpointsForTesting(byRole: Record<string, string[]> | n
   };
   return new PermissionCheckpoints(new PermissionDecider(cache), cache, {
     service: 'core',
-    enforce: false,
+    enforce,
     refreshIntervalMs: 30_000,
     retryBaseMs: 1_000,
     summaryIntervalMs: 300_000,

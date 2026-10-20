@@ -5,6 +5,7 @@ import type { Permission } from '../permissions/permission-catalog';
 
 export const PII_RESPONSE_KEY = 'pii_response';
 export const PII_EXPORT_KEY = 'pii_export';
+export const PII_WRITE_KEY = 'pii_write';
 
 /** 접속기록에 남기는 «정보주체(대상)» 의 종류. 원문 값이 아니라 식별자만 남긴다. */
 export type PiiSubjectType =
@@ -85,7 +86,31 @@ export function PiiExport(): MethodDecorator {
   return applyDecorators(SetMetadata(PII_EXPORT_KEY, true));
 }
 
+/**
+ * 요청 본문으로 개인정보 원문을 받는 쓰기. 본문의 그 필드에 값이 있으면 그 원문을 볼 수 있는 권한(`rawWith`, 기본
+ * `customer.pii.read`)이 있어야 한다 — 가린 값을 본 사람이 그 값을 그대로 다시 저장하지 않게(필드 수준: 고치려면 볼 수
+ * 있어야 한다). 경로는 본문 기준 점 경로(`address`·`customer.phone`) — 배열·와일드카드 없이.
+ */
+export interface PiiWriteSpec {
+  readonly fields: readonly PiiPath[];
+  readonly rawWith?: readonly Permission[];
+}
+
+export function PiiWrite(spec: PiiWriteSpec): MethodDecorator {
+  if (spec.fields.length === 0) throw new Error('@PiiWrite needs at least one field');
+  for (const path of spec.fields) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(path)) {
+      throw new Error(`@PiiWrite takes plain dotted body paths: ${path}`);
+    }
+  }
+  return applyDecorators(SetMetadata(PII_WRITE_KEY, spec));
+}
+
 type Handler = Parameters<Reflector['get']>[1];
+
+export function piiWriteOf(reflector: Reflector, handler: Handler): PiiWriteSpec | undefined {
+  return reflector.get<PiiWriteSpec | undefined>(PII_WRITE_KEY, handler);
+}
 
 export function piiResponseOf(reflector: Reflector, handler: Handler): PiiResponseSpec | undefined {
   return reflector.get<PiiResponseSpec | undefined>(PII_RESPONSE_KEY, handler);
