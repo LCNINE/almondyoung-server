@@ -1,7 +1,8 @@
 import { combinedRequirement, requirementMessage, requirementMet, type PermissionedAction } from './mutation-permission';
 import type { MyPermissions } from './my-permissions';
-import { permissionLabel } from './permission-labels';
 import { canAccess, canAny, resolveScreenAccess } from './screen-access';
+
+export { permissionDeniedMessage } from './permission-labels';
 
 export type CanState = { readonly status: 'loading' } | { readonly status: 'error' } | { readonly status: 'ready'; readonly allowed: boolean };
 
@@ -9,11 +10,6 @@ export function checkCan(query: { isPending: boolean; isError: boolean; data?: M
   if (query.data) return { status: 'ready', allowed: canAny(query.data.permissions, anyOf) };
   if (query.isError) return { status: 'error' };
   return { status: 'loading' };
-}
-
-export function permissionDeniedMessage(required: readonly string[], serverMessage: string): string {
-  if (required.length === 0) return serverMessage;
-  return `이 작업에는 ${required.map(permissionLabel).join(' 또는 ')} 권한이 필요합니다.`;
 }
 
 /** 403 이 한꺼번에 여러 건 와도 권한은 이 간격에 한 번만 다시 읽는다. */

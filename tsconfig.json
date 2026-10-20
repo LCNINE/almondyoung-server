@@ -48,6 +48,7 @@
       "@app/shared/*": ["libs/shared/src/*"],
       "@packages/domain-types": ["packages/domain-types"],
       "@packages/domain-types/*": ["packages/domain-types/*"],
+      "@permission-catalog": ["libs/authorization/src/permissions/index.ts"],
       "@packages/email-layout": ["packages/email-layout"],
       "@packages/email-layout/*": ["packages/email-layout/*"],
       "@packages/event-contracts": ["packages/event-contracts"],

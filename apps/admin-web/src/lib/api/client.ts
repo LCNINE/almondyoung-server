@@ -2,9 +2,9 @@
 
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
 import { CustomError } from './customError';
-import { permissionDeniedMessage } from '@/lib/auth/permission-check';
-import { readRequiredPermissions } from '@/lib/auth/permission-labels';
-import { consumeReveal, parsePiiHeaders, reportPiiResponse } from '@/lib/pii/pii-notices';
+// 상대 경로로 둔다 — 다른 앱의 계약 테스트가 이 파일을 직접 import 한다.
+import { permissionDeniedMessage, readRequiredPermissions } from '../auth/permission-labels';
+import { consumeReveal, parsePiiHeaders, reportPiiResponse } from '../pii/pii-notices';
 
 const REFRESH_LOCK_NAME = 'admin-web:auth-refresh';
 const REFRESH_MARKER_KEY = 'admin-web:last-auth-refresh';
