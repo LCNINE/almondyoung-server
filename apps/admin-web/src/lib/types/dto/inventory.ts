@@ -1935,3 +1935,83 @@ export type UpdateDeliveryProfileDto = Partial<
 > & {
   avgDeliveryDays?: number | null;
 };
+
+// ── SKU 실측 작업 (core inventory/sku-field-capture 응답/요청 미러) ──
+export type FieldCaptureBarcodeStatus = 'scanned' | 'no_manufacturer' | 'none';
+
+export interface FieldCaptureCompletionDto {
+  barcodeStatus: FieldCaptureBarcodeStatus;
+  lastWorkerLabel: string;
+  lastCompletedAt: string;
+}
+
+export interface FieldCaptureSkuSummaryDto {
+  skuId: string;
+  code: string;
+  name: string;
+  imageUrl: string | null;
+  completion: FieldCaptureCompletionDto | null;
+}
+
+export interface ShelfPositionDto {
+  positionCode: string;
+  skus: FieldCaptureSkuSummaryDto[];
+}
+
+export interface ReferencePhotoDto {
+  id: string;
+  fileId: string;
+  sortOrder: number;
+  takenByLabel: string;
+  createdAt: string;
+}
+
+export interface BarcodeOwnerDto {
+  skuId: string;
+  code: string;
+  name: string;
+}
+
+export interface FieldCaptureDetailCompletionDto extends FieldCaptureCompletionDto {
+  scannedBarcode: string | null;
+  barcodeConflict: BarcodeOwnerDto | null;
+  allFacesConfirmed: boolean;
+}
+
+export interface FieldCaptureDetailDto {
+  skuId: string;
+  code: string;
+  name: string;
+  imageUrl: string | null;
+  positionCode: string | null;
+  packageWidthMm: number | null;
+  packageLengthMm: number | null;
+  packageHeightMm: number | null;
+  barcodes: string[];
+  photos: ReferencePhotoDto[];
+  completion: FieldCaptureDetailCompletionDto | null;
+}
+
+export interface WorkerProgressDto {
+  workerId: string;
+  workerLabel: string;
+  today: number;
+  total: number;
+}
+
+export interface FieldCaptureProgressDto {
+  remainingSkus: number;
+  completedSkus: number;
+  stickerNeededSkus: number;
+  barcodeConflictSkus: number;
+  workers: WorkerProgressDto[];
+}
+
+export interface CompleteFieldCaptureRequest {
+  packageWidthMm: number;
+  packageLengthMm: number;
+  packageHeightMm: number;
+  barcodeStatus: FieldCaptureBarcodeStatus;
+  scannedBarcode?: string;
+  allFacesConfirmed: true;
+}
