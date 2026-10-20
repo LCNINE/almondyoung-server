@@ -74,7 +74,10 @@ type UploadFileOptions = {
  * 서버가 검증으로 거부한 업로드(컨텍스트 상한 초과, 허용 안 된 타입 등).
  * 프록시로 다시 보내도 같은 검증에 걸리므로 폴백하지 않고 그대로 띄운다.
  */
-class UploadRejectedError extends Error {}
+export class UploadRejectedError extends Error {
+  // 화면 쪽 오류 문구(errorMessageOf)가 이 이름으로 «검증 거부»를 알아본다 — 빌드가 클래스명을 줄여도 남게 명시한다
+  name = 'UploadRejectedError';
+}
 
 async function readServerErrorMessage(res: Response): Promise<string | null> {
   try {

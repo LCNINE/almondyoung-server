@@ -1,3 +1,4 @@
+import type { BarcodeFormat } from '@zxing/browser';
 import { CustomError } from '@/lib/api/customError';
 import type {
   BarcodeOwnerDto,
@@ -13,7 +14,24 @@ export const REFERENCE_PHOTO_CONTEXT_ID = 'sku-reference-photo';
 export const REFERENCE_PHOTO_MAX_BYTES = 26214400;
 
 const MAX_MM = 5000;
+// core CompleteFieldCaptureDto.scannedBarcode 의 @MaxLength(64) 와 같은 값
+const MAX_BARCODE_LENGTH = 64;
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp'];
+
+export type BarcodeFormatName = keyof typeof BarcodeFormat;
+
+/**
+ * 제조사 바코드 카메라가 읽는 형식 — 소매 1D 만. 화장품 포장엔 QR(URL)이 흔해서, 다 읽으면 그 URL 이
+ * 보조 바코드로 영구히 붙는다(작업자는 뗄 수 없다). 선반 스캔은 이 제한 없이 모든 형식을 읽는다.
+ */
+export const MANUFACTURER_BARCODE_FORMATS: readonly BarcodeFormatName[] = [
+  'EAN_13',
+  'EAN_8',
+  'UPC_A',
+  'UPC_E',
+  'CODE_128',
+  'ITF',
+];
 
 export function parseMm(input: string): number | null {
   const s = input.trim();
@@ -50,6 +68,9 @@ export function missingRequirements(d: CaptureDraft): string[] {
   }
   if (d.barcodeStatus === null || (d.barcodeStatus === 'scanned' && d.scannedBarcode.trim() === '')) {
     out.push('바코드 칸에서 하나를 골라 주세요');
+  } else if (d.barcodeStatus === 'scanned' && d.scannedBarcode.trim().length > MAX_BARCODE_LENGTH) {
+    // 카메라는 막대 바코드만 읽지만 블루투스 스캐너·직접 입력은 QR(URL)도 들어온다 — 서버 400(영문) 전에 막는다
+    out.push('바코드가 너무 길어요. 포장의 제조사 바코드(막대 모양)를 찍어 주세요');
   }
   if (!d.allFacesConfirmed) out.push('여섯 면이 다 나왔는지 확인해 주세요');
   return out;
@@ -133,11 +154,14 @@ export function barcodeConflictWarning(owner: BarcodeOwnerDto | null, currentSku
  * 오류 안내. 언제나 «무엇이 안 됐는지» 문장으로 시작하고, 서버가 준 사유가 있을 때만 괄호로 붙인다.
  * admin-web axios 인터셉터는 모든 실패를 CustomError(message 는 비지 않음)로 던진다 — 네트워크 실패면
  * 서버 본문 없이 statusCode 500 + 'Network Error' 라, 그 문구는 작업자에게 보이지 않는다.
- * fetch 기반 업로드 오류(CustomError 아님)도 상황 문장만 보인다.
+ * fetch 기반 업로드 오류(CustomError 아님)는 상황 문장만 보인다 — 단 서버가 검증으로 거부한 업로드
+ * (upload.client 의 UploadRejectedError: 크기·형식·컨텍스트)는 다시 해도 같으니 사유를 붙인다.
+ * 그 클래스는 'use client' 모듈 안에 있어 instanceof 대신 name 으로 알아본다.
  */
 export function errorMessageOf(e: unknown, context: string): string {
   const fromServer = e instanceof CustomError && (e.response !== undefined || e.statusCode < 500);
-  return fromServer ? `${context} (${e.message})` : context;
+  const uploadRejected = e instanceof Error && e.name === 'UploadRejectedError';
+  return fromServer || uploadRejected ? `${context} (${e.message})` : context;
 }
 
 /** 재작업이면 지난 실측값을 채운다. 여섯 면 확인은 매번 다시 받는다. 사진 수는 서버 수치. */

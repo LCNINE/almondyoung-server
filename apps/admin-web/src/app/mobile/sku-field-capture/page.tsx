@@ -70,6 +70,7 @@ function MyToday() {
   const { data } = useQuery({
     queryKey: fieldCaptureKeys.myToday,
     queryFn: () => skuFieldCaptureClient.getMyToday(),
+    staleTime: 0, // 전역 5분을 물려받지 않는다 — 다른 화면에서 끝낸 수도 돌아오면 바로 센다
   });
   if (!data) return null;
   return <p className="text-center text-sm text-gray-600">오늘 내가 끝낸 상품 {data.today}개</p>;
@@ -89,6 +90,8 @@ function ShelfList({
   const { data, isLoading, error } = useQuery({
     queryKey: fieldCaptureKeys.position(code),
     queryFn: () => skuFieldCaptureClient.getPosition(code),
+    // 전역 5분을 물려받으면 다른 작업자가 방금 끝낸 상품이 「미완료」로 보여 재작업 확인을 건너뛴다
+    staleTime: 0,
   });
 
   const pick = (sku: FieldCaptureSkuSummaryDto) => {

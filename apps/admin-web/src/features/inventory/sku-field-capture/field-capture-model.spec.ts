@@ -8,6 +8,7 @@ import {
   draftFromDetail,
   errorMessageOf,
   fieldCaptureKeys,
+  MANUFACTURER_BARCODE_FORMATS,
   reworkNotice,
   scanInputValue,
   missingRequirements,
@@ -26,6 +27,15 @@ const full: CaptureDraft = {
   photoCount: 3,
   allFacesConfirmed: true,
 };
+
+describe('MANUFACTURER_BARCODE_FORMATS', () => {
+  it('소매 1D 형식만 — QR·2D 는 읽지 않는다', () => {
+    expect([...MANUFACTURER_BARCODE_FORMATS].sort()).toEqual(['CODE_128', 'EAN_13', 'EAN_8', 'ITF', 'UPC_A', 'UPC_E']);
+    for (const twoD of ['QR_CODE', 'DATA_MATRIX', 'PDF_417', 'AZTEC'] as const) {
+      expect(MANUFACTURER_BARCODE_FORMATS).not.toContain(twoD);
+    }
+  });
+});
 
 describe('parseMm', () => {
   it('정수만 받는다', () => {
@@ -53,6 +63,15 @@ describe('missingRequirements', () => {
     expect(missingRequirements({ ...full, barcodeStatus: 'scanned', scannedBarcode: '' })).toContain(
       '바코드 칸에서 하나를 골라 주세요',
     ));
+  it('찍은 바코드가 64자를 넘으면(QR·URL 등) 제조사 바코드를 다시 찍게 한다', () => {
+    const tooLong = 'https://example.com/' + 'a'.repeat(45); // 65자
+    expect(missingRequirements({ ...full, barcodeStatus: 'scanned', scannedBarcode: tooLong })).toContain(
+      '바코드가 너무 길어요. 포장의 제조사 바코드(막대 모양)를 찍어 주세요',
+    );
+    expect(
+      missingRequirements({ ...full, barcodeStatus: 'scanned', scannedBarcode: ` ${'8'.repeat(64)} ` }),
+    ).toEqual([]);
+  });
   it('여섯 면 미확인', () =>
     expect(missingRequirements({ ...full, allFacesConfirmed: false })).toContain('여섯 면이 다 나왔는지 확인해 주세요'));
   it('가로 오입력', () =>
@@ -158,6 +177,12 @@ describe('errorMessageOf', () => {
     expect(errorMessageOf(new CustomError({ message: '인증이 만료되었습니다.', statusCode: 401 }), ctx)).toBe(
       `${ctx} (인증이 만료되었습니다.)`,
     ));
+  it('서버가 거부한 업로드(UploadRejectedError)는 그 사유를 붙인다', () => {
+    const rejected = Object.assign(new Error('파일 업로드가 거부되었습니다. (File size too large)'), {
+      name: 'UploadRejectedError',
+    });
+    expect(errorMessageOf(rejected, ctx)).toBe(`${ctx} (파일 업로드가 거부되었습니다. (File size too large))`);
+  });
   it('fetch 업로드 오류·모르는 값엔 상황 문장만', () => {
     expect(errorMessageOf(new TypeError('Failed to fetch'), ctx)).toBe(ctx);
     expect(errorMessageOf(undefined, ctx)).toBe(ctx);

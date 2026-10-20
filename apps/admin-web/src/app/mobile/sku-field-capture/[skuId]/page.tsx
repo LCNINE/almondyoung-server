@@ -18,6 +18,7 @@ import {
   draftFromDetail,
   errorMessageOf,
   fieldCaptureKeys,
+  MANUFACTURER_BARCODE_FORMATS,
   missingRequirements,
   toCompleteRequest,
   type CaptureDraft,
@@ -38,12 +39,14 @@ const DIMENSIONS: { key: 'widthMm' | 'lengthMm' | 'heightMm'; label: string }[] 
 
 export default function SkuFieldCaptureWorkPage() {
   const { skuId } = useParams<{ skuId: string }>();
-  const { data: detail, isLoading, error } = useQuery({
+  const { data: detail, isFetchedAfterMount, error } = useQuery({
     queryKey: fieldCaptureKeys.detail(skuId),
     queryFn: () => skuFieldCaptureClient.getDetail(skuId),
+    staleTime: 0, // 다른 작업자가 방금 바꾼 실측·사진을 옛 캐시로 보여 주지 않게
   });
 
-  if (isLoading) return <Loader2 className="mx-auto mt-10 h-6 w-6 animate-spin text-gray-400" />;
+  // 초안은 상세가 처음 왔을 때 한 번만 만든다 — 캐시에 옛 상세가 있어도 이번 방문에 받은 값으로 만들게 기다린다
+  if (!isFetchedAfterMount) return <Loader2 className="mx-auto mt-10 h-6 w-6 animate-spin text-gray-400" />;
   if (error || !detail) {
     return (
       <div className="space-y-3 p-4">
@@ -124,6 +127,7 @@ function CaptureForm({ detail }: { detail: FieldCaptureDetailDto }) {
         <BarcodeScanInput
           label="제조사 바코드 찍기"
           placeholder="바코드 직접 입력"
+          formats={MANUFACTURER_BARCODE_FORMATS}
           onScan={(value) => set({ barcodeStatus: 'scanned', scannedBarcode: value })}
         />
         {scanned !== '' && (

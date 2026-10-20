@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { IScannerControls } from '@zxing/browser';
 import { Camera, X } from 'lucide-react';
-import { cameraFailure, cameraUnavailableReason, scanInputValue } from '../field-capture-model';
+import { cameraFailure, cameraUnavailableReason, scanInputValue, type BarcodeFormatName } from '../field-capture-model';
 
 type Props = {
   label: string;
@@ -13,13 +13,15 @@ type Props = {
   autoFocus?: boolean;
   /** 첫 화면처럼 카메라 버튼을 크게 */
   prominent?: boolean;
+  /** 카메라가 읽을 형식. 없으면 전부 (텍스트 칸·블루투스 스캐너엔 적용되지 않는다) */
+  formats?: readonly BarcodeFormatName[];
 };
 
 /**
  * 카메라 연속 디코드(첫 결과에서 멈춤) + 텍스트 칸(엔터=제출).
  * 텍스트 칸이 블루투스 스캐너·수동 입력·카메라 불가 환경의 대체 경로다.
  */
-export function BarcodeScanInput({ label, onScan, placeholder, autoFocus, prominent }: Props) {
+export function BarcodeScanInput({ label, onScan, placeholder, autoFocus, prominent, formats }: Props) {
   const [text, setText] = useState('');
   const [scanning, setScanning] = useState(false);
   // undefined = 아직 확인 전(SSR), null = 쓸 수 있음, string = 못 쓰는 이유
@@ -51,8 +53,11 @@ export function BarcodeScanInput({ label, onScan, placeholder, autoFocus, promin
     };
     // 디코더는 카메라를 처음 켤 때만 받는다 (SSR·첫 화면 번들에서 뺀다)
     import('@zxing/browser')
-      .then(({ BrowserMultiFormatReader }) =>
-        new BrowserMultiFormatReader().decodeFromConstraints(
+      .then(({ BrowserMultiFormatReader, BarcodeFormat }) => {
+        const reader = new BrowserMultiFormatReader();
+        // DecodeHintType.POSSIBLE_FORMATS 를 reader 의 hints 에 넣는 setter
+        if (formats) reader.possibleFormats = formats.map((f) => BarcodeFormat[f]);
+        return reader.decodeFromConstraints(
           { video: { facingMode: 'environment' } },
           video,
           (result, _err, c) => {
@@ -62,8 +67,8 @@ export function BarcodeScanInput({ label, onScan, placeholder, autoFocus, promin
             setScanning(false);
             onScanRef.current(result.getText());
           },
-        ),
-      )
+        );
+      })
       .then((c) => {
         controls = c;
         if (done) c.stop();
@@ -76,7 +81,7 @@ export function BarcodeScanInput({ label, onScan, placeholder, autoFocus, promin
         else setBlocked(f.message);
       });
     return stopNow;
-  }, [scanning]);
+  }, [scanning, formats]);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
