@@ -26,11 +26,7 @@ import {
 } from '@/lib/api/domains/attendance';
 import { uploadFileToFileService } from '@/lib/api/domains/files/upload.client';
 import { fetchWithRefresh } from '@/lib/api/fetch-with-refresh';
-import {
-  ATTENDANCE_KEY,
-  useAttendance,
-  useAttendanceAction,
-} from '../hooks/use-attendance';
+import { ATTENDANCE_KEY, useAttendanceAction } from '../hooks/use-attendance';
 import { formatAttendanceTime } from '../lib/attendance-model';
 import {
   seoulDate,
@@ -39,6 +35,8 @@ import {
 } from '@packages/domain-types/attendance';
 import { toast } from 'sonner';
 import { AttendanceTimeField } from './attendance-time-field';
+import { AttendanceRequestReview } from './request-review';
+import { RequestHistory } from './request-history';
 
 const PHOTO_EXAMPLE_BLUR_DATA_URL =
   'data:image/webp;base64,UklGRkoAAABXRUJQVlA4ID4AAACwAQCdASoIAAgAA8BgJZwAAvxVXVeAAPvJN4RXbCqkb/EooHAAo1sq0a0oNxsWWXY2sUzBATgwoL+Q3AAAAA==';
@@ -58,30 +56,23 @@ export function CorrectionRequests({
   review?: boolean;
   showHeading?: boolean;
 }) {
-  const { data: me } = useAttendance();
+  return review ? (
+    <AttendanceRequestReview showHeading={showHeading} />
+  ) : (
+    <EmployeeCorrectionRequests showHeading={showHeading} />
+  );
+}
+
+function EmployeeCorrectionRequests({ showHeading }: { showHeading: boolean }) {
   const query = useQuery({
-    queryKey: [...ATTENDANCE_KEY, 'requests', review],
-    queryFn: () => attendanceApi.requests(review),
-    enabled: !review || !!me?.isMaster,
+    queryKey: [...ATTENDANCE_KEY, 'requests', false],
+    queryFn: () => attendanceApi.requests(false),
   });
   const [form, setForm] = useState<AttendanceRequest | 'new' | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const cancel = useAttendanceAction(
     attendanceApi.cancelRequest,
     '요청을 취소했어요.'
-  );
-  const decide = useAttendanceAction(
-    async (input: {
-      id: string;
-      version: number;
-      status: 'approved' | 'rejected' | 'needs_information';
-      reason: string;
-    }) => {
-      const { id, ...body } = input;
-
-      return attendanceApi.decide(id, body);
-    },
-    '요청을 처리했어요.'
   );
 
   async function showFile(id: string) {
@@ -105,24 +96,15 @@ export function CorrectionRequests({
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           {showHeading && (
-            <h1 className="text-2xl font-bold">
-              {review ? '출결 요청 검토' : '정정 / 예외 요청'}
-            </h1>
+            <h1 className="text-2xl font-bold">정정 / 예외 요청</h1>
           )}
           <p className="mt-2 text-sm text-slate-400">
-            {review
-              ? '원래 기록과 요청 내용을 확인하고 처리해 주세요.'
-              : '누락된 기록이나 위치 확인 오류를 알려 주세요.'}
+            누락된 기록이나 위치 확인 오류를 알려 주세요.
           </p>
         </div>
-        {!review && (
-          <Button
-            className="min-h-11 sm:min-h-9"
-            onClick={() => setForm('new')}
-          >
-            요청하기
-          </Button>
-        )}
+        <Button className="min-h-11 sm:min-h-9" onClick={() => setForm('new')}>
+          요청하기
+        </Button>
       </div>
       {query.isError && (
         <p role="alert" className="text-sm text-red-600">
@@ -148,16 +130,12 @@ export function CorrectionRequests({
                 <Skeleton className="h-6 w-20 rounded-full motion-reduce:animate-none" />
               </div>
               <Skeleton className="h-5 w-56 max-w-full motion-reduce:animate-none" />
-              {review && (
-                <Skeleton className="h-14 w-full rounded-xl motion-reduce:animate-none" />
-              )}
+
               <div className="space-y-2 py-1">
                 <Skeleton className="h-5 w-full motion-reduce:animate-none" />
                 <Skeleton className="h-5 w-3/4 motion-reduce:animate-none" />
               </div>
-              {review && (
-                <Skeleton className="h-24 w-full rounded-xl motion-reduce:animate-none" />
-              )}
+
               <Skeleton className="h-11 w-24 motion-reduce:animate-none" />
               <div className="border-t pt-3">
                 <Skeleton className="h-11 w-20 motion-reduce:animate-none" />
@@ -173,7 +151,6 @@ export function CorrectionRequests({
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="min-w-0 break-words font-semibold">
-              {review ? `${request.name} · ` : ''}
               {request.workDate}
             </h2>
             <span className="rounded-full bg-slate-50 px-3 py-1 text-xs text-slate-500">
@@ -184,18 +161,7 @@ export function CorrectionRequests({
             요청 출근 {formatAttendanceTime(request.checkIn)} / 퇴근{' '}
             {formatAttendanceTime(request.checkOut)}
           </p>
-          {review && (
-            <div className="rounded-xl bg-slate-50 p-4 text-xs leading-6 text-slate-500">
-              현재 출근 {formatAttendanceTime(request.original?.checkIn)} / 퇴근{' '}
-              {formatAttendanceTime(request.original?.checkOut)}
-              {request.original &&
-                request.original.version !== request.targetVersion && (
-                  <p className="text-amber-700">
-                    요청 이후 기록이 변경됐어요. 확인 후 새 요청을 받아 주세요.
-                  </p>
-                )}
-            </div>
-          )}
+
           <p className="whitespace-pre-wrap break-words text-sm leading-7">
             {request.reason}
           </p>
@@ -222,48 +188,8 @@ export function CorrectionRequests({
               </p>
             </div>
           )}
-          {review && (
-            <div className="rounded-xl bg-indigo-50/60 p-4">
-              <h3 className="text-xs font-semibold text-indigo-700">
-                AI 검토 보조
-              </h3>
-              {request.aiResult ? (
-                <>
-                  <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">
-                    {request.aiResult.summary}
-                  </p>
-                  {request.aiResult.questions.map((question, index) => (
-                    <p
-                      key={index}
-                      className="mt-2 break-words text-xs text-slate-500"
-                    >
-                      · {question}
-                    </p>
-                  ))}
-                </>
-              ) : (
-                <p className="mt-2 text-xs text-slate-400">
-                  {request.aiStatus === 'failed'
-                    ? 'AI 확인에 실패했어요. 직접 검토할 수 있어요.'
-                    : '확인 중이에요. 결과를 기다리지 않고 직접 검토할 수 있어요.'}
-                </p>
-              )}
-            </div>
-          )}
-          {review && request.status === 'pending' && (
-            <DecisionForm
-              disabled={decide.isPending}
-              onSubmit={(status, reason) =>
-                decide.mutate({
-                  id: request.id,
-                  version: request.version,
-                  status,
-                  reason,
-                })
-              }
-            />
-          )}
-          {!review && request.status === 'needs_information' && (
+
+          {request.status === 'needs_information' && (
             <Button
               className="min-h-11 sm:min-h-9"
               variant="outline"
@@ -272,20 +198,19 @@ export function CorrectionRequests({
               보완해서 다시 요청
             </Button>
           )}
-          {!review &&
-            ['pending', 'needs_information'].includes(request.status) && (
-              <Button
-                size="sm"
-                className="min-h-11 sm:min-h-8"
-                variant="ghost"
-                disabled={cancel.isPending}
-                onClick={() =>
-                  cancel.mutate({ id: request.id, version: request.version })
-                }
-              >
-                요청 취소
-              </Button>
-            )}
+          {['pending', 'needs_information'].includes(request.status) && (
+            <Button
+              size="sm"
+              className="min-h-11 sm:min-h-8"
+              variant="ghost"
+              disabled={cancel.isPending}
+              onClick={() =>
+                cancel.mutate({ id: request.id, version: request.version })
+              }
+            >
+              요청 취소
+            </Button>
+          )}
           <RequestHistory requestId={request.id} />
         </article>
       ))}
@@ -318,134 +243,6 @@ export function CorrectionRequests({
         </DialogContent>
       </Dialog>
     </section>
-  );
-}
-
-function RequestHistory({ requestId }: { requestId: string }) {
-  const [open, setOpen] = useState(false);
-  const query = useQuery({
-    queryKey: [...ATTENDANCE_KEY, 'history', requestId],
-    queryFn: () => attendanceApi.history(requestId),
-    enabled: open,
-  });
-  const names: Record<string, string> = {
-    'request.created': '요청 접수',
-    'request.decided': '담당자 처리',
-    'request.resubmitted': '보완 제출',
-    'request.cancelled': '요청 취소',
-    'session.corrected': '기록 반영',
-  };
-
-  return (
-    <div className="border-t pt-3">
-      <button
-        type="button"
-        aria-expanded={open}
-        className="min-h-11 text-xs text-slate-400"
-        onClick={() => setOpen(!open)}
-      >
-        처리 이력 {open ? '접기' : '보기'}
-      </button>
-      {open && (
-        <div className="mt-3 space-y-3" aria-busy={query.isPending}>
-          {query.isPending ? (
-            <>
-              <p role="status" className="sr-only">
-                이력을 불러오고 있어요.
-              </p>
-              {Array.from({ length: 2 }, (_, index) => (
-                <div key={index} aria-hidden="true" className="space-y-2 py-1">
-                  <Skeleton className="h-4 w-full max-w-sm motion-reduce:animate-none" />
-                  <Skeleton className="h-4 w-3/4 max-w-xs motion-reduce:animate-none" />
-                  <Skeleton className="h-4 w-1/2 motion-reduce:animate-none" />
-                </div>
-              ))}
-            </>
-          ) : query.isError ? (
-            <p className="text-xs text-red-600">이력을 불러오지 못했어요.</p>
-          ) : (
-            query.data?.map((entry) => (
-              <div
-                key={entry.id}
-                className="break-words text-xs leading-6 text-slate-500"
-              >
-                <p>
-                  {names[entry.kind] ?? '기록 변경'} · {entry.actor} ·{' '}
-                  {new Date(entry.createdAt).toLocaleString('ko-KR')}
-                </p>
-                {entry.status && (
-                  <p>{labels[entry.status as RequestStatus] ?? entry.status}</p>
-                )}
-                {entry.reason && (
-                  <p className="whitespace-pre-wrap">{entry.reason}</p>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function DecisionForm({
-  disabled,
-  onSubmit,
-}: {
-  disabled: boolean;
-  onSubmit: (
-    status: 'approved' | 'rejected' | 'needs_information',
-    reason: string
-  ) => void;
-}) {
-  const [reason, setReason] = useState('');
-
-  return (
-    <div className="space-y-3 border-t pt-4">
-      <label className="group relative block">
-        <span
-          className={`pointer-events-none absolute left-3 z-10 text-slate-500 transition-all group-focus-within:top-3 group-focus-within:text-xs group-focus-within:text-indigo-600 motion-reduce:transition-none ${reason ? 'top-3 text-xs' : 'top-4 text-base'}`}
-        >
-          처리 사유
-        </span>
-        <Textarea
-          aria-label="처리 사유"
-          className="min-h-28 rounded-xl bg-white pt-9"
-          disabled={disabled}
-          value={reason}
-          onChange={(event) => setReason(event.target.value)}
-        />
-      </label>
-      <p className="text-xs leading-6 text-slate-500">
-        직원에게 전달할 내용을 적어 주세요. 추가 확인이나 반려 시에는 사유가
-        필요해요.
-      </p>
-      <div className="grid gap-2 sm:flex sm:flex-wrap">
-        <Button
-          className="min-h-11 sm:min-h-9"
-          disabled={disabled}
-          onClick={() => onSubmit('approved', reason)}
-        >
-          승인 · 기록 반영
-        </Button>
-        <Button
-          variant="outline"
-          className="min-h-11 sm:min-h-9"
-          disabled={disabled || !reason.trim()}
-          onClick={() => onSubmit('needs_information', reason)}
-        >
-          추가 확인
-        </Button>
-        <Button
-          variant="outline"
-          className="min-h-11 sm:min-h-9"
-          disabled={disabled || !reason.trim()}
-          onClick={() => onSubmit('rejected', reason)}
-        >
-          반려
-        </Button>
-      </div>
-    </div>
   );
 }
 
