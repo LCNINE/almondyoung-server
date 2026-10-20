@@ -25,6 +25,8 @@
 
 .archive-block-editor .bn-block-outer {
   line-height: 1.75;
+  /* 목차로 이동했을 때 위쪽 고정 경로 막대에 제목이 가리지 않게 */
+  scroll-margin-top: 72px;
 }
 
 .archive-block-editor .bn-inline-content {

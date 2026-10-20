@@ -4,7 +4,7 @@ import '@blocknote/shadcn/style.css';
 import './block-editor.css';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FileText, FileSymlink } from 'lucide-react';
+import { FileText, FileSymlink, ListTree } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { BlockNoteView } from '@blocknote/shadcn';
@@ -44,6 +44,7 @@ import {
   createSubPageBlockSpec,
 } from './sub-page-block';
 import { PAGE_LINK_INLINE_TYPE, pageLinkInlineSpec } from './page-link-inline';
+import { TOC_BLOCK_TYPE, createTocBlockSpec } from './toc-block';
 import { ARCHIVE_PAGE_DRAG_TYPE } from '../archive-sidebar/tree-item';
 
 /**
@@ -55,6 +56,7 @@ const archiveSchema = BlockNoteSchema.create({
   blockSpecs: {
     ...defaultBlockSpecs,
     [SUB_PAGE_BLOCK_TYPE]: createSubPageBlockSpec(),
+    [TOC_BLOCK_TYPE]: createTocBlockSpec(),
   },
   inlineContentSpecs: {
     ...defaultInlineContentSpecs,
@@ -550,7 +552,18 @@ export default function BlockEditor({
         onItemClick: startPickExisting,
       };
 
+      const tocItem: DefaultReactSuggestionItem = {
+        title: '목차',
+        subtext: '이 문서의 제목을 모아 누르면 그 위치로 이동한다',
+        aliases: ['toc', 'outline', '목차', '개요', '차례'],
+        group: BASIC_BLOCK_GROUP,
+        icon: <ListTree className="size-4" />,
+        onItemClick: () =>
+          insertOrUpdateBlockForSlashMenu(editor, { type: TOC_BLOCK_TYPE }),
+      };
+
       const archiveItems = [
+        tocItem,
         ...(canCreateSubPage ? [subPageItem] : []),
         ...(canAttachPages ? [attachExistingItem] : []),
       ];
