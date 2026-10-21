@@ -1,6 +1,6 @@
 import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { DbService } from '@app/db';
 import { NotFoundError } from '@app/shared';
@@ -231,6 +231,50 @@ describeIfDb('SkuFieldCaptureReader (DB integration)', () => {
         .set({ completedAt: sql`now() - interval '1 day'` })
         .where(eq(wmsTables.skuFieldCaptureEvents.workerId, me.workerId));
       expect(await reader.countWorkerToday(me.workerId, trx)).toBe(0);
+    });
+  });
+
+  it('listItems — 내 것은 내 완료만, 전체는 모두의 현재 완료. 기간·검색으로 거르고, 삭제(취소)하면 빠진다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const { reader, manager } = build(trx);
+      const a = await seed(trx);
+      const b = await seed(trx);
+      const c = await seed(trx);
+      const me = { workerId: randomUUID(), workerLabel: 'me' };
+      const other = { workerId: randomUUID(), workerLabel: 'other' };
+      await complete(manager, a, trx, me);
+      await complete(manager, b, trx, me);
+      await complete(manager, b, trx, other);
+      await complete(manager, c, trx, me);
+      await trx
+        .update(wmsTables.skuFieldCaptureEvents)
+        .set({ completedAt: sql`now() - interval '1 day'` })
+        .where(and(eq(wmsTables.skuFieldCaptureEvents.skuId, c), eq(wmsTables.skuFieldCaptureEvents.workerId, me.workerId)));
+      const [{ today }] = await trx.execute<{ today: string }>(
+        sql`select to_char((now() at time zone 'Asia/Seoul')::date, 'YYYY-MM-DD') as today`,
+      );
+      const ids = async (filter: Parameters<SkuFieldCaptureReader['listItems']>[0]) =>
+        (await reader.listItems(filter, me.workerId, trx)).map((i) => i.skuId).filter((id) => [a, b, c].includes(id));
+
+      expect((await ids({ who: 'mine', from: today, to: today })).sort()).toEqual([a, b].sort());
+      expect((await ids({ who: 'mine' })).sort()).toEqual([a, b, c].sort());
+      const bItem = (await reader.listItems({ who: 'all' }, me.workerId, trx)).find((i) => i.skuId === b);
+      expect(bItem).toMatchObject({ lastWorkerLabel: 'other', canCancel: false });
+
+      const [aSku] = await trx
+        .select({ code: wmsTables.skus.code })
+        .from(wmsTables.skus)
+        .where(eq(wmsTables.skus.id, a));
+      expect(await ids({ who: 'mine', q: aSku!.code.toLowerCase() })).toEqual([a]);
+
+      await manager.cancel(a, me, trx);
+      expect(await ids({ who: 'mine', from: today, to: today })).toEqual([b]);
+      expect(await ids({ who: 'all' })).not.toContain(a);
+      expect(await reader.countWorkerToday(me.workerId, trx)).toBe(1);
+      expect((await reader.getDetail(a, trx)).completion).toBeNull();
+
+      await complete(manager, a, trx, me);
+      expect((await ids({ who: 'mine', from: today, to: today })).sort()).toEqual([a, b].sort());
     });
   });
 });

@@ -1,5 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { FIELD_CAPTURE_BARCODE_STATUSES, FieldCaptureBarcodeStatus } from '../sku-field-capture.rules';
+import {
+  FIELD_CAPTURE_BARCODE_STATUSES,
+  FIELD_CAPTURE_LIST_WHO,
+  FieldCaptureBarcodeStatus,
+  FieldCaptureListWho,
+} from '../sku-field-capture.rules';
+import { IsIn, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 
 export class FieldCaptureCompletionDto {
   @ApiProperty({ enum: FIELD_CAPTURE_BARCODE_STATUSES })
@@ -77,4 +83,48 @@ export class FieldCaptureProgressDto {
 
 export class MyTodayDto {
   @ApiProperty() today!: number;
+}
+
+export class MyCaptureItemDto {
+  @ApiProperty() skuId!: string;
+  @ApiProperty() code!: string;
+  @ApiProperty() name!: string;
+  @ApiProperty({ type: String, nullable: true }) imageUrl!: string | null;
+  @ApiProperty({ type: String, nullable: true }) positionCode!: string | null;
+  @ApiProperty({ description: 'mine 은 내가, all 은 누군가 마지막으로 완료한 시각. ISO 8601' }) completedAt!: string;
+  @ApiProperty({ description: '현재 완료의 마지막 완료 시각, ISO 8601' }) lastCompletedAt!: string;
+  @ApiProperty() lastWorkerLabel!: string;
+  @ApiProperty({ type: Number, nullable: true }) packageWidthMm!: number | null;
+  @ApiProperty({ type: Number, nullable: true }) packageLengthMm!: number | null;
+  @ApiProperty({ type: Number, nullable: true }) packageHeightMm!: number | null;
+  @ApiProperty({ enum: FIELD_CAPTURE_BARCODE_STATUSES })
+  barcodeStatus!: FieldCaptureBarcodeStatus;
+  @ApiProperty({ description: '마지막 완료자가 나일 때만 완료를 취소할 수 있다' }) canCancel!: boolean;
+}
+
+export class FieldCaptureListQueryDto {
+  @ApiPropertyOptional({ enum: FIELD_CAPTURE_LIST_WHO, default: 'mine' })
+  @IsOptional()
+  @IsIn(FIELD_CAPTURE_LIST_WHO)
+  who?: FieldCaptureListWho;
+
+  @ApiPropertyOptional({ description: '이 날부터(KST, YYYY-MM-DD)' })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  from?: string;
+
+  @ApiPropertyOptional({ description: '이 날까지(KST, YYYY-MM-DD, 포함)' })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  to?: string;
+
+  @ApiPropertyOptional({ description: '상품명·코드·선반 부분일치' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+}
+
+export class MyCaptureItemsDto {
+  @ApiProperty({ type: () => [MyCaptureItemDto] }) items!: MyCaptureItemDto[];
 }

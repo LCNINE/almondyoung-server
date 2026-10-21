@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min, ValidateIf } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min, ValidateIf } from 'class-validator';
 import { FIELD_CAPTURE_BARCODE_STATUSES, FieldCaptureBarcodeStatus, MAX_PACKAGE_MM } from '../sku-field-capture.rules';
 
 export class CompleteFieldCaptureDto {
@@ -35,4 +35,13 @@ export class CompleteFieldCaptureDto {
   @ApiProperty({ description: '모든 면 촬영 확인. true 만 허용', enum: [true] })
   @IsIn([true])
   allFacesConfirmed!: true;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: '화면을 열 때 본 마지막 완료 시각(없었으면 null). 그사이 다른 작업자가 저장했으면 409. 생략하면 검사하지 않는다',
+  })
+  @IsOptional()
+  @IsDateString()
+  expectedLastCompletedAt?: string | null;
 }

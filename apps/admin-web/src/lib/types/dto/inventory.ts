@@ -2003,6 +2003,34 @@ export interface MyTodayDto {
   today: number;
 }
 
+export interface MyCaptureItemDto {
+  skuId: string;
+  code: string;
+  name: string;
+  imageUrl: string | null;
+  positionCode: string | null;
+  completedAt: string;
+  lastCompletedAt: string;
+  lastWorkerLabel: string;
+  packageWidthMm: number | null;
+  packageLengthMm: number | null;
+  packageHeightMm: number | null;
+  barcodeStatus: FieldCaptureBarcodeStatus;
+  canCancel: boolean;
+}
+
+/** 작업 기록 조회 조건. from·to 는 KST 날짜(YYYY-MM-DD, 양끝 포함) */
+export interface FieldCaptureListQuery {
+  who: 'mine' | 'all';
+  from?: string;
+  to?: string;
+  q?: string;
+}
+
+export interface MyCaptureItemsDto {
+  items: MyCaptureItemDto[];
+}
+
 export interface FieldCaptureProgressDto {
   remainingSkus: number;
   completedSkus: number;
@@ -2018,4 +2046,6 @@ export interface CompleteFieldCaptureRequest {
   barcodeStatus: FieldCaptureBarcodeStatus;
   scannedBarcode?: string;
   allFacesConfirmed: true;
+  /** 화면을 열 때 본 마지막 완료 시각(없었으면 null) — 그사이 다른 작업자가 저장했으면 409 */
+  expectedLastCompletedAt?: string | null;
 }

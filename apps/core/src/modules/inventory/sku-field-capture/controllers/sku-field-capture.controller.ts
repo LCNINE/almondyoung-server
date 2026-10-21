@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RequirePermission, RequireScopes, ScopeGuard, User } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
@@ -7,9 +7,16 @@ import { SkuFieldCaptureService } from '../services/sku-field-capture.service';
 import { fieldCaptureActorOf } from '../sku-field-capture.rules';
 import { AttachReferencePhotoDto } from '../dto/attach-reference-photo.dto';
 import { CompleteFieldCaptureDto } from '../dto/complete-field-capture.dto';
-import { FieldCaptureDetailDto, FieldCaptureProgressDto, MyTodayDto, ShelfPositionDto } from '../dto/sku-field-capture.dto';
+import {
+  FieldCaptureDetailDto,
+  FieldCaptureListQueryDto,
+  FieldCaptureProgressDto,
+  MyTodayDto,
+  MyCaptureItemsDto,
+  ShelfPositionDto,
+} from '../dto/sku-field-capture.dto';
 
-type CaptureUser = NonNullable<WarehouseActor> & { email?: string; login_id?: string };
+type CaptureUser = NonNullable<WarehouseActor> & { email?: string; login_id?: string; name?: string };
 
 @ApiTags('Inventory')
 @Controller('inventory/sku-field-capture')
@@ -33,6 +40,19 @@ export class SkuFieldCaptureController {
   @ApiResponse({ status: 200, type: MyTodayDto })
   getMyToday(@User() user: CaptureUser): Promise<MyTodayDto> {
     return this.service.getMyToday(fieldCaptureActorOf(user));
+  }
+
+  @RequirePermission('inventory.stock.read')
+  @Get('items')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
+  @ApiOperation({ summary: '작업 기록 목록, 최근순 — 내 것/전체 · 기간(KST) · 상품명·코드·선반 검색' })
+  @ApiResponse({ status: 200, type: MyCaptureItemsDto })
+  listItems(@Query() query: FieldCaptureListQueryDto, @User() user: CaptureUser): Promise<MyCaptureItemsDto> {
+    const q = query.q?.trim();
+    return this.service.listItems(
+      { who: query.who ?? 'mine', from: query.from, to: query.to, q: q || undefined },
+      fieldCaptureActorOf(user),
+    );
   }
 
   @RequirePermission('inventory.stock.read')
@@ -97,5 +117,15 @@ export class SkuFieldCaptureController {
     @User() user: CaptureUser,
   ): Promise<FieldCaptureDetailDto> {
     return this.service.complete(skuId, dto, fieldCaptureActorOf(user));
+  }
+
+  @RequirePermission('inventory.stock.operate')
+  @Delete('skus/:skuId/capture')
+  @HttpCode(204)
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
+  @ApiOperation({ summary: '실측 완료 취소(내가 마지막으로 끝낸 상품만)' })
+  @ApiResponse({ status: 204 })
+  cancel(@Param('skuId', ParseUUIDPipe) skuId: string, @User() user: CaptureUser): Promise<void> {
+    return this.service.cancel(skuId, fieldCaptureActorOf(user));
   }
 }

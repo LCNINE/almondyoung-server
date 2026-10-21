@@ -676,10 +676,7 @@ export class AuthService {
             .update(userServiceSchema.oauthTokens)
             .set({ isRevoked: true, updatedAt: new Date() })
             .where(
-              and(
-                eq(userServiceSchema.oauthTokens.userId, userId),
-                eq(userServiceSchema.oauthTokens.isRevoked, false),
-              ),
+              and(eq(userServiceSchema.oauthTokens.userId, userId), eq(userServiceSchema.oauthTokens.isRevoked, false)),
             );
           this.logger.log(`SLO: revoked tokens for userId=${userId}`);
         }
@@ -758,6 +755,8 @@ export class AuthService {
       roles,
       email: user.email,
       login_id: user.loginId,
+      // 작업 기록 등 다른 서비스가 누가 했는지를 사람 이름으로 남기게
+      name: user.username,
     };
 
     const expiresIn = JWT_ACCESS_TOKEN_EXPIRATION;

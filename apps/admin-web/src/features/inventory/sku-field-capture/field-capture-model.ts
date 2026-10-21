@@ -153,6 +153,70 @@ const KST_FORMAT = new Intl.DateTimeFormat('en-GB', {
   hourCycle: 'h23',
 });
 
+const KST_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' });
+
+/** 완료 시각을 KST 날짜(YYYY-MM-DD)로 — 내 작업 목록을 날짜별로 묶는 키 */
+export function kstDateOf(iso: string): string {
+  return KST_DATE.format(new Date(iso));
+}
+
+/** YYYY-MM-DD 에 n 일을 더한다(달력 날짜 계산이라 시간대와 무관) */
+export function shiftDate(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+export const HISTORY_PERIODS = ['today', 'yesterday', 'week', 'all', 'date'] as const;
+export type HistoryPeriod = (typeof HISTORY_PERIODS)[number];
+
+/** 기간 칩 → 조회 범위. date 는 고른 하루, all 은 범위 없음 */
+export function periodRange(
+  period: HistoryPeriod,
+  today: string,
+  picked: string | null
+): { from?: string; to?: string } {
+  switch (period) {
+    case 'today':
+      return { from: today, to: today };
+    case 'yesterday':
+      return { from: shiftDate(today, -1), to: shiftDate(today, -1) };
+    case 'week':
+      return { from: shiftDate(today, -6), to: today };
+    case 'date':
+      return picked ? { from: picked, to: picked } : {};
+    case 'all':
+      return {};
+  }
+}
+
+/** 내 작업 목록 한 줄: 「14:05 · 120×80×50mm · 바코드 스캔」 */
+export function myItemLine(item: {
+  completedAt: string;
+  packageWidthMm: number | null;
+  packageLengthMm: number | null;
+  packageHeightMm: number | null;
+  barcodeStatus: FieldCaptureBarcodeStatus;
+}): string {
+  const p = Object.fromEntries(
+    KST_FORMAT.formatToParts(new Date(item.completedAt)).map((x) => [x.type, x.value])
+  );
+  const dims = [item.packageWidthMm, item.packageLengthMm, item.packageHeightMm];
+  return [
+    `${p.hour}:${p.minute}`,
+    dims.every((d) => d !== null) ? `${dims.join('×')}mm` : null,
+    BARCODE_STATUS_LABEL[item.barcodeStatus],
+  ]
+    .filter((s) => s !== null)
+    .join(' · ');
+}
+
+const BARCODE_STATUS_LABEL: Record<FieldCaptureBarcodeStatus, string> = {
+  scanned: '바코드 스캔',
+  no_manufacturer: '자체 스티커',
+  none: '바코드 없음',
+};
+
 export function completedByText(c: {
   lastWorkerLabel: string;
   lastCompletedAt: string;
@@ -252,7 +316,6 @@ export function errorMessageOf(e: unknown, context: string): string {
   return fromServer || uploadRejected ? `${context} (${e.message})` : context;
 }
 
-/** 재작업이면 지난 실측값을 채운다. 여섯 면 확인은 매번 다시 받는다. 사진 수는 서버 수치. */
 /**
  * 완료 전 입력(바코드·크기·체크)은 서버에 없다. 사진 찍으러 카메라 앱에 다녀오거나 채팅 앱으로 넘어갔다 오면
  * 폰이 탭을 다시 불러 입력이 사라졌다(2026-10-21 현장). 그래서 기기에 적어 둔다. 하루 지난 건 버린다 —
@@ -276,6 +339,12 @@ export function restoreDraft(raw: string | null, now: number): CaptureDraft | nu
   }
 }
 
+/** 다른 작업자가 먼저 저장해 core 가 덮어쓰기를 막은 경우 */
+export function isConflict(e: unknown): boolean {
+  return e instanceof CustomError && e.statusCode === 409;
+}
+
+/** 재작업(수정)이면 지난 실측값과 여섯 면 확인을 채운다 — 이미 확인한 사진 그대로다. 사진 수는 서버 수치. */
 export function draftFromDetail(detail: FieldCaptureDetailDto): CaptureDraft {
   const mm = (v: number | null) => (v === null ? '' : String(v));
   const c = detail.completion;
@@ -287,7 +356,7 @@ export function draftFromDetail(detail: FieldCaptureDetailDto): CaptureDraft {
     scannedBarcode:
       c?.barcodeStatus === 'scanned' ? (c.scannedBarcode ?? '') : '',
     photoCount: detail.photos.length,
-    allFacesConfirmed: false,
+    allFacesConfirmed: c?.allFacesConfirmed ?? false,
   };
 }
 
@@ -303,6 +372,9 @@ export const fieldCaptureKeys = {
   barcodeOwner: (barcode: string) =>
     ['sku-field-capture', 'barcode-owner', barcode] as const,
   myToday: ['sku-field-capture', 'me', 'today'] as const,
+  items: ['sku-field-capture', 'items'] as const,
+  itemsOf: (who: string, from: string, to: string, q: string) =>
+    ['sku-field-capture', 'items', who, from, to, q] as const,
   progress: ['sku-field-capture', 'progress'] as const,
   search: (term: string) => ['sku-field-capture', 'search', term] as const,
 };

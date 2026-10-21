@@ -3,7 +3,7 @@ import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { DbService } from '@app/db';
-import { BadRequestError, NotFoundError } from '@app/shared';
+import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { makeDb, inRollbackTx, seedHolder, seedSku } from '../../../fulfillment/services/__support__';
 import { CompleteFieldCaptureInput, SkuFieldCaptureManager } from './sku-field-capture.manager';
@@ -192,6 +192,56 @@ describeIfDb('SkuFieldCaptureManager (DB integration)', () => {
         .from(wmsTables.skuReferencePhotos)
         .where(eq(wmsTables.skuReferencePhotos.skuId, a));
       expect(rows).toHaveLength(0);
+    });
+  });
+
+  it('cancel 은 소프트 삭제 — 행을 남기고 취소 시각·취소자를 찍는다. 마지막 완료자가 아니면 ConflictError', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const m = build(trx);
+      const skuId = await seed(trx);
+      const other = { workerId: randomUUID(), workerLabel: 'w2' };
+      await attach(m, skuId, 3, trx);
+      await m.complete(skuId, input, actor, trx);
+      await expect(m.cancel(skuId, other, trx)).rejects.toBeInstanceOf(ConflictError);
+
+      await m.cancel(skuId, actor, trx);
+      const [row] = await captures(trx, skuId);
+      expect(row?.deletedAt).not.toBeNull();
+      expect(row?.deletedByLabel).toBe('w1');
+      const events = await trx
+        .select()
+        .from(wmsTables.skuFieldCaptureEvents)
+        .where(eq(wmsTables.skuFieldCaptureEvents.skuId, skuId));
+      expect(events.every((e) => e.cancelledAt !== null)).toBe(true);
+      await expect(m.cancel(skuId, actor, trx)).rejects.toBeInstanceOf(NotFoundError);
+
+      await m.complete(skuId, input, actor, trx);
+      const [again] = await captures(trx, skuId);
+      expect(again?.deletedAt).toBeNull();
+    });
+  });
+
+  it('expectedLastCompletedAt 이 지금 완료 시각과 다르면 ConflictError — 다른 작업자가 먼저 저장한 경우', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const m = build(trx);
+      const skuId = await seed(trx);
+      await attach(m, skuId, 3, trx);
+      await m.complete(skuId, { ...input, expectedLastCompletedAt: null }, actor, trx);
+      const [first] = await captures(trx, skuId);
+      const seen = first!.lastCompletedAt.toISOString();
+
+      await m.complete(skuId, { ...input, expectedLastCompletedAt: seen }, actor, trx);
+      // 같은 트랜잭션 안의 now() 는 고정이라, 다른 작업자의 저장을 시각을 밀어 흉내 낸다
+      await trx
+        .update(wmsTables.skuFieldCaptures)
+        .set({ lastCompletedAt: sql`now() + interval '1 second'` })
+        .where(eq(wmsTables.skuFieldCaptures.skuId, skuId));
+      await expect(
+        m.complete(skuId, { ...input, expectedLastCompletedAt: seen }, actor, trx),
+      ).rejects.toBeInstanceOf(ConflictError);
+      await expect(m.complete(skuId, { ...input, expectedLastCompletedAt: null }, actor, trx)).rejects.toBeInstanceOf(
+        ConflictError,
+      );
     });
   });
 });
