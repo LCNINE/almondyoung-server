@@ -19,10 +19,10 @@
 
 라이브 영향 판단의 전제: 라이브 출고는 전부 셀메이트(SO `shipped` + FOI `shipped_qty=qty`, 상자 없음), 직배는 사용 중, 인쇄 외주는 사용 중, V2 상자·소포 추적은 라이브 0회.
 
-- **P1 (D9). 관리자 뱃지·일별 통계가 인쇄 외주를 센다.** 인쇄만 있는 주문이 `preparing` 고정에서 벗어나고(인쇄 shipped → `shipping`, 전량 delivered → `delivered`), 창고 몫이 배송완료여도 인쇄가 안 끝났으면 `shipping`. **라이브 영향 있음**(인쇄 주문의 뱃지·통계 칸이 바뀜).
+- **P1 (D9). 관리자 뱃지·일별 통계가 인쇄 외주를 센다.** 인쇄만 있는 주문이 `preparing` 고정에서 벗어나고(인쇄 shipped → `shipping`, 전량 delivered → `delivered`), 창고 몫이 배송완료여도 인쇄가 안 끝났으면 `shipping`. **라이브 영향 있음**(인쇄 주문의 뱃지·통계 칸이 바뀜). 대상은 SO 가 아직 `confirmed` 이고 활성 인쇄 행이 있는 주문뿐이다 — 셀메이트가 SO 를 `shipped` 로 바꾼 주문은 3번 칸(`external_shipped`)이 먼저 이긴다. 일별 통계는 저장값이 아니라 매번 다시 세므로 **지난 날짜의 칸도 바뀐다**. 인쇄 `delivered` 는 와우프레스 추적 크론(`print-order-tracking`, 30분)이 `ordstat` 로 찍는다 — 와우프레스가 배송완료를 끝내 안 주는 행의 주문은 `shipping` 에 머문다(배포 전 G-d 로 센다).
 - **P2. FO 가 취소됐고 SO 는 취소가 아닌 주문 → 관리자 `cancelled`**(전엔 `preparing`). FO 취소 버튼(D11, PR 4 에서 제거)으로만 생긴다.
 - **P3. SO `cancelled`·`timeout` → 고객 `canceled`**(전엔 FO 로 판정 — FO 생성 전 취소면 `not_created`). 고객 화면 라벨은 스토어프론트(PR 5, F1)가 정하므로 지금 화면에 보이는 변화는 스토어프론트 매핑에 달렸다.
-- **P4. 셀메이트 출고(SO `shipped`·`delivered`) → 고객 `shipping`, 셀프취소 차단**(전엔 상자가 없어 `preparing`. 그리고 FO 가 없는 셀메이트 주문은 출고 증거가 없어 **셀프취소가 열려 있었다** — 셀메이트 스크립트 출력의 `missingFO`). **라이브 영향 있음.**
+- **P4. 셀메이트 출고(SO `shipped`·`delivered`) → 고객 `shipping`, 셀프취소 차단**(전엔 상자가 없어 `preparing`). **라이브 영향 있음.** 지금 FO 가 없는 셀메이트 주문(스크립트 출력의 `missingFO`)은 출고 증거가 없어 셀프취소 **버튼이 보인다**. 전체취소 요청은 엔진이 SO `shipped` 로 거절하지만(`sales-orders.service.ts:511`) 고객이 받는 문구가 운영자용 «부분 취소로 진행해 주세요»다. **돈이 새는 길은 하나** — 인쇄 취소가 거절된 주문에서 «인쇄 빼고 취소»(`excludePrint`)를 고르면 요청이 라인 지정 부분취소가 되고, 그 V1 부분취소 경로엔 SO `shipped` 가드가 없어 이미 나간 물건이 환불될 수 있다. P4 가 둘 다 막는다. 고객 화면 라벨은 그대로다 — 스토어프론트는 `shipping` 을 몰라(`order-status-display.ts` 의 `FO_DISPLAY_LABELS`) SO 상태 라벨 «배송 중»으로 떨어지고, 그게 지금과 같다. 바뀌는 건 취소 버튼이 사라지는 것뿐이다.
 - **P5. «움직임»·«배송완료»를 상자 상태가 아니라 수량으로 판정한다**(FOI `shipped_qty`, 소포 단위 추적 `delivered`, 직배 `forwarded`·`completed`). 실제 쓰기 경로가 만든 데이터에서는 상자 판정과 같다(발송은 `shipped_qty` 를 올리고 회수는 내린다 — `shipment-dispatch.service.ts:1034`, `shipment-recall.service.ts:436`). 상자 상태만 있고 수량이 없는 «만든» 데이터에서만 다르다 — 기존 spec 픽스처가 그런 데이터라 Task 3 이 고친다.
 - **P6 (F10). 관리자 카드 «출고완료»·«부분출고»를 수량으로 다시 정의한다.** 모집단은 둘 다 «최근 14일 · SO `confirmed`»(지금 «출고완료»의 창). 출고완료 = 물리 요구 수량 > 0 이고 남은 미출고 0. 부분출고 = 출고 수량 > 0 이고 남은 미출고 > 0. **부분출고는 더 이상 «출고불가»의 부분집합이 아니다** — 나눠 보낸 주문(#1093)이 남은 몫의 단계와 무관하게 부분출고에 잡힌다. «출고불가»는 그대로(정체 보드 «예약»). 라이브 영향: SO `confirmed` 인 주문만 세므로 셀메이트(`shipped`) 주문은 지금처럼 두 카드에 안 잡힌다.
 - **P7. V1 취소 엔진의 출고 수량은 FOI `shipped_qty` 하나다.** `getEffectiveShippedFulfillmentQty` 의 «FO 가 `shipped` 거나 `shipped_at` 이 있으면 FOI 전량 출고» 대체를 지운다. FO `shipped_at`·`shipped` 를 쓰는 생산자 셋(V2 발송 전량 출고 `shipment-dispatch.service.ts:867`, 직배 완료 `fulfillments.service.ts:542-547`, 셀메이트 스크립트)이 모두 FOI `shipped_qty` 도 같이 채우므로 차이는 옛 데이터에만 있다 — 배포 전 게이트 G-a 로 0 을 확인한다. 효과 metadata 의 `shippedEvidenceSource` 는 `fulfillment_order_item_shipped_qty` / `none` 둘만 남는다.
@@ -37,7 +37,7 @@ V2 전체취소 재계획(2a 이월)은 동작 변경이 없다 — 거절 문�
 - 관계 조각은 raw SQL 이고 **모든 테이블에 별칭을 붙이고 칼럼을 별칭으로 한정한다**(2a 교훈: drizzle 이 단일 테이블 select 의 칼럼을 한정 없이 그려 서브쿼리 안쪽 테이블이 바깥 `"id"` 를 가로챘다).
 - 합계는 `::int` 로 캐스트한다(`sum(integer)` 는 bigint → postgres.js 문자열).
 - FOI 의 `sales_order_line_id` 는 `varchar` 라 판매 라인과 잇는 곳은 `foi.sales_order_line_id = sol.id::text` 로 쓴다. 주문 범위는 `fulfillment_orders.sales_order_id`(uuid, FO 는 SO 당 0..1 — `inventory.schema.ts` 의 «SO:FO 0..1:0..1 강제»)로 좁힌다.
-- 마이그레이션 없음. 배포 단위는 Core 와 admin-web(Task 5 의 취소 모달)뿐. 셀메이트 스크립트는 배포물이 아니다.
+- 마이그레이션 없음. 배포 단위는 Core 뿐(admin-web 은 바꾸지 않는다 — Task 5 의 «하지 않는 것» 참고). 셀메이트 스크립트는 배포물이 아니다.
 - 통합 테스트는 스크래치 DB `k6_it`: `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/k6_it npx jest --runInBand --runTestsByPath <파일…>`. 브랜치 시작 때 한 번 `DATABASE_URL=…/k6_it npx drizzle-kit migrate --config apps/core/drizzle.config.ts`(develop 에 `add-sku-field-capture` 마이그가 새로 있다).
 - 기준선: 브랜치 시작 때 `k6_it` 에서 `apps/core/src/modules/{sales-order,fulfillment,print-order,product-matching}` 의 `*.integration.spec.ts` 를 한 번 돌려 실패 목록을 scratchpad 에 둔다. «새 실패 0» 은 그 목록 대비다(2a 기준선 실패 2건: planning tombstone entrance password, waybill durable failed row).
 - 워크트리는 `node_modules` 심링크(이미 걸려 있음). jest 가 OOM 이면 `--maxWorkers=2`.
@@ -71,7 +71,6 @@ V2 전체취소 재계획(2a 이월)은 동작 변경이 없다 — 거절 문�
 | `sales-order/services/store-sales-orders.service.ts` (수정) | 고객 단계·셀프취소·F11 |
 | `sales-order/services/fulfillment-phase.ts` (수정) | `deriveFulfillmentPhase`·`hasShippedEvidence`·`MOVED_SHIPMENT_STATUSES` 삭제, `shipmentProgressOf` |
 | `sales-order/dto/sales-order-response.dto.ts` (수정) | 타입 import 경로 |
-| `apps/admin-web/src/lib/api/domains/orders/shipment-phase.shape.ts` (수정) + 취소 모달 | 출고 판정을 `shipmentPhase` 로 |
 | `scripts/ops/cellmate-local/mark-core-shipped.js` (수정) + `mark-core-shipped.sql.js` (생성) + 통합 spec | F12 |
 | `line-quantities/line-quantity-read.guard.spec.ts` (수정) | 옛 이름 부활 금지 확장 |
 | `print-order/services/print-order-admin.manager.ts`·`print-orders.service.ts` (수정) | 죽은 `lineQuantity` 삭제 |
@@ -259,30 +258,24 @@ V2 전체취소 재계획(2a 이월)은 동작 변경이 없다 — 거절 문�
 
 - [ ] **Step 1: 실패하는 테스트를 쓴다.**
   - `order-fulfillment-phase.integration.spec.ts`: `cellmate order without FO cannot self-cancel` — `StoreSalesOrdersService` 를 그 spec 의 배선으로 만들 수 없으면 `selfCancelBlock({ …, anyShipped: phases.get(id)!.anyShipped }, …)` 가 `already_shipped` 인지로 단언한다.
-  - `store-sales-orders.service.spec.ts`: `jest.mock('../line-quantities/order-fulfillment-phase.reader')` 로 문을 목하고 `makeContext` 에 `phase?: Partial<OrderFulfillmentPhase>`(기본 `{ adminPhase:'preparing', storePhase:'preparing', anyShipped:false }`)를 더한다. `describe('buildActionsView fulfillmentStatus (V2)')` 의 각 케이스는 Task 3 의 같은 이름 시나리오가 증명한 `(storePhase, anyShipped)` 를 `phase` 로 넣고, **actions·`cancelUnavailableReason`·`shipmentProgress` 단언만** 남긴다(단계 판정은 Task 3 이 소유한다). 새 케이스 `tracking hides superseded boxes` 는 `describe('tracking query V2 graph')` 에 — superseded 상자의 라인이 있는 주문의 `shipments` 에 그 상자가 없다.
+  - `store-sales-orders.service.spec.ts`: `jest.mock('../line-quantities/order-fulfillment-phase.reader')` 로 문을 목하고 `makeContext` 에 `phase?: Partial<OrderFulfillmentPhase>`(기본 `{ adminPhase:'preparing', storePhase:'preparing', anyShipped:false }`)를 더한다. `describe('buildActionsView fulfillmentStatus (V2)')` 의 각 케이스는 Task 3 의 같은 이름 시나리오가 증명한 `(storePhase, anyShipped)` 를 `phase` 로 넣고, **actions·`cancelUnavailableReason`·`shipmentProgress` 단언만** 남긴다(단계 판정은 Task 3 이 소유한다). 새 케이스 `exclude-print cancel of a shipped order is refused` — `phase: { anyShipped: true }`, SO `shipped`, 인쇄 `cancel_refused` + 일반 라인 하나, `excludePrint: true` 로 취소 요청 → `BadRequestException` «이미 출고된 주문은 취소할 수 없습니다…», `cancelRequests.precheck` 를 부르지 않는다(P4 가 막는 돈 구멍). 새 케이스 `tracking hides superseded boxes` 는 `describe('tracking query V2 graph')` 에 — superseded 상자의 라인이 있는 주문의 `shipments` 에 그 상자가 없다.
   - `fulfillment-phase.spec.ts`: `deriveFulfillmentPhase`·`hasShippedEvidence` describe 삭제, `shipmentProgressOf` 에 옛 progress 단언(:40-:50, :64) 이식.
 - [ ] **Step 2:** `npx jest apps/core/src/modules/sales-order/services/store-sales-orders.service.spec.ts apps/core/src/modules/sales-order/services/fulfillment-phase.spec.ts` → FAIL.
 - [ ] **Step 3:** 구현.
 - [ ] **Step 4:** `npx jest apps/core/src/modules/sales-order` → 실패 0. 통합 묶음 → 새 실패 0. `npm run type-check` → 0.
 - [ ] **Step 5:** 커밋 — `refactor(sales-order): 고객 단계·셀프취소는 같은 사다리에서, 배송조회에서 합쳐진 상자를 뺀다 (K6 PR2b)`
 
-### Task 5: 관리자 카드(F10)와 취소 모달의 출고 판정
+### Task 5: 관리자 카드(F10)
 
 **Files:**
 - Modify: `sales-order/services/sales-orders.service.ts` — `getStats`(:1209-1305) 의 `outboundComplete` 쿼리, `shipBlockCounts`(:1314) 의 `partialOutbound`(→ `getStats` 쪽 새 쿼리로 옮기고 `shipBlockCounts` 는 `cannotShip` 만), 틀린 주석 «`hasShippedEvidence` 와 동일한 정의» 삭제
 - Modify: `sales-order/services/sales-orders-stats.integration.spec.ts`(:178, :220, :235 의 세 테스트), `sales-order/services/sales-orders.service.spec.ts:2340-` (쿼리 체인 목 — 새 쿼리 모양에 맞춘다. 판정 자체는 통합 spec 이 소유)
-- Modify: `apps/admin-web/src/lib/api/domains/orders/shipment-phase.shape.ts` + `.spec.ts`, `apps/admin-web/src/features/order/history/components/modals/cancel-order-modal.tsx:127`
 
 **Interfaces:**
 - Consumes: Task 1 `lineSkuQuantitiesSql`.
 - 한 쿼리로 두 숫자: 모집단 = `sales_orders` 중 `order_date >= 14일 전`(지금 `kstTodayRange(13)` 의 `backStart`) 이고 `status = 'confirmed'`. 주문별로 `lineSkuQuantitiesSql(모집단)` 을 접어
   `outboundComplete = count(*) FILTER (WHERE required > 0 AND outstanding = 0)`, `partialOutbound = count(*) FILTER (WHERE shipped > 0 AND outstanding > 0)`(P6).
-- admin-web:
-  ```ts
-  // shipment-phase.shape.ts — 취소 모달이 «이미 나간 주문»이라 부분취소를 기본으로 고르는 판정
-  export function hasLeftWarehouse(p: ShipmentPhase | null): boolean; // 'shipping' | 'delivered' | 'external_shipped' 면 true
-  ```
-  모달의 `isShipped` 는 `hasLeftWarehouse(toShipmentPhase(order?.shipmentPhase))`(지금은 SO `orderStatus` 가 shipped·delivered — 셀메이트만 잡고 core 출고는 못 잡았다). `isProcessing` 은 그대로.
+- **취소 모달은 바꾸지 않는다.** 모달의 `isShipped`(SO `orderStatus` 가 shipped·delivered, `cancel-order-modal.tsx:128`)를 `shipmentPhase` 로 바꾸면 «전체 취소» 버튼이 꺼지는(`:223`) 주문이 늘어난다. 사다리는 직배 `forwarded` 와 인쇄만 나간 주문(P1)도 `shipping` 으로 내므로, **넘긴 직배 주문**(넘긴 뒤에도 취소 가능해야 한다 — 서버는 허용, Review Focus 4)과 창고 몫은 손도 안 댄 인쇄 혼합 주문이 화면에서 전체취소를 못 한다. 지금 판정이 놓치는 건 core 출고(V2)뿐이고 V2 는 라이브 0회라 얻는 것이 없다. 필요해지면 단계가 아니라 «창고·인쇄에서 실제로 나간 수량» 사실로 판정한다(이 PR 밖).
 
 - [ ] **Step 1: 실패하는 테스트를 쓴다.**
   - `sales-orders-stats.integration.spec.ts`(소포는 Task 1 픽스처로):
@@ -291,10 +284,9 @@ V2 전체취소 재계획(2a 이월)은 동작 변경이 없다 — 거절 문�
     - `forwarded drop-ship is neither` — `dropShip:'forwarded'` → 둘 다 0
     - `cellmate shipped order is outside the population` — SO `shipped` + FOI 전량 shipped → 둘 다 0
     - 옛 :178(부분출고는 출고불가의 부분집합) 은 P6 로 의미가 바뀌므로 지우고, 옛 :220(상자 둘 움직여도 주문 하나)·:235(출고완료는 FO 증거)는 새 정의로 다시 쓴다(:235 의 «FO `shipped_at` 만으로 출고완료»는 P7 과 같은 이유로 더는 성립하지 않는다 — 그 단언을 반대로).
-  - `shipment-phase.shape.spec.ts`: `hasLeftWarehouse` — 위 세 값 true, `pending`·`preparing`·`cancelled`·`null` false.
-- [ ] **Step 2:** `DATABASE_URL=…/k6_it npx jest --runInBand --runTestsByPath apps/core/src/modules/sales-order/services/sales-orders-stats.integration.spec.ts` 와 `npm run test:admin-web -- shipment-phase.shape` → FAIL.
+- [ ] **Step 2:** `DATABASE_URL=…/k6_it npx jest --runInBand --runTestsByPath apps/core/src/modules/sales-order/services/sales-orders-stats.integration.spec.ts` → FAIL.
 - [ ] **Step 3:** 구현.
-- [ ] **Step 4:** 위 둘 PASS. `npx jest apps/core/src/modules/sales-order` → 실패 0. `npm run test:admin-web` → 실패 0. `npx tsc --noEmit -p apps/admin-web/tsconfig.json` → 0(루트 type-check 는 admin-web 을 안 돈다). `npm run type-check` → 0.
+- [ ] **Step 4:** 위 spec PASS. `npx jest apps/core/src/modules/sales-order` → 실패 0. `npm run type-check` → 0.
 - [ ] **Step 5:** 커밋 — `fix(sales-order): 관리자 «출고완료»·«부분출고»는 라인 수량으로 — 나눠 보낸 주문이 잡힌다 (K6 PR2b)`
 
 ### Task 6: 셀메이트 스크립트 F12
@@ -329,13 +321,13 @@ V2 전체취소 재계획(2a 이월)은 동작 변경이 없다 — 거절 문�
 - [ ] **Step 2:** `npx jest apps/core/src/modules/sales-order/line-quantities/line-quantity-read.guard.spec.ts` → PASS. 실제로 잡는지: `sales-orders.service.ts` 에 임시로 `MOVED_SHIPMENT_STATUSES` 한 줄을 넣어 FAIL 을 보고 되돌린다.
 - [ ] **Step 3:** `lineQuantity` 삭제 → `npx jest apps/core/src/modules/print-order` 실패 0.
 - [ ] **Step 4: ADR-0047 갱신.** «PR 2b 가 정한 것» 절: SKU 층 관계·FOI 단위 정의(위 Task 1 Interfaces 의 표), 진행 단계 사다리가 SQL 한 벌인 이유, `cancellableSalesUnits` 가 TS 인 이유, P1~P8. «대체되는 것»에 이 PR 이 지운 이름(가드 Step 1 의 목록). 71행 «배포 전 게이트 SQL(라인 행 없는 취소 0)이 선행 조건» → «라인 행 없는 취소 수가 백필 `--verify` 의 (a) ambiguous + (b) 0행 도출 합과 같아야 한다 — 0 이 아닐 수 있다(V1 전체취소에 남은 게 없으면 0행)»(2a 이월).
-- [ ] **Step 5: 게이트.** `npm run type-check` → 0(환경 에러 web-push·tauri 3건은 2a 기준선 — 그 외 0). `npx jest` → 실패 0(OOM 이면 `--maxWorkers=2`). 기준선 통합 묶음 + `scripts/ops/cellmate-local` 통합 → 새 실패 0. `npm run test:admin-web` → 실패 0.
+- [ ] **Step 5: 게이트.** `npm run type-check` → 0(환경 에러 web-push·tauri 3건은 2a 기준선 — 그 외 0). `npx jest` → 실패 0(OOM 이면 `--maxWorkers=2`). 기준선 통합 묶음 + `scripts/ops/cellmate-local` 통합 → 새 실패 0.
 - [ ] **Step 6:** 커밋 — `test(sales-order): 옛 출고 판정 이름 부활 금지 + 이월 정리 + ADR-0047 2b (K6 PR2b)`
 - [ ] **Step 7:** `cancellation-plan.integration.spec` 의 ORDER BY 없는 flake(2a 이월)를 이슈로 연다 — 본문에 파일 경로와 «결과 순서를 단언하는 줄»을 도출하는 grep 명령을 적고 수치는 적지 않는다(CLAUDE.md). 레이블 `ready-for-agent`.
 - [ ] **Step 8:** PR 을 연다(`mattpocock-skills:pr`). 본문에 «스펙에서 벗어나는 판단 두 개», P1~P8, 아래 배포 절차.
 
 **배포 절차(PR 본문에 그대로):**
-1. 배포 단위: Core + admin-web, 마이그 없음. `npm run deploy:preflight -- --stage live`(배치 배포 방침). 2a(#1108)가 아직 미배포면 같이 실리므로 2a PR 본문의 게이트 둘도 함께 돈다.
+1. 배포 단위: Core, 마이그 없음. `npm run deploy:preflight -- --stage live`(배치 배포 방침). 2a(#1108)가 아직 미배포면 같이 실리므로 2a PR 본문의 게이트 둘도 함께 돈다.
 2. **배포 전 게이트(터널은 사용자):**
    - G-a (P7) — FO 만 출고로 표시되고 FOI 는 덜 나간 항목. 기대 0. 0 이 아니면 그 FOI 들의 출고 판정이 바뀌므로 목록을 사람이 본다.
      ```sql
@@ -346,6 +338,10 @@ V2 전체취소 재계획(2a 이월)은 동작 변경이 없다 — 거절 문�
      ```sql
      SELECT count(*) FROM fulfillment_orders fo JOIN sales_orders so ON so.id = fo.sales_order_id
      WHERE fo.status = 'shipped' AND (fo.canceled_at IS NOT NULL OR so.status = 'cancelled');
+     ```
+   - G-d (P1) — 와우프레스가 배송완료를 안 준 채 오래 남은 인쇄 행. 기대값 없음(정보). 0 이 아니면 그 주문들의 관리자 단계가 `shipping` 에 머문다 — 목록을 사람이 본다.
+     ```sql
+     SELECT count(*) FROM print_orders WHERE status = 'shipped' AND shipped_at < now() - interval '14 days';
      ```
    - G-c 성능 — `EXPLAIN (ANALYZE, BUFFERS)` 로 일별 통계 SQL(31일)과 주문 목록 단계 SQL(최근 주문 100건)을 돌려 각각 5초 미만. 렌더된 SQL 은 `orderFulfillmentPhaseSql` 을 `PgDialect().sqlToQuery` 로 찍어 얻는다(빌더가 PR 본문에 붙인다).
 3. **배포 직전·직후 숫자 대조:** `GET /sales-orders/stats/daily?from=<14일 전>&to=<오늘>` 와 `GET /sales-orders/stats` 를 배포 전후로 저장해 diff. 기대: 일별 통계는 인쇄 외주가 든 주문(P1)과 FO 만 취소된 주문(P2)의 칸만 움직이고, 카드는 «부분출고»만 움직일 수 있다(P6).
@@ -358,6 +354,7 @@ V2 전체취소 재계획(2a 이월)은 동작 변경이 없다 — 거절 문�
 - 라인 단위 `anyShipped`·`shippedComplete` — 소비자가 생기는 K7·PR 3 에서.
 - 배송조회의 전체 상태(`deriveOverallTrackingStatus`) — 소포 목록의 표시라 그대로. F11 은 고친다.
 - 스토어프론트 단계 라벨(F1, D8) — PR 5. P3·P4 의 고객 화면 변화는 그 매핑을 거친다.
+- admin-web 취소 모달의 출고 판정 — 단계로 바꾸면 넘긴 직배·인쇄 혼합 주문의 전체취소가 화면에서 막힌다(Task 5). 필요해지면 «실제로 나간 수량» 사실로.
 - 운영자 «미처리 취소»·FO 취소·수동 배송완료 제거(D1·D10·D11) — PR 4.
 - V2 쓰기 배분의 FOI 단위 `outstandingOf`(`v2-cancellation-units.ts`) — 쓰는 함수는 그 모듈에 남는다(G1).
 - `record-cancellation.ts` 의 백필 전 대비와 `sumCancelledByLine` 삭제 — PR 6.
