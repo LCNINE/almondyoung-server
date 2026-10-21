@@ -6,6 +6,9 @@ import {
   cameraUnavailableReason,
   completedByText,
   draftFromDetail,
+  DRAFT_TTL_MS,
+  restoreDraft,
+  savedDraftJson,
   errorMessageOf,
   fieldCaptureKeys,
   MANUFACTURER_BARCODE_FORMATS,
@@ -511,5 +514,25 @@ describe('scannerConstraintsFor', () => {
   });
   it('falls back to facingMode without a chosen lens', () => {
     expect(scannerConstraintsFor(null)).toBe(SCANNER_VIDEO_CONSTRAINTS);
+  });
+});
+
+describe('restoreDraft', () => {
+  const draft = {
+    widthMm: '120',
+    lengthMm: '80',
+    heightMm: '',
+    barcodeStatus: 'scanned' as const,
+    scannedBarcode: '8801234567890',
+    photoCount: 2,
+    allFacesConfirmed: true,
+  };
+  it('되돌아오면 적어 둔 입력을 그대로 돌려준다', () => {
+    expect(restoreDraft(savedDraftJson(draft, 1000), 2000)).toEqual(draft);
+  });
+  it('오래됐거나 깨졌거나 없으면 버린다', () => {
+    expect(restoreDraft(savedDraftJson(draft, 0), DRAFT_TTL_MS + 1)).toBeNull();
+    expect(restoreDraft('{oops', 0)).toBeNull();
+    expect(restoreDraft(null, 0)).toBeNull();
   });
 });

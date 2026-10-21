@@ -30,6 +30,35 @@ async function createReader(formats?: readonly BarcodeFormatName[]) {
   return reader;
 }
 
+type NativeBarcodeDetector = {
+  detect(source: ImageBitmapSource): Promise<{ rawValue: string }[]>;
+};
+type NativeBarcodeDetectorClass = {
+  new (options: { formats: string[] }): NativeBarcodeDetector;
+  getSupportedFormats(): Promise<string[]>;
+};
+
+/**
+ * 브라우저 내장 디코더(안드로이드 크롬 = ML Kit). zxing 보다 흐리거나 기울어진 바코드를 훨씬 잘 읽는다.
+ * 없으면(iOS 사파리 등) null — zxing 만 쓴다. 형식 이름은 zxing 의 EAN_13 → ean_13 꼴이다.
+ */
+async function createNativeDetector(
+  formats?: readonly BarcodeFormatName[]
+): Promise<NativeBarcodeDetector | null> {
+  // lib.dom 에 아직 타입이 없어 window 에서 꺼낸다
+  const Ctor = (window as unknown as { BarcodeDetector?: NativeBarcodeDetectorClass }).BarcodeDetector;
+  if (!Ctor) return null;
+  try {
+    const supported = await Ctor.getSupportedFormats();
+    const want = formats
+      ? formats.map((f) => f.toLowerCase()).filter((f) => supported.includes(f))
+      : supported;
+    return want.length > 0 ? new Ctor({ formats: want }) : null;
+  } catch {
+    return null;
+  }
+}
+
 // 한 번 고른 후면 메인 렌즈를 화면 사이에서 기억한다(같은 탭 안에서만).
 let preferredLens: string | null = null;
 // 고른 렌즈로 못 열었으면(기기가 바뀌었거나 그 렌즈를 못 쓰면) 이 탭에선 더 고르지 않고 facingMode 로 연다
@@ -49,9 +78,12 @@ async function decodePhoto(
   file: File,
   formats?: readonly BarcodeFormatName[]
 ): Promise<string | null> {
-  const reader = await createReader(formats);
   const bitmap = await createImageBitmap(file);
   try {
+    const native = await createNativeDetector(formats);
+    const hit = native && (await native.detect(bitmap).catch(() => []))[0];
+    if (hit) return hit.rawValue;
+    const reader = await createReader(formats);
     const { width, height } = photoDecodeSize(bitmap.width, bitmap.height);
     const canvas = document.createElement('canvas');
     canvas.width = width;
@@ -128,6 +160,25 @@ export function BarcodeScanInput({
       done = true;
       controls?.stop();
     };
+    const finish = (text: string) => {
+      if (done) return;
+      stopNow();
+      setScanning(false);
+      onScanRef.current(text);
+    };
+    // 내장 디코더를 같은 영상에 함께 돌린다 — zxing 과 먼저 읽는 쪽이 이긴다
+    void createNativeDetector(formats).then((native) => {
+      if (!native) return;
+      const tick = async () => {
+        if (done) return;
+        if (video.readyState >= 2) {
+          const [hit] = await native.detect(video).catch(() => []);
+          if (hit) return finish(hit.rawValue);
+        }
+        setTimeout(() => void tick(), 120);
+      };
+      void tick();
+    });
     let lens: string | null = null;
     (async () => {
       lens = lensPickDisabled
@@ -163,10 +214,8 @@ export function BarcodeScanInput({
             lastAt = now;
           }
           if (!result || done) return;
-          done = true;
           c.stop();
-          setScanning(false);
-          onScanRef.current(result.getText());
+          finish(result.getText());
         }
       );
     })()

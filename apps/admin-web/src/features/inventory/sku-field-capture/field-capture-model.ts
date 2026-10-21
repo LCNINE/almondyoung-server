@@ -253,6 +253,29 @@ export function errorMessageOf(e: unknown, context: string): string {
 }
 
 /** 재작업이면 지난 실측값을 채운다. 여섯 면 확인은 매번 다시 받는다. 사진 수는 서버 수치. */
+/**
+ * 완료 전 입력(바코드·크기·체크)은 서버에 없다. 사진 찍으러 카메라 앱에 다녀오거나 채팅 앱으로 넘어갔다 오면
+ * 폰이 탭을 다시 불러 입력이 사라졌다(2026-10-21 현장). 그래서 기기에 적어 둔다. 하루 지난 건 버린다 —
+ * 그사이 다른 작업자가 끝냈으면 서버 값이 맞다.
+ */
+export const DRAFT_TTL_MS = 12 * 60 * 60 * 1000;
+export const draftStorageKey = (skuId: string) => `sku-field-capture:draft:${skuId}`;
+
+export function savedDraftJson(draft: CaptureDraft, now: number): string {
+  return JSON.stringify({ savedAt: now, draft });
+}
+
+export function restoreDraft(raw: string | null, now: number): CaptureDraft | null {
+  if (!raw) return null;
+  try {
+    const { savedAt, draft } = JSON.parse(raw) as { savedAt?: unknown; draft?: CaptureDraft };
+    if (typeof savedAt !== 'number' || now - savedAt > DRAFT_TTL_MS || !draft) return null;
+    return draft;
+  } catch {
+    return null;
+  }
+}
+
 export function draftFromDetail(detail: FieldCaptureDetailDto): CaptureDraft {
   const mm = (v: number | null) => (v === null ? '' : String(v));
   const c = detail.completion;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -16,10 +16,13 @@ import {
   barcodeConflictWarning,
   completedByText,
   draftFromDetail,
+  draftStorageKey,
   errorMessageOf,
   fieldCaptureKeys,
   MANUFACTURER_BARCODE_FORMATS,
   missingRequirements,
+  restoreDraft,
+  savedDraftJson,
   toCompleteRequest,
   type CaptureDraft,
 } from '@/features/inventory/sku-field-capture/field-capture-model';
@@ -32,9 +35,9 @@ const NO_SCAN_OPTIONS: { value: FieldCaptureBarcodeStatus; label: string }[] = [
 ];
 
 const DIMENSIONS: { key: 'widthMm' | 'lengthMm' | 'heightMm'; label: string }[] = [
-  { key: 'widthMm', label: '가로' },
-  { key: 'lengthMm', label: '세로' },
-  { key: 'heightMm', label: '높이' },
+  { key: 'widthMm', label: '가로(좌우)' },
+  { key: 'lengthMm', label: '세로(앞뒤)' },
+  { key: 'heightMm', label: '높이(위아래)' },
 ];
 
 export default function SkuFieldCaptureWorkPage() {
@@ -61,13 +64,28 @@ export default function SkuFieldCaptureWorkPage() {
   return <CaptureForm key={detail.skuId} detail={detail} />;
 }
 
+function readDraft(skuId: string): CaptureDraft | null {
+  try {
+    return restoreDraft(localStorage.getItem(draftStorageKey(skuId)), Date.now());
+  } catch {
+    return null;
+  }
+}
+
 // ③ 상품 작업 — 바코드·크기·사진을 한 화면에서
 function CaptureForm({ detail }: { detail: FieldCaptureDetailDto }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const skuId = detail.skuId;
   // 초안은 상세가 처음 왔을 때 한 번만 만든다 — 사진 응답마다 상세가 바뀌어도 입력을 덮지 않는다
-  const [draft, setDraft] = useState<CaptureDraft>(() => draftFromDetail(detail));
+  const [draft, setDraft] = useState<CaptureDraft>(() => readDraft(skuId) ?? draftFromDetail(detail));
+  useEffect(() => {
+    try {
+      localStorage.setItem(draftStorageKey(skuId), savedDraftJson(draft, Date.now()));
+    } catch {
+      // 저장소를 못 쓰면(사생활 보호 모드 등) 예전처럼 화면에만 둔다
+    }
+  }, [skuId, draft]);
   // 사진 연결·완료는 inventory.stock.operate (core 가 강제한다 — 여기선 버튼만 막는다)
   const canOperate = useCan(['inventory.stock.operate']);
   const writeBlocked = blockedReason(canOperate, [{ permission: ['inventory.stock.operate'] }]);
@@ -93,6 +111,11 @@ function CaptureForm({ detail }: { detail: FieldCaptureDetailDto }) {
     meta: { permission: ['inventory.stock.operate'] },
     onSuccess: async (d) => {
       setDetail(d);
+      try {
+        localStorage.removeItem(draftStorageKey(skuId));
+      } catch {
+        // 못 지워도 하루 뒤엔 버려진다
+      }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: fieldCaptureKeys.positions }),
         queryClient.invalidateQueries({ queryKey: fieldCaptureKeys.barcodeOwners }),
@@ -158,6 +181,7 @@ function CaptureForm({ detail }: { detail: FieldCaptureDetailDto }) {
 
       <section className="space-y-2 rounded-xl border border-gray-200 bg-white p-4">
         <h2 className="text-sm font-semibold text-gray-800">포장째 크기 (mm)</h2>
+        <p className="text-xs text-gray-500">바닥에 세워 두고 앞에서 봤을 때 좌우·앞뒤(깊이)·위아래 길이예요</p>
         <div className="flex gap-2">
           {DIMENSIONS.map((dim) => (
             <input
@@ -168,7 +192,7 @@ function CaptureForm({ detail }: { detail: FieldCaptureDetailDto }) {
               aria-label={`${dim.label} (mm)`}
               inputMode="numeric"
               pattern="[0-9]*"
-              className="h-11 w-full min-w-0 rounded-lg border border-gray-300 text-center text-base"
+              className="h-11 w-full min-w-0 rounded-lg border border-gray-300 text-center text-base placeholder:text-xs"
             />
           ))}
         </div>
