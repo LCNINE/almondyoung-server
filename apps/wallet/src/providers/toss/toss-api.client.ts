@@ -4,6 +4,9 @@ export interface TossConfirmResponse {
   paymentKey: string;
   orderId: string;
   status: string;
+  // 가상계좌 승인(WAITING_FOR_DEPOSIT)에만 온다.
+  secret?: string | null;
+  virtualAccount?: TossVirtualAccount | null;
   [key: string]: unknown;
 }
 

@@ -678,9 +678,9 @@ export function setup(infra: SharedInfra) {
       // 무통장입금 = 토스 가상계좌 발급/자동확인. bank 코드 미설정 시 provider 가 명확히 FAILED 반환.
       TOSS_VIRTUAL_ACCOUNT_BANK: tossVirtualAccountBank.value,
       TOSS_VIRTUAL_ACCOUNT_BANK_NAME: tossVirtualAccountBankName.value,
-      // 무통장 입금 대기 만료 윈도우(시간). 미설정 시 코드 기본값 72h.
-      // 입금확인을 수동으로 하고 주말/연휴가 있어, 입금했는데 자동취소되는 사고를 막기 위해 7일(168h)로 설정.
-      WALLET_BANK_TRANSFER_DEPOSIT_WINDOW_HOURS: '168',
+      // 무통장 입금 대기 만료 윈도우(시간). 입금 대기 동안 주문 재고가 예약돼 묶이므로 3일로 둔다.
+      // 결제위젯 가상계좌는 토스 상점관리자 widgetA 의 입금기한을 따르니 그 값도 같이 맞춘다(현재 3일).
+      WALLET_BANK_TRANSFER_DEPOSIT_WINDOW_HOURS: '72',
       // CMS 계좌 심사 거절 통지가 수신자 이메일을 조회하는 경로.
       USER_SERVICE_URL: idpUserServiceUrl,
       USER_SERVICE_INTERNAL_KEY: idpUserServiceInternalKey,

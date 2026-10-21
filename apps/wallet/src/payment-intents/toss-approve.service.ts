@@ -7,11 +7,14 @@ import { ChargesService } from '../charges/charges.service';
 import { AutoCaptureService } from './auto-capture.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import { GatewayEventType, buildPaymentIntentEventPayload } from '../messaging/gateway-event.builder';
-import { TossApiClient } from '../providers/toss/toss-api.client';
+import { TossApiClient, TossConfirmResponse, TossVirtualAccount } from '../providers/toss/toss-api.client';
+import { tossBankName } from '../providers/toss/toss-banks';
+import { BankTransferPaymentProvider } from '../providers/bank-transfer/bank-transfer.provider';
 import { tossBrandPayCustomerKey } from '../providers/toss/toss-brandpay-customer-key';
 import { usesTossWidget } from '../providers/toss/toss-widget-mode';
 import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
 import { StagedApproval, isDeferredApprovalIntent } from './deferred-approval';
+import { depositWindowHours } from './deposit-window';
 
 /**
  * 적재된 승인이 확정되기를 기다리는 시간. Medusa 가 cart.complete 로 주문을 만들고 승인을
@@ -31,6 +34,7 @@ export class TossApproveService {
     private readonly stateTransitionService: StateTransitionService,
     private readonly tossApi: TossApiClient,
     private readonly cashReceiptsService: CashReceiptsService,
+    private readonly bankTransferProvider: BankTransferPaymentProvider,
   ) {}
 
   async approve(
@@ -40,6 +44,7 @@ export class TossApproveService {
     amount: number,
     correlationId: string,
     paymentType: 'NORMAL' | 'BRANDPAY' = 'NORMAL',
+    method?: 'VIRTUAL_ACCOUNT',
   ): Promise<void> {
     this.logger.log(`approve called: intentId=${intentId} orderId=${orderId} amount=${amount}`);
 
@@ -60,7 +65,12 @@ export class TossApproveService {
       throw new UnprocessableEntityException({ error: 'BRANDPAY_CUSTOMER_REQUIRED' });
     }
     const customerKey = paymentType === 'BRANDPAY' ? tossBrandPayCustomerKey(intent.userId!) : undefined;
-    if (isDeferredApprovalIntent(intent.metadata)) {
+    // 다른 결제의 paymentKey 로 이 charge 를 승인시키지 못하게, 승인 경로와 무관하게 먼저 대조한다.
+    this.assertMatchesCharge(charge, orderId, amount);
+    // 가상계좌는 승인해도 돈이 빠지지 않고 계좌만 발급된다. 지연 승인으로 미루면 카트 완료 안에서
+    // 승인돼 입금대기 marker 없는 주문이 생기므로, 바로 승인해 기존 무통장 입금대기 흐름에 태운다.
+    // method 는 클라이언트 신호라 믿지 않는다 — 실제 분기는 아래 승인 응답의 status 로 한다.
+    if (isDeferredApprovalIntent(intent.metadata) && method !== 'VIRTUAL_ACCOUNT') {
       await this.stageApproval(charge, paymentKey, orderId, amount, paymentType, customerKey);
       this.logger.log(`approve staged (deferred approval): intentId=${intentId} chargeId=${charge.id}`);
       return;
@@ -81,7 +91,200 @@ export class TossApproveService {
       });
     }
 
+    if (result.data.status === 'WAITING_FOR_DEPOSIT') {
+      await this.enterAwaitingDeposit(charge, intent, result.data, correlationId);
+      return;
+    }
+
+    // 가상계좌 신호로 지연 승인을 건너뛰었는데 실제론 카드 등이 승인됐다 — 재고예약 전에 돈이 빠진 상태다.
+    // 승인을 되돌려 고객이 정상 흐름으로 다시 결제하게 한다. 되돌리지 못하면 승인을 그대로 확정한다
+    // (돈은 이미 빠졌으므로 실패로 두면 결제가 원장에서 사라진다).
+    if (method === 'VIRTUAL_ACCOUNT' && isDeferredApprovalIntent(intent.metadata)) {
+      const reverted = await this.tossApi.cancelPayment(
+        result.data.paymentKey,
+        '결제 취소',
+        undefined,
+        `cancel:${charge.providerIdempotencyKey}`,
+        undefined,
+        usesTossWidget(charge.responsePayload),
+      );
+      if (reverted.ok) {
+        await this.finalizeFailure(charge, 'PAYMENT_METHOD_MISMATCH', correlationId);
+        throw new UnprocessableEntityException({
+          error: 'PAYMENT_METHOD_MISMATCH',
+          message: '결제를 처리하지 못했어요. 다시 시도해 주세요.',
+        });
+      }
+      this.logger.error(`method mismatch approval kept: chargeId=${charge.id} error=${JSON.stringify(reverted.error)}`);
+    }
+
     await this.finalizeApproval(charge, result.data.paymentKey, correlationId);
+  }
+
+  /**
+   * 결제위젯 가상계좌 승인을 기존 무통장 입금대기와 같은 상태로 만든다.
+   *
+   * charge 를 고객의 BANK_TRANSFER 결제수단으로 옮겨, 이후 입금 웹훅·만료 취소·환불 신청·관리자 무통장
+   * 목록·현금영수증이 기존 무통장 경로를 그대로 탄다. nextAction 은 ConfirmService 의 offline-wait
+   * 분기가 남기는 BANK_TRANSFER_PENDING 과 같은 모양이고, checkoutMode 로 위젯 키를 쓰게 한다.
+   */
+  private async enterAwaitingDeposit(
+    charge: Charge,
+    intent: PaymentIntent,
+    payment: TossConfirmResponse,
+    correlationId: string,
+  ): Promise<void> {
+    const va = payment.virtualAccount;
+    const userId = intent.userId;
+    if (!va || !userId) {
+      return this.rejectVirtualAccount(charge, intent, payment, 'VIRTUAL_ACCOUNT_INCOMPLETE', correlationId);
+    }
+
+    try {
+      await this.recordAwaitingDeposit(charge, intent, userId, va, payment.paymentKey, payment.secret, correlationId);
+    } catch (error) {
+      // 승인을 기다리는 사이 만료·취소로 intent 가 넘어가 전이가 거부된 경우 등. 발급된 계좌만 열린 채
+      // 남지 않게 닫는다.
+      await this.closeVirtualAccount(charge, payment.paymentKey);
+      throw error;
+    }
+    this.logger.log(`virtual account issued via widget: intentId=${intent.id} chargeId=${charge.id}`);
+  }
+
+  private async recordAwaitingDeposit(
+    charge: Charge,
+    intent: PaymentIntent,
+    userId: string,
+    va: TossVirtualAccount,
+    paymentKey: string,
+    secret: string | null | undefined,
+    correlationId: string,
+  ): Promise<void> {
+    const [bankMethod] = await this.bankTransferProvider.getUserMethods(userId);
+
+    const nextAction = {
+      type: 'BANK_TRANSFER_PENDING',
+      checkoutMode: 'WIDGET',
+      bankName: tossBankName(va.bankCode),
+      accountNumber: va.accountNumber,
+      accountHolder: process.env.BANK_TRANSFER_ACCOUNT_HOLDER ?? va.customerName,
+      dueDate: va.dueDate,
+      amount: charge.amount,
+      currency: charge.currency,
+    };
+    // 적재된 승인은 지운다. 남겨 두면 finalize 재시도가 이미 발급된 계좌를 다시 승인하려 한다.
+    const payload = { ...(charge.responsePayload ?? {}) };
+    delete payload.stagedApproval;
+    const pointsAmount = intent.payableAmount - charge.amount;
+    const metadata = intent.metadata ?? {};
+    const email = metadata.email ?? metadata.customerEmail;
+
+    await this.dbService.db.transaction(async (tx) => {
+      await this.chargesService.updateStatus(
+        charge.id,
+        'REQUIRES_ACTION',
+        {
+          paymentMethodId: bankMethod.id,
+          providerTransactionId: paymentKey,
+          responsePayload: { ...payload, paymentKey, secret: secret ?? null, virtualAccount: va, nextAction },
+        },
+        tx,
+      );
+
+      await this.stateTransitionService.transitionIntent(
+        intent.id,
+        'AWAITING_DEPOSIT',
+        {
+          correlationId,
+          reasonCode: 'AWAITING_DEPOSIT',
+          outboxEvent: {
+            eventType: GatewayEventType.INTENT_AWAITING_DEPOSIT,
+            aggregateId: intent.id,
+            payload: buildPaymentIntentEventPayload({
+              intentId: intent.id,
+              userId,
+              status: 'AWAITING_DEPOSIT',
+              payableAmount: intent.payableAmount,
+              currency: intent.currency,
+              extra: {
+                bankName: nextAction.bankName,
+                accountNumber: nextAction.accountNumber,
+                accountHolder: nextAction.accountHolder,
+                dueDate: nextAction.dueDate,
+                depositAmount: charge.amount,
+                ...(pointsAmount > 0 ? { pointsAmount, paidAmount: charge.amount } : {}),
+                ...(typeof email === 'string' && email.includes('@') ? { email } : {}),
+                ...(metadata.customerName ? { customerName: metadata.customerName } : {}),
+              },
+            }),
+          },
+        },
+        undefined,
+        tx,
+      );
+
+      // 결제창 대기용 actionExpiresAt 을 지워 TossActionExpirationJob 대상에서 빼고, 입금 윈도우로 바꾼다.
+      // 결제수단도 무통장으로 옮겨야 관리자 무통장 목록(intent.paymentMethodId 기준)에 잡힌다.
+      await tx
+        .update(paymentIntents)
+        .set({
+          paymentMethodId: bankMethod.id,
+          actionExpiresAt: null,
+          expiresAt: new Date(Date.now() + depositWindowHours() * 60 * 60_000),
+        })
+        .where(eq(paymentIntents.id, intent.id));
+    });
+  }
+
+  /**
+   * 입금대기로 넘길 수 없는 가상계좌를 닫고 결제를 실패시킨다. 항상 throw 한다.
+   *
+   * 계좌를 못 닫았으면 실패로 확정하지 않는다 — FAILED 면 입금 웹훅이 무시되고, REQUIRES_ACTION 으로
+   * 두면 재결제가 charge 를 계좌 폐쇄 없이 취소한다. 대신 기존 무통장 입금대기로 넘긴다. 재결제가 막히고,
+   * 입금되면 웹훅이 확정하며, 만료는 계좌를 닫아야만 취소한다. 지연 승인 중이었다면 Medusa 는 이 throw 로
+   * 주문을 롤백하고, awaiting_deposit 이벤트가 입금확인중 marker 를 단 주문을 다시 만든다.
+   */
+  private async rejectVirtualAccount(
+    charge: Charge,
+    intent: PaymentIntent,
+    payment: TossConfirmResponse,
+    errorCode: string,
+    correlationId: string,
+  ): Promise<never> {
+    if (await this.closeVirtualAccount(charge, payment.paymentKey)) {
+      await this.finalizeFailure(charge, errorCode, correlationId);
+    } else if (payment.virtualAccount && intent.userId) {
+      await this.recordAwaitingDeposit(
+        charge,
+        intent,
+        intent.userId,
+        payment.virtualAccount,
+        payment.paymentKey,
+        payment.secret,
+        correlationId,
+      );
+    }
+    throw new UnprocessableEntityException({
+      error: errorCode,
+      message: '가상계좌 결제를 처리하지 못했어요. 다시 시도해 주세요.',
+    });
+  }
+
+  private async closeVirtualAccount(charge: Charge, paymentKey: string): Promise<boolean> {
+    const canceled = await this.tossApi.cancelPayment(
+      paymentKey,
+      '결제 취소',
+      undefined,
+      `cancel:${charge.providerIdempotencyKey}`,
+      undefined,
+      usesTossWidget(charge.responsePayload),
+    );
+    if (!canceled.ok) {
+      this.logger.error(
+        `virtual account left open: chargeId=${charge.id} paymentKey=${paymentKey} error=${JSON.stringify(canceled.error)}`,
+      );
+    }
+    return canceled.ok;
   }
 
   /**
@@ -100,21 +303,6 @@ export class TossApproveService {
     paymentType: 'NORMAL' | 'BRANDPAY',
     customerKey?: string,
   ): Promise<void> {
-    if (charge.amount !== amount) {
-      throw new UnprocessableEntityException({
-        error: 'TOSS_AMOUNT_MISMATCH',
-        message: `Expected amount ${charge.amount}, received ${amount}`,
-      });
-    }
-
-    const expectedOrderId = charge.id.replace(/-/g, '');
-    if (orderId !== expectedOrderId) {
-      throw new UnprocessableEntityException({
-        error: 'TOSS_ORDER_ID_MISMATCH',
-        message: 'orderId does not match the charge',
-      });
-    }
-
     const staged: StagedApproval = {
       provider: 'TOSS',
       paymentType,
@@ -135,6 +323,23 @@ export class TossApproveService {
       .update(paymentIntents)
       .set({ actionExpiresAt: new Date(Date.now() + this.stagedApprovalTtlMs()) })
       .where(eq(paymentIntents.id, charge.intentId));
+  }
+
+  private assertMatchesCharge(charge: Charge, orderId: string, amount: number): void {
+    if (charge.amount !== amount) {
+      throw new UnprocessableEntityException({
+        error: 'TOSS_AMOUNT_MISMATCH',
+        message: `Expected amount ${charge.amount}, received ${amount}`,
+      });
+    }
+
+    const expectedOrderId = charge.id.replace(/-/g, '');
+    if (orderId !== expectedOrderId) {
+      throw new UnprocessableEntityException({
+        error: 'TOSS_ORDER_ID_MISMATCH',
+        message: 'orderId does not match the charge',
+      });
+    }
   }
 
   private stagedApprovalTtlMs(): number {
@@ -175,6 +380,14 @@ export class TossApproveService {
         error: result.error.code ?? 'TOSS_CONFIRM_FAILED',
         message: result.error.message,
       });
+    }
+
+    // 지연 승인은 카트 완료 안에서 불린다. 여기서 입금대기로 넘기면 Medusa 가 marker 없는 authorized
+    // 주문을 만들어 미입금 출고가 될 수 있으므로, 계좌를 닫고 실패시켜 주문을 롤백한다.
+    // 정상 흐름에선 wallet-web 이 method=VIRTUAL_ACCOUNT 를 보내 이 경로에 오지 않는다.
+    if (result.data.status === 'WAITING_FOR_DEPOSIT') {
+      const intent = await this.loadIntent(charge.intentId);
+      return this.rejectVirtualAccount(charge, intent, result.data, 'VIRTUAL_ACCOUNT_NOT_DEFERRABLE', correlationId);
     }
 
     await this.finalizeApproval(charge, result.data.paymentKey, correlationId);

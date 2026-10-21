@@ -226,6 +226,7 @@ export async function approveToss(
   orderId: string,
   amount: number,
   paymentType: 'NORMAL' | 'BRANDPAY' = 'NORMAL',
+  method?: 'VIRTUAL_ACCOUNT',
 ): Promise<{ status: string; returnUrl: string | null; metadata?: Record<string, unknown> }> {
   const res = await fetch(`${BASE_URL}/v1/payment-intents/${intentId}/toss-approve`, {
     method: 'POST',
@@ -236,7 +237,7 @@ export async function approveToss(
       // 첫 승인 성공 응답을 그대로 반환하게 한다. 랜덤 UUID면 매번 재실행 → NO_REQUIRES_ACTION_CHARGE 실패화면.
       'Idempotency-Key': `toss-approve:${intentId}:${paymentKey}`,
     },
-    body: JSON.stringify({ paymentKey, orderId, amount, paymentType }),
+    body: JSON.stringify({ paymentKey, orderId, amount, paymentType, ...(method ? { method } : {}) }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
