@@ -1,6 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsDateString, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min, ValidateIf } from 'class-validator';
-import { FIELD_CAPTURE_BARCODE_STATUSES, FieldCaptureBarcodeStatus, MAX_PACKAGE_MM } from '../sku-field-capture.rules';
+import {
+  FIELD_CAPTURE_BARCODE_STATUSES,
+  FieldCaptureBarcodeStatus,
+  MAX_PACKAGE_G,
+  MAX_PACKAGE_MM,
+} from '../sku-field-capture.rules';
 
 export class CompleteFieldCaptureDto {
   @ApiProperty({ description: '포장 가로(mm)', minimum: 1, maximum: MAX_PACKAGE_MM })
@@ -20,6 +25,12 @@ export class CompleteFieldCaptureDto {
   @Min(1)
   @Max(MAX_PACKAGE_MM)
   packageHeightMm!: number;
+
+  @ApiProperty({ description: '포장째 무게(g)', minimum: 1, maximum: MAX_PACKAGE_G })
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PACKAGE_G)
+  packageWeightG!: number;
 
   @ApiProperty({ enum: FIELD_CAPTURE_BARCODE_STATUSES })
   @IsIn(FIELD_CAPTURE_BARCODE_STATUSES)

@@ -87,6 +87,7 @@ export class SkuFieldCaptureReader {
           packageWidthMm: wmsTables.skus.packageWidthMm,
           packageLengthMm: wmsTables.skus.packageLengthMm,
           packageHeightMm: wmsTables.skus.packageHeightMm,
+          packageWeightG: wmsTables.skus.packageWeightG,
           positionCode: wmsTables.skuShelfPositions.positionCode,
           imageUrl: wmsTables.skuShelfPositions.imageUrl,
           barcodeStatus: wmsTables.skuFieldCaptures.barcodeStatus,
@@ -135,6 +136,7 @@ export class SkuFieldCaptureReader {
         packageWidthMm: row.packageWidthMm,
         packageLengthMm: row.packageLengthMm,
         packageHeightMm: row.packageHeightMm,
+        packageWeightG: row.packageWeightG,
         barcodes: barcodes.map((b) => b.barcode),
         photos: photos.map((p) => ({
           id: p.id,

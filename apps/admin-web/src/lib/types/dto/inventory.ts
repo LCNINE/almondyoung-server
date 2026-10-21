@@ -1987,6 +1987,7 @@ export interface FieldCaptureDetailDto {
   packageWidthMm: number | null;
   packageLengthMm: number | null;
   packageHeightMm: number | null;
+  packageWeightG: number | null;
   barcodes: string[];
   photos: ReferencePhotoDto[];
   completion: FieldCaptureDetailCompletionDto | null;
@@ -2043,6 +2044,7 @@ export interface CompleteFieldCaptureRequest {
   packageWidthMm: number;
   packageLengthMm: number;
   packageHeightMm: number;
+  packageWeightG: number;
   barcodeStatus: FieldCaptureBarcodeStatus;
   scannedBarcode?: string;
   allFacesConfirmed: true;

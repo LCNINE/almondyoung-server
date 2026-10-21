@@ -19,6 +19,7 @@ const input: CompleteFieldCaptureInput = {
   packageWidthMm: 120,
   packageLengthMm: 45,
   packageHeightMm: 30,
+  packageWeightG: 250,
   barcodeStatus: 'no_manufacturer',
   allFacesConfirmed: true,
 };
@@ -86,6 +87,7 @@ describeIfDb('SkuFieldCaptureManager (DB integration)', () => {
       await m.complete(skuId, input, actor, trx);
       const [sku] = await trx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, skuId));
       expect([sku.packageWidthMm, sku.packageLengthMm, sku.packageHeightMm]).toEqual([120, 45, 30]);
+      expect(sku.packageWeightG).toBe(250);
       const [cap] = await captures(trx, skuId);
       expect(cap.barcodeStatus).toBe('no_manufacturer');
       expect(cap.lastWorkerLabel).toBe('w1');

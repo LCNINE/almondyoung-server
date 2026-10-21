@@ -91,7 +91,8 @@ function CaptureForm({ detail }: { detail: FieldCaptureDetailDto }) {
   const queryClient = useQueryClient();
   const skuId = detail.skuId;
   // 초안은 상세가 처음 왔을 때 한 번만 만든다 — 사진 응답마다 상세가 바뀌어도 입력을 덮지 않는다
-  const [draft, setDraft] = useState<CaptureDraft>(() => readDraft(skuId) ?? draftFromDetail(detail));
+  // 적어 둔 초안이 무게 칸이 생기기 전 것이어도 빈 칸은 서버 값으로 채운다
+  const [draft, setDraft] = useState<CaptureDraft>(() => ({ ...draftFromDetail(detail), ...readDraft(skuId) }));
   useEffect(() => {
     try {
       localStorage.setItem(draftStorageKey(skuId), savedDraftJson(draft, Date.now()));
@@ -235,6 +236,16 @@ function CaptureForm({ detail }: { detail: FieldCaptureDetailDto }) {
               />
             ))}
           </div>
+          <h2 className="pt-1 text-sm font-semibold text-gray-800">포장째 무게 (g)</h2>
+          <input
+            value={draft.weightG}
+            onChange={(e) => set({ weightG: e.target.value })}
+            placeholder="무게"
+            aria-label="무게 (g)"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            className="h-11 w-full min-w-0 rounded-lg border border-gray-300 text-center text-base"
+          />
         </section>
 
         <section className="space-y-2 rounded-xl border border-gray-200 bg-white p-4">

@@ -14,6 +14,8 @@ export const REFERENCE_PHOTO_CONTEXT_ID = 'sku-reference-photo';
 export const REFERENCE_PHOTO_MAX_BYTES = 26214400;
 
 const MAX_MM = 5000;
+// core MAX_PACKAGE_G 와 같은 값
+const MAX_G = 100_000;
 // core CompleteFieldCaptureDto.scannedBarcode 의 @MaxLength(64) 와 같은 값
 const MAX_BARCODE_LENGTH = 64;
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp'];
@@ -62,11 +64,19 @@ export const MANUFACTURER_BARCODE_FORMATS: readonly BarcodeFormatName[] = [
   'ITF',
 ];
 
-export function parseMm(input: string): number | null {
+function parseIntInRange(input: string, max: number): number | null {
   const s = input.trim();
   if (!/^\d+$/.test(s)) return null;
   const n = Number(s);
-  return n >= 1 && n <= MAX_MM ? n : null;
+  return n >= 1 && n <= max ? n : null;
+}
+
+export function parseMm(input: string): number | null {
+  return parseIntInRange(input, MAX_MM);
+}
+
+export function parseGrams(input: string): number | null {
+  return parseIntInRange(input, MAX_G);
 }
 
 export function photoRejectionReason(file: {
@@ -85,6 +95,7 @@ export type CaptureDraft = {
   widthMm: string;
   lengthMm: string;
   heightMm: string;
+  weightG: string;
   barcodeStatus: FieldCaptureBarcodeStatus | null;
   scannedBarcode: string;
   photoCount: number;
@@ -96,6 +107,7 @@ export function missingRequirements(d: CaptureDraft): string[] {
   if (parseMm(d.widthMm) === null) out.push('가로를 mm 정수로 입력해 주세요');
   if (parseMm(d.lengthMm) === null) out.push('세로를 mm 정수로 입력해 주세요');
   if (parseMm(d.heightMm) === null) out.push('높이를 mm 정수로 입력해 주세요');
+  if (parseGrams(d.weightG) === null) out.push('무게를 g 정수로 입력해 주세요');
   if (d.photoCount < MIN_REFERENCE_PHOTOS) {
     out.push(`사진을 ${MIN_REFERENCE_PHOTOS - d.photoCount}장 더 찍어 주세요`);
   }
@@ -123,11 +135,13 @@ export function toCompleteRequest(
   const width = parseMm(d.widthMm);
   const length = parseMm(d.lengthMm);
   const height = parseMm(d.heightMm);
+  const weight = parseGrams(d.weightG);
   if (
     missingRequirements(d).length > 0 ||
     width === null ||
     length === null ||
     height === null ||
+    weight === null ||
     d.barcodeStatus === null
   ) {
     throw new Error('실측 완료 조건이 충족되지 않았습니다');
@@ -136,6 +150,7 @@ export function toCompleteRequest(
     packageWidthMm: width,
     packageLengthMm: length,
     packageHeightMm: height,
+    packageWeightG: weight,
     barcodeStatus: d.barcodeStatus,
     allFacesConfirmed: true,
   };
@@ -344,14 +359,15 @@ export function isConflict(e: unknown): boolean {
   return e instanceof CustomError && e.statusCode === 409;
 }
 
-/** 재작업(수정)이면 지난 실측값과 여섯 면 확인을 채운다 — 이미 확인한 사진 그대로다. 사진 수는 서버 수치. */
+/** 재작업(수정)이면 지난 실측값(치수·무게)과 여섯 면 확인을 채운다 — 이미 확인한 사진 그대로다. 사진 수는 서버 수치. */
 export function draftFromDetail(detail: FieldCaptureDetailDto): CaptureDraft {
-  const mm = (v: number | null) => (v === null ? '' : String(v));
+  const num = (v: number | null) => (v === null ? '' : String(v));
   const c = detail.completion;
   return {
-    widthMm: mm(detail.packageWidthMm),
-    lengthMm: mm(detail.packageLengthMm),
-    heightMm: mm(detail.packageHeightMm),
+    widthMm: num(detail.packageWidthMm),
+    lengthMm: num(detail.packageLengthMm),
+    heightMm: num(detail.packageHeightMm),
+    weightG: num(detail.packageWeightG),
     barcodeStatus: c?.barcodeStatus ?? null,
     scannedBarcode:
       c?.barcodeStatus === 'scanned' ? (c.scannedBarcode ?? '') : '',
