@@ -57,6 +57,7 @@ export function lineRemainingSql(lineQuantity: SQLWrapper, salesOrderLineId: SQL
  * 구성에만 있고 FOI 가 없는 SKU 는 0 으로 나온다(빠지면 환산이 그 구성품을 못 본다).
  * FOI 갈래의 `key_line.sales_order_id = key_fo.sales_order_id` 는 `::text` 조인이 pkey 를 못 타서
  * `sales_order_lines` 전체를 훑지 않게 주문 인덱스로 좁히는 조건이다(여러 주문 범위로 다시 쓰인다).
+ * 사실 갈래(`item_fact`)도 같은 조건으로 라인에 잇는다 — 범위의 다른 주문 FOI 가 그 라인을 가리켜도 그 라인 사실에 섞이지 않게.
  *
  * FOI 단위로 정한 뒤 (라인, SKU) 로 합한다:
  *   required          = qty − canceled_qty
@@ -120,6 +121,9 @@ export function lineSkuQuantitiesSql(salesOrderScope: SQL): SQL {
                sum(coalesce(item_delivered.qty, 0))::int as delivered
           from ${t.fulfillmentOrders} as fo
           join ${t.fulfillmentOrderItems} as foi on foi.fulfillment_order_id = fo.id
+          join ${t.salesOrderLines} as line
+            on foi.sales_order_line_id = line.id::text
+           and line.sales_order_id = fo.sales_order_id
           left join (
             -- 배송완료 수량은 범위의 FOI 전부를 한 번에 묶어 센 뒤 FOI id 로 되붙인다 — FOI 마다 상관 서브쿼리로 세면
             -- shipment_lines(fulfillment_order_item_id) 인덱스가 없어 FOI 수 × 출고 시도 소스 수로 자란다(R15)

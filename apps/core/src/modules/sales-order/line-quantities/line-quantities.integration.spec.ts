@@ -515,6 +515,34 @@ describeIfDb('readLineQuantities — SKU 층 출고·배송 사실 (K6 PR2b)', (
     });
   });
 
+  it('item of another order pointing at the line is not counted', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const a = await seedOrder(tx);
+      const b = await seedOrder(tx);
+      const aFo = await seedFo(tx, w, a, { qty: 1 });
+      await seedFo(tx, w, b, { qty: 1 });
+      // 주문 A 의 FO 에 주문 B 의 라인을 가리키는 FOI — 키 갈래가 거르는 모양을 사실 갈래도 걸러야 한다
+      await tx.insert(wmsTables.fulfillmentOrderItems).values({
+        fulfillmentOrderId: aFo.foId,
+        salesOrderId: a.salesOrderId,
+        salesOrderLineId: b.lineId,
+        skuId: w.skuId,
+        qty: 5,
+      });
+
+      // 두 주문을 한 범위로 읽어야 FO 범위 필터만으로는 못 거른다
+      const rows = await tx.execute<SkuRow>(
+        lineSkuQuantitiesSql(
+          sql`select so.id from ${wmsTables.salesOrders} as so where so.id in (${a.salesOrderId}, ${b.salesOrderId})`,
+        ),
+      );
+      const bRow = [...rows].find((row) => row.sales_order_line_id === b.lineId);
+      expect(bRow?.required).toBe(1);
+      expect(bRow?.outstanding).toBe(1);
+    });
+  });
+
   it('composition sku without an item appears with zeros', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = await seedWorld(tx);
