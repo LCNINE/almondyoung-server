@@ -1,0 +1,1 @@
+ALTER TABLE "skus" ADD COLUMN "package_weight_g" integer;
