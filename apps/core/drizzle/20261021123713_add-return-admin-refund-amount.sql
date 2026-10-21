@@ -1,0 +1,2 @@
+ALTER TABLE "return_requests" ADD COLUMN "admin_refund_amount" integer;--> statement-breakpoint
+ALTER TABLE "return_requests" ADD CONSTRAINT "ck_return_requests_admin_refund_amount_nonnegative" CHECK ("return_requests"."admin_refund_amount" >= 0);
