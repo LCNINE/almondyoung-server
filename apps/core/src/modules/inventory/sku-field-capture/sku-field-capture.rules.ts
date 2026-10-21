@@ -4,6 +4,7 @@ export { normalizePositionCode } from './position-code';
 
 export const MIN_REFERENCE_PHOTOS = 3;
 export const MAX_PACKAGE_MM = 5000;
+export const MAX_PACKAGE_G = 100_000;
 
 export const FIELD_CAPTURE_BARCODE_STATUSES = ['scanned', 'no_manufacturer', 'none'] as const;
 export type FieldCaptureBarcodeStatus = (typeof FIELD_CAPTURE_BARCODE_STATUSES)[number];

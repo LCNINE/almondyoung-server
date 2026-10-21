@@ -31,6 +31,7 @@ const input: CompleteFieldCaptureInput = {
   packageWidthMm: 120,
   packageLengthMm: 45,
   packageHeightMm: 30,
+  packageWeightG: 250,
   barcodeStatus: 'no_manufacturer',
   allFacesConfirmed: true,
 };
@@ -128,6 +129,7 @@ describeIfDb('SkuFieldCaptureReader (DB integration)', () => {
       expect(d.photos.map((p) => p.fileId)).toEqual(files);
       expect(d.photos.map((p) => p.sortOrder)).toEqual([0, 1, 2]);
       expect([d.packageWidthMm, d.packageLengthMm, d.packageHeightMm]).toEqual([120, 45, 30]);
+      expect(d.packageWeightG).toBe(250);
       expect(d.completion?.scannedBarcode).toBe('8809692359001');
       expect(d.completion?.barcodeConflict?.skuId).toBe(b);
       expect(d.completion?.allFacesConfirmed).toBe(true);

@@ -54,6 +54,7 @@ export class FieldCaptureDetailDto {
   @ApiProperty({ type: Number, nullable: true }) packageWidthMm!: number | null;
   @ApiProperty({ type: Number, nullable: true }) packageLengthMm!: number | null;
   @ApiProperty({ type: Number, nullable: true }) packageHeightMm!: number | null;
+  @ApiProperty({ type: Number, nullable: true }) packageWeightG!: number | null;
   @ApiProperty({ type: [String] }) barcodes!: string[];
   @ApiProperty({ type: () => [ReferencePhotoDto] }) photos!: ReferencePhotoDto[];
   @ApiPropertyOptional({ type: () => FieldCaptureDetailCompletionDto, nullable: true })

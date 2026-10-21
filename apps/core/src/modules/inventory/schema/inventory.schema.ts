@@ -646,6 +646,8 @@ export const skus = pgTable(
     packageWidthMm: integer('package_width_mm'),
     packageLengthMm: integer('package_length_mm'),
     packageHeightMm: integer('package_height_mm'),
+    // 포장 실측 무게(g). 위 product_weight 는 건드리지 않는다.
+    packageWeightG: integer('package_weight_g'),
     productMaterial: text('product_material'),
 
     // 추가 메타데이터

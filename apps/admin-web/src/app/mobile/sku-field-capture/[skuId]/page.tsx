@@ -172,6 +172,16 @@ function CaptureForm({ detail }: { detail: FieldCaptureDetailDto }) {
             />
           ))}
         </div>
+        <h2 className="pt-1 text-sm font-semibold text-gray-800">포장째 무게 (g)</h2>
+        <input
+          value={draft.weightG}
+          onChange={(e) => set({ weightG: e.target.value })}
+          placeholder="무게"
+          aria-label="무게 (g)"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          className="h-11 w-full min-w-0 rounded-lg border border-gray-300 text-center text-base"
+        />
       </section>
 
       <section className="space-y-2 rounded-xl border border-gray-200 bg-white p-4">

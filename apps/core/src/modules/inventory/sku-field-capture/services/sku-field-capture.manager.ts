@@ -9,6 +9,7 @@ export type CompleteFieldCaptureInput = {
   packageWidthMm: number;
   packageLengthMm: number;
   packageHeightMm: number;
+  packageWeightG: number;
   barcodeStatus: FieldCaptureBarcodeStatus;
   scannedBarcode?: string;
   allFacesConfirmed: true;
@@ -78,6 +79,7 @@ export class SkuFieldCaptureManager {
           packageWidthMm: input.packageWidthMm,
           packageLengthMm: input.packageLengthMm,
           packageHeightMm: input.packageHeightMm,
+          packageWeightG: input.packageWeightG,
           updatedAt: sql`now()`,
         })
         .where(eq(wmsTables.skus.id, skuId));

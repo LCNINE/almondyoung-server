@@ -18,6 +18,7 @@ import {
   reworkNotice,
   scanInputValue,
   missingRequirements,
+  parseGrams,
   parseMm,
   photoRejectionReason,
   toCompleteRequest,
@@ -28,6 +29,7 @@ const full: CaptureDraft = {
   widthMm: '120',
   lengthMm: '45',
   heightMm: '30',
+  weightG: '250',
   barcodeStatus: 'none',
   scannedBarcode: '',
   photoCount: 3,
@@ -52,6 +54,15 @@ describe('MANUFACTURER_BARCODE_FORMATS', () => {
     ] as const) {
       expect(MANUFACTURER_BARCODE_FORMATS).not.toContain(twoD);
     }
+  });
+});
+
+describe('parseGrams', () => {
+  it('1~100000 정수만 받는다', () => {
+    expect(parseGrams('250')).toBe(250);
+    expect(parseGrams(' 100000 ')).toBe(100000);
+    for (const bad of ['12.5', '250g', '0', '100001', ''])
+      expect(parseGrams(bad)).toBeNull();
   });
 });
 
@@ -121,6 +132,10 @@ describe('missingRequirements', () => {
     expect(missingRequirements({ ...full, widthMm: 'abc' })).toContain(
       '가로를 mm 정수로 입력해 주세요'
     ));
+  it('무게 빈칸', () =>
+    expect(missingRequirements({ ...full, weightG: '' })).toContain(
+      '무게를 g 정수로 입력해 주세요'
+    ));
 });
 
 describe('toCompleteRequest', () => {
@@ -129,6 +144,7 @@ describe('toCompleteRequest', () => {
       packageWidthMm: 120,
       packageLengthMm: 45,
       packageHeightMm: 30,
+      packageWeightG: 250,
       barcodeStatus: 'none',
       allFacesConfirmed: true,
     });
@@ -331,6 +347,7 @@ describe('draftFromDetail', () => {
     packageWidthMm: null,
     packageLengthMm: null,
     packageHeightMm: null,
+    packageWeightG: null,
     barcodes: [],
     photos: [],
     completion: null,
@@ -356,6 +373,7 @@ describe('draftFromDetail', () => {
       widthMm: '',
       lengthMm: '',
       heightMm: '',
+      weightG: '',
       barcodeStatus: null,
       scannedBarcode: '',
       photoCount: 0,
@@ -369,6 +387,7 @@ describe('draftFromDetail', () => {
         packageWidthMm: 120,
         packageLengthMm: 45,
         packageHeightMm: 30,
+        packageWeightG: 250,
         photos: [photo('a'), photo('b'), photo('c')],
         completion,
       })
@@ -376,6 +395,7 @@ describe('draftFromDetail', () => {
       widthMm: '120',
       lengthMm: '45',
       heightMm: '30',
+      weightG: '250',
       barcodeStatus: 'scanned',
       scannedBarcode: '8801234567890',
       photoCount: 3,
@@ -403,11 +423,29 @@ describe('draftFromDetail', () => {
           packageWidthMm: 120,
           packageLengthMm: 45,
           packageHeightMm: 30,
+          packageWeightG: 250,
           photos: [photo('a'), photo('b'), photo('c')],
           completion,
         })
       )
     ).toEqual(['여섯 면이 다 나왔는지 확인해 주세요']));
+
+  it('무게 없이 끝난 옛 실측을 다시 하면 무게도 받는다', () =>
+    expect(
+      missingRequirements(
+        draftFromDetail({
+          ...base,
+          packageWidthMm: 120,
+          packageLengthMm: 45,
+          packageHeightMm: 30,
+          photos: [photo('a'), photo('b'), photo('c')],
+          completion,
+        })
+      )
+    ).toEqual([
+      '무게를 g 정수로 입력해 주세요',
+      '여섯 면이 다 나왔는지 확인해 주세요',
+    ]));
 });
 
 describe('scanner settings', () => {

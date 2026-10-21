@@ -869,6 +869,13 @@
       "when": 1792519679311,
       "tag": "20261020180759_add-sku-field-capture",
       "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1792556566472,
+      "tag": "20261021042246_add-sku-package-weight",
+      "breakpoints": true
     }
   ]
 }
