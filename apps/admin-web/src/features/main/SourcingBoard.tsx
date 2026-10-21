@@ -1,6 +1,6 @@
 'use client';
 
-import { useAssigneeOptions } from '@/features/keyword-ops/components/ZeroHitTable';
+import { useAssigneeOptions, withCurrentAssignee } from '@/features/keyword-ops/components/ZeroHitTable';
 import { STATUS_LABELS } from '@/features/keyword-ops/labels';
 import { BoardHeader } from '@/features/main/BoardHeader';
 import { SkeletonRows } from '@/features/main/DailyBoards';
@@ -108,12 +108,13 @@ function SourcingRow({
   const upsert = useUpsertKeywordIssue();
   const { blockedReason } = usePermissionCheck();
   const reason = blockedReason(useUpsertKeywordIssue);
+  const options = withCurrentAssignee(assigneeOptions.options, row.issue?.assigneeId, row.issue?.assigneeName);
 
   const changeStatus = (status: KeywordIssueStatus) => {
     upsert.mutate({ keywordNorm: row.keywordNorm, keyword: row.keyword, status });
   };
   const changeAssignee = (assigneeId: string) => {
-    const selected = assigneeOptions.find((option) => option.value === assigneeId);
+    const selected = options.find((option) => option.value === assigneeId);
     upsert.mutate({
       keywordNorm: row.keywordNorm,
       keyword: row.keyword,
@@ -162,20 +163,20 @@ function SourcingRow({
         </BlockedReason>
       </td>
       <td className="px-3 py-2">
-        <BlockedReason reason={reason}>
+        <BlockedReason reason={reason ?? assigneeOptions.blockedReason}>
           {(blocked) => (
             <select
               {...blocked}
               aria-label={`${row.keyword} 담당자`}
               value={row.issue?.assigneeId ?? ''}
               onChange={(event) => {
-                if (!reason) changeAssignee(event.target.value);
+                if (!reason && !assigneeOptions.blockedReason) changeAssignee(event.target.value);
               }}
               disabled={upsert.isPending}
               className={cn(SELECT_CLASS, 'min-w-32')}
             >
               <option value="">미지정</option>
-              {assigneeOptions.map((option) => (
+              {options.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.name}
                 </option>

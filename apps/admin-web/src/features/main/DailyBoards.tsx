@@ -24,6 +24,7 @@ import {
   yDomainMax,
 } from '@/features/main/chart-style';
 import { BrushTraveller } from '@/features/main/BrushTraveller';
+import { useReadGate } from '@/features/main/read-gate';
 
 const DAYS = 7;
 const SIGNUP_COLOR = '#EC825F';
@@ -78,15 +79,19 @@ function Amount({ value, unit, bold }: { value: number | null; unit: string; bol
 export function MembersBoard() {
   const range = useRange();
   const today = kstToday();
-  const signups = useDailySignups(range.from, range.to);
+  // 가입 수는 회원 조회 권한이다(적립금은 이 화면의 통계 권한) — 없으면 요청하지 않고 «가림».
+  const signupGate = useReadGate(['customer.profile.read']);
+  const signups = useDailySignups(range.from, range.to, { enabled: signupGate.enabled });
   const points = useDailyPoints(range.from, range.to);
+  const signupsHidden = signupGate.hiddenReason;
   const [desc, setDesc] = useState(true);
 
   if (signups.isError && points.isError) {
     return <p className="py-6 text-center text-xs text-red-500">회원/적립금 현황을 불러오지 못했습니다.</p>;
   }
 
-  const signupsData = signups.isError ? undefined : signups.data;
+  // 권한이 없으면 캐시에 남은 값도 쓰지 않는다
+  const signupsData = signups.isError || !signupGate.enabled ? undefined : signups.data;
   const pointsData = points.isError ? undefined : points.data;
   const signupsByDay = signupsData ? new Map(signupsData.series.map((point) => [point.bucket, point.count])) : null;
   const earnedByDay = pointsData ? new Map(pointsData.series.map((point) => [point.bucket, point.earnedAmount])) : null;
@@ -99,14 +104,16 @@ export function MembersBoard() {
   const totalSignups = signupsData ? signupsData.series.reduce((sum, point) => sum + point.count, 0) : null;
   const totalEarned = pointsData ? pointsData.series.reduce((sum, point) => sum + point.earnedAmount, 0) : null;
   const tableRows = desc ? [...rows].reverse() : rows;
-  const isLoading = signups.isLoading || points.isLoading;
+  const isLoading = signupGate.pending || signups.isLoading || points.isLoading;
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
       <div className="pt-3">
         <p className="mb-1 text-xs text-[#757575]">단위/명</p>
         <div style={{ height: CHART_BLOCK_HEIGHT }}>
-          {signups.isError ? (
+          {signupsHidden ? (
+            <p className="py-24 text-center text-xs text-gray-400">신규 회원 가입 현황 가림 — {signupsHidden}</p>
+          ) : signups.isError || signupGate.failed ? (
             <p className="py-24 text-center text-xs text-red-500">신규 회원 가입 현황을 불러오지 못했습니다.</p>
           ) : isLoading ? (
             <Skeleton className="h-full w-full" />
@@ -170,7 +177,13 @@ export function MembersBoard() {
 
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-2">
-          <SummaryCard label="총 신규 회원 가입 현황" value={totalSignups} unit="명" isLoading={signups.isLoading} />
+          <SummaryCard
+            label="총 신규 회원 가입 현황"
+            value={totalSignups}
+            unit="명"
+            isLoading={signupGate.pending || signups.isLoading}
+            hiddenReason={signupsHidden}
+          />
           <SummaryCard label="총 적립금 적용 현황" value={totalEarned} unit="원" isLoading={points.isLoading} />
         </div>
         {signups.isError || points.isError ? (
@@ -201,7 +214,13 @@ export function MembersBoard() {
                 >
                   <DayCell bucket={row.bucket} today={today} />
                   <td className="px-3 py-3 text-right">
-                    <Amount value={row.signups} unit="명" bold={(row.signups ?? 0) > 0 || row.bucket === today} />
+                    {signupsHidden ? (
+                      <span title={signupsHidden} className="text-gray-400">
+                        가림
+                      </span>
+                    ) : (
+                      <Amount value={row.signups} unit="명" bold={(row.signups ?? 0) > 0 || row.bucket === today} />
+                    )}
                   </td>
                   <td className="px-3 py-3 text-right">
                     <Amount value={row.earned} unit="원" bold={(row.earned ?? 0) > 0 || row.bucket === today} />
@@ -221,16 +240,23 @@ export function SummaryCard({
   value,
   unit,
   isLoading,
+  hiddenReason = null,
 }: {
   label: string;
   value: number | null;
   unit: string;
   isLoading: boolean;
+  /** 권한이 없어 가렸으면 그 이유 — «불러오지 못함»과 구분해 «가림»으로 그린다 */
+  hiddenReason?: string | null;
 }) {
   return (
     <div className="min-h-20 rounded-xl bg-[#F5F8FF] p-3">
       <p className="text-[13px] leading-5 text-[#616161]">{label}</p>
-      {isLoading ? (
+      {hiddenReason ? (
+        <p title={hiddenReason} className="mt-1.5 text-sm leading-7 text-gray-400">
+          가림
+        </p>
+      ) : isLoading ? (
         <Skeleton className="mt-1.5 h-7 w-20" />
       ) : value == null ? (
         <p className="mt-1.5 text-sm leading-7 text-gray-400">불러오지 못함</p>
@@ -270,9 +296,16 @@ type OrderColumnKey = (typeof ORDER_COLUMNS)[number]['key'];
 export function OrderStatusBoard() {
   const range = useRange();
   const today = kstToday();
-  const { data, isLoading, isError } = useDailyOrderStatus(range.from, range.to);
+  const orderGate = useReadGate(['order.order.read']);
+  const query = useDailyOrderStatus(range.from, range.to, { enabled: orderGate.enabled });
+  // 권한을 확인하기 전·없을 때는 캐시에 남은 값도 쓰지 않는다
+  const data = orderGate.enabled ? query.data : undefined;
+  const isLoading = orderGate.pending || query.isLoading;
+  const isError = orderGate.failed || query.isError;
   const [desc, setDesc] = useState(true);
 
+  if (orderGate.hiddenReason)
+    return <p className="py-6 text-center text-xs text-gray-400">주문처리 현황 가림 — {orderGate.hiddenReason}</p>;
   if (isError) return <p className="py-6 text-center text-xs text-red-500">주문처리 현황을 불러오지 못했습니다.</p>;
   const series = data?.series ?? [];
   const sum = (key: OrderColumnKey) => series.reduce((total, point) => total + point[key], 0);
@@ -358,62 +391,85 @@ type CsColumn = {
   href: (fromDay: string, toDay: string) => string;
   counts: Map<string, number> | null;
   isLoading: boolean;
+  /** 권한이 없어 가린 열이면 그 이유 */
+  hiddenReason: string | null;
 };
 
 export function CsBoard() {
   const range = useRange();
   const today = kstToday();
-  const questions = useDailyQuestionCounts(range.from, range.to);
-  const reviews = useDailyReviewCounts(range.from, range.to);
-  const claims = useDailyOrderStatus(range.from, range.to);
-  const licenses = useDailyBusinessLicenseCounts(range.from, range.to);
+  // 열마다 조회 권한이 다르다 — 없는 열은 요청하지 않고 «가림».
+  const questionGate = useReadGate(['cs.inquiry.read']);
+  const reviewGate = useReadGate(['cs.review.read']);
+  const claimGate = useReadGate(['order.order.read']);
+  const licenseGate = useReadGate(['customer.profile.read']);
+  const questions = useDailyQuestionCounts(range.from, range.to, { enabled: questionGate.enabled });
+  const reviews = useDailyReviewCounts(range.from, range.to, { enabled: reviewGate.enabled });
+  const claims = useDailyOrderStatus(range.from, range.to, { enabled: claimGate.enabled });
+  const licenses = useDailyBusinessLicenseCounts(range.from, range.to, { enabled: licenseGate.enabled });
   const [desc, setDesc] = useState(true);
 
-  const toMap = (query: { isError: boolean; data?: { series: Array<{ bucket: string; count: number }> } }) =>
-    query.isError || !query.data ? null : new Map(query.data.series.map((point) => [point.bucket, point.count]));
+  // 권한을 확인한 열만 값을 쓴다 — 캐시에 남은 값이 합계로 새지 않게(가린 열이 있으면 합계도 «-»).
+  const toMap = (
+    gate: { enabled: boolean },
+    query: { isError: boolean; data?: { series: Array<{ bucket: string; count: number }> } },
+  ) =>
+    !gate.enabled || query.isError || !query.data
+      ? null
+      : new Map(query.data.series.map((point) => [point.bucket, point.count]));
   const claimMap = (key: 'return' | 'exchange') =>
-    claims.isError || !claims.data ? null : new Map(claims.data.series.map((point) => [point.bucket, point[key]]));
+    !claimGate.enabled || claims.isError || !claims.data
+      ? null
+      : new Map(claims.data.series.map((point) => [point.bucket, point[key]]));
 
   const columns: CsColumn[] = [
     {
       key: 'questions',
       label: '문의',
       href: (from, to) => `/cs/qna?createdAt=${createdAtParam(from, to)}`,
-      counts: toMap(questions),
-      isLoading: questions.isLoading,
+      counts: toMap(questionGate, questions),
+      isLoading: questionGate.pending || questions.isLoading,
+      hiddenReason: questionGate.hiddenReason,
     },
     {
       key: 'reviews',
       label: '리뷰',
       href: (from, to) => `/cs/reviews?createdAt=${createdAtParam(from, to)}`,
-      counts: toMap(reviews),
-      isLoading: reviews.isLoading,
+      counts: toMap(reviewGate, reviews),
+      isLoading: reviewGate.pending || reviews.isLoading,
+      hiddenReason: reviewGate.hiddenReason,
     },
     {
       key: 'returns',
       label: '반품 신청',
       href: (from, to) => `/cs/return-exchange?createdAt=${createdAtParam(from, to)}`,
       counts: claimMap('return'),
-      isLoading: claims.isLoading,
+      isLoading: claimGate.pending || claims.isLoading,
+      hiddenReason: claimGate.hiddenReason,
     },
     {
       key: 'exchanges',
       label: '교환 신청',
       href: (from, to) => `/cs/return-exchange?tab=exchanges&createdAt=${createdAtParam(from, to)}`,
       counts: claimMap('exchange'),
-      isLoading: claims.isLoading,
+      isLoading: claimGate.pending || claims.isLoading,
+      hiddenReason: claimGate.hiddenReason,
     },
     {
       key: 'licenses',
       label: '사업자 신청',
       href: (from, to) => `/cs/business-licenses?createdAt=${createdAtParam(from, to)}`,
-      counts: toMap(licenses),
-      isLoading: licenses.isLoading,
+      counts: toMap(licenseGate, licenses),
+      isLoading: licenseGate.pending || licenses.isLoading,
+      hiddenReason: licenseGate.hiddenReason,
     },
   ];
 
   const isLoading = columns.some((column) => column.isLoading);
-  const failed = columns.filter((column) => !column.isLoading && column.counts == null).map((column) => column.label);
+  const failed = columns
+    .filter((column) => !column.isLoading && !column.hiddenReason && column.counts == null)
+    .map((column) => column.label);
+  const hidden = columns.filter((column) => column.hiddenReason);
   const days: string[] = [];
   for (let day = range.from; day <= range.to; day = nextDay(day)) days.push(day);
   const rows = desc ? [...days].reverse() : days;
@@ -428,7 +484,11 @@ export function CsBoard() {
     : null;
 
   const cell = (column: CsColumn, value: number, fromDay: string, toDay: string, bold: boolean) =>
-    column.counts == null ? (
+    column.hiddenReason ? (
+      <span title={column.hiddenReason} className="text-[#BDBDBD]">
+        가림
+      </span>
+    ) : column.counts == null ? (
       <span className="text-[#BDBDBD]">-</span>
     ) : (
       <Link
@@ -444,6 +504,11 @@ export function CsBoard() {
     <div className="space-y-2">
       {failed.length > 0 ? (
         <p className="text-xs text-[#D71952]">{failed.join('·')} 데이터를 불러오지 못했습니다.</p>
+      ) : null}
+      {hidden.length > 0 ? (
+        <p className="text-xs text-gray-400">
+          {hidden.map((column) => `${column.label}: ${column.hiddenReason}`).join(' · ')}
+        </p>
       ) : null}
       <div className="overflow-x-auto">
         <table className="w-full text-[13px]">

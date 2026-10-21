@@ -19,8 +19,9 @@ export const useAdminUserCount = (options: { enabled?: boolean } = {}) => {
   });
 };
 
-export const useDailySignups = (from: string, to: string) => {
+export const useDailySignups = (from: string, to: string, options: { enabled?: boolean } = {}) => {
   return useQuery({
+    enabled: options.enabled ?? true,
     queryKey: usersQueryKeys.dailySignups(from, to),
     queryFn: () => userApi.getDailySignups(from, to),
     staleTime: 60 * 1000,
