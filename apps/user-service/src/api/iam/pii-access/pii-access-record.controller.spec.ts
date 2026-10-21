@@ -30,7 +30,7 @@ describe('PiiAccessRecordController', () => {
     controller = module.get(PiiAccessRecordController);
   });
 
-  it('takes the actor from the token and ignores actor fields in the body', async () => {
+  it('takes the actor and the time from the server, not the body', async () => {
     const body = {
       eventId: '0192f3a4-0000-4000-8000-0000000000bb',
       sourceService: 'admin-web',
@@ -48,7 +48,11 @@ describe('PiiAccessRecordController', () => {
       peerIp: null,
       actorUserId: 'someone-else',
     };
+    const before = Date.now();
     await controller.recordOwn(actor, body);
+    const recorded = service.recordOwn.mock.calls[0][1].occurredAt as Date;
+    expect(recorded.getTime()).toBeGreaterThanOrEqual(before);
+    expect(recorded.getTime()).toBeLessThanOrEqual(Date.now());
     expect(service.recordOwn).toHaveBeenCalledWith(
       actor,
       expect.objectContaining({
@@ -58,7 +62,6 @@ describe('PiiAccessRecordController', () => {
         requestId: 'req-9',
         sourceService: 'admin-web',
         claimedIp: '198.51.100.4',
-        occurredAt: new Date('2026-10-19T05:00:00.000Z'),
       }),
     );
   });

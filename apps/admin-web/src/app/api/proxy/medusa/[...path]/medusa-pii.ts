@@ -40,6 +40,7 @@ const PII_KEYS: Readonly<Record<string, MaskableKind | 'redact'>> = {
   first_name: 'name',
   last_name: 'name',
   company_name: 'name',
+  company: 'name',
   address_1: 'address',
   address_2: 'text',
   postal_code: 'postal',
