@@ -1787,9 +1787,10 @@ export class StoreReturnExchangeService {
     for (const row of succeededRows) {
       refundedByPrior.set(row.returnRequestId, (refundedByPrior.get(row.returnRequestId) ?? 0) + row.amount);
     }
-    const priorReturns: PriorCompletedReturn[] = [...lineIdsByPrior].map(([id, { lineIds }]) => ({
+    // 성공 시도가 없어도 관리자가 0원을 넣은 완료 반품은 돈이 안 나간 것이 확실하다 — 아는 0원(A4 예외)
+    const priorReturns: PriorCompletedReturn[] = [...lineIdsByPrior].map(([id, { lineIds, adminRefundAmount }]) => ({
       lineIds: [...lineIds],
-      refundedAmount: refundedByPrior.get(id) ?? null,
+      refundedAmount: refundedByPrior.get(id) ?? (adminRefundAmount === 0 ? 0 : null),
     }));
 
     return returnRefundCap({

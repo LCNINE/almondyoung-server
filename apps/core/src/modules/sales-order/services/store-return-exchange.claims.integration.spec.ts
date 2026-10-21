@@ -951,6 +951,26 @@ describeIfDb('반품·교환 생성 게이트 — 소포 단위 청구 자격 (K
     });
   });
 
+  it('prior admin zero return is a known zero', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { line, skuA, requestId } = await seedSetPartialReturn(tx);
+      // 관리자가 0원을 넣고 시도 행이 없는 완료 반품 = 돈이 안 나간 것이 확실하다 → 배분액을 지우지 않는다
+      const { requestId: priorId } = await seedClaim(tx, {
+        kind: 'return',
+        salesOrderId: line.salesOrderId,
+        status: 'completed',
+        items: [parcelLine(line, 0, skuA, 1)],
+      });
+      await tx
+        .update(returnExchangeTables.returnRequests)
+        .set({ adminRefundAmount: 0 })
+        .where(eq(returnExchangeTables.returnRequests.id, priorId));
+      const { service } = makeRefundHarness(tx);
+
+      await expect(service.getReturnRefundQuote(requestId)).resolves.toEqual({ kind: 'admin_amount', cap: 2000 });
+    });
+  });
+
   it('automatic return after an admin amount on the same line asks for an amount', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = await seedWorld(tx);

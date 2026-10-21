@@ -123,7 +123,7 @@ PR 1 은 기록만 더했다(이중 기록). PR 2a 가 `cancelledQuantitySql`(�
 - A1 금액은 0 이상 상한 이하 정수. 뒤 갈래는 자동 경로와 같다 — 0 은 즉시 `completed`, 양수는 `walletIntentId` 가 있으면 Wallet 환불, 없으면 `refund_pending`(수동 완료 대기).
 - A2 메모(`adminNote` 1~500자) 필수. `return_requests.admin_note` 를 덮어쓰고 수명주기 링크에도 남긴다.
 - A3 세트 일부가 아닌 요청에 금액을 보내면 400. 세트 일부 요청에 기존 `complete` 를 부르면 400 — 3a 의 N5 임시 갈래(`refund_pending`)를 **대체**했다.
-- A4 앞선 완료 반품의 «아는 금액» = 그 요청의 `return_refund_attempts` 중 `succeeded` 합. `succeeded` 가 없는 완료 반품(수동·자동 0원·관리자 0원)은 금액 모름이고, 그 반품이 건드린 라인의 배분액은 0 이다. 과환불은 막고 상한이 낮게 나올 수 있다.
+- A4 앞선 완료 반품의 «아는 금액» = 그 요청의 `return_refund_attempts` 중 `succeeded` 합. `succeeded` 가 없는 완료 반품 중 관리자가 0원을 넣은 것은 아는 0원(사용자 결정 10-21 — 돈이 안 나간 것이 확실하다), 나머지(수동·자동 0원)는 금액 모름이고 그 반품이 건드린 라인의 배분액은 0 이다. 과환불은 막고 상한이 낮게 나올 수 있다.
 - A5 상한은 `Math.floor`. 반올림하면 1원 넘게 나갈 수 있다.
 - A6 재시도는 저장된 `return_requests.admin_refund_amount` 를 쓰고 상한을 다시 검사하지 않는다(스펙 D7).
 - A7 견적 `GET /admin/return-requests/:id/refund-quote`(`order.claim.read`, `inspected` 에서만, 개인정보 없음). admin-web 이 «완료 처리» 클릭 때 불러 자동/입력 갈래를 `decideCompletion` 으로 고른다.
