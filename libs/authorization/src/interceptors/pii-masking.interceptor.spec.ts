@@ -45,6 +45,15 @@ class Probe {
   })
   conversations(): void {}
 
+  @PiiResponse({
+    fields: { 'items[].phone': 'phone' },
+    subjects: [
+      { path: 'items[].userId', type: 'user' },
+      { param: 'id', type: 'notification' },
+    ],
+  })
+  campaign(): void {}
+
   plain(): void {}
 }
 
@@ -245,6 +254,16 @@ describe('PiiMaskingInterceptor', () => {
     await call(interceptor, { handler: 'list', body: { data } });
     expect(recorder.records[0].subjects).toHaveLength(1000);
     expect(recorder.records[0].subjectCount).toBe(1500);
+  });
+
+  it('keeps every declared subject kind when the cap cuts a long list', async () => {
+    const { interceptor, recorder } = setup();
+    const items = Array.from({ length: 1500 }, (_, i) => ({ userId: `u-${i}`, phone: '010-1234-5678' }));
+    await call(interceptor, { handler: 'campaign', body: { items }, params: { id: 'c-1' } });
+    const { subjects, subjectCount } = recorder.records[0];
+    expect(subjects).toHaveLength(1000);
+    expect(subjects).toContainEqual({ type: 'notification', id: 'c-1' });
+    expect(subjectCount).toBe(1501);
   });
 
   it('does not record when every declared value is empty', async () => {

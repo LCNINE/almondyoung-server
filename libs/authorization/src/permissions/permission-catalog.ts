@@ -84,7 +84,7 @@ export const PERMISSION_CATALOG = [
     grant: ADMIN,
   }),
   permission('customer.pii.read', '개인정보 보기', '가려진 이름·연락처·주소·계좌의 원본을 본다(열람 기록이 남는다)', {
-    owners: ['user-service', 'core', 'membership', 'notification', 'wallet', 'admin-web'],
+    owners: ['user-service', 'core', 'membership', 'notification', 'wallet', 'ugc-service', 'channel-adapter', 'admin-web'],
     grant: ADMIN,
     ...DANGEROUS,
   }),

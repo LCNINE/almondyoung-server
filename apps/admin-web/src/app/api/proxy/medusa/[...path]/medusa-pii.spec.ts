@@ -5,7 +5,7 @@ const order = {
   order: {
     id: 'order_1',
     email: 'abcd@x.com',
-    shipping_address: { first_name: '길동', last_name: '홍', phone: '010-1234-5678', address_1: '서울특별시 송파구 중대로 135', address_2: '101동', postal_code: '05510' },
+    shipping_address: { first_name: '길동', last_name: '홍', company: '아몬드상회', phone: '010-1234-5678', address_1: '서울특별시 송파구 중대로 135', address_2: '101동', postal_code: '05510' },
     customer: { id: 'cus_1', email: 'abcd@x.com', metadata: { default_entrance_password: '1234#' } },
     items: [{ id: 'item_1', title: '상품', quantity: 1 }],
     metadata: { note: 'x' },
@@ -55,7 +55,7 @@ describe('maskMedusaBody', () => {
       order: {
         id: 'order_1',
         email: 'ab***@x.com',
-        shipping_address: { first_name: '길*', last_name: '*', phone: '010-****-5678', address_1: '서울특별시 송파구 …', address_2: '[가림]', postal_code: '*****' },
+        shipping_address: { first_name: '길*', last_name: '*', company: '아***회', phone: '010-****-5678', address_1: '서울특별시 송파구 …', address_2: '[가림]', postal_code: '*****' },
         customer: { id: 'cus_1', email: 'ab***@x.com', metadata: null },
         items: [{ id: 'item_1', title: '상품', quantity: 1 }],
         metadata: null,
