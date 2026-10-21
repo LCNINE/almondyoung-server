@@ -834,11 +834,16 @@ export function setup(infra: SharedInfra) {
     },
   });
 
+  // Next 15 는 공식 지원 기간(출시 후 2년)이 끝나 OpenNext 가 빌드를 거부한다. SST 기본 빌드 명령에 플래그만 더했다.
+  // admin-web·storefront 를 Next 16 으로 올리면 이 값과 두 buildCommand 를 지운다.
+  const next15BuildCommand = 'npx --yes @opennextjs/aws@3.9.14 build --dangerously-use-unsupported-next-version';
+
   // ─── admin-web (Next.js / OpenNext, CloudFront) ───
   // admin-web 자체가 OIDC RP. 빌드 단계의 page-data collection 이 OIDC env 를 required 로 읽으므로,
   // 아래 7개 변수는 누락 시 OpenNext 빌드가 실패한다 (apps/admin-web/src/lib/auth/env.ts 참조).
   new sst.aws.Nextjs('AdminWeb', {
     path: '../../../apps/admin-web',
+    buildCommand: next15BuildCommand,
     // arm64(Graviton) Lambda — server 함수 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
     // (image optimizer 는 SST 가 항상 arm64 로 빌드.)
     //
@@ -971,6 +976,7 @@ export function setup(infra: SharedInfra) {
   // 백엔드 서비스 URL은 storefront가 BACKEND_DOMAIN + 서비스 서브도메인 규칙으로 조립한다.
   new sst.aws.Nextjs('Storefront', {
     path: '../../../web/almondyoung-storefront',
+    buildCommand: next15BuildCommand,
     // arm64(Graviton) Lambda — server 함수 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
     // (image optimizer 는 SST 가 항상 arm64 로 빌드.)
     server: { architecture: 'arm64' },
