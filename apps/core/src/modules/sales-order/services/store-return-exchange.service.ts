@@ -675,14 +675,18 @@ export class StoreReturnExchangeService {
     };
 
     const returnedLines = resolved
-      .map((line) => ({
-        salesOrderLineId: line.salesOrderLineId,
-        channelOrderItemId: line.channelOrderItemId ?? undefined,
-        orderedQuantity: line.orderedQuantity,
-        returnedQuantity: returnedSets(line.salesOrderLineId),
-        // 주문 − 취소 전부. 출고 뒤 취소가 있으면 소비자가 전량 반품을 이 값으로 판정한다(U3)
-        remainingQuantity: lineQuantities.get(line.salesOrderLineId)?.remaining,
-      }))
+      .map((line) => {
+        const remaining = lineQuantities.get(line.salesOrderLineId)?.remaining;
+        return {
+          salesOrderLineId: line.salesOrderLineId,
+          channelOrderItemId: line.channelOrderItemId ?? undefined,
+          orderedQuantity: line.orderedQuantity,
+          returnedQuantity: returnedSets(line.salesOrderLineId),
+          // 주문 − 취소 전부. 출고 뒤 취소가 있으면 소비자가 전량 반품을 이 값으로 판정한다(U3).
+          // 음수(초과 취소)는 데이터 오류지만 Wallet 이 이미 환불한 뒤라 발행이 계약 검증에서 죽으면 안 된다 — 0 으로 낸다
+          remainingQuantity: remaining === undefined ? undefined : Math.max(0, remaining),
+        };
+      })
       .filter((line) => line.returnedQuantity > 0);
 
     if (returnedLines.length === 0) {
@@ -772,7 +776,7 @@ export class StoreReturnExchangeService {
         .set({ adminRefundAmount: refundAmount, adminNote, updatedAt: new Date() })
         .where(eq(returnExchangeTables.returnRequests.id, returnRequestId));
       return this.finishInspectedReturn(tx, rr, salesOrder, refundAmount, adminId, {
-        refundAmountSource: 'admin',
+        refundAmountSource: 'admin_input',
         refundAmount,
         refundCap: cap,
         adminNote,
@@ -807,7 +811,7 @@ export class StoreReturnExchangeService {
    * 0 → 즉시 `completed` + 완료 이벤트, 그 밖 → `refund_pending`(Wallet 환불 또는 수동 완료 대기).
    */
   private async finishInspectedReturn(
-    tx: Parameters<Parameters<typeof this.db.db.transaction>[0]>[0],
+    tx: DbTx,
     rr: ReturnRequestRow,
     salesOrder: RefundSalesOrder | undefined,
     amount: number,
@@ -1333,7 +1337,10 @@ export class StoreReturnExchangeService {
     if (filters.createdTo) conditions.push(lte(returnExchangeTables.exchangeRequests.createdAt, filters.createdTo));
     if (filters.status) {
       conditions.push(
-        inArray(returnExchangeTables.exchangeRequests.status, filters.status.split(',') as ExchangeRequestRow['status'][]),
+        inArray(
+          returnExchangeTables.exchangeRequests.status,
+          filters.status.split(',') as ExchangeRequestRow['status'][],
+        ),
       );
     }
 
@@ -1726,6 +1733,12 @@ export class StoreReturnExchangeService {
       if (units.kind === 'set_partial') return { kind: 'set_partial' };
       unitsByLine.set(lineId, units.units);
     }
+    // 관리자 금액으로 완료한 앞선 반품이 건드린 라인은 자동 공식이 그 몫을 모른다 — 관리자 경로와 상한으로 보낸다(A8)
+    const priors = await this.readPriorCompletedReturns(tx, salesOrder.id, returnRequestId);
+    const touchedByAdminAmount = [...priors.values()].some(
+      (prior) => prior.adminRefundAmount !== null && [...prior.lineIds].some((lineId) => unitsByLine.has(lineId)),
+    );
+    if (touchedByAdminAmount) return { kind: 'set_partial' };
     return {
       kind: 'amount',
       amount: this.calculateReturnRefund(
@@ -1758,25 +1771,7 @@ export class StoreReturnExchangeService {
     const lineQuantities = await readLineQuantities(tx, salesOrder.id);
     const touchedLineIds = new Set((await readReturnRequestSalesUnits(tx, returnRequestId)).keys());
 
-    const requests = returnExchangeTables.returnRequests;
-    const items = returnExchangeTables.returnRequestItems;
-    const priorItemRows = await tx
-      .select({ returnRequestId: requests.id, salesOrderLineId: items.salesOrderLineId })
-      .from(requests)
-      .innerJoin(items, eq(items.returnRequestId, requests.id))
-      .where(
-        and(
-          eq(requests.salesOrderId, salesOrder.id),
-          eq(requests.status, 'completed'),
-          ne(requests.id, returnRequestId),
-        ),
-      );
-    const lineIdsByPrior = new Map<string, Set<string>>();
-    for (const row of priorItemRows) {
-      const lineIds = lineIdsByPrior.get(row.returnRequestId) ?? new Set<string>();
-      lineIds.add(row.salesOrderLineId);
-      lineIdsByPrior.set(row.returnRequestId, lineIds);
-    }
+    const lineIdsByPrior = await this.readPriorCompletedReturns(tx, salesOrder.id, returnRequestId);
 
     const attempts = returnExchangeTables.returnRefundAttempts;
     const succeededRows =
@@ -1792,7 +1787,7 @@ export class StoreReturnExchangeService {
     for (const row of succeededRows) {
       refundedByPrior.set(row.returnRequestId, (refundedByPrior.get(row.returnRequestId) ?? 0) + row.amount);
     }
-    const priorReturns: PriorCompletedReturn[] = [...lineIdsByPrior].map(([id, lineIds]) => ({
+    const priorReturns: PriorCompletedReturn[] = [...lineIdsByPrior].map(([id, { lineIds }]) => ({
       lineIds: [...lineIds],
       refundedAmount: refundedByPrior.get(id) ?? null,
     }));
@@ -1807,11 +1802,46 @@ export class StoreReturnExchangeService {
     });
   }
 
-  /** 환불 판단에 쓰는 주문 칸 — 없으면 undefined. */
-  private async findRefundSalesOrder(
-    tx: Parameters<Parameters<typeof this.db.db.transaction>[0]>[0],
+  /**
+   * 같은 주문의 앞선 완료 반품(이 요청 제외) — 요청마다 건드린 라인 id 와 관리자가 넣은 금액(없으면 null).
+   * 상한(A4)과 자동 금액의 관리자 경로 판정(A8)이 같이 쓴다. 청구 항목은 라인 id 만 읽는다(수량은 수량 문의 몫).
+   */
+  private async readPriorCompletedReturns(
+    tx: DbTx,
     salesOrderId: string,
-  ): Promise<RefundSalesOrder | undefined> {
+    returnRequestId: string,
+  ): Promise<Map<string, { lineIds: Set<string>; adminRefundAmount: number | null }>> {
+    const requests = returnExchangeTables.returnRequests;
+    const items = returnExchangeTables.returnRequestItems;
+    const rows = await tx
+      .select({
+        returnRequestId: requests.id,
+        adminRefundAmount: requests.adminRefundAmount,
+        salesOrderLineId: items.salesOrderLineId,
+      })
+      .from(requests)
+      .innerJoin(items, eq(items.returnRequestId, requests.id))
+      .where(
+        and(
+          eq(requests.salesOrderId, salesOrderId),
+          eq(requests.status, 'completed'),
+          ne(requests.id, returnRequestId),
+        ),
+      );
+    const priors = new Map<string, { lineIds: Set<string>; adminRefundAmount: number | null }>();
+    for (const row of rows) {
+      const prior = priors.get(row.returnRequestId) ?? {
+        lineIds: new Set<string>(),
+        adminRefundAmount: row.adminRefundAmount,
+      };
+      prior.lineIds.add(row.salesOrderLineId);
+      priors.set(row.returnRequestId, prior);
+    }
+    return priors;
+  }
+
+  /** 환불 판단에 쓰는 주문 칸 — 없으면 undefined. */
+  private async findRefundSalesOrder(tx: DbTx, salesOrderId: string): Promise<RefundSalesOrder | undefined> {
     return tx
       .select({
         id: wmsTables.salesOrders.id,

@@ -127,6 +127,8 @@ PR 1 은 기록만 더했다(이중 기록). PR 2a 가 `cancelledQuantitySql`(�
 - A5 상한은 `Math.floor`. 반올림하면 1원 넘게 나갈 수 있다.
 - A6 재시도는 저장된 `return_requests.admin_refund_amount` 를 쓰고 상한을 다시 검사하지 않는다(스펙 D7).
 - A7 견적 `GET /admin/return-requests/:id/refund-quote`(`order.claim.read`, `inspected` 에서만, 개인정보 없음). admin-web 이 «완료 처리» 클릭 때 불러 자동/입력 갈래를 `decideCompletion` 으로 고른다.
+- A8 관리자 금액이 들어간 완료 반품(`admin_refund_amount` 있음)이 건드린 라인의 다음 반품은 세트 통째·단품이어도 자동 금액 없이 관리자 경로(견적 `admin_amount`, `complete` 는 400)로 간다.
+  자동 공식은 결제총액 비례라 앞선 관리자 금액을 몰라 라인 배분액을 넘겨 환불한다 — 상한이 그 몫을 빼서 과환불을 막는다. 모두 자동인 이력은 그대로다.
 - 요청 하나에 금액 하나: 요청에 세트 일부 줄이 하나라도 있으면 그 요청 전체 금액을 관리자가 입력하고, 상한은 이 요청이 건드린 라인들의 (U1 로 줄인) 배분액 합 − 앞선 완료 반품의 아는 환불액(A4).
 - 마이그레이션 하나(expand, additive): `return_requests.admin_refund_amount` + 체크 `ck_return_requests_admin_refund_amount_nonnegative`. 배포 `migrate → deploy`.
 

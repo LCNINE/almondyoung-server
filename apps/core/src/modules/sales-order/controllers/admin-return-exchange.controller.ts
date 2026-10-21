@@ -11,7 +11,17 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { IsArray, IsOptional, IsString, MaxLength, ValidateNested, IsInt, Min, IsNotEmpty } from 'class-validator';
+import {
+  IsArray,
+  IsOptional,
+  IsString,
+  MaxLength,
+  ValidateNested,
+  IsInt,
+  Min,
+  IsNotEmpty,
+  Matches,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { RequireScopes, ScopeGuard, User, RequirePermission, PiiResponse } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
@@ -44,6 +54,8 @@ export class AdminCompleteReturnWithAmountDto {
 
   @IsString()
   @IsNotEmpty()
+  // 공백만 있는 메모는 사유가 아니다(A2)
+  @Matches(/\S/, { message: 'adminNote must contain a non-whitespace character' })
   @MaxLength(500)
   adminNote: string;
 }
