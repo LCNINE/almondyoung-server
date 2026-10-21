@@ -3,6 +3,17 @@
  * 이 명단에 있는데 admin 이 실행할 수 있게 되면 게이트가 «명단에서 빼라»고 실패한다.
  */
 export const MASTER_ONLY_MUTATIONS: readonly string[] = [
+  'features/attendance/hooks/use-attendance-wage.ts#useDeletePayGroup',
+  'features/attendance/hooks/use-attendance-wage.ts#useUpdatePayPolicy',
+  'features/attendance/hooks/use-attendance-wage.ts#useDeletePayPolicy',
+  'features/attendance/hooks/use-attendance-wage.ts#useRemoveWageWorker',
+  'features/attendance/hooks/use-attendance-wage.ts#useUpdateWageRate',
+  'features/attendance/hooks/use-attendance-wage.ts#useDeleteWageRate',
+  'features/attendance/hooks/use-attendance-wage.ts#useUpdateWorkSchedule',
+  'features/attendance/hooks/use-attendance-wage.ts#useDeleteWorkSchedule',
+  'features/attendance/hooks/use-attendance-wage.ts#useUpdateMinimumWage',
+  'features/attendance/hooks/use-attendance-wage.ts#useDeleteMinimumWage',
+  'features/attendance/hooks/use-attendance-wage.ts#useClearWageDecision',
   'features/attendance/hooks/use-attendance-wage.ts#useAddMinimumWage',
   'features/attendance/hooks/use-attendance-wage.ts#useAddPayPolicy',
   'features/attendance/hooks/use-attendance-wage.ts#useAddWageRate',

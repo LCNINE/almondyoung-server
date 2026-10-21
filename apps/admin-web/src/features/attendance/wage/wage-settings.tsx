@@ -3,7 +3,9 @@
 import { useState, type ReactNode } from 'react';
 import {
   defaultWageRules,
+  type MinimumWage,
   type PayBasis,
+  type PayPolicy,
   type PayGroup,
   type WageRules,
 } from '@packages/domain-types/attendance-wage';
@@ -14,11 +16,17 @@ import {
   useAddMinimumWage,
   useAddPayPolicy,
   useCreatePayGroup,
+  useDeleteMinimumWage,
+  useDeletePayGroup,
+  useDeletePayPolicy,
   useMinimumWages,
   usePayGroups,
   usePayPolicies,
+  useUpdateMinimumWage,
   useUpdatePayGroup,
+  useUpdatePayPolicy,
 } from '../hooks/use-attendance-wage';
+import { ConfirmDelete } from './confirm-delete';
 import { formatWon, seoulToday } from './lib/wage-format';
 import { fieldClass, panelClass, WageHeading } from './wage-ui';
 
@@ -202,6 +210,7 @@ function CreateGroupForm({ onCreated }: { onCreated: (id: string) => void }) {
 
 function GroupForm({ group }: { group: PayGroup }) {
   const update = useUpdatePayGroup();
+  const remove = useDeletePayGroup();
   const [name, setName] = useState(group.name);
   const [payday, setPayday] = useState(group.payday);
   const [periodCloseDay, setPeriodCloseDay] = useState(group.periodCloseDay);
@@ -292,6 +301,16 @@ function GroupForm({ group }: { group: PayGroup }) {
           </Button>
         </div>
       </Can>
+      <Can run={useDeletePayGroup}>
+        <div className="mt-3">
+          <ConfirmDelete
+            label="그룹 지우기"
+            question="근무자나 정산 기록이 없는 그룹만 지울 수 있어요. 지울까요?"
+            disabled={remove.isPending}
+            onConfirm={() => remove.mutate(group.id)}
+          />
+        </div>
+      </Can>
     </section>
   );
 }
@@ -319,12 +338,15 @@ function RuleRow({
 function RulesSection({ group }: { group: PayGroup }) {
   const policies = usePayPolicies(group.id);
   const add = useAddPayPolicy();
-  const latest = policies.data?.[policies.data.length - 1];
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected =
+    policies.data?.find((policy) => policy.id === selectedId) ??
+    policies.data?.[policies.data.length - 1];
   const [draft, setDraft] = useState<WageRules | null>(null);
   const [effectiveFrom, setEffectiveFrom] = useState(() =>
     seoulToday(new Date())
   );
-  const rules = draft ?? latest?.rules;
+  const rules = draft ?? selected?.rules;
 
   if (policies.isError) {
     return (
@@ -705,37 +727,67 @@ function RulesSection({ group }: { group: PayGroup }) {
           <option value={10}>10원 단위</option>
         </select>
       </RuleRow>
-      <Can run={useAddPayPolicy}>
-        <div className="mt-4 flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-end">
-          <label className="text-sm text-slate-600">
-            적용 시작일
-            <input
-              type="date"
-              className={fieldClass}
-              value={effectiveFrom}
-              onChange={(event) => setEffectiveFrom(event.target.value)}
+      <div className="mt-4 space-y-3 border-t pt-4">
+        {selected && (
+          <Can run={useUpdatePayPolicy}>
+            <PolicyEditRow
+              key={selected.id}
+              groupId={group.id}
+              policy={selected}
+              rules={rules}
+              changed={!!draft}
+              canDelete={(policies.data ?? []).length > 1}
+              onDone={() => setDraft(null)}
+              onDeleted={() => {
+                setSelectedId(null);
+                setDraft(null);
+              }}
             />
-          </label>
-          <Button
-            disabled={!draft || !effectiveFrom || add.isPending}
-            onClick={() =>
-              add.mutate(
-                { groupId: group.id, effectiveFrom, rules },
-                { onSuccess: () => setDraft(null) }
-              )
-            }
-          >
-            이 날부터 규칙 적용
-          </Button>
-        </div>
-      </Can>
+          </Can>
+        )}
+        <Can run={useAddPayPolicy}>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <label className="text-sm text-slate-600">
+              새 적용 시작일
+              <input
+                type="date"
+                className={fieldClass}
+                value={effectiveFrom}
+                onChange={(event) => setEffectiveFrom(event.target.value)}
+              />
+            </label>
+            <Button
+              disabled={!draft || !effectiveFrom || add.isPending}
+              onClick={() =>
+                add.mutate(
+                  { groupId: group.id, effectiveFrom, rules },
+                  { onSuccess: () => setDraft(null) }
+                )
+              }
+            >
+              이 날부터 새 규칙으로 적용
+            </Button>
+          </div>
+        </Can>
+      </div>
       {(policies.data ?? []).length > 1 && (
-        <p className="mt-3 text-xs text-slate-500">
-          규칙 이력:{' '}
-          {(policies.data ?? [])
-            .map((policy) => policy.effectiveFrom)
-            .join(' · ')}
-        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+          규칙 이력:
+          {(policies.data ?? []).map((policy) => (
+            <button
+              key={policy.id}
+              type="button"
+              aria-pressed={policy.id === selected?.id}
+              onClick={() => {
+                setSelectedId(policy.id);
+                setDraft(null);
+              }}
+              className={`rounded-full px-3 py-1 ${policy.id === selected?.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}
+            >
+              {policy.effectiveFrom}부터
+            </button>
+          ))}
+        </div>
       )}
     </section>
   );
@@ -756,10 +808,7 @@ function MinimumWageSection() {
       </p>
       <ul className="mb-4 divide-y text-sm">
         {(wages.data ?? []).map((wage) => (
-          <li key={wage.effectiveFrom} className="flex justify-between py-2">
-            <span>{wage.effectiveFrom}부터</span>
-            <span className="font-semibold">{formatWon(wage.hourlyWage)}</span>
-          </li>
+          <MinimumWageRow key={wage.effectiveFrom} wage={wage} />
         ))}
       </ul>
       <Can run={useAddMinimumWage}>
@@ -804,5 +853,128 @@ function MinimumWageSection() {
         </div>
       </Can>
     </section>
+  );
+}
+
+function MinimumWageRow({ wage }: { wage: MinimumWage }) {
+  const update = useUpdateMinimumWage();
+  const remove = useDeleteMinimumWage();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(wage.hourlyWage));
+
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-2 py-2">
+      <span>{wage.effectiveFrom}부터</span>
+      {editing ? (
+        <span className="flex items-center gap-1">
+          <input
+            type="number"
+            min={1}
+            aria-label="시간급(원)"
+            className={`${fieldClass} w-32`}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+          />
+          <Button
+            size="sm"
+            disabled={!(Number(value) > 0) || update.isPending}
+            onClick={() =>
+              update.mutate(
+                {
+                  effectiveFrom: wage.effectiveFrom,
+                  hourlyWage: Math.floor(Number(value)),
+                },
+                { onSuccess: () => setEditing(false) }
+              )
+            }
+          >
+            저장
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+            취소
+          </Button>
+        </span>
+      ) : (
+        <span className="flex items-center gap-1">
+          <span className="font-semibold">{formatWon(wage.hourlyWage)}</span>
+          <Can run={useUpdateMinimumWage}>
+            <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
+              고치기
+            </Button>
+          </Can>
+          <Can run={useDeleteMinimumWage}>
+            <ConfirmDelete
+              disabled={remove.isPending}
+              onConfirm={() => remove.mutate(wage.effectiveFrom)}
+            />
+          </Can>
+        </span>
+      )}
+    </li>
+  );
+}
+
+function PolicyEditRow({
+  groupId,
+  policy,
+  rules,
+  changed,
+  canDelete,
+  onDone,
+  onDeleted,
+}: {
+  groupId: string;
+  policy: PayPolicy;
+  rules: WageRules;
+  changed: boolean;
+  canDelete: boolean;
+  onDone: () => void;
+  onDeleted: () => void;
+}) {
+  const update = useUpdatePayPolicy();
+  const remove = useDeletePayPolicy();
+  const [effectiveFrom, setEffectiveFrom] = useState(policy.effectiveFrom);
+
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+      <label className="text-sm text-slate-600">
+        이 규칙의 적용 시작일
+        <input
+          type="date"
+          className={fieldClass}
+          value={effectiveFrom}
+          onChange={(event) => setEffectiveFrom(event.target.value)}
+        />
+      </label>
+      <Button
+        variant="outline"
+        disabled={
+          (!changed && effectiveFrom === policy.effectiveFrom) ||
+          !effectiveFrom ||
+          update.isPending
+        }
+        onClick={() =>
+          update.mutate(
+            { groupId, policyId: policy.id, effectiveFrom, rules },
+            { onSuccess: onDone }
+          )
+        }
+      >
+        이 규칙을 이대로 고치기
+      </Button>
+      {canDelete && (
+        <ConfirmDelete
+          label="이 규칙 지우기"
+          question={`${policy.effectiveFrom}부터의 규칙을 지울까요?`}
+          disabled={remove.isPending}
+          onConfirm={() =>
+            remove.mutate(
+              { groupId, policyId: policy.id },
+              { onSuccess: onDeleted }
+            )
+          }
+        />
+      )}
+    </div>
   );
 }

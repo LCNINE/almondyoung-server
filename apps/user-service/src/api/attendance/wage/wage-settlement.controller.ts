@@ -1,6 +1,6 @@
 import { MasterRoleGuard, RequirePermission, type JwtPayload } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, Query, UseGuards } from '@nestjs/common';
 import type {
   PayGroup,
   SettlementRecord,
@@ -58,6 +58,26 @@ export class WageSettlementController {
     @Body() dto: DecideAbsenceDto,
   ): Promise<void> {
     return this.service.decideAbsence(user.id, userId, workDate, dto);
+  }
+
+  @Delete('overtime/:userId/:workDate')
+  @RequirePermission('attendance.request.review')
+  clearOvertime(
+    @CurrentUser() user: JwtPayload,
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('workDate') workDate: string,
+  ): Promise<void> {
+    return this.service.clearDecision(user.id, 'overtime', userId, workDate);
+  }
+
+  @Delete('absences/:userId/:workDate')
+  @RequirePermission('attendance.request.review')
+  clearAbsence(
+    @CurrentUser() user: JwtPayload,
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('workDate') workDate: string,
+  ): Promise<void> {
+    return this.service.clearDecision(user.id, 'absence', userId, workDate);
   }
 
   @Get('settlements/preview')

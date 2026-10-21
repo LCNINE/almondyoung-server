@@ -189,6 +189,72 @@ useDecideAbsence.permission = [
   'attendance.request.review',
 ] as const satisfies PermissionRequirement;
 
+export const useDeletePayGroup = () =>
+  useWageMutation(attendanceWageApi.deleteGroup, '급여 그룹을 지웠어요.');
+useDeletePayGroup.permission = [
+  'attendance.wage.write',
+] as const satisfies PermissionRequirement;
+
+export const useUpdatePayPolicy = () =>
+  useWageMutation(attendanceWageApi.updatePolicy, '계산 규칙을 고쳤어요.');
+useUpdatePayPolicy.permission = [
+  'attendance.wage.write',
+] as const satisfies PermissionRequirement;
+
+export const useDeletePayPolicy = () =>
+  useWageMutation(attendanceWageApi.deletePolicy, '계산 규칙을 지웠어요.');
+useDeletePayPolicy.permission = [
+  'attendance.wage.write',
+] as const satisfies PermissionRequirement;
+
+export const useRemoveWageWorker = () =>
+  useWageMutation(attendanceWageApi.removeWorker, '명단에서 뺐어요.');
+useRemoveWageWorker.permission = [
+  'attendance.wage.write',
+] as const satisfies PermissionRequirement;
+
+export const useUpdateWageRate = () =>
+  useWageMutation(attendanceWageApi.updateRate, '시급을 고쳤어요.');
+useUpdateWageRate.permission = [
+  'attendance.wage.write',
+] as const satisfies PermissionRequirement;
+
+export const useDeleteWageRate = () =>
+  useWageMutation(attendanceWageApi.deleteRate, '시급을 지웠어요.');
+useDeleteWageRate.permission = [
+  'attendance.wage.write',
+] as const satisfies PermissionRequirement;
+
+export const useUpdateWorkSchedule = () =>
+  useWageMutation(attendanceWageApi.updateSchedule, '근무 시간표를 고쳤어요.');
+useUpdateWorkSchedule.permission = [
+  'attendance.wage.write',
+] as const satisfies PermissionRequirement;
+
+export const useDeleteWorkSchedule = () =>
+  useWageMutation(attendanceWageApi.deleteSchedule, '근무 시간표를 지웠어요.');
+useDeleteWorkSchedule.permission = [
+  'attendance.wage.write',
+] as const satisfies PermissionRequirement;
+
+export const useUpdateMinimumWage = () =>
+  useWageMutation(attendanceWageApi.updateMinimumWage, '최저임금을 고쳤어요.');
+useUpdateMinimumWage.permission = [
+  'attendance.wage.write',
+] as const satisfies PermissionRequirement;
+
+export const useDeleteMinimumWage = () =>
+  useWageMutation(attendanceWageApi.deleteMinimumWage, '최저임금을 지웠어요.');
+useDeleteMinimumWage.permission = [
+  'attendance.wage.write',
+] as const satisfies PermissionRequirement;
+
+export const useClearWageDecision = () =>
+  useWageMutation(attendanceWageApi.clearDecision, '판정을 취소했어요.');
+useClearWageDecision.permission = [
+  'attendance.request.review',
+] as const satisfies PermissionRequirement;
+
 /** 내려받기도 서버에 기록이 남는 동작이다 — 데이터를 받아 화면이 엑셀을 만든다. */
 export const useExportSettlement = () =>
   useMutation({

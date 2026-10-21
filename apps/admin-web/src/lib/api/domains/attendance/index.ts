@@ -235,6 +235,105 @@ export const attendanceWageApi = {
         input
       )
     ).data,
+  deleteGroup: async (id: string) =>
+    (await client.delete(`${wageBase}/groups/${id}`)).data,
+  updatePolicy: async ({
+    groupId,
+    policyId,
+    ...input
+  }: {
+    groupId: string;
+    policyId: string;
+    effectiveFrom?: string;
+    rules?: WageRules;
+  }) =>
+    (
+      await client.patch<PayPolicy>(
+        `${wageBase}/groups/${groupId}/policies/${policyId}`,
+        input
+      )
+    ).data,
+  deletePolicy: async ({
+    groupId,
+    policyId,
+  }: {
+    groupId: string;
+    policyId: string;
+  }) =>
+    (await client.delete(`${wageBase}/groups/${groupId}/policies/${policyId}`))
+      .data,
+  removeWorker: async (userId: string) =>
+    (await client.delete(`${wageBase}/workers/${userId}`)).data,
+  updateRate: async ({
+    userId,
+    rateId,
+    ...input
+  }: {
+    userId: string;
+    rateId: string;
+    effectiveFrom?: string;
+    hourlyWage?: number;
+  }) =>
+    (
+      await client.patch<WageRate>(
+        `${wageBase}/workers/${userId}/rates/${rateId}`,
+        input
+      )
+    ).data,
+  deleteRate: async ({ userId, rateId }: { userId: string; rateId: string }) =>
+    (await client.delete(`${wageBase}/workers/${userId}/rates/${rateId}`)).data,
+  updateSchedule: async ({
+    userId,
+    scheduleId,
+    ...input
+  }: {
+    userId: string;
+    scheduleId: string;
+    effectiveFrom?: string;
+    effectiveTo?: string | null;
+    days?: ScheduleDay[];
+  }) =>
+    (
+      await client.patch<WorkSchedule>(
+        `${wageBase}/workers/${userId}/schedules/${scheduleId}`,
+        input
+      )
+    ).data,
+  deleteSchedule: async ({
+    userId,
+    scheduleId,
+  }: {
+    userId: string;
+    scheduleId: string;
+  }) =>
+    (
+      await client.delete(
+        `${wageBase}/workers/${userId}/schedules/${scheduleId}`
+      )
+    ).data,
+  updateMinimumWage: async ({ effectiveFrom, hourlyWage }: MinimumWage) =>
+    (
+      await client.patch<MinimumWage>(
+        `${wageBase}/minimum-wages/${effectiveFrom}`,
+        { hourlyWage }
+      )
+    ).data,
+  deleteMinimumWage: async (effectiveFrom: string) =>
+    (await client.delete(`${wageBase}/minimum-wages/${effectiveFrom}`)).data,
+  clearDecision: async ({
+    kind,
+    userId,
+    workDate,
+  }: {
+    kind: 'overtime' | 'absence';
+    userId: string;
+    workDate: string;
+  }) =>
+    (
+      await client.delete(
+        `${wageBase}/${kind === 'overtime' ? 'overtime' : 'absences'}/${userId}/${workDate}`
+      )
+    ).data,
   minimumWages: async () =>
     (await client.get<MinimumWage[]>(`${wageBase}/minimum-wages`)).data,
   addMinimumWage: async (input: MinimumWage) =>

@@ -1,6 +1,6 @@
 import { MasterRoleGuard, RequirePermission, type JwtPayload } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import type {
   MinimumWage,
   PayGroup,
@@ -18,7 +18,11 @@ import {
   CreateWageRateDto,
   CreateWorkScheduleDto,
   SaveWorkerDto,
+  UpdateMinimumWageDto,
   UpdatePayGroupDto,
+  UpdatePayPolicyDto,
+  UpdateWageRateDto,
+  UpdateWorkScheduleDto,
 } from './dto/wage-settings.dto';
 import { WageSettingsService } from './wage-settings.service';
 
@@ -118,5 +122,96 @@ export class WageSettingsController {
   @RequirePermission('attendance.wage.write')
   addMinimumWage(@CurrentUser() user: JwtPayload, @Body() dto: CreateMinimumWageDto): Promise<MinimumWage> {
     return this.service.addMinimumWage(user.id, dto);
+  }
+
+  @Delete('groups/:id')
+  @RequirePermission('attendance.wage.write')
+  deleteGroup(@CurrentUser() user: JwtPayload, @Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    return this.service.deleteGroup(user.id, id);
+  }
+
+  @Patch('groups/:id/policies/:policyId')
+  @RequirePermission('attendance.wage.write')
+  updatePolicy(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('policyId', ParseUUIDPipe) policyId: string,
+    @Body() dto: UpdatePayPolicyDto,
+  ): Promise<PayPolicy> {
+    return this.service.updatePolicy(user.id, id, policyId, dto);
+  }
+
+  @Delete('groups/:id/policies/:policyId')
+  @RequirePermission('attendance.wage.write')
+  deletePolicy(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('policyId', ParseUUIDPipe) policyId: string,
+  ): Promise<void> {
+    return this.service.deletePolicy(user.id, id, policyId);
+  }
+
+  @Delete('workers/:userId')
+  @RequirePermission('attendance.wage.write')
+  removeWorker(@CurrentUser() user: JwtPayload, @Param('userId', ParseUUIDPipe) userId: string): Promise<void> {
+    return this.service.removeWorker(user.id, userId);
+  }
+
+  @Patch('workers/:userId/rates/:rateId')
+  @RequirePermission('attendance.wage.write')
+  updateRate(
+    @CurrentUser() user: JwtPayload,
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('rateId', ParseUUIDPipe) rateId: string,
+    @Body() dto: UpdateWageRateDto,
+  ): Promise<WageRate> {
+    return this.service.updateRate(user.id, userId, rateId, dto);
+  }
+
+  @Delete('workers/:userId/rates/:rateId')
+  @RequirePermission('attendance.wage.write')
+  deleteRate(
+    @CurrentUser() user: JwtPayload,
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('rateId', ParseUUIDPipe) rateId: string,
+  ): Promise<void> {
+    return this.service.deleteRate(user.id, userId, rateId);
+  }
+
+  @Patch('workers/:userId/schedules/:scheduleId')
+  @RequirePermission('attendance.wage.write')
+  updateSchedule(
+    @CurrentUser() user: JwtPayload,
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('scheduleId', ParseUUIDPipe) scheduleId: string,
+    @Body() dto: UpdateWorkScheduleDto,
+  ): Promise<WorkSchedule> {
+    return this.service.updateSchedule(user.id, userId, scheduleId, dto);
+  }
+
+  @Delete('workers/:userId/schedules/:scheduleId')
+  @RequirePermission('attendance.wage.write')
+  deleteSchedule(
+    @CurrentUser() user: JwtPayload,
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('scheduleId', ParseUUIDPipe) scheduleId: string,
+  ): Promise<void> {
+    return this.service.deleteSchedule(user.id, userId, scheduleId);
+  }
+
+  @Patch('minimum-wages/:effectiveFrom')
+  @RequirePermission('attendance.wage.write')
+  updateMinimumWage(
+    @CurrentUser() user: JwtPayload,
+    @Param('effectiveFrom') effectiveFrom: string,
+    @Body() dto: UpdateMinimumWageDto,
+  ): Promise<MinimumWage> {
+    return this.service.updateMinimumWage(user.id, effectiveFrom, dto);
+  }
+
+  @Delete('minimum-wages/:effectiveFrom')
+  @RequirePermission('attendance.wage.write')
+  deleteMinimumWage(@CurrentUser() user: JwtPayload, @Param('effectiveFrom') effectiveFrom: string): Promise<void> {
+    return this.service.deleteMinimumWage(user.id, effectiveFrom);
   }
 }

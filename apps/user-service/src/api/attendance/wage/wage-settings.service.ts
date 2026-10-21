@@ -15,7 +15,11 @@ import type {
   CreateWageRateDto,
   CreateWorkScheduleDto,
   SaveWorkerDto,
+  UpdateMinimumWageDto,
   UpdatePayGroupDto,
+  UpdatePayPolicyDto,
+  UpdateWageRateDto,
+  UpdateWorkScheduleDto,
 } from './dto/wage-settings.dto';
 import { WageSettingsManager } from './wage-settings.manager';
 import { WageSettingsReader } from './wage-settings.reader';
@@ -75,5 +79,50 @@ export class WageSettingsService {
 
   addMinimumWage(actorId: string, dto: CreateMinimumWageDto): Promise<MinimumWage> {
     return this.manager.addMinimumWage(actorId, dto);
+  }
+
+  deleteGroup(actorId: string, groupId: string): Promise<void> {
+    return this.manager.deleteGroup(actorId, groupId);
+  }
+
+  updatePolicy(actorId: string, groupId: string, policyId: string, dto: UpdatePayPolicyDto): Promise<PayPolicy> {
+    return this.manager.updatePolicy(actorId, groupId, policyId, dto);
+  }
+
+  deletePolicy(actorId: string, groupId: string, policyId: string): Promise<void> {
+    return this.manager.deletePolicy(actorId, groupId, policyId);
+  }
+
+  removeWorker(actorId: string, userId: string): Promise<void> {
+    return this.manager.removeWorker(actorId, userId);
+  }
+
+  updateRate(actorId: string, userId: string, rateId: string, dto: UpdateWageRateDto): Promise<WageRate> {
+    return this.manager.updateRate(actorId, userId, rateId, dto);
+  }
+
+  deleteRate(actorId: string, userId: string, rateId: string): Promise<void> {
+    return this.manager.deleteRate(actorId, userId, rateId);
+  }
+
+  updateSchedule(
+    actorId: string,
+    userId: string,
+    scheduleId: string,
+    dto: UpdateWorkScheduleDto,
+  ): Promise<WorkSchedule> {
+    return this.manager.updateSchedule(actorId, userId, scheduleId, dto);
+  }
+
+  deleteSchedule(actorId: string, userId: string, scheduleId: string): Promise<void> {
+    return this.manager.deleteSchedule(actorId, userId, scheduleId);
+  }
+
+  updateMinimumWage(actorId: string, effectiveFrom: string, dto: UpdateMinimumWageDto): Promise<MinimumWage> {
+    return this.manager.updateMinimumWage(actorId, effectiveFrom, dto);
+  }
+
+  deleteMinimumWage(actorId: string, effectiveFrom: string): Promise<void> {
+    return this.manager.deleteMinimumWage(actorId, effectiveFrom);
   }
 }
