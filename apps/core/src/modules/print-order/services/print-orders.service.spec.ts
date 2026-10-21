@@ -81,6 +81,8 @@ function setup() {
             canceled,
             demand: 3 - canceled,
             remaining: 3 - canceled,
+            // 인쇄 외주 라인은 FOI 가 없어 SKU 층이 비어 있다
+            skus: [],
           },
         ]),
       ),

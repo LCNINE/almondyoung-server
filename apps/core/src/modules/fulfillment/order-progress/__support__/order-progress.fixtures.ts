@@ -24,7 +24,12 @@ export async function seedWorld(tx: DbTx): Promise<World> {
 
 export async function seedOrder(
   tx: DbTx,
-  args: { status?: 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled'; createdAt?: Date } = {},
+  args: {
+    status?: 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled';
+    createdAt?: Date;
+    /** 라인 주문 수량. 안 주면 1 */
+    quantity?: number;
+  } = {},
 ): Promise<{ salesOrderId: string; lineId: string }> {
   const [so] = await tx
     .insert(wmsTables.salesOrders)
@@ -39,7 +44,13 @@ export async function seedOrder(
     .returning();
   const [line] = await tx
     .insert(wmsTables.salesOrderLines)
-    .values({ salesOrderId: so.id, variantId: randomUUID(), productName: 'OP', quantity: 1, unitPrice: 1000 })
+    .values({
+      salesOrderId: so.id,
+      variantId: randomUUID(),
+      productName: 'OP',
+      quantity: args.quantity ?? 1,
+      unitPrice: 1000,
+    })
     .returning();
   return { salesOrderId: so.id, lineId: line.id };
 }
@@ -61,6 +72,8 @@ export async function seedFo(
     status?: 'created' | 'partially_reserved' | 'ready' | 'processing' | 'completed';
     dropShip?: 'pending' | 'forwarded' | 'completed' | 'canceled';
     createdAt?: Date;
+    /** FO 항목 수량. 안 주면 1 */
+    qty?: number;
   } = {},
 ): Promise<{ foId: string; foItemId: string }> {
   const [fo] = await tx
@@ -71,7 +84,7 @@ export async function seedFo(
       status: args.status ?? 'ready',
       fulfillmentMode: args.dropShip ? 'drop_ship' : 'in_house',
       directShipStatus: args.dropShip ?? null,
-      totalQty: 1,
+      totalQty: args.qty ?? 1,
       createdAt: args.createdAt ?? new Date(),
     })
     .returning();
@@ -82,7 +95,7 @@ export async function seedFo(
       salesOrderId: order.salesOrderId,
       salesOrderLineId: order.lineId,
       skuId: w.skuId,
-      qty: 1,
+      qty: args.qty ?? 1,
     })
     .returning();
   // 실제 FO 생성은 라인 구성을 굳힌다 — 고객 취소 계획이 비율을 거기서 읽는다(#1063)

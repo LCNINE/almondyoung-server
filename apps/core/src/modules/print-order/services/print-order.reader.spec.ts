@@ -32,8 +32,8 @@ describe('refundNotOpenedSql', () => {
   it('compares the line quantity with every cancellation line row of that line', () => {
     expect(rendered).toContain(`"sales_order_lines"."quantity" > coalesce((`);
     expect(rendered).toContain(`from "sales_order_cancellation_lines"`);
-    expect(rendered).toContain(`k6_cl.k6_line_id = "sales_order_lines"."id" ), 0)::int`);
-    expect(rendered).not.toContain('k6_shipment_phase =');
+    expect(rendered).toContain(`cancellation_line.canceled_line_id = "sales_order_lines"."id" ), 0)::int`);
+    expect(rendered).not.toContain('canceled_phase =');
     expect(rendered).not.toContain('cancellation_scope');
     expect(rendered).not.toContain('cancelledLines');
   });
