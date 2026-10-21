@@ -30,6 +30,7 @@ describeIfDb('mark-core-shipped.js — 취소된 FO·FOI 를 출고로 덮지 �
    * 연결이 하나(max: 1)라 BEGIN/ROLLBACK 이 drizzle 과 `unsafe` 둘 다에 걸린다.
    */
   async function inTx(fn: (tx: DbTx, run: (channelOrderId: string) => Promise<void>) => Promise<void>): Promise<void> {
+    // 근거: 픽스처는 DbTx 를 받는데 여기선 BEGIN 을 직접 건 단일 연결 db 다 — 쿼리 표면이 같고 픽스처는 tx 전용 메서드를 안 쓴다
     const tx = drizzle(client, { schema: wmsSchema }) as unknown as DbTx;
     const run = async (channelOrderId: string): Promise<void> => {
       await client.unsafe(sqlText.MARK_SALES_ORDERS_SHIPPED, [[channelOrderId]]);
