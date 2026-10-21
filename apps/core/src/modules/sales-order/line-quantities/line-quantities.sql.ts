@@ -117,23 +117,28 @@ export function lineSkuQuantitiesSql(salesOrderScope: SQL): SQL {
                         then foi.qty - foi.shipped_qty - foi.canceled_qty else 0 end)::int as forwarded,
                sum(case when fo.fulfillment_mode = 'drop_ship' and fo.direct_ship_status = 'completed'
                         then foi.shipped_qty else 0 end)::int as partner_completed,
-               sum(item_delivered.qty)::int as delivered
+               sum(coalesce(item_delivered.qty, 0))::int as delivered
           from ${t.fulfillmentOrders} as fo
           join ${t.fulfillmentOrderItems} as foi on foi.fulfillment_order_id = fo.id
-          cross join lateral (
-            select coalesce(sum(das.qty), 0)::int as qty
-              from ${t.shipmentLines} as sl
-              join ${t.dispatchAttemptSources} as das on das.shipment_line_id = sl.id
-              join ${t.dispatchAttempts} as da on da.id = das.dispatch_attempt_id
-             where sl.fulfillment_order_item_id = foi.id
-               and da.status = 'dispatched'
+          left join (
+            -- 배송완료 수량은 범위의 FOI 전부를 한 번에 묶어 센 뒤 FOI id 로 되붙인다 — FOI 마다 상관 서브쿼리로 세면
+            -- shipment_lines(fulfillment_order_item_id) 인덱스가 없어 FOI 수 × 출고 시도 소스 수로 자란다(R15)
+            select delivered_sl.fulfillment_order_item_id, sum(delivered_das.qty)::int as qty
+              from ${t.fulfillmentOrders} as delivered_fo
+              join ${t.fulfillmentOrderItems} as delivered_foi on delivered_foi.fulfillment_order_id = delivered_fo.id
+              join ${t.shipmentLines} as delivered_sl on delivered_sl.fulfillment_order_item_id = delivered_foi.id
+              join ${t.dispatchAttemptSources} as delivered_das on delivered_das.shipment_line_id = delivered_sl.id
+              join ${t.dispatchAttempts} as delivered_da on delivered_da.id = delivered_das.dispatch_attempt_id
+             where delivered_fo.sales_order_id in (${salesOrderScope})
+               and delivered_da.status = 'dispatched'
                and exists (
                  select 1
-                   from ${t.shipmentTracking} as st
-                  where st.dispatch_attempt_id = da.id
-                    and st.status = 'delivered'
+                   from ${t.shipmentTracking} as delivered_st
+                  where delivered_st.dispatch_attempt_id = delivered_da.id
+                    and delivered_st.status = 'delivered'
                )
-          ) as item_delivered
+             group by delivered_sl.fulfillment_order_item_id
+          ) as item_delivered on item_delivered.fulfillment_order_item_id = foi.id
          where fo.sales_order_id in (${salesOrderScope})
          group by foi.sales_order_line_id, foi.sku_id
       ) as item_fact
