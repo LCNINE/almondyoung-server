@@ -6,6 +6,8 @@ import { DbService } from '@app/db';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { makeDb, inRollbackTx, seedHolder, seedSku } from '../../../fulfillment/services/__support__';
 import { DemandSeriesWriter } from './demand-series.writer';
+import { recordSalesOrderCancellation } from '../../../sales-order/cancellation-record/record-cancellation';
+import { readLineQuantities } from '../../../sales-order/line-quantities/line-quantities.reader';
 
 /**
  * 스펙 §10 「demand-series.writer」: 취소 제외 · 디지털 제외 · 링크 수량 환산 · 창 재계산 멱등 · D0 경계.
@@ -55,14 +57,14 @@ describeIfDb('DemandSeriesWriter (DB integration)', () => {
         variantId: string;
         quantity: number;
         totalPrice: number | null;
-        /** 부분취소로 줄인 수량 — sales_order_cancellations(partial).metadata.cancelledLines 에 적는다(#1016 15번 §1.1) */
+        /** 부분취소로 줄인 수량 — 취소 기록 문(recordSalesOrderCancellation)으로 적어 취소 라인 행까지 남긴다(K6 PR2a) */
         partialCancelledQty?: number;
         fulfillmentKind?: 'physical' | 'digital';
         requiresShipping?: boolean;
         almondDesignId?: string;
       }>;
     },
-  ): Promise<string> {
+  ): Promise<{ orderId: string; lineIds: string[] }> {
     const [order] = await trx
       .insert(wmsTables.salesOrders)
       .values({
@@ -93,13 +95,13 @@ describeIfDb('DemandSeriesWriter (DB integration)', () => {
       l.partialCancelledQty ? [{ salesOrderLineId: insertedLines[i].id, quantity: l.partialCancelledQty }] : [],
     );
     if (cancelledLines.length > 0) {
-      await trx.insert(wmsTables.salesOrderCancellations).values({
+      await recordSalesOrderCancellation(trx, {
         salesOrderId: order.id,
         cancellationScope: 'partial',
         metadata: { cancelledLines },
       });
     }
-    return order.id;
+    return { orderId: order.id, lineIds: insertedLines.map((l) => l.id) };
   }
 
   async function readSeries(trx: DbTx, skuIds: string[]) {
@@ -247,7 +249,7 @@ describeIfDb('DemandSeriesWriter (DB integration)', () => {
         { skuId, demandDate: '2026-08-01', qty: 7, amount: null, source: 'core' }, // 창 밖
         { skuId, demandDate: '2026-08-26', qty: 9, amount: null, source: 'sellmate' }, // 창 안이지만 sellmate
       ]);
-      const orderId = await seedOrder(trx, {
+      const { orderId } = await seedOrder(trx, {
         orderedAtUtc: '2026-09-01T03:00:00Z',
         lines: [{ variantId, quantity: 2, totalPrice: 2000 }],
       });
@@ -368,6 +370,66 @@ describeIfDb('DemandSeriesWriter (DB integration)', () => {
         });
         await new DemandSeriesWriter(boundDbService(trx)).rebuildCoreWindow(WINDOW, trx);
         expect((await readSeries(trx, [skuId])).map((r) => r.qty)).toEqual([3]);
+      });
+    });
+
+    // E2 — 이미 나간 수량의 취소는 물건이 창고를 떠났으므로 수요에서 빼지 않는다(스펙 §6.1 demand = ordered − canceledBeforeShipment)
+    it('after-shipment cancellation stays in demand', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { holderId } = await seedHolder(trx);
+        const { skuId } = await seedSku(trx, holderId);
+        const variantId = await seedMatching(trx, [{ skuId, quantity: 1 }]);
+        const { orderId, lineIds } = await seedOrder(trx, {
+          orderedAtUtc: '2026-09-01T03:00:00Z',
+          lines: [{ variantId, quantity: 5, totalPrice: 5000 }],
+        });
+        const [lineId] = lineIds;
+        await recordSalesOrderCancellation(trx, {
+          salesOrderId: orderId,
+          cancellationScope: 'partial',
+          metadata: { cancelledLines: [{ salesOrderLineId: lineId, quantity: 2 }] },
+          effects: [
+            {
+              type: 'preserved_shipped_fulfillment_order_item',
+              metadata: {
+                salesOrderLineId: lineId,
+                skuId,
+                requestedFulfillmentQuantity: 2,
+                affectedShippedQuantity: 2,
+              },
+            },
+          ],
+        });
+        // 전제: 라인 행이 실제로 after_shipment 로 기록됐다 (행이 없어도 아래 단언은 통과하므로)
+        expect((await readLineQuantities(trx, orderId)).get(lineId)).toMatchObject({
+          canceledAfterShipment: 2,
+          canceledBeforeShipment: 0,
+        });
+        await new DemandSeriesWriter(boundDbService(trx)).rebuildCoreWindow(WINDOW, trx);
+        expect(await readSeries(trx, [skuId])).toEqual([
+          { skuId, demandDate: '2026-09-01', qty: 5, amount: 5000, source: 'core' },
+        ]);
+      });
+    });
+
+    // E1 — 전체취소도 센다. SO status 가 cancelled 가 아닌 V2 전체취소의 라인은 수요에서 빠진다
+    it('v2 full on a non-cancelled order removes its lines from demand', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { holderId } = await seedHolder(trx);
+        const { skuId } = await seedSku(trx, holderId);
+        const variantId = await seedMatching(trx, [{ skuId, quantity: 1 }]);
+        const { orderId, lineIds } = await seedOrder(trx, {
+          orderedAtUtc: '2026-09-01T03:00:00Z',
+          lines: [{ variantId, quantity: 3, totalPrice: 3000 }],
+        });
+        const [lineId] = lineIds;
+        await recordSalesOrderCancellation(trx, {
+          salesOrderId: orderId,
+          cancellationScope: 'full',
+          metadata: { cancelledLines: [{ salesOrderLineId: lineId, quantity: 3 }] },
+        });
+        await new DemandSeriesWriter(boundDbService(trx)).rebuildCoreWindow(WINDOW, trx);
+        expect(await readSeries(trx, [skuId])).toEqual([]);
       });
     });
   });

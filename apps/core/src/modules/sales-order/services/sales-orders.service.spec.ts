@@ -724,16 +724,13 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
   const fulfillmentOrderItemId = '55555555-5555-4555-8555-555555555555';
   const reservationId = '66666666-6666-4666-8666-666666666666';
 
-  function rows<T>(
-    value: T[],
-  ): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
-    const result = [...value] as T[] & {
-      limit: (count: number) => Promise<T[]>;
-      orderBy: () => { limit: (count: number) => Promise<T[]> };
-    };
+  type Rows<T> = T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => Rows<T> };
+  function rows<T>(value: T[]): Rows<T> {
+    const result = [...value] as Rows<T>;
     result.limit = (count: number) => Promise.resolve(result.slice(0, count));
-    // getOne 이 최근 취소 요청 행을 정렬해 읽는다 — 이 가짜는 정렬하지 않는다
-    result.orderBy = () => ({ limit: result.limit });
+    // getOne 이 최근 취소 요청 행을 정렬해 읽고(`.orderBy().limit()`), 라인 수량 문은 정렬만 하고 그대로 기다린다
+    // (`.orderBy()`) — 이 가짜는 정렬하지 않고 같은 배열을 돌려준다
+    result.orderBy = () => result;
     return result;
   }
 
@@ -811,17 +808,46 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
       ] as Array<Record<string, any>>,
       fulfillmentOrderCreationBacklogs: options.fulfillmentOrderCreationBacklogs ?? ([] as Array<Record<string, any>>),
       salesOrderCancellations: [] as Array<Record<string, any>>,
+      salesOrderCancellationLines: [] as Array<Record<string, any>>,
       businessLinks: [] as Array<Record<string, any>>,
     };
 
+    // 라인 수량 문(readLineQuantities)의 가짜 — 쓰기 문이 이 목에 넣은 취소 라인 행을 라인별·갈래별로 합한다 (K6 PR2a)
+    const lineQuantityRows = () =>
+      state.salesOrderLines.map((line) => {
+        const cancelledOf = (phase: 'before_shipment' | 'after_shipment') =>
+          state.salesOrderCancellationLines
+            .filter((row) => row.salesOrderLineId === line.id && row.shipmentPhase === phase)
+            .reduce((total, row) => total + row.quantity, 0);
+        const before = cancelledOf('before_shipment');
+        const after = cancelledOf('after_shipment');
+        return {
+          salesOrderLineId: line.id,
+          ordered: line.quantity,
+          canceledBeforeShipment: before,
+          canceledAfterShipment: after,
+          canceled: before + after,
+          demand: line.quantity - before,
+          remaining: line.quantity - before - after,
+        };
+      });
+
     const selectRowsFor = (table: unknown, selection?: Record<string, unknown>) => {
       if (table === wmsTables.salesOrders) return state.salesOrders;
+      if (table === wmsTables.salesOrderLines && selection && 'canceled' in selection) return lineQuantityRows();
       if (table === wmsTables.salesOrderLines) return state.salesOrderLines;
+      if (table === wmsTables.salesOrderCancellationLines) return state.salesOrderCancellationLines;
       if (table === wmsTables.fulfillmentOrders) return state.fulfillmentOrders;
       if (table === wmsTables.fulfillmentOrderItems) return state.fulfillmentOrderItems;
       if (table === wmsTables.stockReservations) return state.stockReservations;
       if (table === wmsTables.fulfillmentOrderCreationBacklogs) return state.fulfillmentOrderCreationBacklogs;
-      if (table === wmsTables.salesOrderCancellations && selection && Object.keys(selection).length === 1) {
+      // 전체취소 존재 확인(`select({ id })`)만 full 로 거른다 — effects 만 읽는 엔진 문맥은 모든 scope 를 본다
+      if (
+        table === wmsTables.salesOrderCancellations &&
+        selection &&
+        Object.keys(selection).length === 1 &&
+        'id' in selection
+      ) {
         return state.salesOrderCancellations.filter((row) => row.cancellationScope === 'full');
       }
       if (table === wmsTables.salesOrderCancellations) return state.salesOrderCancellations;
@@ -874,6 +900,10 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
             }));
             state.salesOrderCancellations.push(...inserted);
             return { returning: jest.fn().mockResolvedValue(inserted) };
+          }
+          if (table === wmsTables.salesOrderCancellationLines) {
+            state.salesOrderCancellationLines.push(...insertedValues);
+            return Promise.resolve();
           }
           if (table === wmsTables.businessLinks) {
             const inserted = insertedValues.map((value, index) => ({

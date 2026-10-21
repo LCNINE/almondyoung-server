@@ -24,7 +24,7 @@ describe('FulfillmentsService', () => {
     shipments: Array<Record<string, any>>;
     shipmentLines: Array<Record<string, any>>;
     reservations: Array<Record<string, any>>;
-    salesOrderCancellations: Array<Record<string, any>>;
+    salesOrderCancellationLines: Array<Record<string, any>>;
     salesOrderAmendments: Array<Record<string, any>>;
     businessLinks: Array<Record<string, any>>;
   };
@@ -47,8 +47,29 @@ describe('FulfillmentsService', () => {
   }
 
   function makeTx(state: FakeState) {
-    const selectRowsFor = (table: unknown) => {
+    // 라인 수량 문(readLineQuantities)의 가짜 — 취소 라인 행을 라인별·갈래별로 합한다 (K6 PR2a)
+    const lineQuantityRows = () =>
+      state.salesOrderLines.map((line) => {
+        const cancelledOf = (phase: 'before_shipment' | 'after_shipment') =>
+          state.salesOrderCancellationLines
+            .filter((row) => row.salesOrderLineId === line.id && row.shipmentPhase === phase)
+            .reduce((total, row) => total + row.quantity, 0);
+        const before = cancelledOf('before_shipment');
+        const after = cancelledOf('after_shipment');
+        return {
+          salesOrderLineId: line.id,
+          ordered: line.quantity,
+          canceledBeforeShipment: before,
+          canceledAfterShipment: after,
+          canceled: before + after,
+          demand: line.quantity - before,
+          remaining: line.quantity - before - after,
+        };
+      });
+
+    const selectRowsFor = (table: unknown, selection?: Record<string, unknown>) => {
       if (table === wmsTables.salesOrders) return state.salesOrders;
+      if (table === wmsTables.salesOrderLines && selection && 'demand' in selection) return lineQuantityRows();
       if (table === wmsTables.warehouses) return state.warehouses;
       if (table === wmsTables.salesOrderLines) return state.salesOrderLines;
       if (table === wmsTables.salesOrderLineCompositions) return state.salesOrderLineCompositions;
@@ -57,7 +78,7 @@ describe('FulfillmentsService', () => {
       if (table === wmsTables.fulfillmentOrderItems) return state.fulfillmentOrderItems;
       if (table === wmsTables.shipments) return state.shipments;
       if (table === wmsTables.shipmentLines) return state.shipmentLines;
-      if (table === wmsTables.salesOrderCancellations) return state.salesOrderCancellations;
+      if (table === wmsTables.salesOrderCancellationLines) return state.salesOrderCancellationLines;
       if (table === wmsTables.salesOrderAmendments) return state.salesOrderAmendments;
       if (table === wmsTables.businessLinks) return state.businessLinks;
       return [];
@@ -65,9 +86,9 @@ describe('FulfillmentsService', () => {
 
     const tx: any = {
       execute: jest.fn().mockResolvedValue([]),
-      select: jest.fn(() => ({
+      select: jest.fn((selection?: Record<string, unknown>) => ({
         from: (table: unknown) => {
-          const result = rows(selectRowsFor(table));
+          const result = rows(selectRowsFor(table, selection));
           const query: any = {
             innerJoin: () => query,
             where: (_where: unknown) => result,
@@ -168,7 +189,7 @@ describe('FulfillmentsService', () => {
       fulfillmentOrders?: Array<Record<string, any>>;
       fulfillmentOrderItems?: Array<Record<string, any>>;
       shipments?: Array<Record<string, any>>;
-      salesOrderCancellations?: Array<Record<string, any>>;
+      salesOrderCancellationLines?: Array<Record<string, any>>;
       salesOrderAmendments?: Array<Record<string, any>>;
       businessLinks?: Array<Record<string, any>>;
     } = {},
@@ -188,7 +209,7 @@ describe('FulfillmentsService', () => {
       shipments: options.shipments ?? [],
       shipmentLines: [],
       reservations: [],
-      salesOrderCancellations: options.salesOrderCancellations ?? [],
+      salesOrderCancellationLines: options.salesOrderCancellationLines ?? [],
       salesOrderAmendments: options.salesOrderAmendments ?? [],
       businessLinks: options.businessLinks ?? [],
     };
@@ -365,7 +386,7 @@ describe('FulfillmentsService', () => {
     expect(shipmentReservation.reservePartial).not.toHaveBeenCalled();
   });
 
-  it('부분 취소된 SalesOrder line 수량은 backlog retry의 FO 생성 수량에서 차감한다', async () => {
+  it('출고 전 취소된 SalesOrder line 수량은 backlog retry의 FO 생성 수량에서 차감한다', async () => {
     const { service, state, shipmentReservation } = makeService({
       lines: [
         {
@@ -375,15 +396,14 @@ describe('FulfillmentsService', () => {
           quantity: 3,
         },
       ],
-      salesOrderCancellations: [
+      // 취소 기록 문이 남기는 라인 행(K6) — FO 생성 수량은 라인 수량 문의 demand(주문 − 출고 전 취소)다
+      salesOrderCancellationLines: [
         {
-          id: '99999999-9999-4999-8999-999999999999',
+          cancellationId: '99999999-9999-4999-8999-999999999999',
           salesOrderId,
-          cancellationScope: 'partial',
-          status: 'applied',
-          metadata: {
-            cancelledLines: [{ salesOrderLineId, quantity: 1 }],
-          },
+          salesOrderLineId,
+          quantity: 1,
+          shipmentPhase: 'before_shipment',
         },
       ],
     });

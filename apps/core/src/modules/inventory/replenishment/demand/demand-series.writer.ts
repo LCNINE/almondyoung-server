@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { and, eq, gte, lte, sql } from 'drizzle-orm';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsSchema, wmsTables, DbTx, NewSkuDemandDaily } from '../../schema/inventory.schema';
-import { cancelledQuantitySql } from '../../../sales-order/services/cancelled-quantity.sql';
+import { lineDemandSql } from '../../../sales-order/line-quantities/line-quantities.sql';
 
 export interface DemandRebuildResult {
   from: string | null;
@@ -90,16 +90,16 @@ export class DemandSeriesWriter {
     const query = sql`
       WITH lines AS (
         SELECT (o.order_date AT TIME ZONE 'Asia/Seoul')::date AS demand_date,
-               -- 부분취소는 sales_order_cancellations.metadata 에만 남는다(줄 status 는 생산자 없음).
+               -- 취소는 sales_order_cancellation_lines 에 있고, 출고 전 취소만 뺀다(K6 E2 — 나간 수량의 취소는 수요로 남는다).
                -- SKU 로 펼치기 전에 뺀다 — 묶음 상품이 취소분 × 링크 수량만큼 과대 집계되지 않게
-               sol.quantity - ${cancelledQuantitySql(sql`o.id`, sql`sol.id`)} AS line_qty,
+               ${lineDemandSql(sql`sol.quantity`, sql`sol.id`)} AS line_qty,
                sol.total_price AS line_amount,
                pm.id AS matching_id
         FROM sales_order_lines sol
         JOIN sales_orders o ON o.id = sol.sales_order_id
         JOIN product_matchings pm ON pm.variant_id = sol.variant_id
         WHERE o.status NOT IN ('cancelled', 'timeout')
-          AND sol.quantity > ${cancelledQuantitySql(sql`o.id`, sql`sol.id`)}
+          AND ${lineDemandSql(sql`sol.quantity`, sql`sol.id`)} > 0
           AND COALESCE(sol.fulfillment_kind, 'physical') <> 'digital'
           AND COALESCE(sol.requires_shipping, true)
           AND sol.almond_design_id IS NULL

@@ -28,10 +28,13 @@ describe('refundNotOpenedSql', () => {
     expect(rendered).not.toContain(`"sales_order_lines"."status"`);
   });
 
-  it('compares the line quantity with the partial cancellations of that line', () => {
+  // K6 PR2a — 취소 수량은 취소 라인 행에서, 갈래(출고 전/후)·범위(partial/full) 무관 합으로 읽는다(E1)
+  it('compares the line quantity with every cancellation line row of that line', () => {
     expect(rendered).toContain(`"sales_order_lines"."quantity" > coalesce((`);
-    expect(rendered).toContain(`"sales_order_cancellations"."sales_order_id" = "print_orders"."sales_order_id"`);
-    expect(rendered).toContain(`"sales_order_cancellations"."cancellation_scope" = 'partial'`);
-    expect(rendered).toContain(`cl.value->>'salesOrderLineId' = ("sales_order_lines"."id")::text`);
+    expect(rendered).toContain(`from "sales_order_cancellation_lines"`);
+    expect(rendered).toContain(`k6_cl.k6_line_id = "sales_order_lines"."id" ), 0)::int`);
+    expect(rendered).not.toContain('k6_shipment_phase =');
+    expect(rendered).not.toContain('cancellation_scope');
+    expect(rendered).not.toContain('cancelledLines');
   });
 });

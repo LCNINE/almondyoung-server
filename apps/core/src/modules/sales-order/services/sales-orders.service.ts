@@ -37,6 +37,7 @@ import { isDigitalFulfillmentLine, isOutsourcedLine } from '../../product-matchi
 import { selectFrozenCompositions } from '../../product-matching/line-composition/frozen-compositions';
 import { outstandingSalesUnits, physicalCancellationByItem } from './v2-cancellation-units';
 import { MOVED_SHIPMENT_STATUSES } from './fulfillment-phase';
+import { readLineQuantities } from '../line-quantities/line-quantities.reader';
 import type { OrderProgressStage } from '../../fulfillment/order-progress/order-progress.thresholds';
 import { computeEntrancePasswordExpiry } from './entrance-password-expiry';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
@@ -118,7 +119,7 @@ type PartialCancellationLine = {
 };
 type PostShipmentHandoffType = 'return' | 'recovery' | 'refund' | 'compensation';
 type PostShipmentHandoffOptions = NonNullable<CancelSalesOrderOptions['postShipmentHandoff']>;
-type PriorPartialCancellationContext = {
+type PriorCancellationContext = {
   cancelledByLine: Map<string, number>;
   preservedShippedByFulfillmentItem: Map<string, number>;
 };
@@ -132,7 +133,7 @@ type V2OutstandingPlan = {
     canceledQty: number;
     salesOrderLineId: string | null;
   }>;
-  prior: PriorPartialCancellationContext;
+  prior: PriorCancellationContext;
   requestedSalesLines: PartialCancellationLine[];
   cancellationByShipment: Map<
     string,
@@ -1431,7 +1432,7 @@ export class SalesOrdersService {
       .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId));
     const lineById = new Map(originalLines.map((line) => [line.id, line]));
 
-    const priorCancellationContext = await this.loadPriorPartialCancellationContext(salesOrderId, trx);
+    const priorCancellationContext = await this.loadPriorCancellationContext(salesOrderId, trx);
     for (const request of requestedLines) {
       const line = lineById.get(request.salesOrderLineId);
       if (!line) {
@@ -1691,7 +1692,7 @@ export class SalesOrdersService {
       tx,
       salesOrderLines.map((line) => line.id),
     );
-    const prior = await this.loadPriorPartialCancellationContext(salesOrderId, tx);
+    const prior = await this.loadPriorCancellationContext(salesOrderId, tx);
     const requestedSalesLines = isFullCancel
       ? salesOrderLines.flatMap((line) => {
           const items = fulfillmentItems.filter((item) => item.salesOrderLineId === line.id);
@@ -2064,7 +2065,7 @@ export class SalesOrdersService {
       .select()
       .from(wmsTables.salesOrderLines)
       .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId));
-    const prior = await this.loadPriorPartialCancellationContext(salesOrderId, tx);
+    const prior = await this.loadPriorCancellationContext(salesOrderId, tx);
     const [fullCancellation] = await tx
       .select({ id: wmsTables.salesOrderCancellations.id })
       .from(wmsTables.salesOrderCancellations)
@@ -2083,6 +2084,9 @@ export class SalesOrdersService {
           '이미 출고/배송 완료된 주문은 전체 취소를 할 수 없습니다. 부분 취소로 진행해 주세요.',
         );
       }
+      // 전체취소 존재를 «남은 수량»보다 먼저 본다 — 이미 취소된 수량이 전체취소까지 세므로(K6 PR2a),
+      // 뒤에 두면 남은 수량 0 거절이 먼저 나서 문구가 바뀐다.
+      if (fullCancellation) throw new BadRequestException(CANCEL_MSG_FULL_CANCELLATION_EXISTS);
       const requested = salesOrderLines
         .map((line) => ({ salesOrderLineId: line.id, quantity: remainingOf(line) }))
         .filter((line) => line.quantity > 0);
@@ -2144,7 +2148,7 @@ export class SalesOrdersService {
   /** 이 취소 뒤 남는 수량(줄 수량 − 이미 취소 − 이번 취소)이 모든 줄에서 0 인가. 디지털 줄도 센다. */
   private leavesNothing(
     salesOrderLines: Array<{ id: string; quantity: number }>,
-    prior: PriorPartialCancellationContext,
+    prior: PriorCancellationContext,
     requested: PartialCancellationLine[],
   ): boolean {
     const now = new Map(requested.map((line) => [line.salesOrderLineId, line.quantity]));
@@ -2153,42 +2157,22 @@ export class SalesOrdersService {
     );
   }
 
-  /** 라인별 이미 취소된 수량 — 채널 변경 diff 의 «유효 수량» 기준(#1016 5번 행)이 취소 경로와 같은 계산을 쓰게 한다. */
-  async getCancelledQuantityByLine(salesOrderId: string, tx: DbTx): Promise<Map<string, number>> {
-    return (await this.loadPriorPartialCancellationContext(salesOrderId, tx)).cancelledByLine;
-  }
+  /**
+   * 이 주문의 이전 취소가 남긴 엔진 상태 (K6 PR2a).
+   * `cancelledByLine` 은 라인 수량 문의 `canceled`(갈래·scope 무관 — 전체취소도 센다)다.
+   * `preservedShippedByFulfillmentItem` 은 «어느 FOI 의 출고분을 이미 보존 처리했나»라는 FOI 단위 상태라
+   * 라인 행으로 되살릴 수 없어(세트에서 구성품 하나만 나간 단위도 `after_shipment` 1) effects 에서 읽는다.
+   */
+  private async loadPriorCancellationContext(salesOrderId: string, trx: DbTx): Promise<PriorCancellationContext> {
+    const lineQuantities = await readLineQuantities(trx, salesOrderId);
+    const cancelledByLine = new Map([...lineQuantities.values()].map((line) => [line.salesOrderLineId, line.canceled]));
 
-  private async loadPriorPartialCancellationContext(
-    salesOrderId: string,
-    trx: DbTx,
-  ): Promise<PriorPartialCancellationContext> {
     const cancellations = await trx
-      .select({
-        effects: wmsTables.salesOrderCancellations.effects,
-        metadata: wmsTables.salesOrderCancellations.metadata,
-      })
+      .select({ effects: wmsTables.salesOrderCancellations.effects })
       .from(wmsTables.salesOrderCancellations)
-      .where(
-        and(
-          eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId),
-          eq(wmsTables.salesOrderCancellations.cancellationScope, 'partial'),
-        ),
-      );
-
-    const cancelledByLine = new Map<string, number>();
+      .where(eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId));
     const preservedShippedByFulfillmentItem = new Map<string, number>();
     for (const cancellation of cancellations) {
-      const metadata = (cancellation.metadata ?? {}) as Record<string, unknown>;
-      const cancelledLines = Array.isArray(metadata.cancelledLines) ? metadata.cancelledLines : [];
-      for (const line of cancelledLines) {
-        if (!line || typeof line !== 'object') continue;
-        const salesOrderLineId = (line as Record<string, unknown>).salesOrderLineId;
-        const quantity = (line as Record<string, unknown>).quantity;
-        if (typeof salesOrderLineId === 'string' && typeof quantity === 'number') {
-          cancelledByLine.set(salesOrderLineId, (cancelledByLine.get(salesOrderLineId) ?? 0) + quantity);
-        }
-      }
-
       const effects = Array.isArray(cancellation.effects) ? cancellation.effects : [];
       for (const effect of effects) {
         if (!effect || typeof effect !== 'object') continue;

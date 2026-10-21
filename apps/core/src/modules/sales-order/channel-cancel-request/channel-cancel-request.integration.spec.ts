@@ -3,6 +3,7 @@ import { and, eq, sql as drizzleSql } from 'drizzle-orm';
 import { BadRequestError } from '@app/shared';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
+import { readLineQuantities } from '../line-quantities/line-quantities.reader';
 import { CHANNEL_CANCEL_REQUEST_REASON } from './channel-cancel-request.types';
 import {
   markLineShipped,
@@ -120,7 +121,7 @@ describeIfDb('채널 취소 요청 (DB integration, rollback-only)', () => {
       expect(cancellations).toHaveLength(1);
       expect(cancellations[0].cancellationScope).toBe('partial');
       expect((await w.salesOrders.getOne(seed.salesOrderId, tx))?.status).not.toBe('cancelled');
-      expect((await w.salesOrders.getCancelledQuantityByLine(seed.salesOrderId, tx)).get(seed.lineIds[0])).toBe(1);
+      expect((await readLineQuantities(tx, seed.salesOrderId)).get(seed.lineIds[0])?.canceled).toBe(1);
     });
   });
 
@@ -390,7 +391,7 @@ describeIfDb('채널 취소 요청 (DB integration, rollback-only)', () => {
       const cancellations = await cancellationsOf(tx, seed.salesOrderId);
       expect(cancellations).toHaveLength(1);
       expect(cancellations[0].cancellationScope).toBe('partial');
-      expect((await w.salesOrders.getCancelledQuantityByLine(seed.salesOrderId, tx)).get(seed.lineIds[1])).toBe(1);
+      expect((await readLineQuantities(tx, seed.salesOrderId)).get(seed.lineIds[1])?.canceled).toBe(1);
       const [command] = await commandsOf(tx, seed.externalOrderId);
       expect(command.payload.payload).toMatchObject({
         scope: 'partial',

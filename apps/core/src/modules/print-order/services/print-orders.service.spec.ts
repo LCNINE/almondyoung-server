@@ -1,7 +1,7 @@
 import { NotFoundError } from '@app/shared';
 import { DbService } from '@app/db';
 import { wmsSchema, type DbTx } from '../../inventory/schema/inventory.schema';
-import { SalesOrdersService } from '../../sales-order/services/sales-orders.service';
+import { readLineQuantities } from '../../sales-order/line-quantities/line-quantities.reader';
 import { StoreSalesOrdersService } from '../../sales-order/services/store-sales-orders.service';
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { CANCEL_CLAIM_STALE_MS } from './print-order-cancellation.manager';
@@ -14,6 +14,10 @@ import { PrintOrderReader, type PrintOrderListItem, type PrintOrderSummary } fro
 import { PrintOrderRepository } from './print-order.repository';
 import { PrintOrdersService } from './print-orders.service';
 import { PrintCancelRemainingReader } from './print-cancel-remaining.reader';
+
+// 남은 수량은 라인 수량 문(SQL)이 계산한다 — 여기선 문의 결과만 가짜로 채운다
+jest.mock('../../sales-order/line-quantities/line-quantities.reader');
+const readLineQuantitiesMock = jest.mocked(readLineQuantities);
 
 // 모든 메서드를 덮어써 DB 를 쓰지 않는 가짜라 DbService 자리는 형 변환으로 채운다
 const noDb = {} as unknown as DbService<typeof wmsSchema>;
@@ -62,10 +66,27 @@ function setup() {
   const runOnly = { run: <T>(fn: (tx: DbTx) => Promise<T>) => fn({} as DbTx) } as unknown as DbService<
     typeof wmsSchema
   >;
-  const salesOrders = {
-    getCancelledQuantityByLine: () => (lookupError ? Promise.reject(lookupError) : Promise.resolve(cancelledByLine)),
-  } as unknown as SalesOrdersService;
-  const remaining = new PrintCancelRemainingReader(runOnly, salesOrders);
+  readLineQuantitiesMock.mockImplementation(() => {
+    if (lookupError) return Promise.reject(lookupError);
+    // 문은 취소가 없는 라인도 canceled 0 으로 낸다. 이 spec 의 라인은 3개 주문, 취소된 수량만 케이스마다 다르다
+    return Promise.resolve(
+      new Map(
+        [...new Map([['sol-1', 0], ...cancelledByLine])].map(([lineId, canceled]) => [
+          lineId,
+          {
+            salesOrderLineId: lineId,
+            ordered: 3,
+            canceledBeforeShipment: canceled,
+            canceledAfterShipment: 0,
+            canceled,
+            demand: 3 - canceled,
+            remaining: 3 - canceled,
+          },
+        ]),
+      ),
+    );
+  });
+  const remaining = new PrintCancelRemainingReader(runOnly);
   const service = new PrintOrdersService(reader, manager, storeSalesOrders, remaining);
   return { reader, manager, adminCancelRequest, service, cancelledByLine, remainingFails };
 }

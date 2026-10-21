@@ -11,6 +11,8 @@ import {
   seedSku,
   wireLogistics,
 } from '../../fulfillment/services/__support__';
+import { recordSalesOrderCancellation } from '../../sales-order/cancellation-record/record-cancellation';
+import { readLineQuantities } from '../../sales-order/line-quantities/line-quantities.reader';
 import { findCompositionInvariantViolations } from './__support__/composition-invariant';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -31,7 +33,7 @@ describeIfDb('LineCompositionReader / LineCompositionManager (PostgreSQL integra
   });
   const wire = () => wireLogistics(makeDbService(db));
 
-  it('라인마다 판정과 유효 수량(주문 수량 − 부분 취소)을 낸다', async () => {
+  it('라인마다 판정과 유효 수량(주문 수량 − 출고 전 취소)을 낸다', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wire();
       const sku = await twoSkus(tx);
@@ -44,7 +46,7 @@ describeIfDb('LineCompositionReader / LineCompositionManager (PostgreSQL integra
         ],
       });
       await seedMatching(tx, { variantId: matched, skuId: sku.a, quantity: 2 });
-      await tx.insert(wmsTables.salesOrderCancellations).values({
+      await recordSalesOrderCancellation(tx, {
         salesOrderId,
         cancellationScope: 'partial',
         reasonCode: 'it',
@@ -61,6 +63,68 @@ describeIfDb('LineCompositionReader / LineCompositionManager (PostgreSQL integra
         fulfillableQuantity: 0,
         resolution: { kind: 'missing', reason: 'NO_PRODUCT_SKU_MATCHING' },
       });
+    });
+  });
+
+  // E2 — FO 생성 수량은 «출고 전 취소»만 뺀다(스펙 §6.1 demand = ordered − canceledBeforeShipment)
+  it('fulfillable excludes only before-shipment cancellations', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire();
+      const sku = await twoSkus(tx);
+      const variantId = randomUUID();
+      const { salesOrderId, lineIds } = await seedSalesOrder(tx, { lines: [{ variantId, quantity: 3 }] });
+      await seedMatching(tx, { variantId, skuId: sku.a });
+      // 한 번의 부분취소 2개 중 1개는 이미 나간 단위(보존 효과) → 라인 행 before 1 + after 1
+      await recordSalesOrderCancellation(tx, {
+        salesOrderId,
+        cancellationScope: 'partial',
+        reasonCode: 'it',
+        metadata: { cancelledLines: [{ salesOrderLineId: lineIds[0], quantity: 2 }] },
+        effects: [
+          {
+            type: 'preserved_shipped_fulfillment_order_item',
+            metadata: {
+              salesOrderLineId: lineIds[0],
+              skuId: sku.a,
+              requestedFulfillmentQuantity: 2,
+              affectedShippedQuantity: 1,
+            },
+          },
+        ],
+      });
+      // 전제: 씨앗이 정말 갈래 하나씩 1개를 남겼다
+      expect((await readLineQuantities(tx, salesOrderId)).get(lineIds[0])).toMatchObject({
+        canceledBeforeShipment: 1,
+        canceledAfterShipment: 1,
+      });
+
+      const [r] = await w.lineCompositions.resolveForOrder(salesOrderId, tx);
+      expect(r.fulfillableQuantity).toBe(2);
+    });
+  });
+
+  // E1 — 전체취소의 라인 행도 센다. 옛 파서는 V1 전체취소(cancelledLines 없음)를 못 봐 2 를 냈다
+  it('v1 full cancellation leaves nothing fulfillable', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire();
+      const sku = await twoSkus(tx);
+      const variantId = randomUUID();
+      const { salesOrderId, lineIds } = await seedSalesOrder(tx, { lines: [{ variantId, quantity: 2 }] });
+      await seedMatching(tx, { variantId, skuId: sku.a });
+      await recordSalesOrderCancellation(tx, {
+        salesOrderId,
+        cancellationScope: 'full',
+        reasonCode: 'it',
+        metadata: {},
+      });
+      // 전제: V1 전체취소가 라인의 남은 2개를 출고 전으로 남겼다
+      expect((await readLineQuantities(tx, salesOrderId)).get(lineIds[0])).toMatchObject({
+        canceledBeforeShipment: 2,
+        canceledAfterShipment: 0,
+      });
+
+      const [r] = await w.lineCompositions.resolveForOrder(salesOrderId, tx);
+      expect(r.fulfillableQuantity).toBe(0);
     });
   });
 

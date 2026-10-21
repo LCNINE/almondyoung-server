@@ -3,6 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { eq, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb, makeDbService, seedMatching, wireLogistics } from '../../services/__support__';
+import { recordSalesOrderCancellation } from '../../../sales-order/cancellation-record/record-cancellation';
+import { wireCancellation } from '../../../sales-order/cancellation-record/__support__/cancellation-scenarios';
+import { readLineQuantities } from '../../../sales-order/line-quantities/line-quantities.reader';
 import * as f from '../../order-progress/__support__/order-progress.fixtures';
 import { OrderProgressManager } from '../../order-progress/order-progress.manager';
 import { OrderProgressReader } from '../../order-progress/order-progress.reader';
@@ -246,13 +249,33 @@ describeIfDb('WakeAwaitingMatchingRule (PostgreSQL integration)', () => {
         .select({ id: wmsTables.salesOrderLines.id, quantity: wmsTables.salesOrderLines.quantity })
         .from(wmsTables.salesOrderLines)
         .where(eq(wmsTables.salesOrderLines.salesOrderId, o.salesOrderId));
-      await tx.insert(wmsTables.salesOrderCancellations).values({
+      await recordSalesOrderCancellation(tx, {
         salesOrderId: o.salesOrderId,
         cancellationScope: 'partial',
         reasonCode: 'it',
         metadata: { cancelledLines: [{ salesOrderLineId: line.id, quantity: line.quantity }] },
       });
+      // 전제: 취소 기록 문이 라인 전량을 출고 전 취소로 남겼다 — 리더는 이 라인 행만 본다(K6 PR2a)
+      expect((await readLineQuantities(tx, o.salesOrderId)).get(line.id)).toMatchObject({
+        canceledBeforeShipment: line.quantity,
+        demand: 0,
+      });
       expect(await rule.check(o.salesOrderId, tx)).toBe(true);
+    });
+  });
+
+  // E1 로 리더가 V1 전체취소도 세게 되면서 전체취소 주문의 미매칭 라인도 더는 막지 않는다(유효 수량 0).
+  // 그래도 리컨실러 대상이 아닌 까닭은 전체취소가 같은 트랜잭션에서 백로그를 닫기 때문이다 — 그 전제를 고정한다
+  it('V1 전체취소는 매칭 대기 백로그를 닫아 깨울 대상이 아니다 — 막는 라인이 없어져도', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { rule, w } = wire();
+      const o = await seedAwaiting(tx);
+      await wireCancellation(tx).salesOrders.cancel(o.salesOrderId, { cancelledBy: 'it' }, tx);
+
+      const resolved = await w.lineCompositions.resolveForOrder(o.salesOrderId, tx);
+      expect(resolved.map((r) => [r.fulfillableQuantity, r.resolution.kind])).toEqual([[0, 'missing']]);
+      expect(await backlogStatus(tx, o.salesOrderId)).toBe('not_required');
+      expect(await rule.check(o.salesOrderId, tx)).toBe(false);
     });
   });
 
