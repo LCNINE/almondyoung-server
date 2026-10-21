@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { Camera, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { uploadFileToFileService } from '@/lib/api/domains/files/upload.client';
@@ -22,6 +22,13 @@ export function ReferencePhotoField({ skuId, photos, onDetail, disabled = false 
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(0);
   const [removing, setRemoving] = useState<ReadonlySet<string>>(new Set());
+  // 방금 찍은 사진은 서버에서 다시 받지 않고 찍은 파일로 보여 준다 — 다시 받는 요청이 늦거나 실패하면 엑박이 떴다.
+  // 연결 응답(onDetail)이 화면을 다시 그리므로 상태가 아니라 ref 로 둔다
+  const localPreviews = useRef(new Map<string, string>());
+  useEffect(() => {
+    const previews = localPreviews.current;
+    return () => previews.forEach((url) => URL.revokeObjectURL(url));
+  }, []);
   // 서버 쓰기(연결·해제)는 한 줄로 세운다. 응답마다 상세 캐시를 통째로 갈아끼우므로, 병렬이면 늦게 온
   // 옛 응답이 이겨 사진 수가 줄거나 지운 사진이 되살아난다. 파일 업로드 자체는 병렬로 둔다(계속 찍게).
   const writes = useRef<Promise<void>>(Promise.resolve());
@@ -51,6 +58,7 @@ export function ReferencePhotoField({ skuId, photos, onDetail, disabled = false 
         toast.error(errorMessageOf(err, '사진을 올리지 못했어요. 다시 찍어 주세요'));
         return;
       }
+      localPreviews.current.set(fileId, URL.createObjectURL(file));
       // 올라갔어도 연결이 안 되면 화면에도 안 보인다 — 다시 찍게 한다
       await serially(
         () => skuFieldCaptureClient.attachPhoto(skuId, fileId),
@@ -85,13 +93,10 @@ export function ReferencePhotoField({ skuId, photos, onDetail, disabled = false 
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
         {photos.map((p) => {
-          const src = resolvePublicFileUrl(p.fileId);
+          const src = localPreviews.current.get(p.fileId) ?? resolvePublicFileUrl(p.fileId);
           return (
             <div key={p.id} className="relative h-20 w-20 overflow-hidden rounded-lg bg-gray-200">
-              {src && (
-                // eslint-disable-next-line @next/next/no-img-element -- file-service 공개 URL, next/image 도메인 설정 밖
-                <img src={src} alt="" className="h-full w-full object-cover" />
-              )}
+              {src && <PhotoImg src={src} />}
               <button
                 type="button"
                 onClick={() => remove(p.id)}
@@ -132,5 +137,15 @@ export function ReferencePhotoField({ skuId, photos, onDetail, disabled = false 
         {photos.length}/{MIN_REFERENCE_PHOTOS}장 이상
       </p>
     </div>
+  );
+}
+
+// 서버 사진은 한 번 실패해도 바로 엑박으로 두지 않고 주소를 바꿔 한 번 더 받는다 — 일시 실패가 화면에 남던 것
+function PhotoImg({ src }: { src: string }) {
+  const [retried, setRetried] = useState(false);
+  const shown = retried && !src.startsWith('blob:') ? `${src}?retry=1` : src;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- file-service 공개 URL·로컬 미리보기, next/image 도메인 설정 밖
+    <img src={shown} alt="" onError={() => setRetried(true)} className="h-full w-full object-cover" />
   );
 }
