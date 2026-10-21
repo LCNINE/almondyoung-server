@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { DbTx, returnExchangeTables, wmsTables } from '../../inventory/schema/inventory.schema';
 import { seedWorld, World } from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
@@ -703,34 +703,292 @@ describeIfDb('반품·교환 생성 게이트 — 소포 단위 청구 자격 (K
     });
   });
 
-  it('set-partial return goes to manual refund', async () => {
+  // ── 세트 일부 반품 — 관리자가 상한 안에서 금액을 넣어 완료한다 (K6 PR3b) ─────────
+
+  /** 세트 일부(B 1개) 반품 요청 — 상품 소계 2000(결제 5000 − 배송비 3000). */
+  async function seedSetPartialReturn(tx: DbTx) {
+    const set = await seedSetLine(tx);
+    await payOrder(tx, set.line.salesOrderId, { totalAmount: 5000, shippingFee: 3000 });
+    const { requestId } = await seedClaim(tx, {
+      kind: 'return',
+      salesOrderId: set.line.salesOrderId,
+      status: 'inspected',
+      items: [parcelLine(set.line, 0, set.skuB, 1)],
+    });
+    return { ...set, requestId };
+  }
+
+  async function returnRow(tx: DbTx, requestId: string) {
+    const [row] = await tx
+      .select({
+        status: returnExchangeTables.returnRequests.status,
+        adminRefundAmount: returnExchangeTables.returnRequests.adminRefundAmount,
+        adminNote: returnExchangeTables.returnRequests.adminNote,
+      })
+      .from(returnExchangeTables.returnRequests)
+      .where(eq(returnExchangeTables.returnRequests.id, requestId));
+    return row;
+  }
+
+  it('plain completion of a set-partial return asks for an amount', async () => {
     await inRollbackTx(db, async (tx) => {
-      const { line, skuB } = await seedSetLine(tx);
+      const { requestId } = await seedSetPartialReturn(tx);
+      const { service, wallet } = makeRefundHarness(tx);
+
+      const error = await rejection(service.completeReturnRequest(requestId, 'admin-1'));
+
+      // B 1개는 세트 몇 개인지 정할 수 없다 — 자동 금액이 없으므로 금액 완료로 보낸다(A3)
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(error).toMatchObject({ message: '세트 구성품 일부 반품입니다. 환불 금액을 입력해 완료하세요.' });
+      expect((await returnRow(tx, requestId)).status).toBe('inspected');
+      expect(wallet.refundByIntent).not.toHaveBeenCalled();
+    });
+  });
+
+  it('quote of a set-partial return is the admin cap', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { requestId } = await seedSetPartialReturn(tx);
+      const { service } = makeRefundHarness(tx);
+
+      await expect(service.getReturnRefundQuote(requestId)).resolves.toEqual({ kind: 'admin_amount', cap: 2000 });
+    });
+  });
+
+  it('quote of a whole-set return is automatic', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { line, skuA, skuB } = await seedSetLine(tx);
       await payOrder(tx, line.salesOrderId, { totalAmount: 5000, shippingFee: 3000 });
+      const { requestId } = await seedClaim(tx, {
+        kind: 'return',
+        salesOrderId: line.salesOrderId,
+        status: 'inspected',
+        items: [parcelLine(line, 0, skuA, 1), parcelLine(line, 0, skuB, 2)],
+      });
+      const { service } = makeRefundHarness(tx);
+
+      await expect(service.getReturnRefundQuote(requestId)).resolves.toEqual({ kind: 'automatic', amount: 5000 });
+    });
+  });
+
+  it('admin amount within the cap is refunded', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { requestId } = await seedSetPartialReturn(tx);
+      const { service, wallet } = makeRefundHarness(tx);
+
+      const result = await service.completeReturnRequestWithAmount(requestId, 'admin-1', {
+        refundAmount: 1200,
+        adminNote: '구성품 B 1개',
+      });
+
+      expect(wallet.refundByIntent).toHaveBeenCalledWith(INTENT_ID, 1200, expect.anything());
+      expect(result.status).toBe('completed');
+      expect(await returnRow(tx, requestId)).toEqual({
+        status: 'completed',
+        adminRefundAmount: 1200,
+        adminNote: '구성품 B 1개',
+      });
+      const links = await tx
+        .select({ metadata: wmsTables.businessLinks.metadata })
+        .from(wmsTables.businessLinks)
+        .where(
+          and(
+            eq(wmsTables.businessLinks.sourceId, requestId),
+            eq(wmsTables.businessLinks.relationName, 'return_lifecycle_event'),
+          ),
+        );
+      expect(links).toHaveLength(1);
+      expect(links[0].metadata).toMatchObject({
+        event: 'return_refund_pending',
+        refundAmountSource: 'admin',
+        refundAmount: 1200,
+        refundCap: 2000,
+        adminNote: '구성품 B 1개',
+      });
+    });
+  });
+
+  it('admin amount over the cap is refused', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { requestId } = await seedSetPartialReturn(tx);
+      const { service, wallet } = makeRefundHarness(tx);
+
+      const error = await rejection(
+        service.completeReturnRequestWithAmount(requestId, 'admin-1', { refundAmount: 2001, adminNote: '초과' }),
+      );
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(error).toMatchObject({ message: '환불 금액이 상한(2000원)을 넘습니다.' });
+      expect((await returnRow(tx, requestId)).status).toBe('inspected');
+      expect(wallet.refundByIntent).not.toHaveBeenCalled();
+    });
+  });
+
+  it('admin amount on an automatic return is refused', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { line, skuA, skuB } = await seedSetLine(tx);
+      await payOrder(tx, line.salesOrderId, { totalAmount: 5000, shippingFee: 3000 });
+      const { requestId } = await seedClaim(tx, {
+        kind: 'return',
+        salesOrderId: line.salesOrderId,
+        status: 'inspected',
+        items: [parcelLine(line, 0, skuA, 1), parcelLine(line, 0, skuB, 2)],
+      });
+      const { service, wallet } = makeRefundHarness(tx);
+
+      const error = await rejection(
+        service.completeReturnRequestWithAmount(requestId, 'admin-1', { refundAmount: 1000, adminNote: '통째' }),
+      );
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(error).toMatchObject({ message: '자동 환불 금액이 정해지는 반품입니다. 완료 처리를 사용하세요.' });
+      expect((await returnRow(tx, requestId)).status).toBe('inspected');
+      expect(wallet.refundByIntent).not.toHaveBeenCalled();
+    });
+  });
+
+  it('zero admin amount completes without refund', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { requestId } = await seedSetPartialReturn(tx);
+      const { service, wallet, publisher } = makeRefundHarness(tx);
+
+      const result = await service.completeReturnRequestWithAmount(requestId, 'admin-1', {
+        refundAmount: 0,
+        adminNote: '환불 없음',
+      });
+
+      expect(result.status).toBe('completed');
+      expect(wallet.refundByIntent).not.toHaveBeenCalled();
+      expect(enqueued(publisher).map((event) => event.eventType)).toContain('SalesOrderClaimProgressed');
+    });
+  });
+
+  it('retry after admin amount reuses the stored amount', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { requestId } = await seedSetPartialReturn(tx);
+      const { service, wallet } = makeRefundHarness(tx);
+      // 첫 호출만 확정 실패 — attempt 가 닫혀 재시도는 새 attempt 를 만든다
+      wallet.refundByIntent.mockResolvedValueOnce({
+        kind: 'failed',
+        errorCode: 'X',
+        errorMessage: 'refused',
+        determinate: true,
+      });
+
+      const first = await service.completeReturnRequestWithAmount(requestId, 'admin-1', {
+        refundAmount: 1200,
+        adminNote: '구성품 B 1개',
+      });
+      expect(first.status).toBe('refund_pending');
+
+      const retried = await service.retryReturnRefund(requestId, 'admin-1');
+
+      // 재시도는 다시 계산하지 않고 저장된 금액을 쓴다(A6) — 계산하면 세트 일부라 400 이다
+      expect(wallet.refundByIntent).toHaveBeenCalledTimes(2);
+      expect(wallet.refundByIntent).toHaveBeenNthCalledWith(2, INTENT_ID, 1200, expect.anything());
+      expect(retried.status).toBe('completed');
+    });
+  });
+
+  it('prior known refund reduces the cap', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { line, skuA, requestId } = await seedSetPartialReturn(tx);
+      const prior = await seedClaim(tx, {
+        kind: 'return',
+        salesOrderId: line.salesOrderId,
+        status: 'completed',
+        items: [parcelLine(line, 0, skuA, 1)],
+      });
+      await tx.insert(returnExchangeTables.returnRefundAttempts).values({
+        returnRequestId: prior.requestId,
+        attemptNumber: 1,
+        idempotencyKey: `return:${prior.requestId}:refund:1`,
+        amount: 700,
+        status: 'succeeded',
+      });
+      const { service } = makeRefundHarness(tx);
+
+      // 같은 라인을 건드린 앞선 완료 반품이 700 을 이미 돌려줬다
+      await expect(service.getReturnRefundQuote(requestId)).resolves.toEqual({ kind: 'admin_amount', cap: 1300 });
+    });
+  });
+
+  it('prior manual return zeroes the cap', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { line, skuA, requestId } = await seedSetPartialReturn(tx);
+      // 시도 행 없는 완료 반품 = 금액 모름 → 그 라인의 배분액은 0(A4)
+      await seedClaim(tx, {
+        kind: 'return',
+        salesOrderId: line.salesOrderId,
+        status: 'completed',
+        items: [parcelLine(line, 0, skuA, 1)],
+      });
+      const { service } = makeRefundHarness(tx);
+
+      await expect(service.getReturnRefundQuote(requestId)).resolves.toEqual({ kind: 'admin_amount', cap: 0 });
+      const error = await rejection(
+        service.completeReturnRequestWithAmount(requestId, 'admin-1', { refundAmount: 1, adminNote: '1원' }),
+      );
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(error).toMatchObject({ message: '환불 금액이 상한(0원)을 넘습니다.' });
+      const result = await service.completeReturnRequestWithAmount(requestId, 'admin-1', {
+        refundAmount: 0,
+        adminNote: '이미 환불됨',
+      });
+      expect(result.status).toBe('completed');
+    });
+  });
+
+  it('cancelled unit is not refundable again', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const customerId = randomUUID();
+      const skuB = await seedComponentSku(tx, w);
+      // A×1·B×2 세트 라인 수량 2 — 소포 하나에 A 2·B 4 배송완료
+      const line = await seedDeliveredLine(tx, w, {
+        quantity: 2,
+        composition: [
+          { skuId: w.skuId, qtyPerUnit: 1 },
+          { skuId: skuB, qtyPerUnit: 2 },
+        ],
+        parcels: [{ qtyBySku: { [w.skuId]: 2, [skuB]: 4 } }],
+        customerId,
+      });
+      await payOrder(tx, line.salesOrderId, { totalAmount: 5000, shippingFee: 3000 });
+      // 1세트 취소(출고 전 갈래) — totalAmount 는 그대로라 배분액을 남은 비율로 줄여야 한다(U1)
+      await recordSalesOrderCancellation(tx, {
+        salesOrderId: line.salesOrderId,
+        cancellationScope: 'partial',
+        reasonCode: 'customer',
+        metadata: { cancelledLines: [{ salesOrderLineId: line.lineId, quantity: 1 }] },
+        effects: [],
+      });
       const { requestId } = await seedClaim(tx, {
         kind: 'return',
         salesOrderId: line.salesOrderId,
         status: 'inspected',
         items: [parcelLine(line, 0, skuB, 1)],
       });
+      const { service } = makeRefundHarness(tx);
+
+      await expect(service.getReturnRefundQuote(requestId)).resolves.toEqual({ kind: 'admin_amount', cap: 1000 });
+    });
+  });
+
+  it('second completion of the same return is refused', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { requestId } = await seedSetPartialReturn(tx);
       const { service, wallet } = makeRefundHarness(tx);
-
-      const result = await service.completeReturnRequest(requestId, 'admin-1');
-
-      // B 1개는 세트 몇 개인지 정할 수 없다 — 자동 금액이 없으므로 수동 환불로 넘긴다(N5)
-      expect(result.status).toBe('refund_pending');
-      expect(wallet.refundByIntent).not.toHaveBeenCalled();
-      const links = await tx
-        .select({ metadata: wmsTables.businessLinks.metadata })
-        .from(wmsTables.businessLinks)
-        .where(eq(wmsTables.businessLinks.sourceId, requestId));
-      expect(links).toEqual([{ metadata: expect.objectContaining({ event: 'return_refund_pending' }) }]);
-      const error = await rejection(service.retryReturnRefund(requestId, 'admin-1'));
-      expect(error).toBeInstanceOf(BadRequestException);
-      expect(error).toMatchObject({
-        message: '세트 구성품 일부 반품은 자동 환불 금액이 없습니다. 수동 완료를 사용하세요.',
+      await service.completeReturnRequestWithAmount(requestId, 'admin-1', {
+        refundAmount: 1200,
+        adminNote: '구성품 B 1개',
       });
-      expect(wallet.refundByIntent).not.toHaveBeenCalled();
+
+      const error = await rejection(
+        service.completeReturnRequestWithAmount(requestId, 'admin-1', { refundAmount: 1200, adminNote: '또' }),
+      );
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(wallet.refundByIntent).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -83,7 +83,7 @@ export const ROLE_LITERAL_BASELINE: Readonly<Record<string, { count: number; kin
   'apps/core/src/modules/sales-order/controllers/admin-return-exchange.controller.ts': { count: 1, kind: 'data-value' },
   'apps/core/src/modules/sales-order/dto/cancel-sales-order.dto.ts': { count: 1, kind: 'data-value' },
   'apps/core/src/modules/sales-order/services/sales-orders.service.ts': { count: 1, kind: 'system-identity' },
-  'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts': { count: 2, kind: 'data-value' },
+  'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts': { count: 3, kind: 'data-value' },
   'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts': { count: 6, kind: 'system-identity' },
   'apps/core/src/platform/auth/fulfillment-authz.ts': { count: 5, kind: 'legacy-checkpoint' },
   'apps/core/src/platform/auth/fulfillment-scopes.ts': { count: 2, kind: 'role-mapping' },

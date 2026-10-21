@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, gte, inArray, isNotNull, lte, max } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, lte, max, ne } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { InjectTypedDb } from '@app/db';
 import {
@@ -36,6 +36,7 @@ import {
 } from '@packages/event-contracts/streams/orders.stream';
 import { WalletRefundClient, WalletRefundOutcome } from './wallet-refund.client';
 import { classifyRefundOutcome } from './return-refund-classification';
+import { PriorCompletedReturn, returnRefundCap } from './return-refund-cap';
 import { lockShipmentConnectedComponentGraph } from '../../fulfillment/services/shipment-reservation.service';
 import { ACTIVE_EXCHANGE_STATUSES, ACTIVE_RETURN_STATUSES } from '../line-quantities/claim-statuses';
 import { LineQuantities, readLineQuantities } from '../line-quantities/line-quantities.reader';
@@ -60,8 +61,12 @@ export interface ExchangeRequestWithItems {
 }
 
 type ClaimKind = 'return' | 'exchange';
-/** 반품 요청의 자동 환불 금액 — 세트 일부만 돌아온 라인이 있으면 금액을 정할 수 없다(N5, 3b 가 관리자 입력으로 대체). */
+/** 반품 요청의 자동 환불 금액 — 세트 일부만 돌아온 라인이 있으면 금액을 정할 수 없다(N5). 그 요청은 관리자가 금액을 넣는다(3b). */
 type ReturnRefundAmount = { kind: 'amount'; amount: number } | { kind: 'set_partial' };
+/** 반품 환불 금액 견적 — 자동 금액이 있으면 그 값, 세트 일부 반품이면 관리자가 넣을 수 있는 상한(K6 PR3b). */
+export type ReturnRefundQuote = { kind: 'automatic'; amount: number } | { kind: 'admin_amount'; cap: number };
+/** 환불 판단에 쓰는 주문 칸. */
+type RefundSalesOrder = { id: string; walletIntentId: string | null; totalAmount: number | null; shippingFee: number };
 /** 요청 줄 — 소포(`shipmentLineId`·`dispatchAttemptId`)는 둘 다 있거나 둘 다 없다. 없으면 게이트가 라인 단위로 펼친다(N2). */
 type RequestedClaimLine = {
   salesOrderLineId: string;
@@ -713,52 +718,15 @@ export class StoreReturnExchangeService {
         throw new ConflictException(`반품 요청 상태가 'inspected'가 아닙니다. 현재 상태: ${rr.status}`);
       }
 
-      const salesOrder = await tx
-        .select({
-          id: wmsTables.salesOrders.id,
-          walletIntentId: wmsTables.salesOrders.walletIntentId,
-          totalAmount: wmsTables.salesOrders.totalAmount,
-          shippingFee: wmsTables.salesOrders.shippingFee,
-        })
-        .from(wmsTables.salesOrders)
-        .where(eq(wmsTables.salesOrders.id, rr.salesOrderId))
-        .limit(1)
-        .then((r) => r[0]);
-
+      const salesOrder = await this.findRefundSalesOrder(tx, rr.salesOrderId);
       const refund: ReturnRefundAmount = salesOrder
         ? await this.computeReturnRefundAmount(returnRequestId, salesOrder, tx)
         : { kind: 'amount', amount: 0 };
-      // 세트 일부 반품은 자동 금액이 없다 — refund_pending 으로 넘기고 수동 환불을 기다린다(N5)
-      const setPartial = refund.kind === 'set_partial';
-      const immediateComplete = refund.kind === 'amount' && refund.amount <= 0;
-      const needsRefund = !setPartial && !immediateComplete && !!salesOrder?.walletIntentId;
-
-      const now = new Date();
-      const nextStatus = immediateComplete ? 'completed' : 'refund_pending';
-      const [result] = await tx
-        .update(returnExchangeTables.returnRequests)
-        .set({ status: nextStatus, ...(immediateComplete ? { completedAt: now } : {}), updatedAt: now })
-        .where(eq(returnExchangeTables.returnRequests.id, returnRequestId))
-        .returning();
-      await this.insertBusinessLink(tx, 'return_request', returnRequestId, rr.salesOrderId, 'return_lifecycle_event', {
-        event: immediateComplete ? 'return_completed' : 'return_refund_pending',
-        adminId,
-        timestamp: now.toISOString(),
-      });
-      if (immediateComplete) {
-        await this.enqueueReturnCompletedEvent(tx, rr, now);
+      // 세트 일부 반품은 자동 금액이 없다 — 관리자가 상한 안에서 금액을 넣어 완료한다(A3)
+      if (refund.kind === 'set_partial') {
+        throw new BadRequestException('세트 구성품 일부 반품입니다. 환불 금액을 입력해 완료하세요.');
       }
-
-      if (setPartial) {
-        this.logger.warn(
-          `[ReturnRefund] Set-partial return ${returnRequestId} has no automatic amount. Manual refund required.`,
-        );
-      } else if (!immediateComplete && salesOrder && !salesOrder.walletIntentId) {
-        this.logger.warn(
-          `[ReturnRefund] No walletIntentId for SO ${salesOrder.id}, return ${returnRequestId}. Manual refund required.`,
-        );
-      }
-      return { updatedRequest: result, immediateComplete, needsRefund };
+      return this.finishInspectedReturn(tx, rr, salesOrder, refund.amount, adminId, {});
     });
 
     if (phase1.immediateComplete || !phase1.needsRefund) {
@@ -767,6 +735,109 @@ export class StoreReturnExchangeService {
 
     // Phase 2+: 통합 상태기계 (intent-first attempt 행 + 결정적 key)
     return this.attemptReturnRefund(returnRequestId, adminId);
+  }
+
+  /**
+   * 세트 일부 반품을 관리자가 넣은 금액으로 완료한다(K6 PR3b, U2). 금액은 0 이상 상한 이하(A1)이고
+   * 반품 행에 저장돼 재시도가 다시 계산하지 않는다(A6). 그 뒤 갈래는 자동 완료와 같다.
+   */
+  async completeReturnRequestWithAmount(
+    returnRequestId: string,
+    adminId: string,
+    input: { refundAmount: number; adminNote: string },
+  ): Promise<ReturnRequest> {
+    const { refundAmount, adminNote } = input;
+    const phase1 = await this.db.db.transaction(async (tx) => {
+      const rr = await this.findReturnRequestOrThrow(returnRequestId, tx, { forUpdate: true });
+      if (rr.status !== 'inspected') {
+        throw new ConflictException(`반품 요청 상태가 'inspected'가 아닙니다. 현재 상태: ${rr.status}`);
+      }
+
+      const salesOrder = await this.findRefundSalesOrder(tx, rr.salesOrderId);
+      const refund: ReturnRefundAmount = salesOrder
+        ? await this.computeReturnRefundAmount(returnRequestId, salesOrder, tx)
+        : { kind: 'amount', amount: 0 };
+      if (!salesOrder || refund.kind !== 'set_partial') {
+        throw new BadRequestException('자동 환불 금액이 정해지는 반품입니다. 완료 처리를 사용하세요.');
+      }
+      const cap = await this.computeAdminRefundCap(tx, returnRequestId, salesOrder);
+      if (refundAmount > cap) {
+        throw new BadRequestException(`환불 금액이 상한(${cap}원)을 넘습니다.`);
+      }
+
+      await tx
+        .update(returnExchangeTables.returnRequests)
+        .set({ adminRefundAmount: refundAmount, adminNote, updatedAt: new Date() })
+        .where(eq(returnExchangeTables.returnRequests.id, returnRequestId));
+      return this.finishInspectedReturn(tx, rr, salesOrder, refundAmount, adminId, {
+        refundAmountSource: 'admin',
+        refundAmount,
+        refundCap: cap,
+        adminNote,
+      });
+    });
+
+    if (phase1.immediateComplete || !phase1.needsRefund) {
+      return phase1.updatedRequest;
+    }
+    return this.attemptReturnRefund(returnRequestId, adminId);
+  }
+
+  /**
+   * 검수 끝난 반품의 환불 금액 견적(A7). admin-web 이 «완료 처리» 때 불러 자동 완료와 금액 완료 중 하나를 고른다.
+   */
+  async getReturnRefundQuote(returnRequestId: string): Promise<ReturnRefundQuote> {
+    return this.db.db.transaction(async (tx) => {
+      const rr = await this.findReturnRequestOrThrow(returnRequestId, tx);
+      if (rr.status !== 'inspected') {
+        throw new ConflictException(`환불 금액 견적은 'inspected' 상태에서만 볼 수 있습니다. 현재 상태: ${rr.status}`);
+      }
+      const salesOrder = await this.findRefundSalesOrder(tx, rr.salesOrderId);
+      if (!salesOrder) return { kind: 'automatic', amount: 0 };
+      const refund = await this.computeReturnRefundAmount(returnRequestId, salesOrder, tx);
+      if (refund.kind === 'amount') return { kind: 'automatic', amount: refund.amount };
+      return { kind: 'admin_amount', cap: await this.computeAdminRefundCap(tx, returnRequestId, salesOrder) };
+    });
+  }
+
+  /**
+   * 검수 끝난 반품을 금액으로 다음 상태로 보낸다 — 두 완료(자동·관리자 금액)가 같이 쓴다.
+   * 0 → 즉시 `completed` + 완료 이벤트, 그 밖 → `refund_pending`(Wallet 환불 또는 수동 완료 대기).
+   */
+  private async finishInspectedReturn(
+    tx: Parameters<Parameters<typeof this.db.db.transaction>[0]>[0],
+    rr: ReturnRequestRow,
+    salesOrder: RefundSalesOrder | undefined,
+    amount: number,
+    adminId: string,
+    linkExtra: Record<string, unknown>,
+  ): Promise<{ updatedRequest: ReturnRequest; immediateComplete: boolean; needsRefund: boolean }> {
+    const immediateComplete = amount <= 0;
+    const needsRefund = !immediateComplete && !!salesOrder?.walletIntentId;
+
+    const now = new Date();
+    const nextStatus = immediateComplete ? 'completed' : 'refund_pending';
+    const [result] = await tx
+      .update(returnExchangeTables.returnRequests)
+      .set({ status: nextStatus, ...(immediateComplete ? { completedAt: now } : {}), updatedAt: now })
+      .where(eq(returnExchangeTables.returnRequests.id, rr.id))
+      .returning();
+    await this.insertBusinessLink(tx, 'return_request', rr.id, rr.salesOrderId, 'return_lifecycle_event', {
+      event: immediateComplete ? 'return_completed' : 'return_refund_pending',
+      adminId,
+      timestamp: now.toISOString(),
+      ...linkExtra,
+    });
+    if (immediateComplete) {
+      await this.enqueueReturnCompletedEvent(tx, rr, now);
+    }
+
+    if (!immediateComplete && salesOrder && !salesOrder.walletIntentId) {
+      this.logger.warn(
+        `[ReturnRefund] No walletIntentId for SO ${salesOrder.id}, return ${rr.id}. Manual refund required.`,
+      );
+    }
+    return { updatedRequest: result, immediateComplete, needsRefund };
   }
 
   /**
@@ -823,11 +894,18 @@ export class StoreReturnExchangeService {
       }
 
       // 신규 attempt (N = max+1) — 규율 1: pending 없을 때만(직전 확정 failed 또는 최초)
-      const refund = await this.computeReturnRefundAmount(returnRequestId, salesOrder, tx);
-      if (refund.kind === 'set_partial') {
-        throw new BadRequestException('세트 구성품 일부 반품은 자동 환불 금액이 없습니다. 수동 완료를 사용하세요.');
+      // 관리자가 넣은 금액이 있으면 다시 계산하지 않는다(A6). 없으면 자동 금액 — 세트 일부인데 금액이 없는 행은
+      // 3a 의 임시 갈래(N5)가 남긴 refund_pending 이라 수동 완료로 보낸다.
+      let amount: number;
+      if (rr.adminRefundAmount !== null) {
+        amount = rr.adminRefundAmount;
+      } else {
+        const refund = await this.computeReturnRefundAmount(returnRequestId, salesOrder, tx);
+        if (refund.kind === 'set_partial') {
+          throw new BadRequestException('세트 구성품 일부 반품은 자동 환불 금액이 없습니다. 수동 완료를 사용하세요.');
+        }
+        amount = refund.amount;
       }
-      const amount = refund.amount;
       if (amount <= 0) {
         throw new BadRequestException('환불 금액이 0원 이하입니다. 수동 완료를 사용하세요.');
       }
@@ -1655,6 +1733,94 @@ export class StoreReturnExchangeService {
         salesOrder.shippingFee ?? 0,
       ),
     };
+  }
+
+  /**
+   * 세트 일부 반품의 관리자 환불 상한(K6 PR3b) — 주문 라인·남은 수량(U1)·이 요청이 건드린 라인·앞선 완료 반품의
+   * 아는 환불액(A4)을 모아 `returnRefundCap` 에 넘긴다. 청구 항목은 라인 id 만 읽는다(수량은 수량 문의 몫).
+   */
+  private async computeAdminRefundCap(
+    tx: DbTx,
+    returnRequestId: string,
+    salesOrder: { id: string; totalAmount: number | null; shippingFee: number },
+  ): Promise<number> {
+    const orderLines = await tx
+      .select({
+        id: wmsTables.salesOrderLines.id,
+        quantity: wmsTables.salesOrderLines.quantity,
+        unitPrice: wmsTables.salesOrderLines.unitPrice,
+        totalPrice: wmsTables.salesOrderLines.totalPrice,
+      })
+      .from(wmsTables.salesOrderLines)
+      .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrder.id));
+    const lineQuantities = await readLineQuantities(tx, salesOrder.id);
+    const touchedLineIds = new Set((await readReturnRequestSalesUnits(tx, returnRequestId)).keys());
+
+    const requests = returnExchangeTables.returnRequests;
+    const items = returnExchangeTables.returnRequestItems;
+    const priorItemRows = await tx
+      .select({ returnRequestId: requests.id, salesOrderLineId: items.salesOrderLineId })
+      .from(requests)
+      .innerJoin(items, eq(items.returnRequestId, requests.id))
+      .where(
+        and(
+          eq(requests.salesOrderId, salesOrder.id),
+          eq(requests.status, 'completed'),
+          ne(requests.id, returnRequestId),
+        ),
+      );
+    const lineIdsByPrior = new Map<string, Set<string>>();
+    for (const row of priorItemRows) {
+      const lineIds = lineIdsByPrior.get(row.returnRequestId) ?? new Set<string>();
+      lineIds.add(row.salesOrderLineId);
+      lineIdsByPrior.set(row.returnRequestId, lineIds);
+    }
+
+    const attempts = returnExchangeTables.returnRefundAttempts;
+    const succeededRows =
+      lineIdsByPrior.size === 0
+        ? []
+        : await tx
+            .select({ returnRequestId: attempts.returnRequestId, amount: attempts.amount })
+            .from(attempts)
+            .where(
+              and(inArray(attempts.returnRequestId, [...lineIdsByPrior.keys()]), eq(attempts.status, 'succeeded')),
+            );
+    const refundedByPrior = new Map<string, number>();
+    for (const row of succeededRows) {
+      refundedByPrior.set(row.returnRequestId, (refundedByPrior.get(row.returnRequestId) ?? 0) + row.amount);
+    }
+    const priorReturns: PriorCompletedReturn[] = [...lineIdsByPrior].map(([id, lineIds]) => ({
+      lineIds: [...lineIds],
+      refundedAmount: refundedByPrior.get(id) ?? null,
+    }));
+
+    return returnRefundCap({
+      // 수량 문이 늘 주문의 모든 라인을 낸다 — 못 찾으면 0(과환불 쪽으로 기울지 않는다)
+      orderLines: orderLines.map((line) => ({ ...line, remaining: lineQuantities.get(line.id)?.remaining ?? 0 })),
+      touchedLineIds,
+      priorReturns,
+      totalAmount: salesOrder.totalAmount ?? null,
+      shippingFee: salesOrder.shippingFee ?? 0,
+    });
+  }
+
+  /** 환불 판단에 쓰는 주문 칸 — 없으면 undefined. */
+  private async findRefundSalesOrder(
+    tx: Parameters<Parameters<typeof this.db.db.transaction>[0]>[0],
+    salesOrderId: string,
+  ): Promise<RefundSalesOrder | undefined> {
+    return tx
+      .select({
+        id: wmsTables.salesOrders.id,
+        walletIntentId: wmsTables.salesOrders.walletIntentId,
+        totalAmount: wmsTables.salesOrders.totalAmount,
+        shippingFee: wmsTables.salesOrders.shippingFee,
+      })
+      .from(wmsTables.salesOrders)
+      .where(eq(wmsTables.salesOrders.id, salesOrderId))
+      .limit(1)
+      .then((r) => r[0]);
   }
 
   /** 환불 시도 감사 로그 (기존 return_linked_wallet_refund businessLink 연속 — 상태 SoT 는 attempt 행). */

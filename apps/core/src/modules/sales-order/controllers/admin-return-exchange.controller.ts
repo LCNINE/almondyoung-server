@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { IsArray, IsOptional, IsString, MaxLength, ValidateNested, IsInt, Min } from 'class-validator';
+import { IsArray, IsOptional, IsString, MaxLength, ValidateNested, IsInt, Min, IsNotEmpty } from 'class-validator';
 import { Type } from 'class-transformer';
 import { RequireScopes, ScopeGuard, User, RequirePermission, PiiResponse } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
@@ -34,6 +34,18 @@ export class AdminDecideRequestDto {
   @IsOptional()
   @IsString()
   refundLinkId?: string;
+}
+
+/** 세트 일부 반품의 관리자 금액 완료 (K6 PR3b) — 금액은 0 이상 정수, 메모 필수(A1·A2). */
+export class AdminCompleteReturnWithAmountDto {
+  @IsInt()
+  @Min(0)
+  refundAmount: number;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
+  adminNote: string;
 }
 
 class AdminCancelLineDto {
@@ -342,6 +354,38 @@ export class AdminReturnExchangeController {
   @ApiParam({ name: 'id', description: '반품 요청 ID' })
   completeReturnRequest(@Param('id') id: string, @User() admin: AuthenticatedAdmin) {
     return this.service.completeReturnRequest(id, admin.userId);
+  }
+
+  @RequirePermission('order.claim.read')
+  @Get('return-requests/:id/refund-quote')
+  @ApiOperation({ summary: '반품 환불 금액 견적 (관리자) — inspected 상태에서만. 자동 금액 또는 관리자 금액 상한' })
+  @ApiParam({ name: 'id', description: '반품 요청 ID' })
+  getReturnRefundQuote(@Param('id') id: string) {
+    return this.service.getReturnRefundQuote(id);
+  }
+
+  @PiiResponse({
+    fields: {
+      'request.returnAddress': 'redact',
+      'request.reasonDetail': 'text',
+      'request.adminNote': 'text',
+    },
+    subjects: [
+      { path: 'request.id', type: 'return_request' },
+      { path: 'request.customerId', type: 'user' },
+    ],
+  })
+  @RequirePermission('payment.refund.execute')
+  @Post('return-requests/:id/complete-with-amount')
+  @HttpCode(200)
+  @ApiOperation({ summary: '세트 일부 반품을 관리자 금액으로 완료 (관리자) — inspected 상태, 상한 이하' })
+  @ApiParam({ name: 'id', description: '반품 요청 ID' })
+  completeReturnRequestWithAmount(
+    @Param('id') id: string,
+    @User() admin: AuthenticatedAdmin,
+    @Body() dto: AdminCompleteReturnWithAmountDto,
+  ) {
+    return this.service.completeReturnRequestWithAmount(id, admin.userId, dto);
   }
 
   @PiiResponse({

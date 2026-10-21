@@ -46,6 +46,7 @@ export const PII_ROUTES: readonly string[] = [
   'core POST /admin/return-requests/:id/collected',
   'core POST /admin/return-requests/:id/collection-pending',
   'core POST /admin/return-requests/:id/complete',
+  'core POST /admin/return-requests/:id/complete-with-amount',
   'core POST /admin/return-requests/:id/inspected',
   'core POST /admin/return-requests/:id/manual-complete',
   'core POST /admin/return-requests/:id/reject',
