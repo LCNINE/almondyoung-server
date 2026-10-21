@@ -655,6 +655,37 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
       });
     });
 
+    it('delivered parcel with an active return shows return_requested', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await f.seedWorld(tx);
+        const customerId = randomUUID();
+        const sku = await seedComponentSku(tx, w);
+        const line = await seedDeliveredLine(tx, w, {
+          quantity: 1,
+          composition: [{ skuId: sku, qtyPerUnit: 1 }],
+          parcels: [{ qtyBySku: { [sku]: 1 } }],
+          customerId,
+        });
+        await seedClaim(tx, {
+          kind: 'return',
+          salesOrderId: line.salesOrderId,
+          status: 'requested',
+          items: [
+            {
+              salesOrderLineId: line.lineId,
+              shipmentLineId: line.parcels[0].shipmentLineIdBySku.get(sku) ?? null,
+              dispatchAttemptId: line.parcels[0].dispatchAttemptId,
+              quantity: 1,
+            },
+          ],
+        });
+        const actions = await storeService(tx).getActions(line.salesOrderId, customerId);
+        expect(actions.claimStatus).toBe('return_requested');
+        expect(actions.availableActions).not.toContain('return');
+        expect(actions.availableActions).not.toContain('exchange');
+      });
+    });
+
     it('delivered parcel with print still preparing opens claims', async () => {
       await inRollbackTx(db, async (tx) => {
         const w = await f.seedWorld(tx);

@@ -819,36 +819,38 @@ export class StoreSalesOrdersService {
     } else if (cancelUnavailableReason === 'already_shipped') {
       availableActions.push('track');
       availableActions.push('receipt');
-      // return/exchange: 청구 가능한 배송완료 소포(claimable > 0)가 있고 진행 중인 claim 이 없을 때만 허용 (K6 PR3a, C8)
-      const claimableParcels = await readParcelClaimEligibility(this.db.db, so.id);
-      if (claimableParcels.some((parcel) => parcel.claimable > 0)) {
-        const [activeReturn, activeExchange] = await Promise.all([
-          this.db.db
-            .select({ id: returnExchangeTables.returnRequests.id })
-            .from(returnExchangeTables.returnRequests)
-            .where(
-              and(
-                eq(returnExchangeTables.returnRequests.salesOrderId, so.id),
-                inArray(returnExchangeTables.returnRequests.status, [...ACTIVE_RETURN_STATUSES]),
-              ),
-            )
-            .limit(1)
-            .then((r) => r[0]),
-          this.db.db
-            .select({ id: returnExchangeTables.exchangeRequests.id })
-            .from(returnExchangeTables.exchangeRequests)
-            .where(
-              and(
-                eq(returnExchangeTables.exchangeRequests.salesOrderId, so.id),
-                inArray(returnExchangeTables.exchangeRequests.status, [...ACTIVE_EXCHANGE_STATUSES]),
-              ),
-            )
-            .limit(1)
-            .then((r) => r[0]),
-        ]);
-        if (activeReturn) claimStatus = 'return_requested';
-        else if (activeExchange) claimStatus = 'exchange_requested';
-        if (claimStatus === 'none') {
+      // 진행 중인 claim 은 claimable 과 상관없이 claimStatus 로 드러낸다 — 진행 중 반품이 배송완료 소포를
+      // 전부 덮으면 claimable 이 0 이 되므로, 이 조회를 claimable 뒤에 두면 claimStatus 가 'none' 으로 남는다.
+      // return/exchange: 진행 중인 claim 이 없고 청구 가능한 배송완료 소포(claimable > 0)가 있을 때만 허용 (K6 PR3a, C8)
+      const [activeReturn, activeExchange] = await Promise.all([
+        this.db.db
+          .select({ id: returnExchangeTables.returnRequests.id })
+          .from(returnExchangeTables.returnRequests)
+          .where(
+            and(
+              eq(returnExchangeTables.returnRequests.salesOrderId, so.id),
+              inArray(returnExchangeTables.returnRequests.status, [...ACTIVE_RETURN_STATUSES]),
+            ),
+          )
+          .limit(1)
+          .then((r) => r[0]),
+        this.db.db
+          .select({ id: returnExchangeTables.exchangeRequests.id })
+          .from(returnExchangeTables.exchangeRequests)
+          .where(
+            and(
+              eq(returnExchangeTables.exchangeRequests.salesOrderId, so.id),
+              inArray(returnExchangeTables.exchangeRequests.status, [...ACTIVE_EXCHANGE_STATUSES]),
+            ),
+          )
+          .limit(1)
+          .then((r) => r[0]),
+      ]);
+      if (activeReturn) claimStatus = 'return_requested';
+      else if (activeExchange) claimStatus = 'exchange_requested';
+      if (claimStatus === 'none') {
+        const claimableParcels = await readParcelClaimEligibility(this.db.db, so.id);
+        if (claimableParcels.some((parcel) => parcel.claimable > 0)) {
           availableActions.push('return');
           availableActions.push('exchange');
         }
