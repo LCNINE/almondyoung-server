@@ -835,8 +835,10 @@ export function setup(infra: SharedInfra) {
   });
 
   // Next 15 는 공식 지원 기간(출시 후 2년)이 끝나 OpenNext 가 빌드를 거부한다. SST 기본 빌드 명령에 플래그만 더했다.
+  // 플래그 뒤의 `true` 는 지우지 말 것 — OpenNext CLI 는 값 없는 플래그를 «없음»으로 읽는다.
   // admin-web·storefront 를 Next 16 으로 올리면 이 값과 두 buildCommand 를 지운다.
-  const next15BuildCommand = 'npx --yes @opennextjs/aws@3.9.14 build --dangerously-use-unsupported-next-version';
+  const next15BuildCommand =
+    'npx --yes @opennextjs/aws@3.9.14 build --dangerously-use-unsupported-next-version true';
 
   // ─── admin-web (Next.js / OpenNext, CloudFront) ───
   // admin-web 자체가 OIDC RP. 빌드 단계의 page-data collection 이 OIDC env 를 required 로 읽으므로,
