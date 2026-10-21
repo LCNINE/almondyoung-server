@@ -18,8 +18,9 @@ import { SalesOrdersService } from './sales-orders.service';
 /**
  * 주문 현황 칩(관리자 메인 + 통계 종합 탭)이 세는 7개 숫자를 실 Postgres 로 고정한다.
  *
- * 이 숫자들은 화면의 첫 인상이라 정의가 조용히 바뀌면 티가 안 난다. 출고 불가/부분 출고는
+ * 이 숫자들은 화면의 첫 인상이라 정의가 조용히 바뀌면 티가 안 난다. 출고 불가는
  * 정체 보드(`order_progress`)의 «예약» 단계에서 센다 — 보드 칸 숫자와 같은 값이어야 한다(스펙 D9).
+ * 부분 출고·출고완료는 진행 중 주문(14일)의 라인 수량으로 센다(K6 PR2b, R14).
  *
  * 기존 행이 남아 있는 DB 에서도 돌 수 있게 **넣기 전/후의 차이**를 본다.
  * 각 테스트는 트랜잭션 안에서 픽스처를 넣고 항상 롤백한다 — DB 에 아무것도 남지 않는다.
@@ -177,11 +178,16 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
     expect(delta.partialOutbound).toBe(0);
   });
 
-  /** 14일 안 confirmed 주문 하나 + FO(수량 qty) 하나. 상자는 호출자가 만든다 */
+  /** 14일 안 주문(기본 confirmed) 하나 + FO(수량 qty) 하나. 상자는 호출자가 만든다 */
   async function splitOrder(
     trx: DbTx,
     w: f.World,
-    args: { qty: number; dropShip?: 'forwarded' | 'completed'; status?: 'confirmed' | 'shipped'; daysAgo?: number },
+    args: {
+      qty: number;
+      dropShip?: 'forwarded' | 'completed';
+      status?: 'pending' | 'confirmed' | 'shipped';
+      daysAgo?: number;
+    },
   ) {
     const o = await f.seedOrder(trx, {
       status: args.status ?? 'confirmed',
@@ -196,6 +202,24 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
     const delta = await withFixtures(async ({ trx }) => {
       const w = await f.seedWorld(trx);
       const o = await splitOrder(trx, w, { qty: 3 });
+      const sent = await f.seedBox(trx, w, [o.foItemId], { status: 'planned', qty: [1] });
+      await f.seedBox(trx, w, [o.foItemId], { status: 'planned', qty: [2] });
+      await seedDispatchedParcel(trx, w, {
+        shipmentId: sent.shipmentId,
+        lines: [{ shipmentLineId: sent.lineIds[0], foItemId: o.foItemId, qty: 1 }],
+      });
+    });
+
+    expect(delta.partialOutbound).toBe(1);
+    expect(delta.outboundComplete).toBe(0);
+  });
+
+  // 모집단은 진행 중 주문(SO pending·confirmed·processing, 14일)이다 — 라이브 진행 중 주문은 pending 이다(R14).
+  // 생성이 pending 으로 넣고 confirm 은 관리자 엔드포인트뿐이라, confirmed 만 세면 카드가 0 에 머문다.
+  it('pending order counts as partial outbound', async () => {
+    const delta = await withFixtures(async ({ trx }) => {
+      const w = await f.seedWorld(trx);
+      const o = await splitOrder(trx, w, { qty: 3, status: 'pending' });
       const sent = await f.seedBox(trx, w, [o.foItemId], { status: 'planned', qty: [1] });
       await f.seedBox(trx, w, [o.foItemId], { status: 'planned', qty: [2] });
       await seedDispatchedParcel(trx, w, {
@@ -269,6 +293,8 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
   it('FO 의 shipped_at·status 만으로는 출고완료가 아니다 — 나간 수량이 없다', async () => {
     const delta = await withFixtures(async ({ order }) => {
       await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(1), fo: { status: 'shipped' } });
+      // pending 도 모집단이다(R14) — 거기서도 FO 상태만으로는 세지 않는다
+      await order({ status: 'pending', orderDate: kstDaysAgoNoon(1), fo: { status: 'shipped' } });
       await order({
         status: 'confirmed',
         orderDate: kstDaysAgoNoon(3),

@@ -1262,8 +1262,10 @@ export class SalesOrdersService {
           )
           .where(eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship')),
 
-        // 출고완료·부분출고: confirmed SO(14일) 를 라인 수량으로 접어 센다. SO.status 는 processing/shipped/
-        // delivered 로 전이하지 않으므로(작업 15, ADR-0017) 나간 수량에서 도출한다 — 상자 상태가 아니다.
+        // 출고완료·부분출고: 진행 중 SO(pending·confirmed·processing, 14일)를 라인 수량으로 접어 센다(R14).
+        // 라이브 진행 중 주문은 pending 이다 — 생성이 pending 으로 넣고 confirm 은 관리자 엔드포인트뿐이라 confirmed 만
+        // 세면 카드가 0 에 머문다. 셀메이트로 나간 주문(shipped)·취소는 모집단 밖이다.
+        // core 출고는 SO.status 로 전이하지 않으므로(ADR-0017) 나간 수량에서 도출한다 — 상자 상태가 아니다.
         // 직배 넘김(forwarded)은 outstanding 이 남고 shipped 가 0 이라 어느 쪽에도 들지 않는다.
         // 날짜는 ISO 문자열 + 캐스트로 넘긴다(raw sql 에 Date 를 그대로 주면 postgres.js 가 TypeError).
         db.execute<{ outboundComplete: number; partialOutbound: number }>(sql`
@@ -1278,7 +1280,7 @@ export class SalesOrdersService {
                   select scope_so.id
                     from ${wmsTables.salesOrders} as scope_so
                    where scope_so.order_date >= ${fourteenDaysAgo.toISOString()}::timestamptz
-                     and scope_so.status = 'confirmed'
+                     and scope_so.status in ('pending', 'confirmed', 'processing')
                 `)}) as line_sku
                group by line_sku.sales_order_id
             ) as order_fact
