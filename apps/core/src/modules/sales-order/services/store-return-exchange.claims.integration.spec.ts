@@ -10,7 +10,9 @@ import {
   seedComponentSku,
   seedDeliveredLine,
 } from '../line-quantities/__support__/claim-facts.fixtures';
+import { recordSalesOrderCancellation } from '../cancellation-record/record-cancellation';
 import { StoreCreateReturnRequestDto } from '../dto/store-return-request.dto';
+import { readParcelClaimEligibility } from '../line-quantities/parcel-claim-eligibility.reader';
 import { StoreReturnExchangeService } from './store-return-exchange.service';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -226,6 +228,42 @@ describeIfDb('반품 생성 게이트 — 소포 단위 청구 자격 (K6 PR3a)'
       expect(error).toBeInstanceOf(BadRequestException);
       expect(error).toMatchObject({
         message: `배송 시도 ${one.dispatchAttemptId}의 라인 ${one.shipmentLineId} 반품 가능 수량(1)을 초과하였습니다. (요청: 2)`,
+      });
+    });
+  });
+
+  it('over-limit message clamps a negative claimable to 0', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, customerId, line } = await seedSingle(tx);
+      const one = parcelLine(line, 0, w.skuId, 1);
+      // 완료 반품 1 + 출고 뒤 취소 1 — SKU 몫이 1 − 1 − 1 = −1, 소포 claimable 도 −1 이다
+      await seedClaim(tx, { kind: 'return', salesOrderId: line.salesOrderId, status: 'completed', items: [one] });
+      // 엔진은 다 나간 라인의 부분취소를 거절하므로(R1) 엔진이 남기는 모양을 쓰기 문에 직접 넘긴다
+      await recordSalesOrderCancellation(tx, {
+        salesOrderId: line.salesOrderId,
+        cancellationScope: 'partial',
+        reasonCode: 'customer',
+        metadata: { cancelledLines: [{ salesOrderLineId: line.lineId, quantity: 1 }] },
+        effects: [
+          {
+            type: 'preserved_shipped_fulfillment_order_item',
+            metadata: {
+              salesOrderLineId: line.lineId,
+              skuId: w.skuId,
+              requestedFulfillmentQuantity: 1,
+              affectedShippedQuantity: 1,
+            },
+          },
+        ],
+      });
+      const [parcel] = await readParcelClaimEligibility(tx, line.salesOrderId);
+      expect(parcel).toMatchObject({ skuClaimable: -1, claimable: -1 });
+
+      const error = await rejection(makeService(tx).createReturnRequest(line.salesOrderId, customerId, dto([one])));
+      expect(error).toBeInstanceOf(BadRequestException);
+      // 비교는 원값(−1), 문구는 0 으로 클램프한다(R6)
+      expect(error).toMatchObject({
+        message: `배송 시도 ${one.dispatchAttemptId}의 라인 ${one.shipmentLineId} 반품 가능 수량(0)을 초과하였습니다. (요청: 1)`,
       });
     });
   });

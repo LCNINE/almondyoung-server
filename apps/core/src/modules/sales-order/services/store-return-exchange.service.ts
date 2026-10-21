@@ -1452,11 +1452,12 @@ export class StoreReturnExchangeService {
       );
     }
 
-    // ②
+    // ② 요청 라인만이 아니라 주문의 모든 라인을 잠근다 — 서로 다른 라인·이어지지 않은 FO 를 건드린 두 요청도
+    //    여기서 주문 단위로 줄을 서야 ③ «진행 중 요청 있음» 확인이 둘을 함께 통과시키지 않는다(R8).
     await tx
       .select({ id: wmsTables.salesOrderLines.id })
       .from(wmsTables.salesOrderLines)
-      .where(inArray(wmsTables.salesOrderLines.id, lineIds))
+      .where(eq(wmsTables.salesOrderLines.salesOrderId, orderId))
       .orderBy(asc(wmsTables.salesOrderLines.id))
       .for('update');
 
@@ -1512,7 +1513,7 @@ export class StoreReturnExchangeService {
       resolved.push({ line: this.toResolvedClaimLine(only, line.quantity), parcel: only });
     }
 
-    // ⑦ 같은 소포·같은 (라인, SKU) 줄은 합산해 검사한다(F7)
+    // ⑦ 같은 소포·같은 (라인, SKU) 줄은 합산해 검사한다(F7). 비교는 원값, 문구의 수량만 0 으로 클램프한다(R6)
     const requestedByParcel = new Map<string, { parcel: ParcelClaimEligibility; quantity: number }>();
     const requestedBySku = new Map<string, { parcel: ParcelClaimEligibility; quantity: number }>();
     for (const { line, parcel } of resolved) {
@@ -1527,14 +1528,14 @@ export class StoreReturnExchangeService {
     for (const { parcel, quantity } of requestedByParcel.values()) {
       if (quantity > parcel.claimable) {
         throw new BadRequestException(
-          `배송 시도 ${parcel.dispatchAttemptId}의 라인 ${parcel.shipmentLineId} ${label} 가능 수량(${parcel.claimable})을 초과하였습니다. (요청: ${quantity})`,
+          `배송 시도 ${parcel.dispatchAttemptId}의 라인 ${parcel.shipmentLineId} ${label} 가능 수량(${Math.max(0, parcel.claimable)})을 초과하였습니다. (요청: ${quantity})`,
         );
       }
     }
     for (const { parcel, quantity } of requestedBySku.values()) {
       if (quantity > parcel.skuClaimable) {
         throw new BadRequestException(
-          `주문 라인 ${parcel.salesOrderLineId} 구성품 ${parcel.skuId}의 ${label} 가능 수량(${parcel.skuClaimable})을 초과하였습니다. (요청: ${quantity})`,
+          `주문 라인 ${parcel.salesOrderLineId} 구성품 ${parcel.skuId}의 ${label} 가능 수량(${Math.max(0, parcel.skuClaimable)})을 초과하였습니다. (요청: ${quantity})`,
         );
       }
     }
