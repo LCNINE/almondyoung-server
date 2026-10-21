@@ -16,6 +16,10 @@ export interface ReturnRequestItem {
   createdAt: string;
 }
 
+export type ReturnRefundQuote =
+  | { kind: 'automatic'; amount: number }
+  | { kind: 'admin_amount'; cap: number };
+
 export interface ReturnRequest {
   id: string;
   salesOrderId: string;
@@ -239,6 +243,24 @@ export const returnExchangeApi = {
   completeReturn: async (id: string): Promise<ReturnRequest> => {
     const res = await client.post(
       `${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}/complete`
+    );
+    return res.data;
+  },
+
+  getReturnRefundQuote: async (id: string): Promise<ReturnRefundQuote> => {
+    const res = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}/refund-quote`
+    );
+    return res.data;
+  },
+
+  completeReturnWithAmount: async (
+    id: string,
+    body: { refundAmount: number; adminNote: string }
+  ): Promise<ReturnRequest> => {
+    const res = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}/complete-with-amount`,
+      body
     );
     return res.data;
   },

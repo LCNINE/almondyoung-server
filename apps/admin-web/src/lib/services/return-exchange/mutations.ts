@@ -88,6 +88,25 @@ export const useCompleteReturn = () => {
 };
 useCompleteReturn.permission = ['order.claim.write'] as const satisfies PermissionRequirement;
 
+export const useCompleteReturnWithAmount = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      refundAmount,
+      adminNote,
+    }: {
+      id: string;
+      refundAmount: number;
+      adminNote: string;
+    }) =>
+      returnExchangeApi.completeReturnWithAmount(id, { refundAmount, adminNote }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: returnExchangeQueryKeys.allReturns }),
+  });
+};
+useCompleteReturnWithAmount.permission = ['payment.refund.execute'] as const satisfies PermissionRequirement;
+
 export const useRetryReturnRefund = () => {
   const qc = useQueryClient();
   return useMutation({

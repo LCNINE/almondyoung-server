@@ -37,6 +37,7 @@ function makeReturnRequest(overrides: Record<string, unknown> = {}) {
     reasonCode: 'defective',
     reasonDetail: null,
     adminNote: null,
+    adminRefundAmount: null,
     decidedAt: null,
     collectedAt: null,
     completedAt: null,

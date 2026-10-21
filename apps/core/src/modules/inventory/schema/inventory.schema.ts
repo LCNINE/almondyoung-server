@@ -5072,6 +5072,8 @@ export const returnRequests = pgTable(
     reasonDetail: text('reason_detail'),
     returnAddress: json('return_address'),
     adminNote: text('admin_note'),
+    // 세트 일부 반품의 관리자 입력 환불액 (K6 PR3b). null = 자동 계산 경로.
+    adminRefundAmount: integer('admin_refund_amount'),
     decidedAt: timestamp('decided_at', { withTimezone: true }),
     collectedAt: timestamp('collected_at', { withTimezone: true }),
     completedAt: timestamp('completed_at', { withTimezone: true }),
@@ -5082,6 +5084,10 @@ export const returnRequests = pgTable(
     idxReturnRequestsSalesOrder: index('idx_return_requests_sales_order').on(t.salesOrderId),
     idxReturnRequestsStatus: index('idx_return_requests_status').on(t.status),
     idxReturnRequestsCustomer: index('idx_return_requests_customer').on(t.customerId),
+    ckReturnRequestsAdminRefundAmountNonnegative: check(
+      'ck_return_requests_admin_refund_amount_nonnegative',
+      sql`${t.adminRefundAmount} >= 0`,
+    ),
   }),
 );
 

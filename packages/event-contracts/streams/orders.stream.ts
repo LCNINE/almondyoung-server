@@ -525,6 +525,9 @@ export interface SalesOrderReturnedPayload {
     orderedQuantity: number;
     /** 완료된 반품의 누적 수량(이 건 포함). `orderedQuantity` 와 같으면 그 라인은 전량 반품이다. */
     returnedQuantity: number;
+    /** 그 라인의 주문 − 취소 전부(판매 단위). 없으면 옛 생산자다 — 소비자는 `orderedQuantity` 로 대신한다.
+     *  출고 뒤 취소가 있으면 `orderedQuantity` 까지는 영영 반품될 수 없어, 전량 반품 판정은 이 값과 비교한다. */
+    remainingQuantity?: number;
   }>;
 }
 
@@ -541,6 +544,7 @@ const SalesOrderReturnedSchema = z.object({
       channelOrderItemId: z.string().min(1).optional(),
       orderedQuantity: z.number().int().positive(),
       returnedQuantity: z.number().int().positive(),
+      remainingQuantity: z.number().int().nonnegative().optional(),
     }),
   ),
 });

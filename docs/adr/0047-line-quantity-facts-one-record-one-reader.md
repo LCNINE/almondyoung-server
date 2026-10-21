@@ -114,11 +114,23 @@ PR 1 은 기록만 더했다(이중 기록). PR 2a 가 `cancelledQuantitySql`(�
   - R11 굳은 구성(#1063)이 없는 라인의 반품은 환불 `set_partial`(수동 환불)이고 `SalesOrderReturned` 를 내지 않는다. 청구 가능한 소포는 FO 가 있어야 하고 FO 생성이 구성을 굳히므로 해당 주문은 #1063 이전 주문(셀메이트)뿐이다 —
     그런 반품은 수동 환불이 필요하고 ugc 의 적립 회수도 건너뛴다.
 
-**3b 로 넘긴 것:**
-- D7 — 반품 요청에 관리자 입력 금액 칸(expand 마이그레이션), 검수 완료 화면의 금액 입력(admin-web), N5 의 임시 갈래 대체. 상한 규칙: 요청 하나에 금액 하나. 요청에 세트 일부 줄이 하나라도 있으면 그 요청 전체 금액을 관리자가 입력한다.
-  상한 = 이 요청이 건드린 라인들의 배분액 합(지금 부분반품 공식: 라인 무게 × (결제총액 − 배송비) ÷ 라인 무게 합) − 그 라인들을 건드린 앞선 완료 반품의 환불액 전부.
-  수동 완료된 앞선 반품(금액 모름)이 그 라인을 건드렸으면 그 라인의 배분액은 0 으로 본다. 과환불은 막고 상한이 실제보다 낮게 나올 수 있다.
-- F9 — `SalesOrderReturned` 에 `demand` 를 싣는 additive 칸 + ugc `order-return.policy.ts` 가 그 칸과 비교. 이벤트 스키마는 `z.object`(모르는 칸은 버린다)라 core 가 먼저 나가도 된다 — 3b 계획 때 `packages/event-contracts/streams/orders.stream.ts` 로 다시 확인한다.
+**PR 3b 가 정한 것:**
+- U1 상한의 배분액은 «취소 안 된 비율»로 줄인다 — 라인 무게 × (결제총액 − 배송비) ÷ 라인 무게 합 × `remaining` ÷ 주문 수량(`returnRefundCap`, `services/return-refund-cap.ts`).
+  `totalAmount` 는 취소해도 줄지 않아 줄이지 않으면 취소로 환불한 몫을 또 환불한다. 취소 환불 기록은 읽지 않는다(수동 확정 부분취소 환불은 금액 없는 행이 있다).
+- U2 금액을 넣는 완료는 별도 라우트 `POST /admin/return-requests/:id/complete-with-amount`(`payment.refund.execute`). 기존 `complete` 는 `order.claim.write` 그대로.
+- U3 F9 칸은 스펙의 `demand` 가 아니라 `SalesOrderReturned.returnedLines[].remainingQuantity`(= `LineQuantities.remaining`, 주문 − 취소 전부, optional).
+  출고 뒤 취소가 있으면 `claimable` 이 그만큼 줄어 `demand` 와 영영 같아지지 않아 회수가 안 된다. ugc `planReturn` 은 `returnedQuantity < (remainingQuantity ?? orderedQuantity)` 로 비교한다. 스펙 §6.5 이탈.
+- A1 금액은 0 이상 상한 이하 정수. 뒤 갈래는 자동 경로와 같다 — 0 은 즉시 `completed`, 양수는 `walletIntentId` 가 있으면 Wallet 환불, 없으면 `refund_pending`(수동 완료 대기).
+- A2 메모(`adminNote` 1~500자) 필수. `return_requests.admin_note` 를 덮어쓰고 수명주기 링크에도 남긴다.
+- A3 세트 일부가 아닌 요청에 금액을 보내면 400. 세트 일부 요청에 기존 `complete` 를 부르면 400 — 3a 의 N5 임시 갈래(`refund_pending`)를 **대체**했다.
+- A4 앞선 완료 반품의 «아는 금액» = 그 요청의 `return_refund_attempts` 중 `succeeded` 합. `succeeded` 가 없는 완료 반품 중 관리자가 0원을 넣은 것은 아는 0원(사용자 결정 10-21 — 돈이 안 나간 것이 확실하다), 나머지(수동·자동 0원)는 금액 모름이고 그 반품이 건드린 라인의 배분액은 0 이다. 과환불은 막고 상한이 낮게 나올 수 있다.
+- A5 상한은 `Math.floor`. 반올림하면 1원 넘게 나갈 수 있다.
+- A6 재시도는 저장된 `return_requests.admin_refund_amount` 를 쓰고 상한을 다시 검사하지 않는다(스펙 D7).
+- A7 견적 `GET /admin/return-requests/:id/refund-quote`(`order.claim.read`, `inspected` 에서만, 개인정보 없음). admin-web 이 «완료 처리» 클릭 때 불러 자동/입력 갈래를 `decideCompletion` 으로 고른다.
+- A8 관리자 금액이 들어간 완료 반품(`admin_refund_amount` 있음)이 건드린 라인의 다음 반품은 세트 통째·단품이어도 자동 금액 없이 관리자 경로(견적 `admin_amount`, `complete` 는 400)로 간다.
+  자동 공식은 결제총액 비례라 앞선 관리자 금액을 몰라 라인 배분액을 넘겨 환불한다 — 상한이 그 몫을 빼서 과환불을 막는다. 모두 자동인 이력은 그대로다.
+- 요청 하나에 금액 하나: 요청에 세트 일부 줄이 하나라도 있으면 그 요청 전체 금액을 관리자가 입력하고, 상한은 이 요청이 건드린 라인들의 (U1 로 줄인) 배분액 합 − 앞선 완료 반품의 아는 환불액(A4).
+- 마이그레이션 하나(expand, additive): `return_requests.admin_refund_amount` + 체크 `ck_return_requests_admin_refund_amount_nonnegative`. 배포 `migrate → deploy`.
 
 **PR 2b 가 대체한 것:** `orderShipmentPhaseSql`(→ `orderFulfillmentPhaseSql`), `deriveFulfillmentPhase`, `hasShippedEvidence`(→ `SelfCancelFacts.anyShipped`), `MOVED_SHIPMENT_STATUSES`,
 `outstandingSalesUnits`(→ `cancellableSalesUnits`), `getEffectiveShippedFulfillmentQty`(→ `shippedEvidenceOf`).
@@ -126,8 +138,8 @@ PR 1 은 기록만 더했다(이중 기록). PR 2a 가 `cancelledQuantitySql`(�
 **이후 PR(제안, 정본은 스펙 §9):**
 - PR 2a — (#1108) 읽는 문·SQL 조각·일치 spec, 취소 소비자 여섯(취소 엔진·채널 diff·인쇄 둘·수요 통계·구성 리더) 전환, E1·E2.
 - PR 2b — 진행 단계 SQL, 관리자 뱃지·일별 통계·카드 숫자(F10), 고객 actions, 셀메이트 F12·배송조회 F11, SKU 층 사실(`shipped`·`forwarded`·`delivered`·`cancellable`).
-- PR 3a — (이 PR) 청구(반품·교환) 게이트·환불 수량·고객 버튼을 한 공식 `claimable` 과 소포 단위 자격으로. Core 만. 배포 전 게이트 D5: `return_request_items`·`exchange_request_items` 행 수 0.
-- PR 3b — D7 관리자 입력 환불 금액(마이그레이션·상한·admin-web 입력)과 F9(`SalesOrderReturned` additive `demand` + ugc 소비).
+- PR 3a — 청구(반품·교환) 게이트·환불 수량·고객 버튼을 한 공식 `claimable` 과 소포 단위 자격으로. Core 만. 배포 전 게이트 D5: `return_request_items`·`exchange_request_items` 행 수 0.
+- PR 3b — (이 PR) D7 관리자 입력 환불 금액(마이그레이션·`returnRefundCap`·견적/금액 입력 라우트·admin-web 입력)과 F9(`SalesOrderReturned` additive `remainingQuantity` + ugc 소비). Core·ugc·admin-web, 3a·2b 와 같은 배포면 그 절차 먼저.
 - PR 4 — 운영자 «미처리 취소»(admin-web 버튼과 `POST /shipments/:id/cancellations`), FO 취소(`POST /fulfillments/:id/cancel`), 수동 배송완료
   (`POST /fulfillments/:id/deliver`) 제거. 셋 다 판매주문 기록 없이 상태만 바꾸거나 배송 사실을 추적 밖에서 만들어 «기록 위치 하나»와 충돌한다.
 - PR 6 — contract: `metadata.cancelledLines` 쓰기 중단, 옛 파서 삭제, 옛 파서 이름이 되살아나면 빨간 가드. PR 1 의 백필이 라이브에서 끝나고 한 번 이상 배포된 뒤

@@ -5,7 +5,7 @@
  * - **라인 매칭이 필수다.** 반품은 부분이 기본이고 전량이 특수 케이스다. 주문 전체를 회수하면
  *   반품하지 않은 라인의 자격까지 죽는다.
  * - **수량이 있다.** 3개 중 1개만 반품한 고객은 여전히 그 상품을 갖고 있다 — 회수하면 과회수다.
- *   전량 반품(누적 반품 수량 = 주문 수량)일 때만 회수하고, 나머지는 사유를 남겨 «센다».
+ *   전량 반품(누적 반품 수량 = 남은 수량, 없으면 주문 수량)일 때만 회수하고, 나머지는 사유를 남겨 «센다».
  *
  * 판정 불가를 「회수 0건」으로 뭉개지 않는 것이 이 파일의 목적이다.
  */
@@ -43,6 +43,8 @@ export interface ReturnedLineInput {
   orderedQuantity: number;
   /** 완료된 반품의 누적 수량(이 건 포함). core 가 계산해 싣는다. */
   returnedQuantity: number;
+  /** 주문 − 취소 전부. 없으면 옛 생산자다 — `orderedQuantity` 로 대신한다. */
+  remainingQuantity?: number;
 }
 
 export interface ReturnInput {
@@ -79,7 +81,7 @@ export const planReturn = (input: ReturnInput): ReturnPlan => {
       skippedLines.push({ salesOrderLineId: line.salesOrderLineId, skipReason: 'NO_CHANNEL_ORDER_ITEM_ID' });
       continue;
     }
-    if (line.returnedQuantity < line.orderedQuantity) {
+    if (line.returnedQuantity < (line.remainingQuantity ?? line.orderedQuantity)) {
       skippedLines.push({ salesOrderLineId: line.salesOrderLineId, skipReason: 'PARTIAL_QUANTITY' });
       continue;
     }
