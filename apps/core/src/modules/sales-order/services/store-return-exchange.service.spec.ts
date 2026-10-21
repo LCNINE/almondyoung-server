@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import { inventoryTables, returnExchangeTables, wmsTables } from '../../inventory/schema/inventory.schema';
-import { CUSTOM_MADE_CLAIM_MESSAGE, StoreReturnExchangeService } from './store-return-exchange.service';
+import { returnExchangeTables, wmsTables } from '../../inventory/schema/inventory.schema';
+import { StoreReturnExchangeService } from './store-return-exchange.service';
 
 /** 반품 완료 종점이 아웃박스에 적재하는 발행자. 스펙에서는 적재 호출만 세면 된다. */
 const makeCoreOrdersPublisher = () => ({ enqueue: jest.fn().mockResolvedValue(undefined) });
@@ -15,15 +15,6 @@ const ER_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 const SHIPMENT_LINE_ID = '22222222-2222-4222-8222-222222222222';
 const DISPATCH_ATTEMPT_ID = '33333333-3333-4333-8333-333333333333';
 const FULFILLMENT_ORDER_ITEM_ID = '44444444-4444-4444-8444-444444444444';
-
-function makeSo(overrides: Record<string, unknown> = {}) {
-  return {
-    id: ORDER_ID,
-    customerId: CUSTOMER_ID,
-    status: 'delivered',
-    ...overrides,
-  };
-}
 
 function makeReturnRequest(overrides: Record<string, unknown> = {}) {
   return {
@@ -85,8 +76,7 @@ function terminalRows(rows: unknown[]): Record<string, unknown> {
  * Builds a minimal Drizzle mock whose `select().from(table).where(...).limit(n)`
  * chain is driven by a per-table lookup function supplied by each test.
  *
- * Supports the `.innerJoin(...).where(...).groupBy(...)` chain used by
- * `assertExchangeQuantitiesAvailable`. 반품 생성 게이트는 DB 통합 스펙
+ * 반품·교환 생성 게이트는 DB 통합 스펙
  * (`store-return-exchange.claims.integration.spec.ts`)이 지킨다.
  *
  * The `transaction` mock simply calls `fn(tx)` so the inner transaction body
@@ -139,42 +129,6 @@ function makeMockDb(selectRowsFor: (table: unknown) => unknown[]) {
 
   return db;
 }
-
-// ── createExchangeRequest tests ───────────────────────────────────────────────
-
-describe('StoreReturnExchangeService.createExchangeRequest', () => {
-  const baseDto = {
-    lines: [{ salesOrderLineId: LINE_ID, quantity: 1 }],
-    reasonCode: 'defective' as const,
-  };
-
-  it('throws ConflictException when an active exchange request already exists', async () => {
-    const mockDb = makeMockDb((table) => {
-      if (table === inventoryTables.salesOrders) return [makeSo()];
-      if (table === returnExchangeTables.exchangeRequests) return [{ id: 'existing-er' }];
-      return [];
-    });
-
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
-
-    await expect(service.createExchangeRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(ConflictException);
-  });
-
-  it('rejects a custom-made (print) line before creating the request', async () => {
-    const mockDb = makeMockDb((table) => {
-      if (table === inventoryTables.salesOrders) return [makeSo()];
-      if (table === wmsTables.salesOrderLines) return [{ id: LINE_ID, salesOrderId: ORDER_ID, quantity: 1 }];
-      return [];
-    });
-
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
-
-    await expect(service.createExchangeRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(
-      CUSTOM_MADE_CLAIM_MESSAGE,
-    );
-    expect((mockDb as any).db.transaction).not.toHaveBeenCalled();
-  });
-});
 
 // ── approveReturnRequest tests ────────────────────────────────────────────────
 

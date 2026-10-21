@@ -255,13 +255,13 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core POST /store/orders/:orderId/exchange-requests': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:195',
+    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:192',
     predicate: 'this.assertOwnership(so, customerId);',
     note: 'createExchangeRequest.',
   },
   'core POST /store/orders/:orderId/return-requests': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:103',
+    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:100',
     predicate: 'this.assertOwnership(so, customerId);',
     note: 'createReturnRequest; assertOwnership 정의는 1264-1268줄 (if (so.customerId !== customerId) throw ForbiddenException).',
   },
@@ -273,13 +273,13 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core POST /store/orders/by-channel-order/:channelOrderId/exchange-requests': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:195',
+    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:192',
     predicate: 'this.assertOwnership(so, customerId);',
     note: 'createExchangeRequestByChannelOrder(475-482줄) -> this.createExchangeRequest(so.id, customerId, dto) 로 위임, 실제 검증은 178줄.',
   },
   'core POST /store/orders/by-channel-order/:channelOrderId/return-requests': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:103',
+    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:100',
     predicate: 'this.assertOwnership(so, customerId);',
     note: 'createReturnRequestByChannelOrder(466-473줄) -> findSoByChannelOrderOrThrow 후 this.createReturnRequest(so.id, customerId, dto) 로 위임, 실제 검증은 90줄.',
   },

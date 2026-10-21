@@ -145,10 +145,15 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
   async function cleanupCommittedGraph(graph: Awaited<ReturnType<typeof seedDeliveredAttemptGraph>>) {
     await db.transaction(async (rawTx) => {
       const tx = rawTx as unknown as DbTx;
-      const requests = await tx
+      const returnRequests = await tx
         .select({ id: returnExchangeTables.returnRequests.id })
         .from(returnExchangeTables.returnRequests)
         .where(eq(returnExchangeTables.returnRequests.salesOrderId, graph.salesOrderId));
+      const exchangeRequests = await tx
+        .select({ id: returnExchangeTables.exchangeRequests.id })
+        .from(returnExchangeTables.exchangeRequests)
+        .where(eq(returnExchangeTables.exchangeRequests.salesOrderId, graph.salesOrderId));
+      const requests = [...returnRequests, ...exchangeRequests];
       await tx.delete(wmsTables.businessLinks).where(eq(wmsTables.businessLinks.targetId, graph.salesOrderId));
       if (requests.length > 0) {
         await tx.delete(wmsTables.businessLinks).where(
@@ -161,6 +166,10 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
       await tx
         .delete(returnExchangeTables.returnRequests)
         .where(eq(returnExchangeTables.returnRequests.salesOrderId, graph.salesOrderId));
+      // 교환 항목은 요청 cascade 로 지워진다 — 소포 칸(restrict)이 아래 배송 행 삭제를 막지 않게 먼저 지운다
+      await tx
+        .delete(returnExchangeTables.exchangeRequests)
+        .where(eq(returnExchangeTables.exchangeRequests.salesOrderId, graph.salesOrderId));
       await tx.delete(wmsTables.shipmentTracking).where(eq(wmsTables.shipmentTracking.shipmentId, graph.shipment.id));
       await tx.delete(wmsTables.dispatchAttemptSources).where(
         inArray(
@@ -445,6 +454,40 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
         .from(returnExchangeTables.returnRequestItems)
         .where(eq(returnExchangeTables.returnRequestItems.dispatchAttemptId, graph.attempts[0].id));
       expect(claims).toHaveLength(1);
+    } finally {
+      await cleanupCommittedGraph(graph);
+    }
+  });
+
+  it('concurrent return and exchange on one parcel succeed only once', async () => {
+    const graph = await db.transaction((tx) => seedDeliveredAttemptGraph(tx as unknown as DbTx));
+    try {
+      const service = new StoreReturnExchangeService(
+        { db } as never,
+        { refundByIntent: jest.fn() } as never,
+        makeCoreOrdersPublisher() as never,
+      );
+      // 반품과 교환은 «진행 중 요청» 확인이 서로 다르다 — 둘째를 막는 것은 그래프·라인 잠금 뒤에 읽는 같은 claimable 이다
+      const results = await Promise.allSettled([
+        service.createReturnRequest(graph.salesOrderId, graph.customerId, createDto(graph)),
+        service.createExchangeRequest(graph.salesOrderId, graph.customerId, createDto(graph)),
+      ]);
+
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      const rejected = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0].reason).toBeInstanceOf(BadRequestException);
+      const [returnItems, exchangeItems] = await Promise.all([
+        db
+          .select({ id: returnExchangeTables.returnRequestItems.id })
+          .from(returnExchangeTables.returnRequestItems)
+          .where(eq(returnExchangeTables.returnRequestItems.dispatchAttemptId, graph.attempts[0].id)),
+        db
+          .select({ id: returnExchangeTables.exchangeRequestItems.id })
+          .from(returnExchangeTables.exchangeRequestItems)
+          .where(eq(returnExchangeTables.exchangeRequestItems.dispatchAttemptId, graph.attempts[0].id)),
+      ]);
+      expect(returnItems.length + exchangeItems.length).toBe(1);
     } finally {
       await cleanupCommittedGraph(graph);
     }

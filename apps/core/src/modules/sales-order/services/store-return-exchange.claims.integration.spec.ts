@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import { DbTx, returnExchangeTables } from '../../inventory/schema/inventory.schema';
+import { DbTx, returnExchangeTables, wmsTables } from '../../inventory/schema/inventory.schema';
 import { seedWorld, World } from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
 import {
@@ -10,10 +10,12 @@ import {
   seedComponentSku,
   seedDeliveredLine,
 } from '../line-quantities/__support__/claim-facts.fixtures';
+import { recallParcel } from '../line-quantities/__support__/shipment-facts.fixtures';
 import { recordSalesOrderCancellation } from '../cancellation-record/record-cancellation';
 import { StoreCreateReturnRequestDto } from '../dto/store-return-request.dto';
+import { StoreCreateExchangeRequestDto } from '../dto/store-exchange-request.dto';
 import { readParcelClaimEligibility } from '../line-quantities/parcel-claim-eligibility.reader';
-import { StoreReturnExchangeService } from './store-return-exchange.service';
+import { CUSTOM_MADE_CLAIM_MESSAGE, StoreReturnExchangeService } from './store-return-exchange.service';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -50,6 +52,10 @@ function dto(lines: StoreCreateReturnRequestDto['lines']): StoreCreateReturnRequ
   return { reasonCode: 'defective', lines };
 }
 
+function exchangeDto(lines: StoreCreateExchangeRequestDto['lines']): StoreCreateExchangeRequestDto {
+  return { reasonCode: 'defective', lines };
+}
+
 async function rejection(promise: Promise<unknown>): Promise<unknown> {
   return promise.then(
     () => undefined,
@@ -57,7 +63,7 @@ async function rejection(promise: Promise<unknown>): Promise<unknown> {
   );
 }
 
-describeIfDb('반품 생성 게이트 — 소포 단위 청구 자격 (K6 PR3a)', () => {
+describeIfDb('반품·교환 생성 게이트 — 소포 단위 청구 자격 (K6 PR3a)', () => {
   jest.setTimeout(120_000);
   const { sql: client, db } = makeDb(DATABASE_URL as string);
   afterAll(async () => {
@@ -415,6 +421,156 @@ describeIfDb('반품 생성 게이트 — 소포 단위 청구 자격 (K6 PR3a)'
           }),
         ]),
       );
+    });
+  });
+
+  // ── 교환 — 반품과 같은 게이트(Task 4) ───────────────────────────────────
+
+  it('exchange needs a delivered parcel', async () => {
+    await inRollbackTx(db, async (tx) => {
+      // 옛 자격(SO delivered · FO completed)은 다 갖췄지만 소포는 아직 배송 중이다 — 자격은 소포가 정한다(C1)
+      const { customerId, line } = await seedSingle(tx, { parcels: [{ qty: 1, delivered: false }] });
+      await tx
+        .update(wmsTables.salesOrders)
+        .set({ status: 'delivered' })
+        .where(eq(wmsTables.salesOrders.id, line.salesOrderId));
+      await tx
+        .update(wmsTables.fulfillmentOrders)
+        .set({ status: 'completed' })
+        .where(eq(wmsTables.fulfillmentOrders.salesOrderId, line.salesOrderId));
+
+      const error = await rejection(
+        makeService(tx).createExchangeRequest(
+          line.salesOrderId,
+          customerId,
+          exchangeDto([{ salesOrderLineId: line.lineId, quantity: 1 }]),
+        ),
+      );
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(error).toMatchObject({
+        message: `주문 라인 ${line.lineId}에 교환할 수 있는 배송 완료 소포가 없습니다.`,
+      });
+    });
+  });
+
+  it('exchange records the parcel', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, customerId, line } = await seedSingle(tx);
+      const desiredVariantId = randomUUID();
+      const created = await makeService(tx).createExchangeRequest(
+        line.salesOrderId,
+        customerId,
+        exchangeDto([{ salesOrderLineId: line.lineId, quantity: 1, desiredVariantId }]),
+      );
+
+      const expected = parcelLine(line, 0, w.skuId, 1);
+      expect(created.items).toEqual([expect.objectContaining({ ...expected, desiredVariantId })]);
+      const stored = await tx
+        .select()
+        .from(returnExchangeTables.exchangeRequestItems)
+        .where(eq(returnExchangeTables.exchangeRequestItems.exchangeRequestId, created.id));
+      expect(stored).toEqual([expect.objectContaining({ ...expected, desiredVariantId })]);
+    });
+  });
+
+  it('completed return consumes exchange', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, customerId, line } = await seedSingle(tx);
+      const one = parcelLine(line, 0, w.skuId, 1);
+      await seedClaim(tx, { kind: 'return', salesOrderId: line.salesOrderId, status: 'completed', items: [one] });
+
+      const error = await rejection(
+        makeService(tx).createExchangeRequest(line.salesOrderId, customerId, exchangeDto([one])),
+      );
+      expect(error).toBeInstanceOf(BadRequestException);
+      // 돌려받은 물건은 교환할 수 없다(F3) — 옛 교환 검사는 진행 중 청구만 빼서 이걸 통과시켰다
+      expect(error).toMatchObject({
+        message: `배송 시도 ${one.dispatchAttemptId}의 라인 ${one.shipmentLineId} 교환 가능 수량(0)을 초과하였습니다. (요청: 1)`,
+      });
+    });
+  });
+
+  it('completed exchange does not consume', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, customerId, line } = await seedSingle(tx);
+      const one = parcelLine(line, 0, w.skuId, 1);
+      await seedClaim(tx, { kind: 'exchange', salesOrderId: line.salesOrderId, status: 'completed', items: [one] });
+
+      // 교환으로 받은 물건도 다시 교환할 수 있다(D3)
+      const created = await makeService(tx).createExchangeRequest(line.salesOrderId, customerId, exchangeDto([one]));
+      expect(created).toMatchObject({ status: 'requested', items: [expect.objectContaining(one)] });
+    });
+  });
+
+  it('exchange of a recalled parcel is refused', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, customerId, line } = await seedSingle(tx);
+      const one = parcelLine(line, 0, w.skuId, 1);
+      await recallParcel(tx, {
+        dispatchAttemptId: one.dispatchAttemptId,
+        lines: [{ foItemId: must(line.foItemIdBySku.get(w.skuId), 'FOI of A'), qty: 1 }],
+      });
+
+      const error = await rejection(
+        makeService(tx).createExchangeRequest(line.salesOrderId, customerId, exchangeDto([one])),
+      );
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(error).toMatchObject({
+        message: `배송 완료된 소포가 아니거나 이 주문 라인의 것이 아닙니다: ${one.dispatchAttemptId}/${one.shipmentLineId}`,
+      });
+    });
+  });
+
+  it('active exchange request blocks a new one', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, customerId, line } = await seedSingle(tx, { quantity: 2, parcels: [{ qty: 1 }, { qty: 1 }] });
+      await seedClaim(tx, {
+        kind: 'exchange',
+        salesOrderId: line.salesOrderId,
+        status: 'requested',
+        items: [parcelLine(line, 0, w.skuId, 1)],
+      });
+      const error = await rejection(
+        makeService(tx).createExchangeRequest(
+          line.salesOrderId,
+          customerId,
+          exchangeDto([parcelLine(line, 1, w.skuId, 1)]),
+        ),
+      );
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(error).toMatchObject({ message: '이미 진행 중인 교환 요청이 있습니다.' });
+    });
+  });
+
+  it('custom-made line is refused before anything', async () => {
+    await inRollbackTx(db, async (tx) => {
+      // 배송 중 소포 + 진행 중 교환 — 게이트까지 갔다면 409 가 났을 것이다. 주문제작 거절이 그보다 먼저다
+      const { w, customerId, line } = await seedSingle(tx, { parcels: [{ qty: 1, delivered: false }] });
+      await tx
+        .update(wmsTables.salesOrderLines)
+        .set({ almondDesignId: randomUUID() })
+        .where(eq(wmsTables.salesOrderLines.id, line.lineId));
+      await seedClaim(tx, {
+        kind: 'exchange',
+        salesOrderId: line.salesOrderId,
+        status: 'requested',
+        items: [parcelLine(line, 0, w.skuId, 1)],
+      });
+
+      const error = await rejection(
+        makeService(tx).createExchangeRequest(
+          line.salesOrderId,
+          customerId,
+          exchangeDto([{ salesOrderLineId: line.lineId, quantity: 1 }]),
+        ),
+      );
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(error).toMatchObject({ message: CUSTOM_MADE_CLAIM_MESSAGE });
+      const requests = await tx
+        .select({ id: returnExchangeTables.exchangeRequests.id })
+        .from(returnExchangeTables.exchangeRequests)
+        .where(eq(returnExchangeTables.exchangeRequests.salesOrderId, line.salesOrderId));
+      expect(requests).toHaveLength(1);
     });
   });
 });
