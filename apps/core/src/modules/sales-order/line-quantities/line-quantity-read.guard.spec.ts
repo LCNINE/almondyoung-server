@@ -56,7 +56,7 @@ describe('취소 수량 읽는 문', () => {
   it('only the kernel reads delivery tracking for quantities', () => {
     // 비테스트 운영 파일만 센다(walk 가 스펙·__support__ 를 뺀다). 픽스처는 현실 데이터를 흉내 내려 추적 행을 써야 한다.
     // - store-sales-orders.service.ts: 배송조회 화면의 추적 이벤트 목록이다(수량이 아니다).
-    // - store-return-exchange.service.ts: 반품·교환 자격. PR 3 이 문으로 옮기고 이 목록에서 뺀다.
+    // 반품 자격(store-return-exchange.service.ts)은 K6 PR3a 가 소포 단위 청구 자격(`parcel-claim-eligibility`)으로 옮겼다.
     const salesOrder = 'apps/core/src/modules/sales-order/';
     const files = filesMatching((source) => /shipment_tracking|shipmentTracking/.test(source)).filter((path) =>
       path.startsWith(salesOrder),
@@ -64,7 +64,6 @@ describe('취소 수량 읽는 문', () => {
     expect(files).toEqual(
       [
         `${salesOrder}line-quantities/line-quantities.sql.ts`,
-        `${salesOrder}services/store-return-exchange.service.ts`,
         `${salesOrder}services/store-sales-orders.service.ts`,
       ].sort(),
     );

@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, gte, inArray, isNotNull, lte, max, notInArray, sum } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, lte, max, sum } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { InjectTypedDb } from '@app/db';
 import {
@@ -37,6 +37,9 @@ import {
 import { WalletRefundClient, WalletRefundOutcome } from './wallet-refund.client';
 import { classifyRefundOutcome } from './return-refund-classification';
 import { lockShipmentConnectedComponentGraph } from '../../fulfillment/services/shipment-reservation.service';
+import { ACTIVE_EXCHANGE_STATUSES, ACTIVE_RETURN_STATUSES } from '../line-quantities/claim-statuses';
+import { LineQuantities, readLineQuantities } from '../line-quantities/line-quantities.reader';
+import { ParcelClaimEligibility, readParcelClaimEligibility } from '../line-quantities/parcel-claim-eligibility.reader';
 
 type SalesOrderRow = typeof inventoryTables.salesOrders.$inferSelect;
 type ReturnRequestRow = typeof returnExchangeTables.returnRequests.$inferSelect;
@@ -54,23 +57,22 @@ export interface ExchangeRequestWithItems {
   items: ExchangeRequestItem[];
 }
 
-// Active statuses that block creating a new request for the same order
-const ACTIVE_RETURN_STATUSES = [
-  'requested',
-  'approved',
-  'collection_pending',
-  'collected',
-  'inspected',
-  'refund_pending',
-] as const;
-const ACTIVE_EXCHANGE_STATUSES = [
-  'requested',
-  'approved',
-  'collection_pending',
-  'collected',
-  'inspected',
-  'refund_pending',
-] as const;
+type ClaimKind = 'return' | 'exchange';
+/** 요청 줄 — 소포(`shipmentLineId`·`dispatchAttemptId`)는 둘 다 있거나 둘 다 없다. 없으면 게이트가 라인 단위로 펼친다(N2). */
+type RequestedClaimLine = {
+  salesOrderLineId: string;
+  shipmentLineId?: string;
+  dispatchAttemptId?: string;
+  quantity: number;
+};
+/** 게이트를 지난 줄 — 소포 칸이 언제나 찬다(N1). 수량은 SKU 단위다(C3). */
+type ResolvedClaimLine = {
+  salesOrderLineId: string;
+  skuId: string;
+  shipmentLineId: string;
+  dispatchAttemptId: string;
+  quantity: number;
+};
 
 // Statuses where FO is considered fully delivered
 const FO_DELIVERED_STATUSES = new Set(['completed']);
@@ -124,17 +126,12 @@ export class StoreReturnExchangeService {
     dto: StoreCreateReturnRequestDto,
     actor: { customerId: string | null; requestedBy: 'customer' | 'admin'; actorId: string },
   ): Promise<StoreReturnRequestResponseDto> {
-    await this.assertNoActiveReturnRequest(orderId);
-
     const lineIds = dto.lines.map((l) => l.salesOrderLineId);
     await this.assertLinesBelongToOrder(orderId, lineIds);
-    await this.assertReturnQuantitiesAvailable(lineIds, dto.lines);
 
     return this.db.db.transaction(async (tx) => {
-      // The attempt rows are locked before the cumulative claim is re-read. Two
-      // concurrent requests for the same delivered attempt therefore cannot both
-      // consume the same remaining quantity.
-      await this.assertAttemptBasedReturnEligibility(orderId, dto.lines, tx as unknown as DbTx);
+      // 잠금 뒤 같은 트랜잭션에서 자격을 읽고 검사한다(C4) — 같은 소포를 노리는 두 요청이 남은 수량을 함께 쓰지 못한다.
+      const resolvedLines = await this.prepareClaimLines(tx as unknown as DbTx, 'return', orderId, dto.lines);
 
       const [returnRequest] = await tx
         .insert(returnExchangeTables.returnRequests)
@@ -150,14 +147,15 @@ export class StoreReturnExchangeService {
 
       if (!returnRequest) throw new Error('RETURN_REQUEST_INSERT_FAILED');
 
+      // 소포 칸은 언제나 찬다(N1) — 라인 단위 요청도 게이트가 펼친 소포를 적는다. 줄 순서는 요청 순서 그대로다
       await tx.insert(returnExchangeTables.returnRequestItems).values(
-        dto.lines.map((line) => ({
+        resolvedLines.map((line, index) => ({
           returnRequestId: returnRequest.id,
           salesOrderLineId: line.salesOrderLineId,
           shipmentLineId: line.shipmentLineId,
           dispatchAttemptId: line.dispatchAttemptId,
           quantity: line.quantity,
-          reasonCode: (line.reasonCode as typeof dto.reasonCode) ?? null,
+          reasonCode: (dto.lines[index].reasonCode as typeof dto.reasonCode) ?? null,
         })),
       );
 
@@ -339,148 +337,25 @@ export class StoreReturnExchangeService {
     return this.buildReturnEligibility(so.id);
   }
 
+  /**
+   * 배송완료 소포별 청구 자격(K6 PR3a) — `readParcelClaimEligibility` 의 행을 그대로 옮긴다. 산술은 커널 SQL 이 끝냈다.
+   * 칸 이름은 그대로 둔다(admin-web `return-attempt-view-model.ts` 가 읽는다). 음수 자격은 표시에서만 0 으로 클램프한다.
+   */
   private async buildReturnEligibility(orderId: string): Promise<StoreReturnEligibilityResponseDto> {
-    const shipped = await this.db.db
-      .select({
-        salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
-        shipmentId: wmsTables.shipmentLines.shipmentId,
-        shipmentLineId: wmsTables.shipmentLines.id,
-        dispatchAttemptId: wmsTables.dispatchAttempts.id,
-        shippedQty: sum(wmsTables.dispatchAttemptSources.qty),
-      })
-      .from(wmsTables.dispatchAttemptSources)
-      .innerJoin(
-        wmsTables.dispatchAttempts,
-        eq(wmsTables.dispatchAttempts.id, wmsTables.dispatchAttemptSources.dispatchAttemptId),
-      )
-      .innerJoin(
-        wmsTables.shipmentLines,
-        eq(wmsTables.shipmentLines.id, wmsTables.dispatchAttemptSources.shipmentLineId),
-      )
-      .innerJoin(
-        wmsTables.fulfillmentOrderItems,
-        eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
-      )
-      .where(
-        and(
-          eq(wmsTables.fulfillmentOrderItems.salesOrderId, orderId),
-          eq(wmsTables.dispatchAttempts.status, 'dispatched'),
-        ),
-      )
-      .groupBy(
-        wmsTables.fulfillmentOrderItems.salesOrderLineId,
-        wmsTables.shipmentLines.shipmentId,
-        wmsTables.shipmentLines.id,
-        wmsTables.dispatchAttempts.id,
-      );
-    const attemptIds = shipped.map((row) => row.dispatchAttemptId);
-    if (!attemptIds.length) return { orderId, items: [] };
-    const [deliveries, claims, exchangeClaims, salesOrderLines] = await Promise.all([
-      this.db.db
-        .select({
-          dispatchAttemptId: wmsTables.shipmentTracking.dispatchAttemptId,
-          deliveredAt: max(wmsTables.shipmentTracking.timestamp),
-        })
-        .from(wmsTables.shipmentTracking)
-        .where(
-          and(
-            inArray(wmsTables.shipmentTracking.dispatchAttemptId, attemptIds),
-            eq(wmsTables.shipmentTracking.status, 'delivered'),
-          ),
-        )
-        .groupBy(wmsTables.shipmentTracking.dispatchAttemptId),
-      this.db.db
-        .select({
-          salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
-          shipmentLineId: returnExchangeTables.returnRequestItems.shipmentLineId,
-          dispatchAttemptId: returnExchangeTables.returnRequestItems.dispatchAttemptId,
-          quantity: returnExchangeTables.returnRequestItems.quantity,
-        })
-        .from(returnExchangeTables.returnRequestItems)
-        .innerJoin(
-          returnExchangeTables.returnRequests,
-          eq(returnExchangeTables.returnRequests.id, returnExchangeTables.returnRequestItems.returnRequestId),
-        )
-        .where(
-          and(
-            eq(returnExchangeTables.returnRequests.salesOrderId, orderId),
-            notInArray(returnExchangeTables.returnRequests.status, ['rejected', 'cancelled']),
-          ),
-        ),
-      this.db.db
-        .select({
-          salesOrderLineId: returnExchangeTables.exchangeRequestItems.salesOrderLineId,
-          quantity: sum(returnExchangeTables.exchangeRequestItems.quantity),
-        })
-        .from(returnExchangeTables.exchangeRequestItems)
-        .innerJoin(
-          returnExchangeTables.exchangeRequests,
-          eq(returnExchangeTables.exchangeRequests.id, returnExchangeTables.exchangeRequestItems.exchangeRequestId),
-        )
-        .where(
-          and(
-            eq(returnExchangeTables.exchangeRequests.salesOrderId, orderId),
-            inArray(returnExchangeTables.exchangeRequests.status, [...ACTIVE_EXCHANGE_STATUSES]),
-          ),
-        )
-        .groupBy(returnExchangeTables.exchangeRequestItems.salesOrderLineId),
-      this.db.db
-        .select({ id: wmsTables.salesOrderLines.id, quantity: wmsTables.salesOrderLines.quantity })
-        .from(wmsTables.salesOrderLines)
-        .where(eq(wmsTables.salesOrderLines.salesOrderId, orderId)),
-    ]);
-    const deliveredAtByAttempt = new Map(
-      deliveries
-        .filter((row): row is typeof row & { dispatchAttemptId: string; deliveredAt: Date } =>
-          Boolean(row.dispatchAttemptId && row.deliveredAt),
-        )
-        .map((row) => [row.dispatchAttemptId, row.deliveredAt]),
-    );
-    const claimedByGrain = new Map<string, number>();
-    const claimedBySalesOrderLine = new Map<string, number>();
-    for (const claim of claims) {
-      claimedBySalesOrderLine.set(
-        claim.salesOrderLineId,
-        (claimedBySalesOrderLine.get(claim.salesOrderLineId) ?? 0) + claim.quantity,
-      );
-      if (!claim.shipmentLineId || !claim.dispatchAttemptId) continue;
-      const key = `${claim.dispatchAttemptId}:${claim.shipmentLineId}`;
-      claimedByGrain.set(key, (claimedByGrain.get(key) ?? 0) + claim.quantity);
-    }
-    for (const claim of exchangeClaims) {
-      claimedBySalesOrderLine.set(
-        claim.salesOrderLineId,
-        (claimedBySalesOrderLine.get(claim.salesOrderLineId) ?? 0) + Number(claim.quantity ?? 0),
-      );
-    }
-    const purchasedBySalesOrderLine = new Map(salesOrderLines.map((line) => [line.id, line.quantity]));
+    const parcels = await readParcelClaimEligibility(this.db.db, orderId);
     return {
       orderId,
-      items: shipped.flatMap((row) => {
-        if (!row.salesOrderLineId) return [];
-        const deliveredAt = deliveredAtByAttempt.get(row.dispatchAttemptId);
-        if (!deliveredAt) return [];
-        const shippedQty = Number(row.shippedQty ?? 0);
-        const claimedQty = claimedByGrain.get(`${row.dispatchAttemptId}:${row.shipmentLineId}`) ?? 0;
-        const salesOrderLineRemainingEligibleQty = Math.max(
-          0,
-          (purchasedBySalesOrderLine.get(row.salesOrderLineId) ?? 0) -
-            (claimedBySalesOrderLine.get(row.salesOrderLineId) ?? 0),
-        );
-        return [
-          {
-            salesOrderLineId: row.salesOrderLineId,
-            shipmentId: row.shipmentId,
-            shipmentLineId: row.shipmentLineId,
-            dispatchAttemptId: row.dispatchAttemptId,
-            deliveredAt,
-            shippedQty,
-            claimedQty,
-            remainingEligibleQty: Math.min(Math.max(0, shippedQty - claimedQty), salesOrderLineRemainingEligibleQty),
-            salesOrderLineRemainingEligibleQty,
-          },
-        ];
-      }),
+      items: parcels.map((parcel) => ({
+        salesOrderLineId: parcel.salesOrderLineId,
+        shipmentId: parcel.shipmentId,
+        shipmentLineId: parcel.shipmentLineId,
+        dispatchAttemptId: parcel.dispatchAttemptId,
+        deliveredAt: parcel.deliveredAt,
+        shippedQty: parcel.deliveredQty,
+        claimedQty: parcel.claimedQty,
+        remainingEligibleQty: Math.max(0, parcel.claimable),
+        salesOrderLineRemainingEligibleQty: Math.max(0, parcel.skuClaimable),
+      })),
     };
   }
 
@@ -1526,22 +1401,6 @@ export class StoreReturnExchangeService {
     }
   }
 
-  private async assertNoActiveReturnRequest(orderId: string): Promise<void> {
-    const existing = await this.db.db
-      .select({ id: returnExchangeTables.returnRequests.id })
-      .from(returnExchangeTables.returnRequests)
-      .where(
-        and(
-          eq(returnExchangeTables.returnRequests.salesOrderId, orderId),
-          inArray(returnExchangeTables.returnRequests.status, [...ACTIVE_RETURN_STATUSES]),
-        ),
-      )
-      .limit(1)
-      .then((r) => r[0]);
-
-    if (existing) throw new ConflictException('이미 진행 중인 반품 요청이 있습니다.');
-  }
-
   private async assertNoActiveExchangeRequest(orderId: string): Promise<void> {
     const existing = await this.db.db
       .select({ id: returnExchangeTables.exchangeRequests.id })
@@ -1559,6 +1418,172 @@ export class StoreReturnExchangeService {
   }
 
   /**
+   * 반품·교환 생성 게이트 (K6 PR3a, 스펙 §6.5). 호출자 트랜잭션 안에서 이 순서로 한다:
+   *  ① 요청 라인의 FOI 로 연결 그래프 잠금 — 회수·발송·예약 변경과 같은 «그래프 먼저» 순서
+   *  ② 요청 라인을 id 정렬 순으로 `FOR UPDATE` ③ 그 종류의 «진행 중 요청 있음» 409
+   *  ④ 소포 단위 청구 자격을 읽는다(잠금 뒤라 동시 요청이 같은 남은 수량을 쓰지 못한다 — F7)
+   *  ⑤ 소포 반쪽만 온 줄 400 ⑥ 라인 단위 줄을 소포로 펼친다(N2) ⑦ 소포 합 ≤ 그 소포 `claimable`, (라인, SKU) 합 ≤ `skuClaimable`.
+   * 돌려준 줄은 요청 순서를 지키고 같은 소포 줄도 합치지 않는다 — 저장은 요청 모양대로, 검사만 합산한다.
+   * 수량은 SKU 단위다(C3). 소포가 이 라인의 배송완료 소포인지는 자격 행(`dispatch_attempt_sources` 기반)에 있는지로 판정한다.
+   */
+  private async prepareClaimLines(
+    tx: DbTx,
+    kind: ClaimKind,
+    orderId: string,
+    lines: RequestedClaimLine[],
+  ): Promise<ResolvedClaimLine[]> {
+    const label = kind === 'return' ? '반품' : '교환';
+    const lineIds = [...new Set(lines.map((line) => line.salesOrderLineId))].sort();
+
+    // ① FOI 가 없는 라인(FO 전·인쇄 외주)은 잠글 그래프가 없다 — 자격 행도 없어 아래에서 400 이 된다
+    const foiRows = await tx
+      .select({ id: wmsTables.fulfillmentOrderItems.id })
+      .from(wmsTables.fulfillmentOrderItems)
+      .where(
+        and(
+          eq(wmsTables.fulfillmentOrderItems.salesOrderId, orderId),
+          inArray(wmsTables.fulfillmentOrderItems.salesOrderLineId, lineIds),
+        ),
+      );
+    if (foiRows.length > 0) {
+      await lockShipmentConnectedComponentGraph(
+        tx,
+        foiRows.map((row) => row.id),
+      );
+    }
+
+    // ②
+    await tx
+      .select({ id: wmsTables.salesOrderLines.id })
+      .from(wmsTables.salesOrderLines)
+      .where(inArray(wmsTables.salesOrderLines.id, lineIds))
+      .orderBy(asc(wmsTables.salesOrderLines.id))
+      .for('update');
+
+    // ③
+    await this.assertNoActiveClaimRequest(tx, kind, orderId);
+
+    // ④
+    const parcels = await readParcelClaimEligibility(tx, orderId);
+    const parcelKey = (dispatchAttemptId: string, shipmentLineId: string) => `${dispatchAttemptId}:${shipmentLineId}`;
+    const parcelByKey = new Map(
+      parcels.map((parcel) => [parcelKey(parcel.dispatchAttemptId, parcel.shipmentLineId), parcel]),
+    );
+
+    // ⑤
+    if (lines.some((line) => Boolean(line.shipmentLineId) !== Boolean(line.dispatchAttemptId))) {
+      throw new BadRequestException('shipmentLineId 와 dispatchAttemptId 는 함께 보내야 합니다.');
+    }
+
+    // ⑥
+    let lineQuantities: Map<string, LineQuantities> | undefined;
+    const resolved: Array<{ line: ResolvedClaimLine; parcel: ParcelClaimEligibility }> = [];
+    for (const line of lines) {
+      if (line.shipmentLineId && line.dispatchAttemptId) {
+        const parcel = parcelByKey.get(parcelKey(line.dispatchAttemptId, line.shipmentLineId));
+        if (!parcel || parcel.salesOrderLineId !== line.salesOrderLineId) {
+          throw new BadRequestException(
+            `배송 완료된 소포가 아니거나 이 주문 라인의 것이 아닙니다: ${line.dispatchAttemptId}/${line.shipmentLineId}`,
+          );
+        }
+        resolved.push({ line: this.toResolvedClaimLine(parcel, line.quantity), parcel });
+        continue;
+      }
+
+      const candidates = parcels.filter(
+        (parcel) => parcel.salesOrderLineId === line.salesOrderLineId && parcel.claimable > 0,
+      );
+      if (candidates.length === 0) {
+        throw new BadRequestException(
+          `주문 라인 ${line.salesOrderLineId}에 ${label}할 수 있는 배송 완료 소포가 없습니다.`,
+        );
+      }
+      lineQuantities ??= await readLineQuantities(tx, orderId);
+      const composition = (lineQuantities.get(line.salesOrderLineId)?.skus ?? []).filter(
+        (sku) => sku.qtyPerUnit !== null,
+      );
+      // 1개당 수량이 1 인 단품이어야 판매 단위 수량과 SKU 수량이 같은 숫자다 — 그 밖은 같은 숫자가 두 뜻이 된다
+      const [only] = candidates;
+      if (composition.length !== 1 || composition[0].qtyPerUnit !== 1 || candidates.length !== 1) {
+        throw new BadRequestException(
+          `주문 라인 ${line.salesOrderLineId}은 소포와 구성품을 지정해야 합니다(후보 ${candidates.length}개). ${label} 가능 목록에서 고르세요.`,
+        );
+      }
+      resolved.push({ line: this.toResolvedClaimLine(only, line.quantity), parcel: only });
+    }
+
+    // ⑦ 같은 소포·같은 (라인, SKU) 줄은 합산해 검사한다(F7)
+    const requestedByParcel = new Map<string, { parcel: ParcelClaimEligibility; quantity: number }>();
+    const requestedBySku = new Map<string, { parcel: ParcelClaimEligibility; quantity: number }>();
+    for (const { line, parcel } of resolved) {
+      const byParcel = parcelKey(line.dispatchAttemptId, line.shipmentLineId);
+      requestedByParcel.set(byParcel, {
+        parcel,
+        quantity: (requestedByParcel.get(byParcel)?.quantity ?? 0) + line.quantity,
+      });
+      const bySku = `${line.salesOrderLineId}:${line.skuId}`;
+      requestedBySku.set(bySku, { parcel, quantity: (requestedBySku.get(bySku)?.quantity ?? 0) + line.quantity });
+    }
+    for (const { parcel, quantity } of requestedByParcel.values()) {
+      if (quantity > parcel.claimable) {
+        throw new BadRequestException(
+          `배송 시도 ${parcel.dispatchAttemptId}의 라인 ${parcel.shipmentLineId} ${label} 가능 수량(${parcel.claimable})을 초과하였습니다. (요청: ${quantity})`,
+        );
+      }
+    }
+    for (const { parcel, quantity } of requestedBySku.values()) {
+      if (quantity > parcel.skuClaimable) {
+        throw new BadRequestException(
+          `주문 라인 ${parcel.salesOrderLineId} 구성품 ${parcel.skuId}의 ${label} 가능 수량(${parcel.skuClaimable})을 초과하였습니다. (요청: ${quantity})`,
+        );
+      }
+    }
+
+    return resolved.map(({ line }) => line);
+  }
+
+  private toResolvedClaimLine(parcel: ParcelClaimEligibility, quantity: number): ResolvedClaimLine {
+    return {
+      salesOrderLineId: parcel.salesOrderLineId,
+      skuId: parcel.skuId,
+      shipmentLineId: parcel.shipmentLineId,
+      dispatchAttemptId: parcel.dispatchAttemptId,
+      quantity,
+    };
+  }
+
+  /** 게이트 ③ — 주문당 진행 중 요청은 종류마다 하나. 옛 `assertNoActiveReturnRequest` 의 문구 그대로다. */
+  private async assertNoActiveClaimRequest(tx: DbTx, kind: ClaimKind, orderId: string): Promise<void> {
+    const [existing] =
+      kind === 'return'
+        ? await tx
+            .select({ id: returnExchangeTables.returnRequests.id })
+            .from(returnExchangeTables.returnRequests)
+            .where(
+              and(
+                eq(returnExchangeTables.returnRequests.salesOrderId, orderId),
+                inArray(returnExchangeTables.returnRequests.status, [...ACTIVE_RETURN_STATUSES]),
+              ),
+            )
+            .limit(1)
+        : await tx
+            .select({ id: returnExchangeTables.exchangeRequests.id })
+            .from(returnExchangeTables.exchangeRequests)
+            .where(
+              and(
+                eq(returnExchangeTables.exchangeRequests.salesOrderId, orderId),
+                inArray(returnExchangeTables.exchangeRequests.status, [...ACTIVE_EXCHANGE_STATUSES]),
+              ),
+            )
+            .limit(1);
+    if (existing) {
+      throw new ConflictException(
+        kind === 'return' ? '이미 진행 중인 반품 요청이 있습니다.' : '이미 진행 중인 교환 요청이 있습니다.',
+      );
+    }
+  }
+
+  /**
    * Verify that every salesOrderLineId in the request belongs to the given order.
    */
   private async assertLinesBelongToOrder(orderId: string, lineIds: string[]): Promise<void> {
@@ -1573,316 +1598,6 @@ export class StoreReturnExchangeService {
     const invalid = lineIds.filter((id) => !foundIds.has(id));
     if (invalid.length > 0) {
       throw new BadRequestException(`다음 주문 라인이 해당 주문에 속하지 않습니다: ${invalid.join(', ')}`);
-    }
-  }
-
-  /**
-   * New customer returns are eligible at the immutable physical dispatch grain,
-   * not from the legacy `returns.shipmentId` header or a mutable shipment state.
-   *
-   * Eligible quantity = the quantity actually shipped for
-   * (dispatchAttemptId, shipmentLineId) - every historical claim except rejected/cancelled.
-   * Completed/refunded requests remain consumed forever. Active legacy exchange
-   * claims are handled by `assertReturnQuantitiesAvailable` at the SO-line pool.
-   */
-  private async assertAttemptBasedReturnEligibility(
-    orderId: string,
-    requestedLines: StoreCreateReturnRequestDto['lines'],
-    tx: DbTx,
-  ): Promise<void> {
-    const requestedByGrain = new Map<
-      string,
-      { shipmentLineId: string; dispatchAttemptId: string; salesOrderLineId: string; quantity: number }
-    >();
-    for (const line of requestedLines) {
-      const key = `${line.dispatchAttemptId}:${line.shipmentLineId}`;
-      const existing = requestedByGrain.get(key);
-      if (existing && existing.salesOrderLineId !== line.salesOrderLineId) {
-        throw new BadRequestException(
-          `같은 배송 라인을 서로 다른 주문 라인으로 반품할 수 없습니다: ${line.shipmentLineId}`,
-        );
-      }
-      requestedByGrain.set(key, {
-        shipmentLineId: line.shipmentLineId,
-        dispatchAttemptId: line.dispatchAttemptId,
-        salesOrderLineId: line.salesOrderLineId,
-        quantity: (existing?.quantity ?? 0) + line.quantity,
-      });
-    }
-
-    // Discover immutable graph seeds without a row lock. Every identity field
-    // is re-read after the connected component is locked below.
-    const requestedShipmentLineIds = [...new Set([...requestedByGrain.values()].map((line) => line.shipmentLineId))];
-    const optimisticLines = await tx
-      .select({
-        id: wmsTables.shipmentLines.id,
-        shipmentId: wmsTables.shipmentLines.shipmentId,
-        fulfillmentOrderItemId: wmsTables.shipmentLines.fulfillmentOrderItemId,
-        salesOrderId: wmsTables.fulfillmentOrderItems.salesOrderId,
-        salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
-      })
-      .from(wmsTables.shipmentLines)
-      .innerJoin(
-        wmsTables.fulfillmentOrderItems,
-        eq(wmsTables.shipmentLines.fulfillmentOrderItemId, wmsTables.fulfillmentOrderItems.id),
-      )
-      .where(inArray(wmsTables.shipmentLines.id, requestedShipmentLineIds));
-    if (optimisticLines.length !== requestedShipmentLineIds.length) {
-      throw new BadRequestException('요청한 배송 라인 중 존재하지 않는 라인이 있습니다.');
-    }
-    const optimisticById = new Map(optimisticLines.map((line) => [line.id, line]));
-    for (const line of requestedByGrain.values()) {
-      const optimistic = optimisticById.get(line.shipmentLineId);
-      if (!optimistic || optimistic.salesOrderId !== orderId || optimistic.salesOrderLineId !== line.salesOrderLineId) {
-        throw new BadRequestException(`배송 라인 ${line.shipmentLineId}과 주문 라인의 소유 관계가 일치하지 않습니다.`);
-      }
-    }
-
-    // Recall, dispatch, reservation mutation, and return claim all share this
-    // graph-first order. Attempts are never locked before their owning graph.
-    await lockShipmentConnectedComponentGraph(
-      tx,
-      optimisticLines.map((line) => line.fulfillmentOrderItemId),
-    );
-    await this.assertPurchasedQuantityReturnCap(requestedLines, tx);
-
-    const attempts = new Map<string, typeof wmsTables.dispatchAttempts.$inferSelect>();
-    const attemptIds = [...new Set(requestedLines.map((line) => line.dispatchAttemptId))].sort();
-    for (const attemptId of attemptIds) {
-      const [attempt] = await tx
-        .select()
-        .from(wmsTables.dispatchAttempts)
-        .where(eq(wmsTables.dispatchAttempts.id, attemptId))
-        .for('update')
-        .limit(1);
-      if (!attempt) {
-        throw new BadRequestException(`배송 시도를 찾을 수 없습니다: ${attemptId}`);
-      }
-      attempts.set(attemptId, attempt);
-    }
-
-    for (const line of requestedByGrain.values()) {
-      const attempt = attempts.get(line.dispatchAttemptId)!;
-      if (attempt.status !== 'dispatched') {
-        const suffix =
-          attempt.status === 'recalled' ? '회수(recalled)된 배송 시도입니다.' : `상태가 '${attempt.status}'입니다.`;
-        throw new BadRequestException(`반품할 수 없는 배송 시도 ${attempt.id}: ${suffix}`);
-      }
-
-      const [shipmentLine] = await tx
-        .select({
-          id: wmsTables.shipmentLines.id,
-          shipmentId: wmsTables.shipmentLines.shipmentId,
-          fulfillmentOrderItemId: wmsTables.shipmentLines.fulfillmentOrderItemId,
-          salesOrderId: wmsTables.fulfillmentOrderItems.salesOrderId,
-          salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
-        })
-        .from(wmsTables.shipmentLines)
-        .innerJoin(
-          wmsTables.fulfillmentOrderItems,
-          eq(wmsTables.shipmentLines.fulfillmentOrderItemId, wmsTables.fulfillmentOrderItems.id),
-        )
-        .where(eq(wmsTables.shipmentLines.id, line.shipmentLineId))
-        .limit(1);
-      const optimisticLine = optimisticById.get(line.shipmentLineId);
-      if (
-        !shipmentLine ||
-        !optimisticLine ||
-        shipmentLine.shipmentId !== optimisticLine.shipmentId ||
-        shipmentLine.fulfillmentOrderItemId !== optimisticLine.fulfillmentOrderItemId ||
-        shipmentLine.salesOrderId !== optimisticLine.salesOrderId ||
-        shipmentLine.salesOrderLineId !== optimisticLine.salesOrderLineId ||
-        shipmentLine.shipmentId !== attempt.shipmentId ||
-        shipmentLine.salesOrderId !== orderId ||
-        shipmentLine.salesOrderLineId !== line.salesOrderLineId
-      ) {
-        throw new BadRequestException(
-          `배송 라인 ${line.shipmentLineId}과 주문 라인/배송 시도의 소유 관계가 일치하지 않습니다.`,
-        );
-      }
-
-      const [delivered] = await tx
-        .select({ id: wmsTables.shipmentTracking.id })
-        .from(wmsTables.shipmentTracking)
-        .where(
-          and(
-            eq(wmsTables.shipmentTracking.shipmentId, attempt.shipmentId),
-            eq(wmsTables.shipmentTracking.dispatchAttemptId, attempt.id),
-            eq(wmsTables.shipmentTracking.status, 'delivered'),
-          ),
-        )
-        .limit(1);
-      if (!delivered) {
-        throw new BadRequestException(`배송 완료된 시도만 반품할 수 있습니다: ${attempt.id}`);
-      }
-
-      const [shipped] = await tx
-        .select({ quantity: sum(wmsTables.dispatchAttemptSources.qty) })
-        .from(wmsTables.dispatchAttemptSources)
-        .where(
-          and(
-            eq(wmsTables.dispatchAttemptSources.dispatchAttemptId, attempt.id),
-            eq(wmsTables.dispatchAttemptSources.shipmentLineId, shipmentLine.id),
-          ),
-        );
-      const eligibleQuantity = Number(shipped?.quantity ?? 0);
-      if (eligibleQuantity <= 0) {
-        throw new BadRequestException(`배송 시도에 귀속된 실제 출고 수량이 없습니다: ${attempt.id}/${shipmentLine.id}`);
-      }
-
-      const [claimed] = await tx
-        .select({ quantity: sum(returnExchangeTables.returnRequestItems.quantity) })
-        .from(returnExchangeTables.returnRequestItems)
-        .innerJoin(
-          returnExchangeTables.returnRequests,
-          eq(returnExchangeTables.returnRequestItems.returnRequestId, returnExchangeTables.returnRequests.id),
-        )
-        .where(
-          and(
-            eq(returnExchangeTables.returnRequestItems.shipmentLineId, shipmentLine.id),
-            eq(returnExchangeTables.returnRequestItems.dispatchAttemptId, attempt.id),
-            notInArray(returnExchangeTables.returnRequests.status, ['rejected', 'cancelled']),
-          ),
-        );
-      const claimedQuantity = Number(claimed?.quantity ?? 0);
-      const remainingQuantity = eligibleQuantity - claimedQuantity;
-      if (line.quantity > remainingQuantity) {
-        throw new BadRequestException(
-          `배송 시도 ${attempt.id}의 라인 ${shipmentLine.id} 반품 가능 수량(${remainingQuantity})을 초과하였습니다. (요청: ${line.quantity})`,
-        );
-      }
-    }
-  }
-
-  /**
-   * The attempt grain prevents claiming one physical dispatch twice, while this
-   * conservative sales-line cap protects the purchased total across attempts
-   * and nullable legacy rows. Completed/refunded claims remain consumed.
-   */
-  private async assertPurchasedQuantityReturnCap(
-    requestedLines: StoreCreateReturnRequestDto['lines'],
-    tx: DbTx,
-  ): Promise<void> {
-    const requestedBySalesLine = new Map<string, number>();
-    for (const line of requestedLines) {
-      requestedBySalesLine.set(
-        line.salesOrderLineId,
-        (requestedBySalesLine.get(line.salesOrderLineId) ?? 0) + line.quantity,
-      );
-    }
-
-    for (const salesOrderLineId of [...requestedBySalesLine.keys()].sort()) {
-      const [salesOrderLine] = await tx
-        .select({ id: wmsTables.salesOrderLines.id, quantity: wmsTables.salesOrderLines.quantity })
-        .from(wmsTables.salesOrderLines)
-        .where(eq(wmsTables.salesOrderLines.id, salesOrderLineId))
-        .orderBy(asc(wmsTables.salesOrderLines.id))
-        .for('update')
-        .limit(1);
-      if (!salesOrderLine) {
-        throw new BadRequestException(`주문 라인을 찾을 수 없습니다: ${salesOrderLineId}`);
-      }
-
-      const [claimed] = await tx
-        .select({ quantity: sum(returnExchangeTables.returnRequestItems.quantity) })
-        .from(returnExchangeTables.returnRequestItems)
-        .innerJoin(
-          returnExchangeTables.returnRequests,
-          eq(returnExchangeTables.returnRequestItems.returnRequestId, returnExchangeTables.returnRequests.id),
-        )
-        .where(
-          and(
-            eq(returnExchangeTables.returnRequestItems.salesOrderLineId, salesOrderLineId),
-            notInArray(returnExchangeTables.returnRequests.status, ['rejected', 'cancelled']),
-          ),
-        );
-      const claimedQuantity = Number(claimed?.quantity ?? 0);
-      const remainingQuantity = salesOrderLine.quantity - claimedQuantity;
-      const requestedQuantity = requestedBySalesLine.get(salesOrderLineId)!;
-      if (requestedQuantity > remainingQuantity) {
-        throw new BadRequestException(
-          `주문 라인 ${salesOrderLineId}의 누적 반품 가능 수량(${remainingQuantity})을 초과하였습니다. (요청: ${requestedQuantity})`,
-        );
-      }
-    }
-  }
-
-  /**
-   * Validate that requested return quantities do not exceed available quantities per line.
-   * Available = original line quantity - (active return claims + active exchange claims).
-   * Both return and exchange count against the same available pool to prevent double-claiming.
-   */
-  private async assertReturnQuantitiesAvailable(
-    lineIds: string[],
-    requestedLines: Array<{ salesOrderLineId: string; quantity: number }>,
-  ): Promise<void> {
-    if (lineIds.length === 0) return;
-
-    // Load original quantities
-    const orderLines = await this.db.db
-      .select({ id: wmsTables.salesOrderLines.id, quantity: wmsTables.salesOrderLines.quantity })
-      .from(wmsTables.salesOrderLines)
-      .where(inArray(wmsTables.salesOrderLines.id, lineIds));
-
-    const originalQtyMap = new Map(orderLines.map((l) => [l.id, l.quantity]));
-
-    const [activeReturnItems, activeExchangeItems] = await Promise.all([
-      // Active return claims
-      this.db.db
-        .select({
-          salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
-          totalClaimed: sum(returnExchangeTables.returnRequestItems.quantity),
-        })
-        .from(returnExchangeTables.returnRequestItems)
-        .innerJoin(
-          returnExchangeTables.returnRequests,
-          eq(returnExchangeTables.returnRequestItems.returnRequestId, returnExchangeTables.returnRequests.id),
-        )
-        .where(
-          and(
-            inArray(returnExchangeTables.returnRequestItems.salesOrderLineId, lineIds),
-            inArray(returnExchangeTables.returnRequests.status, [...ACTIVE_RETURN_STATUSES]),
-          ),
-        )
-        .groupBy(returnExchangeTables.returnRequestItems.salesOrderLineId),
-      // Active exchange claims (same pool)
-      this.db.db
-        .select({
-          salesOrderLineId: returnExchangeTables.exchangeRequestItems.salesOrderLineId,
-          totalClaimed: sum(returnExchangeTables.exchangeRequestItems.quantity),
-        })
-        .from(returnExchangeTables.exchangeRequestItems)
-        .innerJoin(
-          returnExchangeTables.exchangeRequests,
-          eq(returnExchangeTables.exchangeRequestItems.exchangeRequestId, returnExchangeTables.exchangeRequests.id),
-        )
-        .where(
-          and(
-            inArray(returnExchangeTables.exchangeRequestItems.salesOrderLineId, lineIds),
-            inArray(returnExchangeTables.exchangeRequests.status, [...ACTIVE_EXCHANGE_STATUSES]),
-          ),
-        )
-        .groupBy(returnExchangeTables.exchangeRequestItems.salesOrderLineId),
-    ]);
-
-    const claimedQtyMap = new Map<string, number>();
-    for (const r of activeReturnItems) {
-      claimedQtyMap.set(r.salesOrderLineId, (claimedQtyMap.get(r.salesOrderLineId) ?? 0) + Number(r.totalClaimed ?? 0));
-    }
-    for (const r of activeExchangeItems) {
-      claimedQtyMap.set(r.salesOrderLineId, (claimedQtyMap.get(r.salesOrderLineId) ?? 0) + Number(r.totalClaimed ?? 0));
-    }
-
-    for (const line of requestedLines) {
-      const originalQty = originalQtyMap.get(line.salesOrderLineId) ?? 0;
-      const claimedQty = claimedQtyMap.get(line.salesOrderLineId) ?? 0;
-      const availableQty = originalQty - claimedQty;
-
-      if (line.quantity > availableQty) {
-        throw new BadRequestException(
-          `주문 라인 ${line.salesOrderLineId}의 반품 가능 수량(${availableQty})을 초과하였습니다. (요청: ${line.quantity})`,
-        );
-      }
     }
   }
 

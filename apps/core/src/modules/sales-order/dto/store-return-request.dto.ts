@@ -21,15 +21,20 @@ export class StoreCreateReturnRequestLineDto {
   @IsNotEmpty()
   salesOrderLineId: string;
 
-  @ApiProperty({ description: '배송 라인 ID (실제 배송 시도 기준 반품 eligibility grain)' })
+  @ApiPropertyOptional({
+    description:
+      '배송 라인 ID — dispatchAttemptId 와 함께 소포 하나를 가리킨다. 둘 다 없으면 서버가 라인 단위로 펼친다(단품·1개당 1·소포 하나일 때만)',
+  })
+  @IsOptional()
   @IsUUID()
-  shipmentLineId: string;
+  shipmentLineId?: string;
 
-  @ApiProperty({ description: '배송 완료된 정확한 dispatch attempt ID' })
+  @ApiPropertyOptional({ description: '배송 완료된 정확한 dispatch attempt ID — shipmentLineId 와 함께 보낸다' })
+  @IsOptional()
   @IsUUID()
-  dispatchAttemptId: string;
+  dispatchAttemptId?: string;
 
-  @ApiProperty({ description: '반품 수량', minimum: 1 })
+  @ApiProperty({ description: '반품 수량 (SKU 단위)', minimum: 1 })
   @IsInt()
   @Min(1)
   quantity: number;
@@ -135,7 +140,7 @@ export class StoreReturnEligibilityItemDto {
   claimedQty: number;
   @ApiProperty()
   remainingEligibleQty: number;
-  @ApiProperty({ description: 'legacy 및 다른 배송 시도 claim까지 반영한 주문 라인 전체 잔여 한도' })
+  @ApiProperty({ description: '(라인, SKU) 의 남은 청구 가능 수량' })
   salesOrderLineRemainingEligibleQty: number;
 }
 
