@@ -97,9 +97,14 @@ export function PayForm({
   // 무통장은 자동갱신 불가라 멤버십은 1회결제로만 굴러가며, 정기결제(CMS 등)는 추후 별도 경로.
   const isMembership = intent.metadata?.type === 'MEMBERSHIP_FEE';
 
+  // 위젯이 가상계좌까지 그리므로 무통장 카드를 따로 두면 같은 수단이 두 번 보인다.
+  const widgetCoversBankTransfer =
+    !!tossWidgetConfig && !isMembership && methods.some((m) => m.type === 'TOSS' && isAvailableInRegion('TOSS'));
+
   const externalMethods = methods
     .filter((m) => m.type !== 'POINTS' && isAvailableInRegion(m.type))
     .filter((m) => !isMembership || m.type === 'BANK_TRANSFER')
+    .filter((m) => !widgetCoversBankTransfer || m.type !== 'BANK_TRANSFER')
     .sort((a, b) => {
       const aOrder = availableMethodMap?.get(a.type)?.sortOrder ?? 0;
       const bOrder = availableMethodMap?.get(b.type)?.sortOrder ?? 0;
