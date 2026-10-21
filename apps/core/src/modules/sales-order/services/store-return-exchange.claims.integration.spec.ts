@@ -661,6 +661,48 @@ describeIfDb('반품·교환 생성 게이트 — 소포 단위 청구 자격 (K
     });
   });
 
+  it('whole set return of a two-set line is prorated by sets', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const customerId = randomUUID();
+      const skuB = await seedComponentSku(tx, w);
+      // A×1·B×2 세트 라인 수량 2 — 소포 하나에 A 2·B 4 배송완료
+      const line = await seedDeliveredLine(tx, w, {
+        quantity: 2,
+        composition: [
+          { skuId: w.skuId, qtyPerUnit: 1 },
+          { skuId: skuB, qtyPerUnit: 2 },
+        ],
+        parcels: [{ qtyBySku: { [w.skuId]: 2, [skuB]: 4 } }],
+        customerId,
+      });
+      const money = { totalAmount: 5000, shippingFee: 3000 };
+      await payOrder(tx, line.salesOrderId, money);
+      // A 1·B 2 = 세트 1. SKU 수량(3, 또는 B 2)을 판매 단위로 읽으면 라인 수량 2 이상이라 전체 반품(5000)이 된다
+      const { requestId } = await seedClaim(tx, {
+        kind: 'return',
+        salesOrderId: line.salesOrderId,
+        status: 'inspected',
+        items: [parcelLine(line, 0, w.skuId, 1), parcelLine(line, 0, skuB, 2)],
+      });
+      const { service, wallet } = makeRefundHarness(tx);
+
+      await service.completeReturnRequest(requestId, 'admin-1');
+
+      // 부분 반품 공식: 라인 무게 × (반품 세트 ÷ 라인 수량) × (결제총액 − 배송비) ÷ 라인 무게 합
+      const [orderLine] = await tx
+        .select({ unitPrice: wmsTables.salesOrderLines.unitPrice, quantity: wmsTables.salesOrderLines.quantity })
+        .from(wmsTables.salesOrderLines)
+        .where(eq(wmsTables.salesOrderLines.id, line.lineId));
+      const lineWeight = (orderLine.unitPrice ?? 0) * orderLine.quantity;
+      const expected = Math.round(
+        (((lineWeight * 1) / orderLine.quantity) * (money.totalAmount - money.shippingFee)) / lineWeight,
+      );
+      expect(expected).not.toBe(money.totalAmount);
+      expect(wallet.refundByIntent).toHaveBeenCalledWith(INTENT_ID, expected, expect.anything());
+    });
+  });
+
   it('set-partial return goes to manual refund', async () => {
     await inRollbackTx(db, async (tx) => {
       const { line, skuB } = await seedSetLine(tx);
