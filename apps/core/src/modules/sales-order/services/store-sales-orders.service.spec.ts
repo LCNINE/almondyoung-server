@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { getTableName } from 'drizzle-orm';
+import { getTableName, type SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { StoreSalesOrdersService } from './store-sales-orders.service';
 import { PrintOrderReader } from '../../print-order/services/print-order.reader';
 import {
@@ -10,6 +11,20 @@ import {
   PrintPartialCancelAvailableError,
 } from '../../print-order/services/print-order-cancellation.manager';
 import { WalletRefundClient, WalletRefundOutcome } from './wallet-refund.client';
+import {
+  readOrderFulfillmentPhases,
+  type OrderFulfillmentPhase,
+} from '../line-quantities/order-fulfillment-phase.reader';
+
+// 진행 단계는 사다리 SQL 한 벌이 정하고 그 판정은 order-fulfillment-phase.integration.spec.ts 가 소유한다.
+// 여기서는 사다리가 낸 (storePhase, anyShipped) 를 넣고 actions·취소 사유만 본다.
+jest.mock('../line-quantities/order-fulfillment-phase.reader');
+const readPhases = jest.mocked(readOrderFulfillmentPhases);
+
+function mockPhase(over: Partial<OrderFulfillmentPhase> = {}) {
+  const phase: OrderFulfillmentPhase = { adminPhase: 'preparing', storePhase: 'preparing', anyShipped: false, ...over };
+  readPhases.mockImplementation((_db, ids) => Promise.resolve(new Map(ids.map((id) => [id, phase]))));
+}
 
 // ─── Shared fixtures ─────────────────────────────────────────────────────────
 
@@ -94,8 +109,11 @@ function makeContext(
     /** wallet 환불 목록. null = 실패·시간 초과 */
     walletRefunds?: Array<Record<string, unknown>> | null;
     printCancel?: jest.Mock;
+    /** 사다리가 낸 이 주문의 단계. 기본은 준비중·나간 것 없음 */
+    phase?: Partial<OrderFulfillmentPhase>;
   } = {},
 ) {
+  mockPhase(options.phase);
   const so = options.so ?? makeSo();
   let currentSo = so;
   const printCancel = options.printCancel ?? jest.fn().mockResolvedValue(PRINT_RESULT);
@@ -250,6 +268,9 @@ function makeContext(
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe('StoreSalesOrdersService', () => {
+  // makeContext 를 거치지 않는 가짜(배치·관리자·배송조회)도 사다리 문을 읽을 수 있게 기본 단계를 깔아 둔다
+  beforeEach(() => mockPhase());
+
   describe('printStatusByWalletIntent — 결제 상세 환불 제한', () => {
     it('결제의 주문에 제작 접수된 인쇄 줄이 있으면 hasActivePrint=true', async () => {
       const { service } = makeContext({
@@ -258,7 +279,10 @@ describe('StoreSalesOrdersService', () => {
           { status: 'submitted', orderAttemptedAt: new Date() },
         ],
       });
-      await expect(service.printStatusByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({ hasActivePrint: true, channelOrderId: 'medusa-order-001' });
+      await expect(service.printStatusByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({
+        hasActivePrint: true,
+        channelOrderId: 'medusa-order-001',
+      });
     });
 
     it('아직 안 보낸 실패 행도 재전송되면 제작되므로 true', async () => {
@@ -273,12 +297,18 @@ describe('StoreSalesOrdersService', () => {
       const { service } = makeContext({
         printOrders: [{ status: 'cancelled', orderAttemptedAt: new Date() }],
       });
-      await expect(service.printStatusByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({ hasActivePrint: false, channelOrderId: 'medusa-order-001' });
+      await expect(service.printStatusByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({
+        hasActivePrint: false,
+        channelOrderId: 'medusa-order-001',
+      });
     });
 
     it('인쇄 줄이 없으면 false', async () => {
       const { service } = makeContext({ printOrders: [] });
-      await expect(service.printStatusByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({ hasActivePrint: false, channelOrderId: 'medusa-order-001' });
+      await expect(service.printStatusByWalletIntent(WALLET_INTENT_ID)).resolves.toEqual({
+        hasActivePrint: false,
+        channelOrderId: 'medusa-order-001',
+      });
     });
   });
 
@@ -315,7 +345,10 @@ describe('StoreSalesOrdersService', () => {
     });
 
     it('출고증거(shippedAt) 있는 주문은 고객 직접 취소 불가 (400)', async () => {
-      const { service, cancelRequestsMock } = makeContext({ fos: [{ status: 'shipped' }] });
+      const { service, cancelRequestsMock } = makeContext({
+        fos: [{ status: 'shipped' }],
+        phase: { storePhase: 'shipping', anyShipped: true },
+      });
       await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
         '이미 출고된 주문은 취소할 수 없습니다.',
       );
@@ -334,6 +367,7 @@ describe('StoreSalesOrdersService', () => {
       const { service, cancelRequestsMock } = makeContext({
         fos: [{ status: 'partially_shipped' }],
         activeShipmentStatuses: ['shipped', 'draft'],
+        phase: { storePhase: 'shipping', anyShipped: true },
       });
       await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow('이미 출고');
       expect(cancelRequestsMock.request).not.toHaveBeenCalled();
@@ -472,6 +506,34 @@ describe('StoreSalesOrdersService', () => {
       expect(cancelRequestsMock.request).not.toHaveBeenCalled();
     });
 
+    it('exclude-print cancel of a shipped order is refused', async () => {
+      // P4 — FO 없이 셀메이트로 나간 주문. 옛 판정은 FO·상자로만 출고를 봐서 버튼이 열렸고, 인쇄 제외 요청은
+      // 라인 범위 부분취소가 되어 판매주문 shipped 가드를 지나지 않았다(돈 구멍). 이제 판정 단계에서 막힌다
+      const { service, cancelRequestsMock, printCancel } = makeContext({
+        so: makeSo({ status: 'shipped' }),
+        phase: { adminPhase: 'external_shipped', storePhase: 'shipping', anyShipped: true },
+        printOrders: [{ status: 'cancel_refused', orderAttemptedAt: new Date(), salesOrderLineId: 'print-line' }],
+        planLines: [
+          { salesOrderLineId: 'print-line', quantity: 1 },
+          { salesOrderLineId: 'normal-line', quantity: 1 },
+        ],
+        nonPrintLine: true,
+      });
+      const error = await service
+        .cancelRequestByChannelOrder(
+          CHANNEL_ORDER_ID,
+          CUSTOMER_ID,
+          { excludePrint: true },
+          { idempotencyKey: 'k', actorId: CUSTOMER_ID, actorRoles: [] },
+        )
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as Error).message).toBe('이미 출고된 주문은 취소할 수 없습니다. 고객센터로 문의해 주세요.');
+      expect(cancelRequestsMock.precheck).not.toHaveBeenCalled();
+      expect(printCancel).not.toHaveBeenCalled();
+      expect(cancelRequestsMock.request).not.toHaveBeenCalled();
+    });
+
     it('와우프레스가 인쇄 취소를 거절하고 남은 상품이 인쇄뿐이면 고객 취소 전체를 막고 안내 문구를 그대로 돌려준다', async () => {
       const printCancel = jest.fn().mockRejectedValue(new PrintInProductionError());
       const { service, cancelRequestsMock } = makeContext({ printCancel });
@@ -522,7 +584,10 @@ describe('StoreSalesOrdersService', () => {
     });
 
     it('앞선 거절 사유(출고 등)에 걸리면 와우프레스를 부르지 않는다', async () => {
-      const { service, printCancel } = makeContext({ fos: [{ status: 'shipped' }] });
+      const { service, printCancel } = makeContext({
+        fos: [{ status: 'shipped' }],
+        phase: { storePhase: 'shipping', anyShipped: true },
+      });
       await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow('이미 출고');
       expect(printCancel).not.toHaveBeenCalled();
     });
@@ -615,6 +680,7 @@ describe('StoreSalesOrdersService', () => {
   describe('getActionsByChannelOrderBatch', () => {
     // makeContext 는 findSoOrThrow(limit) 전제라, builder 를 직접 await 하는 배치 쿼리용 mock 을 따로 만든다.
     function makeBatchContext(sos: ReturnType<typeof makeSo>[]) {
+      mockPhase();
       let whereCallIndex = 0;
       const dbMock = {
         db: {
@@ -656,6 +722,32 @@ describe('StoreSalesOrdersService', () => {
       );
       expect(result.map((r) => r.channelOrderId)).toEqual([CHANNEL_ORDER_ID, 'medusa-order-002']);
       expect(result[0].availableActions).toContain('cancel');
+    });
+
+    it('진행 단계는 주문마다가 아니라 전체 id 로 한 번에 읽는다', async () => {
+      const { service } = makeBatchContext([
+        makeSo({ walletIntentId: null }),
+        makeSo({ id: 'so-002', channelOrderId: 'medusa-order-002', walletIntentId: null }),
+        makeSo({ id: 'so-003', channelOrderId: 'medusa-order-003', walletIntentId: null }),
+      ]);
+      readPhases.mockClear();
+
+      await service.getActionsByChannelOrderBatch(
+        [CHANNEL_ORDER_ID, 'medusa-order-002', 'medusa-order-003'],
+        CUSTOMER_ID,
+      );
+
+      expect(readPhases).toHaveBeenCalledTimes(1);
+      expect(readPhases).toHaveBeenCalledWith(expect.anything(), [SO_ID, 'so-002', 'so-003']);
+    });
+
+    it('일괄로 읽은 맵에 주문이 없으면 기본값으로 덮지 않고 던진다', async () => {
+      const { service } = makeBatchContext([makeSo({ walletIntentId: null })]);
+      readPhases.mockResolvedValueOnce(new Map());
+
+      await expect(service.getActionsByChannelOrderBatch([CHANNEL_ORDER_ID], CUSTOMER_ID)).rejects.toThrow(
+        /Fulfillment phase missing/,
+      );
     });
 
     it('빈 id 목록이면 DB 조회 없이 빈 배열을 반환한다', async () => {
@@ -808,6 +900,9 @@ describe('StoreSalesOrdersService', () => {
         so: makeSo({ status: 'delivered' }),
         fos: [{ status: 'completed' }],
         activeShipmentStatuses: ['delivered'],
+        // 사다리: SO shipped·delivered 위에서 사실이 배송완료면 고객은 delivered (R13,
+        // 'cellmate shipped order with completed drop-ship shows delivered to the customer')
+        phase: { adminPhase: 'external_shipped', storePhase: 'delivered', anyShipped: true },
       });
       const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
       expect(result.availableActions).toContain('return');
@@ -821,6 +916,9 @@ describe('StoreSalesOrdersService', () => {
         so: makeSo({ status: 'shipped' }),
         fos: [{ status: 'completed' }],
         activeShipmentStatuses: ['delivered'],
+        // 사다리: SO shipped·delivered 위에서 사실이 배송완료면 고객은 delivered (R13,
+        // 'cellmate shipped order with completed drop-ship shows delivered to the customer')
+        phase: { adminPhase: 'external_shipped', storePhase: 'delivered', anyShipped: true },
       });
       const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
       expect(result.availableActions).toContain('return');
@@ -832,6 +930,7 @@ describe('StoreSalesOrdersService', () => {
         so: makeSo({ status: 'shipped' }),
         fos: [{ status: 'shipped' }],
         activeShipmentStatuses: ['shipped'],
+        phase: { adminPhase: 'external_shipped', storePhase: 'shipping', anyShipped: true },
       });
       const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
       expect(result.availableActions).not.toContain('return');
@@ -851,6 +950,7 @@ describe('StoreSalesOrdersService', () => {
         so: makeSo({ status: 'processing' }),
         fos: [{ status: 'shipped' }],
         activeShipmentStatuses: ['shipped'],
+        phase: { storePhase: 'shipping', anyShipped: true },
       });
       const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
       expect(result.availableActions).not.toContain('return');
@@ -858,77 +958,111 @@ describe('StoreSalesOrdersService', () => {
     });
 
     describe('buildActionsView fulfillmentStatus (V2)', () => {
-      it('전 라인 외주 + 인쇄 전량 delivered → delivered, 반품/교환은 열지 않는다(주문제작)', async () => {
+      // 각 케이스의 phase 는 order-fulfillment-phase.integration.spec.ts 의 같은 시나리오(주석의 이름)가 실 DB 로 낸 값이다.
+      // 단계 판정은 그 spec 이 소유하고, 여기서는 그 단계 위의 actions·취소 사유·진행 요약만 본다.
+      const shipping = { storePhase: 'shipping', anyShipped: true } as const;
+      const delivered = { storePhase: 'delivered', anyShipped: true } as const;
+
+      it('fulfillmentStatus 는 사다리의 storePhase 를 그대로 싣는다', async () => {
+        for (const storePhase of ['not_created', 'preparing', 'shipping', 'delivered', 'canceled'] as const) {
+          const { service } = makeContext({ phase: { storePhase } });
+          expect((await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID)).fulfillmentStatus).toBe(
+            storePhase,
+          );
+        }
+      });
+      it('사다리 맵에 주문이 없으면 기본값으로 덮지 않고 실패한다', async () => {
+        const { service } = makeContext();
+        readPhases.mockResolvedValue(new Map());
+        await expect(service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID)).rejects.toThrow(SO_ID);
+      });
+      it('전 라인 외주 + 인쇄 전량 delivered → 반품/교환은 열지 않는다(주문제작)', async () => {
+        // 사다리: 'print only all delivered'
         const { service } = makeContext({
           fos: [],
           printOrders: [{ status: 'delivered' }],
           allOutsourced: true,
+          phase: delivered,
         });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-        expect(r.fulfillmentStatus).toBe('delivered');
+        expect(r.cancelUnavailableReason).toBe('already_shipped');
         expect(r.availableActions).not.toContain('return');
         expect(r.availableActions).not.toContain('exchange');
+        expect(r.shipmentProgress).toEqual({ total: 1, shipped: 1, delivered: 1 });
       });
-      it('전 라인 외주 + 인쇄 하나라도 shipped → shipping + already_shipped', async () => {
+      it('전 라인 외주 + 인쇄 하나라도 shipped → already_shipped', async () => {
+        // 사다리: 'print only one shipped one submitted'
         const { service } = makeContext({
           fos: [],
           printOrders: [{ status: 'shipped' }, { status: 'submitted' }],
           allOutsourced: true,
+          phase: shipping,
         });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-        expect(r.fulfillmentStatus).toBe('shipping');
         expect(r.cancelUnavailableReason).toBe('already_shipped');
+        expect(r.shipmentProgress).toEqual({ total: 2, shipped: 1, delivered: 0 });
       });
-      it('혼합 주문: 인쇄 shipped 는 출고 증거이자 이행 단위다 — 창고가 준비중이어도 shipping', async () => {
+      it('혼합 주문: 인쇄 shipped 는 출고 증거다 — 창고가 준비중이어도 already_shipped', async () => {
+        // 사다리: 'fo ready and print shipped'
         const { service } = makeContext({
           fos: [{ status: 'ready' }],
           printOrders: [{ status: 'shipped' }],
           allOutsourced: false,
+          phase: shipping,
         });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-        expect(r.fulfillmentStatus).toBe('shipping');
         expect(r.cancelUnavailableReason).toBe('already_shipped');
+        expect(r.availableActions).not.toContain('cancel');
       });
-      it('혼합 주문: 창고 상자 delivered + 인쇄 submitted → delivered 가 아니라 shipping, 반품·교환 미노출', async () => {
+      it('혼합 주문: 창고 상자 delivered + 인쇄 submitted → 반품·교환 미노출', async () => {
+        // 사다리: 'warehouse delivered and print submitted'
         const { service } = makeContext({
           so: makeSo({ status: 'processing' }),
           fos: [{ status: 'shipped' }],
           activeShipmentStatuses: ['delivered'],
           printOrders: [{ status: 'submitted' }],
+          phase: shipping,
         });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-        expect(r.fulfillmentStatus).toBe('shipping');
         expect(r.availableActions).not.toContain('return');
         expect(r.availableActions).not.toContain('exchange');
+        expect(r.shipmentProgress).toEqual({ total: 2, shipped: 1, delivered: 1 });
       });
       it('인쇄 주문이 없으면 기존 결과와 같다 (회귀)', async () => {
-        const { service } = makeContext({ fos: [{ status: 'ready' }] });
+        // 사다리: 'confirmed order with fo and no parcel'
+        const { service } = makeContext({ fos: [{ status: 'ready' }], phase: { storePhase: 'preparing' } });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-        expect(r.fulfillmentStatus).toBe('preparing');
         expect(r.availableActions).toContain('cancel');
+        expect(r.shipmentProgress).toBeUndefined();
       });
-      it('FO 없음 → not_created', async () => {
-        const { service } = makeContext({ fos: [] });
+      it('FO 없음 → 취소 버튼', async () => {
+        // 사다리: 'confirmed order without fo'
+        const { service } = makeContext({ fos: [], phase: { storePhase: 'not_created' } });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-        expect(r.fulfillmentStatus).toBe('not_created');
+        expect(r.availableActions).toEqual(['cancel', 'receipt']);
+        expect(r.shipmentProgress).toBeUndefined();
       });
-      it('FO ready, 상자 미로드 → preparing', async () => {
-        const { service } = makeContext({ fos: [{ status: 'ready' }] });
+      it('FO ready, 상자 미로드 → 취소 버튼', async () => {
+        // 사다리: 'confirmed order with fo and no parcel'
+        const { service } = makeContext({ fos: [{ status: 'ready' }], phase: { storePhase: 'preparing' } });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-        expect(r.fulfillmentStatus).toBe('preparing');
         expect(r.availableActions).toContain('cancel');
       });
       it('planned 상자만 있는 주문은 취소 버튼이 보인다 — 서버가 그 자리에서 취소한다 (#1016 30번)', async () => {
-        const { service } = makeContext({ fos: [{ status: 'ready' }], activeShipmentStatuses: ['planned'] });
+        // 사다리: 'canceled box is ignored'(발송 전 상자는 움직임이 아니다)
+        const { service } = makeContext({
+          fos: [{ status: 'ready' }],
+          activeShipmentStatuses: ['planned'],
+          phase: { storePhase: 'preparing' },
+        });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-        expect(r.fulfillmentStatus).toBe('preparing');
         expect(r.availableActions).toContain('cancel');
         expect(r.cancelUnavailableReason).toBeUndefined();
       });
-      it('FO processing → preparing + already_processing (셀프취소 불가)', async () => {
-        const { service } = makeContext({ fos: [{ status: 'processing' }] });
+      it('FO processing → already_processing (셀프취소 불가)', async () => {
+        // 사다리: 'confirmed order with fo and no parcel'
+        const { service } = makeContext({ fos: [{ status: 'processing' }], phase: { storePhase: 'preparing' } });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-        expect(r.fulfillmentStatus).toBe('preparing');
         expect(r.availableActions).not.toContain('cancel');
         expect(r.cancelUnavailableReason).toBe('already_processing');
       });
@@ -937,6 +1071,7 @@ describe('StoreSalesOrdersService', () => {
           fos: [{ status: 'ready' }],
           printOrders: [{ id: 'po-1', status: 'cancel_refused', trackingNumber: null }],
           nonPrintLine: true,
+          phase: { storePhase: 'preparing' },
         });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
         expect(r.availableActions).toContain('cancel');
@@ -945,62 +1080,75 @@ describe('StoreSalesOrdersService', () => {
         const { service } = makeContext({
           fos: [{ status: 'ready' }],
           printOrders: [{ id: 'po-1', status: 'cancel_refused', trackingNumber: null }],
+          phase: { storePhase: 'preparing' },
         });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
         expect(r.availableActions).not.toContain('cancel');
         expect(r.cancelUnavailableReason).toBe('already_processing');
       });
-      it('FO partially_shipped + 상자 shipped → shipping + already_shipped', async () => {
+      it('FO partially_shipped + 상자 shipped → already_shipped + 진행 요약', async () => {
+        // 사다리: 'partially shipped with a draft box'
         const { service } = makeContext({
           fos: [{ status: 'partially_shipped' }],
           activeShipmentStatuses: ['shipped', 'draft'],
+          phase: shipping,
         });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-        expect(r.fulfillmentStatus).toBe('shipping');
         expect(r.shipmentProgress).toEqual({ total: 2, shipped: 1, delivered: 0 });
         expect(r.availableActions).not.toContain('cancel');
         expect(r.cancelUnavailableReason).toBe('already_shipped');
       });
-      it('FO completed + 상자 전량 delivered → delivered + 반품/교환 노출', async () => {
-        const { service } = makeContext({ fos: [{ status: 'completed' }], activeShipmentStatuses: ['delivered'] });
+      it('FO completed + 상자 전량 delivered → 반품/교환 노출', async () => {
+        // 사다리: 'both parcels delivered'
+        const { service } = makeContext({
+          fos: [{ status: 'completed' }],
+          activeShipmentStatuses: ['delivered'],
+          phase: delivered,
+        });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-        expect(r.fulfillmentStatus).toBe('delivered');
         expect(r.availableActions).toEqual(expect.arrayContaining(['return', 'exchange']));
       });
-      it('부분 배송 + 잔여 상자 recovery_required → shipping + already_shipped (마스킹 방지)', async () => {
+      it('부분 배송 + 잔여 상자 recovery_required → already_shipped (마스킹 방지)', async () => {
+        // 사다리: 'delivered parcel and a recovery box'
         const { service } = makeContext({
           fos: [{ status: 'recovery_required' }],
           activeShipmentStatuses: ['delivered', 'recovery_required'],
+          phase: shipping,
         });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-        expect(r.fulfillmentStatus).toBe('shipping');
         expect(r.availableActions).not.toContain('cancel');
         expect(r.cancelUnavailableReason).toBe('already_shipped');
       });
-      it('복구 중 상자가 있고 출고된 박스 없음 → preparing, 취소 버튼 없이 already_processing (#1016 33번)', async () => {
+      it('복구 중 상자가 있고 출고된 박스 없음 → 취소 버튼 없이 already_processing (#1016 33번)', async () => {
+        // 사다리: 'recovery box without dispatch'
         const { service } = makeContext({
           fos: [{ status: 'recovery_required' }],
           activeShipmentStatuses: ['recovery_required', 'draft'],
+          phase: { storePhase: 'preparing' },
         });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-        expect(r.fulfillmentStatus).toBe('preparing');
         expect(r.availableActions).toEqual(['receipt']);
         expect(r.cancelUnavailableReason).toBe('already_processing');
       });
-      it('직배(drop_ship) forwarded → shipping (loader dropShipStatuses 추출)', async () => {
+      it('직배(drop_ship) forwarded → 취소 버튼 없음', async () => {
+        // 사다리: 'forwarded drop-ship moves but is not shipped'
         const { service } = makeContext({
           fos: [{ status: 'ready', fulfillmentMode: 'drop_ship', directShipStatus: 'forwarded' }],
+          phase: shipping,
         });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-        expect(r.fulfillmentStatus).toBe('shipping');
         expect(r.availableActions).not.toContain('cancel');
+        expect(r.shipmentProgress).toEqual({ total: 1, shipped: 1, delivered: 0 });
       });
-      it('직배 completed → delivered', async () => {
+      it('직배 completed → 진행 요약 배송완료', async () => {
+        // 사다리: 'completed drop-ship shows delivered'
         const { service } = makeContext({
           fos: [{ status: 'ready', fulfillmentMode: 'drop_ship', directShipStatus: 'completed' }],
+          phase: delivered,
         });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-        expect(r.fulfillmentStatus).toBe('delivered');
+        expect(r.cancelUnavailableReason).toBe('already_shipped');
+        expect(r.shipmentProgress).toEqual({ total: 1, shipped: 1, delivered: 1 });
       });
     });
   });
@@ -1650,14 +1798,22 @@ describe('StoreSalesOrdersService', () => {
   });
 
   describe('tracking query V2 graph', () => {
+    const dialect = new PgDialect();
+    const statusOf = (row: unknown): unknown =>
+      typeof row === 'object' && row !== null && 'status' in row ? row.status : undefined;
+
     function makeTrackingService(rowsBySelect: unknown[][], printRows: Array<Record<string, unknown>> = []) {
       let call = 0;
       const dbMock = {
         db: {
           select: jest.fn().mockImplementation(() => ({
-            from: jest.fn().mockImplementation(() => ({
-              where: jest.fn().mockImplementation(() => {
-                const rows = rowsBySelect[call++] ?? [];
+            from: jest.fn().mockImplementation((table: Parameters<typeof getTableName>[0]) => ({
+              where: jest.fn().mockImplementation((condition: SQL) => {
+                const given = rowsBySelect[call++] ?? [];
+                // 상자 select 는 «id 목록 안 + 이 상태들 제외» 조건이다. 가짜가 WHERE 를 무시하면 상태 필터가 보이지 않으므로
+                // 조건에 값으로 실린 상태를 가진 상자를 뺀다
+                const excluded = getTableName(table) === 'shipments' ? dialect.sqlToQuery(condition).params : [];
+                const rows = given.filter((row) => !excluded.includes(statusOf(row)));
                 const promise = Promise.resolve(rows);
                 return {
                   then: promise.then.bind(promise),
@@ -1913,6 +2069,29 @@ describe('StoreSalesOrdersService', () => {
           trackingNumber: 'NEW-TRACKING',
         }),
       ]);
+    });
+
+    it('tracking hides superseded boxes', async () => {
+      // 합포장으로 합쳐진 원래 상자(superseded)의 라인이 남아 있어도 고객 배송조회에는 합친 상자만 보인다(F11)
+      const merged = { id: 'shipment-merged', status: 'superseded' };
+      const service = makeTrackingService([
+        [makeSo()],
+        [fo('fo-1')],
+        [item('foi-1', 'fo-1', 'sol-1')],
+        [
+          { id: 'line-merged', shipmentId: merged.id, fulfillmentOrderItemId: 'foi-1', skuId: 'sku-1', qty: 1 },
+          { id: 'line-shared', shipmentId: shipment.id, fulfillmentOrderItemId: 'foi-1', skuId: 'sku-1', qty: 1 },
+        ],
+        [merged, shipment],
+        [],
+        [],
+        [],
+        [{ id: 'sol-1', channelOrderItemId: null }],
+      ]);
+
+      const result = await service.getTracking(SO_ID, CUSTOMER_ID);
+
+      expect(result.shipments.map((s) => s.shipmentId)).toEqual([shipment.id]);
     });
 
     it('FO completed 상태만으로 delivered를 만들지 않고 최신 carrier attempt evidence를 사용한다', async () => {

@@ -267,7 +267,6 @@ describe('PrintOrderAdminManager', () => {
       await expect(manager.salesCancelTarget(out.row)).resolves.toEqual({
         salesOrderId: 'so-1',
         salesOrderLineId: r.salesOrderLineId,
-        lineQuantity: 2,
       });
     });
 

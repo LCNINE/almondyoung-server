@@ -48,9 +48,44 @@ PR 1 은 기록만 더했다(이중 기록). PR 2a 가 `cancelledQuantitySql`(�
 - 취소 엔진의 FOI 별 `preservedShippedByFulfillmentItem` 은 계속 `effects` 에서 파싱한다 — 라인 행으로는 복원되지 않는 FOI 단위 엔진 상태다.
 - SQL 조각은 취소 라인 테이블을 열 이름을 바꾼 파생 테이블로 감싼다. drizzle 이 단일 테이블 select 의 열을 한정 없이 렌더해 안쪽 테이블이 바깥 `"id"` 를 가로채기 때문이다(일치 spec 이 잡았다). postgres 가 파생 테이블을 평탄화해 필터가 테이블에 바로 붙는다 — 인덱스(`idx_sales_order_cancellation_lines_line`)를 쓸 수 있는 모양이다(실측은 행이 적어 seq scan).
 
+**PR 2b 가 정한 것:** 문에 SKU 층을 더하고(`lineSkuQuantitiesSql`, 리더의 `skus`), 진행 단계를 라인 수량 위의 SQL 한 벌(`order-fulfillment-phase.sql.ts`)로 세웠다.
+- **SKU 층 관계.** 행 = 범위 주문의 (판매 라인, SKU) 중 FOI 가 있거나 굳은 구성(`sales_order_line_compositions`)에 있는 것. FO 가 없는 주문은 운영자가 구성을 미리 정해 뒀어도
+  SKU 층이 비어 있다(R6 — 스펙 §6.1 «구성이 굳기 전(FO 전)에는 SKU 층이 비고»; 구성 갈래는 FO 가 있는 주문에만 건다). FOI 의 `sales_order_line_id` 는 `varchar` 라
+  `sol.id::text` 로 잇고 주문 범위는 `fulfillment_orders.sales_order_id` 로 좁힌다.
+- **FOI 단위 정의(그 뒤 (라인, SKU) 합).** `required = qty − canceled_qty`, `shipped = shipped_qty`, `outstanding = qty − shipped_qty − canceled_qty`,
+  `forwarded` = drop_ship FO 의 `direct_ship_status='forwarded'` 일 때 outstanding(출고가 아니다), `partner_completed` = `'completed'` 일 때 shipped_qty(배송완료가 아니라 표시용),
+  `delivered` = 그 FOI 상자 라인(`dispatch_attempt_sources.qty`) 중 시도가 `dispatched` 이고 `shipment_tracking.status='delivered'` 인 것의 합. FO 상태로 거르지 않는다.
+  `delivered` 는 범위 FOI 전부에 대해 한 번 묶어 센 파생 테이블을 FOI id 로 되붙인다 — FOI 마다 상관 서브쿼리로 세면 `shipment_lines(fulfillment_order_item_id)`
+  인덱스가 없어 제곱으로 자란다(R15). 그 인덱스는 이후 expand PR 이 더한다.
+- **R5 — 인쇄 라인은 SKU 층 밖이다.** 스펙 §6.1 은 «인쇄 … 전량» 을 SKU 층 `shipped` 로 적었지만, 인쇄 외주 라인은 FOI 가 없어 SKU 층에 넣지 않았다. 진행 단계 사다리가
+  `print_orders` 를 주문 단위로 직접 접는다(활성 수·`shipped`/`delivered` 수·`delivered` 수). 2b 소비자는 모두 주문 단위라 충분하다 — 라인 단위 인쇄 사실이 필요해지면 K7·PR 3 이 더한다.
+- **진행 단계 사다리가 SQL 한 벌인 이유.** 일별 통계는 기간 상한이 없는 집계라 SQL 이어야 하고, TS 판을 하나 더 두면 일치 spec 을 영구히 들고 간다. 고객 화면은 같은 SQL 을 주문 하나로 부른다
+  (스펙 §6.4 의 «순수 함수 하나»에서 사용자 확인으로 벗어난 판단). `anyShipped`·`shippedComplete` 를 라인 단위로 내지 않는 것도 같은 확인이다 — 소비자가 생기는 K7·PR 3 이 더한다.
+- **`cancellableSalesUnits` 가 TS 인 이유.** 구성 SKU 마다 `outstanding ÷ qtyPerUnit` 이 같아야 하는 판매 단위 환산이라 SQL 소비자가 없다. 수량 뺄셈은 SQL 조각 안에만 있고 이 함수는 select 한 칼럼을 나눌 뿐이다.
+- **R13 — 고객 단계는 SO `pending`·`shipped` 칸을 타지 않는다.** 사다리는 SO 칸(1 cancelled·timeout, 2 pending, 3 shipped·delivered)과 사실 칸(4 FO 취소, 5 미생성,
+  6 배송완료, 7 배송중, 8 준비중)으로 나뉘고 각 칸은 한 번만 쓴다. `admin_phase` 는 SO 칸이 먼저, 없으면 사실 칸(미생성 → `preparing`). `store_phase` 는 SO cancelled·timeout 이면 `canceled`,
+  SO shipped·delivered 면 사실 칸이 `delivered` 일 때만 `delivered` 아니면 `shipping`, 그 밖(SO `pending` 포함)은 사실 칸 그대로다. 라이브 진행 중 주문은 `pending` 이다 —
+  생성이 `pending` 으로 넣고 `confirm()` 은 관리자 엔드포인트뿐이다. 옛 고객 단계는 SO 상태를 보지 않았으므로, pending 칸을 고객 단계에 태우면 pending 주문의 «배송 완료»·«출고 취소»가
+  사라진다(스펙 §6.4 «현행 화면 유지»).
+- **R14(사용자 확인 대기) — 카드 모집단은 진행 중 주문이다.** 출고완료·부분출고 카드는 최근 14일 SO `status IN ('pending','confirmed','processing')` 을 센다. 같은 이유로 `confirmed` 만 세면
+  warehouse-app 전환 뒤에도 카드가 0 에 머문다. 셀메이트로 나간 주문(`shipped`)은 모집단 밖이다. 출고 요청 카드(`confirmed` 수)와 모집단이 달라 «출고완료 ⊆ 출고 요청» 은 성립하지 않는다.
+- **R9.** V2 전체취소 재계획은 «항목 없음» 409 갈래를 `skus` 가 비었는지가 아니라 **FOI 존재**로 고른다(구성만 굳고 FOI 가 없는 SKU 가 0 단위로 읽히는 것을 막는다).
+- **R10 / G-e.** `sales_order_line_id` 가 비었거나 그 주문의 라인이 아닌 FOI 에 `shipped_qty > 0` 이 있으면 SKU 층이 그 출고를 못 본다. V1 전체취소의 «출고된 항목» 판정도 그걸 못 보지만
+  FO 상태 가드가 전량 출고 FO 는 여전히 막는다. 코드에 대체 읽기를 두지 않는다 — 대체를 두면 «읽는 문 하나»가 깨지고, 같은 집합을 SKU 층이 다른 모든 곳에서 무시한다.
+  대신 배포 전 게이트 G-e(기대 0)로 그런 FOI 가 없음을 확인한다.
+- **P1~P8(동작 변경, 스펙 G5).** P1 관리자 뱃지·일별 통계가 인쇄 외주를 센다(지난 날짜 칸도 바뀐다) · P2 FO 만 취소된 주문은 관리자 `cancelled` · P3 SO `cancelled`·`timeout` 은 고객 `canceled` ·
+  P4 셀메이트 출고(SO `shipped`·`delivered`)는 고객 `shipping`(사실이 배송완료면 `delivered`, R13), 셀프취소 차단 · P5 «움직임»·«배송완료» 를 상자 상태가 아니라 수량으로 판정 ·
+  P6 카드 «출고완료»·«부분출고» 를 수량으로 재정의(F10; 모집단 R14. 인쇄만 있는 주문은 창고 요구 수량이 0 이라 두 카드 어디에도 들지 않는다) · P7 V1 취소 엔진의 출고 수량은 FOI `shipped_qty` 하나(FO `shipped`/`shipped_at` 대체 삭제; 셀프취소 `any_shipped` 도 FO 상태를 증거로 안 본다) ·
+  P8 셀메이트 스크립트가 취소된 FO·FOI 를 출고로 덮지 않는다(F12).
+- 가드 `line-quantity-read.guard.spec.ts` 가 옛 이름의 부활을 막고, 비테스트 운영 파일 중 `shipment_tracking` 을 읽는 곳을 `line-quantities.sql.ts`·`store-sales-orders.service.ts`(배송조회 이벤트 목록, 수량 아님)·
+  `store-return-exchange.service.ts`(반품·교환 자격 — PR 3 이 문으로 옮기고 이 목록에서 뺀다)로 묶는다.
+
+**PR 2b 가 대체한 것:** `orderShipmentPhaseSql`(→ `orderFulfillmentPhaseSql`), `deriveFulfillmentPhase`, `hasShippedEvidence`(→ `SelfCancelFacts.anyShipped`), `MOVED_SHIPMENT_STATUSES`,
+`outstandingSalesUnits`(→ `cancellableSalesUnits`), `getEffectiveShippedFulfillmentQty`(→ `shippedEvidenceOf`).
+
 **이후 PR(제안, 정본은 스펙 §9):**
-- PR 2a — (이 PR) 읽는 문·SQL 조각·일치 spec, 취소 소비자 여섯(취소 엔진·채널 diff·인쇄 둘·수요 통계·구성 리더) 전환, E1·E2.
-- PR 2b — 진행 단계 함수, 관리자 뱃지·일별 통계·카드 숫자(F10), 고객 actions, 셀메이트 F12·배송조회 F11, SKU 층 사실(`shipped`·`forwarded`·`delivered`·`cancellable`).
+- PR 2a — (#1108) 읽는 문·SQL 조각·일치 spec, 취소 소비자 여섯(취소 엔진·채널 diff·인쇄 둘·수요 통계·구성 리더) 전환, E1·E2.
+- PR 2b — (이 PR) 진행 단계 SQL, 관리자 뱃지·일별 통계·카드 숫자(F10), 고객 actions, 셀메이트 F12·배송조회 F11, SKU 층 사실(`shipped`·`forwarded`·`delivered`·`cancellable`).
 - PR 3 — 청구(반품·교환) 게이트·환불 수량을 한 공식 `claimable` 로.
 - PR 4 — 운영자 «미처리 취소»(admin-web 버튼과 `POST /shipments/:id/cancellations`), FO 취소(`POST /fulfillments/:id/cancel`), 수동 배송완료
   (`POST /fulfillments/:id/deliver`) 제거. 셋 다 판매주문 기록 없이 상태만 바꾸거나 배송 사실을 추적 밖에서 만들어 «기록 위치 하나»와 충돌한다.
@@ -68,5 +103,5 @@ PR 1 은 기록만 더했다(이중 기록). PR 2a 가 `cancelledQuantitySql`(�
   `--verify` 로 배포 후 확인한다.
 - **PR 2 착수의 차단 조건:** 라인 행이 없는 취소 수(게이트 SQL)가 백필 러너가 찍는 (a) ambiguous 주문에 속한 취소 수 + (b) 라인 0개로 도출된 취소 수의 합과 다르면 읽는 문을 만들지 않는다. 그 합만큼은 사람이 판단한 예외로 남는다.
 - 백필이 모호하다고 본 주문은 라인 행이 없다. 사람이 목록을 보고 결정한다.
-- PR 2a 로 라이브 취소 수량을 읽는 경로는 라인 행이 유일하다: 라인 행 없는 취소는 문에 보이지 않으므로 배포 전 게이트 SQL(라인 행 없는 취소 0)이 선행 조건이다.
+- PR 2a 로 라이브 취소 수량을 읽는 경로는 라인 행이 유일하다: 라인 행 없는 취소는 문에 보이지 않으므로 라인 행 없는 취소 수가 백필 `--verify` 의 (a) ambiguous + (b) 0행 도출 합과 같아야 한다 — 0 이 아닐 수 있다(V1 전체취소에 남은 게 없으면 0행).
 - 가드는 소스 텍스트를 정규식으로 훑으므로 우회가 가능하다. 실수를 잡는 그물이지 방어선이 아니다.

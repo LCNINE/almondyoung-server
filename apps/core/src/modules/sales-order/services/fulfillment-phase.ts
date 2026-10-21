@@ -1,4 +1,4 @@
-import { StoreFulfillmentStatus, ShipmentProgressDto } from '../dto/store-order-actions.dto';
+import { ShipmentProgressDto } from '../dto/store-order-actions.dto';
 
 export interface PhaseFoRow {
   status: string;
@@ -13,21 +13,11 @@ export interface FulfillmentPhaseInput {
   activeShipmentStatuses: string[];
   /** 직배(drop_ship) FO 의 directShipStatus (canceled 제외; 상자 없음) */
   dropShipStatuses: string[];
-  /** FO 가 출고 흔적(partially_shipped/completed/shipped)을 가지는가 = FOI shippedQty>0 */
-  anyFoiShipped: boolean;
   /** 인쇄 외주(print_orders) 상태 목록 (취소 제외). 없으면 생략 */
   printStatuses?: string[];
 }
 
-export interface FulfillmentPhaseResult {
-  phase: StoreFulfillmentStatus;
-  progress: ShipmentProgressDto;
-}
-
 type UnitPhase = 'preparing' | 'shipping' | 'delivered';
-
-export const MOVED_SHIPMENT_STATUSES = new Set(['shipped', 'in_transit', 'delivered', 'failed']);
-const MOVED_DROPSHIP_STATUSES = new Set(['forwarded', 'completed']);
 
 function shipmentUnitPhase(status: string): UnitPhase {
   if (status === 'delivered') return 'delivered';
@@ -48,37 +38,27 @@ function printUnitPhase(status: string): UnitPhase {
 }
 
 /**
- * 대표 이행 상태 + 진행 요약. 순수 함수 — DB 접근 없음.
- * 합의(consensus) 규칙: 모든 활성 유닛 delivered → delivered; 하나라도 이동 → shipping; 그 외 preparing.
- * 활성 인쇄 외주 행도 창고 상자·직배와 같은 이행 단위로 센다(혼합 주문에서 제작 중인데 배송완료로 보이지 않게).
+ * 진행 요약 = 소포(창고 상자·직배·인쇄 행) 수. 순수 함수 — DB 접근 없음.
+ * 주문의 단계·출고 여부는 여기서 고르지 않는다 — 사다리 한 벌(`orderFulfillmentPhaseSql`)이 정한다(K6 PR2b).
+ * 요약은 «몇 개 중 몇 개가 나갔나»라 상자 status 로 센다. 활성 FO 에 상자·직배가 아직 없으면 창고 몫은 세지 않는다.
  */
-export function deriveFulfillmentPhase(input: FulfillmentPhaseInput): FulfillmentPhaseResult {
-  const empty: ShipmentProgressDto = { total: 0, shipped: 0, delivered: 0 };
+export function shipmentProgressOf(input: FulfillmentPhaseInput): ShipmentProgressDto {
   const printUnits = (input.printStatuses ?? []).map(printUnitPhase);
-  const warehouseActive = input.foCount > 0 && !input.allFoCanceled;
-  if (!warehouseActive && printUnits.length === 0) {
-    return { phase: input.foCount === 0 ? 'not_created' : 'canceled', progress: empty };
-  }
-
-  const warehouseUnits: UnitPhase[] = warehouseActive
-    ? [...input.activeShipmentStatuses.map(shipmentUnitPhase), ...input.dropShipStatuses.map(dropShipUnitPhase)]
-    : [];
-  // 활성 FO 에 상자·직배가 아직 없으면 창고 몫은 준비중이다 — 진행 요약에는 세지 않지만 배송완료는 막는다
-  const warehouseUnitless = warehouseActive && warehouseUnits.length === 0;
+  const warehouseUnits: UnitPhase[] =
+    input.foCount > 0 && !input.allFoCanceled
+      ? [...input.activeShipmentStatuses.map(shipmentUnitPhase), ...input.dropShipStatuses.map(dropShipUnitPhase)]
+      : [];
   const units = [...warehouseUnits, ...printUnits];
-
-  const delivered = units.filter((u) => u === 'delivered').length;
-  const shipped = units.filter((u) => u === 'delivered' || u === 'shipping').length;
-  const progress: ShipmentProgressDto = units.length === 0 ? empty : { total: units.length, shipped, delivered };
-
-  if (!warehouseUnitless && units.every((u) => u === 'delivered')) return { phase: 'delivered', progress };
-  if (shipped > 0) return { phase: 'shipping', progress };
-  return { phase: 'preparing', progress };
+  return {
+    total: units.length,
+    shipped: units.filter((u) => u === 'delivered' || u === 'shipping').length,
+    delivered: units.filter((u) => u === 'delivered').length,
+  };
 }
 
 /**
  * 반품·교환을 열 수 있는가. 창고 몫이 모두 배송완료이고 인쇄 몫은 발송만 됐으면 된다.
- * 와우프레스 택배는 출고완료(ordstat=80)에서 끝나 인쇄 행이 shipped 에 머물므로, 배송완료 합의(deriveFulfillmentPhase)로 판정하면 영영 열리지 않는다.
+ * 와우프레스 택배는 출고완료(ordstat=80)에서 끝나 인쇄 행이 shipped 에 머물므로, «있는 몫이 전부 배송완료»로 판정하면 영영 열리지 않는다.
  */
 export function isReturnEligible(input: FulfillmentPhaseInput): boolean {
   // 인쇄 줄은 반품·교환을 받지 않는다(주문제작). 창고 몫이 없으면 고를 줄이 없어 신청할 수 없으니 고객센터로 보낸다
@@ -94,13 +74,4 @@ export function isReturnEligible(input: FulfillmentPhaseInput): boolean {
 /** 피킹/패킹 시작 여부 = FO status 'processing' (fulfillment-progress: "picking/packing/inspection has begun") */
 export function isPickingStarted(fos: { status: string }[]): boolean {
   return fos.some((fo) => fo.status === 'processing');
-}
-
-/** 하나라도 출고 증거가 있는가 (부분 출고 포함) */
-export function hasShippedEvidence(input: FulfillmentPhaseInput): boolean {
-  if (input.anyFoiShipped) return true;
-  if (input.printStatuses?.some((s) => s === 'shipped' || s === 'delivered')) return true;
-  if (input.activeShipmentStatuses.some((s) => MOVED_SHIPMENT_STATUSES.has(s))) return true;
-  if (input.dropShipStatuses.some((s) => MOVED_DROPSHIP_STATUSES.has(s))) return true;
-  return false;
 }

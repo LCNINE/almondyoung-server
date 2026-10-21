@@ -6,7 +6,8 @@ type SalesOrderRow = typeof inventoryTables.salesOrders.$inferSelect;
 export interface SelfCancelFacts {
   orderStatus: SalesOrderRow['status'];
   salesChannel: SalesOrderRow['salesChannel'];
-  hasShippedEvidence: boolean;
+  /** 나간 것이 하나라도 있는가 — 진행 단계 사다리의 any_shipped(SO 셀메이트 출고·창고 출고·직배 넘김·인쇄 출고) */
+  anyShipped: boolean;
   pickingStarted: boolean;
   hasRecoveryBox: boolean;
 }
@@ -27,7 +28,7 @@ export async function selfCancelBlock(
 ): Promise<SelfCancelBlock | null> {
   if (facts.orderStatus === 'cancelled') return { reason: 'already_cancelled', message: '이미 취소된 주문입니다.' };
 
-  if (facts.hasShippedEvidence) {
+  if (facts.anyShipped) {
     return { reason: 'already_shipped', message: '이미 출고된 주문은 취소할 수 없습니다. 고객센터로 문의해 주세요.' };
   }
 
