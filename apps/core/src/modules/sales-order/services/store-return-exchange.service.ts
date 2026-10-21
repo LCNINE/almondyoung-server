@@ -680,6 +680,8 @@ export class StoreReturnExchangeService {
         channelOrderItemId: line.channelOrderItemId ?? undefined,
         orderedQuantity: line.orderedQuantity,
         returnedQuantity: returnedSets(line.salesOrderLineId),
+        // 주문 − 취소 전부. 출고 뒤 취소가 있으면 소비자가 전량 반품을 이 값으로 판정한다(U3)
+        remainingQuantity: lineQuantities.get(line.salesOrderLineId)?.remaining,
       }))
       .filter((line) => line.returnedQuantity > 0);
 

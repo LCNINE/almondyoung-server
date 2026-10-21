@@ -1030,7 +1030,47 @@ describeIfDb('반품·교환 생성 게이트 — 소포 단위 청구 자격 (K
       // SKU 수량 합 3 이 아니라 통째 세트 1 — 라인 하나에 한 번
       expect(returned[0].payload).toMatchObject({
         returnRequestId: requestId,
-        returnedLines: [{ salesOrderLineId: line.lineId, orderedQuantity: 1, returnedQuantity: 1 }],
+        returnedLines: [
+          { salesOrderLineId: line.lineId, orderedQuantity: 1, returnedQuantity: 1, remainingQuantity: 1 },
+        ],
+      });
+    });
+  });
+
+  it('returned event carries remaining after an after-shipment cancellation', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, line } = await seedSingle(tx, { quantity: 2, parcels: [{ qty: 2 }] });
+      await recordSalesOrderCancellation(tx, {
+        salesOrderId: line.salesOrderId,
+        cancellationScope: 'partial',
+        reasonCode: 'customer',
+        metadata: { cancelledLines: [{ salesOrderLineId: line.lineId, quantity: 1 }] },
+        effects: [
+          {
+            type: 'preserved_shipped_fulfillment_order_item',
+            metadata: {
+              salesOrderLineId: line.lineId,
+              skuId: w.skuId,
+              requestedFulfillmentQuantity: 1,
+              affectedShippedQuantity: 1,
+            },
+          },
+        ],
+      });
+      const { requestId } = await seedClaim(tx, {
+        kind: 'return',
+        salesOrderId: line.salesOrderId,
+        status: 'refund_pending',
+        items: [parcelLine(line, 0, w.skuId, 1)],
+      });
+      const { service, publisher } = makeRefundHarness(tx);
+
+      await service.manualCompleteReturn(requestId, 'admin-1');
+
+      const returned = enqueued(publisher).filter((event) => event.eventType === 'SalesOrderReturned');
+      expect(returned).toHaveLength(1);
+      expect(returned[0].payload).toMatchObject({
+        returnedLines: [{ orderedQuantity: 2, returnedQuantity: 1, remainingQuantity: 1 }],
       });
     });
   });

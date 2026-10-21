@@ -55,6 +55,39 @@ describe('planReturn', () => {
     expect(plan).toMatchObject({ action: 'REVOKE_LINES', orderLineIds: ['item_01'] });
   });
 
+  it('revokes when returned equals remaining after a cancellation', () => {
+    const plan = planReturn({
+      channelOrderId: 'order_01',
+      reason: 'change_of_mind',
+      returnedLines: [line({ orderedQuantity: 3, remainingQuantity: 2, returnedQuantity: 2 })],
+    });
+    expect(plan).toMatchObject({ action: 'REVOKE_LINES', orderLineIds: ['item_01'] });
+  });
+
+  it('keeps partial when below remaining', () => {
+    const plan = planReturn({
+      channelOrderId: 'order_01',
+      reason: 'change_of_mind',
+      returnedLines: [line({ orderedQuantity: 3, remainingQuantity: 2, returnedQuantity: 1 })],
+    });
+    expect(plan).toMatchObject({
+      action: 'SKIP',
+      skippedLines: [{ salesOrderLineId: 'sol-1', skipReason: 'PARTIAL_QUANTITY' }],
+    });
+  });
+
+  it('falls back to ordered quantity without remaining', () => {
+    const plan = planReturn({
+      channelOrderId: 'order_01',
+      reason: 'change_of_mind',
+      returnedLines: [line({ orderedQuantity: 3, returnedQuantity: 2 })],
+    });
+    expect(plan).toMatchObject({
+      action: 'SKIP',
+      skippedLines: [{ salesOrderLineId: 'sol-1', skipReason: 'PARTIAL_QUANTITY' }],
+    });
+  });
+
   it('회수 대상 라인과 제외 라인이 섞이면 대상만 회수하고 제외는 사유와 함께 남는다', () => {
     expect(
       planReturn({
