@@ -1,4 +1,5 @@
 import {
+  completionToast,
   decideCompletion,
   parseAdminRefundAmount,
 } from './admin-refund-amount';
@@ -43,5 +44,19 @@ describe('admin refund amount', () => {
       ok: false,
       message: '상한 2000원을 넘을 수 없습니다.',
     });
+  });
+
+  it('completed with a refund says refunded', () => {
+    expect(completionToast('completed', 1200)).toBe('환불하고 완료 처리되었습니다.');
+  });
+
+  it('completed with zero says no refund', () => {
+    expect(completionToast('completed', 0)).toBe('환불 없이 완료 처리되었습니다.');
+  });
+
+  it('refund pending says it waits for a retry or manual completion', () => {
+    expect(completionToast('refund_pending', 1200)).toBe(
+      '환불 대기로 넘겼습니다. 환불 재시도나 수동 완료가 필요합니다.'
+    );
   });
 });

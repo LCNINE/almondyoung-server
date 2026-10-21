@@ -40,6 +40,7 @@ import {
 import { getServerDenyMessage } from '@/lib/services/orders';
 import { useReturnEligibility } from '@/lib/services/return-exchange';
 import {
+  completionToast,
   decideCompletion,
   parseAdminRefundAmount,
 } from '@/features/cs/return-exchange/admin-refund-amount';
@@ -195,12 +196,12 @@ export function ReturnRequestsTable({
   const handleCompleteWithAmount = async () => {
     if (!amountTarget || !parsedAmount?.ok || !amountNote.trim()) return;
     try {
-      await completeWithAmount.mutateAsync({
+      const result = await completeWithAmount.mutateAsync({
         id: amountTarget.id,
         refundAmount: parsedAmount.amount,
         adminNote: amountNote.trim(),
       });
-      toast.success('환불하고 완료 처리되었습니다.');
+      toast.success(completionToast(result.status, parsedAmount.amount));
       setAmountTarget(null);
     } catch (error) {
       toast.error(getServerDenyMessage(error, '환불 완료 처리에 실패했습니다.'));

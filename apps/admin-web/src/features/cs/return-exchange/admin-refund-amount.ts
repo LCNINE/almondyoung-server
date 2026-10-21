@@ -1,4 +1,7 @@
-import type { ReturnRefundQuote } from '@/lib/api/domains/return-exchange';
+import type {
+  ReturnRefundQuote,
+  ReturnRequest,
+} from '@/lib/api/domains/return-exchange';
 
 export type CompletionDecision =
   | { kind: 'complete_now' }
@@ -36,4 +39,20 @@ export function parseAdminRefundAmount(
     return { ok: false, message: `상한 ${cap}원을 넘을 수 없습니다.` };
   }
   return { ok: true, amount };
+}
+
+/**
+ * 금액 완료 뒤 토스트 — 서버가 돌려준 상태로 고른다. 0원은 즉시 완료, 양수는 Wallet 환불이 끝나면 완료이고
+ * 실패했거나 Wallet 결제가 아니면 환불 대기에 남는다.
+ */
+export function completionToast(
+  status: ReturnRequest['status'],
+  amount: number
+): string {
+  if (status === 'completed') {
+    return amount > 0
+      ? '환불하고 완료 처리되었습니다.'
+      : '환불 없이 완료 처리되었습니다.';
+  }
+  return '환불 대기로 넘겼습니다. 환불 재시도나 수동 완료가 필요합니다.';
 }
