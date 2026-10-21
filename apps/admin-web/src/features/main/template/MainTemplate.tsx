@@ -33,6 +33,7 @@ import {
 import { SourcingBoard } from '@/features/main/SourcingBoard';
 import { BoardHeader } from '@/features/main/BoardHeader';
 import { GrowthGoalCard } from '@/features/main/GrowthGoalCard';
+import { useReadGate, type ReadGate } from '@/features/main/read-gate';
 import { toLocalDateString } from '@/lib/utils/date';
 import { cn } from '@/lib/utils/ui';
 import { STALL_BOARD_RESERVE_HREF } from '@/lib/api/domains/orders/order-progress.shape';
@@ -77,44 +78,54 @@ export default function MainTemplate() {
   const range = lastDays(MAIN_RANGE_DAYS);
 
   // ─── 오늘의 할 일 — 처리 대기 큐를 건수만 센다 (count 전용 limit 1) ───
-  const orderStats = useOrderStats();
-  const bankTransfers = usePendingBankTransfers(1, 1);
-  const refundRequests = useRefundRequests(1, 1);
-  const returnRequests = useReturnRequests({
-    status: 'requested',
-    page: 1,
-    limit: 1,
-  });
-  const exchangeRequests = useExchangeRequests({
-    status: 'requested',
-    page: 1,
-    limit: 1,
-  });
-  const returnsInProgress = useReturnRequests({
-    status: CLAIM_IN_PROGRESS,
-    page: 1,
-    limit: 1,
-  });
-  const exchangesInProgress = useExchangeRequests({
-    status: CLAIM_IN_PROGRESS,
-    page: 1,
-    limit: 1,
-  });
-  const unansweredQna = useQuestions({ status: 'active', page: 1, limit: 1 });
+  // 칩마다 그 큐의 조회 권한이 따로 있다 — 없으면 요청하지 않고 «가림»으로 그린다.
+  const orderGate = useReadGate(['order.order.read']);
+  const paymentGate = useReadGate(['payment.payment.read']);
+  const refundGate = useReadGate(['payment.refund.read']);
+  const claimGate = useReadGate(['order.claim.read']);
+  const inquiryGate = useReadGate(['cs.inquiry.read']);
+  const reviewGate = useReadGate(['cs.review.read']);
+  const profileGate = useReadGate(['customer.profile.read']);
+  const orderStats = useOrderStats({ enabled: orderGate.enabled });
+  const bankTransfers = usePendingBankTransfers(1, 1, { enabled: paymentGate.enabled });
+  const refundRequests = useRefundRequests(1, 1, { enabled: refundGate.enabled });
+  const returnRequests = useReturnRequests(
+    { status: 'requested', page: 1, limit: 1 },
+    { enabled: claimGate.enabled }
+  );
+  const exchangeRequests = useExchangeRequests(
+    { status: 'requested', page: 1, limit: 1 },
+    { enabled: claimGate.enabled }
+  );
+  const returnsInProgress = useReturnRequests(
+    { status: CLAIM_IN_PROGRESS, page: 1, limit: 1 },
+    { enabled: claimGate.enabled }
+  );
+  const exchangesInProgress = useExchangeRequests(
+    { status: CLAIM_IN_PROGRESS, page: 1, limit: 1 },
+    { enabled: claimGate.enabled }
+  );
+  const unansweredQna = useQuestions(
+    { status: 'active', page: 1, limit: 1 },
+    { enabled: inquiryGate.enabled }
+  );
   // 이전 사이트에서 넘어온 리뷰 백로그는 "오늘 할 일"이 아니다 — 자체 작성분만 센다.
   // 전체(이관분 포함) 건수는 CS 현황 탭에서 따로 보여준다.
-  const unansweredOwnReviews = useReviews({
-    hasComment: 'false',
-    status: 'active',
-    source: 'own',
-    page: 1,
-    limit: 1,
-  });
+  const unansweredOwnReviews = useReviews(
+    {
+      hasComment: 'false',
+      status: 'active',
+      source: 'own',
+      page: 1,
+      limit: 1,
+    },
+    { enabled: reviewGate.enabled }
+  );
   // limit 은 건수(total)만 쓰지만 user-service 가 최소 10 을 요구한다 (BusinessLicenseQueryDto @Min(10))
-  const businessLicenses = useBusinessLicenses({
-    limit: 10,
-    status: 'under_review',
-  });
+  const businessLicenses = useBusinessLicenses(
+    { limit: 10, status: 'under_review' },
+    { enabled: profileGate.enabled }
+  );
   const zeroHit = useZeroHitKeywords({
     from: range.from,
     to: range.to,
@@ -130,8 +141,7 @@ export default function MainTemplate() {
       label: '입금 대기',
       count: bankTransfers.data?.total,
       href: '/payments/bank-transfers',
-      isLoading: bankTransfers.isLoading,
-      isError: bankTransfers.isError,
+      ...chipState(paymentGate, bankTransfers),
     },
     {
       // 매칭 대기는 세는 방식이 여럿이다. 이 칩은 "지금 안 하면 주문이 안 나가는" 것만 센다 —
@@ -142,8 +152,7 @@ export default function MainTemplate() {
       hint: '출고 막힘 · 14일',
       count: orderStats.data?.waitingMatching,
       href: '/order/matching',
-      isLoading: orderStats.isLoading,
-      isError: orderStats.isError,
+      ...chipState(orderGate, orderStats),
     },
     {
       id: 'outbound-requested',
@@ -151,8 +160,7 @@ export default function MainTemplate() {
       label: '출고 요청',
       count: orderStats.data?.outboundRequested,
       href: '/order/fulfillments',
-      isLoading: orderStats.isLoading,
-      isError: orderStats.isError,
+      ...chipState(orderGate, orderStats),
     },
     {
       id: 'cannot-ship',
@@ -160,8 +168,7 @@ export default function MainTemplate() {
       label: '출고 불가',
       count: orderStats.data?.cannotShip,
       href: STALL_BOARD_RESERVE_HREF,
-      isLoading: orderStats.isLoading,
-      isError: orderStats.isError,
+      ...chipState(orderGate, orderStats),
     },
     {
       id: 'exchange-requests',
@@ -174,8 +181,7 @@ export default function MainTemplate() {
         count: exchangesInProgress.data?.total,
       },
       href: '/cs/return-exchange?tab=exchanges&status=requested',
-      isLoading: exchangeRequests.isLoading || exchangesInProgress.isLoading,
-      isError: exchangeRequests.isError || exchangesInProgress.isError,
+      ...chipState(claimGate, exchangeRequests, exchangesInProgress),
     },
     {
       id: 'return-requests',
@@ -188,8 +194,7 @@ export default function MainTemplate() {
         count: returnsInProgress.data?.total,
       },
       href: '/cs/return-exchange?status=requested',
-      isLoading: returnRequests.isLoading || returnsInProgress.isLoading,
-      isError: returnRequests.isError || returnsInProgress.isError,
+      ...chipState(claimGate, returnRequests, returnsInProgress),
     },
     {
       id: 'refund-requests',
@@ -197,8 +202,7 @@ export default function MainTemplate() {
       label: '환불 신청',
       count: refundRequests.data?.total,
       href: '/payments/refund-requests',
-      isLoading: refundRequests.isLoading,
-      isError: refundRequests.isError,
+      ...chipState(refundGate, refundRequests),
     },
     {
       id: 'unanswered-qna',
@@ -206,8 +210,7 @@ export default function MainTemplate() {
       label: '미답변 문의',
       count: unansweredQna.data?.total,
       href: '/cs/qna',
-      isLoading: unansweredQna.isLoading,
-      isError: unansweredQna.isError,
+      ...chipState(inquiryGate, unansweredQna),
     },
     {
       id: 'unanswered-reviews',
@@ -216,8 +219,7 @@ export default function MainTemplate() {
       hint: '자체 작성분',
       count: unansweredOwnReviews.data?.total,
       href: '/cs/reviews',
-      isLoading: unansweredOwnReviews.isLoading,
-      isError: unansweredOwnReviews.isError,
+      ...chipState(reviewGate, unansweredOwnReviews),
     },
     {
       id: 'business-licenses',
@@ -225,8 +227,7 @@ export default function MainTemplate() {
       label: '사업자 심사',
       count: businessLicenses.data?.total,
       href: '/cs/business-licenses?status=under_review',
-      isLoading: businessLicenses.isLoading,
-      isError: businessLicenses.isError,
+      ...chipState(profileGate, businessLicenses),
     },
     {
       id: 'neglected-keywords',
@@ -312,6 +313,18 @@ export default function MainTemplate() {
   );
 }
 
+/** 칩의 표시 상태 — 권한 확인 중은 로딩, 권한 확인 실패는 «불러오지 못함», 권한 없음은 «가림». */
+function chipState(
+  gate: ReadGate,
+  ...queries: { isLoading: boolean; isError: boolean }[]
+): { isLoading: boolean; isError: boolean; hiddenReason: string | null } {
+  return {
+    isLoading: gate.pending || queries.some((query) => query.isLoading),
+    isError: gate.failed || queries.some((query) => query.isError),
+    hiddenReason: gate.hiddenReason,
+  };
+}
+
 function TodoChip({
   label,
   hint,
@@ -322,6 +335,7 @@ function TodoChip({
   onClick,
   isLoading,
   isError,
+  hiddenReason,
 }: {
   label: string;
   hint?: string;
@@ -332,12 +346,19 @@ function TodoChip({
   onClick?: () => void;
   isLoading?: boolean;
   isError?: boolean;
+  hiddenReason?: string | null;
 }) {
   const countLink = (
     value: number | undefined,
     name: string,
     target: { href?: string; onClick?: () => void }
   ) => {
+    if (hiddenReason)
+      return (
+        <span title={hiddenReason} className="text-xs leading-[18px] text-gray-400">
+          가림
+        </span>
+      );
     if (isLoading) return <Skeleton className="h-[18px] w-6" />;
     if (isError)
       return (

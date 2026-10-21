@@ -28,8 +28,9 @@ export const useQuestion = (id: string) => {
   });
 };
 
-export const useDailyQuestionCounts = (from: string, to: string) => {
+export const useDailyQuestionCounts = (from: string, to: string, options: { enabled?: boolean } = {}) => {
   return useQuery({
+    enabled: options.enabled ?? true,
     queryKey: [...qnaQueryKeys.all, 'daily', { from, to }] as const,
     queryFn: () => qnaApi.getDailyCounts(from, to),
     staleTime: 60 * 1000,

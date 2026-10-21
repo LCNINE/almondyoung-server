@@ -25,7 +25,6 @@ import {
   useUpsertKeywordIssue,
   useZeroHitKeywords,
 } from '@/lib/services/search';
-import { useAdminUsers } from '@/lib/services/users/queries';
 import { Can } from '@/components/auth/can';
 import { PermissionReadOnly } from '@/components/auth/permission-read-only';
 import { usePermissionCheck } from '@/hooks/use-permission';
@@ -37,7 +36,7 @@ import {
   NeglectDistribution,
   StatusFilterChips,
 } from '@/features/keyword-ops/components/summary';
-import { ZeroHitTable, useAssigneeOptions } from '@/features/keyword-ops/components/ZeroHitTable';
+import { ZeroHitTable, useAssigneeOptions, withCurrentAssignee } from '@/features/keyword-ops/components/ZeroHitTable';
 import { buildZeroSearchForecastSentence } from '@/features/keyword-ops/diagnosis';
 import { buildKeywordTrendChart } from '@/features/keyword-ops/forecast-chart';
 import { estimateMissedDemand } from '@/features/keyword-ops/missed-demand';
@@ -483,7 +482,7 @@ function KeywordIssueEditor({ detail }: { detail: KeywordDetail }) {
   const upsert = useUpsertKeywordIssue();
   // 네이티브 컨트롤이라 읽기 전용 표시를 직접 건다
   const readOnly = usePermissionCheck().blockedReason(useUpsertKeywordIssue) !== null;
-  const { data: adminUsers } = useAdminUsers({ roleName: 'admin,master', limit: 100 });
+  const assignees = useAssigneeOptions();
 
   const [status, setStatus] = useState<KeywordIssueStatus>(detail.issue?.status ?? 'new');
   const [assigneeId, setAssigneeId] = useState(detail.issue?.assigneeId ?? '');
@@ -496,15 +495,7 @@ function KeywordIssueEditor({ detail }: { detail: KeywordDetail }) {
     setMemo(detail.issue?.memo ?? '');
   }, [detail.keywordNorm, detail.issue]);
 
-  const assigneeOptions = useMemo(
-    () =>
-      (adminUsers?.data ?? []).map((user) => ({
-        value: user.id,
-        name: user.username,
-        label: `${user.username} (${user.loginId})`,
-      })),
-    [adminUsers?.data],
-  );
+  const assigneeOptions = withCurrentAssignee(assignees.options, detail.issue?.assigneeId, detail.issue?.assigneeName);
 
   const save = () => {
     const selected = assigneeOptions.find((option) => option.value === assigneeId);
@@ -543,7 +534,8 @@ function KeywordIssueEditor({ detail }: { detail: KeywordDetail }) {
             <select
               value={assigneeId}
               onChange={(event) => setAssigneeId(event.target.value)}
-              disabled={readOnly}
+              disabled={readOnly || assignees.blockedReason !== null}
+              title={assignees.blockedReason ?? undefined}
               className="min-w-40 rounded border border-gray-200 bg-white px-2 py-1.5"
             >
               <option value="">미지정</option>

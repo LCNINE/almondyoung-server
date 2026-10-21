@@ -3,7 +3,8 @@
 import { useMemo } from 'react';
 import { useUpsertKeywordIssue } from '@/lib/services/search';
 import { BlockedReason } from '@/components/auth/blocked-reason';
-import { usePermissionCheck } from '@/hooks/use-permission';
+import { useCan, usePermissionCheck } from '@/hooks/use-permission';
+import { permissionLabel } from '@/lib/auth/permission-labels';
 import { useAdminUsers } from '@/lib/services/users/queries';
 import type { KeywordIssueStatus, ZeroHitKeywordRow } from '@/lib/api/domains/search';
 import { KEYWORD_ISSUE_STATUSES } from '@/lib/api/domains/search';
@@ -16,18 +17,47 @@ export interface AssigneeOption {
   label: string;
 }
 
-/** 담당자 후보를 한 번만 불러 표 전체가 나눠 쓴다 — 행마다 부르면 요청이 행 수만큼 나간다. */
-export function useAssigneeOptions(): AssigneeOption[] {
-  const { data } = useAdminUsers({ roleName: 'admin,master', limit: 100 });
-  return useMemo(
+export interface AssigneeChoices {
+  options: AssigneeOption[];
+  /** 후보를 읽을 권한이 없어 담당자를 바꿀 수 없는 이유. 지금 담당자는 그대로 보인다 */
+  blockedReason: string | null;
+}
+
+/**
+ * 담당자 후보를 한 번만 불러 표 전체가 나눠 쓴다 — 행마다 부르면 요청이 행 수만큼 나간다.
+ * 후보는 관리자 계정 목록(회원 조회 권한)에서 온다 — 권한이 없으면 부르지 않고 담당자 변경을 막는다.
+ */
+export function useAssigneeOptions(): AssigneeChoices {
+  const canReadAccounts = useCan(['customer.profile.read']);
+  const allowed = canReadAccounts.status === 'ready' && canReadAccounts.allowed;
+  const { data } = useAdminUsers({ roleName: 'admin,master', limit: 100 }, { enabled: allowed });
+  // 권한이 없으면 캐시에 남은 계정 목록도 쓰지 않는다
+  const users = allowed ? data?.data : undefined;
+  const options = useMemo(
     () =>
-      (data?.data ?? []).map((user) => ({
+      (users ?? []).map((user) => ({
         value: user.id,
         name: user.username,
         label: `${user.username} (${user.loginId})`,
       })),
-    [data?.data],
+    [users],
   );
+  const blockedReason =
+    canReadAccounts.status === 'ready' && !canReadAccounts.allowed
+      ? `${permissionLabel('customer.profile.read')} 권한이 있어야 담당자를 바꿀 수 있습니다`
+      : null;
+  return { options, blockedReason };
+}
+
+/** 지금 담당자가 후보에 없으면(후보를 못 읽었거나 받는 중) 저장된 이름으로 넣는다 — 다른 칸만 저장해도 담당자가 지워지지 않게. */
+export function withCurrentAssignee(
+  options: AssigneeOption[],
+  assigneeId: string | null | undefined,
+  assigneeName: string | null | undefined,
+): AssigneeOption[] {
+  if (!assigneeId || options.some((option) => option.value === assigneeId)) return options;
+  const name = assigneeName ?? '';
+  return [{ value: assigneeId, name, label: name || '지금 담당자' }, ...options];
 }
 
 /**
@@ -47,7 +77,7 @@ export function ZeroHitTable({
 }: {
   rows: ZeroHitKeywordRow[];
   startNumber?: number;
-  assigneeOptions: AssigneeOption[];
+  assigneeOptions: AssigneeChoices;
   onSelectKeyword?: (keyword: string) => void;
   showMemo?: boolean;
   emptyText?: string;
@@ -97,20 +127,21 @@ function ZeroHitRow({
 }: {
   row: ZeroHitKeywordRow;
   rowNumber: number;
-  assigneeOptions: AssigneeOption[];
+  assigneeOptions: AssigneeChoices;
   onSelect?: () => void;
   showMemo: boolean;
 }) {
   const upsert = useUpsertKeywordIssue();
   const { blockedReason } = usePermissionCheck();
   const reason = blockedReason(useUpsertKeywordIssue);
+  const options = withCurrentAssignee(assigneeOptions.options, row.issue?.assigneeId, row.issue?.assigneeName);
 
   // 바꾼 필드만 보낸다 — 서버 upsert 는 미전달 필드(담당·메모)를 그대로 보존한다.
   const changeStatus = (status: KeywordIssueStatus) => {
     upsert.mutate({ keywordNorm: row.keywordNorm, keyword: row.keyword, status });
   };
   const changeAssignee = (assigneeId: string) => {
-    const selected = assigneeOptions.find((option) => option.value === assigneeId);
+    const selected = options.find((option) => option.value === assigneeId);
     upsert.mutate({
       keywordNorm: row.keywordNorm,
       keyword: row.keyword,
@@ -166,20 +197,20 @@ function ZeroHitRow({
         </BlockedReason>
       </td>
       <td className="py-1.5">
-        <BlockedReason reason={reason}>
+        <BlockedReason reason={reason ?? assigneeOptions.blockedReason}>
           {(blocked) => (
             <select
               {...blocked}
               aria-label={`${row.keyword} 담당자`}
               value={row.issue?.assigneeId ?? ''}
               onChange={(event) => {
-                if (!reason) changeAssignee(event.target.value);
+                if (!reason && !assigneeOptions.blockedReason) changeAssignee(event.target.value);
               }}
               disabled={upsert.isPending}
               className="min-w-28 rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] disabled:opacity-40 aria-disabled:opacity-40"
             >
               <option value="">미지정</option>
-              {assigneeOptions.map((option) => (
+              {options.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
