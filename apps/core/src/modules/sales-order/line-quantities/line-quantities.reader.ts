@@ -28,7 +28,10 @@ export type LineQuantities = {
   demand: number;
   /** ordered − canceled — 더 취소할 수 있는 판매 단위의 상한. */
   remaining: number;
-  /** SKU 순. FO 전(구성이 굳기 전)이면 [] — 인쇄 외주·디지털 라인도 []. */
+  /**
+   * SKU 순. 주문에 FO 가 없으면 [] — 운영자가 FO 전에 구성을 지정했어도 비어 있다(스펙 §6.1 «FO 전에는 SKU 층이 비고»).
+   * FOI 가 없는 인쇄 외주·디지털 라인도 [].
+   */
   skus: LineSkuQuantities[];
 };
 

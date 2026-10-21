@@ -51,8 +51,12 @@ export function lineRemainingSql(lineQuantity: SQLWrapper, salesOrderLineId: SQL
  * `salesOrderScope` 는 판매주문 id 한 열을 내는 SELECT.
  *
  * 키 = 범위 주문의 (판매 라인, SKU) 중 FOI 가 있거나 굳은 구성(`sales_order_line_compositions`)에 있는 것.
+ * 구성 갈래는 FO 가 있는 주문만 본다 — 운영자는 FO 전에도 구성을 지정한다(`assignByOperator`, #1063 스펙 D1).
+ * FO 전엔 SKU 층이 비어야(스펙 §6.1) 소비자가 «빈 skus» 로 FO 전 갈래를 고른다. 0 으로 채운 행이 나오면 그 갈래를 놓친다.
  * 구성에서 빠진 SKU 의 FOI 는 `qty_per_unit` 이 null 로 남는다 — 판매 단위 환산이 그걸 보고 거절한다.
  * 구성에만 있고 FOI 가 없는 SKU 는 0 으로 나온다(빠지면 환산이 그 구성품을 못 본다).
+ * FOI 갈래의 `key_line.sales_order_id = key_fo.sales_order_id` 는 `::text` 조인이 pkey 를 못 타서
+ * `sales_order_lines` 전체를 훑지 않게 주문 인덱스로 좁히는 조건이다(여러 주문 범위로 다시 쓰인다).
  *
  * FOI 단위로 정한 뒤 (라인, SKU) 로 합한다:
  *   required          = qty − canceled_qty
@@ -85,13 +89,20 @@ export function lineSkuQuantitiesSql(salesOrderScope: SQL): SQL {
         select key_line.sales_order_id, key_line.id as sales_order_line_id, key_item.sku_id
           from ${t.fulfillmentOrders} as key_fo
           join ${t.fulfillmentOrderItems} as key_item on key_item.fulfillment_order_id = key_fo.id
-          join ${t.salesOrderLines} as key_line on key_item.sales_order_line_id = key_line.id::text
+          join ${t.salesOrderLines} as key_line
+            on key_item.sales_order_line_id = key_line.id::text
+           and key_line.sales_order_id = key_fo.sales_order_id
          where key_fo.sales_order_id in (${salesOrderScope})
         union
         select key_line.sales_order_id, key_line.id as sales_order_line_id, key_composition.sku_id
           from ${t.salesOrderLines} as key_line
           join ${t.salesOrderLineCompositions} as key_composition on key_composition.sales_order_line_id = key_line.id
          where key_line.sales_order_id in (${salesOrderScope})
+           and exists (
+             select 1
+               from ${t.fulfillmentOrders} as key_composition_fo
+              where key_composition_fo.sales_order_id = key_line.sales_order_id
+           )
       ) as sku_key
       left join ${t.salesOrderLineCompositions} as composition
         on composition.sales_order_line_id = sku_key.sales_order_line_id

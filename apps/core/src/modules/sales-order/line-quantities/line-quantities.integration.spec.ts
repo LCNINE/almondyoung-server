@@ -16,6 +16,8 @@ import {
   seedSku,
   seedWarehouseWithZone,
 } from '../../fulfillment/services/__support__';
+import { ambientDbService } from '../../fulfillment/services/__support__/simple-outbound-wiring';
+import { LineCompositionManager } from '../../product-matching/line-composition/line-composition.manager';
 import { sumCancelledByLine } from '../../product-matching/line-composition/partial-cancellation';
 import {
   seedCancellableOrder,
@@ -358,6 +360,28 @@ describeIfDb('readLineQuantities — SKU 층 출고·배송 사실 (K6 PR2b)', (
     await inRollbackTx(db, async (tx) => {
       await seedWorld(tx);
       const o = await seedOrder(tx, { quantity: 2 });
+
+      const read = await readAndCrossCheck(tx, o.salesOrderId);
+      expect(read.get(o.lineId)?.skus).toEqual([]);
+    });
+  });
+
+  it('operator composition before FO is empty', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const o = await seedOrder(tx, { quantity: 2 });
+      // FO 전 1회 지정(#1063 스펙 D1) — 실제 쓰기 문으로 구성을 굳힌다
+      await new LineCompositionManager(ambientDbService(tx)).assignByOperator(
+        o.lineId,
+        [{ skuId: w.skuId, qtyPerUnit: 1 }],
+        randomUUID(),
+        tx,
+      );
+      const frozen = await tx
+        .select({ id: wmsTables.salesOrderLineCompositions.id })
+        .from(wmsTables.salesOrderLineCompositions)
+        .where(eq(wmsTables.salesOrderLineCompositions.salesOrderLineId, o.lineId));
+      expect(frozen).toHaveLength(1);
 
       const read = await readAndCrossCheck(tx, o.salesOrderId);
       expect(read.get(o.lineId)?.skus).toEqual([]);
