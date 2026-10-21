@@ -15,11 +15,23 @@ import {
   readOrderFulfillmentPhases,
   type OrderFulfillmentPhase,
 } from '../line-quantities/order-fulfillment-phase.reader';
+import { readParcelClaimEligibility } from '../line-quantities/parcel-claim-eligibility.reader';
 
 // 진행 단계는 사다리 SQL 한 벌이 정하고 그 판정은 order-fulfillment-phase.integration.spec.ts 가 소유한다.
 // 여기서는 사다리가 낸 (storePhase, anyShipped) 를 넣고 actions·취소 사유만 본다.
 jest.mock('../line-quantities/order-fulfillment-phase.reader');
 const readPhases = jest.mocked(readOrderFulfillmentPhases);
+
+// 반품·교환 버튼은 청구 가능한 소포(claimable > 0)로 열고 그 판정은 order-fulfillment-phase.integration.spec.ts 가 소유한다(K6 PR3a, C8).
+// 여기서는 소포가 청구 가능한지만 넣는다 — 기본은 사다리가 «배송완료»를 낸 주문만 청구 가능.
+jest.mock('../line-quantities/parcel-claim-eligibility.reader');
+const readClaimEligibility = jest.mocked(readParcelClaimEligibility);
+
+function mockClaimable(claimable: number) {
+  readClaimEligibility.mockResolvedValue([
+    { claimable } as Awaited<ReturnType<typeof readParcelClaimEligibility>>[number],
+  ]);
+}
 
 function mockPhase(over: Partial<OrderFulfillmentPhase> = {}) {
   const phase: OrderFulfillmentPhase = { adminPhase: 'preparing', storePhase: 'preparing', anyShipped: false, ...over };
@@ -111,9 +123,12 @@ function makeContext(
     printCancel?: jest.Mock;
     /** 사다리가 낸 이 주문의 단계. 기본은 준비중·나간 것 없음 */
     phase?: Partial<OrderFulfillmentPhase>;
+    /** 청구 가능한 소포 수량. 기본은 사다리 단계가 delivered 면 1, 아니면 0 */
+    claimable?: number;
   } = {},
 ) {
   mockPhase(options.phase);
+  mockClaimable(options.claimable ?? (options.phase?.storePhase === 'delivered' ? 1 : 0));
   const so = options.so ?? makeSo();
   let currentSo = so;
   const printCancel = options.printCancel ?? jest.fn().mockResolvedValue(PRINT_RESULT);
@@ -983,6 +998,7 @@ describe('StoreSalesOrdersService', () => {
           printOrders: [{ status: 'delivered' }],
           allOutsourced: true,
           phase: delivered,
+          claimable: 0, // 인쇄 줄은 소포가 없다
         });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
         expect(r.cancelUnavailableReason).toBe('already_shipped');

@@ -41,17 +41,13 @@ import { WalletRefundClient } from './wallet-refund.client';
 import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
 import { channelCancelRoute, sellerCenterMessage } from '../channel-cancel-request/channel-cancel-route';
 import type { CancelRequestStatus } from '../channel-cancel-request/channel-cancel-request.types';
-import {
-  isPickingStarted,
-  isReturnEligible,
-  shipmentProgressOf,
-  PhaseFoRow,
-  FulfillmentPhaseInput,
-} from './fulfillment-phase';
+import { isPickingStarted, shipmentProgressOf, PhaseFoRow, FulfillmentPhaseInput } from './fulfillment-phase';
 import {
   readOrderFulfillmentPhases,
   type OrderFulfillmentPhase,
 } from '../line-quantities/order-fulfillment-phase.reader';
+import { ACTIVE_EXCHANGE_STATUSES, ACTIVE_RETURN_STATUSES } from '../line-quantities/claim-statuses';
+import { readParcelClaimEligibility } from '../line-quantities/parcel-claim-eligibility.reader';
 import { selfCancelBlock, SelfCancelBlock } from './self-cancel-block';
 
 type SalesOrderRow = typeof inventoryTables.salesOrders.$inferSelect;
@@ -71,22 +67,6 @@ const CHANNEL_CANCEL_URLS: Record<string, { cancelUrl: string; returnUrl: string
   },
 };
 
-const ACTIVE_RETURN_STATUSES = [
-  'requested',
-  'approved',
-  'collection_pending',
-  'collected',
-  'inspected',
-  'refund_pending',
-] as const;
-const ACTIVE_EXCHANGE_STATUSES = [
-  'requested',
-  'approved',
-  'collection_pending',
-  'collected',
-  'inspected',
-  'refund_pending',
-] as const;
 const VALID_REFUND_STATUSES = new Set<StoreRefundStatus>([
   'none',
   'pending',
@@ -839,35 +819,38 @@ export class StoreSalesOrdersService {
     } else if (cancelUnavailableReason === 'already_shipped') {
       availableActions.push('track');
       availableActions.push('receipt');
-      // return/exchange: 배송완료 상태 + 진행 중인 claim 없을 때만 허용
-      if (isReturnEligible(phaseInput)) {
-        const [activeReturn, activeExchange] = await Promise.all([
-          this.db.db
-            .select({ id: returnExchangeTables.returnRequests.id })
-            .from(returnExchangeTables.returnRequests)
-            .where(
-              and(
-                eq(returnExchangeTables.returnRequests.salesOrderId, so.id),
-                inArray(returnExchangeTables.returnRequests.status, [...ACTIVE_RETURN_STATUSES]),
-              ),
-            )
-            .limit(1)
-            .then((r) => r[0]),
-          this.db.db
-            .select({ id: returnExchangeTables.exchangeRequests.id })
-            .from(returnExchangeTables.exchangeRequests)
-            .where(
-              and(
-                eq(returnExchangeTables.exchangeRequests.salesOrderId, so.id),
-                inArray(returnExchangeTables.exchangeRequests.status, [...ACTIVE_EXCHANGE_STATUSES]),
-              ),
-            )
-            .limit(1)
-            .then((r) => r[0]),
-        ]);
-        if (activeReturn) claimStatus = 'return_requested';
-        else if (activeExchange) claimStatus = 'exchange_requested';
-        if (claimStatus === 'none') {
+      // 진행 중인 claim 은 claimable 과 상관없이 claimStatus 로 드러낸다 — 진행 중 반품이 배송완료 소포를
+      // 전부 덮으면 claimable 이 0 이 되므로, 이 조회를 claimable 뒤에 두면 claimStatus 가 'none' 으로 남는다.
+      // return/exchange: 진행 중인 claim 이 없고 청구 가능한 배송완료 소포(claimable > 0)가 있을 때만 허용 (K6 PR3a, C8)
+      const [activeReturn, activeExchange] = await Promise.all([
+        this.db.db
+          .select({ id: returnExchangeTables.returnRequests.id })
+          .from(returnExchangeTables.returnRequests)
+          .where(
+            and(
+              eq(returnExchangeTables.returnRequests.salesOrderId, so.id),
+              inArray(returnExchangeTables.returnRequests.status, [...ACTIVE_RETURN_STATUSES]),
+            ),
+          )
+          .limit(1)
+          .then((r) => r[0]),
+        this.db.db
+          .select({ id: returnExchangeTables.exchangeRequests.id })
+          .from(returnExchangeTables.exchangeRequests)
+          .where(
+            and(
+              eq(returnExchangeTables.exchangeRequests.salesOrderId, so.id),
+              inArray(returnExchangeTables.exchangeRequests.status, [...ACTIVE_EXCHANGE_STATUSES]),
+            ),
+          )
+          .limit(1)
+          .then((r) => r[0]),
+      ]);
+      if (activeReturn) claimStatus = 'return_requested';
+      else if (activeExchange) claimStatus = 'exchange_requested';
+      if (claimStatus === 'none') {
+        const claimableParcels = await readParcelClaimEligibility(this.db.db, so.id);
+        if (claimableParcels.some((parcel) => parcel.claimable > 0)) {
           availableActions.push('return');
           availableActions.push('exchange');
         }

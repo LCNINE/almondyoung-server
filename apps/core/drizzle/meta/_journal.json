@@ -883,6 +883,20 @@
       "when": 1792559550874,
       "tag": "20261021051230_add-sku-package-weight",
       "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1792574337372,
+      "tag": "20261021091857_add-exchange-item-parcel",
+      "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1792581345077,
+      "tag": "20261021111545_add-shipment-lines-foi-index",
+      "breakpoints": true
     }
   ]
 }

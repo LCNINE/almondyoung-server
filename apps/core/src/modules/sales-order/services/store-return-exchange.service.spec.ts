@@ -1,6 +1,18 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import { inventoryTables, returnExchangeTables, wmsTables } from '../../inventory/schema/inventory.schema';
-import { CUSTOM_MADE_CLAIM_MESSAGE, StoreReturnExchangeService } from './store-return-exchange.service';
+import { returnExchangeTables, wmsTables } from '../../inventory/schema/inventory.schema';
+import { StoreReturnExchangeService } from './store-return-exchange.service';
+import { readReturnRequestSalesUnits, ReturnedSalesUnits } from '../line-quantities/claim-quantities.reader';
+
+// 반품 요청의 라인별 판매 단위는 수량 문이 정한다(C6) — 여기서는 그 결과만 준다.
+// 같은 라인 여러 줄의 합산·세트 환산은 DB 통합 스펙(`store-return-exchange.claims.integration.spec.ts`)이 지킨다.
+jest.mock('../line-quantities/claim-quantities.reader');
+const mockedSalesUnits = jest.mocked(readReturnRequestSalesUnits);
+const salesUnits = (entries: Array<[string, number]>): Map<string, ReturnedSalesUnits> =>
+  new Map(entries.map(([lineId, units]) => [lineId, { kind: 'whole', units }]));
+
+beforeEach(() => {
+  mockedSalesUnits.mockResolvedValue(new Map());
+});
 
 /** 반품 완료 종점이 아웃박스에 적재하는 발행자. 스펙에서는 적재 호출만 세면 된다. */
 const makeCoreOrdersPublisher = () => ({ enqueue: jest.fn().mockResolvedValue(undefined) });
@@ -12,19 +24,9 @@ const CUSTOMER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const LINE_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const RR_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const ER_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
-const SHIPMENT_ID = '11111111-1111-4111-8111-111111111111';
 const SHIPMENT_LINE_ID = '22222222-2222-4222-8222-222222222222';
 const DISPATCH_ATTEMPT_ID = '33333333-3333-4333-8333-333333333333';
 const FULFILLMENT_ORDER_ITEM_ID = '44444444-4444-4444-8444-444444444444';
-
-function makeSo(overrides: Record<string, unknown> = {}) {
-  return {
-    id: ORDER_ID,
-    customerId: CUSTOMER_ID,
-    status: 'delivered',
-    ...overrides,
-  };
-}
 
 function makeReturnRequest(overrides: Record<string, unknown> = {}) {
   return {
@@ -80,74 +82,14 @@ function terminalRows(rows: unknown[]): Record<string, unknown> {
   return self;
 }
 
-function makeEligibleReturnTxSelect(
-  createdItem: Record<string, unknown>,
-  options: {
-    attemptStatus?: string;
-    delivered?: boolean;
-    shippedQuantity?: number;
-    claimedQuantity?: number;
-    purchasedQuantity?: number;
-    salesOrderId?: string;
-    salesOrderLineId?: string;
-    callOrder?: string[];
-  } = {},
-) {
-  return jest.fn(() => ({
-    from: (table: unknown) => {
-      if (table === wmsTables.dispatchAttempts) options.callOrder?.push('attempt');
-      if (table === wmsTables.shipmentLines) options.callOrder?.push('line');
-      if (table === wmsTables.shipmentTracking) options.callOrder?.push('tracking');
-      if (table === wmsTables.dispatchAttemptSources) options.callOrder?.push('sources');
-      if (table === returnExchangeTables.returnRequestItems) options.callOrder?.push('claims/items');
-      if (table === wmsTables.dispatchAttempts) {
-        return terminalRows([
-          { id: DISPATCH_ATTEMPT_ID, shipmentId: SHIPMENT_ID, status: options.attemptStatus ?? 'dispatched' },
-        ]);
-      }
-      if (table === wmsTables.shipmentLines) {
-        return terminalRows([
-          {
-            id: SHIPMENT_LINE_ID,
-            shipmentId: SHIPMENT_ID,
-            fulfillmentOrderItemId: FULFILLMENT_ORDER_ITEM_ID,
-            salesOrderId: options.salesOrderId ?? ORDER_ID,
-            salesOrderLineId: options.salesOrderLineId ?? LINE_ID,
-          },
-        ]);
-      }
-      if (table === wmsTables.fulfillmentOrderItems) {
-        return terminalRows([{ id: FULFILLMENT_ORDER_ITEM_ID, fulfillmentOrderId: 'fo-1' }]);
-      }
-      if (table === wmsTables.salesOrderLines) {
-        return terminalRows([{ id: LINE_ID, quantity: options.purchasedQuantity ?? 5 }]);
-      }
-      if (table === wmsTables.shipmentTracking) {
-        return terminalRows(options.delivered === false ? [] : [{ id: 'delivered-event' }]);
-      }
-      if (table === wmsTables.dispatchAttemptSources) {
-        return terminalRows([{ quantity: String(options.shippedQuantity ?? 1) }]);
-      }
-      if (table === returnExchangeTables.returnRequestItems) {
-        return {
-          ...terminalRows([createdItem]),
-          // Eligibility aggregation sees no pre-existing exact-attempt claim.
-          innerJoin: () => terminalRows(options.claimedQuantity ? [{ quantity: String(options.claimedQuantity) }] : []),
-        };
-      }
-      return terminalRows([]);
-    },
-  }));
-}
-
 // ── Mock DB builder ───────────────────────────────────────────────────────────
 
 /**
  * Builds a minimal Drizzle mock whose `select().from(table).where(...).limit(n)`
  * chain is driven by a per-table lookup function supplied by each test.
  *
- * Supports the `.innerJoin(...).where(...).groupBy(...)` chain used by
- * `assertReturnQuantitiesAvailable` / `assertExchangeQuantitiesAvailable`.
+ * 반품·교환 생성 게이트는 DB 통합 스펙
+ * (`store-return-exchange.claims.integration.spec.ts`)이 지킨다.
  *
  * The `transaction` mock simply calls `fn(tx)` so the inner transaction body
  * executes synchronously against the same mock surface.
@@ -199,311 +141,6 @@ function makeMockDb(selectRowsFor: (table: unknown) => unknown[]) {
 
   return db;
 }
-
-// ── createReturnRequest tests ─────────────────────────────────────────────────
-
-describe('StoreReturnExchangeService.createReturnRequest', () => {
-  const baseDto = {
-    lines: [
-      {
-        salesOrderLineId: LINE_ID,
-        shipmentLineId: SHIPMENT_LINE_ID,
-        dispatchAttemptId: DISPATCH_ATTEMPT_ID,
-        quantity: 1,
-      },
-    ],
-    reasonCode: 'defective' as const,
-  };
-
-  it('throws BadRequestException when salesOrderLineId does not belong to order', async () => {
-    // The SO query returns the order.
-    // The FO query is not needed (SO status is 'delivered').
-    // The active-return-request check returns nothing.
-    // The assertLinesBelongToOrder query returns [] (line not found).
-    const mockDb = makeMockDb((table) => {
-      if (table === inventoryTables.salesOrders) return [makeSo()];
-      if (table === returnExchangeTables.returnRequests) return []; // no active requests
-      if (table === wmsTables.salesOrderLines) return []; // line not found → ownership fails
-      return [];
-    });
-
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
-
-    await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(BadRequestException);
-  });
-
-  it('throws BadRequestException when requested quantity exceeds original line quantity', async () => {
-    // Line exists with quantity 2; request asks for 5.
-    // assertReturnQuantitiesAvailable: originalQty=2, claimedQty=0 → available=2 < 5 → throws.
-    const dto = { ...baseDto, lines: [{ ...baseDto.lines[0], quantity: 5 }] };
-
-    const mockDb = makeMockDb((table) => {
-      if (table === inventoryTables.salesOrders) return [makeSo()];
-      if (table === returnExchangeTables.returnRequests) return []; // no active requests
-      if (table === wmsTables.salesOrderLines) return [{ id: LINE_ID, salesOrderId: ORDER_ID, quantity: 2 }];
-      // inner-join aggregation for claimed quantities returns nothing (no active claims)
-      if (table === returnExchangeTables.returnRequestItems) return [];
-      return [];
-    });
-
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
-
-    await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, dto)).rejects.toThrow(BadRequestException);
-  });
-
-  it('throws BadRequestException when requested quantity exceeds remaining (original minus active claims)', async () => {
-    // Original quantity 3; 2 already claimed; request asks for 2 → available=1 < 2.
-    const dto = { ...baseDto, lines: [{ ...baseDto.lines[0], quantity: 2 }] };
-
-    // The service makes two separate selects for assertReturnQuantitiesAvailable:
-    //   1. from(salesOrderLines) → original quantities
-    //   2. from(returnRequestItems).innerJoin(...) → aggregated claimed sums
-    // Both queries go through `selectRowsFor`; the second one's table is returnRequestItems.
-    const mockDb = makeMockDb((table) => {
-      if (table === inventoryTables.salesOrders) return [makeSo()];
-      if (table === returnExchangeTables.returnRequests) return [];
-      if (table === wmsTables.salesOrderLines) {
-        return [{ id: LINE_ID, salesOrderId: ORDER_ID, quantity: 3 }];
-      }
-      if (table === returnExchangeTables.returnRequestItems) {
-        // Simulating the aggregated result from the innerJoin+groupBy.
-        return [{ salesOrderLineId: LINE_ID, totalClaimed: '2' }];
-      }
-      return [];
-    });
-
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
-
-    await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, dto)).rejects.toThrow(BadRequestException);
-  });
-
-  it('still rejects a partial order when the requested line does not have exact delivered-attempt evidence', async () => {
-    const mockDb = makeMockDb((table) => {
-      if (table === inventoryTables.salesOrders) return [makeSo({ status: 'shipped' })];
-      if (table === inventoryTables.fulfillmentOrders)
-        return [{ id: 'fo-1', salesOrderId: ORDER_ID, status: 'shipped' }];
-      if (table === returnExchangeTables.returnRequests) return [];
-      if (table === wmsTables.salesOrderLines) {
-        return [{ id: LINE_ID, salesOrderId: ORDER_ID, quantity: 1 }];
-      }
-      return [];
-    });
-    const tx = (mockDb as any)._tx;
-    tx.select = makeEligibleReturnTxSelect({}, { delivered: false });
-
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
-
-    await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(BadRequestException);
-  });
-
-  it('succeeds when SO status is delivered', async () => {
-    const createdReturnRequest = makeReturnRequest();
-    const createdItem = {
-      id: 'item-1',
-      returnRequestId: RR_ID,
-      salesOrderLineId: LINE_ID,
-      shipmentLineId: SHIPMENT_LINE_ID,
-      dispatchAttemptId: DISPATCH_ATTEMPT_ID,
-      quantity: 1,
-      reasonCode: null,
-      createdAt: new Date('2026-06-01T00:00:00.000Z'),
-    };
-
-    // The outer db.db.select handles all pre-transaction queries.
-    // The tx.select (inside transaction) handles the post-insert items fetch.
-    // We build them separately so returnRequestItems returns [] outside tx (no active claims)
-    // and [createdItem] inside tx (fetching newly inserted items).
-    const mockDb = makeMockDb((table) => {
-      if (table === inventoryTables.salesOrders) return [makeSo({ status: 'delivered' })];
-      if (table === returnExchangeTables.returnRequests) return []; // no active requests
-      if (table === wmsTables.salesOrderLines) return [{ id: LINE_ID, salesOrderId: ORDER_ID, quantity: 5 }];
-      // outer select for inner-join aggregation (claimed qty) → no active claims
-      if (table === returnExchangeTables.returnRequestItems) return [];
-      return [];
-    });
-
-    // Override tx mock to simulate the transaction body correctly.
-    const tx = (mockDb as any)._tx;
-    tx.insert = jest.fn((table: unknown) => ({
-      values: jest.fn(() => {
-        if (table === returnExchangeTables.returnRequests) {
-          return { returning: jest.fn().mockResolvedValue([createdReturnRequest]) };
-        }
-        return { returning: jest.fn().mockResolvedValue([]) };
-      }),
-    }));
-    tx.select = makeEligibleReturnTxSelect(createdItem);
-
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
-
-    const result = await service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto);
-
-    expect(result.id).toBe(RR_ID);
-    expect(result.status).toBe('requested');
-    expect(result.salesOrderId).toBe(ORDER_ID);
-    expect(result.items).toHaveLength(1);
-    expect(result.items[0].salesOrderLineId).toBe(LINE_ID);
-  });
-
-  it('allows an exact delivered attempt while the aggregate order/FO is still partial', async () => {
-    const createdReturnRequest = makeReturnRequest();
-    const createdItem = {
-      id: 'item-1',
-      returnRequestId: RR_ID,
-      salesOrderLineId: LINE_ID,
-      shipmentLineId: SHIPMENT_LINE_ID,
-      dispatchAttemptId: DISPATCH_ATTEMPT_ID,
-      quantity: 1,
-      reasonCode: null,
-      createdAt: new Date('2026-06-01T00:00:00.000Z'),
-    };
-
-    const mockDb = makeMockDb((table) => {
-      if (table === inventoryTables.salesOrders) return [makeSo({ status: 'processing' })];
-      if (table === inventoryTables.fulfillmentOrders)
-        return [{ id: 'fo-1', salesOrderId: ORDER_ID, status: 'shipped' }];
-      if (table === returnExchangeTables.returnRequests) return [];
-      if (table === wmsTables.salesOrderLines) return [{ id: LINE_ID, salesOrderId: ORDER_ID, quantity: 5 }];
-      if (table === returnExchangeTables.returnRequestItems) return [];
-      return [];
-    });
-
-    const tx = (mockDb as any)._tx;
-    tx.insert = jest.fn((table: unknown) => ({
-      values: jest.fn(() => {
-        if (table === returnExchangeTables.returnRequests) {
-          return { returning: jest.fn().mockResolvedValue([createdReturnRequest]) };
-        }
-        return { returning: jest.fn().mockResolvedValue([]) };
-      }),
-    }));
-    tx.select = makeEligibleReturnTxSelect(createdItem);
-
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
-
-    const result = await service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto);
-
-    expect(result.id).toBe(RR_ID);
-    expect(result.status).toBe('requested');
-  });
-
-  it('throws ConflictException when an active return request already exists', async () => {
-    const mockDb = makeMockDb((table) => {
-      if (table === inventoryTables.salesOrders) return [makeSo()];
-      if (table === returnExchangeTables.returnRequests) return [{ id: 'existing-rr' }]; // active exists
-      return [];
-    });
-
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
-
-    await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(ConflictException);
-  });
-
-  it('rejects a recalled exact dispatch attempt after locking its graph but before tracking state', async () => {
-    const callOrder: string[] = [];
-    const mockDb = makeMockDb(() => []);
-    const tx = (mockDb as any)._tx;
-    tx.select = makeEligibleReturnTxSelect({}, { attemptStatus: 'recalled', callOrder });
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
-
-    await expect((service as any).assertAttemptBasedReturnEligibility(ORDER_ID, baseDto.lines, tx)).rejects.toThrow(
-      /recalled/,
-    );
-    expect(callOrder[0]).toBe('line');
-    expect(callOrder).toContain('attempt');
-    expect(callOrder).not.toContain('tracking');
-  });
-
-  it('rejects an attempt without delivered tracking evidence for that exact attempt', async () => {
-    const mockDb = makeMockDb(() => []);
-    const tx = (mockDb as any)._tx;
-    tx.select = makeEligibleReturnTxSelect({}, { delivered: false });
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
-
-    await expect((service as any).assertAttemptBasedReturnEligibility(ORDER_ID, baseDto.lines, tx)).rejects.toThrow(
-      /배송 완료된 시도/,
-    );
-  });
-
-  it('rejects shipment-line ownership mismatches even when the shipment attempt is delivered', async () => {
-    const mockDb = makeMockDb(() => []);
-    const tx = (mockDb as any)._tx;
-    tx.select = makeEligibleReturnTxSelect({}, { salesOrderId: 'other-order' });
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
-
-    await expect((service as any).assertAttemptBasedReturnEligibility(ORDER_ID, baseDto.lines, tx)).rejects.toThrow(
-      /소유 관계/,
-    );
-  });
-
-  it('locks the graph and purchased cap, then the attempt, before exact-grain claims', async () => {
-    const callOrder: string[] = [];
-    const mockDb = makeMockDb(() => []);
-    const tx = (mockDb as any)._tx;
-    tx.select = makeEligibleReturnTxSelect({}, { shippedQuantity: 2, claimedQuantity: 2, callOrder });
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
-
-    await expect((service as any).assertAttemptBasedReturnEligibility(ORDER_ID, baseDto.lines, tx)).rejects.toThrow(
-      /반품 가능 수량\(0\)/,
-    );
-    expect(callOrder[0]).toBe('line');
-    expect(callOrder.indexOf('line')).toBeLessThan(callOrder.indexOf('attempt'));
-    expect(callOrder.indexOf('claims/items')).toBeLessThan(callOrder.indexOf('attempt'));
-    expect(callOrder.indexOf('attempt')).toBeLessThan(callOrder.lastIndexOf('claims/items'));
-  });
-
-  it('keeps legacy active exchange claims in the SO-line shared availability gate', async () => {
-    const mockDb = makeMockDb((table) => {
-      if (table === inventoryTables.salesOrders) return [makeSo()];
-      if (table === returnExchangeTables.returnRequests) return [];
-      if (table === wmsTables.salesOrderLines) return [{ id: LINE_ID, salesOrderId: ORDER_ID, quantity: 1 }];
-      if (table === returnExchangeTables.returnRequestItems) return [];
-      if (table === returnExchangeTables.exchangeRequestItems) {
-        return [{ salesOrderLineId: LINE_ID, totalClaimed: '1' }];
-      }
-      return [];
-    });
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
-
-    await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(/반품 가능 수량\(0\)/);
-  });
-});
-
-// ── createExchangeRequest tests ───────────────────────────────────────────────
-
-describe('StoreReturnExchangeService.createExchangeRequest', () => {
-  const baseDto = {
-    lines: [{ salesOrderLineId: LINE_ID, quantity: 1 }],
-    reasonCode: 'defective' as const,
-  };
-
-  it('throws ConflictException when an active exchange request already exists', async () => {
-    const mockDb = makeMockDb((table) => {
-      if (table === inventoryTables.salesOrders) return [makeSo()];
-      if (table === returnExchangeTables.exchangeRequests) return [{ id: 'existing-er' }];
-      return [];
-    });
-
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
-
-    await expect(service.createExchangeRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(ConflictException);
-  });
-
-  it('rejects a custom-made (print) line before creating the request', async () => {
-    const mockDb = makeMockDb((table) => {
-      if (table === inventoryTables.salesOrders) return [makeSo()];
-      if (table === wmsTables.salesOrderLines) return [{ id: LINE_ID, salesOrderId: ORDER_ID, quantity: 1 }];
-      return [];
-    });
-
-    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any, makeCoreOrdersPublisher() as never);
-
-    await expect(service.createExchangeRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(
-      CUSTOM_MADE_CLAIM_MESSAGE,
-    );
-    expect((mockDb as any).db.transaction).not.toHaveBeenCalled();
-  });
-});
 
 // ── approveReturnRequest tests ────────────────────────────────────────────────
 
@@ -717,7 +354,6 @@ describe('StoreReturnExchangeService.completeReturnRequest', () => {
     rr: Record<string, unknown>;
     so: Record<string, unknown>;
     orderLines?: unknown[];
-    returnItems?: unknown[];
     maxN?: number;
   }) {
     let currentRr: Record<string, unknown> = { ...opts.rr };
@@ -726,7 +362,6 @@ describe('StoreReturnExchangeService.completeReturnRequest', () => {
       if (table === returnExchangeTables.returnRequests) return [currentRr];
       if (table === wmsTables.salesOrders) return [opts.so];
       if (table === wmsTables.salesOrderLines) return opts.orderLines ?? [];
-      if (table === returnExchangeTables.returnRequestItems) return opts.returnItems ?? [];
       if (table === returnExchangeTables.returnRefundAttempts) {
         attemptSel++;
         return attemptSel === 1 ? [] : [{ maxN: opts.maxN ?? 0 }];
@@ -790,10 +425,11 @@ describe('StoreReturnExchangeService.completeReturnRequest', () => {
 
   it('stays refund_pending when wallet returns partial_pending (무통장 비동기 처리)', async () => {
     const rr = makeReturnRequest({ status: 'inspected' });
+    mockedSalesUnits.mockResolvedValue(salesUnits([[LINE_ID, 2]]));
     const tx = makeCompleteTx({
       rr,
       so: { id: ORDER_ID, walletIntentId: 'intent-123' },
-      returnItems: [{ quantity: 2, unitPrice: 3000 }],
+      orderLines: [{ id: LINE_ID, quantity: 2, unitPrice: 3000, totalPrice: null }],
     });
 
     const walletClient = makeWalletClient();
@@ -812,12 +448,18 @@ describe('StoreReturnExchangeService.completeReturnRequest', () => {
   it('calls wallet with unitPrice × quantity sum (상품가 기준 환불 정책)', async () => {
     const rr = makeReturnRequest({ status: 'inspected' });
     // 라인1: 2개 × 10000원, 라인2: 1개 × 5000원 → 기대 환불액 25000원
+    mockedSalesUnits.mockResolvedValue(
+      salesUnits([
+        ['line-1', 2],
+        ['line-2', 1],
+      ]),
+    );
     const tx = makeCompleteTx({
       rr,
       so: { id: ORDER_ID, walletIntentId: 'intent-abc' },
-      returnItems: [
-        { quantity: 2, unitPrice: 10000 },
-        { quantity: 1, unitPrice: 5000 },
+      orderLines: [
+        { id: 'line-1', quantity: 2, unitPrice: 10000, totalPrice: null },
+        { id: 'line-2', quantity: 1, unitPrice: 5000, totalPrice: null },
       ],
     });
 
@@ -841,10 +483,11 @@ describe('StoreReturnExchangeService.completeReturnRequest', () => {
 
   it('transitions to refund_pending and stays there when wallet refund fails', async () => {
     const rr = makeReturnRequest({ status: 'inspected' });
+    mockedSalesUnits.mockResolvedValue(salesUnits([[LINE_ID, 1]]));
     const tx = makeCompleteTx({
       rr,
       so: { id: ORDER_ID, walletIntentId: 'intent-123' },
-      returnItems: [{ quantity: 1, unitPrice: 5000 }],
+      orderLines: [{ id: LINE_ID, quantity: 1, unitPrice: 5000, totalPrice: null }],
     });
 
     const walletClient = makeWalletClient();
@@ -928,8 +571,11 @@ describe('StoreReturnExchangeService exchange happy path', () => {
 describe('StoreReturnExchangeService.attemptReturnRefund (상태기계)', () => {
   const INTENT = 'intent-123';
   const SO = { id: ORDER_ID, walletIntentId: INTENT, totalAmount: 5000, shippingFee: 0 };
-  const RETURN_ITEMS = [{ salesOrderLineId: LINE_ID, quantity: 1, unitPrice: 5000 }];
   const ORDER_LINES = [{ id: LINE_ID, quantity: 1, unitPrice: 5000, totalPrice: 5000 }];
+  // 이 요청이 라인 하나를 통째로(판매 단위 1) 돌려받았다 → 전체 반품 = 5000
+  beforeEach(() => {
+    mockedSalesUnits.mockResolvedValue(salesUnits([[LINE_ID, 1]]));
+  });
 
   // 반품/주문/라인/attempt 테이블별 행을 주입하는 tx 목 (Phase A·C 공용).
   function makeTx(opts: {
@@ -953,7 +599,6 @@ describe('StoreReturnExchangeService.attemptReturnRefund (상태기계)', () => 
       }
       if (table === wmsTables.salesOrders) return [SO];
       if (table === wmsTables.salesOrderLines) return ORDER_LINES;
-      if (table === returnExchangeTables.returnRequestItems) return RETURN_ITEMS;
       if (table === returnExchangeTables.returnRefundAttempts) {
         attemptSel++;
         if (opts.pendingAttempt) return [opts.pendingAttempt]; // pending 존재 → 재사용(max 조회 미도달)
@@ -1202,23 +847,23 @@ describe('StoreReturnExchangeService.calculateReturnRefund (P1-10 기준 통일)
     // 주문 totalAmount 17000, 배송비 0 → productSubtotal 17000
     // 라인A 1개만 반품: 분모=12000+5000=17000, 라인A 무게=12000, 반품비중=1/2 → 6000
     // 반품액 = round(6000 * 17000 / 17000) = 6000
-    const returnItems = [{ salesOrderLineId: 'A', quantity: 1, unitPrice: 10000 }];
+    const unitsByLine = new Map([['A', 1]]);
     const allLines = [
       { id: 'A', quantity: 2, unitPrice: 10000, totalPrice: 12000 },
       { id: 'B', quantity: 1, unitPrice: 5000, totalPrice: 5000 },
     ];
-    expect(calc(service, returnItems, allLines, 17000, 0)).toBe(6000);
+    expect(calc(service, unitsByLine, allLines, 17000, 0)).toBe(6000);
   });
 
   it('할인 없는 라인은 기존과 동일(unitPrice×qty = totalPrice)', () => {
     const service = new StoreReturnExchangeService({ db: {} } as never, {} as never, makeCoreOrdersPublisher() as never);
-    const returnItems = [{ salesOrderLineId: 'A', quantity: 1, unitPrice: 10000 }];
+    const unitsByLine = new Map([['A', 1]]);
     const allLines = [
       { id: 'A', quantity: 2, unitPrice: 10000, totalPrice: 20000 },
       { id: 'B', quantity: 1, unitPrice: 5000, totalPrice: 5000 },
     ];
     // 분모 25000, 라인A 무게 20000, 반품비중 1/2 → 10000; productSubtotal 25000
     // round(10000 * 25000 / 25000) = 10000
-    expect(calc(service, returnItems, allLines, 25000, 0)).toBe(10000);
+    expect(calc(service, unitsByLine, allLines, 25000, 0)).toBe(10000);
   });
 });

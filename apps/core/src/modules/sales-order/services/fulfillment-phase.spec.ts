@@ -1,4 +1,4 @@
-import { isPickingStarted, isReturnEligible, shipmentProgressOf, FulfillmentPhaseInput } from './fulfillment-phase';
+import { isPickingStarted, shipmentProgressOf, FulfillmentPhaseInput } from './fulfillment-phase';
 
 function input(over: Partial<FulfillmentPhaseInput> = {}): FulfillmentPhaseInput {
   return {
@@ -75,26 +75,6 @@ describe('shipmentProgressOf — 진행 요약은 단계가 아니라 소포 수
         input({ allFoCanceled: true, activeShipmentStatuses: ['shipped'], printStatuses: ['delivered'] }),
       ),
     ).toEqual({ total: 1, shipped: 1, delivered: 1 });
-  });
-});
-
-describe('isReturnEligible', () => {
-  it('창고 몫이 모두 배송완료면 택배로 shipped 에 머무는 인쇄 행이 있어도 연다', () => {
-    expect(isReturnEligible(input({ activeShipmentStatuses: ['delivered'], printStatuses: ['shipped'] }))).toBe(true);
-  });
-  it('인쇄 행이 아직 발송 전이면 열지 않는다', () => {
-    expect(isReturnEligible(input({ activeShipmentStatuses: ['delivered'], printStatuses: ['submitted'] }))).toBe(
-      false,
-    );
-  });
-  it('창고 몫이 아직 배송 중이면 열지 않는다', () => {
-    expect(isReturnEligible(input({ activeShipmentStatuses: ['in_transit'], printStatuses: ['delivered'] }))).toBe(
-      false,
-    );
-  });
-  it('인쇄만 남은 주문은 고를 줄이 없어 열지 않는다', () => {
-    expect(isReturnEligible(input({ foCount: 0, printStatuses: ['delivered'] }))).toBe(false);
-    expect(isReturnEligible(input({ allFoCanceled: true, printStatuses: ['delivered'] }))).toBe(false);
   });
 });
 

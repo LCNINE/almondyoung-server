@@ -6,6 +6,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   Min,
   ValidateNested,
@@ -19,7 +20,20 @@ export class StoreCreateExchangeRequestLineDto {
   @IsNotEmpty()
   salesOrderLineId: string;
 
-  @ApiProperty({ description: '교환 수량', minimum: 1 })
+  @ApiPropertyOptional({
+    description:
+      '배송 라인 ID — dispatchAttemptId 와 함께 소포 하나를 가리킨다. 둘 다 없으면 서버가 라인 단위로 펼친다(단품·1개당 1·소포 하나일 때만)',
+  })
+  @IsOptional()
+  @IsUUID()
+  shipmentLineId?: string;
+
+  @ApiPropertyOptional({ description: '배송 완료된 정확한 dispatch attempt ID — shipmentLineId 와 함께 보낸다' })
+  @IsOptional()
+  @IsUUID()
+  dispatchAttemptId?: string;
+
+  @ApiProperty({ description: '교환 수량 (SKU 단위)', minimum: 1 })
   @IsInt()
   @Min(1)
   quantity: number;
@@ -70,7 +84,13 @@ export class StoreExchangeRequestItemDto {
   @ApiProperty({ description: '판매 주문 라인 ID' })
   salesOrderLineId: string;
 
-  @ApiProperty({ description: '교환 수량' })
+  @ApiProperty({ description: '배송 라인 ID (소포 칸 없는 옛 교환 행은 null)', type: String, nullable: true })
+  shipmentLineId: string | null;
+
+  @ApiProperty({ description: '배송 시도 ID (소포 칸 없는 옛 교환 행은 null)', type: String, nullable: true })
+  dispatchAttemptId: string | null;
+
+  @ApiProperty({ description: '교환 수량 (SKU 단위)' })
   quantity: number;
 
   @ApiPropertyOptional({ description: '교환 희망 상품 변형 ID' })

@@ -58,12 +58,29 @@ type SkuExpected = [
   outstanding: number,
 ];
 
+/**
+ * 2b 시나리오에는 청구도 출고 뒤 취소도 없다 — 청구 칸은 0, `claimable` 은 구성 안 SKU 면 배송완료 그대로, 구성 밖이면 0(N4).
+ * 청구 사실은 `claim-facts.integration.spec.ts` 가 본다.
+ */
 function skuQuantities(
   skuId: string,
   qtyPerUnit: number | null,
   [required, shipped, forwarded, delivered, partnerCompleted, outstanding]: SkuExpected,
 ): LineSkuQuantities {
-  return { skuId, qtyPerUnit, required, shipped, forwarded, delivered, partnerCompleted, outstanding };
+  return {
+    skuId,
+    qtyPerUnit,
+    required,
+    shipped,
+    forwarded,
+    delivered,
+    partnerCompleted,
+    outstanding,
+    returnActive: 0,
+    returnConsumed: 0,
+    exchangeActive: 0,
+    claimable: qtyPerUnit === null ? 0 : delivered,
+  };
 }
 
 type SkuRow = {
@@ -77,6 +94,10 @@ type SkuRow = {
   delivered: number;
   partner_completed: number;
   outstanding: number;
+  return_active: number;
+  return_consumed: number;
+  exchange_active: number;
+  claimable: number;
 };
 
 /** (나) SKU 층 — 문과 다른 범위 모양(주문 테이블 select)으로 조각을 직접 select 하고 여기서 라인별로 묶는다. */
@@ -98,6 +119,10 @@ async function readSkusDirectly(tx: DbTx, salesOrderId: string): Promise<Map<str
         delivered: row.delivered,
         partnerCompleted: row.partner_completed,
         outstanding: row.outstanding,
+        returnActive: row.return_active,
+        returnConsumed: row.return_consumed,
+        exchangeActive: row.exchange_active,
+        claimable: row.claimable,
       },
     ]);
   }

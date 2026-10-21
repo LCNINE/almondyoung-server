@@ -2010,6 +2010,9 @@ export const shipmentLines = pgTable(
   },
   (t) => ({
     idxShipment: index('idx_shipment_lines_shipment').on(t.shipmentId),
+    // FOI → 상자 라인 역방향 — 라인 수량 커널의 배송완료 소포 서브쿼리가 FOI 로 상자 라인을 찾는다 (K6 PR3a, R13).
+    // uq_shipment_lines_shipment_foi 는 shipment_id 가 선두라 이 조회에 못 쓴다.
+    idxFulfillmentOrderItem: index('idx_shipment_lines_fulfillment_order_item').on(t.fulfillmentOrderItemId),
     // 상자당 FOI 1행 — 멱등 ensure(onConflictDoNothing)의 근거. M:N end-state 에서도 성립.
     uqShipmentFoi: unique('uq_shipment_lines_shipment_foi').on(t.shipmentId, t.fulfillmentOrderItemId),
     ckQtyPositive: check('ck_shipment_lines_qty_positive', sql`${t.qty} > 0`),
@@ -5165,6 +5168,9 @@ export const exchangeRequestItems = pgTable(
       .references(() => exchangeRequests.id, { onDelete: 'cascade' })
       .notNull(),
     salesOrderLineId: uuid('sales_order_line_id').notNull(),
+    // 반품 항목과 같은 모양 — 교환 수량도 (SKU, 소포) 단위다(K6 PR3a C3). 옛 행은 null 이고 커널이 세지 않는다(N1).
+    shipmentLineId: uuid('shipment_line_id').references(() => shipmentLines.id, { onDelete: 'restrict' }),
+    dispatchAttemptId: uuid('dispatch_attempt_id').references(() => dispatchAttempts.id, { onDelete: 'restrict' }),
     quantity: integer('quantity').notNull(),
     desiredVariantId: varchar('desired_variant_id', { length: 255 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -5172,6 +5178,10 @@ export const exchangeRequestItems = pgTable(
   (t) => ({
     idxExchangeRequestItemsRequest: index('idx_exchange_request_items_request').on(t.exchangeRequestId),
     idxExchangeRequestItemsOrderLine: index('idx_exchange_request_items_order_line').on(t.salesOrderLineId),
+    idxExchangeRequestItemsShipmentLine: index('idx_exchange_request_items_shipment_line').on(t.shipmentLineId),
+    idxExchangeRequestItemsDispatchAttempt: index('idx_exchange_request_items_dispatch_attempt').on(
+      t.dispatchAttemptId,
+    ),
   }),
 );
 

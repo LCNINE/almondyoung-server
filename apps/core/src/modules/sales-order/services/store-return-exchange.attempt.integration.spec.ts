@@ -12,6 +12,7 @@ import {
   seedWarehouseWithZone,
 } from '../../fulfillment/services/__support__';
 import { lockShipmentConnectedComponentGraph } from '../../fulfillment/services/shipment-reservation.service';
+import { recordSalesOrderCancellation } from '../cancellation-record/record-cancellation';
 import { StoreReturnExchangeService } from './store-return-exchange.service';
 
 /** 반품 완료 종점이 아웃박스에 적재하는 발행자. 스펙에서는 적재 호출만 세면 된다. */
@@ -61,6 +62,10 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
         shippedQty: attemptCount,
       })
       .returning();
+    // 실제 FO 생성이 굳히는 구성 — 청구 자격(K6 PR3a)은 구성 밖 SKU 를 청구할 수 없다고 본다(N4)
+    await tx
+      .insert(wmsTables.salesOrderLineCompositions)
+      .values({ salesOrderLineId: lineIds[0], skuId, qtyPerUnit: 1 });
     const [shipment] = await tx
       .insert(wmsTables.shipments)
       .values({
@@ -140,10 +145,15 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
   async function cleanupCommittedGraph(graph: Awaited<ReturnType<typeof seedDeliveredAttemptGraph>>) {
     await db.transaction(async (rawTx) => {
       const tx = rawTx as unknown as DbTx;
-      const requests = await tx
+      const returnRequests = await tx
         .select({ id: returnExchangeTables.returnRequests.id })
         .from(returnExchangeTables.returnRequests)
         .where(eq(returnExchangeTables.returnRequests.salesOrderId, graph.salesOrderId));
+      const exchangeRequests = await tx
+        .select({ id: returnExchangeTables.exchangeRequests.id })
+        .from(returnExchangeTables.exchangeRequests)
+        .where(eq(returnExchangeTables.exchangeRequests.salesOrderId, graph.salesOrderId));
+      const requests = [...returnRequests, ...exchangeRequests];
       await tx.delete(wmsTables.businessLinks).where(eq(wmsTables.businessLinks.targetId, graph.salesOrderId));
       if (requests.length > 0) {
         await tx.delete(wmsTables.businessLinks).where(
@@ -156,6 +166,10 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
       await tx
         .delete(returnExchangeTables.returnRequests)
         .where(eq(returnExchangeTables.returnRequests.salesOrderId, graph.salesOrderId));
+      // 교환 항목은 요청 cascade 로 지워진다 — 소포 칸(restrict)이 아래 배송 행 삭제를 막지 않게 먼저 지운다
+      await tx
+        .delete(returnExchangeTables.exchangeRequests)
+        .where(eq(returnExchangeTables.exchangeRequests.salesOrderId, graph.salesOrderId));
       await tx.delete(wmsTables.shipmentTracking).where(eq(wmsTables.shipmentTracking.shipmentId, graph.shipment.id));
       await tx.delete(wmsTables.dispatchAttemptSources).where(
         inArray(
@@ -221,6 +235,8 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
       await tx.insert(returnExchangeTables.exchangeRequestItems).values({
         exchangeRequestId: exchange.id,
         salesOrderLineId: graph.salesOrderLineId,
+        shipmentLineId: graph.shipmentLine.id,
+        dispatchAttemptId: graph.attempts[0].id,
         quantity: 1,
       });
       const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
@@ -228,7 +244,7 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
       const eligibility = await service.adminGetReturnEligibility(graph.salesOrderId);
 
       expect(eligibility.items[0]).toMatchObject({
-        claimedQty: 0,
+        claimedQty: 1,
         remainingEligibleQty: 0,
         salesOrderLineRemainingEligibleQty: 0,
       });
@@ -275,7 +291,8 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
     });
   });
 
-  it('counts a completed nullable legacy item against the purchased sales-line cap', async () => {
+  it('legacy item without a parcel does not count', async () => {
+    // N1 — 소포 칸이 빈 항목은 SKU 를 알 길이 없어 커널이 세지 않는다. 라이브 0행이 배포 게이트(D5)다
     await inRollbackTx(db, async (tx) => {
       const graph = await seedDeliveredAttemptGraph(tx);
       const [legacyRequest] = await tx
@@ -306,37 +323,39 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
             dispatchAttemptId: graph.attempts[0].id,
             shippedQty: 1,
             claimedQty: 0,
-            remainingEligibleQty: 0,
-            salesOrderLineRemainingEligibleQty: 0,
+            remainingEligibleQty: 1,
+            salesOrderLineRemainingEligibleQty: 1,
           }),
         ],
       });
 
-      await expect(service.createReturnRequest(graph.salesOrderId, graph.customerId, createDto(graph))).rejects.toThrow(
-        /누적 반품 가능 수량\(0\)/,
-      );
+      await expect(
+        service.createReturnRequest(graph.salesOrderId, graph.customerId, createDto(graph)),
+      ).resolves.toMatchObject({ status: 'requested' });
     });
   });
 
   it('exposes the shared sales-line cap across attempts and rejects an aggregate over-selection', async () => {
     await inRollbackTx(db, async (tx) => {
       const graph = await seedDeliveredAttemptGraph(tx, 2);
-      const [legacyRequest] = await tx
-        .insert(returnExchangeTables.returnRequests)
-        .values({
-          salesOrderId: graph.salesOrderId,
-          customerId: graph.customerId,
-          status: 'completed',
-          reasonCode: 'defective',
-          completedAt: new Date('2026-07-15T04:00:00.000Z'),
-        })
-        .returning();
-      await tx.insert(returnExchangeTables.returnRequestItems).values({
-        returnRequestId: legacyRequest.id,
-        salesOrderLineId: graph.salesOrderLineId,
-        shipmentLineId: null,
-        dispatchAttemptId: null,
-        quantity: 1,
+      // 출고 뒤 취소(V1 사후취소) 1 — 돈을 돌려준 수량은 다시 청구할 수 없다(C9). 두 소포가 SKU 몫 1 을 나눠 쓴다.
+      // 엔진은 다 나간 라인의 부분취소를 거절하므로(R1) 엔진이 남기는 모양을 쓰기 문에 직접 넘긴다
+      await recordSalesOrderCancellation(tx, {
+        salesOrderId: graph.salesOrderId,
+        cancellationScope: 'partial',
+        reasonCode: 'customer',
+        metadata: { cancelledLines: [{ salesOrderLineId: graph.salesOrderLineId, quantity: 1 }] },
+        effects: [
+          {
+            type: 'preserved_shipped_fulfillment_order_item',
+            metadata: {
+              salesOrderLineId: graph.salesOrderLineId,
+              skuId: graph.skuId,
+              requestedFulfillmentQuantity: 1,
+              affectedShippedQuantity: 1,
+            },
+          },
+        ],
       });
       const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
 
@@ -366,7 +385,9 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
             quantity: 1,
           })),
         }),
-      ).rejects.toThrow(/누적 반품 가능 수량\(1\)/);
+      ).rejects.toThrow(
+        `주문 라인 ${graph.salesOrderLineId} 구성품 ${graph.skuId}의 반품 가능 수량(1)을 초과하였습니다. (요청: 2)`,
+      );
     });
   });
 
@@ -410,8 +431,9 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
         .where(eq(wmsTables.dispatchAttempts.id, graph.attempts[0].id));
       const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
 
+      // 회수된 시도는 배송완료 소포가 아니다 — 배송완료 추적 기록이 남아 있어도 자격 목록에 없다
       await expect(service.createReturnRequest(graph.salesOrderId, graph.customerId, createDto(graph))).rejects.toThrow(
-        /recalled/,
+        `배송 완료된 소포가 아니거나 이 주문 라인의 것이 아닙니다: ${graph.attempts[0].id}/${graph.shipmentLine.id}`,
       );
     });
   });
@@ -432,6 +454,40 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
         .from(returnExchangeTables.returnRequestItems)
         .where(eq(returnExchangeTables.returnRequestItems.dispatchAttemptId, graph.attempts[0].id));
       expect(claims).toHaveLength(1);
+    } finally {
+      await cleanupCommittedGraph(graph);
+    }
+  });
+
+  it('concurrent return and exchange on one parcel succeed only once', async () => {
+    const graph = await db.transaction((tx) => seedDeliveredAttemptGraph(tx as unknown as DbTx));
+    try {
+      const service = new StoreReturnExchangeService(
+        { db } as never,
+        { refundByIntent: jest.fn() } as never,
+        makeCoreOrdersPublisher() as never,
+      );
+      // 반품과 교환은 «진행 중 요청» 확인이 서로 다르다 — 둘째를 막는 것은 그래프·라인 잠금 뒤에 읽는 같은 claimable 이다
+      const results = await Promise.allSettled([
+        service.createReturnRequest(graph.salesOrderId, graph.customerId, createDto(graph)),
+        service.createExchangeRequest(graph.salesOrderId, graph.customerId, createDto(graph)),
+      ]);
+
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      const rejected = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0].reason).toBeInstanceOf(BadRequestException);
+      const [returnItems, exchangeItems] = await Promise.all([
+        db
+          .select({ id: returnExchangeTables.returnRequestItems.id })
+          .from(returnExchangeTables.returnRequestItems)
+          .where(eq(returnExchangeTables.returnRequestItems.dispatchAttemptId, graph.attempts[0].id)),
+        db
+          .select({ id: returnExchangeTables.exchangeRequestItems.id })
+          .from(returnExchangeTables.exchangeRequestItems)
+          .where(eq(returnExchangeTables.exchangeRequestItems.dispatchAttemptId, graph.attempts[0].id)),
+      ]);
+      expect(returnItems.length + exchangeItems.length).toBe(1);
     } finally {
       await cleanupCommittedGraph(graph);
     }

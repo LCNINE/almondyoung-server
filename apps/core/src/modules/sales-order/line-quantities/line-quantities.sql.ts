@@ -1,5 +1,6 @@
 import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { type CancellationShipmentPhase, wmsTables } from '../../inventory/schema/inventory.schema';
+import { claimTotalsBySkuSql } from './claim-quantities.sql';
 
 /**
  * 판매 라인 수량의 단 하나의 정의 (K6 PR2a).
@@ -46,8 +47,46 @@ export function lineRemainingSql(lineQuantity: SQLWrapper, salesOrderLineId: SQL
 }
 
 /**
- * 판매 라인 × SKU(구성품) 층의 출고·배송 사실 (K6 PR2b). 행 = (sales_order_id uuid, sales_order_line_id uuid, sku_id uuid,
- * qty_per_unit int|null, required, shipped, forwarded, delivered, partner_completed, outstanding — 전부 int).
+ * 배송완료 소포의 단 하나의 정의 (K6 PR3a — 2b 의 SKU 층 배송완료 서브쿼리를 꺼냈다). 행 = (fulfillment_order_item_id,
+ * shipment_id, shipment_line_id, dispatch_attempt_id — uuid, delivered_at timestamptz, qty int).
+ * 행 = 범위 주문 FO 의 (출고 시도 × 상자 라인) 중 시도가 `dispatched` 이고 그 시도에 `delivered` 추적 행이 있는 것.
+ * qty = 그 시도가 그 상자 라인에서 낸 소스 수량의 합(위치가 여럿이면 소스 행이 여럿이다).
+ * delivered_at = 그 시도의 `delivered` 추적 timestamp 최댓값.
+ * 회수된 시도(`recalled`)는 추적 행이 남아 있어도 세지 않는다 — 회수가 shipped_qty 도 되돌렸다.
+ * SKU 층의 `delivered`(FOI 로 합한다)와 소포 자격(`parcelClaimEligibilitySql`)이 이것을 읽는다 — 배송완료를 두 벌로 쓰지 않게.
+ * FOI → 상자 라인 조인은 `idx_shipment_lines_fulfillment_order_item`(K6 PR3a 가 더했다, R15)을 탄다.
+ */
+export function deliveredParcelsSql(salesOrderScope: SQL): SQL {
+  const t = wmsTables;
+  return sql`
+    select delivered_sl.fulfillment_order_item_id,
+           delivered_sl.shipment_id,
+           delivered_sl.id as shipment_line_id,
+           delivered_da.id as dispatch_attempt_id,
+           delivered_track.delivered_at,
+           sum(delivered_das.qty)::int as qty
+      from ${t.fulfillmentOrders} as delivered_fo
+      join ${t.fulfillmentOrderItems} as delivered_foi on delivered_foi.fulfillment_order_id = delivered_fo.id
+      join ${t.shipmentLines} as delivered_sl on delivered_sl.fulfillment_order_item_id = delivered_foi.id
+      join ${t.dispatchAttemptSources} as delivered_das on delivered_das.shipment_line_id = delivered_sl.id
+      join ${t.dispatchAttempts} as delivered_da on delivered_da.id = delivered_das.dispatch_attempt_id
+      join lateral (
+        select max(delivered_st.timestamp) as delivered_at
+          from ${t.shipmentTracking} as delivered_st
+         where delivered_st.dispatch_attempt_id = delivered_da.id
+           and delivered_st.status = 'delivered'
+      ) as delivered_track on delivered_track.delivered_at is not null
+     where delivered_fo.sales_order_id in (${salesOrderScope})
+       and delivered_da.status = 'dispatched'
+     group by delivered_sl.fulfillment_order_item_id, delivered_sl.shipment_id, delivered_sl.id, delivered_da.id,
+              delivered_track.delivered_at
+  `;
+}
+
+/**
+ * 판매 라인 × SKU(구성품) 층의 출고·배송·청구 사실 (K6 PR2b, 청구는 PR3a). 행 = (sales_order_id uuid,
+ * sales_order_line_id uuid, sku_id uuid, qty_per_unit int|null, required, shipped, forwarded, delivered, partner_completed,
+ * outstanding, return_active, return_consumed, exchange_active, claimable — 전부 int).
  * `salesOrderScope` 는 판매주문 id 한 열을 내는 SELECT.
  *
  * 키 = 범위 주문의 (판매 라인, SKU) 중 FOI 가 있거나 굳은 구성(`sales_order_line_compositions`)에 있는 것.
@@ -65,8 +104,18 @@ export function lineRemainingSql(lineQuantity: SQLWrapper, salesOrderLineId: SQL
  *   outstanding       = qty − shipped_qty − canceled_qty
  *   forwarded         = 직배 FO 가 `forwarded` 면 outstanding — 파트너에게 넘겼을 뿐 출고가 아니다(넘긴 뒤에도 취소된다)
  *   partner_completed = 직배 FO 가 `completed` 면 shipped_qty — 배송완료가 아니다(표시용, 파트너는 배송 추적을 안 준다)
- *   delivered         = 그 FOI 의 상자 라인에서 `dispatched` 인 출고 시도의 소스 수량 중 그 시도에 `delivered` 추적이 있는 것.
- *                       회수된 시도(`recalled`)는 추적 행이 남아 있어도 세지 않는다 — 회수가 shipped_qty 도 되돌렸다
+ *   delivered         = 그 FOI 의 배송완료 소포 수량 합(`deliveredParcelsSql`)
+ *
+ * 청구 사실(K6 PR3a) — `claimTotalsBySkuSql` 을 (라인, SKU) 로 붙인다. 없으면 0:
+ *   (postgres 는 넓은 범위 소비자(진행 단계 SQL·관리자 카드)가 청구 칸을 안 고를 때만 청구 조인을 잘라낸다 — 넓은 범위에서
+ *    청구 칸을 고르면 행마다 청구 집계 스캔과 취소 서브플랜 값을 치른다.)
+ *   return_active     = 진행 중 반품 항목 수량
+ *   return_consumed   = 완료 반품 항목 수량
+ *   exchange_active   = 진행 중 교환 항목 수량
+ *   claimable         = delivered − return_consumed − return_active − exchange_active
+ *                       − 출고 뒤 취소(판매 단위) × qty_per_unit. 출고 뒤 취소로 돈을 돌려준 수량은 다시 청구할 수 없다(C9).
+ *                       구성 밖 SKU(qty_per_unit null)는 0 — 출고 뒤 취소를 SKU 로 환산할 수 없다(N4).
+ *                       GREATEST 로 덮지 않는다 — 회수가 배송완료를 되돌리면 음수가 그대로 보여야 한다.
  * FO 상태로 거르지 않는다 — FO 취소는 진행 단계 사다리가 따로 본다.
  * 인쇄 외주 라인은 FOI 가 없어 이 층에 없다(진행 단계 사다리가 `print_orders` 를 접는다).
  *
@@ -85,7 +134,17 @@ export function lineSkuQuantitiesSql(salesOrderScope: SQL): SQL {
            coalesce(item_fact.forwarded, 0)::int as forwarded,
            coalesce(item_fact.delivered, 0)::int as delivered,
            coalesce(item_fact.partner_completed, 0)::int as partner_completed,
-           coalesce(item_fact.outstanding, 0)::int as outstanding
+           coalesce(item_fact.outstanding, 0)::int as outstanding,
+           coalesce(claim.return_active, 0)::int as return_active,
+           coalesce(claim.return_consumed, 0)::int as return_consumed,
+           coalesce(claim.exchange_active, 0)::int as exchange_active,
+           (case when composition.qty_per_unit is null then 0
+                 else coalesce(item_fact.delivered, 0)
+                      - coalesce(claim.return_consumed, 0)
+                      - coalesce(claim.return_active, 0)
+                      - coalesce(claim.exchange_active, 0)
+                      - ${lineCanceledQuantitySql(sql`sku_key.sales_order_line_id`, 'after_shipment')} * composition.qty_per_unit
+            end)::int as claimable
       from (
         select key_line.sales_order_id, key_line.id as sales_order_line_id, key_item.sku_id
           from ${t.fulfillmentOrders} as key_fo
@@ -126,27 +185,19 @@ export function lineSkuQuantitiesSql(salesOrderScope: SQL): SQL {
            and line.sales_order_id = fo.sales_order_id
           left join (
             -- 배송완료 수량은 범위의 FOI 전부를 한 번에 묶어 센 뒤 FOI id 로 되붙인다 — FOI 마다 상관 서브쿼리로 세면
-            -- shipment_lines(fulfillment_order_item_id) 인덱스가 없어 FOI 수 × 출고 시도 소스 수로 자란다(R15)
-            select delivered_sl.fulfillment_order_item_id, sum(delivered_das.qty)::int as qty
-              from ${t.fulfillmentOrders} as delivered_fo
-              join ${t.fulfillmentOrderItems} as delivered_foi on delivered_foi.fulfillment_order_id = delivered_fo.id
-              join ${t.shipmentLines} as delivered_sl on delivered_sl.fulfillment_order_item_id = delivered_foi.id
-              join ${t.dispatchAttemptSources} as delivered_das on delivered_das.shipment_line_id = delivered_sl.id
-              join ${t.dispatchAttempts} as delivered_da on delivered_da.id = delivered_das.dispatch_attempt_id
-             where delivered_fo.sales_order_id in (${salesOrderScope})
-               and delivered_da.status = 'dispatched'
-               and exists (
-                 select 1
-                   from ${t.shipmentTracking} as delivered_st
-                  where delivered_st.dispatch_attempt_id = delivered_da.id
-                    and delivered_st.status = 'delivered'
-               )
-             group by delivered_sl.fulfillment_order_item_id
+            -- FOI 수만큼 배송완료 소포 조회를 다시 돈다(R15). FOI → 상자 라인 조인은 K6 PR3a 가 더한
+            -- idx_shipment_lines_fulfillment_order_item 을 탄다
+            select delivered_parcel.fulfillment_order_item_id, sum(delivered_parcel.qty)::int as qty
+              from (${deliveredParcelsSql(salesOrderScope)}) as delivered_parcel
+             group by delivered_parcel.fulfillment_order_item_id
           ) as item_delivered on item_delivered.fulfillment_order_item_id = foi.id
          where fo.sales_order_id in (${salesOrderScope})
          group by foi.sales_order_line_id, foi.sku_id
       ) as item_fact
         on item_fact.sales_order_line_id = sku_key.sales_order_line_id::text
        and item_fact.sku_id = sku_key.sku_id
+      left join (${claimTotalsBySkuSql(salesOrderScope)}) as claim
+        on claim.sales_order_line_id = sku_key.sales_order_line_id
+       and claim.sku_id = sku_key.sku_id
   `;
 }

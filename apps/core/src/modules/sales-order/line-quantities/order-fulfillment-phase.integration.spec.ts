@@ -17,6 +17,7 @@ import type { StoreFulfillmentStatus } from '../dto/store-order-actions.dto';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { StoreSalesOrdersService } from '../services/store-sales-orders.service';
 import { PrintOrderReader } from '../../print-order/services/print-order.reader';
+import { seedClaim, seedComponentSku, seedDeliveredLine } from './__support__/claim-facts.fixtures';
 import { recallParcel, seedDispatchedParcel } from './__support__/shipment-facts.fixtures';
 import { type OrderShipmentPhase, orderFulfillmentPhaseSql } from './order-fulfillment-phase.sql';
 import { readOrderFulfillmentPhases } from './order-fulfillment-phase.reader';
@@ -580,6 +581,126 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
         .catch((e: unknown) => e);
       expect(refusal).toBeInstanceOf(BadRequestException);
       expect((refusal as Error).message).toBe('이미 출고된 주문은 취소할 수 없습니다. 고객센터로 문의해 주세요.');
+    });
+  });
+  describe('고객 actions 의 반품·교환 버튼 (K6 PR3a, C8)', () => {
+    function storeService(tx: DbTx): StoreSalesOrdersService {
+      return new StoreSalesOrdersService(
+        { db: tx } as never,
+        {} as never,
+        {} as never,
+        { settlementFactsFor: () => Promise.resolve([]) } as never,
+        new PrintOrderReader({ run: <T>(fn: (trx: DbTx) => Promise<T>) => fn(tx) } as never),
+        {} as never,
+      );
+    }
+
+    it('delivered parcel opens return and exchange', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await f.seedWorld(tx);
+        const customerId = randomUUID();
+        const sku = await seedComponentSku(tx, w);
+        const line = await seedDeliveredLine(tx, w, {
+          quantity: 1,
+          composition: [{ skuId: sku, qtyPerUnit: 1 }],
+          parcels: [{ qtyBySku: { [sku]: 1 } }],
+          customerId,
+        });
+        const actions = await storeService(tx).getActions(line.salesOrderId, customerId);
+        expect(actions.availableActions).toEqual(expect.arrayContaining(['return', 'exchange']));
+      });
+    });
+
+    it('completed drop-ship does not open claims', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await f.seedWorld(tx);
+        const customerId = randomUUID();
+        const o = await f.seedOrder(tx, { status: 'pending' });
+        await tx.update(wmsTables.salesOrders).set({ customerId }).where(eq(wmsTables.salesOrders.id, o.salesOrderId));
+        await seedCompletedDropShip(tx, w, o);
+        await markCellmateShipped(tx, o);
+        const actions = await storeService(tx).getActions(o.salesOrderId, customerId);
+        expect(actions.availableActions).not.toContain('return');
+        expect(actions.availableActions).not.toContain('exchange');
+      });
+    });
+
+    it('fully claimed parcel does not open claims', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await f.seedWorld(tx);
+        const customerId = randomUUID();
+        const sku = await seedComponentSku(tx, w);
+        const line = await seedDeliveredLine(tx, w, {
+          quantity: 1,
+          composition: [{ skuId: sku, qtyPerUnit: 1 }],
+          parcels: [{ qtyBySku: { [sku]: 1 } }],
+          customerId,
+        });
+        await seedClaim(tx, {
+          kind: 'return',
+          salesOrderId: line.salesOrderId,
+          status: 'completed',
+          items: [
+            {
+              salesOrderLineId: line.lineId,
+              shipmentLineId: line.parcels[0].shipmentLineIdBySku.get(sku) ?? null,
+              dispatchAttemptId: line.parcels[0].dispatchAttemptId,
+              quantity: 1,
+            },
+          ],
+        });
+        const actions = await storeService(tx).getActions(line.salesOrderId, customerId);
+        expect(actions.availableActions).not.toContain('return');
+        expect(actions.availableActions).not.toContain('exchange');
+      });
+    });
+
+    it('delivered parcel with an active return shows return_requested', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await f.seedWorld(tx);
+        const customerId = randomUUID();
+        const sku = await seedComponentSku(tx, w);
+        const line = await seedDeliveredLine(tx, w, {
+          quantity: 1,
+          composition: [{ skuId: sku, qtyPerUnit: 1 }],
+          parcels: [{ qtyBySku: { [sku]: 1 } }],
+          customerId,
+        });
+        await seedClaim(tx, {
+          kind: 'return',
+          salesOrderId: line.salesOrderId,
+          status: 'requested',
+          items: [
+            {
+              salesOrderLineId: line.lineId,
+              shipmentLineId: line.parcels[0].shipmentLineIdBySku.get(sku) ?? null,
+              dispatchAttemptId: line.parcels[0].dispatchAttemptId,
+              quantity: 1,
+            },
+          ],
+        });
+        const actions = await storeService(tx).getActions(line.salesOrderId, customerId);
+        expect(actions.claimStatus).toBe('return_requested');
+        expect(actions.availableActions).not.toContain('return');
+        expect(actions.availableActions).not.toContain('exchange');
+      });
+    });
+
+    it('delivered parcel with print still preparing opens claims', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await f.seedWorld(tx);
+        const customerId = randomUUID();
+        const sku = await seedComponentSku(tx, w);
+        const line = await seedDeliveredLine(tx, w, {
+          quantity: 1,
+          composition: [{ skuId: sku, qtyPerUnit: 1 }],
+          parcels: [{ qtyBySku: { [sku]: 1 } }],
+          customerId,
+        });
+        await seedPrint(tx, { salesOrderId: line.salesOrderId, lineId: line.lineId }, 'submitted');
+        const actions = await storeService(tx).getActions(line.salesOrderId, customerId);
+        expect(actions.availableActions).toEqual(expect.arrayContaining(['return', 'exchange']));
+      });
     });
   });
 });

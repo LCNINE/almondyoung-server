@@ -1,0 +1,1 @@
+CREATE INDEX "idx_shipment_lines_fulfillment_order_item" ON "shipment_lines" USING btree ("fulfillment_order_item_id");
