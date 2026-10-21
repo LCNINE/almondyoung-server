@@ -15,6 +15,14 @@ export type LineSkuQuantities = {
   /** 직배 파트너가 완료한 수량 — 배송완료가 아니다(표시용). */
   partnerCompleted: number;
   outstanding: number;
+  /** 진행 중 반품 항목 수량(SKU 단위). */
+  returnActive: number;
+  /** 완료 반품 항목 수량 — 돌아온 물건. */
+  returnConsumed: number;
+  /** 진행 중 교환 항목 수량. 완료 교환은 세지 않는다. */
+  exchangeActive: number;
+  /** 더 반품·교환할 수 있는 SKU 수량. 음수일 수 있다(회수가 배송완료를 되돌린 경우) — 표시는 소비자가 클램프한다. */
+  claimable: number;
 };
 
 export type LineQuantities = {
@@ -45,10 +53,14 @@ type LineSkuRow = {
   delivered: number;
   partner_completed: number;
   outstanding: number;
+  return_active: number;
+  return_consumed: number;
+  exchange_active: number;
+  claimable: number;
 };
 
 /**
- * 판매주문의 라인별 수량을 읽는 문 (K6 PR2a, SKU 층은 PR2b). 호출자 트랜잭션에서 읽는다(ADR-0025).
+ * 판매주문의 라인별 수량을 읽는 문 (K6 PR2a, SKU 층은 PR2b, 청구 사실은 PR3a). 호출자 트랜잭션에서 읽는다(ADR-0025).
  * 그 주문의 모든 판매 라인이 키로 있다 — 취소가 없는 라인도 0 으로 나온다(빠지면 소비자의 `?? 0` 이 오류를 숨긴다).
  * 칼럼은 전부 `line-quantities.sql.ts` 의 조각에서 select 한다 — 여기서 산술하지 않는다.
  * SKU 층은 조각을 주문 범위로 한 번 select 해 라인별로 묶는다(묶기는 산술이 아니다).
@@ -86,6 +98,10 @@ export async function readLineQuantities(trx: DbTx, salesOrderId: string): Promi
         delivered: row.delivered,
         partnerCompleted: row.partner_completed,
         outstanding: row.outstanding,
+        returnActive: row.return_active,
+        returnConsumed: row.return_consumed,
+        exchangeActive: row.exchange_active,
+        claimable: row.claimable,
       },
     ]);
   }

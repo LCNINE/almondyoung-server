@@ -18,6 +18,10 @@ function line(skus: Array<Pick<LineSkuQuantities, 'skuId' | 'qtyPerUnit' | 'outs
       forwarded: 0,
       delivered: 0,
       partnerCompleted: 0,
+      returnActive: 0,
+      returnConsumed: 0,
+      exchangeActive: 0,
+      claimable: 0,
     })),
   };
 }

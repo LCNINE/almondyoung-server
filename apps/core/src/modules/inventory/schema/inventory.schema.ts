@@ -5165,6 +5165,9 @@ export const exchangeRequestItems = pgTable(
       .references(() => exchangeRequests.id, { onDelete: 'cascade' })
       .notNull(),
     salesOrderLineId: uuid('sales_order_line_id').notNull(),
+    // 반품 항목과 같은 모양 — 교환 수량도 (SKU, 소포) 단위다(K6 PR3a C3). 옛 행은 null 이고 커널이 세지 않는다(N1).
+    shipmentLineId: uuid('shipment_line_id').references(() => shipmentLines.id, { onDelete: 'restrict' }),
+    dispatchAttemptId: uuid('dispatch_attempt_id').references(() => dispatchAttempts.id, { onDelete: 'restrict' }),
     quantity: integer('quantity').notNull(),
     desiredVariantId: varchar('desired_variant_id', { length: 255 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -5172,6 +5175,10 @@ export const exchangeRequestItems = pgTable(
   (t) => ({
     idxExchangeRequestItemsRequest: index('idx_exchange_request_items_request').on(t.exchangeRequestId),
     idxExchangeRequestItemsOrderLine: index('idx_exchange_request_items_order_line').on(t.salesOrderLineId),
+    idxExchangeRequestItemsShipmentLine: index('idx_exchange_request_items_shipment_line').on(t.shipmentLineId),
+    idxExchangeRequestItemsDispatchAttempt: index('idx_exchange_request_items_dispatch_attempt').on(
+      t.dispatchAttemptId,
+    ),
   }),
 );
 

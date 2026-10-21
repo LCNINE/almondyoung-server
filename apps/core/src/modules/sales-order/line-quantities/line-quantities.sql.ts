@@ -1,5 +1,6 @@
 import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { type CancellationShipmentPhase, wmsTables } from '../../inventory/schema/inventory.schema';
+import { claimTotalsBySkuSql } from './claim-quantities.sql';
 
 /**
  * 판매 라인 수량의 단 하나의 정의 (K6 PR2a).
@@ -46,8 +47,9 @@ export function lineRemainingSql(lineQuantity: SQLWrapper, salesOrderLineId: SQL
 }
 
 /**
- * 판매 라인 × SKU(구성품) 층의 출고·배송 사실 (K6 PR2b). 행 = (sales_order_id uuid, sales_order_line_id uuid, sku_id uuid,
- * qty_per_unit int|null, required, shipped, forwarded, delivered, partner_completed, outstanding — 전부 int).
+ * 판매 라인 × SKU(구성품) 층의 출고·배송·청구 사실 (K6 PR2b, 청구는 PR3a). 행 = (sales_order_id uuid,
+ * sales_order_line_id uuid, sku_id uuid, qty_per_unit int|null, required, shipped, forwarded, delivered, partner_completed,
+ * outstanding, return_active, return_consumed, exchange_active, claimable — 전부 int).
  * `salesOrderScope` 는 판매주문 id 한 열을 내는 SELECT.
  *
  * 키 = 범위 주문의 (판매 라인, SKU) 중 FOI 가 있거나 굳은 구성(`sales_order_line_compositions`)에 있는 것.
@@ -67,6 +69,15 @@ export function lineRemainingSql(lineQuantity: SQLWrapper, salesOrderLineId: SQL
  *   partner_completed = 직배 FO 가 `completed` 면 shipped_qty — 배송완료가 아니다(표시용, 파트너는 배송 추적을 안 준다)
  *   delivered         = 그 FOI 의 상자 라인에서 `dispatched` 인 출고 시도의 소스 수량 중 그 시도에 `delivered` 추적이 있는 것.
  *                       회수된 시도(`recalled`)는 추적 행이 남아 있어도 세지 않는다 — 회수가 shipped_qty 도 되돌렸다
+ *
+ * 청구 사실(K6 PR3a) — `claimTotalsBySkuSql` 을 (라인, SKU) 로 붙인다. 없으면 0:
+ *   return_active     = 진행 중 반품 항목 수량
+ *   return_consumed   = 완료 반품 항목 수량
+ *   exchange_active   = 진행 중 교환 항목 수량
+ *   claimable         = delivered − return_consumed − return_active − exchange_active
+ *                       − 출고 뒤 취소(판매 단위) × qty_per_unit. 출고 뒤 취소로 돈을 돌려준 수량은 다시 청구할 수 없다(C9).
+ *                       구성 밖 SKU(qty_per_unit null)는 0 — 출고 뒤 취소를 SKU 로 환산할 수 없다(N4).
+ *                       GREATEST 로 덮지 않는다 — 회수가 배송완료를 되돌리면 음수가 그대로 보여야 한다.
  * FO 상태로 거르지 않는다 — FO 취소는 진행 단계 사다리가 따로 본다.
  * 인쇄 외주 라인은 FOI 가 없어 이 층에 없다(진행 단계 사다리가 `print_orders` 를 접는다).
  *
@@ -85,7 +96,17 @@ export function lineSkuQuantitiesSql(salesOrderScope: SQL): SQL {
            coalesce(item_fact.forwarded, 0)::int as forwarded,
            coalesce(item_fact.delivered, 0)::int as delivered,
            coalesce(item_fact.partner_completed, 0)::int as partner_completed,
-           coalesce(item_fact.outstanding, 0)::int as outstanding
+           coalesce(item_fact.outstanding, 0)::int as outstanding,
+           coalesce(claim.return_active, 0)::int as return_active,
+           coalesce(claim.return_consumed, 0)::int as return_consumed,
+           coalesce(claim.exchange_active, 0)::int as exchange_active,
+           (case when composition.qty_per_unit is null then 0
+                 else coalesce(item_fact.delivered, 0)
+                      - coalesce(claim.return_consumed, 0)
+                      - coalesce(claim.return_active, 0)
+                      - coalesce(claim.exchange_active, 0)
+                      - ${lineCanceledQuantitySql(sql`sku_key.sales_order_line_id`, 'after_shipment')} * composition.qty_per_unit
+            end)::int as claimable
       from (
         select key_line.sales_order_id, key_line.id as sales_order_line_id, key_item.sku_id
           from ${t.fulfillmentOrders} as key_fo
@@ -148,5 +169,8 @@ export function lineSkuQuantitiesSql(salesOrderScope: SQL): SQL {
       ) as item_fact
         on item_fact.sales_order_line_id = sku_key.sales_order_line_id::text
        and item_fact.sku_id = sku_key.sku_id
+      left join (${claimTotalsBySkuSql(salesOrderScope)}) as claim
+        on claim.sales_order_line_id = sku_key.sales_order_line_id
+       and claim.sku_id = sku_key.sku_id
   `;
 }
