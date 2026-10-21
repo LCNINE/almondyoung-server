@@ -784,6 +784,104 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: 'eq(reactions.userId, userId),',
     note: '존재확인/삭제/삽입 모두 reactions.userId를 토큰 userId로 스코프. ToggleReactionDto에 userId 필드 없음(바디로 덮어쓸 수 없음).',
   },
+  'user-service GET /attendance/me': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/attendance/controllers/attendance.controller.ts:64',
+    predicate:
+      'async (tx) => (await this.repo.findOpen(tx, user.id)) ?? (await this.repo.findDay(tx, user.id, today)),',
+    note: '본인 세션·설정·휴가만 토큰 user.id 로 읽는다. 관리자 표시(isMaster)는 판정 지점이 정한다.',
+  },
+  'user-service POST /attendance/punch': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/attendance/controllers/attendance.controller.ts:93',
+    predicate: 'return this.service.punch(user.id, dto);',
+    note: '사람을 고르는 값은 토큰의 user.id 뿐이다(DTO 에 userId 필드 없음).',
+  },
+  'user-service GET /attendance/records': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/attendance/controllers/attendance.controller.ts:104',
+    predicate: 'userId !== user.id &&',
+    note: '쿼리 userId 가 본인이 아니면 판정 지점 attendance.staff_records(직원 근태 조회)를 통과해야 한다 — 못 하면 403.',
+  },
+  'user-service GET /attendance/calendar': {
+    verdict: 'N/A',
+    evidence: 'apps/user-service/src/api/attendance/controllers/attendance.controller.ts:120',
+    predicate: '',
+    note: '호출자가 대상 사람을 고르지 않는 직원 공용 목록 — 근태 직원 전원에게 다른 직원의 이름·휴가 일정을 같은 내용으로 보여 주는 설계(공유 달력 통합 테스트가 타인 일정 반환을 기대). 내 근태 권한을 주면 이 공유 조회도 함께 열린다.',
+  },
+  'user-service GET /attendance/overview': {
+    verdict: 'N/A',
+    evidence: 'apps/user-service/src/api/attendance/controllers/attendance.controller.ts:154',
+    predicate: '',
+    note: '호출자가 대상 사람을 고르지 않는 직원 공용 목록 — 근태 직원 전원에게 직원별 이름·근무 상태·휴가 시간을 같은 내용으로 보여 주는 설계. 내 근태 권한을 주면 이 공유 조회도 함께 열린다.',
+  },
+  'user-service PUT /attendance/settings': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/attendance/controllers/attendance.controller.ts:175',
+    predicate: '.values({ userId: user.id, settings: dto })',
+    note: '사람을 고르는 값은 토큰의 user.id 뿐이다(DTO 에 userId 필드 없음).',
+  },
+  'user-service GET /attendance/worksites': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/attendance/controllers/attendance.controller.ts:189',
+    predicate: 'this.checkpoints.compare(',
+    note: '근무지는 개인 소유가 아니다. 쉬는 근무지는 판정 지점 attendance.worksite_inactive 를 통과할 때만 보인다.',
+  },
+  'user-service GET /attendance/recommendations': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/attendance/services/attendance-calendar.service.ts:66',
+    predicate: 'eq(attendanceLeaves.userId, userId),',
+    note: '사람을 고르는 값은 토큰의 user.id 뿐이다(DTO 에 userId 필드 없음).',
+  },
+  'user-service POST /attendance/leaves': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/attendance/services/attendance-calendar.service.ts:150',
+    predicate: '.where(and(eq(attendanceLeaves.userId, userId), isNull(attendanceLeaves.deletedAt)));',
+    note: '사람을 고르는 값은 토큰의 user.id 뿐이다(DTO 에 userId 필드 없음).',
+  },
+  'user-service DELETE /attendance/leaves/:id': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/attendance/services/attendance-calendar.service.ts:206',
+    predicate: 'assertLeaveOwner(row.userId, userId);',
+    note: 'path 의 :id 행을 읽은 뒤 소유자가 토큰 userId 가 아니면 거부한다.',
+  },
+  'user-service PUT /attendance/leaves/:id': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/attendance/services/attendance-calendar.service.ts:231',
+    predicate: 'assertLeaveOwner(row.userId, userId);',
+    note: 'path 의 :id 행을 읽은 뒤 소유자가 토큰 userId 가 아니면 거부한다.',
+  },
+  'user-service GET /attendance/requests': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/attendance/services/attendance-request.manager.ts:88',
+    predicate: '.where(master ? undefined : eq(attendanceRequests.userId, userId))',
+    note: '이 라우트는 master=false 로 부른다(전체 목록은 /attendance/review, 검토 권한).',
+  },
+  'user-service GET /attendance/requests/:id/history': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/attendance/services/attendance-request.manager.ts:101',
+    predicate:
+      '.where(and(eq(attendanceRequests.id, id), canReadStaff ? undefined : eq(attendanceRequests.userId, userId)));',
+    note: '직원 근태 조회 판정 지점을 통과하지 못하면 id AND 토큰 userId 로 좁힌다 — 남의 요청은 404.',
+  },
+  'user-service POST /attendance/requests': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/attendance/services/attendance-request.manager.ts:232',
+    predicate: '.values({ ...input, userId, sessionId: session?.id ?? null, targetVersion: session?.version ?? null })',
+    note: '생성 라우트. 사람을 고르는 값은 토큰의 user.id 뿐이다(DTO 에 userId 필드 없음).',
+  },
+  'user-service POST /attendance/requests/:id/cancel': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/attendance/services/attendance-request.manager.ts:143',
+    predicate: '.where(and(eq(attendanceRequests.id, id), eq(attendanceRequests.userId, userId)))',
+    note: 'id AND 토큰 userId — 남의 요청은 404.',
+  },
+  'user-service POST /attendance/requests/:id/resubmit': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/attendance/services/attendance-request.manager.ts:358',
+    predicate: '.where(and(eq(attendanceRequests.id, id), eq(attendanceRequests.userId, userId)))',
+    note: 'id AND 토큰 userId — 남의 요청은 404.',
+  },
   'user-service GET /attendance/wage/me': {
     verdict: 'SAFE',
     evidence: 'apps/user-service/src/api/attendance/wage/wage.repository.ts:126',
@@ -990,15 +1088,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(158);
+    expect(targets).toHaveLength(174);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(158);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(157);
+    expect(new Set(targets.map(keyOf)).size).toBe(174);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(173);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

@@ -130,8 +130,6 @@ export const ROLE_LITERAL_BASELINE: Readonly<Record<string, { count: number; kin
   'apps/user-service/src/api/admin/shop/shop.controller.ts': { count: 1, kind: 'legacy-route-guard' },
   'apps/user-service/src/api/admin/users/users.controller.ts': { count: 6, kind: 'legacy-route-guard' },
   'apps/user-service/src/api/attendance/attendance-authz.ts': { count: 1, kind: 'legacy-checkpoint' },
-  'apps/user-service/src/api/attendance/controllers/attendance-requests.controller.ts': { count: 2, kind: 'legacy-route-guard' },
-  'apps/user-service/src/api/attendance/controllers/attendance.controller.ts': { count: 2, kind: 'legacy-route-guard' },
   'apps/user-service/src/api/consents/consents.controller.ts': { count: 3, kind: 'legacy-route-guard' },
   'apps/user-service/src/api/events/event-trace.controller.ts': { count: 2, kind: 'legacy-route-guard' },
   'apps/user-service/src/api/iam/assignments/role-assignment.controller.ts': { count: 6, kind: 'legacy-route-guard' },

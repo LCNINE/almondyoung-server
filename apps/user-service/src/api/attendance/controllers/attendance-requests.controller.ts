@@ -1,10 +1,4 @@
-import {
-  type JwtPayload,
-  MasterRoleGuard,
-  PermissionCheckpoints,
-  RequirePermission,
-  RolesGuard,
-} from '@app/authorization';
+import { type JwtPayload, MasterRoleGuard, PermissionCheckpoints, RequirePermission } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
 import { ActiveAttendanceStaffGuard } from '../guards/active-attendance-staff.guard';
@@ -13,7 +7,7 @@ import { CancelRequestDto, CreateRequestDto, DecisionDto } from '../dto/attendan
 import { legacyAttendanceManager } from '../attendance-authz';
 
 @Controller('attendance')
-@UseGuards(RolesGuard('admin', 'master'), ActiveAttendanceStaffGuard)
+@UseGuards(ActiveAttendanceStaffGuard)
 export class AttendanceRequestsController {
   constructor(
     private readonly manager: AttendanceRequestManager,
