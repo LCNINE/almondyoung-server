@@ -7,10 +7,12 @@ jest.mock(
 );
 
 import { randomUUID } from 'crypto';
+import { eq } from 'drizzle-orm';
 import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import * as f from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
+import { seedDispatchedParcel } from '../line-quantities/__support__/shipment-facts.fixtures';
 import { SalesOrdersService } from './sales-orders.service';
 
 /**
@@ -175,78 +177,106 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
     expect(delta.partialOutbound).toBe(0);
   });
 
-  it('부분 출고는 그중 다른 상자가 이미 움직인 주문이다', async () => {
-    const delta = await withFixtures(async ({ trx, order }) => {
+  /** 14일 안 confirmed 주문 하나 + FO(수량 qty) 하나. 상자는 호출자가 만든다 */
+  async function splitOrder(
+    trx: DbTx,
+    w: f.World,
+    args: { qty: number; dropShip?: 'forwarded' | 'completed'; status?: 'confirmed' | 'shipped'; daysAgo?: number },
+  ) {
+    const o = await f.seedOrder(trx, {
+      status: args.status ?? 'confirmed',
+      createdAt: kstDaysAgoNoon(args.daysAgo ?? 1),
+      quantity: args.qty,
+    });
+    const fo = await f.seedFo(trx, w, o, { status: 'processing', qty: args.qty, dropShip: args.dropShip });
+    return { ...o, ...fo };
+  }
+
+  it('나눠 보낸 주문은 부분출고다 — 한 상자만 발송되고 남은 상자는 피킹 단계', async () => {
+    const delta = await withFixtures(async ({ trx }) => {
       const w = await f.seedWorld(trx);
-
-      // «예약» 단계 주문마다 미예약 draft 상자 하나 + 다른 상자 하나를 둔다
-      const reserveOrderWith = async (
-        otherBox: 'shipped' | 'in_transit' | 'failed' | 'delivered' | 'draft' | 'canceled' | null,
-      ) => {
-        const id = await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(1) });
-        const fo = await f.seedFo(trx, w, { salesOrderId: id, lineId: await lineOf(trx, id) }, { status: 'created' });
-        await f.seedBox(trx, w, [fo.foItemId], { status: 'draft' });
-        if (otherBox) await f.seedBox(trx, w, [fo.foItemId], { status: otherBox });
-        await progress(trx, id, { stage: 'reserve' });
-        return { id, fo };
-      };
-
-      // 움직인 상자 넷은 각각 부분 출고다
-      await reserveOrderWith('shipped');
-      await reserveOrderWith('in_transit');
-      await reserveOrderWith('failed');
-      await reserveOrderWith('delivered');
-      // 움직이지 않았거나(draft·canceled) 상자가 하나뿐이면 아니다
-      await reserveOrderWith('draft');
-      await reserveOrderWith('canceled');
-      await reserveOrderWith(null);
-
-      // «예약» 이 아닌 단계의 주문은 상자가 움직였어도 센 쪽에 들지 않는다
-      const planId = await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(1) });
-      const planFo = await f.seedFo(
-        trx,
-        w,
-        { salesOrderId: planId, lineId: await lineOf(trx, planId) },
-        { status: 'processing' },
-      );
-      await f.seedBox(trx, w, [planFo.foItemId], { status: 'shipped' });
-      await progress(trx, planId, { stage: 'plan' });
+      const o = await splitOrder(trx, w, { qty: 3 });
+      const sent = await f.seedBox(trx, w, [o.foItemId], { status: 'planned', qty: [1] });
+      await f.seedBox(trx, w, [o.foItemId], { status: 'planned', qty: [2] });
+      await seedDispatchedParcel(trx, w, {
+        shipmentId: sent.shipmentId,
+        lines: [{ shipmentLineId: sent.lineIds[0], foItemId: o.foItemId, qty: 1 }],
+      });
     });
 
-    expect(delta.cannotShip).toBe(7);
-    expect(delta.partialOutbound).toBe(4);
-  });
-
-  it('상자가 둘 이상 움직였어도 주문 하나로 센다', async () => {
-    const delta = await withFixtures(async ({ trx, order }) => {
-      const w = await f.seedWorld(trx);
-      const id = await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(1) });
-      const fo = await f.seedFo(trx, w, { salesOrderId: id, lineId: await lineOf(trx, id) }, { status: 'created' });
-      await f.seedBox(trx, w, [fo.foItemId], { status: 'draft' });
-      await f.seedBox(trx, w, [fo.foItemId], { status: 'shipped' });
-      await f.seedBox(trx, w, [fo.foItemId], { status: 'delivered' });
-      await progress(trx, id, { stage: 'reserve' });
-    });
-
-    expect(delta.cannotShip).toBe(1);
     expect(delta.partialOutbound).toBe(1);
+    expect(delta.outboundComplete).toBe(0);
   });
 
-  it('출고완료는 FO 의 출고 증거로 판정한다 — status 든 shippedAt 이든 하나면 된다', async () => {
+  it('전량 발송된 주문은 출고완료다', async () => {
+    const delta = await withFixtures(async ({ trx }) => {
+      const w = await f.seedWorld(trx);
+      const o = await splitOrder(trx, w, { qty: 3 });
+      const box = await f.seedBox(trx, w, [o.foItemId], { status: 'planned', qty: [3] });
+      await seedDispatchedParcel(trx, w, {
+        shipmentId: box.shipmentId,
+        lines: [{ shipmentLineId: box.lineIds[0], foItemId: o.foItemId, qty: 3 }],
+      });
+    });
+
+    expect(delta.outboundComplete).toBe(1);
+    expect(delta.partialOutbound).toBe(0);
+  });
+
+  it('상자가 둘 움직여도 주문 하나로 센다', async () => {
+    const delta = await withFixtures(async ({ trx }) => {
+      const w = await f.seedWorld(trx);
+      const o = await splitOrder(trx, w, { qty: 3 });
+      const one = await f.seedBox(trx, w, [o.foItemId], { status: 'planned', qty: [1] });
+      const two = await f.seedBox(trx, w, [o.foItemId], { status: 'planned', qty: [1] });
+      await f.seedBox(trx, w, [o.foItemId], { status: 'planned', qty: [1] });
+      for (const box of [one, two]) {
+        await seedDispatchedParcel(trx, w, {
+          shipmentId: box.shipmentId,
+          lines: [{ shipmentLineId: box.lineIds[0], foItemId: o.foItemId, qty: 1 }],
+        });
+      }
+    });
+
+    expect(delta.partialOutbound).toBe(1);
+    expect(delta.outboundComplete).toBe(0);
+  });
+
+  it('넘기기만 한 직배는 어느 쪽도 아니다', async () => {
+    const delta = await withFixtures(async ({ trx }) => {
+      const w = await f.seedWorld(trx);
+      await splitOrder(trx, w, { qty: 2, dropShip: 'forwarded' });
+    });
+
+    expect(delta.partialOutbound).toBe(0);
+    expect(delta.outboundComplete).toBe(0);
+  });
+
+  it('셀메이트로 나간 주문(SO shipped)은 모집단 밖이다', async () => {
+    const delta = await withFixtures(async ({ trx }) => {
+      const w = await f.seedWorld(trx);
+      const o = await splitOrder(trx, w, { qty: 2, status: 'shipped' });
+      await trx
+        .update(wmsTables.fulfillmentOrderItems)
+        .set({ shippedQty: 2 })
+        .where(eq(wmsTables.fulfillmentOrderItems.id, o.foItemId));
+    });
+
+    expect(delta.partialOutbound).toBe(0);
+    expect(delta.outboundComplete).toBe(0);
+  });
+
+  it('FO 의 shipped_at·status 만으로는 출고완료가 아니다 — 나간 수량이 없다', async () => {
     const delta = await withFixtures(async ({ order }) => {
       await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(1), fo: { status: 'shipped' } });
-      await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(2), fo: { status: 'completed' } });
-      // status 는 아직 created 지만 출고 시각이 찍혔다
       await order({
         status: 'confirmed',
         orderDate: kstDaysAgoNoon(3),
         fo: { status: 'created', shippedAt: kstDaysAgoNoon(3) },
       });
-      // 출고 증거 없음
-      await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(4), fo: { status: 'created' } });
     });
 
-    expect(delta.outboundComplete).toBe(3);
+    expect(delta.outboundComplete).toBe(0);
   });
 
   it('오늘 주문·출고 요청·직송·매칭 대기를 각각 센다', async () => {

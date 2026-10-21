@@ -23,7 +23,6 @@ import {
   count,
   sql,
   ilike,
-  isNotNull,
   isNull,
   exists,
   notExists,
@@ -36,6 +35,7 @@ import { lineMatchingBadgeResolvedSql } from '../../product-matching/line-compos
 import { isDigitalFulfillmentLine, isOutsourcedLine } from '../../product-matching/line-composition/line-composition';
 import { selectFrozenCompositions } from '../../product-matching/line-composition/frozen-compositions';
 import { physicalCancellationByItem } from './v2-cancellation-units';
+import { lineSkuQuantitiesSql } from '../line-quantities/line-quantities.sql';
 import { LineQuantities, readLineQuantities } from '../line-quantities/line-quantities.reader';
 import { cancellableSalesUnits } from '../line-quantities/line-sales-units';
 import type { OrderProgressStage } from '../../fulfillment/order-progress/order-progress.thresholds';
@@ -1218,7 +1218,7 @@ export class SalesOrdersService {
 
     // 칩 하나에 숫자 하나씩이라 행을 실어 오지 않고 DB 에서 세서 받는다. 서로 의존하지 않는
     // 질문들이라 순차로 기다릴 이유도 없다 — 관리자 메인과 통계 종합 탭이 같이 부르는 경로다.
-    const [todayResult, statusCounts, [waitingMatchRow], [shipBlockRow], [directShipRow], [outboundCompleteRow]] =
+    const [todayResult, statusCounts, [waitingMatchRow], [shipBlockRow], [directShipRow], outboundRows] =
       await Promise.all([
         db
           .select({ cnt: count() })
@@ -1248,7 +1248,6 @@ export class SalesOrdersService {
             ),
           ),
 
-        // 출고 불가와 그중 일부 출고는 같은 주문 집합을 두 번 묻는 질문이라 한 번에 센다.
         this.shipBlockCounts(),
 
         db
@@ -1263,29 +1262,30 @@ export class SalesOrdersService {
           )
           .where(eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship')),
 
-        // 출고완료: confirmed SO 중 FO 가 출고 증거를 가진 건수. SO.status 는 processing/shipped/
-        // delivered 로 전이하지 않으므로(작업 15, ADR-0017) FO(status + shippedAt)에서 도출한다.
-        // 표시 레이어의 `hasShippedEvidence`(store-sales-orders)와 동일한 출고 증거 정의.
-        // distinct so.id — 미래 SO:다중 FO 이중계산 방지
-        db
-          .select({ cnt: sql<number>`count(distinct ${wmsTables.salesOrders.id})::int` })
-          .from(wmsTables.salesOrders)
-          .innerJoin(
-            wmsTables.fulfillmentOrders,
-            eq(wmsTables.fulfillmentOrders.salesOrderId, wmsTables.salesOrders.id),
-          )
-          .where(
-            and(
-              gte(wmsTables.salesOrders.orderDate, fourteenDaysAgo),
-              eq(wmsTables.salesOrders.status, 'confirmed'),
-              or(
-                inArray(wmsTables.fulfillmentOrders.status, ['shipped', 'completed']),
-                isNotNull(wmsTables.fulfillmentOrders.shippedAt),
-              ),
-            ),
-          ),
+        // 출고완료·부분출고: confirmed SO(14일) 를 라인 수량으로 접어 센다. SO.status 는 processing/shipped/
+        // delivered 로 전이하지 않으므로(작업 15, ADR-0017) 나간 수량에서 도출한다 — 상자 상태가 아니다.
+        // 직배 넘김(forwarded)은 outstanding 이 남고 shipped 가 0 이라 어느 쪽에도 들지 않는다.
+        // 날짜는 ISO 문자열 + 캐스트로 넘긴다(raw sql 에 Date 를 그대로 주면 postgres.js 가 TypeError).
+        db.execute<{ outboundComplete: number; partialOutbound: number }>(sql`
+          select (count(*) filter (where order_fact.required > 0 and order_fact.outstanding = 0))::int as "outboundComplete",
+                 (count(*) filter (where order_fact.shipped > 0 and order_fact.outstanding > 0))::int as "partialOutbound"
+            from (
+              select line_sku.sales_order_id,
+                     sum(line_sku.required)::int as required,
+                     sum(line_sku.shipped)::int as shipped,
+                     sum(line_sku.outstanding)::int as outstanding
+                from (${lineSkuQuantitiesSql(sql`
+                  select scope_so.id
+                    from ${wmsTables.salesOrders} as scope_so
+                   where scope_so.order_date >= ${fourteenDaysAgo.toISOString()}::timestamptz
+                     and scope_so.status = 'confirmed'
+                `)}) as line_sku
+               group by line_sku.sales_order_id
+            ) as order_fact
+        `),
       ]);
 
+    const [outboundRow] = Array.from(outboundRows);
     const byStatus = (s: string) => Number(statusCounts.find((r) => r.status === s)?.cnt ?? 0);
 
     return {
@@ -1293,38 +1293,22 @@ export class SalesOrdersService {
       outboundRequested: byStatus('confirmed'),
       directShip: Number(directShipRow?.cnt ?? 0),
       cannotShip: Number(shipBlockRow?.cannotShip ?? 0),
-      partialOutbound: Number(shipBlockRow?.partialOutbound ?? 0),
+      partialOutbound: Number(outboundRow?.partialOutbound ?? 0),
       waitingMatching: Number(waitingMatchRow?.cnt ?? 0),
-      outboundComplete: Number(outboundCompleteRow?.cnt ?? 0),
+      outboundComplete: Number(outboundRow?.outboundComplete ?? 0),
     };
   }
 
   /**
    * 출고 불가 = 정체 보드 «예약» 단계에 있는 진행 중 주문 수(스펙 D9) — 보드 칸의 `open` 과 같은 값이다.
-   * 부분 출고 = 그중 그 주문 라인이 든 상자 하나라도 이미 움직인(shipped·in_transit·failed·delivered) 주문 수.
-   * 보드가 상자 단위로 «예약»을 판정하므로(미예약 draft 상자) 라인 상태 조인은 더 필요 없다.
    * 14일·`confirmed` 창이 없는 건 보드와 같은 값을 내기 위해서다.
+   * (부분출고·출고완료는 보드가 아니라 라인 수량이 정한다 — `getStats` 의 한 쿼리.)
    */
   private async shipBlockCounts() {
     const t = wmsTables.orderProgress;
     const reserveStage: OrderProgressStage = 'reserve';
-    const movedStatuses = sql.join(
-      ['shipped', 'in_transit', 'failed', 'delivered'].map((status) => sql`${status}`),
-      sql`, `,
-    );
-    // 바깥 행은 테이블 이름으로 가리킨다 — ${t.salesOrderId} 는 테이블 없이 찍혀 서브쿼리 안의 같은 이름 칸에 묶인다
     return this.db.db
-      .select({
-        cannotShip: sql<number>`count(*)::int`,
-        partialOutbound: sql<number>`(count(*) FILTER (WHERE EXISTS (
-          SELECT 1 FROM ${wmsTables.shipmentLines} sl
-            JOIN ${wmsTables.shipments} sh ON sh.id = sl.shipment_id
-            JOIN ${wmsTables.fulfillmentOrderItems} foi ON foi.id = sl.fulfillment_order_item_id
-            JOIN ${wmsTables.fulfillmentOrders} fo ON fo.id = foi.fulfillment_order_id
-           WHERE fo.sales_order_id = order_progress.sales_order_id
-             AND sh.status::text IN (${movedStatuses})
-        )))::int`,
-      })
+      .select({ cannotShip: sql<number>`count(*)::int` })
       .from(t)
       .where(and(isNull(t.outcome), eq(t.stage, reserveStage)));
   }

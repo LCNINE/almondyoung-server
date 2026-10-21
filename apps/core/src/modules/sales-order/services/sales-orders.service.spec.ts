@@ -2272,20 +2272,15 @@ describe('SalesOrdersService.getStats() — 출고완료 FO 도출 (작업 15)',
     directShip: number;
     outboundComplete: number;
   }): SalesOrdersService {
-    const blockedSubquery = Symbol('blocked');
-
     function builder() {
       const state: { from?: unknown; joins: unknown[]; grouped: boolean } = { joins: [], grouped: false };
       const resolveRows = (): unknown[] => {
         const { from, joins } = state;
-        if (from === blockedSubquery) {
-          return [{ cannotShip: canned.cannotShip, partialOutbound: canned.partialOutbound }];
+        if (from === wmsTables.orderProgress) {
+          return [{ cannotShip: canned.cannotShip }];
         }
         if (from === wmsTables.salesOrders && joins.length === 0) {
           return state.grouped ? canned.statusCounts : [{ cnt: canned.today }];
-        }
-        if (from === wmsTables.salesOrders && joins.includes(wmsTables.fulfillmentOrders)) {
-          return [{ cnt: canned.outboundComplete }];
         }
         if (from === wmsTables.fulfillmentOrders && joins.includes(wmsTables.salesOrders)) {
           return [{ cnt: canned.directShip }];
@@ -2310,13 +2305,18 @@ describe('SalesOrdersService.getStats() — 출고완료 FO 도출 (작업 15)',
           return b;
         },
         having: () => b,
-        // 출고 불가/부분 출고는 주문 단위로 접은 서브쿼리에서 한 번에 센다
-        as: () => blockedSubquery,
         then: (onF: any, onR: any) => Promise.resolve(resolveRows()).then(onF, onR),
       };
       return b;
     }
-    const db = { db: { select: () => builder() } };
+    // 출고완료·부분출고는 라인 수량을 접는 raw SQL 한 쿼리라 execute 로 온다
+    const db = {
+      db: {
+        select: () => builder(),
+        execute: () =>
+          Promise.resolve([{ outboundComplete: canned.outboundComplete, partialOutbound: canned.partialOutbound }]),
+      },
+    };
     return new SalesOrdersService(
       db as any,
       {} as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
