@@ -1,10 +1,4 @@
-import {
-  RolesGuard,
-  type JwtPayload,
-  MasterRoleGuard,
-  PermissionCheckpoints,
-  RequirePermission,
-} from '@app/authorization';
+import { type JwtPayload, MasterRoleGuard, PermissionCheckpoints, RequirePermission } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import {
   Body,
@@ -45,7 +39,7 @@ import {
 import { legacyAttendanceManager } from '../attendance-authz';
 
 @Controller('attendance')
-@UseGuards(RolesGuard('admin', 'master'), ActiveAttendanceStaffGuard)
+@UseGuards(ActiveAttendanceStaffGuard)
 export class AttendanceController {
   constructor(
     private readonly service: AttendanceService,
