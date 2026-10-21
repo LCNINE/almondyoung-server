@@ -15,6 +15,8 @@ export const returnExchangeQueryKeys = {
       'channel-order',
       channelOrderId,
     ] as const,
+  returnRefundQuote: (id: string) =>
+    [...returnExchangeQueryKeys.allReturns, 'refund-quote', id] as const,
   allExchanges: ['exchange-requests'] as const,
   exchangeList: (q: ReturnExchangeListQuery) =>
     [...returnExchangeQueryKeys.allExchanges, 'list', q] as const,

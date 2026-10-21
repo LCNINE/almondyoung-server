@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -30,12 +31,18 @@ import {
   useMarkReturnCollected,
   useMarkReturnInspected,
   useCompleteReturn,
+  useCompleteReturnWithAmount,
+  fetchReturnRefundQuote,
   useRetryReturnRefund,
   useManualCompleteReturn,
   useCreateReturnRequest,
 } from '@/lib/services/return-exchange';
 import { getServerDenyMessage } from '@/lib/services/orders';
 import { useReturnEligibility } from '@/lib/services/return-exchange';
+import {
+  decideCompletion,
+  parseAdminRefundAmount,
+} from '@/features/cs/return-exchange/admin-refund-amount';
 import { usePermissionCheck } from '@/hooks/use-permission';
 import type { ReturnRequest } from '@/lib/api/domains/return-exchange';
 import {
@@ -101,6 +108,8 @@ export function ReturnRequestsTable({
   const collected = useMarkReturnCollected();
   const inspected = useMarkReturnInspected();
   const complete = useCompleteReturn();
+  const completeWithAmount = useCompleteReturnWithAmount();
+  const qc = useQueryClient();
   const retryRefund = useRetryReturnRefund();
   const manualComplete = useManualCompleteReturn();
   const createReturn = useCreateReturnRequest();
@@ -110,6 +119,12 @@ export function ReturnRequestsTable({
     string | null
   >(null);
   const [manualCompleteNote, setManualCompleteNote] = useState('');
+  const [amountTarget, setAmountTarget] = useState<{
+    id: string;
+    cap: number;
+  } | null>(null);
+  const [amountInput, setAmountInput] = useState('');
+  const [amountNote, setAmountNote] = useState('');
   const [eligibilityOrderInput, setEligibilityOrderInput] = useState('');
   const [eligibilityOrderId, setEligibilityOrderId] = useState('');
   const [selectedEligibilityKey, setSelectedEligibilityKey] = useState('');
@@ -139,6 +154,39 @@ export function ReturnRequestsTable({
       toast.success(`${label} 처리되었습니다.`);
     } catch (error) {
       toast.error(getServerDenyMessage(error, `${label} 처리에 실패했습니다.`));
+    }
+  };
+
+  // 세트 구성품 일부 반품은 자동 금액이 없다 — 견적으로 갈래를 고른다.
+  const startComplete = async (id: string) => {
+    const quote = await fetchReturnRefundQuote(qc, id);
+    const decision = decideCompletion(quote, canRun(useCompleteReturnWithAmount));
+    if (decision.kind === 'blocked') throw new Error(decision.message);
+    if (decision.kind === 'ask_amount') {
+      setAmountTarget({ id, cap: decision.cap });
+      setAmountInput('');
+      setAmountNote('');
+      return;
+    }
+    await complete.mutateAsync(id);
+  };
+
+  const parsedAmount = amountTarget
+    ? parseAdminRefundAmount(amountInput, amountTarget.cap)
+    : null;
+
+  const handleCompleteWithAmount = async () => {
+    if (!amountTarget || !parsedAmount?.ok || !amountNote.trim()) return;
+    try {
+      await completeWithAmount.mutateAsync({
+        id: amountTarget.id,
+        refundAmount: parsedAmount.amount,
+        adminNote: amountNote.trim(),
+      });
+      toast.success('환불하고 완료 처리되었습니다.');
+      setAmountTarget(null);
+    } catch (error) {
+      toast.error(getServerDenyMessage(error, '환불 완료 처리에 실패했습니다.'));
     }
   };
 
@@ -405,7 +453,7 @@ export function ReturnRequestsTable({
                             disabled={complete.isPending}
                             onClick={() =>
                               act(
-                                () => complete.mutateAsync(request.id),
+                                () => startComplete(request.id),
                                 '처리 완료'
                               )
                             }
@@ -660,6 +708,59 @@ export function ReturnRequestsTable({
           )}
         </div>
       )}
+
+      <Dialog
+        open={!!amountTarget}
+        onOpenChange={(open) => {
+          if (!open) setAmountTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>환불 금액 입력</DialogTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              {`세트 구성품 일부 반품입니다. 상한 ${amountTarget?.cap ?? 0}원 안에서 환불할 금액과 메모를 입력하세요.`}
+            </p>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>환불 금액 (원)</Label>
+            <Input
+              inputMode="numeric"
+              value={amountInput}
+              onChange={(e) => setAmountInput(e.target.value)}
+            />
+            {amountInput.trim() !== '' && parsedAmount && !parsedAmount.ok && (
+              <p className="text-sm text-destructive">{parsedAmount.message}</p>
+            )}
+            <Label>메모 (필수)</Label>
+            <textarea
+              className="w-full rounded-md border px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+              rows={3}
+              value={amountNote}
+              onChange={(e) => setAmountNote(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setAmountTarget(null)}
+              disabled={completeWithAmount.isPending}
+            >
+              취소
+            </Button>
+            <Button
+              onClick={handleCompleteWithAmount}
+              disabled={
+                completeWithAmount.isPending ||
+                !parsedAmount?.ok ||
+                !amountNote.trim()
+              }
+            >
+              {completeWithAmount.isPending ? '처리 중...' : '환불하고 완료'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={!!manualCompleteTarget}

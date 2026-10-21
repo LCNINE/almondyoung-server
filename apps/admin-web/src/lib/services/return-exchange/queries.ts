@@ -1,6 +1,10 @@
 'use client';
 
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useQuery,
+  type QueryClient,
+} from '@tanstack/react-query';
 import {
   returnExchangeApi,
   type ReturnExchangeListQuery,
@@ -44,3 +48,12 @@ export const useExchangeRequests = (query: ReturnExchangeListQuery, options: { e
     placeholderData: keepPreviousData,
   });
 };
+
+// 「완료 처리」 클릭 때 한 번 부른다 — 행마다 훅을 두지 않는다. 금액 판단이라 캐시를 믿지 않는다.
+export function fetchReturnRefundQuote(qc: QueryClient, id: string) {
+  return qc.fetchQuery({
+    queryKey: returnExchangeQueryKeys.returnRefundQuote(id),
+    queryFn: () => returnExchangeApi.getReturnRefundQuote(id),
+    staleTime: 0,
+  });
+}
