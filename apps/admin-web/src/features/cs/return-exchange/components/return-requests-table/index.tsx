@@ -123,6 +123,7 @@ export function ReturnRequestsTable({
     id: string;
     cap: number;
   } | null>(null);
+  const [completingId, setCompletingId] = useState<string | null>(null);
   const [amountInput, setAmountInput] = useState('');
   const [amountNote, setAmountNote] = useState('');
   const [eligibilityOrderInput, setEligibilityOrderInput] = useState('');
@@ -159,16 +160,32 @@ export function ReturnRequestsTable({
 
   // 세트 구성품 일부 반품은 자동 금액이 없다 — 견적으로 갈래를 고른다.
   const startComplete = async (id: string) => {
-    const quote = await fetchReturnRefundQuote(qc, id);
-    const decision = decideCompletion(quote, canRun(useCompleteReturnWithAmount));
-    if (decision.kind === 'blocked') throw new Error(decision.message);
-    if (decision.kind === 'ask_amount') {
-      setAmountTarget({ id, cap: decision.cap });
-      setAmountInput('');
-      setAmountNote('');
-      return;
+    if (completingId) return;
+    setCompletingId(id);
+    try {
+      const quote = await fetchReturnRefundQuote(qc, id);
+      const decision = decideCompletion(
+        quote,
+        canRun(useCompleteReturnWithAmount)
+      );
+      if (decision.kind === 'blocked') {
+        toast.error(decision.message);
+        return;
+      }
+      if (decision.kind === 'ask_amount') {
+        // 아직 완료된 게 아니다 — 성공 토스트 없이 창만 연다.
+        setAmountTarget({ id, cap: decision.cap });
+        setAmountInput('');
+        setAmountNote('');
+        return;
+      }
+      await complete.mutateAsync(id);
+      toast.success('처리 완료 처리되었습니다.');
+    } catch (error) {
+      toast.error(getServerDenyMessage(error, '처리 완료 처리에 실패했습니다.'));
+    } finally {
+      setCompletingId(null);
     }
-    await complete.mutateAsync(id);
   };
 
   const parsedAmount = amountTarget
@@ -450,13 +467,8 @@ export function ReturnRequestsTable({
                           <Button
                             size="sm"
                             variant="outline"
-                            disabled={complete.isPending}
-                            onClick={() =>
-                              act(
-                                () => startComplete(request.id),
-                                '처리 완료'
-                              )
-                            }
+                            disabled={complete.isPending || completingId !== null}
+                            onClick={() => startComplete(request.id)}
                           >
                             완료 처리
                           </Button>
