@@ -501,7 +501,54 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
       const fo = await f.seedFo(tx, w, o, { status: 'processing' });
       const box = await f.seedBox(tx, w, [fo.foItemId], { status: 'planned' });
       await dispatch(tx, w, box, fo.foItemId, 1, false);
-      expect(await phaseOf(tx, o)).toEqual(['pending', 'not_created', true]);
+      // 관리자는 SO pending 칸이 이기고, 고객은 SO pending 칸을 타지 않는다 — 사실 단계 그대로 «배송 중»(R13)
+      expect(await phaseOf(tx, o)).toEqual(['pending', 'shipping', true]);
+    });
+  });
+
+  // ── 고객 단계는 SO pending·shipped 칸을 타지 않는다 (R13, 스펙 §6.4 «현행 화면 유지») ──
+  // 라이브 진행 중 주문은 `pending` 이다(생성이 pending 으로 넣고 confirm 은 관리자 엔드포인트뿐). 옛 고객 단계는
+  // SO 상태를 보지 않았으므로, 그 칸을 고객 단계에 태우면 pending 주문의 «배송 완료»·«출고 취소»가 사라진다.
+
+  it('pending order with completed drop-ship shows delivered to the customer', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await f.seedWorld(tx);
+      const o = await f.seedOrder(tx, { status: 'pending' });
+      await seedCompletedDropShip(tx, w, o);
+      expect(await phaseOf(tx, o)).toEqual(['pending', 'delivered', true]);
+    });
+  });
+
+  it('pending order with all print delivered shows delivered to the customer', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const o = await f.seedOrder(tx, { status: 'pending' });
+      await seedPrint(tx, o, 'delivered');
+      await seedPrint(tx, o, 'delivered');
+      expect(await phaseOf(tx, o)).toEqual(['pending', 'delivered', true]);
+    });
+  });
+
+  it('pending order with fo canceled shows canceled to the customer', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await f.seedWorld(tx);
+      const o = await f.seedOrder(tx, { status: 'pending' });
+      const fo = await f.seedFo(tx, w, o);
+      await tx
+        .update(wmsTables.fulfillmentOrders)
+        .set({ status: 'canceled' })
+        .where(eq(wmsTables.fulfillmentOrders.id, fo.foId));
+      expect(await phaseOf(tx, o)).toEqual(['pending', 'canceled', false]);
+    });
+  });
+
+  it('cellmate shipped order with completed drop-ship shows delivered to the customer', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await f.seedWorld(tx);
+      const o = await f.seedOrder(tx, { status: 'pending' });
+      await seedCompletedDropShip(tx, w, o);
+      await markCellmateShipped(tx, o);
+      // SO shipped 는 고객에게 «배송 중» 이상이지만, 사실이 배송완료면 배송완료다
+      expect(await phaseOf(tx, o)).toEqual(['external_shipped', 'delivered', true]);
     });
   });
 

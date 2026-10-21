@@ -900,7 +900,9 @@ describe('StoreSalesOrdersService', () => {
         so: makeSo({ status: 'delivered' }),
         fos: [{ status: 'completed' }],
         activeShipmentStatuses: ['delivered'],
-        phase: { adminPhase: 'external_shipped', storePhase: 'shipping', anyShipped: true },
+        // 사다리: SO shipped·delivered 위에서 사실이 배송완료면 고객은 delivered (R13,
+        // 'cellmate shipped order with completed drop-ship shows delivered to the customer')
+        phase: { adminPhase: 'external_shipped', storePhase: 'delivered', anyShipped: true },
       });
       const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
       expect(result.availableActions).toContain('return');
@@ -914,7 +916,9 @@ describe('StoreSalesOrdersService', () => {
         so: makeSo({ status: 'shipped' }),
         fos: [{ status: 'completed' }],
         activeShipmentStatuses: ['delivered'],
-        phase: { adminPhase: 'external_shipped', storePhase: 'shipping', anyShipped: true },
+        // 사다리: SO shipped·delivered 위에서 사실이 배송완료면 고객은 delivered (R13,
+        // 'cellmate shipped order with completed drop-ship shows delivered to the customer')
+        phase: { adminPhase: 'external_shipped', storePhase: 'delivered', anyShipped: true },
       });
       const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
       expect(result.availableActions).toContain('return');

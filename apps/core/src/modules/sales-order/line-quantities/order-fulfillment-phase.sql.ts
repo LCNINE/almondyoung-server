@@ -9,7 +9,7 @@ export type OrderShipmentPhase = 'pending' | 'preparing' | 'shipping' | 'deliver
  * 주문 하나의 진행 단계 사다리 한 벌 (K6 PR2b). 관리자 뱃지·일별 통계·고객 actions 가 모두 이 SQL 을 읽는다 —
  * 화면마다 따로 세면 통계 숫자와 뱃지와 고객 화면이 어긋난다(#1016 15번, 감사 «어디까지 왔나» 3벌).
  * 일별 통계는 기간 상한이 없는 집계라 SQL 이어야 하고, TS 판을 하나 더 두면 일치 spec 을 영구히 들고 가야 해서
- * 사다리는 여기에만 쓴다. 두 화면 값은 사다리 결과 위의 CASE 다.
+ * 사다리는 여기에만 쓴다. 두 화면 값은 사다리의 두 칸(SO 칸·사실 칸) 위의 CASE 다.
  *
  * 행 = (sales_order_id, admin_phase OrderShipmentPhase, store_phase StoreFulfillmentStatus, any_shipped boolean).
  * `salesOrderScope` 는 판매주문 id 한 열을 내는 SELECT. 행은 판매주문에서 시작해 몫마다 LEFT JOIN 하므로
@@ -22,23 +22,29 @@ export type OrderShipmentPhase = 'pending' | 'preparing' | 'shipping' | 'deliver
  *            SKU 층에 없으므로 여기서 직접 접는다(R5).
  *   FO 취소 — FO 가 있고 `canceled` 인가.
  *
- * 사다리(위에서 먼저 맞는 것이 이긴다):
- *   1. SO cancelled·timeout                                   → cancelled
- *   2. SO pending                                             → pending
- *   3. SO shipped·delivered                                   → external_shipped
- *      (producer 는 셀메이트 스크립트뿐이라 «core 밖에서 나갔다» 뜻이다. core 상자가 남아 있어도 이게 이긴다 —
- *       같은 주문을 두 번 세지 않으려는 순서다)
- *   4. FO 가 canceled, 활성 인쇄 0                             → cancelled
- *   5. (FO 없음 또는 required 합 0), 활성 인쇄 0               → not_created
- *   6. 있는 몫이 전부 끝남 — 창고 몫(required>0)은 outstanding 0 이고 delivered+partner_completed ≥ required,
- *      인쇄 몫은 전부 delivered. 없는 몫은 조건에서 빠진다(5 가 «둘 다 없음»을 이미 걸렀다) → delivered
- *   7. 창고 shipped+forwarded > 0, 또는 인쇄 shipped/delivered 하나 이상 → shipping
- *   8. 그 밖                                                  → preparing
+ * 사다리는 두 층이다. 각 칸은 한 번만 쓴다.
+ *   SO 칸(`so_phase`) — SO 상태만 본다. 맞지 않으면 null.
+ *     1. SO cancelled·timeout                                 → cancelled
+ *     2. SO pending                                           → pending
+ *     3. SO shipped·delivered                                 → external_shipped
+ *        (producer 는 셀메이트 스크립트뿐이라 «core 밖에서 나갔다» 뜻이다)
+ *   사실 칸(`facts_phase`) — SO 상태를 보지 않는다. 위에서 먼저 맞는 것이 이긴다.
+ *     4. FO 가 canceled, 활성 인쇄 0                           → cancelled
+ *     5. (FO 없음 또는 required 합 0), 활성 인쇄 0             → not_created
+ *     6. 있는 몫이 전부 끝남 — 창고 몫(required>0)은 outstanding 0 이고 delivered+partner_completed ≥ required,
+ *        인쇄 몫은 전부 delivered. 없는 몫은 조건에서 빠진다(5 가 «둘 다 없음»을 이미 걸렀다) → delivered
+ *     7. 창고 shipped+forwarded > 0, 또는 인쇄 shipped/delivered 하나 이상 → shipping
+ *     8. 그 밖                                                → preparing
  * 직배 `forwarded` 는 출고가 아니지만 화면은 «배송 중», 직배 `completed` 는 배송완료 수량이 0(모름)이지만 화면은 «배송 완료»다
  * (스펙 §6.4 — 단계는 표시용 투영이라 일부러 다르게 읽는다).
  *
- * 매핑: admin_phase 는 not_created → preparing. store_phase 는 pending → not_created, external_shipped → shipping,
- *       cancelled → canceled.
+ * 두 화면 값:
+ *   admin_phase — SO 칸이 있으면 그것(core 상자가 남아 있어도 셀메이트 출고가 이긴다 — 같은 주문을 두 번 세지 않으려는 순서다),
+ *                 없으면 사실 칸(not_created → preparing).
+ *   store_phase — SO cancelled·timeout 이면 canceled. SO shipped·delivered 면 사실 칸이 delivered 일 때만 delivered,
+ *                 아니면 shipping. 그 밖(SO pending 포함)은 사실 칸 그대로(cancelled → canceled) (R13).
+ *                 라이브 진행 중 주문은 `pending` 이다 — 생성이 pending 으로 넣고 confirm 은 관리자 엔드포인트뿐이다.
+ *                 옛 고객 단계는 SO 상태를 보지 않았으므로 pending 칸을 태우면 «배송 완료»·«출고 취소»가 사라진다(스펙 §6.4 «현행 화면 유지»).
  * any_shipped 는 사다리와 독립인 사실이다 — SO shipped·delivered, 창고 shipped+forwarded > 0, 인쇄 shipped/delivered 하나 이상.
  * SO 가 취소여도 나간 것은 나간 것이라 SO 상태로 덮지 않는다(셀프취소 차단이 읽는다).
  *
@@ -48,12 +54,12 @@ export function orderFulfillmentPhaseSql(salesOrderScope: SQL): SQL {
   const t = wmsTables;
   return sql`
     select ladder.sales_order_id,
-           case ladder.phase when 'not_created' then 'preparing' else ladder.phase end as admin_phase,
-           case ladder.phase
-             when 'pending' then 'not_created'
-             when 'external_shipped' then 'shipping'
+           coalesce(ladder.so_phase,
+                    case ladder.facts_phase when 'not_created' then 'preparing' else ladder.facts_phase end) as admin_phase,
+           case ladder.so_phase
              when 'cancelled' then 'canceled'
-             else ladder.phase
+             when 'external_shipped' then case ladder.facts_phase when 'delivered' then 'delivered' else 'shipping' end
+             else case ladder.facts_phase when 'cancelled' then 'canceled' else ladder.facts_phase end
            end as store_phase,
            ladder.any_shipped
       from (
@@ -62,6 +68,8 @@ export function orderFulfillmentPhaseSql(salesOrderScope: SQL): SQL {
                  when order_fact.so_status in ('cancelled', 'timeout') then 'cancelled'
                  when order_fact.so_status = 'pending' then 'pending'
                  when order_fact.so_status in ('shipped', 'delivered') then 'external_shipped'
+               end as so_phase,
+               case
                  when order_fact.fo_canceled and order_fact.print_active = 0 then 'cancelled'
                  when order_fact.required = 0 and order_fact.print_active = 0 then 'not_created'
                  when (order_fact.required = 0
@@ -70,7 +78,7 @@ export function orderFulfillmentPhaseSql(salesOrderScope: SQL): SQL {
                   and order_fact.print_delivered = order_fact.print_active then 'delivered'
                  when order_fact.shipped + order_fact.forwarded > 0 or order_fact.print_moved > 0 then 'shipping'
                  else 'preparing'
-               end as phase,
+               end as facts_phase,
                (order_fact.so_status in ('shipped', 'delivered')
                  or order_fact.shipped + order_fact.forwarded > 0
                  or order_fact.print_moved > 0) as any_shipped
