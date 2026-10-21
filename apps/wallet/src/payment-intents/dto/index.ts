@@ -201,6 +201,14 @@ export class TossApproveDto {
   @IsEnum(['NORMAL', 'BRANDPAY'])
   paymentType?: 'NORMAL' | 'BRANDPAY';
 
+  @ApiPropertyOptional({
+    enum: ['VIRTUAL_ACCOUNT'],
+    description: '결제위젯에서 고른 결제수단. 가상계좌면 지연 승인 없이 바로 승인해 입금대기로 보낸다.',
+  })
+  @IsOptional()
+  @IsEnum(['VIRTUAL_ACCOUNT'])
+  method?: 'VIRTUAL_ACCOUNT';
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()

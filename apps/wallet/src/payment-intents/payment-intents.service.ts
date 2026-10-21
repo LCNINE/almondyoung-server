@@ -340,6 +340,7 @@ export class PaymentIntentsService {
       dto.amount,
       correlationId,
       dto.paymentType,
+      dto.method,
     );
   }
 

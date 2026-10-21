@@ -1,6 +1,8 @@
 import { BankTransferPaymentProvider } from './bank-transfer.provider';
 import { TossApiClient } from '../toss/toss-api.client';
 import { ChargeParams } from '../payment-provider.interface';
+import { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 
 describe('BankTransferPaymentProvider', () => {
   it('declares offline-wait action mode (deposit is not a short interactive redirect)', () => {
@@ -32,18 +34,33 @@ describe('BankTransferPaymentProvider', () => {
         status: 'WAITING_FOR_DEPOSIT',
         totalAmount: 10000,
         secret: 'sk_1',
-        virtualAccount: { accountType: '일반', accountNumber: '1234567890', bankCode: '04', customerName: '홍길동', dueDate: '2026-07-05T00:00:00+09:00' },
+        virtualAccount: {
+          accountType: '일반',
+          accountNumber: '1234567890',
+          bankCode: '04',
+          customerName: '홍길동',
+          dueDate: '2026-07-05T00:00:00+09:00',
+        },
       },
     });
-    const provider = new BankTransferPaymentProvider(null as never, { issueVirtualAccount } as unknown as TossApiClient);
+    const provider = new BankTransferPaymentProvider(
+      null as never,
+      { issueVirtualAccount } as unknown as TossApiClient,
+    );
 
     const result = await provider.authorize(chargeParams());
 
     // orderId 는 chargeId 하이픈 제거값이어야 웹훅 복원이 성립한다.
-    expect(issueVirtualAccount).toHaveBeenCalledWith(expect.objectContaining({ orderId: 'aaaaaaaabbbbccccddddeeeeeeeeeeee', bank: '04', amount: 10000 }));
+    expect(issueVirtualAccount).toHaveBeenCalledWith(
+      expect.objectContaining({ orderId: 'aaaaaaaabbbbccccddddeeeeeeeeeeee', bank: '04', amount: 10000 }),
+    );
     expect(result.status).toBe('REQUIRES_ACTION');
     expect(result.providerTransactionId).toBe('pk_1');
-    expect(result.nextAction).toMatchObject({ type: 'BANK_TRANSFER_PENDING', bankName: '국민은행', accountNumber: '1234567890' });
+    expect(result.nextAction).toMatchObject({
+      type: 'BANK_TRANSFER_PENDING',
+      bankName: '국민은행',
+      accountNumber: '1234567890',
+    });
   });
 
   it('fails clearly when the issuing bank is not configured', async () => {
@@ -76,12 +93,30 @@ describe('BankTransferPaymentProvider', () => {
     const result = await provider.cancel(chargeParams());
 
     // 계좌를 닫지 않으면 고객이 옛 계좌로 입금해 돈만 들어오고 주문이 안 생긴다.
-    expect(cancelPayment).toHaveBeenCalledWith('pk_1', '결제 취소', undefined, 'cancel:k1');
+    expect(cancelPayment).toHaveBeenCalledWith('pk_1', '결제 취소', undefined, 'cancel:k1', undefined, false);
     expect(result.status).toBe('SUCCEEDED');
   });
 
+  it('closes a widget-issued virtual account with the widget key', async () => {
+    const cancelPayment = jest.fn().mockResolvedValue({ ok: true, data: {} });
+    const provider = new BankTransferPaymentProvider(
+      dbWithCharge({
+        providerTransactionId: 'pk_w',
+        responsePayload: { paymentKey: 'pk_w', nextAction: { type: 'BANK_TRANSFER_PENDING', checkoutMode: 'WIDGET' } },
+      }),
+      { cancelPayment } as unknown as TossApiClient,
+    );
+
+    await provider.cancel(chargeParams());
+
+    // 위젯에서 발급된 결제는 위젯 시크릿 키로만 취소된다.
+    expect(cancelPayment).toHaveBeenCalledWith('pk_w', '결제 취소', undefined, 'cancel:k1', undefined, true);
+  });
+
   it('fails the cancel when Toss refuses to close the account', async () => {
-    const cancelPayment = jest.fn().mockResolvedValue({ ok: false, error: { code: 'ALREADY_DEPOSITED', message: '입금 완료' } });
+    const cancelPayment = jest
+      .fn()
+      .mockResolvedValue({ ok: false, error: { code: 'ALREADY_DEPOSITED', message: '입금 완료' } });
     const provider = new BankTransferPaymentProvider(
       dbWithCharge({ providerTransactionId: null, responsePayload: { paymentKey: 'pk_1' } }),
       { cancelPayment } as unknown as TossApiClient,
@@ -172,5 +207,50 @@ describe('BankTransferPaymentProvider', () => {
 
     expect(result).toEqual({ status: 'PENDING', manualTransfer: true });
     expect(cancelPayment).not.toHaveBeenCalled();
+  });
+
+  it('refunds a widget-issued account from the authorize charge snapshot with the widget key', async () => {
+    const cancelPayment = jest.fn().mockResolvedValue({ ok: true, data: {} });
+    const lookedUp: unknown[] = [];
+    const db = {
+      db: {
+        select: () => ({
+          from: () => ({
+            where: (cond: unknown) => {
+              lookedUp.push(cond);
+              return {
+                limit: () =>
+                  Promise.resolve([
+                    {
+                      providerTransactionId: 'pk_w',
+                      responsePayload: { paymentKey: 'pk_w', nextAction: { checkoutMode: 'WIDGET' } },
+                    },
+                  ]),
+              };
+            },
+          }),
+        }),
+      },
+    } as never;
+    const provider = new BankTransferPaymentProvider(db, { cancelPayment } as unknown as TossApiClient);
+    const account = { bank: '06', accountNumber: '1234567890', holderName: '홍길동' };
+
+    const result = await provider.refund({
+      refundId: 'rf-1',
+      chargeId: 'capture-charge',
+      authorizeChargeId: 'authorize-charge',
+      intentId: 'i1',
+      userId: 'u1',
+      amount: 10000,
+      currency: 'KRW',
+      idempotencyKey: 'k1',
+      correlationId: 'c1',
+      refundReceiveAccount: account,
+    });
+
+    // CAPTURE charge 엔 발급 스냅샷이 없어, 위젯 여부를 AUTHORIZE charge 에서 읽어야 위젯 키로 환불된다.
+    expect(new PgDialect().sqlToQuery(lookedUp[0] as SQL).params).toEqual(['authorize-charge']);
+    expect(cancelPayment).toHaveBeenCalledWith('pk_w', '고객 요청', 10000, 'k1', account, true);
+    expect(result.status).toBe('SUCCEEDED');
   });
 });

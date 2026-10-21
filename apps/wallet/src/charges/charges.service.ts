@@ -121,6 +121,7 @@ export class ChargesService {
     status: ChargeStatus,
     extra?: {
       providerTransactionId?: string;
+      paymentMethodId?: string;
       errorCode?: string | null;
       errorMessage?: string | null;
       responsePayload?: Record<string, unknown>;
@@ -134,6 +135,7 @@ export class ChargesService {
         status,
         updatedAt: new Date(),
         ...(extra?.providerTransactionId !== undefined ? { providerTransactionId: extra.providerTransactionId } : {}),
+        ...(extra?.paymentMethodId !== undefined ? { paymentMethodId: extra.paymentMethodId } : {}),
         ...(extra?.errorCode !== undefined ? { errorCode: extra.errorCode } : {}),
         ...(extra?.errorMessage !== undefined ? { errorMessage: extra.errorMessage } : {}),
         ...(extra?.responsePayload !== undefined ? { responsePayload: extra.responsePayload } : {}),

@@ -18,27 +18,36 @@ function makeCharge(overrides: Partial<Record<string, unknown>> = {}) {
     currency: 'KRW',
     operation: 'AUTHORIZE',
     status: 'REQUIRES_ACTION',
+    providerIdempotencyKey: `wallet:authorize:${CHARGE_ID}`,
     responsePayload: {},
     ...overrides,
   } as never;
 }
 
-function makeDb(intent: Record<string, unknown>) {
-  return {
-    db: {
-      select: () => ({
-        from: () => ({ where: () => ({ limit: () => Promise.resolve([intent]) }) }),
-      }),
-      update: () => ({ set: () => ({ where: () => Promise.resolve() }) }),
-      transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn({}),
-    },
-  } as never;
+function makeDb(intent: Record<string, unknown>, intentUpdates: unknown[] = []) {
+  const db = {
+    select: () => ({
+      from: () => ({ where: () => ({ limit: () => Promise.resolve([intent]) }) }),
+    }),
+    update: () => ({
+      set: (values: unknown) => {
+        intentUpdates.push(values);
+        return { where: () => Promise.resolve() };
+      },
+    }),
+    transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(db),
+  };
+  return { db } as never;
 }
 
 function makeTossContext(
   intentMetadata: Record<string, unknown>,
   charge = makeCharge(),
-  confirmResult: { ok: boolean; data?: { paymentKey: string }; error?: { code: string; message: string } } = {
+  confirmResult: {
+    ok: boolean;
+    data?: Record<string, unknown> & { paymentKey: string };
+    error?: { code: string; message: string };
+  } = {
     ok: true,
     data: { paymentKey: 'pk_live_1' },
   },
@@ -60,19 +69,32 @@ function makeTossContext(
   const tossApi = {
     confirmPayment: jest.fn().mockResolvedValue(confirmResult),
     confirmBrandPayPayment: jest.fn().mockResolvedValue(confirmResult),
+    cancelPayment: jest.fn().mockResolvedValue({ ok: true, data: {} }),
   };
   const cashReceiptsService = { issue: jest.fn() };
+  const bankTransferProvider = { getUserMethods: jest.fn().mockResolvedValue([{ id: 'pm-bank' }]) };
+  const intentUpdates: unknown[] = [];
 
   const service = new TossApproveService(
-    makeDb(intent),
+    makeDb(intent, intentUpdates),
     chargesService as never,
     autoCaptureService as never,
     stateTransitionService as never,
     tossApi as never,
     cashReceiptsService as never,
+    bankTransferProvider as never,
   );
 
-  return { service, chargesService, tossApi, autoCaptureService, stateTransitionService, intent };
+  return {
+    service,
+    chargesService,
+    tossApi,
+    autoCaptureService,
+    stateTransitionService,
+    bankTransferProvider,
+    intentUpdates,
+    intent,
+  };
 }
 
 describe('deferred approval — staging', () => {
@@ -210,6 +232,210 @@ describe('deferred approval — confirmStaged', () => {
       expect.anything(),
     );
     expect(ctx.autoCaptureService.attemptAutoCapture).not.toHaveBeenCalled();
+  });
+});
+
+const WIDGET_CHARGE = makeCharge({
+  responsePayload: { nextAction: { type: 'TOSS_CHECKOUT', checkoutMode: 'WIDGET' } },
+});
+const VA_CONFIRM = {
+  ok: true,
+  data: {
+    paymentKey: 'pk_va',
+    status: 'WAITING_FOR_DEPOSIT',
+    secret: 'va-secret',
+    virtualAccount: {
+      accountType: '일반',
+      accountNumber: '12345678901234',
+      bankCode: '20',
+      customerName: '홍길동',
+      dueDate: '2026-10-24T10:00:00+09:00',
+    },
+  },
+};
+
+describe('widget virtual account', () => {
+  it('가상계좌 신호면 지연 승인 intent 라도 바로 승인해 무통장 입금대기로 보낸다', async () => {
+    const ctx = makeTossContext({ approvalMode: 'DEFERRED', customerEmail: 'a@b.com' }, WIDGET_CHARGE, VA_CONFIRM);
+
+    await ctx.service.approve('intent-1', 'pk_va', ORDER_ID, 10000, 'corr-1', 'NORMAL', 'VIRTUAL_ACCOUNT');
+
+    expect(ctx.tossApi.confirmPayment).toHaveBeenCalledWith('pk_va', 10000, ORDER_ID, true);
+    expect(ctx.bankTransferProvider.getUserMethods).toHaveBeenCalledWith('u1');
+    const [, status, extra] = ctx.chargesService.updateStatus.mock.calls[0];
+    expect(status).toBe('REQUIRES_ACTION');
+    expect(extra).toEqual(
+      expect.objectContaining({
+        paymentMethodId: 'pm-bank',
+        providerTransactionId: 'pk_va',
+        responsePayload: expect.objectContaining({
+          paymentKey: 'pk_va',
+          secret: 'va-secret',
+          nextAction: expect.objectContaining({
+            type: 'BANK_TRANSFER_PENDING',
+            checkoutMode: 'WIDGET',
+            bankName: '우리은행',
+            accountNumber: '12345678901234',
+            amount: 10000,
+          }),
+        }),
+      }),
+    );
+    expect(ctx.stateTransitionService.transitionIntent).toHaveBeenCalledWith(
+      'intent-1',
+      'AWAITING_DEPOSIT',
+      expect.objectContaining({
+        outboxEvent: expect.objectContaining({ eventType: 'payment.intent.awaiting_deposit' }),
+      }),
+      undefined,
+      expect.anything(),
+    );
+    expect(ctx.intentUpdates).toContainEqual(
+      expect.objectContaining({ paymentMethodId: 'pm-bank', actionExpiresAt: null }),
+    );
+    // 입금 전이므로 승인·캡처로 가면 안 된다.
+    expect(ctx.autoCaptureService.attemptAutoCapture).not.toHaveBeenCalled();
+  });
+
+  it('신호가 없어도 즉시 승인 intent 의 가상계좌 응답은 입금대기로 보낸다', async () => {
+    const ctx = makeTossContext({}, WIDGET_CHARGE, VA_CONFIRM);
+
+    await ctx.service.approve('intent-1', 'pk_va', ORDER_ID, 10000, 'corr-1');
+
+    expect(ctx.stateTransitionService.transitionIntent).toHaveBeenCalledWith(
+      'intent-1',
+      'AWAITING_DEPOSIT',
+      expect.anything(),
+      undefined,
+      expect.anything(),
+    );
+    expect(ctx.autoCaptureService.attemptAutoCapture).not.toHaveBeenCalled();
+  });
+
+  it('지연 승인 안에서 가상계좌가 나오면 계좌를 닫고 실패시켜 주문을 롤백하게 한다', async () => {
+    const ctx = makeTossContext({ approvalMode: 'DEFERRED' }, WIDGET_CHARGE, VA_CONFIRM);
+    const staged = {
+      provider: 'TOSS' as const,
+      providerToken: 'pk_va',
+      orderId: ORDER_ID,
+      amount: 10000,
+      stagedAt: new Date(0).toISOString(),
+    };
+
+    await expect(ctx.service.confirmStaged(WIDGET_CHARGE, staged, 'corr-1')).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'VIRTUAL_ACCOUNT_NOT_DEFERRABLE' }),
+    });
+
+    expect(ctx.tossApi.cancelPayment).toHaveBeenCalledWith(
+      'pk_va',
+      expect.any(String),
+      undefined,
+      expect.any(String),
+      undefined,
+      true,
+    );
+    expect(ctx.stateTransitionService.transitionIntent).toHaveBeenCalledWith(
+      'intent-1',
+      'CREATED',
+      expect.anything(),
+      undefined,
+      expect.anything(),
+    );
+    expect(ctx.stateTransitionService.transitionIntent).not.toHaveBeenCalledWith(
+      'intent-1',
+      'AWAITING_DEPOSIT',
+      expect.anything(),
+      undefined,
+      expect.anything(),
+    );
+    expect(ctx.autoCaptureService.attemptAutoCapture).not.toHaveBeenCalled();
+  });
+
+  it('계좌를 못 닫으면 실패로 확정하지 않고 기존 무통장 입금대기로 넘긴다', async () => {
+    const staged = {
+      provider: 'TOSS' as const,
+      providerToken: 'pk_va',
+      orderId: ORDER_ID,
+      amount: 10000,
+      stagedAt: new Date(0).toISOString(),
+    };
+    const stagedCharge = makeCharge({
+      responsePayload: { nextAction: { type: 'TOSS_CHECKOUT', checkoutMode: 'WIDGET' }, stagedApproval: staged },
+    });
+    const ctx = makeTossContext({ approvalMode: 'DEFERRED' }, stagedCharge, VA_CONFIRM);
+    ctx.tossApi.cancelPayment.mockResolvedValue({ ok: false, error: { code: 'PROVIDER_ERROR', message: 'x' } });
+
+    await expect(ctx.service.confirmStaged(stagedCharge, staged, 'corr-1')).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'VIRTUAL_ACCOUNT_NOT_DEFERRABLE' }),
+    });
+
+    // FAILED 면 입금 웹훅이 무시되고, REQUIRES_ACTION 이면 재결제가 계좌 폐쇄 없이 charge 를 취소한다.
+    expect(ctx.chargesService.updateStatus).not.toHaveBeenCalledWith(
+      CHARGE_ID,
+      'FAILED',
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(ctx.stateTransitionService.transitionIntent).toHaveBeenCalledWith(
+      'intent-1',
+      'AWAITING_DEPOSIT',
+      expect.anything(),
+      undefined,
+      expect.anything(),
+    );
+    const [, status, extra] = ctx.chargesService.updateStatus.mock.calls[0];
+    expect(status).toBe('REQUIRES_ACTION');
+    expect(extra).toEqual(expect.objectContaining({ paymentMethodId: 'pm-bank', providerTransactionId: 'pk_va' }));
+    // 적재된 승인이 남으면 finalize 재시도가 이미 발급된 계좌를 다시 승인하려 한다.
+    expect(extra.responsePayload).not.toHaveProperty('stagedApproval');
+  });
+
+  it('입금대기 반영이 거부되면(승인 중 만료·취소) 발급된 계좌를 닫는다', async () => {
+    const ctx = makeTossContext({}, WIDGET_CHARGE, VA_CONFIRM);
+    ctx.stateTransitionService.transitionIntent.mockRejectedValue(new Error('INVALID_TRANSITION'));
+
+    await expect(ctx.service.approve('intent-1', 'pk_va', ORDER_ID, 10000, 'corr-1')).rejects.toThrow(
+      'INVALID_TRANSITION',
+    );
+
+    expect(ctx.tossApi.cancelPayment).toHaveBeenCalledWith(
+      'pk_va',
+      expect.any(String),
+      undefined,
+      expect.any(String),
+      undefined,
+      true,
+    );
+  });
+
+  it('가상계좌 신호인데 실제로 카드가 승인되면 승인을 되돌리고 실패시킨다', async () => {
+    const ctx = makeTossContext({ approvalMode: 'DEFERRED' }, WIDGET_CHARGE, {
+      ok: true,
+      data: { paymentKey: 'pk_card', status: 'DONE' },
+    });
+
+    await expect(
+      ctx.service.approve('intent-1', 'pk_card', ORDER_ID, 10000, 'corr-1', 'NORMAL', 'VIRTUAL_ACCOUNT'),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ error: 'PAYMENT_METHOD_MISMATCH' }) });
+
+    expect(ctx.tossApi.cancelPayment).toHaveBeenCalledWith(
+      'pk_card',
+      expect.any(String),
+      undefined,
+      expect.any(String),
+      undefined,
+      true,
+    );
+    expect(ctx.autoCaptureService.attemptAutoCapture).not.toHaveBeenCalled();
+  });
+
+  it('가상계좌 신호가 있어도 금액이 charge 와 다르면 승인하지 않는다', async () => {
+    const ctx = makeTossContext({ approvalMode: 'DEFERRED' }, WIDGET_CHARGE, VA_CONFIRM);
+
+    await expect(
+      ctx.service.approve('intent-1', 'pk_other', ORDER_ID, 100, 'corr-1', 'NORMAL', 'VIRTUAL_ACCOUNT'),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ error: 'TOSS_AMOUNT_MISMATCH' }) });
+    expect(ctx.tossApi.confirmPayment).not.toHaveBeenCalled();
   });
 });
 
