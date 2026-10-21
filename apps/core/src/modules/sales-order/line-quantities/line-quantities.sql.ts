@@ -47,6 +47,42 @@ export function lineRemainingSql(lineQuantity: SQLWrapper, salesOrderLineId: SQL
 }
 
 /**
+ * 배송완료 소포의 단 하나의 정의 (K6 PR3a — 2b 의 SKU 층 배송완료 서브쿼리를 꺼냈다). 행 = (fulfillment_order_item_id,
+ * shipment_id, shipment_line_id, dispatch_attempt_id — uuid, delivered_at timestamptz, qty int).
+ * 행 = 범위 주문 FO 의 (출고 시도 × 상자 라인) 중 시도가 `dispatched` 이고 그 시도에 `delivered` 추적 행이 있는 것.
+ * qty = 그 시도가 그 상자 라인에서 낸 소스 수량의 합(위치가 여럿이면 소스 행이 여럿이다).
+ * delivered_at = 그 시도의 `delivered` 추적 timestamp 최댓값.
+ * 회수된 시도(`recalled`)는 추적 행이 남아 있어도 세지 않는다 — 회수가 shipped_qty 도 되돌렸다.
+ * SKU 층의 `delivered`(FOI 로 합한다)와 소포 자격(`parcelClaimEligibilitySql`)이 이것을 읽는다 — 배송완료를 두 벌로 쓰지 않게.
+ */
+export function deliveredParcelsSql(salesOrderScope: SQL): SQL {
+  const t = wmsTables;
+  return sql`
+    select delivered_sl.fulfillment_order_item_id,
+           delivered_sl.shipment_id,
+           delivered_sl.id as shipment_line_id,
+           delivered_da.id as dispatch_attempt_id,
+           delivered_track.delivered_at,
+           sum(delivered_das.qty)::int as qty
+      from ${t.fulfillmentOrders} as delivered_fo
+      join ${t.fulfillmentOrderItems} as delivered_foi on delivered_foi.fulfillment_order_id = delivered_fo.id
+      join ${t.shipmentLines} as delivered_sl on delivered_sl.fulfillment_order_item_id = delivered_foi.id
+      join ${t.dispatchAttemptSources} as delivered_das on delivered_das.shipment_line_id = delivered_sl.id
+      join ${t.dispatchAttempts} as delivered_da on delivered_da.id = delivered_das.dispatch_attempt_id
+      join lateral (
+        select max(delivered_st.timestamp) as delivered_at
+          from ${t.shipmentTracking} as delivered_st
+         where delivered_st.dispatch_attempt_id = delivered_da.id
+           and delivered_st.status = 'delivered'
+      ) as delivered_track on delivered_track.delivered_at is not null
+     where delivered_fo.sales_order_id in (${salesOrderScope})
+       and delivered_da.status = 'dispatched'
+     group by delivered_sl.fulfillment_order_item_id, delivered_sl.shipment_id, delivered_sl.id, delivered_da.id,
+              delivered_track.delivered_at
+  `;
+}
+
+/**
  * 판매 라인 × SKU(구성품) 층의 출고·배송·청구 사실 (K6 PR2b, 청구는 PR3a). 행 = (sales_order_id uuid,
  * sales_order_line_id uuid, sku_id uuid, qty_per_unit int|null, required, shipped, forwarded, delivered, partner_completed,
  * outstanding, return_active, return_consumed, exchange_active, claimable — 전부 int).
@@ -67,8 +103,7 @@ export function lineRemainingSql(lineQuantity: SQLWrapper, salesOrderLineId: SQL
  *   outstanding       = qty − shipped_qty − canceled_qty
  *   forwarded         = 직배 FO 가 `forwarded` 면 outstanding — 파트너에게 넘겼을 뿐 출고가 아니다(넘긴 뒤에도 취소된다)
  *   partner_completed = 직배 FO 가 `completed` 면 shipped_qty — 배송완료가 아니다(표시용, 파트너는 배송 추적을 안 준다)
- *   delivered         = 그 FOI 의 상자 라인에서 `dispatched` 인 출고 시도의 소스 수량 중 그 시도에 `delivered` 추적이 있는 것.
- *                       회수된 시도(`recalled`)는 추적 행이 남아 있어도 세지 않는다 — 회수가 shipped_qty 도 되돌렸다
+ *   delivered         = 그 FOI 의 배송완료 소포 수량 합(`deliveredParcelsSql`)
  *
  * 청구 사실(K6 PR3a) — `claimTotalsBySkuSql` 을 (라인, SKU) 로 붙인다. 없으면 0:
  *   return_active     = 진행 중 반품 항목 수량
@@ -148,21 +183,9 @@ export function lineSkuQuantitiesSql(salesOrderScope: SQL): SQL {
           left join (
             -- 배송완료 수량은 범위의 FOI 전부를 한 번에 묶어 센 뒤 FOI id 로 되붙인다 — FOI 마다 상관 서브쿼리로 세면
             -- shipment_lines(fulfillment_order_item_id) 인덱스가 없어 FOI 수 × 출고 시도 소스 수로 자란다(R15)
-            select delivered_sl.fulfillment_order_item_id, sum(delivered_das.qty)::int as qty
-              from ${t.fulfillmentOrders} as delivered_fo
-              join ${t.fulfillmentOrderItems} as delivered_foi on delivered_foi.fulfillment_order_id = delivered_fo.id
-              join ${t.shipmentLines} as delivered_sl on delivered_sl.fulfillment_order_item_id = delivered_foi.id
-              join ${t.dispatchAttemptSources} as delivered_das on delivered_das.shipment_line_id = delivered_sl.id
-              join ${t.dispatchAttempts} as delivered_da on delivered_da.id = delivered_das.dispatch_attempt_id
-             where delivered_fo.sales_order_id in (${salesOrderScope})
-               and delivered_da.status = 'dispatched'
-               and exists (
-                 select 1
-                   from ${t.shipmentTracking} as delivered_st
-                  where delivered_st.dispatch_attempt_id = delivered_da.id
-                    and delivered_st.status = 'delivered'
-               )
-             group by delivered_sl.fulfillment_order_item_id
+            select delivered_parcel.fulfillment_order_item_id, sum(delivered_parcel.qty)::int as qty
+              from (${deliveredParcelsSql(salesOrderScope)}) as delivered_parcel
+             group by delivered_parcel.fulfillment_order_item_id
           ) as item_delivered on item_delivered.fulfillment_order_item_id = foi.id
          where fo.sales_order_id in (${salesOrderScope})
          group by foi.sales_order_line_id, foi.sku_id

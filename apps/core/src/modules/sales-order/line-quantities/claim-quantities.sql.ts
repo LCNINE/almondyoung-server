@@ -16,72 +16,88 @@ function statusIn(column: SQL, statuses: readonly string[]): SQL {
 }
 
 /**
- * 청구 항목 하나당 한 행 — (sales_order_line_id, shipment_line_id, dispatch_attempt_id, return_active, return_consumed,
- * exchange_active). 셋 중 많아야 하나만 그 항목 수량이고 나머지는 0 이다. 아무것도 빼지 않는 상태의 항목은 행이 없다.
- * 소포 칸(`shipment_line_id`)이 빈 항목은 SKU 를 알 길이 없어 세지 않는다(N1).
+ * 청구 항목을 그 소포의 SKU 로 해석한다 — «세는 항목»의 단 하나의 정의(R4). SKU 합·소포 합·요청 환산이 모두 이것을 지난다.
+ * `itemsSql` 은 (sales_order_line_id, shipment_line_id, dispatch_attempt_id, …) 칸을 가진 항목 행. 그 칸을 모두 그대로 내고
+ * `sku_id` 를 붙인다. `sku_id` 는 항목이 세어질 때만 non-null 이다:
+ *   - 두 소포 칸(`shipment_line_id`·`dispatch_attempt_id`)이 모두 있고(N1 — 하나라도 비면 어느 소포의 무엇인지 모른다)
+ *   - 그 상자 라인의 FOI 가 항목의 판매 라인을 가리킨다 — 다른 라인의 소포를 적은 항목이 엉뚱한 라인·소포에서 빠지지 않게.
+ * left join 이라 해석 못 한 항목도 행은 남는다 — 요청 환산이 그 라인을 «세트 일부»로 보려면 봐야 한다.
+ * FOI 의 `sales_order_line_id` 는 varchar 라 `::text` 로 잇는다.
+ */
+function resolvedClaimItemsSql(itemsSql: SQL): SQL {
+  const t = wmsTables;
+  return sql`
+    select raw_item.*, resolved_foi.sku_id
+      from (${itemsSql}) as raw_item
+      left join ${t.shipmentLines} as resolved_sl
+        on resolved_sl.id = raw_item.shipment_line_id
+       and raw_item.dispatch_attempt_id is not null
+      left join ${t.fulfillmentOrderItems} as resolved_foi
+        on resolved_foi.id = resolved_sl.fulfillment_order_item_id
+       and resolved_foi.sales_order_line_id = raw_item.sales_order_line_id::text
+  `;
+}
+
+/**
+ * 세는 청구 항목 하나당 한 행 — (sales_order_line_id, shipment_line_id, dispatch_attempt_id, sku_id, return_active,
+ * return_consumed, exchange_active). 셋 중 많아야 하나만 그 항목 수량이고 나머지는 0 이다. 아무것도 빼지 않는 상태의 항목과
+ * 소포의 SKU 로 해석되지 않는 항목(`resolvedClaimItemsSql`)은 행이 없다.
  * 요청의 `sales_order_id` 가 범위 안인 것만 — 항목 테이블에는 주문 칸이 없다.
  */
 function claimItemsSql(salesOrderScope: SQL): SQL {
   const t = returnExchangeTables;
   const returnCounted = [...ACTIVE_RETURN_STATUSES, ...CONSUMED_RETURN_STATUSES];
   return sql`
-    select return_item.sales_order_line_id,
-           return_item.shipment_line_id,
-           return_item.dispatch_attempt_id,
-           (case when ${statusIn(sql`return_request.status`, ACTIVE_RETURN_STATUSES)}
-                 then return_item.quantity else 0 end)::int as return_active,
-           (case when ${statusIn(sql`return_request.status`, CONSUMED_RETURN_STATUSES)}
-                 then return_item.quantity else 0 end)::int as return_consumed,
-           0::int as exchange_active
-      from ${t.returnRequests} as return_request
-      join ${t.returnRequestItems} as return_item on return_item.return_request_id = return_request.id
-     where return_request.sales_order_id in (${salesOrderScope})
-       and return_item.shipment_line_id is not null
-       and ${statusIn(sql`return_request.status`, returnCounted)}
-    union all
-    select exchange_item.sales_order_line_id,
-           exchange_item.shipment_line_id,
-           exchange_item.dispatch_attempt_id,
-           0::int as return_active,
-           0::int as return_consumed,
-           exchange_item.quantity::int as exchange_active
-      from ${t.exchangeRequests} as exchange_request
-      join ${t.exchangeRequestItems} as exchange_item on exchange_item.exchange_request_id = exchange_request.id
-     where exchange_request.sales_order_id in (${salesOrderScope})
-       and exchange_item.shipment_line_id is not null
-       and ${statusIn(sql`exchange_request.status`, ACTIVE_EXCHANGE_STATUSES)}
+    select counted_item.*
+      from (${resolvedClaimItemsSql(sql`
+        select return_item.sales_order_line_id,
+               return_item.shipment_line_id,
+               return_item.dispatch_attempt_id,
+               (case when ${statusIn(sql`return_request.status`, ACTIVE_RETURN_STATUSES)}
+                     then return_item.quantity else 0 end)::int as return_active,
+               (case when ${statusIn(sql`return_request.status`, CONSUMED_RETURN_STATUSES)}
+                     then return_item.quantity else 0 end)::int as return_consumed,
+               0::int as exchange_active
+          from ${t.returnRequests} as return_request
+          join ${t.returnRequestItems} as return_item on return_item.return_request_id = return_request.id
+         where return_request.sales_order_id in (${salesOrderScope})
+           and ${statusIn(sql`return_request.status`, returnCounted)}
+        union all
+        select exchange_item.sales_order_line_id,
+               exchange_item.shipment_line_id,
+               exchange_item.dispatch_attempt_id,
+               0::int as return_active,
+               0::int as return_consumed,
+               exchange_item.quantity::int as exchange_active
+          from ${t.exchangeRequests} as exchange_request
+          join ${t.exchangeRequestItems} as exchange_item on exchange_item.exchange_request_id = exchange_request.id
+         where exchange_request.sales_order_id in (${salesOrderScope})
+           and ${statusIn(sql`exchange_request.status`, ACTIVE_EXCHANGE_STATUSES)}
+      `)}) as counted_item
+     where counted_item.sku_id is not null
   `;
 }
 
 /**
  * 판매 라인 × SKU 의 청구 합. 행 = (sales_order_line_id uuid, sku_id uuid, return_active, return_consumed,
  * exchange_active — int). `salesOrderScope` 는 판매주문 id 한 열을 내는 SELECT.
- *
- * 청구 항목 → `shipment_lines`(shipment_line_id) → `fulfillment_order_items`(sku_id, sales_order_line_id).
- * 상자 라인의 FOI 가 항목의 판매 라인을 가리킬 때만 센다 — 다른 라인의 소포를 적은 항목이 엉뚱한 라인에서 빠지지 않게.
- * FOI 의 `sales_order_line_id` 는 varchar 라 `::text` 로 잇는다.
+ * SKU 는 항목의 상자 라인 → FOI 에서 온다(`resolvedClaimItemsSql`). 소포 합과 같은 항목 집합을 센다(R4).
  */
 export function claimTotalsBySkuSql(salesOrderScope: SQL): SQL {
-  const t = wmsTables;
   return sql`
     select claim_item.sales_order_line_id,
-           claim_foi.sku_id,
+           claim_item.sku_id,
            sum(claim_item.return_active)::int as return_active,
            sum(claim_item.return_consumed)::int as return_consumed,
            sum(claim_item.exchange_active)::int as exchange_active
       from (${claimItemsSql(salesOrderScope)}) as claim_item
-      join ${t.shipmentLines} as claim_sl on claim_sl.id = claim_item.shipment_line_id
-      join ${t.fulfillmentOrderItems} as claim_foi
-        on claim_foi.id = claim_sl.fulfillment_order_item_id
-       and claim_foi.sales_order_line_id = claim_item.sales_order_line_id::text
-     group by claim_item.sales_order_line_id, claim_foi.sku_id
+     group by claim_item.sales_order_line_id, claim_item.sku_id
   `;
 }
 
 /**
  * 소포(출고 시도) × 상자 라인의 청구 합. 행 = (dispatch_attempt_id uuid, shipment_line_id uuid, claimed int).
- * claimed = 그 소포의 반품 항목 중 진행 중+소진 + 교환 항목 중 진행 중.
- * 출고 시도 칸이 빈 항목은 어느 소포인지 몰라 세지 않는다.
+ * claimed = 그 소포의 반품 항목 중 진행 중+소진 + 교환 항목 중 진행 중. SKU 합과 같은 항목 집합을 센다(R4).
  */
 export function claimTotalsByParcelSql(salesOrderScope: SQL): SQL {
   return sql`
@@ -89,7 +105,33 @@ export function claimTotalsByParcelSql(salesOrderScope: SQL): SQL {
            claim_item.shipment_line_id,
            sum(claim_item.return_active + claim_item.return_consumed + claim_item.exchange_active)::int as claimed
       from (${claimItemsSql(salesOrderScope)}) as claim_item
-     where claim_item.dispatch_attempt_id is not null
      group by claim_item.dispatch_attempt_id, claim_item.shipment_line_id
+  `;
+}
+
+/**
+ * 반품 요청 하나의 판매 라인 × SKU 수량 — 상태와 무관하게 그 요청의 항목 전부. 행 = (sales_order_id uuid,
+ * sales_order_line_id uuid, sku_id uuid|null, quantity int). 판매 단위 환산(`readReturnRequestSalesUnits`)이 읽는다.
+ * `sku_id` 가 null 인 행 = 소포의 SKU 로 해석되지 않는 항목들의 합(`resolvedClaimItemsSql` — 소포 칸이 비었거나 다른 라인의
+ * 소포를 적었다). 그 라인은 세트 수를 정할 수 없다.
+ */
+export function returnRequestSkuQuantitiesSql(returnRequestId: string): SQL {
+  const t = returnExchangeTables;
+  return sql`
+    select request_item.sales_order_id,
+           request_item.sales_order_line_id,
+           request_item.sku_id,
+           sum(request_item.quantity)::int as quantity
+      from (${resolvedClaimItemsSql(sql`
+        select return_request.sales_order_id,
+               return_item.sales_order_line_id,
+               return_item.shipment_line_id,
+               return_item.dispatch_attempt_id,
+               return_item.quantity
+          from ${t.returnRequests} as return_request
+          join ${t.returnRequestItems} as return_item on return_item.return_request_id = return_request.id
+         where return_request.id = ${returnRequestId}::uuid
+      `)}) as request_item
+     group by request_item.sales_order_id, request_item.sales_order_line_id, request_item.sku_id
   `;
 }

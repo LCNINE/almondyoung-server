@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { seedWorld } from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
@@ -6,9 +6,12 @@ import { wireCancellation } from '../cancellation-record/__support__/cancellatio
 import { recordSalesOrderCancellation } from '../cancellation-record/record-cancellation';
 import { seedClaim, seedComponentSku, seedDeliveredLine } from './__support__/claim-facts.fixtures';
 import { recallParcel } from './__support__/shipment-facts.fixtures';
+import { readReturnRequestSalesUnits } from './claim-quantities.reader';
 import { claimTotalsByParcelSql } from './claim-quantities.sql';
 import { LineSkuQuantities, readLineQuantities } from './line-quantities.reader';
 import { lineSkuQuantitiesSql } from './line-quantities.sql';
+import { ParcelClaimEligibility, readParcelClaimEligibility } from './parcel-claim-eligibility.reader';
+import { parcelClaimEligibilitySql } from './parcel-claim-eligibility.sql';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -71,6 +74,60 @@ async function skusOf(tx: DbTx, order: { salesOrderId: string; lineId: string })
   return read;
 }
 
+/** 픽스처 맵 조회 — 없으면 픽스처가 틀린 것이다. `?? null` 로 넘기면 «소포 칸이 빈 항목»이 되어 다른 갈래를 시험한다. */
+function must<T>(value: T | undefined, what: string): T {
+  if (value === undefined) throw new Error(`fixture miss: ${what}`);
+  return value;
+}
+
+type ParcelRow = {
+  sales_order_id: string;
+  sales_order_line_id: string;
+  sku_id: string;
+  shipment_id: string;
+  shipment_line_id: string;
+  dispatch_attempt_id: string;
+  delivered_at: string | Date;
+  delivered_qty: number;
+  claimed_qty: number;
+  sku_claimable: number;
+  claimable: number;
+};
+
+const byParcel = (a: ParcelClaimEligibility, b: ParcelClaimEligibility) =>
+  a.dispatchAttemptId === b.dispatchAttemptId
+    ? a.shipmentLineId < b.shipmentLineId
+      ? -1
+      : 1
+    : a.dispatchAttemptId < b.dispatchAttemptId
+      ? -1
+      : 1;
+
+/** 소포 자격의 (가) 문 결과와 (나) 조각을 주문 테이블 select 범위로 직접 select 한 결과가 같은지 본다. 문의 순서를 돌려준다. */
+async function parcelsOf(tx: DbTx, salesOrderId: string): Promise<ParcelClaimEligibility[]> {
+  const read = await readParcelClaimEligibility(tx, salesOrderId);
+  const rows = await tx.execute<ParcelRow>(
+    parcelClaimEligibilitySql(sql`select so.id from ${wmsTables.salesOrders} as so where so.id = ${salesOrderId}`),
+  );
+  const direct = [...rows].map((row) => {
+    expect(row.sales_order_id).toBe(salesOrderId);
+    return {
+      salesOrderLineId: row.sales_order_line_id,
+      skuId: row.sku_id,
+      shipmentId: row.shipment_id,
+      shipmentLineId: row.shipment_line_id,
+      dispatchAttemptId: row.dispatch_attempt_id,
+      deliveredAt: new Date(row.delivered_at),
+      deliveredQty: row.delivered_qty,
+      claimedQty: row.claimed_qty,
+      skuClaimable: row.sku_claimable,
+      claimable: row.claimable,
+    };
+  });
+  expect([...direct].sort(byParcel)).toEqual([...read].sort(byParcel));
+  return read;
+}
+
 async function onlySku(tx: DbTx, order: { salesOrderId: string; lineId: string }): Promise<LineSkuQuantities> {
   const skus = await skusOf(tx, order);
   expect(skus).toHaveLength(1);
@@ -95,7 +152,7 @@ describeIfDb('readLineQuantities — SKU 층 청구 사실 (K6 PR3a)', () => {
     const parcel = line.parcels[0];
     const item = (quantity: number) => ({
       salesOrderLineId: line.lineId,
-      shipmentLineId: parcel.shipmentLineIdBySku.get(w.skuId) ?? null,
+      shipmentLineId: must(parcel.shipmentLineIdBySku.get(w.skuId), 'parcel line of A'),
       dispatchAttemptId: parcel.dispatchAttemptId,
       quantity,
     });
@@ -176,7 +233,7 @@ describeIfDb('readLineQuantities — SKU 층 청구 사실 (K6 PR3a)', () => {
         items: [
           {
             salesOrderLineId: line.lineId,
-            shipmentLineId: parcel.shipmentLineIdBySku.get(skuB) ?? null,
+            shipmentLineId: must(parcel.shipmentLineIdBySku.get(skuB), 'parcel line of B'),
             dispatchAttemptId: parcel.dispatchAttemptId,
             quantity: 1,
           },
@@ -208,7 +265,7 @@ describeIfDb('readLineQuantities — SKU 층 청구 사실 (K6 PR3a)', () => {
       const { w, line, parcel } = await seedSimple(tx);
       await recallParcel(tx, {
         dispatchAttemptId: parcel.dispatchAttemptId,
-        lines: [{ foItemId: line.foItemIdBySku.get(w.skuId) ?? '', qty: 2 }],
+        lines: [{ foItemId: must(line.foItemIdBySku.get(w.skuId), 'FOI of A'), qty: 2 }],
       });
 
       expect(await onlySku(tx, line)).toMatchObject(claims([0, 0, 0, 0, 0]));
@@ -327,6 +384,313 @@ describeIfDb('readLineQuantities — SKU 층 청구 사실 (K6 PR3a)', () => {
           claimed: 3,
         },
       ]);
+    });
+  });
+  it('item with a box line but no dispatch attempt counts in neither total', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { line, item } = await seedSimple(tx);
+      // R4 — SKU 합과 소포 합이 같은 항목 집합을 센다. 출고 시도를 모르면 어느 소포인지 몰라 두 쪽 다 세지 않는다
+      await seedClaim(tx, {
+        kind: 'return',
+        salesOrderId: line.salesOrderId,
+        status: 'completed',
+        items: [{ ...item(1), dispatchAttemptId: null }],
+      });
+
+      expect(await onlySku(tx, line)).toMatchObject(claims([2, 0, 0, 0, 2]));
+      const rows = await tx.execute(claimTotalsByParcelSql(sql`select ${line.salesOrderId}::uuid`));
+      expect([...rows]).toEqual([]);
+    });
+  });
+
+  it("item naming another line's parcel counts in neither total", async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { line, item } = await seedSimple(tx);
+      const other = await seedSimple(tx);
+      // 이 주문의 요청이 이 주문 소포를 적었지만 항목의 판매 라인이 그 소포 FOI 의 라인이 아니다
+      await seedClaim(tx, {
+        kind: 'return',
+        salesOrderId: line.salesOrderId,
+        status: 'completed',
+        items: [{ ...item(1), salesOrderLineId: other.line.lineId }],
+      });
+
+      expect(await onlySku(tx, line)).toMatchObject(claims([2, 0, 0, 0, 2]));
+      const rows = await tx.execute(claimTotalsByParcelSql(sql`select ${line.salesOrderId}::uuid`));
+      expect([...rows]).toEqual([]);
+    });
+  });
+});
+
+describeIfDb('readParcelClaimEligibility — 소포 단위 청구 자격 (K6 PR3a)', () => {
+  jest.setTimeout(120_000);
+  const { sql: client, db } = makeDb(DATABASE_URL as string);
+  afterAll(async () => {
+    await client.end();
+  });
+
+  /** 수량 3, A×1, 소포 A 2 · A 1 — 둘 다 배송완료. */
+  async function seedTwoParcels(tx: DbTx) {
+    const w = await seedWorld(tx);
+    const line = await seedDeliveredLine(tx, w, {
+      quantity: 3,
+      composition: [{ skuId: w.skuId, qtyPerUnit: 1 }],
+      parcels: [{ qtyBySku: { [w.skuId]: 2 } }, { qtyBySku: { [w.skuId]: 1 } }],
+    });
+    const [first, second] = line.parcels;
+    const item = (parcel: typeof first, quantity: number) => ({
+      salesOrderLineId: line.lineId,
+      shipmentLineId: must(parcel.shipmentLineIdBySku.get(w.skuId), 'parcel line of A'),
+      dispatchAttemptId: parcel.dispatchAttemptId,
+      quantity,
+    });
+    return { w, line, first, second, item };
+  }
+
+  it('two delivered parcels of one line are listed separately', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, line, first, second } = await seedTwoParcels(tx);
+      // 둘째 소포가 먼저 배송완료 — 문은 배송완료 시각 순이다
+      const earlier = new Date(Date.now() - 60_000);
+      await tx
+        .update(wmsTables.shipmentTracking)
+        .set({ timestamp: earlier })
+        .where(eq(wmsTables.shipmentTracking.dispatchAttemptId, second.dispatchAttemptId));
+
+      const parcels = await parcelsOf(tx, line.salesOrderId);
+      expect(parcels).toEqual([
+        {
+          salesOrderLineId: line.lineId,
+          skuId: w.skuId,
+          shipmentId: second.shipmentId,
+          shipmentLineId: must(second.shipmentLineIdBySku.get(w.skuId), 'second parcel line'),
+          dispatchAttemptId: second.dispatchAttemptId,
+          deliveredAt: earlier,
+          deliveredQty: 1,
+          claimedQty: 0,
+          skuClaimable: 3,
+          claimable: 1,
+        },
+        expect.objectContaining({
+          shipmentId: first.shipmentId,
+          dispatchAttemptId: first.dispatchAttemptId,
+          deliveredQty: 2,
+          claimedQty: 0,
+          skuClaimable: 3,
+          claimable: 2,
+        }),
+      ]);
+    });
+  });
+
+  it('parcel claimable is capped by the sku pool', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, line, first, second, item } = await seedTwoParcels(tx);
+      await seedClaim(tx, {
+        kind: 'return',
+        salesOrderId: line.salesOrderId,
+        status: 'completed',
+        items: [item(first, 2)],
+      });
+      // R1 — 다 나간 라인의 부분취소는 엔진이 거절한다. 엔진이 V1 사후취소에서 남기는 모양을 쓰기 문에 직접 넘긴다
+      await recordSalesOrderCancellation(tx, {
+        salesOrderId: line.salesOrderId,
+        cancellationScope: 'partial',
+        reasonCode: 'customer',
+        metadata: { cancelledLines: [{ salesOrderLineId: line.lineId, quantity: 1 }] },
+        effects: [
+          {
+            type: 'preserved_shipped_fulfillment_order_item',
+            metadata: {
+              salesOrderLineId: line.lineId,
+              skuId: w.skuId,
+              requestedFulfillmentQuantity: 1,
+              affectedShippedQuantity: 1,
+            },
+          },
+        ],
+      });
+
+      const parcels = await parcelsOf(tx, line.salesOrderId);
+      // 3 − 2(완료 반품) − 1(출고 뒤 취소 × 1)
+      expect(parcels.find((p) => p.dispatchAttemptId === first.dispatchAttemptId)).toMatchObject({
+        deliveredQty: 2,
+        claimedQty: 2,
+        skuClaimable: 0,
+        claimable: 0,
+      });
+      // least(1 − 0, 0) — 소포에는 1 이 남았지만 SKU 몫이 없다
+      expect(parcels.find((p) => p.dispatchAttemptId === second.dispatchAttemptId)).toMatchObject({
+        deliveredQty: 1,
+        claimedQty: 0,
+        skuClaimable: 0,
+        claimable: 0,
+      });
+    });
+  });
+
+  it('exchange on a parcel reduces that parcel', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const line = await seedDeliveredLine(tx, w, {
+        quantity: 2,
+        composition: [{ skuId: w.skuId, qtyPerUnit: 1 }],
+        parcels: [{ qtyBySku: { [w.skuId]: 2 } }],
+      });
+      const [parcel] = line.parcels;
+      await seedClaim(tx, {
+        kind: 'exchange',
+        salesOrderId: line.salesOrderId,
+        status: 'requested',
+        items: [
+          {
+            salesOrderLineId: line.lineId,
+            shipmentLineId: must(parcel.shipmentLineIdBySku.get(w.skuId), 'parcel line of A'),
+            dispatchAttemptId: parcel.dispatchAttemptId,
+            quantity: 1,
+          },
+        ],
+      });
+
+      expect(await parcelsOf(tx, line.salesOrderId)).toEqual([
+        expect.objectContaining({ deliveredQty: 2, claimedQty: 1, skuClaimable: 1, claimable: 1 }),
+      ]);
+    });
+  });
+
+  it('undelivered and recalled parcels are not listed', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const line = await seedDeliveredLine(tx, w, {
+        quantity: 3,
+        composition: [{ skuId: w.skuId, qtyPerUnit: 1 }],
+        parcels: [
+          { qtyBySku: { [w.skuId]: 1 }, delivered: false },
+          { qtyBySku: { [w.skuId]: 1 } },
+          { qtyBySku: { [w.skuId]: 1 } },
+        ],
+      });
+      const [, recalled, kept] = line.parcels;
+      // 회수된 시도는 배송완료 추적 행이 남아 있어도 소포가 아니다
+      await recallParcel(tx, {
+        dispatchAttemptId: recalled.dispatchAttemptId,
+        lines: [{ foItemId: must(line.foItemIdBySku.get(w.skuId), 'FOI of A'), qty: 1 }],
+      });
+
+      expect(await parcelsOf(tx, line.salesOrderId)).toEqual([
+        expect.objectContaining({ dispatchAttemptId: kept.dispatchAttemptId, deliveredQty: 1, claimable: 1 }),
+      ]);
+    });
+  });
+});
+
+describeIfDb('readReturnRequestSalesUnits — 반품의 판매 단위 환산 (K6 PR3a)', () => {
+  jest.setTimeout(120_000);
+  const { sql: client, db } = makeDb(DATABASE_URL as string);
+  afterAll(async () => {
+    await client.end();
+  });
+
+  /** 수량 1, A×1·B×2, 소포 하나에 A 1·B 2. */
+  async function seedSet(tx: DbTx) {
+    const w = await seedWorld(tx);
+    const skuA = w.skuId;
+    const skuB = await seedComponentSku(tx, w);
+    const line = await seedDeliveredLine(tx, w, {
+      quantity: 1,
+      composition: [
+        { skuId: skuA, qtyPerUnit: 1 },
+        { skuId: skuB, qtyPerUnit: 2 },
+      ],
+      parcels: [{ qtyBySku: { [skuA]: 1, [skuB]: 2 } }],
+    });
+    const [parcel] = line.parcels;
+    const item = (skuId: string, quantity: number) => ({
+      salesOrderLineId: line.lineId,
+      shipmentLineId: must(parcel.shipmentLineIdBySku.get(skuId), 'parcel line'),
+      dispatchAttemptId: parcel.dispatchAttemptId,
+      quantity,
+    });
+    return { line, skuA, skuB, item };
+  }
+
+  it('whole set return converts to sales units', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { line, skuA, skuB, item } = await seedSet(tx);
+      const { requestId } = await seedClaim(tx, {
+        kind: 'return',
+        salesOrderId: line.salesOrderId,
+        status: 'inspected',
+        items: [item(skuA, 1), item(skuB, 2)],
+      });
+
+      expect(await readReturnRequestSalesUnits(tx, requestId)).toEqual(
+        new Map([[line.lineId, { kind: 'whole', units: 1 }]]),
+      );
+    });
+  });
+
+  it('set-partial return is flagged', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { line, skuB, item } = await seedSet(tx);
+      const { requestId } = await seedClaim(tx, {
+        kind: 'return',
+        salesOrderId: line.salesOrderId,
+        status: 'inspected',
+        items: [item(skuB, 1)],
+      });
+
+      expect(await readReturnRequestSalesUnits(tx, requestId)).toEqual(
+        new Map([[line.lineId, { kind: 'set_partial' }]]),
+      );
+    });
+  });
+
+  it('two parcels of one line are summed', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const line = await seedDeliveredLine(tx, w, {
+        quantity: 2,
+        composition: [{ skuId: w.skuId, qtyPerUnit: 1 }],
+        parcels: [{ qtyBySku: { [w.skuId]: 1 } }, { qtyBySku: { [w.skuId]: 1 } }],
+      });
+      // F2 — 같은 라인의 항목이 소포마다 한 줄씩이어도 라인 하나로 합해 환산한다
+      const { requestId } = await seedClaim(tx, {
+        kind: 'return',
+        salesOrderId: line.salesOrderId,
+        status: 'inspected',
+        items: line.parcels.map((parcel) => ({
+          salesOrderLineId: line.lineId,
+          shipmentLineId: must(parcel.shipmentLineIdBySku.get(w.skuId), 'parcel line of A'),
+          dispatchAttemptId: parcel.dispatchAttemptId,
+          quantity: 1,
+        })),
+      });
+
+      expect(await readReturnRequestSalesUnits(tx, requestId)).toEqual(
+        new Map([[line.lineId, { kind: 'whole', units: 2 }]]),
+      );
+    });
+  });
+
+  it('item without a parcel makes its line set-partial', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { line, skuA, skuB, item } = await seedSet(tx);
+      // N1 — 소포 칸이 빈 항목은 SKU 를 몰라 세트 수를 정할 수 없다. 나머지 항목이 통째 세트여도 마찬가지다
+      const { requestId } = await seedClaim(tx, {
+        kind: 'return',
+        salesOrderId: line.salesOrderId,
+        status: 'inspected',
+        items: [
+          item(skuA, 1),
+          item(skuB, 2),
+          { salesOrderLineId: line.lineId, shipmentLineId: null, dispatchAttemptId: null, quantity: 1 },
+        ],
+      });
+
+      expect(await readReturnRequestSalesUnits(tx, requestId)).toEqual(
+        new Map([[line.lineId, { kind: 'set_partial' }]]),
+      );
     });
   });
 });
