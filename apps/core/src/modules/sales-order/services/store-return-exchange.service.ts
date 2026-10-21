@@ -419,6 +419,7 @@ export class StoreReturnExchangeService {
       }
 
       // 승인 시점의 항목 사본(감사 기록). 수량은 SKU 단위 그대로 싣는다 — 합산은 수량 문의 몫이다.
+      // 저장된 행을 그대로 옮기는 감사 사본이지 수량 산술이 아니다(읽기 가드는 drizzle `.quantity` 토큰만 막는다).
       const returnReceiptItems = await tx
         .select()
         .from(returnExchangeTables.returnRequestItems)
@@ -1398,7 +1399,7 @@ export class StoreReturnExchangeService {
   /**
    * 반품·교환 생성 게이트 (K6 PR3a, 스펙 §6.5). 호출자 트랜잭션 안에서 이 순서로 한다:
    *  ① 요청 라인의 FOI 로 연결 그래프 잠금 — 회수·발송·예약 변경과 같은 «그래프 먼저» 순서
-   *  ② 주문의 모든 라인을 id 정렬 순으로 `FOR UPDATE`(R8) ③ 그 종류의 «진행 중 요청 있음» 409
+   *  ② 주문의 모든 라인을 id 정렬 순으로 `FOR NO KEY UPDATE`(R8) ③ 그 종류의 «진행 중 요청 있음» 409
    *  ④ 소포 단위 청구 자격을 읽는다(잠금 뒤라 동시 요청이 같은 남은 수량을 쓰지 못한다 — F7)
    *  ⑤ 소포 반쪽만 온 줄 400 ⑥ 라인 단위 줄을 소포로 펼친다(N2) ⑦ 소포 합 ≤ 그 소포 `claimable`, (라인, SKU) 합 ≤ `skuClaimable`.
    * 돌려준 줄은 요청 순서를 지키고 같은 소포 줄도 합치지 않는다 — 저장은 요청 모양대로, 검사만 합산한다.
@@ -1432,12 +1433,13 @@ export class StoreReturnExchangeService {
 
     // ② 요청 라인만이 아니라 주문의 모든 라인을 잠근다 — 서로 다른 라인·이어지지 않은 FO 를 건드린 두 요청도
     //    여기서 주문 단위로 줄을 서야 ③ «진행 중 요청 있음» 확인이 둘을 함께 통과시키지 않는다(R8).
+    //    NO KEY UPDATE 는 같은 잠금끼리 막아 청구 생성자는 줄을 세우지만, 취소 라인·구성 INSERT 의 FK KEY SHARE 는 막지 않는다.
     await tx
       .select({ id: wmsTables.salesOrderLines.id })
       .from(wmsTables.salesOrderLines)
       .where(eq(wmsTables.salesOrderLines.salesOrderId, orderId))
       .orderBy(asc(wmsTables.salesOrderLines.id))
-      .for('update');
+      .for('no key update');
 
     // ③
     await this.assertNoActiveClaimRequest(tx, kind, orderId);

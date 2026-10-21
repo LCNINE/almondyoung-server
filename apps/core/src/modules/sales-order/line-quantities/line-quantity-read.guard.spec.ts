@@ -78,18 +78,25 @@ describe('청구(반품·교환) 수량 읽는 문', () => {
   it('only the kernel and the claim service touch claim items', () => {
     // 커널 SQL 조각(`claim-quantities.sql.ts`)이 수량을 읽고, 서비스는 항목을 만들고(INSERT) 요청을 다룬다.
     // `claim-quantities.reader.ts`·`parcel-claim-eligibility.*` 는 조각을 불러 쓸 뿐 이 테이블 이름을 쓰지 않는다(R2).
-    const files = filesMatching((source) => /\breturnRequestItems\b|\bexchangeRequestItems\b/.test(source)).filter((path) =>
-      path.startsWith(salesOrder),
+    const files = filesMatching((source) => /\breturnRequestItems\b|\bexchangeRequestItems\b/.test(source)).filter(
+      (path) => path.startsWith(salesOrder),
     );
     expect(files).toEqual(
-      [`${salesOrder}line-quantities/claim-quantities.sql.ts`, `${salesOrder}services/store-return-exchange.service.ts`].sort(),
+      [
+        `${salesOrder}line-quantities/claim-quantities.sql.ts`,
+        `${salesOrder}services/store-return-exchange.service.ts`,
+      ].sort(),
     );
-    expect(filesMatching((source) => /\breturnRequestItems\b|\bexchangeRequestItems\b/.test(source)).sort()).toEqual(files);
+    expect(filesMatching((source) => /\breturnRequestItems\b|\bexchangeRequestItems\b/.test(source)).sort()).toEqual(
+      files,
+    );
   });
 
   it('claim quantities are summed only in the kernel', () => {
-    // 서비스의 INSERT(`quantity: line.quantity`)는 걸리지 않는다. 항목 수량을 읽는 표현은 커널 SQL 조각의 `exchange_item.quantity` 별칭뿐이다.
-    expect(filesMatching((source) => /\b(returnRequestItems|exchangeRequestItems)\.quantity\b/.test(source))).toEqual([]);
+    // 서비스의 INSERT(`quantity: line.quantity`)는 걸리지 않는다. 항목 수량을 읽는 표현은 커널 SQL 조각(`claim-quantities.sql.ts`)의 raw SQL 별칭 `return_item.quantity`·`exchange_item.quantity` 뿐이다.
+    expect(filesMatching((source) => /\b(returnRequestItems|exchangeRequestItems)\.quantity\b/.test(source))).toEqual(
+      [],
+    );
   });
 
   it('claim statuses have one home', () => {

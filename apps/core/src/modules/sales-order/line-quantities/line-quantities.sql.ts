@@ -107,6 +107,8 @@ export function deliveredParcelsSql(salesOrderScope: SQL): SQL {
  *   delivered         = 그 FOI 의 배송완료 소포 수량 합(`deliveredParcelsSql`)
  *
  * 청구 사실(K6 PR3a) — `claimTotalsBySkuSql` 을 (라인, SKU) 로 붙인다. 없으면 0:
+ *   (postgres 는 넓은 범위 소비자(진행 단계 SQL·관리자 카드)가 청구 칸을 안 고를 때만 청구 조인을 잘라낸다 — 넓은 범위에서
+ *    청구 칸을 고르면 행마다 청구 집계 스캔과 취소 서브플랜 값을 치른다.)
  *   return_active     = 진행 중 반품 항목 수량
  *   return_consumed   = 완료 반품 항목 수량
  *   exchange_active   = 진행 중 교환 항목 수량
