@@ -24,6 +24,13 @@ if (process.env.REQUIRE_USER_SERVICE_DB === '1' && !DATABASE_URL) {
 }
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 
+// 경합을 볼 수 없는 DB 에서 조용히 초록이 되지 않게 — 반드시 돌려야 하는 실행이면 실패로 알린다.
+const cannotObserve = (reason: string): true => {
+  if (process.env.REQUIRE_USER_SERVICE_DB === '1') throw new Error(`${reason} — use a scratch database`);
+  console.warn(`skipped: ${reason}; use a scratch database`);
+  return true;
+};
+
 const PREFIX = 'zzp4';
 
 describeIfDb('role assignments against a real database', () => {
@@ -100,11 +107,8 @@ describeIfDb('role assignments against a real database', () => {
           notLike(users.loginId, `${PREFIX}%`),
         ),
       );
-    if (Number(others?.n ?? 0) > 0) {
-      // 다른 무기한 보유자가 있으면 «둘 다 성공»이 정답이라 이 경합을 볼 수 없다 — 남의 데이터는 바꾸지 않는다.
-      console.warn('skipped: this database already has a permanent system-role holder; use a scratch database');
-      return;
-    }
+    // 다른 무기한 보유자가 있으면 «둘 다 성공»이 정답이라 이 경합을 볼 수 없다 — 남의 데이터는 바꾸지 않는다.
+    if (Number(others?.n ?? 0) > 0 && cannotObserve('this database already has a permanent system-role holder')) return;
     const a = await makeUser('a');
     const b = await makeUser('b');
     await dbService.db.insert(userRoleAssignments).values([
@@ -155,10 +159,7 @@ describeIfDb('role assignments against a real database', () => {
           notLike(users.loginId, `${PREFIX}%`),
         ),
       );
-    if (Number(others?.n ?? 0) > 0) {
-      console.warn('skipped: this database already has a permanent system-role holder; use a scratch database');
-      return;
-    }
+    if (Number(others?.n ?? 0) > 0 && cannotObserve('this database already has a permanent system-role holder')) return;
     const a = await makeUser('wa');
     const b = await makeUser('wb');
     await dbService.db.insert(userRoleAssignments).values([

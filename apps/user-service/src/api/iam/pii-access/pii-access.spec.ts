@@ -106,7 +106,8 @@ describe('PiiAccessManager', () => {
   const cache = { permissionsFor: jest.fn(() => held) };
   const reader = { page: jest.fn().mockResolvedValue({ items: [], nextCursor: null }) };
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
-  const dbService = { run: jest.fn((cb: (tx: object) => Promise<unknown>) => cb({})) };
+  const tx = { marker: 'tx' };
+  const dbService = { run: jest.fn((cb: (t: object) => Promise<unknown>) => cb(tx)) };
   let manager: PiiAccessManager;
 
   beforeEach(async () => {
@@ -142,10 +143,11 @@ describe('PiiAccessManager', () => {
     await expect(manager.recordOwn(actor, record)).rejects.toBeInstanceOf(ForbiddenError);
   });
 
-  it('records an audit row when the access log is viewed', async () => {
+  it('reads the page and records the audit row in the same transaction', async () => {
     await manager.viewLogs(actor, { actorUserId: record.actorUserId });
+    expect(reader.page).toHaveBeenCalledWith({ actorUserId: record.actorUserId }, tx);
     expect(audit.record).toHaveBeenCalledWith(
-      expect.anything(),
+      tx,
       actor,
       expect.objectContaining({ action: 'pii_access_log.view', targetType: 'pii_access_log', targetId: actor.userId }),
     );

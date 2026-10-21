@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils/ui';
 import { useCategoryTree } from '@/lib/services/products/queries';
 import { useAdminUsers } from '@/lib/services/users/queries';
+import { useCan } from '@/hooks/use-permission';
 import { useSuppliers } from '@/lib/services/inventory/queries';
 import { flattenCategoryTree } from '@/features/mall/products-detail/components/general/basic-information-model';
 import { toCategoryFilterOptions } from '@/hooks/table/filters/category-filter-options';
@@ -84,10 +85,15 @@ export function ProductsListFilterBox() {
   const searchParams = useSearchParams();
 
   const { data: categoryTree } = useCategoryTree({ includeInactive: true });
-  const { data: adminUsers } = useAdminUsers({
-    roleName: 'admin,master',
-    limit: 100,
-  });
+  // 담당자 필터 후보는 회원 조회 권한으로 읽는다 — 상품만 보는 역할이면 부르지 않는다(403 을 내지 않게)
+  const canReadAccounts = useCan(['customer.profile.read']);
+  const canListRegistrants = canReadAccounts.status === 'ready' && canReadAccounts.allowed;
+  const { data: registrants } = useAdminUsers(
+    { roleName: 'admin,master', limit: 100 },
+    { enabled: canListRegistrants }
+  );
+  // 권한이 없으면 캐시에 남은 계정 목록도 쓰지 않는다
+  const adminUsers = canListRegistrants ? registrants : undefined;
   // ponytail: 서버 SupplierFiltersDto 가 limit @Max(100) — 200 이면 400 으로 목록이 통째로 빈다
   const { data: suppliers } = useSuppliers({ limit: 100 });
 

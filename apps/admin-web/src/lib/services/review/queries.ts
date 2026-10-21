@@ -7,8 +7,9 @@ import { ReviewListQuery } from '@/lib/types/dto/review';
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { reviewQueryKeys } from './query-keys';
 
-export const useReviews = (query: ReviewListQuery) => {
+export const useReviews = (query: ReviewListQuery, options: { enabled?: boolean } = {}) => {
   return useQuery({
+    enabled: options.enabled ?? true,
     queryKey: reviewQueryKeys.list(query),
     queryFn: () => reviewApi.getReviews(query),
     staleTime: 30 * 1000,
@@ -42,8 +43,9 @@ export const useReview = (id: string) => {
   });
 };
 
-export const useDailyReviewCounts = (from: string, to: string) => {
+export const useDailyReviewCounts = (from: string, to: string, options: { enabled?: boolean } = {}) => {
   return useQuery({
+    enabled: options.enabled ?? true,
     queryKey: [...reviewQueryKeys.all, 'daily', { from, to }] as const,
     queryFn: () => reviewApi.getDailyCounts(from, to),
     staleTime: 60 * 1000,

@@ -97,6 +97,8 @@ export function setup(infra: IdpInfra) {
       },
     },
     environment: {
+      // 관리자 권한 판정 주체 스위치(ADR-0048 §37) — services 배포의 authzEnforce 와 같은 뜻.
+      AUTHZ_ENFORCE: 'true',
       DATABASE_URL: dbUrl('user_service'),
       // platform이 제공하는 VPC 내부 Redpanda. kafka-config.util은 API key/SASL 미지정 시
       // plaintext로 자동 fallback하므로 브로커 주소만 주입하면 됨.

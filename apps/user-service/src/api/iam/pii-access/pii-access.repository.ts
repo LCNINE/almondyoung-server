@@ -4,6 +4,7 @@ import {
   piiAccessLogs,
   piiAccessReviews,
   type UserServiceSchema,
+  type UserServiceTx,
 } from 'apps/user-service/database/drizzle/schema';
 import { and, desc, eq, gte, inArray, lt, or, sql, type SQL } from 'drizzle-orm';
 
@@ -39,7 +40,7 @@ export class PiiAccessRepository {
     await this.dbService.db.insert(piiAccessLogs).values(row).onConflictDoNothing({ target: piiAccessLogs.eventId });
   }
 
-  page(filter: PiiAccessFilter, limit: number): Promise<PiiAccessLogRow[]> {
+  page(filter: PiiAccessFilter, limit: number, tx?: UserServiceTx): Promise<PiiAccessLogRow[]> {
     const conditions: (SQL | undefined)[] = [
       filter.from ? gte(piiAccessLogs.occurredAt, filter.from) : undefined,
       filter.to ? lt(piiAccessLogs.occurredAt, filter.to) : undefined,
@@ -54,7 +55,7 @@ export class PiiAccessRepository {
         : undefined,
     ];
     const present = conditions.filter((c): c is SQL => c !== undefined);
-    return this.dbService.db
+    return (tx ?? this.dbService.db)
       .select()
       .from(piiAccessLogs)
       .where(present.length > 0 ? and(...present) : undefined)

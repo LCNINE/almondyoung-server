@@ -7,6 +7,7 @@ const base = {
   packageWidthMm: 120,
   packageLengthMm: 45,
   packageHeightMm: 30,
+  packageWeightG: 250,
   barcodeStatus: 'none',
   allFacesConfirmed: true,
 };
@@ -25,6 +26,13 @@ describe('CompleteFieldCaptureDto', () => {
   it('0 과 5001 은 거부', async () => {
     expect((await errorsOf({ packageHeightMm: 0 })).length).toBeGreaterThan(0);
     expect((await errorsOf({ packageLengthMm: 5001 })).length).toBeGreaterThan(0);
+  });
+  it('무게는 필수 — 없거나 소수·0·100001g 이면 거부', async () => {
+    expect((await errorsOf({ packageWeightG: undefined })).length).toBeGreaterThan(0);
+    expect((await errorsOf({ packageWeightG: 12.5 })).length).toBeGreaterThan(0);
+    expect((await errorsOf({ packageWeightG: 0 })).length).toBeGreaterThan(0);
+    expect((await errorsOf({ packageWeightG: 100001 })).length).toBeGreaterThan(0);
+    expect(await errorsOf({ packageWeightG: 100000 })).toHaveLength(0);
   });
   it('scanned 인데 바코드가 없으면 거부', async () => {
     expect((await errorsOf({ barcodeStatus: 'scanned' })).length).toBeGreaterThan(0);

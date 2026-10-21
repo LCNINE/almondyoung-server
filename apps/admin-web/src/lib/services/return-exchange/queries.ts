@@ -7,8 +7,9 @@ import {
 } from '@/lib/api/domains/return-exchange';
 import { returnExchangeQueryKeys } from './query-keys';
 
-export const useReturnRequests = (query: ReturnExchangeListQuery) => {
+export const useReturnRequests = (query: ReturnExchangeListQuery, options: { enabled?: boolean } = {}) => {
   return useQuery({
+    enabled: options.enabled ?? true,
     queryKey: returnExchangeQueryKeys.returnList(query),
     queryFn: () => returnExchangeApi.listReturnRequests(query),
     staleTime: 30 * 1000,
@@ -34,8 +35,9 @@ export const useChannelOrderReturnEligibility = (channelOrderId: string) => {
   });
 };
 
-export const useExchangeRequests = (query: ReturnExchangeListQuery) => {
+export const useExchangeRequests = (query: ReturnExchangeListQuery, options: { enabled?: boolean } = {}) => {
   return useQuery({
+    enabled: options.enabled ?? true,
     queryKey: returnExchangeQueryKeys.exchangeList(query),
     queryFn: () => returnExchangeApi.listExchangeRequests(query),
     staleTime: 30 * 1000,

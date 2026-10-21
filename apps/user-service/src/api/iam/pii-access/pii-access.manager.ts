@@ -39,7 +39,7 @@ export class PiiAccessManager {
   /** 접속기록을 본 것도 남긴다(로그 열람 자체가 기록 대상). 이력을 못 남기면 조회도 실패한다. */
   viewLogs(actor: IamActor, query: PiiAccessLogsQueryDto): Promise<PiiAccessPageDto> {
     return this.dbService.run(async (tx) => {
-      const page = await this.reader.page(query);
+      const page = await this.reader.page(query, tx);
       await this.audit.record(tx, actor, {
         action: 'pii_access_log.view',
         targetType: 'pii_access_log',

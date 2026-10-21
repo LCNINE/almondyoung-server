@@ -6,6 +6,13 @@ import {
   cameraUnavailableReason,
   completedByText,
   draftFromDetail,
+  DRAFT_TTL_MS,
+  restoreDraft,
+  kstDateOf,
+  periodRange,
+  shiftDate,
+  myItemLine,
+  savedDraftJson,
   errorMessageOf,
   fieldCaptureKeys,
   MANUFACTURER_BARCODE_FORMATS,
@@ -18,6 +25,7 @@ import {
   reworkNotice,
   scanInputValue,
   missingRequirements,
+  parseGrams,
   parseMm,
   photoRejectionReason,
   toCompleteRequest,
@@ -28,6 +36,7 @@ const full: CaptureDraft = {
   widthMm: '120',
   lengthMm: '45',
   heightMm: '30',
+  weightG: '250',
   barcodeStatus: 'none',
   scannedBarcode: '',
   photoCount: 3,
@@ -52,6 +61,15 @@ describe('MANUFACTURER_BARCODE_FORMATS', () => {
     ] as const) {
       expect(MANUFACTURER_BARCODE_FORMATS).not.toContain(twoD);
     }
+  });
+});
+
+describe('parseGrams', () => {
+  it('1~100000 정수만 받는다', () => {
+    expect(parseGrams('250')).toBe(250);
+    expect(parseGrams(' 100000 ')).toBe(100000);
+    for (const bad of ['12.5', '250g', '0', '100001', ''])
+      expect(parseGrams(bad)).toBeNull();
   });
 });
 
@@ -121,6 +139,10 @@ describe('missingRequirements', () => {
     expect(missingRequirements({ ...full, widthMm: 'abc' })).toContain(
       '가로를 mm 정수로 입력해 주세요'
     ));
+  it('무게 빈칸', () =>
+    expect(missingRequirements({ ...full, weightG: '' })).toContain(
+      '무게를 g 정수로 입력해 주세요'
+    ));
 });
 
 describe('toCompleteRequest', () => {
@@ -129,6 +151,7 @@ describe('toCompleteRequest', () => {
       packageWidthMm: 120,
       packageLengthMm: 45,
       packageHeightMm: 30,
+      packageWeightG: 250,
       barcodeStatus: 'none',
       allFacesConfirmed: true,
     });
@@ -331,6 +354,7 @@ describe('draftFromDetail', () => {
     packageWidthMm: null,
     packageLengthMm: null,
     packageHeightMm: null,
+    packageWeightG: null,
     barcodes: [],
     photos: [],
     completion: null,
@@ -356,19 +380,21 @@ describe('draftFromDetail', () => {
       widthMm: '',
       lengthMm: '',
       heightMm: '',
+      weightG: '',
       barcodeStatus: null,
       scannedBarcode: '',
       photoCount: 0,
       allFacesConfirmed: false,
     }));
 
-  it('재작업은 치수·바코드를 채우고 여섯 면 확인은 다시 받는다', () =>
+  it('재작업(수정)은 치수·바코드·여섯 면 확인을 채운다', () =>
     expect(
       draftFromDetail({
         ...base,
         packageWidthMm: 120,
         packageLengthMm: 45,
         packageHeightMm: 30,
+        packageWeightG: 250,
         photos: [photo('a'), photo('b'), photo('c')],
         completion,
       })
@@ -376,10 +402,11 @@ describe('draftFromDetail', () => {
       widthMm: '120',
       lengthMm: '45',
       heightMm: '30',
+      weightG: '250',
       barcodeStatus: 'scanned',
       scannedBarcode: '8801234567890',
       photoCount: 3,
-      allFacesConfirmed: false,
+      allFacesConfirmed: true,
     }));
 
   it('스캔이 아닌 완료는 바코드 값을 비운다', () => {
@@ -395,7 +422,22 @@ describe('draftFromDetail', () => {
     expect(d.scannedBarcode).toBe('');
   });
 
-  it('재작업 초안은 여섯 면 체크 하나만 남는다', () =>
+  it('재작업(수정) 초안은 그대로 저장할 수 있다', () =>
+    expect(
+      missingRequirements(
+        draftFromDetail({
+          ...base,
+          packageWidthMm: 120,
+          packageLengthMm: 45,
+          packageHeightMm: 30,
+          packageWeightG: 250,
+          photos: [photo('a'), photo('b'), photo('c')],
+          completion,
+        })
+      )
+    ).toEqual([]));
+
+  it('무게 없이 끝난 옛 실측을 다시 하면 무게도 받는다', () =>
     expect(
       missingRequirements(
         draftFromDetail({
@@ -407,7 +449,7 @@ describe('draftFromDetail', () => {
           completion,
         })
       )
-    ).toEqual(['여섯 면이 다 나왔는지 확인해 주세요']));
+    ).toEqual(['무게를 g 정수로 입력해 주세요']));
 });
 
 describe('scanner settings', () => {
@@ -511,5 +553,76 @@ describe('scannerConstraintsFor', () => {
   });
   it('falls back to facingMode without a chosen lens', () => {
     expect(scannerConstraintsFor(null)).toBe(SCANNER_VIDEO_CONSTRAINTS);
+  });
+});
+
+describe('restoreDraft', () => {
+  const draft = {
+    widthMm: '120',
+    lengthMm: '80',
+    heightMm: '',
+    weightG: '250',
+    barcodeStatus: 'scanned' as const,
+    scannedBarcode: '8801234567890',
+    photoCount: 2,
+    allFacesConfirmed: true,
+  };
+  it('되돌아오면 적어 둔 입력을 그대로 돌려준다', () => {
+    expect(restoreDraft(savedDraftJson(draft, 1000), 2000)).toEqual(draft);
+  });
+  it('오래됐거나 깨졌거나 없으면 버린다', () => {
+    expect(restoreDraft(savedDraftJson(draft, 0), DRAFT_TTL_MS + 1)).toBeNull();
+    expect(restoreDraft('{oops', 0)).toBeNull();
+    expect(restoreDraft(null, 0)).toBeNull();
+  });
+});
+
+describe('kstDateOf', () => {
+  it('UTC 전날 밤도 KST 날짜로 묶는다', () => {
+    expect(kstDateOf('2026-10-20T16:30:00.000Z')).toBe('2026-10-21');
+  });
+});
+
+describe('myItemLine', () => {
+  it('KST 시각·치수·바코드 상태를 한 줄로', () => {
+    expect(
+      myItemLine({
+        completedAt: '2026-10-21T05:05:00.000Z',
+        packageWidthMm: 120,
+        packageLengthMm: 80,
+        packageHeightMm: 50,
+        barcodeStatus: 'scanned',
+      })
+    ).toBe('14:05 · 120×80×50mm · 바코드 스캔');
+  });
+  it('치수가 비면 치수를 뺀다', () => {
+    expect(
+      myItemLine({
+        completedAt: '2026-10-21T05:05:00.000Z',
+        packageWidthMm: null,
+        packageLengthMm: 80,
+        packageHeightMm: 50,
+        barcodeStatus: 'none',
+      })
+    ).toBe('14:05 · 바코드 없음');
+  });
+});
+
+describe('shiftDate', () => {
+  it('달·해를 넘긴다', () => {
+    expect(shiftDate('2026-03-01', -1)).toBe('2026-02-28');
+    expect(shiftDate('2026-12-31', 1)).toBe('2027-01-01');
+  });
+});
+
+describe('periodRange', () => {
+  const today = '2026-10-21';
+  it('오늘·어제·7일(오늘 포함)·전체·날짜', () => {
+    expect(periodRange('today', today, null)).toEqual({ from: today, to: today });
+    expect(periodRange('yesterday', today, null)).toEqual({ from: '2026-10-20', to: '2026-10-20' });
+    expect(periodRange('week', today, null)).toEqual({ from: '2026-10-15', to: today });
+    expect(periodRange('all', today, null)).toEqual({});
+    expect(periodRange('date', today, '2026-10-01')).toEqual({ from: '2026-10-01', to: '2026-10-01' });
+    expect(periodRange('date', today, null)).toEqual({});
   });
 });

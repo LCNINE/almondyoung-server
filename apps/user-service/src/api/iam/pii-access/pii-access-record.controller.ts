@@ -38,7 +38,8 @@ export class PiiAccessRecordController {
       kinds: body.kinds,
       queryKeys: body.queryKeys,
       reason: body.reason ?? null,
-      occurredAt: new Date(body.occurredAt),
+      // 본인 기록은 응답 직후에 온다 — 시각도 행위자처럼 본문이 아니라 서버가 정한다.
+      occurredAt: new Date(),
     });
   }
 

@@ -362,8 +362,9 @@ export const useFulfillmentMetrics = () => {
   });
 };
 
-export const useDailyOrderStatus = (from: string, to: string) => {
+export const useDailyOrderStatus = (from: string, to: string, options: { enabled?: boolean } = {}) => {
   return useQuery({
+    enabled: options.enabled ?? true,
     queryKey: orderQueryKeys.dailyOrderStatus(from, to),
     queryFn: () => orders.salesOrders.getDailyStatusStats(from, to),
     select: normalizeDailyOrderStatus,

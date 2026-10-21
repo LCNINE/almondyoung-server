@@ -58,8 +58,9 @@ export const useRefundList = (query: RefundListQuery) => {
 
 // ── Refund Requests (무통장 환불 요청 큐) ────────────────────────────────────
 
-export const useRefundRequests = (page?: number, limit?: number) => {
+export const useRefundRequests = (page?: number, limit?: number, options: { enabled?: boolean } = {}) => {
   return useQuery({
+    enabled: options.enabled ?? true,
     queryKey: walletQueryKeys.refundRequestList(page, limit),
     queryFn: () => walletApi.listRefundRequests(page, limit),
     staleTime: 30 * 1000,
@@ -69,8 +70,9 @@ export const useRefundRequests = (page?: number, limit?: number) => {
 
 // ── Bank Transfers ─────────────────────────────────────────────────────────
 
-export const usePendingBankTransfers = (page?: number, limit?: number) => {
+export const usePendingBankTransfers = (page?: number, limit?: number, options: { enabled?: boolean } = {}) => {
   return useQuery({
+    enabled: options.enabled ?? true,
     queryKey: walletQueryKeys.bankTransferList(page, limit),
     queryFn: () => walletApi.listPendingBankTransfers(page, limit),
     staleTime: 30 * 1000,

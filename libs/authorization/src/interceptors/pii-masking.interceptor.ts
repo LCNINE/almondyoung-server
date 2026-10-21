@@ -231,16 +231,21 @@ export class PiiMaskingInterceptor implements NestInterceptor {
     action: PiiAccessAction,
     reason: string | null,
   ) {
-    const seen = new Map<string, { type: PiiSubjectType; id: string }>();
-    for (const subject of spec.subjects) {
+    const seen = new Set<string>();
+    const buckets = spec.subjects.map((subject) => {
+      const bucket: { type: PiiSubjectType; id: string }[] = [];
       const values = subject.path !== undefined ? readPathValues(inner, subject.path) : [facts.param(subject.param ?? '')];
       for (const value of values) {
         if (typeof value !== 'string' && typeof value !== 'number') continue;
         const id = subject.hash === true ? `h:${createHash('sha256').update(String(value)).digest('hex').slice(0, 16)}` : String(value);
-        seen.set(`${subject.type}\u0000${id}`, { type: subject.type, id });
+        const key = `${subject.type}\u0000${id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        bucket.push({ type: subject.type, id });
       }
-    }
-    const subjects = [...seen.values()];
+      return bucket;
+    });
+    const subjects = interleave(buckets);
     if (subjects.length === 0) this.logger.warn(`pii_access_without_subject route=${facts.route}`);
     const client = staffClientOf(request);
     return {
@@ -293,4 +298,12 @@ export class PiiMaskingInterceptor implements NestInterceptor {
     if (redacted.length > 0) raw.setHeader('x-pii-redacted', [...redacted].sort().join(','));
     if (revealable) raw.setHeader('x-pii-revealable', '1');
   }
+}
+
+/** 선언마다 하나씩 번갈아 꺼낸다 — 상한에서 잘려도 뒤에 선언한 대상 종류가 통째로 빠지지 않게. */
+function interleave<T>(buckets: readonly (readonly T[])[]): T[] {
+  const out: T[] = [];
+  const longest = Math.max(0, ...buckets.map((b) => b.length));
+  for (let i = 0; i < longest; i++) for (const bucket of buckets) if (i < bucket.length) out.push(bucket[i]);
+  return out;
 }
