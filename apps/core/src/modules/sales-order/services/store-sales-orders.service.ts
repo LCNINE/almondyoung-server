@@ -604,8 +604,19 @@ export class StoreSalesOrdersService {
         ),
       );
 
-    // SO당 select 1~3개 × 페이지(≤100건 제한) Promise.all. 정산이 끝난 채널 취소가 있는 SO는 wallet GET 도 1회 더 한다(2초 시간 초과, 실패 = 모름). 느려지면 buildActionsView 쿼리 배치화.
-    return Promise.all(sos.map((so) => this.buildActionsView(so)));
+    // 진행 단계는 주문 id 전체로 한 번에 읽는다. 나머지는 SO당 select 0~3개 × 페이지(≤100건 제한) Promise.all.
+    // 정산이 끝난 채널 취소가 있는 SO는 wallet GET 도 1회 더 한다(2초 시간 초과, 실패 = 모름). 더 느려지면 buildActionsView 쿼리 배치화.
+    const phases = await readOrderFulfillmentPhases(
+      this.db.db,
+      sos.map((so) => so.id),
+    );
+    return Promise.all(
+      sos.map((so) => {
+        const phase = phases.get(so.id);
+        if (!phase) throw new Error(`Fulfillment phase missing for sales order ${so.id}`);
+        return this.buildActionsView(so, undefined, phase);
+      }),
+    );
   }
 
   async cancelRequestByChannelOrder(
@@ -691,11 +702,13 @@ export class StoreSalesOrdersService {
   private async buildActionsView(
     so: SalesOrderRow,
     overrideRefundStatus?: StoreRefundStatus,
+    /** 일괄 조회가 미리 읽어 온 단계. 없으면(단건 경로) 여기서 읽는다 */
+    preloadedPhase?: OrderFulfillmentPhase,
   ): Promise<StoreOrderActionsResponseDto> {
     const foRows = await this.loadFoRows(so.id);
     const phaseInput = await this.loadFulfillmentPhaseInput(so.id, foRows);
     // 단계는 관리자 뱃지·일별 통계와 같은 사다리 한 벌에서 온다 — 진행 요약(소포 수)만 여기서 센다
-    const phase = await this.loadFulfillmentPhase(so.id);
+    const phase = preloadedPhase ?? (await this.loadFulfillmentPhase(so.id));
     const fulfillmentStatus = phase.storePhase;
     const progress = shipmentProgressOf(phaseInput);
     const shipmentProgress: ShipmentProgressDto | undefined = progress.total > 0 ? progress : undefined;

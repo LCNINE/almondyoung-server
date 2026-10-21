@@ -680,6 +680,7 @@ describe('StoreSalesOrdersService', () => {
   describe('getActionsByChannelOrderBatch', () => {
     // makeContext 는 findSoOrThrow(limit) 전제라, builder 를 직접 await 하는 배치 쿼리용 mock 을 따로 만든다.
     function makeBatchContext(sos: ReturnType<typeof makeSo>[]) {
+      mockPhase();
       let whereCallIndex = 0;
       const dbMock = {
         db: {
@@ -721,6 +722,32 @@ describe('StoreSalesOrdersService', () => {
       );
       expect(result.map((r) => r.channelOrderId)).toEqual([CHANNEL_ORDER_ID, 'medusa-order-002']);
       expect(result[0].availableActions).toContain('cancel');
+    });
+
+    it('진행 단계는 주문마다가 아니라 전체 id 로 한 번에 읽는다', async () => {
+      const { service } = makeBatchContext([
+        makeSo({ walletIntentId: null }),
+        makeSo({ id: 'so-002', channelOrderId: 'medusa-order-002', walletIntentId: null }),
+        makeSo({ id: 'so-003', channelOrderId: 'medusa-order-003', walletIntentId: null }),
+      ]);
+      readPhases.mockClear();
+
+      await service.getActionsByChannelOrderBatch(
+        [CHANNEL_ORDER_ID, 'medusa-order-002', 'medusa-order-003'],
+        CUSTOMER_ID,
+      );
+
+      expect(readPhases).toHaveBeenCalledTimes(1);
+      expect(readPhases).toHaveBeenCalledWith(expect.anything(), [SO_ID, 'so-002', 'so-003']);
+    });
+
+    it('일괄로 읽은 맵에 주문이 없으면 기본값으로 덮지 않고 던진다', async () => {
+      const { service } = makeBatchContext([makeSo({ walletIntentId: null })]);
+      readPhases.mockResolvedValueOnce(new Map());
+
+      await expect(service.getActionsByChannelOrderBatch([CHANNEL_ORDER_ID], CUSTOMER_ID)).rejects.toThrow(
+        /Fulfillment phase missing/,
+      );
     });
 
     it('빈 id 목록이면 DB 조회 없이 빈 배열을 반환한다', async () => {
