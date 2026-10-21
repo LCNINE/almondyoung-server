@@ -1,9 +1,10 @@
 'use client';
 
 import { Suspense, useState, type FormEvent } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, Loader2, Search } from 'lucide-react';
+import { ChevronRight, Loader2, Search } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,6 +20,8 @@ import { skusClient } from '@/lib/api/domains/inventory/skus.client';
 import type { FieldCaptureSkuSummaryDto } from '@/lib/types/dto/inventory';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import { BarcodeScanInput } from '@/features/inventory/sku-field-capture/components/barcode-scan-input';
+import { MobileTopBar } from '@/features/inventory/sku-field-capture/components/mobile-top-bar';
+import { SkuThumb } from '@/features/inventory/sku-field-capture/components/sku-thumb';
 import {
   completedByText,
   errorMessageOf,
@@ -44,7 +47,7 @@ function FieldCaptureEntry() {
   const openSku = (skuId: string) => router.push(`${BASE}/${encodeURIComponent(skuId)}`);
 
   if (position) {
-    return <ShelfList code={position} onBack={() => router.push(BASE)} onOpenSku={openSku} />;
+    return <ShelfList code={position} onOpenSku={openSku} />;
   }
 
   return (
@@ -73,20 +76,23 @@ function MyToday() {
     staleTime: 0, // 전역 5분을 물려받지 않는다 — 다른 화면에서 끝낸 수도 돌아오면 바로 센다
   });
   if (!data) return null;
-  return <p className="text-center text-sm text-gray-600">오늘 내가 끝낸 상품 {data.today}개</p>;
+  return (
+    <Link
+      href={`${BASE}/mine`}
+      className="flex items-center justify-center gap-1 text-sm text-gray-600 underline-offset-2 hover:underline"
+    >
+      오늘 내가 끝낸 상품 {data.today}개
+      <ChevronRight className="h-4 w-4" />
+    </Link>
+  );
 }
 
 // ② 선반의 상품 목록
-function ShelfList({
-  code,
-  onBack,
-  onOpenSku,
-}: {
-  code: string;
-  onBack: () => void;
-  onOpenSku: (skuId: string) => void;
-}) {
-  const [confirm, setConfirm] = useState<{ sku: FieldCaptureSkuSummaryDto; notice: string } | null>(null);
+function ShelfList({ code, onOpenSku }: { code: string; onOpenSku: (skuId: string) => void }) {
+  const [confirm, setConfirm] = useState<{
+    sku: FieldCaptureSkuSummaryDto;
+    notice: string;
+  } | null>(null);
   const { data, isLoading, error } = useQuery({
     queryKey: fieldCaptureKeys.position(code),
     queryFn: () => skuFieldCaptureClient.getPosition(code),
@@ -101,86 +107,63 @@ function ShelfList({
   };
 
   return (
-    <div className="space-y-3 p-4">
-      <button type="button" onClick={onBack} className="flex items-center gap-1 text-sm text-gray-600">
-        <ChevronLeft className="h-4 w-4" />
-        다른 선반 찍기
-      </button>
-      <h1 className="text-lg font-bold text-gray-900">선반 {data?.positionCode ?? code}</h1>
+    <>
+      <MobileTopBar title={`선반 ${data?.positionCode ?? code}`} backHref={BASE} />
+      <div className="space-y-3 p-4">
+        {isLoading && <Loader2 className="mx-auto h-6 w-6 animate-spin text-gray-400" />}
+        {error && <p className="text-sm text-red-600">{errorMessageOf(error, '선반을 불러오지 못했어요')}</p>}
 
-      {isLoading && <Loader2 className="mx-auto h-6 w-6 animate-spin text-gray-400" />}
-      {error && <p className="text-sm text-red-600">{errorMessageOf(error, '선반을 불러오지 못했어요')}</p>}
+        {data && data.skus.length === 0 && (
+          <>
+            <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+              이 칸엔 등록된 상품이 없어요 — 이름·코드로 찾아 주세요
+            </p>
+            <NameSearch onOpenSku={onOpenSku} />
+          </>
+        )}
 
-      {data && data.skus.length === 0 && (
-        <>
-          <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
-            이 칸엔 등록된 상품이 없어요 — 이름·코드로 찾아 주세요
-          </p>
-          <NameSearch onOpenSku={onOpenSku} />
-        </>
-      )}
+        {data && data.skus.length > 0 && (
+          <ul className="space-y-2">
+            {data.skus.map((sku) => (
+              <li key={sku.skuId}>
+                <button
+                  type="button"
+                  onClick={() => pick(sku)}
+                  className="flex w-full items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 text-left"
+                >
+                  <SkuThumb src={resolvePublicFileUrl(sku.imageUrl)} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-semibold text-gray-900">{sku.name}</p>
+                    <p className="text-xs text-gray-500">{sku.code}</p>
+                    {sku.completion ? (
+                      <p className="mt-1 text-xs font-medium text-green-700">{completedByText(sku.completion)}</p>
+                    ) : (
+                      <p className="mt-1 text-xs font-medium text-orange-600">미완료</p>
+                    )}
+                  </div>
+                  <ChevronRight className="h-5 w-5 shrink-0 text-gray-400" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
 
-      {data && data.skus.length > 0 && (
-        <ul className="space-y-2">
-          {data.skus.map((sku) => (
-            <li key={sku.skuId}>
-              <button
-                type="button"
-                onClick={() => pick(sku)}
-                className="flex w-full items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 text-left"
-              >
-                <SkuThumb src={resolvePublicFileUrl(sku.imageUrl)} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-semibold text-gray-900">{sku.name}</p>
-                  <p className="text-xs text-gray-500">{sku.code}</p>
-                  {sku.completion ? (
-                    <p className="mt-1 text-xs font-medium text-green-700">{completedByText(sku.completion)}</p>
-                  ) : (
-                    <p className="mt-1 text-xs font-medium text-orange-600">미완료</p>
-                  )}
-                </div>
-                <ChevronRight className="h-5 w-5 shrink-0 text-gray-400" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <AlertDialog open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>다시 작업할까요?</AlertDialogTitle>
-            <AlertDialogDescription className="text-base font-semibold text-green-700">
-              {confirm?.notice}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>취소</AlertDialogCancel>
-            <AlertDialogAction onClick={() => confirm && onOpenSku(confirm.sku.skuId)}>다시 작업</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
-  );
-}
-
-function SkuThumb({ src }: { src: string | null }) {
-  const [failed, setFailed] = useState(false);
-  if (!src || failed) {
-    return (
-      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-[10px] text-gray-400">
-        사진 없음
+        <AlertDialog open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>다시 작업할까요?</AlertDialogTitle>
+              <AlertDialogDescription className="text-base font-semibold text-green-700">
+                {confirm?.notice}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>취소</AlertDialogCancel>
+              <AlertDialogAction onClick={() => confirm && onOpenSku(confirm.sku.skuId)}>다시 작업</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
-    );
-  }
-  return (
-    // eslint-disable-next-line @next/next/no-img-element -- 셀메이트 외부 이미지, next/image 도메인 설정 밖
-    <img
-      src={src}
-      alt=""
-      onError={() => setFailed(true)}
-      className="h-16 w-16 shrink-0 rounded-lg border border-gray-200 object-cover"
-    />
+    </>
   );
 }
 

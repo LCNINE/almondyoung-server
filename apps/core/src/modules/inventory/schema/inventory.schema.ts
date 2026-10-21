@@ -646,6 +646,8 @@ export const skus = pgTable(
     packageWidthMm: integer('package_width_mm'),
     packageLengthMm: integer('package_length_mm'),
     packageHeightMm: integer('package_height_mm'),
+    // 포장 실측 무게(g). 위 product_weight 는 건드리지 않는다.
+    packageWeightG: integer('package_weight_g'),
     productMaterial: text('product_material'),
 
     // 추가 메타데이터
@@ -786,6 +788,10 @@ export const skuFieldCaptures = pgTable(
     lastWorkerLabel: varchar('last_worker_label', { length: 255 }).notNull(),
     firstCompletedAt: timestamp('first_completed_at', { withTimezone: true }).notNull(),
     lastCompletedAt: timestamp('last_completed_at', { withTimezone: true }).notNull(),
+    // 완료 취소는 소프트 삭제 — 값이 있으면 미완료로 본다. 다시 완료하면 비운다
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedById: uuid('deleted_by_id'),
+    deletedByLabel: varchar('deleted_by_label', { length: 255 }),
   },
   (t) => ({
     ckBarcodeStatus: check(
@@ -805,6 +811,8 @@ export const skuFieldCaptureEvents = pgTable(
     workerId: uuid('worker_id').notNull(),
     workerLabel: varchar('worker_label', { length: 255 }).notNull(),
     completedAt: timestamp('completed_at', { withTimezone: true }).notNull().defaultNow(),
+    // 그 완료가 취소됐으면 찍는다 — 작업 수·내 기록에서 뺀다
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
   },
   (t) => ({
     idxWorkerDay: index('idx_sku_field_capture_events_worker_completed').on(t.workerId, t.completedAt),
