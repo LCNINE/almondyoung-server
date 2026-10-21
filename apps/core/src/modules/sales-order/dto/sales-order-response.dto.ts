@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { SALES_CHANNELS } from '@packages/event-contracts/streams';
-import type { OrderShipmentPhase } from '../services/order-shipment-phase.sql';
+import type { OrderShipmentPhase } from '../line-quantities/order-fulfillment-phase.sql';
 
 export class SalesOrderLineResponseDto {
   @ApiProperty({ description: '주문 라인 ID' })

@@ -59,7 +59,8 @@ import { extractDisplayOrderNo } from '../utils/display-order-no.util';
 import { ChannelCancelRequestReader } from '../channel-cancel-request/channel-cancel-request.reader';
 import { toCancelRequestView } from '../channel-cancel-request/channel-cancel-request.types';
 import { buildDailyOrderStatusSeries, DailyOrderStatusPoint } from '../utils/daily-order-status';
-import { orderShipmentPhaseSql, type OrderShipmentPhase } from './order-shipment-phase.sql';
+import { orderFulfillmentPhaseSql, type OrderShipmentPhase } from '../line-quantities/order-fulfillment-phase.sql';
+import { readOrderFulfillmentPhases } from '../line-quantities/order-fulfillment-phase.reader';
 import { BusinessLinkReferenceDto, CreateBusinessLinkDto } from '../dto/create-business-link.dto';
 import { CancelSalesOrderDto } from '../dto/cancel-sales-order.dto';
 import { AddressDto } from '../dto/address.dto';
@@ -767,18 +768,13 @@ export class SalesOrdersService {
   }
 
   /**
-   * 주문 id 들의 출고 단계를 한 번에 읽는다. 단계 정의는 일별 통계와 같은 `orderShipmentPhaseSql` 한 벌이다.
+   * 주문 id 들의 관리자 출고 단계를 한 번에 읽는다. 단계는 일별 통계·고객 화면과 같은 사다리 한 벌
+   * (`orderFulfillmentPhaseSql`)의 `admin_phase` 다.
    * 반환 맵에 없는 id 는 주문이 없다는 뜻이다(SQL 은 존재하는 주문마다 정확히 한 행을 낸다).
    */
   private async loadShipmentPhases(orderIds: string[], db: DbTx | WmsDb): Promise<Map<string, OrderShipmentPhase>> {
-    if (orderIds.length === 0) return new Map();
-    const ids = sql.join(
-      orderIds.map((id) => sql`${id}::uuid`),
-      sql`, `,
-    );
-    const rows = await db.execute(orderShipmentPhaseSql(sql`SELECT x.id FROM unnest(ARRAY[${ids}]::uuid[]) AS x(id)`));
-    type PhaseRow = { sales_order_id: string; phase: OrderShipmentPhase };
-    return new Map(Array.from(rows as unknown as ArrayLike<PhaseRow>).map((r) => [r.sales_order_id, r.phase]));
+    const phases = await readOrderFulfillmentPhases(db, orderIds);
+    return new Map(Array.from(phases, ([id, phase]) => [id, phase.adminPhase]));
   }
 
   async getOne(id: string, tx?: DbTx) {
@@ -1167,21 +1163,21 @@ export class SalesOrdersService {
     const db = this.db.db;
 
     const [orderRows, exchangeRows, returnRows] = await Promise.all([
-      // 단계 정의는 주문 목록·상세 뱃지와 같은 한 벌(orderShipmentPhaseSql)을 읽는다 — 숫자와 뱃지가 어긋나지 않게.
+      // 단계는 주문 목록·상세 뱃지와 같은 사다리 한 벌(orderFulfillmentPhaseSql)의 admin_phase — 숫자와 뱃지가 어긋나지 않게.
       db.execute(sql`
         WITH ranged AS (
           SELECT id, ((order_date AT TIME ZONE 'Asia/Seoul')::date)::text AS day
             FROM sales_orders
            WHERE order_date >= ${start} AND order_date < ${end}
         ),
-        ph AS (${orderShipmentPhaseSql(sql`SELECT id FROM ranged`)})
+        ph AS (${orderFulfillmentPhaseSql(sql`SELECT ranged.id FROM ranged`)})
         SELECT ranged.day,
-               count(*) FILTER (WHERE ph.phase = 'pending')::int AS pending,
-               count(*) FILTER (WHERE ph.phase = 'preparing')::int AS preparing,
-               count(*) FILTER (WHERE ph.phase = 'shipping')::int AS shipping,
-               count(*) FILTER (WHERE ph.phase = 'delivered')::int AS delivered,
-               count(*) FILTER (WHERE ph.phase = 'external_shipped')::int AS "externalShipped",
-               count(*) FILTER (WHERE ph.phase = 'cancelled')::int AS cancelled,
+               count(*) FILTER (WHERE ph.admin_phase = 'pending')::int AS pending,
+               count(*) FILTER (WHERE ph.admin_phase = 'preparing')::int AS preparing,
+               count(*) FILTER (WHERE ph.admin_phase = 'shipping')::int AS shipping,
+               count(*) FILTER (WHERE ph.admin_phase = 'delivered')::int AS delivered,
+               count(*) FILTER (WHERE ph.admin_phase = 'external_shipped')::int AS "externalShipped",
+               count(*) FILTER (WHERE ph.admin_phase = 'cancelled')::int AS cancelled,
                count(*)::int AS total
           FROM ranged
           JOIN ph ON ph.sales_order_id = ranged.id
