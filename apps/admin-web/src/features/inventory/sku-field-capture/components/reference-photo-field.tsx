@@ -7,7 +7,14 @@ import { uploadFileToFileService } from '@/lib/api/domains/files/upload.client';
 import { skuFieldCaptureClient } from '@/lib/api/domains/inventory/sku-field-capture.client';
 import type { FieldCaptureDetailDto, ReferencePhotoDto } from '@/lib/types/dto/inventory';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
-import { MIN_REFERENCE_PHOTOS, REFERENCE_PHOTO_CONTEXT_ID, errorMessageOf, photoRejectionReason } from '../field-capture-model';
+import {
+  MIN_REFERENCE_PHOTOS,
+  REFERENCE_PHOTO_CONTEXT_ID,
+  cameraUnavailableReason,
+  errorMessageOf,
+  photoRejectionReason,
+} from '../field-capture-model';
+import { PhotoCamera } from './photo-camera';
 
 type Props = {
   skuId: string;
@@ -20,8 +27,12 @@ type Props = {
 
 export function ReferencePhotoField({ skuId, photos, onDetail, disabled = false }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(0);
+  // 올리는 중인 사진의 로컬 미리보기 — 찍자마자 보이고 위에 「올리는 중」만 덮는다
+  const [pending, setPending] = useState<string[]>([]);
   const [removing, setRemoving] = useState<ReadonlySet<string>>(new Set());
+  const [cameraOpen, setCameraOpen] = useState(false);
+  // 화면 안 카메라를 못 쓰면(권한 거부·미지원) 이 화면에선 폰 카메라 앱으로 찍는다
+  const [nativeOnly, setNativeOnly] = useState(false);
   // 방금 찍은 사진은 서버에서 다시 받지 않고 찍은 파일로 보여 준다 — 다시 받는 요청이 늦거나 실패하면 엑박이 떴다.
   // 연결 응답(onDetail)이 화면을 다시 그리므로 상태가 아니라 ref 로 둔다
   const localPreviews = useRef(new Map<string, string>());
@@ -45,7 +56,9 @@ export function ReferencePhotoField({ skuId, photos, onDetail, disabled = false 
   };
 
   const addOne = async (file: File) => {
-    setUploading((n) => n + 1);
+    const preview = URL.createObjectURL(file);
+    setPending((p) => [...p, preview]);
+    let kept = false;
     try {
       let fileId: string;
       try {
@@ -58,14 +71,16 @@ export function ReferencePhotoField({ skuId, photos, onDetail, disabled = false 
         toast.error(errorMessageOf(err, '사진을 올리지 못했어요. 다시 찍어 주세요'));
         return;
       }
-      localPreviews.current.set(fileId, URL.createObjectURL(file));
+      localPreviews.current.set(fileId, preview);
+      kept = true;
       // 올라갔어도 연결이 안 되면 화면에도 안 보인다 — 다시 찍게 한다
       await serially(
         () => skuFieldCaptureClient.attachPhoto(skuId, fileId),
         '사진을 상품에 연결하지 못했어요. 다시 찍어 주세요',
       );
     } finally {
-      setUploading((n) => n - 1);
+      setPending((p) => p.filter((u) => u !== preview));
+      if (!kept) URL.revokeObjectURL(preview);
     }
   };
 
@@ -77,6 +92,17 @@ export function ReferencePhotoField({ skuId, photos, onDetail, disabled = false 
       if (reason) toast.error(reason);
       else void addOne(file);
     }
+  };
+
+  const openCamera = () => {
+    const inPage =
+      !nativeOnly &&
+      cameraUnavailableReason({
+        isSecureContext: window.isSecureContext,
+        hasGetUserMedia: typeof navigator.mediaDevices?.getUserMedia === 'function',
+      }) === null;
+    if (inPage) setCameraOpen(true);
+    else inputRef.current?.click();
   };
 
   const remove = async (photoId: string) => {
@@ -99,7 +125,7 @@ export function ReferencePhotoField({ skuId, photos, onDetail, disabled = false 
               {src && <PhotoImg src={src} />}
               <button
                 type="button"
-                onClick={() => remove(p.id)}
+                onClick={() => void remove(p.id)}
                 disabled={disabled || removing.has(p.id)}
                 aria-label="사진 지우기"
                 className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white disabled:opacity-50"
@@ -109,14 +135,17 @@ export function ReferencePhotoField({ skuId, photos, onDetail, disabled = false 
             </div>
           );
         })}
-        {Array.from({ length: uploading }, (_, i) => (
-          <div key={`up-${i}`} className="flex h-20 w-20 items-center justify-center rounded-lg bg-gray-100">
-            <Loader2 className="h-5 w-5 animate-spin text-gray-500" />
+        {pending.map((url) => (
+          <div key={url} className="relative h-20 w-20 overflow-hidden rounded-lg bg-gray-200">
+            <PhotoImg src={url} />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/45 text-[11px] font-semibold text-white">
+              올리는 중
+            </div>
           </div>
         ))}
         <button
           type="button"
-          onClick={() => inputRef.current?.click()}
+          onClick={openCamera}
           disabled={disabled}
           className="flex h-20 w-20 flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-gray-300 bg-white text-xs text-gray-600 disabled:opacity-40"
         >
@@ -135,7 +164,21 @@ export function ReferencePhotoField({ skuId, photos, onDetail, disabled = false 
       />
       <p className="text-xs text-gray-500">
         {photos.length}/{MIN_REFERENCE_PHOTOS}장 이상
+        {pending.length > 0 && ` · ${pending.length}장 올리는 중`}
       </p>
+      {cameraOpen && (
+        <PhotoCamera
+          count={photos.length + pending.length}
+          min={MIN_REFERENCE_PHOTOS}
+          onShot={(file) => void addOne(file)}
+          onFail={() => {
+            setCameraOpen(false);
+            setNativeOnly(true);
+            toast.error('카메라를 열지 못했어요 — 찍기를 다시 누르면 폰 카메라로 찍어요');
+          }}
+          onClose={() => setCameraOpen(false)}
+        />
+      )}
     </div>
   );
 }
