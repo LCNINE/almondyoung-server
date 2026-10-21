@@ -42,14 +42,16 @@ import { ChannelCancelRequestService } from '../channel-cancel-request/channel-c
 import { channelCancelRoute, sellerCenterMessage } from '../channel-cancel-request/channel-cancel-route';
 import type { CancelRequestStatus } from '../channel-cancel-request/channel-cancel-request.types';
 import {
-  deriveFulfillmentPhase,
   isPickingStarted,
   isReturnEligible,
-  hasShippedEvidence as hasShippedEvidenceFrom,
-  MOVED_SHIPMENT_STATUSES,
+  shipmentProgressOf,
   PhaseFoRow,
   FulfillmentPhaseInput,
 } from './fulfillment-phase';
+import {
+  readOrderFulfillmentPhases,
+  type OrderFulfillmentPhase,
+} from '../line-quantities/order-fulfillment-phase.reader';
 import { selfCancelBlock, SelfCancelBlock } from './self-cancel-block';
 
 type SalesOrderRow = typeof inventoryTables.salesOrders.$inferSelect;
@@ -692,7 +694,10 @@ export class StoreSalesOrdersService {
   ): Promise<StoreOrderActionsResponseDto> {
     const foRows = await this.loadFoRows(so.id);
     const phaseInput = await this.loadFulfillmentPhaseInput(so.id, foRows);
-    const { phase: fulfillmentStatus, progress } = deriveFulfillmentPhase(phaseInput);
+    // 단계는 관리자 뱃지·일별 통계와 같은 사다리 한 벌에서 온다 — 진행 요약(소포 수)만 여기서 센다
+    const phase = await this.loadFulfillmentPhase(so.id);
+    const fulfillmentStatus = phase.storePhase;
+    const progress = shipmentProgressOf(phaseInput);
     const shipmentProgress: ShipmentProgressDto | undefined = progress.total > 0 ? progress : undefined;
     const isChannelOrder = so.salesChannel !== 'medusa';
     // 채널 주문의 정산 상태가 환불 배지를 정한다(#1016 36번 재설계 판정 5) — 정산이 할 말이 없으면 null 이고 아래 도출을 쓴다
@@ -814,7 +819,7 @@ export class StoreSalesOrdersService {
     }
 
     const cancelUnavailableReason =
-      so.status === 'timeout' ? undefined : await this.cancelUnavailableReasonOf(so, foRows, phaseInput);
+      so.status === 'timeout' ? undefined : await this.cancelUnavailableReasonOf(so, foRows, phaseInput, phase);
 
     if (so.status === 'timeout') {
       // 아무 액션 없음
@@ -883,8 +888,9 @@ export class StoreSalesOrdersService {
     so: SalesOrderRow,
     foRows: PhaseFoRow[],
     phaseInput: FulfillmentPhaseInput,
+    phase: OrderFulfillmentPhase,
   ): Promise<StoreCancelUnavailableReason | undefined> {
-    const block = await this.selfCancelBlockOf(so, foRows, phaseInput);
+    const block = await this.selfCancelBlockOf(so, foRows, phaseInput, phase);
 
     if (block) return block.reason;
 
@@ -901,12 +907,15 @@ export class StoreSalesOrdersService {
     so: SalesOrderRow,
     foRows: PhaseFoRow[],
     phaseInput: FulfillmentPhaseInput,
+    phase: OrderFulfillmentPhase,
   ): Promise<SelfCancelBlock | null> {
     return selfCancelBlock(
       {
         orderStatus: so.status,
         salesChannel: so.salesChannel,
-        hasShippedEvidence: hasShippedEvidenceFrom(phaseInput),
+        // 사다리의 «나간 것» — FO 없이 셀메이트로 나간 주문(SO shipped)도 잡는다(P4). FO·상자만 보면 그 주문의
+        // 인쇄 제외 취소가 라인 범위 부분취소로 판매주문 shipped 가드를 지나간다
+        anyShipped: phase.anyShipped,
         pickingStarted: isPickingStarted(foRows),
         // 상자가 복구 중이면 예약 재계산이 FO 를 recovery_required 로 투영해 loadFulfillmentPhaseInput 이 상자 상태를 읽어 온다
         hasRecoveryBox: phaseInput.activeShipmentStatuses.includes('recovery_required'),
@@ -949,7 +958,12 @@ export class StoreSalesOrdersService {
     if (so.status === 'timeout') throw new BadRequestException('타임아웃된 주문은 취소할 수 없습니다.');
 
     const foRows = await this.loadFoRows(so.id);
-    const block = await this.selfCancelBlockOf(so, foRows, await this.loadFulfillmentPhaseInput(so.id, foRows));
+    const block = await this.selfCancelBlockOf(
+      so,
+      foRows,
+      await this.loadFulfillmentPhaseInput(so.id, foRows),
+      await this.loadFulfillmentPhase(so.id),
+    );
 
     if (block) throw new BadRequestException(block.message);
 
@@ -1254,6 +1268,7 @@ export class StoreSalesOrdersService {
       )
       .map((fo) => fo.directShipStatus as string);
 
+    // 상자 상태는 진행 요약·반품 자격·복구 중 상자 판정에만 쓴다(출고 여부는 사다리가 정한다).
     // 확실히 출고된 FO.
     const definitelyShipped = foRows.some(
       (fo) => fo.status === 'shipped' || fo.status === 'partially_shipped' || fo.status === 'completed',
@@ -1264,12 +1279,17 @@ export class StoreSalesOrdersService {
     const activeShipmentStatuses =
       definitelyShipped || maybeMaskedByRecovery ? await this.loadActiveShipmentStatuses(salesOrderId) : [];
 
-    const anyFoiShipped = definitelyShipped || activeShipmentStatuses.some((s) => MOVED_SHIPMENT_STATUSES.has(s));
-
-    const base = { foCount, allFoCanceled, activeShipmentStatuses, dropShipStatuses, anyFoiShipped };
+    const base = { foCount, allFoCanceled, activeShipmentStatuses, dropShipStatuses };
     const prints = (await this.printOrders.forSalesOrder(salesOrderId)).filter((p) => p.status !== 'cancelled');
     if (prints.length === 0) return base;
     return { ...base, printStatuses: prints.map((p) => p.status) };
+  }
+
+  /** 사다리 한 벌이 낸 이 주문의 단계. 방금 읽은 주문이라 맵에 없으면 프로그램 결함이다 — 기본값으로 덮지 않는다 */
+  private async loadFulfillmentPhase(salesOrderId: string): Promise<OrderFulfillmentPhase> {
+    const phase = (await readOrderFulfillmentPhases(this.db.db, [salesOrderId])).get(salesOrderId);
+    if (!phase) throw new Error(`Fulfillment phase missing for sales order ${salesOrderId}`);
+    return phase;
   }
 
   private async loadActiveShipmentStatuses(salesOrderId: string): Promise<string[]> {
@@ -1360,10 +1380,16 @@ export class StoreSalesOrdersService {
     shipmentLineRows: Array<typeof inventoryTables.shipmentLines.$inferSelect>,
   ): Promise<StoreShipmentDto[]> {
     const shipmentIds = [...new Set(shipmentLineRows.map((line) => line.shipmentId))];
+    // 합포장으로 합쳐진 원래 상자(superseded)는 라인이 남아 있어도 고객에게 보이지 않는다 — 합친 상자가 그 소포다(F11)
     const shipmentRows = await this.db.db
       .select()
       .from(inventoryTables.shipments)
-      .where(and(inArray(inventoryTables.shipments.id, shipmentIds), ne(inventoryTables.shipments.status, 'canceled')));
+      .where(
+        and(
+          inArray(inventoryTables.shipments.id, shipmentIds),
+          notInArray(inventoryTables.shipments.status, ['canceled', 'superseded']),
+        ),
+      );
     const visibleShipmentIds = new Set(shipmentRows.map((shipment) => shipment.id));
 
     const dispatchAttempts = await this.db.db

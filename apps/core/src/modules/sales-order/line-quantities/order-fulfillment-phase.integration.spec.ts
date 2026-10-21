@@ -7,6 +7,7 @@ jest.mock(
 );
 
 import { randomUUID } from 'crypto';
+import { BadRequestException } from '@nestjs/common';
 import { eq, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import type { PrintOrderStatus } from '../../print-order/schema/print-order.schema';
@@ -14,6 +15,8 @@ import * as f from '../../fulfillment/order-progress/__support__/order-progress.
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
 import type { StoreFulfillmentStatus } from '../dto/store-order-actions.dto';
 import { SalesOrdersService } from '../services/sales-orders.service';
+import { StoreSalesOrdersService } from '../services/store-sales-orders.service';
+import { PrintOrderReader } from '../../print-order/services/print-order.reader';
 import { recallParcel, seedDispatchedParcel } from './__support__/shipment-facts.fixtures';
 import { type OrderShipmentPhase, orderFulfillmentPhaseSql } from './order-fulfillment-phase.sql';
 import { readOrderFulfillmentPhases } from './order-fulfillment-phase.reader';
@@ -476,6 +479,60 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
       await markCellmateShipped(tx, o);
       // P4 — 출고 수량은 없지만 SO 상태가 출고 사실이다(missingFO). 셀프취소가 막혀야 한다
       expect(await phaseOf(tx, o)).toEqual(['external_shipped', 'shipping', true]);
+    });
+  });
+
+  it('cancelled order with a dispatched parcel', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await f.seedWorld(tx);
+      const o = await f.seedOrder(tx, { status: 'cancelled' });
+      const fo = await f.seedFo(tx, w, o, { status: 'processing' });
+      const box = await f.seedBox(tx, w, [fo.foItemId], { status: 'planned' });
+      await dispatch(tx, w, box, fo.foItemId, 1, false);
+      // 단계는 SO 취소가 이기지만 나간 것은 나간 것이다 — any_shipped 는 SO 상태로 덮지 않는다
+      expect(await phaseOf(tx, o)).toEqual(['cancelled', 'canceled', true]);
+    });
+  });
+
+  it('pending order with a dispatched parcel', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await f.seedWorld(tx);
+      const o = await f.seedOrder(tx, { status: 'pending' });
+      const fo = await f.seedFo(tx, w, o, { status: 'processing' });
+      const box = await f.seedBox(tx, w, [fo.foItemId], { status: 'planned' });
+      await dispatch(tx, w, box, fo.foItemId, 1, false);
+      expect(await phaseOf(tx, o)).toEqual(['pending', 'not_created', true]);
+    });
+  });
+
+  it('cellmate order without FO cannot self-cancel', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const customerId = randomUUID();
+      const o = await f.seedOrder(tx, { status: 'pending' });
+      await tx.update(wmsTables.salesOrders).set({ customerId }).where(eq(wmsTables.salesOrders.id, o.salesOrderId));
+      // 와우프레스가 인쇄 취소를 거절한 인쇄 줄 + 일반 줄 — 인쇄 제외 취소가 라인 범위 부분취소로 새던 모양(P4)
+      await seedPrint(tx, o, 'cancel_refused');
+      await markCellmateShipped(tx, o);
+
+      // 셀프취소 판정은 DB 만 읽는다 — 정산 사실·인쇄 행 읽기만 잇고 나머지 협력자는 닿지 않는다
+      const service = new StoreSalesOrdersService(
+        { db: tx } as never,
+        {} as never,
+        {} as never,
+        { settlementFactsFor: () => Promise.resolve([]) } as never,
+        new PrintOrderReader({ run: <T>(fn: (trx: DbTx) => Promise<T>) => fn(tx) } as never),
+        {} as never,
+      );
+
+      const actions = await service.getActions(o.salesOrderId, customerId);
+      expect(actions.cancelUnavailableReason).toBe('already_shipped');
+      expect(actions.availableActions).not.toContain('cancel');
+
+      const refusal = await service
+        .cancelRequest(o.salesOrderId, customerId, { excludePrint: true })
+        .catch((e: unknown) => e);
+      expect(refusal).toBeInstanceOf(BadRequestException);
+      expect((refusal as Error).message).toBe('이미 출고된 주문은 취소할 수 없습니다. 고객센터로 문의해 주세요.');
     });
   });
 });

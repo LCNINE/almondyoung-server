@@ -3,7 +3,7 @@ import { selfCancelBlock, SelfCancelBlock, SelfCancelFacts } from './self-cancel
 const open: SelfCancelFacts = {
   orderStatus: 'confirmed',
   salesChannel: 'medusa',
-  hasShippedEvidence: false,
+  anyShipped: false,
   pickingStarted: false,
   hasRecoveryBox: false,
 };
@@ -11,7 +11,7 @@ const open: SelfCancelFacts = {
 const blocked: SelfCancelFacts = {
   orderStatus: 'cancelled',
   salesChannel: 'naver',
-  hasShippedEvidence: true,
+  anyShipped: true,
   pickingStarted: true,
   hasRecoveryBox: true,
 };
@@ -32,7 +32,7 @@ describe('selfCancelBlock', () => {
     blocks.push(await selfCancelBlock(facts, downloaded));
     facts.orderStatus = 'confirmed';
     blocks.push(await selfCancelBlock(facts, downloaded));
-    facts.hasShippedEvidence = false;
+    facts.anyShipped = false;
     blocks.push(await selfCancelBlock(facts, downloaded));
     facts.salesChannel = 'medusa';
     blocks.push(await selfCancelBlock(facts, downloaded));
@@ -57,7 +57,7 @@ describe('selfCancelBlock', () => {
 
   it.each<[string, Partial<SelfCancelFacts>, string]>([
     ['취소된 주문', { orderStatus: 'cancelled' }, 'already_cancelled'],
-    ['출고 증거', { hasShippedEvidence: true }, 'already_shipped'],
+    ['출고 증거', { anyShipped: true }, 'already_shipped'],
     ['채널 주문', { salesChannel: 'naver' }, 'channel_order'],
     ['피킹 시작', { pickingStarted: true }, 'already_processing'],
     ['복구 중 상자', { hasRecoveryBox: true }, 'already_processing'],

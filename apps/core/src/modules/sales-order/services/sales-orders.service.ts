@@ -36,7 +36,6 @@ import { lineMatchingBadgeResolvedSql } from '../../product-matching/line-compos
 import { isDigitalFulfillmentLine, isOutsourcedLine } from '../../product-matching/line-composition/line-composition';
 import { selectFrozenCompositions } from '../../product-matching/line-composition/frozen-compositions';
 import { physicalCancellationByItem } from './v2-cancellation-units';
-import { MOVED_SHIPMENT_STATUSES } from './fulfillment-phase';
 import { LineQuantities, readLineQuantities } from '../line-quantities/line-quantities.reader';
 import { cancellableSalesUnits } from '../line-quantities/line-sales-units';
 import type { OrderProgressStage } from '../../fulfillment/order-progress/order-progress.thresholds';
@@ -1310,7 +1309,7 @@ export class SalesOrdersService {
     const t = wmsTables.orderProgress;
     const reserveStage: OrderProgressStage = 'reserve';
     const movedStatuses = sql.join(
-      [...MOVED_SHIPMENT_STATUSES].map((status) => sql`${status}`),
+      ['shipped', 'in_transit', 'failed', 'delivered'].map((status) => sql`${status}`),
       sql`, `,
     );
     // 바깥 행은 테이블 이름으로 가리킨다 — ${t.salesOrderId} 는 테이블 없이 찍혀 서브쿼리 안의 같은 이름 칸에 묶인다
