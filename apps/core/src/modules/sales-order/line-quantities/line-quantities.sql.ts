@@ -54,6 +54,7 @@ export function lineRemainingSql(lineQuantity: SQLWrapper, salesOrderLineId: SQL
  * delivered_at = 그 시도의 `delivered` 추적 timestamp 최댓값.
  * 회수된 시도(`recalled`)는 추적 행이 남아 있어도 세지 않는다 — 회수가 shipped_qty 도 되돌렸다.
  * SKU 층의 `delivered`(FOI 로 합한다)와 소포 자격(`parcelClaimEligibilitySql`)이 이것을 읽는다 — 배송완료를 두 벌로 쓰지 않게.
+ * FOI → 상자 라인 조인은 `idx_shipment_lines_fulfillment_order_item`(K6 PR3a 가 더했다, R15)을 탄다.
  */
 export function deliveredParcelsSql(salesOrderScope: SQL): SQL {
   const t = wmsTables;
@@ -182,7 +183,8 @@ export function lineSkuQuantitiesSql(salesOrderScope: SQL): SQL {
            and line.sales_order_id = fo.sales_order_id
           left join (
             -- 배송완료 수량은 범위의 FOI 전부를 한 번에 묶어 센 뒤 FOI id 로 되붙인다 — FOI 마다 상관 서브쿼리로 세면
-            -- shipment_lines(fulfillment_order_item_id) 인덱스가 없어 FOI 수 × 출고 시도 소스 수로 자란다(R15)
+            -- FOI 수만큼 배송완료 소포 조회를 다시 돈다(R15). FOI → 상자 라인 조인은 K6 PR3a 가 더한
+            -- idx_shipment_lines_fulfillment_order_item 을 탄다
             select delivered_parcel.fulfillment_order_item_id, sum(delivered_parcel.qty)::int as qty
               from (${deliveredParcelsSql(salesOrderScope)}) as delivered_parcel
              group by delivered_parcel.fulfillment_order_item_id

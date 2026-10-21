@@ -2010,6 +2010,9 @@ export const shipmentLines = pgTable(
   },
   (t) => ({
     idxShipment: index('idx_shipment_lines_shipment').on(t.shipmentId),
+    // FOI → 상자 라인 역방향 — 라인 수량 커널의 배송완료 소포 서브쿼리가 FOI 로 상자 라인을 찾는다 (K6 PR3a, R13).
+    // uq_shipment_lines_shipment_foi 는 shipment_id 가 선두라 이 조회에 못 쓴다.
+    idxFulfillmentOrderItem: index('idx_shipment_lines_fulfillment_order_item').on(t.fulfillmentOrderItemId),
     // 상자당 FOI 1행 — 멱등 ensure(onConflictDoNothing)의 근거. M:N end-state 에서도 성립.
     uqShipmentFoi: unique('uq_shipment_lines_shipment_foi').on(t.shipmentId, t.fulfillmentOrderItemId),
     ckQtyPositive: check('ck_shipment_lines_qty_positive', sql`${t.qty} > 0`),

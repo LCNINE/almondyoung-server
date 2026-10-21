@@ -55,8 +55,9 @@ PR 1 은 기록만 더했다(이중 기록). PR 2a 가 `cancelledQuantitySql`(�
 - **FOI 단위 정의(그 뒤 (라인, SKU) 합).** `required = qty − canceled_qty`, `shipped = shipped_qty`, `outstanding = qty − shipped_qty − canceled_qty`,
   `forwarded` = drop_ship FO 의 `direct_ship_status='forwarded'` 일 때 outstanding(출고가 아니다), `partner_completed` = `'completed'` 일 때 shipped_qty(배송완료가 아니라 표시용),
   `delivered` = 그 FOI 상자 라인(`dispatch_attempt_sources.qty`) 중 시도가 `dispatched` 이고 `shipment_tracking.status='delivered'` 인 것의 합. FO 상태로 거르지 않는다.
-  `delivered` 는 범위 FOI 전부에 대해 한 번 묶어 센 파생 테이블을 FOI id 로 되붙인다 — FOI 마다 상관 서브쿼리로 세면 `shipment_lines(fulfillment_order_item_id)`
-  인덱스가 없어 제곱으로 자란다(R15). 그 인덱스는 이후 expand PR 이 더한다.
+  `delivered` 는 범위 FOI 전부에 대해 한 번 묶어 센 파생 테이블을 FOI id 로 되붙인다 — FOI 마다 상관 서브쿼리로 세면 FOI 수만큼 배송완료 소포 조회를
+  다시 돌아 제곱으로 자란다(R15). FOI → 상자 라인 조인이 탈 `shipment_lines(fulfillment_order_item_id)` 인덱스
+  (`idx_shipment_lines_fulfillment_order_item`)는 K6 PR3a 가 더했다(마이그 `20261021111545_add-shipment-lines-foi-index`, additive 라 `migrate → deploy`).
 - **R5 — 인쇄 라인은 SKU 층 밖이다.** 스펙 §6.1 은 «인쇄 … 전량» 을 SKU 층 `shipped` 로 적었지만, 인쇄 외주 라인은 FOI 가 없어 SKU 층에 넣지 않았다. 진행 단계 사다리가
   `print_orders` 를 주문 단위로 직접 접는다(활성 수·`shipped`/`delivered` 수·`delivered` 수). 2b 소비자는 모두 주문 단위라 충분하다 — 라인 단위 인쇄 사실이 필요해지면 K7·PR 3 이 더한다.
 - **진행 단계 사다리가 SQL 한 벌인 이유.** 일별 통계는 기간 상한이 없는 집계라 SQL 이어야 하고, TS 판을 하나 더 두면 일치 spec 을 영구히 들고 간다. 고객 화면은 같은 SQL 을 주문 하나로 부른다
