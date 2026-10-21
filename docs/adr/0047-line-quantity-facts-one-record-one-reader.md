@@ -78,15 +78,55 @@ PR 1 은 기록만 더했다(이중 기록). PR 2a 가 `cancelledQuantitySql`(�
   P6 카드 «출고완료»·«부분출고» 를 수량으로 재정의(F10; 모집단 R14. 인쇄만 있는 주문은 창고 요구 수량이 0 이라 두 카드 어디에도 들지 않는다) · P7 V1 취소 엔진의 출고 수량은 FOI `shipped_qty` 하나(FO `shipped`/`shipped_at` 대체 삭제; 셀프취소 `any_shipped` 도 FO 상태를 증거로 안 본다) ·
   P8 셀메이트 스크립트가 취소된 FO·FOI 를 출고로 덮지 않는다(F12).
 - 가드 `line-quantity-read.guard.spec.ts` 가 옛 이름의 부활을 막고, 비테스트 운영 파일 중 `shipment_tracking` 을 읽는 곳을 `line-quantities.sql.ts`·`store-sales-orders.service.ts`(배송조회 이벤트 목록, 수량 아님)·
-  `store-return-exchange.service.ts`(반품·교환 자격 — PR 3 이 문으로 옮기고 이 목록에서 뺀다)로 묶는다.
+  `store-return-exchange.service.ts`(반품·교환 자격 — PR 3a 가 문으로 옮겨 이 목록에서 뺐다)로 묶었다.
+
+**PR 3a 가 정한 것:** 청구(반품·교환) 수량을 SKU 층의 칸 하나 `claimable` 과 소포 단위 자격으로 모았다. Core 만 바뀐다(`line-quantities/claim-*.ts`, `parcel-claim-eligibility.*`).
+- **청구 칸 정의(`lineSkuQuantitiesSql`).** `return_active` = 진행 중 반품 항목 수량, `return_consumed` = 완료 반품 항목 수량, `exchange_active` = 진행 중 교환 항목 수량,
+  `claimable = delivered − return_consumed − return_active − exchange_active − 출고 뒤 취소(판매 단위) × qty_per_unit`. `GREATEST` 로 덮지 않는다 — 회수가 배송완료를 되돌리면 음수가 그대로 보인다(표시는 소비자가 클램프).
+- **소포 단위 자격(`parcelClaimEligibilitySql`).** 행 = 배송완료 소포(출고 시도 × 상자 라인, `deliveredParcelsSql` 한 벌을 SKU 층 `delivered` 와 공유). `claimable = least(delivered_qty − claimed_qty, sku_claimable)` —
+  소포에 남았어도 SKU 몫(다른 소포의 청구·출고 뒤 취소까지 뺀 값)이 없으면 청구할 수 없다.
+- **세는 항목의 정의는 한 벌(R4, `resolvedClaimItemsSql`).** 두 소포 칸이 모두 있고, 그 상자 라인의 FOI 가 항목의 판매 라인을 가리키는 항목만 센다. SKU 합·소포 합·요청 환산이 모두 이 항목 집합을 지나므로 생성 게이트의 두 상한(소포·SKU)이 같은 항목을 본다.
+- **청구 상태는 한 곳(`claim-statuses.ts`).** 진행 중 반품 = `requested, approved, collection_pending, collected, inspected, refund_pending`, 소진 반품 = `completed`, 진행 중 교환 = 같은 여섯 값.
+  `rejected`·`cancelled`·완료 교환은 아무것도 차감하지 않는다. 두 서비스의 복붙 상수는 지웠다.
+- **가드.** `line-quantity-read.guard.spec.ts` 가 (1) 청구 항목 테이블 이름을 쓰는 비테스트 파일을 `claim-quantities.sql.ts` 와 `store-return-exchange.service.ts`(항목 INSERT·요청 처리) 둘로,
+  (2) `returnRequestItems.quantity`·`exchangeRequestItems.quantity` 를 쓰는 파일을 0 으로, (3) `ACTIVE_*_STATUSES` 정의를 `claim-statuses.ts` 하나로 묶고, (4) 옛 자격 함수(`isReturnEligible`·`assertOrderDelivered` 등)의 부활을 막는다.
+  배송 추적 테이블을 읽는 목록은 `line-quantities.sql.ts`(`deliveredParcelsSql`)·`store-sales-orders.service.ts`(배송조회 이벤트 목록) 둘이다 — 소포 자격 SQL 은 `deliveredParcelsSql` 을 불러 쓰므로 직접 읽지 않는다.
+- **N1~N5(사용자 확인).**
+  - N1 소포 칸이 빈 청구 항목은 커널이 세지 않는다(SKU 를 알 길이 없다). 새 행은 언제나 소포를 적는다. 옛 행 0 이 배포 게이트(D5)다.
+  - N2 라인 단위 요청 펼치기(스펙 §6.5)는 «구성이 SKU 하나·1개당 수량 1·`claimable > 0` 인 소포 후보 하나»일 때만. 1개당 수량이 2 이상이면 판매 단위와 SKU 단위가 갈려 400 이다.
+  - N3 라인 단위 `anyShipped`·`shippedComplete` 는 만들지 않는다 — 3a 에도 소비자가 없다.
+  - N4 구성 밖 SKU(`qty_per_unit` null) 행의 `claimable` 은 0 — 출고 뒤 취소를 SKU 로 환산할 수 없다.
+  - N5 세트 일부 반품의 «완료»는 3b 전까지 자동 환불을 하지 않는다. 검수 완료 → `refund_pending` 으로 넘기고 수동 환불 필요를 남긴다(`walletIntentId` 없는 주문과 같은 갈래).
+- **C1~C9(동작 변경, 스펙 G5).**
+  - C1 교환 자격은 «소포가 배송완료» — SO `delivered`·FO `completed` 를 보던 `assertOrderDelivered` 삭제.
+  - C2 반품·교환이 한 공식을 쓴다 — 완료 반품은 교환에서도 소진, 진행 중 교환은 반품에서도 차감, 완료 교환은 차감하지 않는다.
+  - C3 청구 항목 수량은 SKU 단위이고 (SKU, 소포) 마다 한 줄이다. 교환 항목도 소포(`shipment_line_id`·`dispatch_attempt_id`)를 적는다(additive 마이그레이션, `migrate → deploy`).
+  - C4 생성 검사는 잠금 뒤 한 트랜잭션에서 하고, 같은 소포·같은 (라인, SKU) 줄은 합산해 검사한다. 묶음 라인의 상한이 SKU 단위다.
+  - C5 라인 단위 요청을 서버가 펼친다(N2) — 스토어프론트 반품이 단품·소포 하나인 라인에서 처음으로 동작한다.
+  - C6 반품 환불 수량은 판매 라인별 합산이고 SKU 수량을 통째 세트 수로 환산한다. 세트 일부면 N5.
+  - C7 `SalesOrderReturned.returnedQuantity` = 그 라인의 완료 반품에서 통째로 돌아온 세트 수(구성품별 `floor(returnConsumed ÷ qtyPerUnit)` 의 최솟값). 세트 일부만 돌아온 라인은 0 이라 페이로드에서 빠진다.
+  - C8 고객 actions 의 반품·교환 버튼은 «`claimable > 0` 인 소포가 있다»로 연다(`isReturnEligible` 삭제). 라이브: 직배 완료 주문의 버튼이 사라진다(어차피 400 이던 버튼).
+  - C9 출고 뒤 취소로 돈을 돌려준 수량은 다시 청구할 수 없다(`claimable` 에서 차감).
+- **실행 중 정한 것(동작이 바뀌는 것만).**
+  - R6 초과 400 문구의 «가능 수량»은 `max(0, claimable)` 로 보인다 — 회수가 `claimable` 을 음수로 만들 수 있어 고객에게 «가능 수량(-1)» 이 나가지 않게 한다. 문구만 클램프하고 검사는 원값으로 한다.
+  - R8 생성 게이트의 잠금은 요청한 라인이 아니라 그 주문의 모든 판매 라인을 id 순으로 잡는다 — «진행 중 요청 있음» 검사가 주문 단위로 직렬화되게. 다른 곳에서 이 행들을 잠그지 않아 순서 역전은 없다.
+  - R11 굳은 구성(#1063)이 없는 라인의 반품은 환불 `set_partial`(수동 환불)이고 `SalesOrderReturned` 를 내지 않는다. 청구 가능한 소포는 FO 가 있어야 하고 FO 생성이 구성을 굳히므로 해당 주문은 #1063 이전 주문(셀메이트)뿐이다 —
+    그런 반품은 수동 환불이 필요하고 ugc 의 적립 회수도 건너뛴다.
+
+**3b 로 넘긴 것:**
+- D7 — 반품 요청에 관리자 입력 금액 칸(expand 마이그레이션), 검수 완료 화면의 금액 입력(admin-web), N5 의 임시 갈래 대체. 상한 규칙: 요청 하나에 금액 하나. 요청에 세트 일부 줄이 하나라도 있으면 그 요청 전체 금액을 관리자가 입력한다.
+  상한 = 이 요청이 건드린 라인들의 배분액 합(지금 부분반품 공식: 라인 무게 × (결제총액 − 배송비) ÷ 라인 무게 합) − 그 라인들을 건드린 앞선 완료 반품의 환불액 전부.
+  수동 완료된 앞선 반품(금액 모름)이 그 라인을 건드렸으면 그 라인의 배분액은 0 으로 본다. 과환불은 막고 상한이 실제보다 낮게 나올 수 있다.
+- F9 — `SalesOrderReturned` 에 `demand` 를 싣는 additive 칸 + ugc `order-return.policy.ts` 가 그 칸과 비교. 이벤트 스키마는 `z.object`(모르는 칸은 버린다)라 core 가 먼저 나가도 된다 — 3b 계획 때 `packages/event-contracts/streams/orders.stream.ts` 로 다시 확인한다.
 
 **PR 2b 가 대체한 것:** `orderShipmentPhaseSql`(→ `orderFulfillmentPhaseSql`), `deriveFulfillmentPhase`, `hasShippedEvidence`(→ `SelfCancelFacts.anyShipped`), `MOVED_SHIPMENT_STATUSES`,
 `outstandingSalesUnits`(→ `cancellableSalesUnits`), `getEffectiveShippedFulfillmentQty`(→ `shippedEvidenceOf`).
 
 **이후 PR(제안, 정본은 스펙 §9):**
 - PR 2a — (#1108) 읽는 문·SQL 조각·일치 spec, 취소 소비자 여섯(취소 엔진·채널 diff·인쇄 둘·수요 통계·구성 리더) 전환, E1·E2.
-- PR 2b — (이 PR) 진행 단계 SQL, 관리자 뱃지·일별 통계·카드 숫자(F10), 고객 actions, 셀메이트 F12·배송조회 F11, SKU 층 사실(`shipped`·`forwarded`·`delivered`·`cancellable`).
-- PR 3 — 청구(반품·교환) 게이트·환불 수량을 한 공식 `claimable` 로.
+- PR 2b — 진행 단계 SQL, 관리자 뱃지·일별 통계·카드 숫자(F10), 고객 actions, 셀메이트 F12·배송조회 F11, SKU 층 사실(`shipped`·`forwarded`·`delivered`·`cancellable`).
+- PR 3a — (이 PR) 청구(반품·교환) 게이트·환불 수량·고객 버튼을 한 공식 `claimable` 과 소포 단위 자격으로. Core 만. 배포 전 게이트 D5: `return_request_items`·`exchange_request_items` 행 수 0.
+- PR 3b — D7 관리자 입력 환불 금액(마이그레이션·상한·admin-web 입력)과 F9(`SalesOrderReturned` additive `demand` + ugc 소비).
 - PR 4 — 운영자 «미처리 취소»(admin-web 버튼과 `POST /shipments/:id/cancellations`), FO 취소(`POST /fulfillments/:id/cancel`), 수동 배송완료
   (`POST /fulfillments/:id/deliver`) 제거. 셋 다 판매주문 기록 없이 상태만 바꾸거나 배송 사실을 추적 밖에서 만들어 «기록 위치 하나»와 충돌한다.
 - PR 6 — contract: `metadata.cancelledLines` 쓰기 중단, 옛 파서 삭제, 옛 파서 이름이 되살아나면 빨간 가드. PR 1 의 백필이 라이브에서 끝나고 한 번 이상 배포된 뒤

@@ -49,14 +49,16 @@ describe('취소 수량 읽는 문', () => {
 
   it('retired shipment-phase definitions stay gone', () => {
     const pattern =
-      /\borderShipmentPhaseSql\b|\bderiveFulfillmentPhase\b|\bhasShippedEvidence\b|\bMOVED_SHIPMENT_STATUSES\b|\boutstandingSalesUnits\b|\bgetEffectiveShippedFulfillmentQty\b/;
+      /\borderShipmentPhaseSql\b|\bderiveFulfillmentPhase\b|\bhasShippedEvidence\b|\bMOVED_SHIPMENT_STATUSES\b|\boutstandingSalesUnits\b|\bgetEffectiveShippedFulfillmentQty\b|\bisReturnEligible\b|\bassertOrderDelivered\b|\bassertAttemptBasedReturnEligibility\b|\bassertPurchasedQuantityReturnCap\b|\bassertReturnQuantitiesAvailable\b|\bassertExchangeQuantitiesAvailable\b|\bFO_DELIVERED_STATUSES\b/;
     expect(filesMatching((source) => pattern.test(source))).toEqual([]);
   });
 
   it('only the kernel reads delivery tracking for quantities', () => {
     // 비테스트 운영 파일만 센다(walk 가 스펙·__support__ 를 뺀다). 픽스처는 현실 데이터를 흉내 내려 추적 행을 써야 한다.
     // - store-sales-orders.service.ts: 배송조회 화면의 추적 이벤트 목록이다(수량이 아니다).
-    // 반품 자격(store-return-exchange.service.ts)은 K6 PR3a 가 소포 단위 청구 자격(`parcel-claim-eligibility`)으로 옮겼다.
+    // - line-quantities.sql.ts: `deliveredParcelsSql` 이 «배송완료 소포»의 단 하나의 정의다(SKU 층 `delivered` 와 소포 단위 청구 자격이 함께 쓴다).
+    // 반품 자격(store-return-exchange.service.ts)은 K6 PR3a 가 소포 단위 청구 자격(`parcel-claim-eligibility`)으로 옮겼다 —
+    // 그 SQL 은 `deliveredParcelsSql` 을 불러 쓰므로 추적 테이블 이름을 직접 쓰지 않는다.
     const salesOrder = 'apps/core/src/modules/sales-order/';
     const files = filesMatching((source) => /shipment_tracking|shipmentTracking/.test(source)).filter((path) =>
       path.startsWith(salesOrder),
@@ -67,5 +69,32 @@ describe('취소 수량 읽는 문', () => {
         `${salesOrder}services/store-sales-orders.service.ts`,
       ].sort(),
     );
+  });
+});
+
+describe('청구(반품·교환) 수량 읽는 문', () => {
+  const salesOrder = 'apps/core/src/modules/sales-order/';
+
+  it('only the kernel and the claim service touch claim items', () => {
+    // 커널 SQL 조각(`claim-quantities.sql.ts`)이 수량을 읽고, 서비스는 항목을 만들고(INSERT) 요청을 다룬다.
+    // `claim-quantities.reader.ts`·`parcel-claim-eligibility.*` 는 조각을 불러 쓸 뿐 이 테이블 이름을 쓰지 않는다(R2).
+    const files = filesMatching((source) => /\breturnRequestItems\b|\bexchangeRequestItems\b/.test(source)).filter((path) =>
+      path.startsWith(salesOrder),
+    );
+    expect(files).toEqual(
+      [`${salesOrder}line-quantities/claim-quantities.sql.ts`, `${salesOrder}services/store-return-exchange.service.ts`].sort(),
+    );
+    expect(filesMatching((source) => /\breturnRequestItems\b|\bexchangeRequestItems\b/.test(source)).sort()).toEqual(files);
+  });
+
+  it('claim quantities are summed only in the kernel', () => {
+    // 서비스의 INSERT(`quantity: line.quantity`)는 걸리지 않는다. 항목 수량을 읽는 표현은 커널 SQL 조각의 `exchange_item.quantity` 별칭뿐이다.
+    expect(filesMatching((source) => /\b(returnRequestItems|exchangeRequestItems)\.quantity\b/.test(source))).toEqual([]);
+  });
+
+  it('claim statuses have one home', () => {
+    expect(filesMatching((source) => /const\s+ACTIVE_(RETURN|EXCHANGE)_STATUSES\s*=/.test(source))).toEqual([
+      `${salesOrder}line-quantities/claim-statuses.ts`,
+    ]);
   });
 });
