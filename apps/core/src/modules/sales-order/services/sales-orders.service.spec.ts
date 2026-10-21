@@ -2342,14 +2342,14 @@ describe('SalesOrdersService.getStats() — 출고완료 FO 도출 (작업 15)',
       cannotShip: 0,
       partialOutbound: 0,
       directShip: 0,
-      outboundComplete: 2, // FO 출고 증거 있는 confirmed SO 2건
+      outboundComplete: 2, // 진행 중 SO(pending·confirmed·processing) 중 전량 나간 2건 — 라인 수량 쿼리가 낸 값
     });
 
     const stats = await service.getStats();
 
     expect(stats.outboundComplete).toBe(2); // FO 도출 — dead status 합(9)이 아님
     expect(stats.outboundRequested).toBe(10); // byStatus('confirmed') 유지
-    expect(stats.outboundComplete).toBeLessThanOrEqual(stats.outboundRequested); // 완료 ⊆ 요청
+    // 완료 ⊆ 요청은 성립하지 않는다 — 출고완료 모집단은 pending 도 담는다(R14), 출고 요청은 confirmed 만 센다
     expect(stats.todayCount).toBe(3);
   });
 });
