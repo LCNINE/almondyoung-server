@@ -14,6 +14,7 @@ interface Props {
   customerKey: string;
   amount: number;
   widgetsRef: RefObject<TossPaymentsWidgets | null>;
+  paymentMethodsRef: RefObject<WidgetPaymentMethodWidget | null>;
   setReadyAmount: Dispatch<SetStateAction<number | null>>;
   setError: Dispatch<SetStateAction<string | null>>;
 }
@@ -25,6 +26,7 @@ export function TossPaymentWidget({
   customerKey,
   amount,
   widgetsRef,
+  paymentMethodsRef,
   setReadyAmount,
   setError,
 }: Props) {
@@ -92,6 +94,7 @@ export function TossPaymentWidget({
           return;
         }
         widgetsRef.current = widgets;
+        paymentMethodsRef.current = paymentMethods;
         appliedAmount.current = initialAmount;
         setReadyAmount(initialAmount);
         setInitialized(true);
@@ -108,11 +111,12 @@ export function TossPaymentWidget({
       window.removeEventListener('unhandledrejection', logSdkError);
       debug('disposed');
       widgetsRef.current = null;
+      paymentMethodsRef.current = null;
       appliedAmount.current = null;
       setReadyAmount(null);
       destroy();
     };
-  }, [clientKey, customerKey, intentId, variantKey, widgetsRef, setReadyAmount, setError]);
+  }, [clientKey, customerKey, intentId, variantKey, widgetsRef, paymentMethodsRef, setReadyAmount, setError]);
 
   useEffect(() => {
     if (!initialized || !widgetsRef.current) return;

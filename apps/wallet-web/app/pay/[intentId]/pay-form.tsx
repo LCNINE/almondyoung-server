@@ -35,7 +35,7 @@ import { PaymentMethodCard } from '@/components/payment/payment-method-card';
 import { TossSubMethodCard, type TossSubMethod } from '@/components/payment/toss-submethod-card';
 import { TossPaymentWidget } from '@/components/payment/toss-payment-widget';
 import { isTossWidgetReady } from '@/lib/toss-widget-readiness';
-import type { TossPaymentsWidgets } from '@tosspayments/tosspayments-sdk';
+import type { TossPaymentsWidgets, WidgetPaymentMethodWidget } from '@tosspayments/tosspayments-sdk';
 import {
   CashReceiptCard,
   EMPTY_CASH_RECEIPT,
@@ -119,6 +119,7 @@ export function PayForm({
     brandpayFailed ? '브랜드페이 인증을 완료하지 못했습니다. 다시 시도해주세요.' : null,
   );
   const tossWidgetsRef = useRef<TossPaymentsWidgets | null>(null);
+  const tossPaymentMethodsRef = useRef<WidgetPaymentMethodWidget | null>(null);
   const [tossWidgetReadyAmount, setTossWidgetReadyAmount] = useState<number | null>(null);
   // 재진입(AWAITING_DEPOSIT)이면 서버가 넘긴 계좌로 초기화 → 안내 화면이 그대로 복원된다.
   const [bankTransferPending, setBankTransferPending] = useState<BankTransferPendingAction | null>(
@@ -251,7 +252,17 @@ export function PayForm({
           if (na.amount !== tossWidgetReadyAmount || !tossWidgetsRef.current) {
             throw new Error('결제 금액이 변경되었습니다. 화면을 새로고침한 뒤 다시 시도해주세요.');
           }
-          await tossWidgetsRef.current.requestPayment(tossParams);
+          // 가상계좌면 wallet 이 지연 승인 없이 바로 승인해 입금대기로 보내야 한다. 조회 실패는 신호만 빠질 뿐
+          // 서버가 승인 응답으로 다시 판정하므로 결제를 막지 않는다.
+          const selected = await tossPaymentMethodsRef.current?.getSelectedPaymentMethod().catch(() => null);
+          const successPath =
+            selected?.code === 'VIRTUAL_ACCOUNT'
+              ? buildPayPath(`${intent.id}/toss-complete`, region, { method: 'VIRTUAL_ACCOUNT' })
+              : tossCompletePath;
+          await tossWidgetsRef.current.requestPayment({
+            ...tossParams,
+            successUrl: `${window.location.origin}${successPath}`,
+          });
         } else {
           const { loadTossPayments } = await import('@tosspayments/tosspayments-sdk');
           const tossPayments = await loadTossPayments(na.clientKey as string);
@@ -415,6 +426,7 @@ export function PayForm({
             customerKey={tossWidgetConfig.customerKey}
             amount={remainingAmount}
             widgetsRef={tossWidgetsRef}
+            paymentMethodsRef={tossPaymentMethodsRef}
             setReadyAmount={setTossWidgetReadyAmount}
             setError={setError}
           />

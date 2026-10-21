@@ -10,6 +10,7 @@ import { AutoCaptureService } from './auto-capture.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import { GatewayEventType, buildPaymentIntentEventPayload } from '../messaging/gateway-event.builder';
 import { ChargePlan, ChargeSlot } from './charge-plan';
+import { depositWindowHours } from './deposit-window';
 import { ChargeResult } from '../providers/payment-provider.interface';
 
 type CashReceiptRequest = { type: '소득공제' | '지출증빙'; customerIdentityNumber: string };
@@ -709,14 +710,6 @@ export class ConfirmService {
       .where(eq(paymentIntents.id, intentId));
   }
 
-  private static readonly DEFAULT_DEPOSIT_WINDOW_HOURS = 72;
-
-  private depositWindowMs(): number {
-    const raw = Number(process.env.WALLET_BANK_TRANSFER_DEPOSIT_WINDOW_HOURS);
-    const hours = Number.isFinite(raw) && raw > 0 ? raw : ConfirmService.DEFAULT_DEPOSIT_WINDOW_HOURS;
-    return hours * 60 * 60_000;
-  }
-
   /**
    * 알림 수신자 이메일. 결제 생성 경로마다 metadata 키가 달라 둘 다 본다
    * (멤버십=email, 상품주문=customerEmail). 새 경로가 세 번째 이름을 쓰기 시작하면
@@ -730,7 +723,7 @@ export class ConfirmService {
   private async stampDepositExpiry(intentId: string): Promise<void> {
     await this.dbService.db
       .update(paymentIntents)
-      .set({ expiresAt: new Date(Date.now() + this.depositWindowMs()) })
+      .set({ expiresAt: new Date(Date.now() + depositWindowHours() * 60 * 60_000) })
       .where(eq(paymentIntents.id, intentId));
   }
 
