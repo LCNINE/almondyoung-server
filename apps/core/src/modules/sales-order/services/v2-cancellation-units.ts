@@ -5,6 +5,7 @@ import { CompositionItem } from '../../product-matching/line-composition/line-co
  * V2 취소의 «판매 단위 ↔ 물리 수량» 환산(#1063 스펙 §6.5). 비율은 라인의 굳힌 구성(qtyPerUnit)에서 읽는다 —
  * 옛 코드는 «FO 항목 수량 ÷ 라인 주문 수량»으로 거꾸로 셌는데, 구성을 바꾼 라인·FO 생성 전 부분 취소가 있던 라인에서
  * 그 역산이 나눠떨어지지 않아 고객 취소가 409 로 거절됐다.
+ * «아직 안 나간 판매 단위»(읽기)는 라인 수량 문의 `cancellableSalesUnits` 로 옮겼다(K6 PR2b) — 여기는 FOI 단위 쓰기 배분만 남는다.
  */
 export interface LineFulfillmentItem {
   id: string;
@@ -38,26 +39,6 @@ function itemsByCompositionSku(
     bySku.set(item.skuId, [...(bySku.get(item.skuId) ?? []), item]);
   }
   return bySku;
-}
-
-/** 아직 안 나간 판매 단위. 구성 SKU 마다 같아야 한다. */
-export function outstandingSalesUnits(
-  salesOrderLineId: string,
-  items: readonly LineFulfillmentItem[],
-  composition: readonly CompositionItem[],
-): number {
-  const bySku = itemsByCompositionSku(salesOrderLineId, items, composition);
-  const units = composition.map((entry) => {
-    const outstanding = (bySku.get(entry.skuId) ?? []).reduce((total, item) => total + outstandingOf(item), 0);
-    if (outstanding % entry.qtyPerUnit !== 0) {
-      throw new ConflictException(`V2 progress is not aligned for SalesOrder line ${salesOrderLineId}`);
-    }
-    return outstanding / entry.qtyPerUnit;
-  });
-  if (new Set(units).size !== 1) {
-    throw new ConflictException(`V2 component progress is inconsistent for SalesOrder line ${salesOrderLineId}`);
-  }
-  return units[0];
 }
 
 /** 판매 단위 units 를 취소할 때 FO 항목마다 뺄 물리 수량. */

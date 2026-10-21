@@ -35,9 +35,10 @@ import { alias } from 'drizzle-orm/pg-core';
 import { lineMatchingBadgeResolvedSql } from '../../product-matching/line-composition/line-resolved.sql';
 import { isDigitalFulfillmentLine, isOutsourcedLine } from '../../product-matching/line-composition/line-composition';
 import { selectFrozenCompositions } from '../../product-matching/line-composition/frozen-compositions';
-import { outstandingSalesUnits, physicalCancellationByItem } from './v2-cancellation-units';
+import { physicalCancellationByItem } from './v2-cancellation-units';
 import { MOVED_SHIPMENT_STATUSES } from './fulfillment-phase';
-import { readLineQuantities } from '../line-quantities/line-quantities.reader';
+import { LineQuantities, readLineQuantities } from '../line-quantities/line-quantities.reader';
+import { cancellableSalesUnits } from '../line-quantities/line-sales-units';
 import type { OrderProgressStage } from '../../fulfillment/order-progress/order-progress.thresholds';
 import { computeEntrancePasswordExpiry } from './entrance-password-expiry';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
@@ -120,7 +121,8 @@ type PartialCancellationLine = {
 type PostShipmentHandoffType = 'return' | 'recovery' | 'refund' | 'compensation';
 type PostShipmentHandoffOptions = NonNullable<CancelSalesOrderOptions['postShipmentHandoff']>;
 type PriorCancellationContext = {
-  cancelledByLine: Map<string, number>;
+  /** 라인 수량 문의 `remaining`(주문 − 갈래 무관 취소) — 호출자는 뺄셈을 다시 하지 않는다 (K6 PR2b). */
+  remainingByLine: Map<string, number>;
   preservedShippedByFulfillmentItem: Map<string, number>;
 };
 type V2OutstandingPlan = {
@@ -175,6 +177,20 @@ const CANCEL_MSG_SHIPPED_ITEMS =
 const cancelQuantityExceedsMessage = (requested: number, remaining: number) =>
   `취소 수량(${requested}개)이 취소 가능 수량(${remaining}개)을 초과합니다.`;
 const SALES_ORDER_REF_TYPE = 'sales_order';
+
+/** 주문의 어느 라인·SKU 든 출고 수량이 있다 — V1 전체취소의 «출고 수량이 있는 항목» 거절(라인 수량 문의 `skus`). */
+function hasShippedSku(lineQuantities: Map<string, LineQuantities>): boolean {
+  return [...lineQuantities.values()].some((line) => line.skus.some((sku) => sku.shipped > 0));
+}
+
+/** 라인의 남은 수량. 문은 주문의 모든 라인을 내므로 없으면 다른 주문의 라인이다 — `?? 0` 으로 덮지 않는다. */
+function remainingOf(prior: PriorCancellationContext, salesOrderLineId: string): number {
+  const remaining = prior.remainingByLine.get(salesOrderLineId);
+  if (remaining === undefined) {
+    throw new Error(`Line quantities are missing SalesOrder line ${salesOrderLineId}`);
+  }
+  return remaining;
+}
 
 /** 단계 행이 없는 주문(SQL 이 존재하는 주문마다 한 행을 내므로 일어나지 않는다)에 던지는 대신 쓰는 중립값 */
 const FALLBACK_SHIPMENT_PHASE: OrderShipmentPhase = 'preparing';
@@ -574,21 +590,8 @@ export class SalesOrdersService {
         throw new BadRequestException(CANCEL_MSG_SHIPPED_FULFILLMENT);
       }
 
-      if (fulfillmentOrders.length > 0) {
-        const foIds = fulfillmentOrders.map((fo) => fo.id);
-        const shippedItems = await trx
-          .select({ id: wmsTables.fulfillmentOrderItems.id })
-          .from(wmsTables.fulfillmentOrderItems)
-          .where(
-            and(
-              inArray(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, foIds),
-              sql`${wmsTables.fulfillmentOrderItems.shippedQty} > 0`,
-            ),
-          )
-          .limit(1);
-        if (shippedItems.length > 0) {
-          throw new BadRequestException(CANCEL_MSG_SHIPPED_ITEMS);
-        }
+      if (hasShippedSku(await readLineQuantities(trx, id))) {
+        throw new BadRequestException(CANCEL_MSG_SHIPPED_ITEMS);
       }
 
       const effects: CancellationEffect[] = [];
@@ -1440,7 +1443,7 @@ export class SalesOrdersService {
           `Sales order line ${request.salesOrderLineId} does not belong to ${salesOrderId}`,
         );
       }
-      const remainingQuantity = line.quantity - (priorCancellationContext.cancelledByLine.get(line.id) ?? 0);
+      const remainingQuantity = remainingOf(priorCancellationContext, line.id);
       if (request.quantity > remainingQuantity) {
         throw new BadRequestException(cancelQuantityExceedsMessage(request.quantity, remainingQuantity));
       }
@@ -1480,7 +1483,7 @@ export class SalesOrdersService {
     const fulfillmentDeltas = new Map<string, { quantity: number; reserved: number }>();
     for (const request of requestedLines) {
       const line = lineById.get(request.salesOrderLineId)!;
-      const remainingLineQuantity = line.quantity - (priorCancellationContext.cancelledByLine.get(line.id) ?? 0);
+      const remainingLineQuantity = remainingOf(priorCancellationContext, line.id);
       const lineItems = fulfillmentOrderItems.filter((item) => item.salesOrderLineId === line.id && item.qty > 0);
       const adjustmentEffects = await this.adjustFulfillmentForPartialCancellation(
         line.id,
@@ -1692,26 +1695,25 @@ export class SalesOrdersService {
       tx,
       salesOrderLines.map((line) => line.id),
     );
-    const prior = await this.loadPriorCancellationContext(salesOrderId, tx);
+    const lineQuantities = await readLineQuantities(tx, salesOrderId);
+    const prior = await this.loadPriorCancellationContext(salesOrderId, tx, lineQuantities);
     const requestedSalesLines = isFullCancel
       ? salesOrderLines.flatMap((line) => {
-          const items = fulfillmentItems.filter((item) => item.salesOrderLineId === line.id);
-          if (items.length === 0) {
+          // 갈래는 FOI 유무로 정한다 — FOI 가 있으면 SKU 층이 반드시 비어 있지 않다. 구성만 있고 FOI 가 없는 물리 줄을
+          // SKU 층(0 들)로 판정하면 0 단위로 조용히 빠져 전체 취소가 그 줄의 남은 수량을 놓친다
+          if (!fulfillmentItems.some((item) => item.salesOrderLineId === line.id)) {
             // 인쇄(외주) 줄은 창고 항목이 없어도 판매·환불 대상이다. 남은 판매 수량을 넣고 출고 정리만 아래에서 건너뛴다.
             // 빼 버리면 전체 취소가 부분 취소로 바뀔 때 와우프레스는 취소됐는데 인쇄분이 환불되지 않는다
             if (isOutsourcedLine(line)) {
-              const remaining = line.quantity - (prior.cancelledByLine.get(line.id) ?? 0);
+              const remaining = remainingOf(prior, line.id);
               return remaining > 0 ? [{ salesOrderLineId: line.id, quantity: remaining }] : [];
             }
             if (isDigitalFulfillmentLine(line)) return [];
             throw new ConflictException(`V2 fulfillment item is missing for SalesOrder line ${line.id}`);
           }
-          return [
-            {
-              salesOrderLineId: line.id,
-              quantity: outstandingSalesUnits(line.id, items, compositions.get(line.id) ?? []),
-            },
-          ];
+          const quantities = lineQuantities.get(line.id);
+          if (!quantities) throw new Error(`Line quantities are missing SalesOrder line ${line.id}`);
+          return [{ salesOrderLineId: line.id, quantity: cancellableSalesUnits(quantities) }];
         })
       : this.normalizePartialCancellationLines(options.lines ?? []);
     if (requestedSalesLines.every((line) => line.quantity === 0)) {
@@ -1724,7 +1726,7 @@ export class SalesOrdersService {
         throw new BadRequestException(
           `Sales order line ${request.salesOrderLineId} does not belong to ${salesOrderId}`,
         );
-      const remaining = line.quantity - (prior.cancelledByLine.get(line.id) ?? 0);
+      const remaining = remainingOf(prior, line.id);
       if (request.quantity > remaining) {
         throw new BadRequestException(`Cancellation quantity ${request.quantity} exceeds remaining ${remaining}`);
       }
@@ -2076,8 +2078,6 @@ export class SalesOrdersService {
         ),
       )
       .limit(1);
-    const remainingOf = (line: { id: string; quantity: number }) =>
-      line.quantity - (prior.cancelledByLine.get(line.id) ?? 0);
     if (!lines) {
       if (salesOrder.status === 'shipped' || salesOrder.status === 'delivered') {
         throw new BadRequestException(
@@ -2088,7 +2088,7 @@ export class SalesOrdersService {
       // 뒤에 두면 남은 수량 0 거절이 먼저 나서 문구가 바뀐다.
       if (fullCancellation) throw new BadRequestException(CANCEL_MSG_FULL_CANCELLATION_EXISTS);
       const requested = salesOrderLines
-        .map((line) => ({ salesOrderLineId: line.id, quantity: remainingOf(line) }))
+        .map((line) => ({ salesOrderLineId: line.id, quantity: remainingOf(prior, line.id) }))
         .filter((line) => line.quantity > 0);
       if (requested.length === 0) {
         throw new BadRequestException('Sales order has no outstanding physical quantity to cancel');
@@ -2103,21 +2103,8 @@ export class SalesOrdersService {
       ) {
         throw new BadRequestException(CANCEL_MSG_SHIPPED_FULFILLMENT);
       }
-      if (fulfillmentOrders.length > 0) {
-        const shippedItems = await tx
-          .select({ id: wmsTables.fulfillmentOrderItems.id })
-          .from(wmsTables.fulfillmentOrderItems)
-          .where(
-            and(
-              inArray(
-                wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
-                fulfillmentOrders.map((fo) => fo.id),
-              ),
-              sql`${wmsTables.fulfillmentOrderItems.shippedQty} > 0`,
-            ),
-          )
-          .limit(1);
-        if (shippedItems.length > 0) throw new BadRequestException(CANCEL_MSG_SHIPPED_ITEMS);
+      if (hasShippedSku(await readLineQuantities(tx, salesOrderId))) {
+        throw new BadRequestException(CANCEL_MSG_SHIPPED_ITEMS);
       }
       return { lines: requested, hasShippedQuantity: false, leavesNothing: true };
     }
@@ -2133,7 +2120,7 @@ export class SalesOrdersService {
           `Sales order line ${request.salesOrderLineId} does not belong to ${salesOrderId}`,
         );
       }
-      const remaining = remainingOf(line);
+      const remaining = remainingOf(prior, line.id);
       if (request.quantity > remaining) {
         throw new BadRequestException(cancelQuantityExceedsMessage(request.quantity, remaining));
       }
@@ -2145,27 +2132,30 @@ export class SalesOrdersService {
     };
   }
 
-  /** 이 취소 뒤 남는 수량(줄 수량 − 이미 취소 − 이번 취소)이 모든 줄에서 0 인가. 디지털 줄도 센다. */
+  /** 이 취소 뒤 남는 수량(남은 수량 − 이번 취소)이 모든 줄에서 0 인가. 디지털 줄도 센다. 이번 요청을 빼는 건 판정이다. */
   private leavesNothing(
     salesOrderLines: Array<{ id: string; quantity: number }>,
     prior: PriorCancellationContext,
     requested: PartialCancellationLine[],
   ): boolean {
     const now = new Map(requested.map((line) => [line.salesOrderLineId, line.quantity]));
-    return salesOrderLines.every(
-      (line) => line.quantity - (prior.cancelledByLine.get(line.id) ?? 0) - (now.get(line.id) ?? 0) <= 0,
-    );
+    return salesOrderLines.every((line) => remainingOf(prior, line.id) - (now.get(line.id) ?? 0) <= 0);
   }
 
   /**
-   * 이 주문의 이전 취소가 남긴 엔진 상태 (K6 PR2a).
-   * `cancelledByLine` 은 라인 수량 문의 `canceled`(갈래·scope 무관 — 전체취소도 센다)다.
+   * 이 주문의 이전 취소가 남긴 엔진 상태 (K6 PR2a, `remainingByLine` 은 PR2b).
+   * `remainingByLine` 은 라인 수량 문의 `remaining`(주문 − 갈래·scope 무관 취소 — 전체취소도 센다)이다.
+   * 문을 이미 읽은 호출자(V2 재계획)는 `lineQuantities` 를 넘겨 같은 트랜잭션에서 두 번 읽지 않는다.
    * `preservedShippedByFulfillmentItem` 은 «어느 FOI 의 출고분을 이미 보존 처리했나»라는 FOI 단위 상태라
    * 라인 행으로 되살릴 수 없어(세트에서 구성품 하나만 나간 단위도 `after_shipment` 1) effects 에서 읽는다.
    */
-  private async loadPriorCancellationContext(salesOrderId: string, trx: DbTx): Promise<PriorCancellationContext> {
-    const lineQuantities = await readLineQuantities(trx, salesOrderId);
-    const cancelledByLine = new Map([...lineQuantities.values()].map((line) => [line.salesOrderLineId, line.canceled]));
+  private async loadPriorCancellationContext(
+    salesOrderId: string,
+    trx: DbTx,
+    lineQuantities?: Map<string, LineQuantities>,
+  ): Promise<PriorCancellationContext> {
+    const quantities = lineQuantities ?? (await readLineQuantities(trx, salesOrderId));
+    const remainingByLine = new Map([...quantities.values()].map((line) => [line.salesOrderLineId, line.remaining]));
 
     const cancellations = await trx
       .select({ effects: wmsTables.salesOrderCancellations.effects })
@@ -2192,7 +2182,7 @@ export class SalesOrdersService {
         }
       }
     }
-    return { cancelledByLine, preservedShippedByFulfillmentItem };
+    return { remainingByLine, preservedShippedByFulfillmentItem };
   }
 
   private async loadOpenFulfillmentBacklogs(salesOrderId: string, trx: DbTx) {
@@ -2278,12 +2268,11 @@ export class SalesOrdersService {
         if (!fo || !CANCELLABLE_FULFILLMENT_STATUSES.has(fo.status)) {
           return sum;
         }
-        return sum + this.getCancellableUnprocessedFulfillmentQty(item, fo);
+        return sum + this.getCancellableUnprocessedFulfillmentQty(item);
       }, 0);
       const shippedEvidenceQty = items.reduce((sum, item) => {
-        const fo = fulfillmentOrderById.get(item.fulfillmentOrderId);
         const priorPreservedQty = priorPreservedShippedByFulfillmentItem.get(item.id) ?? 0;
-        return sum + Math.max(0, this.getEffectiveShippedFulfillmentQty(item, fo).quantity - priorPreservedQty);
+        return sum + Math.max(0, item.shippedQty - priorPreservedQty);
       }, 0);
       const postShipmentQty = Math.max(0, remainingFulfillmentQtyToCancel - cancellableUnprocessedQty);
 
@@ -2298,7 +2287,7 @@ export class SalesOrdersService {
         const fo = fulfillmentOrderById.get(item.fulfillmentOrderId);
         if (!fo || !CANCELLABLE_FULFILLMENT_STATUSES.has(fo.status)) continue;
 
-        const availableToReduce = this.getCancellableUnprocessedFulfillmentQty(item, fo);
+        const availableToReduce = this.getCancellableUnprocessedFulfillmentQty(item);
         if (availableToReduce <= 0) continue;
 
         const quantityToReduce = Math.min(availableToReduce, remainingFulfillmentQtyToCancel);
@@ -2368,30 +2357,21 @@ export class SalesOrdersService {
     return effects;
   }
 
-  private getCancellableUnprocessedFulfillmentQty(
-    item: typeof wmsTables.fulfillmentOrderItems.$inferSelect,
-    fulfillmentOrder: typeof wmsTables.fulfillmentOrders.$inferSelect | undefined,
-  ): number {
-    const pickedQty = item.pickedQty || 0;
-    const shippedQty = this.getEffectiveShippedFulfillmentQty(item, fulfillmentOrder).quantity;
-    const warehouseEvidenceQty = Math.max(pickedQty, shippedQty);
+  private getCancellableUnprocessedFulfillmentQty(item: typeof wmsTables.fulfillmentOrderItems.$inferSelect): number {
+    const warehouseEvidenceQty = Math.max(item.pickedQty || 0, item.shippedQty);
     return Math.max(0, item.qty - warehouseEvidenceQty);
   }
 
-  private getEffectiveShippedFulfillmentQty(
-    item: typeof wmsTables.fulfillmentOrderItems.$inferSelect,
-    fulfillmentOrder: typeof wmsTables.fulfillmentOrders.$inferSelect | undefined,
-  ): { quantity: number; source: 'fulfillment_order_item_shipped_qty' | 'fulfillment_order_shipped_state' | 'none' } {
-    if (fulfillmentOrder?.status === 'shipped' || fulfillmentOrder?.shippedAt) {
-      return { quantity: item.qty, source: 'fulfillment_order_shipped_state' };
-    }
-
-    const itemShippedQty = Math.min(item.shippedQty || 0, item.qty);
-    if (itemShippedQty > 0) {
-      return { quantity: itemShippedQty, source: 'fulfillment_order_item_shipped_qty' };
-    }
-
-    return { quantity: 0, source: 'none' };
+  /**
+   * V1 엔진의 출고 수량은 FOI `shipped_qty` 하나다(K6 PR2b P7). FO `shipped`·`shipped_at` 으로 FOI 전량을 출고로 보던
+   * 대체는 지웠다 — FO 출고 표시를 쓰는 생산자(V2 발송·직배 완료·셀메이트 스크립트)가 모두 `shipped_qty` 도 채운다.
+   * `shipped_qty + canceled_qty <= qty` 는 CHECK 가 지키므로 qty 로 자르지 않는다.
+   */
+  private shippedEvidenceOf(item: typeof wmsTables.fulfillmentOrderItems.$inferSelect): {
+    quantity: number;
+    source: 'fulfillment_order_item_shipped_qty' | 'none';
+  } {
+    return { quantity: item.shippedQty, source: item.shippedQty > 0 ? 'fulfillment_order_item_shipped_qty' : 'none' };
   }
 
   private async releaseFulfillmentOrderItemReservations(
@@ -2454,7 +2434,7 @@ export class SalesOrdersService {
     for (const item of items) {
       if (remaining <= 0) break;
       const fo = fulfillmentOrderById.get(item.fulfillmentOrderId);
-      const shippedEvidence = this.getEffectiveShippedFulfillmentQty(item, fo);
+      const shippedEvidence = this.shippedEvidenceOf(item);
       const shippedQty = shippedEvidence.quantity;
       const priorPreservedQty = priorPreservedShippedByFulfillmentItem.get(item.id) ?? 0;
       const availableShippedQty = Math.max(0, shippedQty - priorPreservedQty);

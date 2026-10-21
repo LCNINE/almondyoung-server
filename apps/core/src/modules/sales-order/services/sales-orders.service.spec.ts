@@ -333,6 +333,24 @@ function collectSqlFragments(value: unknown, seen = new WeakSet<object>()): stri
   return [];
 }
 
+/** 라인 수량 문의 SKU 층 읽기(`line_sku` 파생 테이블) — 그 execute 에만 SKU 행을 돌려준다 (K6 PR2b). */
+function isLineSkuRead(statement: unknown): boolean {
+  return /\bline_sku\b/.test(collectSqlFragments(statement).join(' '));
+}
+
+/** 취소가 없는 라인의 라인 수량 문 행 — 전체취소 가짜들은 취소 라인 행을 두지 않는다. */
+function uncancelledLineQuantityRows(lines: Array<{ id: string; quantity: number }>) {
+  return lines.map((line) => ({
+    salesOrderLineId: line.id,
+    ordered: line.quantity,
+    canceledBeforeShipment: 0,
+    canceledAfterShipment: 0,
+    canceled: 0,
+    demand: line.quantity,
+    remaining: line.quantity,
+  }));
+}
+
 function rejectRawDeleteSql(statement: unknown) {
   const sqlText = collectSqlFragments(statement).join(' ');
   if (/\bdelete\b/i.test(sqlText)) {
@@ -343,16 +361,13 @@ function rejectRawDeleteSql(statement: unknown) {
 describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
   const salesOrderId = '11111111-1111-1111-1111-111111111111';
 
-  function rows<T>(
-    value: T[],
-  ): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
-    const result = [...value] as T[] & {
-      limit: (count: number) => Promise<T[]>;
-      orderBy: () => { limit: (count: number) => Promise<T[]> };
-    };
+  type Rows<T> = T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => Rows<T> };
+  function rows<T>(value: T[]): Rows<T> {
+    const result = [...value] as Rows<T>;
     result.limit = (count: number) => Promise.resolve(result.slice(0, count));
-    // getOne 이 최근 취소 요청 행을 정렬해 읽는다 — 이 가짜는 정렬하지 않는다
-    result.orderBy = () => ({ limit: result.limit });
+    // getOne 이 최근 취소 요청 행을 정렬해 읽고(`.orderBy().limit()`), 라인 수량 문은 정렬만 하고 그대로 기다린다
+    // (`.orderBy()`) — 이 가짜는 정렬하지 않고 같은 배열을 돌려준다
+    result.orderBy = () => result;
     return result;
   }
 
@@ -394,8 +409,13 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
       businessLinks: [] as Array<Record<string, any>>,
     };
 
-    const selectRowsFor = (table: unknown) => {
+    const selectRowsFor = (table: unknown, selection?: Record<string, unknown>) => {
       if (table === wmsTables.salesOrders) return state.salesOrders;
+      if (table === wmsTables.salesOrderLines && selection && 'canceled' in selection) {
+        return uncancelledLineQuantityRows(
+          state.salesOrderLines.map((line) => ({ id: line.id, quantity: line.quantity })),
+        );
+      }
       if (table === wmsTables.salesOrderLines) return state.salesOrderLines;
       if (table === wmsTables.fulfillmentOrders) return state.fulfillmentOrders;
       if (table === wmsTables.salesOrderCancellations) return state.salesOrderCancellations;
@@ -408,9 +428,9 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
         rejectRawDeleteSql(statement);
         return Promise.resolve([]);
       }),
-      select: jest.fn(() => ({
+      select: jest.fn((selection?: Record<string, unknown>) => ({
         from: (table: unknown) => ({
-          where: () => rows(selectRowsFor(table)),
+          where: () => rows(selectRowsFor(table, selection)),
         }),
       })),
       update: jest.fn((table: unknown) => ({
@@ -497,7 +517,8 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
       cancelledBy: 'admin-1',
     });
 
-    expect(tx.execute).toHaveBeenCalledTimes(5); // SO lock + V2 history probe + FO/FOI locks + 응답 getOne 의 출고 단계 조회
+    // SO lock + V2 history probe + FO/FOI locks + 출고 수량 판정(라인 수량 문의 SKU 층) + 응답 getOne 의 출고 단계 조회
+    expect(tx.execute).toHaveBeenCalledTimes(6);
     expect(state.salesOrders[0].status).toBe('cancelled');
     expect(state.salesOrderLines).toEqual(originalLines);
     expect(state.salesOrderCancellations).toEqual([
@@ -1343,96 +1364,18 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
     );
   });
 
-  it('treats shipped fulfillment orders as shipped evidence when item shipped quantity is not populated', async () => {
-    const shippedAt = new Date('2026-05-30T02:00:00.000Z');
-    const { service, state, outbox } = makeService({
+  // P7(K6 PR2b) — V1 엔진의 출고 수량은 FOI shipped_qty 하나다. FO shipped_at 으로 FOI 전량을 출고로 보던 대체는 지웠다.
+  it.each([
+    { name: 'without item shipped quantity', shippedQty: 0 },
+    { name: 'with a partial item shipped quantity', shippedQty: 1 },
+  ])('ignores the fulfillment order shipped timestamp $name (P7)', async ({ shippedQty }) => {
+    const { service, state } = makeService({
       fulfillmentOrders: [
         {
           id: fulfillmentOrderId,
           salesOrderId,
           status: 'ready',
-          shippedAt,
-          totalItems: 1,
-          totalQty: 3,
-          totalReservedQty: 0,
-          canceledAt: null,
-        },
-      ],
-      fulfillmentOrderItems: [
-        {
-          id: fulfillmentOrderItemId,
-          fulfillmentOrderId,
-          salesOrderId,
-          salesOrderLineId,
-          skuId: '88888888-8888-4888-8888-888888888888',
-          qty: 3,
-          reservedQty: 0,
-          shippedQty: 0,
-          status: 'pending',
-        },
-      ],
-    });
-    const originalFulfillmentOrder = { ...state.fulfillmentOrders[0] };
-    const originalFulfillmentOrderItem = { ...state.fulfillmentOrderItems[0] };
-
-    await service.cancel(salesOrderId, {
-      lines: [{ salesOrderLineId, quantity: 1 }],
-      reasonCode: 'CUSTOMER_REQUEST',
-      postShipmentHandoff: {
-        type: 'return',
-        externalRef: 'return:request:ret_fo_level_shipped',
-        status: 'requested',
-      },
-    });
-
-    expect(state.fulfillmentOrders[0]).toEqual(originalFulfillmentOrder);
-    expect(state.fulfillmentOrderItems[0]).toEqual(originalFulfillmentOrderItem);
-    expect(state.salesOrderCancellations).toEqual([
-      expect.objectContaining({
-        cancellationScope: 'partial',
-        effects: expect.arrayContaining([
-          expect.objectContaining({
-            type: 'preserved_shipped_fulfillment_order_item',
-            targetId: fulfillmentOrderItemId,
-            metadata: expect.objectContaining({
-              fulfillmentOrderStatus: 'ready',
-              itemShippedQty: 0,
-              shippedQty: 0,
-              effectiveShippedQuantity: 3,
-              shippedEvidenceSource: 'fulfillment_order_shipped_state',
-              affectedShippedQuantity: 1,
-            }),
-          }),
-          expect.objectContaining({
-            type: 'linked_post_shipment_return_handoff',
-            targetExternalRef: 'return:request:ret_fo_level_shipped',
-          }),
-        ]),
-      }),
-    ]);
-    expect(outbox.enqueue).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eventType: 'SalesOrderCancelled',
-        payload: expect.objectContaining({
-          orderId: salesOrderId,
-          cancellationScope: 'partial',
-          cancelledLines: [{ salesOrderLineId, quantity: 1 }],
-          refundRequired: false,
-        }),
-      }),
-      expect.anything(),
-    );
-  });
-
-  it('treats shipped fulfillment orders as overriding partial item shipped quantities', async () => {
-    const shippedAt = new Date('2026-05-30T02:00:00.000Z');
-    const { service, state, outbox } = makeService({
-      fulfillmentOrders: [
-        {
-          id: fulfillmentOrderId,
-          salesOrderId,
-          status: 'ready',
-          shippedAt,
+          shippedAt: new Date('2026-05-30T02:00:00.000Z'),
           totalItems: 1,
           totalQty: 3,
           totalReservedQty: 0,
@@ -1449,61 +1392,25 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
           qty: 3,
           reservedQty: 0,
           pickedQty: 0,
-          shippedQty: 1,
+          shippedQty,
           status: 'pending',
         },
       ],
     });
-    const originalFulfillmentOrder = { ...state.fulfillmentOrders[0] };
-    const originalFulfillmentOrderItem = { ...state.fulfillmentOrderItems[0] };
 
     await service.cancel(salesOrderId, {
       lines: [{ salesOrderLineId, quantity: 1 }],
       reasonCode: 'CUSTOMER_REQUEST',
-      postShipmentHandoff: {
-        type: 'return',
-        externalRef: 'return:request:ret_fo_level_partial_counter',
-        status: 'requested',
-      },
+      postShipmentHandoff: { type: 'return', externalRef: 'return:request:ret_fo_level_shipped', status: 'requested' },
     });
 
-    expect(state.fulfillmentOrders[0]).toEqual(originalFulfillmentOrder);
-    expect(state.fulfillmentOrderItems[0]).toEqual(originalFulfillmentOrderItem);
-    expect(state.salesOrderCancellations).toEqual([
-      expect.objectContaining({
-        cancellationScope: 'partial',
-        effects: expect.arrayContaining([
-          expect.objectContaining({
-            type: 'preserved_shipped_fulfillment_order_item',
-            targetId: fulfillmentOrderItemId,
-            metadata: expect.objectContaining({
-              fulfillmentOrderStatus: 'ready',
-              itemShippedQty: 1,
-              shippedQty: 1,
-              effectiveShippedQuantity: 3,
-              shippedEvidenceSource: 'fulfillment_order_shipped_state',
-              affectedShippedQuantity: 1,
-            }),
-          }),
-          expect.objectContaining({
-            type: 'linked_post_shipment_return_handoff',
-            targetExternalRef: 'return:request:ret_fo_level_partial_counter',
-          }),
-        ]),
-      }),
-    ]);
-    expect(outbox.enqueue).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eventType: 'SalesOrderCancelled',
-        payload: expect.objectContaining({
-          orderId: salesOrderId,
-          cancellationScope: 'partial',
-          cancelledLines: [{ salesOrderLineId, quantity: 1 }],
-          refundRequired: false,
-        }),
-      }),
-      expect.anything(),
-    );
+    // 안 나간 몫(3 − shipped)이 1 이상이므로 출고 전 취소로 FOI 를 줄인다 — 보존·후속 인계 효과가 없다
+    expect(state.fulfillmentOrderItems[0]).toMatchObject({ qty: 2, shippedQty });
+    const [cancellation] = state.salesOrderCancellations;
+    const effectTypes = (cancellation.effects as Array<{ type: string }>).map((effect) => effect.type);
+    expect(effectTypes).toContain('adjusted_fulfillment_order_item');
+    expect(effectTypes).not.toContain('preserved_shipped_fulfillment_order_item');
+    expect(effectTypes).not.toContain('linked_post_shipment_return_handoff');
   });
 
   it('rejects non-UUID post-shipment handoff IDs before business link insert', async () => {
@@ -2076,16 +1983,13 @@ describe('SalesOrdersService business links', () => {
 describe('SalesOrdersService.cancel full cancel shipped evidence guard', () => {
   const salesOrderId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
-  function rows<T>(
-    value: T[],
-  ): T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => { limit: (count: number) => Promise<T[]> } } {
-    const result = [...value] as T[] & {
-      limit: (count: number) => Promise<T[]>;
-      orderBy: () => { limit: (count: number) => Promise<T[]> };
-    };
+  type Rows<T> = T[] & { limit: (count: number) => Promise<T[]>; orderBy: () => Rows<T> };
+  function rows<T>(value: T[]): Rows<T> {
+    const result = [...value] as Rows<T>;
     result.limit = (count: number) => Promise.resolve(result.slice(0, count));
-    // getOne 이 최근 취소 요청 행을 정렬해 읽는다 — 이 가짜는 정렬하지 않는다
-    result.orderBy = () => ({ limit: result.limit });
+    // getOne 이 최근 취소 요청 행을 정렬해 읽고(`.orderBy().limit()`), 라인 수량 문은 정렬만 하고 그대로 기다린다
+    // (`.orderBy()`) — 이 가짜는 정렬하지 않고 같은 배열을 돌려준다
+    result.orderBy = () => result;
     return result;
   }
 
@@ -2119,7 +2023,10 @@ describe('SalesOrdersService.cancel full cancel shipped evidence guard', () => {
       status: 'ready',
     };
 
-    const selectRowsFor = (table: unknown): any[] => {
+    const selectRowsFor = (table: unknown, selection?: Record<string, unknown>): any[] => {
+      if (table === wmsTables.salesOrderLines && selection && 'canceled' in selection) {
+        return uncancelledLineQuantityRows([{ id: 'sol-guard-1', quantity: 2 }]);
+      }
       if (table === wmsTables.salesOrders) {
         return [
           {
@@ -2140,11 +2047,24 @@ describe('SalesOrdersService.cancel full cancel shipped evidence guard', () => {
       return [];
     };
 
+    // 라인 수량 문의 SKU 층 — FOI 하나가 그대로 (라인, SKU) 한 행이다(구성 1개당 1)
+    const skuRow = {
+      sales_order_line_id: foi.salesOrderLineId,
+      sku_id: foi.skuId,
+      qty_per_unit: 1,
+      required: foi.qty,
+      shipped: foi.shippedQty,
+      forwarded: 0,
+      delivered: 0,
+      partner_completed: 0,
+      outstanding: foi.qty - foi.shippedQty,
+    };
+
     const tx: any = {
-      execute: jest.fn().mockResolvedValue([]),
-      select: jest.fn(() => ({
+      execute: jest.fn((statement: unknown) => Promise.resolve(isLineSkuRead(statement) ? [skuRow] : [])),
+      select: jest.fn((selection?: Record<string, unknown>) => ({
         from: (table: unknown) => ({
-          where: () => rows(selectRowsFor(table) as any),
+          where: () => rows(selectRowsFor(table, selection) as any),
         }),
       })),
       update: jest.fn(() => ({ set: () => ({ where: () => [] }) })),
