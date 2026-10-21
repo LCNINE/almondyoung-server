@@ -1,6 +1,18 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { returnExchangeTables, wmsTables } from '../../inventory/schema/inventory.schema';
 import { StoreReturnExchangeService } from './store-return-exchange.service';
+import { readReturnRequestSalesUnits, ReturnedSalesUnits } from '../line-quantities/claim-quantities.reader';
+
+// 반품 요청의 라인별 판매 단위는 수량 문이 정한다(C6) — 여기서는 그 결과만 준다.
+// 같은 라인 여러 줄의 합산·세트 환산은 DB 통합 스펙(`store-return-exchange.claims.integration.spec.ts`)이 지킨다.
+jest.mock('../line-quantities/claim-quantities.reader');
+const mockedSalesUnits = jest.mocked(readReturnRequestSalesUnits);
+const salesUnits = (entries: Array<[string, number]>): Map<string, ReturnedSalesUnits> =>
+  new Map(entries.map(([lineId, units]) => [lineId, { kind: 'whole', units }]));
+
+beforeEach(() => {
+  mockedSalesUnits.mockResolvedValue(new Map());
+});
 
 /** 반품 완료 종점이 아웃박스에 적재하는 발행자. 스펙에서는 적재 호출만 세면 된다. */
 const makeCoreOrdersPublisher = () => ({ enqueue: jest.fn().mockResolvedValue(undefined) });
@@ -342,7 +354,6 @@ describe('StoreReturnExchangeService.completeReturnRequest', () => {
     rr: Record<string, unknown>;
     so: Record<string, unknown>;
     orderLines?: unknown[];
-    returnItems?: unknown[];
     maxN?: number;
   }) {
     let currentRr: Record<string, unknown> = { ...opts.rr };
@@ -351,7 +362,6 @@ describe('StoreReturnExchangeService.completeReturnRequest', () => {
       if (table === returnExchangeTables.returnRequests) return [currentRr];
       if (table === wmsTables.salesOrders) return [opts.so];
       if (table === wmsTables.salesOrderLines) return opts.orderLines ?? [];
-      if (table === returnExchangeTables.returnRequestItems) return opts.returnItems ?? [];
       if (table === returnExchangeTables.returnRefundAttempts) {
         attemptSel++;
         return attemptSel === 1 ? [] : [{ maxN: opts.maxN ?? 0 }];
@@ -415,10 +425,11 @@ describe('StoreReturnExchangeService.completeReturnRequest', () => {
 
   it('stays refund_pending when wallet returns partial_pending (무통장 비동기 처리)', async () => {
     const rr = makeReturnRequest({ status: 'inspected' });
+    mockedSalesUnits.mockResolvedValue(salesUnits([[LINE_ID, 2]]));
     const tx = makeCompleteTx({
       rr,
       so: { id: ORDER_ID, walletIntentId: 'intent-123' },
-      returnItems: [{ quantity: 2, unitPrice: 3000 }],
+      orderLines: [{ id: LINE_ID, quantity: 2, unitPrice: 3000, totalPrice: null }],
     });
 
     const walletClient = makeWalletClient();
@@ -437,12 +448,18 @@ describe('StoreReturnExchangeService.completeReturnRequest', () => {
   it('calls wallet with unitPrice × quantity sum (상품가 기준 환불 정책)', async () => {
     const rr = makeReturnRequest({ status: 'inspected' });
     // 라인1: 2개 × 10000원, 라인2: 1개 × 5000원 → 기대 환불액 25000원
+    mockedSalesUnits.mockResolvedValue(
+      salesUnits([
+        ['line-1', 2],
+        ['line-2', 1],
+      ]),
+    );
     const tx = makeCompleteTx({
       rr,
       so: { id: ORDER_ID, walletIntentId: 'intent-abc' },
-      returnItems: [
-        { quantity: 2, unitPrice: 10000 },
-        { quantity: 1, unitPrice: 5000 },
+      orderLines: [
+        { id: 'line-1', quantity: 2, unitPrice: 10000, totalPrice: null },
+        { id: 'line-2', quantity: 1, unitPrice: 5000, totalPrice: null },
       ],
     });
 
@@ -466,10 +483,11 @@ describe('StoreReturnExchangeService.completeReturnRequest', () => {
 
   it('transitions to refund_pending and stays there when wallet refund fails', async () => {
     const rr = makeReturnRequest({ status: 'inspected' });
+    mockedSalesUnits.mockResolvedValue(salesUnits([[LINE_ID, 1]]));
     const tx = makeCompleteTx({
       rr,
       so: { id: ORDER_ID, walletIntentId: 'intent-123' },
-      returnItems: [{ quantity: 1, unitPrice: 5000 }],
+      orderLines: [{ id: LINE_ID, quantity: 1, unitPrice: 5000, totalPrice: null }],
     });
 
     const walletClient = makeWalletClient();
@@ -553,8 +571,11 @@ describe('StoreReturnExchangeService exchange happy path', () => {
 describe('StoreReturnExchangeService.attemptReturnRefund (상태기계)', () => {
   const INTENT = 'intent-123';
   const SO = { id: ORDER_ID, walletIntentId: INTENT, totalAmount: 5000, shippingFee: 0 };
-  const RETURN_ITEMS = [{ salesOrderLineId: LINE_ID, quantity: 1, unitPrice: 5000 }];
   const ORDER_LINES = [{ id: LINE_ID, quantity: 1, unitPrice: 5000, totalPrice: 5000 }];
+  // 이 요청이 라인 하나를 통째로(판매 단위 1) 돌려받았다 → 전체 반품 = 5000
+  beforeEach(() => {
+    mockedSalesUnits.mockResolvedValue(salesUnits([[LINE_ID, 1]]));
+  });
 
   // 반품/주문/라인/attempt 테이블별 행을 주입하는 tx 목 (Phase A·C 공용).
   function makeTx(opts: {
@@ -578,7 +599,6 @@ describe('StoreReturnExchangeService.attemptReturnRefund (상태기계)', () => 
       }
       if (table === wmsTables.salesOrders) return [SO];
       if (table === wmsTables.salesOrderLines) return ORDER_LINES;
-      if (table === returnExchangeTables.returnRequestItems) return RETURN_ITEMS;
       if (table === returnExchangeTables.returnRefundAttempts) {
         attemptSel++;
         if (opts.pendingAttempt) return [opts.pendingAttempt]; // pending 존재 → 재사용(max 조회 미도달)
@@ -827,23 +847,23 @@ describe('StoreReturnExchangeService.calculateReturnRefund (P1-10 기준 통일)
     // 주문 totalAmount 17000, 배송비 0 → productSubtotal 17000
     // 라인A 1개만 반품: 분모=12000+5000=17000, 라인A 무게=12000, 반품비중=1/2 → 6000
     // 반품액 = round(6000 * 17000 / 17000) = 6000
-    const returnItems = [{ salesOrderLineId: 'A', quantity: 1, unitPrice: 10000 }];
+    const unitsByLine = new Map([['A', 1]]);
     const allLines = [
       { id: 'A', quantity: 2, unitPrice: 10000, totalPrice: 12000 },
       { id: 'B', quantity: 1, unitPrice: 5000, totalPrice: 5000 },
     ];
-    expect(calc(service, returnItems, allLines, 17000, 0)).toBe(6000);
+    expect(calc(service, unitsByLine, allLines, 17000, 0)).toBe(6000);
   });
 
   it('할인 없는 라인은 기존과 동일(unitPrice×qty = totalPrice)', () => {
     const service = new StoreReturnExchangeService({ db: {} } as never, {} as never, makeCoreOrdersPublisher() as never);
-    const returnItems = [{ salesOrderLineId: 'A', quantity: 1, unitPrice: 10000 }];
+    const unitsByLine = new Map([['A', 1]]);
     const allLines = [
       { id: 'A', quantity: 2, unitPrice: 10000, totalPrice: 20000 },
       { id: 'B', quantity: 1, unitPrice: 5000, totalPrice: 5000 },
     ];
     // 분모 25000, 라인A 무게 20000, 반품비중 1/2 → 10000; productSubtotal 25000
     // round(10000 * 25000 / 25000) = 10000
-    expect(calc(service, returnItems, allLines, 25000, 0)).toBe(10000);
+    expect(calc(service, unitsByLine, allLines, 25000, 0)).toBe(10000);
   });
 });

@@ -31,6 +31,31 @@ function makeService(tx: DbTx): StoreReturnExchangeService {
   );
 }
 
+/** 환불·완료 이벤트를 보는 서비스 — Wallet 은 언제나 성공한다. 두 목을 돌려줘 금액·적재를 본다. */
+function makeRefundHarness(tx: DbTx) {
+  const wallet = { refundByIntent: jest.fn().mockResolvedValue({ kind: 'success', refunds: [] }) };
+  const publisher = makeCoreOrdersPublisher();
+  const service = new StoreReturnExchangeService({ db: tx } as never, wallet as never, publisher as never);
+  return { service, wallet, publisher };
+}
+
+/** 발행자에 적재된 이벤트 — `[eventType, payload]`. */
+function enqueued(
+  publisher: ReturnType<typeof makeCoreOrdersPublisher>,
+): Array<{ eventType: string; payload: unknown }> {
+  return publisher.enqueue.mock.calls.map(([params]: [{ eventType: string; payload: unknown }]) => params);
+}
+
+const INTENT_ID = 'intent-k6-claims';
+
+/** Wallet 으로 결제된 주문 — 반품 환불이 자동으로 나갈 수 있다. */
+async function payOrder(tx: DbTx, salesOrderId: string, money: { totalAmount: number; shippingFee: number }) {
+  await tx
+    .update(wmsTables.salesOrders)
+    .set({ walletIntentId: INTENT_ID, ...money })
+    .where(eq(wmsTables.salesOrders.id, salesOrderId));
+}
+
 /** 픽스처 맵 조회 — 없으면 픽스처가 틀린 것이다. */
 function must<T>(value: T | undefined, what: string): T {
   if (value === undefined) throw new Error(`fixture miss: ${what}`);
@@ -571,6 +596,142 @@ describeIfDb('반품·교환 생성 게이트 — 소포 단위 청구 자격 (K
         .from(returnExchangeTables.exchangeRequests)
         .where(eq(returnExchangeTables.exchangeRequests.salesOrderId, line.salesOrderId));
       expect(requests).toHaveLength(1);
+    });
+  });
+
+  // ── 반품 환불 수량과 반품 완료 이벤트 (Task 5) ───────────────────────────
+
+  /** A×1·B×2 세트 라인 수량 1, 소포 하나에 통째로 배송완료. */
+  async function seedSetLine(
+    tx: DbTx,
+  ): Promise<{ customerId: string; line: DeliveredLine; skuA: string; skuB: string }> {
+    const w = await seedWorld(tx);
+    const customerId = randomUUID();
+    const skuB = await seedComponentSku(tx, w);
+    const line = await seedDeliveredLine(tx, w, {
+      quantity: 1,
+      composition: [
+        { skuId: w.skuId, qtyPerUnit: 1 },
+        { skuId: skuB, qtyPerUnit: 2 },
+      ],
+      parcels: [{ qtyBySku: { [w.skuId]: 1, [skuB]: 2 } }],
+      customerId,
+    });
+    return { customerId, line, skuA: w.skuId, skuB };
+  }
+
+  it('two parcels of one line are refunded together', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, line } = await seedSingle(tx, { quantity: 2, parcels: [{ qty: 1 }, { qty: 1 }] });
+      // 단가 1000 × 2 = 상품 2000, 배송비 3000 — 전체 반품이면 5000, 1개만 세면 1000 이다
+      await payOrder(tx, line.salesOrderId, { totalAmount: 5000, shippingFee: 3000 });
+      const { requestId } = await seedClaim(tx, {
+        kind: 'return',
+        salesOrderId: line.salesOrderId,
+        status: 'inspected',
+        items: [parcelLine(line, 0, w.skuId, 1), parcelLine(line, 1, w.skuId, 1)],
+      });
+      const { service, wallet } = makeRefundHarness(tx);
+
+      const result = await service.completeReturnRequest(requestId, 'admin-1');
+
+      // 옛 계산은 같은 라인의 마지막 줄(1개)만 셌다(F2)
+      expect(wallet.refundByIntent).toHaveBeenCalledWith(INTENT_ID, 5000, expect.anything());
+      expect(result.status).toBe('completed');
+    });
+  });
+
+  it('whole set return is refunded by sets', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { line, skuA, skuB } = await seedSetLine(tx);
+      await payOrder(tx, line.salesOrderId, { totalAmount: 5000, shippingFee: 3000 });
+      const { requestId } = await seedClaim(tx, {
+        kind: 'return',
+        salesOrderId: line.salesOrderId,
+        status: 'inspected',
+        items: [parcelLine(line, 0, skuA, 1), parcelLine(line, 0, skuB, 2)],
+      });
+      const { service, wallet } = makeRefundHarness(tx);
+
+      const result = await service.completeReturnRequest(requestId, 'admin-1');
+
+      // SKU 수량 A 1·B 2 = 세트 1 = 라인 수량 전부 → 전체 반품
+      expect(wallet.refundByIntent).toHaveBeenCalledWith(INTENT_ID, 5000, expect.anything());
+      expect(result.status).toBe('completed');
+    });
+  });
+
+  it('set-partial return goes to manual refund', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { line, skuB } = await seedSetLine(tx);
+      await payOrder(tx, line.salesOrderId, { totalAmount: 5000, shippingFee: 3000 });
+      const { requestId } = await seedClaim(tx, {
+        kind: 'return',
+        salesOrderId: line.salesOrderId,
+        status: 'inspected',
+        items: [parcelLine(line, 0, skuB, 1)],
+      });
+      const { service, wallet } = makeRefundHarness(tx);
+
+      const result = await service.completeReturnRequest(requestId, 'admin-1');
+
+      // B 1개는 세트 몇 개인지 정할 수 없다 — 자동 금액이 없으므로 수동 환불로 넘긴다(N5)
+      expect(result.status).toBe('refund_pending');
+      expect(wallet.refundByIntent).not.toHaveBeenCalled();
+      const links = await tx
+        .select({ metadata: wmsTables.businessLinks.metadata })
+        .from(wmsTables.businessLinks)
+        .where(eq(wmsTables.businessLinks.sourceId, requestId));
+      expect(links).toEqual([{ metadata: expect.objectContaining({ event: 'return_refund_pending' }) }]);
+      const error = await rejection(service.retryReturnRefund(requestId, 'admin-1'));
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(error).toMatchObject({
+        message: '세트 구성품 일부 반품은 자동 환불 금액이 없습니다. 수동 완료를 사용하세요.',
+      });
+      expect(wallet.refundByIntent).not.toHaveBeenCalled();
+    });
+  });
+
+  it('set-partial return publishes no returned event', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { line, skuB } = await seedSetLine(tx);
+      const { requestId } = await seedClaim(tx, {
+        kind: 'return',
+        salesOrderId: line.salesOrderId,
+        status: 'refund_pending',
+        items: [parcelLine(line, 0, skuB, 1)],
+      });
+      const { service, publisher } = makeRefundHarness(tx);
+
+      await service.manualCompleteReturn(requestId, 'admin-1', '계좌이체로 환불');
+
+      // 통째로 돌아온 세트가 0 이라 라인이 빠지고, 빠진 라인뿐이라 이벤트가 안 나간다(C7)
+      const eventTypes = enqueued(publisher).map((event) => event.eventType);
+      expect(eventTypes).toContain('SalesOrderClaimProgressed');
+      expect(eventTypes).not.toContain('SalesOrderReturned');
+    });
+  });
+
+  it('whole set return publishes returned sets', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { line, skuA, skuB } = await seedSetLine(tx);
+      const { requestId } = await seedClaim(tx, {
+        kind: 'return',
+        salesOrderId: line.salesOrderId,
+        status: 'refund_pending',
+        items: [parcelLine(line, 0, skuA, 1), parcelLine(line, 0, skuB, 2)],
+      });
+      const { service, publisher } = makeRefundHarness(tx);
+
+      await service.manualCompleteReturn(requestId, 'admin-1');
+
+      const returned = enqueued(publisher).filter((event) => event.eventType === 'SalesOrderReturned');
+      expect(returned).toHaveLength(1);
+      // SKU 수량 합 3 이 아니라 통째 세트 1 — 라인 하나에 한 번
+      expect(returned[0].payload).toMatchObject({
+        returnRequestId: requestId,
+        returnedLines: [{ salesOrderLineId: line.lineId, orderedQuantity: 1, returnedQuantity: 1 }],
+      });
     });
   });
 });

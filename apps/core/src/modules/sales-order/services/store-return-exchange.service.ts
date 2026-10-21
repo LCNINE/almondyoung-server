@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, gte, inArray, isNotNull, lte, max, sum } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, lte, max } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { InjectTypedDb } from '@app/db';
 import {
@@ -39,6 +39,8 @@ import { classifyRefundOutcome } from './return-refund-classification';
 import { lockShipmentConnectedComponentGraph } from '../../fulfillment/services/shipment-reservation.service';
 import { ACTIVE_EXCHANGE_STATUSES, ACTIVE_RETURN_STATUSES } from '../line-quantities/claim-statuses';
 import { LineQuantities, readLineQuantities } from '../line-quantities/line-quantities.reader';
+import { readReturnRequestSalesUnits } from '../line-quantities/claim-quantities.reader';
+import { completedSetUnits } from '../line-quantities/line-sales-units';
 import { ParcelClaimEligibility, readParcelClaimEligibility } from '../line-quantities/parcel-claim-eligibility.reader';
 
 type SalesOrderRow = typeof inventoryTables.salesOrders.$inferSelect;
@@ -58,6 +60,8 @@ export interface ExchangeRequestWithItems {
 }
 
 type ClaimKind = 'return' | 'exchange';
+/** 반품 요청의 자동 환불 금액 — 세트 일부만 돌아온 라인이 있으면 금액을 정할 수 없다(N5, 3b 가 관리자 입력으로 대체). */
+type ReturnRefundAmount = { kind: 'amount'; amount: number } | { kind: 'set_partial' };
 /** 요청 줄 — 소포(`shipmentLineId`·`dispatchAttemptId`)는 둘 다 있거나 둘 다 없다. 없으면 게이트가 라인 단위로 펼친다(N2). */
 type RequestedClaimLine = {
   salesOrderLineId: string;
@@ -414,15 +418,19 @@ export class StoreReturnExchangeService {
         throw new ConflictException(`반품 요청 상태가 'requested'가 아닙니다. 현재 상태: ${rr.status}`);
       }
 
+      // 승인 시점의 항목 사본(감사 기록). 수량은 SKU 단위 그대로 싣는다 — 합산은 수량 문의 몫이다.
       const returnReceiptItems = await tx
-        .select({
-          salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
-          shipmentLineId: returnExchangeTables.returnRequestItems.shipmentLineId,
-          dispatchAttemptId: returnExchangeTables.returnRequestItems.dispatchAttemptId,
-          quantity: returnExchangeTables.returnRequestItems.quantity,
-        })
+        .select()
         .from(returnExchangeTables.returnRequestItems)
-        .where(eq(returnExchangeTables.returnRequestItems.returnRequestId, returnRequestId));
+        .where(eq(returnExchangeTables.returnRequestItems.returnRequestId, returnRequestId))
+        .then((items) =>
+          items.map((item) => ({
+            salesOrderLineId: item.salesOrderLineId,
+            shipmentLineId: item.shipmentLineId,
+            dispatchAttemptId: item.dispatchAttemptId,
+            quantity: item.quantity,
+          })),
+        );
 
       const [updated] = await tx
         .update(returnExchangeTables.returnRequests)
@@ -620,7 +628,8 @@ export class StoreReturnExchangeService {
 
     // 이 요청의 라인. 주문 라인을 못 찾는 항목은 수량 축을 알 수 없으므로 페이로드에서 «빼되
     // 로그로 센다» — 0으로 뭉개면 소비자가 「전량 반품 아님」과 구별하지 못한다.
-    const requestLines = await tx
+    // 항목은 (SKU, 소포) 마다 한 줄이라(C3) 한 라인이 여러 줄일 수 있다 — 페이로드는 라인마다 한 번.
+    const requestLineRows = await tx
       .select({
         salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
         channelOrderItemId: wmsTables.salesOrderLines.channelOrderItemId,
@@ -632,6 +641,7 @@ export class StoreReturnExchangeService {
         eq(wmsTables.salesOrderLines.id, returnExchangeTables.returnRequestItems.salesOrderLineId),
       )
       .where(eq(returnExchangeTables.returnRequestItems.returnRequestId, returnRequest.id));
+    const requestLines = [...new Map(requestLineRows.map((line) => [line.salesOrderLineId, line])).values()];
 
     const resolved = requestLines.filter(
       (line): line is { salesOrderLineId: string; channelOrderItemId: string | null; orderedQuantity: number } =>
@@ -648,36 +658,22 @@ export class StoreReturnExchangeService {
       return;
     }
 
-    // 「이 건의 수량」이 아니라 **그 주문 라인의 완료된 반품 누적 수량**을 싣는다. 이 요청은 방금
-    // completed 로 바뀌었으므로 같은 트랜잭션의 이 집계에 이미 들어 있다. 나눠 반품해도, 이벤트가
-    // 재전달돼도 소비자가 상태 없이 같은 판정을 내릴 수 있게 하는 것이 이 필드의 목적이다.
-    const lineIds = resolved.map((line) => line.salesOrderLineId);
-    const cumulativeRows = await tx
-      .select({
-        salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
-        total: sum(returnExchangeTables.returnRequestItems.quantity),
-      })
-      .from(returnExchangeTables.returnRequestItems)
-      .innerJoin(
-        returnExchangeTables.returnRequests,
-        eq(returnExchangeTables.returnRequests.id, returnExchangeTables.returnRequestItems.returnRequestId),
-      )
-      .where(
-        and(
-          eq(returnExchangeTables.returnRequests.status, 'completed'),
-          inArray(returnExchangeTables.returnRequestItems.salesOrderLineId, lineIds),
-        ),
-      )
-      .groupBy(returnExchangeTables.returnRequestItems.salesOrderLineId);
-
-    const cumulativeByLine = new Map(cumulativeRows.map((row) => [row.salesOrderLineId, Number(row.total ?? 0)]));
+    // 「이 건의 수량」이 아니라 **그 주문 라인의 완료 반품에서 통째로 돌아온 세트 수**를 싣는다(C7). 이 요청은
+    // 방금 completed 로 바뀌었으므로 같은 트랜잭션의 수량 문(`returnConsumed`)에 이미 들어 있다. 나눠 반품해도,
+    // 이벤트가 재전달돼도 소비자가 상태 없이 같은 판정을 내릴 수 있게 하는 것이 이 필드의 목적이다.
+    // 세트 일부만 돌아온 라인은 0 이라 아래에서 빠진다 — 적립을 과하게 회수하지 않는다(스펙 §6.5).
+    const lineQuantities = await readLineQuantities(tx, returnRequest.salesOrderId);
+    const returnedSets = (lineId: string): number => {
+      const line = lineQuantities.get(lineId);
+      return line ? completedSetUnits(line, (sku) => sku.returnConsumed) : 0;
+    };
 
     const returnedLines = resolved
       .map((line) => ({
         salesOrderLineId: line.salesOrderLineId,
         channelOrderItemId: line.channelOrderItemId ?? undefined,
         orderedQuantity: line.orderedQuantity,
-        returnedQuantity: cumulativeByLine.get(line.salesOrderLineId) ?? 0,
+        returnedQuantity: returnedSets(line.salesOrderLineId),
       }))
       .filter((line) => line.returnedQuantity > 0);
 
@@ -728,9 +724,13 @@ export class StoreReturnExchangeService {
         .limit(1)
         .then((r) => r[0]);
 
-      const refundAmount = salesOrder ? await this.computeReturnRefundAmount(returnRequestId, salesOrder, tx) : 0;
-      const immediateComplete = refundAmount <= 0;
-      const needsRefund = !immediateComplete && !!salesOrder?.walletIntentId;
+      const refund: ReturnRefundAmount = salesOrder
+        ? await this.computeReturnRefundAmount(returnRequestId, salesOrder, tx)
+        : { kind: 'amount', amount: 0 };
+      // 세트 일부 반품은 자동 금액이 없다 — refund_pending 으로 넘기고 수동 환불을 기다린다(N5)
+      const setPartial = refund.kind === 'set_partial';
+      const immediateComplete = refund.kind === 'amount' && refund.amount <= 0;
+      const needsRefund = !setPartial && !immediateComplete && !!salesOrder?.walletIntentId;
 
       const now = new Date();
       const nextStatus = immediateComplete ? 'completed' : 'refund_pending';
@@ -748,7 +748,11 @@ export class StoreReturnExchangeService {
         await this.enqueueReturnCompletedEvent(tx, rr, now);
       }
 
-      if (!immediateComplete && salesOrder && !salesOrder.walletIntentId) {
+      if (setPartial) {
+        this.logger.warn(
+          `[ReturnRefund] Set-partial return ${returnRequestId} has no automatic amount. Manual refund required.`,
+        );
+      } else if (!immediateComplete && salesOrder && !salesOrder.walletIntentId) {
         this.logger.warn(
           `[ReturnRefund] No walletIntentId for SO ${salesOrder.id}, return ${returnRequestId}. Manual refund required.`,
         );
@@ -818,7 +822,11 @@ export class StoreReturnExchangeService {
       }
 
       // 신규 attempt (N = max+1) — 규율 1: pending 없을 때만(직전 확정 failed 또는 최초)
-      const amount = await this.computeReturnRefundAmount(returnRequestId, salesOrder, tx);
+      const refund = await this.computeReturnRefundAmount(returnRequestId, salesOrder, tx);
+      if (refund.kind === 'set_partial') {
+        throw new BadRequestException('세트 구성품 일부 반품은 자동 환불 금액이 없습니다. 수동 완료를 사용하세요.');
+      }
+      const amount = refund.amount;
       if (amount <= 0) {
         throw new BadRequestException('환불 금액이 0원 이하입니다. 수동 완료를 사용하세요.');
       }
@@ -1610,41 +1618,41 @@ export class StoreReturnExchangeService {
     };
   }
 
-  /** 반품 환불 금액 계산 — 주문/라인/반품라인을 로드해 calculateReturnRefund 위임. tx 컨텍스트 전용. */
+  /**
+   * 반품 환불 금액 계산 — 주문 라인과 이 요청의 라인별 판매 단위(수량 문, C6)를 읽어 calculateReturnRefund 위임.
+   * 요청 항목 수량은 SKU 단위라(C3) 여기서 직접 읽지 않는다. 세트 일부만 돌아온 라인이 하나라도 있으면 `set_partial`(N5).
+   * tx 컨텍스트 전용.
+   */
   private async computeReturnRefundAmount(
     returnRequestId: string,
     salesOrder: { id: string; totalAmount: number | null; shippingFee: number },
     tx: Parameters<Parameters<typeof this.db.db.transaction>[0]>[0],
-  ): Promise<number> {
-    const [allOrderLines, returnItems] = await Promise.all([
-      tx
-        .select({
-          id: wmsTables.salesOrderLines.id,
-          quantity: wmsTables.salesOrderLines.quantity,
-          unitPrice: wmsTables.salesOrderLines.unitPrice,
-          totalPrice: wmsTables.salesOrderLines.totalPrice,
-        })
-        .from(wmsTables.salesOrderLines)
-        .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrder.id)),
-      tx
-        .select({
-          salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
-          quantity: returnExchangeTables.returnRequestItems.quantity,
-          unitPrice: wmsTables.salesOrderLines.unitPrice,
-        })
-        .from(returnExchangeTables.returnRequestItems)
-        .leftJoin(
-          wmsTables.salesOrderLines,
-          eq(returnExchangeTables.returnRequestItems.salesOrderLineId, wmsTables.salesOrderLines.id),
-        )
-        .where(eq(returnExchangeTables.returnRequestItems.returnRequestId, returnRequestId)),
-    ]);
-    return this.calculateReturnRefund(
-      returnItems,
-      allOrderLines,
-      salesOrder.totalAmount ?? null,
-      salesOrder.shippingFee ?? 0,
-    );
+  ): Promise<ReturnRefundAmount> {
+    const allOrderLines = await tx
+      .select({
+        id: wmsTables.salesOrderLines.id,
+        quantity: wmsTables.salesOrderLines.quantity,
+        unitPrice: wmsTables.salesOrderLines.unitPrice,
+        totalPrice: wmsTables.salesOrderLines.totalPrice,
+      })
+      .from(wmsTables.salesOrderLines)
+      .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrder.id));
+    const salesUnits = await readReturnRequestSalesUnits(tx, returnRequestId);
+
+    const unitsByLine = new Map<string, number>();
+    for (const [lineId, units] of salesUnits) {
+      if (units.kind === 'set_partial') return { kind: 'set_partial' };
+      unitsByLine.set(lineId, units.units);
+    }
+    return {
+      kind: 'amount',
+      amount: this.calculateReturnRefund(
+        unitsByLine,
+        allOrderLines,
+        salesOrder.totalAmount ?? null,
+        salesOrder.shippingFee ?? 0,
+      ),
+    };
   }
 
   /** 환불 시도 감사 로그 (기존 return_linked_wallet_refund businessLink 연속 — 상태 SoT 는 attempt 행). */
@@ -1674,26 +1682,28 @@ export class StoreReturnExchangeService {
   }
 
   /**
-   * 반품 환불 금액 계산.
+   * 반품 환불 금액 계산. `unitsByLine` = 판매 라인별 반품 판매 단위(같은 라인의 여러 항목을 수량 문이 합했다, F2).
    * - 전체 반품: totalAmount (배송비 포함한 실제 결제 금액)
    * - 부분 반품: (반품 라인 합계 / 전체 라인 합계) × (totalAmount - shippingFee)
    *   → 주문 레벨 할인을 라인 비중으로 배분. 부분 반품에는 배송비 미포함.
+   * - totalAmount 없음 또는 라인 무게 합 0: unitPrice × 판매 단위 합.
    */
   private calculateReturnRefund(
-    returnItems: { salesOrderLineId: string | null; quantity: number; unitPrice: number | null }[],
+    unitsByLine: ReadonlyMap<string, number>,
     allLines: { id: string; quantity: number; unitPrice: number | null; totalPrice: number | null }[],
     orderTotalAmount: number | null,
     orderShippingFee: number,
   ): number {
     const orderTotal = orderTotalAmount ?? 0;
+    const unitPriceSum = (): number =>
+      allLines.reduce((acc, l) => acc + (unitsByLine.get(l.id) ?? 0) * (l.unitPrice ?? 0), 0);
 
     if (orderTotal <= 0 || allLines.length === 0) {
       // totalAmount 정보 없음: 단순 unitPrice × 수량 합산으로 폴백
-      return returnItems.reduce((acc, item) => acc + item.quantity * (item.unitPrice ?? 0), 0);
+      return unitPriceSum();
     }
 
-    const returnQtyByLineId = new Map(returnItems.map((r) => [r.salesOrderLineId, r.quantity]));
-    const isFullReturn = allLines.every((l) => (returnQtyByLineId.get(l.id) ?? 0) >= l.quantity);
+    const isFullReturn = allLines.every((l) => (unitsByLine.get(l.id) ?? 0) >= l.quantity);
 
     if (isFullReturn) {
       return orderTotal;
@@ -1705,11 +1715,11 @@ export class StoreReturnExchangeService {
 
     const allLinesTotals = allLines.reduce((acc, l) => acc + lineWeight(l), 0);
     if (allLinesTotals <= 0) {
-      return returnItems.reduce((acc, item) => acc + item.quantity * (item.unitPrice ?? 0), 0);
+      return unitPriceSum();
     }
 
     const returnedLinesTotals = allLines.reduce((acc, l) => {
-      const returnQty = returnQtyByLineId.get(l.id) ?? 0;
+      const returnQty = unitsByLine.get(l.id) ?? 0;
       if (returnQty <= 0 || l.quantity <= 0) return acc;
       // 라인 무게를 반품수량 비율로 배분 (할인 포함 기준)
       return acc + (lineWeight(l) * returnQty) / l.quantity;
