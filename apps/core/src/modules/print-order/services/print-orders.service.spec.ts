@@ -41,7 +41,7 @@ class FakeManager extends PrintOrderAdminManager {
   resolveCancel = jest.fn<Promise<PrintCancelResolution>, [string, 'cancelled' | 'proceed', string]>();
   noteSalesCancelFailed = jest.fn(() => Promise.resolve());
   salesCancelTarget = jest.fn<Promise<PrintSalesCancelTarget | null>, [PrintOrderRow]>(() =>
-    Promise.resolve({ salesOrderId: 'so-1', salesOrderLineId: 'sol-1', lineQuantity: 3 }),
+    Promise.resolve({ salesOrderId: 'so-1', salesOrderLineId: 'sol-1' }),
   );
   get = jest.fn<Promise<PrintOrderRow>, [string]>(() => Promise.resolve(resolvedRow));
   retry = jest.fn();
@@ -253,7 +253,7 @@ describe('PrintOrdersService', () => {
   it('records the failure on the print row and rethrows when the sales cancel fails', async () => {
     const { manager, adminCancelRequest, service } = setup();
     manager.resolveCancel.mockResolvedValue({ row: resolvedRow, cancelSales: true });
-    manager.salesCancelTarget.mockResolvedValue({ salesOrderId: 'so-1', salesOrderLineId: 'sol-1', lineQuantity: 1 });
+    manager.salesCancelTarget.mockResolvedValue({ salesOrderId: 'so-1', salesOrderLineId: 'sol-1' });
     const boom = new Error('medusa down');
     adminCancelRequest.mockRejectedValue(boom);
     await expect(service.resolveCancel('po-1', 'cancelled', ADMIN)).rejects.toBe(boom);

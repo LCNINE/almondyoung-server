@@ -10,7 +10,6 @@ export type PrintCancelOutcome = 'cancelled' | 'proceed';
 export interface PrintSalesCancelTarget {
   salesOrderId: string;
   salesOrderLineId: string;
-  lineQuantity: number;
 }
 
 export interface PrintCancelResolution {
@@ -140,7 +139,7 @@ export class PrintOrderAdminManager {
   async salesCancelTarget(row: PrintOrderRow): Promise<PrintSalesCancelTarget | null> {
     const line = await this.reader.salesLine(row.salesOrderLineId);
     if (!line || line.salesOrderStatus === 'cancelled') return null;
-    return { salesOrderId: row.salesOrderId, salesOrderLineId: row.salesOrderLineId, lineQuantity: line.quantity };
+    return { salesOrderId: row.salesOrderId, salesOrderLineId: row.salesOrderLineId };
   }
 
   private async load(id: string): Promise<PrintOrderRow> {

@@ -46,4 +46,27 @@ describe('취소 수량 읽는 문', () => {
     // PR 6 (contract) 이 쓰기 문의 백필 전 대비와 함께 둘 다 지운다.
     expect(filesMatching((source) => /\bsumCancelledByLine\b/.test(source))).toEqual([RECORDER, PARTIAL_PARSER].sort());
   });
+
+  it('retired shipment-phase definitions stay gone', () => {
+    const pattern =
+      /\borderShipmentPhaseSql\b|\bderiveFulfillmentPhase\b|\bhasShippedEvidence\b|\bMOVED_SHIPMENT_STATUSES\b|\boutstandingSalesUnits\b|\bgetEffectiveShippedFulfillmentQty\b/;
+    expect(filesMatching((source) => pattern.test(source))).toEqual([]);
+  });
+
+  it('only the kernel reads delivery tracking for quantities', () => {
+    // 비테스트 운영 파일만 센다(walk 가 스펙·__support__ 를 뺀다). 픽스처는 현실 데이터를 흉내 내려 추적 행을 써야 한다.
+    // - store-sales-orders.service.ts: 배송조회 화면의 추적 이벤트 목록이다(수량이 아니다).
+    // - store-return-exchange.service.ts: 반품·교환 자격. PR 3 이 문으로 옮기고 이 목록에서 뺀다.
+    const salesOrder = 'apps/core/src/modules/sales-order/';
+    const files = filesMatching((source) => /shipment_tracking|shipmentTracking/.test(source)).filter((path) =>
+      path.startsWith(salesOrder),
+    );
+    expect(files).toEqual(
+      [
+        `${salesOrder}line-quantities/line-quantities.sql.ts`,
+        `${salesOrder}services/store-return-exchange.service.ts`,
+        `${salesOrder}services/store-sales-orders.service.ts`,
+      ].sort(),
+    );
+  });
 });
