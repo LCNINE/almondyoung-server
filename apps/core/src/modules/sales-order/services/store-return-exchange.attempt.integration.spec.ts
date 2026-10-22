@@ -203,7 +203,11 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
   it('keeps customer ownership on Store reads while allowing the scoped Admin read path', async () => {
     await inRollbackTx(db, async (tx) => {
       const graph = await seedDeliveredAttemptGraph(tx);
-      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
+      const service = new StoreReturnExchangeService(
+        { db: tx } as never,
+        { refundByIntent: jest.fn() } as never,
+        makeCoreOrdersPublisher() as never,
+      );
 
       await expect(service.getReturnEligibility(graph.salesOrderId, randomUUID())).rejects.toThrow(
         /본인 주문만 접근할 수 있습니다/,
@@ -239,7 +243,11 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
         dispatchAttemptId: graph.attempts[0].id,
         quantity: 1,
       });
-      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
+      const service = new StoreReturnExchangeService(
+        { db: tx } as never,
+        { refundByIntent: jest.fn() } as never,
+        makeCoreOrdersPublisher() as never,
+      );
 
       const eligibility = await service.adminGetReturnEligibility(graph.salesOrderId);
 
@@ -257,7 +265,11 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
   it('permanently subtracts completed claims, while rejected/cancelled claims release eligibility', async () => {
     await inRollbackTx(db, async (tx) => {
       const graph = await seedDeliveredAttemptGraph(tx);
-      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
+      const service = new StoreReturnExchangeService(
+        { db: tx } as never,
+        { refundByIntent: jest.fn() } as never,
+        makeCoreOrdersPublisher() as never,
+      );
       const first = await service.createReturnRequest(graph.salesOrderId, graph.customerId, createDto(graph));
       await tx
         .update(returnExchangeTables.returnRequests)
@@ -312,7 +324,11 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
         dispatchAttemptId: null,
         quantity: 1,
       });
-      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
+      const service = new StoreReturnExchangeService(
+        { db: tx } as never,
+        { refundByIntent: jest.fn() } as never,
+        makeCoreOrdersPublisher() as never,
+      );
 
       await expect(service.getReturnEligibility(graph.salesOrderId, graph.customerId)).resolves.toEqual({
         orderId: graph.salesOrderId,
@@ -340,24 +356,31 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
       const graph = await seedDeliveredAttemptGraph(tx, 2);
       // 출고 뒤 취소(V1 사후취소) 1 — 돈을 돌려준 수량은 다시 청구할 수 없다(C9). 두 소포가 SKU 몫 1 을 나눠 쓴다.
       // 엔진은 다 나간 라인의 부분취소를 거절하므로(R1) 엔진이 남기는 모양을 쓰기 문에 직접 넘긴다
-      await recordSalesOrderCancellation(tx, {
-        salesOrderId: graph.salesOrderId,
-        cancellationScope: 'partial',
-        reasonCode: 'customer',
-        metadata: { cancelledLines: [{ salesOrderLineId: graph.salesOrderLineId, quantity: 1 }] },
-        effects: [
-          {
-            type: 'preserved_shipped_fulfillment_order_item',
-            metadata: {
-              salesOrderLineId: graph.salesOrderLineId,
-              skuId: graph.skuId,
-              requestedFulfillmentQuantity: 1,
-              affectedShippedQuantity: 1,
+      await recordSalesOrderCancellation(
+        tx,
+        {
+          salesOrderId: graph.salesOrderId,
+          cancellationScope: 'partial',
+          reasonCode: 'customer',
+          effects: [
+            {
+              type: 'preserved_shipped_fulfillment_order_item',
+              metadata: {
+                salesOrderLineId: graph.salesOrderLineId,
+                skuId: graph.skuId,
+                requestedFulfillmentQuantity: 1,
+                affectedShippedQuantity: 1,
+              },
             },
-          },
-        ],
-      });
-      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
+          ],
+        },
+        [{ salesOrderLineId: graph.salesOrderLineId, quantity: 1 }],
+      );
+      const service = new StoreReturnExchangeService(
+        { db: tx } as never,
+        { refundByIntent: jest.fn() } as never,
+        makeCoreOrdersPublisher() as never,
+      );
 
       const eligibility = await service.getReturnEligibility(graph.salesOrderId, graph.customerId);
       expect(eligibility.items).toHaveLength(2);
@@ -394,7 +417,11 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
   it('keeps eligibility pools separate across delivered redispatch attempts', async () => {
     await inRollbackTx(db, async (tx) => {
       const graph = await seedDeliveredAttemptGraph(tx, 2);
-      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
+      const service = new StoreReturnExchangeService(
+        { db: tx } as never,
+        { refundByIntent: jest.fn() } as never,
+        makeCoreOrdersPublisher() as never,
+      );
       const first = await service.createReturnRequest(graph.salesOrderId, graph.customerId, createDto(graph, 0));
       await tx
         .update(returnExchangeTables.returnRequests)
@@ -429,7 +456,11 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
           recalledAt: new Date('2026-07-15T03:00:00.000Z'),
         })
         .where(eq(wmsTables.dispatchAttempts.id, graph.attempts[0].id));
-      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
+      const service = new StoreReturnExchangeService(
+        { db: tx } as never,
+        { refundByIntent: jest.fn() } as never,
+        makeCoreOrdersPublisher() as never,
+      );
 
       // 회수된 시도는 배송완료 소포가 아니다 — 배송완료 추적 기록이 남아 있어도 자격 목록에 없다
       await expect(service.createReturnRequest(graph.salesOrderId, graph.customerId, createDto(graph))).rejects.toThrow(
@@ -441,7 +472,11 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
   it('serializes concurrent claims so exact attempt/line qty=1 succeeds only once', async () => {
     const graph = await db.transaction((tx) => seedDeliveredAttemptGraph(tx as unknown as DbTx));
     try {
-      const service = new StoreReturnExchangeService({ db } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
+      const service = new StoreReturnExchangeService(
+        { db } as never,
+        { refundByIntent: jest.fn() } as never,
+        makeCoreOrdersPublisher() as never,
+      );
       const results = await Promise.allSettled([
         service.createReturnRequest(graph.salesOrderId, graph.customerId, createDto(graph)),
         service.createReturnRequest(graph.salesOrderId, graph.customerId, createDto(graph)),
@@ -496,7 +531,11 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
   it('allows an authenticated admin to create an exact-attempt return without customer impersonation', async () => {
     const graph = await db.transaction((tx) => seedDeliveredAttemptGraph(tx as unknown as DbTx));
     try {
-      const service = new StoreReturnExchangeService({ db } as never, { refundByIntent: jest.fn() } as never, makeCoreOrdersPublisher() as never);
+      const service = new StoreReturnExchangeService(
+        { db } as never,
+        { refundByIntent: jest.fn() } as never,
+        makeCoreOrdersPublisher() as never,
+      );
 
       const created = await service.adminCreateReturnRequest(graph.salesOrderId, 'admin-operator-1', createDto(graph));
 

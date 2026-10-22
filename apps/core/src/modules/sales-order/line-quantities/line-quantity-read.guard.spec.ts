@@ -4,28 +4,39 @@ import { join, relative } from 'path';
 /**
  * K6 PR2a — 취소 수량은 «취소 라인 행(`sales_order_cancellation_lines`)» 한 곳에서, 읽는 문의 SQL 조각 한 벌로만 읽는다.
  * 쓰기 문(`record-cancellation.ts`)과 조각(`line-quantities.sql.ts`) 말고 이 테이블 이름을 쓰는 파일이 생기면
- * 정의가 다시 여러 벌이 된다. 옛 `metadata.cancelledLines` 파서의 이름이 되살아나는 것도 막는다.
+ * 정의가 다시 여러 벌이 된다. K6 PR6 이 옛 `metadata.cancelledLines` 파서를 모두 지웠다 — 이름이 되살아나거나
+ * 취소 metadata 에서 `cancelledLines` 를 다시 읽는 코드가 생기면(스크립트 포함) 빨갛다.
  * 스펙·`__support__`·`__fixtures__` 는 테스트 데이터를 만들 뿐이라 대상이 아니다.
  */
 const ROOT = join(__dirname, '../../../../../..');
 const SRC = join(ROOT, 'apps/core/src');
+const SCRIPTS = join(ROOT, 'scripts');
 const RECORDER = 'apps/core/src/modules/sales-order/cancellation-record/record-cancellation.ts';
 const FRAGMENTS = 'apps/core/src/modules/sales-order/line-quantities/line-quantities.sql.ts';
-const PARTIAL_PARSER = 'apps/core/src/modules/product-matching/line-composition/partial-cancellation.ts';
 const SCHEMA_FILE = 'inventory.schema.ts';
+
+/** 취소 metadata 에서 `cancelledLines` 를 읽는 꼴(TS 접근·Reflect·jsonb 연산자). */
+const METADATA_CANCELLED_LINES_READ =
+  /metadata\??\.cancelledLines|metadata\??\.?\[\s*['"]cancelledLines['"]\s*\]|Reflect\.get\([^)]*['"]cancelledLines['"]\)|->>?\s*'cancelledLines'|#>>?\s*'\{cancelledLines/;
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
     if (statSync(path).isDirectory()) {
-      return name === '__support__' || name === '__fixtures__' ? [] : walk(path);
+      return name === '__support__' || name === '__fixtures__' || name === 'node_modules' ? [] : walk(path);
     }
-    return path.endsWith('.ts') && !path.endsWith('.spec.ts') ? [path] : [];
+    return /\.(ts|js)$/.test(path) && !/\.spec\.(ts|js)$/.test(path) ? [path] : [];
   });
 }
 
 function filesMatching(predicate: (source: string) => boolean): string[] {
-  return walk(SRC)
+  return filesMatchingIn([SRC], predicate);
+}
+
+/** 운영 스크립트(`scripts/`)까지 훑는다 — 옛 파서는 백필 스크립트에서도 쓰였다. */
+function filesMatchingIn(roots: string[], predicate: (source: string) => boolean): string[] {
+  return roots
+    .flatMap(walk)
     .filter((path) => !path.endsWith(SCHEMA_FILE))
     .filter((path) => predicate(readFileSync(path, 'utf8')))
     .map((path) => relative(ROOT, path))
@@ -38,13 +49,32 @@ describe('취소 수량 읽는 문', () => {
   });
 
   it('retired cancelled-quantity parsers stay gone', () => {
-    const pattern = /\bcancelledQuantitySql\b|\bloadPriorPartialCancellationContext\b|\bgetCancelledQuantityByLine\b/;
-    expect(filesMatching((source) => pattern.test(source))).toEqual([]);
+    const pattern =
+      /\bcancelledQuantitySql\b|\bloadPriorPartialCancellationContext\b|\bgetCancelledQuantityByLine\b|\bsumCancelledByLine\b|\breadCancelledLines\b|\blegacyCancelledByLine\b/;
+    expect(filesMatchingIn([SRC, SCRIPTS], (source) => pattern.test(source))).toEqual([]);
   });
 
-  it('sumCancelledByLine stays with the recorder', () => {
-    // PR 6 (contract) 이 쓰기 문의 백필 전 대비와 함께 둘 다 지운다.
-    expect(filesMatching((source) => /\bsumCancelledByLine\b/.test(source))).toEqual([RECORDER, PARTIAL_PARSER].sort());
+  it('the metadata-read pattern catches the common read shapes', () => {
+    const shapes = [
+      'metadata.cancelledLines',
+      'metadata?.cancelledLines',
+      "metadata['cancelledLines']",
+      'metadata["cancelledLines"]',
+      "metadata?.['cancelledLines']",
+      "Reflect.get(metadata, 'cancelledLines')",
+      'Reflect.get(metadata, "cancelledLines")',
+      "c.metadata->'cancelledLines'",
+      "c.metadata->>'cancelledLines'",
+      "c.metadata #> '{cancelledLines}'",
+    ];
+    expect(shapes.filter((shape) => !METADATA_CANCELLED_LINES_READ.test(shape))).toEqual([]);
+    // 이벤트 payload·감사 로그의 객체 리터럴은 다른 것이라 걸리지 않아야 한다.
+    expect(METADATA_CANCELLED_LINES_READ.test('cancelledLines: requestedLines.map(')).toBe(false);
+  });
+
+  it('nothing reads cancelledLines out of cancellation metadata', () => {
+    // 쓰기 쪽 재발은 쓰기 문의 런타임 검사가 잡는다 — 객체 리터럴 `cancelledLines:` 는 이벤트 payload 와 구별되지 않아 여기서 막지 않는다.
+    expect(filesMatchingIn([SRC, SCRIPTS], (source) => METADATA_CANCELLED_LINES_READ.test(source))).toEqual([]);
   });
 
   it('retired shipment-phase definitions stay gone', () => {

@@ -181,11 +181,14 @@ describeIfDb('PrintOrderReader board (tabs, summary)', () => {
           (i) => i.id,
         );
       const partial = (quantity: number) =>
-        recordSalesOrderCancellation(tx, {
-          salesOrderId,
-          cancellationScope: 'partial',
-          metadata: { cancelledLines: [{ salesOrderLineId: lineId, quantity }] },
-        });
+        recordSalesOrderCancellation(
+          tx,
+          {
+            salesOrderId,
+            cancellationScope: 'partial',
+          },
+          [{ salesOrderLineId: lineId, quantity }],
+        );
 
       expect(await tab()).toEqual([printId]);
       expect(await reader.refundNotOpened(printId, tx)).toBe(true);
@@ -234,11 +237,14 @@ describeIfDb('PrintOrderReader board (tabs, summary)', () => {
         .values({ salesOrderId, salesOrderLineId: lineId, almondDesignId: randomUUID(), status: 'cancelled' })
         .returning({ id: wmsTables.printOrders.id });
       expect(await reader.refundNotOpened(print?.id ?? '', tx)).toBe(true);
-      await recordSalesOrderCancellation(tx, {
-        salesOrderId,
-        cancellationScope: 'full',
-        metadata: { cancelledLines: [{ salesOrderLineId: lineId, quantity: 3 }] },
-      });
+      await recordSalesOrderCancellation(
+        tx,
+        {
+          salesOrderId,
+          cancellationScope: 'full',
+        },
+        [{ salesOrderLineId: lineId, quantity: 3 }],
+      );
       expect(await reader.refundNotOpened(print?.id ?? '', tx)).toBe(false);
     });
   });

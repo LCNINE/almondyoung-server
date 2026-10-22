@@ -293,23 +293,26 @@ describeIfDb('readLineQuantities — SKU 층 청구 사실 (K6 PR3a)', () => {
           ),
         ),
       ).rejects.toThrow('includes shipped or already canceled quantity');
-      await recordSalesOrderCancellation(tx, {
-        salesOrderId: line.salesOrderId,
-        cancellationScope: 'partial',
-        reasonCode: 'customer',
-        metadata: { cancelledLines: [{ salesOrderLineId: line.lineId, quantity: 1 }] },
-        effects: [
-          {
-            type: 'preserved_shipped_fulfillment_order_item',
-            metadata: {
-              salesOrderLineId: line.lineId,
-              skuId: w.skuId,
-              requestedFulfillmentQuantity: 2,
-              affectedShippedQuantity: 2,
+      await recordSalesOrderCancellation(
+        tx,
+        {
+          salesOrderId: line.salesOrderId,
+          cancellationScope: 'partial',
+          reasonCode: 'customer',
+          effects: [
+            {
+              type: 'preserved_shipped_fulfillment_order_item',
+              metadata: {
+                salesOrderLineId: line.lineId,
+                skuId: w.skuId,
+                requestedFulfillmentQuantity: 2,
+                affectedShippedQuantity: 2,
+              },
             },
-          },
-        ],
-      });
+          ],
+        },
+        [{ salesOrderLineId: line.lineId, quantity: 1 }],
+      );
 
       const read = await readLineQuantities(tx, line.salesOrderId);
       expect(read.get(line.lineId)?.canceledAfterShipment).toBe(1);
@@ -493,23 +496,26 @@ describeIfDb('readParcelClaimEligibility — 소포 단위 청구 자격 (K6 PR3
         items: [item(first, 2)],
       });
       // R1 — 다 나간 라인의 부분취소는 엔진이 거절한다. 엔진이 V1 사후취소에서 남기는 모양을 쓰기 문에 직접 넘긴다
-      await recordSalesOrderCancellation(tx, {
-        salesOrderId: line.salesOrderId,
-        cancellationScope: 'partial',
-        reasonCode: 'customer',
-        metadata: { cancelledLines: [{ salesOrderLineId: line.lineId, quantity: 1 }] },
-        effects: [
-          {
-            type: 'preserved_shipped_fulfillment_order_item',
-            metadata: {
-              salesOrderLineId: line.lineId,
-              skuId: w.skuId,
-              requestedFulfillmentQuantity: 1,
-              affectedShippedQuantity: 1,
+      await recordSalesOrderCancellation(
+        tx,
+        {
+          salesOrderId: line.salesOrderId,
+          cancellationScope: 'partial',
+          reasonCode: 'customer',
+          effects: [
+            {
+              type: 'preserved_shipped_fulfillment_order_item',
+              metadata: {
+                salesOrderLineId: line.lineId,
+                skuId: w.skuId,
+                requestedFulfillmentQuantity: 1,
+                affectedShippedQuantity: 1,
+              },
             },
-          },
-        ],
-      });
+          ],
+        },
+        [{ salesOrderLineId: line.lineId, quantity: 1 }],
+      );
 
       const parcels = await parcelsOf(tx, line.salesOrderId);
       // 3 − 2(완료 반품) − 1(출고 뒤 취소 × 1)

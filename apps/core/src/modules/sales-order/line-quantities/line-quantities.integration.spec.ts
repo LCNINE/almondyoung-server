@@ -18,7 +18,6 @@ import {
 } from '../../fulfillment/services/__support__';
 import { ambientDbService } from '../../fulfillment/services/__support__/simple-outbound-wiring';
 import { LineCompositionManager } from '../../product-matching/line-composition/line-composition.manager';
-import { sumCancelledByLine } from '../../product-matching/line-composition/partial-cancellation';
 import {
   seedCancellableOrder,
   seedShippedV1Fulfillment,
@@ -160,28 +159,6 @@ async function readAndCrossCheck(tx: DbTx, salesOrderId: string): Promise<Map<st
   return read;
 }
 
-/** (다) 옛 정의 — 그 주문 partial 취소의 metadata.cancelledLines 합. */
-async function legacyCancelledByLine(tx: DbTx, salesOrderId: string): Promise<Map<string, number>> {
-  const partials = await tx
-    .select({ metadata: wmsTables.salesOrderCancellations.metadata })
-    .from(wmsTables.salesOrderCancellations)
-    .where(
-      and(
-        eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId),
-        eq(wmsTables.salesOrderCancellations.cancellationScope, 'partial'),
-      ),
-    );
-  return sumCancelledByLine(partials.map((partial) => partial.metadata));
-}
-
-/** (다) 전체취소가 없는 주문에서는 옛 정의와 새 정의(`canceled`)가 같다 — 소비자 전환이 동작을 안 바꾼다. */
-async function expectLegacyAgrees(tx: DbTx, salesOrderId: string, read: Map<string, LineQuantities>) {
-  const legacy = await legacyCancelledByLine(tx, salesOrderId);
-  for (const [lineId, line] of read) {
-    expect({ lineId, canceled: legacy.get(lineId) ?? 0 }).toEqual({ lineId, canceled: line.canceled });
-  }
-}
-
 async function insertLine(
   tx: DbTx,
   salesOrderId: string,
@@ -215,7 +192,6 @@ describeIfDb('readLineQuantities — 라인 수량은 취소 라인 행 한 곳�
       const read = await readAndCrossCheck(tx, o.salesOrderId);
 
       expect([...read.values()]).toMatchObject([quantities(o.lineId, [3, 0, 0, 0, 3, 3])]);
-      await expectLegacyAgrees(tx, o.salesOrderId, read);
     });
   });
 
@@ -235,7 +211,6 @@ describeIfDb('readLineQuantities — 라인 수량은 취소 라인 행 한 곳�
       expect(read.size).toBe(2);
       expect(read.get(o.lineId)).toMatchObject(quantities(o.lineId, [2, 1, 0, 1, 1, 1]));
       expect(read.get(untouchedLineId)).toMatchObject(quantities(untouchedLineId, [1, 0, 0, 0, 1, 1]));
-      await expectLegacyAgrees(tx, o.salesOrderId, read);
     });
   });
 
@@ -254,7 +229,6 @@ describeIfDb('readLineQuantities — 라인 수량은 취소 라인 행 한 곳�
 
       const read = await readAndCrossCheck(tx, o.salesOrderId);
       expect([...read.values()]).toMatchObject([quantities(o.lineId, [3, 2, 0, 2, 1, 1])]);
-      await expectLegacyAgrees(tx, o.salesOrderId, read);
     });
   });
 
@@ -273,7 +247,6 @@ describeIfDb('readLineQuantities — 라인 수량은 취소 라인 행 한 곳�
       const read = await readAndCrossCheck(tx, o.salesOrderId);
       // 이미 나간 수량의 취소는 수요에서 빼지 않는다(E2) — demand 3, 더 취소할 수 있는 건 2.
       expect([...read.values()]).toMatchObject([quantities(o.lineId, [3, 0, 1, 1, 3, 2])]);
-      await expectLegacyAgrees(tx, o.salesOrderId, read);
     });
   });
 
@@ -310,7 +283,6 @@ describeIfDb('readLineQuantities — 라인 수량은 취소 라인 행 한 곳�
       const read = await readAndCrossCheck(tx, salesOrderId);
       // 구성품이 하나라도 나간 판매 단위는 출고 후 취소다(PR 1 규칙) — 문은 라인 행을 재해석하지 않고 합한다.
       expect([...read.values()]).toMatchObject([quantities(lineId, [1, 0, 1, 1, 1, 0])]);
-      await expectLegacyAgrees(tx, salesOrderId, read);
     });
   });
 
@@ -328,10 +300,8 @@ describeIfDb('readLineQuantities — 라인 수량은 취소 라인 행 한 곳�
 
       const read = await readAndCrossCheck(tx, o.salesOrderId);
       expect([...read.values()]).toMatchObject([quantities(o.lineId, [3, 3, 0, 3, 0, 0])]);
-      // E1 — 옛 정의는 partial 만 세어 1, 새 정의는 전체취소의 라인 행까지 세어 3.
-      const legacy = await legacyCancelledByLine(tx, o.salesOrderId);
-      expect(legacy.get(o.lineId)).toBe(1);
-      expect(read.get(o.lineId)?.canceled).not.toBe(legacy.get(o.lineId));
+      // E1 — 전체취소의 라인 행까지 센다(옛 metadata 파서는 partial 만 세어 1 을 냈다).
+      expect(read.get(o.lineId)?.canceled).toBe(3);
     });
   });
 
