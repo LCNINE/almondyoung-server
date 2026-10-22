@@ -140,8 +140,20 @@ PR 1 은 기록만 더했다(이중 기록). PR 2a 가 `cancelledQuantitySql`(�
 - PR 2b — 진행 단계 SQL, 관리자 뱃지·일별 통계·카드 숫자(F10), 고객 actions, 셀메이트 F12·배송조회 F11, SKU 층 사실(`shipped`·`forwarded`·`delivered`·`cancellable`).
 - PR 3a — 청구(반품·교환) 게이트·환불 수량·고객 버튼을 한 공식 `claimable` 과 소포 단위 자격으로. Core 만. 배포 전 게이트 D5: `return_request_items`·`exchange_request_items` 행 수 0.
 - PR 3b — (이 PR) D7 관리자 입력 환불 금액(마이그레이션·`returnRefundCap`·견적/금액 입력 라우트·admin-web 입력)과 F9(`SalesOrderReturned` additive `remainingQuantity` + ugc 소비). Core·ugc·admin-web, 3a·2b 와 같은 배포면 그 절차 먼저.
-- PR 4 — 운영자 «미처리 취소»(admin-web 버튼과 `POST /shipments/:id/cancellations`), FO 취소(`POST /fulfillments/:id/cancel`), 수동 배송완료
-  (`POST /fulfillments/:id/deliver`) 제거. 셋 다 판매주문 기록 없이 상태만 바꾸거나 배송 사실을 추적 밖에서 만들어 «기록 위치 하나»와 충돌한다.
+- PR 4 — (이 PR) 판매주문 기록 없이 상태만 바꾸거나 배송 사실을 추적 밖에서 만들던 관리자 경로 셋을 지웠다 — «기록 위치 하나»와 충돌한다.
+  - D1 운영자 «미처리 취소»(`POST /shipments/:id/cancellations` + admin-web «미처리 수량 취소»). `ShipmentPlanningService.cancelOutstanding` 은 판매주문 V2 취소의
+    내부 단계로 남고, `cancel-outstanding-callers.guard.spec.ts` 가 호출자를 `sales-orders.service.ts` 하나로 고정한다.
+  - D11 FO 취소(`POST /fulfillments/:id/cancel` + FO 상세 취소 버튼). 그 유일한 생산자와 함께 `FulfillmentCancelled` 를 계약에서 지웠다 — channel-adapter 소비자는
+    로그만 찍는 no-op 이었고 ugc 는 원래 구독하지 않았다.
+  - D10 수동 배송완료(`POST /fulfillments/:id/deliver`, 화면 호출 0). `FulfillmentDelivered` 는 추적 경로(`ShipmentDeliveryTrackingService`)가 계속 발행해 남는다.
+    FO `completed` 의 유일한 작성자가 사라져 새 FO 는 `completed` 가 되지 않는다 — enum 값은 남긴다(값 삭제는 destructive).
+  - FO 상세 `adminAvailableActions` 는 직배 액션(`forwardDropShip`·`completeDropShip`)만 남는다. `removed-operator-routes.spec.ts` 가 세 라우트의 부활을 막는다.
+  - **판매주문 없는 출고주문은 만들지 않는다**(사용자 결정 2026-10-22, 최종 리뷰가 찾은 스펙 공백). admin-web «출고주문 생성 (수동)»이 판매주문 없이 FO 를 만들었는데,
+    D1·D11 뒤 그 FO 는 취소할 길이 없고(취소는 판매주문 취소로만) 직배 완료도 `FulfillmentShipped.orderId`(`min(1)`) 검증에 걸린다. 수량 사실·청구·채널·고객 화면 어디에도
+    닿지 않는다 — 이 시스템의 뼈대는 판매주문 → 출고주문이다. 화면·훅·클라이언트를 지우고 `FulfillmentsService.create` 가 `salesOrderId` 없는 요청을
+    400 `FULFILLMENT_REQUIRES_SALES_ORDER` 로 거절한다(items·lines 갈래 삭제). 수동 출고는 «주문입력(수동)»으로 판매주문을 만든다. 칼럼 `sales_order_id` 의
+    NOT NULL 은 이 PR 밖이다(contract 마이그 — 라이브 SO 없는 FO 0행 확인 뒤).
+  - 마이그레이션 없음. 배포 Core·channel-adapter·admin-web.
 - PR 6 — contract: `metadata.cancelledLines` 쓰기 중단, 옛 파서 삭제, 옛 파서 이름이 되살아나면 빨간 가드. PR 1 의 백필이 라이브에서 끝나고 한 번 이상 배포된 뒤
   (ADR-0005 §5, `deploy → migrate`).
 

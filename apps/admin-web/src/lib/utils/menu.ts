@@ -166,11 +166,6 @@ const allMenus: MainMenu[] = [
             title: '주문입력 (수동/대량)',
             path: '/order/manual-bulk',
           },
-          {
-            id: 'fulfillment-manual',
-            title: '출고주문 생성 (수동)',
-            path: '/order/fulfillment-manual',
-          },
         ],
       },
       {

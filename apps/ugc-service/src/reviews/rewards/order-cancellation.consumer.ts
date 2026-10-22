@@ -8,8 +8,8 @@ import { ReviewRewardManager } from './review-reward.manager';
 /**
  * ugc 의 이벤트 컨슈머. 주문이 취소되거나 반품이 완료되면 리뷰 자격과 이미 나간 적립을 되돌린다.
  *
- * **왜 `SalesOrderCancelled` 하나인가**(2026-09-08 실측, §13-1): `FulfillmentCancelled`·
- * `FulfillmentReturned` 는 저장소 어디에서도 발행되지 않고, 인바운드 `OrderCancelled` 는 core 가
+ * **왜 `SalesOrderCancelled` 하나인가**(2026-09-08 실측, §13-1): `FulfillmentReturned` 는 저장소 어디에서도
+ * 발행되지 않고(`FulfillmentCancelled` 는 K6 PR4 에서 계약째 지워졌다), 인바운드 `OrderCancelled` 는 core 가
  * 받아 자기 취소를 부르므로 이 이벤트로 수렴한다. 관리자 취소·고객 취소요청·인텐트 취소가
  * 전부 여기로 온다.
  *

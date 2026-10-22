@@ -11,7 +11,6 @@ import type {
   FulfillmentOrderDetail,
   FulfillmentOutboxEvent,
   ListFulfillmentsQuery,
-  CreateFulfillmentOrderRequest,
 } from '@/lib/types/dto/fulfillment';
 
 const BASE = `${ALMONDYOUNG_API_BASE_URL}/fulfillments`;
@@ -31,23 +30,6 @@ export const fulfillmentsClient = {
     const res = await client.get(
       `${BASE}/${encodeURIComponent(id)}/outbox-events`
     );
-    return res.data;
-  },
-
-  create: async (
-    data: CreateFulfillmentOrderRequest
-  ): Promise<FulfillmentOrder> => {
-    const res = await client.post(BASE, data);
-    return res.data;
-  },
-
-  deliver: async (id: string): Promise<unknown> => {
-    const res = await client.post(`${BASE}/${encodeURIComponent(id)}/deliver`);
-    return res.data;
-  },
-
-  cancel: async (id: string): Promise<unknown> => {
-    const res = await client.post(`${BASE}/${encodeURIComponent(id)}/cancel`);
     return res.data;
   },
 };

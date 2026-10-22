@@ -2,6 +2,8 @@ import { readdirSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
 import { FulfillmentEventsConsumer } from './fulfillment-events.consumer';
 import { inboxEvents } from '../schema';
+import { EVENT_TYPE_FILTER } from '@app/events';
+import { FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
 import type { FulfillmentShippedPayload, FulfillmentDeliveredPayload } from '@packages/event-contracts/streams';
 
 const SHIPPED_PAYLOAD: FulfillmentShippedPayload = {
@@ -97,5 +99,29 @@ describe('channel-adapter 는 core 의 SalesOrderCancelled 를 구독하지 않�
       /eventType:\s*'CoreOrderCancelled'/.test(readFileSync(file, 'utf8')),
     );
     expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * K6 PR4(D11) — `FulfillmentCancelled` 의 유일한 생산자(FO 취소 `POST /fulfillments/:id/cancel`)를 지우면서
+ * 계약과 이 소비자의 no-op 핸들러도 함께 지웠다. 이 토픽 구독은 남은 Shipped·Delivered 핸들러가 유지한다.
+ */
+describe('FulfillmentCancelled 는 계약째 지워졌다 (K6 D11)', () => {
+  function handledEventTypes(): string[] {
+    const proto = FulfillmentEventsConsumer.prototype as unknown as Record<string, unknown>;
+    return Object.getOwnPropertyNames(proto)
+      .map((name) => proto[name])
+      .filter((handler): handler is object => typeof handler === 'function')
+      .map((handler) => Reflect.getMetadata(EVENT_TYPE_FILTER, handler) as string | undefined)
+      .filter((eventType): eventType is string => eventType !== undefined)
+      .sort();
+  }
+
+  it('FULFILLMENT_STREAM 핸들러는 Shipped·Delivered 둘뿐이다', () => {
+    expect(handledEventTypes()).toEqual(['FulfillmentDelivered', 'FulfillmentShipped']);
+  });
+
+  it('FULFILLMENT_STREAM 에 FulfillmentCancelled 가 없다', () => {
+    expect(Object.keys(FULFILLMENT_STREAM.events)).not.toContain('FulfillmentCancelled');
   });
 });

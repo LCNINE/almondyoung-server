@@ -2,7 +2,6 @@ import { Body, Controller, Get, Headers, Param, Patch, Post, UnauthorizedExcepti
 import { RequireScopes, ScopeGuard, User, RequirePermission, PiiResponse, PiiWrite, OPEN_WITH_RECIPIENT } from '@app/authorization';
 import { ApiOkResponse } from '@nestjs/swagger';
 import {
-  CancelShipmentOutstandingDto,
   PlanShipmentDto,
   ReviseShipmentRecipientDto,
   ShipmentPlanningActor,
@@ -165,41 +164,6 @@ export class ShipmentPlanningController {
     @User() user: AuthenticatedUser,
   ) {
     return this.planning.plan(shipmentId, dto, idempotencyKey ?? '', this.actor(user));
-  }
-
-  @PiiResponse({
-    fields: {
-      'shipment.recipientSnapshot.recipientName': 'name',
-      'shipment.recipientSnapshot.phone': 'phone',
-      'shipment.recipientSnapshot.postalCode': 'postal',
-      'shipment.recipientSnapshot.roadAddress': 'address',
-      'shipment.recipientSnapshot.detailAddress': 'text',
-      'shipment.recipientSnapshot.deliveryNote': 'text',
-      'shipment.recipientSnapshot.personalCustomsCode': 'secret',
-    },
-    subjects: [
-      { param: 'id', type: 'shipment' },
-    ],
-    rawWithByField: {
-      'shipment.recipientSnapshot.recipientName': OPEN_WITH_RECIPIENT,
-      'shipment.recipientSnapshot.phone': OPEN_WITH_RECIPIENT,
-      'shipment.recipientSnapshot.postalCode': OPEN_WITH_RECIPIENT,
-      'shipment.recipientSnapshot.roadAddress': OPEN_WITH_RECIPIENT,
-      'shipment.recipientSnapshot.detailAddress': OPEN_WITH_RECIPIENT,
-      'shipment.recipientSnapshot.deliveryNote': OPEN_WITH_RECIPIENT,
-      'shipment.recipientSnapshot.personalCustomsCode': OPEN_WITH_RECIPIENT,
-    },
-  })
-  @RequirePermission('fulfillment.warehouse.operate')
-  @Post(':id/cancellations')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
-  cancelOutstanding(
-    @Param('id') shipmentId: string,
-    @Body() dto: CancelShipmentOutstandingDto,
-    @Headers('idempotency-key') idempotencyKey: string | undefined,
-    @User() user: AuthenticatedUser,
-  ) {
-    return this.planning.cancelOutstanding(shipmentId, dto, idempotencyKey ?? '', this.actor(user));
   }
 
   @PiiResponse({

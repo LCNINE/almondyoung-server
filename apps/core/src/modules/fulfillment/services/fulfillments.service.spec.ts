@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { wmsTables } from '../../inventory/schema/inventory.schema';
 import { LineCompositionReader } from '../../product-matching/line-composition/line-composition.reader';
 import { FulfillmentsService } from './fulfillments.service';
+import type { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
 
 describe('FulfillmentsService', () => {
   const salesOrderId = '11111111-1111-1111-1111-111111111111';
@@ -344,26 +345,30 @@ describe('FulfillmentsService', () => {
     expect(state.fulfillmentOrderItems).toHaveLength(0);
   });
 
-  it('explicit items에 item-level SO 참조가 있으면 매칭 검증 우회를 막는다', async () => {
-    const { service, state, productSkuMapping } = makeService({ links: null });
+  const withoutSalesOrder: Array<[string, Partial<CreateFulfillmentOrderDto>]> = [
+    ['items', { items: [{ skuId, quantity: 1 }] }],
+    ['lines', { lines: [{ skuId, quantity: 1 }] }],
+    ['빈 요청', {}],
+  ];
+  it.each(withoutSalesOrder)(
+    'salesOrderId 없는 출고주문은 만들지 않는다 — %s (K6 PR4, 판매주문 없는 FO 는 취소·완료 길이 없다)',
+    async (_label, extra) => {
+      const { service, state } = makeService({ links: null });
 
-    try {
-      await service.create({
-        warehouseId,
-        items: [{ skuId, quantity: 1, salesOrderId, salesOrderLineId, variantId }],
-      });
-      throw new Error('expected create to throw');
-    } catch (error) {
-      expect(error).toBeInstanceOf(BadRequestException);
-      expect((error as BadRequestException).getResponse()).toMatchObject({
-        code: 'FULFILLMENT_ITEM_SO_REFERENCE_NOT_ALLOWED',
-      });
-    }
+      try {
+        await service.create({ warehouseId, ...extra });
+        throw new Error('expected create to throw');
+      } catch (error) {
+        expect(error).toBeInstanceOf(BadRequestException);
+        expect((error as BadRequestException).getResponse()).toMatchObject({
+          code: 'FULFILLMENT_REQUIRES_SALES_ORDER',
+        });
+      }
 
-    expect(productSkuMapping.getByVariant).not.toHaveBeenCalled();
-    expect(state.fulfillmentOrders).toHaveLength(0);
-    expect(state.fulfillmentOrderItems).toHaveLength(0);
-  });
+      expect(state.fulfillmentOrders).toHaveLength(0);
+      expect(state.fulfillmentOrderItems).toHaveLength(0);
+    },
+  );
 
   it('salesOrderId에 대한 FO가 이미 있으면 새 FO를 만들지 않고 기존 FO를 반환한다', async () => {
     const { service, state, productSkuMapping, shipmentReservation } = makeService({
@@ -871,34 +876,6 @@ describe('FulfillmentsService', () => {
     );
   });
 
-  describe('markDelivered guard', () => {
-    it.each(['ready', 'labeled', 'invoiced', 'canceled', 'completed'] as const)(
-      '%s 상태 FO는 markDelivered가 ConflictException을 던진다',
-      async (status) => {
-        const { service } = makeService({
-          fulfillmentOrders: [{ id: `fo-${status}`, salesOrderId, warehouseId, status }],
-          shipments: [],
-        });
-
-        await expect(service.markDelivered(`fo-${status}`)).rejects.toThrow(ConflictException);
-      },
-    );
-  });
-
-  it('legacy markDelivered는 FO 이벤트만 발행하고 attempt-owned shipment tracking을 만들지 않는다', async () => {
-    const { service, outbox } = makeService({
-      fulfillmentOrders: [{ id: 'fo-delivered-1', salesOrderId, warehouseId, status: 'shipped' }],
-      shipments: [{ id: 'shipment-2', fulfillmentOrderId: 'fo-delivered-1', trackingNo: 'TRK-002', carrier: 'CJ' }],
-    });
-
-    await service.markDelivered('fo-delivered-1');
-
-    expect(outbox.enqueue).toHaveBeenCalledWith(
-      expect.objectContaining({ eventType: 'FulfillmentDelivered' }),
-      expect.anything(),
-    );
-  });
-
   describe('발생원 예약 sweep (작업 11 P1-3)', () => {
     it('ship(drop_ship) 이 잔존 예약 방어 sweep 을 같은 tx 로 호출한다', async () => {
       const { service, reservationLifecycle } = makeService({
@@ -925,53 +902,6 @@ describe('FulfillmentsService', () => {
         expect.anything(),
       );
     });
-
-    it('markDelivered 가 잔존 예약 방어 sweep 을 같은 tx 로 호출한다', async () => {
-      const { service, reservationLifecycle } = makeService({
-        fulfillmentOrders: [{ id: 'fo-delivered-1', salesOrderId, warehouseId, status: 'shipped' }],
-        shipments: [{ id: 'shipment-2', fulfillmentOrderId: 'fo-delivered-1', trackingNo: 'TRK-002', carrier: 'CJ' }],
-      });
-
-      await service.markDelivered('fo-delivered-1');
-
-      expect(reservationLifecycle.releaseLeftoverReservations).toHaveBeenCalledWith(
-        'fo-delivered-1',
-        'reconcile: FO delivered leftover',
-        expect.anything(),
-      );
-    });
-  });
-
-  it('cancel은 ready/unfulfillable FO의 기존 confirmed reservation을 lifecycle로 해제한다', async () => {
-    const { service, reservationLifecycle } = makeService({
-      fulfillmentOrders: [
-        {
-          id: 'fo-unfulfillable-1',
-          salesOrderId,
-          warehouseId,
-          status: 'unfulfillable',
-          totalReservedQty: 1,
-        },
-      ],
-      fulfillmentOrderItems: [
-        {
-          id: 'foi-unfulfillable-1',
-          fulfillmentOrderId: 'fo-unfulfillable-1',
-          skuId,
-          qty: 2,
-          reservedQty: 1,
-        },
-      ],
-    });
-
-    await service.cancel('fo-unfulfillable-1');
-
-    expect(reservationLifecycle.handleFulfillmentOrderStatusChange).toHaveBeenCalledWith(
-      'fo-unfulfillable-1',
-      'unfulfillable',
-      'canceled',
-      expect.anything(),
-    );
   });
 
   describe('computeAdminAvailableActions / computeBlockedReasons', () => {
@@ -1014,10 +944,10 @@ describe('FulfillmentsService', () => {
       });
     }
 
-    it('shipped 상태에서 deliver만 허용하고 TERMINAL_STATUS blockedReason을 반환한다', async () => {
+    it('shipped 상태에서 액션이 없고 TERMINAL_STATUS blockedReason을 반환한다 (수동 배송완료 은퇴, K6 D10)', async () => {
       const { service, tx } = makeFoDetail('shipped');
       const detail = await service.getOne('fo-action-test', tx);
-      expect(detail?.adminAvailableActions).toEqual(['deliver']);
+      expect(detail?.adminAvailableActions).toEqual([]);
       expect(detail?.blockedReasons).toContain('TERMINAL_STATUS');
     });
 
@@ -1041,7 +971,7 @@ describe('FulfillmentsService', () => {
       expect(detail?.adminAvailableActions).not.toContain('ship');
     });
 
-    it('ready 상태에서 ship/split/reserve/unreserve/transfer 없이 cancel만 있다 (수동 예약 라우트 은퇴)', async () => {
+    it('ready 상태에서 액션이 없다 (수동 예약 라우트 은퇴, FO 취소 은퇴 K6 D11)', async () => {
       const { service, tx } = makeFoDetail('ready');
       const detail = await service.getOne('fo-action-test', tx);
       expect(detail?.adminAvailableActions).not.toContain('ship');
@@ -1049,14 +979,14 @@ describe('FulfillmentsService', () => {
       expect(detail?.adminAvailableActions).not.toContain('reserve');
       expect(detail?.adminAvailableActions).not.toContain('unreserve');
       expect(detail?.adminAvailableActions).not.toContain('transferReservation');
-      expect(detail?.adminAvailableActions).toEqual(['cancel']);
+      expect(detail?.adminAvailableActions).toEqual([]);
       expect(detail?.blockedReasons).toHaveLength(0);
     });
 
-    it('shipped item이 있으면 SHIPPED_EVIDENCE를 추가한다 (cancel 은 유지)', async () => {
+    it('shipped item이 있으면 SHIPPED_EVIDENCE를 추가한다', async () => {
       const { service, tx } = makeFoDetail('ready', { shippedQty: 1 });
       const detail = await service.getOne('fo-action-test', tx);
-      expect(detail?.adminAvailableActions).toContain('cancel');
+      expect(detail?.adminAvailableActions).toEqual([]);
       expect(detail?.blockedReasons).toContain('SHIPPED_EVIDENCE');
     });
 
@@ -1070,8 +1000,7 @@ describe('FulfillmentsService', () => {
     it('drop_ship + directShipStatus 미설정이면 forwardDropShip을 허용한다', async () => {
       const { service, tx } = makeFoDetail('ready', { fulfillmentMode: 'drop_ship', directShipStatus: null });
       const detail = await service.getOne('fo-action-test', tx);
-      expect(detail?.adminAvailableActions).toContain('forwardDropShip');
-      expect(detail?.adminAvailableActions).not.toContain('completeDropShip');
+      expect(detail?.adminAvailableActions).toEqual(['forwardDropShip']);
     });
 
     it('drop_ship + directShipStatus=pending이면 forwardDropShip을 허용한다', async () => {
@@ -1084,8 +1013,7 @@ describe('FulfillmentsService', () => {
     it('drop_ship + directShipStatus=forwarded이면 completeDropShip만 허용한다', async () => {
       const { service, tx } = makeFoDetail('ready', { fulfillmentMode: 'drop_ship', directShipStatus: 'forwarded' });
       const detail = await service.getOne('fo-action-test', tx);
-      expect(detail?.adminAvailableActions).toContain('completeDropShip');
-      expect(detail?.adminAvailableActions).not.toContain('forwardDropShip');
+      expect(detail?.adminAvailableActions).toEqual(['completeDropShip']);
     });
 
     it('drop_ship terminal FO에서는 forwardDropShip/completeDropShip을 허용하지 않는다', async () => {
@@ -1104,15 +1032,14 @@ describe('FulfillmentsService', () => {
   });
 
   describe('computeAdminAvailableActions (drop_ship 가드)', () => {
-    it('drop_ship non-terminal FO는 cancel/forwardDropShip을 광고한다', () => {
+    it('drop_ship non-terminal FO는 forwardDropShip만 광고한다', () => {
       const { service } = makeService();
       const actions = (service as any)['computeAdminAvailableActions']({
         status: 'created',
         fulfillmentMode: 'drop_ship',
         directShipStatus: null,
       });
-      expect(actions).toContain('cancel');
-      expect(actions).toContain('forwardDropShip');
+      expect(actions).toEqual(['forwardDropShip']);
     });
 
     it('null-mode(in_house 기본) FO는 drop_ship 액션을 광고하지 않는다 (nullable mode 회귀)', () => {
@@ -1122,9 +1049,7 @@ describe('FulfillmentsService', () => {
         fulfillmentMode: null,
         directShipStatus: null,
       });
-      expect(actions).toContain('cancel');
-      expect(actions).not.toContain('forwardDropShip');
-      expect(actions).not.toContain('completeDropShip');
+      expect(actions).toEqual([]);
     });
   });
 });

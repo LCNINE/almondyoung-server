@@ -531,27 +531,10 @@ interface OrderPaymentCompletePayload {
 
 ---
 
-#### 4.6 `FulfillmentCancelled`
+#### 4.6 `FulfillmentCancelled` — 제거됨 (K6 PR4, 2026-10-22)
 
-이행 취소
-
-**발행자**: WMS
-
-**구독자**:
-- **Channel Adapter**: 채널에 취소 정보 전송
-- **Notification**: 이행 취소 알림
-
-**페이로드**: (기존 정의됨)
-```typescript
-interface FulfillmentCancelledPayload {
-  fulfillmentId: string;
-  orderId: string;
-  reason: 'ORDER_CANCELLED' | 'OUT_OF_STOCK' | 'ADMIN_CANCEL';
-  reasonDetail?: string;
-  cancelledBy: string;
-  cancelledAt: string;
-}
-```
+유일한 생산자였던 관리자 FO 취소(`POST /fulfillments/:id/cancel`)와 함께 계약에서 지웠다. 취소는 판매주문 취소
+(`SalesOrderCancelled`)로만 알린다. 근거: ADR-0047 «PR 4».
 
 ---
 

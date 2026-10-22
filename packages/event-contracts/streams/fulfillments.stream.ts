@@ -109,19 +109,6 @@ export interface FulfillmentDeliveredPayload {
 }
 
 /**
- * 이행 취소 이벤트
- */
-export interface FulfillmentCancelledPayload {
-  fulfillmentId: string;
-  orderId: string;
-
-  reason: 'ORDER_CANCELLED' | 'OUT_OF_STOCK' | 'ADMIN_CANCEL';
-  reasonDetail?: string;
-  cancelledBy: string;
-  cancelledAt: string;
-}
-
-/**
  * 반품 완료 이벤트
  */
 export interface FulfillmentReturnedPayload {
@@ -213,15 +200,6 @@ const FulfillmentDeliveredSchema = z.object({
   deliverySignature: z.string().optional(),
 });
 
-const FulfillmentCancelledSchema = z.object({
-  fulfillmentId: z.string().min(1),
-  orderId: z.string().min(1),
-  reason: z.enum(['ORDER_CANCELLED', 'OUT_OF_STOCK', 'ADMIN_CANCEL']),
-  reasonDetail: z.string().optional(),
-  cancelledBy: z.string().min(1),
-  cancelledAt: z.string().datetime(),
-});
-
 const FulfillmentReturnedSchema = z.object({
   fulfillmentId: z.string().min(1),
   orderId: z.string().min(1),
@@ -270,7 +248,6 @@ export const FULFILLMENT_STREAM = stream({
     FulfillmentLabeled: event('FulfillmentLabeled', FulfillmentLabeledSchema),
     FulfillmentShipped: event('FulfillmentShipped', FulfillmentShippedSchema),
     FulfillmentDelivered: event('FulfillmentDelivered', FulfillmentDeliveredSchema),
-    FulfillmentCancelled: event('FulfillmentCancelled', FulfillmentCancelledSchema),
     FulfillmentReturned: event('FulfillmentReturned', FulfillmentReturnedSchema),
     ORDER_CREATED: event('ORDER_CREATED', OrderCreatedNoticeSchema),
     ORDER_MODIFIED: event('ORDER_MODIFIED', OrderModifiedNoticeSchema),
@@ -289,6 +266,5 @@ export const FulfillmentEventTypes = {
   LABELED: 'FulfillmentLabeled',
   SHIPPED: 'FulfillmentShipped',
   DELIVERED: 'FulfillmentDelivered',
-  CANCELLED: 'FulfillmentCancelled',
   RETURNED: 'FulfillmentReturned',
 } as const;

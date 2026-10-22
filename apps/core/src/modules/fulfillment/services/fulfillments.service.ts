@@ -22,12 +22,7 @@ import { ReservationLifecycleService } from '../../inventory/shared/services/res
 import { acquireStockAvailabilityLocks } from '../../inventory/shared/locks/stock-availability-lock';
 import { assertWarehouseSellable } from '../../inventory/shared/availability/sellable-warehouses';
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
-import {
-  FULFILLMENT_STREAM,
-  FulfillmentShippedPayload,
-  FulfillmentDeliveredPayload,
-  FulfillmentCancelledPayload,
-} from '@packages/event-contracts/streams';
+import { FULFILLMENT_STREAM, FulfillmentShippedPayload } from '@packages/event-contracts/streams';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import { outbox_events } from '@app/events';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
@@ -104,13 +99,28 @@ export class FulfillmentsService {
       throw new Error('ShipmentReservationService is required for V2 fulfillment creation');
     }
     const shipmentReservation = this.shipmentReservation;
+    const salesOrderId = dto.salesOrderId;
+    // 출고주문은 판매주문에서만 만든다(K6 PR4). 판매주문 없는 FO 는 취소(판매주문 취소로만)·직배 완료(FulfillmentShipped
+    // 의 orderId)·수량 사실 어디에도 닿지 않아 만들어지면 빠져나갈 길이 없다. 수동 출고는 판매주문 입력으로 만든다.
+    if (!salesOrderId) {
+      throw new BadRequestException({
+        code: 'FULFILLMENT_REQUIRES_SALES_ORDER',
+        message: 'A fulfillment order can only be created from a sales order.',
+      });
+    }
+    if ((dto.items?.length ?? 0) > 0 || (dto.lines?.length ?? 0) > 0) {
+      throw new BadRequestException({
+        code: 'SALES_ORDER_ITEMS_DERIVED_FROM_MATCHING',
+        message: 'Fulfillment items for a sales order must be derived from product-SKU matching.',
+      });
+    }
 
     // Fail before opening the creation transaction when the request is known to
     // contain physical demand. Digital-only SOs remain a no-FO route.
     if (
       dto.fulfillmentMode !== 'drop_ship' &&
       !dto.warehouseId &&
-      (await this.hasWarehouseControlledDemandPreflight(dto, tx))
+      (await this.hasWarehouseControlledDemandPreflight(salesOrderId, tx))
     ) {
       throw new BadRequestException({
         code: 'V2_PHYSICAL_FULFILLMENT_REQUIRES_WAREHOUSE',
@@ -119,103 +129,41 @@ export class FulfillmentsService {
     }
 
     return this.db.run(async (trx) => {
-      let salesOrder: typeof wmsTables.salesOrders.$inferSelect | undefined;
-      if (dto.salesOrderId) {
-        await trx.execute(sql`
-          SELECT id FROM ${wmsTables.salesOrders}
-          WHERE ${wmsTables.salesOrders.id} = ${dto.salesOrderId}
-          FOR UPDATE
-        `);
-        [salesOrder] = await trx
-          .select()
-          .from(wmsTables.salesOrders)
-          .where(eq(wmsTables.salesOrders.id, dto.salesOrderId))
-          .limit(1);
-        if (!salesOrder) throw new BadRequestException(`Sales order ${dto.salesOrderId} not found`);
-        if (salesOrder.status === 'cancelled') {
-          throw new BadRequestException(`Cannot create fulfillment for cancelled sales order ${dto.salesOrderId}`);
-        }
-
-        const [existing] = await trx
-          .select()
-          .from(wmsTables.fulfillmentOrders)
-          .where(eq(wmsTables.fulfillmentOrders.salesOrderId, dto.salesOrderId))
-          .limit(1);
-        if (existing) return this.getOne(existing.id, trx);
-        // 셀메이트 과도기: 판매주문 status 의 shipped·delivered 는 셀메이트 스크립트가 쓴다(ADR-0017 — core 경로는 쓰지 않음).
-        // 이미 나간 주문에 FO 를 만들면 확정 예약·draft 상자가 재고를 묶는다(10-08 실측 3,883개). 판매주문 잠금 아래에서
-        // 검사해야 판정 직후 스크립트가 돈 틈까지 막힌다. FO 없이 돌아오면 워커가 backlog 를 not_required 로 닫는다.
-        if (salesOrder.status === 'shipped' || salesOrder.status === 'delivered') {
-          this.logger.log(
-            `Skip FO creation for sales order ${dto.salesOrderId}: already ${salesOrder.status} outside core (sellmate)`,
-          );
-          return null;
-        }
+      await trx.execute(sql`
+        SELECT id FROM ${wmsTables.salesOrders}
+        WHERE ${wmsTables.salesOrders.id} = ${salesOrderId}
+        FOR UPDATE
+      `);
+      const [salesOrder] = await trx
+        .select()
+        .from(wmsTables.salesOrders)
+        .where(eq(wmsTables.salesOrders.id, salesOrderId))
+        .limit(1);
+      if (!salesOrder) throw new BadRequestException(`Sales order ${salesOrderId} not found`);
+      if (salesOrder.status === 'cancelled') {
+        throw new BadRequestException(`Cannot create fulfillment for cancelled sales order ${salesOrderId}`);
       }
 
-      const requestedItems = Array.isArray(dto.items) ? dto.items : [];
-      const legacyLines = Array.isArray(dto.lines) ? dto.lines : [];
-      if (dto.salesOrderId && (requestedItems.length > 0 || legacyLines.length > 0)) {
-        throw new BadRequestException({
-          code: 'SALES_ORDER_ITEMS_DERIVED_FROM_MATCHING',
-          message: 'Fulfillment items for a sales order must be derived from product-SKU matching.',
-        });
+      const [existing] = await trx
+        .select()
+        .from(wmsTables.fulfillmentOrders)
+        .where(eq(wmsTables.fulfillmentOrders.salesOrderId, salesOrderId))
+        .limit(1);
+      if (existing) return this.getOne(existing.id, trx);
+      // 셀메이트 과도기: 판매주문 status 의 shipped·delivered 는 셀메이트 스크립트가 쓴다(ADR-0017 — core 경로는 쓰지 않음).
+      // 이미 나간 주문에 FO 를 만들면 확정 예약·draft 상자가 재고를 묶는다(10-08 실측 3,883개). 판매주문 잠금 아래에서
+      // 검사해야 판정 직후 스크립트가 돈 틈까지 막힌다. FO 없이 돌아오면 워커가 backlog 를 not_required 로 닫는다.
+      if (salesOrder.status === 'shipped' || salesOrder.status === 'delivered') {
+        this.logger.log(
+          `Skip FO creation for sales order ${salesOrderId}: already ${salesOrder.status} outside core (sellmate)`,
+        );
+        return null;
       }
 
-      let itemsToInsert: Omit<FulfillmentOrderItemInsert, 'fulfillmentOrderId'>[];
-      let freeze: LineFreeze[] = [];
-      if (requestedItems.length > 0) {
-        const referenced = requestedItems.find((item) => item.salesOrderId || item.salesOrderLineId);
-        if (referenced) {
-          throw new BadRequestException({
-            code: 'FULFILLMENT_ITEM_SO_REFERENCE_NOT_ALLOWED',
-            message: 'Explicit V2 fulfillment items cannot carry sales-order references.',
-          });
-        }
-        itemsToInsert = requestedItems.map((item) => {
-          if (!item.skuId || !item.quantity || item.quantity <= 0) {
-            throw new BadRequestException('Invalid item data: skuId and positive quantity are required');
-          }
-          return {
-            salesOrderId: null,
-            salesOrderLineId: null,
-            variantId: item.variantId ?? null,
-            skuId: item.skuId,
-            qty: item.quantity,
-            reservedQty: 0,
-            pickedQty: 0,
-            shippedQty: 0,
-            status: 'pending',
-          };
-        });
-      } else if (legacyLines.length > 0) {
-        itemsToInsert = legacyLines.map((line) => {
-          if (!line.skuId || !line.quantity || line.quantity <= 0) {
-            throw new BadRequestException('Invalid line data: skuId and positive quantity are required');
-          }
-          return {
-            salesOrderId: null,
-            salesOrderLineId: null,
-            variantId: null,
-            skuId: line.skuId,
-            qty: line.quantity,
-            reservedQty: 0,
-            pickedQty: 0,
-            shippedQty: 0,
-            status: 'pending',
-          };
-        });
-      } else if (dto.salesOrderId) {
-        const built = await this.buildItemsFromSalesOrder(dto.salesOrderId, trx);
-        itemsToInsert = built.items;
-        freeze = built.freeze;
-      } else {
-        throw new BadRequestException('Fulfillment order requires items or salesOrderId');
-      }
+      const { items: itemsToInsert, freeze } = await this.buildItemsFromSalesOrder(salesOrderId, trx);
 
       // Digital-only/void-matched sales orders do not create a placeholder FO.
-      if (itemsToInsert.length === 0 && dto.salesOrderId) return null;
-      if (itemsToInsert.length === 0) throw new BadRequestException('Fulfillment order items cannot be empty');
+      if (itemsToInsert.length === 0) return null;
       // 판매주문 잠금 아래에서 굳힌다(#1063 스펙 §5.4). 뒤 검증이 실패하면 호출자의 트랜잭션, 또는 백로그 워커가 감싼 savepoint 가 롤백되면서 함께 되돌아간다.
       if (freeze.length > 0) await this.lineCompositionManager.freezeFromMatching(freeze, trx);
       await this.validateSkuRows(itemsToInsert, dto.ownerId ?? null, trx);
@@ -311,19 +259,10 @@ export class FulfillmentsService {
     }, tx);
   }
 
-  private async hasWarehouseControlledDemandPreflight(dto: CreateFulfillmentOrderDto, tx?: DbTx): Promise<boolean> {
+  private async hasWarehouseControlledDemandPreflight(salesOrderId: string, tx?: DbTx): Promise<boolean> {
     const executor = (tx ?? this.db.db) as unknown as DbTx;
-    let skuIds: string[];
-    if ((dto.items?.length ?? 0) > 0) {
-      skuIds = dto.items?.map((item) => item.skuId) ?? [];
-    } else if ((dto.lines?.length ?? 0) > 0) {
-      skuIds = dto.lines?.map((line) => line.skuId) ?? [];
-    } else if (dto.salesOrderId) {
-      const { items } = await this.buildItemsFromSalesOrder(dto.salesOrderId, executor);
-      skuIds = items.map((item) => item.skuId);
-    } else {
-      return true;
-    }
+    const { items } = await this.buildItemsFromSalesOrder(salesOrderId, executor);
+    const skuIds = items.map((item) => item.skuId);
     if (skuIds.length === 0) return false;
 
     const skuRows = await executor
@@ -589,125 +528,6 @@ export class FulfillmentsService {
     }, tx);
   }
 
-  async markDelivered(id: string, tx?: DbTx) {
-    // drop-ship·digital 완료 확인 경로 — maintenance 에서만 닫힌다.
-    this.workflowGate.assertOperationalMutationAllowed('fulfillment.mark_delivered');
-    return this.db.run(async (trx) => {
-      const [fo] = await trx
-        .select()
-        .from(wmsTables.fulfillmentOrders)
-        .where(eq(wmsTables.fulfillmentOrders.id, id))
-        .limit(1);
-      if (!fo) {
-        throw new NotFoundException(`Fulfillment order ${id} not found`);
-      }
-      if (fo.status !== 'shipped') {
-        throw new ConflictException(`Cannot mark delivered: FO is in status '${fo.status}', expected 'shipped'`);
-      }
-
-      const now = new Date();
-
-      // Legacy manual FO acknowledgement only. Carrier state is projected by
-      // ShipmentDeliveryTrackingService and must never drive this demand-settlement axis.
-      await trx
-        .update(wmsTables.fulfillmentOrders)
-        .set({ status: 'completed', updatedAt: now })
-        .where(eq(wmsTables.fulfillmentOrders.id, id));
-
-      // consume 없이 shipped→completed 로 온 FO 의 잔존 예약 방어 sweep.
-      // 정상 소진 경로는 ship 시 이미 release 되어 0건(no-op).
-      const sweptOnDelivered = await this.reservationLifecycle.releaseLeftoverReservations(
-        id,
-        'reconcile: FO delivered leftover',
-        trx,
-      );
-      if (sweptOnDelivered > 0) {
-        this.logger.warn(`Delivered FO ${id} 에서 잔존 예약 ${sweptOnDelivered}건 sweep`);
-      }
-
-      const [salesOrderRow] = fo.salesOrderId
-        ? await trx
-            .select({ channelOrderId: wmsTables.salesOrders.channelOrderId })
-            .from(wmsTables.salesOrders)
-            .where(eq(wmsTables.salesOrders.id, fo.salesOrderId))
-            .limit(1)
-        : [];
-
-      const deliveredPayload: FulfillmentDeliveredPayload = {
-        fulfillmentId: id,
-        orderId: fo.salesOrderId ?? '',
-        channelOrderId: salesOrderRow?.channelOrderId ?? undefined,
-        deliveredAt: now.toISOString(),
-      };
-
-      await this.fulfillmentsV1.enqueue(
-        {
-          // FO 당 전량배송 완료 이벤트는 논리적으로 한 번 — tracking 경로의 v1 완료 투영과 같은 키 규약.
-          idempotencyKey: `${id}:fully-delivered`,
-          eventType: FULFILLMENT_EVENTS.DELIVERED,
-          aggregateId: id,
-          partitionKey: fo.salesOrderId ?? id,
-          payload: deliveredPayload,
-        },
-        trx,
-      );
-
-      return this.getOne(id, trx);
-    }, tx);
-  }
-
-  async cancel(
-    id: string,
-    options?: {
-      reason?: 'ORDER_CANCELLED' | 'OUT_OF_STOCK' | 'ADMIN_CANCEL';
-      reasonDetail?: string;
-      cancelledBy?: string;
-    },
-    tx?: DbTx,
-  ) {
-    // 모드 무관 취소 경로 — maintenance 에서만 닫힌다.
-    this.workflowGate.assertOperationalMutationAllowed('fulfillment.cancel');
-    return this.db.run(async (trx) => {
-      const [fo] = await trx
-        .select()
-        .from(wmsTables.fulfillmentOrders)
-        .where(eq(wmsTables.fulfillmentOrders.id, id))
-        .limit(1);
-      if (!fo) {
-        throw new NotFoundException(`Fulfillment order ${id} not found`);
-      }
-
-      await trx
-        .update(wmsTables.fulfillmentOrders)
-        .set({ status: 'canceled', updatedAt: new Date() })
-        .where(eq(wmsTables.fulfillmentOrders.id, id));
-
-      await this.reservationLifecycle.handleFulfillmentOrderStatusChange(id, fo.status, 'canceled', trx);
-
-      const cancelledPayload: FulfillmentCancelledPayload = {
-        fulfillmentId: id,
-        orderId: fo.salesOrderId ?? '',
-        reason: options?.reason ?? 'ADMIN_CANCEL',
-        reasonDetail: options?.reasonDetail,
-        cancelledBy: options?.cancelledBy ?? 'system',
-        cancelledAt: new Date().toISOString(),
-      };
-
-      await this.fulfillmentsV1.enqueue(
-        {
-          idempotencyKey: `${id}:cancelled`,
-          eventType: FULFILLMENT_EVENTS.CANCELLED,
-          aggregateId: id,
-          partitionKey: fo.salesOrderId ?? id,
-          payload: cancelledPayload,
-        },
-        trx,
-      );
-
-      return this.getOne(id, trx);
-    }, tx);
-  }
-
   private computeAdminAvailableActions(fo: {
     status: string;
     fulfillmentMode: string | null;
@@ -721,12 +541,6 @@ export class FulfillmentsService {
     // V2 예약은 shipment line 단위로 자동(부분예약 + retry worker)이고, 재배치는 shipment-line transfer 로 한다.
     // drop_ship 은 타사 재고라 재고 관련 액션을 광고하지 않는다(아래 forward/complete 만).
     const isDropShip = fo.fulfillmentMode === 'drop_ship';
-    if (!isTerminal) {
-      actions.push('cancel');
-    }
-    if (fo.status === 'shipped') {
-      actions.push('deliver');
-    }
     if (isDropShip && !isTerminal) {
       const dsStatus = fo.directShipStatus;
       if (!dsStatus || dsStatus === 'pending') actions.push('forwardDropShip');

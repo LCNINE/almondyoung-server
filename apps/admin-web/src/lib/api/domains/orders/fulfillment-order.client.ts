@@ -16,7 +16,6 @@ import type {
   FulfillmentOrderDetail,
   FulfillmentOrdersListResponse,
   FulfillmentOrdersQuery,
-  CreateStandaloneFulfillmentRequest,
   ShipmentAdminSummary,
   ShipmentAdminDetail,
   FulfillmentOperation,
@@ -24,7 +23,6 @@ import type {
   SplitUnreservedShipmentRequest,
   ReviseShipmentRecipientRequest,
   PlanShipmentRequest,
-  CancelShipmentOutstandingRequest,
   ShipmentPlanningCommandResponse,
   RecallShipmentRequest,
   ShipmentRecallOperation,
@@ -142,19 +140,6 @@ export const fulfillmentOrder = {
     return response.data;
   },
 
-  cancelShipmentOutstanding: async (
-    shipmentId: string,
-    data: CancelShipmentOutstandingRequest,
-    idempotencyKey: string
-  ): Promise<ShipmentPlanningCommandResponse> => {
-    const response = await client.post(
-      `${ALMONDYOUNG_API_BASE_URL}/shipments/${encodeURIComponent(shipmentId)}/cancellations`,
-      data,
-      { headers: { 'Idempotency-Key': idempotencyKey } }
-    );
-    return response.data;
-  },
-
   recallShipment: async (
     shipmentId: string,
     data: RecallShipmentRequest,
@@ -190,29 +175,10 @@ export const fulfillmentOrder = {
     return response.data;
   },
 
-  // 수동 standalone FO 생성 (POST /fulfillments — items 기반, salesOrderId 미사용)
-  createStandalone: async (
-    data: CreateStandaloneFulfillmentRequest
-  ): Promise<FulfillmentOrderDetail> => {
-    const response = await client.post(
-      `${ALMONDYOUNG_API_BASE_URL}/fulfillments`,
-      data
-    );
-    return response.data;
-  },
-
   // 출고 처리 (POST /fulfillments/:id/ship)
   ship: async (id: string): Promise<FulfillmentOrderDetail> => {
     const response = await client.post(
       `${ALMONDYOUNG_API_BASE_URL}/fulfillments/${encodeURIComponent(id)}/ship`
-    );
-    return response.data;
-  },
-
-  // 출고주문 취소 (POST /fulfillments/:id/cancel)
-  cancel: async (id: string): Promise<FulfillmentOrderDetail> => {
-    const response = await client.post(
-      `${ALMONDYOUNG_API_BASE_URL}/fulfillments/${encodeURIComponent(id)}/cancel`
     );
     return response.data;
   },

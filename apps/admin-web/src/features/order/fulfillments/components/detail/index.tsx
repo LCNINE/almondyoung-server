@@ -1,28 +1,14 @@
 'use client';
 
 import { ReactNode } from 'react';
-import { toast } from 'sonner';
 import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
-import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Can } from '@/components/auth/can';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
 import { FoStatusBadge } from '@/components/table/table-cells/fulfillment';
 import { usePermissionCheck } from '@/hooks/use-permission';
 import { useFulfillmentOrder } from '@/lib/services/orders/queries';
-import { useCancelFulfillment } from '@/lib/services/orders/mutations';
 import type {
   FulfillmentMode,
   FulfillmentOrderPriority,
@@ -35,7 +21,7 @@ import { LineCompositions } from '../../detail/line-compositions';
 import { useAssignLineComposition } from '@/lib/services/orders/line-composition';
 import { foItemStatusLabel } from '../../../line-composition/line-composition-view';
 
-// 출고/취소가 불가능한 종료 상태
+// 종료 상태 — 라인 구성 편집을 막는다
 const TERMINAL_STATUSES = new Set(['shipped', 'completed', 'canceled']);
 
 const MODE_LABEL: Record<FulfillmentMode, string> = {
@@ -59,47 +45,9 @@ function InfoRow({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function ConfirmActionButton({
-  label,
-  title,
-  description,
-  onConfirm,
-  disabled,
-  variant = 'default',
-}: {
-  label: string;
-  title: string;
-  description: string;
-  onConfirm: () => void;
-  disabled?: boolean;
-  variant?: 'default' | 'destructive' | 'outline';
-}) {
-  return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>
-        <Button variant={variant} disabled={disabled} size="sm">
-          {label}
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>취소</AlertDialogCancel>
-          <AlertDialogAction onClick={onConfirm}>확인</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}
-
 export function FulfillmentDetail({ id }: { id: string }) {
   const { canRun } = usePermissionCheck();
   const { data, isLoading } = useFulfillmentOrder(id);
-  const cancelMutation = useCancelFulfillment();
-  const canCancel = canRun(useCancelFulfillment);
 
   if (isLoading) {
     return (
@@ -129,33 +77,12 @@ export function FulfillmentDetail({ id }: { id: string }) {
     blockedReasons: data.blockedReasons ?? [],
   };
 
-  const handleCancel = async () => {
-    try {
-      await cancelMutation.mutateAsync(id);
-      toast.success('출고주문이 취소되었습니다.');
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : '취소에 실패했습니다.');
-    }
-  };
-
   return (
     <div className="flex w-full flex-col gap-y-3">
       {/* 헤더 + 액션 */}
       <Container className="divide-y">
         <div className="flex items-center justify-between p-3">
           <Header title="출고주문 상세" />
-          <div className="flex gap-2">
-            {canCancel && !data.shipments && (
-              <ConfirmActionButton
-                label="취소"
-                title="출고주문 취소"
-                description="이 출고주문을 취소하시겠습니까? 예약된 재고가 해제됩니다."
-                onConfirm={handleCancel}
-                disabled={isTerminal || cancelMutation.isPending}
-                variant="destructive"
-              />
-            )}
-          </div>
         </div>
 
         <InfoRow label="주문번호">
