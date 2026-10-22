@@ -24,7 +24,6 @@ import type {
   SplitUnreservedShipmentRequest,
   ReviseShipmentRecipientRequest,
   PlanShipmentRequest,
-  CancelShipmentOutstandingRequest,
   ShipmentPlanningCommandResponse,
   RecallShipmentRequest,
   ShipmentRecallOperation,
@@ -142,19 +141,6 @@ export const fulfillmentOrder = {
     return response.data;
   },
 
-  cancelShipmentOutstanding: async (
-    shipmentId: string,
-    data: CancelShipmentOutstandingRequest,
-    idempotencyKey: string
-  ): Promise<ShipmentPlanningCommandResponse> => {
-    const response = await client.post(
-      `${ALMONDYOUNG_API_BASE_URL}/shipments/${encodeURIComponent(shipmentId)}/cancellations`,
-      data,
-      { headers: { 'Idempotency-Key': idempotencyKey } }
-    );
-    return response.data;
-  },
-
   recallShipment: async (
     shipmentId: string,
     data: RecallShipmentRequest,
@@ -205,14 +191,6 @@ export const fulfillmentOrder = {
   ship: async (id: string): Promise<FulfillmentOrderDetail> => {
     const response = await client.post(
       `${ALMONDYOUNG_API_BASE_URL}/fulfillments/${encodeURIComponent(id)}/ship`
-    );
-    return response.data;
-  },
-
-  // 출고주문 취소 (POST /fulfillments/:id/cancel)
-  cancel: async (id: string): Promise<FulfillmentOrderDetail> => {
-    const response = await client.post(
-      `${ALMONDYOUNG_API_BASE_URL}/fulfillments/${encodeURIComponent(id)}/cancel`
     );
     return response.data;
   },

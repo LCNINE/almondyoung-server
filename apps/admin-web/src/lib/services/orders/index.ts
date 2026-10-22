@@ -78,12 +78,10 @@ export {
   useAdminManualRefundComplete,
   // 출고주문(FO) 액션
   useCreateFulfillmentOrder,
-  useCancelFulfillment,
   useSplitShipment,
   useSplitUnreservedShipment,
   useReviseShipmentRecipient,
   usePlanShipment,
-  useCancelShipmentOutstanding,
   useRecallShipment,
   useReportShipmentShortPick,
   useCreateShipmentConsolidation,
@@ -115,7 +113,6 @@ export {
   useExportDirectShipFile,
   // 합포장 (D2)
   // FO 액션 (Core /fulfillments canonical)
-  useDeliverFulfillment,
   // 운송장(waybill) 발급
   useIssueWaybill,
   useRegisterManualWaybill,

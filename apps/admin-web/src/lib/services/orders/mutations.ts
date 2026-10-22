@@ -22,7 +22,6 @@ import type {
   SplitUnreservedShipmentRequest,
   ReviseShipmentRecipientRequest,
   PlanShipmentRequest,
-  CancelShipmentOutstandingRequest,
   RecallShipmentRequest,
   ReportShipmentShortPickRequest,
   CreateShipmentConsolidationRequest,
@@ -541,29 +540,6 @@ export const usePlanShipment = () => {
 };
 usePlanShipment.permission = ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement;
 
-export const useCancelShipmentOutstanding = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      shipmentId,
-      data,
-      idempotencyKey,
-    }: {
-      shipmentId: string;
-      data: CancelShipmentOutstandingRequest;
-      idempotencyKey?: string;
-    }) =>
-      orders.fulfillmentOrder.cancelShipmentOutstanding(
-        shipmentId,
-        data,
-        commandKey(idempotencyKey)
-      ),
-    onSuccess: (_, { shipmentId }) =>
-      invalidateShipment(queryClient, shipmentId),
-  });
-};
-useCancelShipmentOutstanding.permission = ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement;
-
 export const useRecallShipment = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -920,32 +896,6 @@ export const useReleaseTote = Object.assign(
   ),
   { permission: ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement },
 );
-
-export const useDeliverFulfillment = (id: string) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => orders.fulfillments.deliver(id),
-    onSuccess: () => {
-      invalidateFulfillment(queryClient, id);
-    },
-  });
-};
-useDeliverFulfillment.permission = ['fulfillment.order.write'] as const satisfies PermissionRequirement;
-
-export const useCancelFulfillment = (boundId?: string) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (id?: string) => {
-      const targetId = boundId ?? id;
-      if (!targetId) throw new Error('Fulfillment id is required');
-      return orders.fulfillments.cancel(targetId);
-    },
-    onSuccess: (_, id) => {
-      invalidateFulfillment(queryClient, boundId ?? id!);
-    },
-  });
-};
-useCancelFulfillment.permission = ['fulfillment.order.write'] as const satisfies PermissionRequirement;
 
 // ===== Waybill (운송장) 발급 =====
 

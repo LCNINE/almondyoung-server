@@ -40,14 +40,4 @@ export const fulfillmentsClient = {
     const res = await client.post(BASE, data);
     return res.data;
   },
-
-  deliver: async (id: string): Promise<unknown> => {
-    const res = await client.post(`${BASE}/${encodeURIComponent(id)}/deliver`);
-    return res.data;
-  },
-
-  cancel: async (id: string): Promise<unknown> => {
-    const res = await client.post(`${BASE}/${encodeURIComponent(id)}/cancel`);
-    return res.data;
-  },
 };

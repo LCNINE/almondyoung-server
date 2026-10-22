@@ -778,17 +778,6 @@ export interface PlanShipmentRequest {
   expectedReservationVersion: number;
 }
 
-export interface CancelShipmentLineRequest {
-  shipmentLineId: string;
-  expectedLineVersion: number;
-  qty: number;
-}
-
-export interface CancelShipmentOutstandingRequest extends ShipmentCommandReason {
-  expectedManifestVersion: number;
-  lines: CancelShipmentLineRequest[];
-}
-
 export interface ShipmentPlanningCommandResponse {
   operationId: string;
   operationStatus?: 'pending' | 'completed';

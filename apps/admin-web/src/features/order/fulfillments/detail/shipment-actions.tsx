@@ -29,7 +29,6 @@ import {
   isSplitQtyAllowed,
 } from '@/lib/api/domains/orders/order-progress.shape';
 import {
-  useCancelShipmentOutstanding,
   canRecallShipment,
   createIdempotentCommand,
   getServerDenyMessage,
@@ -51,7 +50,7 @@ import {
   type RecipientForm,
 } from './recipient-revision';
 
-type Action = 'split' | 'recipient' | 'plan' | 'cancel' | 'recall';
+type Action = 'split' | 'recipient' | 'plan' | 'recall';
 
 type RetryState = {
   operationId: string;
@@ -65,7 +64,6 @@ const ACTION_TITLE: Record<Action, string> = {
   split: 'shipment 분할',
   recipient: '수령인 변경',
   plan: 'shipment 계획 확정',
-  cancel: '미처리 수량 취소',
   recall: '출고 recall',
 };
 
@@ -106,7 +104,6 @@ export function ShipmentActions({
   const split = useSplitShipment();
   const reviseRecipient = useReviseShipmentRecipient();
   const plan = usePlanShipment();
-  const cancel = useCancelShipmentOutstanding();
   const recall = useRecallShipment();
   const [action, setAction] = useState<Action | null>(null);
   const [lineId, setLineId] = useState(shipment.lines[0]?.id ?? '');
@@ -140,7 +137,6 @@ export function ShipmentActions({
     split.isPending ||
     reviseRecipient.isPending ||
     plan.isPending ||
-    cancel.isPending ||
     recall.isPending;
 
   const canRecall =
@@ -287,42 +283,6 @@ export function ShipmentActions({
         await run();
         return;
       }
-      if (action === 'cancel') {
-        if (
-          !line ||
-          !Number.isInteger(quantity) ||
-          quantity < 1 ||
-          quantity > line.qty ||
-          !reason.trim()
-        ) {
-          toast.error('취소 수량과 사유를 확인하세요.');
-          return;
-        }
-        const data = {
-          expectedManifestVersion: shipment.manifestVersion,
-          lines: [
-            {
-              shipmentLineId: line.id,
-              expectedLineVersion: line.lineVersion,
-              qty: quantity,
-            },
-          ],
-          reason: reason.trim(),
-          ...(csCaseId.trim() ? { csCaseId: csCaseId.trim() } : {}),
-          ...(note.trim() ? { note: note.trim() } : {}),
-        };
-        const run: () => Promise<void> = async () => {
-          registerPending(idempotencyKey, ACTION_TITLE[action], run);
-          const result = await cancel.mutateAsync({
-            shipmentId: shipment.id,
-            data,
-            idempotencyKey,
-          });
-          registerResult(result, idempotencyKey, ACTION_TITLE[action], run);
-        };
-        await run();
-        return;
-      }
       if (!attemptId || !physicalRecovery) {
         toast.error(
           '회수된 정확한 출고 시도를 선택하고 실물 회수를 확인하세요.'
@@ -383,15 +343,6 @@ export function ShipmentActions({
             계획 확정
           </Button>
         )}
-        {canRun(useCancelShipmentOutstanding) && (
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={() => setAction('cancel')}
-          >
-            미처리 취소
-          </Button>
-        )}
         {canRecall && (
           <Button
             size="sm"
@@ -433,7 +384,7 @@ export function ShipmentActions({
             <DialogTitle>{action ? ACTION_TITLE[action] : ''}</DialogTitle>
           </DialogHeader>
 
-          {(action === 'split' || action === 'cancel') && (
+          {action === 'split' && (
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2 space-y-1.5">
                 <Label>shipment line</Label>
@@ -594,11 +545,7 @@ export function ShipmentActions({
               취소
             </Button>
             <Button
-              variant={
-                action === 'cancel' || action === 'recall'
-                  ? 'destructive'
-                  : 'default'
-              }
+              variant={action === 'recall' ? 'destructive' : 'default'}
               onClick={() => submit()}
               disabled={
                 pending ||
