@@ -600,6 +600,10 @@ export class ShipmentPlanningService {
     );
   }
 
+  /**
+   * 상자 미처리분 취소. 호출자는 판매주문 V2 취소(`SalesOrdersService`)뿐이다 — 운영자 라우트는 K6 PR4(D1)에서 지웠고
+   * `cancel-outstanding-callers.guard.spec.ts` 가 호출자를 고정한다.
+   */
   async cancelOutstanding(
     shipmentId: string,
     dto: CancelShipmentOutstandingDto,

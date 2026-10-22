@@ -61,7 +61,6 @@ export const PII_ROUTES: readonly string[] = [
   'core POST /sales-orders',
   'core POST /sales-orders/:id/cancel',
   'core POST /sales-orders/:id/confirm',
-  'core POST /shipments/:id/cancellations',
   'core POST /shipments/:id/plan',
   'core POST /shipments/:id/split-unreserved',
   'core POST /shipments/:id/splits',

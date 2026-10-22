@@ -109,7 +109,7 @@ function conflict(code: string, message: string): ConflictException {
 /**
  * 시작된 배치에서 박스가 빠지는 일의 생명주기(스펙 §8). 목표를 0 으로 두고 — 집지 않은 몫은 즉시 반납, 집은 몫과 카트 몫은
  * 되돌림 바구니로 들어갈 때 배정이 준다 — 배정 합이 0 이 되는 트랜잭션에서 나간다.
- * 호출자: 운영자 빼기(`OutboundBatchOrchestrator.excludeShipment`), 전체 취소(`ShipmentPlanningService.cancelOutstanding`),
+ * 호출자: 운영자 빼기(`OutboundBatchOrchestrator.excludeShipment`), 전체 취소(판매주문 취소 → `ShipmentPlanningService.cancelOutstanding`),
  * 되돌림(`BoxReturnService`, 토탈피킹 전략의 카트 여분). PR 4 의 «결품 못 채움» 도 여기로 온다.
  *
  * 시작 전 배치에서 빼기(`excludeUnstarted`)와 취소 송장의 로컬 무효화(`voidWaybillForCancel`)도 여기 있다 — 운영자 빼기와
