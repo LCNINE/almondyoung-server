@@ -11,6 +11,9 @@ export type CancellationEffect = {
 
 export type CancellationLineContext = { id: string; quantity: number; isDigital: boolean };
 
+/** 쓰는 쪽이 넘긴 «이 라인을 몇 개 취소한다»(판매 단위). */
+export type RequestedCancellationLine = { salesOrderLineId: string; quantity: number };
+
 export type CancellationLineDraft = {
   salesOrderLineId: string;
   quantity: number;
@@ -28,8 +31,8 @@ const PRESERVED_SHIPPED_EFFECT = 'preserved_shipped_fulfillment_order_item';
 
 type DeriveInput = {
   scope: 'full' | 'partial';
-  /** 취소 행 metadata.cancelledLines 그대로. 없으면 null. */
-  cancelledLines: Array<{ salesOrderLineId: string; quantity: number }> | null;
+  /** 쓰는 쪽이 넘긴 요청 라인. V1 전체취소는 null(남은 수량 전부). */
+  requestedLines: readonly RequestedCancellationLine[] | null;
   effects: CancellationEffect[];
   /** 그 주문의 전체 판매 라인. */
   lines: CancellationLineContext[];
@@ -50,9 +53,9 @@ export function deriveCancellationLines(input: DeriveInput): CancellationLineDra
     if (quantity > 0) target.set(lineId, (target.get(lineId) ?? 0) + quantity);
   };
 
-  if (input.scope === 'partial' || input.cancelledLines) {
+  if (input.scope === 'partial' || input.requestedLines) {
     const requested = new Map<string, number>();
-    for (const entry of input.cancelledLines ?? []) {
+    for (const entry of input.requestedLines ?? []) {
       if (!lineById.has(entry.salesOrderLineId)) {
         throw new CancellationLineDerivationError(`취소 항목의 판매 라인을 찾을 수 없다: ${entry.salesOrderLineId}`);
       }

@@ -32,11 +32,15 @@ describeIfDb('SalesOrdersService 취소 엔진 — 이미 취소된 수량 읽�
       const w = wireCancellation(tx);
       const o = await seedCancellableOrder(tx, w, 2);
       // 판매주문 status 는 그대로 두고 전체취소 «기록»만 남긴다 — V2 전체 + 남은 출고분처럼 SO 가 cancelled 가 아닌 상태.
-      await recordSalesOrderCancellation(tx, {
-        salesOrderId: o.salesOrderId,
-        cancellationScope: 'full',
-        cancelledBy: 'naver',
-      });
+      await recordSalesOrderCancellation(
+        tx,
+        {
+          salesOrderId: o.salesOrderId,
+          cancellationScope: 'full',
+          cancelledBy: 'naver',
+        },
+        null,
+      );
 
       const planning = w.salesOrders.planCancellation(o.salesOrderId, undefined, tx);
 

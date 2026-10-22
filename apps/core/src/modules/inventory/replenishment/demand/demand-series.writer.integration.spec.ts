@@ -95,11 +95,14 @@ describeIfDb('DemandSeriesWriter (DB integration)', () => {
       l.partialCancelledQty ? [{ salesOrderLineId: insertedLines[i].id, quantity: l.partialCancelledQty }] : [],
     );
     if (cancelledLines.length > 0) {
-      await recordSalesOrderCancellation(trx, {
-        salesOrderId: order.id,
-        cancellationScope: 'partial',
-        metadata: { cancelledLines },
-      });
+      await recordSalesOrderCancellation(
+        trx,
+        {
+          salesOrderId: order.id,
+          cancellationScope: 'partial',
+        },
+        cancelledLines,
+      );
     }
     return { orderId: order.id, lineIds: insertedLines.map((l) => l.id) };
   }
@@ -384,22 +387,25 @@ describeIfDb('DemandSeriesWriter (DB integration)', () => {
           lines: [{ variantId, quantity: 5, totalPrice: 5000 }],
         });
         const [lineId] = lineIds;
-        await recordSalesOrderCancellation(trx, {
-          salesOrderId: orderId,
-          cancellationScope: 'partial',
-          metadata: { cancelledLines: [{ salesOrderLineId: lineId, quantity: 2 }] },
-          effects: [
-            {
-              type: 'preserved_shipped_fulfillment_order_item',
-              metadata: {
-                salesOrderLineId: lineId,
-                skuId,
-                requestedFulfillmentQuantity: 2,
-                affectedShippedQuantity: 2,
+        await recordSalesOrderCancellation(
+          trx,
+          {
+            salesOrderId: orderId,
+            cancellationScope: 'partial',
+            effects: [
+              {
+                type: 'preserved_shipped_fulfillment_order_item',
+                metadata: {
+                  salesOrderLineId: lineId,
+                  skuId,
+                  requestedFulfillmentQuantity: 2,
+                  affectedShippedQuantity: 2,
+                },
               },
-            },
-          ],
-        });
+            ],
+          },
+          [{ salesOrderLineId: lineId, quantity: 2 }],
+        );
         // 전제: 라인 행이 실제로 after_shipment 로 기록됐다 (행이 없어도 아래 단언은 통과하므로)
         expect((await readLineQuantities(trx, orderId)).get(lineId)).toMatchObject({
           canceledAfterShipment: 2,
@@ -423,11 +429,14 @@ describeIfDb('DemandSeriesWriter (DB integration)', () => {
           lines: [{ variantId, quantity: 3, totalPrice: 3000 }],
         });
         const [lineId] = lineIds;
-        await recordSalesOrderCancellation(trx, {
-          salesOrderId: orderId,
-          cancellationScope: 'full',
-          metadata: { cancelledLines: [{ salesOrderLineId: lineId, quantity: 3 }] },
-        });
+        await recordSalesOrderCancellation(
+          trx,
+          {
+            salesOrderId: orderId,
+            cancellationScope: 'full',
+          },
+          [{ salesOrderLineId: lineId, quantity: 3 }],
+        );
         await new DemandSeriesWriter(boundDbService(trx)).rebuildCoreWindow(WINDOW, trx);
         expect(await readSeries(trx, [skuId])).toEqual([]);
       });

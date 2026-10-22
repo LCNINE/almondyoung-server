@@ -22,7 +22,7 @@ describe('deriveCancellationLines', () => {
     expect(
       deriveCancellationLines({
         scope: 'partial',
-        cancelledLines: [{ salesOrderLineId: 'L1', quantity: 2 }],
+        requestedLines: [{ salesOrderLineId: 'L1', quantity: 2 }],
         effects: [],
         lines: [physical('L1', 3)],
         priorCancelledByLine: new Map(),
@@ -34,7 +34,7 @@ describe('deriveCancellationLines', () => {
     expect(
       deriveCancellationLines({
         scope: 'partial',
-        cancelledLines: [{ salesOrderLineId: 'L1', quantity: 2 }],
+        requestedLines: [{ salesOrderLineId: 'L1', quantity: 2 }],
         effects: [preserved('L1', 'A', 2, 1)],
         lines: [physical('L1', 3)],
         priorCancelledByLine: new Map(),
@@ -49,7 +49,7 @@ describe('deriveCancellationLines', () => {
     expect(
       deriveCancellationLines({
         scope: 'partial',
-        cancelledLines: [{ salesOrderLineId: 'L1', quantity: 2 }],
+        requestedLines: [{ salesOrderLineId: 'L1', quantity: 2 }],
         effects: [preserved('L1', 'A', 2, 1), preserved('L1', 'A', 2, 1)],
         lines: [physical('L1', 3)],
         priorCancelledByLine: new Map(),
@@ -61,7 +61,7 @@ describe('deriveCancellationLines', () => {
     expect(
       deriveCancellationLines({
         scope: 'partial',
-        cancelledLines: [{ salesOrderLineId: 'L1', quantity: 1 }],
+        requestedLines: [{ salesOrderLineId: 'L1', quantity: 1 }],
         effects: [preserved('L1', 'A', 1, 1)],
         lines: [physical('L1', 1)],
         priorCancelledByLine: new Map(),
@@ -74,7 +74,7 @@ describe('deriveCancellationLines', () => {
     expect(
       deriveCancellationLines({
         scope: 'partial',
-        cancelledLines: [{ salesOrderLineId: 'L1', quantity: 2 }],
+        requestedLines: [{ salesOrderLineId: 'L1', quantity: 2 }],
         effects: [preserved('L1', 'A', 2, 1), preserved('L1', 'B', 2, 0)],
         lines: [physical('L1', 2)],
         priorCancelledByLine: new Map(),
@@ -90,7 +90,7 @@ describe('deriveCancellationLines', () => {
     expect(
       deriveCancellationLines({
         scope: 'partial',
-        cancelledLines: [{ salesOrderLineId: 'L1', quantity: 3 }],
+        requestedLines: [{ salesOrderLineId: 'L1', quantity: 3 }],
         effects: [preserved('L1', 'A', 3, 1), preserved('L1', 'B', 6, 3)],
         lines: [physical('L1', 3)],
         priorCancelledByLine: new Map(),
@@ -105,7 +105,7 @@ describe('deriveCancellationLines', () => {
     expect(
       deriveCancellationLines({
         scope: 'partial',
-        cancelledLines: [{ salesOrderLineId: 'L1', quantity: 2 }],
+        requestedLines: [{ salesOrderLineId: 'L1', quantity: 2 }],
         effects: [preserved('L1', 'A', 6, 4)],
         lines: [physical('L1', 2)],
         priorCancelledByLine: new Map(),
@@ -117,7 +117,7 @@ describe('deriveCancellationLines', () => {
     expect(() =>
       deriveCancellationLines({
         scope: 'partial',
-        cancelledLines: [{ salesOrderLineId: 'L1', quantity: 2 }],
+        requestedLines: [{ salesOrderLineId: 'L1', quantity: 2 }],
         effects: [],
         lines: [physical('L1', 3)],
         priorCancelledByLine: new Map([['L1', 2]]),
@@ -129,7 +129,7 @@ describe('deriveCancellationLines', () => {
     expect(
       deriveCancellationLines({
         scope: 'full',
-        cancelledLines: null,
+        requestedLines: null,
         effects: [],
         lines: [physical('L1', 3), physical('L2', 1)],
         priorCancelledByLine: new Map([['L1', 1]]),
@@ -140,11 +140,11 @@ describe('deriveCancellationLines', () => {
     ]);
   });
 
-  it('v2 full uses cancelledLines and adds digital remainder', () => {
+  it('v2 full uses requestedLines and adds digital remainder', () => {
     expect(
       deriveCancellationLines({
         scope: 'full',
-        cancelledLines: [{ salesOrderLineId: 'L1', quantity: 1 }],
+        requestedLines: [{ salesOrderLineId: 'L1', quantity: 1 }],
         effects: [],
         lines: [physical('L1', 2), digital('D1', 1)],
         priorCancelledByLine: new Map(),
@@ -159,7 +159,7 @@ describe('deriveCancellationLines', () => {
     expect(
       deriveCancellationLines({
         scope: 'full',
-        cancelledLines: [{ salesOrderLineId: 'L1', quantity: 0 }],
+        requestedLines: [{ salesOrderLineId: 'L1', quantity: 0 }],
         effects: [],
         lines: [physical('L1', 2)],
         priorCancelledByLine: new Map(),
@@ -171,7 +171,7 @@ describe('deriveCancellationLines', () => {
     expect(() =>
       deriveCancellationLines({
         scope: 'partial',
-        cancelledLines: [{ salesOrderLineId: 'L1', quantity: 2 }],
+        requestedLines: [{ salesOrderLineId: 'L1', quantity: 2 }],
         effects: [preserved('L1', 'A', 3, 1)],
         lines: [physical('L1', 2)],
         priorCancelledByLine: new Map(),
@@ -183,7 +183,7 @@ describe('deriveCancellationLines', () => {
     expect(() =>
       deriveCancellationLines({
         scope: 'partial',
-        cancelledLines: [{ salesOrderLineId: 'X', quantity: 1 }],
+        requestedLines: [{ salesOrderLineId: 'X', quantity: 1 }],
         effects: [],
         lines: [physical('L1', 2)],
         priorCancelledByLine: new Map(),
@@ -195,7 +195,7 @@ describe('deriveCancellationLines', () => {
     expect(() =>
       deriveCancellationLines({
         scope: 'partial',
-        cancelledLines: [{ salesOrderLineId: 'L1', quantity: 1 }],
+        requestedLines: [{ salesOrderLineId: 'L1', quantity: 1 }],
         effects: [preserved('L1', 'A', 1, 3)],
         lines: [physical('L1', 2)],
         priorCancelledByLine: new Map(),
@@ -207,7 +207,7 @@ describe('deriveCancellationLines', () => {
     expect(() =>
       deriveCancellationLines({
         scope: 'partial',
-        cancelledLines: [{ salesOrderLineId: 'L1', quantity: 1 }],
+        requestedLines: [{ salesOrderLineId: 'L1', quantity: 1 }],
         effects: [
           {
             type: 'preserved_shipped_fulfillment_order_item',

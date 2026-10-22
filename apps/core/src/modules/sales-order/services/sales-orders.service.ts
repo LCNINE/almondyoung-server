@@ -671,7 +671,7 @@ export class SalesOrdersService {
         metadata: options.metadata ?? {},
         occurredAt,
       };
-      const cancellation = await recordSalesOrderCancellation(trx, cancellationValues);
+      const cancellation = await recordSalesOrderCancellation(trx, cancellationValues, null);
 
       await trx
         .update(wmsTables.salesOrders)
@@ -1546,13 +1546,10 @@ export class SalesOrdersService {
       reasonDetail: options.reasonDetail ?? null,
       cancelledBy: options.cancelledBy ?? null,
       effects,
-      metadata: {
-        ...(options.metadata ?? {}),
-        cancelledLines,
-      },
+      metadata: options.metadata ?? {},
       occurredAt,
     };
-    const cancellation = await recordSalesOrderCancellation(trx, cancellationValues);
+    const cancellation = await recordSalesOrderCancellation(trx, cancellationValues, cancelledLines);
 
     await this.linkCancellationEffects(salesOrderId, cancellation.id, 'partial', effects, occurredAt, trx);
 
@@ -1907,13 +1904,12 @@ export class SalesOrdersService {
       effects: operationEffects,
       metadata: {
         ...(options.metadata ?? {}),
-        cancelledLines: requestedSalesLines,
         fulfillmentCommandSourceKey: this.explicitV2CancellationSourceKey(options),
         fulfillmentCommandRequestHash: this.v2CancellationRequestHash(salesOrderId, options),
       },
       occurredAt,
     };
-    const cancellation = await recordSalesOrderCancellation(tx, cancellationValues);
+    const cancellation = await recordSalesOrderCancellation(tx, cancellationValues, requestedSalesLines);
     if (isFullCancel) {
       await tx
         .update(wmsTables.salesOrders)

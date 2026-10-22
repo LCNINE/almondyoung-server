@@ -52,7 +52,7 @@ describeIfDb('recordSalesOrderCancellation — 취소 행과 라인 행을 같�
       expect(await linesOf(tx, cancellation.id)).toEqual([
         { salesOrderLineId: o.lineId, quantity: 1, shipmentPhase: 'before_shipment' },
       ]);
-      expect(cancellation.metadata).toMatchObject({ cancelledLines: [{ salesOrderLineId: o.lineId, quantity: 1 }] });
+      expect(cancellation.metadata).not.toHaveProperty('cancelledLines');
     });
   });
 
@@ -112,8 +112,7 @@ describeIfDb('recordSalesOrderCancellation — 취소 행과 라인 행을 같�
       expect(cancellation.cancellationScope).toBe('full');
       const lines = await linesOf(tx, cancellation.id);
       expect(lines).toEqual([{ salesOrderLineId: o.lineId, quantity: 2, shipmentPhase: 'before_shipment' }]);
-      const totals = lines.map(({ salesOrderLineId, quantity }) => ({ salesOrderLineId, quantity }));
-      expect(cancellation.metadata).toMatchObject({ cancelledLines: totals });
+      expect(cancellation.metadata).not.toHaveProperty('cancelledLines');
     });
   });
 
@@ -185,18 +184,62 @@ describeIfDb('recordSalesOrderCancellation — 취소 행과 라인 행을 같�
     });
   });
 
+  it('takes cancelled lines from the argument and keeps them out of metadata (K6 PR6)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { salesOrderId, lineIds } = await seedSalesOrder(tx, { lines: [{ variantId: randomUUID(), quantity: 2 }] });
+
+      const cancellation = await recordSalesOrderCancellation(
+        tx,
+        { salesOrderId, cancellationScope: 'partial', effects: [], metadata: { sourceEventId: 'e-1' } },
+        [{ salesOrderLineId: lineIds[0], quantity: 1 }],
+      );
+
+      expect(cancellation.metadata).toEqual({ sourceEventId: 'e-1' });
+      expect(await linesOf(tx, cancellation.id)).toEqual([
+        { salesOrderLineId: lineIds[0], quantity: 1, shipmentPhase: 'before_shipment' },
+      ]);
+    });
+  });
+
+  it('rejects metadata that carries cancelledLines (K6 PR6)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { salesOrderId, lineIds } = await seedSalesOrder(tx, { lines: [{ variantId: randomUUID(), quantity: 2 }] });
+
+      const error = await tx
+        .transaction((nested) =>
+          recordSalesOrderCancellation(
+            nested as unknown as DbTx,
+            {
+              salesOrderId,
+              cancellationScope: 'partial',
+              effects: [],
+              metadata: { cancelledLines: [{ salesOrderLineId: lineIds[0], quantity: 1 }] },
+            },
+            [{ salesOrderLineId: lineIds[0], quantity: 1 }],
+          ),
+        )
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(CancellationLineDerivationError);
+      expect(await cancellationsOf(tx, salesOrderId)).toEqual([]);
+    });
+  });
+
   it('rejects over-cancellation', async () => {
     await inRollbackTx(db, async (tx) => {
       const { salesOrderId, lineIds } = await seedSalesOrder(tx, { lines: [{ variantId: randomUUID(), quantity: 1 }] });
 
       const error = await tx
         .transaction((nested) =>
-          recordSalesOrderCancellation(nested as unknown as DbTx, {
-            salesOrderId,
-            cancellationScope: 'partial',
-            effects: [],
-            metadata: { cancelledLines: [{ salesOrderLineId: lineIds[0], quantity: 2 }] },
-          }),
+          recordSalesOrderCancellation(
+            nested as unknown as DbTx,
+            {
+              salesOrderId,
+              cancellationScope: 'partial',
+              effects: [],
+            },
+            [{ salesOrderLineId: lineIds[0], quantity: 2 }],
+          ),
         )
         .catch((caught: unknown) => caught);
 
@@ -213,12 +256,15 @@ describeIfDb('recordSalesOrderCancellation — 취소 행과 라인 행을 같�
     try {
       await expect(
         db.transaction(async (tx) => {
-          const cancellation = await recordSalesOrderCancellation(tx as unknown as DbTx, {
-            salesOrderId,
-            cancellationScope: 'partial',
-            effects: [],
-            metadata: { cancelledLines: [{ salesOrderLineId: lineIds[0], quantity: 1 }] },
-          });
+          const cancellation = await recordSalesOrderCancellation(
+            tx as unknown as DbTx,
+            {
+              salesOrderId,
+              cancellationScope: 'partial',
+              effects: [],
+            },
+            [{ salesOrderLineId: lineIds[0], quantity: 1 }],
+          );
           expect(await linesOf(tx as unknown as DbTx, cancellation.id)).toHaveLength(1);
           throw new Rollback('after record');
         }),
