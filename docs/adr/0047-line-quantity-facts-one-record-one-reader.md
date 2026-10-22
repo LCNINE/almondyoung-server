@@ -154,6 +154,11 @@ PR 1 은 기록만 더했다(이중 기록). PR 2a 가 `cancelledQuantitySql`(�
     400 `FULFILLMENT_REQUIRES_SALES_ORDER` 로 거절한다(items·lines 갈래 삭제). 수동 출고는 «주문입력(수동)»으로 판매주문을 만든다. 칼럼 `sales_order_id` 의
     NOT NULL 은 이 PR 밖이다(contract 마이그 — 라이브 SO 없는 FO 0행 확인 뒤).
   - 마이그레이션 없음. 배포 Core·channel-adapter·admin-web.
+- PR 5 — (이 PR) 스토어프론트 단계 라벨(D8·F1). core 는 2026-07-19 부터 `fulfillmentStatus` 로 `preparing`·`shipping` 을 보냈는데 스토어프론트 타입·라벨표는
+  옛 FO 상태값에 머물러, 준비·배송 중 주문이 «결제 완료»로 보였다. 타입을 core 값으로 바꾸고 `preparing` → «상품 준비 중», `shipping` → «배송 중».
+  `not_created`·`canceled` 는 지금처럼 SO 상태 라벨로 내려간다. `web/**` 은 CI 가 없고 루트 `type-check` 도 `web` 을 제외하므로,
+  `store-order-actions.storefront-parity.spec.ts`(루트 jest)가 두 트리의 상태 유니온을 대조한다 — `StoreFulfillmentStatus` 는 같은 집합, 나머지는 core ⊆ 스토어프론트.
+  core 변경 없음, 배포 스토어프론트만.
 - PR 6 — contract: `metadata.cancelledLines` 쓰기 중단, 옛 파서 삭제, 옛 파서 이름이 되살아나면 빨간 가드. PR 1 의 백필이 라이브에서 끝나고 한 번 이상 배포된 뒤
   (ADR-0005 §5, `deploy → migrate`).
 
