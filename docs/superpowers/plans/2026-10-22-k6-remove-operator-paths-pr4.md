@@ -43,6 +43,7 @@
     ```
   - **G2 대기 행** — `SELECT count(*) FROM event.outbox_events WHERE event_type = 'FulfillmentCancelled' AND status <> 'PUBLISHED';` 기대 0.
   - **G3 운영자 상자 취소** — `SELECT count(*) FROM shipment_operations WHERE type = 'cancel' AND idempotency_key NOT LIKE 'sales-order-cancel:%';` 기대 0(라이브는 V2 상자 미사용). 0 이 아니면 운영자 취소가 남긴 상자가 있다는 뜻이라 사람이 먼저 본다.
+  - **G4 판매주문 없는 출고주문**(최종 리뷰 뒤 추가, 사용자 결정 (c)) — `SELECT count(*) AS total, count(*) FILTER (WHERE status NOT IN ('shipped','completed','canceled')) AS open, max(created_at) AS last_at FROM fulfillment_orders WHERE sales_order_id IS NULL;` `open` 기대 0. 0 이 아니면 그 FO 는 이 배포 뒤 취소할 길이 없으니 배포 전에 사람이 처리를 정한다. `total`·`last_at` 은 수동 생성 화면을 실제로 쓰던 흔적이다.
 - `npm run deploy:preflight -- --stage live` 가 이벤트 계약 변경(`fulfillments.stream.ts`)을 보여 준다 — 기대한 변경이다.
 
 ---
@@ -289,3 +290,11 @@ git commit -m "feat(admin-web): «미처리 수량 취소»·FO 취소 버튼과
 - PR 본문에 «배포» 절(위 G1~G3 확정 SQL, 배포 단위 Core·channel-adapter·admin-web, 마이그 없음)
 
 **곁에서 찾은 것(이 PR 밖):** `FulfillmentReturned` 도 생산자 0 인 채 계약에 남아 있다(`ugc order-cancellation.consumer.ts:11` 이 2026-09-08 에 실측). 같은 방식으로 지울 수 있으나 K6 범위가 아니다.
+
+## 최종 리뷰 뒤 추가 (Task 5, 사용자 결정 2026-10-22)
+
+최종 리뷰 Important 1: 판매주문 없는 수동 FO 는 D1·D11 뒤 되돌릴 길이 없다. 사용자 결정 (c) — 만들지 않는다.
+- core `FulfillmentsService.createV2` 첫머리에서 `salesOrderId` 없으면 400 `FULFILLMENT_REQUIRES_SALES_ORDER`, `items`·`lines` 는 트랜잭션 전에 `SALES_ORDER_ITEMS_DERIVED_FROM_MATCHING`. items·lines 갈래와 사전 점검의 items 분기 삭제.
+- admin-web «출고주문 생성 (수동)» 메뉴·라우트·화면 권한 줄·폼·`useCreateFulfillmentOrder`·`createStandalone`·죽은 `fulfillments.client.create` 와 요청 타입 삭제.
+- 테스트: `fulfillments.service.spec.ts` «salesOrderId 없는 출고주문은 만들지 않는다» (items·lines·빈 요청).
+

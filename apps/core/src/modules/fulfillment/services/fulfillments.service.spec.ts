@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { wmsTables } from '../../inventory/schema/inventory.schema';
 import { LineCompositionReader } from '../../product-matching/line-composition/line-composition.reader';
 import { FulfillmentsService } from './fulfillments.service';
+import type { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
 
 describe('FulfillmentsService', () => {
   const salesOrderId = '11111111-1111-1111-1111-111111111111';
@@ -344,26 +345,30 @@ describe('FulfillmentsService', () => {
     expect(state.fulfillmentOrderItems).toHaveLength(0);
   });
 
-  it('explicit items에 item-level SO 참조가 있으면 매칭 검증 우회를 막는다', async () => {
-    const { service, state, productSkuMapping } = makeService({ links: null });
+  const withoutSalesOrder: Array<[string, Partial<CreateFulfillmentOrderDto>]> = [
+    ['items', { items: [{ skuId, quantity: 1 }] }],
+    ['lines', { lines: [{ skuId, quantity: 1 }] }],
+    ['빈 요청', {}],
+  ];
+  it.each(withoutSalesOrder)(
+    'salesOrderId 없는 출고주문은 만들지 않는다 — %s (K6 PR4, 판매주문 없는 FO 는 취소·완료 길이 없다)',
+    async (_label, extra) => {
+      const { service, state } = makeService({ links: null });
 
-    try {
-      await service.create({
-        warehouseId,
-        items: [{ skuId, quantity: 1, salesOrderId, salesOrderLineId, variantId }],
-      });
-      throw new Error('expected create to throw');
-    } catch (error) {
-      expect(error).toBeInstanceOf(BadRequestException);
-      expect((error as BadRequestException).getResponse()).toMatchObject({
-        code: 'FULFILLMENT_ITEM_SO_REFERENCE_NOT_ALLOWED',
-      });
-    }
+      try {
+        await service.create({ warehouseId, ...extra });
+        throw new Error('expected create to throw');
+      } catch (error) {
+        expect(error).toBeInstanceOf(BadRequestException);
+        expect((error as BadRequestException).getResponse()).toMatchObject({
+          code: 'FULFILLMENT_REQUIRES_SALES_ORDER',
+        });
+      }
 
-    expect(productSkuMapping.getByVariant).not.toHaveBeenCalled();
-    expect(state.fulfillmentOrders).toHaveLength(0);
-    expect(state.fulfillmentOrderItems).toHaveLength(0);
-  });
+      expect(state.fulfillmentOrders).toHaveLength(0);
+      expect(state.fulfillmentOrderItems).toHaveLength(0);
+    },
+  );
 
   it('salesOrderId에 대한 FO가 이미 있으면 새 FO를 만들지 않고 기존 FO를 반환한다', async () => {
     const { service, state, productSkuMapping, shipmentReservation } = makeService({

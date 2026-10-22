@@ -16,7 +16,6 @@ import type {
   FulfillmentOrderDetail,
   FulfillmentOrdersListResponse,
   FulfillmentOrdersQuery,
-  CreateStandaloneFulfillmentRequest,
   ShipmentAdminSummary,
   ShipmentAdminDetail,
   FulfillmentOperation,
@@ -172,17 +171,6 @@ export const fulfillmentOrder = {
       `${ALMONDYOUNG_API_BASE_URL}/shipments/${encodeURIComponent(shipmentId)}/short-picks`,
       data,
       { headers: { 'Idempotency-Key': idempotencyKey } }
-    );
-    return response.data;
-  },
-
-  // 수동 standalone FO 생성 (POST /fulfillments — items 기반, salesOrderId 미사용)
-  createStandalone: async (
-    data: CreateStandaloneFulfillmentRequest
-  ): Promise<FulfillmentOrderDetail> => {
-    const response = await client.post(
-      `${ALMONDYOUNG_API_BASE_URL}/fulfillments`,
-      data
     );
     return response.data;
   },

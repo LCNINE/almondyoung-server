@@ -63,7 +63,6 @@ export const SCREEN_ACCESS: Readonly<Record<string, ScreenAccess>> = {
   '/order/channel-mismatches': any('channel.account.read'),
   '/order/manual-single': any('order.order.write'),
   '/order/manual-bulk': any('order.order.write'),
-  '/order/fulfillment-manual': any('fulfillment.order.write'),
   '/order/history': any('order.order.read'),
   '/order/stall-board': any('fulfillment.order.read'),
   '/order/fulfillments': any('fulfillment.order.read'),

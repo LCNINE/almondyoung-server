@@ -17,7 +17,6 @@ import type {
 import type {
   ForwardDirectShipOrdersRequest,
   CompleteDirectShipOrdersRequest,
-  CreateStandaloneFulfillmentRequest,
   SplitShipmentRequest,
   SplitUnreservedShipmentRequest,
   ReviseShipmentRecipientRequest,
@@ -407,18 +406,6 @@ function invalidateFulfillment(
   queryClient.invalidateQueries({ queryKey: ['inventory', 'reservations'] });
   queryClient.invalidateQueries({ queryKey: ['direct-ship'] });
 }
-
-export const useCreateFulfillmentOrder = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: CreateStandaloneFulfillmentRequest) =>
-      orders.fulfillmentOrder.createStandalone(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
-    },
-  });
-};
-useCreateFulfillmentOrder.permission = ['fulfillment.order.write'] as const satisfies PermissionRequirement;
 
 // ===== Shipment planning / durable operations =====
 

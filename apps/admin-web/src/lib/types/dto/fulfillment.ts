@@ -111,22 +111,6 @@ export type FulfillmentOrdersQuery = ListFulfillmentsQuery & {
   status?: FulfillmentOrderStatus;
 };
 
-export interface FulfillmentOrderItemInput {
-  salesOrderId: string;
-  salesOrderLineId: string;
-  productId: string;
-  variantId: string;
-  qty: number;
-}
-
-export interface CreateFulfillmentOrderRequest {
-  warehouseId: string;
-  fulfillmentMode: FulfillmentMode;
-  priority?: FulfillmentOrderPriority;
-  items: FulfillmentOrderItemInput[];
-}
-
-// 수동 standalone FO 생성 (POST /fulfillments — 백엔드 CreateFulfillmentOrderDto, salesOrderId 미사용)
 export interface FulfillmentShippingAddress {
   recipientName: string;
   phone: string;
@@ -134,21 +118,6 @@ export interface FulfillmentShippingAddress {
   roadAddress: string;
   detailAddress: string;
   deliveryNote?: string;
-}
-
-export interface CreateStandaloneFulfillmentItem {
-  skuId: string;
-  quantity: number;
-  variantId?: string;
-}
-
-export interface CreateStandaloneFulfillmentRequest {
-  warehouseId?: string;
-  fulfillmentMode?: FulfillmentMode;
-  priority?: FulfillmentOrderPriority;
-  ownerId?: string;
-  shippingAddress?: FulfillmentShippingAddress;
-  items: CreateStandaloneFulfillmentItem[];
 }
 
 export interface AllocateToBatchRequest {

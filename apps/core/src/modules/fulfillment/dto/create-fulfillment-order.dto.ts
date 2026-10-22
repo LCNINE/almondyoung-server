@@ -50,7 +50,7 @@ export class CreateFulfillmentOrderLineDto {
 }
 
 export class CreateFulfillmentOrderDto {
-  @ApiProperty({ description: 'Sales Order ID', required: false })
+  @ApiProperty({ description: 'Sales Order ID — 필수. 없으면 400 FULFILLMENT_REQUIRES_SALES_ORDER (K6 PR4)', required: false })
   @IsUUID()
   @IsOptional()
   salesOrderId?: string;
@@ -82,7 +82,7 @@ export class CreateFulfillmentOrderDto {
   shippingAddress?: AddressDto;
 
   @ApiProperty({
-    description: 'Order items for standalone fulfillment orders. Omit when salesOrderId is provided.',
+    description: 'Not accepted (400). Fulfillment orders are created only from salesOrderId; items derive from product-SKU matching (K6 PR4).',
     type: [CreateFulfillmentOrderItemDto],
     required: false,
   })
@@ -94,7 +94,7 @@ export class CreateFulfillmentOrderDto {
 
   /** @deprecated Use items instead */
   @ApiProperty({
-    description: 'Order lines for standalone fulfillment orders (deprecated, use items instead)',
+    description: 'Not accepted (400). Fulfillment orders are created only from salesOrderId (K6 PR4).',
     type: [CreateFulfillmentOrderLineDto],
     required: false,
     deprecated: true,

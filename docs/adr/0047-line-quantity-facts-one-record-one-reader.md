@@ -148,6 +148,11 @@ PR 1 은 기록만 더했다(이중 기록). PR 2a 가 `cancelledQuantitySql`(�
   - D10 수동 배송완료(`POST /fulfillments/:id/deliver`, 화면 호출 0). `FulfillmentDelivered` 는 추적 경로(`ShipmentDeliveryTrackingService`)가 계속 발행해 남는다.
     FO `completed` 의 유일한 작성자가 사라져 새 FO 는 `completed` 가 되지 않는다 — enum 값은 남긴다(값 삭제는 destructive).
   - FO 상세 `adminAvailableActions` 는 직배 액션(`forwardDropShip`·`completeDropShip`)만 남는다. `removed-operator-routes.spec.ts` 가 세 라우트의 부활을 막는다.
+  - **판매주문 없는 출고주문은 만들지 않는다**(사용자 결정 2026-10-22, 최종 리뷰가 찾은 스펙 공백). admin-web «출고주문 생성 (수동)»이 판매주문 없이 FO 를 만들었는데,
+    D1·D11 뒤 그 FO 는 취소할 길이 없고(취소는 판매주문 취소로만) 직배 완료도 `FulfillmentShipped.orderId`(`min(1)`) 검증에 걸린다. 수량 사실·청구·채널·고객 화면 어디에도
+    닿지 않는다 — 이 시스템의 뼈대는 판매주문 → 출고주문이다. 화면·훅·클라이언트를 지우고 `FulfillmentsService.create` 가 `salesOrderId` 없는 요청을
+    400 `FULFILLMENT_REQUIRES_SALES_ORDER` 로 거절한다(items·lines 갈래 삭제). 수동 출고는 «주문입력(수동)»으로 판매주문을 만든다. 칼럼 `sales_order_id` 의
+    NOT NULL 은 이 PR 밖이다(contract 마이그 — 라이브 SO 없는 FO 0행 확인 뒤).
   - 마이그레이션 없음. 배포 Core·channel-adapter·admin-web.
 - PR 6 — contract: `metadata.cancelledLines` 쓰기 중단, 옛 파서 삭제, 옛 파서 이름이 되살아나면 빨간 가드. PR 1 의 백필이 라이브에서 끝나고 한 번 이상 배포된 뒤
   (ADR-0005 §5, `deploy → migrate`).
