@@ -116,12 +116,12 @@ describeIfDb('recordSalesOrderCancellation — 취소 행과 라인 행을 같�
     });
   });
 
-  it('v1 full after a legacy partial (metadata only, no line rows) counts the legacy partial as prior', async () => {
+  it('a partial with metadata only (no line rows) is invisible to the recorder (K6 PR6)', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
       const o = await seedCancellableOrder(tx, w, 2);
-      // 배포 전 옛 partial — 쓰기 문을 거치지 않아 라인 행이 없고 metadata.cancelledLines 만 있다.
-      // 백필 전 옛 데이터를 흉내 내는 픽스처라 쓰기 문을 일부러 우회한다(가드는 스펙을 보지 않는다).
+      // contract 뒤 취소 수량의 기록은 라인 행뿐이다 — metadata 만 있는 옛 모양의 행은 prior 에 들어가지 않는다.
+      // 이런 행이 라이브에 없다는 것은 배포 전 게이트 G1 이 확인한다(PR6 계획 «배포»). 쓰기 문을 일부러 우회한 픽스처다.
       await tx.insert(wmsTables.salesOrderCancellations).values({
         salesOrderId: o.salesOrderId,
         cancellationScope: 'partial',
@@ -134,7 +134,7 @@ describeIfDb('recordSalesOrderCancellation — 취소 행과 라인 행을 같�
       const full = (await cancellationsOf(tx, o.salesOrderId)).find((row) => row.cancellationScope === 'full');
       expect(full).toBeDefined();
       expect(await linesOf(tx, full!.id)).toEqual([
-        { salesOrderLineId: o.lineId, quantity: 1, shipmentPhase: 'before_shipment' },
+        { salesOrderLineId: o.lineId, quantity: 2, shipmentPhase: 'before_shipment' },
       ]);
     });
   });

@@ -35,10 +35,11 @@ K6 이 정하는 건 «어디에 기록하나»이고 «누가 기록하나»는
    (보고는 주문당 한 건이지만 그 주문의 취소는 전부 행이 없는 채 남는다). 그 밖의 예외는 프로그램 결함이라 그대로 올린다. 조회 모드가 기본이고 `--apply` 로만 쓴다.
    `--verify`(읽기 전용)는 주문마다 저장된 행을 무시하고 `metadata`/`effects` 로 다시 도출해 저장된 행과 (취소, 라인, 갈래, 수량) 집합을 비교하고 어긋난 주문을 찍는다(기대 0).
    행 없는 취소가 0행으로 도출되는 것뿐인 주문도 대조하고, 모호하거나 아직 백필되지 않은 주문만 사유별로 세어 건너뛴다. 대조용 SQL 은 따로 두지 않는다.
+   (PR 6 이 이 백필 스크립트를 지웠다 — 라이브 적용은 2026-10-20 에 끝났고, PR 6 뒤 새 취소에는 `metadata.cancelledLines` 가 없어 `--verify` 가 틀린 도구가 된다. git 이력에 남는다.)
 
 **대체되는 것:** `metadata.cancelledLines` 를 읽는 파서 세 벌(`loadPriorPartialCancellationContext`, `cancelledQuantitySql`, `LineCompositionReader` 의 취소 합).
 PR 1 은 기록만 더했다(이중 기록). PR 2a 가 `cancelledQuantitySql`(파일째)·`getCancelledQuantityByLine`·`loadPriorPartialCancellationContext`(→ 문을 읽는 `loadPriorCancellationContext`)를 지우고
-구성 리더의 취소 합도 문으로 옮겼다. 남은 `sumCancelledByLine` 은 쓰기 문의 백필 전 대비와 백필 스크립트 둘이 쓰므로 PR 6 에서 지운다.
+구성 리더의 취소 합도 문으로 옮겼다. PR 6 이 남은 `sumCancelledByLine`(쓰기 문의 백필 전 대비와 백필 스크립트 둘이 쓰던 것)을 지우고 `metadata.cancelledLines` 쓰기를 끊었다.
 
 **PR 2a 가 정한 것:** 읽는 문 `readLineQuantities`(`sales-order/line-quantities/line-quantities.reader.ts`)와 같은 정의의 SQL 조각(`line-quantities.sql.ts`: `lineCanceledQuantitySql`·`lineDemandSql`·`lineRemainingSql`).
 정의는 SQL 한 벌이고 TS 에서 뺄셈을 다시 하지 않는다. 가드 `line-quantity-read.guard.spec.ts` 가 취소 라인 테이블 이름을 쓰는 파일을 쓰기 문과 조각 파일 둘로 묶고 옛 파서 이름의 부활을 막는다.
@@ -154,8 +155,14 @@ PR 1 은 기록만 더했다(이중 기록). PR 2a 가 `cancelledQuantitySql`(�
     400 `FULFILLMENT_REQUIRES_SALES_ORDER` 로 거절한다(items·lines 갈래 삭제). 수동 출고는 «주문입력(수동)»으로 판매주문을 만든다. 칼럼 `sales_order_id` 의
     NOT NULL 은 이 PR 밖이다(contract 마이그 — 라이브 SO 없는 FO 0행 확인 뒤).
   - 마이그레이션 없음. 배포 Core·channel-adapter·admin-web.
-- PR 6 — contract: `metadata.cancelledLines` 쓰기 중단, 옛 파서 삭제, 옛 파서 이름이 되살아나면 빨간 가드. PR 1 의 백필이 라이브에서 끝나고 한 번 이상 배포된 뒤
-  (ADR-0005 §5, `deploy → migrate`).
+- PR 6 — contract(`docs/superpowers/plans/2026-10-22-k6-contract-cancelled-lines-pr6.md`). PR 1 의 백필이 라이브에서 끝나고(10-20) 세 번 배포된 뒤다.
+  - 쓰기 문이 취소할 라인을 metadata 가 아니라 인자로 받는다: `recordSalesOrderCancellation(trx, values, requestedLines)` — V1 전체취소는 `null`, V1 부분·V2 는 요청 라인.
+    metadata 에 `cancelledLines` 가 실리면 `CancellationLineDerivationError` 로 거절한다 — 조용히 떼어 내면 «어느 쪽이 기록인가»가 다시 두 벌이 된다.
+  - 쓰기 문의 prior 는 라인 행 합뿐이다(옛 partial 의 metadata 를 더하던 대비 삭제). `sumCancelledByLine`·일회성 백필 스크립트 둘(K6 PR 1, #1063)을 지웠다.
+  - 가드 `line-quantity-read.guard.spec.ts` 가 `scripts/` 까지 훑어 옛 파서 이름과 취소 metadata 의 `cancelledLines` 읽기를 막는다.
+  - 마이그레이션 없음 — 이미 쌓인 행의 `metadata.cancelledLines` 는 이력으로 남긴다(아무도 읽지 않는다). 그래서 «contract 는 `deploy → migrate`» 가 해당 없다.
+    배포 전 게이트: 라인 행 없는 partial 0, metadata↔라인 행 합 일치(계획 «배포»).
+  - `fulfillment_orders.sales_order_id` NOT NULL(PR 4 의 contract)은 이 PR 밖이다.
 
 ## Why
 - 사실의 정의가 한 곳이면 소비자를 하나씩 옮겨도 서로 갈라지지 않는다. 기록이 먼저 하나가 되어야 읽는 문이 «어느 쪽이 맞나» 규칙을 영구히 들고 가지 않는다(사용자가 거절한 안).
@@ -165,7 +172,7 @@ PR 1 은 기록만 더했다(이중 기록). PR 2a 가 `cancelledQuantitySql`(�
 ## Consequences
 - 취소 한 건이 라인 행 N개를 같은 트랜잭션에 쓴다. 쓰기 지점이 늘어도 가드 수는 늘지 않는다.
 - PR 1 만으로는 읽는 쪽이 바뀌지 않았다(동작 변경 없음; 읽는 쪽 전환과 동작 변경은 PR 2a, 위 E1·E2). 옛 `cancelledLines` 와 새 라인 행이 공존하는 동안 둘이 어긋나면 새 행이 틀린 것이다 —
-  `--verify` 로 배포 후 확인한다.
+  `--verify` 로 배포 후 확인한다. PR 6 부터는 공존하지 않는다 — 옛 행의 JSON 은 이력으로만 남는다.
 - **PR 2 착수의 차단 조건:** 라인 행이 없는 취소 수(게이트 SQL)가 백필 러너가 찍는 (a) ambiguous 주문에 속한 취소 수 + (b) 라인 0개로 도출된 취소 수의 합과 다르면 읽는 문을 만들지 않는다. 그 합만큼은 사람이 판단한 예외로 남는다.
 - 백필이 모호하다고 본 주문은 라인 행이 없다. 사람이 목록을 보고 결정한다.
 - PR 2a 로 라이브 취소 수량을 읽는 경로는 라인 행이 유일하다: 라인 행 없는 취소는 문에 보이지 않으므로 라인 행 없는 취소 수가 백필 `--verify` 의 (a) ambiguous + (b) 0행 도출 합과 같아야 한다 — 0 이 아닐 수 있다(V1 전체취소에 남은 게 없으면 0행).

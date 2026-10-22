@@ -1,7 +1,6 @@
-import { and, eq, type InferInsertModel } from 'drizzle-orm';
+import { eq, type InferInsertModel } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { isDigitalFulfillmentLine } from '../../product-matching/line-composition/line-composition';
-import { sumCancelledByLine } from '../../product-matching/line-composition/partial-cancellation';
 import {
   CancellationEffect,
   CancellationLineDerivationError,
@@ -70,37 +69,16 @@ export async function recordSalesOrderCancellation(
   return cancellation;
 }
 
-/**
- * 이 주문에서 이미 취소된 라인별 수량(갈래 무관).
- * 라인 행이 있는 취소는 그 행을, 라인 행이 없는 옛 partial 취소(백필 전)는 `metadata.cancelledLines` 를 쓴다 —
- * 같은 취소를 두 번 세지 않는다.
- */
+/** 이 주문의 라인별 이미 취소된 수량(갈래 무관) — 라인 행이 유일한 기록이다(K6 PR6). */
 async function loadPriorCancelledByLine(trx: DbTx, salesOrderId: string): Promise<Map<string, number>> {
   const lineRows = await trx
     .select({
-      cancellationId: wmsTables.salesOrderCancellationLines.cancellationId,
       salesOrderLineId: wmsTables.salesOrderCancellationLines.salesOrderLineId,
       quantity: wmsTables.salesOrderCancellationLines.quantity,
     })
     .from(wmsTables.salesOrderCancellationLines)
     .where(eq(wmsTables.salesOrderCancellationLines.salesOrderId, salesOrderId));
-  const partials = await trx
-    .select({
-      id: wmsTables.salesOrderCancellations.id,
-      metadata: wmsTables.salesOrderCancellations.metadata,
-    })
-    .from(wmsTables.salesOrderCancellations)
-    .where(
-      and(
-        eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId),
-        eq(wmsTables.salesOrderCancellations.cancellationScope, 'partial'),
-      ),
-    );
-
-  const withLines = new Set(lineRows.map((row) => row.cancellationId));
-  const prior = sumCancelledByLine(
-    partials.filter((partial) => !withLines.has(partial.id)).map((partial) => partial.metadata),
-  );
+  const prior = new Map<string, number>();
   for (const row of lineRows) {
     prior.set(row.salesOrderLineId, (prior.get(row.salesOrderLineId) ?? 0) + row.quantity);
   }
