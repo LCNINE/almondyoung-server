@@ -38,13 +38,11 @@ export type StoreOrderAction =
   | "exchange"
   | "receipt"
 
+// core `store-order-actions.dto.ts` 와 같은 값 — `store-order-actions.storefront-parity.spec.ts`(루트 jest)가 대조한다
 export type StoreFulfillmentStatus =
   | "not_created"
-  | "awaiting_matching"
-  | "created"
-  | "picking"
-  | "packed"
-  | "shipped"
+  | "preparing"
+  | "shipping"
   | "delivered"
   | "canceled"
 

@@ -47,14 +47,8 @@ const FULFILLMENT_STATUS_MAP: Record<
   BadgeProps | null
 > = {
   not_created: null,
-  awaiting_matching: {
-    label: "매칭 대기",
-    color: "bg-orange-100 text-orange-600",
-  },
-  created: { label: "출고 대기", color: "bg-gray-100 text-gray-500" },
-  picking: { label: "피킹 중", color: "bg-indigo-100 text-indigo-600" },
-  packed: { label: "패킹 완료", color: "bg-indigo-100 text-indigo-600" },
-  shipped: { label: "배송 중", color: "bg-green-100 text-green-600" },
+  preparing: { label: "상품 준비 중", color: "bg-indigo-100 text-indigo-600" },
+  shipping: { label: "배송 중", color: "bg-green-100 text-green-600" },
   delivered: { label: "배송 완료", color: "bg-green-100 text-green-700" },
   canceled: { label: "출고 취소", color: "bg-gray-100 text-gray-400" },
 }

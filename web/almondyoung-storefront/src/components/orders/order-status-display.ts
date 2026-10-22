@@ -18,21 +18,21 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
   timeout: "시간 초과",
 }
 
-const FO_DISPLAY_LABELS: Partial<Record<StoreFulfillmentStatus, string>> = {
-  picking: "출고 준비 중",
-  packed: "배송 예정",
-  shipped: "배송 중",
+// not_created·canceled 는 문구를 정하지 않는다 — 결제 수단·SO 상태 라벨로 내려간다(K6 PR5)
+const PHASE_LABELS: Partial<Record<StoreFulfillmentStatus, string>> = {
+  preparing: "상품 준비 중",
+  shipping: "배송 중",
   delivered: "배송 완료",
 }
 
 /**
  * Core action projection에서 고객 화면 주 상태 텍스트를 도출한다.
- * FO 상태 > paymentStatus 분기 > SO 상태 순으로 우선 적용.
+ * 진행 단계 > paymentStatus 분기 > SO 상태 순으로 우선 적용.
  */
 export function getCoreDisplayStatus(actions: StoreOrderActionsResponse): string {
-  // 출고 상태가 더 구체적이면 우선 표시
-  const foLabel = FO_DISPLAY_LABELS[actions.fulfillmentStatus]
-  if (foLabel) return foLabel
+  // 진행 단계가 더 구체적이면 우선 표시
+  const phaseLabel = PHASE_LABELS[actions.fulfillmentStatus]
+  if (phaseLabel) return phaseLabel
 
   // pending 주문은 결제 수단별로 문구 분기
   // paymentStatus가 없으면 카드결제 등 이미 확인된 결제 → "결제 완료"
