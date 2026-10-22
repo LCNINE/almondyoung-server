@@ -6,6 +6,8 @@
  *
  * 이벤트 흐름:
  * WMS (FulfillmentShipped/Delivered) → Kafka → inbox → Medusa full-order projection
+ *
+ * `FulfillmentCancelled` 는 K6 PR4 에서 유일한 생산자(FO 취소 라우트)와 함께 계약에서 지워졌다.
  */
 
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
@@ -107,27 +109,5 @@ export class FulfillmentEventsConsumer {
       );
       throw error;
     }
-  }
-
-  /**
-   * 이행 취소 이벤트 핸들러
-   *
-   * V1 fulfillment cancellation은 외부 채널 명령을 소유하지 않는다.
-   * 채널 주문 취소는 core 가 `CancelChannelOrder` 명령으로만 요청한다(ADR-0042).
-   */
-  @On(FULFILLMENT_STREAM, 'FulfillmentCancelled')
-  async handleFulfillmentCancelled(
-    @EventPayload() payload: EventPayloadOf<typeof FULFILLMENT_STREAM, 'FulfillmentCancelled'>,
-    @EventEnvelope() envelope: EnvelopeOf<typeof FULFILLMENT_STREAM, 'FulfillmentCancelled'>,
-  ) {
-    this.logger.log(`❌ [FulfillmentCancelled] Received: fulfillmentId=${payload.fulfillmentId}`, {
-      correlationId: envelope.correlationId,
-      orderId: payload.orderId,
-      reason: payload.reason,
-    });
-
-    this.logger.log(
-      `ℹ️ [FulfillmentCancelled] Compatibility event acknowledged without channel command: fulfillmentId=${payload.fulfillmentId}`,
-    );
   }
 }

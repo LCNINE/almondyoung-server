@@ -26,7 +26,6 @@ export const FULFILLMENT_EVENTS = {
   LABELLED: 'FulfillmentLabeled',
   SHIPPED: 'FulfillmentShipped',
   DELIVERED: 'FulfillmentDelivered',
-  CANCELLED: 'FulfillmentCancelled',
 } as const;
 
 export const SHIPMENT_EVENTS = {
