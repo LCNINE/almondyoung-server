@@ -15,6 +15,10 @@ const RECORDER = 'apps/core/src/modules/sales-order/cancellation-record/record-c
 const FRAGMENTS = 'apps/core/src/modules/sales-order/line-quantities/line-quantities.sql.ts';
 const SCHEMA_FILE = 'inventory.schema.ts';
 
+/** 취소 metadata 에서 `cancelledLines` 를 읽는 꼴(TS 접근·Reflect·jsonb 연산자). */
+const METADATA_CANCELLED_LINES_READ =
+  /metadata\??\.cancelledLines|metadata\??\.?\[\s*['"]cancelledLines['"]\s*\]|Reflect\.get\([^)]*['"]cancelledLines['"]\)|->>?\s*'cancelledLines'|#>>?\s*'\{cancelledLines/;
+
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
@@ -50,11 +54,27 @@ describe('취소 수량 읽는 문', () => {
     expect(filesMatchingIn([SRC, SCRIPTS], (source) => pattern.test(source))).toEqual([]);
   });
 
+  it('the metadata-read pattern catches the common read shapes', () => {
+    const shapes = [
+      'metadata.cancelledLines',
+      'metadata?.cancelledLines',
+      "metadata['cancelledLines']",
+      'metadata["cancelledLines"]',
+      "metadata?.['cancelledLines']",
+      "Reflect.get(metadata, 'cancelledLines')",
+      'Reflect.get(metadata, "cancelledLines")',
+      "c.metadata->'cancelledLines'",
+      "c.metadata->>'cancelledLines'",
+      "c.metadata #> '{cancelledLines}'",
+    ];
+    expect(shapes.filter((shape) => !METADATA_CANCELLED_LINES_READ.test(shape))).toEqual([]);
+    // 이벤트 payload·감사 로그의 객체 리터럴은 다른 것이라 걸리지 않아야 한다.
+    expect(METADATA_CANCELLED_LINES_READ.test('cancelledLines: requestedLines.map(')).toBe(false);
+  });
+
   it('nothing reads cancelledLines out of cancellation metadata', () => {
     // 쓰기 쪽 재발은 쓰기 문의 런타임 검사가 잡는다 — 객체 리터럴 `cancelledLines:` 는 이벤트 payload 와 구별되지 않아 여기서 막지 않는다.
-    const pattern =
-      /metadata\??\.cancelledLines|metadata\??\.\['cancelledLines'\]|Reflect\.get\([^)]*'cancelledLines'\)|->\s*'cancelledLines'/;
-    expect(filesMatchingIn([SRC, SCRIPTS], (source) => pattern.test(source))).toEqual([]);
+    expect(filesMatchingIn([SRC, SCRIPTS], (source) => METADATA_CANCELLED_LINES_READ.test(source))).toEqual([]);
   });
 
   it('retired shipment-phase definitions stay gone', () => {

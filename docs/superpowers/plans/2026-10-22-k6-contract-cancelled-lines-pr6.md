@@ -55,18 +55,20 @@
     WHERE c.cancellation_scope = 'partial'
       AND NOT EXISTS (SELECT 1 FROM sales_order_cancellation_lines l WHERE l.cancellation_id = c.id);
     ```
-  - **G2 metadata ↔ 라인 행 합 일치** — 기대 0(백필 `--verify` 의 SQL 판; 스크립트는 이 PR 이 지운다).
+  - **G2 metadata ↔ 라인 행 합 일치** — 기대 0(백필 `--verify` 의 SQL 판; 스크립트는 이 PR 이 지운다). **확인용이지 막는 게이트가 아니다** — 라인 행이 있는 취소는 PR 6 전에도 쓰기 문이 라인 행을 우선했으므로 G2 가 어긋나도 이 배포의 동작은 바뀌지 않는다. 막는 게이트는 G1 이다.
     ```sql
     WITH meta AS (
       SELECT c.id, sum((e->>'quantity')::int) AS q
       FROM sales_order_cancellations c, jsonb_array_elements(c.metadata->'cancelledLines') e
+      WHERE jsonb_typeof(c.metadata->'cancelledLines') = 'array'
       GROUP BY c.id
     ), lines AS (
       SELECT cancellation_id AS id, sum(quantity) AS q FROM sales_order_cancellation_lines GROUP BY 1
     )
     SELECT count(*) FROM meta LEFT JOIN lines USING (id) WHERE lines.q IS DISTINCT FROM meta.q;
     ```
-    V1·V2 전체취소 중 metadata 에 `cancelledLines` 를 실은 V2 full 은 디지털 보충분만큼 라인 합이 클 수 있다 — 0 이 아니면 그 행이 V2 full + 디지털 라인인지 먼저 본다.
+    배열이 아닌 값(JSON null 등)은 `jsonb_typeof` 로 거른다 — 없으면 쿼리째 ERROR 다. V1 전체취소는 metadata 에 `cancelledLines` 가 없어 G2 에 안 잡힌다.
+    V2 full 은 쓰기 문이 디지털 라인 잔량을 보충하므로 라인 합이 metadata 합보다 클 수 있다 — 0 이 아니면 그 행이 V2 full + 디지털 라인인지 먼저 본다.
 - 배포 뒤: 새 취소 한 건이 생기면 그 행의 `metadata ? 'cancelledLines'` 가 false 이고 라인 행이 있는지 본다(관찰, 게이트 아님).
 
 ---
