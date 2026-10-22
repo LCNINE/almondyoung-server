@@ -22,12 +22,7 @@ import { ReservationLifecycleService } from '../../inventory/shared/services/res
 import { acquireStockAvailabilityLocks } from '../../inventory/shared/locks/stock-availability-lock';
 import { assertWarehouseSellable } from '../../inventory/shared/availability/sellable-warehouses';
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
-import {
-  FULFILLMENT_STREAM,
-  FulfillmentShippedPayload,
-  FulfillmentDeliveredPayload,
-  FulfillmentCancelledPayload,
-} from '@packages/event-contracts/streams';
+import { FULFILLMENT_STREAM, FulfillmentShippedPayload } from '@packages/event-contracts/streams';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import { outbox_events } from '@app/events';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
@@ -589,125 +584,6 @@ export class FulfillmentsService {
     }, tx);
   }
 
-  async markDelivered(id: string, tx?: DbTx) {
-    // drop-ship·digital 완료 확인 경로 — maintenance 에서만 닫힌다.
-    this.workflowGate.assertOperationalMutationAllowed('fulfillment.mark_delivered');
-    return this.db.run(async (trx) => {
-      const [fo] = await trx
-        .select()
-        .from(wmsTables.fulfillmentOrders)
-        .where(eq(wmsTables.fulfillmentOrders.id, id))
-        .limit(1);
-      if (!fo) {
-        throw new NotFoundException(`Fulfillment order ${id} not found`);
-      }
-      if (fo.status !== 'shipped') {
-        throw new ConflictException(`Cannot mark delivered: FO is in status '${fo.status}', expected 'shipped'`);
-      }
-
-      const now = new Date();
-
-      // Legacy manual FO acknowledgement only. Carrier state is projected by
-      // ShipmentDeliveryTrackingService and must never drive this demand-settlement axis.
-      await trx
-        .update(wmsTables.fulfillmentOrders)
-        .set({ status: 'completed', updatedAt: now })
-        .where(eq(wmsTables.fulfillmentOrders.id, id));
-
-      // consume 없이 shipped→completed 로 온 FO 의 잔존 예약 방어 sweep.
-      // 정상 소진 경로는 ship 시 이미 release 되어 0건(no-op).
-      const sweptOnDelivered = await this.reservationLifecycle.releaseLeftoverReservations(
-        id,
-        'reconcile: FO delivered leftover',
-        trx,
-      );
-      if (sweptOnDelivered > 0) {
-        this.logger.warn(`Delivered FO ${id} 에서 잔존 예약 ${sweptOnDelivered}건 sweep`);
-      }
-
-      const [salesOrderRow] = fo.salesOrderId
-        ? await trx
-            .select({ channelOrderId: wmsTables.salesOrders.channelOrderId })
-            .from(wmsTables.salesOrders)
-            .where(eq(wmsTables.salesOrders.id, fo.salesOrderId))
-            .limit(1)
-        : [];
-
-      const deliveredPayload: FulfillmentDeliveredPayload = {
-        fulfillmentId: id,
-        orderId: fo.salesOrderId ?? '',
-        channelOrderId: salesOrderRow?.channelOrderId ?? undefined,
-        deliveredAt: now.toISOString(),
-      };
-
-      await this.fulfillmentsV1.enqueue(
-        {
-          // FO 당 전량배송 완료 이벤트는 논리적으로 한 번 — tracking 경로의 v1 완료 투영과 같은 키 규약.
-          idempotencyKey: `${id}:fully-delivered`,
-          eventType: FULFILLMENT_EVENTS.DELIVERED,
-          aggregateId: id,
-          partitionKey: fo.salesOrderId ?? id,
-          payload: deliveredPayload,
-        },
-        trx,
-      );
-
-      return this.getOne(id, trx);
-    }, tx);
-  }
-
-  async cancel(
-    id: string,
-    options?: {
-      reason?: 'ORDER_CANCELLED' | 'OUT_OF_STOCK' | 'ADMIN_CANCEL';
-      reasonDetail?: string;
-      cancelledBy?: string;
-    },
-    tx?: DbTx,
-  ) {
-    // 모드 무관 취소 경로 — maintenance 에서만 닫힌다.
-    this.workflowGate.assertOperationalMutationAllowed('fulfillment.cancel');
-    return this.db.run(async (trx) => {
-      const [fo] = await trx
-        .select()
-        .from(wmsTables.fulfillmentOrders)
-        .where(eq(wmsTables.fulfillmentOrders.id, id))
-        .limit(1);
-      if (!fo) {
-        throw new NotFoundException(`Fulfillment order ${id} not found`);
-      }
-
-      await trx
-        .update(wmsTables.fulfillmentOrders)
-        .set({ status: 'canceled', updatedAt: new Date() })
-        .where(eq(wmsTables.fulfillmentOrders.id, id));
-
-      await this.reservationLifecycle.handleFulfillmentOrderStatusChange(id, fo.status, 'canceled', trx);
-
-      const cancelledPayload: FulfillmentCancelledPayload = {
-        fulfillmentId: id,
-        orderId: fo.salesOrderId ?? '',
-        reason: options?.reason ?? 'ADMIN_CANCEL',
-        reasonDetail: options?.reasonDetail,
-        cancelledBy: options?.cancelledBy ?? 'system',
-        cancelledAt: new Date().toISOString(),
-      };
-
-      await this.fulfillmentsV1.enqueue(
-        {
-          idempotencyKey: `${id}:cancelled`,
-          eventType: FULFILLMENT_EVENTS.CANCELLED,
-          aggregateId: id,
-          partitionKey: fo.salesOrderId ?? id,
-          payload: cancelledPayload,
-        },
-        trx,
-      );
-
-      return this.getOne(id, trx);
-    }, tx);
-  }
-
   private computeAdminAvailableActions(fo: {
     status: string;
     fulfillmentMode: string | null;
@@ -721,12 +597,6 @@ export class FulfillmentsService {
     // V2 예약은 shipment line 단위로 자동(부분예약 + retry worker)이고, 재배치는 shipment-line transfer 로 한다.
     // drop_ship 은 타사 재고라 재고 관련 액션을 광고하지 않는다(아래 forward/complete 만).
     const isDropShip = fo.fulfillmentMode === 'drop_ship';
-    if (!isTerminal) {
-      actions.push('cancel');
-    }
-    if (fo.status === 'shipped') {
-      actions.push('deliver');
-    }
     if (isDropShip && !isTerminal) {
       const dsStatus = fo.directShipStatus;
       if (!dsStatus || dsStatus === 'pending') actions.push('forwardDropShip');

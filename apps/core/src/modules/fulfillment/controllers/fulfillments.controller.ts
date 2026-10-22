@@ -52,68 +52,6 @@ export class FulfillmentsController {
     return this.service.create(dto);
   }
 
-  @PiiResponse({
-    fields: {
-      'shippingAddress.recipientName': 'name',
-      'shippingAddress.phone': 'phone',
-      'shippingAddress.postalCode': 'postal',
-      'shippingAddress.roadAddress': 'address',
-      'shippingAddress.detailAddress': 'text',
-      'shippingAddress.deliveryNote': 'text',
-      'shippingAddress.personalCustomsCode': 'secret',
-    },
-    subjects: [
-      { path: 'id', type: 'fulfillment_order' },
-    ],
-    rawWithByField: {
-      'shippingAddress.recipientName': OPEN_WITH_RECIPIENT,
-      'shippingAddress.phone': OPEN_WITH_RECIPIENT,
-      'shippingAddress.postalCode': OPEN_WITH_RECIPIENT,
-      'shippingAddress.roadAddress': OPEN_WITH_RECIPIENT,
-      'shippingAddress.detailAddress': OPEN_WITH_RECIPIENT,
-      'shippingAddress.deliveryNote': OPEN_WITH_RECIPIENT,
-      'shippingAddress.personalCustomsCode': OPEN_WITH_RECIPIENT,
-    },
-  })
-  @RequirePermission('fulfillment.order.write')
-  @Post(':id/deliver')
-  @ApiOperation({ summary: '배송 완료 처리 (고객 수령 확인, FulfillmentDelivered 이벤트 발행)' })
-  @ApiParam({ name: 'id', description: '주문처리 ID' })
-  deliver(@Param('id') id: string) {
-    return this.service.markDelivered(id);
-  }
-
-  @PiiResponse({
-    fields: {
-      'shippingAddress.recipientName': 'name',
-      'shippingAddress.phone': 'phone',
-      'shippingAddress.postalCode': 'postal',
-      'shippingAddress.roadAddress': 'address',
-      'shippingAddress.detailAddress': 'text',
-      'shippingAddress.deliveryNote': 'text',
-      'shippingAddress.personalCustomsCode': 'secret',
-    },
-    subjects: [
-      { path: 'id', type: 'fulfillment_order' },
-    ],
-    rawWithByField: {
-      'shippingAddress.recipientName': OPEN_WITH_RECIPIENT,
-      'shippingAddress.phone': OPEN_WITH_RECIPIENT,
-      'shippingAddress.postalCode': OPEN_WITH_RECIPIENT,
-      'shippingAddress.roadAddress': OPEN_WITH_RECIPIENT,
-      'shippingAddress.detailAddress': OPEN_WITH_RECIPIENT,
-      'shippingAddress.deliveryNote': OPEN_WITH_RECIPIENT,
-      'shippingAddress.personalCustomsCode': OPEN_WITH_RECIPIENT,
-    },
-  })
-  @RequirePermission('fulfillment.order.write')
-  @Post(':id/cancel')
-  @ApiOperation({ summary: '주문처리 취소' })
-  @ApiParam({ name: 'id', description: '주문처리 ID' })
-  cancel(@Param('id') id: string) {
-    return this.service.cancel(id);
-  }
-
   @RequirePermission('fulfillment.order.read')
   @Get(':id/outbox-events')
   @ApiOperation({ summary: '주문처리 outbox 이벤트 조회' })

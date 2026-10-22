@@ -1,6 +1,7 @@
 import { Type } from '@nestjs/common';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { RequestMethod } from '@nestjs/common';
+import { FulfillmentsController } from './fulfillments.controller';
 import { ShipmentPlanningController } from './shipment-planning.controller';
 
 /**
@@ -24,5 +25,12 @@ describe('K6 PR4 — 판매주문 기록을 우회하던 관리자 라우트는 
     expect(routesOf(ShipmentPlanningController)).not.toContain('POST :id/cancellations');
     // 헬퍼가 실제로 라우트를 읽는지 — 남는 라우트 하나로 확인
     expect(routesOf(ShipmentPlanningController)).toContain('GET :id');
+  });
+
+  it('FulfillmentsController 에 POST :id/cancel·POST :id/deliver 가 없다 (D10·D11)', () => {
+    const routes = routesOf(FulfillmentsController);
+    expect(routes).not.toContain('POST :id/cancel');
+    expect(routes).not.toContain('POST :id/deliver');
+    expect(routes).toContain('GET :id/outbox-events');
   });
 });
