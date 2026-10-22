@@ -249,12 +249,15 @@ describeIfDb('WakeAwaitingMatchingRule (PostgreSQL integration)', () => {
         .select({ id: wmsTables.salesOrderLines.id, quantity: wmsTables.salesOrderLines.quantity })
         .from(wmsTables.salesOrderLines)
         .where(eq(wmsTables.salesOrderLines.salesOrderId, o.salesOrderId));
-      await recordSalesOrderCancellation(tx, {
-        salesOrderId: o.salesOrderId,
-        cancellationScope: 'partial',
-        reasonCode: 'it',
-        metadata: { cancelledLines: [{ salesOrderLineId: line.id, quantity: line.quantity }] },
-      });
+      await recordSalesOrderCancellation(
+        tx,
+        {
+          salesOrderId: o.salesOrderId,
+          cancellationScope: 'partial',
+          reasonCode: 'it',
+        },
+        [{ salesOrderLineId: line.id, quantity: line.quantity }],
+      );
       // 전제: 취소 기록 문이 라인 전량을 출고 전 취소로 남겼다 — 리더는 이 라인 행만 본다(K6 PR2a)
       expect((await readLineQuantities(tx, o.salesOrderId)).get(line.id)).toMatchObject({
         canceledBeforeShipment: line.quantity,

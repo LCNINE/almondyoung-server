@@ -1010,9 +1010,7 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
         salesOrderId,
         cancellationScope: 'partial',
         reasonCode: 'CUSTOMER_REQUEST',
-        metadata: expect.objectContaining({
-          cancelledLines: [{ salesOrderLineId, quantity: 1 }],
-        }),
+        metadata: expect.not.objectContaining({ cancelledLines: expect.anything() }),
         effects: expect.arrayContaining([
           expect.objectContaining({
             type: 'adjusted_fulfillment_order_item',
@@ -1032,6 +1030,10 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
         ]),
       }),
     ]);
+    // K6 PR6 — 취소 라인은 metadata 가 아니라 라인 행으로만 남는다.
+    expect(state.salesOrderCancellationLines).toEqual(
+      expect.arrayContaining([expect.objectContaining({ salesOrderLineId, quantity: 1 })]),
+    );
     expect(outbox.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: 'SalesOrderCancelled',
@@ -1199,9 +1201,7 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
     expect(state.salesOrderCancellations).toEqual([
       expect.objectContaining({
         cancellationScope: 'partial',
-        metadata: expect.objectContaining({
-          cancelledLines: [{ salesOrderLineId, quantity: 1 }],
-        }),
+        metadata: expect.not.objectContaining({ cancelledLines: expect.anything() }),
         effects: expect.arrayContaining([
           expect.objectContaining({
             type: 'preserved_shipped_fulfillment_order_item',
@@ -1237,6 +1237,10 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
         ]),
       }),
     ]);
+    // K6 PR6 — 취소 라인은 metadata 가 아니라 라인 행으로만 남는다.
+    expect(state.salesOrderCancellationLines).toEqual(
+      expect.arrayContaining([expect.objectContaining({ salesOrderLineId, quantity: 1 })]),
+    );
     expect(outbox.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: 'SalesOrderCancelled',
@@ -1330,9 +1334,7 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
       expect.objectContaining({
         id: 'cancellation-2',
         cancellationScope: 'partial',
-        metadata: expect.objectContaining({
-          cancelledLines: [{ salesOrderLineId, quantity: 1 }],
-        }),
+        metadata: expect.not.objectContaining({ cancelledLines: expect.anything() }),
         effects: expect.arrayContaining([
           expect.objectContaining({
             type: 'preserved_shipped_fulfillment_order_item',
@@ -1349,6 +1351,12 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
           }),
         ]),
       }),
+    );
+    // K6 PR6 — 취소 라인은 metadata 가 아니라 라인 행으로만 남는다.
+    expect(state.salesOrderCancellationLines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ salesOrderLineId, quantity: 1, cancellationId: 'cancellation-2' }),
+      ]),
     );
     expect(outbox.enqueue).toHaveBeenLastCalledWith(
       expect.objectContaining({

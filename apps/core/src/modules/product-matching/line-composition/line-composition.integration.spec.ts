@@ -46,12 +46,15 @@ describeIfDb('LineCompositionReader / LineCompositionManager (PostgreSQL integra
         ],
       });
       await seedMatching(tx, { variantId: matched, skuId: sku.a, quantity: 2 });
-      await recordSalesOrderCancellation(tx, {
-        salesOrderId,
-        cancellationScope: 'partial',
-        reasonCode: 'it',
-        metadata: { cancelledLines: [{ salesOrderLineId: lineIds[1], quantity: 2 }] },
-      });
+      await recordSalesOrderCancellation(
+        tx,
+        {
+          salesOrderId,
+          cancellationScope: 'partial',
+          reasonCode: 'it',
+        },
+        [{ salesOrderLineId: lineIds[1], quantity: 2 }],
+      );
 
       const resolved = await w.lineCompositions.resolveForOrder(salesOrderId, tx);
       const byLine = new Map(resolved.map((r) => [r.line.id, r]));
@@ -75,23 +78,26 @@ describeIfDb('LineCompositionReader / LineCompositionManager (PostgreSQL integra
       const { salesOrderId, lineIds } = await seedSalesOrder(tx, { lines: [{ variantId, quantity: 3 }] });
       await seedMatching(tx, { variantId, skuId: sku.a });
       // 한 번의 부분취소 2개 중 1개는 이미 나간 단위(보존 효과) → 라인 행 before 1 + after 1
-      await recordSalesOrderCancellation(tx, {
-        salesOrderId,
-        cancellationScope: 'partial',
-        reasonCode: 'it',
-        metadata: { cancelledLines: [{ salesOrderLineId: lineIds[0], quantity: 2 }] },
-        effects: [
-          {
-            type: 'preserved_shipped_fulfillment_order_item',
-            metadata: {
-              salesOrderLineId: lineIds[0],
-              skuId: sku.a,
-              requestedFulfillmentQuantity: 2,
-              affectedShippedQuantity: 1,
+      await recordSalesOrderCancellation(
+        tx,
+        {
+          salesOrderId,
+          cancellationScope: 'partial',
+          reasonCode: 'it',
+          effects: [
+            {
+              type: 'preserved_shipped_fulfillment_order_item',
+              metadata: {
+                salesOrderLineId: lineIds[0],
+                skuId: sku.a,
+                requestedFulfillmentQuantity: 2,
+                affectedShippedQuantity: 1,
+              },
             },
-          },
-        ],
-      });
+          ],
+        },
+        [{ salesOrderLineId: lineIds[0], quantity: 2 }],
+      );
       // 전제: 씨앗이 정말 갈래 하나씩 1개를 남겼다
       expect((await readLineQuantities(tx, salesOrderId)).get(lineIds[0])).toMatchObject({
         canceledBeforeShipment: 1,
@@ -111,12 +117,16 @@ describeIfDb('LineCompositionReader / LineCompositionManager (PostgreSQL integra
       const variantId = randomUUID();
       const { salesOrderId, lineIds } = await seedSalesOrder(tx, { lines: [{ variantId, quantity: 2 }] });
       await seedMatching(tx, { variantId, skuId: sku.a });
-      await recordSalesOrderCancellation(tx, {
-        salesOrderId,
-        cancellationScope: 'full',
-        reasonCode: 'it',
-        metadata: {},
-      });
+      await recordSalesOrderCancellation(
+        tx,
+        {
+          salesOrderId,
+          cancellationScope: 'full',
+          reasonCode: 'it',
+          metadata: {},
+        },
+        null,
+      );
       // 전제: V1 전체취소가 라인의 남은 2개를 출고 전으로 남겼다
       expect((await readLineQuantities(tx, salesOrderId)).get(lineIds[0])).toMatchObject({
         canceledBeforeShipment: 2,

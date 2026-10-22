@@ -270,23 +270,26 @@ describeIfDb('반품·교환 생성 게이트 — 소포 단위 청구 자격 (K
       // 완료 반품 1 + 출고 뒤 취소 1 — SKU 몫이 1 − 1 − 1 = −1, 소포 claimable 도 −1 이다
       await seedClaim(tx, { kind: 'return', salesOrderId: line.salesOrderId, status: 'completed', items: [one] });
       // 엔진은 다 나간 라인의 부분취소를 거절하므로(R1) 엔진이 남기는 모양을 쓰기 문에 직접 넘긴다
-      await recordSalesOrderCancellation(tx, {
-        salesOrderId: line.salesOrderId,
-        cancellationScope: 'partial',
-        reasonCode: 'customer',
-        metadata: { cancelledLines: [{ salesOrderLineId: line.lineId, quantity: 1 }] },
-        effects: [
-          {
-            type: 'preserved_shipped_fulfillment_order_item',
-            metadata: {
-              salesOrderLineId: line.lineId,
-              skuId: w.skuId,
-              requestedFulfillmentQuantity: 1,
-              affectedShippedQuantity: 1,
+      await recordSalesOrderCancellation(
+        tx,
+        {
+          salesOrderId: line.salesOrderId,
+          cancellationScope: 'partial',
+          reasonCode: 'customer',
+          effects: [
+            {
+              type: 'preserved_shipped_fulfillment_order_item',
+              metadata: {
+                salesOrderLineId: line.lineId,
+                skuId: w.skuId,
+                requestedFulfillmentQuantity: 1,
+                affectedShippedQuantity: 1,
+              },
             },
-          },
-        ],
-      });
+          ],
+        },
+        [{ salesOrderLineId: line.lineId, quantity: 1 }],
+      );
       const [parcel] = await readParcelClaimEligibility(tx, line.salesOrderId);
       expect(parcel).toMatchObject({ skuClaimable: -1, claimable: -1 });
 
@@ -1071,13 +1074,16 @@ describeIfDb('반품·교환 생성 게이트 — 소포 단위 청구 자격 (K
       });
       await payOrder(tx, line.salesOrderId, { totalAmount: 5000, shippingFee: 3000 });
       // 1세트 취소(출고 전 갈래) — totalAmount 는 그대로라 배분액을 남은 비율로 줄여야 한다(U1)
-      await recordSalesOrderCancellation(tx, {
-        salesOrderId: line.salesOrderId,
-        cancellationScope: 'partial',
-        reasonCode: 'customer',
-        metadata: { cancelledLines: [{ salesOrderLineId: line.lineId, quantity: 1 }] },
-        effects: [],
-      });
+      await recordSalesOrderCancellation(
+        tx,
+        {
+          salesOrderId: line.salesOrderId,
+          cancellationScope: 'partial',
+          reasonCode: 'customer',
+          effects: [],
+        },
+        [{ salesOrderLineId: line.lineId, quantity: 1 }],
+      );
       const { requestId } = await seedClaim(tx, {
         kind: 'return',
         salesOrderId: line.salesOrderId,
@@ -1156,23 +1162,26 @@ describeIfDb('반품·교환 생성 게이트 — 소포 단위 청구 자격 (K
   it('returned event carries remaining after an after-shipment cancellation', async () => {
     await inRollbackTx(db, async (tx) => {
       const { w, line } = await seedSingle(tx, { quantity: 2, parcels: [{ qty: 2 }] });
-      await recordSalesOrderCancellation(tx, {
-        salesOrderId: line.salesOrderId,
-        cancellationScope: 'partial',
-        reasonCode: 'customer',
-        metadata: { cancelledLines: [{ salesOrderLineId: line.lineId, quantity: 1 }] },
-        effects: [
-          {
-            type: 'preserved_shipped_fulfillment_order_item',
-            metadata: {
-              salesOrderLineId: line.lineId,
-              skuId: w.skuId,
-              requestedFulfillmentQuantity: 1,
-              affectedShippedQuantity: 1,
+      await recordSalesOrderCancellation(
+        tx,
+        {
+          salesOrderId: line.salesOrderId,
+          cancellationScope: 'partial',
+          reasonCode: 'customer',
+          effects: [
+            {
+              type: 'preserved_shipped_fulfillment_order_item',
+              metadata: {
+                salesOrderLineId: line.lineId,
+                skuId: w.skuId,
+                requestedFulfillmentQuantity: 1,
+                affectedShippedQuantity: 1,
+              },
             },
-          },
-        ],
-      });
+          ],
+        },
+        [{ salesOrderLineId: line.lineId, quantity: 1 }],
+      );
       const { requestId } = await seedClaim(tx, {
         kind: 'return',
         salesOrderId: line.salesOrderId,
