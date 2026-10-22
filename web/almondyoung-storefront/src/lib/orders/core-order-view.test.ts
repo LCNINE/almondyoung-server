@@ -7,7 +7,7 @@ function actions(over: Partial<StoreOrderActionsResponse> = {}): StoreOrderActio
     orderId: "so-1",
     channelOrderId: "order_1",
     orderStatus: "confirmed",
-    fulfillmentStatus: "created",
+    fulfillmentStatus: "not_created",
     refundStatus: "none",
     claimStatus: "none",
     availableActions: [],
