@@ -7,6 +7,7 @@ import type {
 } from "@/lib/api/orders/store-orders"
 import { refundTone, toRefundStatus } from "@/lib/orders/refund-status"
 import { cn } from "@/lib/utils"
+import { orderBadgeStatus } from "./order-status-display"
 import { REFUND_TONE_BADGE_CLASS } from "./refund-status-style"
 
 interface BadgeProps {
@@ -136,7 +137,7 @@ export function OrderStatusBadges({
   const orderBadge =
     refundRequestBadge ??
     awaitingDepositBadge ??
-    ORDER_STATUS_MAP[actions.orderStatus]
+    ORDER_STATUS_MAP[orderBadgeStatus(actions) ?? ""]
   const fulfillBadge = FULFILLMENT_STATUS_MAP[actions.fulfillmentStatus]
   // core 가 먼저 늘린 값은 «환불 처리 중»으로 접힌다(#1016 36번 PR 4)
   const refundStatus = toRefundStatus(actions.refundStatus)

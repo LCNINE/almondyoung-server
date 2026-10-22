@@ -25,6 +25,17 @@ const PHASE_LABELS: Partial<Record<StoreFulfillmentStatus, string>> = {
   delivered: "배송 완료",
 }
 
+// SO shipped·delivered 는 셀메이트가 core 밖에서 출고했다는 표지다
+const EXTERNALLY_SHIPPED = new Set(["shipped", "delivered"])
+
+/**
+ * 주문 상태 뱃지에 쓸 SO 상태. SO 가 shipped·delivered 면 core 가 그 사실을 진행 단계(shipping·delivered)에 이미 담아
+ * 보내므로 뱃지를 그리지 않는다 — 같이 그리면 «배송 중»이 두 번 뜨거나 «배송 중»+«배송 완료»가 붙는다(K6 PR5).
+ */
+export function orderBadgeStatus(actions: Pick<StoreOrderActionsResponse, "orderStatus">): string | null {
+  return EXTERNALLY_SHIPPED.has(actions.orderStatus) ? null : actions.orderStatus
+}
+
 /**
  * Core action projection에서 고객 화면 주 상태 텍스트를 도출한다.
  * 진행 단계 > paymentStatus 분기 > SO 상태 순으로 우선 적용.

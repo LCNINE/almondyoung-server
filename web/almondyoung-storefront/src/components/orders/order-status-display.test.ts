@@ -3,7 +3,7 @@ import type {
   StoreFulfillmentStatus,
   StoreOrderActionsResponse,
 } from "@/lib/api/orders/store-orders"
-import { getCoreDisplayStatus } from "./order-status-display"
+import { getCoreDisplayStatus, orderBadgeStatus } from "./order-status-display"
 
 function actions(over: Partial<StoreOrderActionsResponse> = {}): StoreOrderActionsResponse {
   return {
@@ -41,5 +41,14 @@ describe("getCoreDisplayStatus — 진행 단계가 core 값을 따른다 (K6 PR
     // core 가 스토어프론트보다 먼저 값을 늘리는 경우를 흉내 낸다(같은 SST 스택이라 배포 순서가 없다)
     const unknown = "returning" as unknown as StoreFulfillmentStatus
     expect(getCoreDisplayStatus(actions({ orderStatus: "pending", fulfillmentStatus: unknown }))).toBe("결제 완료")
+  })
+})
+
+describe("orderBadgeStatus — 주문 상태 뱃지와 진행 단계 뱃지가 겹치지 않는다 (K6 PR5)", () => {
+  it.each(["shipped", "delivered"])("SO %s(셀메이트 출고)는 주문 상태 뱃지를 그리지 않는다 — 단계 뱃지가 그 사실을 담는다", (orderStatus) => {
+    expect(orderBadgeStatus(actions({ orderStatus, fulfillmentStatus: "shipping" }))).toBeNull()
+  })
+  it.each(["pending", "confirmed", "processing", "cancelled", "timeout"])("SO %s 는 그대로", (orderStatus) => {
+    expect(orderBadgeStatus(actions({ orderStatus, fulfillmentStatus: "preparing" }))).toBe(orderStatus)
   })
 })
