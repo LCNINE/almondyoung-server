@@ -292,7 +292,7 @@ export class StoreSalesOrdersService {
           eq(inventoryTables.salesOrders.walletIntentId, intentId),
           inArray(
             inventoryTables.salesOrders.salesChannel,
-            channelsWhere((c) => c.paidByWalletIntent),
+            channelsWhere((c) => c.cancelledByWalletRefundApproval),
           ),
         ),
       )
@@ -318,7 +318,7 @@ export class StoreSalesOrdersService {
           eq(inventoryTables.salesOrders.walletIntentId, intentId),
           inArray(
             inventoryTables.salesOrders.salesChannel,
-            channelsWhere((c) => c.paidByWalletIntent),
+            channelsWhere((c) => c.cancelledByWalletRefundApproval),
           ),
         ),
       )

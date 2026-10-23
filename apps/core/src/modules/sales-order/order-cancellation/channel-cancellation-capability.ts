@@ -22,8 +22,8 @@ export interface ChannelCancellationCapability {
   acceptsAlreadyRefundedOffset: boolean;
   /** 고객이 스토어프론트에서 직접 취소할 수 있는가 */
   customerSelfCancel: boolean;
-  /** 결제가 wallet intent 로 이뤄지는가 */
-  paidByWalletIntent: boolean;
+  /** 무통장 환불 승인(wallet)이 wallet intent 로 이 채널의 주문을 찾아 취소하는가(= 우리 스토어프론트 주문) */
+  cancelledByWalletRefundApproval: boolean;
   /** 판매자센터 안내 문구에 쓰는 이름 */
   sellerCenterLabel: string | null;
 }
@@ -34,7 +34,7 @@ export const CHANNEL_CANCELLATION_CAPABILITIES: Readonly<Record<SalesChannelName
     settlesMoney: 'channel',
     acceptsAlreadyRefundedOffset: true,
     customerSelfCancel: true,
-    paidByWalletIntent: true,
+    cancelledByWalletRefundApproval: true,
     sellerCenterLabel: null,
   },
   naver: {
@@ -42,7 +42,7 @@ export const CHANNEL_CANCELLATION_CAPABILITIES: Readonly<Record<SalesChannelName
     settlesMoney: 'channel',
     acceptsAlreadyRefundedOffset: false,
     customerSelfCancel: false,
-    paidByWalletIntent: false,
+    cancelledByWalletRefundApproval: false,
     sellerCenterLabel: '네이버',
   },
   coupang: {
@@ -50,7 +50,7 @@ export const CHANNEL_CANCELLATION_CAPABILITIES: Readonly<Record<SalesChannelName
     settlesMoney: 'channel',
     acceptsAlreadyRefundedOffset: false,
     customerSelfCancel: false,
-    paidByWalletIntent: false,
+    cancelledByWalletRefundApproval: false,
     sellerCenterLabel: '쿠팡',
   },
   '3pl': {
@@ -58,7 +58,7 @@ export const CHANNEL_CANCELLATION_CAPABILITIES: Readonly<Record<SalesChannelName
     settlesMoney: 'core',
     acceptsAlreadyRefundedOffset: false,
     customerSelfCancel: false,
-    paidByWalletIntent: false,
+    cancelledByWalletRefundApproval: false,
     sellerCenterLabel: null,
   },
 };
@@ -67,10 +67,12 @@ export function cancellationCapabilityOf(salesChannel: string): ChannelCancellat
   if (!Object.hasOwn(CHANNEL_CANCELLATION_CAPABILITIES, salesChannel)) {
     throw new Error(`Unknown sales channel for cancellation: ${salesChannel}`);
   }
+  // as 근거: 위 hasOwn 가드가 표의 키임을 보였다 — string 을 키 유니온으로 좁힐 수 없을 뿐이다
   return CHANNEL_CANCELLATION_CAPABILITIES[salesChannel as SalesChannelName];
 }
 
 export function channelsWhere(pred: (c: ChannelCancellationCapability) => boolean): SalesChannelName[] {
+  // as 근거: Object.keys 는 string[] 을 주지만 표가 Record<SalesChannelName, …> 라 키는 정확히 그 유니온이다
   return (Object.keys(CHANNEL_CANCELLATION_CAPABILITIES) as SalesChannelName[]).filter((ch) =>
     pred(CHANNEL_CANCELLATION_CAPABILITIES[ch]),
   );

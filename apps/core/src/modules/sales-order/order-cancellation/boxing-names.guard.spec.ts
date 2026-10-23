@@ -29,7 +29,7 @@ describe('상자 전/후 이름', () => {
   it('옛 V1/V2 취소 이름이 없다', () =>
     expect(
       filesMatching(
-        /hasV2FulfillmentHistory|cancelV2Outstanding|planV2Outstanding|findV2CancellationReplay|v2CancellationRequestHash|v2-cancellation-units|\bcancelPartial\b/,
+        /hasV2FulfillmentHistory|cancelV2Outstanding|planV2Outstanding|findV2CancellationReplay|V2OutstandingPlan|explicitV2CancellationSourceKey|seedShippedV1Fulfillment|seedV2SetOrder|v2CancellationRequestHash|v2-cancellation-units|\bcancelPartial\b/,
         'apps/core/src',
       ),
     ).toEqual([]));
@@ -37,7 +37,7 @@ describe('상자 전/후 이름', () => {
   it('판매주문 코드가 취소 갈래를 V1/V2 로 부르지 않는다', () =>
     expect(
       filesMatching(
-        /V[12]\s*(전체|부분)?\s*취소|V[12] (sales-order )?cancellation|V[12] 경로|V1 엔진|V2 fulfillment (item|SKU)|V2 (component )?progress|V2 outstanding|V2 «/,
+        /V[12]\s*(전체|부분)?\s*취소|V[12] (sales-order )?cancellation|V[12] 경로|V1 엔진|V2 fulfillment (item|SKU)|V2 (component )?progress|V2 outstanding|V2 «|v[12] (partial|full)/i,
         'apps/core/src/modules/sales-order',
       ),
     ).toEqual([]));

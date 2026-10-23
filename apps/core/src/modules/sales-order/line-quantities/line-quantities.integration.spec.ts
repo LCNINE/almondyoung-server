@@ -20,7 +20,7 @@ import { ambientDbService } from '../../fulfillment/services/__support__/simple-
 import { LineCompositionManager } from '../../product-matching/line-composition/line-composition.manager';
 import {
   seedCancellableOrder,
-  seedShippedV1Fulfillment,
+  seedShippedBeforeBoxingFulfillment,
   wireCancellation,
 } from '../cancellation-record/__support__/cancellation-scenarios';
 import { recallParcel, seedDispatchedParcel } from './__support__/shipment-facts.fixtures';
@@ -236,7 +236,7 @@ describeIfDb('readLineQuantities — 라인 수량은 취소 라인 행 한 곳�
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
       const o = await seedCancellableOrder(tx, w, 3);
-      await seedShippedV1Fulfillment(tx, o, 3);
+      await seedShippedBeforeBoxingFulfillment(tx, o, 3);
 
       await w.salesOrders.cancel(
         o.salesOrderId,
@@ -286,7 +286,7 @@ describeIfDb('readLineQuantities — 라인 수량은 취소 라인 행 한 곳�
     });
   });
 
-  it('v1 full after partial', async () => {
+  it('상자 전 전체 after partial', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
       const o = await seedCancellableOrder(tx, w, 3);
@@ -305,7 +305,7 @@ describeIfDb('readLineQuantities — 라인 수량은 취소 라인 행 한 곳�
     });
   });
 
-  it('v2 full with digital line', async () => {
+  it('상자 후 전체 with digital line', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
       const o = await seedCancellableOrder(tx, w, 2);
@@ -499,7 +499,7 @@ describeIfDb('readLineQuantities — SKU 층 출고·배송 사실 (K6 PR2b)', (
     });
   });
 
-  it('v2 canceled quantity leaves required', async () => {
+  it('상자 후 canceled quantity leaves required', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = await seedWorld(tx);
       const o = await seedOrder(tx, { quantity: 2 });

@@ -761,7 +761,7 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
       fulfillmentOrderItems?: Array<Record<string, any>>;
       fulfillmentOrderCreationBacklogs?: Array<Record<string, any>>;
       lineOverrides?: { almondDesignId?: string };
-      v2History?: boolean;
+      afterBoxingHistory?: boolean;
     } = {},
   ) {
     const state = {
@@ -877,7 +877,7 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
     };
 
     const tx: any = {
-      execute: jest.fn().mockResolvedValue(options.v2History ? [{ id: 'shipment-1' }] : []),
+      execute: jest.fn().mockResolvedValue(options.afterBoxingHistory ? [{ id: 'shipment-1' }] : []),
       select: jest.fn((selection?: Record<string, unknown>) => ({
         from: (table: unknown) => {
           const chain: { innerJoin: () => unknown; where: () => unknown } = {
@@ -959,7 +959,7 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
       undefined,
       undefined,
       // 생성자 파라미터가 ModuleRef 라 최소 더블(get 만)을 넘긴다
-      options.v2History ? ({ get: () => ({}) } as any) : undefined,
+      options.afterBoxingHistory ? ({ get: () => ({}) } as any) : undefined,
     );
 
     return { service, state, tx, outbox, productSellableQuantity };
@@ -1075,7 +1075,7 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
       fulfillmentOrders: [],
       fulfillmentOrderItems: [],
       lineOverrides: { almondDesignId: '5a1d1d1d-0000-4000-8000-000000000001' },
-      v2History: true,
+      afterBoxingHistory: true,
     });
 
     await service.cancel(salesOrderId, { lines: [{ salesOrderLineId, quantity: 1 }], reasonCode: 'CUSTOMER_REQUEST' });

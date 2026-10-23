@@ -125,7 +125,7 @@ type PriorCancellationContext = {
   remainingByLine: Map<string, number>;
   preservedShippedByFulfillmentItem: Map<string, number>;
 };
-type V2OutstandingPlan = {
+type AfterBoxingPlan = {
   salesOrderLines: Array<typeof wmsTables.salesOrderLines.$inferSelect>;
   salesLineById: Map<string, typeof wmsTables.salesOrderLines.$inferSelect>;
   fulfillmentItems: Array<{
@@ -1657,7 +1657,7 @@ export class SalesOrdersService {
     options: CancelSalesOrderOptions,
     isFullCancel: boolean,
     tx: DbTx,
-  ): Promise<V2OutstandingPlan> {
+  ): Promise<AfterBoxingPlan> {
     if (!isFullCancel) await this.assertNoFullCancellation(salesOrderId, tx);
     const salesOrderLines = await tx
       .select()
@@ -1828,8 +1828,12 @@ export class SalesOrdersService {
       if (existing) return this.getOne(salesOrderId, tx);
     }
 
-    const { fulfillmentItems, requestedSalesLines, salesLineById, cancellationByShipment } =
-      await this.planAfterBoxing(salesOrderId, options, isFullCancel, tx);
+    const { fulfillmentItems, requestedSalesLines, salesLineById, cancellationByShipment } = await this.planAfterBoxing(
+      salesOrderId,
+      options,
+      isFullCancel,
+      tx,
+    );
 
     const reason = options.reasonDetail?.trim() || options.reasonCode?.trim() || 'Sales order cancellation';
     const sourceKey =
@@ -1914,7 +1918,7 @@ export class SalesOrdersService {
       effects: operationEffects,
       metadata: {
         ...(options.metadata ?? {}),
-        fulfillmentCommandSourceKey: this.explicitV2CancellationSourceKey(options),
+        fulfillmentCommandSourceKey: this.explicitAfterBoxingSourceKey(options),
         fulfillmentCommandRequestHash: this.afterBoxingRequestHash(salesOrderId, options),
       },
       occurredAt,
@@ -1957,7 +1961,7 @@ export class SalesOrdersService {
     return this.getOne(salesOrderId, tx);
   }
 
-  private explicitV2CancellationSourceKey(options: CancelSalesOrderOptions): string | undefined {
+  private explicitAfterBoxingSourceKey(options: CancelSalesOrderOptions): string | undefined {
     const idempotencyKey = options.fulfillmentCommandContext?.idempotencyKey?.trim();
     if (idempotencyKey) return idempotencyKey;
     return typeof options.metadata?.sourceEventId === 'string' && options.metadata.sourceEventId.trim()
@@ -1984,7 +1988,7 @@ export class SalesOrdersService {
     options: CancelSalesOrderOptions,
     tx: DbTx,
   ): Promise<{ requestHash: string } | undefined> {
-    const sourceKey = this.explicitV2CancellationSourceKey(options);
+    const sourceKey = this.explicitAfterBoxingSourceKey(options);
     if (!sourceKey) return undefined;
     const rows = await tx
       .select({ metadata: wmsTables.salesOrderCancellations.metadata })

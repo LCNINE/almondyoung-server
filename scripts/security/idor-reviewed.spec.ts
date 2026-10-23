@@ -340,8 +340,8 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   'membership GET /me/arrears': {
     verdict: 'SAFE',
     evidence: 'apps/membership/src/services/arrears/arrears.reader.ts:72',
-    predicate: 'and(eq(schema.membershipArrears.userId, userId), eq(schema.membershipArrears.status, \'OUTSTANDING\'))',
-    note: '조회 대상 식별자를 경로·쿼리·본문 어디서도 받지 않는다. 컨트롤러가 @User(\'userId\')(me-arrears.controller.ts:23)로 JWT 에서만 userId 를 얻어 ArrearsRepaymentService.getMine 에 넘기고, 그 아래 두 조회(findOutstandingByUserId: arrears.reader.ts:72, outstandingSummary: arrears.reader.ts:105)가 모두 userId 로 좁힌다. 같은 원장의 관리자 조회는 /admin/arrears/:userId 로 분리돼 있고 MembershipAdminAuth 가 걸려 있다.',
+    predicate: "and(eq(schema.membershipArrears.userId, userId), eq(schema.membershipArrears.status, 'OUTSTANDING'))",
+    note: "조회 대상 식별자를 경로·쿼리·본문 어디서도 받지 않는다. 컨트롤러가 @User('userId')(me-arrears.controller.ts:23)로 JWT 에서만 userId 를 얻어 ArrearsRepaymentService.getMine 에 넘기고, 그 아래 두 조회(findOutstandingByUserId: arrears.reader.ts:72, outstandingSummary: arrears.reader.ts:105)가 모두 userId 로 좁힌다. 같은 원장의 관리자 조회는 /admin/arrears/:userId 로 분리돼 있고 MembershipAdminAuth 가 걸려 있다.",
   },
   'membership POST /me/arrears/checkout': {
     verdict: 'SAFE',
@@ -359,7 +359,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     verdict: 'N/A',
     evidence: 'apps/membership/src/services/terms/terms-agreement.manager.ts:55',
     predicate: '',
-    note: '순수 생성 라우트: 호출자 JWT userId(@User(\'userId\'), me-terms-agreement.controller.ts)로 새 동의 행을 insert 할 뿐이다. 바디는 termsVersion·billingMode·planId 인데 planId 는 공유 플랜 설정을 가리키지 사용자별 객체가 아니고, userId 는 받지 않는다. 기존 타인 소유 행으로 해석되는 id 가 없다.',
+    note: "순수 생성 라우트: 호출자 JWT userId(@User('userId'), me-terms-agreement.controller.ts)로 새 동의 행을 insert 할 뿐이다. 바디는 termsVersion·billingMode·planId 인데 planId 는 공유 플랜 설정을 가리키지 사용자별 객체가 아니고, userId 는 받지 않는다. 기존 타인 소유 행으로 해석되는 id 가 없다.",
   },
   'membership GET /membership/benefits/current': {
     verdict: 'SAFE',
@@ -579,7 +579,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   'search POST /search/products/internal/sales-counts': {
     verdict: 'N/A',
     evidence: 'apps/search/src/internal-sales.controller.ts:40',
-    predicate: "authorization !== `Bearer ${this.internalKey}`",
+    predicate: 'authorization !== `Bearer ${this.internalKey}`',
     note: '서비스 간 내부 라우트 — Medusa 가 누적 판매 수량을 검색 색인에 밀어 넣는다. 사용자 토큰이 아니라 공유 시크릿(SEARCH_INTERNAL_KEY)으로 막으며(internal-sales.controller.ts:40-45), 키가 비어 있으면 라우트를 아예 잠근다(:40-42, fail-closed). 바디의 masterId 는 상품 마스터 ID 로 사용자 소유 리소스가 아니고 쓰기 대상(색인의 sales_count)도 전역 카탈로그 데이터라 소유권 개념이 없어 IDOR 대상 아님. 키가 새면 임의 상품의 판매량을 조작해 검색 랭킹을 흔들 수 있으므로(관련도 동점 구간 한정) 시크릿 취급은 결제 키에 준한다.',
   },
   'search GET /search/products/suggestions': {
@@ -610,7 +610,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     verdict: 'SAFE',
     evidence: 'apps/ugc-service/src/shop-listings/shop-listing.reader.ts:89',
     predicate: 'eq(shopListings.authorUserId, userId)',
-    note: 'findOwned — SELECT WHERE 에 작성자 조건. userId 는 @User(\'userId\') 토큰값.',
+    note: "findOwned — SELECT WHERE 에 작성자 조건. userId 는 @User('userId') 토큰값.",
   },
   'ugc-service GET /shop-listings/mine': {
     verdict: 'SAFE',
@@ -627,7 +627,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     verdict: 'N/A',
     evidence: 'apps/ugc-service/src/shop-listings/controllers/member-shop-listings.controller.ts:19',
     predicate: '',
-    note: '생성 — 대상 id 가 없다. 작성자는 토큰(@User(\'userId\'))에서만 오고 DTO 에 작성자 필드가 없다.',
+    note: "생성 — 대상 id 가 없다. 작성자는 토큰(@User('userId'))에서만 오고 DTO 에 작성자 필드가 없다.",
   },
   'ugc-service POST /shop-listings/:id/close': {
     verdict: 'SAFE',
@@ -692,25 +692,25 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     verdict: 'SAFE',
     evidence: 'apps/ugc-service/src/logo-contest/services/logo-contest.service.ts:130',
     predicate: '.where(and(eq(logoContestEntries.userId, userId), isNull(logoContestEntries.deletedAt)));',
-    note: "내 출품작과 내 표만 돌려준다. userId 는 토큰값이고 이 라우트는 쿼리 파라미터를 받지 않는다.",
+    note: '내 출품작과 내 표만 돌려준다. userId 는 토큰값이고 이 라우트는 쿼리 파라미터를 받지 않는다.',
   },
   'ugc-service POST /logo-contest/entries': {
     verdict: 'SAFE',
     evidence: 'apps/ugc-service/src/logo-contest/clients/file-owner.client.ts:38',
     predicate: 'if (file.uploadedBy !== userId) {',
-    note: "생성 라우트라 대상 객체는 없지만(userId 는 토큰값, CreateLogoContestEntryDto 에 userId 필드 없음) 바디의 mediaFileIds 가 남의 fileId 일 수 있어 file-service 내부 조회로 업로더와 컨텍스트를 확인한다 — 리뷰의 normalizeMediaFileIds 는 개수·중복만 봐서 이 구멍이 열려 있다.",
+    note: '생성 라우트라 대상 객체는 없지만(userId 는 토큰값, CreateLogoContestEntryDto 에 userId 필드 없음) 바디의 mediaFileIds 가 남의 fileId 일 수 있어 file-service 내부 조회로 업로더와 컨텍스트를 확인한다 — 리뷰의 normalizeMediaFileIds 는 개수·중복만 봐서 이 구멍이 열려 있다.',
   },
   'ugc-service DELETE /logo-contest/entries/:id/vote': {
     verdict: 'SAFE',
     evidence: 'apps/ugc-service/src/logo-contest/services/logo-contest.service.ts:256',
     predicate: '.where(and(eq(logoContestVotes.userId, userId), eq(logoContestVotes.entryId, entryId)));',
-    note: "지우는 것은 내 표뿐이다. userId 는 토큰값이라 경로의 id 로 남의 표를 지울 수 없고, 그 출품작에 내 표가 없으면 아무 행도 지워지지 않는다.",
+    note: '지우는 것은 내 표뿐이다. userId 는 토큰값이라 경로의 id 로 남의 표를 지울 수 없고, 그 출품작에 내 표가 없으면 아무 행도 지워지지 않는다.',
   },
   'ugc-service POST /logo-contest/entries/:id/vote': {
     verdict: 'N/A',
     evidence: 'apps/ugc-service/src/logo-contest/services/logo-contest.service.ts:234',
     predicate: '',
-    note: "남의 출품작에 투표하는 것이 이 라우트의 목적이라 대상 객체의 소유권 검사가 성립하지 않는다. 투표자는 토큰 userId 로만 기록되고(바디 없음) 자기 작품 투표는 400, 한 사람 한 표라 다른 작품을 누르면 votes.userId 충돌로 표가 옮겨진다.",
+    note: '남의 출품작에 투표하는 것이 이 라우트의 목적이라 대상 객체의 소유권 검사가 성립하지 않는다. 투표자는 토큰 userId 로만 기록되고(바디 없음) 자기 작품 투표는 400, 한 사람 한 표라 다른 작품을 누르면 votes.userId 충돌로 표가 옮겨진다.',
   },
   'ugc-service GET /almond-designs/:id': {
     verdict: 'SAFE',
@@ -752,7 +752,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     verdict: 'SAFE',
     evidence: 'apps/ugc-service/src/almond-template/services/almond-saved-design.manager.ts:36',
     predicate: 'and(eq(almondSavedDesigns.id, id), eq(almondSavedDesigns.userId, userId))',
-    note: "id 가 있으면 UPDATE WHERE 에 소유자 조건(남의 id 는 0행 → 404). 없으면 새로 만들고 userId 는 토큰값으로만 채운다.",
+    note: 'id 가 있으면 UPDATE WHERE 에 소유자 조건(남의 id 는 0행 → 404). 없으면 새로 만들고 userId 는 토큰값으로만 채운다.',
   },
   'ugc-service PATCH /qna/questions/:id': {
     verdict: 'SAFE',
@@ -763,7 +763,8 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   'ugc-service PATCH /reviews/:id': {
     verdict: 'SAFE',
     evidence: 'apps/ugc-service/src/reviews/services/reviews.service.ts:649',
-    predicate: '.where(and(eq(reviews.id, id), eq(reviews.userId, userId), eq(reviews.sourceSystem, OWN_SOURCE_SYSTEM)))',
+    predicate:
+      '.where(and(eq(reviews.id, id), eq(reviews.userId, userId), eq(reviews.sourceSystem, OWN_SOURCE_SYSTEM)))',
     note: '표본으로 제시된 확인 항목.',
   },
   'ugc-service POST /qna/questions': {
@@ -976,7 +977,8 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   'user-service PUT /beautytop/shops/my-shop': {
     verdict: 'SAFE',
     evidence: 'apps/user-service/src/api/beautytop-shops/beautytop-shops.service.ts:52',
-    predicate: ".where(and(eq(schema.beautytopSavedShops.userId, userId), eq(schema.beautytopSavedShops.role, 'MY_SHOP')));",
+    predicate:
+      ".where(and(eq(schema.beautytopSavedShops.userId, userId), eq(schema.beautytopSavedShops.role, 'MY_SHOP')));",
     note: '대상 사용자는 @CurrentUser 의 id 하나다. 지우기·넣기 모두 그 userId 로만 좁혀지고(넣기는 53행 values(userId, …)), 본문은 샵 정보만 받는다.',
   },
   'user-service POST /beautytop/shops/watch': {

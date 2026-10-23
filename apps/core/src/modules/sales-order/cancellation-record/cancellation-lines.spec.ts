@@ -125,7 +125,7 @@ describe('deriveCancellationLines', () => {
     ).toThrow(CancellationLineDerivationError);
   });
 
-  it('v1 full cancels every remainder', () => {
+  it('상자 전 전체 cancels every remainder', () => {
     expect(
       deriveCancellationLines({
         scope: 'full',
@@ -140,7 +140,7 @@ describe('deriveCancellationLines', () => {
     ]);
   });
 
-  it('v2 full uses requestedLines and adds digital remainder', () => {
+  it('상자 후 전체 uses requestedLines and adds digital remainder', () => {
     expect(
       deriveCancellationLines({
         scope: 'full',

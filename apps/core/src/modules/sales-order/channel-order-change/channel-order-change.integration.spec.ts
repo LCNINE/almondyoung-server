@@ -382,12 +382,6 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
         almondDesignId: randomUUID(),
         status: 'pending',
       });
-      const cancellationRows = () =>
-        tx
-          .select({ id: wmsTables.salesOrderCancellations.id })
-          .from(wmsTables.salesOrderCancellations)
-          .where(eq(wmsTables.salesOrderCancellations.salesOrderId, seed.salesOrderId));
-      const before = (await cancellationRows()).length;
       const p = payload(seed, {});
       p.snapshot.lines[0].quantity = 1;
       await w.manager.handle(seed.salesOrderId, p, `m-${randomUUID()}`, tx);
@@ -397,8 +391,7 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
           blockers: [{ code: 'CANCEL_NOT_IMMEDIATE', detail: 'print order on this line — decide on WowPress' }],
         }),
       ]);
-      // 커널의 거절은 savepoint 를 되돌린다 — 취소 기록이 한 줄도 남지 않는다
-      expect((await cancellationRows()).length).toBe(before);
+      // 인쇄 줄은 쓰기 전에 거절한다 — savepoint 되돌림은 아래 출고분 거절 케이스가 증명한다
       // 아무것도 취소되지 않았다 — 문은 모든 라인을 canceled 0 으로 낸다(빈 맵이 아니다)
       expect([...(await readLineQuantities(tx, seed.salesOrderId)).values()].map((line) => line.canceled)).toEqual([
         0, 0,
@@ -716,7 +709,7 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
     });
   });
 
-  it('effective quantity after a v2 full cancellation is zero', async () => {
+  it('effective quantity after an after-boxing full cancellation is zero', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
       const o = await seedCancellableOrder(tx, w, 2);
