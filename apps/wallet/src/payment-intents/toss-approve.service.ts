@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq } from 'drizzle-orm';
-import { WalletSchema, paymentIntents } from '../schema';
+import { WalletSchema, charges, paymentIntents } from '../schema';
 import { Charge, PaymentIntent } from '../types';
 import { ChargesService } from '../charges/charges.service';
 import { AutoCaptureService } from './auto-capture.service';
@@ -145,10 +145,39 @@ export class TossApproveService {
     } catch (error) {
       // 승인을 기다리는 사이 만료·취소로 intent 가 넘어가 전이가 거부된 경우 등. 발급된 계좌만 열린 채
       // 남지 않게 닫는다.
-      await this.closeVirtualAccount(charge, payment.paymentKey);
+      if (!(await this.closeVirtualAccount(charge, payment.paymentKey))) {
+        await this.keepOpenAccountRecoverable(charge, userId, va, payment.paymentKey);
+      }
       throw error;
     }
     this.logger.log(`virtual account issued via widget: intentId=${intent.id} chargeId=${charge.id}`);
+  }
+
+  /**
+   * 닫지 못한 계좌의 결제 키와 무통장 분류를 charge 에 남긴다. 상태는 건드리지 않는다(동시 취소를 되돌리지 않게).
+   * 이게 없으면 트랜잭션 롤백으로 결제 키가 사라져, 이후 정리가 TOSS 결제창 대기로 보고 계좌 폐쇄 없이 취소한다.
+   */
+  private async keepOpenAccountRecoverable(
+    charge: Charge,
+    userId: string,
+    va: TossVirtualAccount,
+    paymentKey: string,
+  ): Promise<void> {
+    const [bankMethod] = await this.bankTransferProvider.getUserMethods(userId);
+    await this.dbService.db
+      .update(charges)
+      .set({
+        paymentMethodId: bankMethod.id,
+        providerTransactionId: paymentKey,
+        responsePayload: {
+          ...(charge.responsePayload ?? {}),
+          paymentKey,
+          virtualAccount: va,
+          virtualAccountLeftOpenAt: new Date().toISOString(),
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(charges.id, charge.id));
   }
 
   private async recordAwaitingDeposit(
@@ -230,7 +259,7 @@ export class TossApproveService {
         .set({
           paymentMethodId: bankMethod.id,
           actionExpiresAt: null,
-          expiresAt: new Date(Date.now() + depositWindowHours() * 60 * 60_000),
+          expiresAt: depositDeadline(va.dueDate),
         })
         .where(eq(paymentIntents.id, intent.id));
     });
@@ -484,4 +513,10 @@ export class TossApproveService {
 
     return intent;
   }
+}
+
+/** 위젯 가상계좌 기한은 토스 상점 설정을 따른다 — 고객이 안내받은 dueDate 로 만료하고, 없을 때만 우리 윈도우를 쓴다. */
+function depositDeadline(dueDate: string | null | undefined): Date {
+  const due = dueDate ? new Date(dueDate) : null;
+  return due && !Number.isNaN(due.getTime()) ? due : new Date(Date.now() + depositWindowHours() * 60 * 60_000);
 }

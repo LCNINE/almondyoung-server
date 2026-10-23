@@ -48,7 +48,7 @@ export async function GET(
   // 검증된 상대 경로를 그대로 사용해 로그인한 브라우저의 실제 접속 호스트를 유지한다.
   const target = result.redirectTo
   return new NextResponse(
-    `<!doctype html><meta charset="utf-8"><script>location.replace(${JSON.stringify(target)})</script>`,
+    `<!doctype html><meta charset="utf-8"><script>location.replace(${JSON.stringify(target).replace(/</g, "\\u003c")})</script>`,
     { status: 200, headers: { "content-type": "text/html; charset=utf-8" } },
   )
 }
