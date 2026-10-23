@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { and, eq, sql as drizzleSql } from 'drizzle-orm';
 import { BadRequestError } from '@app/shared';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
+import { PRINT_HELD_FOR_CANCEL_UNTIL } from '../../print-order/services/print-order.repository';
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
 import { readLineQuantities } from '../line-quantities/line-quantities.reader';
 import { CHANNEL_CANCEL_REQUEST_REASON } from './channel-cancel-request.types';
@@ -39,6 +40,20 @@ async function cancellationsOf(tx: DbTx, salesOrderId: string) {
     .select()
     .from(wmsTables.salesOrderCancellations)
     .where(eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId));
+}
+
+/** 안 보낸 인쇄 — 주문권을 쓰지 않았고(orderAttemptedAt 없음) 와우프레스 주문번호도 없다 */
+async function seedUnsentPrint(tx: DbTx, salesOrderId: string, salesOrderLineId: string): Promise<string> {
+  const [row] = await tx
+    .insert(wmsTables.printOrders)
+    .values({ salesOrderId, salesOrderLineId, almondDesignId: randomUUID(), status: 'pending' })
+    .returning({ id: wmsTables.printOrders.id });
+  return row.id;
+}
+
+async function printOf(tx: DbTx, printOrderId: string) {
+  const [row] = await tx.select().from(wmsTables.printOrders).where(eq(wmsTables.printOrders.id, printOrderId));
+  return row;
 }
 
 describeIfDb('채널 취소 요청 (DB integration, rollback-only)', () => {
@@ -461,6 +476,57 @@ describeIfDb('채널 취소 요청 (DB integration, rollback-only)', () => {
       await expect(
         w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' }, tx),
       ).rejects.toThrow('이미 취소된 주문입니다.');
+    });
+  });
+
+  // 커널은 자기 트랜잭션을 연다 — 배선이 그것을 스펙 트랜잭션의 savepoint 로 열어(savepointDbService) 안에서 던지면 함께 되돌려진다
+  it('무통장 승인 — 확정과 안 보낸 인쇄 붙잡기가 한 트랜잭션, 커밋 뒤 record 가 인쇄를 멈춘다 (D6)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancelRequest(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: true });
+      const printId = await seedUnsentPrint(tx, seed.salesOrderId, seed.lineIds[0]);
+      const intentId = randomUUID();
+
+      const view = await w.cancellation.noticeWalletRefundApproval({
+        salesOrderId: seed.salesOrderId,
+        intentId,
+        reasonCode: 'CUSTOMER_REFUND_REQUEST',
+      });
+
+      expect(view).toMatchObject({ status: 'settling', scope: 'full' });
+      const row = await w.reader.findBySourceKey(seed.salesOrderId, `wallet-refund-approval:${intentId}`, tx);
+      expect(row).toMatchObject({ id: view.id, status: 'settling' });
+      expect((await w.salesOrders.getOne(seed.salesOrderId, tx))?.status).toBe('cancelled');
+      // 붙잡힌 안 보낸 행(pending) 을 record 가 와우프레스를 부르지 않고 로컬에서 끝낸다
+      expect((await printOf(tx, printId)).status).toBe('cancelled');
+    });
+  });
+
+  it('무통장 승인 — 확정이 거절되면 붙잡기도 롤백되고 record 는 없다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancelRequest(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: true });
+      const printId = await seedUnsentPrint(tx, seed.salesOrderId, seed.lineIds[0]);
+      await tx
+        .update(wmsTables.salesOrders)
+        .set({ status: 'timeout' })
+        .where(eq(wmsTables.salesOrders.id, seed.salesOrderId));
+      const before = await printOf(tx, printId);
+
+      await expect(
+        w.cancellation.noticeWalletRefundApproval({
+          salesOrderId: seed.salesOrderId,
+          intentId: randomUUID(),
+          reasonCode: 'CUSTOMER_REFUND_REQUEST',
+        }),
+      ).rejects.toThrow('타임아웃된 주문은 취소할 수 없습니다.');
+
+      const after = await printOf(tx, printId);
+      expect(after.status).toBe('pending');
+      expect(after.nextAttemptAt.toISOString()).not.toBe(PRINT_HELD_FOR_CANCEL_UNTIL.toISOString());
+      expect(after.nextAttemptAt.toISOString()).toBe(before.nextAttemptAt.toISOString());
+      expect((await w.salesOrders.getOne(seed.salesOrderId, tx))?.status).toBe('timeout');
+      expect(await requestsOf(tx, seed.salesOrderId)).toHaveLength(0);
     });
   });
 });
