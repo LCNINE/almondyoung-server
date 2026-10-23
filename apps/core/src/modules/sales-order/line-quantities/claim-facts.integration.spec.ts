@@ -280,8 +280,8 @@ describeIfDb('readLineQuantities — SKU 층 청구 사실 (K6 PR3a)', () => {
         composition: [{ skuId: w.skuId, qtyPerUnit: 2 }],
         parcels: [{ qtyBySku: { [w.skuId]: 4 } }],
       });
-      // R1 — 취소 엔진은 V2 상자가 있는 주문에서 남은 수량만 취소한다(다 나간 라인의 부분취소는 거절한다). 수량 문의
-      // 산술을 고정하는 스펙이라 엔진이 V1 사후취소에서 남기는 모양(보존 효과 + cancelledLines)을 쓰기 문에 직접 넘긴다.
+      // R1 — 취소 엔진은 상자 후(상자가 있는) 주문에서 남은 수량만 취소한다(다 나간 라인의 부분취소는 거절한다). 수량 문의
+      // 산술을 고정하는 스펙이라 엔진이 상자 전 사후취소에서 남기는 모양(보존 효과 + cancelledLines)을 쓰기 문에 직접 넘긴다.
       // 엔진 호출은 savepoint 안에서 — 거절이 SQL 오류로 나도 바깥 롤백 트랜잭션이 깨지지 않게. drizzle 의 중첩 트랜잭션
       // 타입은 DbTx 와 이름만 다른 같은 모양이라 record-cancellation.integration.spec.ts 와 같은 이중 캐스트를 쓴다.
       await expect(
@@ -495,7 +495,7 @@ describeIfDb('readParcelClaimEligibility — 소포 단위 청구 자격 (K6 PR3
         status: 'completed',
         items: [item(first, 2)],
       });
-      // R1 — 다 나간 라인의 부분취소는 엔진이 거절한다. 엔진이 V1 사후취소에서 남기는 모양을 쓰기 문에 직접 넘긴다
+      // R1 — 다 나간 라인의 부분취소는 엔진이 거절한다. 엔진이 상자 전 사후취소에서 남기는 모양을 쓰기 문에 직접 넘긴다
       await recordSalesOrderCancellation(
         tx,
         {

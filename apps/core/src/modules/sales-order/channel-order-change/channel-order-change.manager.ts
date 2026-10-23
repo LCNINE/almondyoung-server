@@ -114,7 +114,7 @@ export class ChannelOrderChangeManager {
       // 거절이 되돌리는 savepoint 밖에서 아직 안 보낸 인쇄를 먼저 붙잡는다
       await this.holdUnsentPrint(delta.salesOrderLineId, tx);
       if (ctx.allRemoved) return { ...delta, outcome: 'pending', blockers: [{ code: 'ALL_LINES_REMOVED' }] };
-      // V1 cancelPartial 은 판매주문 status 를 보지 않는다 — 시도하면 이미 나간 수량을 «안 나간 몫» 으로 줄이고
+      // cancelBeforeBoxingPartial 은 판매주문 status 를 보지 않는다 — 시도하면 이미 나간 수량을 «안 나간 몫» 으로 줄이고
       // awaiting_matching 백로그를 pending 으로 되돌려 매칭을 다시 시도시킨다.
       if (markedShipped) {
         return {

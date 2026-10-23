@@ -34,7 +34,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import { lineMatchingBadgeResolvedSql } from '../../product-matching/line-composition/line-resolved.sql';
 import { isDigitalFulfillmentLine, isOutsourcedLine } from '../../product-matching/line-composition/line-composition';
 import { selectFrozenCompositions } from '../../product-matching/line-composition/frozen-compositions';
-import { physicalCancellationByItem } from './v2-cancellation-units';
+import { physicalCancellationByItem } from './boxed-cancellation-units';
 import { lineSkuQuantitiesSql } from '../line-quantities/line-quantities.sql';
 import { LineQuantities, readLineQuantities } from '../line-quantities/line-quantities.reader';
 import { cancellableSalesUnits } from '../line-quantities/line-sales-units';
@@ -167,7 +167,7 @@ const CONTRACT_PATCH_FIELDS: SalesOrderContractField[] = [
   'items',
   'lines',
 ];
-// 취소 거절 문구 — `cancel`·`cancelPartial` 과 `planCancellation`(요청 때 판정)이 같은 문구를 쓰게 한 곳에 둔다.
+// 취소 거절 문구 — `cancel`·`cancelBeforeBoxingPartial` 과 `planCancellation`(요청 때 판정)이 같은 문구를 쓰게 한 곳에 둔다.
 const CANCEL_MSG_ALREADY_CANCELLED = '이미 전체 취소된 주문입니다.';
 const CANCEL_MSG_FULL_CANCELLATION_EXISTS = '이미 전체 취소 처리된 주문입니다.';
 const CANCEL_MSG_SHIPPED_FULFILLMENT =
@@ -178,7 +178,7 @@ const cancelQuantityExceedsMessage = (requested: number, remaining: number) =>
   `취소 수량(${requested}개)이 취소 가능 수량(${remaining}개)을 초과합니다.`;
 const SALES_ORDER_REF_TYPE = 'sales_order';
 
-/** 주문의 어느 라인·SKU 든 출고 수량이 있다 — V1 전체취소의 «출고 수량이 있는 항목» 거절(라인 수량 문의 `skus`). */
+/** 주문의 어느 라인·SKU 든 출고 수량이 있다 — 상자 전 전체취소의 «출고 수량이 있는 항목» 거절(라인 수량 문의 `skus`). */
 function hasShippedSku(lineQuantities: Map<string, LineQuantities>): boolean {
   return [...lineQuantities.values()].some((line) => line.skus.some((sku) => sku.shipped > 0));
 }
@@ -511,9 +511,9 @@ export class SalesOrdersService {
       }
 
       const isFullCancel = !this.hasPartialCancellationLines(options);
-      const replay = await this.findV2CancellationReplay(id, options, trx);
+      const replay = await this.findAfterBoxingReplay(id, options, trx);
       if (replay) {
-        if (replay.requestHash !== this.v2CancellationRequestHash(id, options)) {
+        if (replay.requestHash !== this.afterBoxingRequestHash(id, options)) {
           throw new ConflictException({
             code: 'FULFILLMENT_IDEMPOTENCY_MISMATCH',
             message: 'Idempotency key was already used with a different cancellation request',
@@ -521,8 +521,8 @@ export class SalesOrdersService {
         }
         return this.getOne(id, trx);
       }
-      if (await this.hasV2FulfillmentHistory(id, trx)) {
-        return this.cancelV2Outstanding(id, salesOrder, options, isFullCancel, trx);
+      if (await this.hasBoxedFulfillment(id, trx)) {
+        return this.cancelAfterBoxing(id, salesOrder, options, isFullCancel, trx);
       }
       if (isFullCancel && (salesOrder.status === 'shipped' || salesOrder.status === 'delivered')) {
         throw new BadRequestException(
@@ -531,200 +531,10 @@ export class SalesOrdersService {
       }
 
       if (!isFullCancel) {
-        return this.cancelPartial(id, salesOrder, options, trx);
+        return this.cancelBeforeBoxingPartial(id, salesOrder, options, trx);
       }
 
-      const existingCancellation = await trx
-        .select()
-        .from(wmsTables.salesOrderCancellations)
-        .where(
-          and(
-            eq(wmsTables.salesOrderCancellations.salesOrderId, id),
-            eq(wmsTables.salesOrderCancellations.cancellationScope, 'full'),
-          ),
-        )
-        .limit(1)
-        .then((r) => r[0]);
-
-      if (existingCancellation) {
-        this.logger.warn(`Sales order ${id} already has full cancellation ${existingCancellation.id}`);
-        if (salesOrder.status !== 'cancelled') {
-          await trx
-            .update(wmsTables.salesOrders)
-            .set({ status: 'cancelled', updatedAt: new Date() })
-            .where(eq(wmsTables.salesOrders.id, id));
-        }
-        await this.closeOpenFulfillmentBacklogEffects(id, trx);
-        return this.getOne(id, trx);
-      }
-
-      const originalLines = await trx
-        .select()
-        .from(wmsTables.salesOrderLines)
-        .where(eq(wmsTables.salesOrderLines.salesOrderId, id));
-
-      // FO와 FO item을 잠근 뒤 출고 증거 확인 (shipped evidence check와 cancel update를 같은 락 범위에서 처리)
-      await trx.execute(sql`
-        SELECT id FROM ${wmsTables.fulfillmentOrders}
-        WHERE ${wmsTables.fulfillmentOrders.salesOrderId} = ${id}
-        FOR UPDATE
-      `);
-      await trx.execute(sql`
-        SELECT foi.id FROM ${wmsTables.fulfillmentOrderItems} foi
-        JOIN ${wmsTables.fulfillmentOrders} fo ON foi.fulfillment_order_id = fo.id
-        WHERE fo.sales_order_id = ${id}
-        FOR UPDATE
-      `);
-
-      const fulfillmentOrders = await trx
-        .select()
-        .from(wmsTables.fulfillmentOrders)
-        .where(eq(wmsTables.fulfillmentOrders.salesOrderId, id));
-
-      this.logger.log(`Found ${fulfillmentOrders.length} fulfillment orders for SO ${id}`);
-
-      const hasShippedFulfillment = fulfillmentOrders.some(
-        (fo) => fo.status === 'shipped' || fo.status === 'completed' || fo.shippedAt != null,
-      );
-      if (hasShippedFulfillment) {
-        throw new BadRequestException(CANCEL_MSG_SHIPPED_FULFILLMENT);
-      }
-
-      if (hasShippedSku(await readLineQuantities(trx, id))) {
-        throw new BadRequestException(CANCEL_MSG_SHIPPED_ITEMS);
-      }
-
-      const effects: CancellationEffect[] = [];
-      const cancelledFulfillmentOrderIds: string[] = [];
-
-      for (const fo of fulfillmentOrders) {
-        if (!CANCELLABLE_FULFILLMENT_STATUSES.has(fo.status)) continue;
-
-        try {
-          await this.reservationLifecycle.handleFulfillmentOrderStatusChange(fo.id, fo.status, 'canceled', trx);
-        } catch (error) {
-          this.logger.error(`Failed to release reservations for FO ${fo.id}:`, error);
-        }
-
-        await trx
-          .update(wmsTables.fulfillmentOrders)
-          .set({ status: 'canceled', canceledAt: new Date(), updatedAt: new Date() })
-          .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
-
-        cancelledFulfillmentOrderIds.push(fo.id);
-        effects.push({
-          type: 'cancelled_fulfillment_order',
-          targetType: 'fulfillment_order',
-          targetId: fo.id,
-          metadata: { previousStatus: fo.status },
-        });
-        this.logger.log(`Cancelled fulfillment order: ${fo.id}`);
-      }
-
-      const closedBacklog = await this.closeOpenFulfillmentBacklogEffects(id, trx);
-      for (const backlogId of closedBacklog.backlogIds) {
-        effects.push({
-          type: 'closed_fulfillment_creation_backlog',
-          targetType: 'fulfillment_order_creation_backlog',
-          targetId: backlogId,
-        });
-      }
-      if (closedBacklog.closedCount > 0 && closedBacklog.backlogIds.length === 0) {
-        effects.push({
-          type: 'closed_fulfillment_creation_backlog',
-          targetType: 'fulfillment_order_creation_backlog',
-          targetExternalRef: `sales_order:${id}:fulfillment_creation_backlog`,
-          count: closedBacklog.closedCount,
-        });
-      }
-
-      const digitalRevocation = await this.revokeDigitalOwnershipEffects(id, options.reasonCode ?? null, trx);
-      for (const ownershipId of digitalRevocation.ownershipIds) {
-        effects.push({
-          type: 'revoked_digital_ownership',
-          targetType: 'digital_asset_ownership',
-          targetId: ownershipId,
-        });
-      }
-      if (digitalRevocation.revokedCount > 0 && digitalRevocation.ownershipIds.length === 0) {
-        effects.push({
-          type: 'revoked_digital_ownership',
-          targetType: 'digital_asset_ownership',
-          targetExternalRef: `sales_order:${id}:digital_ownerships`,
-          count: digitalRevocation.revokedCount,
-        });
-      }
-      const walletRefundEffect = this.toWalletRefundEffect(options);
-      if (walletRefundEffect) {
-        effects.push(walletRefundEffect);
-      }
-
-      const occurredAt = options.occurredAt ? new Date(options.occurredAt) : new Date();
-      const cancellationValues: SalesOrderCancellationInsert = {
-        salesOrderId: id,
-        cancellationScope: 'full',
-        status: 'applied',
-        reasonCode: options.reasonCode ?? null,
-        reasonDetail: options.reasonDetail ?? null,
-        cancelledBy: options.cancelledBy ?? null,
-        effects,
-        metadata: options.metadata ?? {},
-        occurredAt,
-      };
-      const cancellation = await recordSalesOrderCancellation(trx, cancellationValues, null);
-
-      await trx
-        .update(wmsTables.salesOrders)
-        .set({ status: 'cancelled', updatedAt: new Date() })
-        .where(eq(wmsTables.salesOrders.id, id));
-
-      await this.linkCancellationEffects(id, cancellation.id, 'full', effects, occurredAt, trx);
-
-      const updated = await this.getOne(id, trx);
-
-      await this.coreOrders.enqueue(
-        {
-          idempotencyKey: `so-cancelled:${cancellation.id}`,
-          eventType: 'SalesOrderCancelled',
-          aggregateId: id,
-          partitionKey: id,
-          payload: {
-            orderId: id,
-            channelOrderId: salesOrder.channelOrderId ?? undefined,
-            reason: toCancelReason(options.reasonCode),
-            reasonDetail: options.reasonDetail ?? undefined,
-            cancelledBy: options.cancelledBy ?? 'system',
-            cancelledAt: occurredAt.toISOString(),
-            cancellationScope: 'full',
-            refundRequired: !!(salesOrder.walletIntentId && (salesOrder.totalAmount ?? 0) > 0),
-            refundAmount: options.walletRefund?.amount,
-          } satisfies SalesOrderCancelledPayload,
-        },
-        trx,
-      );
-
-      await this.audit?.logResourceChange(
-        'ORDER_CANCELLED',
-        'cancel',
-        'order',
-        'salesOrder',
-        id,
-        `Sales Order ${salesOrder.channelOrderId || id}`,
-        { status: salesOrder.status },
-        {
-          status: 'cancelled',
-          orderCancellationId: cancellation.id,
-          originalLineCount: originalLines.length,
-          effectTypes: effects.map((effect) => effect.type),
-        },
-        undefined,
-        trx,
-      );
-
-      this.logger.log(
-        `Successfully cancelled sales order ${id} and ${cancelledFulfillmentOrderIds.length} fulfillment orders`,
-      );
-      return updated;
+      return this.cancelBeforeBoxingFull(id, salesOrder, options, trx);
     }, explicitTx);
   }
 
@@ -751,7 +561,7 @@ export class SalesOrdersService {
       });
       if (!replay) return false;
       const metadata = (replay.metadata ?? {}) as Record<string, unknown>;
-      const requestHash = this.v2CancellationRequestHash(salesOrderId, {
+      const requestHash = this.afterBoxingRequestHash(salesOrderId, {
         reasonCode: request.reasonCode,
         reasonDetail: request.reasonDetail,
         lines: request.lines,
@@ -1385,7 +1195,207 @@ export class SalesOrdersService {
     return Array.isArray(options.lines) && options.lines.length > 0;
   }
 
-  private async cancelPartial(
+  /** 상자 전 전체취소 — 상자 이력이 없는 주문을 통째로 취소한다. 출고 증거가 있으면 거절한다. */
+  private async cancelBeforeBoxingFull(
+    id: string,
+    salesOrder: typeof wmsTables.salesOrders.$inferSelect,
+    options: CancelSalesOrderOptions,
+    trx: DbTx,
+  ) {
+    const existingCancellation = await trx
+      .select()
+      .from(wmsTables.salesOrderCancellations)
+      .where(
+        and(
+          eq(wmsTables.salesOrderCancellations.salesOrderId, id),
+          eq(wmsTables.salesOrderCancellations.cancellationScope, 'full'),
+        ),
+      )
+      .limit(1)
+      .then((r) => r[0]);
+
+    if (existingCancellation) {
+      this.logger.warn(`Sales order ${id} already has full cancellation ${existingCancellation.id}`);
+      if (salesOrder.status !== 'cancelled') {
+        await trx
+          .update(wmsTables.salesOrders)
+          .set({ status: 'cancelled', updatedAt: new Date() })
+          .where(eq(wmsTables.salesOrders.id, id));
+      }
+      await this.closeOpenFulfillmentBacklogEffects(id, trx);
+      return this.getOne(id, trx);
+    }
+
+    const originalLines = await trx
+      .select()
+      .from(wmsTables.salesOrderLines)
+      .where(eq(wmsTables.salesOrderLines.salesOrderId, id));
+
+    // FO와 FO item을 잠근 뒤 출고 증거 확인 (shipped evidence check와 cancel update를 같은 락 범위에서 처리)
+    await trx.execute(sql`
+      SELECT id FROM ${wmsTables.fulfillmentOrders}
+      WHERE ${wmsTables.fulfillmentOrders.salesOrderId} = ${id}
+      FOR UPDATE
+    `);
+    await trx.execute(sql`
+      SELECT foi.id FROM ${wmsTables.fulfillmentOrderItems} foi
+      JOIN ${wmsTables.fulfillmentOrders} fo ON foi.fulfillment_order_id = fo.id
+      WHERE fo.sales_order_id = ${id}
+      FOR UPDATE
+    `);
+
+    const fulfillmentOrders = await trx
+      .select()
+      .from(wmsTables.fulfillmentOrders)
+      .where(eq(wmsTables.fulfillmentOrders.salesOrderId, id));
+
+    this.logger.log(`Found ${fulfillmentOrders.length} fulfillment orders for SO ${id}`);
+
+    const hasShippedFulfillment = fulfillmentOrders.some(
+      (fo) => fo.status === 'shipped' || fo.status === 'completed' || fo.shippedAt != null,
+    );
+    if (hasShippedFulfillment) {
+      throw new BadRequestException(CANCEL_MSG_SHIPPED_FULFILLMENT);
+    }
+
+    if (hasShippedSku(await readLineQuantities(trx, id))) {
+      throw new BadRequestException(CANCEL_MSG_SHIPPED_ITEMS);
+    }
+
+    const effects: CancellationEffect[] = [];
+    const cancelledFulfillmentOrderIds: string[] = [];
+
+    for (const fo of fulfillmentOrders) {
+      if (!CANCELLABLE_FULFILLMENT_STATUSES.has(fo.status)) continue;
+
+      try {
+        await this.reservationLifecycle.handleFulfillmentOrderStatusChange(fo.id, fo.status, 'canceled', trx);
+      } catch (error) {
+        this.logger.error(`Failed to release reservations for FO ${fo.id}:`, error);
+      }
+
+      await trx
+        .update(wmsTables.fulfillmentOrders)
+        .set({ status: 'canceled', canceledAt: new Date(), updatedAt: new Date() })
+        .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
+
+      cancelledFulfillmentOrderIds.push(fo.id);
+      effects.push({
+        type: 'cancelled_fulfillment_order',
+        targetType: 'fulfillment_order',
+        targetId: fo.id,
+        metadata: { previousStatus: fo.status },
+      });
+      this.logger.log(`Cancelled fulfillment order: ${fo.id}`);
+    }
+
+    const closedBacklog = await this.closeOpenFulfillmentBacklogEffects(id, trx);
+    for (const backlogId of closedBacklog.backlogIds) {
+      effects.push({
+        type: 'closed_fulfillment_creation_backlog',
+        targetType: 'fulfillment_order_creation_backlog',
+        targetId: backlogId,
+      });
+    }
+    if (closedBacklog.closedCount > 0 && closedBacklog.backlogIds.length === 0) {
+      effects.push({
+        type: 'closed_fulfillment_creation_backlog',
+        targetType: 'fulfillment_order_creation_backlog',
+        targetExternalRef: `sales_order:${id}:fulfillment_creation_backlog`,
+        count: closedBacklog.closedCount,
+      });
+    }
+
+    const digitalRevocation = await this.revokeDigitalOwnershipEffects(id, options.reasonCode ?? null, trx);
+    for (const ownershipId of digitalRevocation.ownershipIds) {
+      effects.push({
+        type: 'revoked_digital_ownership',
+        targetType: 'digital_asset_ownership',
+        targetId: ownershipId,
+      });
+    }
+    if (digitalRevocation.revokedCount > 0 && digitalRevocation.ownershipIds.length === 0) {
+      effects.push({
+        type: 'revoked_digital_ownership',
+        targetType: 'digital_asset_ownership',
+        targetExternalRef: `sales_order:${id}:digital_ownerships`,
+        count: digitalRevocation.revokedCount,
+      });
+    }
+    const walletRefundEffect = this.toWalletRefundEffect(options);
+    if (walletRefundEffect) {
+      effects.push(walletRefundEffect);
+    }
+
+    const occurredAt = options.occurredAt ? new Date(options.occurredAt) : new Date();
+    const cancellationValues: SalesOrderCancellationInsert = {
+      salesOrderId: id,
+      cancellationScope: 'full',
+      status: 'applied',
+      reasonCode: options.reasonCode ?? null,
+      reasonDetail: options.reasonDetail ?? null,
+      cancelledBy: options.cancelledBy ?? null,
+      effects,
+      metadata: options.metadata ?? {},
+      occurredAt,
+    };
+    const cancellation = await recordSalesOrderCancellation(trx, cancellationValues, null);
+
+    await trx
+      .update(wmsTables.salesOrders)
+      .set({ status: 'cancelled', updatedAt: new Date() })
+      .where(eq(wmsTables.salesOrders.id, id));
+
+    await this.linkCancellationEffects(id, cancellation.id, 'full', effects, occurredAt, trx);
+
+    const updated = await this.getOne(id, trx);
+
+    await this.coreOrders.enqueue(
+      {
+        idempotencyKey: `so-cancelled:${cancellation.id}`,
+        eventType: 'SalesOrderCancelled',
+        aggregateId: id,
+        partitionKey: id,
+        payload: {
+          orderId: id,
+          channelOrderId: salesOrder.channelOrderId ?? undefined,
+          reason: toCancelReason(options.reasonCode),
+          reasonDetail: options.reasonDetail ?? undefined,
+          cancelledBy: options.cancelledBy ?? 'system',
+          cancelledAt: occurredAt.toISOString(),
+          cancellationScope: 'full',
+          refundRequired: !!(salesOrder.walletIntentId && (salesOrder.totalAmount ?? 0) > 0),
+          refundAmount: options.walletRefund?.amount,
+        } satisfies SalesOrderCancelledPayload,
+      },
+      trx,
+    );
+
+    await this.audit?.logResourceChange(
+      'ORDER_CANCELLED',
+      'cancel',
+      'order',
+      'salesOrder',
+      id,
+      `Sales Order ${salesOrder.channelOrderId || id}`,
+      { status: salesOrder.status },
+      {
+        status: 'cancelled',
+        orderCancellationId: cancellation.id,
+        originalLineCount: originalLines.length,
+        effectTypes: effects.map((effect) => effect.type),
+      },
+      undefined,
+      trx,
+    );
+
+    this.logger.log(
+      `Successfully cancelled sales order ${id} and ${cancelledFulfillmentOrderIds.length} fulfillment orders`,
+    );
+    return updated;
+  }
+
+  private async cancelBeforeBoxingPartial(
     salesOrderId: string,
     salesOrder: typeof wmsTables.salesOrders.$inferSelect,
     options: CancelSalesOrderOptions & { lines: PartialCancellationLine[] },
@@ -1599,7 +1609,7 @@ export class SalesOrdersService {
     return this.getOne(salesOrderId, trx);
   }
 
-  private async hasV2FulfillmentHistory(salesOrderId: string, tx: DbTx): Promise<boolean> {
+  private async hasBoxedFulfillment(salesOrderId: string, tx: DbTx): Promise<boolean> {
     const rows = await tx.execute(sql`
       SELECT s.id
         FROM shipments s
@@ -1614,8 +1624,8 @@ export class SalesOrdersService {
   }
 
   /**
-   * 부분 취소 요청을 전체 취소 뒤에 받으면 `cancelPartial`·`planCancellation` 과 같은 순서·문구로 400 거절한다.
-   * V2 는 박스 줄 배분 검사가 대부분을 거르지만 상자를 거치지 않는 줄(디지털·외주)은 그 검사를 지나가서,
+   * 부분 취소 요청을 전체 취소 뒤에 받으면 `cancelBeforeBoxingPartial`·`planCancellation` 과 같은 순서·문구로 400 거절한다.
+   * 상자 후는 박스 줄 배분 검사가 대부분을 거르지만 상자를 거치지 않는 줄(디지털·외주)은 그 검사를 지나가서,
    * 이 확인이 없으면 쓰기 문 도출(라인 합 > 주문 수량)이 터져 500 이 된다.
    */
   private async assertNoFullCancellation(salesOrderId: string, tx: DbTx): Promise<void> {
@@ -1639,10 +1649,10 @@ export class SalesOrdersService {
   }
 
   /**
-   * V2 취소의 계획 — 요청 줄 → 박스 줄 배분과 거절 사유. 읽기만 한다(스펙 §5.2). 거절 문구는 옮기기 전과 같다.
-   * `cancelV2Outstanding`(적용)과 `planCancellation`(요청 때 판정)이 함께 쓴다.
+   * 상자 후 취소의 계획 — 요청 줄 → 박스 줄 배분과 거절 사유. 읽기만 한다(스펙 §5.2). 거절 문구는 옮기기 전과 같다.
+   * `cancelAfterBoxing`(적용)과 `planCancellation`(요청 때 판정)이 함께 쓴다.
    */
-  private async planV2Outstanding(
+  private async planAfterBoxing(
     salesOrderId: string,
     options: CancelSalesOrderOptions,
     isFullCancel: boolean,
@@ -1687,7 +1697,7 @@ export class SalesOrdersService {
               return remaining > 0 ? [{ salesOrderLineId: line.id, quantity: remaining }] : [];
             }
             if (isDigitalFulfillmentLine(line)) return [];
-            throw new ConflictException(`V2 fulfillment item is missing for SalesOrder line ${line.id}`);
+            throw new ConflictException(`Boxed fulfillment item is missing for SalesOrder line ${line.id}`);
           }
           const quantities = lineQuantities.get(line.id);
           if (!quantities) throw new Error(`Line quantities are missing SalesOrder line ${line.id}`);
@@ -1749,7 +1759,7 @@ export class SalesOrdersService {
       const requestedItems = fulfillmentItems.filter((item) => item.salesOrderLineId === request.salesOrderLineId);
       if (requestedItems.length === 0) {
         if (isDigitalFulfillmentLine(salesLine) || isOutsourcedLine(salesLine)) continue;
-        throw new ConflictException(`V2 fulfillment item is missing for SalesOrder line ${salesLine.id}`);
+        throw new ConflictException(`Boxed fulfillment item is missing for SalesOrder line ${salesLine.id}`);
       }
       for (const { itemId, qty: physicalQty } of physicalCancellationByItem(
         salesLine.id,
@@ -1781,7 +1791,7 @@ export class SalesOrdersService {
         }
         if (remainingPhysicalQty > 0) {
           throw new ConflictException(
-            `V2 outstanding line quantity is short by ${remainingPhysicalQty} for fulfillment item ${itemId}`,
+            `Boxed outstanding line quantity is short by ${remainingPhysicalQty} for fulfillment item ${itemId}`,
           );
         }
       }
@@ -1790,11 +1800,11 @@ export class SalesOrdersService {
   }
 
   /**
-   * V2 commercial cancellation seam. SO cancellation remains the commercial
+   * Boxed commercial cancellation seam. SO cancellation remains the commercial
    * coordinator, while ShipmentPlanningService exclusively mutates outstanding
    * physical demand. FOI.qty is never rewritten on this path.
    */
-  private async cancelV2Outstanding(
+  private async cancelAfterBoxing(
     salesOrderId: string,
     salesOrder: typeof wmsTables.salesOrders.$inferSelect,
     options: CancelSalesOrderOptions,
@@ -1802,7 +1812,7 @@ export class SalesOrdersService {
     tx: DbTx,
   ) {
     const planning = this.moduleRef?.get(ShipmentPlanningService, { strict: false });
-    if (!planning) throw new Error('ShipmentPlanningService is required for V2 sales-order cancellation');
+    if (!planning) throw new Error('ShipmentPlanningService is required for boxed sales-order cancellation');
 
     if (isFullCancel) {
       const [existing] = await tx
@@ -1819,7 +1829,7 @@ export class SalesOrdersService {
     }
 
     const { fulfillmentItems, requestedSalesLines, salesLineById, cancellationByShipment } =
-      await this.planV2Outstanding(salesOrderId, options, isFullCancel, tx);
+      await this.planAfterBoxing(salesOrderId, options, isFullCancel, tx);
 
     const reason = options.reasonDetail?.trim() || options.reasonCode?.trim() || 'Sales order cancellation';
     const sourceKey =
@@ -1905,7 +1915,7 @@ export class SalesOrdersService {
       metadata: {
         ...(options.metadata ?? {}),
         fulfillmentCommandSourceKey: this.explicitV2CancellationSourceKey(options),
-        fulfillmentCommandRequestHash: this.v2CancellationRequestHash(salesOrderId, options),
+        fulfillmentCommandRequestHash: this.afterBoxingRequestHash(salesOrderId, options),
       },
       occurredAt,
     };
@@ -1955,7 +1965,7 @@ export class SalesOrdersService {
       : undefined;
   }
 
-  private v2CancellationRequestHash(salesOrderId: string, options: CancelSalesOrderOptions): string {
+  private afterBoxingRequestHash(salesOrderId: string, options: CancelSalesOrderOptions): string {
     const lines = this.hasPartialCancellationLines(options)
       ? this.normalizePartialCancellationLines(options.lines ?? []).sort((left, right) =>
           left.salesOrderLineId.localeCompare(right.salesOrderLineId),
@@ -1969,7 +1979,7 @@ export class SalesOrdersService {
     });
   }
 
-  private async findV2CancellationReplay(
+  private async findAfterBoxingReplay(
     salesOrderId: string,
     options: CancelSalesOrderOptions,
     tx: DbTx,
@@ -2021,8 +2031,8 @@ export class SalesOrdersService {
     if (Array.isArray(lines) && lines.length === 0) {
       throw new BadRequestException('Partial cancellation lines cannot be empty; omit lines for full cancellation');
     }
-    if (await this.hasV2FulfillmentHistory(salesOrderId, tx)) {
-      const plan = await this.planV2Outstanding(salesOrderId, options, isFullCancel, tx);
+    if (await this.hasBoxedFulfillment(salesOrderId, tx)) {
+      const plan = await this.planAfterBoxing(salesOrderId, options, isFullCancel, tx);
       const requested = plan.requestedSalesLines.filter((line) => line.quantity > 0);
       const hasShippedQuantity = plan.fulfillmentItems.some((item) => item.shippedQty > 0);
       return {
@@ -2085,7 +2095,7 @@ export class SalesOrdersService {
       }
       return { lines: requested, hasShippedQuantity: false, leavesNothing: true };
     }
-    // `cancelPartial` 과 같은 거절 순서·문구.
+    // `cancelBeforeBoxingPartial` 과 같은 거절 순서·문구.
     if (salesOrder.status === 'cancelled') throw new BadRequestException(CANCEL_MSG_ALREADY_CANCELLED);
     if (fullCancellation) throw new BadRequestException(CANCEL_MSG_FULL_CANCELLATION_EXISTS);
     const requested = this.normalizePartialCancellationLines(lines);
@@ -2122,7 +2132,7 @@ export class SalesOrdersService {
   /**
    * 이 주문의 이전 취소가 남긴 엔진 상태 (K6 PR2a, `remainingByLine` 은 PR2b).
    * `remainingByLine` 은 라인 수량 문의 `remaining`(주문 − 갈래·scope 무관 취소 — 전체취소도 센다)이다.
-   * 문을 이미 읽은 호출자(V2 재계획)는 `lineQuantities` 를 넘겨 같은 트랜잭션에서 두 번 읽지 않는다.
+   * 문을 이미 읽은 호출자(상자 후 재계획)는 `lineQuantities` 를 넘겨 같은 트랜잭션에서 두 번 읽지 않는다.
    * `preservedShippedByFulfillmentItem` 은 «어느 FOI 의 출고분을 이미 보존 처리했나»라는 FOI 단위 상태라
    * 라인 행으로 되살릴 수 없어(세트에서 구성품 하나만 나간 단위도 `after_shipment` 1) effects 에서 읽는다.
    */
@@ -2340,7 +2350,7 @@ export class SalesOrdersService {
   }
 
   /**
-   * V1 엔진의 출고 수량은 FOI `shipped_qty` 하나다(K6 PR2b P7). FO `shipped`·`shipped_at` 으로 FOI 전량을 출고로 보던
+   * 상자 전 엔진의 출고 수량은 FOI `shipped_qty` 하나다(K6 PR2b P7). FO `shipped`·`shipped_at` 으로 FOI 전량을 출고로 보던
    * 대체는 지웠다 — FO 출고 표시를 쓰는 생산자(V2 발송·직배 완료·셀메이트 스크립트)가 모두 `shipped_qty` 도 채운다.
    * `shipped_qty + canceled_qty <= qty` 는 CHECK 가 지키므로 qty 로 자르지 않는다.
    */

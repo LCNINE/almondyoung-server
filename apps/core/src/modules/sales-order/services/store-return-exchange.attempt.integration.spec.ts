@@ -354,7 +354,7 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
   it('exposes the shared sales-line cap across attempts and rejects an aggregate over-selection', async () => {
     await inRollbackTx(db, async (tx) => {
       const graph = await seedDeliveredAttemptGraph(tx, 2);
-      // 출고 뒤 취소(V1 사후취소) 1 — 돈을 돌려준 수량은 다시 청구할 수 없다(C9). 두 소포가 SKU 몫 1 을 나눠 쓴다.
+      // 출고 뒤 취소(상자 전 사후취소) 1 — 돈을 돌려준 수량은 다시 청구할 수 없다(C9). 두 소포가 SKU 몫 1 을 나눠 쓴다.
       // 엔진은 다 나간 라인의 부분취소를 거절하므로(R1) 엔진이 남기는 모양을 쓰기 문에 직접 넘긴다
       await recordSalesOrderCancellation(
         tx,

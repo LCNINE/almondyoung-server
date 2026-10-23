@@ -264,7 +264,7 @@ describeIfDb('readLineQuantities — 라인 수량은 취소 라인 행 한 곳�
         .values({ productMatchingId: matchingId, skuId: skuB, quantity: 1 });
       const { salesOrderId, lineIds } = await seedSalesOrder(tx, { lines: [{ variantId, quantity: 1 }] });
       const [lineId] = lineIds;
-      // 상자 없는 옛(V1) FO — 세트 구성품 A 만 나갔다(FOI shipped_qty=1), B 는 아직.
+      // 상자 없는 옛(상자 전) FO — 세트 구성품 A 만 나갔다(FOI shipped_qty=1), B 는 아직.
       const [fo] = await tx
         .insert(wmsTables.fulfillmentOrders)
         .values({ salesOrderId, warehouseId, totalItems: 2, totalQty: 2 })

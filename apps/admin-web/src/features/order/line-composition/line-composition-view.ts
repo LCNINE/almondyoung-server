@@ -17,7 +17,7 @@ export function sourceBadge(source: CompositionSource | null | undefined): strin
   return source === 'operator' ? OPERATOR_BADGE : null;
 }
 
-// qty 0 이면서 취소 상태가 아닌 것만 구성 변경으로 빠진 SKU 다. 옛 부분취소(cancelPartial)도 전량이면 qty 0 + status canceled 로 쓰므로
+// qty 0 이면서 취소 상태가 아닌 것만 구성 변경으로 빠진 SKU 다. 옛 부분취소(cancelBeforeBoxingPartial)도 전량이면 qty 0 + status canceled 로 쓰므로
 // qty 만 보면 고객 취소가 «대체됨» 으로 오표시된다
 export function foItemStatusLabel(item: Pick<FulfillmentOrderItem, 'qty' | 'status'>): string {
   return item.qty === 0 && item.status !== 'canceled' ? '대체됨' : item.status;

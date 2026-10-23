@@ -31,7 +31,7 @@ const PRESERVED_SHIPPED_EFFECT = 'preserved_shipped_fulfillment_order_item';
 
 type DeriveInput = {
   scope: 'full' | 'partial';
-  /** 쓰는 쪽이 넘긴 요청 라인. V1 전체취소는 null(남은 수량 전부). */
+  /** 쓰는 쪽이 넘긴 요청 라인. 상자 전 전체취소는 null(남은 수량 전부). */
   requestedLines: readonly RequestedCancellationLine[] | null;
   effects: CancellationEffect[];
   /** 그 주문의 전체 판매 라인. */

@@ -72,7 +72,7 @@ async function itemOf(tx: DbTx, salesOrderId: string, skuId: string) {
   return row;
 }
 
-describeIfDb('V2 취소 — 비율은 라인 구성에서 (#1063 스펙 §6.5)', () => {
+describeIfDb('상자 후 취소 — 비율은 라인 구성에서 (#1063 스펙 §6.5)', () => {
   jest.setTimeout(120_000);
   const { sql: client, db } = makeDb(DATABASE_URL as string);
   afterAll(async () => {

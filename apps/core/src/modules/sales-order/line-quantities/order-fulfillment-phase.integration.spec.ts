@@ -220,7 +220,7 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
       const w = await f.seedWorld(tx);
       const o = await f.seedOrder(tx);
       const { foItemId } = await f.seedFo(tx, w, o, { status: 'processing', dropShip: 'forwarded' });
-      // 화면은 «배송 중»이고 셀프취소는 막히지만(any_shipped) 출고 수량은 0 이다 — 관리자 V1 취소는 지금처럼 된다
+      // 화면은 «배송 중»이고 셀프취소는 막히지만(any_shipped) 출고 수량은 0 이다 — 관리자 상자 전 취소는 지금처럼 된다
       expect(await phaseOf(tx, o)).toEqual(['shipping', 'shipping', true]);
       const [item] = await tx
         .select({ shippedQty: wmsTables.fulfillmentOrderItems.shippedQty })

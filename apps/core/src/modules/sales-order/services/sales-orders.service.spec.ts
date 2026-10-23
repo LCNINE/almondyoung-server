@@ -517,7 +517,7 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
       cancelledBy: 'admin-1',
     });
 
-    // SO lock + V2 history probe + FO/FOI locks + 출고 수량 판정(라인 수량 문의 SKU 층) + 응답 getOne 의 출고 단계 조회
+    // SO lock + boxed-history probe + FO/FOI locks + 출고 수량 판정(라인 수량 문의 SKU 층) + 응답 getOne 의 출고 단계 조회
     expect(tx.execute).toHaveBeenCalledTimes(6);
     expect(state.salesOrders[0].status).toBe('cancelled');
     expect(state.salesOrderLines).toEqual(originalLines);
@@ -588,7 +588,7 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
 
     await service.cancel(salesOrderId);
 
-    expect(tx.execute).toHaveBeenCalledTimes(3); // SO lock + V2 history probe + 응답 getOne 의 출고 단계 조회
+    expect(tx.execute).toHaveBeenCalledTimes(3); // SO lock + boxed-history probe + 응답 getOne 의 출고 단계 조회
     expect(backlog.closeOpenForSalesOrder).toHaveBeenCalledWith(salesOrderId, tx);
     expect(state.salesOrderCancellations).toHaveLength(1);
     expect(outbox.enqueue).not.toHaveBeenCalled();
@@ -1372,7 +1372,7 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
     );
   });
 
-  // P7(K6 PR2b) — V1 엔진의 출고 수량은 FOI shipped_qty 하나다. FO shipped_at 으로 FOI 전량을 출고로 보던 대체는 지웠다.
+  // P7(K6 PR2b) — 상자 전 엔진의 출고 수량은 FOI shipped_qty 하나다. FO shipped_at 으로 FOI 전량을 출고로 보던 대체는 지웠다.
   it.each([
     { name: 'without item shipped quantity', shippedQty: 0 },
     { name: 'with a partial item shipped quantity', shippedQty: 1 },

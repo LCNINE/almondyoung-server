@@ -31,7 +31,7 @@ describeIfDb('SalesOrdersService 취소 엔진 — 이미 취소된 수량 읽�
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
       const o = await seedCancellableOrder(tx, w, 2);
-      // 판매주문 status 는 그대로 두고 전체취소 «기록»만 남긴다 — V2 전체 + 남은 출고분처럼 SO 가 cancelled 가 아닌 상태.
+      // 판매주문 status 는 그대로 두고 전체취소 «기록»만 남긴다 — 상자 후 전체 + 남은 출고분처럼 SO 가 cancelled 가 아닌 상태.
       await recordSalesOrderCancellation(
         tx,
         {
@@ -73,7 +73,7 @@ describeIfDb('SalesOrdersService 취소 엔진 — 이미 취소된 수량 읽�
 
 type SetComponent = { skuId: string; foItemId: string; shipmentId: string; shipmentLineId: string; qty: number };
 
-/** V2 세트 라인 — 구성 SKU 마다 FOI 하나(qty = 라인 수량 × 1개당 수량)를 두고 상자(draft)에 담는다. 구성은 FO 생성처럼 굳힌다. */
+/** 상자 후 세트 라인 — 구성 SKU 마다 FOI 하나(qty = 라인 수량 × 1개당 수량)를 두고 상자(draft)에 담는다. 구성은 FO 생성처럼 굳힌다. */
 async function seedV2SetOrder(
   tx: DbTx,
   args: { quantity: number; qtyPerUnit: number[]; boxPerComponent?: boolean },
@@ -140,7 +140,7 @@ async function foItemQty(tx: DbTx, foItemId: string): Promise<number> {
 
 /**
  * 취소 엔진의 남은·취소 가능·출고 수량은 라인 수량 문(`readLineQuantities` 의 `remaining`·`skus`)에서 읽는다 (K6 PR2b).
- * V2 전체 재계획은 `cancellableSalesUnits`, V1 의 출고 수량은 FOI `shipped_qty` 하나다(P7).
+ * 상자 후 전체 재계획은 `cancellableSalesUnits`, 상자 전의 출고 수량은 FOI `shipped_qty` 하나다(P7).
  */
 describeIfDb('SalesOrdersService 취소 엔진 — 남은·취소 가능·출고 수량 (K6 PR2b)', () => {
   jest.setTimeout(120_000);
@@ -212,7 +212,7 @@ describeIfDb('SalesOrdersService 취소 엔진 — 남은·취소 가능·출고
 
       await expect(planning).rejects.toThrow(ConflictException);
       await expect(planning).rejects.toThrow(
-        `V2 component progress is inconsistent for SalesOrder line ${order.lineId}`,
+        `Boxed component progress is inconsistent for SalesOrder line ${order.lineId}`,
       );
     });
   });

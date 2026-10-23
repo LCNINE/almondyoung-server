@@ -410,11 +410,11 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
     });
   });
 
-  it('감소 — V1 출고지시(박스 이력 없음)에서 이미 출고된 수량이면 되돌리고 CANCEL_NOT_IMMEDIATE(취소·회수 이관 없음)', async () => {
+  it('감소 — 상자 전 출고지시(박스 이력 없음)에서 이미 출고된 수량이면 되돌리고 CANCEL_NOT_IMMEDIATE(취소·회수 이관 없음)', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wire(tx);
       const seed = await seedOrder(tx, w, { withFo: false });
-      // V2 박스가 없는 옛 출고지시 — `hasV2FulfillmentHistory` 가 거짓이라 `cancelPartial` 경로로 간다.
+      // 박스 이력이 없는 옛 출고지시 — `hasBoxedFulfillment` 가 거짓이라 `cancelBeforeBoxingPartial` 경로로 간다.
       const [fo] = await tx
         .insert(wmsTables.fulfillmentOrders)
         .values({

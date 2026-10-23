@@ -60,12 +60,12 @@ describe('cancellableSalesUnits', () => {
           { skuId: 'b', qtyPerUnit: 1, outstanding: 1 },
         ]),
       ),
-    ).toThrow('V2 component progress is inconsistent for SalesOrder line l');
+    ).toThrow('Boxed component progress is inconsistent for SalesOrder line l');
   });
 
   it('not divisible is not aligned', () => {
     expect(() => cancellableSalesUnits(line([{ skuId: 'a', qtyPerUnit: 2, outstanding: 3 }]))).toThrow(
-      'V2 progress is not aligned for SalesOrder line l',
+      'Boxed progress is not aligned for SalesOrder line l',
     );
   });
 
@@ -83,7 +83,7 @@ describe('cancellableSalesUnits', () => {
           { skuId: 'x', qtyPerUnit: null, outstanding: 1 },
         ]),
       ),
-    ).toThrow('V2 fulfillment SKU x is outside the composition of SalesOrder line l');
+    ).toThrow('Boxed fulfillment SKU x is outside the composition of SalesOrder line l');
   });
 
   it('stray sku without outstanding is ignored', () => {

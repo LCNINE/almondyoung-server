@@ -58,8 +58,8 @@ export async function seedCancellableOrder(tx: DbTx, w: ReturnType<typeof wireCa
 }
 
 /**
- * 상자 없는 옛(V1) FO 를 두고 셀메이트 스크립트(scripts/ops/cellmate-local/mark-core-shipped.js)처럼 출고로 표시한다 —
- * FO status='shipped'·shipped_at, FOI shipped_qty=qty·status='shipped'. 상자가 없으니 취소는 V1 경로를 탄다.
+ * 상자 없는 옛(상자 전) FO 를 두고 셀메이트 스크립트(scripts/ops/cellmate-local/mark-core-shipped.js)처럼 출고로 표시한다 —
+ * FO status='shipped'·shipped_at, FOI shipped_qty=qty·status='shipped'. 상자가 없으니 취소는 상자 전 경로를 탄다.
  */
 export async function seedShippedV1Fulfillment(
   tx: DbTx,
