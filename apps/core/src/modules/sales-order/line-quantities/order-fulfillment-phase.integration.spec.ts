@@ -17,6 +17,7 @@ import type { StoreFulfillmentStatus } from '../dto/store-order-actions.dto';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { StoreSalesOrdersService } from '../services/store-sales-orders.service';
 import { OrderCancellation } from '../order-cancellation/order-cancellation';
+import { OrderCancellationReader } from '../order-cancellation/order-cancellation.reader';
 import { PrintOrderReader } from '../../print-order/services/print-order.reader';
 import { seedClaim, seedComponentSku, seedDeliveredLine } from './__support__/claim-facts.fixtures';
 import { recallParcel, seedDispatchedParcel } from './__support__/shipment-facts.fixtures';
@@ -66,6 +67,8 @@ function storeServiceFor(tx: DbTx): StoreSalesOrdersService {
       cancelRequests as never,
       printOrders,
       printCancellation as never,
+      {} as never,
+      new OrderCancellationReader(),
     ),
   );
 }

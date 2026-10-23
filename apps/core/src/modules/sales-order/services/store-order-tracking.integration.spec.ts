@@ -14,6 +14,7 @@ import {
 import { WalletRefundClient } from './wallet-refund.client';
 import { StoreSalesOrdersService } from './store-sales-orders.service';
 import { OrderCancellation } from '../order-cancellation/order-cancellation';
+import { OrderCancellationReader } from '../order-cancellation/order-cancellation.reader';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -182,6 +183,8 @@ describeIfDb('Store order tracking V2 graph (DB integration, rollback-only)', ()
           cancelRequests as never,
           printOrders as never,
           printCancellation as never,
+          {} as never,
+          new OrderCancellationReader(),
         ),
       );
       const firstView = await service.getTracking(first.salesOrderId, customerId);

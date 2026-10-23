@@ -18,6 +18,7 @@ import { ChannelCancelRequestService } from '../channel-cancel-request/channel-c
 import { WalletRefundClient } from './wallet-refund.client';
 import { StoreSalesOrdersService } from './store-sales-orders.service';
 import { OrderCancellation } from '../order-cancellation/order-cancellation';
+import { OrderCancellationReader } from '../order-cancellation/order-cancellation.reader';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -98,6 +99,8 @@ describeIfDb('셀프취소 판정 — 복구 중 상자 (DB integration, rollbac
           cancelRequests as never,
           printOrders as never,
           printCancellation as never,
+          {} as never,
+          new OrderCancellationReader(),
         ),
       );
 
@@ -191,6 +194,8 @@ describeIfDb('셀프취소 판정 — 복구 중 상자 (DB integration, rollbac
           cancelRequests,
           printOrders as never,
           printCancellation as never,
+          {} as never,
+          new OrderCancellationReader(),
         ),
       );
 

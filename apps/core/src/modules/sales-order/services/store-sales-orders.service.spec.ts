@@ -3,6 +3,7 @@ import { getTableName, type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { StoreSalesOrdersService } from './store-sales-orders.service';
 import { OrderCancellation } from '../order-cancellation/order-cancellation';
+import { OrderCancellationReader } from '../order-cancellation/order-cancellation.reader';
 import { PrintOrderReader } from '../../print-order/services/print-order.reader';
 import {
   PRINT_IN_PRODUCTION_MESSAGE,
@@ -284,6 +285,8 @@ function makeContext(
       cancelRequestsMock as any,
       printReader,
       printCancellation,
+      {} as never,
+      new OrderCancellationReader(),
     ),
   );
 
@@ -742,6 +745,8 @@ describe('StoreSalesOrdersService', () => {
           cancelRequestsMock as any,
           printReader,
           printCancellation,
+          {} as never,
+          new OrderCancellationReader(),
         ),
       );
       return { service, dbMock };
@@ -1290,6 +1295,8 @@ describe('StoreSalesOrdersService', () => {
         cancelRequestsMock as any,
         printReader,
         printCancellation,
+        {} as never,
+        new OrderCancellationReader(),
       ),
     );
 
@@ -1757,6 +1764,8 @@ describe('StoreSalesOrdersService', () => {
         cancelRequestsMock as any,
         printReader,
         printCancellation,
+        {} as never,
+        new OrderCancellationReader(),
       ),
     );
 
@@ -1897,6 +1906,8 @@ describe('StoreSalesOrdersService', () => {
           cancelRequestsMock as never,
           printReader,
           printCancellation,
+          {} as never,
+          new OrderCancellationReader(),
         ),
       );
     }

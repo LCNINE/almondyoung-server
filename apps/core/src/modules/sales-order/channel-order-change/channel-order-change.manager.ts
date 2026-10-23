@@ -5,12 +5,13 @@ import { and, eq, inArray, isNull, notInArray } from 'drizzle-orm';
 import type { OrderModifiedPayload, ShippingAddress } from '@packages/event-contracts/streams';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { ShipmentPlanningService } from '../../fulfillment/services/shipment-planning.service';
-import { FULFILLMENT_SYSTEM_ACTOR_ID, SalesOrdersService } from '../services/sales-orders.service';
+import { FULFILLMENT_SYSTEM_ACTOR_ID } from '../services/sales-orders.service';
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
 import { ChannelOrderChangeReader, FINISHED_FULFILLMENT_STATUSES } from './channel-order-change.reader';
 import { ChannelCancelSettler } from '../channel-cancel-request/channel-cancel-settler';
 import { diffChannelSnapshot, isDecrease, removesAllLines } from './channel-order-diff';
-import { errorDetail, isDomainRefusal, toAddressBlocker } from './channel-change-blockers';
+import { isDomainRefusal, toAddressBlocker } from './channel-change-blockers';
+import { OrderCancellation } from '../order-cancellation/order-cancellation';
 import { suppressDismissed } from './channel-change-dismissal';
 import {
   CHANNEL_ORDER_MODIFIED_REASON,
@@ -45,10 +46,10 @@ class Refused extends Error {
 export class ChannelOrderChangeManager {
   constructor(
     private readonly reader: ChannelOrderChangeReader,
-    private readonly salesOrders: SalesOrdersService,
     private readonly amendments: SalesOrderAmendmentsService,
     private readonly moduleRef: ModuleRef,
     private readonly cancelSettler: ChannelCancelSettler,
+    private readonly cancellation: OrderCancellation,
   ) {}
 
   async handle(salesOrderId: string, payload: OrderModifiedPayload, sourceEventId: string, tx: DbTx): Promise<void> {
@@ -173,7 +174,7 @@ export class ChannelOrderChangeManager {
 
   /**
    * 스펙 §7.2 — 기존 취소를 그대로 시도. 그 자리에서 끝나지 않으면(박스 대기, 출고분 회수 이관) 되돌린다
-   * (R1: 새 대기·회수를 만들지 않는다).
+   * (R1: 새 대기·회수를 만들지 않는다). 시도·되돌림(savepoint)은 커널이 한다 — 여기는 거절을 대기 사유로 옮길 뿐이다.
    */
   private async tryDecrease(
     order: EffectiveSalesOrder,
@@ -181,35 +182,20 @@ export class ChannelOrderChangeManager {
     ctx: { amendmentId: string; occurredAt: string },
     tx: DbTx,
   ): Promise<RecordedChannelDelta> {
-    const sourceEventId = `${ctx.amendmentId}:${delta.salesOrderLineId}`;
-    const refusal = await this.attempt(tx, async (sp) => {
-      // 판매주문 취소는 외주 줄을 그냥 통과시킨다. 인쇄 줄을 줄이면 와우프레스는 원래 수량대로 주문·제작된다
-      if (await this.reader.hasActivePrintOrder(delta.salesOrderLineId, sp)) {
-        throw new Refused({ code: 'CANCEL_NOT_IMMEDIATE', detail: 'print order on this line — decide on WowPress' });
-      }
-      try {
-        await this.salesOrders.cancel(
-          order.id,
-          {
-            lines: [
-              { salesOrderLineId: delta.salesOrderLineId, quantity: delta.quantityBefore - delta.correctedQuantity },
-            ],
-            cancelledBy: 'channel',
-            reasonCode: CHANNEL_ORDER_MODIFIED_REASON,
-            occurredAt: ctx.occurredAt,
-            // walletRefund 를 넘기지 않는다 — 채널 변경의 환불은 채널이 한다(스펙 R6).
-            metadata: { sourceEventId },
-          },
-          sp,
-        );
-      } catch (error) {
-        if (!isDomainRefusal(error)) throw error;
-        throw new Refused({ code: 'CANCEL_NOT_IMMEDIATE', detail: errorDetail(error) });
-      }
-      const followUp = await this.reader.cancellationNeedsFollowUp(order.id, sourceEventId, sp);
-      if (followUp) throw new Refused({ code: 'CANCEL_NOT_IMMEDIATE', detail: followUp });
-    });
-    return refusal ? { ...delta, outcome: 'pending', blockers: [refusal] } : { ...delta, outcome: 'applied' };
+    const outcome = await this.cancellation.notice(
+      {
+        source: 'channel_decrease',
+        salesOrderId: order.id,
+        line: { salesOrderLineId: delta.salesOrderLineId, quantity: delta.quantityBefore - delta.correctedQuantity },
+        reasonCode: CHANNEL_ORDER_MODIFIED_REASON,
+        occurredAt: ctx.occurredAt,
+        sourceEventId: `${ctx.amendmentId}:${delta.salesOrderLineId}`,
+      },
+      tx,
+    );
+    return outcome.applied
+      ? { ...delta, outcome: 'applied' }
+      : { ...delta, outcome: 'pending', blockers: [{ code: 'CANCEL_NOT_IMMEDIATE', detail: outcome.refusal }] };
   }
 
   /** 아직 주문권을 쓰지 않은 인쇄만 운영자 확인(cancel_refused)으로 넘긴다. 이미 보낸 주문은 와우프레스에서 판단한다. */

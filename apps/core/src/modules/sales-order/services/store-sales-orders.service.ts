@@ -334,16 +334,15 @@ export class StoreSalesOrdersService {
       return { status: so.status, skipped: 'already_shipped' };
     }
 
-    // 돈은 이미 나갔다. 인쇄를 최대한 빨리 멈추고, 멈출 수 없으면 보드에 남긴다
-    await this.printCancellation.cancelForOrder(so.id, 'record');
-    // 환불은 wallet 에서 끝났고 Medusa 장부에는 환불 투영(스펙 §6.4)이 넣는다 — Medusa 취소는 환불 없이 끝난다.
-    // 31번 전환을 하지 않는다: 돈이 이미 다 나갔으므로 전체취소가 맞다(계획 단계 발견 8).
-    const view = await this.cancelRequests.request({
+    // 인쇄 멈춤(record) → 전체취소 요청 순서는 커널이 안다
+    const outcome = await this.cancellation.notice({
+      source: 'wallet_refund_approval',
       salesOrderId: so.id,
-      requester: { kind: 'wallet-refund-approval', intentId },
-      sourceKey: `wallet-refund-approval:${intentId}`,
+      intentId,
       reasonCode: opts.reasonCode ?? 'CUSTOMER_REFUND_REQUEST',
     });
+    const view = outcome.applied ? outcome.requestView : undefined;
+    if (!view) throw new Error(`wallet refund approval notice for SO ${so.id} returned no cancel request`);
     this.logger.log(
       `[cancelByWalletIntentAfterRefund] SO ${so.id} cancel requested (intent=${intentId}, request=${view.id})`,
     );
