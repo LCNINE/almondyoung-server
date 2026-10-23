@@ -9,11 +9,12 @@ interface Props {
   finalPrice: string;
   discounted: boolean;
   onClose: () => void;
+  closeDisabled?: boolean;
   children: ReactNode;
   footer: ReactNode;
 }
 
-export function CheckoutFrame({ orderName, originalPrice, finalPrice, discounted, onClose, children, footer }: Props) {
+export function CheckoutFrame({ orderName, originalPrice, finalPrice, discounted, onClose, closeDisabled, children, footer }: Props) {
   return (
     <div className="min-h-dvh bg-white pb-[calc(11rem+env(safe-area-inset-bottom))] text-foreground">
       <header className="sticky top-0 z-20 border-b border-border/40 bg-white">
@@ -22,8 +23,9 @@ export function CheckoutFrame({ orderName, originalPrice, finalPrice, discounted
           <button
             type="button"
             onClick={onClose}
+            disabled={closeDisabled}
             aria-label="결제 화면 닫기"
-            className="flex size-11 items-center justify-center rounded-full hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary"
+            className="flex size-11 items-center justify-center rounded-full hover:bg-muted disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-primary"
           >
             <X className="size-6" />
           </button>
