@@ -2,6 +2,8 @@ import { TossPaymentProvider } from './toss.provider';
 import { TossBillingProvider } from './toss-billing.provider';
 import { TossApiClient } from './toss-api.client';
 import { PaymentProvider, RefundParams } from '../payment-provider.interface';
+import { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 
 /** charge 한 건을 돌려주는 최소 DbService 스텁 (getPaymentKey 조회용). */
 const dbWithCharge = (row: Record<string, unknown> | undefined) =>
@@ -67,5 +69,39 @@ describe.each<[string, (db: never, api: TossApiClient) => PaymentProvider, strin
       errorCode: missingKeyCode,
       retryable: false,
     });
+  });
+});
+
+describe('TossPaymentProvider.refund — 위젯 결제 키 선택', () => {
+  it('확정(CAPTURE)분 환불은 승인분 charge 에서 위젯 여부를 읽어 위젯 키로 취소한다', async () => {
+    const rows: Record<string, Record<string, unknown>> = {
+      'authorize-charge': { providerTransactionId: 'pk_w', responsePayload: { nextAction: { checkoutMode: 'WIDGET' } } },
+      'capture-charge': { providerTransactionId: 'pk_w', responsePayload: null },
+    };
+    const db = {
+      db: {
+        select: () => ({
+          from: () => ({
+            where: (cond: SQL) => ({
+              limit: () => {
+                const id = String(new PgDialect().sqlToQuery(cond).params[0]);
+                return Promise.resolve(rows[id] ? [rows[id]] : []);
+              },
+            }),
+          }),
+        }),
+      },
+    } as never;
+    const cancelPayment = jest.fn().mockResolvedValue({ ok: true, data: {} });
+    const provider = new TossPaymentProvider(db, { cancelPayment } as unknown as TossApiClient);
+
+    const result = await provider.refund({
+      ...refundParams(),
+      chargeId: 'capture-charge',
+      authorizeChargeId: 'authorize-charge',
+    });
+
+    expect(cancelPayment).toHaveBeenCalledWith('pk_w', '고객 요청', 5000, 'wallet:refund:rf-1', undefined, true);
+    expect(result.status).toBe('SUCCEEDED');
   });
 });

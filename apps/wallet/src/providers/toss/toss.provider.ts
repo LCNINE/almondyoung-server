@@ -120,7 +120,8 @@ export class TossPaymentProvider implements PaymentProvider {
   }
 
   async refund(params: RefundParams): Promise<RefundResult> {
-    const payment = await this.getPayment(params.chargeId);
+    // CAPTURE charge 엔 위젯 여부(nextAction.checkoutMode)가 없다 — AUTHORIZE charge 에서 읽어야 위젯 키로 환불된다.
+    const payment = await this.getPayment(params.authorizeChargeId ?? params.chargeId);
     if (!payment) {
       return { status: 'FAILED', errorCode: 'TOSS_PAYMENT_KEY_NOT_FOUND', retryable: false };
     }

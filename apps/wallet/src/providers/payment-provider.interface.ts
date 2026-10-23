@@ -38,7 +38,7 @@ export interface RefundParams {
   chargeId: string;
   /**
    * provider 원장이 이 결제분을 아는 id. 확정(CAPTURE)분이면 그 승인(AUTHORIZE)분 id 다 —
-   * 확정 때 provider 에 승인분 id 를 넘기기 때문이다(`ledgerLegChargeId`). 포인트 provider 만 읽는다.
+   * 확정 때 provider 에 승인분 id 를 넘기기 때문이다(`ledgerLegChargeId`). 승인분에만 남는 정보(포인트 홀드, 토스 위젯 여부)를 찾을 때 읽는다.
    */
   authorizeChargeId?: string;
   intentId: string;
