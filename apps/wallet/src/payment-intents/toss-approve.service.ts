@@ -114,7 +114,7 @@ export class TossApproveService {
   }
 
   /**
-   * 승인을 되돌렸으면 true. 취소 응답을 잃었으면 토스에 실제 상태를 물어 판정한다 — 취소됐는데 승인으로
+   * 승인을 되돌렸으면 true. 취소가 성공으로 끝나지 않으면(전송 오류·5xx 포함) 토스에 실제 상태를 물어 판정한다 — 취소됐는데 승인으로
    * 확정하면 돈 없이 출고되고, 이후 취소 웹훅은 REQUIRES_ACTION 이 아닌 charge 를 무시한다.
    * 조회까지 실패하면 false(승인 유지) — 돈이 빠졌을 수 있는 쪽을 원장에 남겨야 환불로 되돌릴 수 있다.
    */
@@ -130,11 +130,8 @@ export class TossApproveService {
         useWidgetKey,
       )
       .catch(() => null);
-    if (reverted) {
-      if (!reverted.ok)
-        this.logger.error(`approval revert refused: chargeId=${charge.id} error=${JSON.stringify(reverted.error)}`);
-      return reverted.ok || reverted.error.code === 'ALREADY_CANCELED_PAYMENT';
-    }
+    if (reverted?.ok || reverted?.error.code === 'ALREADY_CANCELED_PAYMENT') return true;
+    this.logger.error(`approval revert not confirmed: chargeId=${charge.id} error=${JSON.stringify(reverted?.error)}`);
     const query = await this.tossApi.getPaymentByOrderId(orderId, useWidgetKey).catch(() => null);
     return !!query?.ok && query.data.status === 'CANCELED';
   }
@@ -323,7 +320,7 @@ export class TossApproveService {
     });
   }
 
-  /** 닫혔는지 모르면(전송 오류 포함) false — 호출자는 열린 계좌로 다룬다. */
+  /** 이미 취소된 계좌도 닫힌 것이다. 닫혔는지 모르면(전송 오류 포함) false — 호출자는 열린 계좌로 다룬다. */
   private async closeVirtualAccount(charge: Charge, paymentKey: string): Promise<boolean> {
     const canceled = await this.tossApi
       .cancelPayment(
@@ -334,13 +331,12 @@ export class TossApproveService {
         undefined,
         usesTossWidget(charge.responsePayload),
       )
-      .catch((error: unknown) => ({ ok: false as const, error: { message: String(error) } }));
-    if (!canceled.ok) {
-      this.logger.error(
-        `virtual account left open: chargeId=${charge.id} paymentKey=${paymentKey} error=${JSON.stringify(canceled.error)}`,
-      );
-    }
-    return canceled.ok;
+      .catch((error: unknown) => ({ ok: false as const, error: { code: undefined, message: String(error) } }));
+    if (canceled.ok || canceled.error.code === 'ALREADY_CANCELED_PAYMENT') return true;
+    this.logger.error(
+      `virtual account left open: chargeId=${charge.id} paymentKey=${paymentKey} error=${JSON.stringify(canceled.error)}`,
+    );
+    return false;
   }
 
   /**
