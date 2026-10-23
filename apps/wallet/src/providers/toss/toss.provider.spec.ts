@@ -108,3 +108,71 @@ describe('TossPaymentProvider.refund — 위젯 결제 키 선택', () => {
     expect(result.status).toBe('SUCCEEDED');
   });
 });
+
+describe('TossPaymentProvider.cancel — 승인 결과를 모르는 charge', () => {
+  const unconfirmed = { providerTransactionId: null, responsePayload: { confirmAttempt: { paymentKey: 'pk_1' } } };
+  const cancelParams = () => ({
+    chargeId: '11111111-2222-3333-4444-555555555555',
+    intentId: 'in-1',
+    paymentMethodId: 'pm-1',
+    userId: 'u-1',
+    amount: 5000,
+    currency: 'KRW',
+    idempotencyKey: 'wallet:cancel:toss:c',
+    correlationId: 'c-1',
+  });
+  const make = (api: Record<string, jest.Mock>) =>
+    new TossPaymentProvider(dbWithCharge(unconfirmed), api as unknown as TossApiClient);
+
+  it('토스에 결제가 없거나 이미 끝났으면 닫을 게 없다', async () => {
+    const notFound = {
+      getPaymentByOrderId: jest
+        .fn()
+        .mockResolvedValue({ ok: false, error: { code: 'NOT_FOUND_PAYMENT', message: 'x' }, statusCode: 404 }),
+      cancelPayment: jest.fn(),
+    };
+    expect((await make(notFound).cancel(cancelParams())).status).toBe('SUCCEEDED');
+    expect(notFound.getPaymentByOrderId).toHaveBeenCalledWith('11111111222233334444555555555555', false);
+
+    const aborted = {
+      getPaymentByOrderId: jest.fn().mockResolvedValue({ ok: true, data: { status: 'ABORTED' } }),
+      cancelPayment: jest.fn(),
+    };
+    expect((await make(aborted).cancel(cancelParams())).status).toBe('SUCCEEDED');
+    expect(aborted.cancelPayment).not.toHaveBeenCalled();
+  });
+
+  it('돈이 빠졌거나 계좌가 열려 있으면 토스 결제 키로 취소한다', async () => {
+    const api = {
+      getPaymentByOrderId: jest.fn().mockResolvedValue({ ok: true, data: { status: 'DONE', paymentKey: 'pk_real' } }),
+      cancelPayment: jest.fn().mockResolvedValue({ ok: true, data: {} }),
+    };
+    expect((await make(api).cancel(cancelParams())).status).toBe('SUCCEEDED');
+    expect(api.cancelPayment).toHaveBeenCalledWith(
+      'pk_real',
+      '결제 취소',
+      undefined,
+      expect.any(String),
+      undefined,
+      false,
+    );
+  });
+
+  it('조회나 취소가 실패하면 FAILED — 정리 경로가 intent 를 넘기지 않는다', async () => {
+    const lookupDown = {
+      getPaymentByOrderId: jest.fn().mockRejectedValue(new Error('ECONNRESET')),
+      cancelPayment: jest.fn(),
+    };
+    expect((await make(lookupDown).cancel(cancelParams())).status).toBe('FAILED');
+
+    const cancelRefused = {
+      getPaymentByOrderId: jest
+        .fn()
+        .mockResolvedValue({ ok: true, data: { status: 'WAITING_FOR_DEPOSIT', paymentKey: 'pk_va' } }),
+      cancelPayment: jest
+        .fn()
+        .mockResolvedValue({ ok: false, error: { code: 'PROVIDER_ERROR', message: 'x' }, statusCode: 500 }),
+    };
+    expect((await make(cancelRefused).cancel(cancelParams())).status).toBe('FAILED');
+  });
+});

@@ -11,6 +11,7 @@ import { StateTransitionService } from '../domain/state-transition/state-transit
 import { GatewayEventType, buildPaymentIntentEventPayload } from '../messaging/gateway-event.builder';
 import { ChargePlan, ChargeSlot } from './charge-plan';
 import { depositWindowHours } from './deposit-window';
+import { hasConfirmAttempt } from '../providers/toss/toss-widget-mode';
 import { ChargeResult } from '../providers/payment-provider.interface';
 
 type CashReceiptRequest = { type: '소득공제' | '지출증빙'; customerIdentityNumber: string };
@@ -116,6 +117,13 @@ export class ConfirmService {
       throw new ConflictException({
         error: 'VIRTUAL_ACCOUNT_CLEANUP_PENDING',
         message: '이전 결제를 정리하고 있어요. 잠시 후 다시 시도해 주세요.',
+      });
+    }
+    if (existingActive && hasConfirmAttempt(existingActive.responsePayload)) {
+      // 승인 결과를 모르는 charge 를 DB 만 CANCELED 로 덮으면 토스에 남은 결제·계좌를 놓친다. abandon 이 정리한다.
+      throw new ConflictException({
+        error: 'PAYMENT_CONFIRMATION_PENDING',
+        message: '이전 결제 결과를 확인하고 있어요. 잠시 후 다시 시도해 주세요.',
       });
     }
     if (existingActive) {
