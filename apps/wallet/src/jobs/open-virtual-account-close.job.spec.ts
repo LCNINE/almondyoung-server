@@ -3,7 +3,7 @@ import { OpenVirtualAccountCloseJob } from './open-virtual-account-close.job';
 function makeContext(rows: Record<string, unknown>[], cancelResult: unknown) {
   const updates: unknown[] = [];
   const db = {
-    select: () => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve(rows) }) }) }),
+    select: () => ({ from: () => ({ where: () => ({ orderBy: () => ({ limit: () => Promise.resolve(rows) }) }) }) }),
     update: () => ({
       set: (values: unknown) => {
         updates.push(values);
@@ -47,6 +47,7 @@ describe('OpenVirtualAccountCloseJob', () => {
 
     const failing = makeContext([LEFT_OPEN], { ok: false, error: { code: 'PROVIDER_ERROR', message: 'x' } });
     expect(await failing.job.closeLeftOpen()).toEqual({ scanned: 1, closed: 0 });
-    expect(failing.updates).toHaveLength(0);
+    // 표식은 남기고 순서만 뒤로 민다.
+    expect(failing.updates).toEqual([{ updatedAt: expect.any(Date) }]);
   });
 });
