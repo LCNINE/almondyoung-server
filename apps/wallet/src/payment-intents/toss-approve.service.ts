@@ -362,6 +362,11 @@ export class TossApproveService {
       )
       .catch((error: unknown) => ({ ok: false as const, error: { code: undefined, message: String(error) } }));
     if (canceled.ok || canceled.error.code === 'ALREADY_CANCELED_PAYMENT') return true;
+    // 취소는 토스에서 끝났는데 응답만 잃었을 수 있다 — 닫힌 계좌를 입금대기로 안내하지 않게 실제 상태를 묻는다.
+    const query = await this.tossApi
+      .getPaymentByOrderId(charge.id.replace(/-/g, ''), usesTossWidget(charge.responsePayload))
+      .catch(() => null);
+    if (query?.ok && ['CANCELED', 'EXPIRED', 'ABORTED'].includes(query.data.status)) return true;
     this.logger.error(
       `virtual account left open: chargeId=${charge.id} paymentKey=${paymentKey} error=${JSON.stringify(canceled.error)}`,
     );

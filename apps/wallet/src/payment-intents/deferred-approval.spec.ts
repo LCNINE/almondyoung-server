@@ -70,7 +70,9 @@ function makeTossContext(
     confirmPayment: jest.fn().mockResolvedValue(confirmResult),
     confirmBrandPayPayment: jest.fn().mockResolvedValue(confirmResult),
     cancelPayment: jest.fn().mockResolvedValue({ ok: true, data: {} }),
-    getPaymentByOrderId: jest.fn(),
+    getPaymentByOrderId: jest
+      .fn()
+      .mockResolvedValue({ ok: false, error: { code: 'UNKNOWN', message: 'x' }, statusCode: 500 }),
   };
   const cashReceiptsService = { issue: jest.fn() };
   const bankTransferProvider = { getUserMethods: jest.fn().mockResolvedValue([{ id: 'pm-bank' }]) };
@@ -375,6 +377,30 @@ describe('widget virtual account', () => {
         providerTransactionId: 'pk_va',
         responsePayload: expect.objectContaining({ virtualAccountLeftOpenAt: expect.any(String) }),
       }),
+    );
+  });
+
+  it('계좌 폐쇄 응답을 잃었어도 토스에서 닫혔으면 입금대기로 안내하지 않고 실패로 확정한다', async () => {
+    const staged = {
+      provider: 'TOSS' as const,
+      providerToken: 'pk_va',
+      orderId: ORDER_ID,
+      amount: 10000,
+      stagedAt: new Date(0).toISOString(),
+    };
+    const ctx = makeTossContext({ approvalMode: 'DEFERRED' }, WIDGET_CHARGE, VA_CONFIRM);
+    ctx.tossApi.cancelPayment.mockRejectedValue(new Error('ECONNRESET'));
+    ctx.tossApi.getPaymentByOrderId.mockResolvedValue({ ok: true, data: { status: 'CANCELED' } });
+
+    await expect(ctx.service.confirmStaged(WIDGET_CHARGE, staged, 'corr-1')).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'VIRTUAL_ACCOUNT_NOT_DEFERRABLE' }),
+    });
+    expect(ctx.stateTransitionService.transitionIntent).not.toHaveBeenCalledWith(
+      'intent-1',
+      'AWAITING_DEPOSIT',
+      expect.anything(),
+      undefined,
+      expect.anything(),
     );
   });
 
