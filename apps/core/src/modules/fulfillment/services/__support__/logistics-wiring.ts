@@ -29,6 +29,7 @@ import { FulfillmentOrderCreationBacklogService } from '../../backlog/fulfillmen
 import { FulfillmentProgressService } from '../fulfillment-progress.service';
 import { FulfillmentInvariantService } from '../fulfillment-invariant.service';
 import { ShipmentReservationService } from '../shipment-reservation.service';
+import { UnboxedDemandCancellation } from '../../unboxed-demand/unboxed-demand-cancellation';
 
 export class Rollback extends Error {}
 
@@ -66,6 +67,7 @@ export interface Wired {
   shipmentReservations: ShipmentReservationService;
   retryWorker: FulfillmentOrderReservationRetryWorker;
   workflowGate: FulfillmentWorkflowGate;
+  unboxedDemand: UnboxedDemandCancellation;
 }
 
 export function wireLogistics(
@@ -140,6 +142,7 @@ export function wireLogistics(
     shipmentReservations,
     retryWorker,
     workflowGate,
+    unboxedDemand: new UnboxedDemandCancellation(dbService),
   };
 }
 
