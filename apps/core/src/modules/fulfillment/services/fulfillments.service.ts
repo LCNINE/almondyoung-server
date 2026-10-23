@@ -475,10 +475,12 @@ export class FulfillmentsService {
         .from(wmsTables.fulfillmentOrderItems)
         .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, id));
       const now = new Date();
-      for (const item of items) {
+      // 남은 수량(qty − shipped − canceled)이 없는 항목(전량 취소)은 건드리지 않는다
+      const shippable = items.filter((item) => item.qty - item.shippedQty - item.canceledQty > 0);
+      for (const item of shippable) {
         await trx
           .update(wmsTables.fulfillmentOrderItems)
-          .set({ shippedQty: item.qty, status: 'shipped', updatedAt: now })
+          .set({ shippedQty: item.qty - item.canceledQty, status: 'shipped', updatedAt: now })
           .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
       }
       await trx
@@ -511,7 +513,11 @@ export class FulfillmentsService {
         trackingInfo: { carrier: 'CJ', trackingNumber: '', invoiceUrl: undefined },
         shippedAt: now.toISOString(),
         estimatedDeliveryDate: undefined,
-        shippedItems: items.map((item) => ({ fulfillmentItemId: item.id, skuId: item.skuId, shippedQty: item.qty })),
+        shippedItems: shippable.map((item) => ({
+          fulfillmentItemId: item.id,
+          skuId: item.skuId,
+          shippedQty: item.qty - item.canceledQty,
+        })),
       };
       await this.fulfillmentsV1.enqueue(
         {
