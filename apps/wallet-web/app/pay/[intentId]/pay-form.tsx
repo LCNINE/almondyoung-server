@@ -451,12 +451,15 @@ export function PayForm({
         )}
       </div>
       {!isZeroAmount && !isMembership && (
-        <CheckoutPoints
-          availablePoints={availablePoints}
-          maxPoints={maxPoints}
-          points={pointsUsed}
-          onChange={setPointsUsed}
-        />
+        // 결제 요청 중 포인트가 바뀌면 위젯 금액이 서버 금액과 달라져 승인이 TOSS_AMOUNT_MISMATCH 로 실패한다.
+        <fieldset disabled={loading} className="min-w-0">
+          <CheckoutPoints
+            availablePoints={availablePoints}
+            maxPoints={maxPoints}
+            points={pointsUsed}
+            onChange={setPointsUsed}
+          />
+        </fieldset>
       )}
       <section aria-label="결제 금액" className="border-t border-border/60 bg-white py-5">
         <h2 className="font-bold">결제 금액</h2>
