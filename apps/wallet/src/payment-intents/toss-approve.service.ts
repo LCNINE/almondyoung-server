@@ -11,7 +11,7 @@ import { TossApiClient, TossConfirmResponse, TossVirtualAccount } from '../provi
 import { tossBankName } from '../providers/toss/toss-banks';
 import { BankTransferPaymentProvider } from '../providers/bank-transfer/bank-transfer.provider';
 import { tossBrandPayCustomerKey } from '../providers/toss/toss-brandpay-customer-key';
-import { usesTossWidget } from '../providers/toss/toss-widget-mode';
+import { VIRTUAL_ACCOUNT_LEFT_OPEN, usesTossWidget } from '../providers/toss/toss-widget-mode';
 import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
 import { StagedApproval, isDeferredApprovalIntent } from './deferred-approval';
 import { depositWindowHours } from './deposit-window';
@@ -173,7 +173,7 @@ export class TossApproveService {
           ...(charge.responsePayload ?? {}),
           paymentKey,
           virtualAccount: va,
-          virtualAccountLeftOpenAt: new Date().toISOString(),
+          [VIRTUAL_ACCOUNT_LEFT_OPEN]: new Date().toISOString(),
         },
         updatedAt: new Date(),
       })
@@ -299,15 +299,18 @@ export class TossApproveService {
     });
   }
 
+  /** 닫혔는지 모르면(전송 오류 포함) false — 호출자는 열린 계좌로 다룬다. */
   private async closeVirtualAccount(charge: Charge, paymentKey: string): Promise<boolean> {
-    const canceled = await this.tossApi.cancelPayment(
-      paymentKey,
-      '결제 취소',
-      undefined,
-      `cancel:${charge.providerIdempotencyKey}`,
-      undefined,
-      usesTossWidget(charge.responsePayload),
-    );
+    const canceled = await this.tossApi
+      .cancelPayment(
+        paymentKey,
+        '결제 취소',
+        undefined,
+        `cancel:${charge.providerIdempotencyKey}`,
+        undefined,
+        usesTossWidget(charge.responsePayload),
+      )
+      .catch((error: unknown) => ({ ok: false as const, error: { message: String(error) } }));
     if (!canceled.ok) {
       this.logger.error(
         `virtual account left open: chargeId=${charge.id} paymentKey=${paymentKey} error=${JSON.stringify(canceled.error)}`,

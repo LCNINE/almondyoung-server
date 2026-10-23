@@ -415,7 +415,8 @@ describe('widget virtual account', () => {
   it('입금대기 반영이 거부되고 계좌도 못 닫으면 결제 키와 무통장 분류를 charge 에 남긴다', async () => {
     const ctx = makeTossContext({}, WIDGET_CHARGE, VA_CONFIRM);
     ctx.stateTransitionService.transitionIntent.mockRejectedValue(new Error('INVALID_TRANSITION'));
-    ctx.tossApi.cancelPayment.mockResolvedValue({ ok: false, error: { code: 'PROVIDER_ERROR', message: 'x' } });
+    // 전송 오류로 닫혔는지 모르는 경우도 열린 계좌로 다룬다.
+    ctx.tossApi.cancelPayment.mockRejectedValue(new Error('ECONNRESET'));
 
     await expect(ctx.service.approve('intent-1', 'pk_va', ORDER_ID, 10000, 'corr-1')).rejects.toThrow(
       'INVALID_TRANSITION',
