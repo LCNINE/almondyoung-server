@@ -100,14 +100,18 @@ export class TossApproveService {
     // 승인을 되돌려 고객이 정상 흐름으로 다시 결제하게 한다. 되돌리지 못하면 승인을 그대로 확정한다
     // (돈은 이미 빠졌으므로 실패로 두면 결제가 원장에서 사라진다).
     if (method === 'VIRTUAL_ACCOUNT' && isDeferredApprovalIntent(intent.metadata)) {
-      const reverted = await this.tossApi.cancelPayment(
-        result.data.paymentKey,
-        '결제 취소',
-        undefined,
-        `cancel:${charge.providerIdempotencyKey}`,
-        undefined,
-        usesTossWidget(charge.responsePayload),
-      );
+      // 되돌렸는지 모르는 전송 오류도 못 되돌린 것으로 본다 — 결제 키를 남기지 않고 throw 하면 실패 화면의
+      // abandon 이 돈 빠진 charge 를 환불 없이 CANCELED 로 덮는다.
+      const reverted = await this.tossApi
+        .cancelPayment(
+          result.data.paymentKey,
+          '결제 취소',
+          undefined,
+          `cancel:${charge.providerIdempotencyKey}`,
+          undefined,
+          usesTossWidget(charge.responsePayload),
+        )
+        .catch((error: unknown) => ({ ok: false as const, error: { message: String(error) } }));
       if (reverted.ok) {
         await this.finalizeFailure(charge, 'PAYMENT_METHOD_MISMATCH', correlationId);
         throw new UnprocessableEntityException({

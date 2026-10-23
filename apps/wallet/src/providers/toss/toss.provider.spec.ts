@@ -75,7 +75,10 @@ describe.each<[string, (db: never, api: TossApiClient) => PaymentProvider, strin
 describe('TossPaymentProvider.refund — 위젯 결제 키 선택', () => {
   it('확정(CAPTURE)분 환불은 승인분 charge 에서 위젯 여부를 읽어 위젯 키로 취소한다', async () => {
     const rows: Record<string, Record<string, unknown>> = {
-      'authorize-charge': { providerTransactionId: 'pk_w', responsePayload: { nextAction: { checkoutMode: 'WIDGET' } } },
+      'authorize-charge': {
+        providerTransactionId: 'pk_w',
+        responsePayload: { nextAction: { checkoutMode: 'WIDGET' } },
+      },
       'capture-charge': { providerTransactionId: 'pk_w', responsePayload: null },
     };
     const db = {

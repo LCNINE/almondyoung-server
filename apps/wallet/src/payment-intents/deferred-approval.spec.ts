@@ -458,6 +458,23 @@ describe('widget virtual account', () => {
     expect(ctx.autoCaptureService.attemptAutoCapture).not.toHaveBeenCalled();
   });
 
+  it('카드 승인을 되돌리다 전송 오류가 나면 승인을 그대로 확정한다', async () => {
+    const ctx = makeTossContext({ approvalMode: 'DEFERRED' }, WIDGET_CHARGE, {
+      ok: true,
+      data: { paymentKey: 'pk_card', status: 'DONE' },
+    });
+    ctx.tossApi.cancelPayment.mockRejectedValue(new Error('ECONNRESET'));
+
+    await ctx.service.approve('intent-1', 'pk_card', ORDER_ID, 10000, 'corr-1', 'NORMAL', 'VIRTUAL_ACCOUNT');
+
+    expect(ctx.chargesService.updateStatus).toHaveBeenCalledWith(
+      CHARGE_ID,
+      'SUCCEEDED',
+      { providerTransactionId: 'pk_card' },
+      expect.anything(),
+    );
+  });
+
   it('가상계좌 신호가 있어도 금액이 charge 와 다르면 승인하지 않는다', async () => {
     const ctx = makeTossContext({ approvalMode: 'DEFERRED' }, WIDGET_CHARGE, VA_CONFIRM);
 
