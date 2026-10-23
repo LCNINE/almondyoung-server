@@ -1,5 +1,6 @@
 import { inventoryTables } from '../../inventory/schema/inventory.schema';
 import { StoreCancelUnavailableReason } from '../dto/store-order-actions.dto';
+import { cancellationCapabilityOf } from '../order-cancellation/channel-cancellation-capability';
 
 type SalesOrderRow = typeof inventoryTables.salesOrders.$inferSelect;
 
@@ -32,7 +33,7 @@ export async function selfCancelBlock(
     return { reason: 'already_shipped', message: '이미 출고된 주문은 취소할 수 없습니다. 고객센터로 문의해 주세요.' };
   }
 
-  if (facts.salesChannel !== 'medusa') {
+  if (!cancellationCapabilityOf(facts.salesChannel).customerSelfCancel) {
     return {
       reason: 'channel_order',
       message: `${facts.salesChannel} 채널 주문은 해당 채널에서 직접 취소해 주세요.`,

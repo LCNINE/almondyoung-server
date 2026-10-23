@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, ne, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { readLineQuantities } from '../line-quantities/line-quantities.reader';
 import { toShippingAddress } from './channel-order-diff';
@@ -104,28 +104,6 @@ export class ChannelOrderChangeReader {
     return Boolean(row);
   }
 
-  /**
-   * 이 취소가 그 자리에서 끝나지 않았는가 — 끝나지 않았으면 그 사유(blocker detail), 끝났으면 null.
-   * ① 박스 쪽에서 대기(CANCEL_REPLAN_PENDING·이탈 대기)로 끝남 — V2 경로.
-   * ② 이미 출고된 수량을 건드려 출고분 보존·회수 이관이 생김 — V1 경로(`toPostShipmentCancellationEffects`).
-   *    채널 정정은 회수를 열지 않는다(스펙 §7.2 R1) — 사람이 판단할 대기로 남긴다.
-   */
-  async cancellationNeedsFollowUp(salesOrderId: string, sourceEventId: string, tx: DbTx): Promise<string | null> {
-    const rows = await tx
-      .select({ effects: wmsTables.salesOrderCancellations.effects })
-      .from(wmsTables.salesOrderCancellations)
-      .where(
-        and(
-          eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId),
-          sql`${wmsTables.salesOrderCancellations.metadata}->>'sourceEventId' = ${sourceEventId}`,
-        ),
-      );
-    const effects = rows.flatMap((row) => (Array.isArray(row.effects) ? row.effects : []));
-    if (effects.some(isPendingShipmentCancellation)) return 'shipment cancellation would wait';
-    if (effects.some(isPostShipmentFollowUp)) return 'cancellation needs post-shipment follow-up';
-    return null;
-  }
-
   /** 주문의 출고지시가 하나 이상 있고, 끝나지 않은 출고지시도 아직 떠나지 않은 박스도 없는가(전량 출고). */
   /**
    * 와우프레스로 이미 보냈거나 보내는 중인 인쇄 줄이 있는가 — 그 인쇄물은 주문할 때 받은 옛 주소로 간다.
@@ -148,16 +126,6 @@ export class ChannelOrderChangeReader {
     );
   }
 
-  async hasActivePrintOrder(salesOrderLineId: string, tx: DbTx): Promise<boolean> {
-    const t = wmsTables.printOrders;
-    const rows = await tx
-      .select({ id: t.id })
-      .from(t)
-      .where(and(eq(t.salesOrderLineId, salesOrderLineId), ne(t.status, 'cancelled')))
-      .for('update');
-    return rows.length > 0;
-  }
-
   async isFullyShipped(salesOrderId: string, tx: DbTx): Promise<boolean> {
     const fulfillmentOrders = await tx
       .select({ status: wmsTables.fulfillmentOrders.status })
@@ -168,24 +136,4 @@ export class ChannelOrderChangeReader {
     if (fulfillmentOrders.some((fo) => !finished.includes(fo.status))) return false;
     return (await this.remainingShipmentIds(salesOrderId, tx)).length === 0;
   }
-}
-
-function effectType(effect: unknown): unknown {
-  return typeof effect === 'object' && effect !== null ? Reflect.get(effect, 'type') : undefined;
-}
-
-function isPendingShipmentCancellation(effect: unknown): boolean {
-  if (typeof effect !== 'object' || effect === null) return false;
-  if (Reflect.get(effect, 'type') !== 'shipment_outstanding_cancellation') return false;
-  const metadata: unknown = Reflect.get(effect, 'metadata');
-  return typeof metadata === 'object' && metadata !== null && Reflect.get(metadata, 'operationStatus') === 'pending';
-}
-
-/** `SalesOrdersService.toPostShipmentCancellationEffects` 가 남기는 두 효과 형식. */
-function isPostShipmentFollowUp(effect: unknown): boolean {
-  const type = effectType(effect);
-  return (
-    type === 'preserved_shipped_fulfillment_order_item' ||
-    (typeof type === 'string' && type.startsWith('linked_post_shipment_'))
-  );
 }

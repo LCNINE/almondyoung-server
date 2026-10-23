@@ -3,7 +3,11 @@ import { BadRequestException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb, Rollback, seedSalesOrder } from '../../fulfillment/services/__support__';
-import { seedCancellableOrder, seedShippedV1Fulfillment, wireCancellation } from './__support__/cancellation-scenarios';
+import {
+  seedCancellableOrder,
+  seedShippedBeforeBoxingFulfillment,
+  wireCancellation,
+} from './__support__/cancellation-scenarios';
 import { CancellationLineDerivationError } from './cancellation-lines';
 import { recordSalesOrderCancellation } from './record-cancellation';
 
@@ -36,7 +40,7 @@ describeIfDb('recordSalesOrderCancellation — 취소 행과 라인 행을 같�
     await client.end();
   });
 
-  it('v1 partial before FO writes before_shipment lines', async () => {
+  it('상자 전 부분 취소 — FO 전 writes before_shipment lines', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
       const o = await seedCancellableOrder(tx, w, 3);
@@ -56,11 +60,11 @@ describeIfDb('recordSalesOrderCancellation — 취소 행과 라인 행을 같�
     });
   });
 
-  it('v1 partial after shipment writes after_shipment lines', async () => {
+  it('상자 전 부분 취소 — 출고 후 writes after_shipment lines', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
       const o = await seedCancellableOrder(tx, w, 3);
-      await seedShippedV1Fulfillment(tx, o, 3);
+      await seedShippedBeforeBoxingFulfillment(tx, o, 3);
 
       await w.salesOrders.cancel(
         o.salesOrderId,
@@ -75,7 +79,7 @@ describeIfDb('recordSalesOrderCancellation — 취소 행과 라인 행을 같�
     });
   });
 
-  it('v1 full writes every remainder', async () => {
+  it('상자 전 전체 writes every remainder', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
       const o = await seedCancellableOrder(tx, w, 2);
@@ -96,7 +100,7 @@ describeIfDb('recordSalesOrderCancellation — 취소 행과 라인 행을 같�
     });
   });
 
-  it('v2 full writes outstanding lines', async () => {
+  it('상자 후 전체 writes outstanding lines', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
       const o = await seedCancellableOrder(tx, w, 2);
@@ -139,7 +143,7 @@ describeIfDb('recordSalesOrderCancellation — 취소 행과 라인 행을 같�
     });
   });
 
-  it('v2 partial after a v2 full is rejected with 400 and writes nothing', async () => {
+  it('상자 후 부분 — 상자 후 전체 뒤 is rejected with 400 and writes nothing', async () => {
     // 상자를 거치지 않는 디지털 줄은 박스 줄 배분 검사에 걸리지 않는다 — 전체 취소 행 확인이 없으면
     // 이미 전체 취소가 뺀 줄을 다시 빼려다 쓰기 문 도출(합 > 주문 수량)이 터져 500 이 된다.
     await inRollbackTx(db, async (tx) => {

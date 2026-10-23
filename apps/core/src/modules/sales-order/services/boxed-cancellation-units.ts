@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { CompositionItem } from '../../product-matching/line-composition/line-composition';
 
 /**
- * V2 취소의 «판매 단위 ↔ 물리 수량» 환산(#1063 스펙 §6.5). 비율은 라인의 굳힌 구성(qtyPerUnit)에서 읽는다 —
+ * 상자 후 취소의 «판매 단위 ↔ 물리 수량» 환산(#1063 스펙 §6.5). 비율은 라인의 굳힌 구성(qtyPerUnit)에서 읽는다 —
  * 옛 코드는 «FO 항목 수량 ÷ 라인 주문 수량»으로 거꾸로 셌는데, 구성을 바꾼 라인·FO 생성 전 부분 취소가 있던 라인에서
  * 그 역산이 나눠떨어지지 않아 고객 취소가 409 로 거절됐다.
  * «아직 안 나간 판매 단위»(읽기)는 라인 수량 문의 `cancellableSalesUnits` 로 옮겼다(K6 PR2b) — 여기는 FOI 단위 쓰기 배분만 남는다.
@@ -30,7 +30,7 @@ function itemsByCompositionSku(
   const stray = items.find((item) => !skus.has(item.skuId) && outstandingOf(item) > 0);
   if (stray) {
     throw new ConflictException(
-      `V2 fulfillment item ${stray.id} is outside the composition of SalesOrder line ${salesOrderLineId}`,
+      `Boxed fulfillment item ${stray.id} is outside the composition of SalesOrder line ${salesOrderLineId}`,
     );
   }
   const bySku = new Map<string, LineFulfillmentItem[]>();

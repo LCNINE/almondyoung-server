@@ -13,6 +13,8 @@ import {
 } from '../../fulfillment/services/__support__';
 import { WalletRefundClient } from './wallet-refund.client';
 import { StoreSalesOrdersService } from './store-sales-orders.service';
+import { OrderCancellation } from '../order-cancellation/order-cancellation';
+import { OrderCancellationReader } from '../order-cancellation/order-cancellation.reader';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -160,10 +162,31 @@ describeIfDb('Store order tracking V2 graph (DB integration, rollback-only)', ()
         },
       ]);
 
-      const service = new StoreSalesOrdersService({ db: tx } as never, {} as never, {} as WalletRefundClient, {} as never, {
+      const db = { db: tx };
+      const salesOrders = {};
+      const cancelRequests = {};
+      const printOrders = {
         forSalesOrder: () => Promise.resolve([]),
         isAllOutsourced: () => Promise.resolve(false),
-      } as never, {} as never);
+      };
+      const printCancellation = {};
+      const service = new StoreSalesOrdersService(
+        db as never,
+        salesOrders as never,
+        {} as WalletRefundClient,
+        cancelRequests as never,
+        printOrders as never,
+        printCancellation as never,
+        new OrderCancellation(
+          db as never,
+          salesOrders as never,
+          cancelRequests as never,
+          printOrders as never,
+          printCancellation as never,
+          {} as never,
+          new OrderCancellationReader(),
+        ),
+      );
       const firstView = await service.getTracking(first.salesOrderId, customerId);
       const secondView = await service.getTracking(second.salesOrderId, customerId);
 

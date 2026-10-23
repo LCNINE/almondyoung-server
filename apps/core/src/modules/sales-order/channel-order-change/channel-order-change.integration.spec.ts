@@ -23,11 +23,31 @@ import { seedCancellableOrder, wireCancellation } from '../cancellation-record/_
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
 import { ChannelOrderChangeReader } from './channel-order-change.reader';
 import { ChannelOrderChangeManager, PRINT_HELD_FOR_DECREASE } from './channel-order-change.manager';
+import { OrderCancellation } from '../order-cancellation/order-cancellation';
+import { OrderCancellationReader } from '../order-cancellation/order-cancellation.reader';
+import { PrintOrderReader } from '../../print-order/services/print-order.reader';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 const ADDRESS = { recipientName: '김', phone: '010-1', postalCode: '12345', roadAddress: '서울', detailAddress: '101' };
 const NEXT = { ...ADDRESS, roadAddress: '부산', detailAddress: '202' };
+
+/** 실제 커널. 수량 감소 갈래는 판매주문 취소와 커널 reader 만 쓰므로 요청·인쇄 협력자는 비워 둔다 */
+function kernelFor(
+  dbService: ReturnType<typeof ambientDbService>,
+  salesOrders: SalesOrdersService,
+  settler: ChannelCancelSettler,
+) {
+  return new OrderCancellation(
+    dbService,
+    salesOrders,
+    {} as never,
+    new PrintOrderReader(dbService),
+    {} as never,
+    settler,
+    new OrderCancellationReader(),
+  );
+}
 
 function wire(tx: DbTx) {
   const dbService = ambientDbService(tx);
@@ -48,14 +68,15 @@ function wire(tx: DbTx) {
   );
   const amendments = new SalesOrderAmendmentsService(dbService);
   const reader = new ChannelOrderChangeReader();
+  const settler = new ChannelCancelSettler(new ChannelCancelRequestReader());
   const manager = new ChannelOrderChangeManager(
     reader,
-    salesOrders,
     amendments,
     {
       get: () => outbound.planning,
     } as never,
-    new ChannelCancelSettler(new ChannelCancelRequestReader()),
+    settler,
+    kernelFor(dbService, salesOrders, settler),
   );
   return { logistics, outbound, salesOrders, manager };
 }
@@ -301,12 +322,13 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
       const failingPlanning = {
         reviseRecipientFromChannel: () => Promise.reject(new Error('boom')),
       };
+      const settler = new ChannelCancelSettler(new ChannelCancelRequestReader());
       const manager = new ChannelOrderChangeManager(
         new ChannelOrderChangeReader(),
-        w.salesOrders,
         new SalesOrderAmendmentsService(ambientDbService(tx)),
         { get: () => failingPlanning } as never,
-        new ChannelCancelSettler(new ChannelCancelRequestReader()),
+        settler,
+        kernelFor(ambientDbService(tx), w.salesOrders, settler),
       );
       await expect(
         manager.handle(seed.salesOrderId, payload(seed, { shippingAddress: NEXT }), `m-${randomUUID()}`, tx),
@@ -369,6 +391,7 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
           blockers: [{ code: 'CANCEL_NOT_IMMEDIATE', detail: 'print order on this line — decide on WowPress' }],
         }),
       ]);
+      // 인쇄 줄은 쓰기 전에 거절한다 — savepoint 되돌림은 아래 출고분 거절 케이스가 증명한다
       // 아무것도 취소되지 않았다 — 문은 모든 라인을 canceled 0 으로 낸다(빈 맵이 아니다)
       expect([...(await readLineQuantities(tx, seed.salesOrderId)).values()].map((line) => line.canceled)).toEqual([
         0, 0,
@@ -410,11 +433,11 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
     });
   });
 
-  it('감소 — V1 출고지시(박스 이력 없음)에서 이미 출고된 수량이면 되돌리고 CANCEL_NOT_IMMEDIATE(취소·회수 이관 없음)', async () => {
+  it('감소 — 상자 전 출고지시(박스 이력 없음)에서 이미 출고된 수량이면 되돌리고 CANCEL_NOT_IMMEDIATE(취소·회수 이관 없음)', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wire(tx);
       const seed = await seedOrder(tx, w, { withFo: false });
-      // V2 박스가 없는 옛 출고지시 — `hasV2FulfillmentHistory` 가 거짓이라 `cancelPartial` 경로로 간다.
+      // 박스 이력이 없는 옛 출고지시 — `hasBoxedFulfillment` 가 거짓이라 `cancelBeforeBoxingPartial` 경로로 간다.
       const [fo] = await tx
         .insert(wmsTables.fulfillmentOrders)
         .values({
@@ -686,7 +709,7 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
     });
   });
 
-  it('effective quantity after a v2 full cancellation is zero', async () => {
+  it('effective quantity after an after-boxing full cancellation is zero', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
       const o = await seedCancellableOrder(tx, w, 2);

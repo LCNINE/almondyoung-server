@@ -31,7 +31,7 @@ describeIfDb('SalesOrdersService 취소 엔진 — 이미 취소된 수량 읽�
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
       const o = await seedCancellableOrder(tx, w, 2);
-      // 판매주문 status 는 그대로 두고 전체취소 «기록»만 남긴다 — V2 전체 + 남은 출고분처럼 SO 가 cancelled 가 아닌 상태.
+      // 판매주문 status 는 그대로 두고 전체취소 «기록»만 남긴다 — 상자 후 전체 + 남은 출고분처럼 SO 가 cancelled 가 아닌 상태.
       await recordSalesOrderCancellation(
         tx,
         {
@@ -73,8 +73,8 @@ describeIfDb('SalesOrdersService 취소 엔진 — 이미 취소된 수량 읽�
 
 type SetComponent = { skuId: string; foItemId: string; shipmentId: string; shipmentLineId: string; qty: number };
 
-/** V2 세트 라인 — 구성 SKU 마다 FOI 하나(qty = 라인 수량 × 1개당 수량)를 두고 상자(draft)에 담는다. 구성은 FO 생성처럼 굳힌다. */
-async function seedV2SetOrder(
+/** 상자 후 세트 라인 — 구성 SKU 마다 FOI 하나(qty = 라인 수량 × 1개당 수량)를 두고 상자(draft)에 담는다. 구성은 FO 생성처럼 굳힌다. */
+async function seedBoxedSetOrder(
   tx: DbTx,
   args: { quantity: number; qtyPerUnit: number[]; boxPerComponent?: boolean },
 ): Promise<{ w: World; order: { salesOrderId: string; lineId: string }; components: SetComponent[] }> {
@@ -140,7 +140,7 @@ async function foItemQty(tx: DbTx, foItemId: string): Promise<number> {
 
 /**
  * 취소 엔진의 남은·취소 가능·출고 수량은 라인 수량 문(`readLineQuantities` 의 `remaining`·`skus`)에서 읽는다 (K6 PR2b).
- * V2 전체 재계획은 `cancellableSalesUnits`, V1 의 출고 수량은 FOI `shipped_qty` 하나다(P7).
+ * 상자 후 전체 재계획은 `cancellableSalesUnits`, 상자 전의 출고 수량은 FOI `shipped_qty` 하나다(P7).
  */
 describeIfDb('SalesOrdersService 취소 엔진 — 남은·취소 가능·출고 수량 (K6 PR2b)', () => {
   jest.setTimeout(120_000);
@@ -149,10 +149,10 @@ describeIfDb('SalesOrdersService 취소 엔진 — 남은·취소 가능·출고
     await client.end();
   });
 
-  it('v2 full replan cancels the cancellable units of a set line', async () => {
+  it('상자 후 전체 replan cancels the cancellable units of a set line', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
-      const { order } = await seedV2SetOrder(tx, { quantity: 2, qtyPerUnit: [1, 2] });
+      const { order } = await seedBoxedSetOrder(tx, { quantity: 2, qtyPerUnit: [1, 2] });
 
       const plan = await w.salesOrders.planCancellation(order.salesOrderId, undefined, tx);
 
@@ -160,10 +160,10 @@ describeIfDb('SalesOrdersService 취소 엔진 — 남은·취소 가능·출고
     });
   });
 
-  it('v2 full includes the remaining of an outsourced line', async () => {
+  it('상자 후 전체 includes the remaining of an outsourced line', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
-      const { order } = await seedV2SetOrder(tx, { quantity: 2, qtyPerUnit: [1, 2] });
+      const { order } = await seedBoxedSetOrder(tx, { quantity: 2, qtyPerUnit: [1, 2] });
       const [printLine] = await tx
         .insert(wmsTables.salesOrderLines)
         .values({
@@ -190,14 +190,14 @@ describeIfDb('SalesOrdersService 취소 엔진 — 남은·취소 가능·출고
     });
   });
 
-  it('v2 full on a half-shipped bundle is refused', async () => {
+  it('상자 후 전체 on a half-shipped bundle is refused', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
       const {
         w: world,
         order,
         components,
-      } = await seedV2SetOrder(tx, {
+      } = await seedBoxedSetOrder(tx, {
         quantity: 1,
         qtyPerUnit: [1, 1],
         boxPerComponent: true,
@@ -212,12 +212,12 @@ describeIfDb('SalesOrdersService 취소 엔진 — 남은·취소 가능·출고
 
       await expect(planning).rejects.toThrow(ConflictException);
       await expect(planning).rejects.toThrow(
-        `V2 component progress is inconsistent for SalesOrder line ${order.lineId}`,
+        `Boxed component progress is inconsistent for SalesOrder line ${order.lineId}`,
       );
     });
   });
 
-  it('v1 partial ignores a shipped fo flag without item shipped qty', async () => {
+  it('상자 전 부분 ignores a shipped fo flag without item shipped qty', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
       const world = await seedWorld(tx);
@@ -240,7 +240,7 @@ describeIfDb('SalesOrdersService 취소 엔진 — 남은·취소 가능·출고
     });
   });
 
-  it('v1 partial of a shipped status fo without item shipped qty is refused', async () => {
+  it('상자 전 부분 of a shipped status fo without item shipped qty is refused', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
       const world = await seedWorld(tx);
@@ -264,7 +264,7 @@ describeIfDb('SalesOrdersService 취소 엔진 — 남은·취소 가능·출고
     });
   });
 
-  it('admin v1 cancel of a forwarded drop-ship still reduces items', async () => {
+  it('관리자 상자 전 취소 of a forwarded drop-ship still reduces items', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
       const world = await seedWorld(tx);

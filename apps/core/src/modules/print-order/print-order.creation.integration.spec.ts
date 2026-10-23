@@ -17,6 +17,9 @@ import type { ChannelOrderChangeService } from '../sales-order/channel-order-cha
 import type { ChannelCancelSettler } from '../sales-order/channel-cancel-request/channel-cancel-settler';
 import type { ChannelCancelRequestService } from '../sales-order/channel-cancel-request/channel-cancel-request.service';
 import type { PrintOrderCancellationManager } from './services/print-order-cancellation.manager';
+import type { PrintOrderReader } from './services/print-order.reader';
+import { OrderCancellation } from '../sales-order/order-cancellation/order-cancellation';
+import { OrderCancellationReader } from '../sales-order/order-cancellation/order-cancellation.reader';
 import { CORE_ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
 import type { PublisherFor } from '@app/events';
 import { ORDER_STREAM, type OrderCreatedPayload } from '@packages/event-contracts/streams/orders.stream';
@@ -53,9 +56,16 @@ function makeConsumer(tx: DbTx): OrderEventsConsumer {
     noFulfillment as unknown as FulfillmentWorkflowGate,
     dbService,
     unused as unknown as ChannelOrderChangeService,
-    unused as unknown as ChannelCancelSettler,
     unused as unknown as ChannelCancelRequestService,
-    unused as unknown as PrintOrderCancellationManager,
+    new OrderCancellation(
+      dbService,
+      service,
+      unused as unknown as ChannelCancelRequestService,
+      unused as unknown as PrintOrderReader,
+      unused as unknown as PrintOrderCancellationManager,
+      unused as unknown as ChannelCancelSettler,
+      new OrderCancellationReader(),
+    ),
   );
 }
 

@@ -19,7 +19,7 @@ type SalesOrderCancellation = typeof wmsTables.salesOrderCancellations.$inferSel
  * 도출이 실패하면(`CancellationLineDerivationError`) 그대로 올려 호출자 트랜잭션을 롤백시킨다 —
  * 프로그램 불변식 위반이라 도메인 예외로 바꾸지 않는다(앞단 검사가 같은 조건을 이미 400 으로 거른다).
  *
- * 취소할 라인은 `requestedLines` 로만 받는다(V1 전체취소는 null). 취소 수량의 기록은 라인 행 하나뿐이라
+ * 취소할 라인은 `requestedLines` 로만 받는다(상자 전 전체취소는 null). 취소 수량의 기록은 라인 행 하나뿐이라
  * 취소 행 metadata 에 `cancelledLines` 를 싣는 호출은 거절한다 — 실으면 기록이 다시 두 벌이 된다 (K6 PR6).
  */
 export async function recordSalesOrderCancellation(

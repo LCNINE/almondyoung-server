@@ -38,7 +38,7 @@ describeIfDb('SalesOrdersService.planCancellation (DB integration, rollback-only
     await sql.end({ timeout: 5 });
   });
 
-  it('V2 전체 — 줄마다 남은 몫, 출고 없음, 남는 것 없음. 아무것도 쓰지 않는다', async () => {
+  it('상자 후 전체 — 줄마다 남은 몫, 출고 없음, 남는 것 없음. 아무것도 쓰지 않는다', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireSalesOrders(tx);
       const seed = await seedChannelOrder(tx, w, { withFo: true });
@@ -59,7 +59,7 @@ describeIfDb('SalesOrdersService.planCancellation (DB integration, rollback-only
     });
   });
 
-  it('V2 전체 — 한 줄이 다 나갔으면 남은 줄만, hasShippedQuantity', async () => {
+  it('상자 후 전체 — 한 줄이 다 나갔으면 남은 줄만, hasShippedQuantity', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireSalesOrders(tx);
       const seed = await seedChannelOrder(tx, w, { withFo: true });
@@ -71,7 +71,7 @@ describeIfDb('SalesOrdersService.planCancellation (DB integration, rollback-only
     });
   });
 
-  it('V2 전체 — 다 나갔으면 지금 취소 코드와 같은 400', async () => {
+  it('상자 후 전체 — 다 나갔으면 지금 취소 코드와 같은 400', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireSalesOrders(tx);
       const seed = await seedChannelOrder(tx, w, { withFo: true });
@@ -83,7 +83,7 @@ describeIfDb('SalesOrdersService.planCancellation (DB integration, rollback-only
     });
   });
 
-  it('V2 부분 — 요청 줄 그대로, 다른 줄이 남으면 leavesNothing=false · 남은 수량 초과는 400', async () => {
+  it('상자 후 부분 — 요청 줄 그대로, 다른 줄이 남으면 leavesNothing=false · 남은 수량 초과는 400', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireSalesOrders(tx);
       const seed = await seedChannelOrder(tx, w, { withFo: true });
@@ -103,7 +103,7 @@ describeIfDb('SalesOrdersService.planCancellation (DB integration, rollback-only
     });
   });
 
-  it('V2 부분 — 남은 수량을 전부 요청하면 leavesNothing', async () => {
+  it('상자 후 부분 — 남은 수량을 전부 요청하면 leavesNothing', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireSalesOrders(tx);
       const seed = await seedChannelOrder(tx, w, { withFo: true });
@@ -135,7 +135,7 @@ describeIfDb('SalesOrdersService.planCancellation (DB integration, rollback-only
     });
   });
 
-  it('박스 이력 없음 — 이미 전체 취소된 주문의 부분 요청은 cancelPartial 과 같은 400', async () => {
+  it('박스 이력 없음 — 이미 전체 취소된 주문의 부분 요청은 cancelBeforeBoxingPartial 과 같은 400', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireSalesOrders(tx);
       const seed = await seedChannelOrder(tx, w, { withFo: false });
@@ -173,7 +173,7 @@ describeIfDb('SalesOrdersService.planCancellation (DB integration, rollback-only
     });
   });
 
-  it('V2 전체 — 인쇄(외주) 줄은 창고 항목이 없어도 남은 판매 수량이 계획에 들어간다(출고분 제외 전환에서도 환불되게)', async () => {
+  it('상자 후 전체 — 인쇄(외주) 줄은 창고 항목이 없어도 남은 판매 수량이 계획에 들어간다(출고분 제외 전환에서도 환불되게)', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireSalesOrders(tx);
       const seed = await seedChannelOrder(tx, w, { withFo: true });
@@ -198,7 +198,7 @@ describeIfDb('SalesOrdersService.planCancellation (DB integration, rollback-only
     });
   });
 
-  it('V2 전체 — 디지털 줄(박스 없음)이 있어도 나간 게 없으면 leavesNothing', async () => {
+  it('상자 후 전체 — 디지털 줄(박스 없음)이 있어도 나간 게 없으면 leavesNothing', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireSalesOrders(tx);
       const seed = await seedChannelOrder(tx, w, { withFo: true });

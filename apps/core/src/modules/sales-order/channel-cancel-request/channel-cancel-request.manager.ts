@@ -12,9 +12,12 @@ import {
   channelOrderPartitionKey,
 } from '@packages/event-contracts/streams';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
-import { SETTLEMENT_REISSUE_GRACE_MS, SETTLE_DELAYED_AFTER_MS } from '../../fulfillment/order-progress/order-progress.thresholds';
+import {
+  SETTLEMENT_REISSUE_GRACE_MS,
+  SETTLE_DELAYED_AFTER_MS,
+} from '../../fulfillment/order-progress/order-progress.thresholds';
 import { SalesOrdersService } from '../services/sales-orders.service';
-import { channelCancelRoute, sellerCenterMessage } from './channel-cancel-route';
+import { cancellationCapabilityOf, sellerCenterMessage } from '../order-cancellation/channel-cancellation-capability';
 import { ChannelCancelRequestReader } from './channel-cancel-request.reader';
 import {
   CHANNEL_CANCEL_REQUEST_REASON,
@@ -49,7 +52,10 @@ export interface RetrySettlementInput {
 /** Medusa 가 주문 수정 «전»에 내는 37번 거절 — 그때만 금액을 바꿔도 같은 requestId 가 새 요청으로 통과한다 */
 const EXTERNAL_REFUND_FAILURE_PREFIX = 'external_refund_';
 
-export type SettlementFailedFact = Pick<ChannelOrderSettlementFailedPayload, 'requestId' | 'retryable' | 'failureCode' | 'message' | 'at'>;
+export type SettlementFailedFact = Pick<
+  ChannelOrderSettlementFailedPayload,
+  'requestId' | 'retryable' | 'failureCode' | 'message' | 'at'
+>;
 
 function cancelScope(
   lines: CancelRequestInput['lines'],
@@ -63,7 +69,7 @@ function cancelScope(
 
 // 상계는 Medusa 부분취소만 안다(ADR-0043) — 전체취소는 «캡처 − 환불»을 돌려주므로 상계할 게 없다.
 function assertAlreadyRefundedAllowed(salesChannel: string, scope: 'full' | 'partial'): void {
-  if (salesChannel !== 'medusa') {
+  if (!cancellationCapabilityOf(salesChannel).acceptsAlreadyRefundedOffset) {
     throw new BadRequestError('이미 환불한 금액은 Medusa 주문 부분취소에만 적을 수 있습니다.');
   }
   if (scope !== 'partial') throw new BadRequestError('이미 환불한 금액은 부분취소에만 적을 수 있습니다.');
@@ -119,7 +125,7 @@ export class ChannelCancelRequestManager {
       const replay = await this.reader.findBySourceKey(so.id, input.sourceKey, trx);
       if (replay) return toCancelRequestView(replay);
 
-      const route = channelCancelRoute(so.salesChannel);
+      const route = cancellationCapabilityOf(so.salesChannel).cancel;
       if (route === 'seller_center') throw new BadRequestError(sellerCenterMessage(so.salesChannel));
       if (route === 'core') throw new Error(`Sales channel ${so.salesChannel} does not take cancel commands`);
       if (so.status === 'cancelled') throw new BadRequestError('이미 취소된 주문입니다.');
@@ -279,7 +285,8 @@ export class ChannelCancelRequestManager {
     return this.db.run(async (trx) => {
       await this.lockSalesOrder(salesOrderId, trx);
       const row = await this.reader.findById(requestId, trx, { lock: true });
-      if (!row || row.salesOrderId !== salesOrderId) throw new NotFoundError(`취소 요청을 찾을 수 없습니다: ${requestId}`);
+      if (!row || row.salesOrderId !== salesOrderId)
+        throw new NotFoundError(`취소 요청을 찾을 수 없습니다: ${requestId}`);
       if (row.status !== 'settling') throw new ConflictError('정산 중인 취소 요청이 아닙니다.');
       const meta = readCancelRequestMetadata(row.metadata);
       const settlement = meta.settlement;
@@ -292,10 +299,16 @@ export class ChannelCancelRequestManager {
         );
       }
       // 같은 requestId 의 명령은 Medusa 에서 멱등이다 — 이 유예는 더블클릭·겹침 소음을 막는다. 거절(refused)은 늘 조치할 수 있다.
-      if (settlement.state === 'in_progress' && now.getTime() - Date.parse(settlement.since) < SETTLEMENT_REISSUE_GRACE_MS) {
-        throw new ConflictError(`방금 정산을 다시 시작했습니다. ${SETTLEMENT_REISSUE_GRACE_MS / 1000}초 뒤에 다시 시도할 수 있습니다.`);
+      if (
+        settlement.state === 'in_progress' &&
+        now.getTime() - Date.parse(settlement.since) < SETTLEMENT_REISSUE_GRACE_MS
+      ) {
+        throw new ConflictError(
+          `방금 정산을 다시 시작했습니다. ${SETTLEMENT_REISSUE_GRACE_MS / 1000}초 뒤에 다시 시도할 수 있습니다.`,
+        );
       }
-      if (kind === 'manual' && settlement.mode === 'manual') throw new ConflictError('이미 계좌 송금으로 환불하고 있습니다.');
+      if (kind === 'manual' && settlement.mode === 'manual')
+        throw new ConflictError('이미 계좌 송금으로 환불하고 있습니다.');
       const mode = kind === 'manual' ? 'manual' : settlement.mode;
       // 품목은 확정 때 이미 취소돼 새 요청을 낼 수 없다 — 37번 거절의 출구는 같은 요청에 금액을 적는 것뿐이다.
       // 저장된 명령을 고쳐야 뒤의 조치·리컨실러 재발행도 같은 금액을 낸다(Medusa 는 금액이 바뀐 같은 requestId 를 거절한다).

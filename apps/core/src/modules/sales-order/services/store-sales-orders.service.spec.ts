@@ -2,6 +2,8 @@ import { BadRequestException, ForbiddenException, NotFoundException } from '@nes
 import { getTableName, type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { StoreSalesOrdersService } from './store-sales-orders.service';
+import { OrderCancellation } from '../order-cancellation/order-cancellation';
+import { OrderCancellationReader } from '../order-cancellation/order-cancellation.reader';
 import { PrintOrderReader } from '../../print-order/services/print-order.reader';
 import {
   PRINT_IN_PRODUCTION_MESSAGE,
@@ -268,13 +270,24 @@ function makeContext(
     }),
   };
 
+  const printReader = printReaderMock(options.printOrders, options.allOutsourced);
+  const printCancellation = printCancelMock(printCancel, printNote);
   const service = new StoreSalesOrdersService(
     dbMock as any,
     salesOrdersServiceMock as any,
     walletClientMock as WalletRefundClient,
     cancelRequestsMock as any,
-    printReaderMock(options.printOrders, options.allOutsourced),
-    printCancelMock(printCancel, printNote),
+    printReader,
+    printCancellation,
+    new OrderCancellation(
+      dbMock as any,
+      salesOrdersServiceMock as any,
+      cancelRequestsMock as any,
+      printReader,
+      printCancellation,
+      {} as never,
+      new OrderCancellationReader(),
+    ),
   );
 
   return { service, dbMock, salesOrdersServiceMock, walletClientMock, cancelRequestsMock, printCancel, printNote };
@@ -715,13 +728,26 @@ describe('StoreSalesOrdersService', () => {
           })),
         },
       };
+      const salesOrdersServiceMock = { cancel: jest.fn(), createBusinessLink: jest.fn() };
+      const cancelRequestsMock = { settlementFactsFor: jest.fn().mockResolvedValue([]) };
+      const printReader = printReaderMock();
+      const printCancellation = printCancelMock();
       const service = new StoreSalesOrdersService(
         dbMock as any,
-        { cancel: jest.fn(), createBusinessLink: jest.fn() } as any,
+        salesOrdersServiceMock as any,
         { refundByIntent: jest.fn() } as any,
-        { settlementFactsFor: jest.fn().mockResolvedValue([]) } as any,
-        printReaderMock(),
-        printCancelMock(),
+        cancelRequestsMock as any,
+        printReader,
+        printCancellation,
+        new OrderCancellation(
+          dbMock as any,
+          salesOrdersServiceMock as any,
+          cancelRequestsMock as any,
+          printReader,
+          printCancellation,
+          {} as never,
+          new OrderCancellationReader(),
+        ),
       );
       return { service, dbMock };
     }
@@ -1254,13 +1280,24 @@ describe('StoreSalesOrdersService', () => {
       precheck: jest.fn().mockResolvedValue(undefined),
     };
 
+    const printReader = printReaderMock();
+    const printCancellation = printCancelMock(printCancel, printNote);
     const service = new StoreSalesOrdersService(
       dbMock as any,
       salesOrdersServiceMock as any,
       walletClientMock as WalletRefundClient,
       cancelRequestsMock as any,
-      printReaderMock(),
-      printCancelMock(printCancel, printNote),
+      printReader,
+      printCancellation,
+      new OrderCancellation(
+        dbMock as any,
+        salesOrdersServiceMock as any,
+        cancelRequestsMock as any,
+        printReader,
+        printCancellation,
+        {} as never,
+        new OrderCancellationReader(),
+      ),
     );
 
     return {
@@ -1712,13 +1749,24 @@ describe('StoreSalesOrdersService', () => {
       precheck: jest.fn().mockResolvedValue(undefined),
     };
 
+    const printReader = printReaderMock();
+    const printCancellation = printCancelMock();
     const service = new StoreSalesOrdersService(
       dbMock as any,
       salesOrdersServiceMock as any,
       walletClientMock as WalletRefundClient,
       cancelRequestsMock as any,
-      printReaderMock(),
-      printCancelMock(),
+      printReader,
+      printCancellation,
+      new OrderCancellation(
+        dbMock as any,
+        salesOrdersServiceMock as any,
+        cancelRequestsMock as any,
+        printReader,
+        printCancellation,
+        {} as never,
+        new OrderCancellationReader(),
+      ),
     );
 
     return { service, walletClientMock, cancelRequestsMock };
@@ -1778,7 +1826,7 @@ describe('StoreSalesOrdersService', () => {
     it('링크 없음 → 새 key로 Wallet 호출 (첫 실패 시 링크 없는 경우 포함)', async () => {
       // currentRefundStatus undefined → refundLink 없음 (채널 경로가 아닌 주문 — 채널 경로는 아래에서 400)
       const { service, walletClientMock } = makeRetryContext({
-        so: makeSo({ status: 'cancelled', salesChannel: 'manual' }),
+        so: makeSo({ status: 'cancelled', salesChannel: '3pl' }),
       });
       const result = await service.retryWalletRefund(SO_ID);
       expect(walletClientMock.refundByIntent).toHaveBeenCalledWith(
@@ -1841,13 +1889,26 @@ describe('StoreSalesOrdersService', () => {
           })),
         },
       };
+      const salesOrdersServiceMock = {};
+      const cancelRequestsMock = {};
+      const printReader = printReaderMock(printRows);
+      const printCancellation = printCancelMock();
       return new StoreSalesOrdersService(
         dbMock as never,
-        {} as never,
+        salesOrdersServiceMock as never,
         {} as WalletRefundClient,
-        {} as never,
-        printReaderMock(printRows),
-        printCancelMock(),
+        cancelRequestsMock as never,
+        printReader,
+        printCancellation,
+        new OrderCancellation(
+          dbMock as never,
+          salesOrdersServiceMock as never,
+          cancelRequestsMock as never,
+          printReader,
+          printCancellation,
+          {} as never,
+          new OrderCancellationReader(),
+        ),
       );
     }
 

@@ -24,6 +24,10 @@ import { ChannelOrderChangeReader } from '../../channel-order-change/channel-ord
 import { ChannelCancelSettler } from '../channel-cancel-settler';
 import { ChannelCancelRequestManager } from '../channel-cancel-request.manager';
 import { ChannelCancelRequestReader } from '../channel-cancel-request.reader';
+import { ChannelCancelRequestService } from '../channel-cancel-request.service';
+import { OrderCancellation } from '../../order-cancellation/order-cancellation';
+import { OrderCancellationReader } from '../../order-cancellation/order-cancellation.reader';
+import { PrintOrderReader } from '../../../print-order/services/print-order.reader';
 
 export const ADDRESS = {
   recipientName: '김',
@@ -196,12 +200,22 @@ export function wireCancelRequest(tx: DbTx) {
   );
   const settler = new ChannelCancelSettler(reader);
   const amendments = new SalesOrderAmendmentsService(dbService);
+  // 실제 커널. 채널 변경이 부르는 수량 감소 갈래는 판매주문 취소와 커널 reader 만 쓴다 — 인쇄 취소 협력자는 비워 둔다
+  const cancellation = new OrderCancellation(
+    dbService,
+    salesOrders,
+    new ChannelCancelRequestService(dbService, manager, reader),
+    new PrintOrderReader(dbService),
+    {} as never,
+    settler,
+    new OrderCancellationReader(),
+  );
   const changes = new ChannelOrderChangeManager(
     new ChannelOrderChangeReader(),
-    salesOrders,
     amendments,
     { get: () => outbound.planning } as never,
     settler,
+    cancellation,
   );
   return { dbService, logistics, outbound, salesOrders, reader, manager, settler, amendments, changes };
 }

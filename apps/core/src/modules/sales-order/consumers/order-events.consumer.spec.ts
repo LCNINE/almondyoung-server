@@ -1,4 +1,6 @@
 import { OrderEventsConsumer } from './order-events.consumer';
+import { OrderCancellation } from '../order-cancellation/order-cancellation';
+import { OrderCancellationReader } from '../order-cancellation/order-cancellation.reader';
 import type { SalesOrdersService } from '../services/sales-orders.service';
 import type { LibraryService } from '../../library/services/library.service';
 import type { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
@@ -115,9 +117,16 @@ describe('OrderEventsConsumer', () => {
       mocks.workflowGate as any,
       mocks.dbService as any,
       mocks.channelOrderChanges as any,
-      mocks.cancelSettler as any,
       mocks.cancelRequests as any,
-      mocks.printCancel as any,
+      new OrderCancellation(
+        mocks.dbService as any,
+        mocks.salesOrders as any,
+        mocks.cancelRequests as any,
+        {} as any,
+        mocks.printCancel as any,
+        mocks.cancelSettler as any,
+        new OrderCancellationReader(),
+      ),
     );
   }
 

@@ -16,6 +16,8 @@ import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
 import type { StoreFulfillmentStatus } from '../dto/store-order-actions.dto';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { StoreSalesOrdersService } from '../services/store-sales-orders.service';
+import { OrderCancellation } from '../order-cancellation/order-cancellation';
+import { OrderCancellationReader } from '../order-cancellation/order-cancellation.reader';
 import { PrintOrderReader } from '../../print-order/services/print-order.reader';
 import { seedClaim, seedComponentSku, seedDeliveredLine } from './__support__/claim-facts.fixtures';
 import { recallParcel, seedDispatchedParcel } from './__support__/shipment-facts.fixtures';
@@ -44,6 +46,32 @@ type PhaseRow = {
   any_shipped: boolean;
 };
 type Order = { salesOrderId: string; lineId: string };
+
+// 고객 actions 의 협력자 — 커널도 같은 가짜로 만든다(K7). 정산 사실·인쇄 행 읽기만 잇는다
+function storeServiceFor(tx: DbTx): StoreSalesOrdersService {
+  const db = { db: tx };
+  const salesOrders = {};
+  const cancelRequests = { settlementFactsFor: () => Promise.resolve([]) };
+  const printOrders = new PrintOrderReader({ run: <T>(fn: (trx: DbTx) => Promise<T>) => fn(tx) } as never);
+  const printCancellation = {};
+  return new StoreSalesOrdersService(
+    db as never,
+    salesOrders as never,
+    {} as never,
+    cancelRequests as never,
+    printOrders,
+    printCancellation as never,
+    new OrderCancellation(
+      db as never,
+      salesOrders as never,
+      cancelRequests as never,
+      printOrders,
+      printCancellation as never,
+      {} as never,
+      new OrderCancellationReader(),
+    ),
+  );
+}
 
 describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 PR2b)', () => {
   jest.setTimeout(120_000);
@@ -220,7 +248,7 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
       const w = await f.seedWorld(tx);
       const o = await f.seedOrder(tx);
       const { foItemId } = await f.seedFo(tx, w, o, { status: 'processing', dropShip: 'forwarded' });
-      // 화면은 «배송 중»이고 셀프취소는 막히지만(any_shipped) 출고 수량은 0 이다 — 관리자 V1 취소는 지금처럼 된다
+      // 화면은 «배송 중»이고 셀프취소는 막히지만(any_shipped) 출고 수량은 0 이다 — 관리자 상자 전 취소는 지금처럼 된다
       expect(await phaseOf(tx, o)).toEqual(['shipping', 'shipping', true]);
       const [item] = await tx
         .select({ shippedQty: wmsTables.fulfillmentOrderItems.shippedQty })
@@ -563,14 +591,7 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
       await markCellmateShipped(tx, o);
 
       // 셀프취소 판정은 DB 만 읽는다 — 정산 사실·인쇄 행 읽기만 잇고 나머지 협력자는 닿지 않는다
-      const service = new StoreSalesOrdersService(
-        { db: tx } as never,
-        {} as never,
-        {} as never,
-        { settlementFactsFor: () => Promise.resolve([]) } as never,
-        new PrintOrderReader({ run: <T>(fn: (trx: DbTx) => Promise<T>) => fn(tx) } as never),
-        {} as never,
-      );
+      const service = storeServiceFor(tx);
 
       const actions = await service.getActions(o.salesOrderId, customerId);
       expect(actions.cancelUnavailableReason).toBe('already_shipped');
@@ -585,14 +606,7 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
   });
   describe('고객 actions 의 반품·교환 버튼 (K6 PR3a, C8)', () => {
     function storeService(tx: DbTx): StoreSalesOrdersService {
-      return new StoreSalesOrdersService(
-        { db: tx } as never,
-        {} as never,
-        {} as never,
-        { settlementFactsFor: () => Promise.resolve([]) } as never,
-        new PrintOrderReader({ run: <T>(fn: (trx: DbTx) => Promise<T>) => fn(tx) } as never),
-        {} as never,
-      );
+      return storeServiceFor(tx);
     }
 
     it('delivered parcel opens return and exchange', async () => {
