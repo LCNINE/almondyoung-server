@@ -24,13 +24,9 @@ import {
 } from '../dto/store-order-actions.dto';
 import { PrintOrderReader } from '../../print-order/services/print-order.reader';
 import { isLivePrint } from '../../print-order/services/print-order-board.rules';
-import { isDigitalFulfillmentLine } from '../../product-matching/line-composition/line-composition';
 import {
-  PrintInProductionError,
   PrintNeedsPartialCancelError,
   PrintOrderCancellationManager,
-  PrintPartialCancelAvailableError,
-  PrintShippedError,
   type PrintCancelResult,
 } from '../../print-order/services/print-order-cancellation.manager';
 import { type PrintOrderRow } from '../../print-order/schema/print-order.schema';
@@ -39,11 +35,8 @@ import { SalesOrdersService } from './sales-orders.service';
 import { channelRefundStatus, manualTransferOf, needsTransferCheck } from './channel-refund-status';
 import { WalletRefundClient } from './wallet-refund.client';
 import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
-import {
-  cancellationCapabilityOf,
-  channelsWhere,
-  sellerCenterMessage,
-} from '../order-cancellation/channel-cancellation-capability';
+import { cancellationCapabilityOf, channelsWhere } from '../order-cancellation/channel-cancellation-capability';
+import { OrderCancellation } from '../order-cancellation/order-cancellation';
 import type { CancelRequestStatus } from '../channel-cancel-request/channel-cancel-request.types';
 import { isPickingStarted, shipmentProgressOf, PhaseFoRow, FulfillmentPhaseInput } from './fulfillment-phase';
 import {
@@ -93,6 +86,7 @@ export class StoreSalesOrdersService {
     private readonly cancelRequests: ChannelCancelRequestService,
     private readonly printOrders: PrintOrderReader,
     private readonly printCancellation: PrintOrderCancellationManager,
+    private readonly cancellation: OrderCancellation,
   ) {}
 
   // ── 공개 메서드: Core SO UUID 기반 ──────────────────────────────────────
@@ -150,35 +144,21 @@ export class StoreSalesOrdersService {
   ): Promise<AdminCancelResult> {
     const so = await this.findSoOrThrow({ id: orderId });
     // 채널 주문은 채널이 환불하고 core 는 문지기다(ADR-0042·0044) — 판정·확정·기록 뒤 명령. 마켓은 판매자센터로.
-    const route = cancellationCapabilityOf(so.salesChannel).cancel;
-    if (route === 'seller_center') throw new BadRequestException(sellerCenterMessage(so.salesChannel));
-    if (route === 'command') {
+    if (cancellationCapabilityOf(so.salesChannel).settlesMoney === 'channel') {
       const ctx = dto.fulfillmentCommandContext;
-      if (!ctx) throw new BadRequestException('Idempotency-Key header is required');
-      const replay = await this.cancelRequests.findBySourceKey(so.id, ctx.idempotencyKey);
-      if (replay) {
-        return {
-          requestId: replay.id,
-          status: replay.status,
-          scope: replay.scope,
-          convertedFromFull: replay.convertedFromFull,
-        };
-      }
-      await this.cancelRequests.precheck(so.id, dto.lines, dto.alreadyRefundedAmount);
-      const printed = await this.printCancellation.cancelForOrder(so.id, 'gate', dto.lines);
-      const view = await this.afterPrintCancel(printed, () =>
-        this.cancelRequests.request({
-          salesOrderId: so.id,
-          ...(dto.lines ? { lines: dto.lines } : {}),
-          requester: { kind: 'operator', actorId: ctx.actorId },
-          sourceKey: ctx.idempotencyKey,
-          reasonCode: dto.reasonCode,
-          reasonDetail: dto.reasonDetail,
-          ...(dto.alreadyRefundedAmount !== undefined ? { alreadyRefundedAmount: dto.alreadyRefundedAmount } : {}),
-        }),
-      );
+      const view = await this.cancellation.request({
+        // 컨텍스트가 없으면 키도 없어 커널이 400 으로 막는다 — 빈 actorId 는 어디에도 쓰이지 않는다
+        requester: { kind: 'operator', actorId: ctx?.actorId ?? '' },
+        salesOrderId: so.id,
+        sourceKey: ctx?.idempotencyKey,
+        reasonCode: dto.reasonCode,
+        reasonDetail: dto.reasonDetail,
+        ...(dto.lines ? { lines: dto.lines } : {}),
+        ...(dto.alreadyRefundedAmount !== undefined ? { alreadyRefundedAmount: dto.alreadyRefundedAmount } : {}),
+      });
       return { requestId: view.id, status: view.status, scope: view.scope, convertedFromFull: view.convertedFromFull };
     }
+    // K7 PR4 전까지: core 가 돈을 쥔 주문은 문이 환불까지 한다(스펙 §5.5)
     if (dto.alreadyRefundedAmount !== undefined) {
       throw new BadRequestException('이미 환불한 금액은 Medusa 주문 부분취소에만 적을 수 있습니다.');
     }
@@ -275,38 +255,6 @@ export class StoreSalesOrdersService {
     );
 
     return { status: 'cancelled', refundStatus };
-  }
-
-  /**
-   * 고객이 인쇄를 빼고 취소할 줄. 전체 취소 계획에서 취소되지 않은 인쇄 줄(실패·미지원도 재전송될 수 있다)과
-   * 디지털 줄을 뺀다 — 부분 취소는 디지털 이용권을 회수하지 않으므로 디지털은 전체 취소로만 돌려준다
-   */
-  private async linesWithoutPrint(
-    salesOrderId: string,
-  ): Promise<Array<{ salesOrderLineId: string; quantity: number }>> {
-    const printLineIds = new Set(
-      (await this.printOrders.forSalesOrder(salesOrderId)).filter(isLivePrint).map((r) => r.salesOrderLineId),
-    );
-    const digitalLineIds = new Set(
-      (
-        await this.db.db
-          .select({
-            id: inventoryTables.salesOrderLines.id,
-            fulfillmentKind: inventoryTables.salesOrderLines.fulfillmentKind,
-            requiresShipping: inventoryTables.salesOrderLines.requiresShipping,
-          })
-          .from(inventoryTables.salesOrderLines)
-          .where(eq(inventoryTables.salesOrderLines.salesOrderId, salesOrderId))
-      )
-        .filter(isDigitalFulfillmentLine)
-        .map((line) => line.id),
-    );
-    const plan = await this.db.db.transaction((trx) =>
-      this.salesOrdersService.planCancellation(salesOrderId, undefined, trx),
-    );
-    return plan.lines
-      .filter((line) => !printLineIds.has(line.salesOrderLineId) && !digitalLineIds.has(line.salesOrderLineId))
-      .map((line) => ({ salesOrderLineId: line.salesOrderLineId, quantity: line.quantity }));
   }
 
   /**
@@ -973,30 +921,14 @@ export class StoreSalesOrdersService {
 
     if (block) throw new BadRequestException(block.message);
 
-    if (!fulfillmentCommandContext) throw new BadRequestException('Idempotency-Key header is required');
-    // 고객이 인쇄 상품을 빼고 나머지만 취소하겠다고 동의한 두 번째 요청이다
-    const lines = dto.excludePrint ? await this.linesWithoutPrint(so.id) : undefined;
-    if (lines?.length === 0) throw new PrintInProductionError();
-    await this.cancelRequests.precheck(so.id, lines);
-    const printed = await this.printCancellation
-      .cancelForOrder(so.id, 'gate', lines, { keepOnRefusal: true })
-      .catch(async (error: unknown) => {
-        const locked = error instanceof PrintInProductionError || error instanceof PrintShippedError;
-        if (locked && !lines && (await this.linesWithoutPrint(so.id)).length > 0) {
-          throw new PrintPartialCancelAvailableError();
-        }
-        throw error;
-      });
-    await this.afterPrintCancel(printed, () =>
-      this.cancelRequests.request({
-        salesOrderId: so.id,
-        ...(lines ? { lines } : {}),
-        requester: { kind: 'customer', customerId },
-        sourceKey: fulfillmentCommandContext.idempotencyKey,
-        reasonCode: dto.reasonCode,
-        reasonDetail: dto.reasonDetail,
-      }),
-    );
+    await this.cancellation.request({
+      requester: { kind: 'customer', customerId },
+      salesOrderId: so.id,
+      sourceKey: fulfillmentCommandContext?.idempotencyKey,
+      reasonCode: dto.reasonCode,
+      reasonDetail: dto.reasonDetail,
+      excludePrint: dto.excludePrint,
+    });
     // 확정 트랜잭션이 판매주문을 취소했다 — 요청 전에 읽은 so 로 만들면 «취소 요청됨»으로 한 번 더 말한다(PR 4 넘길 것 1)
     return this.buildActionsView(await this.findSoOrThrow({ id: so.id }));
   }

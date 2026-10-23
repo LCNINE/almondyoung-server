@@ -17,6 +17,7 @@ import { seedChannelOrder, wireCancelRequest } from '../channel-cancel-request/_
 import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
 import { WalletRefundClient } from './wallet-refund.client';
 import { StoreSalesOrdersService } from './store-sales-orders.service';
+import { OrderCancellation } from '../order-cancellation/order-cancellation';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -81,13 +82,23 @@ describeIfDb('셀프취소 판정 — 복구 중 상자 (DB integration, rollbac
         request: jest.fn(),
       };
       const printCancellation = { cancelForOrder: jest.fn() };
+      const db = { db: tx };
+      const salesOrders = {};
+      const printOrders = { forSalesOrder: () => Promise.resolve([]) };
       const service = new StoreSalesOrdersService(
-        { db: tx } as never,
-        {} as never,
+        db as never,
+        salesOrders as never,
         {} as WalletRefundClient,
         cancelRequests as never,
-        { forSalesOrder: () => Promise.resolve([]) } as never,
+        printOrders as never,
         printCancellation as never,
+        new OrderCancellation(
+          db as never,
+          salesOrders as never,
+          cancelRequests as never,
+          printOrders as never,
+          printCancellation as never,
+        ),
       );
 
       const view = await service.getActionsByChannelOrder(so.channelOrderId, customerId);
@@ -160,16 +171,27 @@ describeIfDb('셀프취소 판정 — 복구 중 상자 (DB integration, rollbac
           recipientHash: canonicalFulfillmentRequestHash(shipment.recipientSnapshot),
         })
         .returning();
+      const db = { db: tx };
+      const cancelRequests = new ChannelCancelRequestService(w.dbService, w.manager, w.reader);
+      const printOrders = { forSalesOrder: () => Promise.resolve([]) };
+      const printCancellation = {
+        cancelForOrder: jest.fn().mockResolvedValue({ vendorCancelled: [], locallyCancelled: [] }),
+        noteSalesCancelFailed: jest.fn(),
+      };
       const service = new StoreSalesOrdersService(
-        { db: tx } as never,
+        db as never,
         w.salesOrders,
         {} as WalletRefundClient,
-        new ChannelCancelRequestService(w.dbService, w.manager, w.reader),
-        { forSalesOrder: () => Promise.resolve([]) } as never,
-        {
-          cancelForOrder: jest.fn().mockResolvedValue({ vendorCancelled: [], locallyCancelled: [] }),
-          noteSalesCancelFailed: jest.fn(),
-        } as never,
+        cancelRequests,
+        printOrders as never,
+        printCancellation as never,
+        new OrderCancellation(
+          db as never,
+          w.salesOrders,
+          cancelRequests,
+          printOrders as never,
+          printCancellation as never,
+        ),
       );
 
       const before = await service.getActionsByChannelOrder(seed.externalOrderId, customerId);

@@ -30,6 +30,7 @@ import { ChannelCancelSettler } from './channel-cancel-request/channel-cancel-se
 import { ChannelCancelRequestReader } from './channel-cancel-request/channel-cancel-request.reader';
 import { ChannelCancelRequestManager } from './channel-cancel-request/channel-cancel-request.manager';
 import { ChannelCancelRequestService } from './channel-cancel-request/channel-cancel-request.service';
+import { OrderCancellation } from './order-cancellation/order-cancellation';
 import { INTERNAL_KEY_ENV } from '@app/authorization';
 import { SalesOrdersInternalController } from './internal/sales-orders-internal.controller';
 import { SalesOrderLookupReader } from './internal/sales-order-lookup.reader';
@@ -110,6 +111,8 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
     ChannelCancelSettler,
     ChannelCancelRequestManager,
     ChannelCancelRequestService,
+    // 주문 취소 커널 — 고객·운영자 문은 «무엇을 왜 취소하나»만 말한다(K7)
+    OrderCancellation,
 
     // 채널 대사(#1016 45번)의 묶음 조회 — 호출자는 channel-adapter
     SalesOrderLookupReader,
