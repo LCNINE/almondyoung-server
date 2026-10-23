@@ -13,7 +13,7 @@ import {
 } from '../payment-provider.interface';
 import { WalletSchema, charges, paymentMethods } from '../../schema';
 import { TossApiClient } from './toss-api.client';
-import { usesTossWidget } from './toss-widget-mode';
+import { hasConfirmAttempt, usesTossWidget } from './toss-widget-mode';
 import { and } from 'drizzle-orm';
 import { isTossRefundRetryable } from './toss-refund-errors';
 
@@ -102,6 +102,9 @@ export class TossPaymentProvider implements PaymentProvider {
   }
 
   async cancel(params: ChargeParams): Promise<ChargeResult> {
+    const unconfirmed = await this.loadUnconfirmed(params.chargeId);
+    if (unconfirmed) return this.settleUnconfirmed(params.chargeId, unconfirmed.useWidgetKey, params.idempotencyKey);
+
     const payment = await this.getPayment(params.chargeId);
     if (!payment) {
       return { status: 'FAILED', errorCode: 'TOSS_PAYMENT_KEY_NOT_FOUND' };
@@ -142,6 +145,48 @@ export class TossPaymentProvider implements PaymentProvider {
       errorCode: result.error.code,
       errorMessage: result.error.message,
       retryable: isTossRefundRetryable(result.error.code),
+    };
+  }
+
+  /** 승인 시도 표식만 있고 확정된 결제 키가 없는 charge — 승인 응답을 잃었을 수 있다. */
+  private async loadUnconfirmed(chargeId: string): Promise<{ useWidgetKey: boolean } | null> {
+    const rows = await this.dbService.db
+      .select({ providerTransactionId: charges.providerTransactionId, responsePayload: charges.responsePayload })
+      .from(charges)
+      .where(eq(charges.id, chargeId))
+      .limit(1);
+    const charge = rows[0];
+    if (!charge || charge.providerTransactionId || !hasConfirmAttempt(charge.responsePayload)) return null;
+    return { useWidgetKey: usesTossWidget(charge.responsePayload) };
+  }
+
+  /**
+   * 토스에 실제 상태를 물어 정리한다. 돈이 빠졌거나 계좌가 열려 있으면 취소하고, 결제가 없거나 이미 끝났으면
+   * 닫을 게 없다. 조회·취소가 실패하면 FAILED — 호출자(abandon·만료)가 intent 를 넘기지 않고 다음 주기에 다시 온다.
+   */
+  private async settleUnconfirmed(
+    chargeId: string,
+    useWidgetKey: boolean,
+    idempotencyKey: string,
+  ): Promise<ChargeResult> {
+    const query = await this.tossApi.getPaymentByOrderId(chargeId.replace(/-/g, ''), useWidgetKey).catch(() => null);
+    if (!query) return { status: 'FAILED', errorCode: 'TOSS_STATUS_UNKNOWN' };
+    if (!query.ok) {
+      return query.statusCode === 404
+        ? { status: 'SUCCEEDED' }
+        : { status: 'FAILED', errorCode: query.error.code ?? 'TOSS_STATUS_UNKNOWN', errorMessage: query.error.message };
+    }
+    if (!['DONE', 'WAITING_FOR_DEPOSIT', 'PARTIAL_CANCELED'].includes(query.data.status))
+      return { status: 'SUCCEEDED' };
+
+    const canceled = await this.tossApi
+      .cancelPayment(query.data.paymentKey, '결제 취소', undefined, `cancel:${idempotencyKey}`, undefined, useWidgetKey)
+      .catch(() => null);
+    if (canceled?.ok || canceled?.error.code === 'ALREADY_CANCELED_PAYMENT') return { status: 'SUCCEEDED' };
+    return {
+      status: 'FAILED',
+      errorCode: canceled?.error.code ?? 'TOSS_CANCEL_UNKNOWN',
+      errorMessage: canceled?.error.message,
     };
   }
 

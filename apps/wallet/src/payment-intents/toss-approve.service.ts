@@ -11,7 +11,7 @@ import { TossApiClient, TossConfirmResponse, TossVirtualAccount } from '../provi
 import { tossBankName } from '../providers/toss/toss-banks';
 import { BankTransferPaymentProvider } from '../providers/bank-transfer/bank-transfer.provider';
 import { tossBrandPayCustomerKey } from '../providers/toss/toss-brandpay-customer-key';
-import { VIRTUAL_ACCOUNT_LEFT_OPEN, usesTossWidget } from '../providers/toss/toss-widget-mode';
+import { CONFIRM_ATTEMPT, VIRTUAL_ACCOUNT_LEFT_OPEN, usesTossWidget } from '../providers/toss/toss-widget-mode';
 import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
 import { StagedApproval, isDeferredApprovalIntent } from './deferred-approval';
 import { depositWindowHours } from './deposit-window';
@@ -77,6 +77,7 @@ export class TossApproveService {
     }
 
     // 3. Call Toss API confirm
+    await this.markConfirmAttempt(charge, paymentKey);
     const result = customerKey
       ? await this.tossApi.confirmBrandPayPayment(paymentKey, amount, orderId, customerKey)
       : await this.tossApi.confirmPayment(paymentKey, amount, orderId, usesTossWidget(charge.responsePayload));
@@ -100,11 +101,20 @@ export class TossApproveService {
     // 승인을 되돌려 고객이 정상 흐름으로 다시 결제하게 한다. 되돌리지 못하면 승인을 그대로 확정한다
     // (돈은 이미 빠졌으므로 실패로 두면 결제가 원장에서 사라진다).
     if (method === 'VIRTUAL_ACCOUNT' && isDeferredApprovalIntent(intent.metadata)) {
-      if (await this.revertApproval(charge, result.data.paymentKey, orderId)) {
+      const revert = await this.revertApproval(charge, result.data.paymentKey, orderId);
+      if (revert === 'REVERTED') {
         await this.finalizeFailure(charge, 'PAYMENT_METHOD_MISMATCH', correlationId);
         throw new UnprocessableEntityException({
           error: 'PAYMENT_METHOD_MISMATCH',
           message: '결제를 처리하지 못했어요. 다시 시도해 주세요.',
+        });
+      }
+      if (revert === 'UNKNOWN') {
+        // 취소됐을 수도 있는 결제를 확정·매입하지 않는다. charge 는 승인 시도 표식을 단 채 REQUIRES_ACTION 에
+        // 남아, abandon·만료가 토스 상태를 다시 물어 환불하거나 닫힌 것으로 정리한다.
+        throw new UnprocessableEntityException({
+          error: 'PAYMENT_STATUS_UNKNOWN',
+          message: '결제 결과를 확인하지 못했어요. 잠시 후 주문 내역을 확인해 주세요.',
         });
       }
       this.logger.error(`method mismatch approval kept: chargeId=${charge.id}`);
@@ -114,11 +124,15 @@ export class TossApproveService {
   }
 
   /**
-   * 승인을 되돌렸으면 true. 취소가 성공으로 끝나지 않으면(전송 오류·5xx 포함) 토스에 실제 상태를 물어 판정한다 — 취소됐는데 승인으로
-   * 확정하면 돈 없이 출고되고, 이후 취소 웹훅은 REQUIRES_ACTION 이 아닌 charge 를 무시한다.
-   * 조회까지 실패하면 false(승인 유지) — 돈이 빠졌을 수 있는 쪽을 원장에 남겨야 환불로 되돌릴 수 있다.
+   * 승인 되돌리기 결과. 취소가 성공으로 끝나지 않으면(전송 오류·5xx 포함) 토스에 실제 상태를 물어 판정한다 —
+   * 취소됐는데 승인으로 확정하면 돈 없이 출고되고, 이후 취소 웹훅은 REQUIRES_ACTION 이 아닌 charge 를 무시한다.
+   * 조회까지 실패하면 UNKNOWN.
    */
-  private async revertApproval(charge: Charge, paymentKey: string, orderId: string): Promise<boolean> {
+  private async revertApproval(
+    charge: Charge,
+    paymentKey: string,
+    orderId: string,
+  ): Promise<'REVERTED' | 'KEPT' | 'UNKNOWN'> {
     const useWidgetKey = usesTossWidget(charge.responsePayload);
     const reverted = await this.tossApi
       .cancelPayment(
@@ -130,10 +144,25 @@ export class TossApproveService {
         useWidgetKey,
       )
       .catch(() => null);
-    if (reverted?.ok || reverted?.error.code === 'ALREADY_CANCELED_PAYMENT') return true;
+    if (reverted?.ok || reverted?.error.code === 'ALREADY_CANCELED_PAYMENT') return 'REVERTED';
     this.logger.error(`approval revert not confirmed: chargeId=${charge.id} error=${JSON.stringify(reverted?.error)}`);
     const query = await this.tossApi.getPaymentByOrderId(orderId, useWidgetKey).catch(() => null);
-    return !!query?.ok && query.data.status === 'CANCELED';
+    if (!query?.ok) return 'UNKNOWN';
+    return query.data.status === 'CANCELED' ? 'REVERTED' : 'KEPT';
+  }
+
+  /** 토스 승인 호출 직전에 남긴다 — 응답을 잃어도 정리 경로가 토스에 물어볼 근거가 된다. */
+  private async markConfirmAttempt(charge: Charge, paymentKey: string): Promise<void> {
+    await this.dbService.db
+      .update(charges)
+      .set({
+        responsePayload: {
+          ...(charge.responsePayload ?? {}),
+          [CONFIRM_ATTEMPT]: { paymentKey, at: new Date().toISOString() },
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(charges.id, charge.id));
   }
 
   /**
@@ -409,6 +438,7 @@ export class TossApproveService {
     if (staged.paymentType === 'BRANDPAY' && !staged.customerKey) {
       throw new UnprocessableEntityException({ error: 'BRANDPAY_CUSTOMER_REQUIRED' });
     }
+    await this.markConfirmAttempt(charge, staged.providerToken);
     const result =
       staged.paymentType === 'BRANDPAY'
         ? await this.tossApi.confirmBrandPayPayment(

@@ -247,6 +247,18 @@ describe('ConfirmService', () => {
     expect(chargesService.updateStatus).not.toHaveBeenCalledWith('charge-va', 'CANCELED', {}, expect.anything());
   });
 
+  it('refuses another attempt while the previous Toss confirmation result is unknown', async () => {
+    const { service, chargesService } = makeContext({ stalePointsCharge: null });
+    chargesService.findActiveByIntentAndOperation.mockResolvedValue({
+      id: 'charge-toss',
+      responsePayload: { confirmAttempt: { paymentKey: 'pk' } },
+    });
+
+    await expect(
+      service.confirm('intent-1', { paymentMethodId: 'pm-toss', pointsToApply: 0 }, 'corr-1'),
+    ).rejects.toMatchObject({ response: { error: 'PAYMENT_CONFIRMATION_PENDING' } });
+  });
+
   it('stamps a short action-expiry deadline when entering REQUIRES_ACTION', async () => {
     const { service, updateSet } = makeContext();
 
