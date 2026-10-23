@@ -235,6 +235,19 @@ describe('ConfirmService', () => {
     expect(chargesService.updateStatus).toHaveBeenCalledWith('charge-points', 'CANCELED', {});
   });
 
+  it('refuses to replace a charge whose widget virtual account could not be closed', async () => {
+    const { service, chargesService } = makeContext({ stalePointsCharge: null });
+    chargesService.findActiveByIntentAndOperation.mockResolvedValue({
+      id: 'charge-va',
+      responsePayload: { virtualAccountLeftOpenAt: '2026-10-23T00:00:00.000Z' },
+    });
+
+    await expect(
+      service.confirm('intent-1', { paymentMethodId: 'pm-toss', pointsToApply: 0 }, 'corr-1'),
+    ).rejects.toMatchObject({ response: { error: 'VIRTUAL_ACCOUNT_CLEANUP_PENDING' } });
+    expect(chargesService.updateStatus).not.toHaveBeenCalledWith('charge-va', 'CANCELED', {}, expect.anything());
+  });
+
   it('stamps a short action-expiry deadline when entering REQUIRES_ACTION', async () => {
     const { service, updateSet } = makeContext();
 
