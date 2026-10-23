@@ -96,6 +96,11 @@ function RefundStatusPanel({ result, onClose }: { result: CancelResult; onClose:
     icon = '⟳';
     title = '주문 취소 완료 · 환불 처리 중';
     body = '환불이 진행 중입니다. 결제 > 환불 관리에서 상태를 확인하세요.';
+  } else if (isManualPending) {
+    color = 'bg-amber-50 border-amber-200 text-amber-800';
+    icon = '⚠';
+    title = '주문 취소 완료 · 환불 결정 필요';
+    body = '주문내역에서 환불 실행 또는 환불 안 함을 고르세요.';
   } else {
     color = 'bg-orange-50 border-orange-200 text-orange-800';
     icon = '!';

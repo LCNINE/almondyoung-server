@@ -25,6 +25,7 @@ import type { SalesOrderBusinessTimelineItemDto } from '@/lib/types/dto/orders';
 import { buildQuery, PAGE_SIZE } from '../../utils/build-query';
 import { useSalesOrderRows } from '../../hooks/use-order-rows';
 import type { OrderLineRow } from '../../hooks/use-order-rows';
+import { refundDecisionActionsOf } from '../../hooks/refund-decision-actions';
 import { ProductThumbnailCell } from '@/components/table/table-cells/product-thumbnail-cell';
 import {
   useSalesOrder,
@@ -32,6 +33,7 @@ import {
   useSalesOrderAmendments,
   useAdminCancelSalesOrder,
   useAdminManualRefundComplete,
+  useAdminWaiveRefund,
 } from '@/lib/services/orders';
 import { usePermissionCheck } from '@/hooks/use-permission';
 import {
@@ -127,6 +129,8 @@ const REFUND_STATUS_CONFIG: Record<
     label: '환불 실패',
     className: 'bg-red-100 text-red-700 ring-1 ring-inset ring-red-300',
   },
+  requested: { label: '환불 요청됨', className: 'bg-blue-100 text-blue-700' },
+  waived: { label: '환불 안 함', className: 'bg-gray-100 text-gray-500' },
   manual_pending: {
     label: '수동처리 필요',
     className: 'bg-amber-100 text-amber-700 ring-1 ring-inset ring-amber-300',
@@ -166,9 +170,11 @@ function RefundStatusBadge({ status }: { status: string }) {
 function RetryRefundButton({
   orderId,
   onDone,
+  label = '환불 재시도',
 }: {
   orderId: string;
   onDone: (status: string) => void;
+  label?: string;
 }) {
   const retryMutation = useAdminRetryRefund();
   const { canRun } = usePermissionCheck();
@@ -194,8 +200,52 @@ function RetryRefundButton({
         }
       }}
     >
-      {retryMutation.isPending ? '처리중...' : '환불 재시도'}
+      {retryMutation.isPending ? '처리중...' : label}
     </button>
+  );
+}
+
+function WaiveRefundButton({
+  orderId,
+  refundLinkId,
+}: {
+  orderId: string;
+  refundLinkId?: string;
+}) {
+  const waive = useAdminWaiveRefund();
+  const { canRun } = usePermissionCheck();
+  if (!canRun(useAdminWaiveRefund)) return null;
+  return (
+    <button
+      className="h-6 px-2 rounded border border-gray-400 text-gray-600 hover:bg-gray-50 text-[11px] whitespace-nowrap disabled:opacity-50"
+      disabled={waive.isPending}
+      onClick={async (e) => {
+        e.stopPropagation();
+        if (!window.confirm('환불하지 않기로 결정합니다. 계속할까요?')) return;
+        try {
+          await waive.mutateAsync({ id: orderId, refundLinkId });
+          toast.success('환불 안 함으로 기록했습니다.');
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : '처리 중 오류가 발생했습니다.');
+        }
+      }}
+    >
+      {waive.isPending ? '처리중...' : '환불 안 함'}
+    </button>
+  );
+}
+
+/** 환불 결정 대기 행의 버튼 — 어느 버튼이 뜨는지는 refundDecisionActionsOf 가 정한다 */
+function RefundDecisionButtons({ r }: { r: OrderLineRow }) {
+  const a = refundDecisionActionsOf(r);
+  if (!a.execute && !a.waive) return null;
+  return (
+    <>
+      {a.execute && (
+        <RetryRefundButton orderId={r.orderId} onDone={() => {}} label="환불 실행" />
+      )}
+      {a.waive && <WaiveRefundButton orderId={r.orderId} refundLinkId={r.refundLinkId} />}
+    </>
   );
 }
 
@@ -873,6 +923,7 @@ export default function OrderTable() {
                 {r.isFirstOfOrder && r.refundStatus === 'failed' && (
                   <RetryRefundButton orderId={r.orderId} onDone={() => {}} />
                 )}
+                <RefundDecisionButtons r={r} />
                 {r.isFirstOfOrder && r.refundStatus === 'failed' && (
                   <ViewPaymentButton walletIntentId={r.walletIntentId} />
                 )}
@@ -962,6 +1013,7 @@ export default function OrderTable() {
                         채널 관리자센터 처리 후 완료 확인
                       </span>
                     )}
+                    <RefundDecisionButtons r={r} />
                     <ManualCompleteButton
                       onDone={() => {
                         setSelectedOrder(r);
@@ -970,6 +1022,9 @@ export default function OrderTable() {
                     />
                     <ViewPaymentButton walletIntentId={r.walletIntentId} />
                   </>
+                )}
+                {r.isFirstOfOrder && (r.refundStatus === 'requested' || r.refundStatus === 'waived') && (
+                  <RefundStatusBadge status={r.refundStatus} />
                 )}
               </div>
             )}
@@ -1094,7 +1149,7 @@ export default function OrderTable() {
             )}
             {filter.refundIssueOnly && (
               <span className="text-xs text-orange-600 font-medium">
-                환불 실패/수동처리 주문만 표시 중
+                환불 결정 전·실패 주문만 표시 중
               </span>
             )}
           </div>

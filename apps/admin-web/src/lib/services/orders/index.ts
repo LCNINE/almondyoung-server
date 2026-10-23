@@ -76,6 +76,7 @@ export {
   useAdminCancelSalesOrder,
   useAdminRetryRefund,
   useAdminManualRefundComplete,
+  useAdminWaiveRefund,
   // 출고주문(FO) 액션
   useSplitShipment,
   useSplitUnreservedShipment,

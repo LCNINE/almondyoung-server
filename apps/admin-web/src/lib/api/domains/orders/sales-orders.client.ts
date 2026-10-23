@@ -186,6 +186,19 @@ export const salesOrders = {
     return response.data;
   },
 
+  // 환불 안 함 결정 (환불 결정 대기 건을 닫는다)
+  adminWaiveRefund: async (
+    id: string,
+    adminNote?: string,
+    refundLinkId?: string
+  ): Promise<{ refundStatus: 'waived' }> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/sales-orders/${encodeURIComponent(id)}/refund-waive`,
+      { adminNote, refundLinkId }
+    );
+    return response.data;
+  },
+
   createBusinessLink: async (
     id: string,
     data: CreateBusinessLinkDto

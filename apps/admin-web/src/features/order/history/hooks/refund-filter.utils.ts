@@ -1,3 +1,6 @@
+/** 서버 refundIssueOnly 와 같은 규칙: 주문 상태 조건 없음 */
+const REFUND_DECISION_OR_FAILED = ['failed', 'manual_pending', 'requested'];
+
 interface RefundFilterableRow {
     orderId: string;
     orderStatus: string;
@@ -14,11 +17,7 @@ interface RefundFilterableRow {
 export function filterRefundIssueRows<T extends RefundFilterableRow>(items: T[]): T[] {
     const issueOrderIds = new Set(
         items
-            .filter(
-                (r) =>
-                    r.orderStatus === 'cancelled' &&
-                    (r.refundStatus === 'failed' || r.refundStatus === 'manual_pending'),
-            )
+            .filter((r) => r.refundStatus !== undefined && REFUND_DECISION_OR_FAILED.includes(r.refundStatus))
             .map((r) => r.orderId),
     );
     return items.filter((r) => issueOrderIds.has(r.orderId));

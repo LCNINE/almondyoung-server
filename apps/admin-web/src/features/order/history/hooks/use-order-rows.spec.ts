@@ -72,14 +72,14 @@ describe('filterRefundIssueRows', () => {
         expect(result[0].orderId).toBe('o3');
     });
 
-    it('비취소 주문은 refundStatus 무관하게 제외', () => {
+    it('주문 상태와 무관하게 환불 상태만 본다 (서버 규칙과 동일)', () => {
         const rows = [
             makeRow({ orderId: 'o1', orderStatus: 'confirmed', refundStatus: 'failed' }),
             makeRow({ orderId: 'o2', orderStatus: 'cancelled', refundStatus: 'failed' }),
+            makeRow({ orderId: 'o3', orderStatus: 'confirmed', refundStatus: undefined }),
         ];
         const result = filterRefundIssueRows(rows);
-        expect(result).toHaveLength(1);
-        expect(result[0].orderId).toBe('o2');
+        expect(result.map((r) => r.orderId)).toEqual(['o1', 'o2']);
     });
 
     it('이슈 없으면 빈 배열 반환', () => {
