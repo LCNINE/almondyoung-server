@@ -171,7 +171,6 @@ describe('external order-line identity real component round trip', () => {
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
     );
 
     await salesOrders.createFromEvent(published);

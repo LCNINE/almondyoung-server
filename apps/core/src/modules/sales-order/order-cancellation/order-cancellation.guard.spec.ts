@@ -57,6 +57,28 @@ describe('판매주문 취소 호출자 (K7)', () => {
       ),
     ).toEqual([])); // D7 — 붙잡기는 와우프레스 모듈의 문(holdUnsentForCancel·holdUnsentForDecrease)
 
+  it('판매주문 코드는 출고 테이블을 직접 쓰지 않는다 — K3 본편 둘만 예외', () =>
+    // K7 PR3 — 상자 전 취소의 FO·FOI 쓰기는 출고 모듈 명령(`UnboxedDemandCancellation`)이 한다.
+    // 남은 둘(배송지·공동현관 비번 파기)은 K3 본편이 옮긴다. drizzle 형과 raw SQL 형 둘 다 본다.
+    expect(
+      filesCalling(
+        /\.(update|insert|delete)\((?:wmsTables|inventoryTables)\.(fulfillmentOrders|fulfillmentOrderItems|stockReservations|shipments|shipmentLines)\)|\b(update|insert\s+into|delete\s+from)\s+"?(fulfillment_orders|fulfillment_order_items|stock_reservations|shipments|shipment_lines)\b/i,
+        'apps/core/src/modules/sales-order',
+      ),
+    ).toEqual([
+      'apps/core/src/modules/sales-order/channel-order-change/channel-order-change.manager.ts',
+      'apps/core/src/modules/sales-order/services/entrance-password-cleaner.ts',
+    ]));
+
+  it('판매주문은 예약 서비스를 모른다', () =>
+    // 상자 전 수요엔 예약이 없다(N13) — 예약은 상자 줄의 일이고 출고 모듈이 쥔다.
+    expect(
+      filesCalling(
+        /ReservationLifecycleService|UnifiedReservationService|ShipmentReservationService/,
+        'apps/core/src/modules/sales-order',
+      ),
+    ).toEqual([]));
+
   it('커널은 DbService 의 db 를 직접 쓰지 않는다 — 읽기는 Reader, 트랜잭션은 run', () =>
     expect(filesCalling(/\bthis\.db\.db\b/, 'apps/core/src/modules/sales-order/order-cancellation')).toEqual([]));
 

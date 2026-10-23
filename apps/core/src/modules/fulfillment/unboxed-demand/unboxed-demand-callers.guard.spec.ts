@@ -28,6 +28,8 @@ function filesCalling(pattern: RegExp): string[] {
 
 describe('UnboxedDemandCancellation 호출자', () => {
   it('UnboxedDemandCancellation 은 판매주문 상자 전 취소만 부른다', () => {
-    expect(filesCalling(/\bunboxedDemand\.(reduce|cancelOrder|lockForCancellation)\(/)).toEqual([]);
+    expect(filesCalling(/\bunboxedDemand\.(reduce|cancelOrder|lockForCancellation)\(/)).toEqual([
+      'apps/core/src/modules/sales-order/services/sales-orders.service.ts',
+    ]);
   });
 });

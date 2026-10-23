@@ -40,7 +40,6 @@ import { LineQuantities, readLineQuantities } from '../line-quantities/line-quan
 import { cancellableSalesUnits } from '../line-quantities/line-sales-units';
 import type { OrderProgressStage } from '../../fulfillment/order-progress/order-progress.thresholds';
 import { computeEntrancePasswordExpiry } from './entrance-password-expiry';
-import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { MetricsService } from '../../inventory/shared/services/metrics.service';
 import { ProductSkuMappingService } from '../../product-matching/services/product-sku-mapping.service';
@@ -70,9 +69,14 @@ import {
   ShippingAddress,
   OrderItem,
 } from '@packages/event-contracts';
-import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { ModuleRef } from '@nestjs/core';
 import { ShipmentPlanningService } from '../../fulfillment/services/shipment-planning.service';
+import { UnboxedDemandCancellation } from '../../fulfillment/unboxed-demand/unboxed-demand-cancellation';
+import type {
+  ReducedDemandItem,
+  UnboxedDemandItem,
+  UnboxedDemandReduction,
+} from '../../fulfillment/unboxed-demand/unboxed-demand.types';
 import { canonicalFulfillmentRequestHash } from '../../fulfillment/services/fulfillment-command.service';
 import type { CancellationEffect } from '../cancellation-record/cancellation-lines';
 import { recordSalesOrderCancellation } from '../cancellation-record/record-cancellation';
@@ -118,6 +122,12 @@ type PartialCancellationLine = {
   salesOrderLineId: string;
   quantity: number;
 };
+/**
+ * 상자 전 부분취소의 감소 자리표시 — 계획 때는 FOI·수량만 정하고, 명령이 쓴 뒤 `adjusted_fulfillment_order_item` 효과로 바꾼다.
+ * 효과 배열 안에 끼워 두는 건 라인·SKU 마다 «감소 → 출고 뒤 몫» 순서를 지금처럼 남기기 위해서다.
+ */
+type PlannedUnboxedReduction = { reduction: { item: UnboxedDemandItem; salesOrderLineId: string; qty: number } };
+type PlannedPartialEffect = CancellationEffect | PlannedUnboxedReduction;
 type PostShipmentHandoffType = 'return' | 'recovery' | 'refund' | 'compensation';
 type PostShipmentHandoffOptions = NonNullable<CancelSalesOrderOptions['postShipmentHandoff']>;
 type PriorCancellationContext = {
@@ -208,19 +218,6 @@ const OPERATIONS_EFFECT_REF_TYPES = new Set(['recovery_handoff', 'refund_policy_
 export { FULFILLMENT_SYSTEM_ACTOR_ID };
 const OPEN_FULFILLMENT_BACKLOG_STATUSES = new Set(['pending', 'failed', 'processing', 'awaiting_matching']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const CANCELLABLE_FULFILLMENT_STATUSES = new Set([
-  'created',
-  'reserving',
-  'ready',
-  'unfulfillable',
-  'labeled',
-  'pending',
-  'allocated',
-  'picking',
-  'picked',
-  'inspecting',
-  'invoiced',
-]);
 
 const VALID_CANCEL_REASONS = new Set<OrderCancelledPayload['reason']>([
   'CUSTOMER_REQUEST',
@@ -249,9 +246,8 @@ export class SalesOrdersService {
     private readonly fulfillmentsV1: PublisherFor<typeof FULFILLMENT_STREAM>,
     @InjectPublisher(CORE_ORDER_STREAM)
     private readonly coreOrders: PublisherFor<typeof CORE_ORDER_STREAM>,
-    private readonly reservationLifecycle: ReservationLifecycleService,
+    private readonly unboxedDemand: UnboxedDemandCancellation,
     private readonly productSkuMapping: ProductSkuMappingService,
-    private readonly productSellableQuantity: ProductSellableQuantityService,
     private readonly fulfillmentBacklog: FulfillmentOrderCreationBacklogService,
     @Optional() private readonly audit?: AuditService,
     @Optional() private readonly metrics?: MetricsService,
@@ -1231,18 +1227,9 @@ export class SalesOrdersService {
       .from(wmsTables.salesOrderLines)
       .where(eq(wmsTables.salesOrderLines.salesOrderId, id));
 
-    // FO와 FO item을 잠근 뒤 출고 증거 확인 (shipped evidence check와 cancel update를 같은 락 범위에서 처리)
-    await trx.execute(sql`
-      SELECT id FROM ${wmsTables.fulfillmentOrders}
-      WHERE ${wmsTables.fulfillmentOrders.salesOrderId} = ${id}
-      FOR UPDATE
-    `);
-    await trx.execute(sql`
-      SELECT foi.id FROM ${wmsTables.fulfillmentOrderItems} foi
-      JOIN ${wmsTables.fulfillmentOrders} fo ON foi.fulfillment_order_id = fo.id
-      WHERE fo.sales_order_id = ${id}
-      FOR UPDATE
-    `);
+    // FO와 FO item을 잠근 뒤 출고 증거 확인 (shipped evidence check와 cancel update를 같은 락 범위에서 처리).
+    // 잠금·쓰기는 출고 모듈 명령이 한다 — 판정(출고 증거)만 판매주문이 쥔다(K7 PR3)
+    await this.unboxedDemand.lockForCancellation(id, trx);
 
     const fulfillmentOrders = await trx
       .select()
@@ -1263,30 +1250,16 @@ export class SalesOrdersService {
     }
 
     const effects: CancellationEffect[] = [];
-    const cancelledFulfillmentOrderIds: string[] = [];
-
-    for (const fo of fulfillmentOrders) {
-      if (!CANCELLABLE_FULFILLMENT_STATUSES.has(fo.status)) continue;
-
-      try {
-        await this.reservationLifecycle.handleFulfillmentOrderStatusChange(fo.id, fo.status, 'canceled', trx);
-      } catch (error) {
-        this.logger.error(`Failed to release reservations for FO ${fo.id}:`, error);
-      }
-
-      await trx
-        .update(wmsTables.fulfillmentOrders)
-        .set({ status: 'canceled', canceledAt: new Date(), updatedAt: new Date() })
-        .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
-
-      cancelledFulfillmentOrderIds.push(fo.id);
+    // created·ready FO 만 닫힌다 — FOI 에 canceledQty 를 남기고 FO 상태는 투영(D3·D4). 상자 전 FO 엔 예약이 없다(N13)
+    const cancelledFulfillmentOrders = await this.unboxedDemand.cancelOrder(id, trx);
+    for (const fo of cancelledFulfillmentOrders) {
       effects.push({
         type: 'cancelled_fulfillment_order',
         targetType: 'fulfillment_order',
-        targetId: fo.id,
-        metadata: { previousStatus: fo.status },
+        targetId: fo.fulfillmentOrderId,
+        metadata: { previousStatus: fo.previousStatus },
       });
-      this.logger.log(`Cancelled fulfillment order: ${fo.id}`);
+      this.logger.log(`Cancelled fulfillment order: ${fo.fulfillmentOrderId}`);
     }
 
     const closedBacklog = await this.closeOpenFulfillmentBacklogEffects(id, trx);
@@ -1390,7 +1363,7 @@ export class SalesOrdersService {
     );
 
     this.logger.log(
-      `Successfully cancelled sales order ${id} and ${cancelledFulfillmentOrderIds.length} fulfillment orders`,
+      `Successfully cancelled sales order ${id} and ${cancelledFulfillmentOrders.length} fulfillment orders`,
     );
     return updated;
   }
@@ -1440,60 +1413,33 @@ export class SalesOrdersService {
       }
     }
 
-    await trx.execute(sql`
-      SELECT id
-      FROM ${wmsTables.fulfillmentOrders}
-      WHERE ${wmsTables.fulfillmentOrders.salesOrderId} = ${salesOrderId}
-      FOR UPDATE
-    `);
-
-    const fulfillmentOrders = await trx
-      .select()
-      .from(wmsTables.fulfillmentOrders)
-      .where(eq(wmsTables.fulfillmentOrders.salesOrderId, salesOrderId));
-    const fulfillmentOrderById = new Map(fulfillmentOrders.map((fo) => [fo.id, fo]));
-    const fulfillmentOrderIds = fulfillmentOrders.map((fo) => fo.id);
-    if (fulfillmentOrderIds.length > 0) {
-      await trx.execute(sql`
-        SELECT id
-        FROM ${wmsTables.fulfillmentOrderItems}
-        WHERE ${inArray(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderIds)}
-        FOR UPDATE
-      `);
-    }
-    const fulfillmentOrderItems =
-      fulfillmentOrderIds.length > 0
-        ? await trx
-            .select()
-            .from(wmsTables.fulfillmentOrderItems)
-            .where(inArray(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderIds))
-        : [];
+    // FO → FOI(id 순) 잠금·읽기는 출고 모듈 명령이 한다. 판매주문은 «라인 수량 → SKU 수요 감소분»만 정한다(K7 PR3)
+    const demandItems = await this.unboxedDemand.lockForCancellation(salesOrderId, trx);
     const openFulfillmentBacklogs = await this.loadOpenFulfillmentBacklogs(salesOrderId, trx);
 
-    const effects: CancellationEffect[] = [];
-    const fulfillmentDeltas = new Map<string, { quantity: number; reserved: number }>();
+    // 감소분은 요청 전체를 모아 명령을 한 번 부른다 — 효과 순서를 지키려고 자리표시(reduction)를 끼워 두고 뒤에 채운다
+    const plannedEffects: PlannedPartialEffect[] = [];
     for (const request of requestedLines) {
       const line = lineById.get(request.salesOrderLineId)!;
       const remainingLineQuantity = remainingOf(priorCancellationContext, line.id);
-      const lineItems = fulfillmentOrderItems.filter((item) => item.salesOrderLineId === line.id && item.qty > 0);
-      const adjustmentEffects = await this.adjustFulfillmentForPartialCancellation(
+      const lineItems = demandItems.filter(
+        (item) => item.salesOrderLineId === line.id && item.qty - item.canceledQty > 0,
+      );
+      const adjustmentEffects = this.adjustFulfillmentForPartialCancellation(
         line.id,
         remainingLineQuantity,
         request.quantity,
         lineItems,
-        fulfillmentOrderById,
-        fulfillmentDeltas,
         priorCancellationContext.preservedShippedByFulfillmentItem,
         options.postShipmentHandoff,
-        trx,
       );
 
-      effects.push(...adjustmentEffects);
+      plannedEffects.push(...adjustmentEffects);
       if (adjustmentEffects.length === 0) {
         if (openFulfillmentBacklogs.length > 0) {
           await this.requeueAwaitingMatchingFulfillmentBacklogs(salesOrderId, openFulfillmentBacklogs, trx);
           for (const backlog of openFulfillmentBacklogs) {
-            effects.push({
+            plannedEffects.push({
               type: 'reduced_pending_fulfillment_quantity',
               targetType: 'fulfillment_order_creation_backlog',
               targetId: backlog.id,
@@ -1507,7 +1453,7 @@ export class SalesOrdersService {
             });
           }
         } else {
-          effects.push({
+          plannedEffects.push({
             type: 'no_physical_fulfillment_adjustment_required',
             targetType: 'sales_order_line',
             targetId: line.id,
@@ -1520,23 +1466,7 @@ export class SalesOrdersService {
       }
     }
 
-    for (const [fulfillmentOrderId, delta] of fulfillmentDeltas) {
-      const fo = fulfillmentOrderById.get(fulfillmentOrderId);
-      if (!fo) continue;
-      const newTotalQty = Math.max(0, (fo.totalQty ?? 0) - delta.quantity);
-      const newTotalReservedQty = Math.max(0, (fo.totalReservedQty ?? 0) - delta.reserved);
-      const shouldCancelFo = newTotalQty === 0 && CANCELLABLE_FULFILLMENT_STATUSES.has(fo.status);
-      await trx
-        .update(wmsTables.fulfillmentOrders)
-        .set({
-          totalQty: newTotalQty,
-          totalReservedQty: newTotalReservedQty,
-          status: shouldCancelFo ? 'canceled' : fo.status,
-          canceledAt: shouldCancelFo ? new Date() : fo.canceledAt,
-          updatedAt: new Date(),
-        })
-        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
-    }
+    const effects = await this.applyUnboxedDemandReductions(salesOrderId, plannedEffects, trx);
 
     const walletRefundEffect = this.toWalletRefundEffect(options);
     if (walletRefundEffect) {
@@ -2213,22 +2143,23 @@ export class SalesOrdersService {
       );
   }
 
-  private async adjustFulfillmentForPartialCancellation(
+  /**
+   * 라인 하나의 취소 수량을 SKU 수요 감소분으로 바꾼다 — 쓰지 않는다. 감소는 자리표시로, 출고 뒤 몫은 효과로 돌려준다.
+   * 수요는 `qty − canceledQty`(옛 표현은 qty 를 깎고 canceled 0 이라 같은 값이다), 줄일 수 있는 몫은 명령의 `cancellableQty`.
+   */
+  private adjustFulfillmentForPartialCancellation(
     salesOrderLineId: string,
     remainingLineQuantity: number,
     cancelledLineQuantity: number,
-    fulfillmentOrderItems: Array<typeof wmsTables.fulfillmentOrderItems.$inferSelect>,
-    fulfillmentOrderById: Map<string, typeof wmsTables.fulfillmentOrders.$inferSelect>,
-    fulfillmentDeltas: Map<string, { quantity: number; reserved: number }>,
+    fulfillmentOrderItems: UnboxedDemandItem[],
     priorPreservedShippedByFulfillmentItem: Map<string, number>,
     postShipmentHandoff: PostShipmentHandoffOptions | undefined,
-    trx: DbTx,
-  ): Promise<CancellationEffect[]> {
+  ): PlannedPartialEffect[] {
     if (remainingLineQuantity <= 0 || fulfillmentOrderItems.length === 0) {
       return [];
     }
 
-    const itemsBySku = new Map<string, Array<typeof wmsTables.fulfillmentOrderItems.$inferSelect>>();
+    const itemsBySku = new Map<string, UnboxedDemandItem[]>();
     for (const item of fulfillmentOrderItems) {
       const key = item.skuId;
       const group = itemsBySku.get(key) ?? [];
@@ -2236,11 +2167,11 @@ export class SalesOrdersService {
       itemsBySku.set(key, group);
     }
 
-    const effects: CancellationEffect[] = [];
+    const effects: PlannedPartialEffect[] = [];
     for (const [skuId, items] of itemsBySku) {
-      const totalCurrentQty = items.reduce((sum, item) => sum + item.qty, 0);
+      const totalCurrentQty = items.reduce((sum, item) => sum + item.qty - item.canceledQty, 0);
       const priorPreservedShippedQty = items.reduce(
-        (sum, item) => sum + (priorPreservedShippedByFulfillmentItem.get(item.id) ?? 0),
+        (sum, item) => sum + (priorPreservedShippedByFulfillmentItem.get(item.fulfillmentOrderItemId) ?? 0),
         0,
       );
       const totalUncancelledQty = totalCurrentQty - priorPreservedShippedQty;
@@ -2254,15 +2185,9 @@ export class SalesOrdersService {
       const skuQtyPerLineUnit = totalUncancelledQty / remainingLineQuantity;
       const fulfillmentQtyToCancel = cancelledLineQuantity * skuQtyPerLineUnit;
       let remainingFulfillmentQtyToCancel = fulfillmentQtyToCancel;
-      const cancellableUnprocessedQty = items.reduce((sum, item) => {
-        const fo = fulfillmentOrderById.get(item.fulfillmentOrderId);
-        if (!fo || !CANCELLABLE_FULFILLMENT_STATUSES.has(fo.status)) {
-          return sum;
-        }
-        return sum + this.getCancellableUnprocessedFulfillmentQty(item);
-      }, 0);
+      const cancellableUnprocessedQty = items.reduce((sum, item) => sum + item.cancellableQty, 0);
       const shippedEvidenceQty = items.reduce((sum, item) => {
-        const priorPreservedQty = priorPreservedShippedByFulfillmentItem.get(item.id) ?? 0;
+        const priorPreservedQty = priorPreservedShippedByFulfillmentItem.get(item.fulfillmentOrderItemId) ?? 0;
         return sum + Math.max(0, item.shippedQty - priorPreservedQty);
       }, 0);
       const postShipmentQty = Math.max(0, remainingFulfillmentQtyToCancel - cancellableUnprocessedQty);
@@ -2275,57 +2200,10 @@ export class SalesOrdersService {
 
       for (const item of items) {
         if (remainingFulfillmentQtyToCancel <= 0) break;
-        const fo = fulfillmentOrderById.get(item.fulfillmentOrderId);
-        if (!fo || !CANCELLABLE_FULFILLMENT_STATUSES.has(fo.status)) continue;
+        if (item.cancellableQty <= 0) continue;
 
-        const availableToReduce = this.getCancellableUnprocessedFulfillmentQty(item);
-        if (availableToReduce <= 0) continue;
-
-        const quantityToReduce = Math.min(availableToReduce, remainingFulfillmentQtyToCancel);
-        const newQty = item.qty - quantityToReduce;
-        const remainingReservableQty = Math.max(0, newQty - (item.shippedQty || 0));
-        const reservationQtyToRelease = Math.max(0, (item.reservedQty || 0) - remainingReservableQty);
-        const releasedReservationQty =
-          reservationQtyToRelease > 0
-            ? await this.releaseFulfillmentOrderItemReservations(item, reservationQtyToRelease, trx)
-            : 0;
-        const newReservedQty = Math.max(0, (item.reservedQty || 0) - releasedReservationQty);
-        const newStatus = newQty === 0 ? 'canceled' : item.status;
-
-        await trx
-          .update(wmsTables.fulfillmentOrderItems)
-          .set({
-            qty: newQty,
-            reservedQty: newReservedQty,
-            status: newStatus,
-            updatedAt: new Date(),
-          })
-          .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
-
-        const currentDelta = fulfillmentDeltas.get(item.fulfillmentOrderId) ?? { quantity: 0, reserved: 0 };
-        currentDelta.quantity += quantityToReduce;
-        currentDelta.reserved += releasedReservationQty;
-        fulfillmentDeltas.set(item.fulfillmentOrderId, currentDelta);
-
-        effects.push({
-          type: 'adjusted_fulfillment_order_item',
-          targetType: 'fulfillment_order_item',
-          targetId: item.id,
-          metadata: {
-            fulfillmentOrderId: item.fulfillmentOrderId,
-            salesOrderLineId,
-            skuId,
-            previousQty: item.qty,
-            newQty,
-            quantityDelta: -quantityToReduce,
-            previousReservedQty: item.reservedQty || 0,
-            newReservedQty,
-            releasedReservationQty,
-            previousStatus: item.status,
-            newStatus,
-          },
-        });
-
+        const quantityToReduce = Math.min(item.cancellableQty, remainingFulfillmentQtyToCancel);
+        effects.push({ reduction: { item, salesOrderLineId, qty: quantityToReduce } });
         remainingFulfillmentQtyToCancel -= quantityToReduce;
       }
 
@@ -2337,7 +2215,6 @@ export class SalesOrdersService {
             fulfillmentQtyToCancel,
             postShipmentQty,
             items,
-            fulfillmentOrderById,
             priorPreservedShippedByFulfillmentItem,
             postShipmentHandoff,
           ),
@@ -2348,9 +2225,48 @@ export class SalesOrdersService {
     return effects;
   }
 
-  private getCancellableUnprocessedFulfillmentQty(item: typeof wmsTables.fulfillmentOrderItems.$inferSelect): number {
-    const warehouseEvidenceQty = Math.max(item.pickedQty || 0, item.shippedQty);
-    return Math.max(0, item.qty - warehouseEvidenceQty);
+  /**
+   * 계획한 감소를 FOI id 순으로 모아 명령을 한 번 부르고, 자리표시를 `adjusted_fulfillment_order_item` 효과로 바꾼다.
+   * metadata 는 새 표현을 따른다(N15) — qty 는 그대로, canceledQty 의 전후. 예약 키는 없다(상자 전 수요엔 예약이 없다, N13).
+   */
+  private async applyUnboxedDemandReductions(
+    salesOrderId: string,
+    planned: PlannedPartialEffect[],
+    trx: DbTx,
+  ): Promise<CancellationEffect[]> {
+    const reductions: UnboxedDemandReduction[] = planned
+      .flatMap((entry) => ('reduction' in entry ? [entry.reduction] : []))
+      .map(({ item, qty }) => ({ fulfillmentOrderItemId: item.fulfillmentOrderItemId, qty }))
+      // uuid 문자열의 코드 단위 비교 = Postgres uuid 정렬(잠금 순서와 같다). localeCompare 는 '-' 를 무시할 수 있어 쓰지 않는다
+      // FOI 하나에 감소 하나(FOI 는 라인 하나에 속한다)라 같은 id 는 없다
+      .sort((a, b) => (a.fulfillmentOrderItemId < b.fulfillmentOrderItemId ? -1 : 1));
+    const reduced = await this.unboxedDemand.reduce(salesOrderId, reductions, trx);
+    const reducedById = new Map<string, ReducedDemandItem>(reduced.map((row) => [row.fulfillmentOrderItemId, row]));
+
+    return planned.map((entry) => {
+      if (!('reduction' in entry)) return entry;
+      const { item, salesOrderLineId, qty } = entry.reduction;
+      const row = reducedById.get(item.fulfillmentOrderItemId);
+      if (!row) {
+        throw new Error(`Unboxed demand reduction for FOI ${item.fulfillmentOrderItemId} was not applied`);
+      }
+      return {
+        type: 'adjusted_fulfillment_order_item',
+        targetType: 'fulfillment_order_item',
+        targetId: item.fulfillmentOrderItemId,
+        metadata: {
+          fulfillmentOrderId: row.fulfillmentOrderId,
+          salesOrderLineId,
+          skuId: row.skuId,
+          qty: item.qty,
+          previousCanceledQty: row.previousCanceledQty,
+          newCanceledQty: row.newCanceledQty,
+          quantityDelta: -qty,
+          previousStatus: row.previousStatus,
+          newStatus: row.newStatus,
+        },
+      };
+    });
   }
 
   /**
@@ -2358,55 +2274,11 @@ export class SalesOrdersService {
    * 대체는 지웠다 — FO 출고 표시를 쓰는 생산자(V2 발송·직배 완료·셀메이트 스크립트)가 모두 `shipped_qty` 도 채운다.
    * `shipped_qty + canceled_qty <= qty` 는 CHECK 가 지키므로 qty 로 자르지 않는다.
    */
-  private shippedEvidenceOf(item: typeof wmsTables.fulfillmentOrderItems.$inferSelect): {
+  private shippedEvidenceOf(item: UnboxedDemandItem): {
     quantity: number;
     source: 'fulfillment_order_item_shipped_qty' | 'none';
   } {
     return { quantity: item.shippedQty, source: item.shippedQty > 0 ? 'fulfillment_order_item_shipped_qty' : 'none' };
-  }
-
-  private async releaseFulfillmentOrderItemReservations(
-    item: typeof wmsTables.fulfillmentOrderItems.$inferSelect,
-    quantityToRelease: number,
-    trx: DbTx,
-  ): Promise<number> {
-    const reservations = await trx
-      .select()
-      .from(wmsTables.stockReservations)
-      .where(
-        and(
-          eq(wmsTables.stockReservations.fulfillmentOrderItemId, item.id),
-          eq(wmsTables.stockReservations.status, 'confirmed'),
-        ),
-      );
-
-    let remaining = quantityToRelease;
-    let released = 0;
-    const touchedSkuIds = new Set<string>();
-    for (const reservation of reservations) {
-      if (remaining <= 0) break;
-      const releaseQuantity = Math.min(reservation.quantity, remaining);
-      if (releaseQuantity === reservation.quantity) {
-        await trx
-          .update(wmsTables.stockReservations)
-          .set({ status: 'released', updatedAt: new Date() })
-          .where(eq(wmsTables.stockReservations.id, reservation.id));
-      } else {
-        await trx
-          .update(wmsTables.stockReservations)
-          .set({ quantity: reservation.quantity - releaseQuantity, updatedAt: new Date() })
-          .where(eq(wmsTables.stockReservations.id, reservation.id));
-      }
-      released += releaseQuantity;
-      remaining -= releaseQuantity;
-      touchedSkuIds.add(reservation.skuId);
-    }
-
-    for (const skuId of touchedSkuIds) {
-      await this.productSellableQuantity.recalculateAndPublishForSku(skuId, trx);
-    }
-
-    return released;
   }
 
   private toPostShipmentCancellationEffects(
@@ -2414,8 +2286,7 @@ export class SalesOrdersService {
     skuId: string,
     requestedFulfillmentQuantity: number,
     affectedShippedQuantity: number,
-    items: Array<typeof wmsTables.fulfillmentOrderItems.$inferSelect>,
-    fulfillmentOrderById: Map<string, typeof wmsTables.fulfillmentOrders.$inferSelect>,
+    items: UnboxedDemandItem[],
     priorPreservedShippedByFulfillmentItem: Map<string, number>,
     handoff: PostShipmentHandoffOptions | undefined,
   ): CancellationEffect[] {
@@ -2424,10 +2295,9 @@ export class SalesOrdersService {
 
     for (const item of items) {
       if (remaining <= 0) break;
-      const fo = fulfillmentOrderById.get(item.fulfillmentOrderId);
       const shippedEvidence = this.shippedEvidenceOf(item);
       const shippedQty = shippedEvidence.quantity;
-      const priorPreservedQty = priorPreservedShippedByFulfillmentItem.get(item.id) ?? 0;
+      const priorPreservedQty = priorPreservedShippedByFulfillmentItem.get(item.fulfillmentOrderItemId) ?? 0;
       const availableShippedQty = Math.max(0, shippedQty - priorPreservedQty);
       if (availableShippedQty <= 0) continue;
 
@@ -2435,10 +2305,10 @@ export class SalesOrdersService {
       effects.push({
         type: 'preserved_shipped_fulfillment_order_item',
         targetType: 'fulfillment_order_item',
-        targetId: item.id,
+        targetId: item.fulfillmentOrderItemId,
         metadata: {
           fulfillmentOrderId: item.fulfillmentOrderId,
-          fulfillmentOrderStatus: fo?.status ?? null,
+          fulfillmentOrderStatus: item.fulfillmentOrderStatus,
           salesOrderLineId,
           skuId,
           requestedFulfillmentQuantity,

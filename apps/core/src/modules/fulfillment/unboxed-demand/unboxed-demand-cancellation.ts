@@ -167,6 +167,8 @@ export class UnboxedDemandCancellation {
       qty: item.qty,
       canceledQty: item.canceledQty,
       shippedQty: item.shippedQty,
+      pickedQty: item.pickedQty,
+      reservedQty: item.reservedQty,
       cancellableQty,
     };
   }
