@@ -128,6 +128,18 @@ describe('BankTransferPaymentProvider', () => {
     expect(result.errorCode).toBe('ALREADY_DEPOSITED');
   });
 
+  it('treats an already-canceled account as closed (lost close response on a retry)', async () => {
+    const cancelPayment = jest
+      .fn()
+      .mockResolvedValue({ ok: false, error: { code: 'ALREADY_CANCELED_PAYMENT', message: '이미 취소' } });
+    const provider = new BankTransferPaymentProvider(
+      dbWithCharge({ providerTransactionId: 'pk_1', responsePayload: { paymentKey: 'pk_1' } }),
+      { cancelPayment } as unknown as TossApiClient,
+    );
+
+    expect((await provider.cancel(chargeParams())).status).toBe('SUCCEEDED');
+  });
+
   it('succeeds without calling Toss when no account was ever issued', async () => {
     const cancelPayment = jest.fn();
     const provider = new BankTransferPaymentProvider(dbWithCharge(undefined), {
