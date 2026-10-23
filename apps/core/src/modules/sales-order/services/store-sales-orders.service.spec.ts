@@ -1778,7 +1778,7 @@ describe('StoreSalesOrdersService', () => {
     it('링크 없음 → 새 key로 Wallet 호출 (첫 실패 시 링크 없는 경우 포함)', async () => {
       // currentRefundStatus undefined → refundLink 없음 (채널 경로가 아닌 주문 — 채널 경로는 아래에서 400)
       const { service, walletClientMock } = makeRetryContext({
-        so: makeSo({ status: 'cancelled', salesChannel: 'manual' }),
+        so: makeSo({ status: 'cancelled', salesChannel: '3pl' }),
       });
       const result = await service.retryWalletRefund(SO_ID);
       expect(walletClientMock.refundByIntent).toHaveBeenCalledWith(

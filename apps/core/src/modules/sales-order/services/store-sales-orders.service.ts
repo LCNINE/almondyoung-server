@@ -39,7 +39,11 @@ import { SalesOrdersService } from './sales-orders.service';
 import { channelRefundStatus, manualTransferOf, needsTransferCheck } from './channel-refund-status';
 import { WalletRefundClient } from './wallet-refund.client';
 import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
-import { channelCancelRoute, sellerCenterMessage } from '../channel-cancel-request/channel-cancel-route';
+import {
+  cancellationCapabilityOf,
+  channelsWhere,
+  sellerCenterMessage,
+} from '../order-cancellation/channel-cancellation-capability';
 import type { CancelRequestStatus } from '../channel-cancel-request/channel-cancel-request.types';
 import { isPickingStarted, shipmentProgressOf, PhaseFoRow, FulfillmentPhaseInput } from './fulfillment-phase';
 import {
@@ -146,7 +150,7 @@ export class StoreSalesOrdersService {
   ): Promise<AdminCancelResult> {
     const so = await this.findSoOrThrow({ id: orderId });
     // 채널 주문은 채널이 환불하고 core 는 문지기다(ADR-0042·0044) — 판정·확정·기록 뒤 명령. 마켓은 판매자센터로.
-    const route = channelCancelRoute(so.salesChannel);
+    const route = cancellationCapabilityOf(so.salesChannel).cancel;
     if (route === 'seller_center') throw new BadRequestException(sellerCenterMessage(so.salesChannel));
     if (route === 'command') {
       const ctx = dto.fulfillmentCommandContext;
@@ -338,7 +342,10 @@ export class StoreSalesOrdersService {
       .where(
         and(
           eq(inventoryTables.salesOrders.walletIntentId, intentId),
-          eq(inventoryTables.salesOrders.salesChannel, 'medusa'),
+          inArray(
+            inventoryTables.salesOrders.salesChannel,
+            channelsWhere((c) => c.paidByWalletIntent),
+          ),
         ),
       )
       .limit(1)
@@ -361,7 +368,10 @@ export class StoreSalesOrdersService {
       .where(
         and(
           eq(inventoryTables.salesOrders.walletIntentId, intentId),
-          eq(inventoryTables.salesOrders.salesChannel, 'medusa'),
+          inArray(
+            inventoryTables.salesOrders.salesChannel,
+            channelsWhere((c) => c.paidByWalletIntent),
+          ),
         ),
       )
       .limit(1)
@@ -518,7 +528,7 @@ export class StoreSalesOrdersService {
       .then((r) => r[0]);
 
     // 채널 경로 주문의 환불은 채널이 한다 — 옛 wallet 환불 링크가 없으면 여기서 wallet 을 부를 근거가 없다.
-    if (!refundLink && channelCancelRoute(so.salesChannel) === 'command') {
+    if (!refundLink && cancellationCapabilityOf(so.salesChannel).cancel === 'command') {
       throw new BadRequestException('채널 주문의 환불은 채널이 처리합니다.');
     }
 

@@ -14,7 +14,7 @@ import {
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { SETTLEMENT_REISSUE_GRACE_MS, SETTLE_DELAYED_AFTER_MS } from '../../fulfillment/order-progress/order-progress.thresholds';
 import { SalesOrdersService } from '../services/sales-orders.service';
-import { channelCancelRoute, sellerCenterMessage } from './channel-cancel-route';
+import { cancellationCapabilityOf, sellerCenterMessage } from '../order-cancellation/channel-cancellation-capability';
 import { ChannelCancelRequestReader } from './channel-cancel-request.reader';
 import {
   CHANNEL_CANCEL_REQUEST_REASON,
@@ -63,7 +63,7 @@ function cancelScope(
 
 // 상계는 Medusa 부분취소만 안다(ADR-0043) — 전체취소는 «캡처 − 환불»을 돌려주므로 상계할 게 없다.
 function assertAlreadyRefundedAllowed(salesChannel: string, scope: 'full' | 'partial'): void {
-  if (salesChannel !== 'medusa') {
+  if (!cancellationCapabilityOf(salesChannel).acceptsAlreadyRefundedOffset) {
     throw new BadRequestError('이미 환불한 금액은 Medusa 주문 부분취소에만 적을 수 있습니다.');
   }
   if (scope !== 'partial') throw new BadRequestError('이미 환불한 금액은 부분취소에만 적을 수 있습니다.');
@@ -119,7 +119,7 @@ export class ChannelCancelRequestManager {
       const replay = await this.reader.findBySourceKey(so.id, input.sourceKey, trx);
       if (replay) return toCancelRequestView(replay);
 
-      const route = channelCancelRoute(so.salesChannel);
+      const route = cancellationCapabilityOf(so.salesChannel).cancel;
       if (route === 'seller_center') throw new BadRequestError(sellerCenterMessage(so.salesChannel));
       if (route === 'core') throw new Error(`Sales channel ${so.salesChannel} does not take cancel commands`);
       if (so.status === 'cancelled') throw new BadRequestError('이미 취소된 주문입니다.');
