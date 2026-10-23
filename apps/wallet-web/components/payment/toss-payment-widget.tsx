@@ -32,7 +32,7 @@ export function TossPaymentWidget({
 }: Props) {
   const [initialized, setInitialized] = useState(false);
   const latestAmount = useRef(amount);
-  const appliedAmount = useRef<number | null>(null);
+  const requestedAmount = useRef<number | null>(null);
   const amountUpdate = useRef<Promise<void>>(Promise.resolve());
   latestAmount.current = amount;
 
@@ -95,7 +95,7 @@ export function TossPaymentWidget({
         }
         widgetsRef.current = widgets;
         paymentMethodsRef.current = paymentMethods;
-        appliedAmount.current = initialAmount;
+        requestedAmount.current = initialAmount;
         setReadyAmount(initialAmount);
         setInitialized(true);
         debug('ready');
@@ -112,7 +112,7 @@ export function TossPaymentWidget({
       debug('disposed');
       widgetsRef.current = null;
       paymentMethodsRef.current = null;
-      appliedAmount.current = null;
+      requestedAmount.current = null;
       setReadyAmount(null);
       destroy();
     };
@@ -120,20 +120,20 @@ export function TossPaymentWidget({
 
   useEffect(() => {
     if (!initialized || !widgetsRef.current) return;
-    if (appliedAmount.current === amount) return;
+    // 적용 완료가 아니라 마지막으로 보낸 금액과 비교한다 — A → B → A 를 빠르게 오가면 대기 중인 B 가 SDK 를 B 로 남긴다.
+    if (requestedAmount.current === amount) return;
     let cancelled = false;
     setReadyAmount(null);
+    requestedAmount.current = amount;
     const widgets = widgetsRef.current;
     const update = amountUpdate.current.then(() => widgets.setAmount({ currency: 'KRW', value: amount }));
     amountUpdate.current = update.catch(() => undefined);
     void update
       .then(() => {
-        if (!cancelled && latestAmount.current === amount) {
-          appliedAmount.current = amount;
-          setReadyAmount(amount);
-        }
+        if (!cancelled && latestAmount.current === amount) setReadyAmount(amount);
       })
       .catch((error: unknown) => {
+        if (requestedAmount.current === amount) requestedAmount.current = null;
         if (!cancelled) setError(error instanceof Error ? error.message : '결제 금액을 갱신하지 못했습니다.');
       });
     return () => {
