@@ -6,8 +6,8 @@ import { SharedModule } from '../inventory/shared/shared.module';
 import { ProductMatchingModule } from '../product-matching/product-matching.module';
 import { PrintOrderModule } from '../print-order/print-order.module';
 import { LibraryModule } from '../library/library.module';
-import { ProductSellableQuantityModule } from '../inventory/product-sellable-quantity/product-sellable-quantity.module';
 import { FulfillmentOrderCreationBacklogModule } from '../fulfillment/backlog/fulfillment-order-creation-backlog.module';
+import { UnboxedDemandModule } from '../fulfillment/unboxed-demand/unboxed-demand.module';
 
 import { SalesOrdersController } from './controllers/sales-orders.controller';
 import { SalesOrderAmendmentsController } from './controllers/sales-order-amendments.controller';
@@ -66,7 +66,7 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
     // OutboxService (Sales Order 이벤트 발행용)
     CoreInventoryModule,
 
-    // AuditService, MetricsService, ReservationLifecycleService
+    // AuditService, MetricsService
     SharedModule,
 
     // ProductSkuMappingService (confirm 시 mapping snapshot 생성)
@@ -78,7 +78,8 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
     // OrderCreated 처리 후 출고주문 생성 시도를 durable backlog 로 기록 — ADR-0014
     FulfillmentOrderCreationBacklogModule,
 
-    ProductSellableQuantityModule,
+    // 상자 전 취소의 FO·FOI 쓰기 — 판매주문은 수요 감소분만 넘긴다(K7 PR3)
+    UnboxedDemandModule,
 
     // 인쇄 외주 송장·상태 (배송조회·이행 단계에 반영)
     PrintOrderModule,

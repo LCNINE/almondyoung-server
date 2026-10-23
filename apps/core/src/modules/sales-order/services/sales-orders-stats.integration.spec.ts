@@ -77,7 +77,6 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
           {} as never,
           {} as never,
           {} as never,
-          {} as never,
         );
 
         before = await service.getStats();

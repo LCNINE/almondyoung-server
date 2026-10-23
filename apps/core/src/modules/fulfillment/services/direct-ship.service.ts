@@ -162,6 +162,7 @@ export class DirectShipService {
         skuId: wmsTables.fulfillmentOrderItems.skuId,
         skuName: wmsTables.skus.name,
         qty: wmsTables.fulfillmentOrderItems.qty,
+        canceledQty: wmsTables.fulfillmentOrderItems.canceledQty,
         supplierCode: wmsTables.suppliers.code,
         supplierSku: wmsTables.skuSuppliers.supplierSku,
       })
@@ -222,7 +223,10 @@ export class DirectShipService {
     }
 
     return foRows.map((fo) => {
-      const items = itemsByFoId.get(fo.id) ?? [];
+      // 남은 요구 수량 = qty − canceledQty. 전량 취소 항목은 업체에 넘기지 않는다
+      const items = (itemsByFoId.get(fo.id) ?? [])
+        .map((item) => ({ ...item, qty: item.qty - item.canceledQty }))
+        .filter((item) => item.qty > 0);
       const supplierCode = items[0]?.supplierCode ?? undefined;
       const customerInfo = customerInfoByFoId.get(fo.id) ?? undefined;
       return {
@@ -233,7 +237,7 @@ export class DirectShipService {
         status: fo.directShipStatus ?? 'pending',
         priority: fo.priority,
         totalItems: fo.totalItems,
-        totalQty: fo.totalQty,
+        totalQty: items.reduce((sum, item) => sum + item.qty, 0),
         createdAt: fo.createdAt,
         forwardedAt: fo.allocatedAt ?? undefined,
         completedAt: fo.shippedAt ?? undefined,

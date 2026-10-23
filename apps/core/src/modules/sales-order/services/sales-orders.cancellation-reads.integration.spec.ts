@@ -11,6 +11,8 @@ import {
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
 import { seedDispatchedParcel } from '../line-quantities/__support__/shipment-facts.fixtures';
 import { recordSalesOrderCancellation } from '../cancellation-record/record-cancellation';
+import { readOrderFulfillmentPhases } from '../line-quantities/order-fulfillment-phase.reader';
+import { readLineQuantities } from '../line-quantities/line-quantities.reader';
 import { seedCancellableOrder, wireCancellation } from '../cancellation-record/__support__/cancellation-scenarios';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -130,12 +132,21 @@ async function seedBoxedSetOrder(
   return { w, order, components };
 }
 
-async function foItemQty(tx: DbTx, foItemId: string): Promise<number> {
+/** FOI 의 남은 수요 — 상자 전 취소는 qty 를 깎지 않고 canceledQty 를 올린다(K7 PR3 D3). 옛 표현(qty 감소)도 같은 값이다. */
+async function foItemDemand(tx: DbTx, foItemId: string): Promise<number> {
   const [item] = await tx
-    .select({ qty: wmsTables.fulfillmentOrderItems.qty })
+    .select({ qty: wmsTables.fulfillmentOrderItems.qty, canceledQty: wmsTables.fulfillmentOrderItems.canceledQty })
     .from(wmsTables.fulfillmentOrderItems)
     .where(eq(wmsTables.fulfillmentOrderItems.id, foItemId));
-  return item.qty;
+  return item.qty - item.canceledQty;
+}
+
+async function foItem(tx: DbTx, foItemId: string) {
+  const [item] = await tx
+    .select()
+    .from(wmsTables.fulfillmentOrderItems)
+    .where(eq(wmsTables.fulfillmentOrderItems.id, foItemId));
+  return item;
 }
 
 /**
@@ -236,7 +247,7 @@ describeIfDb('SalesOrdersService 취소 엔진 — 남은·취소 가능·출고
         tx,
       );
 
-      expect(await foItemQty(tx, foItemId)).toBe(1);
+      expect(await foItemDemand(tx, foItemId)).toBe(1);
     });
   });
 
@@ -260,7 +271,7 @@ describeIfDb('SalesOrdersService 취소 엔진 — 남은·취소 가능·출고
           tx,
         ),
       ).rejects.toThrow('이미 피킹 또는 출고 처리된 상태입니다');
-      expect(await foItemQty(tx, foItemId)).toBe(2);
+      expect(await foItemDemand(tx, foItemId)).toBe(2);
     });
   });
 
@@ -278,7 +289,110 @@ describeIfDb('SalesOrdersService 취소 엔진 — 남은·취소 가능·출고
         tx,
       );
 
-      expect(await foItemQty(tx, foItemId)).toBe(1);
+      expect(await foItemDemand(tx, foItemId)).toBe(1);
+    });
+  });
+
+  it('상자 전 부분 on an item already reduced the old way divides by the current demand', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancellation(tx);
+      const world = await seedWorld(tx);
+      const order = await seedOrder(tx, { quantity: 3 });
+      const { foItemId } = await seedFo(tx, world, order, { qty: 3 });
+      // PR3 이전 엔진의 흔적 — 1 을 취소하며 FOI qty 를 3→2 로 깎았다(canceledQty 0). 라인 남은 수량은 2 다.
+      await tx
+        .update(wmsTables.fulfillmentOrderItems)
+        .set({ qty: 2 })
+        .where(eq(wmsTables.fulfillmentOrderItems.id, foItemId));
+      await recordSalesOrderCancellation(
+        tx,
+        { salesOrderId: order.salesOrderId, cancellationScope: 'partial', cancelledBy: 'admin' },
+        [{ salesOrderLineId: order.lineId, quantity: 1 }],
+      );
+
+      await w.salesOrders.cancel(
+        order.salesOrderId,
+        { lines: [{ salesOrderLineId: order.lineId, quantity: 1 }], cancelledBy: 'admin' },
+        tx,
+      );
+
+      // 나눠떨어짐 분자는 qty − canceledQty = 2 — 옛 표현과 새 표현이 한 행에 섞여도 남은 수요는 1 이다
+      expect(await foItem(tx, foItemId)).toMatchObject({ qty: 2, canceledQty: 1 });
+    });
+  });
+
+  it('상자 전 전체 of a drop-ship FO leaves no outstanding demand', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancellation(tx);
+      const world = await seedWorld(tx);
+      const order = await seedOrder(tx, { quantity: 2 });
+      const { foId, foItemId } = await seedFo(tx, world, order, { qty: 2, dropShip: 'pending', status: 'created' });
+
+      await w.salesOrders.cancel(order.salesOrderId, { cancelledBy: 'admin' }, tx);
+
+      // 전체취소도 FOI 에 취소 수량을 남긴다(D3) — 예전엔 FO 만 canceled 로 두고 FOI 는 그대로였다
+      expect(await foItem(tx, foItemId)).toMatchObject({ qty: 2, canceledQty: 2, status: 'canceled' });
+      const [fo] = await tx
+        .select({ status: wmsTables.fulfillmentOrders.status })
+        .from(wmsTables.fulfillmentOrders)
+        .where(eq(wmsTables.fulfillmentOrders.id, foId));
+      expect(fo.status).toBe('canceled');
+      const line = (await readLineQuantities(tx, order.salesOrderId)).get(order.lineId);
+      expect(line?.skus).toEqual([expect.objectContaining({ skuId: world.skuId, outstanding: 0 })]);
+      // 진행 단계 문도 취소로 읽는다 — FO 가 canceled 여도 «준비 중» 으로 남지 않는다
+      expect((await readOrderFulfillmentPhases(tx, [order.salesOrderId])).get(order.salesOrderId)?.adminPhase).toBe(
+        'cancelled',
+      );
+    });
+  });
+
+  it('직배 FO 부분취소는 FO 를 ready 에서 created 로 투영한다 (D4)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancellation(tx);
+      const world = await seedWorld(tx);
+      const order = await seedOrder(tx, { quantity: 2 });
+      // 직배 FO 는 createV2 가 ready 로 만든다(픽스처 기본값) — 수요가 남는 부분취소는 투영이 created 로 옮긴다
+      const { foId, foItemId } = await seedFo(tx, world, order, { qty: 2, dropShip: 'pending' });
+
+      await w.salesOrders.cancel(
+        order.salesOrderId,
+        { lines: [{ salesOrderLineId: order.lineId, quantity: 1 }], cancelledBy: 'admin' },
+        tx,
+      );
+
+      expect(await foItem(tx, foItemId)).toMatchObject({ qty: 2, canceledQty: 1 });
+      const [fo] = await tx
+        .select({ status: wmsTables.fulfillmentOrders.status })
+        .from(wmsTables.fulfillmentOrders)
+        .where(eq(wmsTables.fulfillmentOrders.id, foId));
+      expect(fo.status).toBe('created');
+    });
+  });
+
+  it('같은 FOI 에 부분취소를 두 번 하면 canceledQty 가 누적되고 남은 수량 초과는 거절된다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancellation(tx);
+      const world = await seedWorld(tx);
+      const order = await seedOrder(tx, { quantity: 3 });
+      const { foItemId } = await seedFo(tx, world, order, { qty: 3 });
+      const cancelOne = () =>
+        w.salesOrders.cancel(
+          order.salesOrderId,
+          { lines: [{ salesOrderLineId: order.lineId, quantity: 1 }], cancelledBy: 'admin' },
+          tx,
+        );
+
+      await cancelOne();
+      await cancelOne();
+
+      expect(await foItem(tx, foItemId)).toMatchObject({ qty: 3, canceledQty: 2 });
+      await expect(
+        w.salesOrders.cancel(
+          order.salesOrderId,
+          { lines: [{ salesOrderLineId: order.lineId, quantity: 2 }], cancelledBy: 'admin' },
+          tx,
+        ),
+      ).rejects.toThrow('취소 수량(2개)이 취소 가능 수량(1개)을 초과합니다.');
     });
   });
 });

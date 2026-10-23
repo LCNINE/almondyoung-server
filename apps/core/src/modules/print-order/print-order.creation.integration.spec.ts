@@ -7,9 +7,8 @@ import { wmsSchema, wmsTables, DbTx } from '../inventory/schema/inventory.schema
 import { makeDb, inRollbackTx } from '../fulfillment/services/__support__';
 import { SalesOrdersService } from '../sales-order/services/sales-orders.service';
 import { OrderEventsConsumer } from '../sales-order/consumers/order-events.consumer';
-import type { ReservationLifecycleService } from '../inventory/shared/services/reservation-lifecycle.service';
+import type { UnboxedDemandCancellation } from '../fulfillment/unboxed-demand/unboxed-demand-cancellation';
 import type { ProductSkuMappingService } from '../product-matching/services/product-sku-mapping.service';
-import type { ProductSellableQuantityService } from '../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import type { LibraryService } from '../library/services/library.service';
 import type { FulfillmentOrderCreationBacklogService } from '../fulfillment/backlog/fulfillment-order-creation-backlog.service';
 import type { FulfillmentWorkflowGate } from '../fulfillment/services/fulfillment-workflow-gate.service';
@@ -44,9 +43,8 @@ function makeConsumer(tx: DbTx): OrderEventsConsumer {
     dbService,
     outbox as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
     outbox as unknown as PublisherFor<typeof CORE_ORDER_STREAM>,
-    unused as unknown as ReservationLifecycleService,
+    unused as unknown as UnboxedDemandCancellation,
     unused as unknown as ProductSkuMappingService,
-    unused as unknown as ProductSellableQuantityService,
     unused as unknown as FulfillmentOrderCreationBacklogService,
   );
   return new OrderEventsConsumer(

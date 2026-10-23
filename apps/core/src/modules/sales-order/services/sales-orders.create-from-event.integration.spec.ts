@@ -17,7 +17,7 @@ const describeIfDb = DATABASE_URL ? describe : describe.skip;
 function makeService(db: PostgresJsDatabase<typeof wmsSchema>): SalesOrdersService {
   const noop = {} as never;
   const outbox = { enqueue: async () => undefined } as never;
-  return new SalesOrdersService(makeDbService(db), outbox, noop, noop, noop, noop, noop);
+  return new SalesOrdersService(makeDbService(db), outbox, noop, noop, noop, noop);
 }
 
 function payload(over: Partial<OrderCreatedPayload> = {}): OrderCreatedPayload {
