@@ -536,7 +536,7 @@ describe('widget virtual account', () => {
     );
   });
 
-  it('카드 승인 되돌리기 결과를 끝내 모르면 승인을 그대로 확정한다', async () => {
+  it('카드 승인 되돌리기 결과를 끝내 모르면 확정·매입하지 않고 승인 시도 표식을 남긴 채 던진다', async () => {
     const ctx = makeTossContext({ approvalMode: 'DEFERRED' }, WIDGET_CHARGE, {
       ok: true,
       data: { paymentKey: 'pk_card', status: 'DONE' },
@@ -544,13 +544,31 @@ describe('widget virtual account', () => {
     ctx.tossApi.cancelPayment.mockRejectedValue(new Error('ECONNRESET'));
     ctx.tossApi.getPaymentByOrderId.mockRejectedValue(new Error('ECONNRESET'));
 
-    await ctx.service.approve('intent-1', 'pk_card', ORDER_ID, 10000, 'corr-1', 'NORMAL', 'VIRTUAL_ACCOUNT');
+    await expect(
+      ctx.service.approve('intent-1', 'pk_card', ORDER_ID, 10000, 'corr-1', 'NORMAL', 'VIRTUAL_ACCOUNT'),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ error: 'PAYMENT_STATUS_UNKNOWN' }) });
 
-    expect(ctx.chargesService.updateStatus).toHaveBeenCalledWith(
-      CHARGE_ID,
-      'SUCCEEDED',
-      { providerTransactionId: 'pk_card' },
-      expect.anything(),
+    expect(ctx.chargesService.updateStatus).not.toHaveBeenCalled();
+    expect(ctx.autoCaptureService.attemptAutoCapture).not.toHaveBeenCalled();
+    expect(ctx.intentUpdates).toContainEqual(
+      expect.objectContaining({
+        responsePayload: expect.objectContaining({
+          confirmAttempt: expect.objectContaining({ paymentKey: 'pk_card' }),
+        }),
+      }),
+    );
+  });
+
+  it('승인 응답을 잃어도 승인 시도 표식이 먼저 남아 있다', async () => {
+    const ctx = makeTossContext({}, WIDGET_CHARGE);
+    ctx.tossApi.confirmPayment.mockRejectedValue(new Error('ECONNRESET'));
+
+    await expect(ctx.service.approve('intent-1', 'pk_x', ORDER_ID, 10000, 'corr-1')).rejects.toThrow('ECONNRESET');
+
+    expect(ctx.intentUpdates[0]).toEqual(
+      expect.objectContaining({
+        responsePayload: expect.objectContaining({ confirmAttempt: expect.objectContaining({ paymentKey: 'pk_x' }) }),
+      }),
     );
   });
 
