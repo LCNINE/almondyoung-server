@@ -940,7 +940,8 @@ export default function OrderTable() {
                         추정: {r.refundEstimateAmount.toLocaleString()}원
                       </span>
                     )}
-                    {r.channel !== 'medusa' && (
+                    {/* 결정 대기는 core 정산 주문이라 채널 관리자센터가 할 일이 없다 */}
+                    {r.channel !== 'medusa' && !r.refundAwaitingDecision && (
                       <span className="text-[10px] text-gray-500 whitespace-normal leading-tight">
                         채널 관리자센터 처리 후 완료 확인
                       </span>
@@ -1008,7 +1009,8 @@ export default function OrderTable() {
                         추정: {r.refundEstimateAmount.toLocaleString()}원
                       </span>
                     )}
-                    {r.channel !== 'medusa' && (
+                    {/* 결정 대기는 core 정산 주문이라 채널 관리자센터가 할 일이 없다 */}
+                    {r.channel !== 'medusa' && !r.refundAwaitingDecision && (
                       <span className="text-[10px] text-gray-500 whitespace-normal leading-tight">
                         채널 관리자센터 처리 후 완료 확인
                       </span>

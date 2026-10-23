@@ -16,6 +16,11 @@ describe('refundDecisionActionsOf', () => {
   it('requested 는 실행만', () => {
     expect(refundDecisionActionsOf({ ...base, refundStatus: 'requested', refundAwaitingDecision: true })).toEqual({ execute: true, waive: false });
   });
+  it('requested 라도 주문이 아직 취소되지 않았으면(상자 후 대기) 실행 없음 — 재시도가 400 이다', () => {
+    expect(
+      refundDecisionActionsOf({ ...base, orderStatus: 'confirmed', refundStatus: 'requested', refundAwaitingDecision: true }),
+    ).toEqual({ execute: false, waive: false });
+  });
   it('옛 manual_pending 이나 첫 행이 아닌 행은 버튼 없음', () => {
     expect(refundDecisionActionsOf({ ...base, refundStatus: 'manual_pending', refundLinkId: 'l1' })).toEqual({ execute: false, waive: false });
     expect(refundDecisionActionsOf({ ...base, isFirstOfOrder: false, refundStatus: 'requested', refundAwaitingDecision: true })).toEqual({ execute: false, waive: false });

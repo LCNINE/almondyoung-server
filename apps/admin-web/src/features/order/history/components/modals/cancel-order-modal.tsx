@@ -76,11 +76,11 @@ function RefundStatusPanel({ result, onClose }: { result: CancelResult; onClose:
   } else if (isPartial && isManualPending) {
     color = 'bg-amber-50 border-amber-200 text-amber-800';
     icon = '⚠';
-    title = result.isShipped ? '부분 취소 접수 완료 · 환불 수동 처리 필요' : '부분 취소 완료 · 환불 수동 처리 필요';
+    title = result.isShipped ? '부분 취소 접수 완료 · 환불 결정 필요' : '부분 취소 완료 · 환불 결정 필요';
     const reasonLabel = result.manualReason ? MANUAL_REASON_LABELS[result.manualReason] : null;
-    body = result.isShipped
-      ? `출고된 상품은 반품/회수 처리가 별도로 필요합니다. 환불은 결제 > 환불 관리에서 수동으로 처리하세요.${reasonLabel ? ` (사유: ${reasonLabel})` : ''}`
-      : `취소 라인 기준 환불 금액을 결제 > 환불 관리에서 수동으로 처리하세요.${reasonLabel ? ` (사유: ${reasonLabel})` : ''}`;
+    // 부분취소는 주문이 살아 있어 «환불 실행» 이 없다 — 목록에 뜨는 버튼은 «수동 완료»·«환불 안 함»
+    const decide = `주문내역에서 수동 완료 또는 환불 안 함을 고르세요.${reasonLabel ? ` (사유: ${reasonLabel})` : ''}`;
+    body = result.isShipped ? `출고된 상품은 반품/회수 처리가 별도로 필요합니다. ${decide}` : decide;
   } else if (isPartial) {
     color = 'bg-orange-50 border-orange-200 text-orange-800';
     icon = '!';
