@@ -27,6 +27,7 @@ import { SalesOrdersService } from './sales-orders.service';
 import { channelRefundStatus, manualTransferOf, needsTransferCheck } from './channel-refund-status';
 import { WalletRefundClient } from './wallet-refund.client';
 import { CancellationRefundManager } from '../cancellation-refund/cancellation-refund.manager';
+import { REFUND_REQUESTED, REFUND_WAIVED } from '../cancellation-refund/cancellation-refund.types';
 import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
 import { channelsWhere } from '../order-cancellation/channel-cancellation-capability';
 import { OrderCancellation } from '../order-cancellation/order-cancellation';
@@ -66,6 +67,19 @@ const VALID_REFUND_STATUSES = new Set<StoreRefundStatus>([
   'delayed',
   'transfer_pending',
 ]);
+
+/**
+ * 환불 링크의 저장값을 스토어프론트 상태로 옮긴다.
+ * requested(요청만 하고 결과 대기)는 고객에겐 진행 중이라 pending, waived(환불 안 함 결정)는 보일 환불이 없어 none.
+ * 모르는 값은 기존대로 pending.
+ */
+export function storeRefundStatusOf(stored: unknown): StoreRefundStatus {
+  if (stored === REFUND_REQUESTED) return 'pending';
+  if (stored === REFUND_WAIVED) return 'none';
+  return typeof stored === 'string' && VALID_REFUND_STATUSES.has(stored as StoreRefundStatus)
+    ? (stored as StoreRefundStatus) // Set 멤버십으로 좁힌 값
+    : 'pending';
+}
 
 @Injectable()
 export class StoreSalesOrdersService {
@@ -275,6 +289,14 @@ export class StoreSalesOrdersService {
     return this.cancellationRefund.retry(orderId);
   }
 
+  /** 운영자 «환불 안 함» 결정 — 규칙은 CancellationRefundManager 가 소유한다 */
+  adminWaiveRefund(
+    orderId: string,
+    dto: { adminNote?: string; refundLinkId?: string },
+  ): Promise<{ refundStatus: 'waived' }> {
+    return this.cancellationRefund.waive(orderId, dto);
+  }
+
   // ── 공개 메서드: Medusa channelOrderId 기반 ─────────────────────────────
 
   async getActionsByChannelOrder(channelOrderId: string, customerId: string): Promise<StoreOrderActionsResponseDto> {
@@ -455,11 +477,7 @@ export class StoreSalesOrdersService {
 
       if (so.status === 'cancelled' && !overrideRefundStatus) {
         if (latestLink) {
-          const stored = (latestLink.metadata as Record<string, unknown>)?.refundStatus;
-          refundStatus =
-            typeof stored === 'string' && VALID_REFUND_STATUSES.has(stored as StoreRefundStatus)
-              ? (stored as StoreRefundStatus)
-              : 'pending';
+          refundStatus = storeRefundStatusOf((latestLink.metadata as Record<string, unknown>)?.refundStatus);
         } else if (collected.length > 0) {
           refundStatus = 'succeeded';
         } else {
@@ -479,9 +497,11 @@ export class StoreSalesOrdersService {
       if (summaryLink) {
         const m = summaryLink.metadata as Record<string, unknown>;
         const summaryStatus =
-          typeof m?.refundStatus === 'string' && VALID_REFUND_STATUSES.has(m.refundStatus as StoreRefundStatus)
-            ? (m.refundStatus as StoreRefundStatus)
-            : refundStatus !== 'none'
+          m?.refundStatus === REFUND_REQUESTED || m?.refundStatus === REFUND_WAIVED
+            ? storeRefundStatusOf(m.refundStatus)
+            : typeof m?.refundStatus === 'string' && VALID_REFUND_STATUSES.has(m.refundStatus as StoreRefundStatus)
+              ? (m.refundStatus as StoreRefundStatus)
+              : refundStatus !== 'none'
               ? refundStatus
               : undefined;
 

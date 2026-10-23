@@ -143,6 +143,15 @@ export class AdminReturnExchangeController {
     return this.storeSalesOrdersService.adminManualRefundComplete(id, dto);
   }
 
+  @RequirePermission('payment.refund.execute')
+  @Post('sales-orders/:id/refund-waive')
+  @HttpCode(200)
+  @ApiOperation({ summary: '취소 주문 환불 안 함 결정 (환불 결정 대기 건에만)' })
+  @ApiParam({ name: 'id', description: '판매 주문 ID' })
+  adminWaiveRefund(@Param('id') id: string, @Body() dto: AdminDecideRequestDto) {
+    return this.storeSalesOrdersService.adminWaiveRefund(id, dto);
+  }
+
   // ── Return Requests ───────────────────────────────────────────────────────
 
   @PiiResponse({

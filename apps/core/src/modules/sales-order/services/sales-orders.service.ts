@@ -775,20 +775,24 @@ export class SalesOrdersService {
           break;
       }
 
-      // ── 환불 실패/수동처리만 ──
+      // ── 환불 결정 전·실패만 ──
       // 어드민 주문내역 화면(use-order-rows)의 refundStatus 도출과 동일 규칙:
       //   effectiveLink = (미완료 manual_pending 링크) ?? (최신 링크)
-      //   이 링크가 failed/manual_pending 이면 이슈. → 아래 두 조건의 OR 로 정확히 재현.
-      //   ① 미완료 manual_pending 링크 존재 (뒤에 무관한 succeeded 가 생겨도 여전히 미처리로 노출)
+      //   이 링크가 failed/manual_pending/requested 면 이슈. → 아래 세 조건의 OR 로 정확히 재현.
+      //   ① 미완료 manual_pending 링크 존재 (succeeded·waived 가 completedRefundLinkId 로 닫지 않은 것.
+      //      뒤에 무관한 succeeded 가 생겨도 여전히 미처리로 노출)
       //   ② 최신 링크가 failed
+      //   ③ 최신 링크가 requested (환불을 요청만 하고 결과 기록이 안 온 채 멈춘 건)
+      // 주문 상태는 묻지 않는다 — core 가 돈을 쥔 주문은 취소 전에도 환불 결정 대기(manual_pending)가 생긴다.
       // 링크 앵커: sourceType='sales_order', sourceId=SO (store-sales-orders 와 동일).
       if (params.refundIssueOnly) {
-        conditions.push(eq(S.salesOrders.status, 'cancelled'));
         const REFUND_RELATION = 'cancellation_linked_wallet_refund';
         const mp = alias(S.businessLinks, 'refund_mp'); // manual_pending 후보
-        const completion = alias(S.businessLinks, 'refund_completion'); // mp 를 종결한 succeeded
+        const completion = alias(S.businessLinks, 'refund_completion'); // mp 를 종결한 succeeded·waived
         const failedLink = alias(S.businessLinks, 'refund_failed'); // failed 후보
         const laterLink = alias(S.businessLinks, 'refund_later'); // failedLink 이후 링크
+        const requestedLink = alias(S.businessLinks, 'refund_requested'); // requested 후보
+        const laterOfRequested = alias(S.businessLinks, 'refund_later_req'); // requestedLink 이후 링크
 
         // ① 아직 종결되지 않은 manual_pending 링크
         const uncompletedManualPending = exists(
@@ -808,7 +812,7 @@ export class SalesOrdersService {
                     .where(
                       and(
                         eq(completion.relationName, REFUND_RELATION),
-                        sql`${completion.metadata}->>'refundStatus' = 'succeeded'`,
+                        sql`${completion.metadata}->>'refundStatus' IN ('succeeded', 'waived')`,
                         sql`${completion.metadata}->>'completedRefundLinkId' = ${mp.id}::text`,
                       ),
                     ),
@@ -845,7 +849,35 @@ export class SalesOrdersService {
             ),
         );
 
-        conditions.push(or(uncompletedManualPending, latestIsFailed)!);
+        // ③ 최신 링크가 requested
+        const latestIsRequested = exists(
+          trx
+            .select({ x: sql`1` })
+            .from(requestedLink)
+            .where(
+              and(
+                eq(requestedLink.sourceType, SALES_ORDER_REF_TYPE),
+                eq(requestedLink.sourceId, S.salesOrders.id),
+                eq(requestedLink.relationName, REFUND_RELATION),
+                sql`${requestedLink.metadata}->>'refundStatus' = 'requested'`,
+                notExists(
+                  trx
+                    .select({ x: sql`1` })
+                    .from(laterOfRequested)
+                    .where(
+                      and(
+                        eq(laterOfRequested.sourceType, SALES_ORDER_REF_TYPE),
+                        eq(laterOfRequested.sourceId, S.salesOrders.id),
+                        eq(laterOfRequested.relationName, REFUND_RELATION),
+                        gt(laterOfRequested.createdAt, requestedLink.createdAt),
+                      ),
+                    ),
+                ),
+              ),
+            ),
+        );
+
+        conditions.push(or(uncompletedManualPending, latestIsFailed, latestIsRequested)!);
       }
 
       // ── 키워드 검색 ──

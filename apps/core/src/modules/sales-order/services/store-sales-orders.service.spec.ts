@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { getTableName, type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { StoreSalesOrdersService } from './store-sales-orders.service';
+import { StoreSalesOrdersService, storeRefundStatusOf } from './store-sales-orders.service';
 import { CancellationRefundManager } from '../cancellation-refund/cancellation-refund.manager';
 import { OrderCancellation } from '../order-cancellation/order-cancellation';
 import { OrderCancellationReader } from '../order-cancellation/order-cancellation.reader';
@@ -315,6 +315,17 @@ function makeContext(
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
+
+describe('storeRefundStatusOf', () => {
+  it('waived 는 none, requested 는 pending', () => {
+    expect(storeRefundStatusOf('waived')).toBe('none');
+    expect(storeRefundStatusOf('requested')).toBe('pending');
+    expect(storeRefundStatusOf('succeeded')).toBe('succeeded');
+    expect(storeRefundStatusOf('manual_pending')).toBe('manual_pending');
+    expect(storeRefundStatusOf(undefined)).toBe('pending');
+    expect(storeRefundStatusOf('이상한값')).toBe('pending');
+  });
+});
 
 describe('StoreSalesOrdersService', () => {
   // makeContext 를 거치지 않는 가짜(배치·관리자·배송조회)도 사다리 문을 읽을 수 있게 기본 단계를 깔아 둔다
