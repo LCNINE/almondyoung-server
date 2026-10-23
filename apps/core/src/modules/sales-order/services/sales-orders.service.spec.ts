@@ -1057,7 +1057,8 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
       canceledQty: 1,
       status: 'pending',
     });
-    expect(state.fulfillmentOrders[0]).toMatchObject({ totalQty: 3, status: 'ready' });
+    // FO status 는 출고 명령의 투영이다 — 이 더블은 투영하지 않으니 여기서 단정하지 않는다(통합 스펙이 고정)
+    expect(state.fulfillmentOrders[0]).toMatchObject({ totalQty: 3 });
     // 요청 전체에 한 번, 잠근 뒤에
     expect(unboxedDemand.lockForCancellation).toHaveBeenCalledWith(salesOrderId, tx);
     expect(unboxedDemand.reduce).toHaveBeenCalledTimes(1);
@@ -1618,7 +1619,7 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
       pickedQty: 1,
       status: 'picking',
     });
-    expect(state.fulfillmentOrders[0]).toMatchObject({ totalQty: 3, status: 'ready' });
+    expect(state.fulfillmentOrders[0]).toMatchObject({ totalQty: 3 });
   });
 
   it('reduces only the unshipped demand of a partially shipped item', async () => {
@@ -1656,7 +1657,7 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
     });
 
     expect(state.fulfillmentOrderItems[0]).toMatchObject({ qty: 3, canceledQty: 1, shippedQty: 1 });
-    expect(state.fulfillmentOrders[0]).toMatchObject({ totalQty: 3, status: 'ready' });
+    expect(state.fulfillmentOrders[0]).toMatchObject({ totalQty: 3 });
   });
 });
 

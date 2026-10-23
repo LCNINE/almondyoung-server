@@ -34,7 +34,7 @@
 | | 변경 | 라이브 영향 |
 |---|---|---|
 | D3 | 상자 전 부분취소: FOI `qty` 감소 → `canceledQty` 증가. 상자 전 **전체**취소도 FOI 에 `canceledQty = qty − shippedQty` 를 남긴다(지금은 FO 만 `canceled`, FOI 는 그대로) | 화면·통계는 K6 문(`qty − canceled_qty`)이라 같다. 전체취소 주문은 SO `cancelled` 칸이 진행 단계를 이겨 같다. 직배 조회·엑셀·완료는 Task 2 로 같은 값. FO 상세 «총»은 원래 수량으로 남는다(옆에 «취소» 칸이 이미 있다 — 상자 후 취소와 같은 표시) |
-| D4 | FO status: 판매주문 직접 쓰기 → 명령의 투영 | 직배 FO(`created`, 예약 0)는 `created` 그대로, 전량 취소면 `canceled`. 라이브 상자 전 열린 FO 0 |
+| D4 | FO status: 판매주문 직접 쓰기 → 명령의 투영 | 직배 FO 는 `ready` 로 만들어진다(`createV2` drop_ship). 부분취소로 수요가 남으면 투영이 `created` 로 옮긴다 — FO 상세가 읽을 때 보이는 `progress.status` 와 같은 값이고, 직배 흐름은 `directShipStatus` 로 돌아 FO status 를 보는 곳이 없다. 전량 취소면 `canceled`. 라이브 직배 FO 0행 |
 | — | 직배 조회·엑셀이 FOI `qty − canceledQty` 를 싣고 0 인 항목을 뺀다. 직배 완료가 `shippedQty = qty − canceledQty` 를 쓰고 전량 취소 항목은 건드리지 않는다 | 라이브 직배 FO 0행 |
 | N13 | 상자 전 취소가 확정 예약을 만나면 해제 대신 500 | 라이브 0(옛 예약 0행) |
 
@@ -62,8 +62,8 @@
 ## 배포
 
 - 배포 단위: **Core 만.** 마이그 없음. 배치 배포에 그대로 실린다(순서 의존 없음).
-- **G1 (배포 전, 사람이 실행):** `scripts/ops/k7-pr3-predeploy-check.js`(Task 3 가 만든다) — 열린 상자 전 FO 를 모드·status 별로, 옛 `FULFILLMENT_ORDER` 확정 예약 수(N13 — 0 이 아니면 ✗, 그 주문의 상자 전 취소가 500 이 된다), 상자 전 FO 의 `canceled_qty > 0` FOI 수(롤백 판정). 10-24 실측은 셋 다 0. 실행: `cd deployments/lcnine/services && npx sst shell --stage live -- node -e "$(cat ../../../scripts/ops/k7-pr3-predeploy-check.js)"`(터널 필요).
-- 🔴 **롤백:** 배포 뒤 상자 전 **부분**취소가 한 건이라도 새 표현(`canceledQty > 0`)으로 쓰이면, 이 PR 이전 Core 로 되돌릴 때 옛 직배 조회가 취소분을 업체 엑셀에 싣고 옛 완료가 CHECK 로 실패한다. G1 스크립트의 마지막 줄(«상자 없는 FO 의 `canceled_qty > 0` FOI»)이 0 이면 롤백 안전, 아니면 되돌리지 말고 앞으로 고친다.
+- **G1 (배포 전, 사람이 실행):** `scripts/ops/k7-pr3-predeploy-check.js`(Task 3 가 만든다) — 열린 상자 전 FO 를 모드·status 별로, 옛 `FULFILLMENT_ORDER` 확정 예약 수(N13 — 0 이 아니면 ✗, 그 주문의 상자 전 취소가 500 이 된다), 열린 상자 전 FO 의 `canceled_qty > 0` FOI 수(롤백 판정). 10-24 실측은 셋 다 0. 실행: `cd deployments/lcnine/services && npx sst shell --stage live -- node -e "$(cat ../../../scripts/ops/k7-pr3-predeploy-check.js)"`(터널 필요).
+- 🔴 **롤백:** 배포 뒤 상자 전 **부분**취소가 한 건이라도 새 표현(`canceledQty > 0`)으로 쓰이면, 이 PR 이전 Core 로 되돌릴 때 옛 직배 조회가 취소분을 업체 엑셀에 싣고 옛 완료가 CHECK 로 실패한다. G1 스크립트의 마지막 줄(«열린 상자 전 FO 의 `canceled_qty > 0` FOI», 전체 취소된 FO 는 뺀다)이 0 이면 롤백 안전, 아니면 되돌리지 말고 앞으로 고친다.
 
 ---
 
@@ -186,7 +186,7 @@
   - 전체: FO·FOI `FOR UPDATE` 두 줄을 `lockForCancellation` 으로, 출고 증거 판정(FO `shipped`·`completed`·`shippedAt`, `hasShippedSku`)은 그대로 판매주문에서, FO 루프(예약 해제·status UPDATE)는 `unboxedDemand.cancelOrder(id, trx)` 한 번(예약 해제는 N13 대로 지운다) — 반환으로 `cancelled_fulfillment_order` 효과(`metadata: { previousStatus }`)와 로그 건수를 만든다.
   - 부분: FO·FOI 잠금·읽기를 `lockForCancellation` 으로. `adjustFulfillmentForPartialCancellation` 은 `UnboxedDemandItem[]` 를 받아 지금 판정을 새 표현으로 한다 — 항목 거름 `qty − canceledQty > 0`, 나눠떨어짐 분자 `Σ(qty − canceledQty) − 앞선 보존 출고`, 줄일 수 있는 수량 `Σ cancellableQty`, 출고 뒤 몫·`shippedEvidenceQty` 판정과 문구 그대로. 분배 결과를 모아 라인마다가 아니라 **요청 전체에 `reduce` 한 번**(FOI id 순), 반환 `ReducedDemandItem` 으로 `adjusted_fulfillment_order_item` 효과(N15)를 만든다. `fulfillmentDeltas` 와 FO UPDATE 루프는 지운다(명령이 투영한다).
   - 생성자를 새 순서로. `wireLogistics` 를 쓰는 곳은 `logistics.unboxedDemand, logistics.productSkuMapping, logistics.backlog` 로, 목을 넘기는 unit spec(`sales-orders.service.spec.ts` 등)은 `UnboxedDemandCancellation` 목(`lockForCancellation`·`reduce`·`cancelOrder`)을 그 자리에. 모듈에 `UnboxedDemandModule`.
-  - `scripts/ops/k7-pr3-predeploy-check.js`: 머리 주석·접속은 `scripts/ops/1063-pr4-contract-preflight.js` 꼴(READ ONLY 트랜잭션, database `core`). 줄: ① 열린(`shipped`·`completed`·`canceled` 아닌) 상자 전 FO(새 상자 줄 없음 = `opened_for_fulfillment_order_id IS NULL` 인 상자에 오른 FOI 가 없음)를 `fulfillment_mode × status` 로 ② N13: 확정 예약 중 `target_type <> 'SHIPMENT_LINE'` 이거나 `fulfillment_order_item_id IS NOT NULL` 인 행 수 — 0 이 아니면 `✗ 그 주문의 상자 전 취소가 500` ③ 롤백 판정: 상자 전 FO 의 `canceled_qty > 0` FOI 수(배포 전 0 이어야 정상, 배포 뒤 0 이 아니면 롤백 금지). 10-24 실측 쿼리는 `/tmp/claude-1000/-home-pauseb-workspace-almondyoung-server/d0668d39-0337-4131-99c6-ad8e11d8395b/scratchpad/k7-pr3-live-probe.js` 를 참고.
+  - `scripts/ops/k7-pr3-predeploy-check.js`: 머리 주석·접속은 `scripts/ops/1063-pr4-contract-preflight.js` 꼴(READ ONLY 트랜잭션, database `core`). 줄: ① 열린(`shipped`·`completed`·`canceled` 아닌) 상자 전 FO(새 상자 줄 없음 = `opened_for_fulfillment_order_id IS NULL` 인 상자에 오른 FOI 가 없음)를 `fulfillment_mode × status` 로 ② N13: 확정 예약 중 `target_type <> 'SHIPMENT_LINE'` 이거나 `fulfillment_order_item_id IS NOT NULL` 인 행 수 — 0 이 아니면 `✗ 그 주문의 상자 전 취소가 500` ③ 롤백 판정: `canceled`·`shipped`·`completed` 가 아닌 상자 전 FO 의 `canceled_qty > 0` FOI 수(canceled FO 는 옛 코드가 다시 건드리지 않아 롤백 안전)(배포 전 0 이어야 정상, 배포 뒤 0 이 아니면 롤백 금지). 10-24 실측 쿼리는 `/tmp/claude-1000/-home-pauseb-workspace-almondyoung-server/d0668d39-0337-4131-99c6-ad8e11d8395b/scratchpad/k7-pr3-live-probe.js` 를 참고.
   - ADR-0049 «현재 상태»에 한 단락: «PR 3: 상자 전 취소는 출고 모듈 `UnboxedDemandCancellation` 을 부른다 — FOI 취소 표현은 `canceledQty` 하나, FO status 는 투영(D3·D4). 판매주문 코드의 출고 테이블 직접 쓰기는 K3 본편 둘만 남았다(가드).» 스펙 §10 에 `- PR 3: 상자 전 취소의 출고 명령 — UnboxedDemandCancellation, D3·D4, 직배 조회·완료가 canceledQty 를 뺀다.`
 
 - [ ] **Step 4: 통과 확인** — 검증 게이트 전부(Global Constraints). 통합(`k6_it`): sales-order 전체 + `fulfillment/unboxed-demand` + `direct-ship.canceled-demand` 기준선 외 실패 0. `node --check scripts/ops/k7-pr3-predeploy-check.js`.

@@ -33,6 +33,8 @@ const K = 'apps/core/src/modules/sales-order/order-cancellation/order-cancellati
 const STORE = 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts'; // N1 — PR4 가 지운다
 const MANAGER = 'apps/core/src/modules/sales-order/channel-cancel-request/channel-cancel-request.manager.ts'; // 확정 내부
 
+const T = '(?:fulfillmentOrders|fulfillmentOrderItems|stockReservations|shipments|shipmentLines)';
+
 describe('판매주문 취소 호출자 (K7)', () => {
   it('판매주문 취소 적용', () =>
     expect(filesCalling(/\b(salesOrders|salesOrdersService)\.cancel\(/)).toEqual([MANAGER, K, STORE].sort()));
@@ -62,7 +64,19 @@ describe('판매주문 취소 호출자 (K7)', () => {
     // 남은 둘(배송지·공동현관 비번 파기)은 K3 본편이 옮긴다. drizzle 형과 raw SQL 형 둘 다 본다.
     expect(
       filesCalling(
-        /\.(update|insert|delete)\((?:wmsTables|inventoryTables)\.(fulfillmentOrders|fulfillmentOrderItems|stockReservations|shipments|shipmentLines)\)|\b(update|insert\s+into|delete\s+from)\s+"?(fulfillment_orders|fulfillment_order_items|stock_reservations|shipments|shipment_lines)\b/i,
+        new RegExp(
+          [
+            // drizzle 직접 형
+            String.raw`\.(?:update|insert|delete)\((?:wmsTables|inventoryTables)\.${T}\)`,
+            // drizzle 별칭 형: const t = wmsTables.fulfillmentOrders; … .update(t)
+            String.raw`const (\w+) = (?:wmsTables|inventoryTables)\.${T};[\s\S]*?\.(?:update|insert|delete)\(\1\)`,
+            // raw SQL 리터럴 형
+            String.raw`\b(?:update|insert\s+into|delete\s+from)\s+"?(?:fulfillment_orders|fulfillment_order_items|stock_reservations|shipments|shipment_lines)\b`,
+            // raw SQL 보간 형: sql`UPDATE ${wmsTables.fulfillmentOrders} …`
+            String.raw`\b(?:update|insert\s+into|delete\s+from)\s+\$\{\s*(?:wmsTables|inventoryTables)\.${T}\s*\}`,
+          ].join('|'),
+          'i',
+        ),
         'apps/core/src/modules/sales-order',
       ),
     ).toEqual([

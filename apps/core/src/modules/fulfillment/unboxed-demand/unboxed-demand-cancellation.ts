@@ -175,7 +175,12 @@ export class UnboxedDemandCancellation {
 
   private async assertNoConfirmedReservations(foIds: string[], items: FoiRow[], trx: DbTx): Promise<void> {
     const [found] = await trx
-      .select({ targetId: wmsTables.stockReservations.targetId })
+      .select({
+        id: wmsTables.stockReservations.id,
+        targetType: wmsTables.stockReservations.targetType,
+        targetId: wmsTables.stockReservations.targetId,
+        fulfillmentOrderItemId: wmsTables.stockReservations.fulfillmentOrderItemId,
+      })
       .from(wmsTables.stockReservations)
       .where(
         and(
@@ -194,8 +199,13 @@ export class UnboxedDemandCancellation {
       )
       .limit(1);
     if (found) {
+      // FOI id 로 걸린 행은 target 이 FO 가 아닐 수 있다 — 점검을 돌린 FO 를 FOI 에서 거꾸로 찾아 적는다.
+      const foId =
+        found.targetType === 'FULFILLMENT_ORDER'
+          ? found.targetId
+          : (items.find((item) => item.id === found.fulfillmentOrderItemId)?.fulfillmentOrderId ?? found.targetId);
       throw new Error(
-        `Unboxed fulfillment order ${found.targetId} has confirmed reservations — unboxed demand carries no reservation`,
+        `Unboxed fulfillment order ${foId} has confirmed reservations — unboxed demand carries no reservation (reservation ${found.id})`,
       );
     }
   }

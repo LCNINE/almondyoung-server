@@ -315,7 +315,6 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
         {} as never,
         {} as never,
         {} as never,
-        {} as never,
       );
       const pointOf = async () => (await service.getDailyStatusStats(bucket, bucket)).series[0];
       const before = await pointOf();
