@@ -24,6 +24,8 @@ import type {
   CancelLine,
   CancellationNotice,
   CancellationRequest,
+  ChannelDecreaseNotice,
+  DecreaseOutcome,
   NoticeFollowUp,
   NoticeOutcome,
 } from './order-cancellation.types';
@@ -33,7 +35,6 @@ type CustomerRequest = Extract<CancellationRequest, { requester: { kind: 'custom
 
 type WalletApprovalNotice = Extract<CancellationNotice, { source: 'wallet_refund_approval' }>;
 type ChannelCancelledNotice = Extract<CancellationNotice, { source: 'channel_cancelled' }>;
-type ChannelDecreaseNotice = Extract<CancellationNotice, { source: 'channel_decrease' }>;
 
 /** savepoint 를 되돌리려고 던지는 표지. 커널 밖으로 새지 않는다 */
 class Refused extends Error {
@@ -91,7 +92,7 @@ export class OrderCancellation {
 
   /**
    * 취소가 이미 정해진 뒤의 통보. 무통장 승인은 커널이 트랜잭션을 가지므로 tx 를 받지 않고,
-   * 채널 취소·수량 감소는 수신 트랜잭션(이벤트 중복 기록·변경 기록과 한 묶음) 안에서만 부른다.
+   * 채널 취소는 수신 트랜잭션(이벤트 중복 기록과 한 묶음) 안에서만 부른다.
    */
   async notice(intent: CancellationNotice, tx?: DbTx): Promise<NoticeOutcome> {
     switch (intent.source) {
@@ -101,9 +102,6 @@ export class OrderCancellation {
       case 'channel_cancelled':
         if (!tx) throw new Error('channel_cancelled notice needs the receiving transaction');
         return this.noticeChannelCancelled(intent, tx);
-      case 'channel_decrease':
-        if (!tx) throw new Error('channel_decrease notice needs the receiving transaction');
-        return this.noticeChannelDecrease(intent, tx);
     }
   }
 
@@ -150,10 +148,15 @@ export class OrderCancellation {
   }
 
   /**
-   * 스펙 §7.2 — 기존 취소를 그대로 시도. 그 자리에서 끝나지 않으면(박스 대기, 출고분 회수 이관) savepoint 를 되돌린다
+   * 채널 수량 감소 (스펙 §7.2, D7). 수신 트랜잭션(변경 기록과 한 묶음) 안에서만 부른다.
+   * 어느 길로 끝나든 감소가 대기로 남으면 운영자 몫이다 — 그사이 원래 수량으로 주문되지 않게, 거절이 되돌리는
+   * savepoint 밖에서 그 줄의 안 보낸 인쇄를 먼저 붙잡는다. 채널 변경 규칙이 이미 대기로 정했으면(`attempt: false`) 붙잡기만 한다.
+   * 시도는 기존 취소 그대로 — 그 자리에서 끝나지 않으면(박스 대기, 출고분 회수 이관) savepoint 를 되돌린다
    * (R1: 새 대기·회수를 만들지 않는다). 도메인 거절이 아닌 예외(교착·버그)는 그대로 던져 바깥 트랜잭션을 되돌린다(스펙 §11).
    */
-  private async noticeChannelDecrease(intent: ChannelDecreaseNotice, tx: DbTx): Promise<NoticeOutcome> {
+  async noticeChannelDecrease(intent: ChannelDecreaseNotice, tx: DbTx): Promise<DecreaseOutcome> {
+    await this.printCancellation.holdForDecrease(intent.line.salesOrderLineId, tx);
+    if (!intent.attempt) return { applied: false, refusal: 'deferred by the channel change rule' };
     try {
       await tx.transaction(async (sp) => {
         // 판매주문 취소는 외주 줄을 그냥 통과시킨다. 인쇄 줄을 줄이면 와우프레스는 원래 수량대로 주문·제작된다

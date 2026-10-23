@@ -28,6 +28,8 @@ import { ChannelCancelRequestService } from '../channel-cancel-request.service';
 import { OrderCancellation } from '../../order-cancellation/order-cancellation';
 import { OrderCancellationReader } from '../../order-cancellation/order-cancellation.reader';
 import { PrintOrderReader } from '../../../print-order/services/print-order.reader';
+import { PrintOrderRepository } from '../../../print-order/services/print-order.repository';
+import { PrintOrderCancellationManager } from '../../../print-order/services/print-order-cancellation.manager';
 
 export const ADDRESS = {
   recipientName: '김',
@@ -200,13 +202,15 @@ export function wireCancelRequest(tx: DbTx) {
   );
   const settler = new ChannelCancelSettler(reader);
   const amendments = new SalesOrderAmendmentsService(dbService);
-  // 실제 커널. 채널 변경이 부르는 수량 감소 갈래는 판매주문 취소와 커널 reader 만 쓴다 — 인쇄 취소 협력자는 비워 둔다
+  // 실제 커널. 채널 변경이 부르는 수량 감소 갈래는 판매주문 취소·커널 reader·인쇄 붙잡기(holdForDecrease)만 쓴다 —
+  // 와우프레스 클라이언트는 비워 둔다(붙잡기는 외부를 부르지 않는다)
+  const printOrders = new PrintOrderReader(dbService);
   const cancellation = new OrderCancellation(
     dbService,
     salesOrders,
     new ChannelCancelRequestService(dbService, manager, reader),
-    new PrintOrderReader(dbService),
-    {} as never,
+    printOrders,
+    new PrintOrderCancellationManager(printOrders, new PrintOrderRepository(dbService), {} as never),
     settler,
     new OrderCancellationReader(),
   );

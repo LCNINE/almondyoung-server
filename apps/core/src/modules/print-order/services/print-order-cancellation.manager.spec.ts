@@ -1,7 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { BadRequestError, ConflictError, UpstreamUnavailableError } from '@app/shared';
 import { DbService } from '@app/db';
-import { wmsSchema } from '../../inventory/schema/inventory.schema';
+import { type DbTx, wmsSchema } from '../../inventory/schema/inventory.schema';
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { WowpressApiError, WowpressClient, WowpressUnauthorizedError } from '../wowpress/wowpress.client';
 import { type WowpressOrderDetail, type WowpressTransport } from '../wowpress/wowpress.types';
@@ -977,6 +977,18 @@ describe('PrintOrderCancellationManager', () => {
       await manager.cancelForOrder('so-1', 'record');
       expect(store.get(pending.id).status).toBe('cancelled');
       expect(store.get(submitted.id).status).toBe('cancelled');
+    });
+  });
+
+  describe('channel decrease hold', () => {
+    it('holdForDecrease 는 그 줄의 안 보낸 인쇄를 저장소에서 붙잡는다', async () => {
+      const { manager, repo } = setup();
+      const hold = jest.spyOn(repo, 'holdUnsentForDecrease').mockResolvedValue(undefined);
+      // 저장소를 가로채므로 트랜잭션은 넘겨지는지만 본다
+      const tx = {} as unknown as DbTx;
+      await manager.holdForDecrease('line-1', tx);
+      expect(hold).toHaveBeenCalledTimes(1);
+      expect(hold).toHaveBeenCalledWith('line-1', tx);
     });
   });
 });

@@ -30,7 +30,8 @@ export type CancellationRequest =
 
 /**
  * 취소 «통보» — 취소가 이미 정해진 뒤 커널에 알리는 것 (K7 PR1).
- * 무통장 승인(돈은 wallet 에서 이미 나갔다)·채널 취소(채널이 이미 취소했다)·채널 수량 감소(채널이 이미 줄였다).
+ * 무통장 승인(돈은 wallet 에서 이미 나갔다)·채널 취소(채널이 이미 취소했다).
+ * 채널 수량 감소(채널이 이미 줄였다)는 제 문(`noticeChannelDecrease`)으로 받는다 — `ChannelDecreaseNotice`.
  */
 export type CancellationNotice =
   | { source: 'wallet_refund_approval'; salesOrderId: string; intentId: string; reasonCode: string }
@@ -44,15 +45,20 @@ export type CancellationNotice =
       cancelledBy?: string;
       occurredAt?: string;
       metadata: Record<string, unknown>;
-    }
-  | {
-      source: 'channel_decrease';
-      salesOrderId: string;
-      line: CancelLine;
-      reasonCode: string;
-      occurredAt: string;
-      sourceEventId: string;
     };
+
+/** 채널 수량 감소 통보 (K7 PR2, D7). 수신 트랜잭션(변경 기록과 한 묶음) 안에서만 받는다 */
+export type ChannelDecreaseNotice = {
+  salesOrderId: string;
+  line: CancelLine;
+  reasonCode: string;
+  occurredAt: string;
+  sourceEventId: string;
+  /** false = 채널 변경 규칙이 이미 대기로 정했다 — 인쇄만 붙잡고 시도하지 않는다 */
+  attempt: boolean;
+};
+
+export type DecreaseOutcome = { applied: true } | { applied: false; refusal: string };
 
 /** 통보한 트랜잭션이 커밋된 뒤 커널이 할 일. 호출자는 이걸 `afterCommit` 에 그대로 돌려준다 */
 export type NoticeFollowUp = { salesOrderId: string; lines: CancelLine[] | undefined; redeliveredSince?: Date };

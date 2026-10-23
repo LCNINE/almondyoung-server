@@ -196,6 +196,11 @@ export class PrintOrderCancellationManager {
     );
   }
 
+  // 채널 수량 감소를 받은 트랜잭션에서 부른다. 감소가 대기로 남는 동안 그 줄의 안 보낸 인쇄가 원래 수량으로 주문되지 않게 한다
+  holdForDecrease(salesOrderLineId: string, tx: DbTx): Promise<void> {
+    return this.repository.holdUnsentForDecrease(salesOrderLineId, tx);
+  }
+
   // 인쇄를 멈춘 뒤 판매주문 취소가 실패한 마지막 시각과 사유를 남긴다. 보드 판정은 판매주문 줄의 남은 수량으로 한다
   async noteSalesCancelFailed(result: PrintCancelResult, cause: unknown): Promise<void> {
     const notes = [
