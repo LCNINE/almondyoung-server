@@ -244,6 +244,30 @@ describe('CancellationRefundManager', () => {
       expect(f.salesOrders.createBusinessLink).toHaveBeenCalledTimes(1);
     });
 
+    it('명시 대상이 succeeded 로 닫혀 있으면 400 — 모순되는 waived 를 쓰지 않는다', async () => {
+      const f = makeFixture({
+        links: [
+          { id: 'k-2', metadata: { refundStatus: 'succeeded', completedRefundLinkId: 'k-1' } },
+          { id: 'k-1', metadata: { refundStatus: 'manual_pending', awaitingDecision: true } },
+        ],
+      });
+      await expect(f.manager.waive(SO_ID, { refundLinkId: 'k-1' })).rejects.toThrow('이미 환불이 완료된 건입니다.');
+      expect(f.salesOrders.createBusinessLink).not.toHaveBeenCalled();
+    });
+
+    it('명시 대상이 결정 대기가 아니면(awaitingDecision 없는 manual_pending·failed) 400', async () => {
+      const f = makeFixture({
+        links: [
+          { id: 'k-2', metadata: { refundStatus: 'failed' } },
+          { id: 'k-1', metadata: { refundStatus: 'manual_pending' } },
+        ],
+      });
+      for (const refundLinkId of ['k-1', 'k-2', 'nope']) {
+        await expect(f.manager.waive(SO_ID, { refundLinkId })).rejects.toThrow('환불 결정 대기 건이 없습니다.');
+      }
+      expect(f.salesOrders.createBusinessLink).not.toHaveBeenCalled();
+    });
+
     it('기록이 실패하면 삼키지 않고 던진다', async () => {
       const f = makeFixture({
         links: [{ id: 'k-1', metadata: { refundStatus: 'manual_pending', awaitingDecision: true } }],
@@ -323,16 +347,23 @@ describe('CancellationRefundManager', () => {
       expect(recorded(f)).toMatchObject({ completedRefundLinkId: 'k-1', providerRefundExecuted: false });
     });
 
-    it('환불 안 함(waived)으로 닫힌 manual_pending 은 열린 건이 아니다', async () => {
-      const f = makeFixture({
-        so: makeSo({ status: 'confirmed' }),
-        links: [
-          { id: 'k-2', metadata: { refundStatus: 'waived', completedRefundLinkId: 'k-1' } },
-          { id: 'k-1', metadata: { refundStatus: 'manual_pending' } },
-        ],
-      });
-      // 열린 건이 없고 주문도 취소 전이라 400 — waived 를 닫힘으로 보지 않으면 k-1 이 대상이 되어 통과한다
-      await expect(f.manager.completeManually(SO_ID, {})).rejects.toThrow('수동 환불 완료 처리');
+    const WAIVED_ROWS = [
+      { id: 'k-2', metadata: { refundStatus: 'waived', completedRefundLinkId: 'k-1' } },
+      { id: 'k-1', metadata: { refundStatus: 'manual_pending', awaitingDecision: true } },
+    ];
+
+    it('환불 안 함으로 닫힌 건뿐이면(대상 없음) 400 — succeeded 를 덧쓰지 않는다', async () => {
+      const f = makeFixture({ links: WAIVED_ROWS });
+      await expect(f.manager.completeManually(SO_ID, {})).rejects.toThrow('환불하지 않기로 한 주문입니다.');
+      expect(f.salesOrders.createBusinessLink).not.toHaveBeenCalled();
+    });
+
+    it.each(['k-1', 'k-2'])('명시 대상 %s 가 waived 이거나 waived 로 닫혔으면 400', async (refundLinkId) => {
+      const f = makeFixture({ links: WAIVED_ROWS });
+      await expect(f.manager.completeManually(SO_ID, { refundLinkId })).rejects.toThrow(
+        '환불하지 않기로 한 주문입니다.',
+      );
+      expect(f.salesOrders.createBusinessLink).not.toHaveBeenCalled();
     });
 
     it('pending → 400', async () => {
@@ -344,6 +375,7 @@ describe('CancellationRefundManager', () => {
   describe('requestWalletRefundAfterCancel — Wallet 결과별 기록', () => {
     it.each([
       [{ kind: 'success', refunds: SUCCESS.kind === 'success' ? SUCCESS.refunds : [] }, 'succeeded', 'succeeded'],
+      [{ kind: 'partial_pending', refunds: SUCCESS.kind === 'success' ? SUCCESS.refunds : [] }, 'pending', 'pending'],
       [{ kind: 'failed', errorCode: 'E', errorMessage: 'm' }, 'failed', 'failed'],
       [{ kind: 'wallet_unavailable', errorMessage: 'm' }, 'manual_pending', 'manual_pending'],
       [{ kind: 'in_flight', errorMessage: 'm' }, 'manual_pending', 'manual_pending'],

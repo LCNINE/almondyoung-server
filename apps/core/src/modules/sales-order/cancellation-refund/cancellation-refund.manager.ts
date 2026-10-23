@@ -128,27 +128,28 @@ export class CancellationRefundManager {
   ): Promise<{ refundStatus: 'waived' }> {
     const so = await this.findSoOrThrow(orderId);
     const rows = await this.refundLinks(so.id);
-    const closedBy = (id: string) =>
-      rows.find((r) => {
-        const m = this.metaOf(r.metadata);
-        return m.refundStatus === REFUND_WAIVED && m.completedRefundLinkId === id;
-      });
-
     if (!dto.refundLinkId && this.metaOf(rows[0]?.metadata).refundStatus === REFUND_WAIVED) {
       return { refundStatus: REFUND_WAIVED };
     }
 
+    // 명시 대상도 자동 선택과 같은 기준이다 — 결정 대기(awaitingDecision manual_pending) 또는 requested 만 «안 함» 의 대상
+    const isDecisionPending = (m: Record<string, unknown>) =>
+      (m.refundStatus === 'manual_pending' && m.awaitingDecision === true) || m.refundStatus === REFUND_REQUESTED;
     const target = dto.refundLinkId
       ? rows.find((r) => r.id === dto.refundLinkId)
       : rows.find((r, i) => {
           const m = this.metaOf(r.metadata);
           const awaiting = m.refundStatus === 'manual_pending' && m.awaitingDecision === true;
-          return (awaiting || (i === 0 && m.refundStatus === REFUND_REQUESTED)) && !this.isClosed(rows, r.id);
+          return (awaiting || (i === 0 && m.refundStatus === REFUND_REQUESTED)) && !this.closedBy(rows, r.id);
         });
-    if (target && closedBy(target.id)) return { refundStatus: REFUND_WAIVED };
 
-    const targetStatus = this.metaOf(target?.metadata).refundStatus;
-    if (!target || (targetStatus !== 'manual_pending' && targetStatus !== REFUND_REQUESTED)) {
+    if (target) {
+      // 이미 닫힌 건: 환불이 끝났으면 «안 함» 을 덧쓰지 않고(모순), 이미 안 하기로 했으면 쓰지 않는다(멱등)
+      const closed = this.closedBy(rows, target.id);
+      if (closed === 'succeeded') throw new BadRequestException('이미 환불이 완료된 건입니다.');
+      if (closed === REFUND_WAIVED) return { refundStatus: REFUND_WAIVED };
+    }
+    if (!target || !isDecisionPending(this.metaOf(target.metadata))) {
       throw new BadRequestException('환불 결정 대기 건이 없습니다.');
     }
 
@@ -185,31 +186,20 @@ export class CancellationRefundManager {
     const so = await this.findSoOrThrow(orderId);
 
     // Resolve target link: if refundLinkId given, target that specific link;
-    // otherwise find the most recent manual_pending link (supports partial cancellations).
-    const targetRefundLink = await (async () => {
-      if (dto.refundLinkId) {
-        return this.db.db
-          .select({ id: wmsTables.businessLinks.id, metadata: wmsTables.businessLinks.metadata })
-          .from(wmsTables.businessLinks)
-          .where(
-            and(
-              eq(wmsTables.businessLinks.id, dto.refundLinkId),
-              eq(wmsTables.businessLinks.sourceType, 'sales_order'),
-              eq(wmsTables.businessLinks.sourceId, so.id),
-              eq(wmsTables.businessLinks.relationName, REFUND_RELATION),
-            ),
-          )
-          .limit(1)
-          .then((r) => r[0]);
-      }
-      // No refundLinkId: find the most recent manual_pending link that hasn't been
-      // closed by a subsequent completion record (same exclusion logic as admin-web UI).
-      const rows = await this.refundLinks(so.id);
-      return (
-        rows.find((r) => this.metaOf(r.metadata).refundStatus === 'manual_pending' && !this.isClosed(rows, r.id)) ??
-        null
-      );
-    })();
+    // otherwise find the most recent manual_pending link that hasn't been closed by a
+    // subsequent completion/waive record (supports partial cancellations).
+    const rows = await this.refundLinks(so.id);
+    const targetRefundLink = dto.refundLinkId
+      ? (rows.find((r) => r.id === dto.refundLinkId) ?? null)
+      : (rows.find((r) => this.metaOf(r.metadata).refundStatus === 'manual_pending' && !this.closedBy(rows, r.id)) ??
+        null);
+
+    // 환불 안 함으로 결정된 건에 «완료» 를 덮어쓰면 결정과 모순되는 기록이 남는다
+    const waivedTarget = targetRefundLink
+      ? this.metaOf(targetRefundLink.metadata).refundStatus === REFUND_WAIVED ||
+        this.closedBy(rows, targetRefundLink.id) === REFUND_WAIVED
+      : this.metaOf(rows[0]?.metadata).refundStatus === REFUND_WAIVED;
+    if (waivedTarget) throw new BadRequestException('환불하지 않기로 한 주문입니다.');
 
     const currentStatus = this.metaOf(targetRefundLink?.metadata).refundStatus;
 
@@ -600,12 +590,14 @@ export class CancellationRefundManager {
       .orderBy(desc(wmsTables.businessLinks.createdAt));
   }
 
-  /** 뒤따른 완료(succeeded)·환불 안 함(waived) 기록이 `completedRefundLinkId` 로 이 링크를 가리키면 닫힌 것이다 */
-  private isClosed(rows: Array<{ id: string; metadata: unknown }>, linkId: string): boolean {
-    return rows.some((r) => {
+  /** 뒤따른 완료(succeeded)·환불 안 함(waived) 기록이 `completedRefundLinkId` 로 이 링크를 가리키면 닫힌 것이다 — 닫은 상태를 돌려준다 */
+  private closedBy(rows: Array<{ id: string; metadata: unknown }>, linkId: string): 'succeeded' | 'waived' | null {
+    for (const r of rows) {
       const m = this.metaOf(r.metadata);
-      return (m.refundStatus === 'succeeded' || m.refundStatus === REFUND_WAIVED) && m.completedRefundLinkId === linkId;
-    });
+      if (m.completedRefundLinkId !== linkId) continue;
+      if (m.refundStatus === 'succeeded' || m.refundStatus === REFUND_WAIVED) return m.refundStatus;
+    }
+    return null;
   }
 
   /** metadata 는 jsonb(unknown)다 — 키별로 좁혀 읽으려고 레코드로 본다. 없으면 빈 객체 */
