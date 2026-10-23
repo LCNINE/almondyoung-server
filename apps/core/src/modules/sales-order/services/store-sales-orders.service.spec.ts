@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, NotFoundException } from '@nes
 import { getTableName, type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { StoreSalesOrdersService } from './store-sales-orders.service';
+import { CancellationRefundManager } from '../cancellation-refund/cancellation-refund.manager';
 import { OrderCancellation } from '../order-cancellation/order-cancellation';
 import { OrderCancellationReader } from '../order-cancellation/order-cancellation.reader';
 import { PrintOrderReader } from '../../print-order/services/print-order.reader';
@@ -291,6 +292,7 @@ function makeContext(
       {} as never,
       new OrderCancellationReader(),
     ),
+    new CancellationRefundManager(dbMock as any, salesOrdersServiceMock as any, walletClientMock as WalletRefundClient),
   );
 
   return { service, dbMock, salesOrdersServiceMock, walletClientMock, cancelRequestsMock, printCancel, printNote };
@@ -751,6 +753,11 @@ describe('StoreSalesOrdersService', () => {
           printCancellation,
           {} as never,
           new OrderCancellationReader(),
+        ),
+        new CancellationRefundManager(
+          dbMock as any,
+          salesOrdersServiceMock as any,
+          { refundByIntent: jest.fn() } as any,
         ),
       );
       return { service, dbMock };
@@ -1305,6 +1312,11 @@ describe('StoreSalesOrdersService', () => {
         {} as never,
         new OrderCancellationReader(),
       ),
+      new CancellationRefundManager(
+        dbMock as any,
+        salesOrdersServiceMock as any,
+        walletClientMock as WalletRefundClient,
+      ),
     );
 
     return {
@@ -1690,191 +1702,20 @@ describe('StoreSalesOrdersService', () => {
     });
   });
 
-  // retryWalletRefund mock: cancelled SO + businessLinks를 상태별로 제어
-  function makeRetryContext(
-    options: {
-      so?: ReturnType<typeof makeSo>;
-      currentRefundStatus?: string;
-      walletOutcome?: WalletRefundOutcome;
-    } = {},
-  ) {
-    const so = options.so ?? makeSo({ status: 'cancelled' });
-    const walletOutcome = options.walletOutcome ?? {
-      kind: 'success',
-      refunds: [
-        {
-          refundId: 'rf-002',
-          intentId: WALLET_INTENT_ID,
-          status: 'SUCCEEDED',
-          amount: 50000,
-          currency: 'KRW',
-          reasonCode: null,
-          reasonMessage: null,
-          manualConfirmable: false,
-        },
-      ],
-    };
-
-    const refundLink =
-      options.currentRefundStatus !== undefined
-        ? { metadata: { refundStatus: options.currentRefundStatus } }
-        : undefined;
-
-    const dbMock = {
-      run: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn(dbMock.db)),
-      db: {
-        select: jest.fn().mockImplementation(() => ({
-          from: jest.fn().mockImplementation(() => ({
-            where: jest.fn().mockImplementation(() => ({
-              // findSoOrThrow
-              limit: jest.fn().mockReturnValue({
-                then: jest.fn((fn: (r: unknown[]) => unknown) => fn([so])),
-              }),
-              // businessLinks orderBy().limit().then()
-              orderBy: jest.fn().mockReturnValue({
-                limit: jest.fn().mockReturnValue({
-                  then: jest.fn((fn: (r: unknown[]) => unknown) => fn(refundLink ? [refundLink] : [])),
-                }),
-              }),
-            })),
-          })),
-        })),
-      },
-    };
-
-    const salesOrdersServiceMock = {
-      cancel: jest.fn().mockResolvedValue(undefined),
-      createBusinessLink: jest.fn().mockResolvedValue(undefined),
-    };
-
-    const walletClientMock: Partial<WalletRefundClient> = {
-      refundByIntent: jest.fn().mockResolvedValue(walletOutcome),
-    };
-
-    const cancelRequestsMock = {
-      request: jest.fn().mockResolvedValue({
-        id: 'req-1',
-        status: 'requested',
-        scope: 'full',
-        stage: null,
-        convertedFromFull: false,
-        requestedAt: '2026-10-07T00:00:00.000Z',
-        rejection: null,
-        outcome: null,
-      }),
-      findBySourceKey: jest.fn().mockResolvedValue(null),
-      precheck: jest.fn().mockResolvedValue(undefined),
-    };
-
-    const printReader = printReaderMock();
-    const printCancellation = printCancelMock();
-    const service = new StoreSalesOrdersService(
-      dbMock as any,
-      salesOrdersServiceMock as any,
-      walletClientMock as WalletRefundClient,
-      cancelRequestsMock as any,
-      printReader,
-      printCancellation,
-      new OrderCancellation(
-        dbMock as any,
-        salesOrdersServiceMock as any,
-        cancelRequestsMock as any,
-        printReader,
-        printCancellation,
-        {} as never,
-        new OrderCancellationReader(),
-      ),
-    );
-
-    return { service, walletClientMock, cancelRequestsMock };
-  }
-
-  describe('retryWalletRefund', () => {
-    it('status=succeeded → Wallet 미호출, succeeded 반환', async () => {
-      const { service, walletClientMock } = makeRetryContext({ currentRefundStatus: 'succeeded' });
-      const result = await service.retryWalletRefund(SO_ID);
-      expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
-      expect(result).toMatchObject({ refundStatus: 'succeeded' });
-    });
-
-    it('status=pending → Wallet 미호출, pending 반환 (중복 재시도 방지)', async () => {
-      const { service, walletClientMock } = makeRetryContext({ currentRefundStatus: 'pending' });
-      const result = await service.retryWalletRefund(SO_ID);
-      expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
-      expect(result.refundStatus).toBe('pending');
-    });
-
-    it('walletIntentId 없으면 400 (수동 처리 필요)', async () => {
-      const { service } = makeRetryContext({
-        so: makeSo({ status: 'cancelled', walletIntentId: null }),
-        currentRefundStatus: 'manual_pending',
-      });
-      await expect(service.retryWalletRefund(SO_ID)).rejects.toThrow('자동 재시도가 불가합니다');
-    });
-
-    it('totalAmount 없으면 400 (수동 처리 필요)', async () => {
-      const { service } = makeRetryContext({
-        so: makeSo({ status: 'cancelled', totalAmount: null }),
-        currentRefundStatus: 'manual_pending',
-      });
-      await expect(service.retryWalletRefund(SO_ID)).rejects.toThrow('환불 금액 정보가 없어');
-    });
-
-    it('status=failed → 새 idempotency key cancel:{id}:retry:* 로 Wallet 호출', async () => {
-      const { service, walletClientMock } = makeRetryContext({ currentRefundStatus: 'failed' });
-      const result = await service.retryWalletRefund(SO_ID);
-      expect(walletClientMock.refundByIntent).toHaveBeenCalledWith(
-        WALLET_INTENT_ID,
-        50000,
-        expect.objectContaining({
-          kind: 'ITEM_CANCEL',
-          correlationId: expect.stringMatching(/^cancel:so-001:retry:/),
-        }),
-      );
-      expect(result).toMatchObject({ refundStatus: 'succeeded' });
-    });
-
-    it('채널(medusa) 주문인데 옛 환불 링크가 없으면 400 — wallet 을 부르지 않는다', async () => {
-      const { service, walletClientMock } = makeRetryContext();
-      await expect(service.retryWalletRefund(SO_ID)).rejects.toThrow('채널 주문의 환불은 채널이 처리합니다.');
-      expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
-    });
-
-    it('링크 없음 → 새 key로 Wallet 호출 (첫 실패 시 링크 없는 경우 포함)', async () => {
-      // currentRefundStatus undefined → refundLink 없음 (채널 경로가 아닌 주문 — 채널 경로는 아래에서 400)
-      const { service, walletClientMock } = makeRetryContext({
-        so: makeSo({ status: 'cancelled', salesChannel: '3pl' }),
-      });
-      const result = await service.retryWalletRefund(SO_ID);
-      expect(walletClientMock.refundByIntent).toHaveBeenCalledWith(
-        WALLET_INTENT_ID,
-        50000,
-        expect.objectContaining({
-          kind: 'ITEM_CANCEL',
-          correlationId: expect.stringMatching(/^cancel:so-001:retry:/),
-        }),
-      );
-      expect(result).toMatchObject({ refundStatus: 'succeeded' });
-    });
-
-    it('failed 재시도에서 초기 취소 key cancel:{id}는 사용하지 않음', async () => {
-      const { service, walletClientMock } = makeRetryContext({ currentRefundStatus: 'failed' });
+  // retryWalletRefund 규칙(재시도·수동 완료·환불 안 함)은 cancellation-refund.manager.spec.ts 가 소유한다.
+  // 이 서비스는 한 줄 위임만 한다.
+  describe('환불 위임', () => {
+    it('retryWalletRefund·adminManualRefundComplete 는 매니저에 그대로 넘긴다', async () => {
+      const { service } = makeContext();
+      const manager = (service as unknown as { cancellationRefund: CancellationRefundManager }).cancellationRefund;
+      const retry = jest.spyOn(manager, 'retry').mockResolvedValue({ refundStatus: 'succeeded' });
+      const complete = jest
+        .spyOn(manager, 'completeManually')
+        .mockResolvedValue({ refundStatus: 'succeeded', completionType: 'manual' });
       await service.retryWalletRefund(SO_ID);
-      const calledWith = (walletClientMock.refundByIntent as jest.Mock).mock.calls[0][2] as { correlationId: string };
-      expect(calledWith.correlationId).not.toBe(`cancel:${SO_ID}`);
-    });
-
-    it('재시도 correlationId는 :retry: 포함 per-attempt 형식, initial key 미사용', async () => {
-      const { service, walletClientMock } = makeRetryContext({ currentRefundStatus: 'failed' });
-      await service.retryWalletRefund(SO_ID);
-      const calledWith = (walletClientMock.refundByIntent as jest.Mock).mock.calls[0][2] as { correlationId: string };
-      expect(calledWith.correlationId).toMatch(/^cancel:so-001:retry:[0-9a-f-]{36}$/);
-      expect(calledWith.correlationId).not.toContain(':initial:');
-    });
-
-    it('취소되지 않은 주문이면 400', async () => {
-      const { service } = makeRetryContext({ so: makeSo({ status: 'confirmed' }) });
-      await expect(service.retryWalletRefund(SO_ID)).rejects.toThrow('취소된 주문에만 환불 재시도를 할 수 있습니다.');
+      await service.adminManualRefundComplete(SO_ID, { adminNote: 'n' });
+      expect(retry).toHaveBeenCalledWith(SO_ID);
+      expect(complete).toHaveBeenCalledWith(SO_ID, { adminNote: 'n' });
     });
   });
 
@@ -1927,6 +1768,7 @@ describe('StoreSalesOrdersService', () => {
           {} as never,
           new OrderCancellationReader(),
         ),
+        new CancellationRefundManager(dbMock as never, salesOrdersServiceMock as never, {} as WalletRefundClient),
       );
     }
 

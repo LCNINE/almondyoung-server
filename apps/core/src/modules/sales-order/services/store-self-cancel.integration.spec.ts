@@ -17,6 +17,7 @@ import { seedChannelOrder, wireCancelRequest } from '../channel-cancel-request/_
 import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
 import { WalletRefundClient } from './wallet-refund.client';
 import { StoreSalesOrdersService } from './store-sales-orders.service';
+import { CancellationRefundManager } from '../cancellation-refund/cancellation-refund.manager';
 import { OrderCancellation } from '../order-cancellation/order-cancellation';
 import { OrderCancellationReader } from '../order-cancellation/order-cancellation.reader';
 
@@ -102,6 +103,7 @@ describeIfDb('셀프취소 판정 — 복구 중 상자 (DB integration, rollbac
           {} as never,
           new OrderCancellationReader(),
         ),
+        new CancellationRefundManager(db as never, salesOrders as never, {} as WalletRefundClient),
       );
 
       const view = await service.getActionsByChannelOrder(so.channelOrderId, customerId);
@@ -197,6 +199,7 @@ describeIfDb('셀프취소 판정 — 복구 중 상자 (DB integration, rollbac
           {} as never,
           new OrderCancellationReader(),
         ),
+        new CancellationRefundManager(db as never, w.salesOrders, {} as WalletRefundClient),
       );
 
       const before = await service.getActionsByChannelOrder(seed.externalOrderId, customerId);
