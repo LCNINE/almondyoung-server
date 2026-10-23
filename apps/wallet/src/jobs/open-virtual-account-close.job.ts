@@ -39,8 +39,6 @@ export class OpenVirtualAccountCloseJob {
     const rows = await this.dbService.db
       .select({
         id: charges.id,
-        providerTransactionId: charges.providerTransactionId,
-        providerIdempotencyKey: charges.providerIdempotencyKey,
         responsePayload: charges.responsePayload,
       })
       .from(charges)
@@ -56,30 +54,53 @@ export class OpenVirtualAccountCloseJob {
 
     let closed = 0;
     for (const row of rows) {
-      if (!row.providerTransactionId) continue;
-      const result = await this.tossApi
-        .cancelPayment(
-          row.providerTransactionId,
-          '결제 취소',
-          undefined,
-          `cancel:${row.providerIdempotencyKey}`,
-          undefined,
-          usesTossWidget(row.responsePayload),
-        )
-        .catch((error: unknown) => ({ ok: false as const, error: { code: undefined, message: String(error) } }));
-      if (!result.ok && result.error.code !== 'ALREADY_CANCELED_PAYMENT') {
-        this.logger.warn(`virtual account still open: chargeId=${row.id} error=${JSON.stringify(result.error)}`);
+      if (await this.closeIfOpen(row.id, row.responsePayload)) {
+        const payload = { ...(row.responsePayload ?? {}) };
+        delete payload[VIRTUAL_ACCOUNT_LEFT_OPEN];
+        await this.dbService.db
+          .update(charges)
+          .set({ responsePayload: payload, updatedAt: new Date() })
+          .where(eq(charges.id, row.id));
+        closed++;
+      } else {
         await this.dbService.db.update(charges).set({ updatedAt: new Date() }).where(eq(charges.id, row.id));
-        continue;
       }
-      const payload = { ...(row.responsePayload ?? {}) };
-      delete payload[VIRTUAL_ACCOUNT_LEFT_OPEN];
-      await this.dbService.db
-        .update(charges)
-        .set({ responsePayload: payload, updatedAt: new Date() })
-        .where(eq(charges.id, row.id));
-      closed++;
     }
     return { scanned: rows.length, closed };
+  }
+
+  /**
+   * 더 이상 입금받지 않는 계좌면 true. 토스 상태를 먼저 묻는다 — 첫 폐쇄 요청과 같은 멱등 키로 다시 부르면
+   * 토스가 그 응답(실패 포함)을 15일간 재생하므로, 상태를 보고 새 키로 취소한다.
+   */
+  private async closeIfOpen(chargeId: string, responsePayload: Record<string, unknown> | null): Promise<boolean> {
+    const useWidgetKey = usesTossWidget(responsePayload);
+    const query = await this.tossApi.getPaymentByOrderId(chargeId.replace(/-/g, ''), useWidgetKey).catch(() => null);
+    if (!query?.ok) {
+      this.logger.warn(`virtual account status unknown: chargeId=${chargeId}`);
+      return false;
+    }
+    if (query.data.status === 'DONE') {
+      // 닫히기 전에 입금됐다. 계좌는 더 받지 않고, 입금분은 웹훅이 DEPOSIT_ON_CANCELED_CHARGE 로 남겨 수동 환불한다.
+      this.logger.error(
+        `deposit on left-open virtual account: chargeId=${chargeId} paymentKey=${query.data.paymentKey}`,
+      );
+      return true;
+    }
+    if (query.data.status !== 'WAITING_FOR_DEPOSIT') return true;
+
+    const canceled = await this.tossApi
+      .cancelPayment(
+        query.data.paymentKey,
+        '결제 취소',
+        undefined,
+        `cancel-open-va:${chargeId}:${Date.now()}`,
+        undefined,
+        useWidgetKey,
+      )
+      .catch(() => null);
+    if (canceled?.ok || canceled?.error.code === 'ALREADY_CANCELED_PAYMENT') return true;
+    this.logger.warn(`virtual account still open: chargeId=${chargeId} error=${JSON.stringify(canceled?.error)}`);
+    return false;
   }
 }
