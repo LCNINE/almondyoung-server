@@ -1,4 +1,3 @@
-import { getTableName } from 'drizzle-orm';
 import { OrderCancellation } from './order-cancellation';
 import type { CancellationRequest } from './order-cancellation.types';
 import {
@@ -31,28 +30,7 @@ function makeKernel(
   const so = { id: 'so', salesChannel: options.salesChannel ?? 'medusa', status: 'confirmed' };
   // 커널이 여는 수신 트랜잭션(`DbService.run`)
   const { tx } = makeTx();
-  // store-sales-orders.service.spec.ts 의 makeContext 와 같은 모양 — sales_orders 는 limit().then(), 줄은 then()
-  const db = {
-    run: jest.fn((fn: (trx: unknown) => Promise<unknown>) => fn(tx)),
-    db: {
-      select: jest.fn().mockImplementation(() => ({
-        from: jest.fn().mockImplementation((table: unknown) => ({
-          where: jest.fn().mockImplementation(() => {
-            const tableName = getTableName(table as Parameters<typeof getTableName>[0]);
-            return {
-              limit: jest.fn().mockReturnValue({
-                then: jest.fn((fn: (r: unknown[]) => unknown) =>
-                  fn(tableName === 'sales_orders' && !options.noSalesOrder ? [so] : []),
-                ),
-              }),
-              then: jest.fn((fn: (r: unknown[]) => unknown) => fn([])),
-            };
-          }),
-        })),
-      })),
-      transaction: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn({})),
-    },
-  };
+  const db = { run: jest.fn((fn: (trx: unknown) => Promise<unknown>) => fn(tx)) };
   const salesOrders = {
     planCancellation: jest.fn().mockResolvedValue({ lines: options.planLines ?? [] }),
     cancel: jest.fn(() => {
@@ -91,6 +69,8 @@ function makeKernel(
     }),
   };
   const reader = {
+    salesOrder: jest.fn().mockResolvedValue(options.noSalesOrder ? undefined : so),
+    digitalLineIds: jest.fn().mockResolvedValue(new Set<string>()),
     hasActivePrintOrder: jest.fn().mockResolvedValue(options.activePrint ?? false),
     cancellationNeedsFollowUp: jest.fn().mockResolvedValue(options.followUp ?? null),
   };

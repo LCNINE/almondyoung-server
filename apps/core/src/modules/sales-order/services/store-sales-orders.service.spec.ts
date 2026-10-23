@@ -168,6 +168,7 @@ function makeContext(
   //     - limit().then()             → []        (return/exchange/businessLinks single-row lookups)
   //     - orderBy().limit().then()   → []        (businessLinks ordered lookup)
   const dbMock = {
+    run: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn(dbMock.db)),
     db: {
       execute: jest
         .fn()
@@ -713,6 +714,7 @@ describe('StoreSalesOrdersService', () => {
       mockPhase();
       let whereCallIndex = 0;
       const dbMock = {
+        run: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn(dbMock.db)),
         db: {
           select: jest.fn().mockImplementation(() => ({
             from: jest.fn().mockImplementation(() => ({
@@ -1719,6 +1721,7 @@ describe('StoreSalesOrdersService', () => {
         : undefined;
 
     const dbMock = {
+      run: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn(dbMock.db)),
       db: {
         select: jest.fn().mockImplementation(() => ({
           from: jest.fn().mockImplementation(() => ({
@@ -1883,6 +1886,7 @@ describe('StoreSalesOrdersService', () => {
     function makeTrackingService(rowsBySelect: unknown[][], printRows: Array<Record<string, unknown>> = []) {
       let call = 0;
       const dbMock = {
+        run: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn(dbMock.db)),
         db: {
           select: jest.fn().mockImplementation(() => ({
             from: jest.fn().mockImplementation((table: Parameters<typeof getTableName>[0]) => ({

@@ -1,11 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { BadRequestError, NotFoundError } from '@app/shared';
 import { DbService, InjectTypedDb } from '@app/db';
-import { eq } from 'drizzle-orm';
-import { DbTx, inventoryTables, wmsSchema } from '../../inventory/schema/inventory.schema';
+import { DbTx, wmsSchema } from '../../inventory/schema/inventory.schema';
 import { PrintOrderReader } from '../../print-order/services/print-order.reader';
 import { isLivePrint } from '../../print-order/services/print-order-board.rules';
-import { isDigitalFulfillmentLine } from '../../product-matching/line-composition/line-composition';
 import {
   PrintInProductionError,
   PrintOrderCancellationManager,
@@ -68,12 +66,7 @@ export class OrderCancellation {
   ) {}
 
   async request(intent: CancellationRequest): Promise<CancelRequestView> {
-    const so = await this.db.db
-      .select()
-      .from(inventoryTables.salesOrders)
-      .where(eq(inventoryTables.salesOrders.id, intent.salesOrderId))
-      .limit(1)
-      .then((r) => r[0]);
+    const so = await this.db.run((tx) => this.reader.salesOrder(intent.salesOrderId, tx));
     if (!so) throw new NotFoundError('주문을 찾을 수 없습니다.');
 
     // 마켓은 판매자센터로 — 키가 없어도 이 안내가 먼저다
@@ -265,21 +258,11 @@ export class OrderCancellation {
     const printLineIds = new Set(
       (await this.printOrders.forSalesOrder(salesOrderId)).filter(isLivePrint).map((r) => r.salesOrderLineId),
     );
-    const digitalLineIds = new Set(
-      (
-        await this.db.db
-          .select({
-            id: inventoryTables.salesOrderLines.id,
-            fulfillmentKind: inventoryTables.salesOrderLines.fulfillmentKind,
-            requiresShipping: inventoryTables.salesOrderLines.requiresShipping,
-          })
-          .from(inventoryTables.salesOrderLines)
-          .where(eq(inventoryTables.salesOrderLines.salesOrderId, salesOrderId))
-      )
-        .filter(isDigitalFulfillmentLine)
-        .map((line) => line.id),
-    );
-    const plan = await this.db.db.transaction((trx) => this.salesOrders.planCancellation(salesOrderId, undefined, trx));
+    // 디지털 줄과 취소 계획을 한 트랜잭션에서 — 같은 스냅샷으로 판정한다
+    const { digitalLineIds, plan } = await this.db.run(async (tx) => ({
+      digitalLineIds: await this.reader.digitalLineIds(salesOrderId, tx),
+      plan: await this.salesOrders.planCancellation(salesOrderId, undefined, tx),
+    }));
     return plan.lines
       .filter((line) => !printLineIds.has(line.salesOrderLineId) && !digitalLineIds.has(line.salesOrderLineId))
       .map((line) => ({ salesOrderLineId: line.salesOrderLineId, quantity: line.quantity }));

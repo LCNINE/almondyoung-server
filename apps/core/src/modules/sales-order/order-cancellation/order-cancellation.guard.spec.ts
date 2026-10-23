@@ -57,6 +57,9 @@ describe('판매주문 취소 호출자 (K7)', () => {
       ),
     ).toEqual([])); // D7 — 붙잡기는 와우프레스 모듈의 문(holdUnsentForCancel·holdUnsentForDecrease)
 
+  it('커널은 DbService 의 db 를 직접 쓰지 않는다 — 읽기는 Reader, 트랜잭션은 run', () =>
+    expect(filesCalling(/\bthis\.db\.db\b/, 'apps/core/src/modules/sales-order/order-cancellation')).toEqual([]));
+
   it('커널은 Wallet 을 모른다', () =>
     expect(
       filesCalling(/WalletRefundClient|wallet-refund\.client/, 'apps/core/src/modules/sales-order/order-cancellation'),
