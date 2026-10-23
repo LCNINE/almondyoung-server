@@ -268,7 +268,7 @@ describe('OrderCancellation.request', () => {
   });
 });
 
-describe('OrderCancellation.notice / receiveChannelCancellation', () => {
+describe('OrderCancellation 통보 — 채널 취소·무통장 승인·채널 수량 감소', () => {
   const t = new Date('2026-10-07T00:00:01.000Z');
   const view = VIEW;
 
@@ -326,31 +326,43 @@ describe('OrderCancellation.notice / receiveChannelCancellation', () => {
     expect(salesOrders.cancel).toHaveBeenCalledTimes(1);
   });
 
-  it('무통장 승인 통보는 record 먼저, 확정 나중 (N4)', async () => {
-    const { k, cancelRequests, callOrder } = makeKernel();
-    const o = await k.notice({
-      source: 'wallet_refund_approval',
-      salesOrderId: 'so',
-      intentId: 'i',
-      reasonCode: 'CUSTOMER_REFUND_REQUEST',
-    });
-    expect(callOrder).toEqual(['record', 'request']);
-    expect(cancelRequests.request).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sourceKey: 'wallet-refund-approval:i',
-        requester: { kind: 'wallet-refund-approval', intentId: 'i' },
-      }),
-    );
-    expect(o).toEqual({ applied: true, requestView: view });
-  });
+  describe('무통장 승인', () => {
+    const approval = { salesOrderId: 'so', intentId: 'i', reasonCode: 'CUSTOMER_REFUND_REQUEST' };
 
-  it('무통장 승인 통보는 tx 를 받지 않는다 — 커널이 트랜잭션을 가진다', async () => {
-    const { k, printCancel } = makeKernel();
-    const { tx } = makeTx();
-    await expect(
-      k.notice({ source: 'wallet_refund_approval', salesOrderId: 'so', intentId: 'i', reasonCode: 'R' }, tx as never),
-    ).rejects.toThrow();
-    expect(printCancel).not.toHaveBeenCalled();
+    it('확정과 안 보낸 인쇄 붙잡기를 한 트랜잭션에서, 커밋 뒤 record (D6)', async () => {
+      const { k, db, tx, cancelRequests, holdUnsent, printCancel, callOrder } = makeKernel();
+      const result = await k.noticeWalletRefundApproval(approval);
+      expect(db.run).toHaveBeenCalledTimes(1);
+      expect(callOrder).toEqual(['request', 'holdUnsent', 'record']);
+      expect(cancelRequests.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceKey: 'wallet-refund-approval:i',
+          requester: { kind: 'wallet-refund-approval', intentId: 'i' },
+          reasonCode: 'CUSTOMER_REFUND_REQUEST',
+        }),
+        tx,
+      );
+      expect(holdUnsent).toHaveBeenCalledWith('so', undefined, tx);
+      expect(printCancel).toHaveBeenCalledWith('so', 'record');
+      expect(result).toEqual(view);
+    });
+
+    it('확정이 실패하면 record 하지 않고 던진다', async () => {
+      const { k, cancelRequests, printCancel } = makeKernel();
+      // 동시 승인이 먼저 확정한 경우 — 붙잡기도 함께 롤백된다
+      const refused = new BadRequestError('이미 취소된 주문입니다.');
+      cancelRequests.request.mockImplementationOnce(() => Promise.reject(refused));
+      await expect(k.noticeWalletRefundApproval(approval)).rejects.toBe(refused);
+      expect(printCancel).not.toHaveBeenCalled();
+    });
+
+    it('커밋 뒤 record 가 던지면 그대로 던진다 (N8)', async () => {
+      const { k, cancelRequests } = makeKernel({
+        printCancel: jest.fn().mockRejectedValue(new Error('wowpress down')),
+      });
+      await expect(k.noticeWalletRefundApproval(approval)).rejects.toThrow('wowpress down');
+      expect(cancelRequests.request).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('채널 수량 감소', () => {

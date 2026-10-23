@@ -88,11 +88,13 @@ const PRINT_RESULT = { vendorCancelled: ['po-1'], locallyCancelled: [] };
 function printCancelMock(
   cancelForOrder: jest.Mock = jest.fn().mockResolvedValue(PRINT_RESULT),
   noteSalesCancelFailed: jest.Mock = jest.fn().mockResolvedValue(undefined),
+  holdUnsent: jest.Mock = jest.fn().mockResolvedValue(undefined),
 ) {
   // 클래스의 private 필드 때문에 구조 대입이 안 되는 부분 가짜
   return {
     cancelForOrder,
     noteSalesCancelFailed,
+    holdUnsent,
   } as unknown as PrintOrderCancellationManager;
 }
 
@@ -1203,6 +1205,7 @@ describe('StoreSalesOrdersService', () => {
       cancelError?: Error;
       orderLines?: Array<{ id: string; quantity: number; unitPrice: number | null }>;
       printCancel?: jest.Mock;
+      holdUnsent?: jest.Mock;
       businessLinkError?: Error;
     } = {},
   ) {
@@ -1229,6 +1232,8 @@ describe('StoreSalesOrdersService', () => {
 
     const selectInTx = (): unknown => (dbMock.db.select as jest.Mock<unknown, []>)();
     const dbMock = {
+      // 커널이 여는 트랜잭션(무통장 승인 확정) — 가짜 트랜잭션은 같은 db 다
+      run: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn(dbMock.db)),
       db: {
         select: jest.fn().mockImplementation(() => ({
           from: jest.fn().mockImplementation(() => ({
@@ -1281,7 +1286,7 @@ describe('StoreSalesOrdersService', () => {
     };
 
     const printReader = printReaderMock();
-    const printCancellation = printCancelMock(printCancel, printNote);
+    const printCancellation = printCancelMock(printCancel, printNote, options.holdUnsent);
     const service = new StoreSalesOrdersService(
       dbMock as any,
       salesOrdersServiceMock as any,
@@ -1595,33 +1600,42 @@ describe('StoreSalesOrdersService', () => {
 
   describe('cancelByWalletIntentAfterRefund', () => {
     it('Medusa 주문은 wallet 승인 요청자로 전체취소를 요청한다 — core 취소·Wallet 없음', async () => {
-      const { service, salesOrdersServiceMock, walletClientMock, cancelRequestsMock } = makeAdminContext();
+      const { service, dbMock, salesOrdersServiceMock, walletClientMock, cancelRequestsMock } = makeAdminContext();
       const result = await service.cancelByWalletIntentAfterRefund(WALLET_INTENT_ID, { amount: 50000 });
-      expect(cancelRequestsMock.request).toHaveBeenCalledWith({
-        salesOrderId: SO_ID,
-        requester: { kind: 'wallet-refund-approval', intentId: WALLET_INTENT_ID },
-        sourceKey: `wallet-refund-approval:${WALLET_INTENT_ID}`,
-        reasonCode: 'CUSTOMER_REFUND_REQUEST',
-      });
+      expect(cancelRequestsMock.request).toHaveBeenCalledWith(
+        {
+          salesOrderId: SO_ID,
+          requester: { kind: 'wallet-refund-approval', intentId: WALLET_INTENT_ID },
+          sourceKey: `wallet-refund-approval:${WALLET_INTENT_ID}`,
+          reasonCode: 'CUSTOMER_REFUND_REQUEST',
+        },
+        dbMock.db,
+      );
       expect(result).toEqual({ status: 'requested', requestId: 'req-1' });
       expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
       expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
     });
 
-    it('환불이 이미 나갔으므로 인쇄 줄은 record 로 먼저 멈추고(거절은 보드로) 취소를 요청한다', async () => {
+    it('환불이 이미 나갔으므로 취소를 확정하고 같은 트랜잭션에서 안 보낸 인쇄를 붙잡은 뒤, 커밋 뒤 record 로 멈춘다', async () => {
       const order: string[] = [];
       const printCancel = jest.fn((_id: string, mode: string) => {
         order.push(`print:${mode}`);
         return Promise.resolve(PRINT_RESULT);
       });
-      const { service, cancelRequestsMock } = makeAdminContext({ printCancel });
+      const holdUnsent = jest.fn(() => {
+        order.push('print:hold');
+        return Promise.resolve(undefined);
+      });
+      const { service, dbMock, cancelRequestsMock } = makeAdminContext({ printCancel, holdUnsent });
       cancelRequestsMock.request.mockImplementation(() => {
         order.push('request');
         return Promise.resolve({ id: 'req-1', status: 'requested', scope: 'full', convertedFromFull: false });
       });
-      await service.cancelByWalletIntentAfterRefund(WALLET_INTENT_ID);
+      const result = await service.cancelByWalletIntentAfterRefund(WALLET_INTENT_ID);
+      expect(holdUnsent).toHaveBeenCalledWith(SO_ID, undefined, dbMock.db);
       expect(printCancel).toHaveBeenCalledWith(SO_ID, 'record');
-      expect(order).toEqual(['print:record', 'request']);
+      expect(order).toEqual(['request', 'print:hold', 'print:record']);
+      expect(result).toEqual({ status: 'requested', requestId: 'req-1' });
     });
 
     it('이미 취소·출고면 지금처럼 건너뛴다', async () => {

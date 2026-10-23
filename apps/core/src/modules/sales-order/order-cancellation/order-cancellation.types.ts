@@ -1,5 +1,3 @@
-import type { CancelRequestView } from '../channel-cancel-request/channel-cancel-request.types';
-
 /** 취소할 줄과 수량. 없으면(요청에 `lines` 가 없으면) 전체취소다 */
 export type CancelLine = { salesOrderLineId: string; quantity: number };
 
@@ -29,16 +27,11 @@ export type CancellationRequest =
     };
 
 /**
- * 취소 «통보» — 취소가 이미 정해진 뒤 커널에 알리는 것 (K7 PR1).
- * 무통장 승인(돈은 wallet 에서 이미 나갔다). 채널 취소(채널이 이미 취소했다)는 `receiveChannelCancellation` 으로,
- * 채널 수량 감소(채널이 이미 줄였다)는 `noticeChannelDecrease` 로 받는다 (K7 PR2).
+ * 무통장 환불 승인 통보 — 돈은 wallet 에서 이미 나갔다 (K7 PR2, N7).
+ * 취소가 이미 정해진 뒤의 통보는 소스마다 커널의 문이 따로다 — 채널 취소(채널이 이미 취소했다)는
+ * `receiveChannelCancellation`, 채널 수량 감소(채널이 이미 줄였다)는 `noticeChannelDecrease`.
  */
-export type CancellationNotice = {
-  source: 'wallet_refund_approval';
-  salesOrderId: string;
-  intentId: string;
-  reasonCode: string;
-};
+export type WalletApprovalNotice = { salesOrderId: string; intentId: string; reasonCode: string };
 
 /** 채널 취소 통보 (K7 PR2, N7) */
 export type ChannelCancelledNotice = {
@@ -69,5 +62,3 @@ export type ChannelDecreaseNotice = {
 };
 
 export type DecreaseOutcome = { applied: true } | { applied: false; refusal: string };
-
-export type NoticeOutcome = { applied: true; requestView?: CancelRequestView } | { applied: false; refusal: string };

@@ -22,19 +22,16 @@ import { cancellationCapabilityOf, sellerCenterMessage } from './channel-cancell
 import { OrderCancellationReader } from './order-cancellation.reader';
 import type {
   CancelLine,
-  CancellationNotice,
   CancellationRequest,
   ChannelCancellationReceipt,
   ChannelCancelledNotice,
   ChannelDecreaseNotice,
   DecreaseOutcome,
-  NoticeOutcome,
+  WalletApprovalNotice,
 } from './order-cancellation.types';
 
 type OperatorRequest = Extract<CancellationRequest, { requester: { kind: 'operator' } }>;
 type CustomerRequest = Extract<CancellationRequest, { requester: { kind: 'customer' } }>;
-
-type WalletApprovalNotice = Extract<CancellationNotice, { source: 'wallet_refund_approval' }>;
 
 /** 수신 트랜잭션이 커밋된 뒤 커널이 할 일 — 와우프레스 record. 재수신이면 그 이벤트를 처음 기록한 시각을 넘긴다 */
 type RecordAfterCommit = { salesOrderId: string; lines: CancelLine[] | undefined; redeliveredSince: Date | undefined };
@@ -94,14 +91,29 @@ export class OrderCancellation {
   }
 
   /**
-   * 취소가 이미 정해진 뒤의 통보. 무통장 승인은 커널이 트랜잭션을 가지므로 tx 를 받지 않는다.
+   * 무통장 환불 승인 (K7 PR2, D6·N8). 전체취소 확정과 안 보낸 인쇄 붙잡기를 커널이 연 한 트랜잭션에서 하고,
+   * 커밋 뒤 와우프레스 record. 확정이 던지면(동시 승인 뒤 «이미 취소된 주문» 등) 붙잡기도 함께 롤백되고 record 는 없다.
    */
-  async notice(intent: CancellationNotice, tx?: DbTx): Promise<NoticeOutcome> {
-    switch (intent.source) {
-      case 'wallet_refund_approval':
-        if (tx) throw new Error('wallet_refund_approval notice runs outside the caller transaction');
-        return this.noticeWalletApproval(intent);
-    }
+  async noticeWalletRefundApproval(intent: WalletApprovalNotice): Promise<CancelRequestView> {
+    const view = await this.db.run(async (tx) => {
+      // 환불은 wallet 에서 끝났고 Medusa 장부에는 환불 투영(스펙 §6.4)이 넣는다 — Medusa 취소는 환불 없이 끝난다.
+      // 31번 전환을 하지 않는다: 돈이 이미 다 나갔으므로 전체취소가 맞다(계획 단계 발견 8).
+      const requestView = await this.cancelRequests.request(
+        {
+          salesOrderId: intent.salesOrderId,
+          requester: { kind: 'wallet-refund-approval', intentId: intent.intentId },
+          sourceKey: `wallet-refund-approval:${intent.intentId}`,
+          reasonCode: intent.reasonCode,
+        },
+        tx,
+      );
+      await this.printCancellation.holdUnsent(intent.salesOrderId, undefined, tx);
+      return requestView;
+    });
+    // 돈은 이미 나갔다 — 승인 전 인쇄 gate 가 살아 있는 인쇄를 막았으니 record 는 경합 대비, 거절은 보드로.
+    // 던지면 삼키지 않는다 — 취소는 남고 승인 결과에 실패가 뜬다(N8)
+    await this.printCancellation.cancelForOrder(intent.salesOrderId, 'record');
+    return view;
   }
 
   /**
@@ -126,20 +138,6 @@ export class OrderCancellation {
     await this.printCancellation.cancelForOrder(after.salesOrderId, 'record', after.lines, {
       redeliveredSince: after.redeliveredSince,
     });
-  }
-
-  private async noticeWalletApproval(intent: WalletApprovalNotice): Promise<NoticeOutcome> {
-    // 돈은 이미 나갔다. 인쇄를 최대한 빨리 멈추고, 멈출 수 없으면 보드에 남긴다
-    await this.printCancellation.cancelForOrder(intent.salesOrderId, 'record');
-    // 환불은 wallet 에서 끝났고 Medusa 장부에는 환불 투영(스펙 §6.4)이 넣는다 — Medusa 취소는 환불 없이 끝난다.
-    // 31번 전환을 하지 않는다: 돈이 이미 다 나갔으므로 전체취소가 맞다(계획 단계 발견 8).
-    const requestView = await this.cancelRequests.request({
-      salesOrderId: intent.salesOrderId,
-      requester: { kind: 'wallet-refund-approval', intentId: intent.intentId },
-      sourceKey: `wallet-refund-approval:${intent.intentId}`,
-      reasonCode: intent.reasonCode,
-    });
-    return { applied: true, requestView };
   }
 
   private async cancelForChannel(intent: ChannelCancelledNotice, tx: DbTx): Promise<void> {
