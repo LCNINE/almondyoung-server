@@ -6,7 +6,7 @@ export function usesTossWidget(responsePayload: unknown): boolean {
   );
 }
 
-/** 닫지 못한 위젯 가상계좌 표식. 정리(abandon·만료)가 계좌를 닫기 전엔 같은 intent 를 다시 결제시키지 않는다. */
+/** 닫지 못한 위젯 가상계좌 표식. 진행 중 charge 는 abandon 이, 끝난 charge 는 OpenVirtualAccountCloseJob 이 닫는다. */
 export const VIRTUAL_ACCOUNT_LEFT_OPEN = 'virtualAccountLeftOpenAt';
 
 export function hasVirtualAccountLeftOpen(responsePayload: unknown): boolean {
