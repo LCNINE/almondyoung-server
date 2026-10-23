@@ -291,7 +291,11 @@ describe('widget virtual account', () => {
       expect.anything(),
     );
     expect(ctx.intentUpdates).toContainEqual(
-      expect.objectContaining({ paymentMethodId: 'pm-bank', actionExpiresAt: null }),
+      expect.objectContaining({
+        paymentMethodId: 'pm-bank',
+        actionExpiresAt: null,
+        expiresAt: new Date('2026-10-24T10:00:00+09:00'),
+      }),
     );
     // 입금 전이므로 승인·캡처로 가면 안 된다.
     expect(ctx.autoCaptureService.attemptAutoCapture).not.toHaveBeenCalled();
@@ -406,6 +410,30 @@ describe('widget virtual account', () => {
       undefined,
       true,
     );
+  });
+
+  it('입금대기 반영이 거부되고 계좌도 못 닫으면 결제 키와 무통장 분류를 charge 에 남긴다', async () => {
+    const ctx = makeTossContext({}, WIDGET_CHARGE, VA_CONFIRM);
+    ctx.stateTransitionService.transitionIntent.mockRejectedValue(new Error('INVALID_TRANSITION'));
+    ctx.tossApi.cancelPayment.mockResolvedValue({ ok: false, error: { code: 'PROVIDER_ERROR', message: 'x' } });
+
+    await expect(ctx.service.approve('intent-1', 'pk_va', ORDER_ID, 10000, 'corr-1')).rejects.toThrow(
+      'INVALID_TRANSITION',
+    );
+
+    // 정리 경로가 무통장으로 보고 계좌를 닫으려면 결제 키·결제수단·위젯 표식이 남아 있어야 한다. 상태는 안 바꾼다.
+    const recovered = ctx.intentUpdates.at(-1) as Record<string, unknown>;
+    expect(recovered).toEqual(
+      expect.objectContaining({
+        paymentMethodId: 'pm-bank',
+        providerTransactionId: 'pk_va',
+        responsePayload: expect.objectContaining({
+          paymentKey: 'pk_va',
+          nextAction: expect.objectContaining({ checkoutMode: 'WIDGET' }),
+        }),
+      }),
+    );
+    expect(recovered).not.toHaveProperty('status');
   });
 
   it('가상계좌 신호인데 실제로 카드가 승인되면 승인을 되돌리고 실패시킨다', async () => {
