@@ -57,11 +57,9 @@ function storeServiceFor(tx: DbTx): StoreSalesOrdersService {
   const printCancellation = {};
   return new StoreSalesOrdersService(
     db as never,
-    salesOrders as never,
     {} as never,
     cancelRequests as never,
     printOrders,
-    printCancellation as never,
     new OrderCancellation(
       db as never,
       salesOrders as never,

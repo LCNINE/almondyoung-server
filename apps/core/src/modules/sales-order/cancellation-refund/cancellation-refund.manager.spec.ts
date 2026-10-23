@@ -177,6 +177,32 @@ describe('CancellationRefundManager', () => {
         expect.objectContaining({ correlationId: 'cancel:oc-1:initial', reasonCode: 'OTHER' }),
       );
       expect(recorded(f)).toMatchObject({ refundStatus: 'succeeded', actor: 'customer', attemptType: 'initial' });
+      // 결정 대기 표지는 막힌 기록에만 붙는다 — 성공 행엔 없다
+      expect(recorded(f).awaitingDecision).toBeUndefined();
+    });
+
+    it.each([[{ kind: 'wallet_unavailable', errorMessage: 'm' }], [{ kind: 'in_flight', errorMessage: 'm' }]] as Array<
+      [WalletRefundOutcome]
+    >)(
+      'Wallet 이 %j 로 막으면 awaitingDecision manual_pending — 목록에서 실행·안 함을 고를 수 있다 (I2)',
+      async (outcome) => {
+        const f = makeFixture({
+          outcome,
+          links: [{ id: 'k-1', metadata: { refundStatus: 'requested', orderCancellationId: 'oc-1' } }],
+        });
+        await expect(f.manager.executeRequested(SO_ID)).resolves.toBe('manual_pending');
+        expect(recorded(f)).toMatchObject({ refundStatus: 'manual_pending', awaitingDecision: true });
+      },
+    );
+
+    it('walletIntentId 가 없어 막혀도 awaitingDecision manual_pending (I2)', async () => {
+      const f = makeFixture({
+        so: makeSo({ walletIntentId: null }),
+        links: [{ id: 'k-1', metadata: { refundStatus: 'requested', orderCancellationId: 'oc-1' } }],
+      });
+      await expect(f.manager.executeRequested(SO_ID)).resolves.toBe('manual_pending');
+      expect(f.wallet.refundByIntent).not.toHaveBeenCalled();
+      expect(recorded(f)).toMatchObject({ refundStatus: 'manual_pending', awaitingDecision: true });
     });
 
     it('최신이 succeeded → Wallet 미호출, null', async () => {
@@ -268,6 +294,18 @@ describe('CancellationRefundManager', () => {
       expect(f.salesOrders.createBusinessLink).not.toHaveBeenCalled();
     });
 
+    it('대상보다 새 succeeded 가 있으면 400 — 이미 환불된 주문에 waived 를 쓰지 않는다 (C1)', async () => {
+      const f = makeFixture({
+        links: [
+          { id: 'k-2', metadata: { refundStatus: 'succeeded' } },
+          { id: 'k-1', metadata: { refundStatus: 'manual_pending', awaitingDecision: true } },
+        ],
+      });
+      await expect(f.manager.waive(SO_ID, {})).rejects.toThrow('이미 환불이 완료된 건입니다.');
+      await expect(f.manager.waive(SO_ID, { refundLinkId: 'k-1' })).rejects.toThrow('이미 환불이 완료된 건입니다.');
+      expect(f.salesOrders.createBusinessLink).not.toHaveBeenCalled();
+    });
+
     it('기록이 실패하면 삼키지 않고 던진다', async () => {
       const f = makeFixture({
         links: [{ id: 'k-1', metadata: { refundStatus: 'manual_pending', awaitingDecision: true } }],
@@ -329,6 +367,56 @@ describe('CancellationRefundManager', () => {
       const f = makeFixture({ so: makeSo({ salesChannel: 'medusa' }) });
       await expect(f.manager.retry(SO_ID)).rejects.toThrow('채널 주문의 환불은 채널이 처리합니다.');
       expect(f.wallet.refundByIntent).not.toHaveBeenCalled();
+    });
+
+    it('결정 대기 manual_pending 을 실행해 성공하면 성공 링크가 그 건을 닫는다 — 뒤의 «환불 안 함» 은 400 (C1)', async () => {
+      const f = makeFixture({
+        links: [{ id: 'k-1', metadata: { refundStatus: 'manual_pending', awaitingDecision: true } }],
+      });
+      await expect(f.manager.retry(SO_ID)).resolves.toEqual({ refundStatus: 'succeeded' });
+      expect(recorded(f)).toMatchObject({ refundStatus: 'succeeded', completedRefundLinkId: 'k-1' });
+      await expect(f.manager.waive(SO_ID, { refundLinkId: 'k-1' })).rejects.toThrow('이미 환불이 완료된 건입니다.');
+      expect(f.salesOrders.createBusinessLink).toHaveBeenCalledTimes(1);
+    });
+
+    it('멈춘 requested 를 실행해 성공하면 성공 링크가 그 요청을 가리킨다 (C1)', async () => {
+      const f = makeFixture({ links: [{ id: 'k-1', metadata: { refundStatus: 'requested' } }] });
+      await expect(f.manager.retry(SO_ID)).resolves.toEqual({ refundStatus: 'succeeded' });
+      expect(recorded(f)).toMatchObject({ refundStatus: 'succeeded', completedRefundLinkId: 'k-1' });
+    });
+
+    it('결정 대기 건 실행이 Wallet 장애로 막히면 failed 로 남기고 그 건이 계속 유일한 결정 대기다 — 다음 성공이 그 건을 닫는다 (I2)', async () => {
+      const f = makeFixture({
+        outcome: { kind: 'wallet_unavailable', errorMessage: 'down' },
+        links: [{ id: 'k-1', metadata: { refundStatus: 'manual_pending', awaitingDecision: true } }],
+      });
+      await expect(f.manager.retry(SO_ID)).resolves.toEqual({ refundStatus: 'failed' });
+      expect(recorded(f)).toMatchObject({ refundStatus: 'failed', completedRefundLinkId: 'k-1' });
+      // 두 번째 manual_pending 이 생기면 성공·안 함이 하나만 닫아 다른 하나가 목록에 영영 남는다
+      expect(f.links.filter((l) => l.metadata.refundStatus === 'manual_pending').map((l) => l.id)).toEqual(['k-1']);
+
+      f.wallet.refundByIntent.mockResolvedValueOnce(SUCCESS);
+      await expect(f.manager.retry(SO_ID)).resolves.toEqual({ refundStatus: 'succeeded' });
+      expect(recorded(f, 1)).toMatchObject({ refundStatus: 'succeeded', completedRefundLinkId: 'k-1' });
+    });
+
+    it('failed 뒤 재시도가 Wallet 장애로 막히면 awaitingDecision manual_pending — 결정 버튼이 남는다 (I2)', async () => {
+      const f = makeFixture({
+        outcome: { kind: 'wallet_unavailable', errorMessage: 'down' },
+        links: [{ id: 'k', metadata: { refundStatus: 'failed' } }],
+      });
+      await expect(f.manager.retry(SO_ID)).resolves.toEqual({ refundStatus: 'manual_pending' });
+      expect(recorded(f)).toMatchObject({ refundStatus: 'manual_pending', awaitingDecision: true });
+    });
+
+    it('채널(medusa) 주문의 옛 failed 재시도가 막히면 지금처럼 표지 없는 manual_pending — 결정 버튼을 열지 않는다 (N19)', async () => {
+      const f = makeFixture({
+        so: makeSo({ salesChannel: 'medusa' }),
+        outcome: { kind: 'wallet_unavailable', errorMessage: 'down' },
+        links: [{ id: 'k', metadata: { refundStatus: 'failed' } }],
+      });
+      await expect(f.manager.retry(SO_ID)).resolves.toEqual({ refundStatus: 'manual_pending' });
+      expect(recorded(f).awaitingDecision).toBeUndefined();
     });
 
     it('취소되지 않은 주문이면 400', async () => {

@@ -123,6 +123,31 @@ describeIfDb('core 정산 주문 취소 — 커널·결제 쪽 매니저 (K7 PR4
     });
   });
 
+  it('운영자 전체취소 뒤 «환불 실행»이 성공하면 결정 대기 건이 닫혀 «환불 결정 전·실패» 목록에서 빠진다 (C1)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const wallet = walletMock();
+      const w = wireCancelRequest(tx, { walletRefundClient: wallet.client });
+      const seed = await seedCoreSettledOrder(tx, w);
+      const refundIssues = () =>
+        w.salesOrders.list(
+          { keyword: seed.externalOrderId, keywordType: 'orderNo', refundIssueOnly: true, limit: 20, offset: 0 },
+          tx,
+        );
+
+      await w.cancellation.request(operator(seed.salesOrderId, 'k-admin-then-retry'));
+      expect((await refundIssues()).data.map((row: { id: string }) => row.id)).toEqual([seed.salesOrderId]);
+
+      await expect(w.refunds.retry(seed.salesOrderId)).resolves.toEqual({ refundStatus: 'succeeded' });
+
+      expect(wallet.refundByIntent).toHaveBeenCalledTimes(1);
+      const links = await refundLinksOf(tx, seed.salesOrderId);
+      const awaiting = links.find((link) => refundStatusOf(link.metadata) === 'manual_pending');
+      const succeeded = links.find((link) => refundStatusOf(link.metadata) === 'succeeded');
+      expect(succeeded?.metadata).toMatchObject({ completedRefundLinkId: awaiting?.id });
+      expect((await refundIssues()).data).toHaveLength(0);
+    });
+  });
+
   it('운영자 부분취소는 추정액을 담은 링크를 남긴다', async () => {
     await inRollbackTx(db, async (tx) => {
       const wallet = walletMock();

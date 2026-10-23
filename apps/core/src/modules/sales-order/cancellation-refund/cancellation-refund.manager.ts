@@ -114,7 +114,13 @@ export class CancellationRefundManager {
     return this.requestWalletRefundAfterCancel(
       so,
       { reasonCode: typeof meta.reasonCode === 'string' ? meta.reasonCode : undefined },
-      { actor: 'customer', attemptType: 'initial', correlationId: `cancel:${orderCancellationId}:initial` },
+      {
+        actor: 'customer',
+        attemptType: 'initial',
+        correlationId: `cancel:${orderCancellationId}:initial`,
+        // 막히면(Wallet 장애·intent 없음 등) 목록에서 «환불 실행»·«환불 안 함» 을 고를 수 있게 결정 대기로 남긴다(스펙 §5.5)
+        onBlocked: 'await_decision',
+      },
     );
   }
 
@@ -135,19 +141,19 @@ export class CancellationRefundManager {
     // 명시 대상도 자동 선택과 같은 기준이다 — 결정 대기(awaitingDecision manual_pending) 또는 requested 만 «안 함» 의 대상
     const isDecisionPending = (m: Record<string, unknown>) =>
       (m.refundStatus === 'manual_pending' && m.awaitingDecision === true) || m.refundStatus === REFUND_REQUESTED;
-    const target = dto.refundLinkId
-      ? rows.find((r) => r.id === dto.refundLinkId)
-      : rows.find((r, i) => {
-          const m = this.metaOf(r.metadata);
-          const awaiting = m.refundStatus === 'manual_pending' && m.awaitingDecision === true;
-          return (awaiting || (i === 0 && m.refundStatus === REFUND_REQUESTED)) && !this.closedBy(rows, r.id);
-        });
+    const target = dto.refundLinkId ? rows.find((r) => r.id === dto.refundLinkId) : this.openDecisionTarget(rows);
 
     if (target) {
       // 이미 닫힌 건: 환불이 끝났으면 «안 함» 을 덧쓰지 않고(모순), 이미 안 하기로 했으면 쓰지 않는다(멱등)
       const closed = this.closedBy(rows, target.id);
       if (closed === 'succeeded') throw new BadRequestException('이미 환불이 완료된 건입니다.');
       if (closed === REFUND_WAIVED) return { refundStatus: REFUND_WAIVED };
+      // 대상 뒤에 환불 성공이 있으면 돈은 이미 나갔다 — 그 성공이 대상을 가리키지 않는 옛 기록(닫기 표지 이전)이어도
+      // «안 함» 을 쓰면 스토어프론트가 환불 없음(none)으로 보인다
+      const newer = rows.slice(0, rows.indexOf(target));
+      if (newer.some((r) => this.metaOf(r.metadata).refundStatus === 'succeeded')) {
+        throw new BadRequestException('이미 환불이 완료된 건입니다.');
+      }
     }
     if (!target || !isDecisionPending(this.metaOf(target.metadata))) {
       throw new BadRequestException('환불 결정 대기 건이 없습니다.');
@@ -241,7 +247,13 @@ export class CancellationRefundManager {
    * - pending: 처리 중 → 중복 재시도 없이 pending 반환
    * - waived: 환불하지 않기로 한 주문 → 400
    * - manual_pending (walletIntentId/amount 없음): 자동 재시도 불가 → 400
-   * - failed / 링크 없음: 새 idempotency key `cancel:{id}:retry:{uuid}`로 Wallet 재호출
+   * - failed / 링크 없음 / 결정 대기: 새 idempotency key `cancel:{id}:retry:{uuid}`로 Wallet 재호출
+   *
+   * 목록의 «환불 실행» 도 이 길이다. 결정 대기 건(waive 와 같은 기준의 대상)이 있으면 결과 링크가 `completedRefundLinkId` 로
+   * 그 건을 가리킨다 — 성공이면 그 건이 닫혀 «환불 결정 전·실패» 에서 빠진다(닫기는 succeeded·waived 만 하므로 다른 결과엔 무해).
+   * Wallet 이 막으면: 결정 대기 manual_pending 이 이미 있으면 `failed` 로 남긴다 — 두 번째 manual_pending 을 쓰면 성공·안 함이
+   * 하나만 닫아 나머지가 목록에 영영 남는다. 그 건이 계속 유일한 결정 대기라 버튼도 그대로다.
+   * 대상이 없거나 `requested` 면 새 manual_pending 이 결정 대기(awaitingDecision)로 남아 버튼을 잃지 않는다(core 정산 주문만, N19).
    */
   async retry(orderId: string): Promise<{ refundStatus: string }> {
     const so = await this.findSoOrThrow(orderId);
@@ -249,7 +261,8 @@ export class CancellationRefundManager {
       throw new BadRequestException('취소된 주문에만 환불 재시도를 할 수 있습니다.');
     }
 
-    const refundLink = await this.latestLink(so.id);
+    const rows = await this.refundLinks(so.id);
+    const refundLink = rows[0];
 
     // 채널 경로 주문의 환불은 채널이 한다 — 옛 wallet 환불 링크가 없으면 여기서 wallet 을 부를 근거가 없다.
     if (!refundLink && cancellationCapabilityOf(so.salesChannel).cancel === 'command') {
@@ -283,13 +296,19 @@ export class CancellationRefundManager {
       );
     }
 
-    // failed 또는 링크 없음 → 새 per-attempt key로 실제 PG 재호출
+    // failed·링크 없음·결정 대기 → 새 per-attempt key로 실제 PG 재호출
+    const target = this.openDecisionTarget(rows);
+    const targetIsManualPending = this.metaOf(target?.metadata).refundStatus === 'manual_pending';
+    // 결정 대기 표지는 core 가 돈을 쥔 주문에만 — 채널 주문의 옛 링크에 «환불 실행» 버튼을 새로 열지 않는다(N19)
+    const settlesHere = cancellationCapabilityOf(so.salesChannel).settlesMoney === 'core';
     const refundStatus = await this.requestWalletRefundAfterCancel(
       so,
       {},
       {
         attemptType: 'retry',
         actor: 'admin',
+        extraMetadata: target ? { completedRefundLinkId: target.id } : undefined,
+        onBlocked: targetIsManualPending ? 'record_failed' : settlesHere ? 'await_decision' : undefined,
       },
     );
     return { refundStatus };
@@ -302,6 +321,11 @@ export class CancellationRefundManager {
    * correlationId는 per-attempt UUID를 포함하여 생성된다. 과거 실패 응답이
    * Wallet idempotency에 의해 재생되어 복구를 막는 문제를 방지한다.
    * 중복/초과 환불 방어는 Wallet의 refundable amount 검증이 담당한다.
+   *
+   * `onBlocked` — 환불이 막혔을 때(intent 없음·금액 없음·Wallet 장애·in-flight) 남길 모양.
+   * - 없음: 지금처럼 `manual_pending`
+   * - `await_decision`: `manual_pending` + `awaitingDecision` — 목록에서 «환불 실행»·«환불 안 함» 을 고른다
+   * - `record_failed`: `failed` — 이미 열린 결정 대기 manual_pending 이 이 환불을 대표할 때(두 번째 manual_pending 금지)
    */
   async requestWalletRefundAfterCancel(
     so: SalesOrderRow,
@@ -312,11 +336,19 @@ export class CancellationRefundManager {
       correlationId?: string;
       amountOverride?: number;
       extraMetadata?: Record<string, unknown>;
+      onBlocked?: 'await_decision' | 'record_failed';
       tx?: DbTx;
     },
   ): Promise<StoreRefundStatus> {
     const attemptType = options?.attemptType ?? 'initial';
     const actor = options?.actor ?? 'system';
+    // 막힌 결과의 상태와 덧붙일 표지. 성공·실패·처리 중 기록에는 결정 대기 표지를 붙이지 않는다
+    const blockedStatus: 'manual_pending' | 'failed' =
+      options?.onBlocked === 'record_failed' ? 'failed' : 'manual_pending';
+    const blockedMetadata =
+      options?.onBlocked === 'await_decision'
+        ? { ...(options?.extraMetadata ?? {}), awaitingDecision: true }
+        : options?.extraMetadata;
 
     if (!so.walletIntentId) {
       this.logger.warn(
@@ -326,16 +358,16 @@ export class CancellationRefundManager {
       await this.recordWalletRefundLink(
         so.id,
         {
-          refundStatus: 'manual_pending',
+          refundStatus: blockedStatus,
           note: 'walletIntentId가 없어 수동 처리 필요',
           reasonCode: dto.reasonCode,
           attemptType,
           actor,
-          extraMetadata: options?.extraMetadata,
+          extraMetadata: blockedMetadata,
         },
         options?.tx,
       );
-      return 'manual_pending';
+      return blockedStatus;
     }
 
     const correlationId = options?.correlationId ?? `cancel:${so.id}:${attemptType}:${crypto.randomUUID()}`;
@@ -346,18 +378,18 @@ export class CancellationRefundManager {
       await this.recordWalletRefundLink(
         so.id,
         {
-          refundStatus: 'manual_pending',
+          refundStatus: blockedStatus,
           note: `amount=${amount} 이 유효하지 않아 수동 처리 필요`,
           intentId: so.walletIntentId,
           reasonCode: dto.reasonCode,
           attemptType,
           actor,
           correlationId,
-          extraMetadata: options?.extraMetadata,
+          extraMetadata: blockedMetadata,
         },
         options?.tx,
       );
-      return 'manual_pending';
+      return blockedStatus;
     }
 
     const outcome = await this.walletRefundClient.refundByIntent(so.walletIntentId, amount, {
@@ -451,7 +483,7 @@ export class CancellationRefundManager {
         await this.recordWalletRefundLink(
           so.id,
           {
-            refundStatus: 'manual_pending',
+            refundStatus: blockedStatus,
             intentId: so.walletIntentId,
             amount,
             note: `Wallet 연결 불가: ${outcome.errorMessage}`,
@@ -459,17 +491,17 @@ export class CancellationRefundManager {
             attemptType,
             actor,
             correlationId,
-            extraMetadata: options?.extraMetadata,
+            extraMetadata: blockedMetadata,
           },
           options?.tx,
         );
-        return 'manual_pending';
+        return blockedStatus;
       }
       case 'in_flight': {
         await this.recordWalletRefundLink(
           so.id,
           {
-            refundStatus: 'manual_pending',
+            refundStatus: blockedStatus,
             intentId: so.walletIntentId,
             amount,
             note: `환불 처리 중(Idempotency in-flight): ${outcome.errorMessage}`,
@@ -477,11 +509,11 @@ export class CancellationRefundManager {
             attemptType,
             actor,
             correlationId,
-            extraMetadata: options?.extraMetadata,
+            extraMetadata: blockedMetadata,
           },
           options?.tx,
         );
-        return 'manual_pending';
+        return blockedStatus;
       }
       case 'no_intent_id':
       default: {
@@ -588,6 +620,18 @@ export class CancellationRefundManager {
         ),
       )
       .orderBy(desc(wmsTables.businessLinks.createdAt));
+  }
+
+  /**
+   * 지금 결정을 기다리는 건 — 닫히지 않은 결정 대기(awaitingDecision) manual_pending, 또는 최신이 멈춘 requested.
+   * «환불 안 함»(waive)의 자동 대상과 «환불 실행»(retry)이 닫을 대상이 같은 기준이어야 목록·SQL 과 어긋나지 않는다
+   */
+  private openDecisionTarget<T extends { id: string; metadata: unknown }>(rows: T[]): T | undefined {
+    return rows.find((r, i) => {
+      const m = this.metaOf(r.metadata);
+      const awaiting = m.refundStatus === 'manual_pending' && m.awaitingDecision === true;
+      return (awaiting || (i === 0 && m.refundStatus === REFUND_REQUESTED)) && !this.closedBy(rows, r.id);
+    });
   }
 
   /** 뒤따른 완료(succeeded)·환불 안 함(waived) 기록이 `completedRefundLinkId` 로 이 링크를 가리키면 닫힌 것이다 — 닫은 상태를 돌려준다 */

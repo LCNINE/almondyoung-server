@@ -89,11 +89,9 @@ describeIfDb('셀프취소 판정 — 복구 중 상자 (DB integration, rollbac
       const printOrders = { forSalesOrder: () => Promise.resolve([]) };
       const service = new StoreSalesOrdersService(
         db as never,
-        salesOrders as never,
         {} as WalletRefundClient,
         cancelRequests as never,
         printOrders as never,
-        printCancellation as never,
         new OrderCancellation(
           db as never,
           salesOrders as never,
@@ -186,11 +184,9 @@ describeIfDb('셀프취소 판정 — 복구 중 상자 (DB integration, rollbac
       };
       const service = new StoreSalesOrdersService(
         db as never,
-        w.salesOrders,
         {} as WalletRefundClient,
         cancelRequests,
         printOrders as never,
-        printCancellation as never,
         new OrderCancellation(
           db as never,
           w.salesOrders,

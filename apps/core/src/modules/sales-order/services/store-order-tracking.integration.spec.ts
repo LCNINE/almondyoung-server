@@ -173,11 +173,9 @@ describeIfDb('Store order tracking V2 graph (DB integration, rollback-only)', ()
       const printCancellation = {};
       const service = new StoreSalesOrdersService(
         db as never,
-        salesOrders as never,
         {} as WalletRefundClient,
         cancelRequests as never,
         printOrders as never,
-        printCancellation as never,
         new OrderCancellation(
           db as never,
           salesOrders as never,

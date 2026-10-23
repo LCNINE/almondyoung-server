@@ -293,11 +293,9 @@ function makeContext(
   );
   const service = new StoreSalesOrdersService(
     dbMock as any,
-    salesOrdersServiceMock as any,
     walletClientMock as WalletRefundClient,
     cancelRequestsMock as any,
     printReader,
-    printCancellation,
     cancellation,
     refunds,
   );
@@ -767,11 +765,9 @@ describe('StoreSalesOrdersService', () => {
       const printCancellation = printCancelMock();
       const service = new StoreSalesOrdersService(
         dbMock as any,
-        salesOrdersServiceMock as any,
         { refundByIntent: jest.fn() } as any,
         cancelRequestsMock as any,
         printReader,
-        printCancellation,
         new OrderCancellation(
           dbMock as any,
           salesOrdersServiceMock as any,
@@ -1346,11 +1342,9 @@ describe('StoreSalesOrdersService', () => {
     );
     const service = new StoreSalesOrdersService(
       dbMock as any,
-      salesOrdersServiceMock as any,
       walletClientMock as WalletRefundClient,
       cancelRequestsMock as any,
       printReader,
-      printCancellation,
       cancellation,
       refunds,
     );
@@ -1754,11 +1748,9 @@ describe('StoreSalesOrdersService', () => {
       const printCancellation = printCancelMock();
       return new StoreSalesOrdersService(
         dbMock as never,
-        salesOrdersServiceMock as never,
         {} as WalletRefundClient,
         cancelRequestsMock as never,
         printReader,
-        printCancellation,
         new OrderCancellation(
           dbMock as never,
           salesOrdersServiceMock as never,

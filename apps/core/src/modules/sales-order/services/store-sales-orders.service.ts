@@ -17,13 +17,9 @@ import {
 } from '../dto/store-order-actions.dto';
 import { PrintOrderReader } from '../../print-order/services/print-order.reader';
 import { isLivePrint } from '../../print-order/services/print-order-board.rules';
-import {
-  PrintNeedsPartialCancelError,
-  PrintOrderCancellationManager,
-} from '../../print-order/services/print-order-cancellation.manager';
+import { PrintNeedsPartialCancelError } from '../../print-order/services/print-order-cancellation.manager';
 import { type PrintOrderRow } from '../../print-order/schema/print-order.schema';
 import { StoreOrderTrackingResponseDto, StoreShipmentDto } from '../dto/store-order-tracking.dto';
-import { SalesOrdersService } from './sales-orders.service';
 import { channelRefundStatus, manualTransferOf, needsTransferCheck } from './channel-refund-status';
 import { WalletRefundClient } from './wallet-refund.client';
 import { CancellationRefundManager } from '../cancellation-refund/cancellation-refund.manager';
@@ -88,11 +84,9 @@ export class StoreSalesOrdersService {
   constructor(
     @InjectTypedDb<typeof inventorySchema>()
     private readonly db: { db: import('drizzle-orm/postgres-js').PostgresJsDatabase<typeof inventorySchema> },
-    private readonly salesOrdersService: SalesOrdersService,
     private readonly walletRefundClient: WalletRefundClient,
     private readonly cancelRequests: ChannelCancelRequestService,
     private readonly printOrders: PrintOrderReader,
-    private readonly printCancellation: PrintOrderCancellationManager,
     private readonly cancellation: OrderCancellation,
     private readonly cancellationRefund: CancellationRefundManager,
   ) {}

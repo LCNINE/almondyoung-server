@@ -1,4 +1,6 @@
+import { Logger } from '@nestjs/common';
 import { OrderCancellation } from './order-cancellation';
+import * as capability from './channel-cancellation-capability';
 import type { CancellationRequest } from './order-cancellation.types';
 import {
   PrintInProductionError,
@@ -379,11 +381,33 @@ describe('OrderCancellation.request — core 가 돈을 쥔 주문 (K7 PR4, D1·
     expect(salesOrders.cancel).not.toHaveBeenCalled();
   });
 
-  it('커밋 뒤 실행이 던져도 결과는 applied, refundStatus 는 requested', async () => {
-    const { k, salesOrders } = makeKernel({ salesChannel: '3pl', executeResult: new Error('wallet down') });
-    const result = await k.request(customer);
-    expect(salesOrders.cancel).toHaveBeenCalledTimes(1);
-    expect(result).toEqual({ kind: 'applied', scope: 'full', refund: { refundStatus: 'requested' } });
+  it('커밋 뒤 실행이 던져도 결과는 applied, refundStatus 는 requested — 오류는 스택과 함께 로그에 남는다', async () => {
+    const boom = new Error('wallet down');
+    const logError = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    try {
+      const { k, salesOrders } = makeKernel({ salesChannel: '3pl', executeResult: boom });
+      const result = await k.request(customer);
+      expect(salesOrders.cancel).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({ kind: 'applied', scope: 'full', refund: { refundStatus: 'requested' } });
+      expect(logError).toHaveBeenCalledWith(expect.stringContaining('wallet down'), boom.stack);
+    } finally {
+      logError.mockRestore();
+    }
+  });
+
+  it('cancel 이 core 인데 돈을 core 가 쥐지 않는 채널이면 던진다 — 환불 방침은 settlesMoney 로 정한다 (프로그램 결함)', async () => {
+    const spy = jest.spyOn(capability, 'cancellationCapabilityOf').mockReturnValue({
+      ...capability.CHANNEL_CANCELLATION_CAPABILITIES['3pl'],
+      settlesMoney: 'channel',
+    });
+    try {
+      const { k, salesOrders, refunds } = makeKernel({ salesChannel: '3pl' });
+      await expect(k.request(op)).rejects.toThrow('settlesMoney');
+      expect(refunds.effectFor).not.toHaveBeenCalled();
+      expect(salesOrders.cancel).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('커밋 뒤 실행이 할 일이 없었으면(상자 후 대기 등) refundStatus 는 requested', async () => {

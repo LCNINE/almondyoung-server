@@ -123,6 +123,14 @@ export class OrderCancellation {
     so: SalesOrderRow,
     sourceKey: string,
   ): Promise<CancellationOutcome> {
+    // 문은 취소 경로(cancel === 'core')로 여기 오지만 환불 방침의 근거는 «돈을 누가 쥐나»(settlesMoney)다(스펙 §5.5).
+    // 지금 표에선 둘이 늘 같이 core 라 닿지 않는다 — 표가 갈라지면 채널이 정산할 주문에 Wallet 환불을 적지 않게 결함으로 멈춘다
+    const settlesMoney = cancellationCapabilityOf(so.salesChannel).settlesMoney;
+    if (settlesMoney !== 'core') {
+      throw new Error(
+        `core-settled cancellation for SO ${so.id} on ${so.salesChannel}, but settlesMoney=${settlesMoney}`,
+      );
+    }
     if (isOperatorRequest(intent) && intent.alreadyRefundedAmount !== undefined) {
       throw new BadRequestError('이미 환불한 금액은 Medusa 주문 부분취소에만 적을 수 있습니다.');
     }
@@ -191,7 +199,11 @@ export class OrderCancellation {
       return (await this.refunds.executeRequested(salesOrderId)) ?? REFUND_REQUESTED;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`[OrderCancellation] refund after cancel failed for SO ${salesOrderId}: ${message}`);
+      // 스택까지 남긴다 — 취소는 이미 커밋돼 사용자에겐 성공으로 보이므로 원인을 찾을 단서는 이 로그뿐이다
+      this.logger.error(
+        `[OrderCancellation] refund after cancel failed for SO ${salesOrderId}: ${message}`,
+        error instanceof Error ? error.stack : undefined,
+      );
       return REFUND_REQUESTED;
     }
   }
