@@ -70,6 +70,7 @@ function makeTossContext(
     confirmPayment: jest.fn().mockResolvedValue(confirmResult),
     confirmBrandPayPayment: jest.fn().mockResolvedValue(confirmResult),
     cancelPayment: jest.fn().mockResolvedValue({ ok: true, data: {} }),
+    getPaymentByOrderId: jest.fn(),
   };
   const cashReceiptsService = { issue: jest.fn() };
   const bankTransferProvider = { getUserMethods: jest.fn().mockResolvedValue([{ id: 'pm-bank' }]) };
@@ -480,12 +481,28 @@ describe('widget virtual account', () => {
     expect(ctx.autoCaptureService.attemptAutoCapture).not.toHaveBeenCalled();
   });
 
-  it('카드 승인을 되돌리다 전송 오류가 나면 승인을 그대로 확정한다', async () => {
+  it('카드 승인 되돌리기 응답을 잃으면 토스에 물어, 취소됐으면 실패로 확정한다', async () => {
     const ctx = makeTossContext({ approvalMode: 'DEFERRED' }, WIDGET_CHARGE, {
       ok: true,
       data: { paymentKey: 'pk_card', status: 'DONE' },
     });
     ctx.tossApi.cancelPayment.mockRejectedValue(new Error('ECONNRESET'));
+    ctx.tossApi.getPaymentByOrderId.mockResolvedValue({ ok: true, data: { status: 'CANCELED' } });
+
+    await expect(
+      ctx.service.approve('intent-1', 'pk_card', ORDER_ID, 10000, 'corr-1', 'NORMAL', 'VIRTUAL_ACCOUNT'),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ error: 'PAYMENT_METHOD_MISMATCH' }) });
+    expect(ctx.tossApi.getPaymentByOrderId).toHaveBeenCalledWith(ORDER_ID, true);
+    expect(ctx.autoCaptureService.attemptAutoCapture).not.toHaveBeenCalled();
+  });
+
+  it('카드 승인 되돌리기 결과를 끝내 모르면 승인을 그대로 확정한다', async () => {
+    const ctx = makeTossContext({ approvalMode: 'DEFERRED' }, WIDGET_CHARGE, {
+      ok: true,
+      data: { paymentKey: 'pk_card', status: 'DONE' },
+    });
+    ctx.tossApi.cancelPayment.mockRejectedValue(new Error('ECONNRESET'));
+    ctx.tossApi.getPaymentByOrderId.mockRejectedValue(new Error('ECONNRESET'));
 
     await ctx.service.approve('intent-1', 'pk_card', ORDER_ID, 10000, 'corr-1', 'NORMAL', 'VIRTUAL_ACCOUNT');
 
