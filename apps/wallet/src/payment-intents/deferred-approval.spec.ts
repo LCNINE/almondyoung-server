@@ -496,6 +496,46 @@ describe('widget virtual account', () => {
     expect(ctx.autoCaptureService.attemptAutoCapture).not.toHaveBeenCalled();
   });
 
+  it('카드 승인 되돌리기가 5xx 로 끝나도 토스에 물어 판정한다', async () => {
+    const ctx = makeTossContext({ approvalMode: 'DEFERRED' }, WIDGET_CHARGE, {
+      ok: true,
+      data: { paymentKey: 'pk_card', status: 'DONE' },
+    });
+    ctx.tossApi.cancelPayment.mockResolvedValue({ ok: false, error: { code: 'PROVIDER_ERROR', message: 'x' } });
+    ctx.tossApi.getPaymentByOrderId.mockResolvedValue({ ok: true, data: { status: 'CANCELED' } });
+
+    await expect(
+      ctx.service.approve('intent-1', 'pk_card', ORDER_ID, 10000, 'corr-1', 'NORMAL', 'VIRTUAL_ACCOUNT'),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ error: 'PAYMENT_METHOD_MISMATCH' }) });
+    expect(ctx.autoCaptureService.attemptAutoCapture).not.toHaveBeenCalled();
+  });
+
+  it('지연 승인 가상계좌가 이미 취소돼 있으면 닫힌 것으로 보고 실패로 확정한다', async () => {
+    const staged = {
+      provider: 'TOSS' as const,
+      providerToken: 'pk_va',
+      orderId: ORDER_ID,
+      amount: 10000,
+      stagedAt: new Date(0).toISOString(),
+    };
+    const ctx = makeTossContext({ approvalMode: 'DEFERRED' }, WIDGET_CHARGE, VA_CONFIRM);
+    ctx.tossApi.cancelPayment.mockResolvedValue({
+      ok: false,
+      error: { code: 'ALREADY_CANCELED_PAYMENT', message: '이미 취소' },
+    });
+
+    await expect(ctx.service.confirmStaged(WIDGET_CHARGE, staged, 'corr-1')).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'VIRTUAL_ACCOUNT_NOT_DEFERRABLE' }),
+    });
+    expect(ctx.stateTransitionService.transitionIntent).not.toHaveBeenCalledWith(
+      'intent-1',
+      'AWAITING_DEPOSIT',
+      expect.anything(),
+      undefined,
+      expect.anything(),
+    );
+  });
+
   it('카드 승인 되돌리기 결과를 끝내 모르면 승인을 그대로 확정한다', async () => {
     const ctx = makeTossContext({ approvalMode: 'DEFERRED' }, WIDGET_CHARGE, {
       ok: true,
