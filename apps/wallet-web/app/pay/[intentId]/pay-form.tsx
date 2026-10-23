@@ -134,6 +134,7 @@ export function PayForm({
           bankName: depositAccount.bankName ?? undefined,
           accountNumber: depositAccount.accountNumber ?? undefined,
           accountHolder: depositAccount.accountHolder ?? undefined,
+          dueDate: depositAccount.dueDate ?? undefined,
           amount: depositAccount.amount,
           currency: depositAccount.currency,
         }
@@ -377,6 +378,7 @@ export function PayForm({
       finalPrice={formatAmount(remainingAmount, intent.currency)}
       discounted={remainingAmount < intent.payableAmount}
       onClose={() => void handleCancel()}
+      closeDisabled={loading}
       footer={
         <>
           <p aria-live="polite" className="text-sm text-muted-foreground">
