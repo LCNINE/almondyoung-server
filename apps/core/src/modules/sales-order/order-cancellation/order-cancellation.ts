@@ -24,9 +24,10 @@ import type {
   CancelLine,
   CancellationNotice,
   CancellationRequest,
+  ChannelCancellationReceipt,
+  ChannelCancelledNotice,
   ChannelDecreaseNotice,
   DecreaseOutcome,
-  NoticeFollowUp,
   NoticeOutcome,
 } from './order-cancellation.types';
 
@@ -34,7 +35,9 @@ type OperatorRequest = Extract<CancellationRequest, { requester: { kind: 'operat
 type CustomerRequest = Extract<CancellationRequest, { requester: { kind: 'customer' } }>;
 
 type WalletApprovalNotice = Extract<CancellationNotice, { source: 'wallet_refund_approval' }>;
-type ChannelCancelledNotice = Extract<CancellationNotice, { source: 'channel_cancelled' }>;
+
+/** 수신 트랜잭션이 커밋된 뒤 커널이 할 일 — 와우프레스 record. 재수신이면 그 이벤트를 처음 기록한 시각을 넘긴다 */
+type RecordAfterCommit = { salesOrderId: string; lines: CancelLine[] | undefined; redeliveredSince: Date | undefined };
 
 /** savepoint 를 되돌리려고 던지는 표지. 커널 밖으로 새지 않는다 */
 class Refused extends Error {
@@ -91,25 +94,37 @@ export class OrderCancellation {
   }
 
   /**
-   * 취소가 이미 정해진 뒤의 통보. 무통장 승인은 커널이 트랜잭션을 가지므로 tx 를 받지 않고,
-   * 채널 취소는 수신 트랜잭션(이벤트 중복 기록과 한 묶음) 안에서만 부른다.
+   * 취소가 이미 정해진 뒤의 통보. 무통장 승인은 커널이 트랜잭션을 가지므로 tx 를 받지 않는다.
    */
   async notice(intent: CancellationNotice, tx?: DbTx): Promise<NoticeOutcome> {
     switch (intent.source) {
       case 'wallet_refund_approval':
         if (tx) throw new Error('wallet_refund_approval notice runs outside the caller transaction');
         return this.noticeWalletApproval(intent);
-      case 'channel_cancelled':
-        if (!tx) throw new Error('channel_cancelled notice needs the receiving transaction');
-        return this.noticeChannelCancelled(intent, tx);
     }
   }
 
-  /** 통보한 트랜잭션이 커밋된 뒤 할 일 */
-  async afterCommit(followUp: NoticeFollowUp): Promise<void> {
-    // 와우프레스 호출은 트랜잭션 밖에서 한다. 이미 취소된 주문이라 막을 수 없으니 거절·장애는 보드에 남긴다
-    await this.printCancellation.cancelForOrder(followUp.salesOrderId, 'record', followUp.lines, {
-      redeliveredSince: followUp.redeliveredSince,
+  /**
+   * 채널 취소 수신 (K7 PR2, N7). 커널이 수신 트랜잭션을 열고, 이벤트 중복 기록·줄 해석은 호출자(컨슈머)가
+   * `receive` 안에서 같은 트랜잭션으로 한다 — 그 판정(새 통보 / 재수신 / 할 일 없음)을 돌려받아 취소한다.
+   * 커밋 뒤 와우프레스 record 도 여기서 한다 — 호출자가 잊을 수 없다.
+   */
+  async receiveChannelCancellation(receive: (tx: DbTx) => Promise<ChannelCancellationReceipt | null>): Promise<void> {
+    const after = await this.db.run(async (tx): Promise<RecordAfterCommit | null> => {
+      const receipt = await receive(tx);
+      if (!receipt) return null;
+      if ('redelivered' in receipt) {
+        const { salesOrderId, lines, since } = receipt.redelivered;
+        return { salesOrderId, lines, redeliveredSince: since };
+      }
+      await this.cancelForChannel(receipt.notice, tx);
+      return { salesOrderId: receipt.notice.salesOrderId, lines: receipt.notice.lines, redeliveredSince: undefined };
+    });
+    if (!after) return;
+    // 와우프레스 호출은 트랜잭션 밖에서 한다. 이미 취소된 주문이라 막을 수 없으니 거절·장애는 보드에 남긴다.
+    // 던지면 삼키지 않는다 — 컨슈머 재시도가 재수신 경로로 다시 record 한다
+    await this.printCancellation.cancelForOrder(after.salesOrderId, 'record', after.lines, {
+      redeliveredSince: after.redeliveredSince,
     });
   }
 
@@ -127,7 +142,7 @@ export class OrderCancellation {
     return { applied: true, requestView };
   }
 
-  private async noticeChannelCancelled(intent: ChannelCancelledNotice, tx: DbTx): Promise<NoticeOutcome> {
+  private async cancelForChannel(intent: ChannelCancelledNotice, tx: DbTx): Promise<void> {
     const { salesOrderId, lines } = intent;
     await this.salesOrders.cancel(
       salesOrderId,
@@ -144,7 +159,6 @@ export class OrderCancellation {
     await this.printCancellation.holdUnsent(salesOrderId, lines, tx);
     // 우리가 낸 취소 요청을 닫는다 — 정산 중 행(확정 때 적용, 위 cancel() 은 이미 취소된 주문이라 아무것도 안 했다). 줄 단위 취소(마켓)는 요청과 무관하다.
     if (!lines) await this.settler.settleCancelled(salesOrderId, tx);
-    return { applied: true, followUp: { salesOrderId, lines } };
   }
 
   /**

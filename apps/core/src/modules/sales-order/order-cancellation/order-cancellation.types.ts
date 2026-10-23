@@ -30,22 +30,32 @@ export type CancellationRequest =
 
 /**
  * 취소 «통보» — 취소가 이미 정해진 뒤 커널에 알리는 것 (K7 PR1).
- * 무통장 승인(돈은 wallet 에서 이미 나갔다)·채널 취소(채널이 이미 취소했다).
- * 채널 수량 감소(채널이 이미 줄였다)는 제 문(`noticeChannelDecrease`)으로 받는다 — `ChannelDecreaseNotice`.
+ * 무통장 승인(돈은 wallet 에서 이미 나갔다). 채널 취소(채널이 이미 취소했다)는 `receiveChannelCancellation` 으로,
+ * 채널 수량 감소(채널이 이미 줄였다)는 `noticeChannelDecrease` 로 받는다 (K7 PR2).
  */
-export type CancellationNotice =
-  | { source: 'wallet_refund_approval'; salesOrderId: string; intentId: string; reasonCode: string }
-  | {
-      source: 'channel_cancelled';
-      salesOrderId: string;
-      /** 없으면 전체취소 */
-      lines: CancelLine[] | undefined;
-      reasonCode?: string;
-      reasonDetail?: string;
-      cancelledBy?: string;
-      occurredAt?: string;
-      metadata: Record<string, unknown>;
-    };
+export type CancellationNotice = {
+  source: 'wallet_refund_approval';
+  salesOrderId: string;
+  intentId: string;
+  reasonCode: string;
+};
+
+/** 채널 취소 통보 (K7 PR2, N7) */
+export type ChannelCancelledNotice = {
+  salesOrderId: string;
+  /** 없으면 전체취소 */
+  lines: CancelLine[] | undefined;
+  reasonCode?: string;
+  reasonDetail?: string;
+  cancelledBy?: string;
+  occurredAt?: string;
+  metadata: Record<string, unknown>;
+};
+
+/** 컨슈머가 수신 트랜잭션에서 판정한 것. 재수신이면 since = 그 이벤트를 처음 기록한 시각 */
+export type ChannelCancellationReceipt =
+  | { notice: ChannelCancelledNotice }
+  | { redelivered: { salesOrderId: string; lines: CancelLine[] | undefined; since: Date | undefined } };
 
 /** 채널 수량 감소 통보 (K7 PR2, D7). 수신 트랜잭션(변경 기록과 한 묶음) 안에서만 받는다 */
 export type ChannelDecreaseNotice = {
@@ -60,9 +70,4 @@ export type ChannelDecreaseNotice = {
 
 export type DecreaseOutcome = { applied: true } | { applied: false; refusal: string };
 
-/** 통보한 트랜잭션이 커밋된 뒤 커널이 할 일. 호출자는 이걸 `afterCommit` 에 그대로 돌려준다 */
-export type NoticeFollowUp = { salesOrderId: string; lines: CancelLine[] | undefined; redeliveredSince?: Date };
-
-export type NoticeOutcome =
-  | { applied: true; requestView?: CancelRequestView; followUp?: NoticeFollowUp }
-  | { applied: false; refusal: string };
+export type NoticeOutcome = { applied: true; requestView?: CancelRequestView } | { applied: false; refusal: string };
