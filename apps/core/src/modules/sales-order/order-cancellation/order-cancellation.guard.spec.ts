@@ -30,24 +30,20 @@ function filesCalling(pattern: RegExp, roots?: string | string[]): string[] {
 }
 
 const K = 'apps/core/src/modules/sales-order/order-cancellation/order-cancellation.ts';
-const STORE = 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts'; // N1 — PR4 가 지운다
 const MANAGER = 'apps/core/src/modules/sales-order/channel-cancel-request/channel-cancel-request.manager.ts'; // 확정 내부
 
 const T = '(?:fulfillmentOrders|fulfillmentOrderItems|stockReservations|shipments|shipmentLines)';
 
 describe('판매주문 취소 호출자 (K7)', () => {
   it('판매주문 취소 적용', () =>
-    expect(filesCalling(/\b(salesOrders|salesOrdersService)\.cancel\(/)).toEqual([MANAGER, K, STORE].sort()));
+    expect(filesCalling(/\b(salesOrders|salesOrdersService)\.cancel\(/)).toEqual([MANAGER, K].sort()));
 
   it('취소 계획', () => expect(filesCalling(/\.planCancellation\(/)).toEqual([MANAGER, K].sort()));
 
-  it('채널 취소 요청 확정·사전검사', () =>
-    expect(filesCalling(/cancelRequests\.(request|precheck)\(/)).toEqual([K, STORE].sort()));
+  it('채널 취소 요청 확정·사전검사', () => expect(filesCalling(/cancelRequests\.(request|precheck)\(/)).toEqual([K]));
 
   it('와우프레스 취소 문', () =>
-    expect(filesCalling(/printCancellation\.(cancelForOrder|holdUnsent|noteSalesCancelFailed)\(/)).toEqual(
-      [K, STORE].sort(),
-    ));
+    expect(filesCalling(/printCancellation\.(cancelForOrder|holdUnsent|noteSalesCancelFailed)\(/)).toEqual([K]));
 
   it('판매주문 코드의 print_orders 직접 UPDATE', () =>
     // 직접 형(.update(wmsTables.printOrders))과 별칭 형(const t = wmsTables.printOrders; … .update(t)) 둘 다.

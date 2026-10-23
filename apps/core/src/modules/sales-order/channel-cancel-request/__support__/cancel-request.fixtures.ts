@@ -31,6 +31,8 @@ import { OrderCancellationReader } from '../../order-cancellation/order-cancella
 import { PrintOrderReader } from '../../../print-order/services/print-order.reader';
 import { PrintOrderRepository } from '../../../print-order/services/print-order.repository';
 import { PrintOrderCancellationManager } from '../../../print-order/services/print-order-cancellation.manager';
+import { CancellationRefundManager } from '../../cancellation-refund/cancellation-refund.manager';
+import type { WalletRefundClient } from '../../services/wallet-refund.client';
 
 export const ADDRESS = {
   recipientName: '김',
@@ -190,8 +192,9 @@ function savepointDbService(tx: DbTx): DbService<typeof wmsSchema> {
 
 /**
  * 취소 요청 통합 스펙의 배선. 롤백 트랜잭션 하나에 판매주문·요청 reader/manager 를 묶는다.
+ * `walletRefundClient` — core 정산 주문의 즉시 환불이 부르는 Wallet(목). 채널 경로는 부르지 않으므로 기본은 비워 둔다
  */
-export function wireCancelRequest(tx: DbTx) {
+export function wireCancelRequest(tx: DbTx, opts: { walletRefundClient?: WalletRefundClient } = {}) {
   const dbService = ambientDbService(tx);
   const logistics = wireLogistics(dbService);
   const outbound = assembleOutbound(tx);
@@ -219,6 +222,8 @@ export function wireCancelRequest(tx: DbTx) {
   // 실제 커널. 채널 변경이 부르는 수량 감소 갈래는 판매주문 취소·커널 reader·인쇄 붙잡기(holdForDecrease)만 쓴다 —
   // 와우프레스 클라이언트는 비워 둔다(붙잡기는 외부를 부르지 않고, 무통장 승인의 record 는 안 보낸 행을 로컬에서 끝낸다)
   const printOrders = new PrintOrderReader(dbService);
+  // 실제 결제 쪽 매니저 — 환불 링크는 취소와 같은 트랜잭션에 쓰이고, 커밋 뒤 실행만 Wallet(목)을 부른다
+  const refunds = new CancellationRefundManager(dbService, salesOrders, opts.walletRefundClient ?? ({} as never));
   const cancellation = new OrderCancellation(
     savepointDbService(tx),
     salesOrders,
@@ -227,6 +232,7 @@ export function wireCancelRequest(tx: DbTx) {
     new PrintOrderCancellationManager(printOrders, new PrintOrderRepository(dbService), {} as never),
     settler,
     new OrderCancellationReader(),
+    refunds,
   );
   const changes = new ChannelOrderChangeManager(
     new ChannelOrderChangeReader(),
@@ -235,7 +241,19 @@ export function wireCancelRequest(tx: DbTx) {
     settler,
     cancellation,
   );
-  return { dbService, logistics, outbound, salesOrders, reader, manager, settler, amendments, changes, cancellation };
+  return {
+    dbService,
+    logistics,
+    outbound,
+    salesOrders,
+    reader,
+    manager,
+    settler,
+    amendments,
+    changes,
+    cancellation,
+    refunds,
+  };
 }
 
 export type CancelWiring = ReturnType<typeof wireCancelRequest>;

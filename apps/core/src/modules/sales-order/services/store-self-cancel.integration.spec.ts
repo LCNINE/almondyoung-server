@@ -102,6 +102,7 @@ describeIfDb('셀프취소 판정 — 복구 중 상자 (DB integration, rollbac
           printCancellation as never,
           {} as never,
           new OrderCancellationReader(),
+          new CancellationRefundManager(db as never, salesOrders as never, {} as WalletRefundClient),
         ),
         new CancellationRefundManager(db as never, salesOrders as never, {} as WalletRefundClient),
       );
@@ -198,6 +199,7 @@ describeIfDb('셀프취소 판정 — 복구 중 상자 (DB integration, rollbac
           printCancellation as never,
           {} as never,
           new OrderCancellationReader(),
+          new CancellationRefundManager(db as never, w.salesOrders, {} as WalletRefundClient),
         ),
         new CancellationRefundManager(db as never, w.salesOrders, {} as WalletRefundClient),
       );

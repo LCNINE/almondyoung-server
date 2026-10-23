@@ -126,6 +126,7 @@ describe('OrderEventsConsumer', () => {
         mocks.printCancel as any,
         mocks.cancelSettler as any,
         new OrderCancellationReader(),
+        {} as never,
       ),
     );
   }

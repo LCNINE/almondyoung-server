@@ -186,6 +186,7 @@ describeIfDb('Store order tracking V2 graph (DB integration, rollback-only)', ()
           printCancellation as never,
           {} as never,
           new OrderCancellationReader(),
+          new CancellationRefundManager(db as never, salesOrders as never, {} as WalletRefundClient),
         ),
         new CancellationRefundManager(db as never, salesOrders as never, {} as WalletRefundClient),
       );

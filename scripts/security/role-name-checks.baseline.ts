@@ -86,9 +86,10 @@ export const ROLE_LITERAL_BASELINE: Readonly<Record<string, { count: number; kin
     kind: 'system-identity',
   },
   'apps/core/src/modules/sales-order/dto/cancel-sales-order.dto.ts': { count: 1, kind: 'data-value' },
+  // 취소 기록의 cancelledBy 값('admin') — 판정이 아니다(K7 PR4 가 관리자 문에서 옮겨 왔다)
+  'apps/core/src/modules/sales-order/order-cancellation/order-cancellation.ts': { count: 1, kind: 'data-value' },
   'apps/core/src/modules/sales-order/services/sales-orders.service.ts': { count: 1, kind: 'system-identity' },
   'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts': { count: 2, kind: 'data-value' },
-  'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts': { count: 2, kind: 'system-identity' },
   'apps/core/src/platform/auth/fulfillment-authz.ts': { count: 5, kind: 'legacy-checkpoint' },
   'apps/core/src/platform/auth/fulfillment-scopes.ts': { count: 2, kind: 'role-mapping' },
   'apps/core/src/platform/auth/inventory-scopes.ts': { count: 3, kind: 'role-mapping' },

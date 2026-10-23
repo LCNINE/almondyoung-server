@@ -70,6 +70,7 @@ function storeServiceFor(tx: DbTx): StoreSalesOrdersService {
       printCancellation as never,
       {} as never,
       new OrderCancellationReader(),
+      new CancellationRefundManager(db as never, salesOrders as never, {} as never),
     ),
     new CancellationRefundManager(db as never, salesOrders as never, {} as never),
   );

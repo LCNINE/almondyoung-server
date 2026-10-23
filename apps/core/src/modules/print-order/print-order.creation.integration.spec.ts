@@ -63,6 +63,7 @@ function makeConsumer(tx: DbTx): OrderEventsConsumer {
       unused as unknown as PrintOrderCancellationManager,
       unused as unknown as ChannelCancelSettler,
       new OrderCancellationReader(),
+      {} as never,
     ),
   );
 }

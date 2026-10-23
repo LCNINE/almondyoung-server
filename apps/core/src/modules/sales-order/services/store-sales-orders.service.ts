@@ -2,15 +2,9 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundEx
 import { createHash } from 'crypto';
 import { InjectTypedDb } from '@app/db';
 import { and, desc, eq, inArray, isNotNull, isNull, ne, notInArray, sql } from 'drizzle-orm';
-import {
-  inventorySchema,
-  inventoryTables,
-  returnExchangeTables,
-  wmsTables,
-} from '../../inventory/schema/inventory.schema';
+import { inventorySchema, inventoryTables, returnExchangeTables } from '../../inventory/schema/inventory.schema';
 import { digitalAssetOwnerships } from '../../library/schema/library.schema';
 import { WAYBILL_TERMINAL_STATUSES } from '../../fulfillment/waybill/waybill.constants';
-import { calculatePartialCancellationRefund } from '../cancellation-refund/partial-cancellation-refund-calculator';
 import {
   RefundSummaryDto,
   ShipmentProgressDto,
@@ -26,7 +20,6 @@ import { isLivePrint } from '../../print-order/services/print-order-board.rules'
 import {
   PrintNeedsPartialCancelError,
   PrintOrderCancellationManager,
-  type PrintCancelResult,
 } from '../../print-order/services/print-order-cancellation.manager';
 import { type PrintOrderRow } from '../../print-order/schema/print-order.schema';
 import { StoreOrderTrackingResponseDto, StoreShipmentDto } from '../dto/store-order-tracking.dto';
@@ -35,7 +28,7 @@ import { channelRefundStatus, manualTransferOf, needsTransferCheck } from './cha
 import { WalletRefundClient } from './wallet-refund.client';
 import { CancellationRefundManager } from '../cancellation-refund/cancellation-refund.manager';
 import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
-import { cancellationCapabilityOf, channelsWhere } from '../order-cancellation/channel-cancellation-capability';
+import { channelsWhere } from '../order-cancellation/channel-cancellation-capability';
 import { OrderCancellation } from '../order-cancellation/order-cancellation';
 import type { CancelRequestStatus } from '../channel-cancel-request/channel-cancel-request.types';
 import { isPickingStarted, shipmentProgressOf, PhaseFoRow, FulfillmentPhaseInput } from './fulfillment-phase';
@@ -128,10 +121,8 @@ export class StoreSalesOrdersService {
   }
 
   /**
-   * 관리자 취소. 채널(Medusa) 주문은 취소 요청(#1016 35번), core 직접 주문은 core 취소 + Wallet 환불.
-   * core 경로 — 전체취소: Core 취소 → Wallet 자동 환불 시도 → 결과 기록.
-   * 부분취소: Core 취소 → 환불 추정액 계산 → manual_pending 기록 (자동 환불 없음).
-   * walletIntentId가 없으면 환불은 manual_pending으로 기록되고 취소는 완료된다.
+   * 관리자 취소 — 커널 한 번. 채널(Medusa) 주문은 채널에 낸 취소 요청(#1016 35번), core 가 돈을 쥔 주문은 core 취소 +
+   * «환불 결정 전» 기록(K7 PR4, D2 — Wallet 을 부르지 않는다. 환불은 관리자가 목록에서 결정한다). 응답 모양은 지금 그대로다.
    */
   async adminCancelRequest(
     orderId: string,
@@ -144,118 +135,42 @@ export class StoreSalesOrdersService {
     },
   ): Promise<AdminCancelResult> {
     const so = await this.findSoOrThrow({ id: orderId });
-    // 채널 주문은 채널이 환불하고 core 는 문지기다(ADR-0042·0044) — 판정·확정·기록 뒤 명령. 마켓은 판매자센터로.
-    if (cancellationCapabilityOf(so.salesChannel).settlesMoney === 'channel') {
-      const ctx = dto.fulfillmentCommandContext;
-      const view = await this.cancellation.request({
-        // 컨텍스트가 없으면 키도 없어 커널이 400 으로 막는다 — 빈 actorId 는 어디에도 쓰이지 않는다
-        requester: { kind: 'operator', actorId: ctx?.actorId ?? '' },
-        salesOrderId: so.id,
-        sourceKey: ctx?.idempotencyKey,
-        reasonCode: dto.reasonCode,
-        reasonDetail: dto.reasonDetail,
-        ...(dto.lines ? { lines: dto.lines } : {}),
-        ...(dto.alreadyRefundedAmount !== undefined ? { alreadyRefundedAmount: dto.alreadyRefundedAmount } : {}),
-      });
-      return { requestId: view.id, status: view.status, scope: view.scope, convertedFromFull: view.convertedFromFull };
-    }
-    // K7 PR4 전까지: core 가 돈을 쥔 주문은 문이 환불까지 한다(스펙 §5.5)
-    if (dto.alreadyRefundedAmount !== undefined) {
-      throw new BadRequestException('이미 환불한 금액은 Medusa 주문 부분취소에만 적을 수 있습니다.');
-    }
-    if (
-      dto.fulfillmentCommandContext &&
-      (await this.salesOrdersService.validateCancellationReplay(so.id, {
-        sourceKey: dto.fulfillmentCommandContext.idempotencyKey,
-        reasonCode: dto.reasonCode,
-        reasonDetail: dto.reasonDetail,
-        lines: dto.lines,
-      }))
-    ) {
-      const replay = await this.buildActionsView(so);
-      return { status: so.status, refundStatus: replay.refundStatus };
-    }
-    if (so.status === 'cancelled') throw new BadRequestException('이미 취소된 주문입니다.');
-    if (so.status === 'timeout') throw new BadRequestException('타임아웃된 주문은 취소할 수 없습니다.');
-
-    await this.cancelRequests.precheck(so.id, dto.lines);
-    const printed = await this.printCancellation.cancelForOrder(so.id, 'gate', dto.lines);
-    const cancelOptions = {
+    const ctx = dto.fulfillmentCommandContext;
+    const outcome = await this.cancellation.request({
+      // 컨텍스트가 없으면 키도 없어 커널이 400 으로 막는다 — 빈 actorId 는 어디에도 쓰이지 않는다
+      requester: { kind: 'operator', actorId: ctx?.actorId ?? '' },
+      actorRoles: ctx?.actorRoles ?? [],
+      salesOrderId: so.id,
+      sourceKey: ctx?.idempotencyKey,
       reasonCode: dto.reasonCode,
       reasonDetail: dto.reasonDetail,
-      lines: dto.lines,
-      cancelledBy: 'admin',
-      fulfillmentCommandContext: dto.fulfillmentCommandContext,
-    };
-
-    const partialLines = dto.lines && dto.lines.length > 0 ? dto.lines : null;
-    if (!partialLines) {
-      await this.afterPrintCancel(printed, () => this.salesOrdersService.cancel(so.id, cancelOptions));
-    } else {
-      // 부분취소와 환불 검토 기록은 한 트랜잭션이다 — 기록이 실패하면 취소도 되돌려, 환불 검토 없이 취소만 남지 않게 한다
-      const calcResult = await this.afterPrintCancel(printed, () =>
-        this.db.db.transaction(async (trx) => {
-          await this.salesOrdersService.cancel(so.id, cancelOptions, trx);
-          const orderLines = await trx
-            .select({
-              id: wmsTables.salesOrderLines.id,
-              quantity: wmsTables.salesOrderLines.quantity,
-              unitPrice: wmsTables.salesOrderLines.unitPrice,
-            })
-            .from(wmsTables.salesOrderLines)
-            .where(eq(wmsTables.salesOrderLines.salesOrderId, so.id));
-
-          const result = calculatePartialCancellationRefund({
-            salesChannel: so.salesChannel,
-            walletIntentId: so.walletIntentId,
-            totalAmount: so.totalAmount,
-            shippingFee: (so as SalesOrderRow & { shippingFee?: number | null }).shippingFee ?? 0,
-            allOrderLines: orderLines,
-            cancelledLines: partialLines,
-          });
-
-          // 부분취소는 정책상 자동환불 없음 — 항상 manual_pending으로 기록.
-          // calcResult.manualRequired는 항상 true이며, refundEstimateAmount는
-          // 비례 배분 추정값이다. 실제 환불은 운영자가 검토 후 수동 처리한다.
-          await this.cancellationRefund.recordWalletRefundLink(
-            so.id,
-            {
-              refundStatus: 'manual_pending',
-              intentId: so.walletIntentId ?? undefined,
-              note: `부분취소 수동 검토 필요: ${result.manualReason}`,
-              reasonCode: dto.reasonCode,
-              extraMetadata: {
-                cancellationScope: 'partial',
-                manualReason: result.manualReason,
-                refundEstimateAmount: result.refundEstimateAmount,
-                breakdown: result.breakdown,
-                cancelledLines: partialLines,
-                warnings: result.warnings,
-              },
-            },
-            trx,
-          );
-          return result;
-        }),
-      );
-
-      const refreshed = await this.findSoOrThrow({ id: orderId });
-      return {
-        status: refreshed.status,
-        refundStatus: 'manual_pending',
-        refundEstimateAmount: calcResult.refundEstimateAmount,
-        manualReason: calcResult.manualReason,
-      };
+      ...(dto.lines ? { lines: dto.lines } : {}),
+      ...(dto.alreadyRefundedAmount !== undefined ? { alreadyRefundedAmount: dto.alreadyRefundedAmount } : {}),
+    });
+    switch (outcome.kind) {
+      case 'channel_request': {
+        const { view } = outcome;
+        return {
+          requestId: view.id,
+          status: view.status,
+          scope: view.scope,
+          convertedFromFull: view.convertedFromFull,
+        };
+      }
+      case 'replayed':
+        // 같은 키의 첫 취소가 이미 적용됐다 — 그 주문의 지금 환불 상태로 답한다
+        return { status: so.status, refundStatus: (await this.buildActionsView(so)).refundStatus };
+      case 'applied': {
+        const refreshed = await this.findSoOrThrow({ id: orderId });
+        const { refundStatus, refundEstimateAmount, manualReason } = outcome.refund;
+        return {
+          status: refreshed.status,
+          refundStatus,
+          ...(refundEstimateAmount !== undefined ? { refundEstimateAmount } : {}),
+          ...(manualReason !== undefined ? { manualReason } : {}),
+        };
+      }
     }
-
-    const refundOptions = { actor: 'admin' as const, attemptType: 'initial' as const };
-    const refundStatus = await this.cancellationRefund.requestWalletRefundAfterCancel(
-      { ...so, status: 'cancelled' } as SalesOrderRow,
-      { reasonCode: dto.reasonCode },
-      refundOptions,
-    );
-
-    return { status: 'cancelled', refundStatus };
   }
 
   /**
@@ -732,16 +647,6 @@ export class StoreSalesOrdersService {
         )
       : null;
     return channelRefundStatus(facts, transfer);
-  }
-
-  // 인쇄를 이미 멈춘 뒤 판매주문 취소가 실패하면 인쇄 행에 남겨 운영자가 찾게 한다
-  private async afterPrintCancel<T>(printed: PrintCancelResult, salesCancel: () => Promise<T>): Promise<T> {
-    try {
-      return await salesCancel();
-    } catch (error) {
-      await this.printCancellation.noteSalesCancelFailed(printed, error);
-      throw error;
-    }
   }
 
   private async processCancelRequest(

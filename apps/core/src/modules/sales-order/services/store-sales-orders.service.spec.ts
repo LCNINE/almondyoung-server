@@ -276,6 +276,21 @@ function makeContext(
 
   const printReader = printReaderMock(options.printOrders, options.allOutsourced);
   const printCancellation = printCancelMock(printCancel, printNote);
+  const refunds = new CancellationRefundManager(
+    dbMock as any,
+    salesOrdersServiceMock as any,
+    walletClientMock as WalletRefundClient,
+  );
+  const cancellation = new OrderCancellation(
+    dbMock as any,
+    salesOrdersServiceMock as any,
+    cancelRequestsMock as any,
+    printReader,
+    printCancellation,
+    {} as never,
+    new OrderCancellationReader(),
+    refunds,
+  );
   const service = new StoreSalesOrdersService(
     dbMock as any,
     salesOrdersServiceMock as any,
@@ -283,19 +298,20 @@ function makeContext(
     cancelRequestsMock as any,
     printReader,
     printCancellation,
-    new OrderCancellation(
-      dbMock as any,
-      salesOrdersServiceMock as any,
-      cancelRequestsMock as any,
-      printReader,
-      printCancellation,
-      {} as never,
-      new OrderCancellationReader(),
-    ),
-    new CancellationRefundManager(dbMock as any, salesOrdersServiceMock as any, walletClientMock as WalletRefundClient),
+    cancellation,
+    refunds,
   );
 
-  return { service, dbMock, salesOrdersServiceMock, walletClientMock, cancelRequestsMock, printCancel, printNote };
+  return {
+    service,
+    cancellation,
+    dbMock,
+    salesOrdersServiceMock,
+    walletClientMock,
+    cancelRequestsMock,
+    printCancel,
+    printNote,
+  };
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -753,6 +769,11 @@ describe('StoreSalesOrdersService', () => {
           printCancellation,
           {} as never,
           new OrderCancellationReader(),
+          new CancellationRefundManager(
+            dbMock as any,
+            salesOrdersServiceMock as any,
+            { refundByIntent: jest.fn() } as any,
+          ),
         ),
         new CancellationRefundManager(
           dbMock as any,
@@ -1273,6 +1294,7 @@ describe('StoreSalesOrdersService', () => {
       createBusinessLink: options.businessLinkError
         ? jest.fn<Promise<unknown>, unknown[]>().mockRejectedValue(options.businessLinkError)
         : jest.fn<Promise<unknown>, unknown[]>().mockResolvedValue(undefined),
+      validateCancellationReplay: jest.fn<Promise<boolean>, unknown[]>().mockResolvedValue(false),
     };
 
     const walletClientMock: Partial<WalletRefundClient> = {
@@ -1296,6 +1318,21 @@ describe('StoreSalesOrdersService', () => {
 
     const printReader = printReaderMock();
     const printCancellation = printCancelMock(printCancel, printNote, options.holdUnsent);
+    const refunds = new CancellationRefundManager(
+      dbMock as any,
+      salesOrdersServiceMock as any,
+      walletClientMock as WalletRefundClient,
+    );
+    const cancellation = new OrderCancellation(
+      dbMock as any,
+      salesOrdersServiceMock as any,
+      cancelRequestsMock as any,
+      printReader,
+      printCancellation,
+      {} as never,
+      new OrderCancellationReader(),
+      refunds,
+    );
     const service = new StoreSalesOrdersService(
       dbMock as any,
       salesOrdersServiceMock as any,
@@ -1303,24 +1340,13 @@ describe('StoreSalesOrdersService', () => {
       cancelRequestsMock as any,
       printReader,
       printCancellation,
-      new OrderCancellation(
-        dbMock as any,
-        salesOrdersServiceMock as any,
-        cancelRequestsMock as any,
-        printReader,
-        printCancellation,
-        {} as never,
-        new OrderCancellationReader(),
-      ),
-      new CancellationRefundManager(
-        dbMock as any,
-        salesOrdersServiceMock as any,
-        walletClientMock as WalletRefundClient,
-      ),
+      cancellation,
+      refunds,
     );
 
     return {
       service,
+      cancellation,
       dbMock,
       salesOrdersServiceMock,
       walletClientMock,
@@ -1368,13 +1394,6 @@ describe('StoreSalesOrdersService', () => {
         expect(printNote).toHaveBeenCalledWith(PRINT_RESULT, failure);
       });
 
-      it('core 경로 — core 취소가 실패하면 인쇄 행에 실패를 남기고 다시 던진다', async () => {
-        const failure = new Error('재고 부족');
-        const { service, printNote } = makeAdminContext({ so: makeSo({ salesChannel: '3pl' }), cancelError: failure });
-        await expect(service.adminCancelRequest(SO_ID, {})).rejects.toBe(failure);
-        expect(printNote).toHaveBeenCalledWith(PRINT_RESULT, failure);
-      });
-
       it('Medusa 주문 — 인쇄 1개 + 일반 99개(주문 1개) 요청은 와우프레스를 부르기 전에 거절된다', async () => {
         const { service, cancelRequestsMock, printCancel } = makeAdminContext();
         cancelRequestsMock.precheck.mockRejectedValue(new Error('취소 수량(99개)이 취소 가능 수량(1개)을 초과합니다.'));
@@ -1414,113 +1433,108 @@ describe('StoreSalesOrdersService', () => {
         expect(cancelRequestsMock.precheck).not.toHaveBeenCalled();
         expect(printCancel).not.toHaveBeenCalled();
       });
+    });
 
-      it('core 경로 — 이전 부분취소로 줄어든 잔여 수량을 넘으면 와우프레스를 부르기 전에 거절된다', async () => {
-        const order: string[] = [];
-        const { service, cancelRequestsMock, printCancel, salesOrdersServiceMock } = makeAdminContext({
-          so: makeSo({ salesChannel: '3pl' }),
+    describe('core 가 돈을 쥔 주문(3pl) — 커널 한 번, 결과 → 응답 (K7 PR4)', () => {
+      const ctx = { idempotencyKey: 'k-c', actorId: 'admin-1', actorRoles: ['admin'] };
+      const CORE_SO = () => makeSo({ salesChannel: '3pl' });
+
+      it('커널에 운영자 의도를 그대로 넘긴다 — 키·행위자·권한·줄·사유', async () => {
+        const { service, cancellation } = makeAdminContext({ so: CORE_SO() });
+        const request = jest
+          .spyOn(cancellation, 'request')
+          .mockResolvedValue({ kind: 'applied', scope: 'partial', refund: { refundStatus: 'manual_pending' } });
+        const lines = [{ salesOrderLineId: 'line-001', quantity: 1 }];
+        await service.adminCancelRequest(SO_ID, {
+          lines,
+          reasonCode: 'ADMIN',
+          reasonDetail: '재고 없음',
+          fulfillmentCommandContext: ctx,
         });
-        cancelRequestsMock.precheck.mockImplementation(() => {
-          order.push('precheck');
-          return Promise.reject(new Error('취소 수량(2개)이 취소 가능 수량(1개)을 초과합니다.'));
+        expect(request).toHaveBeenCalledWith({
+          requester: { kind: 'operator', actorId: 'admin-1' },
+          actorRoles: ['admin'],
+          salesOrderId: SO_ID,
+          sourceKey: 'k-c',
+          reasonCode: 'ADMIN',
+          reasonDetail: '재고 없음',
+          lines,
         });
-        const lines = [{ salesOrderLineId: 'print-line', quantity: 2 }];
-        await expect(service.adminCancelRequest(SO_ID, { lines })).rejects.toThrow('취소 수량(2개)');
-        expect(cancelRequestsMock.precheck).toHaveBeenCalledWith(SO_ID, lines);
-        expect(order).toEqual(['precheck']);
-        expect(printCancel).not.toHaveBeenCalled();
-        expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
       });
 
-      it('core 경로 — 판정이 통과하면 인쇄 gate 다음에 core 취소를 한다', async () => {
-        const order: string[] = [];
-        const printCancel = jest.fn(() => {
-          order.push('print');
-          return Promise.resolve(PRINT_RESULT);
+      it('applied — 다시 읽은 주문 상태와 커널의 환불 결과(추정액·사유)로 답한다', async () => {
+        const { service, cancellation } = makeAdminContext({ so: CORE_SO() });
+        jest.spyOn(cancellation, 'request').mockResolvedValue({
+          kind: 'applied',
+          scope: 'partial',
+          refund: { refundStatus: 'manual_pending', refundEstimateAmount: 25000, manualReason: 'CHANNEL_ORDER' },
         });
-        const { service, cancelRequestsMock } = makeAdminContext({ so: makeSo({ salesChannel: '3pl' }), printCancel });
-        cancelRequestsMock.precheck.mockImplementation(() => {
-          order.push('precheck');
-          return Promise.resolve(undefined);
+        const result = await service.adminCancelRequest(SO_ID, { fulfillmentCommandContext: ctx });
+        expect(result).toEqual({
+          status: 'confirmed',
+          refundStatus: 'manual_pending',
+          refundEstimateAmount: 25000,
+          manualReason: 'CHANNEL_ORDER',
         });
-        await service.adminCancelRequest(SO_ID, {});
-        expect(cancelRequestsMock.precheck).toHaveBeenCalledWith(SO_ID, undefined);
-        expect(order).toEqual(['precheck', 'print']);
       });
 
-      it('core 경로 — 거절이면 core 취소·환불을 하지 않는다', async () => {
-        const printCancel = jest.fn().mockRejectedValue(new PrintInProductionError());
-        const { service, salesOrdersServiceMock, walletClientMock } = makeAdminContext({
-          so: makeSo({ salesChannel: '3pl' }),
-          printCancel,
+      it('applied 전체취소 — 추정액이 없으면 칸도 없다', async () => {
+        const { service, cancellation } = makeAdminContext({
+          so: makeSo({ salesChannel: '3pl', status: 'cancelled' }),
         });
-        await expect(service.adminCancelRequest(SO_ID, {})).rejects.toBeInstanceOf(PrintInProductionError);
-        expect(printCancel).toHaveBeenCalledWith(SO_ID, 'gate', undefined);
-        expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+        jest
+          .spyOn(cancellation, 'request')
+          .mockResolvedValue({ kind: 'applied', scope: 'full', refund: { refundStatus: 'manual_pending' } });
+        expect(await service.adminCancelRequest(SO_ID, { fulfillmentCommandContext: ctx })).toEqual({
+          status: 'cancelled',
+          refundStatus: 'manual_pending',
+        });
+      });
+
+      it('replayed — 지금 주문 상태와 지금 환불 상태로 답한다', async () => {
+        const { service, cancellation } = makeContext({
+          so: makeSo({ salesChannel: '3pl', status: 'cancelled', walletIntentId: null }),
+        });
+        jest.spyOn(cancellation, 'request').mockResolvedValue({ kind: 'replayed' });
+        expect(await service.adminCancelRequest(SO_ID, { fulfillmentCommandContext: ctx })).toEqual({
+          status: 'cancelled',
+          refundStatus: 'none',
+        });
+      });
+
+      it('전체취소는 Wallet 을 부르지 않고 «환불 결정 전»으로 남긴다 (D2, 실제 커널)', async () => {
+        const { service, salesOrdersServiceMock, walletClientMock, cancelRequestsMock } = makeAdminContext({
+          so: CORE_SO(),
+        });
+        const result = await service.adminCancelRequest(SO_ID, { fulfillmentCommandContext: ctx });
+        expect(salesOrdersServiceMock.cancel).toHaveBeenCalledWith(
+          SO_ID,
+          expect.objectContaining({
+            cancelledBy: 'admin',
+            walletRefund: expect.objectContaining({
+              refundStatus: 'manual_pending',
+              metadata: expect.objectContaining({ awaitingDecision: true }),
+            }),
+          }),
+          expect.anything(),
+        );
         expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
+        expect(cancelRequestsMock.request).not.toHaveBeenCalled();
+        expect(result).toEqual({ status: 'confirmed', refundStatus: 'manual_pending' });
       });
-    });
 
-    const CORE_SO = () => makeSo({ salesChannel: '3pl' });
-
-    it('core 경로(3pl) — lines 없으면 전체취소 — Wallet 환불 호출, refundStatus=succeeded', async () => {
-      const { service, walletClientMock } = makeAdminContext({ so: CORE_SO() });
-      const result = await service.adminCancelRequest(SO_ID, {});
-      expect(walletClientMock.refundByIntent).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.anything(),
-        expect.objectContaining({ kind: 'ITEM_CANCEL' }),
-      );
-      expect(result).toMatchObject({ refundStatus: 'succeeded' });
-      expect(result).toMatchObject({ status: 'cancelled' });
-    });
-
-    it('core 경로(3pl) — 관리자 최초 취소 correlationId는 :initial: 포함 per-attempt 형식', async () => {
-      const { service, walletClientMock } = makeAdminContext({ so: CORE_SO() });
-      await service.adminCancelRequest(SO_ID, {});
-      const calledWith = (walletClientMock.refundByIntent as jest.Mock).mock.calls[0][2] as { correlationId: string };
-      expect(calledWith.correlationId).toMatch(/^cancel:so-001:initial:[0-9a-f-]{36}$/);
-      expect(calledWith.correlationId).not.toBe(`cancel:${SO_ID}`);
-    });
-
-    it('core 경로(3pl) — 부분취소는 지금처럼 manual_pending 기록, Wallet 미호출', async () => {
-      const { service, walletClientMock, salesOrdersServiceMock } = makeAdminContext({
-        so: CORE_SO(),
-        orderLines: [{ id: 'line-001', quantity: 2, unitPrice: 25000 }],
+      it('이미 취소된 주문이면 400', async () => {
+        const { service } = makeAdminContext({ so: makeSo({ salesChannel: '3pl', status: 'cancelled' }) });
+        await expect(service.adminCancelRequest(SO_ID, { fulfillmentCommandContext: ctx })).rejects.toThrow(
+          '이미 취소된 주문입니다.',
+        );
       });
-      const lines = [{ salesOrderLineId: 'line-001', quantity: 1 }];
-      const result = await service.adminCancelRequest(SO_ID, { lines });
-      expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
-      expect(salesOrdersServiceMock.cancel).toHaveBeenCalledWith(
-        SO_ID,
-        expect.objectContaining({ lines, cancelledBy: 'admin' }),
-        expect.anything(),
-      );
-      expect(result).toMatchObject({ refundStatus: 'manual_pending', manualReason: 'CHANNEL_ORDER' });
-    });
 
-    it('core 경로 부분취소 — 판매 취소와 환불 검토 기록을 같은 트랜잭션에 쓴다', async () => {
-      const { service, dbMock, salesOrdersServiceMock } = makeAdminContext({ so: CORE_SO() });
-      const lines = [{ salesOrderLineId: 'line-001', quantity: 1 }];
-
-      await service.adminCancelRequest(SO_ID, { lines });
-
-      expect(dbMock.db.transaction).toHaveBeenCalledTimes(1);
-      const cancelCall = salesOrdersServiceMock.cancel.mock.calls[0] ?? [];
-      const linkCall = salesOrdersServiceMock.createBusinessLink.mock.calls[0] ?? [];
-      expect(cancelCall[2]).toBeDefined();
-      expect(linkCall[2]).toBe(cancelCall[2]);
-      expect(linkCall[1]).toMatchObject({ metadata: { refundStatus: 'manual_pending' } });
-    });
-
-    it('core 경로 부분취소 — 환불 검토 기록이 실패하면 판매 취소도 함께 실패한다(로그만 남기고 성공하지 않는다)', async () => {
-      const { service, dbMock } = makeAdminContext({ so: CORE_SO(), businessLinkError: new Error('db down') });
-      const lines = [{ salesOrderLineId: 'line-001', quantity: 1 }];
-
-      await expect(service.adminCancelRequest(SO_ID, { lines })).rejects.toThrow('db down');
-      // 트랜잭션 콜백이 던져 롤백된다 — 같은 트랜잭션 안의 판매 취소도 커밋되지 않는다
-      const txResult: unknown = dbMock.db.transaction.mock.results[0]?.value;
-      await expect(txResult).rejects.toThrow('db down');
+      it('키가 없으면 400 — 커널 규칙(K7 PR4 부터 core 정산 주문도)', async () => {
+        const { service, salesOrdersServiceMock } = makeAdminContext({ so: CORE_SO() });
+        await expect(service.adminCancelRequest(SO_ID, {})).rejects.toThrow('Idempotency-Key header is required');
+        expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+      });
     });
 
     it.each([
@@ -1561,31 +1575,6 @@ describe('StoreSalesOrdersService', () => {
     it('Medusa 주문인데 Idempotency-Key 컨텍스트가 없으면 400', async () => {
       const { service } = makeAdminContext();
       await expect(service.adminCancelRequest(SO_ID, {})).rejects.toThrow('Idempotency-Key header is required');
-    });
-
-    it('core 경로(3pl) — 이미 취소된 주문이면 400', async () => {
-      const { service } = makeAdminContext({ so: makeSo({ salesChannel: '3pl', status: 'cancelled' }) });
-      await expect(service.adminCancelRequest(SO_ID, {})).rejects.toThrow('이미 취소된 주문입니다.');
-    });
-
-    it('core 경로(3pl) — 타임아웃 주문이면 400', async () => {
-      const { service } = makeAdminContext({ so: makeSo({ salesChannel: '3pl', status: 'timeout' }) });
-      await expect(service.adminCancelRequest(SO_ID, {})).rejects.toThrow('타임아웃된 주문은 취소할 수 없습니다.');
-    });
-
-    it('core 경로(3pl) — Core 취소 실패 시 예외 throw, Wallet 미호출', async () => {
-      const { service, walletClientMock } = makeAdminContext({ so: CORE_SO(), cancelError: new Error('재고 부족') });
-      await expect(service.adminCancelRequest(SO_ID, {})).rejects.toThrow('재고 부족');
-      expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
-    });
-
-    it('core 경로(3pl) — walletIntentId 없으면 전체취소도 refundStatus=manual_pending', async () => {
-      const { service, walletClientMock } = makeAdminContext({
-        so: makeSo({ salesChannel: '3pl', walletIntentId: null }),
-      });
-      const result = await service.adminCancelRequest(SO_ID, {});
-      expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
-      expect(result).toMatchObject({ refundStatus: 'manual_pending' });
     });
   });
 
@@ -1767,6 +1756,7 @@ describe('StoreSalesOrdersService', () => {
           printCancellation,
           {} as never,
           new OrderCancellationReader(),
+          new CancellationRefundManager(dbMock as never, salesOrdersServiceMock as never, {} as WalletRefundClient),
         ),
         new CancellationRefundManager(dbMock as never, salesOrdersServiceMock as never, {} as WalletRefundClient),
       );

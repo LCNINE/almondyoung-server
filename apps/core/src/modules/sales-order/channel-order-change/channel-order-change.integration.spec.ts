@@ -52,6 +52,7 @@ function kernelFor(
     new PrintOrderCancellationManager(printOrders, new PrintOrderRepository(dbService), {} as never),
     settler,
     new OrderCancellationReader(),
+    {} as never,
   );
 }
 

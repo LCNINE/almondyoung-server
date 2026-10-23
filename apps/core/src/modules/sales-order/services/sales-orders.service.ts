@@ -1309,7 +1309,7 @@ export class SalesOrdersService {
       reasonDetail: options.reasonDetail ?? null,
       cancelledBy: options.cancelledBy ?? null,
       effects,
-      metadata: options.metadata ?? {},
+      metadata: { ...(options.metadata ?? {}), ...this.commandReplayMetadata(id, options) },
       occurredAt,
     };
     const cancellation = await recordSalesOrderCancellation(trx, cancellationValues, null);
@@ -1486,7 +1486,7 @@ export class SalesOrdersService {
       reasonDetail: options.reasonDetail ?? null,
       cancelledBy: options.cancelledBy ?? null,
       effects,
-      metadata: options.metadata ?? {},
+      metadata: { ...(options.metadata ?? {}), ...this.commandReplayMetadata(salesOrderId, options) },
       occurredAt,
     };
     const cancellation = await recordSalesOrderCancellation(trx, cancellationValues, cancelledLines);
@@ -1889,6 +1889,20 @@ export class SalesOrdersService {
       tx,
     );
     return this.getOne(salesOrderId, tx);
+  }
+
+  /**
+   * 명령 키(Idempotency-Key)로 온 상자 전 취소도 키·요청 해시를 남긴다 (K7 PR4). 상자 후 취소와 같은 칸이라 `cancel()` 첫머리의
+   * 재전송 판정과 `validateCancellationReplay` 가 상자 유무와 무관하게 같은 키를 알아본다 — 없으면 같은 키의 부분취소가 두 번
+   * 적용되고 환불 링크도 둘이 된다. 채널 이벤트 id(`sourceEventId`)는 넣지 않는다 — 채널 경로는 자기 수신 기록으로 중복을 막는다
+   */
+  private commandReplayMetadata(salesOrderId: string, options: CancelSalesOrderOptions): Record<string, string> {
+    const idempotencyKey = options.fulfillmentCommandContext?.idempotencyKey?.trim();
+    if (!idempotencyKey) return {};
+    return {
+      fulfillmentCommandSourceKey: idempotencyKey,
+      fulfillmentCommandRequestHash: this.afterBoxingRequestHash(salesOrderId, options),
+    };
   }
 
   private explicitAfterBoxingSourceKey(options: CancelSalesOrderOptions): string | undefined {
