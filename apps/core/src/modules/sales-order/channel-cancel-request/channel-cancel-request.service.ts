@@ -21,8 +21,8 @@ export class ChannelCancelRequestService {
     private readonly reader: ChannelCancelRequestReader,
   ) {}
 
-  request(input: CancelRequestInput): Promise<CancelRequestView> {
-    return this.manager.request(input);
+  request(input: CancelRequestInput, tx?: DbTx): Promise<CancelRequestView> {
+    return this.manager.request(input, tx);
   }
 
   precheck(salesOrderId: string, lines?: CancelRequestInput['lines'], alreadyRefundedAmount?: number): Promise<void> {

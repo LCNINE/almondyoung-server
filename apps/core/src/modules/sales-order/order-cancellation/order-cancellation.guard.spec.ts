@@ -55,7 +55,10 @@ describe('판매주문 취소 호출자 (K7)', () => {
         /\.update\((?:wmsTables|inventoryTables)\.printOrders\)|const (\w+) = (?:wmsTables|inventoryTables)\.printOrders;[\s\S]*?\.update\(\1\)/,
         'apps/core/src/modules/sales-order',
       ),
-    ).toEqual(['apps/core/src/modules/sales-order/channel-order-change/channel-order-change.manager.ts'])); // N3 — PR2(D7)
+    ).toEqual([])); // D7 — 붙잡기는 와우프레스 모듈의 문(holdUnsentForCancel·holdUnsentForDecrease)
+
+  it('커널은 DbService 의 db 를 직접 쓰지 않는다 — 읽기는 Reader, 트랜잭션은 run', () =>
+    expect(filesCalling(/\bthis\.db\.db\b/, 'apps/core/src/modules/sales-order/order-cancellation')).toEqual([]));
 
   it('커널은 Wallet 을 모른다', () =>
     expect(

@@ -83,7 +83,7 @@ describeIfDb('셀프취소 판정 — 복구 중 상자 (DB integration, rollbac
         request: jest.fn(),
       };
       const printCancellation = { cancelForOrder: jest.fn() };
-      const db = { db: tx };
+      const db = { db: tx, run: <T>(fn: (trx: typeof tx) => Promise<T>) => fn(tx) };
       const salesOrders = {};
       const printOrders = { forSalesOrder: () => Promise.resolve([]) };
       const service = new StoreSalesOrdersService(
@@ -174,7 +174,7 @@ describeIfDb('셀프취소 판정 — 복구 중 상자 (DB integration, rollbac
           recipientHash: canonicalFulfillmentRequestHash(shipment.recipientSnapshot),
         })
         .returning();
-      const db = { db: tx };
+      const db = { db: tx, run: <T>(fn: (trx: typeof tx) => Promise<T>) => fn(tx) };
       const cancelRequests = new ChannelCancelRequestService(w.dbService, w.manager, w.reader);
       const printOrders = { forSalesOrder: () => Promise.resolve([]) };
       const printCancellation = {

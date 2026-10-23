@@ -334,15 +334,12 @@ export class StoreSalesOrdersService {
       return { status: so.status, skipped: 'already_shipped' };
     }
 
-    // 인쇄 멈춤(record) → 전체취소 요청 순서는 커널이 안다
-    const outcome = await this.cancellation.notice({
-      source: 'wallet_refund_approval',
+    // 전체취소 확정 + 안 보낸 인쇄 붙잡기 → 커밋 뒤 인쇄 멈춤(record) 순서는 커널이 안다
+    const view = await this.cancellation.noticeWalletRefundApproval({
       salesOrderId: so.id,
       intentId,
       reasonCode: opts.reasonCode ?? 'CUSTOMER_REFUND_REQUEST',
     });
-    const view = outcome.applied ? outcome.requestView : undefined;
-    if (!view) throw new Error(`wallet refund approval notice for SO ${so.id} returned no cancel request`);
     this.logger.log(
       `[cancelByWalletIntentAfterRefund] SO ${so.id} cancel requested (intent=${intentId}, request=${view.id})`,
     );

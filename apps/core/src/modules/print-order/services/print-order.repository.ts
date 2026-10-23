@@ -39,6 +39,8 @@ export function hasPreservedLastError(): SQL {
 
 // ponytail: 날짜로 붙잡는다. 취소 이벤트가 끝내 처리되지 않으면 운영자 재시도 전까지 발주되지 않는 쪽이 안전하다
 export const PRINT_HELD_FOR_CANCEL_UNTIL = new Date('9999-12-31T00:00:00Z');
+export const PRINT_HELD_FOR_DECREASE =
+  'channel decreased quantity before the print was ordered — confirm quantity, then proceed';
 
 export interface PrintOrderLineContext {
   line: { id: string; variantId: string; quantity: number };
@@ -350,6 +352,32 @@ export class PrintOrderRepository {
           eq(t.salesOrderId, salesOrderId),
           lineIds ? inArray(t.salesOrderLineId, lineIds) : undefined,
           inArray(t.status, ['pending', 'submitting']),
+          isNull(t.orderAttemptedAt),
+          isNull(t.vendorOrderNumber),
+        ),
+      );
+  }
+
+  // 채널 수량 감소를 받은 트랜잭션에서, 감소 거절이 되돌리는 savepoint 밖에서 부른다 — 대기로 남은 감소를 운영자가
+  // 정하기 전에 원래 수량으로 주문되지 않게 한다. 아직 주문권을 쓰지 않은 인쇄만 운영자 확인(cancel_refused)으로 넘긴다.
+  // 이미 보낸 주문은 와우프레스에서 판단한다
+  async holdUnsentForDecrease(salesOrderLineId: string, tx: DbTx): Promise<void> {
+    const t = wmsTables.printOrders;
+    const now = new Date();
+    await tx
+      .update(t)
+      .set({
+        status: 'cancel_refused',
+        cancelRefusedAt: now,
+        cancelResolvedAt: null,
+        cancelResolvedBy: null,
+        lastError: PRINT_HELD_FOR_DECREASE,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(t.salesOrderLineId, salesOrderLineId),
+          inArray(t.status, ['pending', 'submitting', 'failed', 'unsupported']),
           isNull(t.orderAttemptedAt),
           isNull(t.vendorOrderNumber),
         ),

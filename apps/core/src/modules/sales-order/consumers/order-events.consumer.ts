@@ -213,7 +213,9 @@ export class OrderEventsConsumer {
     });
 
     try {
-      const cancelled = await this.dbService.run(async (tx) => {
+      // 수신 트랜잭션·커밋 뒤 와우프레스 정리는 커널이 한다. 여기서는 중복 기록과 줄 해석만 판정한다
+      let cancelledSalesOrderId: string | undefined;
+      await this.cancellation.receiveChannelCancellation(async (tx) => {
         const salesOrderId = await this.resolveSalesOrderId(payload, tx);
         if (!salesOrderId) {
           throw new NotFoundException(`Sales order ${payload.orderId} not found for OrderCancelled`);
@@ -239,12 +241,12 @@ export class OrderEventsConsumer {
             .from(wmsTables.orderEvents)
             .where(eq(wmsTables.orderEvents.eventId, envelope.messageId))
             .limit(1);
-          return { salesOrderId, lines, redeliveredSince: first?.createdAt };
+          return { redelivered: { salesOrderId, lines, since: first?.createdAt } };
         }
 
-        const outcome = await this.cancellation.notice(
-          {
-            source: 'channel_cancelled',
+        cancelledSalesOrderId = salesOrderId;
+        return {
+          notice: {
             salesOrderId,
             lines,
             reasonCode: payload.reason,
@@ -258,14 +260,11 @@ export class OrderEventsConsumer {
               sourceEventId: envelope.messageId,
             },
           },
-          tx,
-        );
-
-        this.logger.log(`[OrderCancelled] Cancelled sales order: ${salesOrderId}, reason: ${payload.reason}`);
-        return outcome.applied ? (outcome.followUp ?? null) : null;
+        };
       });
-      // 커밋 뒤 할 일은 커널이 안다
-      if (cancelled) await this.cancellation.afterCommit(cancelled);
+      if (cancelledSalesOrderId) {
+        this.logger.log(`[OrderCancelled] Cancelled sales order: ${cancelledSalesOrderId}, reason: ${payload.reason}`);
+      }
     } catch (error) {
       this.logger.error(`[OrderCancelled] Failed to process: ${payload.orderId}`, error.stack);
       throw error;

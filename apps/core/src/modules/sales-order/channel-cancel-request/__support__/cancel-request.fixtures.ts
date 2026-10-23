@@ -6,7 +6,8 @@ import {
   FULFILLMENT_STREAM,
 } from '@packages/event-contracts/streams';
 import type { OrderModifiedPayload } from '@packages/event-contracts/streams';
-import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
+import { DbService } from '@app/db';
+import { DbTx, wmsSchema, wmsTables } from '../../../inventory/schema/inventory.schema';
 import {
   wireLogistics,
   seedWarehouseWithZone,
@@ -28,6 +29,8 @@ import { ChannelCancelRequestService } from '../channel-cancel-request.service';
 import { OrderCancellation } from '../../order-cancellation/order-cancellation';
 import { OrderCancellationReader } from '../../order-cancellation/order-cancellation.reader';
 import { PrintOrderReader } from '../../../print-order/services/print-order.reader';
+import { PrintOrderRepository } from '../../../print-order/services/print-order.repository';
+import { PrintOrderCancellationManager } from '../../../print-order/services/print-order-cancellation.manager';
 
 export const ADDRESS = {
   recipientName: '김',
@@ -172,6 +175,20 @@ export async function shipLineOut(tx: DbTx, salesOrderLineId: string): Promise<v
 }
 
 /**
+ * 커널이 «스스로 여는» 트랜잭션을 스펙 트랜잭션의 savepoint 로 연다. 운영의 `DbService.run` 처럼 그 안에서 던지면
+ * 그 안의 쓰기가 함께 되돌려지고, 넘겨받은 tx 가 있으면 그대로 쓴다. ambientDbService 는 스펙 트랜잭션을 그대로 넘겨
+ * «확정이 거절되면 붙잡기도 롤백»(D6) 을 볼 수 없다. 형 변환은 makeDbService(logistics-wiring) 와 같은 이유 —
+ * DbService 의 나머지 표면은 커널이 쓰지 않는다
+ */
+function savepointDbService(tx: DbTx): DbService<typeof wmsSchema> {
+  return {
+    db: tx,
+    run: <T>(fn: (trx: DbTx) => Promise<T>, provided?: DbTx): Promise<T> =>
+      provided ? fn(provided) : tx.transaction((sp) => fn(sp)),
+  } as unknown as DbService<typeof wmsSchema>;
+}
+
+/**
  * 취소 요청 통합 스펙의 배선. 롤백 트랜잭션 하나에 판매주문·요청 reader/manager 를 묶는다.
  */
 export function wireCancelRequest(tx: DbTx) {
@@ -200,13 +217,15 @@ export function wireCancelRequest(tx: DbTx) {
   );
   const settler = new ChannelCancelSettler(reader);
   const amendments = new SalesOrderAmendmentsService(dbService);
-  // 실제 커널. 채널 변경이 부르는 수량 감소 갈래는 판매주문 취소와 커널 reader 만 쓴다 — 인쇄 취소 협력자는 비워 둔다
+  // 실제 커널. 채널 변경이 부르는 수량 감소 갈래는 판매주문 취소·커널 reader·인쇄 붙잡기(holdForDecrease)만 쓴다 —
+  // 와우프레스 클라이언트는 비워 둔다(붙잡기는 외부를 부르지 않고, 무통장 승인의 record 는 안 보낸 행을 로컬에서 끝낸다)
+  const printOrders = new PrintOrderReader(dbService);
   const cancellation = new OrderCancellation(
-    dbService,
+    savepointDbService(tx),
     salesOrders,
     new ChannelCancelRequestService(dbService, manager, reader),
-    new PrintOrderReader(dbService),
-    {} as never,
+    printOrders,
+    new PrintOrderCancellationManager(printOrders, new PrintOrderRepository(dbService), {} as never),
     settler,
     new OrderCancellationReader(),
   );
@@ -217,7 +236,7 @@ export function wireCancelRequest(tx: DbTx) {
     settler,
     cancellation,
   );
-  return { dbService, logistics, outbound, salesOrders, reader, manager, settler, amendments, changes };
+  return { dbService, logistics, outbound, salesOrders, reader, manager, settler, amendments, changes, cancellation };
 }
 
 export type CancelWiring = ReturnType<typeof wireCancelRequest>;

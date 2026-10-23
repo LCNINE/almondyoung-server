@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { randomUUID } from 'crypto';
-import { and, eq, inArray, isNull, notInArray } from 'drizzle-orm';
+import { and, eq, notInArray } from 'drizzle-orm';
 import type { OrderModifiedPayload, ShippingAddress } from '@packages/event-contracts/streams';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { ShipmentPlanningService } from '../../fulfillment/services/shipment-planning.service';
@@ -32,8 +32,6 @@ const CHANNEL_ACTOR = { id: FULFILLMENT_SYSTEM_ACTOR_ID, roles: ['master'] };
  */
 const MARKED_SHIPPED_STATUSES: ReadonlySet<string> = new Set(['shipped', 'delivered']);
 const MARKED_SHIPPED_DETAIL = 'sales order marked shipped';
-export const PRINT_HELD_FOR_DECREASE =
-  'channel decreased quantity before the print was ordered — confirm quantity, then proceed';
 
 /** savepoint 를 되돌리려고 던지는 표지. 밖으로 새지 않는다. */
 class Refused extends Error {
@@ -111,20 +109,15 @@ export class ChannelOrderChangeManager {
       return this.tryAddress(order, delta, ctx.amendmentId, tx);
     }
     if (isDecrease(delta)) {
-      // 아래 어느 길로든 인쇄 줄의 감소는 대기로 남아 운영자 몫이 된다. 그사이 원래 수량으로 주문되지 않게,
-      // 거절이 되돌리는 savepoint 밖에서 아직 안 보낸 인쇄를 먼저 붙잡는다
-      await this.holdUnsentPrint(delta.salesOrderLineId, tx);
-      if (ctx.allRemoved) return { ...delta, outcome: 'pending', blockers: [{ code: 'ALL_LINES_REMOVED' }] };
-      // cancelBeforeBoxingPartial 은 판매주문 status 를 보지 않는다 — 시도하면 이미 나간 수량을 «안 나간 몫» 으로 줄이고
-      // awaiting_matching 백로그를 pending 으로 되돌려 매칭을 다시 시도시킨다.
-      if (markedShipped) {
-        return {
-          ...delta,
-          outcome: 'pending',
-          blockers: [{ code: 'CANCEL_NOT_IMMEDIATE', detail: MARKED_SHIPPED_DETAIL }],
-        };
-      }
-      return this.tryDecrease(order, delta, ctx, tx);
+      // 대기로 정하는 건 채널 변경 규칙이라 여기 남는다(N9). 대기여도 인쇄 붙잡기는 커널이 해야 하므로 감소마다 커널을 부른다.
+      // cancelBeforeBoxingPartial 은 판매주문 status 를 보지 않는다 — 출고 표시 주문을 시도하면 이미 나간 수량을
+      // «안 나간 몫» 으로 줄이고 awaiting_matching 백로그를 pending 으로 되돌려 매칭을 다시 시도시킨다.
+      const deferral: ChannelBlocker | undefined = ctx.allRemoved
+        ? { code: 'ALL_LINES_REMOVED' }
+        : markedShipped
+          ? { code: 'CANCEL_NOT_IMMEDIATE', detail: MARKED_SHIPPED_DETAIL }
+          : undefined;
+      return this.tryDecrease(order, delta, ctx, deferral, tx);
     }
     if (delta.type === 'unmatched_line') {
       return { ...delta, outcome: 'pending', blockers: [{ code: 'LINE_IDENTITY_MISSING' }] };
@@ -174,52 +167,31 @@ export class ChannelOrderChangeManager {
 
   /**
    * 스펙 §7.2 — 기존 취소를 그대로 시도. 그 자리에서 끝나지 않으면(박스 대기, 출고분 회수 이관) 되돌린다
-   * (R1: 새 대기·회수를 만들지 않는다). 시도·되돌림(savepoint)은 커널이 한다 — 여기는 거절을 대기 사유로 옮길 뿐이다.
+   * (R1: 새 대기·회수를 만들지 않는다). 인쇄 붙잡기·시도·되돌림(savepoint)은 커널이 한다 — 여기는 대기 사유를 정할 뿐이다.
+   * 이미 대기로 정했으면(`deferral`) 커널은 붙잡기만 하고, 아니면 거절을 대기 사유로 옮긴다.
    */
   private async tryDecrease(
     order: EffectiveSalesOrder,
     delta: QuantityCorrectionDelta,
     ctx: { amendmentId: string; occurredAt: string },
+    deferral: ChannelBlocker | undefined,
     tx: DbTx,
   ): Promise<RecordedChannelDelta> {
-    const outcome = await this.cancellation.notice(
+    const outcome = await this.cancellation.noticeChannelDecrease(
       {
-        source: 'channel_decrease',
         salesOrderId: order.id,
         line: { salesOrderLineId: delta.salesOrderLineId, quantity: delta.quantityBefore - delta.correctedQuantity },
         reasonCode: CHANNEL_ORDER_MODIFIED_REASON,
         occurredAt: ctx.occurredAt,
         sourceEventId: `${ctx.amendmentId}:${delta.salesOrderLineId}`,
+        attempt: deferral === undefined,
       },
       tx,
     );
+    if (deferral) return { ...delta, outcome: 'pending', blockers: [deferral] };
     return outcome.applied
       ? { ...delta, outcome: 'applied' }
       : { ...delta, outcome: 'pending', blockers: [{ code: 'CANCEL_NOT_IMMEDIATE', detail: outcome.refusal }] };
-  }
-
-  /** 아직 주문권을 쓰지 않은 인쇄만 운영자 확인(cancel_refused)으로 넘긴다. 이미 보낸 주문은 와우프레스에서 판단한다. */
-  private async holdUnsentPrint(salesOrderLineId: string, tx: DbTx): Promise<void> {
-    const t = wmsTables.printOrders;
-    const now = new Date();
-    await tx
-      .update(t)
-      .set({
-        status: 'cancel_refused',
-        cancelRefusedAt: now,
-        cancelResolvedAt: null,
-        cancelResolvedBy: null,
-        lastError: PRINT_HELD_FOR_DECREASE,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(t.salesOrderLineId, salesOrderLineId),
-          inArray(t.status, ['pending', 'submitting', 'failed', 'unsupported']),
-          isNull(t.orderAttemptedAt),
-          isNull(t.vendorOrderNumber),
-        ),
-      );
   }
 
   /** 판매주문과 끝나지 않은 출고지시의 배송지. `shipping_address_hash` 는 건드리지 않는다(스펙 §7.1 2). */

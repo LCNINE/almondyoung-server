@@ -1,10 +1,26 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, ne, sql } from 'drizzle-orm';
-import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
+import { DbTx, SalesOrder, wmsTables } from '../../inventory/schema/inventory.schema';
+import { isDigitalFulfillmentLine } from '../../product-matching/line-composition/line-composition';
 
 /** 커널이 취소를 시도하기 전·후에 읽는 것. 의존성이 없다 — 호출자의 트랜잭션으로 읽는다 */
 @Injectable()
 export class OrderCancellationReader {
+  async salesOrder(salesOrderId: string, tx: DbTx): Promise<SalesOrder | undefined> {
+    const rows = await tx.select().from(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, salesOrderId)).limit(1);
+    return rows[0];
+  }
+
+  /** 디지털 이용권 줄 id — 부분 취소는 디지털을 회수하지 않으므로 호출자가 제외한다 */
+  async digitalLineIds(salesOrderId: string, tx: DbTx): Promise<Set<string>> {
+    const t = wmsTables.salesOrderLines;
+    const rows = await tx
+      .select({ id: t.id, fulfillmentKind: t.fulfillmentKind, requiresShipping: t.requiresShipping })
+      .from(t)
+      .where(eq(t.salesOrderId, salesOrderId));
+    return new Set(rows.filter(isDigitalFulfillmentLine).map((line) => line.id));
+  }
+
   async hasActivePrintOrder(salesOrderLineId: string, tx: DbTx): Promise<boolean> {
     const t = wmsTables.printOrders;
     const rows = await tx

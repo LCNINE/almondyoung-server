@@ -22,28 +22,34 @@ import { readLineQuantities } from '../line-quantities/line-quantities.reader';
 import { seedCancellableOrder, wireCancellation } from '../cancellation-record/__support__/cancellation-scenarios';
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
 import { ChannelOrderChangeReader } from './channel-order-change.reader';
-import { ChannelOrderChangeManager, PRINT_HELD_FOR_DECREASE } from './channel-order-change.manager';
+import { ChannelOrderChangeManager } from './channel-order-change.manager';
 import { OrderCancellation } from '../order-cancellation/order-cancellation';
 import { OrderCancellationReader } from '../order-cancellation/order-cancellation.reader';
 import { PrintOrderReader } from '../../print-order/services/print-order.reader';
+import { PRINT_HELD_FOR_DECREASE, PrintOrderRepository } from '../../print-order/services/print-order.repository';
+import { PrintOrderCancellationManager } from '../../print-order/services/print-order-cancellation.manager';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 const ADDRESS = { recipientName: '김', phone: '010-1', postalCode: '12345', roadAddress: '서울', detailAddress: '101' };
 const NEXT = { ...ADDRESS, roadAddress: '부산', detailAddress: '202' };
 
-/** 실제 커널. 수량 감소 갈래는 판매주문 취소와 커널 reader 만 쓰므로 요청·인쇄 협력자는 비워 둔다 */
+/**
+ * 실제 커널. 수량 감소 갈래는 판매주문 취소·커널 reader·인쇄 붙잡기(holdForDecrease)만 쓴다 —
+ * 요청 협력자와 와우프레스 클라이언트는 비워 둔다(붙잡기는 외부를 부르지 않는다)
+ */
 function kernelFor(
   dbService: ReturnType<typeof ambientDbService>,
   salesOrders: SalesOrdersService,
   settler: ChannelCancelSettler,
 ) {
+  const printOrders = new PrintOrderReader(dbService);
   return new OrderCancellation(
     dbService,
     salesOrders,
     {} as never,
-    new PrintOrderReader(dbService),
-    {} as never,
+    printOrders,
+    new PrintOrderCancellationManager(printOrders, new PrintOrderRepository(dbService), {} as never),
     settler,
     new OrderCancellationReader(),
   );
@@ -519,6 +525,36 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
       expect(pending?.deltas).toEqual([
         expect.objectContaining({ type: 'quantity_correction', blockers: [{ code: 'OUT_OF_SCOPE' }] }),
         expect.objectContaining({ type: 'add_product', blockers: [{ code: 'OUT_OF_SCOPE' }] }),
+      ]);
+    });
+  });
+
+  it('전 라인 0 이어도 안 보낸 인쇄는 붙잡는다 — ALL_LINES_REMOVED 대기', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const seed = await seedOrder(tx, w, { withFo: false });
+      await tx.insert(wmsTables.printOrders).values({
+        salesOrderId: seed.salesOrderId,
+        salesOrderLineId: seed.lineIds[0],
+        almondDesignId: randomUUID(),
+        status: 'pending',
+      });
+      await w.manager.handle(seed.salesOrderId, payload(seed, { lines: [] }), `m-${randomUUID()}`, tx);
+      const [row] = await amendmentsOf(tx, seed.salesOrderId);
+      expect(row.deltas).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ salesOrderLineId: seed.lineIds[0], blockers: [{ code: 'ALL_LINES_REMOVED' }] }),
+        ]),
+      );
+      // 대기로 정했어도 워커가 원래 수량으로 주문하지 않게 붙잡는다 — 운영자가 수량을 확인한 뒤 진행한다
+      const [print] = await tx
+        .select()
+        .from(wmsTables.printOrders)
+        .where(eq(wmsTables.printOrders.salesOrderLineId, seed.lineIds[0]));
+      expect(print).toMatchObject({ status: 'cancel_refused', lastError: PRINT_HELD_FOR_DECREASE });
+      // 시도하지 않았다 — 아무것도 취소되지 않았다
+      expect([...(await readLineQuantities(tx, seed.salesOrderId)).values()].map((line) => line.canceled)).toEqual([
+        0, 0,
       ]);
     });
   });

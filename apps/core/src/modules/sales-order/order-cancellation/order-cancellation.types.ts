@@ -1,5 +1,3 @@
-import type { CancelRequestView } from '../channel-cancel-request/channel-cancel-request.types';
-
 /** 취소할 줄과 수량. 없으면(요청에 `lines` 가 없으면) 전체취소다 */
 export type CancelLine = { salesOrderLineId: string; quantity: number };
 
@@ -29,34 +27,38 @@ export type CancellationRequest =
     };
 
 /**
- * 취소 «통보» — 취소가 이미 정해진 뒤 커널에 알리는 것 (K7 PR1).
- * 무통장 승인(돈은 wallet 에서 이미 나갔다)·채널 취소(채널이 이미 취소했다)·채널 수량 감소(채널이 이미 줄였다).
+ * 무통장 환불 승인 통보 — 돈은 wallet 에서 이미 나갔다 (K7 PR2, N7).
+ * 취소가 이미 정해진 뒤의 통보는 소스마다 커널의 문이 따로다 — 채널 취소(채널이 이미 취소했다)는
+ * `receiveChannelCancellation`, 채널 수량 감소(채널이 이미 줄였다)는 `noticeChannelDecrease`.
  */
-export type CancellationNotice =
-  | { source: 'wallet_refund_approval'; salesOrderId: string; intentId: string; reasonCode: string }
-  | {
-      source: 'channel_cancelled';
-      salesOrderId: string;
-      /** 없으면 전체취소 */
-      lines: CancelLine[] | undefined;
-      reasonCode?: string;
-      reasonDetail?: string;
-      cancelledBy?: string;
-      occurredAt?: string;
-      metadata: Record<string, unknown>;
-    }
-  | {
-      source: 'channel_decrease';
-      salesOrderId: string;
-      line: CancelLine;
-      reasonCode: string;
-      occurredAt: string;
-      sourceEventId: string;
-    };
+export type WalletApprovalNotice = { salesOrderId: string; intentId: string; reasonCode: string };
 
-/** 통보한 트랜잭션이 커밋된 뒤 커널이 할 일. 호출자는 이걸 `afterCommit` 에 그대로 돌려준다 */
-export type NoticeFollowUp = { salesOrderId: string; lines: CancelLine[] | undefined; redeliveredSince?: Date };
+/** 채널 취소 통보 (K7 PR2, N7) */
+export type ChannelCancelledNotice = {
+  salesOrderId: string;
+  /** 없으면 전체취소 */
+  lines: CancelLine[] | undefined;
+  reasonCode?: string;
+  reasonDetail?: string;
+  cancelledBy?: string;
+  occurredAt?: string;
+  metadata: Record<string, unknown>;
+};
 
-export type NoticeOutcome =
-  | { applied: true; requestView?: CancelRequestView; followUp?: NoticeFollowUp }
-  | { applied: false; refusal: string };
+/** 컨슈머가 수신 트랜잭션에서 판정한 것. 재수신이면 since = 그 이벤트를 처음 기록한 시각 */
+export type ChannelCancellationReceipt =
+  | { notice: ChannelCancelledNotice }
+  | { redelivered: { salesOrderId: string; lines: CancelLine[] | undefined; since: Date | undefined } };
+
+/** 채널 수량 감소 통보 (K7 PR2, D7). 수신 트랜잭션(변경 기록과 한 묶음) 안에서만 받는다 */
+export type ChannelDecreaseNotice = {
+  salesOrderId: string;
+  line: CancelLine;
+  reasonCode: string;
+  occurredAt: string;
+  sourceEventId: string;
+  /** false = 채널 변경 규칙이 이미 대기로 정했다 — 인쇄만 붙잡고 시도하지 않는다 */
+  attempt: boolean;
+};
+
+export type DecreaseOutcome = { applied: true } | { applied: false; refusal: string };

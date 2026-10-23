@@ -1,4 +1,3 @@
-import { getTableName } from 'drizzle-orm';
 import { OrderCancellation } from './order-cancellation';
 import type { CancellationRequest } from './order-cancellation.types';
 import {
@@ -29,27 +28,9 @@ function makeKernel(
 ) {
   const callOrder: string[] = [];
   const so = { id: 'so', salesChannel: options.salesChannel ?? 'medusa', status: 'confirmed' };
-  // store-sales-orders.service.spec.ts 의 makeContext 와 같은 모양 — sales_orders 는 limit().then(), 줄은 then()
-  const db = {
-    db: {
-      select: jest.fn().mockImplementation(() => ({
-        from: jest.fn().mockImplementation((table: unknown) => ({
-          where: jest.fn().mockImplementation(() => {
-            const tableName = getTableName(table as Parameters<typeof getTableName>[0]);
-            return {
-              limit: jest.fn().mockReturnValue({
-                then: jest.fn((fn: (r: unknown[]) => unknown) =>
-                  fn(tableName === 'sales_orders' && !options.noSalesOrder ? [so] : []),
-                ),
-              }),
-              then: jest.fn((fn: (r: unknown[]) => unknown) => fn([])),
-            };
-          }),
-        })),
-      })),
-      transaction: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn({})),
-    },
-  };
+  // 커널이 여는 수신 트랜잭션(`DbService.run`)
+  const { tx } = makeTx();
+  const db = { run: jest.fn((fn: (trx: unknown) => Promise<unknown>) => fn(tx)) };
   const salesOrders = {
     planCancellation: jest.fn().mockResolvedValue({ lines: options.planLines ?? [] }),
     cancel: jest.fn(() => {
@@ -80,6 +61,7 @@ function makeKernel(
     callOrder.push('holdUnsent');
     return Promise.resolve(undefined);
   });
+  const holdForDecrease = jest.fn().mockResolvedValue(undefined);
   const settler = {
     settleCancelled: jest.fn(() => {
       callOrder.push('settleCancelled');
@@ -87,6 +69,8 @@ function makeKernel(
     }),
   };
   const reader = {
+    salesOrder: jest.fn().mockResolvedValue(options.noSalesOrder ? undefined : so),
+    digitalLineIds: jest.fn().mockResolvedValue(new Set<string>()),
     hasActivePrintOrder: jest.fn().mockResolvedValue(options.activePrint ?? false),
     cancellationNeedsFollowUp: jest.fn().mockResolvedValue(options.followUp ?? null),
   };
@@ -99,11 +83,25 @@ function makeKernel(
       cancelForOrder: printCancel,
       noteSalesCancelFailed: printNote,
       holdUnsent,
+      holdForDecrease,
     } as unknown as PrintOrderCancellationManager,
     settler as unknown as ChannelCancelSettler,
     reader as unknown as OrderCancellationReader,
   );
-  return { k, salesOrders, cancelRequests, printCancel, printNote, holdUnsent, settler, reader, callOrder };
+  return {
+    k,
+    db,
+    tx,
+    salesOrders,
+    cancelRequests,
+    printCancel,
+    printNote,
+    holdUnsent,
+    holdForDecrease,
+    settler,
+    reader,
+    callOrder,
+  };
 }
 
 /** 문이 넘기는 바깥 트랜잭션. savepoint 는 콜백이 던지면 그 예외를 그대로 내보낸다(=되돌림) */
@@ -250,102 +248,118 @@ describe('OrderCancellation.request', () => {
   });
 });
 
-describe('OrderCancellation.notice / afterCommit', () => {
+describe('OrderCancellation 통보 — 채널 취소·무통장 승인·채널 수량 감소', () => {
   const t = new Date('2026-10-07T00:00:01.000Z');
   const view = VIEW;
 
-  it('채널 취소 통보는 tx 없이 부르면 던진다', async () => {
-    const { k } = makeKernel();
-    await expect(
-      k.notice({ source: 'channel_cancelled', salesOrderId: 'so', lines: undefined, metadata: {} }),
-    ).rejects.toThrow();
-  });
-
-  it('채널 전체취소 통보 — 같은 tx 로 cancel → holdUnsent → settle, 커밋 뒤 할 일을 돌려준다', async () => {
-    const { k, salesOrders, holdUnsent, settler, printCancel, callOrder } = makeKernel();
-    const { tx } = makeTx();
-    const o = await k.notice(
-      { source: 'channel_cancelled', salesOrderId: 'so', lines: undefined, metadata: { sourceEventId: 'e' } },
-      tx as never,
-    );
-    expect(callOrder).toEqual(['cancel', 'holdUnsent', 'settleCancelled']);
-    expect(o).toEqual({ applied: true, followUp: { salesOrderId: 'so', lines: undefined } });
-    expect(printCancel).not.toHaveBeenCalled();
+  it('새 전체취소 — 한 트랜잭션에서 cancel → holdUnsent → settle, 커밋 뒤 record', async () => {
+    const { k, db, tx, salesOrders, holdUnsent, settler, printCancel, callOrder } = makeKernel();
+    const receive = jest.fn().mockResolvedValue({
+      notice: { salesOrderId: 'so', lines: undefined, metadata: { sourceEventId: 'e' } },
+    });
+    await k.receiveChannelCancellation(receive);
+    expect(db.run).toHaveBeenCalledTimes(1);
+    expect(receive).toHaveBeenCalledWith(tx);
+    expect(callOrder).toEqual(['cancel', 'holdUnsent', 'settleCancelled', 'record']);
     expect(salesOrders.cancel).toHaveBeenCalledWith('so', { metadata: { sourceEventId: 'e' } }, tx);
     expect(holdUnsent).toHaveBeenCalledWith('so', undefined, tx);
     expect(settler.settleCancelled).toHaveBeenCalledWith('so', tx);
+    expect(printCancel).toHaveBeenCalledWith('so', 'record', undefined, { redeliveredSince: undefined });
   });
 
-  it('채널 부분취소 통보는 정산을 닫지 않는다', async () => {
-    const { k, salesOrders, settler, callOrder } = makeKernel();
-    const { tx } = makeTx();
-    const o = await k.notice(
-      { source: 'channel_cancelled', salesOrderId: 'so', lines, reasonCode: 'CUSTOMER_REQUEST', metadata: {} },
-      tx as never,
-    );
-    expect(callOrder).toEqual(['cancel', 'holdUnsent']);
+  it('새 부분취소는 정산을 닫지 않고 그 줄만 record', async () => {
+    const { k, tx, salesOrders, settler, printCancel, callOrder } = makeKernel();
+    await k.receiveChannelCancellation(async () => ({
+      notice: { salesOrderId: 'so', lines, reasonCode: 'CUSTOMER_REQUEST', metadata: {} },
+    }));
+    expect(callOrder).toEqual(['cancel', 'holdUnsent', 'record']);
     expect(settler.settleCancelled).not.toHaveBeenCalled();
     expect(salesOrders.cancel).toHaveBeenCalledWith(
       'so',
       expect.objectContaining({ lines, reasonCode: 'CUSTOMER_REQUEST' }),
       tx,
     );
-    expect(o).toEqual({ applied: true, followUp: { salesOrderId: 'so', lines } });
+    expect(printCancel).toHaveBeenCalledWith('so', 'record', lines, { redeliveredSince: undefined });
   });
 
-  it('afterCommit 은 record 로 재수신 시각을 넘긴다', async () => {
-    const { k, printCancel } = makeKernel();
-    await k.afterCommit({ salesOrderId: 'so', lines, redeliveredSince: t });
+  it('재수신은 취소하지 않고 record 에 처음 기록 시각을 넘긴다', async () => {
+    const { k, salesOrders, holdUnsent, settler, printCancel } = makeKernel();
+    await k.receiveChannelCancellation(async () => ({ redelivered: { salesOrderId: 'so', lines, since: t } }));
+    expect(salesOrders.cancel).not.toHaveBeenCalled();
+    expect(holdUnsent).not.toHaveBeenCalled();
+    expect(settler.settleCancelled).not.toHaveBeenCalled();
     expect(printCancel).toHaveBeenCalledWith('so', 'record', lines, { redeliveredSince: t });
   });
 
-  it('무통장 승인 통보는 record 먼저, 확정 나중 (N4)', async () => {
-    const { k, cancelRequests, callOrder } = makeKernel();
-    const o = await k.notice({
-      source: 'wallet_refund_approval',
-      salesOrderId: 'so',
-      intentId: 'i',
-      reasonCode: 'CUSTOMER_REFUND_REQUEST',
-    });
-    expect(callOrder).toEqual(['record', 'request']);
-    expect(cancelRequests.request).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sourceKey: 'wallet-refund-approval:i',
-        requester: { kind: 'wallet-refund-approval', intentId: 'i' },
-      }),
-    );
-    expect(o).toEqual({ applied: true, requestView: view });
+  it('receive 가 null 이면 record 도 없다', async () => {
+    const { k, salesOrders, printCancel } = makeKernel();
+    await k.receiveChannelCancellation(async () => null);
+    expect(salesOrders.cancel).not.toHaveBeenCalled();
+    expect(printCancel).not.toHaveBeenCalled();
   });
 
-  it('무통장 승인 통보는 tx 를 받지 않는다 — 커널이 트랜잭션을 가진다', async () => {
-    const { k, printCancel } = makeKernel();
-    const { tx } = makeTx();
+  it('커밋 뒤 record 가 던지면 그대로 던진다 — 컨슈머 재시도가 재수신 경로로 다시 정리한다', async () => {
+    const { k, salesOrders } = makeKernel({ printCancel: jest.fn().mockRejectedValue(new Error('wowpress down')) });
     await expect(
-      k.notice({ source: 'wallet_refund_approval', salesOrderId: 'so', intentId: 'i', reasonCode: 'R' }, tx as never),
-    ).rejects.toThrow();
-    expect(printCancel).not.toHaveBeenCalled();
+      k.receiveChannelCancellation(async () => ({ notice: { salesOrderId: 'so', lines: undefined, metadata: {} } })),
+    ).rejects.toThrow('wowpress down');
+    expect(salesOrders.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  describe('무통장 승인', () => {
+    const approval = { salesOrderId: 'so', intentId: 'i', reasonCode: 'CUSTOMER_REFUND_REQUEST' };
+
+    it('확정과 안 보낸 인쇄 붙잡기를 한 트랜잭션에서, 커밋 뒤 record (D6)', async () => {
+      const { k, db, tx, cancelRequests, holdUnsent, printCancel, callOrder } = makeKernel();
+      const result = await k.noticeWalletRefundApproval(approval);
+      expect(db.run).toHaveBeenCalledTimes(1);
+      expect(callOrder).toEqual(['request', 'holdUnsent', 'record']);
+      expect(cancelRequests.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceKey: 'wallet-refund-approval:i',
+          requester: { kind: 'wallet-refund-approval', intentId: 'i' },
+          reasonCode: 'CUSTOMER_REFUND_REQUEST',
+        }),
+        tx,
+      );
+      expect(holdUnsent).toHaveBeenCalledWith('so', undefined, tx);
+      expect(printCancel).toHaveBeenCalledWith('so', 'record');
+      expect(result).toEqual(view);
+    });
+
+    it('확정이 실패하면 record 하지 않고 던진다', async () => {
+      const { k, cancelRequests, printCancel } = makeKernel();
+      // 동시 승인이 먼저 확정한 경우 — 붙잡기도 함께 롤백된다
+      const refused = new BadRequestError('이미 취소된 주문입니다.');
+      cancelRequests.request.mockImplementationOnce(() => Promise.reject(refused));
+      await expect(k.noticeWalletRefundApproval(approval)).rejects.toBe(refused);
+      expect(printCancel).not.toHaveBeenCalled();
+    });
+
+    it('커밋 뒤 record 가 던지면 그대로 던진다 (N8)', async () => {
+      const { k, cancelRequests } = makeKernel({
+        printCancel: jest.fn().mockRejectedValue(new Error('wowpress down')),
+      });
+      await expect(k.noticeWalletRefundApproval(approval)).rejects.toThrow('wowpress down');
+      expect(cancelRequests.request).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('채널 수량 감소', () => {
     const line = { salesOrderLineId: 'line-1', quantity: 1 };
     const decrease = {
-      source: 'channel_decrease' as const,
       salesOrderId: 'so',
       line,
       reasonCode: 'CHANNEL_ORDER_MODIFIED',
       occurredAt: '2026-10-07T00:00:00.000Z',
       sourceEventId: 'amend-1:line-1',
+      attempt: true,
     };
-
-    it('tx 없이 부르면 던진다', async () => {
-      const { k } = makeKernel();
-      await expect(k.notice(decrease)).rejects.toThrow();
-    });
 
     it('savepoint 안에서 그 줄만 채널 취소로 줄인다', async () => {
       const { k, salesOrders, reader } = makeKernel();
       const { tx, savepoint } = makeTx();
-      expect(await k.notice(decrease, tx as never)).toEqual({ applied: true });
+      expect(await k.noticeChannelDecrease(decrease, tx as never)).toEqual({ applied: true });
       expect(tx.transaction).toHaveBeenCalledTimes(1);
       expect(reader.hasActivePrintOrder).toHaveBeenCalledWith('line-1', savepoint);
       expect(salesOrders.cancel).toHaveBeenCalledWith(
@@ -362,26 +376,56 @@ describe('OrderCancellation.notice / afterCommit', () => {
       expect(reader.cancellationNeedsFollowUp).toHaveBeenCalledWith('so', 'amend-1:line-1', savepoint);
     });
 
+    it('시도 전에 savepoint 밖에서 그 줄의 인쇄를 붙잡는다', async () => {
+      const { k, holdForDecrease } = makeKernel();
+      const { tx } = makeTx();
+      await k.noticeChannelDecrease(decrease, tx as never);
+      // 거절이 savepoint 를 되돌려도 붙잡기는 남아야 한다 — 바깥 tx 로, savepoint 를 열기 전에
+      expect(holdForDecrease).toHaveBeenCalledWith('line-1', tx);
+      expect(holdForDecrease.mock.invocationCallOrder[0]).toBeLessThan(tx.transaction.mock.invocationCallOrder[0]);
+    });
+
+    it('attempt: false 면 붙잡기만 하고 시도하지 않는다', async () => {
+      const { k, holdForDecrease, salesOrders } = makeKernel();
+      const { tx } = makeTx();
+      const o = await k.noticeChannelDecrease({ ...decrease, attempt: false }, tx as never);
+      expect(o).toEqual({ applied: false, refusal: 'deferred by the channel change rule' });
+      expect(holdForDecrease).toHaveBeenCalledTimes(1);
+      expect(holdForDecrease).toHaveBeenCalledWith('line-1', tx);
+      expect(tx.transaction).not.toHaveBeenCalled();
+      expect(salesOrders.cancel).not.toHaveBeenCalled();
+    });
+
     it('인쇄 줄이면 취소하지 않고 거절한다', async () => {
       const { k, salesOrders } = makeKernel({ activePrint: true });
       const { tx } = makeTx();
-      expect(await k.notice(decrease, tx as never)).toEqual({
+      expect(await k.noticeChannelDecrease(decrease, tx as never)).toEqual({
         applied: false,
         refusal: 'print order on this line — decide on WowPress',
       });
       expect(salesOrders.cancel).not.toHaveBeenCalled();
     });
 
+    it('인쇄 줄 거절이어도 붙잡기는 이미 끝났다', async () => {
+      const { k, holdForDecrease } = makeKernel({ activePrint: true });
+      const { tx } = makeTx();
+      expect(await k.noticeChannelDecrease(decrease, tx as never)).toEqual({
+        applied: false,
+        refusal: 'print order on this line — decide on WowPress',
+      });
+      expect(holdForDecrease).toHaveBeenCalledTimes(1);
+    });
+
     it('도메인 거절은 그 문구로 거절한다', async () => {
       const { k } = makeKernel({ cancelError: new BadRequestError('nope') });
       const { tx } = makeTx();
-      expect(await k.notice(decrease, tx as never)).toEqual({ applied: false, refusal: 'nope' });
+      expect(await k.noticeChannelDecrease(decrease, tx as never)).toEqual({ applied: false, refusal: 'nope' });
     });
 
     it('그 자리에서 끝나지 않은 취소는 savepoint 를 되돌리고 거절한다', async () => {
       const { k } = makeKernel({ followUp: 'shipment cancellation would wait' });
       const { tx } = makeTx();
-      expect(await k.notice(decrease, tx as never)).toEqual({
+      expect(await k.noticeChannelDecrease(decrease, tx as never)).toEqual({
         applied: false,
         refusal: 'shipment cancellation would wait',
       });
@@ -393,7 +437,7 @@ describe('OrderCancellation.notice / afterCommit', () => {
       const boom = new Error('deadlock');
       const { k } = makeKernel({ cancelError: boom });
       const { tx } = makeTx();
-      await expect(k.notice(decrease, tx as never)).rejects.toBe(boom);
+      await expect(k.noticeChannelDecrease(decrease, tx as never)).rejects.toBe(boom);
     });
   });
 });
