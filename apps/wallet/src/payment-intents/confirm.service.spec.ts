@@ -83,6 +83,7 @@ function makeContext(
 
   const chargesService = {
     findActiveByIntentAndOperation: jest.fn().mockResolvedValue(null),
+    hasVirtualAccountLeftOpen: jest.fn().mockResolvedValue(false),
     create: jest.fn().mockResolvedValue({ id: 'charge-ext' }),
     findSucceededPointsAuthorizeByIntent: jest.fn().mockResolvedValue(stalePointsCharge),
     updateStatus: jest.fn().mockResolvedValue(undefined),
@@ -235,12 +236,10 @@ describe('ConfirmService', () => {
     expect(chargesService.updateStatus).toHaveBeenCalledWith('charge-points', 'CANCELED', {});
   });
 
-  it('refuses to replace a charge whose widget virtual account could not be closed', async () => {
+  it('refuses another attempt while a widget virtual account of this intent is still open', async () => {
     const { service, chargesService } = makeContext({ stalePointsCharge: null });
-    chargesService.findActiveByIntentAndOperation.mockResolvedValue({
-      id: 'charge-va',
-      responsePayload: { virtualAccountLeftOpenAt: '2026-10-23T00:00:00.000Z' },
-    });
+    chargesService.findActiveByIntentAndOperation.mockResolvedValue({ id: 'charge-va' });
+    chargesService.hasVirtualAccountLeftOpen.mockResolvedValue(true);
 
     await expect(
       service.confirm('intent-1', { paymentMethodId: 'pm-toss', pointsToApply: 0 }, 'corr-1'),

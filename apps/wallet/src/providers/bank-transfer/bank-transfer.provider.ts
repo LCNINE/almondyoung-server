@@ -145,7 +145,8 @@ export class BankTransferPaymentProvider implements PaymentProvider {
       undefined,
       payment.useWidgetKey,
     );
-    if (result.ok) {
+    // 이미 취소된 계좌도 닫힌 것이다 — 폐쇄 응답을 잃은 재시도가 영영 실패로 남지 않게.
+    if (result.ok || result.error.code === 'ALREADY_CANCELED_PAYMENT') {
       return { status: 'SUCCEEDED' };
     }
 

@@ -355,6 +355,28 @@ describe('widget virtual account', () => {
     expect(ctx.autoCaptureService.attemptAutoCapture).not.toHaveBeenCalled();
   });
 
+  it('지연 승인에서 계좌도 못 닫고 입금대기 전이도 거부되면 복구 표식을 남긴다', async () => {
+    const staged = {
+      provider: 'TOSS' as const,
+      providerToken: 'pk_va',
+      orderId: ORDER_ID,
+      amount: 10000,
+      stagedAt: new Date(0).toISOString(),
+    };
+    const ctx = makeTossContext({ approvalMode: 'DEFERRED' }, WIDGET_CHARGE, VA_CONFIRM);
+    ctx.tossApi.cancelPayment.mockResolvedValue({ ok: false, error: { code: 'PROVIDER_ERROR', message: 'x' } });
+    ctx.stateTransitionService.transitionIntent.mockRejectedValue(new Error('INVALID_TRANSITION'));
+
+    await expect(ctx.service.confirmStaged(WIDGET_CHARGE, staged, 'corr-1')).rejects.toThrow('INVALID_TRANSITION');
+
+    expect(ctx.intentUpdates.at(-1)).toEqual(
+      expect.objectContaining({
+        providerTransactionId: 'pk_va',
+        responsePayload: expect.objectContaining({ virtualAccountLeftOpenAt: expect.any(String) }),
+      }),
+    );
+  });
+
   it('계좌를 못 닫으면 실패로 확정하지 않고 기존 무통장 입금대기로 넘긴다', async () => {
     const staged = {
       provider: 'TOSS' as const,

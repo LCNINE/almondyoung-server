@@ -287,15 +287,21 @@ export class TossApproveService {
     if (await this.closeVirtualAccount(charge, payment.paymentKey)) {
       await this.finalizeFailure(charge, errorCode, correlationId);
     } else if (payment.virtualAccount && intent.userId) {
+      const { virtualAccount, paymentKey } = payment;
+      const userId = intent.userId;
       await this.recordAwaitingDeposit(
         charge,
         intent,
-        intent.userId,
-        payment.virtualAccount,
-        payment.paymentKey,
+        userId,
+        virtualAccount,
+        paymentKey,
         payment.secret,
         correlationId,
-      );
+      ).catch(async (error: unknown) => {
+        // abandon·만료가 먼저 intent 를 넘겨 입금대기 전이가 거부되면 롤백으로 결제 키까지 사라진다.
+        await this.keepOpenAccountRecoverable(charge, userId, virtualAccount, paymentKey);
+        throw error;
+      });
     }
     throw new UnprocessableEntityException({
       error: errorCode,
