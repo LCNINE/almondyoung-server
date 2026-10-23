@@ -1,14 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, ne, sql } from 'drizzle-orm';
-import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
+import { DbTx, SalesOrder, wmsTables } from '../../inventory/schema/inventory.schema';
 import { isDigitalFulfillmentLine } from '../../product-matching/line-composition/line-composition';
-
-export type SalesOrderRow = typeof wmsTables.salesOrders.$inferSelect;
 
 /** 커널이 취소를 시도하기 전·후에 읽는 것. 의존성이 없다 — 호출자의 트랜잭션으로 읽는다 */
 @Injectable()
 export class OrderCancellationReader {
-  async salesOrder(salesOrderId: string, tx: DbTx): Promise<SalesOrderRow | undefined> {
+  async salesOrder(salesOrderId: string, tx: DbTx): Promise<SalesOrder | undefined> {
     const rows = await tx.select().from(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, salesOrderId)).limit(1);
     return rows[0];
   }

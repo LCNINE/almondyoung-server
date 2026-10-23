@@ -258,7 +258,7 @@ export class OrderCancellation {
     const printLineIds = new Set(
       (await this.printOrders.forSalesOrder(salesOrderId)).filter(isLivePrint).map((r) => r.salesOrderLineId),
     );
-    // 디지털 줄과 취소 계획을 한 트랜잭션에서 — 같은 스냅샷으로 판정한다
+    // 디지털 줄과 취소 계획은 한 트랜잭션에서 읽는다(READ COMMITTED 라 한 스냅샷은 아니고, 인쇄 줄은 그 밖에서 읽었다)
     const { digitalLineIds, plan } = await this.db.run(async (tx) => ({
       digitalLineIds: await this.reader.digitalLineIds(salesOrderId, tx),
       plan: await this.salesOrders.planCancellation(salesOrderId, undefined, tx),
