@@ -6,6 +6,7 @@ export interface BankTransferPendingAction {
   bankName?: string;
   accountNumber?: string;
   accountHolder?: string;
+  dueDate?: string;
   amount?: number;
   currency?: string;
 }

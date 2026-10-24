@@ -61,6 +61,29 @@ function makeContext(
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('ChargeReleaseService', () => {
+  it('승인 결과를 모르는 TOSS charge 는 DB 만 취소하지 않고 provider 로 정리한다', async () => {
+    const charge = {
+      ...makePointsCharge({ id: 'charge-toss' }),
+      status: 'REQUIRES_ACTION',
+      responsePayload: { confirmAttempt: {} },
+    };
+    const { service, provider, chargesService } = makeContext({ activeCharge: charge as never, methodType: 'TOSS' });
+
+    await service.releaseIntentCharges(INTENT, 'corr-1');
+
+    expect(provider.cancel).toHaveBeenCalledWith(expect.objectContaining({ chargeId: 'charge-toss' }));
+    expect(chargesService.updateStatus).toHaveBeenCalledWith('charge-toss', 'CANCELED', {});
+  });
+
+  it('승인 시도 표식이 없는 TOSS 결제창 대기는 DB 만 취소한다', async () => {
+    const charge = { ...makePointsCharge({ id: 'charge-toss' }), status: 'REQUIRES_ACTION', responsePayload: {} };
+    const { service, provider } = makeContext({ activeCharge: charge as never, methodType: 'TOSS' });
+
+    await service.releaseIntentCharges(INTENT, 'corr-1');
+
+    expect(provider.cancel).not.toHaveBeenCalled();
+  });
+
   it('releases a SUCCEEDED POINTS hold via the points provider and marks it CANCELED', async () => {
     const charge = makePointsCharge();
     const { service, provider, chargesService } = makeContext({

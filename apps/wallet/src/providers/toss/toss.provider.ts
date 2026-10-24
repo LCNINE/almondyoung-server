@@ -13,6 +13,7 @@ import {
 } from '../payment-provider.interface';
 import { WalletSchema, charges, paymentMethods } from '../../schema';
 import { TossApiClient } from './toss-api.client';
+import { hasConfirmAttempt, usesTossWidget } from './toss-widget-mode';
 import { and } from 'drizzle-orm';
 import { isTossRefundRetryable } from './toss-refund-errors';
 
@@ -28,6 +29,7 @@ export class TossPaymentProvider implements PaymentProvider {
   ) {}
 
   async getUserMethods(userId: string): Promise<PaymentMethod[]> {
+    const widgetEnabled = !!(process.env.TOSS_WIDGET_CLIENT_KEY && process.env.TOSS_WIDGET_SECRET_KEY);
     return this.dbService.db.transaction(async (tx) => {
       const db = tx as typeof this.dbService.db;
       const existing = await db
@@ -37,14 +39,16 @@ export class TossPaymentProvider implements PaymentProvider {
           and(eq(paymentMethods.userId, userId), eq(paymentMethods.type, 'TOSS'), eq(paymentMethods.isDeleted, false)),
         );
 
-      if (existing.length > 0) return existing;
+      if (existing.length > 0) {
+        return widgetEnabled ? existing.map((method) => ({ ...method, displayName: '토스 결제' })) : existing;
+      }
 
       return db
         .insert(paymentMethods)
         .values({
           userId,
           type: 'TOSS',
-          displayName: '카드결제',
+          displayName: widgetEnabled ? '토스 결제' : '카드결제',
           isReusable: true,
           isDeleted: false,
           providerData: {},
@@ -75,6 +79,7 @@ export class TossPaymentProvider implements PaymentProvider {
 
     const orderId = params.chargeId.replace(/-/g, '');
     const meta = params.metadata ?? {};
+    const widgetEnabled = !!(process.env.TOSS_WIDGET_CLIENT_KEY && process.env.TOSS_WIDGET_SECRET_KEY);
     return {
       status: 'REQUIRES_ACTION',
       nextAction: {
@@ -82,6 +87,7 @@ export class TossPaymentProvider implements PaymentProvider {
         orderId,
         orderName: (meta.orderName as string) ?? '결제',
         clientKey: process.env.TOSS_CLIENT_KEY ?? '',
+        ...(widgetEnabled ? { checkoutMode: 'WIDGET' } : {}),
         amount: params.amount,
         currency: params.currency,
         ...(meta.customerName ? { customerName: meta.customerName } : {}),
@@ -96,30 +102,43 @@ export class TossPaymentProvider implements PaymentProvider {
   }
 
   async cancel(params: ChargeParams): Promise<ChargeResult> {
-    const paymentKey = await this.getPaymentKey(params.chargeId);
-    if (!paymentKey) {
+    const unconfirmed = await this.loadUnconfirmed(params.chargeId);
+    if (unconfirmed) return this.settleUnconfirmed(params.chargeId, unconfirmed.useWidgetKey, params.idempotencyKey);
+
+    const payment = await this.getPayment(params.chargeId);
+    if (!payment) {
       return { status: 'FAILED', errorCode: 'TOSS_PAYMENT_KEY_NOT_FOUND' };
     }
 
-    const result = await this.tossApi.cancelPayment(paymentKey, '고객 요청', params.amount, params.idempotencyKey);
+    const result = await this.tossApi.cancelPayment(
+      payment.paymentKey,
+      '고객 요청',
+      params.amount,
+      params.idempotencyKey,
+      undefined,
+      payment.useWidgetKey,
+    );
     if (result.ok) return { status: 'SUCCEEDED' };
     return { status: 'FAILED', errorCode: result.error.code, errorMessage: result.error.message };
   }
 
   async refund(params: RefundParams): Promise<RefundResult> {
-    const paymentKey = await this.getPaymentKey(params.chargeId);
-    if (!paymentKey) {
+    // CAPTURE charge 엔 위젯 여부(nextAction.checkoutMode)가 없다 — AUTHORIZE charge 에서 읽어야 위젯 키로 환불된다.
+    const payment = await this.getPayment(params.authorizeChargeId ?? params.chargeId);
+    if (!payment) {
       return { status: 'FAILED', errorCode: 'TOSS_PAYMENT_KEY_NOT_FOUND', retryable: false };
     }
 
     const result = await this.tossApi.cancelPayment(
-      paymentKey,
+      payment.paymentKey,
       params.cancelReason ?? '고객 요청',
       params.amount,
       params.idempotencyKey,
+      undefined,
+      payment.useWidgetKey,
     );
     if (result.ok) {
-      return { status: 'SUCCEEDED', providerRefundId: paymentKey };
+      return { status: 'SUCCEEDED', providerRefundId: payment.paymentKey };
     }
     return {
       status: 'FAILED',
@@ -129,12 +148,59 @@ export class TossPaymentProvider implements PaymentProvider {
     };
   }
 
-  private async getPaymentKey(chargeId: string): Promise<string | undefined> {
+  /** 승인 시도 표식만 있고 확정된 결제 키가 없는 charge — 승인 응답을 잃었을 수 있다. */
+  private async loadUnconfirmed(chargeId: string): Promise<{ useWidgetKey: boolean } | null> {
     const rows = await this.dbService.db
-      .select({ providerTransactionId: charges.providerTransactionId })
+      .select({ providerTransactionId: charges.providerTransactionId, responsePayload: charges.responsePayload })
       .from(charges)
       .where(eq(charges.id, chargeId))
       .limit(1);
-    return rows[0]?.providerTransactionId ?? undefined;
+    const charge = rows[0];
+    if (!charge || charge.providerTransactionId || !hasConfirmAttempt(charge.responsePayload)) return null;
+    return { useWidgetKey: usesTossWidget(charge.responsePayload) };
+  }
+
+  /**
+   * 토스에 실제 상태를 물어 정리한다. 돈이 빠졌거나 계좌가 열려 있으면 취소하고, 결제가 없거나 이미 끝났으면
+   * 닫을 게 없다. 조회·취소가 실패하면 FAILED — 호출자(abandon·만료)가 intent 를 넘기지 않고 다음 주기에 다시 온다.
+   */
+  private async settleUnconfirmed(
+    chargeId: string,
+    useWidgetKey: boolean,
+    idempotencyKey: string,
+  ): Promise<ChargeResult> {
+    const query = await this.tossApi.getPaymentByOrderId(chargeId.replace(/-/g, ''), useWidgetKey).catch(() => null);
+    if (!query) return { status: 'FAILED', errorCode: 'TOSS_STATUS_UNKNOWN' };
+    if (!query.ok) {
+      return query.statusCode === 404
+        ? { status: 'SUCCEEDED' }
+        : { status: 'FAILED', errorCode: query.error.code ?? 'TOSS_STATUS_UNKNOWN', errorMessage: query.error.message };
+    }
+    if (!['DONE', 'WAITING_FOR_DEPOSIT', 'PARTIAL_CANCELED'].includes(query.data.status))
+      return { status: 'SUCCEEDED' };
+
+    const canceled = await this.tossApi
+      .cancelPayment(query.data.paymentKey, '결제 취소', undefined, `cancel:${idempotencyKey}`, undefined, useWidgetKey)
+      .catch(() => null);
+    if (canceled?.ok || canceled?.error.code === 'ALREADY_CANCELED_PAYMENT') return { status: 'SUCCEEDED' };
+    return {
+      status: 'FAILED',
+      errorCode: canceled?.error.code ?? 'TOSS_CANCEL_UNKNOWN',
+      errorMessage: canceled?.error.message,
+    };
+  }
+
+  private async getPayment(chargeId: string): Promise<{ paymentKey: string; useWidgetKey: boolean } | null> {
+    const rows = await this.dbService.db
+      .select({ providerTransactionId: charges.providerTransactionId, responsePayload: charges.responsePayload })
+      .from(charges)
+      .where(eq(charges.id, chargeId))
+      .limit(1);
+    const charge = rows[0];
+    if (!charge?.providerTransactionId) return null;
+    return {
+      paymentKey: charge.providerTransactionId,
+      useWidgetKey: usesTossWidget(charge.responsePayload),
+    };
   }
 }

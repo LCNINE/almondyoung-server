@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { WalletSchema, charges, paymentMethods, ChargeOperation, ChargeStatus } from '../schema';
 import { Charge, DbTx, NewCharge } from '../types';
+import { VIRTUAL_ACCOUNT_LEFT_OPEN } from '../providers/toss/toss-widget-mode';
 
 @Injectable()
 export class ChargesService {
@@ -50,6 +51,17 @@ export class ChargesService {
       )
       .limit(1);
     return rows[0] ?? null;
+  }
+
+  /** 상태와 무관하게, 아직 닫지 못한 위젯 가상계좌 표식이 붙은 charge 가 이 intent 에 있는가. */
+  async hasVirtualAccountLeftOpen(intentId: string, tx?: DbTx): Promise<boolean> {
+    const db = tx ?? this.dbService.db;
+    const rows = await (db as typeof this.dbService.db)
+      .select({ id: charges.id })
+      .from(charges)
+      .where(and(eq(charges.intentId, intentId), sql`${charges.responsePayload} ? ${VIRTUAL_ACCOUNT_LEFT_OPEN}`))
+      .limit(1);
+    return rows.length > 0;
   }
 
   async findSucceededAuthorizeByIntent(intentId: string, tx?: DbTx): Promise<Charge | null> {
@@ -121,6 +133,7 @@ export class ChargesService {
     status: ChargeStatus,
     extra?: {
       providerTransactionId?: string;
+      paymentMethodId?: string;
       errorCode?: string | null;
       errorMessage?: string | null;
       responsePayload?: Record<string, unknown>;
@@ -134,6 +147,7 @@ export class ChargesService {
         status,
         updatedAt: new Date(),
         ...(extra?.providerTransactionId !== undefined ? { providerTransactionId: extra.providerTransactionId } : {}),
+        ...(extra?.paymentMethodId !== undefined ? { paymentMethodId: extra.paymentMethodId } : {}),
         ...(extra?.errorCode !== undefined ? { errorCode: extra.errorCode } : {}),
         ...(extra?.errorMessage !== undefined ? { errorMessage: extra.errorMessage } : {}),
         ...(extra?.responsePayload !== undefined ? { responsePayload: extra.responsePayload } : {}),

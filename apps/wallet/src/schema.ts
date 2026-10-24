@@ -393,7 +393,7 @@ export const charges = pgTable(
     currency: varchar('currency', { length: 3 }).notNull(),
     operation: chargeOperationEnum('operation').notNull(),
     status: chargeStatusEnum('status').notNull(),
-    providerTransactionId: varchar('provider_transaction_id', { length: 128 }),
+    providerTransactionId: varchar('provider_transaction_id', { length: 200 }),
     providerIdempotencyKey: varchar('provider_idempotency_key', { length: 255 }).notNull(),
     errorCode: varchar('error_code', { length: 128 }),
     errorMessage: text('error_message'),
@@ -428,7 +428,7 @@ export const refunds = pgTable(
     status: refundStatusEnum('status').notNull(),
     reasonCode: varchar('reason_code', { length: 128 }),
     reasonMessage: text('reason_message'),
-    providerRefundId: varchar('provider_refund_id', { length: 128 }),
+    providerRefundId: varchar('provider_refund_id', { length: 200 }),
     execution: refundExecutionEnum('execution').notNull().default('AUTO'),
     kind: refundKindEnum('kind'),
     // FAILED 행에만 채운다: provider 실패 코드(토스 오류 코드 등)와 «같은 환불을 다시 시도하면 될 수 있는가».

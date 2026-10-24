@@ -10,6 +10,8 @@ import { AutoCaptureService } from './auto-capture.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import { GatewayEventType, buildPaymentIntentEventPayload } from '../messaging/gateway-event.builder';
 import { ChargePlan, ChargeSlot } from './charge-plan';
+import { depositWindowHours } from './deposit-window';
+import { hasConfirmAttempt } from '../providers/toss/toss-widget-mode';
 import { ChargeResult } from '../providers/payment-provider.interface';
 
 type CashReceiptRequest = { type: '소득공제' | '지출증빙'; customerIdentityNumber: string };
@@ -109,6 +111,21 @@ export class ConfirmService {
 
     // 3. Cancel any active AUTHORIZE charge (stale from previous attempt)
     const existingActive = await this.chargesService.findActiveByIntentAndOperation(intentId, 'AUTHORIZE', tx);
+    // 닫지 못한 계좌가 남은 채 새 결제를 만들면 그 계좌 입금은 취소된 charge 로 거부된다. 끝난 charge 에 붙은
+    // 표식도 본다(승인 중 abandon 이 이기면 표식은 CANCELED charge 에 남는다). 정리가 닫을 때까지 막는다.
+    if (await this.chargesService.hasVirtualAccountLeftOpen(intentId, tx)) {
+      throw new ConflictException({
+        error: 'VIRTUAL_ACCOUNT_CLEANUP_PENDING',
+        message: '이전 결제를 정리하고 있어요. 잠시 후 다시 시도해 주세요.',
+      });
+    }
+    if (existingActive && hasConfirmAttempt(existingActive.responsePayload)) {
+      // 승인 결과를 모르는 charge 를 DB 만 CANCELED 로 덮으면 토스에 남은 결제·계좌를 놓친다. abandon 이 정리한다.
+      throw new ConflictException({
+        error: 'PAYMENT_CONFIRMATION_PENDING',
+        message: '이전 결제 결과를 확인하고 있어요. 잠시 후 다시 시도해 주세요.',
+      });
+    }
     if (existingActive) {
       await this.cancelStaleCharge(existingActive.id, correlationId, tx);
     }
@@ -709,14 +726,6 @@ export class ConfirmService {
       .where(eq(paymentIntents.id, intentId));
   }
 
-  private static readonly DEFAULT_DEPOSIT_WINDOW_HOURS = 72;
-
-  private depositWindowMs(): number {
-    const raw = Number(process.env.WALLET_BANK_TRANSFER_DEPOSIT_WINDOW_HOURS);
-    const hours = Number.isFinite(raw) && raw > 0 ? raw : ConfirmService.DEFAULT_DEPOSIT_WINDOW_HOURS;
-    return hours * 60 * 60_000;
-  }
-
   /**
    * 알림 수신자 이메일. 결제 생성 경로마다 metadata 키가 달라 둘 다 본다
    * (멤버십=email, 상품주문=customerEmail). 새 경로가 세 번째 이름을 쓰기 시작하면
@@ -730,7 +739,7 @@ export class ConfirmService {
   private async stampDepositExpiry(intentId: string): Promise<void> {
     await this.dbService.db
       .update(paymentIntents)
-      .set({ expiresAt: new Date(Date.now() + this.depositWindowMs()) })
+      .set({ expiresAt: new Date(Date.now() + depositWindowHours() * 60 * 60_000) })
       .where(eq(paymentIntents.id, intentId));
   }
 
