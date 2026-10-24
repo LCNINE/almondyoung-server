@@ -267,6 +267,22 @@ CHECK: **`warehouse_id` 와 `supplier_id` 중 정확히 하나.** 이것이 «�
 - 착수 전 라이브 실측(터널은 사용자가) — 위 사실 확인용, 0 이 기대값이다: `drop_shipped` SKU 수·직배 공급사 연결 없는 수, `fulfillment_mode='drop_ship'` FO 수, `direct_ship_cancel_notices` 행 수,
   채널 주문 중 직배 SKU 수. 하나라도 0 이 아니면 그 행의 이행(백필·종결)을 계획에 넣는다.
 
+## 7. PR 나누기
+
+PR 마다 계획서를 따로 쓴다(`docs/superpowers/plans/2026-10-25-k3-…-prN.md`). **개통(첫 입점사 등록)은 PR 1~7 이 모두 라이브가 된 뒤다** —
+그 전까지는 직배 SKU 가 라이브에 0 이라 PR 4~6 은 휴면이다.
+
+| PR | 내용 | 배포 | 마이그 |
+|---|---|---|---|
+| 1 | **FO 투영 하나**(§4.5): 투영 함수 하나로 모으고 FO·FOI status 직접 쓰기 가드. 남은 예외는 옛 직배 생성·`ship()` | Core | 없음 |
+| 2 | **입점사 상자 expand**(§4.1·§4.2·§4.8): 스키마 추가, SKU 직배 입점사 규칙, 창고 흐름 진입점의 입점사 상자 거부 가드 | Core | expand, `migrate → deploy` |
+| 3 | **이벤트 계약 넓히기**(§4.6·§6): `ShipmentShipped`·`SalesOrderShipmentDispatched` 의 창고/입점사, `carrier` 새 값 | **소비자(channel-adapter·notification) 먼저**, 그다음 Core | 없음 |
+| 4 | **FO 생성이 입점사 상자를 만든다**(§4.3-1) + 읽는 쪽을 상자 기반으로(정체 보드·K6 수량 사실·판매주문 단계·직배 목록), «섞이면 거절» 제거 | Core | 없음(필요하면 expand) |
+| 5 | **직배 발송 명령**(§4.3-3~9·§4.4·§4.6): 내려받기=넘김, 올리기 미리보기/적용, 발송·합포장·정정·못 보냄, 이벤트, 되돌리기 갈래 | Core(PR 3 라이브 뒤) | 없음 |
+| 6 | **취소**(§4.7): 알릴 취소를 상자 후 경로로, 못 보냄 억제, 입점사 FK | Core | 없음 |
+| 7 | **admin-web**(§4.9·§4.2): 직배 화면 개편, SKU 폼 입점사 | admin-web | 없음 |
+| 8 | **contract**(§6): `direct_ship_status`·FO `'shipped'` 값·옛 직배 경로·`holders` FK 제거 | Core, `deploy → migrate` | contract |
+
 ## 부록 A. 지금 직배를 특별 취급하는 곳
 
 2026-10-25 탐색 결과. 착수 때 다시 잰다: `grep -rnE "drop_ship|drop_shipped|directShip|direct_ship" apps/core/src apps/admin-web/src --include=*.ts --include=*.tsx | grep -v '\.spec\.'`
