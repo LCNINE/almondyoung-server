@@ -31,6 +31,9 @@ describe('직배 파트너 취소 대기 행 쓰기 길', () => {
   it('direct_ship_cancel_notices 는 출고 명령(생성)과 통지 매니저(완료 표시)만 쓴다', () => {
     expect(
       filesCalling(/\.(?:insert|update|delete)\((?:wmsTables|inventoryTables)\.directShipCancelNotices\)/),
-    ).toEqual(['apps/core/src/modules/fulfillment/unboxed-demand/unboxed-demand-cancellation.ts']);
+    ).toEqual([
+      'apps/core/src/modules/fulfillment/direct-ship-cancel-notice/direct-ship-cancel-notice.manager.ts',
+      'apps/core/src/modules/fulfillment/unboxed-demand/unboxed-demand-cancellation.ts',
+    ]);
   });
 });
