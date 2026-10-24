@@ -16,8 +16,11 @@ export class DirectShipCancelNoticeService {
     return this.reader.listOpen(filter);
   }
 
-  async exportFile(companyName: string): Promise<{ fileName: string; content: Buffer; mimeType: string }> {
-    const csv = toCancelNoticeCsv(await this.reader.listOpen({ companyName }));
+  async exportFile(
+    companyName: string,
+    noticeIds: string[],
+  ): Promise<{ fileName: string; content: Buffer; mimeType: string }> {
+    const csv = toCancelNoticeCsv(await this.reader.listOpenSelected(companyName, noticeIds));
     const stamp = formatInTimeZone(new Date(), 'Asia/Seoul', 'yyyyMMddHHmm');
     return {
       fileName: `직배취소알림_${companyName}_${stamp}.csv`,

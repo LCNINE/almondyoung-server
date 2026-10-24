@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { and, eq, isNull } from 'drizzle-orm';
+import { BadRequestError } from '@app/shared';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { wmsSchema, wmsTables, DbTx } from '../../inventory/schema/inventory.schema';
 import { DirectShipCancelNotice } from './direct-ship-cancel-notice.types';
 
@@ -10,11 +11,12 @@ export class DirectShipCancelNoticeReader {
   constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
   /** 아직 업체에 알리지 않은 취소, 오래된 것부터. */
-  async listOpen(filter: { companyName?: string }, tx?: DbTx): Promise<DirectShipCancelNotice[]> {
+  async listOpen(filter: { companyName?: string; noticeIds?: string[] }, tx?: DbTx): Promise<DirectShipCancelNotice[]> {
     return this.dbService.run(async (trx) => {
       const n = wmsTables.directShipCancelNotices;
       const where = [isNull(n.notifiedAt)];
       if (filter.companyName) where.push(eq(wmsTables.holders.name, filter.companyName));
+      if (filter.noticeIds) where.push(inArray(n.id, filter.noticeIds));
 
       // 공급사SKU 가 여러 행이면 첫 행 — DISTINCT ON 은 정렬 첫 키가 n.id 여야 해서 순서는 아래에서 다시 맞춘다
       const rows = await trx
@@ -24,6 +26,7 @@ export class DirectShipCancelNoticeReader {
           salesOrderId: n.salesOrderId,
           channelOrderId: wmsTables.salesOrders.channelOrderId,
           salesOrderLineId: n.salesOrderLineId,
+          orderCancellationId: n.orderCancellationId,
           fulfillmentOrderId: n.fulfillmentOrderId,
           skuName: wmsTables.skus.name,
           supplierSku: wmsTables.skuSuppliers.supplierSku,
@@ -53,5 +56,13 @@ export class DirectShipCancelNoticeReader {
         }))
         .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id));
     }, tx);
+  }
+
+  /** 고른 행만 — 전부 이 업체의 아직 안 알린 취소여야 한다. 하나라도 아니면 던진다(알림 완료와 같은 규칙). */
+  async listOpenSelected(companyName: string, noticeIds: string[], tx?: DbTx): Promise<DirectShipCancelNotice[]> {
+    const ids = [...new Set(noticeIds)];
+    const rows = await this.listOpen({ companyName, noticeIds: ids }, tx);
+    if (rows.length !== ids.length) throw new BadRequestError('알림 대상이 이 업체의 알릴 취소가 아닙니다.');
+    return rows;
   }
 }

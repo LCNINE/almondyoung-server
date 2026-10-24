@@ -91,10 +91,13 @@ export const directShipClient = {
     return res.data;
   },
 
-  exportCancelNoticesFile: async (companyName: string): Promise<Blob> => {
+  exportCancelNoticesFile: async (data: {
+    companyName: string;
+    noticeIds: string[];
+  }): Promise<Blob> => {
     const res = await client.post(
       `${BASE}/cancel-notices/export/file`,
-      { companyName },
+      data,
       { responseType: 'blob' }
     );
     return res.data;

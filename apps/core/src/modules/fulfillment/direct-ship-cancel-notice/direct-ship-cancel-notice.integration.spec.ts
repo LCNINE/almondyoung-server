@@ -158,4 +158,34 @@ describeIfDb('직배 알릴 취소 대기함 (PostgreSQL integration)', () => {
       expect(second.id).not.toBe(first.id);
     });
   });
+
+  it('내보내기: 고른 행만 싣고, 다른 업체·없는 id·이미 알린 id 가 섞이면 400', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await f.seedWorld(tx);
+      const wB = await seedOtherHolder(tx, w);
+      const name = await holderName(tx, w.holderId);
+      const a = await (await seedNotice(tx, w)).notice();
+      const b = await (await seedNotice(tx, w)).notice();
+      const done = await (await seedNotice(tx, w)).notice();
+      const theirs = await (await seedNotice(tx, wB)).notice();
+      await manager.markNotified(name, [done.id], 'user-1', tx);
+
+      const rows = await reader.listOpenSelected(name, [a.id], tx);
+      expect(rows.map((r) => r.id)).toEqual([a.id]);
+      expect(rows[0].orderCancellationId).toBe(a.orderCancellationId);
+      expect((await reader.listOpenSelected(name, [a.id, b.id, a.id], tx)).map((r) => r.id).sort()).toEqual(
+        [a.id, b.id].sort(),
+      );
+
+      for (const ids of [
+        [a.id, theirs.id],
+        [a.id, randomUUID()],
+        [a.id, done.id],
+      ]) {
+        await expect(reader.listOpenSelected(name, ids, tx)).rejects.toMatchObject({
+          message: '알림 대상이 이 업체의 알릴 취소가 아닙니다.',
+        });
+      }
+    });
+  });
 });

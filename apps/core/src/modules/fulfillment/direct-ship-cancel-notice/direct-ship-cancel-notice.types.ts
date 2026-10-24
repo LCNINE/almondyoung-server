@@ -4,6 +4,7 @@ export type DirectShipCancelNotice = {
   salesOrderId: string;
   channelOrderId: string | null;
   salesOrderLineId: string | null;
+  orderCancellationId: string | null;
   fulfillmentOrderId: string;
   skuName: string;
   supplierSku: string | null;

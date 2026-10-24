@@ -96,6 +96,8 @@ export const useDirectShipCancelNotices = () => {
   return useQuery({
     queryKey: orderQueryKeys.directShipCancelNotices,
     queryFn: () => orders.directShip.getCancelNotices(),
+    // 화면의 행이 «알림 완료»·CSV 의 기준이다 — 오래된 목록으로 고르면 새로 생긴 취소를 놓친다
+    staleTime: 0,
   });
 };
 

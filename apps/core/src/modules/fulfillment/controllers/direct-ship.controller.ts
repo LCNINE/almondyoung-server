@@ -14,6 +14,7 @@ const ForwardOrdersSchema = z.object({
 
 const CancelNoticeExportSchema = z.object({
   companyName: z.string().min(1),
+  noticeIds: z.array(z.string().uuid()).min(1).max(500),
 });
 
 const CancelNoticeNotifiedSchema = z.object({
@@ -253,9 +254,11 @@ export class DirectShipController {
   @RequirePermission('order.order.export')
   @Post('cancel-notices/export/file')
   @ApiOperation({ summary: '알릴 취소 CSV 내려받기' })
-  @UsePipes(new ZodValidationPipe(CancelNoticeExportSchema))
-  async exportCancelNoticesFile(@Body() dto: z.infer<typeof CancelNoticeExportSchema>, @Res() res: Response) {
-    const fileData = await this.cancelNotices.exportFile(dto.companyName);
+  async exportCancelNoticesFile(
+    @Body(new ZodValidationPipe(CancelNoticeExportSchema)) dto: z.infer<typeof CancelNoticeExportSchema>,
+    @Res() res: Response,
+  ) {
+    const fileData = await this.cancelNotices.exportFile(dto.companyName, dto.noticeIds);
     res.setHeader('Content-Type', fileData.mimeType);
     res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileData.fileName)}`);
     res.send(fileData.content);

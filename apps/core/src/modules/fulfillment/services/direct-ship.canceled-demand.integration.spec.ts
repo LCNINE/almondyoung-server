@@ -98,4 +98,41 @@ describeIfDb('직배송 조회·완료가 취소 수량을 뺀다 (PostgreSQL in
       expect(payload).toHaveProperty('shippedItems.length', 1);
     });
   });
+
+  it('전량 취소돼 canceled 가 된 FO 는 넘길 수 없다 — 400, 그대로', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { direct } = wire(tx);
+      const world = await seedWorld(tx);
+      const order = await seedOrder(tx, { quantity: 3 });
+      const { foId } = await seedFo(tx, world, order, { dropShip: 'pending', status: 'created', qty: 3 });
+      await tx
+        .update(wmsTables.fulfillmentOrders)
+        .set({ status: 'canceled' })
+        .where(eq(wmsTables.fulfillmentOrders.id, foId));
+      const [holder] = await tx.select().from(wmsTables.holders).where(eq(wmsTables.holders.id, world.holderId));
+
+      await expect(direct.forwardOrdersToCompany([foId], holder.name)).rejects.toThrow(
+        'Some orders are not available for forwarding',
+      );
+
+      const [fo] = await tx.select().from(wmsTables.fulfillmentOrders).where(eq(wmsTables.fulfillmentOrders.id, foId));
+      expect(fo.directShipStatus).toBe('pending');
+      expect(fo.status).toBe('canceled');
+    });
+  });
+
+  it('취소되지 않은 pending FO 는 넘어간다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { direct } = wire(tx);
+      const world = await seedWorld(tx);
+      const order = await seedOrder(tx, { quantity: 3 });
+      const { foId } = await seedFo(tx, world, order, { dropShip: 'pending', status: 'created', qty: 3 });
+      const [holder] = await tx.select().from(wmsTables.holders).where(eq(wmsTables.holders.id, world.holderId));
+
+      await direct.forwardOrdersToCompany([foId], holder.name);
+
+      const [fo] = await tx.select().from(wmsTables.fulfillmentOrders).where(eq(wmsTables.fulfillmentOrders.id, foId));
+      expect(fo).toMatchObject({ directShipStatus: 'forwarded', ownerId: holder.id });
+    });
+  });
 });

@@ -58,3 +58,45 @@ describe('POST /direct-ship/cancel-notices/notified', () => {
     expect(markNotified).not.toHaveBeenCalled();
   });
 });
+
+describe('POST /direct-ship/cancel-notices/export/file', () => {
+  let app: INestApplication;
+  const exportFile = jest.fn().mockResolvedValue({
+    fileName: '직배취소알림.csv',
+    content: Buffer.from('a,b'),
+    mimeType: 'text/csv; charset=utf-8',
+  });
+  beforeAll(async () => {
+    const module = await Test.createTestingModule({
+      controllers: [DirectShipController],
+      providers: [
+        { provide: DirectShipService, useValue: {} },
+        { provide: DirectShipCancelNoticeService, useValue: { exportFile } },
+      ],
+    }).compile();
+    app = module.createNestApplication();
+    app.useGlobalFilters(new GlobalExceptionFilter());
+    await app.init();
+  });
+  afterAll(() => app.close());
+  beforeEach(() => exportFile.mockClear());
+
+  const ids = [randomUUID()];
+  const post = () => request(app.getHttpServer() as Server).post('/direct-ship/cancel-notices/export/file');
+
+  it('본문이 맞으면 (업체, id들) 을 넘기고 200 text/csv', async () => {
+    const res = await post().send({ companyName: '업체', noticeIds: ids }).expect(201);
+    expect(res.headers['content-type']).toContain('text/csv');
+    expect(exportFile).toHaveBeenCalledWith('업체', ids);
+  });
+
+  it('본문이 틀리면(id 없음·uuid 아님·업체 빈값) 400', async () => {
+    await post().send({ companyName: '업체' }).expect(400);
+    await post().send({ companyName: '업체', noticeIds: [] }).expect(400);
+    await post()
+      .send({ companyName: '업체', noticeIds: ['x'] })
+      .expect(400);
+    await post().send({ companyName: '', noticeIds: ids }).expect(400);
+    expect(exportFile).not.toHaveBeenCalled();
+  });
+});

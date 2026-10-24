@@ -29,8 +29,23 @@ function filesCalling(pattern: RegExp): string[] {
 
 describe('직배 파트너 취소 대기 행 쓰기 길', () => {
   it('direct_ship_cancel_notices 는 출고 명령(생성)과 통지 매니저(완료 표시)만 쓴다', () => {
+    const T = 'directShipCancelNotices';
     expect(
-      filesCalling(/\.(?:insert|update|delete)\((?:wmsTables|inventoryTables)\.directShipCancelNotices\)/),
+      filesCalling(
+        new RegExp(
+          [
+            // drizzle 직접 형
+            String.raw`\.(?:update|insert|delete)\((?:wmsTables|inventoryTables)\.${T}\)`,
+            // drizzle 별칭 형: const n = wmsTables.directShipCancelNotices; … .update(n)
+            String.raw`const (\w+) = (?:wmsTables|inventoryTables)\.${T};[\s\S]*?\.(?:update|insert|delete)\(\1\)`,
+            // raw SQL 리터럴 형
+            String.raw`\b(?:update|insert\s+into|delete\s+from)\s+"?direct_ship_cancel_notices\b`,
+            // raw SQL 보간 형: sql`UPDATE ${wmsTables.directShipCancelNotices} …`
+            String.raw`\b(?:update|insert\s+into|delete\s+from)\s+\$\{\s*(?:wmsTables|inventoryTables)\.${T}\s*\}`,
+          ].join('|'),
+          'i',
+        ),
+      ),
     ).toEqual([
       'apps/core/src/modules/fulfillment/direct-ship-cancel-notice/direct-ship-cancel-notice.manager.ts',
       'apps/core/src/modules/fulfillment/unboxed-demand/unboxed-demand-cancellation.ts',

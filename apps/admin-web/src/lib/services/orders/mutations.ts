@@ -430,8 +430,8 @@ useMarkDirectShipCancelNoticesNotified.permission = ['fulfillment.order.write'] 
 
 export const useExportDirectShipCancelNoticesFile = () => {
   return useMutation({
-    mutationFn: (companyName: string) =>
-      orders.directShip.exportCancelNoticesFile(companyName),
+    mutationFn: (data: { companyName: string; noticeIds: string[] }) =>
+      orders.directShip.exportCancelNoticesFile(data),
   });
 };
 useExportDirectShipCancelNoticesFile.permission = ['order.order.export'] as const satisfies PermissionRequirement;
