@@ -92,6 +92,13 @@ export const useDirectShipDashboard = () => {
   });
 };
 
+export const useDirectShipCancelNotices = () => {
+  return useQuery({
+    queryKey: orderQueryKeys.directShipCancelNotices,
+    queryFn: () => orders.directShip.getCancelNotices(),
+  });
+};
+
 export const useDirectShipCompanies = () => {
   return useQuery({
     queryKey: orderQueryKeys.directShipCompanies,

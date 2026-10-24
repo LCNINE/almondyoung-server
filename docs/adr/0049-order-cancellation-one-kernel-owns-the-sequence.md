@@ -40,6 +40,8 @@ PR 3: 상자 전 취소는 출고 모듈 `UnboxedDemandCancellation` 을 부른�
 PR 4: core 정산 주문도 커널이 받는다. 환불 방침은 요청자에서 정하고(N16) 취소와 같은 트랜잭션의 환불 링크로 남긴다 — 실행·재시도·환불 안 함은 `CancellationRefundManager`(결제 쪽). 커널은 Wallet 을 모른다.
 같은 키 재전송은 `validateCancellationReplay` 가 알아보도록, 명령 키로 온 상자 전 취소도 상자 후처럼 키·요청 해시를 취소 기록에 남긴다 — 없으면 같은 키의 부분취소가 두 번 적용되고 환불 링크도 둘이 됐다.
 
+PR 5: 이미 업체에 넘긴 직배 주문의 취소는 업체에 알릴 한 줄(`direct_ship_cancel_notices`)을 남긴다 — 행은 커널이 아니라 출고 명령(`UnboxedDemandCancellation`)이 FOI 취소와 같은 트랜잭션에 쓴다. 취소 id 는 쓰기 전에 정해 행이 가리키고, `order_cancellation_id` 에는 FK 를 걸지 않는다(취소 기록은 커널이 같은 트랜잭션 끝에서 쓰므로 FK 면 쓰는 순서가 갇힌다). 알림 완료 전까지 admin-web 「알릴 취소」 탭에 업체별로 남는다.
+
 ## Consequences
 - 새 취소 문은 커널에 의도만 넘기면 된다. 순서를 직접 이으면 가드가 빨갛다.
 - 와우프레스·환불 순서를 바꾸는 후속 PR(2·4)은 커널 한 곳과 허용 목록 줄이기로 끝난다.
