@@ -382,6 +382,23 @@ export interface CompleteDirectShipOrdersRequest {
   completedBy: string;
 }
 
+export interface DirectShipCancelNotice {
+  id: string;
+  companyName: string;
+  salesOrderId: string;
+  channelOrderId: string | null;
+  salesOrderLineId: string | null;
+  fulfillmentOrderId: string;
+  skuName: string;
+  supplierSku: string | null;
+  canceledQty: number;
+  cancellationScope: 'full' | 'partial';
+  cancelledAt: string;
+  createdAt: string;
+  notifiedAt: string | null;
+  notifiedBy: string | null;
+}
+
 export interface ExportDirectShipFileRequest {
   companyName: string;
   format?: 'csv'; // ⚠️ xlsx 미구현 — csv만 허용

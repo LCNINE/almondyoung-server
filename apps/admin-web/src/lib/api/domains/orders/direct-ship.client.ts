@@ -13,6 +13,7 @@ import type {
   DirectShipDashboard,
   DirectShipOrder,
   DirectShipCompanySummary,
+  DirectShipCancelNotice,
   ForwardDirectShipOrdersRequest,
   CompleteDirectShipOrdersRequest,
 } from '@/lib/types/dto/fulfillment';
@@ -80,6 +81,33 @@ export const directShipClient = {
       { companyName, format: 'csv' },
       { responseType: 'blob' }
     );
+    return res.data;
+  },
+
+  getCancelNotices: async (companyName?: string): Promise<DirectShipCancelNotice[]> => {
+    const res = await client.get(`${BASE}/cancel-notices`, {
+      params: companyName ? { companyName } : undefined,
+    });
+    return res.data;
+  },
+
+  exportCancelNoticesFile: async (data: {
+    companyName: string;
+    noticeIds: string[];
+  }): Promise<Blob> => {
+    const res = await client.post(
+      `${BASE}/cancel-notices/export/file`,
+      data,
+      { responseType: 'blob' }
+    );
+    return res.data;
+  },
+
+  markCancelNoticesNotified: async (data: {
+    companyName: string;
+    noticeIds: string[];
+  }): Promise<{ notified: number }> => {
+    const res = await client.post(`${BASE}/cancel-notices/notified`, data);
     return res.data;
   },
 

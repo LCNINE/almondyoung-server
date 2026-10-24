@@ -81,6 +81,7 @@ export const orderQueryKeys = {
 
   // 직배송 관련
   directShipDashboard: ['direct-ship', 'dashboard'] as const,
+  directShipCancelNotices: ['direct-ship', 'cancel-notices'] as const,
   directShipCompanies: ['direct-ship', 'companies'] as const,
   directShipOrders: (params?: Record<string, string>) =>
     ['direct-ship', 'orders', params ?? {}] as const,

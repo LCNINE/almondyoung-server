@@ -321,3 +321,5 @@ K6 처럼 PR 마다 계획을 따로 쓴다. 제안 순서:
 - PR 1 (이 PR): 커널 껍데기·이름·능력 표 — 동작 변경 없음(D8 제외).
 - PR 2: 와우프레스 순서 — 통보 세 문의 받아들이기·붙잡기·커밋 뒤 record(D6·D7), 채널 취소 수신을 한 번 부르기.
 - PR 3: 상자 전 취소의 출고 명령 — UnboxedDemandCancellation, D3·D4, 직배 조회·완료가 canceledQty 를 뺀다.
+- PR 4: 환불 방침과 «환불 안 함»·재시도 — 계획 `docs/superpowers/plans/2026-10-24-k7-order-cancellation-pr4.md`.
+- PR 5: 직배 «알릴 취소» 대기함 — 계획 `docs/superpowers/plans/2026-10-24-k7-order-cancellation-pr5.md`.

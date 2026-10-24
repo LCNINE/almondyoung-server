@@ -416,6 +416,26 @@ export const useExportDirectShipFile = () => {
 };
 useExportDirectShipFile.permission = ['order.order.export'] as const satisfies PermissionRequirement;
 
+export const useMarkDirectShipCancelNoticesNotified = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { companyName: string; noticeIds: string[] }) =>
+      orders.directShip.markCancelNoticesNotified(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.directShipCancelNotices });
+    },
+  });
+};
+useMarkDirectShipCancelNoticesNotified.permission = ['fulfillment.order.write'] as const satisfies PermissionRequirement;
+
+export const useExportDirectShipCancelNoticesFile = () => {
+  return useMutation({
+    mutationFn: (data: { companyName: string; noticeIds: string[] }) =>
+      orders.directShip.exportCancelNoticesFile(data),
+  });
+};
+useExportDirectShipCancelNoticesFile.permission = ['order.order.export'] as const satisfies PermissionRequirement;
+
 // ===== FO 액션 뮤테이션 (Core /fulfillments canonical API) =====
 
 function invalidateFulfillment(

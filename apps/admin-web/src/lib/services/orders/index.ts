@@ -29,6 +29,7 @@ export {
   // 직배송 (D2)
   useDirectShipDashboard,
   useDirectShipCompanies,
+  useDirectShipCancelNotices,
   useDirectShipOrders,
   useDirectShipCompanySummary,
   // 합포장 (D2)
@@ -111,6 +112,8 @@ export {
   useForwardDirectShipOrders,
   useCompleteDirectShipOrders,
   useExportDirectShipFile,
+  useMarkDirectShipCancelNoticesNotified,
+  useExportDirectShipCancelNoticesFile,
   // 합포장 (D2)
   // FO 액션 (Core /fulfillments canonical)
   // 운송장(waybill) 발급

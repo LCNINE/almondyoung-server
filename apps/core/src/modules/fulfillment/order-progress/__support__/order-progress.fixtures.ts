@@ -74,6 +74,8 @@ export async function seedFo(
     createdAt?: Date;
     /** FO 항목 수량. 안 주면 1 */
     qty?: number;
+    /** FO owner(= 업체 holder). 안 주면 넘긴 직배('forwarded')일 때 w.holderId, 아니면 null */
+    ownerId?: string | null;
   } = {},
 ): Promise<{ foId: string; foItemId: string }> {
   const [fo] = await tx
@@ -84,6 +86,7 @@ export async function seedFo(
       status: args.status ?? 'ready',
       fulfillmentMode: args.dropShip ? 'drop_ship' : 'in_house',
       directShipStatus: args.dropShip ?? null,
+      ownerId: args.ownerId !== undefined ? args.ownerId : args.dropShip === 'forwarded' ? w.holderId : null,
       totalQty: args.qty ?? 1,
       createdAt: args.createdAt ?? new Date(),
     })

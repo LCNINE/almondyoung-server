@@ -2,7 +2,7 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema } from '../../inventory/schema/inventory.schema';
 import { DbService } from '@app/db';
-import { and, eq, inArray, desc, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, desc, isNull, ne, or, sql } from 'drizzle-orm';
 import * as ExcelJS from 'exceljs';
 import { FulfillmentsService } from './fulfillments.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
@@ -273,41 +273,48 @@ export class DirectShipService {
     this.workflowGate.assertOperationalMutationAllowed('direct_ship.forward');
     const holderId = await this.lookupHolderByName(companyName);
 
-    const foRows = await this.db
-      .select({ id: wmsTables.fulfillmentOrders.id, ownerId: wmsTables.fulfillmentOrders.ownerId })
-      .from(wmsTables.fulfillmentOrders)
-      .where(
-        and(
-          inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds),
-          eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship'),
-          or(
-            eq(wmsTables.fulfillmentOrders.directShipStatus, 'pending'),
-            isNull(wmsTables.fulfillmentOrders.directShipStatus),
-          ),
-        ),
-      );
+    const forwardable = and(
+      eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship'),
+      ne(wmsTables.fulfillmentOrders.status, 'canceled'),
+      or(
+        eq(wmsTables.fulfillmentOrders.directShipStatus, 'pending'),
+        isNull(wmsTables.fulfillmentOrders.directShipStatus),
+      ),
+    );
 
-    if (foRows.length !== fulfillmentOrderIds.length) {
-      throw new BadRequestException('Some orders are not available for forwarding');
-    }
-
-    // ownerId가 설정된 경우 동일한 holder인지 검증
-    const invalidOrders = foRows.filter((fo) => fo.ownerId && fo.ownerId !== holderId);
-    if (invalidOrders.length > 0) {
-      throw new BadRequestException(
-        `Orders belong to different company: ${invalidOrders.map((fo) => fo.id).join(', ')}`,
-      );
-    }
-
+    // 읽기부터 쓰기까지 FO 행을 잠근다 — 그 사이에 취소가 커밋되면 알릴 취소 없이 넘어간 FO 가 남는다. 잠금 순서는 취소와 같은 FO id 순.
     await this.dbService.run(async (tx) => {
-      await tx
+      const foRows = await tx
+        .select({ id: wmsTables.fulfillmentOrders.id, ownerId: wmsTables.fulfillmentOrders.ownerId })
+        .from(wmsTables.fulfillmentOrders)
+        .where(and(inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds), forwardable))
+        .orderBy(wmsTables.fulfillmentOrders.id)
+        .for('update');
+
+      if (foRows.length !== fulfillmentOrderIds.length) {
+        throw new BadRequestException('Some orders are not available for forwarding');
+      }
+
+      // ownerId가 설정된 경우 동일한 holder인지 검증
+      const invalidOrders = foRows.filter((fo) => fo.ownerId && fo.ownerId !== holderId);
+      if (invalidOrders.length > 0) {
+        throw new BadRequestException(
+          `Orders belong to different company: ${invalidOrders.map((fo) => fo.id).join(', ')}`,
+        );
+      }
+
+      const updated = await tx
         .update(wmsTables.fulfillmentOrders)
         .set({
           directShipStatus: 'forwarded',
           allocatedAt: new Date(),
           ownerId: holderId,
         })
-        .where(inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds));
+        .where(and(inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds), forwardable))
+        .returning({ id: wmsTables.fulfillmentOrders.id });
+      if (updated.length !== fulfillmentOrderIds.length) {
+        throw new BadRequestException('Some orders are not available for forwarding');
+      }
 
       this.logger.log(
         `Forwarded ${fulfillmentOrderIds.length} orders to company: ${companyName} (holderId: ${holderId})`,

@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import * as postgres from 'postgres';
 import { eq } from 'drizzle-orm';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -44,7 +45,12 @@ describeIfDb('상자 전 수요 취소 (PostgreSQL integration)', () => {
       const { foId, foItemId } = await f.seedFo(tx, w, order, { qty: 3, dropShip: 'pending', status: 'created' });
 
       await cmd.lockForCancellation(order.salesOrderId, tx);
-      const reduced = await cmd.reduce(order.salesOrderId, [{ fulfillmentOrderItemId: foItemId, qty: 1 }], tx);
+      const reduced = await cmd.reduce(
+        order.salesOrderId,
+        randomUUID(),
+        [{ fulfillmentOrderItemId: foItemId, qty: 1 }],
+        tx,
+      );
 
       expect(await foi(tx, foItemId)).toMatchObject({ qty: 3, canceledQty: 1, status: 'pending' });
       expect(await fo(tx, foId)).toMatchObject({ status: 'created', totalQty: 3, canceledAt: null });
@@ -68,7 +74,7 @@ describeIfDb('상자 전 수요 취소 (PostgreSQL integration)', () => {
       const { foId, foItemId } = await f.seedFo(tx, w, order, { qty: 2, dropShip: 'pending', status: 'created' });
 
       await cmd.lockForCancellation(order.salesOrderId, tx);
-      await cmd.reduce(order.salesOrderId, [{ fulfillmentOrderItemId: foItemId, qty: 2 }], tx);
+      await cmd.reduce(order.salesOrderId, randomUUID(), [{ fulfillmentOrderItemId: foItemId, qty: 2 }], tx);
 
       expect(await foi(tx, foItemId)).toMatchObject({ qty: 2, canceledQty: 2, status: 'canceled' });
       const after = await fo(tx, foId);
@@ -111,9 +117,9 @@ describeIfDb('상자 전 수요 취소 (PostgreSQL integration)', () => {
       const { foItemId } = await f.seedFo(tx, w, order, { qty: 2, dropShip: 'pending', status: 'created' });
 
       await cmd.lockForCancellation(order.salesOrderId, tx);
-      await expect(cmd.reduce(order.salesOrderId, [{ fulfillmentOrderItemId: foItemId, qty: 3 }], tx)).rejects.toThrow(
-        /exceeds cancellable/,
-      );
+      await expect(
+        cmd.reduce(order.salesOrderId, randomUUID(), [{ fulfillmentOrderItemId: foItemId, qty: 3 }], tx),
+      ).rejects.toThrow(/exceeds cancellable/);
       expect(await foi(tx, foItemId)).toMatchObject({ qty: 2, canceledQty: 0 });
     });
   });
@@ -171,8 +177,8 @@ describeIfDb('상자 전 수요 취소 (PostgreSQL integration)', () => {
       const orderB = await f.seedOrder(tx);
       const b = await f.seedFo(tx, w, orderB, { status: 'partially_reserved' });
 
-      const result = await cmd.cancelOrder(order.salesOrderId, tx);
-      const resultB = await cmd.cancelOrder(orderB.salesOrderId, tx);
+      const result = await cmd.cancelOrder(order.salesOrderId, randomUUID(), tx);
+      const resultB = await cmd.cancelOrder(orderB.salesOrderId, randomUUID(), tx);
 
       expect(await foi(tx, a.foItemId)).toMatchObject({ canceledQty: 2, status: 'canceled' });
       expect(await foi(tx, a2.id)).toMatchObject({ canceledQty: 5, status: 'canceled' });
@@ -184,6 +190,114 @@ describeIfDb('상자 전 수요 취소 (PostgreSQL integration)', () => {
       expect(resultB).toEqual([]);
       expect(await foi(tx, b.foItemId)).toMatchObject({ canceledQty: 0 });
       expect((await fo(tx, b.foId)).status).toBe('partially_reserved');
+    });
+  });
+
+  describe('업체에 알릴 대기 행 (D5)', () => {
+    const notices = (tx: DbTx) => tx.select().from(wmsTables.directShipCancelNotices);
+
+    it('넘긴 직배 FO 부분 감소는 대기 행 하나를 남긴다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await f.seedWorld(tx);
+        const order = await f.seedOrder(tx, { quantity: 3 });
+        const { foItemId } = await f.seedFo(tx, w, order, { qty: 3, dropShip: 'forwarded', status: 'created' });
+        const oc = randomUUID();
+
+        await cmd.lockForCancellation(order.salesOrderId, tx);
+        await cmd.reduce(order.salesOrderId, oc, [{ fulfillmentOrderItemId: foItemId, qty: 1 }], tx);
+
+        expect(await notices(tx)).toEqual([
+          expect.objectContaining({
+            orderCancellationId: oc,
+            salesOrderId: order.salesOrderId,
+            fulfillmentOrderItemId: foItemId,
+            holderId: w.holderId,
+            skuId: w.skuId,
+            canceledQty: 1,
+            cancellationScope: 'partial',
+            notifiedAt: null,
+          }),
+        ]);
+      });
+    });
+
+    it('넘긴 직배 FO 전체 취소는 FOI 마다 남은 수량으로 행을 남긴다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await f.seedWorld(tx);
+        const order = await f.seedOrder(tx, { quantity: 3 });
+        const { foItemId } = await f.seedFo(tx, w, order, { qty: 3, dropShip: 'forwarded', status: 'created' });
+        await tx
+          .update(wmsTables.fulfillmentOrderItems)
+          .set({ canceledQty: 1 })
+          .where(eq(wmsTables.fulfillmentOrderItems.id, foItemId));
+        const oc = randomUUID();
+
+        await cmd.lockForCancellation(order.salesOrderId, tx);
+        await cmd.cancelOrder(order.salesOrderId, oc, tx);
+
+        expect(await notices(tx)).toEqual([
+          expect.objectContaining({
+            orderCancellationId: oc,
+            fulfillmentOrderItemId: foItemId,
+            canceledQty: 2,
+            cancellationScope: 'full',
+          }),
+        ]);
+      });
+    });
+
+    it('넘기기 전 직배·창고 FO 는 행을 남기지 않는다', async () => {
+      for (const dropShip of ['pending', undefined] as const) {
+        await inRollbackTx(db, async (tx) => {
+          const w = await f.seedWorld(tx);
+          const order = await f.seedOrder(tx, { quantity: 3 });
+          const { foItemId } = await f.seedFo(tx, w, order, { qty: 3, dropShip, status: 'created' });
+
+          await cmd.lockForCancellation(order.salesOrderId, tx);
+          await cmd.reduce(order.salesOrderId, randomUUID(), [{ fulfillmentOrderItemId: foItemId, qty: 1 }], tx);
+          await cmd.cancelOrder(order.salesOrderId, randomUUID(), tx);
+
+          expect(await notices(tx)).toEqual([]);
+        });
+      }
+    });
+
+    it('owner 없는 넘긴 직배 FO 는 던진다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await f.seedWorld(tx);
+        const order = await f.seedOrder(tx, { quantity: 3 });
+        const { foItemId } = await f.seedFo(tx, w, order, {
+          qty: 3,
+          dropShip: 'forwarded',
+          status: 'created',
+          ownerId: null,
+        });
+
+        await cmd.lockForCancellation(order.salesOrderId, tx);
+        await expect(
+          cmd.reduce(order.salesOrderId, randomUUID(), [{ fulfillmentOrderItemId: foItemId, qty: 1 }], tx),
+        ).rejects.toThrow('has no owner');
+      });
+    });
+
+    it('행은 넘겨받은 tx 로 쓴다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await f.seedWorld(tx);
+        const order = await f.seedOrder(tx, { quantity: 3 });
+        await f.seedFo(tx, w, order, { qty: 3, dropShip: 'forwarded', status: 'created' });
+
+        await cmd.lockForCancellation(order.salesOrderId, tx);
+        await expect(
+          tx.transaction(async (sp) => {
+            await cmd.cancelOrder(order.salesOrderId, randomUUID(), sp);
+            // 행이 savepoint 안에서 보여야 «넘겨받은 tx 로 썼다»가 증명된다 — 다른 연결이면 여기서 0 이다
+            expect(await notices(sp)).toHaveLength(1);
+            throw new Error('boom');
+          }),
+        ).rejects.toThrow('boom');
+
+        expect(await notices(tx)).toEqual([]);
+      });
     });
   });
 });

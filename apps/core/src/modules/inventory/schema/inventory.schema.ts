@@ -1772,6 +1772,51 @@ export const fulfillmentOrders = pgTable(
   }),
 );
 
+/**
+ * 넘긴 직배 FO 의 상자 전 취소가 업체에 알릴 한 줄(K7 PR5, D5).
+ * 행은 출고 명령이 취소와 같은 트랜잭션에 쓴다. order_cancellation_id 는 FK 가 없다 — 취소 행과 같은 id 를
+ * 명령에 먼저 넘겨 쓰는 약한 참조다(N24).
+ */
+export const directShipCancelNotices = pgTable(
+  'direct_ship_cancel_notices',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orderCancellationId: uuid('order_cancellation_id').notNull(),
+    salesOrderId: uuid('sales_order_id')
+      .references(() => salesOrders.id)
+      .notNull(),
+    fulfillmentOrderId: uuid('fulfillment_order_id')
+      .references(() => fulfillmentOrders.id)
+      .notNull(),
+    fulfillmentOrderItemId: uuid('fulfillment_order_item_id')
+      .references(() => fulfillmentOrderItems.id)
+      .notNull(),
+    holderId: uuid('holder_id')
+      .references(() => holders.id)
+      .notNull(),
+    salesOrderLineId: varchar('sales_order_line_id', { length: 255 }),
+    skuId: uuid('sku_id')
+      .references(() => skus.id)
+      .notNull(),
+    canceledQty: integer('canceled_qty').notNull(),
+    cancellationScope: varchar('cancellation_scope', { length: 32 }).$type<'full' | 'partial'>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    notifiedAt: timestamp('notified_at', { withTimezone: true }),
+    notifiedBy: varchar('notified_by', { length: 255 }),
+  },
+  (t) => ({
+    uqCancellationItem: unique('uq_direct_ship_cancel_notices_cancellation_item').on(
+      t.orderCancellationId,
+      t.fulfillmentOrderItemId,
+    ),
+    idxPending: index('idx_direct_ship_cancel_notices_pending')
+      .on(t.holderId, t.createdAt)
+      .where(sql`${t.notifiedAt} IS NULL`),
+    canceledQtyCheck: check('direct_ship_cancel_notices_canceled_qty_check', sql`${t.canceledQty} > 0`),
+    scopeCheck: check('direct_ship_cancel_notices_scope_check', sql`${t.cancellationScope} IN ('full', 'partial')`),
+  }),
+);
+
 export const fulfillmentOrderCreationBacklogs = pgTable(
   'fulfillment_order_creation_backlogs',
   {
@@ -2786,7 +2831,6 @@ export const productSkuMappingItems = pgTable(
   }),
 );
 
-
 /*───────────────────────────
  * FULFILLMENT ORDER ITEMS (FOI) - 핵심 확장
  *──────────────────────────*/
@@ -3699,6 +3743,7 @@ export const wmsTables = {
   mergeGroups,
   stockReservations,
   fulfillmentOrders,
+  directShipCancelNotices,
   fulfillmentOrderCreationBacklogs,
   shipments,
   shipmentLines,
@@ -4586,7 +4631,6 @@ export const productSkuMappingItemsRelations = relations(productSkuMappingItems,
   }),
 }));
 
-
 // Settings Relations
 export const settingsRelations = relations(settings, ({ one }) => ({
   warehouse: one(warehouses, {
@@ -4965,7 +5009,6 @@ export type NewProductSkuMapping = InferInsertModel<typeof productSkuMappings>;
 
 export type ProductSkuMappingItem = InferSelectModel<typeof productSkuMappingItems>;
 export type NewProductSkuMappingItem = InferInsertModel<typeof productSkuMappingItems>;
-
 
 // Waybill Types
 export type Waybill = InferSelectModel<typeof waybills>;

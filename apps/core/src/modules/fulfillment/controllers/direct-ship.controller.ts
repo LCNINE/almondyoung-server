@@ -1,15 +1,28 @@
-import { Controller, Get, Post, Put, Body, Param, Query, UsePipes, Res } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query, UsePipes, Res, BadRequestException } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { DirectShipService, DirectShipOrder } from '../services/direct-ship.service';
 import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
 import { z } from 'zod';
-import { RequirePermission, PiiResponse, OPEN_WITH_RECIPIENT } from '@app/authorization';
+import { DirectShipCancelNoticeService } from '../direct-ship-cancel-notice/direct-ship-cancel-notice.service';
+import { RequirePermission, User, PiiResponse, OPEN_WITH_RECIPIENT } from '@app/authorization';
 
 const ForwardOrdersSchema = z.object({
   fulfillmentOrderIds: z.array(z.string().uuid()).min(1),
   companyName: z.string().min(1),
 });
+
+const CancelNoticeExportSchema = z.object({
+  companyName: z.string().min(1),
+  noticeIds: z.array(z.string().uuid()).min(1).max(500),
+});
+
+const CancelNoticeNotifiedSchema = z.object({
+  companyName: z.string().min(1),
+  noticeIds: z.array(z.string().uuid()).min(1).max(500),
+});
+
+type AuthenticatedUser = { id?: string; userId?: string };
 
 const CompleteOrdersSchema = z.object({
   fulfillmentOrderIds: z.array(z.string().uuid()).min(1),
@@ -24,7 +37,10 @@ const ExportOrdersSchema = z.object({
 @ApiTags('Direct Ship')
 @Controller('direct-ship')
 export class DirectShipController {
-  constructor(private readonly directShipService: DirectShipService) {}
+  constructor(
+    private readonly directShipService: DirectShipService,
+    private readonly cancelNotices: DirectShipCancelNoticeService,
+  ) {}
 
   @RequirePermission('fulfillment.order.read')
   @Get('dashboard')
@@ -225,5 +241,39 @@ export class DirectShipController {
       totalItems: orders.reduce((sum, order) => sum + order.totalItems, 0),
       lastOrderDate: orders.length > 0 ? orders[0].createdAt : null,
     };
+  }
+
+  @RequirePermission('fulfillment.order.read')
+  @Get('cancel-notices')
+  @ApiOperation({ summary: '업체에 알릴 취소 대기함' })
+  @ApiQuery({ name: 'companyName', required: false })
+  async getCancelNotices(@Query('companyName') companyName?: string) {
+    return this.cancelNotices.listOpen({ companyName });
+  }
+
+  @RequirePermission('order.order.export')
+  @Post('cancel-notices/export/file')
+  @ApiOperation({ summary: '알릴 취소 CSV 내려받기' })
+  async exportCancelNoticesFile(
+    @Body(new ZodValidationPipe(CancelNoticeExportSchema)) dto: z.infer<typeof CancelNoticeExportSchema>,
+    @Res() res: Response,
+  ) {
+    const fileData = await this.cancelNotices.exportFile(dto.companyName, dto.noticeIds);
+    res.setHeader('Content-Type', fileData.mimeType);
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileData.fileName)}`);
+    res.send(fileData.content);
+  }
+
+  @RequirePermission('fulfillment.order.write')
+  @Post('cancel-notices/notified')
+  @ApiOperation({ summary: '알릴 취소 알림 완료' })
+  // 파이프는 본문에만 건다 — 메서드 단위 @UsePipes 는 @User() 까지 지나가 사용자 객체를 본문 스키마로 파싱한다
+  async markCancelNoticesNotified(
+    @Body(new ZodValidationPipe(CancelNoticeNotifiedSchema)) dto: z.infer<typeof CancelNoticeNotifiedSchema>,
+    @User() user: AuthenticatedUser,
+  ) {
+    const actor = user?.id ?? user?.userId;
+    if (!actor) throw new BadRequestException('Authenticated actor is required');
+    return this.cancelNotices.markNotified(dto.companyName, dto.noticeIds, actor);
   }
 }

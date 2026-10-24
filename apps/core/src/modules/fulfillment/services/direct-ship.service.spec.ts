@@ -77,23 +77,17 @@ describe('DirectShipService.forwardOrdersToCompany', () => {
     foRows?: Array<{ id: string; ownerId: string | null }>;
   } = {}) {
     const mockTx: any = {
-      update: jest.fn(() => ({ set: () => ({ where: () => Promise.resolve() }) })),
+      select: jest.fn(() => ({
+        from: () => ({ where: () => ({ orderBy: () => ({ for: () => Promise.resolve(foRows) }) }) }),
+      })),
+      update: jest.fn(() => ({
+        set: () => ({ where: () => ({ returning: () => Promise.resolve(foRows.map((r) => ({ id: r.id }))) }) }),
+      })),
     };
 
     const mockDb: any = {
       select: jest.fn(() => ({
-        from: (table: any) => {
-          const isHolderTable = table === wmsTables.holders;
-          const rows = isHolderTable ? holderRows : foRows;
-          return {
-            where: (_cond: any) => {
-              if (isHolderTable) {
-                return { limit: (_n: number) => Promise.resolve(rows) };
-              }
-              return Promise.resolve(rows);
-            },
-          };
-        },
+        from: () => ({ where: () => ({ limit: () => Promise.resolve(holderRows) }) }),
       })),
       transaction: jest.fn((fn: (tx: any) => Promise<any>) => fn(mockTx)),
     };

@@ -306,6 +306,43 @@ describe('CancellationRefundManager', () => {
       expect(f.salesOrders.createBusinessLink).not.toHaveBeenCalled();
     });
 
+    it('다른 결정 대기 건을 닫은 succeeded 는 «환불 안 함»을 막지 않는다', async () => {
+      const f = makeFixture({
+        links: [
+          { id: 'k-3', metadata: { refundStatus: 'succeeded', completedRefundLinkId: 'k-2' } },
+          { id: 'k-2', metadata: { refundStatus: 'manual_pending', awaitingDecision: true } },
+          { id: 'k-1', metadata: { refundStatus: 'manual_pending', awaitingDecision: true } },
+        ],
+      });
+      await expect(f.manager.waive(SO_ID, { refundLinkId: 'k-1' })).resolves.toEqual({ refundStatus: 'waived' });
+      expect(recorded(f)).toMatchObject({ refundStatus: 'waived', completedRefundLinkId: 'k-1' });
+    });
+
+    it('표지 없는 succeeded 는 다른 건을 닫은 succeeded 와 함께 있어도 «환불 안 함»을 막는다', async () => {
+      const f = makeFixture({
+        links: [
+          { id: 'k-4', metadata: { refundStatus: 'succeeded', completedRefundLinkId: 'k-2' } },
+          { id: 'k-3', metadata: { refundStatus: 'succeeded' } },
+          { id: 'k-2', metadata: { refundStatus: 'manual_pending', awaitingDecision: true } },
+          { id: 'k-1', metadata: { refundStatus: 'manual_pending', awaitingDecision: true } },
+        ],
+      });
+      await expect(f.manager.waive(SO_ID, { refundLinkId: 'k-1' })).rejects.toThrow('이미 환불이 완료된 건입니다.');
+      expect(f.salesOrders.createBusinessLink).not.toHaveBeenCalled();
+    });
+
+    it('자동 선택도 이미 닫힌 k-2 를 건너뛰고 k-1 을 고른다', async () => {
+      const f = makeFixture({
+        links: [
+          { id: 'k-3', metadata: { refundStatus: 'succeeded', completedRefundLinkId: 'k-2' } },
+          { id: 'k-2', metadata: { refundStatus: 'manual_pending', awaitingDecision: true } },
+          { id: 'k-1', metadata: { refundStatus: 'manual_pending', awaitingDecision: true } },
+        ],
+      });
+      await expect(f.manager.waive(SO_ID, {})).resolves.toEqual({ refundStatus: 'waived' });
+      expect(recorded(f)).toMatchObject({ completedRefundLinkId: 'k-1' });
+    });
+
     it('기록이 실패하면 삼키지 않고 던진다', async () => {
       const f = makeFixture({
         links: [{ id: 'k-1', metadata: { refundStatus: 'manual_pending', awaitingDecision: true } }],

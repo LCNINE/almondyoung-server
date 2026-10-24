@@ -29,6 +29,9 @@ import { PoliciesService } from './services/policies.service';
 import { PickingProcessService } from './services/picking-process.service';
 import { ConsolidationService } from './services/consolidation.service';
 import { DirectShipService } from './services/direct-ship.service';
+import { DirectShipCancelNoticeService } from './direct-ship-cancel-notice/direct-ship-cancel-notice.service';
+import { DirectShipCancelNoticeReader } from './direct-ship-cancel-notice/direct-ship-cancel-notice.reader';
+import { DirectShipCancelNoticeManager } from './direct-ship-cancel-notice/direct-ship-cancel-notice.manager';
 import { FulfillmentProgressService } from './services/fulfillment-progress.service';
 import { FulfillmentInvariantService } from './services/fulfillment-invariant.service';
 import { FulfillmentReconciliationService } from './services/fulfillment-reconciliation.service';
@@ -157,6 +160,9 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ToteLifecycleService,
     ConsolidationService,
     DirectShipService,
+    DirectShipCancelNoticeService,
+    DirectShipCancelNoticeReader,
+    DirectShipCancelNoticeManager,
     FulfillmentProgressService,
     FulfillmentInvariantService,
     FulfillmentReconciliationService,
