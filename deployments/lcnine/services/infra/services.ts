@@ -203,8 +203,57 @@ export function setup(infra: SharedInfra) {
   const grafanaCloudLokiOtlpEndpoint = new sst.Secret('GrafanaCloudLokiOtlpEndpoint');
   const grafanaCloudLokiUsername = new sst.Secret('GrafanaCloudLokiUsername');
 
+  // ─── Fargate Spot (1단계 시험, 2026-10-24) ───
+  // Spot 은 일반 Fargate 보다 최대 70% 싸지만 AWS 가 2분 예고(SIGTERM) 뒤 회수한다. 서비스마다 태스크가 1개라
+  // 회수되면 새 태스크가 뜰 때까지(실측 시작→ALB 등록 30~180초) 서비스가 통째로 내려가고, Spot 용량이 없으면
+  // AWS 는 일반 용량으로 대신 띄워 주지 않으므로 용량이 생길 때까지 내려가 있다. @CronOnce 는 놓친 회차를
+  // 따라잡지 않는다. AWS 는 Fargate Spot 중단율을 공개하지 않는다.
+  // 그래서 멈춰도 고객이 못 느끼는 둘(Observability·Ai)만 먼저 옮기고, 중단·배치 실패를 아래 로그로 몇 주 잰 뒤
+  // 나머지를 정한다. FileService 는 고객 업로드(리뷰 사진·문의 첨부·아몬드템플릿 주문 등)가 지나가서 이 기준에서 빠진다.
+  // Bundle A/B 에는 멤버십 결제·인증문자·검색이, MedusaAdmin 에는 Medusa 백그라운드 작업 전부가 있다.
+  //
+  // 경과 보기 (CloudWatch Logs Insights, 로그 그룹 /aws/events/lcnine-services-<stage>-spot):
+  //   fields @timestamp, `detail-type`, detail.group, detail.eventName, detail.stopCode, detail.reason
+  //   | sort @timestamp desc
+  const spotEventsLog = new aws.cloudwatch.LogGroup('SpotEventsLog', {
+    name: `/aws/events/${$app.name}-${$app.stage}-spot`,
+    retentionInDays: 365,
+  });
+  // EventBridge 가 로그 그룹에 쓰려면 리소스 정책이 있어야 한다(대상만 걸면 조용히 아무것도 안 남는다).
+  new aws.cloudwatch.LogResourcePolicy('SpotEventsLogPolicy', {
+    policyName: `${$app.name}-${$app.stage}-spot-events`,
+    policyDocument: $jsonStringify({
+      Version: '2012-10-17',
+      Statement: [
+        {
+          Effect: 'Allow',
+          Principal: { Service: ['events.amazonaws.com', 'delivery.logs.amazonaws.com'] },
+          Action: ['logs:CreateLogStream', 'logs:PutLogEvents'],
+          Resource: $interpolate`${spotEventsLog.arn}:*`,
+        },
+      ],
+    }),
+  });
+  const spotEventsRule = new aws.cloudwatch.EventRule('SpotEventsRule', {
+    description: 'Fargate Spot 회수(SpotInterruption)와 태스크 배치 실패 기록 — Spot 시험 경과',
+    eventPattern: $jsonStringify({
+      source: ['aws.ecs'],
+      'detail-type': ['ECS Task State Change', 'ECS Service Action'],
+      detail: {
+        clusterArn: [cluster.nodes.cluster.arn],
+        $or: [{ stopCode: ['SpotInterruption'] }, { eventName: ['SERVICE_TASK_PLACEMENT_FAILURE'] }],
+      },
+    }),
+  });
+  new aws.cloudwatch.EventTarget('SpotEventsTarget', {
+    rule: spotEventsRule.name,
+    arn: spotEventsLog.arn,
+  });
+
   const alloy = new sst.aws.Service('Observability', {
     cluster,
+    // Spot 시험 대상 — 멈추면 그동안의 메트릭·트레이스·로그만 빠진다 (위 Spot 절).
+    capacity: 'spot',
     cpu: '0.25 vCPU',
     memory: '0.5 GB',
     scaling: { min: 1, max: 1 },
@@ -524,6 +573,8 @@ export function setup(infra: SharedInfra) {
   // 나눠 쓰면 그 스파이크가 남의 OOM 이 된다.
   createService('Ai', {
     architecture: 'arm64',
+    // Spot 시험 대상 — 관리자 어시스턴트다. 크론 둘(대화 파기·고아 파일 수거)은 나이 기준이라 하루 놓쳐도 다음 회차가 같이 처리한다.
+    capacity: 'spot',
     dockerfile: 'apps/ai/Dockerfile',
     domainSlug: 'ai',
     port: 3070,

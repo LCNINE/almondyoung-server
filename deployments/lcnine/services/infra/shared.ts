@@ -183,6 +183,8 @@ export function setup(opts?: { baseDomain?: string }) {
       pathPattern?: string;
       // 다른 서비스가 이미 빌드한 이미지 URI (imageOf 로 얻는다). 주면 dockerfile·buildArgs 로 다시 빌드하지 않는다.
       image?: $util.Input<string>;
+      // 'spot' 이면 Fargate Spot 으로만 띄운다 (services.ts 의 Spot 절 참고). 바꾸면 ECS 서비스가 재생성된다.
+      capacity?: 'spot';
     },
   ) => {
     const image = opts.image ?? {
@@ -197,6 +199,7 @@ export function setup(opts?: { baseDomain?: string }) {
       ...(opts.memory ? { memory: opts.memory as any } : {}),
       ...(opts.scaling ? { scaling: opts.scaling } : {}),
       ...(opts.architecture ? { architecture: opts.architecture } : {}),
+      ...(opts.capacity ? { capacity: opts.capacity } : {}),
       loadBalancer: {
         instance: alb,
         rules: [
