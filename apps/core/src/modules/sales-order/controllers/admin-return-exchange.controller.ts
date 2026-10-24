@@ -99,7 +99,7 @@ export class AdminReturnExchangeController {
   @RequirePermission('order.order.cancel')
   @Post('sales-orders/:id/cancel')
   @HttpCode(200)
-  @ApiOperation({ summary: '관리자 주문 취소 — 채널 주문은 취소 요청, core 주문은 Wallet 자동 환불 연동' })
+  @ApiOperation({ summary: '관리자 주문 취소 — 채널 주문은 취소 요청, core 정산 주문은 환불 결정 대기(Wallet 미호출)' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
   adminCancelOrder(
     @Param('id') id: string,
@@ -141,6 +141,15 @@ export class AdminReturnExchangeController {
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
   adminManualRefundComplete(@Param('id') id: string, @Body() dto: AdminDecideRequestDto) {
     return this.storeSalesOrdersService.adminManualRefundComplete(id, dto);
+  }
+
+  @RequirePermission('payment.refund.execute')
+  @Post('sales-orders/:id/refund-waive')
+  @HttpCode(200)
+  @ApiOperation({ summary: '취소 주문 환불 안 함 결정 (환불 결정 대기 건에만)' })
+  @ApiParam({ name: 'id', description: '판매 주문 ID' })
+  adminWaiveRefund(@Param('id') id: string, @Body() dto: AdminDecideRequestDto) {
+    return this.storeSalesOrdersService.adminWaiveRefund(id, dto);
   }
 
   // ── Return Requests ───────────────────────────────────────────────────────

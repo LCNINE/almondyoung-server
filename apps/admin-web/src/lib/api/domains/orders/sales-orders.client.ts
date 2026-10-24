@@ -133,7 +133,7 @@ export const salesOrders = {
     return response.data;
   },
 
-  // 관리자 주문 취소 + Wallet 자동 환불 (새 엔드포인트)
+  // 관리자 주문 취소. core 정산 주문은 «환불 결정 대기»만 남기고 Wallet 을 부르지 않는다 — 환불은 주문내역에서 따로 결정한다(D2)
   adminCancelSalesOrder: async (
     id: string,
     body?: CancelSalesOrderDto,
@@ -181,6 +181,19 @@ export const salesOrders = {
   ): Promise<{ refundStatus: string; completionType: string }> => {
     const response = await client.post(
       `${ALMONDYOUNG_API_BASE_URL}/admin/sales-orders/${encodeURIComponent(id)}/manual-refund-complete`,
+      { adminNote, refundLinkId }
+    );
+    return response.data;
+  },
+
+  // 환불 안 함 결정 (환불 결정 대기 건을 닫는다)
+  adminWaiveRefund: async (
+    id: string,
+    adminNote?: string,
+    refundLinkId?: string
+  ): Promise<{ refundStatus: 'waived' }> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/sales-orders/${encodeURIComponent(id)}/refund-waive`,
       { adminNote, refundLinkId }
     );
     return response.data;

@@ -13,6 +13,7 @@ import {
 } from '../../fulfillment/services/__support__';
 import { WalletRefundClient } from './wallet-refund.client';
 import { StoreSalesOrdersService } from './store-sales-orders.service';
+import { CancellationRefundManager } from '../cancellation-refund/cancellation-refund.manager';
 import { OrderCancellation } from '../order-cancellation/order-cancellation';
 import { OrderCancellationReader } from '../order-cancellation/order-cancellation.reader';
 
@@ -172,11 +173,9 @@ describeIfDb('Store order tracking V2 graph (DB integration, rollback-only)', ()
       const printCancellation = {};
       const service = new StoreSalesOrdersService(
         db as never,
-        salesOrders as never,
         {} as WalletRefundClient,
         cancelRequests as never,
         printOrders as never,
-        printCancellation as never,
         new OrderCancellation(
           db as never,
           salesOrders as never,
@@ -185,7 +184,9 @@ describeIfDb('Store order tracking V2 graph (DB integration, rollback-only)', ()
           printCancellation as never,
           {} as never,
           new OrderCancellationReader(),
+          new CancellationRefundManager(db as never, salesOrders as never, {} as WalletRefundClient),
         ),
+        new CancellationRefundManager(db as never, salesOrders as never, {} as WalletRefundClient),
       );
       const firstView = await service.getTracking(first.salesOrderId, customerId);
       const secondView = await service.getTracking(second.salesOrderId, customerId);

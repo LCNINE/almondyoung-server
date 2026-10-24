@@ -22,6 +22,7 @@ import { SalesOrderQueryService } from './services/sales-order-query.service';
 import { StoreSalesOrdersService } from './services/store-sales-orders.service';
 import { StoreReturnExchangeService } from './services/store-return-exchange.service';
 import { WalletRefundClient } from './services/wallet-refund.client';
+import { CancellationRefundManager } from './cancellation-refund/cancellation-refund.manager';
 import { ChannelOrderChangeReader } from './channel-order-change/channel-order-change.reader';
 import { ChannelOrderChangeManager } from './channel-order-change/channel-order-change.manager';
 import { ChannelAmendmentActionsService } from './channel-order-change/channel-amendment-actions.service';
@@ -101,6 +102,8 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
     StoreSalesOrdersService,
     StoreReturnExchangeService,
     WalletRefundClient,
+    // 취소의 환불 기록·실행 — Wallet 을 부르는 취소 쪽 파일은 이것 하나(K7 PR4)
+    CancellationRefundManager,
 
     // 수집 뒤 채널 변경(OrderModified) 반영 — #1016 5번 행
     ChannelOrderChangeReader,

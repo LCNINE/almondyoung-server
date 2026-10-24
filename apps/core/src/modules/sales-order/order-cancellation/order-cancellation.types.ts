@@ -1,3 +1,5 @@
+import type { CancelRequestView } from '../channel-cancel-request/channel-cancel-request.types';
+
 /** 취소할 줄과 수량. 없으면(요청에 `lines` 가 없으면) 전체취소다 */
 export type CancelLine = { salesOrderLineId: string; quantity: number };
 
@@ -17,6 +19,8 @@ export type CancellationRequest =
     }
   | {
       requester: { kind: 'operator'; actorId: string };
+      /** core 정산 주문의 출고 명령 행위자 권한 — 문이 넘긴다(채널 요청은 쓰지 않는다) */
+      actorRoles: string[];
       salesOrderId: string;
       sourceKey: string | undefined;
       reasonCode?: string;
@@ -25,6 +29,23 @@ export type CancellationRequest =
       /** 부분취소만. 이번 취소 품목에 이미 다른 경로로 돌려준 금액(원) — 채널이 상계한다(#1016 37번) */
       alreadyRefundedAmount?: number;
     };
+
+/**
+ * 요청의 결과 (K7 PR4). 채널 주문은 채널에 낸 취소 요청(지금과 같은 view), core 가 돈을 쥔 주문은 core 가 바로 적용한 취소.
+ * `replayed` — core 정산 주문에 같은 키가 다시 왔다(첫 결과의 지금 상태는 문이 읽는다).
+ */
+export type CancellationOutcome =
+  | { kind: 'channel_request'; view: CancelRequestView }
+  | { kind: 'replayed' }
+  | { kind: 'applied'; scope: 'full' | 'partial'; refund: CancellationRefundResult };
+
+/** core 정산 주문 취소가 남긴 환불. 즉시 환불을 커밋 뒤 실행했으면 그 Wallet 결과, 아니면 취소와 함께 기록한 상태 */
+export type CancellationRefundResult = {
+  refundStatus: string;
+  /** 부분취소 — 비례 배분 추정액(관리자가 검토 후 결정) */
+  refundEstimateAmount?: number;
+  manualReason?: string;
+};
 
 /**
  * 무통장 환불 승인 통보 — 돈은 wallet 에서 이미 나갔다 (K7 PR2, N7).

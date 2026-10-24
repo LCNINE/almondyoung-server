@@ -147,6 +147,28 @@ export const useAdminManualRefundComplete = () => {
 };
 useAdminManualRefundComplete.permission = ['payment.refund.execute'] as const satisfies PermissionRequirement;
 
+export const useAdminWaiveRefund = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      id,
+      adminNote,
+      refundLinkId,
+    }: {
+      id: string;
+      adminNote?: string;
+      refundLinkId?: string;
+    }) => orders.salesOrders.adminWaiveRefund(id, adminNote, refundLinkId),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.orders });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.order(id) });
+    },
+  });
+};
+useAdminWaiveRefund.permission = ['payment.refund.execute'] as const satisfies PermissionRequirement;
+
 // ===== 매칭 관련 뮤테이션 (WMS API 스펙 기반) =====
 
 /**

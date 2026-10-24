@@ -16,6 +16,7 @@ import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
 import type { StoreFulfillmentStatus } from '../dto/store-order-actions.dto';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { StoreSalesOrdersService } from '../services/store-sales-orders.service';
+import { CancellationRefundManager } from '../cancellation-refund/cancellation-refund.manager';
 import { OrderCancellation } from '../order-cancellation/order-cancellation';
 import { OrderCancellationReader } from '../order-cancellation/order-cancellation.reader';
 import { PrintOrderReader } from '../../print-order/services/print-order.reader';
@@ -56,11 +57,9 @@ function storeServiceFor(tx: DbTx): StoreSalesOrdersService {
   const printCancellation = {};
   return new StoreSalesOrdersService(
     db as never,
-    salesOrders as never,
     {} as never,
     cancelRequests as never,
     printOrders,
-    printCancellation as never,
     new OrderCancellation(
       db as never,
       salesOrders as never,
@@ -69,7 +68,9 @@ function storeServiceFor(tx: DbTx): StoreSalesOrdersService {
       printCancellation as never,
       {} as never,
       new OrderCancellationReader(),
+      new CancellationRefundManager(db as never, salesOrders as never, {} as never),
     ),
+    new CancellationRefundManager(db as never, salesOrders as never, {} as never),
   );
 }
 

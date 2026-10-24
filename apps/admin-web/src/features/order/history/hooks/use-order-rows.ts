@@ -12,6 +12,7 @@ import { isOrderLineMatched } from './demo-order-line';
 import { awaitsSettlementResult, toCancelRequestView } from '@/lib/api/domains/orders/cancel-request.shape';
 import type { CancelRequestView } from '@/lib/api/domains/orders/cancel-request.shape';
 export { filterRefundIssueRows } from './refund-filter.utils';
+import { refundOfTimeline } from './refund-link.utils';
 
 /** 주문한 회원의 신원. user-service 조회가 실패하면 «없다» 가 아니라 «모른다» 라 전부 undefined. */
 type MemberInfo = {
@@ -81,6 +82,9 @@ export type OrderLineRow = {
 
   // 부분취소 비례 배분 추정 환불액 (manual_pending 시 운영자 참고용, 실제 환불액이 아님)
   refundEstimateAmount?: number;
+
+  // 환불 실행/안 함을 운영자가 골라야 하는 상태 (첫 라인만 true 가능)
+  refundAwaitingDecision?: boolean;
 
   // 부분취소 수동 검토 사유 코드 (운영자 UI 표시용)
   manualReason?: string;
@@ -270,51 +274,22 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
         const isMatched = isOrderLineMatched(line, process.env.NEXT_PUBLIC_APP_STAGE);
 
         // 환불 상태 추출 (첫 번째 라인에서만 계산, 나머지는 공유)
-        // cancelled 외에도 부분취소(partial)로 manual_pending이 생길 수 있으므로 상태 무관하게 조회
-        const { refundStatus, refundLinkId, refundEstimateAmount, manualReason } =
+        const {
+          refundStatus,
+          refundLinkId,
+          refundEstimateAmount,
+          manualReason,
+          awaitingDecision: refundAwaitingDecision,
+        } =
           idx === 0
-            ? (() => {
-                const timeline: any[] = detail?.businessTimeline ?? [];
-                const refundLinks = timeline
-                  .filter(
-                    (t: any) =>
-                      t.relationName === 'cancellation_linked_wallet_refund'
-                  )
-                  .sort(
-                    (a: any, b: any) =>
-                      new Date(b.createdAt).getTime() -
-                      new Date(a.createdAt).getTime()
-                  );
-                // Collect manual_pending links that have been completed via adminManualRefundComplete.
-                // Completion creates a new succeeded link with completedRefundLinkId pointing to the
-                // original manual_pending link — those should no longer surface as pending.
-                const completedLinkIds = new Set<string>(
-                  refundLinks
-                    .filter(
-                      (t: any) =>
-                        t.metadata?.refundStatus === 'succeeded' &&
-                        t.metadata?.completedRefundLinkId
-                    )
-                    .map((t: any) => t.metadata.completedRefundLinkId as string)
-                );
-                const pendingLink = refundLinks.find(
-                  (t: any) =>
-                    t.metadata?.refundStatus === 'manual_pending' &&
-                    !completedLinkIds.has(t.id)
-                );
-                const effectiveLink = pendingLink ?? refundLinks[0];
-                // refundEstimateAmount / manualReason은 부분취소 manual_pending 링크에만 존재
-                const estimate = pendingLink?.metadata?.refundEstimateAmount;
-                return {
-                  refundStatus: effectiveLink?.metadata?.refundStatus as
-                    | string
-                    | undefined,
-                  refundLinkId: pendingLink?.id as string | undefined,
-                  refundEstimateAmount: typeof estimate === 'number' ? estimate : undefined,
-                  manualReason: pendingLink?.metadata?.manualReason as string | undefined,
-                };
-              })()
-            : { refundStatus: undefined, refundLinkId: undefined, refundEstimateAmount: undefined, manualReason: undefined };
+            ? refundOfTimeline(detail?.businessTimeline ?? [])
+            : {
+                refundStatus: undefined,
+                refundLinkId: undefined,
+                refundEstimateAmount: undefined,
+                manualReason: undefined,
+                awaitingDecision: false,
+              };
 
         const walletIntentId: string | null | undefined =
           idx === 0
@@ -369,6 +344,7 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           refundLinkId,
           refundEstimateAmount,
           manualReason,
+          refundAwaitingDecision,
           walletIntentId,
 
           // 전체 주문 라인들 추가

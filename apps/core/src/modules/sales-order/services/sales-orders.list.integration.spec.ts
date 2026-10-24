@@ -331,6 +331,45 @@ describeIfDb('SalesOrdersService.list — server-side filters (DB integration, r
     });
   });
 
+  describe('refundIssueOnly — 환불 결정 전·실패 (K7 PR4)', () => {
+    it('살아 있는 주문의 닫히지 않은 manual_pending 이 걸린다', async () => {
+      await run(async (tx, svc, tag) => {
+        const alive = await insertOrder(tx, { channelOrderId: `${tag}-alive`, status: 'confirmed' });
+        await insertRefundLink(tx, alive, 'manual_pending', new Date('2026-01-01T00:00:00Z'));
+
+        const res = await listByKeyword(svc, tx, { keyword: tag, refundIssueOnly: true });
+        expect(res.data.map((d: { id: string }) => d.id)).toEqual([alive]);
+      });
+    });
+
+    it('waived 로 닫힌 manual_pending 은 안 걸린다', async () => {
+      await run(async (tx, svc, tag) => {
+        const waived = await insertOrder(tx, { channelOrderId: `${tag}-waived`, status: 'cancelled' });
+        const mpLinkId = await insertRefundLink(tx, waived, 'manual_pending', new Date('2026-01-01T00:00:00Z'));
+        await insertRefundLink(tx, waived, 'waived', new Date('2026-01-02T00:00:00Z'), {
+          completedRefundLinkId: mpLinkId,
+        });
+
+        const res = await listByKeyword(svc, tx, { keyword: tag, refundIssueOnly: true });
+        expect(res.data).toEqual([]);
+      });
+    });
+
+    it('최신 링크가 requested 면 걸린다, 그 뒤 succeeded 가 오면 안 걸린다', async () => {
+      await run(async (tx, svc, tag) => {
+        const stuck = await insertOrder(tx, { channelOrderId: `${tag}-stuck`, status: 'cancelled' });
+        await insertRefundLink(tx, stuck, 'requested', new Date('2026-01-01T00:00:00Z'));
+
+        const done = await insertOrder(tx, { channelOrderId: `${tag}-done`, status: 'cancelled' });
+        await insertRefundLink(tx, done, 'requested', new Date('2026-01-01T00:00:00Z'));
+        await insertRefundLink(tx, done, 'succeeded', new Date('2026-01-02T00:00:00Z'));
+
+        const res = await listByKeyword(svc, tx, { keyword: tag, refundIssueOnly: true });
+        expect(res.data.map((d: { id: string }) => d.id)).toEqual([stuck]);
+      });
+    });
+  });
+
   it('total 은 주문 수, lineTotal 은 라인 수 를 반환한다', async () => {
     await run(async (tx, svc, tag) => {
       const o1 = await insertOrder(tx, { channelOrderId: `${tag}-1` });

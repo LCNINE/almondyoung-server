@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { BadRequestError, NotFoundError } from '@app/shared';
 import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, wmsSchema } from '../../inventory/schema/inventory.schema';
@@ -12,6 +12,8 @@ import {
   type PrintCancelResult,
 } from '../../print-order/services/print-order-cancellation.manager';
 import { SalesOrdersService } from '../services/sales-orders.service';
+import { CancellationRefundManager } from '../cancellation-refund/cancellation-refund.manager';
+import { REFUND_REQUESTED, type RefundPolicy } from '../cancellation-refund/cancellation-refund.types';
 import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
 import { ChannelCancelSettler } from '../channel-cancel-request/channel-cancel-settler';
 import type { CancelRequestView } from '../channel-cancel-request/channel-cancel-request.types';
@@ -20,6 +22,8 @@ import { cancellationCapabilityOf, sellerCenterMessage } from './channel-cancell
 import { OrderCancellationReader } from './order-cancellation.reader';
 import type {
   CancelLine,
+  CancellationOutcome,
+  CancellationRefundResult,
   CancellationRequest,
   ChannelCancellationReceipt,
   ChannelCancelledNotice,
@@ -30,6 +34,7 @@ import type {
 
 type OperatorRequest = Extract<CancellationRequest, { requester: { kind: 'operator' } }>;
 type CustomerRequest = Extract<CancellationRequest, { requester: { kind: 'customer' } }>;
+type SalesOrderRow = NonNullable<Awaited<ReturnType<OrderCancellationReader['salesOrder']>>>;
 
 /** 수신 트랜잭션이 커밋된 뒤 커널이 할 일 — 와우프레스 record. 재수신이면 그 이벤트를 처음 기록한 시각을 넘긴다 */
 type RecordAfterCommit = { salesOrderId: string; lines: CancelLine[] | undefined; redeliveredSince: Date | undefined };
@@ -47,13 +52,35 @@ function isOperatorRequest(intent: CancellationRequest): intent is OperatorReque
 }
 
 /**
+ * 환불 방침은 요청자에서 정한다(N16) — 고객이 직접 취소하면 결제도 바로 취소되고, 관리자는 취소 뒤 환불을 따로 결정한다.
+ * 둘은 1:1 이라 의도에 칸을 두면 늘 같은 값을 적는 칸이 된다. 효과는 core 가 돈을 쥔 주문에만 있다(스펙 §5.5)
+ */
+function refundPolicyOf(requester: CancellationRequest['requester']): RefundPolicy {
+  return requester.kind === 'customer' ? 'immediate' : 'decide_later';
+}
+
+/** 환불 효과 metadata 는 jsonb 로 남는 레코드다 — 결과에 실을 두 칸만 형을 보고 꺼낸다 */
+function refundResultOf(refundStatus: string, metadata: Record<string, unknown> | undefined): CancellationRefundResult {
+  const estimate = metadata?.refundEstimateAmount;
+  const reason = metadata?.manualReason;
+  return {
+    refundStatus,
+    ...(typeof estimate === 'number' ? { refundEstimateAmount: estimate } : {}),
+    ...(typeof reason === 'string' ? { manualReason: reason } : {}),
+  };
+}
+
+/**
  * 주문 취소 커널 (K7 PR1, 스펙 §5).
  *
  * 호출자(고객·운영자 문)는 «무엇을 왜 취소하나»만 말하고, 채널 판정 → 키 → 재전송 → 줄 → 판정 → 인쇄 gate → 확정
- * 순서는 여기 한 곳이 정한다. 채널 주문은 채널이 환불하고 core 는 문지기다(ADR-0042·0044) — 커널은 Wallet 을 부르지 않는다.
+ * 순서는 여기 한 곳이 정한다. 채널 주문은 채널이 환불하고 core 는 문지기다(ADR-0042·0044). core 가 돈을 쥔 주문(K7 PR4)은
+ * 환불 방침을 취소와 같은 트랜잭션의 환불 링크로 남기고, 실행은 결제 쪽(`CancellationRefundManager`)이 한다 — 커널은 Wallet 을 모른다.
  */
 @Injectable()
 export class OrderCancellation {
+  private readonly logger = new Logger(OrderCancellation.name);
+
   constructor(
     @InjectTypedDb<typeof wmsSchema>()
     private readonly db: DbService<typeof wmsSchema>,
@@ -63,24 +90,122 @@ export class OrderCancellation {
     private readonly printCancellation: PrintOrderCancellationManager,
     private readonly settler: ChannelCancelSettler,
     private readonly reader: OrderCancellationReader,
+    private readonly refunds: CancellationRefundManager,
   ) {}
 
-  async request(intent: CancellationRequest): Promise<CancelRequestView> {
+  async request(intent: CancellationRequest): Promise<CancellationOutcome> {
     const so = await this.db.run((tx) => this.reader.salesOrder(intent.salesOrderId, tx));
     if (!so) throw new NotFoundError('주문을 찾을 수 없습니다.');
 
     // 마켓은 판매자센터로 — 키가 없어도 이 안내가 먼저다
     const route = cancellationCapabilityOf(so.salesChannel).cancel;
     if (route === 'seller_center') throw new BadRequestError(sellerCenterMessage(so.salesChannel));
-    if (route === 'core') throw new Error(`Sales channel ${so.salesChannel} does not take cancel commands`);
 
     if (!intent.sourceKey) throw new BadRequestError('Idempotency-Key header is required');
-    const replay = await this.cancelRequests.findBySourceKey(so.id, intent.sourceKey);
-    if (replay) return replay;
+    if (route === 'core') return this.requestCoreSettled(intent, so, intent.sourceKey);
 
-    return isOperatorRequest(intent)
-      ? this.requestAsOperator(intent, intent.sourceKey)
-      : this.requestAsCustomer(intent, intent.sourceKey);
+    const replay = await this.cancelRequests.findBySourceKey(so.id, intent.sourceKey);
+    if (replay) return { kind: 'channel_request', view: replay };
+
+    const view = isOperatorRequest(intent)
+      ? await this.requestAsOperator(intent, intent.sourceKey)
+      : await this.requestAsCustomer(intent, intent.sourceKey);
+    return { kind: 'channel_request', view };
+  }
+
+  /**
+   * core 가 돈을 쥔 주문의 취소 요청 (K7 PR4, 스펙 §5.5, D1·D2). 판정 → 인쇄 gate → 트랜잭션[환불 방침 기록 + 취소] → 커밋 뒤
+   * 즉시 환불 실행. 환불 효과는 `cancel()` 의 `walletRefund` 로 넘겨 취소와 같은 트랜잭션·같은 취소 id 의 링크가 된다 —
+   * 취소가 롤백되면 링크도 없고, 커밋되면 «환불 요청»은 프로세스가 죽어도 남는다(실행이 안 됐으면 관리자 목록에 뜬다).
+   */
+  private async requestCoreSettled(
+    intent: CancellationRequest,
+    so: SalesOrderRow,
+    sourceKey: string,
+  ): Promise<CancellationOutcome> {
+    // 문은 취소 경로(cancel === 'core')로 여기 오지만 환불 방침의 근거는 «돈을 누가 쥐나»(settlesMoney)다(스펙 §5.5).
+    // 지금 표에선 둘이 늘 같이 core 라 닿지 않는다 — 표가 갈라지면 채널이 정산할 주문에 Wallet 환불을 적지 않게 결함으로 멈춘다
+    const settlesMoney = cancellationCapabilityOf(so.salesChannel).settlesMoney;
+    if (settlesMoney !== 'core') {
+      throw new Error(
+        `core-settled cancellation for SO ${so.id} on ${so.salesChannel}, but settlesMoney=${settlesMoney}`,
+      );
+    }
+    if (isOperatorRequest(intent) && intent.alreadyRefundedAmount !== undefined) {
+      throw new BadRequestError('이미 환불한 금액은 Medusa 주문 부분취소에만 적을 수 있습니다.');
+    }
+    // 재전송은 상태 판정보다 먼저다 — 첫 요청이 이미 취소했으면 400 이 아니라 그 결과를 돌려준다.
+    // 고객 «인쇄 빼고» 줄은 다시 계산할 수 없다(첫 취소가 계획을 바꿨다) — 재전송 판정은 의도의 줄(=없음)로 한다
+    const replayed = await this.salesOrders.validateCancellationReplay(so.id, {
+      sourceKey,
+      reasonCode: intent.reasonCode,
+      reasonDetail: intent.reasonDetail,
+      lines: isOperatorRequest(intent) ? intent.lines : undefined,
+    });
+    if (replayed) return { kind: 'replayed' };
+    if (so.status === 'cancelled') throw new BadRequestError('이미 취소된 주문입니다.');
+    if (so.status === 'timeout') throw new BadRequestError('타임아웃된 주문은 취소할 수 없습니다.');
+
+    const { lines, printed } = isOperatorRequest(intent)
+      ? { lines: intent.lines, printed: await this.operatorGate(intent) }
+      : await this.customerGate(intent);
+    const actor = isOperatorRequest(intent)
+      ? { cancelledBy: 'admin', actorId: intent.requester.actorId, actorRoles: intent.actorRoles }
+      : { cancelledBy: 'customer', actorId: intent.requester.customerId, actorRoles: [] };
+
+    const effect = await this.afterPrintCancel(printed, () =>
+      this.db.run(async (tx) => {
+        const walletRefund = await this.refunds.effectFor(
+          refundPolicyOf(intent.requester),
+          so,
+          lines,
+          intent.reasonCode,
+          tx,
+        );
+        await this.salesOrders.cancel(
+          so.id,
+          {
+            reasonCode: intent.reasonCode,
+            reasonDetail: intent.reasonDetail,
+            ...(lines ? { lines } : {}),
+            cancelledBy: actor.cancelledBy,
+            fulfillmentCommandContext: {
+              idempotencyKey: sourceKey,
+              actorId: actor.actorId,
+              actorRoles: actor.actorRoles,
+            },
+            walletRefund,
+          },
+          tx,
+        );
+        return walletRefund;
+      }),
+    );
+
+    const scope = lines && lines.length > 0 ? 'partial' : 'full';
+    if (effect.refundStatus === REFUND_REQUESTED) {
+      return { kind: 'applied', scope, refund: { refundStatus: await this.executeAfterCommit(so.id) } };
+    }
+    // effectFor 는 늘 상태를 적는다(DTO 칸이 선택일 뿐) — 비어 있으면 «관리자가 볼 것»으로 답한다
+    return { kind: 'applied', scope, refund: refundResultOf(effect.refundStatus ?? 'manual_pending', effect.metadata) };
+  }
+
+  /**
+   * 커밋 뒤 즉시 환불. 취소는 이미 커밋됐으니 던지지 않는다 — 실패하면 링크가 `requested` 로 남아 관리자 목록에서 다시 실행한다(N17).
+   * 실행할 게 없었으면(상자 후 취소가 대기로 끝나 아직 취소되지 않았다 등) 기록한 상태 그대로다
+   */
+  private async executeAfterCommit(salesOrderId: string): Promise<string> {
+    try {
+      return (await this.refunds.executeRequested(salesOrderId)) ?? REFUND_REQUESTED;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // 스택까지 남긴다 — 취소는 이미 커밋돼 사용자에겐 성공으로 보이므로 원인을 찾을 단서는 이 로그뿐이다
+      this.logger.error(
+        `[OrderCancellation] refund after cancel failed for SO ${salesOrderId}: ${message}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      return REFUND_REQUESTED;
+    }
   }
 
   /**
@@ -196,10 +321,7 @@ export class OrderCancellation {
   }
 
   private async requestAsOperator(intent: OperatorRequest, sourceKey: string): Promise<CancelRequestView> {
-    // 판정은 잠그지 않고 먼저 한다 — 인쇄 취소는 되돌릴 수 없어 그 전에 부른다
-    await this.cancelRequests.precheck(intent.salesOrderId, intent.lines, intent.alreadyRefundedAmount);
-    // 와우프레스는 외부 HTTP 라 트랜잭션 밖에서 부른다 — 잠금을 쥔 채 기다리지 않는다
-    const printed = await this.printCancellation.cancelForOrder(intent.salesOrderId, 'gate', intent.lines);
+    const printed = await this.operatorGate(intent);
     return this.afterPrintCancel(printed, () =>
       this.cancelRequests.request({
         salesOrderId: intent.salesOrderId,
@@ -214,6 +336,35 @@ export class OrderCancellation {
   }
 
   private async requestAsCustomer(intent: CustomerRequest, sourceKey: string): Promise<CancelRequestView> {
+    const { lines, printed } = await this.customerGate(intent);
+    return this.afterPrintCancel(printed, () =>
+      this.cancelRequests.request({
+        salesOrderId: intent.salesOrderId,
+        ...(lines ? { lines } : {}),
+        requester: intent.requester,
+        sourceKey,
+        reasonCode: intent.reasonCode,
+        reasonDetail: intent.reasonDetail,
+      }),
+    );
+  }
+
+  /** 운영자 요청의 판정 → 인쇄 gate. 채널 경로와 core 정산 경로가 함께 쓴다 */
+  private async operatorGate(intent: OperatorRequest): Promise<PrintCancelResult> {
+    // 판정은 잠그지 않고 먼저 한다 — 인쇄 취소는 되돌릴 수 없어 그 전에 부른다
+    await this.cancelRequests.precheck(intent.salesOrderId, intent.lines, intent.alreadyRefundedAmount);
+    // 와우프레스는 외부 HTTP 라 트랜잭션 밖에서 부른다 — 잠금을 쥔 채 기다리지 않는다
+    return this.printCancellation.cancelForOrder(intent.salesOrderId, 'gate', intent.lines);
+  }
+
+  /**
+   * 고객 요청의 줄 → 판정 → 인쇄 gate. 채널 경로와 core 정산 경로가 함께 쓴다.
+   * 고객 요청이면 와우프레스 거절을 보드로 넘기지 않고 고객에게 바로 알리고(`keepOnRefusal`), 인쇄 때문에 전체취소를 못 하는데
+   * 인쇄 외 줄이 남으면 «인쇄 빼고 취소»를 묻는다(스펙 §5.3)
+   */
+  private async customerGate(
+    intent: CustomerRequest,
+  ): Promise<{ lines: CancelLine[] | undefined; printed: PrintCancelResult }> {
     const salesOrderId = intent.salesOrderId;
     // 고객이 인쇄 상품을 빼고 나머지만 취소하겠다고 동의한 두 번째 요청이다
     const lines = intent.excludePrint ? await this.linesWithoutPrint(salesOrderId) : undefined;
@@ -228,16 +379,7 @@ export class OrderCancellation {
         }
         throw error;
       });
-    return this.afterPrintCancel(printed, () =>
-      this.cancelRequests.request({
-        salesOrderId,
-        ...(lines ? { lines } : {}),
-        requester: intent.requester,
-        sourceKey,
-        reasonCode: intent.reasonCode,
-        reasonDetail: intent.reasonDetail,
-      }),
-    );
+    return { lines, printed };
   }
 
   // 인쇄를 이미 멈춘 뒤 판매주문 취소가 실패하면 인쇄 행에 남겨 운영자가 찾게 한다

@@ -191,7 +191,7 @@ export default function FilterBox() {
                         onChange={(e) => setLocal({ ...local, refundIssueOnly: e.target.checked, excludeTerminal: e.target.checked ? false : local.excludeTerminal, type: e.target.checked ? 'all' : local.type })}
                         className="accent-orange-600"
                     />
-                    환불 실패/수동처리만
+                    환불 결정 전·실패만
                 </label>
             </div>
 

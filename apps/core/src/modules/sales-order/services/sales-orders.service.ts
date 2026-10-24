@@ -775,20 +775,24 @@ export class SalesOrdersService {
           break;
       }
 
-      // ── 환불 실패/수동처리만 ──
+      // ── 환불 결정 전·실패만 ──
       // 어드민 주문내역 화면(use-order-rows)의 refundStatus 도출과 동일 규칙:
       //   effectiveLink = (미완료 manual_pending 링크) ?? (최신 링크)
-      //   이 링크가 failed/manual_pending 이면 이슈. → 아래 두 조건의 OR 로 정확히 재현.
-      //   ① 미완료 manual_pending 링크 존재 (뒤에 무관한 succeeded 가 생겨도 여전히 미처리로 노출)
+      //   이 링크가 failed/manual_pending/requested 면 이슈. → 아래 세 조건의 OR 로 정확히 재현.
+      //   ① 미완료 manual_pending 링크 존재 (succeeded·waived 가 completedRefundLinkId 로 닫지 않은 것.
+      //      뒤에 무관한 succeeded 가 생겨도 여전히 미처리로 노출)
       //   ② 최신 링크가 failed
+      //   ③ 최신 링크가 requested (환불을 요청만 하고 결과 기록이 안 온 채 멈춘 건)
+      // 주문 상태는 묻지 않는다 — core 가 돈을 쥔 주문은 취소 전에도 환불 결정 대기(manual_pending)가 생긴다.
       // 링크 앵커: sourceType='sales_order', sourceId=SO (store-sales-orders 와 동일).
       if (params.refundIssueOnly) {
-        conditions.push(eq(S.salesOrders.status, 'cancelled'));
         const REFUND_RELATION = 'cancellation_linked_wallet_refund';
         const mp = alias(S.businessLinks, 'refund_mp'); // manual_pending 후보
-        const completion = alias(S.businessLinks, 'refund_completion'); // mp 를 종결한 succeeded
+        const completion = alias(S.businessLinks, 'refund_completion'); // mp 를 종결한 succeeded·waived
         const failedLink = alias(S.businessLinks, 'refund_failed'); // failed 후보
         const laterLink = alias(S.businessLinks, 'refund_later'); // failedLink 이후 링크
+        const requestedLink = alias(S.businessLinks, 'refund_requested'); // requested 후보
+        const laterOfRequested = alias(S.businessLinks, 'refund_later_req'); // requestedLink 이후 링크
 
         // ① 아직 종결되지 않은 manual_pending 링크
         const uncompletedManualPending = exists(
@@ -808,7 +812,7 @@ export class SalesOrdersService {
                     .where(
                       and(
                         eq(completion.relationName, REFUND_RELATION),
-                        sql`${completion.metadata}->>'refundStatus' = 'succeeded'`,
+                        sql`${completion.metadata}->>'refundStatus' IN ('succeeded', 'waived')`,
                         sql`${completion.metadata}->>'completedRefundLinkId' = ${mp.id}::text`,
                       ),
                     ),
@@ -845,7 +849,35 @@ export class SalesOrdersService {
             ),
         );
 
-        conditions.push(or(uncompletedManualPending, latestIsFailed)!);
+        // ③ 최신 링크가 requested
+        const latestIsRequested = exists(
+          trx
+            .select({ x: sql`1` })
+            .from(requestedLink)
+            .where(
+              and(
+                eq(requestedLink.sourceType, SALES_ORDER_REF_TYPE),
+                eq(requestedLink.sourceId, S.salesOrders.id),
+                eq(requestedLink.relationName, REFUND_RELATION),
+                sql`${requestedLink.metadata}->>'refundStatus' = 'requested'`,
+                notExists(
+                  trx
+                    .select({ x: sql`1` })
+                    .from(laterOfRequested)
+                    .where(
+                      and(
+                        eq(laterOfRequested.sourceType, SALES_ORDER_REF_TYPE),
+                        eq(laterOfRequested.sourceId, S.salesOrders.id),
+                        eq(laterOfRequested.relationName, REFUND_RELATION),
+                        gt(laterOfRequested.createdAt, requestedLink.createdAt),
+                      ),
+                    ),
+                ),
+              ),
+            ),
+        );
+
+        conditions.push(or(uncompletedManualPending, latestIsFailed, latestIsRequested)!);
       }
 
       // ── 키워드 검색 ──
@@ -1309,7 +1341,7 @@ export class SalesOrdersService {
       reasonDetail: options.reasonDetail ?? null,
       cancelledBy: options.cancelledBy ?? null,
       effects,
-      metadata: options.metadata ?? {},
+      metadata: { ...(options.metadata ?? {}), ...this.commandReplayMetadata(id, options) },
       occurredAt,
     };
     const cancellation = await recordSalesOrderCancellation(trx, cancellationValues, null);
@@ -1486,7 +1518,7 @@ export class SalesOrdersService {
       reasonDetail: options.reasonDetail ?? null,
       cancelledBy: options.cancelledBy ?? null,
       effects,
-      metadata: options.metadata ?? {},
+      metadata: { ...(options.metadata ?? {}), ...this.commandReplayMetadata(salesOrderId, options) },
       occurredAt,
     };
     const cancellation = await recordSalesOrderCancellation(trx, cancellationValues, cancelledLines);
@@ -1889,6 +1921,20 @@ export class SalesOrdersService {
       tx,
     );
     return this.getOne(salesOrderId, tx);
+  }
+
+  /**
+   * 명령 키(Idempotency-Key)로 온 상자 전 취소도 키·요청 해시를 남긴다 (K7 PR4). 상자 후 취소와 같은 칸이라 `cancel()` 첫머리의
+   * 재전송 판정과 `validateCancellationReplay` 가 상자 유무와 무관하게 같은 키를 알아본다 — 없으면 같은 키의 부분취소가 두 번
+   * 적용되고 환불 링크도 둘이 된다. 채널 이벤트 id(`sourceEventId`)는 넣지 않는다 — 채널 경로는 자기 수신 기록으로 중복을 막는다
+   */
+  private commandReplayMetadata(salesOrderId: string, options: CancelSalesOrderOptions): Record<string, string> {
+    const idempotencyKey = options.fulfillmentCommandContext?.idempotencyKey?.trim();
+    if (!idempotencyKey) return {};
+    return {
+      fulfillmentCommandSourceKey: idempotencyKey,
+      fulfillmentCommandRequestHash: this.afterBoxingRequestHash(salesOrderId, options),
+    };
   }
 
   private explicitAfterBoxingSourceKey(options: CancelSalesOrderOptions): string | undefined {
