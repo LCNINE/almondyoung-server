@@ -264,9 +264,9 @@ export class DirectShipController {
   @RequirePermission('fulfillment.order.write')
   @Post('cancel-notices/notified')
   @ApiOperation({ summary: '알릴 취소 알림 완료' })
-  @UsePipes(new ZodValidationPipe(CancelNoticeNotifiedSchema))
+  // 파이프는 본문에만 건다 — 메서드 단위 @UsePipes 는 @User() 까지 지나가 사용자 객체를 본문 스키마로 파싱한다
   async markCancelNoticesNotified(
-    @Body() dto: z.infer<typeof CancelNoticeNotifiedSchema>,
+    @Body(new ZodValidationPipe(CancelNoticeNotifiedSchema)) dto: z.infer<typeof CancelNoticeNotifiedSchema>,
     @User() user: AuthenticatedUser,
   ) {
     const actor = user?.id ?? user?.userId;
