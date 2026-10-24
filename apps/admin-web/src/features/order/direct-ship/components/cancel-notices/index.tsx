@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import { Download } from 'lucide-react';
+import { toast } from 'sonner';
+import { getServerDenyMessage } from '@/lib/api/server-error';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -55,21 +57,29 @@ export function CancelNoticesPanel() {
     });
 
   const handleExport = async () => {
-    const blob = await exportFile.mutateAsync(group.companyName);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${group.companyName}_알릴취소_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const blob = await exportFile.mutateAsync(group.companyName);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${group.companyName}_알릴취소_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast.error(getServerDenyMessage(error, 'CSV 내려받기에 실패했습니다.'));
+    }
   };
 
   const handleNotified = async () => {
-    await markNotified.mutateAsync({
-      companyName: group.companyName,
-      noticeIds: chosen.map((r) => r.id),
-    });
-    setSelected(new Set());
+    try {
+      await markNotified.mutateAsync({
+        companyName: group.companyName,
+        noticeIds: chosen.map((r) => r.id),
+      });
+      setSelected(new Set());
+    } catch (error) {
+      toast.error(getServerDenyMessage(error, '알림 완료에 실패했습니다.'));
+    }
   };
 
   return (
