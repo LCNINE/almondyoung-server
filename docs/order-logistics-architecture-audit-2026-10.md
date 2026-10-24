@@ -146,6 +146,8 @@ FO status 는 원래 아이템 수량에서 계산하는 투영값이다(`fulfil
 - planning: `canceledQty` 증가
 - sales-order: `qty` 감소, 0이면 `'canceled'`
 
+> 2026-10-24: 판매주문 쪽은 K7 PR3 으로 출고 명령으로 옮겨졌다 — 지금 상태는 §8.1 K3.
+
 ### 4.4 예외 경로의 비중
 
 예외 전용 서비스는 7개, 약 3.4k줄이다: recall, short-pick, short-pick-exit, withdrawal, box-return, return-bin, session-recovery.
@@ -284,6 +286,7 @@ ADR-0041(2026-09-30)이 배정을 작업 항목으로 옮기면서 세 벌이 �
 - **없애는 것:** 게이트 가드 spec, 작업 항목 상태 쓰기 여러 곳.
 - **착수 전 확인:** ADR-0030 의 안전망 근거(통합 spec 이 `spyOn` 을 0회 쓴다)가 지금도 유지되는지 다시 잰다. 0030 의 custody 조항을 부분 대체하는 ADR 을 쓴다.
 - **먼저 하는 이유:** 측정 근거와 ADR 재검토 조건이 이미 있다. 범위가 작다. K2 의 연습이 된다.
+- **ADR-0045 로 완료(2026-10-19).**
 
 **K2. 상자 수명주기 (`ShipmentLifecycle`)**
 - **소유하는 것:** 상태 전이 + 구성(줄·수령인·프로필·manifestVersion). 전이 함수 `transitionShipments` 가 전이표(from → to), 직전 상태 CAS, 목표 상태별 리셋 규칙(`manifestVersion`·`recoveryCode`·`plannedAt` 등)을 맡고, 구성 편집의 문 `editShipmentManifest` 가 잠금·전제 검사·`manifestVersion` 증가·예약 재계산을 맡는다.
@@ -294,7 +297,13 @@ ADR-0041(2026-09-30)이 배정을 작업 항목으로 옮기면서 세 벌이 �
 **K3. FO 상태는 투영만**
 - 커널이라기보다 «FO status 는 아무도 직접 쓰지 않는다»는 규칙이다.
 - 직배송도 수량 사실(`shippedQty`)만 쓰고, 투영이 상태를 정한다.
-- 판매주문의 FO 직접 취소·수량 감소는 출고 쪽 명령으로 옮긴다(ADR-0016 회복).
+- **판매주문 쪽은 K7 PR3 으로 끝났다(2026-10-24).** 상자 전 취소의 FO·FOI 쓰기는 출고 명령 `UnboxedDemandCancellation`(`fulfillment/unboxed-demand/`)이 하고, FO 상태는 투영이 정한다. FOI 취소 표현은 `canceledQty` 하나다 — §4.3 의 «`qty` 감소»는 없어졌다. ADR-0049 «현재 상태».
+- **남은 것(2026-10-24 기준):**
+  - 직배 `FulfillmentsService.ship()` 이 FO·FOI 에 `'shipped'`(투영 어휘에 없는 값)를 직접 쓴다. 같은 경로가 `FulfillmentShipped` 의 `trackingNumber` 를 `''` 로 내보내 이벤트 스키마 `min(1)` 을 어긴다 — 직배 «완료 처리»를 개통하면 막힌다(PR #1126 «알려진 문제»).
+  - 넘긴 직배 FO 가 전량 취소돼도 `directShipStatus` 가 `forwarded` 로 남는다. «주문 목록»에 수량 0 으로 남고 «완료 처리»는 409 다(PR #1128 «알려진 문제»).
+  - 판매주문 모듈이 출고 테이블을 직접 쓰는 예외 둘 — 배송지 변경(`channel-order-change.manager.ts`)과 공동현관 비번 파기(`entrance-password-cleaner.ts`). 정본은 `order-cancellation.guard.spec.ts` 의 예외 목록이고, 줄어드는 방향만 허용된다.
+  - fulfillment 모듈 안의 FO 직접 쓰기 — 상태를 쓰는지 다른 칸을 쓰는지 아직 가르지 않았다. 도출은 «다시 재는 명령»의 FO 줄.
+- **전제:** 직배는 라이브 0건(개통 전, 2026-10-24 실측). 동작 변경의 라이브 영향은 착수 때 다시 잰다.
 
 **K4. 대기 오퍼레이션 재개 레지스트리**
 - **소유하는 것:** 오퍼레이션 타입별 `readiness`/`resume` 핸들러 등록.
@@ -311,12 +320,14 @@ ADR-0041(2026-09-30)이 배정을 작업 항목으로 옮기면서 세 벌이 �
 - TS 판정, SQL 통계, 자격 검증이 모두 이것만 읽는다.
 - **없애는 것:** §5.2 표의 여러 벌.
 - K7·K8 이 이 숫자를 읽으므로 먼저다.
+- **ADR-0047 로 완료(2026-10-23 라이브).** 남은 것: FO `sales_order_id` NOT NULL — contract 라 `deploy → migrate` 순서로 따로 싣는다.
 
 **K7. 주문 취소 (`OrderCancellation.request(intent)`)**
 - **소유하는 것:** 사전검사 → 인쇄 보류 → 적용(상자 전/후를 내부에서 고른다) → 환불기록.
 - **호출자:** 의도만 넘긴다.
 - **같이 정리:** «V1/V2» 를 «상자 전/후»로 이름을 바꾼다.
 - **인쇄 외주:** 인쇄를 이행 단위 하나로 모델링하는 문제는 이 커널과 함께 다룬다.
+- **ADR-0049 로 완료(2026-10-24 라이브).** K8 로 넘긴 것: 결정 대기 환불 둘 중 하나를 «환불 실행»한 뒤 남은 건의 «환불 실행»이 최신 링크를 읽어 아무것도 안 하는 것(부분취소 금액 규칙이 먼저), 반품 환불의 Wallet 호출 가드 예외.
 
 **K8. 환불 금액 정책 + 반품·교환 수명주기**
 - 환불 금액 정책 하나를 취소와 반품이 같이 쓴다.
@@ -352,6 +363,9 @@ ADR-0041(2026-09-30)이 배정을 작업 항목으로 옮기면서 세 벌이 �
 # 상자 상태 쓰기 지점
 grep -rn "update(wmsTables.shipments)" apps/core/src/modules --include=*.ts | grep -v '\.spec\.'
 grep -rn "status: 'draft'" apps/core/src/modules/fulfillment --include=*.ts | grep -v '\.spec\.'
+# FO 직접 쓰기 (K3)
+grep -rnE "\.update\((wmsTables|inventoryTables)\.fulfillmentOrders\)" apps/core/src/modules --include=*.ts | grep -v '\.spec\.'
+grep -rniE "update\s+\"?fulfillment_orders\b|update \\$\{(wmsTables|inventoryTables)\.fulfillmentOrders\}" apps/core/src/modules --include=*.ts | grep -v '\.spec\.'
 # 숨은 순환 의존(서비스 로케이터)
 grep -rn "strict: *false" apps/core/src/modules --include=*.ts | grep -v '\.spec\.'
 # 다른 모듈 스키마 import
