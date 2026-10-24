@@ -10,6 +10,12 @@ export default $config({
       removal: isLive ? 'retain' : 'remove',
       protect: isLive || isDemo,
       home: 'aws',
+      // state 버킷(sst-state-*)은 버전 관리가 켜져 있고, 배포 중 리소스가 바뀔 때마다 현재 state 파일을 통째로
+      // 다시 써서 옛 버전이 끝없이 쌓였다(2026-10-24: app/ 아래 옛 버전 88,244개 467GB).
+      // retention 은 «완료된 배포 횟수» 단위로 최근 N개의 스냅샷만 남기고, 배포가 끝날 때마다 그보다 오래된
+      // 스냅샷·이벤트 로그와 현재 state 파일의 옛 버전 전부를 지운다(SST v4.17.0~). 현재 state·시크릿·암호화 키는
+      // 건드리지 않고, 지우다 실패해도 배포는 실패하지 않는다. 되돌릴 수 있는 지점은 남은 스냅샷 N개다.
+      state: { retention: 30 },
       providers: {
         aws: { region: 'ap-northeast-2' },
       },
