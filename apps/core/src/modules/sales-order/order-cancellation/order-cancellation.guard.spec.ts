@@ -32,7 +32,8 @@ function filesCalling(pattern: RegExp, roots?: string | string[]): string[] {
 const K = 'apps/core/src/modules/sales-order/order-cancellation/order-cancellation.ts';
 const MANAGER = 'apps/core/src/modules/sales-order/channel-cancel-request/channel-cancel-request.manager.ts'; // 확정 내부
 
-const T = '(?:fulfillmentOrders|fulfillmentOrderItems|stockReservations|shipments|shipmentLines)';
+const T =
+  '(?:fulfillmentOrders|fulfillmentOrderItems|stockReservations|shipments|shipmentLines|directShipCancelNotices)';
 
 describe('판매주문 취소 호출자 (K7)', () => {
   it('판매주문 취소 적용', () =>
@@ -67,7 +68,7 @@ describe('판매주문 취소 호출자 (K7)', () => {
             // drizzle 별칭 형: const t = wmsTables.fulfillmentOrders; … .update(t)
             String.raw`const (\w+) = (?:wmsTables|inventoryTables)\.${T};[\s\S]*?\.(?:update|insert|delete)\(\1\)`,
             // raw SQL 리터럴 형
-            String.raw`\b(?:update|insert\s+into|delete\s+from)\s+"?(?:fulfillment_orders|fulfillment_order_items|stock_reservations|shipments|shipment_lines)\b`,
+            String.raw`\b(?:update|insert\s+into|delete\s+from)\s+"?(?:fulfillment_orders|fulfillment_order_items|stock_reservations|shipments|shipment_lines|direct_ship_cancel_notices)\b`,
             // raw SQL 보간 형: sql`UPDATE ${wmsTables.fulfillmentOrders} …`
             String.raw`\b(?:update|insert\s+into|delete\s+from)\s+\$\{\s*(?:wmsTables|inventoryTables)\.${T}\s*\}`,
           ].join('|'),

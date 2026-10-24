@@ -1254,6 +1254,8 @@ export class SalesOrdersService {
       return this.getOne(id, trx);
     }
 
+    // 취소 행 id 를 먼저 정해 출고 명령에 넘긴다 — 넘긴 직배의 대기 행이 이 취소를 가리킨다(D5, N24)
+    const orderCancellationId = randomUUID();
     const originalLines = await trx
       .select()
       .from(wmsTables.salesOrderLines)
@@ -1283,7 +1285,7 @@ export class SalesOrdersService {
 
     const effects: CancellationEffect[] = [];
     // created·ready FO 만 닫힌다 — FOI 에 canceledQty 를 남기고 FO 상태는 투영(D3·D4). 상자 전 FO 엔 예약이 없다(N13)
-    const cancelledFulfillmentOrders = await this.unboxedDemand.cancelOrder(id, trx);
+    const cancelledFulfillmentOrders = await this.unboxedDemand.cancelOrder(id, orderCancellationId, trx);
     for (const fo of cancelledFulfillmentOrders) {
       effects.push({
         type: 'cancelled_fulfillment_order',
@@ -1334,6 +1336,7 @@ export class SalesOrdersService {
 
     const occurredAt = options.occurredAt ? new Date(options.occurredAt) : new Date();
     const cancellationValues: SalesOrderCancellationInsert = {
+      id: orderCancellationId,
       salesOrderId: id,
       cancellationScope: 'full',
       status: 'applied',
@@ -1498,7 +1501,9 @@ export class SalesOrdersService {
       }
     }
 
-    const effects = await this.applyUnboxedDemandReductions(salesOrderId, plannedEffects, trx);
+    // 취소 행 id 를 먼저 정해 출고 명령에 넘긴다 — 넘긴 직배의 대기 행이 이 취소를 가리킨다(D5, N24)
+    const orderCancellationId = randomUUID();
+    const effects = await this.applyUnboxedDemandReductions(salesOrderId, orderCancellationId, plannedEffects, trx);
 
     const walletRefundEffect = this.toWalletRefundEffect(options);
     if (walletRefundEffect) {
@@ -1511,6 +1516,7 @@ export class SalesOrdersService {
       quantity: line.quantity,
     }));
     const cancellationValues: SalesOrderCancellationInsert = {
+      id: orderCancellationId,
       salesOrderId,
       cancellationScope: 'partial',
       status: 'applied',
@@ -2277,6 +2283,7 @@ export class SalesOrdersService {
    */
   private async applyUnboxedDemandReductions(
     salesOrderId: string,
+    orderCancellationId: string,
     planned: PlannedPartialEffect[],
     trx: DbTx,
   ): Promise<CancellationEffect[]> {
@@ -2286,7 +2293,7 @@ export class SalesOrdersService {
       // uuid 문자열의 코드 단위 비교 = Postgres uuid 정렬(잠금 순서와 같다). localeCompare 는 '-' 를 무시할 수 있어 쓰지 않는다
       // FOI 하나에 감소 하나(FOI 는 라인 하나에 속한다)라 같은 id 는 없다
       .sort((a, b) => (a.fulfillmentOrderItemId < b.fulfillmentOrderItemId ? -1 : 1));
-    const reduced = await this.unboxedDemand.reduce(salesOrderId, reductions, trx);
+    const reduced = await this.unboxedDemand.reduce(salesOrderId, orderCancellationId, reductions, trx);
     const reducedById = new Map<string, ReducedDemandItem>(reduced.map((row) => [row.fulfillmentOrderItemId, row]));
 
     return planned.map((entry) => {
