@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 업체에 넘긴(`forwarded`) 직배송 출고지시가 걸린 취소가 커밋되면, 같은 트랜잭션에 «업체 ○○에 이 취소(주문·라인·수량)를 알려야 함» 행이 생긴다(D5). admin-web 직배송 화면에 업체별 「알릴 취소」 탭을 두고, 운영자가 CSV 로 내려받거나 보고 알린 뒤 «알림 완료»를 누른다. 오래 안 알린 건은 눈에 띈다(스펙 §5.6).
+**Goal:** 업체에 넘긴(`forwarded`) 직배송 출고지시가 걸린 취소가 커밋되면, 같은 트랜잭션에 «업체 ○○에 이 취소(주문·라인·수량)를 알려야 함» 행이 생긴다(D5). admin-web 직배송 화면에 업체별 「알릴 취소」 탭을 두고, 운영자가 CSV 로 내려받거나 보고 알린 뒤 «알림 완료»를 누른다. 오래 안 알린 건은 눈에 띈다(스펙 §5.6). 덧붙여 PR4 가 «알려진 문제»로 남긴 «환불 안 함» 가드 결함을 고친다(Task 4).
 
 **Architecture:** 행은 출고 모듈이 쓴다. 상자 전 취소의 FO·FOI 쓰기를 이미 혼자 하는 `UnboxedDemandCancellation` 이 `reduce`·`cancelOrder` 안에서, 줄인 FOI 가 «넘긴 직배 FO» 소속이면 새 테이블 `direct_ship_cancel_notices` 에 한 줄씩 넣는다. 두 메서드는 취소 id 를 **필수 인자**로 받는다 — 판매주문 쪽은 직배를 몰라도 빠뜨릴 수 없다. 대기함 읽기·내려받기·알림 완료는 직배 컨트롤러 밑의 새 Service → Reader/Manager 가 한다. 통지는 한 방향이라 «알림 완료» 뒤 상태는 없다.
 
@@ -36,6 +36,7 @@
 | D5 | 넘긴 직배 FO 를 줄인 취소가 `direct_ship_cancel_notices` 행을 남긴다 | 새 행만 생김. 라이브 넘긴 직배 FO 수는 G1 ① |
 | — | 넘긴 직배 FO 의 `owner_id` 가 비면 그 주문 취소가 500(N29) | G1 ② 가 0 이어야 한다 |
 | — | 상자 전 취소의 `sales_order_cancellations.id` 를 앱이 정한다(N24) | 0 — 값의 모양(uuid v4) 같음 |
+| — | «환불 안 함»이 다른 결정 대기 건을 닫은 환불 성공 때문에 400 나던 것이 통과한다(Task 4, PR4 알려진 문제) | 0 (3pl 주문 0) |
 
 **범위 밖(기존 결함, K3 본편):** 넘긴 직배 FO 가 전량 취소되면 `directShipStatus` 가 `forwarded` 로 남아 «주문 목록»의 넘김 필터에 수량 0 으로 남고, «완료 처리»를 누르면 `ship()` 이 `Cannot ship FO … in terminal status 'canceled'` 409 를 낸다. PR 본문 «알려진 문제»에 적는다.
 
@@ -194,6 +195,22 @@
 - [ ] **Step 3: G1 스크립트** `k7-pr5-predeploy-check.js` — PR4 스크립트 머리(READ ONLY·실행법·`sql.begin('read only')`)를 따른다. ① `fulfillment_mode='drop_ship' AND direct_ship_status='forwarded'` FO 수(FO status 별) — 배포 뒤 취소가 행을 남길 대상. ② 그중 `owner_id IS NULL` 수 — **0 이어야 배포한다**(N29). ③ 넘긴 직배 FO 중 FOI `canceled_qty > 0` 인 FO 수 — 이미 통지 없이 지나간 취소(대기함엔 안 뜬다, 운영자가 따로 확인). ④ 배포 뒤: `direct_ship_cancel_notices` 존재·행 수.
 - [ ] **Step 4: 확인** — `npm run test:admin-web` 실패 0(`mutation-guard.gate.spec.ts`·`screen-access.gate.spec.ts` 포함), admin-web `npx tsc --noEmit -p apps/admin-web` 0(워크트리엔 node_modules 가 없으면 메인 것을 심링크), 루트 `npm run type-check` 0.
 - [ ] **Step 5: 커밋** `직배송 화면에 «알릴 취소» — 업체별로 내려받고 알림 완료, 하루 넘은 건은 눈에 띄게 (K7 PR5)`
+
+### Task 4: «환불 안 함» 가드가 다른 건을 닫은 환불 성공을 세지 않는다 (PR4 알려진 문제)
+
+**사실:** `CancellationRefundManager.waive`(`cancellation-refund/cancellation-refund.manager.ts:153~156`)는 대상 링크보다 새 `succeeded` 가 하나라도 있으면 400 `'이미 환불이 완료된 건입니다.'` 를 낸다. 그 성공이 `completedRefundLinkId` 로 **다른** 결정 대기 건을 닫은 것이어도 센다. 그래서 3pl 부분취소 두 건(결정 대기 k-1·k-2) 중 k-2 를 «환불 실행»(또는 수동 완료)하면 k-1 의 «환불 안 함»이 400 이 된다. 이 가드가 막으려던 것은 닫기 표지 이전의 옛 성공 기록(어느 건을 닫는지 모르는 `succeeded`)뿐이다.
+
+**Files:**
+- Modify: `apps/core/src/modules/sales-order/cancellation-refund/cancellation-refund.manager.ts:151~156`
+- Modify: `apps/core/src/modules/sales-order/cancellation-refund/cancellation-refund.manager.spec.ts` (`describe('waive — 환불 안 함')`)
+
+**Interfaces:** 없음(시그니처·문구 그대로).
+
+- [ ] **Step 1: 실패 테스트** — `다른 결정 대기 건을 닫은 succeeded 는 «환불 안 함»을 막지 않는다`: 링크 `[{ id: 'k-3', metadata: { refundStatus: 'succeeded', completedRefundLinkId: 'k-2' } }, { id: 'k-2', metadata: { refundStatus: 'manual_pending', awaitingDecision: true } }, { id: 'k-1', metadata: { refundStatus: 'manual_pending', awaitingDecision: true } }]` → `waive(SO_ID, { refundLinkId: 'k-1' })` 가 `{ refundStatus: 'waived' }`, 기록 `completedRefundLinkId: 'k-1'`. 자동 선택(`waive(SO_ID, {})`)도 k-1 을 고른다(k-2 는 닫혔다).
+- [ ] **Step 2: 실행해 빨강** — `npx jest apps/core/src/modules/sales-order/cancellation-refund` → 새 테스트만 `'이미 환불이 완료된 건입니다.'` 로 실패.
+- [ ] **Step 3: 고침** — `newer.some(...)` 조건을 «`refundStatus === 'succeeded'` 이고 `completedRefundLinkId` 가 없는 것»으로 좁힌다. 주석은 «어느 건을 닫는지 모르는 옛 성공만 막는다»로.
+- [ ] **Step 4: 확인** — 같은 명령 실패 0. 기존 `대상보다 새 succeeded 가 있으면 400 … (C1)`(표지 없는 succeeded)과 `결정 대기 manual_pending 을 실행해 성공하면 … 400 (C1)`(대상 자신을 닫은 succeeded — `closedBy` 가 잡는다)이 그대로 초록이어야 한다.
+- [ ] **Step 5: 커밋** `«환불 안 함» 가드가 다른 건을 닫은 환불 성공을 세지 않는다 — 3pl 부분취소 둘 중 하나 실행 뒤 나머지 결정이 막히던 것 (K7 PR5, PR4 알려진 문제)`
 
 ## 배포
 
