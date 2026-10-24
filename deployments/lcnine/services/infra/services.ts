@@ -19,6 +19,7 @@ export function setup(infra: SharedInfra) {
     setOtelExporterOtlpEndpoint,
     createService,
     createBundleService,
+    imageOf,
   } = infra;
 
   // storefront/auth-web 등이 BACKEND_DOMAIN + 서비스 서브도메인 규칙으로 백엔드 URL을 조립한다.
@@ -474,7 +475,7 @@ export function setup(infra: SharedInfra) {
   });
 
   // 태스크 A: analytics + channel-adapter + membership (타깃그룹 3개 ≤ 5)
-  createBundleService('ServicesBundleA', {
+  const servicesBundleA = createBundleService('ServicesBundleA', {
     architecture: 'arm64',
     dockerfile: 'deployments/lcnine/services/bundle/Dockerfile',
     cpu: '0.25 vCPU',
@@ -495,9 +496,11 @@ export function setup(infra: SharedInfra) {
   });
 
   // 태스크 B: notification + search + ugc (타깃그룹 3개 ≤ 5)
+  // A 와 같은 이미지다 — 어느 앱을 띄울지는 BUNDLE_APPS env 가 정한다. 그래서 다시 빌드하지 않고 A 의 것을 쓴다.
   createBundleService('ServicesBundleB', {
     architecture: 'arm64',
     dockerfile: 'deployments/lcnine/services/bundle/Dockerfile',
+    image: imageOf(servicesBundleA),
     cpu: '0.25 vCPU',
     memory: '1 GB',
     scaling: { min: 1, max: 1 },
@@ -813,7 +816,7 @@ export function setup(infra: SharedInfra) {
 
   // store — 손님 읽기·체크아웃·결제 웹훅(/hooks). subscriber·job·BullMQ 워커를 띄우지 않는다.
   // migrate 는 admin 이 돈다 (Medusa schema migration 은 잠금이 없어 동시 실행이 경쟁한다).
-  createService('Medusa', {
+  const medusa = createService('Medusa', {
     ...medusaCommon,
     priority: 210,
     transform: {
@@ -827,8 +830,11 @@ export function setup(infra: SharedInfra) {
   });
 
   // admin — /admin/* API + 백그라운드 전부(subscriber·cron·워크플로 엔진). ECS Exec·백필은 여기.
+  // store 와 같은 Dockerfile·buildArgs 라 이미지도 같다 — 다시 빌드하지 않고 store 의 것을 쓴다.
+  // 갈리는 것은 env(MEDUSA_WORKER_MODE 등) 뿐이다. medusaCommon 의 buildArgs 를 바꾸면 둘이 함께 바뀐다.
   createService('MedusaAdmin', {
     ...medusaCommon,
+    image: imageOf(medusa),
     priority: 205,
     pathPattern: '/admin/*',
     transform: {
