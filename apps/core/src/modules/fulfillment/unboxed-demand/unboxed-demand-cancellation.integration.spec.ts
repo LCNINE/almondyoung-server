@@ -287,12 +287,14 @@ describeIfDb('상자 전 수요 취소 (PostgreSQL integration)', () => {
         await f.seedFo(tx, w, order, { qty: 3, dropShip: 'forwarded', status: 'created' });
 
         await cmd.lockForCancellation(order.salesOrderId, tx);
-        await tx
-          .transaction(async (sp) => {
+        await expect(
+          tx.transaction(async (sp) => {
             await cmd.cancelOrder(order.salesOrderId, randomUUID(), sp);
+            // 행이 savepoint 안에서 보여야 «넘겨받은 tx 로 썼다»가 증명된다 — 다른 연결이면 여기서 0 이다
+            expect(await notices(sp)).toHaveLength(1);
             throw new Error('boom');
-          })
-          .catch(() => undefined);
+          }),
+        ).rejects.toThrow('boom');
 
         expect(await notices(tx)).toEqual([]);
       });

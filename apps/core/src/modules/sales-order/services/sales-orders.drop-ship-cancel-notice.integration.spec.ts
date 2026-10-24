@@ -71,6 +71,11 @@ describeIfDb('SalesOrdersService 취소 — 직배 파트너 대기 행 (K7 PR5)
       expect(rows.map((r) => r.canceledQty)).toEqual([1, 1]);
       expect(rows.every((r) => r.cancellationScope === 'partial')).toBe(true);
       expect(new Set(rows.map((r) => r.orderCancellationId)).size).toBe(2);
+      const cancellations = await tx
+        .select()
+        .from(wmsTables.salesOrderCancellations)
+        .where(eq(wmsTables.salesOrderCancellations.salesOrderId, o.salesOrderId));
+      expect(new Set(rows.map((r) => r.orderCancellationId))).toEqual(new Set(cancellations.map((c) => c.id)));
     });
   });
 
