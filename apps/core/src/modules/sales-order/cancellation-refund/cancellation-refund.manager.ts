@@ -148,10 +148,15 @@ export class CancellationRefundManager {
       const closed = this.closedBy(rows, target.id);
       if (closed === 'succeeded') throw new BadRequestException('이미 환불이 완료된 건입니다.');
       if (closed === REFUND_WAIVED) return { refundStatus: REFUND_WAIVED };
-      // 대상 뒤에 환불 성공이 있으면 돈은 이미 나갔다 — 그 성공이 대상을 가리키지 않는 옛 기록(닫기 표지 이전)이어도
-      // «안 함» 을 쓰면 스토어프론트가 환불 없음(none)으로 보인다
+      // 대상 뒤에 환불 성공이 있으면 돈은 이미 나갔다 — 어느 건을 닫는지 모르는 옛 성공만 막는다(닫기 표지 이전 기록).
+      // 표지(completedRefundLinkId)가 있는 성공은 다른 결정 대기 건을 닫은 것이므로 대상에 영향을 주지 않는다
       const newer = rows.slice(0, rows.indexOf(target));
-      if (newer.some((r) => this.metaOf(r.metadata).refundStatus === 'succeeded')) {
+      if (
+        newer.some((r) => {
+          const m = this.metaOf(r.metadata);
+          return m.refundStatus === 'succeeded' && !m.completedRefundLinkId;
+        })
+      ) {
         throw new BadRequestException('이미 환불이 완료된 건입니다.');
       }
     }
