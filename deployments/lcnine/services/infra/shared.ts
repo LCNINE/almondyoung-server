@@ -181,6 +181,8 @@ export function setup(opts?: { baseDomain?: string }) {
       // 같은 호스트 안에서 경로로 갈라 붙는 서비스 (예: Medusa admin 의 `/admin/*`).
       // hostHeader 조건에 pathPattern 조건을 AND 로 더한다. priority 를 기본 서비스보다 작게 줘야 먼저 매칭된다.
       pathPattern?: string;
+      // 'spot' 이면 Fargate Spot 으로만 띄운다 (services.ts 의 Spot 절 참고). 바꾸면 ECS 서비스가 재생성된다.
+      capacity?: 'spot';
     },
   ) =>
     new sst.aws.Service(name, {
@@ -190,6 +192,7 @@ export function setup(opts?: { baseDomain?: string }) {
       ...(opts.memory ? { memory: opts.memory as any } : {}),
       ...(opts.scaling ? { scaling: opts.scaling } : {}),
       ...(opts.architecture ? { architecture: opts.architecture } : {}),
+      ...(opts.capacity ? { capacity: opts.capacity } : {}),
       loadBalancer: {
         instance: alb,
         rules: [
