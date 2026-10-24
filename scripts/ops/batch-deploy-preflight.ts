@@ -5,18 +5,20 @@
  *   npm run deploy:preflight -- --stage live                  # 배포 직전: 무엇이 실리는지, 어느 순서인지
  *   npm run deploy:preflight -- --stage live --mark-deployed  # 배포 뒤: 정말 떴는지 확인하고 배포 태그를 찍는다
  *
+ * - 빌드 머신: arm64 이미지를 빌드할 수 있는지(x86 이면 QEMU binfmt), 컨테이너 빌드를 몇 개 동시에 돌리는지 본다.
+ *   동시성은 sst 를 띄울 셸의 환경변수로만 먹는다 — 점검과 같은 셸에서 배포한다.
  * 필요한 것: 터널(`npx sst tunnel --stage <stage>`), `gh` 로그인, `--mark-deployed` 는 AWS 로그인(`aws login --profile login`).
  *
  * - 대기 마이그는 라이브 DB 의 적용 이력(`drizzle.__drizzle_migrations`)과 저장소 journal 을 직접 비교한다 — 기준 커밋이 없어도 된다.
  *   lcnine-services 와 lcnine-auth 를 둘 다 본다(user-service 는 auth 쪽이라 빠뜨리기 쉽다).
  * - 이벤트 계약·Medusa 마이그는 마지막 배포 태그(`deploy/<stage>/*`) 이후의 git 변경으로 본다.
  * - 종료 코드 1: 한 배포 안에서 expand 와 contract 마이그가 섞였을 때(어느 순서로도 한쪽이 깨진다), drizzle 가 영영 건너뛸
- *   마이그가 있을 때, 판정 재료를 못 읽었을 때. 나머지는 목록과 권장 순서만 보여 주고 판단은 사람이 한다.
+ *   마이그가 있을 때, 이 머신이 arm64 이미지를 빌드하지 못할 때, 판정 재료를 못 읽었을 때. 나머지는 목록과 권장 순서만 보여 주고 판단은 사람이 한다.
  * - 배포 직전 점검이 HEAD 를 기록하고 `--mark-deployed` 는 그 커밋에 태그를 찍는다 — 배포 중에 pull 해도 기준점이 밀리지 않는다.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { freemem, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { Sql } from 'postgres';
 import { z } from 'zod';
@@ -24,6 +26,7 @@ import { createServiceConnection } from '../seeding/lib/db-connection';
 import { getServiceRegistry } from '../seeding/lib/service-registry';
 import { deploymentToCwd } from '../seeding/lib/sst-shell-relaunch';
 import {
+  buildMachineFindings,
   classifyMigration,
   DeploymentVerdict,
   deployTagName,
@@ -254,6 +257,33 @@ const ORDER: Record<DeploymentVerdict['kind'], string> = {
   mixed: '한 순서로 돌릴 수 없다',
 };
 
+const BINFMT_DIR = '/proc/sys/fs/binfmt_misc';
+
+/** 켜져 있는 binfmt 항목. 리눅스가 아니면 null */
+function enabledBinfmt(): string[] | null {
+  if (!existsSync(BINFMT_DIR)) return null;
+  return readdirSync(BINFMT_DIR)
+    .filter((name) => name !== 'register' && name !== 'status')
+    .filter((name) => readFileSync(join(BINFMT_DIR, name), 'utf8').startsWith('enabled'));
+}
+
+/** 막을 일이 있으면 false */
+function reportBuildMachine(stage: string): boolean {
+  section('빌드 머신');
+  const findings = buildMachineFindings({
+    arch: process.arch,
+    binfmtEnabled: enabledBinfmt(),
+    containerConcurrency: process.env.SST_BUILD_CONCURRENCY_CONTAINER,
+    availableMemoryBytes: freemem(),
+    stage,
+  });
+  for (const f of findings) {
+    if (f.level === 'ok') ok(f.message);
+    else bad(f.message, f.fix);
+  }
+  return findings.every((f) => f.level !== 'block');
+}
+
 /** 막을 일이 있으면 false */
 function reportMigrations(states: Map<Deployment, MigrationState>): boolean {
   let fine = true;
@@ -383,6 +413,8 @@ async function main(): Promise<void> {
     writeFileSync(args.collect.out, JSON.stringify(await collectMigrationState(args.collect.deployment, args.stage)));
     return;
   }
+  // 터널 없이도 먼저 보이게 — 마이그 수집은 sst shell 두 번이라 느리고 터널이 없으면 거기서 끝난다.
+  const buildFine = args.markDeployed || reportBuildMachine(args.stage);
   const states = migrationStateByDeployment(args.stage);
   if (args.markDeployed) {
     process.exitCode = markDeployed(args.stage, states) ? 0 : 1;
@@ -392,7 +424,7 @@ async function main(): Promise<void> {
   reportSinceTag(args.stage);
   const issueFine = reportIssue(args.issue);
   recordPreflight(args.stage);
-  process.exitCode = migrationsFine && issueFine ? 0 : 1;
+  process.exitCode = buildFine && migrationsFine && issueFine ? 0 : 1;
 }
 
 if (require.main === module) {

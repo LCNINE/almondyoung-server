@@ -4,7 +4,14 @@ FROM node:22-alpine AS base
 WORKDIR /app
 RUN apk add --no-cache postgresql-client git openssh-client
 
-FROM base AS deps
+# TypeScript 컴파일은 빌드 머신에서 실행하고 런타임 의존성은 대상 아키텍처로 설치한다.
+# arm64 이미지를 x86 머신에서 빌드할 때 이 둘을 대상 아키텍처로 돌리면 QEMU 에뮬레이션이라 수십 배 느리다.
+# 산출물(dist)은 webpack-node-externals 로 node_modules 를 빼고 묶은 순수 JS 라 빌드 머신 아키텍처와 무관하다.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS build-base
+WORKDIR /app
+RUN apk add --no-cache postgresql-client git openssh-client
+
+FROM build-base AS deps
 COPY package*.json ./
 COPY packages/hms-api-wrapper/ ./packages/hms-api-wrapper/
 RUN npm ci
@@ -14,7 +21,7 @@ COPY package*.json ./
 COPY packages/hms-api-wrapper/ ./packages/hms-api-wrapper/
 RUN npm ci --omit=dev && npm cache clean --force
 
-FROM base AS builder
+FROM build-base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY package*.json ./
 COPY tsconfig*.json ./

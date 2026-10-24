@@ -148,7 +148,7 @@ npm run db:seed:demo  -- --stage <stage> --deployment <name> --yes  # demo- pref
 
 **Expand phase 는 순서가 반대다: `migrate → deploy`.** "additive 만 expand" 컨벤션은 *새 schema 가 옛 코드를 안 깨는 것*만 보장하지, 그 반대 (새 코드가 옛 schema 를 만나는 것) 는 보장하지 않는다. 새 컬럼을 읽고 쓰는 코드가 컬럼보다 먼저 뜨면 깨진다. migrate 를 먼저 돌리면 rolling 중 옛 task 는 nullable 추가 컬럼을 무시하므로 안전하다. 두 phase 의 순서를 반대로 적용하지 말 것 — 어느 phase 인지 먼저 확인한다.
 
-**배포는 여러 PR 을 모아 한 번에 한다(2026-10-18).** `sst deploy` 는 develop 전체를 싣기 때문에, 내 PR 에 마이그가 없어도 남의 PR 마이그가 함께 실린다(2026-10-10 장애). 배포 직전에 `npm run deploy:preflight -- --stage live` 를 돌린다. 두 배포(services·auth)의 대기 마이그를 라이브 적용 이력과 비교해 expand/contract 순서를 정하고, 이벤트 계약·Medusa 마이그 변경과 #1016 의 체크 안 된 배포 줄을 보여 준다. expand 와 contract 가 섞였거나 drizzle 가 영영 건너뛸 마이그(더 늦게 만든 마이그가 먼저 배포된 경우)가 있으면 1 로 끝난다. 배포가 끝나면 `--mark-deployed` 를 붙여 다시 돌린다. ECS 롤아웃과 대기 마이그 0 을 확인한 뒤, 점검이 기록한 커밋에 `deploy/<stage>/<KST 시각>` 태그를 찍는다. 이 태그가 다음 점검의 기준점이다. 터널(`npx sst tunnel --stage live`)이 떠 있어야 한다.
+**배포는 여러 PR 을 모아 한 번에 한다(2026-10-18).** `sst deploy` 는 develop 전체를 싣기 때문에, 내 PR 에 마이그가 없어도 남의 PR 마이그가 함께 실린다(2026-10-10 장애). 배포 직전에 `npm run deploy:preflight -- --stage live` 를 돌린다. 두 배포(services·auth)의 대기 마이그를 라이브 적용 이력과 비교해 expand/contract 순서를 정하고, 이벤트 계약·Medusa 마이그 변경과 #1016 의 체크 안 된 배포 줄을 보여 준다. expand 와 contract 가 섞였거나 drizzle 가 영영 건너뛸 마이그(더 늦게 만든 마이그가 먼저 배포된 경우)가 있으면 1 로 끝난다. 빌드 머신도 본다 — x86 이면 arm64 에뮬레이터(binfmt, 재부팅하면 풀린다)가 없을 때 1 로 끝나고, 컨테이너 빌드 동시성(`SST_BUILD_CONCURRENCY_CONTAINER`, SST 기본 1)은 가용 메모리에 맞춘 배포 명령을 준다. 동시성은 sst 를 띄울 셸의 환경변수로만 먹으므로 그 명령을 같은 셸에서 그대로 쓴다. 배포가 끝나면 `--mark-deployed` 를 붙여 다시 돌린다. ECS 롤아웃과 대기 마이그 0 을 확인한 뒤, 점검이 기록한 커밋에 `deploy/<stage>/<KST 시각>` 태그를 찍는다. 이 태그가 다음 점검의 기준점이다. 터널(`npx sst tunnel --stage live`)이 떠 있어야 한다.
 
 ### Adding New Microservices/Libraries
 ```bash

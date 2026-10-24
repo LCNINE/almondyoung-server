@@ -255,3 +255,90 @@ export function deployTagName(stage: string, at: Date): string {
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? '';
   return `deploy/${stage}/${part('year')}${part('month')}${part('day')}-${part('hour')}${part('minute')}`;
 }
+
+/**
+ * 이미지 하나를 빌드할 때의 최악 메모리. 루트 `npm ci` 가 1.8GB(2026-10-24 실측)이고, Dockerfile 의 deps·deps-prod 는
+ * 서로 기대지 않아 lockfile 이 바뀐 배치에서는 둘이 동시에 처음부터 돈다. nest build(Core 2.3GB)는 그 뒤라 겹치지 않는다.
+ */
+export const IMAGE_BUILD_PEAK_BYTES = 3.6e9;
+const MAX_CONTAINER_CONCURRENCY = 4;
+
+export interface BuildMachineFacts {
+  /** `process.arch` */
+  arch: string;
+  /** 켜져 있는 binfmt_misc 항목 이름. 읽을 수 없으면(리눅스가 아니면) null */
+  binfmtEnabled: readonly string[] | null;
+  /** `SST_BUILD_CONCURRENCY_CONTAINER` 원문 */
+  containerConcurrency: string | undefined;
+  availableMemoryBytes: number;
+  stage: string;
+}
+
+export type BuildMachineFinding =
+  | { level: 'ok'; message: string }
+  | { level: 'warn' | 'block'; message: string; fix: string };
+
+const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)}GB`;
+
+/**
+ * sst deploy 를 띄울 이 머신이 이미지를 빌드할 수 있는가, 빠르게 빌드하는가. 모든 서비스 이미지가 arm64 라
+ * x86 머신은 QEMU binfmt 가 있어야 하고(재부팅하면 풀린다 — 2026-10-21), SST 는 컨테이너 빌드를 기본 1개씩만 돌린다.
+ * 동시성은 sst 를 띄우기 전 환경변수로만 먹으므로(빌드 세마포어가 모듈 로드 때 만들어진다) 점검은 «이 셸»을 본다.
+ */
+export function buildMachineFindings(facts: BuildMachineFacts): BuildMachineFinding[] {
+  const findings: BuildMachineFinding[] = [];
+  if (facts.arch === 'arm64') {
+    findings.push({ level: 'ok', message: 'arm64 머신 — 이미지를 에뮬레이션 없이 빌드한다' });
+  } else if (facts.binfmtEnabled === null) {
+    findings.push({
+      level: 'warn',
+      message: 'binfmt_misc 를 읽지 못했다 — arm64 이미지를 빌드할 수 있는지 모른다',
+      fix: 'docker buildx inspect 의 Platforms 에 linux/arm64 가 있는지 본다',
+    });
+  } else if (!facts.binfmtEnabled.includes('qemu-aarch64')) {
+    findings.push({
+      level: 'block',
+      message: 'arm64 에뮬레이터(qemu-aarch64)가 등록돼 있지 않다 — 이대로면 이미지 빌드가 exec format error 로 죽는다',
+      fix: 'docker run --privileged --rm tonistiigi/binfmt --install arm64 (재부팅하면 다시 해야 한다)',
+    });
+  } else {
+    findings.push({ level: 'ok', message: 'arm64 에뮬레이터 등록됨 — 런타임 의존성 설치만 에뮬레이션으로 돈다' });
+  }
+
+  const affordable = Math.max(
+    1,
+    Math.min(MAX_CONTAINER_CONCURRENCY, Math.floor(facts.availableMemoryBytes / IMAGE_BUILD_PEAK_BYTES)),
+  );
+  const memory = `가용 메모리 ${gb(facts.availableMemoryBytes)}, 이미지 하나 최악 ${gb(IMAGE_BUILD_PEAK_BYTES)}`;
+  const command = (n: number) => `SST_BUILD_CONCURRENCY_CONTAINER=${n} npx sst deploy --stage ${facts.stage}`;
+  const raw = facts.containerConcurrency?.trim();
+  const requested = raw ? Number(raw) : 1;
+  if (!Number.isInteger(requested) || requested < 1) {
+    findings.push({
+      level: 'block',
+      message: `SST_BUILD_CONCURRENCY_CONTAINER=${raw} 는 1 이상의 정수가 아니다`,
+      fix: command(affordable),
+    });
+  } else if (requested > affordable && requested > 1) {
+    findings.push({
+      level: 'warn',
+      message: `컨테이너 빌드 ${requested}개 동시 — ${memory}라 lockfile 이 바뀐 배치면 메모리가 모자랄 수 있다`,
+      fix: `로컬 컨테이너·앱을 내리고 다시 점검하거나 ${command(affordable)}`,
+    });
+  } else if (requested > 1) {
+    findings.push({ level: 'ok', message: `컨테이너 빌드 ${requested}개 동시 (${memory})` });
+  } else if (affordable > 1) {
+    findings.push({
+      level: 'warn',
+      message: '컨테이너 빌드가 하나씩 돈다(SST 기본값) — 이미지가 차례로 빌드된다',
+      fix: `이 셸에서 ${command(affordable)} 로 띄운다 (${memory})`,
+    });
+  } else {
+    findings.push({
+      level: 'warn',
+      message: `컨테이너 빌드가 하나씩 돈다 — ${memory}라 둘을 겹치면 lockfile 이 바뀐 배치에서 모자랄 수 있다`,
+      fix: `로컬 컨테이너·앱을 내리고 다시 점검한다. 그대로면 ${command(1)}`,
+    });
+  }
+  return findings;
+}
