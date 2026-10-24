@@ -10,6 +10,8 @@ export default $config({
       removal: isLive ? "retain" : "remove",
       protect: isLive || isDemo,
       home: "aws",
+      // state 버킷의 옛 버전 정리 — 이유와 동작은 services/sst.config.ts 의 같은 줄 주석.
+      state: { retention: 30 },
       providers: {
         aws: { region: "ap-northeast-2" },
       },
