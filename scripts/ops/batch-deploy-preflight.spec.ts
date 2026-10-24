@@ -3,7 +3,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { getServiceRegistry } from '../seeding/lib/service-registry';
 import {
+  BuildMachineFacts,
+  BuildMachineFinding,
+  buildMachineFindings,
   classifyMigration,
+  IMAGE_BUILD_PEAK_BYTES,
   deployTagName,
   EcsServiceSnapshot,
   judgeDeployment,
@@ -209,6 +213,72 @@ describe('rolloutProblems', () => {
     const problems = rolloutProblems([svc({})], ['lcnine-services', 'lcnine-auth']);
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain('lcnine-auth');
+  });
+});
+
+describe('buildMachineFindings', () => {
+  const facts = (over: Partial<BuildMachineFacts>): BuildMachineFacts => ({
+    arch: 'x64',
+    binfmtEnabled: ['qemu-aarch64'],
+    containerConcurrency: '2',
+    availableMemoryBytes: 3 * IMAGE_BUILD_PEAK_BYTES,
+    stage: 'live',
+    ...over,
+  });
+  const findings = (over: Partial<BuildMachineFacts>) => buildMachineFindings(facts(over));
+  const levels = (over: Partial<BuildMachineFacts>) => findings(over).map((f) => f.level);
+  const fixOf = (f: BuildMachineFinding) => (f.level === 'ok' ? '' : f.fix);
+
+  it('에뮬레이터가 있고 메모리에 맞는 동시성이면 둘 다 초록', () => {
+    expect(levels({})).toEqual(['ok', 'ok']);
+  });
+
+  it('x86 에서 qemu-aarch64 가 없으면 막는다 — 재부팅하면 풀린다(2026-10-21)', () => {
+    const [binfmt] = findings({ binfmtEnabled: ['python3.12'] });
+    expect(binfmt.level).toBe('block');
+    expect(fixOf(binfmt)).toContain('tonistiigi/binfmt --install arm64');
+  });
+
+  it('arm64 머신은 에뮬레이터를 보지 않는다', () => {
+    expect(levels({ arch: 'arm64', binfmtEnabled: [] })[0]).toBe('ok');
+  });
+
+  it('binfmt 를 읽지 못하면 초록이 아니라 경고다', () => {
+    expect(levels({ binfmtEnabled: null })[0]).toBe('warn');
+  });
+
+  it('동시성이 비어 있으면 메모리가 허락하는 수를 넣은 배포 명령을 준다', () => {
+    const [, concurrency] = findings({ containerConcurrency: undefined });
+    expect(concurrency.level).toBe('warn');
+    expect(fixOf(concurrency)).toContain('SST_BUILD_CONCURRENCY_CONTAINER=3 npx sst deploy --stage live');
+  });
+
+  it('권하는 동시성은 4 를 넘지 않는다', () => {
+    const [, concurrency] = findings({
+      containerConcurrency: undefined,
+      availableMemoryBytes: 100 * IMAGE_BUILD_PEAK_BYTES,
+    });
+    expect(fixOf(concurrency)).toContain('SST_BUILD_CONCURRENCY_CONTAINER=4 ');
+  });
+
+  it('메모리보다 큰 동시성은 경고하고, 줄인 명령을 준다', () => {
+    const [, concurrency] = findings({ containerConcurrency: '4', availableMemoryBytes: 2.5 * IMAGE_BUILD_PEAK_BYTES });
+    expect(concurrency.level).toBe('warn');
+    expect(fixOf(concurrency)).toContain('SST_BUILD_CONCURRENCY_CONTAINER=2 ');
+  });
+
+  it('메모리가 하나 분량도 안 되면 겹치라고 권하지 않는다', () => {
+    const [, concurrency] = findings({
+      containerConcurrency: undefined,
+      availableMemoryBytes: 0.5 * IMAGE_BUILD_PEAK_BYTES,
+    });
+    expect(concurrency.level).toBe('warn');
+    expect(fixOf(concurrency)).toContain('SST_BUILD_CONCURRENCY_CONTAINER=1 ');
+  });
+
+  it('SST 가 parseInt 로 읽어 0·NaN 이 되는 값은 막는다', () => {
+    expect(levels({ containerConcurrency: 'two' })[1]).toBe('block');
+    expect(levels({ containerConcurrency: '0' })[1]).toBe('block');
   });
 });
 

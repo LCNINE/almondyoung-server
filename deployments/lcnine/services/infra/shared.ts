@@ -181,11 +181,18 @@ export function setup(opts?: { baseDomain?: string }) {
       // 같은 호스트 안에서 경로로 갈라 붙는 서비스 (예: Medusa admin 의 `/admin/*`).
       // hostHeader 조건에 pathPattern 조건을 AND 로 더한다. priority 를 기본 서비스보다 작게 줘야 먼저 매칭된다.
       pathPattern?: string;
+      // 다른 서비스가 이미 빌드한 이미지 URI (imageOf 로 얻는다). 주면 dockerfile·buildArgs 로 다시 빌드하지 않는다.
+      image?: $util.Input<string>;
       // 'spot' 이면 Fargate Spot 으로만 띄운다 (services.ts 의 Spot 절 참고). 바꾸면 ECS 서비스가 재생성된다.
       capacity?: 'spot';
     },
-  ) =>
-    new sst.aws.Service(name, {
+  ) => {
+    const image = opts.image ?? {
+      context: dockerContext,
+      dockerfile: opts.dockerfile,
+      args: opts.buildArgs,
+    };
+    return new sst.aws.Service(name, {
       cluster,
       link: opts.link,
       ...(opts.cpu ? { cpu: opts.cpu as any } : {}),
@@ -212,11 +219,7 @@ export function setup(opts?: { baseDomain?: string }) {
             containers: [
               {
                 name: 'main',
-                image: {
-                  context: dockerContext,
-                  dockerfile: opts.dockerfile,
-                  args: opts.buildArgs,
-                },
+                image,
                 environment: {
                   ...baseEnv(opts.domainSlug),
                   PORT: String(opts.port),
@@ -227,11 +230,7 @@ export function setup(opts?: { baseDomain?: string }) {
             ],
           }
         : {
-            image: {
-              context: dockerContext,
-              dockerfile: opts.dockerfile,
-              args: opts.buildArgs,
-            },
+            image,
             environment: {
               ...baseEnv(opts.domainSlug),
               PORT: String(opts.port),
@@ -263,6 +262,13 @@ export function setup(opts?: { baseDomain?: string }) {
         },
       },
     });
+  };
+
+  // 같은 Dockerfile·buildArgs 로 두 서비스를 띄울 때 두 번째 서비스가 첫 서비스의 이미지를 그대로 쓰게 한다.
+  // SST 는 서비스마다 이미지를 따로 빌드하고 캐시 ref 도 서비스 이름별이라, 그냥 두면 같은 이미지를
+  // 처음부터 두 번 빌드한다 (Medusa/MedusaAdmin 각 ~20분). 사이드카 없는 단일 컨테이너 서비스만 넘길 것.
+  const imageOf = (service: sst.aws.Service) =>
+    service.nodes.taskDefinition.containerDefinitions.apply((defs) => JSON.parse(defs)[0].image as string);
 
   // ─── Bundle service helper (다중 호스트 → 다중 룰) ───
   // 경량 서비스 여러 개를 한 태스크에 묶는 전용 헬퍼. createService(단일 룰)와 별개로 둬서
@@ -280,6 +286,8 @@ export function setup(opts?: { baseDomain?: string }) {
       memory?: string;
       scaling?: { min: number; max: number };
       architecture?: 'x86_64' | 'arm64';
+      // createService 의 image 와 같다 — 주면 dockerfile 로 다시 빌드하지 않는다.
+      image?: $util.Input<string>;
     },
   ) => {
     const hostByPriority: Record<number, string> = {};
@@ -313,7 +321,7 @@ export function setup(opts?: { baseDomain?: string }) {
           ]),
         ) as Record<string, any>,
       },
-      image: {
+      image: opts.image ?? {
         context: dockerContext,
         dockerfile: opts.dockerfile,
       },
@@ -363,6 +371,7 @@ export function setup(opts?: { baseDomain?: string }) {
     kafkaEnv,
     createService,
     createBundleService,
+    imageOf,
   };
 }
 
