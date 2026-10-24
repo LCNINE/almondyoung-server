@@ -1,4 +1,4 @@
-import { registerOTel, OTLPHttpJsonTraceExporter } from "@vercel/otel"
+import { registerOTel, OTLPHttpProtoTraceExporter } from "@vercel/otel"
 import {
   type Sampler,
   type SamplingResult,
@@ -57,7 +57,8 @@ export async function register() {
     serviceName,
     ...(endpoint
       ? {
-          traceExporter: new OTLPHttpJsonTraceExporter({
+          // http/protobuf — 같은 span 을 JSON 의 46% 크기로 보낸다(2026-10-24 실측). 게이트웨이가 도쿄라 리전 간 전송비가 크기에 비례한다.
+          traceExporter: new OTLPHttpProtoTraceExporter({
             url: `${endpoint}/v1/traces`,
             headers:
               instanceId && token
