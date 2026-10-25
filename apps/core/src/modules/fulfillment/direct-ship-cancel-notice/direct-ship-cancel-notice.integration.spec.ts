@@ -5,7 +5,6 @@ import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { wmsSchema, wmsTables, DbTx } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDbService } from '../services/__support__';
 import * as f from '../order-progress/__support__/order-progress.fixtures';
-import { UnboxedDemandCancellation } from '../unboxed-demand/unboxed-demand-cancellation';
 import { DirectShipCancelNoticeReader } from './direct-ship-cancel-notice.reader';
 import { DirectShipCancelNoticeManager } from './direct-ship-cancel-notice.manager';
 
@@ -16,7 +15,6 @@ describeIfDb('직배 알릴 취소 대기함 (PostgreSQL integration)', () => {
   jest.setTimeout(60_000);
   let client: postgres.Sql;
   let db: PostgresJsDatabase<typeof wmsSchema>;
-  let cmd: UnboxedDemandCancellation;
   let reader: DirectShipCancelNoticeReader;
   let manager: DirectShipCancelNoticeManager;
 
@@ -24,7 +22,6 @@ describeIfDb('직배 알릴 취소 대기함 (PostgreSQL integration)', () => {
     client = postgres(DATABASE_URL as string, { max: 1 });
     db = drizzle(client, { schema: wmsSchema });
     const dbService = makeDbService(db);
-    cmd = new UnboxedDemandCancellation(dbService);
     reader = new DirectShipCancelNoticeReader(dbService);
     manager = new DirectShipCancelNoticeManager(dbService);
   });
@@ -35,7 +32,7 @@ describeIfDb('직배 알릴 취소 대기함 (PostgreSQL integration)', () => {
   /** 넘긴 직배 주문 하나를 만들고 부분 취소 1개로 대기 행 하나를 남긴다. 취소 행은 서비스가 쓰는 자리라 여기서 맞춘다. */
   async function seedNotice(tx: DbTx, w: f.World, qty = 3) {
     const order = await f.seedOrder(tx, { quantity: qty });
-    const { foItemId } = await f.seedFo(tx, w, order, { qty, dropShip: 'forwarded', status: 'created' });
+    const { foId, foItemId } = await f.seedFo(tx, w, order, { qty, dropShip: 'forwarded', status: 'created' });
     const notice = async (reduceQty = 1) => {
       const oc = randomUUID();
       await tx.insert(wmsTables.salesOrderCancellations).values({
@@ -44,12 +41,21 @@ describeIfDb('직배 알릴 취소 대기함 (PostgreSQL integration)', () => {
         cancellationScope: 'partial',
         occurredAt: new Date('2026-10-24T03:05:00Z'),
       });
-      await cmd.lockForCancellation(order.salesOrderId, tx);
-      await cmd.reduce(order.salesOrderId, oc, [{ fulfillmentOrderItemId: foItemId, qty: reduceQty }], tx);
+      // 옛 상자 전 쓰기는 K3 PR6 에서 지웠다 — 읽기·완료 표시만 보는 스펙이라 행을 직접 심는다
       const [row] = await tx
-        .select()
-        .from(wmsTables.directShipCancelNotices)
-        .where(eq(wmsTables.directShipCancelNotices.orderCancellationId, oc));
+        .insert(wmsTables.directShipCancelNotices)
+        .values({
+          orderCancellationId: oc,
+          salesOrderId: order.salesOrderId,
+          fulfillmentOrderId: foId,
+          fulfillmentOrderItemId: foItemId,
+          holderId: w.holderId,
+          salesOrderLineId: order.lineId,
+          skuId: w.skuId,
+          canceledQty: reduceQty,
+          cancellationScope: 'partial',
+        })
+        .returning();
       return row;
     };
     return { order, foItemId, notice };
