@@ -1,10 +1,12 @@
-import { Controller, Get, Post, Put, Body, Param, Query, UsePipes, Res, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, ParseUUIDPipe, Query, UsePipes, Res, BadRequestException } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { DirectShipService, DirectShipOrder } from '../services/direct-ship.service';
 import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
 import { z } from 'zod';
 import { DirectShipCancelNoticeService } from '../direct-ship-cancel-notice/direct-ship-cancel-notice.service';
+import { SupplierShipmentQueueReader } from '../supplier-shipment/supplier-shipment-queue.reader';
+import { SupplierQueueShipmentDto, SupplierQueueSummaryDto } from '../dto/supplier-shipment-queue.dto';
 import { RequirePermission, User, PiiResponse, OPEN_WITH_RECIPIENT } from '@app/authorization';
 
 const ForwardOrdersSchema = z.object({
@@ -40,7 +42,31 @@ export class DirectShipController {
   constructor(
     private readonly directShipService: DirectShipService,
     private readonly cancelNotices: DirectShipCancelNoticeService,
+    private readonly supplierQueue: SupplierShipmentQueueReader,
   ) {}
+
+  @RequirePermission('fulfillment.order.read')
+  @Get('supplier-queue')
+  @ApiOperation({ summary: '직배 목록 — 입점사별 대기·넘긴 상자 수와 못 보냄 라인 수' })
+  @ApiResponse({ status: 200, type: [SupplierQueueSummaryDto] })
+  async getSupplierQueue(): Promise<SupplierQueueSummaryDto[]> {
+    return this.supplierQueue.summaryBySupplier();
+  }
+
+  @RequirePermission('fulfillment.order.read')
+  @Get('supplier-queue/:supplierId/shipments')
+  @ApiOperation({ summary: '직배 목록 — 한 입점사의 열린 상자와 라인' })
+  @ApiQuery({ name: 'stage', enum: ['pending', 'forwarded'] })
+  @ApiResponse({ status: 200, type: [SupplierQueueShipmentDto] })
+  async getSupplierQueueShipments(
+    @Param('supplierId', new ParseUUIDPipe()) supplierId: string,
+    @Query('stage') stage?: string,
+  ): Promise<SupplierQueueShipmentDto[]> {
+    if (stage !== 'pending' && stage !== 'forwarded') {
+      throw new BadRequestException("stage must be 'pending' or 'forwarded'");
+    }
+    return this.supplierQueue.openShipments(supplierId, stage);
+  }
 
   @RequirePermission('fulfillment.order.read')
   @Get('dashboard')
