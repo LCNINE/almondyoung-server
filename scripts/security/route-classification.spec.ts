@@ -49,7 +49,6 @@ const READ_VIA_WRITE_VERB: Record<string, string> = {
 
 /** 조회 동사지만 조회 아닌 권한을 요구하는 라우트. 값은 이유. */
 const NON_READ_GET: Record<string, string> = {
-  'core GET /direct-ship/export/:companyName': '내보내기다',
   'core GET /direct-ship/handoffs/:handoffId/sheet': '내보내기다 — 입점사 시트 다시 받기',
   'core GET /shipment-recall-operations/:operationId': '회수 작업 상태 — 회수 권한자의 작업 화면',
   'user-service GET //admin/oauth-clients': '시스템 설정 화면 전체가 관리 권한 하나다',

@@ -4,6 +4,7 @@ import { join, relative } from 'path';
 /**
  * K3 — FO·FOI status 는 투영(`reprojectFulfillmentOrders`)만 쓴다. 다른 곳이 status 를 쓰면 «수량 사실과 상태가 갈리는»
  * 두 번째 모델이 생긴다(감사 §4.3). 허용 목록은 줄어드는 방향으로만 바뀐다.
+ * `apps/core/src` 밖의 셀메이트 수기 출고 스크립트(`scripts/ops/cellmate-local`)가 FO `'shipped'` 를 쓴다 — 이 가드는 못 본다(N1, #923 컷오버 때 걷는다).
  * 스펙·`__support__`·`__fixtures__` 는 테스트 데이터를 만들 뿐이라 대상이 아니다.
  */
 const ROOT = join(__dirname, '../../../../../..');
@@ -58,15 +59,13 @@ describe('FO·FOI status 쓰기 (K3)', () => {
     ).toBe(false);
   });
 
-  it('status 를 쓰는 파일은 투영 하나와 옛 직배 하나뿐', () => {
+  it('status 를 쓰는 파일은 투영 하나뿐', () => {
     const writers = walk(SRC)
       .filter((path) => STATUS_WRITE.test(readFileSync(path, 'utf8')))
       .map((path) => relative(ROOT, path))
       .sort();
     expect(writers).toEqual([
       'apps/core/src/modules/fulfillment/fulfillment-order/fulfillment-order-projection.ts',
-      // 옛 직배 ship() 'shipped' — K3 PR 5·8 이 걷는다. 줄어드는 방향만.
-      'apps/core/src/modules/fulfillment/services/fulfillments.service.ts',
     ]);
   });
 });

@@ -112,9 +112,7 @@ export function wireLogistics(
   const shipmentReservations = new ShipmentReservationService(dbService, unified, progress, invariant);
   const fulfillments = new FulfillmentsService(
     dbService,
-    lifecycle,
     lineCompositions,
-    fulfillmentV1Publisher,
     workflowGate,
     lineCompositionManager,
     shipmentReservations,

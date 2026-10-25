@@ -87,7 +87,7 @@ export class FulfillmentsController {
   @RequirePermission('fulfillment.order.read')
   @Get(':id')
   @ApiOperation({
-    summary: '주문처리 상세 조회 (progress, shipments, items, reservations, adminAvailableActions 포함)',
+    summary: '주문처리 상세 조회 (progress, shipments, items, reservations 포함)',
   })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
   @ApiResponse({ status: 200, type: FulfillmentOrderV2ResponseDto })

@@ -67,7 +67,7 @@ describe('FulfillmentWorkflowGate', () => {
   it('allows operational and V2 mutations in v2', () => {
     const gate = makeGate('v2', cutoverAt);
 
-    expect(() => gate.assertOperationalMutationAllowed('fulfillment.drop_ship')).not.toThrow();
+    expect(() => gate.assertOperationalMutationAllowed('shipment.open')).not.toThrow();
     expect(() => gate.assertV2MutationAllowed('shipment.plan')).not.toThrow();
   });
 

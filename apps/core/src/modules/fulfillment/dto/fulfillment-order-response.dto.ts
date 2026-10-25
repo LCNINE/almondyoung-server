@@ -248,9 +248,6 @@ export class FulfillmentOrderResponseDto {
   })
   reservations?: ReservationSummaryDto[];
 
-  @ApiProperty({ description: '관리자 UI에서 현재 실행 가능한 액션', type: [String], required: false })
-  adminAvailableActions?: string[];
-
   @ApiProperty({ description: '관리자 액션 차단 사유', type: [String], required: false })
   blockedReasons?: string[];
 

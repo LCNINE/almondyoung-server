@@ -19,11 +19,7 @@ export const PII_ROUTES: readonly string[] = [
   'core GET /admin/return-requests/:id',
   'core GET /cs-cases',
   'core GET /cs-cases/:id',
-  'core GET /direct-ship/companies/:companyName/orders',
-  'core GET /direct-ship/export/:companyName',
   'core GET /direct-ship/handoffs/:handoffId/sheet',
-  'core GET /direct-ship/orders',
-  'core GET /direct-ship/orders/by-company',
   'core POST /direct-ship/suppliers/:supplierId/handoffs',
   'core GET /event-failures/dead-letters/:id',
   'core GET /event-failures/outbox/:id',
@@ -108,7 +104,6 @@ export const PII_ROUTES: readonly string[] = [
 /** `*.export` 권한 라우트 중 사유 헤더를 강제하지 않는 것. 값은 이유. */
 export const PII_EXPORT_EXCEPTIONS: Readonly<Record<string, string>> = {
   // 공급사별 직배송 주문 JSON — 레포 밖 호출자가 있을 수 있어 사유 헤더를 강제하면 그 호출이 깨진다. 가림·접속기록은 건다.
-  'core GET /direct-ship/export/:companyName': '레포 밖 호출자 확인 전까지 사유를 강제하지 않는다',
 };
 
 /**

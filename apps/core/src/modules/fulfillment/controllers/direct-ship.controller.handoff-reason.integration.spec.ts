@@ -9,7 +9,6 @@ import { SupplierHandoffService } from '../supplier-shipment/supplier-handoff.se
 import { SupplierSheetApplyService } from '../supplier-shipment/supplier-sheet-apply.service';
 import { SupplierShipmentQueueReader } from '../supplier-shipment/supplier-shipment-queue.reader';
 import { SupplierHandoffListReader } from '../supplier-shipment/supplier-handoff-list.reader';
-import { DirectShipService } from '../services/direct-ship.service';
 import { DirectShipCancelNoticeService } from '../direct-ship-cancel-notice/direct-ship-cancel-notice.service';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -27,7 +26,6 @@ describeIfDb('POST /direct-ship/suppliers/:supplierId/handoffs — 사유는 쓰
     const module = await Test.createTestingModule({
       controllers: [DirectShipController],
       providers: [
-        { provide: DirectShipService, useValue: {} },
         { provide: SupplierShipmentQueueReader, useValue: {} },
         { provide: SupplierHandoffListReader, useValue: {} },
         { provide: SupplierHandoffService, useValue: handoffs },
