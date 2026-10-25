@@ -925,6 +925,13 @@
       "when": 1792903478887,
       "tag": "20261025044438_add-supplier-carriers",
       "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1792904585613,
+      "tag": "20261025050305_require-unfulfillable-reason",
+      "breakpoints": true
     }
   ]
 }

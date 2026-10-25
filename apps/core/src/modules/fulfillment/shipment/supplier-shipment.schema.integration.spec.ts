@@ -114,6 +114,10 @@ describeIfDb('입점사 상자 스키마 제약 (DB integration)', () => {
       await expectViolation(tx, 'ck_shipment_lines_unfulfillable', (sp) =>
         setLine(sp, { unfulfillableReason: '품절' }),
       );
+      // 사유 없이 시각·보고자만 — btrim(NULL) 이 NULL 이라 CHECK 가 통과시키면 안 된다
+      await expectViolation(tx, 'ck_shipment_lines_unfulfillable', (sp) =>
+        setLine(sp, { unfulfillableReportedAt: new Date(), unfulfillableReportedBy: 'it' }),
+      );
       await expectViolation(tx, 'ck_shipment_lines_unfulfillable', (sp) =>
         setLine(sp, { unfulfillableReason: '   ', unfulfillableReportedAt: new Date(), unfulfillableReportedBy: 'it' }),
       );

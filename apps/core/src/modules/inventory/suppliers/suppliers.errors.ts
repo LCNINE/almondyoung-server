@@ -23,3 +23,13 @@ export class SupplierHasShipmentsError extends ApplicationException {
     return HttpStatus.CONFLICT;
   }
 }
+
+/** 이 공급사를 직배로 바꾸면 이미 다른 직배 공급사를 가진 직배 SKU 가 직배 공급사 둘을 갖게 된다(K3 §4.2 «정확히 하나»). */
+export class SupplierWouldDoubleDirectError extends ApplicationException {
+  getErrorCode(): string {
+    return 'SUPPLIER_WOULD_DOUBLE_DIRECT';
+  }
+  getHttpStatus(): number {
+    return HttpStatus.CONFLICT;
+  }
+}

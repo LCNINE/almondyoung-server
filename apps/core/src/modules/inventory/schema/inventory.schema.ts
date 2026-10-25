@@ -2135,7 +2135,7 @@ export const shipmentLines = pgTable(
       'ck_shipment_lines_unfulfillable',
       sql`(${t.unfulfillableReason} IS NULL AND ${t.unfulfillableReportedAt} IS NULL AND ${t.unfulfillableReportedBy} IS NULL)
         OR (${t.unfulfillableReportedAt} IS NOT NULL AND ${t.unfulfillableReportedBy} IS NOT NULL
-          AND length(btrim(${t.unfulfillableReason})) > 0)`,
+          AND ${t.unfulfillableReason} IS NOT NULL AND length(btrim(${t.unfulfillableReason})) > 0)`,
     ),
   }),
 );

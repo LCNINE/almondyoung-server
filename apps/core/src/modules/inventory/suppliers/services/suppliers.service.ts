@@ -2,7 +2,8 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { InjectTypedDb, DbService } from '@app/db';
 import { ConflictError } from '@app/shared';
 import { wmsTables, wmsSchema, DbTx, Supplier } from '../../schema/inventory.schema';
-import { eq, and, or, like, inArray, sql, SQL } from 'drizzle-orm';
+import { eq, and, ne, or, like, inArray, sql, SQL } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import {
   CreateSupplierDto,
   UpdateSupplierDto,
@@ -17,7 +18,11 @@ import {
   SupplierPaymentInfoDto,
   SupplierCategoryInfoDto,
 } from '../dto';
-import { SupplierHasDropShippedSkusError, SupplierHasShipmentsError } from '../suppliers.errors';
+import {
+  SupplierHasDropShippedSkusError,
+  SupplierHasShipmentsError,
+  SupplierWouldDoubleDirectError,
+} from '../suppliers.errors';
 
 @Injectable()
 export class SuppliersService {
@@ -86,6 +91,9 @@ export class SuppliersService {
       if (existing.isDirectDelivery && dto.isDirectDelivery === false) {
         await this.assertNoDropShippedSkus(trx, id, '직배 아님으로 바꿀');
       }
+      if (!existing.isDirectDelivery && dto.isDirectDelivery === true) {
+        await this.assertNoDoubleDirect(trx, id);
+      }
 
       await trx
         .update(suppliers)
@@ -145,8 +153,13 @@ export class SuppliersService {
     return this.dbService.run(async (trx) => {
       const { suppliers, replenishmentSupplierRules } = wmsTables;
 
-      await trx.select({ id: suppliers.id }).from(suppliers).where(eq(suppliers.id, id)).for('update');
-      await this.assertNoDropShippedSkus(trx, id, '삭제할');
+      const [locked] = await trx
+        .select({ isDirectDelivery: suppliers.isDirectDelivery })
+        .from(suppliers)
+        .where(eq(suppliers.id, id))
+        .for('update');
+      // 직배 SKU 규칙은 직배 연결만 센다 — 직배가 아닌 공급사를 지워도 규칙은 깨지지 않는다
+      if (locked?.isDirectDelivery) await this.assertNoDropShippedSkus(trx, id, '삭제할');
       await this.assertNoSupplierShipments(trx, id);
 
       // 판정과 DELETE 는 한 트랜잭션이어야 한다 — 따로 읽으면 "규칙 없음" 을 본 뒤 규칙이 들어와도
@@ -184,6 +197,32 @@ export class SuppliersService {
     if (count > 0) {
       throw new SupplierHasDropShippedSkusError(
         `직배 SKU ${count}개가 이 공급사에 묶여 있어 ${action} 수 없습니다. SKU 의 입점사를 먼저 바꾸세요.`,
+      );
+    }
+  }
+
+  /** 이 공급사에 묶인 직배 SKU 중 이미 다른 직배 공급사를 가진 것이 있으면 409 — 직배로 바꾸면 직배 공급사가 둘이 된다. */
+  private async assertNoDoubleDirect(trx: DbTx, supplierId: string): Promise<void> {
+    const { skuSuppliers, skus, suppliers } = wmsTables;
+    const other = alias(skuSuppliers, 'other_link');
+    const [row] = await trx
+      .select({ count: sql<number>`count(distinct ${skus.id})::int` })
+      .from(skuSuppliers)
+      .innerJoin(skus, eq(skus.id, skuSuppliers.skuId))
+      .innerJoin(other, and(eq(other.skuId, skus.id), ne(other.supplierId, supplierId)))
+      .innerJoin(suppliers, eq(suppliers.id, other.supplierId))
+      .where(
+        and(
+          eq(skuSuppliers.supplierId, supplierId),
+          eq(skus.stockType, 'drop_shipped'),
+          eq(skus.isDeleted, false),
+          eq(suppliers.isDirectDelivery, true),
+        ),
+      );
+    const count = row?.count ?? 0;
+    if (count > 0) {
+      throw new SupplierWouldDoubleDirectError(
+        `이 공급사를 직배로 바꾸면 직배 SKU ${count}개가 직배 공급사 둘을 갖게 됩니다. SKU 의 입점사를 먼저 정리하세요.`,
       );
     }
   }

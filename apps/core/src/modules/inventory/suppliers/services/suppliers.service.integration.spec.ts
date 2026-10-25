@@ -7,7 +7,11 @@ import { ConflictError } from '@app/shared';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { makeDb, inRollbackTx, seedWarehouseWithZone } from '../../../fulfillment/services/__support__';
 import { SuppliersService } from './suppliers.service';
-import { SupplierHasDropShippedSkusError, SupplierHasShipmentsError } from '../suppliers.errors';
+import {
+  SupplierHasDropShippedSkusError,
+  SupplierHasShipmentsError,
+  SupplierWouldDoubleDirectError,
+} from '../suppliers.errors';
 
 /**
  * 공급사 하드 삭제 × 보충 규칙(#743 B). `replenishment_supplier_rules.supplier_id` 의 FK 는
@@ -170,6 +174,46 @@ describeIfDb('SuppliersService.deleteSupplier × 보충 공급사 규칙 (DB int
         const supplierId = await seedDirect(trx);
         await linkSku(trx, supplierId, { stockType: 'drop_shipped', isDeleted: true });
         await expect(build(trx).updateSupplier(supplierId, { isDirectDelivery: false }, trx)).resolves.toBeDefined();
+      });
+    });
+
+    async function seedPlain(trx: DbTx): Promise<string> {
+      const [row] = await trx
+        .insert(wmsTables.suppliers)
+        .values({ name: `it-plain-${randomUUID().slice(0, 8)}`, isDirectDelivery: false })
+        .returning({ id: wmsTables.suppliers.id });
+      return row.id;
+    }
+
+    it('직배 SKU 에 이미 다른 직배 공급사가 있으면 직배로 바꾸지 못한다 — 409 SUPPLIER_WOULD_DOUBLE_DIRECT', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const direct = await seedDirect(trx);
+        const plain = await seedPlain(trx);
+        const skuId = await linkSku(trx, direct, { stockType: 'drop_shipped' });
+        await trx.insert(wmsTables.skuSuppliers).values({ skuId, supplierId: plain });
+        const error = await build(trx)
+          .updateSupplier(plain, { isDirectDelivery: true }, trx)
+          .catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(SupplierWouldDoubleDirectError);
+        expect((error as SupplierWouldDoubleDirectError).getHttpStatus()).toBe(409);
+      });
+    });
+
+    it('직배 SKU 에 직배 공급사가 없으면 그 공급사를 직배로 바꿀 수 있다', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const plain = await seedPlain(trx);
+        await linkSku(trx, plain, { stockType: 'drop_shipped' });
+        await expect(build(trx).updateSupplier(plain, { isDirectDelivery: true }, trx)).resolves.toBeDefined();
+      });
+    });
+
+    it('직배가 아닌 공급사는 직배 SKU 가 묶여 있어도 삭제된다 — 규칙은 직배 연결만 센다', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const direct = await seedDirect(trx);
+        const plain = await seedPlain(trx);
+        const skuId = await linkSku(trx, direct, { stockType: 'drop_shipped' });
+        await trx.insert(wmsTables.skuSuppliers).values({ skuId, supplierId: plain });
+        await expect(build(trx).deleteSupplier(plain, trx)).resolves.toBeUndefined();
       });
     });
 
