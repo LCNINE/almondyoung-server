@@ -5,7 +5,7 @@ import { inRollbackTx, makeDb, makeDbService } from '../services/__support__';
 import * as f from '../order-progress/__support__/order-progress.fixtures';
 import { SupplierHandoffService, supplierSheetFileName } from './supplier-handoff.service';
 import { SUPPLIER_SHEET_COLUMNS } from './supplier-sheet.columns';
-import { SupplierHandoffEmptyError } from './supplier-shipment.errors';
+import { SupplierHandoffEmptyError, SupplierHandoffRecipientIncompleteError } from './supplier-shipment.errors';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -161,6 +161,69 @@ describeIfDb('넘김과 직배 시트 (K3 PR5, PostgreSQL integration)', () => {
         .set({ status: 'shipped', shippedAt: new Date() })
         .where(eq(wmsTables.shipments.id, x.open.shipmentId));
       expect((await service.sheet(first.handoffId, tx)).rows).toEqual([]);
+    });
+  });
+
+  it('수령인이 불완전한 상자는 넘기지 않고 skippedShipments 에 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const x = await world(tx);
+      const i5 = await item(tx, x.w, 'p5');
+      const bad = await f.seedBox(tx, x.w, [i5.foItemId], { status: 'draft', supplierId: x.a }); // 스냅샷 없음
+
+      const sheet = await service.handOff(x.a, 'op-1', tx);
+
+      expect(sheet.rows.map((r) => r.rowKey)).toEqual([x.i1.foItemId]);
+      expect(sheet.skippedShipments).toEqual([{ shipmentId: bad.shipmentId, reason: 'RECIPIENT_INCOMPLETE' }]);
+      expect(await handoffOf(tx, x.open.shipmentId)).toBe(sheet.handoffId);
+      expect(await handoffOf(tx, bad.shipmentId)).toBeNull();
+    });
+  });
+
+  it('후보가 전부 수령인 불완전이면 SUPPLIER_HANDOFF_RECIPIENT_INCOMPLETE 이고 묶음을 만들지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await f.seedWorld(tx);
+      const a = await f.seedDirectSupplier(tx);
+      const it1 = await item(tx, w, 'q1');
+      const bad = await f.seedBox(tx, w, [it1.foItemId], { status: 'draft', supplierId: a });
+
+      await expect(service.handOff(a, 'op-1', tx)).rejects.toThrow(SupplierHandoffRecipientIncompleteError);
+      await expect(service.handOff(a, 'op-1', tx)).rejects.toThrow(bad.shipmentId);
+      expect(await handoffOf(tx, bad.shipmentId)).toBeNull();
+      const made = await tx
+        .select()
+        .from(wmsTables.supplierHandoffs)
+        .where(eq(wmsTables.supplierHandoffs.supplierId, a));
+      expect(made).toEqual([]);
+    });
+  });
+
+  it('다시 받기: 이 묶음을 가리켜도 recovery_code 상자는 빠지고, 수령인 불완전 상자는 skipped', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const x = await world(tx);
+      const first = await service.handOff(x.a, 'op-1', tx);
+      await tx
+        .update(wmsTables.shipments)
+        .set({ supplierHandoffId: first.handoffId })
+        .where(eq(wmsTables.shipments.id, x.recovering.shipmentId));
+      const i6 = await item(tx, x.w, 'p6');
+      const bad = await f.seedBox(tx, x.w, [i6.foItemId], {
+        status: 'draft',
+        supplierId: x.a,
+        supplierHandoffId: first.handoffId,
+      });
+
+      const again = await service.sheet(first.handoffId, tx);
+      expect(again.rows.map((r) => r.rowKey)).toEqual([x.i1.foItemId]);
+      expect(again.skippedShipments).toEqual([{ shipmentId: bad.shipmentId, reason: 'RECIPIENT_INCOMPLETE' }]);
+    });
+  });
+
+  it('다른 입점사와의 sku_suppliers 는 공급사 상품코드에 쓰지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const x = await world(tx);
+      await tx.insert(wmsTables.skuSuppliers).values({ skuId: x.w.skuId, supplierId: x.b, supplierSku: 'B-SKU-9' });
+      const sheet = await service.handOff(x.a, 'op-1', tx);
+      expect(sheet.rows[0].supplierSku).toBe('A-SKU-1');
     });
   });
 

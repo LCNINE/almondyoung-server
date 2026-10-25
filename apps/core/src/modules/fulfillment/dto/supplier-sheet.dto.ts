@@ -22,10 +22,17 @@ export class SupplierSheetRowDto {
   @ApiProperty({ description: '개인정보 접속기록의 대상 식별자 — 시트 열이 아니다' }) salesOrderId!: string;
 }
 
+export class SupplierSheetSkippedShipmentDto {
+  @ApiProperty() shipmentId!: string;
+  @ApiProperty({ enum: ['RECIPIENT_INCOMPLETE'] }) reason!: 'RECIPIENT_INCOMPLETE';
+}
+
 export class SupplierSheetDto {
   @ApiProperty() handoffId!: string;
   @ApiProperty() supplierId!: string;
   @ApiProperty() fileName!: string;
   @ApiProperty({ type: [SupplierSheetColumnDto] }) columns!: SupplierSheetColumnDto[];
   @ApiProperty({ type: [SupplierSheetRowDto] }) rows!: SupplierSheetRowDto[];
+  @ApiProperty({ type: [SupplierSheetSkippedShipmentDto], description: '수령인 정보가 불완전해 싣지 못한 상자' })
+  skippedShipments!: SupplierSheetSkippedShipmentDto[];
 }

@@ -24,6 +24,7 @@ export const PII_ROUTES: readonly string[] = [
   'core GET /direct-ship/handoffs/:handoffId/sheet',
   'core GET /direct-ship/orders',
   'core GET /direct-ship/orders/by-company',
+  'core POST /direct-ship/suppliers/:supplierId/handoffs',
   'core GET /event-failures/dead-letters/:id',
   'core GET /event-failures/outbox/:id',
   'core GET /fulfillment-operations/:operationId',
@@ -102,7 +103,6 @@ export const PII_ROUTES: readonly string[] = [
   'wallet GET /v1/admin/refund-requests',
   'wallet POST /v1/admin/refund-requests/:id/approve',
   'wallet POST /v1/admin/refund-requests/:id/reject',
-  'core POST /direct-ship/suppliers/:supplierId/handoffs',
 ];
 
 /** `*.export` 권한 라우트 중 사유 헤더를 강제하지 않는 것. 값은 이유. */

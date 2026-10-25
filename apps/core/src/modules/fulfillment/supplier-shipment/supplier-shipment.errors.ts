@@ -60,3 +60,13 @@ export class SupplierHandoffEmptyError extends ApplicationException {
     return HttpStatus.CONFLICT;
   }
 }
+
+/** 넘길 상자가 있지만 전부 수령인 정보가 불완전하다. 409 — 메시지에 상자 id 들이 있다. */
+export class SupplierHandoffRecipientIncompleteError extends ApplicationException {
+  getErrorCode(): string {
+    return 'SUPPLIER_HANDOFF_RECIPIENT_INCOMPLETE';
+  }
+  getHttpStatus(): number {
+    return HttpStatus.CONFLICT;
+  }
+}
