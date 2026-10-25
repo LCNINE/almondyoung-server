@@ -76,6 +76,7 @@ async function readItemInput(
       qty: wmsTables.shipmentLines.qty,
       inspectedQty: wmsTables.shipmentLines.inspectedQty,
       shipmentStatus: wmsTables.shipments.status,
+      supplierId: wmsTables.shipments.supplierId,
     })
     .from(wmsTables.shipmentLines)
     .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
@@ -105,6 +106,9 @@ async function readItemInput(
     canceledQty: item.canceledQty,
     confirmedReservedQty: reservations.reduce((total, row) => total + row.quantity, 0),
     activeLineQty: activeLines.reduce((total, line) => total + line.qty, 0),
+    supplierLineQty: activeLines
+      .filter((line) => line.supplierId !== null)
+      .reduce((total, line) => total + line.qty, 0),
     processing: item.pickedQty > 0 || activeLines.some((line) => line.inspectedQty > 0),
     recoveryRequired: activeLines.some((line) => line.shipmentStatus === 'recovery_required'),
   };

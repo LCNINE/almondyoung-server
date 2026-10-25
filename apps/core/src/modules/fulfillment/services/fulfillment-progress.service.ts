@@ -21,6 +21,11 @@ export interface FulfillmentOrderItemProgressInput {
   confirmedReservedQty: number;
   /** Active Draft/Planned/recovery shipment-line demand. */
   activeLineQty: number;
+  /**
+   * 입점사 상자의 활성 라인 수량(`activeLineQty` 에 포함). 창고 예약 대상이 아니라 예약된 것과 같이 센다(K3 §4.5).
+   * `confirmedReservedQty` 에는 넣지 않는다 — 예약 합계가 재고 원장과 어긋나지 않게.
+   */
+  supplierLineQty: number;
   /** Picking, packing or inspection has begun for the outstanding demand. */
   processing: boolean;
   recoveryRequired: boolean;
@@ -59,6 +64,12 @@ export function projectFulfillmentOrderItemProgress(
   assertNonNegativeInteger('canceledQty', input.canceledQty, input.id);
   assertNonNegativeInteger('confirmedReservedQty', input.confirmedReservedQty, input.id);
   assertNonNegativeInteger('activeLineQty', input.activeLineQty, input.id);
+  assertNonNegativeInteger('supplierLineQty', input.supplierLineQty, input.id);
+  if (input.supplierLineQty > input.activeLineQty) {
+    throw new BadRequestException(
+      `FOI ${input.id} supplierLineQty ${input.supplierLineQty} exceeds activeLineQty ${input.activeLineQty}`,
+    );
+  }
   // qty 0 = 라인 구성 변경으로 대체된 항목(#1063 스펙 §6.3). 미출고 0 이고 canceledQty 도 0 이라 아래 규칙이 'canceled' 로 둔다.
 
   const settledQty = input.shippedQty + input.canceledQty;
@@ -66,6 +77,9 @@ export function projectFulfillmentOrderItemProgress(
     throw new BadRequestException(`FOI ${input.id} settled quantity ${settledQty} exceeds qty ${input.qty}`);
   }
   const outstandingQty = input.qty - settledQty;
+
+  // 입점사 몫은 창고 예약이 필요 없으니 예약된 것과 같이 센다.
+  const coveredQty = input.confirmedReservedQty + input.supplierLineQty;
 
   let status: FulfillmentProgressStatus;
   if (input.recoveryRequired) {
@@ -77,9 +91,9 @@ export function projectFulfillmentOrderItemProgress(
     status = 'partially_shipped';
   } else if (input.processing) {
     status = 'processing';
-  } else if (input.confirmedReservedQty >= outstandingQty) {
+  } else if (coveredQty >= outstandingQty) {
     status = 'ready';
-  } else if (input.confirmedReservedQty > 0) {
+  } else if (coveredQty > 0) {
     status = 'partially_reserved';
   } else {
     status = 'created';
@@ -102,9 +116,11 @@ export function projectFulfillmentOrderProgress(
       canceledQty: acc.canceledQty + item.canceledQty,
       outstandingQty: acc.outstandingQty + item.outstandingQty,
       confirmedReservedQty: acc.confirmedReservedQty + item.confirmedReservedQty,
+      supplierLineQty: acc.supplierLineQty + item.supplierLineQty,
     }),
-    { totalQty: 0, shippedQty: 0, canceledQty: 0, outstandingQty: 0, confirmedReservedQty: 0 },
+    { totalQty: 0, shippedQty: 0, canceledQty: 0, outstandingQty: 0, confirmedReservedQty: 0, supplierLineQty: 0 },
   );
+  const coveredQty = summary.confirmedReservedQty + summary.supplierLineQty;
 
   let status: FulfillmentProgressStatus;
   if (items.some((item) => item.status === 'recovery_required')) {
@@ -115,15 +131,16 @@ export function projectFulfillmentOrderProgress(
     status = 'partially_shipped';
   } else if (items.some((item) => item.status === 'processing')) {
     status = 'processing';
-  } else if (summary.confirmedReservedQty >= summary.outstandingQty) {
+  } else if (coveredQty >= summary.outstandingQty) {
     status = 'ready';
-  } else if (summary.confirmedReservedQty > 0) {
+  } else if (coveredQty > 0) {
     status = 'partially_reserved';
   } else {
     status = 'created';
   }
 
-  return { status, ...summary, items };
+  const { supplierLineQty: _supplierLineQty, ...totals } = summary;
+  return { status, ...totals, items };
 }
 
 @Injectable()

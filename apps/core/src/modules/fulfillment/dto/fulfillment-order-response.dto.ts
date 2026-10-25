@@ -92,6 +92,9 @@ export class FulfillmentV2ProgressItemDto {
   @ApiProperty()
   activeLineQty: number;
 
+  @ApiProperty({ description: '입점사 상자 활성 라인 수량(activeLineQty 에 포함, 예약된 것과 같이 센다)' })
+  supplierLineQty: number;
+
   @ApiProperty()
   processing: boolean;
 

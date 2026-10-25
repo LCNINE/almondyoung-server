@@ -687,6 +687,7 @@ export class FulfillmentsService {
               manifestVersion: wmsTables.shipments.manifestVersion,
               reservationVersion: wmsTables.shipments.reservationVersion,
               shippingProfileId: wmsTables.shipments.shippingProfileId,
+              supplierId: wmsTables.shipments.supplierId,
             })
             .from(wmsTables.shipmentLines)
             .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
@@ -728,6 +729,9 @@ export class FulfillmentsService {
             .filter((reservation) => reservation.shipmentLineId && lineIds.has(reservation.shipmentLineId))
             .reduce((total, reservation) => total + reservation.quantity, 0),
           activeLineQty: itemLines.reduce((total, line) => total + line.qty, 0),
+          supplierLineQty: itemLines
+            .filter((line) => line.supplierId !== null)
+            .reduce((total, line) => total + line.qty, 0),
           processing: item.pickedQty > 0 || itemLines.some((line) => line.inspectedQty > 0),
           recoveryRequired: itemLines.some((line) => line.shipmentStatus === 'recovery_required'),
         };
