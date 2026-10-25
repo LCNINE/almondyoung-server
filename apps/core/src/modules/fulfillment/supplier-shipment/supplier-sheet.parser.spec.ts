@@ -2,7 +2,11 @@ import * as ExcelJS from 'exceljs';
 import { BadRequestError } from '@app/shared';
 import { SUPPLIER_SHEET_COLUMNS } from './supplier-sheet.columns';
 import { MAX_SUPPLIER_SHEET_ROWS, parseSupplierSheet } from './supplier-sheet.parser';
-import { SupplierSheetHeaderMissingError, SupplierSheetTooManyRowsError } from './supplier-shipment.errors';
+import {
+  SupplierSheetDuplicateHeaderError,
+  SupplierSheetHeaderMissingError,
+  SupplierSheetTooManyRowsError,
+} from './supplier-shipment.errors';
 
 const HEADERS = SUPPLIER_SHEET_COLUMNS.map((c) => c.header);
 
@@ -137,6 +141,16 @@ describe('parseSupplierSheet (K3 PR5)', () => {
   it('모든 칸이 빈 줄은 건너뛴다(행 번호는 엑셀 그대로)', async () => {
     const rows = await parseSupplierSheet(await sheet(HEADERS, [ROW_A, {}, ROW_B]));
     expect(rows.map((r) => r.rowNumber)).toEqual([2, 4]);
+  });
+
+  it('같은 머리글 열이 둘 → SUPPLIER_SHEET_DUPLICATE_HEADER(400, 머리글 이름)', async () => {
+    const err = await parseSupplierSheet(await sheet([...HEADERS, ' 송장번호 '], [ROW_A])).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SupplierSheetDuplicateHeaderError);
+    const e = err as SupplierSheetDuplicateHeaderError;
+    expect(e.getErrorCode()).toBe('SUPPLIER_SHEET_DUPLICATE_HEADER');
+    expect(e.getHttpStatus()).toBe(400);
+    expect(e.header).toBe('송장번호');
+    expect(e.message).toContain('송장번호');
   });
 
   it('엑셀이 아니면 400', async () => {

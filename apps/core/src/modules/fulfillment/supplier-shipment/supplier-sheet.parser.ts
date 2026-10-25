@@ -1,7 +1,11 @@
 import * as ExcelJS from 'exceljs';
 import { BadRequestError } from '@app/shared';
 import { SUPPLIER_SHEET_COLUMNS, type SupplierSheetKey } from './supplier-sheet.columns';
-import { SupplierSheetHeaderMissingError, SupplierSheetTooManyRowsError } from './supplier-shipment.errors';
+import {
+  SupplierSheetDuplicateHeaderError,
+  SupplierSheetHeaderMissingError,
+  SupplierSheetTooManyRowsError,
+} from './supplier-shipment.errors';
 
 /** 한 파일의 줄 상한(빈 줄 제외). 파일 크기 상한(10MB)은 업로드 라우트가 본다. */
 export const MAX_SUPPLIER_SHEET_ROWS = 2_000;
@@ -66,7 +70,7 @@ export async function parseSupplierSheet(buffer: Buffer): Promise<ParsedSupplier
   sheet.getRow(1).eachCell({ includeEmpty: false }, (cell, col) => {
     const key = keyByHeader.get(cellText(cell));
     if (!key) return; // 읽지 않는 열·입점사가 붙인 열은 무시한다
-    if (columnOf.has(key)) throw new BadRequestError(`직배 시트에 "${headerOf(key)}" 열이 둘 이상입니다.`);
+    if (columnOf.has(key)) throw new SupplierSheetDuplicateHeaderError(headerOf(key));
     columnOf.set(key, col);
   });
   const missing = READ_KEYS.filter((key) => !columnOf.has(key)).map(headerOf);

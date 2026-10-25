@@ -93,3 +93,16 @@ export class SupplierSheetTooManyRowsError extends ApplicationException {
     return HttpStatus.BAD_REQUEST;
   }
 }
+
+/** 올린 직배 시트에 같은 머리글의 열이 둘 이상이다(어느 열을 읽을지 정할 수 없다). 400 — 메시지에 머리글 이름이 있다. */
+export class SupplierSheetDuplicateHeaderError extends ApplicationException {
+  constructor(readonly header: string) {
+    super(`직배 시트에 "${header}" 열이 둘 이상입니다. 한 열만 남겨주세요.`);
+  }
+  getErrorCode(): string {
+    return 'SUPPLIER_SHEET_DUPLICATE_HEADER';
+  }
+  getHttpStatus(): number {
+    return HttpStatus.BAD_REQUEST;
+  }
+}

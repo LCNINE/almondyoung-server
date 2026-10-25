@@ -1,4 +1,6 @@
 import { canonicalConsolidationRecipient } from '../services/consolidation.service';
+import { supplierShipmentStage } from '../shipment/supplier-shipment-stage';
+import type { ShipmentStatus } from '../shipment/shipment-transitions';
 import type { CarrierCode } from '../waybill/carrier/carrier-gateway.interface';
 import { parseCarrierName } from '../waybill/carrier/carrier-names';
 import { normalizeTrackingNo } from './supplier-dispatch';
@@ -61,7 +63,7 @@ export type JudgeLine = {
 };
 export type JudgeBox = {
   id: string;
-  status: string;
+  status: ShipmentStatus;
   supplierId: string | null;
   supplierHandoffId: string | null;
   recoveryCode: string | null;
@@ -87,10 +89,6 @@ export function rowKeyOf(raw: string): string | null {
   return UUID_RE.test(key) ? key : null;
 }
 
-/** 발송 뒤 상태 — 배송 추적이 옮길 수 있는 둘을 포함한다. */
-const SHIPPED_STATUSES: ReadonlySet<string> = new Set(['shipped', 'in_transit', 'delivered']);
-const isShipped = (box: JudgeBox | null): boolean => box !== null && SHIPPED_STATUSES.has(box.status);
-
 /** FOI 미결 0 — 취소(또는 구성 변경으로 수요 0). 다 보낸 FOI 는 취소가 아니다. */
 function isCanceled(foi: JudgeFoi): boolean {
   const open = foi.qty - foi.shippedQty - foi.canceledQty;
@@ -105,6 +103,8 @@ type Work = {
   reason: string;
   line: JudgeLine | null;
   box: JudgeBox | null;
+  /** 상자가 발송됨 — 입점사 상자 단계의 단 하나의 정의(`supplierShipmentStage`)로 판정한다 */
+  shipped: boolean;
   stage: Stage;
   code?: SupplierRowErrorCode;
 };
@@ -114,25 +114,41 @@ function fail(w: Work, code: SupplierRowErrorCode): void {
   w.code = code;
 }
 
+/**
+ * 행 키의 살아 있는 입점사 라인과 그 상자를 붙인다. 상자 단계는 `supplierShipmentStage` 로 — 입점사 상자가 타지 않는
+ * 상태(planned·in_transit·delivered·failed)는 거기서 Error 로 던진다. 살아 있는 라인 로더가 canceled·superseded 를
+ * 빼므로 단계 null 도 프로그래밍 오류다.
+ */
+function locate(w: Work, ctx: JudgeContext, key: string): { line: JudgeLine; box: JudgeBox } | null {
+  const line = ctx.lineByFoi.get(key);
+  if (!line) return null;
+  const box = ctx.boxes.get(line.shipmentId);
+  if (!box) throw new Error(`Supplier sheet judge: shipment ${line.shipmentId} of line ${line.lineId} was not loaded`);
+  const stage = supplierShipmentStage(box);
+  if (stage === null) throw new Error(`Supplier sheet judge: shipment ${box.id} (${box.status}) is not a live box`);
+  w.line = line;
+  w.box = box;
+  w.shipped = stage === 'shipped';
+  return { line, box };
+}
+
 /** 줄 혼자 볼 수 있는 판정 — 묶음·정정 판정은 뒤에서. */
 function judgeAlone(w: Work, ctx: JudgeContext, keyCount: ReadonlyMap<string, number>): void {
   const { row } = w;
   const key = rowKeyOf(row.rowKey);
   if (!key) return fail(w, 'UNKNOWN_ROW_KEY');
+  // 중복 줄도 상자에 붙여 둔다 — 그 상자의 정정·발송 묶음을 오류로 막는다
+  const located = locate(w, ctx, key);
   if ((keyCount.get(key) ?? 0) > 1) return fail(w, 'DUPLICATE_ROW');
   const foi = ctx.fois.get(key);
   if (!foi) return fail(w, 'UNKNOWN_ROW_KEY');
-  const line = ctx.lineByFoi.get(key);
   // 통째로 취소된 라인은 묘비 상자로 빠져 살아 있는 라인이 없다
-  if (!line) return fail(w, isCanceled(foi) ? 'CANCELED' : 'UNKNOWN_ROW_KEY');
-  const box = ctx.boxes.get(line.shipmentId);
-  if (!box) throw new Error(`Supplier sheet judge: shipment ${line.shipmentId} of line ${line.lineId} was not loaded`);
-  w.line = line;
-  w.box = box;
+  if (!located) return fail(w, isCanceled(foi) ? 'CANCELED' : 'UNKNOWN_ROW_KEY');
+  const { line, box } = located;
   if (box.supplierId !== ctx.supplierId) return fail(w, 'OTHER_SUPPLIER');
-  const shipped = isShipped(box);
+  const shipped = w.shipped;
   if (!shipped && isCanceled(foi)) return fail(w, 'CANCELED');
-  if (row.orderNo.trim() !== line.orderNo || row.supplierSku.trim() !== (line.supplierSku ?? '')) {
+  if (row.orderNo.trim() !== line.orderNo.trim() || row.supplierSku.trim() !== (line.supplierSku ?? '').trim()) {
     return fail(w, 'ROW_MISMATCH');
   }
   if (row.qty !== line.qty) return fail(w, 'QTY_MISMATCH');
@@ -156,9 +172,8 @@ function judgeAlone(w: Work, ctx: JudgeContext, keyCount: ReadonlyMap<string, nu
         : 'correctCandidate';
     return;
   }
+  // 단계 함수가 draft·recovery_required 만 열린 단계로 돌려준다 — 남은 것은 draft 다
   if (box.recoveryCode !== null || box.status === 'recovery_required') return fail(w, 'IN_RECOVERY');
-  // 입점사 상자가 갈 수 있는 열린 상태는 draft 뿐이다(planned 는 창고 계획 전용)
-  if (box.status !== 'draft') throw new Error(`Supplier shipment ${box.id} is in unexpected status ${box.status}`);
   if (box.supplierHandoffId === null) return fail(w, 'NOT_HANDED_OFF');
   if (w.reason) {
     w.stage = line.unfulfillableReason === w.reason ? 'unchanged' : 'unfulfillable';
@@ -170,16 +185,24 @@ function judgeAlone(w: Work, ctx: JudgeContext, keyCount: ReadonlyMap<string, nu
 
 type CorrectionClaim = { box: JudgeBox; carrier: CarrierCode; trackingNo: string; works: Work[] };
 
-/** 발송된 상자마다 — 그 상자의 줄(오류 아닌)이 모두 같은 새 송장일 때만 정정, 아니면 그 줄 전부 CORRECTION_PARTIAL. */
+/**
+ * 발송된 상자마다 — 정정은 상자 단위로 전부 아니면 전무다(N4, 발송 묶음과 같은 전파): 그 상자의 줄 하나라도 오류면
+ * 나머지 줄은 GROUP_HAS_ERROR, 오류 없이 모두 같은 새 송장일 때만 정정, 아니면 그 줄 전부 CORRECTION_PARTIAL.
+ */
 function claimCorrections(works: readonly Work[]): CorrectionClaim[] {
   const byBox = new Map<string, Work[]>();
   for (const w of works) {
-    if (!w.box || !isShipped(w.box) || w.stage === 'error') continue;
+    if (!w.box || !w.shipped) continue;
     byBox.set(w.box.id, [...(byBox.get(w.box.id) ?? []), w]);
   }
   const claims: CorrectionClaim[] = [];
-  for (const boxWorks of byBox.values()) {
-    if (!boxWorks.some((w) => w.stage === 'correctCandidate')) continue;
+  for (const allWorks of byBox.values()) {
+    if (!allWorks.some((w) => w.stage === 'correctCandidate')) continue;
+    const boxWorks = allWorks.filter((w) => w.stage !== 'error');
+    if (boxWorks.length !== allWorks.length) {
+      for (const w of boxWorks) fail(w, 'GROUP_HAS_ERROR');
+      continue;
+    }
     const targets = new Set(
       boxWorks.map((w) => (w.stage === 'correctCandidate' ? `${w.carrier}|${w.trackingNo}` : '')),
     );
@@ -200,7 +223,7 @@ function claimCorrections(works: readonly Work[]): CorrectionClaim[] {
 function groupByTracking(works: readonly Work[]): Map<string, Work[]> {
   const groups = new Map<string, Work[]>();
   for (const w of works) {
-    if (!w.trackingNo || isShipped(w.box)) continue;
+    if (!w.trackingNo || w.shipped) continue;
     if (w.stage !== 'shipCandidate' && w.stage !== 'error') continue;
     groups.set(w.trackingNo, [...(groups.get(w.trackingNo) ?? []), w]);
   }
@@ -233,6 +256,7 @@ export function classifySupplierRows(
       reason: row.reason.trim(),
       line: null,
       box: null,
+      shipped: false,
       stage: 'error',
     };
     judgeAlone(w, ctx, keyCount);

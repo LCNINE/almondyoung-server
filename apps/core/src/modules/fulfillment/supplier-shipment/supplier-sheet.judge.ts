@@ -99,7 +99,8 @@ export async function judgeSupplierSheet(
   };
   const judged = classifySupplierRows(rows, ctx);
   const manifestVersions = new Map(boxes.map((box) => [box.id, box.manifestVersion]));
-  return { ...judged, token: supplierSheetPreviewToken(judged.rows, manifestVersions) };
+  const reasonByRow = new Map(rows.map((row) => [row.rowNumber, row.reason.trim()]));
+  return { ...judged, token: supplierSheetPreviewToken(judged.rows, manifestVersions, reasonByRow) };
 }
 
 async function loadFois(tx: DbTx, keys: readonly string[]) {

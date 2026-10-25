@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { eq, sql } from 'drizzle-orm';
+import { ApplicationException } from '@app/shared';
 import {
   CORE_ORDER_STREAM,
   FULFILLMENT_STREAM,
@@ -584,6 +585,74 @@ describeIfDb('직배 시트 줄 판정 (K3 PR5, PostgreSQL integration)', () => 
       const c = await judge(tx, supplierId, rows);
       expect(c.rows).toEqual(a.rows);
       expect(c.token).not.toBe(a.token);
+    });
+  });
+  it('발송된 상자의 정정 줄 중 하나라도 오류면 나머지는 GROUP_HAS_ERROR, plan 에 정정 없음(N4)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const supplierId = await seedDirectSupplier(tx);
+      const a = await order(tx, supplierId, { dropQtys: [1, 2] });
+      const b = await order(tx, supplierId, { dropQtys: [1, 2] });
+      await ship(tx, a.supplierBox, 'A-1');
+      await ship(tx, b.supplierBox, 'B-1');
+      const rows = [
+        tracked(a.lines[0], 'A-2'),
+        tracked(a.lines[1], 'A-2', '우체국', { qty: 1 }),
+        tracked(b.lines[0], 'B-2'),
+        row(b.lines[1], { reason: '품절' }),
+      ];
+      const j = await judge(tx, supplierId, rows);
+      expect(codes(j.rows)).toEqual(['GROUP_HAS_ERROR', 'QTY_MISMATCH', 'GROUP_HAS_ERROR', 'REASON_ON_SHIPPED']);
+      expect(j.plan).toEqual(EMPTY_PLAN);
+    });
+  });
+
+  it('입점사 상자가 타지 않는 상태(in_transit)면 프로그래밍 Error — 상자 id 를 담는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const supplierId = await seedDirectSupplier(tx);
+      const o = await order(tx, supplierId, { dropQtys: [1] });
+      await ship(tx, o.supplierBox, 'IT-1');
+      await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'in_transit' })
+        .where(eq(wmsTables.shipments.id, o.supplierBox));
+      const err = await judge(tx, supplierId, [tracked(o.lines[0], 'IT-1')]).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(ApplicationException);
+      expect((err as Error).message).toContain(o.supplierBox);
+    });
+  });
+
+  it('토큰은 판정이 같아도 사유가 다르면 다르다(사유는 응답 판정에 없다)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const supplierId = await seedDirectSupplier(tx);
+      const o = await order(tx, supplierId, { dropQtys: [1] });
+      const r1 = row(o.lines[0], { reason: '품절' });
+      const a = await judge(tx, supplierId, [r1]);
+      const b = await judge(tx, supplierId, [{ ...r1, reason: '단종' }]);
+      const c = await judge(tx, supplierId, [{ ...r1, reason: '  품절 ' }]);
+      expect(b.rows).toEqual(a.rows);
+      expect(a.rows[0]).not.toHaveProperty('reason');
+      expect(b.token).not.toBe(a.token);
+      expect(c.token).toBe(a.token);
+    });
+  });
+
+  it('ROW_MISMATCH 는 DB 쪽도 앞뒤 공백을 지우고 비교한다(supplier_sku 가 공백을 품고 저장돼도)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const supplierId = await seedDirectSupplier(tx);
+      const o = await order(tx, supplierId, { dropQtys: [1] });
+      const [line] = await tx
+        .select({ skuId: wmsTables.shipmentLines.skuId })
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.id, o.lines[0].lineId));
+      await tx
+        .update(wmsTables.skuSuppliers)
+        .set({ supplierSku: '  SUP-SPACED  ' })
+        .where(eq(wmsTables.skuSuppliers.skuId, line.skuId));
+      const j = await judge(tx, supplierId, [row(o.lines[0], { supplierSku: 'SUP-SPACED' })]);
+      expect(codes(j.rows)).toEqual(['waiting']);
+      const wrong = await judge(tx, supplierId, [row(o.lines[0], { supplierSku: 'SUP-OTHER' })]);
+      expect(codes(wrong.rows)).toEqual(['ROW_MISMATCH']);
     });
   });
 });
