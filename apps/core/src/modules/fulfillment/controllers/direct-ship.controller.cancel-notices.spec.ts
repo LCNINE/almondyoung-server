@@ -10,6 +10,7 @@ import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter
 import { DirectShipController } from './direct-ship.controller';
 import { SupplierHandoffService } from '../supplier-shipment/supplier-handoff.service';
 import { SupplierSheetApplyService } from '../supplier-shipment/supplier-sheet-apply.service';
+import { SupplierHandoffListReader } from '../supplier-shipment/supplier-handoff-list.reader';
 import { SupplierShipmentQueueReader } from '../supplier-shipment/supplier-shipment-queue.reader';
 import { DirectShipService } from '../services/direct-ship.service';
 import { DirectShipCancelNoticeService } from '../direct-ship-cancel-notice/direct-ship-cancel-notice.service';
@@ -24,6 +25,7 @@ describe('POST /direct-ship/cancel-notices/notified', () => {
       providers: [
         { provide: DirectShipService, useValue: {} },
         { provide: SupplierShipmentQueueReader, useValue: {} },
+        { provide: SupplierHandoffListReader, useValue: {} },
         { provide: SupplierHandoffService, useValue: {} },
         { provide: SupplierSheetApplyService, useValue: {} },
         { provide: DirectShipCancelNoticeService, useValue: { markNotified } },
@@ -82,6 +84,7 @@ describe('POST /direct-ship/cancel-notices/export/file', () => {
       providers: [
         { provide: DirectShipService, useValue: {} },
         { provide: SupplierShipmentQueueReader, useValue: {} },
+        { provide: SupplierHandoffListReader, useValue: {} },
         { provide: SupplierHandoffService, useValue: {} },
         { provide: SupplierSheetApplyService, useValue: {} },
         { provide: DirectShipCancelNoticeService, useValue: { exportFile } },
@@ -124,6 +127,7 @@ describe('GET /direct-ship/cancel-notices', () => {
       providers: [
         { provide: DirectShipService, useValue: {} },
         { provide: SupplierShipmentQueueReader, useValue: {} },
+        { provide: SupplierHandoffListReader, useValue: {} },
         { provide: SupplierHandoffService, useValue: {} },
         { provide: SupplierSheetApplyService, useValue: {} },
         { provide: DirectShipCancelNoticeService, useValue: { listOpen } },

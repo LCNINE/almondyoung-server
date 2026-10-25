@@ -106,3 +106,13 @@ export class SupplierSheetApplyResultDto {
   @ApiProperty({ type: [String], description: '이번에 발송한 상자(나누기·합포장 뒤의 최종 상자)' })
   shippedShipmentIds!: string[];
 }
+
+/** 넘김 묶음 한 줄 — 개인정보 없음 */
+export class SupplierHandoffSummaryDto {
+  @ApiProperty() handoffId!: string;
+  @ApiProperty() createdAt!: Date;
+  @ApiProperty() createdBy!: string;
+  @ApiProperty({ description: '그 묶음을 가리키는 열린 상자(draft·recovery_required)' }) openShipments!: number;
+  @ApiProperty() shippedShipments!: number;
+  @ApiProperty({ description: '열린 상자에서 입점사가 못 보냄으로 알린 라인' }) unfulfillableLines!: number;
+}

@@ -12,6 +12,7 @@ import {
   Req,
   HttpCode,
   BadRequestException,
+  Headers,
 } from '@nestjs/common';
 import { Response } from 'express';
 import type { FastifyRequest } from 'fastify';
@@ -22,9 +23,22 @@ import { z } from 'zod';
 import { DirectShipCancelNoticeService } from '../direct-ship-cancel-notice/direct-ship-cancel-notice.service';
 import { SupplierShipmentQueueReader } from '../supplier-shipment/supplier-shipment-queue.reader';
 import { SupplierQueueShipmentDto, SupplierQueueSummaryDto } from '../dto/supplier-shipment-queue.dto';
-import { RequirePermission, User, PiiResponse, PiiExport, OPEN_WITH_RECIPIENT } from '@app/authorization';
+import {
+  RequirePermission,
+  User,
+  PiiResponse,
+  PiiExport,
+  OPEN_WITH_RECIPIENT,
+  readPiiExportReason,
+} from '@app/authorization';
 import { SupplierHandoffService, type SupplierSheet } from '../supplier-shipment/supplier-handoff.service';
-import { SupplierSheetApplyResultDto, SupplierSheetDto, SupplierSheetPreviewDto } from '../dto/supplier-sheet.dto';
+import { SupplierHandoffListReader } from '../supplier-shipment/supplier-handoff-list.reader';
+import {
+  SupplierHandoffSummaryDto,
+  SupplierSheetApplyResultDto,
+  SupplierSheetDto,
+  SupplierSheetPreviewDto,
+} from '../dto/supplier-sheet.dto';
 import {
   SupplierSheetApplyService,
   type SupplierSheetApplyResult,
@@ -87,6 +101,7 @@ export class DirectShipController {
     private readonly supplierQueue: SupplierShipmentQueueReader,
     private readonly supplierHandoffs: SupplierHandoffService,
     private readonly supplierUploads: SupplierSheetApplyService,
+    private readonly handoffList: SupplierHandoffListReader,
   ) {}
 
   @RequirePermission('fulfillment.order.read')
@@ -112,6 +127,16 @@ export class DirectShipController {
     return this.supplierQueue.openShipments(supplierId, stage);
   }
 
+  @RequirePermission('fulfillment.order.read')
+  @Get('suppliers/:supplierId/handoffs')
+  @ApiOperation({ summary: '넘김 묶음 목록 — 입점사의 최근 50개, 묶음별 열린·발송 상자 수와 못 보냄 라인 수' })
+  @ApiResponse({ status: 200, type: [SupplierHandoffSummaryDto] })
+  async listHandoffs(
+    @Param('supplierId', new ParseUUIDPipe()) supplierId: string,
+  ): Promise<SupplierHandoffSummaryDto[]> {
+    return this.handoffList.recent(supplierId);
+  }
+
   @PiiResponse(SUPPLIER_SHEET_PII)
   @PiiExport()
   @RequirePermission('order.order.export')
@@ -121,7 +146,10 @@ export class DirectShipController {
   async handOffToSupplier(
     @Param('supplierId', new ParseUUIDPipe()) supplierId: string,
     @User() user: AuthenticatedUser,
+    @Headers('x-pii-export-reason') reason: string | undefined,
   ): Promise<SupplierSheet> {
+    // 인터셉터는 핸들러가 커밋한 «뒤에» 사유를 본다 — 넘김이 찍힌 채 시트를 못 받지 않게 쓰기 전에 같은 함수로 먼저 본다(K3 PR7, N4)
+    readPiiExportReason(reason ?? null);
     const actor = user?.id ?? user?.userId;
     if (!actor) throw new BadRequestException('Authenticated actor is required');
     return this.supplierHandoffs.handOff(supplierId, actor);
@@ -219,9 +247,7 @@ export class DirectShipController {
       '[].customerInfo.shippingAddress.deliveryNote': 'text',
       '[].customerInfo.shippingAddress.personalCustomsCode': 'secret',
     },
-    subjects: [
-      { path: '[].salesOrderId', type: 'sales_order' },
-    ],
+    subjects: [{ path: '[].salesOrderId', type: 'sales_order' }],
     rawWithByField: {
       '[].customerInfo.customerName': OPEN_WITH_RECIPIENT,
       '[].customerInfo.customerPhone': OPEN_WITH_RECIPIENT,
@@ -261,9 +287,7 @@ export class DirectShipController {
       '*[].customerInfo.shippingAddress.deliveryNote': 'text',
       '*[].customerInfo.shippingAddress.personalCustomsCode': 'secret',
     },
-    subjects: [
-      { path: '*[].salesOrderId', type: 'sales_order' },
-    ],
+    subjects: [{ path: '*[].salesOrderId', type: 'sales_order' }],
     rawWithByField: {
       '*[].customerInfo.customerName': OPEN_WITH_RECIPIENT,
       '*[].customerInfo.customerPhone': OPEN_WITH_RECIPIENT,
@@ -318,9 +342,7 @@ export class DirectShipController {
       'orders[].customerInfo.shippingAddress.deliveryNote': 'text',
       'orders[].customerInfo.shippingAddress.personalCustomsCode': 'secret',
     },
-    subjects: [
-      { path: 'orders[].salesOrderId', type: 'sales_order' },
-    ],
+    subjects: [{ path: 'orders[].salesOrderId', type: 'sales_order' }],
   })
   @RequirePermission('order.order.export')
   @Get('export/:companyName')
@@ -354,9 +376,7 @@ export class DirectShipController {
       '[].customerInfo.shippingAddress.deliveryNote': 'text',
       '[].customerInfo.shippingAddress.personalCustomsCode': 'secret',
     },
-    subjects: [
-      { path: '[].salesOrderId', type: 'sales_order' },
-    ],
+    subjects: [{ path: '[].salesOrderId', type: 'sales_order' }],
     rawWithByField: {
       '[].customerInfo.customerName': OPEN_WITH_RECIPIENT,
       '[].customerInfo.customerPhone': OPEN_WITH_RECIPIENT,
