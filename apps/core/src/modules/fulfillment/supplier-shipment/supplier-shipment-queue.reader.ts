@@ -41,7 +41,7 @@ export type SupplierQueueShipment = {
  * 상자가 판매주문에 닿는 라인을 하나라도 가졌다 — 상자는 라인으로만 주문에 이어진다.
  * 요약과 목록이 같은 술어를 써서 수가 목록과 어긋나지 않는다.
  */
-function hasOrderLine(shipmentId: AnyColumn) {
+export function hasOrderLine(shipmentId: AnyColumn) {
   // 바깥 쿼리가 같은 테이블을 조인하므로 별칭을 쓴다(안 쓰면 바깥 이름이 안쪽을 가린다)
   return sql`EXISTS (
     SELECT 1 FROM shipment_lines hol_l

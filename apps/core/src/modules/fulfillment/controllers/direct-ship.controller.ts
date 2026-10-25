@@ -7,7 +7,9 @@ import { z } from 'zod';
 import { DirectShipCancelNoticeService } from '../direct-ship-cancel-notice/direct-ship-cancel-notice.service';
 import { SupplierShipmentQueueReader } from '../supplier-shipment/supplier-shipment-queue.reader';
 import { SupplierQueueShipmentDto, SupplierQueueSummaryDto } from '../dto/supplier-shipment-queue.dto';
-import { RequirePermission, User, PiiResponse, OPEN_WITH_RECIPIENT } from '@app/authorization';
+import { RequirePermission, User, PiiResponse, PiiExport, OPEN_WITH_RECIPIENT } from '@app/authorization';
+import { SupplierHandoffService, type SupplierSheet } from '../supplier-shipment/supplier-handoff.service';
+import { SupplierSheetDto } from '../dto/supplier-sheet.dto';
 
 const ForwardOrdersSchema = z.object({
   fulfillmentOrderIds: z.array(z.string().uuid()).min(1),
@@ -31,6 +33,25 @@ const CompleteOrdersSchema = z.object({
   completedBy: z.string().min(1),
 });
 
+/** 직배 시트의 개인정보 칸 — 넘김과 다시 받기가 같은 응답이다 */
+const SUPPLIER_SHEET_PII = {
+  fields: {
+    'rows[].recipientName': 'name',
+    'rows[].recipientPhone': 'phone',
+    'rows[].address': 'address',
+    'rows[].entrancePassword': 'secret',
+    'rows[].deliveryMemo': 'text',
+  },
+  subjects: [{ path: 'rows[].salesOrderId', type: 'sales_order' }],
+  rawWithByField: {
+    'rows[].recipientName': OPEN_WITH_RECIPIENT,
+    'rows[].recipientPhone': OPEN_WITH_RECIPIENT,
+    'rows[].address': OPEN_WITH_RECIPIENT,
+    'rows[].entrancePassword': OPEN_WITH_RECIPIENT,
+    'rows[].deliveryMemo': OPEN_WITH_RECIPIENT,
+  },
+} as const;
+
 const ExportOrdersSchema = z.object({
   companyName: z.string().min(1),
   format: z.enum(['csv', 'xlsx']).default('csv'),
@@ -43,6 +64,7 @@ export class DirectShipController {
     private readonly directShipService: DirectShipService,
     private readonly cancelNotices: DirectShipCancelNoticeService,
     private readonly supplierQueue: SupplierShipmentQueueReader,
+    private readonly supplierHandoffs: SupplierHandoffService,
   ) {}
 
   @RequirePermission('fulfillment.order.read')
@@ -66,6 +88,31 @@ export class DirectShipController {
       throw new BadRequestException("stage must be 'pending' or 'forwarded'");
     }
     return this.supplierQueue.openShipments(supplierId, stage);
+  }
+
+  @PiiResponse(SUPPLIER_SHEET_PII)
+  @PiiExport()
+  @RequirePermission('order.order.export')
+  @Post('suppliers/:supplierId/handoffs')
+  @ApiOperation({ summary: '넘김 — 입점사의 넘기지 않은 상자에 묶음을 찍고 시트를 JSON 으로 돌려준다' })
+  @ApiResponse({ status: 201, type: SupplierSheetDto })
+  async handOffToSupplier(
+    @Param('supplierId', new ParseUUIDPipe()) supplierId: string,
+    @User() user: AuthenticatedUser,
+  ): Promise<SupplierSheet> {
+    const actor = user?.id ?? user?.userId;
+    if (!actor) throw new BadRequestException('Authenticated actor is required');
+    return this.supplierHandoffs.handOff(supplierId, actor);
+  }
+
+  @PiiResponse(SUPPLIER_SHEET_PII)
+  @PiiExport()
+  @RequirePermission('order.order.export')
+  @Get('handoffs/:handoffId/sheet')
+  @ApiOperation({ summary: '시트 다시 받기 — 그 묶음의 아직 발송 전인 줄' })
+  @ApiResponse({ status: 200, type: SupplierSheetDto })
+  async getHandoffSheet(@Param('handoffId', new ParseUUIDPipe()) handoffId: string): Promise<SupplierSheet> {
+    return this.supplierHandoffs.sheet(handoffId);
   }
 
   @RequirePermission('fulfillment.order.read')

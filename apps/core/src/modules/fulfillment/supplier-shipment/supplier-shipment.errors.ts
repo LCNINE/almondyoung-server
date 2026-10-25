@@ -50,3 +50,13 @@ export class SupplierReasonOnShippedError extends ApplicationException {
     return HttpStatus.CONFLICT;
   }
 }
+
+/** 넘길 상자가 없다(넘기지 않은 정상 상자가 0). 409. */
+export class SupplierHandoffEmptyError extends ApplicationException {
+  getErrorCode(): string {
+    return 'SUPPLIER_HANDOFF_EMPTY';
+  }
+  getHttpStatus(): number {
+    return HttpStatus.CONFLICT;
+  }
+}

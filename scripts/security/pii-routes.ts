@@ -21,6 +21,7 @@ export const PII_ROUTES: readonly string[] = [
   'core GET /cs-cases/:id',
   'core GET /direct-ship/companies/:companyName/orders',
   'core GET /direct-ship/export/:companyName',
+  'core GET /direct-ship/handoffs/:handoffId/sheet',
   'core GET /direct-ship/orders',
   'core GET /direct-ship/orders/by-company',
   'core GET /event-failures/dead-letters/:id',
@@ -101,6 +102,7 @@ export const PII_ROUTES: readonly string[] = [
   'wallet GET /v1/admin/refund-requests',
   'wallet POST /v1/admin/refund-requests/:id/approve',
   'wallet POST /v1/admin/refund-requests/:id/reject',
+  'core POST /direct-ship/suppliers/:supplierId/handoffs',
 ];
 
 /** `*.export` 권한 라우트 중 사유 헤더를 강제하지 않는 것. 값은 이유. */
@@ -129,6 +131,7 @@ export const PII_WRITE_ROUTES: readonly string[] = [
 export const PII_WRITE_EXEMPT: Readonly<Record<string, string>> = {
   'core POST /cs-cases': '새 상담을 입력한다',
   'core POST /cs-cases/:caseId/comments': '새 댓글을 입력한다',
+  'core POST /direct-ship/suppliers/:supplierId/handoffs': '본문 없음 — 응답으로만 개인정보가 나간다',
   'core POST /fulfillments': '주문에서 출고 요청을 만든다',
   'core POST /sales-order-amendments': '새 주문 변경을 접수한다',
   'core POST /sales-orders': '새 주문을 입력한다',
