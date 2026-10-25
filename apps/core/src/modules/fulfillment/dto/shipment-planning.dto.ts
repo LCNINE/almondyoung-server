@@ -295,8 +295,12 @@ export class ShipmentSummaryResponseDto {
   @ApiProperty()
   status: string;
 
-  @ApiProperty()
-  warehouseId: string;
+  /** 창고 상자의 창고. 입점사 상자(K3)는 null 이고 supplierId 가 있다 */
+  @ApiProperty({ nullable: true, type: String })
+  warehouseId: string | null;
+
+  @ApiProperty({ nullable: true, type: String })
+  supplierId: string | null;
 
   @ApiProperty()
   manifestVersion: number;
@@ -324,8 +328,12 @@ export class ShipmentDetailResponseDto {
   @ApiProperty()
   status: string;
 
-  @ApiProperty()
-  warehouseId: string;
+  /** 창고 상자의 창고. 입점사 상자(K3)는 null 이고 supplierId 가 있다 */
+  @ApiProperty({ nullable: true, type: String })
+  warehouseId: string | null;
+
+  @ApiProperty({ nullable: true, type: String })
+  supplierId: string | null;
 
   @ApiProperty()
   manifestVersion: number;

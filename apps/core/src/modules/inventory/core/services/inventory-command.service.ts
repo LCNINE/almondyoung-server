@@ -12,6 +12,7 @@ import {
 } from '../../shared/locks/stock-availability-lock';
 import { assertReservationInvariant } from '../../shared/locks/reservation-invariant';
 import { BatchControlledStockGuard, BatchSessionDispatchAuthorization } from './batch-controlled-stock.guard';
+import { warehouseIdOf } from '../../../fulfillment/shipment/shipment-owner';
 
 @Injectable()
 export class InventoryCommandService {
@@ -261,17 +262,14 @@ export class InventoryCommandService {
     }
 
     const [attemptWarehouse] = await tx
-      .select({ warehouseId: wmsTables.shipments.warehouseId })
+      .select({ shipmentId: wmsTables.shipments.id, warehouseId: wmsTables.shipments.warehouseId })
       .from(wmsTables.dispatchAttempts)
       .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.dispatchAttempts.shipmentId))
       .where(eq(wmsTables.dispatchAttempts.id, input.dispatchAttemptId))
       .limit(1);
     if (!attemptWarehouse) throw new BadRequestException('Dispatch attempt not found');
-    const reworkLocation = await this.locationService.getSystemLocationByRole(
-      attemptWarehouse.warehouseId,
-      'outbound_rework',
-      tx,
-    );
+    const warehouseId = warehouseIdOf({ id: attemptWarehouse.shipmentId, warehouseId: attemptWarehouse.warehouseId });
+    const reworkLocation = await this.locationService.getSystemLocationByRole(warehouseId, 'outbound_rework', tx);
     const sourceRows = await tx
       .select({
         id: wmsTables.dispatchAttemptSources.id,
@@ -294,7 +292,7 @@ export class InventoryCommandService {
       tx,
       sourceRows.map((source) => ({
         skuId: source.skuId,
-        warehouseId: attemptWarehouse.warehouseId,
+        warehouseId,
       })),
     );
     const sources: ShipmentDispatchEventReversal[] = [];

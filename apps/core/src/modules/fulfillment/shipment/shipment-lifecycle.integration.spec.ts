@@ -9,6 +9,7 @@ import {
   seedWarehouseWithZone,
 } from '../services/__support__/logistics-fixtures';
 import { openShipment, transitionShipments } from './shipment-lifecycle';
+import { shipmentOwnerOf } from './shipment-owner';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -246,7 +247,7 @@ describeIfDb('transitionShipments / openShipment', () => {
       const out = await openShipment(
         tx,
         {
-          warehouseId: s.warehouseId,
+          owner: shipmentOwnerOf(s),
           status: 'draft',
           shippingProfileId: null,
           recipientSnapshot: { recipientName: 'x' },

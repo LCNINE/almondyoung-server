@@ -911,6 +911,13 @@
       "when": 1792808115244,
       "tag": "20261024021515_add-direct-ship-cancel-notices",
       "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1792902415345,
+      "tag": "20261025042655_add-supplier-shipments",
+      "breakpoints": true
     }
   ]
 }

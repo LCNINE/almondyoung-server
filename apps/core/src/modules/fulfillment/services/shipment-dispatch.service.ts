@@ -46,6 +46,7 @@ import { WaybillService } from '../waybill/waybill.service';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import type { WaybillRow } from '../waybill/waybill.types';
 import { resolveSkuIdByBarcode, UUID_PATTERN } from './sku-barcode-resolution';
+import { warehouseIdOf } from '../shipment/shipment-owner';
 
 const TRUSTED_CHANNEL_DISPATCH_SALES_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
 
@@ -667,6 +668,7 @@ export class ShipmentDispatchService {
     tx: DbTx,
     force?: ForceDispatchContext,
   ): Promise<ShipmentDispatchResponse> {
+    const warehouseId = warehouseIdOf(aggregate.shipment);
     if (!force && aggregate.lines.some((line) => line.inspectedQty !== line.qty)) {
       throw this.conflict('SHIPMENT_INSPECTION_INCOMPLETE', 'Every shipment line must be inspected');
     }
@@ -732,7 +734,7 @@ export class ShipmentDispatchService {
 
     await acquireStockAvailabilityLocks(
       tx,
-      aggregate.lines.map((line) => ({ skuId: line.skuId, warehouseId: aggregate.shipment.warehouseId })),
+      aggregate.lines.map((line) => ({ skuId: line.skuId, warehouseId })),
     );
 
     const [attemptNoRow] = await tx
@@ -789,7 +791,7 @@ export class ShipmentDispatchService {
       const shipped = await this.inventory.ship(
         {
           skuId: source.skuId,
-          warehouseId: aggregate.shipment.warehouseId,
+          warehouseId,
           locationId: source.sourceLocationId,
           quantity: source.qty,
           occurredAt: dispatchedAt,
@@ -1186,7 +1188,7 @@ export class ShipmentDispatchService {
       shipmentId: aggregate.shipment.id,
       dispatchAttemptId: attemptId,
       attemptNo,
-      warehouseId: aggregate.shipment.warehouseId,
+      warehouseId: warehouseIdOf(aggregate.shipment),
       dispatchedAt: dispatchedAt.toISOString(),
       invoice: { invoiceId: waybill.id, carrier: waybill.carrier, trackingNo: waybill.trackingNo },
       orders,

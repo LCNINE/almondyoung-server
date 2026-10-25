@@ -45,6 +45,7 @@ import { maskName, readRecipientName } from '../reader/shipment-waybill.reader';
 import { PermissionCheckpoints } from '@app/authorization';
 import { legacyFulfillmentSupervisor } from '../../../platform/auth/fulfillment-authz';
 import { authzSubjectOf } from '../../../platform/auth/system-actor';
+import { warehouseIdOf } from '../shipment/shipment-owner';
 
 const TERMINAL_FOR_BATCH_STATUSES = ['completed', 'excluded'] as const;
 const LEASE_MS = 15 * 60_000;
@@ -553,7 +554,7 @@ export class OutboundBatchOrchestrator {
           const eligible = await this.assertEligible(batch, aggregate, trx, false);
           result.push({
             shipmentId: aggregate.shipment.id,
-            warehouseId: aggregate.shipment.warehouseId,
+            warehouseId: warehouseIdOf(aggregate.shipment),
             shippingProfileId: aggregate.shipment.shippingProfileId!,
             manifestVersion: aggregate.shipment.manifestVersion,
             reservationVersion: aggregate.shipment.reservationVersion,
@@ -1178,6 +1179,7 @@ export class OutboundBatchOrchestrator {
     tx: DbTx,
     lockExecutionInputs = true,
   ): Promise<{ waybillId: string; trackingNo: string }> {
+    warehouseIdOf(aggregate.shipment);
     await this.assertJoinableBox(batch, aggregate, tx, lockExecutionInputs);
     // assertFulfillmentOrders locked invoice rows before this validation, closing the add-vs-void TOCTOU window.
     const waybill = await this.waybills.assertDispatchable(aggregate.shipment.id, tx);

@@ -71,7 +71,7 @@ describeIfDb('editShipmentManifest', () => {
         { shipmentIds: [b.shipmentId], allow: ['draft'] },
         async (w) => {
           const created = await w.createShipment({
-            warehouseId: b.warehouseId,
+            owner: { kind: 'warehouse', warehouseId: b.warehouseId },
             status: 'draft',
             shippingProfileId: null,
             recipientSnapshot: s0.recipientSnapshot,

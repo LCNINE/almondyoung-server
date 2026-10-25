@@ -24,6 +24,7 @@ import { ShipmentReservationService } from './shipment-reservation.service';
 import { lockShipmentAggregates } from './shipment-aggregate';
 import { transitionShipments } from '../shipment/shipment-lifecycle';
 import { editShipmentManifest, ManifestEditDeps } from '../shipment/shipment-manifest-edit';
+import { warehouseIdOf } from '../shipment/shipment-owner';
 
 const TERMINAL_OR_UNSAFE_SOURCE_STATUSES = new Set([
   'open',
@@ -62,7 +63,8 @@ type ShipmentAggregate = {
 export type ConsolidationManifestSnapshot = {
   shipmentId: string;
   status: string;
-  warehouseId: string;
+  warehouseId: string | null;
+  supplierId: string | null;
   shippingProfileId: string | null;
   recipientSnapshot: unknown;
   manifestVersion: number;
@@ -642,7 +644,7 @@ export class ConsolidationService {
       }
     }
 
-    const warehouseId = aggregates[0].shipment.warehouseId;
+    const warehouseId = warehouseIdOf(aggregates[0].shipment);
     const shippingProfileId = aggregates[0].shipment.shippingProfileId;
     // 대상 줄 reserved_qty 와 대상 재계산은 문의 끝맺음이 한다 — 원본을 superseded 로 바꾼 «뒤»라야
     // «planned 는 전량 예약» 불변식이 예약이 빠진 planned 원본을 보지 않는다
@@ -651,7 +653,7 @@ export class ConsolidationService {
       { shipmentIds: sourceIds, allow: ['draft', 'planned', 'recovery_required'] },
       async (writer) => {
         const target = await writer.createShipment({
-          warehouseId,
+          owner: { kind: 'warehouse', warehouseId },
           status: 'draft',
           shippingProfileId,
           recipientSnapshot,
@@ -808,6 +810,9 @@ export class ConsolidationService {
         createdFromLineId: wmsTables.shipmentLines.createdFromLineId,
         forced: wmsTables.shipmentLines.forced,
         demandRequestedAt: wmsTables.shipmentLines.demandRequestedAt,
+        unfulfillableReason: wmsTables.shipmentLines.unfulfillableReason,
+        unfulfillableReportedAt: wmsTables.shipmentLines.unfulfillableReportedAt,
+        unfulfillableReportedBy: wmsTables.shipmentLines.unfulfillableReportedBy,
         createdAt: wmsTables.shipmentLines.createdAt,
         fulfillmentOrderId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
         salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
@@ -850,6 +855,7 @@ export class ConsolidationService {
       shipmentId: aggregate.shipment.id,
       status: aggregate.shipment.status,
       warehouseId: aggregate.shipment.warehouseId,
+      supplierId: aggregate.shipment.supplierId,
       shippingProfileId: aggregate.shipment.shippingProfileId,
       recipientSnapshot: aggregate.shipment.recipientSnapshot,
       manifestVersion: aggregate.shipment.manifestVersion,
@@ -935,7 +941,7 @@ export class ConsolidationService {
   }
 
   private async assertCompatibleSources(aggregates: ShipmentAggregate[], tx: DbTx): Promise<void> {
-    const warehouses = uniqueSorted(aggregates.map((aggregate) => aggregate.shipment.warehouseId));
+    const warehouses = uniqueSorted(aggregates.map((aggregate) => warehouseIdOf(aggregate.shipment)));
     if (warehouses.length !== 1) {
       throw this.conflict('CONSOLIDATION_WAREHOUSE_MISMATCH', 'Source shipments must use the same warehouse');
     }

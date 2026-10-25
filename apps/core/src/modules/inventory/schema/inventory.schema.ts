@@ -1791,9 +1791,9 @@ export const directShipCancelNotices = pgTable(
     fulfillmentOrderItemId: uuid('fulfillment_order_item_id')
       .references(() => fulfillmentOrderItems.id)
       .notNull(),
-    holderId: uuid('holder_id')
-      .references(() => holders.id)
-      .notNull(),
+    // 옛 직배(holders) 또는 입점사(suppliers, K3) 정확히 하나. holder 쪽은 K3 PR 8 이 걷는다.
+    holderId: uuid('holder_id').references(() => holders.id),
+    supplierId: uuid('supplier_id').references(() => suppliers.id),
     salesOrderLineId: varchar('sales_order_line_id', { length: 255 }),
     skuId: uuid('sku_id')
       .references(() => skus.id)
@@ -1814,6 +1814,10 @@ export const directShipCancelNotices = pgTable(
       .where(sql`${t.notifiedAt} IS NULL`),
     canceledQtyCheck: check('direct_ship_cancel_notices_canceled_qty_check', sql`${t.canceledQty} > 0`),
     scopeCheck: check('direct_ship_cancel_notices_scope_check', sql`${t.cancellationScope} IN ('full', 'partial')`),
+    ckParty: check('ck_direct_ship_cancel_notices_party', sql`(${t.holderId} IS NULL) <> (${t.supplierId} IS NULL)`),
+    idxPendingSupplier: index('idx_direct_ship_cancel_notices_pending_supplier')
+      .on(t.supplierId, t.createdAt)
+      .where(sql`${t.notifiedAt} IS NULL`),
   }),
 );
 
@@ -1968,6 +1972,27 @@ export const stockReservations = pgTable(
   }),
 );
 
+/**
+ * 입점사에 넘긴 묶음(K3, 스펙 §4.1·§4.3-3). 운영자가 입점사 하나의 엑셀을 내려받으면 그 파일에 담긴 상자들이 한 묶음이 된다.
+ * «넘김»은 상자 상태가 아니라 이 기록이다 — 넘긴 시각은 created_at. 다시 받기는 같은 묶음을 다시 내려받는 것이라 행이 늘지 않는다.
+ * (id, supplier_id) unique 는 shipments 의 복합 FK 대상이다 — 다른 입점사의 묶음에 상자가 들어가는 것을 DB 가 막는다.
+ */
+export const supplierHandoffs = pgTable(
+  'supplier_handoffs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    supplierId: uuid('supplier_id')
+      .references(() => suppliers.id, { onDelete: 'restrict' })
+      .notNull(),
+    createdBy: varchar('created_by', { length: 255 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqIdSupplier: unique('uq_supplier_handoffs_id_supplier').on(t.id, t.supplierId),
+    idxSupplier: index('idx_supplier_handoffs_supplier').on(t.supplierId, t.createdAt),
+  }),
+);
+
 /*───────────────────────────
  * SHIPMENTS
  *──────────────────────────*/
@@ -1976,9 +2001,11 @@ export const shipments = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     // 박스 = 송장 한 장. V2 shipment 은 planning 단계에서 'draft' 로 생성 (V1 lazy open-box·'open' 상태 은퇴, Task 25).
-    warehouseId: uuid('warehouse_id')
-      .references(() => warehouses.id, { onDelete: 'restrict' })
-      .notNull(),
+    // 주인은 창고(warehouse_id) 또는 입점사(supplier_id) 정확히 하나(ck_shipments_owner, K3). 창고 흐름은 warehouseIdOf 로만 좁힌다.
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }),
+    supplierId: uuid('supplier_id').references(() => suppliers.id, { onDelete: 'restrict' }),
+    // 입점사에 넘긴 묶음. 입점사 상자만 갖는다(ck_shipments_handoff_supplier, fk_shipments_supplier_handoff).
+    supplierHandoffId: uuid('supplier_handoff_id'),
     // 자동완료 판정 기준 FO. FO↔상자 M:N 허용(B 에서 shipments unique drop). nullable: 합배송에서 미설정.
     openedForFulfillmentOrderId: uuid('opened_for_fulfillment_order_id').references(() => fulfillmentOrders.id, {
       onDelete: 'set null',
@@ -2017,6 +2044,19 @@ export const shipments = pgTable(
       'ck_shipments_superseded_at',
       sql`${t.status}::text <> 'superseded' OR ${t.supersededAt} IS NOT NULL`,
     ),
+    ckShipmentOwner: check('ck_shipments_owner', sql`(${t.warehouseId} IS NULL) <> (${t.supplierId} IS NULL)`),
+    ckShipmentHandoffSupplier: check(
+      'ck_shipments_handoff_supplier',
+      sql`${t.supplierHandoffId} IS NULL OR ${t.supplierId} IS NOT NULL`,
+    ),
+    fkShipmentSupplierHandoff: foreignKey({
+      columns: [t.supplierHandoffId, t.supplierId],
+      foreignColumns: [supplierHandoffs.id, supplierHandoffs.supplierId],
+      name: 'fk_shipments_supplier_handoff',
+    }).onDelete('restrict'),
+    idxSupplierStatus: index('idx_shipments_supplier_status')
+      .on(t.supplierId, t.status)
+      .where(sql`${t.supplierId} IS NOT NULL`),
   }),
 );
 
@@ -2051,6 +2091,10 @@ export const shipmentLines = pgTable(
     // 분할로 새로 생긴 라인이 원래 라인의 재고 대기 순번을 이어받는 값 — NULL 이면 created_at.
     // 안 이어받으면 나눠 보낸 미예약 몫이 «지금» 줄 맨 뒤로 가서, 나눈 것 때문에 더 늦게 받는다.
     demandRequestedAt: timestamp('demand_requested_at', { withTimezone: true }),
+    // 입점사가 «못 보냄»으로 돌려준 줄(K3, 스펙 §4.1). 취소가 아니라 사실 기록이라 수량은 그대로다. 셋은 함께 있거나 함께 없다.
+    unfulfillableReason: text('unfulfillable_reason'),
+    unfulfillableReportedAt: timestamp('unfulfillable_reported_at', { withTimezone: true }),
+    unfulfillableReportedBy: varchar('unfulfillable_reported_by', { length: 255 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -2071,6 +2115,12 @@ export const shipmentLines = pgTable(
     ),
     ckLineVersionPositive: check('ck_shipment_lines_line_version_positive', sql`${t.lineVersion} > 0`),
     idxCreatedFromLine: index('idx_shipment_lines_created_from_line').on(t.createdFromLineId),
+    ckUnfulfillable: check(
+      'ck_shipment_lines_unfulfillable',
+      sql`(${t.unfulfillableReason} IS NULL AND ${t.unfulfillableReportedAt} IS NULL AND ${t.unfulfillableReportedBy} IS NULL)
+        OR (${t.unfulfillableReportedAt} IS NOT NULL AND ${t.unfulfillableReportedBy} IS NOT NULL
+          AND length(btrim(${t.unfulfillableReason})) > 0)`,
+    ),
   }),
 );
 
@@ -3611,6 +3661,8 @@ export const dispatchAttempts = pgTable(
       .notNull(),
     attemptNo: integer('attempt_no').notNull(),
     status: dispatchAttemptStatusEnum('status').notNull().default('pending'),
+    // 창고 발송은 재고 원장을 쓰고, 입점사 발송(K3)은 원장이 없다 — CHECK 가 다른 테이블을 못 보므로 시도 행에 종류를 둔다.
+    kind: varchar('kind', { length: 16 }).$type<'warehouse' | 'supplier'>().notNull().default('warehouse'),
     idempotencyKey: varchar('idempotency_key', { length: 255 }).notNull(),
     // waybill 모듈 컷오버(플랜3): 구 invoice_id 를 대체. Task 12에서 invoice_id 컬럼 드롭 완료.
     waybillId: uuid('waybill_id').references(() => waybills.id, { onDelete: 'restrict' }),
@@ -3636,11 +3688,11 @@ export const dispatchAttempts = pgTable(
     ckDispatchAttemptNo: check('ck_dispatch_attempts_attempt_no_positive', sql`${t.attemptNo} > 0`),
     ckDispatchAttemptDispatched: check(
       'ck_dispatch_attempts_dispatched_at',
-      sql`${t.status} NOT IN ('dispatched', 'recalled') OR (${t.dispatchedAt} IS NOT NULL AND ${t.stockJournalId} IS NOT NULL)`,
+      sql`${t.status} NOT IN ('dispatched', 'recalled') OR (${t.dispatchedAt} IS NOT NULL AND (${t.kind} = 'supplier' OR ${t.stockJournalId} IS NOT NULL))`,
     ),
     ckDispatchAttemptRecalled: check(
       'ck_dispatch_attempts_recalled_at',
-      sql`${t.status} <> 'recalled' OR (${t.recalledAt} IS NOT NULL AND ${t.reversalJournalId} IS NOT NULL)`,
+      sql`${t.status} <> 'recalled' OR (${t.recalledAt} IS NOT NULL AND (${t.kind} = 'supplier' OR ${t.reversalJournalId} IS NOT NULL))`,
     ),
     ckDispatchAttemptDistinctJournals: check(
       'ck_dispatch_attempts_distinct_journals',
@@ -3657,6 +3709,11 @@ export const dispatchAttempts = pgTable(
     ckDispatchAttemptCarrierAcceptance: check(
       'ck_dispatch_attempts_carrier_acceptance',
       sql`${t.carrierAcceptedAt} IS NULL OR (${t.dispatchedAt} IS NOT NULL AND ${t.carrierAcceptedAt} >= ${t.dispatchedAt})`,
+    ),
+    ckDispatchAttemptKind: check('ck_dispatch_attempts_kind', sql`${t.kind} IN ('warehouse', 'supplier')`),
+    ckDispatchAttemptSupplierNoJournal: check(
+      'ck_dispatch_attempts_supplier_no_journal',
+      sql`${t.kind} <> 'supplier' OR (${t.stockJournalId} IS NULL AND ${t.reversalJournalId} IS NULL)`,
     ),
     ckDispatchAttemptRecovery: check(
       'ck_dispatch_attempts_recovery_code',
@@ -3745,6 +3802,7 @@ export const wmsTables = {
   fulfillmentOrders,
   directShipCancelNotices,
   fulfillmentOrderCreationBacklogs,
+  supplierHandoffs,
   shipments,
   shipmentLines,
   shipmentTracking,

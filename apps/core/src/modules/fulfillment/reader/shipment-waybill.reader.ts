@@ -8,6 +8,7 @@ import { LINE_ATTRIBUTED_CUSTODY_TYPES } from '../services/line-attributed-custo
 import { loadWithdrawalRemovals, WithdrawalRemoval } from '../services/withdrawal-removals.query';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import { maskName, readDeliveryNote, readRecipientName } from './recipient-snapshot';
+import { warehouseIdOf } from '../shipment/shipment-owner';
 
 // 보충 대기·배치 오케스트레이터·스펙이 이 경로로 가져다 쓴다 — 정본을 옮긴 뒤에도 그대로 둔다
 export { maskName, readDeliveryNote, readRecipientName } from './recipient-snapshot';
@@ -114,8 +115,9 @@ export class ShipmentWaybillReader {
         .where(eq(wmsTables.shipments.id, waybill.shipmentId))
         .limit(1);
       if (!shipment) throw new NotFoundException(`Shipment ${waybill.shipmentId} not found`);
+      const shipmentWarehouseId = warehouseIdOf({ id: waybill.shipmentId, warehouseId: shipment.warehouseId });
 
-      if (warehouseId !== undefined && warehouseId !== shipment.warehouseId) {
+      if (warehouseId !== undefined && warehouseId !== shipmentWarehouseId) {
         throw new ConflictException({
           code: 'LOCATION_OUTBOUND_WAREHOUSE_MISMATCH',
           error: 'LOCATION_OUTBOUND_WAREHOUSE_MISMATCH',
@@ -214,7 +216,7 @@ export class ShipmentWaybillReader {
 
       return {
         shipmentId: waybill.shipmentId,
-        warehouseId: shipment.warehouseId,
+        warehouseId: shipmentWarehouseId,
         trackingNo: waybill.trackingNo ?? normalized,
         carrier: waybill.carrier,
         waybillStatus: waybill.status,
@@ -340,7 +342,8 @@ export class ShipmentWaybillReader {
       .where(eq(wmsTables.shipments.id, waybill.shipmentId))
       .limit(1);
     if (!shipment) return null;
-    if (warehouseId !== undefined && warehouseId !== shipment.warehouseId) return null;
+    const shipmentWarehouseId = warehouseIdOf({ id: waybill.shipmentId, warehouseId: shipment.warehouseId });
+    if (warehouseId !== undefined && warehouseId !== shipmentWarehouseId) return null;
     // 결품으로 빠진 초안 박스가 나중에 초안으로 취소되면 status 는 canceled 지만 이 송장은 결품이 무효화한 것이다 — 취소 이탈이 아니면 결품 이탈도 본다.
     const exitTo =
       (shipment.status === 'canceled' ? await this.canceledExit(trx, waybill.shipmentId) : null) ??
@@ -349,7 +352,7 @@ export class ShipmentWaybillReader {
     const lines = await this.loadLines(trx, waybill.shipmentId);
     return {
       shipmentId: waybill.shipmentId,
-      warehouseId: shipment.warehouseId,
+      warehouseId: shipmentWarehouseId,
       trackingNo: waybill.trackingNo ?? trackingNo,
       carrier: waybill.carrier,
       waybillStatus: waybill.status,

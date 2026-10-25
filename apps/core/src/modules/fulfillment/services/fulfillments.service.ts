@@ -230,7 +230,7 @@ export class FulfillmentsService {
       const { shipment, lines: shipmentLines } = await openShipment(
         trx,
         {
-          warehouseId: dto.warehouseId,
+          owner: { kind: 'warehouse', warehouseId: dto.warehouseId },
           status: 'draft',
           shippingProfileId: compatibleProfileId ?? null,
           recipientSnapshot: dto.shippingAddress ?? salesOrder?.shippingAddress ?? null,

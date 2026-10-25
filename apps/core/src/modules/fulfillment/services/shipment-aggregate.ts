@@ -24,7 +24,8 @@ export type ShipmentAggregate = {
 export type ShipmentManifestSnapshot = {
   shipmentId: string;
   status: string;
-  warehouseId: string;
+  warehouseId: string | null;
+  supplierId: string | null;
   shippingProfileId: string | null;
   recipientSnapshot: unknown;
   manifestVersion: number;
@@ -115,6 +116,9 @@ export async function loadShipmentAggregate(tx: DbTx, shipmentId: string): Promi
       createdFromLineId: wmsTables.shipmentLines.createdFromLineId,
       forced: wmsTables.shipmentLines.forced,
       demandRequestedAt: wmsTables.shipmentLines.demandRequestedAt,
+      unfulfillableReason: wmsTables.shipmentLines.unfulfillableReason,
+      unfulfillableReportedAt: wmsTables.shipmentLines.unfulfillableReportedAt,
+      unfulfillableReportedBy: wmsTables.shipmentLines.unfulfillableReportedBy,
       createdAt: wmsTables.shipmentLines.createdAt,
       fulfillmentOrderId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
       salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
@@ -141,6 +145,7 @@ export function shipmentSnapshot(aggregate: ShipmentAggregate): ShipmentManifest
     shipmentId: aggregate.shipment.id,
     status: aggregate.shipment.status,
     warehouseId: aggregate.shipment.warehouseId,
+    supplierId: aggregate.shipment.supplierId,
     shippingProfileId: aggregate.shipment.shippingProfileId,
     recipientSnapshot: aggregate.shipment.recipientSnapshot,
     manifestVersion: aggregate.shipment.manifestVersion,

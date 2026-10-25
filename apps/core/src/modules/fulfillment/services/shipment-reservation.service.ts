@@ -14,6 +14,7 @@ import {
   reprojectFulfillmentOrders,
 } from '../fulfillment-order/fulfillment-order-projection';
 import { shortPickOperationIntentOf, ShortPickOperationIntentProof } from './batch-inventory-session.service';
+import { warehouseIdOf } from '../shipment/shipment-owner';
 
 type LineContext = {
   id: string;
@@ -904,7 +905,7 @@ export class ShipmentReservationService {
     }
     const consumedReason = `shipment-dispatch:${dispatchAttemptId}`;
     const restoredReason = `shipment-recall:${recallOperationId}`;
-    const lines = await tx
+    const lineRows = await tx
       .select({
         id: wmsTables.shipmentLines.id,
         skuId: wmsTables.shipmentLines.skuId,
@@ -915,7 +916,11 @@ export class ShipmentReservationService {
       .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
       .where(eq(wmsTables.shipmentLines.shipmentId, shipmentId))
       .orderBy(asc(wmsTables.shipmentLines.id));
-    if (lines.length === 0) throw new NotFoundException(`Shipment ${shipmentId} has no lines`);
+    if (lineRows.length === 0) throw new NotFoundException(`Shipment ${shipmentId} has no lines`);
+    const lines = lineRows.map((line) => ({
+      ...line,
+      warehouseId: warehouseIdOf({ id: shipmentId, warehouseId: line.warehouseId }),
+    }));
     const lineIds = lines.map((line) => line.id);
     await this.lockConfirmedReservations(lineIds, tx);
     await tx
@@ -1089,7 +1094,7 @@ export class ShipmentReservationService {
       .where(eq(wmsTables.shipmentLines.id, shipmentLineId))
       .limit(1);
     if (!row) throw new NotFoundException(`Shipment line ${shipmentLineId} not found`);
-    return row;
+    return { ...row, warehouseId: warehouseIdOf({ id: row.shipmentId, warehouseId: row.warehouseId }) };
   }
 
   private async loadConfirmedReservations(shipmentLineId: string, tx: DbTx): Promise<ConfirmedReservation[]> {

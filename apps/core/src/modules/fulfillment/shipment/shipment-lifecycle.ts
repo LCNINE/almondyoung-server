@@ -3,6 +3,7 @@ import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import type { ShipmentRow } from '../services/shipment-aggregate';
 import { assertLegalTransition, RecoveryCode, ShipmentStatus, transitionEffect } from './shipment-transitions';
+import { ownerColumns, type ShipmentOwner } from './shipment-owner';
 
 export type ShipmentLineRecord = typeof wmsTables.shipmentLines.$inferSelect;
 
@@ -108,7 +109,7 @@ function validate(t: ShipmentTransition): void {
 }
 
 export interface NewShipment {
-  warehouseId: string;
+  owner: ShipmentOwner;
   status: 'draft' | 'canceled';
   shippingProfileId: string | null;
   recipientSnapshot: unknown;
@@ -143,7 +144,7 @@ export async function insertShipment(tx: DbTx, box: NewShipment): Promise<Shipme
   const [row] = await tx
     .insert(wmsTables.shipments)
     .values({
-      warehouseId: box.warehouseId,
+      ...ownerColumns(box.owner),
       status: box.status,
       shippingProfileId: box.shippingProfileId,
       recipientSnapshot: box.recipientSnapshot,
