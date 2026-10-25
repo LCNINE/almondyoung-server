@@ -29,7 +29,8 @@ describe('supplierShipmentStage — 입점사 상자 단계 한 벌 (K3 PR4, N6)
       expect(() => supplierShipmentStage(box(status, 'ho-1'))).toThrow('sh-1');
     }
   });
-  it('넘기지 않은 복구 상자는 생길 수 없다 — 발송 전엔 넘김이 있다', () => {
-    expect(() => supplierShipmentStage(box('recovery_required', null))).toThrow('sh-1');
+  // 발송 전엔 넘김이 있어 정상 흐름에선 생기지 않지만, SQL 술어(넘김 없음 = 대기)와 같게 둔다 — 던지면 읽기 하나가 상자 하나 때문에 통째로 죽는다
+  it('넘기지 않은 복구 상자는 pending — SQL 술어와 같다', () => {
+    expect(supplierShipmentStage(box('recovery_required', null))).toBe('pending');
   });
 });
