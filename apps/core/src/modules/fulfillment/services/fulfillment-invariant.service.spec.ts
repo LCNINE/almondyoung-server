@@ -134,6 +134,24 @@ describe('collectFulfillmentInvariantViolations', () => {
     );
   });
 
+  it('입점사 시도에 원장 id 가 있으면(원천 0) 위반이다', () => {
+    const snapshot = validSnapshot();
+    snapshot.dispatchAttempts = [
+      {
+        id: 'attempt-1',
+        shipmentId: 'shipment-1',
+        status: 'dispatched',
+        stockJournalId: 'journal-1',
+        kind: 'supplier',
+      },
+    ];
+    expect(collectFulfillmentInvariantViolations(snapshot)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'DISPATCH_SOURCE_CARDINALITY', resourceId: 'attempt-1' }),
+      ]),
+    );
+  });
+
   it('requires exact dispatch source quantity and a one-to-one linked stock event', () => {
     const snapshot = validSnapshot();
     snapshot.dispatchAttempts = [

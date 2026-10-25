@@ -23,6 +23,7 @@ import { canonicalFulfillmentRequestHash, FulfillmentCommandService } from './fu
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentPlanningService } from './shipment-planning.service';
+import * as op from '../order-progress/__support__/order-progress.fixtures';
 import { assembleBoxWithdrawal } from './__support__/box-withdrawal-wiring';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -277,6 +278,47 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         .where(eq(wmsTables.shipments.id, result.target.shipmentId));
       // 안 물려주면 이 상자의 송장에만 현관 정보가 빠진 채 나가고 기사가 문을 못 연다.
       expect(target.entrancePassword).toBe('#1234');
+    });
+  });
+
+  it('입점사 상자를 나누면 나눈 상자가 같은 입점사·같은 넘김 묶음을 물려받는다 (K3 PR5 N7)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await op.seedWorld(tx);
+      const o = await op.seedOrder(tx);
+      const fo = await op.seedFo(tx, w, o, { qty: 4 });
+      const supplierId = await op.seedDirectSupplier(tx);
+      const handoffId = await op.seedHandoff(tx, supplierId);
+      const box = await op.seedBox(tx, w, [fo.foItemId], {
+        status: 'draft',
+        supplierId,
+        supplierHandoffId: handoffId,
+        qty: [4],
+      });
+      const [source] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, box.shipmentId));
+      const [line] = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.id, box.lineIds[0]));
+
+      const result = await planning.split(
+        box.shipmentId,
+        {
+          expectedManifestVersion: source.manifestVersion,
+          reason: 'supplier split',
+          moves: [{ shipmentLineId: line.id, expectedLineVersion: line.lineVersion, qty: 2 }],
+        },
+        `split-supplier-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      const [target] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, result.target.shipmentId));
+      expect(target.supplierId).toBe(supplierId);
+      expect(target.warehouseId).toBeNull();
+      expect(target.supplierHandoffId).toBe(handoffId);
     });
   });
 
