@@ -314,3 +314,19 @@ PR 마다 계획서를 따로 쓴다(`docs/superpowers/plans/2026-10-25-k3-…-p
 - **(f) admin-web:** `app/(admin)/order/direct-ship/page.tsx`, `features/order/direct-ship/**`, FO 상세 `direct-ship-tab.tsx`, `lib/api/domains/orders/direct-ship.client.ts`, 훅(`lib/services/orders/queries.ts`·`mutations.ts`), `order-progress.shape.ts:237-240`, `line-composition-view.ts:33-39`, SKU 폼
 - **(g) 스키마:** `inventory.schema.ts:122, 206, 215, 1737, 1776-1818`, 마이그 `20261024021515_add-direct-ship-cancel-notices.sql`, 계약 `fulfillments.stream.ts:12, 129`
 - **(h) 창고 흐름 가드:** `shipment-planning.service.ts:1732-1745`, `allocation.locks.ts:198-215`, `outbound-batch-orchestrator.service.ts:1216-1256`, `consolidation.service.ts:953-983`, `line-composition-edit.manager.ts`·`.reader.ts`
+
+**PR 6 구현자에게(PR 5 가 정한 것):**
+- 상자 후 취소가 입점사 상자 라인을 줄일 때 «못 보냄» 기록이 있는 라인은 알릴 취소를 남기지 않는다(§4.7) — 판별은 라인의 `unfulfillable_*` 칸.
+- 발송된 입점사 상자 라인은 취소할 수 없다. 먼저 되돌린다(PR 5 의 입점사 되돌리기).
+- 합포장 상자는 여러 판매주문을 담는다 — 한 주문만 취소하면 그 주문 라인만 줄어야 한다.
+
+**PR 7 구현자에게(PR 5 가 정한 것):**
+- 시트는 JSON(`columns`·`rows`)으로 온다 — XLSX 는 admin-web 이 만든다. 머리글은 응답 `columns` 그대로, 내려받기에는 `X-Pii-Export-Reason` 헤더를 입력받는다.
+- 넘김 응답의 `skippedShipments`(수령인 불완전로 넘기지 못한 상자)를 반드시 보여 준다. 그 상자는 고칠 때까지 대기로 남는다.
+- 올리기 화면은 미리보기 판정·오류 코드를 한국어 문구로 풀고, 적용은 미리보기 토큰과 같은 파일로 부른다.
+- 넘김 묶음별 발송·아직·못 보냄 수 읽기가 없다 — 필요하면 core 읽기 하나를 같이 만든다.
+- 되돌리기 버튼에서 입점사 상자는 «회수 확인» 문구를 «입점사와 확인»으로 바꾼다.
+- FO 상세 `shipments[]` 에 `supplierId`·`supplierLineQty` 가 없다. 상자 상세(`getShipmentDetail`)는 입점사 라인을 예약 0 으로 보이니 «미예약»으로 그리지 않는다.
+- 직배 목록 읽기는 상자 단위 주문 칸만 낸다. 되돌린 합포장 상자가 다시 목록에 나오면 라인별 주문이 필요하다.
+
+**PR 8 구현자에게(PR 5 가 정한 것):** 옛 `direct-ship.service.ts`·`ship()`·`computeAdminAvailableActions`·옛 시트 라우트(`POST /direct-ship/export/file` 류)와 `PII_EXPORT_EXCEPTIONS` 의 `/direct-ship/export/:companyName` 을 지운다. 정정은 이벤트를 다시 내지 않아 Medusa 메타데이터·고객 문자가 옛 번호로 남는다 — 정정이 잦으면 계약을 넓혀 다시 낸다.
