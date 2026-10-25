@@ -19,16 +19,20 @@ function walk(path: string): string[] {
 }
 
 const T = '(?:fulfillmentOrders|fulfillmentOrderItems)';
+// .set( 부터 문장 끝(.where( · .returning( · ;)까지 훑는다. `{[^}]*` 로 자르면 sql 템플릿 값의 `${…}` 에서 멈춰
+// 그 뒤의 status 를 놓친다. 변수 객체(.set(patch))·전개(...patch)는 정규식으로 못 본다 — 그런 쓰기는 투영 함수로 옮긴다.
+const SET_STATUS = String.raw`\.set\((?:(?!\.where\(|\.returning\(|;)[\s\S])*?\bstatus\b\s*[:,}]`;
+const ALIAS = String.raw`(?:\s+(?:as\s+)?\w+)?`;
 const STATUS_WRITE = new RegExp(
   [
     // drizzle 직접 형: .update(wmsTables.fulfillmentOrders).set({ … status … })
-    String.raw`\.update\((?:wmsTables|inventoryTables)\.${T}\)\s*\.set\(\{[^}]*\bstatus\b\s*[:,}]`,
+    String.raw`\.update\((?:wmsTables|inventoryTables)\.${T}\)\s*${SET_STATUS}`,
     // drizzle 별칭 형: const t = wmsTables.fulfillmentOrders; … .update(t).set({ status … })
-    String.raw`const (\w+) = (?:wmsTables|inventoryTables)\.${T};[\s\S]*?\.update\(\1\)\s*\.set\(\{[^}]*\bstatus\b\s*[:,}]`,
-    // raw SQL 리터럴 형
-    String.raw`\bupdate\s+"?(?:fulfillment_orders|fulfillment_order_items)"?\s+set\b[^;]*\bstatus\b`,
-    // raw SQL 보간 형: sql`UPDATE ${wmsTables.fulfillmentOrders} SET status …`
-    String.raw`\bupdate\s+\$\{\s*(?:wmsTables|inventoryTables)\.${T}\s*\}\s+set\b[^;]*\bstatus\b`,
+    String.raw`const (\w+) = (?:wmsTables|inventoryTables)\.${T};[\s\S]*?\.update\(\1\)\s*${SET_STATUS}`,
+    // raw SQL 리터럴 형(별칭 허용): UPDATE fulfillment_order_items foi SET status …
+    String.raw`\bupdate\s+"?(?:fulfillment_orders|fulfillment_order_items)"?${ALIAS}\s+set\b[^;]*?\bstatus\b`,
+    // raw SQL 보간 형(별칭 허용): sql`UPDATE ${wmsTables.fulfillmentOrders} AS fo SET status …`
+    String.raw`\bupdate\s+\$\{\s*(?:wmsTables|inventoryTables)\.${T}\s*\}${ALIAS}\s+set\b[^;]*?\bstatus\b`,
   ].join('|'),
   'i',
 );
@@ -39,7 +43,19 @@ describe('FO·FOI status 쓰기 (K3)', () => {
     expect(STATUS_WRITE.test('.update(wmsTables.fulfillmentOrderItems).set({ canceledQty, status })')).toBe(true);
     expect(STATUS_WRITE.test("sql`UPDATE ${wmsTables.fulfillmentOrderItems} SET status = 'x'`")).toBe(true);
     expect(STATUS_WRITE.test("UPDATE fulfillment_orders SET status = 'x'")).toBe(true);
+    // 리뷰 지적: sql 템플릿 값(`${…}` 안의 `}`)이 status 앞에 오는 모양 — shipment-planning·draft-box-amender 의 취소·수정 지점이 이 모양이다
+    expect(
+      STATUS_WRITE.test(
+        ".update(wmsTables.fulfillmentOrderItems)\n  .set({ canceledQty: sql`${wmsTables.fulfillmentOrderItems.canceledQty} + ${n}`, status: 'canceled' })",
+      ),
+    ).toBe(true);
+    // 별칭이 붙은 raw SQL
+    expect(STATUS_WRITE.test("UPDATE fulfillment_order_items foi SET status = 'x'")).toBe(true);
+    expect(STATUS_WRITE.test("sql`UPDATE ${wmsTables.fulfillmentOrders} AS fo SET status = 'x'`")).toBe(true);
     expect(STATUS_WRITE.test('.update(wmsTables.fulfillmentOrders).set({ shippedAt: now })')).toBe(false);
+    expect(
+      STATUS_WRITE.test(".update(wmsTables.fulfillmentOrders).set({ shippedAt: now }).where(eq(fo.status, 'ready'))"),
+    ).toBe(false);
   });
 
   it('status 를 쓰는 파일은 투영 하나와 옛 직배 하나뿐', () => {
