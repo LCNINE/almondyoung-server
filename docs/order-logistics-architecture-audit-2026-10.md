@@ -302,7 +302,8 @@ ADR-0041(2026-09-30)이 배정을 작업 항목으로 옮기면서 세 벌이 �
   - 직배 `FulfillmentsService.ship()` 이 FO·FOI 에 `'shipped'`(투영 어휘에 없는 값)를 직접 쓴다. 같은 경로가 `FulfillmentShipped` 의 `trackingNumber` 를 `''` 로 내보내 이벤트 스키마 `min(1)` 을 어긴다 — 직배 «완료 처리»를 개통하면 막힌다(PR #1126 «알려진 문제»).
   - 넘긴 직배 FO 가 전량 취소돼도 `directShipStatus` 가 `forwarded` 로 남는다. «주문 목록»에 수량 0 으로 남고 «완료 처리»는 409 다(PR #1128 «알려진 문제»).
   - 판매주문 모듈이 출고 테이블을 직접 쓰는 예외 둘 — 배송지 변경(`channel-order-change.manager.ts`)과 공동현관 비번 파기(`entrance-password-cleaner.ts`). 정본은 `order-cancellation.guard.spec.ts` 의 예외 목록이고, 줄어드는 방향만 허용된다.
-  - fulfillment 모듈 안의 FO 직접 쓰기 — 상태를 쓰는지 다른 칸을 쓰는지 아직 가르지 않았다. 도출은 «다시 재는 명령»의 FO 줄.
+  - fulfillment 모듈 안의 FO 직접 쓰기 — **status 는 갈랐다(K3 PR1).** FO·FOI status 는 투영 함수 `reprojectFulfillmentOrders`(`fulfillment/fulfillment-order/`)만 쓰고, 예외는 옛 직배 `fulfillments.service.ts` 하나다. 정본은 `fulfillment-order-status-writes.guard.spec.ts` 의 허용 목록. 다른 칸(`shippedAt`·수량·예약 합) 쓰기는 «다시 재는 명령»의 FO 줄로 잰다.
+  - K3 본편은 직배를 «입점사가 보내는 상자»로 옮기는 일이다 — 설계 `docs/superpowers/specs/2026-10-25-k3-drop-ship-supplier-shipments-design.md`(PR 8개, §7).
 - **전제:** 직배는 라이브 0건(개통 전, 2026-10-24 실측). 동작 변경의 라이브 영향은 착수 때 다시 잰다.
 
 **K4. 대기 오퍼레이션 재개 레지스트리**
