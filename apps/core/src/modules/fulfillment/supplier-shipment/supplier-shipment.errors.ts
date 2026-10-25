@@ -70,3 +70,26 @@ export class SupplierHandoffRecipientIncompleteError extends ApplicationExceptio
     return HttpStatus.CONFLICT;
   }
 }
+
+/** 올린 직배 시트에 읽어야 할 머리글이 없다. 400 — 메시지와 `missingHeaders` 에 빠진 머리글 이름들이 있다. */
+export class SupplierSheetHeaderMissingError extends ApplicationException {
+  constructor(readonly missingHeaders: readonly string[]) {
+    super(`직배 시트에 머리글이 없습니다: ${missingHeaders.join(', ')}`);
+  }
+  getErrorCode(): string {
+    return 'SUPPLIER_SHEET_HEADER_MISSING';
+  }
+  getHttpStatus(): number {
+    return HttpStatus.BAD_REQUEST;
+  }
+}
+
+/** 올린 직배 시트의 줄이 상한을 넘는다. 400. */
+export class SupplierSheetTooManyRowsError extends ApplicationException {
+  getErrorCode(): string {
+    return 'SUPPLIER_SHEET_TOO_MANY_ROWS';
+  }
+  getHttpStatus(): number {
+    return HttpStatus.BAD_REQUEST;
+  }
+}
