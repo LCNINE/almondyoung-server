@@ -20,3 +20,23 @@ export class SupplierTrackingInUseError extends ApplicationException {
     return HttpStatus.CONFLICT;
   }
 }
+
+/** 나누기·합포장 대상이 아니다(입점사 상자가 아님·draft 아님·회수 중·라인이 그 상자 것이 아님). 409. */
+export class SupplierShipmentNotEditableError extends ApplicationException {
+  getErrorCode(): string {
+    return 'SUPPLIER_SHIPMENT_NOT_EDITABLE';
+  }
+  getHttpStatus(): number {
+    return HttpStatus.CONFLICT;
+  }
+}
+
+/** 합포장할 상자들의 수령인이 정규화 뒤에도 다르다(또는 정규화할 수 없다). 409. */
+export class SupplierMergeRecipientMismatchError extends ApplicationException {
+  getErrorCode(): string {
+    return 'MERGE_RECIPIENT_MISMATCH';
+  }
+  getHttpStatus(): number {
+    return HttpStatus.CONFLICT;
+  }
+}
