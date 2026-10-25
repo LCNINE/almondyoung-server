@@ -284,9 +284,11 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
       };
       const cancelKey = `cancel-consolidated-source-${randomUUID()}`;
       // #1016 30번: 완료된 합포장의 대상이라는 것은 더 이상 막힘이 아니다 — 대기 없이 그 자리에서 끝난다(스펙 §4.1).
-      const cancellation = await planning.cancelOutstanding(targetShipmentId, cancelDto, cancelKey, actor, tx);
+      const cancellation = await planning.cancelOutstanding(targetShipmentId, cancelDto, cancelKey, actor, null, tx);
       expect(cancellation).toMatchObject({ operationStatus: 'completed', shipmentId: targetShipmentId });
-      expect(await planning.cancelOutstanding(targetShipmentId, cancelDto, cancelKey, actor, tx)).toEqual(cancellation);
+      expect(await planning.cancelOutstanding(targetShipmentId, cancelDto, cancelKey, actor, null, tx)).toEqual(
+        cancellation,
+      );
 
       const [targetAfterCancellation] = await tx
         .select()
@@ -428,6 +430,7 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
         },
         `cancel-planned-consolidated-${randomUUID()}`,
         actor,
+        null,
         tx,
       );
 

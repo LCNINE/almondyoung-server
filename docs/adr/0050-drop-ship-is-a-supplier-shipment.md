@@ -36,11 +36,13 @@ Accepted (2026-10-25). 설계 스펙 `docs/superpowers/specs/2026-10-25-k3-drop-
 11. **시트는 서버가 JSON 으로 내고, 적용은 미리보기 토큰으로 묶인다(PR 5).** 응답은 `{ handoffId, fileName, columns, rows, skippedShipments }` 이고 XLSX 는 admin-web 이 만든다 — 서버가 파일을 내면 접속기록 규칙(ADR-0048 §29~36)을 손으로 다시 짜야 한다. 내려받기·다시 받기는 `@PiiResponse` + `@PiiExport`(사유 헤더 필수), 열 정의 `SUPPLIER_SHEET_COLUMNS` 는 core 한 곳이고 파서도 같은 상수를 읽는다. 파서가 읽는 머리글 일곱 개만 필수이고 중복 머리글은 400 이다. 행 키는 라인 id 가 아니라 **FOI id** 다 — 합포장이 라인을 복사해 라인 id 가 바뀐다. 줄 판정(발송·합포장·못 보냄·아직·정정·그대로·오류)은 미리보기와 적용이 같은 함수이고, 적용은 미리보기 토큰(판정 + 상자 `manifest_version` 의 sha256)과 다시 돌린 판정이 같을 때만 하며 **파일 하나 = 트랜잭션 하나**다. **(택배사, 송장) 묶음은 전부 적용하거나 전부 오류**다 — 일부만 합쳐 보내면 다음 파일의 남은 줄이 영영 막힌다. 합포장의 줄 합침 규칙은 창고 합배송과 한 helper(`shipment/merged-lines-by-foi.ts`)를 쓴다. 넘김은 수령인이 온전한 상자만 묶음에 찍고, 불완전한 상자는 대기로 남겨 `skippedShipments` 로 알린다(전부 불완전하면 409 `SUPPLIER_HANDOFF_RECIPIENT_INCOMPLETE`). 발송 기록은 이미 일어난 물리 사실이라 수령인 완전성을 다시 따지지 않는다.
 12. **되돌리기는 같은 명령의 입점사 갈래다(PR 5).** 같은 라우트·`shipment.dispatch.recall`·권한이고 `report` 첫머리에서 입점사 상자를 가른다. 원장·예약·추적 게이트를 건너뛰고 한 트랜잭션에서 `shipped → recovery_required → draft`, 시도 `recalled`, 수기 송장 `voided`, FOI `shipped_qty` 감소, FO `shipped_at` NULL, 투영, `ShipmentDispatchRecalled`·`FulfillmentReopened` 를 낸다. `physicalRecoveryConfirmed` 는 그대로 요구한다(입점사와 확인함). 회수 대기가 트랜잭션 밖에 보이지 않는다. 송장 정정은 이벤트를 다시 내지 않아 Medusa 메타데이터·고객 문자는 옛 번호로 남는다 — 대신 감사 기록(`shipment.waybill.correct`, 옛→새 택배사·번호)을 같은 트랜잭션에 남긴다.
 
-ADR-0049 의 «넘긴 직배 주문의 취소 알림은 상자 전 출고 명령이 쓴다»는 문장은 K3 PR 6 이 알릴 취소를 상자 후 경로로 옮길 때 고친다 — PR 2 는 동작을 바꾸지 않는다.
+13. **넘긴 입점사 상자 라인의 취소는 상자 후 출고 명령이 알릴 취소를 쓴다(PR 6).** 직배 주문에도 상자가 있으므로 판매주문 취소는 상자 후 경로(`cancelOutstanding`)로 가고, `applyDraftCancellation` 이 줄을 줄인 같은 트랜잭션에서 `recordSupplierCancelNotices` 가 `direct_ship_cancel_notices`(`supplier_id`) 행을 남긴다. 취소 id 는 판매주문이 먼저 정해 «취소 출처» 인자로 넘긴다(요청 해시 밖 — 매번 새 uuid 라 넣으면 같은 키 재전송이 불일치가 된다). 조건은 입점사 상자 ∧ 넘김 기록 ∧ «못 보냄» 아닌 라인이고, 판매주문·FO·라인은 상자가 아니라 라인에서 읽는다(되돌린 합포장 상자는 여러 주문을 담는다). 넘긴 입점사 상자를 출처 없이 줄이거나, 입점사 상자가 손질·대기·이탈 갈래로 가면 던진다 — 입점사 상자는 배치·송장 막힘이 생길 수 없다. 옛 상자 전 쓰기(holders)는 지웠다. 알릴 취소의 읽기·내려받기·완료 표시는 입점사 id 로만 찾고, CSV 는 입점사가 받은 시트의 행 키(FOI id)·주문번호를 싣는다.
+
+ADR-0049 의 «넘긴 직배 주문의 취소 알림은 상자 전 출고 명령이 쓴다»는 문장은 K3 PR 6 이 고쳤다(13번, ADR-0049 PR 5 문단 끝).
 
 ## Consequences
 - PR 2 는 휴면이다. 입점사 상자를 만드는 코드(FO 생성, PR 4)도, 직배 SKU 도 라이브에 아직 없다(2026-10-25 실측 0).
-- 창고 흐름 진입 함수를 새로 만들면 `warehouseIdOf` 로 좁히고 가드 목록에 더한다. 입점사 갈래가 필요한 함수(분할·되돌리기)는 PR 5 가 그 앞에서 갈랐고, 취소는 PR 6 이 가른다.
+- 창고 흐름 진입 함수를 새로 만들면 `warehouseIdOf` 로 좁히고 가드 목록에 더한다. 입점사 갈래가 필요한 함수(분할·되돌리기)는 PR 5 가 그 앞에서 갈랐다. 취소는 갈래가 필요 없었다 — 입점사 라인은 예약이 0 이라 `warehouseIdOf` 를 부르는 예약 해제에 닿지 않는다(PR 6, 통합 테스트가 증거).
 - `shipments` 를 창고로 거르지 않고 읽는 조회(정체 보드·예약 부족 판정·리컨실러 상자 규칙 등)는 상자 기준으로 옮겼다(PR 4) — FO 단위 직배 읽기를 상자 기준 읽기로 옮겼다(PR 4). 남은 FO 단위 읽기는 옛 쓰기 경로(`direct-ship.service.ts`·`ship()`)와 그 화면용 읽기뿐이고 PR 8 이 지운다.
 - PR 5 는 마이그 없이 Core 만 바꾼다. PR 3 이 라이브가 된 뒤에만 배포하며, 라이브 뒤에는 channel-adapter·notification 을 PR 3 이전으로 롤백하지 않는다(새 값을 거절해 DLQ 로 간다). 고객 추적 링크는 새 택배사 8개가 아직 `null` 이다 — 실물 송장으로 URL 을 확인한 뒤 더한다.
 - 옛 직배 쓰기 경로(`direct-ship.service.ts` 넘김·완료, `ship()`)는 admin-web 버튼이 쓰고 있어 그대로 두었다. PR 7 이 화면을 바꾼 뒤 PR 8 이 지운다.

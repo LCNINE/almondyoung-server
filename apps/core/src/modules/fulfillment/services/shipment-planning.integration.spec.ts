@@ -364,6 +364,91 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
     });
   });
 
+  // K3 PR6 N4 — 넘긴 입점사 상자의 줄을 줄이는데 가리킬 판매주문 취소가 없으면 알릴 취소를 쓸 수 없다(fail-closed).
+  it('handed-off supplier box canceled without origin throws and leaves the box untouched', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await op.seedWorld(tx);
+      const fo = await op.seedFo(tx, w, await op.seedOrder(tx), { qty: 2 });
+      const supplierId = await op.seedDirectSupplier(tx);
+      const handoffId = await op.seedHandoff(tx, supplierId);
+      const box = await op.seedBox(tx, w, [fo.foItemId], {
+        status: 'draft',
+        supplierId,
+        supplierHandoffId: handoffId,
+        qty: [2],
+      });
+      const source = await shipmentRow(tx, box.shipmentId);
+      const [line] = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.id, box.lineIds[0]));
+
+      const error = await tx
+        .transaction((sp) =>
+          planning.cancelOutstanding(
+            box.shipmentId,
+            cancelDto({ shipment: source, line }),
+            `cancel-no-origin-${randomUUID()}`,
+            actor,
+            null,
+            sp as unknown as DbTx,
+          ),
+        )
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toContain(box.shipmentId);
+      expect((await shipmentRow(tx, box.shipmentId)).status).toBe('draft');
+      const [after] = await tx.select().from(wmsTables.shipmentLines).where(eq(wmsTables.shipmentLines.id, line.id));
+      expect(after.qty).toBe(2);
+    });
+  });
+
+  // K3 PR6 N4 — 입점사 상자는 배치·송장 손질이 생길 수 없다. 생겼다면 불변식이 깨진 것이라 대기·손질로 보내지 않는다.
+  it('supplier box never needs settle steps — a work item on it throws instead of settling', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await op.seedWorld(tx);
+      const fo = await op.seedFo(tx, w, await op.seedOrder(tx), { qty: 1 });
+      const supplierId = await op.seedDirectSupplier(tx);
+      const box = await op.seedBox(tx, w, [fo.foItemId], { status: 'draft', supplierId, qty: [1] });
+      // 운영 경로로는 못 만든다(배치 진입 가드) — 불변식이 깨진 상태를 직접 심는다
+      await op.seedWorkItem(tx, w, box.shipmentId, { status: 'queued' });
+      const source = await shipmentRow(tx, box.shipmentId);
+      const [line] = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.id, box.lineIds[0]));
+
+      const error = await tx
+        .transaction((sp) =>
+          planning.cancelOutstanding(
+            box.shipmentId,
+            cancelDto({ shipment: source, line }),
+            `cancel-supplier-steps-${randomUUID()}`,
+            actor,
+            { orderCancellationId: randomUUID(), scope: 'full' },
+            sp as unknown as DbTx,
+          ),
+        )
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toContain(box.shipmentId);
+      expect((await shipmentRow(tx, box.shipmentId)).status).toBe('draft');
+      const [workItem] = await tx
+        .select()
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.shipmentId, box.shipmentId));
+      expect(workItem.status).toBe('queued');
+    });
+  });
+
   it('leaves the cancellation tombstone without an entrance password', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await physicalFixture(tx, 10, 6);
@@ -390,6 +475,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         },
         `cancel-entrance-${randomUUID()}`,
         actor,
+        null,
         tx,
       );
 
@@ -416,6 +502,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         },
         `cancel-${randomUUID()}`,
         actor,
+        null,
         tx,
       );
 
@@ -518,6 +605,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         },
         key,
         actor,
+        null,
         tx,
       );
 
@@ -586,6 +674,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
             },
             key,
             actor,
+            null,
             nestedTx as unknown as DbTx,
           ),
         );
@@ -625,6 +714,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         cancelDto(fixture),
         `immediate-planned-cancel-${randomUUID()}`,
         actor,
+        null,
         tx,
       );
 
@@ -649,6 +739,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         cancelDto(fixture, 1),
         `partial-planned-cancel-${randomUUID()}`,
         actor,
+        null,
         tx,
       );
 
@@ -678,6 +769,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         cancelDto(fixture),
         `k2-planned-cancel-${randomUUID()}`,
         actor,
+        null,
         tx,
       );
 
@@ -740,6 +832,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         cancelDto(fixture, 1),
         `k2-partial-planned-cancel-${randomUUID()}`,
         actor,
+        null,
         tx,
       );
 
@@ -765,6 +858,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         cancelDto(fixture),
         `draft-waybill-cancel-${randomUUID()}`,
         actor,
+        null,
         tx,
       );
 
@@ -783,6 +877,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         cancelDto(fixture),
         `issuing-waybill-cancel-${randomUUID()}`,
         actor,
+        null,
         tx,
       );
 
@@ -801,8 +896,8 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
       const fixture = await plannedFixture(tx, 2);
       const key = `replay-planned-cancel-${randomUUID()}`;
 
-      const first = await planning.cancelOutstanding(fixture.shipment.id, cancelDto(fixture), key, actor, tx);
-      const second = await planning.cancelOutstanding(fixture.shipment.id, cancelDto(fixture), key, actor, tx);
+      const first = await planning.cancelOutstanding(fixture.shipment.id, cancelDto(fixture), key, actor, null, tx);
+      const second = await planning.cancelOutstanding(fixture.shipment.id, cancelDto(fixture), key, actor, null, tx);
 
       expect(first.operationStatus).toBe('completed');
       expect(second).toEqual(first);
@@ -838,6 +933,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
             cancelDto(fixture),
             `unscoped-planned-cancel-${randomUUID()}`,
             worker,
+            null,
             nestedTx as unknown as DbTx,
           ),
         );
@@ -861,6 +957,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         cancelDto(fixture),
         `manual-exclusion-cancel-${randomUUID()}`,
         actor,
+        null,
         tx,
       );
       expect(pending.operationStatus).toBe('pending');
@@ -901,6 +998,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         cancelDto(fixture),
         `readiness-cancel-${randomUUID()}`,
         actor,
+        null,
         tx,
       );
       expect(pending.operationStatus).toBe('pending');
@@ -949,6 +1047,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         cancelDto(fixture),
         `exit-blocked-resume-${randomUUID()}`,
         actor,
+        null,
         tx,
       );
       await tx
@@ -1010,6 +1109,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
           },
           `shipped-cancel-${randomUUID()}`,
           actor,
+          null,
           tx,
         );
       } catch (caught) {
@@ -1173,6 +1273,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
           },
           cancelKey,
           actor,
+          null,
         ),
       ]);
       expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);

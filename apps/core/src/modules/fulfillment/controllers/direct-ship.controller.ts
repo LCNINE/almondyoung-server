@@ -38,12 +38,12 @@ const ForwardOrdersSchema = z.object({
 });
 
 const CancelNoticeExportSchema = z.object({
-  companyName: z.string().min(1),
+  supplierId: z.string().uuid(),
   noticeIds: z.array(z.string().uuid()).min(1).max(500),
 });
 
 const CancelNoticeNotifiedSchema = z.object({
-  companyName: z.string().min(1),
+  supplierId: z.string().uuid(),
   noticeIds: z.array(z.string().uuid()).min(1).max(500),
 });
 
@@ -395,10 +395,13 @@ export class DirectShipController {
 
   @RequirePermission('fulfillment.order.read')
   @Get('cancel-notices')
-  @ApiOperation({ summary: '업체에 알릴 취소 대기함' })
-  @ApiQuery({ name: 'companyName', required: false })
-  async getCancelNotices(@Query('companyName') companyName?: string) {
-    return this.cancelNotices.listOpen({ companyName });
+  @ApiOperation({ summary: '입점사에 알릴 취소 대기함' })
+  @ApiQuery({ name: 'supplierId', required: false })
+  async getCancelNotices(@Query('supplierId') supplierId?: string) {
+    if (supplierId !== undefined && !z.string().uuid().safeParse(supplierId).success) {
+      throw new BadRequestException('supplierId must be a UUID');
+    }
+    return this.cancelNotices.listOpen({ supplierId });
   }
 
   @RequirePermission('order.order.export')
@@ -408,7 +411,7 @@ export class DirectShipController {
     @Body(new ZodValidationPipe(CancelNoticeExportSchema)) dto: z.infer<typeof CancelNoticeExportSchema>,
     @Res() res: Response,
   ) {
-    const fileData = await this.cancelNotices.exportFile(dto.companyName, dto.noticeIds);
+    const fileData = await this.cancelNotices.exportFile(dto.supplierId, dto.noticeIds);
     res.setHeader('Content-Type', fileData.mimeType);
     res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileData.fileName)}`);
     res.send(fileData.content);
@@ -424,6 +427,6 @@ export class DirectShipController {
   ) {
     const actor = user?.id ?? user?.userId;
     if (!actor) throw new BadRequestException('Authenticated actor is required');
-    return this.cancelNotices.markNotified(dto.companyName, dto.noticeIds, actor);
+    return this.cancelNotices.markNotified(dto.supplierId, dto.noticeIds, actor);
   }
 }

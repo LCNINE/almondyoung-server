@@ -69,6 +69,7 @@ describeIfDb('ResumePendingCancellationRule (PostgreSQL integration)', () => {
       },
       `c-${randomUUID()}`,
       actor,
+      null,
       tx,
     );
   }

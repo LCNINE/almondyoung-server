@@ -129,12 +129,14 @@ describe('ShipmentPlanningService command boundary', () => {
       { ...base, lines: reverse },
       'cancel-key',
       actor,
+      null,
     );
     const secondRequest = await second.service.cancelOutstanding(
       'shipment-1',
       { ...base, lines: forward },
       'cancel-key',
       actor,
+      null,
     );
 
     expect(canonicalFulfillmentRequestHash(firstRequest)).toBe(canonicalFulfillmentRequestHash(secondRequest));

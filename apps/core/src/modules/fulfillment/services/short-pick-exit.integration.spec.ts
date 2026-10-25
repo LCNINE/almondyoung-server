@@ -345,6 +345,7 @@ describeIfDb('결품 이탈의 마무리 (스펙 §9-5, PR 4)', () => {
         },
         `c-${randomUUID()}`,
         { id: box.actorId, roles: ['master'] },
+        null,
         tx,
       );
       expect(canceled.operationStatus).toBe('pending');

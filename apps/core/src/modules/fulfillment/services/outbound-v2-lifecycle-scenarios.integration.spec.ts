@@ -967,6 +967,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
         },
         `lifecycle-case15-cancel-${randomUUID()}`,
         actor,
+        null,
         tx,
       );
       expect(canceled.operationStatus).toBe('completed');

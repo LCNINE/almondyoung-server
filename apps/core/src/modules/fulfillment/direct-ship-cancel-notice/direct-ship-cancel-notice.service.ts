@@ -12,24 +12,26 @@ export class DirectShipCancelNoticeService {
     private readonly manager: DirectShipCancelNoticeManager,
   ) {}
 
-  listOpen(filter: { companyName?: string }): Promise<DirectShipCancelNotice[]> {
+  listOpen(filter: { supplierId?: string }): Promise<DirectShipCancelNotice[]> {
     return this.reader.listOpen(filter);
   }
 
   async exportFile(
-    companyName: string,
+    supplierId: string,
     noticeIds: string[],
   ): Promise<{ fileName: string; content: Buffer; mimeType: string }> {
-    const csv = toCancelNoticeCsv(await this.reader.listOpenSelected(companyName, noticeIds));
+    const rows = await this.reader.listOpenSelected(supplierId, noticeIds);
+    const csv = toCancelNoticeCsv(rows);
     const stamp = formatInTimeZone(new Date(), 'Asia/Seoul', 'yyyyMMddHHmm');
+    // 고른 행이 없으면 reader 가 이미 던졌다 — 이름은 행의 입점사 이름
     return {
-      fileName: `직배취소알림_${companyName}_${stamp}.csv`,
+      fileName: `직배취소알림_${rows[0].companyName}_${stamp}.csv`,
       content: Buffer.from('﻿' + csv, 'utf8'),
       mimeType: 'text/csv; charset=utf-8',
     };
   }
 
-  markNotified(companyName: string, noticeIds: string[], notifiedBy: string): Promise<{ notified: number }> {
-    return this.manager.markNotified(companyName, noticeIds, notifiedBy);
+  markNotified(supplierId: string, noticeIds: string[], notifiedBy: string): Promise<{ notified: number }> {
+    return this.manager.markNotified(supplierId, noticeIds, notifiedBy);
   }
 }

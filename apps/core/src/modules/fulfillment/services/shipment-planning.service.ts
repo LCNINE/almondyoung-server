@@ -6,6 +6,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectTypedDb, DbService } from '@app/db';
+import type { SalesOrderCancellationOrigin } from '../direct-ship-cancel-notice/direct-ship-cancel-notice.types';
+import { recordSupplierCancelNotices } from '../direct-ship-cancel-notice/record-supplier-cancel-notices';
 import { AuthorizationService, PermissionCheckpoints } from '@app/authorization';
 import type { ShippingAddress } from '@packages/event-contracts/streams';
 import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
@@ -619,6 +621,8 @@ export class ShipmentPlanningService {
     dto: CancelShipmentOutstandingDto,
     idempotencyKey: string,
     actor: ShipmentPlanningActor,
+    // 요청 해시에 넣지 않는다 — 매번 새 uuid 라 같은 키 재전송이 불일치로 바뀐다(K3 PR6 N2)
+    origin: SalesOrderCancellationOrigin | null,
     tx?: DbTx,
   ) {
     this.workflowGate.assertV2MutationAllowed('shipment.cancel_outstanding');
@@ -680,6 +684,13 @@ export class ShipmentPlanningService {
           { aggregate, ownOperationId: null, lock: true },
           tx,
         );
+        // 입점사 상자는 배치에 못 들어가고 송장은 발송 때만 생긴다 — 손질·대기·이탈이 필요하면 불변식이 깨진 것이다.
+        // 대기 재개엔 판매주문 취소 출처가 없어 알릴 취소를 못 남기므로 그리로 보내지 않는다(K3 PR6 N4)
+        if (aggregate.shipment.supplierId !== null && (readiness.kind !== 'ready' || readiness.steps.length > 0)) {
+          throw new Error(
+            `Supplier shipment ${shipmentId} cannot need cancellation settle steps or waiting (readiness ${readiness.kind})`,
+          );
+        }
 
         // 전체 취소 연결(E10, 스펙 §8): 시작된 배치의 박스를 전량 취소하면 대기가 아니라 이탈로 끝낸다.
         const withdrawal =
@@ -772,7 +783,7 @@ export class ShipmentPlanningService {
           throw this.conflict('SHIPMENT_NOT_DRAFT', 'Only Draft outstanding can be canceled immediately');
         }
 
-        await this.applyDraftCancellation(settled, selected, operation.id, dto, actor, tx, before);
+        await this.applyDraftCancellation(settled, selected, operation.id, dto, actor, origin, tx, before);
         const after = this.snapshot(await this.loadAggregate(shipmentId, tx));
         const response = {
           operationId: operation.id,
@@ -1273,12 +1284,14 @@ export class ShipmentPlanningService {
       note: pending.note ?? undefined,
     };
     const actor = { id: operation.operatorId, roles: [] };
+    // 대기 재개엔 판매주문 취소 출처가 없다 — 입점사 상자는 대기로 오지 않는다(cancelOutstanding 의 N4 가드)
     await this.applyDraftCancellation(
       aggregate,
       selected,
       operation.id,
       dto,
       actor,
+      null,
       tx,
       (operation.beforeManifestSnapshot as ShipmentManifestSnapshot | null) ?? undefined,
     );
@@ -1429,6 +1442,7 @@ export class ShipmentPlanningService {
     operationId: string,
     dto: CancelShipmentOutstandingDto,
     actor: ShipmentPlanningActor,
+    origin: SalesOrderCancellationOrigin | null,
     tx: DbTx,
     operationBefore?: ShipmentManifestSnapshot,
   ): Promise<void> {
@@ -1479,6 +1493,11 @@ export class ShipmentPlanningService {
             })
             .where(eq(wmsTables.fulfillmentOrderItems.id, fulfillmentOrderItemId));
         }
+        await recordSupplierCancelNotices(tx, {
+          origin,
+          shipment: locked.shipment,
+          canceled: current.map(({ request, line }) => ({ line, qty: request.qty })),
+        });
         return { tombstone: shrunk.tombstone, cancelWholeShipment: wholeShipment };
       },
       tx,

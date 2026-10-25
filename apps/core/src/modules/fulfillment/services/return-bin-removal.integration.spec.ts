@@ -257,6 +257,7 @@ describeIfDb('박스에서 되돌림 바구니로 (스펙 §8, PR 3)', () => {
         },
         `c-${randomUUID()}`,
         actor,
+        null,
         tx,
       );
       expect(cancellation.operationStatus).toBe('pending');

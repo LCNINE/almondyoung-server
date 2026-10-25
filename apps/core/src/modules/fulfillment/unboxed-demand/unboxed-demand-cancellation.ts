@@ -52,12 +52,7 @@ export class UnboxedDemandCancellation {
    * 호출자가 같은 tx 에서 `lockForCancellation` 을 먼저 불렀다고 전제한다(잠금·예약 확인은 거기서 끝났다).
    * 최신 행을 다시 읽어 cancellableQty 를 넘는 감소만 막는다 — 판매주문이 이미 판정한 값이라 500 이 맞다.
    */
-  async reduce(
-    salesOrderId: string,
-    orderCancellationId: string,
-    reductions: UnboxedDemandReduction[],
-    tx: DbTx,
-  ): Promise<ReducedDemandItem[]> {
+  async reduce(salesOrderId: string, reductions: UnboxedDemandReduction[], tx: DbTx): Promise<ReducedDemandItem[]> {
     if (reductions.length === 0) return [];
     return this.dbService.run(async (trx) => {
       const qtyByItem = new Map<string, number>();
@@ -68,7 +63,6 @@ export class UnboxedDemandCancellation {
       const itemById = new Map(items.map((item) => [item.id, item]));
 
       const reduced: ReducedDemandItem[] = [];
-      const changes: Array<{ item: FoiRow; qty: number }> = [];
       for (const [itemId, qty] of qtyByItem) {
         const item = itemById.get(itemId);
         if (!item) throw new Error(`FOI ${itemId} does not belong to sales order ${salesOrderId}`);
@@ -81,7 +75,6 @@ export class UnboxedDemandCancellation {
           .update(wmsTables.fulfillmentOrderItems)
           .set({ canceledQty: newCanceledQty, updatedAt: new Date() })
           .where(eq(wmsTables.fulfillmentOrderItems.id, itemId));
-        changes.push({ item, qty });
         reduced.push({
           fulfillmentOrderItemId: itemId,
           fulfillmentOrderId: item.fulfillmentOrderId,
@@ -102,7 +95,6 @@ export class UnboxedDemandCancellation {
         trx,
         reduced.map((r) => r.fulfillmentOrderItemId),
       );
-      await this.recordPartnerNotices(trx, orderCancellationId, 'partial', changes);
       return reduced.map((r) => ({ ...r, newStatus: statusById.get(r.fulfillmentOrderItemId) ?? r.newStatus }));
     }, tx);
   }
@@ -111,17 +103,15 @@ export class UnboxedDemandCancellation {
    * 전체 취소. created·ready FO 마다 FOI canceledQty = qty − shippedQty → FO 투영.
    * 호출자가 같은 tx 에서 `lockForCancellation` 을 먼저 불렀다고 전제한다.
    */
-  async cancelOrder(salesOrderId: string, orderCancellationId: string, tx: DbTx): Promise<CanceledFulfillmentOrder[]> {
+  async cancelOrder(salesOrderId: string, tx: DbTx): Promise<CanceledFulfillmentOrder[]> {
     return this.dbService.run(async (trx) => {
       const { items, fos } = await this.readOrder(salesOrderId, trx);
       const canceled: CanceledFulfillmentOrder[] = [];
-      const changes: Array<{ item: FoiRow; qty: number }> = [];
       for (const fo of fos) {
         if (!CANCELLABLE_FULFILLMENT_STATUSES.has(fo.status)) continue;
         for (const item of items.filter((i) => i.fulfillmentOrderId === fo.id)) {
           const canceledQty = item.qty - item.shippedQty;
           if (canceledQty === item.canceledQty) continue;
-          changes.push({ item, qty: canceledQty - item.canceledQty });
           await trx
             .update(wmsTables.fulfillmentOrderItems)
             .set({ canceledQty, updatedAt: new Date() })
@@ -130,55 +120,8 @@ export class UnboxedDemandCancellation {
         await reprojectFulfillmentOrders(trx, [fo.id]);
         canceled.push({ fulfillmentOrderId: fo.id, previousStatus: fo.status });
       }
-      await this.recordPartnerNotices(trx, orderCancellationId, 'full', changes);
       return canceled;
     }, tx);
-  }
-
-  /**
-   * 넘긴 직배 FO(drop_ship · forwarded)의 줄인 수량마다 업체에 알릴 대기 행을 남긴다(D5).
-   * 업체는 이미 주문을 받았으므로 취소를 따로 알려야 한다. 같은 tx 라 취소와 함께 커밋·롤백된다.
-   * 넘기기 전 직배·창고 FO 는 알릴 상대가 없다. owner 가 없으면 알릴 곳을 몰라 던진다(N29).
-   */
-  private async recordPartnerNotices(
-    trx: DbTx,
-    orderCancellationId: string,
-    scope: 'full' | 'partial',
-    changes: Array<{ item: FoiRow; qty: number }>,
-  ): Promise<void> {
-    const positive = changes.filter((c) => c.qty > 0);
-    if (positive.length === 0) return;
-    const fos = await trx
-      .select()
-      .from(wmsTables.fulfillmentOrders)
-      .where(inArray(wmsTables.fulfillmentOrders.id, [...new Set(positive.map((c) => c.item.fulfillmentOrderId))]));
-    const forwarded = new Map(
-      fos
-        .filter((fo) => fo.fulfillmentMode === 'drop_ship' && fo.directShipStatus === 'forwarded')
-        .map((fo) => [fo.id, fo]),
-    );
-    const rows: Array<typeof wmsTables.directShipCancelNotices.$inferInsert> = [];
-    for (const { item, qty } of positive) {
-      const fo = forwarded.get(item.fulfillmentOrderId);
-      if (!fo) continue;
-      if (!fo.ownerId || !fo.salesOrderId) {
-        throw new Error(
-          `Forwarded drop-ship fulfillment order ${fo.id} has no owner — cannot record partner cancel notice`,
-        );
-      }
-      rows.push({
-        orderCancellationId,
-        salesOrderId: fo.salesOrderId,
-        fulfillmentOrderId: fo.id,
-        fulfillmentOrderItemId: item.id,
-        holderId: fo.ownerId,
-        salesOrderLineId: item.salesOrderLineId,
-        skuId: item.skuId,
-        canceledQty: qty,
-        cancellationScope: scope,
-      });
-    }
-    if (rows.length > 0) await trx.insert(wmsTables.directShipCancelNotices).values(rows);
   }
 
   private async lockFulfillmentOrders(salesOrderId: string, trx: DbTx): Promise<FoRow[]> {

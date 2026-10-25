@@ -399,11 +399,7 @@ function fakeUnboxedDemand(state: {
       }),
     ),
     reduce: jest.fn(
-      async (
-        salesOrderId: string,
-        _orderCancellationId: string,
-        reductions: Array<{ fulfillmentOrderItemId: string; qty: number }>,
-      ) => {
+      async (salesOrderId: string, reductions: Array<{ fulfillmentOrderItemId: string; qty: number }>) => {
         const reduced = reductions.map(({ fulfillmentOrderItemId, qty }) => {
           const item = itemsOf(salesOrderId).find((row) => row.id === fulfillmentOrderItemId)!;
           const previousCanceledQty = item.canceledQty ?? 0;
@@ -425,7 +421,7 @@ function fakeUnboxedDemand(state: {
         return reduced;
       },
     ),
-    cancelOrder: jest.fn(async (salesOrderId: string, _orderCancellationId?: string) =>
+    cancelOrder: jest.fn(async (salesOrderId: string) =>
       state.fulfillmentOrders
         .filter((fo) => fo.salesOrderId === salesOrderId && CANCELLABLE_FULFILLMENT_STATUSES.has(fo.status))
         .map((fo) => {
@@ -1068,12 +1064,7 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
     // 요청 전체에 한 번, 잠근 뒤에
     expect(unboxedDemand.lockForCancellation).toHaveBeenCalledWith(salesOrderId, tx);
     expect(unboxedDemand.reduce).toHaveBeenCalledTimes(1);
-    expect(unboxedDemand.reduce).toHaveBeenCalledWith(
-      salesOrderId,
-      expect.any(String),
-      [{ fulfillmentOrderItemId, qty: 1 }],
-      tx,
-    );
+    expect(unboxedDemand.reduce).toHaveBeenCalledWith(salesOrderId, [{ fulfillmentOrderItemId, qty: 1 }], tx);
     expect(state.salesOrderCancellations).toEqual([
       expect.objectContaining({
         id: 'cancellation-1',
