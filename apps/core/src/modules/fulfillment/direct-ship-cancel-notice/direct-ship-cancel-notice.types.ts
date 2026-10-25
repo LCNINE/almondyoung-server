@@ -1,11 +1,17 @@
 export type DirectShipCancelNotice = {
   id: string;
+  supplierId: string;
+  /** 입점사 이름 — 옛 화면이 묶음 머리글로 쓴다. 찾기·거르기는 `supplierId` 로만 한다(K3 PR6 N6) */
   companyName: string;
   salesOrderId: string;
+  /** 입점사가 받은 시트의 «주문번호»와 같은 값(`orderNoSql`) */
+  orderNo: string;
   channelOrderId: string | null;
   salesOrderLineId: string | null;
   orderCancellationId: string | null;
   fulfillmentOrderId: string;
+  /** 입점사가 받은 시트의 «행 키» */
+  fulfillmentOrderItemId: string;
   skuName: string;
   supplierSku: string | null;
   canceledQty: number;
