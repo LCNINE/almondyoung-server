@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { and, eq, inArray } from 'drizzle-orm';
 import { outbox_events } from '@app/events';
+import { BadRequestError } from '@app/shared';
 import {
   CORE_ORDER_STREAM,
   FULFILLMENT_STREAM,
@@ -249,7 +250,7 @@ describeIfDb('입점사 상자 나누기·합포장 (K3 PR5, PostgreSQL integrat
       ).rejects.toBeInstanceOf(SupplierShipmentNotEditableError);
       await expect(
         tx.transaction((sp) => splitOffSupplierLines(manifestDeps, sp as unknown as DbTx, o.supplierBox, [])),
-      ).rejects.toBeInstanceOf(SupplierShipmentNotEditableError);
+      ).rejects.toBeInstanceOf(BadRequestError);
       await tx
         .update(wmsTables.shipments)
         .set({ recoveryCode: 'CONSOLIDATION_PENDING' })
@@ -285,7 +286,7 @@ describeIfDb('입점사 상자 나누기·합포장 (K3 PR5, PostgreSQL integrat
         shippingProfileId: null,
         supplierHandoffId: earlier,
       });
-      expect(merged.entrancePassword).toBeTruthy();
+      expect(merged.entrancePassword).toBe('#9999');
       expect((await boxRow(tx, a.supplierBox)).status).toBe('superseded');
       expect((await boxRow(tx, b.supplierBox)).status).toBe('superseded');
       const newLines = await linesOf(tx, mergedId);
@@ -324,8 +325,8 @@ describeIfDb('입점사 상자 나누기·합포장 (K3 PR5, PostgreSQL integrat
       if (!b.warehouseBox) throw new Error('expected a warehouse box');
       await expect(attempt([a.supplierBox, b.warehouseBox])).rejects.toBeInstanceOf(SupplierShipmentNotEditableError);
 
-      await expect(attempt([a.supplierBox])).rejects.toBeInstanceOf(SupplierShipmentNotEditableError);
-      await expect(attempt([a.supplierBox, a.supplierBox])).rejects.toBeInstanceOf(SupplierShipmentNotEditableError);
+      await expect(attempt([a.supplierBox])).rejects.toBeInstanceOf(BadRequestError);
+      await expect(attempt([a.supplierBox, a.supplierBox])).rejects.toBeInstanceOf(BadRequestError);
 
       await tx
         .update(wmsTables.shipments)
@@ -384,6 +385,29 @@ describeIfDb('입점사 상자 나누기·합포장 (K3 PR5, PostgreSQL integrat
       expect((await boxRow(tx, newId)).status).toBe('shipped');
       expect((await boxRow(tx, o.supplierBox)).status).toBe('draft');
       await expectConsistent(tx, [o.foId]);
+    });
+  });
+  it('비번이 서로 다르면 더 최근 주문의 비번을 쓰고, actor 는 openedBy 로 남는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const supplierId = await seedDirectSupplier(tx);
+      const a = await order(tx, supplierId, { dropQtys: [1] });
+      const b = await order(tx, supplierId, { dropQtys: [1] });
+      const setPw = async (o: typeof a, pw: string, orderDate: Date) => {
+        await tx
+          .update(wmsTables.shipments)
+          .set({ entrancePassword: pw })
+          .where(eq(wmsTables.shipments.id, o.supplierBox));
+        await tx.update(wmsTables.salesOrders).set({ orderDate }).where(eq(wmsTables.salesOrders.id, o.salesOrderId));
+      };
+      await setPw(a, '#NEW', new Date('2026-10-24T00:00:00Z'));
+      await setPw(b, '#OLD', new Date('2026-10-01T00:00:00Z'));
+
+      const opener = randomUUID();
+      const mergedId = await mergeSupplierShipments(manifestDeps, tx, [a.supplierBox, b.supplierBox], {
+        actorId: opener,
+      });
+
+      expect(await boxRow(tx, mergedId)).toMatchObject({ entrancePassword: '#NEW', openedBy: opener });
     });
   });
 });

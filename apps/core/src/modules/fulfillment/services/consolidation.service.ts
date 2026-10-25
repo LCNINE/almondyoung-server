@@ -23,6 +23,7 @@ import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 import { lockShipmentAggregates } from './shipment-aggregate';
 import { transitionShipments } from '../shipment/shipment-lifecycle';
+import { FoiSkuMismatchError, MergedLine, mergedLinesByFoi } from '../shipment/merged-lines-by-foi';
 import { editShipmentManifest, ManifestEditDeps } from '../shipment/shipment-manifest-edit';
 import { warehouseIdOf } from '../shipment/shipment-owner';
 
@@ -671,37 +672,19 @@ export class ConsolidationService {
           openedAt: new Date(),
         });
 
-        const allLines = aggregates.flatMap((aggregate) => aggregate.lines);
-        const groupedLines = new Map<string, ShipmentLineRow[]>();
-        for (const line of allLines) {
-          groupedLines.set(line.fulfillmentOrderItemId, [
-            ...(groupedLines.get(line.fulfillmentOrderItemId) ?? []),
-            line,
-          ]);
-        }
         const lineLineage: NonNullable<ConsolidationResponse['lineLineage']> = [];
-        for (const [fulfillmentOrderItemId, lines] of [...groupedLines.entries()].sort(([left], [right]) =>
-          left.localeCompare(right),
-        )) {
-          const skuIds = uniqueSorted(lines.map((line) => line.skuId));
-          if (skuIds.length !== 1) {
-            throw this.conflict(
-              'CONSOLIDATION_FOI_SKU_MISMATCH',
-              `FOI ${fulfillmentOrderItemId} is represented by multiple SKUs`,
-            );
+        let merged: MergedLine<ShipmentLineRow>[];
+        try {
+          merged = mergedLinesByFoi(aggregates.flatMap((aggregate) => aggregate.lines));
+        } catch (e) {
+          if (e instanceof FoiSkuMismatchError) {
+            throw this.conflict('CONSOLIDATION_FOI_SKU_MISMATCH', e.message);
           }
-          const sourceIdsForLine = lines.map((line) => line.id).sort();
-          const targetLine = await writer.addLine(target.id, {
-            fulfillmentOrderItemId,
-            skuId: skuIds[0],
-            qty: lines.reduce((total, line) => total + line.qty, 0),
-            createdFromLineId: lines.length === 1 ? lines[0].id : null,
-            createdAt: new Date(Math.min(...lines.map((line) => line.createdAt.getTime()))),
-            // 예약 대기열의 순서 키 — 합쳐도 가장 오래 기다린 몫의 순간을 잃지 않는다(created_at 으로 대체하면 줄이 뒤로 밀린다)
-            demandRequestedAt: new Date(
-              Math.min(...lines.map((line) => (line.demandRequestedAt ?? line.createdAt).getTime())),
-            ),
-          });
+          throw e;
+        }
+        for (const { fulfillmentOrderItemId, sourceLines, newLine } of merged) {
+          const sourceIdsForLine = sourceLines.map((line) => line.id).sort();
+          const targetLine = await writer.addLine(target.id, newLine);
           await this.reservations.retargetConfirmed(sourceIdsForLine, targetLine.id, tx);
           lineLineage.push({ targetLineId: targetLine.id, fulfillmentOrderItemId, sourceLineIds: sourceIdsForLine });
         }

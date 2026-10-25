@@ -1,12 +1,18 @@
 import { asc, eq, inArray } from 'drizzle-orm';
-import { NotFoundError } from '@app/shared';
+import { BadRequestError, NotFoundError } from '@app/shared';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { selectEntrancePasswordForMerge } from '../services/entrance-password.selection';
 import { canonicalConsolidationRecipient } from '../services/consolidation.service';
 import { ManifestEditDeps, editShipmentManifest } from '../shipment/shipment-manifest-edit';
+import { mergedLinesByFoi } from '../shipment/merged-lines-by-foi';
 import { transitionShipments } from '../shipment/shipment-lifecycle';
 import { shipmentOwnerOf } from '../shipment/shipment-owner';
 import { SupplierMergeRecipientMismatchError, SupplierShipmentNotEditableError } from './supplier-shipment.errors';
+
+/** 새 상자의 `openedBy` 로 남는다(창고 합배송과 같다). */
+export interface ManifestActor {
+  actorId: string;
+}
 
 type BoxRow = typeof wmsTables.shipments.$inferSelect;
 
@@ -47,9 +53,10 @@ export async function splitOffSupplierLines(
   tx: DbTx,
   shipmentId: string,
   lineIds: readonly string[],
+  actor?: ManifestActor,
 ): Promise<string> {
   const moving = [...new Set(lineIds)];
-  if (moving.length === 0) throw new SupplierShipmentNotEditableError('No lines to split off');
+  if (moving.length === 0) throw new BadRequestError('No lines to split off');
   const [seed] = await readBoxes(tx, [shipmentId]);
   assertEditableSupplierBox(seed);
 
@@ -74,7 +81,7 @@ export async function splitOffSupplierLines(
         recipientSnapshot: box.recipientSnapshot,
         entrancePassword: box.entrancePassword,
         supplierHandoffId: box.supplierHandoffId,
-        openedBy: box.openedBy,
+        openedBy: actor?.actorId ?? box.openedBy,
         openedAt: box.openedAt ?? undefined,
       });
       for (const lineId of moving) await writer.moveLine(lineId, shipmentId, created.id);
@@ -88,16 +95,18 @@ export async function splitOffSupplierLines(
  * 같은 입점사의 draft 입점사 상자 둘 이상(서로 다른 주문)을 새 상자 하나로 합친다 — 창고 합배송과 같은 표현:
  * 새 상자에 FOI 당 줄 하나(수량 합, `createdFromLineId`), 원래 상자는 줄을 지닌 채 `draft → superseded`.
  * 수령인은 `canonicalConsolidationRecipient` 가 같아야 한다. 넘김 기록은 원래 상자들 중 가장 이른 묶음(N7).
+ * 넘김 없는 상자를 넘긴 상자와 합치면 새 상자가 가장 이른 묶음을 물려받는다(N7) — 시트 적용은 넘긴 상자끼리만 합친다.
  * 창고 전용 조각(호환성 판정·예약 retarget·합배송 작업 기록)은 부르지 않는다.
  */
 export async function mergeSupplierShipments(
   deps: ManifestEditDeps,
   tx: DbTx,
   shipmentIds: readonly string[],
+  actor?: ManifestActor,
 ): Promise<string> {
   const ids = [...new Set(shipmentIds)];
   if (ids.length !== shipmentIds.length || ids.length < 2) {
-    throw new SupplierShipmentNotEditableError('Merging needs two or more distinct shipments');
+    throw new BadRequestError('Merging needs two or more distinct shipments');
   }
   for (const box of await readBoxes(tx, ids)) assertEditableSupplierBox(box);
 
@@ -148,6 +157,7 @@ export async function mergeSupplierShipments(
         handoffId = earliest?.id ?? null;
       }
 
+      const now = new Date();
       const target = await writer.createShipment({
         owner: { kind: 'supplier', supplierId },
         status: 'draft',
@@ -161,33 +171,19 @@ export async function mergeSupplierShipments(
           })),
         ),
         supplierHandoffId: handoffId,
-        openedAt: new Date(),
+        openedBy: actor?.actorId,
+        openedAt: now,
       });
 
-      const byFoi = new Map<string, (typeof aggregates)[number]['lines']>();
-      for (const line of aggregates.flatMap((aggregate) => aggregate.lines)) {
-        byFoi.set(line.fulfillmentOrderItemId, [...(byFoi.get(line.fulfillmentOrderItemId) ?? []), line]);
-      }
-      for (const [fulfillmentOrderItemId, lines] of [...byFoi.entries()].sort(([l], [r]) => l.localeCompare(r))) {
-        const skuIds = new Set(lines.map((line) => line.skuId));
-        if (skuIds.size !== 1) throw new Error(`FOI ${fulfillmentOrderItemId} is represented by multiple SKUs`);
-        await writer.addLine(target.id, {
-          fulfillmentOrderItemId,
-          skuId: lines[0].skuId,
-          qty: lines.reduce((total, line) => total + line.qty, 0),
-          createdFromLineId: lines.length === 1 ? lines[0].id : null,
-          createdAt: new Date(Math.min(...lines.map((line) => line.createdAt.getTime()))),
-          demandRequestedAt: new Date(
-            Math.min(...lines.map((line) => (line.demandRequestedAt ?? line.createdAt).getTime())),
-          ),
-        });
+      for (const { newLine } of mergedLinesByFoi(aggregates.flatMap((aggregate) => aggregate.lines))) {
+        await writer.addLine(target.id, newLine);
       }
 
       await transitionShipments(tx, {
         shipmentIds: ids,
         from: ['draft'],
         to: 'superseded',
-        at: new Date(),
+        at: now,
         stale: 'unreachable',
       });
       return target.id;
