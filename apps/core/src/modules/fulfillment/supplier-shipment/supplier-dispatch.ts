@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { and, eq, inArray, max, notInArray } from 'drizzle-orm';
+import { BadRequestError, NotFoundError } from '@app/shared';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { reprojectFulfillmentOrders } from '../fulfillment-order/fulfillment-order-projection';
@@ -9,11 +10,13 @@ import {
   markFullyShippedOrders,
   type DispatchEventDeps,
 } from '../services/dispatch-effects';
+import { lockShipmentConnectedComponentGraph } from '../services/shipment-reservation.service';
 import { canonicalFulfillmentRequestHash } from '../services/fulfillment-command.service';
 import { transitionShipments } from '../shipment/shipment-lifecycle';
 import type { CarrierCode } from '../waybill/carrier/carrier-gateway.interface';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import type { WaybillRepository } from '../waybill/waybill.repository';
+import { WaybillTrackingLiveConflictError } from '../waybill/waybill.errors';
 import { SupplierShipmentNotShippableError, SupplierTrackingInUseError } from './supplier-shipment.errors';
 
 /** 호출자(Nest 서비스)가 주입받아 넘기는 평범한 객체 — provider 가 아니다. */
@@ -21,6 +24,11 @@ export type SupplierDispatchDeps = DispatchEventDeps & {
   audit: Pick<AuditService, 'logUserActionRequired'>;
   waybills: Pick<WaybillRepository, 'insertSupplierManualUsed'>;
 };
+
+/** 송장번호 저장·비교 형태 — 앞뒤 공백·하이픈·내부 공백을 지운다. 쓰는 곳은 이 함수 하나여야 한다. */
+export function normalizeTrackingNo(raw: string): string {
+  return raw.replace(/[-\s]/g, '');
+}
 
 export interface SupplierDispatchCommand {
   shipmentId: string;
@@ -40,8 +48,28 @@ export async function shipSupplierShipment(
   tx: DbTx,
   cmd: SupplierDispatchCommand,
 ): Promise<{ attemptId: string; attemptNo: number; waybillId: string }> {
-  const trackingNo = cmd.trackingNo.trim();
-  if (!trackingNo) throw new SupplierShipmentNotShippableError('trackingNo is required');
+  const trackingNo = normalizeTrackingNo(cmd.trackingNo);
+  if (!trackingNo) throw new BadRequestError('trackingNo is required');
+
+  // 공유 락 순서(FOI → 상자 → 라인 → 예약) — 상자를 먼저 잠그면 FOI 먼저 잡는 취소·라인 수정과 교착한다.
+  // 시드 FOI 는 낙관적으로 읽고, 락 뒤에 상자를 다시 읽어 검증한다.
+  const seedLines = await tx
+    .select({ fulfillmentOrderItemId: wmsTables.shipmentLines.fulfillmentOrderItemId })
+    .from(wmsTables.shipmentLines)
+    .where(eq(wmsTables.shipmentLines.shipmentId, cmd.shipmentId));
+  if (seedLines.length === 0) {
+    const [exists] = await tx
+      .select({ id: wmsTables.shipments.id })
+      .from(wmsTables.shipments)
+      .where(eq(wmsTables.shipments.id, cmd.shipmentId))
+      .limit(1);
+    if (!exists) throw new NotFoundError(`Shipment ${cmd.shipmentId} not found`);
+    throw new SupplierShipmentNotShippableError(`Shipment ${cmd.shipmentId} has no lines`);
+  }
+  await lockShipmentConnectedComponentGraph(
+    tx,
+    seedLines.map((line) => line.fulfillmentOrderItemId),
+  );
 
   const [shipment] = await tx
     .select()
@@ -49,7 +77,7 @@ export async function shipSupplierShipment(
     .where(eq(wmsTables.shipments.id, cmd.shipmentId))
     .limit(1)
     .for('update');
-  if (!shipment) throw new SupplierShipmentNotShippableError(`Shipment ${cmd.shipmentId} not found`);
+  if (!shipment) throw new NotFoundError(`Shipment ${cmd.shipmentId} not found`);
   if (
     shipment.supplierId === null ||
     shipment.status !== 'draft' ||
@@ -97,13 +125,21 @@ export async function shipSupplierShipment(
     .limit(1);
   if (taken) throw new SupplierTrackingInUseError(`Tracking number ${trackingNo} is already in use`);
 
-  const waybill = await deps.waybills.insertSupplierManualUsed(tx, {
-    shipmentId: shipment.id,
-    carrier: cmd.carrier,
-    trackingNo,
-    manifestVersion: shipment.manifestVersion,
-    recipientHash: canonicalFulfillmentRequestHash(shipment.recipientSnapshot),
-  });
+  let waybill: { id: string };
+  try {
+    waybill = await deps.waybills.insertSupplierManualUsed(tx, {
+      shipmentId: shipment.id,
+      carrier: cmd.carrier,
+      trackingNo,
+      manifestVersion: shipment.manifestVersion,
+      recipientHash: canonicalFulfillmentRequestHash(shipment.recipientSnapshot),
+    });
+  } catch (e) {
+    if (e instanceof WaybillTrackingLiveConflictError) {
+      throw new SupplierTrackingInUseError(`Tracking number ${trackingNo} is already in use`);
+    }
+    throw e;
+  }
 
   const [attemptNoRow] = await tx
     .select({ attemptNo: max(wmsTables.dispatchAttempts.attemptNo) })

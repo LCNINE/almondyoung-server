@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, inventorySchema, inventoryTables } from '../../inventory/schema/inventory.schema';
-import { SupplierTrackingInUseError } from '../supplier-shipment/supplier-shipment.errors';
+import { WaybillTrackingLiveConflictError } from './waybill.errors';
 import { WAYBILL_DISPATCHABLE_STATUSES, WAYBILL_TERMINAL_STATUSES } from './waybill.constants';
 import type { WaybillRow } from './waybill.types';
 
@@ -70,7 +70,7 @@ export class WaybillRepository {
       return wb;
     } catch (e) {
       if (isUniqueViolationOn(e, 'uq_waybills_tracking_live')) {
-        throw new SupplierTrackingInUseError(`Tracking number ${row.trackingNo} is already in use`);
+        throw new WaybillTrackingLiveConflictError(`Live waybill already has tracking number ${row.trackingNo}`);
       }
       throw e;
     }
@@ -200,9 +200,12 @@ export class WaybillRepository {
 function isUniqueViolationOn(e: unknown, constraint: string): boolean {
   let current: unknown = e;
   for (let depth = 0; current != null && depth < 5; depth += 1) {
-    const row = current as { code?: string; constraint_name?: string; cause?: unknown };
-    if (row.code === '23505' && (row.constraint_name === undefined || row.constraint_name === constraint)) return true;
-    current = row.cause;
+    if (isPgError(current) && current.code === '23505' && current.constraint_name === constraint) return true;
+    current = typeof current === 'object' ? (current as { cause?: unknown }).cause : undefined; // object 로 좁힌 뒤 cause 하나만 읽는다
   }
   return false;
+}
+
+function isPgError(e: unknown): e is { code?: unknown; constraint_name?: unknown } {
+  return typeof e === 'object' && e !== null;
 }

@@ -25,8 +25,10 @@ import {
   Wired,
 } from '../services/__support__';
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
+import { WaybillTrackingLiveConflictError } from '../waybill/waybill.errors';
 import { WaybillRepository } from '../waybill/waybill.repository';
-import { shipSupplierShipment, SupplierDispatchDeps } from './supplier-dispatch';
+import { normalizeTrackingNo, shipSupplierShipment, SupplierDispatchDeps } from './supplier-dispatch';
+import { BadRequestError, NotFoundError } from '@app/shared';
 import { SupplierShipmentNotShippableError, SupplierTrackingInUseError } from './supplier-shipment.errors';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -81,15 +83,13 @@ describeIfDb('입점사 상자 발송 (K3 PR5, PostgreSQL integration)', () => {
     const lines: Array<{ skuId: string; quantity: number }> = [{ skuId: dropSku, quantity: 2 }];
     if (opts.mixed) {
       const { skuId: warehouseSku } = await seedSku(tx, holderId);
-      await tx
-        .insert(wmsTables.stockLedgers)
-        .values({
-          skuId: warehouseSku,
-          warehouseId: w.warehouseId,
-          locationId: w.locationId,
-          stockState: 'ON_HAND',
-          qty: 3,
-        });
+      await tx.insert(wmsTables.stockLedgers).values({
+        skuId: warehouseSku,
+        warehouseId: w.warehouseId,
+        locationId: w.locationId,
+        stockState: 'ON_HAND',
+        qty: 3,
+      });
       lines.push({ skuId: warehouseSku, quantity: 3 });
     }
     const variants = lines.map(() => randomUUID());
@@ -189,7 +189,7 @@ describeIfDb('입점사 상자 발송 (K3 PR5, PostgreSQL integration)', () => {
         source: 'manual',
         status: 'used',
         carrier: 'EPOST',
-        trackingNo: 'EP-100-200',
+        trackingNo: 'EP100200',
         shipmentId: x.supplierBox,
       });
       const [dropFoi] = await tx
@@ -222,7 +222,7 @@ describeIfDb('입점사 상자 발송 (K3 PR5, PostgreSQL integration)', () => {
       expect(after.shipments.find((s) => s.shipmentId === x.supplierBox)).toMatchObject({
         status: 'shipped',
         carrier: 'EPOST',
-        trackingNumber: 'EP-100-200',
+        trackingNumber: 'EP100200',
       });
     });
   });
@@ -248,7 +248,7 @@ describeIfDb('입점사 상자 발송 (K3 PR5, PostgreSQL integration)', () => {
         shipmentId: x.supplierBox,
         supplierId: x.supplierId,
         dispatchAttemptId: result.attemptId,
-        invoice: { invoiceId: result.waybillId, carrier: 'EPOST', trackingNo: 'EP-100-200' },
+        invoice: { invoiceId: result.waybillId, carrier: 'EPOST', trackingNo: 'EP100200' },
       });
       expect(shipped.warehouseId).toBeUndefined();
       CORE_ORDER_STREAM.events.SalesOrderShipmentDispatched.schema!.parse(payloadOf('SalesOrderShipmentDispatched'));
@@ -289,7 +289,7 @@ describeIfDb('입점사 상자 발송 (K3 PR5, PostgreSQL integration)', () => {
       expect(v1).toHaveLength(1);
       const envelope = v1[0].payload as { payload?: unknown };
       const payload = FULFILLMENT_STREAM.events.FulfillmentShipped.schema!.parse(envelope.payload ?? v1[0].payload);
-      expect(payload).toMatchObject({ trackingInfo: { carrier: 'CJ', trackingNumber: '6000-1234' } });
+      expect(payload).toMatchObject({ trackingInfo: { carrier: 'CJ', trackingNumber: '60001234' } });
       await expect(new FulfillmentInvariantService().assertFulfillmentOrders([x.foId], tx)).resolves.toBeUndefined();
     });
   });
@@ -380,12 +380,77 @@ describeIfDb('입점사 상자 발송 (K3 PR5, PostgreSQL integration)', () => {
           deps.waybills.insertSupplierManualUsed(sp as unknown as DbTx, {
             shipmentId: b.supplierBox,
             carrier: 'EPOST',
-            trackingNo: 'DUP-1',
+            trackingNo: 'DUP1',
             manifestVersion: 1,
             recipientHash: 'a'.repeat(64),
           }),
         ),
+      ).rejects.toBeInstanceOf(WaybillTrackingLiveConflictError);
+    });
+  });
+
+  it('송장번호는 공백·하이픈을 지워 저장하고, 같은 번호의 다른 표기도 TRACKING_IN_USE 다', async () => {
+    expect(normalizeTrackingNo(' EP-100 200 ')).toBe('EP100200');
+    await inRollbackTx(db, async (tx) => {
+      const a = await world(tx);
+      const b = await world(tx);
+      await hand(tx, a.supplierId, a.supplierBox);
+      await hand(tx, b.supplierId, b.supplierBox);
+      const result = await ship(tx, a.supplierBox, ' EP-100 200 ');
+      const [wb] = await tx.select().from(wmsTables.waybills).where(eq(wmsTables.waybills.id, result.waybillId));
+      expect(wb.trackingNo).toBe('EP100200');
+      await expect(
+        tx.transaction((sp) => ship(sp as unknown as DbTx, b.supplierBox, 'EP-100-200')),
       ).rejects.toBeInstanceOf(SupplierTrackingInUseError);
+    });
+  });
+
+  it('빈 송장번호는 400, 없는 상자는 404', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const x = await world(tx);
+      await hand(tx, x.supplierId, x.supplierBox);
+      await expect(tx.transaction((sp) => ship(sp as unknown as DbTx, x.supplierBox, ' - '))).rejects.toBeInstanceOf(
+        BadRequestError,
+      );
+      await expect(tx.transaction((sp) => ship(sp as unknown as DbTx, randomUUID()))).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+    });
+  });
+
+  it('이미 발송된 상자·활성 송장이 있는 상자·라인 없는 상자는 NOT_SHIPPABLE', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const x = await world(tx);
+      await hand(tx, x.supplierId, x.supplierBox);
+      await ship(tx, x.supplierBox, 'ONCE-1');
+      await expect(tx.transaction((sp) => ship(sp as unknown as DbTx, x.supplierBox, 'ONCE-2'))).rejects.toBeInstanceOf(
+        SupplierShipmentNotShippableError,
+      );
+
+      const y = await world(tx);
+      await hand(tx, y.supplierId, y.supplierBox);
+      await tx.insert(wmsTables.waybills).values({
+        shipmentId: y.supplierBox,
+        source: 'manual',
+        carrier: 'EPOST',
+        status: 'registered',
+        trackingNo: 'ACTIVE-1',
+        manifestVersion: 1,
+        recipientHash: 'b'.repeat(64),
+      });
+      await expect(tx.transaction((sp) => ship(sp as unknown as DbTx, y.supplierBox, 'ONCE-3'))).rejects.toBeInstanceOf(
+        SupplierShipmentNotShippableError,
+      );
+
+      const z = await world(tx);
+      const handoffId = await seedHandoff(tx, z.supplierId);
+      const [empty] = await tx
+        .insert(wmsTables.shipments)
+        .values({ warehouseId: null, supplierId: z.supplierId, supplierHandoffId: handoffId, status: 'draft' })
+        .returning();
+      await expect(tx.transaction((sp) => ship(sp as unknown as DbTx, empty.id, 'ONCE-4'))).rejects.toBeInstanceOf(
+        SupplierShipmentNotShippableError,
+      );
     });
   });
 });
