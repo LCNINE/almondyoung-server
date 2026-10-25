@@ -28,6 +28,7 @@ import {
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
 import { WaybillRepository } from '../waybill/waybill.repository';
 import { shipSupplierShipment, SupplierDispatchDeps } from './supplier-dispatch';
+import { recallSupplierShipment } from './supplier-recall';
 import { mergeSupplierShipments } from './supplier-manifest';
 import { ManifestEditDeps } from '../shipment/shipment-manifest-edit';
 import { createCheckpointsForTesting } from '@app/authorization';
@@ -74,6 +75,7 @@ describeIfDb('입점사 상자 발송 되돌리기 (K3 PR5, PostgreSQL integrati
       fulfillmentsV1: outboxPublisherFor(FULFILLMENT_STREAM, dbService),
       coreOrders: outboxPublisherFor(CORE_ORDER_STREAM, dbService),
       audit: new AuditService(dbService),
+      invariant: new FulfillmentInvariantService(),
       waybills: new WaybillRepository(dbService),
     };
   });
@@ -298,6 +300,17 @@ describeIfDb('입점사 상자 발송 되돌리기 (K3 PR5, PostgreSQL integrati
         actor,
       );
       expect((await boxRow(tx, x.supplierBox)).status).toBe('draft');
+      const rows = await tx
+        .select()
+        .from(outbox_events)
+        .where(inArray(outbox_events.aggregateId, [x.foId]));
+      const reopened = rows.filter((r) => r.eventType === 'FulfillmentReopened');
+      expect(reopened).toHaveLength(1);
+      expect(FULFILLMENT_V2_STREAM.events.FulfillmentReopened.schema!.parse(payloadOf(reopened[0]))).toMatchObject({
+        fulfillmentOrderId: x.foId,
+        shippedQty: 0,
+        outstandingQty: 5,
+      });
       await expect(new FulfillmentInvariantService().assertFulfillmentOrders([x.foId], tx)).resolves.toBeUndefined();
     });
   });
@@ -370,35 +383,125 @@ describeIfDb('입점사 상자 발송 되돌리기 (K3 PR5, PostgreSQL integrati
     });
   });
 
-  it('physicalRecoveryConfirmed 가 true 가 아니면 400, 어긋난 매니페스트 버전은 409', async () => {
+  // savepoint: 실패한 호출이 남긴 쓰기를 되돌려 «아무것도 남지 않음»을 볼 수 있게 한다. drizzle 의 중첩 트랜잭션은
+  // 부모와 같은 타입이지만 선언은 PgTransaction 이라 DbTx 로 한 번 좁힌다(런타임 동일).
+  const inSavepoint = <T>(tx: DbTx, fn: (sp: DbTx) => Promise<T>): Promise<T> =>
+    tx.transaction((sp) => fn(sp as unknown as DbTx));
+
+  it('physicalRecoveryConfirmed 가 true 가 아니면 400', async () => {
     await inRollbackTx(db, async (tx) => {
       const x = await world(tx, { mixed: false });
       const sent = await ship(tx, x.supplierBox);
-      const service = recallServiceOver(tx);
       const dto = await recallDto(tx, x.supplierBox, sent.attemptId);
 
       await expect(
-        service.report(
+        recallServiceOver(tx).report(
           x.supplierBox,
           sent.attemptId,
+          // 검증 경로를 밟으려는 의도적 잘못된 입력 — DTO 타입은 true 리터럴만 허용한다
           { ...dto, physicalRecoveryConfirmed: false as never },
           'k-1',
           actor,
         ),
       ).rejects.toBeInstanceOf(BadRequestException);
-      // 이미 되돌린 상자를 다시 되돌리기
-      await service.report(x.supplierBox, sent.attemptId, dto, 'k-3', actor);
-      await expect(
-        tx.transaction((sp) =>
-          recallServiceOver(sp as unknown as DbTx).report(
-            x.supplierBox,
-            sent.attemptId,
-            { ...dto, expectedManifestVersion: dto.expectedManifestVersion + 1 },
-            'k-4',
-            actor,
+    });
+  });
+
+  it('어긋난 매니페스트 버전은 발송 상태 그대로 409 SHIPMENT_RECALL_STALE_MANIFEST, 이미 되돌린 상자는 409 SHIPMENT_RECALL_NOT_SHIPPED', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const x = await world(tx, { mixed: false });
+      const sent = await ship(tx, x.supplierBox);
+      const dto = await recallDto(tx, x.supplierBox, sent.attemptId);
+      const codeOf = async (promise: Promise<unknown>) => {
+        const error = await promise.then(
+          () => null,
+          (e: unknown) => e,
+        );
+        expect(error).toBeInstanceOf(ConflictException);
+        return ((error as ConflictException).getResponse() as { code: string }).code;
+      };
+
+      expect(
+        await codeOf(
+          inSavepoint(tx, (sp) =>
+            recallServiceOver(sp).report(
+              x.supplierBox,
+              sent.attemptId,
+              { ...dto, expectedManifestVersion: dto.expectedManifestVersion + 1 },
+              'k-stale',
+              actor,
+            ),
           ),
         ),
-      ).rejects.toBeInstanceOf(ConflictException);
+      ).toBe('SHIPMENT_RECALL_STALE_MANIFEST');
+      expect((await boxRow(tx, x.supplierBox)).status).toBe('shipped');
+
+      await recallServiceOver(tx).report(x.supplierBox, sent.attemptId, dto, 'k-ok', actor);
+      const again = { ...dto, expectedManifestVersion: (await boxRow(tx, x.supplierBox)).manifestVersion };
+      expect(
+        await codeOf(
+          inSavepoint(tx, (sp) => recallServiceOver(sp).report(x.supplierBox, sent.attemptId, again, 'k-again', actor)),
+        ),
+      ).toBe('SHIPMENT_RECALL_NOT_SHIPPED');
+    });
+  });
+
+  it('작업 기록의 before 스냅샷은 창고와 같은 { shipment, attempt, intent } 모양이다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const x = await world(tx, { mixed: false });
+      const sent = await ship(tx, x.supplierBox);
+      const response = await recallServiceOver(tx).report(
+        x.supplierBox,
+        sent.attemptId,
+        await recallDto(tx, x.supplierBox, sent.attemptId),
+        'k-snap',
+        actor,
+      );
+      const [op] = await tx
+        .select()
+        .from(wmsTables.shipmentOperations)
+        .where(eq(wmsTables.shipmentOperations.id, response.operationId));
+      expect(op.beforeManifestSnapshot).toMatchObject({
+        shipment: { id: x.supplierBox, status: 'shipped' },
+        attempt: { id: sent.attemptId, status: 'dispatched' },
+        intent: { kind: 'shipment_recall', attemptNo: 1, shipmentId: x.supplierBox },
+      });
+    });
+  });
+
+  it('커밋 전 정합성 판정이 던지면 되돌리기가 통째로 물러난다(판정은 해당 FO 로 불린다)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const x = await world(tx, { mixed: false });
+      const sent = await ship(tx, x.supplierBox);
+      const assertFulfillmentOrders = jest.fn().mockRejectedValue(new Error('invariant violated'));
+      const expectedManifestVersion = (await boxRow(tx, x.supplierBox)).manifestVersion;
+
+      await expect(
+        inSavepoint(tx, (sp) =>
+          recallSupplierShipment(
+            {
+              shipments: deps.shipments,
+              fulfillmentsV2: deps.fulfillmentsV2,
+              invariant: { assertFulfillmentOrders },
+              voidUsedWaybill: async (id, trx) => {
+                await deps.waybills.casUsedToVoided(trx, id, at);
+              },
+            },
+            sp,
+            {
+              shipmentId: x.supplierBox,
+              dispatchAttemptId: sent.attemptId,
+              recallOperationId: randomUUID(),
+              expectedManifestVersion,
+              actorId: actor.id,
+              at,
+            },
+          ),
+        ),
+      ).rejects.toThrow('invariant violated');
+
+      expect(assertFulfillmentOrders).toHaveBeenCalledWith([x.foId], expect.anything());
+      expect((await boxRow(tx, x.supplierBox)).status).toBe('shipped');
     });
   });
 });

@@ -11,6 +11,7 @@ import {
   type DispatchEventDeps,
 } from '../services/dispatch-effects';
 import { lockShipmentConnectedComponentGraph } from '../services/shipment-reservation.service';
+import type { FulfillmentInvariantService } from '../services/fulfillment-invariant.service';
 import { canonicalFulfillmentRequestHash } from '../services/fulfillment-command.service';
 import { transitionShipments } from '../shipment/shipment-lifecycle';
 import type { CarrierCode } from '../waybill/carrier/carrier-gateway.interface';
@@ -22,6 +23,8 @@ import { SupplierShipmentNotShippableError, SupplierTrackingInUseError } from '.
 /** 호출자(Nest 서비스)가 주입받아 넘기는 평범한 객체 — provider 가 아니다. */
 export type SupplierDispatchDeps = DispatchEventDeps & {
   audit: Pick<AuditService, 'logUserActionRequired'>;
+  /** 커밋 전 FO·FOI 정합성 판정 — 창고 경로(finalizeRecallRestoration)와 같은 자리. */
+  invariant: Pick<FulfillmentInvariantService, 'assertFulfillmentOrders'>;
   waybills: Pick<WaybillRepository, 'insertSupplierManualUsed' | 'casUsedToVoided'>;
 };
 
@@ -210,6 +213,10 @@ export async function shipSupplierShipment(
       supplierId: shipment.supplierId,
       forcedQuantities: [],
     },
+    tx,
+  );
+  await deps.invariant.assertFulfillmentOrders(
+    summaries.map((summary) => summary.fulfillmentOrderId),
     tx,
   );
   return { attemptId, attemptNo, waybillId: waybill.id };

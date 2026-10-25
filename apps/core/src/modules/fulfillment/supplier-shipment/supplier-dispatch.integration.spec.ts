@@ -52,6 +52,7 @@ describeIfDb('입점사 상자 발송 (K3 PR5, PostgreSQL integration)', () => {
       fulfillmentsV1: outboxPublisherFor(FULFILLMENT_STREAM, dbService),
       coreOrders: outboxPublisherFor(CORE_ORDER_STREAM, dbService),
       audit: new AuditService(dbService),
+      invariant: new FulfillmentInvariantService(),
       waybills: new WaybillRepository(dbService),
     };
   });
@@ -203,6 +204,30 @@ describeIfDb('입점사 상자 발송 (K3 PR5, PostgreSQL integration)', () => {
         );
       expect(dropFoi.shippedQty).toBe(2);
       await expect(new FulfillmentInvariantService().assertFulfillmentOrders([x.foId], tx)).resolves.toBeUndefined();
+    });
+  });
+
+  it('커밋 전 정합성 판정이 던지면 발송이 통째로 물러난다(판정은 해당 FO 로 불린다)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const x = await world(tx, { mixed: false });
+      await hand(tx, x.supplierId, x.supplierBox);
+      const assertFulfillmentOrders = jest.fn().mockRejectedValue(new Error('invariant violated'));
+
+      await expect(
+        tx.transaction((sp) =>
+          shipSupplierShipment({ ...deps, invariant: { assertFulfillmentOrders } }, sp as unknown as DbTx, {
+            shipmentId: x.supplierBox,
+            carrier: 'EPOST',
+            trackingNo: 'EP-1',
+            actorId,
+            at,
+          }),
+        ),
+      ).rejects.toThrow('invariant violated');
+
+      expect(assertFulfillmentOrders).toHaveBeenCalledWith([x.foId], expect.anything());
+      const [box] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, x.supplierBox));
+      expect(box.status).toBe('draft'); // savepoint 롤백 — 발송이 남지 않는다
     });
   });
 

@@ -33,10 +33,14 @@ import {
 } from '../dto/shipment-recall.dto';
 import { fulfillmentReopenedOutboxEvent, shipmentDispatchRecalledOutboxEvent } from '../events';
 import { WaybillService } from '../waybill/waybill.service';
-import { lockSupplierRecallGraph, recallSupplierShipment } from '../supplier-shipment/supplier-recall';
+import { recallSupplierShipment } from '../supplier-shipment/supplier-recall';
+import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
+
+// 생성자 의존이 없는 순수 판정기 — 입점사 갈래가 커밋 전에 부른다(창고는 ShipmentReservationService 가 같은 판정기를 쓴다).
+const SUPPLIER_RECALL_INVARIANT = new FulfillmentInvariantService();
 
 type RecallIntent = {
   kind: 'shipment_recall';
@@ -337,57 +341,12 @@ export class ShipmentRecallService {
     },
   ) {
     const { operationId, shipmentId, dto, actor } = p;
-    // 락 순서(FOI → 상자 → 라인) 뒤에 작업 기록 행을 쓴다 — 멤버 FK 가 상자 KEY SHARE 를 잡는다.
-    await lockSupplierRecallGraph(tx, shipmentId);
-    const [attemptRow] = await tx
-      .select({ attemptNo: wmsTables.dispatchAttempts.attemptNo, shipmentId: wmsTables.dispatchAttempts.shipmentId })
-      .from(wmsTables.dispatchAttempts)
-      .where(eq(wmsTables.dispatchAttempts.id, p.dispatchAttemptId))
-      .limit(1);
-    if (!attemptRow || attemptRow.shipmentId !== shipmentId) {
-      throw new NotFoundException(`Dispatch attempt ${p.dispatchAttemptId} not found on shipment ${shipmentId}`);
-    }
-    const intent: RecallIntent = { ...p.initialIntent, attemptNo: attemptRow.attemptNo };
-    await tx.insert(wmsTables.shipmentOperations).values({
-      id: operationId,
-      type: 'recall',
-      status: 'pending',
-      operatorId: actor.id,
-      reason: dto.reason,
-      csCaseId: dto.csCaseId ?? null,
-      note: dto.note ?? null,
-      idempotencyKey: p.idempotencyKey,
-      requestHash: p.requestHash,
-      beforeManifestSnapshot: { intent },
-    });
-    await tx.insert(wmsTables.shipmentOperationMembers).values({
-      operationId,
-      shipmentId,
-      role: 'source',
-      beforeManifestVersion: dto.expectedManifestVersion,
-      beforeManifestSnapshot: { intent },
-    });
-    await this.audit.logUserActionRequired(
-      'shipment.dispatch.recall.requested',
-      'fulfillment',
-      `Recall operation ${operationId} requested for supplier dispatch attempt ${p.dispatchAttemptId}`,
-      { userId: actor.id },
-      {
-        operationId,
-        shipmentId,
-        dispatchAttemptId: p.dispatchAttemptId,
-        attemptNo: attemptRow.attemptNo,
-        owner: 'supplier',
-        physicalRecoveryConfirmed: true,
-        reason: dto.reason,
-      },
-      tx,
-    );
     const recalledAt = new Date();
     const result = await recallSupplierShipment(
       {
         shipments: this.shipments,
         fulfillmentsV2: this.fulfillmentsV2,
+        invariant: SUPPLIER_RECALL_INVARIANT,
         voidUsedWaybill: async (id, trx) => {
           await this.waybills.voidForRecall(
             id,
@@ -406,6 +365,45 @@ export class ShipmentRecallService {
         expectedManifestVersion: dto.expectedManifestVersion,
         actorId: actor.id,
         at: recalledAt,
+        onLocked: async ({ shipment, attempt }) => {
+          const intent: RecallIntent = { ...p.initialIntent, attemptNo: attempt.attemptNo };
+          const before = { shipment, attempt, intent };
+          await tx.insert(wmsTables.shipmentOperations).values({
+            id: operationId,
+            type: 'recall',
+            status: 'pending',
+            operatorId: actor.id,
+            reason: dto.reason,
+            csCaseId: dto.csCaseId ?? null,
+            note: dto.note ?? null,
+            idempotencyKey: p.idempotencyKey,
+            requestHash: p.requestHash,
+            beforeManifestSnapshot: before,
+          });
+          await tx.insert(wmsTables.shipmentOperationMembers).values({
+            operationId,
+            shipmentId,
+            role: 'source',
+            beforeManifestVersion: dto.expectedManifestVersion,
+            beforeManifestSnapshot: before,
+          });
+          await this.audit.logUserActionRequired(
+            'shipment.dispatch.recall.requested',
+            'fulfillment',
+            `Recall operation ${operationId} requested for supplier dispatch attempt ${p.dispatchAttemptId}`,
+            { userId: actor.id },
+            {
+              operationId,
+              shipmentId,
+              dispatchAttemptId: p.dispatchAttemptId,
+              attemptNo: attempt.attemptNo,
+              owner: 'supplier',
+              physicalRecoveryConfirmed: true,
+              reason: dto.reason,
+            },
+            tx,
+          );
+        },
       },
     );
     const after = {

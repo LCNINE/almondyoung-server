@@ -58,6 +58,7 @@ describeIfDb('입점사 송장 정정·못 보냄 (K3 PR5, PostgreSQL integratio
       fulfillmentsV1: outboxPublisherFor(FULFILLMENT_STREAM, dbService),
       coreOrders: outboxPublisherFor(CORE_ORDER_STREAM, dbService),
       audit: new AuditService(dbService),
+      invariant: new FulfillmentInvariantService(),
       waybills: new WaybillRepository(dbService),
     };
   });

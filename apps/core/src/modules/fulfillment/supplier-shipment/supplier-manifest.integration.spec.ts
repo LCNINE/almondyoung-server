@@ -61,6 +61,7 @@ describeIfDb('입점사 상자 나누기·합포장 (K3 PR5, PostgreSQL integrat
       fulfillmentsV1: outboxPublisherFor(FULFILLMENT_STREAM, dbService),
       coreOrders: outboxPublisherFor(CORE_ORDER_STREAM, dbService),
       audit: new AuditService(dbService),
+      invariant: new FulfillmentInvariantService(),
       waybills: new WaybillRepository(dbService),
     };
   });

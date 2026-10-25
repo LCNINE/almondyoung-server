@@ -10,6 +10,7 @@ import {
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { fulfillmentReopenedOutboxEvent, shipmentDispatchRecalledOutboxEvent } from '../events';
 import { reprojectFulfillmentOrders } from '../fulfillment-order/fulfillment-order-projection';
+import type { FulfillmentInvariantService } from '../services/fulfillment-invariant.service';
 import { loadFulfillmentSummaries, type FulfillmentSummary } from '../services/dispatch-effects';
 import { lockShipmentConnectedComponentGraph } from '../services/shipment-reservation.service';
 import { transitionShipments } from '../shipment/shipment-lifecycle';
@@ -18,6 +19,8 @@ import { transitionShipments } from '../shipment/shipment-lifecycle';
 export interface SupplierRecallDeps {
   shipments: PublisherFor<typeof SHIPMENT_STREAM>;
   fulfillmentsV2: PublisherFor<typeof FULFILLMENT_V2_STREAM>;
+  /** 커밋 전 FO·FOI 정합성 판정. */
+  invariant: Pick<FulfillmentInvariantService, 'assertFulfillmentOrders'>;
   /** 상자의 활성 송장 used → voided. 정확히 한 행이 아니면 던진다. */
   voidUsedWaybill: (shipmentId: string, tx: DbTx) => Promise<void>;
 }
@@ -29,6 +32,11 @@ export interface SupplierRecallCommand {
   expectedManifestVersion: number;
   actorId: string;
   at: Date;
+  /** 잠금·검증이 끝난 뒤, 첫 변경 전에 불린다 — 서비스가 작업 기록 행을 여기서 쓴다(창고와 같은 before 스냅샷). */
+  onLocked?: (locked: {
+    shipment: typeof wmsTables.shipments.$inferSelect;
+    attempt: typeof wmsTables.dispatchAttempts.$inferSelect;
+  }) => Promise<void>;
 }
 
 export interface SupplierRecallResult {
@@ -42,8 +50,8 @@ function conflict(code: string, message: string): ConflictException {
   return new ConflictException({ code, message });
 }
 
-/** 락 순서(FOI → 상자 → 라인)로 입점사 상자의 연결 성분을 잠근다. 서비스가 작업 기록 행을 쓰기 전에도 부른다. */
-export async function lockSupplierRecallGraph(tx: DbTx, shipmentId: string): Promise<void> {
+/** 락 순서(FOI → 상자 → 라인)로 입점사 상자의 연결 성분을 잠근다. */
+async function lockSupplierRecallGraph(tx: DbTx, shipmentId: string): Promise<void> {
   const seeds = await tx
     .select({ fulfillmentOrderItemId: wmsTables.shipmentLines.fulfillmentOrderItemId })
     .from(wmsTables.shipmentLines)
@@ -56,6 +64,8 @@ export async function lockSupplierRecallGraph(tx: DbTx, shipmentId: string): Pro
 }
 
 /**
+ * 잠금은 이 함수가 직접 잡는다(단독 호출 가능) — 서비스는 따로 잡지 않고 `onLocked` 로 작업 기록 행을 쓴다.
+ *
  * 발송한 입점사 상자를 되돌린다(K3 N10). 창고 리콜과 같은 명령·같은 결과 모양이지만 재고 원장·예약·추적 게이트를
  * 건너뛴다. 한 트랜잭션에서 shipped → recovery_required(DISPATCH_RECALL_PENDING) → draft, 시도 dispatched → recalled,
  * 송장 voided, FOI shipped_qty 감소, FO shipped_at NULL, 투영, 이벤트 둘. 상자의 넘김(supplier_handoff_id)은 그대로다.
@@ -110,6 +120,8 @@ export async function recallSupplierShipment(
   if (!waybill || waybill.status !== 'used') {
     throw conflict('SHIPMENT_RECALL_WAYBILL_NOT_USED', 'Active shipment waybill is not the used dispatch waybill');
   }
+
+  await cmd.onLocked?.({ shipment, attempt });
 
   const [quarantined] = await tx
     .update(wmsTables.dispatchAttempts)
@@ -209,5 +221,6 @@ export async function recallSupplierShipment(
       tx,
     );
   }
+  await deps.invariant.assertFulfillmentOrders(orderIds, tx);
   return { attemptNo: attempt.attemptNo, shipment: updatedShipment, attempt: recalledAttempt, summaries };
 }
