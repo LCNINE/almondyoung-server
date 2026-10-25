@@ -5,6 +5,7 @@ import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb, wireLogistics } from '../services/__support__';
 import { ambientDbService } from '../services/__support__/simple-outbound-wiring';
 import { boxLinesOf, seedOrderWithDraftBox } from '../draft-box/__support__/draft-box-fixtures';
+import { seedDirectSupplier } from '../order-progress/__support__/order-progress.fixtures';
 import { wireLineCompositionEdit } from './__support__/line-composition-edit-wiring';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -327,6 +328,43 @@ describeIfDb('기존 출고에도 적용 (#1063 스펙 §7.2)', () => {
         .set({ supplierId: supplier.id, warehouseId: null })
         .where(eq(wmsTables.shipments.id, fx.shipmentId));
       expect(await w.edit.reader.existingLineCandidates(tx, variantId)).toEqual([]);
+    });
+  });
+  it('[창고 SKU, 직배 SKU] 섞인 라인은 후보가 아니고, 일괄 적용은 던지지 않고 다른 주문을 처리한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      // 두 SKU 를 가진 라인 → 한 박스에 줄 둘. 둘째 줄(직배 SKU)을 입점사 상자로 옮긴다
+      const mixed = await seedOrderWithDraftBox(tx, w.logistics, {
+        lines: [{ quantity: 1, qtyPerUnits: [1, 1] }],
+        spareSkus: 1,
+      });
+      const variantId = mixed.variantIds[0];
+      const normal = await seedOrderWithDraftBox(tx, w.logistics, {
+        lines: [{ quantity: 1, qtyPerUnits: [1] }],
+      });
+      await tx
+        .update(wmsTables.salesOrderLines)
+        .set({ variantId })
+        .where(eq(wmsTables.salesOrderLines.id, normal.lineIds[0]));
+      const supplier = await seedDirectSupplier(tx);
+      const [supplierBox] = await tx
+        .insert(wmsTables.shipments)
+        .values({ warehouseId: null, supplierId: supplier, status: 'draft' })
+        .returning();
+      const lines = await boxLinesOf(tx, mixed.shipmentId);
+      expect(lines).toHaveLength(2);
+      await tx
+        .update(wmsTables.shipmentLines)
+        .set({ shipmentId: supplierBox.id })
+        .where(eq(wmsTables.shipmentLines.id, lines[1].id));
+
+      expect(await w.edit.reader.existingLineCandidates(tx, variantId)).toEqual([
+        { salesOrderLineId: normal.lineIds[0], salesOrderId: normal.salesOrderId },
+      ]);
+      const impact = await w.edit.reader.previewExistingLines(variantId, tx);
+      expect(impact.changeable + impact.skippedOperator + impact.skippedInProgress + impact.alreadySame).toBe(1);
+
+      await expect(w.edit.manager.applyToExistingLines(variantId, actor, tx)).resolves.toBeDefined();
     });
   });
 });
