@@ -59,7 +59,7 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
       order: (o: {
         status: string;
         orderDate: Date;
-        fo?: { mode?: string; status?: string; shippedAt?: Date | null };
+        fo?: { status?: string; shippedAt?: Date | null };
         backlogStatus?: string;
       }) => Promise<string>;
     }) => Promise<void>,
@@ -99,7 +99,6 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
               await trx.insert(wmsTables.fulfillmentOrders).values({
                 salesOrderId: row.id,
                 status: (fo.status ?? 'created') as never,
-                fulfillmentMode: (fo.mode ?? null) as never,
                 shippedAt: fo.shippedAt ?? null,
               });
             }
@@ -357,13 +356,6 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
       expect(delta.directShip).toBe(0);
     });
 
-    it("FO 모드가 'drop_ship' 이어도 입점사 상자가 없으면 직배가 아니다", async () => {
-      const delta = await withFixtures(async ({ order }) => {
-        await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(1), fo: { mode: 'drop_ship' } });
-      });
-      expect(delta.directShip).toBe(0);
-    });
-
     it("'direct' 필터는 입점사 상자가 있는 주문만 돌려준다", async () => {
       const db = drizzle(sql);
       try {
@@ -373,7 +365,7 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
           const direct = await f.seedOrder(tx);
           await seedSupplierShare(tx, w, direct, { stage: 'forwarded' });
           const plain = await f.seedOrder(tx);
-          await f.seedFo(tx, w, plain, { dropShip: 'forwarded' }); // 옛 FO 모드는 더는 읽지 않는다
+          await f.seedFo(tx, w, plain);
           const service = new SalesOrdersService(
             { db: trx, run: (fn: (t: unknown) => unknown) => fn(trx) } as never,
             {} as never,

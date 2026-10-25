@@ -99,7 +99,7 @@ export class LineCompositionEditReader {
 
   /**
    * 그 라인의 FO 항목이 열린 입점사 상자(`supplier_id IS NOT NULL`, draft·planned·recovery_required)에 담겨 있는가(K3 PR4, N10).
-   * 입점사 상자는 입점사에게 가는 몫이라 창고 구성 편집이 닿을 수 없다. 옛 FO 단위 `fulfillment_mode='drop_ship'` 판별을 대체한다.
+   * 입점사 상자는 입점사에게 가는 몫이라 창고 구성 편집이 닿을 수 없다. 옛 FO 단위 직배 모드 판별은 PR 8 이 걷었다.
    */
   async lineInSupplierShipment(trx: DbTx, salesOrderLineId: string): Promise<boolean> {
     const [row] = await supplierShipmentLineOf(trx, sql`${salesOrderLineId}`).limit(1);

@@ -107,7 +107,7 @@ export function deliveredParcelsSql(salesOrderScope: SQL): SQL {
  *   partner_completed = 그 FOI 의 발송된 입점사 상자(shipped) 라인 수량 합 — 배송완료가 아니다(표시용, 입점사는 배송 추적을 안 준다)
  *   delivered         = 그 FOI 의 배송완료 소포 수량 합(`deliveredParcelsSql`)
  * 입점사 상자 단계(넘김·발송)의 정의는 `fulfillment/shipment/supplier-shipment-stage.ts` 하나다 — 여기 술어는 그것과 같아야 한다.
- * 옛 FO 단위 직배(`fulfillment_mode = 'drop_ship'`·`direct_ship_status`)는 읽지 않는다(K3 PR4, 라이브 0).
+ * 옛 FO 단위 직배 판별(FO 모드·직배 상태 칸)은 K3 PR4 가 읽기를 끊고 PR 8 이 걷었다.
  *
  * 청구 사실(K6 PR3a) — `claimTotalsBySkuSql` 을 (라인, SKU) 로 붙인다. 없으면 0:
  *   (postgres 는 넓은 범위 소비자(진행 단계 SQL·관리자 카드)가 청구 칸을 안 고를 때만 청구 조인을 잘라낸다 — 넓은 범위에서

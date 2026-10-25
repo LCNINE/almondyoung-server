@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -190,31 +190,30 @@ describeIfDb('입점사 상자 스키마 제약 (DB integration)', () => {
     });
   });
 
-  it('알릴 취소는 holder 나 supplier 중 하나', async () => {
+  it('알릴 취소는 입점사가 필수', async () => {
     await inRollbackTx(db, async (tx) => {
       const f = await seedSupplierBox(tx);
-      const base = {
-        orderCancellationId: randomUUID(),
-        salesOrderId: f.order.salesOrderId,
-        fulfillmentOrderId: f.foId,
-        fulfillmentOrderItemId: f.foItemId,
-        skuId: f.w.skuId,
-        canceledQty: 1,
-        cancellationScope: 'full' as const,
-      };
-      await expectViolation(tx, 'ck_direct_ship_cancel_notices_party', (sp) =>
-        sp.insert(wmsTables.directShipCancelNotices).values({ ...base }),
-      );
-      await expectViolation(tx, 'ck_direct_ship_cancel_notices_party', (sp) =>
-        sp
-          .insert(wmsTables.directShipCancelNotices)
-          .values({ ...base, holderId: f.w.holderId, supplierId: f.supplierId }),
+      // 옛 holder 칸은 K3 PR 8 이 걷었다 — supplier_id 없는 행은 NOT NULL(23502)로 막힌다.
+      await expectViolation(tx, '23502', (sp) =>
+        sp.execute(sql`INSERT INTO direct_ship_cancel_notices
+            (order_cancellation_id, sales_order_id, fulfillment_order_id, fulfillment_order_item_id,
+             sku_id, canceled_qty, cancellation_scope)
+          VALUES (${randomUUID()}, ${f.order.salesOrderId}, ${f.foId}, ${f.foItemId}, ${f.w.skuId}, 1, 'full')`),
       );
       const [row] = await tx
         .insert(wmsTables.directShipCancelNotices)
-        .values({ ...base, supplierId: f.supplierId })
+        .values({
+          orderCancellationId: randomUUID(),
+          salesOrderId: f.order.salesOrderId,
+          fulfillmentOrderId: f.foId,
+          fulfillmentOrderItemId: f.foItemId,
+          supplierId: f.supplierId,
+          skuId: f.w.skuId,
+          canceledQty: 1,
+          cancellationScope: 'full',
+        })
         .returning();
-      expect(row).toMatchObject({ supplierId: f.supplierId, holderId: null });
+      expect(row.supplierId).toBe(f.supplierId);
     });
   });
 });

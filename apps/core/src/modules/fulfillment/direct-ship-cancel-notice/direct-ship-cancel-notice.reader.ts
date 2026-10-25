@@ -41,7 +41,7 @@ export class DirectShipCancelNoticeReader {
           notifiedBy: n.notifiedBy,
         })
         .from(n)
-        // 옛 holders 행(라이브 0, K3 PR6 Task 0)은 inner join 으로 빠진다 — holder 칸은 PR 8 이 걷는다
+        // supplier_id 는 NOT NULL 이다 — 옛 holder 칸은 K3 PR 8 이 걷었다
         .innerJoin(wmsTables.suppliers, eq(wmsTables.suppliers.id, n.supplierId))
         .innerJoin(wmsTables.salesOrders, eq(wmsTables.salesOrders.id, n.salesOrderId))
         .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, n.skuId))

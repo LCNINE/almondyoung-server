@@ -189,11 +189,8 @@ export class FulfillmentOrderResponseDto {
   @ApiProperty({ nullable: true })
   batchId: string | null;
 
-  @ApiProperty({ enum: ['in_house', '3pl', 'drop_ship'], nullable: true })
+  @ApiProperty({ enum: ['in_house', '3pl'], nullable: true })
   fulfillmentMode: string | null;
-
-  @ApiProperty({ enum: ['pending', 'forwarded', 'completed', 'canceled'], nullable: true })
-  directShipStatus: string | null;
 
   @ApiProperty({ enum: ['normal', 'high', 'urgent'] })
   priority: string;

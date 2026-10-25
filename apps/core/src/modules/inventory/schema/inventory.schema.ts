@@ -208,7 +208,8 @@ export const eventTypeOrderEnum = pgEnum('event_type_order', [
 export const taskPriorityEnum = pgEnum('task_priority', ['normal', 'high', 'urgent']);
 // Task 25 contract: V1 사장값 11개(reserving/unfulfillable/labeled/pending/allocated/picking/picked/
 // inspecting/inspected/invoiced/forwarded) 제거. V2 progress calculator(fulfillment-progress.service)가
-// 내는 8개 + drop_ship ship() 가 쓰는 'shipped' 만 남는다. (직배 상태는 별도 direct_ship_status enum)
+// 내는 8개 + 'shipped' 가 남는다. 투영은 'shipped' 를 내지 않는다 — 이 값은 apps/core/src 밖의 셀메이트 과도기
+// 스크립트(scripts/ops/cellmate-local/mark-core-shipped.sql.js)가 쓰고, 셀메이트 컷오버(#923) 때 걷는다.
 export const fulfillmentStatusEnum = pgEnum('fulfillment_status', [
   'created',
   'partially_reserved',
@@ -220,7 +221,8 @@ export const fulfillmentStatusEnum = pgEnum('fulfillment_status', [
   'canceled',
   'recovery_required',
 ]);
-export const fulfillmentModeEnum = pgEnum('fulfillment_mode', ['in_house', '3pl', 'drop_ship']);
+// 옛 FO 단위 직배 'drop_ship' 은 K3 PR 8 이 걷었다 — 직배는 입점사 상자(shipments.supplier_id)다.
+export const fulfillmentModeEnum = pgEnum('fulfillment_mode', ['in_house', '3pl']);
 export const fulfillmentOrderCreationBacklogStatusEnum = pgEnum('fulfillment_order_creation_backlog_status', [
   'pending',
   'processing',
@@ -229,7 +231,6 @@ export const fulfillmentOrderCreationBacklogStatusEnum = pgEnum('fulfillment_ord
   'not_required',
   'failed',
 ]);
-export const directShipStatusEnum = pgEnum('direct_ship_status', ['pending', 'forwarded', 'completed', 'canceled']);
 
 // FOI 기반 확장 enums
 export const pickingMethodEnum = pgEnum('picking_method', ['individual', 'total_picking', 'multi_order']);
@@ -1751,7 +1752,6 @@ export const fulfillmentOrders = pgTable(
     warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'set null' }),
     ownerId: uuid('owner_id').references(() => holders.id, { onDelete: 'set null' }),
     status: fulfillmentStatusEnum('status').notNull().default('created'),
-    directShipStatus: directShipStatusEnum('direct_ship_status'),
 
     // 출고 관련 필드들 (batchId 는 Task 25 contract 에서 제거 — FO↔batch 링크 은퇴, batch 단위는 shipment)
     fulfillmentMode: fulfillmentModeEnum('fulfillment_mode'),
@@ -1790,8 +1790,8 @@ export const fulfillmentOrders = pgTable(
 );
 
 /**
- * 넘긴 직배 FO 의 상자 전 취소가 업체에 알릴 한 줄(K7 PR5, D5).
- * 행은 출고 명령이 취소와 같은 트랜잭션에 쓴다. order_cancellation_id 는 FK 가 없다 — 취소 행과 같은 id 를
+ * 입점사(suppliers)에 넘긴 직배 라인의 취소가 입점사에 알릴 한 줄(K7 PR5 D5 → K3 PR6 에서 입점사 단위로).
+ * 행은 취소 명령이 취소와 같은 트랜잭션에 쓴다. order_cancellation_id 는 FK 가 없다 — 취소 행과 같은 id 를
  * 명령에 먼저 넘겨 쓰는 약한 참조다(N24).
  */
 export const directShipCancelNotices = pgTable(
@@ -1808,9 +1808,10 @@ export const directShipCancelNotices = pgTable(
     fulfillmentOrderItemId: uuid('fulfillment_order_item_id')
       .references(() => fulfillmentOrderItems.id)
       .notNull(),
-    // 옛 직배(holders) 또는 입점사(suppliers, K3) 정확히 하나. holder 쪽은 K3 PR 8 이 걷는다.
-    holderId: uuid('holder_id').references(() => holders.id),
-    supplierId: uuid('supplier_id').references(() => suppliers.id),
+    // 입점사(suppliers) 하나. 옛 직배(holders) 칸은 K3 PR 8 이 걷었다.
+    supplierId: uuid('supplier_id')
+      .references(() => suppliers.id)
+      .notNull(),
     salesOrderLineId: varchar('sales_order_line_id', { length: 255 }),
     skuId: uuid('sku_id')
       .references(() => skus.id)
@@ -1826,12 +1827,8 @@ export const directShipCancelNotices = pgTable(
       t.orderCancellationId,
       t.fulfillmentOrderItemId,
     ),
-    idxPending: index('idx_direct_ship_cancel_notices_pending')
-      .on(t.holderId, t.createdAt)
-      .where(sql`${t.notifiedAt} IS NULL`),
     canceledQtyCheck: check('direct_ship_cancel_notices_canceled_qty_check', sql`${t.canceledQty} > 0`),
     scopeCheck: check('direct_ship_cancel_notices_scope_check', sql`${t.cancellationScope} IN ('full', 'partial')`),
-    ckParty: check('ck_direct_ship_cancel_notices_party', sql`(${t.holderId} IS NULL) <> (${t.supplierId} IS NULL)`),
     idxPendingSupplier: index('idx_direct_ship_cancel_notices_pending_supplier')
       .on(t.supplierId, t.createdAt)
       .where(sql`${t.notifiedAt} IS NULL`),
