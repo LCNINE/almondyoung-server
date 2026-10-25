@@ -40,3 +40,13 @@ export class SupplierMergeRecipientMismatchError extends ApplicationException {
     return HttpStatus.CONFLICT;
   }
 }
+
+/** 발송된(또는 입점사가 아닌) 상자의 라인에는 «못 보냄»을 기록할 수 없다. 409. */
+export class SupplierReasonOnShippedError extends ApplicationException {
+  getErrorCode(): string {
+    return 'REASON_ON_SHIPPED';
+  }
+  getHttpStatus(): number {
+    return HttpStatus.CONFLICT;
+  }
+}

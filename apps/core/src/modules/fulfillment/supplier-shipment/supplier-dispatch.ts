@@ -22,7 +22,7 @@ import { SupplierShipmentNotShippableError, SupplierTrackingInUseError } from '.
 /** 호출자(Nest 서비스)가 주입받아 넘기는 평범한 객체 — provider 가 아니다. */
 export type SupplierDispatchDeps = DispatchEventDeps & {
   audit: Pick<AuditService, 'logUserActionRequired'>;
-  waybills: Pick<WaybillRepository, 'insertSupplierManualUsed'>;
+  waybills: Pick<WaybillRepository, 'insertSupplierManualUsed' | 'casUsedToVoided'>;
 };
 
 /** 송장번호 저장·비교 형태 — 앞뒤 공백·하이픈·내부 공백을 지운다. 쓰는 곳은 이 함수 하나여야 한다. */
