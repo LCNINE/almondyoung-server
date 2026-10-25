@@ -55,6 +55,15 @@ describeIfDb('SkuCatalogManager × 배송 프로필 필수 (DB integration)', ()
     return row.id;
   }
 
+  /** 직배 SKU 는 직배 공급사 하나가 필요하다(K3 §4.2, sku-direct-supplier.rule.ts) */
+  async function seedDirectSupplier(trx: DbTx): Promise<string> {
+    const [row] = await trx
+      .insert(wmsTables.suppliers)
+      .values({ name: `it-direct-${Date.now()}`, isDirectDelivery: true })
+      .returning();
+    return row.id;
+  }
+
   async function seedLegacySku(trx: DbTx, holderId: string): Promise<string> {
     // 라이브 옛 SKU 모양: physical 인데 프로필 없음 (규칙 이전에 만들어진 행)
     const [row] = await trx
@@ -85,7 +94,8 @@ describeIfDb('SkuCatalogManager × 배송 프로필 필수 (DB integration)', ()
   it('drop_shipped 는 프로필 없이 만들어진다', async () => {
     await inRollbackTx(db, async (trx) => {
       const { holderId } = await seedHolder(trx);
-      const sku = await build(trx).manager.create({ name: 'd', holderId, stockType: 'drop_shipped' }, trx);
+      const supplierIds = [await seedDirectSupplier(trx)];
+      const sku = await build(trx).manager.create({ name: 'd', holderId, stockType: 'drop_shipped', supplierIds }, trx);
       expect(sku.deliveryProfileId ?? null).toBeNull();
     });
   });
@@ -126,7 +136,8 @@ describeIfDb('SkuCatalogManager × 배송 프로필 필수 (DB integration)', ()
       const { holderId } = await seedHolder(trx);
       const profileId = await seedProfile(trx);
       const { manager } = build(trx);
-      const sku = await manager.create({ name: 'd', holderId, stockType: 'drop_shipped' }, trx);
+      const supplierIds = [await seedDirectSupplier(trx)];
+      const sku = await manager.create({ name: 'd', holderId, stockType: 'drop_shipped', supplierIds }, trx);
       await expect(manager.update(sku.id, { stockType: 'physical' }, trx)).rejects.toBeInstanceOf(
         SkuDeliveryProfileRequiredError,
       );

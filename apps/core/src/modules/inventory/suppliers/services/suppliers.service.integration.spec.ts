@@ -7,6 +7,7 @@ import { ConflictError } from '@app/shared';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { makeDb, inRollbackTx, seedWarehouseWithZone } from '../../../fulfillment/services/__support__';
 import { SuppliersService } from './suppliers.service';
+import { SupplierHasDropShippedSkusError, SupplierHasShipmentsError } from '../suppliers.errors';
 
 /**
  * 공급사 하드 삭제 × 보충 규칙(#743 B). `replenishment_supplier_rules.supplier_id` 의 FK 는
@@ -96,6 +97,88 @@ describeIfDb('SuppliersService.deleteSupplier × 보충 공급사 규칙 (DB int
 
       await trx.delete(t).where(eq(t.supplierId, supplierId));
       await expect(service.deleteSupplier(supplierId, trx)).resolves.toBeUndefined();
+    });
+  });
+
+  describe('직배 공급사(K3 §4.2, N6)', () => {
+    async function seedDirect(trx: DbTx): Promise<string> {
+      const [row] = await trx
+        .insert(wmsTables.suppliers)
+        .values({ name: `it-direct-${randomUUID().slice(0, 8)}`, isDirectDelivery: true })
+        .returning({ id: wmsTables.suppliers.id });
+      return row.id;
+    }
+
+    async function linkSku(
+      trx: DbTx,
+      supplierId: string,
+      args: { stockType: 'drop_shipped' | 'physical'; isDeleted?: boolean },
+    ): Promise<string> {
+      const [holder] = await trx
+        .insert(wmsTables.holders)
+        .values({ name: `it-h-${randomUUID().slice(0, 8)}` })
+        .returning();
+      const [sku] = await trx
+        .insert(wmsTables.skus)
+        .values({
+          name: 'it',
+          code: `IT-DS-${randomUUID()}`,
+          holderId: holder.id,
+          stockType: args.stockType,
+          isDeleted: args.isDeleted ?? false,
+        })
+        .returning();
+      await trx.insert(wmsTables.skuSuppliers).values({ skuId: sku.id, supplierId });
+      return sku.id;
+    }
+
+    it('직배 SKU 가 묶인 공급사를 직배 아님으로 바꾸면 409 SUPPLIER_HAS_DROP_SHIPPED_SKUS', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const supplierId = await seedDirect(trx);
+        await linkSku(trx, supplierId, { stockType: 'drop_shipped' });
+        const error = await build(trx)
+          .updateSupplier(supplierId, { isDirectDelivery: false }, trx)
+          .catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(SupplierHasDropShippedSkusError);
+        expect((error as SupplierHasDropShippedSkusError).getHttpStatus()).toBe(409);
+      });
+    });
+
+    it('묶인 SKU 가 physical 이면 직배 아님으로 바꿀 수 있다', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const supplierId = await seedDirect(trx);
+        await linkSku(trx, supplierId, { stockType: 'physical' });
+        const updated = await build(trx).updateSupplier(supplierId, { isDirectDelivery: false }, trx);
+        expect(updated.purchaseSettings?.isDirectDelivery ?? false).toBe(false);
+      });
+    });
+
+    it('직배 SKU 가 묶인 공급사 삭제는 409, 연결은 그대로 남는다', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const supplierId = await seedDirect(trx);
+        const skuId = await linkSku(trx, supplierId, { stockType: 'drop_shipped' });
+        await expect(build(trx).deleteSupplier(supplierId, trx)).rejects.toBeInstanceOf(
+          SupplierHasDropShippedSkusError,
+        );
+        const links = await trx.select().from(wmsTables.skuSuppliers).where(eq(wmsTables.skuSuppliers.skuId, skuId));
+        expect(links).toHaveLength(1);
+      });
+    });
+
+    it('지운 SKU(is_deleted)의 연결은 세지 않는다', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const supplierId = await seedDirect(trx);
+        await linkSku(trx, supplierId, { stockType: 'drop_shipped', isDeleted: true });
+        await expect(build(trx).updateSupplier(supplierId, { isDirectDelivery: false }, trx)).resolves.toBeDefined();
+      });
+    });
+
+    it('입점사 상자가 있는 공급사 삭제는 409 SUPPLIER_HAS_SHIPMENTS', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const supplierId = await seedDirect(trx);
+        await trx.insert(wmsTables.shipments).values({ supplierId });
+        await expect(build(trx).deleteSupplier(supplierId, trx)).rejects.toBeInstanceOf(SupplierHasShipmentsError);
+      });
     });
   });
 });
