@@ -39,6 +39,7 @@ import {
 import { ACTIVE_EXCHANGE_STATUSES, ACTIVE_RETURN_STATUSES } from '../line-quantities/claim-statuses';
 import { readParcelClaimEligibility } from '../line-quantities/parcel-claim-eligibility.reader';
 import { selfCancelBlock, SelfCancelBlock } from './self-cancel-block';
+import { CARRIER_CODE_ALIASES, CARRIER_NAME_BY_CODE } from '../../fulfillment/waybill/carrier/carrier-names';
 
 type SalesOrderRow = typeof inventoryTables.salesOrders.$inferSelect;
 
@@ -1136,71 +1137,7 @@ function isActiveWaybillStatus(status: string): boolean {
   return !(WAYBILL_TERMINAL_STATUSES as readonly string[]).includes(status);
 }
 
-// 빠짐없음은 type-check 가 본다 — carrier enum 에 값이 늘면 여기서 컴파일이 깨진다
-const CARRIER_NAME_BY_CODE = {
-  CJ: 'CJ대한통운',
-  HANJIN: '한진택배',
-  LOTTE: '롯데택배',
-  LOGEN: '로젠택배',
-  KDEXP: '경동택배',
-  CJGLS: 'CJ GLS',
-  EPOST: '우체국택배',
-  DAESIN: '대신택배',
-  ILYANG: '일양로지스',
-  HDEXP: '합동택배',
-  CVSNET: 'GS편의점택배',
-  CUPOST: 'CU편의점택배',
-  CHUNIL: '천일택배',
-  KUNYOUNG: '건영택배',
-} satisfies Record<CarrierCode, string>;
 const CARRIER_NAMES: Record<string, string> = CARRIER_NAME_BY_CODE;
-
-// Invoice carrierCode 필드는 varchar라 실제 값이 다양할 수 있음 — canonical 코드로 정규화
-const CARRIER_CODE_ALIASES: Record<string, string> = {
-  CJ대한통운: 'CJ',
-  'CJ 대한통운': 'CJ',
-  cj: 'CJ',
-  한진택배: 'HANJIN',
-  한진: 'HANJIN',
-  hanjin: 'HANJIN',
-  롯데택배: 'LOTTE',
-  롯데: 'LOTTE',
-  롯데글로벌로지스: 'LOTTE',
-  lotte: 'LOTTE',
-  로젠택배: 'LOGEN',
-  로젠: 'LOGEN',
-  logen: 'LOGEN',
-  경동택배: 'KDEXP',
-  경동: 'KDEXP',
-  kdexp: 'KDEXP',
-  'CJ-GLS': 'CJGLS',
-  'CJ GLS': 'CJGLS',
-  cjgls: 'CJGLS',
-  우체국택배: 'EPOST',
-  우체국: 'EPOST',
-  epost: 'EPOST',
-  대신택배: 'DAESIN',
-  대신: 'DAESIN',
-  daesin: 'DAESIN',
-  일양로지스: 'ILYANG',
-  일양: 'ILYANG',
-  ilyang: 'ILYANG',
-  합동택배: 'HDEXP',
-  합동: 'HDEXP',
-  hdexp: 'HDEXP',
-  GS편의점택배: 'CVSNET',
-  'GS 편의점택배': 'CVSNET',
-  cvsnet: 'CVSNET',
-  CU편의점택배: 'CUPOST',
-  'CU 편의점택배': 'CUPOST',
-  cupost: 'CUPOST',
-  천일택배: 'CHUNIL',
-  천일: 'CHUNIL',
-  chunil: 'CHUNIL',
-  건영택배: 'KUNYOUNG',
-  건영: 'KUNYOUNG',
-  kunyoung: 'KUNYOUNG',
-};
 
 function normalizeCarrierCode(raw: string | null | undefined): string {
   if (!raw || raw.trim() === '') return 'UNKNOWN';

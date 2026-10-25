@@ -47,7 +47,6 @@ import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import type { WaybillRow } from '../waybill/waybill.types';
 import { resolveSkuIdByBarcode, UUID_PATTERN } from './sku-barcode-resolution';
 import { warehouseIdOf } from '../shipment/shipment-owner';
-import { isConsumerRolloutCarrier } from '../waybill/carrier/carrier-gateway.interface';
 
 const TRUSTED_CHANNEL_DISPATCH_SALES_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
 
@@ -1157,11 +1156,7 @@ export class ShipmentDispatchService {
     if (!waybill.trackingNo) {
       throw this.conflict('SHIPMENT_INVOICE_NOT_READY', 'Dispatch waybill tracking number is missing');
     }
-    // 송장 DTO 가 옛 6개 밖 택배사를 막으므로 도달 불가. PR 3 이 계약을 넓혔지만 같은 배포의 옛 소비자는 새 값을 zod 로 거절한다 — PR 5 가 지운다.
     const carrier = waybill.carrier;
-    if (!isConsumerRolloutCarrier(carrier)) {
-      throw new Error(`Dispatch waybill ${waybill.id} carrier ${carrier} is outside the consumer rollout carriers`);
-    }
     const summaryByFo = new Map(summaries.map((summary) => [summary.fulfillmentOrderId, summary]));
     const orders: ShipmentEventOrder[] = [];
     for (const fulfillmentOrderId of [...new Set(lines.map((line) => line.fulfillmentOrderId))].sort()) {
