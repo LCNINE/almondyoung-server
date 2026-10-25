@@ -44,7 +44,7 @@ const RECIPIENT = {
 };
 const X_RECIPIENT = { ...RECIPIENT, recipientName: '김철수' };
 
-type Fill = { carrier?: string; trackingNo?: string; reason?: string };
+type Fill = { carrier?: string; trackingNo?: string; reason?: string; qty?: number };
 
 /** 넘김 시트의 줄에 입점사가 채운 칸을 얹어 XLSX 로 — 열은 `SUPPLIER_SHEET_COLUMNS` 그대로(머리글 글자). */
 async function xlsxOf(rows: readonly SupplierSheetRow[], fills: ReadonlyMap<string, Fill>): Promise<Buffer> {
@@ -58,6 +58,7 @@ async function xlsxOf(rows: readonly SupplierSheetRow[], fills: ReadonlyMap<stri
       carrier: fill.carrier ?? row.carrier,
       trackingNo: fill.trackingNo ?? row.trackingNo,
       unfulfillableReason: fill.reason ?? row.unfulfillableReason,
+      qty: fill.qty ?? row.qty,
     };
     ws.addRow(SUPPLIER_SHEET_COLUMNS.map((c) => filled[c.key]));
   }
@@ -171,7 +172,15 @@ describeIfDb('직배 시트 올리기 — 미리보기·적용 (K3 PR5, PostgreS
       [z.lines[0].foiId, { carrier: '우체국', trackingNo: 'T 2' }],
     ]);
     const file = await xlsxOf(sheet.rows, fills);
-    return { supplierId, x, y, z, file, salesOrderIds: [x.salesOrderId, y.salesOrderId, z.salesOrderId] };
+    return {
+      supplierId,
+      x,
+      y,
+      z,
+      sheetRows: sheet.rows,
+      file,
+      salesOrderIds: [x.salesOrderId, y.salesOrderId, z.salesOrderId],
+    };
   }
 
   const boxesOfFo = (tx: DbTx, foId: string) =>
@@ -184,6 +193,8 @@ describeIfDb('직배 시트 올리기 — 미리보기·적용 (K3 PR5, PostgreS
         shippedAt: wmsTables.shipments.shippedAt,
         supersededAt: wmsTables.shipments.supersededAt,
         openedBy: wmsTables.shipments.openedBy,
+        openedAt: wmsTables.shipments.openedAt,
+        lastUpdated: wmsTables.shipments.lastUpdated,
       })
       .from(wmsTables.shipments)
       .innerJoin(wmsTables.shipmentLines, eq(wmsTables.shipmentLines.shipmentId, wmsTables.shipments.id))
@@ -276,7 +287,7 @@ describeIfDb('직배 시트 올리기 — 미리보기·적용 (K3 PR5, PostgreS
       expect(xOriginal?.status).toBe('draft');
       expect(xShipped?.status).toBe('shipped');
       expect(xShipped?.supplierHandoffId).toBe(xOriginal?.supplierHandoffId);
-      expect(xShipped?.openedBy).toBe(actorId); // 운영자 id 가 uuid 라 새 상자의 opened_by 로 남는다
+      expect(xShipped?.openedBy).toBe(actorId);
       expect(result.shippedShipmentIds).toContain(xShipped?.id);
       expect((await linesOfBox(tx, w.x.box)).map((l) => [l.id, l.unfulfillableReason])).toEqual([
         [w.x.lines[1].lineId, '품절'],
@@ -299,6 +310,32 @@ describeIfDb('직배 시트 올리기 — 미리보기·적용 (K3 PR5, PostgreS
       expect(await waybillsOf(tx, [merged?.id ?? ''])).toEqual([
         { shipmentId: merged?.id, trackingNo: 'T2', status: 'used' },
       ]);
+
+      // 모든 쓰기가 같은 시각 — 묶음 둘의 발송·나누기·합포장·«못 보냄»·송장 발급
+      const at = merged?.shippedAt;
+      expect(at).toBeInstanceOf(Date);
+      expect(xShipped?.shippedAt).toEqual(at);
+      expect(xShipped?.lastUpdated).toEqual(at);
+      expect(xOriginal?.lastUpdated).toEqual(at); // 나누기의 끝맺음(manifest_version +1)
+      // 나눈 상자의 opened_at 은 원래 상자 것을 물려받는다(대기 나이가 나누기로 리셋되지 않게, Task 5)
+      expect(xShipped?.openedAt).toEqual(xOriginal?.openedAt);
+      expect(merged?.openedAt).toEqual(at);
+      expect(merged?.lastUpdated).toEqual(at);
+      for (const original of [yBoxes.find((b) => b.id === w.y.box), zBoxes.find((b) => b.id === w.z.box)]) {
+        expect(original?.supersededAt).toEqual(at);
+        expect(original?.lastUpdated).toEqual(at);
+      }
+      expect((await linesOfBox(tx, w.x.box))[0].unfulfillableReportedAt).toEqual(at);
+      const issued = await tx
+        .select({ issuedAt: wmsTables.waybills.issuedAt })
+        .from(wmsTables.waybills)
+        .where(inArray(wmsTables.waybills.shipmentId, result.shippedShipmentIds));
+      expect(issued.map((r) => r.issuedAt)).toEqual([at, at]);
+      const foTimes = await tx
+        .select({ updatedAt: wmsTables.fulfillmentOrders.updatedAt })
+        .from(wmsTables.fulfillmentOrders)
+        .where(inArray(wmsTables.fulfillmentOrders.id, [w.x.foId, w.y.foId, w.z.foId]));
+      expect(foTimes.map((r) => r.updatedAt)).toEqual([at, at, at]);
 
       // outbox — 발송 상자마다 ShipmentShipped, 판매주문마다 SalesOrderShipmentDispatched
       const aggregates = await aggregatesOf(tx, w);
@@ -343,7 +380,9 @@ describeIfDb('직배 시트 올리기 — 미리보기·적용 (K3 PR5, PostgreS
     });
   });
 
-  it('미리보기 뒤 X 상자가 바뀌면(못 보냄 기록) apply 는 409 SUPPLIER_UPLOAD_PREVIEW_STALE, 아무것도 안 남음', async () => {
+  // 같은 연결(롤백 트랜잭션) 안에서 상태를 바꾼다 — 별도 커밋 트랜잭션으로 바꾸면 픽스처를 커밋하고 지워야 한다.
+  // 판정이 읽는 것은 커밋된 결과뿐이라, 미리보기와 적용 사이에 다른 트랜잭션이 커밋한 것과 같은 상태다.
+  it('미리보기 뒤 X 라인의 상태가 바뀌면(못 보냄이 먼저 기록됨) apply 는 409 SUPPLIER_UPLOAD_PREVIEW_STALE, 아무것도 안 남음', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = await world(tx);
       const preview = await service.preview(w.supplierId, w.file, tx);
@@ -370,6 +409,47 @@ describeIfDb('직배 시트 올리기 — 미리보기·적용 (K3 PR5, PostgreS
       ).toEqual({ code: 'SUPPLIER_UPLOAD_PREVIEW_STALE', status: 409 });
       expect(await snapshot(tx, w)).toEqual(before);
       expect(await outboxCount(tx, aggregates, 'ShipmentShipped')).toBe(0);
+    });
+  });
+
+  it('오류 줄과 좋은 줄이 섞인 파일 — 좋은 묶음만 적용, 오류 줄의 상자는 그대로, counts 에 오류', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await world(tx);
+      // X 라인1 = T1(좋음), X 라인2 = 비움(대기), Y = T2 이지만 수량을 고침(QTY_MISMATCH, 혼자인 묶음), Z = 비움
+      const file = await xlsxOf(
+        w.sheetRows,
+        new Map<string, Fill>([
+          [w.x.lines[0].foiId, { carrier: '우체국', trackingNo: 'T-1' }],
+          [w.y.lines[0].foiId, { carrier: '우체국', trackingNo: 'T-2', qty: 5 }],
+        ]),
+      );
+      const yBefore = await boxesOfFo(tx, w.y.foId);
+      const yLinesBefore = await linesOfBox(tx, w.y.box);
+
+      const preview = await service.preview(w.supplierId, file, tx);
+      expect(preview.rows.find((r) => r.rowKey === w.y.lines[0].foiId)).toMatchObject({
+        verdict: 'error',
+        code: 'QTY_MISMATCH',
+      });
+      const result = await service.apply(w.supplierId, file, preview.token, actorId, tx);
+
+      expect(result.counts).toEqual({
+        ship: 1,
+        merge: 0,
+        unfulfillable: 0,
+        waiting: 2,
+        correct: 0,
+        unchanged: 0,
+        error: 1,
+      });
+      expect(result.shippedShipmentIds).toHaveLength(1);
+      const xBoxes = await boxesOfFo(tx, w.x.foId);
+      expect(xBoxes.find((b) => b.id === result.shippedShipmentIds[0])?.status).toBe('shipped');
+      expect(xBoxes.find((b) => b.id === w.x.box)?.status).toBe('draft');
+      // 오류 줄의 상자는 손대지 않았다
+      expect(await boxesOfFo(tx, w.y.foId)).toEqual(yBefore);
+      expect(await linesOfBox(tx, w.y.box)).toEqual(yLinesBefore);
+      expect(await waybillsOf(tx, [w.y.box, w.z.box])).toEqual([]);
     });
   });
 

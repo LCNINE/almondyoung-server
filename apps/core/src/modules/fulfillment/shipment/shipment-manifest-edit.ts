@@ -30,6 +30,8 @@ export interface ManifestEdit {
   shipmentIds: readonly string[];
   /** 어기면 내부 Error — 호출자가 먼저 자기 코드로 검사한다 */
   allow: readonly EditableStatus[];
+  /** 이 편집이 찍는 last_updated — 한 명령의 쓰기를 같은 시각으로 묶을 때(직배 시트 적용). 기본 new Date() */
+  at?: Date;
 }
 
 /** 문이 넘긴 잠긴 상자들은 id 정렬 순이다 — 순서가 아니라 id 로 찾는다 */
@@ -155,7 +157,7 @@ export async function editShipmentManifest<T>(
     async setEntrancePassword(shipmentId, entrancePassword) {
       assertTarget(shipmentId);
       // 비밀번호만 바뀐 상자는 끝맺음이 손대지 않으므로 last_updated 는 여기서 찍는다(수령인 정정의 옛 동작 보존)
-      await updateShipment(shipmentId, { entrancePassword, lastUpdated: new Date() });
+      await updateShipment(shipmentId, { entrancePassword, lastUpdated: edit.at ?? new Date() });
     },
     async setShippingProfile(shipmentId, shippingProfileId) {
       assertTarget(shipmentId);
@@ -167,13 +169,13 @@ export async function editShipmentManifest<T>(
   const result = await body(writer, aggregates);
   closed = true;
 
-  const now = new Date();
+  const now = edit.at ?? new Date();
   for (const id of existingIds) {
     if (!lineChanged.has(id) && !labelChanged.has(id)) continue;
     await updateShipment(id, { manifestVersion: sql`${S.manifestVersion} + 1`, lastUpdated: now });
   }
   for (const id of [...existingIds, ...created]) {
-    if (lineChanged.has(id)) await deps.reservations.recompute(id, tx);
+    if (lineChanged.has(id)) await deps.reservations.recompute(id, tx, edit.at);
   }
   return result;
 }

@@ -45,16 +45,6 @@ export function countVerdicts(rows: readonly RowVerdict[]): SupplierSheetVerdict
   return counts;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/**
- * 나눈·합친 새 상자의 `opened_by`(uuid 칸)로 남길 사람 — 플랫폼 사용자 id 는 user-service `users.id`(uuid) 지만
- * 토큰이 uuid 를 보장하지 않으므로, uuid 가 아니면 남기지 않는다(나누기는 원래 상자의 값을 물려받는다).
- */
-function manifestActorOf(actorId: string): ManifestActor | undefined {
-  return UUID_RE.test(actorId) ? { actorId } : undefined;
-}
-
 type ApplyDeps = { manifest: ManifestEditDeps; dispatch: SupplierDispatchDeps };
 
 /**
@@ -69,14 +59,15 @@ async function executePlan(
   actorId: string,
   at: Date,
 ): Promise<string[]> {
-  const actor = manifestActorOf(actorId);
+  // 나눈·합친 새 상자의 opened_by(uuid) — 플랫폼 사용자 id(user-service users.id) 그대로, 창고 합배송·계획과 같다
+  const actor: ManifestActor = { actorId };
   const shipped: string[] = [];
   for (const group of plan.shipGroups) {
     const boxIds: string[] = [];
     for (const box of group.boxes) {
-      boxIds.push(await splitOffSupplierLines(deps.manifest, tx, box.shipmentId, box.lineIds, actor));
+      boxIds.push(await splitOffSupplierLines(deps.manifest, tx, box.shipmentId, box.lineIds, actor, at));
     }
-    const finalId = boxIds.length > 1 ? await mergeSupplierShipments(deps.manifest, tx, boxIds, actor) : boxIds[0];
+    const finalId = boxIds.length > 1 ? await mergeSupplierShipments(deps.manifest, tx, boxIds, actor, at) : boxIds[0];
     if (!finalId) throw new Error(`Supplier sheet apply: ship group ${group.trackingNo} has no boxes`);
     await shipSupplierShipment(deps.dispatch, tx, {
       shipmentId: finalId,

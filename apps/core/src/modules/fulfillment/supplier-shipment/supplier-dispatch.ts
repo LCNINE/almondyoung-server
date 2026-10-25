@@ -136,6 +136,7 @@ export async function shipSupplierShipment(
       trackingNo,
       manifestVersion: shipment.manifestVersion,
       recipientHash: canonicalFulfillmentRequestHash(shipment.recipientSnapshot),
+      issuedAt: cmd.at,
     });
   } catch (e) {
     if (e instanceof WaybillTrackingLiveConflictError) {

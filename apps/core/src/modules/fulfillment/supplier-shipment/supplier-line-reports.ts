@@ -105,6 +105,7 @@ export async function correctSupplierWaybill(
       trackingNo,
       manifestVersion: shipment.manifestVersion,
       recipientHash: current.recipientHash,
+      issuedAt: cmd.at,
     });
   } catch (e) {
     if (e instanceof WaybillTrackingLiveConflictError) {

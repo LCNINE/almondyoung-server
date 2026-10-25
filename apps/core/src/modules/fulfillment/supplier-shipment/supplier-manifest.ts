@@ -47,6 +47,7 @@ async function readBoxes(tx: DbTx, ids: readonly string[]): Promise<BoxRow[]> {
  * 라인이 상자의 전부면 아무것도 옮기지 않고 원래 id 를 돌려준다(빈 상자는 예약 재계산이 던진다).
  * 새 상자는 원래 상자의 수령인·공동현관 비번·넘김 기록을 물려받고 송장 프로필은 없다.
  * 송장이 걸린 상자는 문이 거절하므로 송장 등록 전에 한다. 잠금 순서(FOI → 상자 → 라인)는 문이 지킨다.
+ * `at` 은 두 상자의 last_updated(기본 지금) — 새 상자의 opened_at 은 원래 상자 것을 물려받는다(대기 나이가 나누기로 리셋되지 않게).
  */
 export async function splitOffSupplierLines(
   deps: ManifestEditDeps,
@@ -54,6 +55,7 @@ export async function splitOffSupplierLines(
   shipmentId: string,
   lineIds: readonly string[],
   actor?: ManifestActor,
+  at?: Date,
 ): Promise<string> {
   const moving = [...new Set(lineIds)];
   if (moving.length === 0) throw new BadRequestError('No lines to split off');
@@ -62,7 +64,7 @@ export async function splitOffSupplierLines(
 
   return editShipmentManifest(
     deps,
-    { shipmentIds: [shipmentId], allow: ['draft'] },
+    { shipmentIds: [shipmentId], allow: ['draft'], at },
     async (writer, aggregates) => {
       const aggregate = aggregates[0];
       const box = aggregate.shipment;
@@ -97,12 +99,14 @@ export async function splitOffSupplierLines(
  * 수령인은 `canonicalConsolidationRecipient` 가 같아야 한다. 넘김 기록은 원래 상자들 중 가장 이른 묶음(N7).
  * 넘김 없는 상자를 넘긴 상자와 합치면 새 상자가 가장 이른 묶음을 물려받는다(N7) — 시트 적용은 넘긴 상자끼리만 합친다.
  * 창고 전용 조각(호환성 판정·예약 retarget·합배송 작업 기록)은 부르지 않는다.
+ * `at` 은 새 상자의 opened_at·원래 상자의 superseded_at·last_updated(기본 지금).
  */
 export async function mergeSupplierShipments(
   deps: ManifestEditDeps,
   tx: DbTx,
   shipmentIds: readonly string[],
   actor?: ManifestActor,
+  at?: Date,
 ): Promise<string> {
   const ids = [...new Set(shipmentIds)];
   if (ids.length !== shipmentIds.length || ids.length < 2) {
@@ -112,7 +116,7 @@ export async function mergeSupplierShipments(
 
   return editShipmentManifest(
     deps,
-    { shipmentIds: ids, allow: ['draft'] },
+    { shipmentIds: ids, allow: ['draft'], at },
     async (writer, aggregates) => {
       const suppliers = new Set(aggregates.map((aggregate) => assertEditableSupplierBox(aggregate.shipment)));
       if (suppliers.size !== 1) {
@@ -157,7 +161,7 @@ export async function mergeSupplierShipments(
         handoffId = earliest?.id ?? null;
       }
 
-      const now = new Date();
+      const now = at ?? new Date();
       const target = await writer.createShipment({
         owner: { kind: 'supplier', supplierId },
         status: 'draft',

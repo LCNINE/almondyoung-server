@@ -59,13 +59,15 @@ export class WaybillRepository {
       trackingNo: string;
       manifestVersion: number;
       recipientHash: string;
+      /** 입점사 발송·정정 명령의 시각 — 한 명령의 쓰기를 같은 시각으로 묶는다. 기본 지금 */
+      issuedAt?: Date;
     },
   ): Promise<{ id: string }> {
-    const now = new Date();
+    const { issuedAt, ...values } = row;
     try {
       const [wb] = await trx
         .insert(T)
-        .values({ ...row, source: 'manual', status: 'used', issuedAt: now })
+        .values({ ...values, source: 'manual', status: 'used', issuedAt: issuedAt ?? new Date() })
         .returning({ id: T.id });
       return wb;
     } catch (e) {
