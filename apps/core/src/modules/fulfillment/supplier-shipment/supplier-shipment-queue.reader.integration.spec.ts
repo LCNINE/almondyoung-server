@@ -81,18 +81,42 @@ describeIfDb('직배 목록 — 입점사 대기열 읽기 (PostgreSQL integrati
         });
         await f.seedBox(tx, w, [j2.foItemId], { status: 'canceled', supplierId: b });
 
+        // 라인 없는 draft 상자 — 요약·목록 어디에도 없다
+        await f.seedBox(tx, w, [], { status: 'draft', supplierId: a, openedAt: t0 });
+        // recovery_required: 넘김 있으면 forwarded, 없으면 pending
+        const k1 = await seedItem(tx, w);
+        const k2 = await seedItem(tx, w);
+        const hr = await f.seedHandoff(tx, a);
+        const recFwd = await f.seedBox(tx, w, [k1.foItemId], {
+          status: 'recovery_required',
+          recoveryCode: 'DISPATCH_RECALL_PENDING',
+          supplierId: a,
+          supplierHandoffId: hr,
+          openedAt: t2,
+        });
+        const recPending = await f.seedBox(tx, w, [k2.foItemId], {
+          status: 'recovery_required',
+          recoveryCode: 'DISPATCH_RECALL_PENDING',
+          supplierId: a,
+          openedAt: t2,
+        });
+
         const summary = await reader.summaryBySupplier(tx);
         const ours = summary.filter((s) => [a, b, c].includes(s.supplierId));
         expect(ours).toHaveLength(1);
         expect(ours[0]).toMatchObject({
           supplierId: a,
-          pendingShipments: 2,
-          forwardedShipments: 1,
+          pendingShipments: 3,
+          forwardedShipments: 2,
           unfulfillableLines: 1,
         });
 
         const pending = await reader.openShipments(a, 'pending', tx);
-        expect(pending.map((s) => s.shipmentId)).toEqual([pendingEarly.shipmentId, pendingLate.shipmentId]);
+        expect(pending.map((s) => s.shipmentId)).toEqual([
+          pendingEarly.shipmentId,
+          pendingLate.shipmentId,
+          recPending.shipmentId,
+        ]);
         expect(pending[0]).toMatchObject({
           stage: 'pending',
           salesOrderId: i1.salesOrderId,
@@ -109,11 +133,12 @@ describeIfDb('직배 목록 — 입점사 대기열 읽기 (PostgreSQL integrati
         });
 
         const fwd = await reader.openShipments(a, 'forwarded', tx);
-        expect(fwd.map((s) => s.shipmentId)).toEqual([forwarded.shipmentId]);
-        expect(fwd[0].handoffId).toBe(handoff);
-        expect(fwd[0].handoffAt?.toISOString()).toBe(handoffAt.toISOString());
-        expect(fwd[0].lines[0].unfulfillableReason).toBe('품절');
-        expect(fwd[0].lines[0].unfulfillableReportedAt).toBeInstanceOf(Date);
+        expect(fwd.map((s) => s.shipmentId).sort()).toEqual([forwarded.shipmentId, recFwd.shipmentId].sort());
+        const fw = fwd.find((s) => s.shipmentId === forwarded.shipmentId)!;
+        expect(fw.handoffId).toBe(handoff);
+        expect(fw.handoffAt?.toISOString()).toBe(handoffAt.toISOString());
+        expect(fw.lines[0].unfulfillableReason).toBe('품절');
+        expect(fw.lines[0].unfulfillableReportedAt).toBeInstanceOf(Date);
 
         // 다른 입점사의 상자는 섞이지 않는다
         expect(await reader.openShipments(b, 'pending', tx)).toEqual([]);
