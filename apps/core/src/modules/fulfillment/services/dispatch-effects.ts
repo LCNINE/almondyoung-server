@@ -125,7 +125,7 @@ export async function incrementFulfillmentItems(tx: DbTx, lines: ShipmentLineRow
   }
 }
 
-async function loadFulfillmentSummaries(tx: DbTx, lines: ShipmentLineRow[]): Promise<FulfillmentSummary[]> {
+export async function loadFulfillmentSummaries(tx: DbTx, lines: ShipmentLineRow[]): Promise<FulfillmentSummary[]> {
   const foiRows = await tx
     .select({ fulfillmentOrderId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId })
     .from(wmsTables.fulfillmentOrderItems)

@@ -33,6 +33,7 @@ import {
 } from '../dto/shipment-recall.dto';
 import { fulfillmentReopenedOutboxEvent, shipmentDispatchRecalledOutboxEvent } from '../events';
 import { WaybillService } from '../waybill/waybill.service';
+import { lockSupplierRecallGraph, recallSupplierShipment } from '../supplier-shipment/supplier-recall';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
@@ -141,6 +142,25 @@ export class ShipmentRecallService {
           reason: dto.reason,
           actorId: actor.id,
         };
+        // N10 — 입점사 상자는 원장·예약·추적 게이트가 없다. 창고 전용 걸음(lockShipmentGraphForDispatch 는
+        // 입점사 상자에서 던진다)에 들어가기 전에 가른다. 작업 기록 행은 창고와 같이 쓴다.
+        const [owner] = await tx
+          .select({ supplierId: wmsTables.shipments.supplierId })
+          .from(wmsTables.shipments)
+          .where(eq(wmsTables.shipments.id, shipmentId))
+          .limit(1);
+        if (owner?.supplierId) {
+          return this.reportSupplier(tx, {
+            operationId,
+            initialIntent,
+            shipmentId,
+            dispatchAttemptId,
+            dto,
+            idempotencyKey,
+            requestHash,
+            actor,
+          });
+        }
         // Canonical order: shared shipment graph first, then durable
         // intent/member, then work/plan/session/custody/totes. A member insert
         // is not lock-free — its shipment FK takes KEY SHARE — so it must
@@ -300,6 +320,137 @@ export class ShipmentRecallService {
       },
     );
     return this.currentResponse(accepted.operationId);
+  }
+
+  /** 입점사 상자 되돌리기(K3 N10) — 같은 작업 기록 행·같은 응답, 재고 원장·예약·추적 게이트 없음. */
+  private async reportSupplier(
+    tx: DbTx,
+    p: {
+      operationId: string;
+      initialIntent: Omit<RecallIntent, 'attemptNo'>;
+      shipmentId: string;
+      dispatchAttemptId: string;
+      dto: RecallShipmentDispatchDto;
+      idempotencyKey: string;
+      requestHash: string;
+      actor: ShipmentRecallActor;
+    },
+  ) {
+    const { operationId, shipmentId, dto, actor } = p;
+    // 락 순서(FOI → 상자 → 라인) 뒤에 작업 기록 행을 쓴다 — 멤버 FK 가 상자 KEY SHARE 를 잡는다.
+    await lockSupplierRecallGraph(tx, shipmentId);
+    const [attemptRow] = await tx
+      .select({ attemptNo: wmsTables.dispatchAttempts.attemptNo, shipmentId: wmsTables.dispatchAttempts.shipmentId })
+      .from(wmsTables.dispatchAttempts)
+      .where(eq(wmsTables.dispatchAttempts.id, p.dispatchAttemptId))
+      .limit(1);
+    if (!attemptRow || attemptRow.shipmentId !== shipmentId) {
+      throw new NotFoundException(`Dispatch attempt ${p.dispatchAttemptId} not found on shipment ${shipmentId}`);
+    }
+    const intent: RecallIntent = { ...p.initialIntent, attemptNo: attemptRow.attemptNo };
+    await tx.insert(wmsTables.shipmentOperations).values({
+      id: operationId,
+      type: 'recall',
+      status: 'pending',
+      operatorId: actor.id,
+      reason: dto.reason,
+      csCaseId: dto.csCaseId ?? null,
+      note: dto.note ?? null,
+      idempotencyKey: p.idempotencyKey,
+      requestHash: p.requestHash,
+      beforeManifestSnapshot: { intent },
+    });
+    await tx.insert(wmsTables.shipmentOperationMembers).values({
+      operationId,
+      shipmentId,
+      role: 'source',
+      beforeManifestVersion: dto.expectedManifestVersion,
+      beforeManifestSnapshot: { intent },
+    });
+    await this.audit.logUserActionRequired(
+      'shipment.dispatch.recall.requested',
+      'fulfillment',
+      `Recall operation ${operationId} requested for supplier dispatch attempt ${p.dispatchAttemptId}`,
+      { userId: actor.id },
+      {
+        operationId,
+        shipmentId,
+        dispatchAttemptId: p.dispatchAttemptId,
+        attemptNo: attemptRow.attemptNo,
+        owner: 'supplier',
+        physicalRecoveryConfirmed: true,
+        reason: dto.reason,
+      },
+      tx,
+    );
+    const recalledAt = new Date();
+    const result = await recallSupplierShipment(
+      {
+        shipments: this.shipments,
+        fulfillmentsV2: this.fulfillmentsV2,
+        voidUsedWaybill: async (id, trx) => {
+          await this.waybills.voidForRecall(
+            id,
+            { reason: `shipment_recall:${dto.reason}` },
+            `${p.idempotencyKey}:waybill-void`,
+            actor,
+            trx,
+          );
+        },
+      },
+      tx,
+      {
+        shipmentId,
+        dispatchAttemptId: p.dispatchAttemptId,
+        recallOperationId: operationId,
+        expectedManifestVersion: dto.expectedManifestVersion,
+        actorId: actor.id,
+        at: recalledAt,
+      },
+    );
+    const after = {
+      shipment: result.shipment,
+      dispatchAttempt: result.attempt,
+      fulfillmentOrders: result.summaries,
+    };
+    await tx
+      .update(wmsTables.shipmentOperationMembers)
+      .set({ afterManifestVersion: result.shipment.manifestVersion, afterManifestSnapshot: after })
+      .where(
+        and(
+          eq(wmsTables.shipmentOperationMembers.operationId, operationId),
+          eq(wmsTables.shipmentOperationMembers.shipmentId, shipmentId),
+          eq(wmsTables.shipmentOperationMembers.role, 'source'),
+        ),
+      );
+    await tx
+      .update(wmsTables.shipmentOperations)
+      .set({ status: 'completed', afterManifestSnapshot: after, lastError: null, completedAt: recalledAt })
+      .where(eq(wmsTables.shipmentOperations.id, operationId));
+    await this.audit.logUserActionRequired(
+      'shipment.dispatch.recall.completed',
+      'fulfillment',
+      `Recalled supplier dispatch attempt ${p.dispatchAttemptId} and reopened shipment ${shipmentId}`,
+      { userId: actor.id },
+      {
+        operationId,
+        shipmentId,
+        dispatchAttemptId: p.dispatchAttemptId,
+        attemptNo: result.attemptNo,
+        owner: 'supplier',
+        physicalRecoveryConfirmed: true,
+        reason: dto.reason,
+      },
+      tx,
+    );
+    const response: ShipmentRecallResponseDto = {
+      operationId,
+      shipmentId,
+      dispatchAttemptId: p.dispatchAttemptId,
+      operationStatus: 'completed',
+      invoiceOperationId: null,
+    };
+    return { response, resourceType: 'shipment_operation' as const, resourceId: operationId, operationId };
   }
 
   private async resumePendingInTransaction(operationId: string, tx: DbTx): Promise<ShipmentRecallResponseDto> {

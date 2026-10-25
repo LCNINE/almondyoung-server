@@ -101,6 +101,8 @@ describe('ShipmentRecallService command validation', () => {
       return Promise.resolve();
     });
     const tx = {
+      // 상자 주인 조회(입점사 갈래 판정) — 창고 상자(행 없음 → 창고 갈래)로 답한다
+      select: jest.fn(() => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }) })),
       insert: jest.fn((table: unknown) => {
         if (table === wmsTables.shipmentOperationMembers) {
           order.push('member-insert');
