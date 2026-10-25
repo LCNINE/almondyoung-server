@@ -317,73 +317,177 @@ export type OutboundBatchStatus =
   | 'completed'
   | 'canceled';
 
-// ===== Direct Ship (D2) =====
+// ===== Direct Ship — 입점사 상자 (K3) =====
+// core `supplier-shipment-queue.dto.ts`·`supplier-sheet.dto.ts` 와 1:1. 날짜는 ISO 문자열.
 
-export type DirectShipOrderStatus =
-  | 'pending'
-  | 'forwarded'
-  | 'completed'
-  | 'canceled';
+/**
+ * core `carrierEnum`(inventory.schema.ts) 전체 — 입점사가 시트에 적을 수 있는 택배사.
+ * 아래 «Waybill» 의 `CarrierCode` 는 우리가 발급하는 택배사만이라 이름을 달리 둔다.
+ */
+export type SupplierSheetCarrier =
+  | 'CJ'
+  | 'HANJIN'
+  | 'LOTTE'
+  | 'LOGEN'
+  | 'KDEXP'
+  | 'CJGLS'
+  | 'EPOST'
+  | 'DAESIN'
+  | 'ILYANG'
+  | 'HDEXP'
+  | 'CVSNET'
+  | 'CUPOST'
+  | 'CHUNIL'
+  | 'KUNYOUNG';
 
-export interface DirectShipOrderItem {
-  foiId: string;
-  salesOrderLineId: string;
+export interface SupplierQueueSummary {
+  supplierId: string;
+  supplierCode: string | null;
+  supplierName: string;
+  /** 아직 입점사에게 안 넘긴 열린 상자 수 */
+  pendingShipments: number;
+  /** 넘겼지만 발송 전인 열린 상자 수 */
+  forwardedShipments: number;
+  /** 열린 상자에서 입점사가 «못 보냄»으로 알린 라인 수 */
+  unfulfillableLines: number;
+}
+
+export type SupplierQueueStage = 'pending' | 'forwarded';
+
+export interface SupplierQueueLine {
+  shipmentLineId: string;
   skuId: string;
   skuName: string;
+  /** 그 입점사와의 sku_suppliers.supplier_sku */
+  supplierSku: string | null;
   qty: number;
-  supplierSku?: string; // ⚠️ 항상 undefined — 서버 미구현
+  unfulfillableReason: string | null;
+  unfulfillableReportedAt: string | null;
 }
 
-export interface DirectShipOrder {
-  fulfillmentOrderId: string;
-  salesOrderId?: string;
-  companyName: string;
-  supplierCode?: string; // ⚠️ 항상 undefined — 서버 미구현
-  status: DirectShipOrderStatus;
-  priority: FulfillmentOrderPriority;
-  totalItems: number;
-  totalQty: number;
+export interface SupplierQueueShipment {
+  shipmentId: string;
+  stage: SupplierQueueStage;
+  salesOrderId: string;
+  orderNo: string;
+  openedAt: string;
+  handoffId: string | null;
+  handoffAt: string | null;
+  lines: SupplierQueueLine[];
+}
+
+export interface SupplierSheetColumn {
+  key: string;
+  header: string;
+}
+
+export interface SupplierSheetRow {
+  /** 행 키 = 발주 항목(FOI) id. 입점사가 지우면 안 된다 */
+  rowKey: string;
+  orderNo: string;
+  productName: string;
+  /** 없으면 빈 문자열 */
+  supplierSku: string;
+  qty: number;
+  recipientName: string;
+  recipientPhone: string;
+  address: string;
+  entrancePassword: string;
+  deliveryMemo: string;
+  carrier: string;
+  trackingNo: string;
+  unfulfillableReason: string;
+  /** 개인정보 접속기록의 대상 식별자 — 시트 열이 아니다 */
+  salesOrderId: string;
+}
+
+export interface SupplierSheetSkippedShipment {
+  shipmentId: string;
+  reason: 'RECIPIENT_INCOMPLETE';
+}
+
+export interface SupplierSheet {
+  handoffId: string;
+  supplierId: string;
+  fileName: string;
+  columns: SupplierSheetColumn[];
+  rows: SupplierSheetRow[];
+  /** 수령인 정보가 불완전해 싣지 못한 상자 */
+  skippedShipments: SupplierSheetSkippedShipment[];
+}
+
+export type SupplierRowVerdictKind =
+  | 'ship'
+  | 'merge'
+  | 'unfulfillable'
+  | 'waiting'
+  | 'correct'
+  | 'unchanged'
+  | 'error';
+
+export type SupplierRowErrorCode =
+  | 'UNKNOWN_ROW_KEY'
+  | 'OTHER_SUPPLIER'
+  | 'CANCELED'
+  | 'NOT_HANDED_OFF'
+  | 'IN_RECOVERY'
+  | 'ROW_MISMATCH'
+  | 'QTY_MISMATCH'
+  | 'DUPLICATE_ROW'
+  | 'UNKNOWN_CARRIER'
+  | 'CARRIER_WITHOUT_TRACKING'
+  | 'TRACKING_WITHOUT_CARRIER'
+  | 'TRACKING_AND_REASON'
+  | 'TRACKING_IN_USE'
+  | 'MERGE_RECIPIENT_MISMATCH'
+  | 'CORRECTION_PARTIAL'
+  | 'REASON_ON_SHIPPED'
+  | 'GROUP_HAS_ERROR';
+
+/** 올린 시트 한 줄의 판정 — 개인정보 없음 */
+export interface SupplierRowVerdict {
+  /** 엑셀의 실제 행 번호(머리글이 1행) */
+  rowNumber: number;
+  rowKey: string;
+  orderNo: string;
+  verdict: SupplierRowVerdictKind;
+  /** verdict 가 error 일 때만 */
+  code?: SupplierRowErrorCode;
+  carrier?: SupplierSheetCarrier;
+  trackingNo?: string;
+}
+
+/** 판정 종류마다 줄 수 — 0 인 종류도 온다 */
+export type SupplierSheetVerdictCounts = Record<SupplierRowVerdictKind, number>;
+
+export interface SupplierSheetPreview {
+  rows: SupplierRowVerdict[];
+  counts: SupplierSheetVerdictCounts;
+  /** 적용할 때 같은 파일과 함께 previewToken 으로 돌려준다 */
+  token: string;
+}
+
+export interface SupplierSheetApplyResult {
+  counts: SupplierSheetVerdictCounts;
+  /** 이번에 발송한 상자(나누기·합포장 뒤의 최종 상자) */
+  shippedShipmentIds: string[];
+}
+
+/** 넘김 묶음 한 줄 — 개인정보 없음 */
+export interface SupplierHandoffSummary {
+  handoffId: string;
   createdAt: string;
-  forwardedAt?: string;
-  completedAt?: string;
-  items: DirectShipOrderItem[];
-}
-
-export interface DirectShipCompanySummary {
-  companyName: string;
-  pendingCount: number;
-  forwardedCount: number;
-  completedCount: number;
-  lastOrderDate?: string;
-}
-
-export interface DirectShipDashboard {
-  pendingOrders: number;
-  forwardedOrders: number;
-  completedOrders: number;
-  totalOrders: number;
-  companySummary: DirectShipCompanySummary[];
-  recentActivity: Array<{
-    fulfillmentOrderId: string;
-    salesOrderId?: string;
-    companyName: string;
-    action: 'created' | 'forwarded' | 'completed';
-    timestamp: string;
-  }>;
-}
-
-export interface ForwardDirectShipOrdersRequest {
-  fulfillmentOrderIds: string[];
-  companyName: string;
-}
-
-export interface CompleteDirectShipOrdersRequest {
-  fulfillmentOrderIds: string[];
-  completedBy: string;
+  createdBy: string;
+  /** 그 묶음을 가리키는 열린 상자(draft·recovery_required) */
+  openShipments: number;
+  shippedShipments: number;
+  /** 열린 상자에서 입점사가 못 보냄으로 알린 라인 */
+  unfulfillableLines: number;
 }
 
 export interface DirectShipCancelNotice {
   id: string;
+  supplierId: string;
   companyName: string;
   salesOrderId: string;
   channelOrderId: string | null;
@@ -397,11 +501,6 @@ export interface DirectShipCancelNotice {
   createdAt: string;
   notifiedAt: string | null;
   notifiedBy: string | null;
-}
-
-export interface ExportDirectShipFileRequest {
-  companyName: string;
-  format?: 'csv'; // ⚠️ xlsx 미구현 — csv만 허용
 }
 
 // ===== Consolidation (D2) =====

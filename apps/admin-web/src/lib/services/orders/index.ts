@@ -26,12 +26,11 @@ export {
   useOutboundBatchV2,
   useOutboundBatchEligibleShipments,
   useOutboundBatchWorkItems,
-  // 직배송 (D2)
-  useDirectShipDashboard,
-  useDirectShipCompanies,
+  // 직배 운영 (K3)
+  useSupplierQueue,
+  useSupplierShipments,
+  useSupplierHandoffs,
   useDirectShipCancelNotices,
-  useDirectShipOrders,
-  useDirectShipCompanySummary,
   // 합포장 (D2)
   useConsolidationCandidates,
   useShipmentConsolidationCandidates,
@@ -58,8 +57,6 @@ export {
   useInspectionHistory,
   useQualityMetrics,
   // 레거시
-  useDirectShips,
-  useDirectShip,
   useOrderMetrics,
   useFulfillmentMetrics,
   useConfirmSalesOrder,
@@ -108,10 +105,11 @@ export {
   useToteScan,
   useToteHandoff,
   useReleaseTote,
-  // 직배송 (D2)
-  useForwardDirectShipOrders,
-  useCompleteDirectShipOrders,
-  useExportDirectShipFile,
+  // 직배 운영 (K3)
+  useHandOffToSupplier,
+  useRedownloadHandoffSheet,
+  usePreviewSupplierUpload,
+  useApplySupplierUpload,
   useMarkDirectShipCancelNoticesNotified,
   useExportDirectShipCancelNoticesFile,
   // 합포장 (D2)

@@ -79,17 +79,13 @@ export const orderQueryKeys = {
   qualityMetrics: (query: Record<string, any>) =>
     ['inspection', 'metrics', 'quality', query] as const,
 
-  // 직배송 관련
-  directShipDashboard: ['direct-ship', 'dashboard'] as const,
+  // 직배 운영 (입점사 상자, K3) — 뮤테이션 성공 시 ['direct-ship'] 를 통째로 무효화한다
   directShipCancelNotices: ['direct-ship', 'cancel-notices'] as const,
-  directShipCompanies: ['direct-ship', 'companies'] as const,
-  directShipOrders: (params?: Record<string, string>) =>
-    ['direct-ship', 'orders', params ?? {}] as const,
-  directShipOrdersByCompany: ['direct-ship', 'orders', 'by-company'] as const,
-  directShipCompanyOrders: (companyName: string, status?: string) =>
-    ['direct-ship', 'companies', companyName, status ?? ''] as const,
-  directShipCompanySummary: (companyName: string) =>
-    ['direct-ship', 'companies', companyName, 'summary'] as const,
+  directShipSupplierQueue: ['direct-ship', 'supplier-queue'] as const,
+  directShipSupplierShipments: (supplierId: string, stage: 'pending' | 'forwarded') =>
+    ['direct-ship', 'supplier-queue', supplierId, stage] as const,
+  directShipSupplierHandoffs: (supplierId: string) =>
+    ['direct-ship', 'handoffs', supplierId] as const,
 
   // 합포장 관련
   consolidationCandidates: (warehouseId: string) =>
@@ -104,10 +100,6 @@ export const orderQueryKeys = {
 
   // 위치 최적화 관련
   locationOptimizationZones: ['location-optimization', 'zones'] as const,
-
-  // 레거시 직접 배송 키 (호환성)
-  directShips: ['direct-ships'] as const,
-  directShip: (id: string) => ['direct-ships', id] as const,
 
   // 메트릭스 관련
   metrics: ['metrics'] as const,

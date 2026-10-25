@@ -15,7 +15,6 @@ import type {
 } from '@/lib/types/dto/fulfillment';
 import { InventoryTab } from '../../detail/inventory-tab';
 import { ShipmentTab } from '../../detail/shipment-tab';
-import { DirectShipTab } from '../../detail/direct-ship-tab';
 import { HistoryTab } from '../../detail/history-tab';
 import { LineCompositions } from '../../detail/line-compositions';
 import { useAssignLineComposition } from '@/lib/services/orders/line-composition';
@@ -194,9 +193,6 @@ export function FulfillmentDetail({ id }: { id: string }) {
               <Can anyOf={['fulfillment.shipment.read']}>
                 <TabsTrigger value="shipment">배송</TabsTrigger>
               </Can>
-              {fo.fulfillmentMode === 'drop_ship' && (
-                <TabsTrigger value="direct-ship">직배</TabsTrigger>
-              )}
               <TabsTrigger value="history">이력</TabsTrigger>
             </TabsList>
             <TabsContent value="inventory">
@@ -207,11 +203,6 @@ export function FulfillmentDetail({ id }: { id: string }) {
                 <ShipmentTab fo={fo} />
               </TabsContent>
             </Can>
-            {fo.fulfillmentMode === 'drop_ship' && (
-              <TabsContent value="direct-ship">
-                <DirectShipTab fo={fo} />
-              </TabsContent>
-            )}
             <TabsContent value="history">
               <HistoryTab fo={fo} />
             </TabsContent>
