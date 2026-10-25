@@ -12,7 +12,7 @@ import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import * as f from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
-import { seedDispatchedParcel } from '../line-quantities/__support__/shipment-facts.fixtures';
+import { seedDispatchedParcel, seedSupplierShare } from '../line-quantities/__support__/shipment-facts.fixtures';
 import { SalesOrdersService } from './sales-orders.service';
 
 /**
@@ -183,7 +183,6 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
     w: f.World,
     args: {
       qty: number;
-      dropShip?: 'forwarded' | 'completed';
       status?: 'pending' | 'confirmed' | 'shipped';
       daysAgo?: number;
     },
@@ -193,7 +192,7 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
       createdAt: kstDaysAgoNoon(args.daysAgo ?? 1),
       quantity: args.qty,
     });
-    const fo = await f.seedFo(trx, w, o, { status: 'processing', qty: args.qty, dropShip: args.dropShip });
+    const fo = await f.seedFo(trx, w, o, { status: 'processing', qty: args.qty });
     return { ...o, ...fo };
   }
 
@@ -268,7 +267,9 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
   it('넘기기만 한 직배는 어느 쪽도 아니다', async () => {
     const delta = await withFixtures(async ({ trx }) => {
       const w = await f.seedWorld(trx);
-      await splitOrder(trx, w, { qty: 2, dropShip: 'forwarded' });
+      // 직배는 입점사 상자다(K3 PR4) — 넘긴 입점사 상자는 «배송 중»이지만 나간 수량이 없다
+      const o = await f.seedOrder(trx, { createdAt: kstDaysAgoNoon(1), quantity: 2 });
+      await seedSupplierShare(trx, w, o, { stage: 'forwarded', qty: 2 });
     });
 
     expect(delta.partialOutbound).toBe(0);

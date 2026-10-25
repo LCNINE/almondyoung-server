@@ -23,7 +23,7 @@ import {
   seedShippedBeforeBoxingFulfillment,
   wireCancellation,
 } from '../cancellation-record/__support__/cancellation-scenarios';
-import { recallParcel, seedDispatchedParcel } from './__support__/shipment-facts.fixtures';
+import { recallParcel, seedDispatchedParcel, seedSupplierShare } from './__support__/shipment-facts.fixtures';
 import { LineQuantities, LineSkuQuantities, readLineQuantities } from './line-quantities.reader';
 import { lineCanceledQuantitySql, lineDemandSql, lineRemainingSql, lineSkuQuantitiesSql } from './line-quantities.sql';
 
@@ -466,24 +466,79 @@ describeIfDb('readLineQuantities — SKU 층 출고·배송 사실 (K6 PR2b)', (
     });
   });
 
-  it('forwarded drop-ship moves but is not shipped', async () => {
-    await inRollbackTx(db, async (tx) => {
-      const w = await seedWorld(tx);
-      const o = await seedOrder(tx);
-      await seedFo(tx, w, o, { dropShip: 'forwarded', qty: 1 });
+  // 직배는 입점사 상자다(K3 PR4) — 섞인 주문(창고 라인 수량 1 + 직배 라인 수량 2)의 직배 SKU 가 상자 단계로 움직인다.
+  // 단계 정의는 `supplier-shipment-stage.ts` 하나이고, 수량 사실 SQL 은 같은 술어를 쓴다.
+  async function seedMixedOrder(tx: DbTx, stage: 'pending' | 'forwarded' | 'shipped') {
+    const w = await seedWorld(tx);
+    const o = await seedOrder(tx, { quantity: 1 });
+    const { foId, foItemId } = await seedFo(tx, w, o, { qty: 1 });
+    await seedBox(tx, w, [foItemId], { status: 'draft', qty: [1] });
+    const directLineId = await insertLine(tx, o.salesOrderId, { quantity: 2 });
+    const direct = await seedSupplierShare(
+      tx,
+      w,
+      { salesOrderId: o.salesOrderId, lineId: directLineId },
+      { stage, qty: 2, foId },
+    );
+    const read = await readAndCrossCheck(tx, o.salesOrderId);
+    // 창고 라인은 입점사 단계와 무관하다
+    expect(read.get(o.lineId)?.skus).toEqual([skuQuantities(w.skuId, 1, [1, 0, 0, 0, 0, 1])]);
+    return { skus: read.get(directLineId)?.skus ?? [], skuId: direct.skuId };
+  }
 
-      expect(await skusOf(tx, o)).toEqual([skuQuantities(w.skuId, 1, [1, 0, 1, 0, 0, 1])]);
+  it('supplier box not yet handed off is not forwarded', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { skus, skuId } = await seedMixedOrder(tx, 'pending');
+
+      expect(skus).toEqual([skuQuantities(skuId, 1, [2, 0, 0, 0, 0, 2])]);
     });
   });
 
-  it('completed drop-ship is shipped by partner', async () => {
+  it('handed-off supplier box moves but is not shipped', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { skus, skuId } = await seedMixedOrder(tx, 'forwarded');
+
+      // 입점사에게 넘겼을 뿐 출고가 아니다 — outstanding 은 그대로다(넘긴 뒤에도 취소된다)
+      expect(skus).toEqual([skuQuantities(skuId, 1, [2, 0, 2, 0, 0, 2])]);
+    });
+  });
+
+  it('shipped supplier box is shipped by partner', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { skus, skuId } = await seedMixedOrder(tx, 'shipped');
+
+      // 배송완료가 아니다(표시용) — 배송완료 감지가 없어 청구 가능 수량도 0 이다
+      expect(skus).toEqual([skuQuantities(skuId, 1, [2, 2, 0, 0, 2, 0])]);
+    });
+  });
+
+  it('supplier box under recall still counts as forwarded', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = await seedWorld(tx);
-      const o = await seedOrder(tx);
-      const { foItemId } = await seedFo(tx, w, o, { dropShip: 'completed', qty: 1 });
-      await setItem(tx, foItemId, { shippedQty: 1 });
+      const o = await seedOrder(tx, { quantity: 2 });
+      const direct = await seedSupplierShare(tx, w, o, { stage: 'shipped', qty: 2 });
+      // 되돌리기(shipped → recovery_required(DISPATCH_RECALL_PENDING)) — 발송 수량이 되돌아갔고 넘김은 남았다
+      await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'recovery_required', recoveryCode: 'DISPATCH_RECALL_PENDING' })
+        .where(eq(wmsTables.shipments.id, direct.shipmentId));
+      await setItem(tx, direct.foItemId, { shippedQty: 0 });
 
-      expect(await skusOf(tx, o)).toEqual([skuQuantities(w.skuId, 1, [1, 1, 0, 0, 1, 0])]);
+      expect(await skusOf(tx, o)).toEqual([skuQuantities(direct.skuId, 1, [2, 0, 2, 0, 0, 2])]);
+    });
+  });
+
+  it('canceled supplier box is neither forwarded nor shipped', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const o = await seedOrder(tx, { quantity: 2 });
+      const direct = await seedSupplierShare(tx, w, o, { stage: 'forwarded', qty: 2 });
+      await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'canceled' })
+        .where(eq(wmsTables.shipments.id, direct.shipmentId));
+
+      expect(await skusOf(tx, o)).toEqual([skuQuantities(direct.skuId, 1, [2, 0, 0, 0, 0, 2])]);
     });
   });
 

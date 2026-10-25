@@ -21,7 +21,7 @@ import { OrderCancellation } from '../order-cancellation/order-cancellation';
 import { OrderCancellationReader } from '../order-cancellation/order-cancellation.reader';
 import { PrintOrderReader } from '../../print-order/services/print-order.reader';
 import { seedClaim, seedComponentSku, seedDeliveredLine } from './__support__/claim-facts.fixtures';
-import { recallParcel, seedDispatchedParcel } from './__support__/shipment-facts.fixtures';
+import { recallParcel, seedDispatchedParcel, seedSupplierShare } from './__support__/shipment-facts.fixtures';
 import { type OrderShipmentPhase, orderFulfillmentPhaseSql } from './order-fulfillment-phase.sql';
 import { readOrderFulfillmentPhases } from './order-fulfillment-phase.reader';
 
@@ -106,13 +106,9 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
       .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, foId));
   }
 
-  /** 직배 파트너 완료(`fulfillments.service.ts` 의 완료 처리) — direct_ship_status completed 와 FOI shipped_qty=qty 가 같이 간다 */
+  /** 직배만 있는 주문의 입점사 발송 — 발송된 입점사 상자와 FOI shipped_qty=qty 가 같이 간다(K3 PR4) */
   async function seedCompletedDropShip(tx: DbTx, w: f.World, o: Order): Promise<void> {
-    const { foItemId } = await f.seedFo(tx, w, o, { dropShip: 'completed' });
-    await tx
-      .update(wmsTables.fulfillmentOrderItems)
-      .set({ shippedQty: sql`${wmsTables.fulfillmentOrderItems.qty}`, status: 'shipped' })
-      .where(eq(wmsTables.fulfillmentOrderItems.id, foItemId));
+    await seedSupplierShare(tx, w, o, { stage: 'shipped' });
   }
 
   /** 인쇄 외주 라인 하나 + 그 인쇄 행. 인쇄 라인은 FOI 가 없다 */
@@ -248,7 +244,7 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
     await inRollbackTx(db, async (tx) => {
       const w = await f.seedWorld(tx);
       const o = await f.seedOrder(tx);
-      const { foItemId } = await f.seedFo(tx, w, o, { status: 'processing', dropShip: 'forwarded' });
+      const { foItemId } = await seedSupplierShare(tx, w, o, { stage: 'forwarded' });
       // 화면은 «배송 중»이고 셀프취소는 막히지만(any_shipped) 출고 수량은 0 이다 — 관리자 상자 전 취소는 지금처럼 된다
       expect(await phaseOf(tx, o)).toEqual(['shipping', 'shipping', true]);
       const [item] = await tx
@@ -259,12 +255,58 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
     });
   });
 
+  it('drop-ship not yet handed off is preparing', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await f.seedWorld(tx);
+      const o = await f.seedOrder(tx);
+      await seedSupplierShare(tx, w, o, { stage: 'pending' });
+      expect(await phaseOf(tx, o)).toEqual(['preparing', 'preparing', false]);
+    });
+  });
+
   it('completed drop-ship shows delivered', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = await f.seedWorld(tx);
       const o = await f.seedOrder(tx);
       await seedCompletedDropShip(tx, w, o);
+      // 배송완료 수량은 0(감지 없음)이지만 partner_completed ≥ required 라 «배송 완료»다(스펙 §4.6 «지금 동작을 유지»)
       expect(await phaseOf(tx, o)).toEqual(['delivered', 'delivered', true]);
+    });
+  });
+
+  /** 섞인 주문 — 창고 라인(배송완료 소포 하나) + 직배 라인(입점사 상자 하나, 같은 FO) */
+  async function seedMixedDeliveredOrder(tx: DbTx, w: f.World, stage: 'forwarded' | 'shipped'): Promise<Order> {
+    const o = await f.seedOrder(tx);
+    const fo = await f.seedFo(tx, w, o, { status: 'processing' });
+    const box = await f.seedBox(tx, w, [fo.foItemId], { status: 'planned' });
+    await dispatch(tx, w, box, fo.foItemId, 1, true);
+    const [directLine] = await tx
+      .insert(wmsTables.salesOrderLines)
+      .values({
+        salesOrderId: o.salesOrderId,
+        variantId: randomUUID(),
+        productName: 'DIRECT',
+        quantity: 1,
+        unitPrice: 1000,
+      })
+      .returning();
+    await seedSupplierShare(tx, w, { salesOrderId: o.salesOrderId, lineId: directLine.id }, { stage, foId: fo.foId });
+    return o;
+  }
+
+  it('warehouse delivered and drop-ship shipped is delivered', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await f.seedWorld(tx);
+      const o = await seedMixedDeliveredOrder(tx, w, 'shipped');
+      expect(await phaseOf(tx, o)).toEqual(['delivered', 'delivered', true]);
+    });
+  });
+
+  it('warehouse delivered and drop-ship forwarded is shipping', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await f.seedWorld(tx);
+      const o = await seedMixedDeliveredOrder(tx, w, 'forwarded');
+      expect(await phaseOf(tx, o)).toEqual(['shipping', 'shipping', true]);
     });
   });
 
@@ -604,6 +646,40 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
       expect((refusal as Error).message).toBe('이미 출고된 주문은 취소할 수 없습니다. 고객센터로 문의해 주세요.');
     });
   });
+  it('customer progress counts supplier boxes once by their stage (K3 PR4)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await f.seedWorld(tx);
+      const customerId = randomUUID();
+      const o = await f.seedOrder(tx);
+      await tx.update(wmsTables.salesOrders).set({ customerId }).where(eq(wmsTables.salesOrders.id, o.salesOrderId));
+      // 창고 상자는 배송완료 — FO 가 나간 상태라 고객 화면이 창고 상자 status 를 읽어 온다
+      const fo = await f.seedFo(tx, w, o, { status: 'processing' });
+      const box = await f.seedBox(tx, w, [fo.foItemId], { status: 'planned' });
+      await dispatch(tx, w, box, fo.foItemId, 1, true);
+      await tx
+        .update(wmsTables.fulfillmentOrders)
+        .set({ status: 'partially_shipped' })
+        .where(eq(wmsTables.fulfillmentOrders.id, fo.foId));
+      for (const stage of ['pending', 'forwarded', 'shipped'] as const) {
+        const [line] = await tx
+          .insert(wmsTables.salesOrderLines)
+          .values({
+            salesOrderId: o.salesOrderId,
+            variantId: randomUUID(),
+            productName: stage,
+            quantity: 1,
+            unitPrice: 1000,
+          })
+          .returning();
+        await seedSupplierShare(tx, w, { salesOrderId: o.salesOrderId, lineId: line.id }, { stage, foId: fo.foId });
+      }
+
+      // 입점사 상자는 창고 상자 목록에 끼지 않는다 — 끼면 7개, 그것도 넘김 전 상자가 «준비 중»·발송이 «배송 중»으로 두 번 센다
+      const actions = await storeServiceFor(tx).getActions(o.salesOrderId, customerId);
+      expect(actions.shipmentProgress).toEqual({ total: 4, shipped: 3, delivered: 2 });
+    });
+  });
+
   describe('고객 actions 의 반품·교환 버튼 (K6 PR3a, C8)', () => {
     function storeService(tx: DbTx): StoreSalesOrdersService {
       return storeServiceFor(tx);

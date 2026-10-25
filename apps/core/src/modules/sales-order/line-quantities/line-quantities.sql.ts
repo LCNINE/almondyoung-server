@@ -100,11 +100,14 @@ export function deliveredParcelsSql(salesOrderScope: SQL): SQL {
  *
  * FOI 단위로 정한 뒤 (라인, SKU) 로 합한다:
  *   required          = qty − canceled_qty
- *   shipped           = shipped_qty (셀메이트 스크립트·직배 완료·V2 발송이 모두 여기를 채운다)
+ *   shipped           = shipped_qty (셀메이트 스크립트·입점사 발송·V2 발송이 모두 여기를 채운다)
  *   outstanding       = qty − shipped_qty − canceled_qty
- *   forwarded         = 직배 FO 가 `forwarded` 면 outstanding — 파트너에게 넘겼을 뿐 출고가 아니다(넘긴 뒤에도 취소된다)
- *   partner_completed = 직배 FO 가 `completed` 면 shipped_qty — 배송완료가 아니다(표시용, 파트너는 배송 추적을 안 준다)
+ *   forwarded         = 그 FOI 의 넘긴 입점사 상자(draft·recovery_required, 넘김 묶음 있음) 라인 수량 합 — 입점사에게
+ *                       넘겼을 뿐 출고가 아니다(넘긴 뒤에도 취소된다)
+ *   partner_completed = 그 FOI 의 발송된 입점사 상자(shipped) 라인 수량 합 — 배송완료가 아니다(표시용, 입점사는 배송 추적을 안 준다)
  *   delivered         = 그 FOI 의 배송완료 소포 수량 합(`deliveredParcelsSql`)
+ * 입점사 상자 단계(넘김·발송)의 정의는 `fulfillment/shipment/supplier-shipment-stage.ts` 하나다 — 여기 술어는 그것과 같아야 한다.
+ * 옛 FO 단위 직배(`fulfillment_mode = 'drop_ship'`·`direct_ship_status`)는 읽지 않는다(K3 PR4, 라이브 0).
  *
  * 청구 사실(K6 PR3a) — `claimTotalsBySkuSql` 을 (라인, SKU) 로 붙인다. 없으면 0:
  *   (postgres 는 넓은 범위 소비자(진행 단계 SQL·관리자 카드)가 청구 칸을 안 고를 때만 청구 조인을 잘라낸다 — 넓은 범위에서
@@ -173,10 +176,8 @@ export function lineSkuQuantitiesSql(salesOrderScope: SQL): SQL {
                sum(foi.qty - foi.canceled_qty)::int as required,
                sum(foi.shipped_qty)::int as shipped,
                sum(foi.qty - foi.shipped_qty - foi.canceled_qty)::int as outstanding,
-               sum(case when fo.fulfillment_mode = 'drop_ship' and fo.direct_ship_status = 'forwarded'
-                        then foi.qty - foi.shipped_qty - foi.canceled_qty else 0 end)::int as forwarded,
-               sum(case when fo.fulfillment_mode = 'drop_ship' and fo.direct_ship_status = 'completed'
-                        then foi.shipped_qty else 0 end)::int as partner_completed,
+               sum(coalesce(item_supplier.forwarded, 0))::int as forwarded,
+               sum(coalesce(item_supplier.partner_completed, 0))::int as partner_completed,
                sum(coalesce(item_delivered.qty, 0))::int as delivered
           from ${t.fulfillmentOrders} as fo
           join ${t.fulfillmentOrderItems} as foi on foi.fulfillment_order_id = fo.id
@@ -191,6 +192,23 @@ export function lineSkuQuantitiesSql(salesOrderScope: SQL): SQL {
               from (${deliveredParcelsSql(salesOrderScope)}) as delivered_parcel
              group by delivered_parcel.fulfillment_order_item_id
           ) as item_delivered on item_delivered.fulfillment_order_item_id = foi.id
+          left join (
+            -- 입점사 상자 라인 수량도 배송완료와 같은 모양이다 — 범위 FOI 를 한 번에 묶어 센 뒤 FOI id 로 되붙인다(R15).
+            -- FOI → 상자 라인은 idx_shipment_lines_fulfillment_order_item 을 탄다. 단계 술어는 supplier-shipment-stage.ts 와 같다:
+            -- 넘김 = draft·recovery_required + 넘김 묶음, 발송 = shipped. 넘기지 않은 상자·canceled·superseded 는 0 이다
+            select supplier_sl.fulfillment_order_item_id,
+                   sum(case when supplier_s.status in ('draft', 'recovery_required')
+                             and supplier_s.supplier_handoff_id is not null
+                            then supplier_sl.qty else 0 end)::int as forwarded,
+                   sum(case when supplier_s.status = 'shipped' then supplier_sl.qty else 0 end)::int as partner_completed
+              from ${t.fulfillmentOrders} as supplier_fo
+              join ${t.fulfillmentOrderItems} as supplier_foi on supplier_foi.fulfillment_order_id = supplier_fo.id
+              join ${t.shipmentLines} as supplier_sl on supplier_sl.fulfillment_order_item_id = supplier_foi.id
+              join ${t.shipments} as supplier_s on supplier_s.id = supplier_sl.shipment_id
+             where supplier_fo.sales_order_id in (${salesOrderScope})
+               and supplier_s.supplier_id is not null
+             group by supplier_sl.fulfillment_order_item_id
+          ) as item_supplier on item_supplier.fulfillment_order_item_id = foi.id
          where fo.sales_order_id in (${salesOrderScope})
          group by foi.sales_order_line_id, foi.sku_id
       ) as item_fact

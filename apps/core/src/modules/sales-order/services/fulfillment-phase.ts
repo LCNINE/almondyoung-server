@@ -1,18 +1,17 @@
 import { ShipmentProgressDto } from '../dto/store-order-actions.dto';
+import type { SupplierShipmentStage } from '../../fulfillment/shipment/supplier-shipment-stage';
 
 export interface PhaseFoRow {
   status: string;
-  directShipStatus: string | null;
-  fulfillmentMode: string | null;
 }
 
 export interface FulfillmentPhaseInput {
   foCount: number;
   allFoCanceled: boolean;
-  /** canceled/superseded 제외한 상자 status 목록 */
+  /** canceled/superseded 제외한 창고 상자 status 목록 — 입점사 상자는 아래 단계로만 센다 */
   activeShipmentStatuses: string[];
-  /** 직배(drop_ship) FO 의 directShipStatus (canceled 제외; 상자 없음) */
-  dropShipStatuses: string[];
+  /** 입점사 상자 단계(`supplier-shipment-stage.ts`, canceled·superseded 제외) — 직배는 입점사 상자다(K3 PR4) */
+  supplierShipmentStages: SupplierShipmentStage[];
   /** 인쇄 외주(print_orders) 상태 목록 (취소 제외). 없으면 생략 */
   printStatuses?: string[];
 }
@@ -25,10 +24,16 @@ function shipmentUnitPhase(status: string): UnitPhase {
   return 'preparing'; // draft, planned, recovery_required
 }
 
-function dropShipUnitPhase(status: string): UnitPhase {
-  if (status === 'completed') return 'delivered';
-  if (status === 'forwarded') return 'shipping';
-  return 'preparing'; // pending
+/** 배송완료 감지가 없어 발송된 입점사 상자를 «배송 완료»로 센다 — 안 그러면 «배송 중»에서 영영 멈춘다(스펙 §4.6 «지금 동작을 유지») */
+function supplierShipmentUnitPhase(stage: SupplierShipmentStage): UnitPhase {
+  switch (stage) {
+    case 'shipped':
+      return 'delivered';
+    case 'forwarded':
+      return 'shipping';
+    case 'pending':
+      return 'preparing';
+  }
 }
 
 function printUnitPhase(status: string): UnitPhase {
@@ -38,15 +43,18 @@ function printUnitPhase(status: string): UnitPhase {
 }
 
 /**
- * 진행 요약 = 소포(창고 상자·직배·인쇄 행) 수. 순수 함수 — DB 접근 없음.
+ * 진행 요약 = 소포(창고 상자·입점사 상자·인쇄 행) 수. 순수 함수 — DB 접근 없음.
  * 주문의 단계·출고 여부는 여기서 고르지 않는다 — 사다리 한 벌(`orderFulfillmentPhaseSql`)이 정한다(K6 PR2b).
- * 요약은 «몇 개 중 몇 개가 나갔나»라 상자 status 로 센다. 활성 FO 에 상자·직배가 아직 없으면 창고 몫은 세지 않는다.
+ * 요약은 «몇 개 중 몇 개가 나갔나»라 상자 status 로 센다. 활성 FO 에 상자가 아직 없으면 창고·입점사 몫은 세지 않는다.
  */
 export function shipmentProgressOf(input: FulfillmentPhaseInput): ShipmentProgressDto {
   const printUnits = (input.printStatuses ?? []).map(printUnitPhase);
   const warehouseUnits: UnitPhase[] =
     input.foCount > 0 && !input.allFoCanceled
-      ? [...input.activeShipmentStatuses.map(shipmentUnitPhase), ...input.dropShipStatuses.map(dropShipUnitPhase)]
+      ? [
+          ...input.activeShipmentStatuses.map(shipmentUnitPhase),
+          ...input.supplierShipmentStages.map(supplierShipmentUnitPhase),
+        ]
       : [];
   const units = [...warehouseUnits, ...printUnits];
   return {
