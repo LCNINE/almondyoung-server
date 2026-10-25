@@ -242,4 +242,10 @@ Expected: 넷 다 0. 하나라도 0 이 아니면 **멈추고 사용자에게 �
 - **PR 5(발송 명령):** 입점사 상자 `draft → shipped` 전이와 발송 시도·수기 송장·`shippedQty`·투영·이벤트. 고객 추적(`buildV2TrackingShipments`)은 시도 행으로 읽으므로 PR 5 가 시도 행을 만들면 따라온다 — 그때 draft 입점사 상자가 추적 화면에 «준비 중»으로 어떻게 보이는지 확인. 분할된 상자가 원래 상자의 `supplier_handoff_id` 를 물려받는지(PR 2 에서 넘어온 것). 큐 읽기(Task 6)는 내려받기·«넘긴 것» 화면이 그대로 쓴다.
 - **PR 6(취소):** 이 PR 뒤로 직배 주문에도 상자가 생기므로 `SalesOrdersService.cancel` 은 직배 주문을 상자 후 취소로 보낸다. 옛 «알릴 취소»(`UnboxedDemandCancellation.recordPartnerNotices`)는 `drop_ship` FO 만 보므로 **새 입점사 상자의 취소는 PR 6 전까지 알림 행을 남기지 않는다**(휴면이라 실제 피해는 없다). 상자 후 취소가 예약 0 인 입점사 draft 상자에서 무해한지 PR 6 이 확인한다.
 - **채널 주소 변경:** 넘기지 않은 입점사 상자는 `reviseRecipientFromChannel` 로 간다. 그 경로가 입점사 상자에서 안전한지(창고 전용 단계를 타지 않는지)는 확인하지 않았다 — 직배는 외부 채널에서 팔지 않으므로(비목표) 막히지 않지만, 판다면 그 전에 확인할 것.
-- **PR 8(contract):** `direct_ship_status` 칸·`drop_ship` 모드 값·옛 `direct-ship.service.ts`·`ship()`·`computeAdminAvailableActions`·옛 응답 칸.
+- **PR 5:** K6 사다리의 `delivered`(발송된 입점사 상자)는 발송 명령이 FOI `shipped_qty` 를 써야 선다(규칙 6 이 미결 0 을 요구) — 읽기 픽스처가 그 모양을 가정한다.
+- **PR 5:** 합포장(한 입점사 상자에 여러 주문) — 직배 목록 읽기(Task 6)는 상자 단위 `salesOrderId`·`orderNo` 만 낸다. 합포장 상자는 라인별 주문 칸이 필요하다.
+- **PR 5:** 보드에서 회수 대기 입점사 상자(recovery_required + DISPATCH_RECALL_PENDING)는 복구 갈래가 먼저 잡아(N7) `unclassified/<code>` 로 보인다. 그게 운영자가 원하는 모양인지 정한다.
+- **PR 6:** K6 `forwarded` 는 넘긴 열린 입점사 라인의 Σ `sl.qty` 다. 입점사 상자 취소가 FOI `canceled_qty` 와 함께 `sl.qty` 를 줄여야(`shrinkDraftLines` 경로) 맞다.
+- **PR 7:** admin-web 에 보드 상태 `drop_ship_unfulfillable` 라벨이 없다(원값 표시). admin-web FO 진행 타입에 `supplierLineQty` 가 없다.
+- **PR 8(contract):** `direct_ship_status` 칸·`drop_ship` 모드 값·옛 `direct-ship.service.ts`·`ship()`·`computeAdminAvailableActions`·옛 응답 칸. 그리고 PR 2 N10 으로 남긴 옛 FO 모드 가드(`allocation.locks.ts`·`outbound-batch-orchestrator.service.ts`·`shipment-planning.service.ts`), 옛 쓰기 경로 스펙 여섯이 쓰는 `seedFo({ dropShip })` 픽스처, 라인 구성 편집 읽기가 고르고 안 쓰는 `fulfillmentMode`.
+- **머지 전(사용자):** Task 0 라이브 실측은 돌지 못했다(자동 모드가 운영 읽기를 막았다). 네 쿼리를 머지 전에 돌린다 — 기대값은 전부 0.

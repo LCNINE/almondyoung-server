@@ -28,10 +28,12 @@ Accepted (2026-10-25). 설계 스펙 `docs/superpowers/specs/2026-10-25-k3-drop-
    입점사 상자를 고르지 않는다(자동 배송완료 감지는 비목표).
 7. **이벤트 계약을 넓히는 것은 소비자 먼저다.** 입점사가 쓰는 택배사 8개를 `carrier` enum 에 더했지만 계약 zod 는 아직 6개다. 그 사이 창고 경로
    (송장 DTO·발송 이벤트)는 `EVENT_CONTRACT_CARRIERS` 6개만 낸다. K3 PR 3 이 소비자(channel-adapter·notification)를 먼저 배포하고 계약을 넓힌다.
+8. **FO 생성은 입점사마다 draft 상자를 연다(PR 4).** `createV2` 가 직배 SKU 를 입점사별로 묶어 draft 상자 하나씩 연다(`direct-suppliers-of-skus.ts`, 입점사를 못 정하면 400 `DROP_SHIPPED_SKU_SUPPLIER_UNRESOLVED`). 입점사 상자 라인은 예약하지 않는다. 투영은 이를 `supplierLineQty` 로 «예약된 것과 같다» 고 세되 `reserved_qty` 에는 확정 예약만 쓰고, `shipmentReservationTotalsSql` 의 «덜 예약된 상자» 정의는 입점사 상자를 `unreserved_qty = 0` 으로 본다. 새 FO 는 `drop_ship` 모드를 쓰지 않는다.
+9. **입점사 상자 단계의 정의는 한 곳이다(PR 4).** `pending`(draft·복구 필요이고 넘김 없음) / `forwarded`(넘김 있음) / `shipped` — `fulfillment/shipment/supplier-shipment-stage.ts`. K6 수량 사실·정체 보드·직배 목록·채널 주소 변경의 SQL 은 같은 술어를 쓴다.
 
 ADR-0049 의 «넘긴 직배 주문의 취소 알림은 상자 전 출고 명령이 쓴다»는 문장은 K3 PR 6 이 알릴 취소를 상자 후 경로로 옮길 때 고친다 — PR 2 는 동작을 바꾸지 않는다.
 
 ## Consequences
 - PR 2 는 휴면이다. 입점사 상자를 만드는 코드(FO 생성, PR 4)도, 직배 SKU 도 라이브에 아직 없다(2026-10-25 실측 0).
 - 창고 흐름 진입 함수를 새로 만들면 `warehouseIdOf` 로 좁히고 가드 목록에 더한다. 입점사 갈래가 필요한 함수(분할·취소·되돌리기)는 PR 5·6 이 그 앞에서 가른다.
-- `shipments` 를 창고로 거르지 않고 읽는 조회(정체 보드·예약 부족 판정·리컨실러 상자 규칙 등)는 PR 4 가 상자 기준으로 옮긴다.
+- `shipments` 를 창고로 거르지 않고 읽는 조회(정체 보드·예약 부족 판정·리컨실러 상자 규칙 등)는 상자 기준으로 옮겼다(PR 4) — 옛 FO 단위 직배 읽기는 없다. 남은 FO 단위 직배는 옛 쓰기 경로(`direct-ship.service.ts`·`ship()`)와 그 화면용 읽기뿐이고 PR 8 이 지운다.

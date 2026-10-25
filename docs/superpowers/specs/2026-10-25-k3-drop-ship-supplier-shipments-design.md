@@ -294,6 +294,12 @@ PR 마다 계획서를 따로 쓴다(`docs/superpowers/plans/2026-10-25-k3-…-p
 - 외부 채널(네이버·쿠팡) 발송은 «입점사 출처» 또는 «옛 6개 밖 택배사»면 manual 이다(PR 3 E4). 창고 수기 송장을 새 택배사로 열려면 어댑터 택배사 표부터 넓혀야 한다 — 네이버는 모르는 코드를 CJGLS 로 바꿔 보낸다.
 - 고객 추적 링크는 새 8개가 `null` 이다(PR 3 E5). 실물 송장으로 URL 을 확인해 `buildTrackingUrl` 에 더한다.
 
+**PR 5 구현자에게(PR 4 가 정한 것):**
+- 발송 명령은 FOI `shipped_qty` 를 써야 한다 — K6 사다리의 `delivered`(발송된 입점사 상자)가 미결 0 을 요구한다.
+- 합포장(한 입점사 상자에 여러 주문): 직배 목록 읽기는 상자 단위 `salesOrderId`·`orderNo` 만 낸다. 합포장이면 라인별 주문 칸이 필요하다.
+- 정체 보드에서 회수 대기 입점사 상자(recovery_required + DISPATCH_RECALL_PENDING)는 복구 갈래가 먼저 잡아 `unclassified/<code>` 로 보인다. 원하는 운영자 화면인지 정한다.
+- 직배 목록은 `GET /direct-ship/supplier-queue`(입점사별 대기·넘김·못 보냄 수)와 `/:supplierId/shipments?stage=pending|forwarded`다. 고객 개인정보가 없다 — 수령인은 내려받기에만 둔다.
+
 ## 부록 A. 지금 직배를 특별 취급하는 곳
 
 2026-10-25 탐색 결과. 착수 때 다시 잰다: `grep -rnE "drop_ship|drop_shipped|directShip|direct_ship" apps/core/src apps/admin-web/src --include=*.ts --include=*.tsx | grep -v '\.spec\.'`
