@@ -62,6 +62,34 @@ describeIfDb('FO 투영 (PostgreSQL integration)', () => {
     });
   });
 
+  it('입점사 상자 라인만 있는 FO 를 투영하면 FO ready, reserved_qty 0, total_reserved_qty 0', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, foId, foItemId } = await seed(tx, 2);
+      const supplierId = await f.seedDirectSupplier(tx);
+      await f.seedBox(tx, w, [foItemId], { status: 'draft', qty: [2], supplierId });
+
+      await reprojectFulfillmentOrders(tx, [foId]);
+
+      expect(await foi(tx, foItemId)).toMatchObject({ status: 'ready', reservedQty: 0 });
+      expect(await fo(tx, foId)).toMatchObject({ status: 'ready', totalReservedQty: 0 });
+    });
+  });
+
+  it('창고 상자 전량 확정 예약 + 입점사 상자 → FO ready, total_reserved_qty = 창고 예약 합', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, foId, foItemId } = await seed(tx, 4);
+      const supplierId = await f.seedDirectSupplier(tx);
+      const box = await f.seedBox(tx, w, [foItemId], { status: 'draft', qty: [2] });
+      await f.seedFullReservations(tx, w, { foId, foItemIds: [foItemId], box, qty: [2] });
+      await f.seedBox(tx, w, [foItemId], { status: 'draft', qty: [2], supplierId });
+
+      await reprojectFulfillmentOrders(tx, [foId]);
+
+      expect(await foi(tx, foItemId)).toMatchObject({ status: 'ready', reservedQty: 2 });
+      expect(await fo(tx, foId)).toMatchObject({ status: 'ready', totalReservedQty: 2 });
+    });
+  });
+
   it('예약이 일부면 partially_reserved', async () => {
     await inRollbackTx(db, async (tx) => {
       const { w, foId, foItemId } = await seed(tx, 2);

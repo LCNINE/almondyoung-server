@@ -23,6 +23,7 @@ import {
   count,
   sql,
   ilike,
+  isNotNull,
   isNull,
   exists,
   notExists,
@@ -752,16 +753,23 @@ export class SalesOrdersService {
             ),
           );
           break;
-        case 'direct': // 직배송: drop_ship FO 존재
+        case 'direct': // 직배송: 입점사 상자 존재(K3 PR4) — FO 모드가 아니다
           conditions.push(
             exists(
               trx
                 .select({ x: sql`1` })
-                .from(S.fulfillmentOrders)
+                .from(S.shipments)
+                .innerJoin(S.shipmentLines, eq(S.shipmentLines.shipmentId, S.shipments.id))
+                .innerJoin(
+                  S.fulfillmentOrderItems,
+                  eq(S.fulfillmentOrderItems.id, S.shipmentLines.fulfillmentOrderItemId),
+                )
+                .innerJoin(S.fulfillmentOrders, eq(S.fulfillmentOrders.id, S.fulfillmentOrderItems.fulfillmentOrderId))
                 .where(
                   and(
                     eq(S.fulfillmentOrders.salesOrderId, S.salesOrders.id),
-                    eq(S.fulfillmentOrders.fulfillmentMode, 'drop_ship'),
+                    isNotNull(S.shipments.supplierId),
+                    notInArray(S.shipments.status, ['canceled', 'superseded']),
                   ),
                 ),
             ),
@@ -1088,9 +1096,19 @@ export class SalesOrdersService {
 
         this.shipBlockCounts(),
 
+        // 직배 = 입점사 상자(취소·대체 제외)가 있는 판매주문 수(K3 PR4). 상자 둘이어도 주문 하나로 센다
         db
-          .select({ cnt: count() })
-          .from(wmsTables.fulfillmentOrders)
+          .select({ cnt: sql<number>`count(distinct ${wmsTables.salesOrders.id})::int` })
+          .from(wmsTables.shipments)
+          .innerJoin(wmsTables.shipmentLines, eq(wmsTables.shipmentLines.shipmentId, wmsTables.shipments.id))
+          .innerJoin(
+            wmsTables.fulfillmentOrderItems,
+            eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+          )
+          .innerJoin(
+            wmsTables.fulfillmentOrders,
+            eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+          )
           .innerJoin(
             wmsTables.salesOrders,
             and(
@@ -1098,7 +1116,12 @@ export class SalesOrdersService {
               gte(wmsTables.salesOrders.orderDate, fourteenDaysAgo),
             ),
           )
-          .where(eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship')),
+          .where(
+            and(
+              isNotNull(wmsTables.shipments.supplierId),
+              notInArray(wmsTables.shipments.status, ['canceled', 'superseded']),
+            ),
+          ),
 
         // 출고완료·부분출고: 진행 중 SO(pending·confirmed·processing, 14일)를 라인 수량으로 접어 센다(R14).
         // 라이브 진행 중 주문은 pending 이다 — 생성이 pending 으로 넣고 confirm 은 관리자 엔드포인트뿐이라 confirmed 만

@@ -49,7 +49,8 @@ export const ORDER_PROGRESS_STATES = {
     'awaiting_batch',
     'CONSOLIDATION_PENDING',
   ],
-  dispatch: ['awaiting_dispatch', 'drop_ship_pending'],
+  // drop_ship_* 는 입점사 상자(K3 PR4) — 넘기지 않음·못 보냄은 dispatch, 넘김은 track
+  dispatch: ['awaiting_dispatch', 'drop_ship_pending', 'drop_ship_unfulfillable'],
   track: ['shipped', 'in_transit', 'failed', 'drop_ship_forwarded'],
   cancel_request: ['settle_in_progress', 'settle_delayed', 'settle_refused'],
   // 취소된 주문의 열린 상자·예약. 열린 상자의 recovery_code 가 그대로 나올 수도 있다
@@ -76,7 +77,8 @@ export type OrderProgressState = OrderProgressStateOf<OrderProgressStage>;
 
 /**
  * 상자 하나의 판정(리컨실러 스펙 §11.5 «상자별 결과»)에서 상자 규칙이 겨눌 수 있는 단계·세부 상태. 주문 어휘의 부분집합이다 —
- * accept·fo·cancel_request·return_exchange 는 주문 단위 판정이라 상자에 없고, 직배(drop_ship_*)는 상자가 없다.
+ * accept·fo·cancel_request·return_exchange 는 주문 단위 판정이라 상자에 없고, 입점사 상자의 drop_ship_* 는 겨누는 상자 규칙이 아직 없다
+ * (판정 SQL 은 상자별 결과에도 낸다 — 규칙이 생길 때 더한다).
  * unclassified 는 상자 상태·recovery_code 가 그대로 나오는 열린 값이라 겨눌 규칙이 생길 때 더한다.
  */
 export const SHIPMENT_STAGES = ['reserve', 'plan', 'waybill', 'pick', 'dispatch', 'track', 'cancel'] as const;
@@ -152,11 +154,13 @@ export const STUCK_AFTER_MS: Record<OrderProgressStage, number> = {
 /**
  * 세부 상태가 단계 기준을 덮는 칸. null = 갇힘으로 보지 않는다.
  * 정산 중은 «환불 지연»(확정 + SETTLE_DELAYED_AFTER_MS)이 될 때까지 운영자 일이 아니고, 지연·거절은 그 자체가 «기준을 넘었다»는 뜻이다(스펙 §5.2·§8.1).
+ * 입점사의 «못 보냄»은 관리자가 고객에게 묻고 정해야 하는 일이라 보고 즉시 갇힘이다(K3 스펙 D6).
  */
 export const STUCK_AFTER_MS_BY_STATE: Partial<Record<OrderProgressState, number | null>> = {
   settle_in_progress: null,
   settle_delayed: 0,
   settle_refused: 0,
+  drop_ship_unfulfillable: 0,
 };
 
 function hasStateOverride(state: string): state is keyof typeof STUCK_AFTER_MS_BY_STATE {

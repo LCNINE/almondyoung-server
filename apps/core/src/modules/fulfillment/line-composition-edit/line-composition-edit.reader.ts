@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, eq, inArray, isNotNull, isNull, ne, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, eq, exists, inArray, isNotNull, notExists, notInArray, SQL, sql } from 'drizzle-orm';
 import { DbTx, SalesOrderLine, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import {
   compositionFromMatching,
@@ -11,6 +11,7 @@ import { selectFrozenCompositions } from '../../product-matching/line-compositio
 import { ProductSkuMappingService } from '../../product-matching/services/product-sku-mapping.service';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import { ACTIVE_WORK_ITEM_STATUSES } from '../services/work-item-status';
+import { ACTIVE_SHIPMENT_STATUSES } from '../fulfillment-order/fulfillment-order-projection';
 import { BoxLineView } from '../draft-box/box-target';
 import {
   BoxOfLine,
@@ -23,6 +24,29 @@ import {
 
 // 이미 끝난 박스 — 라인을 «담고» 있어도 수정 판정에서 뺀다(묘비·대체)
 const DEAD_SHIPMENT_STATUSES = ['canceled', 'superseded'] as const;
+
+/**
+ * 그 판매주문 라인의 FO 항목이 열린 입점사 상자(`supplier_id IS NOT NULL`, ACTIVE 상태)에 담긴 줄을 찾는 서브쿼리.
+ * 단일 라인 가드(`lineInSupplierShipment`)와 일괄 적용 후보(`existingLineCandidates`)가 이 한 술어를 같이 써서 어긋나지 않게 한다.
+ * `lineIdText` 는 text 로 맞춘 라인 id(fulfillment_order_items.sales_order_line_id 가 varchar).
+ */
+function supplierShipmentLineOf(trx: DbTx, lineIdText: SQL) {
+  return trx
+    .select({ id: wmsTables.shipmentLines.id, x: sql`1` })
+    .from(wmsTables.shipmentLines)
+    .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
+    .innerJoin(
+      wmsTables.fulfillmentOrderItems,
+      eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+    )
+    .where(
+      and(
+        eq(wmsTables.fulfillmentOrderItems.salesOrderLineId, lineIdText),
+        isNotNull(wmsTables.shipments.supplierId),
+        inArray(wmsTables.shipments.status, [...ACTIVE_SHIPMENT_STATUSES]),
+      ),
+    );
+}
 
 /** 라인 구성 수정 경로의 조회(#1063 스펙 §7). 쓰기는 LineCompositionEditManager 가 한다. */
 @Injectable()
@@ -71,6 +95,15 @@ export class LineCompositionEditReader {
       .where(eq(wmsTables.fulfillmentOrders.salesOrderId, salesOrderId))
       .limit(1);
     return fo ?? null;
+  }
+
+  /**
+   * 그 라인의 FO 항목이 열린 입점사 상자(`supplier_id IS NOT NULL`, draft·planned·recovery_required)에 담겨 있는가(K3 PR4, N10).
+   * 입점사 상자는 입점사에게 가는 몫이라 창고 구성 편집이 닿을 수 없다. 옛 FO 단위 `fulfillment_mode='drop_ship'` 판별을 대체한다.
+   */
+  async lineInSupplierShipment(trx: DbTx, salesOrderLineId: string): Promise<boolean> {
+    const [row] = await supplierShipmentLineOf(trx, sql`${salesOrderLineId}`).limit(1);
+    return Boolean(row);
   }
 
   async lineHasFulfillmentItems(trx: DbTx, salesOrderLineId: string): Promise<boolean> {
@@ -200,7 +233,7 @@ export class LineCompositionEditReader {
 
   /**
    * 일괄 적용 후보: 그 variant 의 굳힌 라인 중 아직 안 나간 수량이 있고 FO·판매주문이 닫히지 않은 것(스펙 §7.2 «FO 미완료»).
-   * 직배송 FO 는 박스가 없어 맞출 것이 없으므로 뺀다. FO 전 운영자 지정 라인은 FO 항목이 없어 여기 안 들어온다 — FO 가 생길 때
+   * 열린 입점사 상자에 담긴 FO 항목은 창고 박스가 아니라 맞출 것이 없으므로 뺀다(K3 PR4). FO 전 운영자 지정 라인은 FO 항목이 없어 여기 안 들어온다 — FO 가 생길 때
    * 그 구성으로 만들어진다.
    */
   async existingLineCandidates(
@@ -224,7 +257,8 @@ export class LineCompositionEditReader {
             eq(lines.variantId, variantId),
             isNotNull(lines.compositionSource),
             sql`${items.qty} - ${items.shippedQty} - ${items.canceledQty} > 0`,
-            or(isNull(orders.fulfillmentMode), ne(orders.fulfillmentMode, 'drop_ship')),
+            // 라인 단위로 뺀다 — [창고 SKU, 직배 SKU] 섞인 라인은 창고 FOI 가 있어도 단일 라인 가드(lineInSupplierShipment)와 같이 막는다
+            notExists(supplierShipmentLineOf(trx, sql`${lines.id}::text`)),
             notInArray(orders.status, [...CLOSED_FULFILLMENT_ORDER_STATUSES]),
             notInArray(salesOrders.status, [...CLOSED_SALES_ORDER_STATUSES, 'cancelled']),
           ),

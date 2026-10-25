@@ -1,7 +1,13 @@
 import { randomUUID } from 'crypto';
-import { eq, max, sql } from 'drizzle-orm';
+import { and, eq, isNull, max, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
-import { World } from '../../../fulfillment/order-progress/__support__/order-progress.fixtures';
+import {
+  seedBox,
+  seedDirectSupplier,
+  seedHandoff,
+  World,
+} from '../../../fulfillment/order-progress/__support__/order-progress.fixtures';
+import type { SupplierShipmentStage } from '../../../fulfillment/shipment/supplier-shipment-stage';
 
 /**
  * 출고·배송 사실 픽스처 (K6 PR2b) — 실제 발송(`shipment-dispatch.service.ts` 의 dispatchLocked)·배송 추적
@@ -108,4 +114,68 @@ export async function recallParcel(
       .set({ shippedQty: sql`${wmsTables.fulfillmentOrderItems.shippedQty} - ${line.qty}`, updatedAt: recalledAt })
       .where(eq(wmsTables.fulfillmentOrderItems.id, line.foItemId));
   }
+}
+
+/**
+ * 입점사 몫 (K3 PR4) — FO 생성(`createV2`)이 직배 라인에 남기는 모양: 직배 SKU(`drop_shipped`, 직배 공급사 하나)의 FOI 와
+ * 그 FOI 의 입점사 상자(warehouse_id NULL). 입점사 상자 라인은 예약하지 않는다. `foId` 를 안 주면 직배만 있는 주문이라
+ * 창고 없는 FO 를 만든다(N2). 단계(`supplier-shipment-stage.ts`)는 `stage` 로 —
+ *   pending   = draft, 넘김 없음
+ *   forwarded = draft, 넘김 묶음 있음
+ *   shipped   = shipped(넘긴 뒤 발송), FOI shipped_qty = qty — 입점사 발송이 남기는 수량. 배송완료 추적은 없다
+ */
+export async function seedSupplierShare(
+  tx: DbTx,
+  w: World,
+  order: { salesOrderId: string; lineId: string },
+  args: { stage: SupplierShipmentStage; qty?: number; foId?: string },
+): Promise<{ foId: string; foItemId: string; shipmentId: string; skuId: string; supplierId: string }> {
+  const qty = args.qty ?? 1;
+  const supplierId = await seedDirectSupplier(tx);
+  const [sku] = await tx
+    .insert(wmsTables.skus)
+    .values({
+      name: 'sf-direct-sku',
+      code: `SF-D-${randomUUID().toUpperCase()}`,
+      holderId: w.holderId,
+      stockType: 'drop_shipped',
+    })
+    .returning();
+  await tx.insert(wmsTables.skuSuppliers).values({ skuId: sku.id, supplierId });
+  const foId =
+    args.foId ??
+    (
+      await tx
+        .insert(wmsTables.fulfillmentOrders)
+        .values({ salesOrderId: order.salesOrderId, warehouseId: null, status: 'ready', totalQty: qty })
+        .returning()
+    )[0].id;
+  const [item] = await tx
+    .insert(wmsTables.fulfillmentOrderItems)
+    .values({
+      fulfillmentOrderId: foId,
+      salesOrderId: order.salesOrderId,
+      salesOrderLineId: order.lineId,
+      skuId: sku.id,
+      qty,
+      shippedQty: args.stage === 'shipped' ? qty : 0,
+    })
+    .returning();
+  await tx
+    .insert(wmsTables.salesOrderLineCompositions)
+    .values({ salesOrderLineId: order.lineId, skuId: sku.id, qtyPerUnit: 1 })
+    .onConflictDoNothing();
+  await tx
+    .update(wmsTables.salesOrderLines)
+    .set({ compositionSource: 'matching', compositionSetAt: new Date() })
+    .where(and(eq(wmsTables.salesOrderLines.id, order.lineId), isNull(wmsTables.salesOrderLines.compositionSource)));
+  const supplierHandoffId = args.stage === 'pending' ? undefined : await seedHandoff(tx, supplierId);
+  const box = await seedBox(tx, { ...w, skuId: sku.id }, [item.id], {
+    status: args.stage === 'shipped' ? 'shipped' : 'draft',
+    shippedAt: args.stage === 'shipped' ? new Date() : undefined,
+    qty: [qty],
+    supplierId,
+    supplierHandoffId,
+  });
+  return { foId, foItemId: item.id, shipmentId: box.shipmentId, skuId: sku.id, supplierId };
 }

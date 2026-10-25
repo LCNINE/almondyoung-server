@@ -188,7 +188,8 @@ describeIfDb('V2 draft shipment partial reservation (DB integration)', () => {
         .set({ fulfillmentKind: 'digital', requiresShipping: false })
         .where(eq(wmsTables.salesOrderLines.id, lineIds[0]));
       await expect(wired.fulfillments.create({ salesOrderId, warehouseId }, tx)).resolves.toBeNull();
-      await expect(wired.fulfillments.create({ salesOrderId, fulfillmentMode: 'drop_ship' }, tx)).resolves.toBeNull();
+      // 창고 없이도 — 디지털만이면 창고 몫이 없어 사전 검사가 창고를 요구하지 않는다
+      await expect(wired.fulfillments.create({ salesOrderId }, tx)).resolves.toBeNull();
       expect(
         await tx
           .select()
@@ -198,17 +199,18 @@ describeIfDb('V2 draft shipment partial reservation (DB integration)', () => {
     });
   });
 
-  // drop_ship 주문이 자사 shipment/예약을 만들지 않았음을 이 주문 범위에서 검증한다.
-  async function expectNoDropShipArtifacts(tx: DbTx, fulfillmentOrderId: string, skuId: string) {
-    const lines = await tx
-      .select({ id: wmsTables.shipmentLines.id })
+  // 직배분(K3 PR4)은 입점사 상자로만 간다 — 창고 상자도 자사 재고 예약도 없음을 이 주문 범위에서 검증한다.
+  async function expectOnlySupplierBox(tx: DbTx, fulfillmentOrderId: string, skuId: string, supplierId: string) {
+    const boxes = await tx
+      .selectDistinct({ warehouseId: wmsTables.shipments.warehouseId, supplierId: wmsTables.shipments.supplierId })
       .from(wmsTables.shipmentLines)
+      .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
       .innerJoin(
         wmsTables.fulfillmentOrderItems,
         eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
       )
       .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
-    expect(lines).toHaveLength(0);
+    expect(boxes).toEqual([{ warehouseId: null, supplierId }]);
     const reservations = await tx
       .select({ id: wmsTables.stockReservations.id })
       .from(wmsTables.stockReservations)
@@ -216,30 +218,23 @@ describeIfDb('V2 draft shipment partial reservation (DB integration)', () => {
     expect(reservations).toHaveLength(0);
   }
 
-  it('keeps drop_ship on the direct route without a shipment or own-stock reservation', async () => {
+  it('routes drop_shipped SKU demand to a supplier box even when backlog input omits fulfillmentMode', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await physicalOrder(tx, { quantity: 2, onHand: 2 });
-      const fo = await wired.fulfillments.create(
-        { salesOrderId: fixture.salesOrderId, warehouseId: fixture.warehouseId, fulfillmentMode: 'drop_ship' },
-        tx,
-      );
-      if (!fo) throw new Error('expected a drop_ship fulfillment order');
-      expect(fo).toMatchObject({ fulfillmentMode: 'drop_ship', status: 'ready' });
-      // 이 주문 범위로 좁혀 단언한다 — 전역 0-count 는 커밋형 픽스처를 남기는 다른 통합 스펙과
-      // 로컬 공유 DB 에서 병렬 실행될 때 간섭당한다(실측 플레이크).
-      await expectNoDropShipArtifacts(tx, fo.id, fixture.skuId);
-    });
-  });
-
-  it('routes drop_shipped SKU demand directly even when backlog input omits fulfillmentMode', async () => {
-    await inRollbackTx(db, async (tx) => {
-      const fixture = await physicalOrder(tx, { quantity: 2, onHand: 0 });
       await tx.update(wmsTables.skus).set({ stockType: 'drop_shipped' }).where(eq(wmsTables.skus.id, fixture.skuId));
+      const [supplier] = await tx
+        .insert(wmsTables.suppliers)
+        .values({ name: `it-direct-${randomUUID().slice(0, 8)}`, isDirectDelivery: true })
+        .returning();
+      await tx.insert(wmsTables.skuSuppliers).values({ skuId: fixture.skuId, supplierId: supplier.id });
 
       const fo = await wired.fulfillments.create({ salesOrderId: fixture.salesOrderId }, tx);
-      if (!fo) throw new Error('expected a drop_ship fulfillment order');
-      expect(fo).toMatchObject({ fulfillmentMode: 'drop_ship', warehouseId: null, status: 'ready' });
-      await expectNoDropShipArtifacts(tx, fo.id, fixture.skuId);
+      if (!fo) throw new Error('expected a fulfillment order');
+      // 새 FO 는 drop_ship 모드를 쓰지 않는다(ADR-0050 §2) — 직배는 상자 주인으로 판별한다
+      expect(fo).toMatchObject({ fulfillmentMode: 'in_house', warehouseId: null, status: 'ready' });
+      // 이 주문 범위로 좁혀 단언한다 — 전역 0-count 는 커밋형 픽스처를 남기는 다른 통합 스펙과
+      // 로컬 공유 DB 에서 병렬 실행될 때 간섭당한다(실측 플레이크).
+      await expectOnlySupplierBox(tx, fo.id, fixture.skuId, supplier.id);
     });
   });
 

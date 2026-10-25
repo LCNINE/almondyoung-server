@@ -70,6 +70,10 @@ export async function seedFo(
   order: { salesOrderId: string; lineId: string },
   args: {
     status?: 'created' | 'partially_reserved' | 'ready' | 'processing' | 'completed';
+    /**
+     * 옛 FO 단위 직배(`fulfillment_mode='drop_ship'`·`direct_ship_status`) — 옛 쓰기 경로(direct-ship.service·취소 알림, PR 5·8 에서 걷는다)
+     * 스펙 전용. 정체 보드·K6 수량 사실·판매주문 단계는 이걸 읽지 않는다(K3 PR4, N8) — 직배는 `seedBox({ supplierId })` 로 만든다.
+     */
     dropShip?: 'pending' | 'forwarded' | 'completed' | 'canceled';
     createdAt?: Date;
     /** FO 항목 수량. 안 주면 1 */
@@ -123,6 +127,15 @@ export async function seedDirectSupplier(tx: DbTx): Promise<string> {
   return row.id;
 }
 
+/** 입점사 넘김 묶음(K3) — 상자를 묶을 때 `seedBox({ supplierId, supplierHandoffId })` 로 같은 입점사를 준다. createdAt = 넘긴 시각 */
+export async function seedHandoff(tx: DbTx, supplierId: string, createdAt = new Date()): Promise<string> {
+  const [row] = await tx
+    .insert(wmsTables.supplierHandoffs)
+    .values({ supplierId, createdBy: 'op-operator', createdAt })
+    .returning();
+  return row.id;
+}
+
 export async function seedBox(
   tx: DbTx,
   w: World,
@@ -137,6 +150,10 @@ export async function seedBox(
     qty?: number[];
     /** 주면 입점사 상자(warehouse_id NULL, K3) */
     supplierId?: string;
+    /** 넘김 묶음(`seedHandoff`). 같은 입점사의 묶음이어야 한다 — 복합 FK 가 지킨다 */
+    supplierHandoffId?: string;
+    /** `lineIndex` 번째 라인을 입점사가 «못 보냄»으로 알렸다 */
+    unfulfillable?: { lineIndex: number; reason: string; at: Date };
   },
 ): Promise<{ shipmentId: string; lineIds: string[] }> {
   const [s] = await tx
@@ -144,6 +161,7 @@ export async function seedBox(
     .values({
       warehouseId: args.supplierId ? null : w.warehouseId,
       supplierId: args.supplierId ?? null,
+      supplierHandoffId: args.supplierHandoffId ?? null,
       status: args.status,
       recoveryCode: args.recoveryCode ?? null,
       openedAt: args.openedAt ?? new Date(),
@@ -155,7 +173,19 @@ export async function seedBox(
   for (const [i, fulfillmentOrderItemId] of foItemIds.entries()) {
     const [l] = await tx
       .insert(wmsTables.shipmentLines)
-      .values({ shipmentId: s.id, fulfillmentOrderItemId, skuId: w.skuId, qty: args.qty?.[i] ?? 1 })
+      .values({
+        shipmentId: s.id,
+        fulfillmentOrderItemId,
+        skuId: w.skuId,
+        qty: args.qty?.[i] ?? 1,
+        ...(args.unfulfillable?.lineIndex === i
+          ? {
+              unfulfillableReason: args.unfulfillable.reason,
+              unfulfillableReportedAt: args.unfulfillable.at,
+              unfulfillableReportedBy: 'op-supplier',
+            }
+          : {}),
+      })
       .returning();
     lineIds.push(l.id);
   }

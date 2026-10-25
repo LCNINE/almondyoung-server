@@ -305,6 +305,7 @@ ADR-0041(2026-09-30)이 배정을 작업 항목으로 옮기면서 세 벌이 �
   - fulfillment 모듈 안의 FO 직접 쓰기 — **status 는 갈랐다(K3 PR1).** FO·FOI status 는 투영 함수 `reprojectFulfillmentOrders`(`fulfillment/fulfillment-order/`)만 쓰고, 예외는 옛 직배 `fulfillments.service.ts` 하나다. 정본은 `fulfillment-order-status-writes.guard.spec.ts` 의 허용 목록. 다른 칸(`shippedAt`·수량·예약 합) 쓰기는 «다시 재는 명령»의 FO 줄로 잰다.
   - K3 본편은 직배를 «입점사가 보내는 상자»로 옮기는 일이다 — 설계 `docs/superpowers/specs/2026-10-25-k3-drop-ship-supplier-shipments-design.md`(PR 8개, §7).
   - 입점사 상자 스키마(상자 주인·넘김 묶음·못 보냄·입점사 발송 시도)와 창고 흐름 가드가 생겼다(K3 PR2, 휴면). 정본은 ADR-0050 과 `supplier-shipment-entry.guard.spec.ts`.
+  - FO 생성이 입점사마다 draft 상자를 만들고 «직배와 창고분이 섞이면 거절»이 없어졌다(K3 PR4, 휴면). 정체 보드·K6 수량 사실·고객 단계·관리자 필터·채널 주소 변경은 상자로 읽고(단계 정의 `supplier-shipment-stage.ts`), FO status 직접 쓰기 예외는 옛 `ship()` 하나만 남았다. 직배 목록 읽기 `GET /direct-ship/supplier-queue`.
 - **전제:** 직배는 라이브 0건(개통 전, 2026-10-24 실측). 동작 변경의 라이브 영향은 착수 때 다시 잰다.
 
 **K4. 대기 오퍼레이션 재개 레지스트리**

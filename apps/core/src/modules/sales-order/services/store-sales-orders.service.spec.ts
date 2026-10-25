@@ -102,8 +102,11 @@ function printCancelMock(
 function makeContext(
   options: {
     so?: ReturnType<typeof makeSo>;
-    fos?: { status: string; directShipStatus?: string | null; fulfillmentMode?: string | null }[];
+    fos?: { status: string }[];
+    /** 창고 상자 status(canceled·superseded 제외) */
     activeShipmentStatuses?: string[];
+    /** 입점사 상자(K3 PR4) — 단계는 `supplier-shipment-stage.ts` 가 정한다 */
+    supplierShipments?: Array<{ status: 'draft' | 'recovery_required' | 'shipped'; supplierHandoffId: string | null }>;
     printOrders?: Array<Record<string, unknown>>;
     allOutsourced?: boolean;
     /** 판매주문이 아직 없다(수집 전) */
@@ -138,12 +141,19 @@ function makeContext(
   let currentSo = so;
   const printCancel = options.printCancel ?? jest.fn().mockResolvedValue(PRINT_RESULT);
   const printNote = jest.fn().mockResolvedValue(undefined);
-  const fos = (options.fos ?? []).map((fo) => ({
-    directShipStatus: null,
-    fulfillmentMode: null,
-    shippedAt: null,
-    ...fo,
+  const fos = (options.fos ?? []).map((fo) => ({ shippedAt: null, ...fo }));
+  const supplierShipmentRows = (options.supplierShipments ?? []).map((box, i) => ({
+    id: `supplier-sh-${i}`,
+    status: box.status,
+    supplier_handoff_id: box.supplierHandoffId,
   }));
+  const warehouseShipmentRows = (options.activeShipmentStatuses ?? []).map((status) => ({
+    id: `sh-${status}`,
+    status,
+  }));
+  const dialect = new PgDialect();
+  /** db.db.execute 로 나간 SQL(렌더링한 문자열) — 상자 읽기 둘이 어느 주인을 거르는지 본다 */
+  const executedSql: string[] = [];
   const walletOutcome = options.walletOutcome ?? {
     kind: 'success',
     refunds: [
@@ -171,9 +181,14 @@ function makeContext(
   const dbMock = {
     run: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn(dbMock.db)),
     db: {
-      execute: jest
-        .fn()
-        .mockResolvedValue((options.activeShipmentStatuses ?? []).map((status) => ({ id: `sh-${status}`, status }))),
+      // 상자 읽기 둘 — 입점사 상자 단계(supplier_id IS NOT NULL)와 창고 상자 status(warehouse_id IS NOT NULL)
+      execute: jest.fn((query: SQL) => {
+        const text = dialect.sqlToQuery(query).sql;
+        executedSql.push(text);
+        return Promise.resolve(
+          text.includes('s.supplier_id IS NOT NULL') ? supplierShipmentRows : warehouseShipmentRows,
+        );
+      }),
       select: jest.fn().mockImplementation(() => ({
         from: jest.fn().mockImplementation((table: unknown) => ({
           where: jest.fn().mockImplementation(() => {
@@ -304,6 +319,7 @@ function makeContext(
     service,
     cancellation,
     dbMock,
+    executedSql,
     salesOrdersServiceMock,
     walletClientMock,
     cancelRequestsMock,
@@ -1211,25 +1227,44 @@ describe('StoreSalesOrdersService', () => {
         expect(r.availableActions).toEqual(['receipt']);
         expect(r.cancelUnavailableReason).toBe('already_processing');
       });
-      it('직배(drop_ship) forwarded → 취소 버튼 없음', async () => {
+      it('넘긴 입점사 상자 → 취소 버튼 없음', async () => {
         // 사다리: 'forwarded drop-ship moves but is not shipped'
         const { service } = makeContext({
-          fos: [{ status: 'ready', fulfillmentMode: 'drop_ship', directShipStatus: 'forwarded' }],
+          fos: [{ status: 'ready' }],
+          supplierShipments: [{ status: 'draft', supplierHandoffId: 'ho-1' }],
           phase: shipping,
         });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
         expect(r.availableActions).not.toContain('cancel');
         expect(r.shipmentProgress).toEqual({ total: 1, shipped: 1, delivered: 0 });
       });
-      it('직배 completed → 진행 요약 배송완료', async () => {
+      it('발송된 입점사 상자 → 진행 요약 배송완료', async () => {
         // 사다리: 'completed drop-ship shows delivered'
         const { service } = makeContext({
-          fos: [{ status: 'ready', fulfillmentMode: 'drop_ship', directShipStatus: 'completed' }],
+          fos: [{ status: 'ready' }],
+          supplierShipments: [{ status: 'shipped', supplierHandoffId: 'ho-1' }],
           phase: delivered,
         });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
         expect(r.cancelUnavailableReason).toBe('already_shipped');
         expect(r.shipmentProgress).toEqual({ total: 1, shipped: 1, delivered: 1 });
+      });
+      it('입점사 상자 pending·forwarded·shipped + 창고 상자 delivered → {4,3,2}, 입점사 상자는 창고 상자 목록에 없다', async () => {
+        // 통합: order-fulfillment-phase.integration.spec.ts 'customer progress counts supplier boxes once by their stage'
+        const { service, executedSql } = makeContext({
+          fos: [{ status: 'partially_shipped' }],
+          activeShipmentStatuses: ['delivered'],
+          supplierShipments: [
+            { status: 'draft', supplierHandoffId: null },
+            { status: 'draft', supplierHandoffId: 'ho-1' },
+            { status: 'shipped', supplierHandoffId: 'ho-1' },
+          ],
+          phase: shipping,
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.shipmentProgress).toEqual({ total: 4, shipped: 3, delivered: 2 });
+        expect(executedSql.filter((q) => q.includes('s.warehouse_id IS NOT NULL'))).toHaveLength(1);
+        expect(executedSql.filter((q) => q.includes('s.supplier_id IS NOT NULL'))).toHaveLength(1);
       });
     });
   });

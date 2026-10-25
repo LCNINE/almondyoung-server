@@ -4,6 +4,7 @@ import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { makeDbService } from '../services/__support__';
 import { OrderProgressReader, JudgedRow } from './order-progress.reader';
+import { isStuck } from './order-progress.thresholds';
 import * as f from './__support__/order-progress.fixtures';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -266,14 +267,15 @@ describeIfDb('order-progress 판정 (PostgreSQL integration)', () => {
     ]);
   });
 
-  it('취소 대기(CANCEL_REPLAN_PENDING) 상자와 직배 단위의 판정은 그대로다', async () => {
+  it('취소 대기(CANCEL_REPLAN_PENDING) 상자와 넘기지 않은 입점사 상자의 판정은 그대로다', async () => {
     const ids: string[] = [];
     const rows = await judgeIn(async (tx, w) => {
       const a = await f.seedOrder(tx);
       const fa = await f.seedFo(tx, w, a, { status: 'created' });
       await f.seedBox(tx, w, [fa.foItemId], { status: 'draft', recoveryCode: 'CANCEL_REPLAN_PENDING' });
       const b = await f.seedOrder(tx);
-      await f.seedFo(tx, w, b, { dropShip: 'pending' });
+      const fb = await f.seedFo(tx, w, b, { status: 'ready' });
+      await f.seedBox(tx, w, [fb.foItemId], { status: 'draft', supplierId: await f.seedDirectSupplier(tx) });
       ids.push(a.salesOrderId, b.salesOrderId);
       return ids;
     });
@@ -372,20 +374,172 @@ describeIfDb('order-progress 판정 (PostgreSQL integration)', () => {
     expect(r).toMatchObject({ stage: 'track', state: 'in_transit', estimatedEnteredAt: at.toISOString() });
   });
 
-  it('직배 pending → dispatch/drop_ship_pending, forwarded → track', async () => {
-    const rows = await judgeIn(async (tx, w) => {
-      const a = await f.seedOrder(tx);
-      await f.seedFo(tx, w, a, { dropShip: 'pending' });
-      const b = await f.seedOrder(tx);
-      await f.seedFo(tx, w, b, { dropShip: 'forwarded' });
-      return [a.salesOrderId, b.salesOrderId];
+  // 입점사 상자는 상자로 판정한다(K3 PR4, N7) — 단계 술어는 fulfillment/shipment/supplier-shipment-stage.ts 와 같다
+  describe('입점사 상자', () => {
+    /** 입점사 상자 하나만 있는 주문. FO 는 ready(투영이 입점사 라인을 예약된 것과 같이 센다, N4) */
+    async function supplierOnly(
+      tx: DbTx,
+      w: f.World,
+      box: Omit<Parameters<typeof f.seedBox>[3], 'supplierId'>,
+      handoffAt?: Date,
+    ) {
+      const o = await f.seedOrder(tx);
+      await f.seedBacklog(tx, o.salesOrderId, 'completed');
+      const fo = await f.seedFo(tx, w, o, { status: 'ready' });
+      const supplierId = await f.seedDirectSupplier(tx);
+      const supplierHandoffId = handoffAt ? await f.seedHandoff(tx, supplierId, handoffAt) : undefined;
+      const b = await f.seedBox(tx, w, [fo.foItemId], { ...box, supplierId, supplierHandoffId });
+      return { orderId: o.salesOrderId, boxIds: [b.shipmentId] };
+    }
+    const onlyBox = (boxes: Map<string, unknown>) => [...boxes.values()][0];
+
+    it('넘기지 않은 입점사 상자 → dispatch/drop_ship_pending, 진입 = opened_at(예약 0 인데 reserve 가 아니다)', async () => {
+      const at = new Date('2026-10-05T00:00:00.000Z');
+      const { order, boxes } = await judgeOrderAndBoxes((tx, w) =>
+        supplierOnly(tx, w, { status: 'draft', openedAt: at }),
+      );
+      const expected = { stage: 'dispatch', state: 'drop_ship_pending', estimatedEnteredAt: at.toISOString() };
+      expect(order).toMatchObject({ ...expected, outcome: null });
+      expect(onlyBox(boxes)).toMatchObject(expected);
     });
-    expect(rows.map((r) => [r.stage, r.state])).toEqual(
-      expect.arrayContaining([
-        ['dispatch', 'drop_ship_pending'],
-        ['track', 'drop_ship_forwarded'],
-      ]),
-    );
+
+    it('넘긴 입점사 상자 → track/drop_ship_forwarded, 진입 = 묶음 created_at', async () => {
+      const handoffAt = new Date('2026-10-05T06:00:00.000Z');
+      const { order, boxes } = await judgeOrderAndBoxes((tx, w) =>
+        supplierOnly(tx, w, { status: 'draft', openedAt: new Date('2026-10-01T00:00:00.000Z') }, handoffAt),
+      );
+      const expected = { stage: 'track', state: 'drop_ship_forwarded', estimatedEnteredAt: handoffAt.toISOString() };
+      expect(order).toMatchObject(expected);
+      expect(onlyBox(boxes)).toMatchObject(expected);
+    });
+
+    // Review Focus — 못 보냄 라인과 정상 라인이 섞여도 상자는 «못 보냄»(넘김 여부와 무관)
+    it('못 보냄 라인이 있는 입점사 상자 → dispatch/drop_ship_unfulfillable, 진입 = 보고 시각, 바로 갇힘', async () => {
+      const reportedAt = new Date('2026-10-06T02:59:00.000Z');
+      const { order, boxes } = await judgeOrderAndBoxes(async (tx, w) => {
+        const o = await f.seedOrder(tx);
+        await f.seedBacklog(tx, o.salesOrderId, 'completed');
+        const fo = await f.seedFo(tx, w, o, { status: 'ready' });
+        const second = await addFoItem(tx, w, o, fo.foId);
+        const supplierId = await f.seedDirectSupplier(tx);
+        const handoff = await f.seedHandoff(tx, supplierId, new Date('2026-10-05T00:00:00.000Z'));
+        const b = await f.seedBox(tx, w, [fo.foItemId, second], {
+          status: 'draft',
+          supplierId,
+          supplierHandoffId: handoff,
+          unfulfillable: { lineIndex: 1, reason: '품절', at: reportedAt },
+        });
+        return { orderId: o.salesOrderId, boxIds: [b.shipmentId] };
+      });
+      const expected = {
+        stage: 'dispatch',
+        state: 'drop_ship_unfulfillable',
+        estimatedEnteredAt: reportedAt.toISOString(),
+      };
+      expect(order).toMatchObject(expected);
+      expect(onlyBox(boxes)).toMatchObject(expected);
+      // 1분 전 보고 — 단계 기준(dispatch 1시간)이면 아직이지만 «못 보냄»은 관리자 개입이라 바로 갇힘이다
+      expect(isStuck('dispatch', reportedAt, now)).toBe(false);
+      expect(isStuck('dispatch', reportedAt, now, order.state)).toBe(true);
+    });
+
+    it('못 보냄 라인이 둘이면 진입은 가장 이른 보고 시각, 넘기지 않은 상자여도 «못 보냄»', async () => {
+      const earlier = new Date('2026-10-04T00:00:00.000Z');
+      const r = await one(async (tx, w) => {
+        const o = await f.seedOrder(tx);
+        const fo = await f.seedFo(tx, w, o, { status: 'ready' });
+        const second = await addFoItem(tx, w, o, fo.foId);
+        const b = await f.seedBox(tx, w, [fo.foItemId, second], {
+          status: 'draft',
+          supplierId: await f.seedDirectSupplier(tx),
+          unfulfillable: { lineIndex: 0, reason: '단종', at: new Date('2026-10-05T00:00:00.000Z') },
+        });
+        await tx
+          .update(wmsTables.shipmentLines)
+          .set({
+            unfulfillableReason: '품절',
+            unfulfillableReportedAt: earlier,
+            unfulfillableReportedBy: 'op-supplier',
+          })
+          .where(eq(wmsTables.shipmentLines.id, b.lineIds[1]));
+        return o.salesOrderId;
+      });
+      expect(r).toMatchObject({
+        stage: 'dispatch',
+        state: 'drop_ship_unfulfillable',
+        estimatedEnteredAt: earlier.toISOString(),
+      });
+    });
+
+    it('발송된 입점사 상자 → done — 주문의 유일한 단위면 배송완료된 창고 상자와 같은 결과', async () => {
+      const shippedAt = new Date('2026-10-05T00:00:00.000Z');
+      const [supplier, warehouse] = await judgeIn(async (tx, w) => {
+        const a = await supplierOnly(tx, w, { status: 'shipped', shippedAt }, new Date('2026-10-04T00:00:00.000Z'));
+        const b = await f.seedOrder(tx);
+        await f.seedBacklog(tx, b.salesOrderId, 'completed');
+        const fb = await f.seedFo(tx, w, b, { status: 'completed' });
+        await f.seedBox(tx, w, [fb.foItemId], { status: 'delivered' });
+        return [a.orderId, b.salesOrderId];
+      });
+      expect(supplier).toMatchObject({ stage: null, state: null, outcome: 'delivered' });
+      expect({ stage: supplier.stage, state: supplier.state, outcome: supplier.outcome }).toEqual({
+        stage: warehouse.stage,
+        state: warehouse.state,
+        outcome: warehouse.outcome,
+      });
+    });
+
+    it('상자별 결과 — 발송된 입점사 상자는 done', async () => {
+      const { boxes } = await judgeOrderAndBoxes((tx, w) =>
+        supplierOnly(tx, w, { status: 'shipped', shippedAt: new Date('2026-10-05T00:00:00.000Z') }, new Date()),
+      );
+      expect(onlyBox(boxes)).toMatchObject({ stage: 'done', state: null });
+    });
+
+    // Review Focus — 넘긴 입점사 상자 + 피킹 중 창고 상자: 대표는 더 뒤처진 창고 pick
+    it('넘긴 입점사 상자 + 피킹 중 창고 상자 → 대표 pick, 상자별로는 각자', async () => {
+      const claimedAt = new Date('2026-10-06T01:00:00.000Z');
+      const { order, boxes } = await judgeOrderAndBoxes(async (tx, w) => {
+        const o = await f.seedOrder(tx);
+        await f.seedBacklog(tx, o.salesOrderId, 'completed');
+        const fo = await f.seedFo(tx, w, o, { status: 'processing' });
+        const second = await addFoItem(tx, w, o, fo.foId);
+        const wh = await f.seedBox(tx, w, [fo.foItemId], { status: 'planned', plannedAt: claimedAt });
+        await f.seedFullReservations(tx, w, { foId: fo.foId, foItemIds: [fo.foItemId], box: wh });
+        await f.seedWorkItem(tx, w, wh.shipmentId, { status: 'picking', pickerClaimedAt: claimedAt });
+        const supplierId = await f.seedDirectSupplier(tx);
+        const sup = await f.seedBox(tx, w, [second], {
+          status: 'draft',
+          supplierId,
+          supplierHandoffId: await f.seedHandoff(tx, supplierId, new Date('2026-10-05T00:00:00.000Z')),
+        });
+        return { orderId: o.salesOrderId, boxIds: [wh.shipmentId, sup.shipmentId] };
+      });
+      const [wh, sup] = [...boxes.values()];
+      expect(order).toMatchObject({ stage: 'pick', state: 'picking', estimatedEnteredAt: claimedAt.toISOString() });
+      expect(wh).toMatchObject({ stage: 'pick', state: 'picking' });
+      expect(sup).toMatchObject({ stage: 'track', state: 'drop_ship_forwarded' });
+    });
+
+    it('CANCEL_REPLAN_PENDING 입점사 상자 → cancel(복구 갈래가 먼저)', async () => {
+      const cancelAt = new Date('2026-10-05T00:00:00.000Z');
+      const { order, boxes } = await judgeOrderAndBoxes(async (tx, w) => {
+        const built = await supplierOnly(
+          tx,
+          w,
+          { status: 'draft', recoveryCode: 'CANCEL_REPLAN_PENDING' },
+          new Date('2026-10-04T00:00:00.000Z'),
+        );
+        await f.seedCancellation(tx, built.orderId, cancelAt);
+        return built;
+      });
+      expect(order).toMatchObject({
+        stage: 'cancel',
+        state: 'CANCEL_REPLAN_PENDING',
+        estimatedEnteredAt: cancelAt.toISOString(),
+      });
+      expect(onlyBox(boxes)).toMatchObject({ stage: 'cancel', state: 'CANCEL_REPLAN_PENDING' });
+    });
   });
 
   it('취소됐는데 상자가 남음 → cancel/open_shipment, 진입 = 마지막 취소 시각', async () => {

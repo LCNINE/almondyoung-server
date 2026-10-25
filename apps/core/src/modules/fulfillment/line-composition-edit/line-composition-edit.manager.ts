@@ -147,8 +147,8 @@ export class LineCompositionEditManager {
           amendmentId: null,
         };
       }
-      if (fo.fulfillmentMode === 'drop_ship') {
-        throw badRequest('DROP_SHIP_NOT_SUPPORTED', `Fulfillment order ${fo.id} is drop-ship`);
+      if (await this.reader.lineInSupplierShipment(trx, line.id)) {
+        throw badRequest('DROP_SHIP_NOT_SUPPORTED', `Line ${line.id} is in a supplier shipment`);
       }
       if (!(await this.reader.lineHasFulfillmentItems(trx, line.id))) {
         throw conflict('LINE_NOT_IN_FULFILLMENT', `Line ${line.id} has no fulfillment items`);

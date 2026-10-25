@@ -65,7 +65,7 @@ describe('FO·FOI status 쓰기 (K3)', () => {
       .sort();
     expect(writers).toEqual([
       'apps/core/src/modules/fulfillment/fulfillment-order/fulfillment-order-projection.ts',
-      // 옛 직배 — 생성 'ready' 는 K3 PR 4, ship() 'shipped' 는 PR 5·8 이 걷는다. 줄어드는 방향만.
+      // 옛 직배 ship() 'shipped' — K3 PR 5·8 이 걷는다. 줄어드는 방향만.
       'apps/core/src/modules/fulfillment/services/fulfillments.service.ts',
     ]);
   });

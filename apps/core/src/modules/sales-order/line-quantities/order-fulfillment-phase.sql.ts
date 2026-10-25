@@ -35,8 +35,8 @@ export type OrderShipmentPhase = 'pending' | 'preparing' | 'shipping' | 'deliver
  *        인쇄 몫은 전부 delivered. 없는 몫은 조건에서 빠진다(5 가 «둘 다 없음»을 이미 걸렀다) → delivered
  *     7. 창고 shipped+forwarded > 0, 또는 인쇄 shipped/delivered 하나 이상 → shipping
  *     8. 그 밖                                                → preparing
- * 직배 `forwarded` 는 출고가 아니지만 화면은 «배송 중», 직배 `completed` 는 배송완료 수량이 0(모름)이지만 화면은 «배송 완료»다
- * (스펙 §6.4 — 단계는 표시용 투영이라 일부러 다르게 읽는다).
+ * 넘긴 입점사 상자(`forwarded`)는 출고가 아니지만 화면은 «배송 중», 발송된 입점사 상자(`partner_completed`)는 배송완료 수량이
+ * 0(모름)이지만 화면은 «배송 완료»다(스펙 §6.4 — 단계는 표시용 투영이라 일부러 다르게 읽는다. K3 스펙 §4.6 «지금 동작을 유지»).
  *
  * 두 화면 값:
  *   admin_phase — SO 칸이 있으면 그것(core 상자가 남아 있어도 셀메이트 출고가 이긴다 — 같은 주문을 두 번 세지 않으려는 순서다),

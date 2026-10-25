@@ -7,6 +7,7 @@ const item = (overrides: Partial<Parameters<typeof projectFulfillmentOrderItemPr
   canceledQty: 0,
   confirmedReservedQty: 0,
   activeLineQty: 10,
+  supplierLineQty: 0,
   processing: false,
   recoveryRequired: false,
   ...overrides,
@@ -24,6 +25,36 @@ describe('fulfillment progress projection', () => {
     [{ recoveryRequired: true }, 'recovery_required'],
   ])('projects item %j as %s', (overrides, expected) => {
     expect(projectFulfillmentOrderItemProgress(item(overrides))).toMatchObject({ status: expected });
+  });
+
+  it('직배분만 남은 항목은 ready', () => {
+    expect(
+      projectFulfillmentOrderItemProgress(item({ qty: 2, activeLineQty: 2, supplierLineQty: 2, confirmedReservedQty: 0 })),
+    ).toMatchObject({ status: 'ready', confirmedReservedQty: 0 });
+  });
+
+  it('창고분 다 예약 + 직배 항목 → 주문 ready, 요약 confirmedReservedQty 는 창고 예약만', () => {
+    const order = projectFulfillmentOrderProgress([
+      item({ id: 'a', qty: 3, activeLineQty: 3, confirmedReservedQty: 3 }),
+      item({ id: 'b', qty: 2, activeLineQty: 2, supplierLineQty: 2 }),
+    ]);
+    expect(order.status).toBe('ready');
+    expect(order.confirmedReservedQty).toBe(3);
+  });
+
+  it('창고분 예약 0 + 직배 항목 → 주문 partially_reserved', () => {
+    const order = projectFulfillmentOrderProgress([
+      item({ id: 'a', qty: 3, activeLineQty: 3, confirmedReservedQty: 0 }),
+      item({ id: 'b', qty: 2, activeLineQty: 2, supplierLineQty: 2 }),
+    ]);
+    expect(order.status).toBe('partially_reserved');
+    expect(order.confirmedReservedQty).toBe(0);
+  });
+
+  it('supplierLineQty > activeLineQty 면 던진다', () => {
+    expect(() => projectFulfillmentOrderItemProgress(item({ activeLineQty: 1, supplierLineQty: 2 }))).toThrow(
+      /supplierLineQty/,
+    );
   });
 
   it('treats shipped+canceled=qty as completed even when neither alone equals qty', () => {

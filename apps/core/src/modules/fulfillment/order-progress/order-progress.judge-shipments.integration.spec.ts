@@ -104,23 +104,46 @@ describeIfDb('상자별 판정 (PostgreSQL integration)', () => {
     });
   });
 
-  it('취소된 상자와 직배 단위는 상자 판정에 나오지 않고, 없는 상자는 undefined', async () => {
+  it('취소된 상자는 상자 판정에 나오지 않고, 없는 상자는 undefined', async () => {
     await rollback(async (tx) => {
       const dbs = makeDbService(db);
       const reader = new OrderProgressReader(dbs);
       const w = await f.seedWorld(tx);
       const o = await f.seedOrder(tx);
-      const dropShipOrder = await f.seedOrder(tx);
       const inHouse = await f.seedFo(tx, w, o);
-      await f.seedFo(tx, w, dropShipOrder, { dropShip: 'pending' });
       const canceled = await f.seedBox(tx, w, [inHouse.foItemId], { status: 'canceled' });
-      await new OrderProgressManager(dbs).refreshScope(idsScope([o.salesOrderId, dropShipOrder.salesOrderId]), NOW, tx);
+      await new OrderProgressManager(dbs).refreshScope(idsScope([o.salesOrderId]), NOW, tx);
 
-      const ours = (await reader.judgeOpenShipments(tx)).filter(
-        (r) => r.salesOrderIds.includes(o.salesOrderId) || r.salesOrderIds.includes(dropShipOrder.salesOrderId),
-      );
+      const ours = (await reader.judgeOpenShipments(tx)).filter((r) => r.salesOrderIds.includes(o.salesOrderId));
       expect(ours).toEqual([]);
       expect(await reader.judgeShipment(canceled.shipmentId, tx)).toBeUndefined();
+      expect(await reader.judgeShipment('00000000-0000-0000-0000-000000000000', tx)).toBeUndefined();
+    });
+  });
+
+  // 입점사 상자는 상자다(K3 PR4, N7) — 리컨실러 상자 후보 원천에도 같은 단계·상태로 나온다. 겨누는 상자 규칙은 아직 없다(SHIPMENT_STATES)
+  it('넘기지 않은 입점사 상자는 열린 상자 판정에 dispatch/drop_ship_pending 으로 나온다', async () => {
+    await rollback(async (tx) => {
+      const dbs = makeDbService(db);
+      const reader = new OrderProgressReader(dbs);
+      const w = await f.seedWorld(tx);
+      const o = await f.seedOrder(tx);
+      const fo = await f.seedFo(tx, w, o);
+      const box = await f.seedBox(tx, w, [fo.foItemId], {
+        status: 'draft',
+        supplierId: await f.seedDirectSupplier(tx),
+      });
+      await new OrderProgressManager(dbs).refreshScope(idsScope([o.salesOrderId]), NOW, tx);
+
+      const ours = (await reader.judgeOpenShipments(tx)).filter((r) => r.salesOrderIds.includes(o.salesOrderId));
+      expect(ours).toEqual([
+        expect.objectContaining({
+          shipmentId: box.shipmentId,
+          stage: 'dispatch',
+          state: 'drop_ship_pending',
+          orderRules: ['unit'],
+        }),
+      ]);
     });
   });
 });

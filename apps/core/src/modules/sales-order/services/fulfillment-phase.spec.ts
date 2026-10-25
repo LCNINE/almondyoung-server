@@ -5,7 +5,7 @@ function input(over: Partial<FulfillmentPhaseInput> = {}): FulfillmentPhaseInput
     foCount: 1,
     allFoCanceled: false,
     activeShipmentStatuses: [],
-    dropShipStatuses: [],
+    supplierShipmentStages: [],
     ...over,
   };
 }
@@ -38,12 +38,20 @@ describe('shipmentProgressOf — 진행 요약은 단계가 아니라 소포 수
       delivered: 2,
     });
   });
-  it('혼합: 창고 draft + 직배 forwarded → {2,1,0}', () => {
-    expect(shipmentProgressOf(input({ activeShipmentStatuses: ['draft'], dropShipStatuses: ['forwarded'] }))).toEqual({
-      total: 2,
-      shipped: 1,
-      delivered: 0,
-    });
+  it('혼합: 창고 draft + 입점사 상자 forwarded → {2,1,0}', () => {
+    expect(
+      shipmentProgressOf(input({ activeShipmentStatuses: ['draft'], supplierShipmentStages: ['forwarded'] })),
+    ).toEqual({ total: 2, shipped: 1, delivered: 0 });
+  });
+  it('입점사 상자 pending·forwarded·shipped + 창고 delivered → {4,3,2} — 발송된 입점사 상자는 «배송 완료»로 센다(스펙 §4.6)', () => {
+    expect(
+      shipmentProgressOf(
+        input({ activeShipmentStatuses: ['delivered'], supplierShipmentStages: ['pending', 'forwarded', 'shipped'] }),
+      ),
+    ).toEqual({ total: 4, shipped: 3, delivered: 2 });
+  });
+  it('FO 가 전부 취소되면 입점사 상자도 세지 않는다', () => {
+    expect(shipmentProgressOf(input({ allFoCanceled: true, supplierShipmentStages: ['shipped'] }))).toEqual(empty);
   });
   it('인쇄만: 전량 delivered → {2,2,2}', () => {
     expect(shipmentProgressOf(input({ foCount: 0, printStatuses: ['delivered', 'delivered'] }))).toEqual({

@@ -297,6 +297,34 @@ describeIfDb('주문별 라인 구성 지정 (#1063 스펙 §7.1)', () => {
     });
   });
 
+  it('입점사 상자에 있는 라인의 구성 변경은 DROP_SHIP_NOT_SUPPORTED — 상자가 닫히면 풀린다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const fx = await seedOrderWithDraftBox(tx, w.logistics, {
+        lines: [{ quantity: 1, qtyPerUnits: [1] }],
+        spareSkus: 1,
+      });
+      const [spare] = fx.spareSkuIds;
+      const [supplier] = await tx
+        .insert(wmsTables.suppliers)
+        .values({ name: `ls-${randomUUID().slice(0, 8)}`, isDirectDelivery: true })
+        .returning();
+      // 열린 입점사 상자 = supplier_id 가 있고 창고가 없는 draft
+      await tx
+        .update(wmsTables.shipments)
+        .set({ supplierId: supplier.id, warehouseId: null })
+        .where(eq(wmsTables.shipments.id, fx.shipmentId));
+      expect(await w.edit.reader.lineInSupplierShipment(tx, fx.lineIds[0])).toBe(true);
+      await expect(
+        w.edit.manager.assignToLine(fx.salesOrderId, fx.lineIds[0], [{ skuId: spare, qtyPerUnit: 1 }], null, actor, tx),
+      ).rejects.toMatchObject({ response: { code: 'DROP_SHIP_NOT_SUPPORTED' } });
+
+      // 취소된 입점사 상자는 «열린» 것이 아니다
+      await tx.update(wmsTables.shipments).set({ status: 'canceled' }).where(eq(wmsTables.shipments.id, fx.shipmentId));
+      expect(await w.edit.reader.lineInSupplierShipment(tx, fx.lineIds[0])).toBe(false);
+    });
+  });
+
   it('디지털 라인·직배송 SKU·FO 있는데 미굳힘 라인을 거절한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wire(tx);

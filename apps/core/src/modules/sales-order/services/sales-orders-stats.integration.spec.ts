@@ -12,7 +12,7 @@ import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import * as f from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
-import { seedDispatchedParcel } from '../line-quantities/__support__/shipment-facts.fixtures';
+import { seedDispatchedParcel, seedSupplierShare } from '../line-quantities/__support__/shipment-facts.fixtures';
 import { SalesOrdersService } from './sales-orders.service';
 
 /**
@@ -183,7 +183,6 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
     w: f.World,
     args: {
       qty: number;
-      dropShip?: 'forwarded' | 'completed';
       status?: 'pending' | 'confirmed' | 'shipped';
       daysAgo?: number;
     },
@@ -193,7 +192,7 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
       createdAt: kstDaysAgoNoon(args.daysAgo ?? 1),
       quantity: args.qty,
     });
-    const fo = await f.seedFo(trx, w, o, { status: 'processing', qty: args.qty, dropShip: args.dropShip });
+    const fo = await f.seedFo(trx, w, o, { status: 'processing', qty: args.qty });
     return { ...o, ...fo };
   }
 
@@ -268,7 +267,9 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
   it('넘기기만 한 직배는 어느 쪽도 아니다', async () => {
     const delta = await withFixtures(async ({ trx }) => {
       const w = await f.seedWorld(trx);
-      await splitOrder(trx, w, { qty: 2, dropShip: 'forwarded' });
+      // 직배는 입점사 상자다(K3 PR4) — 넘긴 입점사 상자는 «배송 중»이지만 나간 수량이 없다
+      const o = await f.seedOrder(trx, { createdAt: kstDaysAgoNoon(1), quantity: 2 });
+      await seedSupplierShare(trx, w, o, { stage: 'forwarded', qty: 2 });
     });
 
     expect(delta.partialOutbound).toBe(0);
@@ -305,9 +306,17 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
   });
 
   it('오늘 주문·출고 요청·직송·매칭 대기를 각각 센다', async () => {
-    const delta = await withFixtures(async ({ order }) => {
+    const delta = await withFixtures(async ({ trx, order }) => {
       await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(0) });
-      await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(2), fo: { mode: 'drop_ship' } });
+      // 직송 = 입점사 상자가 있는 주문(K3 PR4) — FO 모드가 아니다
+      const w = await f.seedWorld(trx);
+      const direct = await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(2) });
+      await seedSupplierShare(
+        trx,
+        w,
+        { salesOrderId: direct, lineId: await lineOf(trx, direct) },
+        { stage: 'pending' },
+      );
       await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(2), backlogStatus: 'awaiting_matching' });
       // 매칭 대기가 아닌 백로그는 빠진다
       await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(2), backlogStatus: 'pending' });
@@ -317,5 +326,71 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
     expect(delta.outboundRequested).toBe(4);
     expect(delta.directShip).toBe(1);
     expect(delta.waitingMatching).toBe(1);
+  });
+
+  describe('직배 = 입점사 상자가 있는 주문', () => {
+    it('입점사 상자가 둘인 주문 하나는 직배 1건이다(판매주문 수)', async () => {
+      const delta = await withFixtures(async ({ trx, order }) => {
+        const w = await f.seedWorld(trx);
+        const id = await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(1) });
+        const lineId = await lineOf(trx, id);
+        const first = await seedSupplierShare(trx, w, { salesOrderId: id, lineId }, { stage: 'pending' });
+        await seedSupplierShare(trx, w, { salesOrderId: id, lineId }, { stage: 'forwarded', foId: first.foId });
+      });
+      expect(delta.directShip).toBe(1);
+    });
+
+    it('취소·대체된 입점사 상자만 있는 주문은 직배가 아니다', async () => {
+      const delta = await withFixtures(async ({ trx, order }) => {
+        const w = await f.seedWorld(trx);
+        const id = await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(1) });
+        const lineId = await lineOf(trx, id);
+        const supplierId = await f.seedDirectSupplier(trx);
+        const { foItemId } = await f.seedFo(trx, w, { salesOrderId: id, lineId });
+        await f.seedBox(trx, w, [foItemId], { status: 'canceled', supplierId });
+        const replaced = await f.seedBox(trx, w, [foItemId], { status: 'draft', supplierId });
+        await trx
+          .update(wmsTables.shipments)
+          .set({ status: 'superseded', supersededAt: new Date() })
+          .where(eq(wmsTables.shipments.id, replaced.shipmentId));
+      });
+      expect(delta.directShip).toBe(0);
+    });
+
+    it("FO 모드가 'drop_ship' 이어도 입점사 상자가 없으면 직배가 아니다", async () => {
+      const delta = await withFixtures(async ({ order }) => {
+        await order({ status: 'confirmed', orderDate: kstDaysAgoNoon(1), fo: { mode: 'drop_ship' } });
+      });
+      expect(delta.directShip).toBe(0);
+    });
+
+    it("'direct' 필터는 입점사 상자가 있는 주문만 돌려준다", async () => {
+      const db = drizzle(sql);
+      try {
+        await db.transaction(async (trx) => {
+          const tx = trx as unknown as DbTx;
+          const w = await f.seedWorld(tx);
+          const direct = await f.seedOrder(tx);
+          await seedSupplierShare(tx, w, direct, { stage: 'forwarded' });
+          const plain = await f.seedOrder(tx);
+          await f.seedFo(tx, w, plain, { dropShip: 'forwarded' }); // 옛 FO 모드는 더는 읽지 않는다
+          const service = new SalesOrdersService(
+            { db: trx, run: (fn: (t: unknown) => unknown) => fn(trx) } as never,
+            {} as never,
+            {} as never,
+            {} as never,
+            {} as never,
+            {} as never,
+          );
+          const page = await service.list({ typeGroup: 'direct', limit: 1000 } as never, tx);
+          const ids = page.data.map((row) => row.id);
+          expect(ids).toContain(direct.salesOrderId);
+          expect(ids).not.toContain(plain.salesOrderId);
+          throw new Rollback();
+        });
+      } catch (error) {
+        if (!(error instanceof Rollback)) throw error;
+      }
+    });
   });
 });

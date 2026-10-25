@@ -83,10 +83,10 @@ describe('OrderReconcileSituation 타입 — npm run type-check 가 검사한다
 });
 
 describe('ShipmentReconcileSituation 타입 — npm run type-check 가 검사한다', () => {
-  it('주문 단위 단계·직배 상태는 상자 칸이 아니다', () => {
+  it('주문 단위 단계·입점사 상자 상태는 상자 칸이 아니다', () => {
     // @ts-expect-error fo 는 주문 단위 판정이라 상자에 없다
     const orderOnly: ShipmentReconcileSituation = { stage: 'fo', states: ['awaiting_matching'] };
-    // @ts-expect-error 직배 단위는 상자가 없다
+    // @ts-expect-error 입점사 상자의 drop_ship_* 는 겨누는 상자 규칙이 아직 없다(SHIPMENT_STATES)
     const dropShip: ShipmentReconcileSituation = { stage: 'dispatch', states: ['drop_ship_pending'] };
     const ok: ShipmentReconcileSituation = { stage: 'pick', states: ['CONSOLIDATION_PENDING'] };
     expect([orderOnly, dropShip, ok]).toHaveLength(3);

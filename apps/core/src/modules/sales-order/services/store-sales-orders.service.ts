@@ -30,6 +30,8 @@ import { channelsWhere } from '../order-cancellation/channel-cancellation-capabi
 import { OrderCancellation } from '../order-cancellation/order-cancellation';
 import type { CancelRequestStatus } from '../channel-cancel-request/channel-cancel-request.types';
 import { isPickingStarted, shipmentProgressOf, PhaseFoRow, FulfillmentPhaseInput } from './fulfillment-phase';
+import { supplierShipmentStage, type SupplierShipmentStage } from '../../fulfillment/shipment/supplier-shipment-stage';
+import type { ShipmentStatus } from '../../fulfillment/shipment/shipment-transitions';
 import {
   readOrderFulfillmentPhases,
   type OrderFulfillmentPhase,
@@ -497,8 +499,8 @@ export class StoreSalesOrdersService {
             : typeof m?.refundStatus === 'string' && VALID_REFUND_STATUSES.has(m.refundStatus as StoreRefundStatus)
               ? (m.refundStatus as StoreRefundStatus)
               : refundStatus !== 'none'
-              ? refundStatus
-              : undefined;
+                ? refundStatus
+                : undefined;
 
         if (summaryStatus && summaryStatus !== 'none') {
           // 부분취소(manual_pending)는 refundEstimateAmount, 전체취소는 amount
@@ -700,11 +702,7 @@ export class StoreSalesOrdersService {
 
   private async loadFoRows(salesOrderId: string): Promise<PhaseFoRow[]> {
     return this.db.db
-      .select({
-        status: inventoryTables.fulfillmentOrders.status,
-        directShipStatus: inventoryTables.fulfillmentOrders.directShipStatus,
-        fulfillmentMode: inventoryTables.fulfillmentOrders.fulfillmentMode,
-      })
+      .select({ status: inventoryTables.fulfillmentOrders.status })
       .from(inventoryTables.fulfillmentOrders)
       .where(eq(inventoryTables.fulfillmentOrders.salesOrderId, salesOrderId));
   }
@@ -712,11 +710,8 @@ export class StoreSalesOrdersService {
   private async loadFulfillmentPhaseInput(salesOrderId: string, foRows: PhaseFoRow[]): Promise<FulfillmentPhaseInput> {
     const foCount = foRows.length;
     const allFoCanceled = foCount > 0 && foRows.every((fo) => fo.status === 'canceled');
-    const dropShipStatuses = foRows
-      .filter(
-        (fo) => fo.fulfillmentMode === 'drop_ship' && fo.directShipStatus != null && fo.directShipStatus !== 'canceled',
-      )
-      .map((fo) => fo.directShipStatus as string);
+    // 입점사 상자 단계는 FO 상태와 무관하게 늘 읽는다 — 넘김은 출고가 아니라 FO status 가 «나갔다»를 말하지 않는다
+    const supplierShipmentStages = foCount > 0 ? await this.loadSupplierShipmentStages(salesOrderId) : [];
 
     // 상자 상태는 진행 요약·반품 자격·복구 중 상자 판정에만 쓴다(출고 여부는 사다리가 정한다).
     // 확실히 출고된 FO.
@@ -729,7 +724,7 @@ export class StoreSalesOrdersService {
     const activeShipmentStatuses =
       definitelyShipped || maybeMaskedByRecovery ? await this.loadActiveShipmentStatuses(salesOrderId) : [];
 
-    const base = { foCount, allFoCanceled, activeShipmentStatuses, dropShipStatuses };
+    const base = { foCount, allFoCanceled, activeShipmentStatuses, supplierShipmentStages };
     const prints = (await this.printOrders.forSalesOrder(salesOrderId)).filter((p) => p.status !== 'cancelled');
     if (prints.length === 0) return base;
     return { ...base, printStatuses: prints.map((p) => p.status) };
@@ -742,6 +737,7 @@ export class StoreSalesOrdersService {
     return phase;
   }
 
+  /** 창고 상자만 — 입점사 상자는 `loadSupplierShipmentStages` 가 단계로 센다. 둘 다 읽으면 입점사 상자가 두 번 세진다 */
   private async loadActiveShipmentStatuses(salesOrderId: string): Promise<string[]> {
     const rows = await this.db.db.execute(sql`
       SELECT DISTINCT s.id, s.status
@@ -750,9 +746,32 @@ export class StoreSalesOrdersService {
         JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
         JOIN fulfillment_orders fo ON fo.id = foi.fulfillment_order_id
        WHERE fo.sales_order_id = ${salesOrderId}
+         AND s.warehouse_id IS NOT NULL
          AND s.status NOT IN ('canceled', 'superseded')
     `);
     return Array.from(rows as unknown as ArrayLike<{ status: string }>).map((r) => r.status);
+  }
+
+  /** 이 주문의 입점사 상자 단계(K3 PR4) — 단계 정의는 `supplier-shipment-stage.ts` 하나다 */
+  private async loadSupplierShipmentStages(salesOrderId: string): Promise<SupplierShipmentStage[]> {
+    const rows = await this.db.db.execute<{
+      id: string;
+      status: ShipmentStatus;
+      supplier_handoff_id: string | null;
+    }>(sql`
+      SELECT DISTINCT s.id, s.status, s.supplier_handoff_id
+        FROM shipments s
+        JOIN shipment_lines sl ON sl.shipment_id = s.id
+        JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
+        JOIN fulfillment_orders fo ON fo.id = foi.fulfillment_order_id
+       WHERE fo.sales_order_id = ${salesOrderId}
+         AND s.supplier_id IS NOT NULL
+         AND s.status NOT IN ('canceled', 'superseded')
+    `);
+    return Array.from(rows).flatMap((r) => {
+      const stage = supplierShipmentStage({ id: r.id, status: r.status, supplierHandoffId: r.supplier_handoff_id });
+      return stage ? [stage] : [];
+    });
   }
 
   // ── Tracking ──────────────────────────────────────────────────────────────

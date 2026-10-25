@@ -65,10 +65,15 @@ export class CreateFulfillmentOrderDto {
   @IsOptional()
   ownerId?: string;
 
-  @ApiProperty({ description: 'Fulfillment Mode', enum: ['in_house', '3pl', 'drop_ship'], required: false })
-  @IsIn(['in_house', '3pl', 'drop_ship'])
+  @ApiProperty({
+    description:
+      'Fulfillment Mode — 기본 in_house. drop_ship 은 받지 않는다(400): 직배분은 FO 모드가 아니라 입점사 상자로 나뉜다(ADR-0050 §2)',
+    enum: ['in_house', '3pl'],
+    required: false,
+  })
+  @IsIn(['in_house', '3pl'])
   @IsOptional()
-  fulfillmentMode?: 'in_house' | '3pl' | 'drop_ship';
+  fulfillmentMode?: 'in_house' | '3pl';
 
   @ApiProperty({ description: 'Priority', enum: ['normal', 'high', 'urgent'], required: false })
   @IsIn(['normal', 'high', 'urgent'])
