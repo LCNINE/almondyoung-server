@@ -14,15 +14,14 @@ export const ORDER_TYPE_GROUPS = [
   'all', // 전체
   'pending', // 주문 미확정
   'unmatched', // 매칭안됨 (매칭이 없어 FO 생성을 기다리는 주문)
-  'direct', // 직배송 (drop_ship FO 존재)
+  'direct', // 직배송 (입점사 상자 존재)
 ] as const;
 export type OrderTypeGroup = (typeof ORDER_TYPE_GROUPS)[number];
 
 export const ORDER_KEYWORD_TYPES = ['all', 'orderNo', 'receiver', 'phone', 'product'] as const;
 export type OrderKeywordType = (typeof ORDER_KEYWORD_TYPES)[number];
 
-const toBool = ({ value }: { value: unknown }) =>
-  value === true || value === 'true' || value === '1';
+const toBool = ({ value }: { value: unknown }) => value === true || value === 'true' || value === '1';
 
 export class SalesOrderFilterDto {
   @ApiPropertyOptional({ description: '조회 시작일 (YYYY-MM-DD)' })

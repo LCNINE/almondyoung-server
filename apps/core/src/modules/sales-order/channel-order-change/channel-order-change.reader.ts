@@ -1,14 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, notInArray, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
+import { ACTIVE_SHIPMENT_STATUSES } from '../../fulfillment/fulfillment-order/fulfillment-order-projection';
 import { readLineQuantities } from '../line-quantities/line-quantities.reader';
 import { toShippingAddress } from './channel-order-diff';
 import type { EffectiveSalesOrder } from './channel-order-change.types';
 
 const FINISHED_SHIPMENT_STATUSES = ['shipped', 'in_transit', 'delivered', 'canceled', 'superseded', 'failed'] as const;
 export const FINISHED_FULFILLMENT_STATUSES = ['shipped', 'completed', 'canceled'] as const;
-/** 공급처에 이미 넘어간 직배. `pending` 은 아직 넘기지 않았고, 넘길 때 판매주문 주소를 읽는다. */
-const HANDED_OFF_DIRECT_SHIP_STATUSES = ['forwarded', 'completed'] as const;
 
 @Injectable()
 export class ChannelOrderChangeReader {
@@ -87,17 +86,30 @@ export class ChannelOrderChangeReader {
     return rows.map((row) => row.id);
   }
 
-  /** 공급처에 이미 넘어간 직배가 있는가 — 주소를 바꿔도 따라가지 못한다. */
+  /**
+   * 입점사에게 이미 넘긴 열린 입점사 상자가 있는가 — 주소를 바꿔도 따라가지 못한다(K3 PR4, N11).
+   * 넘기지 않은 상자(`supplier_handoff_id IS NULL`)는 넘길 때 판매주문 주소를 읽으므로 막지 않는다.
+   * 발송된 상자는 `isFullyShipped`·`remainingShipmentIds` 가 다룬다. 같은 술어: `fulfillment/shipment/supplier-shipment-stage.ts`.
+   */
   async hasDropShipInProgress(salesOrderId: string, tx: DbTx): Promise<boolean> {
     const [row] = await tx
-      .select({ id: wmsTables.fulfillmentOrders.id })
-      .from(wmsTables.fulfillmentOrders)
+      .select({ id: wmsTables.shipments.id })
+      .from(wmsTables.shipments)
+      .innerJoin(wmsTables.shipmentLines, eq(wmsTables.shipmentLines.shipmentId, wmsTables.shipments.id))
+      .innerJoin(
+        wmsTables.fulfillmentOrderItems,
+        eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+      )
+      .innerJoin(
+        wmsTables.fulfillmentOrders,
+        eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+      )
       .where(
         and(
           eq(wmsTables.fulfillmentOrders.salesOrderId, salesOrderId),
-          eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship'),
-          inArray(wmsTables.fulfillmentOrders.directShipStatus, [...HANDED_OFF_DIRECT_SHIP_STATUSES]),
-          notInArray(wmsTables.fulfillmentOrders.status, [...FINISHED_FULFILLMENT_STATUSES]),
+          isNotNull(wmsTables.shipments.supplierId),
+          isNotNull(wmsTables.shipments.supplierHandoffId),
+          inArray(wmsTables.shipments.status, [...ACTIVE_SHIPMENT_STATUSES]),
         ),
       )
       .limit(1);

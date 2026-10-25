@@ -5,6 +5,7 @@ import { CORE_ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts
 import { ChannelCancelSettler } from '../channel-cancel-request/channel-cancel-settler';
 import { ChannelCancelRequestReader } from '../channel-cancel-request/channel-cancel-request.reader';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
+import * as fixtures from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
 import {
   inRollbackTx,
   makeDb,
@@ -265,14 +266,28 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
     });
   });
 
-  it('배송지 — 진행 중인 직배가 있으면 SHIPMENT_NOT_REVISABLE 대기', async () => {
+  /** 주문의 FO 항목 하나를 열린 입점사 상자(draft)에 담는다. handoff 면 입점사 넘김 묶음도 단다 */
+  async function seedSupplierBox(tx: DbTx, salesOrderId: string, handoff: boolean) {
+    const supplierId = await fixtures.seedDirectSupplier(tx);
+    const [item] = await tx
+      .select()
+      .from(wmsTables.fulfillmentOrderItems)
+      .where(eq(wmsTables.fulfillmentOrderItems.salesOrderId, salesOrderId))
+      .limit(1);
+    const supplierHandoffId = handoff ? await fixtures.seedHandoff(tx, supplierId) : undefined;
+    await fixtures.seedBox(tx, { warehouseId: '', skuId: item.skuId, holderId: '' }, [item.id], {
+      status: 'draft',
+      supplierId,
+      supplierHandoffId,
+    });
+  }
+
+  it('배송지 — 넘긴 열린 입점사 상자가 있으면 SHIPMENT_NOT_REVISABLE 대기', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wire(tx);
       const seed = await seedOrder(tx, w, { withFo: true });
-      await tx
-        .update(wmsTables.fulfillmentOrders)
-        .set({ fulfillmentMode: 'drop_ship', directShipStatus: 'forwarded' })
-        .where(eq(wmsTables.fulfillmentOrders.salesOrderId, seed.salesOrderId));
+      await seedSupplierBox(tx, seed.salesOrderId, true);
+      expect(await new ChannelOrderChangeReader().hasDropShipInProgress(seed.salesOrderId, tx)).toBe(true);
       await w.manager.handle(seed.salesOrderId, payload(seed, { shippingAddress: NEXT }), `m-${randomUUID()}`, tx);
       const [row] = await amendmentsOf(tx, seed.salesOrderId);
       expect(row.deltas).toEqual([
@@ -342,19 +357,24 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
     });
   });
 
-  it('배송지 — 직배가 아직 공급처에 넘어가지 않았으면(pending) 막지 않는다', async () => {
+  it('배송지 — 넘기지 않은 입점사 상자만이면 이 검사로는 거절하지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const seed = await seedOrder(tx, w, { withFo: true });
+      await seedSupplierBox(tx, seed.salesOrderId, false);
+      expect(await new ChannelOrderChangeReader().hasDropShipInProgress(seed.salesOrderId, tx)).toBe(false);
+    });
+  });
+
+  it('배송지 — 옛 FO 의 drop_ship 모드·directShipStatus 는 더는 읽지 않는다', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wire(tx);
       const seed = await seedOrder(tx, w, { withFo: true });
       await tx
         .update(wmsTables.fulfillmentOrders)
-        .set({ fulfillmentMode: 'drop_ship', directShipStatus: 'pending' })
+        .set({ fulfillmentMode: 'drop_ship', directShipStatus: 'forwarded' })
         .where(eq(wmsTables.fulfillmentOrders.salesOrderId, seed.salesOrderId));
-      await w.manager.handle(seed.salesOrderId, payload(seed, { shippingAddress: NEXT }), `m-${randomUUID()}`, tx);
-      const [row] = await amendmentsOf(tx, seed.salesOrderId);
-      expect(row.status).toBe('applied');
-      const [so] = await tx.select().from(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, seed.salesOrderId));
-      expect(so.shippingAddress).toEqual(NEXT);
+      expect(await new ChannelOrderChangeReader().hasDropShipInProgress(seed.salesOrderId, tx)).toBe(false);
     });
   });
 

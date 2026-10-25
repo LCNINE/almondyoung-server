@@ -310,4 +310,23 @@ describeIfDb('기존 출고에도 적용 (#1063 스펙 §7.2)', () => {
       expect(await boxLinesOf(tx, fx.shipmentId)).toEqual(before);
     });
   });
+  it('입점사 상자에 있는 라인은 일괄 적용 후보가 아니다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wire(tx);
+      const fx = await seedOrderWithDraftBox(tx, w.logistics, { lines: [{ quantity: 1, qtyPerUnits: [1] }] });
+      const variantId = fx.variantIds[0];
+      expect(await w.edit.reader.existingLineCandidates(tx, variantId)).toEqual([
+        { salesOrderLineId: fx.lineIds[0], salesOrderId: fx.salesOrderId },
+      ]);
+      const [supplier] = await tx
+        .insert(wmsTables.suppliers)
+        .values({ name: `ap-${randomUUID().slice(0, 8)}`, isDirectDelivery: true })
+        .returning();
+      await tx
+        .update(wmsTables.shipments)
+        .set({ supplierId: supplier.id, warehouseId: null })
+        .where(eq(wmsTables.shipments.id, fx.shipmentId));
+      expect(await w.edit.reader.existingLineCandidates(tx, variantId)).toEqual([]);
+    });
+  });
 });
