@@ -18,13 +18,8 @@ import {
 import {
   FULFILLMENT_STREAM,
   FULFILLMENT_V2_STREAM,
-  FulfillmentProgressedPayload,
-  FulfillmentShippedPayload,
   SHIPMENT_STREAM,
-  ShipmentEventOrder,
-  ShipmentShippedPayload,
   CORE_ORDER_STREAM,
-  type SalesOrderShipmentDispatchedPayload,
 } from '@packages/event-contracts/streams';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import { and, asc, eq, gt, inArray, isNull, max, notInArray, sql } from 'drizzle-orm';
@@ -33,11 +28,6 @@ import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.sch
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { BarcodeService } from '../../inventory/shared/services/barcode.service';
 import { acquireStockAvailabilityLocks } from '../../inventory/shared/locks/stock-availability-lock';
-import {
-  fulfillmentProgressedOutboxEvent,
-  fulfillmentShippedV1OutboxEvent,
-  shipmentShippedOutboxEvent,
-} from '../events';
 import { BatchInventorySessionService } from './batch-inventory-session.service';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
@@ -45,10 +35,9 @@ import { ShipmentReservationService } from './shipment-reservation.service';
 import { WaybillService } from '../waybill/waybill.service';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import type { WaybillRow } from '../waybill/waybill.types';
-import { resolveSkuIdByBarcode, UUID_PATTERN } from './sku-barcode-resolution';
+import { resolveSkuIdByBarcode } from './sku-barcode-resolution';
 import { warehouseIdOf } from '../shipment/shipment-owner';
-
-const TRUSTED_CHANNEL_DISPATCH_SALES_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
+import { emitShipmentDispatched, incrementFulfillmentItems, markFullyShippedOrders } from './dispatch-effects';
 
 export interface ShipmentDispatchActor {
   id: string;
@@ -133,44 +122,7 @@ interface ForceDispatchContext {
   beforeLineManifest: DispatchLineManifestEvidence[];
 }
 
-interface EventLineIdentity {
-  shipmentLineId: string;
-  fulfillmentOrderItemId: string;
-  fulfillmentOrderId: string;
-  salesOrderId: string;
-  salesOrderLineId: string;
-  salesChannel: 'medusa' | 'naver' | 'coupang' | '3pl';
-  channelOrderId: string;
-  channelOrderItemId: string;
-  channelProductId: string | null;
-  skuId: string;
-  qty: number;
-  fulfillmentOrderItemQty: number;
-  fulfillmentOrderItemShippedQty: number;
-  fulfillmentOrderItemCanceledQty: number;
-}
-
-interface FulfillmentSummary {
-  fulfillmentOrderId: string;
-  salesOrderId: string | null;
-  shippedQty: number;
-  canceledQty: number;
-  outstandingQty: number;
-  fullyShipped: boolean;
-  items: Array<{ id: string; skuId: string; shippedQty: number }>;
-}
-
-/**
- * 출고 완료 투영의 항목. 구성 변경(#1063)으로 대체된 qty 0 항목은 나간 것이 없어 뺀다 — 계약이 shippedQty 양수를 요구해
- * 그대로 실으면 출고 트랜잭션이 통째로 실패한다. 합계는 0 을 빼도 같다.
- */
-export function shippedItemsForCompletion(
-  items: ReadonlyArray<{ id: string; skuId: string; shippedQty: number }>,
-): FulfillmentShippedPayload['shippedItems'] {
-  return items
-    .filter((item) => item.shippedQty > 0)
-    .map((item) => ({ fulfillmentItemId: item.id, skuId: item.skuId, shippedQty: item.shippedQty }));
-}
+export { shippedItemsForCompletion } from './dispatch-effects';
 
 @Injectable()
 export class ShipmentDispatchService {
@@ -838,7 +790,7 @@ export class ShipmentDispatchService {
       aggregate.lines.map((line) => ({ shipmentLineId: line.id, quantity: line.qty })),
       tx,
     );
-    await this.incrementFulfillmentItems(aggregate.lines, dispatchedAt, tx);
+    await incrementFulfillmentItems(tx, aggregate.lines, dispatchedAt);
 
     // seam 순서: dispatchLocked 상단의 assertDispatchable 이 이미 staleness 를 검증했으므로 여기서는 CAS 만.
     // markUsed 는 staleness 를 재검하지 않는다(registered/used → used 엄격 CAS).
@@ -860,18 +812,32 @@ export class ShipmentDispatchService {
       .where(and(eq(wmsTables.dispatchAttempts.id, attemptId), eq(wmsTables.dispatchAttempts.status, 'pending')));
 
     await this.shipmentReservations.finalizeDispatchConsumption(aggregate.shipment.id, consumption.affectedSkuIds, tx);
-    const summaries = await this.loadFulfillmentSummaries(aggregate.lines, tx);
-    const eventIdentities = await this.loadEventLineIdentities(aggregate.shipment.id, tx);
-    for (const summary of summaries) {
-      if (summary.fullyShipped) {
-        await tx
-          .update(wmsTables.fulfillmentOrders)
-          .set({ shippedAt: dispatchedAt, updatedAt: dispatchedAt })
-          .where(eq(wmsTables.fulfillmentOrders.id, summary.fulfillmentOrderId));
-      }
-    }
+    const summaries = await markFullyShippedOrders(tx, aggregate.lines, dispatchedAt);
 
-    await this.emitDispatchEvents(aggregate, attemptId, attemptNo, dispatchedAt, eventIdentities, summaries, tx);
+    const waybill = aggregate.waybill;
+    // assertDispatchable 이 carrier/trackingNo 존재를 이미 보장하지만, 이벤트 계약(non-null trackingNo)을 위해
+    // 여기서 타입을 좁힌다. waybill.carrier 는 not-null 이라 별도 가드 불필요(구 invoice 는 그 반대였다).
+    if (!waybill.trackingNo) {
+      throw this.conflict('SHIPMENT_INVOICE_NOT_READY', 'Dispatch waybill tracking number is missing');
+    }
+    await emitShipmentDispatched(
+      {
+        shipments: this.shipments,
+        fulfillmentsV2: this.fulfillmentsV2,
+        fulfillmentsV1: this.fulfillmentsV1,
+        coreOrders: this.coreOrders,
+      },
+      tx,
+      {
+        origin: { warehouseId: warehouseIdOf(aggregate.shipment) },
+        shipmentId: aggregate.shipment.id,
+        attemptId,
+        attemptNo,
+        dispatchedAt,
+        waybill: { id: waybill.id, carrier: waybill.carrier, trackingNo: waybill.trackingNo },
+        summaries,
+      },
+    );
     await this.audit.logUserActionRequired(
       'shipment.dispatch',
       'fulfillment',
@@ -1018,267 +984,6 @@ export class ShipmentDispatchService {
         forced: line.forced,
         lineVersion: line.lineVersion,
       }));
-  }
-
-  private async incrementFulfillmentItems(lines: ShipmentLineRow[], now: Date, tx: DbTx): Promise<void> {
-    for (const line of lines) {
-      const [item] = await tx
-        .select()
-        .from(wmsTables.fulfillmentOrderItems)
-        .where(eq(wmsTables.fulfillmentOrderItems.id, line.fulfillmentOrderItemId))
-        .limit(1);
-      if (!item) throw this.conflict('SHIPMENT_FOI_MISSING', `FOI ${line.fulfillmentOrderItemId} disappeared`);
-      if (item.shippedQty + item.canceledQty + line.qty > item.qty) {
-        throw this.conflict('SHIPMENT_FOI_OVER_SHIPPED', `FOI ${item.id} cannot accept shipment line ${line.id}`);
-      }
-      await tx
-        .update(wmsTables.fulfillmentOrderItems)
-        .set({ shippedQty: item.shippedQty + line.qty, updatedAt: now })
-        .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
-    }
-  }
-
-  private async loadFulfillmentSummaries(lines: ShipmentLineRow[], tx: DbTx): Promise<FulfillmentSummary[]> {
-    const foiRows = await tx
-      .select({ fulfillmentOrderId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId })
-      .from(wmsTables.fulfillmentOrderItems)
-      .where(
-        inArray(
-          wmsTables.fulfillmentOrderItems.id,
-          lines.map((line) => line.fulfillmentOrderItemId),
-        ),
-      );
-    const fulfillmentOrderIds = [...new Set(foiRows.map((row) => row.fulfillmentOrderId))].sort();
-    const summaries: FulfillmentSummary[] = [];
-    for (const fulfillmentOrderId of fulfillmentOrderIds) {
-      const [fo] = await tx
-        .select()
-        .from(wmsTables.fulfillmentOrders)
-        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId))
-        .limit(1);
-      if (!fo) throw this.conflict('SHIPMENT_FULFILLMENT_ORDER_MISSING', `FO ${fulfillmentOrderId} disappeared`);
-      const items = await tx
-        .select()
-        .from(wmsTables.fulfillmentOrderItems)
-        .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId))
-        .orderBy(asc(wmsTables.fulfillmentOrderItems.id));
-      const shippedQty = items.reduce((sum, item) => sum + item.shippedQty, 0);
-      const canceledQty = items.reduce((sum, item) => sum + item.canceledQty, 0);
-      const totalQty = items.reduce((sum, item) => sum + item.qty, 0);
-      const outstandingQty = totalQty - shippedQty - canceledQty;
-      const fullyShipped = outstandingQty === 0 && canceledQty === 0;
-      summaries.push({
-        fulfillmentOrderId,
-        salesOrderId: fo.salesOrderId,
-        shippedQty,
-        canceledQty,
-        outstandingQty,
-        fullyShipped,
-        items: items.map((item) => ({ id: item.id, skuId: item.skuId, shippedQty: item.shippedQty })),
-      });
-    }
-    return summaries;
-  }
-
-  private async loadEventLineIdentities(shipmentId: string, tx: DbTx): Promise<EventLineIdentity[]> {
-    const rows = await tx
-      .select({
-        shipmentLineId: wmsTables.shipmentLines.id,
-        fulfillmentOrderItemId: wmsTables.fulfillmentOrderItems.id,
-        fulfillmentOrderId: wmsTables.fulfillmentOrders.id,
-        salesOrderId: wmsTables.salesOrders.id,
-        salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
-        salesChannel: wmsTables.salesOrders.salesChannel,
-        channelOrderId: wmsTables.salesOrders.channelOrderId,
-        channelOrderItemId: wmsTables.salesOrderLines.channelOrderItemId,
-        channelProductId: wmsTables.salesOrderLines.channelProductId,
-        skuId: wmsTables.shipmentLines.skuId,
-        qty: wmsTables.shipmentLines.qty,
-        fulfillmentOrderItemQty: wmsTables.fulfillmentOrderItems.qty,
-        fulfillmentOrderItemShippedQty: wmsTables.fulfillmentOrderItems.shippedQty,
-        fulfillmentOrderItemCanceledQty: wmsTables.fulfillmentOrderItems.canceledQty,
-      })
-      .from(wmsTables.shipmentLines)
-      .innerJoin(
-        wmsTables.fulfillmentOrderItems,
-        eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
-      )
-      .innerJoin(
-        wmsTables.fulfillmentOrders,
-        eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
-      )
-      .leftJoin(wmsTables.salesOrders, eq(wmsTables.salesOrders.id, wmsTables.fulfillmentOrders.salesOrderId))
-      .leftJoin(
-        wmsTables.salesOrderLines,
-        sql`${wmsTables.salesOrderLines.id}::text = ${wmsTables.fulfillmentOrderItems.salesOrderLineId}`,
-      )
-      .where(eq(wmsTables.shipmentLines.shipmentId, shipmentId))
-      .orderBy(asc(wmsTables.fulfillmentOrders.id), asc(wmsTables.shipmentLines.id));
-    const invalid = rows.find(
-      (row) =>
-        row.salesChannel !== null &&
-        TRUSTED_CHANNEL_DISPATCH_SALES_CHANNELS.has(row.salesChannel) &&
-        (!row.salesOrderId ||
-          !row.salesOrderLineId ||
-          !UUID_PATTERN.test(row.salesOrderLineId) ||
-          !row.channelOrderItemId?.trim() ||
-          !row.channelOrderId?.trim()),
-    );
-    if (invalid) {
-      throw this.conflict(
-        'SHIPMENT_EVENT_IDENTITY_MISSING',
-        `Shipment line ${invalid.shipmentLineId} has no trusted channel identity`,
-      );
-    }
-    return rows.filter(
-      (row) =>
-        row.salesOrderId !== null &&
-        row.salesOrderLineId !== null &&
-        UUID_PATTERN.test(row.salesOrderLineId) &&
-        row.salesChannel !== null &&
-        Boolean(row.channelOrderId?.trim()) &&
-        Boolean(row.channelOrderItemId?.trim()),
-    ) as EventLineIdentity[];
-  }
-
-  private async emitDispatchEvents(
-    aggregate: LockedDispatchAggregate,
-    attemptId: string,
-    attemptNo: number,
-    dispatchedAt: Date,
-    lines: EventLineIdentity[],
-    summaries: FulfillmentSummary[],
-    tx: DbTx,
-  ): Promise<void> {
-    // assertDispatchable 이 carrier/trackingNo 존재를 이미 보장하지만, 이벤트 계약(non-null trackingNo)을 위해
-    // 여기서 타입을 좁힌다. waybill.carrier 는 not-null 이라 별도 가드 불필요(구 invoice 는 그 반대였다).
-    const waybill = aggregate.waybill;
-    if (!waybill.trackingNo) {
-      throw this.conflict('SHIPMENT_INVOICE_NOT_READY', 'Dispatch waybill tracking number is missing');
-    }
-    const carrier = waybill.carrier;
-    const summaryByFo = new Map(summaries.map((summary) => [summary.fulfillmentOrderId, summary]));
-    const orders: ShipmentEventOrder[] = [];
-    for (const fulfillmentOrderId of [...new Set(lines.map((line) => line.fulfillmentOrderId))].sort()) {
-      const orderLines = lines.filter((line) => line.fulfillmentOrderId === fulfillmentOrderId);
-      const first = orderLines[0];
-      const summary = summaryByFo.get(fulfillmentOrderId)!;
-      orders.push({
-        salesOrderId: first.salesOrderId,
-        fulfillmentOrderId,
-        salesChannel: first.salesChannel,
-        channelOrderId: first.channelOrderId,
-        isPartial: summary.outstandingQty > 0,
-        lines: orderLines.map((line) => ({
-          shipmentLineId: line.shipmentLineId,
-          fulfillmentOrderItemId: line.fulfillmentOrderItemId,
-          salesOrderLineId: line.salesOrderLineId,
-          channelOrderItemId: line.channelOrderItemId,
-          ...(line.channelProductId ? { channelProductId: line.channelProductId } : {}),
-          skuId: line.skuId,
-          qty: line.qty,
-          isPartialQuantity:
-            line.qty <
-            line.fulfillmentOrderItemQty -
-              (line.fulfillmentOrderItemShippedQty - line.qty) -
-              line.fulfillmentOrderItemCanceledQty,
-        })),
-      });
-    }
-    const shipmentPayload: ShipmentShippedPayload = {
-      shipmentId: aggregate.shipment.id,
-      dispatchAttemptId: attemptId,
-      attemptNo,
-      warehouseId: warehouseIdOf(aggregate.shipment),
-      dispatchedAt: dispatchedAt.toISOString(),
-      invoice: { invoiceId: waybill.id, carrier, trackingNo: waybill.trackingNo },
-      orders,
-    };
-    await this.shipments.enqueue(shipmentShippedOutboxEvent(shipmentPayload), tx);
-    await this.enqueueCustomerShipmentNotices(orders, attemptId, carrier, waybill.trackingNo, dispatchedAt, tx);
-
-    for (const summary of summaries) {
-      const progressed: FulfillmentProgressedPayload = {
-        fulfillmentOrderId: summary.fulfillmentOrderId,
-        salesOrderId: summary.salesOrderId,
-        dispatchAttemptId: attemptId,
-        progressedAt: dispatchedAt.toISOString(),
-        shippedQty: summary.shippedQty,
-        canceledQty: summary.canceledQty,
-        outstandingQty: summary.outstandingQty,
-      };
-      await this.fulfillmentsV2.enqueue(fulfillmentProgressedOutboxEvent(progressed), tx);
-
-      const eventLine = lines.find((line) => line.fulfillmentOrderId === summary.fulfillmentOrderId);
-      if (summary.fullyShipped && summary.salesOrderId && eventLine) {
-        const v1Payload: FulfillmentShippedPayload = {
-          fulfillmentId: summary.fulfillmentOrderId,
-          orderId: summary.salesOrderId,
-          channelOrderId: eventLine.channelOrderId,
-          trackingInfo: { carrier, trackingNumber: waybill.trackingNo },
-          shippedAt: dispatchedAt.toISOString(),
-          shippedItems: shippedItemsForCompletion(summary.items),
-        };
-        await this.fulfillmentsV1.enqueue(
-          fulfillmentShippedV1OutboxEvent(v1Payload, { ...summary, salesOrderId: summary.salesOrderId }),
-          tx,
-        );
-      }
-    }
-  }
-
-  private async enqueueCustomerShipmentNotices(
-    orders: ShipmentEventOrder[],
-    attemptId: string,
-    carrier: string,
-    trackingNo: string,
-    dispatchedAt: Date,
-    tx: DbTx,
-  ): Promise<void> {
-    const medusaOrders = orders.filter((order) => order.salesChannel === 'medusa');
-    if (medusaOrders.length === 0) return;
-    const customers = await tx
-      .select({
-        id: wmsTables.salesOrders.id,
-        displayOrderNo: wmsTables.salesOrders.displayOrderNo,
-        customerId: wmsTables.salesOrders.customerId,
-        customerEmail: wmsTables.salesOrders.customerEmail,
-        customerName: wmsTables.salesOrders.customerName,
-      })
-      .from(wmsTables.salesOrders)
-      .where(
-        inArray(
-          wmsTables.salesOrders.id,
-          medusaOrders.map((order) => order.salesOrderId),
-        ),
-      );
-    const customerByOrder = new Map(customers.map((row) => [row.id, row]));
-    for (const order of medusaOrders) {
-      const customer = customerByOrder.get(order.salesOrderId);
-      if (!customer?.customerId || !customer.customerEmail) continue;
-      await this.coreOrders.enqueue(
-        {
-          idempotencyKey: `so-shipment-dispatched:${attemptId}:${order.salesOrderId}`,
-          eventType: 'SalesOrderShipmentDispatched',
-          aggregateId: order.salesOrderId,
-          partitionKey: order.salesOrderId,
-          payload: {
-            orderId: order.salesOrderId,
-            channelOrderId: order.channelOrderId,
-            ...(customer.displayOrderNo ? { displayOrderNo: customer.displayOrderNo } : {}),
-            customerId: customer.customerId,
-            customerEmail: customer.customerEmail,
-            ...(customer.customerName ? { customerName: customer.customerName } : {}),
-            dispatchAttemptId: attemptId,
-            isPartial: order.isPartial,
-            carrier,
-            trackingNo,
-            dispatchedAt: dispatchedAt.toISOString(),
-          } satisfies SalesOrderShipmentDispatchedPayload,
-        },
-        tx,
-      );
-    }
   }
 
   private assertActor(actor: ShipmentDispatchActor): void {
