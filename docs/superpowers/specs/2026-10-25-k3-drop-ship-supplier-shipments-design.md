@@ -336,3 +336,11 @@ PR 마다 계획서를 따로 쓴다(`docs/superpowers/plans/2026-10-25-k3-…-p
 - 「못 보냄」 화면에서 취소로 가는 링크 — 못 보냄 라인의 취소는 알릴 취소를 남기지 않는다고 문구로 알려도 된다(입점사가 먼저 알려 온 것).
 
 **PR 8 구현자에게(PR 6 이 정한 것):** `direct_ship_cancel_notices.holder_id` 칸·FK·`ck_direct_ship_cancel_notices_party` 를 `supplier_id NOT NULL` 로 좁힌다(`deploy → migrate`, 스크래치 DB 먼저). 읽기는 이미 `suppliers` 만 조인한다. `seedFo({ dropShip })` 픽스처의 옛 직배 갈래도 함께.
+
+**PR 8 구현자에게(PR 7 이 정한 것):**
+- admin-web 은 옛 `/direct-ship/{dashboard,companies,orders…,export…}` 를 더는 부르지 않는다 — 서버 쪽을 지워도 된다.
+- PR 7 이 `GET /direct-ship/suppliers/:supplierId/handoffs` 를 더했고, 넘김 POST 는 `x-pii-export-reason` 을 먼저 확인한다(`readPiiExportReason`, `libs/authorization`). 옛 라우트를 지울 때 이 둘은 지우지 않는다.
+- FO 목록의 `drop_ship` 배지·`fo-status-cell` 라벨·`FulfillmentMode` 의 `drop_ship` 은 FO 모드를 걷을 때 같이 걷는다.
+- N9 공급사 상품코드는 미결이다.
+- PR 7 이 손대지 않은 것 ① 섞인 FO 에서 라인 구성 편집 버튼(`canEditLineComposition`)이 FO 모드로만 갈려 입점사 라인에도 떠서 서버가 `DROP_SHIP_NOT_SUPPORTED` 로 거절한다.
+- PR 7 이 손대지 않은 것 ② 직배 목록은 상자 단위 주문 칸만 내므로, 내 되돌린 합포장 상자가 대기에 다시 오면 주문 하나로만 보인다.
