@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { and, eq, inArray, or } from 'drizzle-orm';
 import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
-import { projectFulfillmentOrderProgress } from '../services/fulfillment-progress.service';
+import { reprojectFulfillmentOrders } from '../fulfillment-order/fulfillment-order-projection';
 import type {
   CanceledFulfillmentOrder,
   ReducedDemandItem,
@@ -48,7 +48,7 @@ export class UnboxedDemandCancellation {
   }
 
   /**
-   * 부분 취소. 줄마다 canceledQty += qty, 전량이면 FOI 'canceled', 손댄 FO 는 투영으로 상태를 다시 쓴다.
+   * 부분 취소. 줄마다 canceledQty += qty, 손댄 FO 는 투영으로 FO·FOI 상태를 다시 쓴다(K3 — status 는 투영만 쓴다).
    * 호출자가 같은 tx 에서 `lockForCancellation` 을 먼저 불렀다고 전제한다(잠금·예약 확인은 거기서 끝났다).
    * 최신 행을 다시 읽어 cancellableQty 를 넘는 감소만 막는다 — 판매주문이 이미 판정한 값이라 500 이 맞다.
    */
@@ -77,10 +77,9 @@ export class UnboxedDemandCancellation {
           throw new Error(`FOI ${itemId} reduction ${qty} exceeds cancellable ${cancellable}`);
         }
         const newCanceledQty = item.canceledQty + qty;
-        const newStatus = newCanceledQty === item.qty ? 'canceled' : item.status;
         await trx
           .update(wmsTables.fulfillmentOrderItems)
-          .set({ canceledQty: newCanceledQty, status: newStatus, updatedAt: new Date() })
+          .set({ canceledQty: newCanceledQty, updatedAt: new Date() })
           .where(eq(wmsTables.fulfillmentOrderItems.id, itemId));
         changes.push({ item, qty });
         reduced.push({
@@ -91,15 +90,20 @@ export class UnboxedDemandCancellation {
           previousCanceledQty: item.canceledQty,
           newCanceledQty,
           previousStatus: item.status,
-          newStatus,
+          newStatus: item.status,
         });
       }
 
-      for (const foId of new Set(reduced.map((r) => r.fulfillmentOrderId))) {
-        await this.projectFulfillmentOrder(foId, trx);
-      }
+      await reprojectFulfillmentOrders(
+        trx,
+        reduced.map((r) => r.fulfillmentOrderId),
+      );
+      const statusById = await this.readItemStatuses(
+        trx,
+        reduced.map((r) => r.fulfillmentOrderItemId),
+      );
       await this.recordPartnerNotices(trx, orderCancellationId, 'partial', changes);
-      return reduced;
+      return reduced.map((r) => ({ ...r, newStatus: statusById.get(r.fulfillmentOrderItemId) ?? r.newStatus }));
     }, tx);
   }
 
@@ -120,10 +124,10 @@ export class UnboxedDemandCancellation {
           changes.push({ item, qty: canceledQty - item.canceledQty });
           await trx
             .update(wmsTables.fulfillmentOrderItems)
-            .set({ canceledQty, status: canceledQty === item.qty ? 'canceled' : item.status, updatedAt: new Date() })
+            .set({ canceledQty, updatedAt: new Date() })
             .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
         }
-        await this.projectFulfillmentOrder(fo.id, trx);
+        await reprojectFulfillmentOrders(trx, [fo.id]);
         canceled.push({ fulfillmentOrderId: fo.id, previousStatus: fo.status });
       }
       await this.recordPartnerNotices(trx, orderCancellationId, 'full', changes);
@@ -267,38 +271,12 @@ export class UnboxedDemandCancellation {
     }
   }
 
-  /** FOI 수량으로 FO 상태를 다시 쓴다. totalQty·totalReservedQty 는 건드리지 않는다(상자 후 취소와 같다). */
-  private async projectFulfillmentOrder(foId: string, trx: DbTx): Promise<void> {
-    const items = await trx
-      .select()
+  private async readItemStatuses(trx: DbTx, itemIds: string[]): Promise<Map<string, string>> {
+    if (itemIds.length === 0) return new Map();
+    const rows = await trx
+      .select({ id: wmsTables.fulfillmentOrderItems.id, status: wmsTables.fulfillmentOrderItems.status })
       .from(wmsTables.fulfillmentOrderItems)
-      .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, foId));
-    const [fo] = await trx.select().from(wmsTables.fulfillmentOrders).where(eq(wmsTables.fulfillmentOrders.id, foId));
-    if (!fo) return;
-    // 항목이 없으면 투영할 수요가 없다 — 취소 대상이었던 FO 라 canceled 로 닫는다.
-    const status =
-      items.length === 0
-        ? 'canceled'
-        : projectFulfillmentOrderProgress(
-            items.map((item) => ({
-              id: item.id,
-              qty: item.qty,
-              shippedQty: item.shippedQty,
-              canceledQty: item.canceledQty,
-              confirmedReservedQty: 0,
-              activeLineQty: 0,
-              processing: item.pickedQty > 0,
-              recoveryRequired: false,
-            })),
-          ).status;
-    const now = new Date();
-    await trx
-      .update(wmsTables.fulfillmentOrders)
-      .set({
-        status,
-        canceledAt: status === 'canceled' ? (fo.canceledAt ?? now) : fo.canceledAt,
-        updatedAt: now,
-      })
-      .where(eq(wmsTables.fulfillmentOrders.id, foId));
+      .where(inArray(wmsTables.fulfillmentOrderItems.id, itemIds));
+    return new Map(rows.map((row) => [row.id, row.status]));
   }
 }
