@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { and, desc, eq, like, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, like, sql } from 'drizzle-orm';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx, SkuBarcode } from '../../schema/inventory.schema';
@@ -9,7 +9,13 @@ import { AddBarcodeDto } from '../dto/add-barcode.dto';
 import { SkuResponseDto } from '../dto/sku-response.dto';
 import { SkuCatalogReader } from './sku-catalog.reader';
 import { deliveryProfileViolation, type SkuProfileState } from '../sku-delivery-profile.rule';
-import { SkuDeliveryProfileNotFoundError, SkuDeliveryProfileRequiredError } from '../sku-catalog.errors';
+import { directSupplierViolation, type SkuSupplierState } from '../sku-direct-supplier.rule';
+import {
+  SkuDeliveryProfileNotFoundError,
+  SkuDeliveryProfileRequiredError,
+  SkuDirectSupplierRequiredError,
+  SkuSupplierNotFoundError,
+} from '../sku-catalog.errors';
 
 @Injectable()
 export class SkuCatalogManager {
@@ -22,12 +28,18 @@ export class SkuCatalogManager {
 
   async create(dto: CreateSkuDto, tx?: DbTx): Promise<SkuResponseDto> {
     return this.dbService.run(async (trx) => {
-      const { supplierIds, categoryIds, source, skuGroupId, imageUploadIds, ...skuData } = dto;
+      const { supplierIds: rawSupplierIds, categoryIds, source, skuGroupId, imageUploadIds, ...skuData } = dto;
+      const supplierIds = uniqueSorted(rawSupplierIds ?? []);
+      // 컬럼 DEFAULT 와 같은 기본값 — 안 보내면 physical 로 들어간다
+      const stockType = skuData.stockType ?? 'physical';
 
       await this.assertDeliveryProfile(trx, skuData.name, null, {
-        // 컬럼 DEFAULT 와 같은 기본값 — 안 보내면 physical 로 들어간다
-        stockType: skuData.stockType ?? 'physical',
+        stockType,
         deliveryProfileId: skuData.deliveryProfileId ?? null,
+      });
+      this.assertDirectSupplier(skuData.name, null, {
+        stockType,
+        directSupplierIds: await this.directSupplierIdsOf(trx, supplierIds),
       });
 
       const [newSku] = await trx
@@ -39,7 +51,7 @@ export class SkuCatalogManager {
         })
         .returning();
 
-      if (supplierIds && supplierIds.length > 0) {
+      if (supplierIds.length > 0) {
         await trx
           .insert(wmsTables.skuSuppliers)
           .values(supplierIds.map((supplierId) => ({ skuId: newSku.id, supplierId })));
@@ -74,15 +86,29 @@ export class SkuCatalogManager {
 
   async update(skuId: string, dto: UpdateSkuDto, tx?: DbTx): Promise<SkuResponseDto> {
     return this.dbService.run(async (trx) => {
-      const { supplierIds, categoryIds, skuGroupId, imageUploadIds, ...updateData } = dto;
+      const { supplierIds: rawSupplierIds, categoryIds, skuGroupId, imageUploadIds, ...updateData } = dto;
+      // undefined = 연결을 안 건드림
+      const supplierIds = rawSupplierIds === undefined ? undefined : uniqueSorted(rawSupplierIds);
 
       const before = await this.loadProfileState(trx, skuId);
-      await this.assertDeliveryProfile(trx, updateData.name ?? before.name, before, {
-        stockType: updateData.stockType ?? before.stockType,
+      const skuName = updateData.name ?? before.name;
+      const stockType = updateData.stockType ?? before.stockType;
+      await this.assertDeliveryProfile(trx, skuName, before, {
+        stockType,
         // undefined = 안 건드림, null = 지움
         deliveryProfileId:
           updateData.deliveryProfileId === undefined ? before.deliveryProfileId : updateData.deliveryProfileId,
       });
+      const beforeDirect = await this.linkedDirectSupplierIds(trx, skuId);
+      this.assertDirectSupplier(
+        skuName,
+        { stockType: before.stockType, directSupplierIds: beforeDirect },
+        {
+          stockType,
+          directSupplierIds:
+            supplierIds === undefined ? beforeDirect : await this.directSupplierIdsOf(trx, supplierIds),
+        },
+      );
 
       const skuUpdatePayload = {
         ...updateData,
@@ -305,6 +331,44 @@ export class SkuCatalogManager {
     }
   }
 
+  private assertDirectSupplier(skuName: string, before: SkuSupplierState | null, after: SkuSupplierState): void {
+    if (directSupplierViolation(before, after)) {
+      throw new SkuDirectSupplierRequiredError(
+        `직배 SKU(${skuName})는 직배 공급사 하나에 연결돼야 합니다 (지금 ${after.directSupplierIds.length}곳)`,
+      );
+    }
+  }
+
+  /**
+   * 주어진 공급사 중 직배 공급사(정렬). 모르는 id 는 400 — 안 보면 FK 위반이 500 으로 샌다.
+   * FOR SHARE: 판정과 연결 쓰기 사이에 공급사가 «직배 아님»으로 바뀌지 못하게 한다(공급사 쪽은 FOR UPDATE 로 먼저 잡는다).
+   */
+  private async directSupplierIdsOf(trx: DbTx, supplierIds: readonly string[]): Promise<string[]> {
+    if (supplierIds.length === 0) return [];
+    const rows = await trx
+      .select({ id: wmsTables.suppliers.id, isDirectDelivery: wmsTables.suppliers.isDirectDelivery })
+      .from(wmsTables.suppliers)
+      .where(inArray(wmsTables.suppliers.id, [...supplierIds]))
+      .orderBy(wmsTables.suppliers.id)
+      .for('share');
+    const found = new Set(rows.map((row) => row.id));
+    const missing = supplierIds.filter((id) => !found.has(id));
+    if (missing.length > 0) throw new SkuSupplierNotFoundError(`공급사를 찾을 수 없습니다: ${missing.join(', ')}`);
+    return rows.filter((row) => row.isDirectDelivery).map((row) => row.id);
+  }
+
+  /** 지금 연결된 직배 공급사(정렬). */
+  private async linkedDirectSupplierIds(trx: DbTx, skuId: string): Promise<string[]> {
+    const rows = await trx
+      .select({ id: wmsTables.suppliers.id })
+      .from(wmsTables.skuSuppliers)
+      .innerJoin(wmsTables.suppliers, eq(wmsTables.suppliers.id, wmsTables.skuSuppliers.supplierId))
+      .where(and(eq(wmsTables.skuSuppliers.skuId, skuId), eq(wmsTables.suppliers.isDirectDelivery, true)))
+      .orderBy(wmsTables.suppliers.id)
+      .for('share', { of: wmsTables.suppliers });
+    return rows.map((row) => row.id);
+  }
+
   private async loadProfileState(trx: DbTx, skuId: string): Promise<SkuProfileState & { name: string }> {
     const [row] = await trx
       .select({
@@ -340,4 +404,8 @@ export class SkuCatalogManager {
 
     return `${prefix}${String(nextNumber).padStart(5, '0')}`;
   }
+}
+
+function uniqueSorted(values: readonly string[]): string[] {
+  return [...new Set(values)].sort();
 }

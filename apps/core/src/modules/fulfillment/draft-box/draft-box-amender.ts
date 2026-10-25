@@ -23,6 +23,7 @@ import {
 } from '../services/shipment-aggregate';
 import { editShipmentManifest, lockedAggregateOf, ManifestWriter } from '../shipment/shipment-manifest-edit';
 import { BoxTarget, diffBox } from './box-target';
+import { warehouseIdOf } from '../shipment/shipment-owner';
 
 export interface AmendResult {
   changed: boolean;
@@ -121,6 +122,7 @@ export class DraftBoxAmender {
     | { changed: true; operationId: string; before: ShipmentManifestSnapshot; tombstone: ShipmentRow | null }
   > {
     const shipmentId = aggregate.shipment.id;
+    const warehouseId = warehouseIdOf(aggregate.shipment);
     const diff = diffBox(
       aggregate.lines.map((line) => ({
         shipmentLineId: line.id,
@@ -158,7 +160,7 @@ export class DraftBoxAmender {
       [
         ...diff.decreases.map((entry) => lineOf(entry.shipmentLineId).skuId),
         ...diff.increases.map((entry) => entry.skuId),
-      ].map((skuId) => ({ skuId, warehouseId: aggregate.shipment.warehouseId })),
+      ].map((skuId) => ({ skuId, warehouseId })),
     );
 
     const before = shipmentSnapshot(aggregate);

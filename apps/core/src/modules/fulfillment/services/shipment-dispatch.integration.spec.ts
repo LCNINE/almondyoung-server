@@ -39,6 +39,7 @@ import { WaybillService } from '../waybill/waybill.service';
 import { WaybillManager } from '../waybill/waybill.manager';
 import { WaybillReader } from '../waybill/waybill.reader';
 import { WaybillRepository } from '../waybill/waybill.repository';
+import { warehouseIdOf } from '../shipment/shipment-owner';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -546,7 +547,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
     const [shipment] = await tx
       .insert(wmsTables.shipments)
       .values({
-        warehouseId: base.shipment.warehouseId,
+        warehouseId: warehouseIdOf(base.shipment),
         status: 'planned',
         recipientSnapshot: base.shipment.recipientSnapshot,
         plannedAt: new Date(),
@@ -568,7 +569,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
       targetId: line.id,
       shipmentLineId: line.id,
       skuId: base.sku.id,
-      warehouseId: base.shipment.warehouseId,
+      warehouseId: warehouseIdOf(base.shipment),
       quantity,
       status: 'confirmed',
       requestedAt: new Date(),
@@ -577,7 +578,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
       .insert(wmsTables.outboundBatches)
       .values({
         batchNumber: `DISPATCH-SPLIT-${suffix}`,
-        warehouseId: base.shipment.warehouseId,
+        warehouseId: warehouseIdOf(base.shipment),
         pickingMethod: 'individual',
         status: 'picking',
         // startBatchPicking 은 배정·세션과 같은 트랜잭션에서 started_at 을 찍는다 — 배정이 있는 배치는 시작된 배치다(I1).
@@ -697,7 +698,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
         .where(
           and(
             eq(wmsTables.stockLedgers.skuId, fixture.sku.id),
-            eq(wmsTables.stockLedgers.warehouseId, fixture.shipment.warehouseId),
+            eq(wmsTables.stockLedgers.warehouseId, warehouseIdOf(fixture.shipment)),
             eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
           ),
         );

@@ -114,6 +114,15 @@ export async function seedFo(
   return { foId: fo.id, foItemId: item.id };
 }
 
+/** 직배 입점사(K3) — `is_direct_delivery = true` 공급사. */
+export async function seedDirectSupplier(tx: DbTx): Promise<string> {
+  const [row] = await tx
+    .insert(wmsTables.suppliers)
+    .values({ name: `op-supplier-${randomUUID().slice(0, 8)}`, isDirectDelivery: true })
+    .returning();
+  return row.id;
+}
+
 export async function seedBox(
   tx: DbTx,
   w: World,
@@ -126,12 +135,15 @@ export async function seedBox(
     shippedAt?: Date;
     /** 라인별 수량(foItemIds 와 같은 순서). 안 주면 라인마다 1 */
     qty?: number[];
+    /** 주면 입점사 상자(warehouse_id NULL, K3) */
+    supplierId?: string;
   },
 ): Promise<{ shipmentId: string; lineIds: string[] }> {
   const [s] = await tx
     .insert(wmsTables.shipments)
     .values({
-      warehouseId: w.warehouseId,
+      warehouseId: args.supplierId ? null : w.warehouseId,
+      supplierId: args.supplierId ?? null,
       status: args.status,
       recoveryCode: args.recoveryCode ?? null,
       openedAt: args.openedAt ?? new Date(),

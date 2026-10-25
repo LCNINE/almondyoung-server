@@ -13,6 +13,7 @@ import {
 import { assertInboundOriginRemovalAllowed } from '../../shared/availability/inbound-origin-availability';
 import { assertReservationInvariant } from '../../shared/locks/reservation-invariant';
 import { BatchControlledStockGuard, BatchSessionDispatchAuthorization } from '../services/batch-controlled-stock.guard';
+import { warehouseIdOf } from '../../../fulfillment/shipment/shipment-owner';
 
 // TransitionType alias for strong typing
 type TransitionType = (typeof wmsTables.stockEvents.$inferInsert)['transitionType'];
@@ -492,13 +493,14 @@ export class StockEventStore {
       .where(eq(wmsTables.stockEvents.id, input.originalShipEventId))
       .limit(1)
       .for('update');
+    const warehouseId = warehouseIdOf({ id: attempt.shipmentId, warehouseId: source.warehouseId });
     const [reworkLocation] = await tx
       .select({ id: wmsTables.locations.id })
       .from(wmsTables.locations)
       .where(
         and(
           eq(wmsTables.locations.id, input.toLocationId),
-          eq(wmsTables.locations.warehouseId, source.warehouseId),
+          eq(wmsTables.locations.warehouseId, warehouseId),
           eq(wmsTables.locations.systemRole, 'outbound_rework'),
           eq(wmsTables.locations.isSystem, true),
           eq(wmsTables.locations.isActive, true),
@@ -581,7 +583,7 @@ export class StockEventStore {
       dispatchAttemptSourceId: source.id,
       shipmentLineId: source.shipmentLineId,
       skuId: source.skuId,
-      warehouseId: source.warehouseId,
+      warehouseId,
       outboundReworkLocationId: reworkLocation.id,
       quantity: source.qty,
       originalEventId: original.id,
@@ -765,14 +767,17 @@ export class StockEventStore {
       );
     }
 
+    // 위 검사로 source 창고 = event 출발 창고다. 입점사 상자(창고 없음)는 원장에 오지 않는다(K3).
+    const warehouseId = warehouseIdOf({ id: source.lineShipmentId, warehouseId: source.warehouseId });
+
     // Canonical dispatch owns attempt/source before it reaches the stock
     // boundary. Preserve that order here, then take the shared stock advisory
     // lock; never take shipment/line locks from this low-level repository.
-    await acquireStockAvailabilityLock(tx, event.skuId, event.fromWarehouseId);
+    await acquireStockAvailabilityLock(tx, event.skuId, warehouseId);
     const availability = await this.batchControlledStock.getAvailability(
       {
         skuId: event.skuId,
-        warehouseId: event.fromWarehouseId,
+        warehouseId,
         sourceLocationId: event.fromLocationId,
       },
       tx,

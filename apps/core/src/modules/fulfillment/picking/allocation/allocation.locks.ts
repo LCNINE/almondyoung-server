@@ -18,6 +18,7 @@ import {
   UNSTARTED_BATCH_WORK_ITEM_STATUSES,
   uniqueSorted,
 } from './allocation.types';
+import { warehouseIdOf } from '../../shipment/shipment-owner';
 
 /**
  * Layer 2 — each function takes exactly the one collaborator it needs, passed explicitly.
@@ -162,6 +163,7 @@ export async function assertStartEligibility(
   aggregate: LockedAggregate,
   requestedShipmentIds: string[],
 ): Promise<StartBlocker[]> {
+  for (const shipment of aggregate.shipments) warehouseIdOf(shipment);
   const blockers: StartBlocker[] = [];
   const requested = requestedShipmentIds.join(',');
   const isStartable = (item: { status: string }) =>

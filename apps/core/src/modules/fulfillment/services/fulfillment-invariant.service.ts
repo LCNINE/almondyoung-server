@@ -44,7 +44,7 @@ export interface FulfillmentInvariantSnapshot {
   }>;
   shipments: Array<{
     id: string;
-    warehouseId: string;
+    warehouseId: string | null;
     status: string;
     manifestVersion: number;
     recoveryCode?: string | null;

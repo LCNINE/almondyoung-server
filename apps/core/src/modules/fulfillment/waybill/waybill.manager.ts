@@ -14,6 +14,7 @@ import { WaybillReader } from './waybill.reader';
 import { WaybillRepository } from './waybill.repository';
 import { WAYBILL, WAYBILL_DISPATCHABLE_STATUSES } from './waybill.constants';
 import type { BatchResultItem, WaybillRow } from './waybill.types';
+import { warehouseIdOf } from '../shipment/shipment-owner';
 
 export interface IssueOpts {
   carrier: CarrierCode;
@@ -398,6 +399,8 @@ export class WaybillManager {
     return this.dbService.run(async (trx) => {
       const [shipment] = await trx
         .select({
+          id: inventoryTables.shipments.id,
+          warehouseId: inventoryTables.shipments.warehouseId,
           manifestVersion: inventoryTables.shipments.manifestVersion,
           recipientSnapshot: inventoryTables.shipments.recipientSnapshot,
         })
@@ -405,6 +408,7 @@ export class WaybillManager {
         .where(eq(inventoryTables.shipments.id, shipmentId))
         .limit(1);
       if (!shipment) throw new NotFoundError(`${WAYBILL.ERROR.SHIPMENT_NOT_FOUND}: ${shipmentId}`);
+      warehouseIdOf(shipment);
       const wb = await this.reader.getActiveWaybill(trx, shipmentId);
       if (!wb || !WAYBILL_DISPATCHABLE_STATUSES.some((s) => s === wb.status)) {
         throw new ConflictError(

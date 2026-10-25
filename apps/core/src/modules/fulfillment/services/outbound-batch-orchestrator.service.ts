@@ -45,6 +45,7 @@ import { maskName, readRecipientName } from '../reader/shipment-waybill.reader';
 import { PermissionCheckpoints } from '@app/authorization';
 import { legacyFulfillmentSupervisor } from '../../../platform/auth/fulfillment-authz';
 import { authzSubjectOf } from '../../../platform/auth/system-actor';
+import { warehouseIdOf } from '../shipment/shipment-owner';
 
 const TERMINAL_FOR_BATCH_STATUSES = ['completed', 'excluded'] as const;
 const LEASE_MS = 15 * 60_000;
@@ -553,7 +554,7 @@ export class OutboundBatchOrchestrator {
           const eligible = await this.assertEligible(batch, aggregate, trx, false);
           result.push({
             shipmentId: aggregate.shipment.id,
-            warehouseId: aggregate.shipment.warehouseId,
+            warehouseId: warehouseIdOf(aggregate.shipment),
             shippingProfileId: aggregate.shipment.shippingProfileId!,
             manifestVersion: aggregate.shipment.manifestVersion,
             reservationVersion: aggregate.shipment.reservationVersion,
@@ -1203,6 +1204,7 @@ export class OutboundBatchOrchestrator {
     lockExecutionInputs = true,
   ): Promise<void> {
     const shipment = aggregate.shipment;
+    warehouseIdOf(shipment);
     if (shipment.status !== 'planned') {
       throw this.conflict('SHIPMENT_NOT_PLANNED', `Shipment ${shipment.id} must be Planned before batching`);
     }

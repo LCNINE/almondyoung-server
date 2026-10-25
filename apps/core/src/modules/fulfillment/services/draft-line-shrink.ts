@@ -2,6 +2,7 @@ import { DbTx } from '../../inventory/schema/inventory.schema';
 import { selectConfirmedReservationQtyByLine, ShipmentLineRow, ShipmentRow } from './shipment-aggregate';
 import type { ShipmentReservationService } from './shipment-reservation.service';
 import type { ManifestWriter } from '../shipment/shipment-manifest-edit';
+import { shipmentOwnerOf } from '../shipment/shipment-owner';
 
 export function confirmedReservationReleaseForCancellation(
   lineQty: number,
@@ -46,7 +47,7 @@ export async function shrinkDraftLines(
     // 묘비 상자는 **의도적으로 비번을 안 받는다.** 송장을 발행하지 않고 배송되지도 않으므로 실을 이유가 없고,
     // 실으면 배송 완료 파기가 영영 도달하지 않는 사본이 하나 더 생긴다(백스톱 배치만 남는다).
     tombstone = await writer.createShipment({
-      warehouseId: input.shipment.warehouseId,
+      owner: shipmentOwnerOf(input.shipment),
       status: 'canceled',
       shippingProfileId: input.shipment.shippingProfileId,
       recipientSnapshot: input.shipment.recipientSnapshot,

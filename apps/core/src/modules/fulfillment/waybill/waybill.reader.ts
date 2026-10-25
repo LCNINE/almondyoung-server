@@ -6,6 +6,7 @@ import { DbTx, inventorySchema, inventoryTables } from '../../inventory/schema/i
 import { canonicalFulfillmentRequestHash } from '../services/fulfillment-command.service';
 import { WAYBILL, WAYBILL_TERMINAL_STATUSES } from './waybill.constants';
 import type { IssueContext, LabelAllocation, WaybillRow } from './waybill.types';
+import { warehouseIdOf } from '../shipment/shipment-owner';
 
 const W = inventoryTables.waybills;
 
@@ -24,6 +25,7 @@ export class WaybillReader {
       .where(eq(inventoryTables.shipments.id, shipmentId))
       .limit(1);
     if (!shipment) throw new NotFoundError(`${WAYBILL.ERROR.SHIPMENT_NOT_FOUND}: ${shipmentId}`);
+    warehouseIdOf(shipment);
     const rows = await trx
       .select({
         skuId: inventoryTables.shipmentLines.skuId,
