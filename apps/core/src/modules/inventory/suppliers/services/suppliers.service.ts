@@ -317,6 +317,12 @@ export class SuppliersService {
         conditions.push(eq(suppliers.purchaseManagerId, filters.purchaseManagerId));
       }
 
+      if (filters.isDirectDelivery === true) {
+        conditions.push(eq(suppliers.isDirectDelivery, true));
+      } else if (filters.isDirectDelivery === false) {
+        conditions.push(sql`${suppliers.isDirectDelivery} is not true`);
+      }
+
       const limit = filters.limit || 50;
       const offset = filters.offset !== undefined ? filters.offset : filters.page ? (filters.page - 1) * limit : 0;
 

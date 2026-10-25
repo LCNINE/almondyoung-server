@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString, IsUUID, IsInt, Min, Max } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsOptional, IsString, IsUUID, IsBoolean, IsInt, Min, Max } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 
 export class SupplierFiltersDto {
   @ApiProperty({ description: 'Search query (name, phone, email, etc.)', required: false })
@@ -17,6 +17,18 @@ export class SupplierFiltersDto {
   @IsOptional()
   @IsString()
   purchaseManagerId?: string;
+
+  @ApiProperty({
+    description: '직배 공급사 필터. true=직배만, false=직배 아님(NULL 포함), 생략=전부',
+    required: false,
+    type: Boolean,
+  })
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === 'true' || value === true ? true : value === 'false' || value === false ? false : value,
+  )
+  @IsBoolean()
+  isDirectDelivery?: boolean;
 
   @ApiProperty({ description: 'Page number (for pagination)', required: false, minimum: 1 })
   @IsOptional()
