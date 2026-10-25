@@ -96,4 +96,24 @@ describeIfDb('shipmentReservationTotalsSql (PostgreSQL integration)', () => {
       expect(rows).toEqual([{ shipment_id: box.shipmentId, line_qty: 2, reserved_qty: 2, unreserved_qty: 1 }]);
     });
   });
+
+  // 입점사 상자는 창고 흐름에 들어가지 않아 예약이 없다 — «덜 예약»이 아니다(K3 PR4, N5). 라인 수량·예약 합은 그대로 센다
+  it('입점사 상자는 unreserved_qty 0 — line_qty 는 그대로, 예약은 없다', async () => {
+    await rollback(async (tx) => {
+      const w = await f.seedWorld(tx);
+      const o = await f.seedOrder(tx);
+      const fo = await f.seedFo(tx, w, o);
+      const box = await f.seedBox(tx, w, [fo.foItemId], {
+        status: 'draft',
+        qty: [3],
+        supplierId: await f.seedDirectSupplier(tx),
+      });
+      const rows = (await tx.execute(
+        shipmentReservationTotalsSql(sql`SELECT ${box.shipmentId}::uuid`),
+      )) as unknown as Totals[];
+      expect(rows).toEqual([{ shipment_id: box.shipmentId, line_qty: 3, reserved_qty: 0, unreserved_qty: 0 }]);
+      const all = (await tx.execute(shipmentReservationTotalsSql())) as unknown as Totals[];
+      expect(all.filter((r) => r.shipment_id === box.shipmentId)).toEqual(rows);
+    });
+  });
 });

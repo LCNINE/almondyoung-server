@@ -20,6 +20,8 @@ export function lineReservedQtySql(lineId: SQL): SQL {
  * target_type='SHIPMENT_LINE' · status='confirmed' 인 stock_reservations.quantity 합), unreserved_qty(라인별
  * max(0, 라인 수량 − 그 라인의 확정 예약)의 합).
  * 상자 «전체»로 잰다 — 합포장 상자는 어느 주문의 라인이든 모두 센다.
+ * 입점사 상자(supplier_id IS NOT NULL)는 창고 흐름에 들어가지 않아 예약이 없다 — unreserved_qty 를 0 으로 둔다(K3 PR4, N5).
+ * line_qty·reserved_qty 는 그대로 센다(예약 합은 재고 원장과 맞아야 한다).
  * 덜 예약 = unreserved_qty > 0 이다. line_qty > reserved_qty 로 재면 넘치게 예약된 라인이 모자란 라인을
  * 가려서(상자 합은 같아 보인다) plan 의 라인별 «다 예약됐나» 검사(assertFullyReserved)와 어긋난다.
  * reserved_qty 는 «예약이 하나라도 있나»(나눌 수 있나·부분 예약 표기)에만 쓴다.
@@ -37,8 +39,11 @@ export function shipmentReservationTotalsSql(scopeShipmentIds?: SQL): SQL {
     ? sql`SELECT DISTINCT x.shipment_id FROM (${scopeShipmentIds}) x(shipment_id)`
     : sql`SELECT id AS shipment_id FROM shipments`;
   return sql`
-    SELECT sc.shipment_id, t.line_qty, t.reserved_qty, t.unreserved_qty
+    SELECT sc.shipment_id, t.line_qty, t.reserved_qty,
+           CASE WHEN s.supplier_id IS NOT NULL THEN 0 ELSE t.unreserved_qty END AS unreserved_qty
       FROM (${drive}) sc
+      -- 상자 주인은 구동 목록의 상자마다 PK 로 한 번 읽는다(집계 앞). LEFT — 없는 상자 id 도 지금처럼 값이 0 인 한 행을 낸다
+      LEFT JOIN shipments s ON s.id = sc.shipment_id
       CROSS JOIN LATERAL (
         SELECT coalesce(sum(sl.qty), 0)::int AS line_qty,
                coalesce(sum(res.quantity), 0)::int AS reserved_qty,

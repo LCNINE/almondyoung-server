@@ -1,7 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import {
-  directShipStatusEnum,
   exchangeRequestStatusEnum,
   fulfillmentOrderCreationBacklogStatusEnum,
   outboundBatchWorkItemStatusEnum,
@@ -81,6 +80,12 @@ describe('세부 상태별 갇힘(#1016 36번 재설계 D6)', () => {
     expect(isStuck('cancel_request', ago(1), now, 'settle_refused')).toBe(true);
   });
 
+  it('입점사 «못 보냄»은 보고 즉시 갇힘 — dispatch 단계 기준(1시간)을 덮는다(K3 PR4)', () => {
+    expect(stuckAfterMs('dispatch', 'drop_ship_unfulfillable')).toBe(0);
+    expect(isStuck('dispatch', ago(1), now, 'drop_ship_unfulfillable')).toBe(true);
+    expect(isStuck('dispatch', ago(1), now, 'drop_ship_pending')).toBe(false);
+  });
+
   it('세부 상태가 없거나 덮어쓰기가 없으면 단계 기준', () => {
     expect(stuckAfterMs('fo', null)).toBe(DAY);
     expect(stuckAfterMs('fo', 'awaiting_matching')).toBe(DAY);
@@ -94,14 +99,12 @@ describe('세부 상태별 갇힘(#1016 36번 재설계 D6)', () => {
 describe('ORDER_PROGRESS_STATES', () => {
   // 판정 SQL 의 본문. 리터럴 세부 상태는 여기에 따옴표째로 들어 있다
   const judgeText = new PgDialect().sqlToQuery(judgedRowsSql(sql`SELECT NULL::uuid`, '2000-01-01T00:00:00.000Z')).sql;
-  const dropShip = directShipStatusEnum.enumValues.map((v) => `drop_ship_${v}`);
   // 판정 SQL 이 원천 값을 그대로(또는 접두어를 붙여) 내는 단계 — 그 단계의 세부 상태는 원천 enum 값이어야 한다
   const passthrough: Partial<Record<OrderProgressStage, readonly string[]>> = {
     fo: fulfillmentOrderCreationBacklogStatusEnum.enumValues,
     waybill: waybillStatusEnum.enumValues,
     pick: outboundBatchWorkItemStatusEnum.enumValues,
-    track: [...shipmentStatusEnum.enumValues, ...dropShip],
-    dispatch: dropShip,
+    track: shipmentStatusEnum.enumValues,
     return_exchange: [
       ...returnRequestStatusEnum.enumValues.map((v) => `return:${v}`),
       ...exchangeRequestStatusEnum.enumValues.map((v) => `exchange:${v}`),
@@ -130,7 +133,7 @@ describe('SHIPMENT_STATES', () => {
     },
   );
 
-  it('직배 단위는 상자가 없다 — drop_ship_* 상태가 상자 어휘에 없다', () => {
+  it('입점사 상자의 drop_ship_* 는 겨누는 상자 규칙이 아직 없다 — 상자 어휘에 없다', () => {
     const all = SHIPMENT_STAGES.flatMap((stage): readonly string[] => SHIPMENT_STATES[stage]);
     expect(all.filter((s) => s.startsWith('drop_ship_'))).toEqual([]);
   });

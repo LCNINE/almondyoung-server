@@ -11,7 +11,8 @@ END`;
 
 /**
  * 판정의 공통 CTE(so … decided). 주문으로 접기(judgedRowsSql)와 상자별 결과(judgedShipmentsSql)가 같이 읽는다 —
- * 판정 정의는 이 한 벌이다(리컨실러 스펙 §11.5). units 는 상자 하나 × 주문 하나(직배는 shipment_id NULL).
+ * 판정 정의는 이 한 벌이다(리컨실러 스펙 §11.5). units 는 상자 하나 × 주문 하나다 — 직배도 입점사 상자라 상자가 있다(K3 PR4).
+ * 입점사 상자 단계(대기·넘김·발송)의 술어는 fulfillment/shipment/supplier-shipment-stage.ts 와 같다 — 바꾸면 함께 바꾼다.
  */
 function judgeCtes(scope: SQL, now: SQL): SQL {
   return sql`
@@ -28,14 +29,13 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
        ORDER BY b.sales_order_id, b.created_at DESC
     ),
     fo AS (
-      SELECT f.id, f.sales_order_id, f.status::text AS status, f.fulfillment_mode::text AS mode,
-             f.direct_ship_status::text AS ds, f.created_at, f.updated_at
+      SELECT f.id, f.sales_order_id, f.status::text AS status, f.created_at, f.updated_at
         FROM fulfillment_orders f
         JOIN so ON so.id = f.sales_order_id
     ),
     -- 판정 대상 주문의 FO 에 걸린 상자 라인(상자 × 주문). shipment_lines 를 한 번만 읽도록 box_res 의 범위와 box 가 함께 쓴다.
     box_line AS (
-      SELECT sl.shipment_id, fo.sales_order_id, fo.created_at AS fo_created_at
+      SELECT sl.shipment_id, fo.sales_order_id, fo.created_at AS fo_created_at, sl.unfulfillable_reported_at
         FROM shipment_lines sl
         JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
         JOIN fo ON fo.id = foi.fulfillment_order_id
@@ -47,17 +47,23 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
     ),
     -- 상자 하나 × 그 상자에 라인이 있는 판매주문 하나. 합포장 상자는 주문마다 한 행씩 나온다.
     -- «예약 단계»는 FO 상태가 아니라 상자의 예약으로 정한다 — 한 FO 의 상자 둘 중 하나만 덜 예약일 수 있다(#1016 15번).
+    -- 입점사 상자(supplier_id)는 넘김 묶음 시각(handoff_at)과 그 주문 라인의 «못 보냄» 보고를 싣는다. «못 보냄»은 주문마다 자기 라인으로 정한다 —
+    -- 입점사 상자는 주문 하나의 FO 에서 열리고, 주문이 둘인 입점사 상자(되돌린 합포장, 스펙 §4.3-9)는 상자별 결과가 더 앞선 단계를 고른다.
     box AS (
       SELECT bl.sales_order_id, s.id AS shipment_id, s.status::text AS status, s.recovery_code,
              s.opened_at, s.planned_at, s.shipped_at,
+             s.supplier_id, s.supplier_handoff_id, h.created_at AS handoff_at,
              bool_or(br.unreserved_qty > 0) AS under_reserved,
              bool_or(br.reserved_qty > 0 AND br.unreserved_qty > 0) AS partially_reserved,
+             bool_or(bl.unfulfillable_reported_at IS NOT NULL) AS has_unfulfillable,
+             min(bl.unfulfillable_reported_at) AS unfulfillable_at,
              min(bl.fo_created_at) AS fo_created_at
         FROM shipments s
         JOIN box_line bl ON bl.shipment_id = s.id
         JOIN box_res br ON br.shipment_id = s.id
+        LEFT JOIN supplier_handoffs h ON h.id = s.supplier_handoff_id
        WHERE s.status NOT IN ('canceled', 'superseded')
-       GROUP BY bl.sales_order_id, s.id
+       GROUP BY bl.sales_order_id, s.id, h.id
     ),
     -- 활성 작업 항목이 있으면 그것, 없으면 마지막 completed. excluded(배치에서 빠짐)는 보지 않는다.
     wi AS (
@@ -80,6 +86,13 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
                WHEN b.status IN ('draft', 'planned', 'recovery_required') AND b.recovery_code = 'CONSOLIDATION_PENDING' THEN 'consolidation'
                WHEN b.status = 'recovery_required'
                  OR (b.status IN ('draft', 'planned') AND b.recovery_code IS NOT NULL) THEN 'recovery_unknown'
+               -- 입점사 상자(N7): 못 보냄 > 대기 > 넘김, 발송은 끝(배송완료 감지가 없다, 스펙 §4.6). 창고 갈래(예약·계획·피킹)에 들어가지 않는다.
+               -- 그 밖 상태(planned·in_transit·delivered·failed)는 입점사 상자가 타지 않는 전이라 분류 안 됨으로 드러낸다
+               WHEN b.supplier_id IS NOT NULL AND b.status = 'draft' AND b.has_unfulfillable THEN 'drop_ship_unfulfillable'
+               WHEN b.supplier_id IS NOT NULL AND b.status = 'draft' AND b.supplier_handoff_id IS NULL THEN 'drop_ship_pending'
+               WHEN b.supplier_id IS NOT NULL AND b.status = 'draft' THEN 'drop_ship_forwarded'
+               WHEN b.supplier_id IS NOT NULL AND b.status = 'shipped' THEN 'done'
+               WHEN b.supplier_id IS NOT NULL THEN 'recovery_unknown'
                WHEN b.status = 'draft' AND b.under_reserved THEN 'reserve'
                WHEN b.status = 'draft' THEN 'plan'
                WHEN b.status = 'planned'
@@ -103,7 +116,9 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
                WHEN 'cancel_replan' THEN 'cancel' WHEN 'consolidation' THEN 'pick' WHEN 'recovery_unknown' THEN 'unclassified'
                WHEN 'reserve' THEN 'reserve' WHEN 'plan' THEN 'plan' WHEN 'picking' THEN 'pick'
                WHEN 'dispatch' THEN 'dispatch' WHEN 'waybill' THEN 'waybill' WHEN 'awaiting_batch' THEN 'pick'
-               WHEN 'track' THEN 'track' ELSE 'done'
+               WHEN 'track' THEN 'track'
+               WHEN 'drop_ship_unfulfillable' THEN 'dispatch' WHEN 'drop_ship_pending' THEN 'dispatch'
+               WHEN 'drop_ship_forwarded' THEN 'track' ELSE 'done'
              END AS stage,
              CASE k.kind
                WHEN 'cancel_replan' THEN k.recovery_code WHEN 'consolidation' THEN k.recovery_code
@@ -111,7 +126,9 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
                WHEN 'reserve' THEN CASE WHEN k.partially_reserved THEN 'partially_reserved' ELSE 'created' END
                WHEN 'plan' THEN 'awaiting_plan' WHEN 'picking' THEN k.wi_status
                WHEN 'dispatch' THEN 'awaiting_dispatch' WHEN 'waybill' THEN coalesce(k.wb_status, 'none')
-               WHEN 'awaiting_batch' THEN 'awaiting_batch' WHEN 'track' THEN k.status ELSE NULL
+               WHEN 'awaiting_batch' THEN 'awaiting_batch' WHEN 'track' THEN k.status
+               WHEN 'drop_ship_unfulfillable' THEN 'drop_ship_unfulfillable' WHEN 'drop_ship_pending' THEN 'drop_ship_pending'
+               WHEN 'drop_ship_forwarded' THEN 'drop_ship_forwarded' ELSE NULL
              END AS state,
              CASE k.kind
                WHEN 'reserve' THEN k.fo_created_at WHEN 'plan' THEN k.opened_at
@@ -119,16 +136,11 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
                WHEN 'dispatch' THEN k.completed_at
                WHEN 'waybill' THEN k.planned_at WHEN 'awaiting_batch' THEN k.planned_at
                WHEN 'consolidation' THEN k.planned_at
-               WHEN 'track' THEN k.shipped_at ELSE NULL
+               WHEN 'track' THEN k.shipped_at
+               WHEN 'drop_ship_unfulfillable' THEN k.unfulfillable_at WHEN 'drop_ship_pending' THEN k.opened_at
+               WHEN 'drop_ship_forwarded' THEN k.handoff_at ELSE NULL
              END AS est
         FROM box_kind k
-      UNION ALL
-      SELECT fo.sales_order_id, NULL::uuid AS shipment_id,
-             CASE fo.ds WHEN 'pending' THEN 'dispatch' WHEN 'forwarded' THEN 'track' ELSE 'done' END,
-             'drop_ship_' || fo.ds,
-             CASE fo.ds WHEN 'pending' THEN fo.created_at ELSE fo.updated_at END
-        FROM fo
-       WHERE fo.mode = 'drop_ship' AND fo.ds IS NOT NULL AND fo.ds <> 'canceled'
     ),
     -- 주문의 대표 단위: 분류 안 됨 > 취소 > 가장 뒤처진 단계, 같은 단계면 가장 오래된 것
     rep AS (
@@ -285,7 +297,7 @@ export function judgedRowsSql(scope: SQL, nowIso: string): SQL {
  * 상자별 판정(리컨실러 스펙 §11.5). 같은 CTE 의 units 를 상자로 접는다 — 판정 정의는 한 벌이다.
  * 상자 하나가 주문마다 한 행씩 나오므로(합포장) 주문으로 접을 때와 같은 우선순위로 대표 행을 고르고,
  * 그 상자에 라인이 있는 주문들과 그 주문 판정(decided.rule)을 배열로 싣는다 — 리컨실러가 D16 제외를 판단한다.
- * 직배 단위는 상자가 없어 나오지 않는다. 추정 시각이 없으면 NULL 이다(주문 접기처럼 «지금»으로 채우지 않는다 — 후보 정렬에서 뒤로 간다).
+ * 입점사 상자도 상자라 나온다(drop_ship_* — 겨누는 상자 규칙은 아직 없다, SHIPMENT_STATES). 추정 시각이 없으면 NULL 이다(주문 접기처럼 «지금»으로 채우지 않는다 — 후보 정렬에서 뒤로 간다).
  */
 export function judgedShipmentsSql(scope: SQL): SQL {
   return sql`
@@ -299,7 +311,6 @@ export function judgedShipmentsSql(scope: SQL): SQL {
                   ELSE d.rule END AS order_rule
         FROM units u
         JOIN decided d ON d.id = u.sales_order_id
-       WHERE u.shipment_id IS NOT NULL
     ),
     agg AS (
       SELECT su.shipment_id,

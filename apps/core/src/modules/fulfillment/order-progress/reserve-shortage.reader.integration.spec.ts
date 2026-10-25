@@ -317,6 +317,53 @@ describeIfDb('ReserveShortageReader (PostgreSQL integration)', () => {
     });
   });
 
+  /** 입점사 draft 상자 하나(예약 없음). 품목은 따로 만든다 */
+  async function seedSupplierBoxOf(tx: DbTx, w: f.World, l: Omit<Spec, 'reserved'>, openedAt?: Date) {
+    const [item] = await tx
+      .insert(wmsTables.fulfillmentOrderItems)
+      .values({
+        fulfillmentOrderId: l.foId,
+        salesOrderId: l.order.salesOrderId,
+        salesOrderLineId: l.order.lineId,
+        skuId: l.skuId,
+        qty: l.qty,
+      })
+      .returning();
+    return f.seedBox(tx, w, [item.id], {
+      status: 'draft',
+      qty: [l.qty],
+      openedAt,
+      supplierId: await f.seedDirectSupplier(tx),
+    });
+  }
+
+  // 입점사 상자는 «덜 예약된 상자»가 아니다(K3 PR4, N5) — 나눠 보내기 대상도, 부족 품목도 아니다
+  it('입점사 draft 상자만 있는 주문은 맵에 없다', async () => {
+    await rollback(async (tx, reader) => {
+      const w = await f.seedWorld(tx);
+      const s = await seedSku(tx, w, '직배품');
+      const { order, foId } = await seedOrderFo(tx, w);
+      await seedSupplierBoxOf(tx, w, { order, foId, skuId: s, qty: 2 });
+      expect((await reader.forOrders([order.salesOrderId], tx)).has(order.salesOrderId)).toBe(false);
+    });
+  });
+
+  it('덜 예약된 창고 상자 + 더 오래된 입점사 상자 → 대표는 창고 상자', async () => {
+    await rollback(async (tx, reader) => {
+      const w = await f.seedWorld(tx);
+      const whSku = await seedSku(tx, w, '창고품');
+      const supSku = await seedSku(tx, w, '직배품');
+      const { order, foId } = await seedOrderFo(tx, w);
+      await seedSupplierBoxOf(tx, w, { order, foId, skuId: supSku, qty: 1 }, new Date('2026-10-01T00:00:00Z'));
+      const wh = await seedBoxOf(tx, w, [{ order, foId, skuId: whSku, qty: 2, reserved: 1 }], {
+        openedAt: new Date('2026-10-02T00:00:00Z'),
+      });
+      const got = (await reader.forOrders([order.salesOrderId], tx)).get(order.salesOrderId);
+      expect(got).toMatchObject({ shipmentId: wh.shipmentId, skuKinds: 1, shortSkuKinds: 1, splittable: true });
+      expect(got?.items.map((i) => [i.skuId, i.shortQty])).toEqual([[whSku, 1]]);
+    });
+  });
+
   it('서비스: 예약 단계 목록에만 shortage 를 싣고, 다른 단계는 null', async () => {
     await rollback(async (tx) => {
       const dbs = makeDbService(db);
