@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import { event, stream } from '../types';
+import { CARRIERS } from './carriers';
 import { SALES_CHANNELS } from './orders.stream';
 
 const NonEmptyIdSchema = z.string().trim().min(1);
@@ -14,7 +15,7 @@ const CoreUuidSchema = z.string().uuid();
 const PositiveQuantitySchema = z.number().int().positive();
 const AttemptNoSchema = z.number().int().positive();
 const SalesChannelSchema = z.enum(SALES_CHANNELS);
-const ShipmentCarrierSchema = z.enum(['CJ', 'HANJIN', 'LOTTE', 'LOGEN', 'KDEXP', 'CJGLS']);
+const ShipmentCarrierSchema = z.enum(CARRIERS);
 
 const ShipmentInvoiceSchema = z
   .object({
@@ -59,7 +60,9 @@ const ShipmentShippedSchema = z
     shipmentId: CoreUuidSchema,
     dispatchAttemptId: CoreUuidSchema,
     attemptNo: AttemptNoSchema,
-    warehouseId: CoreUuidSchema,
+    /** 창고 상자면 `warehouseId`, 입점사 상자면 `supplierId`(K3). 정확히 하나. */
+    warehouseId: CoreUuidSchema.optional(),
+    supplierId: CoreUuidSchema.optional(),
     dispatchedAt: z.string().datetime(),
     invoice: ShipmentInvoiceSchema,
     /**
@@ -70,6 +73,14 @@ const ShipmentShippedSchema = z
   })
   .strict()
   .superRefine((payload, context) => {
+    if ((payload.warehouseId === undefined) === (payload.supplierId === undefined)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'exactly one of warehouseId or supplierId is required',
+        path: ['warehouseId'],
+      });
+    }
+
     const orderGroupKeys = new Set<string>();
     const shipmentLineIds = new Set<string>();
     const fulfillmentOrderItemIds = new Set<string>();

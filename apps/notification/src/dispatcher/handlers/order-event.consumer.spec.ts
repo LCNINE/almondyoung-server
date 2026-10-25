@@ -252,6 +252,16 @@ describe('OrderEventConsumer 발송 완료 알림', () => {
     );
   });
 
+  it('입점사 택배사도 한국어 이름으로 알린다 (K3 PR 3)', async () => {
+    const { consumer, dispatcher } = makeConsumer({}, mapping('ORDER_PARTIALLY_SHIPPED'));
+
+    await consumer.onShipmentDispatched(coreEnvelope, { ...shipment, carrier: 'EPOST' });
+
+    expect(dispatcher.send).toHaveBeenCalledWith(
+      expect.objectContaining({ variables: expect.objectContaining({ carrier: '우체국택배' }) }),
+    );
+  });
+
   it('전부 나갔으면 발송 완료 알림을 고른다', async () => {
     const { consumer, eventMappings } = makeConsumer({}, mapping('ORDER_SHIPPED'));
 

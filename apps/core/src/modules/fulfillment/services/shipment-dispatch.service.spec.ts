@@ -376,6 +376,22 @@ describe('ShipmentDispatchService', () => {
     expect(fulfillmentV1Outbox.enqueue).not.toHaveBeenCalled();
   });
 
+  // 계약이 14개로 넓어진 뒤로는 타입이 이 문을 지키지 않는다 — 지우면 이 테스트만 빨개진다. PR 5 가 문과 함께 뒤집는다.
+  it('refuses to emit a carrier outside the consumer rollout carriers (K3 PR 3, E3)', async () => {
+    const { service, shipmentOutbox, fulfillmentV2Outbox, fulfillmentV1Outbox, coreOrderOutbox } = makeService();
+    const base = aggregate();
+    const locked = { ...base, waybill: { ...base.waybill, carrier: 'EPOST' } };
+
+    await expect(
+      (service as any).emitDispatchEvents(locked, IDS.extraSource, 1, new Date('2026-07-15T00:00:00.000Z'), [], [], {}),
+    ).rejects.toThrow('outside the consumer rollout carriers');
+
+    expect(shipmentOutbox.enqueue).not.toHaveBeenCalled();
+    expect(fulfillmentV2Outbox.enqueue).not.toHaveBeenCalled();
+    expect(fulfillmentV1Outbox.enqueue).not.toHaveBeenCalled();
+    expect(coreOrderOutbox.enqueue).not.toHaveBeenCalled();
+  });
+
   it('redispatches a recalled shipment with attempt 2, a new waybill, exact stock sources and typed outbox', async () => {
     const {
       service,

@@ -166,6 +166,62 @@ describe('ShipmentDispatchInboxWorker routing', () => {
     );
   });
 
+  describe('입점사 출처·새 택배사 (K3 PR 3, E4)', () => {
+    const SUPPLIER_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const { warehouseId: _warehouse, ...noOrigin } = SHIPPED;
+    const supplierShipped: ShipmentShippedPayload = { ...noOrigin, supplierId: SUPPLIER_ID };
+    const withCarrier = (payload: ShipmentShippedPayload, carrier: ShipmentShippedPayload['invoice']['carrier']) => ({
+      ...payload,
+      invoice: { ...payload.invoice, carrier },
+    });
+    const operationFor = (payload: ShipmentShippedPayload, order: ShipmentEventOrder) => {
+      const operation = makeOperation(order);
+      operation.requestSnapshot = { eventType: 'ShipmentShipped', payload: { ...payload, orders: [order] }, order };
+      return operation;
+    };
+
+    it('routes a supplier-origin shipment on an adapter channel to manual', async () => {
+      const { worker, factory } = makeWorker();
+
+      const result = await (worker as any).executeOperation(operationFor(supplierShipped, makeOrder('naver')));
+
+      expect(result).toEqual(expect.objectContaining({ manual: true, reason: expect.stringContaining('drop-ship') }));
+      expect(factory.getAdapter).not.toHaveBeenCalled();
+    });
+
+    it('routes a carrier outside the adapter tables to manual', async () => {
+      const { worker, factory } = makeWorker();
+
+      const result = await (worker as any).executeOperation(
+        operationFor(withCarrier(SHIPPED, 'EPOST'), makeOrder('coupang')),
+      );
+
+      expect(result).toEqual(expect.objectContaining({ manual: true, reason: expect.stringContaining('EPOST') }));
+      expect(factory.getAdapter).not.toHaveBeenCalled();
+    });
+
+    it('still dispatches a HANJIN warehouse shipment through the adapter', async () => {
+      const { worker, naverExecute } = makeWorker();
+
+      await (worker as any).executeOperation(operationFor(SHIPPED, makeOrder('naver')));
+
+      expect(naverExecute).toHaveBeenCalledWith(
+        expect.objectContaining({ tracking: { companyCode: 'HANJIN', number: 'TRACK-1' } }),
+      );
+    });
+
+    it('projects a supplier-origin EPOST shipment to Medusa', async () => {
+      const { worker, medusaClient } = makeWorker();
+
+      const result = await (worker as any).executeOperation(
+        operationFor(withCarrier(supplierShipped, 'EPOST'), makeOrder('medusa')),
+      );
+
+      expect(result).toEqual(expect.objectContaining({ manual: false }));
+      expect(medusaClient.updateOrderShipmentAttemptProjection).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('marks unsupported Naver partial-line quantity dispatch for manual adjustment', async () => {
     const { worker, factory } = makeWorker();
     const base = makeOrder('naver', { isPartial: true });

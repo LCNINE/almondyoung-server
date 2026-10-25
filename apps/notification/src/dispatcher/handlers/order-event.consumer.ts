@@ -11,16 +11,27 @@ import { eventNoticeKey } from './event-notice-key';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 import { formatOrderTotal } from '../../shared/utils/template-helpers';
 import { CORE_ORDER_STREAM, ORDER_STREAM } from '@packages/event-contracts/streams/orders.stream';
+import type { Carrier } from '@packages/event-contracts/streams/fulfillments.stream';
 import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 
-const CARRIER_LABEL: Record<string, string> = {
+// 빠짐없음은 type-check 가 본다 — 계약 택배사가 늘면 여기서 컴파일이 깨진다
+const CARRIER_LABEL_BY_CODE = {
   CJ: 'CJ대한통운',
   CJGLS: 'CJ대한통운',
   HANJIN: '한진택배',
   LOTTE: '롯데택배',
   LOGEN: '로젠택배',
   KDEXP: '경동택배',
-};
+  EPOST: '우체국택배',
+  DAESIN: '대신택배',
+  ILYANG: '일양로지스',
+  HDEXP: '합동택배',
+  CVSNET: 'GS편의점택배',
+  CUPOST: 'CU편의점택배',
+  CHUNIL: '천일택배',
+  KUNYOUNG: '건영택배',
+} satisfies Record<Carrier, string>;
+const CARRIER_LABEL: Record<string, string> = CARRIER_LABEL_BY_CODE;
 
 /**
  * Order Service 이벤트 컨슈머

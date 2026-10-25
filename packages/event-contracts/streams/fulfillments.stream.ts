@@ -6,14 +6,15 @@
 
 import { event, stream } from '../types';
 import { z } from 'zod';
+import { CARRIERS, type Carrier } from './carriers';
+
+export { CARRIERS, type Carrier } from './carriers';
 
 // ===== Common Types =====
 
 export type FulfillmentMode = 'in_house' | '3pl' | 'drop_ship';
 
 export type FulfillmentStatus = 'created' | 'ready' | 'labeled' | 'shipped' | 'delivered' | 'cancelled' | 'returned';
-
-export type Carrier = 'CJ' | 'HANJIN' | 'LOTTE' | 'LOGEN' | 'KDEXP' | 'CJGLS';
 
 export interface FulfillmentItem {
   fulfillmentItemId: string;
@@ -129,7 +130,7 @@ export interface FulfillmentReturnedPayload {
 // ===== Zod 스키마 정의 =====
 
 const FulfillmentModeSchema = z.enum(['in_house', '3pl', 'drop_ship']);
-const CarrierSchema = z.enum(['CJ', 'HANJIN', 'LOTTE', 'LOGEN', 'KDEXP', 'CJGLS']);
+const CarrierSchema = z.enum(CARRIERS);
 
 const FulfillmentItemSchema = z.object({
   fulfillmentItemId: z.string().min(1),
