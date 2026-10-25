@@ -76,7 +76,7 @@ export interface DispatchEventDeps {
 }
 
 export interface DispatchedShipmentFacts {
-  origin: { warehouseId: string } | { supplierId: string };
+  origin: { warehouseId: string; supplierId?: never } | { supplierId: string; warehouseId?: never };
   shipmentId: string;
   attemptId: string;
   attemptNo: number;

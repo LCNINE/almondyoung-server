@@ -447,6 +447,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       new AuditService(dbService),
       new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
       createCheckpointsForTesting(),
+      new FulfillmentInvariantService(),
     );
   }
 

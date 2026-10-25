@@ -184,6 +184,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       audit,
       workflow,
       createCheckpointsForTesting(),
+      invariant,
     );
     serviceRefs.recall = recall;
     const dispatch = new ShipmentDispatchService(

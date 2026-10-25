@@ -5,7 +5,6 @@ import { and, desc, eq, inArray, isNotNull, isNull, ne, notInArray, sql } from '
 import { inventorySchema, inventoryTables, returnExchangeTables } from '../../inventory/schema/inventory.schema';
 import { digitalAssetOwnerships } from '../../library/schema/library.schema';
 import { WAYBILL_TERMINAL_STATUSES } from '../../fulfillment/waybill/waybill.constants';
-import type { CarrierCode } from '../../fulfillment/waybill/carrier/carrier-gateway.interface';
 import {
   RefundSummaryDto,
   ShipmentProgressDto,

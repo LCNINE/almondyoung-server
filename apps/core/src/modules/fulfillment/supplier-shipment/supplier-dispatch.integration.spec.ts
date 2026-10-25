@@ -414,8 +414,9 @@ describeIfDb('입점사 상자 발송 (K3 PR5, PostgreSQL integration)', () => {
     });
   });
 
-  it('송장번호는 공백·하이픈을 지워 저장하고, 같은 번호의 다른 표기도 TRACKING_IN_USE 다', async () => {
+  it('송장번호는 공백·하이픈을 지우고 대문자로 저장하고, 같은 번호의 다른 표기(소문자 포함)도 TRACKING_IN_USE 다', async () => {
     expect(normalizeTrackingNo(' EP-100 200 ')).toBe('EP100200');
+    expect(normalizeTrackingNo('ep-100 200')).toBe('EP100200');
     await inRollbackTx(db, async (tx) => {
       const a = await world(tx);
       const b = await world(tx);
@@ -426,6 +427,9 @@ describeIfDb('입점사 상자 발송 (K3 PR5, PostgreSQL integration)', () => {
       expect(wb.trackingNo).toBe('EP100200');
       await expect(
         tx.transaction((sp) => ship(sp as unknown as DbTx, b.supplierBox, 'EP-100-200')),
+      ).rejects.toBeInstanceOf(SupplierTrackingInUseError);
+      await expect(
+        tx.transaction((sp) => ship(sp as unknown as DbTx, b.supplierBox, 'ep100200')),
       ).rejects.toBeInstanceOf(SupplierTrackingInUseError);
     });
   });

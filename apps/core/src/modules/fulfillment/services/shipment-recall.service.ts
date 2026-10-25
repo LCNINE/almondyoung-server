@@ -39,9 +39,6 @@ import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 
-// 생성자 의존이 없는 순수 판정기 — 입점사 갈래가 커밋 전에 부른다(창고는 ShipmentReservationService 가 같은 판정기를 쓴다).
-const SUPPLIER_RECALL_INVARIANT = new FulfillmentInvariantService();
-
 type RecallIntent = {
   kind: 'shipment_recall';
   operationId: string;
@@ -112,6 +109,8 @@ export class ShipmentRecallService {
     private readonly audit: AuditService,
     private readonly workflowGate: FulfillmentWorkflowGate,
     private readonly checkpoints: PermissionCheckpoints,
+    /** 입점사 갈래가 커밋 전에 부르는 FO 정합성 판정기(창고는 ShipmentReservationService 가 같은 판정기를 쓴다). */
+    private readonly invariant: FulfillmentInvariantService,
   ) {}
 
   async report(
@@ -346,7 +345,7 @@ export class ShipmentRecallService {
       {
         shipments: this.shipments,
         fulfillmentsV2: this.fulfillmentsV2,
-        invariant: SUPPLIER_RECALL_INVARIANT,
+        invariant: this.invariant,
         voidUsedWaybill: async (id, trx) => {
           await this.waybills.voidForRecall(
             id,

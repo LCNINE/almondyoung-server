@@ -284,15 +284,15 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
   it('입점사 상자를 나누면 나눈 상자가 같은 입점사·같은 넘김 묶음을 물려받는다 (K3 PR5 N7)', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = await op.seedWorld(tx);
-      const o = await op.seedOrder(tx);
-      const fo = await op.seedFo(tx, w, o, { qty: 4 });
+      const foA = await op.seedFo(tx, w, await op.seedOrder(tx), { qty: 2 });
+      const foB = await op.seedFo(tx, w, await op.seedOrder(tx), { qty: 3 });
       const supplierId = await op.seedDirectSupplier(tx);
       const handoffId = await op.seedHandoff(tx, supplierId);
-      const box = await op.seedBox(tx, w, [fo.foItemId], {
+      const box = await op.seedBox(tx, w, [foA.foItemId, foB.foItemId], {
         status: 'draft',
         supplierId,
         supplierHandoffId: handoffId,
-        qty: [4],
+        qty: [2, 3],
       });
       const [source] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, box.shipmentId));
       const [line] = await tx
@@ -300,12 +300,13 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         .from(wmsTables.shipmentLines)
         .where(eq(wmsTables.shipmentLines.id, box.lineIds[0]));
 
+      // 입점사 상자는 줄째로만 나눈다 — 한 FOI 의 산 입점사 줄은 하나다(N3).
       const result = await planning.split(
         box.shipmentId,
         {
           expectedManifestVersion: source.manifestVersion,
           reason: 'supplier split',
-          moves: [{ shipmentLineId: line.id, expectedLineVersion: line.lineVersion, qty: 2 }],
+          moves: [{ shipmentLineId: line.id, expectedLineVersion: line.lineVersion, qty: line.qty }],
         },
         `split-supplier-${randomUUID()}`,
         actor,
@@ -319,6 +320,47 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
       expect(target.supplierId).toBe(supplierId);
       expect(target.warehouseId).toBeNull();
       expect(target.supplierHandoffId).toBe(handoffId);
+    });
+  });
+
+  it('입점사 상자의 줄을 일부 수량만 옮기면 409 SUPPLIER_SHIPMENT_PARTIAL_SPLIT — 한 FOI 에 산 입점사 줄이 둘이 되지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await op.seedWorld(tx);
+      const fo = await op.seedFo(tx, w, await op.seedOrder(tx), { qty: 4 });
+      const supplierId = await op.seedDirectSupplier(tx);
+      const box = await op.seedBox(tx, w, [fo.foItemId], { status: 'draft', supplierId, qty: [4] });
+      const [source] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, box.shipmentId));
+      const [line] = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.id, box.lineIds[0]));
+
+      const error = await planning
+        .split(
+          box.shipmentId,
+          {
+            expectedManifestVersion: source.manifestVersion,
+            reason: 'supplier split',
+            moves: [{ shipmentLineId: line.id, expectedLineVersion: line.lineVersion, qty: 2 }],
+          },
+          `split-supplier-partial-${randomUUID()}`,
+          actor,
+          tx,
+        )
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(((error as ConflictException).getResponse() as { code: string }).code).toBe(
+        'SUPPLIER_SHIPMENT_PARTIAL_SPLIT',
+      );
+      const lines = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.fulfillmentOrderItemId, fo.foItemId));
+      expect(lines.map((row) => row.qty)).toEqual([4]);
     });
   });
 

@@ -219,6 +219,37 @@ describeIfDb('입점사 송장 정정·못 보냄 (K3 PR5, PostgreSQL integratio
     });
   });
 
+  it('정정은 감사 기록 하나를 남긴다(상자 id, 옛→새 택배사·번호, 운영자) — 같은 번호면 남기지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const x = await world(tx);
+      await hand(tx, x.supplierId, x.supplierBox);
+      await ship(tx, x.supplierBox, 'OLD-1');
+      const logUserActionRequired = jest.fn().mockResolvedValue(undefined);
+      const audited = { ...deps, audit: { logUserActionRequired } };
+      const correctAudited = (trackingNo: string, carrier: 'EPOST' | 'CJ') =>
+        correctSupplierWaybill(audited, tx, { shipmentId: x.supplierBox, carrier, trackingNo, actorId, at });
+
+      await correctAudited('NEW-2', 'CJ');
+
+      expect(logUserActionRequired).toHaveBeenCalledTimes(1);
+      const [action, module, message, context] = logUserActionRequired.mock.calls[0] as [
+        string,
+        string,
+        string,
+        unknown,
+      ];
+      expect(action).toBe('shipment.waybill.correct');
+      expect(module).toBe('fulfillment');
+      expect(message).toContain(x.supplierBox);
+      expect(message).toContain('EPOST OLD1');
+      expect(message).toContain('CJ NEW2');
+      expect(context).toEqual({ userId: actorId });
+
+      await correctAudited('NEW 2', 'CJ');
+      expect(logUserActionRequired).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('같은 (택배사, 번호)면 아무것도 하지 않고 지금 송장 id, 정규화된 같은 번호도 동일', async () => {
     await inRollbackTx(db, async (tx) => {
       const x = await world(tx);

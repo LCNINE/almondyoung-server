@@ -1,6 +1,7 @@
 import { and, eq, ne, notInArray } from 'drizzle-orm';
 import { BadRequestError, NotFoundError } from '@app/shared';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
+import type { AuditService } from '../../inventory/shared/services/audit.service';
 import { lockShipmentConnectedComponentGraph } from '../services/shipment-reservation.service';
 import type { CarrierCode } from '../waybill/carrier/carrier-gateway.interface';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
@@ -14,6 +15,7 @@ import {
 } from './supplier-shipment.errors';
 
 export type SupplierCorrectionDeps = {
+  audit: Pick<AuditService, 'logUserActionRequired'>;
   waybills: Pick<WaybillRepository, 'insertSupplierManualUsed' | 'casUsedToVoided'>;
 };
 
@@ -27,7 +29,8 @@ export interface SupplierCorrectionCommand {
 
 /**
  * 발송된 입점사 상자의 송장번호를 정정한다(N9) — 옛 수기 송장 used → voided, 새 수기 송장 used, 시도의 waybill_id 를 새 송장으로.
- * 상자 상태·manifest_version·이벤트는 건드리지 않는다. 같은 (택배사, 번호)면 아무것도 하지 않고 지금 송장 id 를 돌려준다.
+ * 상자 상태·manifest_version·이벤트는 건드리지 않는다 — 대신 감사 기록 하나를 같은 트랜잭션에 남긴다(누가 언제 무엇을 무엇으로).
+ * 같은 (택배사, 번호)면 아무것도 하지 않고(감사도 없이) 지금 송장 id 를 돌려준다.
  */
 export async function correctSupplierWaybill(
   deps: SupplierCorrectionDeps,
@@ -119,6 +122,20 @@ export async function correctSupplierWaybill(
     .where(
       and(eq(wmsTables.dispatchAttempts.shipmentId, shipment.id), eq(wmsTables.dispatchAttempts.waybillId, current.id)),
     );
+  await deps.audit.logUserActionRequired(
+    'shipment.waybill.correct',
+    'fulfillment',
+    `Corrected supplier shipment ${shipment.id} waybill: ${current.carrier} ${current.trackingNo} → ${cmd.carrier} ${trackingNo}`,
+    { userId: cmd.actorId },
+    {
+      shipmentId: shipment.id,
+      previousWaybillId: current.id,
+      waybillId: created.id,
+      previous: { carrier: current.carrier, trackingNo: current.trackingNo },
+      next: { carrier: cmd.carrier, trackingNo },
+    },
+    tx,
+  );
   return { waybillId: created.id };
 }
 

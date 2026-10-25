@@ -29,6 +29,7 @@ import { WaybillRepository } from '../waybill/waybill.repository';
 import { shipSupplierShipment, SupplierDispatchDeps } from './supplier-dispatch';
 import { reportUnfulfillable } from './supplier-line-reports';
 import { mergeSupplierShipments } from './supplier-manifest';
+import { recallSupplierShipment } from './supplier-recall';
 import { judgeSupplierSheet, type RowVerdict } from './supplier-sheet.judge';
 import type { ParsedSupplierRow } from './supplier-sheet.parser';
 import { orderNoSql } from './supplier-shipment-queue.reader';
@@ -513,6 +514,72 @@ describeIfDb('직배 시트 줄 판정 (K3 PR5, PostgreSQL integration)', () => 
       ];
       const j = await judge(tx, supplierId, rows);
       expect(codes(j.rows)).toEqual(['ROW_MISMATCH', 'ROW_MISMATCH', 'QTY_MISMATCH', 'QTY_MISMATCH']);
+    });
+  });
+
+  it('QTY_MISMATCH: 라인 수량이 FOI 미결(qty − shipped − canceled)보다 크면 — 적용이 SHIPMENT_FOI_OVER_SHIPPED 로 파일 전체를 죽이지 않게', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const supplierId = await seedDirectSupplier(tx);
+      const o = await order(tx, supplierId, { dropQtys: [2] });
+      const other = await order(tx, supplierId, { dropQtys: [1] });
+      // 라인을 줄이지 않은 채 FOI 미결만 1 로 — 정상 경로로는 닿지 않는 어긋남(방어선)
+      await tx
+        .update(wmsTables.fulfillmentOrderItems)
+        .set({ canceledQty: 1 })
+        .where(eq(wmsTables.fulfillmentOrderItems.id, o.lines[0].foiId));
+      const rows = [tracked(o.lines[0], 'OQ-1'), tracked(other.lines[0], 'OQ-2')];
+
+      const j = await judge(tx, supplierId, rows);
+
+      expect(codes(j.rows)).toEqual(['QTY_MISMATCH', 'ship']);
+      expect(j.plan.shipGroups.map((g) => g.trackingNo)).toEqual(['OQ2']);
+    });
+  });
+
+  it('되돌린 입점사 상자(draft·송장 voided·넘김 그대로)는 다음 시트에서 같은 번호로 다시 ship 이 된다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const supplierId = await seedDirectSupplier(tx);
+      const o = await order(tx, supplierId, { dropQtys: [1, 2] });
+      const sent = await ship(tx, o.supplierBox, 'EP-77');
+      const [shipped] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, o.supplierBox));
+      await recallSupplierShipment(
+        {
+          shipments: dispatchDeps.shipments,
+          fulfillmentsV2: dispatchDeps.fulfillmentsV2,
+          invariant: new FulfillmentInvariantService(),
+          voidUsedWaybill: async (shipmentId, trx) => {
+            await dispatchDeps.waybills.casUsedToVoided(trx, shipmentId, at);
+          },
+        },
+        tx,
+        {
+          shipmentId: o.supplierBox,
+          dispatchAttemptId: sent.attemptId,
+          recallOperationId: randomUUID(),
+          expectedManifestVersion: shipped.manifestVersion,
+          actorId,
+          at,
+        },
+      );
+      const [recalled] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, o.supplierBox));
+      expect(recalled.status).toBe('draft');
+      expect(recalled.supplierHandoffId).not.toBeNull();
+
+      const j = await judge(
+        tx,
+        supplierId,
+        o.lines.map((l) => tracked(l, 'EP-77')),
+        true,
+      );
+
+      expect(j.rows.map((v) => v.verdict)).toEqual(['ship', 'ship']);
+      expect(j.plan.shipGroups).toEqual([
+        {
+          carrier: 'EPOST',
+          trackingNo: 'EP77',
+          boxes: [{ shipmentId: o.supplierBox, lineIds: o.lines.map((l) => l.lineId).sort() }],
+        },
+      ]);
     });
   });
 

@@ -152,6 +152,9 @@ function judgeAlone(w: Work, ctx: JudgeContext, keyCount: ReadonlyMap<string, nu
     return fail(w, 'ROW_MISMATCH');
   }
   if (row.qty !== line.qty) return fail(w, 'QTY_MISMATCH');
+  // 보낼 라인이 FOI 미결보다 크면 발송이 SHIPMENT_FOI_OVER_SHIPPED 로 파일 전체를 롤백한다 — 그 줄만 오류로 막는다.
+  // 발송된 상자는 shipped 에 이미 그 라인이 들어 있으므로 보지 않는다.
+  if (!shipped && line.qty > foi.qty - foi.shippedQty - foi.canceledQty) return fail(w, 'QTY_MISMATCH');
 
   const carrierFilled = row.carrierRaw.trim() !== '';
   if (w.trackingNo && w.reason) return fail(w, 'TRACKING_AND_REASON');

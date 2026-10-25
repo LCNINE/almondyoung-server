@@ -28,9 +28,9 @@ export type SupplierDispatchDeps = DispatchEventDeps & {
   waybills: Pick<WaybillRepository, 'insertSupplierManualUsed' | 'casUsedToVoided'>;
 };
 
-/** 송장번호 저장·비교 형태 — 앞뒤 공백·하이픈·내부 공백을 지운다. 쓰는 곳은 이 함수 하나여야 한다. */
+/** 송장번호 저장·비교 형태 — 앞뒤 공백·하이픈·내부 공백을 지우고 대문자로. 쓰는 곳은 이 함수 하나여야 한다. */
 export function normalizeTrackingNo(raw: string): string {
-  return raw.replace(/[-\s]/g, '');
+  return raw.replace(/[-\s]/g, '').toUpperCase();
 }
 
 export interface SupplierDispatchCommand {

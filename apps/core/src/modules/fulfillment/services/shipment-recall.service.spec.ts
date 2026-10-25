@@ -3,6 +3,7 @@ import { register } from 'prom-client';
 import { wmsTables } from '../../inventory/schema/inventory.schema';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { RecallShipmentDispatchDto } from '../dto/shipment-recall.dto';
+import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { ShipmentRecallService } from './shipment-recall.service';
 
 function makeService(
@@ -25,6 +26,7 @@ function makeService(
     {} as never,
     workflowGate as never,
     checkpoints,
+    new FulfillmentInvariantService(),
   );
   return { service, commands, authorization, reservations, workflowGate };
 }

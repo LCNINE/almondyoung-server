@@ -13,6 +13,7 @@ import { AuditService } from '../../inventory/shared/services/audit.service';
 import { StoreSalesOrdersService } from '../../sales-order/services/store-sales-orders.service';
 import { seedHandoff } from '../order-progress/__support__/order-progress.fixtures';
 import { FulfillmentInvariantService } from '../services/fulfillment-invariant.service';
+import { FulfillmentReconciliationService } from '../services/fulfillment-reconciliation.service';
 import {
   inRollbackTx,
   makeDb,
@@ -118,6 +119,7 @@ describeIfDb('입점사 상자 발송 되돌리기 (K3 PR5, PostgreSQL integrati
       new AuditService(pinned),
       { assertV2MutationAllowed: jest.fn() } as never,
       createCheckpointsForTesting(),
+      new FulfillmentInvariantService(),
     );
   }
 
@@ -312,6 +314,47 @@ describeIfDb('입점사 상자 발송 되돌리기 (K3 PR5, PostgreSQL integrati
         outstandingQty: 5,
       });
       await expect(new FulfillmentInvariantService().assertFulfillmentOrders([x.foId], tx)).resolves.toBeUndefined();
+    });
+  });
+
+  it('밤 대사(SQL 쌍둥이)는 발송 중·되돌린 입점사 시도를 위반으로 세지 않고, 원천이 붙은 입점사 시도만 센다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const kept = await world(tx, { mixed: false });
+      const keptSent = await ship(tx, kept.supplierBox, 'EP-KEEP-1');
+      const back = await world(tx, { mixed: false });
+      const backSent = await ship(tx, back.supplierBox, 'EP-BACK-1');
+      await recallServiceOver(tx).report(
+        back.supplierBox,
+        backSent.attemptId,
+        await recallDto(tx, back.supplierBox, backSent.attemptId),
+        `recall-${randomUUID()}`,
+        actor,
+      );
+      const reconciliation = new FulfillmentReconciliationService(
+        { run: (fn: (trx: DbTx) => Promise<unknown>) => fn(tx) } as never,
+        {} as never,
+      );
+      const ours = new Set<string>([keptSent.attemptId, backSent.attemptId, kept.foId, back.foId]);
+      const oursIn = (report: Awaited<ReturnType<FulfillmentReconciliationService['reconcile']>>) =>
+        report.violations.filter((v) => ours.has(v.resourceId) || [...ours].some((id) => v.message.includes(id)));
+
+      expect(oursIn(await reconciliation.reconcile(tx))).toEqual([]);
+
+      // TS 판정기와 같은 규칙: 입점사 시도에 원천 줄이 붙으면 그것이 위반이다.
+      const [line] = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.shipmentId, kept.supplierBox));
+      const [location] = await tx.select({ id: wmsTables.locations.id }).from(wmsTables.locations).limit(1);
+      await tx.insert(wmsTables.dispatchAttemptSources).values({
+        dispatchAttemptId: keptSent.attemptId,
+        shipmentLineId: line.id,
+        sourceLocationId: location.id,
+        qty: line.qty,
+      });
+      const drifted = await reconciliation.reconcile(tx);
+      expect(drifted.resourceIds.DISPATCH_SOURCE_CARDINALITY).toContain(keptSent.attemptId);
+      expect(drifted.resourceIds.DISPATCH_SOURCE_CARDINALITY).not.toContain(backSent.attemptId);
     });
   });
 
