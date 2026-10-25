@@ -76,7 +76,7 @@ export class FulfillmentReconciliationService {
           JOIN shipment_lines sl ON sl.shipment_id = da.shipment_id
           LEFT JOIN dispatch_attempt_sources das
             ON das.dispatch_attempt_id = da.id AND das.shipment_line_id = sl.id
-         WHERE da.status IN ('dispatched', 'recalled')
+         WHERE da.status IN ('dispatched', 'recalled') AND da.kind = 'warehouse'
          GROUP BY da.id, sl.id, sl.qty
       ), attempt_source_counts AS (
         SELECT da.id AS attempt_id, da.stock_journal_id,
@@ -86,7 +86,14 @@ export class FulfillmentReconciliationService {
           FROM dispatch_attempts da
           LEFT JOIN dispatch_attempt_sources das ON das.dispatch_attempt_id = da.id
           LEFT JOIN stock_events se ON se.journal_id = da.stock_journal_id
-         WHERE da.status IN ('dispatched', 'recalled')
+         WHERE da.status IN ('dispatched', 'recalled') AND da.kind = 'warehouse'
+         GROUP BY da.id, da.stock_journal_id
+      ), supplier_attempt_sources AS (
+        -- 입점사 시도는 우리 재고를 건드리지 않는다 — 원천·원장 id 가 있으면 그것이 위반이다(TS 판정기와 같은 규칙).
+        SELECT da.id AS attempt_id, da.stock_journal_id, COUNT(das.id)::int AS source_count
+          FROM dispatch_attempts da
+          LEFT JOIN dispatch_attempt_sources das ON das.dispatch_attempt_id = da.id
+         WHERE da.status IN ('dispatched', 'recalled') AND da.kind = 'supplier'
          GROUP BY da.id, da.stock_journal_id
       )
       SELECT 'FOI_QUANTITY'::text AS kind, foi.id::text AS resource_id,
@@ -140,6 +147,12 @@ export class FulfillmentReconciliationService {
              concat('line=', als.line_id, ', lineQty=', als.line_qty, ', sourceQty=', als.source_qty)
         FROM attempt_line_sources als
        WHERE als.line_qty <> als.source_qty
+      UNION ALL
+      SELECT 'DISPATCH_SOURCE_CARDINALITY', sas.attempt_id::text,
+             concat('supplier attempt must have no sources/journal: sources=', sas.source_count,
+                    ', journal=', coalesce(sas.stock_journal_id::text, 'none'))
+        FROM supplier_attempt_sources sas
+       WHERE sas.source_count > 0 OR sas.stock_journal_id IS NOT NULL
       UNION ALL
       SELECT 'DISPATCH_SOURCE_CARDINALITY', das.id::text,
              concat('attempt=', da.id, ', foreignLine=', das.shipment_line_id)

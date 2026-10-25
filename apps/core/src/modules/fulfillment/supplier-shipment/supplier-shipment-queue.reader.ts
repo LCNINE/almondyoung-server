@@ -37,11 +37,16 @@ export type SupplierQueueShipment = {
   lines: SupplierQueueLine[];
 };
 
+/** 주문번호 — 표시용 번호가 없으면 채널 주문번호. 직배 목록과 시트(행 검증 포함)가 같은 식을 쓴다. */
+export function orderNoSql() {
+  return sql<string>`COALESCE(${wmsTables.salesOrders.displayOrderNo}, ${wmsTables.salesOrders.channelOrderId})`;
+}
+
 /**
  * 상자가 판매주문에 닿는 라인을 하나라도 가졌다 — 상자는 라인으로만 주문에 이어진다.
  * 요약과 목록이 같은 술어를 써서 수가 목록과 어긋나지 않는다.
  */
-function hasOrderLine(shipmentId: AnyColumn) {
+export function hasOrderLine(shipmentId: AnyColumn) {
   // 바깥 쿼리가 같은 테이블을 조인하므로 별칭을 쓴다(안 쓰면 바깥 이름이 안쪽을 가린다)
   return sql`EXISTS (
     SELECT 1 FROM shipment_lines hol_l
@@ -143,7 +148,7 @@ export class SupplierShipmentQueueReader {
           unfulfillableReason: shipmentLines.unfulfillableReason,
           unfulfillableReportedAt: shipmentLines.unfulfillableReportedAt,
           salesOrderId: salesOrders.id,
-          orderNo: sql<string>`COALESCE(${salesOrders.displayOrderNo}, ${salesOrders.channelOrderId})`,
+          orderNo: orderNoSql(),
         })
         .from(shipmentLines)
         .innerJoin(skus, eq(skus.id, shipmentLines.skuId))

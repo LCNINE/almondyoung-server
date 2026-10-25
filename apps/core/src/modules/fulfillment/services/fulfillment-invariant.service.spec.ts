@@ -110,10 +110,58 @@ describe('collectFulfillmentInvariantViolations', () => {
     );
   });
 
+  it('입점사 시도는 원천·원장이 없어야 정상이고, 원천이 붙으면 위반이다', () => {
+    const snapshot = validSnapshot();
+    snapshot.dispatchAttempts = [
+      { id: 'attempt-1', shipmentId: 'shipment-1', status: 'dispatched', stockJournalId: null, kind: 'supplier' },
+    ];
+    expect(collectFulfillmentInvariantViolations(snapshot)).toEqual([]);
+
+    snapshot.dispatchSources = [
+      {
+        id: 'source-1',
+        dispatchAttemptId: 'attempt-1',
+        shipmentLineId: 'line-1',
+        sourceLocationId: 'location-1',
+        qty: 6,
+        stockEventId: null,
+      },
+    ];
+    expect(collectFulfillmentInvariantViolations(snapshot)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'DISPATCH_SOURCE_CARDINALITY', resourceId: 'attempt-1' }),
+      ]),
+    );
+  });
+
+  it('입점사 시도에 원장 id 가 있으면(원천 0) 위반이다', () => {
+    const snapshot = validSnapshot();
+    snapshot.dispatchAttempts = [
+      {
+        id: 'attempt-1',
+        shipmentId: 'shipment-1',
+        status: 'dispatched',
+        stockJournalId: 'journal-1',
+        kind: 'supplier',
+      },
+    ];
+    expect(collectFulfillmentInvariantViolations(snapshot)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'DISPATCH_SOURCE_CARDINALITY', resourceId: 'attempt-1' }),
+      ]),
+    );
+  });
+
   it('requires exact dispatch source quantity and a one-to-one linked stock event', () => {
     const snapshot = validSnapshot();
     snapshot.dispatchAttempts = [
-      { id: 'attempt-1', shipmentId: 'shipment-1', status: 'dispatched', stockJournalId: 'journal-1' },
+      {
+        id: 'attempt-1',
+        shipmentId: 'shipment-1',
+        status: 'dispatched',
+        stockJournalId: 'journal-1',
+        kind: 'warehouse',
+      },
     ];
     snapshot.dispatchSources = [
       {
@@ -138,7 +186,13 @@ describe('collectFulfillmentInvariantViolations', () => {
   it('accepts an exact dispatch source/event mapping', () => {
     const snapshot = validSnapshot();
     snapshot.dispatchAttempts = [
-      { id: 'attempt-1', shipmentId: 'shipment-1', status: 'dispatched', stockJournalId: 'journal-1' },
+      {
+        id: 'attempt-1',
+        shipmentId: 'shipment-1',
+        status: 'dispatched',
+        stockJournalId: 'journal-1',
+        kind: 'warehouse',
+      },
     ];
     snapshot.dispatchSources = [
       {
@@ -180,7 +234,13 @@ describe('collectFulfillmentInvariantViolations', () => {
       inspectedQty: 0,
     });
     snapshot.dispatchAttempts = [
-      { id: 'attempt-1', shipmentId: 'shipment-1', status: 'dispatched', stockJournalId: 'journal-1' },
+      {
+        id: 'attempt-1',
+        shipmentId: 'shipment-1',
+        status: 'dispatched',
+        stockJournalId: 'journal-1',
+        kind: 'warehouse',
+      },
     ];
     snapshot.dispatchSources = [
       {
@@ -342,7 +402,13 @@ describe('배정 불변식 I1~I3 (스펙 §5)', () => {
     expect(collectFulfillmentInvariantViolations(zero)).toEqual([]);
 
     const withLine = validSnapshot();
-    withLine.fulfillmentOrderItems.push({ id: 'foi-0', fulfillmentOrderId: 'fo-1', qty: 0, shippedQty: 0, canceledQty: 0 });
+    withLine.fulfillmentOrderItems.push({
+      id: 'foi-0',
+      fulfillmentOrderId: 'fo-1',
+      qty: 0,
+      shippedQty: 0,
+      canceledQty: 0,
+    });
     withLine.shipmentLines.push({
       id: 'line-0',
       shipmentId: 'shipment-1',

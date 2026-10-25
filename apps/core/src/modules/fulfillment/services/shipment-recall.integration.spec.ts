@@ -117,6 +117,7 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
       new AuditService(dbService),
       { assertV2MutationAllowed: jest.fn() } as never,
       createCheckpointsForTesting(),
+      new FulfillmentInvariantService(),
     );
   });
 

@@ -3,6 +3,7 @@ import { register } from 'prom-client';
 import { wmsTables } from '../../inventory/schema/inventory.schema';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { RecallShipmentDispatchDto } from '../dto/shipment-recall.dto';
+import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { ShipmentRecallService } from './shipment-recall.service';
 
 function makeService(
@@ -25,6 +26,7 @@ function makeService(
     {} as never,
     workflowGate as never,
     checkpoints,
+    new FulfillmentInvariantService(),
   );
   return { service, commands, authorization, reservations, workflowGate };
 }
@@ -101,6 +103,8 @@ describe('ShipmentRecallService command validation', () => {
       return Promise.resolve();
     });
     const tx = {
+      // 상자 주인 조회(입점사 갈래 판정) — 창고 상자(행 없음 → 창고 갈래)로 답한다
+      select: jest.fn(() => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }) })),
       insert: jest.fn((table: unknown) => {
         if (table === wmsTables.shipmentOperationMembers) {
           order.push('member-insert');

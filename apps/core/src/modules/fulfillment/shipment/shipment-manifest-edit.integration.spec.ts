@@ -20,7 +20,7 @@ describeIfDb('editShipmentManifest', () => {
 
   function makeDeps() {
     const wired = wireLogistics(makeDbService(db));
-    const recompute = jest.fn((id: string, tx: DbTx) => wired.shipmentReservations.recompute(id, tx));
+    const recompute = jest.fn((id: string, tx: DbTx, at?: Date) => wired.shipmentReservations.recompute(id, tx, at));
     const deps: ManifestEditDeps = { invariant: new FulfillmentInvariantService(), reservations: { recompute } };
     return { deps, recompute, wired };
   }
@@ -57,7 +57,7 @@ describeIfDb('editShipmentManifest', () => {
       expect((await shipment(tx, b.shipmentId)).manifestVersion).toBe(s0.manifestVersion + 1);
       expect((await line(tx, b.lineA)).lineVersion).toBe(l0.lineVersion + 2);
       expect(recompute).toHaveBeenCalledTimes(1);
-      expect(recompute).toHaveBeenCalledWith(b.shipmentId, tx);
+      expect(recompute).toHaveBeenCalledWith(b.shipmentId, tx, undefined); // 편집 시각(at)을 주지 않은 편집
     });
   });
 

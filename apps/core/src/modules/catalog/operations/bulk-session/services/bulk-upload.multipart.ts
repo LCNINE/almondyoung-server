@@ -12,13 +12,20 @@ export interface WorkbookUpload {
   buffer: Buffer;
   fileName: string;
   name?: string;
+  /** `options.fields` 로 요청한 폼 칸 중 온 것만(문자열 그대로). 요청하지 않으면 키 자체가 없다. */
+  fields?: Partial<Record<string, string>>;
+}
+
+export interface ReadWorkbookUploadOptions {
+  /** 파일·`name` 말고 더 읽을 폼 칸 이름들 — 직배 시트 적용의 `previewToken` 등 */
+  fields?: readonly string[];
 }
 
 /** `name` 필드 상한. `CreateBulkSessionDto` 의 `@MaxLength(200)` 과 같은 값이어야 한다. */
 const MAX_NAME_LENGTH = 200;
 
 /**
- * multipart 업로드에서 워크북 한 개와 `name` 필드를 읽는다.
+ * multipart 업로드에서 워크북 한 개와 `name` 필드(+ `options.fields` 로 요청한 폼 칸)를 읽는다.
  *
  * **`@nestjs/platform-express` 의 `FileInterceptor` 를 쓰지 않는 이유**: core 는 Fastify 로
  * 뜬다(`main.ts` 의 `FastifyAdapter`). multer 는 Express 의 `req`(스트림)을 기대해
@@ -28,7 +35,10 @@ const MAX_NAME_LENGTH = 200;
  * **모든 part 를 끝까지 소비해야 한다.** 하나라도 남기면 busboy 스트림이 진행하지 않아
  * 요청이 그대로 매달린다 — 그래서 관심 없는 파일 part 도 `toBuffer()` 로 흘려버린다.
  */
-export async function readWorkbookUpload(request: FastifyRequest): Promise<WorkbookUpload> {
+export async function readWorkbookUpload(
+  request: FastifyRequest,
+  options: ReadWorkbookUploadOptions = {},
+): Promise<WorkbookUpload> {
   if (!request.isMultipart()) {
     throw new BadRequestException('multipart/form-data 요청이 아닙니다');
   }
@@ -37,6 +47,8 @@ export async function readWorkbookUpload(request: FastifyRequest): Promise<Workb
   let fileName = '';
   let truncated = false;
   let name: string | undefined;
+  const wanted = new Set(options.fields ?? []);
+  const fields: Partial<Record<string, string>> = {};
 
   for await (const part of request.parts()) {
     if (part.type === 'file') {
@@ -52,6 +64,8 @@ export async function readWorkbookUpload(request: FastifyRequest): Promise<Workb
       truncated = part.file.truncated;
     } else if (part.fieldname === 'name') {
       name = String(part.value);
+    } else if (wanted.has(part.fieldname)) {
+      fields[part.fieldname] = String(part.value);
     }
   }
 
@@ -73,5 +87,6 @@ export async function readWorkbookUpload(request: FastifyRequest): Promise<Workb
     throw new BadRequestException(`세션 이름은 ${MAX_NAME_LENGTH}자를 넘을 수 없습니다.`);
   }
 
-  return { buffer, fileName, name: trimmed ? trimmed : undefined };
+  const upload: WorkbookUpload = { buffer, fileName, name: trimmed ? trimmed : undefined };
+  return options.fields ? { ...upload, fields } : upload;
 }

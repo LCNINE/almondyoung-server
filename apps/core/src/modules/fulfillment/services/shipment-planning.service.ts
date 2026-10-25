@@ -221,6 +221,14 @@ export class ShipmentPlanningService {
               }
               if (move.qty > line.qty)
                 throw new BadRequestException(`Cannot move ${move.qty}; line ${line.id} has ${line.qty}`);
+              // 입점사 상자는 줄째로만 나눈다 — 일부 수량을 옮기면 한 FOI 에 산 입점사 줄이 둘이 되고(N3),
+              // 시트 판정·넘김이 줄을 FOI 로 하나만 찾다 500 으로 죽는다. 창고 상자는 그대로 일부 수량을 옮긴다.
+              if (locked.shipment.supplierId !== null && move.qty !== line.qty) {
+                throw this.conflict(
+                  'SUPPLIER_SHIPMENT_PARTIAL_SPLIT',
+                  `Supplier shipment ${shipmentId} splits whole lines only; line ${line.id} has ${line.qty}, move ${move.qty}`,
+                );
+              }
               return { move, line };
             });
             const totalSourceQty = locked.lines.reduce((total, line) => total + line.qty, 0);
@@ -1578,6 +1586,8 @@ export class ShipmentPlanningService {
       // 현관 정보가 빠진 채 나가고 기사가 문을 못 연다. 주소를 복사하면서 비번을
       // 빠뜨리는 것이 정확히 그 사고다.
       entrancePassword: aggregate.shipment.entrancePassword,
+      // 입점사 상자를 나누면 넘김 기록을 물려받는다(N7). 창고 상자는 NULL 이다.
+      supplierHandoffId: aggregate.shipment.supplierHandoffId,
       openedBy: actor.id,
       openedAt: new Date(),
     });

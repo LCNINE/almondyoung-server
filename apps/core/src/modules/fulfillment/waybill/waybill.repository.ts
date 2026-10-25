@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, inventorySchema, inventoryTables } from '../../inventory/schema/inventory.schema';
+import { WaybillTrackingLiveConflictError } from './waybill.errors';
 import { WAYBILL_DISPATCHABLE_STATUSES, WAYBILL_TERMINAL_STATUSES } from './waybill.constants';
 import type { WaybillRow } from './waybill.types';
 
@@ -44,6 +45,37 @@ export class WaybillRepository {
       .values({ ...row, source: 'manual', status: 'registered', issuedAt: new Date() })
       .returning();
     return wb;
+  }
+
+  /**
+   * 입점사 상자의 수기 송장 — 입점사가 이미 보낸 소포라 `registered` 를 거치지 않고 곧장 `used` 다(K3, ADR-0050).
+   * 살아 있는 송장번호 중복(`uq_waybills_tracking_live`)은 TRACKING_IN_USE 로 옮긴다.
+   */
+  async insertSupplierManualUsed(
+    trx: DbTx,
+    row: {
+      shipmentId: string;
+      carrier: WaybillRow['carrier'];
+      trackingNo: string;
+      manifestVersion: number;
+      recipientHash: string;
+      /** 입점사 발송·정정 명령의 시각 — 한 명령의 쓰기를 같은 시각으로 묶는다. 기본 지금 */
+      issuedAt?: Date;
+    },
+  ): Promise<{ id: string }> {
+    const { issuedAt, ...values } = row;
+    try {
+      const [wb] = await trx
+        .insert(T)
+        .values({ ...values, source: 'manual', status: 'used', issuedAt: issuedAt ?? new Date() })
+        .returning({ id: T.id });
+      return wb;
+    } catch (e) {
+      if (isUniqueViolationOn(e, 'uq_waybills_tracking_live')) {
+        throw new WaybillTrackingLiveConflictError(`Live waybill already has tracking number ${row.trackingNo}`);
+      }
+      throw e;
+    }
   }
 
   async findById(trx: DbTx, id: string): Promise<WaybillRow | undefined> {
@@ -164,4 +196,18 @@ export class WaybillRepository {
       .set({ attempts: sql`${T.attempts} + 1`, updatedAt: new Date() })
       .where(eq(T.id, id));
   }
+}
+
+// drizzle 이 driver 에러를 DrizzleQueryError 로 감싸므로 `.cause` 체인에서 제약 이름까지 확인한다.
+function isUniqueViolationOn(e: unknown, constraint: string): boolean {
+  let current: unknown = e;
+  for (let depth = 0; current != null && depth < 5; depth += 1) {
+    if (isPgError(current) && current.code === '23505' && current.constraint_name === constraint) return true;
+    current = typeof current === 'object' ? (current as { cause?: unknown }).cause : undefined; // object 로 좁힌 뒤 cause 하나만 읽는다
+  }
+  return false;
+}
+
+function isPgError(e: unknown): e is { code?: unknown; constraint_name?: unknown } {
+  return typeof e === 'object' && e !== null;
 }

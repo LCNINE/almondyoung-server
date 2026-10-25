@@ -12,6 +12,8 @@ export interface TransitionRule {
   fromCodes?: readonly RecoveryCode[];
   /** to 가 recovery_required 일 때 허용 코드 */
   toCodes?: readonly RecoveryCode[];
+  /** 'supplier' 면 입점사 상자 전용 — transitionShipments 가 CAS 에 supplier_id IS NOT NULL 을 더한다 */
+  owner?: 'supplier';
 }
 
 /** 상자 상태 전이표(설계 §5.1). failed·canceled·superseded·delivered 에서 나가는 행은 없다. */
@@ -27,6 +29,8 @@ export const SHIPMENT_TRANSITIONS: readonly TransitionRule[] = [
   { from: 'planned', to: 'superseded' },
   { from: 'recovery_required', to: 'superseded', fromCodes: ['CONSOLIDATION_PENDING'] },
   { from: 'planned', to: 'shipped' },
+  /** 입점사 상자는 계획·피킹을 거치지 않고 시트 올리기로 바로 발송된다(K3 PR5). 창고 상자에는 CAS 가 0행이다. */
+  { from: 'draft', to: 'shipped', owner: 'supplier' },
   { from: 'shipped', to: 'in_transit' },
   { from: 'shipped', to: 'delivered' },
   { from: 'in_transit', to: 'delivered' },
@@ -49,6 +53,11 @@ export function assertLegalTransition(
   if (!legal) {
     throw new Error(`Illegal shipment transition: ${from}(${fromCode ?? '-'}) -> ${to}(${toCode ?? '-'})`);
   }
+}
+
+/** 이 쌍에 맞는 행이 입점사 전용이면 true (코드 조건까지 맞는 행 기준). */
+export function isSupplierOnlyTransition(from: ShipmentStatus, to: ShipmentStatus): boolean {
+  return SHIPMENT_TRANSITIONS.some((r) => r.from === from && r.to === to && r.owner === 'supplier');
 }
 
 export interface TransitionEffect {

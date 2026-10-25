@@ -21,8 +21,10 @@ export const PII_ROUTES: readonly string[] = [
   'core GET /cs-cases/:id',
   'core GET /direct-ship/companies/:companyName/orders',
   'core GET /direct-ship/export/:companyName',
+  'core GET /direct-ship/handoffs/:handoffId/sheet',
   'core GET /direct-ship/orders',
   'core GET /direct-ship/orders/by-company',
+  'core POST /direct-ship/suppliers/:supplierId/handoffs',
   'core GET /event-failures/dead-letters/:id',
   'core GET /event-failures/outbox/:id',
   'core GET /fulfillment-operations/:operationId',
@@ -129,6 +131,7 @@ export const PII_WRITE_ROUTES: readonly string[] = [
 export const PII_WRITE_EXEMPT: Readonly<Record<string, string>> = {
   'core POST /cs-cases': '새 상담을 입력한다',
   'core POST /cs-cases/:caseId/comments': '새 댓글을 입력한다',
+  'core POST /direct-ship/suppliers/:supplierId/handoffs': '본문 없음 — 응답으로만 개인정보가 나간다',
   'core POST /fulfillments': '주문에서 출고 요청을 만든다',
   'core POST /sales-order-amendments': '새 주문 변경을 접수한다',
   'core POST /sales-orders': '새 주문을 입력한다',

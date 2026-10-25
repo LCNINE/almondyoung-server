@@ -28,6 +28,8 @@ import { AvailabilityService } from './services/availability.service';
 import { PoliciesService } from './services/policies.service';
 import { PickingProcessService } from './services/picking-process.service';
 import { ConsolidationService } from './services/consolidation.service';
+import { SupplierHandoffService } from './supplier-shipment/supplier-handoff.service';
+import { SupplierSheetApplyService } from './supplier-shipment/supplier-sheet-apply.service';
 import { SupplierShipmentQueueReader } from './supplier-shipment/supplier-shipment-queue.reader';
 import { DirectShipService } from './services/direct-ship.service';
 import { DirectShipCancelNoticeService } from './direct-ship-cancel-notice/direct-ship-cancel-notice.service';
@@ -162,6 +164,8 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ConsolidationService,
     DirectShipService,
     SupplierShipmentQueueReader,
+    SupplierHandoffService,
+    SupplierSheetApplyService,
     DirectShipCancelNoticeService,
     DirectShipCancelNoticeReader,
     DirectShipCancelNoticeManager,

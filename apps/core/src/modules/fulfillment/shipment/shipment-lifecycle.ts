@@ -1,8 +1,14 @@
 import type { PgUpdateSetSource } from 'drizzle-orm/pg-core';
-import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import type { ShipmentRow } from '../services/shipment-aggregate';
-import { assertLegalTransition, RecoveryCode, ShipmentStatus, transitionEffect } from './shipment-transitions';
+import {
+  assertLegalTransition,
+  isSupplierOnlyTransition,
+  RecoveryCode,
+  ShipmentStatus,
+  transitionEffect,
+} from './shipment-transitions';
 import { ownerColumns, type ShipmentOwner } from './shipment-owner';
 
 export type ShipmentLineRecord = typeof wmsTables.shipmentLines.$inferSelect;
@@ -51,6 +57,8 @@ export async function transitionShipments(tx: DbTx, t: ShipmentTransition): Prom
     conds.push(sql`(${ne(s.status, 'recovery_required')} OR ${eq(s.recoveryCode, t.expect.recoveryCode)})`);
   }
   if (t.expect?.manifestVersion !== undefined) conds.push(eq(s.manifestVersion, t.expect.manifestVersion));
+  // 입점사 전용 행(draft→shipped)이 적용되는 호출이면 창고 상자는 CAS 에서 걸러진다.
+  if (t.from.some((f) => isSupplierOnlyTransition(f, t.to))) conds.push(isNotNull(s.supplierId));
 
   const rows = await tx
     .update(s)
@@ -116,6 +124,8 @@ export interface NewShipment {
   entrancePassword: string | null;
   openedBy?: string | null;
   openedAt?: Date;
+  /** 입점사 상자만 — 나눈 상자가 원래 상자의 넘김 기록을 물려받는다(composite FK 가 supplier_id 와 짝을 지킨다) */
+  supplierHandoffId?: string | null;
 }
 
 export interface NewShipmentLine {
@@ -151,6 +161,7 @@ export async function insertShipment(tx: DbTx, box: NewShipment): Promise<Shipme
       entrancePassword: box.entrancePassword,
       manifestVersion: 1,
       reservationVersion: 1,
+      ...(box.supplierHandoffId !== undefined ? { supplierHandoffId: box.supplierHandoffId } : {}),
       ...(box.openedBy !== undefined ? { openedBy: box.openedBy } : {}),
       ...(box.openedAt ? { openedAt: box.openedAt } : {}),
     })

@@ -8,6 +8,7 @@ import {
   seedSku,
   seedWarehouseWithZone,
 } from '../services/__support__/logistics-fixtures';
+import * as f from '../order-progress/__support__/order-progress.fixtures';
 import { openShipment, transitionShipments } from './shipment-lifecycle';
 import { shipmentOwnerOf } from './shipment-owner';
 
@@ -261,6 +262,68 @@ describeIfDb('transitionShipments / openShipment', () => {
       expect(out.lines).toHaveLength(1);
       expect(out.lines[0].lineVersion).toBe(1);
       expect(out.lines[0].shipmentId).toBe(out.shipment.id);
+    });
+  });
+  describe('입점사 draft → shipped (K3 PR5)', () => {
+    it('입점사 draft 상자는 1행 shipped, shipped_at 이 찍힌다. 창고 draft 상자는 같은 호출에서 0행(stale 이면 throw)', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await f.seedWorld(tx);
+        const o = await f.seedOrder(tx);
+        const fo1 = await f.seedFo(tx, w, o);
+        const supplierId = await f.seedDirectSupplier(tx);
+        const sup = await f.seedBox(tx, w, [fo1.foItemId], { status: 'draft', supplierId });
+        const wh = await f.seedBox(tx, w, [fo1.foItemId], { status: 'draft' });
+
+        const rows = await transitionShipments(tx, {
+          shipmentIds: [sup.shipmentId],
+          from: ['draft'],
+          to: 'shipped',
+          stale: 'unreachable',
+        });
+        expect(rows).toHaveLength(1);
+        expect(rows[0].status).toBe('shipped');
+        expect(rows[0].shippedAt).not.toBeNull();
+
+        await expect(
+          transitionShipments(tx, {
+            shipmentIds: [wh.shipmentId],
+            from: ['draft'],
+            to: 'shipped',
+            stale: 'unreachable',
+          }),
+        ).rejects.toThrow(/matched 0\/1/);
+        const ignored = await transitionShipments(tx, {
+          shipmentIds: [wh.shipmentId],
+          from: ['draft'],
+          to: 'shipped',
+          stale: 'ignore',
+        });
+        expect(ignored).toHaveLength(0);
+        expect((await shipment(tx, wh.shipmentId)).status).toBe('draft');
+      });
+    });
+
+    it('openShipment 이 supplierHandoffId 를 칸에 쓴다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await f.seedWorld(tx);
+        const o = await f.seedOrder(tx);
+        const fo = await f.seedFo(tx, w, o);
+        const supplierId = await f.seedDirectSupplier(tx);
+        const handoffId = await f.seedHandoff(tx, supplierId);
+        const out = await openShipment(
+          tx,
+          {
+            owner: { kind: 'supplier', supplierId },
+            status: 'draft',
+            shippingProfileId: null,
+            recipientSnapshot: { recipientName: 'x' },
+            entrancePassword: null,
+            supplierHandoffId: handoffId,
+          },
+          [{ fulfillmentOrderItemId: fo.foItemId, skuId: w.skuId, qty: 1 }],
+        );
+        expect(out.shipment.supplierHandoffId).toBe(handoffId);
+      });
     });
   });
 });

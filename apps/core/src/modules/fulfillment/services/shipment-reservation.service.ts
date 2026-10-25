@@ -1018,8 +1018,8 @@ export class ShipmentReservationService {
     await this.recompute(shipmentId, tx);
   }
 
-  /** Refresh V2 read models and run the locked-row invariant before commit. */
-  async recompute(shipmentId: string, tx: DbTx): Promise<void> {
+  /** Refresh V2 read models and run the locked-row invariant before commit. `at` = FO 투영·상자 last_updated 시각(기본 지금). */
+  async recompute(shipmentId: string, tx: DbTx, at?: Date): Promise<void> {
     const lines = await tx
       .select({
         id: wmsTables.shipmentLines.id,
@@ -1066,8 +1066,11 @@ export class ShipmentReservationService {
         ),
       );
     const fulfillmentOrderIds = [...new Set(itemRows.map((row) => row.fulfillmentOrderId))].sort();
-    await reprojectFulfillmentOrders(tx, fulfillmentOrderIds);
-    await tx.update(wmsTables.shipments).set({ lastUpdated: new Date() }).where(eq(wmsTables.shipments.id, shipmentId));
+    await reprojectFulfillmentOrders(tx, fulfillmentOrderIds, at);
+    await tx
+      .update(wmsTables.shipments)
+      .set({ lastUpdated: at ?? new Date() })
+      .where(eq(wmsTables.shipments.id, shipmentId));
     await this.invariant.assertFulfillmentOrders(fulfillmentOrderIds, tx);
   }
 

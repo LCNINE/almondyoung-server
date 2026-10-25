@@ -89,6 +89,29 @@ describe('readWorkbookUpload', () => {
     await expect(readWorkbookUpload(request)).rejects.toThrow(BadRequestException);
   });
 
+  it('요청한 폼 칸만 fields 로 읽는다 — 파일보다 먼저 와도, 요청하지 않은 칸은 싣지 않는다', async () => {
+    const { request } = fakeRequest([
+      { type: 'field', fieldname: 'previewToken', value: 'tok-1' },
+      { type: 'field', fieldname: 'other', value: 'x' },
+      filePart(),
+    ]);
+
+    await expect(readWorkbookUpload(request, { fields: ['previewToken', 'missing'] })).resolves.toEqual({
+      buffer: Buffer.from('workbook'),
+      fileName: '양식.xlsx',
+      name: undefined,
+      fields: { previewToken: 'tok-1' },
+    });
+  });
+
+  it('fields 를 요청하지 않으면 결과에 fields 가 없다(기존 호출자 그대로)', async () => {
+    const { request } = fakeRequest([filePart(), { type: 'field', fieldname: 'previewToken', value: 'tok-1' }]);
+
+    const result = await readWorkbookUpload(request);
+
+    expect('fields' in result).toBe(false);
+  });
+
   it('multipart 가 아니면 400 이다', async () => {
     const { request } = fakeRequest([], false);
 

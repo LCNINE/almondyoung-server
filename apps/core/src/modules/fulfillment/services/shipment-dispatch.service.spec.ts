@@ -3,6 +3,7 @@ import { ForbiddenException } from '@nestjs/common';
 import { SCOPE_AUTHORIZATION_DECISION_BRAND } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { ShipmentDispatchService } from './shipment-dispatch.service';
+import { emitShipmentDispatched, enqueueCustomerShipmentNotices } from './dispatch-effects';
 
 const FORCE_AUTHORIZATION = Object.freeze({
   scope: FULFILLMENT_SCOPE.DISPATCH_FORCE,
@@ -142,6 +143,16 @@ function aggregate(overrides: Record<string, unknown> = {}) {
     },
     ...overrides,
   } as any;
+}
+
+function depsOf(service: ShipmentDispatchService) {
+  const s = service as any;
+  return {
+    shipments: s.shipments,
+    fulfillmentsV2: s.fulfillmentsV2,
+    fulfillmentsV1: s.fulfillmentsV1,
+    coreOrders: s.coreOrders,
+  };
 }
 
 function makeService() {
@@ -350,13 +361,14 @@ describe('ShipmentDispatchService', () => {
     const { service, shipmentOutbox, fulfillmentV2Outbox, fulfillmentV1Outbox } = makeService();
     const locked = aggregate();
 
-    await (service as any).emitDispatchEvents(
-      locked,
-      IDS.extraSource,
-      1,
-      new Date('2026-07-15T00:00:00.000Z'),
-      [],
-      [
+    await emitShipmentDispatched(depsOf(service), { select: jest.fn(() => new Query([])) } as any, {
+      origin: { warehouseId: locked.shipment.warehouseId },
+      shipmentId: locked.shipment.id,
+      attemptId: IDS.extraSource,
+      attemptNo: 1,
+      dispatchedAt: new Date('2026-07-15T00:00:00.000Z'),
+      waybill: { id: locked.waybill.id, carrier: 'HANJIN', trackingNo: 'TRACK-1' },
+      summaries: [
         {
           fulfillmentOrderId: IDS.fo,
           salesOrderId: null,
@@ -367,8 +379,7 @@ describe('ShipmentDispatchService', () => {
           items: [{ id: IDS.foi, skuId: IDS.sku, shippedQty: 2 }],
         },
       ],
-      {} as any,
-    );
+    });
 
     expect(shipmentOutbox.enqueue.mock.calls.map(([event]: any[]) => event.payload.orders)).toEqual([[]]);
     expect(fulfillmentV2Outbox.enqueue.mock.calls.map(([event]: any[]) => event.payload.orders)).toEqual([undefined]);
@@ -376,20 +387,23 @@ describe('ShipmentDispatchService', () => {
     expect(fulfillmentV1Outbox.enqueue).not.toHaveBeenCalled();
   });
 
-  // 계약이 14개로 넓어진 뒤로는 타입이 이 문을 지키지 않는다 — 지우면 이 테스트만 빨개진다. PR 5 가 문과 함께 뒤집는다.
-  it('refuses to emit a carrier outside the consumer rollout carriers (K3 PR 3, E3)', async () => {
-    const { service, shipmentOutbox, fulfillmentV2Outbox, fulfillmentV1Outbox, coreOrderOutbox } = makeService();
+  it('emits ShipmentShipped with an EPOST waybill (K3 PR 5, N11)', async () => {
+    const { service, shipmentOutbox } = makeService();
     const base = aggregate();
     const locked = { ...base, waybill: { ...base.waybill, carrier: 'EPOST' } };
 
-    await expect(
-      (service as any).emitDispatchEvents(locked, IDS.extraSource, 1, new Date('2026-07-15T00:00:00.000Z'), [], [], {}),
-    ).rejects.toThrow('outside the consumer rollout carriers');
+    await emitShipmentDispatched(depsOf(service), { select: jest.fn(() => new Query([])) } as any, {
+      origin: { warehouseId: locked.shipment.warehouseId },
+      shipmentId: locked.shipment.id,
+      attemptId: IDS.extraSource,
+      attemptNo: 1,
+      dispatchedAt: new Date('2026-07-15T00:00:00.000Z'),
+      waybill: { id: locked.waybill.id, carrier: 'EPOST', trackingNo: 'TRACK-1' },
+      summaries: [],
+    });
 
-    expect(shipmentOutbox.enqueue).not.toHaveBeenCalled();
-    expect(fulfillmentV2Outbox.enqueue).not.toHaveBeenCalled();
-    expect(fulfillmentV1Outbox.enqueue).not.toHaveBeenCalled();
-    expect(coreOrderOutbox.enqueue).not.toHaveBeenCalled();
+    expect(shipmentOutbox.enqueue).toHaveBeenCalledTimes(1);
+    expect(shipmentOutbox.enqueue.mock.calls[0][0].payload.invoice.carrier).toBe('EPOST');
   });
 
   it('redispatches a recalled shipment with attempt 2, a new waybill, exact stock sources and typed outbox', async () => {
@@ -653,21 +667,32 @@ describe('ShipmentDispatchService', () => {
       ...overrides,
     });
     const notify = (service: ShipmentDispatchService, orders: unknown[], customers: unknown[]) =>
-      (service as any).enqueueCustomerShipmentNotices(
-        orders,
+      enqueueCustomerShipmentNotices(
+        depsOf(service).coreOrders,
+        { select: jest.fn(() => new Query(customers)) } as any,
+        orders as any,
         'attempt-1',
         'HANJIN',
         'TRACK-1',
         new Date('2026-09-22T01:00:00.000Z'),
-        { select: jest.fn(() => new Query(customers)) },
       );
 
     it('자사몰 회원 주문이면 받는 사람과 부분 발송 여부를 담아 싣는다', async () => {
       const { service, coreOrderOutbox } = makeService();
 
-      await notify(service, [order()], [
-        { id: IDS.so, displayOrderNo: '3900', customerId: 'user-1', customerEmail: 'a@example.com', customerName: '홍길동' },
-      ]);
+      await notify(
+        service,
+        [order()],
+        [
+          {
+            id: IDS.so,
+            displayOrderNo: '3900',
+            customerId: 'user-1',
+            customerEmail: 'a@example.com',
+            customerName: '홍길동',
+          },
+        ],
+      );
 
       expect(coreOrderOutbox.enqueue).toHaveBeenCalledWith(
         expect.objectContaining({

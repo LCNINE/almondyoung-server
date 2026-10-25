@@ -94,7 +94,11 @@ function callName(node: ts.CallExpression): string | null {
 
 /** 키 → 허용 파일(모듈 기준 상대 경로). */
 type Allow = Record<string, string[]>;
+const SUPPLIER_DIR = 'fulfillment/supplier-shipment/';
 const SHIPMENTS_KEYS: Allow = { reservationVersion: [RESERVATION] };
+/** 입점사 폴더(prefix) 파일에만 여는 키 — 입점사 전용 칸이라 창고 흐름은 쓰지 않는다 */
+const SUPPLIER_DIR_SHIPMENTS_KEYS = ['supplierHandoffId'];
+const SUPPLIER_DIR_LINES_KEYS = ['unfulfillableReason', 'unfulfillableReportedAt', 'unfulfillableReportedBy'];
 const LINES_KEYS: Allow = {
   reservedQty: [RESERVATION],
   lineVersion: [RESERVATION, DISPATCH, BOX_ALLOCATION],
@@ -130,8 +134,15 @@ function checkSet(table: Table, arg: ts.Expression | undefined, rel: string, whe
         out.push(`${where} — shipments.entrancePassword 는 null 로만, 허용 파일에서만 쓴다`);
         continue;
       }
-      if (!(SHIPMENTS_KEYS[name] ?? []).includes(rel)) out.push(`${where} — shipments.${name} 를 커널 밖에서 쓴다`);
-    } else if (!(LINES_KEYS[name] ?? []).includes(rel)) {
+      if (
+        !(SHIPMENTS_KEYS[name] ?? []).includes(rel) &&
+        !(rel.startsWith(SUPPLIER_DIR) && SUPPLIER_DIR_SHIPMENTS_KEYS.includes(name))
+      )
+        out.push(`${where} — shipments.${name} 를 커널 밖에서 쓴다`);
+    } else if (
+      !(LINES_KEYS[name] ?? []).includes(rel) &&
+      !(rel.startsWith(SUPPLIER_DIR) && SUPPLIER_DIR_LINES_KEYS.includes(name))
+    ) {
       out.push(`${where} — shipmentLines.${name} 를 이 파일에서 쓴다`);
     }
   }
