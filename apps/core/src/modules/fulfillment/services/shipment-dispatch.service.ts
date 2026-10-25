@@ -47,6 +47,7 @@ import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import type { WaybillRow } from '../waybill/waybill.types';
 import { resolveSkuIdByBarcode, UUID_PATTERN } from './sku-barcode-resolution';
 import { warehouseIdOf } from '../shipment/shipment-owner';
+import { isEventContractCarrier } from '../waybill/carrier/carrier-gateway.interface';
 
 const TRUSTED_CHANNEL_DISPATCH_SALES_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
 
@@ -1156,6 +1157,11 @@ export class ShipmentDispatchService {
     if (!waybill.trackingNo) {
       throw this.conflict('SHIPMENT_INVOICE_NOT_READY', 'Dispatch waybill tracking number is missing');
     }
+    // 송장 DTO 가 계약 밖 택배사를 막으므로 도달 불가. 계약 밖 값을 내면 소비자 zod 가 throw 한다(K3 PR 2 — PR 3 이 계약을 넓힌다).
+    const carrier = waybill.carrier;
+    if (!isEventContractCarrier(carrier)) {
+      throw new Error(`Dispatch waybill ${waybill.id} carrier ${carrier} is outside the event contract`);
+    }
     const summaryByFo = new Map(summaries.map((summary) => [summary.fulfillmentOrderId, summary]));
     const orders: ShipmentEventOrder[] = [];
     for (const fulfillmentOrderId of [...new Set(lines.map((line) => line.fulfillmentOrderId))].sort()) {
@@ -1190,11 +1196,11 @@ export class ShipmentDispatchService {
       attemptNo,
       warehouseId: warehouseIdOf(aggregate.shipment),
       dispatchedAt: dispatchedAt.toISOString(),
-      invoice: { invoiceId: waybill.id, carrier: waybill.carrier, trackingNo: waybill.trackingNo },
+      invoice: { invoiceId: waybill.id, carrier, trackingNo: waybill.trackingNo },
       orders,
     };
     await this.shipments.enqueue(shipmentShippedOutboxEvent(shipmentPayload), tx);
-    await this.enqueueCustomerShipmentNotices(orders, attemptId, waybill.carrier, waybill.trackingNo, dispatchedAt, tx);
+    await this.enqueueCustomerShipmentNotices(orders, attemptId, carrier, waybill.trackingNo, dispatchedAt, tx);
 
     for (const summary of summaries) {
       const progressed: FulfillmentProgressedPayload = {
@@ -1214,7 +1220,7 @@ export class ShipmentDispatchService {
           fulfillmentId: summary.fulfillmentOrderId,
           orderId: summary.salesOrderId,
           channelOrderId: eventLine.channelOrderId,
-          trackingInfo: { carrier: waybill.carrier, trackingNumber: waybill.trackingNo },
+          trackingInfo: { carrier, trackingNumber: waybill.trackingNo },
           shippedAt: dispatchedAt.toISOString(),
           shippedItems: shippedItemsForCompletion(summary.items),
         };

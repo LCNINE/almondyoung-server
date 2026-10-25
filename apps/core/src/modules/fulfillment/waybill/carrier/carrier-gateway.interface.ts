@@ -3,6 +3,18 @@ import { carrierEnum } from '../../../inventory/schema/inventory.schema';
 
 export type CarrierCode = (typeof carrierEnum.enumValues)[number];
 
+/**
+ * 이벤트 계약(`shipments.stream.ts`·`fulfillments.stream.ts`)이 받는 택배사. 소비자(channel-adapter·notification)는 모르는 값이면
+ * zod 가 throw 하므로 창고 경로(송장 DTO·발송 이벤트)는 이것만 낸다. carrierEnum 의 나머지는 입점사 수기 송장용이다(K3).
+ * K3 PR 3 이 계약을 넓히면 지운다.
+ */
+export const EVENT_CONTRACT_CARRIERS = ['CJ', 'HANJIN', 'LOTTE', 'LOGEN', 'KDEXP', 'CJGLS'] as const;
+export type EventContractCarrier = (typeof EVENT_CONTRACT_CARRIERS)[number];
+
+export function isEventContractCarrier(carrier: CarrierCode): carrier is EventContractCarrier {
+  return (EVENT_CONTRACT_CARRIERS as readonly string[]).includes(carrier);
+}
+
 export interface WaybillRequest {
   custOrdNo: string; // ≤30B, 우리 상관키(주문번호)
   recipient: {

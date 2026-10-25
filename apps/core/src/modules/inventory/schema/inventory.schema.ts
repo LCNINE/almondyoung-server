@@ -84,7 +84,23 @@ export const shipmentStatusEnum = pgEnum('shipment_status', [
   'superseded',
   'recovery_required',
 ]);
-export const carrierEnum = pgEnum('carrier', ['CJ', 'HANJIN', 'LOTTE', 'LOGEN', 'KDEXP', 'CJGLS']);
+// 뒤의 8개는 입점사 상자 수기 송장용(K3). 창고 경로는 EVENT_CONTRACT_CARRIERS(앞의 6개)만 낸다 — carrier-gateway.interface.ts
+export const carrierEnum = pgEnum('carrier', [
+  'CJ',
+  'HANJIN',
+  'LOTTE',
+  'LOGEN',
+  'KDEXP',
+  'CJGLS',
+  'EPOST', // 우체국택배
+  'DAESIN', // 대신택배
+  'ILYANG', // 일양로지스
+  'HDEXP', // 합동택배
+  'CVSNET', // GS 편의점택배
+  'CUPOST', // CU 편의점택배
+  'CHUNIL', // 천일택배
+  'KUNYOUNG', // 건영택배
+]);
 export const returnStatusEnum = pgEnum('return_status', [
   'requested',
   'received',
