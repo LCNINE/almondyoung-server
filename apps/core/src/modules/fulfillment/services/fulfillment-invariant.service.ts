@@ -104,6 +104,7 @@ export interface FulfillmentInvariantSnapshot {
     shipmentId: string;
     status: string;
     stockJournalId: string | null;
+    kind: 'warehouse' | 'supplier';
   }>;
   dispatchSources: Array<{
     id: string;
@@ -326,6 +327,18 @@ export function collectFulfillmentInvariantViolations(
     if (!SETTLED_ATTEMPT_STATUSES.has(attempt.status)) continue;
     const shipmentLines = snapshot.shipmentLines.filter((line) => line.shipmentId === attempt.shipmentId);
     const sources = snapshot.dispatchSources.filter((source) => source.dispatchAttemptId === attempt.id);
+
+    // 입점사 시도는 우리 재고를 건드리지 않는다 — 원천·원장 id 가 있으면 그것이 위반이고, 없는 것이 정상이다(ck_dispatch_attempts_supplier_no_journal).
+    if (attempt.kind === 'supplier') {
+      if (sources.length > 0 || attempt.stockJournalId !== null) {
+        violations.push({
+          kind: 'DISPATCH_SOURCE_CARDINALITY',
+          resourceId: attempt.id,
+          message: `supplier attempt must have no sources/journal: sources=${sources.length}, journal=${attempt.stockJournalId ?? 'none'}`,
+        });
+      }
+      continue;
+    }
 
     for (const line of shipmentLines) {
       const sourceQty = sum(
@@ -650,6 +663,7 @@ export class FulfillmentInvariantService {
             shipmentId: wmsTables.dispatchAttempts.shipmentId,
             status: wmsTables.dispatchAttempts.status,
             stockJournalId: wmsTables.dispatchAttempts.stockJournalId,
+            kind: wmsTables.dispatchAttempts.kind,
           })
           .from(wmsTables.dispatchAttempts)
           .where(inArray(wmsTables.dispatchAttempts.shipmentId, shipmentIds))

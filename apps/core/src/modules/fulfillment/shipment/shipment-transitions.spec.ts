@@ -1,8 +1,8 @@
 import { SHIPMENT_TRANSITIONS, assertLegalTransition, transitionEffect } from './shipment-transitions';
 
 describe('shipment-transitions', () => {
-  it('표는 14행이다', () => {
-    expect(SHIPMENT_TRANSITIONS).toHaveLength(14);
+  it('표는 15행이다', () => {
+    expect(SHIPMENT_TRANSITIONS).toHaveLength(15);
   });
 
   it.each(SHIPMENT_TRANSITIONS.map((r) => [r.from, r.to, r]))('%s → %s 는 합법', (_from, _to, rule) => {
@@ -18,6 +18,14 @@ describe('shipment-transitions', () => {
     expect(() => assertLegalTransition('delivered', 'draft', {})).toThrow(Error);
     expect(() => assertLegalTransition('draft', 'draft', {})).toThrow(Error);
     expect(() => assertLegalTransition('failed', 'draft', {})).toThrow(Error);
+  });
+
+  it('draft → shipped 는 입점사 전용 행으로만 합법이다', () => {
+    expect(() => assertLegalTransition('draft', 'shipped', {})).not.toThrow();
+    const rules = SHIPMENT_TRANSITIONS.filter((r) => r.from === 'draft' && r.to === 'shipped');
+    expect(rules).toHaveLength(1);
+    expect(rules[0].owner).toBe('supplier');
+    expect(SHIPMENT_TRANSITIONS.filter((r) => r.owner === 'supplier')).toHaveLength(1);
   });
 
   it('recovery_required 로 갈 때 코드가 없거나 허용 밖이면 Error', () => {

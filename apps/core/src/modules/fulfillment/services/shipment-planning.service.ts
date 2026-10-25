@@ -1578,6 +1578,8 @@ export class ShipmentPlanningService {
       // 현관 정보가 빠진 채 나가고 기사가 문을 못 연다. 주소를 복사하면서 비번을
       // 빠뜨리는 것이 정확히 그 사고다.
       entrancePassword: aggregate.shipment.entrancePassword,
+      // 입점사 상자를 나누면 넘김 기록을 물려받는다(N7). 창고 상자는 NULL 이다.
+      supplierHandoffId: aggregate.shipment.supplierHandoffId,
       openedBy: actor.id,
       openedAt: new Date(),
     });
