@@ -35,7 +35,7 @@
 
 ## Review Focus
 
-- **이 PR 배포 중 옛 channel-adapter 태스크가 새 택배사 이벤트를 받음** — core 가 내지 않아야 한다. 창고 상자에 `EPOST` 수기 송장을 다는 요청은 400, 이미 그런 송장이 있으면 `emitDispatchEvents` 가 throw(PR 2 테스트가 지킨다 — 이름만 바뀌어 통과해야 한다). Task 1.
+- **이 PR 배포 중 옛 channel-adapter 태스크가 새 택배사 이벤트를 받음** — core 가 내지 않아야 한다. 창고 상자에 `EPOST` 수기 송장을 다는 요청은 400, 이미 그런 송장이 있으면 `emitDispatchEvents` 가 throw. DTO 쪽은 PR 2 의 `waybill.dto.spec.ts` 가, 발송 쪽은 최종 리뷰가 더한 `shipment-dispatch.service.spec.ts` «refuses to emit a carrier outside the consumer rollout carriers» 가 지킨다 — 계약이 14개가 된 뒤로는 타입이 이 문을 지키지 않는다. Task 1.
 - **`warehouseId`·`supplierId` 둘 다 있거나 둘 다 없는 `ShipmentShipped`** — 거절. Task 2.
 - **입점사 출처 발송이 네이버 주문에 실림** — `CJGLS` 로 등록되면 안 되고 manual. Task 3.
 - **`HANJIN` 창고 발송의 네이버·쿠팡 자동 처리** — 이 PR 뒤에도 그대로 어댑터로 간다(회귀 없음). Task 3.
