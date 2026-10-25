@@ -26,7 +26,6 @@ const TERMINAL_STATUSES = new Set(['shipped', 'completed', 'canceled']);
 const MODE_LABEL: Record<FulfillmentMode, string> = {
   in_house: '자가출고',
   '3pl': '3PL',
-  drop_ship: '직배송',
 };
 
 const PRIORITY_LABEL: Record<FulfillmentOrderPriority, string> = {
@@ -72,7 +71,6 @@ export function FulfillmentDetail({ id }: { id: string }) {
     ...data,
     items: data.items ?? [],
     reservations: data.reservations ?? [],
-    adminAvailableActions: data.adminAvailableActions ?? [],
     blockedReasons: data.blockedReasons ?? [],
   };
 

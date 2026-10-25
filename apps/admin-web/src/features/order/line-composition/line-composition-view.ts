@@ -1,9 +1,6 @@
 // 판매주문 라인 구성(#1063) 화면 판정. 컴포넌트는 이 결과만 그린다 — admin-web 은 컴포넌트 테스트 환경이 없다
 import { parseServerError, record } from '@/lib/api/server-error';
-import type {
-  FulfillmentMode,
-  FulfillmentOrderItem,
-} from '@/lib/types/dto/fulfillment';
+import type { FulfillmentOrderItem } from '@/lib/types/dto/fulfillment';
 import type {
   ApplySkipReason,
   ApplyToExistingLinesResult,
@@ -28,14 +25,6 @@ export function foItemStatusLabel(
   item: Pick<FulfillmentOrderItem, 'qty' | 'status'>
 ): string {
   return item.qty === 0 && item.status !== 'canceled' ? '대체됨' : item.status;
-}
-
-// 직배 출고는 서버가 개별 지정을 DROP_SHIP_NOT_SUPPORTED 로 항상 거절한다 — 눌러도 실패할 버튼은 두지 않는다
-export function canEditLineComposition(args: {
-  canEdit: boolean;
-  fulfillmentMode: FulfillmentMode | null | undefined;
-}): boolean {
-  return args.canEdit && args.fulfillmentMode !== 'drop_ship';
 }
 
 // 구성 한 줄의 표시. 매칭표와 출고 상세가 같은 모양으로 보이게 한 곳에서 만든다

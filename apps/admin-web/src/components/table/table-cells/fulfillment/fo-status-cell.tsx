@@ -48,7 +48,6 @@ export const FoPriorityCell = ({ value }: { value: string | null | undefined }) 
 const MODE_LABEL: Record<string, string> = {
   in_house: '자가출고',
   '3pl': '3PL',
-  drop_ship: '직배송',
 };
 
 export const FoModeCell = ({ value }: { value: string | null | undefined }) => {

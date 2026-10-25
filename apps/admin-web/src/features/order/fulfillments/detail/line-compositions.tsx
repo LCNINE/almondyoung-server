@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import type { FulfillmentOrderDetail } from '@/lib/types/dto/fulfillment';
 import { LineCompositionDialog } from '../../line-composition/components/line-composition-dialog';
 import {
-  canEditLineComposition,
   compositionItemText,
   sourceBadge,
   type LineCompositionTarget,
@@ -19,8 +18,7 @@ export function LineCompositions({ fo, canEdit }: { fo: FulfillmentOrderDetail; 
   const [target, setTarget] = useState<LineCompositionTarget | null>(null);
   const lines = fo.lines ?? [];
   const salesOrderId = fo.salesOrderId;
-  const editable = canEditLineComposition({ canEdit, fulfillmentMode: fo.fulfillmentMode });
-  if (lines.length === 0) return null;
+    if (lines.length === 0) return null;
 
   return (
     <Container>
@@ -43,7 +41,7 @@ export function LineCompositions({ fo, canEdit }: { fo: FulfillmentOrderDetail; 
                   </td>
                   <td className="py-2 pr-3">{badge && <Badge variant="secondary">{badge}</Badge>}</td>
                   <td className="py-2 text-right">
-                    {editable && salesOrderId && (
+                    {canEdit && salesOrderId && (
                       <Button
                         size="sm"
                         variant="outline"

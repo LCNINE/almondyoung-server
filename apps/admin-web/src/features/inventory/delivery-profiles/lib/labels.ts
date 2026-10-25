@@ -11,5 +11,4 @@ export const SOURCE_TYPE_LABELS: Record<DeliveryProfileSourceType, string> = {
 export const FULFILLMENT_MODE_LABELS: Record<FulfillmentMode, string> = {
   in_house: '자사 출고',
   '3pl': '3PL',
-  drop_ship: '위탁 직배송',
 };

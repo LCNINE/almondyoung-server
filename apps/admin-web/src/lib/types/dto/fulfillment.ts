@@ -5,7 +5,7 @@ import type { LineCompositionView } from './line-composition';
 
 // ===== Fulfillment Order =====
 
-export type FulfillmentMode = 'in_house' | '3pl' | 'drop_ship';
+export type FulfillmentMode = 'in_house' | '3pl';
 export type FulfillmentOrderPriority = 'normal' | 'high' | 'urgent';
 // 백엔드 fulfillmentStatusEnum 전체와 1:1 (inventory.schema.ts)
 export type FulfillmentOrderStatus =
@@ -18,12 +18,6 @@ export type FulfillmentOrderStatus =
   | 'completed'
   | 'canceled'
   | 'recovery_required';
-
-export type DirectShipStatus =
-  | 'pending'
-  | 'forwarded'
-  | 'completed'
-  | 'canceled';
 
 // ===== FO summary types (Core DTO 1:1 대응) =====
 
@@ -66,7 +60,6 @@ export interface FulfillmentOrder {
   status: FulfillmentOrderStatus;
   batchId: string | null;
   fulfillmentMode: FulfillmentMode | null;
-  directShipStatus: DirectShipStatus | null;
   priority: FulfillmentOrderPriority;
   totalItems: number;
   totalQty: number;
@@ -82,11 +75,10 @@ export interface FulfillmentOrder {
   updatedAt: string;
 }
 
-/** GET /fulfillments/:id 상세 응답 (items, reservations, adminAvailableActions 포함) */
+/** GET /fulfillments/:id 상세 응답 (items, reservations 포함) */
 export interface FulfillmentOrderDetail extends FulfillmentOrder {
   items: FulfillmentOrderItem[];
   reservations: ReservationSummary[];
-  adminAvailableActions: string[];
   blockedReasons: string[];
   progress?: FulfillmentV2Progress;
   /** V2는 하나의 FO에 여러 shipment가 존재하므로 이 목록을 기준으로 렌더한다. */
