@@ -6,6 +6,7 @@ import {
   FulfillmentReopenedPayload,
   ShipmentDeliveredPayload,
   ShipmentDispatchRecalledPayload,
+  ShipmentCarrier,
   ShipmentEventOrder,
   ShipmentShippedPayload,
 } from '@packages/event-contracts/streams';
@@ -26,6 +27,12 @@ const OUTBOUND_INBOX_EVENT_TYPES = [
   'FulfillmentReopened',
 ] as const;
 type OutboundInboxEventType = (typeof OUTBOUND_INBOX_EVENT_TYPES)[number];
+
+/**
+ * 네이버·쿠팡 어댑터의 택배사 표가 아는 코드. 모르는 코드는 네이버가 CJGLS 로 바꿔 보낸다
+ * (`naver-smartstore.adapter.ts` DEFAULT) — 그래서 표에 넣기 전까지는 운영 큐로 보낸다(K3 PR 3).
+ */
+const EXTERNAL_DISPATCH_CARRIERS: readonly ShipmentCarrier[] = ['CJ', 'HANJIN', 'LOTTE', 'LOGEN', 'KDEXP', 'CJGLS'];
 type ShipmentInboxEventType = Extract<OutboundInboxEventType, `Shipment${string}`>;
 type DispatchOperationType = 'dispatch' | 'delivery' | 'recall';
 export type ChannelDispatchOperationObservationStatus =
@@ -467,6 +474,14 @@ export class ShipmentDispatchInboxWorker {
     // 운영 큐에 남긴다 — 상자는 실제로 나갔는데 채널이 그 사실을 모르는 상태이기 때문이다.
     if (capabilities.route.kind === 'none') {
       return { manual: true, reason: `${channel} has no outbound dispatch integration.` };
+    }
+
+    // 직배는 아몬드영 쇼핑몰에서만 판다(K3 비목표) — 입점사 상자가 외부 채널 주문에 실렸다면 사람이 본다.
+    if (shipped.supplierId) {
+      return { manual: true, reason: `${channel} does not take drop-ship (supplier) shipments.` };
+    }
+    if (!EXTERNAL_DISPATCH_CARRIERS.includes(shipped.invoice.carrier)) {
+      return { manual: true, reason: `${channel} adapter has no carrier code for ${shipped.invoice.carrier}.` };
     }
 
     const adapter = this.requireChannelAdapterFactory().getAdapter(capabilities.route.adapter);

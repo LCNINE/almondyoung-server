@@ -108,6 +108,34 @@ describe('shipment event channel ownership contract', () => {
     // could not fail.
   });
 
+  it('accepts a supplier-origin shipment with a supplier carrier into the inbox (K3 PR 3)', async () => {
+    const accepted: Array<Record<string, unknown>> = [];
+    const db = {
+      insert: jest.fn(() => ({
+        values: jest.fn((value: Record<string, unknown>) => {
+          accepted.push(value);
+          return { onConflictDoNothing: jest.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+    };
+    const consumer = new ShipmentEventsConsumer({ db } as never);
+    const { warehouseId: _warehouse, ...noOrigin } = SHIPPED;
+    const supplierShipped: ShipmentShippedPayload = {
+      ...noOrigin,
+      supplierId: '12121212-1212-4212-8212-121212121212',
+      invoice: { ...SHIPPED.invoice, carrier: 'EPOST' },
+    };
+
+    await consumer.handleShipmentShipped(supplierShipped, {
+      correlationId: 'correlation-1',
+      causationId: 'causation-1',
+      messageId: 'message-1',
+    } as never);
+
+    expect(accepted).toHaveLength(1);
+    expect(accepted[0]?.payload).toEqual(supplierShipped);
+  });
+
   it('derives partially_shipped, never shipped, from a partial Medusa shipment attempt', async () => {
     let metadata: Record<string, unknown> = {};
     const fetch = jest.fn(
