@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { DbService, InjectTypedDb } from '@app/db';
 import { DbTx, inventorySchema, inventoryTables } from '../../inventory/schema/inventory.schema';
+import { SupplierTrackingInUseError } from '../supplier-shipment/supplier-shipment.errors';
 import { WAYBILL_DISPATCHABLE_STATUSES, WAYBILL_TERMINAL_STATUSES } from './waybill.constants';
 import type { WaybillRow } from './waybill.types';
 
@@ -44,6 +45,35 @@ export class WaybillRepository {
       .values({ ...row, source: 'manual', status: 'registered', issuedAt: new Date() })
       .returning();
     return wb;
+  }
+
+  /**
+   * 입점사 상자의 수기 송장 — 입점사가 이미 보낸 소포라 `registered` 를 거치지 않고 곧장 `used` 다(K3, ADR-0050).
+   * 살아 있는 송장번호 중복(`uq_waybills_tracking_live`)은 TRACKING_IN_USE 로 옮긴다.
+   */
+  async insertSupplierManualUsed(
+    trx: DbTx,
+    row: {
+      shipmentId: string;
+      carrier: WaybillRow['carrier'];
+      trackingNo: string;
+      manifestVersion: number;
+      recipientHash: string;
+    },
+  ): Promise<{ id: string }> {
+    const now = new Date();
+    try {
+      const [wb] = await trx
+        .insert(T)
+        .values({ ...row, source: 'manual', status: 'used', issuedAt: now })
+        .returning({ id: T.id });
+      return wb;
+    } catch (e) {
+      if (isUniqueViolationOn(e, 'uq_waybills_tracking_live')) {
+        throw new SupplierTrackingInUseError(`Tracking number ${row.trackingNo} is already in use`);
+      }
+      throw e;
+    }
   }
 
   async findById(trx: DbTx, id: string): Promise<WaybillRow | undefined> {
@@ -164,4 +194,15 @@ export class WaybillRepository {
       .set({ attempts: sql`${T.attempts} + 1`, updatedAt: new Date() })
       .where(eq(T.id, id));
   }
+}
+
+// drizzle 이 driver 에러를 DrizzleQueryError 로 감싸므로 `.cause` 체인에서 제약 이름까지 확인한다.
+function isUniqueViolationOn(e: unknown, constraint: string): boolean {
+  let current: unknown = e;
+  for (let depth = 0; current != null && depth < 5; depth += 1) {
+    const row = current as { code?: string; constraint_name?: string; cause?: unknown };
+    if (row.code === '23505' && (row.constraint_name === undefined || row.constraint_name === constraint)) return true;
+    current = row.cause;
+  }
+  return false;
 }
