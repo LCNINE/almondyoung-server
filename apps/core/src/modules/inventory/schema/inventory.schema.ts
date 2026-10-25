@@ -84,7 +84,8 @@ export const shipmentStatusEnum = pgEnum('shipment_status', [
   'superseded',
   'recovery_required',
 ]);
-// 뒤의 8개는 입점사 상자 수기 송장용(K3). 창고 경로는 EVENT_CONTRACT_CARRIERS(앞의 6개)만 낸다 — carrier-gateway.interface.ts
+// 뒤의 8개는 입점사 상자 수기 송장용(K3). 계약 `packages/event-contracts/streams/carriers.ts` 와 같아야 한다.
+// 창고 경로는 PR 5 전까지 CONSUMER_ROLLOUT_CARRIERS(앞의 6개)만 낸다 — carrier-gateway.interface.ts
 export const carrierEnum = pgEnum('carrier', [
   'CJ',
   'HANJIN',

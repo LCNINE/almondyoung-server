@@ -1,14 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Length, MaxLength, Min } from 'class-validator';
-import { EVENT_CONTRACT_CARRIERS, type EventContractCarrier } from '../carrier/carrier-gateway.interface';
+import { CONSUMER_ROLLOUT_CARRIERS, type ConsumerRolloutCarrier } from '../carrier/carrier-gateway.interface';
 
 export class IssueWaybillDto {
   @IsInt()
   @Min(1)
   expectedManifestVersion: number;
 
-  @IsIn(EVENT_CONTRACT_CARRIERS)
-  carrier: EventContractCarrier;
+  @IsIn(CONSUMER_ROLLOUT_CARRIERS)
+  carrier: ConsumerRolloutCarrier;
 }
 
 export class RegisterManualWaybillDto {
@@ -16,8 +16,8 @@ export class RegisterManualWaybillDto {
   @Min(1)
   expectedManifestVersion: number;
 
-  @IsIn(EVENT_CONTRACT_CARRIERS)
-  carrier: EventContractCarrier;
+  @IsIn(CONSUMER_ROLLOUT_CARRIERS)
+  carrier: ConsumerRolloutCarrier;
 
   @IsString()
   @IsNotEmpty()
@@ -45,8 +45,8 @@ export class IssueBatchWaybillDto {
   @IsString({ each: true })
   shipmentIds: string[];
 
-  @IsIn(EVENT_CONTRACT_CARRIERS)
-  carrier: EventContractCarrier;
+  @IsIn(CONSUMER_ROLLOUT_CARRIERS)
+  carrier: ConsumerRolloutCarrier;
 }
 
 export class WaybillResponseDto {

@@ -4,15 +4,16 @@ import { carrierEnum } from '../../../inventory/schema/inventory.schema';
 export type CarrierCode = (typeof carrierEnum.enumValues)[number];
 
 /**
- * 이벤트 계약(`shipments.stream.ts`·`fulfillments.stream.ts`)이 받는 택배사. 소비자(channel-adapter·notification)는 모르는 값이면
- * zod 가 throw 하므로 창고 경로(송장 DTO·발송 이벤트)는 이것만 낸다. carrierEnum 의 나머지는 입점사 수기 송장용이다(K3).
- * K3 PR 3 이 계약을 넓히면 지운다.
+ * core 가 지금 내는 택배사. 이벤트 계약(`carriers.ts`)은 K3 PR 3 에서 14개로 넓어졌지만, SST 한 스택 배포는
+ * 컴포넌트 순서를 못 정해 같은 배포 안에서 소비자(channel-adapter·notification)가 먼저 뜬다는 보장이 없다.
+ * 옛 소비자는 모르는 값이면 zod 가 throw 하므로 창고 경로(송장 DTO·발송 이벤트)는 이것만 낸다.
+ * PR 5 가 PR 3 라이브를 확인한 뒤 지운다.
  */
-export const EVENT_CONTRACT_CARRIERS = ['CJ', 'HANJIN', 'LOTTE', 'LOGEN', 'KDEXP', 'CJGLS'] as const;
-export type EventContractCarrier = (typeof EVENT_CONTRACT_CARRIERS)[number];
+export const CONSUMER_ROLLOUT_CARRIERS = ['CJ', 'HANJIN', 'LOTTE', 'LOGEN', 'KDEXP', 'CJGLS'] as const;
+export type ConsumerRolloutCarrier = (typeof CONSUMER_ROLLOUT_CARRIERS)[number];
 
-export function isEventContractCarrier(carrier: CarrierCode): carrier is EventContractCarrier {
-  return (EVENT_CONTRACT_CARRIERS as readonly string[]).includes(carrier);
+export function isConsumerRolloutCarrier(carrier: CarrierCode): carrier is ConsumerRolloutCarrier {
+  return (CONSUMER_ROLLOUT_CARRIERS as readonly string[]).includes(carrier);
 }
 
 export interface WaybillRequest {
