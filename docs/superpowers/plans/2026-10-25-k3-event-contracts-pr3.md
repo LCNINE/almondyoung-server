@@ -217,5 +217,5 @@ it('labels a supplier carrier in the shipped notice', async () => {
 **Files:**
 - Modify: `docs/superpowers/specs/2026-10-25-k3-drop-ship-supplier-shipments-design.md` §6·§7 PR 3·PR 5 줄
 
-- [ ] **Step 1:** §6 «소비자 먼저» 문단 끝에 한 줄: «SST 한 스택은 컴포넌트 순서를 못 정한다 — PR 3 은 계약·소비자만 넓히고 core 는 옛 6개만 낸다. core 가 새 값을 내는 것은 PR 3 라이브 뒤의 PR 5 다.» §7 표의 PR 3 배포 칸을 «services 한 번(순서 무관, core 는 새 값을 내지 않음)», PR 5 칸에 «`CONSUMER_ROLLOUT_CARRIERS` 문 제거» 를 더한다. §4.6 `SalesOrderShipmentDispatched` 줄에 «계약 변경 불필요(칸 없음·`carrier` 는 문자열) — PR 3 확인» 을 더한다.
+- [ ] **Step 1:** §6 «소비자 먼저» 문단 끝에 한 줄: «SST 한 스택은 컴포넌트 순서를 못 정한다 — PR 3 은 계약·소비자만 넓히고 core 는 옛 6개만 낸다. core 가 새 값을 내는 것은 PR 3 라이브 뒤의 PR 5 다.» §7 표의 PR 3 배포 칸을 «services 한 번(순서 무관, core 는 새 값을 내지 않음)», PR 5 칸에 «`CONSUMER_ROLLOUT_CARRIERS` 문 제거» 를 더한다. §7 표 아래에 PR 5 구현자용 주의 두 줄: «PR 5 는 PR 3 라이브(태그) 확인 뒤에만 배포한다», «🔴 PR 5 라이브 뒤에는 channel-adapter·notification 을 PR 3 이전으로 롤백하지 않는다 — 새 택배사·`supplierId` 를 zod 가 거절해 DLQ 로 간다». §4.6 `SalesOrderShipmentDispatched` 줄에 «계약 변경 불필요(칸 없음·`carrier` 는 문자열) — PR 3 확인» 을 더한다.
 - [ ] **Step 2: Commit** — `docs(k3): PR 3 이 확인한 배포 순서와 SalesOrderShipmentDispatched 를 설계에 반영`

@@ -197,6 +197,8 @@ CHECK: **`warehouse_id` 와 `supplier_id` 중 정확히 하나.** 이것이 «�
   `ship()` 의 직접 enqueue 는 없어진다. 직배 상자의 실제 택배사·송장이 실린다.
 - 고객 발송 알림 `SalesOrderShipmentDispatched` — 직배 상자 발송에도 나가야 한다(고객이 창고분과 같은 알림을 받는다). 스키마가 창고 전용 칸
   (`warehouseId`·`dispatchAttemptId` 등)을 요구하면 계약을 넓힌다 — §6 의 «소비자 먼저».
+  **PR 3 확인: 계약 변경 불필요** — `warehouseId` 칸이 없고 `carrier` 는 문자열이며 `dispatchAttemptId` 는 입점사 시도 행(`kind='supplier'`)이 채운다.
+  notification 의 택배사 표시 이름만 14개로 넓혔다.
 - `ShipmentShipped` — **낸다(내 판단).** 외부 채널 발송용만이 아니다: Medusa 도 능력 표에서 `route: projection` 이라
   (`channel-capabilities.ts:71`), `shipment-dispatch-inbox.worker.ts:458` 가 이 이벤트로 Medusa `order.metadata.coreShipmentAttempts` 에 상자별 기록을 남기고,
   Medusa 자동 리뷰 자격의 «발송됨» 단계가 그 칸을 읽는다(`apps/medusa/src/scripts/lib/auto-review-eligibility.ts:82-96, 176`). 안 내면 직배 주문은 «주문 나이»
@@ -256,6 +258,9 @@ CHECK: **`warehouse_id` 와 `supplier_id` 중 정확히 하나.** 이것이 «�
 - **expand** (additive: `shipments.supplier_id`, `warehouse_id` NULL 허용, CHECK, 라인 «못 보냄» 칸, 넘김 기록, 알릴 취소의 supplier FK, `carrier` enum 값 추가) — `migrate → deploy`.
 - **이벤트 계약의 enum·칸 추가는 소비자 먼저 배포한다.** 소비자가 zod 로 검증하고 모르는 값이면 throw 한다(channel-adapter, notification).
   `carrier` 에 새 값을 넣는 PR 은 소비자 배포가 끝난 뒤에야 core 가 그 값을 낼 수 있다.
+  **SST 한 스택은 컴포넌트 순서를 못 정한다(`--target` 도 이 저장소에선 못 쓴다)** — 그래서 «소비자 먼저»는 배포 한 번 안에서가 아니라
+  **배포 둘 사이**에서 지킨다. PR 3 은 계약·소비자만 넓히고 core 는 옛 6개 택배사·`warehouseId` 출처만 낸다(`CONSUMER_ROLLOUT_CARRIERS`).
+  core 가 새 값·`supplierId` 출처를 내는 것은 PR 3 라이브 뒤의 PR 5 다(PR 3 계획 E3, 2026-10-25).
 - **contract** (`direct_ship_status` 칸 drop, fulfillment_status `'shipped'` 값 제거, 옛 직배 서비스 경로 삭제, `holders` FK 제거) — 별도 PR,
   사이에 배포 한 번 이상, `deploy → migrate`. enum 값 제거는 Postgres 에서 타입 재생성이라 빌더가 스크래치 DB 에서 먼저 돌린다
   (메모: drizzle DROP 순서 함정).
@@ -276,12 +281,18 @@ PR 마다 계획서를 따로 쓴다(`docs/superpowers/plans/2026-10-25-k3-…-p
 |---|---|---|---|
 | 1 | **FO 투영 하나**(§4.5): 투영 함수 하나로 모으고 FO·FOI status 직접 쓰기 가드. 남은 예외는 옛 직배 생성·`ship()` | Core | 없음 |
 | 2 | **입점사 상자 expand**(§4.1·§4.2·§4.8): 스키마 추가, SKU 직배 입점사 규칙, 창고 흐름 진입점의 입점사 상자 거부 가드 | Core | expand, `migrate → deploy` |
-| 3 | **이벤트 계약 넓히기**(§4.6·§6): `ShipmentShipped`·`SalesOrderShipmentDispatched` 의 창고/입점사, `carrier` 새 값 | **소비자(channel-adapter·notification) 먼저**, 그다음 Core | 없음 |
+| 3 | **이벤트 계약 넓히기**(§4.6·§6): `ShipmentShipped` 의 창고/입점사 출처, `carrier` 새 값, 소비자(외부 채널 manual·알림 택배사 이름) | services 한 번(순서 무관 — core 는 아직 새 값을 내지 않는다) | 없음 |
 | 4 | **FO 생성이 입점사 상자를 만든다**(§4.3-1) + 읽는 쪽을 상자 기반으로(정체 보드·K6 수량 사실·판매주문 단계·직배 목록), «섞이면 거절» 제거 | Core | 없음(필요하면 expand) |
-| 5 | **직배 발송 명령**(§4.3-3~9·§4.4·§4.6): 내려받기=넘김, 올리기 미리보기/적용, 발송·합포장·정정·못 보냄, 이벤트, 되돌리기 갈래 | Core(PR 3 라이브 뒤) | 없음 |
+| 5 | **직배 발송 명령**(§4.3-3~9·§4.4·§4.6): 내려받기=넘김, 올리기 미리보기/적용, 발송·합포장·정정·못 보냄, 이벤트, 되돌리기 갈래, `CONSUMER_ROLLOUT_CARRIERS` 문 제거 | Core(PR 3 라이브 뒤) | 없음 |
 | 6 | **취소**(§4.7): 알릴 취소를 상자 후 경로로, 못 보냄 억제, 입점사 FK | Core | 없음 |
 | 7 | **admin-web**(§4.9·§4.2): 직배 화면 개편, SKU 폼 입점사 | admin-web | 없음 |
 | 8 | **contract**(§6): `direct_ship_status`·FO `'shipped'` 값·옛 직배 경로·`holders` FK 제거 | Core, `deploy → migrate` | contract |
+
+**PR 5 구현자에게(PR 3 이 정한 것):**
+- PR 5 는 **PR 3 라이브(배포 태그) 확인 뒤에만** 배포한다. 그 전에 core 가 새 택배사·`supplierId` 를 내면, 아직 옛 버전인 소비자가 zod 로 throw 한다.
+- 🔴 **PR 5 라이브 뒤에는 channel-adapter·notification 을 PR 3 이전으로 롤백하지 않는다** — 새 값을 거절해 DLQ 로 간다.
+- 외부 채널(네이버·쿠팡) 발송은 «입점사 출처» 또는 «옛 6개 밖 택배사»면 manual 이다(PR 3 E4). 창고 수기 송장을 새 택배사로 열려면 어댑터 택배사 표부터 넓혀야 한다 — 네이버는 모르는 코드를 CJGLS 로 바꿔 보낸다.
+- 고객 추적 링크는 새 8개가 `null` 이다(PR 3 E5). 실물 송장으로 URL 을 확인해 `buildTrackingUrl` 에 더한다.
 
 ## 부록 A. 지금 직배를 특별 취급하는 곳
 
