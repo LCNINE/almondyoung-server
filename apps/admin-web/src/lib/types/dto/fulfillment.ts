@@ -692,7 +692,8 @@ export interface FulfillmentShipmentSummary {
 export interface ShipmentAdminSummary {
   id: string;
   status: string;
-  warehouseId: string;
+  warehouseId: string | null;
+  supplierId: string | null;
   manifestVersion: number;
   reservationVersion: number;
   totalQty: number;
@@ -790,7 +791,8 @@ export interface ShipmentWorkItemHistory {
 export interface ShipmentAdminDetail {
   id: string;
   status: string;
-  warehouseId: string;
+  warehouseId: string | null;
+  supplierId: string | null;
   manifestVersion: number;
   reservationVersion: number;
   shippingProfileId?: string | null;

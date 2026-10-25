@@ -49,8 +49,13 @@ import {
   RECIPIENT_FIELDS,
   type RecipientForm,
 } from './recipient-revision';
+import {
+  recallConfirmText,
+  shipmentActionsFor,
+  type ShipmentAction,
+} from './shipment-owner';
 
-type Action = 'split' | 'recipient' | 'plan' | 'recall';
+type Action = ShipmentAction;
 
 type RetryState = {
   operationId: string;
@@ -139,7 +144,10 @@ export function ShipmentActions({
     plan.isPending ||
     recall.isPending;
 
+  const allowed = shipmentActionsFor(shipment);
+  const isSupplier = !!shipment.supplierId;
   const canRecall =
+    allowed.includes('recall') &&
     canRun(useRecallShipment) &&
     canRecallShipment(
       shipment.status,
@@ -320,7 +328,7 @@ export function ShipmentActions({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
-        {canRun(useSplitShipment) && (
+        {allowed.includes('split') && canRun(useSplitShipment) && (
           <Button
             size="sm"
             variant="outline"
@@ -329,16 +337,17 @@ export function ShipmentActions({
             분할
           </Button>
         )}
-        {canRun(useReviseShipmentRecipient) && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setAction('recipient')}
-          >
-            수령인 변경
-          </Button>
-        )}
-        {canRun(usePlanShipment) && (
+        {allowed.includes('recipient') &&
+          canRun(useReviseShipmentRecipient) && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setAction('recipient')}
+            >
+              수령인 변경
+            </Button>
+          )}
+        {allowed.includes('plan') && canRun(usePlanShipment) && (
           <Button size="sm" variant="outline" onClick={() => setAction('plan')}>
             계획 확정
           </Button>
@@ -502,10 +511,7 @@ export function ShipmentActions({
                     setPhysicalRecovery(checked === true)
                   }
                 />
-                <span>
-                  선택한 출고 시도의 실물 패키지가 창고에 회수되었음을
-                  확인합니다.
-                </span>
+                <span>{recallConfirmText(isSupplier)}</span>
               </label>
             </div>
           )}

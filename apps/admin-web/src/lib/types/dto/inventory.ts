@@ -945,6 +945,7 @@ export interface SupplierFiltersDto {
   search?: string;
   categoryId?: string;
   purchaseManagerId?: string;
+  isDirectDelivery?: boolean;
   page?: number;
   limit?: number;
   offset?: number;
