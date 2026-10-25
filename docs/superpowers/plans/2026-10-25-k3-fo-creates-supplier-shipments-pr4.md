@@ -245,6 +245,11 @@ Expected: 넷 다 0. 하나라도 0 이 아니면 **멈추고 사용자에게 �
 - **PR 5:** K6 사다리의 `delivered`(발송된 입점사 상자)는 발송 명령이 FOI `shipped_qty` 를 써야 선다(규칙 6 이 미결 0 을 요구) — 읽기 픽스처가 그 모양을 가정한다.
 - **PR 5:** 합포장(한 입점사 상자에 여러 주문) — 직배 목록 읽기(Task 6)는 상자 단위 `salesOrderId`·`orderNo` 만 낸다. 합포장 상자는 라인별 주문 칸이 필요하다.
 - **PR 5:** 보드에서 회수 대기 입점사 상자(recovery_required + DISPATCH_RECALL_PENDING)는 복구 갈래가 먼저 잡아(N7) `unclassified/<code>` 로 보인다. 그게 운영자가 원하는 모양인지 정한다.
+- **PR 5:** 내려받기·넘김은 `recovery_code IS NOT NULL` 인 상자를 넘기지 않는다 — 직배 목록은 recovery_required 상자를 열린 것(N6 의 대기·넘김)으로 세지만 보드는 취소·재계획 상자를 `cancel` 로 보여 준다.
+- **PR 5:** K6 `forwarded` 는 «못 보냄» 라인을 포함해 고객에게 「배송 중」으로 보인다 — 입점사가 못 보낸다고 한 라인이 그렇게 보여도 되는지 정한다.
+- **PR 6:** `cancelAfterBoxing` 은 이제 입점사 상자가 있는 모든 주문의 취소 경로이고 `warehouseIdOf` 에 걸릴 수 있다 — 이 PR 이 만든 가장 큰 휴면 위험이다.
+- **PR 7:** `getOne` 의 FO 상세 `shipments[]` 에 `supplierId` 가 없어 admin-web 이 입점사 상자를 구별하지 못한다.
+- **PR 8:** FO 목록 필터 `fulfillmentMode='drop_ship'`(`fulfillments.controller.ts:138`, `list-fulfillments-query.dto.ts:16`)은 이제 옛 FO(라이브 0)만 맞춘다 — 모드와 함께 지운다.
 - **PR 6:** K6 `forwarded` 는 넘긴 열린 입점사 라인의 Σ `sl.qty` 다. 입점사 상자 취소가 FOI `canceled_qty` 와 함께 `sl.qty` 를 줄여야(`shrinkDraftLines` 경로) 맞다.
 - **PR 7:** admin-web 에 보드 상태 `drop_ship_unfulfillable` 라벨이 없다(원값 표시). admin-web FO 진행 타입에 `supplierLineQty` 가 없다.
 - **PR 8(contract):** `direct_ship_status` 칸·`drop_ship` 모드 값·옛 `direct-ship.service.ts`·`ship()`·`computeAdminAvailableActions`·옛 응답 칸. 그리고 PR 2 N10 으로 남긴 옛 FO 모드 가드(`allocation.locks.ts`·`outbound-batch-orchestrator.service.ts`·`shipment-planning.service.ts`), 옛 쓰기 경로 스펙 여섯이 쓰는 `seedFo({ dropShip })` 픽스처, 라인 구성 편집 읽기가 고르고 안 쓰는 `fulfillmentMode`.

@@ -298,7 +298,9 @@ PR 마다 계획서를 따로 쓴다(`docs/superpowers/plans/2026-10-25-k3-…-p
 - 발송 명령은 FOI `shipped_qty` 를 써야 한다 — K6 사다리의 `delivered`(발송된 입점사 상자)가 미결 0 을 요구한다.
 - 합포장(한 입점사 상자에 여러 주문): 직배 목록 읽기는 상자 단위 `salesOrderId`·`orderNo` 만 낸다. 합포장이면 라인별 주문 칸이 필요하다.
 - 정체 보드에서 회수 대기 입점사 상자(recovery_required + DISPATCH_RECALL_PENDING)는 복구 갈래가 먼저 잡아 `unclassified/<code>` 로 보인다. 원하는 운영자 화면인지 정한다.
-- 직배 목록은 `GET /direct-ship/supplier-queue`(입점사별 대기·넘김·못 보냄 수)와 `/:supplierId/shipments?stage=pending|forwarded`다. 고객 개인정보가 없다 — 수령인은 내려받기에만 둔다.
+- 직배 목록은 `GET /direct-ship/supplier-queue`(입점사별 대기·넘김·못 보냄 수)와 `GET /direct-ship/supplier-queue/:supplierId/shipments?stage=pending|forwarded`다. 고객 개인정보가 없다 — 수령인은 내려받기에만 둔다.
+- 내려받기·넘김은 `recovery_code IS NOT NULL` 인 상자를 넘기지 않는다 — 직배 목록은 recovery_required 상자를 열린 것(N6 의 대기·넘김)으로 세지만 보드는 취소·재계획 상자를 `cancel` 로 보여 준다.
+- K6 `forwarded` 는 «못 보냄» 라인을 포함해 고객에게 「배송 중」으로 보인다 — 입점사가 못 보낸다고 한 라인이 그렇게 보여도 되는지 정한다.
 
 ## 부록 A. 지금 직배를 특별 취급하는 곳
 

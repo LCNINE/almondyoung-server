@@ -13,6 +13,8 @@ END`;
  * 판정의 공통 CTE(so … decided). 주문으로 접기(judgedRowsSql)와 상자별 결과(judgedShipmentsSql)가 같이 읽는다 —
  * 판정 정의는 이 한 벌이다(리컨실러 스펙 §11.5). units 는 상자 하나 × 주문 하나다 — 직배도 입점사 상자라 상자가 있다(K3 PR4).
  * 입점사 상자 단계(대기·넘김·발송)의 술어는 fulfillment/shipment/supplier-shipment-stage.ts 와 같다 — 바꾸면 함께 바꾼다.
+ * 단, 복구 갈래가 먼저 잡는다: recovery_required 상자(넘긴 뒤 회수 대기 포함)는 unclassified/cancel 로 보이고,
+ * «못 보냄»(drop_ship_unfulfillable)은 draft 상자 전용 보드 상태라 TS 단계가 없다.
  */
 function judgeCtes(scope: SQL, now: SQL): SQL {
   return sql`
