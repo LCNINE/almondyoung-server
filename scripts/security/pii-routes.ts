@@ -103,7 +103,7 @@ export const PII_ROUTES: readonly string[] = [
 
 /** `*.export` 권한 라우트 중 사유 헤더를 강제하지 않는 것. 값은 이유. */
 export const PII_EXPORT_EXCEPTIONS: Readonly<Record<string, string>> = {
-  // 공급사별 직배송 주문 JSON — 레포 밖 호출자가 있을 수 있어 사유 헤더를 강제하면 그 호출이 깨진다. 가림·접속기록은 건다.
+  // 현재 예외 없음 — 모든 `*.export` 라우트가 사유 헤더를 강제한다. 예외를 더하면 값에 이유를 적는다.
 };
 
 /**
