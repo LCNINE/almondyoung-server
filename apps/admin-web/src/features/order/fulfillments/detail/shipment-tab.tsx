@@ -14,6 +14,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useSuppliers } from '@/lib/services/inventory/queries';
+import { directDeliverySuppliers } from '@/lib/utils/direct-delivery-suppliers';
 import {
   getServerDenyMessage,
   isRecoverableOperation,
@@ -30,7 +31,7 @@ import {
   ChannelDispatchAttemptStatus,
 } from './channel-dispatch-status';
 import { ShipmentActions } from './shipment-actions';
-import { ownerLabel } from './shipment-owner';
+import { ownerLabel, showsWaybillActions } from './shipment-owner';
 import { WaybillActions } from './waybill-actions';
 
 const STATUS_VARIANT = (
@@ -64,7 +65,7 @@ function ShipmentDetailView({ shipment }: { shipment: ShipmentAdminDetail }) {
   const channelDispatch = useChannelDispatchViewModel(shipment);
   const isSupplier = !!shipment.supplierId;
   const suppliers = useSuppliers({ isDirectDelivery: true, limit: 100 });
-  const supplierName = suppliers.data?.data.find(
+  const supplierName = directDeliverySuppliers(suppliers.data?.data).find(
     (entry) => entry.id === shipment.supplierId
   )?.name;
 
@@ -157,7 +158,9 @@ function ShipmentDetailView({ shipment }: { shipment: ShipmentAdminDetail }) {
         <h3 className="mb-2 text-sm font-semibold">
           운송장 이력 ({waybills.length})
         </h3>
-        <WaybillActions shipment={shipment} />
+        {showsWaybillActions(shipment) && (
+          <WaybillActions shipment={shipment} />
+        )}
         {waybills.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             발행된 운송장이 없습니다.

@@ -3,6 +3,7 @@ import type { SupplierSheet } from '@/lib/types/dto/fulfillment';
 import type { PiiMeta } from '@/lib/pii/pii-notices';
 import {
   SHEET_MASKED_MESSAGE,
+  SHEET_MASKED_TRANSIENT_MESSAGE,
   buildSupplierSheetWorkbook,
   sheetDownloadDecision,
 } from './supplier-sheet-xlsx';
@@ -113,4 +114,25 @@ describe('sheetDownloadDecision', () => {
       '수령인 정보를 볼 권한이 없어 시트를 만들지 않았습니다. 권한을 받은 뒤 ‘넘긴 것’에서 다시 받으세요.'
     );
   });
+
+  const masked = (reason: PiiMeta['reason']): PiiMeta => ({
+    maskedKinds: ['name'],
+    reason,
+    redactedPaths: [],
+    revealable: false,
+  });
+
+  it.each(['no-permission', 'reveal-required', null] as const)('가린 이유가 %s 면 권한 문구(N3)', (reason) => {
+    expect(sheetDownloadDecision(masked(reason))).toEqual({ ok: false, message: SHEET_MASKED_MESSAGE });
+  });
+
+  it.each(['record-failed', 'unavailable'] as const)(
+    '가린 이유가 %s 면 권한 탓이 아니다 — 잠시 뒤 «넘긴 것»에서 다시 받으라고 한다',
+    (reason) => {
+      const decision = sheetDownloadDecision(masked(reason));
+      expect(decision).toEqual({ ok: false, message: SHEET_MASKED_TRANSIENT_MESSAGE });
+      expect(SHEET_MASKED_TRANSIENT_MESSAGE).not.toContain('권한');
+      expect(SHEET_MASKED_TRANSIENT_MESSAGE).toContain('넘긴 것');
+    }
+  );
 });

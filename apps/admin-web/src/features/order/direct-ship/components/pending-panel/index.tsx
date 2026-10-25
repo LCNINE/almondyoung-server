@@ -19,6 +19,7 @@ import { useHandOffToSupplier, useSupplierShipments } from '@/lib/services/order
 import { type HandoffOutcome, handoffOutcome } from '../../lib/handoff-outcome';
 import { downloadSupplierSheet } from '../../lib/supplier-sheet-xlsx';
 import { ExportReasonDialog } from '../export-reason-dialog';
+import { SkippedShipmentsAlert } from '../skipped-shipments-alert';
 
 /** 「대기」 — 아직 입점사에게 넘기지 않은 상자. 넘김 = 묶음을 찍고 시트를 받는다 */
 export function PendingPanel({ supplierId }: { supplierId: string }) {
@@ -61,18 +62,7 @@ export function PendingPanel({ supplierId }: { supplierId: string }) {
           <AlertDescription>{outcome.maskedMessage}</AlertDescription>
         </Alert>
       )}
-      {outcome?.skipped && (
-        <Alert className="border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
-          <AlertDescription>
-            <p>{outcome.skipped.message}</p>
-            <ul className="mt-1 font-mono text-xs">
-              {outcome.skipped.shipmentIds.map((id) => (
-                <li key={id}>{id}</li>
-              ))}
-            </ul>
-          </AlertDescription>
-        </Alert>
-      )}
+      <SkippedShipmentsAlert skipped={outcome?.skipped ?? null} />
 
       {shipments.length === 0 ? (
         <div className="p-8 text-center text-sm text-muted-foreground">넘길 상자가 없습니다.</div>

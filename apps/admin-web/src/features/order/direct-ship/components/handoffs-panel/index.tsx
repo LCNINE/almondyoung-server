@@ -15,9 +15,10 @@ import {
 import { usePermissionCheck } from '@/hooks/use-permission';
 import { getServerDenyMessage } from '@/lib/api/server-error';
 import { useRedownloadHandoffSheet, useSupplierHandoffs } from '@/lib/services/orders';
-import { handoffOutcome } from '../../lib/handoff-outcome';
+import { type HandoffOutcome, redownloadOutcome } from '../../lib/handoff-outcome';
 import { downloadSupplierSheet } from '../../lib/supplier-sheet-xlsx';
 import { ExportReasonDialog } from '../export-reason-dialog';
+import { SkippedShipmentsAlert } from '../skipped-shipments-alert';
 
 /** 「넘긴 것」 — 넘김 묶음(최근 50개). 다시 받기는 가린 시트의 복구 길이다(N3) */
 export function HandoffsPanel({ supplierId }: { supplierId: string }) {
@@ -25,15 +26,15 @@ export function HandoffsPanel({ supplierId }: { supplierId: string }) {
   const { data: handoffs = [], isLoading } = useSupplierHandoffs(supplierId);
   const redownload = useRedownloadHandoffSheet();
   const [target, setTarget] = useState<string | null>(null);
-  const [maskedMessage, setMaskedMessage] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<HandoffOutcome | null>(null);
 
   const confirm = async (reason: string) => {
     if (target === null) return;
     try {
       const res = await redownload.mutateAsync({ handoffId: target, reason });
-      const outcome = handoffOutcome(res);
-      if (outcome.download) downloadSupplierSheet(res.sheet);
-      setMaskedMessage(outcome.maskedMessage);
+      const next = redownloadOutcome(res);
+      if (next.download) downloadSupplierSheet(res.sheet);
+      setOutcome(next);
       setTarget(null);
     } catch (error) {
       toast.error(getServerDenyMessage(error, '시트를 다시 받지 못했습니다.'));
@@ -49,11 +50,17 @@ export function HandoffsPanel({ supplierId }: { supplierId: string }) {
 
   return (
     <div className="space-y-3 p-4">
-      {maskedMessage && (
+      {outcome?.maskedMessage && (
         <Alert variant="destructive">
-          <AlertDescription>{maskedMessage}</AlertDescription>
+          <AlertDescription>{outcome.maskedMessage}</AlertDescription>
         </Alert>
       )}
+      {outcome?.emptyMessage && (
+        <Alert>
+          <AlertDescription>{outcome.emptyMessage}</AlertDescription>
+        </Alert>
+      )}
+      <SkippedShipmentsAlert skipped={outcome?.skipped ?? null} />
       <Table>
         <TableHeader>
           <TableRow>

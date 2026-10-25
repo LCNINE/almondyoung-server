@@ -23,6 +23,7 @@ import {
   useSuppliers,
 } from '@/lib/services/inventory';
 import { useSku } from '@/lib/services/inventory';
+import { directDeliverySuppliers } from '@/lib/utils/direct-delivery-suppliers';
 import type { SkuResponseDto, CreateSkuDto } from '@/lib/types/dto/inventory';
 import { BarcodeListSection } from '../barcode-list-section';
 import {
@@ -112,7 +113,8 @@ export function SkuFormDialog({ open, sku, onOpenChange }: Props) {
     isLoading: directSuppliersLoading,
     isError: directSuppliersError,
   } = useSuppliers({ isDirectDelivery: true, limit: 100 });
-  const directList = directSuppliers?.data ?? [];
+  // 목록에 들었다고 직배가 아니다 — 파라미터를 모르는 core 는 전부를 준다(행의 플래그로 판정)
+  const directList = directDeliverySuppliers(directSuppliers?.data);
   const directSupplierIds = new Set(directList.map((s) => s.id));
   const originalDirectId = sku
     ? originalDirectSupplierId(sku, directSupplierIds)
@@ -194,7 +196,10 @@ export function SkuFormDialog({ open, sku, onOpenChange }: Props) {
           ? { deliveryProfileId: form.deliveryProfileId }
           : {}),
       ...supplierIdsPayload({
-        linkedSupplierIds: (sku?.suppliers ?? []).map((s) => s.id),
+        // 목록 행이 아니라 방금 받은 SKU 의 연결 — 낡은 행으로 갈아 끼우면 그 사이 붙은 연결이 지워진다
+        linkedSupplierIds: ((freshSku ?? sku)?.suppliers ?? []).map(
+          (s) => s.id
+        ),
         directSupplierIds,
         originalDirectSupplierId: originalDirectId,
         directSupplierId: form.directSupplierId,

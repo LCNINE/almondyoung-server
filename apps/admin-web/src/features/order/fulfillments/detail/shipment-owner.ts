@@ -17,6 +17,16 @@ export function shipmentActionsFor(shipment: {
   return shipment.supplierId ? ['recall'] : ALL_ACTIONS;
 }
 
+/**
+ * 운송장 발급·수기 등록·재발급·무효는 창고 상자만 — 입점사 상자는 입점사가 송장을 붙이고 서버가 전부
+ * 409 `SUPPLIER_SHIPMENT_IN_WAREHOUSE_FLOW` 로 거절한다.
+ */
+export function showsWaybillActions(shipment: {
+  supplierId: string | null;
+}): boolean {
+  return !shipment.supplierId;
+}
+
 export function recallConfirmText(isSupplier: boolean): string {
   return isSupplier
     ? '입점사와 확인했습니다 — 이 송장은 잘못 반영되었거나 아직 보내지 않았습니다.'

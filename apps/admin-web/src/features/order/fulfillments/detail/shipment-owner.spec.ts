@@ -2,6 +2,7 @@ import {
   ownerLabel,
   recallConfirmText,
   shipmentActionsFor,
+  showsWaybillActions,
 } from './shipment-owner';
 
 const SUPPLIER = 'ab12cd34-0000-0000-0000-000000000000';
@@ -18,6 +19,15 @@ describe('shipmentActionsFor', () => {
       'plan',
       'recall',
     ]);
+  });
+});
+
+describe('showsWaybillActions', () => {
+  it('입점사 상자는 운송장 버튼을 숨긴다 — 서버가 전부 409', () => {
+    expect(showsWaybillActions({ supplierId: SUPPLIER })).toBe(false);
+  });
+  it('창고 상자는 보인다', () => {
+    expect(showsWaybillActions({ supplierId: null })).toBe(true);
   });
 });
 

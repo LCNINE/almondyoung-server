@@ -4,8 +4,13 @@ import type { SupplierSheet, SupplierSheetRow } from '@/lib/types/dto/fulfillmen
 
 export const SUPPLIER_SHEET_NAME = '직배';
 
+/** 권한 때문에 가렸다(`no-permission`·`reveal-required`, 이유를 모를 때도) — N3 문구 */
 export const SHEET_MASKED_MESSAGE =
   '수령인 정보를 볼 권한이 없어 시트를 만들지 않았습니다. 권한을 받은 뒤 ‘넘긴 것’에서 다시 받으세요.';
+
+/** 서버가 접속기록을 못 남겨 가렸다(`record-failed`·`unavailable`) — 잠깐 뒤 다시 받으면 된다 */
+export const SHEET_MASKED_TRANSIENT_MESSAGE =
+  '지금 서버가 개인정보 접속기록을 남기지 못해 수령인 정보가 가려진 채 왔고, 시트를 만들지 않았습니다. 잠시 뒤 ‘넘긴 것’에서 다시 받으세요.';
 
 function cellText(row: SupplierSheetRow, key: string): string {
   // columns 의 key 는 서버가 정한다 — 행에 없는 key 는 빈칸, 숫자(수량)도 글자로
@@ -37,5 +42,6 @@ export function sheetDownloadDecision(
   pii: PiiMeta | null
 ): { ok: true } | { ok: false; message: string } {
   if (pii === null) return { ok: true };
-  return { ok: false, message: SHEET_MASKED_MESSAGE };
+  const transient = pii.reason === 'record-failed' || pii.reason === 'unavailable';
+  return { ok: false, message: transient ? SHEET_MASKED_TRANSIENT_MESSAGE : SHEET_MASKED_MESSAGE };
 }
