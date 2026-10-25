@@ -60,7 +60,9 @@ const ShipmentShippedSchema = z
     shipmentId: CoreUuidSchema,
     dispatchAttemptId: CoreUuidSchema,
     attemptNo: AttemptNoSchema,
-    warehouseId: CoreUuidSchema,
+    /** 창고 상자면 `warehouseId`, 입점사 상자면 `supplierId`(K3). 정확히 하나. */
+    warehouseId: CoreUuidSchema.optional(),
+    supplierId: CoreUuidSchema.optional(),
     dispatchedAt: z.string().datetime(),
     invoice: ShipmentInvoiceSchema,
     /**
@@ -71,6 +73,14 @@ const ShipmentShippedSchema = z
   })
   .strict()
   .superRefine((payload, context) => {
+    if ((payload.warehouseId === undefined) === (payload.supplierId === undefined)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'exactly one of warehouseId or supplierId is required',
+        path: ['warehouseId'],
+      });
+    }
+
     const orderGroupKeys = new Set<string>();
     const shipmentLineIds = new Set<string>();
     const fulfillmentOrderItemIds = new Set<string>();

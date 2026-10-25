@@ -130,9 +130,47 @@ describe('SHIPMENT_STREAM', () => {
     ).toBe('dddddddd-dddd-4ddd-8ddd-dddddddddddd');
   });
 
-  it.each(['shipmentId', 'dispatchAttemptId', 'warehouseId'] as const)('rejects a missing %s identity', (field) => {
+  it.each(['shipmentId', 'dispatchAttemptId'] as const)('rejects a missing %s identity', (field) => {
     const { [field]: _missing, ...payload } = SHIPPED_PAYLOAD;
     expect(() => shippedSchema.parse(payload)).toThrow();
+  });
+
+  describe('origin — warehouse or supplier, exactly one (K3)', () => {
+    const SUPPLIER_ID = '17171717-1717-4717-8717-171717171717';
+    const { warehouseId: _warehouse, ...noOrigin } = SHIPPED_PAYLOAD;
+    const accepts = (payload: unknown) => shippedSchema.safeParse(payload).success;
+
+    it('keeps the warehouse payload shape unchanged', () => {
+      expect(accepts(SHIPPED_PAYLOAD)).toBe(true);
+    });
+
+    it('accepts a supplier-origin shipment', () => {
+      expect(accepts({ ...noOrigin, supplierId: SUPPLIER_ID })).toBe(true);
+    });
+
+    it('rejects a shipment with neither origin', () => {
+      expect(accepts(noOrigin)).toBe(false);
+    });
+
+    it('rejects a shipment with both origins', () => {
+      expect(accepts({ ...SHIPPED_PAYLOAD, supplierId: SUPPLIER_ID })).toBe(false);
+    });
+
+    it('rejects a non-uuid supplierId', () => {
+      expect(accepts({ ...noOrigin, supplierId: 'acme' })).toBe(false);
+    });
+  });
+
+  it.each(['EPOST', 'KUNYOUNG'] as const)('accepts supplier carrier %s on ShipmentShipped', (carrier) => {
+    expect(shippedSchema.safeParse({ ...SHIPPED_PAYLOAD, invoice: { ...SHIPPED_PAYLOAD.invoice, carrier } }).success).toBe(
+      true,
+    );
+  });
+
+  it('still rejects an unknown carrier', () => {
+    expect(
+      shippedSchema.safeParse({ ...SHIPPED_PAYLOAD, invoice: { ...SHIPPED_PAYLOAD.invoice, carrier: 'UNKNOWN' } }).success,
+    ).toBe(false);
   });
 
   it('rejects payloads without an attempt number', () => {
@@ -362,6 +400,15 @@ describe('FulfillmentShipped v1 full-completion projection', () => {
       }),
     ).toEqual(v1Payload);
     expect(FULFILLMENT_STREAM.events.FulfillmentShipped.schema!.parse(v1Payload)).toEqual(v1Payload);
+  });
+
+  it.each(['EPOST', 'KUNYOUNG'] as const)('accepts supplier carrier %s on FulfillmentShipped v1', (carrier) => {
+    expect(
+      FULFILLMENT_STREAM.events.FulfillmentShipped.schema!.safeParse({
+        ...v1Payload,
+        trackingInfo: { carrier, trackingNumber: 'tracking-1' },
+      }).success,
+    ).toBe(true);
   });
 
   it('cannot construct FulfillmentShipped v1 from a partial shipment', () => {
