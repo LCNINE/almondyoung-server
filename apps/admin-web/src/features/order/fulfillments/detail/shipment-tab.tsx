@@ -13,6 +13,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useSuppliers } from '@/lib/services/inventory/queries';
+import { directDeliverySuppliers } from '@/lib/utils/direct-delivery-suppliers';
 import {
   getServerDenyMessage,
   isRecoverableOperation,
@@ -29,6 +31,7 @@ import {
   ChannelDispatchAttemptStatus,
 } from './channel-dispatch-status';
 import { ShipmentActions } from './shipment-actions';
+import { ownerLabel, showsWaybillActions } from './shipment-owner';
 import { WaybillActions } from './waybill-actions';
 
 const STATUS_VARIANT = (
@@ -60,6 +63,11 @@ function ShipmentDetailView({ shipment }: { shipment: ShipmentAdminDetail }) {
   const waybills = shipment.waybills ?? [];
   const attempts = shipment.dispatchAttempts ?? [];
   const channelDispatch = useChannelDispatchViewModel(shipment);
+  const isSupplier = !!shipment.supplierId;
+  const suppliers = useSuppliers({ isDirectDelivery: true, limit: 100 });
+  const supplierName = directDeliverySuppliers(suppliers.data?.data).find(
+    (entry) => entry.id === shipment.supplierId
+  )?.name;
 
   return (
     <div className="space-y-6">
@@ -71,8 +79,8 @@ function ShipmentDetailView({ shipment }: { shipment: ShipmentAdminDetail }) {
             <h3 className="font-mono text-sm font-semibold">{shipment.id}</h3>
             <p className="text-xs text-muted-foreground">
               manifest v{shipment.manifestVersion} · reservation v
-              {shipment.reservationVersion} · 창고{' '}
-              {shortId(shipment.warehouseId)}
+              {shipment.reservationVersion} ·{' '}
+              {ownerLabel(shipment, supplierName)}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -131,7 +139,7 @@ function ShipmentDetailView({ shipment }: { shipment: ShipmentAdminDetail }) {
                     {line.qty}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {line.reservedQty}
+                    {isSupplier ? '—' : line.reservedQty}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {line.inspectedQty}
@@ -150,7 +158,9 @@ function ShipmentDetailView({ shipment }: { shipment: ShipmentAdminDetail }) {
         <h3 className="mb-2 text-sm font-semibold">
           운송장 이력 ({waybills.length})
         </h3>
-        <WaybillActions shipment={shipment} />
+        {showsWaybillActions(shipment) && (
+          <WaybillActions shipment={shipment} />
+        )}
         {waybills.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             발행된 운송장이 없습니다.

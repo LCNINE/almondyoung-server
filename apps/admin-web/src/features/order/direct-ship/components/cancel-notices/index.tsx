@@ -21,7 +21,7 @@ import {
   useExportDirectShipCancelNoticesFile,
   useMarkDirectShipCancelNoticesNotified,
 } from '@/lib/services/orders';
-import { groupByCompany, isOverdue } from './cancel-notice-view';
+import { groupBySupplier, isOverdue } from './cancel-notice-view';
 
 function elapsed(createdAt: string, now: Date): string {
   const h = Math.floor(
@@ -42,8 +42,8 @@ export function CancelNoticesPanel() {
 
   // 렌더마다 현재 시각으로 — 메모에 가두면 화면을 연 채 시간이 지나도 «하루 넘음» 이 갱신되지 않는다
   const now = new Date();
-  const groups = groupByCompany(data ?? [], now);
-  const group = groups.find((g) => g.companyName === picked) ?? groups[0];
+  const groups = groupBySupplier(data ?? [], now);
+  const group = groups.find((g) => g.supplierId === picked) ?? groups[0];
 
   if (isLoading) return null;
   if (!group) {
@@ -68,7 +68,7 @@ export function CancelNoticesPanel() {
   const handleExport = async () => {
     try {
       const blob = await exportFile.mutateAsync({
-        companyName: group.companyName,
+        supplierId: group.supplierId,
         noticeIds: chosen.map((r) => r.id),
       });
       const url = URL.createObjectURL(blob);
@@ -85,7 +85,7 @@ export function CancelNoticesPanel() {
   const handleNotified = async () => {
     try {
       await markNotified.mutateAsync({
-        companyName: group.companyName,
+        supplierId: group.supplierId,
         noticeIds: chosen.map((r) => r.id),
       });
       setSelected(new Set());
@@ -100,13 +100,13 @@ export function CancelNoticesPanel() {
         <div className="flex flex-wrap gap-1.5">
           {groups.map((g) => (
             <Button
-              key={g.companyName}
+              key={g.supplierId}
               size="sm"
               variant={
-                g.companyName === group.companyName ? 'default' : 'outline'
+                g.supplierId === group.supplierId ? 'default' : 'outline'
               }
               onClick={() => {
-                setPicked(g.companyName);
+                setPicked(g.supplierId);
                 setSelected(new Set());
               }}
             >

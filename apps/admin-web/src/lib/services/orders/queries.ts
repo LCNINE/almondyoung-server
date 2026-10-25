@@ -22,6 +22,7 @@ import type {
   FulfillmentOrdersQuery,
   ShipmentConsolidationCandidateQuery,
   OutboundBatchV2ListQuery,
+  SupplierQueueStage,
 } from '@/lib/types/dto/fulfillment';
 import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
@@ -83,12 +84,32 @@ export const useOutboundBatchWorkItems = (id: string) => {
   });
 };
 
-// ===== 직배송 관련 쿼리 (D2) =====
+// ===== 직배 운영 — 입점사 상자 (K3) =====
 
-export const useDirectShipDashboard = () => {
+export const useSupplierQueue = () => {
   return useQuery({
-    queryKey: orderQueryKeys.directShipDashboard,
-    queryFn: () => orders.directShip.getDashboard(),
+    queryKey: orderQueryKeys.directShipSupplierQueue,
+    queryFn: () => orders.directShip.getSupplierQueue(),
+  });
+};
+
+/** 입점사를 고르지 않았으면(null) 부르지 않는다 — 키에 undefined 가 들어가지 않게 */
+export const useSupplierShipments = (
+  supplierId: string | null,
+  stage: SupplierQueueStage
+) => {
+  return useQuery({
+    queryKey: orderQueryKeys.directShipSupplierShipments(supplierId ?? '', stage),
+    queryFn: () => orders.directShip.getSupplierShipments(supplierId ?? '', stage),
+    enabled: !!supplierId,
+  });
+};
+
+export const useSupplierHandoffs = (supplierId: string | null) => {
+  return useQuery({
+    queryKey: orderQueryKeys.directShipSupplierHandoffs(supplierId ?? ''),
+    queryFn: () => orders.directShip.getSupplierHandoffs(supplierId ?? ''),
+    enabled: !!supplierId,
   });
 };
 
@@ -98,32 +119,6 @@ export const useDirectShipCancelNotices = () => {
     queryFn: () => orders.directShip.getCancelNotices(),
     // 화면의 행이 «알림 완료»·CSV 의 기준이다 — 오래된 목록으로 고르면 새로 생긴 취소를 놓친다
     staleTime: 0,
-  });
-};
-
-export const useDirectShipCompanies = () => {
-  return useQuery({
-    queryKey: orderQueryKeys.directShipCompanies,
-    queryFn: () => orders.directShip.getCompanies(),
-  });
-};
-
-export const useDirectShipOrders = (params?: {
-  companyName?: string;
-  status?: string;
-  warehouseId?: string;
-}) => {
-  return useQuery({
-    queryKey: orderQueryKeys.directShipOrders(params as Record<string, string>),
-    queryFn: () => orders.directShip.getOrders(params),
-  });
-};
-
-export const useDirectShipCompanySummary = (companyName: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.directShipCompanySummary(companyName),
-    queryFn: () => orders.directShip.getCompanySummary(companyName),
-    enabled: !!companyName,
   });
 };
 
@@ -335,22 +330,6 @@ export const useLegacyPurchaseOrders = () => {
 export const useLegacyPurchaseOrder = (id: string) => {
   return useQuery({
     queryKey: orderQueryKeys.purchaseOrder(id),
-    queryFn: () => Promise.resolve({ id }),
-    enabled: !!id,
-  });
-};
-
-// 레거시 직접 배송 쿼리 (호환성)
-export const useDirectShips = () => {
-  return useQuery({
-    queryKey: orderQueryKeys.directShips,
-    queryFn: () => orders.directShip.getOrders(),
-  });
-};
-
-export const useDirectShip = (id: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.directShip(id),
     queryFn: () => Promise.resolve({ id }),
     enabled: !!id,
   });

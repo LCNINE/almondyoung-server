@@ -235,6 +235,7 @@ const STATE_LABELS: Record<string, string> = {
   CONSOLIDATION_PENDING: '합포장 재개 대기',
   awaiting_dispatch: '발송 처리 대기',
   drop_ship_pending: '직배 대기',
+  drop_ship_unfulfillable: '직배 못 보냄',
   shipped: '발송됨',
   in_transit: '배송 중',
   drop_ship_forwarded: '직배 전달',

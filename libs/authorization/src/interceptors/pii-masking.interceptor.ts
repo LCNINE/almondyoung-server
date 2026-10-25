@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   CallHandler,
   ForbiddenException,
   ServiceUnavailableException,
@@ -29,6 +28,7 @@ import { PermissionAuthority } from '../services/permission-authority';
 import { PermissionCache } from '../services/permission-cache';
 import { methodOf, rawResponseOf, rolesOf } from '../services/request-identity';
 import { staffClientOf } from '../services/staff-client';
+import { readPiiExportReason } from '../pii/pii-export-reason';
 
 export const PII_MASKING_OPTIONS = Symbol('PII_MASKING_OPTIONS');
 
@@ -44,8 +44,6 @@ type MaskReason = 'no-permission' | 'reveal-required' | 'unavailable' | 'record-
 
 const REASON_PRIORITY: readonly MaskReason[] = ['unavailable', 'record-failed', 'reveal-required', 'no-permission'];
 const PII_READ = 'customer.pii.read';
-const REASON_MIN = 5;
-const REASON_MAX = 200;
 
 interface RequestFacts {
   readonly userId: string | null;
@@ -209,17 +207,7 @@ export class PiiMaskingInterceptor implements NestInterceptor {
   }
 
   private exportReason(facts: RequestFacts): string {
-    const encoded = facts.header('x-pii-export-reason');
-    let reason = '';
-    try {
-      reason = encoded === null ? '' : decodeURIComponent(encoded).trim();
-    } catch {
-      reason = '';
-    }
-    if (reason.length < REASON_MIN || reason.length > REASON_MAX) {
-      throw new BadRequestException(`개인정보 내보내기 사유를 ${REASON_MIN}~${REASON_MAX}자로 입력하세요`);
-    }
-    return reason;
+    return readPiiExportReason(facts.header('x-pii-export-reason'));
   }
 
   private recordOf(

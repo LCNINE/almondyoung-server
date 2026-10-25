@@ -225,4 +225,45 @@ describeIfDb('SuppliersService.deleteSupplier × 보충 공급사 규칙 (DB int
       });
     });
   });
+
+  describe('목록 isDirectDelivery 필터(K3 PR7)', () => {
+    async function seedPair(trx: DbTx): Promise<{ tag: string; direct: string; plain: string }> {
+      const tag = `it-f-${randomUUID().slice(0, 8)}`;
+      const [d] = await trx
+        .insert(wmsTables.suppliers)
+        .values({ name: `${tag}-d`, isDirectDelivery: true })
+        .returning({ id: wmsTables.suppliers.id });
+      const [p] = await trx
+        .insert(wmsTables.suppliers)
+        .values({ name: `${tag}-p`, isDirectDelivery: false })
+        .returning({ id: wmsTables.suppliers.id });
+      return { tag, direct: d.id, plain: p.id };
+    }
+
+    it('true 는 직배 공급사만', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { tag, direct } = await seedPair(trx);
+        const res = await build(trx).getSuppliers({ search: tag, isDirectDelivery: true }, trx);
+        expect(res.data.map((s) => s.id)).toEqual([direct]);
+        expect(res.total).toBe(1);
+      });
+    });
+
+    it('false 는 직배 아님(IS NOT TRUE)', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { tag, plain } = await seedPair(trx);
+        const res = await build(trx).getSuppliers({ search: tag, isDirectDelivery: false }, trx);
+        expect(res.data.map((s) => s.id)).toEqual([plain]);
+        expect(res.total).toBe(1);
+      });
+    });
+
+    it('생략하면 전부', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { tag } = await seedPair(trx);
+        const res = await build(trx).getSuppliers({ search: tag }, trx);
+        expect(res.total).toBe(2);
+      });
+    });
+  });
 });

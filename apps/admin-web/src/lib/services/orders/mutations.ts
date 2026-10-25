@@ -15,8 +15,6 @@ import type {
   VariantMatchingDto,
 } from '@/lib/types/dto/orders';
 import type {
-  ForwardDirectShipOrdersRequest,
-  CompleteDirectShipOrdersRequest,
   SplitShipmentRequest,
   SplitUnreservedShipmentRequest,
   ReviseShipmentRecipientRequest,
@@ -380,49 +378,67 @@ export const useCompleteMatching = () => {
 };
 useCompleteMatching.permission = ['order.matching.write'] as const satisfies PermissionRequirement;
 
-// ===== 직배송 뮤테이션 (D2) =====
+// ===== 직배 운영 — 입점사 상자 (K3) =====
+// 넘김·적용·알림 완료가 성공하면 ['direct-ship'] 를 통째로 무효화한다 — 요약 칩·대기·넘긴 것·묶음이 같이 바뀐다
 
-export const useForwardDirectShipOrders = () => {
+/** 넘김 — 넘기지 않은 상자에 묶음을 찍고 시트를 받는다. 쓰기라 실패해도 다시 부르지 않는다. */
+export const useHandOffToSupplier = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: ForwardDirectShipOrdersRequest) =>
-      orders.directShip.forwardOrders(data),
+    mutationFn: ({ supplierId, reason }: { supplierId: string; reason: string }) =>
+      orders.directShip.handOff(supplierId, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['direct-ship'] });
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
     },
   });
 };
-useForwardDirectShipOrders.permission = ['fulfillment.order.write'] as const satisfies PermissionRequirement;
+useHandOffToSupplier.permission = ['order.order.export'] as const satisfies PermissionRequirement;
 
-export const useCompleteDirectShipOrders = () => {
+/** 시트 다시 받기 — 읽기지만 사유를 싣는 내보내기라 뮤테이션으로 부른다(캐시하지 않는다) */
+export const useRedownloadHandoffSheet = () => {
+  return useMutation({
+    mutationFn: ({ handoffId, reason }: { handoffId: string; reason: string }) =>
+      orders.directShip.getHandoffSheet(handoffId, reason),
+  });
+};
+useRedownloadHandoffSheet.permission = ['order.order.export'] as const satisfies PermissionRequirement;
+
+/** 올리기 미리보기 — 아무것도 쓰지 않는다 */
+export const usePreviewSupplierUpload = () => {
+  return useMutation({
+    mutationFn: ({ supplierId, file }: { supplierId: string; file: File }) =>
+      orders.directShip.previewUpload(supplierId, file),
+  });
+};
+usePreviewSupplierUpload.permission = ['fulfillment.order.write'] as const satisfies PermissionRequirement;
+
+export const useApplySupplierUpload = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: CompleteDirectShipOrdersRequest) =>
-      orders.directShip.completeOrders(data),
+    mutationFn: ({
+      supplierId,
+      file,
+      previewToken,
+    }: {
+      supplierId: string;
+      file: File;
+      previewToken: string;
+    }) => orders.directShip.applyUpload(supplierId, file, previewToken),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['direct-ship'] });
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
+      queryClient.invalidateQueries({ queryKey: ['shipments'] });
     },
   });
 };
-useCompleteDirectShipOrders.permission = ['fulfillment.order.write'] as const satisfies PermissionRequirement;
-
-export const useExportDirectShipFile = () => {
-  return useMutation({
-    mutationFn: (companyName: string) =>
-      orders.directShip.exportFile(companyName),
-  });
-};
-useExportDirectShipFile.permission = ['order.order.export'] as const satisfies PermissionRequirement;
+useApplySupplierUpload.permission = ['fulfillment.order.write'] as const satisfies PermissionRequirement;
 
 export const useMarkDirectShipCancelNoticesNotified = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: { companyName: string; noticeIds: string[] }) =>
+    mutationFn: (data: { supplierId: string; noticeIds: string[] }) =>
       orders.directShip.markCancelNoticesNotified(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.directShipCancelNotices });
+      queryClient.invalidateQueries({ queryKey: ['direct-ship'] });
     },
   });
 };
@@ -430,7 +446,7 @@ useMarkDirectShipCancelNoticesNotified.permission = ['fulfillment.order.write'] 
 
 export const useExportDirectShipCancelNoticesFile = () => {
   return useMutation({
-    mutationFn: (data: { companyName: string; noticeIds: string[] }) =>
+    mutationFn: (data: { supplierId: string; noticeIds: string[] }) =>
       orders.directShip.exportCancelNoticesFile(data),
   });
 };

@@ -20,14 +20,20 @@ import {
   useUpdateSku,
   useSkuGroups,
   useDeliveryProfiles,
+  useSuppliers,
 } from '@/lib/services/inventory';
 import { useSku } from '@/lib/services/inventory';
+import { directDeliverySuppliers } from '@/lib/utils/direct-delivery-suppliers';
 import type { SkuResponseDto, CreateSkuDto } from '@/lib/types/dto/inventory';
 import { BarcodeListSection } from '../barcode-list-section';
 import {
   deliveryProfileMissing,
   requiresDeliveryProfile,
 } from '../../lib/delivery-profile-requirement';
+import {
+  directSupplierMissing,
+  supplierIdsPayload,
+} from '../../lib/direct-supplier-requirement';
 
 const STOCK_TYPE_OPTIONS = [
   { value: 'physical', label: '사입' },
@@ -39,6 +45,7 @@ const STOCK_TYPE_OPTIONS = [
 // Radix SelectItem 은 value="" 를 금지한다. 폼 상태는 '' 을 「프로필 없음」으로 쓰므로,
 // 화면 표시용으로만 이 센티널을 쓰고 onValueChange 에서 즉시 '' 로 되돌린다.
 const NO_DELIVERY_PROFILE = '__none__';
+const NO_DIRECT_SUPPLIER = '__none__';
 
 type Props = {
   open: boolean;
@@ -52,6 +59,7 @@ type FormState = {
   stockType: string;
   groupId: string;
   deliveryProfileId: string;
+  directSupplierId: string;
 };
 
 const DEFAULT_FORM: FormState = {
@@ -60,15 +68,28 @@ const DEFAULT_FORM: FormState = {
   stockType: 'physical',
   groupId: '',
   deliveryProfileId: '',
+  directSupplierId: '',
 };
 
-function formFromSku(sku: SkuResponseDto): FormState {
+// 원래 직배 입점사 = SKU 에 연결된 공급사 중 직배 목록에 있는 첫 번째.
+function originalDirectSupplierId(
+  sku: SkuResponseDto,
+  directSupplierIds: ReadonlySet<string>
+): string {
+  return sku.suppliers.find((s) => directSupplierIds.has(s.id))?.id ?? '';
+}
+
+function formFromSku(
+  sku: SkuResponseDto,
+  directSupplierIds: ReadonlySet<string>
+): FormState {
   return {
     name: sku.name,
     businessProductName: sku.businessProductName ?? '',
     stockType: sku.stockType,
     groupId: sku.groupId ?? '',
     deliveryProfileId: sku.deliveryProfileId ?? '',
+    directSupplierId: originalDirectSupplierId(sku, directSupplierIds),
   };
 }
 
@@ -87,10 +108,22 @@ export function SkuFormDialog({ open, sku, onOpenChange }: Props) {
     isLoading: profilesLoading,
     isError: profilesError,
   } = useDeliveryProfiles();
+  const {
+    data: directSuppliers,
+    isLoading: directSuppliersLoading,
+    isError: directSuppliersError,
+  } = useSuppliers({ isDirectDelivery: true, limit: 100 });
+  // 목록에 들었다고 직배가 아니다 — 파라미터를 모르는 core 는 전부를 준다(행의 플래그로 판정)
+  const directList = directDeliverySuppliers(directSuppliers?.data);
+  const directSupplierIds = new Set(directList.map((s) => s.id));
+  const originalDirectId = sku
+    ? originalDirectSupplierId(sku, directSupplierIds)
+    : '';
   const original = sku
     ? {
         stockType: sku.stockType,
         deliveryProfileId: sku.deliveryProfileId ?? '',
+        directSupplierId: originalDirectId,
       }
     : null;
 
@@ -99,10 +132,22 @@ export function SkuFormDialog({ open, sku, onOpenChange }: Props) {
 
   useEffect(() => {
     if (open) {
-      setForm(sku ? formFromSku(sku) : DEFAULT_FORM);
+      setForm(sku ? formFromSku(sku, directSupplierIds) : DEFAULT_FORM);
       setErrors({});
     }
+    // 직배 목록이 늦게 와도 폼 입력을 덮지 않도록 목록 도착은 의존성에서 뺀다 — 아래 별도 효과가 빈 칸만 채운다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, sku]);
+
+  useEffect(() => {
+    if (open && sku && originalDirectId) {
+      setForm((prev) =>
+        prev.directSupplierId
+          ? prev
+          : { ...prev, directSupplierId: originalDirectId }
+      );
+    }
+  }, [open, sku, originalDirectId]);
 
   const set = (field: keyof FormState) => (value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -118,6 +163,15 @@ export function SkuFormDialog({ open, sku, onOpenChange }: Props) {
       })
     ) {
       next.deliveryProfileId = '사입·위탁 SKU 는 배송 프로필이 필요합니다.';
+    }
+    if (
+      directSupplierMissing({
+        original,
+        stockType: form.stockType,
+        directSupplierId: form.directSupplierId,
+      })
+    ) {
+      next.directSupplierId = '직배 SKU 는 직배 입점사가 필요합니다.';
     }
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -141,6 +195,16 @@ export function SkuFormDialog({ open, sku, onOpenChange }: Props) {
         : form.deliveryProfileId
           ? { deliveryProfileId: form.deliveryProfileId }
           : {}),
+      ...supplierIdsPayload({
+        // 목록 행이 아니라 방금 받은 SKU 의 연결 — 낡은 행으로 갈아 끼우면 그 사이 붙은 연결이 지워진다
+        linkedSupplierIds: ((freshSku ?? sku)?.suppliers ?? []).map(
+          (s) => s.id
+        ),
+        directSupplierIds,
+        originalDirectSupplierId: originalDirectId,
+        directSupplierId: form.directSupplierId,
+        stockType: form.stockType,
+      }),
     };
 
     try {
@@ -153,6 +217,13 @@ export function SkuFormDialog({ open, sku, onOpenChange }: Props) {
       }
       onOpenChange(false);
     } catch (e: any) {
+      if (e?.response?.data?.code === 'SKU_DIRECT_SUPPLIER_REQUIRED') {
+        setErrors((prev) => ({
+          ...prev,
+          directSupplierId: '직배 SKU 는 직배 입점사가 필요합니다.',
+        }));
+        return;
+      }
       const msg =
         e?.response?.data?.message ?? e?.message ?? '오류가 발생했습니다.';
       toast.error(msg);
@@ -252,6 +323,48 @@ export function SkuFormDialog({ open, sku, onOpenChange }: Props) {
                 />
               )}
             </FormField>
+
+            {form.stockType === 'drop_shipped' && (
+              <FormField
+                label="직배 입점사"
+                required
+                errorMessage={errors.directSupplierId}
+              >
+                {directSuppliersLoading ? (
+                  <p className="text-sm text-muted-foreground">불러오는 중…</p>
+                ) : directSuppliersError ? (
+                  <p className="text-sm text-destructive">
+                    직배 입점사를 불러오지 못했습니다.
+                  </p>
+                ) : directList.length === 0 ? (
+                  <p className="text-sm text-destructive">
+                    직배 공급사가 없습니다 —{' '}
+                    <Link href="/inventory/suppliers" className="underline">
+                      공급사 화면에서 ‘직배’로 등록하세요
+                    </Link>
+                    .
+                  </p>
+                ) : (
+                  <FormSelect
+                    value={form.directSupplierId || NO_DIRECT_SUPPLIER}
+                    onValueChange={(value) =>
+                      set('directSupplierId')(
+                        value === NO_DIRECT_SUPPLIER ? '' : value
+                      )
+                    }
+                    options={[
+                      { value: NO_DIRECT_SUPPLIER, label: '선택 안 함' },
+                      ...directList.map((s) => ({
+                        value: s.id,
+                        label: s.name,
+                      })),
+                    ]}
+                    placeholder="직배 입점사 선택"
+                    error={!!errors.directSupplierId}
+                  />
+                )}
+              </FormField>
+            )}
 
             <p className="text-xs text-muted-foreground">
               안전재고는 수요 통계로 계산됩니다. 예외(제외 · 고정 안전재고 ·
