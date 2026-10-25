@@ -902,6 +902,7 @@ describeIfDb('Outbound V2 release scenarios', () => {
         },
         `scenario-cancel-consolidated-${randomUUID()}`,
         actor,
+        null,
         tx,
       );
       // #1016 30번: 배치 밖 planned 상자의 일부 취소는 그 자리에서 끝난다 — registered 송장은 같은 트랜잭션에서 로컬

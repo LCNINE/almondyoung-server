@@ -48,6 +48,7 @@ describe('직배 파트너 취소 대기 행 쓰기 길', () => {
       ),
     ).toEqual([
       'apps/core/src/modules/fulfillment/direct-ship-cancel-notice/direct-ship-cancel-notice.manager.ts',
+      'apps/core/src/modules/fulfillment/direct-ship-cancel-notice/record-supplier-cancel-notices.ts',
       'apps/core/src/modules/fulfillment/unboxed-demand/unboxed-demand-cancellation.ts',
     ]);
   });

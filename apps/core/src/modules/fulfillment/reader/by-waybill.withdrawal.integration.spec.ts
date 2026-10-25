@@ -117,6 +117,7 @@ describeIfDb('송장 스캔 — 빠지는·빠진 박스 (스펙 §10.5, PR 3)',
         },
         `c-${randomUUID()}`,
         actor,
+        null,
         tx,
       );
       const found = await readerFor(tx).byTrackingNo(second.trackingNo);

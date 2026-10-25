@@ -1129,6 +1129,7 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       },
       `resume-cancel-${randomUUID()}`,
       master,
+      null,
     );
     expect(cancellation.operationStatus).toBe('pending');
     const [waiting] = await db
@@ -1197,6 +1198,7 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       },
       cancellationKey,
       master,
+      null,
     );
     const [addResult, cancelResult] = await Promise.allSettled([add, cancellation]);
     expect(cancelResult.status).toBe('fulfilled');

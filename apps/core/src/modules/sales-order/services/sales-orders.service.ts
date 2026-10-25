@@ -1826,6 +1826,9 @@ export class SalesOrdersService {
       tx,
     );
 
+    // 취소 행 id 를 먼저 정해 출고 명령에 넘긴다 — 넘긴 입점사 상자의 알릴 취소 행이 이 취소를 가리킨다(K3 PR6, ADR-0049 PR5)
+    const orderCancellationId = randomUUID();
+    const cancellationScope = isFullCancel ? 'full' : 'partial';
     const reason = options.reasonDetail?.trim() || options.reasonCode?.trim() || 'Sales order cancellation';
     const sourceKey =
       options.fulfillmentCommandContext?.idempotencyKey ||
@@ -1866,6 +1869,7 @@ export class SalesOrdersService {
         },
         `sales-order-cancel:${sourceKey}:${shipmentId}`,
         commandActor,
+        { orderCancellationId, scope: cancellationScope },
         tx,
       );
       operationEffects.push({
@@ -1898,8 +1902,8 @@ export class SalesOrdersService {
     }
 
     const occurredAt = options.occurredAt ? new Date(options.occurredAt) : new Date();
-    const cancellationScope = isFullCancel ? 'full' : 'partial';
     const cancellationValues: SalesOrderCancellationInsert = {
+      id: orderCancellationId,
       salesOrderId,
       cancellationScope,
       status: 'applied',
