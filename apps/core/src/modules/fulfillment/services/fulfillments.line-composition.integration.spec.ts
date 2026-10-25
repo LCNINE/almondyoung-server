@@ -6,6 +6,7 @@ import { WarehouseService } from '../../inventory/warehouse/services/warehouse.s
 import { WarehouseReader } from '../../inventory/warehouse/services/warehouse.reader';
 import { WarehouseManager } from '../../inventory/warehouse/services/warehouse.manager';
 import { FulfillmentOrderCreationBacklogWorker } from './fulfillment-order-creation-backlog.worker';
+import { DropShippedSkuSupplierUnresolvedError } from '../supplier-shipment/direct-suppliers-of-skus';
 import { findCompositionInvariantViolations } from '../../product-matching/line-composition/__support__/composition-invariant';
 import {
   inRollbackTx,
@@ -157,11 +158,12 @@ describeIfDb('FO 생성의 라인 구성 판정·굳히기 (PostgreSQL integrati
     });
   });
 
-  it('굳힌 뒤 같은 트랜잭션의 검증(창고 SKU·직배송 SKU 혼합)이 실패하면 굳힌 것도 남지 않는다', async () => {
+  it('굳힌 뒤 같은 트랜잭션의 검증(직배 SKU 의 입점사 미정)이 실패하면 굳힌 것도 남지 않는다', async () => {
     const { warehouseId, salesOrderId } = await db.transaction(async (raw) => {
       // inRollbackTx 와 같은 이유 — drizzle 트랜잭션 핸들은 DbTx 와 구조가 같고 스키마 제네릭만 다르다
       const tx = raw as unknown as DbTx;
       const seeded = await world(tx);
+      // 직배 공급사 연결 없는 직배 SKU — FO 생성이 입점사를 못 정해 굳힌 뒤에 실패한다(K3 PR4)
       await tx.update(wmsTables.skus).set({ stockType: 'drop_shipped' }).where(eq(wmsTables.skus.id, seeded.b));
       const v1 = randomUUID();
       const v2 = randomUUID();
@@ -178,9 +180,9 @@ describeIfDb('FO 생성의 라인 구성 판정·굳히기 (PostgreSQL integrati
     try {
       const w = wireLogistics(makeDbService(db));
       // tx 없이 부르면 create 가 자기 트랜잭션을 연다 — 실패 시 그 트랜잭션 전체가 롤백되는지 본다
-      await expect(w.fulfillments.create({ salesOrderId, warehouseId })).rejects.toMatchObject({
-        response: { code: 'V2_MIXED_DIRECT_AND_WAREHOUSE_FULFILLMENT' },
-      });
+      await expect(w.fulfillments.create({ salesOrderId, warehouseId })).rejects.toBeInstanceOf(
+        DropShippedSkuSupplierUnresolvedError,
+      );
       const lines = await db
         .select({ source: wmsTables.salesOrderLines.compositionSource })
         .from(wmsTables.salesOrderLines)
@@ -196,6 +198,7 @@ describeIfDb('FO 생성의 라인 구성 판정·굳히기 (PostgreSQL integrati
       const dbService = makeDbService(db);
       const w = wireLogistics(dbService);
       const { a, b } = await world(tx);
+      // 직배 공급사 연결 없는 직배 SKU — 입점사를 못 정해 실패한다(K3 PR4)
       await tx.update(wmsTables.skus).set({ stockType: 'drop_shipped' }).where(eq(wmsTables.skus.id, b));
       const v1 = randomUUID();
       const v2 = randomUUID();

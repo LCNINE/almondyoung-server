@@ -31,6 +31,8 @@ import { FulfillmentProgressService } from './fulfillment-progress.service';
 import { selectEntrancePassword } from './entrance-password.selection';
 import { compatibleShippingProfileId } from './shipping-profile';
 import { openShipment } from '../shipment/shipment-lifecycle';
+import { reprojectFulfillmentOrders } from '../fulfillment-order/fulfillment-order-projection';
+import { directSuppliersOfSkus } from '../supplier-shipment/direct-suppliers-of-skus';
 
 type FulfillmentStatus = (typeof wmsTables.fulfillmentOrders.status.enumValues)[number];
 
@@ -116,12 +118,8 @@ export class FulfillmentsService {
     }
 
     // Fail before opening the creation transaction when the request is known to
-    // contain physical demand. Digital-only SOs remain a no-FO route.
-    if (
-      dto.fulfillmentMode !== 'drop_ship' &&
-      !dto.warehouseId &&
-      (await this.hasWarehouseControlledDemandPreflight(salesOrderId, tx))
-    ) {
+    // contain warehouse demand. Digital-only and drop-shipped-only SOs need no warehouse.
+    if (!dto.warehouseId && (await this.hasWarehouseControlledDemandPreflight(salesOrderId, tx))) {
       throw new BadRequestException({
         code: 'V2_PHYSICAL_FULFILLMENT_REQUIRES_WAREHOUSE',
         message: 'A warehouse is required for V2 physical fulfillment',
@@ -176,41 +174,20 @@ export class FulfillmentsService {
         })
         .from(wmsTables.skus)
         .where(inArray(wmsTables.skus.id, uniqueSkuIds));
-      const dropShippedSkuCount = skuRows.filter((row) => row.stockType === 'drop_shipped').length;
-      if (dto.fulfillmentMode === 'drop_ship' || dropShippedSkuCount === skuRows.length) {
-        // Explicit direct mode and all-drop_shipped demand never enter the V2
-        // warehouse shipment/reservation model.
-        return this.createFulfillmentOrderFromItems(
-          {
-            ...dto,
-            fulfillmentMode: 'drop_ship',
-            shippingAddress:
-              dto.shippingAddress ??
-              (salesOrder?.shippingAddress as CreateFulfillmentOrderDto['shippingAddress'] | undefined),
-          },
-          itemsToInsert,
-          trx,
-        );
-      }
-      if (dropShippedSkuCount > 0) {
-        throw new BadRequestException({
-          code: 'V2_MIXED_DIRECT_AND_WAREHOUSE_FULFILLMENT',
-          message: 'drop_shipped and warehouse-controlled SKUs require separate fulfillment routes',
-        });
-      }
-      if (!dto.warehouseId) {
-        throw new BadRequestException({
-          code: 'V2_PHYSICAL_FULFILLMENT_REQUIRES_WAREHOUSE',
-          message: 'A warehouse is required for V2 physical fulfillment',
-        });
-      }
-      await this.validateWarehouseExists(dto.warehouseId, trx);
+      // 항목을 SKU 재고 유형으로 가른다(K3 스펙 §4.3-1) — 직배분은 입점사마다 draft 상자 하나(예약 없음), 창고분은 창고 draft 상자.
+      const dropShippedSkuIds = new Set(skuRows.filter((row) => row.stockType === 'drop_shipped').map((row) => row.id));
+      const warehouseSkuRows = skuRows.filter((row) => !dropShippedSkuIds.has(row.id));
+      // 입점사를 못 정하면 fail-closed(N3) — 위에서 굳힌 라인 구성도 호출자의 트랜잭션(백로그 워커의 savepoint)과 함께 되돌아간다
+      const supplierOfSku = await directSuppliersOfSkus(trx, [...dropShippedSkuIds]);
+      // 창고 몫이 없으면 창고도 없다(N2) — FO warehouse_id NULL. 창고 필수·판매 창고 검증은 창고 몫이 있을 때만.
+      const warehouseId =
+        warehouseSkuRows.length > 0 ? await this.requireSellableWarehouse(dto.warehouseId, trx) : null;
 
       const [fo] = await trx
         .insert(wmsTables.fulfillmentOrders)
         .values({
           salesOrderId: dto.salesOrderId ?? null,
-          warehouseId: dto.warehouseId,
+          warehouseId,
           ownerId: dto.ownerId ?? null,
           fulfillmentMode: dto.fulfillmentMode ?? 'in_house',
           priority: dto.priority ?? 'normal',
@@ -218,7 +195,7 @@ export class FulfillmentsService {
           totalItems: itemsToInsert.length,
           totalQty: itemsToInsert.reduce((total, item) => total + item.qty, 0),
           totalReservedQty: 0,
-          shippingAddress: dto.shippingAddress ?? salesOrder?.shippingAddress ?? null,
+          shippingAddress: dto.shippingAddress ?? salesOrder.shippingAddress ?? null,
         })
         .returning();
       const insertedItems = await trx
@@ -226,35 +203,80 @@ export class FulfillmentsService {
         .values(itemsToInsert.map((item) => ({ ...item, fulfillmentOrderId: fo.id })))
         .returning();
 
-      const compatibleProfileId = compatibleShippingProfileId(skuRows.map((row) => row.deliveryProfileId));
-      const { shipment, lines: shipmentLines } = await openShipment(
-        trx,
-        {
-          owner: { kind: 'warehouse', warehouseId: dto.warehouseId },
-          status: 'draft',
-          shippingProfileId: compatibleProfileId ?? null,
-          recipientSnapshot: dto.shippingAddress ?? salesOrder?.shippingAddress ?? null,
-          entrancePassword: selectEntrancePassword(
-            salesOrder ? [{ orderDate: salesOrder.orderDate, entrancePassword: salesOrder.entrancePassword }] : [],
-          ),
-        },
-        insertedItems.map((item) => ({ fulfillmentOrderItemId: item.id, skuId: item.skuId, qty: item.qty })),
-      );
+      // 창고 상자와 입점사 상자는 수령인·공동현관 비번이 같다 — 같은 주문이다
+      const recipientSnapshot = dto.shippingAddress ?? salesOrder.shippingAddress ?? null;
+      const entrancePassword = selectEntrancePassword([
+        { orderDate: salesOrder.orderDate, entrancePassword: salesOrder.entrancePassword },
+      ]);
+      const boxLine = (item: (typeof insertedItems)[number]) => ({
+        fulfillmentOrderItemId: item.id,
+        skuId: item.skuId,
+        qty: item.qty,
+      });
+
+      // 배송 프로필은 창고분 SKU 만으로 정한다 — 직배 SKU 는 프로필이 없어서, 섞어 정하면 하나만 섞여도 NULL 이 된다
+      const warehouseBox =
+        warehouseId === null
+          ? null
+          : {
+              warehouseId,
+              ...(await openShipment(
+                trx,
+                {
+                  owner: { kind: 'warehouse', warehouseId },
+                  status: 'draft',
+                  shippingProfileId: compatibleShippingProfileId(warehouseSkuRows.map((row) => row.deliveryProfileId)),
+                  recipientSnapshot,
+                  entrancePassword,
+                },
+                insertedItems.filter((item) => !dropShippedSkuIds.has(item.skuId)).map(boxLine),
+              )),
+            };
+
+      // 입점사 상자는 예약보다 먼저 연다 — 예약이 부르는 투영이 입점사 라인을 «예약된 것과 같다»로 세야 한다(N4)
+      const itemsBySupplier = new Map<string, Array<(typeof insertedItems)[number]>>();
+      for (const item of insertedItems) {
+        const supplierId = supplierOfSku.get(item.skuId);
+        if (supplierId !== undefined)
+          itemsBySupplier.set(supplierId, [...(itemsBySupplier.get(supplierId) ?? []), item]);
+      }
+      for (const supplierId of [...itemsBySupplier.keys()].sort()) {
+        const { shipment } = await openShipment(
+          trx,
+          {
+            owner: { kind: 'supplier', supplierId },
+            status: 'draft',
+            shippingProfileId: null,
+            recipientSnapshot,
+            entrancePassword,
+          },
+          (itemsBySupplier.get(supplierId) ?? []).map(boxLine),
+        );
+        this.logger.log(
+          `Created supplier Draft shipment ${shipment.id} (supplier ${supplierId}) for fulfillment order ${fo.id}`,
+        );
+      }
+
+      if (warehouseBox === null) {
+        // 예약할 창고 라인이 없어 예약이 투영을 부르지 않는다 — 직접 투영한다(FO·FOI status 는 투영만 쓴다)
+        await reprojectFulfillmentOrders(trx, [fo.id]);
+        return this.getOne(fo.id, trx);
+      }
 
       // Acquire every stock key first so multi-SKU orders cannot deadlock each
       // other by sales-order line order. reservePartial safely re-enters the locks.
       await acquireStockAvailabilityLocks(
         trx,
-        shipmentLines.map((line) => ({ skuId: line.skuId, warehouseId: dto.warehouseId as string })),
+        warehouseBox.lines.map((line) => ({ skuId: line.skuId, warehouseId: warehouseBox.warehouseId })),
       );
       let mutated = false;
-      for (const line of shipmentLines.sort((a, b) => a.id.localeCompare(b.id))) {
+      for (const line of warehouseBox.lines.sort((a, b) => a.id.localeCompare(b.id))) {
         const result = await shipmentReservation.reservePartial(line.id, line.qty, trx);
         mutated ||= result.mutated;
       }
-      if (!mutated) await shipmentReservation.recompute(shipment.id, trx);
+      if (!mutated) await shipmentReservation.recompute(warehouseBox.shipment.id, trx);
 
-      this.logger.log(`Created V2 Draft shipment ${shipment.id} for fulfillment order ${fo.id}`);
+      this.logger.log(`Created V2 Draft shipment ${warehouseBox.shipment.id} for fulfillment order ${fo.id}`);
       return this.getOne(fo.id, trx);
     }, tx);
   }
@@ -274,89 +296,19 @@ export class FulfillmentsService {
     return skuRows.length !== new Set(skuIds).size || skuRows.some((row) => row.stockType !== 'drop_shipped');
   }
 
-  private async validateWarehouseExists(warehouseId: string | undefined, trx: DbTx): Promise<void> {
+  /**
+   * 창고 몫이 있는 FO 의 창고. 비판매 창고(해외 등)로는 출고를 지시할 수 없다 — 예약은 호출자가 창고를 지정하는
+   * 구조라, 이 지점을 막으면 비판매 창고에 예약이 걸릴 경로가 없다. 없는 창고에도 던지므로 존재 검증을 겸한다.
+   */
+  private async requireSellableWarehouse(warehouseId: string | undefined, trx: DbTx): Promise<string> {
     if (!warehouseId) {
-      return;
+      throw new BadRequestException({
+        code: 'V2_PHYSICAL_FULFILLMENT_REQUIRES_WAREHOUSE',
+        message: 'A warehouse is required for V2 physical fulfillment',
+      });
     }
-
-    // 비판매 창고(해외 등)로는 출고를 지시할 수 없다. 예약은 호출자가 창고를 지정하는
-    // 구조라, 이 지점을 막으면 비판매 창고에 예약이 걸릴 경로가 없다. 없는 창고에도
-    // 던지므로 기존 존재 검증을 겸한다.
     await assertWarehouseSellable(trx, warehouseId);
-  }
-
-  private async createFulfillmentOrderFromItems(
-    dto: Pick<
-      CreateFulfillmentOrderDto,
-      'salesOrderId' | 'warehouseId' | 'ownerId' | 'fulfillmentMode' | 'priority' | 'shippingAddress'
-    >,
-    itemsToInsert: Omit<FulfillmentOrderItemInsert, 'fulfillmentOrderId'>[],
-    trx: DbTx,
-  ) {
-    if (itemsToInsert.length > 0) {
-      await this.validateSkuRows(itemsToInsert, dto.ownerId ?? null, trx);
-    }
-
-    const initialStatus = dto.salesOrderId && itemsToInsert.length === 0 ? 'completed' : 'created';
-
-    const [fo] = await trx
-      .insert(wmsTables.fulfillmentOrders)
-      .values({
-        salesOrderId: dto.salesOrderId ?? null,
-        warehouseId: dto.warehouseId ?? null,
-        ownerId: dto.ownerId ?? null,
-        fulfillmentMode: dto.fulfillmentMode ?? null,
-        priority: dto.priority ?? 'normal',
-        status: initialStatus,
-        totalItems: itemsToInsert.length,
-        totalQty: itemsToInsert.reduce((sum, item) => sum + item.qty, 0),
-        totalReservedQty: 0,
-        reservationFailureReason: null,
-        reservationFailureDetails: null,
-        shippingAddress: dto.shippingAddress ?? null,
-        labelNo: null,
-      })
-      .returning();
-
-    if (!fo) {
-      throw new Error('Failed to create fulfillment order');
-    }
-
-    // FulfillmentCreated 는 구독하는 서비스가 없어 발행하지 않는다.
-    // (스토어프론트/어드민 모두 Core API 로 live FO 상태를 직접 조회하고,
-    //  Medusa 동기화는 Shipped/Delivered 만 사용한다.)
-    // 설계 원칙: 아무도 구독하지 않는 이벤트는 발행하지 않는다.
-
-    const insertedItems =
-      itemsToInsert.length > 0
-        ? await trx
-            .insert(wmsTables.fulfillmentOrderItems)
-            .values(itemsToInsert.map((item) => ({ ...item, fulfillmentOrderId: fo.id })))
-            .returning()
-        : [];
-    this.logger.log(`Created ${insertedItems.length} fulfillment order items`);
-
-    if (insertedItems.length === 0) {
-      this.logger.log(`Fulfillment order ${fo.id} completed without physical items`);
-      return this.getOne(fo.id, trx);
-    }
-
-    // 이 메서드의 유일한 호출자는 createV2 의 drop_ship 분기다 — 타사 재고라 자사 예약을 만들지 않고
-    // 항상 ready 로 전환한다. (V1 창고 예약 경로 tryReserveItems 는 Task 25 에서 제거됐다.)
-    await trx
-      .update(wmsTables.fulfillmentOrders)
-      .set({
-        status: 'ready',
-        totalReservedQty: 0,
-        reservationFailureReason: null,
-        reservationFailureDetails: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
-    // FulfillmentReady 는 구독하는 서비스가 없어 발행하지 않는다 (설계 원칙: 미구독 이벤트 미발행).
-
-    this.logger.log(`Fulfillment order ${fo.id} created successfully with status: ready`);
-    return this.getOne(fo.id, trx);
+    return warehouseId;
   }
 
   /**
