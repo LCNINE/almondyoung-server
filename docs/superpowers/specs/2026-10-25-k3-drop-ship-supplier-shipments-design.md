@@ -330,3 +330,9 @@ PR 마다 계획서를 따로 쓴다(`docs/superpowers/plans/2026-10-25-k3-…-p
 - 직배 목록 읽기는 상자 단위 주문 칸만 낸다. 되돌린 합포장 상자가 다시 목록에 나오면 라인별 주문이 필요하다.
 
 **PR 8 구현자에게(PR 5 가 정한 것):** 옛 `direct-ship.service.ts`·`ship()`·`computeAdminAvailableActions`·옛 시트 라우트(`POST /direct-ship/export/file` 류)와 `PII_EXPORT_EXCEPTIONS` 의 `/direct-ship/export/:companyName` 을 지운다. 정정은 이벤트를 다시 내지 않아 Medusa 메타데이터·고객 문자가 옛 번호로 남는다 — 정정이 잦으면 계약을 넓혀 다시 낸다.
+
+**PR 7 구현자에게(PR 6 이 정한 것):**
+- 「알릴 취소」 탭은 행의 `supplierId` 로 묶고 내려받기·완료에 `{ supplierId, noticeIds }` 를 보낸다 — 옛 `companyName` 본문은 400 이다. 목록 쿼리도 `?supplierId=`(uuid). 머리글은 `companyName`(입점사 이름) 그대로 써도 된다. CSV 는 서버가 만든다(개인정보 없음, 열은 입점사 시트의 행 키·주문번호·상품명·공급사 상품코드 + 취소 넷).
+- 「못 보냄」 화면에서 취소로 가는 링크 — 못 보냄 라인의 취소는 알릴 취소를 남기지 않는다고 문구로 알려도 된다(입점사가 먼저 알려 온 것).
+
+**PR 8 구현자에게(PR 6 이 정한 것):** `direct_ship_cancel_notices.holder_id` 칸·FK·`ck_direct_ship_cancel_notices_party` 를 `supplier_id NOT NULL` 로 좁힌다(`deploy → migrate`, 스크래치 DB 먼저). 읽기는 이미 `suppliers` 만 조인한다. `seedFo({ dropShip })` 픽스처의 옛 직배 갈래도 함께.
