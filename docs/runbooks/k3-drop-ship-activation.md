@@ -17,14 +17,14 @@
   FROM skus s
   JOIN sku_suppliers ss ON ss.sku_id = s.id
   JOIN suppliers su ON su.id = ss.supplier_id AND su.is_direct_delivery
-  WHERE s.stock_type <> 'drop_shipped';
+  WHERE s.stock_type <> 'drop_shipped' AND NOT s.is_deleted;
 
   -- 직배 SKU 인데 직배 공급사 연결이 정확히 하나가 아닌 SKU
   SELECT s.id, count(su.id) AS direct_suppliers
   FROM skus s
   LEFT JOIN sku_suppliers ss ON ss.sku_id = s.id
   LEFT JOIN suppliers su ON su.id = ss.supplier_id AND su.is_direct_delivery
-  WHERE s.stock_type = 'drop_shipped'
+  WHERE s.stock_type = 'drop_shipped' AND NOT s.is_deleted
   GROUP BY s.id
   HAVING count(su.id) <> 1;
   ```
@@ -39,7 +39,7 @@
   5. 발송 알림 문자가 간다.
   확인(읽기 전용): 해당 상자 `SELECT id, status, supplier_id, supplier_handoff_id FROM shipments WHERE supplier_id IS NOT NULL ORDER BY created_at DESC LIMIT 5;` 가 `shipped` 이고 넘김 묶음을 가리킨다.
 - [ ] **7. 취소 스모크.** 소액 주문을 하나 더 넘긴 뒤 관리자 취소 → 직배송 운영 «알릴 취소» 에 행이 뜬다 → 내려받기 → 완료 표시.
-  확인: `SELECT id, supplier_id, status FROM direct_ship_cancel_notices ORDER BY created_at DESC LIMIT 5;` 의 `supplier_id` 가 그 입점사이고, 완료 표시 뒤 대기에서 빠진다.
+  확인: `SELECT id, supplier_id, notified_at, notified_by FROM direct_ship_cancel_notices ORDER BY created_at DESC LIMIT 5;` 의 `supplier_id` 가 그 입점사이고, 완료 표시 뒤 `notified_at` 이 찍힌다.
 
 ## 알아 둘 것
 - 되돌리기는 상자 상세에서 한다(입점사 상자는 재고 원장을 건드리지 않는다). 못 보냄은 취소가 아니라 라인 기록이다 — 수량은 그대로 남는다.

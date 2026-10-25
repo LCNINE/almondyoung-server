@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  BadRequestException,
-  Optional,
-} from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, Optional } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { eq, inArray, desc, sql, count, and } from 'drizzle-orm';
@@ -30,11 +25,16 @@ import { reprojectFulfillmentOrders } from '../fulfillment-order/fulfillment-ord
 import { directSuppliersOfSkus } from '../supplier-shipment/direct-suppliers-of-skus';
 
 type FulfillmentStatus = (typeof wmsTables.fulfillmentOrders.status.enumValues)[number];
+type FulfillmentMode = (typeof wmsTables.fulfillmentOrders.fulfillmentMode.enumValues)[number];
 
 // 외부 쿼리 문자열을 fulfillment status enum 으로 좁히는 타입 가드.
 // enumValues 를 readonly string[] 로 넓혀 includes 비교 (단순 멤버십 체크용 안전한 위닝)
 const isFulfillmentStatus = (value: string): value is FulfillmentStatus =>
   (wmsTables.fulfillmentOrders.status.enumValues as readonly string[]).includes(value);
+
+// fulfillmentMode 쿼리 문자열도 같은 방식으로 좁힌다 — enum 밖 값(옛 'drop_ship' 포함)이 쿼리에 닿으면 22P02 → 500 이다.
+const isFulfillmentMode = (value: string): value is FulfillmentMode =>
+  (wmsTables.fulfillmentOrders.fulfillmentMode.enumValues as readonly string[]).includes(value);
 
 type FulfillmentOrderItemInsert = {
   fulfillmentOrderId: string;
@@ -613,12 +613,12 @@ export class FulfillmentsService {
 
     // status 쿼리 문자열을 enum 으로 안전 narrowing (잘못된 값은 무시)
     const statusFilter = params.status && isFulfillmentStatus(params.status) ? params.status : undefined;
+    const modeFilter =
+      params.fulfillmentMode && isFulfillmentMode(params.fulfillmentMode) ? params.fulfillmentMode : undefined;
     const conditions = [
       statusFilter ? eq(wmsTables.fulfillmentOrders.status, statusFilter) : undefined,
       params.warehouseId ? eq(wmsTables.fulfillmentOrders.warehouseId, params.warehouseId) : undefined,
-      params.fulfillmentMode
-        ? eq(wmsTables.fulfillmentOrders.fulfillmentMode, params.fulfillmentMode as any)
-        : undefined,
+      modeFilter ? eq(wmsTables.fulfillmentOrders.fulfillmentMode, modeFilter) : undefined,
       params.salesOrderId ? eq(wmsTables.fulfillmentOrders.salesOrderId, params.salesOrderId) : undefined,
       params.priority ? eq(wmsTables.fulfillmentOrders.priority, params.priority as any) : undefined,
     ].filter(Boolean);

@@ -112,8 +112,8 @@ CHECK: **`warehouse_id` 와 `supplier_id` 중 정확히 하나.** 이것이 «�
 국내 주요 택배사로 정한다. 이 enum 은 이벤트 계약(`fulfillments.stream.ts`·`shipments.stream.ts` 의 zod)에도 있으므로 §6 순서를 따른다.
 
 **FO.** 새 FO 에는 `fulfillment_mode = 'drop_ship'` 을 쓰지 않는다 — 한 FO 에 창고분과 직배분이 섞이므로 FO 단위 모드는 뜻이 없다.
-직배 여부는 상자(`supplier_id`)로 판정한다. `direct_ship_status` 칸, fulfillment_status 의 `'shipped'` 값, (필요하면) FO `drop_ship` 모드는
-**contract 단계에서** 걷는다(§6).
+직배 여부는 상자(`supplier_id`)로 판정한다. `direct_ship_status` 칸과 FO `drop_ship` 모드는 **contract 단계에서** 걷는다(§6). fulfillment_status 의 `'shipped'` 값은
+걷지 않는다 — 셀메이트 스크립트가 쓰므로 남기고, 셀메이트 컷오버(#923) 때 걷는다(§6·§7).
 
 **알릴 취소.** `direct_ship_cancel_notices` 의 업체 FK 를 `holders` 에서 `suppliers` 로 옮긴다. 테이블은 10-24 에 생겼다 —
 라이브 행 수를 먼저 재고, 0 이면 단순 교체, 아니면 expand-contract.
