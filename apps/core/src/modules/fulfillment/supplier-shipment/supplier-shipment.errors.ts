@@ -106,3 +106,13 @@ export class SupplierSheetDuplicateHeaderError extends ApplicationException {
     return HttpStatus.BAD_REQUEST;
   }
 }
+
+/** 미리보기 뒤 판정(줄 판정·상자 manifest_version)이 바뀌었다 — 적용하지 않았다, 다시 미리보기 해야 한다(N6). 409. */
+export class SupplierUploadPreviewStaleError extends ApplicationException {
+  getErrorCode(): string {
+    return 'SUPPLIER_UPLOAD_PREVIEW_STALE';
+  }
+  getHttpStatus(): number {
+    return HttpStatus.CONFLICT;
+  }
+}
