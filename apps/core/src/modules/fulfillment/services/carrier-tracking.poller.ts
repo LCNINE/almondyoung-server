@@ -204,6 +204,8 @@ export class CarrierTrackingPoller {
             eq(wmsTables.dispatchAttempts.status, 'dispatched'),
             gte(wmsTables.dispatchAttempts.dispatchedAt, since),
             inArray(wmsTables.shipments.status, ['shipped', 'in_transit']),
+            // 입점사 상자는 추적하지 않는다 — 자동 배송완료 감지는 K3 비목표이고, 입점사 상자는 in_transit·delivered 전이를 쓰지 않는다
+            isNotNull(wmsTables.shipments.warehouseId),
             eq(wmsTables.waybills.status, 'used'),
             inArray(wmsTables.waybills.carrier, carriers),
             isNotNull(wmsTables.waybills.trackingNo),

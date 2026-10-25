@@ -65,7 +65,7 @@ import {
   ShipmentRow,
 } from './shipment-aggregate';
 import { shrinkDraftLines } from './draft-line-shrink';
-import { shipmentOwnerOf } from '../shipment/shipment-owner';
+import { shipmentOwnerOf, warehouseIdOf } from '../shipment/shipment-owner';
 
 const TRUSTED_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
 
@@ -556,6 +556,7 @@ export class ShipmentPlanningService {
       },
       async (tx, _commandRequestId, requestHash) => {
         const aggregate = await this.lockAggregate(shipmentId, tx);
+        warehouseIdOf(aggregate.shipment);
         this.assertShipmentVersion(aggregate.shipment, dto.expectedManifestVersion, dto.expectedReservationVersion);
         if (aggregate.shipment.status !== 'draft') {
           throw this.conflict('SHIPMENT_NOT_DRAFT', `Shipment ${shipmentId} must be Draft to plan`);

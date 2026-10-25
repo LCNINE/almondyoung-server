@@ -1179,7 +1179,6 @@ export class OutboundBatchOrchestrator {
     tx: DbTx,
     lockExecutionInputs = true,
   ): Promise<{ waybillId: string; trackingNo: string }> {
-    warehouseIdOf(aggregate.shipment);
     await this.assertJoinableBox(batch, aggregate, tx, lockExecutionInputs);
     // assertFulfillmentOrders locked invoice rows before this validation, closing the add-vs-void TOCTOU window.
     const waybill = await this.waybills.assertDispatchable(aggregate.shipment.id, tx);
@@ -1205,6 +1204,7 @@ export class OutboundBatchOrchestrator {
     lockExecutionInputs = true,
   ): Promise<void> {
     const shipment = aggregate.shipment;
+    warehouseIdOf(shipment);
     if (shipment.status !== 'planned') {
       throw this.conflict('SHIPMENT_NOT_PLANNED', `Shipment ${shipment.id} must be Planned before batching`);
     }

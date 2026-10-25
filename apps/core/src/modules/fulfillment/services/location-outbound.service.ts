@@ -7,7 +7,10 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { isAdminForceDispatchDecision, type ForceDispatchDecision } from '../../../platform/auth/force-dispatch-authorization';
+import {
+  isAdminForceDispatchDecision,
+  type ForceDispatchDecision,
+} from '../../../platform/auth/force-dispatch-authorization';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
@@ -21,6 +24,7 @@ import {
   SimpleOutboundService,
   SimpleOutboundState,
 } from './simple-outbound.service';
+import { warehouseIdOf } from '../shipment/shipment-owner';
 
 export interface StartLocationOutboundInput {
   warehouseId: string;
@@ -387,12 +391,12 @@ export class LocationOutboundService {
 
   private async assertWarehouse(shipmentId: string, warehouseId: string, tx: DbTx) {
     const [shipment] = await tx
-      .select({ warehouseId: wmsTables.shipments.warehouseId })
+      .select({ id: wmsTables.shipments.id, warehouseId: wmsTables.shipments.warehouseId })
       .from(wmsTables.shipments)
       .where(eq(wmsTables.shipments.id, shipmentId))
       .limit(1);
     if (!shipment) throw new NotFoundException('Shipment not found');
-    if (shipment.warehouseId !== warehouseId)
+    if (warehouseIdOf(shipment) !== warehouseId)
       throw this.conflict('LOCATION_OUTBOUND_WAREHOUSE_MISMATCH', 'Shipment belongs to another warehouse');
   }
 
