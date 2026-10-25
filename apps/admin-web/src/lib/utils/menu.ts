@@ -231,7 +231,7 @@ const allMenus: MainMenu[] = [
           },
           {
             id: 'direct-ship',
-            title: '직배송 운영',
+            title: '직배 운영',
             path: '/order/direct-ship',
           },
           {

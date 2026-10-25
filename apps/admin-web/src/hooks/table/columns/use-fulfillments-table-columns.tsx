@@ -78,11 +78,6 @@ export const useFulfillmentsTableColumns = () => {
                   <DropdownMenuItem asChild>
                     <Link href={`${base}?tab=shipment`}>배송</Link>
                   </DropdownMenuItem>
-                  {fo.fulfillmentMode === 'drop_ship' && (
-                    <DropdownMenuItem asChild>
-                      <Link href={`${base}?tab=direct-ship`}>직배</Link>
-                    </DropdownMenuItem>
-                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
