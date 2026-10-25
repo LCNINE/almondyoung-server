@@ -52,7 +52,8 @@ describeIfDb('상자 전 수요 취소 (PostgreSQL integration)', () => {
         tx,
       );
 
-      expect(await foi(tx, foItemId)).toMatchObject({ qty: 3, canceledQty: 1, status: 'pending' });
+      // FOI status 는 투영값이다(K3 PR1 N1) — 생성 기본값 'pending' 이 남지 않는다
+      expect(await foi(tx, foItemId)).toMatchObject({ qty: 3, canceledQty: 1, status: 'created' });
       expect(await fo(tx, foId)).toMatchObject({ status: 'created', totalQty: 3, canceledAt: null });
       expect(reduced).toEqual([
         expect.objectContaining({
@@ -61,7 +62,7 @@ describeIfDb('상자 전 수요 취소 (PostgreSQL integration)', () => {
           previousCanceledQty: 0,
           newCanceledQty: 1,
           previousStatus: 'pending',
-          newStatus: 'pending',
+          newStatus: 'created',
         }),
       ]);
     });

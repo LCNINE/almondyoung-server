@@ -8,10 +8,12 @@ import {
 } from '../../inventory/shared/locks/stock-availability-lock';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
-import { FulfillmentProgressService, FulfillmentOrderItemProgressInput } from './fulfillment-progress.service';
+import { FulfillmentProgressService } from './fulfillment-progress.service';
+import {
+  ACTIVE_SHIPMENT_STATUSES,
+  reprojectFulfillmentOrders,
+} from '../fulfillment-order/fulfillment-order-projection';
 import { shortPickOperationIntentOf, ShortPickOperationIntentProof } from './batch-inventory-session.service';
-
-const ACTIVE_SHIPMENT_STATUSES = ['draft', 'planned', 'recovery_required'] as const;
 
 type LineContext = {
   id: string;
@@ -1059,80 +1061,9 @@ export class ShipmentReservationService {
         ),
       );
     const fulfillmentOrderIds = [...new Set(itemRows.map((row) => row.fulfillmentOrderId))].sort();
-    for (const fulfillmentOrderId of fulfillmentOrderIds) {
-      await this.recomputeFulfillmentOrder(fulfillmentOrderId, tx);
-    }
+    await reprojectFulfillmentOrders(tx, fulfillmentOrderIds);
     await tx.update(wmsTables.shipments).set({ lastUpdated: new Date() }).where(eq(wmsTables.shipments.id, shipmentId));
     await this.invariant.assertFulfillmentOrders(fulfillmentOrderIds, tx);
-  }
-
-  private async recomputeFulfillmentOrder(fulfillmentOrderId: string, tx: DbTx): Promise<void> {
-    const items = await tx
-      .select()
-      .from(wmsTables.fulfillmentOrderItems)
-      .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId))
-      .orderBy(asc(wmsTables.fulfillmentOrderItems.id));
-    const inputs: FulfillmentOrderItemProgressInput[] = [];
-
-    for (const item of items) {
-      const activeLines = await tx
-        .select({
-          id: wmsTables.shipmentLines.id,
-          qty: wmsTables.shipmentLines.qty,
-          inspectedQty: wmsTables.shipmentLines.inspectedQty,
-          shipmentStatus: wmsTables.shipments.status,
-        })
-        .from(wmsTables.shipmentLines)
-        .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
-        .where(
-          and(
-            eq(wmsTables.shipmentLines.fulfillmentOrderItemId, item.id),
-            inArray(wmsTables.shipments.status, [...ACTIVE_SHIPMENT_STATUSES]),
-          ),
-        );
-      const activeLineIds = activeLines.map((line) => line.id);
-      const reservations =
-        activeLineIds.length === 0
-          ? []
-          : await tx
-              .select({ quantity: wmsTables.stockReservations.quantity })
-              .from(wmsTables.stockReservations)
-              .where(
-                and(
-                  inArray(wmsTables.stockReservations.shipmentLineId, activeLineIds),
-                  eq(wmsTables.stockReservations.status, 'confirmed'),
-                ),
-              );
-      const confirmedReservedQty = reservations.reduce((total, row) => total + row.quantity, 0);
-      const input: FulfillmentOrderItemProgressInput = {
-        id: item.id,
-        qty: item.qty,
-        shippedQty: item.shippedQty,
-        canceledQty: item.canceledQty,
-        confirmedReservedQty,
-        activeLineQty: activeLines.reduce((total, line) => total + line.qty, 0),
-        processing: item.pickedQty > 0 || activeLines.some((line) => line.inspectedQty > 0),
-        recoveryRequired: activeLines.some((line) => line.shipmentStatus === 'recovery_required'),
-      };
-      const projected = this.progress.projectItem(input);
-      inputs.push(input);
-      await tx
-        .update(wmsTables.fulfillmentOrderItems)
-        .set({ reservedQty: confirmedReservedQty, status: projected.status, updatedAt: new Date() })
-        .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
-    }
-
-    const projected = this.progress.projectOrder(inputs);
-    await tx
-      .update(wmsTables.fulfillmentOrders)
-      .set({
-        status: projected.status,
-        totalReservedQty: projected.confirmedReservedQty,
-        reservationFailureReason: null,
-        reservationFailureDetails: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
   }
 
   private async loadLineContext(shipmentLineId: string, tx: DbTx): Promise<LineContext> {
