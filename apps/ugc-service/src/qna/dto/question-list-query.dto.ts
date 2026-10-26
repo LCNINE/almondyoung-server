@@ -7,6 +7,10 @@ import { QUESTION_CATEGORIES, QUESTION_SOURCES, type QuestionCategory, type Ques
 export const QUESTION_SORT_OPTIONS = ['latest', 'oldest'] as const;
 export type QuestionSortOption = (typeof QUESTION_SORT_OPTIONS)[number];
 
+// 관리자 기본: 답변 대기를 앞에 두고 오래 기다린 것부터, 답변 완료는 최신부터
+export const ADMIN_QUESTION_SORT_OPTIONS = ['pending_first', ...QUESTION_SORT_OPTIONS] as const;
+export type AdminQuestionSortOption = (typeof ADMIN_QUESTION_SORT_OPTIONS)[number];
+
 export const QUESTION_ANSWER_STATUS_FILTERS = [
   'answered',
   'unanswered',
@@ -122,12 +126,12 @@ export class AdminQuestionListQueryDto extends PaginationQueryDto {
 
   @ApiPropertyOptional({
     description: '정렬 옵션',
-    enum: QUESTION_SORT_OPTIONS,
-    default: 'latest',
+    enum: ADMIN_QUESTION_SORT_OPTIONS,
+    default: 'pending_first',
   })
   @IsOptional()
-  @IsIn(QUESTION_SORT_OPTIONS)
-  sort?: QuestionSortOption;
+  @IsIn(ADMIN_QUESTION_SORT_OPTIONS)
+  sort?: AdminQuestionSortOption;
 
   @ApiPropertyOptional({
     description: '검색어 (제목, 내용, 닉네임)',

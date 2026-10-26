@@ -76,7 +76,8 @@ export const SUB_CATEGORY_LABELS: Record<
 };
 
 // 정렬 옵션
-export const QUESTION_SORT_OPTIONS = ['latest', 'oldest'] as const;
+// pending_first: 답변 대기를 앞에 두고 오래 기다린 것부터 (관리자 기본)
+export const QUESTION_SORT_OPTIONS = ['pending_first', 'latest', 'oldest'] as const;
 export type QuestionSortOption = (typeof QUESTION_SORT_OPTIONS)[number];
 
 // 답변 응답 DTO
