@@ -87,6 +87,8 @@ function makeContext(
     receipt?: ReturnType<typeof makeReceipt>;
     // 환불 합계 조회마다 다른 값을 돌려줄 때 — 앞에서부터 하나씩 쓰고, 다 쓰면 succeededRefunds
     refundsByCall?: Array<Array<{ amount: number }>>;
+    // 토스 현금영수증 거래 목록(GET /cash-receipts)
+    tossList?: Array<Record<string, unknown>>;
   } = {},
 ) {
   const selectQueue = [...(opts.selectQueue ?? [])];
@@ -147,6 +149,9 @@ function makeContext(
     issueCashReceipt: jest.fn().mockResolvedValue(opts.tossIssue ?? { ok: true, data: {} }),
     cancelCashReceipt: jest.fn<Promise<unknown>, [string, number?, string?]>(),
     getPayment: jest.fn().mockResolvedValue(opts.tossPayment ?? { ok: true, data: { cashReceipt: null } }),
+    listCashReceipts: jest
+      .fn()
+      .mockResolvedValue({ ok: true, data: { hasNext: false, lastCursor: null, data: opts.tossList ?? [] } }),
   };
 
   tossApiClient.cancelCashReceipt.mockResolvedValue(opts.tossCancel ?? { ok: true, data: {} });
@@ -602,6 +607,146 @@ describe('CashReceiptsService', () => {
         status: 'ISSUED',
         requestPayload: { pendingCancel: { amount: 300 } },
       });
+    });
+
+    it('토스가 취소를 접수만 했으면(IN_PROGRESS) 확정하지 않고 남긴 취소를 유지한다', async () => {
+      const { service, receipt } = makeContext({
+        receipt: makeReceipt({ amount: 1000 }),
+        chargeById: makeCharge({ amount: 1000 }),
+        succeededRefunds: [{ amount: 300 }],
+        tossCancel: { ok: true, data: { issueStatus: 'IN_PROGRESS' } },
+      });
+      await service.cancelForRefund(CHARGE_ID);
+      expect(receipt).toMatchObject({ canceledAmount: 0, requestPayload: { pendingCancel: { amount: 300 } } });
+    });
+
+    describe('같은 키로 다시 보내도 모르면 토스 거래 목록의 완료 합계로 판정한다 — 토스는 첫 5xx 도 같은 키에 재생한다', () => {
+      const ago = (minutes: number) => new Date(Date.now() - minutes * 60 * 1000).toISOString();
+      const replayed500 = { ok: false, statusCode: 500, error: { code: 'FAILED_INTERNAL', message: 'x' } };
+      const cancelTx = (amount: number, issueStatus = 'COMPLETED') => ({
+        receiptKey: 'c_rk-001',
+        transactionType: 'CANCEL',
+        amount,
+        issueStatus,
+      });
+      // 잠그지 않는 영수증 조회(lookupCancel)가 돌려줄 값
+      const lookupRow = (canceledAmount: number, issuedDaysAgo = 0) => [
+        [{ canceledAmount, createdAt: new Date(Date.now() - issuedDaysAgo * 24 * 60 * 60 * 1000) }],
+      ];
+
+      it('완료 합계가 이 취소만큼 늘었으면 반영된 것으로 확정한다', async () => {
+        const { service, tossApiClient, receipt } = makeContext({
+          selectQueue: lookupRow(200),
+          receipt: makeReceipt({ amount: 1000, canceledAmount: 200, requestPayload: pendingOf(200, ago(30)) }),
+          chargeById: makeCharge({ amount: 1000 }),
+          succeededRefunds: [{ amount: 400 }],
+          tossCancelByCall: [replayed500],
+          tossList: [cancelTx(200), cancelTx(200)],
+        });
+        await service.cancelForRefund(CHARGE_ID);
+        expect(tossApiClient.cancelCashReceipt).toHaveBeenCalledTimes(1);
+        expect(receipt).toMatchObject({ canceledAmount: 400 });
+        expect(receipt!.requestPayload).toEqual({});
+      });
+
+      it('앞서 반영한 같은 금액의 취소만 있으면 이번 취소를 반영된 것으로 보지 않는다', async () => {
+        const { service, receipt } = makeContext({
+          selectQueue: lookupRow(200),
+          receipt: makeReceipt({ amount: 1000, canceledAmount: 200, requestPayload: pendingOf(200, ago(30)) }),
+          chargeById: makeCharge({ amount: 1000 }),
+          succeededRefunds: [{ amount: 400 }],
+          tossCancelByCall: [replayed500],
+          tossList: [cancelTx(200)],
+        });
+        await service.cancelForRefund(CHARGE_ID);
+        expect(receipt).toMatchObject({ canceledAmount: 200, requestPayload: { pendingCancel: { amount: 200 } } });
+      });
+
+      it('한 시간이 지나도 합계가 그대로면 반영 안 된 것으로 보고 새 키로 다시 취소한다', async () => {
+        const { service, tossApiClient, receipt } = makeContext({
+          selectQueue: lookupRow(0),
+          receipt: makeReceipt({ amount: 1000, requestPayload: pendingOf(200, ago(90)) }),
+          chargeById: makeCharge({ amount: 1000 }),
+          succeededRefunds: [{ amount: 200 }],
+          tossCancelByCall: [replayed500],
+        });
+        await service.cancelForRefund(CHARGE_ID);
+        expect(tossApiClient.cancelCashReceipt).toHaveBeenNthCalledWith(2, 'rk-001', 200, expect.any(String));
+        expect(tossApiClient.cancelCashReceipt.mock.calls[1][2]).not.toBe('k-pending');
+        expect(receipt).toMatchObject({ canceledAmount: 200 });
+      });
+
+      it('처리 중인 취소가 있으면 그대로 둔다', async () => {
+        const { service, receipt } = makeContext({
+          selectQueue: lookupRow(0),
+          receipt: makeReceipt({ amount: 1000, requestPayload: pendingOf(200, ago(90)) }),
+          chargeById: makeCharge({ amount: 1000 }),
+          succeededRefunds: [{ amount: 200 }],
+          tossCancelByCall: [replayed500],
+          tossList: [cancelTx(200, 'IN_PROGRESS')],
+        });
+        await service.cancelForRefund(CHARGE_ID);
+        expect(receipt).toMatchObject({ canceledAmount: 0, requestPayload: { pendingCancel: { amount: 200 } } });
+      });
+
+      it('발급일부터 오늘까지 날짜마다 조회한다 — 자정을 넘겨 접수된 취소도 놓치지 않게', async () => {
+        const { service, tossApiClient } = makeContext({
+          selectQueue: lookupRow(0, 2),
+          receipt: makeReceipt({ amount: 1000, requestPayload: pendingOf(200, ago(30)) }),
+          chargeById: makeCharge({ amount: 1000 }),
+          succeededRefunds: [{ amount: 200 }],
+          tossCancelByCall: [replayed500],
+        });
+        await service.cancelForRefund(CHARGE_ID);
+        const dates = tossApiClient.listCashReceipts.mock.calls.map((c: unknown[]) => c[0]);
+        expect(dates).toHaveLength(3);
+        expect(new Set(dates).size).toBe(3);
+      });
+
+      it('오래된 영수증도 접수만 됐던 취소(IN_PROGRESS 재생)를 목록으로 확정한다', async () => {
+        const { service, tossApiClient, receipt } = makeContext({
+          selectQueue: lookupRow(0, 90),
+          receipt: makeReceipt({ amount: 1000, requestPayload: pendingOf(200, ago(30)) }),
+          chargeById: makeCharge({ amount: 1000 }),
+          succeededRefunds: [{ amount: 200 }],
+          tossCancelByCall: [{ ok: true, data: { issueStatus: 'IN_PROGRESS' } }],
+        });
+        // 날짜마다 같은 목록을 돌려주면 합계가 부풀므로, 첫 날짜에만 완료 거래가 있다
+        tossApiClient.listCashReceipts.mockResolvedValueOnce({
+          ok: true,
+          data: { hasNext: false, lastCursor: null, data: [cancelTx(200)] },
+        });
+        await service.cancelForRefund(CHARGE_ID);
+        expect(tossApiClient.listCashReceipts).toHaveBeenCalledTimes(91);
+        expect(receipt).toMatchObject({ canceledAmount: 200 });
+        expect(receipt!.requestPayload).toEqual({});
+      });
+
+      it('방금 남긴 취소는 다른 호출이 보내는 중일 수 있어 목록을 보지 않는다', async () => {
+        const { service, tossApiClient, receipt } = makeContext({
+          receipt: makeReceipt({ amount: 1000, requestPayload: pendingOf(200, ago(1)) }),
+          chargeById: makeCharge({ amount: 1000 }),
+          succeededRefunds: [{ amount: 200 }],
+          tossCancelByCall: [replayed500],
+        });
+        await service.cancelForRefund(CHARGE_ID);
+        expect(tossApiClient.listCashReceipts).not.toHaveBeenCalled();
+        expect(receipt).toMatchObject({ canceledAmount: 0, requestPayload: { pendingCancel: { amount: 200 } } });
+      });
+    });
+
+    it('확정과 함께 다시 맞추기 표식을 남기고, 맞출 게 없으면 지운다 — 그 사이 죽어도 크론이 이어받게', async () => {
+      const { service, updateCalls, receipt } = makeContext({
+        receipt: makeReceipt({ amount: 1000 }),
+        chargeById: makeCharge({ amount: 1000 }),
+        succeededRefunds: [{ amount: 300 }],
+      });
+      await service.cancelForRefund(CHARGE_ID);
+      expect(updateCalls).toContainEqual(
+        expect.objectContaining({ requestPayload: { reconcileRequestedAt: expect.any(String) } }),
+      );
+      expect(receipt).toMatchObject({ canceledAmount: 300 });
+      expect(receipt!.requestPayload).toEqual({});
     });
   });
 

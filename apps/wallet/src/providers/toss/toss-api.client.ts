@@ -78,6 +78,7 @@ export interface TossCashReceiptResponse {
   receiptUrl: string;
   amount: number;
   taxFreeAmount: number;
+  requestedAt?: string;
   [key: string]: unknown;
 }
 
@@ -225,6 +226,15 @@ export class TossApiClient {
     if (amount !== undefined) body.amount = amount;
     const headers = idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined;
     return this.post<TossCashReceiptResponse>(`/cash-receipts/${receiptKey}/cancel`, body, headers);
+  }
+
+  /** requestDate(yyyy-MM-dd) 에 요청된 현금영수증 발급·취소 거래. 취소 거래의 receiptKey 는 원래 키에 `c_` 가 붙는다. */
+  async listCashReceipts(
+    requestDate: string,
+    cursor?: number,
+  ): Promise<TossApiResult<{ hasNext: boolean; lastCursor: number | null; data: TossCashReceiptResponse[] }>> {
+    const query = `requestDate=${requestDate}&limit=10000${cursor !== undefined ? `&cursor=${cursor}` : ''}`;
+    return this.get(`/cash-receipts?${query}`);
   }
 
   /**

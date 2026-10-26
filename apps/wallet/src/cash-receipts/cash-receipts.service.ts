@@ -54,6 +54,26 @@ const UNRESOLVED_CANCEL_STATUSES = new Set([401, 403, 408, 429]);
 // 토스 멱등 키는 15일 동안만 유효하다. 그 뒤 같은 키로 보내면 새 요청으로 처리돼 또 깎인다.
 const PENDING_CANCEL_RESEND_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
+// 같은 키로 다시 보내도 결과를 모르면 토스 거래 목록으로 판정한다. 그보다 어린 취소는 다른 호출이 아직 보내는 중일 수 있다.
+const CANCEL_LOOKUP_AFTER_MS = 10 * 60 * 1000;
+// 목록의 완료 합계가 끝내 늘지 않으면 반영되지 않은 것으로 본다
+const CANCEL_LOOKUP_NOT_FOUND_AFTER_MS = 60 * 60 * 1000;
+
+/** from~to 의 KST 날짜(yyyy-MM-dd) — 토스 현금영수증 목록의 requestDate 단위 */
+function kstDatesBetween(from: Date, to: Date): string[] {
+  const kst = (t: number) => new Date(t + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const dates: string[] = [];
+  const last = kst(to.getTime());
+  for (let t = from.getTime(); dates.at(-1) !== last; t += 24 * 60 * 60 * 1000) {
+    const d = kst(Math.min(t, to.getTime()));
+    if (dates.at(-1) !== d) dates.push(d);
+  }
+  return dates;
+}
+
+/** 확정 뒤 최신 환불 합계로 다시 맞춰야 하는 영수증 표식. 다음 취소를 준비하기 전에 프로세스가 죽어도 크론이 이어받는다. */
+const RECONCILE_MARKER = 'reconcileRequestedAt';
+
 function readPendingCancel(requestPayload: Record<string, unknown> | null): PendingCancel | null {
   const pending = requestPayload?.pendingCancel as Partial<PendingCancel> | undefined;
   if (
@@ -205,12 +225,16 @@ export class CashReceiptsService {
 
     // 확정할 때마다 최신 환불 합계로 다시 맞춘다. 겹친 환불은 이 호출의 키를 받아 '처리 중'으로 물러나므로,
     // 여기서 다시 보지 않으면 그 환불분이 남은 취소 기록도 없이 빠진다. 새 취소가 거절되면 곧바로 다시 보내지 않는다.
-    // ponytail: 라운드 상한 5 — 환불이 그보다 많이 겹치면 남은 몫은 다음 환불·크론이 아니라 수동으로 맞춰야 한다
+    // ponytail: 라운드 상한 5 — 환불이 그보다 많이 겹치면 남은 몫은 확정 때 남긴 표식으로 크론이 이어서 맞춘다
     for (let round = 0; round < 5; round++) {
       const prepared = await this.prepareCancel(charge.amount, legIds);
       if (!prepared) return;
-      const outcome = await this.sendCancel(prepared.receiptKey, prepared.attempt, prepared.receiptId);
-      await this.settleCancel(prepared.receiptId, prepared.attempt, outcome);
+      let outcome = await this.sendCancel(prepared.receiptKey, prepared.attempt, prepared.receiptId);
+      // 토스는 첫 응답(5xx·처리 중 포함)을 같은 키에 그대로 재생하므로, 다시 보내도 모르면 거래 목록에 묻는다
+      if (outcome === 'unknown' && prepared.resumed) {
+        outcome = await this.lookupCancel(prepared.receiptKey, prepared.attempt, prepared.receiptId);
+      }
+      await this.settleCancel(prepared.receiptId, prepared.attempt, outcome, prepared.resumed);
       if (outcome === 'unknown' || (outcome === 'rejected' && !prepared.resumed)) return;
     }
   }
@@ -246,7 +270,17 @@ export class CashReceiptsService {
         .where(and(inArray(refunds.chargeId, legIds), eq(refunds.status, 'SUCCEEDED')));
       const target = Math.max(0, chargeAmount - refunded.reduce((total, r) => total + r.amount, 0));
       const cancelAmount = receipt.amount - receipt.canceledAmount - target;
-      if (cancelAmount <= 0) return null;
+      if (cancelAmount <= 0) {
+        if (receipt.requestPayload && RECONCILE_MARKER in receipt.requestPayload) {
+          const restPayload = { ...receipt.requestPayload };
+          delete restPayload[RECONCILE_MARKER];
+          await tx
+            .update(cashReceipts)
+            .set({ requestPayload: restPayload, updatedAt: new Date() })
+            .where(eq(cashReceipts.id, receipt.id));
+        }
+        return null;
+      }
 
       const attempt: PendingCancel = {
         amount: cancelAmount,
@@ -267,6 +301,7 @@ export class CashReceiptsService {
     receiptId: string,
     attempt: PendingCancel,
     outcome: 'applied' | 'rejected' | 'unknown',
+    resumed: boolean,
   ): Promise<void> {
     await this.dbService.run(async (tx) => {
       const [receipt] = await tx
@@ -283,8 +318,11 @@ export class CashReceiptsService {
         return;
       }
 
-      const restPayload = { ...receipt.requestPayload };
+      const restPayload: Record<string, unknown> = { ...receipt.requestPayload };
       delete restPayload.pendingCancel;
+      // cancelForRefund 는 이어서 다음 취소를 준비한다(거절된 새 취소만 멈춘다). 그 사이에 죽으면 크론이 이 표식으로 다시 맞춘다.
+      if (outcome === 'applied' || resumed) restPayload[RECONCILE_MARKER] = new Date().toISOString();
+      else delete restPayload[RECONCILE_MARKER];
       const canceled = receipt.canceledAmount + (outcome === 'applied' ? attempt.amount : 0);
       const fullyCanceled = canceled >= receipt.amount;
       await tx
@@ -301,7 +339,7 @@ export class CashReceiptsService {
   }
 
   /**
-   * 결과를 모르는 취소가 남은 영수증을 다음 환불을 기다리지 않고 확정한다(크론).
+   * 결과를 모르는 취소가 남았거나 확정 뒤 다시 맞추다 끊긴 영수증을 다음 환불을 기다리지 않고 맞춘다(크론).
    * 멱등 키 유효기간이 지난 건은 cancelForRefund 가 다시 보내지 않으므로 고르지 않는다 — 매 주기 상한을 차지하지 않게.
    */
   async resolvePendingCancels(limit = 50): Promise<{ scanned: number; failed: number }> {
@@ -312,7 +350,8 @@ export class CashReceiptsService {
       .where(
         and(
           eq(cashReceipts.status, 'ISSUED'),
-          sql`(${cashReceipts.requestPayload} -> 'pendingCancel' ->> 'requestedAt')::timestamptz > ${windowStart}::timestamptz`,
+          sql`((${cashReceipts.requestPayload} -> 'pendingCancel' ->> 'requestedAt')::timestamptz > ${windowStart}::timestamptz
+            or (${cashReceipts.requestPayload} ? ${RECONCILE_MARKER} and not ${cashReceipts.requestPayload} ? 'pendingCancel'))`,
         ),
       )
       .orderBy(asc(cashReceipts.updatedAt))
@@ -340,6 +379,9 @@ export class CashReceiptsService {
   ): Promise<'applied' | 'rejected' | 'unknown'> {
     try {
       const result = await this.tossApiClient.cancelCashReceipt(receiptKey, attempt.amount, attempt.idempotencyKey);
+      // 접수만 된 취소(IN_PROGRESS)는 실패로 끝날 수 있다 — 확정하지 않고 거래 목록으로 판정한다
+      if (result.ok && result.data.issueStatus === 'IN_PROGRESS') return 'unknown';
+      if (result.ok && result.data.issueStatus === 'FAILED') return 'rejected';
       if (result.ok) return 'applied';
       const unknown =
         result.statusCode >= 500 ||
@@ -356,6 +398,63 @@ export class CashReceiptsService {
       );
       return 'unknown';
     }
+  }
+
+  /**
+   * 토스 거래 목록의 완료된 취소 합계를 DB 취소액과 대조해 판정한다. 부분 취소는 같은 receiptKey(`c_` 접두)·같은 금액으로
+   * 여러 번 나올 수 있어 거래 하나를 이 시도와 짝지을 수 없다 — 합계로만 본다.
+   * 처리 중인 취소가 있거나 합계가 어중간하면 모름. 늘지 않았으면 오래 지난 뒤에만 미반영. 조회가 실패해도 모름.
+   * 목록은 요청일(KST) 단위라 영수증 발급일부터 오늘까지 모두 본다(자정을 넘긴 접수도 놓치지 않게).
+   * ponytail: 발급일부터 날짜마다 한 번씩 부른다(오래된 영수증이면 수백 번). 무통장 환불 취소가 결과를 모를 때만 오므로 감수 —
+   * 많아지면 날짜·합계 체크포인트를 requestPayload 에 남겨 이어 본다.
+   */
+  private async lookupCancel(
+    receiptKey: string,
+    attempt: PendingCancel,
+    receiptId: string,
+  ): Promise<'applied' | 'rejected' | 'unknown'> {
+    const age = Date.now() - Date.parse(attempt.requestedAt);
+    if (age < CANCEL_LOOKUP_AFTER_MS) return 'unknown';
+
+    const [receipt] = await this.dbService.db
+      .select({ canceledAmount: cashReceipts.canceledAmount, createdAt: cashReceipts.createdAt })
+      .from(cashReceipts)
+      .where(eq(cashReceipts.id, receiptId))
+      .limit(1);
+    if (!receipt) return 'unknown';
+
+    const dates = kstDatesBetween(receipt.createdAt, new Date());
+    let completed = 0;
+    for (const requestDate of dates) {
+      let cursor: number | undefined;
+      do {
+        const page = await this.tossApiClient.listCashReceipts(requestDate, cursor).catch(() => null);
+        if (!page?.ok) {
+          this.logger.error(`Cash receipt cancel lookup failed: receipt=${receiptId}, error=${page?.error.message}`);
+          return 'unknown';
+        }
+        for (const r of page.data.data) {
+          if (r.transactionType !== 'CANCEL' || r.receiptKey !== `c_${receiptKey}`) continue;
+          if (r.issueStatus === 'IN_PROGRESS') return 'unknown';
+          if (r.issueStatus === 'COMPLETED') completed += r.amount;
+        }
+        cursor = page.data.hasNext && page.data.lastCursor !== null ? page.data.lastCursor : undefined;
+      } while (cursor !== undefined);
+    }
+
+    if (completed === receipt.canceledAmount + attempt.amount) return 'applied';
+    if (completed === receipt.canceledAmount && age >= CANCEL_LOOKUP_NOT_FOUND_AFTER_MS) {
+      this.logger.error(
+        `Cash receipt cancel not applied per Toss lookup: receipt=${receiptId}, amount=${attempt.amount}`,
+      );
+      return 'rejected';
+    }
+    if (completed !== receipt.canceledAmount) {
+      this.logger.error(
+        `Cash receipt cancel total mismatch, needs manual check: receipt=${receiptId}, toss=${completed}, db=${receipt.canceledAmount}, pending=${attempt.amount}`,
+      );
+    }
+    return 'unknown';
   }
 
   async findByIntent(intentId: string, userId: string): Promise<CashReceipt[]> {
