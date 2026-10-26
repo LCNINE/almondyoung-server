@@ -15,6 +15,12 @@ import { hasConfirmAttempt } from '../providers/toss/toss-widget-mode';
 import { ChargeResult } from '../providers/payment-provider.interface';
 
 type CashReceiptRequest = { type: '소득공제' | '지출증빙'; customerIdentityNumber: string };
+type ConfirmRequest = {
+  paymentMethodId?: string;
+  pointsToApply?: number;
+  cashReceipt?: CashReceiptRequest;
+  tossCheckoutMode?: 'WIDGET' | 'LEGACY';
+};
 
 interface Phase1Result {
   plan: ChargePlan;
@@ -43,7 +49,7 @@ export class ConfirmService {
 
   async confirm(
     intentId: string,
-    dto: { paymentMethodId?: string; pointsToApply?: number; cashReceipt?: CashReceiptRequest },
+    dto: ConfirmRequest,
     correlationId: string,
   ): Promise<{ nextAction?: Record<string, unknown> }> {
     let phase1: Phase1Result | null = null;
@@ -60,7 +66,7 @@ export class ConfirmService {
 
   private async phase1Setup(
     intentId: string,
-    dto: { paymentMethodId?: string; pointsToApply?: number; cashReceipt?: CashReceiptRequest },
+    dto: ConfirmRequest,
     correlationId: string,
     tx: DbTx,
   ): Promise<Phase1Result | null> {
@@ -250,7 +256,11 @@ export class ConfirmService {
       userId: intentUserId,
       currency: intent.currency,
       payableAmount: intent.payableAmount,
-      metadata: intent.metadata ?? {},
+      // 결제창 방식은 이번 시도에만 해당하므로 인텐트에 저장하지 않고 provider 에만 넘긴다(charge 의 nextAction 에 남는다)
+      metadata: {
+        ...(intent.metadata ?? {}),
+        ...(dto.tossCheckoutMode ? { tossCheckoutMode: dto.tossCheckoutMode } : {}),
+      },
       discountChargeId,
       primaryChargeId,
     };

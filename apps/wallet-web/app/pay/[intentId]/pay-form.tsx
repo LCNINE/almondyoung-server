@@ -242,6 +242,7 @@ export function PayForm({
         remaining > 0 ? methodId! : null,
         pts > 0 ? pts : undefined,
         cashReceipt,
+        isTossSelected ? (tossWidgetConfig ? 'WIDGET' : 'LEGACY') : undefined,
       );
 
       if (result.status === 'REQUIRES_ACTION' && result.nextAction?.type === 'TOSS_CHECKOUT') {

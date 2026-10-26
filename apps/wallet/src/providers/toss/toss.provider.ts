@@ -79,7 +79,10 @@ export class TossPaymentProvider implements PaymentProvider {
 
     const orderId = params.chargeId.replace(/-/g, '');
     const meta = params.metadata ?? {};
-    const widgetEnabled = !!(process.env.TOSS_WIDGET_CLIENT_KEY && process.env.TOSS_WIDGET_SECRET_KEY);
+    // 결제창이 기존 방식을 열었으면(리전이 무통장을 막은 경우) 승인도 기존 키로 — checkoutMode 를 남기지 않는다
+    const widgetEnabled =
+      !!(process.env.TOSS_WIDGET_CLIENT_KEY && process.env.TOSS_WIDGET_SECRET_KEY) &&
+      meta.tossCheckoutMode !== 'LEGACY';
     return {
       status: 'REQUIRES_ACTION',
       nextAction: {
