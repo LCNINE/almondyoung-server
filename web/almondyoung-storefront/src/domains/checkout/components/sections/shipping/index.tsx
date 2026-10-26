@@ -2,7 +2,7 @@
 
 import { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { ShippingAddressModal } from "../../../../../components/address"
 import { ShippingAddressSelectorModal } from "./address-selector-modal"
 import { SectionCard } from "../../shared/section-card"
@@ -12,7 +12,12 @@ import {
   ShippingMemoDialog,
 } from "./components"
 import type { EditAddressState, ShippingSectionProps } from "./types"
-import { formatAddress, formatShippingMemo, isValidAddress } from "./utils"
+import {
+  findShippingMemoError,
+  formatAddress,
+  formatShippingMemo,
+  isValidAddress,
+} from "./utils"
 
 export const ShippingSection = ({
   cartId,
@@ -20,12 +25,15 @@ export const ShippingSection = ({
   addressName,
   shippingMemo,
   onShippingMemoChange,
+  memoPromptKey = 0,
 }: ShippingSectionProps) => {
   const t = useTranslations("checkout.shipping")
   const tMemo = useTranslations("checkout.shipping.memo")
+  const tToasts = useTranslations("checkout.process.toasts")
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSelectorOpen, setIsSelectorOpen] = useState(false)
   const [isMemoOpen, setIsMemoOpen] = useState(false)
+  const [memoValidateOnOpen, setMemoValidateOnOpen] = useState(false)
   const [modalMode, setModalMode] = useState<"create" | "edit">("create")
   const [editAddressState, setEditAddressState] =
     useState<EditAddressState | null>(null)
@@ -83,7 +91,16 @@ export const ShippingSection = ({
     }
   }, [])
 
+  useEffect(() => {
+    if (!memoPromptKey) return
+    setMemoValidateOnOpen(true)
+    setIsMemoOpen(true)
+  }, [memoPromptKey])
+
   const memoSummary = formatShippingMemo(shippingMemo, tMemo)
+  // 지난 주문에서 "공동현관 있음"만 이어받고 비번은 안 이어받는다 — 요약만 보면 빠진 걸 모른다.
+  const needsEntrancePw =
+    findShippingMemoError(shippingMemo) === "enterEntrancePw"
 
   return (
     <section aria-labelledby="shipping-heading" className="mb-8 space-y-3">
@@ -119,7 +136,13 @@ export const ShippingSection = ({
 
           <SectionCard
             title={tMemo("title")}
-            action={{ label: t("change"), onClick: () => setIsMemoOpen(true) }}
+            action={{
+              label: t("change"),
+              onClick: () => {
+                setMemoValidateOnOpen(false)
+                setIsMemoOpen(true)
+              },
+            }}
           >
             <p
               className={
@@ -130,6 +153,11 @@ export const ShippingSection = ({
             >
               {memoSummary || tMemo("empty")}
             </p>
+            {needsEntrancePw && (
+              <p className="mt-1 text-[13px] text-red-600">
+                {tToasts("enterEntrancePw")}
+              </p>
+            )}
           </SectionCard>
 
           <ShippingMemoDialog
@@ -137,6 +165,7 @@ export const ShippingSection = ({
             onOpenChange={setIsMemoOpen}
             shippingMemo={shippingMemo}
             onSubmit={onShippingMemoChange}
+            validateOnOpen={memoValidateOnOpen}
           />
         </>
       )}

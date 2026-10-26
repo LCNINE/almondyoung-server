@@ -11,6 +11,7 @@ import { PaymentTotalSection } from "@/domains/checkout/components/sections/paym
 import { ShippingSection } from "@/domains/checkout/components/sections/shipping"
 import type { ShippingMemo } from "@/domains/checkout/components/sections/shipping/types"
 import {
+  findShippingMemoError,
   isSameShippingMemo,
   readShippingMemo,
 } from "@/domains/checkout/components/sections/shipping/utils"
@@ -191,6 +192,7 @@ export default function CheckoutTemplate({
   const handleShippingMemoChange = useCallback((memo: ShippingMemo) => {
     setShippingMemo(memo)
   }, [])
+  const [memoPromptKey, setMemoPromptKey] = useState(0)
 
   // 해외직구 상품 포함 여부 → 개인통관고유부호 입력 필수
   const hasOverseasItem = useMemo(() => cartHasOverseasItem(cart), [cart])
@@ -211,16 +213,11 @@ export default function CheckoutTemplate({
       if (!cart?.shipping_address?.address_1) {
         return toast.error(tProcess("toasts.setShipping"))
       }
-      if (!shippingMemo.type) {
-        return toast.error(tProcess("toasts.selectMemo"))
-      }
-      // 문 앞 선택 + 공동현관 있음 체크 시 비밀번호 필수
-      if (
-        shippingMemo.type === "door" &&
-        shippingMemo.hasEntrance &&
-        !shippingMemo.entrancePassword.trim()
-      ) {
-        return toast.error(tProcess("toasts.enterEntrancePw"))
+      // 토스트만으로는 어디를 고칠지 모른다 — 배송메모 편집 창을 열어 해당 칸으로 보낸다.
+      const memoError = findShippingMemoError(shippingMemo)
+      if (memoError) {
+        setMemoPromptKey((n) => n + 1)
+        return toast.error(tProcess(`toasts.${memoError}`))
       }
     }
     // 해외직구 상품이 있으면 개인통관고유부호 형식 검증
@@ -414,6 +411,7 @@ export default function CheckoutTemplate({
                 }
                 shippingMemo={shippingMemo}
                 onShippingMemoChange={handleShippingMemoChange}
+                memoPromptKey={memoPromptKey}
               />
             )}
             {hasOverseasItem && (

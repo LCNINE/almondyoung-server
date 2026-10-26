@@ -13,6 +13,8 @@ export interface ShippingSectionProps {
   addressName?: string | null
   shippingMemo: ShippingMemo
   onShippingMemoChange: (memo: ShippingMemo) => void
+  /** 값이 바뀔 때마다 배송메모 편집 창을 검증 상태로 연다. */
+  memoPromptKey?: number
 }
 
 export interface EditAddressState {

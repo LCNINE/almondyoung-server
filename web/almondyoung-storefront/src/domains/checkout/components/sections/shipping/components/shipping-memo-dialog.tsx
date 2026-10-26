@@ -20,6 +20,7 @@ interface ShippingMemoDialogProps {
   onOpenChange: (open: boolean) => void
   shippingMemo: ShippingMemo
   onSubmit: (memo: ShippingMemo) => void
+  validateOnOpen?: boolean
 }
 
 /**
@@ -30,6 +31,7 @@ export function ShippingMemoDialog({
   onOpenChange,
   shippingMemo,
   onSubmit,
+  validateOnOpen = false,
 }: ShippingMemoDialogProps) {
   const t = useTranslations("checkout.shipping.memo")
   const [draft, setDraft] = useState<ShippingMemo>(shippingMemo)
@@ -39,9 +41,9 @@ export function ShippingMemoDialog({
   useEffect(() => {
     if (open) {
       setDraft(shippingMemo)
-      setSubmitAttempt(0)
+      setSubmitAttempt(validateOnOpen ? 1 : 0)
     }
-  }, [open, shippingMemo])
+  }, [open, shippingMemo, validateOnOpen])
 
   const error = findShippingMemoError(draft)
 
