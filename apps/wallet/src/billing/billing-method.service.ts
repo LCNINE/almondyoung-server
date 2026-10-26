@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, max, ne } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import {
   WalletSchema,
@@ -35,6 +35,13 @@ export interface CmsBillingMethodStatusRow {
   createdAt: Date;
   updatedAt: Date;
 }
+export interface ActiveCmsLatestAgreement {
+  userId: string;
+  billingMethodId: string;
+  cmsMemberStatus: string;
+  latestAgreementAt: string;
+}
+
 @Injectable()
 export class BillingMethodService {
   private readonly logger = new Logger(BillingMethodService.name);
@@ -43,6 +50,26 @@ export class BillingMethodService {
     private readonly dbService: DbService<WalletSchema>,
     private readonly cmsApi: CmsApiClient,
   ) {}
+
+  /** 활성 CMS 계좌마다 마지막 동의자료 시각. membership 이 이 시각 뒤로 가입이 없는 회원을 가려낸다. */
+  async listActiveCmsLatestAgreements(): Promise<ActiveCmsLatestAgreement[]> {
+    const rows = await this.dbService.db
+      .select({
+        userId: billingMethods.userId,
+        billingMethodId: billingMethods.id,
+        cmsMemberStatus: cmsMembers.status,
+        latestAgreementAt: max(cmsAgreements.createdAt),
+      })
+      .from(billingMethods)
+      .innerJoin(cmsMembers, eq(cmsMembers.billingMethodId, billingMethods.id))
+      .innerJoin(cmsAgreements, eq(cmsAgreements.cmsMemberId, cmsMembers.cmsMemberId))
+      .where(and(eq(billingMethods.providerType, 'CMS_BATCH'), eq(billingMethods.status, 'ACTIVE')))
+      .groupBy(billingMethods.id, cmsMembers.status);
+
+    return rows.flatMap((r) =>
+      r.latestAgreementAt ? [{ ...r, latestAgreementAt: r.latestAgreementAt.toISOString() }] : [],
+    );
+  }
 
   async registerCmsBillingMethod(userId: string, cmsMemberId: string, displayName?: string): Promise<BillingMethod> {
     const rows = await this.dbService.db

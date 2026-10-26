@@ -1208,7 +1208,7 @@
     "metaSuccess": "멤버십 가입 완료",
     "metaFail": "결제 실패 - 멤버십",
     "successTitle": "멤버십 가입 완료",
-    "withdrawNotice": "결제일(결제 확인 전에 자격이 먼저 시작된 경우 그날)부터 7일 이내이고 멤버십 혜택을 한 번도 이용하지 않으셨다면 마이페이지 > 멤버십에서 청약철회로 전액 환불받으실 수 있어요. 멤버십가 구매·웰컴딜·전용 쿠폰 등 혜택을 1회라도 이용하시면 청약철회가 제한돼요.",
+    "withdrawNotice": "결제일부터 7일 안에 혜택을 쓰지 않았다면 전액 환불받을 수 있어요.\n결제 전에 멤버십이 먼저 시작됐다면 그날부터 7일이에요.\n멤버십가 구매·웰컴딜·전용 쿠폰을 한 번이라도 쓰면 환불이 어려워요.",
     "celebrationAlt": "축하 아이콘",
     "welcomeLine1": "축하합니다!",
     "welcomeStrong": "아몬드영 멤버십",
@@ -1317,7 +1317,13 @@
     "subscribeFailDesc": "계좌 등록은 끝났어요. 다시 시도해 주세요. 계속 안 되면 멤버십 가입 화면에서 다시 신청하거나 고객센터로 문의해 주세요.",
     "subscribeRetry": "다시 시도",
     "subscribeGoToForm": "가입 화면으로",
-    "alreadyMemberToast": "이미 멤버십을 이용 중이에요."
+    "alreadyMemberToast": "이미 멤버십을 이용 중이에요.",
+    "serverSignupWaitingTitle": "가입을 마무리하고 있어요",
+    "serverSignupWaitingDesc": "잠시만 기다려 주세요.",
+    "serverSignupDelayedTitle": "가입이 조금 늦어지고 있어요",
+    "serverSignupDelayedDesc": "계좌 등록은 끝났어요.\n가입은 곧 자동으로 마무리돼요.",
+    "serverSignupDelayedHelp": "몇 분 뒤에도 그대로라면 <kakao>카카오톡 고객센터</kakao>로 알려주세요.",
+    "serverSignupGoMembership": "멤버십 화면으로 가기"
   },
   "reviews": {
     "pageTitle": "리뷰",

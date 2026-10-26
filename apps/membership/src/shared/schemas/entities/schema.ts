@@ -14,7 +14,7 @@ import {
   primaryKey,
   serial,
 } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import { authorizationSchema } from '@app/authorization';
 
 // ... 나머지 테이블에 대한 relations도 유사하게 정의할 수 있습니다.
@@ -166,26 +166,35 @@ export const subscriptionContracts = pgTable(
 /**
  * Subscription entitlement - 권한 개념으로 명확화
  */
-export const subscriptionEntitlement = pgTable('subscription_entitlement', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: varchar('user_id').notNull(), // users 테이블 참조
-  tierId: uuid('tier_id')
-    .notNull()
-    .references(() => tiers.id),
-  startsAt: date('starts_at').notNull(),
-  endsAt: date('ends_at').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  closedAt: timestamp('closed_at', { withTimezone: true }),
-  isCurrent: boolean('is_current').notNull().default(true),
-  sourceBatchId: uuid('source_batch_id').references(() => eventBatches.id),
-  closedBatchId: uuid('closed_batch_id').references(() => eventBatches.id),
-  pausedAt: timestamp('paused_at', { withTimezone: true }),
-  /**
-   * 만료 사전 고지를 보낸 시각. 자동갱신이 없는 이용권은 계약이 아예 없을 수 있어
-   * (관리자 부여 등) 갱신 고지처럼 subscription_contract_events 에 마커를 남길 수 없다.
-   */
-  expiryNoticeSentAt: timestamp('expiry_notice_sent_at', { withTimezone: true }),
-});
+export const subscriptionEntitlement = pgTable(
+  'subscription_entitlement',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: varchar('user_id').notNull(), // users 테이블 참조
+    tierId: uuid('tier_id')
+      .notNull()
+      .references(() => tiers.id),
+    startsAt: date('starts_at').notNull(),
+    endsAt: date('ends_at').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    isCurrent: boolean('is_current').notNull().default(true),
+    sourceBatchId: uuid('source_batch_id').references(() => eventBatches.id),
+    closedBatchId: uuid('closed_batch_id').references(() => eventBatches.id),
+    pausedAt: timestamp('paused_at', { withTimezone: true }),
+    /**
+     * 만료 사전 고지를 보낸 시각. 자동갱신이 없는 이용권은 계약이 아예 없을 수 있어
+     * (관리자 부여 등) 갱신 고지처럼 subscription_contract_events 에 마커를 남길 수 없다.
+     */
+    expiryNoticeSentAt: timestamp('expiry_notice_sent_at', { withTimezone: true }),
+  },
+
+  (table) => [
+    uniqueIndex('uq_subscription_entitlement_current_user')
+      .on(table.userId)
+      .where(sql`${table.isCurrent}`),
+  ],
+);
 
 /**
  * Event batches - 배치 개념으로 명확화

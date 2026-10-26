@@ -12,10 +12,11 @@ interface PendingSignupResumeProps {
 
 /**
  * 멤버십 가입 도중인데 이미 은행 심사 중인 계좌가 있는 고객. 새로 등록하면 같은 사람이 심사를 한 번 더
- * 걸게 되므로, 그 계좌로 가입을 이어 간다. 스토어프론트는 돌아온 billingMethodId 로 바로 가입한다.
+ * 걸게 되므로, 그 계좌로 가입을 이어 간다. 스토어프론트는 돌아온 subscribeWith 로 바로 가입한다.
  */
 export function PendingSignupResume({ returnUrl, billingMethodId, displayName }: PendingSignupResumeProps) {
-  const goBack = () => leaveToReturnUrl(buildReturnUrl(returnUrl, { cardChanged: '1', billingMethodId }));
+  // 새로 등록하지 않으니 서버가 가입을 만들 계기가 없다. 스토어프론트가 이 계좌로 직접 가입한다.
+  const goBack = () => leaveToReturnUrl(buildReturnUrl(returnUrl, { subscribeWith: billingMethodId }));
   const registerAnother = `/billing-change?returnUrl=${encodeURIComponent(returnUrl)}&register=1`;
 
   return (

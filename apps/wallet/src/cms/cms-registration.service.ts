@@ -13,6 +13,14 @@ export interface RegisterCmsWithAgreementDto {
   payerNumber: string;
   paymentNumber: string;
   phone: string;
+  /** 멤버십 가입 도중이면 그 플랜. 없으면 계좌만 등록한다 */
+  planId?: string;
+  termsAgreementId?: string;
+}
+
+function toSignupIntent(userId: string, billingMethodId: string, dto: RegisterCmsWithAgreementDto) {
+  if (!dto.planId) return undefined;
+  return { userId, billingMethodId, planId: dto.planId, termsAgreementId: dto.termsAgreementId ?? null };
 }
 
 export interface RegisterCmsWithAgreementResult {
@@ -56,6 +64,7 @@ export class CmsRegistrationService {
         file,
         CMS_AGREEMENT_FILE_TYPE,
         fileExtension,
+        toSignupIntent(userId, billingMethod.id, dto),
       );
       return { billingMethod, cmsMember, agreement, agreementUploadFailed: false };
     } catch (err) {
@@ -120,6 +129,7 @@ export class CmsRegistrationService {
         file,
         CMS_AGREEMENT_FILE_TYPE,
         fileExtension,
+        toSignupIntent(userId, billingMethodId, dto),
       );
       return { billingMethod, cmsMember: updatedMember, agreement, agreementUploadFailed: false };
     } catch (err) {

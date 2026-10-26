@@ -4,6 +4,8 @@ import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
 import { eq, and, desc, inArray, count } from 'drizzle-orm';
 import { CancellationInfo, resolveCancellationInfo } from './cancellation-info';
+import { differenceInCalendarDays, parseISO } from 'date-fns';
+import type { GrantTakeover } from './subscription.creator';
 
 type Contract = typeof schema.subscriptionContracts.$inferSelect;
 type Plan = typeof schema.plan.$inferSelect;
@@ -568,6 +570,17 @@ export class SubscriptionContractReader {
 
     if (!event) return null;
     return ((event.metadata ?? {}) as { days?: number }).days ?? 0;
+  }
+
+  /**
+   * 현재 이용권이 관리자 지급분이면 이어받을 정보, 결제로 생긴 이용권이면 null.
+   * 남은 일수는 지급 때와 같은 UTC 날짜 기준으로 센다.
+   */
+  async findGrantTakeover(contractId: string, entitlementEndsAt: string): Promise<GrantTakeover | null> {
+    if ((await this.findAdminGrantDays(contractId)) === null) return null;
+    const today = new Date().toISOString().split('T')[0];
+    const remainingDays = Math.max(0, differenceInCalendarDays(parseISO(entitlementEndsAt), parseISO(today)));
+    return { grantContractId: contractId, remainingDays };
   }
 
   /**

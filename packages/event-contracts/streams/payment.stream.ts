@@ -403,6 +403,24 @@ export interface MandatePendingPayload {
   occurredAt: string;
 }
 
+/**
+ * 가입 도중 등록한 CMS 계좌의 동의자료가 접수됐다 — membership 이 이걸 받아 선적용 가입을 만든다.
+ *
+ * 예전엔 브라우저가 스토어프론트로 돌아와야 가입이 생겨서, 복귀가 끊기면 계좌만 남았다. 이 이벤트는
+ * 동의자료 기록과 같은 트랜잭션으로 적재되므로 동의자료는 기록됐는데 가입 의도만 사라지는 일이 없다.
+ * 가입 의도(planId) 없이 계좌만 등록하면 발행하지 않는다.
+ */
+export interface CmsSignupRequestedPayload {
+  /** 멱등 근거 — 동의자료 한 건에 가입 시도 한 번 */
+  cmsAgreementId: string;
+  billingMethodId: string;
+  userId: string;
+  planId: string;
+  /** 가입 폼이 남긴 약관 동의. 검증은 membership 이 한다 */
+  termsAgreementId: string | null;
+  occurredAt: string;
+}
+
 /** 심사 통과. 이제부터 실제로 출금이 걸린다는 사실을 고객에게 알린다. */
 export interface CmsMemberRegisteredPayload {
   cmsMemberId: string;
@@ -884,6 +902,15 @@ const MandatePendingSchema = z.object({
   occurredAt: z.string().min(1),
 });
 
+const CmsSignupRequestedSchema = z.object({
+  cmsAgreementId: z.string().min(1),
+  billingMethodId: z.string().min(1),
+  userId: z.string().min(1),
+  planId: z.string().min(1),
+  termsAgreementId: z.string().min(1).nullable(),
+  occurredAt: z.string().min(1),
+});
+
 /** 거절과 대칭. 승인만 조용하면 고객은 「된 건가?」 하고 결제수단 화면을 다시 열어본다. */
 const CmsMemberRegisteredSchema = z.object({
   cmsMemberId: z.string().min(1),
@@ -1055,6 +1082,10 @@ export const PAYMENT_STREAM = stream({
       CmsMemberRegisteredSchema,
     ),
     'mandate.pending': event<'mandate.pending', MandatePendingPayload>('mandate.pending', MandatePendingSchema),
+    'cms.signup.requested': event<'cms.signup.requested', CmsSignupRequestedPayload>(
+      'cms.signup.requested',
+      CmsSignupRequestedSchema,
+    ),
 
     // --- Payment Intent Events (wallet outbox dispatcher, 도트 표기) ---
     'payment.intent.created': event<'payment.intent.created', PaymentIntentEventPayload>(

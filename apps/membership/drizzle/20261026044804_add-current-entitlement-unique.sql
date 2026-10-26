@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "uq_subscription_entitlement_current_user" ON "subscription_entitlement" USING btree ("user_id") WHERE "subscription_entitlement"."is_current";

@@ -705,7 +705,7 @@ function PrimaryButton({ disabled, children }: { disabled?: boolean; children: R
     <Button
       type="submit"
       disabled={disabled}
-      className="h-14 w-full rounded-2xl text-[16px] font-semibold transition-transform duration-150 active:scale-[0.985] disabled:active:scale-100"
+      className="h-14 w-full rounded-md text-[16px] font-semibold transition-transform duration-150 active:scale-[0.985] disabled:active:scale-100"
     >
       {children}
     </Button>

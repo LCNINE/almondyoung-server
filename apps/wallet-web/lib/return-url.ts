@@ -26,13 +26,20 @@ export function buildReturnUrl(baseUrl: string, params: Record<string, string>):
  * 아무 일도 안 일어나거나, 가입 중인 고객을 계좌 변경 화면처럼 대하게 된다.
  */
 export function isSubscribeReturnUrl(returnUrl: string): boolean {
+  return subscribeIntentOf(returnUrl) !== null;
+}
+
+/** 가입 도중이면 그 가입 의도. 계좌 등록 요청에 실어 서버가 가입까지 만들게 한다. */
+export function subscribeIntentOf(returnUrl: string): { planId: string; termsAgreementId: string | null } | null {
   let url: URL;
   try {
     url = new URL(returnUrl, RELATIVE_BASE);
   } catch {
-    return false;
+    return null;
   }
-  return url.searchParams.get('redirect') === 'subscribe' && !!url.searchParams.get('planId');
+  const planId = url.searchParams.get('planId');
+  if (url.searchParams.get('redirect') !== 'subscribe' || !planId) return null;
+  return { planId, termsAgreementId: url.searchParams.get('termsAgreementId') };
 }
 
 function parseList(env: string | undefined): string[] {

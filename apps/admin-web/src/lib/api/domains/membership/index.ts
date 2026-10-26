@@ -646,6 +646,13 @@ export const membershipApi = {
     return res.data;
   },
 
+  getSignupMissing: async (): Promise<
+    import('@/lib/types/dto/membership').SignupMissingListResponse
+  > => {
+    const res = await client.get(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/signup-missing`);
+    return res.data;
+  },
+
   resetBillingInProgress: async (
     contractId: string,
     reason: string

@@ -1,11 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
+import { InjectPublisher, PublisherFor } from '@app/events';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 import { eq } from 'drizzle-orm';
 import { WalletSchema, cmsAgreements } from '../schema';
 import { CmsAgreementRecord } from '../types';
 import { CmsApiClient } from './cms-api.client';
 import { CmsMemberService } from './cms-member.service';
 import { CmsOperationError, CMS_CUSTOMER_MESSAGES } from './cms-errors';
+
+/** 가입 도중 등록한 계좌면 동의자료 기록과 함께 가입 요청을 적재한다. */
+export interface CmsSignupIntent {
+  userId: string;
+  billingMethodId: string;
+  planId: string;
+  termsAgreementId: string | null;
+}
 
 /** 효성 API 5xx/네트워크 일시 장애 — 재시도 가능. 영구 실패로 기록하지 않는다. */
 export class CmsAgreementRetryableError extends Error {
@@ -23,6 +33,8 @@ export class CmsAgreementService {
     private readonly dbService: DbService<WalletSchema>,
     private readonly cmsApi: CmsApiClient,
     private readonly cmsMemberService: CmsMemberService,
+    @InjectPublisher(PAYMENT_STREAM)
+    private readonly publisher: PublisherFor<typeof PAYMENT_STREAM>,
   ) {}
 
   /**
@@ -34,6 +46,7 @@ export class CmsAgreementService {
     file: Buffer,
     fileType: string,
     fileExtension: string,
+    signup?: CmsSignupIntent,
   ): Promise<CmsAgreementRecord> {
     // 회원 존재 확인
     const member = await this.cmsMemberService.findByCmsMemberId(cmsMemberId);
@@ -60,20 +73,42 @@ export class CmsAgreementService {
     }
 
     const agreementFile = result.data.agreementFile;
-    const rows = await this.dbService.db
-      .insert(cmsAgreements)
-      .values({
-        cmsMemberId,
-        agreementKey: agreementFile.agreementKey ?? null,
-        fileType,
-        fileExtension,
-        status: agreementFile.registerStatus ?? '등록',
-        resultCode: agreementFile.result?.code ?? null,
-        resultMessage: agreementFile.result?.message ?? null,
-      })
-      .returning();
+    // 가입 요청을 동의자료 기록과 같은 트랜잭션에 묶는다 — 브라우저가 돌아오지 못해도 가입 의도는 남는다.
+    return this.dbService.run(async (trx) => {
+      const [row] = await trx
+        .insert(cmsAgreements)
+        .values({
+          cmsMemberId,
+          agreementKey: agreementFile.agreementKey ?? null,
+          fileType,
+          fileExtension,
+          status: agreementFile.registerStatus ?? '등록',
+          resultCode: agreementFile.result?.code ?? null,
+          resultMessage: agreementFile.result?.message ?? null,
+        })
+        .returning();
 
-    return rows[0];
+      if (signup) {
+        await this.publisher.enqueue(
+          {
+            eventType: 'cms.signup.requested',
+            aggregateId: row.id,
+            partitionKey: signup.userId,
+            idempotencyKey: `cms:signup-requested:${row.id}`,
+            payload: {
+              cmsAgreementId: row.id,
+              billingMethodId: signup.billingMethodId,
+              userId: signup.userId,
+              planId: signup.planId,
+              termsAgreementId: signup.termsAgreementId,
+              occurredAt: new Date().toISOString(),
+            },
+          },
+          trx,
+        );
+      }
+      return row;
+    });
   }
 
   /**

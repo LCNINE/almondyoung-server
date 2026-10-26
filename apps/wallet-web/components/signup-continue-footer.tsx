@@ -44,22 +44,22 @@ export function SignupContinueFooter({ onLeave, label }: SignupContinueFooterPro
 
   return (
     <footer className="shrink-0 px-5 pb-[calc(1rem_+_env(safe-area-inset-bottom))] pt-3">
-      <Button onClick={leave} className="h-14 w-full rounded-2xl text-[16px] font-semibold">
+      <Button onClick={leave} className="h-14 w-full rounded-md text-[16px] font-semibold">
         {label}
       </Button>
       <p className="mt-3 text-center text-[13px] break-keep text-muted-foreground" aria-live="polite">
         {stayed ? (
-          '자동 이동을 멈췄어요. 위 버튼을 눌러 가입을 마무리해주세요.'
+          '자동 이동을 멈췄어요. 준비되면 위 버튼을 눌러 주세요.'
         ) : (
           <>
             {/* 숫자는 매초 바뀐다 — 화면낭독기가 초마다 다시 읽지 않게 숫자만 낭독에서 뺀다. */}
             <span aria-hidden="true">{remaining}초 뒤 </span>
             <span className="sr-only">잠시 뒤 </span>
-            가입 화면으로 이동해요 ·{' '}
+            이동해요 ·{' '}
             <button
               type="button"
               onClick={() => setStayed(true)}
-              className="underline underline-offset-2 hover:text-foreground"
+              className="whitespace-nowrap underline underline-offset-2 hover:text-foreground"
             >
               이 화면에 머무르기
             </button>

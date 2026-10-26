@@ -226,6 +226,13 @@ export interface WalletInvoiceResponse {
  * 결제 서버 연동 클라이언트 서비스
  * CTO 지침: PaymentIntent/PaymentAttempt 중심의 백엔드 간 결제 모델
  */
+export interface ActiveCmsLatestAgreement {
+  userId: string;
+  billingMethodId: string;
+  cmsMemberStatus: string;
+  latestAgreementAt: string;
+}
+
 @Injectable()
 export class PaymentClientService {
   /** intentId → 환불 가능 정보. TTL 이 짧아 프로세스 메모리로 충분하다(인스턴스 간 공유 불필요). */
@@ -424,6 +431,18 @@ export class PaymentClientService {
       this.logger.error(`Failed to get wallet invoice by idempotencyKey ${idempotencyKey}: ${error.message}`);
       throw new Error(`Wallet invoice lookup by idempotencyKey failed: ${error.message}`);
     }
+  }
+
+  /** 활성 CMS 계좌별 마지막 동의자료 시각 — 어드민 가입 누락 탐지용 */
+  async listActiveCmsLatestAgreements(): Promise<ActiveCmsLatestAgreement[]> {
+    const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
+    const response = await firstValueFrom(
+      this.httpService.get<ActiveCmsLatestAgreement[]>(
+        `${walletApiUrl}/v1/billing-methods/cms/active-latest-agreements`,
+        { headers: { Authorization: `Bearer ${walletApiKey}` } },
+      ),
+    );
+    return response.data;
   }
 
   async createBillingAgreement(

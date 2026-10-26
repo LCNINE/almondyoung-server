@@ -14,7 +14,7 @@ import {
   emptyCmsAccountDetails,
   CmsVerifiedAccount,
 } from '@/components/cms-account-fields';
-import { buildReturnUrl, isSubscribeReturnUrl, leaveToReturnUrl } from '@/lib/return-url';
+import { isSubscribeReturnUrl, leaveToReturnUrl, subscribeIntentOf } from '@/lib/return-url';
 import { SignupContinueFooter } from '@/components/signup-continue-footer';
 import { redirectToWalletLogin } from '@/lib/auth-expired';
 
@@ -36,8 +36,6 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialPhone, in
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [done, setDone] = useState(false);
   const [agreementUploadFailed, setAgreementUploadFailed] = useState(false);
-  // 신규 등록 시 백엔드가 반환한 새 결제수단 id — 복귀 후 선적용 자동가입이 이 수단을 쓰도록 returnUrl 에 싣는다.
-  const [newBillingMethodId, setNewBillingMethodId] = useState<string | null>(null);
 
   const [details, setDetails] = useState<CmsAccountDetails>({
     ...emptyCmsAccountDetails,
@@ -76,6 +74,15 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialPhone, in
     formData.append('paymentNumber', paymentNumber);
     formData.append('phone', phone);
     formData.append('file', blob, 'signature.png');
+
+    const intent = subscribeIntentOf(returnUrl);
+
+    if (intent) {
+      formData.append('planId', intent.planId);
+
+      if (intent.termsAgreementId) formData.append('termsAgreementId', intent.termsAgreementId);
+    }
+
     try {
       const url = isRegister
         ? '/api/billing/cms-register-with-agreement'
@@ -100,8 +107,6 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialPhone, in
       if (data.agreementUploadFailed) {
         setAgreementUploadFailed(true);
       }
-      // 신규 등록 응답의 새 id 만 실어 보낸다(변경은 기존 수단이라 auto-subscribe 가 이미 알고 있음).
-      if (isRegister && data.id) setNewBillingMethodId(data.id);
       setDone(true);
     } catch {
       setError(isRegister ? '계좌 등록 중 오류가 발생했습니다.' : '계좌 변경 중 오류가 발생했습니다.');
@@ -111,12 +116,8 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialPhone, in
   };
 
   if (done) {
-    const goBack = () =>
-      leaveToReturnUrl(
-        newBillingMethodId
-          ? buildReturnUrl(returnUrlWithFlag, { billingMethodId: newBillingMethodId })
-          : returnUrlWithFlag,
-      );
+    // cardChanged 를 받은 스토어프론트는 서버가 만들 가입을 기다린다. 동의자료가 실패했으면 가입 요청도 없다.
+    const goBack = () => leaveToReturnUrl(agreementUploadFailed ? returnUrl : returnUrlWithFlag);
     // 뒤 4자리만 남긴다 — 「내가 등록한 그 계좌가 맞나」를 확인하는 데는 그걸로 충분하다.
     const maskedAccount =
       paymentNumber.length > 4 ? `${'•'.repeat(paymentNumber.length - 4)}${paymentNumber.slice(-4)}` : paymentNumber;
@@ -138,17 +139,26 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialPhone, in
                 agreementUploadFailed ? 'bg-muted-foreground' : 'bg-primary'
               }`}
             >
-              <Check
-                className="size-7 text-primary-foreground animate-in zoom-in-50 fade-in delay-150 duration-300 fill-mode-both"
-                strokeWidth={3}
-              />
+              {agreementUploadFailed ? (
+                <span
+                  aria-hidden
+                  className="text-[28px] leading-none font-bold text-primary-foreground animate-in zoom-in-50 fade-in delay-150 duration-300 fill-mode-both"
+                >
+                  !
+                </span>
+              ) : (
+                <Check
+                  className="size-7 text-primary-foreground animate-in zoom-in-50 fade-in delay-150 duration-300 fill-mode-both"
+                  strokeWidth={3}
+                />
+              )}
             </span>
             <h1 className="mt-5 text-[22px] font-bold tracking-tight text-foreground animate-in fade-in slide-in-from-bottom-2 delay-150 duration-500 fill-mode-both">
               {agreementUploadFailed ? '계좌 등록 확인 필요' : isRegister ? '계좌 등록 완료' : '계좌 변경 완료'}
             </h1>
             {continueSignup && (
-              <p className="mt-2 text-[15px] font-semibold text-primary animate-in fade-in slide-in-from-bottom-2 delay-200 duration-500 fill-mode-both">
-                아직 멤버십 가입 전이에요
+              <p className="mt-2 text-[15px] font-semibold text-muted-foreground animate-in fade-in slide-in-from-bottom-2 delay-200 duration-500 fill-mode-both">
+                멤버십 가입도 함께 진행하고 있어요
               </p>
             )}
           </div>
@@ -182,9 +192,9 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialPhone, in
               마치는 것이라는 걸 맨 앞에 둔다 — 안내문 여러 줄 안에 묻어두면 읽히지 않는다. */}
           {continueSignup ? (
             <div className="mt-5 rounded-xl border border-primary/40 p-4 animate-in fade-in duration-500 delay-[500ms] fill-mode-both">
-              <p className="text-[14px] font-bold text-foreground">한 단계 남았어요</p>
+              <p className="text-[14px] font-bold text-foreground">가입은 자동으로 마무리돼요</p>
               <p className="mt-1 text-[13px] leading-relaxed break-keep text-muted-foreground">
-                가입 화면으로 돌아가면 멤버십 가입이 마무리됩니다. 결제는 심사 승인과 함께 자동으로 출금돼요.
+                따로 하실 일은 없어요. 결제는 은행 심사가 끝나면 자동으로 출금돼요.
               </p>
             </div>
           ) : (
@@ -204,12 +214,12 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialPhone, in
         </div>
 
         {continueSignup ? (
-          <SignupContinueFooter onLeave={goBack} label="지금 가입 마무리하기" />
+          <SignupContinueFooter onLeave={goBack} label="가입 결과 확인하기" />
         ) : (
           <footer className="shrink-0 px-5 pb-[calc(1rem_+_env(safe-area-inset-bottom))] pt-3">
             <Button
               onClick={goBack}
-              className="h-14 w-full rounded-2xl text-[16px] font-semibold animate-in fade-in slide-in-from-bottom-3 duration-500 delay-[650ms] fill-mode-both"
+              className="h-14 w-full rounded-md text-[16px] font-semibold animate-in fade-in slide-in-from-bottom-3 duration-500 delay-[650ms] fill-mode-both"
             >
               {agreementUploadFailed ? '확인' : isRegister ? '멤버십 가입 계속하기' : '확인'}
             </Button>
@@ -347,7 +357,7 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialPhone, in
 
         <footer className="shrink-0 border-t border-border/60 bg-background px-5 pt-3 pb-[calc(1rem_+_env(safe-area-inset-bottom))]">
           <Button
-            className="h-14 w-full rounded-2xl text-[16px] font-semibold transition-transform duration-150 active:scale-[0.985] disabled:active:scale-100"
+            className="h-14 w-full rounded-md text-[16px] font-semibold transition-transform duration-150 active:scale-[0.985] disabled:active:scale-100"
             disabled={!allConsented}
             onClick={() => setStep('signature')}
           >

@@ -1,4 +1,4 @@
-import { isSubscribeReturnUrl, safeReturnUrl } from './return-url';
+import { isSubscribeReturnUrl, safeReturnUrl, subscribeIntentOf } from './return-url';
 
 describe('safeReturnUrl', () => {
   const prevSuffixes = process.env.ALLOWED_RETURN_HOST_SUFFIXES;
@@ -74,5 +74,21 @@ describe('isSubscribeReturnUrl', () => {
     ).toBe(false);
     expect(isSubscribeReturnUrl('https://shop.example.com/kr/mypage/membership/payment-method?planId=p1')).toBe(false);
     expect(isSubscribeReturnUrl('/')).toBe(false);
+  });
+});
+
+describe('subscribeIntentOf', () => {
+  it('carries the plan and terms agreement the storefront left in the returnUrl', () => {
+    expect(
+      subscribeIntentOf('/kr/mypage/membership/payment-method?redirect=subscribe&planId=p1&termsAgreementId=a1'),
+    ).toEqual({ planId: 'p1', termsAgreementId: 'a1' });
+    expect(subscribeIntentOf('/kr/mypage/membership/payment-method?redirect=subscribe&planId=p1')).toEqual({
+      planId: 'p1',
+      termsAgreementId: null,
+    });
+  });
+
+  it('is null outside the signup flow', () => {
+    expect(subscribeIntentOf('/kr/mypage/membership/payment-method?planId=p1')).toBeNull();
   });
 });
