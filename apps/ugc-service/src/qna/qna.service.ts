@@ -256,10 +256,11 @@ export class QnaService {
     tx?: DbTransaction,
   ): Promise<QuestionWithDetailsEntity> {
     return this.inTx(async (tx) => {
+      // 관리자는 삭제된 문의도 연다 — 목록의 삭제됨 필터에서 들어온다.
       const [question] = await tx
         .select()
         .from(questions)
-        .where(and(eq(questions.id, id), isNull(questions.deletedAt)));
+        .where(isAdmin ? eq(questions.id, id) : and(eq(questions.id, id), isNull(questions.deletedAt)));
 
       if (!question) {
         throw new NotFoundException('Question not found');

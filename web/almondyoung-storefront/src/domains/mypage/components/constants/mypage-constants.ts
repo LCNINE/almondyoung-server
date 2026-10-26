@@ -335,11 +335,11 @@ export const SIDEBAR_SECTIONS: {
         label: "mypage.menu.almondTemplates",
         path: "/mypage/almond-templates",
       },
-      // {
-      //   id: "inquiries",
-      //   label: "mypage.menu.inquiries",
-      //   path: "/mypage/inquiries",
-      // },
+      {
+        id: "inquiries",
+        label: "mypage.menu.inquiries",
+        path: "/mypage/inquiries",
+      },
     ],
   },
   {
