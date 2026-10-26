@@ -1,0 +1,94 @@
+// apps/medusa/integration-tests/http/fixtures/return-fixture.ts
+import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
+import { createServer, Server } from 'http';
+import jwt from 'jsonwebtoken';
+import type { Commerce } from './partial-cancel-fixture';
+
+export const CORE_PORT = 39132;
+export const CORE_BASE_URL = `http://127.0.0.1:${CORE_PORT}`;
+export const CORE_INTERNAL_KEY = 'test-core-key';
+
+type EligibilityLine = { channelOrderItemId: string; deliveredUnits: number; lastDeliveredAt: string | null };
+
+/**
+ * core 의 `POST /internal/sales-orders/return-eligibility` 스텁(K8 PR3 Task 1).
+ * 모르는 주문은 실제 core 처럼 `{ found: false, lines: [] }` 로 답한다 — 셀메이트 시기 라이브와 같은 모양이다.
+ */
+export class FakeCore {
+  server?: Server;
+  calls: Array<{ externalOrderId: string; authorization: string | undefined }> = [];
+  private eligibility = new Map<string, EligibilityLine[]>();
+  private failStatus: number | null = null;
+
+  constructor(private readonly port = CORE_PORT) {}
+
+  async start() {
+    this.server = createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        const parsed = body ? JSON.parse(body) : {};
+        const externalOrderId = String(parsed.externalOrderId ?? '');
+        if (req.method === 'POST' && req.url === '/internal/sales-orders/return-eligibility') {
+          this.calls.push({ externalOrderId, authorization: req.headers.authorization });
+        }
+        const { status, payload } = this.route(req.method ?? 'GET', req.url ?? '/', externalOrderId);
+        res.writeHead(status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(payload));
+      });
+    });
+    await new Promise<void>((r) => this.server!.listen(this.port, '127.0.0.1', r));
+  }
+  async stop() {
+    if (this.server) await new Promise<void>((r) => this.server!.close(() => r()));
+  }
+  reset() {
+    this.calls = [];
+    this.eligibility.clear();
+    this.failStatus = null;
+  }
+  setEligibility(orderId: string, lines: EligibilityLine[]) {
+    this.eligibility.set(orderId, lines);
+  }
+  /** 숫자면 그 상태로 거절한다(모든 주문). null 이면 정상으로 돌아온다. */
+  failWith(status: number | null) {
+    this.failStatus = status;
+  }
+
+  private route(method: string, url: string, externalOrderId: string): { status: number; payload: unknown } {
+    if (method !== 'POST' || url !== '/internal/sales-orders/return-eligibility') {
+      return { status: 404, payload: { message: url } };
+    }
+    if (this.failStatus !== null) return { status: this.failStatus, payload: { message: 'injected' } };
+    const lines = this.eligibility.get(externalOrderId);
+    return { status: 200, payload: lines ? { found: true, lines } : { found: false, lines: [] } };
+  }
+}
+
+let customerSeq = 0;
+
+/** 고객 하나 + 그 고객으로 인증된 스토어 헤더(publishable key 포함). */
+export async function customerHeaders(
+  container: any,
+  c: Commerce,
+): Promise<{ customerId: string; headers: { headers: Record<string, string> } }> {
+  customerSeq++;
+  const config = container.resolve(ContainerRegistrationKeys.CONFIG_MODULE) as any;
+  const secret = config.projectConfig.http.jwtSecret;
+  const [customer] = await container
+    .resolve(Modules.CUSTOMER)
+    .createCustomers([{ email: `returner${customerSeq}-${Date.now()}@return.test` }]);
+  const token = jwt.sign(
+    { actor_id: customer.id, actor_type: 'customer', auth_identity_id: 'c', app_metadata: { customer_id: customer.id } },
+    secret,
+  );
+  return {
+    customerId: customer.id as string,
+    headers: { headers: { ...c.storeHeaders.headers, authorization: `Bearer ${token}` } },
+  };
+}
+
+/** placeOrder 는 손님 주문을 만든다 — 고객 소유 확인을 보려면 주문을 고객에게 붙인다. */
+export async function assignOrderToCustomer(container: any, orderId: string, customerId: string) {
+  await container.resolve(Modules.ORDER).updateOrders([{ id: orderId, customer_id: customerId }]);
+}
