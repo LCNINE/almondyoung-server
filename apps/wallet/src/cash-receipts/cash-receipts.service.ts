@@ -1,7 +1,15 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, asc, eq } from 'drizzle-orm';
-import { CashReceiptType, WalletSchema, cashReceipts, paymentIntentItems, paymentIntents } from '../schema';
+import { and, asc, eq, inArray } from 'drizzle-orm';
+import {
+  CashReceiptType,
+  WalletSchema,
+  cashReceipts,
+  charges,
+  paymentIntentItems,
+  paymentIntents,
+  refunds,
+} from '../schema';
 import { Charge, CashReceipt } from '../types';
 import { ChargesService } from '../charges/charges.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
@@ -58,8 +66,11 @@ export class CashReceiptsService {
     // 카드는 매출전표가 증빙이라 현금영수증을 또 끊으면 안 됨.
     const charge = await this.findCashChargeOrThrow(dto.intentId);
 
+    // 환불 행·영수증은 경로에 따라 CAPTURE 와 원래 AUTHORIZE 중 어느 쪽 id 로도 남는다
+    const legIds = await this.legChargeIds(charge);
+
     // 이중발급 방지 (DB partial unique index 와 짝)
-    const existing = await this.findActiveByCharge(charge.id);
+    const existing = await this.findActiveByCharges(legIds);
     if (existing) {
       throw new ConflictException({
         error: 'CASH_RECEIPT_ALREADY_ISSUED',
@@ -69,10 +80,19 @@ export class CashReceiptsService {
 
     await this.assertNoTossIssuedReceipt(charge);
 
+    // 먼저 부분 환불된 결제는 남은 금액만 발급한다. 진행 중(PENDING) 환불은 성공할 때 cancelForRefund 가 맞춘다.
+    const amount = charge.amount - (await this.getSucceededRefundedTotal(legIds));
+    if (amount <= 0) {
+      throw new BadRequestException({
+        error: 'CASH_RECEIPT_NOTHING_TO_ISSUE',
+        message: '환불되어 현금영수증을 발급할 금액이 없습니다.',
+      });
+    }
+
     const orderName = await this.buildOrderName(dto.intentId);
 
     const result = await this.tossApiClient.issueCashReceipt({
-      amount: charge.amount,
+      amount,
       orderId: dto.intentId,
       orderName,
       type: dto.type,
@@ -89,7 +109,7 @@ export class CashReceiptsService {
           userId,
           type: dto.type,
           customerIdentityNumber: dto.customerIdentityNumber,
-          amount: charge.amount,
+          amount,
           currency: charge.currency,
           status: 'FAILED',
           errorCode: result.error.code,
@@ -112,7 +132,7 @@ export class CashReceiptsService {
         userId,
         type: dto.type,
         customerIdentityNumber: dto.customerIdentityNumber,
-        amount: charge.amount,
+        amount,
         currency: charge.currency,
         status: 'ISSUED',
         receiptKey: data.receiptKey,
@@ -125,39 +145,66 @@ export class CashReceiptsService {
 
     const row = inserted[0];
     if (!row) throw new Error('CASH_RECEIPT_INSERT_FAILED');
+
+    // 합계를 읽은 뒤 저장 전에 성공한 환불은 그 환불의 cancelForRefund 가 영수증을 못 찾고 지나갔다.
+    // 저장 직후 한 번 더 맞춘다. 발급은 이미 됐으므로 실패해도 되돌리지 않는다.
+    await this.cancelForRefund(charge.id).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Cash receipt reconcile after issue failed: receipt=${row.id}, error=${message}`);
+    });
     return row;
   }
 
   /**
-   * 환불 시 호출 — 해당 charge 의 ISSUED 현금영수증을 환불금액만큼 토스에서 취소한다.
+   * 환불 성공 뒤 호출 — 그 결제분의 ISSUED 현금영수증을 (결제 금액 − 성공한 환불 합계)에 맞춰 토스에서 취소한다.
+   * 받은 환불 금액만큼 빼지 않고 목표에 맞추므로, 발급 때 이미 뺀 환불이 다시 빠지지 않고 여러 번 불려도 같다.
    * 돈은 이미 환불됐으므로 영수증 취소 실패가 환불을 막아선 안 된다 (best-effort, 로깅만).
+   *
+   * 영수증 행을 잠근 채 조회 → 토스 취소 → 갱신한다. 환불 두 건이 동시에 성공하면 둘 다 같은 취소액을 읽고
+   * 목표까지 각자 취소해 토스에서 두 번 깎인다. 뒤에 온 호출은 앞 호출의 갱신을 보고 취소할 게 없어 끝난다.
    */
-  async cancelForRefund(chargeId: string, amount: number): Promise<void> {
-    const receipt = await this.findActiveByCharge(chargeId);
-    if (!receipt || !receipt.receiptKey) return;
+  async cancelForRefund(chargeId: string): Promise<void> {
+    const charge = await this.chargesService.findById(chargeId);
+    if (!charge) return;
+    const legIds = await this.legChargeIds(charge);
 
-    const cancelAmount = Math.min(amount, receipt.amount - receipt.canceledAmount);
-    if (cancelAmount <= 0) return;
+    await this.dbService.run(async (tx) => {
+      const [receipt] = await tx
+        .select()
+        .from(cashReceipts)
+        .where(and(inArray(cashReceipts.chargeId, legIds), eq(cashReceipts.status, 'ISSUED')))
+        .limit(1)
+        .for('update');
+      if (!receipt || !receipt.receiptKey) return;
 
-    const result = await this.tossApiClient.cancelCashReceipt(receipt.receiptKey, cancelAmount);
-    if (!result.ok) {
-      this.logger.error(
-        `Cash receipt cancel failed (refund continues): charge=${chargeId}, receipt=${receipt.id}, error=${result.error.message}`,
-      );
-      return;
-    }
+      const refunded = await tx
+        .select({ amount: refunds.amount })
+        .from(refunds)
+        .where(and(inArray(refunds.chargeId, legIds), eq(refunds.status, 'SUCCEEDED')));
+      const target = Math.max(0, charge.amount - refunded.reduce((total, r) => total + r.amount, 0));
+      const cancelAmount = receipt.amount - receipt.canceledAmount - target;
+      if (cancelAmount <= 0) return;
 
-    const newCanceled = receipt.canceledAmount + cancelAmount;
-    const fullyCanceled = newCanceled >= receipt.amount;
-    await this.dbService.db
-      .update(cashReceipts)
-      .set({
-        canceledAmount: newCanceled,
-        status: fullyCanceled ? 'CANCELED' : receipt.status,
-        canceledAt: fullyCanceled ? new Date() : receipt.canceledAt,
-        updatedAt: new Date(),
-      })
-      .where(eq(cashReceipts.id, receipt.id));
+      const result = await this.tossApiClient.cancelCashReceipt(receipt.receiptKey, cancelAmount);
+      if (!result.ok) {
+        this.logger.error(
+          `Cash receipt cancel failed (refund continues): charge=${chargeId}, receipt=${receipt.id}, error=${result.error.message}`,
+        );
+        return;
+      }
+
+      const newCanceled = receipt.canceledAmount + cancelAmount;
+      const fullyCanceled = newCanceled >= receipt.amount;
+      await tx
+        .update(cashReceipts)
+        .set({
+          canceledAmount: newCanceled,
+          status: fullyCanceled ? 'CANCELED' : receipt.status,
+          canceledAt: fullyCanceled ? new Date() : receipt.canceledAt,
+          updatedAt: new Date(),
+        })
+        .where(eq(cashReceipts.id, receipt.id));
+    });
   }
 
   async findByIntent(intentId: string, userId: string): Promise<CashReceipt[]> {
@@ -243,11 +290,30 @@ export class CashReceiptsService {
     }
   }
 
-  private async findActiveByCharge(chargeId: string): Promise<CashReceipt | null> {
+  /** 같은 결제분의 charge id — 원래 AUTHORIZE 와 그것을 캡처한 CAPTURE 들. */
+  private async legChargeIds(charge: Charge): Promise<string[]> {
+    const authorizeId = ledgerLegChargeId(charge);
+    const captures = await this.dbService.db
+      .select()
+      .from(charges)
+      .where(and(eq(charges.intentId, charge.intentId), eq(charges.operation, 'CAPTURE')));
+    const captureIds = captures.filter((c) => ledgerLegChargeId(c) === authorizeId).map((c) => c.id);
+    return [...new Set([charge.id, authorizeId, ...captureIds])];
+  }
+
+  private async getSucceededRefundedTotal(chargeIds: string[]): Promise<number> {
+    const rows = await this.dbService.db
+      .select({ amount: refunds.amount })
+      .from(refunds)
+      .where(and(inArray(refunds.chargeId, chargeIds), eq(refunds.status, 'SUCCEEDED')));
+    return rows.reduce((total, r) => total + r.amount, 0);
+  }
+
+  private async findActiveByCharges(chargeIds: string[]): Promise<CashReceipt | null> {
     const rows = await this.dbService.db
       .select()
       .from(cashReceipts)
-      .where(and(eq(cashReceipts.chargeId, chargeId), eq(cashReceipts.status, 'ISSUED')))
+      .where(and(inArray(cashReceipts.chargeId, chargeIds), eq(cashReceipts.status, 'ISSUED')))
       .limit(1);
     return rows[0] ?? null;
   }
