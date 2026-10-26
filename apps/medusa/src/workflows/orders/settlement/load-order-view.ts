@@ -1,0 +1,102 @@
+import type { MedusaContainer } from '@medusajs/framework/types';
+import { Modules } from '@medusajs/framework/utils';
+
+import { POLICY_SNAPSHOT_KEY, type ShippingPolicySnapshot } from '../../../modules/almond-fulfillment/types';
+import { toNumber } from '../partial-cancel/amount';
+import type { OrderLine } from '../partial-cancel/plan-partial-cancel';
+import { PARTIAL_CANCEL_CHARGE_NAME, type ShippingMethodView } from '../partial-cancel/plan-shipping';
+
+export type OrderView = {
+  id: string;
+  status: string;
+  version: number;
+  metadata: Record<string, unknown> | null;
+  lines: OrderLine[];
+  shippingMethods: ShippingMethodView[];
+  postalCode: string | null;
+  /** 현재 버전 summary 의 pending_difference. 음수 = 돌려줄 차액 */
+  pendingDifference: number;
+};
+
+/**
+ * 주문을 «현재 버전» 기준으로 읽는다. query.graph 로 order 를 읽으면 주문 수정 뒤 summary·items 가 버전이 섞여 나온다
+ * (Task 1 특성 테스트에서 관찰) — 버전을 아는 order 모듈로 읽는다.
+ */
+export async function loadOrderView(container: MedusaContainer, orderId: string): Promise<OrderView | null> {
+  const orderModule = container.resolve(Modules.ORDER);
+  const [o] = await orderModule.listOrders(
+    { id: orderId },
+    {
+      select: ['id', 'status', 'version', 'metadata'],
+      relations: [
+        'items',
+        'items.detail',
+        'items.adjustments',
+        'shipping_methods',
+        'shipping_methods.adjustments',
+        'summary',
+        'shipping_address',
+      ],
+    },
+  );
+  if (!o) return null;
+  // order 모듈의 DTO 는 summary 를 단일 객체로 적지만 실제로는 버전별 배열이 올 수 있어 모양을 넓혀 받는다.
+  const rawSummary = (o as unknown as { summary?: SummaryRow | SummaryRow[] | null }).summary;
+  const summary = Array.isArray(rawSummary) ? (rawSummary.find((s) => s.version === o.version) ?? rawSummary[0]) : rawSummary;
+  const pendingDifference = toNumber(summary?.totals?.pending_difference ?? summary?.pending_difference ?? 0);
+  if (!Number.isFinite(pendingDifference)) throw new Error(`주문 summary 를 읽지 못했습니다: ${orderId}`);
+
+  return {
+    id: o.id,
+    status: o.status,
+    version: o.version,
+    metadata: (o.metadata as Record<string, unknown> | null) ?? null,
+    lines: (o.items ?? []).map((i) => ({
+      id: i.id,
+      quantity: toNumber(i.quantity),
+      unitPrice: toNumber(i.unit_price),
+      productId: i.product_id ?? null,
+      requiresShipping: i.requires_shipping !== false,
+      adjustments: (i.adjustments ?? []).map((a) => ({
+        amount: toNumber(a.amount),
+        code: a.code ?? null,
+        promotion_id: a.promotion_id ?? null,
+        description: a.description ?? null,
+        // 모델에는 있는데 OrderLineItemAdjustmentDTO 타입에 빠진 필드라 모양만 넓혀 읽는다.
+        is_tax_inclusive: !!(a as { is_tax_inclusive?: boolean | null }).is_tax_inclusive,
+      })),
+    })),
+    shippingMethods: (o.shipping_methods ?? []).map((m) => toShippingMethodView(m)),
+    postalCode: o.shipping_address?.postal_code ?? null,
+    pendingDifference,
+  };
+}
+
+/** 배송 방법 → 계획 입력. amount 는 할인 «전» 금액이라, 할인이 붙었는지를 따로 넘긴다(planShipping 이 조정을 멈춘다). */
+export function toShippingMethodView(m: {
+  id: string;
+  shipping_option_id?: string | null;
+  amount: unknown;
+  name?: string | null;
+  data?: Record<string, unknown> | null;
+  adjustments?: Array<{ amount: unknown } | null> | null;
+}): ShippingMethodView {
+  return {
+    id: m.id,
+    shippingOptionId: m.shipping_option_id ?? null,
+    amount: toNumber(m.amount),
+    snapshot: readSnapshot(m.data),
+    isPartialCancelCharge: m.name === PARTIAL_CANCEL_CHARGE_NAME,
+    hasAdjustments: (m.adjustments ?? []).some((a) => !!a && toNumber(a.amount) !== 0),
+  };
+}
+
+type SummaryRow = { version?: number; pending_difference?: unknown; totals?: { pending_difference?: unknown } };
+
+function readSnapshot(data: Record<string, unknown> | null | undefined): ShippingPolicySnapshot | null {
+  // Medusa 는 JSON 을 병합 갱신하므로 «지운» 스냅샷은 null 로 남는다. 모양이 맞지 않으면 없는 것으로 본다.
+  const v = data?.[POLICY_SNAPSHOT_KEY] as Partial<ShippingPolicySnapshot> | null | undefined;
+  if (!v || typeof v !== 'object' || !v.policy || typeof v.shippingProfileId !== 'string') return null;
+  return v as ShippingPolicySnapshot;
+}
+

@@ -1,6 +1,9 @@
 import { calculateShippingFee } from '../../../modules/almond-fulfillment/calculate-shipping-fee';
 import type { ShippingPolicySnapshot } from '../../../modules/almond-fulfillment/types';
 
+/** 부분취소가 더하는 배송비 방법의 이름 — 다음 판정이 «그룹의 원래 방법»과 가르는 표지다. */
+export const PARTIAL_CANCEL_CHARGE_NAME = '부분취소 배송비';
+
 export type ShippingMethodView = {
   id: string;
   shippingOptionId: string | null;
