@@ -84,7 +84,7 @@ describeIfDb('EntitlementManager.grantByDays 아웃박스 원자성 (PostgreSQL 
 
   it('지급 커밋과 함께 MembershipStatusChanged(ACTIVE) 가 event.outbox_events 에 남는다', async () => {
     const userId = newUserId();
-    const manager = new EntitlementManager({ db } as never, realPublisher());
+    const manager = new EntitlementManager({ db, run: (fn: (t: unknown) => Promise<unknown>, t?: unknown) => (t ? fn(t) : db.transaction(fn as never)) } as never, realPublisher());
 
     const result = await manager.grantByDays(userId, 30, 'itest memo', 'admin-it');
 
@@ -119,7 +119,7 @@ describeIfDb('EntitlementManager.grantByDays 아웃박스 원자성 (PostgreSQL 
     const failingPublisher = {
       saveStatusChanged: jest.fn().mockRejectedValue(new Error('outbox insert failed')),
     };
-    const manager = new EntitlementManager({ db } as never, failingPublisher as never);
+    const manager = new EntitlementManager({ db, run: (fn: (t: unknown) => Promise<unknown>, t?: unknown) => (t ? fn(t) : db.transaction(fn as never)) } as never, failingPublisher as never);
 
     await expect(manager.grantByDays(userId, 30, null, 'admin-it')).rejects.toThrow('outbox insert failed');
 
