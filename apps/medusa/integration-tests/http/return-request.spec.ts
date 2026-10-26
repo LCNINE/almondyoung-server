@@ -3,9 +3,11 @@ import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
 import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import {
   beginReceiveReturnWorkflow,
+  beginReturnOrderWorkflow,
   confirmReturnReceiveWorkflow,
   getOrderDetailWorkflow,
   receiveItemReturnRequestWorkflow,
+  requestItemReturnWorkflow,
 } from '@medusajs/core-flows';
 import { ALMOND_FULFILLMENT_PROVIDER_ID } from '../../src/modules/almond-fulfillment/provision-shipping-group';
 import {
@@ -297,6 +299,79 @@ medusaIntegrationTestRunner({
       const itemId = (await loadOrder(getContainer(), orderId)).items[0].id;
       expect(await rejection(request({ orderId, items: [{ itemId, quantity: 1 }] }))).toBe('not_delivered');
       expect(await returnsOf(orderId)).toHaveLength(0);
+    });
+
+    // ── 중간에 끊긴 요청(같은 requestId 재시도가 먼저 치운다) ─────────────────────────────────────────────
+    const orderModule = () => getContainer().resolve(Modules.ORDER);
+    /** 앞선 시도가 registerFulfillment 까지만 하고 죽은 모양 — 오케스트레이터와 같은 표지를 단다. */
+    const deadTopUp = (orderId: string, requestId: string, itemId: string, quantity: number) =>
+      orderModule().registerFulfillment({ order_id: orderId, items: [{ id: itemId, quantity }], internal_note: `return-request:${requestId}` });
+    const confirmedChanges = async (orderId: string, tag: string) =>
+      ((await orderModule().listOrderChanges({ order_id: orderId, status: 'confirmed' }, { select: ['id', 'internal_note'] })) as any[]).filter(
+        (ch) => ch.internal_note === tag,
+      );
+
+    it('top-up 만 남고 죽은 요청(registerFulfillment 직접 호출로 재현)을 같은 requestId 로 다시 부르면 → 반품 1개, fulfilled 는 반품 수량과 같다(이중으로 안 오름)', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      await deadTopUp(orderId, 'r-dead-topup', itemOf('A'), 1);
+      expect(await detailOf(orderId, itemOf('A'))).toMatchObject({ fulfilled: 1, returnRequested: 0 });
+
+      const res = await request({ orderId, requestId: 'r-dead-topup', items: [{ itemId: itemOf('A'), quantity: 1 }] });
+
+      expect(res.status).toBe('requested');
+      expect(await returnsOf(orderId)).toHaveLength(1);
+      expect(await detailOf(orderId, itemOf('A'))).toMatchObject({ fulfilled: 1, returnRequested: 1 });
+      expect(await confirmedChanges(orderId, 'return-request-revert:r-dead-topup')).toHaveLength(1);
+    });
+
+    it('되돌림을 두 번 하지 않는다', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const body = { orderId, requestId: 'r-dead-twice', items: [{ itemId: itemOf('A'), quantity: 1 }] };
+      await deadTopUp(orderId, 'r-dead-twice', itemOf('A'), 1);
+
+      // 치운 뒤 새 시도가 확정 단계에서 또 죽는다 — 그 되돌림도 같은 표지로 이력에 남는다
+      const flows = jest.requireMock('@medusajs/medusa/core-flows') as { confirmReturnRequestWorkflow: jest.Mock };
+      flows.confirmReturnRequestWorkflow.mockImplementationOnce(() => ({ run: () => Promise.reject(new Error('boom')) }));
+      await expect(request(body)).rejects.toThrow('boom');
+      expect(await detailOf(orderId, itemOf('A'))).toMatchObject({ fulfilled: 0, returnRequested: 0 });
+      expect(await confirmedChanges(orderId, 'return-request-revert:r-dead-twice')).toHaveLength(2);
+
+      // 이력 합: +1(죽은 시도) −1(치움) +1(새 시도) −1(되돌리기) = 0 → 더 내리지 않는다(내리면 fulfilled 0 아래라 Medusa 가 거절한다)
+      const a = await request(body);
+      const b = await request(body);
+      expect(b).toEqual(a);
+      expect(await returnsOf(orderId)).toHaveLength(1);
+      expect(await detailOf(orderId, itemOf('A'))).toMatchObject({ fulfilled: 1, returnRequested: 1 });
+      expect(await confirmedChanges(orderId, 'return-request-revert:r-dead-twice')).toHaveLength(2);
+    });
+
+    it('open 반품으로 죽은 요청(begin+requestItemReturn 까지 직접 호출, metadata 에 기록)을 다시 부르면 → 열린 주문 변경 0, 확정된 반품 1개, fulfilled 정확', async () => {
+      const container = getContainer();
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }, { variant: 'C', quantity: 1 }]);
+      await deadTopUp(orderId, 'r-dead-open', itemOf('A'), 1);
+      const record = {
+        requestId: 'r-dead-open', requestHash: 'stale', requestedBy: 'operator', reasonValue: 'change_of_mind', feeBearer: 'customer',
+        windowOverride: null, fulfillmentTopUp: [{ itemId: itemOf('A'), quantity: 1 }],
+      };
+      const { result: change } = await beginReturnOrderWorkflow(container).run({ input: { order_id: orderId, metadata: { almondReturn: record } } });
+      await requestItemReturnWorkflow(container).run({
+        input: { return_id: (change as any).return_id, items: [{ id: itemOf('A'), quantity: 1 }] },
+      });
+      expect(await openChanges(orderId)).toHaveLength(1);
+
+      const res = await request({ orderId, requestId: 'r-dead-open', items: [{ itemId: itemOf('A'), quantity: 1 }] });
+
+      expect(res.status).toBe('requested');
+      expect(res.returnId).not.toBe((change as any).return_id);
+      expect(await openChanges(orderId)).toHaveLength(0);
+      const rets = await returnsOf(orderId);
+      expect(rets.map((r) => r.status)).toEqual(['requested']);
+      expect(await detailOf(orderId, itemOf('A'))).toMatchObject({ fulfilled: 1, returnRequested: 1 });
+
+      // partialCancelOrder 가 반품 아닌 수량에서 성공
+      const pc = await partialCancelOrder(container, { orderId, requestId: 'pc-after-dead-open', items: [{ itemId: itemOf('A'), quantity: 1 }] });
+      expect(pc.stage).toBe('refunded');
+      expect(await detailOf(orderId, itemOf('A'))).toMatchObject({ quantity: 1, fulfilled: 1 });
     });
 
     it('반품 1개 요청 뒤 그 줄 전량 partialCancelOrder → PartialCancelRejected, 주문 수정 0', async () => {

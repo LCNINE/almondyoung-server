@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import type { MedusaContainer } from '@medusajs/framework/types';
-import { ContainerRegistrationKeys, Modules, ReturnStatus } from '@medusajs/framework/utils';
+import { ChangeActionType, ContainerRegistrationKeys, Modules, OrderChangeStatus, ReturnStatus } from '@medusajs/framework/utils';
 import {
   beginReturnOrderWorkflow,
   cancelReturnRequestWorkflow,
@@ -11,6 +11,7 @@ import {
 
 import { findReturnShippingOptionId } from '../../../modules/almond-fulfillment/return-shipping-option';
 import { describeError } from '../../../utils/describe-error';
+import { toNumber } from '../partial-cancel/amount';
 import { orderCancelLockKey } from '../settlement/order-payments';
 import { fetchCoreReturnEligibility } from './core-return-eligibility';
 import { loadReturnOrder, RETURN_REQUEST_METADATA_KEY, type ReturnRequestRecord } from './load-return-order';
@@ -55,6 +56,10 @@ export class ReturnOrderNotFound extends Error {
 /** 부분취소와 같은 잠금 — 한 주문에 열린 주문 변경은 하나뿐이다(N5). 레디스 잠금은 timeout 이 곧 만료다. */
 const ORDER_LOCK_TIMEOUT_SECONDS = 60;
 
+/** 주문 변경(change)의 internal_note 표지 — registerFulfillment·cancelFulfillment 는 이 값을 주문 변경 행에 싣는다(services/actions/*-fulfillment.js). */
+const topUpTag = (requestId: string) => `return-request:${requestId}`;
+const revertTag = (requestId: string) => `return-request-revert:${requestId}`;
+
 /**
  * 반품 요청(K8 PR3, 설계 §4.2 «우리 워크플로 셋»의 1).
  *
@@ -70,7 +75,7 @@ export async function requestOrderReturn(container: MedusaContainer, input: Requ
 }
 
 async function run(container: MedusaContainer, input: RequestOrderReturnInput): Promise<RequestOrderReturnResult> {
-  const order = await loadReturnOrder(container, input.orderId);
+  let order = await loadReturnOrder(container, input.orderId);
   if (!order || (input.requestedBy === 'customer' && (!input.customerId || order.customerId !== input.customerId))) {
     throw new ReturnOrderNotFound(`주문을 찾을 수 없습니다: ${input.orderId}`);
   }
@@ -78,13 +83,21 @@ async function run(container: MedusaContainer, input: RequestOrderReturnInput): 
   // 멱등은 판정 «전»에 본다 — 같은 요청을 다시 판정하면 이미 만든 반품이 그 수량을 잡고 있어 quantity_exceeds_returnable 로 거절된다
   const items = normalizeItems(input.items);
   const requestHash = hashReturnRequest(items, input.reasonValue, input.operatorFeeBearer);
-  const existing = order.returns.find((r) => r.record?.requestId === input.requestId);
-  if (existing?.record) {
-    if (existing.record.requestHash !== requestHash) {
+  const mine = order.returns.filter((r) => r.record?.requestId === input.requestId);
+  const settled = mine.find((r) => r.status !== ReturnStatus.OPEN);
+  if (settled?.record) {
+    if (settled.record.requestHash !== requestHash) {
       throw new ReturnRequestRejected('request_id_conflict', `같은 requestId 로 다른 요청이 왔습니다: ${input.requestId}`);
     }
     // 해시가 품목을 덮으므로 이번 품목이 곧 그때 품목이다
-    return toResult(existing.id, existing.status, input.requestId, items, existing.record);
+    return toResult(settled.id, settled.status, input.requestId, items, settled.record);
+  }
+  // 여기까지 왔으면 이 requestId 의 확정된 반품은 없다 — 앞선 시도가 중간에 죽었다면 그 흔적을 «먼저» 치운다(같은 잠금 안)
+  if (await clearAbandonedAttempt(container, order.id, input.requestId, mine)) {
+    // 치운 만큼 fulfilled·요청 수량이 바뀌었다 — 옛 수치로 판정하면 top-up 을 덜 올려 코어 RETURN_ITEM 검증에 걸린다
+    const reloaded = await loadReturnOrder(container, input.orderId);
+    if (!reloaded) throw new ReturnOrderNotFound(`주문을 찾을 수 없습니다: ${input.orderId}`);
+    order = reloaded;
   }
 
   const core = await fetchCoreReturnEligibility(order.id);
@@ -132,7 +145,7 @@ async function run(container: MedusaContainer, input: RequestOrderReturnInput): 
       order_id: order.id,
       items: topUp,
       created_by: input.actorId,
-      internal_note: `return-request:${input.requestId}`,
+      internal_note: topUpTag(input.requestId),
     });
   }
 
@@ -167,7 +180,7 @@ async function run(container: MedusaContainer, input: RequestOrderReturnInput): 
     });
     await confirmReturnRequestWorkflow(container).run({ input: { return_id: returnId, confirmed_by: input.actorId } });
   } catch (error) {
-    await rollback(container, { orderId: order.id, returnId, topUp });
+    await rollback(container, { orderId: order.id, requestId: input.requestId, returnId, topUp });
     throw error instanceof Error ? error : new Error(`반품 요청 실패: ${describeError(error)}`);
   }
 
@@ -181,7 +194,7 @@ async function run(container: MedusaContainer, input: RequestOrderReturnInput): 
  */
 async function rollback(
   container: MedusaContainer,
-  p: { orderId: string; returnId: string | undefined; topUp: Array<{ id: string; quantity: number }> },
+  p: { orderId: string; requestId: string; returnId: string | undefined; topUp: Array<{ id: string; quantity: number }> },
 ) {
   const logger = container.resolve(ContainerRegistrationKeys.LOGGER);
   if (p.returnId) {
@@ -194,13 +207,67 @@ async function rollback(
   if (p.topUp.length > 0) {
     await container
       .resolve(Modules.ORDER)
-      .cancelFulfillment({ order_id: p.orderId, items: p.topUp })
+      // 되돌림 표지 — 여기서 실패해도 다음 같은 requestId 시도가 이력으로 남은 몫만 되돌린다(clearAbandonedAttempt)
+      .cancelFulfillment({ order_id: p.orderId, items: p.topUp, internal_note: revertTag(p.requestId) })
       .catch((e: unknown) =>
         logger.error(
           `[return-request] 올린 출고 수량 되돌리기 실패: orderId=${p.orderId} items=${JSON.stringify(p.topUp)} — ${describeError(e)}`,
         ),
       );
   }
+}
+
+/**
+ * 같은 requestId 의 앞선 시도가 확정 전에 죽은 흔적을 치운다 — 되돌리기(rollback)까지 못 간 경우다.
+ * ① 열린(open) 반품: 주문 변경이 열린 채라 이후 부분취소가 «active order change» 500 으로 막힌다 → cancelReturnRequestWorkflow.
+ * ② 주인 없는 출고 수량: registerFulfillment 뒤 begin 전에 죽으면 반품 기록이 없어 반품 취소가 영영 못 내린다(5a 하한 때문에
+ *    그 수량은 부분취소도 못 한다). 무엇을 실제로 올렸는지는 metadata 가 아니라 주문 변경 이력이 정본이다 — 이 requestId 표지의
+ *    확정된 FULFILL_ITEM 합에서 되돌림 표지의 CANCEL_ITEM_FULFILLMENT 합을 뺀 만큼을 되돌림 표지로 내린다. 되돌림도 이력에 남으므로
+ *    다시 불러도 두 번 내리지 않는다. 호출자는 이 requestId 의 확정된 반품이 없을 때만 부른다(있으면 그 반품이 수량의 주인이다).
+ * 무엇이든 치웠으면 true — 호출자는 주문을 다시 읽어야 한다.
+ */
+async function clearAbandonedAttempt(
+  container: MedusaContainer,
+  orderId: string,
+  requestId: string,
+  openReturns: Array<{ id: string }>,
+): Promise<boolean> {
+  for (const r of openReturns) {
+    await cancelReturnRequestWorkflow(container).run({ input: { return_id: r.id } });
+  }
+
+  const orderModule = container.resolve(Modules.ORDER);
+  // internal_note 는 모델에는 있는데 OrderChangeDTO 타입에 빠져 있다 — 고른 필드만 담은 모양으로 좁힌다(partial-cancel 의 ensureNoDanglingEdit 와 같은 관례).
+  const changes = (await orderModule.listOrderChanges(
+    { order_id: orderId, status: OrderChangeStatus.CONFIRMED },
+    { select: ['id', 'status', 'internal_note'], relations: ['actions'] },
+  )) as Array<{
+    internal_note?: string | null;
+    actions?: Array<{ action: string; details?: { reference_id?: unknown; quantity?: unknown } | null }> | null;
+  }>;
+  const net = new Map<string, number>();
+  const add = (tag: string, action: string, sign: 1 | -1) => {
+    for (const ch of changes.filter((c) => c.internal_note === tag)) {
+      for (const a of (ch.actions ?? []).filter((x) => x.action === action)) {
+        const itemId = a.details?.reference_id;
+        const qty = toNumber(a.details?.quantity);
+        if (typeof itemId !== 'string' || !Number.isFinite(qty)) {
+          throw new Error(`반품 요청 출고 이력을 읽지 못했습니다: orderId=${orderId} requestId=${requestId}`);
+        }
+        net.set(itemId, (net.get(itemId) ?? 0) + sign * qty);
+      }
+    }
+  };
+  add(topUpTag(requestId), ChangeActionType.FULFILL_ITEM, 1);
+  add(revertTag(requestId), ChangeActionType.CANCEL_ITEM_FULFILLMENT, -1);
+
+  const remainder = [...net].filter(([, q]) => q > 0).map(([id, quantity]) => ({ id, quantity }));
+  if (remainder.length === 0) return openReturns.length > 0;
+  container
+    .resolve(ContainerRegistrationKeys.LOGGER)
+    .warn(`[return-request] 끊긴 요청의 출고 수량을 되돌린다: orderId=${orderId} requestId=${requestId} items=${JSON.stringify(remainder)}`);
+  await orderModule.cancelFulfillment({ order_id: orderId, items: remainder, internal_note: revertTag(requestId) });
+  return true;
 }
 
 async function findReturnReason(container: MedusaContainer, value: string) {
