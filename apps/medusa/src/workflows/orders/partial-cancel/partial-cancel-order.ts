@@ -23,6 +23,7 @@ import { appliedExternalRefund, checkAlreadyRefunded, hashRequest, unresolvedExt
 import type { OrderAdjustment } from './prorate-adjustments';
 import { planPartialCancel, PartialCancelRejected, type CancelRequestItem, type OrderLine } from './plan-partial-cancel';
 import { PARTIAL_CANCEL_CHARGE_NAME, planShipping } from './plan-shipping';
+import { cancelShippingFeeBearer, type ShippingFeeBearer } from './shipping-fee-bearer';
 
 export { PARTIAL_CANCEL_CHARGE_NAME };
 
@@ -34,6 +35,9 @@ export type PartialCancelInput = {
   alreadyRefunded?: number;
   /** 없으면 auto(#1016 36번 재설계). 요청 해시에 넣지 않는다 — 자동 거절 뒤 같은 요청을 수동으로 다시 보낸다 */
   refundMode?: RefundMode;
+  /** 취소 사유·요청 주체 — 택배비 부담을 정한다(K8). 요청 해시에 넣지 않는다: 옛 기록으로 멈춘 요청을 사유와 함께 다시 불러도 이어 가야 한다 */
+  reasonCode?: string;
+  requestedBy?: string;
   actorId?: string;
 };
 export type PartialCancelRecord = {
@@ -56,6 +60,8 @@ export type PartialCancelRecord = {
   refundedAt?: string;
   /** 환불을 끝낸 방식 — refunded 때 쓴다. 옛 기록엔 없다(auto) */
   refundMode?: RefundMode;
+  /** 무료배송이 깨질 때 택배비를 누가 냈나 — 옛 기록엔 없다(그땐 고객이 냈다) */
+  shippingFeeBearer?: ShippingFeeBearer;
 };
 export type PartialCancelResult = {
   requestId: string;
@@ -175,6 +181,7 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
     order.lines.map((l) => l.productId).filter((x): x is string => !!x),
   );
   const newQty = new Map(plan.lines.map((p) => [p.itemId, p.newQty]));
+  const bearer = cancelShippingFeeBearer(input);
   const shipping = planShipping({
     methods: order.shippingMethods,
     lines: order.lines.map((l) => ({
@@ -186,7 +193,7 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
     })),
     postalCode: order.postalCode,
     priorGroupFees: priorGroupFees(order.metadata),
-    chargeCap: plan.itemRefundEstimate,
+    chargeCap: bearer === 'seller' ? 0 : plan.itemRefundEstimate,
   });
 
   const { result: change } = await beginOrderEditOrderWorkflow(container).run({
@@ -252,6 +259,7 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
     groupFees: shipping.adjustable ? Object.fromEntries(shipping.groups.map((g) => [g.shippingProfileId, g.recordedFee])) : {},
     at: new Date().toISOString(),
     orderVersion: edited.version,
+    shippingFeeBearer: bearer,
     ...(input.alreadyRefunded !== undefined ? { externalRefundApplied: applied } : {}),
   };
   await writeRecord(container, order.id, input.requestId, record);

@@ -97,6 +97,8 @@ export class ChannelOrderCancelManager {
       items: command.lines.map((line) => ({ itemId: line.channelOrderItemId, quantity: line.quantity })),
       ...(command.alreadyRefundedAmount !== undefined ? { alreadyRefunded: command.alreadyRefundedAmount } : {}),
       refundMode: command.refundMode ?? 'auto',
+      ...(command.reasonCode !== undefined ? { reasonCode: command.reasonCode } : {}),
+      ...(command.requestedBy !== undefined ? { requestedBy: command.requestedBy } : {}),
     });
     switch (outcome.kind) {
       case 'cancelled':

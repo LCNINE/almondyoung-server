@@ -82,6 +82,7 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
         requestId: 'req-1',
         items: [{ itemId: 'ordli_1', quantity: 2 }],
         refundMode: 'auto',
+        requestedBy: 'operator',
       });
     });
 
@@ -97,7 +98,27 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
         items: [{ itemId: 'ordli_1', quantity: 2 }],
         alreadyRefunded: 10000,
         refundMode: 'manual',
+        requestedBy: 'operator',
       });
+    });
+  });
+
+  describe('취소 사유 전달 (K8 — 택배비는 사유가 정한다)', () => {
+    it('명령의 reasonCode·requestedBy 를 부분취소 입력으로 그대로 넘긴다', async () => {
+      const { manager, medusa } = setup();
+      medusa.partialCancelOrder.mockResolvedValue(cancelledPartial);
+      await manager.execute({ ...partial, reasonCode: 'OUT_OF_STOCK', requestedBy: 'operator' }, 'd1');
+      expect(medusa.partialCancelOrder).toHaveBeenCalledWith(
+        'order_1',
+        expect.objectContaining({ reasonCode: 'OUT_OF_STOCK', requestedBy: 'operator' }),
+      );
+    });
+
+    it('사유가 명령에 없으면 reasonCode 키를 싣지 않는다', async () => {
+      const { manager, medusa } = setup();
+      medusa.partialCancelOrder.mockResolvedValue(cancelledPartial);
+      await manager.execute(partial, 'd1');
+      expect(medusa.partialCancelOrder.mock.calls[0][1]).not.toHaveProperty('reasonCode');
     });
   });
 

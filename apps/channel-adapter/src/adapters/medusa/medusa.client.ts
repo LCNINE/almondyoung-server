@@ -2662,6 +2662,9 @@ export class MedusaClient {
       items: Array<{ itemId: string; quantity: number }>;
       alreadyRefunded?: number;
       refundMode: ChannelCancelRefundMode;
+      /** 취소 사유·요청 주체 — Medusa 가 무료배송이 깨질 때 택배비 부담을 정한다(K8). 없으면 칸을 싣지 않는다 */
+      reasonCode?: string;
+      requestedBy?: string;
     },
   ): Promise<MedusaPartialCancelOutcome> {
     const path = `/admin/orders/${encodeURIComponent(orderId)}/partial-cancel`;
@@ -2672,6 +2675,8 @@ export class MedusaClient {
         items: input.items.map((item) => ({ item_id: item.itemId, quantity: item.quantity })),
         ...(input.alreadyRefunded !== undefined ? { already_refunded: input.alreadyRefunded } : {}),
         refundMode: input.refundMode,
+        ...(input.reasonCode !== undefined ? { reasonCode: input.reasonCode } : {}),
+        ...(input.requestedBy !== undefined ? { requestedBy: input.requestedBy } : {}),
       });
     } catch (error) {
       return {
