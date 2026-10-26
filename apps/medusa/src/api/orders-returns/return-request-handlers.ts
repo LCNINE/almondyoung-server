@@ -1,0 +1,58 @@
+import type { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
+
+import { fetchCoreReturnEligibility } from '../../workflows/orders/returns/core-return-eligibility';
+import { loadReturnOrder } from '../../workflows/orders/returns/load-return-order';
+import { describeReturnable } from '../../workflows/orders/returns/plan-return-request';
+import {
+  requestOrderReturn,
+  ReturnOrderNotFound,
+  type RequestOrderReturnResult,
+} from '../../workflows/orders/returns/request-order-return';
+import { parseReturnRequestBody } from './parse-return-input';
+import { sendReturnError } from './return-error-response';
+
+const toBody = (r: RequestOrderReturnResult) => ({
+  return_id: r.returnId,
+  request_id: r.requestId,
+  status: r.status,
+  items: r.items.map((i) => ({ item_id: i.itemId, quantity: i.quantity })),
+  fee_bearer: r.feeBearer,
+  window_overridden: r.windowOverridden,
+});
+
+/** store·admin POST 가 공유한다 — 다른 건 호출 주체뿐이다. 고객 소유 확인은 requestOrderReturn 안에서 한다. */
+export async function handleReturnRequest(req: AuthenticatedMedusaRequest, res: MedusaResponse, scope: 'store' | 'admin') {
+  const input = parseReturnRequestBody(req.body, scope);
+  const actorId = req.auth_context?.actor_id;
+  try {
+    const result = await requestOrderReturn(req.scope, {
+      ...input,
+      orderId: req.params.id,
+      ...(scope === 'store' ? { requestedBy: 'customer' as const, customerId: actorId } : { requestedBy: 'operator' as const, actorId }),
+    });
+    res.status(200).json(toBody(result));
+  } catch (error) {
+    if (!sendReturnError(res, error)) throw error;
+  }
+}
+
+/** store·admin GET 이 공유한다. store 는 본인 주문이 아니면 404 — 존재 여부를 흘리지 않는다. */
+export async function handleReturnable(req: AuthenticatedMedusaRequest, res: MedusaResponse, scope: 'store' | 'admin') {
+  try {
+    const order = await loadReturnOrder(req.scope, req.params.id);
+    if (!order || (scope === 'store' && (!req.auth_context?.actor_id || order.customerId !== req.auth_context.actor_id))) {
+      throw new ReturnOrderNotFound(`주문을 찾을 수 없습니다: ${req.params.id}`);
+    }
+    const core = await fetchCoreReturnEligibility(order.id);
+    const lines = describeReturnable(order.items, core);
+    res.status(200).json({
+      items: lines.map((l) => ({
+        item_id: l.itemId,
+        returnable_quantity: l.returnableQuantity,
+        window_ends_at: l.windowEndsAt ? l.windowEndsAt.toISOString() : null,
+      })),
+    });
+  } catch (error) {
+    if (!sendReturnError(res, error)) throw error;
+  }
+}
