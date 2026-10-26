@@ -1,6 +1,9 @@
 import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
 import { InternalOnly } from '@app/authorization';
+import { ReturnEligibilityService } from './return-eligibility.service';
+import { ReturnEligibilityRequestDto } from './return-eligibility.dto';
+import type { ReturnEligibilityResponse } from './return-eligibility';
 import { SalesOrderLookupService } from './sales-order-lookup.service';
 import { SalesOrderLookupRequestDto, SalesOrderLookupResponse } from './sales-order-lookup.dto';
 
@@ -12,11 +15,21 @@ import { SalesOrderLookupRequestDto, SalesOrderLookupResponse } from './sales-or
 @InternalOnly()
 @Controller('internal/sales-orders')
 export class SalesOrdersInternalController {
-  constructor(private readonly lookupService: SalesOrderLookupService) {}
+  constructor(
+    private readonly lookupService: SalesOrderLookupService,
+    private readonly returnEligibilityService: ReturnEligibilityService,
+  ) {}
 
   @Post('lookup')
   @HttpCode(HttpStatus.OK)
   async lookup(@Body() dto: SalesOrderLookupRequestDto): Promise<SalesOrderLookupResponse> {
     return { orders: await this.lookupService.lookup(dto.salesChannel, dto.orders) };
+  }
+
+  /** K8 PR3 — Medusa 반품 요청이 줄마다 배송완료 판매 단위·마지막 배송완료 시각을 묻는다. 반품 차감은 싣지 않는다. */
+  @Post('return-eligibility')
+  @HttpCode(HttpStatus.OK)
+  returnEligibility(@Body() dto: ReturnEligibilityRequestDto): Promise<ReturnEligibilityResponse> {
+    return this.returnEligibilityService.read(dto);
   }
 }
