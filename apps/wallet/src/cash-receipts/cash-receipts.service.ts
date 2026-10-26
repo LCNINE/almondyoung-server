@@ -241,7 +241,11 @@ export class CashReceiptsService {
           return;
         }
         const outcome = await this.sendCancel(receiptKey, pending, receipt.id);
-        if (outcome === 'unknown') return;
+        if (outcome === 'unknown') {
+          // 크론이 updated_at 오래된 순으로 고른다 — 시도한 건을 뒤로 보내 같은 50건만 계속 고르지 않게
+          await tx.update(cashReceipts).set({ updatedAt: new Date() }).where(eq(cashReceipts.id, receipt.id));
+          return;
+        }
         if (outcome === 'applied') canceled += pending.amount;
         pending = null;
       }
@@ -282,6 +286,7 @@ export class CashReceiptsService {
           sql`(${cashReceipts.requestPayload} -> 'pendingCancel' ->> 'requestedAt')::timestamptz > ${windowStart}::timestamptz`,
         ),
       )
+      .orderBy(asc(cashReceipts.updatedAt))
       .limit(limit);
     let failed = 0;
     for (const row of rows) {

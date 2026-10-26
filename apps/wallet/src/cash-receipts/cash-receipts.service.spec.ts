@@ -106,7 +106,15 @@ function makeContext(
             ? { where: () => Promise.resolve(refundsByCall.shift() ?? opts.succeededRefunds ?? []) }
             : table === charges
               ? { where: () => Promise.resolve(opts.captures ?? []) }
-              : { where: () => ({ limit: lockable, orderBy: () => resultPromise() }) },
+              : {
+                  where: () => ({
+                    limit: lockable,
+                    orderBy: () => {
+                      const p = resultPromise();
+                      return Object.assign(p, { limit: () => p });
+                    },
+                  }),
+                },
       })),
       insert: jest.fn().mockImplementation(() => ({
         values: (vals: any) => ({ returning: () => Promise.resolve([{ id: 'cr-new', ...vals }]) }),
@@ -477,7 +485,9 @@ describe('CashReceiptsService', () => {
       });
       await service.cancelForRefund(CHARGE_ID);
       expect(tossApiClient.cancelCashReceipt).toHaveBeenCalledTimes(1);
-      expect(updateCalls).toHaveLength(0);
+      // 크론 순번만 뒤로 — 취소액·남은 취소 기록은 그대로
+      expect(updateCalls).toHaveLength(1);
+      expect(Object.keys(updateCalls[0])).toEqual(['updatedAt']);
     });
 
     it.each([401, 403, 429])(
@@ -491,7 +501,8 @@ describe('CashReceiptsService', () => {
         });
         await service.cancelForRefund(CHARGE_ID);
         expect(tossApiClient.cancelCashReceipt).toHaveBeenCalledTimes(1);
-        expect(updateCalls).toHaveLength(0);
+        expect(updateCalls).toHaveLength(1);
+        expect(Object.keys(updateCalls[0])).toEqual(['updatedAt']);
       },
     );
 
