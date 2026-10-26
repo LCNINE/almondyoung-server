@@ -101,6 +101,11 @@ export class AlmondFulfillmentProviderService extends AbstractFulfillmentProvide
     return { data: {}, labels: [] };
   }
 
+  // 반품 요청 확정이 반품 배송 방법의 provider 로 부른다. 기본 클래스는 던진다. 회수 접수는 Medusa 가 아니라 core 가 한진에 한다(K8 §4.2).
+  async createReturnFulfillment(): Promise<CreateFulfillmentResult> {
+    return { data: {}, labels: [] };
+  }
+
   async cancelFulfillment(): Promise<any> {
     return {};
   }
