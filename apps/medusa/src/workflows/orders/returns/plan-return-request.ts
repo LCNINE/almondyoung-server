@@ -85,7 +85,8 @@ export type ReturnRequestPlan = {
  * 그래서 반품이 잡는 수량만큼만 올린다 — 전부 올리면 주문 수정이 그 아래로 수량을 못 줄인다.
  */
 export function planReturnRequest(input: PlanReturnRequestInput): ReturnRequestPlan {
-  if (input.orderStatus === 'canceled') throw new ReturnRequestRejected('order_canceled', '취소된 주문은 반품할 수 없습니다');
+  if (input.orderStatus === 'canceled')
+    throw new ReturnRequestRejected('order_canceled', '취소된 주문은 반품할 수 없습니다');
 
   const feeBearer = resolveFeeBearer(input);
   const lines = describeReturnable(input.items, input.core);
@@ -107,10 +108,13 @@ export function planReturnRequest(input: PlanReturnRequestInput): ReturnRequestP
     return { item, line, quantity: req.quantity };
   });
 
-  const closed = picked.some((p) => p.line.windowEndsAt !== null && input.now.getTime() > p.line.windowEndsAt.getTime());
+  const closed = picked.some(
+    (p) => p.line.windowEndsAt !== null && input.now.getTime() > p.line.windowEndsAt.getTime(),
+  );
   let windowOverridden = false;
   if (closed) {
-    if (input.requestedBy === 'customer') throw new ReturnRequestRejected('window_closed', '반품 가능 기한이 지났습니다');
+    if (input.requestedBy === 'customer')
+      throw new ReturnRequestRejected('window_closed', '반품 가능 기한이 지났습니다');
     if (!input.windowOverrideReason?.trim()) {
       throw new ReturnRequestRejected('window_override_reason_required', '기한을 넘기려면 사유가 필요합니다');
     }
@@ -135,9 +139,11 @@ function resolveFeeBearer(input: PlanReturnRequestInput): 'customer' | 'seller' 
   if (input.requestedBy === 'customer' && !reason.customerSelectable) {
     throw new ReturnRequestRejected('reason_not_selectable', '고객이 고를 수 없는 사유입니다');
   }
-  if (reason.feeBearer === null) throw new ReturnRequestRejected('reason_not_found', '부담 주체가 정해지지 않은 사유입니다');
+  if (reason.feeBearer === null)
+    throw new ReturnRequestRejected('reason_not_found', '부담 주체가 정해지지 않은 사유입니다');
   if (reason.feeBearer === 'operator') {
-    if (!input.operatorFeeBearer) throw new ReturnRequestRejected('fee_bearer_required', '택배비 부담 주체를 골라야 합니다');
+    if (!input.operatorFeeBearer)
+      throw new ReturnRequestRejected('fee_bearer_required', '택배비 부담 주체를 골라야 합니다');
     return input.operatorFeeBearer;
   }
   return reason.feeBearer;

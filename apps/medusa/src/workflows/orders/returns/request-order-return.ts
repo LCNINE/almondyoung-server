@@ -1,6 +1,12 @@
 import { createHash } from 'crypto';
 import type { MedusaContainer } from '@medusajs/framework/types';
-import { ChangeActionType, ContainerRegistrationKeys, Modules, OrderChangeStatus, ReturnStatus } from '@medusajs/framework/utils';
+import {
+  ChangeActionType,
+  ContainerRegistrationKeys,
+  Modules,
+  OrderChangeStatus,
+  ReturnStatus,
+} from '@medusajs/framework/utils';
 import {
   beginReturnOrderWorkflow,
   cancelReturnRequestWorkflow,
@@ -11,8 +17,8 @@ import {
 
 import { findReturnShippingOptionId } from '../../../modules/almond-fulfillment/return-shipping-option';
 import { describeError } from '../../../utils/describe-error';
-import { toNumber } from '../partial-cancel/amount';
 import { orderCancelLockKey } from '../settlement/order-payments';
+import { remainingTopUp, revertTag, topUpTag } from './return-top-up-ledger';
 import { fetchCoreReturnEligibility } from './core-return-eligibility';
 import { loadReturnOrder, RETURN_REQUEST_METADATA_KEY, type ReturnRequestRecord } from './load-return-order';
 import { planReturnRequest, ReturnRequestRejected, type ReturnRequestedBy } from './plan-return-request';
@@ -56,11 +62,6 @@ export class ReturnOrderNotFound extends Error {
 /** 부분취소와 같은 잠금 — 한 주문에 열린 주문 변경은 하나뿐이다(N5). 레디스 잠금은 timeout 이 곧 만료다. */
 const ORDER_LOCK_TIMEOUT_SECONDS = 60;
 
-/** 주문 변경(change)의 internal_note 표지 — registerFulfillment·cancelFulfillment 는 이 값을 주문 변경 행에 싣는다(services/actions/*-fulfillment.js). */
-export const topUpTag = (requestId: string) => `return-request:${requestId}`;
-/** 반품 취소(cancel-order-return)도 같은 표지로 되돌려야 같은 requestId 재시도의 «올림 − 되돌림» 이력이 맞는다 */
-export const revertTag = (requestId: string) => `return-request-revert:${requestId}`;
-
 /**
  * 반품 요청(K8 PR3, 설계 §4.2 «우리 워크플로 셋»의 1).
  *
@@ -68,7 +69,10 @@ export const revertTag = (requestId: string) => `return-request-revert:${request
  * 0 이므로, 반품이 잡는 수량만큼만 registerFulfillment 로 올린 뒤(N1) 코어 반품 워크플로를 차례로 부른다. 반품 배송 방법은
  * 0원이다 — 택배비는 요청 때 매기지 않고 부담 주체만 기록에 남긴다(정산은 PR 6).
  */
-export async function requestOrderReturn(container: MedusaContainer, input: RequestOrderReturnInput): Promise<RequestOrderReturnResult> {
+export async function requestOrderReturn(
+  container: MedusaContainer,
+  input: RequestOrderReturnInput,
+): Promise<RequestOrderReturnResult> {
   const locking = container.resolve(Modules.LOCKING);
   return locking.execute(orderCancelLockKey(input.orderId), () => run(container, input), {
     timeout: ORDER_LOCK_TIMEOUT_SECONDS,
@@ -88,7 +92,10 @@ async function run(container: MedusaContainer, input: RequestOrderReturnInput): 
   const settled = mine.find((r) => r.status !== ReturnStatus.OPEN);
   if (settled?.record) {
     if (settled.record.requestHash !== requestHash) {
-      throw new ReturnRequestRejected('request_id_conflict', `같은 requestId 로 다른 요청이 왔습니다: ${input.requestId}`);
+      throw new ReturnRequestRejected(
+        'request_id_conflict',
+        `같은 requestId 로 다른 요청이 왔습니다: ${input.requestId}`,
+      );
     }
     // 해시가 품목을 덮으므로 이번 품목이 곧 그때 품목이다
     return toResult(settled.id, settled.status, input.requestId, items, settled.record);
@@ -195,14 +202,21 @@ async function run(container: MedusaContainer, input: RequestOrderReturnInput): 
  */
 async function rollback(
   container: MedusaContainer,
-  p: { orderId: string; requestId: string; returnId: string | undefined; topUp: Array<{ id: string; quantity: number }> },
+  p: {
+    orderId: string;
+    requestId: string;
+    returnId: string | undefined;
+    topUp: Array<{ id: string; quantity: number }>;
+  },
 ) {
   const logger = container.resolve(ContainerRegistrationKeys.LOGGER);
   if (p.returnId) {
     await cancelReturnRequestWorkflow(container)
       .run({ input: { return_id: p.returnId } })
       .catch((e: unknown) =>
-        logger.error(`[return-request] 반품 되돌리기 실패: orderId=${p.orderId} returnId=${p.returnId} — ${describeError(e)}`),
+        logger.error(
+          `[return-request] 반품 되돌리기 실패: orderId=${p.orderId} returnId=${p.returnId} — ${describeError(e)}`,
+        ),
       );
   }
   if (p.topUp.length > 0) {
@@ -237,37 +251,16 @@ async function clearAbandonedAttempt(
     await cancelReturnRequestWorkflow(container).run({ input: { return_id: r.id } });
   }
 
-  const orderModule = container.resolve(Modules.ORDER);
-  // internal_note 는 모델에는 있는데 OrderChangeDTO 타입에 빠져 있다 — 고른 필드만 담은 모양으로 좁힌다(partial-cancel 의 ensureNoDanglingEdit 와 같은 관례).
-  const changes = (await orderModule.listOrderChanges(
-    { order_id: orderId, status: OrderChangeStatus.CONFIRMED },
-    { select: ['id', 'status', 'internal_note'], relations: ['actions'] },
-  )) as Array<{
-    internal_note?: string | null;
-    actions?: Array<{ action: string; details?: { reference_id?: unknown; quantity?: unknown } | null }> | null;
-  }>;
-  const net = new Map<string, number>();
-  const add = (tag: string, action: string, sign: 1 | -1) => {
-    for (const ch of changes.filter((c) => c.internal_note === tag)) {
-      for (const a of (ch.actions ?? []).filter((x) => x.action === action)) {
-        const itemId = a.details?.reference_id;
-        const qty = toNumber(a.details?.quantity);
-        if (typeof itemId !== 'string' || !Number.isFinite(qty)) {
-          throw new Error(`반품 요청 출고 이력을 읽지 못했습니다: orderId=${orderId} requestId=${requestId}`);
-        }
-        net.set(itemId, (net.get(itemId) ?? 0) + sign * qty);
-      }
-    }
-  };
-  add(topUpTag(requestId), ChangeActionType.FULFILL_ITEM, 1);
-  add(revertTag(requestId), ChangeActionType.CANCEL_ITEM_FULFILLMENT, -1);
-
-  const remainder = [...net].filter(([, q]) => q > 0).map(([id, quantity]) => ({ id, quantity }));
+  const remainder = await remainingTopUp(container, orderId, requestId);
   if (remainder.length === 0) return openReturns.length > 0;
   container
     .resolve(ContainerRegistrationKeys.LOGGER)
-    .warn(`[return-request] 끊긴 요청의 출고 수량을 되돌린다: orderId=${orderId} requestId=${requestId} items=${JSON.stringify(remainder)}`);
-  await orderModule.cancelFulfillment({ order_id: orderId, items: remainder, internal_note: revertTag(requestId) });
+    .warn(
+      `[return-request] 끊긴 요청의 출고 수량을 되돌린다: orderId=${orderId} requestId=${requestId} items=${JSON.stringify(remainder)}`,
+    );
+  await container
+    .resolve(Modules.ORDER)
+    .cancelFulfillment({ order_id: orderId, items: remainder, internal_note: revertTag(requestId) });
   return true;
 }
 
@@ -291,7 +284,9 @@ async function returnTarget(container: MedusaContainer): Promise<{ optionId: str
     filters: { id: optionId },
   });
   // 링크 필드(fulfillment_set.location)는 graph 결과 타입에 없다 — 경계에서 좁힌다.
-  const [option] = data as Array<{ service_zone?: { fulfillment_set?: { location?: { id?: string } | null } | null } | null }>;
+  const [option] = data as Array<{
+    service_zone?: { fulfillment_set?: { location?: { id?: string } | null } | null } | null;
+  }>;
   // 반품 위치 = 반품 옵션의 위치. confirmReturnReceive 가 이 위치의 재고 level 을 올리고, 반품 fulfillment 도 이 위치로 간다.
   // 라이브 stock location 은 하나뿐이고(설계 §4.4-4) 그게 판매 위치이기도 해서 재고 관리 variant 의 level 이 거기 있다.
   const locationId = option?.service_zone?.fulfillment_set?.location?.id;

@@ -177,6 +177,29 @@ medusaIntegrationTestRunner({
       expect(await revertChanges(o.orderId)).toHaveLength(1);
     });
 
+    it('③ 에서 cancelFulfillment 뒤·표지 전에 끊긴 취소를 다시 부르면 되돌리지 않는다 — fulfilled 정확, revert 주문 변경 정확히 1개', async () => {
+      const o = await ownedOrder(2);
+      const req = await requestAsCustomer({ ...o, customerId: o.me.customerId });
+      const container = getContainer();
+      const before = await returnOf(req.returnId);
+      const { cancelFulfillmentWorkflow } = await import('@medusajs/medusa/core-flows');
+      for (const f of before.fulfillments) await cancelFulfillmentWorkflow(container).run({ input: { id: f.id } });
+      await cancelReturnWorkflow(container).run({ input: { return_id: req.returnId } });
+      // ③ 의 cancelFulfillment 까지만 하고 표지를 못 쓴 채 죽은 상태
+      await container.resolve(Modules.ORDER).cancelFulfillment({
+        order_id: o.orderId,
+        items: [{ id: o.itemId, quantity: 1 }],
+        internal_note: `return-request-revert:${req.requestId}`,
+      });
+      expect((await returnOf(req.returnId)).metadata.almondReturn.fulfillmentTopUpReverted).toBeUndefined();
+
+      const res = await api.post(cancelUrl(o.orderId, req.returnId), {}, o.me.headers);
+      expect(res.status).toBe(200);
+      expect(await detailOf(o.orderId, o.itemId)).toMatchObject({ fulfilled: 0, returnRequested: 0 });
+      expect(await revertChanges(o.orderId)).toHaveLength(1);
+      expect((await returnOf(req.returnId)).metadata.almondReturn.fulfillmentTopUpReverted).toBe(true);
+    });
+
     it('수령 뒤 취소 → 400 return_already_received, 반품·출고 수량 그대로', async () => {
       const o = await ownedOrder(2);
       const req = await requestAsCustomer({ ...o, customerId: o.me.customerId });

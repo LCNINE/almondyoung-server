@@ -6,7 +6,8 @@ import { toNumber } from '../partial-cancel/amount';
 import { orderCancelLockKey } from '../settlement/order-payments';
 import { loadReturnOrder, RETURN_REQUEST_METADATA_KEY, type ReturnRequestRecord } from './load-return-order';
 import { ReturnRequestRejected, type ReturnRequestedBy } from './plan-return-request';
-import { ReturnOrderNotFound, revertTag } from './request-order-return';
+import { ReturnOrderNotFound } from './request-order-return';
+import { remainingTopUp, revertTag } from './return-top-up-ledger';
 
 export type CancelOrderReturnInput = {
   orderId: string;
@@ -79,11 +80,13 @@ async function revertTopUp(
   record: ReturnRequestRecord,
 ): Promise<void> {
   const orderModule = container.resolve(Modules.ORDER);
-  if (record.fulfillmentTopUp.length > 0) {
-    // 요청 쪽 rollback 과 같은 표지 — 같은 requestId 재시도(clearAbandonedAttempt)가 «올림 − 되돌림» 으로 남은 몫을 셈한다
+  // 플래그는 효과 «뒤»에 쓰므로 cancelFulfillment 와 플래그 사이에서 죽을 수 있다 — 주문 변경 이력이 정본이다.
+  // 올림 − 되돌림 으로 남은 몫만 같은 표지로 내려, 끊긴 취소를 다시 불러도 두 번 내리지 않는다.
+  const leftover = await remainingTopUp(container, orderId, record.requestId);
+  if (leftover.length > 0) {
     await orderModule.cancelFulfillment({
       order_id: orderId,
-      items: record.fulfillmentTopUp.map((t) => ({ id: t.itemId, quantity: t.quantity })),
+      items: leftover,
       internal_note: revertTag(record.requestId),
     });
   }

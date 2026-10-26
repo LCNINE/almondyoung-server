@@ -21,7 +21,8 @@ const TIMEOUT_MS = 5000;
 export async function fetchCoreReturnEligibility(orderId: string): Promise<CoreReturnEligibility> {
   const baseUrl = process.env.CORE_SERVICE_URL;
   const key = process.env.CORE_INTERNAL_KEY;
-  if (!baseUrl || !key) throw new CoreEligibilityUnavailable('CORE_SERVICE_URL / CORE_INTERNAL_KEY 가 설정되지 않았습니다');
+  if (!baseUrl || !key)
+    throw new CoreEligibilityUnavailable('CORE_SERVICE_URL / CORE_INTERNAL_KEY 가 설정되지 않았습니다');
 
   let res: Response;
   try {

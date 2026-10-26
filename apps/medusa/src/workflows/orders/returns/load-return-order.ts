@@ -39,7 +39,8 @@ export function readReturnRequestRecord(metadata: unknown): ReturnRequestRecord 
   const raw = (metadata as Record<string, unknown>)[RETURN_REQUEST_METADATA_KEY];
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
-  if (typeof r.requestId !== 'string' || typeof r.requestHash !== 'string' || typeof r.reasonValue !== 'string') return null;
+  if (typeof r.requestId !== 'string' || typeof r.requestHash !== 'string' || typeof r.reasonValue !== 'string')
+    return null;
   if (typeof r.requestedBy !== 'string' || !REQUESTED_BY.has(r.requestedBy)) return null;
   if (typeof r.feeBearer !== 'string' || !FEE_BEARERS.has(r.feeBearer)) return null;
   if (!Array.isArray(r.fulfillmentTopUp)) return null;
