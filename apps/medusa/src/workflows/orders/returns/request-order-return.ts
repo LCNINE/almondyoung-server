@@ -1,12 +1,6 @@
 import { createHash } from 'crypto';
 import type { MedusaContainer } from '@medusajs/framework/types';
-import {
-  ChangeActionType,
-  ContainerRegistrationKeys,
-  Modules,
-  OrderChangeStatus,
-  ReturnStatus,
-} from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, Modules, ReturnStatus } from '@medusajs/framework/utils';
 import {
   beginReturnOrderWorkflow,
   cancelReturnRequestWorkflow,
@@ -18,7 +12,7 @@ import {
 import { findReturnShippingOptionId } from '../../../modules/almond-fulfillment/return-shipping-option';
 import { describeError } from '../../../utils/describe-error';
 import { orderCancelLockKey } from '../settlement/order-payments';
-import { remainingTopUp, revertTag, topUpTag } from './return-top-up-ledger';
+import { lowerUnheldTopUp, remainingTopUp, topUpTag } from './return-top-up-ledger';
 import { fetchCoreReturnEligibility } from './core-return-eligibility';
 import { loadReturnOrder, RETURN_REQUEST_METADATA_KEY, type ReturnRequestRecord } from './load-return-order';
 import { planReturnRequest, ReturnRequestRejected, type ReturnRequestedBy } from './plan-return-request';
@@ -220,10 +214,9 @@ async function rollback(
       );
   }
   if (p.topUp.length > 0) {
-    await container
-      .resolve(Modules.ORDER)
-      // 되돌림 표지 — 여기서 실패해도 다음 같은 requestId 시도가 이력으로 남은 몫만 되돌린다(clearAbandonedAttempt)
-      .cancelFulfillment({ order_id: p.orderId, items: p.topUp, internal_note: revertTag(p.requestId) })
+    // 되돌림 표지 — 여기서 실패해도 다음 같은 requestId 시도가 이력으로 남은 몫만 되돌린다(clearAbandonedAttempt).
+    // 다른 반품이 잡은 출고 수량 아래로는 내리지 않는다(capRevertToUnheld) — 못 내린 몫은 이력에 남아 같은 재시도가 다시 본다
+    await lowerUnheldTopUp(container, p.orderId, p.requestId, p.topUp)
       .catch((e: unknown) =>
         logger.error(
           `[return-request] 올린 출고 수량 되돌리기 실패: orderId=${p.orderId} items=${JSON.stringify(p.topUp)} — ${describeError(e)}`,
@@ -258,9 +251,9 @@ async function clearAbandonedAttempt(
     .warn(
       `[return-request] 끊긴 요청의 출고 수량을 되돌린다: orderId=${orderId} requestId=${requestId} items=${JSON.stringify(remainder)}`,
     );
-  await container
-    .resolve(Modules.ORDER)
-    .cancelFulfillment({ order_id: orderId, items: remainder, internal_note: revertTag(requestId) });
+  // 끊긴 시도가 올린 수량 위에 다른 requestId 의 반품이 올림 0 으로 앉았을 수 있다 — 그 반품이 잡은 만큼은 내리지 않는다.
+  // 못 내린 몫은 이 requestId 이력에 남는다 — 그 반품이 끝난 뒤 이 requestId 반품의 취소(또는 다음 재시도)가 마저 내린다
+  await lowerUnheldTopUp(container, orderId, requestId, remainder);
   return true;
 }
 

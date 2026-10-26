@@ -1,4 +1,5 @@
 import {
+  describeOrderReturnable,
   describeReturnable,
   planReturnRequest,
   ReturnRequestRejected,
@@ -143,5 +144,21 @@ describe('describeReturnable', () => {
     const lines = describeReturnable(items, core(2));
     expect(lines[0]).toEqual({ itemId: 'i1', returnableQuantity: 0, windowEndsAt: new Date('2026-10-27T14:59:59.999Z') });
     expect(lines[1]).toEqual({ itemId: 'i2', returnableQuantity: 0, windowEndsAt: null });
+  });
+});
+
+describe('describeOrderReturnable', () => {
+  it('취소된 주문은 core 를 묻지 않고 전 줄 0·기한 없음 — POST 의 order_canceled 와 같은 판정', async () => {
+    const loadCore = jest.fn(async () => core());
+    expect(await describeOrderReturnable('canceled', [item(), item({ id: 'i2' })], loadCore)).toEqual([
+      { itemId: 'i1', returnableQuantity: 0, windowEndsAt: null },
+      { itemId: 'i2', returnableQuantity: 0, windowEndsAt: null },
+    ]);
+    expect(loadCore).not.toHaveBeenCalled();
+    expect(reasonOf(() => planReturnRequest({ ...base, orderStatus: 'canceled' }))).toBe('order_canceled');
+  });
+
+  it('취소되지 않은 주문은 describeReturnable 과 같다', async () => {
+    expect(await describeOrderReturnable('pending', [item()], async () => core())).toEqual(describeReturnable([item()], core()));
   });
 });

@@ -165,6 +165,34 @@ medusaIntegrationTestRunner({
       expect(after.data.items[0]).toMatchObject({ item_id: itemId, returnable_quantity: 1 });
     });
 
+    it('취소된 주문 GET returnable → 전 줄 0 — POST 가 order_canceled 로 거절하는 것과 같은 규칙', async () => {
+      const { orderId, itemId, me } = await ownedOrder(2);
+      expect((await api.post(`/admin/orders/${orderId}/channel-cancel`, {}, c.adminHeaders)).status).toBe(200);
+
+      const res = await api.get(`/store/orders/${orderId}/returnable`, me.headers);
+      expect(res.status).toBe(200);
+      expect(res.data.items).toEqual([{ item_id: itemId, returnable_quantity: 0, window_ends_at: null }]);
+      const admin = await api.get(`/admin/orders/${orderId}/returnable`, c.adminHeaders);
+      expect(admin.data.items).toEqual([{ item_id: itemId, returnable_quantity: 0, window_ends_at: null }]);
+
+      const post = await fail(api.post(`/store/orders/${orderId}/returns`, body(itemId), me.headers));
+      expect(post.status).toBe(400);
+      expect(post.data).toMatchObject({ reason: 'order_canceled' });
+    });
+
+    it('고객 토큰으로 admin 반품 라우트 셋 → 401, 반품 그대로', async () => {
+      const { orderId, itemId, me } = await ownedOrder(2);
+      const mine = await api.post(`/store/orders/${orderId}/returns`, body(itemId), me.headers);
+      expect(mine.status).toBe(200);
+
+      expect((await fail(api.post(`/admin/orders/${orderId}/returns`, body(itemId), me.headers))).status).toBe(401);
+      expect((await fail(api.get(`/admin/orders/${orderId}/returnable`, me.headers))).status).toBe(401);
+      expect(
+        (await fail(api.post(`/admin/orders/${orderId}/returns/${mine.data.return_id}/cancel`, {}, me.headers))).status,
+      ).toBe(401);
+      expect((await returnsOf(orderId)).map((r) => r.status)).toEqual(['requested']);
+    });
+
     it('PR 2 차단과 안 겹친다: POST /store/returns 는 여전히 400 default_return_route_blocked', async () => {
       const res = await fail(api.post('/store/returns', {}, { headers: c.storeHeaders.headers }));
       expect(res.status).toBe(400);

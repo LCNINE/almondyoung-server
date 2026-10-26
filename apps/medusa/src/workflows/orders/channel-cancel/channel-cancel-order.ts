@@ -1,5 +1,12 @@
 import type { MedusaContainer } from '@medusajs/framework/types';
-import { ContainerRegistrationKeys, MedusaError, Modules, OrderChangeStatus, OrderStatus } from '@medusajs/framework/utils';
+import {
+  ContainerRegistrationKeys,
+  MedusaError,
+  Modules,
+  OrderChangeStatus,
+  OrderStatus,
+  ReturnStatus,
+} from '@medusajs/framework/utils';
 import { cancelOrderWorkflow } from '@medusajs/medusa/core-flows';
 
 import { paymentRefundLockKey } from '../../../modules/almond-payment/refund-data';
@@ -75,11 +82,17 @@ async function assertCancelable(container: MedusaContainer, orderId: string): Pr
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
   const { data } = await query.graph({
     entity: 'order',
-    fields: ['id', 'status', 'fulfillments.canceled_at'],
+    fields: ['id', 'status', 'fulfillments.canceled_at', 'returns.id', 'returns.status'],
     filters: { id: orderId },
   });
   // query.graph 의 링크 필드는 타입이 넓다 — 경계에서 필요한 칸으로만 좁힌다.
-  const order = data[0] as { status?: string; fulfillments?: Array<{ canceled_at?: unknown } | null> } | undefined;
+  const order = data[0] as
+    | {
+        status?: string;
+        fulfillments?: Array<{ canceled_at?: unknown } | null>;
+        returns?: Array<{ id: string; status?: string } | null>;
+      }
+    | undefined;
   if (!order) throw new MedusaError(MedusaError.Types.NOT_FOUND, `Order id not found: ${orderId}`);
   // 문장은 코어 throwIfOrderIsCancelled·cancelValidateOrder 와 같게 둔다 — channel-adapter 가 «이미 취소됨»을 이 문장으로 판정한다
   if (order.status === OrderStatus.CANCELED) {
@@ -94,6 +107,17 @@ async function assertCancelable(container: MedusaContainer, orderId: string): Pr
     throw new MedusaError(
       MedusaError.Types.NOT_ALLOWED,
       `Order with id ${orderId} has an active order change — 진행 중인 주문 변경(수정·반품·교환)을 먼저 정리해야 합니다`,
+    );
+  }
+  // 요청된 반품은 위 두 검사에 안 걸린다 — 주문 변경은 이미 확정됐고, 반품 fulfillment 는 주문이 아니라 반품에 붙으며,
+  // 반품 때문에 올린 출고 수량(registerFulfillment)은 fulfillment 레코드를 만들지 않는다(K8 PR3 N1). 그대로 두면 전액 환불·취소 뒤에도
+  // 반품이 살아 있어 수거·수령·정산(PR 5·6)이 취소된 주문에서 또 환불한다. 부분취소의 «전 줄 0» 도 이 경로로 오므로 여기서 막는다.
+  // 돈이 움직이기 «전»의 NOT_ALLOWED 400 — channel-adapter 는 «이미 취소됨» 문장도 wallet 표지도 아닌 400 을 «취소 불가»로 닫는다
+  const liveReturn = (order.returns ?? []).find((r) => r !== null && r.status !== ReturnStatus.CANCELED);
+  if (liveReturn) {
+    throw new MedusaError(
+      MedusaError.Types.NOT_ALLOWED,
+      `Order with id ${orderId} has a return in progress (${liveReturn.id}) — 반품이 진행 중인 주문은 전체취소할 수 없습니다, 반품을 먼저 취소해야 합니다`,
     );
   }
   if ((order.fulfillments ?? []).some((f) => f !== null && !f.canceled_at)) {

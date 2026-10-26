@@ -3,7 +3,7 @@ import type { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/frame
 import { cancelOrderReturn } from '../../workflows/orders/returns/cancel-order-return';
 import { fetchCoreReturnEligibility } from '../../workflows/orders/returns/core-return-eligibility';
 import { loadReturnOrder } from '../../workflows/orders/returns/load-return-order';
-import { describeReturnable } from '../../workflows/orders/returns/plan-return-request';
+import { describeOrderReturnable } from '../../workflows/orders/returns/plan-return-request';
 import {
   requestOrderReturn,
   ReturnOrderNotFound,
@@ -53,8 +53,8 @@ export async function handleReturnable(req: AuthenticatedMedusaRequest, res: Med
     ) {
       throw new ReturnOrderNotFound(`주문을 찾을 수 없습니다: ${req.params.id}`);
     }
-    const core = await fetchCoreReturnEligibility(order.id);
-    const lines = describeReturnable(order.items, core);
+    // 취소된 주문은 POST 가 order_canceled 로 거절한다 — GET 도 같은 판정으로 전 줄 0 을 낸다(화면이 규칙을 다시 만들지 않게)
+    const lines = await describeOrderReturnable(order.status, order.items, () => fetchCoreReturnEligibility(order.id));
     res.status(200).json({
       items: lines.map((l) => ({
         item_id: l.itemId,

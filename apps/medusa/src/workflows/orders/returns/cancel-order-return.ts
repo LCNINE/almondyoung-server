@@ -1,13 +1,17 @@
 import type { MedusaContainer } from '@medusajs/framework/types';
-import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
-import { cancelFulfillmentWorkflow, cancelReturnWorkflow } from '@medusajs/medusa/core-flows';
+import { ContainerRegistrationKeys, Modules, ReturnStatus } from '@medusajs/framework/utils';
+import {
+  cancelFulfillmentWorkflow,
+  cancelReturnRequestWorkflow,
+  cancelReturnWorkflow,
+} from '@medusajs/medusa/core-flows';
 
 import { toNumber } from '../partial-cancel/amount';
 import { orderCancelLockKey } from '../settlement/order-payments';
 import { loadReturnOrder, RETURN_REQUEST_METADATA_KEY, type ReturnRequestRecord } from './load-return-order';
 import { ReturnRequestRejected, type ReturnRequestedBy } from './plan-return-request';
 import { ReturnOrderNotFound } from './request-order-return';
-import { remainingTopUp, revertTag } from './return-top-up-ledger';
+import { lowerUnheldTopUp, remainingTopUp } from './return-top-up-ledger';
 
 export type CancelOrderReturnInput = {
   orderId: string;
@@ -26,7 +30,9 @@ const ORDER_LOCK_TIMEOUT_SECONDS = 60;
 /**
  * 도착 전 반품 취소(K8 PR3). 순서가 곧 정확성이다 — 코어 cancelReturnWorkflow 는 반품 fulfillment 가 전부 취소돼 있어야 하고(① 먼저),
  * 올린 출고 수량은 반품이 끝난 «뒤»에 내린다(③): 반품의 열린 주문 변경이 남은 채 cancelFulfillment 가 새 주문 변경을 만들면 거절된다.
- * 각 단계는 다시 불러도 안전하다 — ①은 취소 안 된 것만, ②는 이미 canceled 면 건너뛰고, ③은 기록의 fulfillmentTopUpReverted 로 한 번만.
+ * 각 단계는 다시 불러도 안전하다 — ①은 취소 안 된 것만, ②는 이미 canceled 면 건너뛰고, ③은 주문 변경 이력으로 남은 몫만
+ * (기록의 fulfillmentTopUpReverted 는 «다 내렸다»는 지름길일 뿐이다).
+ * 확정 전에 끊겨 open 으로 남은 반품은 요청의 되돌리기와 같은 길로 닫는다 — cancelReturnWorkflow 는 새 주문 변경을 만들다 열린 변경에 막힌다.
  */
 export async function cancelOrderReturn(
   container: MedusaContainer,
@@ -52,7 +58,16 @@ async function run(container: MedusaContainer, input: CancelOrderReturnInput): P
 
   const result: CancelOrderReturnResult = { returnId: ret.id, status: 'canceled' };
 
-  if (ret.status === 'canceled') {
+  if (ret.status === ReturnStatus.OPEN) {
+    // 확정 전에 끊긴 요청이 남긴 반품 — 반품 fulfillment 는 확정 때 생기므로 아직 없다. cancelReturnRequestWorkflow 가 열린 주문 변경과
+    // 반품을 함께 버린다(soft delete). 그 뒤라 기록에 «되돌렸다»를 적을 행이 없다 — 대신 이력이 정본이라, 여기서 ③ 이 끊겨도
+    // 같은 requestId 의 요청 재시도(clearAbandonedAttempt)가 남은 몫을 내린다. 이 반품 id 로 다시 부르면 «없는 반품» 404 다.
+    await cancelReturnRequestWorkflow(container).run({ input: { return_id: ret.id } });
+    await lowerUnheldTopUp(container, order.id, record.requestId, await remainingTopUp(container, order.id, record.requestId));
+    return result;
+  }
+
+  if (ret.status === ReturnStatus.CANCELED) {
     // ③ 직전에 끊긴 취소를 이어 받는다. 이미 되돌렸으면 아무것도 하지 않는다(멱등)
     if (record.fulfillmentTopUpReverted !== true) await revertTopUp(container, order.id, ret.id, record);
     return result;
@@ -82,14 +97,10 @@ async function revertTopUp(
   const orderModule = container.resolve(Modules.ORDER);
   // 플래그는 효과 «뒤»에 쓰므로 cancelFulfillment 와 플래그 사이에서 죽을 수 있다 — 주문 변경 이력이 정본이다.
   // 올림 − 되돌림 으로 남은 몫만 같은 표지로 내려, 끊긴 취소를 다시 불러도 두 번 내리지 않는다.
-  const leftover = await remainingTopUp(container, orderId, record.requestId);
-  if (leftover.length > 0) {
-    await orderModule.cancelFulfillment({
-      order_id: orderId,
-      items: leftover,
-      internal_note: revertTag(record.requestId),
-    });
-  }
+  // 남은 몫은 다른 반품이 잡지 않은 만큼만 내린다(capRevertToUnheld) — 다 못 내렸으면 플래그를 남기지 않아, 그 반품이 끝난 뒤
+  // 이 반품 취소를 다시 부르면 마저 내린다(위 canceled 분기)
+  const { short } = await lowerUnheldTopUp(container, orderId, record.requestId, await remainingTopUp(container, orderId, record.requestId));
+  if (short) return;
   // updateReturns 는 metadata 를 통째로 바꾼다 — 다른 키를 잃지 않게 읽은 뒤 합친다
   const [row] = await orderModule.listReturns({ id: returnId }, { select: ['id', 'metadata'] });
   await orderModule.updateReturns([

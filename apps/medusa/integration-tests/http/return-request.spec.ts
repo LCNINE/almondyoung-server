@@ -264,14 +264,30 @@ medusaIntegrationTestRunner({
 
       await expect(request({ orderId, items: [{ itemId: itemOf('A'), quantity: 1 }] })).rejects.toThrow('boom');
 
-      const rets = await returnsOf(orderId);
-      expect(rets.every((r) => r.status === 'canceled')).toBe(true);
+      // cancelReturnRequestWorkflow 는 반품을 soft delete 한다 — 남은 반품이 없어야 같은 requestId 재시도가 «취소된 결과»에 갇히지 않는다
+      expect(await returnsOf(orderId)).toEqual([]);
       expect(await openChanges(orderId)).toHaveLength(0);
       expect(await detailOf(orderId, itemOf('A'))).toMatchObject({ fulfilled: 0, returnRequested: 0 });
 
       // 출고 수량이 되돌아가지 않았으면 item-update 하한(또는 Step 5a 거절)에 막힌다
       const res = await partialCancelOrder(getContainer(), { orderId, requestId: 'pc-after-boom', items: [{ itemId: itemOf('A'), quantity: 2 }] });
       expect(res.stage).toBe('refunded');
+    });
+
+    it('확정 단계 실패 뒤 같은 requestId 로 다시 부르면 → 반품 정확히 1개(requested), fulfilled 1, 열린 주문 변경 0', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const body = { orderId, requestId: 'r-retry-after-boom', items: [{ itemId: itemOf('A'), quantity: 1 }] };
+      const flows = jest.requireMock('@medusajs/medusa/core-flows') as { confirmReturnRequestWorkflow: jest.Mock };
+      flows.confirmReturnRequestWorkflow.mockImplementationOnce(() => ({ run: () => Promise.reject(new Error('boom')) }));
+      await expect(request(body)).rejects.toThrow('boom');
+
+      // 클라이언트가 500 뒤에 가장 흔히 하는 일 — 되돌린 시도가 Ruling 2(«취소된 결과» 재생)와 부딪치면 여기서 canceled 가 온다
+      const res = await request(body);
+      expect(res.status).toBe('requested');
+      const rets = await returnsOf(orderId);
+      expect(rets.map((r) => [r.id, r.status])).toEqual([[res.returnId, 'requested']]);
+      expect(await detailOf(orderId, itemOf('A'))).toMatchObject({ fulfilled: 1, returnRequested: 1 });
+      expect(await openChanges(orderId)).toHaveLength(0);
     });
 
     it('요청 전후 주문 fulfillment_status 같다', async () => {

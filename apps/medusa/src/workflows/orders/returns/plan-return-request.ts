@@ -59,6 +59,22 @@ export function describeReturnable(items: ReturnableOrderItem[], core: CoreRetur
   });
 }
 
+/** 취소된 주문은 반품할 수 없다 — POST(planReturnRequest 의 order_canceled)와 GET(반품 가능 수량)이 이 한 판정을 쓴다(N8) */
+export const isOrderCanceled = (orderStatus: string) => orderStatus === 'canceled';
+
+/**
+ * 주문 단위 반품 가능 수량 — 취소된 주문은 core 를 묻지 않고 전 줄 0·기한 없음이다. 화면이 POST 의 거절 규칙을 다시 만들지 않게
+ * GET 이 같은 판정을 먼저 적용한다. 취소되지 않은 주문은 loadCore 결과로 describeReturnable 을 계산한다.
+ */
+export async function describeOrderReturnable(
+  orderStatus: string,
+  items: ReturnableOrderItem[],
+  loadCore: () => Promise<CoreReturnEligibility>,
+): Promise<ReturnableLine[]> {
+  if (isOrderCanceled(orderStatus)) return items.map((i) => ({ itemId: i.id, returnableQuantity: 0, windowEndsAt: null }));
+  return describeReturnable(items, await loadCore());
+}
+
 export type PlanReturnRequestInput = {
   orderStatus: string;
   items: ReturnableOrderItem[];
@@ -85,7 +101,7 @@ export type ReturnRequestPlan = {
  * 그래서 반품이 잡는 수량만큼만 올린다 — 전부 올리면 주문 수정이 그 아래로 수량을 못 줄인다.
  */
 export function planReturnRequest(input: PlanReturnRequestInput): ReturnRequestPlan {
-  if (input.orderStatus === 'canceled')
+  if (isOrderCanceled(input.orderStatus))
     throw new ReturnRequestRejected('order_canceled', '취소된 주문은 반품할 수 없습니다');
 
   const feeBearer = resolveFeeBearer(input);

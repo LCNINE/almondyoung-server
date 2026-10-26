@@ -3,9 +3,11 @@ import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
 import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import {
   beginReceiveReturnWorkflow,
+  beginReturnOrderWorkflow,
   cancelReturnWorkflow,
   confirmReturnReceiveWorkflow,
   receiveItemReturnRequestWorkflow,
+  requestItemReturnWorkflow,
 } from '@medusajs/core-flows';
 import { ensureReturnShippingOption } from '../../src/modules/almond-fulfillment/return-shipping-option';
 import { ensureReturnReasons } from '../../src/workflows/orders/returns/return-reasons';
@@ -229,6 +231,94 @@ medusaIntegrationTestRunner({
         (await fail(api.post(cancelUrl(o.orderId, req.returnId), {}, { headers: c.storeHeaders.headers }))).status,
       ).toBe(401);
       expect((await returnOf(req.returnId)).status).toBe('requested');
+    });
+
+    /** 반품 취소가 ①② 까지 하고 ③(출고 수량 되돌림) 전에 죽은 모양 */
+    const dieBeforeRevert = async (returnId: string) => {
+      const { cancelFulfillmentWorkflow } = await import('@medusajs/medusa/core-flows');
+      for (const f of (await returnOf(returnId)).fulfillments) {
+        await cancelFulfillmentWorkflow(getContainer()).run({ input: { id: f.id } });
+      }
+      await cancelReturnWorkflow(getContainer()).run({ input: { return_id: returnId } });
+    };
+
+    it('끊긴 취소의 남은 출고 수량을 다른 반품이 쓰고 있으면 되돌림이 그 아래로 내리지 않는다 — 그 반품이 끝난 뒤 다시 부르면 마저 내린다', async () => {
+      const o = await ownedOrder(2);
+      const a = await requestAsCustomer({ ...o, customerId: o.me.customerId });
+      await dieBeforeRevert(a.returnId);
+      expect(await detailOf(o.orderId, o.itemId)).toMatchObject({ fulfilled: 1, returnRequested: 0 });
+      // B 는 A 가 남긴 출고 수량 위에 앉는다(올림 0)
+      const b = await requestAsCustomer({ ...o, customerId: o.me.customerId });
+      expect(await detailOf(o.orderId, o.itemId)).toMatchObject({ fulfilled: 1, returnRequested: 1 });
+
+      // A 취소를 다시 부른다 — B 가 잡은 1 아래로 내리면 5a 가 B 의 수량을 못 지킨다
+      const retried = await api.post(cancelUrl(o.orderId, a.returnId), {}, o.me.headers);
+      expect(retried.status).toBe(200);
+      expect(await detailOf(o.orderId, o.itemId)).toMatchObject({ fulfilled: 1, returnRequested: 1 });
+      // 다 못 내렸으니 «되돌렸다» 표시를 남기지 않는다 — 다시 부르면 마저 내린다
+      expect((await returnOf(a.returnId)).metadata.almondReturn.fulfillmentTopUpReverted).toBeUndefined();
+
+      expect((await api.post(cancelUrl(o.orderId, b.returnId), {}, o.me.headers)).status).toBe(200);
+      expect(await detailOf(o.orderId, o.itemId)).toMatchObject({ fulfilled: 1, returnRequested: 0 });
+      expect((await api.post(cancelUrl(o.orderId, a.returnId), {}, o.me.headers)).status).toBe(200);
+      expect(await detailOf(o.orderId, o.itemId)).toMatchObject({ fulfilled: 0, returnRequested: 0 });
+      expect((await returnOf(a.returnId)).metadata.almondReturn.fulfillmentTopUpReverted).toBe(true);
+    });
+
+    it('open 으로 남은 반품(확정 전에 끊긴 요청)을 취소 → 200, 열린 주문 변경 0, 올린 출고 수량 되돌림', async () => {
+      const o = await ownedOrder(2);
+      const container = getContainer();
+      const requestId = 'r-open-cancel';
+      await container.resolve(Modules.ORDER).registerFulfillment({
+        order_id: o.orderId,
+        items: [{ id: o.itemId, quantity: 1 }],
+        internal_note: `return-request:${requestId}`,
+      });
+      const record = {
+        requestId, requestHash: 'stale', requestedBy: 'operator', reasonValue: 'change_of_mind', feeBearer: 'customer',
+        windowOverride: null, fulfillmentTopUp: [{ itemId: o.itemId, quantity: 1 }],
+      };
+      const { result: change } = await beginReturnOrderWorkflow(container).run({
+        input: { order_id: o.orderId, metadata: { almondReturn: record } },
+      });
+      const returnId = (change as any).return_id as string;
+      await requestItemReturnWorkflow(container).run({ input: { return_id: returnId, items: [{ id: o.itemId, quantity: 1 }] } });
+      const openChanges = () =>
+        container.resolve(Modules.ORDER).listOrderChanges({ order_id: o.orderId, status: ['pending', 'requested'] });
+      expect(await openChanges()).toHaveLength(1);
+
+      const res = await fail(api.post(cancelUrl(o.orderId, returnId, 'admin'), {}, c.adminHeaders));
+      expect(res.status).toBe(200);
+      expect(res.data).toEqual({ return_id: returnId, status: 'canceled' });
+      expect(await openChanges()).toHaveLength(0);
+      expect(await detailOf(o.orderId, o.itemId)).toMatchObject({ fulfilled: 0, returnRequested: 0 });
+      expect(await revertChanges(o.orderId)).toHaveLength(1);
+    });
+
+    // ── 반품이 걸린 주문의 전체취소(채널 취소) ───────────────────────────────────────────────────────
+    const channelCancel = (orderId: string) => fail(api.post(`/admin/orders/${orderId}/channel-cancel`, {}, c.adminHeaders));
+    const orderStatus = async (orderId: string) => (await loadOrder(getContainer(), orderId)).status as string;
+
+    it('반품이 걸린 주문의 채널 전체취소 → 환불 전에 400 not_allowed(«취소 불가»), 주문·반품 그대로 / 반품 취소 뒤 같은 전체취소는 200', async () => {
+      const o = await ownedOrder(2);
+      const req = await requestAsCustomer({ ...o, customerId: o.me.customerId });
+
+      const blocked = await channelCancel(o.orderId);
+      expect(blocked.status).toBe(400);
+      expect(blocked.data.type).toBe('not_allowed');
+      expect(blocked.data.message).toContain(req.returnId);
+      // channel-adapter 는 이 문장이면 «이미 취소됨 = 성공»으로 읽는다 — 그렇게 읽히면 안 된다
+      expect(blocked.data.message).not.toMatch(/^Order with id .+ has been canceled\.$/);
+      expect(String(blocked.data.code ?? '')).not.toMatch(/^wallet_refund_refused:/);
+      expect(wallet.refundCalls()).toHaveLength(0);
+      expect(await orderStatus(o.orderId)).not.toBe('canceled');
+      expect((await returnOf(req.returnId)).status).toBe('requested');
+
+      expect((await api.post(cancelUrl(o.orderId, req.returnId, 'admin'), {}, c.adminHeaders)).status).toBe(200);
+      const ok = await channelCancel(o.orderId);
+      expect(ok.status).toBe(200);
+      expect(await orderStatus(o.orderId)).toBe('canceled');
+      expect(wallet.refunds).toHaveLength(1);
     });
 
     it('admin 취소 → 200', async () => {
