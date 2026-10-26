@@ -243,5 +243,7 @@ git commit -m "K8 PR2 — 반품 사유 6종을 코드 정본으로 보장하고
 ## 배포 노트 (PR 본문에 옮긴다)
 
 - Medusa 만, 마이그 없음. **한 배포로.** 이 PR 만으로는 고객·CS 에게 보이는 변화가 없다 — 반품을 여는 우리 라우트는 PR 3, 개통은 core 출고 개통 뒤(D9).
-- 배포 뒤 라이브 확인 셋: ① `POST /store/returns` 가 400 `default_return_route_blocked`(빈 본문으로 충분), ② `GET /admin/shipping-options` 에 `반품 회수` 1개(profile type `return`), ③ `GET /admin/return-reasons` 에 6행.
+- **배포 전 확인(라이브, 읽기 전용):** `select provider_id, count(*) from shipping_option where deleted_at is null group by 1;` — 「라이브 옵션이 전부 almond 라 `/store/returns` 가 우연히 막혀 있다」는 전제의 근거다. `manual_manual` 옵션이 살아 있으면 **오늘도** 인증 없는 `/store/returns` 가 열려 있는 것이므로(manual 은 `createReturnFulfillment` 를 구현한다) 이 PR 을 배치를 기다리지 말고 먼저 낸다.
+- 라이브는 store(`Medusa`)·admin(`MedusaAdmin`) 두 서비스가 부팅마다 `seed-shipping` 을 동시에 돈다. 반품 준비는 DB advisory lock(`hashtext('almond:seed-shipping:return-setup')`) 안에서 돌고, 실패해도 error 로그만 남기고 부팅은 계속한다(최종 리뷰 Important 1·2).
+- 배포 뒤 라이브 확인: ① `POST /store/returns` 가 400 `default_return_route_blocked`(빈 본문으로 충분), ② `shipping_profile` 중 type `return` 이 정확히 1행·그 profile 의 `반품 회수` 옵션 1개, ③ 반품 사유가 정확히 6행(중복 없음), ④ 두 서비스 로그에 `반품 준비 실패` 가 없을 것.
 - 롤백: 이전 task definition 으로 돌려도 안전하다 — 옛 코드는 반품 profile·옵션·사유 행을 무시하고, almond 의 `createReturnFulfillment` 가 다시 던져 `/store/returns` 는 우연히 닫힌 상태로 돌아간다.

@@ -191,5 +191,49 @@ medusaIntegrationTestRunner({
       expect(await findReturnShippingOptionId(container)).not.toBeNull();
       expect(await listOurReasons()).toHaveLength(6);
     });
+    const wipeReturnSetup = async () => {
+      const container = getContainer();
+      const fulfillment = container.resolve(Modules.FULFILLMENT);
+      const profiles = await fulfillment.listShippingProfiles({ type: RETURN_SHIPPING_PROFILE_TYPE });
+      const options = await fulfillment.listShippingOptions({ shipping_profile_id: profiles.map((p: any) => p.id) });
+      if (options.length) await fulfillment.deleteShippingOptions(options.map((o: any) => o.id));
+      if (profiles.length) await fulfillment.deleteShippingProfiles(profiles.map((p: any) => p.id));
+      const orderModule = container.resolve(Modules.ORDER);
+      const reasons = await listOurReasons();
+      if (reasons.length) await orderModule.deleteReturnReasons(reasons.map((r: any) => r.id));
+    };
+
+    it('두 서비스가 동시에 부팅해도(store·admin) 반품 profile·옵션 하나, 사유 6행', async () => {
+      await wipeReturnSetup();
+      const container = getContainer();
+      await Promise.all([seedShipping({ container } as any), seedShipping({ container } as any), seedShipping({ container } as any)]);
+      const fulfillment = container.resolve(Modules.FULFILLMENT);
+      expect(await fulfillment.listShippingProfiles({ type: RETURN_SHIPPING_PROFILE_TYPE })).toHaveLength(1);
+      expect(await returnProfileOptions()).toHaveLength(1);
+      expect(await listOurReasons()).toHaveLength(6);
+    });
+
+    it('이름이 «반품» 인 배송비 그룹이 있어도 반품 옵션을 만든다 — profile 이름은 unique 다', async () => {
+      await wipeReturnSetup();
+      const container = getContainer();
+      await provisionShippingGroup(container, {
+        code: 'rs-named-return', name: '반품', policy: { type: 'flat', baseFee: 3000 }, delivery: DEFAULT_SHIPPING_GROUP_DELIVERY,
+      });
+      await expect(ensureReturnShippingOption(container)).resolves.toEqual(expect.any(String));
+    });
+
+    it('반품 준비가 실패해도 seed-shipping 은 끝까지 간다 — 휴면 기능 때문에 Medusa 기동을 막지 않는다', async () => {
+      const container = getContainer();
+      const errors: string[] = [];
+      const broken = {
+        resolve: (key: string) => {
+          if (key === Modules.ORDER) throw new Error('order module down');
+          if (key === ContainerRegistrationKeys.LOGGER) return { info: () => {}, warn: () => {}, error: (m: string) => errors.push(String(m)) };
+          return container.resolve(key);
+        },
+      };
+      await expect(seedShipping({ container: broken } as any)).resolves.toBeUndefined();
+      expect(errors.join('\n')).toContain('반품 준비');
+    });
   },
 });

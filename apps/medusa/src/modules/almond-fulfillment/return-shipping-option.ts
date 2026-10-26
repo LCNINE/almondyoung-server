@@ -16,7 +16,8 @@ import { ALMOND_FULFILLMENT_PROVIDER_ID, ensureKoreanShippingInfrastructure } fr
 export const RETURN_SHIPPING_PROFILE_TYPE = 'return';
 export const RETURN_SHIPPING_OPTION_PURPOSE = 'return';
 
-const RETURN_SHIPPING_PROFILE_NAME = '반품';
+// shipping_profile.name 은 unique 다. 배송비 그룹 profile 은 그룹 이름을 그대로 쓰므로(«반품» 그룹이 생길 수 있다) 겹칠 수 없는 이름을 쓴다.
+const RETURN_SHIPPING_PROFILE_NAME = '반품 회수 (시스템)';
 const RETURN_SHIPPING_OPTION_NAME = '반품 회수';
 
 export async function ensureReturnShippingOption(container: MedusaContainer): Promise<string> {
