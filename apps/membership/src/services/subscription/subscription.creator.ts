@@ -125,13 +125,18 @@ export class SubscriptionCreator {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`membership-signup:${userId}`}))`);
 
       // 호출부 가드와 이 트랜잭션 사이에 다른 가입이 커밋됐을 수 있다. 그 이용권을 닫고 덮어쓰지 않게 다시 본다.
-      const [current] = await tx
-        .select({ id: schema.subscriptionEntitlement.id })
-        .from(schema.subscriptionEntitlement)
-        .where(
-          and(eq(schema.subscriptionEntitlement.userId, userId), eq(schema.subscriptionEntitlement.isCurrent, true)),
-        )
-        .limit(1);
+      const findCurrent = async () => {
+        const [row] = await tx
+          .select({ id: schema.subscriptionEntitlement.id })
+          .from(schema.subscriptionEntitlement)
+          .where(
+            and(eq(schema.subscriptionEntitlement.userId, userId), eq(schema.subscriptionEntitlement.isCurrent, true)),
+          )
+          .limit(1);
+        return row;
+      };
+      const current = await findCurrent();
+      let grantExpired = false;
       if (current && !grantTakeover) throw new ActiveSubscriptionExistsException();
       if (grantTakeover) {
         // 다른 가입이 먼저 이 지급분을 이어받았으면 그 가입을 덮어쓰지 않는다.
@@ -140,7 +145,13 @@ export class SubscriptionCreator {
           .from(schema.subscriptionContracts)
           .where(eq(schema.subscriptionContracts.id, grantTakeover.grantContractId))
           .limit(1);
-        if (grant?.status !== 'ACTIVE') throw new ActiveSubscriptionExistsException();
+        // 만료 크론이 읽기와 이 트랜잭션 사이에 지급 계약을 닫았을 수 있다 — 중복이 아니라 남은 일수 0 인 일반 가입이다.
+        // 만료 처리는 지급 이용권의 isCurrent 도 같은 트랜잭션에서 내리므로, 남아 있는 current 는 다른 가입의 것이다.
+        if (grant?.status === 'EXPIRED') {
+          // 위 current 는 만료 커밋 직전에 읽었을 수 있다 — EXPIRED 를 본 뒤 다시 읽어 판정한다.
+          if (await findCurrent()) throw new ActiveSubscriptionExistsException();
+          grantExpired = true;
+        } else if (grant?.status !== 'ACTIVE') throw new ActiveSubscriptionExistsException();
       }
 
       // 같은 결제로 기존 계약이 이미 생성됐으면 재사용(replay) 거부.
@@ -168,15 +179,15 @@ export class SubscriptionCreator {
       }
 
       const autoRenewal = billingMode === 'recurring';
-      const billingDate = addDays(startsAt, Math.max(effectiveTrialDays, grantTakeover?.remainingDays ?? 0));
+      const billingDate = addDays(startsAt, Math.max(effectiveTrialDays, (grantExpired ? 0 : grantTakeover?.remainingDays) ?? 0));
       // nextBillingDate = billingDate: 체험 종료일이 곧 첫 결제일
       // 결제 성공 시 BillingOutcomeHandler가 nextBillingDate를 endsAt + durationDays로 갱신
       const nextBillingDate = billingMode === 'recurring' ? billingDate : null;
       // recurring: endsAt = 체험 종료일 (첫 결제 시 +durationDays 연장)
-      // one_time: endsAt = 결제된 전체 서비스 기간
+      // one_time: endsAt = 결제된 전체 서비스 기간 (이어받기면 남은 임시 일수 뒤에 붙는다)
       const endsAt = billingMode === 'recurring'
         ? billingDate
-        : addDays(startsAt, plan.durationDays);
+        : addDays(billingDate, plan.durationDays);
 
       // 1. 이벤트 배치 생성
       const [batch] = await tx
@@ -240,7 +251,7 @@ export class SubscriptionCreator {
       }
 
       // 지급 계약을 닫는다. 지급 이용권은 아래 createEntitlement 가 종료한다.
-      if (grantTakeover) {
+      if (grantTakeover && !grantExpired) {
         await tx
           .update(schema.subscriptionContracts)
           .set({

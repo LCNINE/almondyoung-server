@@ -8,7 +8,7 @@ import {
 import { EntitlementService } from './entitlement.service';
 import { PlanService } from './plan.service';
 import { SubscriptionContractReader } from './subscription/subscription-contract.reader';
-import { SubscriptionCreator } from './subscription/subscription.creator';
+import { GrantTakeover, SubscriptionCreator } from './subscription/subscription.creator';
 import { SubscriptionManager } from './subscription/subscription.manager';
 import { MembershipEventPublisher } from './membership-event.publisher';
 import { PaymentClientService, WalletPaymentIntentResponse } from './billing/payment-client.service';
@@ -157,8 +157,7 @@ export class SubscriptionService {
     options: CreateSubscriptionOptions = {},
     billingMode: 'one_time' | 'recurring' = 'one_time',
   ) {
-    const existing = await this.entitlementService.getUserEntitlement(userId);
-    if (existing) throw new ActiveSubscriptionExistsException();
+    const grantTakeover = await this.resolveGrantTakeover(userId);
 
     const planDetails = await this.planService.getPlanDetails(planId);
     if (!planDetails) throw new PlanNotFoundException();
@@ -172,6 +171,7 @@ export class SubscriptionService {
       false,
       'CHARGE',
       email,
+      grantTakeover,
     );
 
     // one_time 은 createNewSubscription 이 아웃박스에 원자적으로 기록하므로 여기서 발행하지 않는다.
@@ -196,6 +196,15 @@ export class SubscriptionService {
     return result;
   }
 
+  // 이용권이 없으면 undefined, 관리자 임시 지급분이면 이어받기 정보, 결제로 생긴 이용권이면 거절한다.
+  private async resolveGrantTakeover(userId: string): Promise<GrantTakeover | undefined> {
+    const existing = await this.entitlementService.getUserEntitlement(userId);
+    if (!existing) return undefined;
+    const grantTakeover = await this.contractReader.findGrantTakeover(existing.contract.id, existing.entitlement.endsAt);
+    if (!grantTakeover) throw new ActiveSubscriptionExistsException();
+    return grantTakeover;
+  }
+
   async createCheckoutIntent(
     userId: string,
     planId: string,
@@ -210,8 +219,7 @@ export class SubscriptionService {
       );
     }
 
-    const existing = await this.entitlementService.getUserEntitlement(userId);
-    if (existing) throw new ActiveSubscriptionExistsException();
+    await this.resolveGrantTakeover(userId);
     await this.arrearsGate.assertNoOutstanding(userId);
 
     const planDetails = await this.planService.getPlanDetails(planId);

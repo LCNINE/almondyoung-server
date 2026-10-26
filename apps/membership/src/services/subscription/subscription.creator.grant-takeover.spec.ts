@@ -10,13 +10,21 @@ describe('SubscriptionCreator — 관리자 임시 지급 이어받기', () => {
       entitlementError?: unknown;
       currentEntitlement?: boolean;
       grantStatus?: string;
+      durationDays?: number;
+      currentSequence?: boolean[];
     } = {},
   ) {
     const insertedContracts: Record<string, unknown>[] = [];
     const updates: { table: unknown; set: Record<string, unknown> }[] = [];
     const execute = jest.fn().mockResolvedValue(undefined);
+    let currentReads = 0;
     const rowsFor = (table: unknown) => {
-      if (table === schema.subscriptionEntitlement) return options.currentEntitlement ? [{ id: 'other' }] : [];
+      if (table === schema.subscriptionEntitlement) {
+        const present = options.currentSequence
+          ? (options.currentSequence[currentReads++] ?? false)
+          : options.currentEntitlement;
+        return present ? [{ id: 'other' }] : [];
+      }
       if (table === schema.subscriptionContracts) return [{ status: options.grantStatus ?? 'ACTIVE' }];
       return [];
     };
@@ -63,8 +71,8 @@ describe('SubscriptionCreator — 관리자 임시 지급 이어받기', () => {
       { getBooleanPolicy: jest.fn().mockResolvedValue(true) } as never,
       { saveStatusChanged: jest.fn() } as never,
     );
-    const plan = { id: 'p1', tierId: 't1', durationDays: 30, trialDays: options.trialDays ?? 0 } as never;
-    return { creator, plan, insertedContracts, updates, addEvent, execute };
+    const plan = { id: 'p1', tierId: 't1', durationDays: options.durationDays ?? 30, trialDays: options.trialDays ?? 0 } as never;
+    return { creator, plan, insertedContracts, updates, addEvent, execute, createEntitlement };
   }
 
   const tier = { id: 't1' } as never;
@@ -133,5 +141,76 @@ describe('SubscriptionCreator — 관리자 임시 지급 이어받기', () => {
     const { creator, plan, insertedContracts } = makeCreator({ grantStatus: 'CANCELLED' });
     await expect(create(creator, plan, 3)).rejects.toBeInstanceOf(ActiveSubscriptionExistsException);
     expect(insertedContracts).toHaveLength(0);
+  });
+
+  describe('일시결제', () => {
+    const entitlementEndsAt = (createEntitlement: jest.Mock) =>
+      (createEntitlement.mock.calls[0][4] as Date).toISOString().split('T')[0];
+
+    it('one_time 이어받기는 종료일이 오늘 + 남은 일수 + 플랜 일수', async () => {
+      const { creator, plan, insertedContracts, createEntitlement } = makeCreator({ durationDays: 365 });
+      await creator.createNewSubscription('u1', plan, tier, {}, 'one_time', false, 'CHARGE', '', {
+        grantContractId: 'grant-contract',
+        remainingDays: 20,
+      });
+      expect(entitlementEndsAt(createEntitlement)).toBe(daysFromToday(385));
+      expect(insertedContracts[0].billingDate).toBe(daysFromToday(20));
+    });
+
+    it('EXPIRED 지급 계약이면 남은 일수 0으로 가입을 만든다', async () => {
+      const { creator, plan, insertedContracts, createEntitlement, updates } = makeCreator({
+        durationDays: 365,
+        grantStatus: 'EXPIRED',
+      });
+      await creator.createNewSubscription('u1', plan, tier, {}, 'one_time', false, 'CHARGE', '', {
+        grantContractId: 'grant-contract',
+        remainingDays: 20,
+      });
+      expect(entitlementEndsAt(createEntitlement)).toBe(daysFromToday(365));
+      expect(insertedContracts[0].billingDate).toBe(daysFromToday(0));
+      expect(updates).toHaveLength(0);
+    });
+
+    it('EXPIRED 지급 계약인데 다른 current 이용권이 있으면 ActiveSubscriptionExistsException', async () => {
+      const { creator, plan, insertedContracts } = makeCreator({ grantStatus: 'EXPIRED', currentEntitlement: true });
+      await expect(
+        creator.createNewSubscription('u1', plan, tier, {}, 'one_time', false, 'CHARGE', '', {
+          grantContractId: 'grant-contract',
+          remainingDays: 20,
+        }),
+      ).rejects.toBeInstanceOf(ActiveSubscriptionExistsException);
+      expect(insertedContracts).toHaveLength(0);
+    });
+
+    it('EXPIRED 를 본 뒤 다시 읽은 current 가 비어 있으면(만료 커밋 직전에 읽은 것) 가입을 만든다', async () => {
+      const { creator, plan, createEntitlement } = makeCreator({
+        durationDays: 365,
+        grantStatus: 'EXPIRED',
+        currentSequence: [true, false],
+      });
+      await creator.createNewSubscription('u1', plan, tier, {}, 'one_time', false, 'CHARGE', '', {
+        grantContractId: 'grant-contract',
+        remainingDays: 20,
+      });
+      expect(entitlementEndsAt(createEntitlement)).toBe(daysFromToday(365));
+    });
+
+    it('CANCELLED 지급 계약이면 ActiveSubscriptionExistsException', async () => {
+      const { creator, plan, insertedContracts } = makeCreator({ grantStatus: 'CANCELLED' });
+      await expect(
+        creator.createNewSubscription('u1', plan, tier, {}, 'one_time', false, 'CHARGE', '', {
+          grantContractId: 'grant-contract',
+          remainingDays: 20,
+        }),
+      ).rejects.toBeInstanceOf(ActiveSubscriptionExistsException);
+      expect(insertedContracts).toHaveLength(0);
+    });
+
+    it('one_time 이어받기 없으면 종료일은 오늘 + 플랜 일수 (기존)', async () => {
+      const { creator, plan, insertedContracts, createEntitlement } = makeCreator({ durationDays: 365 });
+      await creator.createNewSubscription('u1', plan, tier, {}, 'one_time', false, 'CHARGE', '');
+      expect(entitlementEndsAt(createEntitlement)).toBe(daysFromToday(365));
+      expect(insertedContracts[0].billingDate).toBe(daysFromToday(0));
+    });
   });
 });

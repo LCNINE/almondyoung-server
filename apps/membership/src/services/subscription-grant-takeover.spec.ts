@@ -83,6 +83,80 @@ describe('subscribeWithBillingMethod — 관리자 임시 지급분이 있을 �
   });
 });
 
+describe('일시결제 — 관리자 임시 지급분이 있을 때', () => {
+  function makeService(options: { entitlement: unknown; grantTakeover: unknown }) {
+    const deps = {
+      entitlementService: { getUserEntitlement: jest.fn().mockResolvedValue(options.entitlement) },
+      contractReader: { findGrantTakeover: jest.fn().mockResolvedValue(options.grantTakeover) },
+      arrearsGate: { assertNoOutstanding: jest.fn().mockResolvedValue(undefined) },
+      planService: {
+        getPlanDetails: jest
+          .fn()
+          .mockResolvedValue({ plan: { id: 'p1', isActive: true, price: 10000 }, tier: { id: 't1' } }),
+      },
+      termsAgreementManager: { resolveForSubscription: jest.fn().mockResolvedValue(null) },
+      subscriptionCreator: { createNewSubscription: jest.fn().mockResolvedValue({ contractId: 'new-contract' }) },
+      paymentClientService: {
+        createMembershipCheckoutIntent: jest.fn().mockResolvedValue({ intentId: 'i1' }),
+      },
+      membershipEventPublisher: { publishStatusChanged: jest.fn().mockResolvedValue(undefined) },
+      logger: { warn: jest.fn(), error: jest.fn(), log: jest.fn() },
+    };
+    const service = Object.create(SubscriptionService.prototype) as SubscriptionService;
+    Object.assign(service, deps);
+    return { service, deps };
+  }
+
+  const grantEntitlement = { contract: { id: 'grant-contract' }, entitlement: { endsAt: '2099-01-01' } };
+  const takeover = { grantContractId: 'grant-contract', remainingDays: 20 };
+
+  it('createCheckoutIntent: 지급분이면 거절하지 않고 결제창을 만든다', async () => {
+    const { service, deps } = makeService({ entitlement: grantEntitlement, grantTakeover: takeover });
+    await expect(service.createCheckoutIntent('u1', 'p1', 'https://r')).resolves.toEqual({ intentId: 'i1' });
+    expect(deps.paymentClientService.createMembershipCheckoutIntent).toHaveBeenCalled();
+  });
+
+  it('createCheckoutIntent: 결제로 생긴 이용권이면 거절', async () => {
+    const { service, deps } = makeService({ entitlement: grantEntitlement, grantTakeover: null });
+    await expect(service.createCheckoutIntent('u1', 'p1', 'https://r')).rejects.toBeInstanceOf(
+      ActiveSubscriptionExistsException,
+    );
+    expect(deps.paymentClientService.createMembershipCheckoutIntent).not.toHaveBeenCalled();
+  });
+
+  it('createSubscription: 지급분이면 grantTakeover 를 creator 에 넘긴다', async () => {
+    const { service, deps } = makeService({ entitlement: grantEntitlement, grantTakeover: takeover });
+    await service.createSubscription('u1', 'p1', 'a@b.c', {}, 'one_time');
+    expect(deps.subscriptionCreator.createNewSubscription).toHaveBeenCalledWith(
+      'u1',
+      expect.anything(),
+      expect.anything(),
+      {},
+      'one_time',
+      false,
+      'CHARGE',
+      'a@b.c',
+      takeover,
+    );
+  });
+
+  it('createSubscription: 확정 시점에 이용권이 없으면(임시 이용권 만료) grantTakeover 없이 일반 가입', async () => {
+    const { service, deps } = makeService({ entitlement: null, grantTakeover: null });
+    await service.createSubscription('u1', 'p1', 'a@b.c', {}, 'one_time');
+    const args = deps.subscriptionCreator.createNewSubscription.mock.calls[0];
+    expect(args[8]).toBeUndefined();
+    expect(deps.contractReader.findGrantTakeover).not.toHaveBeenCalled();
+  });
+
+  it('createSubscription: 확정 시점에 결제 이용권이면 ActiveSubscriptionExistsException', async () => {
+    const { service, deps } = makeService({ entitlement: grantEntitlement, grantTakeover: null });
+    await expect(service.createSubscription('u1', 'p1', 'a@b.c', {}, 'one_time')).rejects.toBeInstanceOf(
+      ActiveSubscriptionExistsException,
+    );
+    expect(deps.subscriptionCreator.createNewSubscription).not.toHaveBeenCalled();
+  });
+});
+
 describe('resumeCmsSignup — 약정 전에 끊긴 서버 가입 잇기', () => {
   const requestedAt = new Date('2026-10-26T05:00:00.000Z');
 
