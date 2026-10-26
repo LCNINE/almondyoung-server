@@ -1,5 +1,6 @@
 import type { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 
+import { cancelOrderReturn } from '../../workflows/orders/returns/cancel-order-return';
 import { fetchCoreReturnEligibility } from '../../workflows/orders/returns/core-return-eligibility';
 import { loadReturnOrder } from '../../workflows/orders/returns/load-return-order';
 import { describeReturnable } from '../../workflows/orders/returns/plan-return-request';
@@ -21,14 +22,20 @@ const toBody = (r: RequestOrderReturnResult) => ({
 });
 
 /** store·admin POST 가 공유한다 — 다른 건 호출 주체뿐이다. 고객 소유 확인은 requestOrderReturn 안에서 한다. */
-export async function handleReturnRequest(req: AuthenticatedMedusaRequest, res: MedusaResponse, scope: 'store' | 'admin') {
+export async function handleReturnRequest(
+  req: AuthenticatedMedusaRequest,
+  res: MedusaResponse,
+  scope: 'store' | 'admin',
+) {
   const input = parseReturnRequestBody(req.body, scope);
   const actorId = req.auth_context?.actor_id;
   try {
     const result = await requestOrderReturn(req.scope, {
       ...input,
       orderId: req.params.id,
-      ...(scope === 'store' ? { requestedBy: 'customer' as const, customerId: actorId } : { requestedBy: 'operator' as const, actorId }),
+      ...(scope === 'store'
+        ? { requestedBy: 'customer' as const, customerId: actorId }
+        : { requestedBy: 'operator' as const, actorId }),
     });
     res.status(200).json(toBody(result));
   } catch (error) {
@@ -40,7 +47,10 @@ export async function handleReturnRequest(req: AuthenticatedMedusaRequest, res: 
 export async function handleReturnable(req: AuthenticatedMedusaRequest, res: MedusaResponse, scope: 'store' | 'admin') {
   try {
     const order = await loadReturnOrder(req.scope, req.params.id);
-    if (!order || (scope === 'store' && (!req.auth_context?.actor_id || order.customerId !== req.auth_context.actor_id))) {
+    if (
+      !order ||
+      (scope === 'store' && (!req.auth_context?.actor_id || order.customerId !== req.auth_context.actor_id))
+    ) {
       throw new ReturnOrderNotFound(`주문을 찾을 수 없습니다: ${req.params.id}`);
     }
     const core = await fetchCoreReturnEligibility(order.id);
@@ -52,6 +62,27 @@ export async function handleReturnable(req: AuthenticatedMedusaRequest, res: Med
         window_ends_at: l.windowEndsAt ? l.windowEndsAt.toISOString() : null,
       })),
     });
+  } catch (error) {
+    if (!sendReturnError(res, error)) throw error;
+  }
+}
+
+/** store·admin 반품 취소가 공유한다. 본문 없음 — 고객 소유 확인은 cancelOrderReturn 안에서 한다. */
+export async function handleReturnCancel(
+  req: AuthenticatedMedusaRequest,
+  res: MedusaResponse,
+  scope: 'store' | 'admin',
+) {
+  const actorId = req.auth_context?.actor_id;
+  try {
+    const result = await cancelOrderReturn(req.scope, {
+      orderId: req.params.id,
+      returnId: req.params.return_id,
+      ...(scope === 'store'
+        ? { requestedBy: 'customer' as const, customerId: actorId }
+        : { requestedBy: 'operator' as const, actorId }),
+    });
+    res.status(200).json({ return_id: result.returnId, status: result.status });
   } catch (error) {
     if (!sendReturnError(res, error)) throw error;
   }

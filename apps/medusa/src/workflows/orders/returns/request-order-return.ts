@@ -57,8 +57,9 @@ export class ReturnOrderNotFound extends Error {
 const ORDER_LOCK_TIMEOUT_SECONDS = 60;
 
 /** 주문 변경(change)의 internal_note 표지 — registerFulfillment·cancelFulfillment 는 이 값을 주문 변경 행에 싣는다(services/actions/*-fulfillment.js). */
-const topUpTag = (requestId: string) => `return-request:${requestId}`;
-const revertTag = (requestId: string) => `return-request-revert:${requestId}`;
+export const topUpTag = (requestId: string) => `return-request:${requestId}`;
+/** 반품 취소(cancel-order-return)도 같은 표지로 되돌려야 같은 requestId 재시도의 «올림 − 되돌림» 이력이 맞는다 */
+export const revertTag = (requestId: string) => `return-request-revert:${requestId}`;
 
 /**
  * 반품 요청(K8 PR3, 설계 §4.2 «우리 워크플로 셋»의 1).
