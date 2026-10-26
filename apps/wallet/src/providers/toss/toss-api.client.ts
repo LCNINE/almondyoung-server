@@ -216,10 +216,15 @@ export class TossApiClient {
     return this.post<TossCashReceiptResponse>('/cash-receipts', body);
   }
 
-  async cancelCashReceipt(receiptKey: string, amount?: number): Promise<TossApiResult<TossCashReceiptResponse>> {
+  async cancelCashReceipt(
+    receiptKey: string,
+    amount?: number,
+    idempotencyKey?: string,
+  ): Promise<TossApiResult<TossCashReceiptResponse>> {
     const body: Record<string, unknown> = {};
     if (amount !== undefined) body.amount = amount;
-    return this.post<TossCashReceiptResponse>(`/cash-receipts/${receiptKey}/cancel`, body);
+    const headers = idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined;
+    return this.post<TossCashReceiptResponse>(`/cash-receipts/${receiptKey}/cancel`, body, headers);
   }
 
   /**

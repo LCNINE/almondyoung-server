@@ -43,7 +43,14 @@ function makeCharge(overrides: ChargeOverrides = {}) {
   };
 }
 
-function makeReceipt(overrides: Partial<{ amount: number; canceledAmount: number; status: string }> = {}) {
+function makeReceipt(
+  overrides: Partial<{
+    amount: number;
+    canceledAmount: number;
+    status: string;
+    requestPayload: Record<string, unknown> | null;
+  }> = {},
+) {
   return {
     id: '33333333-3333-4333-8333-333333333333',
     chargeId: CHARGE_ID,
@@ -53,6 +60,7 @@ function makeReceipt(overrides: Partial<{ amount: number; canceledAmount: number
     status: overrides.status ?? 'ISSUED',
     receiptKey: 'rk-001',
     canceledAt: null,
+    requestPayload: overrides.requestPayload ?? null,
   };
 }
 
@@ -68,7 +76,9 @@ function makeContext(
     refundableCharges?: ReturnType<typeof makeCharge>[];
     methodType?: string;
     tossIssue?: { ok: boolean; data?: any; error?: any };
-    tossCancel?: { ok: boolean; data?: any; error?: any };
+    tossCancel?: { ok: boolean; data?: any; error?: any; statusCode?: number };
+    // 취소 호출마다 다른 결과 — Error 면 throw (응답 끊김)
+    tossCancelByCall?: Array<{ ok: boolean; data?: any; error?: any; statusCode?: number } | Error>;
     tossPayment?: { ok: boolean; data?: any; error?: any };
     chargeById?: ReturnType<typeof makeCharge>;
     succeededRefunds?: Array<{ amount: number }>;
@@ -123,9 +133,15 @@ function makeContext(
   };
   const tossApiClient = {
     issueCashReceipt: jest.fn().mockResolvedValue(opts.tossIssue ?? { ok: true, data: {} }),
-    cancelCashReceipt: jest.fn().mockResolvedValue(opts.tossCancel ?? { ok: true, data: {} }),
+    cancelCashReceipt: jest.fn(),
     getPayment: jest.fn().mockResolvedValue(opts.tossPayment ?? { ok: true, data: { cashReceipt: null } }),
   };
+
+  tossApiClient.cancelCashReceipt.mockResolvedValue(opts.tossCancel ?? { ok: true, data: {} });
+  for (const result of opts.tossCancelByCall ?? []) {
+    if (result instanceof Error) tossApiClient.cancelCashReceipt.mockRejectedValueOnce(result);
+    else tossApiClient.cancelCashReceipt.mockResolvedValueOnce(result);
+  }
 
   const service = new CashReceiptsService(
     db as any,
@@ -222,6 +238,24 @@ describe('CashReceiptsService', () => {
       expect(tossApiClient.issueCashReceipt).toHaveBeenCalled();
     });
 
+    it('발급 금액만큼 취소가 진행 중이면 아직 살아 있다고 보고 발급하지 않는다', async () => {
+      const { service, tossApiClient } = makeContext({
+        selectQueue: [[makeIntent()], []],
+        refundableCharges: [makeCharge({ responsePayload: { paymentKey: 'pk-1' } })],
+        tossPayment: {
+          ok: true,
+          data: {
+            cashReceipts: [
+              { transactionType: 'CONFIRM', issueStatus: 'COMPLETED', amount: 10000 },
+              { transactionType: 'CANCEL', issueStatus: 'IN_PROGRESS', amount: 10000 },
+            ],
+          },
+        },
+      });
+      await expect(service.issue(DTO, USER_ID)).rejects.toBeInstanceOf(ConflictException);
+      expect(tossApiClient.issueCashReceipt).not.toHaveBeenCalled();
+    });
+
     it('CAPTURE charge 면 원래 AUTHORIZE charge 의 스냅샷으로 위젯 키를 고른다', async () => {
       const AUTH_ID = '44444444-4444-4444-8444-444444444444';
       const { service, tossApiClient } = makeContext({
@@ -304,7 +338,7 @@ describe('CashReceiptsService', () => {
       });
       await service.issue(DTO, USER_ID);
       expect(tossApiClient.issueCashReceipt).toHaveBeenCalledWith(expect.objectContaining({ amount: 1000 }));
-      expect(tossApiClient.cancelCashReceipt).toHaveBeenCalledWith('rk-001', 200);
+      expect(tossApiClient.cancelCashReceipt).toHaveBeenCalledWith('rk-001', 200, expect.any(String));
       expect(updateCalls[0]).toMatchObject({ canceledAmount: 200, status: 'ISSUED' });
     });
 
@@ -328,7 +362,7 @@ describe('CashReceiptsService', () => {
         succeededRefunds: [{ amount: 10000 }],
       });
       await service.cancelForRefund(CHARGE_ID);
-      expect(tossApiClient.cancelCashReceipt).toHaveBeenCalledWith('rk-001', 10000);
+      expect(tossApiClient.cancelCashReceipt).toHaveBeenCalledWith('rk-001', 10000, expect.any(String));
       expect(updateCalls[0]).toMatchObject({ canceledAmount: 10000, status: 'CANCELED' });
       expect(updateCalls[0].canceledAt).toBeInstanceOf(Date);
     });
@@ -340,7 +374,7 @@ describe('CashReceiptsService', () => {
         succeededRefunds: [{ amount: 3000 }, { amount: 4000 }],
       });
       await service.cancelForRefund(CHARGE_ID);
-      expect(tossApiClient.cancelCashReceipt).toHaveBeenCalledWith('rk-001', 4000);
+      expect(tossApiClient.cancelCashReceipt).toHaveBeenCalledWith('rk-001', 4000, expect.any(String));
       expect(updateCalls[0]).toMatchObject({ canceledAmount: 7000, status: 'ISSUED' });
       expect(updateCalls[0].canceledAt).toBeNull();
     });
@@ -380,6 +414,118 @@ describe('CashReceiptsService', () => {
       });
       await service.cancelForRefund(CHARGE_ID);
       expect(updateCalls).toHaveLength(0);
+    });
+  });
+
+  describe('cancelForRefund() — 응답이 끊긴 취소', () => {
+    const pendingOf = (amount: number, requestedAt = new Date().toISOString()) => ({
+      pendingCancel: { amount, idempotencyKey: 'k-pending', requestedAt },
+    });
+
+    it('남은 취소를 같은 키로 먼저 확정하고, 반영됐으면 그만큼 빼고 나머지만 취소한다', async () => {
+      // 1000 영수증, 200 취소가 반영됐는데 기록 안 됨, 환불 누계 300 → 700 이어야 한다
+      const { service, tossApiClient, updateCalls } = makeContext({
+        selectQueue: [[makeReceipt({ amount: 1000, requestPayload: pendingOf(200) })]],
+        chargeById: makeCharge({ amount: 1000 }),
+        succeededRefunds: [{ amount: 200 }, { amount: 100 }],
+      });
+      await service.cancelForRefund(CHARGE_ID);
+      expect(tossApiClient.cancelCashReceipt).toHaveBeenNthCalledWith(1, 'rk-001', 200, 'k-pending');
+      expect(tossApiClient.cancelCashReceipt).toHaveBeenNthCalledWith(2, 'rk-001', 100, expect.any(String));
+      expect(updateCalls).toHaveLength(1);
+      expect(updateCalls[0]).toMatchObject({ canceledAmount: 300, status: 'ISSUED', requestPayload: {} });
+    });
+
+    it('남은 취소가 거절되면 반영 안 된 것으로 보고 목표까지 새로 취소한다', async () => {
+      const { service, tossApiClient, updateCalls } = makeContext({
+        selectQueue: [[makeReceipt({ amount: 1000, requestPayload: pendingOf(200) })]],
+        chargeById: makeCharge({ amount: 1000 }),
+        succeededRefunds: [{ amount: 300 }],
+        tossCancelByCall: [{ ok: false, statusCode: 400, error: { code: 'INVALID', message: 'no' } }],
+      });
+      await service.cancelForRefund(CHARGE_ID);
+      expect(tossApiClient.cancelCashReceipt).toHaveBeenNthCalledWith(2, 'rk-001', 300, expect.any(String));
+      expect(updateCalls[0]).toMatchObject({ canceledAmount: 300, requestPayload: {} });
+    });
+
+    it('거절된 취소를 다시 시도할 때는 새 멱등 키를 쓴다 — 토스는 실패 응답도 캐시한다', async () => {
+      const rejected = { ok: false, statusCode: 400, error: { code: 'INVALID', message: 'no' } };
+      const first = makeContext({
+        selectQueue: [[makeReceipt({ amount: 1000 })]],
+        chargeById: makeCharge({ amount: 1000 }),
+        succeededRefunds: [{ amount: 300 }],
+        tossCancel: rejected,
+      });
+      const second = makeContext({
+        selectQueue: [[makeReceipt({ amount: 1000 })]],
+        chargeById: makeCharge({ amount: 1000 }),
+        succeededRefunds: [{ amount: 300 }],
+      });
+      await first.service.cancelForRefund(CHARGE_ID);
+      await second.service.cancelForRefund(CHARGE_ID);
+      const key = (ctx: typeof first) => ctx.tossApiClient.cancelCashReceipt.mock.calls[0][2];
+      expect(key(first)).not.toBe(key(second));
+      expect(first.updateCalls).toHaveLength(0);
+    });
+
+    it('남은 취소가 또 결과를 모르면 더 취소하지 않는다', async () => {
+      const { service, tossApiClient, updateCalls } = makeContext({
+        selectQueue: [[makeReceipt({ amount: 1000, requestPayload: pendingOf(200) })]],
+        chargeById: makeCharge({ amount: 1000 }),
+        succeededRefunds: [{ amount: 300 }],
+        tossCancelByCall: [new Error('socket hang up')],
+      });
+      await service.cancelForRefund(CHARGE_ID);
+      expect(tossApiClient.cancelCashReceipt).toHaveBeenCalledTimes(1);
+      expect(updateCalls).toHaveLength(0);
+    });
+
+    it.each([401, 403, 429])(
+      '남은 취소가 %d 로 막히면 원래 결과를 모르므로 기록을 지우지 않는다',
+      async (statusCode) => {
+        const { service, tossApiClient, updateCalls } = makeContext({
+          selectQueue: [[makeReceipt({ amount: 1000, requestPayload: pendingOf(200) })]],
+          chargeById: makeCharge({ amount: 1000 }),
+          succeededRefunds: [{ amount: 300 }],
+          tossCancelByCall: [{ ok: false, statusCode, error: { code: 'X', message: 'blocked' } }],
+        });
+        await service.cancelForRefund(CHARGE_ID);
+        expect(tossApiClient.cancelCashReceipt).toHaveBeenCalledTimes(1);
+        expect(updateCalls).toHaveLength(0);
+      },
+    );
+
+    it('멱등 키 유효기간이 지난 남은 취소는 다시 보내지 않는다', async () => {
+      const old = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString();
+      const { service, tossApiClient } = makeContext({
+        selectQueue: [[makeReceipt({ amount: 1000, requestPayload: pendingOf(200, old) })]],
+        chargeById: makeCharge({ amount: 1000 }),
+        succeededRefunds: [{ amount: 300 }],
+      });
+      await service.cancelForRefund(CHARGE_ID);
+      expect(tossApiClient.cancelCashReceipt).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['응답 없음', new Error('ETIMEDOUT')],
+      ['5xx', { ok: false, statusCode: 502, error: { code: 'UNKNOWN', message: 'bad gateway' } }],
+      [
+        '이전 요청 처리 중',
+        { ok: false, statusCode: 409, error: { code: 'IDEMPOTENT_REQUEST_PROCESSING', message: '' } },
+      ],
+    ])('새 취소 결과를 모르면(%s) 취소액은 그대로 두고 남은 취소로 기록한다', async (_label, result) => {
+      const { service, updateCalls } = makeContext({
+        selectQueue: [[makeReceipt({ amount: 1000 })]],
+        chargeById: makeCharge({ amount: 1000 }),
+        succeededRefunds: [{ amount: 300 }],
+        tossCancelByCall: [result],
+      });
+      await service.cancelForRefund(CHARGE_ID);
+      expect(updateCalls[0]).toMatchObject({
+        canceledAmount: 0,
+        status: 'ISSUED',
+        requestPayload: { pendingCancel: { amount: 300, idempotencyKey: expect.any(String) } },
+      });
     });
   });
 

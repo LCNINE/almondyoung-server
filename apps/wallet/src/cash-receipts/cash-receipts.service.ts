@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { and, asc, eq, inArray } from 'drizzle-orm';
@@ -24,15 +25,45 @@ const PAYABLE_STATUSES = ['CAPTURED', 'SUCCEEDED'] as const;
 // 터져 500 이 난다. 조회 전 형식을 검증해 안전하게 처리한다.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** cashReceipts 는 발행·취소 이력이다. 실패 건을 빼고 발행액이 취소액보다 크면 살아 있는 영수증이 있다. */
+/**
+ * cashReceipts 는 발행·취소 이력이다. 발행은 실패만 빼고(진행 중도 살아 있다), 취소는 완료된 것만 뺀다.
+ * 진행 중인 취소를 빼면 그 취소가 실패했을 때 영수증 두 장이 함께 살아 있게 된다.
+ */
 function hasActiveTossReceipt(payment: TossPaymentQueryResponse): boolean {
   if (!Array.isArray(payment.cashReceipts)) return !!payment.cashReceipt;
   let net = 0;
   for (const r of payment.cashReceipts) {
-    if (r.issueStatus === 'FAILED') continue;
-    net += r.transactionType === 'CANCEL' ? -r.amount : r.amount;
+    if (r.transactionType === 'CANCEL') {
+      if (r.issueStatus === 'COMPLETED') net -= r.amount;
+    } else if (r.issueStatus !== 'FAILED') {
+      net += r.amount;
+    }
   }
   return net > 0;
+}
+
+/** 응답이 끊겨 토스에 반영됐는지 모르는 영수증 취소. 같은 멱등 키로 다시 보내 결과를 확정한다. */
+interface PendingCancel {
+  amount: number;
+  idempotencyKey: string;
+  requestedAt: string;
+}
+
+const UNRESOLVED_CANCEL_STATUSES = new Set([401, 403, 408, 429]);
+
+// 토스 멱등 키는 15일 동안만 유효하다. 그 뒤 같은 키로 보내면 새 요청으로 처리돼 또 깎인다.
+const PENDING_CANCEL_RESEND_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
+function readPendingCancel(requestPayload: Record<string, unknown> | null): PendingCancel | null {
+  const pending = requestPayload?.pendingCancel as Partial<PendingCancel> | undefined;
+  if (
+    typeof pending?.amount !== 'number' ||
+    typeof pending.idempotencyKey !== 'string' ||
+    typeof pending.requestedAt !== 'string'
+  ) {
+    return null;
+  }
+  return { amount: pending.amount, idempotencyKey: pending.idempotencyKey, requestedAt: pending.requestedAt };
 }
 
 @Injectable()
@@ -162,6 +193,10 @@ export class CashReceiptsService {
    *
    * 영수증 행을 잠근 채 조회 → 토스 취소 → 갱신한다. 환불 두 건이 동시에 성공하면 둘 다 같은 취소액을 읽고
    * 목표까지 각자 취소해 토스에서 두 번 깎인다. 뒤에 온 호출은 앞 호출의 갱신을 보고 취소할 게 없어 끝난다.
+   *
+   * 응답이 끊긴 취소는 canceledAmount 에 안 잡혀 있다. 그대로 목표를 다시 계산하면 이미 깎인 금액을 또 깎으므로,
+   * 결과를 모르는 취소는 requestPayload.pendingCancel 에 남기고 다음 호출이 같은 멱등 키로 먼저 확정한다.
+   * 확정하지 못하면 더 취소하지 않는다.
    */
   async cancelForRefund(chargeId: string): Promise<void> {
     const charge = await this.chargesService.findById(chargeId);
@@ -176,35 +211,90 @@ export class CashReceiptsService {
         .limit(1)
         .for('update');
       if (!receipt || !receipt.receiptKey) return;
+      const receiptKey = receipt.receiptKey;
+
+      let canceled = receipt.canceledAmount;
+      const storedPending = readPendingCancel(receipt.requestPayload);
+      let pending = storedPending;
+      const save = async () => {
+        if (canceled === receipt.canceledAmount && pending === storedPending) return;
+        const restPayload = { ...receipt.requestPayload };
+        delete restPayload.pendingCancel;
+        const fullyCanceled = canceled >= receipt.amount;
+        await tx
+          .update(cashReceipts)
+          .set({
+            canceledAmount: canceled,
+            status: fullyCanceled ? 'CANCELED' : receipt.status,
+            canceledAt: fullyCanceled ? new Date() : receipt.canceledAt,
+            requestPayload: pending ? { ...restPayload, pendingCancel: pending } : restPayload,
+            updatedAt: new Date(),
+          })
+          .where(eq(cashReceipts.id, receipt.id));
+      };
+
+      if (pending) {
+        if (Date.now() - Date.parse(pending.requestedAt) > PENDING_CANCEL_RESEND_WINDOW_MS) {
+          this.logger.error(
+            `Cash receipt cancel outcome unknown past idempotency window, needs manual check: receipt=${receipt.id}, amount=${pending.amount}`,
+          );
+          return;
+        }
+        const outcome = await this.sendCancel(receiptKey, pending, receipt.id);
+        if (outcome === 'unknown') return;
+        if (outcome === 'applied') canceled += pending.amount;
+        pending = null;
+      }
 
       const refunded = await tx
         .select({ amount: refunds.amount })
         .from(refunds)
         .where(and(inArray(refunds.chargeId, legIds), eq(refunds.status, 'SUCCEEDED')));
       const target = Math.max(0, charge.amount - refunded.reduce((total, r) => total + r.amount, 0));
-      const cancelAmount = receipt.amount - receipt.canceledAmount - target;
-      if (cancelAmount <= 0) return;
-
-      const result = await this.tossApiClient.cancelCashReceipt(receipt.receiptKey, cancelAmount);
-      if (!result.ok) {
-        this.logger.error(
-          `Cash receipt cancel failed (refund continues): charge=${chargeId}, receipt=${receipt.id}, error=${result.error.message}`,
-        );
-        return;
+      const cancelAmount = receipt.amount - canceled - target;
+      if (cancelAmount > 0) {
+        const attempt: PendingCancel = {
+          amount: cancelAmount,
+          // 결과를 모르면 pendingCancel 이 이 키를 들고 있다. 거절된 키는 토스가 실패 응답까지 캐시하므로 시도마다 새로 만든다.
+          idempotencyKey: `wallet:cash-receipt-cancel:${randomUUID()}`,
+          requestedAt: new Date().toISOString(),
+        };
+        const outcome = await this.sendCancel(receiptKey, attempt, receipt.id);
+        if (outcome === 'applied') canceled += cancelAmount;
+        if (outcome === 'unknown') pending = attempt;
       }
-
-      const newCanceled = receipt.canceledAmount + cancelAmount;
-      const fullyCanceled = newCanceled >= receipt.amount;
-      await tx
-        .update(cashReceipts)
-        .set({
-          canceledAmount: newCanceled,
-          status: fullyCanceled ? 'CANCELED' : receipt.status,
-          canceledAt: fullyCanceled ? new Date() : receipt.canceledAt,
-          updatedAt: new Date(),
-        })
-        .where(eq(cashReceipts.id, receipt.id));
+      await save();
     });
+  }
+
+  /**
+   * 토스가 받았는지 모르는 경우(응답 없음·5xx·이전 멱등 요청 처리 중)는 'unknown'.
+   * 같은 키로 다시 보냈을 때 업무 거절(4xx)이면 원래 요청도 반영되지 않은 것이다 — 반영됐다면 토스가 그 응답을 돌려준다.
+   * 인증·한도(401·403·408·429)는 멱등 응답을 찾기 전에 막힌 것이라 원래 결과를 말해 주지 않으므로 'unknown'.
+   */
+  private async sendCancel(
+    receiptKey: string,
+    attempt: PendingCancel,
+    receiptId: string,
+  ): Promise<'applied' | 'rejected' | 'unknown'> {
+    try {
+      const result = await this.tossApiClient.cancelCashReceipt(receiptKey, attempt.amount, attempt.idempotencyKey);
+      if (result.ok) return 'applied';
+      const unknown =
+        result.statusCode >= 500 ||
+        UNRESOLVED_CANCEL_STATUSES.has(result.statusCode) ||
+        result.error.code === 'IDEMPOTENT_REQUEST_PROCESSING';
+      this.logger.error(
+        `Cash receipt cancel ${unknown ? 'outcome unknown' : 'failed'} (refund continues): receipt=${receiptId}, amount=${attempt.amount}, error=${result.error.message}`,
+      );
+      return unknown ? 'unknown' : 'rejected';
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `Cash receipt cancel outcome unknown: receipt=${receiptId}, amount=${attempt.amount}, error=${message}`,
+      );
+      return 'unknown';
+    }
   }
 
   async findByIntent(intentId: string, userId: string): Promise<CashReceipt[]> {
