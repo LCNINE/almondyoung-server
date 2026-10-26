@@ -7,11 +7,10 @@ import { useQuestion } from '@/lib/services/qna';
 import {
   CATEGORY_LABELS,
   SOURCE_LABELS,
-  STATUS_LABELS,
   SUB_CATEGORY_LABELS,
   getQuestionSource,
 } from '@/lib/types/dto/qna';
-import { Badge } from '@/components/ui/badge';
+import { QnaStatusCell } from '@/components/table/table-cells/qna';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import {
   Carousel,
@@ -110,9 +109,7 @@ function QuestionDetailContent({ questionId }: { questionId: string }) {
       {data.productId && <ProductStrip productId={data.productId} />}
 
       <div className="flex flex-wrap items-center gap-1.5">
-        <Badge variant={data.status === 'answered' ? 'secondary' : 'default'}>
-          {STATUS_LABELS[data.status]}
-        </Badge>
+        <QnaStatusCell status={data.status} />
         <Chip>{SOURCE_LABELS[getQuestionSource(data)]}</Chip>
         {category && <Chip>{category}</Chip>}
         {data.isSecret && (

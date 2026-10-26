@@ -437,13 +437,23 @@ export class QnaService {
 
       const [{ count: total }] = await tx.select({ count: count() }).from(questions).where(whereClause);
 
-      const orderByClause = query.sort === 'oldest' ? asc(questions.createdAt) : desc(questions.createdAt);
+      // question_status enum 선언 순서(active → answered)대로 asc 하면 답변 대기가 앞에 온다
+      const orderByClauses =
+        query.sort === 'oldest'
+          ? [asc(questions.createdAt)]
+          : query.sort === 'latest'
+            ? [desc(questions.createdAt)]
+            : [
+                asc(questions.status),
+                asc(sql`CASE WHEN ${questions.status} = 'active' THEN ${questions.createdAt} END`),
+                desc(questions.createdAt),
+              ];
 
       const data = await tx
         .select()
         .from(questions)
         .where(whereClause)
-        .orderBy(orderByClause)
+        .orderBy(...orderByClauses)
         .limit(limit)
         .offset(offset);
 
