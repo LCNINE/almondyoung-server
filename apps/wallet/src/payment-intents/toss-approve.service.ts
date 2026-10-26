@@ -253,17 +253,7 @@ export class TossApproveService {
     const email = metadata.email ?? metadata.customerEmail;
 
     await this.dbService.db.transaction(async (tx) => {
-      await this.chargesService.updateStatus(
-        charge.id,
-        'REQUIRES_ACTION',
-        {
-          paymentMethodId: bankMethod.id,
-          providerTransactionId: paymentKey,
-          responsePayload: { ...payload, paymentKey, secret: secret ?? null, virtualAccount: va, nextAction },
-        },
-        tx,
-      );
-
+      // intent 를 먼저 잠근다. AbandonService 가 intent → charge 순으로 잠그므로 거꾸로 잡으면 교착한다.
       await this.stateTransitionService.transitionIntent(
         intent.id,
         'AWAITING_DEPOSIT',
@@ -293,6 +283,17 @@ export class TossApproveService {
           },
         },
         undefined,
+        tx,
+      );
+
+      await this.chargesService.updateStatus(
+        charge.id,
+        'REQUIRES_ACTION',
+        {
+          paymentMethodId: bankMethod.id,
+          providerTransactionId: paymentKey,
+          responsePayload: { ...payload, paymentKey, secret: secret ?? null, virtualAccount: va, nextAction },
+        },
         tx,
       );
 
