@@ -14,7 +14,9 @@ import {
   ensureReturnShippingOption,
   findReturnShippingOptionId,
 } from '../../src/modules/almond-fulfillment/return-shipping-option';
-import { DEFAULT_SHIPPING_GROUP_DELIVERY } from '../../src/modules/almond-fulfillment/types';
+import { DEFAULT_SHIPPING_GROUP_CODE, DEFAULT_SHIPPING_GROUP_DELIVERY } from '../../src/modules/almond-fulfillment/types';
+import { RETURN_REASONS, ensureReturnReasons } from '../../src/workflows/orders/returns/return-reasons';
+import seedShipping from '../../src/scripts/seed-shipping';
 import {
   FakeWallet, WALLET_BASE_URL, setupCommerce, requestReturnWithShipping, placeOrder, loadOrder, Commerce,
 } from './fixtures/partial-cancel-fixture';
@@ -134,6 +136,60 @@ medusaIntegrationTestRunner({
       });
       expect(await returnProfileOptions()).toHaveLength(2);
       expect(await findReturnShippingOptionId(container)).toBe(first);
+    });
+    const listOurReasons = () =>
+      getContainer().resolve(Modules.ORDER).listReturnReasons({ value: RETURN_REASONS.map((r) => r.value) });
+
+    it('ensureReturnReasons 두 번 — 6행, 중복 없음, metadata 가 표와 같다', async () => {
+      await ensureReturnReasons(getContainer());
+      await ensureReturnReasons(getContainer());
+      const rows = await listOurReasons();
+      expect(rows).toHaveLength(6);
+      for (const r of RETURN_REASONS) {
+        const row = rows.find((x: any) => x.value === r.value)!;
+        expect(row.label).toBe(r.label);
+        expect(row.metadata).toMatchObject({ feeBearer: r.feeBearer, customerSelectable: r.customerSelectable });
+      }
+    });
+
+    it('누가 label·feeBearer 를 바꿔도 다음 보장이 되돌리고, metadata 의 다른 키는 남긴다', async () => {
+      const orderModule = getContainer().resolve(Modules.ORDER);
+      const [row] = await orderModule.listReturnReasons({ value: 'change_of_mind' });
+      await orderModule.updateReturnReasons(row.id, { label: 'x', metadata: { feeBearer: 'seller', customerSelectable: true, note: 'keep' } });
+      await ensureReturnReasons(getContainer());
+      const [after] = await orderModule.listReturnReasons({ value: 'change_of_mind' });
+      expect(after.label).toBe('단순 변심');
+      expect(after.metadata).toMatchObject({ feeBearer: 'customer', note: 'keep' });
+    });
+
+    it('seed-shipping 은 기본 그룹이 이미 있어도 반품 옵션과 사유를 보장한다', async () => {
+      const container = getContainer();
+      await provisionShippingGroup(container, {
+        code: DEFAULT_SHIPPING_GROUP_CODE, name: '기본배송', policy: { type: 'flat', baseFee: 1234 }, delivery: DEFAULT_SHIPPING_GROUP_DELIVERY,
+      });
+      const optionBefore = await findReturnShippingOptionId(container);
+      await seedShipping({ container } as any);
+      await seedShipping({ container } as any);
+      expect(await findReturnShippingOptionId(container)).toBe(optionBefore);
+      expect(await listOurReasons()).toHaveLength(6);
+      const defaultGroup = (await listShippingGroups(container)).find((g) => g.code === DEFAULT_SHIPPING_GROUP_CODE)!;
+      expect(defaultGroup.policy).toMatchObject({ type: 'flat', baseFee: 1234 });
+    });
+
+    it('seed-shipping 은 반품 옵션·사유가 없는 DB 에도 만든다', async () => {
+      const container = getContainer();
+      const fulfillment = container.resolve(Modules.FULFILLMENT);
+      const [profile] = await fulfillment.listShippingProfiles({ type: RETURN_SHIPPING_PROFILE_TYPE });
+      const options = await fulfillment.listShippingOptions({ shipping_profile_id: profile.id });
+      await fulfillment.deleteShippingOptions(options.map((o: any) => o.id));
+      const orderModule = container.resolve(Modules.ORDER);
+      await orderModule.deleteReturnReasons((await listOurReasons()).map((r: any) => r.id));
+      expect(await findReturnShippingOptionId(container)).toBeNull();
+
+      await seedShipping({ container } as any);
+
+      expect(await findReturnShippingOptionId(container)).not.toBeNull();
+      expect(await listOurReasons()).toHaveLength(6);
     });
   },
 });
