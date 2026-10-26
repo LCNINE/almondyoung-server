@@ -152,8 +152,10 @@ Medusa 정산: 수령(양품/불량) + 택배비 + 환불 ◀──(channel-orde
 **반품용 배송 옵션과 provider.**
 - 반품 배송 방법은 `is_return` 규칙이 켜진 옵션에서만 만들 수 있다. 라이브에는 0개다.
 - `provisionShippingGroup` 은 같은 shipping profile 의 다른 옵션을 전부 지운다(`provision-shipping-group.ts:187-196`).
-  그래서 반품 옵션은 **그 함수 안에서 그룹 옵션과 함께 보장**한다 — 그룹을 고칠 때마다 사라지지 않게. 이미 있는 그룹을 위해
-  시드(`seed-shipping.ts` 곁, 멱등)로도 보장한다. Medusa 컨테이너는 뜰 때마다 `package.json` 의 `start` 로 시드를 돌린다.
+  그래서 반품 옵션은 **배송비 그룹 profile 밖, 전용 profile(type `return`) 하나에 하나만** 둔다 — 그 함수가 지울 길이 아예 없다
+  (PR 2 계획 N1. 처음엔 «그 함수 안에서 그룹 옵션과 함께 보장»이었다). 코어의 반품 배송 방법 생성은 profile 을 검사하지 않고,
+  반품 택배비는 옵션이 아니라 `policySnapshot` 으로 계산하므로(4.4) 그룹마다 옵션이 있을 이유가 없다. 시드(`seed-shipping.ts`, 멱등)로
+  보장한다. Medusa 컨테이너는 뜰 때마다 `package.json` 의 `start` 로 시드를 돌린다.
 - 반품 옵션이 없으면 요청 워크플로가 거절하고 이유를 남긴다(시드 누락이 조용히 깨지지 않게).
 - `almond-fulfillment` provider 에 `createReturnFulfillment` 가 없다 — 기본 클래스는 던진다(`utils/dist/fulfillment/provider.js:338-340`).
   `{ data: {}, labels: [] }` 를 돌려주는 구현을 넣는다. 한진 회수는 Medusa 가 아니라 core 가 접수한다(한진 클라이언트·HMAC·설정이 core 에 있다).
