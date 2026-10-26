@@ -4,6 +4,11 @@ import {
   createRegionsWorkflow,
   createSalesChannelsWorkflow,
   createProductsWorkflow,
+  createShippingOptionsWorkflow,
+  beginReturnOrderWorkflow,
+  requestItemReturnWorkflow,
+  createReturnShippingMethodWorkflow,
+  confirmReturnRequestWorkflow,
   createApiKeysWorkflow,
   linkSalesChannelsToApiKeyWorkflow,
   linkSalesChannelsToStockLocationWorkflow,
@@ -207,6 +212,49 @@ export class FakeWallet {
     }
     return { status: 404, payload: { error: 'NOT_FOUND', message: path } };
   }
+}
+
+/**
+ * 반품 배송 옵션(is_return: true, 고정 0원). 우리 almond-fulfillment provider 는 아직 createReturnFulfillment 가 없어
+ * manual provider 로 만든다. 반품 배송 방법은 호출마다 custom_amount 로 금액을 정한다.
+ */
+export async function createReturnShippingOption(container: any, shippingProfileId: string): Promise<string> {
+  const { serviceZoneId } = await ensureKoreanShippingInfrastructure(container);
+  const { result } = await createShippingOptionsWorkflow(container).run({
+    input: [
+      {
+        name: '반품 택배',
+        price_type: 'flat',
+        provider_id: 'manual_manual',
+        service_zone_id: serviceZoneId,
+        shipping_profile_id: shippingProfileId,
+        type: { label: '반품 택배', description: '반품', code: 'return' },
+        prices: [{ currency_code: 'krw', amount: 0 }],
+        rules: [
+          { attribute: 'enabled_in_store', value: 'false', operator: 'eq' },
+          { attribute: 'is_return', value: 'true', operator: 'eq' },
+        ],
+      },
+    ],
+  });
+  return result[0].id as string;
+}
+
+/** 주문 줄 하나를 반품 요청으로 확정한다(반품 배송 방법 포함). 반환: return id. */
+export async function requestReturnWithShipping(
+  container: any,
+  p: { orderId: string; itemId: string; quantity: number; returnOptionId: string; shippingAmount: number },
+): Promise<string> {
+  const { result: change } = await beginReturnOrderWorkflow(container).run({ input: { order_id: p.orderId } });
+  const returnId = (change as any).return_id as string;
+  await requestItemReturnWorkflow(container).run({
+    input: { return_id: returnId, items: [{ id: p.itemId, quantity: p.quantity }] },
+  });
+  await createReturnShippingMethodWorkflow(container).run({
+    input: { return_id: returnId, shipping_option_id: p.returnOptionId, custom_amount: p.shippingAmount },
+  });
+  await confirmReturnRequestWorkflow(container).run({ input: { return_id: returnId, confirmed_by: 'test' } });
+  return returnId;
 }
 
 export type Ctx = { api: any; getContainer: () => any };

@@ -36,4 +36,27 @@ describe('partial-cancel parseInput', () => {
       }
     });
   });
+
+  describe('reasonCode·requestedBy (K8 PR1 — 택배비는 사유가 정한다)', () => {
+    const base = { requestId: 'r1', items: [{ item_id: 'i1', quantity: 1 }] };
+
+    it('그대로 나온다', () => {
+      const out = parseInput({ ...base, reasonCode: 'OUT_OF_STOCK', requestedBy: 'operator' });
+      expect(out.reasonCode).toBe('OUT_OF_STOCK');
+      expect(out.requestedBy).toBe('operator');
+    });
+
+    it('둘 다 없으면 키가 없다', () => {
+      const out = parseInput(base);
+      expect(out).not.toHaveProperty('reasonCode');
+      expect(out).not.toHaveProperty('requestedBy');
+    });
+
+    it.each([
+      [{ reasonCode: 1 }],
+      [{ requestedBy: {} }],
+    ])('문자열이 아니면 INVALID_DATA: %j', (extra) => {
+      expect(() => parseInput({ ...base, ...extra })).toThrow(MedusaError);
+    });
+  });
 });

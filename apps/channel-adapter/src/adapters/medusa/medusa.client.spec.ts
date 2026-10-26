@@ -1706,6 +1706,25 @@ describe('MedusaClient 취소 (#1016 35번 PR-B · 36번 재설계 PR 3)', () =>
       });
     });
 
+    it('취소 사유·요청 주체는 있을 때만 reasonCode·requestedBy 로 싣는다', async () => {
+      global.fetch = respond(200, { requestId: 'req-1', refundAmount: 1, shippingDelta: 0, shippingNotAdjusted: false, stage: 'refunded' });
+      await makeClient().partialCancelOrder('order_1', { ...input, reasonCode: 'OUT_OF_STOCK', requestedBy: 'operator' });
+      expect(lastBody()).toEqual({
+        requestId: 'req-1',
+        items: [{ item_id: 'ordli_1', quantity: 2 }],
+        refundMode: 'auto',
+        reasonCode: 'OUT_OF_STOCK',
+        requestedBy: 'operator',
+      });
+    });
+
+    it('사유·요청 주체가 없으면 두 칸의 키가 없다', async () => {
+      global.fetch = respond(200, { requestId: 'req-1', refundAmount: 1, shippingDelta: 0, shippingNotAdjusted: false, stage: 'refunded' });
+      await makeClient().partialCancelOrder('order_1', input);
+      expect(lastBody()).not.toHaveProperty('reasonCode');
+      expect(lastBody()).not.toHaveProperty('requestedBy');
+    });
+
     it('external_refund_* 사유의 거절은 사유·금액과 함께 따로 돌려준다', async () => {
       global.fetch = respond(400, {
         type: 'not_allowed',

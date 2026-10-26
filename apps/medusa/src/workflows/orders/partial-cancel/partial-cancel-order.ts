@@ -11,21 +11,21 @@ import {
   requestOrderEditRequestWorkflow,
 } from '@medusajs/medusa/core-flows';
 
-import { paymentRefundLockKey } from '../../../modules/almond-payment/refund-data';
 import { readWalletRefundRefusal } from '../../../modules/almond-payment/wallet-refund-refusal';
 import { describeError } from '../../../utils/describe-error';
-import { POLICY_SNAPSHOT_KEY, type ShippingPolicySnapshot } from '../../../modules/almond-fulfillment/types';
-import { issuePaymentRefund } from '../settlement/issue-payment-refund';
+import { loadOrderView, type OrderView } from '../settlement/load-order-view';
 import { orderCancelLockKey, orderPaymentIds } from '../settlement/order-payments';
+import { refundOrderPayments } from '../settlement/refund-order-payments';
 import type { RefundMode } from '../settlement/refund-mode';
 import { reconcileOrderWalletRefunds } from '../settlement/wallet-refund-ledger';
 import { toNumber } from './amount';
 import { appliedExternalRefund, checkAlreadyRefunded, hashRequest, unresolvedExternalRefund } from './external-refund';
 import type { OrderAdjustment } from './prorate-adjustments';
 import { planPartialCancel, PartialCancelRejected, type CancelRequestItem, type OrderLine } from './plan-partial-cancel';
-import { planShipping, type ShippingMethodView } from './plan-shipping';
+import { PARTIAL_CANCEL_CHARGE_NAME, planShipping } from './plan-shipping';
+import { cancelShippingFeeBearer, type ShippingFeeBearer } from './shipping-fee-bearer';
 
-export const PARTIAL_CANCEL_CHARGE_NAME = '부분취소 배송비';
+export { PARTIAL_CANCEL_CHARGE_NAME };
 
 export type PartialCancelInput = {
   orderId: string;
@@ -35,6 +35,9 @@ export type PartialCancelInput = {
   alreadyRefunded?: number;
   /** 없으면 auto(#1016 36번 재설계). 요청 해시에 넣지 않는다 — 자동 거절 뒤 같은 요청을 수동으로 다시 보낸다 */
   refundMode?: RefundMode;
+  /** 취소 사유·요청 주체 — 택배비 부담을 정한다(K8). 요청 해시에 넣지 않는다: 옛 기록으로 멈춘 요청을 사유와 함께 다시 불러도 이어 가야 한다 */
+  reasonCode?: string;
+  requestedBy?: string;
   actorId?: string;
 };
 export type PartialCancelRecord = {
@@ -57,6 +60,8 @@ export type PartialCancelRecord = {
   refundedAt?: string;
   /** 환불을 끝낸 방식 — refunded 때 쓴다. 옛 기록엔 없다(auto) */
   refundMode?: RefundMode;
+  /** 무료배송이 깨질 때 택배비를 누가 냈나 — 옛 기록엔 없다(그땐 고객이 냈다) */
+  shippingFeeBearer?: ShippingFeeBearer;
 };
 export type PartialCancelResult = {
   requestId: string;
@@ -98,8 +103,6 @@ export class PartialCancelRefundRefused extends Error {
 
 /** 주문 하나의 부분취소를 직렬화한다. 레디스 잠금은 timeout 이 곧 만료라, 주문 수정 + 환불이 넉넉히 들어가게 잡는다. */
 const ORDER_LOCK_TIMEOUT_SECONDS = 120;
-/** 환불 투영(payment-events)과 같은 값. 이 잠금 안에서는 refundPaymentWorkflow 한 번만 돈다. */
-const PAYMENT_LOCK_TIMEOUT_SECONDS = 30;
 
 /** 상계 음수 크레딧 라인의 reference — reference_id 는 requestId. 재시도가 이것으로 이미 넣었는지 본다 */
 const OFFSET_CREDIT_LINE_REFERENCE = 'partial-cancel';
@@ -145,7 +148,14 @@ async function run(container: MedusaContainer, input: PartialCancelInput): Promi
     if (existing) await reconcileOrderWalletRefunds(container, input.orderId);
     // 상계 라인을 환불보다 «먼저» 넣는다 — 그래야 환불 뒤 차액이 0 이고, refundPaymentWorkflow 가 배송비 몫만 양수 라인으로 붙인다
     await offsetExternalRefund(container, input.orderId, input.requestId, record.externalRefundApplied ?? 0);
-    await refund(container, input.orderId, input.requestId, record.refundAmount, mode, input.actorId);
+    await refundOrderPayments(container, {
+      orderId: input.orderId,
+      amount: record.refundAmount,
+      note: refundNote(input.requestId),
+      mode,
+      kind: 'ITEM_CANCEL',
+      actorId: input.actorId,
+    });
   } catch (error) {
     const refusal = readWalletRefundRefusal(error);
     if (refusal) throw new PartialCancelRefundRefused(input.requestId, refusal.code, refusal.message);
@@ -171,6 +181,7 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
     order.lines.map((l) => l.productId).filter((x): x is string => !!x),
   );
   const newQty = new Map(plan.lines.map((p) => [p.itemId, p.newQty]));
+  const bearer = cancelShippingFeeBearer(input);
   const shipping = planShipping({
     methods: order.shippingMethods,
     lines: order.lines.map((l) => ({
@@ -182,7 +193,7 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
     })),
     postalCode: order.postalCode,
     priorGroupFees: priorGroupFees(order.metadata),
-    chargeCap: plan.itemRefundEstimate,
+    chargeCap: bearer === 'seller' ? 0 : plan.itemRefundEstimate,
   });
 
   const { result: change } = await beginOrderEditOrderWorkflow(container).run({
@@ -248,6 +259,7 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
     groupFees: shipping.adjustable ? Object.fromEntries(shipping.groups.map((g) => [g.shippingProfileId, g.recordedFee])) : {},
     at: new Date().toISOString(),
     orderVersion: edited.version,
+    shippingFeeBearer: bearer,
     ...(input.alreadyRefunded !== undefined ? { externalRefundApplied: applied } : {}),
   };
   await writeRecord(container, order.id, input.requestId, record);
@@ -309,145 +321,14 @@ async function offsetExternalRefund(container: MedusaContainer, orderId: string,
   }
 }
 
-/**
- * 결제마다 «캡처 − 환불» 남은 만큼 차례로 환불한다. 결제 단위 잠금(환불 투영과 같은 키) 안에서 결제를 다시 읽어 여유를
- * 계산한다 — 같은 금액의 외부 환불 표식이 살아 있는 동안 우리 환불이 끼어들면 wallet 호출을 건너뛸 수 있다.
- * 이미 이 요청 메모로 기록된 환불은 빼고 나머지만 낸다(환불 뒤 기록 전에 끊겼다 다시 불려도 두 번 내지 않게).
- * 시도·수동 표식은 issuePaymentRefund 가 쓴다.
- */
-async function refund(
-  container: MedusaContainer,
-  orderId: string,
-  requestId: string,
-  amount: number,
-  mode: RefundMode,
-  actorId?: string,
-) {
-  if (amount <= 0) return;
-  const note = refundNote(requestId);
-  const paymentModule = container.resolve(Modules.PAYMENT);
-  const locking = container.resolve(Modules.LOCKING);
-  const paymentIds = await orderPaymentIds(container, orderId);
-  if (paymentIds.length === 0) throw new Error(`환불할 결제가 없습니다: ${orderId}`);
-
-  const before = await paymentModule.listPayments({ id: paymentIds }, { relations: ['refunds'] });
-  const alreadyRefunded = before.flatMap((p) => p.refunds ?? []).filter((r) => r.note === note).reduce((s, r) => s + toNumber(r.amount), 0);
-  let left = amount - alreadyRefunded;
-
-  for (const paymentId of paymentIds) {
-    if (left <= 0) break;
-    await locking.execute(
-      paymentRefundLockKey(paymentId),
-      async () => {
-        const p = await paymentModule.retrievePayment(paymentId, { relations: ['captures', 'refunds'] });
-        if (p.canceled_at) return;
-        const captured = (p.captures ?? []).reduce((s, x) => s + toNumber(x.amount), 0);
-        const refunded = (p.refunds ?? []).reduce((s, x) => s + toNumber(x.amount), 0);
-        const take = Math.min(captured - refunded, left);
-        if (!(take > 0)) return;
-        await issuePaymentRefund(container, { paymentId, amount: take, note, mode, kind: 'ITEM_CANCEL', actorId });
-        left -= take;
-      },
-      { timeout: PAYMENT_LOCK_TIMEOUT_SECONDS },
-    );
-  }
-  if (left > 0) throw new Error(`환불할 캡처 잔액이 부족합니다: 남은 ${left}`);
-}
 
 // ── 조회 ──────────────────────────────────────────────────────────────────────
 
-type OrderView = {
-  id: string;
-  status: string;
-  version: number;
-  metadata: Record<string, unknown> | null;
-  lines: OrderLine[];
-  shippingMethods: ShippingMethodView[];
-  postalCode: string | null;
-  /** 현재 버전 summary 의 pending_difference. 음수 = 돌려줄 차액 */
-  pendingDifference: number;
-};
-
-/**
- * 주문을 «현재 버전» 기준으로 읽는다. query.graph 로 order 를 읽으면 주문 수정 뒤 summary·items 가 버전이 섞여 나온다
- * (Task 1 특성 테스트에서 관찰) — 버전을 아는 order 모듈로 읽는다.
- */
+/** 주문을 «현재 버전» 기준으로 읽는다(읽기 본체는 settlement/load-order-view). 부분취소는 못 찾으면 정해진 거절이다. */
 async function loadOrder(container: MedusaContainer, orderId: string): Promise<OrderView> {
-  const orderModule = container.resolve(Modules.ORDER);
-  const [o] = await orderModule.listOrders(
-    { id: orderId },
-    {
-      select: ['id', 'status', 'version', 'metadata'],
-      relations: [
-        'items',
-        'items.detail',
-        'items.adjustments',
-        'shipping_methods',
-        'shipping_methods.adjustments',
-        'summary',
-        'shipping_address',
-      ],
-    },
-  );
-  if (!o) throw new PartialCancelRejected(`주문을 찾을 수 없습니다: ${orderId}`);
-  // order 모듈의 DTO 는 summary 를 단일 객체로 적지만 실제로는 버전별 배열이 올 수 있어 모양을 넓혀 받는다.
-  const rawSummary = (o as unknown as { summary?: SummaryRow | SummaryRow[] | null }).summary;
-  const summary = Array.isArray(rawSummary) ? (rawSummary.find((s) => s.version === o.version) ?? rawSummary[0]) : rawSummary;
-  const pendingDifference = toNumber(summary?.totals?.pending_difference ?? summary?.pending_difference ?? 0);
-  if (!Number.isFinite(pendingDifference)) throw new Error(`주문 summary 를 읽지 못했습니다: ${orderId}`);
-
-  return {
-    id: o.id,
-    status: o.status,
-    version: o.version,
-    metadata: (o.metadata as Record<string, unknown> | null) ?? null,
-    lines: (o.items ?? []).map((i) => ({
-      id: i.id,
-      quantity: toNumber(i.quantity),
-      unitPrice: toNumber(i.unit_price),
-      productId: i.product_id ?? null,
-      requiresShipping: i.requires_shipping !== false,
-      adjustments: (i.adjustments ?? []).map((a) => ({
-        amount: toNumber(a.amount),
-        code: a.code ?? null,
-        promotion_id: a.promotion_id ?? null,
-        description: a.description ?? null,
-        // 모델에는 있는데 OrderLineItemAdjustmentDTO 타입에 빠진 필드라 모양만 넓혀 읽는다.
-        is_tax_inclusive: !!(a as { is_tax_inclusive?: boolean | null }).is_tax_inclusive,
-      })),
-    })),
-    shippingMethods: (o.shipping_methods ?? []).map((m) => toShippingMethodView(m)),
-    postalCode: o.shipping_address?.postal_code ?? null,
-    pendingDifference,
-  };
-}
-
-/** 배송 방법 → 계획 입력. amount 는 할인 «전» 금액이라, 할인이 붙었는지를 따로 넘긴다(planShipping 이 조정을 멈춘다). */
-export function toShippingMethodView(m: {
-  id: string;
-  shipping_option_id?: string | null;
-  amount: unknown;
-  name?: string | null;
-  data?: Record<string, unknown> | null;
-  adjustments?: Array<{ amount: unknown } | null> | null;
-}): ShippingMethodView {
-  return {
-    id: m.id,
-    shippingOptionId: m.shipping_option_id ?? null,
-    amount: toNumber(m.amount),
-    snapshot: readSnapshot(m.data),
-    isPartialCancelCharge: m.name === PARTIAL_CANCEL_CHARGE_NAME,
-    hasAdjustments: (m.adjustments ?? []).some((a) => !!a && toNumber(a.amount) !== 0),
-  };
-}
-
-type SummaryRow = { version?: number; pending_difference?: unknown; totals?: { pending_difference?: unknown } };
-
-function readSnapshot(data: Record<string, unknown> | null | undefined): ShippingPolicySnapshot | null {
-  // Medusa 는 JSON 을 병합 갱신하므로 «지운» 스냅샷은 null 로 남는다. 모양이 맞지 않으면 없는 것으로 본다.
-  const v = data?.[POLICY_SNAPSHOT_KEY] as Partial<ShippingPolicySnapshot> | null | undefined;
-  if (!v || typeof v !== 'object' || !v.policy || typeof v.shippingProfileId !== 'string') return null;
-  return v as ShippingPolicySnapshot;
+  const order = await loadOrderView(container, orderId);
+  if (!order) throw new PartialCancelRejected(`주문을 찾을 수 없습니다: ${orderId}`);
+  return order;
 }
 
 async function productShippingProfiles(container: MedusaContainer, productIds: string[]): Promise<Map<string, string>> {

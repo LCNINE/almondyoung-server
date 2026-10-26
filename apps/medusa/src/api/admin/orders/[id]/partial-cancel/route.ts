@@ -20,7 +20,7 @@ import { parseInput } from './parse-input';
  * POST /admin/orders/:id/partial-cancel
  */
 export const POST = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) => {
-  const { requestId, items, alreadyRefunded, refundMode } = parseInput(req.body);
+  const { requestId, items, alreadyRefunded, refundMode, reasonCode, requestedBy } = parseInput(req.body);
   try {
     const result = await partialCancelOrder(req.scope, {
       orderId: req.params.id,
@@ -28,6 +28,8 @@ export const POST = async (req: AuthenticatedMedusaRequest, res: MedusaResponse)
       items,
       ...(alreadyRefunded !== undefined ? { alreadyRefunded } : {}),
       ...(refundMode !== undefined ? { refundMode } : {}),
+      ...(reasonCode !== undefined ? { reasonCode } : {}),
+      ...(requestedBy !== undefined ? { requestedBy } : {}),
       actorId: req.auth_context?.actor_id,
     });
     res.status(200).json(result);
