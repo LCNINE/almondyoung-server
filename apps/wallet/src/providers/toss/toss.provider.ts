@@ -179,8 +179,16 @@ export class TossPaymentProvider implements PaymentProvider {
     if (!['DONE', 'WAITING_FOR_DEPOSIT', 'PARTIAL_CANCELED'].includes(query.data.status))
       return { status: 'SUCCEEDED' };
 
+    // 만료 크론은 같은 idempotencyKey 로 매 주기 다시 온다. 토스는 실패 응답도 재생하므로 상태를 본 뒤 새 키로 취소한다.
     const canceled = await this.tossApi
-      .cancelPayment(query.data.paymentKey, '결제 취소', undefined, `cancel:${idempotencyKey}`, undefined, useWidgetKey)
+      .cancelPayment(
+        query.data.paymentKey,
+        '결제 취소',
+        undefined,
+        `cancel:${idempotencyKey}:${Date.now()}`,
+        undefined,
+        useWidgetKey,
+      )
       .catch(() => null);
     if (canceled?.ok || canceled?.error.code === 'ALREADY_CANCELED_PAYMENT') return { status: 'SUCCEEDED' };
     return {

@@ -175,4 +175,19 @@ describe('TossPaymentProvider.cancel — 승인 결과를 모르는 charge', () 
     };
     expect((await make(cancelRefused).cancel(cancelParams())).status).toBe('FAILED');
   });
+
+  it('다음 주기의 재시도는 새 멱등 키로 취소한다 — 토스가 캐시한 실패를 재생하지 않게', async () => {
+    const api = {
+      getPaymentByOrderId: jest
+        .fn()
+        .mockResolvedValue({ ok: true, data: { status: 'WAITING_FOR_DEPOSIT', paymentKey: 'pk_va' } }),
+      cancelPayment: jest.fn().mockResolvedValue({ ok: false, error: { code: 'PROVIDER_ERROR' }, statusCode: 500 }),
+    };
+    const now = jest.spyOn(Date, 'now').mockReturnValueOnce(1).mockReturnValueOnce(2);
+    await make(api).cancel(cancelParams());
+    await make(api).cancel(cancelParams());
+    now.mockRestore();
+    const [first, second] = api.cancelPayment.mock.calls.map((call) => call[3]);
+    expect(first).not.toBe(second);
+  });
 });
