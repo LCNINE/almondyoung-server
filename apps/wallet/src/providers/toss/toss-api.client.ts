@@ -60,6 +60,13 @@ export interface TossPaymentQueryResponse {
   // 발급 시 charge 에 저장해 둔 값과 하며, 이 필드에 의존하지 않는다.
   secret: string | null;
   virtualAccount?: TossVirtualAccount | null;
+  // 결제에 딸려 토스가 발급한 현금영수증. 우리가 /cash-receipts 로 따로 발급한 건은 여기 안 붙는다.
+  cashReceipt?: { receiptKey?: string } | null;
+  cashReceipts?: Array<{
+    transactionType: 'CONFIRM' | 'CANCEL';
+    issueStatus: 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
+    amount: number;
+  }> | null;
   [key: string]: unknown;
 }
 
@@ -222,6 +229,10 @@ export class TossApiClient {
    */
   async getPaymentByOrderId(orderId: string, useWidgetKey = false): Promise<TossApiResult<TossPaymentQueryResponse>> {
     return this.get<TossPaymentQueryResponse>(`/payments/orders/${encodeURIComponent(orderId)}`, useWidgetKey);
+  }
+
+  async getPayment(paymentKey: string, useWidgetKey = false): Promise<TossApiResult<TossPaymentQueryResponse>> {
+    return this.get<TossPaymentQueryResponse>(`/payments/${encodeURIComponent(paymentKey)}`, useWidgetKey);
   }
 
   private async get<T>(path: string, useWidgetKey = false): Promise<TossApiResult<T>> {

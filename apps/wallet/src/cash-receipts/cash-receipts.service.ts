@@ -2,10 +2,12 @@ import { BadRequestException, ConflictException, Injectable, Logger, NotFoundExc
 import { DbService } from '@app/db';
 import { and, asc, eq } from 'drizzle-orm';
 import { CashReceiptType, WalletSchema, cashReceipts, paymentIntentItems, paymentIntents } from '../schema';
-import { CashReceipt } from '../types';
+import { Charge, CashReceipt } from '../types';
 import { ChargesService } from '../charges/charges.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
-import { TossApiClient } from '../providers/toss/toss-api.client';
+import { TossApiClient, TossPaymentQueryResponse } from '../providers/toss/toss-api.client';
+import { usesTossWidget } from '../providers/toss/toss-widget-mode';
+import { ledgerLegChargeId } from '../charges/ledger-leg';
 
 // 발급 가능한 인텐트 상태 (결제 완료된 건만)
 const PAYABLE_STATUSES = ['CAPTURED', 'SUCCEEDED'] as const;
@@ -13,6 +15,17 @@ const PAYABLE_STATUSES = ['CAPTURED', 'SUCCEEDED'] as const;
 // intent_id 는 uuid 컬럼. 비-UUID(더미 intentId 등)로 조회하면 postgres 가 uuid 캐스팅에서
 // 터져 500 이 난다. 조회 전 형식을 검증해 안전하게 처리한다.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** cashReceipts 는 발행·취소 이력이다. 실패 건을 빼고 발행액이 취소액보다 크면 살아 있는 영수증이 있다. */
+function hasActiveTossReceipt(payment: TossPaymentQueryResponse): boolean {
+  if (!Array.isArray(payment.cashReceipts)) return !!payment.cashReceipt;
+  let net = 0;
+  for (const r of payment.cashReceipts) {
+    if (r.issueStatus === 'FAILED') continue;
+    net += r.transactionType === 'CANCEL' ? -r.amount : r.amount;
+  }
+  return net > 0;
+}
 
 @Injectable()
 export class CashReceiptsService {
@@ -53,6 +66,8 @@ export class CashReceiptsService {
         message: '이미 현금영수증이 발급된 주문입니다.',
       });
     }
+
+    await this.assertNoTossIssuedReceipt(charge);
 
     const orderName = await this.buildOrderName(dto.intentId);
 
@@ -197,6 +212,35 @@ export class CashReceiptsService {
     }
     // ponytail: intent 당 무통장 charge 는 사실상 1건. 여러 건이면 첫 건으로 발급, 분할발급은 추후.
     return cashCharges[0];
+  }
+
+  /**
+   * 가상계좌는 입금되면 토스가 현금영수증을 자동 신청해 결제에 붙인다(고객이 결제창에서 고른 용도, 없으면 계약상 자진발급).
+   * 우리 발급(POST /cash-receipts)은 결제와 연결되지 않는 독립 발급이라 토스가 중복을 막아 주지 않는다.
+   * 조회를 못 하면 중복 여부를 모르므로 발급하지 않는다.
+   */
+  private async assertNoTossIssuedReceipt(charge: Charge) {
+    // CAPTURE charge 엔 발급 스냅샷이 없다 — 환불과 같이 원래 AUTHORIZE charge 에서 읽는다.
+    const legId = ledgerLegChargeId(charge);
+    const leg = legId === charge.id ? charge : await this.chargesService.findById(legId);
+    // providerTransactionId 는 보지 않는다 — 수동 입금확인은 거기에 입금자 메모를 적는다.
+    const paymentKey = (leg?.responsePayload as { paymentKey?: unknown } | null | undefined)?.paymentKey;
+    if (typeof paymentKey !== 'string' || !paymentKey) return;
+
+    const result = await this.tossApiClient.getPayment(paymentKey, usesTossWidget(leg?.responsePayload));
+    if (!result.ok) {
+      this.logger.error(`Toss payment lookup failed before cash receipt issue: error=${result.error.message}`);
+      throw new BadRequestException({
+        error: 'TOSS_PAYMENT_LOOKUP_FAILED',
+        message: '토스 결제 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+      });
+    }
+    if (hasActiveTossReceipt(result.data)) {
+      throw new ConflictException({
+        error: 'CASH_RECEIPT_ISSUED_BY_TOSS',
+        message: '토스가 이 결제에 이미 현금영수증을 발급했습니다(고객의 결제창 신청 또는 자동 발급).',
+      });
+    }
   }
 
   private async findActiveByCharge(chargeId: string): Promise<CashReceipt | null> {
