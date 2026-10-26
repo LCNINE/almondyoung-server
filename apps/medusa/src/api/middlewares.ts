@@ -2,6 +2,7 @@ import { authenticate, defineMiddlewares } from '@medusajs/framework/http';
 import { createCartLockAwareErrorHandler } from './cart-lock-conflict';
 import { validateAndTransformQuery } from '@medusajs/framework';
 import { adminRouteMiddlewares } from './admin/middlewares';
+import { defaultReturnWriteMiddlewares } from './reject-default-return-writes';
 import { listTransformQueryConfig as ordersListQueryConfig } from './store/orders-list/query-config';
 import { StoreGetOrdersListParams } from './store/orders-list/validators';
 import { perCustomerLimitMiddleware } from './store/carts/middlewares/per-customer-limit';
@@ -46,6 +47,8 @@ export default defineMiddlewares({
       middlewares: [timingMiddleware],
     },
     ...adminRouteMiddlewares,
+    // 기본 반품·교환·클레임·사유 쓰기 라우트 차단(K8). 우리 반품 라우트는 다른 경로에 둔다.
+    ...defaultReturnWriteMiddlewares,
     // additional_data 안쪽 검증 (#488 N7). 코어 zod 는 여기를 z.record(z.unknown()) 로 열어두므로
     // 어휘 밖 값이 워크플로까지 갔다가 DB CHECK 에서 500 이 났고, 그 시점엔 프로모션이 이미
     // active 로 만들어져 있었다. 검증기를 걸면 400 이고 프로모션 행이 남지 않는다(실측).
