@@ -481,12 +481,39 @@ export class TossApproveService {
     await this.finalizeApproval(charge, result.data.paymentKey, correlationId);
   }
 
-  async finalizeApproval(charge: Charge, paymentKey: string, correlationId: string): Promise<void> {
+  /**
+   * virtualAccount 는 입금 웹훅이 토스 조회값으로 넘긴다. 승인 응답을 잃어 입금대기 기록 없이 입금된 위젯 가상계좌면
+   * 여기서 무통장으로 옮긴다 — TOSS 로 남으면 환불 신청이 NOT_BANK_TRANSFER 로 막히고 환불계좌 없이 취소가 나간다.
+   */
+  async finalizeApproval(
+    charge: Charge,
+    paymentKey: string,
+    correlationId: string,
+    virtualAccount?: TossVirtualAccount | null,
+  ): Promise<void> {
     const intent = await this.loadIntent(charge.intentId);
     const now = new Date().toISOString();
+    const payload = charge.responsePayload ?? {};
+    const [bankMethod] =
+      virtualAccount && !payload.virtualAccount && intent.userId
+        ? await this.bankTransferProvider.getUserMethods(intent.userId)
+        : [];
 
     await this.dbService.db.transaction(async (tx) => {
-      await this.chargesService.updateStatus(charge.id, 'SUCCEEDED', { providerTransactionId: paymentKey }, tx);
+      if (bankMethod) {
+        await tx.update(paymentIntents).set({ paymentMethodId: bankMethod.id }).where(eq(paymentIntents.id, intent.id));
+      }
+      await this.chargesService.updateStatus(
+        charge.id,
+        'SUCCEEDED',
+        {
+          providerTransactionId: paymentKey,
+          ...(bankMethod
+            ? { paymentMethodId: bankMethod.id, responsePayload: { ...payload, paymentKey, virtualAccount } }
+            : {}),
+        },
+        tx,
+      );
 
       await this.stateTransitionService.transitionIntent(
         intent.id,

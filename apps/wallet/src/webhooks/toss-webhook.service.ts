@@ -204,7 +204,7 @@ export class TossWebhookService {
       }
       // 본문이 아닌 토스가 돌려준 실제 paymentKey 로 확정한다(가짜 키가 charge 에 박혀
       // 이후 취소/환불이 깨지는 것도 함께 방지).
-      await this.tossApproveService.finalizeApproval(charge, authPaymentKey, correlationId);
+      await this.tossApproveService.finalizeApproval(charge, authPaymentKey, correlationId, query.data.virtualAccount);
       await this.repository.updateStatus(receiptId, 'PROCESSED', { processedAt: new Date() });
     } else if (['ABORTED', 'EXPIRED', 'CANCELED'].includes(authStatus)) {
       if (charge.status !== 'REQUIRES_ACTION') {

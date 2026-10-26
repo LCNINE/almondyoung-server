@@ -660,3 +660,34 @@ describe('deferred approval — finalize', () => {
     });
   });
 });
+
+describe('widget virtual account — 승인 응답을 잃고 입금 웹훅으로 확정', () => {
+  const va = VA_CONFIRM.data.virtualAccount;
+
+  it('입금대기 기록이 없던 계좌면 charge·intent 를 무통장으로 옮겨 확정한다', async () => {
+    const ctx = makeTossContext({}, WIDGET_CHARGE);
+
+    await ctx.service.finalizeApproval(WIDGET_CHARGE, 'pk_va', 'corr-1', va);
+
+    expect(ctx.intentUpdates).toContainEqual({ paymentMethodId: 'pm-bank' });
+    const [, status, extra] = ctx.chargesService.updateStatus.mock.calls[0];
+    expect(status).toBe('SUCCEEDED');
+    expect(extra).toEqual(
+      expect.objectContaining({
+        paymentMethodId: 'pm-bank',
+        providerTransactionId: 'pk_va',
+        responsePayload: expect.objectContaining({ paymentKey: 'pk_va', virtualAccount: va }),
+      }),
+    );
+  });
+
+  it('이미 입금대기로 기록된 계좌는 결제수단을 다시 건드리지 않는다', async () => {
+    const recorded = makeCharge({ responsePayload: { paymentKey: 'pk_va', virtualAccount: va } });
+    const ctx = makeTossContext({}, recorded);
+
+    await ctx.service.finalizeApproval(recorded, 'pk_va', 'corr-1', va);
+
+    expect(ctx.bankTransferProvider.getUserMethods).not.toHaveBeenCalled();
+    expect(ctx.chargesService.updateStatus.mock.calls[0][2]).toEqual({ providerTransactionId: 'pk_va' });
+  });
+});

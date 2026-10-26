@@ -59,6 +59,7 @@ export interface TossPaymentQueryResponse {
   // 발급 응답에만 값이 있고, 이후 조회에서는 보안상 null 로 돌아온다. 웹훅 secret 대조는
   // 발급 시 charge 에 저장해 둔 값과 하며, 이 필드에 의존하지 않는다.
   secret: string | null;
+  virtualAccount?: TossVirtualAccount | null;
   [key: string]: unknown;
 }
 

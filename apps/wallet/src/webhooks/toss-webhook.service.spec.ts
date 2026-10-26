@@ -96,7 +96,7 @@ describe('TossWebhookService — 위조 방어 (토스 재조회 + secret 대조
 
     await service.handle(depositWebhook()); // 본문 paymentKey 는 pk_body
 
-    expect(finalizeApproval).toHaveBeenCalledWith(expect.anything(), 'pk_toss', expect.anything());
+    expect(finalizeApproval).toHaveBeenCalledWith(expect.anything(), 'pk_toss', expect.anything(), undefined);
   });
 
   it('금액은 본문이 아니라 토스 재조회 금액으로 검증한다 (불일치면 FAILED)', async () => {
