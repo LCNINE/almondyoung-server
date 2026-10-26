@@ -75,10 +75,10 @@ export class RefundsService {
     private readonly stateTransitionService: StateTransitionService,
   ) {}
 
-  /** 환불 성공 시 발급된 현금영수증을 환불금액만큼 취소. best-effort — 실패해도 환불은 유지. */
-  private async cancelCashReceiptBestEffort(chargeId: string, amount: number): Promise<void> {
+  /** 환불 성공 시 발급된 현금영수증을 남은 결제 금액에 맞춰 취소. best-effort — 실패해도 환불은 유지. */
+  private async cancelCashReceiptBestEffort(chargeId: string): Promise<void> {
     try {
-      await this.cashReceiptsService.cancelForRefund(chargeId, amount);
+      await this.cashReceiptsService.cancelForRefund(chargeId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Cash receipt cancel-on-refund failed (refund kept): charge=${chargeId}, error=${message}`);
@@ -311,7 +311,7 @@ export class RefundsService {
           );
         }
       });
-      await this.cancelCashReceiptBestEffort(charge.id, refund.amount);
+      await this.cancelCashReceiptBestEffort(charge.id);
     } else if (providerResult.status === 'PENDING') {
       // PG 를 안 부른 수동 폴백(무통장 계좌 없음 등)은 MANUAL 송금 대기다 — Medusa 장부 맞추기가 넣고, 환불 내역이 [완료 처리]를 띄운다.
       // AUTO 로 두면 «진행 중»으로 읽혀 정산이 멈추고(D8) 고객에겐 «환불 완료»로 보인다(#1016 36번 마무리 ②)
@@ -942,7 +942,7 @@ export class RefundsService {
         );
       }
     });
-    await this.cancelCashReceiptBestEffort(refund.chargeId, refund.amount);
+    await this.cancelCashReceiptBestEffort(refund.chargeId);
 
     return this.findByIdOrThrow(refundId);
   }
