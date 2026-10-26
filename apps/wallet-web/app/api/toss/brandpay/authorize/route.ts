@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
   }
 
   let accessToken = request.cookies.get(SESSION_COOKIE_NAMES.ACCESS_TOKEN)?.value;
-  const walletUrl = process.env.WALLET_API_URL ?? process.env.NEXT_PUBLIC_WALLET_API_URL ?? 'http://localhost:5001';
+  const walletUrl = process.env.WALLET_API_URL ?? process.env.NEXT_PUBLIC_WALLET_API_URL ?? 'http://localhost:3100';
   // SDK가 같은 일회용 code를 재전송해도 wallet의 성공 응답을 재사용한다.
   const authorizationIdempotencyKey = `brandpay-authorize:${createHash('sha256')
     .update(JSON.stringify([intentId, customerKey, code]))
