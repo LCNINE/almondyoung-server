@@ -87,11 +87,14 @@ export function PayForm({
   brandpayFailed,
   businessInfo,
   depositAccount,
-  tossWidgetConfig,
+  tossWidgetConfig: tossWidgetConfigProp,
 }: Props) {
   const router = useRouter();
   const availableMethodMap = availableMethods ? new Map(availableMethods.map((method) => [method.code, method])) : null;
   const isAvailableInRegion = (type: string) => !availableMethodMap || availableMethodMap.has(type);
+  // 위젯은 토스 대시보드의 variant 대로 가상계좌까지 그리고 우리가 수단을 뺄 수 없다.
+  // 리전이 무통장을 막았으면 위젯을 쓰지 않고 기존 토스 결제창으로 간다 — 위젯 가상계좌가 무통장으로 바뀌어 리전 설정을 우회하지 않게.
+  const tossWidgetConfig = tossWidgetConfigProp && isAvailableInRegion('BANK_TRANSFER') ? tossWidgetConfigProp : null;
 
   // 멤버십(MEMBERSHIP_FEE)은 무통장(가상계좌) 결제만 허용한다 — 카드/간편결제 비노출.
   // 무통장은 자동갱신 불가라 멤버십은 1회결제로만 굴러가며, 정기결제(CMS 등)는 추후 별도 경로.
