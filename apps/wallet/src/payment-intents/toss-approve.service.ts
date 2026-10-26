@@ -11,7 +11,12 @@ import { TossApiClient, TossConfirmResponse, TossVirtualAccount } from '../provi
 import { tossBankName } from '../providers/toss/toss-banks';
 import { BankTransferPaymentProvider } from '../providers/bank-transfer/bank-transfer.provider';
 import { tossBrandPayCustomerKey } from '../providers/toss/toss-brandpay-customer-key';
-import { CONFIRM_ATTEMPT, VIRTUAL_ACCOUNT_LEFT_OPEN, usesTossWidget } from '../providers/toss/toss-widget-mode';
+import {
+  CONFIRM_ATTEMPT,
+  VIRTUAL_ACCOUNT_LEFT_OPEN,
+  hasConfirmAttempt,
+  usesTossWidget,
+} from '../providers/toss/toss-widget-mode';
 import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
 import { StagedApproval, isDeferredApprovalIntent } from './deferred-approval';
 import { depositWindowHours } from './deposit-window';
@@ -22,6 +27,28 @@ import { depositWindowHours } from './deposit-window';
  * charge 를 회수하고 PG 미승인 결제는 자동 만료된다(= 돈이 빠지지 않는 방향).
  */
 const DEFAULT_STAGED_APPROVAL_TTL_MINUTES = 10;
+
+/**
+ * 토스가 승인을 처리했는지 모르는 응답(5xx·타임아웃·한도·처리 중·이미 처리됨). 실패로 확정하면 charge 가 FAILED 로 빠져
+ * 재결제가 열리고, 실제로 승인됐다면 이중 결제에 뒤늦은 DONE 웹훅까지 무시된다. 승인 시도 표식을 단 REQUIRES_ACTION 으로
+ * 남겨 두면 DONE 웹훅이 확정하고, abandon·만료가 토스 상태를 물어 정리한다. 그 뒤의 재시도는 무엇으로 거절돼도 같다.
+ */
+function isConfirmOutcomeUnknown(result: { statusCode: number; error: { code?: string } }): boolean {
+  return (
+    result.statusCode >= 500 ||
+    result.statusCode === 408 ||
+    result.statusCode === 429 ||
+    result.error.code === 'IDEMPOTENT_REQUEST_PROCESSING' ||
+    result.error.code === 'ALREADY_PROCESSED_PAYMENT'
+  );
+}
+
+function confirmOutcomeUnknown(): UnprocessableEntityException {
+  return new UnprocessableEntityException({
+    error: 'PAYMENT_STATUS_UNKNOWN',
+    message: '결제 결과를 확인하지 못했어요. 잠시 후 주문 내역을 확인해 주세요.',
+  });
+}
 
 @Injectable()
 export class TossApproveService {
@@ -77,6 +104,8 @@ export class TossApproveService {
     }
 
     // 3. Call Toss API confirm
+    // 앞선 승인의 결과를 모르는 재시도다 — 이번 요청의 거절(401 등)은 앞선 승인이 됐는지 말해 주지 않는다
+    const retried = hasConfirmAttempt(charge.responsePayload);
     await this.markConfirmAttempt(charge, paymentKey);
     const result = customerKey
       ? await this.tossApi.confirmBrandPayPayment(paymentKey, amount, orderId, customerKey)
@@ -85,6 +114,7 @@ export class TossApproveService {
 
     if (!result.ok) {
       this.logger.error(`Toss API confirm failed: ${JSON.stringify(result.error)}`);
+      if (retried || isConfirmOutcomeUnknown(result)) throw confirmOutcomeUnknown();
       await this.finalizeFailure(charge, result.error.code ?? 'TOSS_CONFIRM_FAILED', correlationId);
       throw new UnprocessableEntityException({
         error: result.error.code ?? 'TOSS_CONFIRM_FAILED',
@@ -444,6 +474,7 @@ export class TossApproveService {
     if (staged.paymentType === 'BRANDPAY' && !staged.customerKey) {
       throw new UnprocessableEntityException({ error: 'BRANDPAY_CUSTOMER_REQUIRED' });
     }
+    const retried = hasConfirmAttempt(charge.responsePayload);
     await this.markConfirmAttempt(charge, staged.providerToken);
     const result =
       staged.paymentType === 'BRANDPAY'
@@ -463,6 +494,7 @@ export class TossApproveService {
 
     if (!result.ok) {
       this.logger.error(`Toss API confirm failed (staged): ${JSON.stringify(result.error)}`);
+      if (retried || isConfirmOutcomeUnknown(result)) throw confirmOutcomeUnknown();
       await this.finalizeFailure(charge, result.error.code ?? 'TOSS_CONFIRM_FAILED', correlationId);
       throw new UnprocessableEntityException({
         error: result.error.code ?? 'TOSS_CONFIRM_FAILED',
