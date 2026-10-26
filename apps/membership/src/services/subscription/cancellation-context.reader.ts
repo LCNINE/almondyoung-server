@@ -64,6 +64,20 @@ export class CancellationContextReader {
     plan: Plan,
     entitlement: { endsAt: string; startsAt: string },
   ): Promise<Date | null> {
+    const base = await this.resolveBasePaidPeriodStart(contract, plan, entitlement);
+    if (!base || !contract.billingDate) return base;
+    // 임시 이용권을 이어받은 계약의 무료 구간(결제일 ~ billingDate)은 유료 사용이 아니다.
+    // 이 구간의 구매가 혜택 사용으로 잡히거나 철회 창이 먼저 닫히지 않게 기준점을 billingDate 로 민다.
+    if (!(await this.contractReader.isGrantTakeoverContract(contract.id, contract.userId))) return base;
+    const paidStart = new Date(`${contract.billingDate}T00:00:00Z`);
+    return paidStart > base ? paidStart : base;
+  }
+
+  private async resolveBasePaidPeriodStart(
+    contract: Contract,
+    plan: Plan,
+    entitlement: { endsAt: string; startsAt: string },
+  ): Promise<Date | null> {
     const hasPayment = !!contract.lastPaymentIntentId;
     // 주기 시작은 '마지막 결제 성공 시각'이 원천이다. endsAt 역산은 관리자 기간 조정·일시정지 재개로
     // endsAt 가 밀리면 함께 밀려 청약철회 7일 창을 되살린다. 결제 기록이 없는 옛 계약만 역산으로 폴백.

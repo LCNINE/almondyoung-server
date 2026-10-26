@@ -290,6 +290,7 @@ export class EntitlementManager {
       .from(schema.subscriptionContractEvents)
       .where(
         and(
+          eq(schema.subscriptionContractEvents.userId, contract.userId),
           eq(schema.subscriptionContractEvents.eventType, 'SUPERSEDED_BY_SUBSCRIPTION'),
           sql`${schema.subscriptionContractEvents.metadata}->>'newContractId' = ${contract.id}`,
         ),

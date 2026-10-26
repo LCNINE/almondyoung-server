@@ -39,6 +39,7 @@ describe('SubscriptionCancellationService', () => {
     canResumeRecurring: jest.fn().mockResolvedValue(true),
     // 결제 기록이 없는 계약을 가정 — 주기 시작은 endsAt 역산 폴백으로 계산된다.
     findLastChargeSuccessAt: jest.fn().mockResolvedValue(null),
+    isGrantTakeoverContract: jest.fn().mockResolvedValue(false),
   };
 
   const mockCancellationManager = {

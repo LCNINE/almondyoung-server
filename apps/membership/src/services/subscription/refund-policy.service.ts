@@ -34,7 +34,11 @@ export function isWithdrawalEligible(params: {
 /** 청약철회 창이 며칠 남았는지(지났거나 주기 시작을 모르면 0). 혜택 사용 여부는 보지 않는다. */
 export function withdrawalDaysRemaining(periodStart: Date | null, now: Date): number {
   if (!periodStart) return 0;
-  return Math.max(0, WITHDRAWAL_WINDOW_DAYS - differenceInCalendarDays(now, periodStart));
+  // 유료 시작이 미래(이어받기 계약의 임시 구간)여도 창은 최대 7일이다.
+  return Math.min(
+    WITHDRAWAL_WINDOW_DAYS,
+    Math.max(0, WITHDRAWAL_WINDOW_DAYS - differenceInCalendarDays(now, periodStart)),
+  );
 }
 
 /** 연간 플랜 판정 기준일수. 365 를 그대로 쓰지 않는 이유는 366/360 같은 변형 플랜도 연간으로 보기 위함. */
@@ -203,11 +207,10 @@ export class RefundPolicyService {
    * 이미 받았는데 할인을 또 빼면 같은 이용을 두 번 청구하는 셈이 된다(실제 제공한 대가를 넘는 공제).
    * 연간 할인분(2개월)은 월 정가 환산만으로 회수된다 — 10개월 뒤 환불액이 0이 된다.
    */
-  calculateAnnualProration(params: {
-    paidAmount: number;
-    monthlyListPrice: number;
-    daysElapsed: number;
-  }): { refundAmount: number; breakdown: AnnualProrationBreakdown } {
+  calculateAnnualProration(params: { paidAmount: number; monthlyListPrice: number; daysElapsed: number }): {
+    refundAmount: number;
+    breakdown: AnnualProrationBreakdown;
+  } {
     // 사용 첫날도 1개월로 센다(일할 계산이 아니라 '월 단위 정가 환산'이 정책이다).
     const monthsElapsed = Math.max(1, Math.ceil(Math.max(0, params.daysElapsed) / MONTH_UNIT_DAYS));
     const usageDeduction = Math.min(params.paidAmount, monthsElapsed * params.monthlyListPrice);
@@ -274,8 +277,7 @@ export class RefundPolicyService {
     // 여기서 비워두면 화면이 CMS 계약을 'PG 자동환불 가능' 으로 안내하고 계좌 입력도 띄우지 않아,
     // 관리자 예외 환불이 **보낼 곳 없는 수동 대기**로 떨어진다.
     const execution: RefundExecution = !input.hasPayment ? 'NONE' : input.autoRefundSupported ? 'AUTO' : 'MANUAL';
-    const requiresReceiveAccount =
-      input.hasPayment && (input.requiresReceiveAccount || execution === 'MANUAL');
+    const requiresReceiveAccount = input.hasPayment && (input.requiresReceiveAccount || execution === 'MANUAL');
 
     const base: CancellationOption = {
       mode: 'IMMEDIATE_REFUND',

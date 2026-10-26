@@ -49,14 +49,17 @@ export class BenefitUsageManager {
           entitlement,
         )
       : null;
+    const now = new Date();
+    // 유료 시작이 아직 미래면 임시 이용권 구간이다 — 이 구간 사용은 환불 판정에 영향이 없고,
+    // 미래 시각을 멱등 키로 쓰면 유료 구간 첫 사용이 같은 키에 막혀 기록되지 않는다.
+    const inTempPeriod = !!paidPeriodStart && paidPeriodStart > now;
     // 결제가 없는 이용권(관리자 부여)은 철회 창이 없다 — 멱등 키로만 자격 개시일을 쓴다.
-    const periodStart = paidPeriodStart ?? new Date(entitlement.startsAt);
+    const periodStart = paidPeriodStart && !inTempPeriod ? paidPeriodStart : new Date(entitlement.startsAt);
 
     if (await this.benefitReader.hasBenefitUsageSince(userId, kind, periodStart)) return { status: 'ALREADY_RECORDED' };
 
-    if (!acknowledged && paidPeriodStart) {
+    if (!acknowledged && paidPeriodStart && !inTempPeriod) {
       const usage = await this.benefitReader.findMembershipBenefitUsageSince(userId, paidPeriodStart);
-      const now = new Date();
       if (isWithdrawalEligible({ periodStart: paidPeriodStart, now, usage })) {
         return { status: 'CONFIRMATION_REQUIRED', withdrawalDaysRemaining: withdrawalDaysRemaining(paidPeriodStart, now) };
       }

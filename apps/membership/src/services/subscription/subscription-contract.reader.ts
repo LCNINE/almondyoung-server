@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
-import { eq, and, desc, inArray, count } from 'drizzle-orm';
+import { eq, and, desc, inArray, count, sql } from 'drizzle-orm';
 import { CancellationInfo, resolveCancellationInfo } from './cancellation-info';
 import { differenceInCalendarDays, parseISO } from 'date-fns';
 import type { GrantTakeover } from './subscription.creator';
@@ -581,6 +581,22 @@ export class SubscriptionContractReader {
     const today = new Date().toISOString().split('T')[0];
     const remainingDays = Math.max(0, differenceInCalendarDays(parseISO(entitlementEndsAt), parseISO(today)));
     return { grantContractId: contractId, remainingDays };
+  }
+
+  /** 이 계약이 임시 이용권을 이어받아 생긴 유료 계약인지 (지급 계약에 SUPERSEDED_BY_SUBSCRIPTION 이벤트가 남는다) */
+  async isGrantTakeoverContract(contractId: string, userId: string): Promise<boolean> {
+    const [row] = await this.dbService.db
+      .select({ id: schema.subscriptionContractEvents.id })
+      .from(schema.subscriptionContractEvents)
+      .where(
+        and(
+          eq(schema.subscriptionContractEvents.userId, userId),
+          eq(schema.subscriptionContractEvents.eventType, 'SUPERSEDED_BY_SUBSCRIPTION'),
+          sql`${schema.subscriptionContractEvents.metadata}->>'newContractId' = ${contractId}`,
+        ),
+      )
+      .limit(1);
+    return !!row;
   }
 
   /**
