@@ -5,6 +5,8 @@ import * as schema from '../../shared/schemas/entities/schema';
 import { and, eq } from 'drizzle-orm';
 import { ContractEventManager } from './contract-event.manager';
 import { DrizzleTransaction } from '../../shared/schemas/types';
+import { EntitlementManager } from '../entitlement/entitlement.manager';
+import { BadRequestException } from '../../shared/exceptions/subscription.exceptions';
 
 type Contract = typeof schema.subscriptionContracts.$inferSelect;
 type Plan = typeof schema.plan.$inferSelect;
@@ -68,6 +70,7 @@ export class SubscriptionCancellationManager {
   constructor(
     private readonly dbService: DbService<typeof membershipSchema>,
     private readonly contractEventManager: ContractEventManager,
+    private readonly entitlementManager: EntitlementManager,
   ) {}
 
   /**
@@ -85,6 +88,10 @@ export class SubscriptionCancellationManager {
     const cancelledAt = new Date();
 
     return await this.dbService.db.transaction(async (tx) => {
+      // 계약 행을 잠그고 상태를 다시 본다. 재배달된 환불이 복구된 임시 이용권을 닫지 않게 한다.
+      // no key update 는 이벤트 INSERT 의 FK 검사(key share)와 충돌하지 않아 교착을 피한다.
+      await this.assertNotCancelled(tx, contract.id);
+
       // 1. 이벤트 배치 생성
       const [batch] = await tx
         .insert(schema.eventBatches)
@@ -150,6 +157,7 @@ export class SubscriptionCancellationManager {
       await tx
         .delete(schema.membershipDunningQueue)
         .where(eq(schema.membershipDunningQueue.contractId, contract.id));
+      await this.entitlementManager.restoreTakenOverGrant(tx, contract);
 
       return {
         type: 'IMMEDIATE_CANCELLATION',
@@ -433,6 +441,10 @@ export class SubscriptionCancellationManager {
     const cancelledAt = new Date();
 
     return this.dbService.db.transaction(async (tx: DrizzleTransaction) => {
+      // 계약 행을 잠그고 상태를 다시 본다. 재배달된 환불이 복구된 임시 이용권을 닫지 않게 한다.
+      // no key update 는 이벤트 INSERT 의 FK 검사(key share)와 충돌하지 않아 교착을 피한다.
+      await this.assertNotCancelled(tx, contract.id);
+
       // 1. 환불 금액 계산
       let refundAmount = 0;
       if (refundType === 'FULL') {
@@ -517,6 +529,7 @@ export class SubscriptionCancellationManager {
       await tx
         .delete(schema.membershipDunningQueue)
         .where(eq(schema.membershipDunningQueue.contractId, contract.id));
+      await this.entitlementManager.restoreTakenOverGrant(tx, contract);
 
       return {
         contractId: contract.id,
@@ -527,6 +540,19 @@ export class SubscriptionCancellationManager {
         refundStatus: refundAmount > 0 ? 'PENDING' : 'NOT_APPLICABLE',
       };
     });
+  }
+
+  private async assertNotCancelled(tx: DrizzleTransaction, contractId: string): Promise<void> {
+    // no key update 는 이벤트 INSERT 의 FK 검사(key share)와 충돌하지 않아 교착을 피한다.
+    const [locked] = await tx
+      .select({ status: schema.subscriptionContracts.status })
+      .from(schema.subscriptionContracts)
+      .where(eq(schema.subscriptionContracts.id, contractId))
+      .for('no key update')
+      .limit(1);
+    if (locked?.status === 'CANCELLED') {
+      throw new BadRequestException('이미 해지된 구독입니다');
+    }
   }
 
   /**

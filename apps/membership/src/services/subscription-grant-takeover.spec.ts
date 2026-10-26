@@ -1,5 +1,8 @@
 import { SubscriptionService } from './subscription.service';
-import { ActiveSubscriptionExistsException } from '../shared/exceptions/subscription.exceptions';
+import {
+  ActiveSubscriptionExistsException,
+  BadRequestException as SubscriptionBadRequestException,
+} from '../shared/exceptions/subscription.exceptions';
 
 describe('subscribeWithBillingMethod — 관리자 임시 지급분이 있을 때', () => {
   function makeService(options: { grantTakeover: unknown; agreementFails?: boolean }) {
@@ -66,15 +69,17 @@ describe('subscribeWithBillingMethod — 관리자 임시 지급분이 있을 �
     );
   });
 
-  it('이어받은 뒤 정기결제 설정이 실패하면 남은 지급 일수를 돌려준다', async () => {
+  it('이어받은 뒤 정기결제 설정이 실패하면 void 가 복구를 맡으므로 grantByDays 를 다시 부르지 않는다', async () => {
     const { service, deps } = makeService({
       grantTakeover: { grantContractId: 'grant-contract', remainingDays: 2 },
       agreementFails: true,
     });
 
-    await expect(subscribe(service)).rejects.toThrow('정기결제 설정에 실패했습니다');
+    const promise = subscribe(service);
+    await expect(promise).rejects.toBeInstanceOf(SubscriptionBadRequestException);
+    await expect(promise).rejects.toThrow('정기결제 설정에 실패했습니다');
     expect(deps.subscriptionManager.voidSubscription).toHaveBeenCalled();
-    expect(deps.entitlementService.grantByDays).toHaveBeenCalledWith('u1', 2, expect.any(String), 'SYSTEM');
+    expect(deps.entitlementService.grantByDays).not.toHaveBeenCalled();
   });
 });
 

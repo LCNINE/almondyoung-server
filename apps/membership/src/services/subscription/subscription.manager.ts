@@ -183,6 +183,18 @@ export class SubscriptionManager {
     return await this.dbService.db.transaction(async (tx) => {
       const now = new Date();
 
+      // 계약 행을 잠그고 상태를 다시 본다. 재배달된 환불이 복구된 임시 이용권을 닫지 않게 한다.
+      // no key update 는 이벤트 INSERT 의 FK 검사(key share)와 충돌하지 않아 교착을 피한다.
+      const [locked] = await tx
+        .select({ status: schema.subscriptionContracts.status, cancelledAt: schema.subscriptionContracts.cancelledAt })
+        .from(schema.subscriptionContracts)
+        .where(eq(schema.subscriptionContracts.id, contract.id))
+        .for('no key update')
+        .limit(1);
+      if (locked?.status === 'CANCELLED') {
+        return { cancelledAt: locked.cancelledAt ?? now, contractId: contract.id };
+      }
+
       // 1. 취소 이벤트 배치 생성
       const [batch] = await tx
         .insert(schema.eventBatches)
@@ -208,6 +220,9 @@ export class SubscriptionManager {
 
       // 3. 권한 종료
       await this.entitlementManager.terminateActiveEntitlement(tx, userId, batch.id);
+
+      // 4. 이어받기 계약이면 남은 임시 일수를 되돌린다(종료 뒤에 불러야 한다)
+      await this.entitlementManager.restoreTakenOverGrant(tx, contract);
 
       return {
         cancelledAt: now,

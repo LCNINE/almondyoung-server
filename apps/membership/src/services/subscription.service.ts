@@ -643,15 +643,6 @@ export class SubscriptionService {
         if (contract) {
           await this.subscriptionManager.voidSubscription(userId, contract, '정기결제 설정 실패');
         }
-        // 이어받으며 닫은 임시 지급분을 되돌려 준다. 가입 실패로 고객이 받은 날을 잃으면 안 된다.
-        if (grantTakeover && grantTakeover.remainingDays > 0) {
-          await this.entitlementService.grantByDays(
-            userId,
-            grantTakeover.remainingDays,
-            '가입 실패로 임시 지급 복구',
-            'SYSTEM',
-          );
-        }
         throw new SubscriptionBadRequestException('정기결제 설정에 실패했습니다. 잠시 후 다시 시도해주세요.');
       }
 
