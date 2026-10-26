@@ -453,6 +453,18 @@ describe('CashReceiptsService', () => {
       expect(storedAtSend).toMatchObject({ amount: 300, idempotencyKey: sentKey });
     });
 
+    it('보내는 사이 성공한 환불도 확정 뒤 최신 합계로 다시 맞춘다 — 겹친 호출은 처리 중으로 물러난다', async () => {
+      const refundRows = [{ amount: 2000 }];
+      const ctx = makeContext({ receipt: makeReceipt({ amount: 10000 }), succeededRefunds: refundRows });
+      ctx.tossApiClient.cancelCashReceipt.mockImplementationOnce(() => {
+        refundRows.push({ amount: 3000 });
+        return Promise.resolve({ ok: true, data: {} });
+      });
+      await ctx.service.cancelForRefund(CHARGE_ID);
+      expect(ctx.tossApiClient.cancelCashReceipt).toHaveBeenNthCalledWith(2, 'rk-001', 3000, expect.any(String));
+      expect(ctx.receipt).toMatchObject({ canceledAmount: 5000, requestPayload: {} });
+    });
+
     it('보내는 사이 다른 호출이 같은 취소를 확정했으면 취소액을 또 더하지 않는다', async () => {
       const ctx = makeContext({
         receipt: makeReceipt({ amount: 1000, requestPayload: { pendingCancel: pendingCancelOf(200) } }),

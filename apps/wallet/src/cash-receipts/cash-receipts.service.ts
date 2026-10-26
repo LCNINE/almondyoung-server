@@ -203,13 +203,15 @@ export class CashReceiptsService {
     if (!charge) return;
     const legIds = await this.legChargeIds(charge);
 
-    // 남은 취소를 확정했으면 목표까지 한 번 더 — 새 취소는 거절돼도 곧바로 다시 보내지 않는다
-    for (let round = 0; round < 2; round++) {
+    // 확정할 때마다 최신 환불 합계로 다시 맞춘다. 겹친 환불은 이 호출의 키를 받아 '처리 중'으로 물러나므로,
+    // 여기서 다시 보지 않으면 그 환불분이 남은 취소 기록도 없이 빠진다. 새 취소가 거절되면 곧바로 다시 보내지 않는다.
+    // ponytail: 라운드 상한 5 — 환불이 그보다 많이 겹치면 남은 몫은 다음 환불·크론이 아니라 수동으로 맞춰야 한다
+    for (let round = 0; round < 5; round++) {
       const prepared = await this.prepareCancel(charge.amount, legIds);
       if (!prepared) return;
       const outcome = await this.sendCancel(prepared.receiptKey, prepared.attempt, prepared.receiptId);
       await this.settleCancel(prepared.receiptId, prepared.attempt, outcome);
-      if (outcome === 'unknown' || !prepared.resumed) return;
+      if (outcome === 'unknown' || (outcome === 'rejected' && !prepared.resumed)) return;
     }
   }
 
