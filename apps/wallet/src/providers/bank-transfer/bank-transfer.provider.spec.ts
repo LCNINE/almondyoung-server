@@ -93,7 +93,14 @@ describe('BankTransferPaymentProvider', () => {
     const result = await provider.cancel(chargeParams());
 
     // 계좌를 닫지 않으면 고객이 옛 계좌로 입금해 돈만 들어오고 주문이 안 생긴다.
-    expect(cancelPayment).toHaveBeenCalledWith('pk_1', '결제 취소', undefined, 'cancel:k1', undefined, false);
+    expect(cancelPayment).toHaveBeenCalledWith(
+      'pk_1',
+      '결제 취소',
+      undefined,
+      expect.stringMatching(/^cancel:k1:/),
+      undefined,
+      false,
+    );
     expect(result.status).toBe('SUCCEEDED');
   });
 
@@ -110,7 +117,14 @@ describe('BankTransferPaymentProvider', () => {
     await provider.cancel(chargeParams());
 
     // 위젯에서 발급된 결제는 위젯 시크릿 키로만 취소된다.
-    expect(cancelPayment).toHaveBeenCalledWith('pk_w', '결제 취소', undefined, 'cancel:k1', undefined, true);
+    expect(cancelPayment).toHaveBeenCalledWith(
+      'pk_w',
+      '결제 취소',
+      undefined,
+      expect.stringMatching(/^cancel:k1:/),
+      undefined,
+      true,
+    );
   });
 
   it('fails the cancel when Toss refuses to close the account', async () => {
@@ -138,6 +152,23 @@ describe('BankTransferPaymentProvider', () => {
     );
 
     expect((await provider.cancel(chargeParams())).status).toBe('SUCCEEDED');
+  });
+
+  it('retries the close with a fresh idempotency key — Toss replays a cached failure for the same key', async () => {
+    const cancelPayment = jest
+      .fn()
+      .mockResolvedValue({ ok: false, error: { code: 'PROVIDER_ERROR' }, statusCode: 500 });
+    const provider = new BankTransferPaymentProvider(
+      dbWithCharge({ providerTransactionId: 'pk_1', responsePayload: { paymentKey: 'pk_1' } }),
+      { cancelPayment } as unknown as TossApiClient,
+    );
+
+    const now = jest.spyOn(Date, 'now').mockReturnValueOnce(1).mockReturnValueOnce(2);
+    await provider.cancel(chargeParams());
+    await provider.cancel(chargeParams());
+    now.mockRestore();
+    const [first, second] = cancelPayment.mock.calls.map((call) => call[3]);
+    expect(first).not.toBe(second);
   });
 
   it('succeeds without calling Toss when no account was ever issued', async () => {

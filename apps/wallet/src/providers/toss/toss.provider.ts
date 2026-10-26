@@ -176,6 +176,8 @@ export class TossPaymentProvider implements PaymentProvider {
         ? { status: 'SUCCEEDED' }
         : { status: 'FAILED', errorCode: query.error.code ?? 'TOSS_STATUS_UNKNOWN', errorMessage: query.error.message };
     }
+    // IN_PROGRESS 는 끝난 게 아니라 승인 대기다 — 지금 정리 완료로 넘기면 뒤늦게 성공한 승인이 원장 밖에 남는다.
+    if (query.data.status === 'IN_PROGRESS') return { status: 'FAILED', errorCode: 'TOSS_CONFIRM_IN_PROGRESS' };
     if (!['DONE', 'WAITING_FOR_DEPOSIT', 'PARTIAL_CANCELED'].includes(query.data.status))
       return { status: 'SUCCEEDED' };
 

@@ -137,11 +137,13 @@ export class BankTransferPaymentProvider implements PaymentProvider {
     }
 
     // 미입금 가상계좌 취소는 환불계좌가 필요 없다(입금 후 환불만 refundReceiveAccount 필수).
+    // 만료 크론은 같은 idempotencyKey 로 매 주기 다시 온다. 토스는 실패 응답도 재생하므로 부를 때마다 새 키로 닫는다
+    // — 계좌 취소는 두 번 불러도 ALREADY_CANCELED_PAYMENT 로 끝난다.
     const result = await this.tossApi.cancelPayment(
       payment.paymentKey,
       '결제 취소',
       undefined,
-      `cancel:${params.idempotencyKey}`,
+      `cancel:${params.idempotencyKey}:${Date.now()}`,
       undefined,
       payment.useWidgetKey,
     );
