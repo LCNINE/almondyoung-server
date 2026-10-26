@@ -57,6 +57,8 @@ export async function loadOrderView(container: MedusaContainer, orderId: string)
       unitPrice: toNumber(i.unit_price),
       productId: i.product_id ?? null,
       requiresShipping: i.requires_shipping !== false,
+      // items.detail 을 이미 싣는다. 못 읽으면 0 — 하한 검사를 건너뛰고 Medusa 자신의 검증에 맡긴다
+      fulfilledQuantity: readFulfilledQuantity(i.detail),
       adjustments: (i.adjustments ?? []).map((a) => ({
         amount: toNumber(a.amount),
         code: a.code ?? null,
@@ -92,6 +94,11 @@ export function toShippingMethodView(m: {
     isReturnExchangeOrClaimShipping: !!(m.detail?.return_id || m.detail?.exchange_id || m.detail?.claim_id),
     hasAdjustments: (m.adjustments ?? []).some((a) => !!a && toNumber(a.amount) !== 0),
   };
+}
+
+function readFulfilledQuantity(detail: { fulfilled_quantity?: unknown } | null | undefined): number {
+  const n = toNumber(detail?.fulfilled_quantity ?? 0);
+  return Number.isFinite(n) ? n : 0;
 }
 
 type SummaryRow = { version?: number; pending_difference?: unknown; totals?: { pending_difference?: unknown } };

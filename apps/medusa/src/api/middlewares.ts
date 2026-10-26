@@ -150,6 +150,15 @@ export default defineMiddlewares({
       middlewares: [authenticate('customer', ['session', 'bearer'])],
     },
     {
+      // method 없이 — 하위 /:return_id/cancel 까지 덮는다. 반품은 로그인 고객의 본인 주문만(소유 확인은 워크플로)
+      matcher: '/store/orders/:id/returns',
+      middlewares: [authenticate('customer', ['session', 'bearer'])],
+    },
+    {
+      matcher: '/store/orders/:id/returnable',
+      middlewares: [authenticate('customer', ['session', 'bearer'])],
+    },
+    {
       // 커스텀 주문 목록(기간 필터 지원) — 본인 주문만 조회 가능하도록 인증 필수.
       // validateAndTransformQuery(확장 validator)로 created_at 을 허용하고 fields 를 정규화한다.
       matcher: '/store/orders-list',

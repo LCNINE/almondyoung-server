@@ -1,7 +1,7 @@
 import { planPartialCancel, PartialCancelRejected, OrderLine, CancelRequestItem } from '../plan-partial-cancel';
 
-const line = (id: string, quantity: number, unitPrice: number, adj = 0): OrderLine => ({
-  id, quantity, unitPrice, productId: `p_${id}`, requiresShipping: true,
+const line = (id: string, quantity: number, unitPrice: number, adj = 0, fulfilledQuantity = 0): OrderLine => ({
+  id, quantity, unitPrice, productId: `p_${id}`, requiresShipping: true, fulfilledQuantity,
   adjustments: adj ? [{ amount: adj, code: 'P' }] : [],
 });
 
@@ -31,6 +31,18 @@ describe('planPartialCancel', () => {
     ['빈 요청', []],
   ])('%s 는 거절한다', (_label, items) => {
     expect(() => planPartialCancel([line('a', 2, 1000)], items)).toThrow(PartialCancelRejected);
+  });
+
+  it('newQty 가 fulfilledQuantity 보다 작으면 PartialCancelRejected(반품이 걸린 수량)', () => {
+    // 반품이 출고 수량을 1 올린 줄(K8 N1) — 2개를 다 빼면 Medusa item-update 하한에 걸려 500 이 된다
+    const run = () => planPartialCancel([line('a', 2, 1000, 0, 1), line('b', 1, 1000)], [{ itemId: 'a', quantity: 2 }]);
+    expect(run).toThrow(PartialCancelRejected);
+    expect(run).toThrow('반품이 걸린 수량은 취소할 수 없습니다: a');
+  });
+
+  it('fulfilledQuantity 와 같으면 통과', () => {
+    const plan = planPartialCancel([line('a', 2, 1000, 0, 1), line('b', 1, 1000)], [{ itemId: 'a', quantity: 1 }]);
+    expect(plan.lines).toEqual([{ itemId: 'a', oldQty: 2, newQty: 1, replaceAdjustments: null }]);
   });
 
   it('모든 줄을 0 으로 만드는 요청은 거절한다 — 전체취소 경로를 써야 한다', () => {
