@@ -191,83 +191,110 @@ export class CashReceiptsService {
    * 받은 환불 금액만큼 빼지 않고 목표에 맞추므로, 발급 때 이미 뺀 환불이 다시 빠지지 않고 여러 번 불려도 같다.
    * 돈은 이미 환불됐으므로 영수증 취소 실패가 환불을 막아선 안 된다 (best-effort, 로깅만).
    *
-   * 영수증 행을 잠근 채 조회 → 토스 취소 → 갱신한다. 환불 두 건이 동시에 성공하면 둘 다 같은 취소액을 읽고
-   * 목표까지 각자 취소해 토스에서 두 번 깎인다. 뒤에 온 호출은 앞 호출의 갱신을 보고 취소할 게 없어 끝난다.
+   * 취소는 «남긴다 → 보낸다 → 확정한다» 세 걸음이다. 보내기 전에 금액·멱등 키를 requestPayload.pendingCancel 에
+   * 커밋해 두므로, 토스가 반영한 뒤 프로세스가 죽거나 응답이 끊겨도 다음 호출이 같은 키로 다시 보내 확정한다
+   * (반영됐으면 토스가 저장해 둔 응답을 돌려준다). 남은 취소가 있으면 새 취소를 만들지 않는다.
    *
-   * 응답이 끊긴 취소는 canceledAmount 에 안 잡혀 있다. 그대로 목표를 다시 계산하면 이미 깎인 금액을 또 깎으므로,
-   * 결과를 모르는 취소는 requestPayload.pendingCancel 에 남기고 다음 호출이 같은 멱등 키로 먼저 확정한다.
-   * 확정하지 못하면 더 취소하지 않는다.
+   * 토스 호출 중에는 행을 잠그지 않는다. 동시에 들어온 호출은 남은 취소를 같은 키로 보내므로 두 번 깎이지 않고,
+   * 확정은 행을 다시 잠가 키가 그대로일 때만 한다 — 먼저 확정한 쪽만 취소액을 더한다.
    */
   async cancelForRefund(chargeId: string): Promise<void> {
     const charge = await this.chargesService.findById(chargeId);
     if (!charge) return;
     const legIds = await this.legChargeIds(charge);
 
-    await this.dbService.run(async (tx) => {
+    // 남은 취소를 확정했으면 목표까지 한 번 더 — 새 취소는 거절돼도 곧바로 다시 보내지 않는다
+    for (let round = 0; round < 2; round++) {
+      const prepared = await this.prepareCancel(charge.amount, legIds);
+      if (!prepared) return;
+      const outcome = await this.sendCancel(prepared.receiptKey, prepared.attempt, prepared.receiptId);
+      await this.settleCancel(prepared.receiptId, prepared.attempt, outcome);
+      if (outcome === 'unknown' || !prepared.resumed) return;
+    }
+  }
+
+  /** 보낼 취소를 정해 커밋한다 — 남은 취소가 있으면 그것, 없으면 목표까지의 새 취소. 보낼 게 없으면 null. */
+  private async prepareCancel(
+    chargeAmount: number,
+    legIds: string[],
+  ): Promise<{ receiptId: string; receiptKey: string; attempt: PendingCancel; resumed: boolean } | null> {
+    return this.dbService.run(async (tx) => {
       const [receipt] = await tx
         .select()
         .from(cashReceipts)
         .where(and(inArray(cashReceipts.chargeId, legIds), eq(cashReceipts.status, 'ISSUED')))
         .limit(1)
         .for('update');
-      if (!receipt || !receipt.receiptKey) return;
-      const receiptKey = receipt.receiptKey;
+      if (!receipt || !receipt.receiptKey) return null;
 
-      let canceled = receipt.canceledAmount;
-      const storedPending = readPendingCancel(receipt.requestPayload);
-      let pending = storedPending;
-      const save = async () => {
-        if (canceled === receipt.canceledAmount && pending === storedPending) return;
-        const restPayload = { ...receipt.requestPayload };
-        delete restPayload.pendingCancel;
-        const fullyCanceled = canceled >= receipt.amount;
-        await tx
-          .update(cashReceipts)
-          .set({
-            canceledAmount: canceled,
-            status: fullyCanceled ? 'CANCELED' : receipt.status,
-            canceledAt: fullyCanceled ? new Date() : receipt.canceledAt,
-            requestPayload: pending ? { ...restPayload, pendingCancel: pending } : restPayload,
-            updatedAt: new Date(),
-          })
-          .where(eq(cashReceipts.id, receipt.id));
-      };
-
+      const pending = readPendingCancel(receipt.requestPayload);
       if (pending) {
         if (Date.now() - Date.parse(pending.requestedAt) > PENDING_CANCEL_RESEND_WINDOW_MS) {
           this.logger.error(
             `Cash receipt cancel outcome unknown past idempotency window, needs manual check: receipt=${receipt.id}, amount=${pending.amount}`,
           );
-          return;
+          return null;
         }
-        const outcome = await this.sendCancel(receiptKey, pending, receipt.id);
-        if (outcome === 'unknown') {
-          // 크론이 updated_at 오래된 순으로 고른다 — 시도한 건을 뒤로 보내 같은 50건만 계속 고르지 않게
-          await tx.update(cashReceipts).set({ updatedAt: new Date() }).where(eq(cashReceipts.id, receipt.id));
-          return;
-        }
-        if (outcome === 'applied') canceled += pending.amount;
-        pending = null;
+        return { receiptId: receipt.id, receiptKey: receipt.receiptKey, attempt: pending, resumed: true };
       }
 
       const refunded = await tx
         .select({ amount: refunds.amount })
         .from(refunds)
         .where(and(inArray(refunds.chargeId, legIds), eq(refunds.status, 'SUCCEEDED')));
-      const target = Math.max(0, charge.amount - refunded.reduce((total, r) => total + r.amount, 0));
-      const cancelAmount = receipt.amount - canceled - target;
-      if (cancelAmount > 0) {
-        const attempt: PendingCancel = {
-          amount: cancelAmount,
-          // 결과를 모르면 pendingCancel 이 이 키를 들고 있다. 거절된 키는 토스가 실패 응답까지 캐시하므로 시도마다 새로 만든다.
-          idempotencyKey: `wallet:cash-receipt-cancel:${randomUUID()}`,
-          requestedAt: new Date().toISOString(),
-        };
-        const outcome = await this.sendCancel(receiptKey, attempt, receipt.id);
-        if (outcome === 'applied') canceled += cancelAmount;
-        if (outcome === 'unknown') pending = attempt;
+      const target = Math.max(0, chargeAmount - refunded.reduce((total, r) => total + r.amount, 0));
+      const cancelAmount = receipt.amount - receipt.canceledAmount - target;
+      if (cancelAmount <= 0) return null;
+
+      const attempt: PendingCancel = {
+        amount: cancelAmount,
+        // 거절된 키는 토스가 실패 응답까지 캐시하므로 새 취소마다 새로 만든다
+        idempotencyKey: `wallet:cash-receipt-cancel:${randomUUID()}`,
+        requestedAt: new Date().toISOString(),
+      };
+      await tx
+        .update(cashReceipts)
+        .set({ requestPayload: { ...receipt.requestPayload, pendingCancel: attempt }, updatedAt: new Date() })
+        .where(eq(cashReceipts.id, receipt.id));
+      return { receiptId: receipt.id, receiptKey: receipt.receiptKey, attempt, resumed: false };
+    });
+  }
+
+  /** 보낸 취소의 결과를 반영한다. 그 사이 다른 호출이 같은 취소를 확정했으면(키가 바뀜) 아무것도 안 한다. */
+  private async settleCancel(
+    receiptId: string,
+    attempt: PendingCancel,
+    outcome: 'applied' | 'rejected' | 'unknown',
+  ): Promise<void> {
+    await this.dbService.run(async (tx) => {
+      const [receipt] = await tx
+        .select()
+        .from(cashReceipts)
+        .where(eq(cashReceipts.id, receiptId))
+        .limit(1)
+        .for('update');
+      if (!receipt || readPendingCancel(receipt.requestPayload)?.idempotencyKey !== attempt.idempotencyKey) return;
+
+      if (outcome === 'unknown') {
+        // 크론이 updated_at 오래된 순으로 고른다 — 시도한 건을 뒤로 보내 같은 50건만 계속 고르지 않게
+        await tx.update(cashReceipts).set({ updatedAt: new Date() }).where(eq(cashReceipts.id, receipt.id));
+        return;
       }
-      await save();
+
+      const restPayload = { ...receipt.requestPayload };
+      delete restPayload.pendingCancel;
+      const canceled = receipt.canceledAmount + (outcome === 'applied' ? attempt.amount : 0);
+      const fullyCanceled = canceled >= receipt.amount;
+      await tx
+        .update(cashReceipts)
+        .set({
+          canceledAmount: canceled,
+          status: fullyCanceled ? 'CANCELED' : receipt.status,
+          canceledAt: fullyCanceled ? new Date() : receipt.canceledAt,
+          requestPayload: restPayload,
+          updatedAt: new Date(),
+        })
+        .where(eq(cashReceipts.id, receipt.id));
     });
   }
 
