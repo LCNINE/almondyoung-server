@@ -812,6 +812,9 @@ export function setup(infra: SharedInfra) {
     ALMOND_PAYMENT_ENDPOINT: url('wallet'),
     MEMBERSHIP_SERVICE_URL: url('membership'),
     MEMBERSHIP_INTERNAL_KEY: membershipInternalKey.value,
+    // 반품 요청이 core 에 배송완료 수량·시각을 묻는다(K8 PR3). core 의 같은 이름 키와 같은 값.
+    CORE_SERVICE_URL: url('core'),
+    CORE_INTERNAL_KEY: coreInternalKey.value,
     UGC_SERVICE_URL: url('ugc'),
     UGC_INTERNAL_KEY: ugcInternalKey.value,
     SEARCH_SERVICE_URL: url('search'),

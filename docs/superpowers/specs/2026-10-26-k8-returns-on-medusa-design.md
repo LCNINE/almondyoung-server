@@ -146,6 +146,12 @@ Medusa 정산: 수령(양품/불량) + 택배비 + 환불 ◀──(channel-orde
      만든다(`create-or-update-order-payment-collection.js:84-94`). 고객에게 «결제할 돈»이 생긴 것처럼 보인다. 택배비는 4.4 의 정산에서 뺀다.
    - 반품 가능 수량과 기한의 근거는 core 다(Medusa 는 배송완료일·소포를 모른다 — 빌더가 확인할 것). 설계자 판단: core 내부 API 가
      라인별 «반품 가능 수량»(K6 `claimable` 의 후신)과 «받은 날»을 주고, Medusa 라우트가 그것으로 판정한다.
+     **PR 3 에서 확정한 결과.**
+     - (N2) core 는 «청구를 빼기 전» 사실만 준다 — 줄마다 `deliveredUnits`·`lastDeliveredAt`. K6 `claimable` 은 쓰지 않는다(PR 5 가 반품 예정 기록에 다시 이으면 두 번 빠진다).
+       반품으로 빠진 수량은 Medusa 가 자기 반품 기록으로 뺀다: `min(deliveredUnits, item.quantity) − (requested + received + dismissed)`.
+     - (N1) Medusa 는 출고를 모른다 — `fulfilled_quantity` 가 0 이라 코어 검증(`quantity ≤ fulfilled − return_requested`)이 막는다.
+       반품 요청 직전 **반품이 잡는 수량만큼만** `registerFulfillment` 로 올리고, 반품 취소 때 되돌린다. 배송완료 전부를 올리면 주문 수정이 그 아래로 수량을 못 줄인다.
+       출고 기록으로 Medusa 가 배송 사실을 알게 하는 길은 #1148.
 2. **반품 취소** — 도착 전에만. `cancelReturn` + (회수 예약이 있으면) core 가 한진 예약을 취소한다.
 3. **반품 정산** — core 의 «검수 끝» 명령만 부른다(4.4).
 
@@ -354,7 +360,7 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 | --- | --- | --- | --- |
 | 1 | settlement 꺼내기(`refund()`·`loadOrder()`) + 부분취소 사유 규칙(4.5) + 반품 배송 방법 거르기(4.4 함정) | medusa · channel-adapter · core(명령에 사유) | 반품 없이도 값이 있다 |
 | 2 | 기본 반품·교환·클레임 쓰기 라우트 거절 미들웨어 + `createReturnFulfillment` + 반품 옵션·사유 보장(`provisionShippingGroup`·시드) | medusa | 미들웨어가 시드보다 먼저(7) |
-| 3 | 우리 반품 요청·취소 워크플로와 라우트(store·admin) | medusa | 자격은 core 내부 API(6) |
+| 3 | 우리 반품 요청·취소 워크플로와 라우트(store·admin) | medusa · core(내부 API) · infra | 자격은 core 내부 API(6) |
 | 4 | 원장 `RETURNED` + 전이 셋 + 뷰 재정의 + 상태 목록 반영 | core · event-contracts · admin-web · warehouse-app | expand, 휴면 |
 | 5 | 반품 예정 기록 + Medusa 반품 관측(channel-adapter) + 고객 이벤트를 새 기록에서 + K6 다시 잇기 | core · channel-adapter · event-contracts | 소비자 선배포 |
 | 6 | 도착·검수 명령 + «수령 알림» 명령 + Medusa 정산 워크플로·라우트(4.4) | core · channel-adapter · medusa | 여기서 반품이 끝까지 돈다 |
