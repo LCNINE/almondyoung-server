@@ -43,6 +43,9 @@ function adminGrantOf(adjustments: { eventType: string; days: number }[]): { day
   return grant ? { days: grant.days } : null;
 }
 
+// wallet 이 요청을 적재한 시각과 membership DB 시각의 어긋남을 흡수한다.
+const RESUME_CLOCK_SKEW_MS = 60_000;
+
 @Injectable()
 export class SubscriptionService {
   private readonly logger = new Logger(SubscriptionService.name);
@@ -695,6 +698,25 @@ export class SubscriptionService {
     }
 
     return result;
+  }
+
+  /**
+   * 서버 가입이 계약까지 커밋하고 정기결제 약정 전에 끊긴 채 재배달됐을 때 남은 단계를 잇는다.
+   * 이 요청 뒤에 생긴 인보이스 경로 계약만 잇는다. 그 전부터 있던 구독의 결제수단을 덮어쓰지 않기 위해서다.
+   */
+  async resumeCmsSignup(
+    userId: string,
+    billingMethodId: string,
+    termsAgreementId: string | undefined,
+    requestedAt: Date,
+  ): Promise<boolean> {
+    const contract = await this.contractReader.findActiveContract(userId);
+    if (!contract || contract.billingPath !== 'INVOICE' || !contract.autoRenewal) return false;
+    if (contract.createdAt.getTime() < requestedAt.getTime() - RESUME_CLOCK_SKEW_MS) return false;
+    // 약정 생성은 같은 계약에 대해 덮어쓰기라, 이미 만들어졌어도 다시 불러 안전하다.
+    await this.createBillingAgreementWithRetry(userId, contract.id, billingMethodId, 2, true);
+    if (termsAgreementId) await this.termsAgreementManager.linkContract(userId, termsAgreementId, contract.id);
+    return true;
   }
 
   private async createBillingAgreementWithRetry(

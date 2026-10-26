@@ -414,12 +414,21 @@ export default function MembershipPaymentMethodContent() {
     let cancelled = false
     let attempt = 0
     const poll = async () => {
-      // 구독이 보이는지로 판정하면 임시 지급을 받은 고객은 이어받기 전에 끝난 줄 안다. 약정은 정식 가입에만 생긴다.
-      const agreements = await getBillingAgreements().catch(() => [])
+      // 현재 구독 계약에 정기결제 약정이 붙어야 가입이 끝난 것이다. 임시 지급분에는 약정이 없고,
+      // 무효화된 가입이나 예전 계약의 약정은 현재 계약과 ref 가 달라 걸러진다.
+      const [current, agreements] = await Promise.all([
+        getCurrentSubscription().catch(() => null),
+        getBillingAgreements().catch(() => []),
+      ])
       if (cancelled) return
-      const signedUp = agreements.some(
-        (a) => a.subscriberType === "MEMBERSHIP" && a.status === "ACTIVE"
-      )
+      const signedUp =
+        !!current &&
+        agreements.some(
+          (a) =>
+            a.subscriberType === "MEMBERSHIP" &&
+            a.status === "ACTIVE" &&
+            a.subscriberRef === current.id
+        )
       if (signedUp) {
         router.push(`/${countryCode}/mypage/membership/subscribe/success`)
         return

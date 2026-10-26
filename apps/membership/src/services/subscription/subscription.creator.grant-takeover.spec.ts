@@ -4,16 +4,27 @@ import * as schema from '../../shared/schemas/entities/schema';
 import { ActiveSubscriptionExistsException } from '../../shared/exceptions/subscription.exceptions';
 
 describe('SubscriptionCreator — 관리자 임시 지급 이어받기', () => {
-  function makeCreator(options: { trialDays?: number; entitlementError?: unknown; currentEntitlement?: boolean } = {}) {
+  function makeCreator(
+    options: {
+      trialDays?: number;
+      entitlementError?: unknown;
+      currentEntitlement?: boolean;
+      grantStatus?: string;
+    } = {},
+  ) {
     const insertedContracts: Record<string, unknown>[] = [];
     const updates: { table: unknown; set: Record<string, unknown> }[] = [];
+    const execute = jest.fn().mockResolvedValue(undefined);
+    const rowsFor = (table: unknown) => {
+      if (table === schema.subscriptionEntitlement) return options.currentEntitlement ? [{ id: 'other' }] : [];
+      if (table === schema.subscriptionContracts) return [{ status: options.grantStatus ?? 'ACTIVE' }];
+      return [];
+    };
     const tx = {
+      execute,
       select: () => ({
-        from: () => ({
-          where: () => ({
-            for: () => ({ limit: () => Promise.resolve(options.currentEntitlement ? [{ id: 'other' }] : []) }),
-            limit: () => Promise.resolve([]),
-          }),
+        from: (table: unknown) => ({
+          where: () => ({ limit: () => Promise.resolve(rowsFor(table)) }),
         }),
       }),
       insert: (table: unknown) => ({
@@ -53,7 +64,7 @@ describe('SubscriptionCreator — 관리자 임시 지급 이어받기', () => {
       { saveStatusChanged: jest.fn() } as never,
     );
     const plan = { id: 'p1', tierId: 't1', durationDays: 30, trialDays: options.trialDays ?? 0 } as never;
-    return { creator, plan, insertedContracts, updates, addEvent };
+    return { creator, plan, insertedContracts, updates, addEvent, execute };
   }
 
   const tier = { id: 't1' } as never;
@@ -79,12 +90,9 @@ describe('SubscriptionCreator — 관리자 임시 지급 이어받기', () => {
   it('지급 계약을 닫고 이어받은 사실을 남긴다', async () => {
     const { creator, plan, updates, addEvent } = makeCreator();
     await create(creator, plan, 3);
-    expect(updates).toEqual([
-      expect.objectContaining({
-        table: schema.subscriptionContracts,
-        set: expect.objectContaining({ status: 'CANCELLED', cancellationReasonCode: 'SUPERSEDED_BY_SUBSCRIPTION' }),
-      }),
-    ]);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].table).toBe(schema.subscriptionContracts);
+    expect(updates[0].set).toMatchObject({ status: 'CANCELLED', cancellationReasonCode: 'SUPERSEDED_BY_SUBSCRIPTION' });
     expect(addEvent).toHaveBeenCalledWith(
       expect.anything(),
       'grant-contract',
@@ -112,6 +120,18 @@ describe('SubscriptionCreator — 관리자 임시 지급 이어받기', () => {
     await expect(
       creator.createNewSubscription('u1', plan, tier, {}, 'recurring', false, 'INVOICE'),
     ).rejects.toBeInstanceOf(ActiveSubscriptionExistsException);
+    expect(insertedContracts).toHaveLength(0);
+  });
+
+  it('같은 사용자의 가입을 트랜잭션 잠금으로 한 줄로 세운다', async () => {
+    const { creator, plan, execute } = makeCreator();
+    await creator.createNewSubscription('u1', plan, tier, {}, 'recurring', false, 'INVOICE');
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('다른 가입이 먼저 지급분을 이어받았으면 덮어쓰지 않고 거절한다', async () => {
+    const { creator, plan, insertedContracts } = makeCreator({ grantStatus: 'CANCELLED' });
+    await expect(create(creator, plan, 3)).rejects.toBeInstanceOf(ActiveSubscriptionExistsException);
     expect(insertedContracts).toHaveLength(0);
   });
 });

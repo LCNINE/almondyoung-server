@@ -36,9 +36,15 @@ export class CmsSignupConsumer {
       );
       this.logger.log(`[CmsSignup] 가입 생성: userId=${payload.userId} cmsAgreementId=${payload.cmsAgreementId}`);
     } catch (err) {
-      // 재배달이거나 고객이 직접 먼저 가입했다.
+      // 재배달이거나 고객이 직접 먼저 가입했다. 앞선 처리가 약정 전에 끊겼을 수 있어 남은 단계를 잇는다.
       if (err instanceof ActiveSubscriptionExistsException) {
-        this.logger.log(`[CmsSignup] 이미 가입됨, 스킵: userId=${payload.userId}`);
+        const resumed = await this.subscriptionService.resumeCmsSignup(
+          payload.userId,
+          payload.billingMethodId,
+          payload.termsAgreementId ?? undefined,
+          new Date(payload.occurredAt),
+        );
+        this.logger.log(`[CmsSignup] 이미 가입됨${resumed ? ', 약정 확인' : ''}: userId=${payload.userId}`);
         return;
       }
       throw err;

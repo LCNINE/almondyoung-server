@@ -3,7 +3,7 @@ import { DbService } from '@app/db';
 import { BadRequestError } from '@app/shared';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
-import { and, eq, notExists } from 'drizzle-orm';
+import { and, eq, notExists, sql } from 'drizzle-orm';
 import { addDays } from 'date-fns';
 import { ContractEventManager } from './contract-event.manager';
 import { EntitlementManager } from '../entitlement/entitlement.manager';
@@ -120,6 +120,10 @@ export class SubscriptionCreator {
       const now = new Date();
       const startsAt = now;
 
+      // 같은 사용자의 가입을 한 줄로 세운다. 행 잠금만으로는 이용권이 아직 없을 때 잠글 것이 없어,
+      // 동시에 들어온 두 가입이 서로의 이용권을 닫고 각자 계약을 만든다.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`membership-signup:${userId}`}))`);
+
       // 호출부 가드와 이 트랜잭션 사이에 다른 가입이 커밋됐을 수 있다. 그 이용권을 닫고 덮어쓰지 않게 다시 본다.
       const [current] = await tx
         .select({ id: schema.subscriptionEntitlement.id })
@@ -127,9 +131,17 @@ export class SubscriptionCreator {
         .where(
           and(eq(schema.subscriptionEntitlement.userId, userId), eq(schema.subscriptionEntitlement.isCurrent, true)),
         )
-        .for('update')
         .limit(1);
       if (current && !grantTakeover) throw new ActiveSubscriptionExistsException();
+      if (grantTakeover) {
+        // 다른 가입이 먼저 이 지급분을 이어받았으면 그 가입을 덮어쓰지 않는다.
+        const [grant] = await tx
+          .select({ status: schema.subscriptionContracts.status })
+          .from(schema.subscriptionContracts)
+          .where(eq(schema.subscriptionContracts.id, grantTakeover.grantContractId))
+          .limit(1);
+        if (grant?.status !== 'ACTIVE') throw new ActiveSubscriptionExistsException();
+      }
 
       // 같은 결제로 기존 계약이 이미 생성됐으면 재사용(replay) 거부.
       // billing_events 의 uq_billing_events_intent_event 가 동시 요청 레이스를 막고,

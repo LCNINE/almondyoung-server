@@ -9,11 +9,16 @@ import * as schema from '../../shared/schemas/entities/schema';
 describe('SubscriptionCreator — payment intent replay 차단', () => {
   function makeCreator(options: { existingContractByIntent?: boolean; billingEventInsertError?: Error }) {
     const tx = {
+      execute: () => Promise.resolve(),
       select: () => ({
-        from: () => ({
+        from: (table: unknown) => ({
           where: () => ({
-            for: () => ({ limit: () => Promise.resolve([]) }),
-            limit: () => Promise.resolve(options.existingContractByIntent ? [{ id: 'old-contract' }] : []),
+            limit: () =>
+              Promise.resolve(
+                table === schema.subscriptionContracts && options.existingContractByIntent
+                  ? [{ id: 'old-contract' }]
+                  : [],
+              ),
           }),
         }),
       }),
@@ -65,10 +70,10 @@ describe('SubscriptionCreator — payment intent replay 차단', () => {
   it('충돌 없는 정상 생성은 통과하고 intentId 가 billing event 에 기록된다', async () => {
     const insertedBillingEvents: Record<string, unknown>[] = [];
     const tx = {
+      execute: () => Promise.resolve(),
       select: () => ({
         from: () => ({
           where: () => ({
-            for: () => ({ limit: () => Promise.resolve([]) }),
             limit: () => Promise.resolve([]),
           }),
         }),
@@ -96,10 +101,10 @@ describe('SubscriptionCreator — payment intent replay 차단', () => {
 
   it('one_time 은 같은 트랜잭션의 아웃박스에 MembershipStatusChanged(ACTIVE) 를 기록한다', async () => {
     const tx = {
+      execute: () => Promise.resolve(),
       select: () => ({
         from: () => ({
           where: () => ({
-            for: () => ({ limit: () => Promise.resolve([]) }),
             limit: () => Promise.resolve([]),
           }),
         }),

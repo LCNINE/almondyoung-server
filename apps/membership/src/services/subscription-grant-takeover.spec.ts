@@ -53,8 +53,17 @@ describe('subscribeWithBillingMethod — 관리자 임시 지급분이 있을 �
 
     await subscribe(service);
 
-    const args = deps.subscriptionCreator.createNewSubscription.mock.calls[0];
-    expect(args[args.length - 1]).toEqual(takeover);
+    expect(deps.subscriptionCreator.createNewSubscription).toHaveBeenCalledWith(
+      'u1',
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      'recurring',
+      false,
+      'INVOICE',
+      'a@b.c',
+      takeover,
+    );
   });
 
   it('이어받은 뒤 정기결제 설정이 실패하면 남은 지급 일수를 돌려준다', async () => {
@@ -66,5 +75,47 @@ describe('subscribeWithBillingMethod — 관리자 임시 지급분이 있을 �
     await expect(subscribe(service)).rejects.toThrow('정기결제 설정에 실패했습니다');
     expect(deps.subscriptionManager.voidSubscription).toHaveBeenCalled();
     expect(deps.entitlementService.grantByDays).toHaveBeenCalledWith('u1', 2, expect.any(String), 'SYSTEM');
+  });
+});
+
+describe('resumeCmsSignup — 약정 전에 끊긴 서버 가입 잇기', () => {
+  const requestedAt = new Date('2026-10-26T05:00:00.000Z');
+
+  function makeService(contract: unknown) {
+    const deps = {
+      contractReader: { findActiveContract: jest.fn().mockResolvedValue(contract) },
+      paymentClientService: { createBillingAgreement: jest.fn().mockResolvedValue(undefined) },
+      termsAgreementManager: { linkContract: jest.fn().mockResolvedValue(undefined) },
+      logger: { warn: jest.fn(), error: jest.fn(), log: jest.fn() },
+    };
+    const service = Object.create(SubscriptionService.prototype) as SubscriptionService;
+    Object.assign(service, deps);
+    return { service, deps };
+  }
+
+  const invoiceContract = (createdAt: string) => ({
+    id: 'c1',
+    billingPath: 'INVOICE',
+    autoRenewal: true,
+    createdAt: new Date(createdAt),
+  });
+
+  it('이 요청 뒤에 생긴 계약이면 약정과 약관 연결을 잇는다', async () => {
+    const { service, deps } = makeService(invoiceContract('2026-10-26T05:00:01.000Z'));
+    await expect(service.resumeCmsSignup('u1', 'bm-1', 'terms-1', requestedAt)).resolves.toBe(true);
+    expect(deps.paymentClientService.createBillingAgreement).toHaveBeenCalledWith(
+      'u1',
+      'c1',
+      'bm-1',
+      expect.any(String),
+      { allowPendingMandate: true },
+    );
+    expect(deps.termsAgreementManager.linkContract).toHaveBeenCalledWith('u1', 'terms-1', 'c1');
+  });
+
+  it('그 전부터 있던 구독은 건드리지 않는다 — 결제수단을 새 계좌로 덮어쓰면 안 된다', async () => {
+    const { service, deps } = makeService(invoiceContract('2026-10-20T00:00:00.000Z'));
+    await expect(service.resumeCmsSignup('u1', 'bm-1', undefined, requestedAt)).resolves.toBe(false);
+    expect(deps.paymentClientService.createBillingAgreement).not.toHaveBeenCalled();
   });
 });
