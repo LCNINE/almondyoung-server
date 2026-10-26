@@ -266,6 +266,7 @@ function InquiryDetailDialog({
                         className="block"
                       >
                         <Image
+                          unoptimized
                           width={80}
                           height={80}
                           src={url}

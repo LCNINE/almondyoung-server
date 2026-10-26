@@ -52,7 +52,13 @@ function ProductStrip({ productId }: { productId: string }) {
     >
       <div className="bg-muted relative flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md">
         {thumbnail ? (
-          <Image src={thumbnail} alt="" fill className="object-cover" />
+          <Image
+            src={thumbnail}
+            alt=""
+            fill
+            unoptimized
+            className="object-cover"
+          />
         ) : (
           <PackageIcon className="text-muted-foreground size-5" />
         )}
@@ -140,6 +146,7 @@ function QuestionDetailContent({ questionId }: { questionId: string }) {
                 className="cursor-pointer"
               >
                 <Image
+                  unoptimized
                   width={96}
                   height={96}
                   src={url}
@@ -164,6 +171,7 @@ function QuestionDetailContent({ questionId }: { questionId: string }) {
                   <div className="relative flex h-[70vh] w-full items-center justify-center">
                     <Image
                       fill
+                      unoptimized
                       src={url}
                       alt={`첨부 이미지 ${index + 1}`}
                       className="object-contain"
