@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import {
   CashReceiptType,
   WalletSchema,
@@ -265,6 +265,33 @@ export class CashReceiptsService {
       }
       await save();
     });
+  }
+
+  /**
+   * 결과를 모르는 취소가 남은 영수증을 다음 환불을 기다리지 않고 확정한다(크론).
+   * 멱등 키 유효기간이 지난 건은 cancelForRefund 가 다시 보내지 않으므로 고르지 않는다 — 매 주기 상한을 차지하지 않게.
+   */
+  async resolvePendingCancels(limit = 50): Promise<{ scanned: number; failed: number }> {
+    const windowStart = new Date(Date.now() - PENDING_CANCEL_RESEND_WINDOW_MS).toISOString();
+    const rows = await this.dbService.db
+      .select({ chargeId: cashReceipts.chargeId })
+      .from(cashReceipts)
+      .where(
+        and(
+          eq(cashReceipts.status, 'ISSUED'),
+          sql`(${cashReceipts.requestPayload} -> 'pendingCancel' ->> 'requestedAt')::timestamptz > ${windowStart}::timestamptz`,
+        ),
+      )
+      .limit(limit);
+    let failed = 0;
+    for (const row of rows) {
+      await this.cancelForRefund(row.chargeId).catch((error: unknown) => {
+        failed += 1;
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.error(`Cash receipt pending cancel resolve failed: charge=${row.chargeId}, error=${message}`);
+      });
+    }
+    return { scanned: rows.length, failed };
   }
 
   /**
