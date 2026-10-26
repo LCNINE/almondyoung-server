@@ -191,6 +191,14 @@ export class ConfirmPaymentIntentDto {
   @ValidateNested()
   @Type(() => CashReceiptRequestDto)
   cashReceipt?: CashReceiptRequestDto;
+
+  @ApiPropertyOptional({
+    enum: ['WIDGET', 'LEGACY'],
+    description: '토스 결제창 방식. 위젯 키가 있어도 결제창이 기존 방식(LEGACY)을 열면 승인도 기존 키로 해야 한다.',
+  })
+  @IsOptional()
+  @IsEnum(['WIDGET', 'LEGACY'])
+  tossCheckoutMode?: 'WIDGET' | 'LEGACY';
 }
 
 // ─── Toss Approve ─────────────────────────────────────────────────────────────

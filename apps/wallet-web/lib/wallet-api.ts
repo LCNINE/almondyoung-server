@@ -203,6 +203,7 @@ export async function confirmPaymentIntent(
   paymentMethodId: string | null,
   pointsToApply?: number,
   cashReceipt?: { type: CashReceiptType; customerIdentityNumber: string },
+  tossCheckoutMode?: 'WIDGET' | 'LEGACY',
 ): Promise<ConfirmResult> {
   const res = await fetchWithAuthBounce(paymentIntentRoute(intentId, 'confirm'), {
     method: 'POST',
@@ -211,7 +212,7 @@ export async function confirmPaymentIntent(
       'Idempotency-Key': createRequestId(),
     },
     credentials: 'include',
-    body: JSON.stringify({ paymentMethodId, pointsToApply, cashReceipt }),
+    body: JSON.stringify({ paymentMethodId, pointsToApply, cashReceipt, tossCheckoutMode }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

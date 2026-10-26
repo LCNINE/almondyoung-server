@@ -202,3 +202,37 @@ describe('TossPaymentProvider.cancel — 승인 결과를 모르는 charge', () 
     expect(first).not.toBe(second);
   });
 });
+
+describe('TossPaymentProvider.authorize — 결제창 방식', () => {
+  const env = { ...process.env };
+  beforeEach(() => {
+    process.env.TOSS_WIDGET_CLIENT_KEY = 'test_gck';
+    process.env.TOSS_WIDGET_SECRET_KEY = 'test_gsk';
+  });
+  afterEach(() => {
+    process.env = { ...env };
+  });
+
+  const authorize = (metadata?: Record<string, unknown>) =>
+    new TossPaymentProvider(dbWithCharge(undefined), {} as TossApiClient).authorize({
+      chargeId: 'ch-1',
+      intentId: 'in-1',
+      paymentMethodId: 'pm-1',
+      userId: 'u-1',
+      amount: 1000,
+      currency: 'KRW',
+      idempotencyKey: 'k',
+      correlationId: 'c',
+      metadata,
+    });
+
+  it('위젯 키가 있으면 위젯 결제로 남긴다', async () => {
+    const result = await authorize();
+    expect(result.nextAction).toMatchObject({ checkoutMode: 'WIDGET' });
+  });
+
+  it('결제창이 기존 방식을 열면 위젯 키가 있어도 위젯 결제로 남기지 않는다 — 승인을 기존 키로', async () => {
+    const result = await authorize({ tossCheckoutMode: 'LEGACY' });
+    expect(result.nextAction).not.toHaveProperty('checkoutMode');
+  });
+});
