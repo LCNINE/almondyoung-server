@@ -189,11 +189,8 @@ export class FulfillmentOrderResponseDto {
   @ApiProperty({ nullable: true })
   batchId: string | null;
 
-  @ApiProperty({ enum: ['in_house', '3pl', 'drop_ship'], nullable: true })
+  @ApiProperty({ enum: ['in_house', '3pl'], nullable: true })
   fulfillmentMode: string | null;
-
-  @ApiProperty({ enum: ['pending', 'forwarded', 'completed', 'canceled'], nullable: true })
-  directShipStatus: string | null;
 
   @ApiProperty({ enum: ['normal', 'high', 'urgent'] })
   priority: string;
@@ -247,9 +244,6 @@ export class FulfillmentOrderResponseDto {
     required: false,
   })
   reservations?: ReservationSummaryDto[];
-
-  @ApiProperty({ description: '관리자 UI에서 현재 실행 가능한 액션', type: [String], required: false })
-  adminAvailableActions?: string[];
 
   @ApiProperty({ description: '관리자 액션 차단 사유', type: [String], required: false })
   blockedReasons?: string[];

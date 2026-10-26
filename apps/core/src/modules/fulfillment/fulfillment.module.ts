@@ -32,7 +32,6 @@ import { SupplierHandoffService } from './supplier-shipment/supplier-handoff.ser
 import { SupplierSheetApplyService } from './supplier-shipment/supplier-sheet-apply.service';
 import { SupplierHandoffListReader } from './supplier-shipment/supplier-handoff-list.reader';
 import { SupplierShipmentQueueReader } from './supplier-shipment/supplier-shipment-queue.reader';
-import { DirectShipService } from './services/direct-ship.service';
 import { DirectShipCancelNoticeService } from './direct-ship-cancel-notice/direct-ship-cancel-notice.service';
 import { DirectShipCancelNoticeReader } from './direct-ship-cancel-notice/direct-ship-cancel-notice.reader';
 import { DirectShipCancelNoticeManager } from './direct-ship-cancel-notice/direct-ship-cancel-notice.manager';
@@ -163,7 +162,6 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ShipmentRecallService,
     ToteLifecycleService,
     ConsolidationService,
-    DirectShipService,
     SupplierShipmentQueueReader,
     SupplierHandoffListReader,
     SupplierHandoffService,

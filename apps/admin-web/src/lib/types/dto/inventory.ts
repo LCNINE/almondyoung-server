@@ -1896,7 +1896,7 @@ export interface MovementHistoryQuery {
 // ===== 배송 프로필 (Delivery Profiles) =====
 
 export type DeliveryProfileSourceType = 'direct' | 'in_house' | 'overseas';
-export type FulfillmentMode = 'in_house' | '3pl' | 'drop_ship';
+export type FulfillmentMode = 'in_house' | '3pl';
 
 export interface DeliveryProfileAddress {
   postalCode: string;

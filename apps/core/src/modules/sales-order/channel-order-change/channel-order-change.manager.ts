@@ -135,7 +135,7 @@ export class ChannelOrderChangeManager {
     const planning = this.moduleRef.get(ShipmentPlanningService, { strict: false });
     const refusal = await this.attempt(tx, async (sp) => {
       if (await this.reader.hasDropShipInProgress(order.id, sp)) {
-        throw new Refused({ code: 'SHIPMENT_NOT_REVISABLE', detail: 'drop_ship already handed to supplier' });
+        throw new Refused({ code: 'SHIPMENT_NOT_REVISABLE', detail: 'supplier shipment already handed off' });
       }
       // 와우프레스 인쇄 주문은 받은 주소로 직배송된다. 판매주문만 고치면 «반영됨» 으로 보이고 인쇄물은 옛 주소로 간다
       if (await this.reader.hasPrintSentToVendor(order.id, sp)) {

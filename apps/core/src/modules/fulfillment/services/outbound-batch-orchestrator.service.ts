@@ -1215,12 +1215,7 @@ export class OutboundBatchOrchestrator {
       throw this.conflict('SHIPMENT_PROFILE_REQUIRED', `Shipment ${shipment.id} has no shipping profile`);
     }
     this.assertRecipientComplete(shipment.recipientSnapshot);
-    if (
-      aggregate.lines.some(
-        (line) =>
-          line.fulfillmentMode === 'drop_ship' || line.stockType === 'drop_shipped' || line.reservedQty !== line.qty,
-      )
-    ) {
+    if (aggregate.lines.some((line) => line.stockType === 'drop_shipped' || line.reservedQty !== line.qty)) {
       throw this.conflict(
         'SHIPMENT_NOT_FULLY_RESERVED_PHYSICAL',
         `Shipment ${shipment.id} must contain only fully reserved physical lines`,

@@ -67,7 +67,7 @@ export class CreateFulfillmentOrderDto {
 
   @ApiProperty({
     description:
-      'Fulfillment Mode — 기본 in_house. drop_ship 은 받지 않는다(400): 직배분은 FO 모드가 아니라 입점사 상자로 나뉜다(ADR-0050 §2)',
+      'Fulfillment Mode — 기본 in_house. 직배분은 FO 모드가 아니라 입점사 상자로 나뉜다(ADR-0050 §2, 옛 drop_ship 모드는 K3 PR 8 이 걷었다)',
     enum: ['in_house', '3pl'],
     required: false,
   })

@@ -10,8 +10,9 @@ describe('CreateFulfillmentOrderDto.fulfillmentMode (K3 PR4)', () => {
     return errors.filter((error) => error.property === 'fulfillmentMode');
   }
 
-  it('drop_ship 모드를 거절한다 — 직배분은 FO 모드가 아니라 입점사 상자로 나뉜다(ADR-0050 §2)', async () => {
-    expect(await modeErrors('drop_ship')).toHaveLength(1);
+  // 옛 FO 단위 직배 모드는 K3 PR 8 이 enum 에서 걷었다 — 직배분은 FO 모드가 아니라 입점사 상자로 나뉜다(ADR-0050 §2)
+  it('enum 밖의 모드는 거절한다', async () => {
+    expect(await modeErrors('unknown_mode')).toHaveLength(1);
   });
 
   it.each(['in_house', '3pl', undefined])('%s 는 받는다', async (mode) => {

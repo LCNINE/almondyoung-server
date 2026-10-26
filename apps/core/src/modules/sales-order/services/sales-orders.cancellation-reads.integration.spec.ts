@@ -275,24 +275,6 @@ describeIfDb('SalesOrdersService 취소 엔진 — 남은·취소 가능·출고
     });
   });
 
-  it('관리자 상자 전 취소 of a forwarded drop-ship still reduces items', async () => {
-    await inRollbackTx(db, async (tx) => {
-      const w = wireCancellation(tx);
-      const world = await seedWorld(tx);
-      const order = await seedOrder(tx, { quantity: 2 });
-      // 파트너에게 넘겼을 뿐 출고가 아니다 — 넘긴 뒤에도 취소가 FOI 를 줄여야 한다
-      const { foItemId } = await seedFo(tx, world, order, { qty: 2, dropShip: 'forwarded' });
-
-      await w.salesOrders.cancel(
-        order.salesOrderId,
-        { lines: [{ salesOrderLineId: order.lineId, quantity: 1 }], cancelledBy: 'admin' },
-        tx,
-      );
-
-      expect(await foItemDemand(tx, foItemId)).toBe(1);
-    });
-  });
-
   it('상자 전 부분 on an item already reduced the old way divides by the current demand', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
@@ -321,12 +303,12 @@ describeIfDb('SalesOrdersService 취소 엔진 — 남은·취소 가능·출고
     });
   });
 
-  it('상자 전 전체 of a drop-ship FO leaves no outstanding demand', async () => {
+  it('상자 전 전체 of an unboxed FO leaves no outstanding demand', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
       const world = await seedWorld(tx);
       const order = await seedOrder(tx, { quantity: 2 });
-      const { foId, foItemId } = await seedFo(tx, world, order, { qty: 2, dropShip: 'pending', status: 'created' });
+      const { foId, foItemId } = await seedFo(tx, world, order, { qty: 2, status: 'created' });
 
       await w.salesOrders.cancel(order.salesOrderId, { cancelledBy: 'admin' }, tx);
 
@@ -346,13 +328,13 @@ describeIfDb('SalesOrdersService 취소 엔진 — 남은·취소 가능·출고
     });
   });
 
-  it('직배 FO 부분취소는 FO 를 ready 에서 created 로 투영한다 (D4)', async () => {
+  it('예약 없는 FO 부분취소는 FO 를 ready 에서 created 로 투영한다 (D4)', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
       const world = await seedWorld(tx);
       const order = await seedOrder(tx, { quantity: 2 });
-      // 직배 FO 는 createV2 가 ready 로 만든다(픽스처 기본값) — 수요가 남는 부분취소는 투영이 created 로 옮긴다
-      const { foId, foItemId } = await seedFo(tx, world, order, { qty: 2, dropShip: 'pending' });
+      // 픽스처 기본값 ready 인 예약 없는 FO — 수요가 남는 부분취소는 투영이 created 로 옮긴다
+      const { foId, foItemId } = await seedFo(tx, world, order, { qty: 2 });
 
       await w.salesOrders.cancel(
         order.salesOrderId,

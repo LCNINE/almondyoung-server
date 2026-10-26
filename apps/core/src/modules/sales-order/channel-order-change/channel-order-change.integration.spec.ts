@@ -366,18 +366,6 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
     });
   });
 
-  it('배송지 — 옛 FO 의 drop_ship 모드·directShipStatus 는 더는 읽지 않는다', async () => {
-    await inRollbackTx(db, async (tx) => {
-      const w = wire(tx);
-      const seed = await seedOrder(tx, w, { withFo: true });
-      await tx
-        .update(wmsTables.fulfillmentOrders)
-        .set({ fulfillmentMode: 'drop_ship', directShipStatus: 'forwarded' })
-        .where(eq(wmsTables.fulfillmentOrders.salesOrderId, seed.salesOrderId));
-      expect(await new ChannelOrderChangeReader().hasDropShipInProgress(seed.salesOrderId, tx)).toBe(false);
-    });
-  });
-
   it('감소 — 출고지시 전이면 반영되고 취소 행에 walletRefund 효과가 없다', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wire(tx);

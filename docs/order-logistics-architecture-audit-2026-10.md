@@ -299,14 +299,13 @@ ADR-0041(2026-09-30)이 배정을 작업 항목으로 옮기면서 세 벌이 �
 - 직배송도 수량 사실(`shippedQty`)만 쓰고, 투영이 상태를 정한다.
 - **판매주문 쪽은 K7 PR3 으로 끝났다(2026-10-24).** 상자 전 취소의 FO·FOI 쓰기는 출고 명령 `UnboxedDemandCancellation`(`fulfillment/unboxed-demand/`)이 하고, FO 상태는 투영이 정한다. FOI 취소 표현은 `canceledQty` 하나다 — §4.3 의 «`qty` 감소»는 없어졌다. ADR-0049 «현재 상태».
 - **남은 것(2026-10-24 기준):**
-  - 직배 `FulfillmentsService.ship()` 이 FO·FOI 에 `'shipped'`(투영 어휘에 없는 값)를 직접 쓴다. 같은 경로가 `FulfillmentShipped` 의 `trackingNumber` 를 `''` 로 내보내 이벤트 스키마 `min(1)` 을 어긴다 — 직배 «완료 처리»를 개통하면 막힌다(PR #1126 «알려진 문제»).
-  - 넘긴 직배 FO 가 전량 취소돼도 `directShipStatus` 가 `forwarded` 로 남는다. «주문 목록»에 수량 0 으로 남고 «완료 처리»는 409 다(PR #1128 «알려진 문제»).
+  - ~~직배 `ship()` 의 FO·FOI `'shipped'` 직접 쓰기와 빈 `trackingNumber`~~ · ~~넘긴 직배 FO 가 전량 취소돼도 `directShipStatus` 가 `forwarded` 로 남는 문제~~ — **K3 PR 8 이 옛 `ship()` 과 `direct_ship_status` 칸을 지워 해소했다.** 직배 발송은 입점사 상자·수기 송장으로 간다.
   - 판매주문 모듈이 출고 테이블을 직접 쓰는 예외 둘 — 배송지 변경(`channel-order-change.manager.ts`)과 공동현관 비번 파기(`entrance-password-cleaner.ts`). 정본은 `order-cancellation.guard.spec.ts` 의 예외 목록이고, 줄어드는 방향만 허용된다.
-  - fulfillment 모듈 안의 FO 직접 쓰기 — **status 는 갈랐다(K3 PR1).** FO·FOI status 는 투영 함수 `reprojectFulfillmentOrders`(`fulfillment/fulfillment-order/`)만 쓰고, 예외는 옛 직배 `fulfillments.service.ts` 하나다. 정본은 `fulfillment-order-status-writes.guard.spec.ts` 의 허용 목록. 다른 칸(`shippedAt`·수량·예약 합) 쓰기는 «다시 재는 명령»의 FO 줄로 잰다.
+  - fulfillment 모듈 안의 FO 직접 쓰기 — **status 는 갈랐다(K3 PR1).** FO·FOI status 는 투영 함수 `reprojectFulfillmentOrders`(`fulfillment/fulfillment-order/`)만 쓰고, 코드 안 쓰기는 투영 하나다(K3 PR 8 이 옛 `ship()` 을 지웠다). FO `'shipped'` 는 셀메이트 스크립트(`scripts/ops/cellmate-local/mark-core-shipped.sql.js`, 코드 밖)가 쓴다. 정본은 `fulfillment-order-status-writes.guard.spec.ts` 의 허용 목록. 다른 칸(`shippedAt`·수량·예약 합) 쓰기는 «다시 재는 명령»의 FO 줄로 잰다.
   - K3 본편은 직배를 «입점사가 보내는 상자»로 옮기는 일이다 — 설계 `docs/superpowers/specs/2026-10-25-k3-drop-ship-supplier-shipments-design.md`(PR 8개, §7).
   - 입점사 상자 스키마(상자 주인·넘김 묶음·못 보냄·입점사 발송 시도)와 창고 흐름 가드가 생겼다(K3 PR2, 휴면). 정본은 ADR-0050 과 `supplier-shipment-entry.guard.spec.ts`.
-  - FO 생성이 입점사마다 draft 상자를 만들고 «직배와 창고분이 섞이면 거절»이 없어졌다(K3 PR4, 휴면). 정체 보드·K6 수량 사실·고객 단계·관리자 필터·채널 주소 변경은 상자로 읽고(단계 정의 `supplier-shipment-stage.ts`), FO status 직접 쓰기 예외는 옛 `ship()` 하나만 남았다. 직배 목록 읽기 `GET /direct-ship/supplier-queue`.
-  - 직배 발송이 상자·수기 송장·투영으로 간다(K3 PR5, 휴면): 시트 내려받기=넘김, 올리기(미리보기 토큰·파일 하나 = 트랜잭션 하나), 입점사 발송·합포장·정정·못 보냄, 되돌리기의 입점사 갈래. FO status 직접 쓰기 예외는 옛 `ship()` 하나(PR 8 이 지운다). 정본은 ADR-0050 10~12.
+  - FO 생성이 입점사마다 draft 상자를 만들고 «직배와 창고분이 섞이면 거절»이 없어졌다(K3 PR4, 휴면). 정체 보드·K6 수량 사실·고객 단계·관리자 필터·채널 주소 변경은 상자로 읽고(단계 정의 `supplier-shipment-stage.ts`), FO status 직접 쓰기 예외는 옛 `ship()` 하나만 남았다(PR 8 이 지웠다). 직배 목록 읽기 `GET /direct-ship/supplier-queue`.
+  - 직배 발송이 상자·수기 송장·투영으로 간다(K3 PR5, 휴면): 시트 내려받기=넘김, 올리기(미리보기 토큰·파일 하나 = 트랜잭션 하나), 입점사 발송·합포장·정정·못 보냄, 되돌리기의 입점사 갈래. FO status 직접 쓰기 예외는 옛 `ship()` 하나였다(PR 8 이 지웠다). 정본은 ADR-0050 10~12.
   - 넘긴 입점사 상자 라인의 취소가 상자 후 경로에서 알릴 취소를 남긴다(K3 PR6, 휴면) — 같은 트랜잭션·같은 취소 id, «못 보냄» 라인 제외, 옛 상자 전(holders) 쓰기 삭제, 알릴 취소는 입점사 id 로 찾는다. 정본은 ADR-0050 13.
 - **전제:** 직배는 라이브 0건(개통 전, 2026-10-24 실측). 동작 변경의 라이브 영향은 착수 때 다시 잰다.
 

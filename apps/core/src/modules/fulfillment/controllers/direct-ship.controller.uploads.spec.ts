@@ -6,7 +6,6 @@ import { SupplierHandoffService } from '../supplier-shipment/supplier-handoff.se
 import { SupplierSheetApplyService } from '../supplier-shipment/supplier-sheet-apply.service';
 import { SupplierHandoffListReader } from '../supplier-shipment/supplier-handoff-list.reader';
 import { SupplierShipmentQueueReader } from '../supplier-shipment/supplier-shipment-queue.reader';
-import { DirectShipService } from '../services/direct-ship.service';
 import { DirectShipCancelNoticeService } from '../direct-ship-cancel-notice/direct-ship-cancel-notice.service';
 
 type Part = { type: 'file'; fieldname: string; buffer: Buffer } | { type: 'field'; fieldname: string; value: string };
@@ -46,7 +45,6 @@ describe('POST /direct-ship/suppliers/:supplierId/uploads/{preview,apply}', () =
     const module = await Test.createTestingModule({
       controllers: [DirectShipController],
       providers: [
-        { provide: DirectShipService, useValue: {} },
         { provide: SupplierShipmentQueueReader, useValue: {} },
         { provide: SupplierHandoffListReader, useValue: {} },
         { provide: SupplierHandoffService, useValue: {} },

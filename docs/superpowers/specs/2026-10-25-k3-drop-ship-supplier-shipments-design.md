@@ -112,8 +112,8 @@ CHECK: **`warehouse_id` 와 `supplier_id` 중 정확히 하나.** 이것이 «�
 국내 주요 택배사로 정한다. 이 enum 은 이벤트 계약(`fulfillments.stream.ts`·`shipments.stream.ts` 의 zod)에도 있으므로 §6 순서를 따른다.
 
 **FO.** 새 FO 에는 `fulfillment_mode = 'drop_ship'` 을 쓰지 않는다 — 한 FO 에 창고분과 직배분이 섞이므로 FO 단위 모드는 뜻이 없다.
-직배 여부는 상자(`supplier_id`)로 판정한다. `direct_ship_status` 칸, fulfillment_status 의 `'shipped'` 값, (필요하면) FO `drop_ship` 모드는
-**contract 단계에서** 걷는다(§6).
+직배 여부는 상자(`supplier_id`)로 판정한다. `direct_ship_status` 칸과 FO `drop_ship` 모드는 **contract 단계에서** 걷는다(§6). fulfillment_status 의 `'shipped'` 값은
+걷지 않는다 — 셀메이트 스크립트가 쓰므로 남기고, 셀메이트 컷오버(#923) 때 걷는다(§6·§7).
 
 **알릴 취소.** `direct_ship_cancel_notices` 의 업체 FK 를 `holders` 에서 `suppliers` 로 옮긴다. 테이블은 10-24 에 생겼다 —
 라이브 행 수를 먼저 재고, 0 이면 단순 교체, 아니면 expand-contract.
@@ -261,7 +261,7 @@ CHECK: **`warehouse_id` 와 `supplier_id` 중 정확히 하나.** 이것이 «�
   **SST 한 스택은 컴포넌트 순서를 못 정한다(`--target` 도 이 저장소에선 못 쓴다)** — 그래서 «소비자 먼저»는 배포 한 번 안에서가 아니라
   **배포 둘 사이**에서 지킨다. PR 3 은 계약·소비자만 넓히고 core 는 옛 6개 택배사·`warehouseId` 출처만 낸다(`CONSUMER_ROLLOUT_CARRIERS`).
   core 가 새 값·`supplierId` 출처를 내는 것은 PR 3 라이브 뒤의 PR 5 다(PR 3 계획 E3, 2026-10-25).
-- **contract** (`direct_ship_status` 칸 drop, fulfillment_status `'shipped'` 값 제거, 옛 직배 서비스 경로 삭제, `holders` FK 제거) — 별도 PR,
+- **contract** (`direct_ship_status` 칸 drop, ~~fulfillment_status `'shipped'` 값 제거~~ (**`'shipped'` 는 셀메이트 스크립트가 써서 남겼다 — PR 8 N1, 셀메이트 컷오버 #923 때 걷는다**), 옛 직배 서비스 경로 삭제, `holders` FK 제거) — 별도 PR,
   사이에 배포 한 번 이상, `deploy → migrate`. enum 값 제거는 Postgres 에서 타입 재생성이라 빌더가 스크래치 DB 에서 먼저 돌린다
   (메모: drizzle DROP 순서 함정).
 - 배포는 묶음 배포 방침(CLAUDE.md, `npm run deploy:preflight`)을 따른다.
@@ -286,7 +286,7 @@ PR 마다 계획서를 따로 쓴다(`docs/superpowers/plans/2026-10-25-k3-…-p
 | 5 | **직배 발송 명령**(§4.3-3~9·§4.4·§4.6): 내려받기=넘김, 올리기 미리보기/적용, 발송·합포장·정정·못 보냄, 이벤트, 되돌리기 갈래, `CONSUMER_ROLLOUT_CARRIERS` 문 제거 | Core(PR 3 라이브 뒤) | 없음 |
 | 6 | **취소**(§4.7): 알릴 취소를 상자 후 경로로, 못 보냄 억제, 입점사 FK | Core | 없음 |
 | 7 | **admin-web**(§4.9·§4.2): 직배 화면 개편, SKU 폼 입점사 | admin-web | 없음 |
-| 8 | **contract**(§6): `direct_ship_status`·FO `'shipped'` 값·옛 직배 경로·`holders` FK 제거 | Core, `deploy → migrate` | contract |
+| 8 | **contract**(§6): `direct_ship_status`·~~FO `'shipped'` 값~~(셀메이트 스크립트가 써서 남겼다 — PR 8 N1)·옛 직배 경로·`holders` FK 제거 | Core, `deploy → migrate` | contract |
 
 **PR 5 구현자에게(PR 3 이 정한 것):**
 - PR 5 는 **PR 3 라이브(배포 태그) 확인 뒤에만** 배포한다. 그 전에 core 가 새 택배사·`supplierId` 를 내면, 아직 옛 버전인 소비자가 zod 로 throw 한다.

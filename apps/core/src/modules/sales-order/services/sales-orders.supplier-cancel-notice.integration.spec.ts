@@ -112,7 +112,6 @@ describeIfDb('SalesOrdersService 취소 — 입점사 상자 알릴 취소 (K3 P
         expect.objectContaining({
           orderCancellationId: cancellation.id,
           supplierId: o.supplierIds.A,
-          holderId: null,
           salesOrderLineId: o.lineIds[0],
           fulfillmentOrderItemId: box.lines[0].fulfillmentOrderItemId,
           canceledQty: 2,

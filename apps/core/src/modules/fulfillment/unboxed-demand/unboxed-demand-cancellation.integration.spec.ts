@@ -37,11 +37,11 @@ describeIfDb('상자 전 수요 취소 (PostgreSQL integration)', () => {
       .where(eq(wmsTables.fulfillmentOrders.id, id))
       .then((r) => r[0]);
 
-  it('직배 FO 부분 감소는 canceledQty 만 늘리고 qty·FO 상태는 그대로', async () => {
+  it('예약 없는 FO 부분 감소는 canceledQty 만 늘리고 qty·FO 상태는 그대로', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = await f.seedWorld(tx);
       const order = await f.seedOrder(tx, { quantity: 3 });
-      const { foId, foItemId } = await f.seedFo(tx, w, order, { qty: 3, dropShip: 'pending', status: 'created' });
+      const { foId, foItemId } = await f.seedFo(tx, w, order, { qty: 3, status: 'created' });
 
       await cmd.lockForCancellation(order.salesOrderId, tx);
       const reduced = await cmd.reduce(order.salesOrderId, [{ fulfillmentOrderItemId: foItemId, qty: 1 }], tx);
@@ -66,7 +66,7 @@ describeIfDb('상자 전 수요 취소 (PostgreSQL integration)', () => {
     await inRollbackTx(db, async (tx) => {
       const w = await f.seedWorld(tx);
       const order = await f.seedOrder(tx, { quantity: 2 });
-      const { foId, foItemId } = await f.seedFo(tx, w, order, { qty: 2, dropShip: 'pending', status: 'created' });
+      const { foId, foItemId } = await f.seedFo(tx, w, order, { qty: 2, status: 'created' });
 
       await cmd.lockForCancellation(order.salesOrderId, tx);
       await cmd.reduce(order.salesOrderId, [{ fulfillmentOrderItemId: foItemId, qty: 2 }], tx);
@@ -109,7 +109,7 @@ describeIfDb('상자 전 수요 취소 (PostgreSQL integration)', () => {
     await inRollbackTx(db, async (tx) => {
       const w = await f.seedWorld(tx);
       const order = await f.seedOrder(tx, { quantity: 2 });
-      const { foItemId } = await f.seedFo(tx, w, order, { qty: 2, dropShip: 'pending', status: 'created' });
+      const { foItemId } = await f.seedFo(tx, w, order, { qty: 2, status: 'created' });
 
       await cmd.lockForCancellation(order.salesOrderId, tx);
       await expect(cmd.reduce(order.salesOrderId, [{ fulfillmentOrderItemId: foItemId, qty: 3 }], tx)).rejects.toThrow(
@@ -157,7 +157,7 @@ describeIfDb('상자 전 수요 취소 (PostgreSQL integration)', () => {
     await inRollbackTx(db, async (tx) => {
       const w = await f.seedWorld(tx);
       const order = await f.seedOrder(tx, { quantity: 2 });
-      const a = await f.seedFo(tx, w, order, { qty: 2, dropShip: 'pending', status: 'created' });
+      const a = await f.seedFo(tx, w, order, { qty: 2, status: 'created' });
       const [a2] = await tx
         .insert(wmsTables.fulfillmentOrderItems)
         .values({

@@ -230,7 +230,7 @@ describeIfDb('V2 draft shipment partial reservation (DB integration)', () => {
 
       const fo = await wired.fulfillments.create({ salesOrderId: fixture.salesOrderId }, tx);
       if (!fo) throw new Error('expected a fulfillment order');
-      // 새 FO 는 drop_ship 모드를 쓰지 않는다(ADR-0050 §2) — 직배는 상자 주인으로 판별한다
+      // drop_ship FO 모드는 contract(K3 PR 8)로 사라졌다(ADR-0050 §2) — 직배는 상자 주인으로 판별한다
       expect(fo).toMatchObject({ fulfillmentMode: 'in_house', warehouseId: null, status: 'ready' });
       // 이 주문 범위로 좁혀 단언한다 — 전역 0-count 는 커밋형 픽스처를 남기는 다른 통합 스펙과
       // 로컬 공유 DB 에서 병렬 실행될 때 간섭당한다(실측 플레이크).

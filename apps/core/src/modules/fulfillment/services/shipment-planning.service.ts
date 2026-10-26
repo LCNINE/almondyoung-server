@@ -1761,9 +1761,6 @@ export class ShipmentPlanningService {
   }
 
   private async assertPlanProfile(aggregate: ShipmentAggregate, requestedProfileId: string, tx: DbTx): Promise<void> {
-    if (aggregate.lines.some((line) => line.fulfillmentMode === 'drop_ship')) {
-      throw this.conflict('SHIPMENT_DROP_SHIP_NOT_SUPPORTED', 'Drop-ship demand cannot enter V2 planning');
-    }
     const skuRows = await tx
       .select({
         id: wmsTables.skus.id,

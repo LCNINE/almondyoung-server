@@ -87,7 +87,7 @@ export class FulfillmentsController {
   @RequirePermission('fulfillment.order.read')
   @Get(':id')
   @ApiOperation({
-    summary: '주문처리 상세 조회 (progress, shipments, items, reservations, adminAvailableActions 포함)',
+    summary: '주문처리 상세 조회 (progress, shipments, items, reservations 포함)',
   })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
   @ApiResponse({ status: 200, type: FulfillmentOrderV2ResponseDto })
@@ -135,7 +135,7 @@ export class FulfillmentsController {
   @ApiQuery({ name: 'offset', required: false, type: String })
   @ApiQuery({ name: 'status', required: false, type: String, description: 'FO 상태 필터 (단일)' })
   @ApiQuery({ name: 'warehouseId', required: false, type: String })
-  @ApiQuery({ name: 'fulfillmentMode', required: false, enum: ['in_house', '3pl', 'drop_ship'] })
+  @ApiQuery({ name: 'fulfillmentMode', required: false, enum: ['in_house', '3pl'] })
   @ApiQuery({ name: 'salesOrderId', required: false, type: String })
   @ApiQuery({ name: 'priority', required: false, enum: ['normal', 'high', 'urgent'] })
   @ApiResponse({ status: 200, type: FulfillmentOrderListResponseDto })

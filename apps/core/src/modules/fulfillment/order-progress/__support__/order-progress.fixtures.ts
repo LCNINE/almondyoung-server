@@ -70,15 +70,10 @@ export async function seedFo(
   order: { salesOrderId: string; lineId: string },
   args: {
     status?: 'created' | 'partially_reserved' | 'ready' | 'processing' | 'completed';
-    /**
-     * 옛 FO 단위 직배(`fulfillment_mode='drop_ship'`·`direct_ship_status`) — 옛 쓰기 경로(direct-ship.service·취소 알림, PR 5·8 에서 걷는다)
-     * 스펙 전용. 정체 보드·K6 수량 사실·판매주문 단계는 이걸 읽지 않는다(K3 PR4, N8) — 직배는 `seedBox({ supplierId })` 로 만든다.
-     */
-    dropShip?: 'pending' | 'forwarded' | 'completed' | 'canceled';
     createdAt?: Date;
     /** FO 항목 수량. 안 주면 1 */
     qty?: number;
-    /** FO owner(= 업체 holder). 안 주면 넘긴 직배('forwarded')일 때 w.holderId, 아니면 null */
+    /** FO owner(holder). 안 주면 null. 직배는 FO 가 아니라 `seedBox({ supplierId })` 로 만든다(옛 FO 단위 직배는 K3 PR 8 이 걷었다) */
     ownerId?: string | null;
   } = {},
 ): Promise<{ foId: string; foItemId: string }> {
@@ -88,9 +83,8 @@ export async function seedFo(
       salesOrderId: order.salesOrderId,
       warehouseId: w.warehouseId,
       status: args.status ?? 'ready',
-      fulfillmentMode: args.dropShip ? 'drop_ship' : 'in_house',
-      directShipStatus: args.dropShip ?? null,
-      ownerId: args.ownerId !== undefined ? args.ownerId : args.dropShip === 'forwarded' ? w.holderId : null,
+      fulfillmentMode: 'in_house',
+      ownerId: args.ownerId ?? null,
       totalQty: args.qty ?? 1,
       createdAt: args.createdAt ?? new Date(),
     })

@@ -48,7 +48,7 @@ private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
   - 숫자: `value ?? 0`
   - 날짜: `value ?? undefined`
 - enum 값은 스키마 정의만 사용한다.
-  - 예: `fulfillmentMode` 비교 시 `'drop_ship'` 사용. 존재하지 않는 `'direct_ship'` 사용 금지.
+  - 예: 직배 여부는 FO 모드가 아니라 `shipments.supplier_id`(상자 주인)로 판별한다. 지워진 `'drop_ship'`·존재하지 않는 `'direct_ship'` 모드는 쓰지 않는다(raw SQL 비교는 22P02).
 
 ### any/as 사용 금지 정책
 - any와 `as` 캐스팅은 원칙적으로 금지한다.

@@ -38,10 +38,10 @@ describeIfDb('FO 투영 (PostgreSQL integration)', () => {
     tx.update(wmsTables.fulfillmentOrderItems).set(set).where(eq(wmsTables.fulfillmentOrderItems.id, id));
 
   /** qty 짜리 FO 하나 — 투영 전 상태는 일부러 어긋난 값으로 둔다(투영이 덮어쓰는지 보려고). */
-  async function seed(tx: DbTx, qty: number, opts: { dropShip?: 'pending' } = {}) {
+  async function seed(tx: DbTx, qty: number) {
     const w = await f.seedWorld(tx);
     const order = await f.seedOrder(tx, { quantity: qty });
-    const ids = await f.seedFo(tx, w, order, { qty, status: 'processing', dropShip: opts.dropShip });
+    const ids = await f.seedFo(tx, w, order, { qty, status: 'processing' });
     return { w, ...ids };
   }
 
@@ -169,9 +169,9 @@ describeIfDb('FO 투영 (PostgreSQL integration)', () => {
     });
   });
 
-  it('직배 FO 부분 감소 뒤는 created', async () => {
+  it('예약 없는 FO 부분 감소 뒤는 created', async () => {
     await inRollbackTx(db, async (tx) => {
-      const { foId, foItemId } = await seed(tx, 3, { dropShip: 'pending' });
+      const { foId, foItemId } = await seed(tx, 3);
       await setFoi(tx, foItemId, { canceledQty: 1 });
 
       await reprojectFulfillmentOrders(tx, [foId]);

@@ -1,15 +1,7 @@
-import {
-  Injectable,
-  Logger,
-  BadRequestException,
-  NotFoundException,
-  ConflictException,
-  Optional,
-} from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, Optional } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { eq, inArray, desc, sql, count, and } from 'drizzle-orm';
-import { FULFILLMENT_EVENTS } from '../events';
 import { LineCompositionReader } from '../../product-matching/line-composition/line-composition.reader';
 import { selectLineCompositionViews } from '../../product-matching/line-composition/line-composition-views';
 import { LineCompositionManager } from '../../product-matching/line-composition/line-composition.manager';
@@ -18,12 +10,10 @@ import {
   CompositionItem,
   MatchingFailureReason,
 } from '../../product-matching/line-composition/line-composition';
-import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
 import { acquireStockAvailabilityLocks } from '../../inventory/shared/locks/stock-availability-lock';
 import { assertWarehouseSellable } from '../../inventory/shared/availability/sellable-warehouses';
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
-import { FULFILLMENT_STREAM, FulfillmentShippedPayload } from '@packages/event-contracts/streams';
-import { InjectPublisher, PublisherFor } from '@app/events';
+import { FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
 import { outbox_events } from '@app/events';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
@@ -35,11 +25,16 @@ import { reprojectFulfillmentOrders } from '../fulfillment-order/fulfillment-ord
 import { directSuppliersOfSkus } from '../supplier-shipment/direct-suppliers-of-skus';
 
 type FulfillmentStatus = (typeof wmsTables.fulfillmentOrders.status.enumValues)[number];
+type FulfillmentMode = (typeof wmsTables.fulfillmentOrders.fulfillmentMode.enumValues)[number];
 
 // 외부 쿼리 문자열을 fulfillment status enum 으로 좁히는 타입 가드.
 // enumValues 를 readonly string[] 로 넓혀 includes 비교 (단순 멤버십 체크용 안전한 위닝)
 const isFulfillmentStatus = (value: string): value is FulfillmentStatus =>
   (wmsTables.fulfillmentOrders.status.enumValues as readonly string[]).includes(value);
+
+// fulfillmentMode 쿼리 문자열도 같은 방식으로 좁힌다 — enum 밖 값(옛 'drop_ship' 포함)이 쿼리에 닿으면 22P02 → 500 이다.
+const isFulfillmentMode = (value: string): value is FulfillmentMode =>
+  (wmsTables.fulfillmentOrders.fulfillmentMode.enumValues as readonly string[]).includes(value);
 
 type FulfillmentOrderItemInsert = {
   fulfillmentOrderId: string;
@@ -73,10 +68,7 @@ export class FulfillmentsService {
 
   constructor(
     private readonly db: DbService<typeof wmsSchema>,
-    private readonly reservationLifecycle: ReservationLifecycleService,
     private readonly lineCompositions: LineCompositionReader,
-    @InjectPublisher(FULFILLMENT_STREAM)
-    private readonly fulfillmentsV1: PublisherFor<typeof FULFILLMENT_STREAM>,
     private readonly workflowGate: FulfillmentWorkflowGate,
     private readonly lineCompositionManager: LineCompositionManager,
     @Optional() private readonly shipmentReservation?: ShipmentReservationService,
@@ -395,118 +387,6 @@ export class FulfillmentsService {
     }
   }
 
-  async ship(id: string, tx?: DbTx) {
-    this.workflowGate.assertOperationalMutationAllowed('fulfillment.drop_ship');
-    return this.db.run(async (trx) => {
-      await trx.execute(
-        sql`SELECT id FROM ${wmsTables.fulfillmentOrders} WHERE ${wmsTables.fulfillmentOrders.id} = ${id} FOR UPDATE`,
-      );
-      const [fo] = await trx
-        .select()
-        .from(wmsTables.fulfillmentOrders)
-        .where(eq(wmsTables.fulfillmentOrders.id, id))
-        .limit(1);
-      if (!fo) throw new NotFoundException(`Fulfillment order ${id} not found`);
-      if (fo.status === 'shipped') return this.getOne(id, trx);
-      if (fo.status === 'completed' || fo.status === 'canceled')
-        throw new ConflictException(`Cannot ship FO ${id} in terminal status '${fo.status}'`);
-      if (fo.fulfillmentMode !== 'drop_ship')
-        throw new ConflictException(
-          `ship() 은 drop_ship 전용입니다. 자사 출고는 shipment dispatch attempt를 거칩니다.`,
-        );
-      if (fo.directShipStatus !== 'forwarded')
-        throw new ConflictException(
-          `Cannot ship drop_ship FO ${id}: directShipStatus must be 'forwarded', got '${fo.directShipStatus ?? 'null'}'`,
-        );
-
-      await trx.execute(
-        sql`SELECT id FROM ${wmsTables.fulfillmentOrderItems} WHERE ${wmsTables.fulfillmentOrderItems.fulfillmentOrderId} = ${id} FOR UPDATE`,
-      );
-      const items = await trx
-        .select()
-        .from(wmsTables.fulfillmentOrderItems)
-        .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, id));
-      const now = new Date();
-      // 남은 수량(qty − shipped − canceled)이 없는 항목(전량 취소)은 건드리지 않는다
-      const shippable = items.filter((item) => item.qty - item.shippedQty - item.canceledQty > 0);
-      for (const item of shippable) {
-        await trx
-          .update(wmsTables.fulfillmentOrderItems)
-          .set({ shippedQty: item.qty - item.canceledQty, status: 'shipped', updatedAt: now })
-          .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
-      }
-      await trx
-        .update(wmsTables.fulfillmentOrders)
-        .set({ status: 'shipped', shippedAt: now, updatedAt: now })
-        .where(eq(wmsTables.fulfillmentOrders.id, id));
-
-      // drop_ship 불변식("자사 재고 예약 없음") 방어 sweep — 잔존 confirmed 예약이 있으면
-      // 좀비가 되므로 같은 tx 로 즉시 해제. 정상 drop_ship 은 항상 0건(no-op).
-      const sweptOnShip = await this.reservationLifecycle.releaseLeftoverReservations(
-        id,
-        'reconcile: drop_ship invariant sweep',
-        trx,
-      );
-      if (sweptOnShip > 0) {
-        this.logger.warn(`drop_ship FO ${id} 에서 잔존 예약 ${sweptOnShip}건 sweep — 예약 없음 불변식 위반`);
-      }
-
-      const [salesOrderRow] = fo.salesOrderId
-        ? await trx
-            .select({ channelOrderId: wmsTables.salesOrders.channelOrderId })
-            .from(wmsTables.salesOrders)
-            .where(eq(wmsTables.salesOrders.id, fo.salesOrderId))
-            .limit(1)
-        : [];
-      const shippedPayload: FulfillmentShippedPayload = {
-        fulfillmentId: id,
-        orderId: fo.salesOrderId ?? '',
-        channelOrderId: salesOrderRow?.channelOrderId ?? undefined,
-        trackingInfo: { carrier: 'CJ', trackingNumber: '', invoiceUrl: undefined },
-        shippedAt: now.toISOString(),
-        estimatedDeliveryDate: undefined,
-        shippedItems: shippable.map((item) => ({
-          fulfillmentItemId: item.id,
-          skuId: item.skuId,
-          shippedQty: item.qty - item.canceledQty,
-        })),
-      };
-      await this.fulfillmentsV1.enqueue(
-        {
-          // FO 당 전량출고 완료 이벤트는 논리적으로 한 번 — dispatch 경로의 v1 완료 투영과 같은 키 규약.
-          idempotencyKey: `${id}:fully-shipped`,
-          eventType: FULFILLMENT_EVENTS.SHIPPED,
-          aggregateId: id,
-          partitionKey: fo.salesOrderId ?? id,
-          payload: shippedPayload,
-        },
-        trx,
-      );
-      return this.getOne(id, trx);
-    }, tx);
-  }
-
-  private computeAdminAvailableActions(fo: {
-    status: string;
-    fulfillmentMode: string | null;
-    directShipStatus: string | null | undefined;
-  }): string[] {
-    const TERMINAL_STATUSES = ['shipped', 'completed', 'canceled'];
-    const isTerminal = TERMINAL_STATUSES.includes(fo.status);
-    const actions: string[] = [];
-
-    // FO 단위 수동 reserve/unreserve/transfer 액션은 V1 예약 경로와 함께 Task 25 에서 라우트째 제거됐다.
-    // V2 예약은 shipment line 단위로 자동(부분예약 + retry worker)이고, 재배치는 shipment-line transfer 로 한다.
-    // drop_ship 은 타사 재고라 재고 관련 액션을 광고하지 않는다(아래 forward/complete 만).
-    const isDropShip = fo.fulfillmentMode === 'drop_ship';
-    if (isDropShip && !isTerminal) {
-      const dsStatus = fo.directShipStatus;
-      if (!dsStatus || dsStatus === 'pending') actions.push('forwardDropShip');
-      if (dsStatus === 'forwarded') actions.push('completeDropShip');
-    }
-    return actions;
-  }
-
   private computeBlockedReasons(fo: { status: string }, items: Array<{ shippedQty: number }>): string[] {
     const reasons: string[] = [];
     if (['shipped', 'completed', 'canceled'].includes(fo.status)) {
@@ -597,7 +477,6 @@ export class FulfillmentsService {
 
     const itemIds = items.map((i) => i.id);
 
-    const adminAvailableActions = this.computeAdminAvailableActions(fulfillmentOrder);
     const blockedReasons = this.computeBlockedReasons(fulfillmentOrder, items);
 
     // FOI 라인 + SKU 조인 (상세 화면 표시용)
@@ -714,7 +593,6 @@ export class FulfillmentsService {
       items: itemsWithSku,
       lines: lineViews,
       reservations: v2Reservations,
-      adminAvailableActions,
       blockedReasons,
     };
   }
@@ -735,12 +613,12 @@ export class FulfillmentsService {
 
     // status 쿼리 문자열을 enum 으로 안전 narrowing (잘못된 값은 무시)
     const statusFilter = params.status && isFulfillmentStatus(params.status) ? params.status : undefined;
+    const modeFilter =
+      params.fulfillmentMode && isFulfillmentMode(params.fulfillmentMode) ? params.fulfillmentMode : undefined;
     const conditions = [
       statusFilter ? eq(wmsTables.fulfillmentOrders.status, statusFilter) : undefined,
       params.warehouseId ? eq(wmsTables.fulfillmentOrders.warehouseId, params.warehouseId) : undefined,
-      params.fulfillmentMode
-        ? eq(wmsTables.fulfillmentOrders.fulfillmentMode, params.fulfillmentMode as any)
-        : undefined,
+      modeFilter ? eq(wmsTables.fulfillmentOrders.fulfillmentMode, modeFilter) : undefined,
       params.salesOrderId ? eq(wmsTables.fulfillmentOrders.salesOrderId, params.salesOrderId) : undefined,
       params.priority ? eq(wmsTables.fulfillmentOrders.priority, params.priority as any) : undefined,
     ].filter(Boolean);

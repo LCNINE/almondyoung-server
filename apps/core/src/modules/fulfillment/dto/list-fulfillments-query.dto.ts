@@ -13,10 +13,10 @@ export class ListFulfillmentsQueryDto {
   @IsUUID()
   warehouseId?: string;
 
-  @ApiProperty({ required: false, enum: ['in_house', '3pl', 'drop_ship'] })
+  @ApiProperty({ required: false, enum: ['in_house', '3pl'] })
   @IsOptional()
-  @IsEnum(['in_house', '3pl', 'drop_ship'])
-  fulfillmentMode?: 'in_house' | '3pl' | 'drop_ship';
+  @IsEnum(['in_house', '3pl'])
+  fulfillmentMode?: 'in_house' | '3pl';
 
   @ApiProperty({ required: false })
   @IsOptional()

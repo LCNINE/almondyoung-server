@@ -7,7 +7,6 @@ import {
   compositionItemText,
   compositionErrorView,
   existingLinesStep,
-  canEditLineComposition,
   foItemStatusLabel,
   matchingRowTarget,
   sourceBadge,
@@ -58,17 +57,6 @@ describe('foItemStatusLabel', () => {
     // 고객 취소는 qty 가 그대로(canceledQty 가 들고 있음)라 «대체됨» 이 아니다
     const canceled = { qty: 2, canceledQty: 2, status: 'canceled' };
     expect(foItemStatusLabel(canceled)).toBe('canceled');
-  });
-});
-
-describe('canEditLineComposition', () => {
-  it('직배 출고는 서버가 개별 지정을 거절하므로 숨긴다', () => {
-    expect(canEditLineComposition({ canEdit: true, fulfillmentMode: 'drop_ship' })).toBe(false);
-  });
-  it('직배가 아니면 권한을 따른다', () => {
-    expect(canEditLineComposition({ canEdit: true, fulfillmentMode: 'in_house' })).toBe(true);
-    expect(canEditLineComposition({ canEdit: true, fulfillmentMode: null })).toBe(true);
-    expect(canEditLineComposition({ canEdit: false, fulfillmentMode: 'in_house' })).toBe(false);
   });
 });
 

@@ -208,7 +208,6 @@ export async function assertStartEligibility(
       shipmentLines.some(
         (line) =>
           line.stockType === 'drop_shipped' ||
-          line.fulfillmentMode === 'drop_ship' ||
           line.skuDeliveryProfileId !== shipment.shippingProfileId ||
           line.reservedQty !== line.qty ||
           line.inspectedQty !== 0,
