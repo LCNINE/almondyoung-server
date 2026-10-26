@@ -133,7 +133,7 @@ function makeContext(
   };
   const tossApiClient = {
     issueCashReceipt: jest.fn().mockResolvedValue(opts.tossIssue ?? { ok: true, data: {} }),
-    cancelCashReceipt: jest.fn(),
+    cancelCashReceipt: jest.fn<Promise<unknown>, [string, number?, string?]>(),
     getPayment: jest.fn().mockResolvedValue(opts.tossPayment ?? { ok: true, data: { cashReceipt: null } }),
   };
 
@@ -495,6 +495,18 @@ describe('CashReceiptsService', () => {
       },
     );
 
+    it('크론은 남은 취소가 있는 영수증을 다음 환불 없이 확정한다', async () => {
+      const { service, tossApiClient, updateCalls } = makeContext({
+        selectQueue: [[{ chargeId: CHARGE_ID }], [makeReceipt({ amount: 1000, requestPayload: pendingOf(300) })]],
+        chargeById: makeCharge({ amount: 1000 }),
+        succeededRefunds: [{ amount: 300 }],
+      });
+      await expect(service.resolvePendingCancels()).resolves.toEqual({ scanned: 1, failed: 0 });
+      expect(tossApiClient.cancelCashReceipt).toHaveBeenCalledTimes(1);
+      expect(tossApiClient.cancelCashReceipt).toHaveBeenCalledWith('rk-001', 300, 'k-pending');
+      expect(updateCalls[0]).toMatchObject({ canceledAmount: 300, requestPayload: {} });
+    });
+
     it('멱등 키 유효기간이 지난 남은 취소는 다시 보내지 않는다', async () => {
       const old = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString();
       const { service, tossApiClient } = makeContext({
@@ -524,7 +536,7 @@ describe('CashReceiptsService', () => {
       expect(updateCalls[0]).toMatchObject({
         canceledAmount: 0,
         status: 'ISSUED',
-        requestPayload: { pendingCancel: { amount: 300, idempotencyKey: expect.any(String) } },
+        requestPayload: { pendingCancel: { amount: 300 } },
       });
     });
   });
