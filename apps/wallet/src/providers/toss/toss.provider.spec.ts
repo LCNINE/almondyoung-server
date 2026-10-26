@@ -142,6 +142,17 @@ describe('TossPaymentProvider.cancel — 승인 결과를 모르는 charge', () 
     expect(aborted.cancelPayment).not.toHaveBeenCalled();
   });
 
+  it('승인 대기(IN_PROGRESS)면 정리 완료로 넘기지 않는다 — 뒤늦은 승인 성공이 원장 밖에 남지 않게', async () => {
+    const api = {
+      getPaymentByOrderId: jest
+        .fn()
+        .mockResolvedValue({ ok: true, data: { status: 'IN_PROGRESS', paymentKey: 'pk_p' } }),
+      cancelPayment: jest.fn(),
+    };
+    expect(await make(api).cancel(cancelParams())).toEqual({ status: 'FAILED', errorCode: 'TOSS_CONFIRM_IN_PROGRESS' });
+    expect(api.cancelPayment).not.toHaveBeenCalled();
+  });
+
   it('돈이 빠졌거나 계좌가 열려 있으면 토스 결제 키로 취소한다', async () => {
     const api = {
       getPaymentByOrderId: jest.fn().mockResolvedValue({ ok: true, data: { status: 'DONE', paymentKey: 'pk_real' } }),
