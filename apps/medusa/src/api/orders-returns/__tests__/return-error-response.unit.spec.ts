@@ -21,7 +21,7 @@ describe('sendReturnError', () => {
     const res = fakeRes();
     expect(sendReturnError(res, new ReturnRequestRejected('window_closed', '기한'))).toBe(true);
     expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ type: 'not_allowed', code: 'return_request_rejected', reason: 'window_closed', message: '기한' });
+    expect(res.body).toEqual({ type: 'not_allowed', code: 'return_rejected', reason: 'window_closed', message: '기한' });
   });
 
   it('ReturnOrderNotFound → 404 not_found', () => {
@@ -35,7 +35,7 @@ describe('sendReturnError', () => {
     const res = fakeRes();
     expect(sendReturnError(res, new CoreEligibilityUnavailable('core 응답 500'))).toBe(true);
     expect(res.statusCode).toBe(502);
-    expect(res.body).toMatchObject({ code: 'core_unavailable' });
+    expect(res.body).toEqual({ type: 'core_unavailable', message: 'core 응답 500' });
   });
 
   it('그 밖의 오류는 처리하지 않는다(false)', () => {

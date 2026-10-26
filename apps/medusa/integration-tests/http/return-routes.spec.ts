@@ -122,7 +122,7 @@ medusaIntegrationTestRunner({
 
       const customer = await fail(api.post(`/store/orders/${orderId}/returns`, body(itemId), me.headers));
       expect(customer.status).toBe(400);
-      expect(customer.data).toMatchObject({ code: 'return_request_rejected', reason: 'window_closed' });
+      expect(customer.data).toMatchObject({ code: 'return_rejected', reason: 'window_closed' });
 
       const noReason = await fail(api.post(`/admin/orders/${orderId}/returns`, body(itemId), c.adminHeaders));
       expect(noReason.status).toBe(400);
@@ -148,7 +148,7 @@ medusaIntegrationTestRunner({
       core.failWith(500);
       const res = await fail(api.post(`/store/orders/${orderId}/returns`, body(itemId), me.headers));
       expect(res.status).toBe(502);
-      expect(res.data).toMatchObject({ code: 'core_unavailable' });
+      expect(res.data).toMatchObject({ type: 'core_unavailable' });
       expect(await returnsOf(orderId)).toHaveLength(0);
     });
 
