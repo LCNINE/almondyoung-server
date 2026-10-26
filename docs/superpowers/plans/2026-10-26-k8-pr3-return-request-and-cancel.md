@@ -29,7 +29,7 @@
 
 ## 이름 붙은 결정
 
-- **N1. Medusa 의 `fulfilled_quantity` 는 «반품이 잡은 수량»만큼만 올린다.** 반품 요청 직전 줄마다 `topUp = max(0, (requested + received + dismissed + 이번 수량) − fulfilled)` 를 `registerFulfillment` 로 올리고, 올린 값을 반품 metadata 에 남겨 반품 취소 때 `cancelFulfillment` 로 되돌린다. 갈래 셋 중 이것만 부작용이 없다: ⓐ core 출고를 Medusa fulfillment 로 전부 투영하면 주문 취소(`All fulfillments must be canceled`)·부분취소(`item-update` 하한)가 라이브 전 주문에서 깨진다. ⓑ `createOrderFulfillmentWorkflow` 를 반품 때 부르면 Medusa 재고 level 을 깎고 provider 를 부른다. ⓒ `registerFulfillment` 는 order 모듈 공개 메서드이고 주문 변경 이력에 남는다. 설계 §6 «Medusa 가 배송완료일·소포를 아는지 확인»의 답이다 — Task 2 가 설계 §4.2 에 이 결과를 적는다.
+- **N1. Medusa 의 `fulfilled_quantity` 는 «반품이 잡은 수량»만큼만 올린다.** 반품 요청 직전 줄마다 `topUp = max(0, (requested + received + dismissed + 이번 수량) − fulfilled)` 를 `registerFulfillment` 로 올리고, 올린 값을 반품 metadata 에 남겨 반품 취소 때 `cancelFulfillment` 로 되돌린다. 갈래 셋 중 이것만 부작용이 없다: ⓐ core 출고를 Medusa fulfillment 로 전부 투영하면 주문 취소(`All fulfillments must be canceled`)·부분취소(`item-update` 하한)가 라이브 전 주문에서 깨진다. ⓑ `createOrderFulfillmentWorkflow` 를 반품 때 부르면 Medusa 재고 level 을 깎고 provider 를 부른다. ⓒ `registerFulfillment` 는 order 모듈 공개 메서드이고 주문 변경 이력에 남는다. 설계 §6 «Medusa 가 배송완료일·소포를 아는지 확인»의 답이다 — Task 2 가 설계 §4.2 에 이 결과를 적는다. 이 다리 대신 Medusa 가 출고 기록으로 배송 사실을 알게 하는 길은 #1148 에서 따로 본다(core 출고 개통 때).
 - **N2. core 자격 API 는 «청구를 빼기 전» 사실만 준다** — 줄마다 `deliveredUnits`(배송완료 판매 단위)와 `lastDeliveredAt`. 반품으로 빠진 수량은 Medusa 가 자기 반품 기록(`return_requested/received/dismissed`)으로 뺀다. 반품 기록의 주인이 Medusa 라서다(D1). K6 `claimable` 을 쓰면 PR 5 가 그걸 새 반품 예정 기록에 다시 이을 때 **두 번 빠진다.** 판정: `returnable = min(deliveredUnits, item.quantity) − (requested + received + dismissed)`. `item.quantity` 쪽 min 은 배송 뒤 부분취소로 Medusa 수량이 줄어든 경우를 막는다.
 - **N3. 이 PR 은 medusa 만이 아니다** — core 내부 라우트 하나와 infra env 둘(`CORE_SERVICE_URL`·`CORE_INTERNAL_KEY`)이 같이 간다. 설계 §8 표의 PR 3 «사는 곳»을 `medusa · core(내부 API) · infra` 로 고친다(Task 2).
 - **N4. 고객 기한은 KST 달력 7일.** `lastDeliveredAt` 의 KST 날짜 + 7일의 23:59:59.999 KST 까지. 한 줄이 여러 소포로 왔으면 **마지막** 배송완료 기준(고객에게 유리한 쪽). CS 는 기한을 넘겨도 되지만 `windowOverrideReason` 이 필수이고 반품 metadata 에 남는다(D5). **CS 도 수량은 못 넘긴다**(§4.0).
@@ -57,6 +57,7 @@
 3. **확정 전 실패가 흔적을 남긴다** — 반품 배송 방법 단계에서 던지면(반품 옵션 삭제로 재현) 열린 주문 변경 0, 반품 행은 canceled 이거나 없음, `fulfilled_quantity` 원래대로. 이어서 부분취소가 성공한다. Task 3 통합 테스트.
 4. **반품 취소 뒤 부분취소** — 반품 요청 → 취소 → 같은 줄 전량 부분취소가 성공한다(`fulfilled_quantity` 가 되돌아가지 않으면 `item-update` 하한에 막힌다). Task 5 통합 테스트.
 5. **반품이 주문 배송 상태를 바꾸지 않는다** — 반품 요청 뒤 주문 `fulfillment_status` 가 요청 전과 같다(admin-web 고객 탭 배지). Task 3 통합 테스트.
+6. **반품이 걸린 수량에 출고 후 취소가 온다** — N1 로 올린 `fulfilled_quantity` 아래로 부분취소가 수량을 줄이려 하면 Medusa 가 `INVALID_DATA` 를 던지고, 부분취소 라우트는 그걸 500 으로 내보내 channel-adapter 가 **재시도를 되풀이한다.** 막는 것 자체는 맞다(반품 중인 물건은 취소 대상이 아니다) — 정해진 거절 400 `partial_cancel_rejected` 로 닫혀야 한다. Task 3 단위·통합 테스트.
 
 ---
 
@@ -163,7 +164,8 @@ it('소포가 없는 줄은 lastDeliveredAt null', /* … */);
 - Create: `apps/medusa/src/workflows/orders/returns/load-return-order.ts`
 - Create: `apps/medusa/src/workflows/orders/returns/request-order-return.ts`
 - Create: `apps/medusa/integration-tests/http/fixtures/return-fixture.ts` (`FakeCore`, 고객 헤더)
-- Test: `apps/medusa/integration-tests/http/return-request.spec.ts`
+- Modify: `apps/medusa/src/workflows/orders/partial-cancel/plan-partial-cancel.ts` (`OrderLine.fulfilledQuantity`, 하한 거절), `apps/medusa/src/workflows/orders/settlement/load-order-view.ts` (`detail.fulfilled_quantity` → `fulfilledQuantity`, 이미 `items.detail` 을 읽는다)
+- Test: `apps/medusa/integration-tests/http/return-request.spec.ts`, `apps/medusa/src/workflows/orders/partial-cancel/__tests__/plan-partial-cancel.unit.spec.ts`(케이스 추가)
 
 **Interfaces:**
 - Produces:
@@ -201,6 +203,7 @@ it('소포가 없는 줄은 lastDeliveredAt null', /* … */);
 - [ ] **Step 3: 실패 확인** — `scripts/local/run-medusa-integration.sh --testPathPattern return-request` FAIL.
 - [ ] **Step 4: `load-return-order.ts`·`request-order-return.ts` 구현.** 재고 관리 variant 가 반품 위치 level 검증에 걸리면(`Cannot request item return at location`) 픽스처가 variant 를 그 위치에 연결하게 고치고, 라이브도 위치가 하나라는 근거(설계 §4.4-4)를 주석에 남긴다.
 - [ ] **Step 5: 통과 확인** — 같은 통합 PASS, `(cd apps/medusa && npm run test:unit)` PASS.
+- [ ] **Step 5a: 부분취소 하한을 정해진 거절로 (Review Focus 6)** — 실패 테스트 먼저: `plan-partial-cancel.unit.spec.ts` 에 `'newQty 가 fulfilledQuantity 보다 작으면 PartialCancelRejected(반품이 걸린 수량)'`·`'fulfilledQuantity 와 같으면 통과'`, `return-request.spec.ts` 에 `'반품 1개 요청 뒤 그 줄 전량 partialCancelOrder → PartialCancelRejected, 주문 수정 0'`. 구현: `OrderLine` 에 `fulfilledQuantity: number`(없으면 0), `planPartialCancel` 이 줄마다 `newQty < fulfilledQuantity` 면 `PartialCancelRejected(\`반품이 걸린 수량은 취소할 수 없습니다: ${itemId}\`)`. 기존 부분취소 단위·통합 테스트 전부 PASS(지금 주문은 fulfilled 0 이라 동작 변화 없음).
 - [ ] **Step 6: 커밋** — `K8 PR3 — 반품 요청은 core 자격으로 판정하고, 반품이 잡는 수량만 Medusa 에 출고로 올린 뒤 0원 반품 배송으로 확정한다`
 
 ---
