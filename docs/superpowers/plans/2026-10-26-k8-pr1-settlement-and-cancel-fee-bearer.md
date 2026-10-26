@@ -169,7 +169,7 @@ git commit -m "K8 PR1 — 부분취소 배송비는 사유가 정한다: 판매�
 
 **Interfaces:**
 - Consumes: Task 1 의 `loadOrderView`, `toShippingMethodView`.
-- Produces: `ShippingMethodView.belongsToOrderChange: boolean` — 반품·교환·클레임에 속한 배송 방법이면 `true`. `planShipping` 의 «원래 방법»은 `!isPartialCancelCharge && !belongsToOrderChange`.
+- Produces: `ShippingMethodView.isReturnExchangeOrClaimShipping: boolean` — 반품·교환·클레임에 속한 배송 방법이면 `true`. `planShipping` 의 «원래 방법»은 `!isPartialCancelCharge && !isReturnExchangeOrClaimShipping`.
 
 - [ ] **Step 1: 특성 테스트 — 반품 배송 방법이 주문에서 어떻게 보이는지 적는다** (`partial-cancel.spec.ts`)
 
@@ -178,11 +178,11 @@ git commit -m "K8 PR1 — 부분취소 배송비는 사유가 정한다: 판매�
 Run: `scripts/local/run-medusa-integration.sh -- integration-tests/http/partial-cancel.spec.ts -t '특성(K8)'`
 Expected: 적은 그대로 PASS. 목록에 반품 방법이 **없으면** 이 Task 의 나머지는 할 일이 없다 — 특성 테스트만 남기고 Step 6 으로 간다(커밋 메시지에 그 사실을 적는다).
 
-- [ ] **Step 2: 실패하는 테스트** — `plan-shipping.unit.spec.ts`: 원래 방법 하나(스냅샷 있음) + `belongsToOrderChange: true` 이고 스냅샷 없는 방법 하나 → `adjustable: true` 이고 결과가 원래 방법 하나만 있을 때와 같다. 통합: `'반품 배송 방법이 붙은 주문의 부분취소는 배송비를 다시 계산한다'` — Step 1 의 주문에서 A 를 `CUSTOMER_REQUEST` 로 취소 → `shippingNotAdjusted` false.
+- [ ] **Step 2: 실패하는 테스트** — `plan-shipping.unit.spec.ts`: 원래 방법 하나(스냅샷 있음) + `isReturnExchangeOrClaimShipping: true` 이고 스냅샷 없는 방법 하나 → `adjustable: true` 이고 결과가 원래 방법 하나만 있을 때와 같다. 통합: `'반품 배송 방법이 붙은 주문의 부분취소는 배송비를 다시 계산한다'` — Step 1 의 주문에서 A 를 `CUSTOMER_REQUEST` 로 취소 → `shippingNotAdjusted` false.
 
 - [ ] **Step 3: 돌려서 실패를 본다** — Expected: 단위는 `NO_SNAPSHOT`, 통합은 `shippingNotAdjusted: true`.
 
-- [ ] **Step 4: 구현** — `loadOrderView` 가 Step 1 에서 확인한 칸을 읽어 `toShippingMethodView` 에 넘기고, `toShippingMethodView` 가 `belongsToOrderChange` 를 채운다(반품·교환·클레임 셋 다), `planShipping` 이 거른다.
+- [ ] **Step 4: 구현** — `loadOrderView` 가 Step 1 에서 확인한 칸을 읽어 `toShippingMethodView` 에 넘기고, `toShippingMethodView` 가 `isReturnExchangeOrClaimShipping` 를 채운다(반품·교환·클레임 셋 다), `planShipping` 이 거른다.
 
 - [ ] **Step 5: 단위·통합 통과 확인**
 
@@ -214,3 +214,4 @@ git commit -m "K8 PR1 — 반품·교환·클레임 배송 방법은 부분취�
 - `refundOrderPayments` 는 반품 정산(PR 6)이 `kind: 'RETURN'`, 메모 `return-settle:${returnId}:${requestId}` 꼴로 쓴다(메모 규칙은 PR 6 이 정한다).
 - `loadOrderView` 는 반품 정산이 수령 전후 `pendingDifference` 를 읽는 데 쓴다.
 - 반품 택배비 차감은 `cancelShippingFeeBearer` 가 아니라 반품 사유(`ReturnReason.metadata`)의 부담 주체를 쓴다 — 표가 다르다(PR 2·6).
+- Medusa 반품 수령은 품목 `quantity` 를 줄이지 않는다(`return_received_quantity` 만 늘어난다, `@medusajs/order/dist/utils/actions/receive-return-item.js`) — PR 6 정산은 «남는 수량 = quantity − 수령·반품 수량»을 정하고, PR 1 의 부분취소 무료배송 깨짐 청구(`groupFees`)와 이중으로 빼지 않는지 함께 본다. (`planShipping`/`planPartialCancel` 은 지금 반품 완료 수량도 남는 수량으로 센다.)

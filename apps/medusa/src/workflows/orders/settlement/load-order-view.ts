@@ -89,7 +89,7 @@ export function toShippingMethodView(m: {
     amount: toNumber(m.amount),
     snapshot: readSnapshot(m.data),
     isPartialCancelCharge: m.name === PARTIAL_CANCEL_CHARGE_NAME,
-    belongsToOrderChange: !!(m.detail?.return_id || m.detail?.exchange_id || m.detail?.claim_id),
+    isReturnExchangeOrClaimShipping: !!(m.detail?.return_id || m.detail?.exchange_id || m.detail?.claim_id),
     hasAdjustments: (m.adjustments ?? []).some((a) => !!a && toNumber(a.amount) !== 0),
   };
 }
