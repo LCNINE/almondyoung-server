@@ -19,8 +19,27 @@ function makeIntent(overrides: Partial<{ userId: string; status: string }> = {})
   };
 }
 
-function makeCharge(overrides: Partial<{ amount: number }> = {}) {
-  return { id: CHARGE_ID, intentId: INTENT_ID, paymentMethodId: PM_ID, amount: overrides.amount ?? 10000, currency: 'KRW' };
+type ChargeOverrides = Partial<{
+  id: string;
+  amount: number;
+  operation: string;
+  requestPayload: Record<string, unknown> | null;
+  responsePayload: unknown;
+  providerTransactionId: string | null;
+}>;
+
+function makeCharge(overrides: ChargeOverrides = {}) {
+  return {
+    id: overrides.id ?? CHARGE_ID,
+    operation: overrides.operation ?? 'AUTHORIZE',
+    requestPayload: overrides.requestPayload ?? null,
+    intentId: INTENT_ID,
+    paymentMethodId: PM_ID,
+    amount: overrides.amount ?? 10000,
+    currency: 'KRW',
+    responsePayload: overrides.responsePayload ?? null,
+    providerTransactionId: overrides.providerTransactionId ?? null,
+  };
 }
 
 function makeReceipt(overrides: Partial<{ amount: number; canceledAmount: number; status: string }> = {}) {
@@ -41,13 +60,17 @@ function makeReceipt(overrides: Partial<{ amount: number; canceledAmount: number
  * issue() 의 select 순서: 1) findIntentOrThrow  2) findActiveByCharge  3) buildOrderName(items)
  * cancelForRefund() 의 select 순서: 1) findActiveByCharge
  */
-function makeContext(opts: {
-  selectQueue?: unknown[][];
-  refundableCharges?: ReturnType<typeof makeCharge>[];
-  methodType?: string;
-  tossIssue?: { ok: boolean; data?: any; error?: any };
-  tossCancel?: { ok: boolean; data?: any; error?: any };
-} = {}) {
+function makeContext(
+  opts: {
+    selectQueue?: unknown[][];
+    refundableCharges?: ReturnType<typeof makeCharge>[];
+    methodType?: string;
+    tossIssue?: { ok: boolean; data?: any; error?: any };
+    tossCancel?: { ok: boolean; data?: any; error?: any };
+    tossPayment?: { ok: boolean; data?: any; error?: any };
+    chargeById?: ReturnType<typeof makeCharge>;
+  } = {},
+) {
   const selectQueue = [...(opts.selectQueue ?? [])];
   const updateCalls: Array<Record<string, unknown>> = [];
   const resultPromise = () => Promise.resolve(selectQueue.shift() ?? []);
@@ -75,6 +98,7 @@ function makeContext(opts: {
 
   const chargesService = {
     findRefundableByIntent: jest.fn().mockResolvedValue(opts.refundableCharges ?? [makeCharge()]),
+    findById: jest.fn().mockResolvedValue(opts.chargeById ?? null),
   };
   const paymentMethodsService = {
     findById: jest.fn().mockResolvedValue({ id: PM_ID, type: opts.methodType ?? 'BANK_TRANSFER' }),
@@ -82,6 +106,7 @@ function makeContext(opts: {
   const tossApiClient = {
     issueCashReceipt: jest.fn().mockResolvedValue(opts.tossIssue ?? { ok: true, data: {} }),
     cancelCashReceipt: jest.fn().mockResolvedValue(opts.tossCancel ?? { ok: true, data: {} }),
+    getPayment: jest.fn().mockResolvedValue(opts.tossPayment ?? { ok: true, data: { cashReceipt: null } }),
   };
 
   const service = new CashReceiptsService(
@@ -130,6 +155,96 @@ describe('CashReceiptsService', () => {
         expect.objectContaining({ amount: 7000, orderId: INTENT_ID, type: '소득공제' }),
       );
       expect(r.status).toBe('ISSUED');
+    });
+  });
+
+  describe('issue() — 토스가 결제에 붙여 발급한 영수증과의 중복 (#1117)', () => {
+    const OK_ISSUE = { ok: true, data: { receiptKey: 'rk', issueNumber: '123', receiptUrl: 'http://x' } };
+
+    it('토스 결제에 cashReceipt 가 붙어 있으면 Conflict 이고 발급하지 않는다', async () => {
+      const { service, tossApiClient } = makeContext({
+        selectQueue: [[makeIntent()], []],
+        refundableCharges: [makeCharge({ responsePayload: { paymentKey: 'pk-1' } })],
+        tossPayment: { ok: true, data: { cashReceipt: { receiptKey: 'auto' } } },
+      });
+      await expect(service.issue(DTO, USER_ID)).rejects.toThrow('이미 현금영수증을 발급했습니다');
+      expect(tossApiClient.issueCashReceipt).not.toHaveBeenCalled();
+    });
+
+    it('발행 이력이 살아 있으면 Conflict', async () => {
+      const { service } = makeContext({
+        selectQueue: [[makeIntent()], []],
+        refundableCharges: [makeCharge({ responsePayload: { paymentKey: 'pk-1' } })],
+        tossPayment: {
+          ok: true,
+          data: { cashReceipts: [{ transactionType: 'CONFIRM', issueStatus: 'COMPLETED', amount: 10000 }] },
+        },
+      });
+      await expect(service.issue(DTO, USER_ID)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('실패했거나 전액 취소된 이력뿐이면 발급한다', async () => {
+      const { service, tossApiClient } = makeContext({
+        selectQueue: [[makeIntent()], [], [{ name: '상품A' }]],
+        refundableCharges: [makeCharge({ responsePayload: { paymentKey: 'pk-1' } })],
+        tossPayment: {
+          ok: true,
+          data: {
+            cashReceipt: { receiptKey: 'old' },
+            cashReceipts: [
+              { transactionType: 'CONFIRM', issueStatus: 'FAILED', amount: 10000 },
+              { transactionType: 'CONFIRM', issueStatus: 'COMPLETED', amount: 10000 },
+              { transactionType: 'CANCEL', issueStatus: 'COMPLETED', amount: 10000 },
+            ],
+          },
+        },
+        tossIssue: OK_ISSUE,
+      });
+      await service.issue(DTO, USER_ID);
+      expect(tossApiClient.issueCashReceipt).toHaveBeenCalled();
+    });
+
+    it('CAPTURE charge 면 원래 AUTHORIZE charge 의 스냅샷으로 위젯 키를 고른다', async () => {
+      const AUTH_ID = '44444444-4444-4444-8444-444444444444';
+      const { service, tossApiClient } = makeContext({
+        selectQueue: [[makeIntent()], [], [{ name: '상품A' }]],
+        refundableCharges: [
+          makeCharge({
+            operation: 'CAPTURE',
+            requestPayload: { authorizeChargeId: AUTH_ID },
+            providerTransactionId: 'pk-1',
+          }),
+        ],
+        chargeById: makeCharge({
+          id: AUTH_ID,
+          responsePayload: { paymentKey: 'pk-1', nextAction: { checkoutMode: 'WIDGET' } },
+        }),
+        tossIssue: OK_ISSUE,
+      });
+      await service.issue(DTO, USER_ID);
+      expect(tossApiClient.getPayment).toHaveBeenCalledWith('pk-1', true);
+      expect(tossApiClient.issueCashReceipt).toHaveBeenCalled();
+    });
+
+    it('수동 입금확인 건(providerTransactionId = 입금자 메모)은 조회 없이 발급한다', async () => {
+      const { service, tossApiClient } = makeContext({
+        selectQueue: [[makeIntent()], [], [{ name: '상품A' }]],
+        refundableCharges: [makeCharge({ providerTransactionId: '홍길동 입금' })],
+        tossIssue: OK_ISSUE,
+      });
+      await service.issue(DTO, USER_ID);
+      expect(tossApiClient.getPayment).not.toHaveBeenCalled();
+      expect(tossApiClient.issueCashReceipt).toHaveBeenCalled();
+    });
+
+    it('토스 조회가 실패하면 발급하지 않는다', async () => {
+      const { service, tossApiClient } = makeContext({
+        selectQueue: [[makeIntent()], []],
+        refundableCharges: [makeCharge({ responsePayload: { paymentKey: 'pk-1' } })],
+        tossPayment: { ok: false, error: { code: 'X', message: 'down' } },
+      });
+      await expect(service.issue(DTO, USER_ID)).rejects.toThrow('토스 결제 정보를 확인하지 못했습니다');
+      expect(tossApiClient.issueCashReceipt).not.toHaveBeenCalled();
     });
   });
 
