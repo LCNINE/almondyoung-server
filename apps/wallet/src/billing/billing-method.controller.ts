@@ -18,7 +18,7 @@ import {
 import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { WalletJwtAuth } from '../wallet-auth.decorator';
 import { AuthenticatedRequest } from '../wallet.module';
-import { BillingMethodService } from './billing-method.service';
+import { ActiveCmsLatestAgreement, BillingMethodService } from './billing-method.service';
 import { CmsMemberService } from '../cms/cms-member.service';
 import { CmsRegistrationService } from '../cms/cms-registration.service';
 import { CmsAccountCheckService } from '../cms/cms-account-check.service';
@@ -28,6 +28,7 @@ import {
   CheckCmsAccountDto,
   CheckCmsAccountResponseDto,
   CmsBankAccountDto,
+  CmsBankAccountWithAgreementDto,
   CmsBillingMethodStatusDto,
   RegisterCmsBillingMethodDto,
   RegisterCmsWithAgreementResponseDto,
@@ -38,7 +39,7 @@ import {
   FastifyUploadedFile,
   UploadedFastifyFile,
 } from '../common/fastify-multipart.interceptor';
-import { StoreRoute } from '@app/authorization';
+import { KeyAuthRoute, StoreRoute } from '@app/authorization';
 
 @ApiTags('Billing Methods')
 @Controller('v1/billing-methods')
@@ -147,7 +148,7 @@ export class BillingMethodController {
   @ApiOperation({ summary: 'CMS 계좌 등록 + 전자서명 동의자료 업로드 통합 — 효성 회원등록 후 동의자료 연속 제출' })
   async registerCmsBankAccountWithAgreement(
     @Req() req: AuthenticatedRequest,
-    @Body() dto: CmsBankAccountDto,
+    @Body() dto: CmsBankAccountWithAgreementDto,
     @UploadedFastifyFile() file: FastifyUploadedFile,
   ): Promise<RegisterCmsWithAgreementResponseDto> {
     if (!file?.buffer) {
@@ -185,7 +186,7 @@ export class BillingMethodController {
   async updateCmsBankAccountWithAgreement(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
-    @Body() dto: CmsBankAccountDto,
+    @Body() dto: CmsBankAccountWithAgreementDto,
     @UploadedFastifyFile() file: FastifyUploadedFile,
   ): Promise<RegisterCmsWithAgreementResponseDto> {
     if (!file?.buffer) {
@@ -238,6 +239,13 @@ export class BillingMethodController {
       if (msg.includes('not found') || msg.includes('access denied')) throw new NotFoundException(e.message);
       this.mapCmsError(e);
     }
+  }
+
+  @KeyAuthRoute()
+  @Get('cms/active-latest-agreements')
+  @ApiOperation({ summary: '활성 CMS 계좌별 마지막 동의자료 시각 (server-to-server, 어드민 가입 누락 탐지용)' })
+  async listActiveCmsLatestAgreements(): Promise<ActiveCmsLatestAgreement[]> {
+    return this.service.listActiveCmsLatestAgreements();
   }
 
   @StoreRoute()

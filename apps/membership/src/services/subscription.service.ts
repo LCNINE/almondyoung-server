@@ -569,7 +569,11 @@ export class SubscriptionService {
     termsAgreementId?: string,
   ) {
     const existing = await this.entitlementService.getUserEntitlement(userId);
-    if (existing) throw new ActiveSubscriptionExistsException();
+    // 관리자 임시 지급분이면 막지 않고 정식 가입으로 이어받는다
+    const grantTakeover = existing
+      ? await this.contractReader.findGrantTakeover(existing.contract.id, existing.entitlement.endsAt)
+      : null;
+    if (existing && !grantTakeover) throw new ActiveSubscriptionExistsException();
     // 결제보다 먼저 — 미납이 남은 계정은 새 달 요금만 내고 다시 쓰지 못하게 한다.
     await this.arrearsGate.assertNoOutstanding(userId);
 
@@ -620,6 +624,7 @@ export class SubscriptionService {
       false,
       invoicePath ? 'INVOICE' : 'CHARGE',
       email,
+      grantTakeover ?? undefined,
     );
 
     if (billingMode === 'recurring') {
@@ -634,6 +639,15 @@ export class SubscriptionService {
         const contract = await this.contractReader.findById(result.contractId);
         if (contract) {
           await this.subscriptionManager.voidSubscription(userId, contract, '정기결제 설정 실패');
+        }
+        // 이어받으며 닫은 임시 지급분을 되돌려 준다. 가입 실패로 고객이 받은 날을 잃으면 안 된다.
+        if (grantTakeover && grantTakeover.remainingDays > 0) {
+          await this.entitlementService.grantByDays(
+            userId,
+            grantTakeover.remainingDays,
+            '가입 실패로 임시 지급 복구',
+            'SYSTEM',
+          );
         }
         throw new SubscriptionBadRequestException('정기결제 설정에 실패했습니다. 잠시 후 다시 시도해주세요.');
       }
@@ -666,7 +680,8 @@ export class SubscriptionService {
       this.membershipEventPublisher
         .publishStatusChanged({
           userId,
-          email,
+          // 이메일을 모르면 빼고 보낸다. 빈 문자열은 계약 검증에 걸려 그룹 동기화 이벤트가 통째로 안 나간다.
+          email: email || undefined,
           status: 'ACTIVE',
           occurredAt: new Date().toISOString(),
           contractId: result.contractId,

@@ -9,6 +9,7 @@ import { EventsModule, EventTraceApiModule } from '@app/events';
 import { MEMBERSHIP_STREAM, PAYMENT_STREAM, IAM_STREAM } from '@packages/event-contracts/streams';
 import { WALLET_COMMAND_STREAM } from '@packages/event-contracts/streams/wallet-command.stream';
 import { BillingResultConsumer } from './consumers/billing-result.consumer';
+import { CmsSignupConsumer } from './consumers/cms-signup.consumer';
 import { MembershipCheckoutConsumer } from './consumers/membership-checkout.consumer';
 import { MembershipRefundConsumer } from './consumers/membership-refund.consumer';
 import { UserWithdrawalConsumer } from './consumers/user-withdrawal.consumer';
@@ -159,6 +160,7 @@ import { EventTraceController } from './controllers/event-trace.controller';
     BillingResultConsumer,
     InvoiceResultConsumer,
     MembershipCheckoutConsumer,
+    CmsSignupConsumer,
     ArrearsPaymentConsumer,
     MembershipRefundConsumer,
     UserWithdrawalConsumer,

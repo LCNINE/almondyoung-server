@@ -49,6 +49,43 @@ describe('CmsRegistrationService agreement file type', () => {
       'png',
     );
 
-    expect(cmsAgreementService.uploadAgreement).toHaveBeenCalledWith('CMSMEMBER1', expect.any(Buffer), '서면', 'png');
+    expect(cmsAgreementService.uploadAgreement).toHaveBeenCalledWith(
+      'CMSMEMBER1',
+      expect.any(Buffer),
+      '서면',
+      'png',
+      undefined,
+    );
+  });
+
+  it('passes the membership signup intent along with the new billing method when a plan is given', async () => {
+    const cmsMemberService = { registerMember: jest.fn().mockResolvedValue({ billingMethod, cmsMember }) };
+    const cmsAgreementService = { uploadAgreement: jest.fn().mockResolvedValue({ id: 'agreement-1', status: '등록' }) };
+    const service = new CmsRegistrationService(
+      cmsMemberService as never,
+      cmsAgreementService as never,
+      { findById: jest.fn() } as never,
+    );
+
+    await service.registerWithAgreement(
+      'user-1',
+      {
+        paymentCompany: '088',
+        payerName: '홍길동',
+        payerNumber: '900101',
+        paymentNumber: '1234567890',
+        phone: '01012345678',
+        planId: 'plan-1',
+      },
+      Buffer.from('png'),
+      'png',
+    );
+
+    expect(cmsAgreementService.uploadAgreement).toHaveBeenCalledWith('CMSMEMBER1', expect.any(Buffer), '서면', 'png', {
+      userId: 'user-1',
+      billingMethodId: 'billing-method-1',
+      planId: 'plan-1',
+      termsAgreementId: null,
+    });
   });
 });

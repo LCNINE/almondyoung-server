@@ -12,6 +12,7 @@ describe('SubscriptionCreator — payment intent replay 차단', () => {
       select: () => ({
         from: () => ({
           where: () => ({
+            for: () => ({ limit: () => Promise.resolve([]) }),
             limit: () => Promise.resolve(options.existingContractByIntent ? [{ id: 'old-contract' }] : []),
           }),
         }),
@@ -64,7 +65,14 @@ describe('SubscriptionCreator — payment intent replay 차단', () => {
   it('충돌 없는 정상 생성은 통과하고 intentId 가 billing event 에 기록된다', async () => {
     const insertedBillingEvents: Record<string, unknown>[] = [];
     const tx = {
-      select: () => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }) }),
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            for: () => ({ limit: () => Promise.resolve([]) }),
+            limit: () => Promise.resolve([]),
+          }),
+        }),
+      }),
       insert: (table: unknown) => ({
         values: (v: Record<string, unknown>) => {
           if (table === schema.billingEvents) insertedBillingEvents.push(v);
@@ -88,7 +96,14 @@ describe('SubscriptionCreator — payment intent replay 차단', () => {
 
   it('one_time 은 같은 트랜잭션의 아웃박스에 MembershipStatusChanged(ACTIVE) 를 기록한다', async () => {
     const tx = {
-      select: () => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }) }),
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            for: () => ({ limit: () => Promise.resolve([]) }),
+            limit: () => Promise.resolve([]),
+          }),
+        }),
+      }),
       insert: () => ({ values: () => ({ returning: () => Promise.resolve([{ id: 'row1' }]) }) }),
     };
     const saveStatusChanged = jest.fn().mockResolvedValue(undefined);

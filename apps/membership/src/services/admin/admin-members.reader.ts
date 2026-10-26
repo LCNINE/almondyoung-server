@@ -3,12 +3,12 @@ import { BadRequestError, ConflictError } from '@app/shared';
 import { DbService } from '@app/db';
 import { membershipSchema, pauseEvents } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
-import { eq, and, or, desc, asc, ilike, gte, lte, inArray, SQL, count, isNull, isNotNull, notInArray, sql } from 'drizzle-orm';
+import { eq, and, or, desc, asc, ilike, gte, lte, inArray, SQL, count, isNull, isNotNull, notInArray, sql, max, notExists } from 'drizzle-orm';
 import { endOfDay } from 'date-fns';
 import { ContractEventManager } from '../subscription/contract-event.manager';
 import { isAxiosError } from 'axios';
 import { randomUUID } from 'crypto';
-import { PaymentClientService } from '../billing/payment-client.service';
+import { ActiveCmsLatestAgreement, PaymentClientService } from '../billing/payment-client.service';
 import {
   isAgreementCleanupWithdrawn,
   SubscriptionContractReader,
@@ -315,6 +315,38 @@ export interface AgreementCleanupItem {
   contractStatus: string | null;
   billingPath: string | null;
   cancelledAt: string | null;
+}
+
+export interface SignupMissingItem extends ActiveCmsLatestAgreement {
+  /** 이 회원의 마지막 계약 생성 시각. 계약이 한 번도 없으면 null */
+  lastContractAt: string | null;
+}
+
+export interface SignupMissingListResponse {
+  data: SignupMissingItem[];
+  total: number;
+}
+
+/**
+ * 계좌의 마지막 동의자료 뒤로 계약이 하나도 없으면 가입 누락이다. 해지하고 계좌만 남긴 회원은 동의자료보다
+ * 계약이 뒤에 있어 빠진다. 계좌가 여럿이면 가장 최근 것 하나로 본다.
+ */
+export function pickSignupMissing(
+  accounts: ActiveCmsLatestAgreement[],
+  lastContractAtByUser: Map<string, Date>,
+): SignupMissingItem[] {
+  const latestByUser = new Map<string, ActiveCmsLatestAgreement>();
+  for (const a of accounts) {
+    const prev = latestByUser.get(a.userId);
+    if (!prev || a.latestAgreementAt > prev.latestAgreementAt) latestByUser.set(a.userId, a);
+  }
+  return [...latestByUser.values()]
+    .filter((a) => {
+      const last = lastContractAtByUser.get(a.userId);
+      return !last || last.getTime() < new Date(a.latestAgreementAt).getTime();
+    })
+    .map((a) => ({ ...a, lastContractAt: lastContractAtByUser.get(a.userId)?.toISOString() ?? null }))
+    .sort((x, y) => y.latestAgreementAt.localeCompare(x.latestAgreementAt));
 }
 
 export interface AgreementCleanupListResponse {
@@ -1311,6 +1343,43 @@ export class AdminMembersReader {
       })),
       total: rows.length,
     };
+  }
+
+  /** 자동이체 계좌는 등록했는데 그 뒤로 가입이 생기지 않은 회원. CS 가 DB 를 뒤지지 않고 찾게 한다. */
+  async findSignupMissing(): Promise<SignupMissingListResponse> {
+    const accounts = await this.paymentClientService.listActiveCmsLatestAgreements();
+    if (accounts.length === 0) return { data: [], total: 0 };
+
+    const rows = await this.dbService.db
+      .select({
+        userId: schema.subscriptionContracts.userId,
+        lastContractAt: max(schema.subscriptionContracts.createdAt),
+      })
+      .from(schema.subscriptionContracts)
+      .where(
+        and(
+          inArray(schema.subscriptionContracts.userId, [...new Set(accounts.map((a) => a.userId))]),
+          // 무효화된 가입과 상담원이 메운 임시 지급은 가입으로 치지 않는다.
+          eq(schema.subscriptionContracts.isVoided, false),
+          notExists(
+            this.dbService.db
+              .select({ id: schema.subscriptionContractEvents.id })
+              .from(schema.subscriptionContractEvents)
+              .where(
+                and(
+                  eq(schema.subscriptionContractEvents.contractId, schema.subscriptionContracts.id),
+                  eq(schema.subscriptionContractEvents.eventType, 'GRANTED_BY_ADMIN'),
+                ),
+              ),
+          ),
+        ),
+      )
+      .groupBy(schema.subscriptionContracts.userId);
+    const lastContractAtByUser = new Map<string, Date>();
+    for (const r of rows) if (r.lastContractAt) lastContractAtByUser.set(r.userId, r.lastContractAt);
+
+    const data = pickSignupMissing(accounts, lastContractAtByUser);
+    return { data, total: data.length };
   }
 
   /**

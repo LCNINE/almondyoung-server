@@ -71,6 +71,20 @@ export interface AgreementCleanupItem {
   cancelledAt: string | null;
 }
 
+/** 자동이체 계좌는 등록했는데 그 뒤로 가입이 없는 회원 */
+export interface SignupMissingItem {
+  userId: string;
+  billingMethodId: string;
+  cmsMemberStatus: string;
+  latestAgreementAt: string;
+  lastContractAt: string | null;
+}
+
+export interface SignupMissingListResponse {
+  data: SignupMissingItem[];
+  total: number;
+}
+
 export interface AgreementCleanupListResponse {
   data: AgreementCleanupItem[];
   total: number;

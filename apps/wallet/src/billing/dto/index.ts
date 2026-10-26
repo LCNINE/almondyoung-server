@@ -126,6 +126,19 @@ export class CmsBankAccountDto {
   phone: string;
 }
 
+/** 계좌 등록 + 동의자료. 멤버십 가입 도중이면 가입 의도를 함께 받아 서버가 가입까지 만든다. */
+export class CmsBankAccountWithAgreementDto extends CmsBankAccountDto {
+  @ApiPropertyOptional({ description: '가입할 멤버십 플랜 — 있으면 동의자료 접수와 함께 가입을 요청한다' })
+  @IsOptional()
+  @IsUUID()
+  planId?: string;
+
+  @ApiPropertyOptional({ description: '가입 폼이 남긴 약관 동의 id' })
+  @IsOptional()
+  @IsUUID()
+  termsAgreementId?: string;
+}
+
 export class CheckCmsAccountDto {
   @ApiProperty({ description: '은행코드 3자리 (예: 004=국민, 088=신한)', example: '004' })
   @IsString()

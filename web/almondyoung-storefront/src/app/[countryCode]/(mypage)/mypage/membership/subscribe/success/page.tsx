@@ -36,13 +36,13 @@ export default async function MembershipSuccessScreen() {
       <CartRefresher />
       <div className="mx-auto flex w-full max-w-[540px] flex-col px-6">
         <header className="flex w-full shrink-0 items-center border-b border-gray-200 px-3 py-4 md:px-6 md:py-3">
-          <div className="flex-1">
+          <div className="w-10 shrink-0">
             <BackButton />
           </div>
-          <h1 className="flex-1 text-center text-base font-bold text-black">
+          <h1 className="min-w-0 flex-1 text-center text-base font-bold whitespace-nowrap text-black">
             {t("successTitle")}
           </h1>
-          <div className="flex-1" />
+          <div className="w-10 shrink-0" />
         </header>
 
         <div className="flex flex-col py-0">
@@ -77,7 +77,8 @@ export default async function MembershipSuccessScreen() {
             </h2>
           </section>
 
-          <div className="mt-11 grid grid-cols-2 gap-[19px]">
+          {/* 상품 이미지가 카드 아래로 삐져나온다. 그 길이가 카드 폭에 비례하므로 여백도 폭 비율로 잡아 안내 문구를 가리지 않게 한다. */}
+          <div className="mt-11 grid grid-cols-2 gap-[19px] pb-[max(0px,calc(67.5%_-_180px))] sm:pb-[max(0px,calc(50%_-_180px))]">
             {RECOMMEND_CARDS.map((card) => {
               const body = (
                 <>
@@ -122,7 +123,7 @@ export default async function MembershipSuccessScreen() {
         </div>
 
         {/* 결제 완료 안내 = 계약 내용 서면. 청약철회 기한·제한을 여기서도 알린다(전자상거래법 제13조 제2항). */}
-        <p className="text-muted-foreground mt-8 text-xs leading-4 break-keep">
+        <p className="text-muted-foreground mt-8 text-xs leading-5 break-keep whitespace-pre-line">
           {t("withdrawNotice")}
         </p>
 

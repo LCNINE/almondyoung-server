@@ -1259,6 +1259,19 @@ export class AdminOperationsController {
   }
 
   /**
+   * 가입 누락 — 자동이체 계좌는 등록했는데 그 뒤로 가입이 생기지 않은 회원.
+   *
+   * GET /admin/signup-missing
+   */
+  @RequirePermission('membership.billing.read')
+  @Get('signup-missing')
+  @ApiOperation({ summary: '계좌 등록 후 가입이 없는 회원 목록' })
+  @UseGuards(JwtAuthGuard)
+  async getSignupMissing() {
+    return this.adminMembersReader.findSignupMissing();
+  }
+
+  /**
    * 자동이체 약정 정리 큐 — 해지했는데 은행에 효성 약정이 남아 있는 계약.
    *
    * `AGREEMENT_REVOKE_ABANDONED` 는 스케줄러가 7일 뒤 재시도를 **멈춘** 건이라, 이 목록이 없으면

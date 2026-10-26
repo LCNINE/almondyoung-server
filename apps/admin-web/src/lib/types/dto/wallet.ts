@@ -407,7 +407,8 @@ export interface AdminRecurringBillingListQuery {
     | 'stuck'
     | 'dunning'
     | 'invoices'
-    | 'agreement-cleanup';
+    | 'agreement-cleanup'
+    | 'signup-missing';
   dateType?: 'updatedAt' | 'createdAt' | 'paymentDate' | 'nextBillingDate';
   dateFrom?: string;
   dateTo?: string;

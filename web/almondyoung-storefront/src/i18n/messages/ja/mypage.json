@@ -1196,7 +1196,7 @@
     "metaSuccess": "メンバーシップ加入完了",
     "metaFail": "決済失敗 - メンバーシップ",
     "successTitle": "メンバーシップ加入完了",
-    "withdrawNotice": "決済日（決済の確認前に資格が開始した場合はその日）から7日以内で、メンバーシップ特典を一度も利用していない場合は、マイページ > メンバーシップから申込撤回により全額返金を受けられます。メンバーシップ価格での購入・ウェルカムディール・会員専用クーポンなど、特典を一度でも利用すると申込撤回が制限されます。",
+    "withdrawNotice": "決済日から7日以内で特典を使っていなければ、全額返金を受けられます。\n決済前にメンバーシップが始まった場合は、その日から7日間です。\nメンバー価格での購入・ウェルカムディール・専用クーポンを一度でも使うと、返金が難しくなります。",
     "celebrationAlt": "お祝いアイコン",
     "welcomeLine1": "おめでとうございます!",
     "welcomeStrong": "アモンドヤン メンバーシップ",
@@ -1305,7 +1305,13 @@
     "subscribeFailDesc": "口座の登録は完了しています。もう一度お試しください。うまくいかない場合は、メンバーシップ加入画面から再度お申し込みいただくか、カスタマーセンターへお問い合わせください。",
     "subscribeRetry": "再試行",
     "subscribeGoToForm": "加入画面へ",
-    "alreadyMemberToast": "すでにメンバーシップをご利用中です。"
+    "alreadyMemberToast": "すでにメンバーシップをご利用中です。",
+    "serverSignupWaitingTitle": "加入手続きを完了しています",
+    "serverSignupWaitingDesc": "少々お待ちください。",
+    "serverSignupDelayedTitle": "加入手続きに少し時間がかかっています",
+    "serverSignupDelayedDesc": "口座の登録は完了しました。\nまもなく加入も自動で完了します。",
+    "serverSignupDelayedHelp": "数分経っても変わらない場合は、<kakao>カカオトークのカスタマーセンター</kakao>までお知らせください。",
+    "serverSignupGoMembership": "メンバーシップ画面へ"
   },
   "reviews": {
     "pageTitle": "レビュー",

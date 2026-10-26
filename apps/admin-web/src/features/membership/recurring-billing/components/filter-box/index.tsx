@@ -27,13 +27,14 @@ const TABS: { value: View; label: string }[] = [
   { value: 'dunning', label: '재시도 대기' },
   { value: 'invoices', label: '인보이스' },
   { value: 'agreement-cleanup', label: '약정 정리' },
+  { value: 'signup-missing', label: '가입 누락' },
 ];
 
 const isView = (value: string | null): value is View => TABS.some((tab) => tab.value === value);
 
-/** 탭 8개를 일의 성격으로 묶는다. 주소(`view`)는 예전 그대로라 즐겨찾기 링크가 깨지지 않는다. */
+/** 탭을 일의 성격으로 묶는다. 주소(`view`)는 예전 그대로라 즐겨찾기 링크가 깨지지 않는다. */
 const TAB_GROUPS: { label: string; views: View[] }[] = [
-  { label: '손볼 것', views: ['needs-action', 'stuck', 'agreement-cleanup'] },
+  { label: '손볼 것', views: ['needs-action', 'stuck', 'agreement-cleanup', 'signup-missing'] },
   { label: '심사·출금', views: ['members', 'withdrawals'] },
   { label: '청구서', views: ['invoices', 'dunning'] },
   { label: '계약', views: ['contracts'] },
@@ -59,6 +60,7 @@ const DATE_TYPE_OPTIONS_BY_VIEW: Record<View, { value: DateType; label: string }
   dunning: [{ value: 'updatedAt', label: '최근 갱신일' }],
   invoices: [{ value: 'updatedAt', label: '최근 갱신일' }],
   'agreement-cleanup': [{ value: 'updatedAt', label: '최근 갱신일' }],
+  'signup-missing': [{ value: 'updatedAt', label: '최근 갱신일' }],
 };
 
 const CMS_MEMBER_STATUS_OPTIONS: { value: string; label: string }[] = [
@@ -249,7 +251,8 @@ export function RecurringBillingFilterBox() {
       currentView === 'stuck' ||
       currentView === 'dunning' ||
       currentView === 'invoices' ||
-      currentView === 'agreement-cleanup' ? (
+      currentView === 'agreement-cleanup' ||
+      currentView === 'signup-missing' ? (
         <p className="text-sm text-muted-foreground">
           {currentView === 'needs-action'
             ? '지금 손봐야 하는 결제수단·출금 전체입니다(심사 실패·동의자료 미등록·출금 실패·30분 넘은 결과 대기). 날짜·검색 필터는 적용되지 않습니다.'
@@ -259,7 +262,9 @@ export function RecurringBillingFilterBox() {
               ? '결제 실패로 자동 재시도 대기 중인 전체 계약입니다. 별도 필터는 적용되지 않습니다.'
               : currentView === 'agreement-cleanup'
                 ? '해지 후 은행에 자동이체 약정이 남아 있는 전체 계약입니다. 별도 필터는 적용되지 않습니다.'
-                : '인보이스(청구 권위 상태) 목록입니다. 상태 필터는 표 상단에서 선택합니다.'}
+                : currentView === 'signup-missing'
+                  ? '자동이체 계좌를 등록했는데 그 뒤로 멤버십 가입이 없는 회원입니다. 가입 화면(/kr/mypage/membership/subscribe/payment)에서 다시 가입하도록 안내해 주세요.'
+                  : '인보이스(청구 권위 상태) 목록입니다. 상태 필터는 표 상단에서 선택합니다.'}
         </p>
       ) : (
       <>

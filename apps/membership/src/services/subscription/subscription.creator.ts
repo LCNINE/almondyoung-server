@@ -3,23 +3,40 @@ import { DbService } from '@app/db';
 import { BadRequestError } from '@app/shared';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq, notExists } from 'drizzle-orm';
 import { addDays } from 'date-fns';
 import { ContractEventManager } from './contract-event.manager';
 import { EntitlementManager } from '../entitlement/entitlement.manager';
 import { MembershipPolicyService } from '../membership-policy.service';
 import { MembershipEventPublisher } from '../membership-event.publisher';
-import { PaymentIntentAlreadyUsedException } from '../../shared/exceptions/subscription.exceptions';
+import {
+  ActiveSubscriptionExistsException,
+  PaymentIntentAlreadyUsedException,
+} from '../../shared/exceptions/subscription.exceptions';
 
-function isUniqueViolation(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { code?: string }).code === '23505';
+function isUniqueViolation(err: unknown, constraint?: string): boolean {
+  // drizzle 0.44 는 드라이버 에러를 DrizzleQueryError.cause 로 감싼다.
+  for (let e: unknown = err; typeof e === 'object' && e !== null; e = 'cause' in e ? e.cause : undefined) {
+    if ('code' in e && e.code === '23505') {
+      return !constraint || ('constraint_name' in e && e.constraint_name === constraint);
+    }
+  }
+  return false;
 }
+
+const CURRENT_ENTITLEMENT_UNIQUE = 'uq_subscription_entitlement_current_user';
 
 // 정기결제는 월간 플랜(최대 31일)만 허용. 연간 플랜은 1회 결제 전용.
 const RECURRING_MAX_DURATION_DAYS = 31;
 
 type Plan = typeof schema.plan.$inferSelect;
 type Tier = typeof schema.tiers.$inferSelect;
+/** 관리자 임시 지급을 정식 가입으로 이어받을 때 */
+export type GrantTakeover = {
+  grantContractId: string;
+  /** 지급분 남은 일수. 첫 청구일을 max(체험, 이 값) 만큼 미룬다 */
+  remainingDays: number;
+};
 type CreateSubscriptionPaymentRefs = {
   initialPaymentIntentId?: string;
   initialPaymentAttemptId?: string;
@@ -61,6 +78,7 @@ export class SubscriptionCreator {
     skipTrial = false,
     billingPath: 'CHARGE' | 'INVOICE' = 'CHARGE',
     email = '',
+    grantTakeover?: GrantTakeover,
   ): Promise<{ contractId: string; entitlementId: string; effectiveTrialDays: number }> {
     if (billingMode === 'recurring' && plan.durationDays > RECURRING_MAX_DURATION_DAYS) {
       throw new BadRequestError(
@@ -68,9 +86,50 @@ export class SubscriptionCreator {
       );
     }
 
+    try {
+      return await this.createInTx(
+        userId,
+        plan,
+        tier,
+        paymentRefs,
+        billingMode,
+        skipTrial,
+        billingPath,
+        email,
+        grantTakeover,
+      );
+    } catch (err: unknown) {
+      // 동시에 들어온 다른 가입이 먼저 이용권을 만들었다 — 이 가입은 통째로 롤백됐다.
+      if (isUniqueViolation(err, CURRENT_ENTITLEMENT_UNIQUE)) throw new ActiveSubscriptionExistsException();
+      throw err;
+    }
+  }
+
+  private async createInTx(
+    userId: string,
+    plan: Plan,
+    tier: Tier,
+    paymentRefs: CreateSubscriptionPaymentRefs,
+    billingMode: 'one_time' | 'recurring',
+    skipTrial: boolean,
+    billingPath: 'CHARGE' | 'INVOICE',
+    email: string,
+    grantTakeover?: GrantTakeover,
+  ): Promise<{ contractId: string; entitlementId: string; effectiveTrialDays: number }> {
     return await this.dbService.db.transaction(async (tx) => {
       const now = new Date();
       const startsAt = now;
+
+      // 호출부 가드와 이 트랜잭션 사이에 다른 가입이 커밋됐을 수 있다. 그 이용권을 닫고 덮어쓰지 않게 다시 본다.
+      const [current] = await tx
+        .select({ id: schema.subscriptionEntitlement.id })
+        .from(schema.subscriptionEntitlement)
+        .where(
+          and(eq(schema.subscriptionEntitlement.userId, userId), eq(schema.subscriptionEntitlement.isCurrent, true)),
+        )
+        .for('update')
+        .limit(1);
+      if (current && !grantTakeover) throw new ActiveSubscriptionExistsException();
 
       // 같은 결제로 기존 계약이 이미 생성됐으면 재사용(replay) 거부.
       // billing_events 의 uq_billing_events_intent_event 가 동시 요청 레이스를 막고,
@@ -97,7 +156,7 @@ export class SubscriptionCreator {
       }
 
       const autoRenewal = billingMode === 'recurring';
-      const billingDate = addDays(startsAt, effectiveTrialDays);
+      const billingDate = addDays(startsAt, Math.max(effectiveTrialDays, grantTakeover?.remainingDays ?? 0));
       // nextBillingDate = billingDate: 체험 종료일이 곧 첫 결제일
       // 결제 성공 시 BillingOutcomeHandler가 nextBillingDate를 endsAt + durationDays로 갱신
       const nextBillingDate = billingMode === 'recurring' ? billingDate : null;
@@ -168,6 +227,30 @@ export class SubscriptionCreator {
         }
       }
 
+      // 지급 계약을 닫는다. 지급 이용권은 아래 createEntitlement 가 종료한다.
+      if (grantTakeover) {
+        await tx
+          .update(schema.subscriptionContracts)
+          .set({
+            status: 'CANCELLED',
+            cancelledAt: now,
+            cancellationReasonCode: 'SUPERSEDED_BY_SUBSCRIPTION',
+            autoRenewal: false,
+            nextBillingDate: null,
+          })
+          .where(eq(schema.subscriptionContracts.id, grantTakeover.grantContractId));
+        await this.contractEventManager.addEvent(
+          tx,
+          grantTakeover.grantContractId,
+          'SUPERSEDED_BY_SUBSCRIPTION',
+          { newContractId: contract.id, remainingDays: grantTakeover.remainingDays },
+          'USER',
+          userId,
+          batch.id,
+          userId,
+        );
+      }
+
       // 5. 구독 권한 생성
       const entitlement = await this.entitlementManager.createEntitlement(
         tx,
@@ -207,13 +290,28 @@ export class SubscriptionCreator {
   /**
    * 첫 구독 여부 확인 (무료 체험 악용 방지)
    *
-   * 과거 구독 이력이 없으면 첫 구독으로 판단
+   * 과거 구독 이력이 없으면 첫 구독으로 판단. 관리자 임시 지급은 고객이 가입한 이력이 아니라서 세지 않는다.
    */
   private async isFirstTimeSubscriber(userId: string): Promise<boolean> {
     const contracts = await this.dbService.db
-      .select()
+      .select({ id: schema.subscriptionContracts.id })
       .from(schema.subscriptionContracts)
-      .where(eq(schema.subscriptionContracts.userId, userId))
+      .where(
+        and(
+          eq(schema.subscriptionContracts.userId, userId),
+          notExists(
+            this.dbService.db
+              .select({ id: schema.subscriptionContractEvents.id })
+              .from(schema.subscriptionContractEvents)
+              .where(
+                and(
+                  eq(schema.subscriptionContractEvents.contractId, schema.subscriptionContracts.id),
+                  eq(schema.subscriptionContractEvents.eventType, 'GRANTED_BY_ADMIN'),
+                ),
+              ),
+          ),
+        ),
+      )
       .limit(1);
 
     return contracts.length === 0;

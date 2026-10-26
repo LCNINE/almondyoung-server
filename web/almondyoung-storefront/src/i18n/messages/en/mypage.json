@@ -1196,7 +1196,7 @@
     "metaSuccess": "Membership subscription complete",
     "metaFail": "Payment failed - Membership",
     "successTitle": "Membership subscription complete",
-    "withdrawNotice": "Within 7 days of payment (or of when your access started, if it started before payment was confirmed), and if you have never used a membership benefit, you can withdraw for a full refund from My Page > Membership. Using any benefit once — a member-price purchase, a welcome deal, a members-only coupon, etc. — limits withdrawal.",
+    "withdrawNotice": "Haven't used any benefit within 7 days of payment? You can get a full refund.\nIf your membership started before payment, the 7 days count from that day.\nUsing a member price, welcome deal, or members-only coupon even once limits refunds.",
     "celebrationAlt": "Celebration icon",
     "welcomeLine1": "Congratulations!",
     "welcomeStrong": "Almondyoung Membership",
@@ -1305,7 +1305,13 @@
     "subscribeFailDesc": "Your account registration is complete. Please try again. If it keeps failing, sign up again from the membership page or contact customer service.",
     "subscribeRetry": "Try again",
     "subscribeGoToForm": "Go to signup",
-    "alreadyMemberToast": "You already have an active membership."
+    "alreadyMemberToast": "You already have an active membership.",
+    "serverSignupWaitingTitle": "Finishing your signup",
+    "serverSignupWaitingDesc": "Please wait a moment.",
+    "serverSignupDelayedTitle": "Your signup is taking a little longer",
+    "serverSignupDelayedDesc": "Your account is registered.\nYour signup will finish automatically soon.",
+    "serverSignupDelayedHelp": "Still nothing after a few minutes? Let us know via <kakao>KakaoTalk support</kakao>.",
+    "serverSignupGoMembership": "Go to membership"
   },
   "reviews": {
     "pageTitle": "Reviews",

@@ -51,6 +51,57 @@ const IconCheckCircle = () => (
   </svg>
 )
 
+// 정상이면 등록 후 몇 초 안에 가입이 생긴다. 이보다 늦으면 기다리게 두지 않고 안내로 넘긴다.
+const SERVER_SIGNUP_POLL_INTERVAL_MS = 2000
+const SERVER_SIGNUP_POLL_ATTEMPTS = 8
+const KAKAO_CHANNEL_URL = "https://pf.kakao.com/_xaxgxazs"
+
+function ServerSignupStatus({ delayed }: { delayed: boolean }) {
+  const t = useTranslations("mypage.membershipPaymentMethod")
+  return (
+    <div className="bg-white px-4 py-6 md:px-0">
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-sm flex-col items-center justify-center text-center break-keep">
+        {!delayed && (
+          <span
+            aria-hidden
+            className="mb-4 size-8 animate-spin rounded-full border-2 border-gray-200 border-t-gray-700"
+          />
+        )}
+        <p role="status" className="text-lg font-bold text-black">
+          {t(delayed ? "serverSignupDelayedTitle" : "serverSignupWaitingTitle")}
+        </p>
+        <p className="mt-2 text-sm leading-relaxed whitespace-pre-line text-gray-600">
+          {t(delayed ? "serverSignupDelayedDesc" : "serverSignupWaitingDesc")}
+        </p>
+        {delayed && (
+          <>
+            <p className="mt-4 text-xs leading-relaxed text-gray-500">
+              {t.rich("serverSignupDelayedHelp", {
+                kakao: (chunks) => (
+                  <a
+                    href={KAKAO_CHANNEL_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-semibold text-gray-700 underline underline-offset-2"
+                  >
+                    {chunks}
+                  </a>
+                ),
+              })}
+            </p>
+            <LocalizedClientLink
+              href="/mypage/membership"
+              className="mt-6 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-black hover:bg-gray-50"
+            >
+              {t("serverSignupGoMembership")}
+            </LocalizedClientLink>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function MembershipPaymentMethodContent() {
   const router = useRouter()
   const params = useParams()
@@ -64,9 +115,19 @@ export default function MembershipPaymentMethodContent() {
   const termsAgreementId = searchParams.get("termsAgreementId") ?? undefined
   const redirect = searchParams.get("redirect")
   const isSubscribeFlow = redirect === "subscribe" && !!planId
-  const autoSubscribeOnLoad = useRef(
+  // 가입 도중 계좌를 등록하고 돌아왔다. 가입은 서버가 만들므로 여기선 생길 때까지 기다리기만 한다.
+  const [serverSignup, setServerSignup] = useState<
+    "waiting" | "delayed" | null
+  >(
     isSubscribeFlow && searchParams.get("cardChanged") === "1"
+      ? "waiting"
+      : null
   )
+  // 심사 중 계좌로 가입을 이어 가겠다며 돌아왔다(새 등록 없음). 이때만 화면이 직접 가입한다.
+  const resumeWithMethodId = isSubscribeFlow
+    ? searchParams.get("subscribeWith")
+    : null
+  const resumeStarted = useRef(false)
 
   const [isLoading, setIsLoading] = useState(true)
   const [agreement, setAgreement] = useState<BillingAgreementDto | null>(null)
@@ -342,40 +403,51 @@ export default function MembershipPaymentMethodContent() {
   }
 
   useEffect(() => {
-    if (!autoSubscribeOnLoad.current || isLoading) return
-    // wallet-web 이 방금 등록한 계좌 id 를 returnUrl 로 넘기면 그 계좌를 최우선으로 삼는다.
-    // (넘어오지 않으면 기존 우선순위: 심사 중 PENDING → 첫 other. 임의 계좌로 가입되는 것을 막는다.)
-    const registeredMethodId = searchParams.get("billingMethodId")
-    const pendingCandidate = isInvoiceBillingEnabled()
-      ? pendingCmsMethods.find(
-          (s) => s.billingMethodId !== agreement?.billingMethodId
-        )
-      : undefined
-    const targetMethodId =
-      registeredMethodId ??
-      pendingCandidate?.billingMethodId ??
-      otherMethods[0]?.id
-    if (!targetMethodId) return
-    autoSubscribeOnLoad.current = false
-    // 심사 중(PENDING) 계좌로 선적용 가입하는 경우엔 첫 출금이 승인 후임을 정직하게 안내한다.
-    const isPendingTarget =
-      targetMethodId === pendingCandidate?.billingMethodId ||
-      pendingCmsMethods.some((s) => s.billingMethodId === targetMethodId)
-    handleSubscribeWithMethod(targetMethodId, {
-      pendingMandate: isPendingTarget,
-    })
+    if (!resumeWithMethodId || isLoading || resumeStarted.current) return
+    resumeStarted.current = true
+    handleSubscribeWithMethod(resumeWithMethodId, { pendingMandate: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoading, otherMethods, pendingCmsMethods])
+  }, [isLoading])
+
+  useEffect(() => {
+    if (serverSignup !== "waiting") return
+    let cancelled = false
+    let attempt = 0
+    const poll = async () => {
+      // 구독이 보이는지로 판정하면 임시 지급을 받은 고객은 이어받기 전에 끝난 줄 안다. 약정은 정식 가입에만 생긴다.
+      const agreements = await getBillingAgreements().catch(() => [])
+      if (cancelled) return
+      const signedUp = agreements.some(
+        (a) => a.subscriberType === "MEMBERSHIP" && a.status === "ACTIVE"
+      )
+      if (signedUp) {
+        router.push(`/${countryCode}/mypage/membership/subscribe/success`)
+        return
+      }
+      attempt += 1
+      if (attempt >= SERVER_SIGNUP_POLL_ATTEMPTS) {
+        setServerSignup("delayed")
+        return
+      }
+      timer = setTimeout(poll, SERVER_SIGNUP_POLL_INTERVAL_MS)
+    }
+    let timer = setTimeout(poll, SERVER_SIGNUP_POLL_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverSignup])
+
+  if (serverSignup) {
+    return <ServerSignupStatus delayed={serverSignup === "delayed"} />
+  }
 
   if (isLoading) {
     return <MembershipPaymentMethodSkeleton />
   }
 
   const formattedNextBillingDate = formatDate(nextBillingDate, undefined, "")
-  const showAutoSubscribePendingNotice =
-    autoSubscribeOnLoad.current &&
-    otherMethods.length === 0 &&
-    pendingCmsMethods.length > 0
 
   const renderMethodDetails = (
     billingMethodId: string,
@@ -664,18 +736,6 @@ export default function MembershipPaymentMethodContent() {
                   </div>
                 ))}
               </section>
-            )}
-
-            {/* 심사중 CMS 계좌 */}
-            {showAutoSubscribePendingNotice && (
-              <div className="rounded-md border border-amber-200 bg-amber-50 p-4">
-                <p className="text-sm font-semibold text-amber-800">
-                  {t("cmsPendingTitle")}
-                </p>
-                <p className="mt-1 text-xs leading-relaxed text-amber-700">
-                  {t("cmsPendingDesc")}
-                </p>
-              </div>
             )}
 
             {pendingCmsMethods.length > 0 && (
