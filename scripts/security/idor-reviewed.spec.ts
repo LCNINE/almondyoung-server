@@ -667,7 +667,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service GET /qna/questions/me': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/qna/qna.service.ts:479',
+    evidence: 'apps/ugc-service/src/qna/qna.service.ts:489',
     predicate: 'const conditions: SQL[] = [eq(questions.userId, userId), isNull(questions.deletedAt)];',
   },
   'ugc-service GET /reviews/eligibilities': {
