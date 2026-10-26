@@ -54,8 +54,9 @@ const UNRESOLVED_CANCEL_STATUSES = new Set([401, 403, 408, 429]);
 // 토스 멱등 키는 15일 동안만 유효하다. 그 뒤 같은 키로 보내면 새 요청으로 처리돼 또 깎인다.
 const PENDING_CANCEL_RESEND_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
-// 같은 키로 다시 보내도 결과를 모르면 토스 거래 목록으로 판정한다. 그보다 어린 취소는 다른 호출이 아직 보내는 중일 수 있다.
-const CANCEL_LOOKUP_AFTER_MS = 10 * 60 * 1000;
+// 같은 키로 다시 보내도 결과를 모르면 토스 거래 목록으로 판정한다. 토스는 취소에 늘 IN_PROGRESS 로 답하고 목록엔 수 초 뒤
+// COMPLETED 로 찍힌다(2026-10-26 샌드박스 실측) — 첫 크론 주기에 확정되게 짧게 둔다. 보내는 중인 취소는 합계가 그대로라 모름으로 남는다.
+const CANCEL_LOOKUP_AFTER_MS = 60 * 1000;
 // 목록의 완료 합계가 끝내 늘지 않으면 반영되지 않은 것으로 본다
 const CANCEL_LOOKUP_NOT_FOUND_AFTER_MS = 60 * 60 * 1000;
 

@@ -724,7 +724,7 @@ describe('CashReceiptsService', () => {
 
       it('방금 남긴 취소는 다른 호출이 보내는 중일 수 있어 목록을 보지 않는다', async () => {
         const { service, tossApiClient, receipt } = makeContext({
-          receipt: makeReceipt({ amount: 1000, requestPayload: pendingOf(200, ago(1)) }),
+          receipt: makeReceipt({ amount: 1000, requestPayload: pendingOf(200, new Date().toISOString()) }),
           chargeById: makeCharge({ amount: 1000 }),
           succeededRefunds: [{ amount: 200 }],
           tossCancelByCall: [replayed500],
