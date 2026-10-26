@@ -8,9 +8,10 @@ import {
 import { PartialCancelRejected } from '../../src/workflows/orders/partial-cancel/plan-partial-cancel';
 import { PartialCancelExternalRefundRejected } from '../../src/workflows/orders/partial-cancel/external-refund';
 import { handleRefundProjection } from '../../src/api/hooks/payment-events/route';
+import { loadOrderView } from '../../src/workflows/orders/settlement/load-order-view';
 import { POLICY_SNAPSHOT_KEY } from '../../src/modules/almond-fulfillment/types';
 import {
-  FakeWallet, WALLET_BASE_URL, setupCommerce, placeOrder, createOrderFixedPromo, createShippingFixedPromo, loadOrder, Commerce,
+  FakeWallet, WALLET_BASE_URL, setupCommerce, createReturnShippingOption, requestReturnWithShipping, placeOrder, createOrderFixedPromo, createShippingFixedPromo, loadOrder, Commerce,
 } from './fixtures/partial-cancel-fixture';
 
 jest.setTimeout(300 * 1000);
@@ -727,6 +728,49 @@ medusaIntegrationTestRunner({
         );
         expect(ok.status).toBe(200);
         expect(ok.data).toMatchObject({ refundAmount: 20000, externalRefundApplied: 10000 });
+      });
+    });
+
+    describe('반품 배송 방법이 붙은 주문 (K8 PR1)', () => {
+      const orderWithReturn = async () => {
+        const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 1 }, { variant: 'B', quantity: 1 }], promoCode: 'PC6000' });
+        const o = await loadOrder(getContainer(), orderId);
+        // 반품은 출고된(fulfilled) 수량만 요청할 수 있다
+        await api.post(`/admin/orders/${orderId}/fulfillments`, { items: [{ id: o.items[1].id, quantity: 1 }] }, c.adminHeaders);
+        const returnOptionId = await createReturnShippingOption(getContainer(), c.groups.cond.shippingProfileId);
+        const returnId = await requestReturnWithShipping(getContainer(), {
+          orderId, itemId: o.items[1].id, quantity: 1, returnOptionId, shippingAmount: 2500,
+        });
+        return { orderId, returnId, o };
+      };
+
+      it('특성(K8): 반품 배송 방법이 주문에서 어떻게 보이는지', async () => {
+        const { orderId, returnId } = await orderWithReturn();
+        // listOrders 는 반품 배송 방법을 «목록에 넣는다». 어느 반품에 속하는지는 방법 자체가 아니라 order_shipping 행(detail)에 있다.
+        const listed = await getContainer().resolve(Modules.ORDER).listOrders({ id: orderId }, { relations: ['shipping_methods'] });
+        const methods = listed[0].shipping_methods ?? [];
+        expect(methods).toHaveLength(2);
+        const ret = methods.find((m: any) => m.name === '반품 택배') as any;
+        expect(num(ret.amount)).toBe(2500);
+        expect(ret.detail).toMatchObject({ return_id: returnId, exchange_id: null, claim_id: null });
+        // 반품 방법은 스냅샷이 없다 — 그래서 원래 방법으로 세면 부분취소 배송비 조정이 멈춘다
+        expect(ret.data?.[POLICY_SNAPSHOT_KEY]).toBeFalsy();
+        const original = methods.find((m: any) => m.name === '조건부') as any;
+        expect(original.detail).toMatchObject({ return_id: null, exchange_id: null, claim_id: null });
+
+        // loadOrderView 는 detail 을 읽어 반품에 속한 방법을 가른다
+        const view = await loadOrderView(getContainer(), orderId);
+        expect(view?.shippingMethods.map((v) => v.belongsToOrderChange).sort()).toEqual([false, true]);
+      });
+
+      it('반품 배송 방법이 붙은 주문의 부분취소는 배송비를 다시 계산한다', async () => {
+        const { orderId, o } = await orderWithReturn();
+        // 60,000 − 6,000 할인 = 54,000 ≥ 50,000 무료. A 를 취소하면 남은 B(30,000) 가 기준 미달 → 3,000 청구
+        const res = await partialCancelOrder(getContainer(), {
+          orderId, requestId: 'req-k8-ret-1', items: [{ itemId: o.items[0].id, quantity: 1 }], reasonCode: 'CUSTOMER_REQUEST', requestedBy: 'operator',
+        });
+        expect(res.shippingNotAdjusted).toBe(false);
+        expect(res.shippingDelta).toBe(3000);
       });
     });
   },

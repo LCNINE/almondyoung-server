@@ -11,6 +11,8 @@ export type ShippingMethodView = {
   snapshot: ShippingPolicySnapshot | null;
   /** 이전 부분취소가 더한 «부분취소 배송비» 방법. 그룹의 원래 방법이 아니다. */
   isPartialCancelCharge: boolean;
+  /** 반품·교환·클레임의 배송 방법(order_shipping 행이 return_id·exchange_id·claim_id 를 든다). 스냅샷이 없고 그룹의 원래 방법도 아니다. */
+  belongsToOrderChange: boolean;
   /** 0 이 아닌 할인(배송비 쿠폰 등)이 붙어 있다. amount 는 할인 «전» 금액이라 고객이 실제로 낸 배송비가 아니다. */
   hasAdjustments: boolean;
 };
@@ -49,7 +51,7 @@ export function planShipping(input: {
   priorGroupFees: PriorGroupFees;
   chargeCap: number;
 }): ShippingPlan {
-  const originals = input.methods.filter((m) => !m.isPartialCancelCharge);
+  const originals = input.methods.filter((m) => !m.isPartialCancelCharge && !m.belongsToOrderChange);
   // 배송비 할인이 붙은 주문은 조정하지 않는다(fail-safe). 할인 뒤 순 배송비로 계산하지 않는 이유: 할인을 그룹 사이에
   // 어떻게 나눌지·남은 요금에 할인을 다시 어떻게 매길지를 정해야 하는데, 틀리면 고객이 내지 않은 배송비를 돌려준다.
   if (originals.some((m) => m.hasAdjustments)) return { adjustable: false, reason: 'SHIPPING_DISCOUNTED' };

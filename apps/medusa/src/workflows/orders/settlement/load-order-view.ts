@@ -79,6 +79,8 @@ export function toShippingMethodView(m: {
   amount: unknown;
   name?: string | null;
   data?: Record<string, unknown> | null;
+  /** order 모듈이 order_shipping 행을 이 이름으로 싣는다 — 어느 반품·교환·클레임에 속하는지가 여기 있다. */
+  detail?: { return_id?: string | null; exchange_id?: string | null; claim_id?: string | null } | null;
   adjustments?: Array<{ amount: unknown } | null> | null;
 }): ShippingMethodView {
   return {
@@ -87,6 +89,7 @@ export function toShippingMethodView(m: {
     amount: toNumber(m.amount),
     snapshot: readSnapshot(m.data),
     isPartialCancelCharge: m.name === PARTIAL_CANCEL_CHARGE_NAME,
+    belongsToOrderChange: !!(m.detail?.return_id || m.detail?.exchange_id || m.detail?.claim_id),
     hasAdjustments: (m.adjustments ?? []).some((a) => !!a && toNumber(a.amount) !== 0),
   };
 }
