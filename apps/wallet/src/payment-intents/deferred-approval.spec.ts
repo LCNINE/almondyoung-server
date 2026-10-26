@@ -236,6 +236,50 @@ describe('deferred approval — confirmStaged', () => {
     );
     expect(ctx.autoCaptureService.attemptAutoCapture).not.toHaveBeenCalled();
   });
+
+  it('결과를 모르는 승인 뒤의 재시도는 거절(401)돼도 실패로 확정하지 않는다 — 앞선 승인이 됐을 수 있다', async () => {
+    const retried = makeCharge({ responsePayload: { confirmAttempt: { paymentKey: 'pk_live_1', at: 'x' } } });
+    const failure = { ok: false, error: { code: 'UNAUTHORIZED_KEY', message: 'x' }, statusCode: 401 };
+    const ctx = makeTossContext({}, retried, failure);
+
+    await expect(ctx.service.approve('intent-1', 'pk_live_1', ORDER_ID, 10000, 'corr-1')).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'PAYMENT_STATUS_UNKNOWN' }),
+    });
+    await expect(ctx.service.confirmStaged(retried, staged, 'corr-2')).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'PAYMENT_STATUS_UNKNOWN' }),
+    });
+    expect(ctx.stateTransitionService.transitionIntent).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [502, 'UNKNOWN'],
+    [400, 'ALREADY_PROCESSED_PAYMENT'],
+  ])(
+    '승인 결과를 모르는 응답(%s %s)이면 실패로 확정하지 않고 승인 시도 표식을 남긴 채 던진다',
+    async (statusCode, code) => {
+      // FAILED 로 빠지면 재결제가 열린다 — 토스에서 실제로 승인됐다면 이중 결제가 된다.
+      const failure = { ok: false, error: { code, message: 'x' }, statusCode };
+      const ctx = makeTossContext({}, makeCharge(), failure);
+
+      await expect(ctx.service.approve('intent-1', 'pk_live_1', ORDER_ID, 10000, 'corr-1')).rejects.toMatchObject({
+        response: expect.objectContaining({ error: 'PAYMENT_STATUS_UNKNOWN' }),
+      });
+      await expect(ctx.service.confirmStaged(makeCharge(), staged, 'corr-2')).rejects.toMatchObject({
+        response: expect.objectContaining({ error: 'PAYMENT_STATUS_UNKNOWN' }),
+      });
+
+      expect(ctx.chargesService.updateStatus).not.toHaveBeenCalledWith(
+        CHARGE_ID,
+        'FAILED',
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(ctx.stateTransitionService.transitionIntent).not.toHaveBeenCalled();
+      expect(ctx.intentUpdates).toContainEqual(
+        expect.objectContaining({ responsePayload: expect.objectContaining({ confirmAttempt: expect.anything() }) }),
+      );
+    },
+  );
 });
 
 const WIDGET_CHARGE = makeCharge({
