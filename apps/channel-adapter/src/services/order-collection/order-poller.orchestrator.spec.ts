@@ -260,6 +260,7 @@ describe('OrderPollerOrchestrator', () => {
   it.each([
     ['ChannelReturnRequested', 'return:ret_1:requested', { returnId: 'ret_1', requestId: 'req_1' }],
     ['ChannelReturnCancelled', 'return:ret_1:cancelled', { returnId: 'ret_1', cancelledAt: '2026-05-26T01:10:00.000Z' }],
+    ['ChannelReturnPrepaid', 'return:ret_1:prepaid', { returnId: 'ret_1', requestId: 'req_1', amount: 8000 }],
     ['ChannelReturnSettled', 'return:ret_1:settled', { returnId: 'ret_1', requestId: 'req_1', refundAmount: 24000 }],
   ] as const)('%s 관측은 채널 키를 붙여 한 번만 적재한다', async (eventType, eventKey, expected) => {
     const db = makeDb();
@@ -2490,7 +2491,7 @@ function makeFailure(sourceUpdatedAt: string): OrderCollectionFailureItem {
 }
 
 function makeReturnEvent(
-  eventType: 'ChannelReturnRequested' | 'ChannelReturnCancelled' | 'ChannelReturnSettled',
+  eventType: 'ChannelReturnRequested' | 'ChannelReturnCancelled' | 'ChannelReturnPrepaid' | 'ChannelReturnSettled',
   eventKey: string,
   sourceUpdatedAt: string,
 ): OrderLifecycleEventItem {
@@ -2508,6 +2509,13 @@ function makeReturnEvent(
         requestedAt: sourceUpdatedAt,
         items: [{ channelOrderItemId: 'item_1', quantity: 1 }],
       },
+    };
+  }
+  if (eventType === 'ChannelReturnPrepaid') {
+    return {
+      ...base,
+      eventType,
+      payload: { returnId: 'ret_1', requestId: 'req_1', amount: 8000, refundMode: 'auto', prepaidAt: sourceUpdatedAt },
     };
   }
   if (eventType === 'ChannelReturnSettled') {

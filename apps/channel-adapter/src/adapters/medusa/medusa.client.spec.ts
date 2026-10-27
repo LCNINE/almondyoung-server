@@ -1722,6 +1722,93 @@ describe('MedusaClient 취소 (#1016 35번 PR-B · 36번 재설계 PR 3)', () =>
     });
   });
 
+  describe('settleReturn 의 CS 칸 (K8 PR6b)', () => {
+    const base = {
+      requestId: 'cr-1',
+      items: [{ itemId: 'ordli_1', received: 1, dismissed: 0 }],
+      refundMode: 'auto' as const,
+    };
+
+    it('세 칸은 snake_case 로 싣고 camelCase 는 본문에 없다 — hold_deduction 이 빠지면 과환불이다', async () => {
+      global.fetch = respond(200, {});
+      await makeClient().settleReturn('order_1', 'ret_1', {
+        ...base,
+        holdDeduction: { amount: 5000, memo: '파손' },
+        alreadyRefundedAmount: 12000,
+        closesMissing: true,
+      });
+      expect(lastBody()).toEqual({
+        requestId: 'cr-1',
+        items: [{ item_id: 'ordli_1', received: 1, dismissed: 0 }],
+        refundMode: 'auto',
+        hold_deduction: { amount: 5000, memo: '파손' },
+        already_refunded_amount: 12000,
+        closes_missing: true,
+      });
+      const raw = (global.fetch as jest.Mock).mock.calls[0][1].body as string;
+      expect(raw).not.toMatch(/holdDeduction|alreadyRefundedAmount|closesMissing/);
+    });
+
+    it('false·0 도 싣는다 (있는 칸은 값이 무엇이든 보낸다)', async () => {
+      global.fetch = respond(200, {});
+      await makeClient().settleReturn('order_1', 'ret_1', { ...base, alreadyRefundedAmount: 0, closesMissing: false });
+      expect(lastBody()).toMatchObject({ already_refunded_amount: 0, closes_missing: false });
+    });
+  });
+
+  describe('prepayReturn (K8 PR6b)', () => {
+    const input = { requestId: 'cr-1', amount: 8000, refundMode: 'auto' as const, memo: '선환불' };
+    const prepay = () => makeClient().prepayReturn('order_1', 'ret_1', input);
+
+    it('200 → prepaid, 선환불 라우트에 requestId·amount·refundMode·memo 를 보낸다', async () => {
+      global.fetch = respond(200, {});
+      await expect(prepay()).resolves.toEqual({ kind: 'prepaid' });
+      expect((global.fetch as jest.Mock).mock.calls[0][0]).toBe(
+        'http://medusa.local/admin/orders/order_1/returns/ret_1/prepay',
+      );
+      expect(lastBody()).toEqual({ requestId: 'cr-1', amount: 8000, refundMode: 'auto', memo: '선환불' });
+    });
+
+    it('금액이 없으면 amount 키를 싣지 않는다 (Medusa 가 기본값을 정한다)', async () => {
+      global.fetch = respond(200, {});
+      await makeClient().prepayReturn('order_1', 'ret_1', { requestId: 'cr-1', refundMode: 'manual', memo: 'm' });
+      expect(lastBody()).toEqual({ requestId: 'cr-1', refundMode: 'manual', memo: 'm' });
+    });
+
+    it('400 return_prepay_rejected → rejected(reason)', async () => {
+      global.fetch = respond(400, { type: 'not_allowed', code: 'return_prepay_rejected', reason: 'return_already_settled', message: 'x' });
+      await expect(prepay()).resolves.toEqual({ kind: 'rejected', reason: 'return_already_settled', message: 'x' });
+    });
+
+    it('정산의 거절 코드는 선환불에서 정해진 거절이 아니다 → 일시', async () => {
+      global.fetch = respond(400, { type: 'not_allowed', code: 'return_settle_rejected', reason: 'x', message: 'x' });
+      await expect(prepay()).resolves.toMatchObject({ kind: 'transient', failureCode: 'return_settle_rejected' });
+    });
+
+    it('400 wallet_refund_refused:X → refund_refused', async () => {
+      global.fetch = respond(400, { code: 'wallet_refund_refused:X', message: 'w' });
+      await expect(prepay()).resolves.toEqual({ kind: 'refund_refused', failureCode: 'wallet_refund_refused:X', message: 'w' });
+    });
+
+    it('502 본문 refund_pending → refund_pending, 본문 없는 502 → 일시 http_502', async () => {
+      global.fetch = respond(502, { type: 'refund_pending', message: 'p' });
+      await expect(prepay()).resolves.toEqual({ kind: 'refund_pending', message: 'p' });
+      global.fetch = respond(502);
+      await expect(prepay()).resolves.toMatchObject({ kind: 'transient', failureCode: 'http_502' });
+    });
+
+    it('본문 있는 404 → not_found, 모르는 400 → 일시(N12), 500 → http_500, 연결 실패 → network', async () => {
+      global.fetch = respond(404, { type: 'not_found', message: 'n' });
+      await expect(prepay()).resolves.toEqual({ kind: 'not_found', message: 'n' });
+      global.fetch = respond(400, { type: 'not_allowed', code: 'order_change_open', message: 'o' });
+      await expect(prepay()).resolves.toEqual({ kind: 'transient', failureCode: 'order_change_open', message: 'o' });
+      global.fetch = respond(500, {});
+      await expect(prepay()).resolves.toMatchObject({ kind: 'transient', failureCode: 'http_500' });
+      global.fetch = jest.fn().mockRejectedValue(new TypeError('fetch failed')) as any;
+      await expect(prepay()).resolves.toMatchObject({ kind: 'transient', failureCode: 'network' });
+    });
+  });
+
   describe('partialCancelOrder', () => {
     const input = { requestId: 'req-1', items: [{ itemId: 'ordli_1', quantity: 2 }], refundMode: 'auto' as const };
 

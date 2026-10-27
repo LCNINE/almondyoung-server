@@ -3,15 +3,17 @@ import { join } from 'path';
 import { ChannelOrdersCommandConsumer } from './channel-orders-command.consumer';
 import type { OrderPollerOrchestrator } from '../services/order-collection/order-poller.orchestrator';
 import type { ChannelReturnSettleManager } from '../services/order-cancel/channel-return-settle.manager';
+import type { ChannelReturnPrepayManager } from '../services/order-cancel/channel-return-prepay.manager';
 import type { ChannelOrderCancelManager } from '../services/order-cancel/channel-order-cancel.manager';
 
 const envelope = { messageId: 'msg-1', correlationId: 'corr-1', chainId: 'chain-1' } as never;
 
-function consumerWith(syncOrder: jest.Mock, execute: jest.Mock = jest.fn(), settle: jest.Mock = jest.fn()) {
+function consumerWith(syncOrder: jest.Mock, execute: jest.Mock = jest.fn(), settle: jest.Mock = jest.fn(), prepay: jest.Mock = jest.fn()) {
   return new ChannelOrdersCommandConsumer(
     { syncOrder } as unknown as OrderPollerOrchestrator,
     { execute } as unknown as ChannelOrderCancelManager,
     { execute: settle } as unknown as ChannelReturnSettleManager,
+    { execute: prepay } as unknown as ChannelReturnPrepayManager,
   );
 }
 
@@ -106,5 +108,22 @@ describe('ChannelOrdersCommandConsumer — SettleChannelReturn (K8 PR6)', () => 
   it('실행기의 예외는 삼키지 않는다', async () => {
     const settle = jest.fn().mockRejectedValue(new Error('outbox down'));
     await expect(consumerWith(jest.fn(), jest.fn(), settle).handleSettleReturn(command, envelope)).rejects.toThrow('outbox down');
+  });
+});
+
+describe('ChannelOrdersCommandConsumer — PrepayChannelReturn (K8 PR6b)', () => {
+  it('명령과 전달 id 를 선환불 매니저에 넘긴다', async () => {
+    const prepay = jest.fn().mockResolvedValue(undefined);
+    const payload = {
+      requestId: 'cr-1',
+      salesChannel: 'medusa',
+      externalOrderId: 'order_1',
+      returnId: 'ret_1',
+      refundMode: 'auto' as const,
+      memo: 'm',
+      requestedAt: '2026-10-27T00:00:00.000Z',
+    };
+    await consumerWith(jest.fn(), jest.fn(), jest.fn(), prepay).handlePrepayReturn(payload, envelope);
+    expect(prepay).toHaveBeenCalledWith(payload, 'msg-1');
   });
 });

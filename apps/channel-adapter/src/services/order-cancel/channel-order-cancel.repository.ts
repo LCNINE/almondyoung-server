@@ -7,6 +7,7 @@ import {
   ORDER_STREAM,
   channelOrderPartitionKey,
   type ChannelOrderSettlementFailedPayload,
+  type ChannelReturnPrepayFailedPayload,
   type ChannelReturnSettlementFailedPayload,
 } from '@packages/event-contracts/streams';
 import { channelAdapterSchema, wmsOrderMappings } from '../../schema';
@@ -72,6 +73,27 @@ export class ChannelOrderCancelRepository {
           partitionKey: fact.salesChannel,
           metadata: { partitionKey: fact.salesChannel },
           idempotencyKey: `return-settlement-failed:${fact.requestId}:${deliveryId}:${code}`,
+          payload: fact,
+        },
+        tx,
+      ),
+    );
+  }
+
+  /**
+   * 반품 선환불 실패 사실을 적재한다 (K8 PR6b). 멱등 키는 `return-prepay-failed:<requestId>:<deliveryId>:<code(120자까지)>` —
+   * 같은 전달의 재전달은 한 번, core 가 다시 발행한 명령은 새 전달이라 새 사실이다.
+   */
+  async recordReturnPrepayFailure(fact: ChannelReturnPrepayFailedPayload, deliveryId: string): Promise<void> {
+    const code = fact.failureCode.slice(0, KEY_FAILURE_CODE_MAX);
+    await this.db.db.transaction(async (tx) =>
+      this.orders.enqueue(
+        {
+          eventType: 'ChannelReturnPrepayFailed',
+          aggregateId: channelOrderPartitionKey(fact.salesChannel, fact.externalOrderId),
+          partitionKey: fact.salesChannel,
+          metadata: { partitionKey: fact.salesChannel },
+          idempotencyKey: `return-prepay-failed:${fact.requestId}:${deliveryId}:${code}`,
           payload: fact,
         },
         tx,

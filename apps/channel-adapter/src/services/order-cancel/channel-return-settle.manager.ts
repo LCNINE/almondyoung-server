@@ -69,6 +69,10 @@ export class ChannelReturnSettleManager {
         dismissed: item.dismissed,
       })),
       refundMode: command.refundMode ?? 'auto',
+      // 명령 칸을 그대로 넘긴다 — 빠지면 차감·상계 없이 정산돼 과환불이다
+      ...(command.holdDeduction !== undefined ? { holdDeduction: command.holdDeduction } : {}),
+      ...(command.alreadyRefundedAmount !== undefined ? { alreadyRefundedAmount: command.alreadyRefundedAmount } : {}),
+      ...(command.closesMissing !== undefined ? { closesMissing: command.closesMissing } : {}),
     });
     switch (outcome.kind) {
       case 'settled':

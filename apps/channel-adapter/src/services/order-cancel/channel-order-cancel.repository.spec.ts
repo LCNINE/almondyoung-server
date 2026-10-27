@@ -135,4 +135,39 @@ describe('ChannelOrderCancelRepository (#1016 35번 PR-B)', () => {
       expect(event.payload.failureCode).toHaveLength(400);
     });
   });
+
+  describe('recordReturnPrepayFailure (K8 PR6b)', () => {
+    const prepayFact = {
+      requestId: 'cr-1',
+      salesChannel: 'medusa',
+      externalOrderId: 'order_1',
+      returnId: 'ret_1',
+      retryable: false,
+      failureCode: 'return_prepay_rejected:return_already_settled',
+      message: 'm',
+      at: '2026-10-27T00:00:00.000Z',
+    };
+
+    it('채널 단위 파티션·전달·코드 단위 멱등 키로 적재한다', async () => {
+      const { repository, enqueue } = makeRepository();
+      await repository.recordReturnPrepayFailure(prepayFact, 'd1');
+      expect(enqueue).toHaveBeenCalledWith(
+        {
+          eventType: 'ChannelReturnPrepayFailed',
+          aggregateId: 'medusa:order_1',
+          partitionKey: 'medusa',
+          metadata: { partitionKey: 'medusa' },
+          idempotencyKey: 'return-prepay-failed:cr-1:d1:return_prepay_rejected:return_already_settled',
+          payload: prepayFact,
+        },
+        'tx',
+      );
+    });
+
+    it('긴 failureCode 는 키에서 120자로 자른다', async () => {
+      const { repository, enqueue } = makeRepository();
+      await repository.recordReturnPrepayFailure({ ...prepayFact, failureCode: 'X'.repeat(400) }, 'd1');
+      expect(enqueue.mock.calls[0][0].idempotencyKey).toBe(`return-prepay-failed:cr-1:d1:${'X'.repeat(120)}`);
+    });
+  });
 });

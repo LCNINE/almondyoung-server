@@ -306,6 +306,15 @@ export type MedusaReturnSettleOutcome =
   | { kind: 'not_found'; message: string }
   | MedusaSettlementTransient;
 
+/** 반품 정산·선환불 두 라우트가 함께 갖는 성공이 아닌 결과 */
+type MedusaReturnRouteFailure = Exclude<MedusaReturnSettleOutcome, { kind: 'settled' }>;
+
+/**
+ * Medusa 반품 선환불 결과 (K8 PR6b). `MedusaReturnSettleOutcome` 과 같은 갈래이고 성공만 `prepaid` 다.
+ * `rejected.reason` 은 `return_prepay_rejected` 의 reason 이다(예: `return_already_settled`).
+ */
+export type MedusaReturnPrepayOutcome = { kind: 'prepaid' } | MedusaReturnRouteFailure;
+
 /**
  * 코어 `throwIfOrderIsCancelled` 의 문구(`Order with id … has been canceled.`, `@medusajs/core-flows` 2.13.4). 채널 취소 라우트도 같은 문장을 낸다.
  * Medusa 를 올릴 때 확인할 것 — 바뀌면 재전달된 전체취소 명령이 취소 불가로 닫힌다.
@@ -2759,6 +2768,8 @@ export class MedusaClient {
   /**
    * 반품 정산(K8 PR6). 분류는 `partialCancelOrder` 와 같은 순서다 — 본문으로 502 를 가린다(ALB 의 본문 없는 502 는 일시).
    * 정해진 거절은 `code === 'return_settle_rejected'`, 영구 환불 거절은 표지 `wallet_refund_refused:*`, 404 는 본문 type=not_found 일 때만 없는 반품이다.
+   * CS 칸(K8 PR6b)은 Medusa 라우트가 snake_case 만 받는다 — camelCase 로 보내면 400 invalid_data 다. 값은 그대로, 키 철자만 옮긴다.
+   * 있는 칸만 싣는다(`hold_deduction` 이 조용히 빠지면 차감 없이 정산돼 과환불이다 — 그래서 본문 모양을 테스트가 못박는다).
    */
   async settleReturn(
     orderId: string,
@@ -2767,12 +2778,15 @@ export class MedusaClient {
       requestId: string;
       items: Array<{ itemId: string; received: number; dismissed: number }>;
       refundMode: ChannelCancelRefundMode;
+      holdDeduction?: { amount: number; memo: string };
+      alreadyRefundedAmount?: number;
+      closesMissing?: boolean;
     },
   ): Promise<MedusaReturnSettleOutcome> {
     const path = `/admin/orders/${encodeURIComponent(orderId)}/returns/${encodeURIComponent(returnId)}/settle`;
-    let response: { status: number; body: Record<string, unknown> };
-    try {
-      response = await this.postAdmin(path, {
+    const result = await this.postReturnRoute(
+      path,
+      {
         requestId: input.requestId,
         items: input.items.map((item) => ({
           item_id: item.itemId,
@@ -2780,7 +2794,47 @@ export class MedusaClient {
           dismissed: item.dismissed,
         })),
         refundMode: input.refundMode,
-      });
+        ...(input.holdDeduction !== undefined ? { hold_deduction: input.holdDeduction } : {}),
+        ...(input.alreadyRefundedAmount !== undefined ? { already_refunded_amount: input.alreadyRefundedAmount } : {}),
+        ...(input.closesMissing !== undefined ? { closes_missing: input.closesMissing } : {}),
+      },
+      { rejectedCode: 'return_settle_rejected', label: `settle Medusa return: ${orderId}/${returnId}` },
+    );
+    return result.kind === 'ok' ? { kind: 'settled' } : result;
+  }
+
+  /**
+   * 반품 선환불 (K8 PR6b). 정산과 같은 분류를 거절 코드 이름만 바꿔 쓴다 — 정해진 거절은 `code === 'return_prepay_rejected'`.
+   * 같은 requestId 로 다시 불러도 안전하다(Medusa 가 진행 단계부터 이어 간다).
+   */
+  async prepayReturn(
+    orderId: string,
+    returnId: string,
+    input: { requestId: string; amount?: number; refundMode: ChannelCancelRefundMode; memo: string },
+  ): Promise<MedusaReturnPrepayOutcome> {
+    const path = `/admin/orders/${encodeURIComponent(orderId)}/returns/${encodeURIComponent(returnId)}/prepay`;
+    const result = await this.postReturnRoute(
+      path,
+      {
+        requestId: input.requestId,
+        ...(input.amount !== undefined ? { amount: input.amount } : {}),
+        refundMode: input.refundMode,
+        memo: input.memo,
+      },
+      { rejectedCode: 'return_prepay_rejected', label: `prepay Medusa return: ${orderId}/${returnId}` },
+    );
+    return result.kind === 'ok' ? { kind: 'prepaid' } : result;
+  }
+
+  /** 반품 정산·선환불 라우트의 공용 호출·분류. 던지지 않는다. */
+  private async postReturnRoute(
+    path: string,
+    requestBody: Record<string, unknown>,
+    options: { rejectedCode: string; label: string },
+  ): Promise<{ kind: 'ok' } | MedusaReturnRouteFailure> {
+    let response: { status: number; body: Record<string, unknown> };
+    try {
+      response = await this.postAdmin(path, requestBody);
     } catch (error) {
       return {
         kind: 'transient',
@@ -2790,8 +2844,8 @@ export class MedusaClient {
     }
     const { status, body } = response;
     const message = typeof body.message === 'string' ? body.message : `status ${status}`;
-    if (status >= 200 && status < 300) return { kind: 'settled' };
-    if (status === 400 && body.code === 'return_settle_rejected') {
+    if (status >= 200 && status < 300) return { kind: 'ok' };
+    if (status === 400 && body.code === options.rejectedCode) {
       return { kind: 'rejected', reason: typeof body.reason === 'string' ? body.reason : 'unknown', message };
     }
     if (status === 400 && isWalletRefundRefusal(body)) {
@@ -2800,12 +2854,9 @@ export class MedusaClient {
     if (status === 502 && body.type === 'refund_pending') return { kind: 'refund_pending', message };
     if (status === 404 && body.type === 'not_found') return { kind: 'not_found', message };
     // partialCancelOrder 와 달리 모르는 400 을 영구 거절로 닫지 않는다: Medusa 는 일시 조건(다른 주문 수정이 열려 있음 등)도
-    // 400 not_allowed 로 내는데, 영구 실패는 core 재시도를 멈추고 사람이 닫을 길이 아직 없다(PR 6b 전). 진짜 영구면 core 의 발행 상한이 막는다.
+    // 400 not_allowed 로 내는데, 영구 실패는 core 재시도를 멈춘다. 진짜 영구면 core 의 발행 상한이 막는다(N12).
     if (status === 400) return { kind: 'transient', failureCode: medusaErrorCode(status, body), message };
-    this.logger.error(
-      `Failed to settle Medusa return: ${orderId}/${returnId} (status=${status}, type=${String(body.type)})`,
-      message,
-    );
+    this.logger.error(`Failed to ${options.label} (status=${status}, type=${String(body.type)})`, message);
     return { kind: 'transient', failureCode: `http_${status}`, message };
   }
 

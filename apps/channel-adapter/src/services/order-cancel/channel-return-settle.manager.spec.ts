@@ -42,6 +42,23 @@ describe('ChannelReturnSettleManager (K8 PR6)', () => {
     expect(poller.syncOrder).toHaveBeenCalledWith('medusa', 'order_1', { force: true });
   });
 
+  it('명령의 보류 차감·기환불·미도착 칸을 settleReturn 인자로 그대로 넘긴다 (K8 PR6b)', async () => {
+    const { manager, medusa } = setup();
+    medusa.settleReturn.mockResolvedValue({ kind: 'settled' });
+    await manager.execute(
+      { ...command, holdDeduction: { amount: 5000, memo: '파손' }, alreadyRefundedAmount: 12000, closesMissing: true },
+      'd1',
+    );
+    expect(medusa.settleReturn).toHaveBeenCalledWith('order_1', 'ret_1', {
+      requestId: 'cr-1',
+      items: [{ itemId: 'ordli_1', received: 1, dismissed: 1 }],
+      refundMode: 'auto',
+      holdDeduction: { amount: 5000, memo: '파손' },
+      alreadyRefundedAmount: 12000,
+      closesMissing: true,
+    });
+  });
+
   it.each([
     [
       'rejected',
