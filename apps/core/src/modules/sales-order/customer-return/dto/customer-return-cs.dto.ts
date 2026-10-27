@@ -43,3 +43,17 @@ export class RequestCustomerReturnPrepayDto {
   @MaxLength(500)
   memo: string;
 }
+
+/** 반품 정산 [다시 시도] 본문 — 비어 있어도 된다(K8 PR6b N10) */
+export class RetryCustomerReturnSettlementDto {
+  @ApiPropertyOptional({
+    minimum: 0,
+    description:
+      '채널(Medusa)이 외부 결제 몫을 물으며 거절한 정산만(return_settle_rejected:external_refund_unresolved) — ' +
+      '이 반품 품목에 이미 다른 경로로 돌려준 금액(원). 저장돼 재발행도 같은 값을 낸다',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  alreadyRefundedAmount?: number;
+}

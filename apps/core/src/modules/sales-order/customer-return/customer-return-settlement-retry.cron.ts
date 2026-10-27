@@ -3,7 +3,7 @@ import { CronOnce } from '@app/cron-once';
 import { CustomerReturnService } from './customer-return.service';
 
 /**
- * 반품 정산 명령 재발행 5분 주기 (K8 PR6 N9). 리컨실러가 아니라 이 크론이 낸다 — 주문 진행 판정의 반품 단계가
+ * 반품 정산·선환불 명령 재발행 5분 주기 (K8 PR6 N9, 선환불은 PR6b). 리컨실러가 아니라 이 크론이 낸다 — 주문 진행 판정의 반품 단계가
  * 새 기록을 읽기 전(PR 10)까지 붙일 자리가 없다. CronOnce 가 주기당 클러스터 한 번을, 같은 프로세스 안에서는
  * 앞 실행이 길어지면 다음 틱을 건너뛴다. 실패는 로그만 — 다음 주기가 다시 한다.
  */
@@ -24,7 +24,7 @@ export class CustomerReturnSettlementRetryCron {
     this.running = true;
     try {
       const reissued = await this.service.reissueStalled(new Date());
-      if (reissued > 0) this.logger.log(`반품 정산 명령 재발행 ${reissued}건`);
+      if (reissued > 0) this.logger.log(`반품 정산·선환불 명령 재발행 ${reissued}건`);
       return 'ran';
     } catch (error) {
       this.logger.error(

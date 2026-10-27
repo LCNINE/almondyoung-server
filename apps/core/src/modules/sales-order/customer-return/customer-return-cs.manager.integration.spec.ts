@@ -10,6 +10,8 @@ import { CustomerReturnManager } from './customer-return.manager';
 import { CustomerReturnReader } from './customer-return.reader';
 import { CustomerReturnReceivingManager } from './customer-return-receiving.manager';
 import { CustomerReturnCsManager } from './customer-return-cs.manager';
+import { CustomerReturnSettlementManager } from './customer-return-settlement.manager';
+import { readLineQuantities } from '../line-quantities/line-quantities.reader';
 
 /**
  * 반품 CS 문 — 미도착 닫기·보류 정산·선환불 요청 (K8 PR6b Task 7). 픽스처는 PR 6 의 도착·검수 명령으로 간다.
@@ -51,8 +53,15 @@ describeIfDb('CustomerReturnCsManager — 미도착 닫기·보류 정산·선�
       commands.publisher as never,
     );
     const cs = new CustomerReturnCsManager(dbService, reader, commands.publisher as never);
+    const settlement = new CustomerReturnSettlementManager(
+      dbService,
+      reader,
+      coreOrders.publisher as never,
+      commands.publisher as never,
+    );
     const commandsOf = (type: string) => commands.calls().filter((e) => e.eventType === type);
-    return { intake, receiving, cs, commandsOf };
+    const eventsOf = (type: string) => coreOrders.calls().filter((e) => e.eventType === type);
+    return { intake, receiving, cs, settlement, commandsOf, eventsOf };
   }
 
   type Wired = ReturnType<typeof wire>;
@@ -311,6 +320,78 @@ describeIfDb('CustomerReturnCsManager — 미도착 닫기·보류 정산·선�
         ).rejects.toBeInstanceOf(ConflictError);
         const record = await recordOf(tx, s.customerReturnId);
         expect(record.csResolution).toBeNull();
+      });
+    });
+  });
+
+  describe('미도착 닫기 뒤의 수량 (K6)', () => {
+    /** 판매 라인 SKU 의 더 반품·교환할 수 있는 수량 */
+    async function claimableOf(tx: DbTx, salesOrderId: string, lineId: string, skuId: string) {
+      const line = (await readLineQuantities(tx, salesOrderId)).get(lineId);
+      const sku = line?.skus.find((row) => row.skuId === skuId);
+      if (!sku) throw new Error(`no sku ${skuId} on line ${lineId}`);
+      return sku;
+    }
+
+    it('2개 중 1개 미도착으로 닫기 → K6 claimable 이 닫은 1개를 돌려준다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seed(tx, w, wired);
+        await s.arrive([{ skuId: w.skuId, quantity: 1 }]);
+        expect(await claimableOf(tx, s.salesOrderId, s.lineId, w.skuId)).toMatchObject({
+          delivered: 2,
+          returnActive: 2,
+          claimable: 0,
+        });
+
+        await wired.cs.closeMissing({ customerReturnId: s.customerReturnId, memo: '1개 미도착', actorId }, tx);
+
+        expect(await claimableOf(tx, s.salesOrderId, s.lineId, w.skuId)).toMatchObject({
+          delivered: 2,
+          returnActive: 1,
+          claimable: 1,
+        });
+      });
+    });
+
+    it('미도착으로 닫은 2개 반품의 정산 완료 → SalesOrderReturned returnedQuantity 1', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seed(tx, w, wired);
+        await s.arrive([{ skuId: w.skuId, quantity: 1 }]);
+        await wired.cs.closeMissing({ customerReturnId: s.customerReturnId, memo: '1개 미도착', actorId }, tx);
+        await s.inspect([{ skuId: w.skuId, accepted: 1 }]);
+
+        await wired.settlement.recordSettled(
+          {
+            orderId: s.channelOrderId,
+            salesChannel: 'medusa',
+            externalOrderId: s.channelOrderId,
+            returnId: s.channelReturnId,
+            requestId: s.customerReturnId,
+            refundAmount: 5000,
+            deduction: { returnShipping: 0, freeShippingBreak: 0, roundTrip: 0 },
+            feeNotAdjusted: false,
+            refundMode: 'auto',
+            settledAt: '2026-10-27T03:00:00.000Z',
+            items: [{ channelOrderItemId: s.channelOrderItemId, received: 1, dismissed: 0 }],
+          },
+          tx,
+        );
+
+        const returned = wired.eventsOf('SalesOrderReturned');
+        expect(returned).toHaveLength(1);
+        expect(returned[0].payload).toMatchObject({
+          returnRequestId: s.customerReturnId,
+          returnedLines: [{ salesOrderLineId: s.lineId, orderedQuantity: 2, returnedQuantity: 1 }],
+        });
+        expect(await claimableOf(tx, s.salesOrderId, s.lineId, w.skuId)).toMatchObject({
+          returnActive: 0,
+          returnConsumed: 1,
+          claimable: 1,
+        });
       });
     });
   });

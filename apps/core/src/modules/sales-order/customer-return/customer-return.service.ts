@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import type {
   ChannelReturnCancelledPayload,
+  ChannelReturnPrepaidPayload,
+  ChannelReturnPrepayFailedPayload,
   ChannelReturnRequestedPayload,
   ChannelReturnSettledPayload,
   ChannelReturnSettlementFailedPayload,
@@ -13,7 +15,7 @@ import {
   RecordCustomerReturnArrivalInput,
   RecordCustomerReturnInspectionInput,
 } from './customer-return-receiving.manager';
-import { CustomerReturnSettlementManager } from './customer-return-settlement.manager';
+import { CustomerReturnSettlementManager, RestartCustomerReturnInput } from './customer-return-settlement.manager';
 import {
   CloseCustomerReturnMissingInput,
   CustomerReturnCsManager,
@@ -69,6 +71,18 @@ export class CustomerReturnService {
 
   recordSettlementFailed(fact: ChannelReturnSettlementFailedPayload, tx?: DbTx) {
     return this.settlement.recordSettlementFailed(fact, tx);
+  }
+
+  recordPrepaid(fact: ChannelReturnPrepaidPayload, tx?: DbTx) {
+    return this.settlement.recordPrepaid(fact, tx);
+  }
+
+  recordPrepayFailed(fact: ChannelReturnPrepayFailedPayload, tx?: DbTx) {
+    return this.settlement.recordPrepayFailed(fact, tx);
+  }
+
+  restart(input: RestartCustomerReturnInput, tx?: DbTx) {
+    return this.settlement.restart(input, tx);
   }
 
   reissueStalled(now: Date, tx?: DbTx) {

@@ -11,11 +11,13 @@ import { RecordCustomerReturnArrivalDto, RecordCustomerReturnInspectionDto } fro
 import {
   CloseCustomerReturnMissingDto,
   RequestCustomerReturnPrepayDto,
+  RetryCustomerReturnSettlementDto,
   SettleHeldCustomerReturnDto,
 } from './dto/customer-return-cs.dto';
 
 /**
- * 고객 반품 기록(K8 PR6) — 조회와 창고의 도착·검수, CS 의 미도착 닫기·보류 정산·선환불(PR6b).
+ * 고객 반품 기록(K8 PR6) — 조회와 창고의 도착·검수, CS 의 미도착 닫기·보류 정산·선환불과
+ * 정산·선환불의 다시 시도·계좌 송금(PR6b).
  * 응답에 고객 개인정보는 없다(반품·줄·SKU 항목의 수량과 상태, CS 메모뿐).
  */
 @ApiTags('Admin - Customer Returns')
@@ -134,6 +136,77 @@ export class CustomerReturnsController {
       amount: dto.amount ?? null,
       refundMode: dto.refundMode ?? 'auto',
       memo: dto.memo,
+      actorId: authenticatedWarehouseActor(user),
+    });
+  }
+
+  @RequirePermission('payment.refund.execute')
+  @Post(':id/settlement/retry')
+  @ApiOperation({
+    summary:
+      '반품 정산 다시 시도 — 거절·멈춘 정산을 같은 방식으로 다시 낸다. 외부 환불 거절이면 이미 환불한 금액을 적는다',
+  })
+  @ApiResponse({ status: 200, description: '다시 낸 뒤의 반품 기록(settlement)' })
+  @ApiResponse({ status: 400, description: '외부 환불 거절이 아닌데 이미 환불한 금액을 적음' })
+  @ApiResponse({ status: 409, description: '정산 중이 아님 · 진행 중(결과를 기다리세요) · 이미 끝남' })
+  @HttpCode(HttpStatus.OK)
+  retrySettlement(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RetryCustomerReturnSettlementDto = {},
+    @User() user?: WarehouseActor,
+  ) {
+    return this.service.restart({
+      customerReturnId: id,
+      target: 'settlement',
+      kind: 'retry',
+      alreadyRefundedAmount: dto.alreadyRefundedAmount,
+      actorId: authenticatedWarehouseActor(user),
+    });
+  }
+
+  @RequirePermission('payment.refund.execute')
+  @Post(':id/settlement/manual-refund')
+  @ApiOperation({ summary: '반품 정산을 계좌 송금으로 — 거절·멈춘 정산을 refundMode manual 로 다시 낸다' })
+  @ApiResponse({ status: 200, description: '다시 낸 뒤의 반품 기록(settlement)' })
+  @ApiResponse({ status: 409, description: '정산 중이 아님 · 진행 중 · 이미 끝남 · 이미 계좌 송금' })
+  @HttpCode(HttpStatus.OK)
+  manualRefundSettlement(@Param('id', ParseUUIDPipe) id: string, @User() user?: WarehouseActor) {
+    return this.service.restart({
+      customerReturnId: id,
+      target: 'settlement',
+      kind: 'manual',
+      actorId: authenticatedWarehouseActor(user),
+    });
+  }
+
+  @RequirePermission('payment.refund.execute')
+  @Post(':id/prepayment/retry')
+  @ApiOperation({ summary: '선환불 다시 시도 — 거절·멈춘 선환불을 처음 요청의 금액·메모 그대로 다시 낸다' })
+  @ApiResponse({ status: 200, description: '다시 낸 뒤의 반품 기록(prepayment)' })
+  @ApiResponse({ status: 409, description: '선환불 없음 · 수령 전이 아님 · 진행 중 · 이미 끝남(성공·정산이 대신함)' })
+  @HttpCode(HttpStatus.OK)
+  retryPrepayment(@Param('id', ParseUUIDPipe) id: string, @User() user?: WarehouseActor) {
+    return this.service.restart({
+      customerReturnId: id,
+      target: 'prepayment',
+      kind: 'retry',
+      actorId: authenticatedWarehouseActor(user),
+    });
+  }
+
+  @RequirePermission('payment.refund.execute')
+  @Post(':id/prepayment/manual-refund')
+  @ApiOperation({
+    summary: '선환불을 계좌 송금으로 — 거절·멈춘 선환불을 같은 금액·메모, refundMode manual 로 다시 낸다',
+  })
+  @ApiResponse({ status: 200, description: '다시 낸 뒤의 반품 기록(prepayment)' })
+  @ApiResponse({ status: 409, description: '선환불 없음 · 수령 전이 아님 · 진행 중 · 이미 끝남 · 이미 계좌 송금' })
+  @HttpCode(HttpStatus.OK)
+  manualRefundPrepayment(@Param('id', ParseUUIDPipe) id: string, @User() user?: WarehouseActor) {
+    return this.service.restart({
+      customerReturnId: id,
+      target: 'prepayment',
+      kind: 'manual',
       actorId: authenticatedWarehouseActor(user),
     });
   }
