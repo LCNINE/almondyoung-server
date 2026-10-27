@@ -2,10 +2,9 @@
 
 import { useState, type FormEvent } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { skuFieldCaptureClient } from '@/lib/api/domains/inventory/sku-field-capture.client';
-import type { FieldCapturePhotoDto } from '@/lib/types/dto/inventory';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import {
   fieldCaptureKeys,
@@ -27,7 +26,7 @@ export function FieldCapturePhotoGallery() {
   const [period, setPeriod] = useState<HistoryPeriod>('today');
   const [text, setText] = useState('');
   const [q, setQ] = useState('');
-  const [open, setOpen] = useState<FieldCapturePhotoDto | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
   const { from, to } = periodRange(period, kstDateOf(new Date().toISOString()), null);
 
   const { data, isLoading, isError, refetch, hasNextPage, fetchNextPage, isFetchingNextPage } =
@@ -46,6 +45,23 @@ export function FieldCapturePhotoGallery() {
 
   const photos = data?.pages.flatMap((p) => p.photos) ?? [];
   const groups = groupPhotosBySku(photos);
+  // 좌우 이동은 화면에 보이는 순서(상품 카드 순)를 따른다
+  const ordered = groups.flat();
+  const idx = ordered.findIndex((p) => p.id === openId);
+  const open = idx >= 0 ? ordered[idx]! : null;
+  const hasPrev = idx > 0;
+  const hasNext = idx >= 0 && (idx < ordered.length - 1 || hasNextPage);
+  const go = async (step: -1 | 1) => {
+    if (idx < 0) return;
+    const target = ordered[idx + step];
+    if (target) return setOpenId(target.id);
+    // 불러온 마지막 사진이면 다음 묶음을 불러와 이어 간다
+    if (step === 1 && hasNextPage && !isFetchingNextPage) {
+      const res = await fetchNextPage();
+      const next = groupPhotosBySku(res.data?.pages.flatMap((p) => p.photos) ?? []).flat()[idx + 1];
+      if (next) setOpenId(next.id);
+    }
+  };
 
   return (
     <section className="flex flex-col gap-3">
@@ -118,7 +134,7 @@ export function FieldCapturePhotoGallery() {
                   <button
                     key={p.id}
                     type="button"
-                    onClick={() => setOpen(p)}
+                    onClick={() => setOpenId(p.id)}
                     className="flex w-28 flex-col gap-1 text-left"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element -- file-service 공개 경로, next/image 도메인 설정 밖 */}
@@ -151,8 +167,14 @@ export function FieldCapturePhotoGallery() {
         </button>
       )}
 
-      <Dialog open={open !== null} onOpenChange={(v) => !v && setOpen(null)}>
-        <DialogContent className="max-w-[calc(100%-2rem)] gap-3 p-4 sm:max-w-4xl">
+      <Dialog open={open !== null} onOpenChange={(v) => !v && setOpenId(null)}>
+        <DialogContent
+          className="max-w-[calc(100%-2rem)] gap-3 p-4 sm:max-w-4xl"
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowLeft') void go(-1);
+            if (e.key === 'ArrowRight') void go(1);
+          }}
+        >
           {open && (
             <>
               <DialogTitle className="pr-8 text-sm font-medium">
@@ -162,12 +184,36 @@ export function FieldCapturePhotoGallery() {
                   {open.takenByLabel} · {kstShortTime(open.createdAt)}
                 </span>
               </DialogTitle>
-              {/* eslint-disable-next-line @next/next/no-img-element -- file-service 공개 경로, next/image 도메인 설정 밖 */}
-              <img
-                src={resolvePublicFileUrl(open.fileId) ?? ''}
-                alt={`${open.name} 사진`}
-                className="max-h-[80vh] w-full rounded-md object-contain"
-              />
+              <div className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element -- file-service 공개 경로, next/image 도메인 설정 밖 */}
+                <img
+                  src={resolvePublicFileUrl(open.fileId) ?? ''}
+                  alt={`${open.name} 사진`}
+                  className="max-h-[80vh] w-full rounded-md object-contain"
+                />
+                <button
+                  type="button"
+                  aria-label="이전 사진"
+                  disabled={!hasPrev}
+                  onClick={() => void go(-1)}
+                  className="absolute top-1/2 left-2 -translate-y-1/2 rounded-full bg-black/50 p-2 text-white hover:bg-black/70 disabled:invisible"
+                >
+                  <ChevronLeft className="h-6 w-6" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="다음 사진"
+                  disabled={!hasNext || isFetchingNextPage}
+                  onClick={() => void go(1)}
+                  className="absolute top-1/2 right-2 -translate-y-1/2 rounded-full bg-black/50 p-2 text-white hover:bg-black/70 disabled:invisible"
+                >
+                  <ChevronRight className="h-6 w-6" />
+                </button>
+              </div>
+              <p className="text-center text-xs text-muted-foreground tabular-nums">
+                {idx + 1} / {ordered.length}
+                {hasNextPage && '+'}
+              </p>
             </>
           )}
         </DialogContent>
