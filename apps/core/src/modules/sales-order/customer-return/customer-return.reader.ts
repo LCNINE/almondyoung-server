@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { asc, eq, inArray, sql } from 'drizzle-orm';
+import { asc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { NotFoundError } from '@app/shared';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
+import { refundDueAt } from './customer-return-attention';
 import type {
   CustomerReturnCsResolution,
   CustomerReturnPrepayment,
@@ -16,14 +17,20 @@ import type {
 export type CustomerReturnView = {
   id: string;
   salesOrderId: string;
+  /** 주문 식별 — `orderNo` 는 고객이 아는 번호(없으면 채널 주문 id) (K8 PR7 N6) */
+  order: { orderNo: string; channelOrderId: string; salesChannel: string };
   channelReturnId: string;
   status: CustomerReturnStatus;
   reason: string;
   feeBearer: string;
   requestedBy: string;
   warehouseId: string | null;
+  windowOverrideReason: string | null;
   requestedAt: string;
+  cancelledAt: string | null;
   arrivedAt: string | null;
+  /** 환불 기한 — 첫 도착 전이면 null */
+  refundDueAt: string | null;
   inspectedAt: string | null;
   settledAt: string | null;
   settlement: CustomerReturnSettlement | null;
@@ -36,12 +43,15 @@ export type CustomerReturnView = {
     id: string;
     salesOrderLineId: string;
     channelOrderItemId: string;
+    productName: string;
     quantity: number;
     /** 미도착으로 닫은 수량(N8) — 정산은 `quantity − missingQty` 만 싣는다 */
     missingQty: number;
     items: Array<{
       id: string;
       skuId: string;
+      skuName: string;
+      skuCode: string;
       qtyPerUnit: number;
       expectedQty: number;
       /** 도착 기록 행의 합(N4) — 칸을 따로 두지 않는다 */
@@ -62,16 +72,30 @@ export class CustomerReturnReader {
 
   async findById(id: string, tx?: DbTx): Promise<CustomerReturnView> {
     return this.dbService.run(async (trx) => {
-      const [record] = await trx
-        .select()
+      const [found] = await trx
+        .select({
+          record: getTableColumns(wmsTables.customerReturns),
+          channelOrderId: wmsTables.salesOrders.channelOrderId,
+          displayOrderNo: wmsTables.salesOrders.displayOrderNo,
+          salesChannel: wmsTables.salesOrders.salesChannel,
+        })
         .from(wmsTables.customerReturns)
+        .innerJoin(wmsTables.salesOrders, eq(wmsTables.salesOrders.id, wmsTables.customerReturns.salesOrderId))
         .where(eq(wmsTables.customerReturns.id, id))
         .limit(1);
-      if (!record) throw new NotFoundError(`Customer return not found: ${id}`);
+      if (!found) throw new NotFoundError(`Customer return not found: ${id}`);
+      const record = found.record;
 
       const lines = await trx
-        .select()
+        .select({
+          ...getTableColumns(wmsTables.customerReturnLines),
+          productName: wmsTables.salesOrderLines.productName,
+        })
         .from(wmsTables.customerReturnLines)
+        .innerJoin(
+          wmsTables.salesOrderLines,
+          eq(wmsTables.salesOrderLines.id, wmsTables.customerReturnLines.salesOrderLineId),
+        )
         .where(eq(wmsTables.customerReturnLines.customerReturnId, id))
         .orderBy(asc(wmsTables.customerReturnLines.channelOrderItemId), asc(wmsTables.customerReturnLines.id));
       const items = await this.itemsOf(
@@ -82,14 +106,22 @@ export class CustomerReturnReader {
       return {
         id: record.id,
         salesOrderId: record.salesOrderId,
+        order: {
+          orderNo: found.displayOrderNo ?? found.channelOrderId,
+          channelOrderId: found.channelOrderId,
+          salesChannel: found.salesChannel,
+        },
         channelReturnId: record.channelReturnId,
         status: record.status,
         reason: record.reason,
         feeBearer: record.feeBearer,
         requestedBy: record.requestedBy,
         warehouseId: record.warehouseId,
+        windowOverrideReason: record.windowOverrideReason ?? null,
         requestedAt: record.requestedAt.toISOString(),
+        cancelledAt: record.cancelledAt?.toISOString() ?? null,
         arrivedAt: record.arrivedAt?.toISOString() ?? null,
+        refundDueAt: record.arrivedAt ? refundDueAt(record.arrivedAt).toISOString() : null,
         inspectedAt: record.inspectedAt?.toISOString() ?? null,
         settledAt: record.settledAt?.toISOString() ?? null,
         settlement: record.settlement ?? null,
@@ -100,6 +132,7 @@ export class CustomerReturnReader {
           id: line.id,
           salesOrderLineId: line.salesOrderLineId,
           channelOrderItemId: line.channelOrderItemId,
+          productName: line.productName,
           quantity: line.quantity,
           missingQty: line.missingQty,
           items: items
@@ -107,6 +140,8 @@ export class CustomerReturnReader {
             .map((item) => ({
               id: item.id,
               skuId: item.skuId,
+              skuName: item.skuName,
+              skuCode: item.skuCode,
               qtyPerUnit: item.qtyPerUnit,
               expectedQty: item.expectedQty,
               arrivedQty: item.arrivedQty,
@@ -133,6 +168,8 @@ export class CustomerReturnReader {
         id: i.id,
         customerReturnLineId: i.customerReturnLineId,
         skuId: i.skuId,
+        skuName: wmsTables.skus.name,
+        skuCode: wmsTables.skus.code,
         qtyPerUnit: i.qtyPerUnit,
         expectedQty: i.expectedQty,
         acceptedQty: i.acceptedQty,
@@ -140,6 +177,7 @@ export class CustomerReturnReader {
         heldQty: i.heldQty,
       })
       .from(i)
+      .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, i.skuId))
       .where(inArray(i.customerReturnLineId, lineIds))
       .orderBy(asc(i.skuId), asc(i.id));
     if (items.length === 0) return [];

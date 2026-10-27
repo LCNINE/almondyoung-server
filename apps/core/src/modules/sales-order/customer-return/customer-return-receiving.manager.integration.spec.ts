@@ -200,7 +200,7 @@ describeIfDb('CustomerReturnReceivingManager — 반품 도착·검수 (K8 PR6)'
           channelOrderItemId: s.channelOrderItemId,
           quantity: 2,
           items: [
-            {
+            expect.objectContaining({
               id: itemId,
               skuId: w.skuId,
               qtyPerUnit: 1,
@@ -209,7 +209,7 @@ describeIfDb('CustomerReturnReceivingManager — 반품 도착·검수 (K8 PR6)'
               acceptedQty: null,
               rejectedQty: null,
               heldQty: null,
-            },
+            }),
           ],
         }),
       ]);
