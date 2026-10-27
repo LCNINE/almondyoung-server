@@ -167,6 +167,27 @@ describeIfDb('CustomerReturnReader — 상세 뷰 (K8 PR7)', () => {
     });
   });
 
+  it('항목이 SKU 바코드를 주 바코드 먼저 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const wired = wire();
+      const s = await seed(tx, w, wired);
+      const tag = randomUUID().slice(0, 8);
+      await tx.insert(wmsTables.skuBarcodes).values([
+        { skuId: w.skuId, barcode: `A1-${tag}`, isPrimary: false },
+        { skuId: w.skuId, barcode: `B2-${tag}`, isPrimary: true },
+      ]);
+
+      const view = await wired.reader.findById(s.customerReturnId, tx);
+      expect(view.lines[0].items[0].barcodes).toEqual([`B2-${tag}`, `A1-${tag}`]);
+
+      await tx.delete(wmsTables.skuBarcodes).where(eq(wmsTables.skuBarcodes.skuId, w.skuId));
+      const none = await wired.reader.findById(s.customerReturnId, tx);
+      expect(none.lines[0].items[0].barcodes).toEqual([]);
+      expect(none.inspectedBy).toBeNull();
+    });
+  });
+
   it('도착 전엔 refundDueAt 이 null, 도착하면 첫 도착 시각으로 계산한 값', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = await seedWorld(tx);

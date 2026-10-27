@@ -274,7 +274,7 @@ export class CustomerReturnReceivingManager {
 
       if (input.items.some((item) => item.held > 0)) {
         // 환불 보류 — 명령도 정산 칸도 없다. CS 의 보류 정산(`CustomerReturnCsManager.settleHeld`)이 연다
-        await this.transition(trx, record.id, 'held', { inspectedAt: now });
+        await this.transition(trx, record.id, 'held', { inspectedAt: now, inspectedBy: input.actorId });
         return this.reader.findById(record.id, trx);
       }
 
@@ -288,7 +288,7 @@ export class CustomerReturnReceivingManager {
         lastFailure: null,
         command: closesMissing ? { closesMissing: true } : {},
       };
-      await this.transition(trx, record.id, 'inspected', { inspectedAt: now, settlement });
+      await this.transition(trx, record.id, 'inspected', { inspectedAt: now, inspectedBy: input.actorId, settlement });
       await enqueueSettleChannelReturn(this.commands, trx, {
         customerReturnId: record.id,
         salesOrderId: record.salesOrderId,

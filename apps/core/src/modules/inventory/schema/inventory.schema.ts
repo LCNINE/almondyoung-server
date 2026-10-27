@@ -1601,6 +1601,7 @@ export const customerReturns = pgTable(
     warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }),
     arrivedAt: timestamp('arrived_at', { withTimezone: true }),
     inspectedAt: timestamp('inspected_at', { withTimezone: true }),
+    inspectedBy: varchar('inspected_by', { length: 255 }),
     settledAt: timestamp('settled_at', { withTimezone: true }),
     /** 정산 진행 기록(명령 발행·실패 사실) */
     settlement: jsonb('settlement').$type<CustomerReturnSettlement>(),

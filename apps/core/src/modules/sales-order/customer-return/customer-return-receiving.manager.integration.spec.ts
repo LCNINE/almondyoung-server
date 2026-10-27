@@ -599,6 +599,52 @@ describeIfDb('CustomerReturnReceivingManager — 반품 도착·검수 (K8 PR6)'
     });
   });
 
+  it('처음 검수한 사람을 inspectedBy 로 남기고, 같은 결과 재요청은 바꾸지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const s = await seed(tx, w);
+      const { manager } = wire();
+      const itemId = s.itemOf(w.skuId);
+      await arriveAll(manager, tx, s, w.warehouseId, [{ customerReturnItemId: itemId, quantity: 2 }]);
+      const inspect = (by: string) =>
+        manager.recordInspection(
+          {
+            customerReturnId: s.customerReturnId,
+            items: [{ customerReturnItemId: itemId, accepted: 2, rejected: 0, held: 0 }],
+            actorId: by,
+          },
+          tx,
+        );
+
+      const first = await inspect('u-1');
+      expect(first.inspectedBy).toBe('u-1');
+      const again = await inspect('u-2');
+      expect(again.inspectedBy).toBe('u-1');
+      expect((await recordOf(tx, s.customerReturnId)).inspectedBy).toBe('u-1');
+    });
+  });
+
+  it('보류가 있는 검수(held)도 inspectedBy 를 남긴다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const s = await seed(tx, w);
+      const { manager } = wire();
+      const itemId = s.itemOf(w.skuId);
+      await arriveAll(manager, tx, s, w.warehouseId, [{ customerReturnItemId: itemId, quantity: 2 }]);
+
+      const view = await manager.recordInspection(
+        {
+          customerReturnId: s.customerReturnId,
+          items: [{ customerReturnItemId: itemId, accepted: 1, rejected: 0, held: 1 }],
+          actorId: 'u-3',
+        },
+        tx,
+      );
+      expect(view.status).toBe('held');
+      expect(view.inspectedBy).toBe('u-3');
+    });
+  });
+
   it('합이 도착 수량과 다른 검수 → BadRequest', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = await seedWorld(tx);

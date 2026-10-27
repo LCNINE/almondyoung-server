@@ -33,6 +33,8 @@ export type CustomerReturnView = {
   /** 환불 기한 — 첫 도착 전이면 null */
   refundDueAt: string | null;
   inspectedAt: string | null;
+  /** 처음 검수한 사람의 id — 검수 전이면 null (K8 PR7b N9) */
+  inspectedBy: string | null;
   settledAt: string | null;
   settlement: CustomerReturnSettlement | null;
   settlementOutcome: CustomerReturnSettlementOutcome | null;
@@ -60,6 +62,8 @@ export type CustomerReturnView = {
       acceptedQty: number | null;
       rejectedQty: number | null;
       heldQty: number | null;
+      /** SKU 바코드 — 주 바코드 먼저, 그다음 바코드 오름차순 (K8 PR7b N5) */
+      barcodes: string[];
     }>;
   }>;
 };
@@ -318,6 +322,7 @@ export class CustomerReturnReader {
         arrivedAt: record.arrivedAt?.toISOString() ?? null,
         refundDueAt: record.arrivedAt ? refundDueAt(record.arrivedAt).toISOString() : null,
         inspectedAt: record.inspectedAt?.toISOString() ?? null,
+        inspectedBy: record.inspectedBy ?? null,
         settledAt: record.settledAt?.toISOString() ?? null,
         settlement: record.settlement ?? null,
         settlementOutcome: record.settlementOutcome ?? null,
@@ -343,6 +348,7 @@ export class CustomerReturnReader {
               acceptedQty: item.acceptedQty,
               rejectedQty: item.rejectedQty,
               heldQty: item.heldQty,
+              barcodes: item.barcodes,
             })),
         })),
       };
@@ -387,6 +393,24 @@ export class CustomerReturnReader {
       )
       .groupBy(a.customerReturnItemId);
     const arrivedByItem = new Map(arrived.map((row) => [row.itemId, row.qty]));
-    return items.map((item) => ({ ...item, arrivedQty: arrivedByItem.get(item.id) ?? 0 }));
+    // 바코드도 따로 읽는다 — 항목마다 SKU 바코드가 여럿이라 조인하면 행이 곱해진다
+    const b = wmsTables.skuBarcodes;
+    const barcodeRows = await trx
+      .select({ skuId: b.skuId, barcode: b.barcode })
+      .from(b)
+      .where(
+        inArray(
+          b.skuId,
+          items.map((item) => item.skuId),
+        ),
+      )
+      .orderBy(desc(b.isPrimary), asc(b.barcode));
+    const barcodesBySku = new Map<string, string[]>();
+    for (const row of barcodeRows) barcodesBySku.set(row.skuId, [...(barcodesBySku.get(row.skuId) ?? []), row.barcode]);
+    return items.map((item) => ({
+      ...item,
+      arrivedQty: arrivedByItem.get(item.id) ?? 0,
+      barcodes: barcodesBySku.get(item.skuId) ?? [],
+    }));
   }
 }
