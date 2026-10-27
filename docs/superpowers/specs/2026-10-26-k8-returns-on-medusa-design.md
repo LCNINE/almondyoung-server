@@ -187,8 +187,8 @@ Medusa return id 를 유일키로 갖는다. 운송장 테이블은 `waybills.sh
 auto 든 wallet «송금 대기»인 manual 이든 — 또는 수동 완료) / `canceled`(도착 전 취소). 환불이 바로 성공하면 `inspected` 에서 `settled` 로
 곧장 간다. manual 도 `settled` 다(취소 정산이 manual 을 `applied` 로 닫는 것과 같다 — PR 6 결과의 N17).
 검수에 «환불 보류»가 하나라도 있으면 `inspected` 대신 `held`(CS 판단 대기)로 가고, 수령 알림은 CS 가 차감액을 넣을 때 낸다(D10).
-요청보다 적게 오면 도착한 줄만 `arrived` 이후로 가고, 나머지 줄은 CS 가 «미도착으로 닫기»를 할 때까지 남는다 — 그때 Medusa
-반품의 남은 품목도 취소한다. 기록 단위 상태는 줄 상태에서 유도하든 따로 두든 빌더 몫이되, «아직 안 끝난 줄이 있는 반품»이
+요청보다 적게 오면 도착한 줄만 `arrived` 이후로 가고, 나머지 줄은 CS 가 «미도착으로 닫기»를 할 때까지 남는다 — 닫아도 Medusa
+반품의 남은 품목은 취소하지 않는다(아래 PR 6b 결과). 기록 단위 상태는 줄 상태에서 유도하든 따로 두든 빌더 몫이되, «아직 안 끝난 줄이 있는 반품»이
 목록에서 보여야 한다. 전이는 K2 처럼
 **직전 상태 CAS** 한 함수가 소유하고, 트랜잭션은 `db.run(fn, tx)` 로 전파한다(ADR-0025). 옛 core 반품의 «읽고 나서 쓰기»를
 되풀이하지 않는다.
@@ -254,6 +254,15 @@ requested = `expected` 관측, collected = `arrived`, completed = `settled`. `Sa
 - (N17) 정산 결과: `ChannelReturnSettled`(환불까지 끝, auto·manual 무관)는 `settled`, `ChannelReturnSettlementFailed` 가 `received: true`(수령 확정, 환불만 남음)면 `inspected → refund_pending`. 실패 사실은 순서 없이 와도 `at` 이 더 늦은 것만 적는다. 위 사다리 문장을 이에 맞게 고쳤다.
 - (f) 검수자 id 는 이번 PR 에서 저장하지 않는다(칸 없음) — 창고 화면(PR 7)과 함께 더한다.
 
+**PR 6b 에서 확정한 결과.**
+- (N1) CS 의 문(미도착 닫기·보류 정산·선환불·다시 시도·계좌 송금)은 core 라우트다. CS 는 Medusa 를 직접 부르지 않는다 — core 가 기록과 명령을 한 트랜잭션에 묶어야 크론 재발행·관측이 한 기록 위에 선다. 읽기 하나(정산 미리보기, 4.4)만 Medusa 의 관리자 라우트를 직접 읽는다.
+- (N7) 선환불과 정산은 Medusa 주문 잠금이 줄 세운다. 정산이 먼저 돌면 뒤에 온 선환불은 영구 거절(`return_already_settled`)이라 core 는 선환불을 `superseded` 로 둔다. 선환불이 먼저면 정산이 그만큼 뺀다. 그래서 선환불이 진행 중이어도 검수를 막지 않는다.
+- (N8) 미도착 닫기는 줄의 `missing_qty` 다. 줄마다 «온전히 도착한 벌» = SKU 항목별 `floor(도착 / qty_per_unit)` 의 최솟값을 세고 `missing_qty = 줄 수량 − 그 값` 을 쓴다. 정산 명령의 줄 수량은 `quantity − missing_qty`, 0 인 줄은 싣지 않고 `closesMissing: true` 를 싣는다. 검수는 «기대 = 도착»이 아니라 «합 = 도착»만 본다(일부만 온 세트의 구성품도 원장에서 정리돼야 한다). 닫힌 수량은 K6 가 다시 청구할 수 있다. **Medusa 의 남은 반품 품목은 취소하지 않는다** — 반품은 `partially_received` 로 남는다. 지원되는 워크플로가 «나머지만 취소»를 하지 않고(`order/dist/services/actions/cancel-return.js:43`), 전체 취소는 받은 몫까지 되돌린다. 대가로 그 줄의 재반품이 막힌다(알려진 잔여).
+- (N8 후속) 닫은 뒤에는 **새 도착 키만** 거절(Conflict)한다. 닫기 전 키의 재전송은 view 를 돌려줘 창고 재시도가 멱등이다. 닫은 뒤 늦게 온 소포는 시스템 밖(CS)에서 다룬다. 일부만 온 세트의 구성품만 온 반품은 닫지도 취소하지도 못한다(같은 이유).
+- (N10·N11) 다시 시도·계좌 송금은 취소 정산의 꼴이다. 대상은 정산·선환불 둘이고 `refused`·`stalled` 만 받는다. 진행 칸에 `issues`(지금까지 낸 수, 재발행 멱등키의 일부)와 `attempts`(마지막 재시작 뒤 낸 수, 상한 12)를 따로 둔다 — `issues` 가 없는 행은 `attempts` 로 읽는다. 저장된 명령 칸을 고쳐 크론 재발행도 같은 값을 낸다.
+- (N14) 보류 수량은 Medusa 에 폐기로 알린다(`rejectedQty + heldQty`) — 원장(DEFECTIVE)과 Medusa 재고가 같은 쪽을 본다. 돈은 바뀌지 않는다.
+- (N15, **열린 질문 Q1**) 선환불한 반품은 미도착으로 닫지도 취소하지도 못한다 — 닫으면 `owed < P` 로 상계 뒤 차액이 양수(NOT_PAID 결제 컬렉션)가 되고, 취소하면 환불이 반품 없이 남는다. 끝내 안 오면 목록에 `expected`/`arrived` 로 남는다. 대안은 «손실로 닫기»(안 온 수량을 Medusa 에 폐기로 알려 장부를 닫는다)이고 아직 답이 없다. 답이 «손실로 닫기»면 core 에 문 하나가 늘고 정산 명령의 `closesMissing` 판정이 갈린다.
+
 ### 4.4 정산 — 수령 + 택배비 + 환불 (Medusa)
 
 core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) → channel-adapter → 우리 Medusa 관리자 라우트.
@@ -293,7 +302,7 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
   이하. 택배비 차감(2) 위에 더해진다. 차감을 주문에 남기는 방식은 택배비 차감과 같은 방식을 쓴다.
 - **선환불**: 물건이 도착하기 전에 CS 가 환불을 먼저 낸다. Medusa 수령은 하지 않고 환불만 낸다 — 금액은 «요청 품목의 환불 예정액
   − 택배비 차감»을 기본으로 CS 가 고칠 수 있다. 나중에 도착·검수로 정산할 때는 **이미 선환불한 금액을 빼고** 낸다(부분취소의
-  `alreadyRefunded` 상계, ADR-0043 과 같은 생각). 반품 기록에 선환불액을 남겨 정산이 읽는다.
+  `alreadyRefunded` 상계, ADR-0043 과 같은 생각). 선환불액의 정본은 반품 기록이 아니라 Medusa 환불 행이다(아래 PR 6b 결과).
 - 운영 규칙: Medusa 주문의 반품 환불을 wallet 관리자 화면에서 직접 내지 않는다. 이 작업은 그것을 기술적으로 막지는 않는다
   (wallet 직접 환불 차단은 #1070 축과 함께 본다) — 개통 안내에 적는다.
 
@@ -307,11 +316,23 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 - (N10) 수령까지 끝난 반품도 전체취소를 계속 막는다 — Medusa 전체취소는 «캡처 − 환불» 을 다 돌려줘 반품 정산이 뺀 택배비까지 돌려주기 때문이다. 반품이 있는 주문은 배송완료가 있어 core 가 운영자 전체취소를 부분취소로 바꾸므로 이 막음에 걸리는 정상 호출은 없고, 동작은 그대로 두고 테스트로 못 박았다. PR 3 숙제의 답이다.
 - (a) 반품 뒤 부분취소의 배송비 판정은 돌아온 수량(수령+폐기)을 남는 수량에서 뺀다 — 안 빼면 반품이 뺀 무료배송 깨짐을 부분취소가 되돌려 준다.
 - (a-1) 반품 뒤 부분취소는 배송비를 «돌아온 물건이 아직 있는 것처럼» 계산한 값 아래로 돌려주지 않는다 — 돌아온 물건의 출고 배송비는 이미 쓴 것이다. 청구는 돌아온 수량을 뺀 계산 그대로(`planShipping` 의 `refundFloorLines`).
-- (a-2) 알려진 잔여: 무료배송 기준을 반품분만으로 넘는 주문은 «반품 먼저·취소 나중»일 때 왕복 몫을 덜 뺀다(고객 유리, 순서에 따라 갈림) — PR 6b 에서 다시 본다.
+- (a-2) 알려진 잔여: 무료배송 기준을 반품분만으로 넘는 주문은 «반품 먼저·취소 나중»일 때 왕복 몫을 덜 뺀다(고객 유리, 순서에 따라 갈림) — PR 6b 에서 다시 봤고 그대로 둔다(위 PR 6b 결과의 N13).
 - (b) 부분취소의 «지금 그룹 요금»은 택배비 청구가 붙은(`charged`·`refunded`) 반품 기록만 겹친다.
-- (c) 한 주문에 택배비 청구 전(`received`)에 멈춘 반품 기록이 있으면 그 주문의 부분취소와 다른 반품 정산은 500(일시)으로 기다린다 — 두 번 빠지는 것을 막는다. 멈춘 기록은 사람이 풀어야 한다(운영 안내).
+- (c) 한 주문에 택배비 청구 전(`received`)에 멈춘 반품 기록이 있으면 그 주문의 부분취소와 다른 반품 정산은 500(일시)으로 기다린다 — 두 번 빠지는 것을 막는다. 멈춘 기록은 사람이 풀어야 한다(운영 안내 — PR 6b 부터는 다시 시도).
 - (d) 택배비 청구의 배송 옵션은 수령 때 기록에 남긴다. 기록에 정산 requestId 를 싣는다.
-- (e) channel-adapter 는 Medusa 의 모르는 400 을 일시 실패로 다시 시도한다(부분취소와 다르다 — 반품은 PR 6b 전까지 사람의 길이 없다). 정해진 거절(`return_settle_rejected`)만 영구다.
+- (e) channel-adapter 는 Medusa 의 모르는 400 을 일시 실패로 다시 시도한다(부분취소와 다르다 — 반품은 PR 6b 전까지 사람의 길이 없었다. 6b 부터는 `stalled` 뒤 다시 시도가 사람 길이다). 정해진 거절(`return_settle_rejected`)만 영구다.
+
+**PR 6b 에서 확정한 결과.**
+- (N2·N3) 보류 정산은 `held → inspected` + 명령의 `holdDeduction { amount, memo }` 다. 0 은 «차감 없이 정산»이다. Medusa 는 차감을 택배비와 **같은 order edit** 에 «반품 차감» 배송 방법(`custom_amount`)으로 남기고, 부분취소가 원래 방법으로 읽지 않게 정산 청구 이름에 더한다. 차감은 수령 «뒤» `owed` 를 알아야 판정되는데 수령 뒤 거절은 반품을 `received` 에 가둔다 — 그래서 **넘치면 깎는다**(거절하지 않는다). 채우는 순서는 선환불·외부 상계 → 택배비(① ② ③) → 보류 차감이고, 기록은 요청액과 적용액을 둘 다 남긴다.
+- (N4·N5) 선환불은 정산과 같은 라우트의 모드가 아니라 **새 명령 `PrepayChannelReturn` 과 새 워크플로 `prepayOrderReturn`** 이다 — 수령·택배비가 없고 반품 하나에 정산과 따로 한 번 있어 진행 기록·실패 사실이 갈린다. 요청 키는 core `customer_returns.id`, 환불 메모는 `return-prepay:<id>`(정산은 `return-settle:<id>`). 금액은 Medusa 가 센다: 품목 값 `V`(반품 품목 전부, 할인 몫 제외) 와 택배비 예상 `F` 로 기본 `V − F`, CS 가 주면 `1 ≤ amount ≤ V`. 상한이 `V` 라 정산의 `owed ≥ P` 가 늘 성립한다.
+- (N6) **선환불액의 정본은 Medusa 환불 행**(메모 `return-prepay:<id>` 의 합 `P`)이고 반품 기록은 진행만 든다. 정산은 `P` 와 CS 가 적은 외부 환불 `E` 만큼 덜 낸다. 상계 크레딧 라인이 필요한지는 실측이 정했다 — 반품 요청이 열려 있는 동안 `refundPaymentWorkflow` 가 읽는 저장된 주문 summary 는 반품 품목 값을 «돌려줄 돈»으로 센다. 그래서 선환불은 **크레딧 라인이 붙지 않고** `loadOrderView` 차액이 +P 로 남았다가 수령 때 산술로 상쇄된다. 상계 크레딧 라인(reference `'return-offset'`)은 **크레딧이 붙은 환불**(외부 환불 등)의 몫에만 쓴다: `clamp(P + E − B, 0, P + E)`, 원 단위 내림, `B` = 수령 전 `loadOrderView` 차액. 이 식은 그 주문에 끝나지 않은 다른 돈 기록(부분취소·다른 반품 정산)이 없을 때만 맞아서, `P + E > 0` 인데 있으면 500(일시)으로 기다린다. 내림 때문의 1원 미만 잔차는 차액에 남고 반품 청구는 1.5원 미만을 노이즈로 본다. 다른 반품의 열린 선환불이 `B` 를 부풀리면 이 반품의 상계 라인이 모자랄 수 있으나, 환불액은 맞고 그 반품이 정산되면 스스로 풀린다 — 막으면 선환불 둘이 서로 기다린다. 실측은 `apps/medusa/integration-tests/http/return-prepay-premises.spec.ts`.
+- (선환불 재시도·취소) 정산이 끝난 뒤 온 선환불 재시도는 환불 원장을 따른다: 원장에 선환불 합이 있으면 200(원장 합계), 없으면 `return_already_settled`. core 의 `recordPrepaid` 는 반품이 어느 상태든 사실을 받는다(`superseded`·`in_progress`·`refused` → `done` + 결과) — 응답을 잃은 선환불이 정산 뒤 도착할 수 있어서다. 반품 취소의 막음은 **실제로 나간 선환불**(환불 행이 `refunded` 이거나 원장 합이 0 초과)에만 건다 — 거절돼 돈이 안 나간 요청 기록이 반품을 가두지 않는다.
+- (Medusa 2.13.4 결함) `cancelBeginOrderEditWorkflow` 는 `SHIPPING_ADD` 액션의 id 로 삭제를 걸어, 추가한 배송 방법이 아니라 엉뚱한 행을 지운다. 취소한 order edit 의 배송 방법이 다음 확정된 edit 에 되살아난다. 우리가 연 edit 를 취소하는 길은 `cancelOpenOrderEdit`(`settlement/order-edit-charge.ts`)로 배송 방법을 직접 지우며, 부분취소의 취소 경로도 같은 함수를 쓴다(반품 없는 주문의 정상 경로는 그대로).
+- (CS 칸 이름) Medusa 정산 라우트는 CS 칸을 **snake_case**(`hold_deduction`·`already_refunded_amount`·`closes_missing`)로만 받고 camelCase 는 400 `invalid_data` 로 거절한다 — 조용히 버리면 보류 차감이 빠져 과환불한다. channel-adapter 가 명령의 키를 옮기고 값은 그대로 둔다(본문은 테스트가 못 박는다). core 의 해시는 새 칸이 있을 때만 그 칸을 포함해, PR 6 모양 요청의 해시는 그대로다.
+- (N9) 읽기 하나: `GET /admin/orders/:id/returns/:return_id/settlement-preview` → 품목 값·택배비 예상·선환불 기본값·이미 선환불한 합. 쓰기 없음이고 core 는 부르지 않는다(화면 PR 7 용). 반품이 없으면 404.
+- (N12·사람 길) 모르는 400 은 계속 일시 실패다. 12번 뒤 `stalled` 면 **다시 시도(PR 6b)** 가 사람 길이다 — 부분취소처럼 영구로 바꾸면 사람이 볼 기회 없이 `refused` 가 된다. 위 PR 6 의 (c)·(e) 는 이 길로 풀린다: 같은 requestId 로 이어 가므로 `received` 에 멈춘 정산도 풀린다.
+- (N16 → 결과) 외부 환불이 미해결이면 정산은 400 `return_settle_rejected:external_refund_unresolved`(미해결 금액 동봉)이고, 다시 시도에 «이미 환불한 금액» 을 실어 그 몫을 상계한다(위 N6 의 `E`). 이 칸은 그 실패 코드일 때만 받는다. 선환불한 반품을 미도착으로 닫는 정산은 `prepaid_closes_missing`(400)으로 정해진 거절이다(N15).
+- (N13 재확인) (a-2)의 «반품 먼저·취소 나중» 잔여는 6b 에서 다시 보고 **고치지 않는다** — 고객 유리이고, 고치려면 부분취소 환불 하한 (a-1)을 순서 무관하게 다시 짜야 한다. 라이브 반품 0건이고 6b 의 문들과 독립이다.
 
 ### 4.5 Medusa 부분취소에 사유 규칙 (D4)
 
@@ -420,7 +441,7 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 | 4 | 원장 `RETURNED` + 전이 셋 + 뷰 재정의 + 상태 목록 반영 | core · event-contracts · admin-web · warehouse-app | expand, 휴면 |
 | 5 | 반품 예정 기록 + Medusa 반품 관측(channel-adapter) + 고객 이벤트를 새 기록에서 + K6 다시 잇기 | core · channel-adapter · event-contracts | expand(`migrate → deploy`), 배포 순서 제약 없음 — N1·N2 |
 | 6 | 도착·검수 명령 + 수령 알림 명령 + Medusa 정산(수령·택배비·환불) + 정산 관측·고객 이벤트 | core · channel-adapter · medusa | 여기서 반품이 끝까지 돈다(보류 없는 정상 흐름) |
-| 6b | CS 문 셋: 환불 보류 정산·선환불·미도착 닫기, 영구 거절 정산의 다시 시도·계좌 송금 | core · medusa · channel-adapter | 6 이 라이브인 뒤 |
+| 6b | CS 문 셋: 환불 보류 정산·선환불·미도착 닫기, 영구 거절 정산의 다시 시도·계좌 송금 | core · medusa · channel-adapter | 6 이 라이브인 뒤. 결과는 4.3·4.4 의 «PR 6b 에서 확정한 결과» |
 | 7 | admin-web CS 화면 다시 짓기 + 창고 반품 입고·검수 화면 | admin-web · (warehouse-app?) | 화면 위치 열린 질문 |
 | 8 | 스토어프론트 신청 화면(#933·#934) | storefront | |
 | 9 | 한진 회수 접수(R)·취소 | core | DEV 스모크 선행(4.7) |
