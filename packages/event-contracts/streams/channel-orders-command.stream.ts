@@ -78,7 +78,11 @@ export interface SettleChannelReturnPayload {
    * 그러면 차감 없이 정산돼 과환불이 된다. 배포 직전 `held` 반품 0 을 확인한다.
    */
   holdDeduction?: { amount: number; memo: string };
-  /** 반품 요청이 열린 동안 이미 선환불한 금액(원). 정산에서 상계한다 */
+  /**
+   * CS 가 적은 «이미 다른 경로로 돌려준 외부 환불»(원, N16 — wallet 직접 환불처럼 품목에 연결 안 된 환불). Medusa 가 그만큼
+   * 상계하고, 미해결 외부 환불과 맞지 않으면 `external_refund_exceeds`·`external_refund_absent` 로 거절한다.
+   * 선환불 금액이 아니다 — 선환불은 여기 싣지 않고 Medusa 가 자기 장부(`return-prepay:` 메모 환불)에서 읽는다
+   */
   alreadyRefundedAmount?: number;
   /** 미도착(받지 못함)으로 반품을 닫는 정산이다 */
   closesMissing?: boolean;

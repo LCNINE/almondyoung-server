@@ -349,3 +349,18 @@
 - **알려진 잔여:** N13(A×2+E), N15(선환불 뒤 미도착은 닫지 못함 — Q1 답에 따라), 일부만 온 세트의 구성품만 온 반품은 닫지도 취소하지도 못함(N8 — CS 가 시스템 밖), 닫은 뒤 늦게 온 소포는 거절(CS 가 시스템 밖), Medusa 남은 반품 품목은 `partially_received` 로 남아 그 줄 재반품을 막는다.
 - **롤백:** 이전 task definition 으로 돌려도 안전하다 — 옛 코드는 새 칸을 안 읽고, 새 명령·사실은 warn 으로 넘긴다. 이미 선환불한 반품의 정산을 옛 Medusa 가 받으면 선환불을 모르고 전액을 낸다 → 롤백 전 `prepayment->>'state' = 'done'` 이고 정산 전인 반품 0 확인.
 - 배포 뒤 확인: ① 크론 로그 5분마다 0건 ② channel-adapter 로그에 `PrepayChannelReturn` 처리 오류 없음 ③ 아무 라이브 주문의 `GET …/settlement-preview` 가 반품 없음 404.
+- 🔴 **배포·롤백 창(최종 리뷰 I3).** 세 앱이 따로 굴러 섞인 동안 돈이 틀어질 수 있는 자리:
+  - **새 channel-adapter → 옛 Medusa:** 옛 정산 라우트의 `parseInput` 은 모르는 키를 버린다 → `hold_deduction` 이 소리 없이 빠져 **차감 없이 과환불**된다(`closes_missing`·`already_refunded_amount` 는 옛 Medusa 가 품목 불일치·외부 환불 미해결로 크게 거절해 돈이 안 나간다). 보류 정산이 걸린 채 **Medusa 만 롤백**해도 같다.
+  - **새 사실 → 옛 core 태스크:** `ChannelReturnPrepaid`·`ChannelReturnPrepayFailed` 를 옛 core 가 받으면 warn 으로 넘기고, 관측 키 `return:<id>:prepaid` 는 다시 나오지 않는다 → core 의 선환불 칸이 `done` 이 못 되고 크론 재발행 끝에 `stalled` 로 선다(Medusa 는 200 으로 답하지만 같은 관측 키라 사실이 다시 안 나온다). 돈은 맞다 — 정산 결과의 `prepaidAmount` 가 Medusa 장부에서 온다.
+  - **옛 Medusa 태스크:** 반품 취소의 `return_prepaid` 거절이 없다 — 롤링 몇 분 동안 선환불한 반품을 취소할 수 있다(창이 작다).
+  - **운영 규칙(PR 본문에 그대로):** «held-settlement·선환불 문은 Medusa admin·core·channel-adapter 롤아웃이 모두 끝난 뒤에만 쓴다. 확인: `GET …/settlement-preview` 가 라우트 404 가 아니라 404 not_found 를 낸다.»
+  - **배포 전·롤백 전 점검 SQL(셋 다 0):**
+    ```sql
+    select count(*) from customer_returns where status = 'held';
+    select count(*) from customer_returns
+     where status in ('inspected', 'refund_pending') and settlement->'command' ? 'holdDeduction';
+    select count(*) from customer_returns where prepayment->>'state' = 'done' and status <> 'settled';
+    ```
+    셋째는 롤백 전에만 본다 — 옛 Medusa 는 선환불을 몰라 정산에서 전액을 낸다.
+  - **Q1(선환불 뒤 끝내 미도착)은 아직 열려 있다** — 이 PR 은 «닫지 못하고 목록에 남긴다»(N15)로 나간다.
+  - **알려진 가장자리(고치지 않음):** 결제가 여럿인 주문에서 선환불이 일부 결제만 환불하고 거절(`refused`)되면, core 의 미도착 닫기는 `refused` 를 막지 않아(`PREPAY_BLOCKS_CLOSE`) 닫힌다 — 그러나 Medusa 장부엔 `return-prepay:` 환불이 있어 그 정산은 수령 전에 `prepaid_closes_missing` 으로 거절되고 반품은 사람 일로 남는다.
