@@ -173,6 +173,24 @@ describeIfDb('InventoryCommandService 반품 전이 (DB integration, rollback-on
     });
   });
 
+  // 호출자가 키를 반품 줄 id 하나로만 만들면 합격이 입고 이벤트를 「성공」으로 돌려받고 물건은 RETURNED 에 남는다.
+  it('같은 idempotencyKey 로 다른 전이·수량이 오면 기존 이벤트를 돌려주지 않고 409', async () => {
+    await inRollbackTx(async (tx) => {
+      const { warehouse, sku } = await createFixture(tx);
+      const base = { skuId: sku.id, warehouseId: warehouse.id };
+      const shared = key();
+      await command.returnReceive({ ...base, quantity: 3, idempotencyKey: shared }, tx);
+
+      await expect(command.returnAccept({ ...base, quantity: 3, idempotencyKey: shared }, tx)).rejects.toThrow(
+        ConflictException,
+      );
+      await expect(command.returnReceive({ ...base, quantity: 2, idempotencyKey: shared }, tx)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(await ledgerQty(tx, sku.id, warehouse.id, 'RETURNED')).toBe(3);
+    });
+  });
+
   it('수량이 0 이하면 400', async () => {
     await inRollbackTx(async (tx) => {
       const { warehouse, sku } = await createFixture(tx);

@@ -207,7 +207,9 @@ describeIfDb('purchase-order receiving PR-C contract migration (isolated Postgre
       const fixture = await seedContractFixture(client);
       const before = await captureContractState(client, fixture);
 
-      await applyMigrations(client, harness.chain.throughContract);
+      // 보존 비교는 계약 마이그레이션 직후에 한다 — 그 뒤 마이그레이션이 뷰를 다시 만드는 것(K8 PR 4 의
+      // stock_summary_view returned_qty 등)은 계약이 깬 게 아니다. 나머지 체인은 아래에서 이어 적용한다.
+      await applyMigrations(client, harness.chain.uptoContract);
 
       expect(await client`SELECT to_regclass('public.inbound_plans') AS name`).toEqual([{ name: null }]);
       expect(await client`SELECT to_regclass('public.inbound_plan_items') AS name`).toEqual([{ name: null }]);
@@ -231,10 +233,13 @@ describeIfDb('purchase-order receiving PR-C contract migration (isolated Postgre
       expect(after.workLogs).toEqual(before.workLogs);
       expect(after.views).toEqual(before.views);
       expect(after.stockSummary).toEqual(before.stockSummary);
+
+      await applyMigrations(client, harness.chain.throughContract);
+      const current = await captureContractState(client, fixture);
       // throughContract includes the current chain, including migrations added
       // after PR-C. Check its identities and retain the applied PR-B prefix.
-      expect(after.journal.slice(0, before.journal.length)).toEqual(before.journal);
-      expect(after.journal.map(({ hash, created_at }) => ({ hash, created_at: String(created_at) }))).toEqual(
+      expect(current.journal.slice(0, before.journal.length)).toEqual(before.journal);
+      expect(current.journal.map(({ hash, created_at }) => ({ hash, created_at: String(created_at) }))).toEqual(
         harness.chain.throughContract.map((migration) => ({
           hash: migration.hash,
           created_at: String(migration.folderMillis),

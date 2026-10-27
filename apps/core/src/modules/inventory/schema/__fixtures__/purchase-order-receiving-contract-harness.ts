@@ -16,6 +16,8 @@ interface MigrationJournal {
 
 export interface ContractMigrationChain {
   throughPrB: MigrationMeta[];
+  /** PR-C 계약 마이그레이션(drop-legacy-inbound-plans)까지 — 계약이 «무엇을 보존하는지»는 여기서 잰다. */
+  uptoContract: MigrationMeta[];
   throughContract: MigrationMeta[];
   tags: string[];
 }
@@ -40,10 +42,13 @@ export function migrationChain(): ContractMigrationChain {
   const journal = JSON.parse(readFileSync(join(DRIZZLE_DIR, 'meta', '_journal.json'), 'utf8')) as MigrationJournal;
   const backfillIndex = journal.entries.findIndex(({ tag }) => tag.endsWith('_backfill-purchase-order-receiving'));
   if (backfillIndex < 0) throw new Error('PR-B backfill migration file must exist');
+  const contractIndex = journal.entries.findIndex(({ tag }) => tag.endsWith('_drop-legacy-inbound-plans'));
+  if (contractIndex < 0) throw new Error('PR-C contract migration file must exist');
 
   const migrations = readMigrationFiles({ migrationsFolder: DRIZZLE_DIR });
   return {
     throughPrB: migrations.slice(0, backfillIndex + 1),
+    uptoContract: migrations.slice(0, contractIndex + 1),
     throughContract: migrations,
     tags: journal.entries.map(({ tag }) => tag),
   };

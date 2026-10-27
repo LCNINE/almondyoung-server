@@ -784,6 +784,16 @@ export class InventoryCommandService {
         trx,
       );
       if (!event) throw new BadRequestException('Failed to create stock event');
+      // createEvent 는 키가 겹치면 그 키의 기존 이벤트를 내용 대조 없이 돌려준다. 다른 전이·수량이 같은 키로
+      // 오면(키를 반품 줄 id 로만 만든 호출자) 성공으로 삼키지 않는다 — 물건이 RETURNED 에 남은 채 검수가 끝난다.
+      if (
+        event.transitionType !== transitionType ||
+        event.skuId !== input.skuId ||
+        event.toWarehouseId !== input.warehouseId ||
+        event.quantity !== input.quantity
+      ) {
+        throw new ConflictException(`idempotencyKey ${input.idempotencyKey} already belongs to a different stock event`);
+      }
       return { eventId: event.id };
     }, tx);
   }
