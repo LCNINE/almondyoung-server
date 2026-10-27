@@ -7,7 +7,7 @@ import { readPartialCancelRecords } from '../partial-cancel/partial-cancel-order
 import { priorGroupFeesFor } from '../partial-cancel/prior-group-fees';
 import { shippingPlanLines } from '../partial-cancel/shipping-plan-lines';
 import { productShippingProfiles, type OrderView } from '../settlement/load-order-view';
-import { orderCancelLockKey } from '../settlement/order-payments';
+import { listOrderRefunds, orderCancelLockKey } from '../settlement/order-payments';
 import { refundOrderPayments } from '../settlement/refund-order-payments';
 import type { RefundMode } from '../settlement/refund-mode';
 import { reconcileOrderWalletRefunds } from '../settlement/wallet-refund-ledger';
@@ -17,6 +17,7 @@ import { ReturnOrderNotFound } from './request-order-return';
 import { returnItemValue } from './return-item-value';
 import {
   hashReturnPrepay,
+  prepaidTotal,
   prepayNote,
   readReturnPrepayRecord,
   RETURN_PREPAY_METADATA_KEY,
@@ -110,14 +111,17 @@ async function run(container: MedusaContainer, input: PrepayOrderReturnInput): P
   const ret = await loadReturn(container, input.returnId);
   // 다른 주문의 반품 id 는 «없는 반품» — 존재 여부를 가르지 않는다
   if (!ret || ret.orderId !== input.orderId) throw new ReturnOrderNotFound(`반품을 찾을 수 없습니다: ${input.returnId}`);
-  const request = assertPrepayableReturn(ret);
+  const request = assertOurLiveReturn(ret);
   const requestHash = hashReturnPrepay(input.requestId, input.amount ?? null, input.memo);
   const existing = readPrepayRecordStrict(ret);
   if (existing && existing.requestHash !== requestHash) {
     throw new ReturnPrepayRejected('request_id_conflict', `이 반품에 다른 선환불 요청이 이미 있습니다: ${input.requestId}`);
   }
+  // 끝난 선환불은 반품이 그 뒤 정산(수령)됐어도 결과 그대로 — 돈이 나갔다는 사실을 «정산됨»으로 덮지 않는다
   if (existing?.stage === 'refunded') return toResult(input, existing);
   const mode = input.refundMode ?? 'auto';
+  if (isSettledOrReceived(ret)) return settledAfterPrepay(container, input, ret, existing, mode);
+  assertRequested(ret);
 
   const record = existing ?? (await open(container, input, ret, request, requestHash));
   try {
@@ -137,6 +141,28 @@ async function run(container: MedusaContainer, input: PrepayOrderReturnInput): P
     throw new ReturnPrepayRefundPending(input.requestId, `반품 선환불이 끝나지 않았습니다(${input.requestId}): ${describeError(error)}`);
   }
   const done: ReturnPrepayRecord = { ...record, stage: 'refunded', refundedAt: new Date().toISOString(), refundMode: mode };
+  await writePrepayRecord(container, ret.id, done);
+  return toResult(input, done);
+}
+
+/**
+ * 정산(수령)이 이 선환불보다 먼저 끝났다(N7). 더 내지 않는다 — 그러나 응답을 잃은 선환불은 돈이 이미 나갔을 수 있어
+ * 장부(N6: 이 메모 환불 행이 정본)를 맞춰 본다: 나간 돈이 있으면 그 합으로 기록을 refunded 로 닫고 200(관측이 선환불을 낸다),
+ * 없으면 return_already_settled.
+ */
+async function settledAfterPrepay(
+  container: MedusaContainer,
+  input: PrepayOrderReturnInput,
+  ret: ReturnRow,
+  existing: ReturnPrepayRecord | null,
+  mode: RefundMode,
+): Promise<PrepayOrderReturnResult> {
+  await reconcileOrderWalletRefunds(container, input.orderId);
+  const paid = prepaidTotal(await listOrderRefunds(container, input.orderId), input.requestId);
+  if (paid <= 0) throw new ReturnPrepayRejected('return_already_settled', '이미 정산(수령)한 반품입니다 — 선환불할 수 없습니다');
+  // 기록은 환불 «전»에 쓰이므로 기록 없는 선환불 메모 환불은 우리 길로 생기지 않는다 — 모르는 돈이라 멈춘다
+  if (!existing) throw new Error(`선환불 기록 없이 선환불 메모 환불 ${paid}원이 있습니다: ${input.requestId}`);
+  const done: ReturnPrepayRecord = { ...existing, amount: paid, stage: 'refunded', refundedAt: new Date().toISOString(), refundMode: mode };
   await writePrepayRecord(container, ret.id, done);
   return toResult(input, done);
 }
@@ -203,19 +229,30 @@ async function open(
  * 정산 기록은 읽히는지와 무관하게 키가 있으면 정산된 것으로 본다 — 반만 믿고 돈을 움직이지 않는다.
  */
 export function assertPrepayableReturn(ret: ReturnRow): ReturnRequestRecord {
+  const request = assertOurLiveReturn(ret);
+  if (isSettledOrReceived(ret)) {
+    throw new ReturnPrepayRejected('return_already_settled', '이미 정산(수령)한 반품입니다 — 선환불할 수 없습니다');
+  }
+  assertRequested(ret);
+  return request;
+}
+
+/** 우리 반품(요청 기록)이고 취소되지 않았다. */
+function assertOurLiveReturn(ret: ReturnRow): ReturnRequestRecord {
   const request = readReturnRequestRecord(ret.metadata);
   if (!request) throw new ReturnPrepayRejected('not_our_return', '이 반품은 선환불할 수 없습니다');
   if (ret.status === ReturnStatus.CANCELED) throw new ReturnPrepayRejected('return_canceled', '취소된 반품입니다');
-  if (
-    ret.metadata?.[RETURN_SETTLEMENT_METADATA_KEY] !== undefined ||
-    ret.status === ReturnStatus.RECEIVED ||
-    ret.status === ReturnStatus.PARTIALLY_RECEIVED
-  ) {
-    throw new ReturnPrepayRejected('return_already_settled', '이미 정산(수령)한 반품입니다 — 선환불할 수 없습니다');
-  }
-  // open = 확정 전에 끊긴 요청의 흔적. 같은 requestId 의 요청 재시도가 치운다 — 정해진 거절이 아니라 기다림(500)
-  if (ret.status !== ReturnStatus.REQUESTED) throw new Error(`요청이 확정되지 않은 반품입니다: ${ret.id} (${ret.status})`);
   return request;
+}
+
+const isSettledOrReceived = (ret: ReturnRow): boolean =>
+  ret.metadata?.[RETURN_SETTLEMENT_METADATA_KEY] !== undefined ||
+  ret.status === ReturnStatus.RECEIVED ||
+  ret.status === ReturnStatus.PARTIALLY_RECEIVED;
+
+/** open = 확정 전에 끊긴 요청의 흔적. 같은 requestId 의 요청 재시도가 치운다 — 정해진 거절이 아니라 기다림(500) */
+function assertRequested(ret: ReturnRow): void {
+  if (ret.status !== ReturnStatus.REQUESTED) throw new Error(`요청이 확정되지 않은 반품입니다: ${ret.id} (${ret.status})`);
 }
 
 export type ReturnPrepayEstimate = {

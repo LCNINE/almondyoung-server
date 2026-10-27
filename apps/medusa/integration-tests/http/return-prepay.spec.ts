@@ -249,6 +249,35 @@ medusaIntegrationTestRunner({
       expect((await ledgerRefunds(orderId)).map((r) => r.note)).toEqual([expect.stringMatching(/^return-settle:/)]);
     });
 
+    it('선환불 응답을 잃고 정산이 돈 뒤 같은 requestId 로 다시 → 200, 금액 = 장부의 선환불 합, 환불 1', async () => {
+      // A×2 + B×2 = 120,000 — 정산이 선환불을 아직 빼지 않아도(Task 5 전) 캡처가 모자라지 않게 넉넉히 둔다
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }, { variant: 'B', quantity: 2 }]);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+      const requestId = rid('prepay');
+      const body = { requestId, memo: '먼저' };
+      wallet.loseNextRefundResponse = true;
+
+      expect((await prepay(orderId, returnId, body)).status).toBe(502);
+      const lost = readReturnPrepayRecord((await returnRow(returnId)).metadata);
+      expect(lost?.stage).toBe('requested');
+      expect(await settle(orderId, returnId, { requestId: rid('settle'), items: [{ item_id: itemOf('A'), received: 2, dismissed: 0 }] })).toEqual(
+        expect.objectContaining({ status: 200 }),
+      );
+      const callsBefore = wallet.refundCalls().length;
+
+      const retry = await prepay(orderId, returnId, body);
+
+      expect(retry.status).toBe(200);
+      expect(retry.data).toEqual({ returnId, requestId, amount: lost!.amount, refund: { mode: 'auto', amount: lost!.amount }, stage: 'refunded' });
+      expect(wallet.refundCalls()).toHaveLength(callsBefore);
+      expect((await ledgerRefunds(orderId)).filter((r) => r.note === `return-prepay:${requestId}`)).toEqual([
+        { amount: lost!.amount, note: `return-prepay:${requestId}` },
+      ]);
+      expect(readReturnPrepayRecord((await returnRow(returnId)).metadata)).toEqual(
+        expect.objectContaining({ stage: 'refunded', amount: lost!.amount }),
+      );
+    });
+
     it('환불이 밀린 부분취소가 있어 차액이 음수인 주문 → 400 pending_refund_outstanding, 환불 0', async () => {
       // A×2 배송완료, E 미출고 — E 부분취소의 환불이 502 로 밀려 차액 −10,000 이 남았다
       const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }, { variant: 'E', quantity: 1 }], ['A']);
