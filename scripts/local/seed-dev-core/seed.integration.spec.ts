@@ -8,7 +8,15 @@ import {
   assembleSimpleOutbound,
   startBatchFor,
 } from '../../../apps/core/src/modules/fulfillment/services/__support__/simple-outbound-wiring';
-import { inRollbackTx } from '../../../apps/core/src/modules/fulfillment/services/__support__/logistics-wiring';
+import {
+  inRollbackTx,
+  makeDbService,
+  wireLogistics,
+} from '../../../apps/core/src/modules/fulfillment/services/__support__/logistics-wiring';
+import { outboxPublisherFor } from '../../../apps/core/src/modules/fulfillment/outbox/__support__/outbox-publisher.factory';
+import { CustomerReturnReader } from '../../../apps/core/src/modules/sales-order/customer-return/customer-return.reader';
+import { CustomerReturnReceivingManager } from '../../../apps/core/src/modules/sales-order/customer-return/customer-return-receiving.manager';
+import { CHANNEL_ORDERS_COMMAND_STREAM, CORE_ORDER_STREAM } from '@packages/event-contracts/streams';
 
 const SEED_URL = process.env.SEED_DEV_CORE_URL;
 // constants.ts 레지스트리의 019d000f(출고 시나리오 SKU). 기본 시드 단언에서 그 행을 걸러낼 때만 쓴다.
@@ -443,21 +451,33 @@ describeIfSeedDb('dev_core 시드', () => {
   });
 
   it('판매주문 10건이 FO 와 draft shipment 로 변환된다', async () => {
-    // 출고 시나리오 주문(DEV-BOX-*) 8건이 함께 있다 — 그쪽은 아래 「출고 시나리오」 테스트가 본다.
+    // 출고 시나리오 주문(DEV-BOX-*) 8건·반품 시나리오 주문(DEV-RETURN-*) 3건이 함께 있다 — 그쪽은 아래
+    // 「출고 시나리오」·「반품 시나리오」 테스트가 본다.
     const orders = await db.select().from(wmsTables.salesOrders).orderBy(wmsTables.salesOrders.channelOrderId);
     expect(orders.filter((o) => o.channelOrderId.startsWith('DEV-ORDER-'))).toHaveLength(10);
-    expect(orders).toHaveLength(18);
+    expect(orders).toHaveLength(10 + 8 + 3);
 
     const fulfillmentOrders = await db.select().from(wmsTables.fulfillmentOrders);
-    expect(fulfillmentOrders).toHaveLength(18);
+    expect(fulfillmentOrders).toHaveLength(10 + 8 + 3);
 
-    const items = await db.select().from(wmsTables.fulfillmentOrderItems);
-    expect(items).toHaveLength(10 + 17); // 기본 10 + 시나리오 박스 줄 17
-    // 예약이 함께 섰는지 — 직접 insert 로는 만들 수 없는 상태다.
-    expect(items.every((item) => item.reservedQty > 0)).toBe(true);
+    const items = await db
+      .select({
+        channelOrderId: wmsTables.salesOrders.channelOrderId,
+        reservedQty: wmsTables.fulfillmentOrderItems.reservedQty,
+      })
+      .from(wmsTables.fulfillmentOrderItems)
+      .innerJoin(
+        wmsTables.fulfillmentOrders,
+        eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+      )
+      .innerJoin(wmsTables.salesOrders, eq(wmsTables.salesOrders.id, wmsTables.fulfillmentOrders.salesOrderId));
+    expect(items).toHaveLength(10 + 17 + 4); // 기본 10 + 시나리오 박스 줄 17 + 반품 시나리오 구성품 4
+    // 예약이 함께 섰는지 — 직접 insert 로는 만들 수 없는 상태다. 반품 시나리오는 이미 배송완료라 예약이 없다.
+    const outstanding = items.filter((item) => !item.channelOrderId.startsWith('DEV-RETURN-'));
+    expect(outstanding.every((item) => item.reservedQty > 0)).toBe(true);
 
     const shipments = await db.select().from(wmsTables.shipments);
-    expect(shipments).toHaveLength(18);
+    expect(shipments).toHaveLength(10 + 8 + 3);
 
     // 리뷰 지적사항: 위 assertion 들은 FulfillmentsService.create 가 실제로 계산하는 핵심 값 —
     // FO item 의 qty(= sales_order_line.quantity × product_variant_sku_link.quantity)와 그
@@ -519,7 +539,8 @@ describeIfSeedDb('dev_core 시드', () => {
       acc[row.status] = (acc[row.status] ?? 0) + 1;
       return acc;
     }, {});
-    expect(byStatus).toEqual({ draft: 5, planned: 5 + 8 }); // 시나리오 박스 8개는 전부 planned
+    // 출고 시나리오 박스 8개는 전부 planned, 반품 시나리오 소포 3개는 배송완료
+    expect(byStatus).toEqual({ draft: 5, planned: 5 + 8, delivered: 3 });
   });
 
   it('planned shipment 13건(기본 5 + 시나리오 8)이 배치·work item·송장까지 출고 대기 상태로 들어간다', async () => {
@@ -737,6 +758,189 @@ describeIfSeedDb('dev_core 시드', () => {
           .where(eq(wmsTables.pickingSourceAllocations.shipmentLineId, rollerLine!.lineId))
           .orderBy(wmsTables.locations.code);
         expect(allocations.map((a) => `${a.location}=${a.qty}`)).toEqual(['A-01-05=2', 'A-01-06=1']);
+      });
+    });
+  });
+
+  // 반품 시나리오(return-scenarios.ts) — 스테이션 F7 반품의 길마다 반품 하나씩. 기대값은 그 파일을 import 하지 않고
+  // 리터럴로 적는다(위 주석들과 같은 이유). 표는 docs/local-dev.md «반품 시나리오».
+  describe('반품 시나리오', () => {
+    const BUCHEON = '019d0001-0001-7000-a000-000000000001';
+    const CHINA = '019d0001-0002-7000-a000-000000000002';
+    const SCENARIO_RETURNS = [
+      { order: 'DEV-RETURN-0001', customer: '변심반품', reason: 'change_of_mind', items: ['DEV-BOX-SKU-01×2'] },
+      { order: 'DEV-RETURN-0002', customer: '덜옴반품', reason: 'defective', items: ['DEV-BOX-SKU-02×3'] },
+      {
+        order: 'DEV-RETURN-0003',
+        customer: '세트반품',
+        reason: 'wrong_item',
+        items: ['DEV-BOX-SKU-05×2', 'DEV-BOX-SKU-06×1'],
+      },
+    ];
+
+    async function returnItems() {
+      return db
+        .select({
+          order: wmsTables.salesOrders.channelOrderId,
+          skuCode: wmsTables.skus.code,
+          expectedQty: wmsTables.customerReturnItems.expectedQty,
+          barcode: wmsTables.skuBarcodes.barcode,
+        })
+        .from(wmsTables.customerReturnItems)
+        .innerJoin(
+          wmsTables.customerReturnLines,
+          eq(wmsTables.customerReturnLines.id, wmsTables.customerReturnItems.customerReturnLineId),
+        )
+        .innerJoin(
+          wmsTables.customerReturns,
+          eq(wmsTables.customerReturns.id, wmsTables.customerReturnLines.customerReturnId),
+        )
+        .innerJoin(wmsTables.salesOrders, eq(wmsTables.salesOrders.id, wmsTables.customerReturns.salesOrderId))
+        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.customerReturnItems.skuId))
+        .leftJoin(wmsTables.skuBarcodes, eq(wmsTables.skuBarcodes.skuId, wmsTables.customerReturnItems.skuId))
+        .orderBy(wmsTables.salesOrders.channelOrderId, wmsTables.skus.code);
+    }
+
+    it('반품 3건이 도착 전(expected)으로, 정해진 주문·고객·사유·항목으로 들어간다', async () => {
+      const returns = await db
+        .select({
+          order: wmsTables.salesOrders.channelOrderId,
+          customer: wmsTables.salesOrders.customerName,
+          status: wmsTables.customerReturns.status,
+          reason: wmsTables.customerReturns.reason,
+        })
+        .from(wmsTables.customerReturns)
+        .innerJoin(wmsTables.salesOrders, eq(wmsTables.salesOrders.id, wmsTables.customerReturns.salesOrderId))
+        .orderBy(wmsTables.salesOrders.channelOrderId);
+      expect(returns).toEqual(
+        SCENARIO_RETURNS.map((r) => ({ order: r.order, customer: r.customer, status: 'expected', reason: r.reason })),
+      );
+
+      const items = await returnItems();
+      for (const scenario of SCENARIO_RETURNS) {
+        expect(items.filter((i) => i.order === scenario.order).map((i) => `${i.skuCode}×${i.expectedQty}`)).toEqual(
+          scenario.items,
+        );
+      }
+    });
+
+    it('반품 항목의 SKU 마다 출고 시나리오의 시드 바코드가 있다 — 소포 세기에서 상품을 찍을 수 있다', async () => {
+      const items = await returnItems();
+      expect(items.map((i) => `${i.skuCode}=${i.barcode}`)).toEqual([
+        'DEV-BOX-SKU-01=8809990000001',
+        'DEV-BOX-SKU-02=8809990000002',
+        'DEV-BOX-SKU-05=8809990000005',
+        'DEV-BOX-SKU-06=8809990000006',
+      ]);
+    });
+
+    it('부천의 도착 대기 목록에 셋 다 awaiting 으로 뜨고, 상품 바코드로 그 반품을 찾는다', async () => {
+      const reader = new CustomerReturnReader(makeDbService(db));
+      const bucheon = await reader.listForReceiving({ warehouseId: BUCHEON, limit: 100 });
+      expect(bucheon.total).toBe(3);
+      expect(bucheon.items.map((i) => `${i.orderNo}:${i.stage}:${i.customerMasked}:${i.expectedQty}`)).toEqual([
+        'DEV-RETURN-0001:awaiting:변심**:2',
+        'DEV-RETURN-0002:awaiting:덜옴**:3',
+        'DEV-RETURN-0003:awaiting:세트**:3',
+      ]);
+
+      const byBarcode = await reader.listForReceiving({ warehouseId: BUCHEON, barcode: '8809990000006', limit: 100 });
+      expect(byBarcode.items.map((i) => i.orderNo)).toEqual(['DEV-RETURN-0003']);
+
+      // 배송완료한 창고만 받는다 — 중국 창고 목록에는 없다
+      const china = await reader.listForReceiving({ warehouseId: CHINA, limit: 100 });
+      expect(china.total).toBe(0);
+    });
+
+    // 위 테스트는 «목록에 뜬다»까지만 본다. 표의 길(도착 → 검수)을 실제 Manager 로 밟아 시드가 스모크에 쓸 수 있음을 증명한다.
+    it('표의 길대로 밟힌다 — 0001 양품 1·불량 1 → inspected, 0002 하나만 → partial, 0003 보류 → held', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const dbService = makeDbService(db);
+        const reader = new CustomerReturnReader(dbService);
+        const receiving = new CustomerReturnReceivingManager(
+          dbService,
+          reader,
+          wireLogistics(dbService).command,
+          outboxPublisherFor(CORE_ORDER_STREAM, dbService),
+          outboxPublisherFor(CHANNEL_ORDERS_COMMAND_STREAM, dbService),
+        );
+        const actorId = '019d0008-0001-7000-a000-000000000001';
+        const { items } = await reader.listForReceiving({ warehouseId: BUCHEON, limit: 100 }, tx);
+        const viewOf = async (orderNo: string) => {
+          const row = items.find((i) => i.orderNo === orderNo);
+          if (!row) throw new Error(`${orderNo} 가 목록에 없다`);
+          return reader.findById(row.id, tx);
+        };
+        const itemsOf = (view: Awaited<ReturnType<typeof viewOf>>) => view.lines.flatMap((line) => line.items);
+
+        const first = await viewOf('DEV-RETURN-0001');
+        const [cream] = itemsOf(first);
+        await receiving.recordArrival(
+          {
+            customerReturnId: first.id,
+            warehouseId: BUCHEON,
+            items: [{ customerReturnItemId: cream.id, quantity: 2 }],
+            idempotencyKey: 'seed-smoke-0001',
+            actorId,
+          },
+          tx,
+        );
+        const inspected = await receiving.recordInspection(
+          {
+            customerReturnId: first.id,
+            items: [{ customerReturnItemId: cream.id, accepted: 1, rejected: 1, held: 0 }],
+            actorId,
+          },
+          tx,
+        );
+        expect(inspected.status).toBe('inspected');
+
+        const second = await viewOf('DEV-RETURN-0002');
+        const [pin] = itemsOf(second);
+        await receiving.recordArrival(
+          {
+            customerReturnId: second.id,
+            warehouseId: BUCHEON,
+            items: [{ customerReturnItemId: pin.id, quantity: 1 }],
+            idempotencyKey: 'seed-smoke-0002',
+            actorId,
+          },
+          tx,
+        );
+
+        const third = await viewOf('DEV-RETURN-0003');
+        const setItems = itemsOf(third);
+        expect(setItems.map((i) => `${i.skuCode}×${i.expectedQty}:${i.barcodes.join(',')}`)).toEqual([
+          'DEV-BOX-SKU-05×2:8809990000005',
+          'DEV-BOX-SKU-06×1:8809990000006',
+        ]);
+        await receiving.recordArrival(
+          {
+            customerReturnId: third.id,
+            warehouseId: BUCHEON,
+            items: setItems.map((i) => ({ customerReturnItemId: i.id, quantity: i.expectedQty })),
+            idempotencyKey: 'seed-smoke-0003',
+            actorId,
+          },
+          tx,
+        );
+        const held = await receiving.recordInspection(
+          {
+            customerReturnId: third.id,
+            items: setItems.map((i, n) => ({
+              customerReturnItemId: i.id,
+              accepted: n === 0 ? i.expectedQty : 0,
+              rejected: 0,
+              held: n === 0 ? 0 : i.expectedQty,
+            })),
+            actorId,
+          },
+          tx,
+        );
+        expect(held.status).toBe('held');
+
+        const after = await reader.listForReceiving({ warehouseId: BUCHEON, limit: 100 }, tx);
+        expect(after.items.map((i) => `${i.orderNo}:${i.stage}`)).toEqual(['DEV-RETURN-0002:partial']);
       });
     });
   });

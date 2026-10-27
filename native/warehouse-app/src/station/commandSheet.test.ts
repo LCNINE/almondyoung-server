@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { assertUniqueKeys } from './actions';
 import { parseCommand } from './commandCode';
 import { COMMAND_SHEET_SECTIONS, SHEET_DIGITS, digitEntry, keyEntry } from './commandSheet';
+import { RETURNS_ACTIONS } from './returns/returnsActions';
 
 describe('명령 바코드 시트', () => {
   it('첫 절은 탭 F1~F7 — IME 켠 PC 에서 명령이 읽히는지 바로 확인한다', () => {
@@ -13,6 +14,15 @@ describe('명령 바코드 시트', () => {
     expect(COMMAND_SHEET_SECTIONS[1].title).toBe('출고 검수');
     expect(COMMAND_SHEET_SECTIONS[1].actions.map((a) => a.key)).toEqual(['F7', 'F8', 'F9', 'F10', 'F11', 'F12', 'Escape']);
     expect(COMMAND_SHEET_SECTIONS[1].actions).toContainEqual(expect.objectContaining({ key: 'F10', label: '강제출고' }));
+  });
+
+  it('셋째 절은 반품 — 화면 선언 상수에서 검색·확정·목록, 같은 키의 두 확정은 한 바코드에 두 이름으로', () => {
+    expect(COMMAND_SHEET_SECTIONS[2].title).toBe('반품');
+    expect(COMMAND_SHEET_SECTIONS[2].actions).toEqual([
+      { key: 'F9', label: RETURNS_ACTIONS.search.label },
+      { key: 'F10', label: `${RETURNS_ACTIONS.confirmArrival.label} · ${RETURNS_ACTIONS.confirmInspection.label}` },
+      { key: 'Escape', label: RETURNS_ACTIONS.back.label },
+    ]);
   });
 
   it('절마다 키가 겹치지 않고, 모든 바코드가 그 키로 되읽힌다', () => {

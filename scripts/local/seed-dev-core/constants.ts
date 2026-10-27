@@ -28,6 +28,7 @@
  *                              값을 바꾸려면 그쪽도 같이 본다)
  *   019d000f — outbound-scenarios.ts  scenarioSkuId (출고 시나리오 SKU 8개)
  *   019d0010 — outbound-scenarios.ts  scenarioVariantId (출고 시나리오 variant 8개)
+ *   019d0011 — return-scenarios.ts    returnVariantId (반품 시나리오 주문 줄의 variant 3개)
  */
 export const SEED_IDS = {
   warehouseBucheon: '019d0001-0001-7000-a000-000000000001',
