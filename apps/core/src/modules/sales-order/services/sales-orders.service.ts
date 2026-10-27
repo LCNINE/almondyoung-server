@@ -134,6 +134,11 @@ type PostShipmentHandoffOptions = NonNullable<CancelSalesOrderOptions['postShipm
 type PriorCancellationContext = {
   /** 라인 수량 문의 `remaining`(주문 − 갈래 무관 취소) — 호출자는 뺄셈을 다시 하지 않는다 (K6 PR2b). */
   remainingByLine: Map<string, number>;
+  /**
+   * 요청 검사의 취소 상한 = `remaining − returnHeld`(K8 PR5) — 반품이 잡은 물건을 취소로 또 환불하지 않게.
+   * 전체취소 몫·«남는 것 없음» 판정은 반품과 무관하게 `remainingByLine` 으로 센다(N6).
+   */
+  cancelableByLine: Map<string, number>;
   preservedShippedByFulfillmentItem: Map<string, number>;
 };
 type AfterBoxingPlan = {
@@ -201,6 +206,15 @@ function remainingOf(prior: PriorCancellationContext, salesOrderLineId: string):
     throw new Error(`Line quantities are missing SalesOrder line ${salesOrderLineId}`);
   }
   return remaining;
+}
+
+/** 라인의 취소 상한(남은 수량 − 반품이 잡은 수량). 없으면 `remainingOf` 와 같이 다른 주문의 라인이다. */
+function cancelableOf(prior: PriorCancellationContext, salesOrderLineId: string): number {
+  const cancelable = prior.cancelableByLine.get(salesOrderLineId);
+  if (cancelable === undefined) {
+    throw new Error(`Line quantities are missing SalesOrder line ${salesOrderLineId}`);
+  }
+  return cancelable;
 }
 
 /** 단계 행이 없는 주문(SQL 이 존재하는 주문마다 한 행을 내므로 일어나지 않는다)에 던지는 대신 쓰는 중립값 */
@@ -1464,9 +1478,9 @@ export class SalesOrdersService {
           `Sales order line ${request.salesOrderLineId} does not belong to ${salesOrderId}`,
         );
       }
-      const remainingQuantity = remainingOf(priorCancellationContext, line.id);
-      if (request.quantity > remainingQuantity) {
-        throw new BadRequestException(cancelQuantityExceedsMessage(request.quantity, remainingQuantity));
+      const cancelableQuantity = cancelableOf(priorCancellationContext, line.id);
+      if (request.quantity > cancelableQuantity) {
+        throw new BadRequestException(cancelQuantityExceedsMessage(request.quantity, cancelableQuantity));
       }
     }
 
@@ -1703,9 +1717,9 @@ export class SalesOrdersService {
         throw new BadRequestException(
           `Sales order line ${request.salesOrderLineId} does not belong to ${salesOrderId}`,
         );
-      const remaining = remainingOf(prior, line.id);
-      if (request.quantity > remaining) {
-        throw new BadRequestException(`Cancellation quantity ${request.quantity} exceeds remaining ${remaining}`);
+      const cancelable = cancelableOf(prior, line.id);
+      if (request.quantity > cancelable) {
+        throw new BadRequestException(`Cancellation quantity ${request.quantity} exceeds remaining ${cancelable}`);
       }
     }
 
@@ -2118,9 +2132,9 @@ export class SalesOrdersService {
           `Sales order line ${request.salesOrderLineId} does not belong to ${salesOrderId}`,
         );
       }
-      const remaining = remainingOf(prior, line.id);
-      if (request.quantity > remaining) {
-        throw new BadRequestException(cancelQuantityExceedsMessage(request.quantity, remaining));
+      const cancelable = cancelableOf(prior, line.id);
+      if (request.quantity > cancelable) {
+        throw new BadRequestException(cancelQuantityExceedsMessage(request.quantity, cancelable));
       }
     }
     return {
@@ -2143,6 +2157,7 @@ export class SalesOrdersService {
   /**
    * 이 주문의 이전 취소가 남긴 엔진 상태 (K6 PR2a, `remainingByLine` 은 PR2b).
    * `remainingByLine` 은 라인 수량 문의 `remaining`(주문 − 갈래·scope 무관 취소 — 전체취소도 센다)이다.
+   * `cancelableByLine` 은 거기서 반품이 잡은 수량(`returnHeld`)을 뺀 요청 검사의 상한이다(K8 PR5).
    * 문을 이미 읽은 호출자(상자 후 재계획)는 `lineQuantities` 를 넘겨 같은 트랜잭션에서 두 번 읽지 않는다.
    * `preservedShippedByFulfillmentItem` 은 «어느 FOI 의 출고분을 이미 보존 처리했나»라는 FOI 단위 상태라
    * 라인 행으로 되살릴 수 없어(세트에서 구성품 하나만 나간 단위도 `after_shipment` 1) effects 에서 읽는다.
@@ -2154,6 +2169,9 @@ export class SalesOrdersService {
   ): Promise<PriorCancellationContext> {
     const quantities = lineQuantities ?? (await readLineQuantities(trx, salesOrderId));
     const remainingByLine = new Map([...quantities.values()].map((line) => [line.salesOrderLineId, line.remaining]));
+    const cancelableByLine = new Map(
+      [...quantities.values()].map((line) => [line.salesOrderLineId, line.remaining - line.returnHeld]),
+    );
 
     const cancellations = await trx
       .select({ effects: wmsTables.salesOrderCancellations.effects })
@@ -2180,7 +2198,7 @@ export class SalesOrdersService {
         }
       }
     }
-    return { remainingByLine, preservedShippedByFulfillmentItem };
+    return { remainingByLine, cancelableByLine, preservedShippedByFulfillmentItem };
   }
 
   private async loadOpenFulfillmentBacklogs(salesOrderId: string, trx: DbTx) {

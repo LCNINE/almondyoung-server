@@ -13,6 +13,7 @@ function line(
     canceled: 0,
     demand: 0,
     remaining: 0,
+    returnHeld: 0,
     skus: skus.map((sku) => ({
       required: sku.outstanding ?? 0,
       outstanding: 0,

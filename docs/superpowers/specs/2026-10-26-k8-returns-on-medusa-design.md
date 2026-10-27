@@ -104,13 +104,13 @@ CS 라우트가 둘 다 거절하므로, 개통 전에는 자연히 닫혀 있�
 ### 4.1 한 장 그림
 
 ```
-고객/CS ──(우리 Medusa 라우트)──▶ Medusa Return 요청·확정 ──(channel-adapter 폴링)──▶ core «반품 예정»
-                                         │                                              │
-                                         │                                   한진 회수 접수(R) (뒤 PR)
-                                         │                                              │
-                                         │                                   창고 도착: 원장 null → RETURNED
-                                         │                                   검수:     RETURNED → ON_HAND | DEFECTIVE
-                                         │                                              │
+고객/CS ──(우리 Medusa 라우트)──▶ Medusa Return 요청·확정 ──(폴링: ChannelReturnRequested)──▶ core «반품 예정»
+                                         │                                                      │
+                                         │                                           한진 회수 접수(R) (뒤 PR)
+                                         │                                                      │
+                                         │                                           창고 도착: 원장 null → RETURNED
+                                         │                                           검수:     RETURNED → ON_HAND | DEFECTIVE
+                                         │                                                      │
 Medusa 정산: 수령(양품/불량) + 택배비 + 환불 ◀──(channel-orders 명령)── core «검수 끝, 수령 알림»
          │
          └─(channel-adapter 폴링: OrderRefundCreated 등)──▶ core 고객 이벤트(SalesOrderClaimProgressed·SalesOrderReturned)
@@ -217,9 +217,29 @@ requested = `expected` 관측, collected = `arrived`, completed = `settled`. `Sa
 
 **K6 수량 사실.** 지금 `claimable`·`return_*`·`exchange_active` 칸은 옛 반품 테이블을 읽는다(`claim-quantities.sql.ts`). 읽는 곳은
 옛 반품 자격 판정과 스토어 actions 화면(`store-sales-orders.service.ts:557-591`)뿐이다. 반품 예정 기록으로 다시 잇는다:
-진행 중 = `expected`·`arrived`·`inspected`, 소진 = `settled`. **`lineRemainingSql` 도 정산된 반품을 빼게 한다** — 출고 후 취소와
+진행 중 = `expected`·`arrived`·`inspected`·`held`·`refund_pending`, 소진 = `settled`. **취소 상한이 반품이 잡은 수량을 뺀다**
+(`remaining − returnHeld`, 정산 전 반품도) — `lineRemainingSql`(`remaining`)은 그대로 둔다(아래 PR 5 결과의 N6). 출고 후 취소와
 반품의 이중 환불을 막는다(반목표). Medusa 쪽은 두 주문 변경이 같은 주문 합계를 줄이므로 저절로 막히지만, core 가 먼저 막아야
 명령 자체가 나가지 않는다.
+
+**PR 5 에서 확정한 결과.**
+- (N1) Medusa→core 사실은 새 이름 둘 — `ChannelReturnRequested`·`ChannelReturnCancelled`(`orders.events.v1`). 발행자·소비자가 0이던
+  `OrderReturnRequested` 는 계약에서 지웠다. 옛 계약을 고쳐 쓰면 옛 스키마를 가진 소비자가 새 payload 검증에서 throw 하지만, 새 이름은
+  옛 소비자가 warn 하고 넘긴다 — 위 «Medusa→core 관측»의 **소비자 선배포는 필요 없다**.
+- (N3) 반품 예정 기록은 `customer_returns`·`customer_return_lines`(줄 = 판매 라인 × 판매 단위). 상태 enum 은 위 사다리 전부
+  (`expected·arrived·inspected·held·refund_pending·settled·cancelled`)를 지금 만든다 — 이 PR 이 쓰는 전이는 `→ expected`·`expected → cancelled`
+  뿐이지만, K6 상태 목록이 enum 칼럼을 문자열과 비교하므로 값을 뒤 PR 에서 더하면 목록 고치기를 잊는 순간 도착한 반품이 청구에서 빠진다.
+- (N5) K6 는 새 기록을 **SKU 합에만** 더한다(`claimTotalsBySkuSql`, 줄 수량 × 굳은 구성의 `qty_per_unit`, 기존 `return_active`·
+  `return_consumed` 칸에 합친다). 줄이 소포를 모르므로 소포 합에는 없다 — 소포 자격이 `least(소포 − 소포 청구, SKU claimable)` 이라
+  SKU 몫이 덮는다. 옛 반품 표 읽기는 PR 10 까지 남아 두 길의 반품이 서로를 뺀다.
+- (N6) `remaining` 은 반품을 빼지 않는다 — 채널 변경 대조가 `remaining` 을 Medusa 줄 수량과 비교하는데 Medusa 반품은 `item.quantity` 를
+  줄이지 않고, `SalesOrderReturned.remainingQuantity` 도 같은 값이다. 대신 `LineQuantities.returnHeld`(취소되지 않은 반품 줄의 판매 단위 합)를
+  두고, 취소 요청 검사 세 곳(상자 전 부분취소·상자 후 재계획·요청 때 판정)만 `remaining − returnHeld` 를 상한으로 쓴다. 전체취소 몫과
+  «남는 것 없음» 판정은 주문 − 취소로 센다.
+- (N8) 고객 이벤트는 이 PR 에서 `SalesOrderClaimProgressed` 의 `requested` 하나다(`expected` 기록을 만든 트랜잭션에서). `collected`·`completed`·
+  `SalesOrderReturned` 는 그 전이를 만드는 PR 6 이 낸다. 반품 취소에는 고객 이벤트 단계가 없다.
+- channel-adapter 의 Medusa 주문 조회 `ORDER_FIELDS` 는 `returns.items.*` 로 반품 품목을 읽는다 — `returns.items.quantity` 를 이름으로 적으면
+  Medusa 가 응답에서 그 칸을 뺀다(`apps/medusa/integration-tests/http/return-observation-fields.spec.ts` 가 실측으로 못 박는다).
 
 ### 4.4 정산 — 수령 + 택배비 + 환불 (Medusa)
 
@@ -372,7 +392,7 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 | 2 | 기본 반품·교환·클레임 쓰기 라우트 거절 미들웨어 + `createReturnFulfillment` + 반품 옵션·사유 보장(`provisionShippingGroup`·시드) | medusa | 미들웨어가 시드보다 먼저(7) |
 | 3 | 우리 반품 요청·취소 워크플로와 라우트(store·admin) | medusa · core(내부 API) · infra | 자격은 core 내부 API(6) |
 | 4 | 원장 `RETURNED` + 전이 셋 + 뷰 재정의 + 상태 목록 반영 | core · event-contracts · admin-web · warehouse-app | expand, 휴면 |
-| 5 | 반품 예정 기록 + Medusa 반품 관측(channel-adapter) + 고객 이벤트를 새 기록에서 + K6 다시 잇기 | core · channel-adapter · event-contracts | 소비자 선배포 |
+| 5 | 반품 예정 기록 + Medusa 반품 관측(channel-adapter) + 고객 이벤트를 새 기록에서 + K6 다시 잇기 | core · channel-adapter · event-contracts | expand(`migrate → deploy`), 배포 순서 제약 없음 — N1·N2 |
 | 6 | 도착·검수 명령 + «수령 알림» 명령 + Medusa 정산 워크플로·라우트(4.4) | core · channel-adapter · medusa | 여기서 반품이 끝까지 돈다 |
 | 7 | admin-web CS 화면 다시 짓기 + 창고 반품 입고·검수 화면 | admin-web · (warehouse-app?) | 화면 위치 열린 질문 |
 | 8 | 스토어프론트 신청 화면(#933·#934) | storefront | |

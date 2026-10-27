@@ -33,6 +33,7 @@ function singleSkuLine(ordered: number, returnConsumed: number): LineQuantities 
     canceled: 0,
     demand: ordered,
     remaining: ordered,
+    returnHeld: 0,
     skus: [
       {
         skuId: SKU_ID,

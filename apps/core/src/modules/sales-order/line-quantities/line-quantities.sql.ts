@@ -1,6 +1,6 @@
 import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { type CancellationShipmentPhase, wmsTables } from '../../inventory/schema/inventory.schema';
-import { claimTotalsBySkuSql } from './claim-quantities.sql';
+import { claimTotalsBySkuSql, heldCustomerReturnLinesSql } from './claim-quantities.sql';
 
 /**
  * 판매 라인 수량의 단 하나의 정의 (K6 PR2a).
@@ -30,6 +30,20 @@ export function lineCanceledQuantitySql(
       from ${cl}
     ) as cancellation_line
     where cancellation_line.canceled_line_id = ${salesOrderLineId}${phaseFilter}
+  ), 0)::int`;
+}
+
+/**
+ * 라인의 반품이 잡은 판매 단위 = 취소되지 않은 반품 예정 기록 줄 수량의 합(K8 PR5). 없으면 0.
+ * 취소 상한(`remaining − returnHeld`)에서만 뺀다 — `lineRemainingSql` 은 반품을 모른다(N6: Medusa 반품은 주문 줄 수량을
+ * 줄이지 않아 채널 변경 대조가 `remaining` 을 Medusa 줄 수량과 비교한다).
+ * 줄을 칼럼 이름을 바꾼 파생 테이블로 감싸 읽는다 — `lineCanceledQuantitySql` 의 바깥 참조 함정과 같다.
+ */
+export function lineReturnHeldSql(salesOrderLineId: SQLWrapper): SQL<number> {
+  return sql<number>`coalesce((
+    select sum(held_line.held_quantity)
+    from (${heldCustomerReturnLinesSql()}) as held_line
+    where held_line.held_line_id = ${salesOrderLineId}
   ), 0)::int`;
 }
 

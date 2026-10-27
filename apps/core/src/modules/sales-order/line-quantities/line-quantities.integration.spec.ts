@@ -23,20 +23,30 @@ import {
   seedShippedBeforeBoxingFulfillment,
   wireCancellation,
 } from '../cancellation-record/__support__/cancellation-scenarios';
+import { insertCustomerReturn } from './__support__/claim-facts.fixtures';
 import { recallParcel, seedDispatchedParcel, seedSupplierShare } from './__support__/shipment-facts.fixtures';
 import { LineQuantities, LineSkuQuantities, readLineQuantities } from './line-quantities.reader';
-import { lineCanceledQuantitySql, lineDemandSql, lineRemainingSql, lineSkuQuantitiesSql } from './line-quantities.sql';
+import {
+  lineCanceledQuantitySql,
+  lineDemandSql,
+  lineRemainingSql,
+  lineReturnHeldSql,
+  lineSkuQuantitiesSql,
+} from './line-quantities.sql';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 
 type Expected = [ordered: number, before: number, after: number, canceled: number, demand: number, remaining: number];
 
-/** 2a 시나리오는 라인 칸만 단언한다(`toMatchObject`) — SKU 층은 아래 SKU 시나리오가 본다. 교차 검사는 둘 다 받는다. */
+/**
+ * 2a 시나리오는 라인 칸만 단언한다(`toMatchObject`) — SKU 층은 아래 SKU 시나리오가, `returnHeld` 는 반품 시나리오가 본다.
+ * 교차 검사는 모두 받는다.
+ */
 function quantities(
   salesOrderLineId: string,
   [ordered, before, after, canceled, demand, remaining]: Expected,
-): Omit<LineQuantities, 'skus'> {
+): Omit<LineQuantities, 'skus' | 'returnHeld'> {
   return {
     salesOrderLineId,
     ordered,
@@ -145,6 +155,7 @@ async function readDirectly(tx: DbTx, salesOrderId: string): Promise<Map<string,
       canceled: lineCanceledQuantitySql(sol.id, 'any'),
       demand: lineDemandSql(sol.quantity, sol.id),
       remaining: lineRemainingSql(sol.quantity, sol.id),
+      returnHeld: lineReturnHeldSql(sol.id),
     })
     .from(so)
     .innerJoin(sol, eq(sol.salesOrderId, so.id))
@@ -302,6 +313,31 @@ describeIfDb('readLineQuantities — 라인 수량은 취소 라인 행 한 곳�
       expect([...read.values()]).toMatchObject([quantities(o.lineId, [3, 3, 0, 3, 0, 0])]);
       // E1 — 전체취소의 라인 행까지 센다(옛 metadata 파서는 partial 만 세어 1 을 냈다).
       expect(read.get(o.lineId)?.canceled).toBe(3);
+    });
+  });
+
+  it('customer return raises returnHeld and leaves remaining unchanged', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancellation(tx);
+      const o = await seedCancellableOrder(tx, w, 3);
+      const cancelledOnlyLineId = await insertLine(tx, o.salesOrderId, { quantity: 1 });
+      const on = (salesOrderLineId: string) => [{ salesOrderLineId, quantity: 1 }];
+      await insertCustomerReturn(tx, { salesOrderId: o.salesOrderId, status: 'expected', lines: on(o.lineId) });
+      await insertCustomerReturn(tx, { salesOrderId: o.salesOrderId, status: 'settled', lines: on(o.lineId) });
+      await insertCustomerReturn(tx, { salesOrderId: o.salesOrderId, status: 'cancelled', lines: on(o.lineId) });
+      await insertCustomerReturn(tx, {
+        salesOrderId: o.salesOrderId,
+        status: 'cancelled',
+        lines: on(cancelledOnlyLineId),
+      });
+
+      const read = await readAndCrossCheck(tx, o.salesOrderId);
+      // N6 — remaining 은 반품을 모른다(Medusa 반품은 item.quantity 를 줄이지 않는다). 취소되지 않은 반품만 returnHeld 로
+      expect(read.get(o.lineId)).toMatchObject({ ...quantities(o.lineId, [3, 0, 0, 0, 3, 3]), returnHeld: 2 });
+      expect(read.get(cancelledOnlyLineId)).toMatchObject({
+        ...quantities(cancelledOnlyLineId, [1, 0, 0, 0, 1, 1]),
+        returnHeld: 0,
+      });
     });
   });
 

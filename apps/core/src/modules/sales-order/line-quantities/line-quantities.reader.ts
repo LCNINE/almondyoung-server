@@ -1,6 +1,12 @@
 import { eq, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
-import { lineCanceledQuantitySql, lineDemandSql, lineRemainingSql, lineSkuQuantitiesSql } from './line-quantities.sql';
+import {
+  lineCanceledQuantitySql,
+  lineDemandSql,
+  lineRemainingSql,
+  lineReturnHeldSql,
+  lineSkuQuantitiesSql,
+} from './line-quantities.sql';
 
 /** 라인 × SKU(구성품) 층 — 칸의 뜻은 `lineSkuQuantitiesSql` 이 정한다. */
 export type LineSkuQuantities = {
@@ -34,8 +40,10 @@ export type LineQuantities = {
   canceled: number;
   /** ordered − canceledBeforeShipment. */
   demand: number;
-  /** ordered − canceled — 더 취소할 수 있는 판매 단위의 상한. */
+  /** ordered − canceled — 취소되지 않고 남은 판매 단위. 반품을 빼지 않는다(채널 줄 수량과 비교되는 값이다). */
   remaining: number;
+  /** 반품이 잡은 판매 단위 — 취소 상한에서만 뺀다. `remaining` 은 반품을 모른다(N6). */
+  returnHeld: number;
   /**
    * SKU 순. 주문에 FO 가 없으면 [] — 운영자가 FO 전에 구성을 지정했어도 비어 있다(스펙 §6.1 «FO 전에는 SKU 층이 비고»).
    * FOI 가 없는 인쇄 외주·디지털 라인도 [].
@@ -76,6 +84,7 @@ export async function readLineQuantities(trx: DbTx, salesOrderId: string): Promi
       canceled: lineCanceledQuantitySql(sol.id, 'any'),
       demand: lineDemandSql(sol.quantity, sol.id),
       remaining: lineRemainingSql(sol.quantity, sol.id),
+      returnHeld: lineReturnHeldSql(sol.id),
     })
     .from(sol)
     .where(eq(sol.salesOrderId, salesOrderId))
