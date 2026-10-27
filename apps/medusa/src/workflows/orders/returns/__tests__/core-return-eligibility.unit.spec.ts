@@ -36,6 +36,22 @@ describe('fetchCoreReturnEligibility', () => {
     expect(init.headers.Authorization).toBe('Bearer k');
   });
 
+  it('customerReturns 를 그대로 싣고, 칸이 없는 옛 core 응답은 []', async () => {
+    fetchMock.mockResolvedValue(
+      respond(200, { ...okBody, customerReturns: [{ channelReturnId: 'ret_1', status: 'arrived' }] }),
+    );
+    expect((await fetchCoreReturnEligibility('o')).customerReturns).toEqual([
+      { channelReturnId: 'ret_1', status: 'arrived' },
+    ]);
+    fetchMock.mockResolvedValue(respond(200, okBody));
+    expect((await fetchCoreReturnEligibility('o')).customerReturns).toEqual([]);
+  });
+
+  it('customerReturns 모양이 틀리면 CoreEligibilityUnavailable', async () => {
+    fetchMock.mockResolvedValue(respond(200, { ...okBody, customerReturns: [{ channelReturnId: 1, status: 'arrived' }] }));
+    await expect(fetchCoreReturnEligibility('o')).rejects.toBeInstanceOf(CoreEligibilityUnavailable);
+  });
+
   it('lastDeliveredAt null 은 null 로', async () => {
     fetchMock.mockResolvedValue(
       respond(200, { found: true, lines: [{ channelOrderItemId: 'a', deliveredUnits: 0, lastDeliveredAt: null }] }),

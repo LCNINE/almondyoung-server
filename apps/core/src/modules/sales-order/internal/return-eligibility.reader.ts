@@ -15,7 +15,7 @@ export async function readReturnEligibility(trx: DbTx, externalOrderId: string):
       and(eq(wmsTables.salesOrders.salesChannel, 'medusa'), eq(wmsTables.salesOrders.channelOrderId, externalOrderId)),
     )
     .limit(1);
-  if (!order) return { found: false, lines: [] };
+  if (!order) return { found: false, lines: [], customerReturns: [] };
 
   const lineRows = await trx
     .select({ id: wmsTables.salesOrderLines.id, channelOrderItemId: wmsTables.salesOrderLines.channelOrderItemId })
@@ -28,7 +28,15 @@ export async function readReturnEligibility(trx: DbTx, externalOrderId: string):
     const lineQuantities = quantities.get(row.id);
     return lineQuantities ? [{ channelOrderItemId: row.channelOrderItemId, quantities: lineQuantities }] : [];
   });
-  return { found: true, lines: toReturnEligibilityLines(lines, parcels) };
+  const customerReturns = await trx
+    .select({
+      channelReturnId: wmsTables.customerReturns.channelReturnId,
+      status: wmsTables.customerReturns.status,
+    })
+    .from(wmsTables.customerReturns)
+    .where(eq(wmsTables.customerReturns.salesOrderId, order.id))
+    .orderBy(asc(wmsTables.customerReturns.requestedAt), asc(wmsTables.customerReturns.id));
+  return { found: true, lines: toReturnEligibilityLines(lines, parcels), customerReturns };
 }
 
 @Injectable()

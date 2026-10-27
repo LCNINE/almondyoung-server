@@ -1,6 +1,8 @@
 export type CoreReturnEligibility = {
   found: boolean;
   lines: Array<{ channelOrderItemId: string; deliveredUnits: number; lastDeliveredAt: Date | null }>;
+  /** 그 주문의 core 반품 예정 기록. 옛 core(칸 없음)면 [] — 그러면 «도착 없음»으로 읽는다(K8 PR6 N11). */
+  customerReturns: Array<{ channelReturnId: string; status: string }>;
 };
 
 /** core 가 답을 못 줬다(설정 누락·네트워크·비정상 응답). 호출자는 «반품 불가»가 아니라 «지금은 판정 불가»로 다룬다. */
@@ -49,12 +51,19 @@ export async function fetchCoreReturnEligibility(orderId: string): Promise<CoreR
 function parse(body: unknown): CoreReturnEligibility {
   const bad = (why: string) => new CoreEligibilityUnavailable(`core 응답 모양 불일치: ${why}`);
   if (typeof body !== 'object' || body === null) throw bad('객체 아님');
-  const { found, lines } = body as { found?: unknown; lines?: unknown };
+  const { found, lines, customerReturns } = body as { found?: unknown; lines?: unknown; customerReturns?: unknown };
   if (typeof found !== 'boolean') throw bad('found');
   if (!Array.isArray(lines)) throw bad('lines');
+  if (customerReturns !== undefined && !Array.isArray(customerReturns)) throw bad('customerReturns');
 
   return {
     found,
+    customerReturns: (customerReturns ?? []).map((raw: unknown) => {
+      const row = (raw ?? {}) as Record<string, unknown>;
+      if (typeof row.channelReturnId !== 'string') throw bad('customerReturns.channelReturnId');
+      if (typeof row.status !== 'string') throw bad('customerReturns.status');
+      return { channelReturnId: row.channelReturnId, status: row.status };
+    }),
     lines: lines.map((raw: unknown) => {
       const line = (raw ?? {}) as Record<string, unknown>;
       const { channelOrderItemId, deliveredUnits, lastDeliveredAt } = line;

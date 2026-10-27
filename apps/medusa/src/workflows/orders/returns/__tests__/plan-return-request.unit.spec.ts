@@ -17,6 +17,7 @@ const item = (o: Partial<ReturnableOrderItem> = {}): ReturnableOrderItem => ({
 const core = (deliveredUnits = 2, id = 'i1'): CoreReturnEligibility => ({
   found: true,
   lines: [{ channelOrderItemId: id, deliveredUnits, lastDeliveredAt: DELIVERED }],
+  customerReturns: [],
 });
 const changeOfMind = { value: 'change_of_mind', feeBearer: 'customer' as const, customerSelectable: true };
 const defective = { value: 'defective', feeBearer: 'seller' as const, customerSelectable: true };
