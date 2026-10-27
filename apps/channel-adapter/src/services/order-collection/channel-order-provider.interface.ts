@@ -1,4 +1,6 @@
 import {
+  ChannelReturnCancelledPayload,
+  ChannelReturnRequestedPayload,
   OrderCancelledPayload,
   OrderCreatedPayload,
   OrderModifiedCancelRequest,
@@ -8,6 +10,7 @@ import {
   SalesChannel,
   ShippingAddress,
 } from '@packages/event-contracts/streams';
+import type { ReturnObservationPayload } from './channel-order-source.interface';
 import type { AffectedLine } from '@packages/domain-types';
 
 export const CHANNEL_ORDER_PROVIDER = Symbol('CHANNEL_ORDER_PROVIDER');
@@ -57,11 +60,17 @@ export interface OrderCollectionFailureItem {
   rawOrder: Record<string, unknown>;
 }
 
-export type OrderLifecycleEventType = 'OrderCancelled' | 'OrderRefundCreated';
+export type OrderLifecycleEventType =
+  | 'OrderCancelled'
+  | 'OrderRefundCreated'
+  | 'ChannelReturnRequested'
+  | 'ChannelReturnCancelled';
 
 export type OrderLifecycleEventPayload =
   | Omit<OrderCancelledPayload, 'orderId'>
-  | Omit<OrderRefundCreatedPayload, 'orderId'>;
+  | Omit<OrderRefundCreatedPayload, 'orderId'>
+  | ReturnObservationPayload<ChannelReturnRequestedPayload>
+  | ReturnObservationPayload<ChannelReturnCancelledPayload>;
 
 interface OrderLifecycleEventBase {
   externalOrderId: string;
@@ -84,6 +93,8 @@ export type OrderLifecycleEventItem = OrderLifecycleEventBase &
   (
     | { eventType: 'OrderCancelled'; payload: Omit<OrderCancelledPayload, 'orderId'> }
     | { eventType: 'OrderRefundCreated'; payload: Omit<OrderRefundCreatedPayload, 'orderId'> }
+    | { eventType: 'ChannelReturnRequested'; payload: ReturnObservationPayload<ChannelReturnRequestedPayload> }
+    | { eventType: 'ChannelReturnCancelled'; payload: ReturnObservationPayload<ChannelReturnCancelledPayload> }
   );
 
 export interface OrderFetchItem {

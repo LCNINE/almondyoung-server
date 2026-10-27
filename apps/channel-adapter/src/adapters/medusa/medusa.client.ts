@@ -78,6 +78,16 @@ function mergeCoreShippingStatus(
     : incoming;
 }
 
+/** 주문에 달린 Medusa 반품 (K8 PR5). 접수 기록은 `metadata.almondReturn` 이고 `medusa-return-observations.ts` 가 읽는다. */
+export type MedusaReturn = {
+  id?: string;
+  status?: string;
+  requested_at?: string | null;
+  canceled_at?: string | null;
+  metadata?: Record<string, unknown> | null;
+  items?: Array<{ item_id?: string; quantity?: number }>;
+};
+
 export interface MedusaOrder {
   id: string;
   /** 고객에게 노출되는 순번형 주문번호 (#2332) */
@@ -109,6 +119,7 @@ export interface MedusaOrder {
   created_at?: string;
   updated_at?: string;
   canceled_at?: string;
+  returns?: MedusaReturn[];
   // 주문 레벨 메타데이터. 무통장입금 선생성 주문의 bank_transfer_status('awaiting_deposit'|'confirmed')로 입금 전(미수집) 여부를 판별하는 데 사용
   metadata?: Record<string, unknown> | null;
   items?: Array<{
@@ -241,6 +252,14 @@ const ORDER_FIELDS = [
   'transactions.reference',
   'transactions.reference_id',
   'transactions.created_at',
+  // 반품 관측 (K8 PR5). `returns.items.quantity` 는 명시해도 응답에서 빠진다 — `returns.items.*` 일 때만 quantity 가 온다
+  // (중첩 `item` 객체도 따라오지만 읽지 않는다). 모양 고정: apps/medusa/integration-tests/http/return-observation-fields.spec.ts
+  'returns.id',
+  'returns.status',
+  'returns.requested_at',
+  'returns.canceled_at',
+  'returns.metadata',
+  'returns.items.*',
 ].join(',');
 
 /**
