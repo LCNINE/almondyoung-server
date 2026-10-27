@@ -307,9 +307,8 @@ export class MedusaOrderSource implements ReplayableChannelOrderSource {
     // 반품은 취소·환불 뒤에 붙인다 (K8 PR5). 건너뛴 반품은 조용히 사라지지 않게 남긴다 (N9).
     const returns = medusaReturnObservations(order);
     for (const skip of returns.skipped) {
-      // 확정 전(`unconfirmed`) 반품은 정상 상태라 warn 이 아니다.
-      const log = skip.reason === 'unconfirmed' ? this.logger.debug : this.logger.warn;
-      log.call(this.logger, `[medusa] Skipping return ${skip.returnId} of order ${order.id}: ${skip.reason}`);
+      // open 반품이 남는 건 PR3 접수가 중간에 죽었을 때뿐이고 그 주문의 이후 접수·부분취소를 막으므로 사람이 봐야 한다.
+      this.logger.warn(`[medusa] Skipping return ${skip.returnId} of order ${order.id}: ${skip.reason}`);
     }
     observations.push(...returns.observations);
 

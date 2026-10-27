@@ -58,20 +58,18 @@ export function medusaReturnObservations(order: MedusaOrder): {
   const observations: LifecycleObservation[] = [];
   const skipped: SkippedReturn[] = [];
 
-  const confirmed: MedusaReturn[] = [];
+  const confirmed: Array<{ ret: MedusaReturn; returnId: string; requestedAt: string }> = [];
   for (const ret of order.returns ?? []) {
     if (!ret.id) continue;
     if (!ret.requested_at) {
       skipped.push({ returnId: ret.id, reason: 'unconfirmed' });
       continue;
     }
-    confirmed.push(ret);
+    confirmed.push({ ret, returnId: ret.id, requestedAt: ret.requested_at });
   }
-  confirmed.sort((a, b) => Date.parse(a.requested_at ?? '') - Date.parse(b.requested_at ?? ''));
+  confirmed.sort((a, b) => Date.parse(a.requestedAt) - Date.parse(b.requestedAt));
 
-  for (const ret of confirmed) {
-    const returnId = ret.id as string;
-    const requestedAt = ret.requested_at as string;
+  for (const { ret, returnId, requestedAt } of confirmed) {
     const record = readRecord(ret.metadata);
     if (!record) {
       skipped.push({ returnId, reason: 'no_record' });
