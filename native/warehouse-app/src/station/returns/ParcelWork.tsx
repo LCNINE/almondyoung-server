@@ -17,7 +17,7 @@ import type { StationAction } from '../actions';
 import { useFeedback } from '../feedback/FeedbackProvider';
 import { BigPanel, WorkGrid, type BigPanelContent } from '../outbound/panels';
 import { RETURNS_ACTIONS } from './returnsActions';
-import type { ReturnsNotice } from './ReturnsScreen';
+import type { ReturnsNotice } from './returnsTypes';
 
 type ArrivalBody = Parameters<typeof recordArrival>[2];
 

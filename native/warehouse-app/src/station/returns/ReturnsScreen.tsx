@@ -8,20 +8,11 @@ import { fetchReturn } from '../../domains/customer-returns/api';
 import { receivingStageOf } from '../../domains/customer-returns/stage';
 import type { ReturnView } from '../../domains/customer-returns/types';
 import { WarehousePicker } from '../../domains/warehouse/WarehousePicker';
-import { useStationActions } from '../ActionRegistry';
 import { useFeedback } from '../feedback/FeedbackProvider';
+import { InspectReturn } from './InspectReturn';
 import { ParcelWork } from './ParcelWork';
 import { ReturnList } from './ReturnList';
-import { RETURNS_ACTIONS } from './returnsActions';
-
-/** 화면 상태 — 목록 → (열기) → 소포 세기 또는 검수(N8) */
-export type ReturnsView = { kind: 'list' } | { kind: 'receive'; view: ReturnView } | { kind: 'inspect'; view: ReturnView };
-
-/** 목록 위 한 줄 — error 는 오류음과 함께 */
-export interface ReturnsNotice {
-  text: string;
-  tone: 'error' | 'info';
-}
+import type { ReturnsNotice, ReturnsView } from './returnsTypes';
 
 const CLOSED_MESSAGE = { cancelled: '취소된 반품이에요', inspected: '끝난 반품이에요' } as const;
 
@@ -121,9 +112,8 @@ function Returns({ warehouseId }: { warehouseId: string }) {
         />
       );
       break;
-    // Task 6 이 검수 화면으로 채운다
     case 'inspect':
-      body = <ReturnPlaceholder key={mount} label="검수" view={current.view} onBack={() => toList()} />;
+      body = <InspectReturn key={mount} view={current.view} open={open} toList={toList} onActivity={clearNotice} />;
       break;
     default:
       body = <ReturnList warehouseId={warehouseId} onOpen={openFromList} onActivity={clearNotice} />;
@@ -145,14 +135,5 @@ function Returns({ warehouseId }: { warehouseId: string }) {
       ) : null}
       <div className="min-h-0 flex-1">{body}</div>
     </div>
-  );
-}
-
-function ReturnPlaceholder({ label, view, onBack }: { label: string; view: ReturnView; onBack(): void }) {
-  useStationActions([{ ...RETURNS_ACTIONS.back, enabled: true, run: onBack }]);
-  return (
-    <section aria-label={label} className="rounded-[10px] border border-[#D5D8DE] bg-white p-4">
-      <h2 className="font-mono text-2xl font-semibold">{view.order.orderNo}</h2>
-    </section>
   );
 }
