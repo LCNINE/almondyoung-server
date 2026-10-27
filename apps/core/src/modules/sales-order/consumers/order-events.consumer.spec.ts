@@ -843,7 +843,12 @@ describe('OrderEventsConsumer poison classification (작업 13)', () => {
   });
 
   it('classifies ChannelReturnRequested/Cancelled domain NotFound·BadRequest as non-retryable, Conflict stays retryable', () => {
-    for (const handler of [proto.handleChannelReturnRequested, proto.handleChannelReturnCancelled]) {
+    for (const handler of [
+      proto.handleChannelReturnRequested,
+      proto.handleChannelReturnCancelled,
+      proto.handleChannelReturnSettled,
+      proto.handleChannelReturnSettlementFailed,
+    ]) {
       expect(retryPolicyOf(handler)?.nonRetryableErrors).toEqual([NotFoundError, BadRequestError]);
     }
   });
@@ -854,6 +859,8 @@ describe('OrderEventsConsumer — 채널 반품 사실 위임 (K8 PR5)', () => {
     const customerReturns = {
       recordRequested: jest.fn().mockResolvedValue({ customerReturnId: 'cr-1', created: true }),
       recordCancelled: jest.fn().mockResolvedValue({ customerReturnId: 'cr-1', changed: true }),
+      recordSettled: jest.fn().mockResolvedValue({ changed: true }),
+      recordSettlementFailed: jest.fn().mockResolvedValue({ changed: true }),
     };
     const consumer = new OrderEventsConsumer(
       {} as never,
@@ -882,5 +889,19 @@ describe('OrderEventsConsumer — 채널 반품 사실 위임 (K8 PR5)', () => {
     const payload = { returnId: 'ret-1', salesChannel: 'medusa', externalOrderId: 'order_1' };
     await consumer.handleChannelReturnCancelled(payload as never, envelope as never);
     expect(customerReturns.recordCancelled).toHaveBeenCalledWith(payload);
+  });
+
+  it('ChannelReturnSettled 를 서비스에 그대로 넘긴다 (K8 PR6)', async () => {
+    const { consumer, customerReturns } = makeSubject();
+    const payload = { returnId: 'ret-1', salesChannel: 'medusa', externalOrderId: 'order_1', refundAmount: 1000 };
+    await consumer.handleChannelReturnSettled(payload as never, envelope as never);
+    expect(customerReturns.recordSettled).toHaveBeenCalledWith(payload);
+  });
+
+  it('ChannelReturnSettlementFailed 를 서비스에 그대로 넘긴다 (K8 PR6)', async () => {
+    const { consumer, customerReturns } = makeSubject();
+    const payload = { requestId: 'cr-1', returnId: 'ret-1', failureCode: 'refund_failed', retryable: true };
+    await consumer.handleChannelReturnSettlementFailed(payload as never, envelope as never);
+    expect(customerReturns.recordSettlementFailed).toHaveBeenCalledWith(payload);
   });
 });

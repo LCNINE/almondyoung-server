@@ -356,6 +356,40 @@ export class OrderEventsConsumer {
     await this.customerReturns.recordCancelled(payload);
   }
 
+  /**
+   * 반품 정산 결과 (K8 PR6). 성공은 반품을 닫고 고객 «반품 완료»·`SalesOrderReturned` 를, 실패는 마지막 실패를 적는다.
+   * order_events 에 적지 않는다(반품 확정·취소 핸들러와 같은 이유).
+   */
+  @On(ORDER_STREAM, 'ChannelReturnSettled')
+  @RetryPolicy({ nonRetryableErrors: [NotFoundError, BadRequestError] })
+  async handleChannelReturnSettled(
+    @EventPayload() payload: EventPayloadOf<typeof ORDER_STREAM, 'ChannelReturnSettled'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof ORDER_STREAM, 'ChannelReturnSettled'>,
+  ) {
+    this.logger.log(
+      `[ChannelReturnSettled] ${payload.salesChannel}/${payload.externalOrderId} return=${payload.returnId} refund=${payload.refundAmount}`,
+      {
+        correlationId: envelope.correlationId,
+      },
+    );
+    await this.customerReturns.recordSettled(payload);
+  }
+
+  @On(ORDER_STREAM, 'ChannelReturnSettlementFailed')
+  @RetryPolicy({ nonRetryableErrors: [NotFoundError, BadRequestError] })
+  async handleChannelReturnSettlementFailed(
+    @EventPayload() payload: EventPayloadOf<typeof ORDER_STREAM, 'ChannelReturnSettlementFailed'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof ORDER_STREAM, 'ChannelReturnSettlementFailed'>,
+  ) {
+    this.logger.log(
+      `[ChannelReturnSettlementFailed] ${payload.requestId} return=${payload.returnId} ${payload.failureCode} retryable=${payload.retryable} received=${payload.received}`,
+      {
+        correlationId: envelope.correlationId,
+      },
+    );
+    await this.customerReturns.recordSettlementFailed(payload);
+  }
+
   @On(ORDER_STREAM, 'OrderRefundCreated')
   @RetryPolicy({ nonRetryableErrors: [NotFoundException] })
   async handleOrderRefundCreated(

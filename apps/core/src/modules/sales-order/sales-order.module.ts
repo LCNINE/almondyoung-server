@@ -35,6 +35,8 @@ import { CustomerReturnManager } from './customer-return/customer-return.manager
 import { CustomerReturnService } from './customer-return/customer-return.service';
 import { CustomerReturnReader } from './customer-return/customer-return.reader';
 import { CustomerReturnReceivingManager } from './customer-return/customer-return-receiving.manager';
+import { CustomerReturnSettlementManager } from './customer-return/customer-return-settlement.manager';
+import { CustomerReturnSettlementRetryCron } from './customer-return/customer-return-settlement-retry.cron';
 import { CustomerReturnsController } from './customer-return/customer-returns.controller';
 import { OrderCancellation } from './order-cancellation/order-cancellation';
 import { OrderCancellationReader } from './order-cancellation/order-cancellation.reader';
@@ -132,6 +134,8 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
     CustomerReturnManager,
     CustomerReturnReader,
     CustomerReturnReceivingManager,
+    CustomerReturnSettlementManager,
+    CustomerReturnSettlementRetryCron,
     CustomerReturnService,
 
     // 채널 대사(#1016 45번)의 묶음 조회 — 호출자는 channel-adapter

@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import type {
   ChannelReturnCancelledPayload,
   ChannelReturnRequestedPayload,
+  ChannelReturnSettledPayload,
+  ChannelReturnSettlementFailedPayload,
 } from '@packages/event-contracts/streams/orders.stream';
 import { DbTx } from '../../inventory/schema/inventory.schema';
 import { CustomerReturnManager } from './customer-return.manager';
@@ -11,6 +13,7 @@ import {
   RecordCustomerReturnArrivalInput,
   RecordCustomerReturnInspectionInput,
 } from './customer-return-receiving.manager';
+import { CustomerReturnSettlementManager } from './customer-return-settlement.manager';
 
 @Injectable()
 export class CustomerReturnService {
@@ -18,6 +21,7 @@ export class CustomerReturnService {
     private readonly manager: CustomerReturnManager,
     private readonly reader: CustomerReturnReader,
     private readonly receiving: CustomerReturnReceivingManager,
+    private readonly settlement: CustomerReturnSettlementManager,
   ) {}
 
   recordRequested(fact: ChannelReturnRequestedPayload, tx?: DbTx) {
@@ -38,5 +42,17 @@ export class CustomerReturnService {
 
   recordInspection(input: RecordCustomerReturnInspectionInput, tx?: DbTx) {
     return this.receiving.recordInspection(input, tx);
+  }
+
+  recordSettled(fact: ChannelReturnSettledPayload, tx?: DbTx) {
+    return this.settlement.recordSettled(fact, tx);
+  }
+
+  recordSettlementFailed(fact: ChannelReturnSettlementFailedPayload, tx?: DbTx) {
+    return this.settlement.recordSettlementFailed(fact, tx);
+  }
+
+  reissueStalled(now: Date, tx?: DbTx) {
+    return this.settlement.reissueStalled(now, tx);
   }
 }
