@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { differenceInDays } from 'date-fns';
+import { BadRequestError } from '@app/shared';
 import * as schema from '../../shared/schemas/entities/schema';
 import { SubscriptionContractReader } from './subscription-contract.reader';
 import { BenefitReader } from '../benefit/benefit.reader';
@@ -56,10 +57,34 @@ export class CancellationContextReader {
   ) {}
 
   /**
+   * 고객 셀프 해지·해지 철회 전용 가드. 임시 이용권은 종료일에 저절로 끝나므로 대상 계약 기준으로 거절한다.
+   * 관리자 강제취소와 탈퇴 경로는 이 가드를 거치지 않는다.
+   */
+  async assertCustomerCancellable(contractId: string): Promise<void> {
+    if ((await this.contractReader.findAdminGrantDays(contractId)) !== null) {
+      throw new BadRequestError('임시 이용권은 종료일까지 이용하면 자동으로 끝나요.');
+    }
+  }
+
+  /**
    * 이번 결제 주기의 시작. 청약철회 창과 «이번 주기에 혜택을 썼는가»가 모두 이 한 점에서 센다.
    * 결제 기록도 수금 대기도 없으면(무상 부여 등) null — 청약철회 창이 없다.
    */
   async resolvePaidPeriodStart(
+    contract: Contract,
+    plan: Plan,
+    entitlement: { endsAt: string; startsAt: string },
+  ): Promise<Date | null> {
+    const base = await this.resolveBasePaidPeriodStart(contract, plan, entitlement);
+    if (!base || !contract.billingDate) return base;
+    // 임시 이용권을 이어받은 계약의 무료 구간(결제일 ~ billingDate)은 유료 사용이 아니다.
+    // 이 구간의 구매가 혜택 사용으로 잡히거나 철회 창이 먼저 닫히지 않게 기준점을 billingDate 로 민다.
+    if (!(await this.contractReader.isGrantTakeoverContract(contract.id, contract.userId))) return base;
+    const paidStart = new Date(`${contract.billingDate}T00:00:00Z`);
+    return paidStart > base ? paidStart : base;
+  }
+
+  private async resolveBasePaidPeriodStart(
     contract: Contract,
     plan: Plan,
     entitlement: { endsAt: string; startsAt: string },

@@ -191,6 +191,7 @@ describe('SubscriptionService - Layer Refactoring', () => {
         false,
         'CHARGE',
         email,
+        undefined,
       );
       // one_time 은 createNewSubscription 내부에서 아웃박스로 원자 발행하므로
       // 서비스 레벨의 best-effort publishStatusChanged 는 호출되지 않는다.

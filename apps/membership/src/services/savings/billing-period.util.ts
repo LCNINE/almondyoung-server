@@ -48,7 +48,8 @@ export function deriveBillingPeriods(source: ContractPeriodSource, now: Date): B
 
   let cursor = source.start;
   let periodNumber = 1;
-  while (cursor <= limit && periods.length < MAX_PERIODS_PER_CONTRACT) {
+  // 종료 시각과 같은 시작점은 길이 0 주기라 만들지 않는다 (주기 id 는 달라질 수 있어도 금액은 그대로)
+  while (cursor <= limit && cursor < source.end && periods.length < MAX_PERIODS_PER_CONTRACT) {
     const naturalEnd = addDays(cursor, duration);
     const end = naturalEnd < source.end ? naturalEnd : source.end;
     periods.push({

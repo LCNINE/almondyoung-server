@@ -1,4 +1,4 @@
-import { subDays } from 'date-fns';
+import { addDays, subDays } from 'date-fns';
 import { BenefitUsageManager } from './benefit-usage.manager';
 import { NO_BENEFIT_USAGE } from './benefit-usage';
 
@@ -78,6 +78,17 @@ describe('BenefitUsageManager.recordUsage', () => {
 
     const late = make({ paidPeriodStart: subDays(new Date(), 8) });
     await expect(late.manager.recordUsage(userId, 'BEAUTYTOP_PREMIUM', false)).resolves.toEqual({ status: 'RECORDED' });
+  });
+
+  it('유료 시작 전(임시 구간)이면 자격 개시일을 키로 쓰고 동의 없이도 묻지 않는다', async () => {
+    const { manager, values } = make({ paidPeriodStart: addDays(new Date(), 10) });
+    await expect(manager.recordUsage(userId, 'BEAUTYTOP_PREMIUM', false)).resolves.toEqual({ status: 'RECORDED' });
+    expect(values).toHaveBeenCalledWith({
+      userId,
+      kind: 'BEAUTYTOP_PREMIUM',
+      contractId: 'c1',
+      periodStart: new Date(entitlement.startsAt),
+    });
   });
 
   it('동시에 두 번 들어와 한쪽이 충돌로 빠지면 ALREADY_RECORDED', async () => {

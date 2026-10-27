@@ -39,6 +39,9 @@ describe('SubscriptionCancellationService', () => {
     canResumeRecurring: jest.fn().mockResolvedValue(true),
     // 결제 기록이 없는 계약을 가정 — 주기 시작은 endsAt 역산 폴백으로 계산된다.
     findLastChargeSuccessAt: jest.fn().mockResolvedValue(null),
+    isGrantTakeoverContract: jest.fn().mockResolvedValue(false),
+    // 기본은 결제 가입 계약 — 지급 계약은 스펙에서 일수를 돌려준다.
+    findAdminGrantDays: jest.fn().mockResolvedValue(null),
   };
 
   const mockCancellationManager = {
@@ -111,6 +114,7 @@ describe('SubscriptionCancellationService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockContractReader.findMonthlyListPrice.mockResolvedValue(4990);
+    mockContractReader.findAdminGrantDays.mockResolvedValue(null);
     mockBenefitReader.findMembershipBenefitUsageSince.mockResolvedValue({ orderCount: 0, totalDiscountAmount: 0, welcomeDeal: false, beautytopPremium: false });
     mockPauseReader.sumPausedDaysSince.mockResolvedValue(0);
     mockPauseReader.findPausedEntitlement.mockResolvedValue(null);
@@ -189,6 +193,31 @@ describe('SubscriptionCancellationService', () => {
       await expect(
         service.cancelSubscription('user_001', 'a@b.com', { reasonCode: 'NO_LONGER_NEEDED' }),
       ).rejects.toThrow(ConflictError);
+    });
+
+    it.each(['AT_PERIOD_END', 'IMMEDIATE_REFUND'] as const)(
+      '임시 이용권 계약은 %s 모두 거절하고 아무것도 바꾸지 않는다',
+      async (cancelType) => {
+        givenActiveContract({ plan: MONTHLY_PLAN, daysSincePeriodStart: 1, autoRenewal: false });
+        mockContractReader.findAdminGrantDays.mockResolvedValue(30);
+
+        await expect(
+          service.cancelSubscription('user_001', undefined, { reasonCode: 'OTHER', cancelType }),
+        ).rejects.toThrow(new BadRequestError('임시 이용권은 종료일까지 이용하면 자동으로 끝나요.'));
+
+        expect(mockCancellationManager.cancelImmediately).not.toHaveBeenCalled();
+        expect(mockCancellationManager.cancelRecurringPayment).not.toHaveBeenCalled();
+        expect(mockPauseManager.resumePause).not.toHaveBeenCalled();
+      },
+    );
+
+    it('유료 계약은 지급 판정에 걸리지 않고 기존대로 해지된다', async () => {
+      givenActiveContract({ plan: MONTHLY_PLAN, daysSincePeriodStart: 1 });
+
+      await service.cancelSubscription('user_001', undefined, { reasonCode: 'OTHER', cancelType: 'AT_PERIOD_END' });
+
+      expect(mockContractReader.findAdminGrantDays).toHaveBeenCalledWith('contract_001');
+      expect(mockCancellationManager.cancelRecurringPayment).toHaveBeenCalled();
     });
 
     it('결제 7일 내 + 혜택 미사용이면 즉시해지로 전액 환불', async () => {
@@ -507,6 +536,19 @@ describe('SubscriptionCancellationService', () => {
   });
 
   describe('previewCancellation', () => {
+    it('임시 이용권 계약이면 isAdminGrant 로 내려 화면이 해지 UI 를 숨기게 한다', async () => {
+      givenActiveContract({ plan: MONTHLY_PLAN, daysSincePeriodStart: 1, autoRenewal: false });
+      mockContractReader.findAdminGrantDays.mockResolvedValue(30);
+
+      expect((await service.previewCancellation('user_001')).isAdminGrant).toBe(true);
+    });
+
+    it('결제 가입 계약은 isAdminGrant 가 false', async () => {
+      givenActiveContract({ plan: MONTHLY_PLAN, daysSincePeriodStart: 1 });
+
+      expect((await service.previewCancellation('user_001')).isAdminGrant).toBe(false);
+    });
+
     it('선택지와 환불 금액을 실제 해지와 동일한 정책으로 계산한다', async () => {
       givenActiveContract({ plan: ANNUAL_PLAN, daysSincePeriodStart: 75, autoRenewal: false });
 
@@ -539,6 +581,22 @@ describe('SubscriptionCancellationService', () => {
       givenActiveContract({ plan: MONTHLY_PLAN, daysSincePeriodStart: 5 });
 
       await expect(service.undoCancellation('user_001', 'a@b.com')).rejects.toThrow(ConflictError);
+    });
+
+    it('임시 이용권 계약의 철회는 legacy 예약 흔적이 있어도 거절하고 약정을 만들지 않는다', async () => {
+      givenActiveContract({
+        plan: MONTHLY_PLAN,
+        daysSincePeriodStart: 5,
+        autoRenewal: false,
+        recurringCancelledAt: new Date(),
+      });
+      mockContractReader.findAdminGrantDays.mockResolvedValue(30);
+
+      await expect(service.undoCancellation('user_001', 'a@b.com')).rejects.toThrow(
+        new BadRequestError('임시 이용권은 종료일까지 이용하면 자동으로 끝나요.'),
+      );
+      expect(mockPaymentClientService.createBillingAgreement).not.toHaveBeenCalled();
+      expect(mockCancellationManager.undoRecurringCancellation).not.toHaveBeenCalled();
     });
 
     it('약정을 먼저 복구한 뒤 자동갱신을 되살린다', async () => {

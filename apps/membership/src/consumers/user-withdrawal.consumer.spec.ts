@@ -60,6 +60,14 @@ describe('UserWithdrawalConsumer', () => {
     expect(call[8]).toBeUndefined(); // customerEmail — 안내 메일 미발송
   });
 
+  it('임시 이용권은 되살리지 않는다', async () => {
+    findContractsByUserId.mockResolvedValue([{ id: 'c-1', status: 'ACTIVE' }]);
+
+    await consumer.onUserDeleted({ userId: USER_ID });
+
+    expect(forceCancelSubscription.mock.calls[0][10]).toBe(false); // restoreGrant
+  });
+
   it('이미 해지된 계약은 건너뛴다 (재시도 멱등)', async () => {
     findContractsByUserId.mockResolvedValue([
       { id: 'c-1', status: 'CANCELLED' },

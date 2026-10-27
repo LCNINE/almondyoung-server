@@ -15,6 +15,7 @@ function makeHandler(opts: {
   const batchInserts: Record<string, unknown>[] = [];
 
   const tx = {
+    execute: jest.fn(),
     select: jest.fn().mockReturnThis(),
     from: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),

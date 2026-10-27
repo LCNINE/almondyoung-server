@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
+import { DrizzleTransaction } from '../../shared/schemas/types';
+import { lockMembershipUser } from './membership-user-lock';
 import { BadRequestError } from '@app/shared';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
 import { and, eq, notExists, sql } from 'drizzle-orm';
-import { addDays } from 'date-fns';
+import { addDays, differenceInCalendarDays, parseISO } from 'date-fns';
 import { ContractEventManager } from './contract-event.manager';
 import { EntitlementManager } from '../entitlement/entitlement.manager';
 import { MembershipPolicyService } from '../membership-policy.service';
@@ -34,8 +36,8 @@ type Tier = typeof schema.tiers.$inferSelect;
 /** 관리자 임시 지급을 정식 가입으로 이어받을 때 */
 export type GrantTakeover = {
   grantContractId: string;
-  /** 지급분 남은 일수. 첫 청구일을 max(체험, 이 값) 만큼 미룬다 */
-  remainingDays: number;
+  /** 지급분 종료일(yyyy-MM-dd). 가입 시각 기준으로 남은 일수를 세어 첫 청구일을 max(체험, 남은 일수) 만큼 미룬다 */
+  grantEndsAt: string;
 };
 type CreateSubscriptionPaymentRefs = {
   initialPaymentIntentId?: string;
@@ -116,22 +118,33 @@ export class SubscriptionCreator {
     email: string,
     grantTakeover?: GrantTakeover,
   ): Promise<{ contractId: string; entitlementId: string; effectiveTrialDays: number }> {
+    // 회원 잠금을 쥔 채 다른 연결을 쓰지 않게 정책은 트랜잭션 밖에서 읽는다.
+    const trialReuseEnabled =
+      billingMode === 'recurring' && !skipTrial
+        ? await this.policyService.getBooleanPolicy('TRIAL_REUSE_PREVENTION', 'enabled', plan.tierId, true)
+        : true;
+
     return await this.dbService.db.transaction(async (tx) => {
       const now = new Date();
       const startsAt = now;
 
       // 같은 사용자의 가입을 한 줄로 세운다. 행 잠금만으로는 이용권이 아직 없을 때 잠글 것이 없어,
       // 동시에 들어온 두 가입이 서로의 이용권을 닫고 각자 계약을 만든다.
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`membership-signup:${userId}`}))`);
+      await lockMembershipUser(tx, userId);
 
       // 호출부 가드와 이 트랜잭션 사이에 다른 가입이 커밋됐을 수 있다. 그 이용권을 닫고 덮어쓰지 않게 다시 본다.
-      const [current] = await tx
-        .select({ id: schema.subscriptionEntitlement.id })
-        .from(schema.subscriptionEntitlement)
-        .where(
-          and(eq(schema.subscriptionEntitlement.userId, userId), eq(schema.subscriptionEntitlement.isCurrent, true)),
-        )
-        .limit(1);
+      const findCurrent = async () => {
+        const [row] = await tx
+          .select({ id: schema.subscriptionEntitlement.id })
+          .from(schema.subscriptionEntitlement)
+          .where(
+            and(eq(schema.subscriptionEntitlement.userId, userId), eq(schema.subscriptionEntitlement.isCurrent, true)),
+          )
+          .limit(1);
+        return row;
+      };
+      const current = await findCurrent();
+      let grantExpired = false;
       if (current && !grantTakeover) throw new ActiveSubscriptionExistsException();
       if (grantTakeover) {
         // 다른 가입이 먼저 이 지급분을 이어받았으면 그 가입을 덮어쓰지 않는다.
@@ -140,7 +153,13 @@ export class SubscriptionCreator {
           .from(schema.subscriptionContracts)
           .where(eq(schema.subscriptionContracts.id, grantTakeover.grantContractId))
           .limit(1);
-        if (grant?.status !== 'ACTIVE') throw new ActiveSubscriptionExistsException();
+        // 만료 크론이 읽기와 이 트랜잭션 사이에 지급 계약을 닫았을 수 있다 — 중복이 아니라 남은 일수 0 인 일반 가입이다.
+        // 만료 처리는 지급 이용권의 isCurrent 도 같은 트랜잭션에서 내리므로, 남아 있는 current 는 다른 가입의 것이다.
+        if (grant?.status === 'EXPIRED') {
+          // 위 current 는 만료 커밋 직전에 읽었을 수 있다 — EXPIRED 를 본 뒤 다시 읽어 판정한다.
+          if (await findCurrent()) throw new ActiveSubscriptionExistsException();
+          grantExpired = true;
+        } else if (grant?.status !== 'ACTIVE') throw new ActiveSubscriptionExistsException();
       }
 
       // 같은 결제로 기존 계약이 이미 생성됐으면 재사용(replay) 거부.
@@ -160,23 +179,28 @@ export class SubscriptionCreator {
       // 무료체험은 정기결제 첫 구독자에게만 적용 (관리자 생성 시 skipTrial=true)
       let effectiveTrialDays = 0;
       if (billingMode === 'recurring' && !skipTrial) {
-        const [isFirstTime, trialReuseEnabled] = await Promise.all([
-          this.isFirstTimeSubscriber(userId),
-          this.policyService.getBooleanPolicy('TRIAL_REUSE_PREVENTION', 'enabled', plan.tierId, true),
-        ]);
+        const isFirstTime = await this.isFirstTimeSubscriber(tx, userId);
         effectiveTrialDays = (isFirstTime || !trialReuseEnabled) ? (plan.trialDays || 0) : 0;
       }
 
       const autoRenewal = billingMode === 'recurring';
-      const billingDate = addDays(startsAt, Math.max(effectiveTrialDays, grantTakeover?.remainingDays ?? 0));
+      // 남은 일수는 청구일을 더하는 startsAt 과 같은 UTC 날짜로 센다(자정 걸치면 하루 늘어나는 것 방지)
+      const remainingDays =
+        grantTakeover && !grantExpired
+          ? Math.max(
+              0,
+              differenceInCalendarDays(parseISO(grantTakeover.grantEndsAt), parseISO(startsAt.toISOString().split('T')[0])),
+            )
+          : 0;
+      const billingDate = addDays(startsAt, Math.max(effectiveTrialDays, remainingDays));
       // nextBillingDate = billingDate: 체험 종료일이 곧 첫 결제일
       // 결제 성공 시 BillingOutcomeHandler가 nextBillingDate를 endsAt + durationDays로 갱신
       const nextBillingDate = billingMode === 'recurring' ? billingDate : null;
       // recurring: endsAt = 체험 종료일 (첫 결제 시 +durationDays 연장)
-      // one_time: endsAt = 결제된 전체 서비스 기간
+      // one_time: endsAt = 결제된 전체 서비스 기간 (이어받기면 남은 임시 일수 뒤에 붙는다)
       const endsAt = billingMode === 'recurring'
         ? billingDate
-        : addDays(startsAt, plan.durationDays);
+        : addDays(billingDate, plan.durationDays);
 
       // 1. 이벤트 배치 생성
       const [batch] = await tx
@@ -240,7 +264,7 @@ export class SubscriptionCreator {
       }
 
       // 지급 계약을 닫는다. 지급 이용권은 아래 createEntitlement 가 종료한다.
-      if (grantTakeover) {
+      if (grantTakeover && !grantExpired) {
         await tx
           .update(schema.subscriptionContracts)
           .set({
@@ -255,7 +279,7 @@ export class SubscriptionCreator {
           tx,
           grantTakeover.grantContractId,
           'SUPERSEDED_BY_SUBSCRIPTION',
-          { newContractId: contract.id, remainingDays: grantTakeover.remainingDays },
+          { newContractId: contract.id, remainingDays },
           'USER',
           userId,
           batch.id,
@@ -304,15 +328,15 @@ export class SubscriptionCreator {
    *
    * 과거 구독 이력이 없으면 첫 구독으로 판단. 관리자 임시 지급은 고객이 가입한 이력이 아니라서 세지 않는다.
    */
-  private async isFirstTimeSubscriber(userId: string): Promise<boolean> {
-    const contracts = await this.dbService.db
+  private async isFirstTimeSubscriber(tx: DrizzleTransaction, userId: string): Promise<boolean> {
+    const contracts = await tx
       .select({ id: schema.subscriptionContracts.id })
       .from(schema.subscriptionContracts)
       .where(
         and(
           eq(schema.subscriptionContracts.userId, userId),
           notExists(
-            this.dbService.db
+            tx
               .select({ id: schema.subscriptionContractEvents.id })
               .from(schema.subscriptionContractEvents)
               .where(

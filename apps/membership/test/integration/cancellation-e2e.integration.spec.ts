@@ -30,6 +30,7 @@ import { PauseManager } from '../../src/services/pause/pause.manager';
 import { MembershipPolicyService } from '../../src/services/membership-policy.service';
 import { BillingReader } from '../../src/services/billing/billing.reader';
 import { PaymentClientService } from '../../src/services/billing/payment-client.service';
+import { EntitlementManager } from '../../src/services/entitlement/entitlement.manager';
 import { MembershipEventPublisher } from '../../src/services/membership-event.publisher';
 import { InvoiceBillingManager } from '../../src/services/billing/invoice-billing.manager';
 import { AdminMembersReader } from '../../src/services/admin/admin-members.reader';
@@ -90,6 +91,7 @@ describeE2E('멤버십 해지·환불 E2E', () => {
       providers: [
         SubscriptionCancellationService,
         SubscriptionCancellationManager,
+        EntitlementManager,
         SubscriptionContractReader,
         CancellationContextReader,
         RefundPolicyService,

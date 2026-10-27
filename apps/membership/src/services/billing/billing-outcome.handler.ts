@@ -5,6 +5,8 @@ import * as schema from '../../shared/schemas/entities/schema';
 import { eq, and, count, isNull, lt } from 'drizzle-orm';
 import { addDays, addHours, format } from 'date-fns';
 import { ContractEventManager } from '../subscription/contract-event.manager';
+
+import { lockMembershipUser, lockMembershipUserOfContract } from '../subscription/membership-user-lock';
 import { MembershipEventPublisher } from '../membership-event.publisher';
 import { DrizzleTransaction } from '../../shared/schemas/types';
 
@@ -23,6 +25,7 @@ export class BillingOutcomeHandler {
 
   async handleSuccess(contractId: string, amount: number | null, paymentIntentId?: string): Promise<void> {
     const renewedUserId = await this.dbService.db.transaction(async (tx) => {
+      await lockMembershipUserOfContract(tx, contractId);
       const row = await this.getContractWithPlan(tx, contractId);
       if (!row) {
         this.logger.warn(`handleSuccess: contract not found (${contractId})`);
@@ -165,6 +168,7 @@ export class BillingOutcomeHandler {
     paymentIntentId?: string,
   ): Promise<void> {
     const terminatedUserId = await this.dbService.db.transaction(async (tx) => {
+      await lockMembershipUserOfContract(tx, contractId);
       const [contract] = await tx
         .select({
           userId: schema.subscriptionContracts.userId,
@@ -291,6 +295,7 @@ export class BillingOutcomeHandler {
     // 크론이 목록을 읽은 뒤 자격이 갈아치워질 수 있다(해지 철회·재가입·갱신 결제·기간 연장).
     // 무조건 EXPIRED 를 찍으면 되살아난 고객이 만료되고 그 이벤트가 Medusa 그룹까지 벗긴다.
     const expired = await this.dbService.db.transaction(async (tx) => {
+      await lockMembershipUser(tx, userId);
       // 아직 만료 대상인 자격만 조건부로 닫는다. 건너뛴 실행은 아무것도 쓰지 않는다.
       const closed = await tx
         .update(schema.subscriptionEntitlement)
@@ -356,6 +361,7 @@ export class BillingOutcomeHandler {
   // 이미 꺼졌거나 해지/만료된 계약이면 관리자의 '완전 중단' 의도로 보고 재청구하지 않는다.
   async handleCanceled(contractId: string, paymentIntentId?: string): Promise<void> {
     const terminatedUserId = await this.dbService.db.transaction(async (tx) => {
+      await lockMembershipUserOfContract(tx, contractId);
       // 멱등 마커(첫 쓰기): unique(contract_id, payment_intent_id, event_type) 충돌 시 0행 → 이미 처리됨.
       // 옛 intent 취소가 재전달돼도(그 사이 새 청구가 billingInProgress 를 다시 선점) 새 선점을 잘못 풀거나
       // 재청구를 중복 스케줄하지 않도록 intent 단위로 한 번만 처리한다.

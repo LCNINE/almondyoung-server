@@ -6,7 +6,7 @@ import { ChevronRight, ExternalLink } from "lucide-react"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { useTranslations } from "next-intl"
 import { MembershipCancelModal } from "../../../components/modal"
-import MembershipStatusSection from "domains/membership/components/status-selection"
+import MembershipStatusSection from "@/domains/membership/components/status-selection"
 import MemberDetails from "./member-details"
 import { cancelSubscription, undoCancellation } from "@/lib/api/membership"
 import { toast } from "sonner"
@@ -77,13 +77,17 @@ export default function SubscriberSection({
     cancellationPreview?.recurringCancelledAt ??
     membershipData?.recurringCancelledAt ??
     null
-  const isCancellationScheduled = !!scheduledCancelledAt
+  // 임시 이용권은 종료일에 저절로 끝난다. 예약 데이터가 남아 있어도 해지 UI 는 그리지 않는다.
+  const isAdminGrant =
+    !!membershipData?.adminGrant || !!cancellationPreview?.isAdminGrant
+  const isCancellationScheduled = !isAdminGrant && !!scheduledCancelledAt
   const periodEndsAt =
     cancellationPreview?.currentPeriodEndsAt ??
     membershipData?.currentPeriodEnd ??
     membershipData?.endDate ??
     null
-  const canCancel = !!cancellationPreview && !isCancellationScheduled
+  const canCancel =
+    !isAdminGrant && !!cancellationPreview && !isCancellationScheduled
   // 해지 예약 뒤에도 즉시해지+환불은 남아 있다. 예약을 먼저 고른 고객이 청약철회 7일 안에 마음을
   // 바꾸면 전액 환불 대상인데, 진입점이 사라지면 그 돈을 되돌릴 방법이 화면에 없어진다
   // (서버는 예약 상태에서도 IMMEDIATE_REFUND 를 받는다 — 막히는 건 재예약뿐이다).
@@ -203,6 +207,12 @@ export default function SubscriberSection({
             </a>
           )}
         </div>
+        {/* 임시 이용권은 해지 대신 자동 종료 안내 */}
+        {isAdminGrant && (
+          <p className="text-muted-foreground mt-6 text-xs">
+            {t("billing.grantEndsAutomatically")}
+          </p>
+        )}
         {/* 해지 */}
         {canCancel && (
           <div className="mt-6 flex flex-col items-start gap-2">

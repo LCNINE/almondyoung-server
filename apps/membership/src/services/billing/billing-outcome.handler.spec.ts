@@ -49,7 +49,7 @@ function makeHandler() {
   }));
   const del = jest.fn(() => ({ where: () => Promise.resolve(undefined) }));
 
-  const tx = { select, insert, update, delete: del };
+  const tx = { execute: jest.fn(), select, insert, update, delete: del };
   const transaction = jest.fn((cb: (t: unknown) => unknown) => cb(tx));
   const dbService = { db: { transaction } };
   const contractEventManager = { addEvent: jest.fn().mockResolvedValue(undefined) };
@@ -130,7 +130,7 @@ function makeCanceledHandler(opts: {
     },
   }));
 
-  const tx = { update, insert, select, delete: del };
+  const tx = { execute: jest.fn(), update, insert, select, delete: del };
   const transaction = jest.fn((cb: (t: unknown) => unknown) => cb(tx));
   const dbService = { db: { transaction } };
   const addEvent = jest.fn().mockResolvedValue(undefined);
@@ -263,7 +263,7 @@ function makeFailureHandler(opts: {
     },
   }));
 
-  const tx = { select, insert, update, delete: del };
+  const tx = { execute: jest.fn(), select, insert, update, delete: del };
   const transaction = jest.fn((cb: (t: unknown) => unknown) => cb(tx));
   const dbService = { db: { transaction } };
   const contractEventManager = { addEvent: jest.fn().mockResolvedValue(undefined) };

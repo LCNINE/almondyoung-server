@@ -123,6 +123,79 @@ describe("임시 이용권 표시 (#1056)", () => {
     expect(html).not.toContain("은행 확인 중")
   })
 
+  it("임시 이용권 보유자에게 남은 일수 안내와 가입 버튼을 보여 준다", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-09-10T03:00:00Z"))
+    try {
+      const html = renderToStaticMarkup(
+        createElement(MemberDetails, {
+          membershipData: item as unknown as SubscriptionDetailsDto,
+          savingsOverview: null,
+        })
+      )
+
+      expect(html).toContain("지금 가입해도 남은 20일은 그대로 써요")
+      expect(html).toContain("멤버십 가입하기")
+      expect(html).toContain("/mypage/membership/subscribe/payment")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("남은 일수가 0이면 안내 문구 없이 버튼만 보여 준다", () => {
+    const html = renderToStaticMarkup(
+      createElement(MemberDetails, {
+        membershipData: {
+          ...item,
+          endDate: "2020-01-01T00:00:00Z",
+        } as unknown as SubscriptionDetailsDto,
+        savingsOverview: null,
+      })
+    )
+
+    expect(html).not.toContain("지금 가입해도")
+    expect(html).toContain("멤버십 가입하기")
+  })
+
+  const renderAt = (now: string, data: Record<string, unknown>) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(now))
+    try {
+      return renderToStaticMarkup(
+        createElement(MemberDetails, {
+          membershipData: {
+            ...item,
+            ...data,
+          } as unknown as SubscriptionDetailsDto,
+          savingsOverview: null,
+        })
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+
+  it("종료일이 오늘이면 안내를 숨기고 내일이면 1일로 센다", () => {
+    const today = renderAt("2026-09-10T03:00:00Z", {
+      endDate: "2026-09-10T00:00:00Z",
+    })
+    expect(today).not.toContain("지금 가입해도")
+    expect(today).toContain("멤버십 가입하기")
+
+    const tomorrow = renderAt("2026-09-10T03:00:00Z", {
+      endDate: "2026-09-11T00:00:00Z",
+    })
+    expect(tomorrow).toContain("남은 1일은 그대로 써요")
+  })
+
+  it("currentPeriodEnd 가 endDate 보다 우선한다", () => {
+    const html = renderAt("2026-09-10T03:00:00Z", {
+      endDate: "2026-09-12T00:00:00Z",
+      currentPeriodEnd: "2026-09-20T00:00:00Z",
+    })
+    expect(html).toContain("남은 10일은 그대로 써요")
+  })
+
   it("현재 유료 구독은 다음 결제일을 유지한다", () => {
     const html = renderToStaticMarkup(
       createElement(MemberDetails, {

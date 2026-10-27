@@ -1,5 +1,5 @@
 import { addDays } from 'date-fns';
-import { CancellationPolicyInput, isWithdrawalEligible, RefundPolicyService } from '../refund-policy.service';
+import { CancellationPolicyInput, isWithdrawalEligible, RefundPolicyService, withdrawalDaysRemaining } from '../refund-policy.service';
 
 /**
  * 연간 환불 정책의 수치를 고정한다.
@@ -121,6 +121,16 @@ describe('RefundPolicyService', () => {
       expect(decision.immediateRefund.refundKind).toBe('WITHDRAWAL_FULL');
       expect(decision.immediateRefund.refundAmount).toBe(MONTHLY_PRICE);
       expect(decision.recommendedMode).toBe('IMMEDIATE_REFUND');
+    });
+
+    it('유료 시작 전(paidPeriodStart 가 미래)이면 혜택 사용과 무관하게 WITHDRAWAL_FULL', () => {
+      const decision = policy.evaluate(input({ paidPeriodStart: addDays(new Date('2026-07-30'), 10) }));
+
+      expect(decision.immediateRefund.refundKind).toBe('WITHDRAWAL_FULL');
+    });
+
+    it('유료 시작이 먼 미래여도 withdrawalDaysRemaining 은 7일을 넘지 않는다', () => {
+      expect(withdrawalDaysRemaining(addDays(new Date('2026-07-30'), 10), new Date('2026-07-30'))).toBe(7);
     });
 
     it('8일째부터는 환불 불가', () => {

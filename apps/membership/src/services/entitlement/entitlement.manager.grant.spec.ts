@@ -29,7 +29,7 @@ describe('EntitlementManager.grantByDays — 아웃박스 원자 기록', () => 
         }),
       }),
     };
-    const dbService = { db: { transaction: (fn: (t: unknown) => Promise<unknown>) => fn(tx) } };
+    const dbService = { run: (fn: (t: unknown) => Promise<unknown>) => fn(tx) };
     const saveStatusChanged = jest.fn().mockResolvedValue(undefined);
 
     const manager = new EntitlementManager(dbService as never, { saveStatusChanged } as never);
@@ -58,7 +58,7 @@ describe('EntitlementManager.grantByDays — 아웃박스 원자 기록', () => 
         }),
       }),
     };
-    const dbService = { db: { transaction: (fn: (t: unknown) => Promise<unknown>) => fn(tx) } };
+    const dbService = { run: (fn: (t: unknown) => Promise<unknown>) => fn(tx) };
     const saveStatusChanged = jest.fn().mockRejectedValue(new Error('outbox insert failed'));
 
     const manager = new EntitlementManager(dbService as never, { saveStatusChanged } as never);

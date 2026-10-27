@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { lockMembershipUser } from '../subscription/membership-user-lock';
 import { DbService } from '@app/db';
 import { and, eq, isNotNull } from 'drizzle-orm';
 import * as schema from '../../shared/schemas/entities/schema';
@@ -143,6 +144,7 @@ export class PauseManager {
    */
   async resumePause(userId: string, entitlement: any): Promise<ResumeResult | null> {
     return this.dbService.db.transaction(async (tx: DrizzleTransaction) => {
+      await lockMembershipUser(tx, userId);
       const now = new Date();
 
       // 실제 정지된 일수만큼만 종료일을 연장한다(조기 재개면 그만큼 적게 연장 → 무료 연장 방지).

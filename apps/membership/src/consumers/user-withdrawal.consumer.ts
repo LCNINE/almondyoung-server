@@ -69,6 +69,8 @@ export class UserWithdrawalConsumer {
           // 안내 메일 주소를 넘기지 않는다 — 탈퇴로 이미 개인정보를 파기했다.
           undefined,
           true,
+          // 탈퇴한 사람에게 임시 이용권을 되살리지 않는다.
+          false,
         );
 
         this.logger.log(`[UserWithdrawal] 구독 해지 완료: userId=${userId} contractId=${contract.id}`);
