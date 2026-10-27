@@ -572,6 +572,54 @@ export class SubscriptionContractReader {
   }
 
   /**
+   * 사용자의 지급 계약 표식을 한 번에 읽는다 (절약 주기 계산용).
+   * grantDays: 관리자 지급 계약 id -> 지급 일수 + 기간 조정(연장 +, 차감 -) 합계
+   * supersededBy: 이어받혀 닫힌 지급 계약 id -> 새 유료 계약 id
+   */
+  async findGrantMarkersByUserId(userId: string): Promise<{
+    grantDays: Map<string, number>;
+    supersededBy: Map<string, string>;
+  }> {
+    const rows = await this.dbService.db
+      .select({
+        contractId: schema.subscriptionContractEvents.contractId,
+        eventType: schema.subscriptionContractEvents.eventType,
+        metadata: schema.subscriptionContractEvents.metadata,
+      })
+      .from(schema.subscriptionContractEvents)
+      .where(
+        and(
+          eq(schema.subscriptionContractEvents.userId, userId),
+          inArray(schema.subscriptionContractEvents.eventType, [
+            'GRANTED_BY_ADMIN',
+            'SUPERSEDED_BY_SUBSCRIPTION',
+            'ENTITLEMENT_EXTENDED',
+            'ENTITLEMENT_REDUCED',
+          ]),
+        ),
+      );
+
+    const granted = new Set<string>();
+    const adjustments = new Map<string, number>();
+    const grantDays = new Map<string, number>();
+    const supersededBy = new Map<string, string>();
+    for (const row of rows) {
+      const meta = (row.metadata ?? {}) as { days?: number; newContractId?: string };
+      if (row.eventType === 'GRANTED_BY_ADMIN') {
+        granted.add(row.contractId);
+        grantDays.set(row.contractId, (grantDays.get(row.contractId) ?? 0) + (meta.days ?? 0));
+      } else if (row.eventType === 'SUPERSEDED_BY_SUBSCRIPTION') {
+        if (meta.newContractId) supersededBy.set(row.contractId, meta.newContractId);
+      } else {
+        adjustments.set(row.contractId, (adjustments.get(row.contractId) ?? 0) + (meta.days ?? 0));
+      }
+    }
+    // 조정 이벤트는 지급 계약에 붙은 것만 더한다 (유료 계약의 조정은 건드리지 않는다)
+    for (const id of granted) grantDays.set(id, (grantDays.get(id) ?? 0) + (adjustments.get(id) ?? 0));
+    return { grantDays, supersededBy };
+  }
+
+  /**
    * 현재 이용권이 관리자 지급분이면 이어받을 정보, 결제로 생긴 이용권이면 null.
    * 종료일만 넘기고 남은 일수는 가입 시점에 센다.
    */

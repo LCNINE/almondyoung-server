@@ -159,7 +159,7 @@ export class SubscriptionCancellationManager {
       await tx
         .delete(schema.membershipDunningQueue)
         .where(eq(schema.membershipDunningQueue.contractId, contract.id));
-      await this.entitlementManager.restoreTakenOverGrant(tx, contract);
+      await this.entitlementManager.restoreTakenOverGrant(tx, contract, cancelledAt);
 
       return {
         type: 'IMMEDIATE_CANCELLATION',
@@ -533,7 +533,7 @@ export class SubscriptionCancellationManager {
       await tx
         .delete(schema.membershipDunningQueue)
         .where(eq(schema.membershipDunningQueue.contractId, contract.id));
-      if (restoreGrant) await this.entitlementManager.restoreTakenOverGrant(tx, contract);
+      if (restoreGrant) await this.entitlementManager.restoreTakenOverGrant(tx, contract, cancelledAt);
 
       return {
         contractId: contract.id,

@@ -226,7 +226,7 @@ export class SubscriptionManager {
       await this.entitlementManager.terminateActiveEntitlement(tx, userId, batch.id);
 
       // 4. 이어받기 계약이면 남은 임시 일수를 되돌린다(종료 뒤에 불러야 한다)
-      await this.entitlementManager.restoreTakenOverGrant(tx, contract);
+      await this.entitlementManager.restoreTakenOverGrant(tx, contract, now);
 
       return {
         cancelledAt: now,

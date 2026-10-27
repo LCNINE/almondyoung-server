@@ -57,6 +57,16 @@ describe('EntitlementManager.restoreTakenOverGrant', () => {
     expect(inserted.find((v) => 'endsAt' in v)).toMatchObject({ endsAt: '2026-11-15' });
   });
 
+  it('해지 시각을 넘기면 시스템 시계가 다음 날이어도 시작일은 해지일이다', async () => {
+    jest.setSystemTime(new Date('2026-10-27T00:00:00.500Z'));
+    const { manager, tx, inserted } = setup([[{ id: 1 }], [], [{ planId: 'p1', tierId: 't1' }]]);
+
+    const days = await manager.restoreTakenOverGrant(tx as never, contract, new Date('2026-10-26T23:59:59.999Z'));
+
+    expect(days).toBe(20);
+    expect(inserted.find((v) => 'endsAt' in v)).toMatchObject({ startsAt: '2026-10-26', endsAt: '2026-11-15' });
+  });
+
   it('조회 중 UTC 자정을 넘겨도 종료일은 billingDate 그대로다', async () => {
     jest.setSystemTime(new Date('2026-10-26T23:59:59.999Z'));
     const { manager, tx, inserted } = setup([[{ id: 1 }], [], [{ planId: 'p1', tierId: 't1' }]], () =>

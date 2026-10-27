@@ -152,25 +152,49 @@ export class SavingsService {
    * 첫 결제일 + 플랜 기간으로 본다(결제 기록 없이 만료된 옛 계약).
    */
   private async resolvePeriods(userId: string): Promise<BillingPeriod[]> {
-    const [rows, entitlementData] = await Promise.all([
+    const [rows, entitlementData, markers] = await Promise.all([
       this.contractReader.findContractsByUserIdWithPlan(userId),
       this.entitlementService.getUserEntitlement(userId).catch(() => null),
+      this.contractReader.findGrantMarkersByUserId(userId),
     ]);
 
     const now = new Date();
     const currentEndsAt = entitlementData?.entitlement.endsAt ? new Date(entitlementData.entitlement.endsAt) : null;
+    const contractById = new Map(rows.map(({ contract }) => [contract.id, contract]));
 
     return rows.flatMap(({ contract, plan }) => {
       const start = new Date(contract.billingDate);
-      const end =
-        contract.status === 'ACTIVE' && currentEndsAt
-          ? currentEndsAt
-          : (contract.cancelledAt ?? new Date(start.getTime() + plan.durationDays * 86_400_000));
+      const grantDays = markers.grantDays.get(contract.id);
+      const isGrant = grantDays !== undefined;
 
-      return deriveBillingPeriods(
-        { contractId: contract.id, start, end, durationDays: plan.durationDays },
-        now,
-      );
+      // 이어받혀 닫힌 임시 계약은 해지 시각이 아니라 유료 시작에서 끝난다. 유료 계약이 시작 전에 해지됐으면
+      // 그 해지 시각에서 끝낸다 (복구된 임시 이용권이 그 시각부터 이어지므로 겹치지도 비지도 않는다).
+      const successor = contractById.get(markers.supersededBy.get(contract.id) ?? '');
+      let takenOverAt: Date | undefined;
+      if (successor) {
+        takenOverAt = new Date(successor.billingDate);
+        if (successor.cancelledAt) {
+          // 복구된 지급 계약의 시작은 날짜(UTC 00:00)로 잘리므로 같은 경계로 맞춰 반일 겹침을 막는다
+          const c = successor.cancelledAt;
+          const cancelDayStart = new Date(Date.UTC(c.getUTCFullYear(), c.getUTCMonth(), c.getUTCDate()));
+          if (cancelDayStart < takenOverAt) takenOverAt = cancelDayStart;
+        }
+      }
+
+      // 만료된 지급 계약은 해지 시각이 없어 지급 일수(+조정)로 끝을 추정한다. 플랜 기간이 아니다.
+      const estimatedDays = isGrant ? grantDays : plan.durationDays;
+      const end =
+        takenOverAt ??
+        (contract.status === 'ACTIVE' && currentEndsAt
+          ? currentEndsAt
+          : (contract.cancelledAt ?? new Date(start.getTime() + estimatedDays * 86_400_000)));
+
+      // 임시 이용권은 플랜 기간으로 쪼개지 않고 하나의 주기로 본다
+      const durationDays = isGrant
+        ? Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86_400_000))
+        : plan.durationDays;
+
+      return deriveBillingPeriods({ contractId: contract.id, start, end, durationDays }, now);
     });
   }
 

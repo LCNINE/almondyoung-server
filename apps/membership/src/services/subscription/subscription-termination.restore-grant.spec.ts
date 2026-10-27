@@ -102,7 +102,7 @@ describe('계약 종료 경로 — 잠금 재확인과 임시 이용권 복구',
 
     expect(lockModes).toEqual(['no key update']);
     expect(order).toEqual(['user-lock', 'terminate', 'restore']);
-    expect(entitlementManager.restoreTakenOverGrant).toHaveBeenCalledWith(tx, contract);
+    expect(entitlementManager.restoreTakenOverGrant).toHaveBeenCalledWith(tx, contract, expect.any(Date));
   });
 
   it('세 종료 경로는 트랜잭션 첫 문장으로 회원 잠금을 건다', async () => {
@@ -169,7 +169,7 @@ describe('계약 종료 경로 — 잠금 재확인과 임시 이용권 복구',
     await makeCancellation(tx).cancelImmediately('u1', contract, plan, 'R', undefined, eligibility);
 
     expect(order).toEqual(['user-lock', 'terminate', 'restore']);
-    expect(entitlementManager.restoreTakenOverGrant).toHaveBeenCalledWith(tx, contract);
+    expect(entitlementManager.restoreTakenOverGrant).toHaveBeenCalledWith(tx, contract, expect.any(Date));
   });
 
   it('forceCancelSubscription: 종료 후 restoreTakenOverGrant 를 같은 tx 로 부른다', async () => {
@@ -178,7 +178,7 @@ describe('계약 종료 경로 — 잠금 재확인과 임시 이용권 복구',
     await makeCancellation(tx).forceCancelSubscription(contract, plan, 'admin1', 'r', 'NONE');
 
     expect(order).toEqual(['user-lock', 'terminate', 'restore']);
-    expect(entitlementManager.restoreTakenOverGrant).toHaveBeenCalledWith(tx, contract);
+    expect(entitlementManager.restoreTakenOverGrant).toHaveBeenCalledWith(tx, contract, expect.any(Date));
   });
 
   it('forceCancelSubscription: restoreGrant=false 면 복구하지 않는다', async () => {

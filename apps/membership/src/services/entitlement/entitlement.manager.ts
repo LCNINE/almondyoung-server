@@ -278,10 +278,11 @@ export class EntitlementManager {
   async restoreTakenOverGrant(
     tx: DrizzleTransaction,
     contract: { id: string; userId: string; billingDate: string | null },
+    // 해지 시각과 같은 시계를 쓰도록 호출자가 넘긴다 (자정을 사이에 두고 하루가 비지 않게)
+    now: Date = new Date(),
   ): Promise<number> {
     if (!contract.billingDate) return 0;
 
-    const now = new Date();
     const days = differenceInCalendarDays(parseISO(contract.billingDate), parseISO(now.toISOString().split('T')[0]));
     if (days <= 0) return 0;
 
