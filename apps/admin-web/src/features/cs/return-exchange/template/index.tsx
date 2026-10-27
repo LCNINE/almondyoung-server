@@ -15,20 +15,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ReturnRequestsTable } from '../components/return-requests-table';
+import { CustomerReturnsTable } from '../components/customer-returns-table';
+import type { CustomerReturnBucket } from '@/lib/types/dto/customer-returns';
 import { ExchangeRequestsTable } from '../components/exchange-requests-table';
-
-const RETURN_STATUSES = [
-  { value: '', label: '전체' },
-  { value: 'requested', label: '신청' },
-  { value: CLAIM_IN_PROGRESS, label: '처리중 (승인~환불 대기)' },
-  { value: 'approved', label: '승인' },
-  { value: 'rejected', label: '거절' },
-  { value: 'collection_pending', label: '수거 대기' },
-  { value: 'collected', label: '수거 완료' },
-  { value: 'inspected', label: '검수 완료' },
-  { value: 'completed', label: '완료' },
-];
 
 const EXCHANGE_STATUSES = [
   { value: '', label: '전체' },
@@ -60,8 +49,7 @@ export default function ReturnExchangeTemplate() {
   const status = searchParams.get('status') ?? '';
   const createdAt = searchParams.get('createdAt') ?? undefined;
   const { from: createdFrom, to: createdTo } = parseDateRangeParam(createdAt);
-  const [returnPage, setReturnPage] = useState(1);
-  const [exchangePage, setExchangePage] = useState(1);
+    const [exchangePage, setExchangePage] = useState(1);
 
   const updateParams = (patch: Record<string, string | undefined>) => {
     const next = new URLSearchParams(searchParams.toString());
@@ -71,13 +59,22 @@ export default function ReturnExchangeTemplate() {
     }
     const qs = next.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-    setReturnPage(1);
     setExchangePage(1);
   };
 
+  const bucketParam = searchParams.get('bucket');
+  const bucket: CustomerReturnBucket =
+    bucketParam === 'attention' || bucketParam === 'closed' ? bucketParam : 'open';
+  const q = searchParams.get('q') ?? '';
+
   const handleStatusChange = (value: string) => updateParams({ status: value === 'all' ? undefined : value });
   const handleTabChange = (value: string) =>
-    updateParams({ tab: value === 'exchanges' ? 'exchanges' : undefined, status: undefined });
+    updateParams({
+      tab: value === 'exchanges' ? 'exchanges' : undefined,
+      status: undefined,
+      bucket: undefined,
+      q: undefined,
+    });
 
   const dateChip =
     createdFrom || createdTo ? (
@@ -94,7 +91,7 @@ export default function ReturnExchangeTemplate() {
       </span>
     ) : null;
 
-  const statusSelect = (options: typeof RETURN_STATUSES) => (
+  const statusSelect = (options: typeof EXCHANGE_STATUSES) => (
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-sm text-muted-foreground">상태 필터</span>
       <Select value={status || 'all'} onValueChange={handleStatusChange}>
@@ -118,18 +115,16 @@ export default function ReturnExchangeTemplate() {
       <Header title="반품/교환 관리" />
       <Tabs value={tab} onValueChange={handleTabChange}>
         <TabsList className="mb-4">
-          <TabsTrigger value="returns">반품 요청</TabsTrigger>
-          <TabsTrigger value="exchanges">교환 요청</TabsTrigger>
+          <TabsTrigger value="returns">반품</TabsTrigger>
+          <TabsTrigger value="exchanges">교환</TabsTrigger>
         </TabsList>
 
         <TabsContent value="returns" className="space-y-3">
-          {statusSelect(RETURN_STATUSES)}
-          <ReturnRequestsTable
-            statusFilter={status || undefined}
-            createdFrom={createdFrom}
-            createdTo={createdTo}
-            page={returnPage}
-            onPageChange={setReturnPage}
+          <CustomerReturnsTable
+            bucket={bucket}
+            q={q}
+            onBucketChange={(next) => updateParams({ bucket: next === 'open' ? undefined : next })}
+            onSearch={(next) => updateParams({ q: next || undefined })}
           />
         </TabsContent>
 
