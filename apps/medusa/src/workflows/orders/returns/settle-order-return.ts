@@ -18,6 +18,7 @@ import { RETURN_FEE_CHARGE_NAME } from '../partial-cancel/plan-shipping';
 import { priorGroupFeesFor } from '../partial-cancel/prior-group-fees';
 import { shippingPlanLines } from '../partial-cancel/shipping-plan-lines';
 import { loadOrderView, productShippingProfiles, type OrderView } from '../settlement/load-order-view';
+import type { ShippingMethodView } from '../partial-cancel/plan-shipping';
 import { addSettlementCharge, ensureNoDanglingChange } from '../settlement/order-edit-charge';
 import { orderCancelLockKey, orderPaymentIds } from '../settlement/order-payments';
 import { refundOrderPayments } from '../settlement/refund-order-payments';
@@ -27,6 +28,7 @@ import { readReturnRequestRecord } from './load-return-order';
 import { planReturnFees, type ReturnSettlementDeduction } from './plan-return-fees';
 import { ReturnOrderNotFound } from './request-order-return';
 import {
+  assertNoReturnAwaitingCharge,
   assertReadableSettlementRecord,
   hashReturnSettlement,
   loadReturnSettlementRecords,
@@ -62,7 +64,8 @@ export type ReturnSettleRejectReason =
   | 'return_canceled'
   | 'request_id_conflict'
   | 'items_mismatch'
-  | 'external_refund_unresolved';
+  | 'external_refund_unresolved'
+  | 'return_already_received';
 
 /** 정해진 거절 — 다시 불러도 같다. 라우트가 400 code=return_settle_rejected + reason 으로 낸다. 반품·주문은 그대로다. */
 export class ReturnSettleRejected extends Error {
@@ -175,16 +178,25 @@ async function receive(
   requestHash: string,
 ): Promise<ReturnSettlementRecord> {
   assertItemsMatch(ret.quantities, input.items);
-  // 수령 «전»에 장부를 맞춘다 — 투영 안 된 외부 환불까지 보고 거절하게. 맞추기가 넣은 환불은 차액을 움직이므로 그 «뒤»에 읽는다
+  // 이 반품은 아직 기록이 없으니 목록은 «다른» 반품들의 기록이다. 수령까지 하고 청구 전에 멈춘 반품이 있으면 기다린다(500 → 재시도):
+  // 그 반품의 groupFees 는 아직 겹치기에 안 들어가(charged·refunded 만) 이 반품이 같은 깨짐을 받고, 그 반품이 이어 가며 또 받는다.
+  const otherReturns = await loadReturnSettlementRecords(container, input.orderId);
+  assertNoReturnAwaitingCharge(otherReturns);
+  // 수령 «전»에 장부를 맞춘다 — 투영 안 된 외부 환불까지 보고 거절하게
   await reconcileOrderWalletRefunds(container, input.orderId);
-  const before = await loadOrder(container, input.orderId);
-  await assertNoExternalRefund(container, before);
+  await assertNoExternalRefund(container, await loadOrder(container, input.orderId));
 
   const tag = receiveTag(input.requestId);
   // 확정됐는데 기록이 없으면(확정과 기록 사이에 끊김) 다시 받으면 재고·차액이 두 번 움직인다 — 멈춘다. 열린 채면 버리고 새로 한다
   await ensureNoDanglingChange(container, input.orderId, tag, async () => {
     await cancelReturnReceiveWorkflow(container).run({ input: { return_id: ret.id } });
   });
+  // 우리 태그의 확정 수령이 없는데 이미 받은 반품 — 다른 경로(기본 라우트·대시보드)가 받았다. 차액이 이미 움직여 돌려줄 돈을 셀 수 없다
+  if (ret.status === ReturnStatus.RECEIVED || ret.status === ReturnStatus.PARTIALLY_RECEIVED) {
+    throw new ReturnSettleRejected('return_already_received', '정산 밖에서 이미 수령한 반품입니다 — 수동 확인이 필요합니다');
+  }
+  // 맞추기·끊긴 수령 버리기가 모두 끝난 «뒤»에 읽는다 — 그 둘이 움직인 차액이 owed 에 섞이지 않게
+  const before = await loadOrder(container, input.orderId);
   await beginReceiveReturnWorkflow(container).run({
     input: { return_id: ret.id, created_by: input.actorId, internal_note: tag },
   });
@@ -218,12 +230,11 @@ async function receive(
     methods: after.shippingMethods,
     lines: shippingPlanLines(after.lines, new Map(), profiles).map((l) => ({ ...l, returnedNow: returnedNow.get(l.itemId) ?? 0 })),
     postalCode: after.postalCode,
-    priorGroupFees: priorGroupFeesFor(
-      Object.values(readPartialCancelRecords(after.metadata)),
-      await loadReturnSettlementRecords(container, input.orderId),
-    ),
+    priorGroupFees: priorGroupFeesFor(Object.values(readPartialCancelRecords(after.metadata)), otherReturns),
     chargeCap: Math.max(0, owed),
   });
+  const chargeShippingOptionId = plan.total > 0 ? chargeShippingOption(after.shippingMethods, after.lines, profiles, input.items) : null;
+  if (plan.total > 0 && !chargeShippingOptionId) throw new Error(`반품 택배비를 붙일 배송 방법을 찾지 못했습니다: ${input.orderId}`);
 
   const record: ReturnSettlementRecord = {
     requestHash,
@@ -236,6 +247,7 @@ async function receive(
     groupFees: plan.groupFees,
     orderVersion: after.version,
     receivedAt: new Date().toISOString(),
+    chargeShippingOptionId,
   };
   await writeRecord(container, ret.id, record);
   return record;
@@ -249,11 +261,12 @@ async function charge(container: MedusaContainer, input: SettleOrderReturnInput,
     await ensureNoDanglingChange(container, input.orderId, tag, async () => {
       await cancelBeginOrderEditWorkflow(container).run({ input: { order_id: input.orderId } });
     });
-    const order = await loadOrder(container, input.orderId);
+    // 옵션은 수령 때 정해 기록에 둔 값 — 이어 갈 때 주문의 배송 방법 순서에 다시 기대지 않는다
+    if (!record.chargeShippingOptionId) throw new Error(`차감이 있는데 택배비 배송 옵션이 기록에 없습니다: ${input.returnId}`);
     await addSettlementCharge(container, {
       orderId: input.orderId,
       tag,
-      shippingOptionId: await chargeShippingOptionId(container, order, record.items),
+      shippingOptionId: record.chargeShippingOptionId,
       amount: total,
       name: RETURN_FEE_CHARGE_NAME,
       actorId: input.actorId,
@@ -298,22 +311,25 @@ async function assertNoExternalRefund(container: MedusaContainer, order: OrderVi
 
 /**
  * «반품 택배비» 방법을 붙일 배송 옵션 — 이번 반품이 닿은 첫 그룹(주문의 배송 방법 순서)의 원래 방법 옵션.
- * 금액은 custom_amount 라 옵션은 그릇일 뿐이다. 차감이 있으면 계획이 그룹을 맞춘 것이라 반드시 있다.
+ * 금액은 custom_amount 라 옵션은 그릇일 뿐이다. 차감이 있으면 계획이 그룹을 맞춘 것이라 있어야 한다.
  */
-async function chargeShippingOptionId(
-  container: MedusaContainer,
-  order: OrderView,
-  items: ReturnSettlementRecord['items'],
-): Promise<string> {
+function chargeShippingOption(
+  methods: ShippingMethodView[],
+  lines: OrderView['lines'],
+  profiles: ReadonlyMap<string, string>,
+  items: SettleOrderReturnInput['items'],
+): string | null {
   const ids = new Set(items.filter((i) => i.received + i.dismissed > 0).map((i) => i.itemId));
-  const productIds = order.lines.filter((l) => ids.has(l.id)).flatMap((l) => (l.productId ? [l.productId] : []));
-  const profiles = await productShippingProfiles(container, productIds);
-  const touched = new Set(profiles.values());
-  const target = order.shippingMethods.find(
+  const touched = new Set(
+    lines.flatMap((l) => {
+      const profile = ids.has(l.id) && l.productId ? profiles.get(l.productId) : undefined;
+      return profile ? [profile] : [];
+    }),
+  );
+  const target = methods.find(
     (m) => !m.isSettlementCharge && !m.isReturnExchangeOrClaimShipping && m.snapshot && touched.has(m.snapshot.shippingProfileId),
   );
-  if (!target?.shippingOptionId) throw new Error(`반품 택배비를 붙일 배송 방법을 찾지 못했습니다: ${order.id}`);
-  return target.shippingOptionId;
+  return target?.shippingOptionId ?? null;
 }
 
 // ── 조회·기록 ──────────────────────────────────────────────────────────────────

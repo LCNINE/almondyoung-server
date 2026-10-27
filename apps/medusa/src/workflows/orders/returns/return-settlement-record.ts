@@ -25,6 +25,8 @@ export type ReturnSettlementRecord = {
   /** 수령 확정 뒤 주문 버전 */
   orderVersion: number;
   receivedAt: string;
+  /** «반품 택배비» 방법을 붙일 배송 옵션 — 수령 때 정한다(이 반품이 닿은 첫 그룹의 원래 방법). 차감 0 이면 null */
+  chargeShippingOptionId: string | null;
   refundedAt?: string;
   refundMode?: string;
 };
@@ -55,6 +57,7 @@ export function readReturnSettlementRecord(metadata: unknown): ReturnSettlementR
     if (!isNum(v)) return null;
     groupFees[k] = v;
   }
+  if (r.chargeShippingOptionId !== null && typeof r.chargeShippingOptionId !== 'string') return null;
   if (r.refundedAt !== undefined && typeof r.refundedAt !== 'string') return null;
   if (r.refundMode !== undefined && typeof r.refundMode !== 'string') return null;
   return {
@@ -68,6 +71,7 @@ export function readReturnSettlementRecord(metadata: unknown): ReturnSettlementR
     groupFees,
     orderVersion: r.orderVersion,
     receivedAt: r.receivedAt,
+    chargeShippingOptionId: r.chargeShippingOptionId,
     ...(r.refundedAt !== undefined ? { refundedAt: r.refundedAt } : {}),
     ...(r.refundMode !== undefined ? { refundMode: r.refundMode } : {}),
   };

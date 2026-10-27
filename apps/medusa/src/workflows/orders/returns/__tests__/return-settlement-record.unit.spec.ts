@@ -18,6 +18,7 @@ const valid = (): ReturnSettlementRecord => ({
   groupFees: { sp: 3000 },
   orderVersion: 3,
   receivedAt: '2026-10-27T00:00:00.000Z',
+  chargeShippingOptionId: 'so_1',
 });
 const meta = (r: unknown) => ({ [RETURN_SETTLEMENT_METADATA_KEY]: r });
 
@@ -29,7 +30,13 @@ describe('readReturnSettlementRecord', () => {
     const r = { ...valid(), stage: 'refunded', refundedAt: '2026-10-28T00:00:00.000Z', refundMode: 'auto' };
     expect(readReturnSettlementRecord(meta(r))).toEqual(r);
   });
+  it('차감이 없으면 chargeShippingOptionId 는 null 로 읽는다', () => {
+    const r = { ...valid(), chargeShippingOptionId: null };
+    expect(readReturnSettlementRecord(meta(r))).toEqual(r);
+  });
   it.each([
+    ['chargeShippingOptionId 누락', { chargeShippingOptionId: undefined }],
+    ['chargeShippingOptionId 숫자', { chargeShippingOptionId: 1 }],
     ['stage 모름', { stage: 'x' }],
     ['owed 문자열', { owed: '1' }],
     ['deduction 한 칸 누락', { deduction: { returnShipping: 1, freeShippingBreak: 1 } }],
