@@ -10,7 +10,7 @@ export class LocationContentItemDto {
   @ApiProperty()
   skuName: string;
 
-  @ApiProperty({ description: 'ON_HAND | DEFECTIVE | IN_TRANSFER' })
+  @ApiProperty({ description: 'ON_HAND | DEFECTIVE | IN_TRANSFER | RETURNED' })
   stockState: string;
 
   @ApiProperty()

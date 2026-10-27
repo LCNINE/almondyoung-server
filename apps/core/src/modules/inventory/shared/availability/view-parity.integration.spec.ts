@@ -60,12 +60,13 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
     transferPending: number;
     defective: number;
     inTransfer: number;
+    returned: number;
   }
 
   const readViewRow = async (trx: DbTx, skuId: string, warehouseId: string): Promise<ViewRow> => {
     const rows = (await trx.execute(sql`
       SELECT available_qty, projected_available_qty, inbound_pending_qty, transfer_pending_qty,
-             defective_qty, in_transfer_qty
+             defective_qty, in_transfer_qty, returned_qty
         FROM stock_summary_view
        WHERE sku_id = ${skuId} AND warehouse_id = ${warehouseId}
     `)) as unknown as {
@@ -75,6 +76,7 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
       transfer_pending_qty: number | string;
       defective_qty: number | string;
       in_transfer_qty: number | string;
+      returned_qty: number | string;
     }[];
     return {
       available: Number(rows[0]?.available_qty ?? 0),
@@ -83,11 +85,14 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
       transferPending: Number(rows[0]?.transfer_pending_qty ?? 0),
       defective: Number(rows[0]?.defective_qty ?? 0),
       inTransfer: Number(rows[0]?.in_transfer_qty ?? 0),
+      returned: Number(rows[0]?.returned_qty ?? 0),
     };
   };
 
   const DEFECTIVE_QTY = 5;
   const IN_TRANSFER_QTY = 3;
+  /** 반품 검수 대기 — 판매 불가. 가용에 섞이면 이 스펙이 잡는다(K8). */
+  const RETURNED_QTY = 4;
   /** 떠났지만 아직 도착하지 않은 이동 수량 — transit_out 항을 0 이 아니게 만드는 값. */
   const TRANSIT_QTY = 3;
 
@@ -114,6 +119,13 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
         stockState: 'IN_TRANSFER',
         qty: IN_TRANSFER_QTY,
       },
+      {
+        skuId: fx.skuId,
+        warehouseId: fx.warehouseId,
+        locationId: fx.locationId,
+        stockState: 'RETURNED',
+        qty: RETURNED_QTY,
+      },
     ]);
   };
 
@@ -121,6 +133,7 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
   const expectNonOnHandSeeded = (row: ViewRow) => {
     expect(row.defective).toBe(DEFECTIVE_QTY);
     expect(row.inTransfer).toBe(IN_TRANSFER_QTY);
+    expect(row.returned).toBe(RETURNED_QTY);
   };
 
   /**
@@ -197,7 +210,7 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
       expect(source.projected).toBe(14);
       expect(source.transferPending).toBe(0);
       expectProjectedDerivesFromAvailable(source);
-      expectNonOnHandSeeded(source); // DEFECTIVE/IN_TRANSFER 가 있어도 위 값들은 그대로다
+      expectNonOnHandSeeded(source); // DEFECTIVE/IN_TRANSFER/RETURNED 가 있어도 위 값들은 그대로다
 
       // 도착 창고: 재고 0 / 미도착 이동 3. 미도착 이동은 가용에서도 전망에서도 빼지 않는다.
       const destModule = await readWarehouseAvailability(trx, fx.skuId, destWarehouse.id);
