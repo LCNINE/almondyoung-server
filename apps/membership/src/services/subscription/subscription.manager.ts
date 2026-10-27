@@ -5,6 +5,7 @@ import * as schema from '../../shared/schemas/entities/schema';
 import { eq } from 'drizzle-orm';
 import { addDays } from 'date-fns';
 import { ContractEventManager } from './contract-event.manager';
+import { lockMembershipUser } from './membership-user-lock';
 import { EntitlementManager } from '../entitlement/entitlement.manager';
 import { SubscriptionException } from '../../shared/exceptions/subscription.exceptions';
 
@@ -49,6 +50,7 @@ export class SubscriptionManager {
     }
 
     return await this.dbService.db.transaction(async (tx) => {
+      await lockMembershipUser(tx, userId);
       const now = new Date();
       const newEndsAt = addDays(now, newPlan.durationDays);
 
@@ -121,6 +123,7 @@ export class SubscriptionManager {
     }
 
     return await this.dbService.db.transaction(async (tx) => {
+      await lockMembershipUser(tx, userId);
       const now = new Date();
       const newEndsAt = addDays(now, newPlan.durationDays);
 
@@ -181,6 +184,7 @@ export class SubscriptionManager {
     reason?: string,
   ): Promise<{ cancelledAt: Date; contractId: string }> {
     return await this.dbService.db.transaction(async (tx) => {
+      await lockMembershipUser(tx, userId);
       const now = new Date();
 
       // 계약 행을 잠그고 상태를 다시 본다. 재배달된 환불이 복구된 임시 이용권을 닫지 않게 한다.

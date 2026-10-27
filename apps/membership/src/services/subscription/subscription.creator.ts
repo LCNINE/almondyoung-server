@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
+import { DrizzleTransaction } from '../../shared/schemas/types';
+import { lockMembershipUser } from './membership-user-lock';
 import { BadRequestError } from '@app/shared';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
@@ -116,13 +118,19 @@ export class SubscriptionCreator {
     email: string,
     grantTakeover?: GrantTakeover,
   ): Promise<{ contractId: string; entitlementId: string; effectiveTrialDays: number }> {
+    // 회원 잠금을 쥔 채 다른 연결을 쓰지 않게 정책은 트랜잭션 밖에서 읽는다.
+    const trialReuseEnabled =
+      billingMode === 'recurring' && !skipTrial
+        ? await this.policyService.getBooleanPolicy('TRIAL_REUSE_PREVENTION', 'enabled', plan.tierId, true)
+        : true;
+
     return await this.dbService.db.transaction(async (tx) => {
       const now = new Date();
       const startsAt = now;
 
       // 같은 사용자의 가입을 한 줄로 세운다. 행 잠금만으로는 이용권이 아직 없을 때 잠글 것이 없어,
       // 동시에 들어온 두 가입이 서로의 이용권을 닫고 각자 계약을 만든다.
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`membership-signup:${userId}`}))`);
+      await lockMembershipUser(tx, userId);
 
       // 호출부 가드와 이 트랜잭션 사이에 다른 가입이 커밋됐을 수 있다. 그 이용권을 닫고 덮어쓰지 않게 다시 본다.
       const findCurrent = async () => {
@@ -171,10 +179,7 @@ export class SubscriptionCreator {
       // 무료체험은 정기결제 첫 구독자에게만 적용 (관리자 생성 시 skipTrial=true)
       let effectiveTrialDays = 0;
       if (billingMode === 'recurring' && !skipTrial) {
-        const [isFirstTime, trialReuseEnabled] = await Promise.all([
-          this.isFirstTimeSubscriber(userId),
-          this.policyService.getBooleanPolicy('TRIAL_REUSE_PREVENTION', 'enabled', plan.tierId, true),
-        ]);
+        const isFirstTime = await this.isFirstTimeSubscriber(tx, userId);
         effectiveTrialDays = (isFirstTime || !trialReuseEnabled) ? (plan.trialDays || 0) : 0;
       }
 
@@ -323,15 +328,15 @@ export class SubscriptionCreator {
    *
    * 과거 구독 이력이 없으면 첫 구독으로 판단. 관리자 임시 지급은 고객이 가입한 이력이 아니라서 세지 않는다.
    */
-  private async isFirstTimeSubscriber(userId: string): Promise<boolean> {
-    const contracts = await this.dbService.db
+  private async isFirstTimeSubscriber(tx: DrizzleTransaction, userId: string): Promise<boolean> {
+    const contracts = await tx
       .select({ id: schema.subscriptionContracts.id })
       .from(schema.subscriptionContracts)
       .where(
         and(
           eq(schema.subscriptionContracts.userId, userId),
           notExists(
-            this.dbService.db
+            tx
               .select({ id: schema.subscriptionContractEvents.id })
               .from(schema.subscriptionContractEvents)
               .where(

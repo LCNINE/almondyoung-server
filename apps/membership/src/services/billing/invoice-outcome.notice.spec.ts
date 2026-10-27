@@ -25,6 +25,7 @@ function makeHandler(opts: {
   const selectQueue: unknown[][] = [contract ? [contract] : [], opts.heldEntitlement ? [opts.heldEntitlement] : []];
 
   const tx = {
+    execute: jest.fn(),
     select: jest.fn().mockReturnThis(),
     from: jest.fn().mockReturnThis(),
     innerJoin: jest.fn().mockReturnThis(),

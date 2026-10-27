@@ -5,6 +5,7 @@ import * as schema from '../../shared/schemas/entities/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { format } from 'date-fns';
 import { ContractEventManager } from '../subscription/contract-event.manager';
+import { lockMembershipUserOfContract } from '../subscription/membership-user-lock';
 import { MembershipEventPublisher } from '../membership-event.publisher';
 import { DrizzleTransaction } from '../../shared/schemas/types';
 import { PaymentClientService } from './payment-client.service';
@@ -139,6 +140,7 @@ export class InvoiceOutcomeHandler {
     intentId?: string,
   ): Promise<void> {
     const renewedUserId = await this.dbService.db.transaction(async (tx) => {
+      await lockMembershipUserOfContract(tx, contractId);
       const contract = await this.getContract(tx, contractId);
       if (!contract) return null;
       if (contract.billingPath !== 'INVOICE') {
@@ -232,6 +234,7 @@ export class InvoiceOutcomeHandler {
     const contact = notice ? await this.billingNoticeManager.lookupContactForContract(contractId) : null;
 
     await this.dbService.db.transaction(async (tx) => {
+      await lockMembershipUserOfContract(tx, contractId);
       const contract = await this.getContract(tx, contractId);
       if (!contract) return;
 
@@ -328,6 +331,7 @@ export class InvoiceOutcomeHandler {
     const contact = notifies ? await this.billingNoticeManager.lookupContactForContract(contractId) : null;
 
     const terminatedUserId = await this.dbService.db.transaction(async (tx) => {
+      await lockMembershipUserOfContract(tx, contractId);
       const contract = await this.getContract(tx, contractId);
       if (!contract) return null;
 

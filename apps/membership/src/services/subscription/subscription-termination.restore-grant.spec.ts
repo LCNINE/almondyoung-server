@@ -5,12 +5,15 @@ import { BadRequestException } from '../../shared/exceptions/subscription.except
 
 /** 잠금 select 가 돌려줄 행과 호출 순서를 기록하는 tx 목 */
 function makeTx(lockedRow: { status: string; cancelledAt?: Date | null }, order: string[], lockModes: string[] = []) {
+  // 회원 잠금 포함 모든 문장을 실행 순서대로 기록한다
+  const trace: string[] = [];
   const chain = (rows: unknown[]) => {
     const c: Record<string, jest.Mock> = {};
     c.from = jest.fn(() => c);
     c.where = jest.fn(() => c);
     c.for = jest.fn((mode: string) => {
       lockModes.push(mode);
+      trace.push('contract-lock');
       return c;
     });
     c.limit = jest.fn(async () => rows);
@@ -21,10 +24,21 @@ function makeTx(lockedRow: { status: string; cancelledAt?: Date | null }, order:
   };
   const updates: unknown[] = [];
   const tx = {
-    select: jest.fn(() => chain([lockedRow])),
-    insert: jest.fn(() => chain([{ id: 'batch-1' }])),
+    execute: jest.fn(async () => {
+      trace.push('user-lock');
+      order.push('user-lock');
+    }),
+    select: jest.fn(() => {
+      trace.push('select');
+      return chain([lockedRow]);
+    }),
+    insert: jest.fn(() => {
+      trace.push('insert');
+      return chain([{ id: 'batch-1' }]);
+    }),
     update: jest.fn((table: unknown) => {
       updates.push(table);
+      trace.push('update');
       if (table === schema.subscriptionEntitlement) order.push('terminate');
       const c = chain([]);
       c.where = jest.fn(async () => undefined);
@@ -32,7 +46,7 @@ function makeTx(lockedRow: { status: string; cancelledAt?: Date | null }, order:
     }),
     delete: jest.fn(() => ({ where: jest.fn(async () => undefined) })),
   };
-  return { tx, updates };
+  return { tx, updates, trace };
 }
 
 // 계약 행 전체가 아니라 종료 경로가 읽는 필드만 필요해 never 로 좁힌다(테스트 한정)
@@ -87,8 +101,33 @@ describe('계약 종료 경로 — 잠금 재확인과 임시 이용권 복구',
     await manager.voidSubscription('u1', contract);
 
     expect(lockModes).toEqual(['no key update']);
-    expect(order).toEqual(['terminate', 'restore']);
+    expect(order).toEqual(['user-lock', 'terminate', 'restore']);
     expect(entitlementManager.restoreTakenOverGrant).toHaveBeenCalledWith(tx, contract);
+  });
+
+  it('세 종료 경로는 트랜잭션 첫 문장으로 회원 잠금을 건다', async () => {
+    const run = async (call: (tx: unknown) => Promise<unknown>) => {
+      order.length = 0;
+      const { tx, trace } = makeTx({ status: 'ACTIVE' }, order);
+      await call(tx);
+      // 회원 잠금은 한 번, 맨 앞이어야 하고 계약 잠금·첫 쓰기보다 앞선다
+      expect(trace[0]).toBe('user-lock');
+      expect(trace.filter((t) => t === 'user-lock')).toHaveLength(1);
+      expect(trace.indexOf('user-lock')).toBeLessThan(trace.indexOf('contract-lock'));
+      expect(trace.indexOf('user-lock')).toBeLessThan(trace.indexOf('update'));
+      const text = JSON.stringify(tx.execute.mock.calls[0]);
+      expect(text).toContain('membership-signup:');
+      expect(text).toContain('u1');
+    };
+    await run((tx) =>
+      new SubscriptionManager(
+        makeDb(tx) as never,
+        contractEventManager as never,
+        entitlementManager as never,
+      ).voidSubscription('u1', contract),
+    );
+    await run((tx) => makeCancellation(tx).cancelImmediately('u1', contract, plan, 'R', undefined, eligibility));
+    await run((tx) => makeCancellation(tx).forceCancelSubscription(contract, plan, 'admin', 'r', 'NONE'));
   });
 
   const eligibility = { eligible: false, reason: '', amount: 0 };
@@ -129,7 +168,7 @@ describe('계약 종료 경로 — 잠금 재확인과 임시 이용권 복구',
 
     await makeCancellation(tx).cancelImmediately('u1', contract, plan, 'R', undefined, eligibility);
 
-    expect(order).toEqual(['terminate', 'restore']);
+    expect(order).toEqual(['user-lock', 'terminate', 'restore']);
     expect(entitlementManager.restoreTakenOverGrant).toHaveBeenCalledWith(tx, contract);
   });
 
@@ -138,16 +177,25 @@ describe('계약 종료 경로 — 잠금 재확인과 임시 이용권 복구',
 
     await makeCancellation(tx).forceCancelSubscription(contract, plan, 'admin1', 'r', 'NONE');
 
-    expect(order).toEqual(['terminate', 'restore']);
+    expect(order).toEqual(['user-lock', 'terminate', 'restore']);
     expect(entitlementManager.restoreTakenOverGrant).toHaveBeenCalledWith(tx, contract);
   });
 
   it('forceCancelSubscription: restoreGrant=false 면 복구하지 않는다', async () => {
     const { tx } = makeTx({ status: 'ACTIVE' }, order);
 
-    await makeCancellation(tx).forceCancelSubscription(contract, plan, 'admin1', 'r', 'NONE', undefined, undefined, false);
+    await makeCancellation(tx).forceCancelSubscription(
+      contract,
+      plan,
+      'admin1',
+      'r',
+      'NONE',
+      undefined,
+      undefined,
+      false,
+    );
 
-    expect(order).toEqual(['terminate']);
+    expect(order).toEqual(['user-lock', 'terminate']);
     expect(entitlementManager.restoreTakenOverGrant).not.toHaveBeenCalled();
   });
 });

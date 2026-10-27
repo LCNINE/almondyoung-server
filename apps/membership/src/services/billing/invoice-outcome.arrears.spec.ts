@@ -32,6 +32,7 @@ function makeHandler(opts: {
   ];
 
   const tx = {
+    execute: jest.fn(),
     select: jest.fn().mockReturnThis(),
     from: jest.fn().mockReturnThis(),
     innerJoin: jest.fn().mockReturnThis(),

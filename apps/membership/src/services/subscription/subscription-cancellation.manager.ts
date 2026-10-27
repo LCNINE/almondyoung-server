@@ -4,6 +4,7 @@ import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
 import { and, eq } from 'drizzle-orm';
 import { ContractEventManager } from './contract-event.manager';
+import { lockMembershipUser } from './membership-user-lock';
 import { DrizzleTransaction } from '../../shared/schemas/types';
 import { EntitlementManager } from '../entitlement/entitlement.manager';
 import { BadRequestException } from '../../shared/exceptions/subscription.exceptions';
@@ -88,6 +89,7 @@ export class SubscriptionCancellationManager {
     const cancelledAt = new Date();
 
     return await this.dbService.db.transaction(async (tx) => {
+      await lockMembershipUser(tx, userId);
       // 계약 행을 잠그고 상태를 다시 본다. 재배달된 환불이 복구된 임시 이용권을 닫지 않게 한다.
       // no key update 는 이벤트 INSERT 의 FK 검사(key share)와 충돌하지 않아 교착을 피한다.
       await this.assertNotCancelled(tx, contract.id);
@@ -442,6 +444,7 @@ export class SubscriptionCancellationManager {
     const cancelledAt = new Date();
 
     return this.dbService.db.transaction(async (tx: DrizzleTransaction) => {
+      await lockMembershipUser(tx, contract.userId);
       // 계약 행을 잠그고 상태를 다시 본다. 재배달된 환불이 복구된 임시 이용권을 닫지 않게 한다.
       // no key update 는 이벤트 INSERT 의 FK 검사(key share)와 충돌하지 않아 교착을 피한다.
       await this.assertNotCancelled(tx, contract.id);
