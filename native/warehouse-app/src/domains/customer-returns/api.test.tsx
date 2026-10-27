@@ -4,10 +4,11 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SessionProvider } from '../../app/session-context';
 import { ApiClientProvider } from '../../core/data/ApiClientProvider';
-import type { ApiClient } from '../../core/data/httpClient';
+import { ApiError, ConflictError, type ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import {
   fetchReturn,
+  isUncertainWrite,
   recordArrival,
   recordInspection,
   useReceivingReturns,
@@ -97,5 +98,16 @@ describe('writes', () => {
       method: 'POST',
       body,
     });
+  });
+});
+
+describe('isUncertainWrite', () => {
+  it('응답이 없거나 5xx 면 결과를 모른다, 4xx 는 거절이다', () => {
+    expect(isUncertainWrite(new TypeError('Failed to fetch'))).toBe(true);
+    expect(isUncertainWrite(new ApiError('POST x → 503', 503))).toBe(true);
+    expect(isUncertainWrite(new ApiError('POST x → 500', 500))).toBe(true);
+    expect(isUncertainWrite(new ApiError('POST x → 400', 400, 'BAD_REQUEST'))).toBe(false);
+    expect(isUncertainWrite(new ConflictError('conflict', 'CONFLICT'))).toBe(false);
+    expect(isUncertainWrite(new ApiError('POST x → 404', 404, 'NOT_FOUND'))).toBe(false);
   });
 });
