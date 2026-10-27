@@ -141,4 +141,13 @@ describe('계약 종료 경로 — 잠금 재확인과 임시 이용권 복구',
     expect(order).toEqual(['terminate', 'restore']);
     expect(entitlementManager.restoreTakenOverGrant).toHaveBeenCalledWith(tx, contract);
   });
+
+  it('forceCancelSubscription: restoreGrant=false 면 복구하지 않는다', async () => {
+    const { tx } = makeTx({ status: 'ACTIVE' }, order);
+
+    await makeCancellation(tx).forceCancelSubscription(contract, plan, 'admin1', 'r', 'NONE', undefined, undefined, false);
+
+    expect(order).toEqual(['terminate']);
+    expect(entitlementManager.restoreTakenOverGrant).not.toHaveBeenCalled();
+  });
 });

@@ -80,7 +80,7 @@ describe('SubscriptionCreator — 관리자 임시 지급 이어받기', () => {
   const create = (creator: SubscriptionCreator, plan: never, remainingDays: number) =>
     creator.createNewSubscription('u1', plan, tier, {}, 'recurring', false, 'INVOICE', '', {
       grantContractId: 'grant-contract',
-      remainingDays,
+      grantEndsAt: daysFromToday(remainingDays),
     });
 
   it('남은 지급 일수만큼 첫 청구일을 미룬다', async () => {
@@ -143,6 +143,33 @@ describe('SubscriptionCreator — 관리자 임시 지급 이어받기', () => {
     expect(insertedContracts).toHaveLength(0);
   });
 
+  describe('UTC 자정 직후 가입', () => {
+    afterEach(() => jest.useRealTimers());
+
+    it('종료일 기준으로 센다 — 청구일이 하루 밀리지 않는다', async () => {
+      jest.useFakeTimers({ now: new Date('2026-10-27T00:00:01Z'), doNotFake: ['nextTick', 'setImmediate', 'setTimeout'] });
+      const { creator, plan, insertedContracts } = makeCreator();
+      await creator.createNewSubscription('u1', plan, tier, {}, 'recurring', false, 'INVOICE', '', {
+        grantContractId: 'grant-contract',
+        grantEndsAt: '2026-11-15',
+      });
+      expect(insertedContracts[0].billingDate).toBe('2026-11-15');
+    });
+
+    it('one_time 종료일은 지급 종료일 + 플랜 일수', async () => {
+      jest.useFakeTimers({ now: new Date('2026-10-27T00:00:01Z'), doNotFake: ['nextTick', 'setImmediate', 'setTimeout'] });
+      const { creator, plan, insertedContracts, createEntitlement } = makeCreator({ durationDays: 365 });
+      await creator.createNewSubscription('u1', plan, tier, {}, 'one_time', false, 'CHARGE', '', {
+        grantContractId: 'grant-contract',
+        grantEndsAt: '2026-11-15',
+      });
+      expect(insertedContracts[0].billingDate).toBe('2026-11-15');
+      expect((createEntitlement.mock.calls[0][4] as Date).toISOString().split('T')[0]).toBe(
+        addDays(new Date('2026-11-15T00:00:00Z'), 365).toISOString().split('T')[0],
+      );
+    });
+  });
+
   describe('일시결제', () => {
     const entitlementEndsAt = (createEntitlement: jest.Mock) =>
       (createEntitlement.mock.calls[0][4] as Date).toISOString().split('T')[0];
@@ -151,7 +178,7 @@ describe('SubscriptionCreator — 관리자 임시 지급 이어받기', () => {
       const { creator, plan, insertedContracts, createEntitlement } = makeCreator({ durationDays: 365 });
       await creator.createNewSubscription('u1', plan, tier, {}, 'one_time', false, 'CHARGE', '', {
         grantContractId: 'grant-contract',
-        remainingDays: 20,
+        grantEndsAt: daysFromToday(20),
       });
       expect(entitlementEndsAt(createEntitlement)).toBe(daysFromToday(385));
       expect(insertedContracts[0].billingDate).toBe(daysFromToday(20));
@@ -164,7 +191,7 @@ describe('SubscriptionCreator — 관리자 임시 지급 이어받기', () => {
       });
       await creator.createNewSubscription('u1', plan, tier, {}, 'one_time', false, 'CHARGE', '', {
         grantContractId: 'grant-contract',
-        remainingDays: 20,
+        grantEndsAt: daysFromToday(20),
       });
       expect(entitlementEndsAt(createEntitlement)).toBe(daysFromToday(365));
       expect(insertedContracts[0].billingDate).toBe(daysFromToday(0));
@@ -176,7 +203,7 @@ describe('SubscriptionCreator — 관리자 임시 지급 이어받기', () => {
       await expect(
         creator.createNewSubscription('u1', plan, tier, {}, 'one_time', false, 'CHARGE', '', {
           grantContractId: 'grant-contract',
-          remainingDays: 20,
+          grantEndsAt: daysFromToday(20),
         }),
       ).rejects.toBeInstanceOf(ActiveSubscriptionExistsException);
       expect(insertedContracts).toHaveLength(0);
@@ -190,7 +217,7 @@ describe('SubscriptionCreator — 관리자 임시 지급 이어받기', () => {
       });
       await creator.createNewSubscription('u1', plan, tier, {}, 'one_time', false, 'CHARGE', '', {
         grantContractId: 'grant-contract',
-        remainingDays: 20,
+        grantEndsAt: daysFromToday(20),
       });
       expect(entitlementEndsAt(createEntitlement)).toBe(daysFromToday(365));
     });
@@ -200,7 +227,7 @@ describe('SubscriptionCreator — 관리자 임시 지급 이어받기', () => {
       await expect(
         creator.createNewSubscription('u1', plan, tier, {}, 'one_time', false, 'CHARGE', '', {
           grantContractId: 'grant-contract',
-          remainingDays: 20,
+          grantEndsAt: daysFromToday(20),
         }),
       ).rejects.toBeInstanceOf(ActiveSubscriptionExistsException);
       expect(insertedContracts).toHaveLength(0);

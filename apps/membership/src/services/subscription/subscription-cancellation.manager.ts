@@ -430,6 +430,7 @@ export class SubscriptionCancellationManager {
     refundType: 'FULL' | 'PARTIAL' | 'NONE',
     partialRefundAmount?: number,
     refundReason?: string,
+    restoreGrant = true,
   ): Promise<{
     contractId: string;
     status: 'CANCELLED';
@@ -529,7 +530,7 @@ export class SubscriptionCancellationManager {
       await tx
         .delete(schema.membershipDunningQueue)
         .where(eq(schema.membershipDunningQueue.contractId, contract.id));
-      await this.entitlementManager.restoreTakenOverGrant(tx, contract);
+      if (restoreGrant) await this.entitlementManager.restoreTakenOverGrant(tx, contract);
 
       return {
         contractId: contract.id,

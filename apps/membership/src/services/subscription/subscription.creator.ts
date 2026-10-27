@@ -4,7 +4,7 @@ import { BadRequestError } from '@app/shared';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
 import { and, eq, notExists, sql } from 'drizzle-orm';
-import { addDays } from 'date-fns';
+import { addDays, differenceInCalendarDays, parseISO } from 'date-fns';
 import { ContractEventManager } from './contract-event.manager';
 import { EntitlementManager } from '../entitlement/entitlement.manager';
 import { MembershipPolicyService } from '../membership-policy.service';
@@ -34,8 +34,8 @@ type Tier = typeof schema.tiers.$inferSelect;
 /** 관리자 임시 지급을 정식 가입으로 이어받을 때 */
 export type GrantTakeover = {
   grantContractId: string;
-  /** 지급분 남은 일수. 첫 청구일을 max(체험, 이 값) 만큼 미룬다 */
-  remainingDays: number;
+  /** 지급분 종료일(yyyy-MM-dd). 가입 시각 기준으로 남은 일수를 세어 첫 청구일을 max(체험, 남은 일수) 만큼 미룬다 */
+  grantEndsAt: string;
 };
 type CreateSubscriptionPaymentRefs = {
   initialPaymentIntentId?: string;
@@ -179,7 +179,15 @@ export class SubscriptionCreator {
       }
 
       const autoRenewal = billingMode === 'recurring';
-      const billingDate = addDays(startsAt, Math.max(effectiveTrialDays, (grantExpired ? 0 : grantTakeover?.remainingDays) ?? 0));
+      // 남은 일수는 청구일을 더하는 startsAt 과 같은 UTC 날짜로 센다(자정 걸치면 하루 늘어나는 것 방지)
+      const remainingDays =
+        grantTakeover && !grantExpired
+          ? Math.max(
+              0,
+              differenceInCalendarDays(parseISO(grantTakeover.grantEndsAt), parseISO(startsAt.toISOString().split('T')[0])),
+            )
+          : 0;
+      const billingDate = addDays(startsAt, Math.max(effectiveTrialDays, remainingDays));
       // nextBillingDate = billingDate: 체험 종료일이 곧 첫 결제일
       // 결제 성공 시 BillingOutcomeHandler가 nextBillingDate를 endsAt + durationDays로 갱신
       const nextBillingDate = billingMode === 'recurring' ? billingDate : null;
@@ -266,7 +274,7 @@ export class SubscriptionCreator {
           tx,
           grantTakeover.grantContractId,
           'SUPERSEDED_BY_SUBSCRIPTION',
-          { newContractId: contract.id, remainingDays: grantTakeover.remainingDays },
+          { newContractId: contract.id, remainingDays },
           'USER',
           userId,
           batch.id,

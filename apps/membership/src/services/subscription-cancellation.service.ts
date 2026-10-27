@@ -387,6 +387,8 @@ export class SubscriptionCancellationService {
     customerEmail?: string,
     /** 고객이 자동이체 계좌 삭제까지 요청한 경우에만 true. 기본은 계좌를 남긴다. */
     deleteBillingMethod = false,
+    /** 이어받기 계약이면 임시 이용권을 되살린다. 탈퇴 경로는 false. */
+    restoreGrant = true,
   ): Promise<CancellationResult> {
     const contract = await this.contractReader.findById(contractId);
     if (!contract) throw new NotFoundError(`구독 계약을 찾을 수 없습니다: ${contractId}`);
@@ -437,6 +439,7 @@ export class SubscriptionCancellationService {
       refundType,
       partialRefundAmount,
       refundReason,
+      restoreGrant,
     );
 
     await this.revokeBillingAgreementSafely(contract.id, contract.userId, deleteBillingMethod);

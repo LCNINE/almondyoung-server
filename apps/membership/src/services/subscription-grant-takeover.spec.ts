@@ -51,7 +51,7 @@ describe('subscribeWithBillingMethod — 관리자 임시 지급분이 있을 �
   });
 
   it('지급분이면 거절하지 않고 이어받아 가입한다', async () => {
-    const takeover = { grantContractId: 'grant-contract', remainingDays: 2 };
+    const takeover = { grantContractId: 'grant-contract', grantEndsAt: '2026-11-15' };
     const { service, deps } = makeService({ grantTakeover: takeover });
 
     await subscribe(service);
@@ -71,7 +71,7 @@ describe('subscribeWithBillingMethod — 관리자 임시 지급분이 있을 �
 
   it('이어받은 뒤 정기결제 설정이 실패하면 void 가 복구를 맡으므로 grantByDays 를 다시 부르지 않는다', async () => {
     const { service, deps } = makeService({
-      grantTakeover: { grantContractId: 'grant-contract', remainingDays: 2 },
+      grantTakeover: { grantContractId: 'grant-contract', grantEndsAt: '2026-11-15' },
       agreementFails: true,
     });
 
@@ -108,7 +108,7 @@ describe('일시결제 — 관리자 임시 지급분이 있을 때', () => {
   }
 
   const grantEntitlement = { contract: { id: 'grant-contract' }, entitlement: { endsAt: '2099-01-01' } };
-  const takeover = { grantContractId: 'grant-contract', remainingDays: 20 };
+  const takeover = { grantContractId: 'grant-contract', grantEndsAt: '2026-11-15' };
 
   it('createCheckoutIntent: 지급분이면 거절하지 않고 결제창을 만든다', async () => {
     const { service, deps } = makeService({ entitlement: grantEntitlement, grantTakeover: takeover });
