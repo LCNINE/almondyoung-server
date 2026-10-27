@@ -105,7 +105,7 @@ function Body({
   onAction: (a: CustomerReturnAction) => void;
 }) {
   const actions = availableCustomerReturnActions(view);
-  const { settlement, settlementOutcome, prepayment } = view;
+  const { settlement, settlementOutcome, prepayment, csResolution } = view;
   const failure =
     settlement && (settlement.state === 'refused' || settlement.state === 'stalled')
       ? settlement.lastFailure
@@ -157,7 +157,7 @@ function Body({
         </Table>
       </section>
 
-      {(settlementOutcome || prepayment) && (
+      {(settlementOutcome || prepayment || csResolution) && (
         <section className="space-y-1">
           {settlementOutcome && (
             <div className="space-y-0.5">
@@ -180,6 +180,13 @@ function Body({
               {SUB_STATE_LABELS[prepayment.state]}
             </div>
           )}
+          {csResolution?.hold && (
+            <div>
+              보류 차감 {formatWon(csResolution.hold.deduction)} · {csResolution.hold.memo}
+              {csResolution.hold.dropped && ' · 차감 뺌'}
+            </div>
+          )}
+          {csResolution?.missing && <div>미도착 닫음 · {csResolution.missing.memo}</div>}
         </section>
       )}
 

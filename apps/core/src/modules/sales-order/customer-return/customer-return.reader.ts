@@ -162,7 +162,9 @@ export class CustomerReturnReader {
           const dx = x.refundDueAt ? Date.parse(x.refundDueAt) : Number.POSITIVE_INFINITY;
           const dy = y.refundDueAt ? Date.parse(y.refundDueAt) : Number.POSITIVE_INFINITY;
           if (dx !== dy) return dx < dy ? -1 : 1;
-          return Date.parse(x.requestedAt) - Date.parse(y.requestedAt);
+          const byRequested = Date.parse(x.requestedAt) - Date.parse(y.requestedAt);
+          if (byRequested !== 0) return byRequested;
+          return x.id < y.id ? -1 : x.id > y.id ? 1 : 0;
         });
       return { items: pool.slice(query.offset, query.offset + query.limit), total: pool.length, attentionCount };
     }, tx);

@@ -1,6 +1,8 @@
 import type { OrderReturnable, ReturnRejectReason } from '@/lib/types/dto/customer-returns';
 import {
   buildReturnRequestBody,
+  isCustomerReturnReason,
+  isReturnRejectReason,
   returnRejectMessage,
   RETURN_REJECT_MESSAGES,
   windowOverrideNeeded,
@@ -99,6 +101,24 @@ describe('windowOverrideNeeded', () => {
   });
 });
 
+describe('guards', () => {
+  it('접수 사유는 여섯 값만 통과한다', () => {
+    expect(isCustomerReturnReason('defective')).toBe(true);
+    expect(isCustomerReturnReason('brand_new')).toBe(false);
+    expect(isCustomerReturnReason('')).toBe(false);
+  });
+
+  it('거절 사유는 맵의 키만 통과한다 (prototype 키 제외)', () => {
+    expect(isReturnRejectReason('not_delivered')).toBe(true);
+    expect(isReturnRejectReason('toString')).toBe(false);
+    expect(isReturnRejectReason(undefined)).toBe(false);
+  });
+
+  it('목록에 없는 사유는 폼 오류다', () => {
+    expect(build(form({ reason: 'brand_new' }))).toEqual({ ok: false, error: '반품 사유를 고르세요' });
+  });
+});
+
 describe('returnRejectMessage', () => {
   const ALL: ReturnRejectReason[] = [
     'order_canceled', 'item_not_in_order', 'not_delivered', 'quantity_exceeds_returnable', 'window_closed',
@@ -120,6 +140,12 @@ describe('returnRejectMessage', () => {
   it('모르는 reason 은 서버 문구로 떨어진다', () => {
     const err = { response: { status: 400, data: { code: 'return_rejected', reason: 'brand_new', message: '서버 문구' } } };
     expect(returnRejectMessage(err)).toBe('서버 문구');
+  });
+
+  it('request_id_conflict 는 다시 접수하라고 안내하지 않는다', () => {
+    const err = { response: { status: 400, data: { code: 'return_rejected', reason: 'request_id_conflict' } } };
+    const msg = returnRejectMessage(err);
+    expect(msg).toBe('이 접수는 이미 처리됐습니다 — 다시 접수하지 말고 반품 목록(5분 안에 나타납니다)을 확인하세요');
   });
 
   it('502 core_unavailable', () => {

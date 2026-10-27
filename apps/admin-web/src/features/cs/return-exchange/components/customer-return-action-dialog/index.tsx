@@ -180,6 +180,7 @@ export function CustomerReturnActionDialog({ view, action, onClose }: Props) {
           {kind === 'retrySettlement' && action.needs === 'alreadyRefundedAmount' && (
             <Field label="이미 환불한 금액(원)">
               <Input inputMode="numeric" value={alreadyText} onChange={(e) => setAlreadyText(e.target.value)} />
+              <p className="mt-1 text-xs text-muted-foreground">없으면 0</p>
             </Field>
           )}
 

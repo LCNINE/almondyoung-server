@@ -1,4 +1,5 @@
 import { parseServerError, record } from '@/lib/api/server-error';
+import { RETURN_REASON_OPTIONS } from './customer-return-labels';
 import type {
   CustomerReturnReason,
   OrderReturnable,
@@ -18,6 +19,14 @@ export type ReturnRequestForm = {
 export type BuildReturnRequestResult =
   | { ok: true; body: RequestOrderReturnBody }
   | { ok: false; error: string };
+
+export function isCustomerReturnReason(value: string): value is CustomerReturnReason {
+  return RETURN_REASON_OPTIONS.some((o) => o.value === value);
+}
+
+export function isReturnRejectReason(value: unknown): value is ReturnRejectReason {
+  return typeof value === 'string' && Object.hasOwn(RETURN_REJECT_MESSAGES, value);
+}
 
 const chosenQty = (form: ReturnRequestForm, itemId: string) => form.quantities[itemId] ?? 0;
 
@@ -52,12 +61,12 @@ export function buildReturnRequestBody(
   if (items.length === 0) return { ok: false, error: '반품할 품목의 수량을 입력하세요' };
 
   const reason = form.reason.trim();
-  if (!reason) return { ok: false, error: '반품 사유를 고르세요' };
+  if (!reason || !isCustomerReturnReason(reason)) return { ok: false, error: '반품 사유를 고르세요' };
 
   const body: RequestOrderReturnBody = {
     request_id: requestId,
     items,
-    reason: reason as CustomerReturnReason,
+    reason,
   };
 
   const note = form.note.trim();
@@ -87,7 +96,7 @@ export const RETURN_REJECT_MESSAGES: Record<ReturnRejectReason, string> = {
   reason_not_found: '반품 사유를 찾을 수 없습니다',
   reason_not_selectable: '이 사유는 접수에 쓸 수 없습니다',
   fee_bearer_required: '기타 사유는 배송비 부담 주체를 정해야 합니다',
-  request_id_conflict: '같은 접수 번호가 다른 내용으로 이미 쓰였습니다. 대화상자를 닫고 다시 여세요',
+  request_id_conflict: '이 접수는 이미 처리됐습니다 — 다시 접수하지 말고 반품 목록(5분 안에 나타납니다)을 확인하세요',
   return_option_missing: '반품 배송 방법이 설정되어 있지 않습니다',
   return_already_received: '이미 입고 처리된 반품입니다',
   not_our_return: '이 주문의 반품이 아닙니다',
@@ -106,8 +115,8 @@ export function returnRejectMessage(error: unknown): string {
   if (status === 502 && data?.type === 'core_unavailable') return CORE_UNAVAILABLE;
 
   const reason = data?.reason;
-  if (typeof reason === 'string' && Object.prototype.hasOwnProperty.call(RETURN_REJECT_MESSAGES, reason)) {
-    return RETURN_REJECT_MESSAGES[reason as ReturnRejectReason];
+  if (isReturnRejectReason(reason)) {
+    return RETURN_REJECT_MESSAGES[reason];
   }
   return parseServerError(error).message;
 }
