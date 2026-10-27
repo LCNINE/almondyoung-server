@@ -5,10 +5,16 @@ import { NotFoundError } from '@app/shared';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { normalizePositionCode } from '../position-code';
-import { FieldCaptureBarcodeStatus, FieldCaptureListFilter, likeContains } from '../sku-field-capture.rules';
+import {
+  FieldCaptureBarcodeStatus,
+  FieldCaptureListFilter,
+  FieldCapturePhotoFilter,
+  likeContains,
+} from '../sku-field-capture.rules';
 import {
   BarcodeOwnerDto,
   FieldCaptureDetailDto,
+  FieldCapturePhotosDto,
   FieldCaptureProgressDto,
   FieldCaptureSkuSummaryDto,
   MyCaptureItemDto,
@@ -20,6 +26,8 @@ function asBarcodeStatus(raw: string): FieldCaptureBarcodeStatus {
   if (raw === 'scanned' || raw === 'no_manufacturer' || raw === 'none') return raw;
   throw new Error(`unexpected barcode_status: ${raw}`);
 }
+
+const PHOTO_PAGE_SIZE = 200;
 
 /** 「오늘」은 KST. getProgress 의 작업자별 today 와 countWorkerToday 가 같은 식을 쓴다. */
 const completedTodayKst = (completedAt: AnyPgColumn) =>
@@ -272,6 +280,58 @@ export class SkuFieldCaptureReader {
             ]
           : [],
       );
+    }, tx);
+  }
+
+  /** 찍힌 사진 전체, 최근순 — 어떤 선반·상품을 누가 찍었는지. 기간(KST)·상품명·코드·선반·작업자로 거른다. */
+  async listPhotos(filter: FieldCapturePhotoFilter, tx?: DbTx): Promise<FieldCapturePhotosDto> {
+    const { from, to, q, before } = filter;
+    return this.dbService.run(async (trx) => {
+      const ph = wmsTables.skuReferencePhotos;
+      const cur = alias(ph, 'cur');
+      // 커서는 사진 id — 시각은 DB 의 마이크로초 그대로 비교해야 같은 밀리초에 찍힌 사진이 빠지지 않는다
+      const after = before
+        ? sql`(${ph.createdAt}, ${ph.id}) < (${trx
+            .select({ createdAt: cur.createdAt, id: cur.id })
+            .from(cur)
+            .where(eq(cur.id, before))})`
+        : undefined;
+      const rows = await trx
+        .select({
+          id: ph.id,
+          fileId: ph.fileId,
+          takenByLabel: ph.takenByLabel,
+          createdAt: ph.createdAt,
+          skuId: wmsTables.skus.id,
+          code: wmsTables.skus.code,
+          name: wmsTables.skus.name,
+          positionCode: wmsTables.skuShelfPositions.positionCode,
+        })
+        .from(ph)
+        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, ph.skuId))
+        .leftJoin(wmsTables.skuShelfPositions, eq(wmsTables.skuShelfPositions.skuId, wmsTables.skus.id))
+        .where(
+          and(
+            eq(wmsTables.skus.isDeleted, false),
+            completedBetweenKst(ph.createdAt, from, to),
+            after,
+            q
+              ? or(
+                  ilike(wmsTables.skus.name, likeContains(q)),
+                  ilike(wmsTables.skus.code, likeContains(q)),
+                  ilike(wmsTables.skuShelfPositions.positionCode, likeContains(q)),
+                  ilike(ph.takenByLabel, likeContains(q)),
+                )
+              : undefined,
+          ),
+        )
+        .orderBy(desc(ph.createdAt), desc(ph.id))
+        .limit(PHOTO_PAGE_SIZE + 1);
+      const page = rows.slice(0, PHOTO_PAGE_SIZE);
+      return {
+        photos: page.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })),
+        nextCursor: rows.length > PHOTO_PAGE_SIZE ? (page[page.length - 1]?.id ?? null) : null,
+      };
     }, tx);
   }
 

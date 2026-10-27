@@ -10,6 +10,8 @@ import { CompleteFieldCaptureDto } from '../dto/complete-field-capture.dto';
 import {
   FieldCaptureDetailDto,
   FieldCaptureListQueryDto,
+  FieldCapturePhotoQueryDto,
+  FieldCapturePhotosDto,
   FieldCaptureProgressDto,
   MyTodayDto,
   MyCaptureItemsDto,
@@ -31,6 +33,16 @@ export class SkuFieldCaptureController {
   @ApiResponse({ status: 200, type: FieldCaptureProgressDto })
   getProgress(): Promise<FieldCaptureProgressDto> {
     return this.service.getProgress();
+  }
+
+  @RequirePermission('inventory.master.read')
+  @Get('photos')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
+  @ApiOperation({ summary: '찍힌 실물 사진 모아보기(관리자), 최근순 — 기간(KST) · 상품명·코드·선반·찍은 사람 검색' })
+  @ApiResponse({ status: 200, type: FieldCapturePhotosDto })
+  listPhotos(@Query() query: FieldCapturePhotoQueryDto): Promise<FieldCapturePhotosDto> {
+    const q = query.q?.trim();
+    return this.service.listPhotos({ from: query.from, to: query.to, q: q || undefined, before: query.before });
   }
 
   @RequirePermission('inventory.stock.read')

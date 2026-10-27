@@ -2036,6 +2036,31 @@ export interface MyCaptureItemsDto {
   items: MyCaptureItemDto[];
 }
 
+export interface FieldCapturePhotoDto {
+  id: string;
+  fileId: string;
+  takenByLabel: string;
+  createdAt: string;
+  skuId: string;
+  code: string;
+  name: string;
+  positionCode: string | null;
+}
+
+/** 사진 모아보기 조건. from·to 는 찍은 날(KST, YYYY-MM-DD, 양끝 포함) */
+export interface FieldCapturePhotoQuery {
+  from?: string;
+  to?: string;
+  q?: string;
+  /** 직전 응답의 nextCursor */
+  before?: string;
+}
+
+export interface FieldCapturePhotosDto {
+  photos: FieldCapturePhotoDto[];
+  nextCursor: string | null;
+}
+
 export interface FieldCaptureProgressDto {
   remainingSkus: number;
   completedSkus: number;

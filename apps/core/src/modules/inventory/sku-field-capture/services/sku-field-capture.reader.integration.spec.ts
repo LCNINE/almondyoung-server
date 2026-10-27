@@ -279,4 +279,35 @@ describeIfDb('SkuFieldCaptureReader (DB integration)', () => {
       expect((await ids({ who: 'mine', from: today, to: today })).sort()).toEqual([a, b].sort());
     });
   });
+
+  it('listPhotos — 선반·상품·찍은 사람을 담고, 찍은 날·찍은 사람으로 거른다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const { reader, manager } = build(trx);
+      const a = await seed(trx);
+      const b = await seed(trx);
+      await trx.insert(wmsTables.skuShelfPositions).values({ skuId: a, positionCode: 'P-09-01' });
+      const pa: string = randomUUID();
+      const pb: string = randomUUID();
+      await manager.attachPhoto(a, pa, w1, trx);
+      await manager.attachPhoto(b, pb, w2, trx);
+      await trx
+        .update(wmsTables.skuReferencePhotos)
+        .set({ createdAt: sql`now() - interval '1 day'` })
+        .where(eq(wmsTables.skuReferencePhotos.skuId, b));
+      const [{ today }] = await trx.execute<{ today: string }>(
+        sql`select to_char((now() at time zone 'Asia/Seoul')::date, 'YYYY-MM-DD') as today`,
+      );
+      const mine = ({ photos }: Awaited<ReturnType<SkuFieldCaptureReader['listPhotos']>>) =>
+        photos.filter((p) => [pa, pb].includes(p.fileId));
+
+      expect(mine(await reader.listPhotos({}, trx)).map((p) => p.fileId)).toEqual([pa, pb]);
+      expect(mine(await reader.listPhotos({ from: today, to: today }, trx))).toEqual([
+        expect.objectContaining({ fileId: pa, skuId: a, positionCode: 'P-09-01', takenByLabel: 'w1' }),
+      ]);
+      expect(mine(await reader.listPhotos({ q: 'w2' }, trx)).map((p) => p.fileId)).toEqual([pb]);
+
+      const [first] = mine(await reader.listPhotos({}, trx));
+      expect(mine(await reader.listPhotos({ before: first!.id }, trx)).map((p) => p.fileId)).toEqual([pb]);
+    });
+  });
 });

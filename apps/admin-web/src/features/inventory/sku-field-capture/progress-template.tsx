@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { skuFieldCaptureClient } from '@/lib/api/domains/inventory/sku-field-capture.client';
 import { fieldCaptureKeys, PROGRESS_REFETCH_MS } from './field-capture-model';
+import { FieldCapturePhotoGallery } from './photo-gallery';
 
 export default function SkuFieldCaptureProgressTemplate() {
   const { data, isLoading, isError, refetch } = useQuery({
@@ -87,6 +88,7 @@ export default function SkuFieldCaptureProgressTemplate() {
           </div>
         </>
       )}
+      <FieldCapturePhotoGallery />
     </div>
   );
 }

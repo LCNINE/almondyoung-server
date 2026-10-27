@@ -170,6 +170,25 @@ const KST_FORMAT = new Intl.DateTimeFormat('en-GB', {
 
 const KST_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' });
 
+/** 「10-27 14:05」 (KST) */
+export function kstShortTime(iso: string): string {
+  const p = Object.fromEntries(
+    KST_FORMAT.formatToParts(new Date(iso)).map((x) => [x.type, x.value])
+  );
+  return `${p.month}-${p.day} ${p.hour}:${p.minute}`;
+}
+
+/** 사진 목록(최근순)을 상품별로 묶는다 — 가장 최근에 찍힌 상품이 먼저 */
+export function groupPhotosBySku<T extends { skuId: string }>(photos: T[]): T[][] {
+  const groups = new Map<string, T[]>();
+  for (const p of photos) {
+    const g = groups.get(p.skuId);
+    if (g) g.push(p);
+    else groups.set(p.skuId, [p]);
+  }
+  return [...groups.values()];
+}
+
 /** 완료 시각을 KST 날짜(YYYY-MM-DD)로 — 내 작업 목록을 날짜별로 묶는 키 */
 export function kstDateOf(iso: string): string {
   return KST_DATE.format(new Date(iso));
@@ -392,6 +411,8 @@ export const fieldCaptureKeys = {
   itemsOf: (who: string, from: string, to: string, q: string) =>
     ['sku-field-capture', 'items', who, from, to, q] as const,
   progress: ['sku-field-capture', 'progress'] as const,
+  photos: (from: string, to: string, q: string) =>
+    ['sku-field-capture', 'photos', from, to, q] as const,
   search: (term: string) => ['sku-field-capture', 'search', term] as const,
 };
 

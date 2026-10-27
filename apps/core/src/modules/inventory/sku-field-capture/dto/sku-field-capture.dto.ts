@@ -5,7 +5,7 @@ import {
   FieldCaptureBarcodeStatus,
   FieldCaptureListWho,
 } from '../sku-field-capture.rules';
-import { IsIn, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
 
 export class FieldCaptureCompletionDto {
   @ApiProperty({ enum: FIELD_CAPTURE_BARCODE_STATUSES })
@@ -128,4 +128,43 @@ export class FieldCaptureListQueryDto {
 
 export class MyCaptureItemsDto {
   @ApiProperty({ type: () => [MyCaptureItemDto] }) items!: MyCaptureItemDto[];
+}
+
+export class FieldCapturePhotoQueryDto {
+  @ApiPropertyOptional({ description: '이 날부터(KST, YYYY-MM-DD)' })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  from?: string;
+
+  @ApiPropertyOptional({ description: '이 날까지(KST, YYYY-MM-DD, 포함)' })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  to?: string;
+
+  @ApiPropertyOptional({ description: '상품명·코드·선반·찍은 사람 부분일치' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @ApiPropertyOptional({ description: '더 보기 커서 — 직전 응답의 nextCursor' })
+  @IsOptional()
+  @IsUUID()
+  before?: string;
+}
+
+export class FieldCapturePhotoDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() fileId!: string;
+  @ApiProperty() takenByLabel!: string;
+  @ApiProperty({ description: 'ISO 8601' }) createdAt!: string;
+  @ApiProperty() skuId!: string;
+  @ApiProperty() code!: string;
+  @ApiProperty() name!: string;
+  @ApiProperty({ type: String, nullable: true }) positionCode!: string | null;
+}
+
+export class FieldCapturePhotosDto {
+  @ApiProperty({ type: () => [FieldCapturePhotoDto] }) photos!: FieldCapturePhotoDto[];
+  @ApiProperty({ type: String, nullable: true, description: '더 없으면 null' }) nextCursor!: string | null;
 }

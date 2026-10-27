@@ -7,6 +7,8 @@ import type {
   CompleteFieldCaptureRequest,
   FieldCaptureDetailDto,
   FieldCaptureListQuery,
+  FieldCapturePhotosDto,
+  FieldCapturePhotoQuery,
   FieldCaptureProgressDto,
   MyTodayDto,
   MyCaptureItemsDto,
@@ -35,5 +37,7 @@ export const skuFieldCaptureClient = {
   cancel: async (skuId: string): Promise<void> => {
     await client.delete(`${BASE}/skus/${seg(skuId)}/capture`);
   },
+  getPhotos: async (query: FieldCapturePhotoQuery): Promise<FieldCapturePhotosDto> =>
+    (await client.get(`${BASE}/photos`, { params: query })).data,
   getProgress: async (): Promise<FieldCaptureProgressDto> => (await client.get(`${BASE}/progress`)).data,
 };

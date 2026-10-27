@@ -9,6 +9,7 @@ import {
   DRAFT_TTL_MS,
   restoreDraft,
   kstDateOf,
+  groupPhotosBySku,
   periodRange,
   shiftDate,
   myItemLine,
@@ -624,5 +625,15 @@ describe('periodRange', () => {
     expect(periodRange('all', today, null)).toEqual({});
     expect(periodRange('date', today, '2026-10-01')).toEqual({ from: '2026-10-01', to: '2026-10-01' });
     expect(periodRange('date', today, null)).toEqual({});
+  });
+});
+
+describe('groupPhotosBySku', () => {
+  it('최근순을 지키며 상품별로 묶는다', () => {
+    const p = (id: string, skuId: string) => ({ id, skuId });
+    expect(groupPhotosBySku([p('1', 'a'), p('2', 'b'), p('3', 'a')])).toEqual([
+      [p('1', 'a'), p('3', 'a')],
+      [p('2', 'b')],
+    ]);
   });
 });

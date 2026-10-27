@@ -2,10 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { SkuFieldCaptureManager } from './sku-field-capture.manager';
 import { SkuFieldCaptureReader } from './sku-field-capture.reader';
 import type { CompleteFieldCaptureInput } from './sku-field-capture.manager';
-import type { FieldCaptureActor, FieldCaptureListFilter } from '../sku-field-capture.rules';
+import type { FieldCaptureActor, FieldCaptureListFilter, FieldCapturePhotoFilter } from '../sku-field-capture.rules';
 import type {
   BarcodeOwnerDto,
   FieldCaptureDetailDto,
+  FieldCapturePhotosDto,
   FieldCaptureProgressDto,
   MyTodayDto,
   MyCaptureItemsDto,
@@ -33,6 +34,10 @@ export class SkuFieldCaptureService {
 
   getProgress(): Promise<FieldCaptureProgressDto> {
     return this.reader.getProgress();
+  }
+
+  listPhotos(filter: FieldCapturePhotoFilter): Promise<FieldCapturePhotosDto> {
+    return this.reader.listPhotos(filter);
   }
 
   async getMyToday(actor: FieldCaptureActor): Promise<MyTodayDto> {

@@ -15,6 +15,9 @@ export type FieldCaptureListWho = (typeof FIELD_CAPTURE_LIST_WHO)[number];
 /** 작업 기록 조회 조건. from·to 는 KST 날짜(YYYY-MM-DD, 양끝 포함), q 는 상품명·코드·선반 부분일치. */
 export type FieldCaptureListFilter = { who: FieldCaptureListWho; from?: string; to?: string; q?: string };
 
+/** 사진 모아보기 조건. from·to 는 찍은 날(KST), q 는 상품명·코드·선반·찍은 사람 부분일치, before 는 이전 페이지 마지막 사진 id. */
+export type FieldCapturePhotoFilter = Omit<FieldCaptureListFilter, 'who'> & { before?: string };
+
 /** ILIKE 패턴에서 %·_·\ 를 글자 그대로 찾게 */
 export function likeContains(q: string): string {
   return `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
