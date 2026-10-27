@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
-import { NotFoundError } from '@app/shared';
+import { ConflictError, NotFoundError } from '@app/shared';
 import type {
   ChannelReturnSettledPayload,
   ChannelReturnSettlementFailedPayload,
@@ -381,6 +381,38 @@ describeIfDb('CustomerReturnSettlementManager — 반품 정산 결과·재발�
           tx,
         ),
       ).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
+  it('settled 의 requestId 가 그 반품 기록이 아니면 → ConflictError, 아무것도 쓰지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const wired = wire();
+      const s = await seedInspected(tx, w, wired);
+      const before = await recordOf(tx, s.customerReturnId);
+      const eventsBefore = wired.eventsOf('SalesOrderReturned').length;
+
+      await expect(
+        wired.settlement.recordSettled(settledFact(s, { requestId: randomUUID() }), tx),
+      ).rejects.toBeInstanceOf(ConflictError);
+
+      expect(await recordOf(tx, s.customerReturnId)).toEqual(before);
+      expect(wired.eventsOf('SalesOrderReturned')).toHaveLength(eventsBefore);
+    });
+  });
+
+  it('실패 사실의 requestId 가 그 반품 기록이 아니면 → ConflictError, 아무것도 쓰지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const wired = wire();
+      const s = await seedInspected(tx, w, wired);
+      const before = await recordOf(tx, s.customerReturnId);
+
+      await expect(
+        wired.settlement.recordSettlementFailed(failedFact(s, { requestId: randomUUID(), received: true }), tx),
+      ).rejects.toBeInstanceOf(ConflictError);
+
+      expect(await recordOf(tx, s.customerReturnId)).toEqual(before);
     });
   });
 

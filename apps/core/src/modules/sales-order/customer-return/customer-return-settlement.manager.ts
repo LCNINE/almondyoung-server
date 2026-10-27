@@ -50,7 +50,7 @@ export class CustomerReturnSettlementManager {
 
   async recordSettled(fact: ChannelReturnSettledPayload, tx?: DbTx): Promise<{ changed: boolean }> {
     return this.dbService.run(async (trx) => {
-      const record = await this.lockByChannelReturnId(trx, fact.returnId);
+      const record = await this.lockByChannelReturnId(trx, fact.returnId, fact.requestId);
       if (record.status === 'settled') return { changed: false };
 
       const settledAt = new Date(fact.settledAt);
@@ -100,7 +100,7 @@ export class CustomerReturnSettlementManager {
 
   async recordSettlementFailed(fact: ChannelReturnSettlementFailedPayload, tx?: DbTx): Promise<{ changed: boolean }> {
     return this.dbService.run(async (trx) => {
-      const record = await this.lockByChannelReturnId(trx, fact.returnId);
+      const record = await this.lockByChannelReturnId(trx, fact.returnId, fact.requestId);
       // 이미 닫혔거나(늦은 실패) 정산 중이 아니다
       if (record.status !== 'inspected' && record.status !== 'refund_pending') return { changed: false };
       const previous = record.settlement;
@@ -189,13 +189,22 @@ export class CustomerReturnSettlementManager {
     }, tx);
   }
 
-  private async lockByChannelReturnId(trx: DbTx, channelReturnId: string): Promise<CustomerReturn> {
+  /**
+   * 채널 반품 id 로 기록을 잠그고, 사실의 requestId(= 정산 명령이 실은 customerReturnId)가 그 기록인지 본다.
+   * 다르면 다른 기록의 정산 결과다 — 아무것도 쓰기 전에 ConflictError(DLQ) 로 사람에게 넘긴다.
+   */
+  private async lockByChannelReturnId(trx: DbTx, channelReturnId: string, requestId: string): Promise<CustomerReturn> {
     const [record] = await trx
       .select()
       .from(wmsTables.customerReturns)
       .where(eq(wmsTables.customerReturns.channelReturnId, channelReturnId))
       .for('update');
     if (!record) throw new NotFoundError(`Customer return not found for channel return ${channelReturnId}`);
+    if (record.id !== requestId) {
+      throw new ConflictError(
+        `Settlement fact for channel return ${channelReturnId} names request ${requestId}, but the record is ${record.id}`,
+      );
+    }
     return record;
   }
 
