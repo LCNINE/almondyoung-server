@@ -14,6 +14,16 @@ import { assertReservationInvariant } from '../../shared/locks/reservation-invar
 import { BatchControlledStockGuard, BatchSessionDispatchAuthorization } from './batch-controlled-stock.guard';
 import { warehouseIdOf } from '../../../fulfillment/shipment/shipment-owner';
 
+export interface ReturnStockInput {
+  skuId: string;
+  warehouseId: string;
+  quantity: number;
+  /** 호출자(반품 검수 명령)는 재시도로 다시 들어온다 — 같은 키는 기존 이벤트를 돌려준다. */
+  idempotencyKey: string;
+  occurredAt?: Date;
+  reason?: string;
+}
+
 @Injectable()
 export class InventoryCommandService {
   private readonly logger = new Logger(InventoryCommandService.name);
@@ -725,5 +735,56 @@ export class InventoryCommandService {
       return { eventId: event?.id ?? null };
     };
     return this.dbService.run(exec, tx);
+  }
+
+  /** 고객 반품 입고 — null → RETURNED. 검수 전이라 판매가능수량에 잡히지 않는다(K8). */
+  returnReceive(input: ReturnStockInput, tx?: DbTx) {
+    return this.recordReturnTransition(input, null, 'RETURNED', 'RETURN_RECEIVE', tx);
+  }
+
+  /** 반품 검수 양품 — RETURNED → ON_HAND. 적치 위치로 옮기는 건 그다음의 평범한 이동이다. */
+  returnAccept(input: ReturnStockInput, tx?: DbTx) {
+    return this.recordReturnTransition(input, 'RETURNED', 'ON_HAND', 'RETURN_ACCEPT', tx);
+  }
+
+  /** 반품 검수 불량·환불 보류 — RETURNED → DEFECTIVE. */
+  returnReject(input: ReturnStockInput, tx?: DbTx) {
+    return this.recordReturnTransition(input, 'RETURNED', 'DEFECTIVE', 'RETURN_REJECT', tx);
+  }
+
+  /**
+   * 반품 전이는 언제나 그 창고의 return_default 위치에서 상태만 바꾼다 — RETURNED 를 옮기는 경로가
+   * 없으므로(moveInternal 은 ON_HAND 고정) 호출자에게 위치를 받지 않는다.
+   */
+  private async recordReturnTransition(
+    input: ReturnStockInput,
+    fromState: 'RETURNED' | null,
+    toState: 'RETURNED' | 'ON_HAND' | 'DEFECTIVE',
+    transitionType: 'RETURN_RECEIVE' | 'RETURN_ACCEPT' | 'RETURN_REJECT',
+    tx?: DbTx,
+  ): Promise<{ eventId: string }> {
+    if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
+    return this.dbService.run(async (trx) => {
+      const location = await this.locationService.getSystemLocationByRole(input.warehouseId, 'return_default', trx);
+      const event = await this.eventStore.createEvent(
+        {
+          skuId: input.skuId,
+          fromWarehouseId: fromState ? input.warehouseId : null,
+          fromLocationId: fromState ? location.id : null,
+          toWarehouseId: input.warehouseId,
+          toLocationId: location.id,
+          fromState,
+          toState,
+          transitionType,
+          quantity: input.quantity,
+          occurredAt: input.occurredAt ?? new Date(),
+          idempotencyKey: input.idempotencyKey,
+          reason: input.reason,
+        },
+        trx,
+      );
+      if (!event) throw new BadRequestException('Failed to create stock event');
+      return { eventId: event.id };
+    }, tx);
   }
 }
