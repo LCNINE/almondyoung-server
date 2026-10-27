@@ -49,6 +49,35 @@ describe('readReturnSettlementRecord', () => {
   ])('모양이 어긋나면 null — %s', (_n, patch) => {
     expect(readReturnSettlementRecord(meta({ ...valid(), ...patch }))).toBeNull();
   });
+  it('새 칸 없는 PR 6 기록이 그대로 읽힌다 — 새 칸이 생기지 않는다', () => {
+    const pr6 = { ...valid(), stage: 'refunded', refundedAt: '2026-10-28T00:00:00.000Z', refundMode: 'auto' };
+    const read = readReturnSettlementRecord(JSON.parse(JSON.stringify(meta(pr6))));
+    expect(read).toEqual(pr6);
+    for (const k of ['hold', 'prepaidApplied', 'externalRefundApplied', 'closesMissing']) expect(read).not.toHaveProperty(k);
+    expect(read?.deduction).not.toHaveProperty('hold');
+  });
+  it('PR 6b 칸(보류 차감·상계·미도착 닫기)이 왕복한다', () => {
+    const r: ReturnSettlementRecord = {
+      ...valid(),
+      deduction: { returnShipping: 3000, freeShippingBreak: 0, roundTrip: 0, hold: 2000 },
+      hold: { requested: 5000, memo: '파손 확인' },
+      prepaidApplied: 24000,
+      externalRefundApplied: 1000,
+      closesMissing: true,
+    };
+    expect(readReturnSettlementRecord(JSON.parse(JSON.stringify(meta(r))))).toEqual(r);
+  });
+  it.each([
+    ['deduction.hold 문자열', { deduction: { returnShipping: 0, freeShippingBreak: 0, roundTrip: 0, hold: '1' } }],
+    ['hold 메모 누락', { hold: { requested: 1000 } }],
+    ['hold 요청액 문자열', { hold: { requested: '1000', memo: 'x' } }],
+    ['hold 가 객체 아님', { hold: 1000 }],
+    ['prepaidApplied 문자열', { prepaidApplied: '1' }],
+    ['externalRefundApplied NaN', { externalRefundApplied: Number.NaN }],
+    ['closesMissing 문자열', { closesMissing: 'true' }],
+  ])('새 칸이 있는데 모양이 어긋나면 null — %s', (_n, patch) => {
+    expect(readReturnSettlementRecord(meta({ ...valid(), ...patch }))).toBeNull();
+  });
   it('기록이 없거나 객체가 아니면 null', () => {
     expect(readReturnSettlementRecord(null)).toBeNull();
     expect(readReturnSettlementRecord({})).toBeNull();
@@ -102,5 +131,24 @@ describe('assertReadableSettlementRecord', () => {
     expect(() =>
       assertReadableSettlementRecord({ ...valid(), deduction: { returnShipping: 1.5, freeShippingBreak: 0, roundTrip: 0 } }),
     ).toThrow('정수');
+  });
+  it('보류 차감·상계 적용액이 소수면 던진다 — 정산 관측이 정수만 읽는다', () => {
+    expect(() =>
+      assertReadableSettlementRecord({ ...valid(), deduction: { returnShipping: 0, freeShippingBreak: 0, roundTrip: 0, hold: 0.5 } }),
+    ).toThrow('정수');
+    expect(() => assertReadableSettlementRecord({ ...valid(), prepaidApplied: 0.5 })).toThrow('정수');
+    expect(() => assertReadableSettlementRecord({ ...valid(), externalRefundApplied: 0.5 })).toThrow('정수');
+  });
+  it('PR 6b 칸이 든 기록도 통과한다', () => {
+    expect(() =>
+      assertReadableSettlementRecord({
+        ...valid(),
+        deduction: { returnShipping: 3000, freeShippingBreak: 0, roundTrip: 0, hold: 2000 },
+        hold: { requested: 2000, memo: 'm' },
+        prepaidApplied: 0,
+        externalRefundApplied: 0,
+        closesMissing: false,
+      }),
+    ).not.toThrow();
   });
 });

@@ -20,7 +20,7 @@ export type ReturnSettlementRecord = {
   owed: number;
   deduction: ReturnSettlementDeduction;
   feeNotAdjusted: boolean;
-  /** owed − deduction 합 */
+  /** owed − 상계 적용액(prepaidApplied·externalRefundApplied) − deduction 합 */
   refundAmount: number;
   /** 이 정산 뒤 그룹 요금 — 부분취소 기록과 주문 버전 순으로 겹친다 */
   groupFees: Record<string, number>;
@@ -31,6 +31,15 @@ export type ReturnSettlementRecord = {
   chargeShippingOptionId: string | null;
   refundedAt?: string;
   refundMode?: string;
+  // ── PR 6b 칸 — 전부 선택. 없으면 PR 6 기록이다(보류 차감·상계·미도착 닫기 없음) ──
+  /** CS 가 요청한 보류 차감(요청액 그대로). 적용액은 deduction.hold */
+  hold?: { requested: number; memo: string };
+  /** 선환불(`return-prepay:<requestId>` 메모 환불 합)에서 이 정산이 덜 낸 몫 */
+  prepaidApplied?: number;
+  /** CS 가 적은 외부 환불에서 이 정산이 덜 낸 몫 — 다음 판정의 «품목에 연결 안 된 외부 환불»에서 빠진다 */
+  externalRefundApplied?: number;
+  /** 미도착 수량을 닫고 정산했다(items 가 반품 품목보다 적을 수 있다) */
+  closesMissing?: boolean;
 };
 
 const isStage = (v: unknown): v is ReturnSettlementStage => v === 'received' || v === 'charged' || v === 'refunded';
@@ -49,8 +58,8 @@ export function readReturnSettlementRecord(metadata: unknown): ReturnSettlementR
     if (!isObj(i) || typeof i.itemId !== 'string' || !isNum(i.received) || !isNum(i.dismissed)) return null;
     items.push({ itemId: i.itemId, received: i.received, dismissed: i.dismissed });
   }
-  const d = r.deduction;
-  if (!isObj(d) || !isNum(d.returnShipping) || !isNum(d.freeShippingBreak) || !isNum(d.roundTrip)) return null;
+  const deduction = readDeduction(r.deduction);
+  if (!deduction) return null;
   if (!isNum(r.owed) || !isNum(r.refundAmount) || !isNum(r.orderVersion)) return null;
   if (typeof r.feeNotAdjusted !== 'boolean' || typeof r.receivedAt !== 'string') return null;
   if (!isObj(r.groupFees)) return null;
@@ -62,13 +71,22 @@ export function readReturnSettlementRecord(metadata: unknown): ReturnSettlementR
   if (r.chargeShippingOptionId !== null && typeof r.chargeShippingOptionId !== 'string') return null;
   if (r.refundedAt !== undefined && typeof r.refundedAt !== 'string') return null;
   if (r.refundMode !== undefined && typeof r.refundMode !== 'string') return null;
+  let hold: ReturnSettlementRecord['hold'];
+  if (r.hold !== undefined) {
+    const h = r.hold;
+    if (!isObj(h) || !isNum(h.requested) || typeof h.memo !== 'string') return null;
+    hold = { requested: h.requested, memo: h.memo };
+  }
+  if (r.prepaidApplied !== undefined && !isNum(r.prepaidApplied)) return null;
+  if (r.externalRefundApplied !== undefined && !isNum(r.externalRefundApplied)) return null;
+  if (r.closesMissing !== undefined && typeof r.closesMissing !== 'boolean') return null;
   return {
     requestId: r.requestId,
     requestHash: r.requestHash,
     stage: r.stage,
     items,
     owed: r.owed,
-    deduction: { returnShipping: d.returnShipping, freeShippingBreak: d.freeShippingBreak, roundTrip: d.roundTrip },
+    deduction,
     feeNotAdjusted: r.feeNotAdjusted,
     refundAmount: r.refundAmount,
     groupFees,
@@ -77,6 +95,22 @@ export function readReturnSettlementRecord(metadata: unknown): ReturnSettlementR
     chargeShippingOptionId: r.chargeShippingOptionId,
     ...(r.refundedAt !== undefined ? { refundedAt: r.refundedAt } : {}),
     ...(r.refundMode !== undefined ? { refundMode: r.refundMode } : {}),
+    ...(hold !== undefined ? { hold } : {}),
+    ...(r.prepaidApplied !== undefined ? { prepaidApplied: r.prepaidApplied } : {}),
+    ...(r.externalRefundApplied !== undefined ? { externalRefundApplied: r.externalRefundApplied } : {}),
+    ...(r.closesMissing !== undefined ? { closesMissing: r.closesMissing } : {}),
+  };
+}
+
+/** 차감 세 몫(+ PR 6b 의 보류 차감, 선택). 하나라도 어긋나면 null. 선환불 기록의 택배비 예상도 이것으로 읽는다. */
+export function readDeduction(d: unknown): ReturnSettlementDeduction | null {
+  if (!isObj(d) || !isNum(d.returnShipping) || !isNum(d.freeShippingBreak) || !isNum(d.roundTrip)) return null;
+  if (d.hold !== undefined && !isNum(d.hold)) return null;
+  return {
+    returnShipping: d.returnShipping,
+    freeShippingBreak: d.freeShippingBreak,
+    roundTrip: d.roundTrip,
+    ...(d.hold !== undefined ? { hold: d.hold } : {}),
   };
 }
 
@@ -106,9 +140,10 @@ export function assertReadableSettlementRecord(record: ReturnSettlementRecord): 
   if (!readReturnSettlementRecord({ [RETURN_SETTLEMENT_METADATA_KEY]: record })) {
     throw new Error(`반품 정산 기록의 모양이 어긋납니다: ${JSON.stringify(record)}`);
   }
-  // 환불액·차감은 반올림한 원이다 — channel-adapter 의 정산 관측이 정수만 받으므로 소수를 쓰면 관측이 영영 막힌다
-  const { returnShipping, freeShippingBreak, roundTrip } = record.deduction;
-  if (![record.refundAmount, returnShipping, freeShippingBreak, roundTrip].every(Number.isInteger)) {
+  // 환불액·차감·상계 적용액은 반올림한 원이다 — channel-adapter 의 정산 관측이 정수만 받으므로 소수를 쓰면 관측이 영영 막힌다
+  const { returnShipping, freeShippingBreak, roundTrip, hold = 0 } = record.deduction;
+  const { prepaidApplied = 0, externalRefundApplied = 0 } = record;
+  if (![record.refundAmount, returnShipping, freeShippingBreak, roundTrip, hold, prepaidApplied, externalRefundApplied].every(Number.isInteger)) {
     throw new Error(`반품 정산 기록의 환불액·차감이 정수 원이 아닙니다: ${JSON.stringify(record)}`);
   }
 }

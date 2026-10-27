@@ -1,11 +1,10 @@
 import type { MedusaContainer } from '@medusajs/framework/types';
-import { ChangeActionType, ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
+import { ChangeActionType, Modules } from '@medusajs/framework/utils';
 import {
   beginOrderEditOrderWorkflow,
   cancelBeginOrderEditWorkflow,
   confirmOrderEditRequestWorkflow,
   createOrderChangeActionsWorkflow,
-  createOrderCreditLinesWorkflow,
   orderEditUpdateItemQuantityWorkflow,
   requestOrderEditRequestWorkflow,
 } from '@medusajs/medusa/core-flows';
@@ -13,13 +12,17 @@ import {
 import { readWalletRefundRefusal } from '../../../modules/almond-payment/wallet-refund-refusal';
 import { describeError } from '../../../utils/describe-error';
 import { loadOrderView, productShippingProfiles, type OrderView } from '../settlement/load-order-view';
+import { offsetCreditLine } from '../settlement/offset-credit-line';
 import { addChargeShippingMethod, ensureNoDanglingChange } from '../settlement/order-edit-charge';
 import { orderCancelLockKey, orderPaymentIds } from '../settlement/order-payments';
 import { refundOrderPayments } from '../settlement/refund-order-payments';
 import type { RefundMode } from '../settlement/refund-mode';
 import { reconcileOrderWalletRefunds } from '../settlement/wallet-refund-ledger';
-import { assertNoReturnAwaitingCharge, loadReturnSettlementRecords } from '../returns/return-settlement-record';
-import { toNumber } from './amount';
+import {
+  assertNoReturnAwaitingCharge,
+  loadReturnSettlementRecords,
+  type ReturnSettlementRecord,
+} from '../returns/return-settlement-record';
 import { appliedExternalRefund, checkAlreadyRefunded, hashRequest, unresolvedExternalRefund } from './external-refund';
 import type { OrderAdjustment } from './prorate-adjustments';
 import { planPartialCancel, PartialCancelRejected, type CancelRequestItem, type OrderLine } from './plan-partial-cancel';
@@ -150,7 +153,12 @@ async function run(container: MedusaContainer, input: PartialCancelInput): Promi
     // 수정은 확정됐다 — 여기부터의 실패는 refund_pending(재시도) 또는 영구 거절 표지(400, stage edited)다
     if (existing) await reconcileOrderWalletRefunds(container, input.orderId);
     // 상계 라인을 환불보다 «먼저» 넣는다 — 그래야 환불 뒤 차액이 0 이고, refundPaymentWorkflow 가 배송비 몫만 양수 라인으로 붙인다
-    await offsetExternalRefund(container, input.orderId, input.requestId, record.externalRefundApplied ?? 0);
+    await offsetCreditLine(container, {
+      orderId: input.orderId,
+      reference: OFFSET_CREDIT_LINE_REFERENCE,
+      referenceId: input.requestId,
+      amount: record.externalRefundApplied ?? 0,
+    });
     await refundOrderPayments(container, {
       orderId: input.orderId,
       amount: record.refundAmount,
@@ -184,7 +192,7 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
   const plan = planPartialCancel(order.lines, input.items);
   // 끊긴 확정 수정을 먼저 가린 «뒤»에 본다 — 앞에 두면 그 경우가 업무 거절(400)로 닫혀 주문만 줄어든 채 남는다(Review Focus 1).
   // 계획 검증 «뒤»에 둬서 잘못된 수량은 금액을 묻기 전에 제 사유로 거절된다. 주문을 바꾸는 단계보다는 여전히 앞이다.
-  await assertExternalRefundsResolved(container, order, input.alreadyRefunded);
+  await assertExternalRefundsResolved(container, order, returnRecords, input.alreadyRefunded);
 
   const profiles = await productShippingProfiles(
     container,
@@ -278,59 +286,24 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
 
 /**
  * 품목에 연결 안 된 외부 환불(U)이 있는데 운영자가 «이미 환불한 금액»을 주지 않았으면 거절한다(#1016 37번, 스펙 §4.2).
- * 장부만 읽는다 — 투영이 외부 환불을 `wallet:` 메모로 남긴다.
+ * 장부만 읽는다 — 투영이 외부 환불을 `wallet:` 메모로 남긴다. 앞선 부분취소와 반품 정산(K8 PR6b)이 상계로 가져간 몫은 뺀다.
  */
-async function assertExternalRefundsResolved(container: MedusaContainer, order: OrderView, alreadyRefunded: number | undefined) {
+async function assertExternalRefundsResolved(
+  container: MedusaContainer,
+  order: OrderView,
+  returnRecords: ReturnSettlementRecord[],
+  alreadyRefunded: number | undefined,
+) {
   const paymentIds = await orderPaymentIds(container, order.id);
   const payments = paymentIds.length
     ? await container.resolve(Modules.PAYMENT).listPayments({ id: paymentIds }, { relations: ['refunds'] })
     : [];
   const unresolved = unresolvedExternalRefund(
     payments.flatMap((p) => p.refunds ?? []),
-    Object.values(readPartialCancelRecords(order.metadata)),
+    [...Object.values(readPartialCancelRecords(order.metadata)), ...returnRecords],
   );
   checkAlreadyRefunded(unresolved, alreadyRefunded);
 }
-
-/**
- * 상계한 몫을 음수 크레딧 라인으로 적는다 — 외부 환불이 남긴 «+X 금액 조정»을 «품목 값»으로 다시 분류한다.
- * 같은 requestId 의 라인이 이미 있으면 건너뛴다(환불 실패 뒤 재시도, Review Focus 2).
- */
-async function offsetExternalRefund(container: MedusaContainer, orderId: string, requestId: string, applied: number) {
-  if (applied <= 0) return;
-  const logger = container.resolve(ContainerRegistrationKeys.LOGGER);
-  const orderModule = container.resolve(Modules.ORDER);
-  const order = await orderModule.retrieveOrder(orderId, { select: ['id'], relations: ['credit_lines'] });
-  const lines = order.credit_lines ?? [];
-  const exists = lines.some((l) => l.reference === OFFSET_CREDIT_LINE_REFERENCE && l.reference_id === requestId);
-  if (exists) return;
-  // 알려진 절단(스펙 §8): Medusa 는 크레딧 라인 합이 0 이하면 0 으로 자른다 — 상계가 지금 합보다 크면 넘는 몫은
-  // 차액을 움직이지 못해 차액이 음수로 남는다. 동작은 바꾸지 않고 보이게만 한다.
-  const creditSum = lines.reduce((s, l) => s + toNumber(l.amount), 0);
-  if (applied > creditSum) {
-    logger.warn(
-      `부분취소 상계가 크레딧 라인 합보다 큽니다 — Medusa 는 합이 0 이하인 크레딧을 0 으로 잘라 차액이 음수로 남습니다: ` +
-        `orderId=${orderId} requestId=${requestId} applied=${applied} creditSum=${creditSum}`,
-    );
-  }
-  try {
-    await createOrderCreditLinesWorkflow(container).run({
-      input: { id: orderId, credit_lines: [{ amount: -applied, reference: OFFSET_CREDIT_LINE_REFERENCE, reference_id: requestId }] },
-    });
-  } catch (error) {
-    // 스펙 §8-4: 상계가 막히면 재시도마다 같은 자리에서 멈춘다 — 무엇을 넣으려다 어떤 차액에 막혔는지 남긴다
-    const pending = await loadOrder(container, orderId).then(
-      (o) => String(o.pendingDifference),
-      () => 'unknown',
-    );
-    logger.error(
-      `부분취소 상계 크레딧 라인을 넣지 못했습니다: orderId=${orderId} requestId=${requestId} applied=${applied} ` +
-        `pendingDifference=${pending} — ${describeError(error)}`,
-    );
-    throw error;
-  }
-}
-
 
 // ── 조회 ──────────────────────────────────────────────────────────────────────
 

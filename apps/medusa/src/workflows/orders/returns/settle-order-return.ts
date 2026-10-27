@@ -184,7 +184,7 @@ async function receive(
   assertNoReturnAwaitingCharge(otherReturns);
   // 수령 «전»에 장부를 맞춘다 — 투영 안 된 외부 환불까지 보고 거절하게
   await reconcileOrderWalletRefunds(container, input.orderId);
-  await assertNoExternalRefund(container, await loadOrder(container, input.orderId));
+  await assertNoExternalRefund(container, await loadOrder(container, input.orderId), otherReturns);
 
   const tag = receiveTag(input.requestId);
   // 확정됐는데 기록이 없으면(확정과 기록 사이에 끊김) 다시 받으면 재고·차액이 두 번 움직인다 — 멈춘다. 열린 채면 버리고 새로 한다
@@ -268,8 +268,7 @@ async function charge(container: MedusaContainer, input: SettleOrderReturnInput,
       orderId: input.orderId,
       tag,
       shippingOptionId: record.chargeShippingOptionId,
-      amount: total,
-      name: RETURN_FEE_CHARGE_NAME,
+      charges: [{ name: RETURN_FEE_CHARGE_NAME, amount: total }],
       actorId: input.actorId,
     });
   }
@@ -291,16 +290,20 @@ function assertItemsMatch(quantities: ReadonlyMap<string, number>, items: Settle
 
 /**
  * wallet 에서 직접 낸 환불(`wallet:` 메모)이 품목에 연결되지 않은 채 있으면 거절한다(N16) — 반품 환불을 더 내면 이중 환불이다.
- * 앞선 부분취소가 상계로 가져간 몫은 뺀다. 상계는 PR 6b 선환불과 함께 연다.
+ * 앞선 부분취소·다른 반품 정산(PR 6b 의 externalRefundApplied)이 상계로 가져간 몫은 뺀다.
  */
-async function assertNoExternalRefund(container: MedusaContainer, order: OrderView): Promise<void> {
+async function assertNoExternalRefund(
+  container: MedusaContainer,
+  order: OrderView,
+  returnRecords: ReturnSettlementRecord[],
+): Promise<void> {
   const paymentIds = await orderPaymentIds(container, order.id);
   const payments = paymentIds.length
     ? await container.resolve(Modules.PAYMENT).listPayments({ id: paymentIds }, { relations: ['refunds'] })
     : [];
   const unresolved = unresolvedExternalRefund(
     payments.flatMap((p) => p.refunds ?? []),
-    Object.values(readPartialCancelRecords(order.metadata)),
+    [...Object.values(readPartialCancelRecords(order.metadata)), ...returnRecords],
   );
   if (unresolved > 0) {
     throw new ReturnSettleRejected(

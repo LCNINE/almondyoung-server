@@ -26,24 +26,37 @@ export async function addChargeShippingMethod(
 }
 
 /**
- * 청구 하나만 담은 주문 수정을 연다 → 배송 방법 추가 → 이름 바꾸기 → request → confirm.
+ * 정산 청구만 담은 주문 수정을 연다 → 청구마다 배송 방법 추가 → 이름 바꾸기 → request → confirm.
+ * 청구 여럿(반품 택배비·반품 차감)은 한 수정에 함께 들어간다 — 하나만 확정되고 끊기는 창이 없다. 0 원 몫은 건너뛰고,
+ * 남는 청구가 없으면 수정을 열지 않는다.
  * 확정 전 실패는 열린 수정을 버려 주문을 원래대로 둔다. internal_note 의 태그로 끊긴 수정을 찾는다(ensureNoDanglingChange).
  */
 export async function addSettlementCharge(
   container: MedusaContainer,
-  input: { orderId: string; tag: string; shippingOptionId: string; amount: number; name: string; actorId?: string },
+  input: {
+    orderId: string;
+    tag: string;
+    shippingOptionId: string;
+    charges: Array<{ name: string; amount: number }>;
+    actorId?: string;
+  },
 ): Promise<void> {
+  const charges = input.charges.filter((c) => c.amount > 0);
+  if (charges.length === 0) return;
   const { result: change } = await beginOrderEditOrderWorkflow(container).run({
     input: { order_id: input.orderId, created_by: input.actorId, internal_note: input.tag },
   });
   try {
-    await addChargeShippingMethod(container, {
-      orderId: input.orderId,
-      orderChangeId: change.id,
-      shippingOptionId: input.shippingOptionId,
-      amount: input.amount,
-      name: input.name,
-    });
+    // 차례로 더한다 — 이름 바꾸기가 «방금 더한» 방법(마지막 SHIPPING_ADD)을 찾는다
+    for (const c of charges) {
+      await addChargeShippingMethod(container, {
+        orderId: input.orderId,
+        orderChangeId: change.id,
+        shippingOptionId: input.shippingOptionId,
+        amount: c.amount,
+        name: c.name,
+      });
+    }
     await requestOrderEditRequestWorkflow(container).run({ input: { order_id: input.orderId, requested_by: input.actorId } });
     await confirmOrderEditRequestWorkflow(container).run({ input: { order_id: input.orderId, confirmed_by: input.actorId } });
   } catch (error) {
