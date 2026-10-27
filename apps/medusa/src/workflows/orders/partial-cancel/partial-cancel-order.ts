@@ -18,6 +18,8 @@ import { orderCancelLockKey, orderPaymentIds } from '../settlement/order-payment
 import { refundOrderPayments } from '../settlement/refund-order-payments';
 import type { RefundMode } from '../settlement/refund-mode';
 import { reconcileOrderWalletRefunds } from '../settlement/wallet-refund-ledger';
+import { mergeGroupFees } from '../settlement/group-fees';
+import { loadReturnSettlementRecords } from '../returns/return-settlement-record';
 import { toNumber } from './amount';
 import { appliedExternalRefund, checkAlreadyRefunded, hashRequest, unresolvedExternalRefund } from './external-refund';
 import type { OrderAdjustment } from './prorate-adjustments';
@@ -192,7 +194,10 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
       requiresShipping: l.requiresShipping,
     })),
     postalCode: order.postalCode,
-    priorGroupFees: priorGroupFees(order.metadata),
+    priorGroupFees: mergeGroupFees([
+      ...Object.values(readRecords(order.metadata)),
+      ...(await loadReturnSettlementRecords(container, order.id)),
+    ]),
     chargeCap: bearer === 'seller' ? 0 : plan.itemRefundEstimate,
   });
 
@@ -386,13 +391,6 @@ function readRecords(metadata: unknown): Record<string, PartialCancelRecord> {
   return Object.fromEntries(
     Object.entries(v as Record<string, unknown>).filter((e): e is [string, PartialCancelRecord] => !!e[1] && typeof e[1] === 'object'),
   );
-}
-
-/** 앞선 부분취소들이 남긴 그룹 요금을 주문 버전 순으로 겹친다(나중 것이 이긴다). */
-function priorGroupFees(metadata: unknown): Record<string, number> {
-  return Object.values(readRecords(metadata))
-    .sort((a, b) => a.orderVersion - b.orderVersion)
-    .reduce<Record<string, number>>((acc, r) => ({ ...acc, ...r.groupFees }), {});
 }
 
 async function writeRecord(container: MedusaContainer, orderId: string, requestId: string, record: PartialCancelRecord) {

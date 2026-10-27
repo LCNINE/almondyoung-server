@@ -4,7 +4,7 @@ import { Modules } from '@medusajs/framework/utils';
 import { POLICY_SNAPSHOT_KEY, type ShippingPolicySnapshot } from '../../../modules/almond-fulfillment/types';
 import { toNumber } from '../partial-cancel/amount';
 import type { OrderLine } from '../partial-cancel/plan-partial-cancel';
-import { PARTIAL_CANCEL_CHARGE_NAME, type ShippingMethodView } from '../partial-cancel/plan-shipping';
+import { SETTLEMENT_CHARGE_NAMES, type ShippingMethodView } from '../partial-cancel/plan-shipping';
 
 export type OrderView = {
   id: string;
@@ -90,7 +90,7 @@ export function toShippingMethodView(m: {
     shippingOptionId: m.shipping_option_id ?? null,
     amount: toNumber(m.amount),
     snapshot: readSnapshot(m.data),
-    isPartialCancelCharge: m.name === PARTIAL_CANCEL_CHARGE_NAME,
+    isSettlementCharge: !!m.name && SETTLEMENT_CHARGE_NAMES.includes(m.name),
     isReturnExchangeOrClaimShipping: !!(m.detail?.return_id || m.detail?.exchange_id || m.detail?.claim_id),
     hasAdjustments: (m.adjustments ?? []).some((a) => !!a && toNumber(a.amount) !== 0),
   };
