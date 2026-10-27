@@ -17,6 +17,7 @@ const STATE_LABELS: Record<string, string> = {
   ON_HAND: '보유 (ON_HAND)',
   DEFECTIVE: '불량',
   IN_TRANSFER: '창고 이동 중',
+  RETURNED: '반품 검수 대기',
 };
 
 const SORT_OPTIONS = [

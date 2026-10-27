@@ -116,6 +116,7 @@ describeIfDb('재고 금액 원가 판정 (실 Postgres)', () => {
         for (const [skuN, whN, locN, state, qty] of [
           [1, 1, 1, 'ON_HAND', 10],
           [1, 1, 1, 'DEFECTIVE', 2],
+          [1, 1, 1, 'RETURNED', 3], // 반품 검수 대기 — 상태 집계에만 잡히고 ON_HAND 금액엔 안 섞인다
           [2, 1, 1, 'ON_HAND', 5],
           [3, 1, 1, 'ON_HAND', 3],
           [4, 2, 2, 'ON_HAND', 4],
@@ -166,6 +167,14 @@ describeIfDb('재고 금액 원가 판정 (실 Postgres)', () => {
       state: 'DEFECTIVE',
       quantity: 2,
       value: 2_000,
+      uncostedQuantity: 0,
+    });
+
+    // 반품 검수 대기도 상태 집계에 나온다 — 맵에 없는 상태는 조용히 빠졌었다
+    expect(summary.states.find((state) => state.state === 'RETURNED')).toEqual({
+      state: 'RETURNED',
+      quantity: 3,
+      value: 3_000,
       uncostedQuantity: 0,
     });
 

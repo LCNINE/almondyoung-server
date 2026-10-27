@@ -86,13 +86,16 @@ export class WarehouseReader {
     }, tx);
   }
 
+  /** 가용은 출고가능(ON_HAND) 보유만 — RETURNED·DEFECTIVE·IN_TRANSFER 는 창고에 있어도 가용이 아니다. */
   async getStockSummary(warehouseId: string) {
     const rows = await this.db
       .select({
         skuId: wmsTables.stockLedgers.skuId,
         skuName: wmsTables.skus.name,
         skuCode: wmsTables.skus.code,
-        totalQuantity: sql<number>`sum(${wmsTables.stockLedgers.qty})`,
+        // ::int — sum(integer) 는 bigint 라 드라이버가 문자열로 주고, 아래 reduce 가 숫자 대신 문자열을 이어 붙였다.
+        totalQuantity: sql<number>`sum(${wmsTables.stockLedgers.qty})::int`,
+        onHandQuantity: sql<number>`(sum(${wmsTables.stockLedgers.qty}) filter (where ${wmsTables.stockLedgers.stockState} = 'ON_HAND'))::int`,
         locationCount: sql<number>`count(distinct ${wmsTables.stockLedgers.locationId})`,
       })
       .from(wmsTables.stockLedgers)
@@ -105,7 +108,7 @@ export class WarehouseReader {
       summary: rows,
       totalSkus: rows.length,
       totalQuantity: rows.reduce((sum, item) => sum + item.totalQuantity, 0),
-      totalAvailable: rows.reduce((sum, item) => sum + item.totalQuantity, 0),
+      totalAvailable: rows.reduce((sum, item) => sum + (item.onHandQuantity ?? 0), 0),
     };
   }
 

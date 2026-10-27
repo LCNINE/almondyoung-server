@@ -939,6 +939,13 @@
       "when": 1792970742966,
       "tag": "20261025232542_drop-legacy-drop-ship",
       "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1793069082596,
+      "tag": "20261027024442_add-returned-stock-state",
+      "breakpoints": true
     }
   ]
 }

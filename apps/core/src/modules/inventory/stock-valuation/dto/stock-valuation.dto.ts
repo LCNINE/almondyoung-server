@@ -6,8 +6,8 @@ import { IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator';
 export type SkuCostStatus = 'valued' | 'costMissing' | 'costConflict' | 'multiMaster' | 'unmatched';
 
 export class StockValuationStateDto {
-  @ApiProperty({ description: '재고 상태', enum: ['ON_HAND', 'DEFECTIVE', 'IN_TRANSFER'] })
-  state: 'ON_HAND' | 'DEFECTIVE' | 'IN_TRANSFER';
+  @ApiProperty({ description: '재고 상태', enum: ['ON_HAND', 'DEFECTIVE', 'IN_TRANSFER', 'RETURNED'] })
+  state: 'ON_HAND' | 'DEFECTIVE' | 'IN_TRANSFER' | 'RETURNED';
 
   @ApiProperty({ description: '수량 합 (SKU 단위, 원가 판정 여부 무관 전체)' })
   quantity: number;

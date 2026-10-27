@@ -11,6 +11,7 @@ import { SkuStockSummaryDto } from '../dto/sku-stock-summary.dto';
 import { PaginatedResponseDto } from '../../shared/dto';
 import { LocationContentsDto } from '../dto/location-contents.dto';
 import { readLocationStockAvailability } from '../../shared/availability/location-stock-availability';
+import { physicalQuantity } from './physical-quantity';
 
 @Injectable()
 export class StockProjectionReader {
@@ -45,6 +46,7 @@ export class StockProjectionReader {
         onHandQty: s.onHandQty,
         defectiveQty: s.defectiveQty,
         inTransferQty: s.inTransferQty,
+        returnedQty: s.returnedQty,
         reservedQty: s.reservedQty,
         availableQty: s.availableQty,
         inboundPendingQty: s.inboundPendingQty,
@@ -77,7 +79,7 @@ export class StockProjectionReader {
       const v = wmsSchema.stockSummary;
       // view는 SKU × 창고 CROSS JOIN — 재고 움직임이 전혀 없는 조합은 목록에서 제외
       const conditions: SQL[] = [
-        sql`(${v.onHandQty} <> 0 OR ${v.defectiveQty} <> 0 OR ${v.inTransferQty} <> 0 OR ${v.reservedQty} <> 0 OR ${v.inboundPendingQty} <> 0 OR ${v.transferPendingQty} <> 0)`,
+        sql`(${v.onHandQty} <> 0 OR ${v.defectiveQty} <> 0 OR ${v.inTransferQty} <> 0 OR ${v.returnedQty} <> 0 OR ${v.reservedQty} <> 0 OR ${v.inboundPendingQty} <> 0 OR ${v.transferPendingQty} <> 0)`,
       ];
       if (skuId) {
         conditions.push(eq(v.skuId, skuId));
@@ -131,7 +133,7 @@ export class StockProjectionReader {
           skuName: s.skuName ?? '',
           warehouseId: s.warehouseId,
           warehouseName: s.warehouseName ?? '',
-          currentQuantity: s.onHandQty + s.defectiveQty + s.inTransferQty,
+          currentQuantity: physicalQuantity(s),
           availableQuantity: s.availableQty,
           reservedQuantity: s.reservedQty,
           inboundPendingQuantity: s.inboundPendingQty,
@@ -161,7 +163,7 @@ export class StockProjectionReader {
 
     const total = summaries.reduce(
       (acc, summary) => ({
-        totalRealQuantity: acc.totalRealQuantity + summary.onHandQty + summary.defectiveQty + summary.inTransferQty,
+        totalRealQuantity: acc.totalRealQuantity + physicalQuantity(summary),
         totalReservedQuantity: acc.totalReservedQuantity + summary.reservedQty,
         totalAvailableQuantity: acc.totalAvailableQuantity + summary.availableQty,
       }),
@@ -203,13 +205,14 @@ export class StockProjectionReader {
     return {
       summary: summary
         ? {
-            currentQuantity: summary.onHandQty + summary.defectiveQty + summary.inTransferQty,
+            currentQuantity: physicalQuantity(summary),
             availableQuantity: summary.availableQty,
             reservedQuantity: summary.reservedQty,
             inboundPendingQuantity: summary.inboundPendingQty,
             outboundPendingQuantity: summary.onOrderQty,
             movingQuantity: summary.inTransferQty,
             defectiveQuantity: summary.defectiveQty,
+            returnedQuantity: summary.returnedQty,
             lastUpdated: summary.lastCalculatedAt,
           }
         : null,
@@ -268,14 +271,14 @@ export class StockProjectionReader {
       const warehouseStocks = summaries.map((summary) => ({
         warehouseId: summary.warehouseId,
         warehouseName: warehouseMap.get(summary.warehouseId)?.name || 'Unknown Warehouse',
-        realQuantity: summary.onHandQty + summary.defectiveQty + summary.inTransferQty,
+        realQuantity: physicalQuantity(summary),
         reservedQuantity: summary.reservedQty,
         availableQuantity: summary.availableQty,
       }));
 
       const totals = summaries.reduce(
         (acc, summary) => ({
-          totalRealQuantity: acc.totalRealQuantity + summary.onHandQty + summary.defectiveQty + summary.inTransferQty,
+          totalRealQuantity: acc.totalRealQuantity + physicalQuantity(summary),
           totalReservedQuantity: acc.totalReservedQuantity + summary.reservedQty,
           totalAvailableQuantity: acc.totalAvailableQuantity + summary.availableQty,
         }),

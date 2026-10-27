@@ -3,7 +3,7 @@ export interface LocationContentItem {
   skuId: string;
   skuCode: string;
   skuName: string;
-  /** ON_HAND | DEFECTIVE | IN_TRANSFER. 이동 대상은 ON_HAND 뿐이다. */
+  /** ON_HAND | DEFECTIVE | IN_TRANSFER | RETURNED. 이동 대상은 ON_HAND 뿐이다. */
   stockState: string;
   quantity: number;
   inboundPendingQty: number;

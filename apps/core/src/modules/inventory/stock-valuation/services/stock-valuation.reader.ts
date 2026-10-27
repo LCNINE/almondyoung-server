@@ -19,7 +19,7 @@ import {
 
 type MergedTx = TxFor<MergedSchema>;
 
-type StockState = 'ON_HAND' | 'DEFECTIVE' | 'IN_TRANSFER';
+type StockState = 'ON_HAND' | 'DEFECTIVE' | 'IN_TRANSFER' | 'RETURNED';
 
 export interface SkuCost {
   status: SkuCostStatus;
@@ -98,7 +98,7 @@ export class StockValuationReader {
       const { ledgerRows, skuCosts } = await this.loadValuation(trx);
 
       const stateAgg = new Map<StockState, { quantity: number; value: number; uncostedQuantity: number }>();
-      for (const state of ['ON_HAND', 'DEFECTIVE', 'IN_TRANSFER'] as const) {
+      for (const state of ['ON_HAND', 'DEFECTIVE', 'IN_TRANSFER', 'RETURNED'] as const) {
         stateAgg.set(state, { quantity: 0, value: 0, uncostedQuantity: 0 });
       }
       const warehouseAgg = new Map<string, { onHandQuantity: number; onHandValue: number; uncostedQuantity: number }>();

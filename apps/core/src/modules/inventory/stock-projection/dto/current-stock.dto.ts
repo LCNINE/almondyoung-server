@@ -22,6 +22,9 @@ export class CurrentStockDto {
   @ApiProperty({ description: '이동중재고 (IN_TRANSFER)' })
   inTransferQty: number;
 
+  @ApiProperty({ description: '반품 검수 대기 (RETURNED)' })
+  returnedQty: number;
+
   @ApiProperty({ description: '예약된 수량' })
   reservedQty: number;
 

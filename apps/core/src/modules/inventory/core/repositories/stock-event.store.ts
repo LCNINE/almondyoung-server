@@ -664,7 +664,7 @@ export class StockEventStore {
       }
 
       // 전이 타입 역매핑
-      const reverseType = this.getReversalType(original.transitionType);
+      const reverseType = reversalTransitionType(original.transitionType);
 
       const [rev] = await trx
         .insert(wmsTables.stockEvents)
@@ -973,25 +973,31 @@ export class StockEventStore {
   private shipmentDispatchReversalConflict(code: string, message: string): ConflictException {
     return new ConflictException({ code, message });
   }
+}
 
-  private getReversalType(t: TransitionType): TransitionType {
-    const map: Record<TransitionType, TransitionType> = {
-      // 기본 흐름
-      RECEIVE: 'ADJUST_DOWN',
-      SHIP: 'ADJUST_UP',
-      MOVE: 'MOVE', // 이동은 반대 방향 이동으로 역분개
+/** 역분개 이벤트의 전이 타입. 방향은 reverseEvent 가 from/to 를 뒤집어 정하고, 이 이름은 이력 표시용이다. */
+export function reversalTransitionType(t: TransitionType): TransitionType {
+  const map: Record<TransitionType, TransitionType> = {
+    // 기본 흐름
+    RECEIVE: 'ADJUST_DOWN',
+    SHIP: 'ADJUST_UP',
+    MOVE: 'MOVE', // 이동은 반대 방향 이동으로 역분개
 
-      // 품질 관리
-      MARK_DEFECT: 'REWORK_GOOD',
-      REWORK_GOOD: 'MARK_DEFECT',
-      SCRAP: 'ADJUST_UP', // 폐기 취소는 재고 증가
+    // 품질 관리
+    MARK_DEFECT: 'REWORK_GOOD',
+    REWORK_GOOD: 'MARK_DEFECT',
+    SCRAP: 'ADJUST_UP', // 폐기 취소는 재고 증가
 
-      // 수동 조정
-      ADJUST_UP: 'ADJUST_DOWN',
-      ADJUST_DOWN: 'ADJUST_UP',
-    } as const;
-    return map[t] ?? 'ADJUST_DOWN';
-  }
+    // 수동 조정
+    ADJUST_UP: 'ADJUST_DOWN',
+    ADJUST_DOWN: 'ADJUST_UP',
+
+    // 고객 반품 — 같은 위치 상태 전이는 MOVE 가 이미 담는다(transferShip 의 ON_HAND→IN_TRANSFER)
+    RETURN_RECEIVE: 'ADJUST_DOWN',
+    RETURN_ACCEPT: 'MOVE',
+    RETURN_REJECT: 'MOVE',
+  };
+  return map[t];
 }
 
 /**

@@ -675,7 +675,10 @@ export type StockTransitionType =
   | 'REWORK_GOOD'
   | 'SCRAP'
   | 'ADJUST_UP'
-  | 'ADJUST_DOWN';
+  | 'ADJUST_DOWN'
+  | 'RETURN_RECEIVE'
+  | 'RETURN_ACCEPT'
+  | 'RETURN_REJECT';
 
 export interface StockHistoryDto {
   id: string;

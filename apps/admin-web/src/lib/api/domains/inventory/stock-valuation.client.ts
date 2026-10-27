@@ -6,7 +6,7 @@ import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import { client } from '../../client';
 
 export interface StockValuationState {
-  state: 'ON_HAND' | 'DEFECTIVE' | 'IN_TRANSFER';
+  state: 'ON_HAND' | 'DEFECTIVE' | 'IN_TRANSFER' | 'RETURNED';
   quantity: number;
   value: number;
   uncostedQuantity: number;

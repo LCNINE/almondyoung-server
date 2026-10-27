@@ -30,6 +30,9 @@ const TRANSITION_TYPE_LABELS: Record<string, string> = {
   SCRAP: '폐기',
   ADJUST_UP: '조정(증가)',
   ADJUST_DOWN: '조정(감소)',
+  RETURN_RECEIVE: '반품 입고',
+  RETURN_ACCEPT: '반품 양품',
+  RETURN_REJECT: '반품 불량',
 };
 
 // 해당 창고 관점의 수량 변화: 들어오면 +, 나가면 −, 창고 내 전환(이동/불량 지정 등)은 0
