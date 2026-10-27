@@ -422,6 +422,21 @@ export async function createBuyNowCart(params: {
   return { cartId: cart.id }
 }
 
+// 장바구니 페이지는 쿠키 카트가 없거나 비면 고객의 미완료 카트를 복구해 보여준다.
+// 선택 주문도 같은 카트를 찾아야 화면에 보이는 상품으로 진행할 수 있다.
+async function retrieveSourceCart() {
+  const fields = "id,region_id,*items,*items.variant"
+  const cart = await retrieveCart(undefined, fields, "no-store")
+  if (cart?.items?.length) {
+    return cart
+  }
+
+  const recovered = await recoverCustomerCart()
+  return recovered?.id
+    ? retrieveCart(recovered.id, fields, "no-store")
+    : cart
+}
+
 export async function createCheckoutCartFromLineItems(params: {
   countryCode: string
   lineItemIds: string[]
@@ -439,11 +454,7 @@ export async function createCheckoutCartFromLineItems(params: {
     )
   }
 
-  const sourceCart = await retrieveCart(
-    undefined,
-    "id,region_id,*items,*items.variant",
-    "no-store"
-  )
+  const sourceCart = await retrieveSourceCart()
 
   if (!sourceCart?.id) {
     throw new HttpApiError("Source cart not found", 404, "NOT_FOUND")
@@ -569,11 +580,7 @@ export async function createShippingPreviewCartFromLineItems(params: {
     )
   }
 
-  const sourceCart = await retrieveCart(
-    undefined,
-    "id,region_id,*items,*items.variant",
-    "no-store"
-  )
+  const sourceCart = await retrieveSourceCart()
 
   if (!sourceCart?.id) {
     throw new HttpApiError("Source cart not found", 404, "NOT_FOUND")
