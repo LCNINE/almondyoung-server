@@ -26,6 +26,11 @@ import {
 } from 'drizzle-orm/pg-core';
 import { authorizationSchema } from '@app/authorization';
 import { printOrders } from '../../print-order/schema/print-order.schema';
+// 타입만 가져온다(런타임 import 없음) — jsonb 칸의 모양은 반품 타입 파일이 정본이다
+import type {
+  CustomerReturnSettlement,
+  CustomerReturnSettlementOutcome,
+} from '../../sales-order/customer-return/customer-return.types';
 
 /*───────────────────────────
  * ENUM DECLARATIONS
@@ -1590,6 +1595,15 @@ export const customerReturns = pgTable(
     windowOverrideReason: text('window_override_reason'),
     requestedAt: timestamp('requested_at', { withTimezone: true }).notNull(),
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    /** 받은 창고 — 첫 도착이 정하고, 이후 도착은 같은 창고여야 한다(K8 PR6) */
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }),
+    arrivedAt: timestamp('arrived_at', { withTimezone: true }),
+    inspectedAt: timestamp('inspected_at', { withTimezone: true }),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
+    /** 정산 진행 기록(명령 발행·실패 사실) */
+    settlement: jsonb('settlement').$type<CustomerReturnSettlement>(),
+    /** 정산 결과(환불액·차감) */
+    settlementOutcome: jsonb('settlement_outcome').$type<CustomerReturnSettlementOutcome>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1618,6 +1632,56 @@ export const customerReturnLines = pgTable(
     uqReturnLine: unique('uq_customer_return_lines_return_line').on(t.customerReturnId, t.salesOrderLineId),
     idxSalesOrderLine: index('idx_customer_return_lines_sales_order_line').on(t.salesOrderLineId),
     ckQuantityPositive: check('ck_customer_return_lines_quantity_positive', sql`${t.quantity} > 0`),
+  }),
+);
+
+/**
+ * 반품 줄 × 굳은 구성 SKU (K8 PR6 N3). expected_qty = 반품 줄 수량 × qty_per_unit.
+ * 검수 결과 세 칸은 검수 전 모두 null, 검수 뒤 모두 0 이상.
+ */
+export const customerReturnItems = pgTable(
+  'customer_return_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    customerReturnLineId: uuid('customer_return_line_id')
+      .references(() => customerReturnLines.id, { onDelete: 'cascade' })
+      .notNull(),
+    skuId: uuid('sku_id')
+      .references(() => skus.id, { onDelete: 'restrict' })
+      .notNull(),
+    qtyPerUnit: integer('qty_per_unit').notNull(),
+    expectedQty: integer('expected_qty').notNull(),
+    acceptedQty: integer('accepted_qty'),
+    rejectedQty: integer('rejected_qty'),
+    heldQty: integer('held_qty'),
+  },
+  (t) => ({
+    uqLineSku: unique('uq_customer_return_items_line_sku').on(t.customerReturnLineId, t.skuId),
+    ckExpectedPositive: check('ck_customer_return_items_expected_qty_positive', sql`${t.expectedQty} > 0`),
+    ckInspectionAllOrNone: check(
+      'ck_customer_return_items_inspection_all_or_none',
+      sql`(${t.acceptedQty} IS NULL AND ${t.rejectedQty} IS NULL AND ${t.heldQty} IS NULL) OR (${t.acceptedQty} >= 0 AND ${t.rejectedQty} >= 0 AND ${t.heldQty} >= 0)`,
+    ),
+  }),
+);
+
+/** 반품 도착 기록 (K8 PR6 N4). 도착 수량 = 항목별 이 행들의 합. 멱등은 idempotency_key unique 가 진다. */
+export const customerReturnArrivals = pgTable(
+  'customer_return_arrivals',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    customerReturnItemId: uuid('customer_return_item_id')
+      .references(() => customerReturnItems.id, { onDelete: 'cascade' })
+      .notNull(),
+    quantity: integer('quantity').notNull(),
+    idempotencyKey: varchar('idempotency_key', { length: 255 }).notNull().unique(),
+    stockEventId: uuid('stock_event_id'),
+    arrivedBy: varchar('arrived_by', { length: 255 }),
+    arrivedAt: timestamp('arrived_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxItem: index('idx_customer_return_arrivals_item').on(t.customerReturnItemId),
+    ckQuantityPositive: check('ck_customer_return_arrivals_quantity_positive', sql`${t.quantity} > 0`),
   }),
 );
 
@@ -3892,6 +3956,8 @@ export const wmsTables = {
   salesOrderLineCompositions,
   customerReturns,
   customerReturnLines,
+  customerReturnItems,
+  customerReturnArrivals,
   orderEvents,
   businessLinks,
   salesOrderAmendments,

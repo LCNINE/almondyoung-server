@@ -7,6 +7,7 @@ import type {
 } from '@packages/event-contracts/streams/orders.stream';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
+import { seedHolder, seedSku } from '../../fulfillment/services/__support__/logistics-fixtures';
 import { seedOrder } from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
 import { CustomerReturnManager } from './customer-return.manager';
 
@@ -46,7 +47,13 @@ describeIfDb('CustomerReturnManager — 채널 반품 사실 기록 (K8 PR5)', (
       .set({ customerId: randomUUID() })
       .where(eq(wmsTables.salesOrders.id, order.salesOrderId))
       .returning();
-    return { ...order, channelOrderItemId, channelOrderId: so.channelOrderId };
+    // 반품 접수는 굳은 구성이 있는 줄만 받는다(N3) — 기본은 SKU 하나 × 1
+    const { holderId } = await seedHolder(tx);
+    const sku = await seedSku(tx, holderId);
+    await tx
+      .insert(wmsTables.salesOrderLineCompositions)
+      .values({ salesOrderLineId: order.lineId, skuId: sku.skuId, qtyPerUnit: 1 });
+    return { ...order, channelOrderItemId, channelOrderId: so.channelOrderId, skuId: sku.skuId, holderId };
   }
 
   function requested(
@@ -123,6 +130,68 @@ describeIfDb('CustomerReturnManager — 채널 반품 사실 기록 (K8 PR5)', (
         requestedBy: 'customer',
         orderId: s.salesOrderId,
       });
+    });
+  });
+
+  it('접수가 SKU 항목을 만든다 — 세트 A×2·B×1 줄 1벌이면 A 2·B 1', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const s = await seed(tx);
+      const a = s.skuId;
+      const b = (await seedSku(tx, s.holderId)).skuId;
+      await tx
+        .update(wmsTables.salesOrderLineCompositions)
+        .set({ qtyPerUnit: 2 })
+        .where(eq(wmsTables.salesOrderLineCompositions.salesOrderLineId, s.lineId));
+      await tx
+        .insert(wmsTables.salesOrderLineCompositions)
+        .values({ salesOrderLineId: s.lineId, skuId: b, qtyPerUnit: 1 });
+      const { manager } = makeManager(tx);
+
+      const result = await manager.recordRequested(requested(s), tx);
+
+      const [line] = await linesOf(tx, result.customerReturnId);
+      const items = await tx
+        .select()
+        .from(wmsTables.customerReturnItems)
+        .where(eq(wmsTables.customerReturnItems.customerReturnLineId, line.id));
+      expect(
+        items.map((i) => [i.skuId, i.qtyPerUnit, i.expectedQty, i.acceptedQty, i.rejectedQty, i.heldQty]).sort(),
+      ).toEqual(
+        [
+          [a, 2, 2, null, null, null],
+          [b, 1, 1, null, null, null],
+        ].sort(),
+      );
+    });
+  });
+
+  it('구성 없는 줄이 섞인 접수 → BadRequestError, 기록·줄·항목·이벤트 0', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const s = await seed(tx);
+      const bare = await seedOrder(tx, { quantity: 1 });
+      const bareItem = `item_${randomUUID().slice(0, 8)}`;
+      await tx
+        .update(wmsTables.salesOrderLines)
+        .set({ channelOrderItemId: bareItem, salesOrderId: s.salesOrderId })
+        .where(eq(wmsTables.salesOrderLines.id, bare.lineId));
+      const { manager, events } = makeManager(tx);
+
+      await expect(
+        manager.recordRequested(
+          requested(s, {
+            items: [
+              { channelOrderItemId: s.channelOrderItemId, quantity: 1 },
+              { channelOrderItemId: bareItem, quantity: 1 },
+            ],
+          }),
+          tx,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestError);
+
+      expect(await returnsOf(tx, s.salesOrderId)).toHaveLength(0);
+      expect(await tx.select().from(wmsTables.customerReturnLines)).toEqual([]);
+      expect(await tx.select().from(wmsTables.customerReturnItems)).toEqual([]);
+      expect(events()).toHaveLength(0);
     });
   });
 
