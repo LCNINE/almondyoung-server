@@ -60,6 +60,8 @@ export interface CancellationPreview {
   refundProcessingBusinessDays: number;
   /** 해지 예약을 철회해 자동결제를 재개할 수 있는지. 1회 결제는 되살릴 정기결제가 없어 false. */
   canUndoCancellation: boolean;
+  /** 관리자가 지급한 임시 이용권 계약인지. true 면 고객 해지가 거절되므로 화면이 해지 UI 를 그리지 않는다. */
+  isAdminGrant: boolean;
   /**
    * 환불 대상 결제 내역이 있는지. 관리자 지급·cafe24 이관 계약은 결제가 없어 **환불 유형 자체가
    * 거부된다**(force-cancel 400). 견적 화면이 이 사실을 알아야 관리자가 금액·계좌를 다 채운 뒤에야
@@ -107,7 +109,8 @@ export class SubscriptionCancellationService {
    */
   async previewCancellation(userId: string): Promise<CancellationPreview> {
     const context = await this.loadContextForUser(userId);
-    return this.toPreview(context);
+    const isAdminGrant = (await this.contractReader.findAdminGrantDays(context.contract.id)) !== null;
+    return this.toPreview(context, isAdminGrant);
   }
 
   /** 관리자 환불 견적 — 계약 ID 기준. 강제취소 다이얼로그의 금액 계산기. */
@@ -121,7 +124,8 @@ export class SubscriptionCancellationService {
     const context = await this.contextReader.load({ contract, plan });
     if (!context) throw new ConflictError('활성 이용 권한이 없어 해지 견적을 낼 수 없습니다.');
 
-    return this.toPreview(context);
+    const isAdminGrant = (await this.contractReader.findAdminGrantDays(contract.id)) !== null;
+    return this.toPreview(context, isAdminGrant);
   }
 
   /**
@@ -148,6 +152,8 @@ export class SubscriptionCancellationService {
     // 환불 상한은 캐시 없이 확정한다 — 결제관리에서 방금 나간 환불을 못 보면 상한이 느슨해진다.
     const context = await this.loadContextForUser(userId, { fresh: true });
     const { contract, plan, decision } = context;
+
+    await this.contextReader.assertCustomerCancellable(contract.id);
 
     const mode = params.cancelType ?? decision.recommendedMode;
     const option = mode === 'IMMEDIATE_REFUND' ? decision.immediateRefund : decision.atPeriodEnd;
@@ -258,6 +264,7 @@ export class SubscriptionCancellationService {
   async undoCancellation(userId: string, email: string | undefined): Promise<UndoCancellationResult> {
     const data = await this.contractReader.findContractWithPlan(userId);
     if (!data) throw new NotFoundError('활성 구독이 없습니다.');
+    await this.contextReader.assertCustomerCancellable(data.contract.id);
     if (!data.contract.recurringCancelledAt) {
       throw new ConflictError('해지 예약된 구독이 아닙니다.');
     }
@@ -801,7 +808,7 @@ export class SubscriptionCancellationService {
     return context;
   }
 
-  private toPreview(context: CancellationContext): CancellationPreview {
+  private toPreview(context: CancellationContext, isAdminGrant: boolean): CancellationPreview {
     return {
       contractId: context.contract.id,
       planName: { durationDays: context.plan.durationDays, price: context.plan.price },
@@ -815,6 +822,7 @@ export class SubscriptionCancellationService {
       withdrawalWindowDays: WITHDRAWAL_WINDOW_DAYS,
       refundProcessingBusinessDays: REFUND_PROCESSING_BUSINESS_DAYS,
       canUndoCancellation: context.alreadyScheduledForCancellation && context.isRecurring,
+      isAdminGrant,
       hasPaymentIntent: !!context.contract.lastPaymentIntentId,
       currentPeriodBenefit: context.currentPeriodBenefit,
       benefitPeriodStart: context.benefitPeriodStart,

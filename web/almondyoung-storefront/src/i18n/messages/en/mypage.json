@@ -861,6 +861,7 @@
       "cancelUndoFailed": "Failed to undo cancellation. Please try again shortly.",
       "oneTimeNoCancelNeeded": "This is a one-time payment, so there is no recurring charge. It ends automatically on {date}.",
       "cancelUndoUnavailable": "This was a one-time payment, so there is no auto-payment to restore. You can keep using the membership until it ends.",
+      "grantEndsAutomatically": "It ends automatically when your end date arrives.",
       "cancelScheduledDone": "Your cancellation has been received. You can use the membership until the end date.",
       "cancelImmediateDone": "Your membership has been cancelled.",
       "cancelRefundCompleted": "Your membership was cancelled and {amount} KRW was refunded.",

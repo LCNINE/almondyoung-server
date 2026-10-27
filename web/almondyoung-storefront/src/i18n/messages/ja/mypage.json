@@ -861,6 +861,7 @@
       "cancelUndoFailed": "解約の取り消しに失敗しました。しばらくしてから再度お試しください。",
       "oneTimeNoCancelNeeded": "1回決済のため自動決済はありません。{date}に自動的に終了します。",
       "cancelUndoUnavailable": "1回払いのため、復元する自動決済がありません。終了日まではそのままご利用いただけます。",
+      "grantEndsAutomatically": "終了日までご利用いただくと自動的に終了します",
       "cancelScheduledDone": "解約を受け付けました。終了日までメンバーシップをご利用いただけます。",
       "cancelImmediateDone": "メンバーシップを解約しました。",
       "cancelRefundCompleted": "メンバーシップを解約し、{amount}ウォンを返金しました。",

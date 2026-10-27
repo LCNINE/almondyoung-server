@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { differenceInDays } from 'date-fns';
+import { BadRequestError } from '@app/shared';
 import * as schema from '../../shared/schemas/entities/schema';
 import { SubscriptionContractReader } from './subscription-contract.reader';
 import { BenefitReader } from '../benefit/benefit.reader';
@@ -54,6 +55,16 @@ export class CancellationContextReader {
     private readonly paymentClientService: PaymentClientService,
     private readonly refundPolicy: RefundPolicyService,
   ) {}
+
+  /**
+   * 고객 셀프 해지·해지 철회 전용 가드. 임시 이용권은 종료일에 저절로 끝나므로 대상 계약 기준으로 거절한다.
+   * 관리자 강제취소와 탈퇴 경로는 이 가드를 거치지 않는다.
+   */
+  async assertCustomerCancellable(contractId: string): Promise<void> {
+    if ((await this.contractReader.findAdminGrantDays(contractId)) !== null) {
+      throw new BadRequestError('임시 이용권은 종료일까지 이용하면 자동으로 끝나요.');
+    }
+  }
 
   /**
    * 이번 결제 주기의 시작. 청약철회 창과 «이번 주기에 혜택을 썼는가»가 모두 이 한 점에서 센다.

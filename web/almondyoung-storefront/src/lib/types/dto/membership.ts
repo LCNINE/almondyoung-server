@@ -96,6 +96,8 @@ export interface CancellationPreviewDto {
   refundProcessingBusinessDays: number
   /** 해지 예약을 철회해 자동결제를 재개할 수 있는지 (1회 결제는 false) */
   canUndoCancellation: boolean
+  /** 관리자 지급 임시 이용권 계약 — 고객 해지가 거절된다 */
+  isAdminGrant?: boolean
   options: CancellationOptionDto[]
 }
 
