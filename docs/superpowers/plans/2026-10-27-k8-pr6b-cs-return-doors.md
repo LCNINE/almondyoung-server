@@ -4,7 +4,7 @@
 
 **Goal:** PR 6 의 정상 길이 멈추는 자리마다 CS 가 끝낼 문을 연다. 환불 보류(`held`)는 차감액·메모로 정산하고, 도착 전에 환불을 먼저 낼 수 있고(선환불), 덜 온 반품은 «미도착»으로 닫고 온 것만 정산하며, 영구 거절·멈춘 정산은 같은 요청으로 다시 내거나 계좌 송금으로 바꾼다.
 
-**Architecture:** ① 문은 전부 core 관리자 라우트다 — core 가 반품 기록을 옮기고 같은 트랜잭션에 명령을 싣는다(PR 6 꼴). ② 보류 정산·미도착 닫기·다시 시도는 PR 6 의 `SettleChannelReturn` 에 칸을 더해 같은 Medusa 정산을 탄다. 선환불만 새 명령 `PrepayChannelReturn` 과 새 Medusa 워크플로다. ③ 돈의 장부는 부분취소가 이미 쓰는 두 도구로 맞춘다: 선환불 환불은 Medusa 가 자동으로 «+P 크레딧 라인»을 붙이고(`refundPaymentWorkflow`), 정산이 «−P 상계 크레딧 라인»으로 그것을 품목 값으로 다시 분류한다. CS 차감은 택배비처럼 order edit 의 배송 방법(«반품 차감»)으로 남긴다. ④ 성공은 재수집 관측이, 실패는 channel-adapter 가 사실로 낸다(PR 6 과 같다).
+**Architecture:** ① 문은 전부 core 관리자 라우트다 — core 가 반품 기록을 옮기고 같은 트랜잭션에 명령을 싣는다(PR 6 꼴). ② 보류 정산·미도착 닫기·다시 시도는 PR 6 의 `SettleChannelReturn` 에 칸을 더해 같은 Medusa 정산을 탄다. 선환불만 새 명령 `PrepayChannelReturn` 과 새 Medusa 워크플로다. ③ 돈의 장부: 반품 요청이 열린 동안 Medusa 는 반품 품목 값을 «이미 돌려줄 돈»으로 보아 선환불에 크레딧 라인을 붙이지 않는다(Task 1 실측) — 선환불은 수령이 만든 차액과 산술로 상계되고, 정산은 P 만큼 덜 낸다. 상계 크레딧 라인은 크레딧이 붙은 환불(반품 전 외부 환불)의 몫에만 넣는다(N6). CS 차감은 택배비처럼 order edit 의 배송 방법(«반품 차감»)으로 남긴다. ④ 성공은 재수집 관측이, 실패는 channel-adapter 가 사실로 낸다(PR 6 과 같다).
 
 **Tech Stack:** NestJS + Drizzle(core·channel-adapter), `@app/events` 아웃박스·명령 스트림, `@app/cron-once`, zod 계약(`packages/event-contracts`), Medusa 2.13.4(`refundPaymentWorkflow`·`createOrderCreditLinesWorkflow`·반품 수령 워크플로·order edit), Jest(unit·`describeIfDb` 통합), Medusa HTTP 통합(`@medusajs/test-utils`).
 
@@ -26,6 +26,7 @@
 ## 코드에서 확인한 것 (develop `1ec597794`)
 
 - **Medusa 의 차액.** `pending_difference = current_order_total − transaction_total`(`@medusajs/order/dist/utils/calculate-order-change.js:82`). 주문 변경 없는 환불은 차액을 양수로 민다. 그러나 `refundPaymentWorkflow` 는 환불이 «돌려줄 차액»을 넘으면 넘는 만큼 **크레딧 라인을 자동으로 붙인다**(`core-flows/dist/payment/workflows/refund-payment.js:91-124`) — wallet 직접 환불 투영(`projectWalletRefund`)이 «+X 금액 조정»으로 남는 이유가 이것이다. 부분취소는 그 +X 를 «−X 상계 크레딧 라인»으로 품목 값으로 다시 분류한다(`partial-cancel-order.ts` `offsetExternalRefund`, reference `'partial-cancel'`). Medusa 는 크레딧 라인 합이 0 이하면 0 으로 자른다(같은 함수 주석).
+- **🔴 Task 1 실측(반품 요청이 열린 주문).** `refundPaymentWorkflow` 가 읽는 주문 summary(저장된 값)는 확정된 반품 요청의 품목 값을 «돌려줄 돈»으로 센다(30,000×2 반품 요청 → `pending_difference −60,000`). 같은 주문을 `loadOrderView` 로 읽으면 0 이다 — 두 읽기가 다르다. 그래서 24,000 선환불은 크레딧 라인 0 이고 `loadOrderView` 차액은 +24,000, NOT_PAID 0. 수령 2 확정 → −36,000. 반품 요청 없는 주문의 같은 환불은 크레딧 +24,000(기존 스펙 `partial-cancel.spec.ts:91`·`channel-cancel-settlement.spec.ts:59` 와 같다). 수령 뒤 order edit 에 방법 둘(3,000·2,000) → −55,000, NOT_PAID 0. 할인 줄 품목 값 추정 == 수령 차액. 부분 수령 → `partially_received`, `return_requested_quantity` 1.
 - **반품 수령의 돈.** `RECEIVE_RETURN_ITEM`·`RECEIVE_DAMAGED_RETURN_ITEM` 이 `unit_price × qty` 를 빼고, 할인은 수량 비례(PR 6 Task 1 실측: 수령 1·폐기 1 → −60,000). 부분취소의 `itemRefundEstimate`(`plan-partial-cancel.ts:52`)가 같은 몫을 `unitPrice × q − cancelledAdjustmentShare(adjustments, quantity, quantity − q)` 로 미리 센다. `OrderView.lines` 는 `adjustments` 를 싣는다(`load-order-view.ts:63`).
 - **부분 수령.** `RECEIVE_RETURN_ITEM` 은 `return_requested_quantity` 를 받은 만큼만 줄인다 — 나머지는 요청 상태로 남고 반품은 `partially_received` 다. 남은 품목만 취소하는 지원 워크플로는 없다: `cancelReturnWorkflow` 는 받은 품목이 하나라도 있으면 던진다(`core-flows/dist/order/workflows/return/cancel-return.js:43`), `CANCEL_RETURN_ITEM` 액션은 그 워크플로 안에서만 쓰인다.
 - **PR 6 정산(`settle-order-return.ts`).** 기록 단계 `received → charged → refunded`, 요청 해시 = `hashReturnSettlement(requestId, items)`, `refundMode` 는 해시 밖(«자동 거절 뒤 같은 요청을 수동으로 다시 보낸다»). `assertItemsMatch` 가 품목 집합·수량 합의 일치를 요구한다. `assertNoExternalRefund` 는 `unresolvedExternalRefund(refunds, partialCancelRecords)` 만 본다 — 반품 기록의 상계를 모른다. 택배비는 `addSettlementCharge` 한 방법, 상한은 `owed`.
@@ -42,7 +43,7 @@
 - **N3. 차감은 넘치면 깎는다, 거절하지 않는다.** 차감액은 수령 «뒤» `owed` 를 알아야 판정되는데, 수령 뒤 거절은 반품을 `received` 에 가둔다. 채우는 순서: 선환불·외부 상계 → 택배비(① 반품비 ② 깨짐 ③ 왕복) → 보류 차감. 기록은 요청액과 적용액을 둘 다 남기고 core 결과에 적용액이 간다.
 - **N4. 선환불은 새 명령 `PrepayChannelReturn` 과 새 워크플로 `prepayOrderReturn`.** 설계 §4.4 는 «같은 정산 라우트에 모드»라 했으나, 선환불은 수령·택배비가 없고 반품 하나에 정산과 따로 한 번 있어 진행 기록·실패 사실이 갈린다 — 라우트·기록을 나눈다(설계 §6 «이름은 빌더 몫»). 요청 키는 정산과 같은 core `customer_returns.id`, 환불 메모는 `return-prepay:<id>`(정산은 `return-settle:<id>`).
 - **N5. 선환불 금액.** Medusa 가 계산한다: 품목 값 `V = floor(Σ unitPrice × q − cancelledAdjustmentShare)`(반품 품목 전부), 택배비 예상 `F = planReturnFees(…, returnedNow = 반품 수량, chargeCap = V).total`. 기본 = `V − F`, CS 가 금액을 주면 `1 ≤ amount ≤ V`(넘으면 `prepay_exceeds_item_value`). 상한이 `V` 라 정산의 `owed ≥ P` 가 늘 성립한다 — 그래야 상계 뒤 차액이 양수가 되지 않는다(Task 1 이 `V == owed` 를 실측한다).
-- **N6. 선환불한 금액은 Medusa 환불 행이 정본이다.** 정산은 `return-prepay:<id>` 메모 환불의 합 `P` 를 읽어 `−P` 상계 크레딧 라인(reference `'return-prepay'`, reference_id = requestId)을 넣고 `P` 만큼 덜 낸다. 기록은 보조다 — 응답을 잃은 선환불도 장부 맞추기(`reconcileOrderWalletRefunds`)가 메모로 넣으므로 합에 든다.
+- **N6. 선환불한 금액은 Medusa 환불 행이 정본이고, 상계 크레딧 라인은 «크레딧이 붙은 몫»에만.** 정산은 `return-prepay:<id>` 메모 환불의 합 `P` 와 CS 가 적은 외부 환불 `E` 만큼 덜 낸다. 크레딧 라인이 붙었는지는 환불 때 반품 요청이 열려 있었는지에 달려 있어(Task 1) 환불 행만 보고는 모른다 — 그래서 차액으로 잰다: `B` = 수령 «전» `loadOrderView` 차액(장부 맞추기 뒤). 크레딧 없는 몫은 `B` 에 양수로 들어 있으므로 상계 크레딧 라인 = `clamp(P + E − B, 0, P + E)`(reference `'return-offset'`, reference_id = requestId). 이 식은 그 주문의 다른 돈 일이 끝나 있을 때만 맞다 — `P + E > 0` 인데 `refunded` 가 아닌 부분취소 기록·다른 반품 정산 기록이 있으면 일반 Error(500, 기다림). 응답을 잃은 선환불도 장부 맞추기가 메모로 넣으므로 `P` 에 든다.
 - **N7. 선환불과 정산은 Medusa 주문 잠금이 줄 세운다.** 정산이 먼저 돌면 뒤에 온 선환불은 `return_already_settled`(영구) — core 는 선환불을 `superseded` 로 둔다. 선환불이 먼저면 정산이 뺀다. 그래서 core 는 선환불이 진행 중이어도 검수를 막지 않는다. 선환불은 반품이 `requested`(Medusa)·정산 기록 없음일 때만 열린다.
 - **N8. 미도착 닫기 = 줄의 `missing_qty`.** core 가 줄마다 «온전히 도착한 벌» `min over SKU 항목 floor(도착 / qty_per_unit)` 을 세고 `missing_qty = 줄 수량 − 그 값` 을 쓴다. 정산 명령의 줄 수량은 `quantity − missing_qty`, 0 인 줄은 싣지 않고 `closesMissing: true` 를 싣는다. 검수는 «기대 = 도착»이 아니라 «합 = 도착»만 본다(일부만 온 세트의 구성품도 원장에서 정리돼야 한다). 닫은 뒤 도착은 Conflict. K6 의 세 곳이 `quantity − missing_qty` 를 센다 — 닫힌 수량은 다시 청구할 수 있다.
   - Medusa 는 `closesMissing` 일 때만 «품목 일부·수량 미달»을 받는다(없으면 PR 6 처럼 `items_mismatch`). **남은 반품 품목은 취소하지 않는다**(설계 §4.3 교정) — 지원 워크플로가 없다(위 «부분 수령»). 남은 `return_requested_quantity` 는 그 줄의 재반품을 막을 뿐이다.
@@ -68,7 +69,7 @@
 - 멱등 키(이 계획이 정한다):
   - 정산 명령 `customer-return-settle:<id>:issue:<issues>` (PR 6 형식 그대로, 번호만 `issues`)
   - 선환불 명령 `customer-return-prepay:<id>:issue:<issues>`
-  - Medusa 선환불 메모 `return-prepay:<requestId>`, 상계 크레딧 라인 reference `'return-prepay'`·`'return-external'`(외부 환불 상계), reference_id = requestId
+  - Medusa 선환불 메모 `return-prepay:<requestId>`, 상계 크레딧 라인 reference `'return-offset'`, reference_id = requestId(N6)
   - 선환불 실패 사실 `return-prepay-failed:<requestId>:<deliveryId>:<code(120자까지)>`, 관측 키 `return:<returnId>:prepaid`
 - Medusa 선환불 라우트 응답은 정산 라우트와 같은 모양: 200 / 400 `{ type: 'not_allowed', code: 'return_prepay_rejected', reason, message }` / 400 `{ code: 'wallet_refund_refused:<code>' }` / 502 `{ type: 'refund_pending' }` / 그 밖 500.
 - 게이트:
@@ -79,7 +80,7 @@
 
 ## Review Focus
 
-1. **선환불 뒤 정산의 장부가 0 으로 닫힌다.** 30,000×2 변심 전량, 선환불 기본값 → 정산: 환불 합(선환불 + 정산) = 60,000 − 택배비, 마지막 차액 0, 크레딧 라인 합 0, NOT_PAID 결제 컬렉션 0. CS 가 품목 값 전액을 선환불했으면 정산의 택배비·차감은 0 으로 깎이고 정산 환불 0. — Task 5 통합.
+1. **선환불 뒤 정산의 장부가 0 으로 닫힌다.** 30,000×2 변심 전량, 선환불 기본값 → 정산: 환불 합(선환불 + 정산) = 60,000 − 택배비, 마지막 차액 0, 상계 크레딧 라인 0, NOT_PAID 결제 컬렉션 0. 반품 «전»에 외부 환불(크레딧 +E)이 있던 주문은 상계 −E 로 차액 0. CS 가 품목 값 전액을 선환불했으면 정산의 택배비·차감은 0 으로 깎이고 정산 환불 0. — Task 5 통합.
 2. **보류 차감이 남은 돈보다 크다.** 차감 100,000 요청 → 적용액 = owed − 택배비, 정산 환불 0, 기록에 요청·적용 둘 다, NOT_PAID 0. — Task 3 단위(채우기 순서) + Task 5 통합.
 3. **다시 시도 뒤 크론이 정말 다시 낸다.** `stalled`(attempts 12) → 다시 시도(issues 13) → 5분 뒤 크론이 issue 14 를 싣는다(옛 키와 안 겹친다). — Task 8 통합.
 4. **선환불과 검수 명령이 엇갈린다.** 정산이 먼저 Medusa 에 닿으면 선환불은 `return_already_settled` 이고 core 선환불 `superseded`, 환불 1번. 선환불이 먼저면 정산이 그만큼 덜 낸다. — Task 4·5 통합(Medusa) + Task 8(core 상태).
@@ -98,14 +99,14 @@
 - Consumes: PR 6 `return-settlement-premises.spec.ts` 의 주문 준비 꼴(30,000×2 줄, 반품 2개 요청 확정, wallet 목), settlement 의 `refundOrderPayments`·`loadOrderView`, partial-cancel 의 `cancelledAdjustmentShare`.
 
 - [ ] **Step 1: 스펙 작성**
-  - `it('주문 변경 없는 RETURN 환불 24,000 → 크레딧 라인 +24,000, 차액 0, NOT_PAID 0')` — `refundOrderPayments({ amount: 24000, note: 'return-prepay:t1', mode: 'auto', kind: 'RETURN' })`.
-  - `it('그 뒤 수령 2 확정 → 차액 −60,000, NOT_PAID 0')`.
-  - `it('−24,000 상계 크레딧 라인 → 차액 −36,000, 크레딧 합 0')` — `createOrderCreditLinesWorkflow`(`reference: 'return-prepay'`).
+  - (실측으로 고친 갈래 — 위 «🔴 Task 1 실측») `it('반품 요청이 열린 주문의 RETURN 환불 24,000 → 크레딧 라인 0, 차액 +24,000, NOT_PAID 0')` — `refundOrderPayments({ amount: 24000, note: 'return-prepay:t1', mode: 'auto', kind: 'RETURN' })`.
+  - `it('그 뒤 수령 2 확정 → 차액 −36,000, 남은 36,000 환불 → 차액 0, 크레딧 0, NOT_PAID 0')`.
+  - `it('반품 요청 «전» 환불 24,000 → 크레딧 +24,000·차액 0, 그 뒤 반품 요청·수령 2 → −60,000, −24,000 상계 크레딧 + 36,000 환불 → 차액 0')` — `createOrderCreditLinesWorkflow`(`reference: 'return-offset'`). N6 식의 두 갈래(크레딧 없음·있음)를 끝까지 잰다.
   - `it('5,000 할인이 붙은 줄의 품목 값 추정이 수령 차액과 같다')` — `floor(unitPrice × 2 − cancelledAdjustmentShare(adjs, 2, 0))` == 수령 전후 차액(반올림 전 값 포함해 기록).
   - `it('같은 order edit 에 배송 방법 둘(3,000·2,000) → 차액이 5,000 오르고 NOT_PAID 0')`.
   - `it('2개 요청 중 1개만 수령 확정 → status partially_received, return_requested_quantity 1, 차액 −30,000')`.
 - [ ] **Step 2: 실행** — `scripts/local/run-medusa-integration.sh --testPathPattern 'http/return-prepay-premises\.spec'` → PASS. 빨가면 멈추고 보고.
-- [ ] **Step 3: Commit** — `test(medusa): 선환불 크레딧 라인·상계·품목 값 추정·부분 수령의 차액을 못 박는다 (K8 PR6b)`
+- [ ] **Step 3: Commit** — `test(medusa): 반품 요청이 열린 주문의 선환불·상계·품목 값 추정·부분 수령의 차액을 못 박는다 (K8 PR6b)`
 
 ### Task 2: 계약 — 정산 명령의 CS 칸, 선환불 명령·사실
 
@@ -144,13 +145,13 @@
   - `returnItemValue(lines: OrderView['lines'], items: Array<{ itemId: string; quantity: number }>): number` — N5 식, 내림.
   - `return-prepay-record.ts`: `RETURN_PREPAY_METADATA_KEY = 'almondReturnPrepay'`, `prepayNote(requestId) = 'return-prepay:' + requestId`, `type ReturnPrepayRecord = { requestId; requestHash; stage: 'requested' | 'refunded'; amount: number; itemValue: number; feeEstimate: ReturnSettlementDeduction; memo: string; requestedAt: string; refundedAt?: string; refundMode?: string }`, `readReturnPrepayRecord(metadata: unknown): ReturnPrepayRecord | null`(어긋나면 null), `hashReturnPrepay(requestId, amount: number | null, memo)`, `prepaidTotal(refunds: Array<{ amount: unknown; note?: string | null }>, requestId: string): number`.
   - `ReturnSettlementRecord` 새 칸(전부 선택): `deduction.hold?: number`, `hold?: { requested: number; memo: string }`, `prepaidApplied?: number`, `externalRefundApplied?: number`, `closesMissing?: boolean`. 읽기는 칸이 없으면 PR 6 기록으로 읽는다(옛 기록 호환).
-  - `applyReturnOffsets(input: { owed: number; room: number; prepaid: number; externalRefund: number; fees: ReturnSettlementDeduction; holdRequested: number }): { prepaidApplied: number; externalRefundApplied: number; deduction: ReturnSettlementDeduction /* hold 포함, 깎인 값 */; refundAmount: number }` — N3 순서. `room` = 수령 뒤 `floor(−pendingDifference)`: Medusa `validateOrderCreditLinesStep` 은 음수 라인이 |차액| 을 넘으면 거절하므로 상계 둘의 합은 `room` 안에서(부분취소 `room` 과 같은 이유). `available = owed − prepaidApplied − externalRefundApplied`, 택배비는 `available` 안에서 ①→②→③, 보류는 남은 것 안에서.
+  - `applyReturnOffsets(input: { owed: number; room: number; diffBeforeReceive: number; prepaid: number; externalRefund: number; fees: ReturnSettlementDeduction; holdRequested: number }): { prepaidApplied: number; externalRefundApplied: number; offsetCreditLine: number; deduction: ReturnSettlementDeduction /* hold 포함, 깎인 값 */; refundAmount: number }` — N3 순서, `offsetCreditLine` 은 N6 식(`clamp(prepaidApplied + externalRefundApplied − diffBeforeReceive, 0, 그 합)`, 그리고 `room` 이하). `room` = 수령 뒤 `floor(−pendingDifference)`: Medusa `validateOrderCreditLinesStep` 은 음수 라인이 |차액| 을 넘으면 거절한다(부분취소 `room` 과 같은 이유). `available = owed − prepaidApplied − externalRefundApplied`, 택배비는 `available` 안에서 ①→②→③, 보류는 남은 것 안에서.
   - Medusa 쪽 `ReturnSettlementDeduction`(`plan-return-fees.ts`, 계약을 import 하지 않는 사본)에도 `hold?: number` 를 더한다.
   - 외부 환불 판정: `unresolvedExternalRefund(refunds, [...부분취소 기록, ...loadReturnSettlementRecords])` — 부분취소·반품 정산 두 호출부 모두. 반품 기록의 `externalRefundApplied` 가 빠진다.
 
 - [ ] **Step 1: 실패하는 단위 테스트**
   - `return-item-value`: 할인 없는 30,000×2 중 1 → 30,000. 줄 할인 5,000(수량 2) 중 1 → 27,500. 소수 몫은 내림.
-  - `apply-return-offsets`: `it('선환불 24,000·owed 60,000·택배비 6,000 → 정산 환불 30,000')`, `it('선환불이 owed − 택배비보다 크면 택배비가 깎인다')`(owed 60,000·P 58,000 → 반품비 2,000·깨짐 0), `it('보류 100,000 요청 → 남은 만큼만 적용, 환불 0')`(Review Focus 2), `it('외부 상계는 선환불 다음, 택배비 앞')`, `it('전부 0 이면 환불 = owed')`.
+  - `apply-return-offsets`: `it('선환불 24,000·owed 60,000·택배비 6,000 → 정산 환불 30,000')`, `it('선환불이 owed − 택배비보다 크면 택배비가 깎인다')`(owed 60,000·P 58,000 → 반품비 2,000·깨짐 0), `it('보류 100,000 요청 → 남은 만큼만 적용, 환불 0')`(Review Focus 2), `it('외부 상계는 선환불 다음, 택배비 앞')`, `it('전부 0 이면 환불 = owed, 상계 크레딧 0')`, `it('선환불 24,000 이 수령 전 차액에 +24,000 으로 들어 있으면 상계 크레딧 0')`, `it('크레딧이 붙은 외부 환불 10,000(수령 전 차액 0) → 상계 크레딧 10,000')`, `it('상계 크레딧은 room 을 넘지 않는다')`.
   - `return-prepay-record`: 읽기·쓰기 왕복, 칸 하나 어긋나면 null, `prepaidTotal` 이 다른 메모·다른 requestId 를 빼고 합친다.
   - `plan-shipping`: `it('반품 차감 방법은 원래 방법이 아니다')`.
   - `return-settlement-record`: 새 칸 없는 PR 6 기록이 그대로 읽힌다.
@@ -174,7 +175,7 @@
 - Produces:
   - `type PrepayOrderReturnInput = { orderId; returnId; requestId; amount?: number; refundMode?: RefundMode; memo: string; actorId? }`, `type PrepayOrderReturnResult = { returnId; requestId; amount: number; refund: { mode: RefundMode; amount: number }; stage: 'refunded' }`.
   - `prepayOrderReturn(container, input)` — 주문 잠금 안. 오류 `ReturnPrepayRejected(reason, message)`(reason: `not_our_return`·`return_canceled`·`return_already_settled`·`request_id_conflict`·`prepay_exceeds_item_value`·`external_refund_unresolved`·`pending_refund_outstanding`), `ReturnPrepayRefundPending`, `ReturnPrepayRefundRefused(refusalCode)`.
-  - 흐름: 반품·요청 기록 확인 → 정산 기록이 있거나 반품이 `received`·`partially_received` 면 `return_already_settled` → 선환불 기록이 `refunded` 면 결과 그대로, 해시가 다르면 `request_id_conflict` → (기록 없을 때) 장부 맞추기 → 외부 환불 미해결이면 거절 → 주문 차액이 음수면(돌려줄 돈이 이미 밀려 있다) `pending_refund_outstanding` — 그때 Medusa 는 선환불의 일부만 크레딧 라인으로 붙여 정산의 −P 상계가 잘린다 → `V`·`F` 계산(N5) → 금액 판정 → 기록 `requested` → `refundOrderPayments({ amount, note: prepayNote, mode, kind: 'RETURN' })` → 기록 `refunded`. 이어 가는 호출은 정산과 같은 꼴이다: 장부 맞추기 뒤 같은 메모로 전액을 부르면 `refundOrderPayments` 가 같은 메모의 장부 몫을 빼고 남은 몫만 낸다(`refund-order-payments.ts:31`).
+  - 흐름: 반품·요청 기록 확인 → 정산 기록이 있거나 반품이 `received`·`partially_received` 면 `return_already_settled` → 선환불 기록이 `refunded` 면 결과 그대로, 해시가 다르면 `request_id_conflict` → (기록 없을 때) 장부 맞추기 → 외부 환불 미해결이면 거절 → 주문 차액(`loadOrderView`)이 음수면(돌려줄 돈이 이미 밀려 있다) `pending_refund_outstanding` — N6 의 상계 식은 다른 돈 일이 끝난 주문을 전제한다 → `V`·`F` 계산(N5) → 금액 판정 → 기록 `requested` → `refundOrderPayments({ amount, note: prepayNote, mode, kind: 'RETURN' })` → 기록 `refunded`. 이어 가는 호출은 정산과 같은 꼴이다: 장부 맞추기 뒤 같은 메모로 전액을 부르면 `refundOrderPayments` 가 같은 메모의 장부 몫을 빼고 남은 몫만 낸다(`refund-order-payments.ts:31`).
   - `returnSettlementPreview(container, { orderId, returnId }): Promise<{ itemValue: number; feeEstimate: ReturnSettlementDeduction; defaultPrepayAmount: number; prepaidAmount: number }>` — 선환불과 같은 `V`·`F` 계산 함수를 쓴다(따로 두 벌 쓰지 않는다).
   - 라우트 `POST /admin/orders/:id/returns/:return_id/prepay` 본문 `{ requestId, amount?, refundMode?, memo }`, `GET …/settlement-preview`. 응답 계약은 Global Constraints.
   - `cancelOrderReturn`: 주문 변경을 건드리기 전, `prepaidTotal(주문 환불, 반품의 요청 기록 requestId) > 0` 또는 선환불 기록이 있으면 `ReturnRequestRejected('return_prepaid', '먼저 환불한 반품은 취소할 수 없습니다')`. `ReturnRejectReason` 에 값을 더한다(medusa tsc 가 잡는다 — PR 6 Task 10 교훈).
@@ -208,7 +209,7 @@
   1. `assertItemsMatch` — `closesMissing` 이면 «품목은 반품 품목의 부분집합, 줄마다 `0 < 수령 + 폐기 ≤ 반품 수량`», 아니면 PR 6 그대로.
   2. 외부 환불: `alreadyRefundedAmount` 가 없으면 PR 6 처럼 `external_refund_unresolved`, 있으면 `checkAlreadyRefunded(unresolved, alreadyRefundedAmount)`.
   3. 수령 뒤 `P = prepaidTotal(환불, requestId)`, 택배비 계획의 `chargeCap = max(0, owed − P − alreadyRefundedAmount)`, `applyReturnOffsets` 로 상계·차감·환불액. 기록에 새 칸.
-  4. `charge` 단계: 상계 크레딧 라인 둘(`'return-prepay'`·`'return-external'`, 0 이면 건너뜀) → 택배비·보류 차감을 한 `addSettlementCharge`(`charges: [{ 반품 택배비, 합 }, { 반품 차감, hold }]`). 셋 다 이미 있으면 건너뛰므로 이어 가기가 두 번 넣지 않는다. 기록 `charged`.
+  4. `charge` 단계: 상계 크레딧 라인 하나(`'return-offset'`, 금액 `offsetCreditLine`, 0 이면 건너뜀) → 택배비·보류 차감을 한 `addSettlementCharge`(`charges: [{ 반품 택배비, 합 }, { 반품 차감, hold }]`). 셋 다 이미 있으면 건너뛰므로 이어 가기가 두 번 넣지 않는다. 기록 `charged`.
 - [ ] **Step 1: 실패하는 통합 테스트**
   - `it('선환불 기본값 뒤 정산 → 환불 합 60,000 − 택배비, 마지막 차액 0, 크레딧 합 0, NOT_PAID 0')`(Review Focus 1).
   - `it('품목 값 전액 선환불 뒤 정산 → 택배비 0 으로 깎임, 정산 환불 0, 차액 0')`.
@@ -217,6 +218,7 @@
   - `it('closesMissing 로 2개 중 1개만 정산 → partially_received, 환불 30,000 − 택배비')`, `it('closesMissing 없이 1개만 → 400 items_mismatch')`.
   - `it('외부 환불 있는 주문 + alreadyRefundedAmount → 그만큼 상계, 뒤의 부분취소가 그 외부 환불을 다시 묻지 않는다')`, `it('alreadyRefundedAmount 가 미해결보다 크면 400 external_refund_exceeds')`.
   - `it('received 에서 끊긴 보류 정산을 같은 요청으로 이어 가면 «반품 차감»·상계 라인이 하나씩')`.
+  - `it('반품 «전» 외부 환불(크레딧 +10,000) + alreadyRefundedAmount 10,000 → 상계 −10,000, 마지막 차액 0')`, `it('선환불이 있는데 환불 안 끝난 부분취소 기록이 있으면 500, 반품 그대로')`(N6 의 전제).
   - `it('같은 requestId 에 보류 차감액만 다르면 400 request_id_conflict')`.
 - [ ] **Step 2: 실행** — `scripts/local/run-medusa-integration.sh --testPathPattern 'http/return-settle\.spec'` → FAIL.
 - [ ] **Step 3: 구현**.
