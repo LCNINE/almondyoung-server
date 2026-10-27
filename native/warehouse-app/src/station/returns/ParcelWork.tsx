@@ -140,7 +140,9 @@ export function ParcelWork({
     inFlight.current = true;
     setBusy(true);
     try {
-      onArrived(await recordArrival(api, view.id, body));
+      const arrivedView = await recordArrival(api, view.id, body);
+      signal('complete');
+      onArrived(arrivedView);
     } catch (error) {
       if (isUncertainWrite(error)) {
         setPending(body);
@@ -199,7 +201,10 @@ export function ParcelWork({
     armed === 'send'
       ? { kind: 'notice', title: '새 소포면 F10 한 번 더' }
       : armed === 'discard'
-        ? { kind: 'notice', title: '한 번 더 누르면 센 수량을 버려요' }
+        ? {
+          kind: 'notice',
+          title: pending ? '한 번 더 누르면 목록으로 — 보낸 소포는 다시 열어 확인하세요' : '한 번 더 누르면 센 수량을 버려요',
+        }
         : pending
           ? { kind: 'alert', message: UNCERTAIN_MESSAGE }
           : alert

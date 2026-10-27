@@ -183,6 +183,31 @@ describe('검수 — Esc', () => {
     expect(inspectionPosts(server)).toHaveLength(0);
   });
 
+  it('Esc 가 확정 대기를 풀면 알림 줄도 걷는다', async () => {
+    setupReturns({ returns: [TWO, READY] });
+    await openByScan('8805001');
+    await typeHuman(['1']);
+    press('F10');
+    expect(await screen.findByText(REFUND_PROMPT)).toBeInTheDocument();
+    press('Escape');
+    await waitFor(() => expect(screen.queryByText(REFUND_PROMPT)).toBeNull());
+    expect(region()).toBeInTheDocument();
+  });
+
+  it('결과를 모른 채 서버가 정산까지 넘겼어도 같은 결과 재전송은 성공 — 목록으로, 409 없음', async () => {
+    const { server } = setupReturns({ returns: [TWO, READY] });
+    await openByScan('8805001');
+    await typeHuman(['1']);
+    server.failNext({ method: 'POST', applied: true });
+    press('F10');
+    press('F10');
+    expect(await screen.findByRole('alert')).toHaveTextContent(UNCERTAIN);
+    server.setStatus(TWO.id, 'settled');
+    press('F10');
+    await waitFor(() => expect(orderNos()).toEqual(['O-1003']));
+    expect(screen.queryByRole('region', { name: '검수' })).toBeNull();
+  });
+
   it('결과를 모르면 입력이 없어도 두 번 — 첫 Esc 는 «한 번 더 누르면 입력을 버려요»', async () => {
     const { server } = setupReturns({ returns: [TWO] });
     await openByScan('8805001');

@@ -6,6 +6,7 @@ import { AWAITING, PARTIAL, READY, listed, orderNos, setupReturns } from './__fi
 import type { ArrivalBody, FakeReturn, ReturnsServer } from './__fixtures__/returnsServer';
 
 const SUCCESS_HZ = 1760;
+const COMPLETE_HZ = 1568;
 
 const bar = () => within(screen.getByRole('toolbar', { name: '기능키' }));
 const region = () => screen.getByRole('region', { name: '소포 세기' });
@@ -180,6 +181,27 @@ describe('도착 확정 F10', () => {
     expect(body.idempotencyKey.length).toBeGreaterThan(0);
   });
 
+  it('도착 확정이 성공하면 완료음 — 다 오면 검수로, 덜 오면 목록으로 가는 두 길 모두', async () => {
+    const full = setupReturns({ returns: [BULK] });
+    await openByScan('8806001');
+    await typeHuman(['1', '2', 'ArrowDown', '5']);
+    await waitFor(() => expect(arrivalKey()).toBeInTheDocument());
+    press('F10');
+    expect(await screen.findByRole('region', { name: '검수' })).toBeInTheDocument();
+    expect(full.beeps.at(-1)?.frequency).toBe(COMPLETE_HZ);
+    expect(flash()).toBe('complete');
+  });
+
+  it('덜 와도 도착 확정이 성공하면 완료음', async () => {
+    const { beeps } = setupReturns({ returns: [BULK] });
+    await openByScan('8806002');
+    scan('8806002');
+    await waitFor(() => expect(parcelOf('cri-6b')).toBe('1'));
+    press('F10');
+    expect(await screen.findByText('남은 물건은 CS 가 정해요')).toBeInTheDocument();
+    expect(beeps.at(-1)?.frequency).toBe(COMPLETE_HZ);
+  });
+
   it('덜 오면 «남은 물건은 CS 가 정해요» 뒤 목록 — 0 인 줄은 보내지 않는다', async () => {
     const { server } = setupReturns({ returns: [BULK] });
     await openByScan('8806002');
@@ -321,14 +343,14 @@ describe('결과를 모르는 도착', () => {
     press('F10');
     expect(await screen.findByRole('alert')).toHaveTextContent('결과를 확인하지 못했어요 — F10 다시 보내기');
     press('Escape');
-    expect(await screen.findByText('한 번 더 누르면 센 수량을 버려요')).toBeInTheDocument();
+    expect(await screen.findByText('한 번 더 누르면 목록으로 — 보낸 소포는 다시 열어 확인하세요')).toBeInTheDocument();
     server.failNext({ method: 'POST' });
     press('F10');
     await waitFor(() => expect(arrivalPosts(server)).toHaveLength(2));
     expect(await screen.findByRole('alert')).toHaveTextContent('결과를 확인하지 못했어요 — F10 다시 보내기');
-    expect(screen.queryByText('한 번 더 누르면 센 수량을 버려요')).toBeNull();
+    expect(screen.queryByText('한 번 더 누르면 목록으로 — 보낸 소포는 다시 열어 확인하세요')).toBeNull();
     press('Escape');
-    expect(await screen.findByText('한 번 더 누르면 센 수량을 버려요')).toBeInTheDocument();
+    expect(await screen.findByText('한 번 더 누르면 목록으로 — 보낸 소포는 다시 열어 확인하세요')).toBeInTheDocument();
     expect(region()).toBeInTheDocument();
   });
 

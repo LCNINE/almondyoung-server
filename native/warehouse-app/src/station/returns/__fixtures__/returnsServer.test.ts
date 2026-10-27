@@ -57,6 +57,10 @@ describe('가짜 core 의 반품 규칙(테스트 하네스)', () => {
     expect(await statusOf(recordInspection(api, 'cr-1', inspect(1, 0, 1)))).toBe('ok');
     expect(await statusOf(recordInspection(api, 'cr-1', inspect(2)))).toBe(409);
     expect(api.inspections).toHaveLength(1);
+    // 정산까지 넘어간 뒤의 같은 결과 재전송도 core 처럼 그대로(INSPECTED_STATUSES)
+    api.setStatus('cr-1', 'settled');
+    expect(await statusOf(recordInspection(api, 'cr-1', inspect(1, 0, 1)))).toBe('ok');
+    expect(await statusOf(recordInspection(api, 'cr-1', inspect(2)))).toBe(409);
   });
 
   it('failNext — 네트워크 오류·상태, applied 면 반영하고 응답만 잃는다', async () => {

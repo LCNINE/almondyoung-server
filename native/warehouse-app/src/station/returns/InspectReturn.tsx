@@ -182,6 +182,7 @@ export function InspectReturn({
 
   /** Esc — 첫 누름이면 그것만 푼다. 입력했거나 결과를 모르면 한 번 더 눌러야 버린다(소포 세기와 같다) */
   const back = () => {
+    onActivity();
     if (armed === 'confirm') setArmed(null);
     else if (armed === 'discard' || (!touched && pending === null)) toList();
     else setArmed('discard');

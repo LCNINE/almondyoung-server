@@ -8,7 +8,7 @@ type Req = Parameters<ApiClient['request']>[0];
 
 export { WAREHOUSE_ID };
 
-export type FakeReturnStatus = 'expected' | 'arrived' | 'cancelled' | 'inspected' | 'held';
+export type FakeReturnStatus = 'expected' | 'arrived' | 'cancelled' | 'inspected' | 'held' | 'refund_pending' | 'settled';
 
 export interface FakeReturnItem {
   id: string;
@@ -87,7 +87,7 @@ export function maskName(name: string): string {
 }
 
 const STAGE_ORDER: Record<ReceivingItem['stage'], number> = { ready: 0, partial: 1, awaiting: 2 };
-const INSPECTED: readonly FakeReturnStatus[] = ['inspected', 'held'];
+const INSPECTED: readonly FakeReturnStatus[] = ['inspected', 'held', 'refund_pending', 'settled'];
 
 const conflict = (message: string) => new ConflictError(message, 'CONFLICT');
 const badRequest = (path: string, message: string) => {

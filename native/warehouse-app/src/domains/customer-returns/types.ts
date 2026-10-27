@@ -8,9 +8,9 @@ export interface ReturnItem {
   qtyPerUnit: number;
   expectedQty: number;
   arrivedQty: number;
-  acceptedQty: number;
-  rejectedQty: number;
-  heldQty: number;
+  acceptedQty: number | null;
+  rejectedQty: number | null;
+  heldQty: number | null;
   /** 주 바코드 먼저, 그다음 오름차순. */
   barcodes: string[];
 }
