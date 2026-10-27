@@ -6,6 +6,7 @@ import { seedWorld, World } from '../../fulfillment/order-progress/__support__/o
 import { seedDeliveredLine } from '../line-quantities/__support__/claim-facts.fixtures';
 import { CustomerReturnManager } from './customer-return.manager';
 import { CustomerReturnReader } from './customer-return.reader';
+import { ListCustomerReturnsQueryDto } from './dto/list-customer-returns.dto';
 import { CustomerReturnReceivingManager } from './customer-return-receiving.manager';
 
 /**
@@ -200,6 +201,191 @@ describeIfDb('CustomerReturnReader — 상세 뷰 (K8 PR7)', () => {
       const view = await wired.reader.findById(s.customerReturnId, tx);
       expect(view.windowOverrideReason).toBe('고객센터 승인');
       expect(view.cancelledAt).toBe('2026-10-27T05:00:00.000Z');
+    });
+  });
+
+  describe('목록 (K8 PR7 N2)', () => {
+    const NOW = new Date('2026-10-28T03:00:00Z');
+    const query = (over: Partial<ListCustomerReturnsQueryDto> = {}): ListCustomerReturnsQueryDto =>
+      Object.assign(new ListCustomerReturnsQueryDto(), over);
+
+    async function seedReturn(
+      tx: DbTx,
+      wired: Wired,
+      set: Partial<typeof wmsTables.customerReturns.$inferInsert> = {},
+      orderSet: Partial<typeof wmsTables.salesOrders.$inferInsert> = {},
+    ) {
+      const w = await seedWorld(tx);
+      const s = await seed(tx, w, wired);
+      if (Object.keys(set).length > 0) {
+        await tx.update(wmsTables.customerReturns).set(set).where(eq(wmsTables.customerReturns.id, s.customerReturnId));
+      }
+      if (Object.keys(orderSet).length > 0) {
+        await tx.update(wmsTables.salesOrders).set(orderSet).where(eq(wmsTables.salesOrders.id, s.salesOrderId));
+      }
+      return s;
+    }
+    const idsOf = (page: { items: Array<{ id: string }> }, mine: string[]) =>
+      page.items.map((i) => i.id).filter((id) => mine.includes(id));
+
+    it('open 은 settled·cancelled 를 빼고 기한 이른 순, 도착 없는 반품은 뒤', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const wired = wire();
+        const late = await seedReturn(tx, wired, { arrivedAt: new Date('2026-10-27T03:00:00Z'), status: 'arrived' });
+        const early = await seedReturn(tx, wired, { arrivedAt: new Date('2026-10-20T03:00:00Z'), status: 'arrived' });
+        const none = await seedReturn(tx, wired);
+        const settled = await seedReturn(tx, wired, { status: 'settled', settledAt: new Date('2026-10-26T00:00:00Z') });
+        const cancelled = await seedReturn(tx, wired, {
+          status: 'cancelled',
+          cancelledAt: new Date('2026-10-26T00:00:00Z'),
+        });
+        const mine = [late, early, none, settled, cancelled].map((s) => s.customerReturnId);
+        const page = await wired.reader.list(query({ limit: 100 }), NOW, tx);
+        expect(idsOf(page, mine)).toEqual([early.customerReturnId, late.customerReturnId, none.customerReturnId]);
+      });
+    });
+
+    it('held·refund_pending·inspected 는 open 에 남는다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const wired = wire();
+        const a = await seedReturn(tx, wired, { status: 'held' });
+        const b = await seedReturn(tx, wired, { status: 'refund_pending' });
+        const c = await seedReturn(tx, wired, { status: 'inspected' });
+        const mine = [a, b, c].map((s) => s.customerReturnId);
+        const page = await wired.reader.list(query({ limit: 100 }), NOW, tx);
+        expect(idsOf(page, mine).sort()).toEqual([...mine].sort());
+      });
+    });
+
+    it('attention 은 확인 필요가 있는 것만, attentionCount 는 세 bucket 에서 같다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const wired = wire();
+        const held = await seedReturn(tx, wired, { status: 'held' });
+        const fine = await seedReturn(tx, wired);
+        const closed = await seedReturn(tx, wired, { status: 'settled', settledAt: new Date('2026-10-26T00:00:00Z') });
+        const mine = [held, fine, closed].map((s) => s.customerReturnId);
+        const att = await wired.reader.list(query({ bucket: 'attention', limit: 100 }), NOW, tx);
+        expect(idsOf(att, mine)).toEqual([held.customerReturnId]);
+        expect(att.items.find((i) => i.id === held.customerReturnId)?.attention).toEqual(['held']);
+        const open = await wired.reader.list(query({ limit: 100 }), NOW, tx);
+        const done = await wired.reader.list(query({ bucket: 'closed', limit: 100 }), NOW, tx);
+        expect(open.attentionCount).toBe(att.attentionCount);
+        expect(done.attentionCount).toBe(att.attentionCount);
+        expect(att.total).toBe(att.attentionCount);
+      });
+    });
+
+    it('closed 는 끝난 순 최신부터, limit·offset 이 자른다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const wired = wire();
+        const old = await seedReturn(tx, wired, { status: 'settled', settledAt: new Date('2026-10-20T00:00:00Z') });
+        const mid = await seedReturn(tx, wired, { status: 'cancelled', cancelledAt: new Date('2026-10-22T00:00:00Z') });
+        const recent = await seedReturn(tx, wired, { status: 'settled', settledAt: new Date('2026-10-26T00:00:00Z') });
+        const mine = [old, mid, recent].map((s) => s.customerReturnId);
+        const all = await wired.reader.list(query({ bucket: 'closed', limit: 100 }), NOW, tx);
+        expect(idsOf(all, mine)).toEqual([recent.customerReturnId, mid.customerReturnId, old.customerReturnId]);
+        expect(all.total).toBeGreaterThanOrEqual(3);
+        const first = await wired.reader.list(query({ bucket: 'closed', limit: 1, offset: 0 }), NOW, tx);
+        const second = await wired.reader.list(query({ bucket: 'closed', limit: 1, offset: 1 }), NOW, tx);
+        expect(first.items).toHaveLength(1);
+        expect(second.items).toHaveLength(1);
+        expect(first.items[0].id).toBe(all.items[0].id);
+        expect(second.items[0].id).toBe(all.items[1].id);
+        expect(first.total).toBe(all.total);
+      });
+    });
+
+    it('q 는 주문번호 정확 일치·채널 주문 id 정확 일치·고객명 부분 일치', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const wired = wire();
+        const a = await seedReturn(tx, wired, {}, { displayOrderNo: '987654', customerName: '김철수' });
+        const b = await seedReturn(tx, wired, {}, { displayOrderNo: '9876540', customerName: '박영희' });
+        const ids = async (q: string, bucket: 'open' | 'closed' = 'open') =>
+          (await wired.reader.list(query({ q, bucket, limit: 100 }), NOW, tx)).items.map((i) => i.id);
+        expect(await ids('987654')).toEqual([a.customerReturnId]);
+        expect(await ids(a.channelOrderId)).toEqual([a.customerReturnId]);
+        expect(await ids('영희')).toEqual([b.customerReturnId]);
+        expect(await ids('없는사람')).toEqual([]);
+        await tx
+          .update(wmsTables.customerReturns)
+          .set({ status: 'settled', settledAt: new Date('2026-10-26T00:00:00Z') })
+          .where(eq(wmsTables.customerReturns.id, b.customerReturnId));
+        expect(await ids('영희', 'closed')).toEqual([b.customerReturnId]);
+        expect(await ids('영희')).toEqual([]);
+      });
+    });
+
+    it('행이 orderNo·customerName·quantity·productSummary·refundAmount 를 싣는다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const wired = wire();
+        const s = await seedReturn(
+          tx,
+          wired,
+          {
+            status: 'settled',
+            settledAt: new Date('2026-10-26T00:00:00Z'),
+            settlementOutcome: {
+              refundAmount: 12300,
+              deduction: { amount: 0, kind: 'none' } as never,
+              feeNotAdjusted: false,
+              refundMode: 'auto',
+              settledAt: '2026-10-26T00:00:00.000Z',
+            },
+          },
+          { displayOrderNo: '4242', customerName: '홍길동' },
+        );
+        const [line] = await tx
+          .select({ productName: wmsTables.salesOrderLines.productName })
+          .from(wmsTables.salesOrderLines)
+          .where(eq(wmsTables.salesOrderLines.id, s.lineId));
+        const page = await wired.reader.list(query({ bucket: 'closed', q: '4242' }), NOW, tx);
+        expect(page.items).toHaveLength(1);
+        expect(page.items[0]).toMatchObject({
+          id: s.customerReturnId,
+          salesOrderId: s.salesOrderId,
+          orderNo: '4242',
+          channelOrderId: s.channelOrderId,
+          customerName: '홍길동',
+          status: 'settled',
+          reason: 'defective',
+          quantity: 2,
+          productSummary: line.productName,
+          refundAmount: 12300,
+          settledAt: '2026-10-26T00:00:00.000Z',
+          cancelledAt: null,
+          attention: [],
+        });
+
+        // 줄이 둘이면 «첫 품목 외 1건» — 같은 주문에 두 번째 줄과 그 반품 줄을 직접 더한다
+        const w = await seedWorld(tx);
+        const two = await seed(tx, w, wired);
+        const [first] = await tx
+          .select({
+            productName: wmsTables.salesOrderLines.productName,
+            variantId: wmsTables.salesOrderLines.variantId,
+          })
+          .from(wmsTables.salesOrderLines)
+          .where(eq(wmsTables.salesOrderLines.id, two.lineId));
+        const [second] = await tx
+          .insert(wmsTables.salesOrderLines)
+          .values({
+            salesOrderId: two.salesOrderId,
+            variantId: first.variantId,
+            productName: 'ZZ 둘째 품목',
+            quantity: 3,
+            channelOrderItemId: `zzz_${randomUUID().slice(0, 8)}`,
+          })
+          .returning({ id: wmsTables.salesOrderLines.id, itemId: wmsTables.salesOrderLines.channelOrderItemId });
+        await tx.insert(wmsTables.customerReturnLines).values({
+          customerReturnId: two.customerReturnId,
+          salesOrderLineId: second.id,
+          channelOrderItemId: second.itemId ?? '',
+          quantity: 3,
+        });
+        const page2 = await wired.reader.list(query({ q: two.channelOrderId }), NOW, tx);
+        expect(page2.items[0].productSummary).toBe(`${first.productName} 외 1건`);
+        expect(page2.items[0].quantity).toBe(5);
+      });
     });
   });
 });

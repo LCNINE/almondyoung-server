@@ -10,6 +10,7 @@ export const PII_ROUTES: readonly string[] = [
   'channel-adapter GET /adapter/event-failures/outbox/:id',
   'channel-adapter GET /adapter/order-collection-failures',
   'channel-adapter GET /adapter/order-collection-failures/:id',
+  'core GET /admin/customer-returns',
   'core GET /admin/exchange-requests',
   'core GET /admin/exchange-requests/:id',
   'core GET /admin/print-orders',

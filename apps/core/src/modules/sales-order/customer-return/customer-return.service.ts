@@ -10,6 +10,7 @@ import type {
 import { DbTx } from '../../inventory/schema/inventory.schema';
 import { CustomerReturnManager } from './customer-return.manager';
 import { CustomerReturnReader } from './customer-return.reader';
+import type { ListCustomerReturnsQueryDto } from './dto/list-customer-returns.dto';
 import {
   CustomerReturnReceivingManager,
   RecordCustomerReturnArrivalInput,
@@ -43,6 +44,10 @@ export class CustomerReturnService {
 
   findById(id: string, tx?: DbTx) {
     return this.reader.findById(id, tx);
+  }
+
+  list(query: ListCustomerReturnsQueryDto, now: Date = new Date(), tx?: DbTx) {
+    return this.reader.list(query, now, tx);
   }
 
   recordArrival(input: RecordCustomerReturnArrivalInput, tx?: DbTx) {

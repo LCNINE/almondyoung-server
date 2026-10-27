@@ -1,11 +1,23 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequirePermission, RequireScopes, ScopeGuard, User } from '@app/authorization';
+import { PiiResponse, RequirePermission, RequireScopes, ScopeGuard, User } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../platform/auth/inventory-scopes';
 import {
   WarehouseActor,
   authenticatedWarehouseActor,
 } from '../../inventory/core/services/warehouse-operation-contract';
+import { ListCustomerReturnsQueryDto } from './dto/list-customer-returns.dto';
 import { CustomerReturnService } from './customer-return.service';
 import { RecordCustomerReturnArrivalDto, RecordCustomerReturnInspectionDto } from './dto/customer-return-receiving.dto';
 import {
@@ -18,12 +30,23 @@ import {
 /**
  * 고객 반품 기록(K8 PR6) — 조회와 창고의 도착·검수, CS 의 미도착 닫기·보류 정산·선환불과
  * 정산·선환불의 다시 시도·계좌 송금(PR6b).
- * 응답에 고객 개인정보는 없다(반품·줄·SKU 항목의 수량과 상태, CS 메모뿐).
+ * 고객 개인정보는 목록의 고객명뿐이고 `@PiiResponse` 가 가린다. 상세·쓰기 응답엔 없다(수량·상태·CS 메모뿐).
  */
 @ApiTags('Admin - Customer Returns')
 @Controller('admin/customer-returns')
 export class CustomerReturnsController {
   constructor(private readonly service: CustomerReturnService) {}
+
+  @PiiResponse({
+    fields: { 'items[].customerName': 'name' },
+    subjects: [{ path: 'items[].salesOrderId', type: 'sales_order' }],
+  })
+  @RequirePermission('order.claim.read')
+  @Get()
+  @ApiOperation({ summary: '반품 목록 — 진행 중(open)·확인 필요(attention)·끝남(closed), 주문번호·고객명 검색' })
+  list(@Query() query: ListCustomerReturnsQueryDto) {
+    return this.service.list(query);
+  }
 
   @RequirePermission('order.claim.read')
   @Get(':id')
