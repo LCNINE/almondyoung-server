@@ -12,7 +12,6 @@ import { formatKstDate } from '../format';
 import { CustomerReturnSheet } from '../customer-return-sheet';
 
 const PAGE_SIZE = 20;
-const ACTIVE_LIMIT = 100;
 
 interface Props {
   bucket: CustomerReturnBucket;
@@ -26,10 +25,7 @@ export function CustomerReturnsTable({ bucket, q, onBucketChange, onSearch }: Pr
   const [draft, setDraft] = useState(q);
   const [selected, setSelected] = useState<{ id: string; customerName: string | null } | null>(null);
 
-  const query =
-    bucket === 'closed'
-      ? { bucket, q, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }
-      : { bucket, q, limit: ACTIVE_LIMIT };
+  const query = { bucket, q, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE };
   const { data, isLoading, isError } = useCustomerReturns(query);
 
   const items = data?.items ?? [];
@@ -144,7 +140,7 @@ export function CustomerReturnsTable({ bucket, q, onBucketChange, onSearch }: Pr
         </Table>
       )}
 
-      {bucket === 'closed' && totalPages > 1 && (
+      {totalPages > 1 && (
         <div className="flex justify-center gap-2 text-sm">
           <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>
             이전
