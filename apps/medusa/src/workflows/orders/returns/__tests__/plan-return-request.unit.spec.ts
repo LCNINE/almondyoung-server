@@ -62,7 +62,7 @@ describe('planReturnRequest', () => {
   });
 
   it('core 줄 없음 또는 deliveredUnits 0 → not_delivered', () => {
-    expect(reasonOf(() => planReturnRequest({ ...base, core: { found: true, lines: [] } }))).toBe('not_delivered');
+    expect(reasonOf(() => planReturnRequest({ ...base, core: { found: true, lines: [], customerReturns: [] } }))).toBe('not_delivered');
     expect(reasonOf(() => planReturnRequest({ ...base, core: core(0) }))).toBe('not_delivered');
   });
 

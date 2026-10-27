@@ -168,6 +168,11 @@ describeIfDb('readReturnEligibility', () => {
         lines: [{ salesOrderLineId: line.lineId, quantity: 1 }],
       });
 
+      await tx
+        .update(wmsTables.customerReturns)
+        .set({ requestedAt: new Date(Date.now() + 3_600_000) })
+        .where(eq(wmsTables.customerReturns.id, arrived.customerReturnId));
+
       const result = await readReturnEligibility(tx, ORDER_ID);
       const idOf = async (id: string) =>
         (
@@ -177,11 +182,12 @@ describeIfDb('readReturnEligibility', () => {
             .where(eq(wmsTables.customerReturns.id, id))
         )[0].c;
       expect(result.customerReturns).toHaveLength(2);
+      // 읽기는 requestedAt, id 순 — 접수 시각이 이른 expected 가 먼저다
       expect(result.customerReturns).toEqual(
-        expect.arrayContaining([
+        [
           { channelReturnId: await idOf(expected.customerReturnId), status: 'expected' },
           { channelReturnId: await idOf(arrived.customerReturnId), status: 'arrived' },
-        ]),
+        ],
       );
     });
   });

@@ -2,7 +2,7 @@ import type { ReturnSettlementRecord } from '../../returns/return-settlement-rec
 import { priorGroupFeesFor } from '../prior-group-fees';
 
 const ret = (stage: ReturnSettlementRecord['stage'], groupFees: Record<string, number>, orderVersion: number): ReturnSettlementRecord => ({
-  requestId: 'r', requestHash: 'h', stage, items: [], owed: 0,
+  requestId: 'r', requestHash: 'h', stage, items: [], owed: 0, chargeShippingOptionId: null,
   deduction: { returnShipping: 0, freeShippingBreak: 0, roundTrip: 0 },
   feeNotAdjusted: false, refundAmount: 0, groupFees, orderVersion, receivedAt: 't',
 });
