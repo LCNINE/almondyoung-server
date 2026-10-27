@@ -17,11 +17,12 @@ describe('activeTabOf — 가장 긴 접두어가 이긴다', () => {
     ['/stocktaking/s-1/variances', 'F5'],
     ['/inventory', 'F6'],
     ['/inventory/sku-1/adjust', 'F6'],
+    ['/customer-returns', 'F7'],
   ])('%s → %s', (path, key) => {
     expect(activeTabOf(path)?.key).toBe(key);
   });
 
-  it.each(['/', '/settings', '/diagnostics', '/station/command-sheet', '/outboundx'])('%s 는 어느 탭도 아니다', (path) => {
+  it.each(['/', '/settings', '/diagnostics', '/station/command-sheet', '/outboundx', '/returns'])('%s 는 어느 탭도 아니다', (path) => {
     expect(activeTabOf(path)).toBeNull();
   });
 });
@@ -38,8 +39,9 @@ describe('activeSectionOf', () => {
 });
 
 describe('STATION_TABS', () => {
-  it('F1~F6 순서, 각 탭의 첫 경로는 자기 탭에 속한다', () => {
-    expect(STATION_TABS.map((t) => t.key)).toEqual(['F1', 'F2', 'F3', 'F4', 'F5', 'F6']);
+  it('F1~F7 순서, 각 탭의 첫 경로는 자기 탭에 속한다', () => {
+    expect(STATION_TABS.map((t) => t.key)).toEqual(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7']);
+    expect(STATION_TABS.at(-1)).toMatchObject({ key: 'F7', label: '반품', to: '/customer-returns' });
     for (const tab of STATION_TABS) expect(activeTabOf(tab.to)?.key).toBe(tab.key);
   });
 

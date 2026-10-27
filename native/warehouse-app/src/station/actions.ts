@@ -46,17 +46,17 @@ export function dispatchKey(resolved: ReadonlyMap<StationKey, StationAction>, ke
   return action.enabled ? { kind: 'run', action } : { kind: 'disabled', action };
 }
 
+/** 셸의 탭 전환 액션 id 접두어 — 탭 바에 이미 그려져 있다. */
+export const TAB_ACTION_PREFIX = 'tab-';
+
 /**
  * 기능키 바: 켜진 것만(U2 — 지금 안 되는 것·권한 없는 것은 그리지 않는다), 키 순서(F1…F12, Esc 는 맨 끝).
- * `omit` 은 다른 곳에 이미 그려진 키다 — 탭 바의 F1~F6 을 바에 또 그리지 않는다.
+ * 셸의 탭 액션은 탭 바에 이미 있어 빼되, 키로 빼지 않는다 — 화면이 같은 키를 선언하면(F1 검수 중 F7 «수량») 그 액션은 바에 남는다.
  */
-export function functionBarItems(
-  resolved: ReadonlyMap<StationKey, StationAction>,
-  omit: ReadonlySet<StationKey>
-): StationAction[] {
+export function functionBarItems(resolved: ReadonlyMap<StationKey, StationAction>): StationAction[] {
   return STATION_KEYS.flatMap((key) => {
     const action = resolved.get(key);
-    return action && action.enabled && !omit.has(key) ? [action] : [];
+    return action && action.enabled && !action.id.startsWith(TAB_ACTION_PREFIX) ? [action] : [];
   });
 }
 

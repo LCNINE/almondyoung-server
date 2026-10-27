@@ -71,7 +71,7 @@ export function renderStation(Screen: () => ReactNode, opts: { runtime: WorkRunt
   const sink: ToneSink = { now: () => 0, beep: (b) => void beeps.push(b) };
   const path = opts.path ?? '/outbound';
   const root = createRootRoute({ component: () => <StationShell sink={sink} /> });
-  const routes = ['/outbound', '/outbound/batches', '/inbound', '/settings'].map((p) =>
+  const routes = ['/outbound', '/outbound/batches', '/inbound', '/customer-returns', '/settings'].map((p) =>
     createRoute({
       getParentRoute: () => root,
       path: p,

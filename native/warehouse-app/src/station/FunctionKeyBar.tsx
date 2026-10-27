@@ -2,10 +2,9 @@ import { cn } from '../core/design/cn';
 import { useRegistryApi, useResolvedActions } from './ActionRegistry';
 import { functionBarItems } from './actions';
 import { Kbd } from './Kbd';
-import type { StationKey } from './keys';
 
 /** 기능키 바 56px(스펙 §5.1). 마우스로 눌러도 같은 액션이 돈다 — 실행은 늘 최신 등록에서 꺼낸다. */
-export function FunctionKeyBar({ omit }: { omit: ReadonlySet<StationKey> }) {
+export function FunctionKeyBar() {
   const resolved = useResolvedActions();
   const api = useRegistryApi();
   return (
@@ -14,7 +13,7 @@ export function FunctionKeyBar({ omit }: { omit: ReadonlySet<StationKey> }) {
       aria-label="기능키"
       className="flex h-14 shrink-0 items-center gap-2 border-t border-[#D5D8DE] bg-white px-3 print:hidden"
     >
-      {functionBarItems(resolved, omit).map((action) => (
+      {functionBarItems(resolved).map((action) => (
         <button
           key={action.id}
           type="button"

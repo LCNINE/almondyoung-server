@@ -147,6 +147,7 @@ it('예전 스테이션 홈 타일의 작업에 탭·하위 탭으로 모두 닿
     ['F5', null, '/stocktaking'],
     ['F1', null, '/outbound'],
     ['F2', null, '/outbound/batches'],
+    ['F7', null, '/customer-returns'],
   ];
   for (const [key, section, path] of cases) {
     fireEvent.keyDown(window, { key });
@@ -184,4 +185,27 @@ it('스테이션의 F1 은 출고 검수, F2 는 배치 현황 화면이다', as
   fireEvent.keyDown(window, { key: 'F2' });
   await waitFor(() => expect(router.state.location.pathname).toBe('/outbound/batches'));
   expect(await screen.findByText('진행 중인 배치가 없어요.')).toBeInTheDocument();
+});
+
+it('스테이션의 F7 은 반품 탭 — 송장 대기에서 누르면 도착 대기 목록이다', async () => {
+  const { session, setAuthed } = makeStub();
+  setAuthed(true);
+  const prefs = createMemoryPrefs({ 'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '부천 창고' }) });
+  const stationClient: ApiClient = {
+    request: (async (opts: { path: string }) =>
+      opts.path.startsWith('/admin/customer-return-receiving')
+        ? { items: [], total: 0 }
+        : opts.path.startsWith('/outbound-batches') || opts.path.startsWith('/outbound-refills')
+          ? []
+          : { data: [], total: 0 }) as unknown as ApiClient['request'],
+  };
+  const router = renderAppRouter(['/outbound'], session, prefs, stationClient);
+  expect(await screen.findByText('송장 바코드')).toBeInTheDocument();
+  fireEvent.keyDown(window, { key: 'F7' });
+  await waitFor(() => expect(router.state.location.pathname).toBe('/customer-returns'));
+  expect(await screen.findByText('도착 대기 반품이 없어요')).toBeInTheDocument();
+  expect(within(screen.getByRole('navigation', { name: '탭' })).getByRole('link', { name: /반품/ })).toHaveAttribute(
+    'data-active',
+    'true'
+  );
 });

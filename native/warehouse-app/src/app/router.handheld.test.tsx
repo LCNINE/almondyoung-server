@@ -234,4 +234,34 @@ describe('handheld hub navigation', () => {
     expect(await screen.findByRole('heading', { name: '출고작업' })).toBeInTheDocument();
     expect(screen.queryByText('송장 바코드')).toBeNull();
   });
+  it('핸드헬드에 반품 경로로 들어오면 스테이션 작업이라고만 알린다', async () => {
+    const session = stub();
+    const client: ApiClient = {
+      request: (async (opts: { path: string }) => {
+        if (opts.path === '/inventory/warehouses') return [];
+        return { data: [], total: 0 };
+      }) as unknown as ApiClient['request'],
+    };
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const router = createAppRouter(session);
+    render(
+      <SessionProvider session={session}>
+        <QueryClientProvider client={qc}>
+          <ApiClientProvider client={client}>
+            <WarehouseProvider prefs={createMemoryPrefs()}>
+              <ScanProvider>
+                <RouterProvider router={router} />
+              </ScanProvider>
+            </WarehouseProvider>
+          </ApiClientProvider>
+        </QueryClientProvider>
+      </SessionProvider>
+    );
+    await screen.findByRole('link', { name: /재고조회/ });
+    await act(async () => {
+      await router.navigate({ to: '/customer-returns' });
+    });
+    expect(await screen.findByRole('heading', { name: '반품' })).toBeInTheDocument();
+    expect(screen.getByText('스테이션에서 하는 작업이에요')).toBeInTheDocument();
+  });
 });

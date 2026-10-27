@@ -4,9 +4,9 @@ import { parseCommand } from './commandCode';
 import { COMMAND_SHEET_SECTIONS, SHEET_DIGITS, digitEntry, keyEntry } from './commandSheet';
 
 describe('명령 바코드 시트', () => {
-  it('첫 절은 탭 F1~F6 — IME 켠 PC 에서 명령이 읽히는지 바로 확인한다', () => {
+  it('첫 절은 탭 F1~F7 — IME 켠 PC 에서 명령이 읽히는지 바로 확인한다', () => {
     expect(COMMAND_SHEET_SECTIONS[0].title).toBe('탭');
-    expect(COMMAND_SHEET_SECTIONS[0].actions.map((a) => a.key)).toEqual(['F1', 'F2', 'F3', 'F4', 'F5', 'F6']);
+    expect(COMMAND_SHEET_SECTIONS[0].actions.map((a) => a.key)).toEqual(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7']);
   });
 
   it('둘째 절은 출고 검수 — 화면이 선언하는 액션과 같은 값(F7~F12, Esc)', () => {

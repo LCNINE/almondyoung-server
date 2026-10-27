@@ -30,6 +30,7 @@ import { OutboundBatchesRoute } from './routes/OutboundBatchesRoute';
 import { OutboundRoute } from './routes/OutboundRoute';
 import { SimpleOutboundRoute } from './routes/SimpleOutboundRoute';
 import { WithdrawRoute } from './routes/WithdrawRoute';
+import { CustomerReturnsRoute } from './routes/CustomerReturnsRoute';
 import { CommandSheetScreen } from '../station/CommandSheetScreen';
 import type { ShipmentByWaybill } from '../domains/outbound/types';
 
@@ -202,6 +203,13 @@ const outboundWithdrawRoute = createRoute({
   component: WithdrawRoute,
 });
 
+// 스테이션 F7 반품 — 고객 반품의 도착·검수(K8 PR7b). 핸드헬드는 안내만 한다
+const customerReturnsRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/customer-returns',
+  component: CustomerReturnsRoute,
+});
+
 // --- 공통 유틸 ---
 const settingsRoute = createRoute({
   getParentRoute: () => authedRoute,
@@ -240,6 +248,7 @@ export const routeTree = rootRoute.addChildren([
     outboundBatchesRoute,
     outboundSimpleRoute,
     outboundWithdrawRoute,
+    customerReturnsRoute,
     settingsRoute,
     commandSheetRoute,
   ]),
