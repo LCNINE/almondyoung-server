@@ -284,7 +284,20 @@ export default function MembershipPaymentMethodContent() {
         }
         // 응답만 잃고 가입은 됐거나(시간 초과) 이미 가입돼 있으면, 다시 시도는 거절만 받는다.
         const current = await getCurrentSubscription().catch(() => undefined)
-        if (current) {
+        // 임시 이용권 보유자는 구독이 이미 있어도 가입된 게 아니다. 현재 계약에 정기결제 약정이 붙었을 때만 가입으로 본다.
+        const agreements = current?.adminGrant
+          ? await getBillingAgreements().catch(() => [])
+          : []
+        const alreadySubscribed =
+          !!current &&
+          (!current.adminGrant ||
+            agreements.some(
+              (a) =>
+                a.subscriberType === "MEMBERSHIP" &&
+                a.status === "ACTIVE" &&
+                a.subscriberRef === current.id
+            ))
+        if (alreadySubscribed) {
           toast.success(t("alreadyMemberToast"))
           router.push(`/${countryCode}/mypage/membership`)
           return

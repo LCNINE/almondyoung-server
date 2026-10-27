@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react"
 import { differenceInCalendarDays } from "date-fns"
 import { useTranslations } from "next-intl"
 import { useParams, useRouter } from "next/navigation"
+import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import { getCmsBillingMethodStatuses } from "@lib/api/wallet"
 import { isInvoiceBillingEnabled } from "@lib/utils/invoice-billing"
@@ -62,6 +63,15 @@ export default function MemberDetails({
   const isRecurring = !adminGrant && (isInTrial || !!recurringNextBillingDate)
   const membershipEndDate =
     membershipData?.currentPeriodEnd ?? membershipData?.endDate ?? null
+
+  // 임시 이용권 남은 일수 (오늘 기준 달력 일수, 최소 0)
+  const grantRemainingDays =
+    adminGrant && membershipEndDate
+      ? Math.max(
+          0,
+          differenceInCalendarDays(new Date(membershipEndDate), today)
+        )
+      : 0
 
   const tierCode =
     membershipData?.tier?.code ?? membershipData?.plan?.tier?.code ?? "-"
@@ -146,6 +156,22 @@ export default function MemberDetails({
           {tierCode}
         </span>
       </div>
+
+      {adminGrant && (
+        <div className="mx-auto mt-3 mb-4 flex w-full flex-col gap-3.5 md:max-w-[360px]">
+          {grantRemainingDays > 0 && (
+            <p className="text-foreground text-center text-[13px] leading-[1.6]">
+              {t("subscription.grantSignupHint", { days: grantRemainingDays })}
+            </p>
+          )}
+          <LocalizedClientLink
+            href="/mypage/membership/subscribe/payment"
+            className="bg-primary flex h-12 w-full items-center justify-center rounded-xl text-[15px] font-bold text-white"
+          >
+            {t("subscription.grantSignupCta")}
+          </LocalizedClientLink>
+        </div>
+      )}
 
       {/* 2. 구분선 */}
       <hr className="w-full border-t border-gray-200" />

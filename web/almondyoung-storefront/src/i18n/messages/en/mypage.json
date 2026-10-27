@@ -802,6 +802,8 @@
       "EXPIRED": "Expired"
     },
     "subscription": {
+      "grantSignupHint": "Join now and still keep your remaining {days} days",
+      "grantSignupCta": "Join membership",
       "temporaryPass": "Temporary pass ({days} days)",
       "monthly": "Monthly subscription",
       "annual": "Annual subscription",

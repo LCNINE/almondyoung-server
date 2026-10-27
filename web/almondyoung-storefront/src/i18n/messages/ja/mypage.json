@@ -802,6 +802,8 @@
       "EXPIRED": "期限切れ"
     },
     "subscription": {
+      "grantSignupHint": "今ご加入いただいても、残り{days}日間はそのままご利用いただけます",
+      "grantSignupCta": "メンバーシップに加入する",
       "temporaryPass": "一時利用券（{days}日間）",
       "monthly": "月額プラン",
       "annual": "年額プラン",

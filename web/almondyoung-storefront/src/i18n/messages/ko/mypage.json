@@ -802,6 +802,8 @@
       "EXPIRED": "만료됨"
     },
     "subscription": {
+      "grantSignupHint": "지금 가입해도 남은 {days}일은 그대로 써요",
+      "grantSignupCta": "멤버십 가입하기",
       "temporaryPass": "임시 이용권 ({days}일)",
       "monthly": "월간 구독",
       "annual": "연간 구독",
