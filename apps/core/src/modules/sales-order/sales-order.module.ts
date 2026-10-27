@@ -39,6 +39,7 @@ import { CustomerReturnSettlementManager } from './customer-return/customer-retu
 import { CustomerReturnCsManager } from './customer-return/customer-return-cs.manager';
 import { CustomerReturnSettlementRetryCron } from './customer-return/customer-return-settlement-retry.cron';
 import { CustomerReturnsController } from './customer-return/customer-returns.controller';
+import { CustomerReturnReceivingController } from './customer-return/customer-return-receiving.controller';
 import { OrderCancellation } from './order-cancellation/order-cancellation';
 import { OrderCancellationReader } from './order-cancellation/order-cancellation.reader';
 import { INTERNAL_KEY_ENV } from '@app/authorization';
@@ -103,6 +104,7 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
     AdminReturnExchangeController,
     // 반품 기록 조회·도착·검수(K8 PR6)
     CustomerReturnsController,
+    CustomerReturnReceivingController,
     OrderEventsConsumer,
     // 채널 대사(#1016 45번)의 묶음 조회 — 호출자는 channel-adapter
     SalesOrdersInternalController,

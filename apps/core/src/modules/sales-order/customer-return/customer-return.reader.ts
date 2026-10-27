@@ -6,6 +6,9 @@ import { NotFoundError } from '@app/shared';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { CustomerReturnAttention, customerReturnAttention, refundDueAt } from './customer-return-attention';
 import type { ListCustomerReturnsQueryDto } from './dto/list-customer-returns.dto';
+import type { ListReceivingCustomerReturnsQueryDto } from './dto/list-receiving-customer-returns.dto';
+import { maskName } from '../../fulfillment/reader/recipient-snapshot';
+import { deliveredParcelsSql } from '../line-quantities/line-quantities.sql';
 import type {
   CustomerReturnCsResolution,
   CustomerReturnPrepayment,
@@ -99,6 +102,34 @@ export type CustomerReturnListPage = {
   attentionCount: number;
 };
 
+/** 창고 도착 대기 목록의 단계 (K8 PR7b N3) — awaiting: 도착 전, partial: 덜 옴, ready: 검수 대기 */
+export type CustomerReturnReceivingStage = 'awaiting' | 'partial' | 'ready';
+
+/** 창고 도착 대기 목록 한 행 (K8 PR7b N3). 고객명은 가려서만 싣는다(N4) — 원문이 아니라 `@PiiResponse` 대상이 아니다. */
+export type CustomerReturnReceivingItem = {
+  id: string;
+  orderNo: string;
+  customerMasked: string;
+  productSummary: string;
+  /** SKU 항목 기대 수량의 합 */
+  expectedQty: number;
+  /** SKU 항목 도착 수량의 합 */
+  arrivedQty: number;
+  stage: CustomerReturnReceivingStage;
+  requestedAt: string;
+};
+
+/** 반품 한 건의 줄 요약과 수량 합 — 목록 둘(CS·창고)이 같이 쓴다 */
+type CustomerReturnSummary = {
+  quantity: number;
+  missingQty: number;
+  productSummary: string;
+  expectedQty: number;
+  arrivedQty: number;
+};
+
+const RECEIVING_STAGE_ORDER: Record<CustomerReturnReceivingStage, number> = { ready: 0, partial: 1, awaiting: 2 };
+
 /** 진행 중 반품을 전부 읽는다(N2). 공정이 묶는 수라 자르지 않고, 이 수를 넘으면 경고만 남긴다. */
 const OPEN_WARN_THRESHOLD = 500;
 const CLOSED_STATUSES: CustomerReturnStatus[] = ['settled', 'cancelled'];
@@ -186,19 +217,141 @@ export class CustomerReturnReader {
     );
   }
 
-  /** 목록 행들에 줄 요약·수량 합·확인 필요를 붙인다. 합은 반품 id 로 group by 해 따로 읽는다. */
-  private async decorate(
-    trx: DbTx,
-    rows: Array<{
-      record: typeof wmsTables.customerReturns.$inferSelect;
-      channelOrderId: string;
-      displayOrderNo: string | null;
-      customerName: string | null;
-    }>,
-    now: Date,
-  ): Promise<CustomerReturnListItem[]> {
-    if (rows.length === 0) return [];
-    const ids = rows.map((row) => row.record.id);
+  /**
+   * 창고 도착 대기 목록(K8 PR7b N3). `arrived` 는 W 에서 첫 도착한 것, `expected` 는 그 판매주문을 W 가 배송완료한 것
+   * (도착 검증 `assertReceivingWarehouse` 와 같은 술어 — 후보 판매주문 전부를 한 번에 판정한다).
+   * 단계 ready → partial → awaiting, 그다음 요청 이른 순·id 순. 진행 중 반품 수만큼이라 TS 로 판정·정렬한 뒤 자른다.
+   */
+  async listForReceiving(
+    query: ListReceivingCustomerReturnsQueryDto,
+    tx?: DbTx,
+  ): Promise<{ items: CustomerReturnReceivingItem[]; total: number }> {
+    return this.dbService.run(async (trx) => {
+      const r = wmsTables.customerReturns;
+      const so = wmsTables.salesOrders;
+      const warehouseId = query.warehouseId;
+
+      // barcode: 그 바코드(정확 일치)를 가진 SKU 의 항목이 있는 반품 — 상관 없는 서브쿼리라 진행 중 후보 안에서만 거른다
+      const barcode = query.barcode?.trim();
+      const l = wmsTables.customerReturnLines;
+      const i = wmsTables.customerReturnItems;
+      const b = wmsTables.skuBarcodes;
+      const withBarcode = barcode
+        ? inArray(
+            r.id,
+            trx
+              .select({ customerReturnId: l.customerReturnId })
+              .from(i)
+              .innerJoin(l, eq(l.id, i.customerReturnLineId))
+              .innerJoin(b, eq(b.skuId, i.skuId))
+              .where(eq(b.barcode, barcode)),
+          )
+        : undefined;
+
+      const candidates = await trx
+        .select({
+          id: r.id,
+          salesOrderId: r.salesOrderId,
+          status: r.status,
+          requestedAt: r.requestedAt,
+          csResolution: r.csResolution,
+          channelOrderId: so.channelOrderId,
+          displayOrderNo: so.displayOrderNo,
+          customerName: so.customerName,
+        })
+        .from(r)
+        .innerJoin(so, eq(so.id, r.salesOrderId))
+        .where(
+          and(
+            or(and(eq(r.status, 'arrived'), eq(r.warehouseId, warehouseId)), eq(r.status, 'expected')),
+            this.searchCondition(query.q),
+            withBarcode,
+          ),
+        );
+      const delivered = await this.salesOrdersDeliveredBy(
+        trx,
+        warehouseId,
+        candidates.filter((row) => row.status === 'expected').map((row) => row.salesOrderId),
+      );
+      const scoped = candidates.filter((row) => row.status === 'arrived' || delivered.has(row.salesOrderId));
+      const summaries = await this.summarize(
+        trx,
+        scoped.map((row) => row.id),
+      );
+
+      const items = scoped
+        .map((row): CustomerReturnReceivingItem => {
+          const summary = summaries.get(row.id);
+          const expectedQty = summary?.expectedQty ?? 0;
+          const arrivedQty = summary?.arrivedQty ?? 0;
+          const stage: CustomerReturnReceivingStage =
+            row.status === 'expected'
+              ? 'awaiting'
+              : arrivedQty >= expectedQty || row.csResolution?.missing
+                ? 'ready'
+                : 'partial';
+          return {
+            id: row.id,
+            orderNo: row.displayOrderNo ?? row.channelOrderId,
+            customerMasked: maskName(row.customerName ?? ''),
+            productSummary: summary?.productSummary ?? '',
+            expectedQty,
+            arrivedQty,
+            stage,
+            requestedAt: row.requestedAt.toISOString(),
+          };
+        })
+        .sort((x, y) => {
+          const byStage = RECEIVING_STAGE_ORDER[x.stage] - RECEIVING_STAGE_ORDER[y.stage];
+          if (byStage !== 0) return byStage;
+          const byRequested = Date.parse(x.requestedAt) - Date.parse(y.requestedAt);
+          if (byRequested !== 0) return byRequested;
+          return x.id < y.id ? -1 : x.id > y.id ? 1 : 0;
+        });
+      return { items: items.slice(0, query.limit), total: items.length };
+    }, tx);
+  }
+
+  /**
+   * 판매주문들 중 W 가 배송완료한 것 — `deliveredParcelsSql` 의 상자 라인 × `shipments.warehouse_id = W`.
+   * 도착 검증(`assertReceivingWarehouse`)과 같은 술어를 주문마다가 아니라 한 번에 부른다.
+   */
+  private async salesOrdersDeliveredBy(trx: DbTx, warehouseId: string, salesOrderIds: string[]): Promise<Set<string>> {
+    if (salesOrderIds.length === 0) return new Set();
+    const ids = sql.join(
+      [...new Set(salesOrderIds)].map((id) => sql`${id}::uuid`),
+      sql`, `,
+    );
+    const s = wmsTables.shipments;
+    const sl = wmsTables.shipmentLines;
+    const foi = wmsTables.fulfillmentOrderItems;
+    const fo = wmsTables.fulfillmentOrders;
+    const rows = await trx
+      .selectDistinct({ salesOrderId: fo.salesOrderId })
+      .from(sl)
+      .innerJoin(s, eq(s.id, sl.shipmentId))
+      .innerJoin(foi, eq(foi.id, sl.fulfillmentOrderItemId))
+      .innerJoin(fo, eq(fo.id, foi.fulfillmentOrderId))
+      .where(
+        and(
+          eq(s.warehouseId, warehouseId),
+          inArray(
+            sl.id,
+            sql`(select delivered_parcel.shipment_line_id from (${deliveredParcelsSql(sql`select x.id from unnest(ARRAY[${ids}]::uuid[]) as x(id)`)}) as delivered_parcel)`,
+          ),
+        ),
+      );
+    const delivered = new Set<string>();
+    for (const row of rows) if (row.salesOrderId) delivered.add(row.salesOrderId);
+    return delivered;
+  }
+
+  /**
+   * 반품들의 줄 요약(«첫 품목 외 N건»)·줄 수량·미도착 수량과 SKU 항목 기대·도착 합.
+   * 합은 반품 id 로 group by 해 따로 읽는다(조인 없는 select 의 상관 서브쿼리 금지 — `itemsOf` 주석).
+   */
+  private async summarize(trx: DbTx, ids: string[]): Promise<Map<string, CustomerReturnSummary>> {
+    if (ids.length === 0) return new Map();
     const l = wmsTables.customerReturnLines;
     const i = wmsTables.customerReturnItems;
     const a = wmsTables.customerReturnArrivals;
@@ -230,11 +383,43 @@ export class CustomerReturnReader {
     const expectedBy = new Map(expected.map((row) => [row.customerReturnId, row.qty]));
     const arrivedBy = new Map(arrived.map((row) => [row.customerReturnId, row.qty]));
 
+    return new Map(
+      ids.map((id) => {
+        const mine = lines.filter((line) => line.customerReturnId === id);
+        const first = mine[0]?.productName ?? '';
+        return [
+          id,
+          {
+            quantity: mine.reduce((sum, line) => sum + line.quantity, 0),
+            missingQty: mine.reduce((sum, line) => sum + line.missingQty, 0),
+            productSummary: mine.length > 1 ? `${first} 외 ${mine.length - 1}건` : first,
+            expectedQty: expectedBy.get(id) ?? 0,
+            arrivedQty: arrivedBy.get(id) ?? 0,
+          },
+        ];
+      }),
+    );
+  }
+
+  /** 목록 행들에 줄 요약·수량 합·확인 필요를 붙인다. 합은 반품 id 로 group by 해 따로 읽는다. */
+  private async decorate(
+    trx: DbTx,
+    rows: Array<{
+      record: typeof wmsTables.customerReturns.$inferSelect;
+      channelOrderId: string;
+      displayOrderNo: string | null;
+      customerName: string | null;
+    }>,
+    now: Date,
+  ): Promise<CustomerReturnListItem[]> {
+    if (rows.length === 0) return [];
+    const summaries = await this.summarize(
+      trx,
+      rows.map((row) => row.record.id),
+    );
+
     return rows.map(({ record, channelOrderId, displayOrderNo, customerName }) => {
-      const mine = lines.filter((line) => line.customerReturnId === record.id);
-      const quantity = mine.reduce((sum, line) => sum + line.quantity, 0);
-      const missingQty = mine.reduce((sum, line) => sum + line.missingQty, 0);
-      const first = mine[0]?.productName ?? '';
+      const summary = summaries.get(record.id);
       return {
         id: record.id,
         salesOrderId: record.salesOrderId,
@@ -250,8 +435,8 @@ export class CustomerReturnReader {
         refundDueAt: record.arrivedAt ? refundDueAt(record.arrivedAt).toISOString() : null,
         settledAt: record.settledAt?.toISOString() ?? null,
         cancelledAt: record.cancelledAt?.toISOString() ?? null,
-        quantity,
-        productSummary: mine.length > 1 ? `${first} 외 ${mine.length - 1}건` : first,
+        quantity: summary?.quantity ?? 0,
+        productSummary: summary?.productSummary ?? '',
         refundAmount: record.settlementOutcome?.refundAmount ?? null,
         attention: customerReturnAttention(
           {
@@ -259,9 +444,9 @@ export class CustomerReturnReader {
             arrivedAt: record.arrivedAt,
             settlementState: record.settlement?.state ?? null,
             prepaymentState: record.prepayment?.state ?? null,
-            expectedQty: expectedBy.get(record.id) ?? 0,
-            arrivedQty: arrivedBy.get(record.id) ?? 0,
-            missingQty,
+            expectedQty: summary?.expectedQty ?? 0,
+            arrivedQty: summary?.arrivedQty ?? 0,
+            missingQty: summary?.missingQty ?? 0,
           },
           now,
         ),

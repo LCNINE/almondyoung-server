@@ -3,10 +3,11 @@ import { eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb, makeDbService, wireLogistics } from '../../fulfillment/services/__support__';
 import { seedWorld, World } from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
-import { seedDeliveredLine } from '../line-quantities/__support__/claim-facts.fixtures';
+import { seedComponentSku, seedDeliveredLine } from '../line-quantities/__support__/claim-facts.fixtures';
 import { CustomerReturnManager } from './customer-return.manager';
 import { CustomerReturnReader } from './customer-return.reader';
 import { ListCustomerReturnsQueryDto } from './dto/list-customer-returns.dto';
+import { ListReceivingCustomerReturnsQueryDto } from './dto/list-receiving-customer-returns.dto';
 import { CustomerReturnReceivingManager } from './customer-return-receiving.manager';
 
 /**
@@ -406,6 +407,215 @@ describeIfDb('CustomerReturnReader — 상세 뷰 (K8 PR7)', () => {
         const page2 = await wired.reader.list(query({ q: two.channelOrderId }), NOW, tx);
         expect(page2.items[0].productSummary).toBe(`${first.productName} 외 1건`);
         expect(page2.items[0].quantity).toBe(5);
+      });
+    });
+  });
+
+  describe('listForReceiving (K8 PR7b N3)', () => {
+    const receivingQuery = (
+      warehouseId: string,
+      over: Partial<ListReceivingCustomerReturnsQueryDto> = {},
+    ): ListReceivingCustomerReturnsQueryDto =>
+      Object.assign(new ListReceivingCustomerReturnsQueryDto(), { warehouseId }, over);
+    const setReturn = (tx: DbTx, id: string, set: Partial<typeof wmsTables.customerReturns.$inferInsert>) =>
+      tx.update(wmsTables.customerReturns).set(set).where(eq(wmsTables.customerReturns.id, id));
+
+    it('W 가 배송완료한 expected 반품만 awaiting 으로 싣고, 다른 창고가 배송한 주문은 뺀다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const wired = wire();
+        const w = await seedWorld(tx);
+        const w2 = await seedWorld(tx);
+        const mine = await seed(tx, w, wired);
+        const theirs = await seed(tx, w2, wired);
+        await tx
+          .update(wmsTables.salesOrders)
+          .set({ displayOrderNo: '7100', customerName: '홍길동' })
+          .where(eq(wmsTables.salesOrders.id, mine.salesOrderId));
+        const [line] = await tx
+          .select({ productName: wmsTables.salesOrderLines.productName })
+          .from(wmsTables.salesOrderLines)
+          .where(eq(wmsTables.salesOrderLines.id, mine.lineId));
+
+        const page = await wired.reader.listForReceiving(receivingQuery(w.warehouseId), tx);
+        expect(page.items).toEqual([
+          {
+            id: mine.customerReturnId,
+            orderNo: '7100',
+            customerMasked: '홍길*',
+            productSummary: line.productName,
+            expectedQty: 2,
+            arrivedQty: 0,
+            stage: 'awaiting',
+            requestedAt: '2026-10-27T01:00:00.000Z',
+          },
+        ]);
+        expect(page.total).toBe(1);
+        const atW2 = await wired.reader.listForReceiving(receivingQuery(w2.warehouseId), tx);
+        expect(atW2.items.map((i) => i.id)).toEqual([theirs.customerReturnId]);
+        // 고객명이 없으면 빈 문자열, 주문번호가 없으면 채널 주문 id
+        expect(atW2.items[0]).toMatchObject({ orderNo: theirs.channelOrderId, customerMasked: '' });
+      });
+    });
+
+    it('W 에서 첫 도착한 반품은 W 에만 보인다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const wired = wire();
+        const w = await seedWorld(tx);
+        const w2 = await seedWorld(tx);
+        const s = await seed(tx, w, wired);
+        await s.arrive([{ skuId: w.skuId, quantity: 1 }]);
+        // 소포의 창고를 W2 로 옮겨도(«W2 가 배송완료») 받기 시작한 반품은 첫 도착 창고에만 남는다
+        await tx
+          .update(wmsTables.shipments)
+          .set({ warehouseId: w2.warehouseId })
+          .where(eq(wmsTables.shipments.id, s.parcels[0].shipmentId));
+
+        const atW = await wired.reader.listForReceiving(receivingQuery(w.warehouseId), tx);
+        expect(atW.items.map((i) => [i.id, i.stage])).toEqual([[s.customerReturnId, 'partial']]);
+        const atW2 = await wired.reader.listForReceiving(receivingQuery(w2.warehouseId), tx);
+        expect(atW2).toEqual({ items: [], total: 0 });
+      });
+    });
+
+    it('단계: 덜 온 arrived 는 partial, 다 온 arrived·미도착으로 닫힌 arrived 는 ready', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const wired = wire();
+        const w = await seedWorld(tx);
+        const partial = await seed(tx, w, wired);
+        await partial.arrive([{ skuId: w.skuId, quantity: 1 }]);
+        const full = await seed(tx, w, wired);
+        await full.arrive([{ skuId: w.skuId, quantity: 2 }]);
+        const closed = await seed(tx, w, wired);
+        await closed.arrive([{ skuId: w.skuId, quantity: 1 }]);
+        await setReturn(tx, closed.customerReturnId, {
+          csResolution: { missing: { memo: '한 개 안 옴', by: 'cs-1', at: '2026-10-27T05:00:00.000Z' } },
+        });
+
+        const page = await wired.reader.listForReceiving(receivingQuery(w.warehouseId), tx);
+        const byId = new Map(page.items.map((i) => [i.id, i]));
+        expect(byId.get(partial.customerReturnId)).toMatchObject({ stage: 'partial', expectedQty: 2, arrivedQty: 1 });
+        expect(byId.get(full.customerReturnId)).toMatchObject({ stage: 'ready', expectedQty: 2, arrivedQty: 2 });
+        expect(byId.get(closed.customerReturnId)).toMatchObject({ stage: 'ready', expectedQty: 2, arrivedQty: 1 });
+        expect(page.total).toBe(3);
+      });
+    });
+
+    it('inspected·held·cancelled 는 싣지 않는다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const wired = wire();
+        const w = await seedWorld(tx);
+        const inspected = await seed(tx, w, wired);
+        await inspected.arrive([{ skuId: w.skuId, quantity: 2 }]);
+        await inspected.inspect([{ skuId: w.skuId, accepted: 2 }]);
+        const held = await seed(tx, w, wired);
+        await held.arrive([{ skuId: w.skuId, quantity: 2 }]);
+        await held.inspect([{ skuId: w.skuId, accepted: 1, held: 1 }]);
+        const cancelled = await seed(tx, w, wired);
+        await setReturn(tx, cancelled.customerReturnId, {
+          status: 'cancelled',
+          cancelledAt: new Date('2026-10-27T05:00:00Z'),
+        });
+        const open = await seed(tx, w, wired);
+
+        expect((await wired.reader.findById(inspected.customerReturnId, tx)).status).toBe('inspected');
+        expect((await wired.reader.findById(held.customerReturnId, tx)).status).toBe('held');
+        const page = await wired.reader.listForReceiving(receivingQuery(w.warehouseId), tx);
+        expect(page.items.map((i) => i.id)).toEqual([open.customerReturnId]);
+        expect(page.total).toBe(1);
+      });
+    });
+
+    it('정렬은 ready → partial → awaiting, 그다음 요청 이른 순', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const wired = wire();
+        const w = await seedWorld(tx);
+        const awaitingLate = await seed(tx, w, wired);
+        const awaitingEarly = await seed(tx, w, wired);
+        const tieA = await seed(tx, w, wired);
+        const tieB = await seed(tx, w, wired);
+        const partial = await seed(tx, w, wired);
+        await partial.arrive([{ skuId: w.skuId, quantity: 1 }]);
+        const ready = await seed(tx, w, wired);
+        await ready.arrive([{ skuId: w.skuId, quantity: 2 }]);
+        // 받는 쪽일수록 요청이 늦게 — 단계가 시각보다 먼저인지 본다
+        await setReturn(tx, ready.customerReturnId, { requestedAt: new Date('2026-10-27T09:00:00Z') });
+        await setReturn(tx, partial.customerReturnId, { requestedAt: new Date('2026-10-27T08:00:00Z') });
+        await setReturn(tx, awaitingLate.customerReturnId, { requestedAt: new Date('2026-10-27T03:00:00Z') });
+        await setReturn(tx, awaitingEarly.customerReturnId, { requestedAt: new Date('2026-10-27T01:00:00Z') });
+        await setReturn(tx, tieA.customerReturnId, { requestedAt: new Date('2026-10-27T02:00:00Z') });
+        await setReturn(tx, tieB.customerReturnId, { requestedAt: new Date('2026-10-27T02:00:00Z') });
+        const ties = [tieA.customerReturnId, tieB.customerReturnId].sort();
+
+        const page = await wired.reader.listForReceiving(receivingQuery(w.warehouseId), tx);
+        expect(page.items.map((i) => i.id)).toEqual([
+          ready.customerReturnId,
+          partial.customerReturnId,
+          awaitingEarly.customerReturnId,
+          ...ties,
+          awaitingLate.customerReturnId,
+        ]);
+        expect(page.items.map((i) => i.stage)).toEqual([
+          'ready',
+          'partial',
+          'awaiting',
+          'awaiting',
+          'awaiting',
+          'awaiting',
+        ]);
+      });
+    });
+
+    it('q 는 주문번호 정확 일치·고객명 부분 일치, barcode 는 정확 일치로 그 SKU 를 가진 반품만', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const wired = wire();
+        const w = await seedWorld(tx);
+        const a = await seed(tx, w, wired);
+        const otherSku = await seedComponentSku(tx, w);
+        const b = await seed(tx, w, wired, { composition: [{ skuId: otherSku, qtyPerUnit: 1 }] });
+        await tx
+          .update(wmsTables.salesOrders)
+          .set({ displayOrderNo: '5501', customerName: '홍길동' })
+          .where(eq(wmsTables.salesOrders.id, a.salesOrderId));
+        await tx
+          .update(wmsTables.salesOrders)
+          .set({ displayOrderNo: '55010', customerName: '김영희' })
+          .where(eq(wmsTables.salesOrders.id, b.salesOrderId));
+        const tag = randomUUID().slice(0, 8);
+        await tx.insert(wmsTables.skuBarcodes).values([
+          { skuId: w.skuId, barcode: `880-A-${tag}`, isPrimary: true },
+          { skuId: otherSku, barcode: `880-B-${tag}`, isPrimary: true },
+          { skuId: otherSku, barcode: `880-B2-${tag}`, isPrimary: false },
+        ]);
+        const ids = (over: Partial<ListReceivingCustomerReturnsQueryDto>) =>
+          wired.reader
+            .listForReceiving(receivingQuery(w.warehouseId, over), tx)
+            .then((page) => page.items.map((i) => i.id));
+
+        expect(await ids({ q: '5501' })).toEqual([a.customerReturnId]);
+        expect(await ids({ q: b.channelOrderId })).toEqual([b.customerReturnId]);
+        expect(await ids({ q: '길동' })).toEqual([a.customerReturnId]);
+        expect(await ids({ q: '%' })).toEqual([]);
+        const named = await wired.reader.listForReceiving(receivingQuery(w.warehouseId, { q: '홍' }), tx);
+        expect(named.items.map((i) => i.customerMasked)).toEqual(['홍길*']);
+
+        expect(await ids({ barcode: `880-A-${tag}` })).toEqual([a.customerReturnId]);
+        expect(await ids({ barcode: `880-B2-${tag}` })).toEqual([b.customerReturnId]);
+        expect(await ids({ barcode: `880-B` })).toEqual([]);
+        expect(await ids({ barcode: `880-A-${tag}`, q: '김영희' })).toEqual([]);
+      });
+    });
+
+    it('limit 을 넘으면 items 는 자르고 total 은 전체', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const wired = wire();
+        const w = await seedWorld(tx);
+        const seeded = [await seed(tx, w, wired), await seed(tx, w, wired), await seed(tx, w, wired)];
+        const page = await wired.reader.listForReceiving(receivingQuery(w.warehouseId, { limit: 2 }), tx);
+        expect(page.items).toHaveLength(2);
+        expect(page.total).toBe(3);
+        const all = await wired.reader.listForReceiving(receivingQuery(w.warehouseId), tx);
+        expect(all.items.map((i) => i.id).sort()).toEqual(seeded.map((s) => s.customerReturnId).sort());
+        expect(page.items).toEqual(all.items.slice(0, 2));
       });
     });
   });

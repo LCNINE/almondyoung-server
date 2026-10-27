@@ -51,6 +51,10 @@ const READ_VIA_WRITE_VERB: Record<string, string> = {
 const NON_READ_GET: Record<string, string> = {
   'core GET /direct-ship/handoffs/:handoffId/sheet': '내보내기다 — 입점사 시트 다시 받기',
   'core GET /shipment-recall-operations/:operationId': '회수 작업 상태 — 회수 권한자의 작업 화면',
+  'core GET /admin/customer-return-receiving':
+    '창고 반품 도착·검수 작업 화면의 목록 — 도착·검수 쓰기와 같은 문이다(K8 PR7b N2, 창고 작업자엔 order.claim.read 가 없다)',
+  'core GET /admin/customer-return-receiving/:id':
+    '창고 반품 도착·검수 작업 화면의 상세 — 도착·검수 쓰기와 같은 문이다(K8 PR7b N2, 창고 작업자엔 order.claim.read 가 없다)',
   'user-service GET //admin/oauth-clients': '시스템 설정 화면 전체가 관리 권한 하나다',
   'user-service GET //admin/oauth-clients/:clientId': '시스템 설정 화면 전체가 관리 권한 하나다',
   'ai GET /assistant/sessions': '어시스턴트 사용자 자신의 대화 목록이다',
