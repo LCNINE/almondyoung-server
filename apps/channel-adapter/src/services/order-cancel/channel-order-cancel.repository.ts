@@ -7,6 +7,7 @@ import {
   ORDER_STREAM,
   channelOrderPartitionKey,
   type ChannelOrderSettlementFailedPayload,
+  type ChannelReturnSettlementFailedPayload,
 } from '@packages/event-contracts/streams';
 import { channelAdapterSchema, wmsOrderMappings } from '../../schema';
 
@@ -50,6 +51,27 @@ export class ChannelOrderCancelRepository {
           partitionKey: fact.salesChannel,
           metadata: { partitionKey: fact.salesChannel },
           idempotencyKey: `settlement-failed:${fact.requestId}:${deliveryId}:${code}`,
+          payload: fact,
+        },
+        tx,
+      ),
+    );
+  }
+
+  /**
+   * 반품 정산 실패 사실을 적재한다 (K8 PR6). 멱등 키 모양·이유는 `recordSettlementFailure` 와 같고 이름만 `return-settlement-failed` 다.
+   * 파티션 키는 수집 사실과 같다.
+   */
+  async recordReturnSettlementFailure(fact: ChannelReturnSettlementFailedPayload, deliveryId: string): Promise<void> {
+    const code = fact.failureCode.slice(0, KEY_FAILURE_CODE_MAX);
+    await this.db.db.transaction(async (tx) =>
+      this.orders.enqueue(
+        {
+          eventType: 'ChannelReturnSettlementFailed',
+          aggregateId: channelOrderPartitionKey(fact.salesChannel, fact.externalOrderId),
+          partitionKey: fact.salesChannel,
+          metadata: { partitionKey: fact.salesChannel },
+          idempotencyKey: `return-settlement-failed:${fact.requestId}:${deliveryId}:${code}`,
           payload: fact,
         },
         tx,

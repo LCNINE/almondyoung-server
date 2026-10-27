@@ -2,14 +2,16 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { ChannelOrdersCommandConsumer } from './channel-orders-command.consumer';
 import type { OrderPollerOrchestrator } from '../services/order-collection/order-poller.orchestrator';
+import type { ChannelReturnSettleManager } from '../services/order-cancel/channel-return-settle.manager';
 import type { ChannelOrderCancelManager } from '../services/order-cancel/channel-order-cancel.manager';
 
 const envelope = { messageId: 'msg-1', correlationId: 'corr-1', chainId: 'chain-1' } as never;
 
-function consumerWith(syncOrder: jest.Mock, execute: jest.Mock = jest.fn()) {
+function consumerWith(syncOrder: jest.Mock, execute: jest.Mock = jest.fn(), settle: jest.Mock = jest.fn()) {
   return new ChannelOrdersCommandConsumer(
     { syncOrder } as unknown as OrderPollerOrchestrator,
     { execute } as unknown as ChannelOrderCancelManager,
+    { execute: settle } as unknown as ChannelReturnSettleManager,
   );
 }
 
@@ -81,5 +83,28 @@ describe('ChannelOrdersCommandConsumer — CancelChannelOrder (#1016 35번 행)'
     const providers = source.slice(source.indexOf('providers: ['));
     expect(providers).toMatch(/\bChannelOrderCancelManager\b/);
     expect(providers).toMatch(/\bChannelOrderCancelRepository\b/);
+    expect(providers).toMatch(/\bChannelReturnSettleManager\b/);
+  });
+});
+
+describe('ChannelOrdersCommandConsumer — SettleChannelReturn (K8 PR6)', () => {
+  const command = {
+    requestId: 'cr-1',
+    salesChannel: 'medusa',
+    externalOrderId: 'order_1',
+    returnId: 'ret_1',
+    items: [{ channelOrderItemId: 'ordli_1', received: 1, dismissed: 0 }],
+    requestedAt: '2026-10-27T00:00:00.000Z',
+  };
+
+  it('명령을 정산 실행기에 봉투 messageId 와 함께 넘긴다', async () => {
+    const settle = jest.fn().mockResolvedValue(undefined);
+    await consumerWith(jest.fn(), jest.fn(), settle).handleSettleReturn(command, envelope);
+    expect(settle).toHaveBeenCalledWith(command, 'msg-1');
+  });
+
+  it('실행기의 예외는 삼키지 않는다', async () => {
+    const settle = jest.fn().mockRejectedValue(new Error('outbox down'));
+    await expect(consumerWith(jest.fn(), jest.fn(), settle).handleSettleReturn(command, envelope)).rejects.toThrow('outbox down');
   });
 });

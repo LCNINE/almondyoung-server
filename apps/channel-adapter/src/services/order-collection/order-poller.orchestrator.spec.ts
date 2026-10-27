@@ -260,6 +260,7 @@ describe('OrderPollerOrchestrator', () => {
   it.each([
     ['ChannelReturnRequested', 'return:ret_1:requested', { returnId: 'ret_1', requestId: 'req_1' }],
     ['ChannelReturnCancelled', 'return:ret_1:cancelled', { returnId: 'ret_1', cancelledAt: '2026-05-26T01:10:00.000Z' }],
+    ['ChannelReturnSettled', 'return:ret_1:settled', { returnId: 'ret_1', requestId: 'req_1', refundAmount: 24000 }],
   ] as const)('%s 관측은 채널 키를 붙여 한 번만 적재한다', async (eventType, eventKey, expected) => {
     const db = makeDb();
     const lifecycleEvents = [makeReturnEvent(eventType, eventKey, '2026-05-26T01:10:00.000Z')];
@@ -2489,7 +2490,7 @@ function makeFailure(sourceUpdatedAt: string): OrderCollectionFailureItem {
 }
 
 function makeReturnEvent(
-  eventType: 'ChannelReturnRequested' | 'ChannelReturnCancelled',
+  eventType: 'ChannelReturnRequested' | 'ChannelReturnCancelled' | 'ChannelReturnSettled',
   eventKey: string,
   sourceUpdatedAt: string,
 ): OrderLifecycleEventItem {
@@ -2506,6 +2507,22 @@ function makeReturnEvent(
         requestedBy: 'customer',
         requestedAt: sourceUpdatedAt,
         items: [{ channelOrderItemId: 'item_1', quantity: 1 }],
+      },
+    };
+  }
+  if (eventType === 'ChannelReturnSettled') {
+    return {
+      ...base,
+      eventType,
+      payload: {
+        returnId: 'ret_1',
+        requestId: 'req_1',
+        refundAmount: 24000,
+        deduction: { returnShipping: 3000, freeShippingBreak: 3000, roundTrip: 0 },
+        feeNotAdjusted: false,
+        refundMode: 'auto',
+        settledAt: sourceUpdatedAt,
+        items: [{ channelOrderItemId: 'item_1', received: 1, dismissed: 0 }],
       },
     };
   }

@@ -106,4 +106,78 @@ describe('medusaReturnObservations', () => {
   it('returns 칸이 없는 옛 응답 → 관측 0, skipped 0', () => {
     expect(medusaReturnObservations(order())).toEqual({ observations: [], skipped: [] });
   });
+
+  describe('정산 (K8 PR6)', () => {
+    const settlement = (over: Record<string, unknown> = {}) => ({
+      ...record(),
+      almondReturnSettlement: {
+        requestId: 'cr_1',
+        requestHash: 'h',
+        stage: 'refunded',
+        items: [{ itemId: 'item_1', received: 1, dismissed: 0 }],
+        deduction: { returnShipping: 3000, freeShippingBreak: 3000, roundTrip: 0 },
+        feeNotAdjusted: false,
+        refundAmount: 24000,
+        refundedAt: '2026-10-27T05:00:00.000Z',
+        refundMode: 'auto',
+        ...over,
+      },
+    });
+
+    it('정산 끝난 반품 → requested 다음 settled', () => {
+      const { observations, skipped } = medusaReturnObservations(
+        order([ret({ status: 'received', metadata: settlement() })]),
+      );
+      expect(skipped).toEqual([]);
+      expect(observations.map((o) => o.eventKey)).toEqual(['return:ret_1:requested', 'return:ret_1:settled']);
+      expect(observations[1]).toMatchObject({
+        eventType: 'ChannelReturnSettled',
+        payload: {
+          returnId: 'ret_1',
+          requestId: 'cr_1',
+          refundAmount: 24000,
+          deduction: { returnShipping: 3000, freeShippingBreak: 3000, roundTrip: 0 },
+          feeNotAdjusted: false,
+          refundMode: 'auto',
+          settledAt: '2026-10-27T05:00:00.000Z',
+          items: [{ channelOrderItemId: 'item_1', received: 1, dismissed: 0 }],
+        },
+      });
+    });
+
+    it('partially_received 도 settled 를 낸다', () => {
+      const { observations } = medusaReturnObservations(
+        order([ret({ status: 'partially_received', metadata: settlement() })]),
+      );
+      expect(observations.map((o) => o.eventKey)).toContain('return:ret_1:settled');
+    });
+
+    it('received 단계 기록은 settled 를 내지 않는다', () => {
+      const { observations, skipped } = medusaReturnObservations(
+        order([ret({ status: 'received', metadata: settlement({ stage: 'received' }) })]),
+      );
+      expect(observations.map((o) => o.eventKey)).toEqual(['return:ret_1:requested']);
+      expect(skipped).toEqual([]);
+    });
+
+    it('반품 status 가 requested 면(아직 수령 전) settled 를 내지 않는다', () => {
+      const { observations } = medusaReturnObservations(order([ret({ metadata: settlement() })]));
+      expect(observations.map((o) => o.eventKey)).toEqual(['return:ret_1:requested']);
+    });
+
+    it.each([
+      ['requestId 없음', { requestId: undefined }],
+      ['환불액 소수', { refundAmount: 100.5 }],
+      ['차감 한 칸 누락', { deduction: { returnShipping: 1, freeShippingBreak: 1 } }],
+      ['환불 방식 모름', { refundMode: 'x' }],
+      ['refundedAt 없음', { refundedAt: undefined }],
+      ['줄 없음', { items: [] }],
+    ])('끝난 기록의 모양이 어긋나면 no_settlement_record — %s', (_n, patch) => {
+      const { observations, skipped } = medusaReturnObservations(
+        order([ret({ status: 'received', metadata: settlement(patch) })]),
+      );
+      expect(observations.map((o) => o.eventKey)).toEqual(['return:ret_1:requested']);
+      expect(skipped).toEqual([{ returnId: 'ret_1', reason: 'no_settlement_record' }]);
+    });
+  });
 });

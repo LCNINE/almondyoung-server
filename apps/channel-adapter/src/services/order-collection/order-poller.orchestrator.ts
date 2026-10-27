@@ -6,6 +6,7 @@ import { InjectPublisher, PublisherFor } from '@app/events';
 import {
   ChannelReturnCancelledPayload,
   ChannelReturnRequestedPayload,
+  ChannelReturnSettledPayload,
   ORDER_STREAM,
   OrderCancelledPayload,
   OrderRefundCreatedPayload,
@@ -878,6 +879,14 @@ export class OrderPollerOrchestrator {
           };
           await this.ordersPublisher.enqueue(
             { eventType: 'ChannelReturnCancelled', payload: returnCancelled, ...common },
+            tx,
+          );
+          break;
+        }
+        case 'ChannelReturnSettled': {
+          const returnSettled: ChannelReturnSettledPayload = { orderId: wmsOrderId, ...channelKey, ...item.payload };
+          await this.ordersPublisher.enqueue(
+            { eventType: 'ChannelReturnSettled', payload: returnSettled, ...common },
             tx,
           );
           break;

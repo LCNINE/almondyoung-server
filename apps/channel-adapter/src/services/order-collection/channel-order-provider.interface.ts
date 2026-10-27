@@ -1,6 +1,7 @@
 import {
   ChannelReturnCancelledPayload,
   ChannelReturnRequestedPayload,
+  ChannelReturnSettledPayload,
   OrderCancelledPayload,
   OrderCreatedPayload,
   OrderModifiedCancelRequest,
@@ -64,13 +65,15 @@ export type OrderLifecycleEventType =
   | 'OrderCancelled'
   | 'OrderRefundCreated'
   | 'ChannelReturnRequested'
-  | 'ChannelReturnCancelled';
+  | 'ChannelReturnCancelled'
+  | 'ChannelReturnSettled';
 
 export type OrderLifecycleEventPayload =
   | Omit<OrderCancelledPayload, 'orderId'>
   | Omit<OrderRefundCreatedPayload, 'orderId'>
   | ReturnObservationPayload<ChannelReturnRequestedPayload>
-  | ReturnObservationPayload<ChannelReturnCancelledPayload>;
+  | ReturnObservationPayload<ChannelReturnCancelledPayload>
+  | ReturnObservationPayload<ChannelReturnSettledPayload>;
 
 interface OrderLifecycleEventBase {
   externalOrderId: string;
@@ -95,6 +98,7 @@ export type OrderLifecycleEventItem = OrderLifecycleEventBase &
     | { eventType: 'OrderRefundCreated'; payload: Omit<OrderRefundCreatedPayload, 'orderId'> }
     | { eventType: 'ChannelReturnRequested'; payload: ReturnObservationPayload<ChannelReturnRequestedPayload> }
     | { eventType: 'ChannelReturnCancelled'; payload: ReturnObservationPayload<ChannelReturnCancelledPayload> }
+    | { eventType: 'ChannelReturnSettled'; payload: ReturnObservationPayload<ChannelReturnSettledPayload> }
   );
 
 export interface OrderFetchItem {
