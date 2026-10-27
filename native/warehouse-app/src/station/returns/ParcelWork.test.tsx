@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto';
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { flash, press, scan, typeHuman } from '../outbound/__fixtures__/renderStation';
 import { AWAITING, PARTIAL, READY, listed, orderNos, setupReturns } from './__fixtures__/renderReturns';
@@ -192,6 +192,23 @@ describe('도착 확정 F10', () => {
     expect(server.arrivalCalls[0].body.items).toEqual([{ customerReturnItemId: 'cri-6b', quantity: 1 }]);
   });
 
+  it('F10 이 렌더 전에 두 번 와도 한 번만 보낸다', async () => {
+    const { server } = setupReturns();
+    await openByScan('8801001');
+    scan('8801001');
+    await waitFor(() => expect(parcelOf('cri-1')).toBe('1'));
+    await waitFor(() => expect(arrivalKey()).toBeInTheDocument());
+    const release = server.holdWrites();
+    act(() => {
+      fireEvent.keyDown(window, { key: 'F10' });
+      fireEvent.keyDown(window, { key: 'F10' });
+    });
+    await act(async () => {});
+    release();
+    expect(await screen.findByText('남은 물건은 CS 가 정해요')).toBeInTheDocument();
+    expect(arrivalPosts(server)).toHaveLength(1);
+  });
+
   it('보내는 중엔 스캔·입력이 오류음이고 수량 그대로', async () => {
     const { server } = setupReturns({ returns: [BULK] });
     await openByScan('8806002');
@@ -293,6 +310,26 @@ describe('결과를 모르는 도착', () => {
     expect(server.arrivalCalls).toHaveLength(2);
     expect(server.arrivalCalls[1].body).toEqual(server.arrivalCalls[0].body);
     expect(server.arrivals).toHaveLength(1);
+  });
+
+  it('Esc 의 «버리기» 대기는 다시 보내기를 넘어 살아남지 않는다 — 다시 실패하면 결과 모름이 보이고, Esc 한 번으론 버리지 않는다', async () => {
+    const { server } = setupReturns();
+    await openByScan('8801001');
+    scan('8801001');
+    await waitFor(() => expect(parcelOf('cri-1')).toBe('1'));
+    server.failNext({ method: 'POST' });
+    press('F10');
+    expect(await screen.findByRole('alert')).toHaveTextContent('결과를 확인하지 못했어요 — F10 다시 보내기');
+    press('Escape');
+    expect(await screen.findByText('한 번 더 누르면 센 수량을 버려요')).toBeInTheDocument();
+    server.failNext({ method: 'POST' });
+    press('F10');
+    await waitFor(() => expect(arrivalPosts(server)).toHaveLength(2));
+    expect(await screen.findByRole('alert')).toHaveTextContent('결과를 확인하지 못했어요 — F10 다시 보내기');
+    expect(screen.queryByText('한 번 더 누르면 센 수량을 버려요')).toBeNull();
+    press('Escape');
+    expect(await screen.findByText('한 번 더 누르면 센 수량을 버려요')).toBeInTheDocument();
+    expect(region()).toBeInTheDocument();
   });
 
   it('5xx 도 결과 모름이다', async () => {

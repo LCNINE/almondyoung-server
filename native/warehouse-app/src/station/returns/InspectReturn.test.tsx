@@ -9,6 +9,8 @@ const COMPLETE_HZ = 1568;
 const REFUND_PROMPT = '한 번 더 누르면 환불을 요청해요';
 const CS_PROMPT = '한 번 더 누르면 CS 확인으로 넘겨요';
 const UNCERTAIN = '결과를 확인하지 못했어요 — F10 다시 보내기';
+const DISCARD_PROMPT = '한 번 더 누르면 입력을 버려요';
+const NOT_IN_RETURN = '이 반품에 없는 상품이에요';
 
 type Col = 'arrived' | 'accepted' | 'rejected' | 'held';
 
@@ -126,6 +128,73 @@ describe('검수 — 입력', () => {
     await typeHuman(['ArrowUp', 'ArrowRight', 'Backspace']);
     expect(cell('cri-5a', 'held')).toBe('0');
     expect(cell('cri-5a', 'accepted')).toBe('3');
+  });
+});
+
+describe('검수 — 상품 스캔', () => {
+  it('찍은 상품의 줄을 고른다 — 그다음 숫자는 그 줄을 덮어쓴다. 없는 상품은 «이 반품에 없는 상품이에요»·오류음·선택 그대로', async () => {
+    setupReturns({ returns: [TWO] });
+    await openByScan('8805001');
+    scan('8805002');
+    await waitFor(() => expect(itemRow('cri-5b')).toHaveAttribute('aria-selected', 'true'));
+    expect(itemRow('cri-5a')).toHaveAttribute('aria-selected', 'false');
+    await typeHuman(['1']);
+    expect(cell('cri-5b', 'rejected')).toBe('1');
+    expect(cell('cri-5a', 'rejected')).toBe('0');
+
+    scan('8801004');
+    expect(await screen.findByRole('alert')).toHaveTextContent(NOT_IN_RETURN);
+    expect(flash()).toBe('error');
+    expect(itemRow('cri-5b')).toHaveAttribute('aria-selected', 'true');
+    expect(cell('cri-5b', 'rejected')).toBe('1');
+    // 손대면 그 한 줄이 지워진다
+    await typeHuman(['ArrowUp']);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(itemRow('cri-5a')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('스캔도 첫 누름을 푼다', async () => {
+    const { server } = setupReturns({ returns: [TWO] });
+    await openByScan('8805001');
+    press('F10');
+    expect(await screen.findByText(REFUND_PROMPT)).toBeInTheDocument();
+    scan('8805002');
+    await waitFor(() => expect(screen.queryByText(REFUND_PROMPT)).toBeNull());
+    press('F10');
+    expect(await screen.findByText(REFUND_PROMPT)).toBeInTheDocument();
+    expect(inspectionPosts(server)).toHaveLength(0);
+  });
+});
+
+describe('검수 — Esc', () => {
+  it('입력한 게 있으면 «한 번 더 누르면 입력을 버려요» — 사이에 입력하면 풀리고, 두 번 연달아 눌러야 목록', async () => {
+    const { server } = setupReturns({ returns: [TWO] });
+    await openByScan('8805001');
+    await typeHuman(['1']);
+    press('Escape');
+    expect(await screen.findByText(DISCARD_PROMPT)).toBeInTheDocument();
+    expect(region()).toBeInTheDocument();
+    await typeHuman(['ArrowRight']);
+    expect(screen.queryByText(DISCARD_PROMPT)).toBeNull();
+    press('Escape');
+    expect(await screen.findByText(DISCARD_PROMPT)).toBeInTheDocument();
+    press('Escape');
+    expect(await listed()).toEqual(['O-1005']);
+    expect(inspectionPosts(server)).toHaveLength(0);
+  });
+
+  it('결과를 모르면 입력이 없어도 두 번 — 첫 Esc 는 «한 번 더 누르면 입력을 버려요»', async () => {
+    const { server } = setupReturns({ returns: [TWO] });
+    await openByScan('8805001');
+    server.failNext({ method: 'POST' });
+    press('F10');
+    press('F10');
+    expect(await screen.findByRole('alert')).toHaveTextContent(UNCERTAIN);
+    press('Escape');
+    expect(await screen.findByText(DISCARD_PROMPT)).toBeInTheDocument();
+    expect(region()).toBeInTheDocument();
+    press('Escape');
+    expect(await listed()).toEqual(['O-1005']);
   });
 });
 
@@ -247,6 +316,11 @@ describe('결과를 모르는 검수', () => {
     await typeHuman(['ArrowRight', '1']);
     expect(cell('cri-5a', 'held')).toBe('0');
     expect(activeCell()).toBe(cellEl('cri-5a', 'rejected'));
+    // 스캔도 거절 — 선택 그대로
+    scan('8805002');
+    await waitFor(() => expect(flash()).toBe('error'));
+    expect(itemRow('cri-5a')).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('alert')).toHaveTextContent(UNCERTAIN);
 
     await waitFor(() => expect(bar().getByRole('button', { name: /F10\s*다시 보내기/ })).toBeInTheDocument());
     press('F10');
@@ -339,6 +413,10 @@ describe('미도착으로 닫힌 반품', () => {
     await openByScan('8804001');
     expect(region().querySelector('tr[data-item-id="cri-4b"]')).toBeNull();
     expect(cell('cri-4a', 'arrived')).toBe('1');
+    // 하나도 안 온 상품은 이 화면에 없는 상품이다
+    scan('8804002');
+    expect(await screen.findByRole('alert')).toHaveTextContent(NOT_IN_RETURN);
+    expect(flash()).toBe('error');
     // ↓ 로 갈 줄이 없다
     await typeHuman(['ArrowDown', '1']);
     expect(cell('cri-4a', 'rejected')).toBe('1');

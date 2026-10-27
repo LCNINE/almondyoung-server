@@ -64,6 +64,8 @@ export function ParcelWork({
   // 결과를 모르는 도착 — 다음 F10 이 이것을 그대로 다시 보낸다
   const [pending, setPending] = useState<ArrivalBody | null>(null);
   const [busy, setBusy] = useState(false);
+  // 보내는 중 — 렌더 전에 F10 이 두 번 와도(같은 낡은 run) 한 번만 보내게. busy 는 다음 렌더에야 보인다
+  const inFlight = useRef(false);
   const [alert, setAlert] = useState<{ message: string; detail?: string } | null>(null);
 
   const rows = view.lines.flatMap((line) => line.items.map((item) => ({ line, item })));
@@ -81,7 +83,7 @@ export function ParcelWork({
   const touch = (): boolean => {
     onActivity();
     setArmed(null);
-    if (!locked) return true;
+    if (!locked && !inFlight.current) return true;
     signal('error');
     return false;
   };
@@ -134,6 +136,8 @@ export function ParcelWork({
   });
 
   const send = async (body: ArrivalBody) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     try {
       onArrived(await recordArrival(api, view.id, body));
@@ -146,13 +150,17 @@ export function ParcelWork({
         await open(view.id, { text: errorMessage(error), tone: 'error' });
       }
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   };
 
   const confirm = () => {
     onActivity();
+    if (inFlight.current) return;
     if (pending) {
+      // Esc 의 «버리기» 대기가 다시 보내기를 넘어 살아남지 않게
+      setArmed(null);
       void send(pending);
       return;
     }

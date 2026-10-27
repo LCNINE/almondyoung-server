@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import { errorMessage } from '../../core/data/errorMessage';
 import { cn } from '../../core/design/cn';
-import { useHumanKeys } from '../../core/hardware/scan/useScanner';
+import { useHumanKeys, useScanner } from '../../core/hardware/scan/useScanner';
 import { isUncertainWrite, recordInspection } from '../../domains/customer-returns/api';
 import {
   acceptedOf,
@@ -21,6 +21,9 @@ import { RETURNS_ACTIONS } from './returnsActions';
 import type { ReturnsNotice } from './returnsTypes';
 
 type InspectionBody = Parameters<typeof recordInspection>[2];
+
+/** «한 번 더 눌러» 대기 — F10 검수 확정, Esc 입력 버리기 */
+type Armed = 'confirm' | 'discard' | null;
 
 const UNCERTAIN_MESSAGE = '결과를 확인하지 못했어요 — F10 다시 보내기';
 const COLUMN_LABEL: Record<InspectionColumn, string> = { rejected: '불량', held: '보류' };
@@ -55,11 +58,12 @@ export function InspectReturn({
   const [column, setColumn] = useState<InspectionColumn>('rejected');
   // 칸을 고른 뒤 첫 숫자는 덮어쓴다, 그다음부터 이어 친다
   const [fresh, setFresh] = useState(true);
-  // F10 첫 누름 — 칸을 바꾸면(입력·이동) 풀린다
-  const [armed, setArmed] = useState(false);
+  // 첫 누름 — 칸을 바꾸면(입력·이동·스캔) 풀린다
+  const [armed, setArmed] = useState<Armed>(null);
   // 결과를 모르는 검수 — 다음 F10 이 이것을 그대로 다시 보낸다
   const [pending, setPending] = useState<InspectionBody | null>(null);
   const [busy, setBusy] = useState(false);
+  const [alert, setAlert] = useState<{ message: string; detail?: string } | null>(null);
   // 보내는 중 — 렌더 전에 F10 이 두 번 와도(같은 낡은 run) 한 번만 보내게. busy 는 다음 렌더에야 보인다
   const inFlight = useRef(false);
 
@@ -67,11 +71,12 @@ export function InspectReturn({
   const rows = view.lines.flatMap((line) => line.items.filter((item) => item.arrivedQty > 0).map((item) => ({ line, item })));
   const cursor = Math.min(selected, Math.max(rows.length - 1, 0));
   const locked = busy || pending !== null;
+  const touched = [...draft.values()].some((c) => c.rejected > 0 || c.held > 0);
 
   /** 작업자의 입력 — 앞 안내·첫 누름을 풀고, 잠겼으면 오류음만 */
   const touch = (): boolean => {
     onActivity();
-    setArmed(false);
+    setArmed(null);
     if (!locked && !inFlight.current) return true;
     signal('error');
     return false;
@@ -91,6 +96,7 @@ export function InspectReturn({
     draftRef.current = result.draft;
     setDraft(result.draft);
     setFresh(false);
+    setAlert(null);
   };
   const typeDigit = (digit: number) => edit((current) => (fresh ? digit : current * 10 + digit));
   const typeRef = useRef(typeDigit);
@@ -101,12 +107,32 @@ export function InspectReturn({
     if (!touch()) return;
     setSelected(Math.max(0, Math.min(rows.length - 1, cursor + delta)));
     setFresh(true);
+    setAlert(null);
   };
   const moveColumn = (next: InspectionColumn) => {
     if (!touch()) return;
     setColumn(next);
     setFresh(true);
+    setAlert(null);
   };
+
+  /** 상품 스캔 = 그 상품의 첫 줄을 고른다(스테이션 §8 — 상품 칸은 스캔도 받는다). 도착 0 인 항목은 줄이 없어 없는 상품이다 */
+  const onScan = (code: string) => {
+    if (!touch()) return;
+    const index = rows.findIndex(({ item }) => item.barcodes.includes(code));
+    if (index < 0) {
+      setAlert({ message: '이 반품에 없는 상품이에요', detail: code });
+      signal('error');
+      return;
+    }
+    setSelected(index);
+    setFresh(true);
+    setAlert(null);
+    signal('success');
+  };
+  const scanRef = useRef(onScan);
+  scanRef.current = onScan;
+  useScanner(useCallback((event: { code: string }) => scanRef.current(event.code), []));
   useHumanKeys((key: string) => {
     if (/^\d$/.test(key)) typeDigit(Number(key));
     else if (key === 'Backspace') edit((current) => Math.floor(current / 10));
@@ -142,21 +168,23 @@ export function InspectReturn({
     onActivity();
     if (inFlight.current) return;
     if (pending) {
-      setArmed(false);
+      setArmed(null);
       void send(pending);
       return;
     }
-    if (!armed) {
-      setArmed(true);
+    if (armed !== 'confirm') {
+      setArmed('confirm');
       return;
     }
-    setArmed(false);
+    setArmed(null);
     void send({ items: inspectionItems(view, draftRef.current) });
   };
 
+  /** Esc — 첫 누름이면 그것만 푼다. 입력했거나 결과를 모르면 한 번 더 눌러야 버린다(소포 세기와 같다) */
   const back = () => {
-    if (armed) setArmed(false);
-    else toList();
+    if (armed === 'confirm') setArmed(null);
+    else if (armed === 'discard' || (!touched && pending === null)) toList();
+    else setArmed('discard');
   };
 
   const actions: StationAction[] = [
@@ -168,7 +196,7 @@ export function InspectReturn({
     },
     {
       ...RETURNS_ACTIONS.back,
-      label: armed ? '취소' : RETURNS_ACTIONS.back.label,
+      label: armed === 'confirm' ? '취소' : RETURNS_ACTIONS.back.label,
       enabled: !busy,
       run: back,
     },
@@ -176,14 +204,19 @@ export function InspectReturn({
   useStationActions(actions);
 
   const active = rows[cursor];
-  const big: BigPanelContent | null = armed
-    ? {
-        kind: 'notice',
-        title: heldTotal(draft) > 0 ? '한 번 더 누르면 CS 확인으로 넘겨요' : '한 번 더 누르면 환불을 요청해요',
-      }
-    : pending
-      ? { kind: 'alert', message: UNCERTAIN_MESSAGE }
-      : null;
+  const big: BigPanelContent | null =
+    armed === 'confirm'
+      ? {
+          kind: 'notice',
+          title: heldTotal(draft) > 0 ? '한 번 더 누르면 CS 확인으로 넘겨요' : '한 번 더 누르면 환불을 요청해요',
+        }
+      : armed === 'discard'
+        ? { kind: 'notice', title: '한 번 더 누르면 입력을 버려요' }
+        : pending
+          ? { kind: 'alert', message: UNCERTAIN_MESSAGE }
+          : alert
+            ? { kind: 'alert', ...alert }
+            : null;
 
   return (
     <section aria-label="검수" className="h-full min-h-0">
