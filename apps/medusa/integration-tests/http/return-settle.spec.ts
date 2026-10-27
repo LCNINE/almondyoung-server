@@ -3,11 +3,14 @@ import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
 import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import {
   beginReceiveReturnWorkflow,
+  beginReturnOrderWorkflow,
   confirmOrderEditRequestWorkflow,
+  createReturnShippingMethodWorkflow,
   confirmReturnReceiveWorkflow,
   receiveItemReturnRequestWorkflow,
 } from '@medusajs/medusa/core-flows';
-import { ensureReturnShippingOption } from '../../src/modules/almond-fulfillment/return-shipping-option';
+import { ensureReturnShippingOption, findReturnShippingOptionId } from '../../src/modules/almond-fulfillment/return-shipping-option';
+import { POLICY_SNAPSHOT_KEY } from '../../src/modules/almond-fulfillment/types';
 import { cancelOrderReturn } from '../../src/workflows/orders/returns/cancel-order-return';
 import { ensureReturnReasons } from '../../src/workflows/orders/returns/return-reasons';
 import {
@@ -18,6 +21,7 @@ import {
 import { requestOrderReturn } from '../../src/workflows/orders/returns/request-order-return';
 import { partialCancelOrder } from '../../src/workflows/orders/partial-cancel/partial-cancel-order';
 import { loadOrderView } from '../../src/workflows/orders/settlement/load-order-view';
+import { cancelOpenOrderEdit } from '../../src/workflows/orders/settlement/order-edit-charge';
 import { reconcileOrderWalletRefunds } from '../../src/workflows/orders/settlement/wallet-refund-ledger';
 import { FakeWallet, WALLET_BASE_URL, setupCommerce, placeOrder, loadOrder, Commerce } from './fixtures/partial-cancel-fixture';
 import { CORE_BASE_URL, CORE_INTERNAL_KEY, FakeCore } from './fixtures/return-fixture';
@@ -933,6 +937,91 @@ medusaIntegrationTestRunner({
       expect(none.status).toBe(400);
       expect(none.data.reason).toBe('request_id_conflict');
       expect(wallet.refundCalls()).toHaveLength(1);
+    });
+
+    /** 배포 전 주문을 흉내 — 배송 방법 data 의 스냅샷을 지운다(JSON 병합 갱신이라 키를 null 로). 택배비 계획은 NO_SNAPSHOT */
+    const wipeSnapshots = async (orderId: string) => {
+      const o = await loadOrder(getContainer(), orderId);
+      await getContainer()
+        .resolve(Modules.ORDER)
+        .updateOrderShippingMethods(o.shipping_methods.map((m: any) => ({ id: m.id, data: { [POLICY_SNAPSHOT_KEY]: null } })));
+    };
+
+    it('스냅샷 없는 주문의 보류 차감 5,000 → 택배비 0·feeNotAdjusted, «반품 차감»이 원래 방법 옵션에 붙는다, 차액 0', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+      await wipeSnapshots(orderId);
+      const requestId = rid('cr');
+
+      const res = await settle(orderId, returnId, {
+        requestId,
+        items: [{ item_id: itemOf('A'), received: 2, dismissed: 0 }],
+        hold_deduction: { amount: 5000, memo: '사용 흔적' },
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.data).toEqual(
+        expect.objectContaining({
+          refundAmount: 55000,
+          feeNotAdjusted: true,
+          deduction: { returnShipping: 0, freeShippingBreak: 0, roundTrip: 0, hold: 5000 },
+        }),
+      );
+      // 반품 배송 방법(return_id)·청구 방법이 아닌 주문의 원래 배송 방법
+      const originals = (await loadOrderView(getContainer(), orderId))!.shippingMethods.filter(
+        (m) => !m.isSettlementCharge && !m.isReturnExchangeOrClaimShipping,
+      );
+      expect(originals).toHaveLength(1);
+      expect(readReturnSettlementRecord((await returnRow(returnId)).metadata)).toEqual(
+        expect.objectContaining({ stage: 'refunded', chargeShippingOptionId: originals[0].shippingOptionId }),
+      );
+      expect(await chargeMethods(orderId)).toEqual([{ name: '반품 차감', amount: 5000 }]);
+      expect(wallet.refunds.map((r) => r.amount)).toEqual([55000]);
+      expect(await pending(orderId)).toBe(0);
+      expect(await notPaidCollections(orderId)).toBe(0);
+    });
+
+    it('옵션 있는 원래 배송 방법이 없는 주문의 보류 차감 → 400 no_charge_shipping_option, 수령 전에 멈춘다', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+      await wipeSnapshots(orderId);
+      const o = await loadOrder(getContainer(), orderId);
+      await getContainer()
+        .resolve(Modules.ORDER)
+        .updateOrderShippingMethods(o.shipping_methods.map((m: any) => ({ id: m.id, shipping_option_id: null })));
+      const requestId = rid('cr');
+
+      const res = await settle(orderId, returnId, {
+        requestId,
+        items: [{ item_id: itemOf('A'), received: 2, dismissed: 0 }],
+        hold_deduction: { amount: 5000, memo: '사용 흔적' },
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.data).toEqual(expect.objectContaining({ code: 'return_settle_rejected', reason: 'no_charge_shipping_option' }));
+      const row = await returnRow(returnId);
+      expect(row.status).toBe('requested');
+      expect(readReturnSettlementRecord(row.metadata)).toBeNull();
+      expect(await changesTagged(orderId, `return-receive:${requestId}`)).toEqual([]);
+      expect(wallet.refundCalls()).toHaveLength(0);
+    });
+
+    it('cancelOpenOrderEdit 는 주문 수정만 버린다 — 열린 반품 요청 변경과 그 반품 배송 방법은 그대로', async () => {
+      const { orderId } = await deliveredOrder([{ variant: 'A', quantity: 1 }]);
+      const orderModule = getContainer().resolve(Modules.ORDER);
+      const { result: change } = await beginReturnOrderWorkflow(getContainer()).run({ input: { order_id: orderId } });
+      await createReturnShippingMethodWorkflow(getContainer()).run({
+        input: { return_id: change.return_id!, shipping_option_id: (await findReturnShippingOptionId(getContainer()))!, custom_amount: 0 },
+      });
+      const actions = await orderModule.listOrderChangeActions({ order_change_id: change.id }, { select: ['action', 'reference_id'] });
+      const added = actions.filter((a) => a.action === 'SHIPPING_ADD').map((a) => a.reference_id as string);
+      expect(added).toHaveLength(1);
+
+      await cancelOpenOrderEdit(getContainer(), orderId);
+
+      expect(await orderModule.listOrderShippingMethods({ id: added }, { select: ['id'] })).toHaveLength(1);
+      const [still] = await orderModule.listOrderChanges({ id: change.id }, { select: ['id', 'status'] });
+      expect(still?.status).toBe('pending');
     });
   },
 });

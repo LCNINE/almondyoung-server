@@ -17,7 +17,6 @@ import { RETURN_FEE_CHARGE_NAME, RETURN_HOLD_DEDUCTION_NAME } from '../partial-c
 import { priorGroupFeesFor } from '../partial-cancel/prior-group-fees';
 import { shippingPlanLines } from '../partial-cancel/shipping-plan-lines';
 import { loadOrderView, productShippingProfiles, type OrderView } from '../settlement/load-order-view';
-import type { ShippingMethodView } from '../partial-cancel/plan-shipping';
 import { offsetCreditLine } from '../settlement/offset-credit-line';
 import { addSettlementCharge, cancelOpenOrderEdit, ensureNoDanglingChange } from '../settlement/order-edit-charge';
 import { listOrderRefunds, orderCancelLockKey } from '../settlement/order-payments';
@@ -25,6 +24,7 @@ import { refundOrderPayments } from '../settlement/refund-order-payments';
 import type { RefundMode } from '../settlement/refund-mode';
 import { reconcileOrderWalletRefunds } from '../settlement/wallet-refund-ledger';
 import { applyReturnOffsets } from './apply-return-offsets';
+import { chargeShippingOption } from './charge-shipping-option';
 import { readReturnRequestRecord } from './load-return-order';
 import { planReturnFees, type ReturnSettlementDeduction } from './plan-return-fees';
 import { ReturnOrderNotFound } from './request-order-return';
@@ -82,7 +82,8 @@ export type ReturnSettleRejectReason =
   | 'external_refund_exceeds'
   | 'external_refund_absent'
   | 'return_already_received'
-  | 'prepaid_closes_missing';
+  | 'prepaid_closes_missing'
+  | 'no_charge_shipping_option';
 
 /**
  * 정해진 거절 — 다시 불러도 같다. 라우트가 400 code=return_settle_rejected + reason 으로 낸다. 반품·주문은 그대로다.
@@ -222,6 +223,19 @@ async function receive(
   const prepaid = prepaidTotal(refunds, input.requestId);
   const externalRefund = input.alreadyRefundedAmount ?? 0;
   assertOffsetPremises(reconciled, otherReturns, { prepaid, externalRefund, closesMissing });
+  // 청구를 붙일 배송 옵션은 수령 «전»에 정한다 — 수령 뒤에 못 찾고 던지면 수령은 확정됐는데 기록이 없어 다시 부를 때마다
+  // ensureNoDanglingChange 가 멈춘다. 배송 방법은 수령으로 바뀌지 않는다. 택배비가 있으면 계획이 맞춘 그룹이라 늘 찾는다
+  const profiles = await productShippingProfiles(
+    container,
+    reconciled.lines.map((l) => l.productId).filter((x): x is string => !!x),
+  );
+  const chargeOptionId = chargeShippingOption(reconciled.shippingMethods, reconciled.lines, profiles, input.items);
+  if (!chargeOptionId && (input.holdDeduction?.amount ?? 0) > 0) {
+    throw new ReturnSettleRejected(
+      'no_charge_shipping_option',
+      `보류 차감을 붙일 배송 방법이 없는 주문입니다 — 차감 없이 정산하거나 수동으로 처리하세요: ${input.orderId}`,
+    );
+  }
 
   const tag = receiveTag(input.requestId);
   // 확정됐는데 기록이 없으면(확정과 기록 사이에 끊김) 다시 받으면 재고·차액이 두 번 움직인다 — 멈춘다. 열린 채면 버리고 새로 한다
@@ -258,10 +272,6 @@ async function receive(
 
   // 택배비 계획은 수령 «뒤»에 돈다 — 상한(chargeCap)은 돌려줄 차액에서 선환불·외부 상계를 뺀 것(N3: 상계가 택배비보다 먼저다).
   // 남는 수량 = 줄 수량 − 돌아온 수량(이번 반품이 이미 들어 있다). 미도착을 닫았으면 input.items 가 실제로 정산한 품목이다
-  const profiles = await productShippingProfiles(
-    container,
-    after.lines.map((l) => l.productId).filter((x): x is string => !!x),
-  );
   const returnedNow = new Map(input.items.map((i) => [i.itemId, i.received + i.dismissed]));
   const plan = planReturnFees({
     feeBearer,
@@ -286,7 +296,8 @@ async function receive(
   // (externalRefundApplied)을 줄이지 않는다 — 그 값은 다음 판정의 «품목에 연결 안 된 외부 환불»에서만 빠지고, 원 미만은 잡음이다
   const offsetLine = Math.floor(offsets.offsetCreditLine);
   const chargeTotal = deductionTotal(offsets.deduction);
-  const chargeShippingOptionId = chargeTotal > 0 ? chargeShippingOption(after.shippingMethods, after.lines, profiles, input.items) : null;
+  const chargeShippingOptionId = chargeTotal > 0 ? chargeOptionId : null;
+  // 닿지 않는 자리 — 보류 차감은 위에서 거절했고 택배비는 계획이 그룹(옵션이 있는 원래 방법)을 맞췄을 때만 0 보다 크다
   if (chargeTotal > 0 && !chargeShippingOptionId) throw new Error(`반품 택배비·차감을 붙일 배송 방법을 찾지 못했습니다: ${input.orderId}`);
 
   const record: ReturnSettlementRecord = {
@@ -434,29 +445,6 @@ export async function orderUnresolvedExternalRefund(
     ...Object.values(readPartialCancelRecords(order.metadata)),
     ...returnRecords,
   ]);
-}
-
-/**
- * «반품 택배비» 방법을 붙일 배송 옵션 — 이번 반품이 닿은 첫 그룹(주문의 배송 방법 순서)의 원래 방법 옵션.
- * 금액은 custom_amount 라 옵션은 그릇일 뿐이다. 차감이 있으면 계획이 그룹을 맞춘 것이라 있어야 한다.
- */
-function chargeShippingOption(
-  methods: ShippingMethodView[],
-  lines: OrderView['lines'],
-  profiles: ReadonlyMap<string, string>,
-  items: SettleOrderReturnInput['items'],
-): string | null {
-  const ids = new Set(items.filter((i) => i.received + i.dismissed > 0).map((i) => i.itemId));
-  const touched = new Set(
-    lines.flatMap((l) => {
-      const profile = ids.has(l.id) && l.productId ? profiles.get(l.productId) : undefined;
-      return profile ? [profile] : [];
-    }),
-  );
-  const target = methods.find(
-    (m) => !m.isSettlementCharge && !m.isReturnExchangeOrClaimShipping && m.snapshot && touched.has(m.snapshot.shippingProfileId),
-  );
-  return target?.shippingOptionId ?? null;
 }
 
 // ── 조회·기록 ──────────────────────────────────────────────────────────────────

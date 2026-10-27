@@ -291,7 +291,14 @@ medusaIntegrationTestRunner({
       const res = await prepay(orderId, returnId, { requestId: rid('prepay'), memo: '먼저' });
 
       expect(res.status).toBe(400);
-      expect(res.data).toEqual(expect.objectContaining({ code: 'return_prepay_rejected', reason: 'pending_refund_outstanding' }));
+      expect(res.data).toEqual(
+        expect.objectContaining({
+          code: 'return_prepay_rejected',
+          reason: 'pending_refund_outstanding',
+          // 원 단위로 반올림해 적는다(차액에 할인 안분의 원 미만이 섞일 수 있다)
+          message: expect.stringContaining('차액 10000원'),
+        }),
+      );
       expect(wallet.refunds).toHaveLength(0);
       expect(readReturnPrepayRecord((await returnRow(returnId)).metadata)).toBeNull();
     });

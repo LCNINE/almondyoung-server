@@ -191,7 +191,7 @@ async function open(
   if (Math.round(order.pendingDifference) < 0) {
     throw new ReturnPrepayRejected(
       'pending_refund_outstanding',
-      `아직 돌려주지 못한 차액 ${-order.pendingDifference}원이 있는 주문입니다 — 그 환불이 끝난 뒤 선환불하세요`,
+      `아직 돌려주지 못한 차액 ${Math.round(-order.pendingDifference)}원이 있는 주문입니다 — 그 환불이 끝난 뒤 선환불하세요`,
     );
   }
 

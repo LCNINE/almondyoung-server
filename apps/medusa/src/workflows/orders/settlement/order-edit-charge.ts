@@ -1,5 +1,5 @@
 import type { MedusaContainer } from '@medusajs/framework/types';
-import { ChangeActionType, Modules, OrderChangeStatus } from '@medusajs/framework/utils';
+import { ChangeActionType, Modules, OrderChangeStatus, OrderChangeType } from '@medusajs/framework/utils';
 import {
   beginOrderEditOrderWorkflow,
   cancelBeginOrderEditWorkflow,
@@ -71,14 +71,23 @@ export async function addSettlementCharge(
  * (core-flows order-edit/cancel-begin-order-edit.js). 남은 방법은 다음 수정이 같은 버전으로 확정될 때 주문에 다시 나타난다
  * (K8 PR6b 실측: 끊긴 «반품 택배비»·«반품 차감»이 이어 간 수정 뒤 두 벌로 보였다). 지우기를 먼저 한다 — 버리기 뒤에 끊기면
  * 지울 id 를 다시 찾을 길이 없다. 버리기가 실패해도 수정은 열린 채라 다음 시도가 이 함수를 다시 탄다.
+ * 지우는 것은 «주문 수정»(change_type edit — 버리는 바로 그 변경)이 더한 방법뿐이다. 같은 주문의 열린 반품·교환·클레임 변경이
+ * 더한 배송 방법(반품 배송 등)은 그 변경의 것이라 건드리지 않는다. 열린 주문 수정이 없으면 아무것도 하지 않는다 —
+ * cancelBeginOrderEditWorkflow 는 change_type 을 보지 않고 열린 변경 하나를 지운다(열린 반품 요청이면 그것을 지운다).
  */
 export async function cancelOpenOrderEdit(container: MedusaContainer, orderId: string): Promise<void> {
   const orderModule = container.resolve(Modules.ORDER);
-  const changes = await orderModule.listOrderChanges({ order_id: orderId }, { select: ['id', 'status'] });
-  const open = changes.filter((ch) => ch.status === OrderChangeStatus.PENDING || ch.status === OrderChangeStatus.REQUESTED);
-  const actions = open.length
-    ? await orderModule.listOrderChangeActions({ order_change_id: open.map((ch) => ch.id) }, { select: ['id', 'action', 'reference_id'] })
-    : [];
+  const changes = await orderModule.listOrderChanges({ order_id: orderId }, { select: ['id', 'status', 'change_type'] });
+  const open = changes.filter(
+    (ch) =>
+      ch.change_type === OrderChangeType.EDIT &&
+      (ch.status === OrderChangeStatus.PENDING || ch.status === OrderChangeStatus.REQUESTED),
+  );
+  if (open.length === 0) return;
+  const actions = await orderModule.listOrderChangeActions(
+    { order_change_id: open.map((ch) => ch.id) },
+    { select: ['id', 'action', 'reference_id'] },
+  );
   const added = actions.flatMap((a) => (a.action === ChangeActionType.SHIPPING_ADD && a.reference_id ? [a.reference_id] : []));
   if (added.length > 0) await orderModule.softDeleteOrderShippingMethods(added);
   await cancelBeginOrderEditWorkflow(container).run({ input: { order_id: orderId } });
