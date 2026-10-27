@@ -83,16 +83,19 @@ export class CustomerReturnManager {
           salesOrderLineId: wmsTables.customerReturnLines.salesOrderLineId,
         });
       const returnLineIdBySalesLine = new Map(insertedLines.map((row) => [row.salesOrderLineId, row.id]));
-      await trx.insert(wmsTables.customerReturnItems).values(
-        lines.flatMap((line) =>
-          (compositions.get(line.salesOrderLineId) ?? []).map((c) => ({
-            customerReturnLineId: returnLineIdBySalesLine.get(line.salesOrderLineId) as string,
-            skuId: c.skuId,
-            qtyPerUnit: c.qtyPerUnit,
-            expectedQty: line.quantity * c.qtyPerUnit,
-          })),
-        ),
-      );
+      const itemRows = lines.flatMap((line) => {
+        const customerReturnLineId = returnLineIdBySalesLine.get(line.salesOrderLineId);
+        if (!customerReturnLineId) {
+          throw new Error(`Inserted customer return line not returned for sales line ${line.salesOrderLineId}`);
+        }
+        return (compositions.get(line.salesOrderLineId) ?? []).map((c) => ({
+          customerReturnLineId,
+          skuId: c.skuId,
+          qtyPerUnit: c.qtyPerUnit,
+          expectedQty: line.quantity * c.qtyPerUnit,
+        }));
+      });
+      await trx.insert(wmsTables.customerReturnItems).values(itemRows);
       await enqueueSalesOrderClaimProgress(this.coreOrders, trx, {
         salesOrderId,
         kind: 'return',
