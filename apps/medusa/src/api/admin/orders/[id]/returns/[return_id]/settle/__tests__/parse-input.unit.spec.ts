@@ -22,6 +22,20 @@ describe('return settle parseInput', () => {
       closesMissing: true,
     });
   });
+  it.each([
+    ['holdDeduction', { amount: 5000, memo: 'm' }, 'hold_deduction'],
+    ['alreadyRefundedAmount', 10000, 'already_refunded_amount'],
+    ['closesMissing', true, 'closes_missing'],
+  ])('camelCase %s 는 snake_case 키를 짚어 INVALID_DATA — 버리면 차감·상계 없이 정산돼 더 환불한다', (key, value, snake) => {
+    let err: unknown;
+    try {
+      parseInput({ ...base, [key]: value });
+    } catch (e) {
+      err = e;
+    }
+    expect(MedusaError.isMedusaError(err) && err.type === MedusaError.Types.INVALID_DATA).toBe(true);
+    expect((err as Error).message).toContain(snake);
+  });
   it('closes_missing false 는 칸이 없는 것과 같다', () => {
     expect(parseInput({ ...base, closes_missing: false })).not.toHaveProperty('closesMissing');
   });

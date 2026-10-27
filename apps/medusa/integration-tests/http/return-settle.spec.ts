@@ -350,7 +350,9 @@ medusaIntegrationTestRunner({
       const res = await settle(orderId, returnId, { requestId: rid('settle'), items: [{ item_id: itemOf('A'), received: 2, dismissed: 0 }] });
 
       expect(res.status).toBe(400);
-      expect(res.data).toEqual(expect.objectContaining({ code: 'return_settle_rejected', reason: 'external_refund_unresolved' }));
+      expect(res.data).toEqual(
+        expect.objectContaining({ code: 'return_settle_rejected', reason: 'external_refund_unresolved', unresolvedAmount: 10000 }),
+      );
       const row = await returnRow(returnId);
       expect(row.status).toBe('requested');
       expect(readReturnSettlementRecord(row.metadata)).toBeNull();
@@ -711,7 +713,7 @@ medusaIntegrationTestRunner({
       expect(wallet.refundCalls()).toHaveLength(0);
     });
 
-    it('선환불한 반품을 closesMissing 으로 정산 → 500, 반품 그대로(N15 — 상계 뒤 차액이 양수가 될 수 있다)', async () => {
+    it('선환불한 반품을 closesMissing 으로 정산 → 400 prepaid_closes_missing, 반품 그대로(N15 — 상계 뒤 차액이 양수가 될 수 있다)', async () => {
       const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
       const returnId = await requestReturn(orderId, itemOf('A'), 2);
       const requestId = rid('cr');
@@ -723,7 +725,9 @@ medusaIntegrationTestRunner({
         closes_missing: true,
       });
 
-      expect(res.status).toBe(500);
+      expect(res.status).toBe(400);
+      expect(res.data).toEqual(expect.objectContaining({ type: 'not_allowed', code: 'return_settle_rejected', reason: 'prepaid_closes_missing' }));
+      expect(res.data).not.toHaveProperty('unresolvedAmount');
       const row = await returnRow(returnId);
       expect(row.status).toBe('requested');
       expect(readReturnSettlementRecord(row.metadata)).toBeNull();
@@ -782,12 +786,16 @@ medusaIntegrationTestRunner({
 
       const absent = await settle(orderId, returnId, { requestId: rid('cr'), items, already_refunded_amount: 5000 });
       expect(absent.status).toBe(400);
-      expect(absent.data).toEqual(expect.objectContaining({ code: 'return_settle_rejected', reason: 'external_refund_absent' }));
+      expect(absent.data).toEqual(
+        expect.objectContaining({ code: 'return_settle_rejected', reason: 'external_refund_absent', unresolvedAmount: 0 }),
+      );
 
       wallet.addExternalRefund(intentId, 10000);
       const exceeds = await settle(orderId, returnId, { requestId: rid('cr'), items, already_refunded_amount: 20000 });
       expect(exceeds.status).toBe(400);
-      expect(exceeds.data).toEqual(expect.objectContaining({ code: 'return_settle_rejected', reason: 'external_refund_exceeds' }));
+      expect(exceeds.data).toEqual(
+        expect.objectContaining({ code: 'return_settle_rejected', reason: 'external_refund_exceeds', unresolvedAmount: 10000 }),
+      );
 
       const row = await returnRow(returnId);
       expect(row.status).toBe('requested');
@@ -885,6 +893,27 @@ medusaIntegrationTestRunner({
       expect(readReturnSettlementRecord(row.metadata)).toBeNull();
       expect(await changesTagged(orderId, `return-receive:${requestId}`)).toHaveLength(0);
       expect(wallet.refundCalls()).toHaveLength(callsBefore);
+    });
+
+    it('CS 칸을 camelCase 로 보내면 400 invalid_data — 차감·상계 없이 정산하지 않는다', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+      const items = [{ item_id: itemOf('A'), received: 2, dismissed: 0 }];
+
+      for (const [extra, snake] of [
+        [{ holdDeduction: { amount: 5000, memo: '흔적' } }, 'hold_deduction'],
+        [{ alreadyRefundedAmount: 0 }, 'already_refunded_amount'],
+        [{ closesMissing: true }, 'closes_missing'],
+      ] as const) {
+        const res = await settle(orderId, returnId, { requestId: rid('cr'), items, ...extra });
+        expect(res.status).toBe(400);
+        expect(res.data.type).toBe('invalid_data');
+        expect(res.data.message).toContain(snake);
+      }
+      const row = await returnRow(returnId);
+      expect(row.status).toBe('requested');
+      expect(readReturnSettlementRecord(row.metadata)).toBeNull();
+      expect(wallet.refundCalls()).toHaveLength(0);
     });
 
     it('같은 requestId 에 보류 차감액만 다르면 400 request_id_conflict', async () => {

@@ -81,13 +81,18 @@ export type ReturnSettleRejectReason =
   | 'external_refund_unresolved'
   | 'external_refund_exceeds'
   | 'external_refund_absent'
-  | 'return_already_received';
+  | 'return_already_received'
+  | 'prepaid_closes_missing';
 
-/** 정해진 거절 — 다시 불러도 같다. 라우트가 400 code=return_settle_rejected + reason 으로 낸다. 반품·주문은 그대로다. */
+/**
+ * 정해진 거절 — 다시 불러도 같다. 라우트가 400 code=return_settle_rejected + reason 으로 낸다. 반품·주문은 그대로다.
+ * external_refund_* 는 미해결 외부 환불(unresolvedAmount, 원)을 싣는다 — CS 가 «이미 환불한 금액»을 채울 숫자다(부분취소와 같다).
+ */
 export class ReturnSettleRejected extends Error {
   constructor(
     readonly reason: ReturnSettleRejectReason,
     message: string,
+    readonly unresolvedAmount?: number,
   ) {
     super(message);
     this.name = 'ReturnSettleRejected';
@@ -377,6 +382,7 @@ function assertExternalRefundResolved(
       throw new ReturnSettleRejected(
         'external_refund_unresolved',
         `품목에 연결 안 된 외부 환불 ${unresolved}원이 있는 주문입니다 — 반품 환불을 더 내면 이중 환불이라 정산하지 않습니다`,
+        unresolved,
       );
     }
     return;
@@ -384,7 +390,9 @@ function assertExternalRefundResolved(
   try {
     checkAlreadyRefunded(unresolved, alreadyRefunded);
   } catch (error) {
-    if (error instanceof PartialCancelExternalRefundRejected) throw new ReturnSettleRejected(error.reason, error.message);
+    if (error instanceof PartialCancelExternalRefundRejected) {
+      throw new ReturnSettleRejected(error.reason, error.message, error.unresolvedAmount);
+    }
     throw error;
   }
 }
@@ -393,8 +401,8 @@ function assertExternalRefundResolved(
  * 상계 식(N6)이 맞으려면 그 주문의 다른 돈 일이 끝나 있어야 한다 — 수령 전 차액에 «크레딧 없는 선환불·외부 환불»만 양수로
  * 들어 있다고 보고 상계 크레딧 라인을 재기 때문이다. 상계할 돈(선환불·외부 환불)이 있는데 환불이 안 끝난 부분취소·다른 반품
  * 정산 기록이 있으면 기다린다(일반 Error → 500, 재시도). 주문을 바꾸기 «전»이다.
- * 선환불한 반품은 미도착으로 닫지 못한다(N15) — 닫으면 정산 품목 값이 선환불보다 작아져 상계 뒤 차액이 양수(NOT_PAID)가 될 수 있다.
- * core 가 막는 자리지만 수령 뒤엔 되돌릴 수 없어 여기서도 멈춘다.
+ * 선환불한 반품은 미도착으로 닫지 못한다(N15, prepaid_closes_missing) — 닫으면 정산 품목 값이 선환불보다 작아져 상계 뒤 차액이
+ * 양수(NOT_PAID)가 될 수 있다. core 가 막는 자리지만 수령 뒤엔 되돌릴 수 없어 여기서도 정해진 거절로 멈춘다.
  */
 function assertOffsetPremises(
   order: OrderView,
@@ -402,7 +410,7 @@ function assertOffsetPremises(
   p: { prepaid: number; externalRefund: number; closesMissing: boolean },
 ): void {
   if (p.closesMissing && p.prepaid > 0) {
-    throw new Error(`선환불(${p.prepaid}원)한 반품은 미도착으로 닫고 정산할 수 없습니다 — 수동 확인이 필요합니다`);
+    throw new ReturnSettleRejected('prepaid_closes_missing', `선환불(${p.prepaid}원)한 반품은 미도착으로 닫고 정산할 수 없습니다`);
   }
   if (p.prepaid + p.externalRefund <= 0) return;
   const unfinished =

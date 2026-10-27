@@ -19,6 +19,16 @@ export type ReturnSettleBody = {
 const MEMO_MAX_LENGTH = 500;
 
 const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
+
+/**
+ * camelCase 로 온 CS 칸 → 써야 할 snake_case 키. 모르는 키는 버리는 본문이라, `holdDeduction` 으로 보내면 차감 없이 정산돼
+ * 조용히 더 환불한다 — 그래서 이 셋은 이름을 짚어 거절한다.
+ */
+const CAMEL_CS_KEYS: ReadonlyArray<readonly [string, string]> = [
+  ['holdDeduction', 'hold_deduction'],
+  ['alreadyRefundedAmount', 'already_refunded_amount'],
+  ['closesMissing', 'closes_missing'],
+];
 const invalid = (message: string) => new MedusaError(MedusaError.Types.INVALID_DATA, message);
 
 /**
@@ -35,6 +45,9 @@ export function parseInput(body: unknown): ReturnSettleBody {
     closes_missing?: unknown;
   };
   if (typeof b.requestId !== 'string' || b.requestId.trim() === '') throw invalid('requestId 가 필요합니다');
+  for (const [camel, snake] of CAMEL_CS_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(b, camel)) throw invalid(`${camel} 가 아니라 ${snake} 로 보내세요`);
+  }
   if (!Array.isArray(b.items) || b.items.length === 0) throw invalid('items 가 비어 있습니다');
   const items = b.items.map((raw, i) => {
     const it = (raw ?? {}) as { item_id?: unknown; received?: unknown; dismissed?: unknown };
