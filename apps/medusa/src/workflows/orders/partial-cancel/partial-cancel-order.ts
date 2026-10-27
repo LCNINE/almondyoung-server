@@ -1,24 +1,24 @@
 import type { MedusaContainer } from '@medusajs/framework/types';
-import { ChangeActionType, ContainerRegistrationKeys, Modules, OrderChangeStatus } from '@medusajs/framework/utils';
+import { ChangeActionType, ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import {
   beginOrderEditOrderWorkflow,
   cancelBeginOrderEditWorkflow,
   confirmOrderEditRequestWorkflow,
   createOrderChangeActionsWorkflow,
   createOrderCreditLinesWorkflow,
-  createOrderEditShippingMethodWorkflow,
   orderEditUpdateItemQuantityWorkflow,
   requestOrderEditRequestWorkflow,
 } from '@medusajs/medusa/core-flows';
 
 import { readWalletRefundRefusal } from '../../../modules/almond-payment/wallet-refund-refusal';
 import { describeError } from '../../../utils/describe-error';
-import { loadOrderView, type OrderView } from '../settlement/load-order-view';
+import { loadOrderView, productShippingProfiles, type OrderView } from '../settlement/load-order-view';
+import { addChargeShippingMethod, ensureNoDanglingChange } from '../settlement/order-edit-charge';
 import { orderCancelLockKey, orderPaymentIds } from '../settlement/order-payments';
 import { refundOrderPayments } from '../settlement/refund-order-payments';
 import type { RefundMode } from '../settlement/refund-mode';
 import { reconcileOrderWalletRefunds } from '../settlement/wallet-refund-ledger';
-import { loadReturnSettlementRecords } from '../returns/return-settlement-record';
+import { assertNoReturnAwaitingCharge, loadReturnSettlementRecords } from '../returns/return-settlement-record';
 import { toNumber } from './amount';
 import { appliedExternalRefund, checkAlreadyRefunded, hashRequest, unresolvedExternalRefund } from './external-refund';
 import type { OrderAdjustment } from './prorate-adjustments';
@@ -131,7 +131,7 @@ export async function partialCancelOrder(container: MedusaContainer, input: Part
 async function run(container: MedusaContainer, input: PartialCancelInput): Promise<PartialCancelResult> {
   const requestHash = hashRequest(input.items, input.alreadyRefunded);
   let order = await loadOrder(container, input.orderId);
-  const existing = readRecords(order.metadata)[input.requestId];
+  const existing = readPartialCancelRecords(order.metadata)[input.requestId];
   if (existing && existing.requestHash !== requestHash) {
     throw new PartialCancelRejected(`같은 requestId 로 다른 요청이 왔습니다: ${input.requestId}`);
   }
@@ -171,9 +171,16 @@ async function run(container: MedusaContainer, input: PartialCancelInput): Promi
 
 async function edit(container: MedusaContainer, input: PartialCancelInput, order: OrderView, requestHash: string): Promise<PartialCancelRecord> {
   if (order.status === 'canceled') throw new PartialCancelRejected('이미 취소된 주문입니다');
+  const returnRecords = await loadReturnSettlementRecords(container, order.id);
+  // 수령은 됐는데 택배비 청구 전에 끊긴 반품 정산이 있으면 기다린다(500 → 호출자 재시도). 지금 부분취소하면 이 취소가
+  // 깨짐을 받고, 이어 가는 반품 정산이 같은 깨짐을 또 받는다. 수령·청구는 같은 주문 잠금 안이라 이 창은 끊긴 정산 뒤에만 있다.
+  // 주문을 바꾸는 단계보다 앞이다.
+  assertNoReturnAwaitingCharge(returnRecords);
   // 계획 검증보다 «먼저» 본다: 확정 뒤 기록 전에 끊긴 요청은 이미 수량을 줄여 놨다. 줄을 통째로 뺐다면 계획 검증이
   // «주문에 없는 줄»로 업무 거절(400)을 내고, 호출자가 취소를 닫아 주문은 수정된 채 환불 0 으로 남는다.
-  await ensureNoDanglingEdit(container, order.id, input.requestId);
+  await ensureNoDanglingChange(container, order.id, editTag(input.requestId), async () => {
+    await cancelBeginOrderEditWorkflow(container).run({ input: { order_id: order.id } });
+  });
   const plan = planPartialCancel(order.lines, input.items);
   // 끊긴 확정 수정을 먼저 가린 «뒤»에 본다 — 앞에 두면 그 경우가 업무 거절(400)로 닫혀 주문만 줄어든 채 남는다(Review Focus 1).
   // 계획 검증 «뒤»에 둬서 잘못된 수량은 금액을 묻기 전에 제 사유로 거절된다. 주문을 바꾸는 단계보다는 여전히 앞이다.
@@ -189,10 +196,7 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
     methods: order.shippingMethods,
     lines: shippingPlanLines(order.lines, newQty, profiles),
     postalCode: order.postalCode,
-    priorGroupFees: priorGroupFeesFor(
-      Object.values(readRecords(order.metadata)),
-      await loadReturnSettlementRecords(container, order.id),
-    ),
+    priorGroupFees: priorGroupFeesFor(Object.values(readPartialCancelRecords(order.metadata)), returnRecords),
     chargeCap: bearer === 'seller' ? 0 : plan.itemRefundEstimate,
   });
 
@@ -221,11 +225,14 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
     if (shipping.adjustable && shipping.charge > 0) {
       const target = shipping.groups.find((g) => g.recordedFee > g.currentFee);
       if (!target) throw new Error('배송비 청구가 있는데 올라간 그룹이 없습니다');
-      await createOrderEditShippingMethodWorkflow(container).run({
-        input: { order_id: order.id, shipping_option_id: target.shippingOptionId, custom_amount: shipping.charge },
-      });
       // 이름으로 «부분취소 배송비»를 표시한다 — 다음 부분취소의 그룹 판정에서 이 방법을 뺀다
-      await renameAddedShippingMethod(container, change.id, PARTIAL_CANCEL_CHARGE_NAME);
+      await addChargeShippingMethod(container, {
+        orderId: order.id,
+        orderChangeId: change.id,
+        shippingOptionId: target.shippingOptionId,
+        amount: shipping.charge,
+        name: PARTIAL_CANCEL_CHARGE_NAME,
+      });
     }
 
     await requestOrderEditRequestWorkflow(container).run({ input: { order_id: order.id, requested_by: input.actorId } });
@@ -277,7 +284,7 @@ async function assertExternalRefundsResolved(container: MedusaContainer, order: 
     : [];
   const unresolved = unresolvedExternalRefund(
     payments.flatMap((p) => p.refunds ?? []),
-    Object.values(readRecords(order.metadata)),
+    Object.values(readPartialCancelRecords(order.metadata)),
   );
   checkAlreadyRefunded(unresolved, alreadyRefunded);
 }
@@ -331,55 +338,10 @@ async function loadOrder(container: MedusaContainer, orderId: string): Promise<O
   return order;
 }
 
-async function productShippingProfiles(container: MedusaContainer, productIds: string[]): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
-  if (productIds.length === 0) return map;
-  const query = container.resolve(ContainerRegistrationKeys.QUERY);
-  const { data } = await query.graph({ entity: 'product', fields: ['id', 'shipping_profile.id'], filters: { id: [...new Set(productIds)] } });
-  // 링크 필드(shipping_profile)는 graph 결과 타입에 없다 — 경계에서 좁힌다.
-  for (const p of data as Array<{ id: string; shipping_profile?: { id?: string } | null }>) {
-    if (p.shipping_profile?.id) map.set(p.id, p.shipping_profile.id);
-  }
-  return map;
-}
-
-/**
- * 이 requestId 로 연 주문 수정이 남아 있는지 본다.
- * - 열린 채(pending/requested) 남았으면 앞선 시도가 확정 전에 끊긴 것 — 버리고 새로 한다.
- * - 확정됐는데 기록이 없으면 확정과 기록 사이에 끊긴 것 — 다시 하면 수량을 두 번 줄이므로 멈춘다(사람이 확인).
- */
-async function ensureNoDanglingEdit(container: MedusaContainer, orderId: string, requestId: string) {
-  const orderModule = container.resolve(Modules.ORDER);
-  // internal_note 는 모델에는 있는데 OrderChangeDTO 타입에 빠져 있다 — 고른 필드만 담은 모양으로 좁힌다.
-  const changes = (await orderModule.listOrderChanges(
-    { order_id: orderId },
-    { select: ['id', 'status', 'internal_note'] },
-  )) as Array<{ id: string; status: string; internal_note?: string | null }>;
-  const mine = changes.filter((ch) => ch.internal_note === editTag(requestId));
-  if (mine.some((ch) => ch.status === OrderChangeStatus.CONFIRMED)) {
-    throw new Error(`부분취소 ${requestId} 의 주문 수정은 확정됐는데 진행 기록이 없습니다 — 다시 하면 두 번 취소되므로 멈춥니다. 수동 확인이 필요합니다`);
-  }
-  if (mine.some((ch) => ch.status === OrderChangeStatus.PENDING || ch.status === OrderChangeStatus.REQUESTED)) {
-    await cancelBeginOrderEditWorkflow(container).run({ input: { order_id: orderId } });
-  }
-}
-
-/** createOrderEditShippingMethodWorkflow 는 이름을 받지 않는다 — 이 주문 수정이 방금 더한 방법의 이름을 바꾼다. */
-async function renameAddedShippingMethod(container: MedusaContainer, orderChangeId: string, name: string) {
-  const orderModule = container.resolve(Modules.ORDER);
-  const actions = await orderModule.listOrderChangeActions(
-    { order_change_id: orderChangeId },
-    { select: ['id', 'action', 'reference_id', 'ordering'] },
-  );
-  const added = actions.filter((a) => a.action === ChangeActionType.SHIPPING_ADD).sort((a, b) => a.ordering - b.ordering);
-  const id = added[added.length - 1]?.reference_id;
-  if (!id) throw new Error(`방금 더한 배송 방법을 찾지 못했습니다: ${orderChangeId}`);
-  await orderModule.updateOrderShippingMethods([{ id, name }]);
-}
-
 // ── 기록 ──────────────────────────────────────────────────────────────────────
 
-function readRecords(metadata: unknown): Record<string, PartialCancelRecord> {
+/** 주문 metadata 의 부분취소 기록들. 반품 정산도 읽는다 — 외부 환불 판정(상계한 몫)과 그룹 요금 겹치기. */
+export function readPartialCancelRecords(metadata: unknown): Record<string, PartialCancelRecord> {
   const v = (metadata as Record<string, unknown> | null | undefined)?.partialCancels;
   if (!v || typeof v !== 'object') return {};
   // metadata 는 JSON 병합 갱신이라 «지운» 기록은 null 로 남는다 — 객체가 아닌 값은 기록이 없는 것으로 본다.
@@ -393,7 +355,7 @@ async function writeRecord(container: MedusaContainer, orderId: string, requestI
   const current = await orderModule.retrieveOrder(orderId, { select: ['id', 'metadata'] });
   const meta = (current.metadata ?? {}) as Record<string, unknown>;
   await orderModule.updateOrders([
-    { id: orderId, metadata: { ...meta, partialCancels: { ...readRecords(meta), [requestId]: record } } },
+    { id: orderId, metadata: { ...meta, partialCancels: { ...readPartialCancelRecords(meta), [requestId]: record } } },
   ]);
 }
 

@@ -1,5 +1,5 @@
 import type { MedusaContainer } from '@medusajs/framework/types';
-import { Modules } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 
 import { POLICY_SNAPSHOT_KEY, type ShippingPolicySnapshot } from '../../../modules/almond-fulfillment/types';
 import { toNumber } from '../partial-cancel/amount';
@@ -73,6 +73,19 @@ export async function loadOrderView(container: MedusaContainer, orderId: string)
     postalCode: o.shipping_address?.postal_code ?? null,
     pendingDifference,
   };
+}
+
+/** 상품 → 지금 배송 프로필. 그룹 소속은 «지금» 상품의 배송 프로필로 정한다(부분취소·반품 정산). */
+export async function productShippingProfiles(container: MedusaContainer, productIds: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (productIds.length === 0) return map;
+  const query = container.resolve(ContainerRegistrationKeys.QUERY);
+  const { data } = await query.graph({ entity: 'product', fields: ['id', 'shipping_profile.id'], filters: { id: [...new Set(productIds)] } });
+  // 링크 필드(shipping_profile)는 graph 결과 타입에 없다 — 경계에서 좁힌다.
+  for (const p of data as Array<{ id: string; shipping_profile?: { id?: string } | null }>) {
+    if (p.shipping_profile?.id) map.set(p.id, p.shipping_profile.id);
+  }
+  return map;
 }
 
 /** 배송 방법 → 계획 입력. amount 는 할인 «전» 금액이라, 할인이 붙었는지를 따로 넘긴다(planShipping 이 조정을 멈춘다). */

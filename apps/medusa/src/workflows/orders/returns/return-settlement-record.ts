@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import type { MedusaContainer } from '@medusajs/framework/types';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 
@@ -70,6 +71,34 @@ export function readReturnSettlementRecord(metadata: unknown): ReturnSettlementR
     ...(r.refundedAt !== undefined ? { refundedAt: r.refundedAt } : {}),
     ...(r.refundMode !== undefined ? { refundMode: r.refundMode } : {}),
   };
+}
+
+/**
+ * 정산 요청 해시. requestId 를 넣는다 — 반품 하나에 정산 요청은 하나(core customer_returns.id)라, 다른 requestId 는
+ * 같은 품목이어도 «다른 요청»이다. 품목 순서는 무관하다.
+ */
+export function hashReturnSettlement(requestId: string, items: ReturnSettlementRecord['items']): string {
+  const sorted = [...items]
+    .map((i) => ({ itemId: i.itemId, received: i.received, dismissed: i.dismissed }))
+    .sort((a, b) => a.itemId.localeCompare(b.itemId));
+  return createHash('sha256').update(JSON.stringify({ requestId, items: sorted })).digest('hex');
+}
+
+/**
+ * 수령은 됐는데 택배비 청구 전에 멈춘 정산(stage received)이 있으면 부분취소를 막는다 — 일반 Error 라 500(일시, 재시도)이다.
+ * 그 사이 부분취소가 무료배송 깨짐을 받으면, 이어 가는 반품 정산이 같은 깨짐을 또 받는다.
+ */
+export function assertNoReturnAwaitingCharge(records: ReturnSettlementRecord[]): void {
+  if (records.some((r) => r.stage === 'received')) {
+    throw new Error('수령까지 끝나고 택배비 청구 전에 멈춘 반품 정산이 있습니다 — 그 정산이 끝난 뒤 다시 시도하세요');
+  }
+}
+
+/** 쓰기 전에 본다: 읽기(readReturnSettlementRecord)가 버릴 모양이면 겹치기가 이 기록을 조용히 빼므로 쓰지 않고 멈춘다. */
+export function assertReadableSettlementRecord(record: ReturnSettlementRecord): void {
+  if (!readReturnSettlementRecord({ [RETURN_SETTLEMENT_METADATA_KEY]: record })) {
+    throw new Error(`반품 정산 기록의 모양이 어긋납니다: ${JSON.stringify(record)}`);
+  }
 }
 
 type GraphOrderReturns = { returns?: Array<{ metadata?: Record<string, unknown> | null } | null> | null };

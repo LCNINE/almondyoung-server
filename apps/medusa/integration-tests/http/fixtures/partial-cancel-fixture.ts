@@ -264,7 +264,7 @@ export type Commerce = {
   storeHeaders: { headers: Record<string, string> };
   adminHeaders: { headers: Record<string, string> };
   groups: Record<'cond' | 'flat' | 'perq', { code: string; shippingProfileId: string; shippingOptionId: string }>;
-  variants: Record<'A' | 'B' | 'C' | 'D', string>;
+  variants: Record<'A' | 'B' | 'C' | 'D' | 'E', string>;
 };
 
 export async function setupCommerce({ api, getContainer }: Ctx): Promise<Commerce> {
@@ -323,6 +323,8 @@ export async function setupCommerce({ api, getContainer }: Ctx): Promise<Commerc
         product('PC-B', 'PC-B', 30000, groups.cond.shippingProfileId),
         product('PC-C', 'PC-C', 10000, groups.flat.shippingProfileId),
         product('PC-D', 'PC-D', 5000, groups.perq.shippingProfileId),
+        // 조건부 무료 그룹의 작은 상품 — 반품 뒤 다른 품목 부분취소(K8 PR6 Review Focus 5)
+        product('PC-E', 'PC-E', 10000, groups.cond.shippingProfileId),
       ],
     },
   });
@@ -331,6 +333,7 @@ export async function setupCommerce({ api, getContainer }: Ctx): Promise<Commerc
     B: products[1].variants[0].id,
     C: products[2].variants[0].id,
     D: products[3].variants[0].id,
+    E: products[4].variants[0].id,
   };
 
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
@@ -386,7 +389,7 @@ export async function placeOrder(
   c: Commerce,
   wallet: FakeWallet,
   opts: {
-    lines: Array<{ variant: 'A' | 'B' | 'C' | 'D'; quantity: number }>;
+    lines: Array<{ variant: 'A' | 'B' | 'C' | 'D' | 'E'; quantity: number }>;
     promoCode?: string;
     /** 배송 방법을 넣은 «뒤»에 적용한다 — 배송 방법이 없는 카트에선 배송비 할인이 붙을 대상이 없다. */
     shippingPromoCode?: string;
@@ -411,7 +414,7 @@ export async function placeOrder(
   if (opts.promoCode) await api.post(`/store/carts/${cartId}/promotions`, { promo_codes: [opts.promoCode] }, c.storeHeaders);
 
   // 주문에 쓰인 그룹마다 배송 방법 하나. 기본 라우트는 호출마다 기존 방법을 전부 지우므로 bulk 라우트로 한 번에 넣는다.
-  const used = [...new Set(opts.lines.map((l) => ({ A: 'cond', B: 'cond', C: 'flat', D: 'perq' } as const)[l.variant]))];
+  const used = [...new Set(opts.lines.map((l) => ({ A: 'cond', B: 'cond', C: 'flat', D: 'perq', E: 'cond' } as const)[l.variant]))];
   await api.post(
     `/store/carts/${cartId}/shipping-methods/bulk`,
     { option_ids: used.map((g) => c.groups[g].shippingOptionId) },
