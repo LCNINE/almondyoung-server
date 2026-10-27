@@ -65,6 +65,7 @@ function makeConsumer(tx: DbTx): OrderEventsConsumer {
       new OrderCancellationReader(),
       {} as never,
     ),
+    unused as never,
   );
 }
 

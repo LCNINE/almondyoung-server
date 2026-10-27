@@ -16,6 +16,7 @@ import type { EnvelopeOf } from '@packages/event-contracts/types';
 import { ORDER_STREAM } from '@packages/event-contracts/streams/orders.stream';
 import 'reflect-metadata';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestError, NotFoundError } from '@app/shared';
 import { RETRY_POLICY_METADATA } from '@app/events';
 
 /**
@@ -42,6 +43,7 @@ describe('OrderEventsConsumer', () => {
     cancelSettler: { settleCancelled: jest.Mock };
     cancelRequests: { recordSettlementFailure: jest.Mock };
     printCancel: { cancelForOrder: jest.Mock; holdUnsent: jest.Mock };
+    customerReturns: { recordRequested: jest.Mock; recordCancelled: jest.Mock };
     txInserts: Array<{ table: unknown; values: unknown }>;
     // Rows returned by the businessLinks idempotency guard's `select(...)` lookup. Empty by
     // default (no existing link); push a row to simulate a refund link already recorded.
@@ -102,6 +104,10 @@ describe('OrderEventsConsumer', () => {
         cancelForOrder: jest.fn().mockResolvedValue(undefined),
         holdUnsent: jest.fn().mockResolvedValue(undefined),
       },
+      customerReturns: {
+        recordRequested: jest.fn().mockResolvedValue({ customerReturnId: 'cr-1', created: true }),
+        recordCancelled: jest.fn().mockResolvedValue({ customerReturnId: 'cr-1', changed: true }),
+      },
       txInserts,
       businessLinkRows,
       fakeTx,
@@ -128,6 +134,7 @@ describe('OrderEventsConsumer', () => {
         new OrderCancellationReader(),
         {} as never,
       ),
+      mocks.customerReturns as any,
     );
   }
 
@@ -833,5 +840,47 @@ describe('OrderEventsConsumer poison classification (작업 13)', () => {
   it('classifies OrderModified SO-not-found as non-retryable (즉시 DLQ, 스펙 §11)', () => {
     const policy = retryPolicyOf(proto.handleOrderModified);
     expect(policy?.nonRetryableErrors).toEqual([NotFoundException]);
+  });
+
+  it('classifies ChannelReturnRequested/Cancelled domain NotFound·BadRequest as non-retryable, Conflict stays retryable', () => {
+    for (const handler of [proto.handleChannelReturnRequested, proto.handleChannelReturnCancelled]) {
+      expect(retryPolicyOf(handler)?.nonRetryableErrors).toEqual([NotFoundError, BadRequestError]);
+    }
+  });
+});
+
+describe('OrderEventsConsumer — 채널 반품 사실 위임 (K8 PR5)', () => {
+  const makeSubject = () => {
+    const customerReturns = {
+      recordRequested: jest.fn().mockResolvedValue({ customerReturnId: 'cr-1', created: true }),
+      recordCancelled: jest.fn().mockResolvedValue({ customerReturnId: 'cr-1', changed: true }),
+    };
+    const consumer = new OrderEventsConsumer(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      customerReturns as never,
+    );
+    return { consumer, customerReturns };
+  };
+  const envelope = { messageId: 'msg-r', correlationId: 'corr-r' };
+
+  it('ChannelReturnRequested 를 서비스에 그대로 넘긴다', async () => {
+    const { consumer, customerReturns } = makeSubject();
+    const payload = { returnId: 'ret-1', salesChannel: 'medusa', externalOrderId: 'order_1' };
+    await consumer.handleChannelReturnRequested(payload as never, envelope as never);
+    expect(customerReturns.recordRequested).toHaveBeenCalledWith(payload);
+  });
+
+  it('ChannelReturnCancelled 를 서비스에 그대로 넘긴다', async () => {
+    const { consumer, customerReturns } = makeSubject();
+    const payload = { returnId: 'ret-1', salesChannel: 'medusa', externalOrderId: 'order_1' };
+    await consumer.handleChannelReturnCancelled(payload as never, envelope as never);
+    expect(customerReturns.recordCancelled).toHaveBeenCalledWith(payload);
   });
 });
