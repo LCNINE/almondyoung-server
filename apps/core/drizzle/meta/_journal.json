@@ -946,6 +946,13 @@
       "when": 1793069082596,
       "tag": "20261027024442_add-returned-stock-state",
       "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1793074146213,
+      "tag": "20261027040906_add-customer-returns",
+      "breakpoints": true
     }
   ]
 }
