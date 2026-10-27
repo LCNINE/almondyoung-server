@@ -22,8 +22,11 @@ jest.mock('@/lib/services/wallet', () => ({
 }));
 jest.mock('@/lib/services/return-exchange/queries', () => ({
   ...jest.requireActual('@/lib/services/return-exchange/queries'),
-  useReturnRequests: mockQueue(),
   useExchangeRequests: mockQueue(),
+}));
+jest.mock('@/lib/services/customer-returns', () => ({
+  ...jest.requireActual('@/lib/services/customer-returns'),
+  useCustomerReturns: mockQueue(),
 }));
 jest.mock('@/lib/services/qna', () => ({ ...jest.requireActual('@/lib/services/qna'), useQuestions: mockQueue() }));
 jest.mock('@/lib/services/review', () => ({ ...jest.requireActual('@/lib/services/review'), useReviews: mockQueue() }));
@@ -36,7 +39,7 @@ const QUEUE_HOOKS: ReadonlyArray<readonly [string, string]> = [
   ['@/lib/services/orders', 'useOrderStats'],
   ['@/lib/services/wallet', 'usePendingBankTransfers'],
   ['@/lib/services/wallet', 'useRefundRequests'],
-  ['@/lib/services/return-exchange/queries', 'useReturnRequests'],
+  ['@/lib/services/customer-returns', 'useCustomerReturns'],
   ['@/lib/services/return-exchange/queries', 'useExchangeRequests'],
   ['@/lib/services/qna', 'useQuestions'],
   ['@/lib/services/review', 'useReviews'],
@@ -115,6 +118,7 @@ describe('admin home queues the viewer cannot read', () => {
     render(['analytics.report.read']);
     const calls = queueOptions();
     expect(calls.length).toBeGreaterThanOrEqual(QUEUE_HOOKS.length);
+    for (const [, hook] of QUEUE_HOOKS) expect(calls.some((c) => c.hook === hook)).toBe(true);
     for (const call of calls) expect(call).toEqual({ hook: call.hook, options: { enabled: false } });
   });
 
@@ -122,7 +126,7 @@ describe('admin home queues the viewer cannot read', () => {
     ['order.order.read', 'useOrderStats'],
     ['payment.payment.read', 'usePendingBankTransfers'],
     ['payment.refund.read', 'useRefundRequests'],
-    ['order.claim.read', 'useReturnRequests'],
+    ['order.claim.read', 'useCustomerReturns'],
     ['order.claim.read', 'useExchangeRequests'],
     ['cs.inquiry.read', 'useQuestions'],
     ['cs.review.read', 'useReviews'],

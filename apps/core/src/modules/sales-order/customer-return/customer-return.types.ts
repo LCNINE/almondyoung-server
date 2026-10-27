@@ -72,5 +72,5 @@ export type CustomerReturnPrepayment = {
 /** `customer_returns.cs_resolution` — CS 가 내린 결정(미도착 닫기·보류 차감, K8 PR6b) */
 export type CustomerReturnCsResolution = {
   missing?: { memo: string; by: string; at: string };
-  hold?: { deduction: number; memo: string; by: string; at: string };
+  hold?: { deduction: number; memo: string; by: string; at: string; dropped?: { by: string; at: string } };
 };

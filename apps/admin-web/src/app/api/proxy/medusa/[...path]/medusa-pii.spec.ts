@@ -32,7 +32,15 @@ describe('medusaPiiRuleFor', () => {
 
   it('covers every customer or order path the proxy lets through', () => {
     // 개인정보가 없다고 확인한 경로만 예외로 둔다. 고객 그룹은 `fields` 로 소속 고객을 펼칠 수 있어 대상이다.
-    const NO_PERSONAL_DATA = new Set(['GET admin/customers/:id/cart', 'GET admin/payment-sessions/:id/order']);
+    const NO_PERSONAL_DATA = new Set([
+      'GET admin/customers/:id/cart',
+      'GET admin/payment-sessions/:id/order',
+      // 반품 문(K8 PR7) — 응답이 품목 id·수량·금액·상태뿐이다
+      'GET admin/orders/:id/returnable',
+      'POST admin/orders/:id/returns',
+      'POST admin/orders/:id/returns/:returnId/cancel',
+      'GET admin/orders/:id/returns/:returnId/settlement-preview',
+    ]);
     const personal = MEDUSA_PERMISSIONS.filter(
       (r) => /^admin\/(customers|customer-groups|orders)(\/|$)|\/customers$/.test(r.pattern) && !NO_PERSONAL_DATA.has(`${r.method} ${r.pattern}`),
     );

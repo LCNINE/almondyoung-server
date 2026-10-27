@@ -58,6 +58,9 @@ import { EditOrderModal } from '../modals/edit-order-modal';
 import { AddOrderItemModal } from '../modals/add-order-item-modal';
 import { MemoModal } from '../modals/memo-modal';
 import { CancelOrderModal } from '../modals/cancel-order-modal';
+import { RequestReturnDialog } from '@/features/cs/return-exchange/components/request-return-dialog';
+import { Can } from '@/components/auth/can';
+import { useRequestCustomerReturn } from '@/lib/services/customer-returns';
 import { ManualRefundCompleteModal } from '../modals/manual-refund-complete-modal';
 
 /* ── 내부 ID (참조·복사용) ─────────────────────────────────── */
@@ -768,6 +771,8 @@ export default function OrderTable() {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showManualRefundModal, setShowManualRefundModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<OrderLineRow | null>(null);
+  // 반품 접수는 열린 동안에만 대화상자를 그린다 — request_id 를 열 때마다 새로 만들기 위해
+  const [returnOrderId, setReturnOrderId] = useState<string | null>(null);
   const { can, canRun } = usePermissionCheck();
   const canCancelOrder = canRun(useAdminCancelSalesOrder);
   // 메모 모달은 컴포넌트 안 뮤테이션이라 훅이 없다
@@ -1001,6 +1006,21 @@ export default function OrderTable() {
                     </>
                   );
                 })()}
+                {r.channel === 'medusa' && r.isFirstOfOrder && (
+                  <Can run={useRequestCustomerReturn}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={(e: MouseEvent) => {
+                        e.stopPropagation();
+                        setReturnOrderId(r.channelOrderId);
+                      }}
+                    >
+                      반품 접수
+                    </Button>
+                  </Can>
+                )}
                 {r.isFirstOfOrder && r.refundStatus === 'manual_pending' && (
                   <>
                     <RefundStatusBadge status={r.refundStatus} />
@@ -1237,6 +1257,9 @@ export default function OrderTable() {
         open={showManualRefundModal}
         onOpenChange={setShowManualRefundModal}
       />
+      {returnOrderId && (
+        <RequestReturnDialog orderId={returnOrderId} onClose={() => setReturnOrderId(null)} />
+      )}
     </>
   );
 }

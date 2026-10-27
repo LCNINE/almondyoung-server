@@ -32,7 +32,8 @@ import {
   useRefundRequests,
 } from '@/lib/services/wallet/queries';
 import { useOrderStats } from '@/lib/services/orders/queries';
-import { useExchangeRequests, useReturnRequests } from '@/lib/services/return-exchange/queries';
+import { useExchangeRequests } from '@/lib/services/return-exchange/queries';
+import { useCustomerReturns } from '@/lib/services/customer-returns';
 import { useQuestions } from '@/lib/services/qna/queries';
 import { toLocalDateString } from '@/lib/utils/date';
 import { cn } from '@/lib/utils/ui';
@@ -171,7 +172,7 @@ export default function OverviewStatisticsTemplate() {
   const orderStats = useOrderStats();
   const bankTransfers = usePendingBankTransfers(1, 1);
   const refundRequests = useRefundRequests(1, 1);
-  const returnRequests = useReturnRequests({ status: 'requested', page: 1, limit: 1 });
+  const returnRequests = useCustomerReturns({ bucket: 'open', limit: 1 });
   const exchangeRequests = useExchangeRequests({ status: 'requested', page: 1, limit: 1 });
   const unansweredQna = useQuestions({ status: 'active', page: 1, limit: 1 });
   const unansweredReviews = useReviews({ hasComment: 'false', status: 'active', page: 1, limit: 1 });

@@ -45,6 +45,11 @@ const PREPAY_SUPERSEDED_CODE = 'return_prepay_rejected:return_already_settled';
  * absent(외부 환불이 없는데 적었다)는 지우기(null)가 유일한 출구다
  */
 const EXTERNAL_REFUND_REJECTED_PREFIX = 'return_settle_rejected:external_refund_';
+/**
+ * 보류 차감을 붙일 배송 방법이 없어 Medusa 가 거절한 정산 — «차감 없이 다시 내기»(`dropHoldDeduction`)가 허락되는 유일한 실패.
+ * 수령·기록 «전» 거절이라 명령을 바꿔 다시 낼 수 있다
+ */
+export const NO_CHARGE_SHIPPING_OPTION_FAILURE = 'return_settle_rejected:no_charge_shipping_option';
 
 /** 다시 시작하기 «전» 발행의 실패 사실이 늦게 왔다 — 다시 시작한 칸을 그 실패로 되돌리지 않는다(M4) */
 const predatesRestart = (at: string, slot: { restartedAt?: string }): boolean =>
@@ -61,6 +66,11 @@ export type RestartCustomerReturnInput = {
    * 돌려준 금액(원). null 이면 저장된 값을 지운다(없음 거절의 출구). undefined 면 저장된 값 그대로
    */
   alreadyRefundedAmount?: number | null;
+  /**
+   * 정산 다시 시도만, 마지막 실패가 `no_charge_shipping_option` 이고 보류 차감이 실린 정산일 때만 — 명령에서 보류 차감을 빼고
+   * 다시 낸다. `cs_resolution.hold.dropped` 에 누가 언제 뺐는지 남는다. `alreadyRefundedAmount` 와 함께 쓰지 않는다
+   */
+  dropHoldDeduction?: true;
   actorId: string;
 };
 
@@ -262,6 +272,14 @@ export class CustomerReturnSettlementManager {
           throw new BadRequestError('alreadyRefundedAmount must be a non-negative integer');
         }
       }
+      if (input.dropHoldDeduction !== undefined) {
+        if (input.target !== 'settlement' || input.kind !== 'retry') {
+          throw new BadRequestError('보류 차감 빼기는 정산 다시 시도에만 쓸 수 있습니다');
+        }
+        if (input.alreadyRefundedAmount !== undefined) {
+          throw new BadRequestError('보류 차감 빼기는 이미 환불한 금액과 함께 쓸 수 없습니다');
+        }
+      }
       const now = new Date();
       const refundMode =
         input.target === 'settlement'
@@ -414,6 +432,27 @@ export class CustomerReturnSettlementManager {
       // null 은 지우기 — 칸을 없애 명령에도 싣지 않는다
       if (input.alreadyRefundedAmount === null) delete command.alreadyRefundedAmount;
       else command.alreadyRefundedAmount = input.alreadyRefundedAmount;
+    }
+    if (input.dropHoldDeduction !== undefined) {
+      if (settlement.state !== 'refused' || settlement.lastFailure?.code !== NO_CHARGE_SHIPPING_OPTION_FAILURE) {
+        throw new BadRequestError('보류 차감 빼기는 배송 방법이 없어 채널이 거절한 정산에만 쓸 수 있습니다');
+      }
+      const hold = record.csResolution?.hold;
+      if (!hold || !command.holdDeduction) {
+        throw new BadRequestError('이 정산에는 뺄 보류 차감이 없습니다');
+      }
+      command = { ...command };
+      delete command.holdDeduction;
+      // 명령과 «뺐다는 기록»은 같은 트랜잭션에서 — 차감 원본(hold.deduction)은 그대로 둔다
+      await trx
+        .update(wmsTables.customerReturns)
+        .set({
+          csResolution: {
+            ...record.csResolution,
+            hold: { ...hold, dropped: { by: input.actorId, at: now.toISOString() } },
+          },
+        })
+        .where(eq(wmsTables.customerReturns.id, record.id));
     }
     const refundMode = input.kind === 'manual' ? 'manual' : settlement.refundMode;
     const issue = (settlement.issues ?? settlement.attempts) + 1;
