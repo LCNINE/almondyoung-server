@@ -937,6 +937,168 @@ describeIfDb('CustomerReturnSettlementManager — 반품 정산 결과·재발�
     });
   });
 
+  describe('보류 차감 빼고 다시 시도 (K8 PR7 N7)', () => {
+    const NO_CHARGE = 'return_settle_rejected:no_charge_shipping_option';
+
+    /** 2개 중 1개 양품·1개 보류 → 차감 5,000 으로 보류 정산을 열고, 채널이 배송 방법 없음으로 거절한 상태 */
+    async function seedHeldRefused(tx: DbTx, w: World, wired: Wired, failureCode = NO_CHARGE) {
+      const s = await seedExpected(tx, w, wired);
+      await s.arrive();
+      const [item] = await tx
+        .select({ id: wmsTables.customerReturnItems.id })
+        .from(wmsTables.customerReturnItems)
+        .innerJoin(
+          wmsTables.customerReturnLines,
+          eq(wmsTables.customerReturnLines.id, wmsTables.customerReturnItems.customerReturnLineId),
+        )
+        .where(eq(wmsTables.customerReturnLines.customerReturnId, s.customerReturnId));
+      await wired.receiving.recordInspection(
+        {
+          customerReturnId: s.customerReturnId,
+          items: [{ customerReturnItemId: item.id, accepted: 1, rejected: 0, held: 1 }],
+          actorId: 'admin-1',
+        },
+        tx,
+      );
+      await wired.cs.settleHeld(
+        { customerReturnId: s.customerReturnId, deduction: 5000, memo: '포장 훼손', actorId: 'cs-0' },
+        tx,
+      );
+      await wired.settlement.recordSettlementFailed(
+        failedFact(s, { retryable: false, failureCode, message: 'refused' }),
+        tx,
+      );
+      return s;
+    }
+
+    const retry = (wired: Wired, tx: DbTx, id: string, extra: Record<string, unknown> = {}) =>
+      wired.settlement.restart(
+        { customerReturnId: id, target: 'settlement', kind: 'retry', actorId: 'cs-1', ...extra },
+        tx,
+      );
+
+    it('보류 차감을 빼고 다시 내면 명령에 holdDeduction 이 없고 cs_resolution.hold.dropped 가 남는다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seedHeldRefused(tx, w, wired);
+
+        const view = await retry(wired, tx, s.customerReturnId, { dropHoldDeduction: true });
+
+        expect(view.settlement).toMatchObject({ state: 'in_progress', issues: 2 });
+        expect(view.settlement?.command).not.toHaveProperty('holdDeduction');
+        expect(view.csResolution?.hold).toMatchObject({ deduction: 5000, memo: '포장 훼손', by: 'cs-0' });
+        expect(view.csResolution?.hold?.dropped).toMatchObject({ by: 'cs-1' });
+        expect(Number.isNaN(Date.parse(view.csResolution?.hold?.dropped?.at ?? ''))).toBe(false);
+        const sent = settleCommandsOf(wired, s.customerReturnId);
+        expect(sent).toHaveLength(2);
+        expect(sent[0].payload).toHaveProperty('holdDeduction');
+        expect(sent[1].payload).not.toHaveProperty('holdDeduction');
+      });
+    });
+
+    it('그 뒤 크론 재발행도 차감 없는 명령', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seedHeldRefused(tx, w, wired);
+        const view = await retry(wired, tx, s.customerReturnId, { dropHoldDeduction: true });
+
+        const later = new Date(Date.parse(view.settlement?.lastIssuedAt ?? '') + CUSTOMER_RETURN_SETTLEMENT_RETRY_MS);
+        expect(await wired.settlement.reissueStalled(later, tx)).toBe(1);
+
+        const sent = settleCommandsOf(wired, s.customerReturnId);
+        expect(sent).toHaveLength(3);
+        expect(sent[2].payload).not.toHaveProperty('holdDeduction');
+      });
+    });
+
+    it('다른 실패(external_refund_unresolved·모르는 코드)나 stalled 에선 400, 저장된 명령 그대로', async () => {
+      for (const code of [EXTERNAL_REFUND_UNRESOLVED, 'return_settle_rejected:whatever']) {
+        await inRollbackTx(db, async (tx) => {
+          const w = await seedWorld(tx);
+          const wired = wire();
+          const s = await seedHeldRefused(tx, w, wired, code);
+          const before = await recordOf(tx, s.customerReturnId);
+          await expect(retry(wired, tx, s.customerReturnId, { dropHoldDeduction: true })).rejects.toBeInstanceOf(
+            BadRequestError,
+          );
+          expect(await recordOf(tx, s.customerReturnId)).toEqual(before);
+          expect(before.settlement?.command).toHaveProperty('holdDeduction');
+          expect(settleCommandsOf(wired, s.customerReturnId)).toHaveLength(1);
+        });
+      }
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seedHeldRefused(tx, w, wired);
+        await patchSettlement(tx, s.customerReturnId, { state: 'stalled', lastFailure: null });
+        const before = await recordOf(tx, s.customerReturnId);
+        await expect(retry(wired, tx, s.customerReturnId, { dropHoldDeduction: true })).rejects.toBeInstanceOf(
+          BadRequestError,
+        );
+        expect(await recordOf(tx, s.customerReturnId)).toEqual(before);
+      });
+    });
+
+    it('보류 차감이 없는 정산이나 alreadyRefundedAmount 와 함께면 400', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seedHeldRefused(tx, w, wired);
+        const before = await recordOf(tx, s.customerReturnId);
+        await expect(
+          retry(wired, tx, s.customerReturnId, { dropHoldDeduction: true, alreadyRefundedAmount: 1000 }),
+        ).rejects.toBeInstanceOf(BadRequestError);
+        expect(await recordOf(tx, s.customerReturnId)).toEqual(before);
+
+        // 보류 차감이 애초에 없는 정산
+        const plain = await seedInspected(tx, w, wired);
+        await wired.settlement.recordSettlementFailed(
+          failedFact(plain, { retryable: false, failureCode: NO_CHARGE, message: 'x' }),
+          tx,
+        );
+        await expect(retry(wired, tx, plain.customerReturnId, { dropHoldDeduction: true })).rejects.toBeInstanceOf(
+          BadRequestError,
+        );
+      });
+    });
+
+    it('선환불 target·계좌 송금 kind 에선 400', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seedHeldRefused(tx, w, wired);
+        await expect(
+          wired.settlement.restart(
+            {
+              customerReturnId: s.customerReturnId,
+              target: 'settlement',
+              kind: 'manual',
+              dropHoldDeduction: true,
+              actorId: 'cs-1',
+            },
+            tx,
+          ),
+        ).rejects.toBeInstanceOf(BadRequestError);
+        const p = await seedPrepaying(tx, w, wired);
+        await wired.settlement.recordPrepayFailed(prepayFailedFact(p, { retryable: false, failureCode: 'x' }), tx);
+        await expect(
+          wired.settlement.restart(
+            {
+              customerReturnId: p.customerReturnId,
+              target: 'prepayment',
+              kind: 'retry',
+              dropHoldDeduction: true,
+              actorId: 'cs-1',
+            },
+            tx,
+          ),
+        ).rejects.toBeInstanceOf(BadRequestError);
+      });
+    });
+  });
+
   describe('선환불 결과 (N4·N7)', () => {
     it('선환불 성공 사실 → done·outcome, 두 번 → changed false', async () => {
       await inRollbackTx(db, async (tx) => {

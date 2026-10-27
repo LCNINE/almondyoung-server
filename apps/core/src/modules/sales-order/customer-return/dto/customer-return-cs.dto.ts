@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
 
 /** 반품 미도착 닫기 — 온전히 도착한 벌만 남기고 나머지를 닫는다(K8 PR6b N8) */
 export class CloseCustomerReturnMissingDto {
@@ -59,4 +59,14 @@ export class RetryCustomerReturnSettlementDto {
   @IsInt()
   @Min(0)
   alreadyRefundedAmount?: number | null;
+
+  @ApiPropertyOptional({
+    type: Boolean,
+    description:
+      '마지막 실패가 return_settle_rejected:no_charge_shipping_option(보류 차감을 붙일 배송 방법 없음)일 때만 — ' +
+      '보류 차감을 빼고 다시 낸다. alreadyRefundedAmount 와 함께 쓸 수 없다. false 는 없는 것과 같다',
+  })
+  @IsOptional()
+  @IsBoolean()
+  dropHoldDeduction?: boolean;
 }

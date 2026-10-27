@@ -191,6 +191,7 @@ export class CustomerReturnsController {
       target: 'settlement',
       kind: 'retry',
       alreadyRefundedAmount: dto.alreadyRefundedAmount,
+      dropHoldDeduction: dto.dropHoldDeduction === true ? true : undefined,
       actorId: authenticatedWarehouseActor(user),
     });
   }
