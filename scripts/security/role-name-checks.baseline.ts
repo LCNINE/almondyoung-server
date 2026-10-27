@@ -85,6 +85,8 @@ export const ROLE_LITERAL_BASELINE: Readonly<Record<string, { count: number; kin
     count: 6,
     kind: 'system-identity',
   },
+  // 반품 접수 이벤트 계약의 requestedBy 값('admin') — 판정이 아니다(K8 PR5)
+  'apps/core/src/modules/sales-order/customer-return/customer-return.manager.ts': { count: 1, kind: 'data-value' },
   'apps/core/src/modules/sales-order/dto/cancel-sales-order.dto.ts': { count: 1, kind: 'data-value' },
   // 취소 기록의 cancelledBy 값('admin') — 판정이 아니다(K7 PR4 가 관리자 문에서 옮겨 왔다)
   'apps/core/src/modules/sales-order/order-cancellation/order-cancellation.ts': { count: 1, kind: 'data-value' },
