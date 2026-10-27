@@ -78,10 +78,10 @@ function MyToday() {
   if (!data) return null;
   return (
     <Link
-      href={`${BASE}/mine`}
+      href={`${BASE}/mine?period=all`}
       className="flex items-center justify-center gap-1 text-sm text-gray-600 underline-offset-2 hover:underline"
     >
-      오늘 내가 끝낸 상품 {data.today}개
+      작업 기록 보기 · 오늘 {data.today}개
       <ChevronRight className="h-4 w-4" />
     </Link>
   );
