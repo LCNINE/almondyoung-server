@@ -5,6 +5,8 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { NotFoundError } from '@app/shared';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import type {
+  CustomerReturnCsResolution,
+  CustomerReturnPrepayment,
   CustomerReturnSettlement,
   CustomerReturnSettlementOutcome,
   CustomerReturnStatus,
@@ -26,11 +28,17 @@ export type CustomerReturnView = {
   settledAt: string | null;
   settlement: CustomerReturnSettlement | null;
   settlementOutcome: CustomerReturnSettlementOutcome | null;
+  /** 선환불 진행과 결과(K8 PR6b) */
+  prepayment: CustomerReturnPrepayment | null;
+  /** CS 결정 — 미도착 닫기·보류 차감(K8 PR6b) */
+  csResolution: CustomerReturnCsResolution | null;
   lines: Array<{
     id: string;
     salesOrderLineId: string;
     channelOrderItemId: string;
     quantity: number;
+    /** 미도착으로 닫은 수량(N8) — 정산은 `quantity − missingQty` 만 싣는다 */
+    missingQty: number;
     items: Array<{
       id: string;
       skuId: string;
@@ -86,11 +94,14 @@ export class CustomerReturnReader {
         settledAt: record.settledAt?.toISOString() ?? null,
         settlement: record.settlement ?? null,
         settlementOutcome: record.settlementOutcome ?? null,
+        prepayment: record.prepayment ?? null,
+        csResolution: record.csResolution ?? null,
         lines: lines.map((line) => ({
           id: line.id,
           salesOrderLineId: line.salesOrderLineId,
           channelOrderItemId: line.channelOrderItemId,
           quantity: line.quantity,
+          missingQty: line.missingQty,
           items: items
             .filter((item) => item.customerReturnLineId === line.id)
             .map((item) => ({

@@ -13,7 +13,7 @@ import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.sch
 import { enqueueSalesOrderClaimProgress } from '../common/claim-progress';
 import { enqueueSalesOrderReturned } from '../common/sales-order-returned';
 import { transitionCustomerReturn } from './customer-return-transition';
-import { enqueueSettleChannelReturn, toSettleItems } from './customer-return-settle-command';
+import { enqueueSettleChannelReturn, loadSettleLines, toSettleItems } from './customer-return-settle-command';
 import type {
   CustomerReturn,
   CustomerReturnSettlement,
@@ -178,8 +178,9 @@ export class CustomerReturnSettlementManager {
           customerReturnId: record.id,
           salesOrderId: record.salesOrderId,
           channelReturnId: record.channelReturnId,
-          items: toSettleItems(await this.loadSettleLines(trx, record.id)),
+          items: toSettleItems(await loadSettleLines(trx, record.id)),
           refundMode: settlement.refundMode,
+          command: settlement.command,
           issue,
         });
         await this.writeSettlement(trx, record.id, { ...settlement, attempts: issue, lastIssuedAt: now.toISOString() });
@@ -230,34 +231,5 @@ export class CustomerReturnSettlementManager {
       .innerJoin(sol, eq(sol.id, l.salesOrderLineId))
       .where(eq(l.customerReturnId, customerReturnId))
       .orderBy(asc(l.channelOrderItemId));
-  }
-
-  /** 검수가 적은 SKU 항목 불량 수량을 줄마다 모은다 — 검수 때와 같은 `toSettleItems` 입력 */
-  private async loadSettleLines(trx: DbTx, customerReturnId: string): Promise<Parameters<typeof toSettleItems>[0]> {
-    const i = wmsTables.customerReturnItems;
-    const l = wmsTables.customerReturnLines;
-    const rows = await trx
-      .select({
-        lineId: l.id,
-        channelOrderItemId: l.channelOrderItemId,
-        lineQuantity: l.quantity,
-        qtyPerUnit: i.qtyPerUnit,
-        rejectedQty: i.rejectedQty,
-      })
-      .from(i)
-      .innerJoin(l, eq(l.id, i.customerReturnLineId))
-      .where(eq(l.customerReturnId, customerReturnId))
-      .orderBy(asc(l.channelOrderItemId), asc(i.skuId));
-    const byLine = new Map<string, Parameters<typeof toSettleItems>[0][number]>();
-    for (const row of rows) {
-      const line = byLine.get(row.lineId) ?? {
-        channelOrderItemId: row.channelOrderItemId,
-        quantity: row.lineQuantity,
-        items: [],
-      };
-      line.items.push({ qtyPerUnit: row.qtyPerUnit, rejectedQty: row.rejectedQty ?? 0 });
-      byLine.set(row.lineId, line);
-    }
-    return [...byLine.values()];
   }
 }

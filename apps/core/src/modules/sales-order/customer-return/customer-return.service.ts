@@ -14,6 +14,12 @@ import {
   RecordCustomerReturnInspectionInput,
 } from './customer-return-receiving.manager';
 import { CustomerReturnSettlementManager } from './customer-return-settlement.manager';
+import {
+  CloseCustomerReturnMissingInput,
+  CustomerReturnCsManager,
+  RequestCustomerReturnPrepayInput,
+  SettleHeldCustomerReturnInput,
+} from './customer-return-cs.manager';
 
 @Injectable()
 export class CustomerReturnService {
@@ -22,6 +28,7 @@ export class CustomerReturnService {
     private readonly reader: CustomerReturnReader,
     private readonly receiving: CustomerReturnReceivingManager,
     private readonly settlement: CustomerReturnSettlementManager,
+    private readonly cs: CustomerReturnCsManager,
   ) {}
 
   recordRequested(fact: ChannelReturnRequestedPayload, tx?: DbTx) {
@@ -42,6 +49,18 @@ export class CustomerReturnService {
 
   recordInspection(input: RecordCustomerReturnInspectionInput, tx?: DbTx) {
     return this.receiving.recordInspection(input, tx);
+  }
+
+  closeMissing(input: CloseCustomerReturnMissingInput, tx?: DbTx) {
+    return this.cs.closeMissing(input, tx);
+  }
+
+  settleHeld(input: SettleHeldCustomerReturnInput, tx?: DbTx) {
+    return this.cs.settleHeld(input, tx);
+  }
+
+  requestPrepay(input: RequestCustomerReturnPrepayInput, tx?: DbTx) {
+    return this.cs.requestPrepay(input, tx);
   }
 
   recordSettled(fact: ChannelReturnSettledPayload, tx?: DbTx) {
