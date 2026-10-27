@@ -174,7 +174,7 @@ export async function insertCustomerReturn(
   args: {
     salesOrderId: string;
     status: CustomerReturnStatus;
-    lines: Array<{ salesOrderLineId: string; quantity: number }>;
+    lines: Array<{ salesOrderLineId: string; quantity: number; missingQty?: number }>;
   },
 ): Promise<{ customerReturnId: string }> {
   const [customerReturn] = await tx
@@ -197,6 +197,7 @@ export async function insertCustomerReturn(
       salesOrderLineId: line.salesOrderLineId,
       channelOrderItemId: `ci-${randomUUID()}`,
       quantity: line.quantity,
+      missingQty: line.missingQty ?? 0,
     })),
   );
   return { customerReturnId: customerReturn.id };

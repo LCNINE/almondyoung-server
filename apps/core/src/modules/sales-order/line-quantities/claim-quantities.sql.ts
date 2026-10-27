@@ -102,10 +102,10 @@ function customerReturnSkuItemsSql(salesOrderScope: SQL): SQL {
     select customer_return_line.sales_order_line_id,
            customer_return_composition.sku_id,
            (case when ${statusIn(sql`customer_return.status`, CUSTOMER_RETURN_ACTIVE_STATUSES)}
-                 then customer_return_line.quantity * customer_return_composition.qty_per_unit else 0 end)::int
+                 then (customer_return_line.quantity - customer_return_line.missing_qty) * customer_return_composition.qty_per_unit else 0 end)::int
              as return_active,
            (case when ${statusIn(sql`customer_return.status`, CUSTOMER_RETURN_CONSUMED_STATUSES)}
-                 then customer_return_line.quantity * customer_return_composition.qty_per_unit else 0 end)::int
+                 then (customer_return_line.quantity - customer_return_line.missing_qty) * customer_return_composition.qty_per_unit else 0 end)::int
              as return_consumed,
            0::int as exchange_active
       from ${t.customerReturns} as customer_return
@@ -162,7 +162,7 @@ export function heldCustomerReturnLinesSql(): SQL {
   const t = wmsTables;
   return sql`
     select held_return_line.sales_order_line_id as held_line_id,
-           held_return_line.quantity as held_quantity
+           (held_return_line.quantity - held_return_line.missing_qty) as held_quantity
       from ${t.customerReturnLines} as held_return_line
       join ${t.customerReturns} as held_return on held_return.id = held_return_line.customer_return_id
      where ${statusIn(sql`held_return.status`, CUSTOMER_RETURN_COUNTED_STATUSES)}
