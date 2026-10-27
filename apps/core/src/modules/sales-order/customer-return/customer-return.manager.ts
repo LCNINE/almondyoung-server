@@ -32,6 +32,17 @@ export class CustomerReturnManager {
     tx?: DbTx,
   ): Promise<{ customerReturnId: string; created: boolean }> {
     return this.dbService.run(async (trx) => {
+      // 이미 기록된 사실의 재전달은 주문이 그 사이 바뀌었어도 검증 없이 «이미 있음»이다(N7)
+      const already = await this.findExistingByChannelReturnId(trx, fact.returnId);
+      if (already) return { customerReturnId: already.id, created: false };
+
+      const duplicated = fact.items.find(
+        (item, i) => fact.items.findIndex((o) => o.channelOrderItemId === item.channelOrderItemId) !== i,
+      );
+      if (duplicated) {
+        throw new BadRequestError(`Duplicate channel order item in return: ${duplicated.channelOrderItemId}`);
+      }
+
       const salesOrderId = await this.findSalesOrderId(trx, fact.salesChannel, fact.externalOrderId);
       const lines = await this.resolveLines(trx, salesOrderId, fact.items);
 
@@ -115,12 +126,17 @@ export class CustomerReturnManager {
     return row.id;
   }
 
-  private async findByChannelReturnId(trx: DbTx, channelReturnId: string) {
+  private async findExistingByChannelReturnId(trx: DbTx, channelReturnId: string) {
     const [row] = await trx
       .select()
       .from(wmsTables.customerReturns)
       .where(eq(wmsTables.customerReturns.channelReturnId, channelReturnId))
       .limit(1);
+    return row;
+  }
+
+  private async findByChannelReturnId(trx: DbTx, channelReturnId: string) {
+    const row = await this.findExistingByChannelReturnId(trx, channelReturnId);
     if (!row) throw new NotFoundError(`Customer return not found: channel ${channelReturnId}`);
     return row;
   }

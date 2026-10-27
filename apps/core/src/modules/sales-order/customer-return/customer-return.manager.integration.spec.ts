@@ -184,6 +184,40 @@ describeIfDb('CustomerReturnManager — 채널 반품 사실 기록 (K8 PR5)', (
     });
   });
 
+  it('이미 기록된 사실의 재전달은 주문이 바뀌었어도 created false', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const s = await seed(tx);
+      const { manager, events } = makeManager(tx);
+      const fact = requested(s);
+      const first = await manager.recordRequested(fact, tx);
+      await tx
+        .update(wmsTables.salesOrderLines)
+        .set({ channelOrderItemId: 'item_changed' })
+        .where(eq(wmsTables.salesOrderLines.id, s.lineId));
+
+      const again = await manager.recordRequested(fact, tx);
+
+      expect(again).toEqual({ customerReturnId: first.customerReturnId, created: false });
+      expect(await returnsOf(tx, s.salesOrderId)).toHaveLength(1);
+      expect(events()).toHaveLength(1);
+    });
+  });
+
+  it('같은 줄이 items 에 두 번 → BadRequestError, 아무것도 안 씀', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const s = await seed(tx);
+      const { manager, events } = makeManager(tx);
+      const item = { channelOrderItemId: s.channelOrderItemId, quantity: 1 };
+
+      await expect(manager.recordRequested(requested(s, { items: [item, item] }), tx)).rejects.toBeInstanceOf(
+        BadRequestError,
+      );
+
+      expect(await returnsOf(tx, s.salesOrderId)).toHaveLength(0);
+      expect(events()).toHaveLength(0);
+    });
+  });
+
   it('모르는 주문 → NotFoundError', async () => {
     await inRollbackTx(db, async (tx) => {
       const s = await seed(tx);
