@@ -32,6 +32,12 @@ export type CustomerReturnSettlement = {
     alreadyRefundedAmount?: number;
     closesMissing?: boolean;
   };
+  /**
+   * 마지막 [다시 시도]·[계좌 송금] 시각·사람(K8 PR6b) — 다시 시작하기 전 발행의 실패가 늦게 와 칸을 거절로 되돌리지 않게
+   * `at` 이 이보다 이른 실패 사실은 버린다. 다시 시작한 적 없으면 없다
+   */
+  restartedAt?: string;
+  restartedBy?: string;
 };
 
 /** `customer_returns.settlement_outcome` — 정산 결과(환불액·차감) */
@@ -58,6 +64,9 @@ export type CustomerReturnPrepayment = {
   issues: number;
   lastFailure: { code: string; message: string; retryable: boolean; at: string } | null;
   outcome: { amount: number; refundMode: 'auto' | 'manual'; prepaidAt: string } | null;
+  /** 정산 칸과 같다 — 마지막 다시 시작(다시 시도·계좌 송금·Medusa 거절 뒤 새 금액 요청) 시각·사람 */
+  restartedAt?: string;
+  restartedBy?: string;
 };
 
 /** `customer_returns.cs_resolution` — CS 가 내린 결정(미도착 닫기·보류 차감, K8 PR6b) */

@@ -40,6 +40,15 @@ export type RequestCustomerReturnPrepayInput = {
 const PREPAY_BLOCKS_CLOSE: ReadonlyArray<CustomerReturnPrepayment['state']> = ['in_progress', 'stalled', 'done'];
 
 /**
+ * Medusa 가 선환불 기록을 쓰기 «전»에 거절했다(금액 넘침·미해결 외부 환불 등) — 요청 해시가 아직 없어 새 금액·메모로
+ * 다시 요청할 수 있다. wallet 거절(`wallet_refund_refused:*`)은 Medusa 기록이 이미 있어 새 금액이면 request_id_conflict 다
+ */
+const PREPAY_REJECTED_BEFORE_RECORD_PREFIX = 'return_prepay_rejected:';
+
+const replaceablePrepayment = (p: CustomerReturnPrepayment): boolean =>
+  p.state === 'refused' && !!p.lastFailure?.code.startsWith(PREPAY_REJECTED_BEFORE_RECORD_PREFIX);
+
+/**
  * 반품 CS 문 (K8 PR6b) — 미도착 닫기·보류 정산·선환불 요청. 문마다 반품 기록을 옮기고 채널 명령을 같은 트랜잭션에 싣는다(N1).
  * 돈은 Medusa 가 정한다 — 여기는 CS 의 결정(`cs_resolution`)과 명령의 진행(`settlement`·`prepayment`)만 적는다.
  * 같은 반품의 문들과 도착·검수는 `customer_returns` 행 잠금으로 줄을 세운다.
@@ -164,16 +173,24 @@ export class CustomerReturnCsManager {
 
   /**
    * 선환불 요청(N4) — 수령 전 반품(`expected`·`arrived`)에 RETURN 환불을 먼저 낸다. 상태는 바꾸지 않고 선환불 칸만 쓴다.
-   * 미도착을 닫은 반품은 받지 않는다(N15). 반품당 한 번 — 같은 금액·메모의 재요청은 그대로, 다르면 거절한다
-   * (Medusa 가 금액·메모로 같은 선환불을 잇는다).
+   * 미도착을 닫은 반품은 받지 않는다(N15). 반품당 한 번 — 같은 금액·메모·환불 방식의 재요청은 그대로, 다르면 거절한다
+   * (Medusa 가 금액·메모로 같은 선환불을 잇는다). 단 Medusa 가 기록 전에 거절한 선환불(`return_prepay_rejected:*`)은
+   * 새 요청으로 갈아 끼운다 — 발행 세대는 이어(issues + 1) 멱등 키가 겹치지 않는다.
    */
   async requestPrepay(input: RequestCustomerReturnPrepayInput, tx?: DbTx): Promise<CustomerReturnView> {
     return this.dbService.run(async (trx) => {
       const record = await this.lockReturn(trx, input.customerReturnId);
       const prior = record.prepayment;
-      if (prior) {
-        if (prior.requestedAmount === input.amount && prior.memo === input.memo) {
-          return this.reader.findById(record.id, trx);
+      const sameRequest = !!prior && prior.requestedAmount === input.amount && prior.memo === input.memo;
+      if (prior && sameRequest && prior.refundMode === input.refundMode) {
+        return this.reader.findById(record.id, trx);
+      }
+      if (prior && !replaceablePrepayment(prior)) {
+        if (sameRequest) {
+          throw new ConflictError(
+            `Customer return ${record.id} already has a ${prior.refundMode} prepayment — ` +
+              'to switch to a bank transfer, use POST /admin/customer-returns/:id/prepayment/manual-refund once it is refused or stalled',
+          );
         }
         throw new ConflictError(
           `Customer return ${record.id} already has a prepayment with a different amount or memo`,
@@ -191,6 +208,8 @@ export class CustomerReturnCsManager {
       this.assertMemo(input.memo);
 
       const now = new Date().toISOString();
+      // 갈아 끼우면 세대를 잇는다 — 옛 발행과 멱등 키가 겹치지 않고, 그 발행의 늦은 실패는 restartedAt 앞이라 버린다
+      const issue = (prior?.issues ?? 0) + 1;
       await this.writePrepayment(trx, record.id, {
         state: 'in_progress',
         refundMode: input.refundMode,
@@ -200,9 +219,10 @@ export class CustomerReturnCsManager {
         startedAt: now,
         lastIssuedAt: now,
         attempts: 1,
-        issues: 1,
+        issues: issue,
         lastFailure: null,
         outcome: null,
+        ...(prior ? { restartedAt: now, restartedBy: input.actorId } : {}),
       });
       await enqueuePrepayChannelReturn(this.commands, trx, {
         customerReturnId: record.id,
@@ -211,7 +231,7 @@ export class CustomerReturnCsManager {
         amount: input.amount,
         refundMode: input.refundMode,
         memo: input.memo,
-        issue: 1,
+        issue,
       });
       return this.reader.findById(record.id, trx);
     }, tx);

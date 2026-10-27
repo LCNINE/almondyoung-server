@@ -572,6 +572,8 @@ describeIfDb('CustomerReturnSettlementManager — 반품 정산 결과·재발�
   }
 
   const EXTERNAL_REFUND_UNRESOLVED = 'return_settle_rejected:external_refund_unresolved';
+  /** 다시 시작한 «뒤»의 사실 — restartedAt(지금)보다 늦어야 버려지지 않는다(M4) */
+  const afterRestart = (minutes = 1) => new Date(Date.now() + minutes * 60_000).toISOString();
 
   describe('정산 다시 시도·계좌 송금 (N10·N11)', () => {
     it('stalled(attempts 12) → 다시 시도 → issue 13 명령, 5분 뒤 크론 issue 14', async () => {
@@ -643,7 +645,7 @@ describeIfDb('CustomerReturnSettlementManager — 반품 정산 결과·재발�
 
         // 수동도 거절 → 다시 계좌 송금은 Conflict(이미 수동), 다시 시도는 수동 그대로
         await wired.settlement.recordSettlementFailed(
-          failedFact(s, { retryable: false, failureCode: 'wallet_refund_refused:X', at: '2026-10-27T05:00:00.000Z' }),
+          failedFact(s, { retryable: false, failureCode: 'wallet_refund_refused:X', at: afterRestart() }),
           tx,
         );
         await expect(
@@ -740,6 +742,154 @@ describeIfDb('CustomerReturnSettlementManager — 반품 정산 결과·재발�
         expect(sent[0].payload).not.toHaveProperty('alreadyRefundedAmount');
         expect(sent[1].payload).toMatchObject({ alreadyRefundedAmount: 10_000 });
         expect(sent[2].payload).toMatchObject({ alreadyRefundedAmount: 10_000 });
+      });
+    });
+
+    it('external_refund_exceeds 뒤 고친 금액으로 다시 시도 → 명령이 새 값, 크론 재발행도 새 값', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seedInspected(tx, w, wired);
+        await wired.settlement.recordSettlementFailed(
+          failedFact(s, { retryable: false, failureCode: EXTERNAL_REFUND_UNRESOLVED, message: 'external' }),
+          tx,
+        );
+        const retry = (alreadyRefundedAmount: number | null) =>
+          wired.settlement.restart(
+            {
+              customerReturnId: s.customerReturnId,
+              target: 'settlement',
+              kind: 'retry',
+              alreadyRefundedAmount,
+              actorId: 'cs-1',
+            },
+            tx,
+          );
+        await retry(12_000);
+        await wired.settlement.recordSettlementFailed(
+          failedFact(s, {
+            retryable: false,
+            failureCode: 'return_settle_rejected:external_refund_exceeds',
+            message: 'exceeds',
+            at: afterRestart(),
+          }),
+          tx,
+        );
+
+        const view = await retry(8_000);
+
+        expect(view.settlement).toMatchObject({
+          state: 'in_progress',
+          issues: 3,
+          command: { alreadyRefundedAmount: 8_000 },
+        });
+        const later = new Date(Date.parse(view.settlement?.lastIssuedAt ?? '') + CUSTOMER_RETURN_SETTLEMENT_RETRY_MS);
+        expect(await wired.settlement.reissueStalled(later, tx)).toBe(1);
+        const sent = settleCommandsOf(wired, s.customerReturnId);
+        expect(sent.map((c) => c.payload.alreadyRefundedAmount)).toEqual([undefined, 12_000, 8_000, 8_000]);
+      });
+    });
+
+    it('external_refund_absent 뒤 null 로 다시 시도 → 저장된 값을 지운다, 명령·크론 재발행에 칸 없음', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seedInspected(tx, w, wired);
+        await wired.settlement.recordSettlementFailed(
+          failedFact(s, { retryable: false, failureCode: EXTERNAL_REFUND_UNRESOLVED, message: 'external' }),
+          tx,
+        );
+        await wired.settlement.restart(
+          {
+            customerReturnId: s.customerReturnId,
+            target: 'settlement',
+            kind: 'retry',
+            alreadyRefundedAmount: 10_000,
+            actorId: 'cs-1',
+          },
+          tx,
+        );
+        await wired.settlement.recordSettlementFailed(
+          failedFact(s, {
+            retryable: false,
+            failureCode: 'return_settle_rejected:external_refund_absent',
+            message: 'absent',
+            at: afterRestart(),
+          }),
+          tx,
+        );
+
+        const view = await wired.settlement.restart(
+          {
+            customerReturnId: s.customerReturnId,
+            target: 'settlement',
+            kind: 'retry',
+            alreadyRefundedAmount: null,
+            actorId: 'cs-2',
+          },
+          tx,
+        );
+
+        expect(view.settlement).toMatchObject({ state: 'in_progress', issues: 3, restartedBy: 'cs-2' });
+        expect(view.settlement?.command).toEqual({});
+        const later = new Date(Date.parse(view.settlement?.lastIssuedAt ?? '') + CUSTOMER_RETURN_SETTLEMENT_RETRY_MS);
+        expect(await wired.settlement.reissueStalled(later, tx)).toBe(1);
+        const sent = settleCommandsOf(wired, s.customerReturnId);
+        expect(sent).toHaveLength(4);
+        expect(sent[1].payload).toMatchObject({ alreadyRefundedAmount: 10_000 });
+        expect(sent[2].payload).not.toHaveProperty('alreadyRefundedAmount');
+        expect(sent[3].payload).not.toHaveProperty('alreadyRefundedAmount');
+      });
+    });
+
+    it('다시 시작하기 전 발행의 실패가 늦게 오면(at < restartedAt) 버린다 — 다시 시작한 칸이 거절로 돌아가지 않는다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seedInspected(tx, w, wired);
+        await wired.settlement.recordSettlementFailed(
+          failedFact(s, { retryable: false, failureCode: 'wallet_refund_refused:X', message: 'no' }),
+          tx,
+        );
+        const view = await wired.settlement.restart(
+          { customerReturnId: s.customerReturnId, target: 'settlement', kind: 'retry', actorId: 'cs-1' },
+          tx,
+        );
+        expect(view.settlement).toMatchObject({ state: 'in_progress', restartedBy: 'cs-1' });
+        const restartedAt = view.settlement?.restartedAt ?? '';
+        expect(Date.parse(restartedAt)).toBe(Date.parse(view.settlement?.lastIssuedAt ?? ''));
+
+        // 옛 발행(issue 1)의 실패 — 마지막 실패보다 늦지만 다시 시작보다 이르다
+        const late = new Date(Date.parse(restartedAt) - 1_000).toISOString();
+        expect(
+          await wired.settlement.recordSettlementFailed(
+            failedFact(s, { retryable: false, failureCode: 'wallet_refund_refused:Y', message: 'late', at: late }),
+            tx,
+          ),
+        ).toEqual({ changed: false });
+        expect((await recordOf(tx, s.customerReturnId)).settlement).toMatchObject({
+          state: 'in_progress',
+          lastFailure: { code: 'wallet_refund_refused:X' },
+        });
+
+        // 선환불 칸도 같다
+        const p = await seedPrepaying(tx, w, wired);
+        await wired.settlement.recordPrepayFailed(
+          prepayFailedFact(p, { retryable: false, failureCode: 'wallet_refund_refused:X' }),
+          tx,
+        );
+        const pv = await wired.settlement.restart(
+          { customerReturnId: p.customerReturnId, target: 'prepayment', kind: 'retry', actorId: 'cs-1' },
+          tx,
+        );
+        const pLate = new Date(Date.parse(pv.prepayment?.restartedAt ?? '') - 1_000).toISOString();
+        expect(
+          await wired.settlement.recordPrepayFailed(
+            prepayFailedFact(p, { retryable: false, failureCode: 'wallet_refund_refused:Y', at: pLate }),
+            tx,
+          ),
+        ).toEqual({ changed: false });
+        expect((await recordOf(tx, p.customerReturnId)).prepayment).toMatchObject({ state: 'in_progress' });
       });
     });
 

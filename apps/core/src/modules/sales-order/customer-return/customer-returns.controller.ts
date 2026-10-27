@@ -124,7 +124,12 @@ export class CustomerReturnsController {
   @Post(':id/prepayment')
   @ApiOperation({ summary: '선환불 요청 — 수령 전에 환불을 먼저 낸다. 금액이 없으면 품목 값 − 택배비 예상' })
   @ApiResponse({ status: 200, description: '선환불을 요청한 뒤의 반품 기록(prepayment)' })
-  @ApiResponse({ status: 409, description: '수령 전이 아님 · 미도착으로 닫은 반품 · 이미 다른 금액·메모로 요청함' })
+  @ApiResponse({
+    status: 409,
+    description:
+      '수령 전이 아님 · 미도착으로 닫은 반품 · 이미 다른 금액·메모·환불 방식으로 요청함' +
+      '(Medusa 가 기록 전에 거절한 선환불은 새 요청으로 갈아 끼운다)',
+  })
   @HttpCode(HttpStatus.OK)
   requestPrepay(
     @Param('id', ParseUUIDPipe) id: string,
@@ -147,7 +152,10 @@ export class CustomerReturnsController {
       '반품 정산 다시 시도 — 거절·멈춘 정산을 같은 방식으로 다시 낸다. 외부 환불 거절이면 이미 환불한 금액을 적는다',
   })
   @ApiResponse({ status: 200, description: '다시 낸 뒤의 반품 기록(settlement)' })
-  @ApiResponse({ status: 400, description: '외부 환불 거절이 아닌데 이미 환불한 금액을 적음' })
+  @ApiResponse({
+    status: 400,
+    description: '외부 환불 거절(external_refund_*)이 아닌데 이미 환불한 금액을 적거나 지움',
+  })
   @ApiResponse({ status: 409, description: '정산 중이 아님 · 진행 중(결과를 기다리세요) · 이미 끝남' })
   @HttpCode(HttpStatus.OK)
   retrySettlement(

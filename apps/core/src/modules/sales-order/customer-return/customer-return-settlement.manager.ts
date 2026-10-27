@@ -39,8 +39,16 @@ const PREPAYABLE_STATUSES = ['expected', 'arrived'] as const;
 
 /** 정산이 먼저 Medusa 에 닿아 선환불이 설 자리가 없다 — 선환불은 `superseded`(N7) */
 const PREPAY_SUPERSEDED_CODE = 'return_prepay_rejected:return_already_settled';
-/** 외부 결제 몫을 Medusa 가 물으며 거절한 정산 — «이미 환불한 금액»을 적을 수 있는 유일한 실패(N10) */
-const EXTERNAL_REFUND_UNRESOLVED_CODE = 'return_settle_rejected:external_refund_unresolved';
+/**
+ * 외부 환불로 Medusa 가 거절한 정산(unresolved·exceeds·absent) — «이미 환불한 금액»을 적거나 고치거나 지울 수 있는 실패(N10).
+ * 셋 다 Medusa 가 수령·기록 «전»에 거절하므로 요청 해시가 아직 없어 바꾼 값으로 다시 낼 수 있다.
+ * absent(외부 환불이 없는데 적었다)는 지우기(null)가 유일한 출구다
+ */
+const EXTERNAL_REFUND_REJECTED_PREFIX = 'return_settle_rejected:external_refund_';
+
+/** 다시 시작하기 «전» 발행의 실패 사실이 늦게 왔다 — 다시 시작한 칸을 그 실패로 되돌리지 않는다(M4) */
+const predatesRestart = (at: string, slot: { restartedAt?: string }): boolean =>
+  slot.restartedAt !== undefined && Date.parse(at) < Date.parse(slot.restartedAt);
 
 export type RestartCustomerReturnInput = {
   customerReturnId: string;
@@ -48,8 +56,11 @@ export type RestartCustomerReturnInput = {
   target: 'settlement' | 'prepayment';
   /** retry = 같은 방식으로, manual = 계좌 송금(refundMode manual)으로 */
   kind: 'retry' | 'manual';
-  /** 정산 다시 시도만, 마지막 실패가 외부 환불 거절일 때만 — 이미 다른 경로로 돌려준 금액(원) */
-  alreadyRefundedAmount?: number;
+  /**
+   * 정산 다시 시도만, 마지막 실패가 외부 환불 거절(`return_settle_rejected:external_refund_*`)일 때만 — 이미 다른 경로로
+   * 돌려준 금액(원). null 이면 저장된 값을 지운다(없음 거절의 출구). undefined 면 저장된 값 그대로
+   */
+  alreadyRefundedAmount?: number | null;
   actorId: string;
 };
 
@@ -145,10 +156,11 @@ export class CustomerReturnSettlementManager {
       if (record.status !== 'inspected' && record.status !== 'refund_pending') return { changed: false };
       const previous = record.settlement;
       if (!previous) throw new Error(`Settling customer return ${record.id} has no settlement record`);
-      // 순서 없이 온다 — 이미 적힌 실패보다 이른 것은 버린다
+      // 순서 없이 온다 — 이미 적힌 실패보다 이른 것, 다시 시작하기 전 발행의 실패는 버린다
       if (previous.lastFailure && Date.parse(fact.at) < Date.parse(previous.lastFailure.at)) {
         return { changed: false };
       }
+      if (predatesRestart(fact.at, previous)) return { changed: false };
 
       const settlement: CustomerReturnSettlement = {
         ...previous,
@@ -214,6 +226,7 @@ export class CustomerReturnSettlementManager {
       if (previous.lastFailure && Date.parse(fact.at) < Date.parse(previous.lastFailure.at)) {
         return { changed: false };
       }
+      if (predatesRestart(fact.at, previous)) return { changed: false };
       await this.writePrepayment(trx, record.id, {
         ...previous,
         state: fact.failureCode === PREPAY_SUPERSEDED_CODE ? 'superseded' : fact.retryable ? 'in_progress' : 'refused',
@@ -242,7 +255,10 @@ export class CustomerReturnSettlementManager {
         if (input.target !== 'settlement' || input.kind !== 'retry') {
           throw new BadRequestError('이미 환불한 금액은 정산 다시 시도에만 적을 수 있습니다');
         }
-        if (!Number.isInteger(input.alreadyRefundedAmount) || input.alreadyRefundedAmount < 0) {
+        if (
+          input.alreadyRefundedAmount !== null &&
+          (!Number.isInteger(input.alreadyRefundedAmount) || input.alreadyRefundedAmount < 0)
+        ) {
           throw new BadRequestError('alreadyRefundedAmount must be a non-negative integer');
         }
       }
@@ -391,10 +407,13 @@ export class CustomerReturnSettlementManager {
     }
     let command = settlement.command ?? {};
     if (input.alreadyRefundedAmount !== undefined) {
-      if (settlement.lastFailure?.code !== EXTERNAL_REFUND_UNRESOLVED_CODE) {
-        throw new BadRequestError('이미 환불한 금액은 채널이 그 금액을 물으며 거절한 정산에만 적을 수 있습니다');
+      if (!settlement.lastFailure?.code.startsWith(EXTERNAL_REFUND_REJECTED_PREFIX)) {
+        throw new BadRequestError('이미 환불한 금액은 채널이 외부 환불로 거절한 정산에만 적거나 지울 수 있습니다');
       }
-      command = { ...command, alreadyRefundedAmount: input.alreadyRefundedAmount };
+      command = { ...command };
+      // null 은 지우기 — 칸을 없애 명령에도 싣지 않는다
+      if (input.alreadyRefundedAmount === null) delete command.alreadyRefundedAmount;
+      else command.alreadyRefundedAmount = input.alreadyRefundedAmount;
     }
     const refundMode = input.kind === 'manual' ? 'manual' : settlement.refundMode;
     const issue = (settlement.issues ?? settlement.attempts) + 1;
@@ -406,6 +425,8 @@ export class CustomerReturnSettlementManager {
       issues: issue,
       lastIssuedAt: now.toISOString(),
       command,
+      restartedAt: now.toISOString(),
+      restartedBy: input.actorId,
     });
     await enqueueSettleChannelReturn(this.commands, trx, {
       customerReturnId: record.id,
@@ -447,6 +468,8 @@ export class CustomerReturnSettlementManager {
       attempts: 1,
       issues: issue,
       lastIssuedAt: now.toISOString(),
+      restartedAt: now.toISOString(),
+      restartedBy: input.actorId,
     });
     await enqueuePrepayChannelReturn(this.commands, trx, {
       customerReturnId: record.id,

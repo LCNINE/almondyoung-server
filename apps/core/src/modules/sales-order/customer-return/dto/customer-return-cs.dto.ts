@@ -48,12 +48,15 @@ export class RequestCustomerReturnPrepayDto {
 export class RetryCustomerReturnSettlementDto {
   @ApiPropertyOptional({
     minimum: 0,
+    nullable: true,
+    type: Number,
     description:
-      '채널(Medusa)이 외부 결제 몫을 물으며 거절한 정산만(return_settle_rejected:external_refund_unresolved) — ' +
-      '이 반품 품목에 이미 다른 경로로 돌려준 금액(원). 저장돼 재발행도 같은 값을 낸다',
+      '채널(Medusa)이 외부 환불로 거절한 정산만(return_settle_rejected:external_refund_unresolved·exceeds·absent) — ' +
+      '이 반품 품목에 이미 다른 경로로 돌려준 금액(원). 저장돼 재발행도 같은 값을 낸다. ' +
+      'null 이면 저장된 값을 지운다(외부 환불이 없다는 거절 absent 의 출구). 없으면 저장된 값 그대로',
   })
   @IsOptional()
   @IsInt()
   @Min(0)
-  alreadyRefundedAmount?: number;
+  alreadyRefundedAmount?: number | null;
 }

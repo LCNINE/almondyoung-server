@@ -589,6 +589,105 @@ describeIfDb('CustomerReturnCsManager — 미도착 닫기·보류 정산·선�
       });
     });
 
+    /** Medusa·wallet 이 선환불을 영구 거절했다는 사실(channel-adapter 가 낸다) */
+    const refusePrepay = (wired: Wired, s: Awaited<ReturnType<typeof seed>>, failureCode: string, tx: DbTx) =>
+      wired.settlement.recordPrepayFailed(
+        {
+          requestId: s.customerReturnId,
+          salesChannel: 'medusa',
+          externalOrderId: s.channelOrderId,
+          returnId: s.channelReturnId,
+          retryable: false,
+          failureCode,
+          message: 'refused',
+          at: new Date().toISOString(),
+        },
+        tx,
+      );
+
+    it('Medusa 가 기록 전에 거절한 선환불(넘침) → 더 작은 새 금액을 받는다, 명령 issue 2·새 금액', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seed(tx, w, wired);
+        const input = {
+          customerReturnId: s.customerReturnId,
+          amount: 90_000,
+          refundMode: 'auto' as const,
+          memo: '먼저 환불',
+          actorId,
+        };
+        await wired.cs.requestPrepay(input, tx);
+        await refusePrepay(wired, s, 'return_prepay_rejected:prepay_exceeds_item_value', tx);
+        expect((await recordOf(tx, s.customerReturnId)).prepayment).toMatchObject({ state: 'refused' });
+
+        const view = await wired.cs.requestPrepay({ ...input, amount: 5_000, actorId: 'cs-2' }, tx);
+
+        expect(view.prepayment).toMatchObject({
+          state: 'in_progress',
+          requestedAmount: 5_000,
+          requestedBy: 'cs-2',
+          attempts: 1,
+          issues: 2,
+          lastFailure: null,
+          restartedBy: 'cs-2',
+        });
+        const sent = wired.commandsOf('PrepayChannelReturn');
+        expect(sent.map((c) => c.idempotencyKey)).toEqual([
+          `customer-return-prepay:${s.customerReturnId}:issue:1`,
+          `customer-return-prepay:${s.customerReturnId}:issue:2`,
+        ]);
+        expect(sent[1].payload).toMatchObject({ amount: 5_000, refundMode: 'auto', memo: '먼저 환불' });
+      });
+    });
+
+    it('wallet 이 거절한 선환불(Medusa 기록 있음)은 다른 금액이면 여전히 Conflict', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seed(tx, w, wired);
+        const input = {
+          customerReturnId: s.customerReturnId,
+          amount: 10_000,
+          refundMode: 'auto' as const,
+          memo: '먼저 환불',
+          actorId,
+        };
+        await wired.cs.requestPrepay(input, tx);
+        await refusePrepay(wired, s, 'wallet_refund_refused:ALREADY_CANCELED', tx);
+        const before = await recordOf(tx, s.customerReturnId);
+
+        await expect(wired.cs.requestPrepay({ ...input, amount: 5_000 }, tx)).rejects.toBeInstanceOf(ConflictError);
+        expect(await recordOf(tx, s.customerReturnId)).toEqual(before);
+        expect(wired.commandsOf('PrepayChannelReturn')).toHaveLength(1);
+      });
+    });
+
+    it('같은 금액·메모에 환불 방식만 다르면 Conflict — 계좌 송금 문(manual-refund)을 가리킨다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seed(tx, w, wired);
+        const input = {
+          customerReturnId: s.customerReturnId,
+          amount: 10_000,
+          refundMode: 'auto' as const,
+          memo: '먼저 환불',
+          actorId,
+        };
+        await wired.cs.requestPrepay(input, tx);
+
+        const attempt = wired.cs.requestPrepay({ ...input, refundMode: 'manual' }, tx);
+        await expect(attempt).rejects.toBeInstanceOf(ConflictError);
+        await expect(attempt).rejects.toThrow(/prepayment\/manual-refund/);
+        expect((await recordOf(tx, s.customerReturnId)).prepayment).toMatchObject({
+          state: 'in_progress',
+          refundMode: 'auto',
+        });
+        expect(wired.commandsOf('PrepayChannelReturn')).toHaveLength(1);
+      });
+    });
+
     it('검수가 끝난 반품에 선환불 → Conflict', async () => {
       await inRollbackTx(db, async (tx) => {
         const w = await seedWorld(tx);
