@@ -162,6 +162,10 @@ export class FieldCapturePhotoDto {
   @ApiProperty() code!: string;
   @ApiProperty() name!: string;
   @ApiProperty({ type: String, nullable: true }) positionCode!: string | null;
+  @ApiProperty({ type: Number, nullable: true }) packageWidthMm!: number | null;
+  @ApiProperty({ type: Number, nullable: true }) packageLengthMm!: number | null;
+  @ApiProperty({ type: Number, nullable: true }) packageHeightMm!: number | null;
+  @ApiProperty({ type: Number, nullable: true }) packageWeightG!: number | null;
 }
 
 export class FieldCapturePhotosDto {

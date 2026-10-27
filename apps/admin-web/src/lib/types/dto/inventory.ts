@@ -2045,6 +2045,10 @@ export interface FieldCapturePhotoDto {
   code: string;
   name: string;
   positionCode: string | null;
+  packageWidthMm: number | null;
+  packageLengthMm: number | null;
+  packageHeightMm: number | null;
+  packageWeightG: number | null;
 }
 
 /** 사진 모아보기 조건. from·to 는 찍은 날(KST, YYYY-MM-DD, 양끝 포함) */

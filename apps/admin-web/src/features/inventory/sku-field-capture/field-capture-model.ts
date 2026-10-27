@@ -245,6 +245,17 @@ export function myItemLine(item: {
     .join(' · ');
 }
 
+/** 가로×세로×높이와 무게: 「120×80×50mm · 250g」. 안 잰 값은 - */
+export function packageLine(sku: {
+  packageWidthMm: number | null;
+  packageLengthMm: number | null;
+  packageHeightMm: number | null;
+  packageWeightG: number | null;
+}): string {
+  const dims = [sku.packageWidthMm, sku.packageLengthMm, sku.packageHeightMm].map((d) => d ?? '-');
+  return `${dims.join('×')}mm · ${sku.packageWeightG ?? '-'}g`;
+}
+
 const BARCODE_STATUS_LABEL: Record<FieldCaptureBarcodeStatus, string> = {
   scanned: '바코드 스캔',
   no_manufacturer: '자체 스티커',

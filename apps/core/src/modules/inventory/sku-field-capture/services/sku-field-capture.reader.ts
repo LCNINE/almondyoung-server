@@ -306,6 +306,10 @@ export class SkuFieldCaptureReader {
           code: wmsTables.skus.code,
           name: wmsTables.skus.name,
           positionCode: wmsTables.skuShelfPositions.positionCode,
+          packageWidthMm: wmsTables.skus.packageWidthMm,
+          packageLengthMm: wmsTables.skus.packageLengthMm,
+          packageHeightMm: wmsTables.skus.packageHeightMm,
+          packageWeightG: wmsTables.skus.packageWeightG,
         })
         .from(ph)
         .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, ph.skuId))

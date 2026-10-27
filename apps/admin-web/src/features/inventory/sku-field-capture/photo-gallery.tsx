@@ -11,6 +11,7 @@ import {
   groupPhotosBySku,
   kstDateOf,
   kstShortTime,
+  packageLine,
   periodRange,
   type HistoryPeriod,
 } from './field-capture-model';
@@ -128,6 +129,7 @@ export function FieldCapturePhotoGallery() {
                 </span>
                 <span className="font-medium">{head.name}</span>
                 <span className="text-xs text-muted-foreground">{head.code}</span>
+                <span className="text-xs tabular-nums">{packageLine(head)}</span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {g.map((p) => (
@@ -180,6 +182,7 @@ export function FieldCapturePhotoGallery() {
               <DialogTitle className="pr-8 text-sm font-medium">
                 <span className="mr-2 font-mono">{open.positionCode ?? '선반 없음'}</span>
                 {open.name}
+                <span className="ml-2 text-xs font-normal tabular-nums">{packageLine(open)}</span>
                 <span className="ml-2 text-xs font-normal text-muted-foreground">
                   {open.takenByLabel} · {kstShortTime(open.createdAt)}
                 </span>
