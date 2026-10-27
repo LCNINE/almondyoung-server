@@ -9,10 +9,8 @@ import { useBusinessLicenses } from '@/lib/services/business-licenses';
 import { useOrderStats } from '@/lib/services/orders';
 import { useQuestions } from '@/lib/services/qna';
 import { useReviews } from '@/lib/services/review';
-import {
-  useExchangeRequests,
-  useReturnRequests,
-} from '@/lib/services/return-exchange/queries';
+import { useExchangeRequests } from '@/lib/services/return-exchange/queries';
+import { useCustomerReturns } from '@/lib/services/customer-returns';
 import { CLAIM_IN_PROGRESS } from '@/lib/api/domains/return-exchange';
 import {
   useKeywordStatistics,
@@ -89,16 +87,9 @@ export default function MainTemplate() {
   const orderStats = useOrderStats({ enabled: orderGate.enabled });
   const bankTransfers = usePendingBankTransfers(1, 1, { enabled: paymentGate.enabled });
   const refundRequests = useRefundRequests(1, 1, { enabled: refundGate.enabled });
-  const returnRequests = useReturnRequests(
-    { status: 'requested', page: 1, limit: 1 },
-    { enabled: claimGate.enabled }
-  );
+  const customerReturns = useCustomerReturns({ bucket: 'open', limit: 1 }, { enabled: claimGate.enabled });
   const exchangeRequests = useExchangeRequests(
     { status: 'requested', page: 1, limit: 1 },
-    { enabled: claimGate.enabled }
-  );
-  const returnsInProgress = useReturnRequests(
-    { status: CLAIM_IN_PROGRESS, page: 1, limit: 1 },
     { enabled: claimGate.enabled }
   );
   const exchangesInProgress = useExchangeRequests(
@@ -187,14 +178,14 @@ export default function MainTemplate() {
       id: 'return-requests',
       tone: 'claim',
       label: '반품신청',
-      count: returnRequests.data?.total,
+      count: customerReturns.data?.total,
       second: {
-        label: '처리중',
-        href: `/cs/return-exchange?status=${encodeURIComponent(CLAIM_IN_PROGRESS)}`,
-        count: returnsInProgress.data?.total,
+        label: '확인 필요',
+        href: '/cs/return-exchange?bucket=attention',
+        count: customerReturns.data?.attentionCount,
       },
-      href: '/cs/return-exchange?status=requested',
-      ...chipState(claimGate, returnRequests, returnsInProgress),
+      href: '/cs/return-exchange',
+      ...chipState(claimGate, customerReturns),
     },
     {
       id: 'refund-requests',
