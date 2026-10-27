@@ -11,11 +11,33 @@ export function shippingPlanLines(
   newQty: ReadonlyMap<string, number>,
   profiles: ReadonlyMap<string, string>,
 ): ShippingLineView[] {
+  return toViews(lines, newQty, profiles, (l) => l.returnedQuantity);
+}
+
+/**
+ * 부분취소 «환불»의 바닥 줄 — 돌아온 수량을 빼지 않는다(취소 뒤 수량 그대로). 돌아온 물건도 한 번은 나갔으니
+ * 그 출고 배송비는 이미 쓴 것이다: 반품 뒤 남은 줄을 다 취소해도 «돌아온 물건이 아직 있다면» 냈을 요금 아래로는
+ * 돌려주지 않는다. 반품이 없는 주문은 shippingPlanLines 와 같은 값이라 판정이 바뀌지 않는다.
+ */
+export function shippingRefundFloorLines(
+  lines: OrderLine[],
+  newQty: ReadonlyMap<string, number>,
+  profiles: ReadonlyMap<string, string>,
+): ShippingLineView[] {
+  return toViews(lines, newQty, profiles, () => 0);
+}
+
+function toViews(
+  lines: OrderLine[],
+  newQty: ReadonlyMap<string, number>,
+  profiles: ReadonlyMap<string, string>,
+  returned: (l: OrderLine) => number,
+): ShippingLineView[] {
   return lines.map((l) => ({
     itemId: l.id,
     productShippingProfileId: l.productId ? (profiles.get(l.productId) ?? null) : null,
     unitPrice: l.unitPrice,
-    newQty: Math.max(0, (newQty.get(l.id) ?? l.quantity) - l.returnedQuantity),
+    newQty: Math.max(0, (newQty.get(l.id) ?? l.quantity) - returned(l)),
     requiresShipping: l.requiresShipping,
   }));
 }

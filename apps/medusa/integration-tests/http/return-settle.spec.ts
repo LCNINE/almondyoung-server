@@ -353,6 +353,29 @@ medusaIntegrationTestRunner({
       expect(await balance(orderId)).toBe(0);
     });
 
+    it('A 만 배송·반품 정산 뒤 미출고 E 부분취소 — 줄이 다 비어도 A 의 출고 배송비를 돌려주지 않는다', async () => {
+      // A 30,000 + E 10,000 = 40,000 → 배송비 3,000 을 냈다. A 만 배송완료, E 미출고. A 변심 반품은 반품비 3,000(깨짐 0)
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 1 }, { variant: 'E', quantity: 1 }], ['A']);
+      const returnId = await requestReturn(orderId, itemOf('A'), 1);
+      const settled = await settle(orderId, returnId, { requestId: rid('settle'), items: [{ item_id: itemOf('A'), received: 1, dismissed: 0 }] });
+      expect(settled.status).toBe(200);
+      expect(settled.data).toEqual(expect.objectContaining({ refundAmount: 27000, deduction: { returnShipping: 3000, freeShippingBreak: 0, roundTrip: 0 } }));
+
+      const res = await api
+        .post(
+          `/admin/orders/${orderId}/partial-cancel`,
+          { requestId: rid('pc'), items: [{ item_id: itemOf('E'), quantity: 1 }], reasonCode: 'CUSTOMER_REQUEST', requestedBy: 'operator' },
+          c.adminHeaders,
+        )
+        .catch((e: any) => e.response);
+
+      // 남는 줄이 없어도 A 는 나갔다 — 그 3,000 은 쓴 배송비라 E 의 상품값만 돌려준다
+      expect(res.status).toBe(200);
+      expect(res.data).toEqual(expect.objectContaining({ refundAmount: 10000, shippingDelta: 0, shippingNotAdjusted: false }));
+      expect(wallet.refunds.map((r) => r.amount)).toEqual([27000, 10000]);
+      expect(await balance(orderId)).toBe(0);
+    });
+
     it('수령 뒤 청구 전에 멈춘 반품 정산이 있으면 부분취소는 500(재시도) — 주문을 바꾸지 않는다', async () => {
       const { orderId, itemOf } = await deliveredOrder(
         [{ variant: 'A', quantity: 1 }, { variant: 'B', quantity: 1 }, { variant: 'E', quantity: 1 }],

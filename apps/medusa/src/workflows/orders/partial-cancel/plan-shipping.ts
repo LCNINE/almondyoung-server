@@ -52,6 +52,11 @@ export type ShippingPlan =
 export function planShipping(input: {
   methods: ShippingMethodView[];
   lines: ShippingLineView[];
+  /**
+   * 환불의 바닥 — 주면 그룹 환불은 이 줄로 계산한 요금(과 newFee 중 큰 쪽) 아래로 내려가지 않는다. 청구는 lines 만 본다.
+   * 부분취소가 «돌아온 수량을 빼지 않은» 줄을 준다(shippingRefundFloorLines). 없으면 바닥은 newFee 다(지금까지와 같다).
+   */
+  refundFloorLines?: ShippingLineView[];
   postalCode: string | null;
   priorGroupFees: PriorGroupFees;
   chargeCap: number;
@@ -73,16 +78,21 @@ export function planShipping(input: {
     return { adjustable: false, reason: 'GROUP_MISMATCH' };
   }
 
-  let computed: Array<{ shippingProfileId: string; shippingOptionId: string; currentFee: number; newFee: number }>;
+  const floorLines = input.refundFloorLines?.filter((l) => l.requiresShipping);
+  let computed: Array<{ shippingProfileId: string; shippingOptionId: string; currentFee: number; newFee: number; floorFee: number }>;
   try {
     computed = withSnapshot.map((m) => {
       const profileId = m.snapshot.shippingProfileId;
-      const remaining = shipLines
-        .filter((l) => l.productShippingProfileId === profileId && l.newQty > 0)
-        .map((l) => ({ subtotal: l.unitPrice * l.newQty, quantity: l.newQty }));
+      const feeOf = (ls: ShippingLineView[]) => {
+        const remaining = ls
+          .filter((l) => l.productShippingProfileId === profileId && l.newQty > 0)
+          .map((l) => ({ subtotal: l.unitPrice * l.newQty, quantity: l.newQty }));
+        return remaining.length === 0 ? 0 : calculateShippingFee(m.snapshot.policy, remaining, input.postalCode);
+      };
       const currentFee = input.priorGroupFees[profileId] ?? m.amount;
-      const newFee = remaining.length === 0 ? 0 : calculateShippingFee(m.snapshot.policy, remaining, input.postalCode);
-      return { shippingProfileId: profileId, shippingOptionId: m.shippingOptionId, currentFee, newFee };
+      const newFee = feeOf(shipLines);
+      const floorFee = floorLines ? Math.max(newFee, feeOf(floorLines)) : newFee;
+      return { shippingProfileId: profileId, shippingOptionId: m.shippingOptionId, currentFee, newFee, floorFee };
     });
   } catch {
     // 저장된 스냅샷을 지금 코드가 계산하지 못한다(모르는 정책 종류 등). 던지면 같은 요청이 매번 500 이 된다 —
@@ -91,13 +101,14 @@ export function planShipping(input: {
   }
 
   const up = computed.reduce((s, g) => s + Math.max(0, g.newFee - g.currentFee), 0);
-  const down = computed.reduce((s, g) => s + Math.max(0, g.currentFee - g.newFee), 0);
+  const down = computed.reduce((s, g) => s + Math.max(0, g.currentFee - g.floorFee), 0);
   const charge = Math.min(up, Math.max(0, input.chargeCap));
 
-  // 올라가는 그룹에 청구분을 그룹 순서대로 배분한다. 내려가거나 그대로인 그룹은 newFee 그대로.
+  // 올라가는 그룹에 청구분을 그룹 순서대로 배분한다. 내려가거나 그대로인 그룹은 돌려준 만큼만 내려간다
+  // (바닥이 없으면 newFee 그대로, 바닥이 막으면 currentFee − 환불분).
   let left = charge;
-  const groups = computed.map((g) => {
-    if (g.newFee <= g.currentFee) return { ...g, recordedFee: g.newFee };
+  const groups = computed.map(({ floorFee, ...g }) => {
+    if (g.newFee <= g.currentFee) return { ...g, recordedFee: Math.min(g.currentFee, floorFee) };
     const share = Math.min(left, g.newFee - g.currentFee);
     left -= share;
     return { ...g, recordedFee: g.currentFee + share };

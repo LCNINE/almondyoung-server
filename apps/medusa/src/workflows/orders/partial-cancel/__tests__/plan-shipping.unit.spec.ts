@@ -78,6 +78,18 @@ describe('planShipping', () => {
     expect(p.adjustable && p.refund).toBe(2000);
   });
 
+  it('환불 바닥 줄을 주면 환불은 그 요금 아래로 내려가지 않고, 기록 요금은 돌려준 만큼만 내려간다', () => {
+    // 수량당 3개 3,000 — 1개는 돌아왔고 2개를 취소한다. 청구 판정 줄은 0개, 바닥 줄은 돌아온 1개를 센다
+    const p = planShipping({ ...base, methods: [m('q', perq, 3000)], lines: [l('d', 'sp_perq', 5000, 0)], refundFloorLines: [l('d', 'sp_perq', 5000, 1)] });
+    expect(p).toEqual({ adjustable: true, groups: [{ shippingProfileId: 'sp_perq', shippingOptionId: 'so_q', currentFee: 3000, newFee: 0, recordedFee: 1000 }], charge: 0, refund: 2000 });
+  });
+
+  it('환불 바닥은 청구를 바꾸지 않는다 — 올라가는 그룹은 lines 로만 판정한다', () => {
+    const lines = [l('a', 'sp_cond', 30000, 1)];
+    const p = planShipping({ ...base, methods: [m('c', cond, 0)], lines, refundFloorLines: [l('a', 'sp_cond', 30000, 2)] });
+    expect(p).toEqual(planShipping({ ...base, methods: [m('c', cond, 0)], lines }));
+  });
+
   it('제주 우편번호면 지역 추가비가 남는다(줄이 남아 있으면 추가비 포함 요금 그대로)', () => {
     const jeju: ShippingPolicySnapshot = { ...flat, policy: { ...flat.policy, jejuExtraFee: 3000 } };
     const p = planShipping({ ...base, postalCode: '63000', methods: [m('f', jeju, 6000)], lines: [l('x', 'sp_flat', 10000, 1)] });

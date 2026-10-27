@@ -25,7 +25,7 @@ import type { OrderAdjustment } from './prorate-adjustments';
 import { planPartialCancel, PartialCancelRejected, type CancelRequestItem, type OrderLine } from './plan-partial-cancel';
 import { PARTIAL_CANCEL_CHARGE_NAME, planShipping } from './plan-shipping';
 import { priorGroupFeesFor } from './prior-group-fees';
-import { shippingPlanLines } from './shipping-plan-lines';
+import { shippingPlanLines, shippingRefundFloorLines } from './shipping-plan-lines';
 import { cancelShippingFeeBearer, type ShippingFeeBearer } from './shipping-fee-bearer';
 
 export { PARTIAL_CANCEL_CHARGE_NAME };
@@ -195,6 +195,9 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
   const shipping = planShipping({
     methods: order.shippingMethods,
     lines: shippingPlanLines(order.lines, newQty, profiles),
+    // 청구는 돌아온 수량을 뺀 줄로, 환불은 돌아온 물건이 아직 있는 것처럼 센 요금 아래로 내려가지 않게 — 돌아온 물건의
+    // 출고 배송비는 이미 썼다. 반품 뒤 남은 줄을 다 취소해도 처음 낸 배송비·반품이 받은 깨짐이 되돌아가지 않는다
+    refundFloorLines: shippingRefundFloorLines(order.lines, newQty, profiles),
     postalCode: order.postalCode,
     priorGroupFees: priorGroupFeesFor(Object.values(readPartialCancelRecords(order.metadata)), returnRecords),
     chargeCap: bearer === 'seller' ? 0 : plan.itemRefundEstimate,
