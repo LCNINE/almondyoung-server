@@ -119,8 +119,10 @@ function customerOrdersCte(until: Date): SQL {
         sum(case when l.quantity > 0
           then l.total_price * greatest(l.quantity - least(coalesce(l.restored_qty, 0), l.quantity), 0) / l.quantity
           else l.total_price end) as amount,
-        bool_or(exists (select 1 from full_cancel_refs f where f.ref in (l.order_key, l.order_id))) as full_flag,
-        bool_or(exists (select 1 from restored r where r.ref in (l.order_key, l.order_id))) as has_restoration,
+        -- exists (... where ref in (a, b)) 로 쓰면 라인마다 CTE 를 다시 훑어 쿼리 하나가 수 초 걸린다. in (select) 는 해시를 한 번만 만든다.
+        -- in 은 NULL 이 섞이면 false 가 아니라 NULL 이라 coalesce 로 exists 와 같은 참/거짓에 맞춘다.
+        bool_or(coalesce(l.order_key in (select ref from full_cancel_refs) or l.order_id in (select ref from full_cancel_refs), false)) as full_flag,
+        bool_or(coalesce(l.order_key in (select ref from restored) or l.order_id in (select ref from restored), false)) as has_restoration,
         count(l.restored_qty) as matched_lines,
         bool_and(l.order_item_id is not null and coalesce(l.restored_qty, 0) >= l.quantity) as all_restored
       from lines l
