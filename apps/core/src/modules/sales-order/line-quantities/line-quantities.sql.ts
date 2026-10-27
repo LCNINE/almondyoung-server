@@ -53,7 +53,7 @@ export function lineDemandSql(lineQuantity: SQLWrapper, salesOrderLineId: SQLWra
 }
 
 /**
- * 라인의 남은 수량 = 주문 수량 − 갈래 무관 취소. 더 취소할 수 있는 판매 단위의 상한.
+ * 라인의 남은 수량 = 주문 수량 − 갈래 무관 취소. 반품은 모른다(N6) — 취소 상한은 `remaining − returnHeld`(`cancelableOf`)다.
  * GREATEST 로 덮지 않는다 — 음수면 불변식(취소 ≤ 주문) 위반이 그대로 보여야 한다.
  */
 export function lineRemainingSql(lineQuantity: SQLWrapper, salesOrderLineId: SQLWrapper): SQL<number> {

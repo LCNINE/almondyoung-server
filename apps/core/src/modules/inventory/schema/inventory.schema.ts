@@ -1550,11 +1550,6 @@ export const salesOrderLineCompositions = pgTable(
   }),
 );
 
-/**
- * 반품 예정 기록(K8 PR5). 채널 반품 «확정» 사실(Medusa 반품 확정)이 만든다.
- * 도착·검수·환불은 이 행의 status 가 따라가며, 수량 사실(K6)은 expected~refund_pending 을 «예정 수량»으로 읽는다.
- * 값은 packages/event-contracts 의 CUSTOMER_RETURN_REASONS 와 같아야 한다(스펙이 지킨다).
- */
 export const customerReturnStatusEnum = pgEnum('customer_return_status', [
   'expected',
   'arrived',
@@ -1565,6 +1560,7 @@ export const customerReturnStatusEnum = pgEnum('customer_return_status', [
   'cancelled',
 ]);
 
+/** 값은 packages/event-contracts 의 CUSTOMER_RETURN_REASONS 와 같아야 한다(스펙이 지킨다). */
 export const customerReturnReasonEnum = pgEnum('customer_return_reason', [
   'change_of_mind',
   'defective',
@@ -1574,6 +1570,10 @@ export const customerReturnReasonEnum = pgEnum('customer_return_reason', [
   'other',
 ]);
 
+/**
+ * 반품 예정 기록(K8 PR5). 채널 반품 «확정» 사실(Medusa 반품 확정)이 만든다.
+ * 도착·검수·환불은 이 행의 status 가 따라가며, 수량 사실(K6)은 expected~refund_pending 을 «예정 수량»으로 읽는다.
+ */
 export const customerReturns = pgTable(
   'customer_returns',
   {
@@ -5053,10 +5053,6 @@ export type NewSalesOrder = InferInsertModel<typeof salesOrders>;
 export type SalesOrderLine = InferSelectModel<typeof salesOrderLines>;
 export type SalesOrderLineComposition = InferSelectModel<typeof salesOrderLineCompositions>;
 export type NewSalesOrderLine = InferInsertModel<typeof salesOrderLines>;
-export type CustomerReturnRow = InferSelectModel<typeof customerReturns>;
-export type NewCustomerReturnRow = InferInsertModel<typeof customerReturns>;
-export type CustomerReturnLineRow = InferSelectModel<typeof customerReturnLines>;
-export type NewCustomerReturnLineRow = InferInsertModel<typeof customerReturnLines>;
 
 export type OrderEvent = InferSelectModel<typeof orderEvents>;
 export type NewOrderEvent = InferInsertModel<typeof orderEvents>;

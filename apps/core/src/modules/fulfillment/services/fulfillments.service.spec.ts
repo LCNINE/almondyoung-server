@@ -65,6 +65,7 @@ describe('FulfillmentsService', () => {
           canceled: before + after,
           demand: line.quantity - before,
           remaining: line.quantity - before - after,
+          returnHeld: 0,
         };
       });
 

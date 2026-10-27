@@ -167,6 +167,29 @@ describeIfDb('SalesOrdersService.planCancellation (DB integration, rollback-only
     });
   });
 
+  it('박스 이력 없음 — 실제 부분 취소(cancelBeforeBoxingPartial)의 상한도 반품 예정 수량을 뺀다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireSalesOrders(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: false });
+      // 줄 수량 2 중 1 을 고객이 반품 중이다 — 취소 상한은 remaining 2 가 아니라 2 − 1 = 1
+      const { customerReturnId } = await insertCustomerReturn(tx, {
+        salesOrderId: seed.salesOrderId,
+        status: 'expected',
+        lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 1 }],
+      });
+      const whole = { lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 2 }] };
+      await expect(w.salesOrders.cancel(seed.salesOrderId, whole, tx)).rejects.toThrow(
+        '취소 수량(2개)이 취소 가능 수량(1개)을 초과합니다.',
+      );
+      await tx
+        .update(wmsTables.customerReturns)
+        .set({ status: 'cancelled', cancelledAt: new Date() })
+        .where(eq(wmsTables.customerReturns.id, customerReturnId));
+      // 취소된 반품은 상한을 잡지 않는다 — 같은 요청이 상한을 지난다
+      await expect(w.salesOrders.cancel(seed.salesOrderId, whole, tx)).resolves.toBeDefined();
+    });
+  });
+
   it('박스 이력 없음 — 이미 전체 취소된 주문의 부분 요청은 cancelBeforeBoxingPartial 과 같은 400', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireSalesOrders(tx);

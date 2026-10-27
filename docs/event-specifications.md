@@ -452,17 +452,14 @@ interface OrderPaymentCompletePayload {
 
 ---
 
-#### 3.4 `OrderReturnRequested`
+#### 3.4 `ChannelReturnRequested` · `ChannelReturnCancelled` (K8 PR5, 구 `OrderReturnRequested` 대체)
 
-반품 요청
+Medusa 반품의 확정·취소 관측
 
-**발행자**:
-- **Channel Adapter**: 외부 채널 반품 요청
-- **Main Server**: 고객 반품 요청
+**발행자**: **Channel Adapter** (Medusa 반품 폴링)
 
 **구독자**:
-- **WMS**: 반품 처리 시작
-- **Notification**: 반품 요청 알림
+- **Core**: 반품 예정 기록(`customer_returns`)을 만들고 취소한다. 접수 고객 이벤트도 여기서 낸다
 
 ---
 

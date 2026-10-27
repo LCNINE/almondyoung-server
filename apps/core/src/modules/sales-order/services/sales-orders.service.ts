@@ -1717,6 +1717,7 @@ export class SalesOrdersService {
         throw new BadRequestException(
           `Sales order line ${request.salesOrderLineId} does not belong to ${salesOrderId}`,
         );
+      // 전체취소에도 돈다 — 물리 줄은 outstanding ≤ cancelable 이라 안전하고, 인쇄(외주) 줄은 배송완료 0 이라 반품이 잡지 못한다
       const cancelable = cancelableOf(prior, line.id);
       if (request.quantity > cancelable) {
         throw new BadRequestException(`Cancellation quantity ${request.quantity} exceeds remaining ${cancelable}`);

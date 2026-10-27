@@ -208,8 +208,9 @@ Medusa return id 를 유일키로 갖는다. 운송장 테이블은 `waybills.sh
 - 검수가 끝나면 **«수령 알림» 명령**(4.4)을 outbox 로 낸다. 같은 트랜잭션이다.
 
 **Medusa→core 관측.** channel-adapter `MedusaOrderSource` 가 반품을 읽게 한다(지금은 취소·환불만 읽는다, `medusa-order.source.ts:257-305`).
-계약에 이미 있고 발행자·소비자가 0인 `OrderReturnRequested`(`orders.stream.ts`)를 쓰고, 반품 취소와 정산 완료도 관측한다
-(새 이벤트가 필요하면 추가 — 이벤트 계약 enum 추가는 **소비자 선배포**). 지연은 폴링 주기(5분)까지다.
+~~계약에 이미 있고 발행자·소비자가 0인 `OrderReturnRequested`(`orders.stream.ts`)를 쓰고, 반품 취소와 정산 완료도 관측한다
+(새 이벤트가 필요하면 추가 — 이벤트 계약 enum 추가는 **소비자 선배포**).~~ **대체됨 — 아래 «PR 5 에서 확정한 결과» 를 따른다**
+(새 이벤트 `ChannelReturnRequested`·`ChannelReturnCancelled`, 소비자 선배포 제약 없음). 지연은 폴링 주기(5분)까지다.
 
 **고객 이벤트는 그대로 core 가 낸다.** `SalesOrderClaimProgressed`(requested·collected·completed)와 `SalesOrderReturned` 계약과
 소비자(notification 메일, ugc 리뷰 적립 회수)를 바꾸지 않는다. core 가 반품 예정 기록의 전이에서 낸다:
