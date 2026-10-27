@@ -290,6 +290,13 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
   - `warehouse.reader.ts` 의 `totalAvailable`(전 상태 합 — 기존 버그성), `stock-projection.reader.ts` 의 `currentQuantity`
   - `stock-valuation.reader.ts`·DTO, event-contracts `inventory.stream.ts`, admin-web 상태 라벨·통계, warehouse-app `movement/types.ts`
 - 죽은 `MARK_DEFECT`·`REWORK_GOOD` 는 건드리지 않는다(현황판 작업 8b 의 몫).
+- **PR 4 에서 확정한 결과.**
+  - 메서드 `InventoryCommandService.returnReceive`·`returnAccept`·`returnReject`. 위치를 받지 않는다 — 언제나 그 창고의 `return_default`
+    (RETURNED 를 옮기는 경로가 없으므로 합격·불합격도 같은 위치에서 상태만 바꾼다). `idempotencyKey` 필수(호출자는 재시도로 다시 들어온다).
+  - 역분개 타입: `RETURN_RECEIVE → ADJUST_DOWN`, `RETURN_ACCEPT`·`RETURN_REJECT → MOVE`(같은 위치 상태 전이는 `MOVE` 가 이미 담는다 —
+    `transferShip` 의 ON_HAND → IN_TRANSFER). 합격의 역분개는 ON_HAND 를 줄이므로 예약 불변식 가드를 탄다.
+  - «실재고»(물리 합계)는 RETURNED 를 더하고 가용은 더하지 않는다(`physicalQuantity`). 창고 요약 `totalAvailable` 은 전 상태 합이던 것을
+    ON_HAND 합으로 고쳤다.
 
 ### 4.7 한진 회수 접수 (뒤 PR, DEV 스모크 선행)
 
@@ -346,8 +353,11 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 
 ## 7. 배포 순서 제약
 
-- **expand 먼저, `migrate → deploy`**: core 원장 enum 추가(`ALTER TYPE … ADD VALUE` — drizzle migrate 의 트랜잭션 안에서 같은 값을
-  바로 쓰면 실패할 수 있으니 값 추가와 사용을 다른 마이그레이션으로), 반품 예정 테이블, 뷰 재정의.
+- **expand 먼저, `migrate → deploy`**: core 원장 enum 추가, 반품 예정 테이블, 뷰 재정의.
+  `ALTER TYPE … ADD VALUE` 한 값은 그 트랜잭션이 커밋되기 전에 쓰면 PG 가 거절한다(`unsafe use of new value`). drizzle migrate 는
+  **대기 마이그레이션 전부를 한 트랜잭션**으로 돌리므로 값 추가와 사용을 다른 파일로 나눠도 같은 실행에 실리면 소용없다(빈 DB
+  부트스트랩은 늘 그렇다). 그래서 마이그레이션 안에서 새 값을 쓰는 SQL(뷰 등)은 `stock_state::text = 'RETURNED'` 처럼 text 로 비교한다
+  (PR 4, 빈 DB 부트스트랩으로 확인).
 - **이벤트 계약에 타입·enum 을 더하면 소비자 선배포**(이벤트 계약 zod 검증은 소비자가 throw 한다).
 - **Medusa 미들웨어(기본 반품 라우트 거절)는 우리 라우트와 같은 배포 또는 먼저.** 막지 않은 채 반품 옵션을 시드하면 그 순간
   `POST /store/returns` 가 실제로 반품을 만들 수 있게 된다 — 옵션 시드보다 미들웨어가 먼저다.

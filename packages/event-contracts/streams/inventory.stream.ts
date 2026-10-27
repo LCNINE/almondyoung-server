@@ -9,7 +9,7 @@ import { z } from 'zod';
 
 // ===== Common Types =====
 
-export type StockState = 'ON_HAND' | 'DEFECTIVE' | 'IN_TRANSFER';
+export type StockState = 'ON_HAND' | 'DEFECTIVE' | 'IN_TRANSFER' | 'RETURNED';
 
 export type InboundType = 'DOMESTIC' | 'OVERSEAS' | 'RETURN' | 'GENERAL';
 
