@@ -4,13 +4,18 @@ import type { ShippingPolicySnapshot } from '../../../modules/almond-fulfillment
 /** 부분취소가 더하는 배송비 방법의 이름 — 다음 판정이 «그룹의 원래 방법»과 가르는 표지다. */
 export const PARTIAL_CANCEL_CHARGE_NAME = '부분취소 배송비';
 
+/** 반품 정산이 더하는 택배비 방법의 이름 — 부분취소 배송비와 같이 «원래 방법이 아닌» 청구다. */
+export const RETURN_FEE_CHARGE_NAME = '반품 택배비';
+/** 우리가 정산으로 더한 청구 이름 둘. 다음 판정은 이 이름의 방법을 그룹의 원래 방법에서 뺀다. */
+export const SETTLEMENT_CHARGE_NAMES: readonly string[] = [PARTIAL_CANCEL_CHARGE_NAME, RETURN_FEE_CHARGE_NAME];
+
 export type ShippingMethodView = {
   id: string;
   shippingOptionId: string | null;
   amount: number;
   snapshot: ShippingPolicySnapshot | null;
-  /** 이전 부분취소가 더한 «부분취소 배송비» 방법. 그룹의 원래 방법이 아니다. */
-  isPartialCancelCharge: boolean;
+  /** 이전 부분취소·반품 정산이 더한 «부분취소 배송비»·«반품 택배비» 방법. 그룹의 원래 방법이 아니다. */
+  isSettlementCharge: boolean;
   /** 반품·교환·클레임의 배송 방법(order_shipping 행이 return_id·exchange_id·claim_id 를 든다). 스냅샷이 없고 그룹의 원래 방법도 아니다. */
   isReturnExchangeOrClaimShipping: boolean;
   /** 0 이 아닌 할인(배송비 쿠폰 등)이 붙어 있다. amount 는 할인 «전» 금액이라 고객이 실제로 낸 배송비가 아니다. */
@@ -47,11 +52,16 @@ export type ShippingPlan =
 export function planShipping(input: {
   methods: ShippingMethodView[];
   lines: ShippingLineView[];
+  /**
+   * 환불의 바닥 — 주면 그룹 환불은 이 줄로 계산한 요금(과 newFee 중 큰 쪽) 아래로 내려가지 않는다. 청구는 lines 만 본다.
+   * 부분취소가 «돌아온 수량을 빼지 않은» 줄을 준다(shippingRefundFloorLines). 없으면 바닥은 newFee 다(지금까지와 같다).
+   */
+  refundFloorLines?: ShippingLineView[];
   postalCode: string | null;
   priorGroupFees: PriorGroupFees;
   chargeCap: number;
 }): ShippingPlan {
-  const originals = input.methods.filter((m) => !m.isPartialCancelCharge && !m.isReturnExchangeOrClaimShipping);
+  const originals = input.methods.filter((m) => !m.isSettlementCharge && !m.isReturnExchangeOrClaimShipping);
   // 배송비 할인이 붙은 주문은 조정하지 않는다(fail-safe). 할인 뒤 순 배송비로 계산하지 않는 이유: 할인을 그룹 사이에
   // 어떻게 나눌지·남은 요금에 할인을 다시 어떻게 매길지를 정해야 하는데, 틀리면 고객이 내지 않은 배송비를 돌려준다.
   if (originals.some((m) => m.hasAdjustments)) return { adjustable: false, reason: 'SHIPPING_DISCOUNTED' };
@@ -68,16 +78,21 @@ export function planShipping(input: {
     return { adjustable: false, reason: 'GROUP_MISMATCH' };
   }
 
-  let computed: Array<{ shippingProfileId: string; shippingOptionId: string; currentFee: number; newFee: number }>;
+  const floorLines = input.refundFloorLines?.filter((l) => l.requiresShipping);
+  let computed: Array<{ shippingProfileId: string; shippingOptionId: string; currentFee: number; newFee: number; floorFee: number }>;
   try {
     computed = withSnapshot.map((m) => {
       const profileId = m.snapshot.shippingProfileId;
-      const remaining = shipLines
-        .filter((l) => l.productShippingProfileId === profileId && l.newQty > 0)
-        .map((l) => ({ subtotal: l.unitPrice * l.newQty, quantity: l.newQty }));
+      const feeOf = (ls: ShippingLineView[]) => {
+        const remaining = ls
+          .filter((l) => l.productShippingProfileId === profileId && l.newQty > 0)
+          .map((l) => ({ subtotal: l.unitPrice * l.newQty, quantity: l.newQty }));
+        return remaining.length === 0 ? 0 : calculateShippingFee(m.snapshot.policy, remaining, input.postalCode);
+      };
       const currentFee = input.priorGroupFees[profileId] ?? m.amount;
-      const newFee = remaining.length === 0 ? 0 : calculateShippingFee(m.snapshot.policy, remaining, input.postalCode);
-      return { shippingProfileId: profileId, shippingOptionId: m.shippingOptionId, currentFee, newFee };
+      const newFee = feeOf(shipLines);
+      const floorFee = floorLines ? Math.max(newFee, feeOf(floorLines)) : newFee;
+      return { shippingProfileId: profileId, shippingOptionId: m.shippingOptionId, currentFee, newFee, floorFee };
     });
   } catch {
     // 저장된 스냅샷을 지금 코드가 계산하지 못한다(모르는 정책 종류 등). 던지면 같은 요청이 매번 500 이 된다 —
@@ -86,13 +101,14 @@ export function planShipping(input: {
   }
 
   const up = computed.reduce((s, g) => s + Math.max(0, g.newFee - g.currentFee), 0);
-  const down = computed.reduce((s, g) => s + Math.max(0, g.currentFee - g.newFee), 0);
+  const down = computed.reduce((s, g) => s + Math.max(0, g.currentFee - g.floorFee), 0);
   const charge = Math.min(up, Math.max(0, input.chargeCap));
 
-  // 올라가는 그룹에 청구분을 그룹 순서대로 배분한다. 내려가거나 그대로인 그룹은 newFee 그대로.
+  // 올라가는 그룹에 청구분을 그룹 순서대로 배분한다. 내려가거나 그대로인 그룹은 돌려준 만큼만 내려간다
+  // (바닥이 없으면 newFee 그대로, 바닥이 막으면 currentFee − 환불분).
   let left = charge;
-  const groups = computed.map((g) => {
-    if (g.newFee <= g.currentFee) return { ...g, recordedFee: g.newFee };
+  const groups = computed.map(({ floorFee, ...g }) => {
+    if (g.newFee <= g.currentFee) return { ...g, recordedFee: Math.min(g.currentFee, floorFee) };
     const share = Math.min(left, g.newFee - g.currentFee);
     left -= share;
     return { ...g, recordedFee: g.currentFee + share };

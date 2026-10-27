@@ -97,4 +97,42 @@ describe('ChannelOrderCancelRepository (#1016 35번 PR-B)', () => {
     enqueue.mockRejectedValueOnce(new Error('outbox down'));
     await expect(repository.recordSettlementFailure(fact, 'd1')).rejects.toThrow('outbox down');
   });
+
+  describe('recordReturnSettlementFailure (K8 PR6)', () => {
+    const returnFact = {
+      requestId: 'cr-1',
+      salesChannel: 'medusa',
+      externalOrderId: 'order_1',
+      returnId: 'ret_1',
+      received: true,
+      retryable: true,
+      failureCode: 'refund_pending',
+      message: '환불이 남았습니다',
+      at: '2026-10-27T00:00:00.000Z',
+    };
+
+    it('채널 단위 파티션·전달·코드 단위 멱등 키로 적재한다', async () => {
+      const { repository, enqueue } = makeRepository();
+      await repository.recordReturnSettlementFailure(returnFact, 'd1');
+      expect(enqueue).toHaveBeenCalledWith(
+        {
+          eventType: 'ChannelReturnSettlementFailed',
+          aggregateId: 'medusa:order_1',
+          partitionKey: 'medusa',
+          metadata: { partitionKey: 'medusa' },
+          idempotencyKey: 'return-settlement-failed:cr-1:d1:refund_pending',
+          payload: returnFact,
+        },
+        'tx',
+      );
+    });
+
+    it('긴 failureCode 는 키에서 120자로 자른다', async () => {
+      const { repository, enqueue } = makeRepository();
+      await repository.recordReturnSettlementFailure({ ...returnFact, failureCode: 'X'.repeat(400) }, 'd1');
+      const [event] = enqueue.mock.calls[0];
+      expect(event.idempotencyKey).toBe(`return-settlement-failed:cr-1:d1:${'X'.repeat(120)}`);
+      expect(event.payload.failureCode).toHaveLength(400);
+    });
+  });
 });

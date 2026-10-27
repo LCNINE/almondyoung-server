@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { seedOrder, seedWorld } from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
-import { seedComponentSku, seedDeliveredLine } from '../line-quantities/__support__/claim-facts.fixtures';
+import { insertCustomerReturn, seedComponentSku, seedDeliveredLine } from '../line-quantities/__support__/claim-facts.fixtures';
 import { recallParcel, seedSupplierShare } from '../line-quantities/__support__/shipment-facts.fixtures';
 import { readParcelClaimEligibility } from '../line-quantities/parcel-claim-eligibility.reader';
 import { readReturnEligibility } from './return-eligibility.reader';
@@ -52,6 +52,7 @@ describeIfDb('readReturnEligibility', () => {
       expect(await readReturnEligibility(tx, ORDER_ID)).toEqual({
         found: true,
         lines: [{ channelOrderItemId: ITEM_ID, deliveredUnits: 2, lastDeliveredAt: max }],
+        customerReturns: [],
       });
     });
   });
@@ -88,6 +89,7 @@ describeIfDb('readReturnEligibility', () => {
       expect(await readReturnEligibility(tx, ORDER_ID)).toEqual({
         found: true,
         lines: [{ channelOrderItemId: ITEM_ID, deliveredUnits: 0, lastDeliveredAt: null }],
+        customerReturns: [],
       });
     });
   });
@@ -109,6 +111,7 @@ describeIfDb('readReturnEligibility', () => {
       expect(await readReturnEligibility(tx, ORDER_ID)).toEqual({
         found: true,
         lines: [{ channelOrderItemId: ITEM_ID, deliveredUnits: 0, lastDeliveredAt: null }],
+        customerReturns: [],
       });
     });
   });
@@ -135,13 +138,57 @@ describeIfDb('readReturnEligibility', () => {
       });
       await asMedusa(tx, line, 'naver');
 
-      expect(await readReturnEligibility(tx, ORDER_ID)).toEqual({ found: false, lines: [] });
+      expect(await readReturnEligibility(tx, ORDER_ID)).toEqual({ found: false, lines: [], customerReturns: [] });
     });
   });
 
-  it('없는 주문 → { found: false, lines: [] }', async () => {
+  it('없는 주문 → { found: false, lines: [], customerReturns: [] }', async () => {
     await inRollbackTx(db, async (tx) => {
-      expect(await readReturnEligibility(tx, 'order_does_not_exist')).toEqual({ found: false, lines: [] });
+      expect(await readReturnEligibility(tx, 'order_does_not_exist')).toEqual({ found: false, lines: [], customerReturns: [] });
+    });
+  });
+
+  it('자격 응답에 반품 예정 기록의 상태를 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const line = await seedDeliveredLine(tx, w, {
+        quantity: 2,
+        composition: [{ skuId: w.skuId, qtyPerUnit: 1 }],
+        parcels: [{ qtyBySku: { [w.skuId]: 2 } }],
+      });
+      await asMedusa(tx, line);
+      const expected = await insertCustomerReturn(tx, {
+        salesOrderId: line.salesOrderId,
+        status: 'expected',
+        lines: [{ salesOrderLineId: line.lineId, quantity: 1 }],
+      });
+      const arrived = await insertCustomerReturn(tx, {
+        salesOrderId: line.salesOrderId,
+        status: 'arrived',
+        lines: [{ salesOrderLineId: line.lineId, quantity: 1 }],
+      });
+
+      await tx
+        .update(wmsTables.customerReturns)
+        .set({ requestedAt: new Date(Date.now() + 3_600_000) })
+        .where(eq(wmsTables.customerReturns.id, arrived.customerReturnId));
+
+      const result = await readReturnEligibility(tx, ORDER_ID);
+      const idOf = async (id: string) =>
+        (
+          await tx
+            .select({ c: wmsTables.customerReturns.channelReturnId })
+            .from(wmsTables.customerReturns)
+            .where(eq(wmsTables.customerReturns.id, id))
+        )[0].c;
+      expect(result.customerReturns).toHaveLength(2);
+      // 읽기는 requestedAt, id 순 — 접수 시각이 이른 expected 가 먼저다
+      expect(result.customerReturns).toEqual(
+        [
+          { channelReturnId: await idOf(expected.customerReturnId), status: 'expected' },
+          { channelReturnId: await idOf(arrived.customerReturnId), status: 'arrived' },
+        ],
+      );
     });
   });
 });

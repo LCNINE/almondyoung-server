@@ -6,6 +6,8 @@
 
 import { event, stream } from '../types';
 import { z } from 'zod';
+import type { ChannelCancelRefundMode, SettleChannelReturnPayload } from './channel-orders-command.stream';
+import { CHANNEL_CANCEL_REFUND_MODES } from './channel-orders-command.stream';
 
 // ===== Common Types =====
 
@@ -680,6 +682,92 @@ const ChannelOrderSettlementFailedSchema = z.object({
   at: z.string().datetime(),
 });
 
+// ===== 채널 반품 정산 결과 (K8 PR6) =====
+
+/** 반품 정산에서 환불액에서 뺀 금액(원, 0 이상 정수). */
+export interface ReturnSettlementDeduction {
+  returnShipping: number;
+  freeShippingBreak: number;
+  roundTrip: number;
+}
+
+/**
+ * 채널 반품 정산 사실 (K8 PR6). channel-adapter 가 Medusa 주문을 재수집해 관측해 낸다 — 성공은 명령의 답이 아니라 관측이다.
+ * `orderId` 는 `ChannelReturnRequestedPayload.orderId` 와 같다.
+ */
+export interface ChannelReturnSettledPayload {
+  orderId: string;
+  salesChannel: SalesChannel;
+  externalOrderId: string;
+  returnId: string;
+  requestId: string;
+  refundAmount: number;
+  deduction: ReturnSettlementDeduction;
+  feeNotAdjusted: boolean;
+  refundMode: ChannelCancelRefundMode;
+  settledAt: string;
+  items: SettleChannelReturnPayload['items'];
+}
+
+/**
+ * 반품 정산 실패 사실 (K8 PR6). `ChannelOrderSettlementFailed.scope` 를 넓히지 않고 새 이름으로 낸다(옛 소비자 throw 방지).
+ * `received`: Medusa 수령은 확정됐고 환불만 남았다. 판매주문 id 는 싣지 않는다 — `ChannelOrderSettlementFailed` 와 같은 이유(#656).
+ */
+export interface ChannelReturnSettlementFailedPayload {
+  /** `SettleChannelReturnPayload.requestId` 그대로 */
+  requestId: string;
+  salesChannel: string;
+  externalOrderId: string;
+  returnId: string;
+  received: boolean;
+  retryable: boolean;
+  /** 열린 문자열 — `ChannelOrderSettlementFailedPayload.failureCode` 와 같은 어휘 */
+  failureCode: string;
+  message: string;
+  /** ISO 8601 */
+  at: string;
+}
+
+const ReturnSettlementDeductionSchema = z.object({
+  returnShipping: z.number().int().nonnegative(),
+  freeShippingBreak: z.number().int().nonnegative(),
+  roundTrip: z.number().int().nonnegative(),
+});
+
+const ChannelReturnSettledSchema = z.object({
+  orderId: z.string().min(1),
+  salesChannel: SalesChannelSchema,
+  externalOrderId: z.string().min(1),
+  returnId: z.string().min(1),
+  requestId: z.string().min(1),
+  refundAmount: z.number().int().nonnegative(),
+  deduction: ReturnSettlementDeductionSchema,
+  feeNotAdjusted: z.boolean(),
+  refundMode: z.enum(CHANNEL_CANCEL_REFUND_MODES),
+  settledAt: z.string().datetime(),
+  items: z
+    .array(
+      z.object({
+        channelOrderItemId: z.string().min(1),
+        received: z.number().int().nonnegative(),
+        dismissed: z.number().int().nonnegative(),
+      }),
+    )
+    .min(1),
+});
+
+const ChannelReturnSettlementFailedSchema = z.object({
+  requestId: z.string().min(1),
+  salesChannel: z.string().min(1),
+  externalOrderId: z.string().min(1),
+  returnId: z.string().min(1),
+  received: z.boolean(),
+  retryable: z.boolean(),
+  failureCode: z.string().min(1),
+  message: z.string(),
+  at: z.string().datetime(),
+});
+
 // ===== Stream Config (타입 안전 버전) =====
 
 export const ORDER_STREAM = stream({
@@ -710,6 +798,14 @@ export const ORDER_STREAM = stream({
     ChannelOrderSettlementFailed: event<'ChannelOrderSettlementFailed', ChannelOrderSettlementFailedPayload>(
       'ChannelOrderSettlementFailed',
       ChannelOrderSettlementFailedSchema,
+    ),
+    ChannelReturnSettled: event<'ChannelReturnSettled', ChannelReturnSettledPayload>(
+      'ChannelReturnSettled',
+      ChannelReturnSettledSchema,
+    ),
+    ChannelReturnSettlementFailed: event<'ChannelReturnSettlementFailed', ChannelReturnSettlementFailedPayload>(
+      'ChannelReturnSettlementFailed',
+      ChannelReturnSettlementFailedSchema,
     ),
   },
 });

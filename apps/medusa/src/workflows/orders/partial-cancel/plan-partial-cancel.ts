@@ -11,6 +11,11 @@ export type OrderLine = {
    * 반품 요청이 그 반품이 잡는 만큼만 올린다(K8 N1). Medusa 주문 수정은 이 아래로 수량을 못 줄인다(item-update 하한).
    */
   fulfilledQuantity: number;
+  /**
+   * 이미 돌아온 수량(detail.return_received_quantity + return_dismissed_quantity). Medusa 는 이걸 items.quantity 에서
+   * 빼지 않는다 — 배송비 판정은 남는 수량으로 해야 하므로 따로 든다. 주문 수정의 수량 계산에는 쓰지 않는다.
+   */
+  returnedQuantity: number;
   adjustments: OrderAdjustment[];
 };
 export type CancelRequestItem = { itemId: string; quantity: number };

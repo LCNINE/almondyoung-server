@@ -45,6 +45,8 @@ export class CustomerReturnManager {
 
       const salesOrderId = await this.findSalesOrderId(trx, fact.salesChannel, fact.externalOrderId);
       const lines = await this.resolveLines(trx, salesOrderId, fact.items);
+      // 구성 없는 줄이 하나라도 있으면 아무것도 쓰기 전에 거절한다(N3)
+      const compositions = await this.resolveCompositions(trx, lines);
 
       const [inserted] = await trx
         .insert(wmsTables.customerReturns)
@@ -66,14 +68,34 @@ export class CustomerReturnManager {
         return { customerReturnId: existing.id, created: false };
       }
 
-      await trx.insert(wmsTables.customerReturnLines).values(
-        lines.map((line) => ({
-          customerReturnId: inserted.id,
-          salesOrderLineId: line.salesOrderLineId,
-          channelOrderItemId: line.channelOrderItemId,
-          quantity: line.quantity,
-        })),
-      );
+      const insertedLines = await trx
+        .insert(wmsTables.customerReturnLines)
+        .values(
+          lines.map((line) => ({
+            customerReturnId: inserted.id,
+            salesOrderLineId: line.salesOrderLineId,
+            channelOrderItemId: line.channelOrderItemId,
+            quantity: line.quantity,
+          })),
+        )
+        .returning({
+          id: wmsTables.customerReturnLines.id,
+          salesOrderLineId: wmsTables.customerReturnLines.salesOrderLineId,
+        });
+      const returnLineIdBySalesLine = new Map(insertedLines.map((row) => [row.salesOrderLineId, row.id]));
+      const itemRows = lines.flatMap((line) => {
+        const customerReturnLineId = returnLineIdBySalesLine.get(line.salesOrderLineId);
+        if (!customerReturnLineId) {
+          throw new Error(`Inserted customer return line not returned for sales line ${line.salesOrderLineId}`);
+        }
+        return (compositions.get(line.salesOrderLineId) ?? []).map((c) => ({
+          customerReturnLineId,
+          skuId: c.skuId,
+          qtyPerUnit: c.qtyPerUnit,
+          expectedQty: line.quantity * c.qtyPerUnit,
+        }));
+      });
+      await trx.insert(wmsTables.customerReturnItems).values(itemRows);
       await enqueueSalesOrderClaimProgress(this.coreOrders, trx, {
         salesOrderId,
         kind: 'return',
@@ -139,6 +161,37 @@ export class CustomerReturnManager {
     const row = await this.findExistingByChannelReturnId(trx, channelReturnId);
     if (!row) throw new NotFoundError(`Customer return not found: channel ${channelReturnId}`);
     return row;
+  }
+
+  /** 줄마다 굳은 구성(SKU × 판매 1개당 수량)을 읽는다. 구성이 없는 줄이 있으면 BadRequestError. */
+  private async resolveCompositions(
+    trx: DbTx,
+    lines: Array<{ salesOrderLineId: string; channelOrderItemId: string }>,
+  ): Promise<Map<string, Array<{ skuId: string; qtyPerUnit: number }>>> {
+    const rows = await trx
+      .select({
+        salesOrderLineId: wmsTables.salesOrderLineCompositions.salesOrderLineId,
+        skuId: wmsTables.salesOrderLineCompositions.skuId,
+        qtyPerUnit: wmsTables.salesOrderLineCompositions.qtyPerUnit,
+      })
+      .from(wmsTables.salesOrderLineCompositions)
+      .where(
+        inArray(
+          wmsTables.salesOrderLineCompositions.salesOrderLineId,
+          lines.map((line) => line.salesOrderLineId),
+        ),
+      );
+    const bySalesLine = new Map<string, Array<{ skuId: string; qtyPerUnit: number }>>();
+    for (const row of rows) {
+      const list = bySalesLine.get(row.salesOrderLineId) ?? [];
+      list.push({ skuId: row.skuId, qtyPerUnit: row.qtyPerUnit });
+      bySalesLine.set(row.salesOrderLineId, list);
+    }
+    const missing = lines.find((line) => !bySalesLine.has(line.salesOrderLineId));
+    if (missing) {
+      throw new BadRequestError(`Return line has no SKU composition: ${missing.channelOrderItemId}`);
+    }
+    return bySalesLine;
   }
 
   private async resolveLines(

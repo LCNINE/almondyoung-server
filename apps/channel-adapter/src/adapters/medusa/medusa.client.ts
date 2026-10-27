@@ -295,6 +295,18 @@ export type MedusaPartialCancelOutcome =
   | MedusaSettlementTransient;
 
 /**
+ * Medusa 반품 정산 결과 (K8 PR6). 던지지 않는다. `refund_pending` = 수령은 확정됐고 환불이 남았다 — 같은 requestId 로 다시 부르면 이어 간다.
+ * `rejected` 의 `reason` 은 `return_settle_rejected` 의 reason 이고, Medusa 자신의 400 이면 code ?? type 이다.
+ */
+export type MedusaReturnSettleOutcome =
+  | { kind: 'settled' }
+  | { kind: 'rejected'; reason: string; message: string }
+  | MedusaRefundRefused
+  | { kind: 'refund_pending'; message: string }
+  | { kind: 'not_found'; message: string }
+  | MedusaSettlementTransient;
+
+/**
  * 코어 `throwIfOrderIsCancelled` 의 문구(`Order with id … has been canceled.`, `@medusajs/core-flows` 2.13.4). 채널 취소 라우트도 같은 문장을 낸다.
  * Medusa 를 올릴 때 확인할 것 — 바뀌면 재전달된 전체취소 명령이 취소 불가로 닫힌다.
  */
@@ -2739,6 +2751,59 @@ export class MedusaClient {
     }
     this.logger.error(
       `Failed to partial-cancel Medusa order: ${orderId} (status=${status}, type=${String(body.type)})`,
+      message,
+    );
+    return { kind: 'transient', failureCode: `http_${status}`, message };
+  }
+
+  /**
+   * 반품 정산(K8 PR6). 분류는 `partialCancelOrder` 와 같은 순서다 — 본문으로 502 를 가린다(ALB 의 본문 없는 502 는 일시).
+   * 정해진 거절은 `code === 'return_settle_rejected'`, 영구 환불 거절은 표지 `wallet_refund_refused:*`, 404 는 본문 type=not_found 일 때만 없는 반품이다.
+   */
+  async settleReturn(
+    orderId: string,
+    returnId: string,
+    input: {
+      requestId: string;
+      items: Array<{ itemId: string; received: number; dismissed: number }>;
+      refundMode: ChannelCancelRefundMode;
+    },
+  ): Promise<MedusaReturnSettleOutcome> {
+    const path = `/admin/orders/${encodeURIComponent(orderId)}/returns/${encodeURIComponent(returnId)}/settle`;
+    let response: { status: number; body: Record<string, unknown> };
+    try {
+      response = await this.postAdmin(path, {
+        requestId: input.requestId,
+        items: input.items.map((item) => ({
+          item_id: item.itemId,
+          received: item.received,
+          dismissed: item.dismissed,
+        })),
+        refundMode: input.refundMode,
+      });
+    } catch (error) {
+      return {
+        kind: 'transient',
+        failureCode: 'network',
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+    const { status, body } = response;
+    const message = typeof body.message === 'string' ? body.message : `status ${status}`;
+    if (status >= 200 && status < 300) return { kind: 'settled' };
+    if (status === 400 && body.code === 'return_settle_rejected') {
+      return { kind: 'rejected', reason: typeof body.reason === 'string' ? body.reason : 'unknown', message };
+    }
+    if (status === 400 && isWalletRefundRefusal(body)) {
+      return { kind: 'refund_refused', failureCode: body.code, message };
+    }
+    if (status === 502 && body.type === 'refund_pending') return { kind: 'refund_pending', message };
+    if (status === 404 && body.type === 'not_found') return { kind: 'not_found', message };
+    // partialCancelOrder 와 달리 모르는 400 을 영구 거절로 닫지 않는다: Medusa 는 일시 조건(다른 주문 수정이 열려 있음 등)도
+    // 400 not_allowed 로 내는데, 영구 실패는 core 재시도를 멈추고 사람이 닫을 길이 아직 없다(PR 6b 전). 진짜 영구면 core 의 발행 상한이 막는다.
+    if (status === 400) return { kind: 'transient', failureCode: medusaErrorCode(status, body), message };
+    this.logger.error(
+      `Failed to settle Medusa return: ${orderId}/${returnId} (status=${status}, type=${String(body.type)})`,
       message,
     );
     return { kind: 'transient', failureCode: `http_${status}`, message };

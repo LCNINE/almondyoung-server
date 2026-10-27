@@ -237,3 +237,51 @@ describe('ChannelReturnRequested / ChannelReturnCancelled', () => {
     expect(Object.keys(ORDER_STREAM.events)).not.toContain('OrderReturnRequested');
   });
 });
+
+describe('ChannelReturnSettled / ChannelReturnSettlementFailed (K8 PR6)', () => {
+  const settled = ORDER_STREAM.events.ChannelReturnSettled.schema!;
+  const failed = ORDER_STREAM.events.ChannelReturnSettlementFailed.schema!;
+  const settledPayload = {
+    orderId: 'wms-order-1',
+    salesChannel: 'medusa',
+    externalOrderId: 'order_01',
+    returnId: 'ret_01',
+    requestId: 'req-1',
+    refundAmount: 9000,
+    deduction: { returnShipping: 3000, freeShippingBreak: 0, roundTrip: 0 },
+    feeNotAdjusted: false,
+    refundMode: 'auto',
+    settledAt: '2026-10-27T03:00:00.000Z',
+    items: [{ channelOrderItemId: 'item_01', received: 1, dismissed: 0 }],
+  };
+  const failedPayload = {
+    requestId: 'req-1',
+    salesChannel: 'medusa',
+    externalOrderId: 'order_01',
+    returnId: 'ret_01',
+    received: true,
+    retryable: true,
+    failureCode: 'http_502',
+    message: 'bad gateway',
+    at: '2026-10-27T03:00:00.000Z',
+  };
+
+  it('정상 payload 를 통과시킨다', () => {
+    expect(() => settled.parse(settledPayload)).not.toThrow();
+    expect(() => failed.parse(failedPayload)).not.toThrow();
+  });
+
+  it('정산 사실의 음수 환불액·정수 아닌 공제·채널 누락은 거부한다', () => {
+    expect(() => settled.parse({ ...settledPayload, refundAmount: -1 })).toThrow();
+    expect(() =>
+      settled.parse({ ...settledPayload, deduction: { ...settledPayload.deduction, roundTrip: 1.5 } }),
+    ).toThrow();
+    const { salesChannel: _omit, ...noChannel } = settledPayload;
+    expect(() => settled.parse(noChannel)).toThrow();
+  });
+
+  it('실패 사실은 received 가 필수다', () => {
+    const { received: _omit, ...noReceived } = failedPayload;
+    expect(() => failed.parse(noReceived)).toThrow();
+  });
+});

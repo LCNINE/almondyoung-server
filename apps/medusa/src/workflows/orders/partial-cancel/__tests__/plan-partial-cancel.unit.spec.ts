@@ -1,7 +1,7 @@
 import { planPartialCancel, PartialCancelRejected, OrderLine, CancelRequestItem } from '../plan-partial-cancel';
 
 const line = (id: string, quantity: number, unitPrice: number, adj = 0, fulfilledQuantity = 0): OrderLine => ({
-  id, quantity, unitPrice, productId: `p_${id}`, requiresShipping: true, fulfilledQuantity,
+  id, quantity, unitPrice, productId: `p_${id}`, requiresShipping: true, fulfilledQuantity, returnedQuantity: 0,
   adjustments: adj ? [{ amount: adj, code: 'P' }] : [],
 });
 

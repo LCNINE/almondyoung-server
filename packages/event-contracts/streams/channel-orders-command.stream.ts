@@ -58,6 +58,25 @@ export interface CancelChannelOrderPayload {
   requestedAt: string;
 }
 
+/**
+ * 채널에 «반품 도착·검수 결과»를 알려 수령·택배비·환불을 정리하게 한다 (K8 PR6). 성공은 사실로 내지 않는다 —
+ * 재수집된 `ChannelReturnSettled` 가 곧 사실이다. 못 끝내면 `ChannelReturnSettlementFailed` 로 돌려받는다.
+ */
+export interface SettleChannelReturnPayload {
+  /** core `customer_returns.id`. 같은 요청의 재전송은 같은 값이다 — Medusa 쪽 멱등 키 */
+  requestId: string;
+  /** 'medusa' | 'naver' … — 문자열로 두고, 지원 여부는 소비자가 판정한다 */
+  salesChannel: string;
+  externalOrderId: string;
+  returnId: string;
+  /** `received`·`dismissed` 는 판매 단위(세트 한 벌이 1). 줄마다 합이 0 보다 커야 한다 */
+  items: Array<{ channelOrderItemId: string; received: number; dismissed: number }>;
+  /** 없으면 `auto` */
+  refundMode?: ChannelCancelRefundMode;
+  /** ISO 8601 */
+  requestedAt: string;
+}
+
 // ===== Zod Schemas =====
 
 const ResyncChannelOrderSchema = z.object({
@@ -105,6 +124,36 @@ const CancelChannelOrderSchema = z
     }
   });
 
+const SettleChannelReturnSchema = z
+  .object({
+    requestId: z.string().min(1),
+    salesChannel: z.string().min(1),
+    externalOrderId: z.string().min(1),
+    returnId: z.string().min(1),
+    items: z
+      .array(
+        z.object({
+          channelOrderItemId: z.string().min(1),
+          received: z.number().int().nonnegative(),
+          dismissed: z.number().int().nonnegative(),
+        }),
+      )
+      .min(1),
+    refundMode: z.enum(CHANNEL_CANCEL_REFUND_MODES).optional(),
+    requestedAt: z.string().datetime(),
+  })
+  .superRefine((payload, context) => {
+    payload.items.forEach((item, index) => {
+      if (item.received + item.dismissed <= 0) {
+        context.addIssue({ code: 'custom', path: ['items', index], message: '수령도 폐기도 없는 줄은 싣지 않는다' });
+      }
+    });
+    const ids = payload.items.map((item) => item.channelOrderItemId);
+    if (new Set(ids).size !== ids.length) {
+      context.addIssue({ code: 'custom', path: ['items'], message: '같은 줄이 두 번 실렸다' });
+    }
+  });
+
 // ===== Stream Config =====
 
 export const CHANNEL_ORDERS_COMMAND_STREAM = stream({
@@ -119,6 +168,10 @@ export const CHANNEL_ORDERS_COMMAND_STREAM = stream({
     CancelChannelOrder: event<'CancelChannelOrder', CancelChannelOrderPayload>(
       'CancelChannelOrder',
       CancelChannelOrderSchema,
+    ),
+    SettleChannelReturn: event<'SettleChannelReturn', SettleChannelReturnPayload>(
+      'SettleChannelReturn',
+      SettleChannelReturnSchema,
     ),
   },
 });

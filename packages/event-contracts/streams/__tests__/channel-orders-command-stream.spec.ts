@@ -98,4 +98,38 @@ describe('CHANNEL_ORDERS_COMMAND_STREAM', () => {
       });
     });
   });
+
+  describe('SettleChannelReturn (K8 PR6)', () => {
+    const schema = CHANNEL_ORDERS_COMMAND_STREAM.events.SettleChannelReturn.schema!;
+    const base = {
+      requestId: '0192f0aa-0000-7000-8000-000000000002',
+      salesChannel: 'medusa',
+      externalOrderId: 'order_1',
+      returnId: 'ret_1',
+      items: [{ channelOrderItemId: 'ordli_1', received: 1, dismissed: 1 }],
+      requestedAt: '2026-10-27T00:00:00.000Z',
+    };
+
+    it('정상 payload 를 통과시킨다', () => {
+      expect(schema.parse(base)).toEqual(base);
+      expect(schema.parse({ ...base, refundMode: 'manual' })).toMatchObject({ refundMode: 'manual' });
+    });
+
+    it('빈 줄 목록·수령도 폐기도 0 인 줄·같은 줄 두 번·ISO 아닌 시각은 거부한다', () => {
+      expect(() => schema.parse({ ...base, items: [] })).toThrow();
+      expect(() =>
+        schema.parse({ ...base, items: [{ channelOrderItemId: 'ordli_1', received: 0, dismissed: 0 }] }),
+      ).toThrow();
+      expect(() =>
+        schema.parse({
+          ...base,
+          items: [
+            { channelOrderItemId: 'ordli_1', received: 1, dismissed: 0 },
+            { channelOrderItemId: 'ordli_1', received: 0, dismissed: 1 },
+          ],
+        }),
+      ).toThrow();
+      expect(() => schema.parse({ ...base, requestedAt: 'yesterday' })).toThrow();
+    });
+  });
 });

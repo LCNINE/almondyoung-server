@@ -1,8 +1,14 @@
-import { CUSTOMER_RETURN_REASONS, type CustomerReturnReason } from '@packages/event-contracts/streams';
+import {
+  CHANNEL_CANCEL_REFUND_MODES,
+  CUSTOMER_RETURN_REASONS,
+  type ChannelCancelRefundMode,
+  type ChannelReturnSettledPayload,
+  type CustomerReturnReason,
+} from '@packages/event-contracts/streams';
 import type { MedusaOrder, MedusaReturn } from '../../adapters/medusa/medusa.client';
 import type { LifecycleObservation } from './channel-order-source.interface';
 
-export type SkippedReturn = { returnId: string; reason: 'unconfirmed' | 'no_record' | 'no_items' };
+export type SkippedReturn = { returnId: string; reason: 'unconfirmed' | 'no_record' | 'no_items' | 'no_settlement_record' };
 
 interface AlmondReturnRecord {
   requestId: string;
@@ -41,6 +47,53 @@ function readRecord(metadata: MedusaReturn['metadata']): AlmondReturnRecord | nu
     feeBearer,
     requestedBy,
     ...(overrideReason ? { windowOverrideReason: overrideReason } : {}),
+  };
+}
+
+type SettlementRecord = Omit<ChannelReturnSettledPayload, 'orderId' | 'salesChannel' | 'externalOrderId' | 'returnId'>;
+
+const isNonNegativeInt = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0;
+
+function isRefundMode(value: unknown): value is ChannelCancelRefundMode {
+  return CHANNEL_CANCEL_REFUND_MODES.some((mode) => mode === value);
+}
+
+/**
+ * `return.metadata.almondReturnSettlement` 중 환불까지 끝난(`stage === 'refunded'`) 기록을 읽는다. 모양은 Medusa 쪽
+ * `return-settlement-record.ts` 가 정한다 — 필요한 칸만 직접 검증한다. 아직 끝나지 않았으면 undefined, 끝났다는데
+ * 모양이 어긋나면 null (돈을 지어내지 않는다).
+ */
+function readSettlement(metadata: MedusaReturn['metadata']): SettlementRecord | null | undefined {
+  const raw = metadata?.almondReturnSettlement;
+  if (raw === undefined || raw === null) return undefined;
+  if (!isRecord(raw)) return null;
+  if (raw.stage !== 'refunded') return undefined;
+  const { requestId, items, deduction, feeNotAdjusted, refundAmount, refundedAt, refundMode } = raw;
+  if (typeof requestId !== 'string' || requestId === '') return null;
+  if (!Array.isArray(items) || items.length === 0) return null;
+  const lines: SettlementRecord['items'] = [];
+  for (const item of items) {
+    if (!isRecord(item) || typeof item.itemId !== 'string' || item.itemId === '') return null;
+    if (!isNonNegativeInt(item.received) || !isNonNegativeInt(item.dismissed)) return null;
+    lines.push({ channelOrderItemId: item.itemId, received: item.received, dismissed: item.dismissed });
+  }
+  if (!isRecord(deduction)) return null;
+  const { returnShipping, freeShippingBreak, roundTrip } = deduction;
+  if (!isNonNegativeInt(returnShipping) || !isNonNegativeInt(freeShippingBreak) || !isNonNegativeInt(roundTrip)) {
+    return null;
+  }
+  if (typeof feeNotAdjusted !== 'boolean' || !isNonNegativeInt(refundAmount)) return null;
+  if (typeof refundedAt !== 'string' || Number.isNaN(Date.parse(refundedAt))) return null;
+  if (!isRefundMode(refundMode)) return null;
+  return {
+    requestId,
+    refundAmount,
+    deduction: { returnShipping, freeShippingBreak, roundTrip },
+    feeNotAdjusted,
+    refundMode,
+    settledAt: new Date(refundedAt).toISOString(),
+    items: lines,
   };
 }
 
@@ -108,6 +161,21 @@ export function medusaReturnObservations(order: MedusaOrder): {
         payload: { returnId, cancelledAt: ret.canceled_at ?? order.updated_at ?? requestedAt },
         rawEvent: { externalOrderId: order.id, returnId, status: ret.status },
       });
+    }
+
+    // 정산 끝(환불까지) — 같은 반품의 requested 뒤에 낸다. 수령 단계(received·partially_received)에서만 읽는다.
+    if (ret.status === 'received' || ret.status === 'partially_received') {
+      const settlement = readSettlement(ret.metadata);
+      if (settlement === null) {
+        skipped.push({ returnId, reason: 'no_settlement_record' });
+      } else if (settlement) {
+        observations.push({
+          eventType: 'ChannelReturnSettled',
+          eventKey: `return:${returnId}:settled`,
+          payload: { returnId, ...settlement },
+          rawEvent: { externalOrderId: order.id, returnId, status: ret.status },
+        });
+      }
     }
   }
 

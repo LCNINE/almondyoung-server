@@ -8,6 +8,7 @@ import {
 
 import { toNumber } from '../partial-cancel/amount';
 import { orderCancelLockKey } from '../settlement/order-payments';
+import { fetchCoreReturnEligibility } from './core-return-eligibility';
 import { loadReturnOrder, RETURN_REQUEST_METADATA_KEY, type ReturnRequestRecord } from './load-return-order';
 import { ReturnRequestRejected, type ReturnRequestedBy } from './plan-return-request';
 import { ReturnOrderNotFound } from './request-order-return';
@@ -77,6 +78,13 @@ async function run(container: MedusaContainer, input: CancelOrderReturnInput): P
   // 수령이 시작된 반품은 재고·환불 쪽 일이 벌어졌다 — 취소가 아니라 이후 흐름(PR 6)의 몫이다
   if (query.items.some((i) => i.receivedQuantity > 0)) {
     throw new ReturnRequestRejected('return_already_received', '이미 수령한 반품은 취소할 수 없습니다');
+  }
+  // 창고에 도착한 반품은 core 가 입고·검수의 주인이다 — 취소하면 core 가 ChannelReturnCancelled 를 Conflict 로 DLQ 에 보낸다(N11).
+  // core 에 기록이 없으면(관측 지연 ≤ 5분) 도착도 있을 수 없다. 주문 변경을 건드리기 «전»에 묻는다.
+  const eligibility = await fetchCoreReturnEligibility(order.id);
+  const coreStatus = eligibility.customerReturns.find((r) => r.channelReturnId === ret.id)?.status;
+  if (coreStatus !== undefined && coreStatus !== 'expected' && coreStatus !== 'cancelled') {
+    throw new ReturnRequestRejected('return_arrived', '창고에 도착한 반품은 취소할 수 없습니다');
   }
 
   for (const f of query.fulfillments.filter((x) => !x.canceledAt)) {

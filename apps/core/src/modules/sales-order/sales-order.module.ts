@@ -33,6 +33,11 @@ import { ChannelCancelRequestManager } from './channel-cancel-request/channel-ca
 import { ChannelCancelRequestService } from './channel-cancel-request/channel-cancel-request.service';
 import { CustomerReturnManager } from './customer-return/customer-return.manager';
 import { CustomerReturnService } from './customer-return/customer-return.service';
+import { CustomerReturnReader } from './customer-return/customer-return.reader';
+import { CustomerReturnReceivingManager } from './customer-return/customer-return-receiving.manager';
+import { CustomerReturnSettlementManager } from './customer-return/customer-return-settlement.manager';
+import { CustomerReturnSettlementRetryCron } from './customer-return/customer-return-settlement-retry.cron';
+import { CustomerReturnsController } from './customer-return/customer-returns.controller';
 import { OrderCancellation } from './order-cancellation/order-cancellation';
 import { OrderCancellationReader } from './order-cancellation/order-cancellation.reader';
 import { INTERNAL_KEY_ENV } from '@app/authorization';
@@ -68,7 +73,7 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
       policy: { validateOnConsume: true },
     }),
 
-    // OutboxService (Sales Order 이벤트 발행용)
+    // OutboxService (Sales Order 이벤트 발행용), InventoryCommandService (반품 도착·검수 원장 — K8 PR6)
     CoreInventoryModule,
 
     // AuditService, MetricsService
@@ -95,6 +100,8 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
     StoreSalesOrdersController,
     StoreSalesOrderReturnExchangeController,
     AdminReturnExchangeController,
+    // 반품 기록 조회·도착·검수(K8 PR6)
+    CustomerReturnsController,
     OrderEventsConsumer,
     // 채널 대사(#1016 45번)의 묶음 조회 — 호출자는 channel-adapter
     SalesOrdersInternalController,
@@ -123,8 +130,12 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
     // 주문 취소 커널 — 고객·운영자 문은 «무엇을 왜 취소하나»만 말한다(K7)
     OrderCancellation,
     OrderCancellationReader,
-    // 채널 반품 확정·취소 → 반품 예정 기록(K8 PR5)
+    // 채널 반품 확정·취소 → 반품 예정 기록(K8 PR5), 도착·검수·정산 명령(K8 PR6 — 원장은 CoreInventoryModule)
     CustomerReturnManager,
+    CustomerReturnReader,
+    CustomerReturnReceivingManager,
+    CustomerReturnSettlementManager,
+    CustomerReturnSettlementRetryCron,
     CustomerReturnService,
 
     // 채널 대사(#1016 45번)의 묶음 조회 — 호출자는 channel-adapter

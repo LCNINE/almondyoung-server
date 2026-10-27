@@ -1661,6 +1661,67 @@ describe('MedusaClient 취소 (#1016 35번 PR-B · 36번 재설계 PR 3)', () =>
     });
   });
 
+  describe('settleReturn (K8 PR6)', () => {
+    const input = {
+      requestId: 'cr-1',
+      items: [{ itemId: 'ordli_1', received: 1, dismissed: 1 }],
+      refundMode: 'auto' as const,
+    };
+    const settle = () => makeClient().settleReturn('order_1', 'ret_1', input);
+
+    it('200 → settled, 정산 라우트에 item_id·received·dismissed·refundMode 를 보낸다', async () => {
+      global.fetch = respond(200, { requestId: 'cr-1', stage: 'refunded' });
+      await expect(settle()).resolves.toEqual({ kind: 'settled' });
+      expect((global.fetch as jest.Mock).mock.calls[0][0]).toBe(
+        'http://medusa.local/admin/orders/order_1/returns/ret_1/settle',
+      );
+      expect(lastBody()).toEqual({
+        requestId: 'cr-1',
+        items: [{ item_id: 'ordli_1', received: 1, dismissed: 1 }],
+        refundMode: 'auto',
+      });
+    });
+
+    it('400 return_settle_rejected → rejected(reason)', async () => {
+      global.fetch = respond(400, { type: 'not_allowed', code: 'return_settle_rejected', reason: 'items_mismatch', message: 'x' });
+      await expect(settle()).resolves.toEqual({ kind: 'rejected', reason: 'items_mismatch', message: 'x' });
+    });
+
+    it('모르는 400 not_allowed → 일시(재시도) 실패, 그 code 를 싣는다', async () => {
+      global.fetch = respond(400, { type: 'not_allowed', code: 'order_change_open', message: '열린 주문 수정' });
+      await expect(settle()).resolves.toEqual({ kind: 'transient', failureCode: 'order_change_open', message: '열린 주문 수정' });
+      global.fetch = respond(400, { type: 'not_allowed', message: 'x' });
+      await expect(settle()).resolves.toMatchObject({ kind: 'transient', failureCode: 'not_allowed' });
+    });
+
+    it('400 wallet_refund_refused:X → refund_refused', async () => {
+      global.fetch = respond(400, { type: 'not_allowed', code: 'wallet_refund_refused:X', stage: 'received', message: 'w' });
+      await expect(settle()).resolves.toEqual({ kind: 'refund_refused', failureCode: 'wallet_refund_refused:X', message: 'w' });
+    });
+
+    it('502 본문 refund_pending → refund_pending', async () => {
+      global.fetch = respond(502, { type: 'refund_pending', stage: 'received', message: 'p' });
+      await expect(settle()).resolves.toEqual({ kind: 'refund_pending', message: 'p' });
+    });
+
+    it('본문 있는 404 → not_found', async () => {
+      global.fetch = respond(404, { type: 'not_found', message: 'n' });
+      await expect(settle()).resolves.toEqual({ kind: 'not_found', message: 'n' });
+    });
+
+    it('본문 없는 502 → 일시 http_502, 500 → http_500', async () => {
+      global.fetch = respond(502);
+      await expect(settle()).resolves.toMatchObject({ kind: 'transient', failureCode: 'http_502' });
+      global.fetch = respond(500, { message: '다른 반품이 택배비 청구를 기다립니다' });
+      await expect(settle()).resolves.toMatchObject({ kind: 'transient', failureCode: 'http_500' });
+    });
+
+    it('연결 실패는 던지지 않고 일시 network 다', async () => {
+      global.fetch = jest.fn().mockRejectedValue(new TypeError('fetch failed')) as any;
+      await expect(settle()).resolves.toMatchObject({ kind: 'transient', failureCode: 'network' });
+    });
+  });
+
   describe('partialCancelOrder', () => {
     const input = { requestId: 'req-1', items: [{ itemId: 'ordli_1', quantity: 2 }], refundMode: 'auto' as const };
 

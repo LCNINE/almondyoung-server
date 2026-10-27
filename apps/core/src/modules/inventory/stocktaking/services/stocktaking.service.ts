@@ -405,6 +405,9 @@ export class StocktakingService {
       .limit(1);
     if (!location || location.warehouseId !== warehouseId || !location.isActive)
       throw new BadRequestException('이 창고에서 사용할 수 없는 위치예요.');
+    // 반품 검수 칸은 RETURNED·DEFECTIVE 가 섞여 ON_HAND 만 읽는 실사가 유령 ADJUST_UP 을 만든다.
+    if (location.systemRole === 'return_default')
+      throw new BadRequestException('반품 검수 칸은 실사할 수 없어요. 이 칸의 수량은 반품 검수가 정리해요.');
   }
 
   /** Read identity without a row lock, then acquire session -> stock availability -> line locks. */

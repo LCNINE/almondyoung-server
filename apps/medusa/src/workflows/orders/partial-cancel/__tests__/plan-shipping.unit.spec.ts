@@ -4,7 +4,7 @@ import type { ShippingPolicySnapshot } from '../../../../modules/almond-fulfillm
 const cond: ShippingPolicySnapshot = { policy: { type: 'conditional_free', baseFee: 3000, freeThreshold: 50000 }, shippingGroupCode: 'cond', shippingProfileId: 'sp_cond' };
 const flat: ShippingPolicySnapshot = { policy: { type: 'flat', baseFee: 3000 }, shippingGroupCode: 'flat', shippingProfileId: 'sp_flat' };
 const perq: ShippingPolicySnapshot = { policy: { type: 'per_quantity', baseFee: 1000 }, shippingGroupCode: 'perq', shippingProfileId: 'sp_perq' };
-const m = (id: string, snapshot: ShippingPolicySnapshot | null, amount: number): ShippingMethodView => ({ id, shippingOptionId: `so_${id}`, amount, snapshot, isPartialCancelCharge: false, isReturnExchangeOrClaimShipping: false, hasAdjustments: false });
+const m = (id: string, snapshot: ShippingPolicySnapshot | null, amount: number): ShippingMethodView => ({ id, shippingOptionId: `so_${id}`, amount, snapshot, isSettlementCharge: false, isReturnExchangeOrClaimShipping: false, hasAdjustments: false });
 const l = (itemId: string, profile: string | null, unitPrice: number, newQty: number, requiresShipping = true): ShippingLineView =>
   ({ itemId, productShippingProfileId: profile, unitPrice, newQty, requiresShipping });
 
@@ -21,6 +21,14 @@ describe('planShipping', () => {
     const withReturn = planShipping({ ...base, methods: [m('c', cond, 0), { ...m('r', null, 2500), isReturnExchangeOrClaimShipping: true }], lines });
     expect(withReturn.adjustable).toBe(true);
     expect(withReturn).toEqual(planShipping({ ...base, methods: [m('c', cond, 0)], lines }));
+  });
+
+  it('반품 택배비 방법은 원래 방법이 아니다', () => {
+    const lines = [l('a', 'sp_cond', 30000, 1), l('b', 'sp_cond', 30000, 0)];
+    const ret = { ...m('r', null, 3000), isSettlementCharge: true };
+    const p = planShipping({ ...base, methods: [m('c', cond, 0), ret], lines });
+    expect(p.adjustable).toBe(true);
+    expect(p).toEqual(planShipping({ ...base, methods: [m('c', cond, 0)], lines }));
   });
 
   it('상한이 청구를 깎으면 기록 요금은 실제 청구분만 반영한다', () => {
@@ -70,6 +78,18 @@ describe('planShipping', () => {
     expect(p.adjustable && p.refund).toBe(2000);
   });
 
+  it('환불 바닥 줄을 주면 환불은 그 요금 아래로 내려가지 않고, 기록 요금은 돌려준 만큼만 내려간다', () => {
+    // 수량당 3개 3,000 — 1개는 돌아왔고 2개를 취소한다. 청구 판정 줄은 0개, 바닥 줄은 돌아온 1개를 센다
+    const p = planShipping({ ...base, methods: [m('q', perq, 3000)], lines: [l('d', 'sp_perq', 5000, 0)], refundFloorLines: [l('d', 'sp_perq', 5000, 1)] });
+    expect(p).toEqual({ adjustable: true, groups: [{ shippingProfileId: 'sp_perq', shippingOptionId: 'so_q', currentFee: 3000, newFee: 0, recordedFee: 1000 }], charge: 0, refund: 2000 });
+  });
+
+  it('환불 바닥은 청구를 바꾸지 않는다 — 올라가는 그룹은 lines 로만 판정한다', () => {
+    const lines = [l('a', 'sp_cond', 30000, 1)];
+    const p = planShipping({ ...base, methods: [m('c', cond, 0)], lines, refundFloorLines: [l('a', 'sp_cond', 30000, 2)] });
+    expect(p).toEqual(planShipping({ ...base, methods: [m('c', cond, 0)], lines }));
+  });
+
   it('제주 우편번호면 지역 추가비가 남는다(줄이 남아 있으면 추가비 포함 요금 그대로)', () => {
     const jeju: ShippingPolicySnapshot = { ...flat, policy: { ...flat.policy, jejuExtraFee: 3000 } };
     const p = planShipping({ ...base, postalCode: '63000', methods: [m('f', jeju, 6000)], lines: [l('x', 'sp_flat', 10000, 1)] });
@@ -95,7 +115,7 @@ describe('planShipping', () => {
   });
 
   it('직전 부분취소가 더한 «부분취소 배송비» 방법은 그룹 판정에서 빼고 본다', () => {
-    const extra: ShippingMethodView = { id: 'x', shippingOptionId: 'so_c', amount: 3000, snapshot: null, isPartialCancelCharge: true, isReturnExchangeOrClaimShipping: false, hasAdjustments: false };
+    const extra: ShippingMethodView = { id: 'x', shippingOptionId: 'so_c', amount: 3000, snapshot: null, isSettlementCharge: true, isReturnExchangeOrClaimShipping: false, hasAdjustments: false };
     const p = planShipping({ ...base, priorGroupFees: { sp_cond: 3000 }, methods: [m('c', cond, 0), extra], lines: [l('a', 'sp_cond', 30000, 1)] });
     expect(p.adjustable).toBe(true);
   });
@@ -109,7 +129,7 @@ describe('planShipping', () => {
   });
 
   it('«부분취소 배송비» 방법의 할인은 판정에 넣지 않는다', () => {
-    const extra: ShippingMethodView = { id: 'x', shippingOptionId: 'so_c', amount: 3000, snapshot: null, isPartialCancelCharge: true, isReturnExchangeOrClaimShipping: false, hasAdjustments: true };
+    const extra: ShippingMethodView = { id: 'x', shippingOptionId: 'so_c', amount: 3000, snapshot: null, isSettlementCharge: true, isReturnExchangeOrClaimShipping: false, hasAdjustments: true };
     const p = planShipping({ ...base, priorGroupFees: { sp_cond: 3000 }, methods: [m('c', cond, 0), extra], lines: [l('a', 'sp_cond', 30000, 1)] });
     expect(p.adjustable).toBe(true);
   });

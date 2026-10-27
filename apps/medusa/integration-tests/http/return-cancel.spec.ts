@@ -219,6 +219,37 @@ medusaIntegrationTestRunner({
       expect(await revertChanges(o.orderId)).toHaveLength(0);
     });
 
+    it('core 가 arrived 라고 하면 반품 취소 400 return_arrived, 반품 그대로', async () => {
+      const o = await ownedOrder(2);
+      const req = await requestAsCustomer({ ...o, customerId: o.me.customerId });
+      core.setCustomerReturns(o.orderId, [{ channelReturnId: req.returnId, status: 'arrived' }]);
+
+      const res = await fail(api.post(cancelUrl(o.orderId, req.returnId), {}, o.me.headers));
+      expect(res.status).toBe(400);
+      expect(res.data).toMatchObject({ code: 'return_rejected', reason: 'return_arrived' });
+      expect((await returnOf(req.returnId)).status).not.toBe('canceled');
+      expect(await detailOf(o.orderId, o.itemId)).toMatchObject({ fulfilled: 1, returnRequested: 1 });
+      expect(await revertChanges(o.orderId)).toHaveLength(0);
+    });
+
+    it('core 에 기록이 없거나 expected 면 지금처럼 취소된다', async () => {
+      const o = await ownedOrder(2);
+      const req = await requestAsCustomer({ ...o, customerId: o.me.customerId });
+      core.setCustomerReturns(o.orderId, [{ channelReturnId: 'another-return', status: 'arrived' }]);
+      const res = await api.post(cancelUrl(o.orderId, req.returnId), {}, o.me.headers);
+      expect(res.status).toBe(200);
+      expect((await returnOf(req.returnId)).status).toBe('canceled');
+    });
+
+    it('core 가 응답하지 않으면 반품 취소 502 core_unavailable, 반품 그대로', async () => {
+      const o = await ownedOrder(2);
+      const req = await requestAsCustomer({ ...o, customerId: o.me.customerId });
+      core.failWith(500);
+      const res = await fail(api.post(cancelUrl(o.orderId, req.returnId), {}, o.me.headers));
+      expect(res.status).toBe(502);
+      expect((await returnOf(req.returnId)).status).not.toBe('canceled');
+    });
+
     it('남의 주문의 반품 / 다른 주문 id 로 / 로그인 없이 → 404 / 404 / 401', async () => {
       const o = await ownedOrder(2);
       const other = await ownedOrder(1);

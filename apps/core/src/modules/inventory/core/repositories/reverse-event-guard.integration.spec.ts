@@ -4,6 +4,7 @@ import { ConflictException } from '@nestjs/common';
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { randomUUID } from 'crypto';
+import { eq } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { StockEventStore } from './stock-event.store';
@@ -31,6 +32,7 @@ describeIfDb('StockEventStore.reverseEvent lock+guard (DB integration, rollback-
   let db: PostgresJsDatabase<typeof wmsSchema>;
   let command: InventoryCommandService;
   let eventStore: StockEventStore;
+  let locationService: LocationService;
 
   beforeAll(() => {
     sql = postgres(DATABASE_URL as string, { max: 1 });
@@ -45,6 +47,7 @@ describeIfDb('StockEventStore.reverseEvent lock+guard (DB integration, rollback-
     const sellable = new ProductSellableQuantityService(dbService as never, outbox);
     eventStore = new StockEventStore(dbService, sellable);
     const location = new LocationService(dbService);
+    locationService = location;
     command = new InventoryCommandService(dbService, eventStore, outbox, location);
   });
 
@@ -130,6 +133,33 @@ describeIfDb('StockEventStore.reverseEvent lock+guard (DB integration, rollback-
       await reserve(tx, sku.id, warehouse.id, 5); // 예약 5 == 현재 ON_HAND 5
       // ADJUST_DOWN 역분개 = +5 (증가) → 가드 미적용, 성공
       await expect(eventStore.reverseEvent(down.eventId, 'TEST', tx)).resolves.toBeDefined();
+    });
+  });
+
+  it('RETURN_RECEIVE 이벤트 역분개 → 409 RETURN_EVENT_REVERSAL_NOT_ALLOWED, 원장 그대로', async () => {
+    await inRollbackTx(async (tx) => {
+      const { warehouse, sku } = await createFixture(tx);
+      await locationService.ensureSystemLocations(warehouse.id, tx);
+      const received = await command.returnReceive(
+        { skuId: sku.id, warehouseId: warehouse.id, quantity: 3, idempotencyKey: `it-ret-${randomUUID()}` },
+        tx,
+      );
+      const before = await tx.select().from(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.skuId, sku.id));
+
+      const error = await eventStore.reverseEvent(received.eventId as string, 'TEST', tx).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).getResponse()).toMatchObject({ code: 'RETURN_EVENT_REVERSAL_NOT_ALLOWED' });
+      const after = await tx.select().from(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.skuId, sku.id));
+      expect(after).toHaveLength(before.length);
+    });
+  });
+
+  it('RECEIVE 계열(ADJUST_UP) 이벤트 역분개는 그대로 된다', async () => {
+    await inRollbackTx(async (tx) => {
+      const { warehouse, sku } = await createFixture(tx);
+      const up = await command.adjustUp({ skuId: sku.id, warehouseId: warehouse.id, quantity: 4 }, tx);
+      await expect(eventStore.reverseEvent(up.eventId, 'TEST', tx)).resolves.toBeDefined();
     });
   });
 });

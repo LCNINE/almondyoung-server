@@ -127,6 +127,7 @@ import { createOrderProvider } from './services/order-collection/translating-ord
 import { OrderCollectionFailureService } from './services/order-collection/order-collection-failure.service';
 import { OrderPollerOrchestrator } from './services/order-collection/order-poller.orchestrator';
 import { ChannelOrderCancelManager } from './services/order-cancel/channel-order-cancel.manager';
+import { ChannelReturnSettleManager } from './services/order-cancel/channel-return-settle.manager';
 import { ChannelOrderCancelRepository } from './services/order-cancel/channel-order-cancel.repository';
 import { EventTraceController } from './controllers/event-trace.controller';
 import { EventFailuresController } from './controllers/event-failures.controller';
@@ -357,6 +358,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
           InboxWorkerService,
           ChannelOrderCancelRepository,
           ChannelOrderCancelManager,
+          ChannelReturnSettleManager,
         ]
       : []),
 

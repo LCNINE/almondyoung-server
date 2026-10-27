@@ -1,10 +1,10 @@
 import type { MedusaContainer } from '@medusajs/framework/types';
-import { Modules } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 
 import { POLICY_SNAPSHOT_KEY, type ShippingPolicySnapshot } from '../../../modules/almond-fulfillment/types';
 import { toNumber } from '../partial-cancel/amount';
 import type { OrderLine } from '../partial-cancel/plan-partial-cancel';
-import { PARTIAL_CANCEL_CHARGE_NAME, type ShippingMethodView } from '../partial-cancel/plan-shipping';
+import { SETTLEMENT_CHARGE_NAMES, type ShippingMethodView } from '../partial-cancel/plan-shipping';
 
 export type OrderView = {
   id: string;
@@ -59,6 +59,7 @@ export async function loadOrderView(container: MedusaContainer, orderId: string)
       requiresShipping: i.requires_shipping !== false,
       // items.detail 을 이미 싣는다. 못 읽으면 0 — 하한 검사를 건너뛰고 Medusa 자신의 검증에 맡긴다
       fulfilledQuantity: readFulfilledQuantity(i.detail),
+      returnedQuantity: readReturnedQuantity(i.detail),
       adjustments: (i.adjustments ?? []).map((a) => ({
         amount: toNumber(a.amount),
         code: a.code ?? null,
@@ -72,6 +73,19 @@ export async function loadOrderView(container: MedusaContainer, orderId: string)
     postalCode: o.shipping_address?.postal_code ?? null,
     pendingDifference,
   };
+}
+
+/** 상품 → 지금 배송 프로필. 그룹 소속은 «지금» 상품의 배송 프로필로 정한다(부분취소·반품 정산). */
+export async function productShippingProfiles(container: MedusaContainer, productIds: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (productIds.length === 0) return map;
+  const query = container.resolve(ContainerRegistrationKeys.QUERY);
+  const { data } = await query.graph({ entity: 'product', fields: ['id', 'shipping_profile.id'], filters: { id: [...new Set(productIds)] } });
+  // 링크 필드(shipping_profile)는 graph 결과 타입에 없다 — 경계에서 좁힌다.
+  for (const p of data as Array<{ id: string; shipping_profile?: { id?: string } | null }>) {
+    if (p.shipping_profile?.id) map.set(p.id, p.shipping_profile.id);
+  }
+  return map;
 }
 
 /** 배송 방법 → 계획 입력. amount 는 할인 «전» 금액이라, 할인이 붙었는지를 따로 넘긴다(planShipping 이 조정을 멈춘다). */
@@ -90,7 +104,7 @@ export function toShippingMethodView(m: {
     shippingOptionId: m.shipping_option_id ?? null,
     amount: toNumber(m.amount),
     snapshot: readSnapshot(m.data),
-    isPartialCancelCharge: m.name === PARTIAL_CANCEL_CHARGE_NAME,
+    isSettlementCharge: !!m.name && SETTLEMENT_CHARGE_NAMES.includes(m.name),
     isReturnExchangeOrClaimShipping: !!(m.detail?.return_id || m.detail?.exchange_id || m.detail?.claim_id),
     hasAdjustments: (m.adjustments ?? []).some((a) => !!a && toNumber(a.amount) !== 0),
   };
@@ -98,6 +112,13 @@ export function toShippingMethodView(m: {
 
 function readFulfilledQuantity(detail: { fulfilled_quantity?: unknown } | null | undefined): number {
   const n = toNumber(detail?.fulfilled_quantity ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function readReturnedQuantity(
+  detail: { return_received_quantity?: unknown; return_dismissed_quantity?: unknown } | null | undefined,
+): number {
+  const n = toNumber(detail?.return_received_quantity ?? 0) + toNumber(detail?.return_dismissed_quantity ?? 0);
   return Number.isFinite(n) ? n : 0;
 }
 

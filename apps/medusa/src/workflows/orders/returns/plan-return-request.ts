@@ -17,7 +17,8 @@ export type ReturnRejectReason =
   | 'request_id_conflict'
   | 'return_option_missing'
   | 'return_already_received'
-  | 'not_our_return';
+  | 'not_our_return'
+  | 'return_arrived';
 
 /** 정해진 거절 — 호출자는 이걸 400 계열로 닫는다(500 이면 channel-adapter 류가 재시도를 되풀이한다). */
 export class ReturnRequestRejected extends Error {

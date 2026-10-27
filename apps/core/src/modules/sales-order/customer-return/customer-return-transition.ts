@@ -13,7 +13,12 @@ export async function transitionCustomerReturn(
     id: string;
     from: readonly CustomerReturnStatus[];
     to: CustomerReturnStatus;
-    set?: Partial<Pick<CustomerReturn, 'cancelledAt'>>;
+    set?: Partial<
+      Pick<
+        CustomerReturn,
+        'cancelledAt' | 'warehouseId' | 'arrivedAt' | 'inspectedAt' | 'settledAt' | 'settlement' | 'settlementOutcome'
+      >
+    >;
   },
 ): Promise<boolean> {
   const updated = await trx
