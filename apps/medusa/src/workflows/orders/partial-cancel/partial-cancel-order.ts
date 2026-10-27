@@ -2,7 +2,6 @@ import type { MedusaContainer } from '@medusajs/framework/types';
 import { ChangeActionType, Modules } from '@medusajs/framework/utils';
 import {
   beginOrderEditOrderWorkflow,
-  cancelBeginOrderEditWorkflow,
   confirmOrderEditRequestWorkflow,
   createOrderChangeActionsWorkflow,
   orderEditUpdateItemQuantityWorkflow,
@@ -13,7 +12,7 @@ import { readWalletRefundRefusal } from '../../../modules/almond-payment/wallet-
 import { describeError } from '../../../utils/describe-error';
 import { loadOrderView, productShippingProfiles, type OrderView } from '../settlement/load-order-view';
 import { offsetCreditLine } from '../settlement/offset-credit-line';
-import { addChargeShippingMethod, ensureNoDanglingChange } from '../settlement/order-edit-charge';
+import { addChargeShippingMethod, cancelOpenOrderEdit, ensureNoDanglingChange } from '../settlement/order-edit-charge';
 import { orderCancelLockKey, orderPaymentIds } from '../settlement/order-payments';
 import { refundOrderPayments } from '../settlement/refund-order-payments';
 import type { RefundMode } from '../settlement/refund-mode';
@@ -187,7 +186,7 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
   // 계획 검증보다 «먼저» 본다: 확정 뒤 기록 전에 끊긴 요청은 이미 수량을 줄여 놨다. 줄을 통째로 뺐다면 계획 검증이
   // «주문에 없는 줄»로 업무 거절(400)을 내고, 호출자가 취소를 닫아 주문은 수정된 채 환불 0 으로 남는다.
   await ensureNoDanglingChange(container, order.id, editTag(input.requestId), async () => {
-    await cancelBeginOrderEditWorkflow(container).run({ input: { order_id: order.id } });
+    await cancelOpenOrderEdit(container, order.id);
   });
   const plan = planPartialCancel(order.lines, input.items);
   // 끊긴 확정 수정을 먼저 가린 «뒤»에 본다 — 앞에 두면 그 경우가 업무 거절(400)로 닫혀 주문만 줄어든 채 남는다(Review Focus 1).
@@ -249,10 +248,8 @@ async function edit(container: MedusaContainer, input: PartialCancelInput, order
     await requestOrderEditRequestWorkflow(container).run({ input: { order_id: order.id, requested_by: input.actorId } });
     await confirmOrderEditRequestWorkflow(container).run({ input: { order_id: order.id, confirmed_by: input.actorId } });
   } catch (error) {
-    // 확정 전 실패 — 열린 주문 수정을 버려 주문을 원래대로 둔다
-    await cancelBeginOrderEditWorkflow(container)
-      .run({ input: { order_id: order.id } })
-      .catch(() => undefined);
+    // 확정 전 실패 — 열린 주문 수정을 버려 주문을 원래대로 둔다(더한 «부분취소 배송비» 방법도 지운다)
+    await cancelOpenOrderEdit(container, order.id).catch(() => undefined);
     throw error instanceof Error ? error : new Error(`부분취소 주문 수정 실패: ${describeError(error)}`);
   }
 

@@ -53,7 +53,7 @@ describe('readReturnSettlementRecord', () => {
     const pr6 = { ...valid(), stage: 'refunded', refundedAt: '2026-10-28T00:00:00.000Z', refundMode: 'auto' };
     const read = readReturnSettlementRecord(JSON.parse(JSON.stringify(meta(pr6))));
     expect(read).toEqual(pr6);
-    for (const k of ['hold', 'prepaidApplied', 'externalRefundApplied', 'closesMissing']) expect(read).not.toHaveProperty(k);
+    for (const k of ['hold', 'prepaidApplied', 'externalRefundApplied', 'closesMissing', 'offsetCreditLine']) expect(read).not.toHaveProperty(k);
     expect(read?.deduction).not.toHaveProperty('hold');
   });
   it('PR 6b 칸(보류 차감·상계·미도착 닫기)이 왕복한다', () => {
@@ -64,6 +64,7 @@ describe('readReturnSettlementRecord', () => {
       prepaidApplied: 24000,
       externalRefundApplied: 1000,
       closesMissing: true,
+      offsetCreditLine: 1000,
     };
     expect(readReturnSettlementRecord(JSON.parse(JSON.stringify(meta(r))))).toEqual(r);
   });
@@ -75,6 +76,7 @@ describe('readReturnSettlementRecord', () => {
     ['prepaidApplied 문자열', { prepaidApplied: '1' }],
     ['externalRefundApplied NaN', { externalRefundApplied: Number.NaN }],
     ['closesMissing 문자열', { closesMissing: 'true' }],
+    ['offsetCreditLine 문자열', { offsetCreditLine: '1000' }],
   ])('새 칸이 있는데 모양이 어긋나면 null — %s', (_n, patch) => {
     expect(readReturnSettlementRecord(meta({ ...valid(), ...patch }))).toBeNull();
   });
@@ -100,6 +102,28 @@ describe('hashReturnSettlement', () => {
   });
   it('requestId 가 다르면 다르다 — 반품 하나에 정산 요청 하나', () => {
     expect(hashReturnSettlement('r1', items)).not.toBe(hashReturnSettlement('r2', items));
+  });
+  it('CS 칸이 없으면 PR 6 해시와 바이트까지 같다 — PR 6 기록이 이어 간다', () => {
+    // PR 6 의 hashReturnSettlement('cr_1', 아래 품목) 값을 박아 둔다(sha256 of {"requestId","items"})
+    const pr6 = 'c738f094c97ada5dec307245752d52807c0dca662160e8fd858257404d216bad';
+    const pr6Items = [
+      { itemId: 'item_b', received: 1, dismissed: 0 },
+      { itemId: 'item_a', received: 0, dismissed: 2 },
+    ];
+    expect(hashReturnSettlement('cr_1', pr6Items)).toBe(pr6);
+    expect(hashReturnSettlement('cr_1', pr6Items, {})).toBe(pr6);
+    expect(hashReturnSettlement('cr_1', pr6Items, { closesMissing: false })).toBe(pr6);
+  });
+  it('보류 차감액·이미 환불한 금액·미도착 닫기가 다르면 다르다', () => {
+    const base = hashReturnSettlement('r1', items);
+    const variants = [
+      hashReturnSettlement('r1', items, { holdDeductionAmount: 5000 }),
+      hashReturnSettlement('r1', items, { holdDeductionAmount: 3000 }),
+      hashReturnSettlement('r1', items, { alreadyRefundedAmount: 0 }),
+      hashReturnSettlement('r1', items, { alreadyRefundedAmount: 10000 }),
+      hashReturnSettlement('r1', items, { closesMissing: true }),
+    ];
+    expect(new Set([base, ...variants]).size).toBe(variants.length + 1);
   });
 });
 
@@ -138,6 +162,7 @@ describe('assertReadableSettlementRecord', () => {
     ).toThrow('정수');
     expect(() => assertReadableSettlementRecord({ ...valid(), prepaidApplied: 0.5 })).toThrow('정수');
     expect(() => assertReadableSettlementRecord({ ...valid(), externalRefundApplied: 0.5 })).toThrow('정수');
+    expect(() => assertReadableSettlementRecord({ ...valid(), offsetCreditLine: 0.5 })).toThrow('정수');
   });
   it('PR 6b 칸이 든 기록도 통과한다', () => {
     expect(() =>

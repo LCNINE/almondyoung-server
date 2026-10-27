@@ -40,6 +40,11 @@ export type ReturnSettlementRecord = {
   externalRefundApplied?: number;
   /** 미도착 수량을 닫고 정산했다(items 가 반품 품목보다 적을 수 있다) */
   closesMissing?: boolean;
+  /**
+   * 넣을(넣은) 상계 음수 크레딧 라인의 크기(원, 양수) — 수령 «전» 차액으로만 셀 수 있어 수령 때 정해 둔다.
+   * 이어 가는 청구 단계가 이 값으로 넣는다(reference 'return-offset'). 없으면 0
+   */
+  offsetCreditLine?: number;
 };
 
 const isStage = (v: unknown): v is ReturnSettlementStage => v === 'received' || v === 'charged' || v === 'refunded';
@@ -80,6 +85,7 @@ export function readReturnSettlementRecord(metadata: unknown): ReturnSettlementR
   if (r.prepaidApplied !== undefined && !isNum(r.prepaidApplied)) return null;
   if (r.externalRefundApplied !== undefined && !isNum(r.externalRefundApplied)) return null;
   if (r.closesMissing !== undefined && typeof r.closesMissing !== 'boolean') return null;
+  if (r.offsetCreditLine !== undefined && !isNum(r.offsetCreditLine)) return null;
   return {
     requestId: r.requestId,
     requestHash: r.requestHash,
@@ -99,6 +105,7 @@ export function readReturnSettlementRecord(metadata: unknown): ReturnSettlementR
     ...(r.prepaidApplied !== undefined ? { prepaidApplied: r.prepaidApplied } : {}),
     ...(r.externalRefundApplied !== undefined ? { externalRefundApplied: r.externalRefundApplied } : {}),
     ...(r.closesMissing !== undefined ? { closesMissing: r.closesMissing } : {}),
+    ...(r.offsetCreditLine !== undefined ? { offsetCreditLine: r.offsetCreditLine } : {}),
   };
 }
 
@@ -114,15 +121,35 @@ export function readDeduction(d: unknown): ReturnSettlementDeduction | null {
   };
 }
 
+/** 요청 해시에 드는 CS 칸(K8 PR6b). 보류 차감은 금액만 — 메모는 해시 밖이다. */
+export type ReturnSettlementHashFields = {
+  holdDeductionAmount?: number;
+  alreadyRefundedAmount?: number;
+  closesMissing?: boolean;
+};
+
 /**
  * 정산 요청 해시. requestId 를 넣는다 — 반품 하나에 정산 요청은 하나(core customer_returns.id)라, 다른 requestId 는
  * 같은 품목이어도 «다른 요청»이다. 품목 순서는 무관하다.
+ * CS 칸은 «있을 때만» 넣는다 — 칸이 없는 요청은 PR 6 과 바이트까지 같은 해시여야 PR 6 기록이 이어 간다.
+ * closesMissing false 는 칸이 없는 것과 같은 요청이라 넣지 않는다.
  */
-export function hashReturnSettlement(requestId: string, items: ReturnSettlementRecord['items']): string {
+export function hashReturnSettlement(
+  requestId: string,
+  items: ReturnSettlementRecord['items'],
+  cs: ReturnSettlementHashFields = {},
+): string {
   const sorted = [...items]
     .map((i) => ({ itemId: i.itemId, received: i.received, dismissed: i.dismissed }))
     .sort((a, b) => a.itemId.localeCompare(b.itemId));
-  return createHash('sha256').update(JSON.stringify({ requestId, items: sorted })).digest('hex');
+  const body = {
+    requestId,
+    items: sorted,
+    ...(cs.holdDeductionAmount !== undefined ? { holdDeductionAmount: cs.holdDeductionAmount } : {}),
+    ...(cs.alreadyRefundedAmount !== undefined ? { alreadyRefundedAmount: cs.alreadyRefundedAmount } : {}),
+    ...(cs.closesMissing === true ? { closesMissing: true } : {}),
+  };
+  return createHash('sha256').update(JSON.stringify(body)).digest('hex');
 }
 
 /**
@@ -142,8 +169,9 @@ export function assertReadableSettlementRecord(record: ReturnSettlementRecord): 
   }
   // 환불액·차감·상계 적용액은 반올림한 원이다 — channel-adapter 의 정산 관측이 정수만 받으므로 소수를 쓰면 관측이 영영 막힌다
   const { returnShipping, freeShippingBreak, roundTrip, hold = 0 } = record.deduction;
-  const { prepaidApplied = 0, externalRefundApplied = 0 } = record;
-  if (![record.refundAmount, returnShipping, freeShippingBreak, roundTrip, hold, prepaidApplied, externalRefundApplied].every(Number.isInteger)) {
+  const { prepaidApplied = 0, externalRefundApplied = 0, offsetCreditLine = 0 } = record;
+  const amounts = [record.refundAmount, returnShipping, freeShippingBreak, roundTrip, hold, prepaidApplied, externalRefundApplied, offsetCreditLine];
+  if (!amounts.every(Number.isInteger)) {
     throw new Error(`반품 정산 기록의 환불액·차감이 정수 원이 아닙니다: ${JSON.stringify(record)}`);
   }
 }

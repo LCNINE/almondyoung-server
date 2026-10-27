@@ -60,11 +60,28 @@ export async function addSettlementCharge(
     await requestOrderEditRequestWorkflow(container).run({ input: { order_id: input.orderId, requested_by: input.actorId } });
     await confirmOrderEditRequestWorkflow(container).run({ input: { order_id: input.orderId, confirmed_by: input.actorId } });
   } catch (error) {
-    await cancelBeginOrderEditWorkflow(container)
-      .run({ input: { order_id: input.orderId } })
-      .catch(() => undefined);
+    await cancelOpenOrderEdit(container, input.orderId).catch(() => undefined);
     throw error instanceof Error ? error : new Error(`정산 청구 주문 수정 실패: ${describeError(error)}`);
   }
+}
+
+/**
+ * 열린 주문 수정(pending·requested)을 버린다 — 그 수정이 더한 배송 방법을 먼저 지우고 cancelBeginOrderEditWorkflow 를 부른다.
+ * Medusa 2.13.4 의 cancelBeginOrderEditWorkflow 는 SHIPPING_ADD «액션»의 id 를 배송 방법 id 자리에 넘겨 아무것도 지우지 않는다
+ * (core-flows order-edit/cancel-begin-order-edit.js). 남은 방법은 다음 수정이 같은 버전으로 확정될 때 주문에 다시 나타난다
+ * (K8 PR6b 실측: 끊긴 «반품 택배비»·«반품 차감»이 이어 간 수정 뒤 두 벌로 보였다). 지우기를 먼저 한다 — 버리기 뒤에 끊기면
+ * 지울 id 를 다시 찾을 길이 없다. 버리기가 실패해도 수정은 열린 채라 다음 시도가 이 함수를 다시 탄다.
+ */
+export async function cancelOpenOrderEdit(container: MedusaContainer, orderId: string): Promise<void> {
+  const orderModule = container.resolve(Modules.ORDER);
+  const changes = await orderModule.listOrderChanges({ order_id: orderId }, { select: ['id', 'status'] });
+  const open = changes.filter((ch) => ch.status === OrderChangeStatus.PENDING || ch.status === OrderChangeStatus.REQUESTED);
+  const actions = open.length
+    ? await orderModule.listOrderChangeActions({ order_change_id: open.map((ch) => ch.id) }, { select: ['id', 'action', 'reference_id'] })
+    : [];
+  const added = actions.flatMap((a) => (a.action === ChangeActionType.SHIPPING_ADD && a.reference_id ? [a.reference_id] : []));
+  if (added.length > 0) await orderModule.softDeleteOrderShippingMethods(added);
+  await cancelBeginOrderEditWorkflow(container).run({ input: { order_id: orderId } });
 }
 
 /**

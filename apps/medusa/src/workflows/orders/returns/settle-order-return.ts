@@ -2,7 +2,6 @@ import type { MedusaContainer } from '@medusajs/framework/types';
 import { Modules, ReturnStatus } from '@medusajs/framework/utils';
 import {
   beginReceiveReturnWorkflow,
-  cancelBeginOrderEditWorkflow,
   cancelReturnReceiveWorkflow,
   confirmReturnReceiveWorkflow,
   dismissItemReturnRequestWorkflow,
@@ -12,21 +11,24 @@ import {
 import { readWalletRefundRefusal } from '../../../modules/almond-payment/wallet-refund-refusal';
 import { describeError } from '../../../utils/describe-error';
 import { toNumber } from '../partial-cancel/amount';
-import { unresolvedExternalRefund } from '../partial-cancel/external-refund';
+import { checkAlreadyRefunded, PartialCancelExternalRefundRejected, unresolvedExternalRefund } from '../partial-cancel/external-refund';
 import { readPartialCancelRecords } from '../partial-cancel/partial-cancel-order';
-import { RETURN_FEE_CHARGE_NAME } from '../partial-cancel/plan-shipping';
+import { RETURN_FEE_CHARGE_NAME, RETURN_HOLD_DEDUCTION_NAME } from '../partial-cancel/plan-shipping';
 import { priorGroupFeesFor } from '../partial-cancel/prior-group-fees';
 import { shippingPlanLines } from '../partial-cancel/shipping-plan-lines';
 import { loadOrderView, productShippingProfiles, type OrderView } from '../settlement/load-order-view';
 import type { ShippingMethodView } from '../partial-cancel/plan-shipping';
-import { addSettlementCharge, ensureNoDanglingChange } from '../settlement/order-edit-charge';
+import { offsetCreditLine } from '../settlement/offset-credit-line';
+import { addSettlementCharge, cancelOpenOrderEdit, ensureNoDanglingChange } from '../settlement/order-edit-charge';
 import { listOrderRefunds, orderCancelLockKey } from '../settlement/order-payments';
 import { refundOrderPayments } from '../settlement/refund-order-payments';
 import type { RefundMode } from '../settlement/refund-mode';
 import { reconcileOrderWalletRefunds } from '../settlement/wallet-refund-ledger';
+import { applyReturnOffsets } from './apply-return-offsets';
 import { readReturnRequestRecord } from './load-return-order';
 import { planReturnFees, type ReturnSettlementDeduction } from './plan-return-fees';
 import { ReturnOrderNotFound } from './request-order-return';
+import { prepaidTotal } from './return-prepay-record';
 import {
   assertNoReturnAwaitingCharge,
   assertReadableSettlementRecord,
@@ -47,14 +49,26 @@ export type SettleOrderReturnInput = {
   /** 없으면 auto. 요청 해시에 넣지 않는다 — 자동 거절 뒤 같은 요청을 수동으로 다시 보낸다 */
   refundMode?: RefundMode;
   actorId?: string;
+  // ── PR 6b(CS 의 문) — 셋 다 요청 해시에 든다(보류 차감은 금액만). 재발행은 같은 값을 내므로 늘 같고, 다르면 request_id_conflict ──
+  /** CS 보류 차감 요청액(N2·N3). 넘치면 남은 돈 안으로 깎는다 — 수령 뒤라 거절하면 반품이 received 에 갇힌다 */
+  holdDeduction?: { amount: number; memo: string };
+  /** CS 가 적은 «이미 환불한 외부 환불»(N16) — 있으면 그만큼 상계하고, 없으면 PR 6 처럼 미해결 외부 환불을 거절한다 */
+  alreadyRefundedAmount?: number;
+  /** core 가 미도착 수량을 닫았다(N8) — 품목이 반품 품목의 부분집합·수량 미달이어도 받는다. 남은 반품 품목은 취소하지 않는다 */
+  closesMissing?: boolean;
 };
 
 export type SettleOrderReturnResult = {
   returnId: string;
   requestId: string;
   refundAmount: number;
+  /** 택배비 세 몫 + 보류 차감 적용액(hold, 보류 정산일 때만) */
   deduction: ReturnSettlementDeduction;
   feeNotAdjusted: boolean;
+  /** 선환불에서 덜 낸 몫 */
+  prepaidApplied: number;
+  /** CS 가 적은 외부 환불에서 덜 낸 몫 */
+  externalRefundApplied: number;
   refund: { mode: RefundMode; amount: number };
   stage: 'refunded';
 };
@@ -65,6 +79,8 @@ export type ReturnSettleRejectReason =
   | 'request_id_conflict'
   | 'items_mismatch'
   | 'external_refund_unresolved'
+  | 'external_refund_exceeds'
+  | 'external_refund_absent'
   | 'return_already_received';
 
 /** 정해진 거절 — 다시 불러도 같다. 라우트가 400 code=return_settle_rejected + reason 으로 낸다. 반품·주문은 그대로다. */
@@ -107,11 +123,16 @@ const ORDER_LOCK_TIMEOUT_SECONDS = 120;
 const receiveTag = (requestId: string) => `return-receive:${requestId}`;
 const feeTag = (requestId: string) => `return-fee:${requestId}`;
 const refundNote = (requestId: string) => `return-settle:${requestId}`;
+/** 상계 크레딧 라인(N6) — reference_id 는 requestId. 부분취소는 'partial-cancel' */
+const RETURN_OFFSET_REFERENCE = 'return-offset';
 
 /**
- * 반품 정산(K8 PR6, N13·N14). 수령 확정(받은 품목 receive · 폐기 품목 dismiss) → 택배비 주문 수정(«반품 택배비» 방법,
- * 차감 0 이면 건너뜀) → RETURN 환불. 택배비는 수령 «뒤»에 넣는다 — 앞에 넣으면 차액이 잠깐 양수가 돼 NOT_PAID 결제
- * 컬렉션이 생긴다. 단계는 반품 metadata 의 정산 기록에 남고, 같은 requestId 로 다시 부르면 기록의 단계부터 잇는다.
+ * 반품 정산(K8 PR6, N13·N14). 수령 확정(받은 품목 receive · 폐기 품목 dismiss) → 상계 크레딧 라인 → 택배비·보류 차감
+ * 주문 수정(«반품 택배비»·«반품 차감» 방법, 0 원 몫은 건너뜀) → RETURN 환불. 청구는 수령 «뒤»에 넣는다 — 앞에 넣으면
+ * 차액이 잠깐 양수가 돼 NOT_PAID 결제 컬렉션이 생긴다. 단계는 반품 metadata 의 정산 기록에 남고, 같은 requestId 로
+ * 다시 부르면 기록의 단계부터 잇는다.
+ * PR 6b: 수령이 만든 «돌려줄 차액»을 선환불(return-prepay 메모 환불 합) → CS 가 적은 외부 환불 → 택배비 → 보류 차감 순으로
+ * 채우고(applyReturnOffsets) 남은 것만 환불한다.
  */
 export async function settleOrderReturn(container: MedusaContainer, input: SettleOrderReturnInput): Promise<SettleOrderReturnResult> {
   const locking = container.resolve(Modules.LOCKING);
@@ -136,7 +157,11 @@ async function run(container: MedusaContainer, input: SettleOrderReturnInput): P
   const request = readReturnRequestRecord(ret.metadata);
   if (!request) throw new ReturnSettleRejected('not_our_return', '이 반품은 정산할 수 없습니다');
   if (ret.status === ReturnStatus.CANCELED) throw new ReturnSettleRejected('return_canceled', '취소된 반품입니다');
-  const requestHash = hashReturnSettlement(input.requestId, input.items);
+  const requestHash = hashReturnSettlement(input.requestId, input.items, {
+    holdDeductionAmount: input.holdDeduction?.amount,
+    alreadyRefundedAmount: input.alreadyRefundedAmount,
+    closesMissing: input.closesMissing,
+  });
   const existing = readReturnSettlementRecord(ret.metadata);
   if (existing && existing.requestHash !== requestHash) {
     throw new ReturnSettleRejected('request_id_conflict', `이 반품에 다른 정산 요청이 이미 있습니다: ${input.requestId}`);
@@ -177,14 +202,21 @@ async function receive(
   feeBearer: 'customer' | 'seller',
   requestHash: string,
 ): Promise<ReturnSettlementRecord> {
-  assertItemsMatch(ret.quantities, input.items);
+  const closesMissing = input.closesMissing === true;
+  assertItemsMatch(ret.quantities, input.items, closesMissing);
   // 이 반품은 아직 기록이 없으니 목록은 «다른» 반품들의 기록이다. 수령까지 하고 청구 전에 멈춘 반품이 있으면 기다린다(500 → 재시도):
   // 그 반품의 groupFees 는 아직 겹치기에 안 들어가(charged·refunded 만) 이 반품이 같은 깨짐을 받고, 그 반품이 이어 가며 또 받는다.
   const otherReturns = await loadReturnSettlementRecords(container, input.orderId);
   assertNoReturnAwaitingCharge(otherReturns);
-  // 수령 «전»에 장부를 맞춘다 — 투영 안 된 외부 환불까지 보고 거절하게
+  // 수령 «전»에 장부를 맞춘다 — 투영 안 된 외부 환불까지 보고 거절하게, 응답을 잃은 선환불까지 P 에 들게
   await reconcileOrderWalletRefunds(container, input.orderId);
-  await assertNoExternalRefund(container, await loadOrder(container, input.orderId), otherReturns);
+  const reconciled = await loadOrder(container, input.orderId);
+  const refunds = await listOrderRefunds(container, input.orderId);
+  assertExternalRefundResolved(refunds, reconciled, otherReturns, input.alreadyRefundedAmount);
+  // 선환불한 금액의 정본은 이 메모 환불 행이다(N6) — 선환불 기록의 amount 가 아니다
+  const prepaid = prepaidTotal(refunds, input.requestId);
+  const externalRefund = input.alreadyRefundedAmount ?? 0;
+  assertOffsetPremises(reconciled, otherReturns, { prepaid, externalRefund, closesMissing });
 
   const tag = receiveTag(input.requestId);
   // 확정됐는데 기록이 없으면(확정과 기록 사이에 끊김) 다시 받으면 재고·차액이 두 번 움직인다 — 멈춘다. 열린 채면 버리고 새로 한다
@@ -219,7 +251,8 @@ async function receive(
   const owed = Math.round(before.pendingDifference - after.pendingDifference);
   if (!Number.isFinite(owed)) throw new Error(`돌려줄 차액을 읽지 못했습니다: ${before.pendingDifference} → ${after.pendingDifference}`);
 
-  // 택배비 계획은 수령 «뒤»에 돈다 — 상한(chargeCap)이 돌려줄 차액이다. 남는 수량 = 줄 수량 − 돌아온 수량(이번 반품이 이미 들어 있다)
+  // 택배비 계획은 수령 «뒤»에 돈다 — 상한(chargeCap)은 돌려줄 차액에서 선환불·외부 상계를 뺀 것(N3: 상계가 택배비보다 먼저다).
+  // 남는 수량 = 줄 수량 − 돌아온 수량(이번 반품이 이미 들어 있다). 미도착을 닫았으면 input.items 가 실제로 정산한 품목이다
   const profiles = await productShippingProfiles(
     container,
     after.lines.map((l) => l.productId).filter((x): x is string => !!x),
@@ -231,10 +264,25 @@ async function receive(
     lines: shippingPlanLines(after.lines, new Map(), profiles).map((l) => ({ ...l, returnedNow: returnedNow.get(l.itemId) ?? 0 })),
     postalCode: after.postalCode,
     priorGroupFees: priorGroupFeesFor(Object.values(readPartialCancelRecords(after.metadata)), otherReturns),
-    chargeCap: Math.max(0, owed),
+    chargeCap: Math.max(0, owed - prepaid - externalRefund),
   });
-  const chargeShippingOptionId = plan.total > 0 ? chargeShippingOption(after.shippingMethods, after.lines, profiles, input.items) : null;
-  if (plan.total > 0 && !chargeShippingOptionId) throw new Error(`반품 택배비를 붙일 배송 방법을 찾지 못했습니다: ${input.orderId}`);
+  const offsets = applyReturnOffsets({
+    owed,
+    // Medusa 는 음수 크레딧 라인이 |수령 뒤 차액| 을 넘으면 거절한다(부분취소의 room 과 같다)
+    room: after.pendingDifference < 0 ? Math.floor(-after.pendingDifference) : 0,
+    diffBeforeReceive: before.pendingDifference,
+    prepaid,
+    externalRefund,
+    fees: plan.deduction,
+    holdRequested: input.holdDeduction?.amount ?? 0,
+  });
+  // 상계 라인은 원 단위로 내린다 — 수령 전 차액에 원 미만(할인 안분 잔여)이 섞이면 식이 소수를 낸다. room 이 라인을 묶은 경우
+  // (원 미만 반올림 몫)도 그 차이는 원 미만의 음수 차액으로 남는다. 부분취소는 그 몫을 환불이 떠안지만 여기서는 상계 적용액
+  // (externalRefundApplied)을 줄이지 않는다 — 그 값은 다음 판정의 «품목에 연결 안 된 외부 환불»에서만 빠지고, 원 미만은 잡음이다
+  const offsetLine = Math.floor(offsets.offsetCreditLine);
+  const chargeTotal = deductionTotal(offsets.deduction);
+  const chargeShippingOptionId = chargeTotal > 0 ? chargeShippingOption(after.shippingMethods, after.lines, profiles, input.items) : null;
+  if (chargeTotal > 0 && !chargeShippingOptionId) throw new Error(`반품 택배비·차감을 붙일 배송 방법을 찾지 못했습니다: ${input.orderId}`);
 
   const record: ReturnSettlementRecord = {
     requestId: input.requestId,
@@ -242,25 +290,42 @@ async function receive(
     stage: 'received',
     items: normalizeItems(input.items),
     owed,
-    deduction: plan.deduction,
+    deduction: offsets.deduction,
     feeNotAdjusted: plan.feeNotAdjusted,
-    refundAmount: Math.max(0, owed - plan.total),
+    refundAmount: offsets.refundAmount,
+    // 보류 차감은 그룹 요금이 아니다(N2) — 택배비 계획의 그룹 요금만 남긴다
     groupFees: plan.groupFees,
     orderVersion: after.version,
     receivedAt: new Date().toISOString(),
     chargeShippingOptionId,
+    ...(input.holdDeduction ? { hold: { requested: input.holdDeduction.amount, memo: input.holdDeduction.memo } } : {}),
+    prepaidApplied: offsets.prepaidApplied,
+    externalRefundApplied: offsets.externalRefundApplied,
+    ...(closesMissing ? { closesMissing: true } : {}),
+    ...(offsetLine > 0 ? { offsetCreditLine: offsetLine } : {}),
   };
   await writeRecord(container, ret.id, record);
   return record;
 }
 
-/** ② 차감이 있으면 «반품 택배비» 주문 수정을 확정한다 → 기록 charged. 차감 0 이면 수정 없이 charged. */
+/**
+ * ② 상계 크레딧 라인 → 택배비·보류 차감 주문 수정 하나(«반품 택배비»·«반품 차감») → 기록 charged. 셋 다 0 이면 아무것도 없이 charged.
+ * 라인을 «먼저» 넣는다 — Medusa 는 음수 라인이 |차액| 을 넘으면 거절하는데, 청구가 차액을 줄이기 전이 가장 넓다. 라인은
+ * 같은 reference·requestId 가 있으면 건너뛰고, 끊긴 주문 수정은 버리고 새로 하므로 이어 가기가 두 번 넣지 않는다.
+ */
 async function charge(container: MedusaContainer, input: SettleOrderReturnInput, record: ReturnSettlementRecord): Promise<ReturnSettlementRecord> {
-  const total = record.deduction.returnShipping + record.deduction.freeShippingBreak + record.deduction.roundTrip;
-  if (total > 0) {
+  await offsetCreditLine(container, {
+    orderId: input.orderId,
+    reference: RETURN_OFFSET_REFERENCE,
+    referenceId: input.requestId,
+    amount: record.offsetCreditLine ?? 0,
+  });
+  const fees = record.deduction.returnShipping + record.deduction.freeShippingBreak + record.deduction.roundTrip;
+  const hold = record.deduction.hold ?? 0;
+  if (fees + hold > 0) {
     const tag = feeTag(input.requestId);
     await ensureNoDanglingChange(container, input.orderId, tag, async () => {
-      await cancelBeginOrderEditWorkflow(container).run({ input: { order_id: input.orderId } });
+      await cancelOpenOrderEdit(container, input.orderId);
     });
     // 옵션은 수령 때 정해 기록에 둔 값 — 이어 갈 때 주문의 배송 방법 순서에 다시 기대지 않는다
     if (!record.chargeShippingOptionId) throw new Error(`차감이 있는데 택배비 배송 옵션이 기록에 없습니다: ${input.returnId}`);
@@ -268,7 +333,10 @@ async function charge(container: MedusaContainer, input: SettleOrderReturnInput,
       orderId: input.orderId,
       tag,
       shippingOptionId: record.chargeShippingOptionId,
-      charges: [{ name: RETURN_FEE_CHARGE_NAME, amount: total }],
+      charges: [
+        { name: RETURN_FEE_CHARGE_NAME, amount: fees },
+        { name: RETURN_HOLD_DEDUCTION_NAME, amount: hold },
+      ],
       actorId: input.actorId,
     });
   }
@@ -279,30 +347,69 @@ async function charge(container: MedusaContainer, input: SettleOrderReturnInput,
 
 // ── 판정 ──────────────────────────────────────────────────────────────────────
 
-/** 품목 집합이 반품 품목과 같고, 줄마다 수령 + 폐기 = 반품 품목 수량. 부분 도착은 이 PR 에서 정산하지 않는다(N7). */
-function assertItemsMatch(quantities: ReadonlyMap<string, number>, items: SettleOrderReturnInput['items']): void {
+/**
+ * 품목 집합이 반품 품목과 같고, 줄마다 수령 + 폐기 = 반품 품목 수량(PR 6). 미도착을 닫았으면(N8) 반품 품목의 부분집합이고
+ * 줄마다 0 < 수령 + 폐기 ≤ 반품 품목 수량 — 남은 수량은 요청 상태로 남는다(반품 partially_received).
+ */
+function assertItemsMatch(quantities: ReadonlyMap<string, number>, items: SettleOrderReturnInput['items'], closesMissing: boolean): void {
   const ids = new Set(items.map((i) => i.itemId));
-  const sameSet = ids.size === items.length && ids.size === quantities.size && [...ids].every((id) => quantities.has(id));
-  if (!sameSet || items.some((i) => i.received + i.dismissed !== quantities.get(i.itemId))) {
-    throw new ReturnSettleRejected('items_mismatch', '정산 품목·수량이 반품 품목과 다릅니다');
+  const unique = ids.size === items.length && [...ids].every((id) => quantities.has(id));
+  const ok = closesMissing
+    ? unique && items.every((i) => i.received + i.dismissed > 0 && i.received + i.dismissed <= (quantities.get(i.itemId) ?? 0))
+    : unique && ids.size === quantities.size && items.every((i) => i.received + i.dismissed === quantities.get(i.itemId));
+  if (!ok) throw new ReturnSettleRejected('items_mismatch', '정산 품목·수량이 반품 품목과 다릅니다');
+}
+
+/**
+ * wallet 에서 직접 낸 환불(`wallet:` 메모)이 품목에 연결되지 않은 채 있으면(N16) — «이미 환불한 금액»이 없으면 PR 6 처럼 거절하고
+ * (반품 환불을 더 내면 이중 환불이다), 있으면 부분취소와 같은 판정(checkAlreadyRefunded)으로 넘침·없음을 거절한다.
+ * 앞선 부분취소·다른 반품 정산이 상계로 가져간 몫은 뺀다.
+ */
+function assertExternalRefundResolved(
+  refunds: Array<{ amount: unknown; note?: string | null }>,
+  order: OrderView,
+  returnRecords: ReturnSettlementRecord[],
+  alreadyRefunded: number | undefined,
+): void {
+  const unresolved = unresolvedExternalRefund(refunds, [...Object.values(readPartialCancelRecords(order.metadata)), ...returnRecords]);
+  if (alreadyRefunded === undefined) {
+    if (unresolved > 0) {
+      throw new ReturnSettleRejected(
+        'external_refund_unresolved',
+        `품목에 연결 안 된 외부 환불 ${unresolved}원이 있는 주문입니다 — 반품 환불을 더 내면 이중 환불이라 정산하지 않습니다`,
+      );
+    }
+    return;
+  }
+  try {
+    checkAlreadyRefunded(unresolved, alreadyRefunded);
+  } catch (error) {
+    if (error instanceof PartialCancelExternalRefundRejected) throw new ReturnSettleRejected(error.reason, error.message);
+    throw error;
   }
 }
 
 /**
- * wallet 에서 직접 낸 환불(`wallet:` 메모)이 품목에 연결되지 않은 채 있으면 거절한다(N16) — 반품 환불을 더 내면 이중 환불이다.
- * 앞선 부분취소·다른 반품 정산(PR 6b 의 externalRefundApplied)이 상계로 가져간 몫은 뺀다.
+ * 상계 식(N6)이 맞으려면 그 주문의 다른 돈 일이 끝나 있어야 한다 — 수령 전 차액에 «크레딧 없는 선환불·외부 환불»만 양수로
+ * 들어 있다고 보고 상계 크레딧 라인을 재기 때문이다. 상계할 돈(선환불·외부 환불)이 있는데 환불이 안 끝난 부분취소·다른 반품
+ * 정산 기록이 있으면 기다린다(일반 Error → 500, 재시도). 주문을 바꾸기 «전»이다.
+ * 선환불한 반품은 미도착으로 닫지 못한다(N15) — 닫으면 정산 품목 값이 선환불보다 작아져 상계 뒤 차액이 양수(NOT_PAID)가 될 수 있다.
+ * core 가 막는 자리지만 수령 뒤엔 되돌릴 수 없어 여기서도 멈춘다.
  */
-async function assertNoExternalRefund(
-  container: MedusaContainer,
+function assertOffsetPremises(
   order: OrderView,
   returnRecords: ReturnSettlementRecord[],
-): Promise<void> {
-  const unresolved = await orderUnresolvedExternalRefund(container, order, returnRecords);
-  if (unresolved > 0) {
-    throw new ReturnSettleRejected(
-      'external_refund_unresolved',
-      `품목에 연결 안 된 외부 환불 ${unresolved}원이 있는 주문입니다 — 반품 환불을 더 내면 이중 환불이라 정산하지 않습니다`,
-    );
+  p: { prepaid: number; externalRefund: number; closesMissing: boolean },
+): void {
+  if (p.closesMissing && p.prepaid > 0) {
+    throw new Error(`선환불(${p.prepaid}원)한 반품은 미도착으로 닫고 정산할 수 없습니다 — 수동 확인이 필요합니다`);
+  }
+  if (p.prepaid + p.externalRefund <= 0) return;
+  const unfinished =
+    Object.values(readPartialCancelRecords(order.metadata)).some((r) => r.stage !== 'refunded') ||
+    returnRecords.some((r) => r.stage !== 'refunded');
+  if (unfinished) {
+    throw new Error('환불이 끝나지 않은 부분취소·반품 정산이 있는 주문입니다 — 상계를 셀 수 없어 그 환불이 끝난 뒤 다시 시도하세요');
   }
 }
 
@@ -391,12 +498,16 @@ const normalizeItems = (items: SettleOrderReturnInput['items']): ReturnSettlemen
     .map((i) => ({ itemId: i.itemId, received: i.received, dismissed: i.dismissed }))
     .sort((a, b) => a.itemId.localeCompare(b.itemId));
 
+const deductionTotal = (d: ReturnSettlementDeduction): number => d.returnShipping + d.freeShippingBreak + d.roundTrip + (d.hold ?? 0);
+
 const toResult = (input: SettleOrderReturnInput, r: ReturnSettlementRecord): SettleOrderReturnResult => ({
   returnId: input.returnId,
   requestId: input.requestId,
   refundAmount: r.refundAmount,
   deduction: r.deduction,
   feeNotAdjusted: r.feeNotAdjusted,
+  prepaidApplied: r.prepaidApplied ?? 0,
+  externalRefundApplied: r.externalRefundApplied ?? 0,
   // 기록의 refundMode 는 문자열로 읽힌다 — 우리가 쓴 값은 auto·manual 뿐이다
   refund: { mode: r.refundMode === 'manual' ? 'manual' : 'auto', amount: r.refundAmount },
   stage: 'refunded',
