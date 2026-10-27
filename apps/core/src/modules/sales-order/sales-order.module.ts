@@ -36,6 +36,7 @@ import { CustomerReturnService } from './customer-return/customer-return.service
 import { CustomerReturnReader } from './customer-return/customer-return.reader';
 import { CustomerReturnReceivingManager } from './customer-return/customer-return-receiving.manager';
 import { CustomerReturnSettlementManager } from './customer-return/customer-return-settlement.manager';
+import { CustomerReturnCsManager } from './customer-return/customer-return-cs.manager';
 import { CustomerReturnSettlementRetryCron } from './customer-return/customer-return-settlement-retry.cron';
 import { CustomerReturnsController } from './customer-return/customer-returns.controller';
 import { OrderCancellation } from './order-cancellation/order-cancellation';
@@ -135,6 +136,7 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
     CustomerReturnReader,
     CustomerReturnReceivingManager,
     CustomerReturnSettlementManager,
+    CustomerReturnCsManager,
     CustomerReturnSettlementRetryCron,
     CustomerReturnService,
 

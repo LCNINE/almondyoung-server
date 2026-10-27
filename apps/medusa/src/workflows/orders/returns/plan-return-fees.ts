@@ -11,6 +11,8 @@ export type ReturnSettlementDeduction = {
   returnShipping: number;
   freeShippingBreak: number;
   roundTrip: number;
+  /** CS 보류 차감의 적용액(K8 PR6b N2·N3). 보류 정산일 때만 있다 — 택배비 계획은 이 칸을 채우지 않는다 */
+  hold?: number;
 };
 
 export type ReturnFeePlan = {

@@ -1,7 +1,14 @@
 // apps/medusa/integration-tests/http/partial-cancel.spec.ts
 import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
-import { Modules } from '@medusajs/framework/utils';
-import { createOrderCreditLinesWorkflow, refundPaymentWorkflow } from '@medusajs/medusa/core-flows';
+import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
+import {
+  beginOrderEditOrderWorkflow,
+  confirmOrderEditRequestWorkflow,
+  createOrderCreditLinesWorkflow,
+  createOrderEditShippingMethodWorkflow,
+  refundPaymentWorkflow,
+  requestOrderEditRequestWorkflow,
+} from '@medusajs/medusa/core-flows';
 import {
   partialCancelOrder, PartialCancelRefundPending,
 } from '../../src/workflows/orders/partial-cancel/partial-cancel-order';
@@ -13,6 +20,19 @@ import { POLICY_SNAPSHOT_KEY } from '../../src/modules/almond-fulfillment/types'
 import {
   FakeWallet, WALLET_BASE_URL, setupCommerce, createReturnShippingOption, requestReturnWithShipping, placeOrder, createOrderFixedPromo, createShippingFixedPromo, loadOrder, Commerce,
 } from './fixtures/partial-cancel-fixture';
+
+/**
+ * 주문 수정 확정에서 끊을 자리(K8 PR6b). core-flows 는 configurable:false getter 로 다시 내보내 jest.spyOn 이 죽는다
+ * (return-request.spec 과 같은 이유) — 모듈을 실물로 두고 이 하나만 실물을 감싼 jest.fn 으로 바꾼다. 기본은 실물 그대로다.
+ */
+jest.mock('@medusajs/medusa/core-flows', () => {
+  const actual = jest.requireActual('@medusajs/medusa/core-flows');
+  return {
+    __esModule: true,
+    ...actual,
+    confirmOrderEditRequestWorkflow: jest.fn((...args: unknown[]) => actual.confirmOrderEditRequestWorkflow(...args)),
+  };
+});
 
 jest.setTimeout(300 * 1000);
 process.env.WALLET_BASE_URL = WALLET_BASE_URL;
@@ -62,6 +82,64 @@ medusaIntegrationTestRunner({
       expect(after.metadata.partialCancels['req-1'].stage).toBe('refunded');
       const charge = after.shipping_methods.find((m: any) => m.name === '부분취소 배송비');
       expect(num(charge?.amount)).toBe(3000);
+    });
+
+    it('배송비를 더한 주문 수정이 확정 직전에 끊긴 뒤 같은 requestId → «부분취소 배송비» 하나, 차액 0, NOT_PAID 0', async () => {
+      // A 30,000 + B 30,000 (cond, 무료). B 취소 → 남은 A 가 기준 미달이라 «부분취소 배송비» 3,000
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 1 }, { variant: 'B', quantity: 1 }] });
+      const o = await loadOrder(getContainer(), orderId);
+      const b = o.items.find((i: any) => i.variant_id === c.variants.B);
+      const input = { orderId, requestId: 'req-cut-1', items: [{ itemId: b.id, quantity: 1 }], reasonCode: 'CUSTOMER_REQUEST', requestedBy: 'operator' as const };
+      // Medusa 2.13.4 의 cancelBeginOrderEditWorkflow 는 더한 배송 방법을 못 지운다(액션 id 를 넘긴다) — cancelOpenOrderEdit 가 지운다
+      jest.mocked(confirmOrderEditRequestWorkflow).mockImplementationOnce((() => ({
+        run: async () => {
+          throw new Error('확정 직전 끊김');
+        },
+      })) as unknown as typeof confirmOrderEditRequestWorkflow);
+
+      await expect(partialCancelOrder(getContainer(), input)).rejects.toThrow('확정 직전 끊김');
+      expect(wallet.refundCalls()).toHaveLength(0);
+
+      const res = await partialCancelOrder(getContainer(), input);
+
+      expect(res.refundAmount).toBe(27000);
+      const after = await loadOrder(getContainer(), orderId);
+      expect(after.shipping_methods.filter((m: any) => m.name === '부분취소 배송비').map((m: any) => num(m.amount))).toEqual([3000]);
+      expect((await loadOrderView(getContainer(), orderId))!.pendingDifference).toBe(0);
+      expect(balance(after)).toBe(0);
+      const { data: [pcs] } = await getContainer()
+        .resolve(ContainerRegistrationKeys.QUERY)
+        .graph({ entity: 'order', fields: ['id', 'payment_collections.status'], filters: { id: orderId } });
+      expect((pcs as any).payment_collections.filter((pc: any) => pc.status === 'not_paid')).toHaveLength(0);
+    });
+
+    it('끊겨 열린 채 남은 같은 태그의 주문 수정(배송 방법 포함)을 버리고 다시 하면 그 방법이 남지 않는다', async () => {
+      // 프로세스가 확정 전에 죽은 흔적 — 같은 requestId 태그로 연 수정에 배송 방법 3,000 을 더하고 request 까지 한 채 둔다
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 1 }, { variant: 'B', quantity: 1 }] });
+      const o = await loadOrder(getContainer(), orderId);
+      const b = o.items.find((i: any) => i.variant_id === c.variants.B);
+      const container = getContainer();
+      await beginOrderEditOrderWorkflow(container).run({ input: { order_id: orderId, created_by: 'test', internal_note: 'partial-cancel:req-cut-2' } });
+      await createOrderEditShippingMethodWorkflow(container).run({
+        input: { order_id: orderId, shipping_option_id: c.groups.cond.shippingOptionId, custom_amount: 3000 },
+      });
+      await requestOrderEditRequestWorkflow(container).run({ input: { order_id: orderId, requested_by: 'test' } });
+
+      const res = await partialCancelOrder(container, {
+        orderId,
+        requestId: 'req-cut-2',
+        items: [{ itemId: b.id, quantity: 1 }],
+        reasonCode: 'CUSTOMER_REQUEST',
+        requestedBy: 'operator',
+      });
+
+      expect(res.refundAmount).toBe(27000);
+      const after = await loadOrder(container, orderId);
+      // 원래 방법(0) + 이번 «부분취소 배송비» 3,000 뿐 — 버린 수정의 3,000 은 없다
+      expect(after.shipping_methods.map((m: any) => num(m.amount)).sort((x: number, y: number) => x - y)).toEqual([0, 3000]);
+      expect(after.shipping_methods.filter((m: any) => m.name === '부분취소 배송비')).toHaveLength(1);
+      expect((await loadOrderView(container, orderId))!.pendingDifference).toBe(0);
+      expect(balance(after)).toBe(0);
     });
 
     it('수량 감소: 할인을 비례로 다시 쓴다', async () => {

@@ -180,4 +180,128 @@ describe('medusaReturnObservations', () => {
       expect(skipped).toEqual([{ returnId: 'ret_1', reason: 'no_settlement_record' }]);
     });
   });
+
+  describe('선환불 (K8 PR6b)', () => {
+    const prepay = (over: Record<string, unknown> = {}) => ({
+      ...record(),
+      almondReturnPrepay: {
+        requestId: 'cr_1',
+        requestHash: 'h',
+        stage: 'refunded',
+        amount: 8000,
+        itemValue: 20000,
+        feeEstimate: { returnShipping: 3000, freeShippingBreak: 3000, roundTrip: 0 },
+        memo: 'm',
+        requestedAt: '2026-10-27T03:00:00.000Z',
+        refundedAt: '2026-10-27T03:05:00.000Z',
+        refundMode: 'auto',
+        ...over,
+      },
+    });
+
+    it('선환불 끝난 반품 → requested 다음 prepaid', () => {
+      const { observations, skipped } = medusaReturnObservations(order([ret({ metadata: prepay() })]));
+      expect(skipped).toEqual([]);
+      expect(observations.map((o) => o.eventKey)).toEqual(['return:ret_1:requested', 'return:ret_1:prepaid']);
+      expect(observations[1]).toMatchObject({
+        eventType: 'ChannelReturnPrepaid',
+        payload: {
+          returnId: 'ret_1',
+          requestId: 'cr_1',
+          amount: 8000,
+          refundMode: 'auto',
+          prepaidAt: '2026-10-27T03:05:00.000Z',
+        },
+      });
+    });
+
+    it('requested 단계 선환불 기록은 prepaid 를 내지 않는다', () => {
+      const { observations, skipped } = medusaReturnObservations(
+        order([ret({ metadata: prepay({ stage: 'requested', refundedAt: undefined, refundMode: undefined }) })]),
+      );
+      expect(observations.map((o) => o.eventKey)).toEqual(['return:ret_1:requested']);
+      expect(skipped).toEqual([]);
+    });
+
+    it.each([
+      ['requestId 없음', { requestId: undefined }],
+      ['금액 소수', { amount: 100.5 }],
+      ['금액 0', { amount: 0 }],
+      ['refundedAt 없음', { refundedAt: undefined }],
+      ['환불 방식 모름', { refundMode: 'x' }],
+    ])('끝난 기록의 모양이 어긋나면 no_prepay_record — %s', (_n, patch) => {
+      const { observations, skipped } = medusaReturnObservations(order([ret({ metadata: prepay(patch) })]));
+      expect(observations.map((o) => o.eventKey)).toEqual(['return:ret_1:requested']);
+      expect(skipped).toEqual([{ returnId: 'ret_1', reason: 'no_prepay_record' }]);
+    });
+
+    it('선환불 뒤 정산까지 끝나면 requested → prepaid → settled 순서', () => {
+      const settled = {
+        requestId: 'cr_1',
+        requestHash: 'h',
+        stage: 'refunded',
+        items: [{ itemId: 'item_1', received: 1, dismissed: 0 }],
+        deduction: { returnShipping: 3000, freeShippingBreak: 3000, roundTrip: 0 },
+        feeNotAdjusted: false,
+        refundAmount: 4000,
+        refundedAt: '2026-10-27T05:00:00.000Z',
+        refundMode: 'auto',
+      };
+      const { observations } = medusaReturnObservations(
+        order([ret({ status: 'received', metadata: { ...prepay(), almondReturnSettlement: settled } })]),
+      );
+      expect(observations.map((o) => o.eventKey)).toEqual([
+        'return:ret_1:requested',
+        'return:ret_1:prepaid',
+        'return:ret_1:settled',
+      ]);
+    });
+  });
+
+  describe('정산의 새 칸 (K8 PR6b)', () => {
+    const settlement = (over: Record<string, unknown> = {}, deduction: Record<string, unknown> = {}) => ({
+      ...record(),
+      almondReturnSettlement: {
+        requestId: 'cr_1',
+        requestHash: 'h',
+        stage: 'refunded',
+        items: [{ itemId: 'item_1', received: 1, dismissed: 0 }],
+        deduction: { returnShipping: 3000, freeShippingBreak: 3000, roundTrip: 0, ...deduction },
+        feeNotAdjusted: false,
+        refundAmount: 9000,
+        refundedAt: '2026-10-27T05:00:00.000Z',
+        refundMode: 'auto',
+        ...over,
+      },
+    });
+    const settledOf = (metadata: Record<string, unknown>) =>
+      medusaReturnObservations(order([ret({ status: 'received', metadata })])).observations.find(
+        (o) => o.eventType === 'ChannelReturnSettled',
+      );
+
+    it('보류 차감·선환불 상계가 있는 정산 → settled 에 칸', () => {
+      const settled = settledOf(settlement({ prepaidApplied: 8000, externalRefundApplied: 2000 }, { hold: 5000 }));
+      expect(settled).toMatchObject({
+        payload: {
+          deduction: { returnShipping: 3000, freeShippingBreak: 3000, roundTrip: 0, hold: 5000 },
+          prepaidAmount: 8000,
+          externalRefundApplied: 2000,
+        },
+      });
+    });
+
+    it('새 칸이 없는 옛 기록 → 칸을 생략한다', () => {
+      const settled = settledOf(settlement());
+      expect(settled?.payload).not.toHaveProperty('prepaidAmount');
+      expect(settled?.payload).not.toHaveProperty('externalRefundApplied');
+      expect((settled?.payload as { deduction: object }).deduction).not.toHaveProperty('hold');
+    });
+
+    it('새 칸의 모양이 어긋나면 no_settlement_record', () => {
+      const { skipped } = medusaReturnObservations(
+        order([ret({ status: 'received', metadata: settlement({ prepaidApplied: -1 }) })]),
+      );
+      expect(skipped).toEqual([{ returnId: 'ret_1', reason: 'no_settlement_record' }]);
+    });
+  });
 });

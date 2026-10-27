@@ -28,6 +28,8 @@ import { authorizationSchema } from '@app/authorization';
 import { printOrders } from '../../print-order/schema/print-order.schema';
 // 타입만 가져온다(런타임 import 없음) — jsonb 칸의 모양은 반품 타입 파일이 정본이다
 import type {
+  CustomerReturnCsResolution,
+  CustomerReturnPrepayment,
   CustomerReturnSettlement,
   CustomerReturnSettlementOutcome,
 } from '../../sales-order/customer-return/customer-return.types';
@@ -1604,6 +1606,10 @@ export const customerReturns = pgTable(
     settlement: jsonb('settlement').$type<CustomerReturnSettlement>(),
     /** 정산 결과(환불액·차감) */
     settlementOutcome: jsonb('settlement_outcome').$type<CustomerReturnSettlementOutcome>(),
+    /** 선환불(수령 없이 RETURN 환불) 진행 기록·결과(K8 PR6b) */
+    prepayment: jsonb('prepayment').$type<CustomerReturnPrepayment>(),
+    /** CS 결정 — 미도착 닫기·보류 차감(K8 PR6b) */
+    csResolution: jsonb('cs_resolution').$type<CustomerReturnCsResolution>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1627,11 +1633,17 @@ export const customerReturnLines = pgTable(
       .notNull(),
     channelOrderItemId: varchar('channel_order_item_id', { length: 255 }).notNull(),
     quantity: integer('quantity').notNull(),
+    /** CS 가 «안 왔다»로 닫은 수량(K8 PR6b) — K6 는 quantity - missing_qty 를 읽는다 */
+    missingQty: integer('missing_qty').notNull().default(0),
   },
   (t) => ({
     uqReturnLine: unique('uq_customer_return_lines_return_line').on(t.customerReturnId, t.salesOrderLineId),
     idxSalesOrderLine: index('idx_customer_return_lines_sales_order_line').on(t.salesOrderLineId),
     ckQuantityPositive: check('ck_customer_return_lines_quantity_positive', sql`${t.quantity} > 0`),
+    ckMissingQtyRange: check(
+      'ck_customer_return_lines_missing_qty_range',
+      sql`${t.missingQty} >= 0 and ${t.missingQty} <= ${t.quantity}`,
+    ),
   }),
 );
 

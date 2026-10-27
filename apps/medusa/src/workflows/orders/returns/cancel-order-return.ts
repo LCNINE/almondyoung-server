@@ -7,12 +7,15 @@ import {
 } from '@medusajs/medusa/core-flows';
 
 import { toNumber } from '../partial-cancel/amount';
-import { orderCancelLockKey } from '../settlement/order-payments';
+import { listOrderRefunds, orderCancelLockKey } from '../settlement/order-payments';
 import { fetchCoreReturnEligibility } from './core-return-eligibility';
 import { loadReturnOrder, RETURN_REQUEST_METADATA_KEY, type ReturnRequestRecord } from './load-return-order';
 import { ReturnRequestRejected, type ReturnRequestedBy } from './plan-return-request';
 import { ReturnOrderNotFound } from './request-order-return';
+import { reconcileOrderWalletRefunds } from '../settlement/wallet-refund-ledger';
+import { prepaidTotal, readReturnPrepayRecord, RETURN_PREPAY_METADATA_KEY } from './return-prepay-record';
 import { lowerUnheldTopUp, remainingTopUp } from './return-top-up-ledger';
+import { loadReturn } from './settle-order-return';
 
 export type CancelOrderReturnInput = {
   orderId: string;
@@ -56,6 +59,8 @@ async function run(container: MedusaContainer, input: CancelOrderReturnInput): P
   // Medusa 기본 경로나 대시보드가 만든 반품은 우리가 올린 출고 수량이 없다 — 되돌릴 근거가 없으니 건드리지 않는다
   const record = ret.record;
   if (!record) throw new ReturnRequestRejected('not_our_return', '이 반품은 취소할 수 없습니다');
+  // 주문 변경을 건드리기 «전»에 본다 — 먼저 환불한 반품을 취소하면 환불이 반품 없이 남는다(K8 PR6b N15)
+  await assertNotPrepaid(container, order.id, ret.id);
 
   const result: CancelOrderReturnResult = { returnId: ret.id, status: 'canceled' };
 
@@ -93,6 +98,22 @@ async function run(container: MedusaContainer, input: CancelOrderReturnInput): P
   await cancelReturnWorkflow(container).run({ input: { return_id: ret.id, canceled_by: input.actorId } });
   await revertTopUp(container, order.id, ret.id, record);
   return result;
+}
+
+/**
+ * 돈이 실제로 나간 선환불이 있는 반품은 취소하지 않는다. 기록이 refunded 이거나, 기록이 requested 라도 장부(N6: 선환불 메모
+ * 환불 행이 정본)에 그 메모 환불이 있으면 막는다 — 응답을 잃은 환불은 장부 맞추기로 넣고 본다(같은 주문 잠금 안).
+ * requested 인데 나간 돈이 없는 기록(영구 거절된 선환불)은 막지 않는다. 키는 있는데 읽히지 않는 기록은 모르는 돈이라 멈춘다(500).
+ */
+async function assertNotPrepaid(container: MedusaContainer, orderId: string, returnId: string): Promise<void> {
+  const row = await loadReturn(container, returnId);
+  if (row?.metadata?.[RETURN_PREPAY_METADATA_KEY] === undefined) return;
+  const prepay = readReturnPrepayRecord(row.metadata);
+  if (!prepay) throw new Error(`반품 선환불 기록의 모양이 어긋납니다: ${returnId}`);
+  const rejected = new ReturnRequestRejected('return_prepaid', '먼저 환불한 반품은 취소할 수 없습니다');
+  if (prepay.stage === 'refunded') throw rejected;
+  await reconcileOrderWalletRefunds(container, orderId);
+  if (prepaidTotal(await listOrderRefunds(container, orderId), prepay.requestId) > 0) throw rejected;
 }
 
 /** ③ — 올린 출고 수량을 같은 만큼 내리고, 내렸다는 표시를 반품 기록에 남긴다. */

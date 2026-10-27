@@ -341,6 +341,21 @@ describeIfDb('readLineQuantities — 라인 수량은 취소 라인 행 한 곳�
     });
   });
 
+  it('미도착으로 닫은 1개는 returnHeld 에서 빠진다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancellation(tx);
+      const o = await seedCancellableOrder(tx, w, 3);
+      await insertCustomerReturn(tx, {
+        salesOrderId: o.salesOrderId,
+        status: 'expected',
+        lines: [{ salesOrderLineId: o.lineId, quantity: 2, missingQty: 1 }],
+      });
+
+      const read = await readAndCrossCheck(tx, o.salesOrderId);
+      expect(read.get(o.lineId)).toMatchObject({ returnHeld: 1 });
+    });
+  });
+
   it('상자 후 전체 with digital line', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);

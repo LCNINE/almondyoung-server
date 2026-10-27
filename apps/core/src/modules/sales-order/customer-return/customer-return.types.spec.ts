@@ -2,7 +2,9 @@ import { CUSTOMER_RETURN_REASONS } from '@packages/event-contracts/streams';
 import {
   customerReturnArrivals,
   customerReturnItems,
+  customerReturnLines,
   customerReturnReasonEnum,
+  customerReturns,
   customerReturnStatusEnum,
 } from '../../inventory/schema/inventory.schema';
 
@@ -38,5 +40,13 @@ describe('customer_return_items / customer_return_arrivals 스키마', () => {
       ]),
     );
     expect(customerReturnArrivals.idempotencyKey.isUnique).toBe(true);
+  });
+});
+
+describe('K8 PR6b — CS 문 칸', () => {
+  it('반품 기록은 선환불·CS 결정 칸을, 줄은 미도착 수량 칸을 가진다', () => {
+    expect(Object.keys(customerReturns)).toEqual(expect.arrayContaining(['prepayment', 'csResolution']));
+    expect(Object.keys(customerReturnLines)).toContain('missingQty');
+    expect(customerReturnLines.missingQty.notNull).toBe(true);
   });
 });

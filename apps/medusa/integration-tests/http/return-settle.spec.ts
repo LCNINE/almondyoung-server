@@ -3,10 +3,14 @@ import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
 import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import {
   beginReceiveReturnWorkflow,
+  beginReturnOrderWorkflow,
+  confirmOrderEditRequestWorkflow,
+  createReturnShippingMethodWorkflow,
   confirmReturnReceiveWorkflow,
   receiveItemReturnRequestWorkflow,
 } from '@medusajs/medusa/core-flows';
-import { ensureReturnShippingOption } from '../../src/modules/almond-fulfillment/return-shipping-option';
+import { ensureReturnShippingOption, findReturnShippingOptionId } from '../../src/modules/almond-fulfillment/return-shipping-option';
+import { POLICY_SNAPSHOT_KEY } from '../../src/modules/almond-fulfillment/types';
 import { cancelOrderReturn } from '../../src/workflows/orders/returns/cancel-order-return';
 import { ensureReturnReasons } from '../../src/workflows/orders/returns/return-reasons';
 import {
@@ -15,8 +19,25 @@ import {
   type ReturnSettlementRecord,
 } from '../../src/workflows/orders/returns/return-settlement-record';
 import { requestOrderReturn } from '../../src/workflows/orders/returns/request-order-return';
+import { partialCancelOrder } from '../../src/workflows/orders/partial-cancel/partial-cancel-order';
+import { loadOrderView } from '../../src/workflows/orders/settlement/load-order-view';
+import { cancelOpenOrderEdit } from '../../src/workflows/orders/settlement/order-edit-charge';
+import { reconcileOrderWalletRefunds } from '../../src/workflows/orders/settlement/wallet-refund-ledger';
 import { FakeWallet, WALLET_BASE_URL, setupCommerce, placeOrder, loadOrder, Commerce } from './fixtures/partial-cancel-fixture';
 import { CORE_BASE_URL, CORE_INTERNAL_KEY, FakeCore } from './fixtures/return-fixture';
+
+/**
+ * 보류 정산을 택배비·차감 주문 수정 확정에서 끊을 자리(K8 PR6b). core-flows 는 configurable:false getter 로 다시 내보내
+ * jest.spyOn 이 죽는다(return-request.spec 과 같은 이유) — 모듈을 실물로 두고 이 하나만 실물을 감싼 jest.fn 으로 바꾼다.
+ */
+jest.mock('@medusajs/medusa/core-flows', () => {
+  const actual = jest.requireActual('@medusajs/medusa/core-flows');
+  return {
+    __esModule: true,
+    ...actual,
+    confirmOrderEditRequestWorkflow: jest.fn((...args: unknown[]) => actual.confirmOrderEditRequestWorkflow(...args)),
+  };
+});
 
 jest.setTimeout(300 * 1000);
 process.env.WALLET_BASE_URL = WALLET_BASE_URL;
@@ -111,6 +132,30 @@ medusaIntegrationTestRunner({
       return (p.refunds ?? []).map((r: any) => ({ amount: num(r.amount), note: r.note }));
     };
     const balance = async (orderId: string) => num((await loadOrder(getContainer(), orderId)).summary.pending_difference);
+    /** 정산이 읽는 차액(loadOrderView) — 반품 요청이 열린 동안 저장된 summary 와 다르다(Task 1 실측) */
+    const pending = async (orderId: string) => (await loadOrderView(getContainer(), orderId))!.pendingDifference;
+    const creditLines = async (orderId: string) =>
+      ((await loadOrder(getContainer(), orderId)).credit_lines ?? []).map((l: any) => ({
+        amount: num(l.amount),
+        reference: l.reference as string | null,
+        referenceId: l.reference_id as string | null,
+      }));
+    const creditSum = async (orderId: string) => (await creditLines(orderId)).reduce((s, l) => s + l.amount, 0);
+    const chargeMethods = async (orderId: string) =>
+      (await loadOrder(getContainer(), orderId)).shipping_methods
+        .filter((m: any) => m.name === '반품 택배비' || m.name === '반품 차감')
+        .map((m: any) => ({ name: m.name as string, amount: num(m.amount) }))
+        .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name));
+    const prepay = (orderId: string, returnId: string, body: Record<string, unknown>) =>
+      api.post(`/admin/orders/${orderId}/returns/${returnId}/prepay`, body, c.adminHeaders).catch((e: any) => e.response);
+    /** 배송완료 주문에 반품 «전» wallet 직접 환불을 넣고 투영한다 — 반품 요청이 없어 크레딧 +amount 가 붙는다 */
+    const creditBackedExternalRefund = async (lines: Array<{ variant: 'A' | 'B' | 'E'; quantity: number }>, amount: number) => {
+      const order = await deliveredOrder(lines);
+      wallet.addExternalRefund(order.intentId, amount);
+      await reconcileOrderWalletRefunds(getContainer(), order.orderId);
+      expect(await creditSum(order.orderId)).toBe(amount);
+      return order;
+    };
 
     it('변심 1개 수령 → 반품비·깨짐을 빼고 환불, 반품 received, 결과 200', async () => {
       const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 1 }, { variant: 'B', quantity: 1 }]);
@@ -126,6 +171,8 @@ medusaIntegrationTestRunner({
         refundAmount: 24000,
         deduction: { returnShipping: 3000, freeShippingBreak: 3000, roundTrip: 0 },
         feeNotAdjusted: false,
+        prepaidApplied: 0,
+        externalRefundApplied: 0,
         refund: { mode: 'auto', amount: 24000 },
         stage: 'refunded',
       });
@@ -307,7 +354,9 @@ medusaIntegrationTestRunner({
       const res = await settle(orderId, returnId, { requestId: rid('settle'), items: [{ item_id: itemOf('A'), received: 2, dismissed: 0 }] });
 
       expect(res.status).toBe(400);
-      expect(res.data).toEqual(expect.objectContaining({ code: 'return_settle_rejected', reason: 'external_refund_unresolved' }));
+      expect(res.data).toEqual(
+        expect.objectContaining({ code: 'return_settle_rejected', reason: 'external_refund_unresolved', unresolvedAmount: 10000 }),
+      );
       const row = await returnRow(returnId);
       expect(row.status).toBe('requested');
       expect(readReturnSettlementRecord(row.metadata)).toBeNull();
@@ -492,6 +541,487 @@ medusaIntegrationTestRunner({
       expect((await feeMethods(orderId)).map((m: any) => num(m.amount)).sort()).toEqual([3000, 6000]);
       expect(wallet.refunds.map((r) => r.amount)).toEqual([24000, 7000]);
       expect(await balance(orderId)).toBe(0);
+    });
+
+    // ── K8 PR6b — 선환불·외부 상계·보류 차감·미도착 닫기 ─────────────────────────────
+
+    it('선환불 기본값 뒤 정산 → 환불 합 60,000 − 택배비, 마지막 차액 0, 크레딧 합 0, NOT_PAID 0', async () => {
+      // A×2 변심 전량: V 60,000, 택배비 = 반품비 3,000 + 왕복 3,000 → 선환불 기본 54,000
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+      const prepayId = rid('cr');
+      expect((await prepay(orderId, returnId, { requestId: prepayId, memo: '먼저' })).data.amount).toBe(54000);
+
+      const res = await settle(orderId, returnId, { requestId: prepayId, items: [{ item_id: itemOf('A'), received: 2, dismissed: 0 }] });
+
+      expect(res.status).toBe(200);
+      expect(res.data).toEqual(
+        expect.objectContaining({
+          refundAmount: 0,
+          prepaidApplied: 54000,
+          externalRefundApplied: 0,
+          deduction: { returnShipping: 3000, freeShippingBreak: 0, roundTrip: 3000 },
+        }),
+      );
+      expect(readReturnSettlementRecord((await returnRow(returnId)).metadata)).toEqual(
+        expect.objectContaining({ stage: 'refunded', owed: 60000, prepaidApplied: 54000, refundAmount: 0 }),
+      );
+      expect(wallet.refunds.map((r) => r.amount)).toEqual([54000]);
+      expect(await chargeMethods(orderId)).toEqual([{ name: '반품 택배비', amount: 6000 }]);
+      expect(await creditLines(orderId)).toEqual([]);
+      expect(await pending(orderId)).toBe(0);
+      expect(await balance(orderId)).toBe(0);
+      expect(await notPaidCollections(orderId)).toBe(0);
+    });
+
+    it('품목 값 전액 선환불 뒤 정산 → 택배비 0 으로 깎임, 정산 환불 0, 차액 0', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+      const requestId = rid('cr');
+      expect((await prepay(orderId, returnId, { requestId, amount: 60000, memo: '전액' })).status).toBe(200);
+
+      const res = await settle(orderId, returnId, { requestId, items: [{ item_id: itemOf('A'), received: 2, dismissed: 0 }] });
+
+      expect(res.status).toBe(200);
+      expect(res.data).toEqual(
+        expect.objectContaining({ refundAmount: 0, prepaidApplied: 60000, deduction: { returnShipping: 0, freeShippingBreak: 0, roundTrip: 0 } }),
+      );
+      expect(await chargeMethods(orderId)).toEqual([]);
+      expect(await changesTagged(orderId, `return-fee:${requestId}`)).toHaveLength(0);
+      expect(wallet.refunds.map((r) => r.amount)).toEqual([60000]);
+      expect(await pending(orderId)).toBe(0);
+      expect(await creditLines(orderId)).toEqual([]);
+      expect(await notPaidCollections(orderId)).toBe(0);
+    });
+
+    it('선환불이 먼저 Medusa 에 닿고 정산 → 정산이 P 만큼 덜 낸다', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+      const requestId = rid('cr');
+      expect((await prepay(orderId, returnId, { requestId, amount: 10000, memo: '일부 먼저' })).status).toBe(200);
+
+      const res = await settle(orderId, returnId, { requestId, items: [{ item_id: itemOf('A'), received: 2, dismissed: 0 }] });
+
+      expect(res.status).toBe(200);
+      expect(res.data).toEqual(expect.objectContaining({ refundAmount: 44000, prepaidApplied: 10000 }));
+      expect(await ledgerRefunds(orderId)).toEqual([
+        { amount: 10000, note: `return-prepay:${requestId}` },
+        { amount: 44000, note: `return-settle:${requestId}` },
+      ]);
+      expect(await pending(orderId)).toBe(0);
+      expect(await creditLines(orderId)).toEqual([]);
+      expect(await notPaidCollections(orderId)).toBe(0);
+    });
+
+    it('보류 차감 5,000·메모 → «반품 차감» 방법 5,000, 환불이 그만큼 적다 — 택배비와 한 주문 수정', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+      const requestId = rid('cr');
+
+      const res = await settle(orderId, returnId, {
+        requestId,
+        items: [{ item_id: itemOf('A'), received: 2, dismissed: 0 }],
+        hold_deduction: { amount: 5000, memo: '사용 흔적' },
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.data).toEqual(
+        expect.objectContaining({ refundAmount: 49000, deduction: { returnShipping: 3000, freeShippingBreak: 0, roundTrip: 3000, hold: 5000 } }),
+      );
+      expect(readReturnSettlementRecord((await returnRow(returnId)).metadata)).toEqual(
+        expect.objectContaining({ hold: { requested: 5000, memo: '사용 흔적' }, refundAmount: 49000 }),
+      );
+      // 방법 둘이 한 주문 수정(return-fee 태그 하나)에 들어갔다
+      expect(await changesTagged(orderId, `return-fee:${requestId}`)).toEqual([expect.objectContaining({ status: 'confirmed' })]);
+      expect(await chargeMethods(orderId)).toEqual([
+        { name: '반품 차감', amount: 5000 },
+        { name: '반품 택배비', amount: 6000 },
+      ]);
+      expect(wallet.refunds.map((r) => r.amount)).toEqual([49000]);
+      expect(await pending(orderId)).toBe(0);
+      expect(await balance(orderId)).toBe(0);
+      expect(await notPaidCollections(orderId)).toBe(0);
+    });
+
+    it('보류 차감 100,000 → 적용액 = 남은 돈, 환불 0, 기록에 요청·적용', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+
+      const res = await settle(orderId, returnId, {
+        requestId: rid('cr'),
+        items: [{ item_id: itemOf('A'), received: 2, dismissed: 0 }],
+        hold_deduction: { amount: 100000, memo: '전손' },
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.data).toEqual(
+        expect.objectContaining({ refundAmount: 0, deduction: { returnShipping: 3000, freeShippingBreak: 0, roundTrip: 3000, hold: 54000 } }),
+      );
+      expect(readReturnSettlementRecord((await returnRow(returnId)).metadata)).toEqual(
+        expect.objectContaining({
+          stage: 'refunded',
+          hold: { requested: 100000, memo: '전손' },
+          deduction: { returnShipping: 3000, freeShippingBreak: 0, roundTrip: 3000, hold: 54000 },
+          refundAmount: 0,
+        }),
+      );
+      expect(wallet.refundCalls()).toHaveLength(0);
+      expect(await chargeMethods(orderId)).toEqual([
+        { name: '반품 차감', amount: 54000 },
+        { name: '반품 택배비', amount: 6000 },
+      ]);
+      expect(await pending(orderId)).toBe(0);
+      expect(await notPaidCollections(orderId)).toBe(0);
+    });
+
+    it('closesMissing 로 2개 중 1개만 정산 → partially_received, 환불 30,000 − 택배비', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+
+      const res = await settle(orderId, returnId, {
+        requestId: rid('cr'),
+        items: [{ item_id: itemOf('A'), received: 1, dismissed: 0 }],
+        closes_missing: true,
+      });
+
+      // 남는 A 30,000 은 50,000 아래 — 반품비 3,000 + 깨짐 3,000
+      expect(res.status).toBe(200);
+      expect(res.data).toEqual(
+        expect.objectContaining({ refundAmount: 24000, deduction: { returnShipping: 3000, freeShippingBreak: 3000, roundTrip: 0 } }),
+      );
+      const row = await returnRow(returnId);
+      expect(row.status).toBe('partially_received');
+      expect(readReturnSettlementRecord(row.metadata)).toEqual(
+        expect.objectContaining({ closesMissing: true, owed: 30000, items: [{ itemId: itemOf('A'), received: 1, dismissed: 0 }] }),
+      );
+      expect(wallet.refunds.map((r) => r.amount)).toEqual([24000]);
+      expect(await pending(orderId)).toBe(0);
+      expect(await notPaidCollections(orderId)).toBe(0);
+    });
+
+    it('closesMissing 없이 1개만 → 400 items_mismatch — closesMissing 이어도 반품 밖 품목·초과·0 은 items_mismatch', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }, { variant: 'B', quantity: 1 }]);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+
+      for (const body of [
+        { items: [{ item_id: itemOf('A'), received: 1, dismissed: 0 }] },
+        { items: [{ item_id: itemOf('B'), received: 1, dismissed: 0 }], closes_missing: true },
+        { items: [{ item_id: itemOf('A'), received: 2, dismissed: 1 }], closes_missing: true },
+        { items: [{ item_id: itemOf('A'), received: 0, dismissed: 0 }], closes_missing: true },
+      ]) {
+        const res = await settle(orderId, returnId, { requestId: rid('cr'), ...body });
+        expect(res.status).toBe(400);
+        expect(res.data).toEqual(expect.objectContaining({ code: 'return_settle_rejected', reason: 'items_mismatch' }));
+      }
+      expect((await returnRow(returnId)).status).toBe('requested');
+      expect(wallet.refundCalls()).toHaveLength(0);
+    });
+
+    it('선환불한 반품을 closesMissing 으로 정산 → 400 prepaid_closes_missing, 반품 그대로(N15 — 상계 뒤 차액이 양수가 될 수 있다)', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+      const requestId = rid('cr');
+      expect((await prepay(orderId, returnId, { requestId, memo: '먼저' })).status).toBe(200);
+
+      const res = await settle(orderId, returnId, {
+        requestId,
+        items: [{ item_id: itemOf('A'), received: 1, dismissed: 0 }],
+        closes_missing: true,
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.data).toEqual(expect.objectContaining({ type: 'not_allowed', code: 'return_settle_rejected', reason: 'prepaid_closes_missing' }));
+      expect(res.data).not.toHaveProperty('unresolvedAmount');
+      const row = await returnRow(returnId);
+      expect(row.status).toBe('requested');
+      expect(readReturnSettlementRecord(row.metadata)).toBeNull();
+      expect(await changesTagged(orderId, `return-receive:${requestId}`)).toHaveLength(0);
+    });
+
+    it('외부 환불 있는 주문 + alreadyRefundedAmount → 그만큼 상계, 뒤의 부분취소가 그 외부 환불을 다시 묻지 않는다', async () => {
+      // A×2 배송완료, E 미출고. 반품 요청 «뒤» 외부 환불 — 열린 반품 요청이 흡수해 크레딧이 안 붙는다(Task 1), 상계 라인도 0
+      const { orderId, intentId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }, { variant: 'E', quantity: 1 }], ['A']);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+      wallet.addExternalRefund(intentId, 10000);
+
+      const res = await settle(orderId, returnId, {
+        requestId: rid('cr'),
+        items: [{ item_id: itemOf('A'), received: 2, dismissed: 0 }],
+        already_refunded_amount: 10000,
+      });
+
+      // 남는 E 10,000 — 반품비 3,000 + 깨짐 3,000
+      expect(res.status).toBe(200);
+      expect(res.data).toEqual(
+        expect.objectContaining({
+          refundAmount: 44000,
+          externalRefundApplied: 10000,
+          deduction: { returnShipping: 3000, freeShippingBreak: 3000, roundTrip: 0 },
+        }),
+      );
+      expect(readReturnSettlementRecord((await returnRow(returnId)).metadata)).toEqual(expect.objectContaining({ externalRefundApplied: 10000 }));
+      expect(await pending(orderId)).toBe(0);
+      expect(await creditLines(orderId)).toEqual([]);
+
+      const pc = await api
+        .post(
+          `/admin/orders/${orderId}/partial-cancel`,
+          { requestId: rid('pc'), items: [{ item_id: itemOf('E'), quantity: 1 }], reasonCode: 'CUSTOMER_REQUEST', requestedBy: 'operator' },
+          c.adminHeaders,
+        )
+        .catch((e: any) => e.response);
+      // 외부 환불을 다시 묻지 않는다(external_refund_unresolved 아님). 금액은 N13 의 알려진 잔여 그대로다 — A×2+E «반품 먼저·취소
+      // 나중»은 반품이 받은 깨짐 3,000 을 E 취소가 돌려준다(PR 6 (a-2), 고객 유리, 이 PR 에서 고치지 않는다)
+      expect(pc.status).toBe(200);
+      expect(pc.data).toEqual(expect.objectContaining({ refundAmount: 13000, shippingDelta: -3000, externalRefundApplied: 0 }));
+      expect(wallet.refunds.map((r) => r.amount)).toEqual([10000, 44000, 13000]);
+      expect(await pending(orderId)).toBe(0);
+      // 반품 요청 «뒤» 외부 환불은 크레딧이 없어 상계 라인도 없다. 남은 +3,000 은 부분취소의 배송비 환불 몫에
+      // refundPaymentWorkflow 가 붙인 크레딧이다(부분취소의 정상 장부)
+      expect((await creditLines(orderId)).filter((l) => l.reference === 'return-offset')).toEqual([]);
+      expect(await creditSum(orderId)).toBe(3000);
+      expect(await notPaidCollections(orderId)).toBe(0);
+    });
+
+    it('alreadyRefundedAmount 가 미해결보다 크면 400 external_refund_exceeds, 외부 환불이 없는데 주면 external_refund_absent', async () => {
+      const { orderId, intentId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+      const items = [{ item_id: itemOf('A'), received: 2, dismissed: 0 }];
+
+      const absent = await settle(orderId, returnId, { requestId: rid('cr'), items, already_refunded_amount: 5000 });
+      expect(absent.status).toBe(400);
+      expect(absent.data).toEqual(
+        expect.objectContaining({ code: 'return_settle_rejected', reason: 'external_refund_absent', unresolvedAmount: 0 }),
+      );
+
+      wallet.addExternalRefund(intentId, 10000);
+      const exceeds = await settle(orderId, returnId, { requestId: rid('cr'), items, already_refunded_amount: 20000 });
+      expect(exceeds.status).toBe(400);
+      expect(exceeds.data).toEqual(
+        expect.objectContaining({ code: 'return_settle_rejected', reason: 'external_refund_exceeds', unresolvedAmount: 10000 }),
+      );
+
+      const row = await returnRow(returnId);
+      expect(row.status).toBe('requested');
+      expect(readReturnSettlementRecord(row.metadata)).toBeNull();
+      expect(wallet.refundCalls()).toHaveLength(0);
+    });
+
+    it('반품 «전» 외부 환불(크레딧 +10,000) + alreadyRefundedAmount 10,000 → 상계 −10,000, 마지막 차액 0', async () => {
+      const { orderId, itemOf } = await creditBackedExternalRefund([{ variant: 'A', quantity: 2 }], 10000);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+      const requestId = rid('cr');
+
+      const res = await settle(orderId, returnId, {
+        requestId,
+        items: [{ item_id: itemOf('A'), received: 2, dismissed: 0 }],
+        already_refunded_amount: 10000,
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.data).toEqual(expect.objectContaining({ refundAmount: 44000, externalRefundApplied: 10000 }));
+      expect((await creditLines(orderId)).filter((l) => l.reference === 'return-offset')).toEqual([
+        { amount: -10000, reference: 'return-offset', referenceId: requestId },
+      ]);
+      expect(await creditSum(orderId)).toBe(0);
+      expect(wallet.refunds.map((r) => r.amount)).toEqual([10000, 44000]);
+      expect(await pending(orderId)).toBe(0);
+      expect(await balance(orderId)).toBe(0);
+      expect(await notPaidCollections(orderId)).toBe(0);
+    });
+
+    it('received 에서 끊긴 보류 정산을 같은 요청으로 이어 가면 «반품 차감»·상계 라인이 하나씩', async () => {
+      const { orderId, itemOf } = await creditBackedExternalRefund([{ variant: 'A', quantity: 2 }], 10000);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+      const requestId = rid('cr');
+      const body = {
+        requestId,
+        items: [{ item_id: itemOf('A'), received: 2, dismissed: 0 }],
+        hold_deduction: { amount: 5000, memo: '사용 흔적' },
+        already_refunded_amount: 10000,
+      };
+      // 상계 라인을 넣은 «뒤» 택배비·차감 주문 수정 확정에서 끊는다
+      jest.mocked(confirmOrderEditRequestWorkflow).mockImplementationOnce((() => ({
+        run: async () => {
+          throw new Error('확정 직전 끊김');
+        },
+      })) as unknown as typeof confirmOrderEditRequestWorkflow);
+
+      const cut = await settle(orderId, returnId, body);
+      expect(cut.status).toBe(500);
+      expect(readReturnSettlementRecord((await returnRow(returnId)).metadata)?.stage).toBe('received');
+      expect((await creditLines(orderId)).filter((l) => l.reference === 'return-offset')).toHaveLength(1);
+      expect(await chargeMethods(orderId)).toEqual([]);
+      expect(wallet.refundCalls()).toHaveLength(0);
+
+      const done = await settle(orderId, returnId, body);
+      expect(done.status).toBe(200);
+      expect(done.data).toEqual(
+        expect.objectContaining({
+          refundAmount: 39000,
+          externalRefundApplied: 10000,
+          deduction: { returnShipping: 3000, freeShippingBreak: 0, roundTrip: 3000, hold: 5000 },
+        }),
+      );
+      expect(await settle(orderId, returnId, body)).toEqual(expect.objectContaining({ status: 200 }));
+      expect((await creditLines(orderId)).filter((l) => l.reference === 'return-offset')).toEqual([
+        { amount: -10000, reference: 'return-offset', referenceId: requestId },
+      ]);
+      expect(await chargeMethods(orderId)).toEqual([
+        { name: '반품 차감', amount: 5000 },
+        { name: '반품 택배비', amount: 6000 },
+      ]);
+      expect(wallet.refunds.map((r) => r.amount)).toEqual([10000, 39000]);
+      expect(await pending(orderId)).toBe(0);
+      expect(await creditSum(orderId)).toBe(0);
+      expect(await notPaidCollections(orderId)).toBe(0);
+    });
+
+    it('선환불이 있는데 환불 안 끝난 부분취소 기록이 있으면 500, 반품 그대로', async () => {
+      // A×2 배송완료, E 미출고. A×2 반품 요청 → 선환불 → E 부분취소의 환불이 502 로 밀려 기록 edited
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }, { variant: 'E', quantity: 1 }], ['A']);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+      const requestId = rid('cr');
+      expect((await prepay(orderId, returnId, { requestId, amount: 10000, memo: '먼저' })).status).toBe(200);
+      wallet.failNextRefund = true;
+      await expect(
+        partialCancelOrder(getContainer(), { orderId, requestId: rid('pc'), items: [{ itemId: itemOf('E'), quantity: 1 }] }),
+      ).rejects.toThrow();
+      const callsBefore = wallet.refundCalls().length;
+
+      const res = await settle(orderId, returnId, { requestId, items: [{ item_id: itemOf('A'), received: 2, dismissed: 0 }] });
+
+      expect(res.status).toBe(500);
+      const row = await returnRow(returnId);
+      expect(row.status).toBe('requested');
+      expect(readReturnSettlementRecord(row.metadata)).toBeNull();
+      expect(await changesTagged(orderId, `return-receive:${requestId}`)).toHaveLength(0);
+      expect(wallet.refundCalls()).toHaveLength(callsBefore);
+    });
+
+    it('CS 칸을 camelCase 로 보내면 400 invalid_data — 차감·상계 없이 정산하지 않는다', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+      const items = [{ item_id: itemOf('A'), received: 2, dismissed: 0 }];
+
+      for (const [extra, snake] of [
+        [{ holdDeduction: { amount: 5000, memo: '흔적' } }, 'hold_deduction'],
+        [{ alreadyRefundedAmount: 0 }, 'already_refunded_amount'],
+        [{ closesMissing: true }, 'closes_missing'],
+      ] as const) {
+        const res = await settle(orderId, returnId, { requestId: rid('cr'), items, ...extra });
+        expect(res.status).toBe(400);
+        expect(res.data.type).toBe('invalid_data');
+        expect(res.data.message).toContain(snake);
+      }
+      const row = await returnRow(returnId);
+      expect(row.status).toBe('requested');
+      expect(readReturnSettlementRecord(row.metadata)).toBeNull();
+      expect(wallet.refundCalls()).toHaveLength(0);
+    });
+
+    it('같은 requestId 에 보류 차감액만 다르면 400 request_id_conflict', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+      const requestId = rid('cr');
+      const items = [{ item_id: itemOf('A'), received: 2, dismissed: 0 }];
+      expect((await settle(orderId, returnId, { requestId, items, hold_deduction: { amount: 5000, memo: '흔적' } })).status).toBe(200);
+
+      // 메모는 해시 밖 — 같은 금액·다른 메모는 같은 요청이다
+      const sameAmount = await settle(orderId, returnId, { requestId, items, hold_deduction: { amount: 5000, memo: '다른 메모' } });
+      expect(sameAmount.status).toBe(200);
+      const res = await settle(orderId, returnId, { requestId, items, hold_deduction: { amount: 3000, memo: '흔적' } });
+      expect(res.status).toBe(400);
+      expect(res.data).toEqual(expect.objectContaining({ code: 'return_settle_rejected', reason: 'request_id_conflict' }));
+      const none = await settle(orderId, returnId, { requestId, items });
+      expect(none.status).toBe(400);
+      expect(none.data.reason).toBe('request_id_conflict');
+      expect(wallet.refundCalls()).toHaveLength(1);
+    });
+
+    /** 배포 전 주문을 흉내 — 배송 방법 data 의 스냅샷을 지운다(JSON 병합 갱신이라 키를 null 로). 택배비 계획은 NO_SNAPSHOT */
+    const wipeSnapshots = async (orderId: string) => {
+      const o = await loadOrder(getContainer(), orderId);
+      await getContainer()
+        .resolve(Modules.ORDER)
+        .updateOrderShippingMethods(o.shipping_methods.map((m: any) => ({ id: m.id, data: { [POLICY_SNAPSHOT_KEY]: null } })));
+    };
+
+    it('스냅샷 없는 주문의 보류 차감 5,000 → 택배비 0·feeNotAdjusted, «반품 차감»이 원래 방법 옵션에 붙는다, 차액 0', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+      await wipeSnapshots(orderId);
+      const requestId = rid('cr');
+
+      const res = await settle(orderId, returnId, {
+        requestId,
+        items: [{ item_id: itemOf('A'), received: 2, dismissed: 0 }],
+        hold_deduction: { amount: 5000, memo: '사용 흔적' },
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.data).toEqual(
+        expect.objectContaining({
+          refundAmount: 55000,
+          feeNotAdjusted: true,
+          deduction: { returnShipping: 0, freeShippingBreak: 0, roundTrip: 0, hold: 5000 },
+        }),
+      );
+      // 반품 배송 방법(return_id)·청구 방법이 아닌 주문의 원래 배송 방법
+      const originals = (await loadOrderView(getContainer(), orderId))!.shippingMethods.filter(
+        (m) => !m.isSettlementCharge && !m.isReturnExchangeOrClaimShipping,
+      );
+      expect(originals).toHaveLength(1);
+      expect(readReturnSettlementRecord((await returnRow(returnId)).metadata)).toEqual(
+        expect.objectContaining({ stage: 'refunded', chargeShippingOptionId: originals[0].shippingOptionId }),
+      );
+      expect(await chargeMethods(orderId)).toEqual([{ name: '반품 차감', amount: 5000 }]);
+      expect(wallet.refunds.map((r) => r.amount)).toEqual([55000]);
+      expect(await pending(orderId)).toBe(0);
+      expect(await notPaidCollections(orderId)).toBe(0);
+    });
+
+    it('옵션 있는 원래 배송 방법이 없는 주문의 보류 차감 → 400 no_charge_shipping_option, 수령 전에 멈춘다', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const returnId = await requestReturn(orderId, itemOf('A'), 2);
+      await wipeSnapshots(orderId);
+      const o = await loadOrder(getContainer(), orderId);
+      await getContainer()
+        .resolve(Modules.ORDER)
+        .updateOrderShippingMethods(o.shipping_methods.map((m: any) => ({ id: m.id, shipping_option_id: null })));
+      const requestId = rid('cr');
+
+      const res = await settle(orderId, returnId, {
+        requestId,
+        items: [{ item_id: itemOf('A'), received: 2, dismissed: 0 }],
+        hold_deduction: { amount: 5000, memo: '사용 흔적' },
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.data).toEqual(expect.objectContaining({ code: 'return_settle_rejected', reason: 'no_charge_shipping_option' }));
+      const row = await returnRow(returnId);
+      expect(row.status).toBe('requested');
+      expect(readReturnSettlementRecord(row.metadata)).toBeNull();
+      expect(await changesTagged(orderId, `return-receive:${requestId}`)).toEqual([]);
+      expect(wallet.refundCalls()).toHaveLength(0);
+    });
+
+    it('cancelOpenOrderEdit 는 주문 수정만 버린다 — 열린 반품 요청 변경과 그 반품 배송 방법은 그대로', async () => {
+      const { orderId } = await deliveredOrder([{ variant: 'A', quantity: 1 }]);
+      const orderModule = getContainer().resolve(Modules.ORDER);
+      const { result: change } = await beginReturnOrderWorkflow(getContainer()).run({ input: { order_id: orderId } });
+      await createReturnShippingMethodWorkflow(getContainer()).run({
+        input: { return_id: change.return_id!, shipping_option_id: (await findReturnShippingOptionId(getContainer()))!, custom_amount: 0 },
+      });
+      const actions = await orderModule.listOrderChangeActions({ order_change_id: change.id }, { select: ['action', 'reference_id'] });
+      const added = actions.filter((a) => a.action === 'SHIPPING_ADD').map((a) => a.reference_id as string);
+      expect(added).toHaveLength(1);
+
+      await cancelOpenOrderEdit(getContainer(), orderId);
+
+      expect(await orderModule.listOrderShippingMethods({ id: added }, { select: ['id'] })).toHaveLength(1);
+      const [still] = await orderModule.listOrderChanges({ id: change.id }, { select: ['id', 'status'] });
+      expect(still?.status).toBe('pending');
     });
   },
 });

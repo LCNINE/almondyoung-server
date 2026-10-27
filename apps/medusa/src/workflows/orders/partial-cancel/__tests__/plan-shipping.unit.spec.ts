@@ -1,4 +1,5 @@
-import { planShipping, ShippingMethodView, ShippingLineView } from '../plan-shipping';
+import { toShippingMethodView } from '../../settlement/load-order-view';
+import { planShipping, RETURN_HOLD_DEDUCTION_NAME, SETTLEMENT_CHARGE_NAMES, ShippingMethodView, ShippingLineView } from '../plan-shipping';
 import type { ShippingPolicySnapshot } from '../../../../modules/almond-fulfillment/types';
 
 const cond: ShippingPolicySnapshot = { policy: { type: 'conditional_free', baseFee: 3000, freeThreshold: 50000 }, shippingGroupCode: 'cond', shippingProfileId: 'sp_cond' };
@@ -27,6 +28,17 @@ describe('planShipping', () => {
     const lines = [l('a', 'sp_cond', 30000, 1), l('b', 'sp_cond', 30000, 0)];
     const ret = { ...m('r', null, 3000), isSettlementCharge: true };
     const p = planShipping({ ...base, methods: [m('c', cond, 0), ret], lines });
+    expect(p.adjustable).toBe(true);
+    expect(p).toEqual(planShipping({ ...base, methods: [m('c', cond, 0)], lines }));
+  });
+
+  it('반품 차감 방법은 원래 방법이 아니다', () => {
+    expect(RETURN_HOLD_DEDUCTION_NAME).toBe('반품 차감');
+    expect(SETTLEMENT_CHARGE_NAMES).toContain(RETURN_HOLD_DEDUCTION_NAME);
+    const lines = [l('a', 'sp_cond', 30000, 1), l('b', 'sp_cond', 30000, 0)];
+    const hold = toShippingMethodView({ id: 'h', shipping_option_id: 'so_c', amount: 5000, name: RETURN_HOLD_DEDUCTION_NAME, data: null });
+    expect(hold.isSettlementCharge).toBe(true);
+    const p = planShipping({ ...base, methods: [m('c', cond, 0), hold], lines });
     expect(p.adjustable).toBe(true);
     expect(p).toEqual(planShipping({ ...base, methods: [m('c', cond, 0)], lines }));
   });

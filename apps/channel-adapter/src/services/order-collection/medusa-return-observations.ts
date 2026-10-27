@@ -2,13 +2,14 @@ import {
   CHANNEL_CANCEL_REFUND_MODES,
   CUSTOMER_RETURN_REASONS,
   type ChannelCancelRefundMode,
+  type ChannelReturnPrepaidPayload,
   type ChannelReturnSettledPayload,
   type CustomerReturnReason,
 } from '@packages/event-contracts/streams';
 import type { MedusaOrder, MedusaReturn } from '../../adapters/medusa/medusa.client';
 import type { LifecycleObservation } from './channel-order-source.interface';
 
-export type SkippedReturn = { returnId: string; reason: 'unconfirmed' | 'no_record' | 'no_items' | 'no_settlement_record' };
+export type SkippedReturn = { returnId: string; reason: 'unconfirmed' | 'no_record' | 'no_items' | 'no_settlement_record' | 'no_prepay_record' };
 
 interface AlmondReturnRecord {
   requestId: string;
@@ -79,22 +80,49 @@ function readSettlement(metadata: MedusaReturn['metadata']): SettlementRecord | 
     lines.push({ channelOrderItemId: item.itemId, received: item.received, dismissed: item.dismissed });
   }
   if (!isRecord(deduction)) return null;
-  const { returnShipping, freeShippingBreak, roundTrip } = deduction;
+  const { returnShipping, freeShippingBreak, roundTrip, hold } = deduction;
   if (!isNonNegativeInt(returnShipping) || !isNonNegativeInt(freeShippingBreak) || !isNonNegativeInt(roundTrip)) {
     return null;
   }
+  // K8 PR6b 의 새 칸 — 없으면 칸을 생략하고(옛 기록), 있는데 모양이 어긋나면 돈을 지어내지 않는다
+  if (hold !== undefined && !isNonNegativeInt(hold)) return null;
+  const { prepaidApplied, externalRefundApplied } = raw;
+  if (prepaidApplied !== undefined && !isNonNegativeInt(prepaidApplied)) return null;
+  if (externalRefundApplied !== undefined && !isNonNegativeInt(externalRefundApplied)) return null;
   if (typeof feeNotAdjusted !== 'boolean' || !isNonNegativeInt(refundAmount)) return null;
   if (typeof refundedAt !== 'string' || Number.isNaN(Date.parse(refundedAt))) return null;
   if (!isRefundMode(refundMode)) return null;
   return {
     requestId,
     refundAmount,
-    deduction: { returnShipping, freeShippingBreak, roundTrip },
+    deduction: { returnShipping, freeShippingBreak, roundTrip, ...(hold !== undefined ? { hold } : {}) },
     feeNotAdjusted,
     refundMode,
     settledAt: new Date(refundedAt).toISOString(),
     items: lines,
+    ...(prepaidApplied !== undefined ? { prepaidAmount: prepaidApplied } : {}),
+    ...(externalRefundApplied !== undefined ? { externalRefundApplied } : {}),
   };
+}
+
+type PrepayRecord = Omit<ChannelReturnPrepaidPayload, 'orderId' | 'salesChannel' | 'externalOrderId' | 'returnId'>;
+
+/**
+ * `return.metadata.almondReturnPrepay` 중 환불까지 끝난(`stage === 'refunded'`) 기록을 읽는다. 모양은 Medusa 쪽
+ * `return-prepay-record.ts` 가 정한다. 아직 요청 단계면 undefined, 끝났다는데 모양이 어긋나면 null.
+ * 기록의 amount 는 «이번에 선환불할(한) 금액»이다 — 이 관측이 곧 그 금액의 사실이다.
+ */
+function readPrepay(metadata: MedusaReturn['metadata']): PrepayRecord | null | undefined {
+  const raw = metadata?.almondReturnPrepay;
+  if (raw === undefined || raw === null) return undefined;
+  if (!isRecord(raw)) return null;
+  if (raw.stage !== 'refunded') return undefined;
+  const { requestId, amount, refundedAt, refundMode } = raw;
+  if (typeof requestId !== 'string' || requestId === '') return null;
+  if (typeof amount !== 'number' || !Number.isInteger(amount) || amount < 1) return null;
+  if (typeof refundedAt !== 'string' || Number.isNaN(Date.parse(refundedAt))) return null;
+  if (!isRefundMode(refundMode)) return null;
+  return { requestId, amount, refundMode, prepaidAt: new Date(refundedAt).toISOString() };
 }
 
 /**
@@ -153,6 +181,19 @@ export function medusaReturnObservations(order: MedusaOrder): {
       },
       rawEvent: { externalOrderId: order.id, returnId, status: ret.status },
     });
+
+    // 선환불 끝 — requested 뒤, settled 앞. 정산 전에 나간 돈이라 반품 status 와 무관하게 읽는다.
+    const prepay = readPrepay(ret.metadata);
+    if (prepay === null) {
+      skipped.push({ returnId, reason: 'no_prepay_record' });
+    } else if (prepay) {
+      observations.push({
+        eventType: 'ChannelReturnPrepaid',
+        eventKey: `return:${returnId}:prepaid`,
+        payload: { returnId, ...prepay },
+        rawEvent: { externalOrderId: order.id, returnId, status: ret.status },
+      });
+    }
 
     if (ret.status === 'canceled') {
       observations.push({

@@ -1,5 +1,5 @@
 import type { MedusaContainer } from '@medusajs/framework/types';
-import { ChangeActionType, Modules, OrderChangeStatus } from '@medusajs/framework/utils';
+import { ChangeActionType, Modules, OrderChangeStatus, OrderChangeType } from '@medusajs/framework/utils';
 import {
   beginOrderEditOrderWorkflow,
   cancelBeginOrderEditWorkflow,
@@ -26,32 +26,71 @@ export async function addChargeShippingMethod(
 }
 
 /**
- * 청구 하나만 담은 주문 수정을 연다 → 배송 방법 추가 → 이름 바꾸기 → request → confirm.
+ * 정산 청구만 담은 주문 수정을 연다 → 청구마다 배송 방법 추가 → 이름 바꾸기 → request → confirm.
+ * 청구 여럿(반품 택배비·반품 차감)은 한 수정에 함께 들어간다 — 하나만 확정되고 끊기는 창이 없다. 0 원 몫은 건너뛰고,
+ * 남는 청구가 없으면 수정을 열지 않는다.
  * 확정 전 실패는 열린 수정을 버려 주문을 원래대로 둔다. internal_note 의 태그로 끊긴 수정을 찾는다(ensureNoDanglingChange).
  */
 export async function addSettlementCharge(
   container: MedusaContainer,
-  input: { orderId: string; tag: string; shippingOptionId: string; amount: number; name: string; actorId?: string },
+  input: {
+    orderId: string;
+    tag: string;
+    shippingOptionId: string;
+    charges: Array<{ name: string; amount: number }>;
+    actorId?: string;
+  },
 ): Promise<void> {
+  const charges = input.charges.filter((c) => c.amount > 0);
+  if (charges.length === 0) return;
   const { result: change } = await beginOrderEditOrderWorkflow(container).run({
     input: { order_id: input.orderId, created_by: input.actorId, internal_note: input.tag },
   });
   try {
-    await addChargeShippingMethod(container, {
-      orderId: input.orderId,
-      orderChangeId: change.id,
-      shippingOptionId: input.shippingOptionId,
-      amount: input.amount,
-      name: input.name,
-    });
+    // 차례로 더한다 — 이름 바꾸기가 «방금 더한» 방법(마지막 SHIPPING_ADD)을 찾는다
+    for (const c of charges) {
+      await addChargeShippingMethod(container, {
+        orderId: input.orderId,
+        orderChangeId: change.id,
+        shippingOptionId: input.shippingOptionId,
+        amount: c.amount,
+        name: c.name,
+      });
+    }
     await requestOrderEditRequestWorkflow(container).run({ input: { order_id: input.orderId, requested_by: input.actorId } });
     await confirmOrderEditRequestWorkflow(container).run({ input: { order_id: input.orderId, confirmed_by: input.actorId } });
   } catch (error) {
-    await cancelBeginOrderEditWorkflow(container)
-      .run({ input: { order_id: input.orderId } })
-      .catch(() => undefined);
+    await cancelOpenOrderEdit(container, input.orderId).catch(() => undefined);
     throw error instanceof Error ? error : new Error(`정산 청구 주문 수정 실패: ${describeError(error)}`);
   }
+}
+
+/**
+ * 열린 주문 수정(pending·requested)을 버린다 — 그 수정이 더한 배송 방법을 먼저 지우고 cancelBeginOrderEditWorkflow 를 부른다.
+ * Medusa 2.13.4 의 cancelBeginOrderEditWorkflow 는 SHIPPING_ADD «액션»의 id 를 배송 방법 id 자리에 넘겨 아무것도 지우지 않는다
+ * (core-flows order-edit/cancel-begin-order-edit.js). 남은 방법은 다음 수정이 같은 버전으로 확정될 때 주문에 다시 나타난다
+ * (K8 PR6b 실측: 끊긴 «반품 택배비»·«반품 차감»이 이어 간 수정 뒤 두 벌로 보였다). 지우기를 먼저 한다 — 버리기 뒤에 끊기면
+ * 지울 id 를 다시 찾을 길이 없다. 버리기가 실패해도 수정은 열린 채라 다음 시도가 이 함수를 다시 탄다.
+ * 지우는 것은 «주문 수정»(change_type edit — 버리는 바로 그 변경)이 더한 방법뿐이다. 같은 주문의 열린 반품·교환·클레임 변경이
+ * 더한 배송 방법(반품 배송 등)은 그 변경의 것이라 건드리지 않는다. 열린 주문 수정이 없으면 아무것도 하지 않는다 —
+ * cancelBeginOrderEditWorkflow 는 change_type 을 보지 않고 열린 변경 하나를 지운다(열린 반품 요청이면 그것을 지운다).
+ */
+export async function cancelOpenOrderEdit(container: MedusaContainer, orderId: string): Promise<void> {
+  const orderModule = container.resolve(Modules.ORDER);
+  const changes = await orderModule.listOrderChanges({ order_id: orderId }, { select: ['id', 'status', 'change_type'] });
+  const open = changes.filter(
+    (ch) =>
+      ch.change_type === OrderChangeType.EDIT &&
+      (ch.status === OrderChangeStatus.PENDING || ch.status === OrderChangeStatus.REQUESTED),
+  );
+  if (open.length === 0) return;
+  const actions = await orderModule.listOrderChangeActions(
+    { order_change_id: open.map((ch) => ch.id) },
+    { select: ['id', 'action', 'reference_id'] },
+  );
+  const added = actions.flatMap((a) => (a.action === ChangeActionType.SHIPPING_ADD && a.reference_id ? [a.reference_id] : []));
+  if (added.length > 0) await orderModule.softDeleteOrderShippingMethods(added);
+  await cancelBeginOrderEditWorkflow(container).run({ input: { order_id: orderId } });
 }
 
 /**

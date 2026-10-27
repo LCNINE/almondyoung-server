@@ -441,6 +441,19 @@ describeIfDb('readLineQuantities — SKU 층 청구 사실 (K6 PR3a)', () => {
     });
   });
 
+  it('미도착으로 닫은 1개는 claimable 로 돌아온다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { line } = await seedSimple(tx);
+      await insertCustomerReturn(tx, {
+        salesOrderId: line.salesOrderId,
+        status: 'expected',
+        lines: [{ salesOrderLineId: line.lineId, quantity: 2, missingQty: 1 }],
+      });
+
+      expect(await onlySku(tx, line)).toMatchObject(claims([2, 1, 0, 0, 1]));
+    });
+  });
+
   it('settled customer return counts as consumed', async () => {
     await inRollbackTx(db, async (tx) => {
       const { line } = await seedSimple(tx);

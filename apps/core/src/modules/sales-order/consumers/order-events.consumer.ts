@@ -390,6 +390,40 @@ export class OrderEventsConsumer {
     await this.customerReturns.recordSettlementFailed(payload);
   }
 
+  /**
+   * 반품 선환불 결과 (K8 PR6b). 성공은 선환불 칸을 `done` 으로(반품 상태와 무관), 실패는 마지막 실패를 적는다.
+   * order_events 에 적지 않는다(반품 정산 결과 핸들러와 같은 이유).
+   */
+  @On(ORDER_STREAM, 'ChannelReturnPrepaid')
+  @RetryPolicy({ nonRetryableErrors: [NotFoundError, BadRequestError] })
+  async handleChannelReturnPrepaid(
+    @EventPayload() payload: EventPayloadOf<typeof ORDER_STREAM, 'ChannelReturnPrepaid'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof ORDER_STREAM, 'ChannelReturnPrepaid'>,
+  ) {
+    this.logger.log(
+      `[ChannelReturnPrepaid] ${payload.salesChannel}/${payload.externalOrderId} return=${payload.returnId} amount=${payload.amount}`,
+      {
+        correlationId: envelope.correlationId,
+      },
+    );
+    await this.customerReturns.recordPrepaid(payload);
+  }
+
+  @On(ORDER_STREAM, 'ChannelReturnPrepayFailed')
+  @RetryPolicy({ nonRetryableErrors: [NotFoundError, BadRequestError] })
+  async handleChannelReturnPrepayFailed(
+    @EventPayload() payload: EventPayloadOf<typeof ORDER_STREAM, 'ChannelReturnPrepayFailed'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof ORDER_STREAM, 'ChannelReturnPrepayFailed'>,
+  ) {
+    this.logger.log(
+      `[ChannelReturnPrepayFailed] ${payload.requestId} return=${payload.returnId} ${payload.failureCode} retryable=${payload.retryable}`,
+      {
+        correlationId: envelope.correlationId,
+      },
+    );
+    await this.customerReturns.recordPrepayFailed(payload);
+  }
+
   @On(ORDER_STREAM, 'OrderRefundCreated')
   @RetryPolicy({ nonRetryableErrors: [NotFoundException] })
   async handleOrderRefundCreated(

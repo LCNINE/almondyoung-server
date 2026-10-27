@@ -10,7 +10,7 @@ import { InventoryCommandService } from '../../inventory/core/services/inventory
 import { enqueueSalesOrderClaimProgress } from '../common/claim-progress';
 import { deliveredParcelsSql } from '../line-quantities/line-quantities.sql';
 import { transitionCustomerReturn } from './customer-return-transition';
-import { enqueueSettleChannelReturn, toSettleItems } from './customer-return-settle-command';
+import { enqueueSettleChannelReturn, loadSettleLines, toSettleItems } from './customer-return-settle-command';
 import { CustomerReturnReader, CustomerReturnView } from './customer-return.reader';
 import type { CustomerReturn, CustomerReturnSettlement, CustomerReturnStatus } from './customer-return.types';
 
@@ -40,9 +40,6 @@ type ReturnItemRow = {
   acceptedQty: number | null;
   rejectedQty: number | null;
   heldQty: number | null;
-  customerReturnLineId: string;
-  channelOrderItemId: string;
-  lineQuantity: number;
 };
 
 /**
@@ -110,6 +107,8 @@ export class CustomerReturnReceivingManager {
           }
           continue;
         }
+        // 미도착으로 닫은 반품은 새 소포를 받지 않는다(N8) — 닫기 전에 받은 키의 재전송만 위에서 그대로 돌려준다
+        if (record.csResolution?.missing) throw new ConflictError('미도착으로 닫은 반품입니다');
         const target = itemById.get(item.customerReturnItemId);
         const sum = (arrived.get(item.customerReturnItemId) ?? 0) + item.quantity;
         if (target && sum > target.expectedQty) {
@@ -225,8 +224,9 @@ export class CustomerReturnReceivingManager {
         trx,
         items.map((item) => item.id),
       );
-      // 부분 도착은 이 PR 에서 검수하지 않는다(N7) — «미도착으로 닫기»가 PR 6b 다
-      const short = items.find((item) => (arrived.get(item.id) ?? 0) < item.expectedQty);
+      // 부분 도착은 «미도착으로 닫기»(PR 6b N8) 뒤에만 검수한다 — 닫혔으면 «합 = 도착»만 본다
+      const closesMissing = record.csResolution?.missing !== undefined;
+      const short = closesMissing ? undefined : items.find((item) => (arrived.get(item.id) ?? 0) < item.expectedQty);
       if (short) {
         throw new BadRequestError(
           `아직 도착하지 않은 수량이 있습니다 — item ${short.id}: ${arrived.get(short.id) ?? 0}/${short.expectedQty}`,
@@ -273,7 +273,7 @@ export class CustomerReturnReceivingManager {
       }
 
       if (input.items.some((item) => item.held > 0)) {
-        // 환불 보류 — 명령도 정산 칸도 없다. 보류 정산은 PR 6b 가 연다
+        // 환불 보류 — 명령도 정산 칸도 없다. CS 의 보류 정산(`CustomerReturnCsManager.settleHeld`)이 연다
         await this.transition(trx, record.id, 'held', { inspectedAt: now });
         return this.reader.findById(record.id, trx);
       }
@@ -284,15 +284,19 @@ export class CustomerReturnReceivingManager {
         startedAt: now.toISOString(),
         lastIssuedAt: now.toISOString(),
         attempts: 1,
+        issues: 1,
         lastFailure: null,
+        command: closesMissing ? { closesMissing: true } : {},
       };
       await this.transition(trx, record.id, 'inspected', { inspectedAt: now, settlement });
       await enqueueSettleChannelReturn(this.commands, trx, {
         customerReturnId: record.id,
         salesOrderId: record.salesOrderId,
         channelReturnId: record.channelReturnId,
-        items: toSettleItems(this.linesWithResults(items, resultByItem)),
+        // 검수 결과는 위에서 항목에 적었다 — 재발행과 같은 읽기로 줄을 만든다
+        items: toSettleItems(await loadSettleLines(trx, record.id)),
         refundMode: 'auto',
+        command: settlement.command,
         issue: 1,
       });
       return this.reader.findById(record.id, trx);
@@ -307,24 +311,6 @@ export class CustomerReturnReceivingManager {
   ): Promise<void> {
     const moved = await transitionCustomerReturn(trx, { id, from: ['arrived'], to, set });
     if (!moved) throw new ConflictError(`Customer return ${id} changed while recording inspection`);
-  }
-
-  /** 반품 줄마다 SKU 항목의 불량 수량을 모은다 — `toSettleItems` 의 입력 */
-  private linesWithResults(
-    items: ReturnItemRow[],
-    resultByItem: Map<string, { rejected: number }>,
-  ): Parameters<typeof toSettleItems>[0] {
-    const byLine = new Map<string, Parameters<typeof toSettleItems>[0][number]>();
-    for (const item of items) {
-      const line = byLine.get(item.customerReturnLineId) ?? {
-        channelOrderItemId: item.channelOrderItemId,
-        quantity: item.lineQuantity,
-        items: [],
-      };
-      line.items.push({ qtyPerUnit: item.qtyPerUnit, rejectedQty: resultByItem.get(item.id)?.rejected ?? 0 });
-      byLine.set(item.customerReturnLineId, line);
-    }
-    return [...byLine.values()];
   }
 
   private async lockReturn(trx: DbTx, id: string): Promise<CustomerReturn> {
@@ -384,9 +370,6 @@ export class CustomerReturnReceivingManager {
         acceptedQty: i.acceptedQty,
         rejectedQty: i.rejectedQty,
         heldQty: i.heldQty,
-        customerReturnLineId: l.id,
-        channelOrderItemId: l.channelOrderItemId,
-        lineQuantity: l.quantity,
       })
       .from(i)
       .innerJoin(l, eq(l.id, i.customerReturnLineId))

@@ -14,6 +14,11 @@ import { ensureReturnReasons } from '../../src/workflows/orders/returns/return-r
 import { requestOrderReturn } from '../../src/workflows/orders/returns/request-order-return';
 import { partialCancelOrder } from '../../src/workflows/orders/partial-cancel/partial-cancel-order';
 import {
+  prepayOrderReturn,
+  ReturnPrepayRefundPending,
+  ReturnPrepayRefundRefused,
+} from '../../src/workflows/orders/returns/prepay-order-return';
+import {
   FakeWallet,
   WALLET_BASE_URL,
   setupCommerce,
@@ -229,6 +234,53 @@ medusaIntegrationTestRunner({
       expect(res.data).toMatchObject({ code: 'return_rejected', reason: 'return_arrived' });
       expect((await returnOf(req.returnId)).status).not.toBe('canceled');
       expect(await detailOf(o.orderId, o.itemId)).toMatchObject({ fulfilled: 1, returnRequested: 1 });
+      expect(await revertChanges(o.orderId)).toHaveLength(0);
+    });
+
+    it('선환불한 반품 취소 → 400 return_prepaid, 반품 그대로', async () => {
+      const o = await ownedOrder(2);
+      const req = await requestAsCustomer({ ...o, customerId: o.me.customerId });
+      await prepayOrderReturn(getContainer(), { orderId: o.orderId, returnId: req.returnId, requestId: 'prepay-cancel-1', memo: '먼저 환불' });
+      expect(wallet.refunds).toHaveLength(1);
+
+      for (const [scope, headers] of [['store', o.me.headers], ['admin', c.adminHeaders]] as const) {
+        const res = await fail(api.post(cancelUrl(o.orderId, req.returnId, scope), {}, headers));
+        expect(res.status).toBe(400);
+        expect(res.data).toMatchObject({ code: 'return_rejected', reason: 'return_prepaid' });
+      }
+      expect((await returnOf(req.returnId)).status).toBe('requested');
+      expect(await detailOf(o.orderId, o.itemId)).toMatchObject({ fulfilled: 1, returnRequested: 1 });
+      expect(await revertChanges(o.orderId)).toHaveLength(0);
+    });
+
+    it('wallet 이 영구 거절한 선환불(기록 requested, 나간 돈 없음)은 취소를 막지 않는다', async () => {
+      const o = await ownedOrder(2);
+      const req = await requestAsCustomer({ ...o, customerId: o.me.customerId });
+      wallet.rejectNextRefundWith = { status: 400, error: 'REFUND_NOT_AUTOMATABLE', message: 'wallet 원문', retryable: false };
+      await expect(
+        prepayOrderReturn(getContainer(), { orderId: o.orderId, returnId: req.returnId, requestId: 'prepay-cancel-2', memo: '먼저 환불' }),
+      ).rejects.toThrow(ReturnPrepayRefundRefused);
+      expect((await returnOf(req.returnId)).metadata.almondReturnPrepay.stage).toBe('requested');
+
+      const res = await api.post(cancelUrl(o.orderId, req.returnId, 'admin'), {}, c.adminHeaders);
+      expect(res.status).toBe(200);
+      expect((await returnOf(req.returnId)).status).toBe('canceled');
+    });
+
+    it('응답을 잃은 선환불(기록 requested, 장부엔 환불) → 취소 400 return_prepaid', async () => {
+      const o = await ownedOrder(2);
+      const req = await requestAsCustomer({ ...o, customerId: o.me.customerId });
+      wallet.loseNextRefundResponse = true;
+      await expect(
+        prepayOrderReturn(getContainer(), { orderId: o.orderId, returnId: req.returnId, requestId: 'prepay-cancel-3', memo: '먼저 환불' }),
+      ).rejects.toThrow(ReturnPrepayRefundPending);
+      expect((await returnOf(req.returnId)).metadata.almondReturnPrepay.stage).toBe('requested');
+      expect(wallet.refunds).toHaveLength(1);
+
+      const res = await fail(api.post(cancelUrl(o.orderId, req.returnId, 'admin'), {}, c.adminHeaders));
+      expect(res.status).toBe(400);
+      expect(res.data).toMatchObject({ code: 'return_rejected', reason: 'return_prepaid' });
+      expect((await returnOf(req.returnId)).status).toBe('requested');
       expect(await revertChanges(o.orderId)).toHaveLength(0);
     });
 

@@ -16,7 +16,15 @@ export async function transitionCustomerReturn(
     set?: Partial<
       Pick<
         CustomerReturn,
-        'cancelledAt' | 'warehouseId' | 'arrivedAt' | 'inspectedAt' | 'settledAt' | 'settlement' | 'settlementOutcome'
+        | 'cancelledAt'
+        | 'warehouseId'
+        | 'arrivedAt'
+        | 'inspectedAt'
+        | 'settledAt'
+        | 'settlement'
+        | 'settlementOutcome'
+        | 'prepayment'
+        | 'csResolution'
       >
     >;
   },

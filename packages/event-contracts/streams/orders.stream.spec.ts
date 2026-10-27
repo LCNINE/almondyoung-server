@@ -285,3 +285,78 @@ describe('ChannelReturnSettled / ChannelReturnSettlementFailed (K8 PR6)', () => 
     expect(() => failed.parse(noReceived)).toThrow();
   });
 });
+
+describe('반품 선환불 사실·정산 사실의 새 칸 (K8 PR6b)', () => {
+  const settled = ORDER_STREAM.events.ChannelReturnSettled.schema!;
+  const prepaid = ORDER_STREAM.events.ChannelReturnPrepaid.schema!;
+  const prepayFailed = ORDER_STREAM.events.ChannelReturnPrepayFailed.schema!;
+  const settledPayload = {
+    orderId: 'wms-order-1',
+    salesChannel: 'medusa',
+    externalOrderId: 'order_01',
+    returnId: 'ret_01',
+    requestId: 'req-1',
+    refundAmount: 9000,
+    deduction: { returnShipping: 3000, freeShippingBreak: 0, roundTrip: 0 },
+    feeNotAdjusted: false,
+    refundMode: 'auto',
+    settledAt: '2026-10-27T03:00:00.000Z',
+    items: [{ channelOrderItemId: 'item_01', received: 1, dismissed: 0 }],
+  };
+  const prepaidPayload = {
+    orderId: 'wms-order-1',
+    salesChannel: 'medusa',
+    externalOrderId: 'order_01',
+    returnId: 'ret_01',
+    requestId: 'req-2',
+    amount: 4000,
+    refundMode: 'auto',
+    prepaidAt: '2026-10-27T03:00:00.000Z',
+  };
+  const prepayFailedPayload = {
+    requestId: 'req-2',
+    salesChannel: 'medusa',
+    externalOrderId: 'order_01',
+    returnId: 'ret_01',
+    retryable: false,
+    failureCode: 'return_prepay_rejected',
+    message: 'rejected',
+    at: '2026-10-27T03:00:00.000Z',
+  };
+
+  it('정산 사실은 새 칸 없이도 통과한다(옛 생산자) — 새 칸은 정수 0 이상이면 통과한다', () => {
+    expect(() => settled.parse(settledPayload)).not.toThrow();
+    expect(() =>
+      settled.parse({
+        ...settledPayload,
+        deduction: { ...settledPayload.deduction, hold: 2000 },
+        prepaidAmount: 4000,
+        externalRefundApplied: 0,
+      }),
+    ).not.toThrow();
+  });
+
+  it('보류 공제가 정수 아니거나 새 칸이 음수면 거부한다', () => {
+    expect(() => settled.parse({ ...settledPayload, deduction: { ...settledPayload.deduction, hold: 1.5 } })).toThrow();
+    expect(() => settled.parse({ ...settledPayload, deduction: { ...settledPayload.deduction, hold: -1 } })).toThrow();
+    expect(() => settled.parse({ ...settledPayload, prepaidAmount: -1 })).toThrow();
+    expect(() => settled.parse({ ...settledPayload, externalRefundApplied: 1.5 })).toThrow();
+  });
+
+  it('선환불 성공·실패 사실은 정상 payload 를 통과시킨다', () => {
+    expect(() => prepaid.parse(prepaidPayload)).not.toThrow();
+    expect(() => prepayFailed.parse(prepayFailedPayload)).not.toThrow();
+  });
+
+  it('선환불 사실의 필수 칸 누락은 거부한다', () => {
+    const { amount: _a, ...noAmount } = prepaidPayload;
+    expect(() => prepaid.parse(noAmount)).toThrow();
+    const { refundMode: _r, ...noMode } = prepaidPayload;
+    expect(() => prepaid.parse(noMode)).toThrow();
+    expect(() => prepaid.parse({ ...prepaidPayload, amount: 0 })).toThrow();
+    const { retryable: _t, ...noRetryable } = prepayFailedPayload;
+    expect(() => prepayFailed.parse(noRetryable)).toThrow();
+    const { failureCode: _f, ...noCode } = prepayFailedPayload;
+    expect(() => prepayFailed.parse(noCode)).toThrow();
+  });
+});

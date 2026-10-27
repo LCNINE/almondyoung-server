@@ -1,6 +1,7 @@
 import {
   ChannelReturnCancelledPayload,
   ChannelReturnRequestedPayload,
+  ChannelReturnPrepaidPayload,
   ChannelReturnSettledPayload,
   OrderCancelledPayload,
   OrderModifiedCancelRequest,
@@ -79,6 +80,7 @@ export type LifecycleObservation = LifecycleObservationBase &
     | { eventType: 'OrderRefundCreated'; payload: Omit<OrderRefundCreatedPayload, 'orderId'> }
     | { eventType: 'ChannelReturnRequested'; payload: ReturnObservationPayload<ChannelReturnRequestedPayload> }
     | { eventType: 'ChannelReturnCancelled'; payload: ReturnObservationPayload<ChannelReturnCancelledPayload> }
+    | { eventType: 'ChannelReturnPrepaid'; payload: ReturnObservationPayload<ChannelReturnPrepaidPayload> }
     | { eventType: 'ChannelReturnSettled'; payload: ReturnObservationPayload<ChannelReturnSettledPayload> }
   );
 

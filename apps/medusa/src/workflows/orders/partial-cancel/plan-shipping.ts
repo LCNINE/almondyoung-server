@@ -6,15 +6,20 @@ export const PARTIAL_CANCEL_CHARGE_NAME = '부분취소 배송비';
 
 /** 반품 정산이 더하는 택배비 방법의 이름 — 부분취소 배송비와 같이 «원래 방법이 아닌» 청구다. */
 export const RETURN_FEE_CHARGE_NAME = '반품 택배비';
-/** 우리가 정산으로 더한 청구 이름 둘. 다음 판정은 이 이름의 방법을 그룹의 원래 방법에서 뺀다. */
-export const SETTLEMENT_CHARGE_NAMES: readonly string[] = [PARTIAL_CANCEL_CHARGE_NAME, RETURN_FEE_CHARGE_NAME];
+/**
+ * 반품 보류 정산이 더하는 CS 차감 방법의 이름(K8 PR6b N2) — 택배비와 같은 주문 수정에 «원래 방법이 아닌» 청구로 남긴다.
+ * 그룹 요금이 아니다(groupFees 에 넣지 않는다).
+ */
+export const RETURN_HOLD_DEDUCTION_NAME = '반품 차감';
+/** 우리가 정산으로 더한 청구 이름들. 다음 판정은 이 이름의 방법을 그룹의 원래 방법에서 뺀다. */
+export const SETTLEMENT_CHARGE_NAMES: readonly string[] = [PARTIAL_CANCEL_CHARGE_NAME, RETURN_FEE_CHARGE_NAME, RETURN_HOLD_DEDUCTION_NAME];
 
 export type ShippingMethodView = {
   id: string;
   shippingOptionId: string | null;
   amount: number;
   snapshot: ShippingPolicySnapshot | null;
-  /** 이전 부분취소·반품 정산이 더한 «부분취소 배송비»·«반품 택배비» 방법. 그룹의 원래 방법이 아니다. */
+  /** 이전 부분취소·반품 정산이 더한 «부분취소 배송비»·«반품 택배비»·«반품 차감» 방법. 그룹의 원래 방법이 아니다. */
   isSettlementCharge: boolean;
   /** 반품·교환·클레임의 배송 방법(order_shipping 행이 return_id·exchange_id·claim_id 를 든다). 스냅샷이 없고 그룹의 원래 방법도 아니다. */
   isReturnExchangeOrClaimShipping: boolean;

@@ -1,6 +1,7 @@
 import {
   ChannelReturnCancelledPayload,
   ChannelReturnRequestedPayload,
+  ChannelReturnPrepaidPayload,
   ChannelReturnSettledPayload,
   OrderCancelledPayload,
   OrderCreatedPayload,
@@ -66,6 +67,7 @@ export type OrderLifecycleEventType =
   | 'OrderRefundCreated'
   | 'ChannelReturnRequested'
   | 'ChannelReturnCancelled'
+  | 'ChannelReturnPrepaid'
   | 'ChannelReturnSettled';
 
 export type OrderLifecycleEventPayload =
@@ -73,6 +75,7 @@ export type OrderLifecycleEventPayload =
   | Omit<OrderRefundCreatedPayload, 'orderId'>
   | ReturnObservationPayload<ChannelReturnRequestedPayload>
   | ReturnObservationPayload<ChannelReturnCancelledPayload>
+  | ReturnObservationPayload<ChannelReturnPrepaidPayload>
   | ReturnObservationPayload<ChannelReturnSettledPayload>;
 
 interface OrderLifecycleEventBase {
@@ -98,6 +101,7 @@ export type OrderLifecycleEventItem = OrderLifecycleEventBase &
     | { eventType: 'OrderRefundCreated'; payload: Omit<OrderRefundCreatedPayload, 'orderId'> }
     | { eventType: 'ChannelReturnRequested'; payload: ReturnObservationPayload<ChannelReturnRequestedPayload> }
     | { eventType: 'ChannelReturnCancelled'; payload: ReturnObservationPayload<ChannelReturnCancelledPayload> }
+    | { eventType: 'ChannelReturnPrepaid'; payload: ReturnObservationPayload<ChannelReturnPrepaidPayload> }
     | { eventType: 'ChannelReturnSettled'; payload: ReturnObservationPayload<ChannelReturnSettledPayload> }
   );
 

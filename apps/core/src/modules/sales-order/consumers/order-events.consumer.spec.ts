@@ -848,6 +848,8 @@ describe('OrderEventsConsumer poison classification (작업 13)', () => {
       proto.handleChannelReturnCancelled,
       proto.handleChannelReturnSettled,
       proto.handleChannelReturnSettlementFailed,
+      proto.handleChannelReturnPrepaid,
+      proto.handleChannelReturnPrepayFailed,
     ]) {
       expect(retryPolicyOf(handler)?.nonRetryableErrors).toEqual([NotFoundError, BadRequestError]);
     }
@@ -861,6 +863,8 @@ describe('OrderEventsConsumer — 채널 반품 사실 위임 (K8 PR5)', () => {
       recordCancelled: jest.fn().mockResolvedValue({ customerReturnId: 'cr-1', changed: true }),
       recordSettled: jest.fn().mockResolvedValue({ changed: true }),
       recordSettlementFailed: jest.fn().mockResolvedValue({ changed: true }),
+      recordPrepaid: jest.fn().mockResolvedValue({ changed: true }),
+      recordPrepayFailed: jest.fn().mockResolvedValue({ changed: true }),
     };
     const consumer = new OrderEventsConsumer(
       {} as never,
@@ -903,5 +907,19 @@ describe('OrderEventsConsumer — 채널 반품 사실 위임 (K8 PR5)', () => {
     const payload = { requestId: 'cr-1', returnId: 'ret-1', failureCode: 'refund_failed', retryable: true };
     await consumer.handleChannelReturnSettlementFailed(payload as never, envelope as never);
     expect(customerReturns.recordSettlementFailed).toHaveBeenCalledWith(payload);
+  });
+
+  it('ChannelReturnPrepaid 를 서비스에 그대로 넘긴다 (K8 PR6b)', async () => {
+    const { consumer, customerReturns } = makeSubject();
+    const payload = { requestId: 'cr-1', returnId: 'ret-1', salesChannel: 'medusa', amount: 5000 };
+    await consumer.handleChannelReturnPrepaid(payload as never, envelope as never);
+    expect(customerReturns.recordPrepaid).toHaveBeenCalledWith(payload);
+  });
+
+  it('ChannelReturnPrepayFailed 를 서비스에 그대로 넘긴다 (K8 PR6b)', async () => {
+    const { consumer, customerReturns } = makeSubject();
+    const payload = { requestId: 'cr-1', returnId: 'ret-1', failureCode: 'http_502', retryable: true };
+    await consumer.handleChannelReturnPrepayFailed(payload as never, envelope as never);
+    expect(customerReturns.recordPrepayFailed).toHaveBeenCalledWith(payload);
   });
 });

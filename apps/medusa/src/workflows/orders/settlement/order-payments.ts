@@ -1,4 +1,4 @@
-import type { MedusaContainer } from '@medusajs/framework/types';
+import type { MedusaContainer, RefundDTO } from '@medusajs/framework/types';
 import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 
 /**
@@ -23,4 +23,12 @@ export async function orderPaymentIds(container: MedusaContainer, orderId: strin
     .flatMap((pc) => pc.payments ?? [])
     .sort((a, b) => new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime() || a.id.localeCompare(b.id))
     .map((p) => p.id);
+}
+
+/** 이 주문 결제들의 환불 행(장부) 전부. 순서는 보장하지 않는다 — 합·메모로만 읽는다. */
+export async function listOrderRefunds(container: MedusaContainer, orderId: string): Promise<RefundDTO[]> {
+  const paymentIds = await orderPaymentIds(container, orderId);
+  if (paymentIds.length === 0) return [];
+  const payments = await container.resolve(Modules.PAYMENT).listPayments({ id: paymentIds }, { relations: ['refunds'] });
+  return payments.flatMap((p) => p.refunds ?? []);
 }
