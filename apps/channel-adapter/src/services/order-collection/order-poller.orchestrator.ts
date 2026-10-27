@@ -4,6 +4,8 @@ import { eq, and, inArray } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import {
+  ChannelReturnCancelledPayload,
+  ChannelReturnRequestedPayload,
   ORDER_STREAM,
   OrderCancelledPayload,
   OrderRefundCreatedPayload,
@@ -849,12 +851,37 @@ export class OrderPollerOrchestrator {
         externalOrderId: item.externalOrderId,
       };
 
-      if (item.eventType === 'OrderCancelled') {
-        const cancelled: OrderCancelledPayload = { orderId: wmsOrderId, ...channelKey, ...item.payload };
-        await this.ordersPublisher.enqueue({ eventType: 'OrderCancelled', payload: cancelled, ...common }, tx);
-      } else {
-        const refunded: OrderRefundCreatedPayload = { orderId: wmsOrderId, ...channelKey, ...item.payload };
-        await this.ordersPublisher.enqueue({ eventType: 'OrderRefundCreated', payload: refunded, ...common }, tx);
+      switch (item.eventType) {
+        case 'OrderCancelled': {
+          const cancelled: OrderCancelledPayload = { orderId: wmsOrderId, ...channelKey, ...item.payload };
+          await this.ordersPublisher.enqueue({ eventType: 'OrderCancelled', payload: cancelled, ...common }, tx);
+          break;
+        }
+        case 'OrderRefundCreated': {
+          const refunded: OrderRefundCreatedPayload = { orderId: wmsOrderId, ...channelKey, ...item.payload };
+          await this.ordersPublisher.enqueue({ eventType: 'OrderRefundCreated', payload: refunded, ...common }, tx);
+          break;
+        }
+        case 'ChannelReturnRequested': {
+          const requested: ChannelReturnRequestedPayload = { orderId: wmsOrderId, ...channelKey, ...item.payload };
+          await this.ordersPublisher.enqueue(
+            { eventType: 'ChannelReturnRequested', payload: requested, ...common },
+            tx,
+          );
+          break;
+        }
+        case 'ChannelReturnCancelled': {
+          const returnCancelled: ChannelReturnCancelledPayload = {
+            orderId: wmsOrderId,
+            ...channelKey,
+            ...item.payload,
+          };
+          await this.ordersPublisher.enqueue(
+            { eventType: 'ChannelReturnCancelled', payload: returnCancelled, ...common },
+            tx,
+          );
+          break;
+        }
       }
 
       // 기록은 `claimFirstSeen` 이 이미 같은 트랜잭션에서 끝냈다 — 여기서 또 쓰지 않는다.

@@ -1,4 +1,4 @@
-import { ORDER_STREAM, type OrderCreatedPayload } from './orders.stream';
+import { CUSTOMER_RETURN_REASONS, ORDER_STREAM, type OrderCreatedPayload } from './orders.stream';
 
 const BASE_ITEM = {
   skuId: 'sku-1',
@@ -171,5 +171,69 @@ describe('ORDER_STREAM OrderModified snapshot', () => {
   it('음수 수량은 거부한다', () => {
     const bad = { ...base, snapshot: { ...base.snapshot, lines: [{ ...base.snapshot.lines[0], quantity: -1 }] } };
     expect(() => schema.parse(bad)).toThrow();
+  });
+});
+
+describe('ChannelReturnRequested / ChannelReturnCancelled', () => {
+  const requested = ORDER_STREAM.events.ChannelReturnRequested.schema!;
+  const cancelled = ORDER_STREAM.events.ChannelReturnCancelled.schema!;
+
+  const requestedPayload = {
+    orderId: 'wms-order-1',
+    salesChannel: 'medusa',
+    externalOrderId: 'order_01',
+    returnId: 'ret_01',
+    requestId: 'req-1',
+    reason: 'defective',
+    feeBearer: 'seller',
+    requestedBy: 'customer',
+    requestedAt: '2026-10-27T01:00:00.000Z',
+    items: [{ channelOrderItemId: 'item_01', quantity: 1 }],
+  };
+  const cancelledPayload = {
+    orderId: 'wms-order-1',
+    salesChannel: 'medusa',
+    externalOrderId: 'order_01',
+    returnId: 'ret_01',
+    cancelledAt: '2026-10-27T02:00:00.000Z',
+  };
+
+  it('정상 payload 를 통과시킨다', () => {
+    expect(() => requested.parse(requestedPayload)).not.toThrow();
+    expect(() => requested.parse({ ...requestedPayload, windowOverrideReason: '고객 센터 승인' })).not.toThrow();
+    expect(() => cancelled.parse(cancelledPayload)).not.toThrow();
+  });
+
+  it('사유 어휘가 Medusa RETURN_REASONS 와 같다', () => {
+    expect([...CUSTOMER_RETURN_REASONS]).toEqual([
+      'change_of_mind',
+      'defective',
+      'not_as_described',
+      'wrong_item',
+      'damaged_in_shipping',
+      'other',
+    ]);
+  });
+
+  it.each([
+    ['빈 items', { items: [] }],
+    ['수량 0', { items: [{ channelOrderItemId: 'item_01', quantity: 0 }] }],
+    ['옛 사유', { reason: 'SIZE_NOT_FIT' }],
+    ['salesChannel 누락', { salesChannel: undefined }],
+    ['externalOrderId 누락', { externalOrderId: undefined }],
+    ['requestedAt 형식', { requestedAt: '2026-10-27' }],
+  ])('요청: %s 는 거절한다', (_n, patch) => {
+    expect(() => requested.parse({ ...requestedPayload, ...patch })).toThrow();
+  });
+
+  it.each([
+    ['cancelledAt 형식', { cancelledAt: 'yesterday' }],
+    ['salesChannel 누락', { salesChannel: undefined }],
+  ])('취소: %s 는 거절한다', (_n, patch) => {
+    expect(() => cancelled.parse({ ...cancelledPayload, ...patch })).toThrow();
+  });
+
+  it('옛 OrderReturnRequested 는 계약에 없다', () => {
+    expect(Object.keys(ORDER_STREAM.events)).not.toContain('OrderReturnRequested');
   });
 });

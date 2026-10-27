@@ -348,6 +348,7 @@ function uncancelledLineQuantityRows(lines: Array<{ id: string; quantity: number
     canceled: 0,
     demand: line.quantity,
     remaining: line.quantity,
+    returnHeld: 0,
   }));
 }
 
@@ -920,6 +921,7 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
           canceled: before + after,
           demand: line.quantity - before,
           remaining: line.quantity - before - after,
+          returnHeld: 0,
         };
       });
 

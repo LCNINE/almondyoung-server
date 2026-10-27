@@ -1,4 +1,6 @@
 import {
+  ChannelReturnCancelledPayload,
+  ChannelReturnRequestedPayload,
   OrderCancelledPayload,
   OrderModifiedCancelRequest,
   OrderRefundCreatedPayload,
@@ -55,6 +57,9 @@ export interface ChannelOrderLineSnapshot {
   cancelled?: boolean;
 }
 
+/** 반품 관측 payload — 채널 키(`orderId`·`salesChannel`·`externalOrderId`)는 오케스트레이터가 붙인다. */
+export type ReturnObservationPayload<P> = Omit<P, 'orderId' | 'salesChannel' | 'externalOrderId'>;
+
 interface LifecycleObservationBase {
   /** 같은 관측을 두 번 세지 않기 위한 채널 내 안정 키. 예: `cancelled`, `refund:<refundId>`. */
   eventKey: string;
@@ -71,6 +76,8 @@ export type LifecycleObservation = LifecycleObservationBase &
   (
     | { eventType: 'OrderCancelled'; payload: Omit<OrderCancelledPayload, 'orderId'> }
     | { eventType: 'OrderRefundCreated'; payload: Omit<OrderRefundCreatedPayload, 'orderId'> }
+    | { eventType: 'ChannelReturnRequested'; payload: ReturnObservationPayload<ChannelReturnRequestedPayload> }
+    | { eventType: 'ChannelReturnCancelled'; payload: ReturnObservationPayload<ChannelReturnCancelledPayload> }
   );
 
 export interface ChannelOrderSnapshot {

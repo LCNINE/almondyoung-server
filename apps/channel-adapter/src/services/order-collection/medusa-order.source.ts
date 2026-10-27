@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { OrderModifiedCancelRequest, SalesChannel, ShippingAddress } from '@packages/event-contracts/streams';
 import { MedusaClient, MedusaOrder } from '../../adapters/medusa/medusa.client';
 import { LIFECYCLE_PAYMENT_STATUSES, PAYMENT_ACCEPTED_STATUSES } from '../../adapters/medusa/medusa-order-status';
@@ -9,6 +9,7 @@ import {
   LifecycleObservation,
   ReplayableChannelOrderSource,
 } from './channel-order-source.interface';
+import { medusaReturnObservations } from './medusa-return-observations';
 import { buildDeliveryNote, readEntrancePassword } from './shipping-memo-label';
 
 const ALMOND_DESIGN_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -25,6 +26,7 @@ type MedusaLineItem = NonNullable<MedusaOrder['items']>[number];
 @Injectable()
 export class MedusaOrderSource implements ReplayableChannelOrderSource {
   readonly channel: SalesChannel = 'medusa';
+  private readonly logger = new Logger(MedusaOrderSource.name);
 
   constructor(private readonly medusaClient: MedusaClient) {}
 
@@ -301,6 +303,14 @@ export class MedusaOrderSource implements ReplayableChannelOrderSource {
         },
       });
     }
+
+    // 반품은 취소·환불 뒤에 붙인다 (K8 PR5). 건너뛴 반품은 조용히 사라지지 않게 남긴다 (N9).
+    const returns = medusaReturnObservations(order);
+    for (const skip of returns.skipped) {
+      // open 반품이 남는 건 PR3 접수가 중간에 죽었을 때뿐이고 그 주문의 이후 접수·부분취소를 막으므로 사람이 봐야 한다.
+      this.logger.warn(`[medusa] Skipping return ${skip.returnId} of order ${order.id}: ${skip.reason}`);
+    }
+    observations.push(...returns.observations);
 
     return observations;
   }

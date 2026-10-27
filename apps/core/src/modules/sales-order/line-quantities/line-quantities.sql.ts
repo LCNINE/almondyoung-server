@@ -1,6 +1,6 @@
 import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { type CancellationShipmentPhase, wmsTables } from '../../inventory/schema/inventory.schema';
-import { claimTotalsBySkuSql } from './claim-quantities.sql';
+import { claimTotalsBySkuSql, heldCustomerReturnLinesSql } from './claim-quantities.sql';
 
 /**
  * 판매 라인 수량의 단 하나의 정의 (K6 PR2a).
@@ -33,13 +33,27 @@ export function lineCanceledQuantitySql(
   ), 0)::int`;
 }
 
+/**
+ * 라인의 반품이 잡은 판매 단위 = 취소되지 않은 반품 예정 기록 줄 수량의 합(K8 PR5). 없으면 0.
+ * 취소 상한(`remaining − returnHeld`)에서만 뺀다 — `lineRemainingSql` 은 반품을 모른다(N6: Medusa 반품은 주문 줄 수량을
+ * 줄이지 않아 채널 변경 대조가 `remaining` 을 Medusa 줄 수량과 비교한다).
+ * 줄을 칼럼 이름을 바꾼 파생 테이블로 감싸 읽는다 — `lineCanceledQuantitySql` 의 바깥 참조 함정과 같다.
+ */
+export function lineReturnHeldSql(salesOrderLineId: SQLWrapper): SQL<number> {
+  return sql<number>`coalesce((
+    select sum(held_line.held_quantity)
+    from (${heldCustomerReturnLinesSql()}) as held_line
+    where held_line.held_line_id = ${salesOrderLineId}
+  ), 0)::int`;
+}
+
 /** 라인의 수요 = 주문 수량 − 출고 전 취소. 이미 나간 수량의 취소는 물건이 창고를 떠났으므로 빼지 않는다(E2). */
 export function lineDemandSql(lineQuantity: SQLWrapper, salesOrderLineId: SQLWrapper): SQL<number> {
   return sql<number>`(${lineQuantity} - ${lineCanceledQuantitySql(salesOrderLineId, 'before_shipment')})::int`;
 }
 
 /**
- * 라인의 남은 수량 = 주문 수량 − 갈래 무관 취소. 더 취소할 수 있는 판매 단위의 상한.
+ * 라인의 남은 수량 = 주문 수량 − 갈래 무관 취소. 반품은 모른다(N6) — 취소 상한은 `remaining − returnHeld`(`cancelableOf`)다.
  * GREATEST 로 덮지 않는다 — 음수면 불변식(취소 ≤ 주문) 위반이 그대로 보여야 한다.
  */
 export function lineRemainingSql(lineQuantity: SQLWrapper, salesOrderLineId: SQLWrapper): SQL<number> {

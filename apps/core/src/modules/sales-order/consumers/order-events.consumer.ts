@@ -7,6 +7,8 @@ import { SalesOrdersService } from '../services/sales-orders.service';
 import { ChannelOrderChangeService } from '../channel-order-change/channel-order-change.service';
 import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
 import { LibraryService } from '../../library/services/library.service';
+import { CustomerReturnService } from '../customer-return/customer-return.service';
+import { NotFoundError, BadRequestError } from '@app/shared';
 import { OrderCancellation } from '../order-cancellation/order-cancellation';
 import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
 import { FulfillmentWorkflowGate } from '../../fulfillment/services/fulfillment-workflow-gate.service';
@@ -39,6 +41,7 @@ export class OrderEventsConsumer {
     private readonly channelOrderChanges: ChannelOrderChangeService,
     private readonly cancelRequests: ChannelCancelRequestService,
     private readonly cancellation: OrderCancellation,
+    private readonly customerReturns: CustomerReturnService,
   ) {}
 
   private async checkAndRecordEvent(
@@ -317,6 +320,40 @@ export class OrderEventsConsumer {
       { correlationId: envelope.correlationId },
     );
     await this.cancelRequests.recordSettlementFailure(payload);
+  }
+
+  /**
+   * 채널 반품 확정·취소 (K8 PR5). «반품 예정» 기록과 고객 «반품 접수» 이벤트는 서비스가 한 트랜잭션에서 쓴다.
+   * order_events 에 적지 않는다(정산 실패 핸들러와 같은 이유 — 판매주문 생애가 아니다).
+   */
+  @On(ORDER_STREAM, 'ChannelReturnRequested')
+  @RetryPolicy({ nonRetryableErrors: [NotFoundError, BadRequestError] })
+  async handleChannelReturnRequested(
+    @EventPayload() payload: EventPayloadOf<typeof ORDER_STREAM, 'ChannelReturnRequested'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof ORDER_STREAM, 'ChannelReturnRequested'>,
+  ) {
+    this.logger.log(
+      `[ChannelReturnRequested] ${payload.salesChannel}/${payload.externalOrderId} return=${payload.returnId}`,
+      {
+        correlationId: envelope.correlationId,
+      },
+    );
+    await this.customerReturns.recordRequested(payload);
+  }
+
+  @On(ORDER_STREAM, 'ChannelReturnCancelled')
+  @RetryPolicy({ nonRetryableErrors: [NotFoundError, BadRequestError] })
+  async handleChannelReturnCancelled(
+    @EventPayload() payload: EventPayloadOf<typeof ORDER_STREAM, 'ChannelReturnCancelled'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof ORDER_STREAM, 'ChannelReturnCancelled'>,
+  ) {
+    this.logger.log(
+      `[ChannelReturnCancelled] ${payload.salesChannel}/${payload.externalOrderId} return=${payload.returnId}`,
+      {
+        correlationId: envelope.correlationId,
+      },
+    );
+    await this.customerReturns.recordCancelled(payload);
   }
 
   @On(ORDER_STREAM, 'OrderRefundCreated')

@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -6,6 +7,7 @@ import { ambientDbService, assembleOutbound } from '../../fulfillment/services/_
 import { outboxPublisherFor } from '../../fulfillment/outbox/__support__/outbox-publisher.factory';
 import { CORE_ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
 import { SalesOrdersService } from '../services/sales-orders.service';
+import { insertCustomerReturn } from '../line-quantities/__support__/claim-facts.fixtures';
 import { markLineShipped, seedChannelOrder } from './__support__/cancel-request.fixtures';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -102,6 +104,37 @@ describeIfDb('SalesOrdersService.planCancellation (DB integration, rollback-only
     });
   });
 
+  it('상자 후 부분 — 반품이 잡은 수량은 취소 상한에서 빠진다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireSalesOrders(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: true });
+      // 줄 수량 2 중 1 이 나가 배송완료됐고 그 1 을 고객이 반품 중이다
+      await markLineShipped(tx, seed.lineIds[0], 1);
+      const { customerReturnId } = await insertCustomerReturn(tx, {
+        salesOrderId: seed.salesOrderId,
+        status: 'expected',
+        lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 1 }],
+      });
+      const whole = [{ salesOrderLineId: seed.lineIds[0], quantity: 2 }];
+      // 돌아오는 중인 물건을 취소로 또 환불하지 않게 — 상한은 남은 수량 2 가 아니라 2 − 반품 1 이다
+      await expect(w.salesOrders.planCancellation(seed.salesOrderId, whole, tx)).rejects.toThrow(
+        new BadRequestException('Cancellation quantity 2 exceeds remaining 1'),
+      );
+      // 반품이 잡지 않은(안 나간) 1 은 그대로 취소할 수 있다
+      const unshipped = [{ salesOrderLineId: seed.lineIds[0], quantity: 1 }];
+      expect((await w.salesOrders.planCancellation(seed.salesOrderId, unshipped, tx)).lines).toEqual(unshipped);
+
+      await tx
+        .update(wmsTables.customerReturns)
+        .set({ status: 'cancelled', cancelledAt: new Date() })
+        .where(eq(wmsTables.customerReturns.id, customerReturnId));
+      // 취소된 반품은 상한을 잡지 않는다 — 같은 요청이 상한을 지나 다음 판정(나간 수량은 회수·반품으로)에서 걸린다
+      await expect(w.salesOrders.planCancellation(seed.salesOrderId, whole, tx)).rejects.toThrow(
+        'includes shipped or already canceled quantity',
+      );
+    });
+  });
+
   it('상자 후 부분 — 남은 수량을 전부 요청하면 leavesNothing', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireSalesOrders(tx);
@@ -131,6 +164,29 @@ describeIfDb('SalesOrdersService.planCancellation (DB integration, rollback-only
       await expect(
         w.salesOrders.planCancellation(seed.salesOrderId, [{ salesOrderLineId: seed.lineIds[1], quantity: 5 }], tx),
       ).rejects.toThrow('취소 수량(5개)이 취소 가능 수량(1개)을 초과합니다.');
+    });
+  });
+
+  it('박스 이력 없음 — 실제 부분 취소(cancelBeforeBoxingPartial)의 상한도 반품 예정 수량을 뺀다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireSalesOrders(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo: false });
+      // 줄 수량 2 중 1 을 고객이 반품 중이다 — 취소 상한은 remaining 2 가 아니라 2 − 1 = 1
+      const { customerReturnId } = await insertCustomerReturn(tx, {
+        salesOrderId: seed.salesOrderId,
+        status: 'expected',
+        lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 1 }],
+      });
+      const whole = { lines: [{ salesOrderLineId: seed.lineIds[0], quantity: 2 }] };
+      await expect(w.salesOrders.cancel(seed.salesOrderId, whole, tx)).rejects.toThrow(
+        '취소 수량(2개)이 취소 가능 수량(1개)을 초과합니다.',
+      );
+      await tx
+        .update(wmsTables.customerReturns)
+        .set({ status: 'cancelled', cancelledAt: new Date() })
+        .where(eq(wmsTables.customerReturns.id, customerReturnId));
+      // 취소된 반품은 상한을 잡지 않는다 — 같은 요청이 상한을 지난다
+      await expect(w.salesOrders.cancel(seed.salesOrderId, whole, tx)).resolves.toBeDefined();
     });
   });
 

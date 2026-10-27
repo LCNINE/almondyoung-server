@@ -209,23 +209,48 @@ export interface OrderPaymentCompletedPayload {
 }
 
 /**
- * 반품 요청 이벤트
+ * 고객이 반품 사유로 고를 수 있는 값의 정본. Medusa `RETURN_REASONS`
+ * (apps/medusa/src/workflows/orders/returns/return-reasons.ts) 와 순서·값이 같다.
  */
-export interface OrderReturnRequestedPayload {
+export const CUSTOMER_RETURN_REASONS = [
+  'change_of_mind',
+  'defective',
+  'not_as_described',
+  'wrong_item',
+  'damaged_in_shipping',
+  'other',
+] as const;
+
+export type CustomerReturnReason = (typeof CUSTOMER_RETURN_REASONS)[number];
+
+/**
+ * 채널 반품 접수 사실 (K8 PR5). channel-adapter 가 Medusa 주문의 `returns` 에서 관측해 낸다.
+ * `orderId` 는 channel-adapter 의 wmsOrderId 이고 정본은 채널 키(`salesChannel`+`externalOrderId`)다(#656).
+ */
+export interface ChannelReturnRequestedPayload {
   orderId: string;
+  salesChannel: SalesChannel;
+  externalOrderId: string;
   returnId: string;
-
-  items: Array<{
-    orderItemId: string;
-    skuId: string;
-    quantity: number;
-    reason: 'DEFECTIVE' | 'WRONG_ITEM' | 'CUSTOMER_CHANGED_MIND' | 'SIZE_NOT_FIT';
-    reasonDetail?: string;
-  }>;
-
-  requestedBy: 'CUSTOMER' | 'ADMIN';
+  /** Medusa 반품 기록의 멱등 키 */
+  requestId: string;
+  reason: CustomerReturnReason;
+  feeBearer: 'customer' | 'seller';
+  requestedBy: 'customer' | 'operator';
+  windowOverrideReason?: string;
   requestedAt: string;
-  note?: string;
+  items: Array<{ channelOrderItemId: string; quantity: number }>;
+}
+
+/**
+ * 채널 반품 취소 사실 (K8 PR5). `orderId` 는 `ChannelReturnRequestedPayload.orderId` 와 같다.
+ */
+export interface ChannelReturnCancelledPayload {
+  orderId: string;
+  salesChannel: SalesChannel;
+  externalOrderId: string;
+  returnId: string;
+  cancelledAt: string;
 }
 
 /**
@@ -394,21 +419,33 @@ const OrderPaymentCompletedSchema = z.object({
   capturedAt: z.string().datetime(),
 });
 
-const OrderReturnRequestedSchema = z.object({
+const ChannelReturnRequestedSchema = z.object({
   orderId: z.string().min(1),
+  salesChannel: SalesChannelSchema,
+  externalOrderId: z.string().min(1),
   returnId: z.string().min(1),
-  items: z.array(
-    z.object({
-      orderItemId: z.string().min(1),
-      skuId: z.string().min(1),
-      quantity: z.number().int().positive(),
-      reason: z.enum(['DEFECTIVE', 'WRONG_ITEM', 'CUSTOMER_CHANGED_MIND', 'SIZE_NOT_FIT']),
-      reasonDetail: z.string().optional(),
-    }),
-  ),
-  requestedBy: z.enum(['CUSTOMER', 'ADMIN']),
+  requestId: z.string().min(1),
+  reason: z.enum(CUSTOMER_RETURN_REASONS),
+  feeBearer: z.enum(['customer', 'seller']),
+  requestedBy: z.enum(['customer', 'operator']),
+  windowOverrideReason: z.string().optional(),
   requestedAt: z.string().datetime(),
-  note: z.string().optional(),
+  items: z
+    .array(
+      z.object({
+        channelOrderItemId: z.string().min(1),
+        quantity: z.number().int().positive(),
+      }),
+    )
+    .min(1),
+});
+
+const ChannelReturnCancelledSchema = z.object({
+  orderId: z.string().min(1),
+  salesChannel: SalesChannelSchema,
+  externalOrderId: z.string().min(1),
+  returnId: z.string().min(1),
+  cancelledAt: z.string().datetime(),
 });
 
 const OrderRefundCreatedSchema = z.object({
@@ -657,9 +694,13 @@ export const ORDER_STREAM = stream({
       'OrderPaymentCompleted',
       OrderPaymentCompletedSchema,
     ),
-    OrderReturnRequested: event<'OrderReturnRequested', OrderReturnRequestedPayload>(
-      'OrderReturnRequested',
-      OrderReturnRequestedSchema,
+    ChannelReturnRequested: event<'ChannelReturnRequested', ChannelReturnRequestedPayload>(
+      'ChannelReturnRequested',
+      ChannelReturnRequestedSchema,
+    ),
+    ChannelReturnCancelled: event<'ChannelReturnCancelled', ChannelReturnCancelledPayload>(
+      'ChannelReturnCancelled',
+      ChannelReturnCancelledSchema,
     ),
     OrderRefundCreated: event<'OrderRefundCreated', OrderRefundCreatedPayload>(
       'OrderRefundCreated',
@@ -726,9 +767,5 @@ export const ORDER_EVENTS = {
   ORDER_CANCELLED: {
     topic: ORDER_STREAM.topic.topic,
     messageType: 'OrderCancelled' as const,
-  },
-  ORDER_RETURN_REQUESTED: {
-    topic: ORDER_STREAM.topic.topic,
-    messageType: 'OrderReturnRequested' as const,
   },
 } as const;

@@ -257,6 +257,48 @@ describe('OrderPollerOrchestrator', () => {
     );
   });
 
+  it.each([
+    ['ChannelReturnRequested', 'return:ret_1:requested', { returnId: 'ret_1', requestId: 'req_1' }],
+    ['ChannelReturnCancelled', 'return:ret_1:cancelled', { returnId: 'ret_1', cancelledAt: '2026-05-26T01:10:00.000Z' }],
+  ] as const)('%s 관측은 채널 키를 붙여 한 번만 적재한다', async (eventType, eventKey, expected) => {
+    const db = makeDb();
+    const lifecycleEvents = [makeReturnEvent(eventType, eventKey, '2026-05-26T01:10:00.000Z')];
+    const provider: ChannelOrderProvider = {
+      channel: 'medusa',
+      fetchOrders: jest
+        .fn()
+        .mockResolvedValueOnce({ orders: [makeOrder('2026-05-26T01:00:00.000Z')], failures: [] })
+        .mockResolvedValueOnce({ orders: [makeOrder('2026-05-26T01:10:00.000Z')], failures: [], lifecycleEvents })
+        .mockResolvedValueOnce({ orders: [makeOrder('2026-05-26T01:10:00.000Z')], failures: [], lifecycleEvents }),
+    };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      makeSyncStatus() as any,
+      outbox as any,
+      makeHashService() as any,
+      makeFailureService() as any,
+      db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
+    );
+
+    await orchestrator.poll();
+    await orchestrator.poll();
+    await orchestrator.poll();
+
+    const returnCalls = outbox.enqueue.mock.calls.filter(([arg]) => arg.eventType === eventType);
+    expect(returnCalls).toHaveLength(1);
+    expect(returnCalls[0][0]).toMatchObject({
+      aggregateId: '11111111-1111-4111-8111-111111111111',
+      payload: {
+        orderId: '11111111-1111-4111-8111-111111111111',
+        salesChannel: 'medusa',
+        externalOrderId: 'medusa_order_1',
+        ...expected,
+      },
+    });
+  });
+
   it('환불 lifecycle 이 함께 와도 내용 변경은 OrderModified 로 간다', async () => {
     const db = makeDb();
     const provider: ChannelOrderProvider = {
@@ -2444,6 +2486,30 @@ function makeFailure(sourceUpdatedAt: string): OrderCollectionFailureItem {
       ],
     },
   };
+}
+
+function makeReturnEvent(
+  eventType: 'ChannelReturnRequested' | 'ChannelReturnCancelled',
+  eventKey: string,
+  sourceUpdatedAt: string,
+): OrderLifecycleEventItem {
+  const base = { externalOrderId: 'medusa_order_1', sourceUpdatedAt, eventKey, rawEvent: { returnId: 'ret_1' } };
+  if (eventType === 'ChannelReturnRequested') {
+    return {
+      ...base,
+      eventType,
+      payload: {
+        returnId: 'ret_1',
+        requestId: 'req_1',
+        reason: 'change_of_mind',
+        feeBearer: 'customer',
+        requestedBy: 'customer',
+        requestedAt: sourceUpdatedAt,
+        items: [{ channelOrderItemId: 'item_1', quantity: 1 }],
+      },
+    };
+  }
+  return { ...base, eventType, payload: { returnId: 'ret_1', cancelledAt: sourceUpdatedAt } };
 }
 
 function makeLifecycleEvent(

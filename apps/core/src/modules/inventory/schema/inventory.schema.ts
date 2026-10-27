@@ -1550,6 +1550,77 @@ export const salesOrderLineCompositions = pgTable(
   }),
 );
 
+export const customerReturnStatusEnum = pgEnum('customer_return_status', [
+  'expected',
+  'arrived',
+  'inspected',
+  'held',
+  'refund_pending',
+  'settled',
+  'cancelled',
+]);
+
+/** 값은 packages/event-contracts 의 CUSTOMER_RETURN_REASONS 와 같아야 한다(스펙이 지킨다). */
+export const customerReturnReasonEnum = pgEnum('customer_return_reason', [
+  'change_of_mind',
+  'defective',
+  'not_as_described',
+  'wrong_item',
+  'damaged_in_shipping',
+  'other',
+]);
+
+/**
+ * 반품 예정 기록(K8 PR5). 채널 반품 «확정» 사실(Medusa 반품 확정)이 만든다.
+ * 도착·검수·환불은 이 행의 status 가 따라가며, 수량 사실(K6)은 expected~refund_pending 을 «예정 수량»으로 읽는다.
+ */
+export const customerReturns = pgTable(
+  'customer_returns',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    salesOrderId: uuid('sales_order_id')
+      .references(() => salesOrders.id, { onDelete: 'restrict' })
+      .notNull(),
+    channelReturnId: varchar('channel_return_id', { length: 255 }).notNull(),
+    channelRequestId: varchar('channel_request_id', { length: 255 }).notNull(),
+    status: customerReturnStatusEnum('status').notNull().default('expected'),
+    reason: customerReturnReasonEnum('reason').notNull(),
+    feeBearer: varchar('fee_bearer', { length: 16 }).notNull(),
+    requestedBy: varchar('requested_by', { length: 16 }).notNull(),
+    windowOverrideReason: text('window_override_reason'),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull(),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqChannelReturn: unique('uq_customer_returns_channel_return').on(t.channelReturnId),
+    idxSalesOrder: index('idx_customer_returns_sales_order').on(t.salesOrderId),
+    ckFeeBearer: check('ck_customer_returns_fee_bearer', sql`${t.feeBearer} IN ('customer', 'seller')`),
+    ckRequestedBy: check('ck_customer_returns_requested_by', sql`${t.requestedBy} IN ('customer', 'operator')`),
+  }),
+);
+
+export const customerReturnLines = pgTable(
+  'customer_return_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    customerReturnId: uuid('customer_return_id')
+      .references(() => customerReturns.id, { onDelete: 'cascade' })
+      .notNull(),
+    salesOrderLineId: uuid('sales_order_line_id')
+      .references(() => salesOrderLines.id, { onDelete: 'restrict' })
+      .notNull(),
+    channelOrderItemId: varchar('channel_order_item_id', { length: 255 }).notNull(),
+    quantity: integer('quantity').notNull(),
+  },
+  (t) => ({
+    uqReturnLine: unique('uq_customer_return_lines_return_line').on(t.customerReturnId, t.salesOrderLineId),
+    idxSalesOrderLine: index('idx_customer_return_lines_sales_order_line').on(t.salesOrderLineId),
+    ckQuantityPositive: check('ck_customer_return_lines_quantity_positive', sql`${t.quantity} > 0`),
+  }),
+);
+
 // 주문 이벤트 로그 테이블 추가
 export const orderEvents = pgTable('order_events', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -3819,6 +3890,8 @@ export const wmsTables = {
   salesOrders,
   salesOrderLines,
   salesOrderLineCompositions,
+  customerReturns,
+  customerReturnLines,
   orderEvents,
   businessLinks,
   salesOrderAmendments,

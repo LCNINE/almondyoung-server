@@ -4,7 +4,12 @@ import { seedWorld } from '../../fulfillment/order-progress/__support__/order-pr
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
 import { wireCancellation } from '../cancellation-record/__support__/cancellation-scenarios';
 import { recordSalesOrderCancellation } from '../cancellation-record/record-cancellation';
-import { seedClaim, seedComponentSku, seedDeliveredLine } from './__support__/claim-facts.fixtures';
+import {
+  insertCustomerReturn,
+  seedClaim,
+  seedComponentSku,
+  seedDeliveredLine,
+} from './__support__/claim-facts.fixtures';
 import { recallParcel } from './__support__/shipment-facts.fixtures';
 import { readReturnRequestSalesUnits } from './claim-quantities.reader';
 import { claimTotalsByParcelSql } from './claim-quantities.sql';
@@ -423,6 +428,73 @@ describeIfDb('readLineQuantities — SKU 층 청구 사실 (K6 PR3a)', () => {
       expect([...rows]).toEqual([]);
     });
   });
+
+  // K8 PR5 — 반품 예정 기록(customer_returns)은 소포를 모르고 판매 라인 × 판매 단위로 적는다. SKU 합에만 들어간다(N5)
+  it('expected customer return reduces claimable, cancelled does not', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { line } = await seedSimple(tx);
+      const lines = [{ salesOrderLineId: line.lineId, quantity: 1 }];
+      await insertCustomerReturn(tx, { salesOrderId: line.salesOrderId, status: 'expected', lines });
+      await insertCustomerReturn(tx, { salesOrderId: line.salesOrderId, status: 'cancelled', lines });
+
+      expect(await onlySku(tx, line)).toMatchObject(claims([2, 1, 0, 0, 1]));
+    });
+  });
+
+  it('settled customer return counts as consumed', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { line } = await seedSimple(tx);
+      await insertCustomerReturn(tx, {
+        salesOrderId: line.salesOrderId,
+        status: 'settled',
+        lines: [{ salesOrderLineId: line.lineId, quantity: 1 }],
+      });
+
+      expect(await onlySku(tx, line)).toMatchObject(claims([2, 0, 1, 0, 1]));
+    });
+  });
+
+  it('customer return on a set line reduces each component by qty_per_unit', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const skuA = w.skuId;
+      const skuB = await seedComponentSku(tx, w);
+      const line = await seedDeliveredLine(tx, w, {
+        quantity: 1,
+        composition: [
+          { skuId: skuA, qtyPerUnit: 2 },
+          { skuId: skuB, qtyPerUnit: 1 },
+        ],
+        parcels: [{ qtyBySku: { [skuA]: 2, [skuB]: 1 } }],
+      });
+      // 1벌 = A 2 · B 1
+      await insertCustomerReturn(tx, {
+        salesOrderId: line.salesOrderId,
+        status: 'expected',
+        lines: [{ salesOrderLineId: line.lineId, quantity: 1 }],
+      });
+
+      const skus = await skusOf(tx, line);
+      expect(skus).toHaveLength(2);
+      expect(skus.find((sku) => sku.skuId === skuA)).toMatchObject(claims([2, 2, 0, 0, 0]));
+      expect(skus.find((sku) => sku.skuId === skuB)).toMatchObject(claims([1, 1, 0, 0, 0]));
+    });
+  });
+
+  it('old and customer returns on one line both reduce claimable', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { line, item } = await seedSimple(tx);
+      // 옛 반품 표(PR 10 이 걷는다)와 새 기록이 같은 풀에서 뺀다 — 둘이 서로를 모르면 같은 물건을 두 번 청구한다
+      await seedClaim(tx, { kind: 'return', salesOrderId: line.salesOrderId, status: 'requested', items: [item(1)] });
+      await insertCustomerReturn(tx, {
+        salesOrderId: line.salesOrderId,
+        status: 'expected',
+        lines: [{ salesOrderLineId: line.lineId, quantity: 1 }],
+      });
+
+      expect(await onlySku(tx, line)).toMatchObject(claims([2, 2, 0, 0, 0]));
+    });
+  });
 });
 
 describeIfDb('readParcelClaimEligibility — 소포 단위 청구 자격 (K6 PR3a)', () => {
@@ -532,6 +604,29 @@ describeIfDb('readParcelClaimEligibility — 소포 단위 청구 자격 (K6 PR3
         skuClaimable: 0,
         claimable: 0,
       });
+    });
+  });
+
+  it('customer return caps parcel claimable through the sku pool', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const line = await seedDeliveredLine(tx, w, {
+        quantity: 2,
+        composition: [{ skuId: w.skuId, qtyPerUnit: 1 }],
+        parcels: [{ qtyBySku: { [w.skuId]: 2 } }],
+      });
+      await insertCustomerReturn(tx, {
+        salesOrderId: line.salesOrderId,
+        status: 'expected',
+        lines: [{ salesOrderLineId: line.lineId, quantity: 1 }],
+      });
+
+      // N5 — 새 기록은 소포가 없어 소포 합에 없다. least(2 − 0, 1) — SKU 몫이 소포를 덮는다
+      expect(await parcelsOf(tx, line.salesOrderId)).toEqual([
+        expect.objectContaining({ deliveredQty: 2, claimedQty: 0, skuClaimable: 1, claimable: 1 }),
+      ]);
+      const rows = await tx.execute(claimTotalsByParcelSql(sql`select ${line.salesOrderId}::uuid`));
+      expect([...rows]).toEqual([]);
     });
   });
 

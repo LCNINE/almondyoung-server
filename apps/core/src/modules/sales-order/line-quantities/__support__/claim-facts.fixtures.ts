@@ -7,6 +7,7 @@ import {
   wmsTables,
 } from '../../../inventory/schema/inventory.schema';
 import { seedBox, seedOrder, World } from '../../../fulfillment/order-progress/__support__/order-progress.fixtures';
+import type { CustomerReturnStatus } from '../../customer-return/customer-return.types';
 import { seedDispatchedParcel } from './shipment-facts.fixtures';
 
 /**
@@ -162,4 +163,41 @@ export async function seedClaim(
     .insert(t.exchangeRequestItems)
     .values(args.items.map((item) => ({ exchangeRequestId: request.id, ...item })));
   return { requestId: request.id };
+}
+
+/**
+ * 반품 예정 기록(K8 PR5) 하나와 그 줄들 — 매니저를 거치지 않고 직접 넣는다. 수량 문이 읽는 칸(상태·줄의 판매 라인·판매 단위
+ * 수량)만 뜻 있게 채우고, 채널 식별자는 겹치지 않는 값으로 둔다. 줄은 소포를 모른다(판매 라인 단위다).
+ */
+export async function insertCustomerReturn(
+  tx: DbTx,
+  args: {
+    salesOrderId: string;
+    status: CustomerReturnStatus;
+    lines: Array<{ salesOrderLineId: string; quantity: number }>;
+  },
+): Promise<{ customerReturnId: string }> {
+  const [customerReturn] = await tx
+    .insert(wmsTables.customerReturns)
+    .values({
+      salesOrderId: args.salesOrderId,
+      channelReturnId: `ret-${randomUUID()}`,
+      channelRequestId: `req-${randomUUID()}`,
+      status: args.status,
+      reason: 'defective',
+      feeBearer: 'seller',
+      requestedBy: 'customer',
+      requestedAt: new Date(),
+      cancelledAt: args.status === 'cancelled' ? new Date() : null,
+    })
+    .returning();
+  await tx.insert(wmsTables.customerReturnLines).values(
+    args.lines.map((line) => ({
+      customerReturnId: customerReturn.id,
+      salesOrderLineId: line.salesOrderLineId,
+      channelOrderItemId: `ci-${randomUUID()}`,
+      quantity: line.quantity,
+    })),
+  );
+  return { customerReturnId: customerReturn.id };
 }

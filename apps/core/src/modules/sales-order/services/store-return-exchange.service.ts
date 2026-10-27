@@ -34,6 +34,7 @@ import {
   SalesOrderClaimProgressedPayload,
   SalesOrderReturnedPayload,
 } from '@packages/event-contracts/streams/orders.stream';
+import { enqueueSalesOrderClaimProgress } from '../common/claim-progress';
 import { WalletRefundClient, WalletRefundOutcome } from './wallet-refund.client';
 import { classifyRefundOutcome } from './return-refund-classification';
 import { PriorCompletedReturn, returnRefundCap } from './return-refund-cap';
@@ -575,42 +576,7 @@ export class StoreReturnExchangeService {
       occurredAt: Date;
     },
   ): Promise<void> {
-    const [so] = await tx
-      .select({
-        channelOrderId: wmsTables.salesOrders.channelOrderId,
-        displayOrderNo: wmsTables.salesOrders.displayOrderNo,
-        salesChannel: wmsTables.salesOrders.salesChannel,
-        customerId: wmsTables.salesOrders.customerId,
-        customerEmail: wmsTables.salesOrders.customerEmail,
-        customerName: wmsTables.salesOrders.customerName,
-      })
-      .from(wmsTables.salesOrders)
-      .where(eq(wmsTables.salesOrders.id, claim.salesOrderId))
-      .limit(1);
-    if (!so || so.salesChannel !== 'medusa' || !so.customerId) return;
-
-    await this.coreOrders.enqueue(
-      {
-        idempotencyKey: `so-claim:${claim.kind}:${claim.requestId}:${claim.stage}`,
-        eventType: 'SalesOrderClaimProgressed',
-        aggregateId: claim.salesOrderId,
-        partitionKey: claim.salesOrderId,
-        payload: {
-          orderId: claim.salesOrderId,
-          channelOrderId: so.channelOrderId,
-          ...(so.displayOrderNo ? { displayOrderNo: so.displayOrderNo } : {}),
-          customerId: so.customerId,
-          ...(so.customerEmail ? { customerEmail: so.customerEmail } : {}),
-          ...(so.customerName ? { customerName: so.customerName } : {}),
-          kind: claim.kind,
-          stage: claim.stage,
-          requestId: claim.requestId,
-          ...(claim.requestedBy ? { requestedBy: claim.requestedBy } : {}),
-          occurredAt: claim.occurredAt.toISOString(),
-        } satisfies SalesOrderClaimProgressedPayload,
-      },
-      tx,
-    );
+    await enqueueSalesOrderClaimProgress(this.coreOrders, tx, claim);
   }
 
   private async enqueueReturnCompletedEvent(

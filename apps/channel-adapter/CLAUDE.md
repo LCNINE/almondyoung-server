@@ -140,7 +140,7 @@ Core(구 PIM) (Kafka) → PimProductEventConsumer → inbox_events
 ### 발행하는 Kafka 스트림 (Outbound)
 | 스트림 | 이벤트 | 소비자 |
 |--------|--------|--------|
-| `orders.events.v1` | `OrderCreated`, `OrderModified`, `OrderCancelled`, `ChannelOrderSettlementFailed` | WMS(core) |
+| `orders.events.v1` | `OrderCreated`, `OrderModified`, `OrderCancelled`, `OrderRefundCreated`, `ChannelReturnRequested`, `ChannelReturnCancelled`, `ChannelOrderSettlementFailed` | WMS(core) |
 | `channel-adapter.events.v1` | `OrderSyncCompleted`, `InventorySyncCompleted` 등 | 모니터링/분석 |
 
 ### 외부 API 의존

@@ -144,7 +144,8 @@
 | `OrderCreated` | 주문 생성 | `orderId`, `status`, `total`, `items` |
 | `OrderCancelled` | 주문 취소 | `orderId`, `status` |
 | `OrderPaymentComplete` | 결제 완료 | `order_id`, `payment_id`, `amount` |
-| `OrderReturnRequested` | 반품 요청 | `order_id`, `return_id`, `items` |
+| `ChannelReturnRequested` | 채널 반품 확정 관측 (producer channel-adapter, consumer core) | `orderId`, `returnId`, `items` |
+| `ChannelReturnCancelled` | 채널 반품 취소 관측 (producer channel-adapter, consumer core) | `orderId`, `returnId` |
 | `OrderRefundCreated` | 환불 생성 | `order_id`, `refund_id`, `amount` |
 
 #### Payload 예시
@@ -160,19 +161,6 @@
   ]
 }
 
-// OrderReturnRequested
-{
-  order_id: "order_01H8...",
-  return_id: "ret_01H8...",
-  items: [
-    {
-      item_id: "item_01H8...",
-      quantity: 1,
-      reason: "SIZE_NOT_FIT"
-    }
-  ],
-  requested_at: "2024-03-01T12:00:00Z"
-}
 ```
 
 ---
@@ -194,7 +182,8 @@ WMS 통합을 위한 확장된 주문 이벤트 스트림입니다. 재고 차�
 | `OrderModified` | 주문 수정 | `orderId`, `changes`, `modifiedBy` |
 | `OrderCancelled` | 주문 취소 (재고 복원) | `orderId`, `reason`, `stockRestorationResults` |
 | `OrderPaymentCompleted` | 결제 완료 | `orderId`, `paymentId`, `amount` |
-| `OrderReturnRequested` | 반품 요청 | `orderId`, `returnId`, `items` |
+| `ChannelReturnRequested` | 채널 반품 확정 (Medusa 반품 → core 반품 예정 기록) | `orderId`, `returnId`, `items` |
+| `ChannelReturnCancelled` | 채널 반품 취소 | `orderId`, `returnId` |
 | `OrderRefundCreated` | 환불 생성 | `orderId`, `refundId`, `amount` |
 | `OrderMerged` | 주문 병합 | `targetOrderId`, `sourceOrderIds` |
 | `ChannelOrderSettlementFailed` | 채널이 취소 명령의 정산(환불·취소)을 끝내지 못함 (#1016 36번 재설계) | `requestId`, `scope`, `retryable`, `failureCode`, `message` |
