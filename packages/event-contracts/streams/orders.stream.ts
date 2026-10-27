@@ -7,7 +7,7 @@
 import { event, stream } from '../types';
 import { z } from 'zod';
 import type { ChannelCancelRefundMode, SettleChannelReturnPayload } from './channel-orders-command.stream';
-import { CHANNEL_CANCEL_REFUND_MODES } from './channel-orders-command.stream';
+import { CHANNEL_CANCEL_REFUND_MODES, ReturnSettlementItemSchema } from './channel-orders-command.stream';
 
 // ===== Common Types =====
 
@@ -689,6 +689,8 @@ export interface ReturnSettlementDeduction {
   returnShipping: number;
   freeShippingBreak: number;
   roundTrip: number;
+  /** CS 가 검수 뒤 적은 보류 차감(K8 PR6b). 옛 생산자는 싣지 않는다 */
+  hold?: number;
 }
 
 /**
@@ -707,6 +709,39 @@ export interface ChannelReturnSettledPayload {
   refundMode: ChannelCancelRefundMode;
   settledAt: string;
   items: SettleChannelReturnPayload['items'];
+  /** 정산 전에 선환불로 이미 나간 금액(원, K8 PR6b) */
+  prepaidAmount?: number;
+  /** 외부 결제 몫 가운데 이번 정산이 실제로 되돌린 금액(원, K8 PR6b) */
+  externalRefundApplied?: number;
+}
+
+/** 반품 선환불 성공 사실 (K8 PR6b). channel-adapter 가 Medusa 선환불 응답을 보고 낸다. */
+export interface ChannelReturnPrepaidPayload {
+  orderId: string;
+  salesChannel: SalesChannel;
+  externalOrderId: string;
+  returnId: string;
+  /** `PrepayChannelReturnPayload.requestId` 그대로 */
+  requestId: string;
+  amount: number;
+  refundMode: ChannelCancelRefundMode;
+  /** ISO 8601 */
+  prepaidAt: string;
+}
+
+/** 반품 선환불 실패 사실 (K8 PR6b). 정산 실패와 같은 이유로 판매주문 id 는 싣지 않는다. */
+export interface ChannelReturnPrepayFailedPayload {
+  /** `PrepayChannelReturnPayload.requestId` 그대로 */
+  requestId: string;
+  salesChannel: string;
+  externalOrderId: string;
+  returnId: string;
+  retryable: boolean;
+  /** 열린 문자열 — `ChannelReturnSettlementFailedPayload.failureCode` 와 같은 어휘 */
+  failureCode: string;
+  message: string;
+  /** ISO 8601 */
+  at: string;
 }
 
 /**
@@ -732,6 +767,7 @@ const ReturnSettlementDeductionSchema = z.object({
   returnShipping: z.number().int().nonnegative(),
   freeShippingBreak: z.number().int().nonnegative(),
   roundTrip: z.number().int().nonnegative(),
+  hold: z.number().int().nonnegative().optional(),
 });
 
 const ChannelReturnSettledSchema = z.object({
@@ -745,15 +781,31 @@ const ChannelReturnSettledSchema = z.object({
   feeNotAdjusted: z.boolean(),
   refundMode: z.enum(CHANNEL_CANCEL_REFUND_MODES),
   settledAt: z.string().datetime(),
-  items: z
-    .array(
-      z.object({
-        channelOrderItemId: z.string().min(1),
-        received: z.number().int().nonnegative(),
-        dismissed: z.number().int().nonnegative(),
-      }),
-    )
-    .min(1),
+  items: z.array(ReturnSettlementItemSchema).min(1),
+  prepaidAmount: z.number().int().nonnegative().optional(),
+  externalRefundApplied: z.number().int().nonnegative().optional(),
+});
+
+const ChannelReturnPrepaidSchema = z.object({
+  orderId: z.string().min(1),
+  salesChannel: SalesChannelSchema,
+  externalOrderId: z.string().min(1),
+  returnId: z.string().min(1),
+  requestId: z.string().min(1),
+  amount: z.number().int().positive(),
+  refundMode: z.enum(CHANNEL_CANCEL_REFUND_MODES),
+  prepaidAt: z.string().datetime(),
+});
+
+const ChannelReturnPrepayFailedSchema = z.object({
+  requestId: z.string().min(1),
+  salesChannel: z.string().min(1),
+  externalOrderId: z.string().min(1),
+  returnId: z.string().min(1),
+  retryable: z.boolean(),
+  failureCode: z.string().min(1),
+  message: z.string(),
+  at: z.string().datetime(),
 });
 
 const ChannelReturnSettlementFailedSchema = z.object({
@@ -806,6 +858,14 @@ export const ORDER_STREAM = stream({
     ChannelReturnSettlementFailed: event<'ChannelReturnSettlementFailed', ChannelReturnSettlementFailedPayload>(
       'ChannelReturnSettlementFailed',
       ChannelReturnSettlementFailedSchema,
+    ),
+    ChannelReturnPrepaid: event<'ChannelReturnPrepaid', ChannelReturnPrepaidPayload>(
+      'ChannelReturnPrepaid',
+      ChannelReturnPrepaidSchema,
+    ),
+    ChannelReturnPrepayFailed: event<'ChannelReturnPrepayFailed', ChannelReturnPrepayFailedPayload>(
+      'ChannelReturnPrepayFailed',
+      ChannelReturnPrepayFailedSchema,
     ),
   },
 });

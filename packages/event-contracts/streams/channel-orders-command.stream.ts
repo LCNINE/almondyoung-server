@@ -73,6 +73,34 @@ export interface SettleChannelReturnPayload {
   items: Array<{ channelOrderItemId: string; received: number; dismissed: number }>;
   /** 없으면 `auto` */
   refundMode?: ChannelCancelRefundMode;
+  /**
+   * 보류 차감(CS 가 검수 뒤 사유를 적어 환불액에서 더 뺀다, K8 PR6b). 옛 channel-adapter 는 이 칸을 버린다 —
+   * 그러면 차감 없이 정산돼 과환불이 된다. 배포 직전 `held` 반품 0 을 확인한다.
+   */
+  holdDeduction?: { amount: number; memo: string };
+  /** 반품 요청이 열린 동안 이미 선환불한 금액(원). 정산에서 상계한다 */
+  alreadyRefundedAmount?: number;
+  /** 미도착(받지 못함)으로 반품을 닫는 정산이다 */
+  closesMissing?: boolean;
+  /** ISO 8601 */
+  requestedAt: string;
+}
+
+/**
+ * 반품 요청이 열린 주문에 정산 전에 환불을 먼저 내보낸다 (K8 PR6b). 성공은 `ChannelReturnPrepaid`,
+ * 못 하면 `ChannelReturnPrepayFailed` 로 돌려받는다.
+ */
+export interface PrepayChannelReturnPayload {
+  /** core `customer_returns.id` 에서 파생한 멱등 키 — 같은 요청의 재전송은 같은 값이다 */
+  requestId: string;
+  /** 'medusa' | 'naver' … — 문자열로 두고, 지원 여부는 소비자가 판정한다 */
+  salesChannel: string;
+  externalOrderId: string;
+  returnId: string;
+  /** 없으면 소비자가 정한 상한까지. 있으면 1 이상 정수(원) */
+  amount?: number;
+  refundMode: ChannelCancelRefundMode;
+  memo: string;
   /** ISO 8601 */
   requestedAt: string;
 }
@@ -124,22 +152,24 @@ const CancelChannelOrderSchema = z
     }
   });
 
+/** 반품 줄의 수령·폐기 수량. 정산 명령과 `ChannelReturnSettled` 가 같은 모양을 쓴다(orders.stream.ts 가 가져간다). */
+export const ReturnSettlementItemSchema = z.object({
+  channelOrderItemId: z.string().min(1),
+  received: z.number().int().nonnegative(),
+  dismissed: z.number().int().nonnegative(),
+});
+
 const SettleChannelReturnSchema = z
   .object({
     requestId: z.string().min(1),
     salesChannel: z.string().min(1),
     externalOrderId: z.string().min(1),
     returnId: z.string().min(1),
-    items: z
-      .array(
-        z.object({
-          channelOrderItemId: z.string().min(1),
-          received: z.number().int().nonnegative(),
-          dismissed: z.number().int().nonnegative(),
-        }),
-      )
-      .min(1),
+    items: z.array(ReturnSettlementItemSchema).min(1),
     refundMode: z.enum(CHANNEL_CANCEL_REFUND_MODES).optional(),
+    holdDeduction: z.object({ amount: z.number().int().positive(), memo: z.string().min(1).max(500) }).optional(),
+    alreadyRefundedAmount: z.number().int().nonnegative().optional(),
+    closesMissing: z.boolean().optional(),
     requestedAt: z.string().datetime(),
   })
   .superRefine((payload, context) => {
@@ -153,6 +183,17 @@ const SettleChannelReturnSchema = z
       context.addIssue({ code: 'custom', path: ['items'], message: '같은 줄이 두 번 실렸다' });
     }
   });
+
+const PrepayChannelReturnSchema = z.object({
+  requestId: z.string().min(1),
+  salesChannel: z.string().min(1),
+  externalOrderId: z.string().min(1),
+  returnId: z.string().min(1),
+  amount: z.number().int().positive().optional(),
+  refundMode: z.enum(CHANNEL_CANCEL_REFUND_MODES),
+  memo: z.string().min(1).max(500),
+  requestedAt: z.string().datetime(),
+});
 
 // ===== Stream Config =====
 
@@ -172,6 +213,10 @@ export const CHANNEL_ORDERS_COMMAND_STREAM = stream({
     SettleChannelReturn: event<'SettleChannelReturn', SettleChannelReturnPayload>(
       'SettleChannelReturn',
       SettleChannelReturnSchema,
+    ),
+    PrepayChannelReturn: event<'PrepayChannelReturn', PrepayChannelReturnPayload>(
+      'PrepayChannelReturn',
+      PrepayChannelReturnSchema,
     ),
   },
 });

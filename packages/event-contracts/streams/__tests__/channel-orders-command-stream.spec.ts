@@ -131,5 +131,51 @@ describe('CHANNEL_ORDERS_COMMAND_STREAM', () => {
       ).toThrow();
       expect(() => schema.parse({ ...base, requestedAt: 'yesterday' })).toThrow();
     });
+
+    it('CS 칸 셋(보류 차감·상계·미도착 닫기)을 싣고 통과한다', () => {
+      const withCs = {
+        ...base,
+        holdDeduction: { amount: 3000, memo: '파손 확인' },
+        alreadyRefundedAmount: 5000,
+        closesMissing: true,
+      };
+      expect(schema.parse(withCs)).toEqual(withCs);
+      expect(() => schema.parse({ ...base, alreadyRefundedAmount: 0 })).not.toThrow();
+    });
+
+    it('보류 차감 0원·빈 메모·501자 메모·음수 상계는 거부한다', () => {
+      expect(() => schema.parse({ ...base, holdDeduction: { amount: 0, memo: 'x' } })).toThrow();
+      expect(() => schema.parse({ ...base, holdDeduction: { amount: 1.5, memo: 'x' } })).toThrow();
+      expect(() => schema.parse({ ...base, holdDeduction: { amount: 1000, memo: '' } })).toThrow();
+      expect(() => schema.parse({ ...base, holdDeduction: { amount: 1000, memo: 'x'.repeat(501) } })).toThrow();
+      expect(() => schema.parse({ ...base, holdDeduction: { amount: 1000, memo: 'x'.repeat(500) } })).not.toThrow();
+      expect(() => schema.parse({ ...base, alreadyRefundedAmount: -1 })).toThrow();
+    });
+  });
+
+  describe('PrepayChannelReturn (K8 PR6b)', () => {
+    const schema = CHANNEL_ORDERS_COMMAND_STREAM.events.PrepayChannelReturn.schema!;
+    const base = {
+      requestId: '0192f0aa-0000-7000-8000-000000000003',
+      salesChannel: 'medusa',
+      externalOrderId: 'order_1',
+      returnId: 'ret_1',
+      refundMode: 'auto',
+      memo: '고객 요청 선환불',
+      requestedAt: '2026-10-27T00:00:00.000Z',
+    };
+
+    it('정상 payload 를 통과시킨다 (amount 는 선택)', () => {
+      expect(schema.parse(base)).toEqual(base);
+      expect(schema.parse({ ...base, amount: 4000 })).toMatchObject({ amount: 4000 });
+    });
+
+    it('amount 0·refundMode 누락·빈 메모는 거부한다', () => {
+      expect(() => schema.parse({ ...base, amount: 0 })).toThrow();
+      const { refundMode: _omit, ...noMode } = base;
+      expect(() => schema.parse(noMode)).toThrow();
+      expect(() => schema.parse({ ...base, refundMode: 'MANUAL' })).toThrow();
+      expect(() => schema.parse({ ...base, memo: '' })).toThrow();
+    });
   });
 });
