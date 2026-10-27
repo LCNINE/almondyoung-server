@@ -237,6 +237,7 @@ async function receive(
   if (plan.total > 0 && !chargeShippingOptionId) throw new Error(`반품 택배비를 붙일 배송 방법을 찾지 못했습니다: ${input.orderId}`);
 
   const record: ReturnSettlementRecord = {
+    requestId: input.requestId,
     requestHash,
     stage: 'received',
     items: normalizeItems(input.items),

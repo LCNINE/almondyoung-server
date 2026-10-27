@@ -10,6 +10,8 @@ export const RETURN_SETTLEMENT_METADATA_KEY = 'almondReturnSettlement';
 export type ReturnSettlementStage = 'received' | 'charged' | 'refunded';
 
 export type ReturnSettlementRecord = {
+  /** 정산 요청 키(core customer_returns.id) — 정산 관측이 core 에 돌려준다 */
+  requestId: string;
   /** items 정렬 해시 — 같은 requestId 다른 품목은 거절 */
   requestHash: string;
   stage: ReturnSettlementStage;
@@ -40,7 +42,7 @@ export function readReturnSettlementRecord(metadata: unknown): ReturnSettlementR
   if (!isObj(metadata)) return null;
   const r = metadata[RETURN_SETTLEMENT_METADATA_KEY];
   if (!isObj(r)) return null;
-  if (typeof r.requestHash !== 'string' || !isStage(r.stage)) return null;
+  if (typeof r.requestId !== 'string' || r.requestId === '' || typeof r.requestHash !== 'string' || !isStage(r.stage)) return null;
   if (!Array.isArray(r.items)) return null;
   const items: ReturnSettlementRecord['items'] = [];
   for (const i of r.items) {
@@ -61,6 +63,7 @@ export function readReturnSettlementRecord(metadata: unknown): ReturnSettlementR
   if (r.refundedAt !== undefined && typeof r.refundedAt !== 'string') return null;
   if (r.refundMode !== undefined && typeof r.refundMode !== 'string') return null;
   return {
+    requestId: r.requestId,
     requestHash: r.requestHash,
     stage: r.stage,
     items,

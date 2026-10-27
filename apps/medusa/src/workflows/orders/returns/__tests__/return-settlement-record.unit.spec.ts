@@ -8,6 +8,7 @@ import {
 } from '../return-settlement-record';
 
 const valid = (): ReturnSettlementRecord => ({
+  requestId: 'r1',
   requestHash: 'h',
   stage: 'received',
   items: [{ itemId: 'i1', received: 1, dismissed: 0 }],
@@ -37,6 +38,8 @@ describe('readReturnSettlementRecord', () => {
   it.each([
     ['chargeShippingOptionId 누락', { chargeShippingOptionId: undefined }],
     ['chargeShippingOptionId 숫자', { chargeShippingOptionId: 1 }],
+    ['requestId 누락', { requestId: undefined }],
+    ['requestId 빈 문자열', { requestId: '' }],
     ['stage 모름', { stage: 'x' }],
     ['owed 문자열', { owed: '1' }],
     ['deduction 한 칸 누락', { deduction: { returnShipping: 1, freeShippingBreak: 1 } }],

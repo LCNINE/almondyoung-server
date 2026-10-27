@@ -433,6 +433,7 @@ medusaIntegrationTestRunner({
       await confirmReturnReceiveWorkflow(container).run({ input: { return_id: return1 } });
       const items1 = [{ itemId: itemOf('A'), received: 1, dismissed: 0 }];
       const stuck: ReturnSettlementRecord = {
+        requestId: rid1,
         requestHash: hashReturnSettlement(rid1, items1),
         stage: 'received',
         items: items1,
