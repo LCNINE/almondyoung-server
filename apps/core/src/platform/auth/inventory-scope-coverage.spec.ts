@@ -120,6 +120,7 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'POST /inventory/delivery-profiles': S.MANAGE,
   'PATCH /inventory/delivery-profiles/:id': S.MANAGE,
   'GET /inventory/sku-field-capture/progress': S.MANAGE,
+  'GET /inventory/sku-field-capture/photos': S.MANAGE,
   'POST /inventory/sku-groups': S.MANAGE,
   'DELETE /inventory/sku-groups/:id': S.MANAGE,
   'PUT /inventory/sku-groups/:id': S.MANAGE,
