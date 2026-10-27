@@ -106,6 +106,11 @@ export function assertReadableSettlementRecord(record: ReturnSettlementRecord): 
   if (!readReturnSettlementRecord({ [RETURN_SETTLEMENT_METADATA_KEY]: record })) {
     throw new Error(`반품 정산 기록의 모양이 어긋납니다: ${JSON.stringify(record)}`);
   }
+  // 환불액·차감은 반올림한 원이다 — channel-adapter 의 정산 관측이 정수만 받으므로 소수를 쓰면 관측이 영영 막힌다
+  const { returnShipping, freeShippingBreak, roundTrip } = record.deduction;
+  if (![record.refundAmount, returnShipping, freeShippingBreak, roundTrip].every(Number.isInteger)) {
+    throw new Error(`반품 정산 기록의 환불액·차감이 정수 원이 아닙니다: ${JSON.stringify(record)}`);
+  }
 }
 
 type GraphOrderReturns = { returns?: Array<{ metadata?: Record<string, unknown> | null } | null> | null };

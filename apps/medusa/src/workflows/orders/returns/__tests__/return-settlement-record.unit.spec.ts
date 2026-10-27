@@ -97,4 +97,10 @@ describe('assertReadableSettlementRecord', () => {
     expect(() => assertReadableSettlementRecord(valid())).not.toThrow();
     expect(() => assertReadableSettlementRecord({ ...valid(), owed: Number.NaN })).toThrow();
   });
+  it('환불액·차감이 소수면 던진다 — 정산 관측이 정수만 읽는다', () => {
+    expect(() => assertReadableSettlementRecord({ ...valid(), refundAmount: 100.5 })).toThrow('정수');
+    expect(() =>
+      assertReadableSettlementRecord({ ...valid(), deduction: { returnShipping: 1.5, freeShippingBreak: 0, roundTrip: 0 } }),
+    ).toThrow('정수');
+  });
 });

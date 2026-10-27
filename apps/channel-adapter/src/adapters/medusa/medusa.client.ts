@@ -2799,7 +2799,9 @@ export class MedusaClient {
     }
     if (status === 502 && body.type === 'refund_pending') return { kind: 'refund_pending', message };
     if (status === 404 && body.type === 'not_found') return { kind: 'not_found', message };
-    if (status === 400) return { kind: 'rejected', reason: medusaErrorCode(status, body), message };
+    // partialCancelOrder 와 달리 모르는 400 을 영구 거절로 닫지 않는다: Medusa 는 일시 조건(다른 주문 수정이 열려 있음 등)도
+    // 400 not_allowed 로 내는데, 영구 실패는 core 재시도를 멈추고 사람이 닫을 길이 아직 없다(PR 6b 전). 진짜 영구면 core 의 발행 상한이 막는다.
+    if (status === 400) return { kind: 'transient', failureCode: medusaErrorCode(status, body), message };
     this.logger.error(
       `Failed to settle Medusa return: ${orderId}/${returnId} (status=${status}, type=${String(body.type)})`,
       message,

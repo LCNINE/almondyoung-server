@@ -1687,6 +1687,13 @@ describe('MedusaClient 취소 (#1016 35번 PR-B · 36번 재설계 PR 3)', () =>
       await expect(settle()).resolves.toEqual({ kind: 'rejected', reason: 'items_mismatch', message: 'x' });
     });
 
+    it('모르는 400 not_allowed → 일시(재시도) 실패, 그 code 를 싣는다', async () => {
+      global.fetch = respond(400, { type: 'not_allowed', code: 'order_change_open', message: '열린 주문 수정' });
+      await expect(settle()).resolves.toEqual({ kind: 'transient', failureCode: 'order_change_open', message: '열린 주문 수정' });
+      global.fetch = respond(400, { type: 'not_allowed', message: 'x' });
+      await expect(settle()).resolves.toMatchObject({ kind: 'transient', failureCode: 'not_allowed' });
+    });
+
     it('400 wallet_refund_refused:X → refund_refused', async () => {
       global.fetch = respond(400, { type: 'not_allowed', code: 'wallet_refund_refused:X', stage: 'received', message: 'w' });
       await expect(settle()).resolves.toEqual({ kind: 'refund_refused', failureCode: 'wallet_refund_refused:X', message: 'w' });
