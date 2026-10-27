@@ -178,4 +178,24 @@ describeDb('stocktaking add count item', () => {
       .where(eq(wmsTables.stocktakingLines.sessionId, fixture.session.id));
     expect(lines).toHaveLength(1);
   });
+
+  it('return_default 위치를 실사에 넣으면 거절', async () => {
+    const fixture = await h.seed(0);
+    await h.db
+      .update(wmsTables.locations)
+      .set({ isSystem: true, systemRole: 'return_default' })
+      .where(eq(wmsTables.locations.id, fixture.otherLocation.id));
+
+    await expect(h.controller.addCountItem(inputFor(fixture), h.actor)).rejects.toThrow(
+      '반품 검수 칸은 실사할 수 없어요. 이 칸의 수량은 반품 검수가 정리해요.',
+    );
+  });
+
+  it('일반 위치는 그대로 실사된다', async () => {
+    const fixture = await h.seed(0);
+
+    await expect(h.controller.addCountItem(inputFor(fixture), h.actor)).resolves.toMatchObject({
+      skuId: fixture.sku.id,
+    });
+  });
 });

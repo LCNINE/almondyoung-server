@@ -615,6 +615,17 @@ export class StockEventStore {
           'Shipment dispatch events can only be reversed through the exact recall operation',
         );
       }
+      // 반품 입고·검수 전이는 반품 기록이 수량의 주인이다 — 이벤트만 되돌리면 둘이 어긋난다.
+      if (
+        original.transitionType === 'RETURN_RECEIVE' ||
+        original.transitionType === 'RETURN_ACCEPT' ||
+        original.transitionType === 'RETURN_REJECT'
+      ) {
+        throw this.shipmentDispatchReversalConflict(
+          'RETURN_EVENT_REVERSAL_NOT_ALLOWED',
+          '반품 입고·검수 이벤트는 되돌릴 수 없습니다 — 반품 기록이 이 수량의 주인입니다',
+        );
+      }
       const [existingReversal] = await trx
         .select({ id: wmsTables.stockEvents.id })
         .from(wmsTables.stockEvents)

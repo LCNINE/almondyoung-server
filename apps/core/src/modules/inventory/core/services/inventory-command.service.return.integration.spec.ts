@@ -209,43 +209,21 @@ describeIfDb('InventoryCommandService 반품 전이 (DB integration, rollback-on
     });
   });
 
-  it('합격분에 예약이 걸리면 그 합격의 역분개는 예약 불변식 가드가 거절한다', async () => {
+  it('합격 이벤트의 역분개는 반품 기록이 주인이라 거절되고 원장은 그대로다', async () => {
     await inRollbackTx(async (tx) => {
       const { warehouse, sku } = await createFixture(tx);
       const base = { skuId: sku.id, warehouseId: warehouse.id };
       await command.returnReceive({ ...base, quantity: 2, idempotencyKey: key() }, tx);
       const accepted = await command.returnAccept({ ...base, quantity: 2, idempotencyKey: key() }, tx);
-      const shipmentLineId = await seedShipmentLineFor(tx, { ...base, qty: 2 });
-      await tx.insert(wmsTables.stockReservations).values({
-        targetType: 'SHIPMENT_LINE',
-        targetId: shipmentLineId,
-        shipmentLineId,
-        skuId: sku.id,
-        warehouseId: warehouse.id,
-        quantity: 2,
-        status: 'confirmed',
-      });
 
-      await expect(
-        tx.transaction((sp) => eventStore.reverseEvent(accepted.eventId as string, 'it', sp)),
-      ).rejects.toThrow(ConflictException);
+      const error = await tx
+        .transaction((sp) => eventStore.reverseEvent(accepted.eventId as string, 'it', sp))
+        .catch((e: unknown) => e);
 
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).getResponse()).toMatchObject({ code: 'RETURN_EVENT_REVERSAL_NOT_ALLOWED' });
       expect(await ledgerQty(tx, sku.id, warehouse.id, 'ON_HAND')).toBe(2);
-    });
-  });
-
-  it('예약이 없으면 합격의 역분개는 MOVE 로 ON_HAND 를 RETURNED 로 되돌린다', async () => {
-    await inRollbackTx(async (tx) => {
-      const { warehouse, sku } = await createFixture(tx);
-      const base = { skuId: sku.id, warehouseId: warehouse.id };
-      await command.returnReceive({ ...base, quantity: 2, idempotencyKey: key() }, tx);
-      const accepted = await command.returnAccept({ ...base, quantity: 2, idempotencyKey: key() }, tx);
-
-      const reversal = await eventStore.reverseEvent(accepted.eventId as string, 'it', tx);
-
-      expect(reversal).toMatchObject({ transitionType: 'MOVE', fromState: 'ON_HAND', toState: 'RETURNED' });
-      expect(await ledgerQty(tx, sku.id, warehouse.id, 'ON_HAND')).toBe(0);
-      expect(await ledgerQty(tx, sku.id, warehouse.id, 'RETURNED')).toBe(2);
+      expect(await ledgerQty(tx, sku.id, warehouse.id, 'RETURNED')).toBe(0);
     });
   });
 });
