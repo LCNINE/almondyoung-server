@@ -20,7 +20,7 @@ import { shippingPlanLines } from '../partial-cancel/shipping-plan-lines';
 import { loadOrderView, productShippingProfiles, type OrderView } from '../settlement/load-order-view';
 import type { ShippingMethodView } from '../partial-cancel/plan-shipping';
 import { addSettlementCharge, ensureNoDanglingChange } from '../settlement/order-edit-charge';
-import { orderCancelLockKey, orderPaymentIds } from '../settlement/order-payments';
+import { listOrderRefunds, orderCancelLockKey } from '../settlement/order-payments';
 import { refundOrderPayments } from '../settlement/refund-order-payments';
 import type { RefundMode } from '../settlement/refund-mode';
 import { reconcileOrderWalletRefunds } from '../settlement/wallet-refund-ledger';
@@ -120,7 +120,7 @@ export async function settleOrderReturn(container: MedusaContainer, input: Settl
   });
 }
 
-type ReturnRow = {
+export type ReturnRow = {
   id: string;
   orderId: string;
   status: string;
@@ -297,20 +297,28 @@ async function assertNoExternalRefund(
   order: OrderView,
   returnRecords: ReturnSettlementRecord[],
 ): Promise<void> {
-  const paymentIds = await orderPaymentIds(container, order.id);
-  const payments = paymentIds.length
-    ? await container.resolve(Modules.PAYMENT).listPayments({ id: paymentIds }, { relations: ['refunds'] })
-    : [];
-  const unresolved = unresolvedExternalRefund(
-    payments.flatMap((p) => p.refunds ?? []),
-    [...Object.values(readPartialCancelRecords(order.metadata)), ...returnRecords],
-  );
+  const unresolved = await orderUnresolvedExternalRefund(container, order, returnRecords);
   if (unresolved > 0) {
     throw new ReturnSettleRejected(
       'external_refund_unresolved',
       `품목에 연결 안 된 외부 환불 ${unresolved}원이 있는 주문입니다 — 반품 환불을 더 내면 이중 환불이라 정산하지 않습니다`,
     );
   }
+}
+
+/**
+ * 주문의 «품목에 연결 안 된 외부 환불»(원) — `wallet:` 메모 환불 합에서 부분취소·반품 정산 기록이 상계로 가져간 몫을 뺀 것.
+ * 정산과 선환불이 같은 판정으로 거절한다.
+ */
+export async function orderUnresolvedExternalRefund(
+  container: MedusaContainer,
+  order: OrderView,
+  returnRecords: ReturnSettlementRecord[],
+): Promise<number> {
+  return unresolvedExternalRefund(await listOrderRefunds(container, order.id), [
+    ...Object.values(readPartialCancelRecords(order.metadata)),
+    ...returnRecords,
+  ]);
 }
 
 /**
@@ -338,13 +346,13 @@ function chargeShippingOption(
 
 // ── 조회·기록 ──────────────────────────────────────────────────────────────────
 
-async function loadOrder(container: MedusaContainer, orderId: string): Promise<OrderView> {
+export async function loadOrder(container: MedusaContainer, orderId: string): Promise<OrderView> {
   const order = await loadOrderView(container, orderId);
   if (!order) throw new ReturnOrderNotFound(`주문을 찾을 수 없습니다: ${orderId}`);
   return order;
 }
 
-async function loadReturn(container: MedusaContainer, returnId: string): Promise<ReturnRow | null> {
+export async function loadReturn(container: MedusaContainer, returnId: string): Promise<ReturnRow | null> {
   const [row] = await container
     .resolve(Modules.ORDER)
     .listReturns({ id: returnId }, { select: ['id', 'order_id', 'status', 'metadata'], relations: ['items'] });
@@ -358,15 +366,22 @@ async function loadReturn(container: MedusaContainer, returnId: string): Promise
   return { id: row.id, orderId: row.order_id, status: row.status, metadata: row.metadata ?? null, quantities };
 }
 
-/** 반품 metadata 는 배열형 updateReturns 로만 저장된다(PR 3 실측). 통째로 바뀌므로 읽은 뒤 합친다 — 요청 기록(almondReturn)을 잃지 않게. */
 async function writeRecord(container: MedusaContainer, returnId: string, record: ReturnSettlementRecord): Promise<void> {
   assertReadableSettlementRecord(record);
+  await writeReturnMetadata(container, returnId, RETURN_SETTLEMENT_METADATA_KEY, record);
+}
+
+/**
+ * 반품 metadata 의 키 하나를 쓴다. metadata 는 배열형 updateReturns 로만 저장된다(PR 3 실측). 통째로 바뀌므로 읽은 뒤 합친다 —
+ * 다른 기록(요청 almondReturn·정산·선환불)을 잃지 않게. 같은 주문 잠금 안에서 부른다.
+ */
+export async function writeReturnMetadata(container: MedusaContainer, returnId: string, key: string, value: unknown): Promise<void> {
   const orderModule = container.resolve(Modules.ORDER);
   const [row] = await orderModule.listReturns({ id: returnId }, { select: ['id', 'metadata'] });
   await orderModule.updateReturns([
     {
       selector: { id: returnId },
-      data: { metadata: { ...(row?.metadata ?? {}), [RETURN_SETTLEMENT_METADATA_KEY]: record } },
+      data: { metadata: { ...(row?.metadata ?? {}), [key]: value } },
     },
   ]);
 }

@@ -7,12 +7,14 @@ import {
 } from '@medusajs/medusa/core-flows';
 
 import { toNumber } from '../partial-cancel/amount';
-import { orderCancelLockKey } from '../settlement/order-payments';
+import { listOrderRefunds, orderCancelLockKey } from '../settlement/order-payments';
 import { fetchCoreReturnEligibility } from './core-return-eligibility';
 import { loadReturnOrder, RETURN_REQUEST_METADATA_KEY, type ReturnRequestRecord } from './load-return-order';
 import { ReturnRequestRejected, type ReturnRequestedBy } from './plan-return-request';
 import { ReturnOrderNotFound } from './request-order-return';
+import { prepaidTotal, RETURN_PREPAY_METADATA_KEY } from './return-prepay-record';
 import { lowerUnheldTopUp, remainingTopUp } from './return-top-up-ledger';
+import { loadReturn } from './settle-order-return';
 
 export type CancelOrderReturnInput = {
   orderId: string;
@@ -56,6 +58,8 @@ async function run(container: MedusaContainer, input: CancelOrderReturnInput): P
   // Medusa 기본 경로나 대시보드가 만든 반품은 우리가 올린 출고 수량이 없다 — 되돌릴 근거가 없으니 건드리지 않는다
   const record = ret.record;
   if (!record) throw new ReturnRequestRejected('not_our_return', '이 반품은 취소할 수 없습니다');
+  // 주문 변경을 건드리기 «전»에 본다 — 먼저 환불한 반품을 취소하면 환불이 반품 없이 남는다(K8 PR6b N15)
+  await assertNotPrepaid(container, order.id, ret.id, record.requestId);
 
   const result: CancelOrderReturnResult = { returnId: ret.id, status: 'canceled' };
 
@@ -93,6 +97,18 @@ async function run(container: MedusaContainer, input: CancelOrderReturnInput): P
   await cancelReturnWorkflow(container).run({ input: { return_id: ret.id, canceled_by: input.actorId } });
   await revertTopUp(container, order.id, ret.id, record);
   return result;
+}
+
+/**
+ * 선환불이 시작된 반품은 취소하지 않는다. 선환불 기록은 환불 «전»에 쓰이므로 기록(읽히든 아니든 키)이 정본이고,
+ * 요청 기록의 requestId 메모 환불은 기록 없이 남은 환불까지 잡는 덧댐이다.
+ */
+async function assertNotPrepaid(container: MedusaContainer, orderId: string, returnId: string, requestId: string): Promise<void> {
+  const row = await loadReturn(container, returnId);
+  const started = row?.metadata?.[RETURN_PREPAY_METADATA_KEY] !== undefined;
+  if (started || prepaidTotal(await listOrderRefunds(container, orderId), requestId) > 0) {
+    throw new ReturnRequestRejected('return_prepaid', '먼저 환불한 반품은 취소할 수 없습니다');
+  }
 }
 
 /** ③ — 올린 출고 수량을 같은 만큼 내리고, 내렸다는 표시를 반품 기록에 남긴다. */
