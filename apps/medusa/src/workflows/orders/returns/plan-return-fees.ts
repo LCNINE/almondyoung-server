@@ -22,12 +22,12 @@ export type ReturnFeePlan = {
   groupFees: Record<string, number>;
 };
 
-const NONE: ReturnFeePlan = {
-  feeNotAdjusted: false,
+const none = (feeNotAdjusted: boolean): ReturnFeePlan => ({
+  feeNotAdjusted,
   deduction: { returnShipping: 0, freeShippingBreak: 0, roundTrip: 0 },
   total: 0,
   groupFees: {},
-};
+});
 
 /**
  * 반품 택배비 차감을 계산한다(N13). 고객 부담일 때만 세 몫 — 반품 택배비·무료배송 깨짐·왕복.
@@ -42,7 +42,7 @@ export function planReturnFees(input: {
   priorGroupFees: PriorGroupFees;
   chargeCap: number;
 }): ReturnFeePlan {
-  if (input.feeBearer === 'seller') return NONE;
+  if (input.feeBearer === 'seller') return none(false);
 
   // 그룹·스냅샷 판정은 부분취소와 같은 계산에 맡긴다. 상한 없이 돌려 «올라감»만 읽는다.
   const shipping = planShipping({
@@ -52,7 +52,7 @@ export function planReturnFees(input: {
     priorGroupFees: input.priorGroupFees,
     chargeCap: Number.MAX_SAFE_INTEGER,
   });
-  if (!shipping.adjustable) return { ...NONE, feeNotAdjusted: true };
+  if (!shipping.adjustable) return none(true);
 
   const snapshots = new Map(
     input.methods.flatMap((m) => (m.snapshot ? [[m.snapshot.shippingProfileId, m.snapshot] as const] : [])),

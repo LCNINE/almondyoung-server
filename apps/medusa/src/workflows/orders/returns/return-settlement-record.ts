@@ -28,7 +28,7 @@ export type ReturnSettlementRecord = {
   refundMode?: string;
 };
 
-const STAGES: ReadonlySet<string> = new Set<ReturnSettlementStage>(['received', 'charged', 'refunded']);
+const isStage = (v: unknown): v is ReturnSettlementStage => v === 'received' || v === 'charged' || v === 'refunded';
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
@@ -37,7 +37,7 @@ export function readReturnSettlementRecord(metadata: unknown): ReturnSettlementR
   if (!isObj(metadata)) return null;
   const r = metadata[RETURN_SETTLEMENT_METADATA_KEY];
   if (!isObj(r)) return null;
-  if (typeof r.requestHash !== 'string' || typeof r.stage !== 'string' || !STAGES.has(r.stage)) return null;
+  if (typeof r.requestHash !== 'string' || !isStage(r.stage)) return null;
   if (!Array.isArray(r.items)) return null;
   const items: ReturnSettlementRecord['items'] = [];
   for (const i of r.items) {
@@ -58,7 +58,7 @@ export function readReturnSettlementRecord(metadata: unknown): ReturnSettlementR
   if (r.refundMode !== undefined && typeof r.refundMode !== 'string') return null;
   return {
     requestHash: r.requestHash,
-    stage: r.stage as ReturnSettlementStage,
+    stage: r.stage,
     items,
     owed: r.owed,
     deduction: { returnShipping: d.returnShipping, freeShippingBreak: d.freeShippingBreak, roundTrip: d.roundTrip },

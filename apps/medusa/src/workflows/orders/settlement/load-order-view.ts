@@ -59,6 +59,7 @@ export async function loadOrderView(container: MedusaContainer, orderId: string)
       requiresShipping: i.requires_shipping !== false,
       // items.detail 을 이미 싣는다. 못 읽으면 0 — 하한 검사를 건너뛰고 Medusa 자신의 검증에 맡긴다
       fulfilledQuantity: readFulfilledQuantity(i.detail),
+      returnedQuantity: readReturnedQuantity(i.detail),
       adjustments: (i.adjustments ?? []).map((a) => ({
         amount: toNumber(a.amount),
         code: a.code ?? null,
@@ -98,6 +99,13 @@ export function toShippingMethodView(m: {
 
 function readFulfilledQuantity(detail: { fulfilled_quantity?: unknown } | null | undefined): number {
   const n = toNumber(detail?.fulfilled_quantity ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function readReturnedQuantity(
+  detail: { return_received_quantity?: unknown; return_dismissed_quantity?: unknown } | null | undefined,
+): number {
+  const n = toNumber(detail?.return_received_quantity ?? 0) + toNumber(detail?.return_dismissed_quantity ?? 0);
   return Number.isFinite(n) ? n : 0;
 }
 
