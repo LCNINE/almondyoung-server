@@ -7,19 +7,17 @@ import { ShellChromeContext } from '../core/design/shellChrome';
 import { useDeveloperMode } from '../core/diagnostics/DeveloperModeProvider';
 import { useCommandScans } from '../core/hardware/scan/useScanner';
 import { ActionRegistryProvider, useRegistryApi, useStationActions } from './ActionRegistry';
-import type { StationAction } from './actions';
+import { TAB_ACTION_PREFIX, type StationAction } from './actions';
 import { parseCommand } from './commandCode';
 import { FeedbackProvider, useFeedback, useFlash } from './feedback/FeedbackProvider';
 import type { ToneSink } from './feedback/soundPlayer';
 import { FunctionKeyBar } from './FunctionKeyBar';
 import { Kbd } from './Kbd';
-import { TAB_KEYS, type StationKey } from './keys';
 import { BatchProgressProvider } from './status/batchProgress';
 import { StatusBar } from './status/StatusBar';
 import { STATION_TABS, activeSectionOf, activeTabOf } from './tabs';
 import { modalOpen, useStationKeyCapture } from './useStationKeys';
 
-const TAB_KEY_SET: ReadonlySet<StationKey> = new Set<StationKey>(TAB_KEYS);
 const STATION_CHROME = { hidesHomeBack: true };
 
 /**
@@ -51,11 +49,11 @@ function ShellFrame() {
   const flash = useFlash();
   const registry = useRegistryApi();
 
-  // 탭 전환(F1~F6)은 셸 자신의 액션이다(스펙 §5.2).
+  // 탭 전환(F1~F7)은 셸 자신의 액션이다(스펙 §5.2). 기능키 바는 id 접두어로 알아보고 뺀다
   const tabActions = useMemo<StationAction[]>(
     () =>
       STATION_TABS.map((t) => ({
-        id: `tab-${t.key}`,
+        id: `${TAB_ACTION_PREFIX}${t.key}`,
         key: t.key,
         label: t.label,
         enabled: true,
@@ -166,7 +164,7 @@ function ShellFrame() {
       <main className="min-h-0 flex-1 overflow-y-auto p-3 print:overflow-visible print:p-0">
         <Outlet />
       </main>
-      <FunctionKeyBar omit={TAB_KEY_SET} />
+      <FunctionKeyBar />
       <StatusBar tab={tab?.key ?? null} />
       {flash !== null && (
         <div

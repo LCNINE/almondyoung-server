@@ -55,6 +55,17 @@ describe('createHumanKeyDetector', () => {
     expect(d.feed('Escape', 1300)).toEqual(['Escape']);
   });
 
+  it('←→ 도 사람 키로 바로 낸다 — 미뤄 둔 글자를 먼저, 스캔 묶음 판정에 끼지 않는다(반품 검수의 칸 이동)', () => {
+    const d = createHumanKeyDetector();
+    d.feed('3', 0);
+    expect(d.feed('ArrowRight', 10)).toEqual(['3', 'ArrowRight']);
+    expect(d.feed('ArrowLeft', 500)).toEqual(['ArrowLeft']);
+    // 스캔 묶음 바로 뒤에 와도 사람 키다 — 묶음 상태를 끊고, 그 뒤의 Enter 도 사람 것이다
+    [...'8801'].forEach((key, i) => d.feed(key, 1000 + i * 5));
+    expect(d.feed('ArrowLeft', 1020)).toEqual(['ArrowLeft']);
+    expect(d.feed('Enter', 1030)).toEqual(['Enter']);
+  });
+
   it('모르는 제어 키는 내지 않되 미뤄 둔 글자는 낸다', () => {
     const d = createHumanKeyDetector();
     d.feed('4', 0);

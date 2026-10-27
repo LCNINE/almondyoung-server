@@ -41,12 +41,20 @@ describe('dispatchKey', () => {
 });
 
 describe('functionBarItems', () => {
-  it('켜진 것만, 키 순서대로, Esc 는 맨 끝, omit 한 키(탭)는 빼고', () => {
+  it('켜진 것만, 키 순서대로, Esc 는 맨 끝, 셸의 탭 액션(tab-…)은 빼고', () => {
     const resolved = resolveActions([
       [action('tab-F1', 'F1')],
       [action('esc', 'Escape'), action('f12', 'F12'), action('f7', 'F7'), action('f9', 'F9', false)],
     ]);
-    expect(functionBarItems(resolved, new Set<StationKey>(['F1'])).map((a) => a.id)).toEqual(['f7', 'f12', 'esc']);
+    expect(functionBarItems(resolved).map((a) => a.id)).toEqual(['f7', 'f12', 'esc']);
+  });
+
+  it('F7 은 탭이면 빠지고, 화면이 F7 을 선언하면(검수 중 수량) 바에 남는다', () => {
+    const tabs = [action('tab-F1', 'F1'), action('tab-F7', 'F7')];
+    expect(functionBarItems(resolveActions([tabs])).map((a) => a.id)).toEqual([]);
+    expect(functionBarItems(resolveActions([tabs, [action('inspect-quantity', 'F7')]])).map((a) => a.id)).toEqual([
+      'inspect-quantity',
+    ]);
   });
 });
 

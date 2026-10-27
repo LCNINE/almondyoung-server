@@ -252,7 +252,7 @@ requested = `expected` 관측, collected = `arrived`, completed = `settled`. `Sa
 - (N9) 정산 명령의 재발행은 core 크론(`customer-return-settlement-retry`, 5분)이다. 같은 requestId 로 다시 내고, 12번을 넘기면 `stalled` 로 멈춰 error 로그를 남긴다(사람 일). 영구 거절은 건드리지 않는다.
 - (N11) Medusa 반품 취소는 core 에 도착을 묻는다 — 자격 API 응답의 `customerReturns` 에서 그 반품이 `expected`·`cancelled` 가 아니면 `return_arrived`(400). core 에 기록이 없으면(관측 지연 ≤ 5분) 통과하고, core 가 응답하지 않으면 502 다. PR 3 숙제의 답이다.
 - (N17) 정산 결과: `ChannelReturnSettled`(환불까지 끝, auto·manual 무관)는 `settled`, `ChannelReturnSettlementFailed` 가 `received: true`(수령 확정, 환불만 남음)면 `inspected → refund_pending`. 실패 사실은 순서 없이 와도 `at` 이 더 늦은 것만 적는다. 위 사다리 문장을 이에 맞게 고쳤다.
-- (f) 검수자 id 는 이번 PR 에서 저장하지 않는다(칸 없음) — 창고 화면(PR 7)과 함께 더한다.
+- (f) 검수자 id 는 이번 PR 에서 저장하지 않는다(칸 없음) — 창고 화면(PR 7)과 함께 더한다. → PR 7b 에서 `inspected_by`.
 
 **PR 6b 에서 확정한 결과.**
 - (N1) CS 의 문(미도착 닫기·보류 정산·선환불·다시 시도·계좌 송금)은 core 라우트다. CS 는 Medusa 를 직접 부르지 않는다 — core 가 기록과 명령을 한 트랜잭션에 묶어야 크론 재발행·관측이 한 기록 위에 선다. 읽기 하나(정산 미리보기, 4.4)만 Medusa 의 관리자 라우트를 직접 읽는다.
@@ -395,6 +395,20 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 - (N11) 대시보드·통계의 «반품» 칸은 새 목록(진행 중 total, 확인 필요 attentionCount)으로 바꿨다. 일별 반품 수는 옛 표를 세므로 PR 10 에서 다시 잇는다.
 - (창고 화면) warehouse-app 스테이션(F7)에 둔다. 소포는 한진 회수(PR 9) 전까지 «도착 대기 목록 + 검색»으로 찾는다. 이 작업과 검수자 id 칸이 **PR 7b** 다.
 
+**PR 7b 에서 확정한 결과.** 창고 반품 화면(스테이션)과 core 읽기 라우트·검수자 칸이다. 마이그 하나(expand).
+- (N1) 자리는 스테이션 7번째 탭 F7 «반품»(경로 `/customer-returns`). F1 검수 중 «수량»도 F7 이다 — 레지스트리가 안쪽을 이기므로 검수 중 F7 = 수량, 그 밖에선 반품 탭이다. 기능키 바는 id 가 `tab-` 로 시작하는 셸 탭 액션만 뺀다. 핸드헬드엔 탭이 없다.
+- (N2) 창고 읽기 라우트는 `GET admin/customer-return-receiving`(목록)·`/:id`(상세) — 권한 `inventory.stock.operate`(+ `ScopeGuard`), 새 권한 키 없음. GET 인데 쓰기와 같은 문이라 `route-classification.spec.ts` 의 `NON_READ_GET` 에 근거와 함께 올렸다.
+- (N3) 도착 대기 목록은 `expected`·`arrived` 만, 그 창고 것만(`expected` 는 그 창고가 배송완료한 주문). 단계 `ready`(검수 대기) → `partial`(덜 옴) → `awaiting`(도착 전) 순, 그다음 요청 이른 순.
+- (N4) 고객명은 가려서(`customerMasked`) 싣는다 — 원문이 아니라 `@PiiResponse` 대상이 아니다. 검색은 원문 부분 일치다.
+- (N5) 항목에 `barcodes` 를 싣는다. 소포 세기에서 스캔은 그 바코드를 가진 항목 중 남은 수량이 있는 첫 줄에 +1 하고 그 줄을 고른다 — 같은 SKU 가 두 줄이면 앞줄부터 찬다. 포장단위는 무시(낱개).
+- (N6) 소포 키는 화면을 열 때 한 번 만든다. 결과를 모르면 수량을 잠그고 같은 키로 다시 보낸다. 이미 도착이 있는 반품은 F10 을 두 번 눌러야 보낸다(같은 소포를 두 번 세는 일을 막는 유일한 장치).
+- (N7) 검수는 불량·보류만 입력하고 양품은 도착 − 불량 − 보류(파생)다. 되돌릴 수 없어 F10 은 두 번 누른다.
+- (N9) `customer_returns.inspected_by` nullable — 처음 검수 때만 `actorId` 를 쓰고 같은 결과 재요청은 건드리지 않는다. 화면엔 안 보인다. `migrate → deploy`, core 먼저 → 앱 릴리스.
+- (검색칸) 명령 바코드는 셸로 보낸다(스테이션 §5.3). 숫자만 친 값이 주문 검색으로 0건이면 같은 값을 상품 바코드로 한 번 더 찾는다(주문번호도 숫자라 앞에서 못 가른다). Esc 는 열린 칸이면 칸만 닫고, 닫힌 칸이면 검색을 지운다.
+- (검수 스캔·Esc) 검수 화면도 상품 스캔으로 그 줄을 고른다(없는 상품은 오류음). 소포 세기·검수 둘 다 입력이 있거나 결과를 모르면 Esc 를 두 번 눌러야 버린다.
+- (명령 시트) «반품» 절은 키당 바코드 한 장(F10 «도착 확정 · 검수 확정», Esc «목록»). 탭 절의 F7(반품)과 출고 검수 절의 F7(수량)이 함께 있어, 검수 중에 탭 F7 바코드를 찍으면 수량이 열린다(N1 의 그림자).
+- (N11) dev 시드 반품 시나리오 셋(`DEV-RETURN-0001…3`, `docs/local-dev.md`).
+
 ### 4.9 교환·클레임 (뒤 PR — 문만 적는다)
 
 - Medusa `OrderExchange` 는 «돌려받기(Return) + 새 품목 + 차액(`difference_due`)», `OrderClaim` 은 하자·오배송용(`refund`/`replace`)이다.
@@ -455,7 +469,7 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 | 6 | 도착·검수 명령 + 수령 알림 명령 + Medusa 정산(수령·택배비·환불) + 정산 관측·고객 이벤트 | core · channel-adapter · medusa | 여기서 반품이 끝까지 돈다(보류 없는 정상 흐름) |
 | 6b | CS 문 셋: 환불 보류 정산·선환불·미도착 닫기, 영구 거절 정산의 다시 시도·계좌 송금 | core · medusa · channel-adapter | 6 이 라이브인 뒤. 결과는 4.3·4.4 의 «PR 6b 에서 확정한 결과» |
 | 7 | core 읽기·목록 + admin-web CS 화면 다시 짓기 | core · admin-web | 결과는 4.8 의 «PR 7 에서 확정한 결과» |
-| 7b | 창고 반품 도착·검수 화면 + 검수자 id | warehouse-app · core | 스테이션(F7), 도착 대기 목록 + 검색 |
+| 7b | 창고 반품 도착·검수 화면 + 검수자 id | warehouse-app · core | 스테이션(F7), 도착 대기 목록 + 검색. 마이그 하나(`migrate → deploy`), core 먼저 → 앱 릴리스. 결과는 4.8 의 «PR 7b 에서 확정한 결과» |
 | 8 | 스토어프론트 신청 화면(#933·#934) | storefront | |
 | 9 | 한진 회수 접수(R)·취소 | core | DEV 스모크 선행(4.7) |
 | 10 | 옛 core 반품·교환·inventory 반품 코드와 테이블 걷기 | core · admin-web · storefront | contract, `deploy → migrate` |

@@ -10,12 +10,12 @@ import { planEach } from './shipments';
 const SKU_ID_PREFIX = '019d000f';
 const VARIANT_ID_PREFIX = '019d0010';
 
-function seededId(prefix: string, index: number): string {
+export function seededId(prefix: string, index: number): string {
   const seq = String(index + 1).padStart(4, '0');
   return `${prefix}-${seq}-7000-a000-00000000${seq}`;
 }
 
-function rack(code: string) {
+export function rack(code: string) {
   const location = SEED_RACK_LOCATIONS.find((candidate) => candidate.code === code);
   if (!location) throw new Error(`[seed-dev-core] 랙 ${code} 이 SEED_RACK_LOCATIONS 에 없다`);
   return location;
@@ -24,9 +24,9 @@ function rack(code: string) {
 /**
  * 출고 시나리오 상품. 재고 배치가 곧 시나리오다 — 결품 결과(채움·뺄 상품·빠진 박스)와 위치 나눔은 서버가
  * 재고에서 정하므로, 수량을 바꾸면 그 박스가 다른 경로로 간다. 표: docs/local-dev.md «출고 시나리오 박스».
- * 바코드는 13자리라 기본 시드(11자리)·송장(12자리)과 길이로도 갈린다.
+ * 바코드는 13자리라 기본 시드(11자리)·송장(12자리)과 길이로도 갈린다. 반품 시나리오(return-scenarios.ts)도 이 상품을 쓴다.
  */
-const SCENARIO_SKUS = [
+export const SCENARIO_SKUS = [
   { name: '컬러크림 6N 자연갈색 80g', placements: [{ rack: 'A-01-01', qty: 30 }] },
   { name: '헤어클립 집게핀 블랙 10p', placements: [{ rack: 'A-01-02', qty: 30 }] },
   { name: '퍼머넌트 1제 웨이브 500ml', placements: [{ rack: 'A-01-03', qty: 30 }] },

@@ -15,6 +15,9 @@ export const HUMAN_CONTROL_KEYS: ReadonlySet<string> = new Set([
   'Backspace',
   'ArrowUp',
   'ArrowDown',
+  // 반품 검수의 불량↔보류 칸 이동
+  'ArrowLeft',
+  'ArrowRight',
   'Escape',
 ]);
 

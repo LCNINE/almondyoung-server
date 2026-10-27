@@ -11,11 +11,23 @@ const big = (name: string) => screen.getByRole('status', { name });
 /** 키가 켜질 때까지 — 꺼진 키에 누르면 아무 일도 안 일어나 «무장» 이 검증되지 않는다 */
 const enabledKey = (name: RegExp) => waitFor(() => expect(bar().getByRole('button', { name })).toBeEnabled());
 
+describe('송장 대기의 F7', () => {
+  it('반품 탭으로 간다 — 탭 바에 있으니 기능키 바에는 그리지 않는다', async () => {
+    const { router } = await setupInspection();
+    expect(bar().queryByRole('button', { name: /F7/ })).toBeNull();
+    press('F7');
+    await waitFor(() => expect(router.state.location.pathname).toBe('/customer-returns'));
+  });
+});
+
 describe('검수 중 기능키(스펙 §6.3)', () => {
   it('F7 수량 → 키보드 숫자 → 다음 스캔 한 번에 그 수량, 그 뒤엔 1', async () => {
-    const { server } = await setupInspection();
+    const { server, router } = await setupInspection();
     await openBox('421033881907');
+    // F7 은 반품 탭 키이기도 하다 — 검수 중엔 화면의 «수량» 이 이기고 기능키 바에도 남는다
+    expect(bar().getByRole('button', { name: /F7\s*수량/ })).toBeInTheDocument();
     press('F7');
+    expect(router.state.location.pathname).toBe('/outbound');
     await typeHuman(['2']);
     expect(big('수량')).toHaveTextContent('2');
     scan('8801002');

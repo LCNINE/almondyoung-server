@@ -20,6 +20,7 @@ export async function transitionCustomerReturn(
         | 'warehouseId'
         | 'arrivedAt'
         | 'inspectedAt'
+        | 'inspectedBy'
         | 'settledAt'
         | 'settlement'
         | 'settlementOutcome'

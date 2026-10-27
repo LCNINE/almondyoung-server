@@ -70,10 +70,10 @@ const flash = () => document.querySelector('[data-flash]')?.getAttribute('data-f
 describe('StationShell', () => {
   beforeEach(() => qtyRun.mockReset());
 
-  it('탭 6개를 키와 함께 그리고 지금 탭을 표시한다', async () => {
+  it('탭 7개를 키와 함께 그리고 지금 탭을 표시한다', async () => {
     renderShell();
     const tabs = await screen.findByRole('navigation', { name: '탭' });
-    expect(within(tabs).getAllByRole('link')).toHaveLength(6);
+    expect(within(tabs).getAllByRole('link')).toHaveLength(7);
     expect(within(tabs).getByRole('link', { name: /출고 검수/ })).toHaveAttribute('data-active', 'true');
     expect(within(tabs).getByRole('link', { name: /재고 조회/ })).toHaveAttribute('data-active', 'false');
   });
