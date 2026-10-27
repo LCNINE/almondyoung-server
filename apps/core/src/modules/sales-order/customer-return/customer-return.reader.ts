@@ -268,6 +268,9 @@ export class CustomerReturnReader {
             withBarcode,
           ),
         );
+      if (candidates.length > OPEN_WARN_THRESHOLD) {
+        this.logger.warn(`창고 반품 후보 ${candidates.length}건 — 목록이 전부 읽는다(${OPEN_WARN_THRESHOLD} 초과)`);
+      }
       const delivered = await this.salesOrdersDeliveredBy(
         trx,
         warehouseId,

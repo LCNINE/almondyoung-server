@@ -302,7 +302,7 @@ npm run start:main:dev               # core :3100
     ```bash
     curl --cookie "accessToken=$TOKEN" http://localhost:8002/api/proxy/api/purchase-orders
     ```
-- 시드는 결정론적이다. SKU 코드 `DEV-SKU-0001…`, 바코드 `88000000001…`, 주문번호 `DEV-ORDER-0001…`,
+- 시드는 결정론적이다. SKU 코드 `DEV-SKU-0001…`, 바코드 `88000000001…`, 주문번호 `DEV-ORDER-0001…`, 반품번호 `DEV-RETURN-0001…3`,
   송장번호 `900000000001…`(12자리 숫자 — 실제 한진 형식) 이 리셋해도 그대로라 종이에 적어두고 스캔 테스트에 쓸 수 있다.
 - **출고작업(단순출고)이 시드만으로 열린다.** planned 13건(기본 주문 5 + 아래 출고 시나리오 8)이 배치
   `DEV-BATCH-0001` 에 묶이고 각각 `registered` 송장을 갖는다. 배치는 `created` 로 남으므로 **먼저 «작업 시작»을
