@@ -8,7 +8,7 @@ import { useWorkRuntime } from '../../core/operations/OperationContext';
 import type { StoredOperation } from '../../core/operations/operationStore';
 import type { TabKey } from '../keys';
 import { useCurrentBatchProgress } from './batchProgress';
-import { statusBarItems, unsentCount, type StatusTone } from './statusBar';
+import { statusBarItems, unsentCount, type StatusTone } from './statusBarItems';
 
 const NO_OPERATIONS: StoredOperation[] = [];
 const noSubscribe = () => () => {};

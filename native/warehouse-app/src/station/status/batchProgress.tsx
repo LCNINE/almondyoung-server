@@ -1,6 +1,6 @@
 /* oxlint-disable react/only-export-components -- Provider 와 use… 훅을 한 파일에서 내보내면 이 규칙은 항상 걸린다. 컨텍스트 둘을 모듈 밖에 노출하지 않으려고 한 파일로 둔다. */
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import type { BatchProgress } from './statusBar';
+import type { BatchProgress } from './statusBarItems';
 
 const SetContext = createContext<((progress: BatchProgress | null) => void) | null>(null);
 const ValueContext = createContext<BatchProgress | null>(null);

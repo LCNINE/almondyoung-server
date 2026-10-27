@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { StoredOperation } from '../../core/operations/operationStore';
-import { statusBarItems, unsentCount, type StatusInput } from './statusBar';
+import { statusBarItems, unsentCount, type StatusInput } from './statusBarItems';
 
 const base: StatusInput = {
   printer: { configured: true, lastFailed: false },
