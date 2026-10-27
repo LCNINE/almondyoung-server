@@ -1,4 +1,4 @@
-import { reversalOnHandDecrement } from './stock-event.store';
+import { reversalOnHandDecrement, reversalTransitionType } from './stock-event.store';
 import { StockStateEnum } from '../../schema/enum-values';
 
 const base: {
@@ -54,5 +54,21 @@ describe('reversalOnHandDecrement', () => {
   });
   it('toState=ON_HAND 이나 toWarehouseId 없음(malformed) → null', () => {
     expect(reversalOnHandDecrement({ ...base, toWarehouseId: null, toState: 'ON_HAND' })).toBeNull();
+  });
+});
+
+describe('reversalTransitionType', () => {
+  it('반품 입고 역분개는 입고 역분개처럼 ADJUST_DOWN', () => {
+    expect(reversalTransitionType('RETURN_RECEIVE')).toBe('ADJUST_DOWN');
+  });
+  // 같은 위치 상태 전이는 MOVE 가 이미 담는다(transferShip 이 ON_HAND→IN_TRANSFER 를 MOVE 로 쓴다).
+  it('반품 합격·불합격 역분개는 같은 위치 상태 전이라 MOVE', () => {
+    expect(reversalTransitionType('RETURN_ACCEPT')).toBe('MOVE');
+    expect(reversalTransitionType('RETURN_REJECT')).toBe('MOVE');
+  });
+  it('기존 전이의 역분개 타입은 그대로', () => {
+    expect(reversalTransitionType('RECEIVE')).toBe('ADJUST_DOWN');
+    expect(reversalTransitionType('SHIP')).toBe('ADJUST_UP');
+    expect(reversalTransitionType('MOVE')).toBe('MOVE');
   });
 });

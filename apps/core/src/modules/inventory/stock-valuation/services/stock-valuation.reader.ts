@@ -19,7 +19,7 @@ import {
 
 type MergedTx = TxFor<MergedSchema>;
 
-type StockState = 'ON_HAND' | 'DEFECTIVE' | 'IN_TRANSFER';
+type StockState = 'ON_HAND' | 'DEFECTIVE' | 'IN_TRANSFER' | 'RETURNED';
 
 export interface SkuCost {
   status: SkuCostStatus;

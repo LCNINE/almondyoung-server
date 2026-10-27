@@ -37,6 +37,7 @@ export const stockStateEnum = pgEnum('stock_state', [
   'ON_HAND', // 출고가능 or 가용재고
   'DEFECTIVE', // 불량
   'IN_TRANSFER', // 창고간 운송중
+  'RETURNED', // 반품 — 검수 대기, 판매 불가
 ]);
 /** 상태 전이 타입(enum) */
 export const transitionTypeEnum = pgEnum('transition_type', [
@@ -53,6 +54,11 @@ export const transitionTypeEnum = pgEnum('transition_type', [
   // 수동 조정 (reason 필드로 상세 사유 기록)
   'ADJUST_UP', // null → ON_HAND (재고 증가)
   'ADJUST_DOWN', // ON_HAND → null (재고 감소)
+
+  // 고객 반품 (K8)
+  'RETURN_RECEIVE', // null → RETURNED (반품 입고)
+  'RETURN_ACCEPT', // RETURNED → ON_HAND (검수 양품)
+  'RETURN_REJECT', // RETURNED → DEFECTIVE (검수 불량·환불 보류)
 ]);
 
 // 창고 타입 추가
@@ -1217,6 +1223,7 @@ export const stockSummary = pgView('stock_summary_view', {
   onHandQty: integer('on_hand_qty').notNull().default(0),
   defectiveQty: integer('defective_qty').notNull().default(0),
   inTransferQty: integer('in_transfer_qty').notNull().default(0),
+  returnedQty: integer('returned_qty').notNull().default(0),
 
   // 예약 상태
   reservedQty: integer('reserved_qty').notNull().default(0),
@@ -1242,6 +1249,7 @@ export const stockSummary = pgView('stock_summary_view', {
         COALESCE(on_hand.qty, 0) as on_hand_qty,
         COALESCE(defective.qty, 0) as defective_qty,
         COALESCE(in_transfer.qty, 0) as in_transfer_qty,
+        COALESCE(returned.qty, 0) as returned_qty,
 
         -- 예약 상태
         COALESCE(reserved.qty, 0) as reserved_qty,
@@ -1281,6 +1289,14 @@ export const stockSummary = pgView('stock_summary_view', {
         WHERE stock_state = 'IN_TRANSFER'
         GROUP BY sku_id, warehouse_id
     ) in_transfer ON s.id = in_transfer.sku_id AND w.id = in_transfer.warehouse_id
+    LEFT JOIN (
+        -- ::text 비교: drizzle migrate 는 대기 마이그레이션 전부를 한 트랜잭션으로 돌려, 같은 실행에서
+        -- ADD VALUE 한 enum 값을 = 'RETURNED' 로 쓰면 PG 가 "unsafe use of new value" 로 거절한다.
+        SELECT sku_id, warehouse_id, SUM(qty) as qty
+        FROM stock_ledgers
+        WHERE stock_state::text = 'RETURNED'
+        GROUP BY sku_id, warehouse_id
+    ) returned ON s.id = returned.sku_id AND w.id = returned.warehouse_id
     LEFT JOIN (
         SELECT sku_id, warehouse_id, SUM(quantity) as qty
         FROM stock_reservations
