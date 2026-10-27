@@ -12,6 +12,13 @@ const row = (orderNo: string) => {
   return found;
 };
 const searchBox = () => screen.getByRole('searchbox', { name: '반품 검색' });
+/** 검색칸에 넣고 Enter — 실제 브라우저처럼 form 에 submit 을 보낸다(명령이 탭을 바꾸면 React 가 form 으로 FormData 를 만든다) */
+const submitSearch = (value: string) => {
+  fireEvent.change(searchBox(), { target: { value } });
+  const form = searchBox().closest('form');
+  if (!form) throw new Error('search form not found');
+  fireEvent.submit(form);
+};
 
 describe('도착 대기 목록', () => {
   it('검수 대기·덜 옴이 위로, 고객명은 가린 값, 도착 대기에는 단계 글자가 없다 — 이 창고 것만', async () => {
@@ -55,8 +62,7 @@ describe('검색', () => {
     press('F9');
     const box = searchBox();
     expect(box).toHaveFocus();
-    fireEvent.change(box, { target: { value: '김민' } });
-    fireEvent.submit(box);
+    submitSearch('김민');
     await waitFor(() => expect(orderNos()).toEqual(['O-1001']));
     expect(server.listQueries().at(-1)?.get('q')).toBe('김민');
     expect(screen.queryByRole('searchbox')).toBeNull();
@@ -67,13 +73,55 @@ describe('검색', () => {
     await waitFor(() => expect(bar().queryByRole('button', { name: /검색 지우기/ })).toBeNull());
   });
 
-  it('검색칸이 열려 있을 때 Esc 는 칸을 닫는다', async () => {
-    setupReturns();
+  it('검색칸이 열려 있을 때 Esc 는 칸만 닫는다 — 걸린 검색은 남고, 다음 Esc 가 지운다', async () => {
+    const { server } = setupReturns();
     await listed();
     press('F9');
-    await waitFor(() => expect(bar().getByRole('button', { name: /검색 지우기/ })).toBeInTheDocument());
+    submitSearch('김민');
+    await waitFor(() => expect(orderNos()).toEqual(['O-1001']));
+    press('F9');
+    expect(searchBox()).toHaveValue('김민');
+    await waitFor(() => expect(bar().getByRole('button', { name: /검색 닫기/ })).toBeInTheDocument());
     press('Escape');
     expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(orderNos()).toEqual(['O-1001']);
+    expect(server.listQueries().at(-1)?.get('q')).toBe('김민');
+    await waitFor(() => expect(bar().getByRole('button', { name: /검색 지우기/ })).toBeInTheDocument());
+    press('Escape');
+    await waitFor(() => expect(orderNos()).toEqual(['O-1003', 'O-1002', 'O-1001']));
+  });
+
+  it('검색칸에 찍힌 명령 바코드는 검색이 아니라 명령이다 — 셸이 탭을 바꾼다', async () => {
+    const { server, router } = setupReturns();
+    await listed();
+    press('F9');
+    submitSearch('%90%02');
+    await waitFor(() => expect(router.state.location.pathname).toBe('/outbound/batches'));
+    expect(server.listQueries().some((q) => q.has('q'))).toBe(false);
+  });
+
+  it('검색칸에 친 숫자가 주문번호로 0건이면 상품 바코드로 한 번 더 찾는다 — 하나면 연다', async () => {
+    const { server } = setupReturns();
+    await listed();
+    press('F9');
+    submitSearch('8801002');
+    expect(await screen.findByRole('region', { name: '소포 세기' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'O-1002' })).toBeInTheDocument();
+    const queries = server.listQueries();
+    expect(queries.at(-2)?.get('q')).toBe('8801002');
+    expect(queries.at(-1)?.get('barcode')).toBe('8801002');
+    expect(queries.at(-1)?.has('q')).toBe(false);
+  });
+
+  it('숫자뿐인 주문번호면 주문번호 검색 그대로 — 바코드로 다시 찾지 않는다', async () => {
+    const numbered = { ...AWAITING, id: 'cr-6', orderNo: '20261027001', requestedAt: '2026-10-24T01:00:00.000Z' };
+    const { server } = setupReturns({ returns: [AWAITING, numbered, READY] });
+    await listed();
+    press('F9');
+    submitSearch('20261027001');
+    await waitFor(() => expect(orderNos()).toEqual(['20261027001']));
+    expect(server.listQueries().some((q) => q.has('barcode'))).toBe(false);
+    expect(screen.queryByRole('region', { name: '소포 세기' })).toBeNull();
   });
 
   it('숫자를 치기 시작해도 검색칸이 열린다 — 친 숫자부터', async () => {
@@ -83,8 +131,7 @@ describe('검색', () => {
     const box = searchBox();
     expect(box).toHaveFocus();
     expect(box).toHaveValue('1');
-    fireEvent.change(box, { target: { value: 'O-1002' } });
-    fireEvent.submit(box);
+    submitSearch('O-1002');
     await waitFor(() => expect(orderNos()).toEqual(['O-1002']));
     expect(server.listQueries().at(-1)?.get('q')).toBe('O-1002');
   });
@@ -93,8 +140,7 @@ describe('검색', () => {
     setupReturns();
     await listed();
     press('F9');
-    fireEvent.change(searchBox(), { target: { value: '없는 이름' } });
-    fireEvent.submit(searchBox());
+    submitSearch('없는 이름');
     expect(await screen.findByText('찾는 반품이 없어요')).toBeInTheDocument();
   });
 });
@@ -156,6 +202,25 @@ describe('열기', () => {
     await listed();
     fireEvent.click(within(row('O-1001')).getByRole('button'));
     expect(await screen.findByRole('region', { name: '소포 세기' })).toBeInTheDocument();
+  });
+
+  it('누른 행이 ↑↓ 선택이 된다 — 열기가 실패한 뒤 Enter 는 그 행을 한 번만 연다', async () => {
+    const { server } = setupReturns();
+    await listed();
+    const button = within(row('O-1001')).getByRole('button');
+    expect(button).toHaveAttribute('tabindex', '-1');
+    server.failNext({ method: 'GET' });
+    fireEvent.click(button);
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(row('O-1001')).toHaveAttribute('aria-selected', 'true');
+    await typeHuman(['Enter']);
+    expect(await screen.findByRole('region', { name: '소포 세기' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'O-1001' })).toBeInTheDocument();
+    const details = server.requests.filter((r) => r.path.startsWith('/admin/customer-return-receiving/'));
+    expect(details.map((r) => r.path)).toEqual([
+      '/admin/customer-return-receiving/cr-1',
+      '/admin/customer-return-receiving/cr-1',
+    ]);
   });
 
   it('그 사이 취소된 반품이면 «취소된 반품이에요» 뒤 목록 — 목록도 다시 읽는다', async () => {

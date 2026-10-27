@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { errorMessage } from '../../core/data/errorMessage';
 import { cn } from '../../core/design/cn';
-import { useHumanKeys, useScanner } from '../../core/hardware/scan/useScanner';
+import { isCommandCode } from '../../core/hardware/scan/commandPrefix';
+import { useHumanKeys, useScanEmit, useScanner } from '../../core/hardware/scan/useScanner';
 import { useReceivingReturns } from '../../domains/customer-returns/api';
 import type { ReceivingItem } from '../../domains/customer-returns/types';
 import { useStationActions } from '../ActionRegistry';
@@ -33,11 +34,14 @@ export function ReturnList({
   onActivity(): void;
 }) {
   const { signal } = useFeedback();
+  const emit = useScanEmit();
   const [filter, setFilter] = useState(NO_FILTER);
   const [draft, setDraft] = useState<string | null>(null);
   const [selected, setSelected] = useState(0);
   // 찍은 상품 — 그 조회 결과가 오면 하나일 때 연다
   const [scanned, setScanned] = useState<string | null>(null);
+  // 검색칸에 친(찍힌) 숫자 — 주문번호로 0건이면 상품 바코드로 한 번 더 찾는다(입력칸 포커스 중엔 스캔이 버스로 안 온다)
+  const [digits, setDigits] = useState<string | null>(null);
   const query = useReceivingReturns(warehouseId, filter);
   const items = query.data?.items ?? [];
   const total = query.data?.total ?? 0;
@@ -50,6 +54,14 @@ export function ReturnList({
     setSelected(0);
     setFilter(next);
   };
+
+  useEffect(() => {
+    if (digits === null || filter.q !== digits || query.data === undefined) return;
+    setDigits(null);
+    if (query.data.items.length > 0) return;
+    setFilter({ q: '', barcode: digits });
+    setScanned(digits);
+  }, [digits, filter.q, query.data]);
 
   useEffect(() => {
     if (scanned === null || filter.barcode !== scanned || query.data === undefined) return;
@@ -80,9 +92,28 @@ export function ReturnList({
       : null
   );
 
+  /** 검색칸 Enter — 명령 바코드는 버스로 보내 셸이 받게(스펙 §5.3), 아니면 검색 */
+  const submit = (raw: string) => {
+    const value = raw.trim();
+    if (isCommandCode(value)) {
+      setDraft(null);
+      emit({ code: value, source: 'hid', at: Date.now() });
+      return;
+    }
+    apply({ q: value, barcode: '' });
+    setDigits(/^\d+$/.test(value) ? value : null);
+  };
+
+  // Esc: 칸이 열려 있으면 칸만 닫는다(걸린 검색은 남는다), 닫혀 있으면 걸린 검색을 지운다
+  const escape: StationAction[] =
+    draft !== null
+      ? [{ ...RETURNS_ACTIONS.clear, label: '검색 닫기', enabled: true, run: () => setDraft(null) }]
+      : filtered
+        ? [{ ...RETURNS_ACTIONS.clear, enabled: true, run: () => apply(NO_FILTER) }]
+        : [];
   const actions: StationAction[] = [
     { ...RETURNS_ACTIONS.search, enabled: true, run: () => setDraft((current) => current ?? filter.q) },
-    ...(draft !== null || filtered ? [{ ...RETURNS_ACTIONS.clear, enabled: true, run: () => apply(NO_FILTER) }] : []),
+    ...escape,
   ];
   useStationActions(actions);
 
@@ -93,7 +124,7 @@ export function ReturnList({
           className="shrink-0"
           onSubmit={(e) => {
             e.preventDefault();
-            apply({ q: draft.trim(), barcode: '' });
+            submit(draft);
           }}
         >
           <input
@@ -124,7 +155,16 @@ export function ReturnList({
           className="min-h-0 flex-1 overflow-auto rounded-[10px] border border-[#D5D8DE] bg-white"
         >
           {items.map((item, index) => (
-            <ReturnRow key={item.id} item={item} selected={index === cursor} onOpen={() => onOpen(item.id)} />
+            <ReturnRow
+              key={item.id}
+              item={item}
+              selected={index === cursor}
+              onOpen={() => {
+                // 누른 행이 ↑↓ 선택이 된다 — 열기가 실패해도 Enter 가 같은 행을 연다
+                setSelected(index);
+                onOpen(item.id);
+              }}
+            />
           ))}
         </ul>
       ) : null}
@@ -150,8 +190,11 @@ function ReturnRow({ item, selected, onOpen }: { item: ReceivingItem; selected: 
       data-order-no={item.orderNo}
       className="border-b border-[#E4E6EA]"
     >
+      {/* 포커스를 받지 않는다 — 누른 뒤 Enter 가 단추 클릭과 사람 Enter 로 두 번 열지 않게 */}
       <button
         type="button"
+        tabIndex={-1}
+        onMouseDown={(e) => e.preventDefault()}
         onClick={onOpen}
         className={cn(
           'grid h-14 w-full grid-cols-[180px_120px_minmax(0,1fr)_96px_96px] items-center px-4 text-left text-base',
