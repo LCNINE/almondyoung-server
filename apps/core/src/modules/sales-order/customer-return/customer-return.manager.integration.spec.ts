@@ -466,6 +466,74 @@ describeIfDb('CustomerReturnManager — 채널 반품 사실 기록 (K8 PR5)', (
       });
     });
 
+    it.each([
+      ['attempts_exhausted: unknown_outcome: transport_error', 12],
+      ['ERROR-03: 주문번호 중복', 1],
+    ])(
+      '예약이 남았을 수 있는 failed(%s, attempts %i) → cancel_pending, next_attempt_at null (R9)',
+      async (lastError, attempts) => {
+        await inRollbackTx(db, async (tx) => {
+          const s = await seed(tx);
+          const { manager } = makeManager(tx);
+          const fact = requested(s);
+          const { customerReturnId } = await manager.recordRequested(fact, tx);
+          await tx
+            .update(wmsTables.customerReturnPickups)
+            .set({ status: 'failed', attempts, lastError, nextAttemptAt: new Date() })
+            .where(eq(wmsTables.customerReturnPickups.customerReturnId, customerReturnId));
+
+          await manager.recordCancelled(cancelled(s, fact.returnId), tx);
+
+          const [row] = await pickupsOf(tx, customerReturnId);
+          expect(row).toMatchObject({ status: 'cancel_pending', nextAttemptAt: null, attempts, lastError });
+        });
+      },
+    );
+
+    it('주소가 없어 못 보낸 failed(no_pickup_address:) 는 그대로 — 한진에 아무것도 없다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const s = await seed(tx);
+        const { manager } = makeManager(tx);
+        const fact = requested(s);
+        const { customerReturnId } = await manager.recordRequested(fact, tx);
+        await tx
+          .update(wmsTables.customerReturnPickups)
+          .set({ status: 'failed', attempts: 1, lastError: 'no_pickup_address: no delivered shipment' })
+          .where(eq(wmsTables.customerReturnPickups.customerReturnId, customerReturnId));
+
+        await manager.recordCancelled(cancelled(s, fact.returnId), tx);
+
+        const [row] = await pickupsOf(tx, customerReturnId);
+        expect(row.status).toBe('failed');
+      });
+    });
+
+    it('마지막 행이 아닌 옛 failed 는 건드리지 않는다 — 마지막 행이 cancelled 면 그대로', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const s = await seed(tx);
+        const { manager } = makeManager(tx);
+        const fact = requested(s);
+        const { customerReturnId } = await manager.recordRequested(fact, tx);
+        await tx
+          .update(wmsTables.customerReturnPickups)
+          .set({
+            status: 'failed',
+            attempts: 12,
+            lastError: 'attempts_exhausted: x',
+            createdAt: new Date('2026-10-01T00:00:00Z'),
+          })
+          .where(eq(wmsTables.customerReturnPickups.customerReturnId, customerReturnId));
+        await tx
+          .insert(wmsTables.customerReturnPickups)
+          .values({ ...newPickupRow(customerReturnId, 'cs-1'), status: 'cancelled', attempts: 1 });
+
+        await manager.recordCancelled(cancelled(s, fact.returnId), tx);
+
+        const rows = await pickupsOf(tx, customerReturnId);
+        expect(rows.map((r) => r.status).sort()).toEqual(['cancelled', 'failed']);
+      });
+    });
+
     it('활성 행이 없으면(failed) recordCancelled 는 회수 행을 건드리지 않는다', async () => {
       await inRollbackTx(db, async (tx) => {
         const s = await seed(tx);

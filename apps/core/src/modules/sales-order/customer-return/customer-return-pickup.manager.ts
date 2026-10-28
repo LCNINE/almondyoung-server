@@ -16,7 +16,12 @@ import type { HanjinConfig } from '../../fulfillment/waybill/carrier/hanjin/hanj
 import { HANJIN_CONFIG } from '../../fulfillment/waybill/waybill.tokens';
 import { readPickupSource } from './customer-return-pickup-source.reader';
 import { assemblePickupRequest } from './customer-return-pickup-request';
-import { ACTIVE_PICKUP_STATUSES, newPickupRow, type PickupRow } from './customer-return-pickup.types';
+import {
+  ACTIVE_PICKUP_STATUSES,
+  mayHoldReservation,
+  newPickupRow,
+  type PickupRow,
+} from './customer-return-pickup.types';
 
 export const PICKUP_ATTEMPTS_CAP = 12;
 export const PICKUP_LEASE_MS = 120_000;
@@ -133,11 +138,13 @@ export class CustomerReturnPickupManager {
         .orderBy(desc(t.createdAt), desc(t.id))
         .limit(1);
       if (latest?.status === 'failed') {
+        // attempts 를 0 으로 되돌리지 않는다(R7) — «pending ∧ attempts 0» 은 «한진에 보낸 적 없음»이라 놓아주기·
+        // 취소 정리가 한진을 묻지 않고 void 한다. 한 번이라도 보낸 행은 1 로 남겨 그 길이 한진 취소를 거치게 한다
         const revived = await trx
           .update(t)
           .set({
             status: 'pending',
-            attempts: 0,
+            attempts: latest.attempts > 0 ? 1 : 0,
             lastError: null,
             nextAttemptAt: null,
             leaseUntil: null,
@@ -313,6 +320,7 @@ export class CustomerReturnPickupManager {
 
   /** 예약을 보낸다. 회수 운송장을 받아 적었으면 true */
   private async sendReservation(gateway: PickupGateway, row: Claimed, now: Date): Promise<boolean> {
+    if (await this.standDownIfNotExpected(row, now)) return false;
     let originalWaybillNo: string | null;
     let outcome: PickupReserveOutcome;
     try {
@@ -358,6 +366,31 @@ export class CustomerReturnPickupManager {
     );
     if (!written) await this.keepWaybillForCancel(row, outcome.waybillNo, originalWaybillNo, now);
     return written;
+  }
+
+  /**
+   * 반품이 더는 expected 가 아니면(취소·도착 등) 예약을 보내지 않는다(R9) — 취소 정리가 아직 못 본 행이 기사를
+   * 부르면 기록 없는 소포가 온다. 이번 잡기 전에 보낸 적이 없으면(잡기가 올린 attempts 가 1) 한진에 아무것도 없어
+   * void, 있으면 cancel_pending 으로 돌려 다음 틱이 한진에 취소한다. 물러났으면 true
+   */
+  private async standDownIfNotExpected(row: Claimed, now: Date): Promise<boolean> {
+    const r = wmsTables.customerReturns;
+    const [record] = await this.dbService.run((trx) =>
+      trx.select({ status: r.status }).from(r).where(eq(r.id, row.customerReturnId)).limit(1),
+    );
+    if (record?.status === 'expected') return false;
+    const neverSent = row.attempts <= 1;
+    this.logger.warn(
+      `[ReturnPickup] pickup ${row.id} (${row.custOrdNo}) not sent: return ${row.customerReturnId} is ` +
+        `${record?.status ?? 'missing'}; ${neverSent ? 'void' : 'cancel_pending'}`,
+    );
+    await this.settle(
+      row,
+      neverSent ? { status: 'void', nextAttemptAt: null } : { status: 'cancel_pending', nextAttemptAt: null },
+      now,
+      neverSent ? 'void' : 'cancel_pending',
+    );
+    return true;
   }
 
   /**
@@ -506,14 +539,6 @@ export class CustomerReturnPickupManager {
     }
     return true;
   }
-}
-
-/**
- * failed 인데 한진에 예약이 남아 있을 수 있나(R6). 한 번이라도 보냈고(attempts ≥ 1) 주소가 없어 보내지도 못한
- * 실패(no_pickup_address:)가 아니면 그렇다 — attempts_exhausted:(결과 모름), ERROR-03 인데 번호 없음 등.
- */
-function mayHoldReservation(row: PickupRow): boolean {
-  return row.status === 'failed' && row.attempts >= 1 && !(row.lastError ?? '').startsWith('no_pickup_address:');
 }
 
 /** last_error·로그용 요약 — 코드만 싣는다(한진 응답 본문·요청 값은 싣지 않는다) */

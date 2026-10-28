@@ -28,3 +28,12 @@ export function newPickupRow(customerReturnId: string, createdBy: string | null)
     createdBy,
   };
 }
+
+/**
+ * failed 인데 한진에 예약이 남아 있을 수 있나(R6). 한 번이라도 보냈고(attempts ≥ 1) 주소가 없어 보내지도 못한
+ * 실패(no_pickup_address:)가 아니면 그렇다 — attempts_exhausted:(결과 모름), ERROR-03 인데 번호 없음 등.
+ * 놓아주기(release)와 취소 정리(tidyActivePickup)가 같이 쓴다 — 둘이 갈리면 한쪽만 한진 취소를 빠뜨린다.
+ */
+export function mayHoldReservation(row: Pick<PickupRow, 'status' | 'attempts' | 'lastError'>): boolean {
+  return row.status === 'failed' && row.attempts >= 1 && !(row.lastError ?? '').startsWith('no_pickup_address:');
+}

@@ -19,6 +19,7 @@ import {
 } from '../../fulfillment/waybill/carrier/carrier-gateway.interface';
 import type { HanjinConfig } from '../../fulfillment/waybill/carrier/hanjin/hanjin.config';
 import { newPickupRow } from './customer-return-pickup.types';
+import { CustomerReturnManager } from './customer-return.manager';
 import {
   CustomerReturnPickupManager,
   PICKUP_ATTEMPTS_CAP,
@@ -435,6 +436,57 @@ describeIfDb('CustomerReturnPickupManager — 반품 회수 워커 (K8 PR9)', ()
           expect(row.pickedUpAt?.getTime()).toBe(now.getTime());
         }),
     );
+
+    describe('반품이 더는 expected 가 아니면 예약을 보내지 않는다 (R9)', () => {
+      const setReturnStatus = (tx: DbTx, customerReturnId: string, status: 'cancelled' | 'arrived') =>
+        tx
+          .update(wmsTables.customerReturns)
+          .set({ status, cancelledAt: status === 'cancelled' ? now : null })
+          .where(eq(wmsTables.customerReturns.id, customerReturnId));
+
+      it.each(['cancelled', 'arrived'] as const)(
+        '보낸 적 없는 pending(attempts 0) + 반품 %s → void, 한진 안 부름',
+        (status) =>
+          inRollbackTx(db, async (tx) => {
+            const { gateway, manager } = wire(tx);
+            const { pickupId, customerReturnId } = await seedPickup(tx);
+            await setReturnStatus(tx, customerReturnId, status);
+
+            expect(await manager.dispatchDue(now)).toEqual({ sent: 0, cancelled: 0 });
+            expect(gateway.reserveCalls).toHaveLength(0);
+            expect(gateway.cancelCalls).toHaveLength(0);
+            expect(await rowOf(tx, pickupId)).toMatchObject({ status: 'void', leaseUntil: null, waybillNo: null });
+          }),
+      );
+
+      it('보낸 적 있는 pending(attempts 2) + 반품 cancelled → cancel_pending, 다음 틱이 한진에 취소', () =>
+        inRollbackTx(db, async (tx) => {
+          const { gateway, manager } = wire(tx);
+          const { pickupId, custOrdNo, customerReturnId } = await seedPickup(tx);
+          await setRow(tx, pickupId, {
+            attempts: 2,
+            lastError: 'unknown_outcome: transport_error',
+            nextAttemptAt: now,
+          });
+          await setReturnStatus(tx, customerReturnId, 'cancelled');
+
+          expect(await manager.dispatchDue(now)).toEqual({ sent: 0, cancelled: 0 });
+          expect(gateway.reserveCalls).toHaveLength(0);
+          expect(gateway.cancelCalls).toHaveLength(0);
+          expect(await rowOf(tx, pickupId)).toMatchObject({
+            status: 'cancel_pending',
+            attempts: 3,
+            nextAttemptAt: null,
+            leaseUntil: null,
+          });
+
+          gateway.cancelScript = () => Promise.resolve({ kind: 'not_found' });
+          expect(await manager.dispatchDue(now)).toEqual({ sent: 0, cancelled: 1 });
+          expect(gateway.cancelCalls).toEqual([custOrdNo]);
+          expect(gateway.reserveCalls).toHaveLength(0);
+          expect((await rowOf(tx, pickupId)).status).toBe('cancelled');
+        }));
+    });
   });
 
   describe('취소(cancel_pending)', () => {
@@ -867,7 +919,7 @@ describeIfDb('CustomerReturnPickupManager — 반품 회수 워커 (K8 PR9)', ()
         .where(eq(wmsTables.customerReturnPickups.customerReturnId, customerReturnId));
 
     it.each(['attempts_exhausted: unknown_outcome: http_502', 'ERROR-14: 지불조건 오류'])(
-      'failed(%s) 는 같은 행을 pending 으로 되살린다 — 같은 custOrdNo, 새 행 없음',
+      'failed(%s) 는 같은 행을 pending 으로 되살린다 — 같은 custOrdNo, 새 행 없음, 보낸 적 있으니 attempts 1(R7)',
       (lastError) =>
         inRollbackTx(db, async (tx) => {
           const { manager } = wire(tx);
@@ -886,13 +938,69 @@ describeIfDb('CustomerReturnPickupManager — 반품 회수 워커 (K8 PR9)', ()
             id: pickupId,
             custOrdNo,
             status: 'pending',
-            attempts: 0,
+            attempts: 1,
             lastError: null,
             nextAttemptAt: null,
             leaseUntil: null,
           });
         }),
     );
+
+    it('attempts 0 인 failed 는 attempts 0 으로 되살린다 — 한진에 보낸 적이 없다', () =>
+      inRollbackTx(db, async (tx) => {
+        const { manager } = wire(tx);
+        const { pickupId, customerReturnId } = await seedPickup(tx);
+        await setRow(tx, pickupId, { status: 'failed', attempts: 0, lastError: 'x' });
+        await manager.retry(customerReturnId, 'cs-1', tx);
+        expect(await rowOf(tx, pickupId)).toMatchObject({ status: 'pending', attempts: 0 });
+      }));
+
+    describe('되살린 행이 워커 틱 전에 취소돼도 한진 예약을 지나치지 않는다 (R7)', () => {
+      async function seedRevived(tx: DbTx, manager: CustomerReturnPickupManager) {
+        const seeded = await seedPickup(tx);
+        await setRow(tx, seeded.pickupId, {
+          status: 'failed',
+          attempts: PICKUP_ATTEMPTS_CAP,
+          lastError: 'attempts_exhausted: unknown_outcome: transport_error',
+        });
+        await manager.retry(seeded.customerReturnId, 'cs-1', tx);
+        const [record] = await tx
+          .select({ channelReturnId: wmsTables.customerReturns.channelReturnId })
+          .from(wmsTables.customerReturns)
+          .where(eq(wmsTables.customerReturns.id, seeded.customerReturnId));
+        return { ...seeded, channelReturnId: record.channelReturnId };
+      }
+
+      it('release → 한진 cancelPickup 을 부른다(void 로 건너뛰지 않는다)', () =>
+        inRollbackTx(db, async (tx) => {
+          const { gateway, manager } = wire(tx);
+          gateway.cancelScript = () => Promise.resolve({ kind: 'cancelled' });
+          const { pickupId, custOrdNo, channelReturnId } = await seedRevived(tx, manager);
+
+          expect(await manager.release(channelReturnId, now)).toEqual({ result: 'released' });
+          expect(gateway.cancelCalls).toEqual([custOrdNo]);
+          expect((await rowOf(tx, pickupId)).status).toBe('cancelled');
+        }));
+
+      it('recordCancelled(ChannelReturnCancelled 관측) → cancel_pending, void 아님', () =>
+        inRollbackTx(db, async (tx) => {
+          const { manager } = wire(tx);
+          const { pickupId, channelReturnId } = await seedRevived(tx, manager);
+          const returns = new CustomerReturnManager(scopedDbService(tx), { enqueue: jest.fn() } as never);
+
+          await returns.recordCancelled(
+            {
+              orderId: 'ignored',
+              salesChannel: 'medusa',
+              externalOrderId: 'ignored',
+              returnId: channelReturnId,
+              cancelledAt: now.toISOString(),
+            },
+            tx,
+          );
+          expect(await rowOf(tx, pickupId)).toMatchObject({ status: 'cancel_pending', nextAttemptAt: null });
+        }));
+    });
 
     it.each(['cancelled', 'void'] as const)('마지막 행이 %s 면 새 행(새 번호)을 만든다', (status) =>
       inRollbackTx(db, async (tx) => {

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq, inArray, isNull, lt, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt, or } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { InjectPublisher, PublisherFor } from '@app/events';
@@ -13,7 +13,7 @@ import type {
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { enqueueSalesOrderClaimProgress } from '../common/claim-progress';
 import { transitionCustomerReturn } from './customer-return-transition';
-import { ACTIVE_PICKUP_STATUSES, newPickupRow } from './customer-return-pickup.types';
+import { ACTIVE_PICKUP_STATUSES, mayHoldReservation, newPickupRow } from './customer-return-pickup.types';
 
 /**
  * 채널(Medusa) 반품 확정·취소 사실을 «반품 예정» 기록으로 옮긴다 (K8 PR5).
@@ -140,6 +140,8 @@ export class CustomerReturnManager {
   /**
    * 취소된 반품의 활성 회수 행을 정리한다(N7). 아직 한진에 한 번도 안 보냈고 워커가 잡고 있지도 않은
    * pending 만 바로 void 다. 보낸 적이 있거나 리스가 살아 있으면 한진에 예약이 있을 수 있으니 워커가 취소한다.
+   * 활성 행이 없어도 마지막 행이 «예약이 남아 있을 수 있는 failed»(R6)면 cancel_pending 으로 돌린다(R9) —
+   * 결과를 모른 채 끝난 예약이 한진에 살아 있으면 취소된 반품의 소포가 기록 없이 온다.
    */
   private async tidyActivePickup(trx: DbTx, customerReturnId: string): Promise<void> {
     const t = wmsTables.customerReturnPickups;
@@ -157,10 +159,26 @@ export class CustomerReturnManager {
       )
       .returning({ id: t.id });
     if (voided.length > 0) return;
+    const moved = await trx
+      .update(t)
+      .set({ status: 'cancel_pending', nextAttemptAt: null, updatedAt: now })
+      .where(and(eq(t.customerReturnId, customerReturnId), inArray(t.status, [...ACTIVE_PICKUP_STATUSES])))
+      .returning({ id: t.id });
+    if (moved.length > 0) return;
+
+    const [latest] = await trx
+      .select()
+      .from(t)
+      .where(eq(t.customerReturnId, customerReturnId))
+      .orderBy(desc(t.createdAt), desc(t.id))
+      .limit(1);
+    if (!latest || !mayHoldReservation(latest)) return;
+    // 리스는 건드리지 않는다 — 놓아주기가 잡고 한진에 취소 중이면 그 결과 CAS(status failed)가 빗나가고,
+    // 워커는 리스가 끝난 뒤에야 잡아 한 번 더 묻는다(already_cancelled → cancelled)
     await trx
       .update(t)
       .set({ status: 'cancel_pending', nextAttemptAt: null, updatedAt: now })
-      .where(and(eq(t.customerReturnId, customerReturnId), inArray(t.status, [...ACTIVE_PICKUP_STATUSES])));
+      .where(and(eq(t.id, latest.id), eq(t.status, 'failed')));
   }
 
   private async findSalesOrderId(trx: DbTx, salesChannel: SalesChannel, channelOrderId: string): Promise<string> {
