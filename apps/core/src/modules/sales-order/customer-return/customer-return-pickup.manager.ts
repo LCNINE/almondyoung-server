@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, eq, inArray, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { BadRequestError, ConflictError, UpstreamUnavailableError } from '@app/shared';
@@ -119,7 +119,9 @@ export class CustomerReturnPickupManager {
         `pickup_cancel_unavailable: pickup ${pickup.id} sent but carrier not configured`,
       );
     }
-    const claimed = await this.dbService.run((trx) => this.claim(trx, pickup.id, now));
+    const claimed = await this.dbService.run((trx) =>
+      pickup.status === 'failed' ? this.claimFailed(trx, pickup.id, now) : this.claim(trx, pickup.id, now),
+    );
     if (!claimed?.leaseUntil) {
       throw new ConflictError(`pickup_busy: pickup ${pickup.id} changed while releasing`);
     }
@@ -133,6 +135,7 @@ export class CustomerReturnPickupManager {
   /**
    * 놓아주기 대상. 기록이 없으면(요청 관측 지연) 회수도 없다 → released.
    * 반품이 이미 도착·검수 쪽으로 갔으면 소포는 기사 손을 떠났다 → 한진을 묻지 않고 picked_up.
+   * 활성 행이 없어도 마지막 행이 «예약이 남아 있을 수 있는 failed»면 그 행을 대상으로 돌려준다(R6).
    */
   private async findReleaseTarget(
     trx: DbTx,
@@ -148,12 +151,20 @@ export class CustomerReturnPickupManager {
     if (record.status !== 'expected' && record.status !== 'cancelled') return { kind: 'picked_up' };
 
     const t = wmsTables.customerReturnPickups;
-    const [pickup] = await trx
+    const [active] = await trx
       .select()
       .from(t)
       .where(and(eq(t.customerReturnId, record.id), inArray(t.status, [...ACTIVE_PICKUP_STATUSES])))
       .limit(1);
-    return pickup ? { kind: 'pickup', pickup } : { kind: 'released' };
+    if (active) return { kind: 'pickup', pickup: active };
+
+    const [latest] = await trx
+      .select()
+      .from(t)
+      .where(eq(t.customerReturnId, record.id))
+      .orderBy(desc(t.createdAt), desc(t.id))
+      .limit(1);
+    return latest && mayHoldReservation(latest) ? { kind: 'pickup', pickup: latest } : { kind: 'released' };
   }
 
   /** 한 번도 안 보낸 pending 을 void 로 — 취소 정리(tidyActivePickup)와 같은 조건. 바꿨으면 true */
@@ -183,6 +194,15 @@ export class CustomerReturnPickupManager {
   async claim(trx: DbTx, pickupId: string, now: Date): Promise<PickupRow | null> {
     const t = wmsTables.customerReturnPickups;
     return this.claimWhere(trx, pickupId, now, inArray(t.status, [...ACTIVE_PICKUP_STATUSES]));
+  }
+
+  /**
+   * 놓아주기용 failed 행 잡기(R6) — 한진에 예약이 남아 있을지 모르는 failed 를 취소하러 잡는다. 워커는 failed 를
+   * 잡지 않으니(claimDue) 이 길은 워커와 겹치지 않는다. 그 밖은 `claim` 과 같다.
+   */
+  private async claimFailed(trx: DbTx, pickupId: string, now: Date): Promise<PickupRow | null> {
+    const t = wmsTables.customerReturnPickups;
+    return this.claimWhere(trx, pickupId, now, eq(t.status, 'failed'));
   }
 
   /**
@@ -386,6 +406,13 @@ export class CustomerReturnPickupManager {
    * 상한을 넘으면 사람이 보도록 error 로그만 더한다.
    */
   private async cancellationFailed(row: Claimed, detail: string, now: Date): Promise<void> {
+    if (row.status === 'failed') {
+      // 놓아주기가 잡은 failed — last_error 를 덮지 않는다. «attempts_exhausted:» 가 남아야 다시 접수가 같은 행
+      // (같은 번호)을 되살린다(N9). 다음 시도도 없다 — 리스만 푼다
+      this.logger.warn(`[ReturnPickup] failed pickup ${row.id} (${row.custOrdNo}) cancel not confirmed: ${detail}`);
+      await this.settle(row, {}, now, 'retry');
+      return;
+    }
     if (row.attempts >= PICKUP_ATTEMPTS_CAP) {
       this.logger.error(
         `[ReturnPickup] pickup ${row.id} (${row.custOrdNo}) still not cancelled after ${row.attempts}: ${detail}`,
@@ -418,6 +445,14 @@ export class CustomerReturnPickupManager {
     }
     return true;
   }
+}
+
+/**
+ * failed 인데 한진에 예약이 남아 있을 수 있나(R6). 한 번이라도 보냈고(attempts ≥ 1) 주소가 없어 보내지도 못한
+ * 실패(no_pickup_address:)가 아니면 그렇다 — attempts_exhausted:(결과 모름), ERROR-03 인데 번호 없음 등.
+ */
+function mayHoldReservation(row: PickupRow): boolean {
+  return row.status === 'failed' && row.attempts >= 1 && !(row.lastError ?? '').startsWith('no_pickup_address:');
 }
 
 /** last_error·로그용 요약 — 코드만 싣는다(한진 응답 본문·요청 값은 싣지 않는다) */

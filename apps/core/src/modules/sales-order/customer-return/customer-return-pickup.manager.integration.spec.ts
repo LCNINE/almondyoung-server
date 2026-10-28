@@ -610,7 +610,7 @@ describeIfDb('CustomerReturnPickupManager — 반품 회수 워커 (K8 PR9)', ()
       }),
     );
 
-    it.each(['failed', 'void', 'cancelled'] as const)('활성 회수 없음(%s 뿐) → released, 한진 안 부름', (status) =>
+    it.each(['void', 'cancelled'] as const)('활성 회수 없음(%s 뿐) → released, 한진 안 부름', (status) =>
       inRollbackTx(db, async (tx) => {
         const { gateway, manager } = wire(tx);
         const { pickupId, channelReturnId } = await seedSent(tx, 'reserved');
@@ -621,6 +621,93 @@ describeIfDb('CustomerReturnPickupManager — 반품 회수 워커 (K8 PR9)', ()
         expect(await rowOf(tx, pickupId)).toMatchObject({ status });
       }),
     );
+
+    describe('마지막 행이 failed — 한진에 예약이 남아 있을 수 있다 (R6)', () => {
+      async function seedFailed(tx: DbTx, attempts: number, lastError: string) {
+        const seeded = await seedSent(tx, 'pending');
+        await setRow(tx, seeded.pickupId, { status: 'failed', attempts, lastError, waybillNo: null });
+        return seeded;
+      }
+
+      it('attempts_exhausted → 한진에 취소를 묻고 not_found 면 행 cancelled, released', () =>
+        inRollbackTx(db, async (tx) => {
+          const { gateway, manager } = wire(tx);
+          gateway.cancelScript = () => Promise.resolve({ kind: 'not_found' });
+          const { pickupId, custOrdNo, channelReturnId } = await seedFailed(
+            tx,
+            PICKUP_ATTEMPTS_CAP,
+            'attempts_exhausted: unknown_outcome: transport_error',
+          );
+
+          expect(await manager.release(channelReturnId, now)).toEqual({ result: 'released' });
+          expect(gateway.cancelCalls).toEqual([custOrdNo]);
+          const row = await rowOf(tx, pickupId);
+          expect(row).toMatchObject({ status: 'cancelled', leaseUntil: null });
+          expect(row.cancelledAt?.getTime()).toBe(now.getTime());
+        }));
+
+      it('ERROR-03(번호 없음) → 한진이 picked_up 이면 행 reserved·picked_up_at, picked_up', () =>
+        inRollbackTx(db, async (tx) => {
+          const { gateway, manager } = wire(tx);
+          gateway.cancelScript = () => Promise.resolve({ kind: 'picked_up', reason: '운송장출력 상태' });
+          const { pickupId, channelReturnId } = await seedFailed(tx, 1, 'ERROR-03: 주문번호 중복');
+
+          expect(await manager.release(channelReturnId, now)).toEqual({ result: 'picked_up' });
+          const row = await rowOf(tx, pickupId);
+          expect(row).toMatchObject({ status: 'reserved', leaseUntil: null });
+          expect(row.pickedUpAt?.getTime()).toBe(now.getTime());
+        }));
+
+      it.each<[string, number, string]>([
+        ['no_pickup_address', 1, 'no_pickup_address: no delivered shipment'],
+        ['attempts 0', 0, 'ERROR-14: 지불조건 오류'],
+      ])('%s → released, 한진 안 부름, 행 그대로', (_label, attempts, lastError) =>
+        inRollbackTx(db, async (tx) => {
+          const { gateway, manager } = wire(tx);
+          const { pickupId, channelReturnId } = await seedFailed(tx, attempts, lastError);
+          const before = await rowOf(tx, pickupId);
+
+          expect(await manager.release(channelReturnId, now)).toEqual({ result: 'released' });
+          expect(gateway.cancelCalls).toHaveLength(0);
+          expect(await rowOf(tx, pickupId)).toEqual(before);
+        }),
+      );
+
+      it('한진 거절 → 502, 행 failed 그대로·last_error 그대로(다시 접수가 같은 행을 되살린다), 리스 풀림', () =>
+        inRollbackTx(db, async (tx) => {
+          const { gateway, manager } = wire(tx);
+          gateway.cancelScript = () => Promise.resolve({ kind: 'rejected', code: 'ERROR-99', reason: '알 수 없음' });
+          const lastError = 'attempts_exhausted: unknown_outcome: transport_error';
+          const { pickupId, channelReturnId } = await seedFailed(tx, PICKUP_ATTEMPTS_CAP, lastError);
+
+          await expect(manager.release(channelReturnId, now)).rejects.toBeInstanceOf(UpstreamUnavailableError);
+          expect(gateway.cancelCalls).toHaveLength(1);
+          expect(await rowOf(tx, pickupId)).toMatchObject({ status: 'failed', lastError, leaseUntil: null });
+        }));
+
+      it('리스가 살아 있으면 409, 게이트웨이 미설정이면 502 — 둘 다 한진 안 부름', () =>
+        inRollbackTx(db, async (tx) => {
+          const { gateway, manager } = wire(tx);
+          const { pickupId, channelReturnId } = await seedFailed(tx, 1, 'ERROR-03: 주문번호 중복');
+          await setRow(tx, pickupId, { leaseUntil: new Date(now.getTime() + MINUTE) });
+          await expect(manager.release(channelReturnId, now)).rejects.toBeInstanceOf(ConflictError);
+
+          await setRow(tx, pickupId, { leaseUntil: null });
+          gateway.configured = false;
+          await expect(manager.release(channelReturnId, now)).rejects.toBeInstanceOf(UpstreamUnavailableError);
+          expect(gateway.cancelCalls).toHaveLength(0);
+          expect(await rowOf(tx, pickupId)).toMatchObject({ status: 'failed', leaseUntil: null, attempts: 1 });
+        }));
+
+      it('워커는 failed 행을 잡지 않는다', () =>
+        inRollbackTx(db, async (tx) => {
+          const { gateway, manager } = wire(tx);
+          await seedFailed(tx, 1, 'ERROR-03: 주문번호 중복');
+          expect(await manager.dispatchDue(now)).toEqual({ sent: 0, cancelled: 0 });
+          expect(gateway.cancelCalls).toHaveLength(0);
+          expect(gateway.reserveCalls).toHaveLength(0);
+        }));
+    });
 
     it('워커가 리스를 잡은 상태 → 409 pickup_busy, 행 그대로, 한진 안 부름', () =>
       inRollbackTx(db, async (tx) => {
