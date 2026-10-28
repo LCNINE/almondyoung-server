@@ -21,13 +21,11 @@ export type LineSkuQuantities = {
   /** 직배 파트너가 완료한 수량 — 배송완료가 아니다(표시용). */
   partnerCompleted: number;
   outstanding: number;
-  /** 진행 중 반품 항목 수량(SKU 단위). */
+  /** 진행 중 반품 예정 수량(SKU 단위). */
   returnActive: number;
-  /** 완료 반품 항목 수량 — 돌아온 물건. */
+  /** 정산 끝난 반품 수량 — 돌아온 물건. */
   returnConsumed: number;
-  /** 진행 중 교환 항목 수량. 완료 교환은 세지 않는다. */
-  exchangeActive: number;
-  /** 더 반품·교환할 수 있는 SKU 수량. 음수일 수 있다(회수가 배송완료를 되돌린 경우) — 표시는 소비자가 클램프한다. */
+  /** 더 반품할 수 있는 SKU 수량. 음수일 수 있다(회수가 배송완료를 되돌린 경우) — 표시는 소비자가 클램프한다. */
   claimable: number;
 };
 
@@ -63,7 +61,6 @@ type LineSkuRow = {
   outstanding: number;
   return_active: number;
   return_consumed: number;
-  exchange_active: number;
   claimable: number;
 };
 
@@ -109,7 +106,6 @@ export async function readLineQuantities(trx: DbTx, salesOrderId: string): Promi
         outstanding: row.outstanding,
         returnActive: row.return_active,
         returnConsumed: row.return_consumed,
-        exchangeActive: row.exchange_active,
         claimable: row.claimable,
       },
     ]);
