@@ -688,6 +688,27 @@
         "generic": "返品を申請できませんでした。カスタマーセンターへお問い合わせください。"
       }
     },
+    "returns": {
+      "title": "返品",
+      "quantity": "{count}点",
+      "reasonLabel": "理由",
+      "requestItem": "返品を申請",
+      "cancel": "返品をキャンセル",
+      "cancelConfirm": "もう一度押すとキャンセルされます",
+      "cancelDone": "返品をキャンセルしました。",
+      "cancelFailed": "しばらくしてからもう一度お試しください。",
+      "stage": {
+        "requested": "受付済み · 回収をお待ちください",
+        "processing": "検品が完了しました · 返金中です",
+        "refunded": "返金しました",
+        "canceled": "キャンセルしました"
+      },
+      "cancelReject": {
+        "returnArrived": "すでに倉庫に到着しているため、キャンセルできません。",
+        "returnPrepaid": "すでに返金が始まっているため、キャンセルできません。",
+        "notOurReturn": "この画面ではキャンセルできない返品です。カスタマーセンターへお問い合わせください。"
+      }
+    },
     "exchange": {
       "pageTitle": "返品/交換/返金 一覧",
       "exchanged": "交換完了",
@@ -868,7 +889,6 @@
       "usageType": "利用タイプ",
       "usageStartDate": "利用開始日",
       "usageEndDate": "利用終了予定日",
-
       "autoStartDate": "自動決済開始日",
       "endDate": "サブスク終了日",
       "endDateLabel": "終了日",

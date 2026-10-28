@@ -688,6 +688,27 @@
         "generic": "We couldn't submit your return. Please contact customer service."
       }
     },
+    "returns": {
+      "title": "Returns",
+      "quantity": "{count} pcs",
+      "reasonLabel": "Reason",
+      "requestItem": "Request return",
+      "cancel": "Cancel return",
+      "cancelConfirm": "Press once more to cancel",
+      "cancelDone": "Your return has been canceled.",
+      "cancelFailed": "Please try again in a moment.",
+      "stage": {
+        "requested": "Received · waiting for pickup",
+        "processing": "Inspection done · refund in progress",
+        "refunded": "Refunded",
+        "canceled": "Canceled"
+      },
+      "cancelReject": {
+        "returnArrived": "The items have already reached our warehouse, so this can't be canceled.",
+        "returnPrepaid": "A refund has already started, so this can't be canceled.",
+        "notOurReturn": "This return can't be canceled here. Please contact customer service."
+      }
+    },
     "exchange": {
       "pageTitle": "Returns / Exchanges / Refunds",
       "exchanged": "Exchanged",
@@ -868,7 +889,6 @@
       "usageType": "Access type",
       "usageStartDate": "Access start date",
       "usageEndDate": "Access end date",
-
       "autoStartDate": "Auto-billing starts",
       "endDate": "Subscription ends",
       "endDateLabel": "End date",

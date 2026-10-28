@@ -688,6 +688,27 @@
         "generic": "반품을 신청하지 못했어요. 고객센터로 문의해 주세요."
       }
     },
+    "returns": {
+      "title": "반품",
+      "quantity": "{count}개",
+      "reasonLabel": "사유",
+      "requestItem": "반품 신청",
+      "cancel": "반품 취소",
+      "cancelConfirm": "한 번 더 누르면 취소돼요",
+      "cancelDone": "반품을 취소했어요.",
+      "cancelFailed": "잠시 뒤 다시 시도해 주세요.",
+      "stage": {
+        "requested": "접수됐어요 · 회수를 기다려요",
+        "processing": "검수를 마쳤어요 · 환불 중이에요",
+        "refunded": "환불했어요",
+        "canceled": "취소했어요"
+      },
+      "cancelReject": {
+        "returnArrived": "이미 창고에 도착해 취소할 수 없어요.",
+        "returnPrepaid": "이미 환불이 시작돼 취소할 수 없어요.",
+        "notOurReturn": "이 화면에서 취소할 수 없는 반품이에요. 고객센터로 문의해 주세요."
+      }
+    },
     "exchange": {
       "pageTitle": "반품/교환/환불 목록",
       "exchanged": "교환완료",
@@ -868,7 +889,6 @@
       "usageType": "이용 유형",
       "usageStartDate": "이용 시작일",
       "usageEndDate": "이용 종료 예정일",
-
       "autoStartDate": "자동 결제 시작일",
       "endDate": "구독 종료일",
       "endDateLabel": "종료일",
