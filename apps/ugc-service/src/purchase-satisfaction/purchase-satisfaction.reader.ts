@@ -86,7 +86,7 @@ export class PurchaseSatisfactionReader {
       const unnested = trx
         .select({ reason: sql<string>`unnest(${purchaseSatisfactions.reasons})`.as('reason') })
         .from(purchaseSatisfactions)
-        .where(where)
+        .where(and(where, lte(purchaseSatisfactions.rating, 3)))
         .as('unnested');
       const reasonRows = await trx
         .select({ reason: unnested.reason, n: sql<number>`count(*)::int` })
