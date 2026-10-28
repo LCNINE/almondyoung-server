@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lt, or } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { InjectPublisher, PublisherFor } from '@app/events';
@@ -13,6 +13,7 @@ import type {
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { enqueueSalesOrderClaimProgress } from '../common/claim-progress';
 import { transitionCustomerReturn } from './customer-return-transition';
+import { ACTIVE_PICKUP_STATUSES, newPickupRow } from './customer-return-pickup.types';
 
 /**
  * 채널(Medusa) 반품 확정·취소 사실을 «반품 예정» 기록으로 옮긴다 (K8 PR5).
@@ -96,6 +97,8 @@ export class CustomerReturnManager {
         }));
       });
       await trx.insert(wmsTables.customerReturnItems).values(itemRows);
+      // 회수 예약은 접수와 같은 트랜잭션에서 «해야 할 일»로만 남긴다 — 한진 HTTP 는 워커가 트랜잭션 밖에서 보낸다
+      await trx.insert(wmsTables.customerReturnPickups).values(newPickupRow(inserted.id, null));
       await enqueueSalesOrderClaimProgress(this.coreOrders, trx, {
         salesOrderId,
         kind: 'return',
@@ -129,8 +132,35 @@ export class CustomerReturnManager {
           `Cannot cancel customer return ${record.id} (channel ${fact.returnId}): status is ${record.status}`,
         );
       }
+      await this.tidyActivePickup(trx, record.id);
       return { customerReturnId: record.id, changed: true };
     }, tx);
+  }
+
+  /**
+   * 취소된 반품의 활성 회수 행을 정리한다(N7). 아직 한진에 한 번도 안 보냈고 워커가 잡고 있지도 않은
+   * pending 만 바로 void 다. 보낸 적이 있거나 리스가 살아 있으면 한진에 예약이 있을 수 있으니 워커가 취소한다.
+   */
+  private async tidyActivePickup(trx: DbTx, customerReturnId: string): Promise<void> {
+    const t = wmsTables.customerReturnPickups;
+    const now = new Date();
+    const voided = await trx
+      .update(t)
+      .set({ status: 'void', updatedAt: now })
+      .where(
+        and(
+          eq(t.customerReturnId, customerReturnId),
+          eq(t.status, 'pending'),
+          eq(t.attempts, 0),
+          or(isNull(t.leaseUntil), lt(t.leaseUntil, now)),
+        ),
+      )
+      .returning({ id: t.id });
+    if (voided.length > 0) return;
+    await trx
+      .update(t)
+      .set({ status: 'cancel_pending', nextAttemptAt: null, updatedAt: now })
+      .where(and(eq(t.customerReturnId, customerReturnId), inArray(t.status, [...ACTIVE_PICKUP_STATUSES])));
   }
 
   private async findSalesOrderId(trx: DbTx, salesChannel: SalesChannel, channelOrderId: string): Promise<string> {
