@@ -186,6 +186,7 @@ const CONTRACT_PATCH_FIELDS: SalesOrderContractField[] = [
 // 취소 거절 문구 — `cancel`·`cancelBeforeBoxingPartial` 과 `planCancellation`(요청 때 판정)이 같은 문구를 쓰게 한 곳에 둔다.
 const CANCEL_MSG_ALREADY_CANCELLED = '이미 전체 취소된 주문입니다.';
 const CANCEL_MSG_FULL_CANCELLATION_EXISTS = '이미 전체 취소 처리된 주문입니다.';
+const CANCEL_MSG_NOTHING_TO_CANCEL = '취소할 수 있는 수량이 없습니다. 이미 출고된 상품은 반품 접수로 환불해 주세요.';
 const CANCEL_MSG_SHIPPED_FULFILLMENT =
   '출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다. 부분 취소로 진행해 주세요.';
 const CANCEL_MSG_SHIPPED_ITEMS =
@@ -1707,7 +1708,7 @@ export class SalesOrdersService {
         })
       : this.normalizePartialCancellationLines(options.lines ?? []);
     if (requestedSalesLines.every((line) => line.quantity === 0)) {
-      throw new BadRequestException('Sales order has no outstanding physical quantity to cancel');
+      throw new BadRequestException(CANCEL_MSG_NOTHING_TO_CANCEL);
     }
     const salesLineById = new Map(salesOrderLines.map((line) => [line.id, line]));
     for (const request of requestedSalesLines) {
@@ -2103,7 +2104,7 @@ export class SalesOrdersService {
         .map((line) => ({ salesOrderLineId: line.id, quantity: remainingOf(prior, line.id) }))
         .filter((line) => line.quantity > 0);
       if (requested.length === 0) {
-        throw new BadRequestException('Sales order has no outstanding physical quantity to cancel');
+        throw new BadRequestException(CANCEL_MSG_NOTHING_TO_CANCEL);
       }
       // `cancel` 의 전체 취소 경로와 같은 출고 증거 거절(박스 이력은 없지만 FO 가 나갔을 수 있다).
       const fulfillmentOrders = await tx

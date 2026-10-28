@@ -423,7 +423,7 @@ describeIfDb('채널 취소 요청 (DB integration, rollback-only)', () => {
       await markLineShipped(tx, seed.lineIds[1], 1);
       await expect(
         w.manager.request({ salesOrderId: seed.salesOrderId, requester: OPERATOR, sourceKey: 'k1' }, tx),
-      ).rejects.toThrow('no outstanding physical quantity');
+      ).rejects.toThrow('취소할 수 있는 수량이 없습니다');
       expect(await requestsOf(tx, seed.salesOrderId)).toHaveLength(0);
       expect(await commandsOf(tx, seed.externalOrderId)).toHaveLength(0);
       expect(await cancellationsOf(tx, seed.salesOrderId)).toHaveLength(0);

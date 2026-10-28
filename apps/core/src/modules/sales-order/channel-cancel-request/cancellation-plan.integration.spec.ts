@@ -79,7 +79,7 @@ describeIfDb('SalesOrdersService.planCancellation (DB integration, rollback-only
       await markLineShipped(tx, seed.lineIds[0], 2);
       await markLineShipped(tx, seed.lineIds[1], 1);
       await expect(w.salesOrders.planCancellation(seed.salesOrderId, undefined, tx)).rejects.toThrow(
-        'Sales order has no outstanding physical quantity to cancel',
+        '취소할 수 있는 수량이 없습니다. 이미 출고된 상품은 반품 접수로 환불해 주세요.',
       );
     });
   });

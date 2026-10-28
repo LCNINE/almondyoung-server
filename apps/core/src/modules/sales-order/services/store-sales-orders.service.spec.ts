@@ -642,7 +642,7 @@ describe('StoreSalesOrdersService', () => {
     it('판매주문 취소 판정이 거절할 요청이면 와우프레스를 부르지 않는다', async () => {
       const { service, cancelRequestsMock, printCancel } = makeContext();
       cancelRequestsMock.precheck.mockRejectedValue(
-        new Error('Sales order has no outstanding physical quantity to cancel'),
+        new Error('취소할 수 있는 수량이 없습니다. 이미 출고된 상품은 반품 접수로 환불해 주세요.'),
       );
       await expect(
         service.cancelRequestByChannelOrder(
@@ -651,7 +651,7 @@ describe('StoreSalesOrdersService', () => {
           {},
           { idempotencyKey: 'k', actorId: CUSTOMER_ID, actorRoles: [] },
         ),
-      ).rejects.toThrow('no outstanding');
+      ).rejects.toThrow('취소할 수 있는 수량이 없습니다');
       expect(cancelRequestsMock.precheck).toHaveBeenCalledWith(SO_ID, undefined);
       expect(printCancel).not.toHaveBeenCalled();
       expect(cancelRequestsMock.request).not.toHaveBeenCalled();
