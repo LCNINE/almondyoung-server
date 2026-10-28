@@ -124,6 +124,7 @@ describe('WaybillLabelManager.render — labelType 배선', () => {
     },
     boxType: 'A',
     payType: 'CD',
+    returnPayType: 'CT',
   };
 
   const FINGERPRINT = 'f'.repeat(64);

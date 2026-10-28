@@ -1,5 +1,7 @@
 export const WAYBILL = {
   CUST_ORD_NO_PREFIX: 'AY',
+  // 반품 회수(R) 예약의 custOrdNo 접두사. 출고(AY)와 이름공간을 가른다 — 한진 주문번호는 S/R 구분 없이 하나다.
+  RETURN_CUST_ORD_NO_PREFIX: 'AR',
   PENDING_ATTEMPTS_CAP: 5, // pending unknown_outcome 지속 시 자동 abandon 임계(§8). allocated 는 무제한.
   // 일시적 거절(ERROR-05/06) 전용 임계. PENDING_ATTEMPTS_CAP 과 «별도 카운터»를 쓴다 — 섞으면
   // 「시간이 지나면 풀리는 사유」가 「결과를 모르는 사유」의 자동 abandon 을 앞당긴다.

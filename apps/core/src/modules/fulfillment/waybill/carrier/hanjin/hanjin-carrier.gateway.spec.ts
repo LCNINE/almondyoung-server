@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { HanjinCarrierGateway, RECIPIENT_DETAIL_FALLBACK } from './hanjin-carrier.gateway';
-import type { WaybillRequest } from '../carrier-gateway.interface';
+import { CarrierError, type PickupRequest, type WaybillRequest } from '../carrier-gateway.interface';
 import type { HanjinConfig } from './hanjin.config';
 import { assembleWaybillRequest } from '../../waybill-request.assembler';
 
@@ -388,5 +388,116 @@ describe('주문 스냅샷 → insert-order 바디 (#911)', () => {
       '/parcel-delivery/v1/order/insert-order',
       expect.objectContaining({ rcvrTelNo: '010-1234-5678' }),
     );
+  });
+});
+
+describe('reservePickup / cancelPickup (K8 PR9)', () => {
+  const pickupConfig = { ...config, returnPayType: 'CT' } as HanjinConfig;
+  const pickupReq: PickupRequest = {
+    custOrdNo: 'AR0000000000000000000000AA',
+    originalWaybillNo: '100000000001',
+    sender: { name: '고객', zip: '03154', baseAddress: '서울 종로구 세종대로 209', detailAddress: '101호', mobile: '010-1111-2222' },
+    recipient: { name: '창고', zip: '08588', baseAddress: '금천구', detailAddress: '지점', tel: '02-1' },
+    items: [{ name: '의류', quantity: 2 }],
+    commodityName: '의류',
+    boxType: 'A',
+    payType: 'CT',
+  };
+  const gw = (post: jest.Mock) =>
+    new HanjinCarrierGateway(pickupConfig, { post } as any, () => new Date('2026-10-28T15:30:00Z'));
+
+  it('insert-order 에 R 본문을 보낸다 — 고객이 송하인, 창고가 수하인', async () => {
+    const post = jest.fn().mockResolvedValue({ resultCode: 'OK', wblNo: '560000175571' });
+    const res = await gw(post).reservePickup(pickupReq);
+    expect(res).toEqual({ kind: 'reserved', waybillNo: '560000175571' });
+    const [host, path, body] = post.mock.calls[0];
+    expect(host).toBe('order');
+    expect(path).toBe('/parcel-delivery/v1/order/insert-order');
+    expect(body).toMatchObject({
+      custEdiCd: 'HANJIN',
+      custOrdNo: pickupReq.custOrdNo,
+      svcCatCd: 'R',
+      payTypCd: 'CT',
+      wblNo: '100000000001',
+      cntractNo: '9117159',
+      pickupAskDt: '20261029', // 15:30Z = KST 다음날 00:30
+      sndrNm: '고객',
+      sndrTelNo: '010-1111-2222',
+      sndrMobileNo: '010-1111-2222',
+      rcvrNm: '창고',
+      rcvrTelNo: '02-1',
+      comodityList: [{ comodityCd: '', comodityNm: '의류', comodityCnt: '2' }],
+    });
+  });
+
+  it('payTypCd 는 요청의 payType 을 따른다', async () => {
+    const post = jest.fn().mockResolvedValue({ resultCode: 'OK', wblNo: '1' });
+    await gw(post).reservePickup({ ...pickupReq, payType: 'PP' });
+    expect(post.mock.calls[0][2].payTypCd).toBe('PP');
+  });
+
+  it('원운송장이 없으면 wblNo 는 빈 문자열', async () => {
+    const post = jest.fn().mockResolvedValue({ resultCode: 'OK', wblNo: '1' });
+    await gw(post).reservePickup({ ...pickupReq, originalWaybillNo: undefined });
+    expect(post.mock.calls[0][2].wblNo).toBe('');
+  });
+
+  it('ERROR-03 + wblNo → already_reserved', async () => {
+    const post = jest.fn().mockResolvedValue({ resultCode: 'ERROR-03', wblNo: '560000175571' });
+    expect(await gw(post).reservePickup(pickupReq)).toEqual({ kind: 'already_reserved', waybillNo: '560000175571' });
+  });
+
+  it('ERROR-03 인데 번호 없음 → rejected', async () => {
+    const post = jest.fn().mockResolvedValue({ resultCode: 'ERROR-03' });
+    expect(await gw(post).reservePickup(pickupReq)).toMatchObject({ kind: 'rejected', code: 'ERROR-03' });
+  });
+
+  it('ERROR-14 → rejected(원문 사유)', async () => {
+    const post = jest
+      .fn()
+      .mockResolvedValue({ resultCode: 'ERROR-14', resultMessage: '배송구분별 지불조건(payTypCd) 검증 오류' });
+    expect(await gw(post).reservePickup(pickupReq)).toEqual({
+      kind: 'rejected',
+      code: 'ERROR-14',
+      reason: '배송구분별 지불조건(payTypCd) 검증 오류',
+    });
+  });
+
+  it('OK 인데 wblNo 없음 → rejected no_wbl_num', async () => {
+    const post = jest.fn().mockResolvedValue({ resultCode: 'OK' });
+    expect(await gw(post).reservePickup(pickupReq)).toMatchObject({ kind: 'rejected', code: 'no_wbl_num' });
+  });
+
+  it('전송 오류(unknown_outcome)는 그대로 던진다', async () => {
+    const post = jest.fn().mockRejectedValue(new CarrierError('timeout', 'unknown_outcome'));
+    await expect(gw(post).reservePickup(pickupReq)).rejects.toMatchObject({ outcome: 'unknown_outcome' });
+    await expect(gw(post).cancelPickup('AR1')).rejects.toMatchObject({ outcome: 'unknown_outcome' });
+  });
+
+  describe('cancelPickup', () => {
+    const cases: Array<[string, any, any]> = [
+      ['OK', { resultCode: 'OK', wblNo: '1' }, { kind: 'cancelled' }],
+      ['ERROR-05', { resultCode: 'ERROR-05' }, { kind: 'already_cancelled' }],
+      ['ERROR-03', { resultCode: 'ERROR-03' }, { kind: 'not_found' }],
+      ['ERROR-04', { resultCode: 'ERROR-04', resultMessage: '운송장출력' }, { kind: 'picked_up', reason: '운송장출력' }],
+      ['ERROR-99', { resultCode: 'ERROR-99', resultMessage: 'x' }, { kind: 'rejected', code: 'ERROR-99', reason: 'x' }],
+    ];
+    it.each(cases)('%s', async (_n, res, expected) => {
+      const post = jest.fn().mockResolvedValue(res);
+      expect(await gw(post).cancelPickup('AR1')).toEqual(expected);
+      expect(post).toHaveBeenCalledWith('order', '/parcel-delivery/v1/order/cancel-order', {
+        custEdiCd: 'HANJIN',
+        custOrdNo: 'AR1',
+      });
+    });
+  });
+
+  it('capabilities.canCancel 은 출고 S 용이라 false 로 둔다', () => {
+    expect(gw(jest.fn()).capabilities.canCancel).toBe(false);
+  });
+
+  it('isPickupConfigured — returnPayType 이 허용 밖이면 false', () => {
+    const base = { ...config, returnPayType: 'CD' } as HanjinConfig;
+    expect(new HanjinCarrierGateway(base, { post: jest.fn() } as any).isPickupConfigured()).toBe(false);
   });
 });

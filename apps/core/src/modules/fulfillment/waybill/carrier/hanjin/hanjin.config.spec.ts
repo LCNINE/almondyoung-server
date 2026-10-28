@@ -1,4 +1,4 @@
-import { loadHanjinConfig, isHanjinConfigured, missingHanjinConfig } from './hanjin.config';
+import { loadHanjinConfig, isHanjinConfigured, missingHanjinConfig, missingHanjinPickupConfig } from './hanjin.config';
 
 // insert-order(정본 §4.2)가 실제로 요구하는 최소 집합. 여기서 하나를 빼면 게이트가 false 여야 한다 —
 // 통과시키면 한진이 ERROR-01 로 거절하고, 그 거절은 되돌릴 수 없는 waybill `failed` 로 기록된다.
@@ -110,5 +110,19 @@ describe('hanjin.config', () => {
       expect(isHanjinConfigured(c)).toBe(true);
       expect(missingHanjinConfig(c)).toEqual([]);
     });
+  });
+});
+
+describe('hanjin.config — 반품 회수(R) 지불조건 (K8 PR9)', () => {
+  it('기본은 CT(착지신용) — R 에서 CD 는 ERROR-14 라 출고 payType 과 따로 둔다', () => {
+    expect(configWith().returnPayType).toBe('CT');
+  });
+  it('허용 집합 밖(CD)이면 missingHanjinPickupConfig 만 그 이름을 낸다', () => {
+    const c = configWith({ HANJIN_RETURN_PAY_TYPE: 'CD' });
+    expect(missingHanjinPickupConfig(c)).toEqual(['HANJIN_RETURN_PAY_TYPE']);
+    expect(missingHanjinConfig(c)).toEqual([]);
+  });
+  it('기본값이면 missingHanjinPickupConfig 는 비어 있다', () => {
+    expect(missingHanjinPickupConfig(configWith())).toEqual([]);
   });
 });

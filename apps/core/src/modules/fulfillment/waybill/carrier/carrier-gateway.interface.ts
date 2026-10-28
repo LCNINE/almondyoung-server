@@ -21,6 +21,30 @@ export interface WaybillRequest {
   payType: string; // payTypCd
 }
 
+/** 반품 회수(한진 svcCatCd 'R') 예약. 송하인 = 고객, 수하인 = 창고 — 출고와 방향이 반대다. */
+export interface PickupRequest {
+  custOrdNo: string; // ≤30B
+  originalWaybillNo?: string; // 한진은 검증하지 않는다 — 있으면 싣는다
+  sender: { name: string; zip: string; baseAddress: string; detailAddress: string; mobile: string }; // 고객
+  recipient: { name: string; zip: string; baseAddress: string; detailAddress: string; tel: string }; // 창고
+  items: Array<{ name: string; quantity: number }>;
+  commodityName: string;
+  boxType: string;
+  payType: string;
+}
+
+export type PickupReserveOutcome =
+  | { kind: 'reserved'; waybillNo: string }
+  | { kind: 'already_reserved'; waybillNo: string } // ERROR-03 + wblNo: 같은 주문번호 재전송이 번호를 되찾는다
+  | { kind: 'rejected'; code: string; reason: string };
+
+export type PickupCancelOutcome =
+  | { kind: 'cancelled' }
+  | { kind: 'already_cancelled' } // ERROR-05
+  | { kind: 'not_found' } // ERROR-03
+  | { kind: 'picked_up'; reason: string } // ERROR-04: 기사가 집하하며 운송장을 출력한 뒤
+  | { kind: 'rejected'; code: string; reason: string };
+
 export interface AllocateResult {
   waybillNo: string;
   labelData: Record<string, unknown>; // carrier-tagged blob (한진 분류필드)
@@ -107,4 +131,9 @@ export abstract class CarrierGateway {
   abstract register(waybillNo: string, req: WaybillRequest): Promise<RegisterOutcome>;
   track?(waybillNo: string): Promise<CarrierScan[]>;
   cancel?(waybillNo: string, req: WaybillRequest): Promise<void>;
+  // 반품 회수. 능력 플래그를 늘리지 않는다 — 선택 메서드의 유무가 능력이다.
+  // 전송 오류·타임아웃·-103 은 결과가 아니라 CarrierError 로 던진다.
+  isPickupConfigured?(): boolean;
+  reservePickup?(req: PickupRequest): Promise<PickupReserveOutcome>;
+  cancelPickup?(custOrdNo: string): Promise<PickupCancelOutcome>;
 }

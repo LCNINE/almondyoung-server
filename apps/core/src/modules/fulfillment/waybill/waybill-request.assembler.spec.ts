@@ -19,6 +19,7 @@ const config: HanjinConfig = {
   },
   boxType: 'A',
   payType: 'PP',
+  returnPayType: 'CT',
   labelType: 'NS',
 };
 const snapshot = {
