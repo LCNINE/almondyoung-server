@@ -1021,7 +1021,7 @@ export class SalesOrdersService {
     const end = sql`(${to}::date + 1)::timestamp AT TIME ZONE 'Asia/Seoul'`;
     const db = this.db.db;
 
-    const [orderRows, exchangeRows, returnRows] = await Promise.all([
+    const [orderRows, returnRows] = await Promise.all([
       // 단계는 주문 목록·상세 뱃지와 같은 사다리 한 벌(orderFulfillmentPhaseSql)의 admin_phase — 숫자와 뱃지가 어긋나지 않게.
       db.execute(sql`
         WITH ranged AS (
@@ -1042,16 +1042,11 @@ export class SalesOrdersService {
           JOIN ph ON ph.sales_order_id = ranged.id
          GROUP BY ranged.day
       `),
+      // 반품 = 그날 접수된 반품 예정 기록(K8 PR 10, 취소 포함 — «접수된 수»). 교환은 PR 11 까지 없다
       db.execute(sql`
-        SELECT ((created_at AT TIME ZONE 'Asia/Seoul')::date)::text AS day, count(*)::int AS count
-          FROM exchange_requests
-         WHERE created_at >= ${start} AND created_at < ${end}
-         GROUP BY 1
-      `),
-      db.execute(sql`
-        SELECT ((created_at AT TIME ZONE 'Asia/Seoul')::date)::text AS day, count(*)::int AS count
-          FROM return_requests
-         WHERE created_at >= ${start} AND created_at < ${end}
+        SELECT ((cr.requested_at AT TIME ZONE 'Asia/Seoul')::date)::text AS day, count(*)::int AS count
+          FROM customer_returns cr
+         WHERE cr.requested_at >= ${start} AND cr.requested_at < ${end}
          GROUP BY 1
       `),
     ]);
@@ -1062,7 +1057,6 @@ export class SalesOrdersService {
       range: { from, to },
       series: buildDailyOrderStatusSeries(
         Array.from(orderRows as unknown as ArrayLike<OrderDayRow>),
-        Array.from(exchangeRows as unknown as ArrayLike<DayCount>),
         Array.from(returnRows as unknown as ArrayLike<DayCount>),
         from,
         to,

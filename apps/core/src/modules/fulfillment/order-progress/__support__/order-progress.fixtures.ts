@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { and, eq, isNull } from 'drizzle-orm';
-import { DbTx, returnRequests, wmsTables } from '../../../inventory/schema/inventory.schema';
+import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
+import type { CustomerReturnStatus } from '../../../sales-order/customer-return/customer-return.types';
 
 /** 정체 보드 판정 스펙 전용 — 판정이 읽는 칸만 채운다(실제 흐름 서비스는 부르지 않는다). */
 export type World = { warehouseId: string; skuId: string; holderId: string };
@@ -262,13 +263,23 @@ export async function seedCancellation(tx: DbTx, salesOrderId: string, occurredA
   await tx.insert(wmsTables.salesOrderCancellations).values({ salesOrderId, occurredAt, reasonCode: 'customer' });
 }
 
+/** 반품 예정 기록(K8 PR5) — 판정이 읽는 칸(주문·상태·접수 시각)만 뜻 있게 채운다. 줄은 판정이 읽지 않는다. */
 export async function seedReturn(
   tx: DbTx,
   salesOrderId: string,
-  status: 'requested' | 'collection_pending' | 'completed' | 'rejected',
-  createdAt = new Date(),
+  status: CustomerReturnStatus,
+  requestedAt = new Date(),
 ): Promise<void> {
-  await tx.insert(returnRequests).values({ salesOrderId, status, reasonCode: 'defective', createdAt });
+  await tx.insert(wmsTables.customerReturns).values({
+    salesOrderId,
+    channelReturnId: `ret-${randomUUID()}`,
+    channelRequestId: `req-${randomUUID()}`,
+    status,
+    reason: 'defective',
+    feeBearer: 'seller',
+    requestedBy: 'customer',
+    requestedAt,
+  });
 }
 
 /** 확정된 채널 취소 요청(정산 중) — #1016 36번 재설계. createdAt 이 확정 시각이다 */

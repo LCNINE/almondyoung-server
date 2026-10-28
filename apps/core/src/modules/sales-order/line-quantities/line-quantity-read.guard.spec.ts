@@ -107,7 +107,7 @@ describe('취소 수량 읽는 문', () => {
  * 스키마 정의만 그때까지 남는다 — 그 밖의 운영 파일이 이 이름을 다시 쓰면 빨갛다(PR 10b 뒤엔 없는 표를 읽는다).
  */
 const LEGACY_CLAIM_IDENTIFIERS =
-  /\b(returnRequests|returnRequestItems|exchangeRequests|exchangeRequestItems|returnRefundAttempts|returnExchangeTables|returnExchangeSchema|StoreReturnExchangeService|ACTIVE_RETURN_STATUSES|ACTIVE_EXCHANGE_STATUSES|CONSUMED_RETURN_STATUSES|exchange_active|exchangeActive)\b/;
+  /\b(returnRequests|returnRequestItems|exchangeRequests|exchangeRequestItems|returnRefundAttempts|returnExchangeTables|returnExchangeSchema|StoreReturnExchangeService|ACTIVE_RETURN_STATUSES|ACTIVE_EXCHANGE_STATUSES|CONSUMED_RETURN_STATUSES|exchange_active|exchangeActive|return_requests|return_request_items|exchange_requests|exchange_request_items|return_refund_attempts)\b/;
 const INVENTORY_SCHEMA = 'apps/core/src/modules/inventory/schema/inventory.schema.ts';
 
 describe('청구(반품) 수량 읽는 문', () => {
