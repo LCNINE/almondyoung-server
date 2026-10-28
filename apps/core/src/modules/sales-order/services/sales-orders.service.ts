@@ -81,7 +81,7 @@ import type {
 import { canonicalFulfillmentRequestHash } from '../../fulfillment/services/fulfillment-command.service';
 import type { CancellationEffect } from '../cancellation-record/cancellation-lines';
 import { recordSalesOrderCancellation } from '../cancellation-record/record-cancellation';
-import { FULFILLMENT_SYSTEM_ACTOR_ID } from '../../../platform/auth/system-actor';
+import { FULFILLMENT_SYSTEM_ACTOR } from '../../../platform/auth/system-actor';
 
 type SalesOrderLineInsert = InferInsertModel<typeof wmsTables.salesOrderLines>;
 type BusinessLinkInsert = InferInsertModel<typeof wmsTables.businessLinks>;
@@ -230,7 +230,6 @@ const WALLET_EFFECT_REF_TYPES = new Set([
 ]);
 const LOGISTICS_EFFECT_REF_TYPES = new Set(['return', 'return_handoff']);
 const OPERATIONS_EFFECT_REF_TYPES = new Set(['recovery_handoff', 'refund_policy_handoff', 'compensation_handoff']);
-export { FULFILLMENT_SYSTEM_ACTOR_ID };
 const OPEN_FULFILLMENT_BACKLOG_STATUSES = new Set(['pending', 'failed', 'processing', 'awaiting_matching']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -1853,7 +1852,7 @@ export class SalesOrdersService {
           id: options.fulfillmentCommandContext.actorId,
           roles: options.fulfillmentCommandContext.actorRoles,
         }
-      : { id: FULFILLMENT_SYSTEM_ACTOR_ID, roles: ['master'] };
+      : FULFILLMENT_SYSTEM_ACTOR;
     const operationEffects: CancellationEffect[] = [];
     for (const request of requestedSalesLines) {
       const salesLine = salesLineById.get(request.salesOrderLineId)!;

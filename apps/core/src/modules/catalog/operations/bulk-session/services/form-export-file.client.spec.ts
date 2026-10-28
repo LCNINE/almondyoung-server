@@ -70,7 +70,7 @@ describe('FormExportFileClient', () => {
   describe('getDownloadUrl', () => {
     const FILE_ID = '0193cccc-dddd-7eee-8fff-000011112222';
 
-    it('올바른 라우트로 요청해 signedUrl 을 돌려주고, 토큰에 sub/userId/scopes 를 싣는다', async () => {
+    it('올바른 라우트로 요청해 signedUrl 을 돌려주고, 요청자 대신 부르는 위임 토큰을 싣는다', async () => {
       const fetchMock = jest.fn().mockResolvedValue({
         ok: true,
         json: () => Promise.resolve({ signedUrl: 'https://signed.example/form.xlsx?sig=abc' }),
@@ -91,9 +91,8 @@ describe('FormExportFileClient', () => {
       const headers = init.headers as Record<string, string>;
       expect(headers.Authorization).toMatch(/^Bearer .+/);
       const payload = verify(headers.Authorization.replace('Bearer ', ''), SECRET) as Record<string, unknown>;
-      expect(payload.sub).toBe('core-bulk-session');
-      expect(payload.userId).toBe('u1');
-      expect(payload.scopes).toEqual(['master']);
+      expect(payload).toMatchObject({ sub: 'u1', act: { sub: 'core' }, aud: 'file-service' });
+      expect(payload).not.toHaveProperty('scopes');
     });
 
     it('실패 응답이면 상태코드를 담아 던진다', async () => {
@@ -199,10 +198,8 @@ describe('FormExportFileClient', () => {
       expect(verify(auth.replace('Bearer ', ''), SECRET)).toMatchObject({ userId: 'u1' });
     });
 
-    // 보안 회귀 방지 — 이미지 경로 토큰에 master 가 실리면 file-service 의
-    // `isMasterOrOwner`(file-access.ts:62)가 소유권 검사를 단락해, 작업자가 통보한
-    // **임의의 fileId** 를 core 가 master 권한으로 읽고 지우는 프리미티브가 된다.
-    it('이미지 경로 토큰에는 master 스코프가 없다 — file-service 가 업로더 소유권을 강제해야 한다', async () => {
+    // 이미지 경로의 fileId 는 작업자가 통보한 값이다 — 위임 표기가 실리면 file-service 가 소유권 검사를 건너뛴다.
+    it('이미지 경로 토큰에는 위임 표기가 없다 — file-service 가 업로더 소유권을 강제해야 한다', async () => {
       const fetchMock = jest.fn().mockResolvedValue({
         ok: true,
         status: 200,
@@ -216,12 +213,12 @@ describe('FormExportFileClient', () => {
       const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       const auth = (init.headers as Record<string, string>).Authorization;
       const payload = verify(auth.replace('Bearer ', ''), SECRET) as Record<string, unknown>;
-      // owner 분기(file-access.ts:55)가 읽는 클레임은 userId 다 — 이게 없으면 이미지
-      // 경로 전체가 403 으로 죽는다.
+      // 소유자 분기가 읽는 클레임은 userId 다 — 이게 없으면 이미지 경로 전체가 403 으로 죽는다.
       expect(payload.userId).toBe('u1');
       expect(payload.scopes).toEqual([]);
-      expect(payload.scopes).not.toContain('master');
-      // roles 로도 master 가 새면 안 된다(file-access.ts:58 이 roles 도 본다).
+      expect(payload).not.toHaveProperty('act');
+      expect(payload).not.toHaveProperty('client_id');
+      expect(payload).not.toHaveProperty('aud');
       expect(payload.roles).toBeUndefined();
     });
 
@@ -283,18 +280,19 @@ describe('FormExportFileClient', () => {
     }
 
     // 워크북은 만든 사람과 쓰는 사람이 다른 것이 정상이고(assertExportUsable), 만료 정리는
-    // 잡 소유자와 다른 맥락(크론)에서 돈다 — owner 검사를 통과할 수 없으므로 master 가 필요하다.
-    it('softDelete(워크북)는 master 스코프를 유지한다', async () => {
+    // 잡 소유자와 다른 맥락(크론)에서 돈다 — owner 검사를 통과할 수 없으므로 core 위임 토큰이 필요하다.
+    it('softDelete(워크북)는 core 위임 토큰을 쓴다', async () => {
       const fetchMock = deleteFetchMock();
       await new FormExportFileClient(config).softDelete(FILE_ID, 'u1');
 
       const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(url).toBe(`http://file-service/files/${FILE_ID}`);
       expect(init.method).toBe('DELETE');
-      expect(tokenOf(fetchMock)).toMatchObject({ userId: 'u1', scopes: ['master'] });
+      expect(tokenOf(fetchMock)).toMatchObject({ sub: 'u1', act: { sub: 'core' }, aud: 'file-service' });
+      expect(tokenOf(fetchMock)).not.toHaveProperty('scopes');
     });
 
-    it('softDeleteOwnedFile(이미지)는 master 스코프를 싣지 않는다 — 임의 파일 삭제 방지', async () => {
+    it('softDeleteOwnedFile(이미지)는 위임 표기를 싣지 않는다 — 본인 파일만 지운다', async () => {
       const fetchMock = deleteFetchMock();
       await new FormExportFileClient(config).softDeleteOwnedFile(FILE_ID, 'u1');
 
@@ -304,6 +302,8 @@ describe('FormExportFileClient', () => {
       const payload = tokenOf(fetchMock);
       expect(payload.userId).toBe('u1');
       expect(payload.scopes).toEqual([]);
+      expect(payload).not.toHaveProperty('act');
+      expect(payload).not.toHaveProperty('aud');
       expect(payload.roles).toBeUndefined();
     });
 

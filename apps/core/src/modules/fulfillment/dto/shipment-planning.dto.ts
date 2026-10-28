@@ -1,3 +1,4 @@
+import type { SystemPrincipal } from '@app/authorization';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import {
@@ -125,6 +126,8 @@ export class CancelShipmentOutstandingDto extends ShipmentCommandReasonDto {
 export type ShipmentPlanningActor = {
   id: string;
   roles: string[];
+  /** 시스템 행위자만 갖는다(`FULFILLMENT_SYSTEM_ACTOR`). */
+  principal?: SystemPrincipal;
 };
 
 export class ShipmentLineOriginResponseDto {

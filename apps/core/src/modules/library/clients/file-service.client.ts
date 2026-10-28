@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { sign as jwtSign } from 'jsonwebtoken';
+import { signFileServiceDelegation } from '../../../platform/auth/file-service-delegation';
 
 /**
  * Core → file-service 의 service-to-service client.
@@ -8,14 +8,12 @@ import { sign as jwtSign } from 'jsonwebtoken';
  * Library 다운로드 흐름:
  *  1) storefront 가 core 의 `/library/ownerships/:id/download` 호출
  *  2) core 가 사용자 본인 + exercise 검증
- *  3) **이 client** 가 file-service `/files/:fileId/download` 호출 — master scope 의
- *     단명 HS256 서비스 토큰 발급 (AUTH_SECRET 공유) → signed URL 응답 받음
+ *  3) **이 client** 가 file-service `/files/:fileId/download` 호출 — 요청자 대신 core 가 부르는
+ *     단명 위임 토큰(`sub`=요청자, `act.sub`=core) 발급 (AUTH_SECRET 공유) → signed URL 응답 받음
  *  4) signed URL 의 바이트를 fetch → 클라이언트로 stream
  *
- * 왜 토큰을 매 호출마다 발급하는가: file-service 가 (소유자 || master scope) 만 허용하는데,
- * 디지털 자산의 uploadedBy 는 admin 이고 storefront 사용자는 둘 다 아니다. core 가 권한 검사를
- * 마쳤음을 신뢰하는 별도의 internal endpoint 를 만들 수도 있지만 그건 스코프 확장.
- * 짧은 만료(1m)의 master 토큰으로 위임만 한다.
+ * 왜 위임 토큰인가: file-service 는 소유자가 아니면 막는데, 디지털 자산의 uploadedBy 는 admin 이고
+ * storefront 사용자는 아니다. core 가 권한 검사를 마쳤으므로 짧은 만료(1m)의 위임 토큰으로 넘긴다.
  */
 @Injectable()
 export class FileServiceClient {
@@ -23,21 +21,14 @@ export class FileServiceClient {
 
   constructor(private readonly config: ConfigService) {}
 
-  private mintServiceToken(): string {
+  private delegationToken(onBehalfOf: string): string {
     const secret = this.config.get<string>('AUTH_SECRET');
     if (!secret) {
       throw new Error(
         'FileServiceClient requires AUTH_SECRET (HS256 shared with file-service) to mint a service token.',
       );
     }
-    return jwtSign(
-      {
-        sub: 'core-library-service',
-        scopes: ['master'],
-      },
-      secret,
-      { algorithm: 'HS256', expiresIn: '1m' },
-    );
+    return signFileServiceDelegation(secret, onBehalfOf, '1m');
   }
 
   private baseUrl(): string {
@@ -52,12 +43,15 @@ export class FileServiceClient {
    * file-service 의 download endpoint 를 호출해 signed URL 을 얻고, 그 URL 의 바이트를
    * 가져와 (stream, contentType, contentLength) 로 돌려준다.
    */
-  async fetchFile(fileId: string): Promise<{
+  async fetchFile(
+    fileId: string,
+    onBehalfOf: string,
+  ): Promise<{
     stream: ReadableStream<Uint8Array>;
     contentType: string;
     contentLength: number | null;
   }> {
-    const token = this.mintServiceToken();
+    const token = this.delegationToken(onBehalfOf);
     const metaRes = await fetch(`${this.baseUrl()}/files/${fileId}/download?expiresIn=60`, {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}` },
@@ -92,8 +86,8 @@ export class FileServiceClient {
    * (대용량 파일이 Lambda 응답 한도(6MB)를 넘겨 502 나는 문제 해결).
    */
   // expiresIn 은 짧게 (클릭→다운로드 시작에 충분). 관리자 회수 후 이미 발급된 URL 의 유효창을 줄인다.
-  async getDownloadUrl(fileId: string, expiresIn = 60): Promise<string> {
-    const token = this.mintServiceToken();
+  async getDownloadUrl(fileId: string, onBehalfOf: string, expiresIn = 60): Promise<string> {
+    const token = this.delegationToken(onBehalfOf);
     const res = await fetch(
       `${this.baseUrl()}/files/${fileId}/download?expiresIn=${expiresIn}&download=true`,
       { method: 'GET', headers: { Authorization: `Bearer ${token}` } },
@@ -112,14 +106,17 @@ export class FileServiceClient {
   /**
    * file-service 의 metadata 를 가져온다 (다운로드 파일명 결정용).
    */
-  async fetchMetadata(fileId: string): Promise<{
+  async fetchMetadata(
+    fileId: string,
+    onBehalfOf: string,
+  ): Promise<{
     fileName: string;
     originalName: string | null;
     mimeType: string | null;
     status: string | null;
     contextId: string | null;
   }> {
-    const token = this.mintServiceToken();
+    const token = this.delegationToken(onBehalfOf);
     const res = await fetch(`${this.baseUrl()}/files/${fileId}/metadata`, {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}` },

@@ -9,6 +9,7 @@ import {
   Post,
   Query,
   Req,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 
@@ -33,7 +34,7 @@ export class DigitalAssetController {
   @ApiOperation({ summary: '디지털 자산 등록' })
   @ApiResponse({ status: 201, type: DigitalAssetResponseDto })
   async create(@Body() dto: CreateDigitalAssetDto, @Req() req: any): Promise<DigitalAssetResponseDto> {
-    return this.service.createAsset(dto, req.user?.id);
+    return this.service.createAsset(dto, req.user?.id, this.requesterId(req));
   }
 
   @RequirePermission('catalog.product.read')
@@ -100,7 +101,7 @@ export class DigitalAssetController {
     @Body() dto: CreateFileVersionDto,
     @Req() req: any,
   ): Promise<DigitalAssetFileVersionDto> {
-    return this.service.addFileVersion(id, dto, req.user?.id);
+    return this.service.addFileVersion(id, dto, req.user?.id, this.requesterId(req));
   }
 
   @RequirePermission('catalog.digital_asset.write')
@@ -115,5 +116,12 @@ export class DigitalAssetController {
     @Req() req: any,
   ): Promise<DigitalAssetResponseDto> {
     return this.service.rollbackToFileVersion(id, versionId, req.user?.id);
+  }
+
+  /** 토큰의 사용자 — file-service 에 이 사람 대신 묻는다. */
+  private requesterId(req: { user?: { userId?: string; sub?: string } }): string {
+    const userId = req.user?.userId ?? req.user?.sub;
+    if (!userId) throw new UnauthorizedException('Authenticated user required');
+    return userId;
   }
 }

@@ -76,7 +76,7 @@ describe('InternalAlmondDesignsController', () => {
     const [id, format, dpi, token] = printLink.mock.calls[0];
     expect([id, format, dpi]).toEqual([ID, 'jpg', 300]);
     const claims = verify(token, SECRET, { algorithms: ['HS256'] });
-    expect(claims).toMatchObject({ scopes: ['master'] });
+    expect(claims).toMatchObject({ client_id: 'ugc-service', aud: 'file-service' });
     const { exp, iat } = claims as { exp: number; iat: number };
     expect(exp - iat).toBe(300);
   });
