@@ -47,6 +47,7 @@ export const LABEL_TEST_CONFIG: HanjinConfig = {
   },
   boxType: 'A',
   payType: 'CD',
+  returnPayType: 'CT',
   labelType: 'FS',
 };
 

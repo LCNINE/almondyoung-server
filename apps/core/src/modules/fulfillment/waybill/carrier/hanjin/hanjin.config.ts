@@ -9,6 +9,11 @@ export interface HanjinConfig {
   sender: { name: string; zip: string; baseAddress: string; detailAddress: string; tel: string };
   boxType: string;
   payType: string;
+  /**
+   * 반품 회수(R)의 지불조건. 출고 `payType` 과 따로 둔다 — R 에서는 `CD`(발지신용)가 ERROR-14 로 거절되고
+   * (DEV 실측 2026-10-28) `PP`·`CC`·`CT` 만 열린다. 기본 `CT` = 받는 쪽(창고)이 월 정산.
+   */
+  returnPayType: string;
   /** 운송장 형(NS|NL|FS). 검증은 라벨 렌더 때(hanjin-label-templates) — 발급과 무관하다. */
   labelType: string;
 }
@@ -19,6 +24,7 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 // ERROR-10(지불조건) / ERROR-11(박스타입) 으로 거절한다.
 const BOX_TYPE_CODES: ReadonlySet<string> = new Set(['S', 'A', 'B', 'C', 'D', 'E']);
 const PAY_TYPE_CODES: ReadonlySet<string> = new Set(['CD', 'CT', 'PP', 'CC']);
+const RETURN_PAY_TYPE_CODES: ReadonlySet<string> = new Set(['CT', 'PP', 'CC']);
 
 export function loadHanjinConfig(env: NodeJS.ProcessEnv = process.env): HanjinConfig {
   const timeout = Number(env.HANJIN_TIMEOUT_MS);
@@ -39,6 +45,8 @@ export function loadHanjinConfig(env: NodeJS.ProcessEnv = process.env): HanjinCo
     },
     boxType: env.HANJIN_BOX_TYPE ?? 'A',
     payType: env.HANJIN_PAY_TYPE ?? 'PP',
+    // 라벨 형처럼 앞뒤 공백·소문자를 맞춘다 — ' ct ' 가 허용 집합 검사에 걸려 회수 전체가 꺼지지 않게
+    returnPayType: env.HANJIN_RETURN_PAY_TYPE?.trim().toUpperCase() || 'CT',
     labelType: env.HANJIN_LABEL_TYPE?.trim().toUpperCase() || 'NS',
   };
 }
@@ -71,6 +79,11 @@ export function missingHanjinConfig(c: HanjinConfig): string[] {
     ['HANJIN_PAY_TYPE', PAY_TYPE_CODES.has(c.payType)],
   ];
   return required.filter(([, ok]) => !ok).map(([key]) => key);
+}
+
+/** 회수 예약까지 쓸 수 있는지. 출고 게이트(`missingHanjinConfig`)에는 영향을 주지 않는다. */
+export function missingHanjinPickupConfig(c: HanjinConfig): string[] {
+  return [...missingHanjinConfig(c), ...(RETURN_PAY_TYPE_CODES.has(c.returnPayType) ? [] : ['HANJIN_RETURN_PAY_TYPE'])];
 }
 
 export function isHanjinConfigured(c: HanjinConfig): boolean {

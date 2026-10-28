@@ -1622,6 +1622,55 @@ export const customerReturns = pgTable(
   }),
 );
 
+export const customerReturnPickupStatusEnum = pgEnum('customer_return_pickup_status', [
+  'pending',
+  'reserved',
+  'failed',
+  'void',
+  'cancel_pending',
+  'cancelled',
+]);
+
+/**
+ * 반품 회수 예약(K8 PR9). 한진 회수(R) 접수·취소의 진행 기록이다.
+ * id 는 앱이 준다 — cust_ord_no 가 id 에서 파생되므로 삽입 전에 번호가 필요하다.
+ * 한 반품의 활성 행(pending·reserved·cancel_pending)은 하나뿐이고, 다시 접수는 새 행 = 새 번호다.
+ */
+export const customerReturnPickups = pgTable(
+  'customer_return_pickups',
+  {
+    id: uuid('id').primaryKey(),
+    customerReturnId: uuid('customer_return_id')
+      .references(() => customerReturns.id, { onDelete: 'cascade' })
+      .notNull(),
+    carrier: carrierEnum('carrier').notNull(),
+    custOrdNo: varchar('cust_ord_no', { length: 30 }).notNull().unique(),
+    status: customerReturnPickupStatusEnum('status').notNull().default('pending'),
+    waybillNo: varchar('waybill_no', { length: 32 }),
+    originalWaybillNo: varchar('original_waybill_no', { length: 32 }),
+    attempts: integer('attempts').notNull().default(0),
+    lastError: text('last_error'),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    reservedAt: timestamp('reserved_at', { withTimezone: true }),
+    pickedUpAt: timestamp('picked_up_at', { withTimezone: true }),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    /** null = 시스템(접수가 자동으로 만든 행) */
+    createdBy: varchar('created_by', { length: 255 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqActive: uniqueIndex('uq_customer_return_pickups_active')
+      .on(t.customerReturnId)
+      .where(sql`${t.status} IN ('pending', 'reserved', 'cancel_pending')`),
+    uqWaybill: uniqueIndex('uq_customer_return_pickups_waybill')
+      .on(t.waybillNo)
+      .where(sql`${t.waybillNo} IS NOT NULL`),
+    idxDue: index('idx_customer_return_pickups_due').on(t.status, t.nextAttemptAt),
+  }),
+);
+
 export const customerReturnLines = pgTable(
   'customer_return_lines',
   {
@@ -3969,6 +4018,7 @@ export const wmsTables = {
   salesOrderLineCompositions,
   customerReturns,
   customerReturnLines,
+  customerReturnPickups,
   customerReturnItems,
   customerReturnArrivals,
   orderEvents,

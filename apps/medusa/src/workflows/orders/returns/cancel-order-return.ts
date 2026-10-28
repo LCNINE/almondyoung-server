@@ -9,6 +9,7 @@ import {
 import { toNumber } from '../partial-cancel/amount';
 import { listOrderRefunds, orderCancelLockKey } from '../settlement/order-payments';
 import { fetchCoreReturnEligibility } from './core-return-eligibility';
+import { releaseCoreReturnPickup } from './core-return-pickup';
 import { loadReturnOrder, RETURN_REQUEST_METADATA_KEY, type ReturnRequestRecord } from './load-return-order';
 import { ReturnRequestRejected, type ReturnRequestedBy } from './plan-return-request';
 import { ReturnOrderNotFound } from './request-order-return';
@@ -28,8 +29,11 @@ export type CancelOrderReturnInput = {
 
 export type CancelOrderReturnResult = { returnId: string; status: 'canceled' };
 
-/** 반품 요청과 같은 잠금·같은 만료 — 한 주문에 열린 주문 변경은 하나뿐이다. */
-const ORDER_LOCK_TIMEOUT_SECONDS = 60;
+/**
+ * 정산·선환불·채널 취소와 같은 만료 — 잠금 안에서 core 의 회수 놓아주기(한진 취소 HTTP)를 동기로 기다린 뒤
+ * 주문 변경까지 하므로 반품 요청(60초)보다 넉넉히 잡는다. 한 주문에 열린 주문 변경은 하나뿐이다.
+ */
+const ORDER_LOCK_TIMEOUT_SECONDS = 120;
 
 /**
  * 도착 전 반품 취소(K8 PR3). 순서가 곧 정확성이다 — 코어 cancelReturnWorkflow 는 반품 fulfillment 가 전부 취소돼 있어야 하고(① 먼저),
@@ -90,6 +94,11 @@ async function run(container: MedusaContainer, input: CancelOrderReturnInput): P
   const coreStatus = eligibility.customerReturns.find((r) => r.channelReturnId === ret.id)?.status;
   if (coreStatus !== undefined && coreStatus !== 'expected' && coreStatus !== 'cancelled') {
     throw new ReturnRequestRejected('return_arrived', '창고에 도착한 반품은 취소할 수 없습니다');
+  }
+  // 한진 회수 예약을 core 가 먼저 취소한다 — 기사가 이미 가져갔으면 취소를 거절한다. core 가 취소한 뒤 아래가 실패해도
+  // 회수만 없어진 쪽(CS 가 다시 접수)이 소포가 기록 없이 오는 쪽보다 낫다(N6). 주문 변경을 건드리기 «전»이다.
+  if ((await releaseCoreReturnPickup(ret.id)) === 'picked_up') {
+    throw new ReturnRequestRejected('return_picked_up', '택배 기사님이 이미 회수한 반품은 취소할 수 없습니다');
   }
 
   for (const f of query.fulfillments.filter((x) => !x.canceledAt)) {

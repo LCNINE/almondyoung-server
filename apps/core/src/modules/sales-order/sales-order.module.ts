@@ -8,6 +8,7 @@ import { PrintOrderModule } from '../print-order/print-order.module';
 import { LibraryModule } from '../library/library.module';
 import { FulfillmentOrderCreationBacklogModule } from '../fulfillment/backlog/fulfillment-order-creation-backlog.module';
 import { UnboxedDemandModule } from '../fulfillment/unboxed-demand/unboxed-demand.module';
+import { WaybillModule } from '../fulfillment/waybill/waybill.module';
 
 import { SalesOrdersController } from './controllers/sales-orders.controller';
 import { SalesOrderAmendmentsController } from './controllers/sales-order-amendments.controller';
@@ -38,6 +39,8 @@ import { CustomerReturnReceivingManager } from './customer-return/customer-retur
 import { CustomerReturnSettlementManager } from './customer-return/customer-return-settlement.manager';
 import { CustomerReturnCsManager } from './customer-return/customer-return-cs.manager';
 import { CustomerReturnSettlementRetryCron } from './customer-return/customer-return-settlement-retry.cron';
+import { CustomerReturnPickupManager } from './customer-return/customer-return-pickup.manager';
+import { CustomerReturnPickupCron } from './customer-return/customer-return-pickup.cron';
 import { CustomerReturnsController } from './customer-return/customer-returns.controller';
 import { CustomerReturnReceivingController } from './customer-return/customer-return-receiving.controller';
 import { OrderCancellation } from './order-cancellation/order-cancellation';
@@ -95,6 +98,9 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
 
     // 인쇄 외주 송장·상태 (배송조회·이행 단계에 반영)
     PrintOrderModule,
+
+    // 반품 회수 워커의 한진 게이트웨이·설정(K8 PR9). WaybillModule 은 FulfillmentCommandModule 만 물어 순환이 없다
+    WaybillModule,
   ],
   controllers: [
     SalesOrdersController,
@@ -140,6 +146,9 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
     CustomerReturnSettlementManager,
     CustomerReturnCsManager,
     CustomerReturnSettlementRetryCron,
+    // 반품 회수 한진 예약·취소 워커(K8 PR9)
+    CustomerReturnPickupManager,
+    CustomerReturnPickupCron,
     CustomerReturnService,
 
     // 채널 대사(#1016 45번)의 묶음 조회 — 호출자는 channel-adapter

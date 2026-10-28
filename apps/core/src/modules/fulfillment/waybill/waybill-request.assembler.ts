@@ -47,7 +47,7 @@ export function composeMessage(deliveryNote: string | undefined, entrancePasswor
 }
 
 /** 품명 = 첫 상품명 + 「외 N건」. 한진 등록값과 라벨 품명이 같은 함수에서 나온다(#913). */
-export function commodityNameOf(lines: readonly ManifestLineLite[]): string {
+export function commodityNameOf<L extends { productName: string }>(lines: readonly L[]): string {
   const head = lines[0]?.productName ?? '';
   return lines.length > 1 ? `${head} 외 ${lines.length - 1}건` : head;
 }

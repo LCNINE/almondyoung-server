@@ -1,5 +1,6 @@
 import type {
   CustomerReturnAttention,
+  CustomerReturnPickupStatus,
   CustomerReturnReason,
   CustomerReturnStatus,
 } from '@/lib/types/dto/customer-returns';
@@ -52,7 +53,20 @@ export const RETURN_ATTENTION_LABELS: Record<CustomerReturnAttention, string> =
     prepayment_failed: '선환불 실패',
     partial_arrival: '덜 도착',
     refund_overdue: '환불 기한 지남',
+    pickup_failed: '회수 미접수',
   };
+
+export const RETURN_PICKUP_STATUS_LABELS: Record<
+  CustomerReturnPickupStatus,
+  string
+> = {
+  pending: '접수 중',
+  reserved: '접수됨',
+  failed: '접수 실패',
+  void: '접수 안 함',
+  cancel_pending: '취소 중',
+  cancelled: '취소됨',
+};
 
 /** CS 버튼 이름 — `availableCustomerReturnActions` 의 kind 와 같은 키 */
 export const RETURN_ACTION_LABELS = {
@@ -64,4 +78,5 @@ export const RETURN_ACTION_LABELS = {
   manualSettlement: '정산 계좌 송금',
   retryPrepayment: '선환불 다시 시도',
   manualPrepayment: '선환불 계좌 송금',
+  retryPickup: '회수 다시 접수',
 } as const;

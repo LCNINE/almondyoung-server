@@ -18,6 +18,7 @@ import {
   RecordCustomerReturnInspectionInput,
 } from './customer-return-receiving.manager';
 import { CustomerReturnSettlementManager, RestartCustomerReturnInput } from './customer-return-settlement.manager';
+import { CustomerReturnPickupManager } from './customer-return-pickup.manager';
 import {
   CloseCustomerReturnMissingInput,
   CustomerReturnCsManager,
@@ -33,6 +34,7 @@ export class CustomerReturnService {
     private readonly receiving: CustomerReturnReceivingManager,
     private readonly settlement: CustomerReturnSettlementManager,
     private readonly cs: CustomerReturnCsManager,
+    private readonly pickups: CustomerReturnPickupManager,
   ) {}
 
   recordRequested(fact: ChannelReturnRequestedPayload, tx?: DbTx) {
@@ -41,6 +43,17 @@ export class CustomerReturnService {
 
   recordCancelled(fact: ChannelReturnCancelledPayload, tx?: DbTx) {
     return this.manager.recordCancelled(fact, tx);
+  }
+
+  /** 반품 취소 전 한진 회수 놓아주기 (K8 PR9 N6) — 한진 HTTP 를 부르므로 트랜잭션을 받지 않는다 */
+  releasePickup(channelReturnId: string) {
+    return this.pickups.release(channelReturnId, new Date());
+  }
+
+  /** CS [회수 다시 접수] (K8 PR9 N9) — 접수한 뒤의 반품 기록을 돌려준다 */
+  async retryPickup(customerReturnId: string, actorId: string, tx?: DbTx) {
+    await this.pickups.retry(customerReturnId, actorId, tx);
+    return this.reader.findById(customerReturnId, tx);
   }
 
   findById(id: string, tx?: DbTx) {

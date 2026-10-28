@@ -82,3 +82,12 @@ export const useRestartCustomerReturn = () => {
   });
 };
 useRestartCustomerReturn.permission = ['payment.refund.execute'] as const satisfies PermissionRequirement;
+
+export const useRetryCustomerReturnPickup = () => {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: ({ id }: { id: string }) => customerReturnApi.retryPickup(id),
+    onSuccess: invalidate,
+  });
+};
+useRetryCustomerReturnPickup.permission = ['order.claim.write'] as const satisfies PermissionRequirement;

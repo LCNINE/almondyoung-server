@@ -38,6 +38,7 @@ describe("order-returns-view", () => {
   it("취소 거절 문구 — 도착·환불 시작은 취소 전용, 모르는 이유는 취소 실패 일반 문구", () => {
     expect(cancelRejectKey("return_arrived")).toBe("cancelReject.returnArrived")
     expect(cancelRejectKey("return_prepaid")).toBe("cancelReject.returnPrepaid")
+    expect(cancelRejectKey("return_picked_up")).toBe("cancelReject.returnPickedUp")
     expect(cancelRejectKey("return_already_received")).toBe("cancelReject.returnArrived")
     expect(cancelRejectKey("not_our_return")).toBe("cancelReject.notOurReturn")
     expect(cancelRejectKey("whatever")).toBe("cancelFailed")

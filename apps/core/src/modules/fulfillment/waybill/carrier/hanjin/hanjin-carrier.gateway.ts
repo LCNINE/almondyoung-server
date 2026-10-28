@@ -7,12 +7,15 @@ import {
   CarrierGateway,
   CarrierScan,
   CarrierScanStatus,
+  PickupCancelOutcome,
+  PickupRequest,
+  PickupReserveOutcome,
   RegisterOutcome,
   RetryAfter,
   WaybillRequest,
 } from '../carrier-gateway.interface';
 import { IntervalPacer } from '../interval-pacer';
-import { HanjinConfig, isHanjinConfigured } from './hanjin.config';
+import { HanjinConfig, isHanjinConfigured, missingHanjinPickupConfig } from './hanjin.config';
 import type { HanjinApiClient } from './hanjin-api.client';
 
 // 한진은 빈 상세주소를 ERROR-01 로 거절하고 글자가 있으면 받는다(2026-10-28 개발 서버 실측). 기사가 빠뜨린 게 아니라 없는 주소임을 알게 문구로 둔다
@@ -56,6 +59,8 @@ interface PrintWblResponse {
 interface InsertOrderResponse {
   resultCode?: string;
   resultMessage?: string;
+  // R(회수) 예약은 응답에 바로 운송장번호를 싣는다. 같은 주문번호 재전송(ERROR-03)도 처음 번호를 싣는다.
+  wblNo?: string;
 }
 
 // 배송정보 API 는 10 TPS 슬라이딩 창으로 제한된다 (정본 §5). 그 절반으로 벌린다 — 창 경계의 지터를 흡수하고,
@@ -224,6 +229,68 @@ export class HanjinCarrierGateway extends CarrierGateway {
     if (res?.resultCode === 'OK') return { kind: 'registered' };
     if (res?.resultCode === 'ERROR-09') return { kind: 'already_registered' };
     return { kind: 'rejected', reason: `${res?.resultCode ?? 'UNKNOWN'}: ${res?.resultMessage ?? ''}`.trim() };
+  }
+
+  override isPickupConfigured(): boolean {
+    return missingHanjinPickupConfig(this.config).length === 0;
+  }
+
+  override async reservePickup(req: PickupRequest): Promise<PickupReserveOutcome> {
+    const body = {
+      custEdiCd: this.config.clientId,
+      custOrdNo: req.custOrdNo,
+      wblNo: req.originalWaybillNo ?? '',
+      svcCatCd: 'R',
+      cntractNo: this.config.contractNo,
+      pickupAskDt: this.kstDate(this.now()),
+      sndrZip: req.sender.zip,
+      sndrBaseAddr: req.sender.baseAddress,
+      sndrDtlAddr: req.sender.detailAddress.trim() || RECIPIENT_DETAIL_FALLBACK,
+      sndrNm: req.sender.name,
+      // 고객은 휴대폰 하나뿐이다. 필수인 sndrTelNo 에도 같은 값을 싣는다(rcvrTelNo 폴백과 같은 이유).
+      sndrTelNo: req.sender.mobile,
+      sndrMobileNo: req.sender.mobile,
+      rcvrZip: req.recipient.zip,
+      rcvrBaseAddr: req.recipient.baseAddress,
+      rcvrDtlAddr: req.recipient.detailAddress,
+      rcvrNm: req.recipient.name,
+      rcvrTelNo: req.recipient.tel,
+      rcvrAskCntent: '',
+      comodityNm: req.commodityName,
+      payTypCd: req.payType,
+      boxTypCd: req.boxType,
+      comodityList: req.items.map((it) => ({ comodityCd: '', comodityNm: it.name, comodityCnt: String(it.quantity) })),
+    };
+    const res = await this.client.post<InsertOrderResponse>('order', '/parcel-delivery/v1/order/insert-order', body);
+    const wbl = res?.wblNo ? String(res.wblNo) : '';
+    if (res?.resultCode === 'OK') {
+      if (!wbl) return { kind: 'rejected', code: 'no_wbl_num', reason: 'OK 인데 회수 운송장번호가 없다' };
+      return { kind: 'reserved', waybillNo: wbl };
+    }
+    // ERROR-03 «주문번호 중복» + 처음 받은 wblNo: 응답을 잃은 예약의 재시도가 번호를 되찾는다.
+    // 번호가 없으면 되찾을 게 없으니 거절이다.
+    if (res?.resultCode === 'ERROR-03' && wbl) return { kind: 'already_reserved', waybillNo: wbl };
+    return { kind: 'rejected', code: res?.resultCode ?? 'UNKNOWN', reason: res?.resultMessage ?? '' };
+  }
+
+  override async cancelPickup(custOrdNo: string): Promise<PickupCancelOutcome> {
+    const res = await this.client.post<InsertOrderResponse>('order', '/parcel-delivery/v1/order/cancel-order', {
+      custEdiCd: this.config.clientId,
+      custOrdNo,
+    });
+    const reason = res?.resultMessage ?? '';
+    switch (res?.resultCode) {
+      case 'OK':
+        return { kind: 'cancelled' };
+      case 'ERROR-05': // 이미 취소된 주문 (정본 §4.3 표에 없는 코드 — DEV 실측)
+        return { kind: 'already_cancelled' };
+      case 'ERROR-03': // 접수된 예약 미존재
+        return { kind: 'not_found' };
+      case 'ERROR-04': // 운송장출력 상태 — 기사가 집하하며 출력한 뒤. DEV 에선 재현 못 함
+        return { kind: 'picked_up', reason };
+      default:
+        return { kind: 'rejected', code: res?.resultCode ?? 'UNKNOWN', reason };
+    }
   }
 
   override async track(waybillNo: string): Promise<CarrierScan[]> {

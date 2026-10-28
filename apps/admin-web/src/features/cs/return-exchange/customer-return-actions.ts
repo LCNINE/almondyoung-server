@@ -9,7 +9,8 @@ export type CustomerReturnAction = {
     | 'retrySettlement'
     | 'manualSettlement'
     | 'retryPrepayment'
-    | 'manualPrepayment';
+    | 'manualPrepayment'
+    | 'retryPickup';
   /** 다시 시도 대화상자가 받아야 하는 칸 */
   needs?: 'alreadyRefundedAmount' | 'dropHoldDeduction';
 };
@@ -89,6 +90,18 @@ export function availableCustomerReturnActions(
     actions.push({ kind: 'retryPrepayment' });
     if (prepayment.refundMode !== 'manual')
       actions.push({ kind: 'manualPrepayment' });
+  }
+
+  // 회수(한진) 예약이 없거나 실패·취소·무효인 반품만 다시 접수한다. void 는 회수만 놓아주고 반품 취소가 실패했을 때
+  // 생긴다(R8). 나머지(활성 행·단계)는 서버가 409 로 가른다.
+  if (
+    status === 'expected' &&
+    (!view.pickup ||
+      view.pickup.status === 'failed' ||
+      view.pickup.status === 'cancelled' ||
+      view.pickup.status === 'void')
+  ) {
+    actions.push({ kind: 'retryPickup' });
   }
 
   return actions;
