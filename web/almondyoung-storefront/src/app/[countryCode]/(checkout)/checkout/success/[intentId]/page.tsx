@@ -8,6 +8,7 @@ import { getTranslations } from "next-intl/server"
 import { ChevronDownIcon } from "../_components"
 import { PurchaseSatisfactionCard } from "../purchase-satisfaction-card"
 import { getPurchaseSatisfaction } from "@/lib/api/medusa/purchase-satisfaction"
+import { resolveOrderAccess } from "./resolve-order-access"
 import { PurchaseTracker } from "./purchase-tracker"
 import { HttpTypes } from "@medusajs/types"
 import { buildAddressLine } from "@/lib/utils/address-line"
@@ -95,20 +96,15 @@ export default async function CheckoutSuccessPage({
     retrieveCustomer(),
   ])
 
-  // 소유권 검증: /store/orders/:id 는 주인을 가리지 않으므로 여기서 막는다.
-  // intent 의 customerEmail 은 결제 세션 생성 때 고객 인증이 안 붙으면 비어 있어서 로그인 고객 일치를 먼저 본다
-  const intentEmail = intent?.metadata?.["customerEmail"]
-  const orderEmail = rawOrder?.email
-  const isCustomerMatch = Boolean(
-    rawOrder?.customer_id && customer?.id === rawOrder.customer_id
+  // 소유권 검증: /store/orders/:id 는 주인을 가리지 않으므로 로그인 고객 ID 일치로만 허용한다
+  const { isCustomerMatch, canShowSatisfaction } = resolveOrderAccess(
+    rawOrder,
+    customer
   )
-  const isOwnerMatch =
-    isCustomerMatch ||
-    Boolean(rawOrder && intentEmail && orderEmail && intentEmail === orderEmail)
 
   // 소유권이 일치하지 않으면 order 정보를 표시하지 않음 (보안)
-  const order = isOwnerMatch ? rawOrder : null
-  const satisfactionOrderId = order && isCustomerMatch ? order.id : null
+  const order = isCustomerMatch ? rawOrder : null
+  const satisfactionOrderId = order && canShowSatisfaction ? order.id : null
   const satisfaction = satisfactionOrderId
     ? await getSatisfactionOrNull(satisfactionOrderId)
     : null
@@ -119,10 +115,7 @@ export default async function CheckoutSuccessPage({
       order_id: rawOrder?.id ?? null,
       order_display_id: rawOrder?.display_id ?? null,
       customer_id: rawOrder?.customer_id ?? null,
-      has_intent_email: Boolean(intentEmail),
-      has_order_email: Boolean(orderEmail),
       is_customer_match: isCustomerMatch,
-      is_owner_match: isOwnerMatch,
       has_shipping_name: Boolean(
         rawOrder?.shipping_address?.first_name ||
           rawOrder?.shipping_address?.last_name
