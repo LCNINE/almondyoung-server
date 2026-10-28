@@ -11,6 +11,7 @@ import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb, makeDbService, wireLogistics } from '../../fulfillment/services/__support__';
 import { seedWorld, World } from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
 import { seedDeliveredLine } from '../line-quantities/__support__/claim-facts.fixtures';
+import { LineCompositionManager } from '../../product-matching/line-composition/line-composition.manager';
 import { CustomerReturnManager } from './customer-return.manager';
 import { CustomerReturnReader } from './customer-return.reader';
 import { CustomerReturnReceivingManager } from './customer-return-receiving.manager';
@@ -52,7 +53,11 @@ describeIfDb('CustomerReturnSettlementManager — 반품 정산 결과·재발�
     const coreOrders = recorder();
     const commands = recorder();
     const reader = new CustomerReturnReader(dbService);
-    const intake = new CustomerReturnManager(dbService, coreOrders.publisher as never);
+    const intake = new CustomerReturnManager(
+      dbService,
+      coreOrders.publisher as never,
+      new LineCompositionManager(dbService),
+    );
     const receiving = new CustomerReturnReceivingManager(
       dbService,
       reader,

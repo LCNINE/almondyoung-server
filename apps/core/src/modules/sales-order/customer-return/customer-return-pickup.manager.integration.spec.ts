@@ -19,6 +19,7 @@ import {
 } from '../../fulfillment/waybill/carrier/carrier-gateway.interface';
 import type { HanjinConfig } from '../../fulfillment/waybill/carrier/hanjin/hanjin.config';
 import { newPickupRow } from './customer-return-pickup.types';
+import { LineCompositionManager } from '../../product-matching/line-composition/line-composition.manager';
 import { CustomerReturnManager } from './customer-return.manager';
 import {
   CustomerReturnPickupManager,
@@ -986,7 +987,11 @@ describeIfDb('CustomerReturnPickupManager — 반품 회수 워커 (K8 PR9)', ()
         inRollbackTx(db, async (tx) => {
           const { manager } = wire(tx);
           const { pickupId, channelReturnId } = await seedRevived(tx, manager);
-          const returns = new CustomerReturnManager(scopedDbService(tx), { enqueue: jest.fn() } as never);
+          const returns = new CustomerReturnManager(
+            scopedDbService(tx),
+            { enqueue: jest.fn() } as never,
+            new LineCompositionManager(scopedDbService(tx)),
+          );
 
           await returns.recordCancelled(
             {

@@ -163,7 +163,7 @@ export class CustomerReturnReceivingManager {
         if (!moved) throw new ConflictError(`Customer return ${record.id} changed while recording arrival`);
         await enqueueSalesOrderClaimProgress(this.coreOrders, trx, {
           salesOrderId: record.salesOrderId,
-          kind: 'return',
+          kind: record.kind,
           stage: 'collected',
           requestId: record.id,
           requestedBy: record.requestedBy === 'operator' ? 'admin' : 'customer',

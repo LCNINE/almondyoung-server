@@ -7,6 +7,7 @@ import { StockStateEnum } from '../../inventory/schema/enum-values';
 import { inRollbackTx, makeDb, makeDbService, wireLogistics } from '../../fulfillment/services/__support__';
 import { seedWorld, World } from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
 import { seedComponentSku, seedDeliveredLine } from '../line-quantities/__support__/claim-facts.fixtures';
+import { LineCompositionManager } from '../../product-matching/line-composition/line-composition.manager';
 import { CustomerReturnManager } from './customer-return.manager';
 import { CustomerReturnReader } from './customer-return.reader';
 import { CustomerReturnReceivingManager } from './customer-return-receiving.manager';
@@ -41,7 +42,11 @@ describeIfDb('CustomerReturnReceivingManager — 반품 도착·검수 (K8 PR6)'
     const coreOrders = recorder();
     const commands = recorder();
     const reader = new CustomerReturnReader(dbService);
-    const intake = new CustomerReturnManager(dbService, coreOrders.publisher as never);
+    const intake = new CustomerReturnManager(
+      dbService,
+      coreOrders.publisher as never,
+      new LineCompositionManager(dbService),
+    );
     const manager = new CustomerReturnReceivingManager(
       dbService,
       reader,
@@ -66,6 +71,7 @@ describeIfDb('CustomerReturnReceivingManager — 반품 도착·검수 (K8 PR6)'
       composition?: Array<{ skuId: string; qtyPerUnit: number }>;
       parcels?: Array<{ qtyBySku: Record<string, number> }>;
       requestedBy?: ChannelReturnRequestedPayload['requestedBy'];
+      kind?: ChannelReturnRequestedPayload['kind'];
     } = {},
   ) {
     const quantity = opts.quantity ?? 2;
@@ -102,6 +108,7 @@ describeIfDb('CustomerReturnReceivingManager — 반품 도착·검수 (K8 PR6)'
         requestedBy: opts.requestedBy ?? 'customer',
         requestedAt: '2026-10-27T01:00:00.000Z',
         items: [{ channelOrderItemId, quantity: opts.returnQuantity ?? quantity }],
+        ...(opts.kind ? { kind: opts.kind } : {}),
       },
       tx,
     );
@@ -230,6 +237,30 @@ describeIfDb('CustomerReturnReceivingManager — 반품 도착·검수 (K8 PR6)'
         requestId: s.customerReturnId,
         requestedBy: 'admin',
       });
+    });
+  });
+
+  it('교환 반품 도착 → collected 이벤트 kind exchange (N19)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const s = await seed(tx, w, { kind: 'exchange' });
+      const { manager, collected } = wire();
+
+      await manager.recordArrival(
+        {
+          customerReturnId: s.customerReturnId,
+          warehouseId: w.warehouseId,
+          items: [{ customerReturnItemId: s.itemOf(w.skuId), quantity: 2 }],
+          idempotencyKey: 'arrive-exchange',
+          actorId,
+        },
+        tx,
+      );
+
+      const events = collected();
+      expect(events).toHaveLength(1);
+      expect(events[0].idempotencyKey).toBe(`so-claim:exchange:${s.customerReturnId}:collected`);
+      expect(events[0].payload).toMatchObject({ kind: 'exchange', stage: 'collected', requestId: s.customerReturnId });
     });
   });
 

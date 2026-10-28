@@ -6,6 +6,7 @@ import { StockStateEnum } from '../../inventory/schema/enum-values';
 import { inRollbackTx, makeDb, makeDbService, wireLogistics } from '../../fulfillment/services/__support__';
 import { seedWorld, World } from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
 import { seedComponentSku, seedDeliveredLine } from '../line-quantities/__support__/claim-facts.fixtures';
+import { LineCompositionManager } from '../../product-matching/line-composition/line-composition.manager';
 import { CustomerReturnManager } from './customer-return.manager';
 import { CustomerReturnReader } from './customer-return.reader';
 import { CustomerReturnReceivingManager } from './customer-return-receiving.manager';
@@ -44,7 +45,11 @@ describeIfDb('CustomerReturnCsManager — 미도착 닫기·보류 정산·선�
     const coreOrders = recorder();
     const commands = recorder();
     const reader = new CustomerReturnReader(dbService);
-    const intake = new CustomerReturnManager(dbService, coreOrders.publisher as never);
+    const intake = new CustomerReturnManager(
+      dbService,
+      coreOrders.publisher as never,
+      new LineCompositionManager(dbService),
+    );
     const receiving = new CustomerReturnReceivingManager(
       dbService,
       reader,
