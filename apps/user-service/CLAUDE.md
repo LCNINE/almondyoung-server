@@ -88,7 +88,7 @@ Express가 아닌 Fastify를 사용한다. 파일 업로드는 `@fastify/multipa
 |-----------|------|
 | `@app/db` | `DbService`, `@InjectDb` |
 | `@app/events` | `StreamPublisher` — Kafka 이벤트 발행 |
-| `@app/authorization` | `RequireScopes`, `ScopeGuard`, `authorizationSchema` |
+| `@app/authorization` | `StoreRoute`, `RequirePermission`, `PermissionGuard`, `JwtAuthGuard` |
 | `@app/shared` | `CurrentUser`, `GlobalExceptionFilter`, `ResponseInterceptor` |
 | `@packages/event-contracts` | `UserEvents`, `USER_STREAM` 이벤트 타입 |
 

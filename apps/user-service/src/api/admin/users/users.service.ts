@@ -1,7 +1,9 @@
+import { PermissionCache, type Permission } from '@app/authorization';
 import { DbService, InjectDb } from '@app/db';
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestError, ServiceUnavailableError } from '@app/shared';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
-import { and, asc, count, desc, eq, gt, ilike, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { buildDailyCountSeries, type DailyCountPoint, kstDayRangeCondition, kstDaySql } from '../../../commons/utils/daily-count';
 import * as schema from '../../../../database/drizzle/schema';
 import { AdminUserDetailResponseDto } from './dto/admin-user-detail.response.dto';
@@ -9,7 +11,8 @@ import { UpdateUserDto } from '../../users/dto/update-user.dto';
 import { AddressDto } from '../../../commons/dto/address.dto';
 import { DbTransaction } from 'apps/user-service/src/commons/types';
 import { UserConsent } from '../../consents/types/consent.type';
-import { CUSTOMER_ROLE_NAMES } from '../../iam/iam.constants';
+import { liveStaffAssignment } from '../../iam/iam.constants';
+import { type RoleHolderLookup, RoleHoldersUnavailableError, rolesHoldingOrThrow } from '../../iam/role-holders';
 
 export interface StaffRole {
   name: string;
@@ -21,19 +24,18 @@ export type UserWithRoles = schema.UserWithoutPassword & {
   roles: string[];
   /** `audience=staff` 일 때만 — 지금 유효한 직원 역할(기간 부여 포함) */
   staffRoles?: StaffRole[];
+  /** `holding` 을 줬을 때만 — 지금 유효한 직원 역할 중 그 권한을 가진 것이 있는가 */
+  holdsPermission?: boolean;
   phoneNumber: string | null;
   marketingConsent: boolean;
 };
-
-/** 기간이 없거나 아직 끝나지 않은 부여 — 토큰 발급이 역할을 넣는 조건과 같다. */
-const liveAssignment = () =>
-  or(isNull(schema.userRoleAssignments.expiresAt), gt(schema.userRoleAssignments.expiresAt, new Date()));
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectDb()
     private readonly dbService: DbService<UserServiceSchema>,
+    @Inject(PermissionCache) private readonly roleHolders: RoleHolderLookup,
   ) {}
 
   private getClient(tx?: DbTransaction) {
@@ -63,13 +65,7 @@ export class UsersService {
       })
       .from(schema.userRoleAssignments)
       .innerJoin(schema.roles, eq(schema.userRoleAssignments.roleId, schema.roles.roleId))
-      .where(
-        and(
-          inArray(schema.userRoleAssignments.userId, userIds),
-          notInArray(schema.roles.name, [...CUSTOMER_ROLE_NAMES]),
-          liveAssignment(),
-        ),
-      )
+      .where(and(inArray(schema.userRoleAssignments.userId, userIds), liveStaffAssignment()))
       .orderBy(schema.roles.createdAt, schema.roles.name);
     const byUser = new Map<string, StaffRole[]>();
     for (const row of rows) {
@@ -81,12 +77,25 @@ export class UsersService {
     return byUser;
   }
 
+  private holdersOf(permission: Permission): readonly string[] {
+    try {
+      return rolesHoldingOrThrow(this.roleHolders, permission);
+    } catch (error) {
+      if (error instanceof RoleHoldersUnavailableError) {
+        throw new ServiceUnavailableError('권한 정보를 아직 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.');
+      }
+
+      throw error;
+    }
+  }
+
   async getUsers(filters: {
     q?: string;
     page?: number;
     limit?: number;
     roleName?: string;
     audience?: 'staff';
+    holding?: Permission;
     status?: 'active' | 'withdrawn' | 'dormant';
     sort?: 'createdAt' | 'username' | 'email' | 'lastActivityAt' | 'phoneNumber';
     order?: 'asc' | 'desc';
@@ -99,6 +108,11 @@ export class UsersService {
     page: number;
     limit: number;
   }> {
+    if (filters?.holding && filters.audience !== 'staff') {
+      throw new BadRequestError('holding 은 audience=staff 와 함께 써야 합니다.');
+    }
+    const holders = filters?.holding ? this.holdersOf(filters.holding) : null;
+
     try {
       const client = this.getClient(filters?.tx);
       const idList = filters?.ids
@@ -175,7 +189,7 @@ export class UsersService {
           .select({ userId: schema.userRoleAssignments.userId })
           .from(schema.userRoleAssignments)
           .innerJoin(schema.roles, eq(schema.userRoleAssignments.roleId, schema.roles.roleId))
-          .where(and(notInArray(schema.roles.name, [...CUSTOMER_ROLE_NAMES]), liveAssignment()));
+          .where(liveStaffAssignment());
         conditions.push(inArray(schema.users.id, staffUserIds));
       }
 
@@ -257,6 +271,9 @@ export class UsersService {
         marketingConsent: u.marketingConsent ?? false,
         roles: rolesByUserId.get(u.id) ?? [],
         ...(filters?.audience === 'staff' ? { staffRoles: staffByUser.get(u.id) ?? [] } : {}),
+        ...(holders
+          ? { holdsPermission: (staffByUser.get(u.id) ?? []).some((role) => holders.includes(role.name)) }
+          : {}),
       }));
 
       return { data, total, page, limit };

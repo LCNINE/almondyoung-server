@@ -12,7 +12,7 @@ export const useAdminUserCount = (options: { enabled?: boolean } = {}) => {
     enabled: options.enabled ?? true,
     queryKey: usersQueryKeys.count(),
     queryFn: async () => {
-      const res = await userApi.getAdminUsers({ limit: 1, roleName: 'admin,master' });
+      const res = await userApi.getAdminUsers({ limit: 1, audience: 'staff' });
       return res.total;
     },
     staleTime: 60 * 1000,
@@ -38,6 +38,9 @@ export const useAllUserCount = () => {
     staleTime: 60 * 1000,
   });
 };
+
+/** 직원 후보 목록을 한 번에 받는 상한 — 서버 limit 의 최댓값과 같다. */
+export const STAFF_CANDIDATE_LIMIT = 1000;
 
 export const useAdminUsers = (
   query: AdminUsersQuery,

@@ -2,6 +2,7 @@
 // 사용자 관련 DTO 타입 정의
 
 import type { BaseUserInfo, UUID } from './common';
+import type { Permission } from '@permission-catalog';
 import type { Assignment, StaffRoleBadge } from './iam';
 
 // ===== 기본 관리자 사용자 정보 =====
@@ -28,18 +29,6 @@ interface CreateAdminAccountResult {
   initialPassword: string;
 }
 
-interface UserRolesResponseDto {
-  userId: UUID;
-  roles: {
-    role: { id: string; name: string };
-
-    scopes: {
-      scope_name: string;
-      description: string;
-    };
-  }[];
-}
-
 // ===== 어드민 사용자 목록 조회 =====
 interface AdminUsersQuery {
   page?: number;
@@ -51,6 +40,8 @@ interface AdminUsersQuery {
   roleName?: string;
   /** staff: 직원 역할을 지금 가진 사람만(기간 부여 포함) */
   audience?: 'staff';
+  /** audience=staff 와 함께만 — 이 권한을 가진 직원이 각 행의 holdsPermission 으로 표시된다 */
+  holding?: Permission;
   sort?: string;
   order?: string;
   ids?: string;
@@ -72,6 +63,8 @@ interface AdminUserDto {
   roles: string[];
   /** audience=staff 일 때만 — 지금 유효한 직원 역할 */
   staffRoles?: StaffRoleBadge[];
+  /** holding 을 줬을 때만 */
+  holdsPermission?: boolean;
 }
 
 interface AdminUserProfileDto {
@@ -132,7 +125,6 @@ export type {
   CreateAdminAccountDto,
   CreateAdminAccountResult,
   User,
-  UserRolesResponseDto,
   AdminUsersQuery,
   AdminUserDto,
   AdminUserDetailDto,

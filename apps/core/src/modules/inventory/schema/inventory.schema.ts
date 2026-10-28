@@ -24,7 +24,6 @@ import {
   foreignKey,
   AnyPgColumn,
 } from 'drizzle-orm/pg-core';
-import { authorizationSchema } from '@app/authorization';
 import { printOrders } from '../../print-order/schema/print-order.schema';
 // 타입만 가져온다(런타임 import 없음) — jsonb 칸의 모양은 반품 타입 파일이 정본이다
 import type {
@@ -5020,7 +5019,6 @@ export const wmsSchema = {
   ...wmsTables,
   ...wmsViews,
   ...wmsRelations,
-  ...authorizationSchema,
 } as const;
 
 export type DbTx = TxFor<typeof wmsSchema>;

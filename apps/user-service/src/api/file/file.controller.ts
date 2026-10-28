@@ -1,4 +1,4 @@
-import { RequireScopes, JwtPayload, StoreRoute } from '@app/authorization';
+import { JwtPayload, StoreRoute } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import { Body, Controller, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -17,7 +17,6 @@ export class FileController {
   @StoreRoute()
   @Post('upload')
   @FastifyFileInterceptor('file')
-  @RequireScopes('user:modify')
   @ApiOperation({
     summary: '파일 업로드',
     description: '파일을 AWS S3에 업로드합니다.',
@@ -44,7 +43,6 @@ export class FileController {
    */
   @StoreRoute()
   @Post('delete')
-  @RequireScopes('user:delete')
   @ApiOperation({
     summary: '파일 삭제',
     description: 'AWS S3에서 사용자가 업로드한 파일을 삭제합니다.',

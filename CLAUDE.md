@@ -359,8 +359,8 @@ Medusa 를 새로 부르면 `medusa-permissions.ts` 에 경로를 더한다(`med
 `.read` 가 없으면 `requires` 나 `standalone` 을 적는다(`permission-dependencies.spec.ts` 가 빨갛다).
 
 권한 라우트는 언제나 `PermissionGuard` 가 결정한다 — 스위치는 없고, 되돌리기는 직전 `deploy/<stage>/…` 태그 커밋을 코드·배포 설정째 재배포한다(이미지만 돌리면 옛 가드가 판정한다, ADR-0048 §37~39).
-본문 조건·핸들러 안의 판정은 `PermissionCheckpoints.check`/`checkRoute` 로 권한만 보고 쓴다. 옛 가드(`RolesGuard`·`@RequireScopes`)는
-새로 달지 않는다(`@RequireScopes` 는 기존 고객 셀프서비스 라우트에만 남아 있다). 개인정보 원문을 본문으로
+본문 조건·핸들러 안의 판정은 `PermissionCheckpoints.check`/`checkRoute` 로 권한만 보고 쓴다. 옛 가드(`RolesGuard`·스코프 가드)는
+존재하지 않는다 — 고객 셀프서비스는 `@StoreRoute` 와 토큰 사용자로 판정한다. 개인정보 원문을 본문으로
 받는 새 쓰기 라우트는 `@PiiWrite` 와 `PII_WRITE_ROUTES` 한 줄을 더한다(없으면 `pii-write-routes.spec.ts` 가 빨갛다).
 
 ### 크론 (`@app/cron-once`)

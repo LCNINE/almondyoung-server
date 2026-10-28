@@ -7,7 +7,7 @@ import { fromZonedTime } from 'date-fns-tz';
 import { IamAuditCreator, type IamAuditAction } from '../audit/iam-audit.creator';
 import type { IamActor } from '../iam-actor';
 import { SYSTEM_ROLE_NAME } from '../iam.constants';
-import { IamEscalationError, IamLastMasterError, IamSelfChangeError } from '../iam.errors';
+import { IamEscalationError, IamLastMasterError, IamSelfChangeError, IamStaffCannotLeaveError } from '../iam.errors';
 import { MyPermissionsReader } from '../my-permissions.reader';
 import { RolePermissionsReader } from '../role-permissions.reader';
 import { RoleRepository, type HeldAssignment } from '../roles/role.repository';
@@ -127,6 +127,13 @@ export class RoleAssignmentManager {
       const held = await this.roles.assignmentsOf(userId, tx);
       if (!held.some((h) => isSystemRole(h.name) && h.expiresAt === null)) return;
       await this.assertSystemRoleSurvives(tx, { id: userId, canSignIn: false }, new Map());
+    }, tx);
+  }
+
+  /** 탈퇴 전 확인 — 지금 직원 역할이 유효한 계정은 스스로 떠날 수 없다. 역할 회수가 먼저다. */
+  async assertNotStaff(userId: string, tx?: UserServiceTx): Promise<void> {
+    await this.dbService.run(async (tx) => {
+      if (await this.roles.hasLiveStaffRole(userId, tx)) throw new IamStaffCannotLeaveError();
     }, tx);
   }
 

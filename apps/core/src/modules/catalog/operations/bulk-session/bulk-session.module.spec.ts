@@ -57,7 +57,6 @@ describeIfDb('BulkSessionModule DI', () => {
     const { DbModule } = await import('@app/db');
     const { AuthorizationModule } = await import('@app/authorization');
     const { mergedSchema } = await import('../../../../platform/database/merged-schema');
-    const { ALL_SCOPES, ALL_ROLE_MAPPINGS } = await import('../../../../platform/auth/merged-scopes');
     const { CatalogModule } = await import('../../catalog.module');
     const { FormExportService } = await import('./services/form-export.service');
     const { FormExportSnapshotReader } = await import('./services/form-export.snapshot.reader');
@@ -86,11 +85,7 @@ describeIfDb('BulkSessionModule DI', () => {
           }),
           schema: mergedSchema,
         }),
-        AuthorizationModule.forRoot({
-          microserviceName: 'almondyoung',
-          scopes: ALL_SCOPES,
-          roleMappings: ALL_ROLE_MAPPINGS,
-        }),
+        AuthorizationModule.forAuthOnly(),
         CatalogModule,
       ],
     }).compile();

@@ -20,7 +20,6 @@ import { outboxPublisherFor } from '../../../apps/core/src/modules/fulfillment/o
 import { CORE_ORDER_STREAM } from '@packages/event-contracts/streams';
 import { DEFAULT_SEED_URL, recreateDatabase, resolveSeedUrl, runCoreMigrations } from './database';
 import { assertLocalDevCoreUrl } from './guard';
-import { bootstrapScopes } from './scopes';
 import { seedMasterData } from './master-data';
 import { seedStock } from './stock';
 import { seedInbound } from './inbound';
@@ -84,20 +83,17 @@ async function main(): Promise<void> {
   assertLocalDevCoreUrl(url);
   await confirmNonDefaultTarget(url);
 
-  console.log(`── 1/4 dev_core 재생성 (${url})`);
+  console.log(`── 1/3 dev_core 재생성 (${url})`);
   await recreateDatabase(url);
 
-  console.log('── 2/4 drizzle 마이그레이션');
+  console.log('── 2/3 drizzle 마이그레이션');
   runCoreMigrations(url);
 
   const client = postgres(url, { max: 1 });
   const db = drizzle(client, { schema: wmsSchema });
 
   try {
-    console.log('── 3/4 스코프 부트스트랩');
-    await bootstrapScopes(db);
-
-    console.log(`── 4/4 시드${bulk ? ' (--bulk)' : ''}`);
+    console.log(`── 3/3 시드${bulk ? ' (--bulk)' : ''}`);
     const dbService = makeDbService(db);
     const wired = wireLogistics(dbService, 'v2');
 
