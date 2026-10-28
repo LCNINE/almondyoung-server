@@ -11,6 +11,8 @@ import { SidebarProvider } from '@/components/ui/sidebar';
 import { cn } from '@/lib/utils/ui';
 import { type MenuItem, getActiveMenuAndItem } from '@/lib/utils/menu';
 
+const SIDEBAR_AUTO_COLLAPSE_BELOW = 1600;
+
 interface AdminShellProps {
   banner?: React.ReactNode;
   children: React.ReactNode;
@@ -26,6 +28,15 @@ export function AdminShell({ children, banner }: AdminShellProps) {
   const isArchive = pathname.startsWith('/archive');
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // 노트북 폭에서는 하위 메뉴를 접어 표가 쓸 폭을 넓힌다. 직접 펼친 건 폭이 다시 경계를 넘을 때까지 그대로 둔다.
+  useEffect(() => {
+    const wide = window.matchMedia(`(min-width: ${SIDEBAR_AUTO_COLLAPSE_BELOW}px)`);
+    setSidebarOpen(wide.matches);
+    const onChange = (e: MediaQueryListEvent) => setSidebarOpen(e.matches);
+    wide.addEventListener('change', onChange);
+    return () => wide.removeEventListener('change', onChange);
+  }, []);
 
   useEffect(() => {
     const { menuId, itemId } = getActiveMenuAndItem(pathname);

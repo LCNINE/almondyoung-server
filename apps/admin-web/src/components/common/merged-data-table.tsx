@@ -40,6 +40,8 @@ type BaseProps<T> = {
     getRowClassName?: (row: T, globalIndex: number) => string;
     /** 행 클릭 시 이동할 URL (DataTable과 동일) */
     navigateTo?: (row: T) => string;
+    /** 행의 빈 곳을 누르면 부른다. 셀 안 버튼·링크·입력이나 셀에서 띄운 대화상자 클릭, 글자 선택은 행 클릭으로 치지 않는다 */
+    onRowClick?: (row: T) => void;
     /** 긴 목록 스크롤 시 헤더를 상단에 고정 (opt-in) */
     stickyHeader?: boolean;
 };
@@ -97,6 +99,7 @@ export function MergedDataTable<T extends Record<string, unknown>>(
         emptyMessage = '데이터가 없습니다.',
         getRowClassName,
         navigateTo,
+        onRowClick,
         stickyHeader = false,
     } = props;
 
@@ -310,9 +313,18 @@ export function MergedDataTable<T extends Record<string, unknown>>(
                                         isSelected && selectedRowClassName,
                                         rowClass,
                                         'hover:bg-muted/50 transition-colors',
-                                        href && 'cursor-pointer',
+                                        (href || onRowClick) && 'cursor-pointer',
                                     )}
-                                    onClick={href ? () => router.push(href) : undefined}
+                                    onClick={(e) => {
+                                        if (href) return router.push(href);
+                                        if (!onRowClick) return;
+                                        const target = e.target as HTMLElement;
+                                        // 셀에서 띄운 대화상자는 포털이라 DOM 은 밖인데 React 이벤트는 행까지 올라온다
+                                        if (!e.currentTarget.contains(target)) return;
+                                        if (target.closest('button, a, input, label, [role="menuitem"]')) return;
+                                        if (window.getSelection()?.toString()) return;
+                                        onRowClick(row);
+                                    }}
                                 >
                                     {/* 체크박스 셀: mergeCheckbox=true이면 첫 행만(rowspan), 아니면 매 행 */}
                                     {selectable && (mergeCheckbox ? isFirst : true) && (

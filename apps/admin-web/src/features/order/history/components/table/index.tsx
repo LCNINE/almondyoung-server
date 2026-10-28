@@ -1,8 +1,9 @@
 // src/features/order/history/components/table/index.tsx
 'use client';
 
-import { useMemo, useState } from 'react';
-import type { MouseEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
+import { MoreHorizontal } from 'lucide-react';
 import {
   cancelActionOf,
   cancelRequestFromAmendment,
@@ -48,6 +49,22 @@ import { Table } from '@/components/admin-ui-experimental/common/table/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -71,7 +88,7 @@ import { ManualRefundCompleteModal } from '../modals/manual-refund-complete-moda
 function CopyableId({ value }: { value: string }) {
   const short = value.length > 14 ? `${value.slice(0, 10)}…${value.slice(-4)}` : value;
   return (
-    <span className="mt-0.5 inline-flex items-center gap-1">
+    <span className="mt-0.5 inline-flex items-center gap-1 whitespace-nowrap">
       <span className="font-mono text-[10px] text-gray-400" title={value}>
         {short}
       </span>
@@ -88,6 +105,107 @@ function CopyableId({ value }: { value: string }) {
     </span>
   );
 }
+
+/* ── 주문 상세 패널 ─────────────────────────────────────────── */
+// 목록과 나란히 보도록 배경을 어둡게 하지 않고, 바깥을 눌러도 닫지 않는다(다른 행을 누르면 내용만 바뀐다).
+function OrderDetailPanel({ lines, onClose }: { lines: OrderLineRow[]; onClose: () => void }) {
+  const o = lines[0];
+  const fields: [string, ReactNode][] = o
+    ? [
+        ['주문자', o.customerName || '-'],
+        ['수령자', o.receiverName || '-'],
+        [
+          '회원',
+          o.memberId ? (
+            <a href={`/users/${o.memberId}`} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
+              {o.memberLoginId ?? o.memberEmail ?? '회원 상세'}
+            </a>
+          ) : (
+            '비회원 주문'
+          ),
+        ],
+        ['연락처', o.phone || '-'],
+        ['주소', o.address || '-'],
+        ['통관부호', o.personalCustomsCode || '-'],
+        ['배송비', o.shippingFee ? `${o.shippingFee.toLocaleString()}원` : '선불'],
+        ['합계', o.totalAmount != null ? `${o.totalAmount.toLocaleString()}원` : '-'],
+        ['메모', o.memo || '-'],
+      ]
+    : [];
+  return (
+    <Sheet open={!!o} modal={false} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent
+        className="w-[480px] gap-0 sm:max-w-[480px]"
+        onInteractOutside={(e) => e.preventDefault()}
+      >
+        {o && (
+          <>
+            <SheetHeader className="border-b">
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                {dayjs(o.orderDate).format('YYYY-MM-DD')}
+                <ChannelBadge channel={o.channel} />
+              </div>
+              <SheetTitle>{o.orderNo}</SheetTitle>
+              <SheetDescription asChild>
+                <div>{o.channelOrderId !== o.orderNo && <CopyableId value={o.channelOrderId} />}</div>
+              </SheetDescription>
+            </SheetHeader>
+            <div className="flex-1 space-y-5 overflow-y-auto p-4 text-sm">
+              <section>
+                <h4 className="mb-2 font-medium">상품 {lines.length}개</h4>
+                <ul className="space-y-2">
+                  {lines.map((l) => (
+                    <li key={l.rowId} className="flex justify-between gap-3">
+                      <div className="min-w-0">
+                        <div>{l.productName}</div>
+                        {l.optionName && <div className="text-xs text-gray-500">{l.optionName}</div>}
+                      </div>
+                      <div className="text-right whitespace-nowrap">
+                        {l.quantity}개
+                        <div className="text-xs text-gray-500">
+                          {(l.totalPrice ?? l.unitPrice)?.toLocaleString() ?? '-'}원
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+              <dl className="grid grid-cols-[72px_1fr] gap-x-3 gap-y-2">
+                {fields.map(([k, v]) => (
+                  <div key={k} className="contents">
+                    <dt className="text-gray-500">{k}</dt>
+                    <dd className="min-w-0 break-words">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+            <div className="border-t p-4">
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() =>
+                  window.open(
+                    `/cs?orderId=${encodeURIComponent(o.orderId)}&orderNo=${encodeURIComponent(o.orderNo)}`,
+                    '_blank'
+                  )
+                }
+              >
+                CS 화면에서 열기
+              </Button>
+            </div>
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+const HIDEABLE_COLUMNS = [
+  { key: 'imageUrl', label: '이미지' },
+  { key: 'shippingFee', label: '배송방법' },
+  { key: 'csStatus', label: 'C/S 상태' },
+];
+const HIDDEN_COLUMNS_KEY = 'order-history:hidden-columns';
 
 /* ── 상태 배지 ────────────────────────────────────────────── */
 const PHASE_BADGE_CLASS: Record<ShipmentPhase, string> = {
@@ -767,6 +885,26 @@ export default function OrderTable() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showMemoModal, setShowMemoModal] = useState(false);
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
+  // 서버 렌더와 첫 화면을 맞추려고 저장값은 마운트 뒤에 읽는다
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(HIDDEN_COLUMNS_KEY);
+      if (saved) setHiddenColumns(new Set(JSON.parse(saved) as string[]));
+    } catch {}
+  }, []);
+  const toggleColumn = (key: string, visible: boolean) => {
+    setHiddenColumns((prev) => {
+      const next = new Set(prev);
+      if (visible) next.delete(key);
+      else next.add(key);
+      try {
+        localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...next]));
+      } catch {}
+      return next;
+    });
+  };
   const [showTimelineModal, setShowTimelineModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showManualRefundModal, setShowManualRefundModal] = useState(false);
@@ -793,19 +931,16 @@ export default function OrderTable() {
       },
       {
         key: 'orderDate',
-        label: '주문일자',
+        label: '주문일자\n판매처',
         merged: true,
         render: (_, r) => (
-          <span className="whitespace-nowrap">
-            {dayjs(r.orderDate).format('YYYY-MM-DD')}
-          </span>
+          <div className="flex flex-col items-start gap-1">
+            <span className="whitespace-nowrap">
+              {dayjs(r.orderDate).format('YYYY-MM-DD')}
+            </span>
+            <ChannelBadge channel={r.channel} />
+          </div>
         ),
-      },
-      {
-        key: 'channel',
-        label: '판매처',
-        merged: true,
-        render: (_, r) => <ChannelBadge channel={r.channel} />,
       },
       {
         key: 'orderNo',
@@ -814,7 +949,7 @@ export default function OrderTable() {
         render: (_, r) => (
           <div>
             <button
-              className="text-blue-600 hover:underline font-medium block text-left"
+              className="text-blue-600 hover:underline font-medium block text-left whitespace-nowrap"
               onClick={() =>
                 window.open(
                   `/cs?orderId=${encodeURIComponent(r.orderId)}&orderNo=${encodeURIComponent(r.orderNo)}`,
@@ -824,11 +959,7 @@ export default function OrderTable() {
             >
               {r.orderNo}
             </button>
-            {/* 내부 채널 주문 ID 는 사람이 읽는 값이 아니지만 Medusa·로그 대조에 필요해 남긴다. */}
-            {r.channelOrderId !== r.orderNo && (
-              <CopyableId value={r.channelOrderId} />
-            )}
-            {r.phone && <div className="text-blue-500 mt-0.5">{r.phone}</div>}
+            {r.phone && <div className="text-blue-500 mt-0.5 whitespace-nowrap">{r.phone}</div>}
           </div>
         ),
       },
@@ -864,38 +995,85 @@ export default function OrderTable() {
         key: '_actions',
         label: '기능',
         width: '108px',
-        render: (_, r) => (
+        render: (_, r) => {
+          const action = r.orderStatus === 'cancelled' ? null : cancelActionOf(r);
+          const cancelLabel = !canCancelOrder
+            ? null
+            : action?.kind === 'cancel'
+              ? action.label
+              : action?.kind === 'rejected'
+                ? '다시 요청'
+                : null;
+          return (
           <div className="flex flex-col gap-1">
-            <button
-              className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs"
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedOrder(r);
-                setShowEditModal(true);
-              }}
-            >
-              입력확인
-            </button>
-            {/* stub: API 미구현 — 클릭 불가 */}
-            <button
-              disabled
-              className="h-7 px-2 rounded border border-gray-200 bg-gray-50 whitespace-nowrap text-xs text-gray-400 cursor-not-allowed"
-              title="준비 중: Core 주문분할 API 필요"
-            >
-              주문추가
-            </button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedOrder(r);
-                setShowTimelineModal(true);
-              }}
-            >
-              업무연결
-            </Button>
+            <div className="flex gap-1">
+              <button
+                className="h-7 flex-1 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedOrder(r);
+                  setShowEditModal(true);
+                }}
+              >
+                입력확인
+              </button>
+              {/* 열린 메뉴에서 대화상자를 띄우면 modal 메뉴가 body 포인터를 잠근 채 남는 일이 있다 */}
+              <DropdownMenu modal={false}>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    aria-label="더 보기"
+                    className="h-7 w-7 shrink-0 inline-flex items-center justify-center rounded border hover:bg-gray-50"
+                  >
+                    <MoreHorizontal className="size-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setSelectedOrder(r);
+                      setShowTimelineModal(true);
+                    }}
+                  >
+                    업무연결
+                  </DropdownMenuItem>
+                  {canWriteOrder && (
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        setSelectedOrder(r);
+                        setShowMemoModal(true);
+                      }}
+                    >
+                      메모추가
+                    </DropdownMenuItem>
+                  )}
+                  {r.channel === 'medusa' && r.isFirstOfOrder && r.orderStatus !== 'cancelled' && (
+                    <Can run={useRequestCustomerReturn}>
+                      <DropdownMenuItem onSelect={() => setReturnOrderId(r.channelOrderId)}>
+                        반품 접수
+                      </DropdownMenuItem>
+                    </Can>
+                  )}
+                  {/* stub: API 미구현 — 클릭 불가 */}
+                  <DropdownMenuItem disabled title="준비 중: Core 주문분할 API 필요">
+                    주문추가 (준비 중)
+                  </DropdownMenuItem>
+                  {cancelLabel && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onSelect={() => {
+                          setSelectedOrder(r);
+                          setShowCancelModal(true);
+                        }}
+                      >
+                        {cancelLabel}
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
             {r.orderStatus === 'cancelled' ? (
               <div className="flex flex-col gap-1">
                 <span className="inline-flex items-center h-7 px-2 rounded border border-gray-200 bg-gray-50 text-xs text-gray-500 whitespace-nowrap">
@@ -964,7 +1142,7 @@ export default function OrderTable() {
             ) : (
               <div className="flex flex-col gap-1">
                 {(() => {
-                  const action = cancelActionOf(r);
+                  if (!action) return null;
                   if (action.kind === 'seller_center') {
                     return <span className="text-[11px] text-gray-500 whitespace-normal leading-tight">{action.label}</span>;
                   }
@@ -985,42 +1163,10 @@ export default function OrderTable() {
                       </>
                     );
                   }
-                  if (!canCancelOrder) {
-                    return action.kind === 'rejected' ? (
-                      <span className="text-[11px] text-red-600 whitespace-normal leading-tight">취소 실패 · {action.reason}</span>
-                    ) : null;
-                  }
-                  const open = (e: MouseEvent) => {
-                    e.stopPropagation();
-                    setSelectedOrder(r);
-                    setShowCancelModal(true);
-                  };
-                  return (
-                    <>
-                      {action.kind === 'rejected' && (
-                        <span className="text-[11px] text-red-600 whitespace-normal leading-tight">취소 실패 · {action.reason}</span>
-                      )}
-                      <Button variant="outline" size="sm" className="h-7 px-2 text-xs text-red-600 border-red-300 hover:bg-red-50" onClick={open}>
-                        {action.kind === 'rejected' ? '다시 요청' : action.label}
-                      </Button>
-                    </>
-                  );
+                  return action.kind === 'rejected' ? (
+                    <span className="text-[11px] text-red-600 whitespace-normal leading-tight">취소 실패 · {action.reason}</span>
+                  ) : null;
                 })()}
-                {r.channel === 'medusa' && r.isFirstOfOrder && (
-                  <Can run={useRequestCustomerReturn}>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 px-2 text-xs"
-                      onClick={(e: MouseEvent) => {
-                        e.stopPropagation();
-                        setReturnOrderId(r.channelOrderId);
-                      }}
-                    >
-                      반품 접수
-                    </Button>
-                  </Can>
-                )}
                 {r.isFirstOfOrder && r.refundStatus === 'manual_pending' && (
                   <>
                     <RefundStatusBadge status={r.refundStatus} />
@@ -1051,7 +1197,8 @@ export default function OrderTable() {
               </div>
             )}
           </div>
-        ),
+          );
+        },
       },
       {
         key: 'totalPrice',
@@ -1098,11 +1245,6 @@ export default function OrderTable() {
                 합계: {r.totalAmount.toLocaleString()}
               </div>
             )}
-            {r.personalCustomsCode && (
-              <div className="text-amber-600 mt-0.5">
-                통관부호: {r.personalCustomsCode}
-              </div>
-            )}
             {r.address && (
               <div className="text-blue-500 mt-0.5 cursor-pointer hover:underline">
                 배송추적
@@ -1113,7 +1255,7 @@ export default function OrderTable() {
       },
       {
         key: 'shippingFee',
-        label: '배송방법',
+        label: '배송\n방법',
         render: (_, r) => (
           <div className="flex flex-col gap-1">
             <span className="text-gray-700">
@@ -1126,7 +1268,7 @@ export default function OrderTable() {
       },
       {
         key: 'csStatus',
-        label: 'C/S 상태',
+        label: 'C/S\n상태',
         render: (_, r) =>
           canWriteOrder ? (
             <button
@@ -1176,6 +1318,28 @@ export default function OrderTable() {
             )}
           </div>
           <div className="flex gap-2 flex-wrap">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="px-3 h-9 rounded border text-sm hover:bg-gray-50">
+                  표 설정{hiddenColumns.size > 0 && ` (${hiddenColumns.size}개 숨김)`}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel className="text-xs text-gray-500">보이는 칸</DropdownMenuLabel>
+                {HIDEABLE_COLUMNS.map((c) => (
+                  <DropdownMenuCheckboxItem
+                    key={c.key}
+                    checked={!hiddenColumns.has(c.key)}
+                    onCheckedChange={(v) => toggleColumn(c.key, v === true)}
+                    onSelect={(e) => e.preventDefault()}
+                  >
+                    {c.label}
+                  </DropdownMenuCheckboxItem>
+                ))}
+                <DropdownMenuSeparator />
+                <p className="px-2 py-1 text-xs text-gray-500">숨긴 칸은 행을 누르면 나오는 상세에 있어요.</p>
+              </DropdownMenuContent>
+            </DropdownMenu>
             {can(['order.order.export']) && (
               <button
                 className="px-3 h-9 rounded border text-sm hover:bg-gray-50"
@@ -1192,7 +1356,7 @@ export default function OrderTable() {
         {/* 테이블 */}
         <MergedDataTable<OrderLineRow>
           data={rows}
-          columns={columns as MergedTableColumn<OrderLineRow>[]}
+          columns={columns.filter((c) => !hiddenColumns.has(String(c.key)))}
           rowKey="rowId"
           groupKey="orderId"
           stickyHeader
@@ -1203,8 +1367,9 @@ export default function OrderTable() {
           loading={isInitialLoading}
           isFetching={false}
           getRowClassName={(r) =>
-            r.orderStatus === 'cancelled' ? 'opacity-50' : ''
+            cn(r.orderStatus === 'cancelled' && 'opacity-50', r.orderId === detailOrderId && 'bg-blue-50')
           }
+          onRowClick={(r) => setDetailOrderId(r.orderId)}
         />
 
         {/* 페이지네이션 - DataTable과 동일한 방식 */}
@@ -1260,6 +1425,10 @@ export default function OrderTable() {
       {returnOrderId && (
         <RequestReturnDialog orderId={returnOrderId} onClose={() => setReturnOrderId(null)} />
       )}
+      <OrderDetailPanel
+        lines={rows.filter((r) => r.orderId === detailOrderId)}
+        onClose={() => setDetailOrderId(null)}
+      />
     </>
   );
 }
