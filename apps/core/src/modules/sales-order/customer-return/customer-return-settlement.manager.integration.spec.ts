@@ -1519,7 +1519,7 @@ describeIfDb('CustomerReturnSettlementManager — 반품 정산 결과·재발�
       });
     });
 
-    it('교환 settled 인데 exchangeItems 가 없거나 원래 줄과 맞지 않으면 → ConflictError, 아무것도 쓰지 않는다', async () => {
+    it('교환 settled 인데 exchangeItems 가 없거나 원래 줄·수량과 맞지 않으면 → ConflictError, 아무것도 쓰지 않는다', async () => {
       await inRollbackTx(db, async (tx) => {
         const w = await seedWorld(tx);
         const wired = wire();
@@ -1537,7 +1537,18 @@ describeIfDb('CustomerReturnSettlementManager — 반품 정산 결과·재발�
             tx,
           ),
         ).rejects.toBeInstanceOf(ConflictError);
+        // 대체 수량이 교환 줄 수량(2)과 다르다
+        await expect(
+          wired.settlement.recordSettled(
+            settledFact(s, {
+              refundAmount: 0,
+              exchangeItems: [{ sourceItemId: s.channelOrderItemId, itemId: 'item_new', quantity: 1 }],
+            }),
+            tx,
+          ),
+        ).rejects.toBeInstanceOf(ConflictError);
         expect((await recordOf(tx, s.customerReturnId)).status).toBe('inspected');
+        expect((await exchangeBoxOf(tx, s.salesOrderId)).lines[0].channelOrderItemId).toBeNull();
       });
     });
 

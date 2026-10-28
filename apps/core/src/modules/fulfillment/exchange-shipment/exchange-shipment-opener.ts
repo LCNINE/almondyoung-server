@@ -89,6 +89,10 @@ export class ExchangeShipmentOpener {
       insertedItems.map((item) => ({ fulfillmentOrderItemId: item.id, skuId: item.skuId, qty: item.qty })),
     );
 
+    // 잠금 순서는 예약 커널과 같다: 이 상자가 닿는 FOI·상자 그래프(이미 배송완료된 원래 상자·앞선 교환 상자 포함)를 먼저,
+    // 그다음 재고 키(SKU 정렬). reservePartial 은 같은 순서로 다시 들어와도 안전하다. 재고 키를 먼저 잡으면 그래프를 먼저 잡는
+    // 재시도 워커·작성 중 상자 맞추기와 엇갈려 교착할 수 있다
+    await this.shipmentReservation.lockShipmentGraphForDispatch(shipment.id, trx);
     await acquireStockAvailabilityLocks(
       trx,
       lines.map((line) => ({ skuId: line.skuId, warehouseId })),

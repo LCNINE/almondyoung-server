@@ -810,6 +810,30 @@ describeIfDb('CustomerReturnCsManager — 미도착 닫기·보류 정산·선�
       });
     });
 
+    it('선발송 뒤 검수가 보류로 멈춘 교환 → 문이 정산을 연다(inspected + 정산 명령 1), 상자는 그대로 1', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seed(tx, w, wired, { kind: 'exchange' });
+        await wired.cs.releaseExchange({ customerReturnId: s.customerReturnId, actorId: csActor }, tx);
+        await s.arrive([{ skuId: w.skuId, quantity: 2 }]);
+        const held = await s.inspect([{ skuId: w.skuId, accepted: 1, held: 1 }], csActor);
+        expect(held.status).toBe('held');
+        expect(wired.commandsOf('SettleChannelReturn')).toHaveLength(0);
+
+        const view = await wired.cs.releaseExchange({ customerReturnId: s.customerReturnId, actorId: csActor }, tx);
+
+        expect(view.status).toBe('inspected');
+        expect(view.settlement).toMatchObject({ state: 'in_progress', issues: 1, command: {} });
+        expect(wired.commandsOf('SettleChannelReturn')).toHaveLength(1);
+        expect((await exchangeBoxOf(tx, s.salesOrderId)).shipments).toHaveLength(1);
+        // 그 뒤 재요청은 그대로
+        const again = await wired.cs.releaseExchange({ customerReturnId: s.customerReturnId, actorId: csActor }, tx);
+        expect(again).toEqual(view);
+        expect(wired.commandsOf('SettleChannelReturn')).toHaveLength(1);
+      });
+    });
+
     it('arrived 교환(선발송) → 상태 그대로 + 교환 상자', async () => {
       await inRollbackTx(db, async (tx) => {
         const w = await seedWorld(tx);

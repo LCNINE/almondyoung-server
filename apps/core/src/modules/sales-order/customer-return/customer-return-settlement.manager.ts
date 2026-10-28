@@ -536,12 +536,9 @@ export class CustomerReturnSettlementManager {
   }
 
   /**
-   * 채널 반품 id 로 기록을 잠그고, 사실의 requestId(= 정산·선환불 명령이 실은 customerReturnId)가 그 기록인지 본다.
-   * 다르면 다른 기록의 정산 결과다 — 아무것도 쓰기 전에 ConflictError(DLQ) 로 사람에게 넘긴다.
-   */
-  /**
    * 교환 정산 사실의 `exchangeItems` 를 교환 줄에 맞춘다(N16) — `sourceItemId` = 반품 줄의 채널 품목 id, 그 반품 줄의 교환 줄이
-   * 대체 품목 `itemId` 를 받는다. 칸이 없거나, 모르는 원래 품목이거나, 교환 줄이 하나라도 남으면 어긋난 사실이다(DLQ — 사람).
+   * 대체 품목 `itemId` 를 받는다. 칸이 없거나, 모르는 원래 품목이거나, 수량이 교환 줄과 다르거나, 교환 줄이 하나라도 남으면
+   * 어긋난 사실이다(DLQ — 사람).
    */
   private async matchExchangeItems(
     trx: DbTx,
@@ -556,6 +553,7 @@ export class CustomerReturnSettlementManager {
       .select({
         sourceItemId: wmsTables.customerReturnLines.channelOrderItemId,
         exchangeLineId: wmsTables.salesOrderLines.id,
+        quantity: wmsTables.salesOrderLines.quantity,
       })
       .from(wmsTables.customerReturnLines)
       .innerJoin(
@@ -563,15 +561,22 @@ export class CustomerReturnSettlementManager {
         eq(wmsTables.salesOrderLines.exchangeReturnLineId, wmsTables.customerReturnLines.id),
       )
       .where(eq(wmsTables.customerReturnLines.customerReturnId, record.id));
-    const exchangeLineBySource = new Map(rows.map((row) => [row.sourceItemId, row.exchangeLineId]));
+    const exchangeLineBySource = new Map(rows.map((row) => [row.sourceItemId, row]));
     const links = items.map((item) => {
-      const exchangeLineId = exchangeLineBySource.get(item.sourceItemId);
-      if (!exchangeLineId) {
+      const exchangeLine = exchangeLineBySource.get(item.sourceItemId);
+      if (!exchangeLine) {
         throw new ConflictError(
           `Settled customer exchange ${record.id} names unknown source item ${item.sourceItemId}`,
         );
       }
-      return { exchangeLineId, itemId: item.itemId };
+      // 대체 품목 수량 = 교환 줄 수량(반품 줄 수량)이어야 한다 — 다르면 Medusa 와 core 가 다른 교환을 본다
+      if (item.quantity !== exchangeLine.quantity) {
+        throw new ConflictError(
+          `Settled customer exchange ${record.id} replaced ${item.quantity} of source item ${item.sourceItemId}, ` +
+            `exchange line has ${exchangeLine.quantity}`,
+        );
+      }
+      return { exchangeLineId: exchangeLine.exchangeLineId, itemId: item.itemId };
     });
     const linked = new Set(links.map((link) => link.exchangeLineId));
     if (linked.size !== links.length || linked.size !== rows.length) {
@@ -582,6 +587,10 @@ export class CustomerReturnSettlementManager {
     return links;
   }
 
+  /**
+   * 채널 반품 id 로 기록을 잠그고, 사실의 requestId(= 정산·선환불 명령이 실은 customerReturnId)가 그 기록인지 본다.
+   * 다르면 다른 기록의 정산 결과다 — 아무것도 쓰기 전에 ConflictError(DLQ) 로 사람에게 넘긴다.
+   */
   private async lockByChannelReturnId(trx: DbTx, channelReturnId: string, requestId: string): Promise<CustomerReturn> {
     const [record] = await trx
       .select()

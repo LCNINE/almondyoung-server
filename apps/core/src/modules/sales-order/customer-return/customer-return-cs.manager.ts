@@ -70,13 +70,15 @@ export class CustomerReturnCsManager {
   /**
    * 교환품 보내기(K8 PR11 N14 ②) — 보류(`held`)면 `held → inspected` 로 옮겨 정산 명령(명령 칸 `{}`)을 내고 교환 상자를 연다.
    * 수령 전(`expected`·`arrived`)이면 상자만 연다(«선발송») — 정산은 검수가 낸다. 그 밖의 상태는 409.
-   * 이미 열린 교환의 재요청은 그대로 돌려준다. 반품(kind return)은 400.
+   * 이미 열린 교환의 재요청은 그대로 돌려준다 — 단 선발송 뒤 검수가 보류로 멈춘 교환(held)은 정산을 연다. 반품(kind return)은 400.
    */
   async releaseExchange(input: ReleaseCustomerExchangeInput, tx?: DbTx): Promise<CustomerReturnView> {
     return this.dbService.run(async (trx) => {
       const record = await this.lockReturn(trx, input.customerReturnId);
       if (record.kind !== 'exchange') throw new BadRequestError('반품은 교환품을 보내지 않습니다');
-      if (record.exchangeReleasedAt) return this.reader.findById(record.id, trx);
+      // 열린 교환의 재요청은 그대로 — 단 보류(held)는 아니다: 선발송한 교환도 검수에 보류가 있으면 held 에 멈추고
+      // 정산을 여는 문은 이것뿐이다(보류 정산은 교환을 거절한다). held 면 정산을 열고, 상자는 releaser 가 다시 열지 않는다
+      if (record.exchangeReleasedAt && record.status !== 'held') return this.reader.findById(record.id, trx);
 
       if (record.status === 'held') {
         const now = new Date();
