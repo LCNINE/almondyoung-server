@@ -56,7 +56,7 @@ export async function loadSettleLines(trx: DbTx, customerReturnId: string): Prom
     .orderBy(asc(l.channelOrderItemId), asc(i.skuId));
   const byLine = new Map<string, SettleLine>();
   for (const row of rows) {
-    const line = byLine.get(row.lineId) ?? {
+    const line: SettleLine = byLine.get(row.lineId) ?? {
       channelOrderItemId: row.channelOrderItemId,
       quantity: row.lineQuantity,
       missingQty: row.missingQty,
