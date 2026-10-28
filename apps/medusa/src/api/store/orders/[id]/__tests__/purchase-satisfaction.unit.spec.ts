@@ -10,7 +10,7 @@ const ORDER = {
   customer: { metadata: { almond_user_id: '11111111-1111-4111-8111-111111111111' } },
 };
 
-function makeReq(order: Record<string, any> | undefined, actorId: string | undefined = 'cust_1', body?: any) {
+function makeReq(order: Record<string, any> | undefined, actorId: string | null = 'cust_1', body?: any) {
   const graph = jest.fn(async () => ({ data: order ? [order] : [] }));
   return {
     params: { id: 'order_1' },
@@ -70,7 +70,7 @@ describe('/store/orders/:id/purchase-satisfaction', () => {
   it('없는 주문이나 actor 없음도 404', async () => {
     const res = makeRes();
     await GET(makeReq(undefined), res);
-    await GET(makeReq(ORDER, undefined), makeRes());
+    await GET(makeReq(ORDER, null), makeRes());
     expect(res.status).toHaveBeenCalledWith(404);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
