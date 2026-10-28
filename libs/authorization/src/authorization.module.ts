@@ -6,7 +6,6 @@ import { AuthenticationService } from './services/authentication.service';
 import { ScopeBootstrapService, AuthorizationModuleOptions } from './services/scope-bootstrap.service';
 import { ScopeGuard } from './guards/scope.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { AdminRealmGuard } from './guards/admin-realm.guard';
 import { JwtAccessStrategy } from './strategies/jwt-access.strategy';
 import { AUTHORIZATION_OPTIONS, AUTH_CONFIG } from './constants';
 
@@ -69,14 +68,12 @@ export class AuthorizationModule {
         ScopeGuard,
         JwtAccessStrategy,
         JwtAuthGuard,
-        AdminRealmGuard,
       ],
       exports: [
         AuthenticationService,
         AuthorizationService,
         ScopeGuard,
         JwtAuthGuard,
-        AdminRealmGuard,
         JwtAccessStrategy,
         PassportModule,
         AUTHORIZATION_OPTIONS,
@@ -93,8 +90,8 @@ export class AuthorizationModule {
     return {
       module: AuthorizationModule,
       imports: [ConfigModule, PassportModule.register({ defaultStrategy: 'jwt' })],
-      providers: [authConfigProvider, AuthenticationService, JwtAccessStrategy, JwtAuthGuard, AdminRealmGuard],
-      exports: [AuthenticationService, JwtAuthGuard, AdminRealmGuard, JwtAccessStrategy, PassportModule],
+      providers: [authConfigProvider, AuthenticationService, JwtAccessStrategy, JwtAuthGuard],
+      exports: [AuthenticationService, JwtAuthGuard, JwtAccessStrategy, PassportModule],
     };
   }
 }

@@ -1,7 +1,6 @@
-import { Controller, HttpCode, Post, Query, UseGuards } from '@nestjs/common';
+import { Controller, HttpCode, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
+import { RequirePermission } from '@app/authorization';
 import { ReplenishmentProfileService } from '../demand/replenishment-profile.service';
 import { RecomputeProfilesQueryDto, RefreshSummaryDto } from '../dto/replenishment-profile.dto';
 
@@ -11,14 +10,12 @@ import { RecomputeProfilesQueryDto, RefreshSummaryDto } from '../dto/replenishme
  */
 @ApiTags('Inventory - Replenishment')
 @Controller('replenishment')
-@UseGuards(ScopeGuard)
 export class ReplenishmentProfileController {
   constructor(private readonly service: ReplenishmentProfileService) {}
 
   @RequirePermission('inventory.master.write')
   @Post('profiles/recompute')
   @HttpCode(200)
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: '수요 시계열 · 프로필 · 리드타임 프로필을 지금 다시 계산한다',
     description: '야간 배치(03:40 KST)와 같은 세 단계. series=window 는 최근 창만, full 은 D0 이후 전량.',

@@ -27,27 +27,32 @@ const REPO = process.env.ROUTE_AUDIT_ROOT ?? path.resolve(__dirname, '..', '..')
  *
  *   globalScope : ScopeGuard 가 APP_GUARD 로 전역 등록됨 → @RequireScopes 만으로 강제된다.
  *   adminRealm  : AdminRealmGuard 가 전역 → 표시 없는 라우트는 admin/master 필요 (기본 차단).
+ *   permissionDeny : 옛 인가 가드 없이 PermissionGuard 가 전역으로 결정한다 → 분류 표식이 없는 라우트는 403
+ *                    (기본 차단). 권한 분류 라우트는 직원 전용이고, 고객이 닿는 것은 @StoreRoute 와
+ *                    (앱 내부 인증이 없는) @OptionalAuth 뿐이다.
  *   authz       : 그 앱 고유의 인가 데코레이터 이름들.
  *   defaultDeny : 표시가 없어도 가드가 막는가 (wallet 은 API key 로 fallback).
  */
 const APPS = {
-  core: { globalScope: false, adminRealm: true, defaultDeny: true, authz: [] },
-  notification: { globalScope: false, adminRealm: true, defaultDeny: true, authz: [] },
-  'channel-adapter': { globalScope: false, adminRealm: true, defaultDeny: true, authz: [] },
+  core: { globalScope: false, adminRealm: false, permissionDeny: true, defaultDeny: true, authz: [] },
+  notification: { globalScope: false, adminRealm: false, permissionDeny: true, defaultDeny: true, authz: [] },
+  'channel-adapter': { globalScope: false, adminRealm: false, permissionDeny: true, defaultDeny: true, authz: [] },
   'user-service': { globalScope: true, adminRealm: false, defaultDeny: false, authz: [] },
   membership: {
-    globalScope: true,
+    globalScope: false,
     adminRealm: false,
-    defaultDeny: false,
-    authz: ['MembershipAdminAuth', 'MembershipInternalAuth'],
+    permissionDeny: true,
+    defaultDeny: true,
+    authz: ['MembershipInternalAuth'],
     // 안에서 Public() 을 부르는 앱 데코레이터 — 분류상 «공개»다.
     publicDecorators: ['MembershipInternalAuth'],
   },
-  'file-service': { globalScope: true, adminRealm: false, defaultDeny: false, authz: [] },
+  'file-service': { globalScope: false, adminRealm: false, defaultDeny: false, authz: [] },
   'ugc-service': {
-    globalScope: true,
+    globalScope: false,
     adminRealm: false,
-    defaultDeny: false,
+    permissionDeny: true,
+    defaultDeny: true,
     authz: ['UgcInternalAuth'],
     publicDecorators: ['UgcInternalAuth'],
   },
@@ -56,7 +61,7 @@ const APPS = {
   // globalAuth=false: JwtAuthGuard 가 전역이 아니다(컨트롤러 단위). 그래서 @Public 표식에 런타임 효과가 없다.
   search: { globalScope: false, adminRealm: false, defaultDeny: false, authz: [], globalAuth: false },
   analytics: { globalScope: false, adminRealm: false, defaultDeny: false, authz: [], globalAuth: false },
-  ai: { globalScope: true, adminRealm: false, defaultDeny: false, authz: [] },
+  ai: { globalScope: false, adminRealm: false, permissionDeny: true, defaultDeny: true, authz: [] },
 };
 
 const HTTP = new Set(['Get', 'Post', 'Put', 'Patch', 'Delete', 'All', 'Head', 'Options']);
@@ -268,15 +273,19 @@ for (const app of selected) {
  * [B] IDOR 검사 대상 판정. printReport 와 --json 이 **반드시** 같은 식을 써야 한다.
  * 두 곳에 복사하면 APPS 맵이 바뀔 때 조용히 어긋난다.
  *
- *   기본차단 앱(core 등): 표시 없는 라우트는 직원 전용이라 정상. 고객이 닿는 @StoreRoute 만 대상.
+ *   기본차단 앱(core 등): 표시 없는 라우트는 직원 전용(또는 거부)이라 정상. 고객이 닿는 @StoreRoute 와
+ *   앱 내부 인증 없는 @OptionalAuth 만 대상.
  *   그 외 앱: 표시가 없으면 인증만 통과하므로 전부 대상.
  *
  * 대상은 «현행 런타임 동작» 기준이다. 분류 표식 중 그 앱에서 런타임 효과가 없는 것 — 전역
- * AdminRealmGuard 가 없는 앱의 @StoreRoute, 전역 인증 가드가 없는 앱(globalAuth=false)의 @Public —
- * 과 권한 선언(@RequirePermission)은 대상을 바꾸지 않는다.
+ * AdminRealmGuard 도 PermissionGuard 기본 거부도 없는 앱의 @StoreRoute, 전역 인증 가드가 없는
+ * 앱(globalAuth=false)의 @Public — 과 권한 선언(@RequirePermission)은 대상을 바꾸지 않는다.
  */
+const isOptionalAuthOnly = (r) => r.classifications.includes('public') && !r.isPublic && !r.authz;
 const isIdorTarget = (r, cfg) =>
-  cfg.defaultDeny ? r.storeRoute && cfg.adminRealm : !(r.isPublic && cfg.globalAuth !== false) && !r.authz;
+  cfg.defaultDeny
+    ? (r.storeRoute || isOptionalAuthOnly(r)) && (cfg.adminRealm || cfg.permissionDeny === true)
+    : !(r.isPublic && cfg.globalAuth !== false) && !r.authz;
 
 const print = (title, list) => {
   if (!list.length) return;
@@ -315,7 +324,7 @@ function printReport() {
 
     console.log(
       `\n########## ${app} — 라우트 ${rows.length} ` +
-        `(ScopeGuard전역=${cfg.globalScope} AdminRealm=${cfg.adminRealm} 기본차단=${cfg.defaultDeny}) ##########`,
+        `(ScopeGuard전역=${cfg.globalScope} AdminRealm=${cfg.adminRealm} 권한기본거부=${cfg.permissionDeny === true} 기본차단=${cfg.defaultDeny}) ##########`,
     );
 
     print(
@@ -324,7 +333,9 @@ function printReport() {
     );
 
     print(
-      cfg.defaultDeny ? 'B: @StoreRoute (고객 — IDOR 검사 대상)' : 'B: 인가 표시 없음 — 인증만 통과 (IDOR 검사 대상)',
+      cfg.defaultDeny
+        ? 'B: @StoreRoute·@OptionalAuth (고객 — IDOR 검사 대상)'
+        : 'B: 인가 표시 없음 — 인증만 통과 (IDOR 검사 대상)',
       rows.filter((r) => isIdorTarget(r, cfg)),
     );
     print(

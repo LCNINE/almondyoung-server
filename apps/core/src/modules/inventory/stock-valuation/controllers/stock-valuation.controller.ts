@@ -1,7 +1,6 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
+import { RequirePermission } from '@app/authorization';
 import { ApiOkResponsePaginated } from '../../shared/decorators/api-paginated-response.decorator';
 import { PaginatedResponseDto } from '../../shared/dto';
 import { StockValuationService } from '../services/stock-valuation.service';
@@ -13,13 +12,11 @@ import {
 
 @ApiTags('Inventory')
 @Controller('inventory/statistics/stock-valuation')
-@UseGuards(ScopeGuard)
 export class StockValuationController {
   constructor(private readonly stockValuation: StockValuationService) {}
 
   @RequirePermission('inventory.stock.read')
   @Get('/summary')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '재고 금액 요약 (묶인 돈)',
     description:
@@ -33,7 +30,6 @@ export class StockValuationController {
 
   @RequirePermission('inventory.stock.read')
   @Get('/products')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '상품별 재고 금액 (전체 페이지네이션)',
     description:

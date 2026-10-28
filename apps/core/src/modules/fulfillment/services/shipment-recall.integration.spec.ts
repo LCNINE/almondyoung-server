@@ -108,7 +108,6 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
     service = new ShipmentRecallService(
       dbService,
       new FulfillmentCommandService(dbService),
-      {} as never, // authorization — actor.roles=['master'] 로 우회
       waybills,
       inventory,
       reservations,

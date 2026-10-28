@@ -42,7 +42,6 @@ describeIfDb('WaybillReader (DB integration)', () => {
       wired.shipmentReservations,
       invariant,
       new AuditService(svc),
-      { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
       workflowGate,
       assembleBoxWithdrawal(svc),
       createCheckpointsForTesting(),

@@ -1,7 +1,6 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
 import { ApiExtraModels, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, RequirePermission, PiiResponse, OPEN_WITH_RECIPIENT } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { RequirePermission, PiiResponse, OPEN_WITH_RECIPIENT } from '@app/authorization';
 import { FulfillmentsService } from '../services/fulfillments.service';
 import { ShipmentPlanningService } from '../services/shipment-planning.service';
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
@@ -97,8 +96,6 @@ export class FulfillmentsController {
 
   @RequirePermission('fulfillment.shipment.read')
   @Get(':id/shipments')
-  @UseGuards(ScopeGuard)
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOperation({ summary: 'V2 shipment 목록과 라인 진행 수량 조회' })
   @ApiResponse({ status: 200, type: [ShipmentSummaryResponseDto] })
   shipments(@Param('id') id: string): Promise<ShipmentSummaryResponseDto[]> {

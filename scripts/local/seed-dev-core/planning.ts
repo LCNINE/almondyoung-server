@@ -9,7 +9,6 @@ import { FulfillmentCommandService } from '../../../apps/core/src/modules/fulfil
 import { FulfillmentInvariantService } from '../../../apps/core/src/modules/fulfillment/services/fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from '../../../apps/core/src/modules/fulfillment/services/fulfillment-workflow-gate.service';
 import { ShipmentPlanningService } from '../../../apps/core/src/modules/fulfillment/services/shipment-planning.service';
-import { FULFILLMENT_SCOPES } from '../../../apps/core/src/platform/auth/fulfillment-scopes';
 
 /**
  * ShipmentPlanningService 는 wireLogistics 의 Wired 밖이라 (다른 BC 조합에서는 안 쓰이는
@@ -23,9 +22,6 @@ export function buildShipmentPlanning(dbService: DbService<typeof wmsSchema>, wi
     wired.shipmentReservations,
     new FulfillmentInvariantService(),
     new AuditService(dbService),
-    // plan() 경로는 scope 를 보지 않지만 생성자가 요구한다. 시드 액터는 master 이므로
-    // 전 scope 를 가진 stub 으로 채운다 (통합 스펙과 동일한 관용구).
-    { getScopesByRoles: () => Promise.resolve(new Set(FULFILLMENT_SCOPES.map((scope) => scope.key))) } as never,
     new FulfillmentWorkflowGate(
       new ConfigService({
         FULFILLMENT_WORKFLOW_MODE: 'v2',

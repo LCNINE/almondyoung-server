@@ -1,7 +1,6 @@
-import { Body, Controller, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiCreatedResponse, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { RequirePermission } from '@app/authorization';
 import { ShipmentTrackingEventDto } from '../dto/shipment-tracking-event.dto';
 import { ShipmentDeliveryTrackingService } from '../services/shipment-delivery-tracking.service';
 
@@ -12,8 +11,6 @@ export class ShipmentTrackingController {
 
   @RequirePermission('fulfillment.tracking.ingest')
   @Post(':dispatchAttemptId/tracking-events')
-  @UseGuards(ScopeGuard)
-  @RequireScopes(FULFILLMENT_SCOPE.TRACKING_INGEST)
   @ApiOperation({ summary: 'Record an idempotent normalized carrier tracking event' })
   @ApiParam({ name: 'dispatchAttemptId', description: 'Dispatch attempt ID' })
   @ApiCreatedResponse({ description: 'Attempt-owned tracking projection' })

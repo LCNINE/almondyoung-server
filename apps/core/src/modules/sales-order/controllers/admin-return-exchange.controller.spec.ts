@@ -1,4 +1,4 @@
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { REQUIRED_PERMISSIONS_KEY } from '@app/authorization';
 import { AdminReturnExchangeController } from './admin-return-exchange.controller';
 
 describe('AdminReturnExchangeController V2 eligibility contract', () => {
@@ -42,12 +42,13 @@ describe('AdminReturnExchangeController V2 eligibility contract', () => {
     expect(service.adminCreateReturnRequest).toHaveBeenCalledWith('order-1', 'admin-1', dto);
   });
 
-  it.each(['createReturnRequest', 'getReturnEligibility', 'getReturnEligibilityByChannelOrder'] as const)(
-    'requires warehouse operate scope for %s',
-    (methodName) => {
-      const method = Object.getOwnPropertyDescriptor(AdminReturnExchangeController.prototype, methodName)
-        ?.value as object;
-      expect(Reflect.getMetadata('required_scopes', method)).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
-    },
-  );
+  it.each([
+    ['createReturnRequest', 'fulfillment.warehouse.operate'],
+    ['getReturnEligibility', 'fulfillment.shipment.read'],
+    ['getReturnEligibilityByChannelOrder', 'fulfillment.shipment.read'],
+  ] as const)('requires %s to carry %s', (methodName, permission) => {
+    const method = Object.getOwnPropertyDescriptor(AdminReturnExchangeController.prototype, methodName)
+      ?.value as object;
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, method)).toEqual([permission]);
+  });
 });

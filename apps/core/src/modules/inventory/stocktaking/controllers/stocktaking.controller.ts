@@ -19,11 +19,9 @@ import {
   HttpStatus,
   Query,
   Headers,
-  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
+import { User, RequirePermission } from '@app/authorization';
 import { StocktakingService } from '../services/stocktaking.service';
 import { CreateStocktakingSessionDto } from '../dto/create-session.dto';
 import { ListStocktakingSessionsQueryDto } from '../dto/list-sessions-query.dto';
@@ -36,7 +34,6 @@ import { AddCountItemDto } from '../dto/add-count-item.dto';
 
 @ApiTags('Stocktaking')
 @Controller('stocktaking')
-@UseGuards(ScopeGuard)
 export class StocktakingController {
   constructor(
     private readonly stocktakingService: StocktakingService,
@@ -45,7 +42,6 @@ export class StocktakingController {
 
   @RequirePermission('inventory.stock.read')
   @Get('sessions')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '재고 실사 세션 목록 조회 (List stocktaking sessions)' })
   @ApiResponse({ status: 200, description: 'Paginated list of sessions' })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
@@ -55,7 +51,6 @@ export class StocktakingController {
 
   @RequirePermission('inventory.stock.read')
   @Get('sessions/:id')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '재고 실사 세션 상세 조회 (세션 + 전체 라인 + 진행률)' })
   @ApiParam({ name: 'id', description: '세션 ID' })
   @ApiResponse({ status: 200, type: StocktakingSessionDetailDto })
@@ -67,7 +62,6 @@ export class StocktakingController {
 
   @RequirePermission('inventory.stock.operate')
   @Post('sessions')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '재고 실사 세션 생성 (Create stocktaking session)' })
   @ApiResponse({ status: 201, description: 'Session created successfully' })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
@@ -78,7 +72,6 @@ export class StocktakingController {
   @RequirePermission('inventory.stock.operate')
   @Post('sessions/:id/start')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '재고 실사 시작 (Start stocktaking session)' })
   @ApiParam({ name: 'id', description: 'Session ID' })
   @ApiResponse({ status: 200, description: 'Session started' })
@@ -90,7 +83,6 @@ export class StocktakingController {
   @RequirePermission('inventory.stock.operate')
   @Post('scan-location')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '위치 바코드 스캔 (Scan location barcode)' })
   @ApiResponse({ status: 200, description: 'Location scanned, expected items loaded' })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
@@ -113,7 +105,6 @@ export class StocktakingController {
   @RequirePermission('inventory.stock.operate')
   @Post('scan-product')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '상품 바코드 스캔 (Scan product barcode)' })
   @ApiResponse({ status: 200, description: 'Product scanned, count updated' })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
@@ -136,7 +127,6 @@ export class StocktakingController {
   @RequirePermission('inventory.stock.operate')
   @Post('count-items')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU로 실사 상품 추가 (Add stocktaking item by SKU)' })
   @ApiResponse({ status: 200, description: 'Count item created' })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
@@ -157,7 +147,6 @@ export class StocktakingController {
 
   @RequirePermission('inventory.stock.operate')
   @Put('lines/:id/count')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '수량 수동 입력 (Update count manually)' })
   @ApiParam({ name: 'id', description: 'Line ID' })
   @ApiResponse({ status: 200, description: 'Count updated' })
@@ -182,7 +171,6 @@ export class StocktakingController {
   @RequirePermission('inventory.stock.operate')
   @Post('lines/:id/reset-count')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   async resetCount(
     @Param('id') id: string,
     @Body() dto: ResetCountDto,
@@ -201,7 +189,6 @@ export class StocktakingController {
 
   @RequirePermission('inventory.stock.read')
   @Get('sessions/:id/variances')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '차이 조회 (Get variances/discrepancies)' })
   @ApiParam({ name: 'id', description: 'Session ID' })
   @ApiResponse({ status: 200, description: 'List of variances' })
@@ -213,7 +200,6 @@ export class StocktakingController {
   @RequirePermission('inventory.stock.operate')
   @Post('sessions/:id/generate-adjustments')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '조정 자동 생성 (Generate stock adjustments)' })
   @ApiParam({ name: 'id', description: 'Session ID' })
   @ApiResponse({ status: 200, description: 'Adjustments generated' })
@@ -225,7 +211,6 @@ export class StocktakingController {
   @RequirePermission('inventory.stock.adjust')
   @Post('sessions/:id/complete')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({ summary: '재고 실사 완료 (Complete stocktaking session)' })
   @ApiParam({ name: 'id', description: 'Session ID' })
   @ApiResponse({ status: 200, description: 'Session completed with summary' })
@@ -250,7 +235,6 @@ export class StocktakingController {
   @RequirePermission('inventory.stock.operate')
   @Post('sessions/:id/cancel')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '재고 실사 취소 (Cancel stocktaking session)' })
   @ApiParam({ name: 'id', description: 'Session ID' })
   @ApiResponse({ status: 200, description: 'Session cancelled' })

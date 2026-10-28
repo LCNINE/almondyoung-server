@@ -2,13 +2,12 @@ import { NotFoundException } from '@nestjs/common';
 import { createGlobalValidationPipe } from '../../../platform/http/validation-pipe';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import {
-  ScopeGuard,
+  REQUIRED_PERMISSIONS_KEY,
   checkpointEvaluations,
   createCheckpointsForTesting,
   PermissionCheckpoints,
 } from '@app/authorization';
 import { register } from 'prom-client';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { ConsolidationController } from '../controllers/consolidation.controller';
 import { CreateConsolidationDto } from '../dto/consolidation.dto';
 import { canonicalFulfillmentRequestHash } from './fulfillment-command.service';
@@ -28,28 +27,16 @@ const recipient = {
 
 function harness(dbService: unknown = {}, checkpoints: PermissionCheckpoints = createCheckpointsForTesting()) {
   const execute = jest.fn((input: { canonicalRequest: unknown }) => Promise.resolve(input.canonicalRequest));
-  const authorization = {
-    getScopesByRoles: jest
-      .fn()
-      .mockResolvedValue(
-        new Set([
-          FULFILLMENT_SCOPE.SHIPMENT_CONSOLIDATE,
-          FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT,
-          FULFILLMENT_SCOPE.SHIPMENT_REOPEN,
-        ]),
-      ),
-  };
   const service = new ConsolidationService(
     dbService as never,
     { execute } as never,
     {} as never,
     {} as never,
     {} as never,
-    authorization as never,
     { assertV2MutationAllowed: jest.fn() } as never,
     checkpoints,
   );
-  return { service, execute, authorization };
+  return { service, execute };
 }
 
 describe('ConsolidationService command boundary', () => {
@@ -138,7 +125,7 @@ describe('ConsolidationService command boundary', () => {
     ]);
   });
 
-  it('compares the consolidation permission next to the legacy scope check', async () => {
+  it('decides the consolidation check by the permission', async () => {
     register.resetMetrics();
     const { service, execute } = harness(
       {},
@@ -148,6 +135,17 @@ describe('ConsolidationService command boundary', () => {
     await expect(
       service.consolidate({ sources: [source], recipientSourceShipmentId: first, reason: 'one' }, 'key', actor),
     ).rejects.toThrow('At least two source shipments are required');
+    expect(execute).not.toHaveBeenCalled();
+    expect(await checkpointEvaluations('fulfillment.consolidation_scope', 'match')).toBe(1);
+  });
+
+  it('denies consolidation without the permission before claiming the command', async () => {
+    register.resetMetrics();
+    const { service, execute } = harness({}, createCheckpointsForTesting({ logistics_manager: [] }));
+    const source = { shipmentId: first, expectedManifestVersion: 1, expectedReservationVersion: 1 };
+    await expect(
+      service.consolidate({ sources: [source], recipientSourceShipmentId: first, reason: 'one' }, 'key', actor),
+    ).rejects.toThrow('Missing required scope: fulfillment.shipment.consolidate');
     expect(execute).not.toHaveBeenCalled();
     expect(await checkpointEvaluations('fulfillment.consolidation_scope', 'match')).toBe(1);
   });
@@ -200,11 +198,10 @@ describe('ConsolidationService command boundary', () => {
     expect(consolidation.consolidate).toHaveBeenCalledWith(dto, 'key', actor);
   });
 
-  it('replaces the temporary admin guard with the consolidation scope guard contract', () => {
-    const classGuards = Reflect.getMetadata(GUARDS_METADATA, ConsolidationController) as unknown[];
-    expect(classGuards).toContain(ScopeGuard);
-    expect(Reflect.getMetadata('required_scopes', ConsolidationController.prototype.consolidate)).toEqual([
-      FULFILLMENT_SCOPE.SHIPMENT_CONSOLIDATE,
+  it('requires the consolidation permission with no legacy guard on the controller', () => {
+    expect(Reflect.getMetadata(GUARDS_METADATA, ConsolidationController)).toBeUndefined();
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, ConsolidationController.prototype.consolidate)).toEqual([
+      'fulfillment.shipment.consolidate',
     ]);
   });
 });

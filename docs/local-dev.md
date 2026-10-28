@@ -276,17 +276,12 @@ npm run start:main:dev               # core :3100
 - **user-service 는 라이브를 쓴다.** core 가 `OIDC_ISSUER_URL` 로 JWKS 검증만 하므로 그대로 통과한다.
   **역할은 라이브 계정이 가진 것 그대로**이므로, 어떤 역할로 로그인했는지가 곧 로컬에서 무엇이
   되는지를 결정한다.
-- **inventory 엔드포인트에도 이제 scope 게이트가 있다** (#551 이 라우트 154개에 `@RequireScopes`
-  부착). "로그인만 되면 inventory 는 다 된다"는 예전 서술은 더 이상 사실이 아니다. 역할별 경계:
+- **inventory·fulfillment 엔드포인트는 권한 키로 판정한다** (`@RequirePermission`, ADR-0048). 역할별로 무엇이
+  되는지는 코드가 아니라 user-service 의 역할↔권한 매핑이 정한다(관리자 화면 «역할·권한»에서 본다). core 는 그 사본을
+  `USER_SERVICE_URL` 의 내부 경로에서 받아 두고 판정하므로, **사본을 한 번도 받지 못하면 권한 라우트는 503** 이다
+  («권한 없음» 403 과 다르다).
 
-  | 역할 | 되는 것 | 안 되는 것 |
-  |---|---|---|
-  | `logistics_worker` | 재고조회·입고확정·적치·실사 카운트·이동 (`inventory.operate`), 피킹·검수·출고 (`fulfillment.warehouse.operate`) | 재고조정·실사 차이 반영(`inventory.adjust`), 마스터데이터(`inventory.manage`), 강제출고(`fulfillment.dispatch.force`) |
-  | `logistics_manager` | 위 전부 + `adjust`/`manage`/`warehouse.manage` + 강제출고·recall·재개방 | `fulfillment.tracking.ingest` (택배사 전용) |
-  | `admin` | inventory 4개 전부 | **fulfillment 스코프 0개** — 피킹·출고는 못 한다 |
-  | `master` | 전부 (ScopeGuard 가 무조건 통과) | — |
-
-  ⚠️ **라이브 개발 계정이 `admin` 이면 `logistics_worker` 의 권한 구멍이 로컬에서 드러나지 않는다.**
+  ⚠️ **넓은 권한의 계정(`admin`·`master`)으로만 검증하면 현장 역할의 권한 구멍이 로컬에서 드러나지 않는다.**
   현장 역할로 검증하려면 라이브 user-service 에 그 역할을 가진 계정이 필요하다.
 - **`npm run generate:token` 의 HS256 토큰은 curl 검증용이다.** 임의 역할로 발급할 수 있어 권한
   경계를 확인하기 좋지만, **warehouse-app 에는 토큰 주입 경로가 없다**(`src/app/config.ts` 가 OIDC

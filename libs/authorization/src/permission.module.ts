@@ -6,7 +6,6 @@ import { AuthzShadowInterceptor } from './interceptors/authz-shadow.interceptor'
 import type { OwnerService } from './permissions/permission.types';
 import { AuthzShadowRecorder } from './services/authz-shadow.recorder';
 import { HttpRolePermissionSource } from './services/http-role-permission.source';
-import { PermissionAuthority } from './services/permission-authority';
 import { PermissionCache } from './services/permission-cache';
 import { PermissionCheckpoints } from './services/permission-checkpoints';
 import { PermissionDecider } from './services/permission-decider';
@@ -38,7 +37,6 @@ const EXPORTED = [
   AuthzShadowInterceptor,
   PermissionGuard,
   PermissionCheckpoints,
-  PermissionAuthority,
 ];
 
 /**
@@ -58,7 +56,6 @@ export class PermissionModule {
           inject: [ConfigService],
           useFactory: (config: ConfigService): PermissionRuntimeOptions => ({
             service: options.service,
-            enforce: config.get<string>('AUTHZ_ENFORCE') === 'true',
             refreshIntervalMs: DEFAULT_REFRESH_INTERVAL_MS,
             retryBaseMs: DEFAULT_RETRY_BASE_MS,
             summaryIntervalMs: DEFAULT_SUMMARY_INTERVAL_MS,

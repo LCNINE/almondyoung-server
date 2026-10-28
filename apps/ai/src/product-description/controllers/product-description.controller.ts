@@ -1,4 +1,4 @@
-import { RequireScopes, RequirePermission } from '@app/authorization';
+import { RequirePermission } from '@app/authorization';
 import { Body, Controller, Post, Req, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -7,7 +7,6 @@ import { callerAuthHeaders } from '../../assistant/lib/multipart';
 import { ComposeDescriptionDto } from '../dto/compose-description.dto';
 import { ExtractFactsDto } from '../dto/extract-facts.dto';
 import { ProductDescriptionService } from '../services/product-description.service';
-import { AI_SCOPE } from '../../platform/auth/ai-scopes';
 
 /**
  * 상품 상세설명 AI 초안. 어드민 상품 상세 화면의 "AI 초안" 버튼과
@@ -18,8 +17,7 @@ import { AI_SCOPE } from '../../platform/auth/ai-scopes';
  */
 @ApiTags('AI 상품 상세설명')
 @ApiBearerAuth()
-@RequireScopes(AI_SCOPE.ASSISTANT)
-@ApiResponse({ status: 403, description: 'ai:assistant 스코프가 필요합니다 (어드민 전용).' })
+@ApiResponse({ status: 403, description: 'ai.assistant.use 권한이 필요합니다 (어드민 전용).' })
 @Controller('product-description')
 export class ProductDescriptionController {
   constructor(private readonly service: ProductDescriptionService) {}

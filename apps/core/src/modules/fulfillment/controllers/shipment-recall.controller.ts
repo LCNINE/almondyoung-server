@@ -10,11 +10,9 @@ import {
   ParseUUIDPipe,
   Post,
   UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
 import { ApiAcceptedResponse, ApiHeader, ApiOkResponse, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { User, RequirePermission } from '@app/authorization';
 import { RecallShipmentDispatchDto, ShipmentRecallActor, ShipmentRecallResponseDto } from '../dto/shipment-recall.dto';
 import { ShipmentRecallService } from '../services/shipment-recall.service';
 
@@ -27,8 +25,6 @@ export class ShipmentRecallController {
 
   @RequirePermission('fulfillment.dispatch.recall')
   @Post(':shipmentId/recalls')
-  @UseGuards(ScopeGuard)
-  @RequireScopes(FULFILLMENT_SCOPE.DISPATCH_RECALL)
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiOperation({ summary: 'Recall one exact dispatch attempt after physical recovery' })
@@ -74,8 +70,6 @@ export class ShipmentRecallOperationController {
 
   @RequirePermission('fulfillment.dispatch.recall')
   @Get(':operationId')
-  @UseGuards(ScopeGuard)
-  @RequireScopes(FULFILLMENT_SCOPE.DISPATCH_RECALL)
   @ApiOperation({ summary: 'Read a durable shipment recall saga status' })
   @ApiParam({ name: 'operationId' })
   @ApiOkResponse({ description: 'Durable shipment recall saga status', type: ShipmentRecallResponseDto })

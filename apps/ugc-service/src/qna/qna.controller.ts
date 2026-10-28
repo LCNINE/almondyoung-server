@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { OptionalAuth, Public, RequireScopes, User, StoreRoute, RequirePermission } from '@app/authorization';
+import { OptionalAuth, Public, User, StoreRoute, RequirePermission } from '@app/authorization';
 import { ApiOkResponsePaginated } from '@app/shared/decorators/api-paginated-response.decorator';
 import { PaginatedResponseDto } from '@app/shared/dto';
 import { QnaService } from './qna.service';
@@ -157,7 +157,6 @@ export class QnaController {
 
   @RequirePermission('cs.inquiry.read')
   @Get('admin/questions')
-  @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '전체 문의 목록 조회 (관리자)' })
   @ApiQuery({
     name: 'category',
@@ -188,7 +187,6 @@ export class QnaController {
 
   @RequirePermission('cs.inquiry.read')
   @Get('admin/questions/stats/daily')
-  @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '일별 문의 접수 수 (관리자) — 작성일 KST 귀속, 삭제 제외' })
   async getDailyQuestionCounts(@Query() query: DailyRangeQueryDto) {
     return this.qnaService.getDailyCountsForAdmin(query.from, query.to);
@@ -196,7 +194,6 @@ export class QnaController {
 
   @RequirePermission('cs.inquiry.read')
   @Get('admin/questions/:id')
-  @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '문의 상세 조회 (관리자)' })
   @ApiParam({ name: 'id', description: '질문 ID (UUID)' })
   @ApiResponse({ status: HttpStatus.OK, description: '문의 상세 조회 성공', type: QuestionResponseDto })
@@ -209,7 +206,6 @@ export class QnaController {
 
   @RequirePermission('cs.inquiry.write')
   @Delete('admin/questions/:id')
-  @RequireScopes('admin:ugc:modify')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '문의 삭제 (관리자, soft delete)' })
   @ApiParam({ name: 'id', description: '질문 ID (UUID)' })
@@ -223,7 +219,6 @@ export class QnaController {
 
   @RequirePermission('cs.inquiry.write')
   @Post('questions/:id/answer')
-  @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '답변 작성 (관리자)' })
   @ApiParam({ name: 'id', description: '질문 ID (UUID)' })
   @ApiBody({ type: CreateAnswerDto })
@@ -241,7 +236,6 @@ export class QnaController {
 
   @RequirePermission('cs.inquiry.write')
   @Patch('questions/:id/answer')
-  @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '답변 수정 (관리자)' })
   @ApiParam({ name: 'id', description: '질문 ID (UUID)' })
   @ApiBody({ type: CreateAnswerDto })
@@ -258,7 +252,6 @@ export class QnaController {
 
   @RequirePermission('cs.inquiry.write')
   @Delete('questions/:id/answer')
-  @RequireScopes('admin:ugc:modify')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '답변 삭제 (관리자)' })
   @ApiParam({ name: 'id', description: '질문 ID (UUID)' })

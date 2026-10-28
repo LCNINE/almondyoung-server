@@ -70,7 +70,6 @@ export class ConsentsController {
   })
   @RequirePermission('customer.profile.read')
   @Get('marketing/:userId')
-  @RequireScopes('master', 'admin:users:read')
   async getMarketingConsent(@Param('userId') userId: string): Promise<{ isMarketingEnabled: boolean }> {
     const isMarketingEnabled = await this.consentsService.getUserMarketingConsent(userId);
     return { isMarketingEnabled };
@@ -88,7 +87,6 @@ export class ConsentsController {
   })
   @RequirePermission('customer.profile.read')
   @Get('profile/:userId')
-  @RequireScopes('master', 'admin:users:read')
   async getUserProfile(@Param('userId') userId: string) {
     const profile = await this.consentsService.getUserProfile(userId);
     if (!profile) {
@@ -108,7 +106,6 @@ export class ConsentsController {
   })
   @RequirePermission('customer.profile.read')
   @Post('search')
-  @RequireScopes('master', 'admin:users:read')
   async getUsersByCriteria(@Body() criteria: any) {
     return await this.consentsService.getUsersByCriteria(criteria);
   }

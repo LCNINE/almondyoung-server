@@ -11,18 +11,10 @@ import {
   Query,
   Req,
   UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
 import { adminForceDispatchDecisionFrom } from '../../../platform/auth/force-dispatch-authorization';
 import { ApiHeader, ApiTags } from '@nestjs/swagger';
-import {
-  PermissionCheckpoints,
-  RequireScopes,
-  ScopeGuard,
-  User,
-  RequirePermission,
-} from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { PermissionCheckpoints, User, RequirePermission } from '@app/authorization';
 import {
   LocationOutboundConfirmDto,
   LocationOutboundScanDto,
@@ -34,7 +26,6 @@ type AuthenticatedUser = { id?: string; userId?: string; sub?: string; roles?: s
 
 @ApiTags('Shipments')
 @Controller('shipments')
-@UseGuards(ScopeGuard)
 export class LocationOutboundController {
   constructor(
     private readonly outbound: LocationOutboundService,
@@ -43,7 +34,6 @@ export class LocationOutboundController {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post(':shipmentId/location-outbound-starts')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   async start(
     @Param('shipmentId', ParseUUIDPipe) shipmentId: string,
@@ -56,7 +46,6 @@ export class LocationOutboundController {
 
   @RequirePermission('fulfillment.shipment.read')
   @Get(':shipmentId/location-outbound-state')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   state(
     @Param('shipmentId', ParseUUIDPipe) shipmentId: string,
     @Query() query: StartLocationOutboundDto,
@@ -68,7 +57,6 @@ export class LocationOutboundController {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post(':shipmentId/location-outbound-scans')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   async scan(
     @Param('shipmentId', ParseUUIDPipe) shipmentId: string,
@@ -81,7 +69,6 @@ export class LocationOutboundController {
 
   @RequirePermission('fulfillment.dispatch.force')
   @Post(':shipmentId/location-outbound-forces')
-  @RequireScopes(FULFILLMENT_SCOPE.DISPATCH_FORCE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   async force(
     @Param('shipmentId', ParseUUIDPipe) shipmentId: string,
@@ -90,11 +77,9 @@ export class LocationOutboundController {
     @User() user: AuthenticatedUser,
     @Req() request: unknown,
   ) {
-    const authorization = adminForceDispatchDecisionFrom(request, this.checkpoints.enforced);
-    const legacy = adminForceDispatchDecisionFrom(request, false) !== undefined;
-    this.checkpoints.compareDecision('fulfillment.force_dispatch_decision', legacy, request, [
-      'fulfillment.dispatch.force',
-    ]);
+    const authorization = adminForceDispatchDecisionFrom(request);
+    // 판정 지점 집계만 남긴다 — 결과는 위 낙인을 받은 서비스가 정한다.
+    this.checkpoints.checkRoute('fulfillment.force_dispatch_decision', request, ['fulfillment.dispatch.force']);
     return unwrapPreparedOutbound(
       await this.outbound.force(shipmentId, dto, this.actor(user), this.key(key), authorization),
     );
@@ -102,7 +87,6 @@ export class LocationOutboundController {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post(':shipmentId/location-outbound-force-resolutions')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   resolveForce(
     @Param('shipmentId', ParseUUIDPipe) shipmentId: string,

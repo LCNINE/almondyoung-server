@@ -1,4 +1,3 @@
-import { AI_SCOPE } from '../../platform/auth/ai-scopes';
 import type { ComposeRequest } from '../../product-description/services/compose';
 import type { Skill, SkillTool } from '../types';
 import { RequestAbortedError, core, normalizeFileName, toolError, uploadToFileService } from '../types';
@@ -734,7 +733,7 @@ const unpublishProduct: SkillTool = {
 
 export const productCatalogSkill: Skill = {
   name: 'product-catalog',
-  scopes: [AI_SCOPE.ASSISTANT],
+  permissions: ['ai.assistant.use'],
   label: '상품 등록·수정·삭제',
   tools: [
     searchProducts,

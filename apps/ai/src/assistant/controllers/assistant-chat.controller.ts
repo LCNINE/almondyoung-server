@@ -1,12 +1,10 @@
-import { PermissionCheckpoints, RequireScopes, User, RequirePermission } from '@app/authorization';
+import { type Permission, PermissionCheckpoints, User, RequirePermission } from '@app/authorization';
 import { Controller, Logger, Param, Post, Req, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { clientAbortSignal } from '../lib/client-abort';
 import { callerAuthHeaders, readTurn } from '../lib/multipart';
 import { AssistantChatService, type TurnEvent } from '../services/assistant-chat.service';
-import { AI_SCOPE } from '../../platform/auth/ai-scopes';
-import { grantedAiScopes } from '../../platform/auth/granted-scopes';
 
 /**
  * 마지막 프레임에 실을 도구 결과의 상한(자). 클라이언트 파서가 1MB 를 넘으면 던지고,
@@ -30,9 +28,7 @@ function fitToolCalls(toolCalls: unknown): unknown {
 
 @ApiTags('AI 어시스턴트 - 채팅')
 @ApiBearerAuth()
-// 두 스코프 모두 이 엔드포인트로 들어온다. 무엇을 부를 수 있는지는 도구 목록이 가른다.
-@RequireScopes(AI_SCOPE.ASSISTANT, AI_SCOPE.STOREFRONT)
-@ApiResponse({ status: 403, description: 'ai:assistant 또는 ai:storefront 스코프가 필요합니다.' })
+@ApiResponse({ status: 403, description: 'ai.assistant.use 권한이 필요합니다.' })
 @Controller('assistant/sessions')
 export class AssistantChatController {
   private readonly logger = new Logger(AssistantChatController.name);
@@ -60,11 +56,11 @@ export class AssistantChatController {
   ) {
     const turn = await readTurn(request);
     const headers = callerAuthHeaders(request);
-    const grantedScopes = grantedAiScopes(request, this.checkpoints.enforced);
-    const legacy = grantedAiScopes(request, false).includes(AI_SCOPE.ASSISTANT);
-    this.checkpoints.compareDecision('ai.assistant_tools', legacy, request, [
+    const grantedPermissions: readonly Permission[] = this.checkpoints.checkRoute('ai.assistant_tools', request, [
       'ai.assistant.use',
-    ]);
+    ])
+      ? ['ai.assistant.use']
+      : [];
 
     const events = this.service.runTurn({
       userId: user.userId,
@@ -73,7 +69,7 @@ export class AssistantChatController {
       // 여기서 기다릴 것이 없으므로 async 가 아니다 — 타입만 Promise 면 도구 쪽은 그대로 await 한다.
       coreHeaders: (extra?: Record<string, string>) => Promise.resolve({ ...headers, ...extra }),
       signal: clientAbortSignal(reply),
-      grantedScopes,
+      grantedPermissions,
     });
 
     // 첫 이벤트를 받기 전에 헤더를 내보내지 않는다 — 소유 확인이 던지는 404 가

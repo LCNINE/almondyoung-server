@@ -3,7 +3,6 @@ import { Request } from 'express';
 import { InboundReceiptStateReader } from '../../inbound/services/inbound-receipt-state.reader';
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import { ScopeGuard } from '@app/authorization';
 import * as request from 'supertest';
 import { InboundController } from '../../inbound/controllers/inbound.controllers';
 import { InboundPutawayReader } from '../../inbound/services/inbound-putaway.reader';
@@ -74,10 +73,7 @@ describeIfDb('inventory idempotency (DB integration, rollback-only)', () => {
         { provide: InboundPutawayReader, useValue: {} },
         { provide: InboundReceiptStateReader, useValue: {} },
       ],
-    })
-      .overrideGuard(ScopeGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
+    }).compile();
     app = module.createNestApplication();
     app.use((req: Request & { user?: { id: string } }, _res: unknown, next: () => void) => {
       req.user = { id: '00000000-0000-4000-8000-000000000001' };

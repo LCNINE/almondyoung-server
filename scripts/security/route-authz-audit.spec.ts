@@ -30,6 +30,7 @@ interface AuditRow {
   isPublic: boolean;
   inertScope: boolean;
   authz: string | null;
+  classifications: string[];
 }
 
 const WRITE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -61,6 +62,63 @@ describe('라우트 인가 감사', () => {
 
     expect(inert).toEqual([]);
   });
+
+  // core 는 옛 인가 가드 없이 전역 PermissionGuard 하나가 결정한다 — 분류 없는 라우트는 403 이고,
+  // 남은 가드(내부 키)는 열린 라우트 위에만 있다.
+  it('core 의 모든 라우트가 분류돼 있고 옛 가드는 열린 라우트 위에만 남는다', () => {
+    const rows = runAudit('core');
+    const unclassified = rows
+      .filter((r) => r.classifications.length === 0)
+      .map((r) => `${r.verb} ${r.route} (${r.file}:${r.line})`);
+    const guardedPermission = rows
+      .filter((r) => r.classifications.includes('permission') && r.authz !== null)
+      .map((r) => `${r.verb} ${r.route} ${r.authz} (${r.file}:${r.line})`);
+
+    expect(unclassified).toEqual([]);
+    expect(guardedPermission).toEqual([]);
+  });
+
+  // user-service 의 전역 ScopeGuard 는 고객 셀프서비스(@StoreRoute) 라우트의 스코프만 지킨다 — 권한 라우트는
+  // 전역 PermissionGuard 가 결정하고, 남은 가드(내부 키)는 열린 라우트 위에만 있다.
+  it('user-service 의 옛 표식·가드는 권한 라우트가 아닌 곳에만 남는다', () => {
+    const rows = runAudit('user-service');
+    const scoped = rows.filter((r) => r.authz === 'scopes');
+    const guardedPermission = rows
+      .filter((r) => r.classifications.includes('permission') && r.authz !== null)
+      .map((r) => `${r.verb} ${r.route} ${r.authz} (${r.file}:${r.line})`);
+
+    expect(scoped.filter((r) => !r.classifications.includes('store')).map((r) => `${r.verb} ${r.route}`)).toEqual([]);
+    expect(scoped).toHaveLength(20);
+    expect(guardedPermission).toEqual([]);
+  });
+
+  // 나머지 앱도 권한 라우트는 PermissionGuard 하나가 결정한다 — 옛 표식·역할 가드는 남지 않고, 남은 앱 고유
+  // 표시는 열린 라우트(내부 키·고객)의 인증뿐이다. wallet 의 @WalletAdminAuth 는 관리자 경로의 JWT 인증 표시다.
+  it('나머지 앱의 권한 라우트에는 옛 표식·가드가 없다', () => {
+    const rows = runAudit(
+      'notification',
+      'channel-adapter',
+      'membership',
+      'file-service',
+      'ugc-service',
+      'ai',
+      'analytics',
+      'search',
+      'wallet',
+    );
+    const unclassified = rows
+      .filter((r) => r.classifications.length === 0)
+      .map((r) => `${r.app} ${r.verb} ${r.route} (${r.file}:${r.line})`);
+    const guardedPermission = rows
+      .filter((r) => r.classifications.includes('permission') && r.authz !== null)
+      .filter((r) => !(r.app === 'wallet' && r.authz === 'WalletAdminAuth'))
+      .map((r) => `${r.app} ${r.verb} ${r.route} ${r.authz} (${r.file}:${r.line})`);
+    const scoped = rows.filter((r) => r.authz === 'scopes').map((r) => `${r.app} ${r.verb} ${r.route}`);
+
+    expect(unclassified).toEqual([]);
+    expect(guardedPermission).toEqual([]);
+    expect(scoped).toEqual([]);
+  });
 });
 
 /**
@@ -69,17 +127,13 @@ describe('라우트 인가 감사', () => {
  * `/events/trace/*` 무인증 노출 3건을 5개 앱에서 놓친 이유가 이것이다 (#705).
  *
  * 근본 원인은 **공용 라이브러리가 인증 정책을 정하고 있는 것** 자체다. 앱마다 전역 가드가 달라
- * (AdminRealmGuard 기본차단 / ScopeGuard 무표시통과 / WalletAuthGuard API키요구) lib 이 고른
+ * (PermissionGuard 미분류 차단 / ScopeGuard 무표시통과 / WalletAuthGuard API키요구) lib 이 고른
  * 표기 하나가 세 갈래를 동시에 만족시킬 수 없다. 그래서 규칙은 "libs 에 컨트롤러를 두지 않는다"다.
  *
  * 예외를 허용해야 한다면 `LIBS_CONTROLLERS_ALLOWED` 에 **이유와 함께** 추가한다. 그 추가 자체가
  * 리뷰 대상이다.
  */
-const LIBS_CONTROLLERS_ALLOWED: Record<string, string> = {
-  'libs/authorization/src/api/role-scope.controller.ts':
-    'RoleScopeApiModule 을 import 하는 앱이 0개라 실제로 서빙되지 않는다. 등록되더라도 클래스 레벨 ' +
-    '@UseGuards(JwtAuthGuard, MasterRoleGuard) 가 master 전용으로 막는다.',
-};
+const LIBS_CONTROLLERS_ALLOWED: Record<string, string> = {};
 
 interface LibsControllerRow {
   file: string;
@@ -130,17 +184,16 @@ describe('인증 면제 표기 인식', () => {
  * 열려 있었다 (#705). 컨트롤러를 앱 소유로 옮기면서 닫았고, 이 테스트가 그 상태를 못 박는다.
  *
  * 앱마다 통과 조건이 다르다:
- *   channel-adapter · notification — 전역 `AdminRealmGuard` 가 표시 없는 라우트를 직원 전용으로
- *                                   기본 차단한다. 그래서 데코레이터가 **없는 게** 정답이다.
- *   membership · user-service      — 전역 `ScopeGuard` 는 표시가 없으면 통과시킨다. 인가 표시가
- *                                   반드시 있어야 한다.
+ *   channel-adapter · notification · membership · user-service
+ *                                 — 옛 표식 없이 권한 키(`@RequirePermission`)로 전역 `PermissionGuard`
+ *                                   가 결정한다. 분류 없는 라우트는 403 이고, 권한 분류가 인가 표시를 대신한다.
  *   wallet                         — 전역 `WalletAuthGuard` 는 표시가 없으면 API 키를 요구한다.
  *                                   어드민 브라우저는 쿠키를 보내므로 `@WalletAdminAuth()` 가 필요하다.
  */
 const TRACE_APPS = ['channel-adapter', 'notification', 'membership', 'user-service', 'wallet'] as const;
 const TRACE_ROUTES_PER_APP = 3;
 
-/** 전역 가드가 기본 차단인 앱 — 인가 데코레이터 없이도 직원 전용이다. */
+/** 전역 PermissionGuard 가 분류 없는 라우트를 거부하는 앱 — 인가 데코레이터 없이도 직원 전용이다. */
 const DEFAULT_DENY_APPS = new Set<string>(['channel-adapter', 'notification']);
 
 describe('/events/trace/* 인가', () => {
@@ -160,9 +213,9 @@ describe('/events/trace/* 인가', () => {
     expect(publicRoutes).toEqual([]);
   });
 
-  it('기본 차단이 아닌 앱에는 인가 표시가 붙어 있다', () => {
+  it('기본 차단이 아닌 앱에는 인가 표시나 권한 분류가 붙어 있다', () => {
     const unmarked = traceRows()
-      .filter((r) => !DEFAULT_DENY_APPS.has(r.app) && !r.authz)
+      .filter((r) => !DEFAULT_DENY_APPS.has(r.app) && !r.authz && !r.classifications.includes('permission'))
       .map((r) => `${r.app} ${r.verb} ${r.route} (${r.file}:${r.line})`);
 
     expect(unmarked).toEqual([]);

@@ -1,7 +1,6 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpStatus, Logger, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpStatus, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
+import { RequirePermission } from '@app/authorization';
 import { HolderService } from '../services/holder.service';
 import { HolderQueryDto } from '../dto/holder/holder-query.dto';
 import { CreateHolderDto } from '../dto/holder/holder-create.dto';
@@ -10,7 +9,6 @@ import { HolderDto, HolderListResponseDto } from '../dto/holder/holder-response.
 
 @ApiTags('Holder Management')
 @Controller('holders')
-@UseGuards(ScopeGuard)
 export class HolderController {
   private readonly logger = new Logger(HolderController.name);
 
@@ -18,7 +16,6 @@ export class HolderController {
 
   @RequirePermission('inventory.stock.read')
   @Get()
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '재고소유 목록/검색 조회' })
   @ApiResponse({
     status: HttpStatus.OK,
@@ -33,7 +30,6 @@ export class HolderController {
 
   @RequirePermission('inventory.stock.read')
   @Get(':id')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '재고소유 단일 조회' })
   @ApiParam({ name: 'id', description: 'Holder ID' })
   @ApiResponse({
@@ -53,7 +49,6 @@ export class HolderController {
 
   @RequirePermission('inventory.master.write')
   @Post()
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '재고소유 생성' })
   @ApiBody({ type: CreateHolderDto })
   @ApiResponse({
@@ -73,7 +68,6 @@ export class HolderController {
 
   @RequirePermission('inventory.master.write')
   @Put(':id')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '재고소유 수정' })
   @ApiParam({ name: 'id', description: 'Holder ID' })
   @ApiBody({ type: UpdateHolderDto })
@@ -98,7 +92,6 @@ export class HolderController {
 
   @RequirePermission('inventory.master.write')
   @Delete(':id')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '재고소유 삭제' })
   @ApiParam({ name: 'id', description: 'Holder ID' })
   @ApiResponse({

@@ -1,4 +1,4 @@
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { REQUIRED_PERMISSIONS_KEY } from '@app/authorization';
 import { FulfillmentsController } from './fulfillments.controller';
 
 describe('FulfillmentsController V2 admin contract', () => {
@@ -11,8 +11,8 @@ describe('FulfillmentsController V2 admin contract', () => {
     expect(shipmentPlanning.getFulfillmentShipments).toHaveBeenCalledWith('fo-1');
   });
 
-  it.each(['shipments'] as const)('requires warehouse operate scope for %s', (methodName) => {
+  it.each(['shipments'] as const)('requires the shipment read permission for %s', (methodName) => {
     const method = Object.getOwnPropertyDescriptor(FulfillmentsController.prototype, methodName)?.value as object;
-    expect(Reflect.getMetadata('required_scopes', method)).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, method)).toEqual(['fulfillment.shipment.read']);
   });
 });

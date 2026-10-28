@@ -1,7 +1,6 @@
-import { REQUIRED_SCOPES_KEY } from '@app/authorization';
+import { REQUIRED_PERMISSIONS_KEY } from '@app/authorization';
 import { HTTP_CODE_METADATA } from '@nestjs/common/constants';
 import { validateSync } from 'class-validator';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { RecallShipmentDispatchDto } from '../dto/shipment-recall.dto';
 import { ShipmentRecallController, ShipmentRecallOperationController } from './shipment-recall.controller';
 
@@ -15,7 +14,7 @@ describe('ShipmentRecallController', () => {
     reason: 'package_recovered',
   };
 
-  it('requires recall scope and forwards exact attempt, actor and idempotency identity', async () => {
+  it('requires recall permission and forwards exact attempt, actor and idempotency identity', async () => {
     const recall = { report: jest.fn().mockResolvedValue({ operationId: 'operation-1' }) };
     const controller = new ShipmentRecallController(recall as never);
 
@@ -25,7 +24,7 @@ describe('ShipmentRecallController', () => {
     });
 
     const reportHandler: object = Object.getOwnPropertyDescriptor(ShipmentRecallController.prototype, 'report')?.value;
-    expect(Reflect.getMetadata(REQUIRED_SCOPES_KEY, reportHandler)).toEqual([FULFILLMENT_SCOPE.DISPATCH_RECALL]);
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, reportHandler)).toEqual(['fulfillment.dispatch.recall']);
     expect(Reflect.getMetadata(HTTP_CODE_METADATA, reportHandler)).toBe(202);
     expect(recall.report).toHaveBeenCalledWith(shipmentId, attemptId, dto, 'recall-key', {
       id: '33333333-3333-4333-8333-333333333333',
@@ -50,7 +49,7 @@ describe('ShipmentRecallController', () => {
     expect(recall.report).not.toHaveBeenCalled();
   });
 
-  it('exposes the durable operation status under the same recall scope', async () => {
+  it('exposes the durable operation status under the same recall permission', async () => {
     const recall = { getOperation: jest.fn().mockResolvedValue({ operationStatus: 'pending' }) };
     const controller = new ShipmentRecallOperationController(recall as never);
 
@@ -60,7 +59,7 @@ describe('ShipmentRecallController', () => {
       ShipmentRecallOperationController.prototype,
       'get',
     )?.value;
-    expect(Reflect.getMetadata(REQUIRED_SCOPES_KEY, getHandler)).toEqual([FULFILLMENT_SCOPE.DISPATCH_RECALL]);
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, getHandler)).toEqual(['fulfillment.dispatch.recall']);
     expect(recall.getOperation).toHaveBeenCalledWith('44444444-4444-4444-8444-444444444444');
   });
 });

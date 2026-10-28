@@ -1,13 +1,12 @@
 import * as preparationLocks from './outbound-preparation.locks';
 import { SimpleOutboundService } from './simple-outbound.service';
-import { SCOPE_AUTHORIZATION_DECISION_BRAND } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import * as planLocks from '../picking/allocation/allocation.locks';
 import { randomUUID } from 'crypto';
 import { and, eq, inArray, sql as sqlQuery } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { makeDb, seedPickableShipment, wireLogistics } from './__support__';
 import { assembleOutbound, ambientDbService } from './__support__/simple-outbound-wiring';
+import { grantedPermissionDecision } from './__support__/force-dispatch-decision';
 import { cleanupPreparationFixture } from './__support__/outbound-preparation-cleanup';
 import { overlap } from './__support__/committed-overlap';
 import { seedBoxOverSameStock, seedTwoBoxBatch } from './__support__/simple-outbound-fixtures';
@@ -308,11 +307,7 @@ describeDb('outbound preparation committed concurrency', () => {
           },
           actor,
           randomUUID(),
-          {
-            scope: FULFILLMENT_SCOPE.DISPATCH_FORCE,
-            granted: true,
-            [SCOPE_AUTHORIZATION_DECISION_BRAND]: true,
-          },
+          grantedPermissionDecision('fulfillment.dispatch.force'),
           tx,
         );
       });
@@ -459,11 +454,7 @@ describeDb('outbound preparation committed concurrency', () => {
             },
             { id: f.actorId, roles: ['logistics_worker'] },
             randomUUID(),
-            {
-              scope: FULFILLMENT_SCOPE.DISPATCH_FORCE,
-              granted: true,
-              [SCOPE_AUTHORIZATION_DECISION_BRAND]: true,
-            },
+            grantedPermissionDecision('fulfillment.dispatch.force'),
             tx,
           );
         });

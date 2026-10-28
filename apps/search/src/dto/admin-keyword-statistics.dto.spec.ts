@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { AdminRealmGuard, JwtAuthGuard } from '@app/authorization';
+import { JwtAuthGuard, PermissionGuard } from '@app/authorization';
 import { AdminKeywordController } from '../admin-keyword.controller';
 import { AdminKeywordStatisticsQueryDto } from './admin-keyword-statistics.dto';
 
@@ -33,11 +33,10 @@ describe('AdminKeywordStatisticsQueryDto 날짜 검증', () => {
 });
 
 describe('AdminKeywordController 가드 배선', () => {
-  it('JwtAuthGuard 와 AdminRealmGuard 가 컨트롤러 클래스에 걸려 있다', () => {
+  it('JwtAuthGuard 바로 뒤에 PermissionGuard 가 컨트롤러 클래스에 걸려 있다', () => {
     // 모든 서비스가 AUTH_SECRET 을 공유하므로 인증만으로는 고객 토큰도 통과한다.
-    // staff role 강제(AdminRealmGuard)가 빠지면 관리자 통계가 고객에게 열린다.
+    // 권한 판정(PermissionGuard)이 빠지면 관리자 통계가 고객에게 열린다.
     const guards: unknown[] = Reflect.getMetadata('__guards__', AdminKeywordController) ?? [];
-    expect(guards).toContain(JwtAuthGuard);
-    expect(guards).toContain(AdminRealmGuard);
+    expect(guards).toEqual([JwtAuthGuard, PermissionGuard]);
   });
 });

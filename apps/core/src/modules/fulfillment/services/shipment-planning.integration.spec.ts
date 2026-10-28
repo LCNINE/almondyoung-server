@@ -51,7 +51,6 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
       logistics.shipmentReservations,
       new FulfillmentInvariantService(),
       new AuditService(dbService),
-      { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
       new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
       assembleBoxWithdrawal(dbService),
       createCheckpointsForTesting(),

@@ -1,16 +1,16 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AdminRealmGuard, JwtAuthGuard, RequirePermission, PermissionGuard } from '@app/authorization';
+import { JwtAuthGuard, RequirePermission, PermissionGuard } from '@app/authorization';
 import { ProfitQuery, ProfitStatistics } from '../read-model/profit.query';
 import { ProfitStatisticsQueryDto } from './statistics-query.dto';
 
 /**
  * 이익(수익성) 통계. admin-web 프록시를 통해서만 호출된다.
- * 신설 라우트 관례대로 AdminRealmGuard 로 staff 를 강제한다.
+ * 판정은 JwtAuthGuard 뒤의 PermissionGuard 가 라우트의 권한 키로 한다.
  */
 @ApiTags('Statistics')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('statistics')
 export class ProfitController {
   constructor(private readonly profitQuery: ProfitQuery) {}

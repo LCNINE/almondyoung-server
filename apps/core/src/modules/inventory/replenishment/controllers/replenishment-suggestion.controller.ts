@@ -1,7 +1,6 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
+import { RequirePermission } from '@app/authorization';
 import { ReplenishmentSuggestionService } from '../suggestion/replenishment-suggestion.service';
 import {
   ListSuggestionsQueryDto,
@@ -14,13 +13,11 @@ import {
  */
 @ApiTags('Inventory - Replenishment')
 @Controller('replenishment')
-@UseGuards(ScopeGuard)
 export class ReplenishmentSuggestionController {
   constructor(private readonly service: ReplenishmentSuggestionService) {}
 
   @RequirePermission('inventory.master.read')
   @Get('suggestions')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: '보충 제안 목록 — 발주 제안과 이동 제안',
     description:
@@ -35,7 +32,6 @@ export class ReplenishmentSuggestionController {
 
   @RequirePermission('inventory.master.read')
   @Get('skus/:skuId')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: 'SKU 한 건의 보충 판정 — 제안이 없어도, 제외된 SKU 여도 행을 준다',
     description: '프로필 드로어용. 수요 프로필과 적용된 유효 파라미터(α · L1 · L2 · 커버)를 함께 낸다.',

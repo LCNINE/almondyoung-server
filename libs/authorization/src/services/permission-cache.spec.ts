@@ -26,7 +26,6 @@ const snapshot = (version: string, roles: Record<string, string[]>): SnapshotFet
 
 const options: PermissionRuntimeOptions = {
   service: 'core',
-  enforce: false,
   refreshIntervalMs: 30_000,
   retryBaseMs: 1_000,
   summaryIntervalMs: 300_000,

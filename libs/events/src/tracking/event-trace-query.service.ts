@@ -21,7 +21,7 @@ const MAX_LIMIT = 100;
  * `/events/trace/*` 응답 정형. 라우팅·인증은 앱 소유다.
  *
  * 왜 컨트롤러가 여기 없는가 — 이 API 를 서빙하는 앱이 5개인데 전역 가드가 앱마다 다르다
- * (channel-adapter·notification = `AdminRealmGuard` 기본차단 / membership·user-service =
+ * (channel-adapter·notification = `PermissionGuard` 미분류 차단 / membership·user-service =
  * `ScopeGuard` 무표시 통과 / wallet = `WalletAuthGuard` API 키 요구). 라이브러리가 인증 표기를
  * 하나 고르면 세 갈래 중 둘이 깨진다. 실제로 옛 `EventTraceController` 는 `isPublic` 을 골랐고,
  * 그게 5개 앱 전부에서 인터넷 무인증 노출이 됐다 (#705).

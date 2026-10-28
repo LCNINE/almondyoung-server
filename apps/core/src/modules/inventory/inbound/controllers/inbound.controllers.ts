@@ -1,9 +1,8 @@
 import { WarehouseActor, warehouseOperationContext } from '../../core/services/warehouse-operation-contract';
-import { Controller, Post, Body, Get, Query, Param, BadRequestException, Headers, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Get, Query, Param, BadRequestException, Headers } from '@nestjs/common';
 import { isUUID } from 'class-validator';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
+import { User, RequirePermission } from '@app/authorization';
 import { InboundService } from '../services/inbound.service';
 import { InboundReceiptStateReader } from '../services/inbound-receipt-state.reader';
 import { ReceiptLineState } from '../dto/inbound-receipt-state.dto';
@@ -27,11 +26,9 @@ import { InboundReceiptsQueryDto } from '../dto/inbound-receipts-query.dto';
 
 @ApiTags('Inbound')
 @Controller('inbound')
-@UseGuards(ScopeGuard)
 export class InboundController {
   @RequirePermission('inventory.stock.operate')
   @Post('simple')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '간편입고 - SKU 리스트를 지정 위치로 즉시 입고' })
   @ApiResponse({ status: 201, description: '입고가 성공적으로 처리되었습니다.', type: SimpleInboundResponseDto })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
@@ -47,7 +44,6 @@ export class InboundController {
 
   @RequirePermission('inventory.stock.operate')
   @Post('simple-fullscan')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '전수조사 간편입고 - (서버는 간편입고와 동일 처리, 기록만 구분)' })
   @ApiResponse({
     status: 201,
@@ -70,14 +66,12 @@ export class InboundController {
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   @RequirePermission('inventory.stock.operate')
   @Post('lines/:lineId/memo')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   async updateInboundLineMemo(@Param('lineId') lineId: string, @Body() dto: UpdateInboundLineMemoDto) {
     return this.inboundService.updateInboundLineMemo(lineId, dto);
   }
 
   @RequirePermission('inventory.stock.operate')
   @Post('individual')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '개별입고 - 단일 SKU를 지정(옵션) 로케로 입고' })
   @ApiResponse({
     status: 201,
@@ -103,7 +97,6 @@ export class InboundController {
 
   @RequirePermission('inventory.stock.read')
   @Get('lines/:lineId/state')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '입고 라인의 현재 처리 상태' })
   @ApiQuery({ name: 'warehouseId', required: true })
   @ApiResponse({ status: 200, type: ReceiptLineState })
@@ -121,7 +114,6 @@ export class InboundController {
 
   @RequirePermission('inventory.stock.read')
   @Get('history')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '입고 실적 조회' })
   @ApiQuery({ name: 'skuId', required: false, description: 'SKU ID' })
   @ApiQuery({ name: 'warehouseId', required: false, description: '창고 ID' })
@@ -138,7 +130,6 @@ export class InboundController {
 
   @RequirePermission('inventory.stock.operate')
   @Post('verify-barcode')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '입고 검수 - 바코드 스캔' })
   @ApiResponse({ status: 200, description: '바코드가 성공적으로 검증되었습니다.' })
   @ApiResponse({ status: 404, description: '바코드에 해당하는 SKU를 찾을 수 없습니다.' })
@@ -150,7 +141,6 @@ export class InboundController {
 
   @RequirePermission('inventory.stock.read')
   @Get('receipts')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '회차별 입고내역 조회 - 전체 라인 포함' })
   @ApiResponse({
     status: 200,
@@ -170,7 +160,6 @@ export class InboundController {
 
   @RequirePermission('inventory.stock.read')
   @Get('work-logs')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '입고 작업 타임라인 조회 (INBOUND/PUTAWAY/RETURN/CANCEL)' })
   @ApiQuery({ name: 'warehouseId', required: false })
   @ApiQuery({ name: 'skuId', required: false })
@@ -205,7 +194,6 @@ export class InboundController {
 
   @RequirePermission('inventory.stock.read')
   @Get('status')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '집계 입고현황(확정수량) 조회' })
   @ApiQuery({ name: 'skuId', required: false })
   @ApiQuery({ name: 'warehouseId', required: false })
@@ -234,7 +222,6 @@ export class InboundController {
 
   @RequirePermission('inventory.stock.read')
   @Get('putaway/pending')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '적치 대기 조회 — 시스템 존에 남은 미적치 잔량' })
   @ApiQuery({ name: 'warehouseId', required: true })
   @ApiQuery({
@@ -292,7 +279,6 @@ export class InboundController {
 
   @RequirePermission('inventory.stock.operate')
   @Post('putaway')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '입고 적치(즉시 이동): 원위치에서 목적지로 즉시 이동' })
   @ApiResponse({ status: 201, description: '적치가 성공적으로 처리되었습니다.' })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
@@ -307,7 +293,6 @@ export class InboundController {
 
   @RequirePermission('inventory.stock.operate')
   @Post('return')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '입고 회송: 원위치 잔량에서 차감' })
   @ApiResponse({ status: 201, description: '회송이 성공적으로 처리되었습니다.' })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
@@ -322,7 +307,6 @@ export class InboundController {
 
   @RequirePermission('inventory.stock.operate')
   @Post('cancel')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '입고 취소: 오입고 정정, 원위치 잔량에서 차감' })
   @ApiResponse({ status: 201, description: '입고취소가 성공적으로 처리되었습니다.' })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })

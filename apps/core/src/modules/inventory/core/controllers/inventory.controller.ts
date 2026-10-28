@@ -1,9 +1,8 @@
 import { InventoryIdempotencyService } from '../services/inventory-idempotency.service';
 import { WarehouseActor, warehouseOperationContext, warehouseRequest } from '../services/warehouse-operation-contract';
-import { BadRequestException, Body, Controller, HttpCode, HttpStatus, Headers, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, HttpCode, HttpStatus, Headers, Post } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
+import { User, RequirePermission } from '@app/authorization';
 import { StockEventService } from '../services/stock-event.service';
 import { InventoryCommandService } from '../services/inventory-command.service';
 import { AdjustStockDto } from '../dto/inventory/adjust-stock.dto';
@@ -11,7 +10,6 @@ import { CreateStockEntryBySkuIdDto } from '../../inbound/dto/create-stock-entry
 
 @ApiTags('Inventory')
 @Controller('inventory')
-@UseGuards(ScopeGuard)
 export class InventoryController {
   constructor(
     private readonly stockEventService: StockEventService,
@@ -26,7 +24,6 @@ export class InventoryController {
   @RequirePermission('inventory.stock.adjust')
   @Post('/stocks/adjust')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({ summary: '재고 수량 조정 (관리자 수동 조정)' })
   @ApiResponse({ status: 200, description: '재고 수량이 성공적으로 조정되었습니다.' })
   @ApiResponse({ status: 400, description: '잘못된 요청 또는 유효성 검사 실패.' })
@@ -82,7 +79,6 @@ export class InventoryController {
 
   @RequirePermission('inventory.stock.adjust')
   @Post('/stocks/entry-safe')
-  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({
     summary: '안전한 재고 입고 (SKU ID 기반)',
     description: '기존 SKU ID로만 재고를 입고합니다. 자동 SKU 생성을 하지 않아 데이터 무결성을 보장합니다.',

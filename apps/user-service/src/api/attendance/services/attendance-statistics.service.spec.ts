@@ -1,7 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
-import { MasterRoleGuard } from '@app/authorization';
+import { REQUIRED_PERMISSIONS_KEY } from '@app/authorization';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { AttendanceStatisticsController } from '../controllers/attendance-statistics.controller';
+import { ActiveAttendanceStaffGuard } from '../guards/active-attendance-staff.guard';
 import { monthlyRange, summarizeMonth } from './attendance-statistics.service';
 
 describe('monthly attendance statistics', () => {
@@ -88,9 +89,14 @@ describe('monthly attendance statistics', () => {
     expect(result.people[0]).toMatchObject({ recordedDays: 0, recordedMinutes: 0 });
   });
 
-  it('protects the monthly endpoint with the master role guard', () => {
+  it('protects the monthly endpoint with the statistics permission and keeps the staff guard', () => {
     const guards = Reflect.getMetadata(GUARDS_METADATA, AttendanceStatisticsController);
 
-    expect(guards).toContain(MasterRoleGuard);
+    expect(guards).toEqual([ActiveAttendanceStaffGuard]);
+    // Metadata inspection reads the method reference without invoking it or losing its receiver.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, AttendanceStatisticsController.prototype.monthly)).toEqual([
+      'attendance.statistics.read',
+    ]);
   });
 });

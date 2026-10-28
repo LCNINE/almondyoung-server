@@ -1,16 +1,6 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Headers,
-  Inject,
-  Post,
-  UnauthorizedException,
-  UseGuards,
-} from '@nestjs/common';
+import { BadRequestException, Body, Controller, Headers, Inject, Post, UnauthorizedException } from '@nestjs/common';
 import { ApiCreatedResponse, ApiHeader, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { User, RequirePermission } from '@app/authorization';
 import { AssignToteDto, RegisterToteDto, ReleaseToteDto, ToteHandoffDto, ToteScanDto } from '../dto/tote.dto';
 import {
   PickingActor,
@@ -44,13 +34,11 @@ interface ToteCommandAdapter {
 
 @ApiTags('Picking V2 Totes')
 @Controller('picking/v2/totes')
-@UseGuards(ScopeGuard)
 export class ToteController {
   constructor(@Inject(PickingProcessService) private readonly picking: ToteCommandAdapter) {}
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('registrations')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiCreatedResponse({ description: 'Physical tote barcode registered for a warehouse' })
   register(
@@ -67,7 +55,6 @@ export class ToteController {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('assignments')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiCreatedResponse({ description: 'Physical tote assigned to shipment work' })
   assign(
@@ -84,7 +71,6 @@ export class ToteController {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('scans')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiCreatedResponse({ description: 'Allocated source custody moved into the assigned physical tote' })
   scan(
@@ -103,7 +89,6 @@ export class ToteController {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('handoffs')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiCreatedResponse({ description: 'Empty physical tote reassigned to different shipment work' })
   handoff(
@@ -120,7 +105,6 @@ export class ToteController {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('releases')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiCreatedResponse({ description: 'Empty or settled physical tote released while preserving assignment history' })
   release(

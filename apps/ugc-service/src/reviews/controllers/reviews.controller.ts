@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, HttpCode, HttpStatus, Param, Patch, Post, Get, Query } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags, ApiQuery } from '@nestjs/swagger';
-import { Public, RequireScopes, User, StoreRoute, RequirePermission, PiiResponse } from '@app/authorization';
+import { Public, User, StoreRoute, RequirePermission, PiiResponse } from '@app/authorization';
 import { ReviewsService } from '../services/reviews.service';
 import { AdminReviewResponseDto } from '../dto/admin-review-response.dto';
 import { AdminCreateReviewDto, CreateReviewDto } from '../dto/create-review.dto';
@@ -168,7 +168,6 @@ export class ReviewsController {
   @PiiResponse({ fields: { legacy_author_name: 'name' }, subjects: [{ path: 'id', type: 'review' }] })
   @RequirePermission('cs.review.moderate')
   @Post('admin/reviews')
-  @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '리뷰 수기 작성 (관리자) — 다른 채널 고객 후기를 옮겨 적는다' })
   @ApiBody({ type: AdminCreateReviewDto })
   @ApiResponse({ status: HttpStatus.CREATED, description: '작성 성공', type: AdminReviewResponseDto })
@@ -186,7 +185,6 @@ export class ReviewsController {
   @PiiResponse({ fields: { 'data[].legacy_author_name': 'name' }, subjects: [{ path: 'data[].id', type: 'review' }] })
   @RequirePermission('cs.review.read')
   @Get('admin/reviews')
-  @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '전체 리뷰 목록 조회 (관리자)' })
   @ApiQuery({
     name: 'status',
@@ -236,7 +234,6 @@ export class ReviewsController {
 
   @RequirePermission('cs.review.read')
   @Get('admin/reviews/stats/daily')
-  @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '일별 리뷰 작성 수 (관리자) — 작성일 KST 귀속, 삭제 제외' })
   async getDailyReviewCounts(@Query() query: DailyRangeQueryDto) {
     return this.reviewsService.getDailyCountsForAdmin(query.from, query.to);
@@ -245,7 +242,6 @@ export class ReviewsController {
   @PiiResponse({ fields: { legacy_author_name: 'name' }, subjects: [{ param: 'id', type: 'review' }], reveal: true })
   @RequirePermission('cs.review.read')
   @Get('admin/reviews/:id')
-  @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '리뷰 상세 조회 (관리자)' })
   @ApiParam({ name: 'id', description: '리뷰 ID (UUID)' })
   @ApiResponse({ status: HttpStatus.OK, description: '리뷰 상세 조회 성공', type: AdminReviewResponseDto })
@@ -257,7 +253,6 @@ export class ReviewsController {
 
   @RequirePermission('cs.review.moderate')
   @Patch('admin/reviews/:id/status')
-  @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '리뷰 상태 변경 (활성/숨김)' })
   @ApiParam({ name: 'id', description: '리뷰 ID (UUID)' })
   @ApiBody({ type: UpdateReviewStatusDto })
@@ -270,7 +265,6 @@ export class ReviewsController {
 
   @RequirePermission('cs.review.moderate')
   @Delete('admin/reviews/:id')
-  @RequireScopes('admin:ugc:modify')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '리뷰 삭제 (관리자, soft delete)' })
   @ApiParam({ name: 'id', description: '리뷰 ID (UUID)' })
@@ -351,7 +345,6 @@ export class ReviewsController {
 
   @RequirePermission('cs.review.moderate')
   @Post(':id/comment')
-  @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '리뷰 관리자 댓글 작성' })
   @ApiParam({
     name: 'id',
@@ -377,7 +370,6 @@ export class ReviewsController {
 
   @RequirePermission('cs.review.moderate')
   @Patch(':id/comment')
-  @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '리뷰 관리자 댓글 수정' })
   @ApiParam({
     name: 'id',
@@ -402,7 +394,6 @@ export class ReviewsController {
 
   @RequirePermission('cs.review.moderate')
   @Delete(':id/comment')
-  @RequireScopes('admin:ugc:modify')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: '리뷰 관리자 댓글 삭제' })
   @ApiParam({

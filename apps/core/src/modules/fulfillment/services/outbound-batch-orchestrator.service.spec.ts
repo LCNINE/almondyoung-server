@@ -1,13 +1,12 @@
 import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { GUARDS_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import {
-  REQUIRED_SCOPES_KEY,
+  REQUIRED_PERMISSIONS_KEY,
   checkpointEvaluations,
   createCheckpointsForTesting,
   PermissionCheckpoints,
 } from '@app/authorization';
 import { register } from 'prom-client';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { OutboundBatchV2Controller } from '../controllers/outbound-batch-v2.controller';
 import { OutboundBatchOrchestrator } from './outbound-batch-orchestrator.service';
 
@@ -156,14 +155,14 @@ describe('OutboundBatchOrchestrator policy', () => {
 
 describe('OutboundBatchV2Controller contract', () => {
   const metadata = (method: keyof OutboundBatchV2Controller) =>
-    Reflect.getMetadata(REQUIRED_SCOPES_KEY, OutboundBatchV2Controller.prototype[method]);
+    Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, OutboundBatchV2Controller.prototype[method]);
 
-  it('registers static V2 routes under ScopeGuard with warehouse operate scope', () => {
-    expect(Reflect.getMetadata(GUARDS_METADATA, OutboundBatchV2Controller)).toHaveLength(1);
+  it('registers static V2 routes with the warehouse operate permission and no legacy guard', () => {
+    expect(Reflect.getMetadata(GUARDS_METADATA, OutboundBatchV2Controller)).toBeUndefined();
     expect(Reflect.getMetadata(PATH_METADATA, OutboundBatchV2Controller.prototype.create)).toBe('outbound-batches/v2');
-    expect(metadata('create')).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
-    expect(metadata('addShipment')).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
-    expect(metadata('handoff')).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
+    expect(metadata('create')).toEqual(['fulfillment.warehouse.operate']);
+    expect(metadata('addShipment')).toEqual(['fulfillment.warehouse.operate']);
+    expect(metadata('handoff')).toEqual(['fulfillment.warehouse.operate']);
   });
 
   it('takes self-claim identity and audit actor from JWT rather than request body', async () => {

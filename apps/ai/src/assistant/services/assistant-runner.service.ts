@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import type { Permission } from '@app/authorization';
 import { buildSystemPrompt, buildToolDefinitions, runTool } from '../../skills/registry';
 import type { SkillAttachment, SkillContext } from '../../skills/types';
 import { buildDateTimeContext } from '../lib/chat-datetime';
@@ -34,10 +35,9 @@ export type RunInput = {
   /** 이번 턴의 사용자 발화. 이미 DB 에 저장된 뒤 넘어온다. */
   history: Message[];
   /**
-   * 이 요청이 가드에서 통과받은 스코프. 모델 앞에 놓일 도구를 여기서 가른다 —
-   * 어드민과 고객이 같은 엔드포인트로 들어와도 부를 수 있는 것이 달라야 한다.
+   * 이 요청이 라우트에서 판정받은 권한. 모델 앞에 놓일 도구를 여기서 가른다.
    */
-  grantedScopes: readonly string[];
+  grantedPermissions: readonly Permission[];
   attachments: SkillAttachment[];
   coreHeaders: SkillContext['coreHeaders'];
   signal: AbortSignal;
@@ -47,8 +47,8 @@ export type RunInput = {
 };
 
 /** 스킬의 provider 중립 정의를 OpenAI function 형식으로 옮긴다. */
-function toOpenAiTools(grantedScopes: readonly string[]): OpenAI.Chat.Completions.ChatCompletionTool[] {
-  return buildToolDefinitions(grantedScopes).map((t) => ({
+function toOpenAiTools(grantedPermissions: readonly Permission[]): OpenAI.Chat.Completions.ChatCompletionTool[] {
+  return buildToolDefinitions(grantedPermissions).map((t) => ({
     type: 'function',
     function: {
       name: t.name,
@@ -65,18 +65,18 @@ export class AssistantRunnerService {
   constructor(private readonly uploadedFiles: UploadedFileRepository) {}
 
   /**
-   * 스코프 조합별 도구 정의. 조합은 몇 개뿐이고 프로세스 수명 동안 바뀌지 않으므로
+   * 권한 조합별 도구 정의. 조합은 몇 개뿐이고 프로세스 수명 동안 바뀌지 않으므로
    * 한 번 만들어 재사용한다 — 매 요청 다시 만들면 같은 JSON 을 반복해 직렬화할 뿐이다.
    */
-  private readonly toolsByScope = new Map<string, OpenAI.Chat.Completions.ChatCompletionTool[]>();
+  private readonly toolsByPermissions = new Map<string, OpenAI.Chat.Completions.ChatCompletionTool[]>();
 
-  private toolsFor(grantedScopes: readonly string[]): OpenAI.Chat.Completions.ChatCompletionTool[] {
-    const key = [...grantedScopes].sort().join('|');
-    const cached = this.toolsByScope.get(key);
+  private toolsFor(grantedPermissions: readonly Permission[]): OpenAI.Chat.Completions.ChatCompletionTool[] {
+    const key = [...grantedPermissions].sort().join('|');
+    const cached = this.toolsByPermissions.get(key);
     if (cached) return cached;
 
-    const tools = toOpenAiTools(grantedScopes);
-    this.toolsByScope.set(key, tools);
+    const tools = toOpenAiTools(grantedPermissions);
+    this.toolsByPermissions.set(key, tools);
     return tools;
   }
 
@@ -85,7 +85,7 @@ export class AssistantRunnerService {
    * HTTP 를 모르는 곳에 루프를 두면 테스트가 쉽고, 나중에 큐 워커에서도 같은 코드를 쓴다.
    */
   async *run(input: RunInput): AsyncGenerator<RunEvent> {
-    const { history, attachments, coreHeaders, signal, grantedScopes } = input;
+    const { history, attachments, coreHeaders, signal, grantedPermissions } = input;
 
     const ctx: SkillContext = {
       coreHeaders,
@@ -102,7 +102,7 @@ export class AssistantRunnerService {
 
     // system 은 매번 서버가 새로 붙인다 — 지시문을 고치면 진행 중인 대화에도 바로 반영된다.
     const messages: Message[] = [
-      { role: 'system', content: buildSystemPrompt(grantedScopes) },
+      { role: 'system', content: buildSystemPrompt(grantedPermissions) },
       ...history.filter((m) => m.role !== 'system'),
     ];
 
@@ -162,7 +162,7 @@ export class AssistantRunnerService {
           {
             model: model(),
             messages,
-            tools: this.toolsFor(grantedScopes),
+            tools: this.toolsFor(grantedPermissions),
             stream: true,
             // 스트리밍은 기본적으로 usage 를 안 준다. 비용 추적이 끊기지 않게 켠다.
             stream_options: { include_usage: true },
@@ -252,7 +252,7 @@ export class AssistantRunnerService {
 
           let result: unknown;
           try {
-            result = await runTool(call.name, toolInput, ctx, grantedScopes);
+            result = await runTool(call.name, toolInput, ctx, grantedPermissions);
           } catch (toolError) {
             if (aborted() || (toolError as Error)?.name === 'AbortError') {
               yield { type: 'settled', event: 'aborted', payload: snapshot() };

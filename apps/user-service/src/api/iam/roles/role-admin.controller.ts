@@ -1,4 +1,4 @@
-import { RequirePermission, RequireScopes } from '@app/authorization';
+import { RequirePermission } from '@app/authorization';
 import {
   Body,
   Controller,
@@ -25,7 +25,6 @@ import {
 } from './dto/role-admin.dto';
 import { RoleAdminService } from './role-admin.service';
 
-// 판정 주체가 바뀌기 전까지는 옛 표식(@RequireScopes)이 결과를 정한다 — 지금처럼 시스템 역할만.
 @ApiTags('Admin/Roles')
 @ApiBearerAuth('access-token')
 @Controller('admin/roles')
@@ -35,7 +34,6 @@ export class RoleAdminController {
   @ApiOperation({ summary: '역할 목록(고객 역할 포함 — audience 로 구분)' })
   @RequirePermission('iam.role.read')
   @Get()
-  @RequireScopes('master')
   list(): Promise<RoleSummaryDto[]> {
     return this.service.list();
   }
@@ -43,7 +41,6 @@ export class RoleAdminController {
   @ApiOperation({ summary: '역할 상세(권한 포함)' })
   @RequirePermission('iam.role.read')
   @Get(':roleId')
-  @RequireScopes('master')
   detail(@Param('roleId', ParseUUIDPipe) roleId: string): Promise<RoleDetailDto> {
     return this.service.detail(roleId);
   }
@@ -51,7 +48,6 @@ export class RoleAdminController {
   @ApiOperation({ summary: '역할 만들기(복제 포함)' })
   @RequirePermission('iam.role.write')
   @Post()
-  @RequireScopes('master')
   create(@CurrentIamActor() actor: IamActor, @Body() dto: CreateRoleDto): Promise<RoleDetailDto> {
     return this.service.create(actor, dto);
   }
@@ -59,7 +55,6 @@ export class RoleAdminController {
   @ApiOperation({ summary: '역할 표시 이름·설명·첫 화면 수정' })
   @RequirePermission('iam.role.write')
   @Patch(':roleId')
-  @RequireScopes('master')
   update(
     @CurrentIamActor() actor: IamActor,
     @Param('roleId', ParseUUIDPipe) roleId: string,
@@ -71,7 +66,6 @@ export class RoleAdminController {
   @ApiOperation({ summary: '역할 권한 전체 교체(버전이 다르면 409)' })
   @RequirePermission('iam.role.write')
   @Put(':roleId/permissions')
-  @RequireScopes('master')
   replacePermissions(
     @CurrentIamActor() actor: IamActor,
     @Param('roleId', ParseUUIDPipe) roleId: string,
@@ -84,7 +78,6 @@ export class RoleAdminController {
   @RequirePermission('iam.role.write')
   @Delete(':roleId')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequireScopes('master')
   delete(
     @CurrentIamActor() actor: IamActor,
     @Param('roleId', ParseUUIDPipe) roleId: string,

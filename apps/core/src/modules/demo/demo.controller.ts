@@ -1,7 +1,6 @@
-import { Body, Controller, Get, HttpCode, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../platform/auth/inventory-scopes';
+import { User, RequirePermission } from '@app/authorization';
 import { DemoPracticeService, parsePracticeRequest } from './demo-practice.service';
 import { DemoReplenishmentService } from './demo-replenishment.service';
 import { parseDemoReplenishmentRequest } from './demo-replenishment.input';
@@ -10,8 +9,6 @@ import { DemoCatalogService, parseDemoCatalogQuery } from './demo-catalog.servic
 
 @ApiTags('Demo')
 @Controller('demo')
-@UseGuards(ScopeGuard)
-@RequireScopes(INVENTORY_SCOPE.MANAGE)
 export class DemoController {
   constructor(
     private readonly service: DemoService,

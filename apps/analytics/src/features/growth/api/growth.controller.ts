@@ -1,6 +1,6 @@
 import { BadRequestException, Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AdminRealmGuard, JwtAuthGuard, RequirePermission, PermissionGuard } from '@app/authorization';
+import { JwtAuthGuard, RequirePermission, PermissionGuard } from '@app/authorization';
 import { toSeoulDateOnly } from '../../../shared/date.util';
 import { daysBetweenInclusive } from '../domain/period';
 import { CustomerFlowQuery } from '../read-model/customer-flow.query';
@@ -18,7 +18,7 @@ const MAX_RANGE_DAYS = 400;
  */
 @ApiTags('Statistics')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('statistics')
 export class GrowthController {
   constructor(

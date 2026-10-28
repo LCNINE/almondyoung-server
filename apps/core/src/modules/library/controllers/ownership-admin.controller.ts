@@ -1,16 +1,6 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  Param,
-  ParseUUIDPipe,
-  Post,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RolesGuard, RequirePermission } from '@app/authorization';
+import { RequirePermission } from '@app/authorization';
 
 import { OwnershipService } from '../services/ownership.service';
 import {
@@ -24,7 +14,6 @@ import {
 
 @ApiTags('Library / Admin Ownerships')
 @ApiBearerAuth()
-@UseGuards(RolesGuard('master', 'admin'))
 @Controller('library/admin/ownerships')
 export class OwnershipAdminController {
   constructor(private readonly service: OwnershipService) {}

@@ -1,7 +1,6 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
+import { RequirePermission } from '@app/authorization';
 import { BarcodeService } from '../services/barcode.service';
 import {
   GenerateBarcodeImageDto,
@@ -13,14 +12,12 @@ import {
 
 @ApiTags('Barcode Generation')
 @Controller('barcode-generation')
-@UseGuards(ScopeGuard)
 export class BarcodeGenerationController {
   constructor(private readonly barcodeService: BarcodeService) {}
 
   @RequirePermission('inventory.master.write')
   @Post('custom')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: '사용자 정의 바코드 이미지 생성 (Generate custom barcode image)',
     description: 'Generate a barcode image for any custom value with specified format',
@@ -46,7 +43,6 @@ export class BarcodeGenerationController {
   @RequirePermission('inventory.master.write')
   @Post('sku')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: 'SKU 바코드 이미지 생성 (Generate SKU barcode image)',
     description: 'Generate a barcode image for a SKU with format SKU-{uuid}',
@@ -68,7 +64,6 @@ export class BarcodeGenerationController {
   @RequirePermission('inventory.master.write')
   @Post('location')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: '로케이션 바코드 이미지 생성 (Generate location barcode image)',
     description: 'Generate a barcode image for a location with format LOC-{code}',
@@ -90,7 +85,6 @@ export class BarcodeGenerationController {
   @RequirePermission('inventory.master.write')
   @Post('fulfillment-order')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: '풀필먼트 오더 바코드 이미지 생성 (Generate FO barcode image)',
     description: 'Generate a barcode image for a fulfillment order with format FO-{uuid}',
@@ -114,7 +108,6 @@ export class BarcodeGenerationController {
   @RequirePermission('inventory.master.write')
   @Post('validate')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: '바코드 포맷 검증 (Validate barcode format)',
     description: 'Validate if a value is compatible with a specific barcode format',

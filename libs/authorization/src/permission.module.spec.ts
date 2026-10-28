@@ -1,10 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host';
 import { RequirePermission } from './decorators/require-permission.decorator';
-import { RolesGuard } from './guards/master-role.guard';
-import { PermissionAuthority } from './services/permission-authority';
 import { Test } from '@nestjs/testing';
 import { AuthzObserverGuard } from './guards/authz-observer.guard';
 import { PermissionGuard } from './guards/permission.guard';
@@ -25,6 +23,22 @@ class StubSource extends RolePermissionSource {
   }
 }
 
+/** 역할 `intern` 은 아무 권한도 없다 — 사본은 있으니 판정은 «권한 없음»(403)이다. */
+class ReadySource extends RolePermissionSource {
+  isConfigured(): boolean {
+    return true;
+  }
+
+  async fetch(): Promise<SnapshotFetch> {
+    return { status: 'loaded', snapshot: { version: 'v1', roles: new Map([['intern', []]]) } };
+  }
+}
+
+class Routes {
+  @RequirePermission('order.order.read')
+  read(): void {}
+}
+
 describe('PermissionModule', () => {
   const build = (env: Record<string, string>) =>
     Test.createTestingModule({
@@ -34,13 +48,11 @@ describe('PermissionModule', () => {
       ],
     }).compile();
 
-  it('wires the runtime with enforcement off by default', async () => {
+  it('wires the runtime', async () => {
     const module = await build({});
-    expect(module.get<PermissionRuntimeOptions>(PERMISSION_RUNTIME_OPTIONS)).toMatchObject({
-      service: 'core',
-      enforce: false,
-      refreshIntervalMs: 30_000,
-    });
+    const options = module.get<PermissionRuntimeOptions>(PERMISSION_RUNTIME_OPTIONS);
+    expect(options).toMatchObject({ service: 'core', refreshIntervalMs: 30_000 });
+    expect(Object.keys(options)).not.toContain('enforce');
     expect(module.get(PermissionGuard)).toBeInstanceOf(PermissionGuard);
     expect(module.get(PermissionCache).status().state).toBe('disabled');
   });
@@ -78,35 +90,39 @@ describe('PermissionModule', () => {
     expect(module.get(UsesCheckpoints).checkpoints).toBeInstanceOf(PermissionCheckpoints);
   });
 
-  it('turns enforcement on only for the exact value true', async () => {
-    const enforced = async (value: string) =>
-      (await build({ AUTHZ_ENFORCE: value })).get<PermissionRuntimeOptions>(PERMISSION_RUNTIME_OPTIONS).enforce;
-    expect(await enforced('true')).toBe(true);
-    expect(await enforced('1')).toBe(false);
-  });
-
-  it('exports the authority for app-level guards', async () => {
-    class Routes {
-      @RequirePermission('order.order.read')
-      read(): void {}
-    }
-    const AdminOnly = RolesGuard('admin', 'master');
-    const module = await Test.createTestingModule({
-      imports: [
-        ConfigModule.forRoot({ ignoreEnvFile: true, ignoreEnvVars: true, load: [() => ({ AUTHZ_ENFORCE: 'true' })] }),
-        PermissionModule.forRoot({ service: 'core', source: StubSource }),
-      ],
-      providers: [AdminOnly],
-    }).compile();
-    const context = new ExecutionContextHost([{ user: { userId: 'u', sub: 'u', roles: ['intern'] } }, {}], Routes, Routes.prototype.read);
-    context.setType('http');
-    expect(module.get(PermissionAuthority).enforced).toBe(true);
-    expect(module.get(AdminOnly).canActivate(context)).toBe(true);
-  });
+  // 판정은 설정으로 끌 수 없다 — 옛 스위치 값이 무엇이든 권한 없는 호출은 거부된다.
+  it.each([[{}], [{ AUTHZ_ENFORCE: 'false' }], [{ AUTHZ_ENFORCE: '' }]])(
+    'refuses a caller without the permission whatever the old switch says (%j)',
+    async (env: Record<string, string>) => {
+      const module = await Test.createTestingModule({
+        imports: [
+          ConfigModule.forRoot({ ignoreEnvFile: true, ignoreEnvVars: true, load: [() => env] }),
+          PermissionModule.forRoot({ service: 'core', source: ReadySource }),
+        ],
+      }).compile();
+      await module.get(PermissionCache).refresh();
+      const context = new ExecutionContextHost(
+        [{ user: { userId: 'u', sub: 'u', roles: ['intern'] } }, {}],
+        Routes,
+        Routes.prototype.read,
+      );
+      context.setType('http');
+      let error: unknown;
+      try {
+        module.get(PermissionGuard).canActivate(context);
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect(error instanceof ForbiddenException ? error.getResponse() : undefined).toMatchObject({
+        requiredPermissions: ['order.order.read'],
+      });
+    },
+  );
 
   it('logs the authz mode once at boot', async () => {
     const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
-    const module = await build({ AUTHZ_ENFORCE: 'true' });
+    const module = await build({});
     await module.createNestApplication().init();
     const lines = log.mock.calls.map((call) => String(call[0])).filter((line) => line.startsWith('authz mode'));
     expect(lines).toEqual(['authz mode: enforce (core)']);

@@ -28,7 +28,6 @@ import { RouteRequirement, RouteRequirementResolver } from './route-requirement.
 
 const options: PermissionRuntimeOptions = {
   service: 'core',
-  enforce: false,
   refreshIntervalMs: 30_000,
   retryBaseMs: 1_000,
   summaryIntervalMs: 300_000,
@@ -90,7 +89,7 @@ describe('AuthzShadowRecorder', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it('flags a request that would be denied once enforced', async () => {
+  it('flags a request the permission decision would deny', async () => {
     build({ intern: [] });
     const { request, response, finish } = exchange({ roles: ['intern'] });
     recorder.observe(request, response, 'GET /orders', order);
@@ -100,7 +99,7 @@ describe('AuthzShadowRecorder', () => {
     expect(JSON.parse(String(warn.mock.calls[0][0]))).toEqual({
       event: 'authz_shadow_mismatch',
       service: 'core',
-      mode: 'shadow',
+      mode: 'enforce',
       route: 'GET /orders',
       roles: ['intern'],
       legacy: 'allow',
@@ -197,7 +196,7 @@ describe('AuthzShadowRecorder', () => {
 
   it('labels logs with the mode', () => {
     const c = cache({ intern: [] });
-    recorder = new AuthzShadowRecorder(new PermissionDecider(c), c, { ...options, enforce: true });
+    recorder = new AuthzShadowRecorder(new PermissionDecider(c), c, options);
     const { request, response, finish } = exchange({ roles: ['intern'] });
     recorder.observe(request, response, 'GET /orders', order);
     recorder.markPassed(request);
@@ -285,24 +284,29 @@ describe('AuthzObserverGuard in a running app', () => {
     expect(await outcomeCount('would_allow')).toBe(1);
   });
 
-  it('sees a request the legacy guards let through', async () => {
+  it('agrees with the permission guard that refuses a caller without the permission', async () => {
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     const res = await app.inject({ method: 'GET', url: '/orders', headers: { 'x-roles': 'intern' } });
-    expect(res.statusCode).toBe(200);
-    expect(await outcomeCount('would_deny')).toBe(1);
+    expect(res.statusCode).toBe(403);
+    expect(await outcomeCount('match')).toBe(1);
+    expect(await outcomeCount('would_deny')).toBe(0);
   });
 
   it('stamps the route decision before the handler runs', async () => {
     const granted = await app.inject({ method: 'GET', url: '/orders', headers: { 'x-roles': 'logistics_worker' } });
     expect(granted.json()).toEqual({ ok: true, stamped: true });
     const notGranted = await app.inject({ method: 'GET', url: '/orders', headers: { 'x-roles': 'intern' } });
-    expect(notGranted.json()).toEqual({ ok: true, stamped: false });
+    expect(notGranted.statusCode).toBe(403);
   });
 
   it('labels the route by its pattern, not its url', async () => {
     recorder.flush();
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
-    await app.inject({ method: 'GET', url: '/orders?secret=1', headers: { 'x-roles': 'intern' } });
+    await app.inject({
+      method: 'GET',
+      url: '/orders?secret=1',
+      headers: { 'x-roles': 'logistics_worker', 'x-deny': '1' },
+    });
     expect(JSON.parse(String(warn.mock.calls[0]?.[0] ?? '{}')).route).toBe('GET /orders');
   });
 });

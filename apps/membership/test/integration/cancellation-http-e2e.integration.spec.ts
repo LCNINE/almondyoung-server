@@ -2,8 +2,8 @@
  * 멤버십 해지·환불 HTTP 계층 E2E.
  *
  * 서비스 계층 E2E(cancellation-e2e)가 상태 전이를 검증하는 반면, 여기서는 **HTTP 경계**를 검증한다:
- * 라우팅, JwtAuthGuard, ScopeGuard + @RequireScopes, zod 검증, 도메인 예외 → 상태코드 매핑.
- * 스코프는 auth.role_scope_mapping DB 조회로 결정되므로 실제 부트스트랩된 행을 그대로 쓴다.
+ * 라우팅, JwtAuthGuard, PermissionGuard(라이브 enforce 와 같은 판정), zod 검증, 도메인 예외 → 상태코드 매핑.
+ * 역할별 권한은 카탈로그의 첫 등록 부여를 쓴다.
  *
  * 실행: npm run test:membership:cancellation-e2e  (같은 스크립트가 함께 돌린다)
  */
@@ -18,13 +18,7 @@ import { sign } from 'jsonwebtoken';
 import { addDays, format, subDays } from 'date-fns';
 import { eq } from 'drizzle-orm';
 import { DbModule, DbService } from '@app/db';
-import {
-  AuthorizationModule,
-  createCheckpointsForTesting,
-  JwtAuthGuard,
-  PermissionCheckpoints,
-  ScopeGuard,
-} from '@app/authorization';
+import { AuthorizationModule, enforcedPermissionProvidersForTesting, JwtAuthGuard } from '@app/authorization';
 import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter';
 import * as schema from '../../src/shared/schemas/entities/schema';
 import { membershipSchema } from '../../src/shared/schemas/entities/schema';
@@ -114,7 +108,6 @@ describeE2E('멤버십 해지·환불 HTTP E2E', () => {
       controllers: [SubscriptionController, AdminOperationsController],
       providers: [
         { provide: APP_GUARD, useClass: JwtAuthGuard },
-        { provide: APP_GUARD, useClass: ScopeGuard },
         SubscriptionCancellationService,
         SubscriptionCancellationManager,
         EntitlementManager,
@@ -147,7 +140,7 @@ describeE2E('멤버십 해지·환불 HTTP E2E', () => {
         { provide: MembershipEventPublisher, useValue: events },
         { provide: InvoiceBillingManager, useValue: invoices },
         { provide: SubscriptionService, useValue: { getCurrentSubscriptionDetails: jest.fn() } },
-        { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting() },
+        ...enforcedPermissionProvidersForTesting(),
       ],
     }).compile();
 

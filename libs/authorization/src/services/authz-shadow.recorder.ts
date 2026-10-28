@@ -93,9 +93,9 @@ export class AuthzShadowRecorder implements OnModuleInit, OnModuleDestroy {
     this.windowStartedAt = now;
   }
 
-  /** 강제 모드에선 옛 가드가 권한 라우트에서 물러나므로 «옛 결과»는 새 판정이 정한 결과다 — 로그를 읽는 쪽이 구분하게 남긴다. */
-  private mode(): 'shadow' | 'enforce' {
-    return this.options.enforce ? 'enforce' : 'shadow';
+  /** 권한 라우트의 «옛 결과»는 새 판정이 정한 결과다 — 로그를 읽는 쪽이 옛 그림자 기간과 구분하게 남긴다. */
+  private mode(): 'enforce' {
+    return 'enforce';
   }
 
   private settle(request: object, state: ObservedRequest, statusCode: number): void {

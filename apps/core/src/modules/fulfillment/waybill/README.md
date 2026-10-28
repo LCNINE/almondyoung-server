@@ -18,7 +18,7 @@ Controller → Service → Manager → Reader / Repository
                                                           WaybillModule → FulfillmentModule)
 ```
 
-- **`waybill.controller.ts`** — HTTP 라우트 6개(§9.2), `ScopeGuard`/`RequireScopes`, `idempotency-key` 헤더 전달.
+- **`waybill.controller.ts`** — HTTP 라우트 6개(§9.2), `RequirePermission`, `idempotency-key` 헤더 전달.
   try/catch 없음 — 도메인 예외는 `GlobalExceptionFilter` 가 상태코드로 변환.
 - **`waybill.service.ts`** (`WaybillService`, Port) — 얇은 위임 계층. `WaybillRow` → `WaybillView` 변환(`toView`)만
   수행하고 검증 로직은 갖지 않는다.

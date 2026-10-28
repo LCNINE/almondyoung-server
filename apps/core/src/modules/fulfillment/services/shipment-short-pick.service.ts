@@ -6,10 +6,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AuthorizationService, PermissionCheckpoints } from '@app/authorization';
+import { PermissionCheckpoints } from '@app/authorization';
 import { and, asc, eq, ne } from 'drizzle-orm';
-import { legacyHasShortPickScope } from '../../../platform/auth/fulfillment-authz';
-import { SHORT_PICK_REPORT_SCOPES } from '../../../platform/auth/fulfillment-scopes';
+import { SHORT_PICK_REPORT_PERMISSIONS } from '../../../platform/auth/fulfillment-permissions';
 import { authzSubjectOf } from '../../../platform/auth/system-actor';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -37,7 +36,6 @@ const SHORT_PICK_WORK_ITEM_STATUSES: readonly string[] = ['queued', 'picking'];
 export class ShipmentShortPickService {
   constructor(
     private readonly commands: FulfillmentCommandService,
-    private readonly authorization: AuthorizationService,
     private readonly audit: AuditService,
     private readonly workflowGate: FulfillmentWorkflowGate,
     private readonly boxes: BoxAllocationManager,
@@ -61,7 +59,7 @@ export class ShipmentShortPickService {
   ): Promise<ShipmentShortPickResponseDto> {
     this.workflowGate.assertV2MutationAllowed('shipment.short_pick.report');
     this.assertDto(dto);
-    await this.requireScope(actor);
+    this.requirePermission(actor);
     return this.commands.execute<ShipmentShortPickResponseDto>(
       {
         commandType: 'shipment.short_pick.report',
@@ -448,16 +446,15 @@ export class ShipmentShortPickService {
     return result;
   }
 
-  /** 관리자(reopen) 또는 스테이션 작업자(short_pick) — 스펙 U7. ScopeGuard 를 거치지 않은 직접 호출도 같은 규칙. */
-  private async requireScope(actor: ShipmentShortPickActor): Promise<void> {
-    const legacy = await this.checkpoints.legacyVerdict(() => legacyHasShortPickScope(this.authorization, actor.roles));
+  /** 관리자(reopen) 또는 스테이션 작업자(short_pick) — 스펙 U7. 라우트 가드를 거치지 않은 직접 호출도 같은 규칙. */
+  private requirePermission(actor: ShipmentShortPickActor): void {
     if (
-      !this.checkpoints.compare('fulfillment.short_pick_report', legacy, authzSubjectOf(actor), [
+      !this.checkpoints.check('fulfillment.short_pick_report', authzSubjectOf(actor), [
         'fulfillment.shipment.reopen',
         'fulfillment.shipment.short_pick',
       ])
     ) {
-      throw new ForbiddenException(`Missing required scope: ${SHORT_PICK_REPORT_SCOPES.join(' or ')}`);
+      throw new ForbiddenException(`Missing required permission: ${SHORT_PICK_REPORT_PERMISSIONS.join(' or ')}`);
     }
   }
 

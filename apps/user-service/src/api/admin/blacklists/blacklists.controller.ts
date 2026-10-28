@@ -1,4 +1,4 @@
-import { RequireScopes, JwtPayload, RequirePermission, PiiResponse } from '@app/authorization';
+import { JwtPayload, RequirePermission, PiiResponse } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -27,7 +27,6 @@ export class BlacklistsController {
   })
   @RequirePermission('customer.profile.read')
   @Get()
-  @RequireScopes('master', 'admin:users:read')
   async getBlacklists(@Query() query: { page?: string; limit?: string; userId?: string; q?: string }): Promise<{
     data: BlacklistsResponseDto[];
     total: number;
@@ -52,7 +51,6 @@ export class BlacklistsController {
   @PiiResponse({ fields: { reason: 'text', internalNote: 'text' }, subjects: [{ param: 'userId', type: 'user' }], reveal: true })
   @RequirePermission('customer.profile.read')
   @Get(':userId')
-  @RequireScopes('master', 'admin:users:read')
   async getBlacklistByUserId(@Param('userId') userId: string): Promise<BlacklistsResponseDto | null> {
     return await this.blacklistsService.getBlacklistByUserId(userId);
   }
@@ -65,7 +63,6 @@ export class BlacklistsController {
   @ApiResponse({ status: 400, description: '블랙리스트 생성 실패' })
   @RequirePermission('customer.blacklist.write')
   @Post()
-  @RequireScopes('master', 'admin:users:modify')
   async createBlacklist(@Body() blacklistsCreateDto: BlacklistsCreateDto, @CurrentUser() user: JwtPayload) {
     const adminId = user.id;
     return await this.blacklistsService.createBlacklist(blacklistsCreateDto, adminId);
@@ -80,7 +77,6 @@ export class BlacklistsController {
   @ApiResponse({ status: 404, description: '블랙리스트를 찾을 수 없음' })
   @RequirePermission('customer.blacklist.write')
   @Delete(':userId')
-  @RequireScopes('master', 'admin:users:modify')
   async deleteBlacklist(@Param('userId') userId: string, @CurrentUser() user: JwtPayload) {
     const adminId = user.id;
     return await this.blacklistsService.deleteBlacklist(userId, adminId);

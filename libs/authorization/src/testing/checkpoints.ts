@@ -1,18 +1,47 @@
+import { Provider } from '@nestjs/common';
+import { APP_GUARD, Reflector } from '@nestjs/core';
 import { register } from 'prom-client';
+import { PermissionGuard } from '../guards/permission.guard';
 import { PermissionCache } from '../services/permission-cache';
 import { PermissionCheckpoints } from '../services/permission-checkpoints';
 import { PermissionDecider } from '../services/permission-decider';
+import { PermissionRuntimeOptions } from '../services/permission-runtime.options';
+import { RouteRequirementResolver } from '../services/route-requirement.resolver';
+import { FIRST_GRANT_ROLE_PERMISSIONS } from './first-grant-roles';
 
 /**
- * 판정 지점을 가진 클래스를 스펙에서 만들 때 쓴다. 판정 지점은 옛 판정을 그대로 돌려주므로 사본이 없어도(기본)
- * 그 클래스의 동작은 같다. 비교 결과까지 보려면 역할별 권한을, 강제 모드를 보려면 `{ enforce: true }` 를 넘긴다.
+ * 판정 지점을 가진 클래스를 스펙에서 만들 때 쓴다. 라이브와 같이 항상 새 판정을 돌려준다.
+ * 기본 사본은 카탈로그의 첫 등록 부여(+ master 전체)이고, 테스트가 말하려는 권한 구성이 따로 있으면 역할별 권한을 넘긴다.
+ * `null` 은 사본을 한 번도 받지 못한 상태(cold) — 판정 불가라 거부된다.
  */
 export function createCheckpointsForTesting(
-  byRole: Record<string, string[]> | null = null,
-  { enforce = false }: { enforce?: boolean } = {},
+  byRole: Readonly<Record<string, readonly string[]>> | null = FIRST_GRANT_ROLE_PERMISSIONS,
 ): PermissionCheckpoints {
-  const cache: Pick<PermissionCache, 'permissionsFor' | 'status'> = {
-    permissionsFor: (roles) => (byRole === null ? null : new Set(roles.flatMap((role) => byRole[role] ?? []))),
+  const cache = cacheFor(byRole);
+  return new PermissionCheckpoints(new PermissionDecider(cache), cache, runtimeOptions());
+}
+
+/**
+ * HTTP 하네스(`Test.createTestingModule`)의 providers 에 펼쳐 라이브와 같은 인가를 만든다.
+ * 진짜 `PermissionGuard` 가 전역 가드로 판정하고 낙인을 남긴다. 판정 지점도 같은 사본을 쓴다.
+ * 역할별 권한은 읽을 때마다 다시 보므로 getter 로 두면 테스트 도중 권한을 거둘 수 있다.
+ */
+export function enforcedPermissionProvidersForTesting(
+  byRole: Readonly<Record<string, readonly string[]>> = FIRST_GRANT_ROLE_PERMISSIONS,
+): Provider[] {
+  const resolver = new RouteRequirementResolver(new Reflector());
+  return [
+    { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting(byRole) },
+    { provide: APP_GUARD, useValue: new PermissionGuard(resolver, new PermissionDecider(cacheFor(byRole))) },
+  ];
+}
+
+function cacheFor(
+  byRole: Readonly<Record<string, readonly string[]>> | null,
+): Pick<PermissionCache, 'permissionsFor' | 'status'> {
+  return {
+    permissionsFor: (roles) =>
+      byRole === null ? null : new Set(roles.flatMap((role) => (Object.hasOwn(byRole, role) ? byRole[role] : []))),
     status: () => ({
       state: byRole ? 'ready' : 'cold',
       version: byRole ? 'test' : null,
@@ -20,13 +49,10 @@ export function createCheckpointsForTesting(
       consecutiveFailures: 0,
     }),
   };
-  return new PermissionCheckpoints(new PermissionDecider(cache), cache, {
-    service: 'core',
-    enforce,
-    refreshIntervalMs: 30_000,
-    retryBaseMs: 1_000,
-    summaryIntervalMs: 300_000,
-  });
+}
+
+function runtimeOptions(): PermissionRuntimeOptions {
+  return { service: 'core', refreshIntervalMs: 30_000, retryBaseMs: 1_000, summaryIntervalMs: 300_000 };
 }
 
 /** 판정 지점 비교 횟수(스펙 단언용). 스펙마다 `register.resetMetrics()` 를 먼저 부른다. */

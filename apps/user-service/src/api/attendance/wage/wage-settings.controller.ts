@@ -1,4 +1,4 @@
-import { MasterRoleGuard, RequirePermission, type JwtPayload } from '@app/authorization';
+import { RequirePermission, type JwtPayload } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import type {
@@ -26,9 +26,8 @@ import {
 } from './dto/wage-settings.dto';
 import { WageSettingsService } from './wage-settings.service';
 
-// 옛 가드: 급여 권한은 첫 부여가 없다(= master 만) — 근태 통계와 같은 옛 가드로 맞춘다.
 @Controller('attendance/wage')
-@UseGuards(MasterRoleGuard, ActiveAttendanceStaffGuard)
+@UseGuards(ActiveAttendanceStaffGuard)
 export class WageSettingsController {
   constructor(private readonly service: WageSettingsService) {}
 

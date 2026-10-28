@@ -1,7 +1,6 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequirePermission, RequireScopes, ScopeGuard, User } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
+import { RequirePermission, User } from '@app/authorization';
 import type { WarehouseActor } from '../../core/services/warehouse-operation-contract';
 import { SkuFieldCaptureService } from '../services/sku-field-capture.service';
 import { fieldCaptureActorOf } from '../sku-field-capture.rules';
@@ -22,13 +21,11 @@ type CaptureUser = NonNullable<WarehouseActor> & { email?: string; login_id?: st
 
 @ApiTags('Inventory')
 @Controller('inventory/sku-field-capture')
-@UseGuards(ScopeGuard)
 export class SkuFieldCaptureController {
   constructor(private readonly service: SkuFieldCaptureService) {}
 
   @RequirePermission('inventory.master.read')
   @Get('progress')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU 실측 작업 현황(관리자)' })
   @ApiResponse({ status: 200, type: FieldCaptureProgressDto })
   getProgress(): Promise<FieldCaptureProgressDto> {
@@ -37,7 +34,6 @@ export class SkuFieldCaptureController {
 
   @RequirePermission('inventory.master.read')
   @Get('photos')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '찍힌 실물 사진 모아보기(관리자), 최근순 — 기간(KST) · 상품명·코드·선반·찍은 사람 검색' })
   @ApiResponse({ status: 200, type: FieldCapturePhotosDto })
   listPhotos(@Query() query: FieldCapturePhotoQueryDto): Promise<FieldCapturePhotosDto> {
@@ -47,7 +43,6 @@ export class SkuFieldCaptureController {
 
   @RequirePermission('inventory.stock.read')
   @Get('me/today')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '내가 오늘 끝낸 SKU 수(작업자 본인)' })
   @ApiResponse({ status: 200, type: MyTodayDto })
   getMyToday(@User() user: CaptureUser): Promise<MyTodayDto> {
@@ -56,7 +51,6 @@ export class SkuFieldCaptureController {
 
   @RequirePermission('inventory.stock.read')
   @Get('items')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '작업 기록 목록, 최근순 — 내 것/전체 · 기간(KST) · 상품명·코드·선반 검색' })
   @ApiResponse({ status: 200, type: MyCaptureItemsDto })
   listItems(@Query() query: FieldCaptureListQueryDto, @User() user: CaptureUser): Promise<MyCaptureItemsDto> {
@@ -69,7 +63,6 @@ export class SkuFieldCaptureController {
 
   @RequirePermission('inventory.stock.read')
   @Get('positions/:positionCode')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '선반 위치 코드로 SKU 목록 조회' })
   @ApiResponse({ status: 200, type: ShelfPositionDto })
   findByPosition(@Param('positionCode') positionCode: string): Promise<ShelfPositionDto> {
@@ -78,7 +71,6 @@ export class SkuFieldCaptureController {
 
   @RequirePermission('inventory.stock.read')
   @Get('skus/:skuId')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU 실측 상세' })
   @ApiResponse({ status: 200, type: FieldCaptureDetailDto })
   getDetail(@Param('skuId', ParseUUIDPipe) skuId: string): Promise<FieldCaptureDetailDto> {
@@ -87,7 +79,6 @@ export class SkuFieldCaptureController {
 
   @RequirePermission('inventory.stock.read')
   @Get('barcodes/:barcode/owner')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '바코드를 가진 SKU 조회' })
   findBarcodeOwner(@Param('barcode') barcode: string) {
     return this.service.findBarcodeOwner(barcode);
@@ -95,7 +86,6 @@ export class SkuFieldCaptureController {
 
   @RequirePermission('inventory.stock.operate')
   @Post('skus/:skuId/photos')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '실물 사진 연결' })
   @ApiResponse({ status: 201, type: FieldCaptureDetailDto })
   attachPhoto(
@@ -108,7 +98,6 @@ export class SkuFieldCaptureController {
 
   @RequirePermission('inventory.stock.operate')
   @Delete('skus/:skuId/photos/:photoId')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '실물 사진 연결 해제' })
   @ApiResponse({ status: 200, type: FieldCaptureDetailDto })
   removePhoto(
@@ -120,7 +109,6 @@ export class SkuFieldCaptureController {
 
   @RequirePermission('inventory.stock.operate')
   @Put('skus/:skuId/capture')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '실측 완료 처리' })
   @ApiResponse({ status: 200, type: FieldCaptureDetailDto })
   complete(
@@ -134,7 +122,6 @@ export class SkuFieldCaptureController {
   @RequirePermission('inventory.stock.operate')
   @Delete('skus/:skuId/capture')
   @HttpCode(204)
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '실측 완료 취소(내가 마지막으로 끝낸 상품만)' })
   @ApiResponse({ status: 204 })
   cancel(@Param('skuId', ParseUUIDPipe) skuId: string, @User() user: CaptureUser): Promise<void> {

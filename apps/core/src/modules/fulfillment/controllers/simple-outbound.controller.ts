@@ -11,19 +11,10 @@ import {
   Query,
   Req,
   UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { forceDispatchDecisionFrom } from '../../../platform/auth/force-dispatch-authorization';
-import {
-  PermissionCheckpoints,
-  RequireScopes,
-  ScopeGuard,
-  User,
-  RequirePermission,
-  RequireAnyPermission,
-} from '@app/authorization';
-import { FULFILLMENT_SCOPE, SIMPLE_OUTBOUND_FORCE_SCOPES } from '../../../platform/auth/fulfillment-scopes';
+import { PermissionCheckpoints, User, RequirePermission, RequireAnyPermission } from '@app/authorization';
 import { ForceSimpleOutboundDto, SimpleOutboundScanDto, SimpleOutboundStateDto } from '../dto/simple-outbound.dto';
 import { ShipmentWaybillReader, ShipmentByWaybillResult } from '../reader/shipment-waybill.reader';
 import { SimpleOutboundService } from '../services/simple-outbound.service';
@@ -38,7 +29,6 @@ type AuthenticatedUser = { id?: string; userId?: string; sub?: string; roles?: s
  */
 @ApiTags('Shipments')
 @Controller('shipments')
-@UseGuards(ScopeGuard)
 export class SimpleOutboundController {
   constructor(
     private readonly simpleOutbound: SimpleOutboundService,
@@ -48,7 +38,6 @@ export class SimpleOutboundController {
 
   @RequirePermission('fulfillment.shipment.read')
   @Get('by-waybill')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOperation({ summary: '운송장번호로 박스와 라인 진행 조회 (단순출고 진입점)' })
   async byWaybill(
     @Query('trackingNo') trackingNo?: string,
@@ -62,7 +51,6 @@ export class SimpleOutboundController {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post(':shipmentId/simple-outbound-scans')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiOperation({ summary: '단순출고 스캔 — 피킹·검수·자동 출고를 한 트랜잭션에서 처리' })
   async scan(
@@ -83,7 +71,6 @@ export class SimpleOutboundController {
 
   @RequireAnyPermission('fulfillment.dispatch.force', 'fulfillment.dispatch.station_force')
   @Post(':shipmentId/simple-outbound-forces')
-  @RequireScopes(...SIMPLE_OUTBOUND_FORCE_SCOPES)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiOperation({ summary: '단순출고 강제완료 — 미피킹 수량을 채우고 강제 출고' })
   async force(
@@ -93,9 +80,9 @@ export class SimpleOutboundController {
     @User() user: AuthenticatedUser,
     @Req() request: unknown,
   ): Promise<SimpleOutboundStateDto> {
-    const authorization = forceDispatchDecisionFrom(request, this.checkpoints.enforced);
-    const legacy = forceDispatchDecisionFrom(request, false) !== undefined;
-    this.checkpoints.compareDecision('fulfillment.force_dispatch_decision', legacy, request, [
+    const authorization = forceDispatchDecisionFrom(request);
+    // 판정 지점 집계만 남긴다 — 결과는 위 낙인을 받은 서비스가 정한다.
+    this.checkpoints.checkRoute('fulfillment.force_dispatch_decision', request, [
       'fulfillment.dispatch.force',
       'fulfillment.dispatch.station_force',
     ]);

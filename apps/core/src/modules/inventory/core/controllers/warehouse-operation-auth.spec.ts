@@ -3,7 +3,7 @@ import { Server } from 'http';
 import { Request } from 'express';
 import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { AuthorizationService, ScopeGuard, PermissionCheckpoints, createCheckpointsForTesting } from '@app/authorization';
+import { enforcedPermissionProvidersForTesting, FIRST_GRANT_ROLE_PERMISSIONS } from '@app/authorization';
 import * as request from 'supertest';
 import { LocationOutboundController } from '../../../fulfillment/controllers/location-outbound.controller';
 import { LocationOutboundService } from '../../../fulfillment/services/location-outbound.service';
@@ -21,7 +21,7 @@ import { MovementService } from '../../movement/services/movement.service';
 import { StocktakingController } from '../../stocktaking/controllers/stocktaking.controller';
 import { StocktakingService } from '../../stocktaking/services/stocktaking.service';
 
-// Real Nest routes/ScopeGuard/DTO pipeline; replace only the DB authorization source and mutation services.
+// Real Nest routes/PermissionGuard/DTO pipeline; replace only the permission source and mutation services.
 describe('warehouse v2 HTTP authorization and DTO contract', () => {
   let app: INestApplication;
   const mutation = jest.fn<Promise<unknown>, unknown[]>().mockResolvedValue({ lineId: 'line' });
@@ -36,30 +36,28 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
         StocktakingController,
       ],
       providers: [
-        ScopeGuard,
-        { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting() },
+        // 라이브 enforce 와 같은 인가 — 권한 라우트는 새 판정이 정한다.
+        ...enforcedPermissionProvidersForTesting({
+          ...FIRST_GRANT_ROLE_PERMISSIONS,
+          worker: ['inventory.stock.read', 'inventory.stock.operate'],
+          station_worker: [
+            'inventory.stock.read',
+            'inventory.stock.operate',
+            'fulfillment.dispatch.station_force',
+            'fulfillment.shipment.short_pick',
+          ],
+          manager: [
+            'inventory.stock.read',
+            'inventory.stock.operate',
+            'inventory.stock.adjust',
+            'inventory.master.read',
+            'inventory.master.write',
+            'fulfillment.dispatch.force',
+          ],
+          custom_force: ['inventory.stock.read', 'inventory.stock.operate', 'fulfillment.dispatch.force'],
+          mapped_master: FIRST_GRANT_ROLE_PERMISSIONS.master,
+        }),
         { provide: LocationOutboundService, useValue: { force: mutation } },
-        {
-          provide: AuthorizationService,
-          useValue: {
-            getScopesByRoles: (roles: string[]) =>
-              Promise.resolve(
-                new Set(
-                  roles.includes('station_worker')
-                    ? ['inventory.operate', 'fulfillment.dispatch.station_force', 'fulfillment.shipment.short_pick']
-                    : roles.includes('manager')
-                      ? ['inventory.operate', 'inventory.manage', 'inventory.adjust', 'fulfillment.dispatch.force']
-                      : roles.includes('mapped_master')
-                        ? ['master']
-                        : roles.includes('custom_force')
-                          ? ['inventory.operate', 'fulfillment.dispatch.force']
-                          : roles.includes('worker')
-                            ? ['inventory.operate']
-                            : [],
-                ),
-              ),
-          },
-        },
         { provide: InventoryIdempotencyService, useValue: { withIdempotency: mutation } },
         ...[
           InventoryCommandService,
@@ -117,33 +115,30 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
       .send({ warehouseId: '00000000-0000-4000-8000-000000000003', reason: 'checked', items: [] })
       .expect(permissions.forceDispatch ? 201 : 403);
   });
-  it('keeps ordinary work available but denies force when its permission preview lookup fails', async () => {
-    const source = app.get(AuthorizationService);
-    const lookup = jest
-      .spyOn(source, 'getScopesByRoles')
-      .mockResolvedValueOnce(new Set(['inventory.operate']))
-      .mockRejectedValueOnce(new Error('mapping lookup unavailable'))
-      .mockRejectedValueOnce(new Error('mapping lookup unavailable'));
-    try {
-      const context = await request(app.getHttpServer() as Server)
-        .get('/inventory/work-context')
-        .set('x-test-role', 'manager')
-        .expect(200);
-      expect(context.body).toHaveProperty('permissions', { forceDispatch: false, stationForceDispatch: false, shortPick: false });
-      await request(app.getHttpServer() as Server)
-        .post('/shipments/00000000-0000-4000-8000-000000000002/location-outbound-forces')
-        .set('x-test-role', 'manager')
-        .send({})
-        .expect(403);
-      expect(mutation).not.toHaveBeenCalled();
-    } finally {
-      lookup.mockRestore();
-    }
+  it('decides preview and force by permission', async () => {
+    const context = await request(app.getHttpServer() as Server)
+      .get('/inventory/work-context')
+      .set('x-test-role', 'manager')
+      .expect(200);
+    expect(context.body).toHaveProperty('permissions', { forceDispatch: true, stationForceDispatch: true, shortPick: false });
+    await request(app.getHttpServer() as Server)
+      .post('/shipments/00000000-0000-4000-8000-000000000002/location-outbound-forces')
+      .set('x-test-role', 'manager')
+      .send({})
+      .expect(400);
+    expect(mutation).not.toHaveBeenCalled();
+    await request(app.getHttpServer() as Server)
+      .post('/shipments/00000000-0000-4000-8000-000000000002/location-outbound-forces')
+      .set('x-test-role', 'manager')
+      .set('Idempotency-Key', 'lookup-down-force')
+      .send({ warehouseId: '00000000-0000-4000-8000-000000000003', reason: 'checked', items: [] })
+      .expect(201);
+    expect(mutation).toHaveBeenCalledTimes(1);
   });
   it('fails closed for anonymous work context and ordinary worker diagnostics', async () => {
     await request(app.getHttpServer() as Server)
       .get('/inventory/work-context')
-      .expect(403);
+      .expect(401);
     await request(app.getHttpServer() as Server)
       .get('/inventory/diagnostics-access')
       .set('x-test-role', 'worker')
@@ -160,9 +155,17 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
     '/stocktaking/scan-product',
     '/stocktaking/scan-location',
     '/stocktaking/count-items',
-  ])('denies unauthorized %s before payload validation/replay', async (path) => {
+  ])('denies an anonymous %s before payload validation/replay', async (path) => {
     await request(app.getHttpServer() as Server)
       .post(path)
+      .send({ contractVersion: 2 })
+      .expect(401);
+    expect(mutation).not.toHaveBeenCalled();
+  });
+  it('denies a worker without the adjust permission before payload validation/replay', async () => {
+    await request(app.getHttpServer() as Server)
+      .post('/inventory/stocks/adjust')
+      .set('x-test-role', 'worker')
       .send({ contractVersion: 2 })
       .expect(403);
     expect(mutation).not.toHaveBeenCalled();
@@ -170,7 +173,7 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
   it('denies anonymous current receipt state before lookup', async () => {
     await request(app.getHttpServer() as Server)
       .get('/inbound/lines/00000000-0000-4000-8000-000000000002/state?warehouseId=00000000-0000-4000-8000-000000000003')
-      .expect(403);
+      .expect(401);
   });
   const dto = {
     contractVersion: 2,

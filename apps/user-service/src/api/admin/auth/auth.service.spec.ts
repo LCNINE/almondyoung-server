@@ -1,11 +1,5 @@
 import { DbService } from '@app/db';
-import {
-  checkpointEvaluations,
-  createCheckpointsForTesting,
-  PermissionCheckpoints,
-  ScopeGuard,
-} from '@app/authorization';
-import { register } from 'prom-client';
+import { createCheckpointsForTesting, PermissionCheckpoints } from '@app/authorization';
 import { ForbiddenError, NotFoundError } from '@app/shared';
 import { Test } from '@nestjs/testing';
 import { RoleAssignmentManager } from '../../iam/assignments/role-assignment.manager';
@@ -16,34 +10,29 @@ describe('AuthService.changePassword', () => {
   const where = jest.fn();
   const db = { update: jest.fn(() => ({ set: jest.fn(() => ({ where })) })) };
   const usersService = { findUserByLoginId: jest.fn(), getUserRoleNames: jest.fn() };
-  const scopeGuard = { getGrantedScopes: jest.fn() };
   let service: AuthService;
 
   const admin = { roles: ['admin'] };
   const master = { roles: ['master'] };
   const request = { loginId: 'target', newPassword: 'Passw0rd!' };
 
-  beforeEach(async () => {
-    jest.clearAllMocks();
-    register.resetMetrics();
-    usersService.findUserByLoginId.mockResolvedValue({ id: 'u-1', loginId: 'target' });
-    scopeGuard.getGrantedScopes.mockImplementation(async (user: { roles: string[] }) =>
-      user.roles.includes('master') ? ['master'] : [],
-    );
+  async function serviceWith(byRole?: Readonly<Record<string, readonly string[]>> | null): Promise<AuthService> {
     const module = await Test.createTestingModule({
       providers: [
         AuthService,
         { provide: DbService, useValue: { db } },
         { provide: UsersService, useValue: usersService },
-        { provide: ScopeGuard, useValue: scopeGuard },
         { provide: RoleAssignmentManager, useValue: { assignOnCreate: jest.fn() } },
-        {
-          provide: PermissionCheckpoints,
-          useValue: createCheckpointsForTesting({ master: ['iam.admin_user.write'], admin: [] }),
-        },
+        { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting(byRole) },
       ],
     }).compile();
-    service = module.get(AuthService);
+    return module.get(AuthService);
+  }
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    usersService.findUserByLoginId.mockResolvedValue({ id: 'u-1', loginId: 'target' });
+    service = await serviceWith({ master: ['iam.admin_user.write'], admin: [] });
   });
 
   it('lets an account manager reset a customer password', async () => {
@@ -70,7 +59,6 @@ describe('AuthService.changePassword', () => {
   it('lets the account-creation authority reset a staff account', async () => {
     usersService.getUserRoleNames.mockResolvedValue(['admin']);
     await expect(service.changePassword(request, master)).resolves.toBeDefined();
-    expect(scopeGuard.getGrantedScopes).toHaveBeenCalledWith(master, ['master']);
     expect(where).toHaveBeenCalledTimes(1);
   });
 
@@ -79,17 +67,32 @@ describe('AuthService.changePassword', () => {
     await expect(service.changePassword(request, master)).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it('compares the staff password rule with the account management permission', async () => {
+  it('does not let an old role name alone reset a staff account', async () => {
     usersService.getUserRoleNames.mockResolvedValue(['logistics_manager']);
-    await expect(service.changePassword(request, admin)).rejects.toBeInstanceOf(ForbiddenError);
-    await expect(service.changePassword(request, master)).resolves.toEqual({ message: '비밀번호가 변경되었습니다.' });
-    expect(await checkpointEvaluations('iam.staff_password_reset', 'match')).toBe(2);
+    service = await serviceWith({ master: [] });
+    await expect(service.changePassword(request, master)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(where).not.toHaveBeenCalled();
   });
 
-  it('does not compare anything for a customer account', async () => {
+  it('lets any role holding the account management permission reset a staff account', async () => {
+    usersService.getUserRoleNames.mockResolvedValue(['logistics_manager']);
+    service = await serviceWith({ hr: ['iam.admin_user.write'] });
+    await expect(service.changePassword(request, { roles: ['hr'] })).resolves.toBeDefined();
+  });
+
+  it('follows the real first-grant map: master resets a staff account, admin does not', async () => {
+    usersService.getUserRoleNames.mockResolvedValue(['logistics_manager']);
+    service = await serviceWith();
+    await expect(service.changePassword(request, admin)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(service.changePassword(request, master)).resolves.toBeDefined();
+  });
+
+  it('refuses staff resets before the permission copy arrives, but not customer resets', async () => {
+    service = await serviceWith(null);
+    usersService.getUserRoleNames.mockResolvedValue(['logistics_manager']);
+    await expect(service.changePassword(request, master)).rejects.toBeInstanceOf(ForbiddenError);
     usersService.getUserRoleNames.mockResolvedValue(['user']);
-    await service.changePassword(request, admin);
-    expect(await checkpointEvaluations('iam.staff_password_reset', 'match')).toBe(0);
+    await expect(service.changePassword(request, admin)).resolves.toBeDefined();
   });
 });
 
@@ -119,7 +122,6 @@ describe('AuthService.createAccount', () => {
         AuthService,
         { provide: DbService, useValue: { run } },
         { provide: UsersService, useValue: usersService },
-        { provide: ScopeGuard, useValue: { getGrantedScopes: jest.fn() } },
         { provide: RoleAssignmentManager, useValue: assignments },
         { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting({}) },
       ],

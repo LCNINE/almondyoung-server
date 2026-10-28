@@ -1,10 +1,10 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { MasterRoleGuard, RequirePermission } from '@app/authorization';
+import { RequirePermission } from '@app/authorization';
 import { ActiveAttendanceStaffGuard } from '../guards/active-attendance-staff.guard';
 import { AttendanceStatisticsService } from '../services/attendance-statistics.service';
 
 @Controller('attendance')
-@UseGuards(MasterRoleGuard, ActiveAttendanceStaffGuard)
+@UseGuards(ActiveAttendanceStaffGuard)
 export class AttendanceStatisticsController {
   constructor(private readonly statistics: AttendanceStatisticsService) {}
 

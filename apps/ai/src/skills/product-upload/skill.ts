@@ -1,4 +1,3 @@
-import { AI_SCOPE } from '../../platform/auth/ai-scopes';
 import type { Skill, SkillTool } from '../types';
 import { core, toolError, uploadToFileService, normalizeFileName } from '../types';
 
@@ -360,7 +359,7 @@ const cancel: SkillTool = {
 
 export const productUploadSkill: Skill = {
   name: 'product-upload',
-  scopes: [AI_SCOPE.ASSISTANT],
+  permissions: ['ai.assistant.use'],
   label: '상품 일괄 등록/수정',
   tools: [
     uploadForm,

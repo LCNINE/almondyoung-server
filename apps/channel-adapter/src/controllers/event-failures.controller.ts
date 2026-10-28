@@ -22,8 +22,7 @@ import {
 } from '@app/events';
 
 /**
- * 이벤트 실패 출구 (#1016 7·8번). 인가 데코레이터가 없는 게 의도다 — 이 앱은 전역 `AdminRealmGuard` 가 표시 없는 라우트를
- * 직원 전용으로 기본 차단한다(`event-trace.controller.ts` 와 같다).
+ * 이벤트 실패 출구 (#1016 7·8번). 판정은 전역 `PermissionGuard` 가 라우트의 권한 키로 한다(`event-trace.controller.ts` 와 같다).
  * `@UseFilters` 인 이유: 이 앱엔 전역 예외 필터가 없어 `ConflictError` 등이 500 이 된다. 앱 전체 필터 추가는 범위 밖이다.
  */
 @ApiTags('adapter-event-failures')

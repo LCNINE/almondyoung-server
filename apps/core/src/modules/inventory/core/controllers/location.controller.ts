@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpStatus, Logger, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query, HttpStatus, Logger } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -9,8 +9,7 @@ import {
   ApiExtraModels,
   getSchemaPath,
 } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
+import { RequirePermission } from '@app/authorization';
 import { LocationService } from '../services/location.service';
 import {
   CreateColumnDto,
@@ -34,7 +33,6 @@ import { LocationMapper } from '../mappers/location.mapper';
 @ApiTags('Location Management')
 @ApiExtraModels(StandardLocationResponseDto, ZoneLocationResponseDto)
 @Controller('locations')
-@UseGuards(ScopeGuard)
 export class LocationController {
   private readonly logger = new Logger(LocationController.name);
 
@@ -42,7 +40,6 @@ export class LocationController {
 
   @RequirePermission('inventory.master.write')
   @Post('/warehouses/:warehouseId/columns')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '새 열(Column) 생성' })
   @ApiParam({ name: 'warehouseId', description: '창고 ID' })
   @ApiBody({ type: CreateColumnDto })
@@ -63,7 +60,6 @@ export class LocationController {
 
   @RequirePermission('inventory.stock.read')
   @Get('/warehouses/:warehouseId/columns')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '창고의 모든 열 조회' })
   @ApiParam({ name: 'warehouseId', description: '창고 ID' })
   @ApiQuery({ name: 'isActive', required: false, type: 'boolean', description: '활성 상태 필터' })
@@ -79,7 +75,6 @@ export class LocationController {
 
   @RequirePermission('inventory.master.write')
   @Put('/columns/:columnId')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '열 정보 수정' })
   @ApiParam({ name: 'columnId', description: '열 ID' })
   @ApiBody({ type: UpdateColumnDto })
@@ -99,7 +94,6 @@ export class LocationController {
 
   @RequirePermission('inventory.master.write')
   @Post('/warehouses/:warehouseId/racks')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: '새 랙 생성 (빈 자동생성 포함)',
     description: 'autoGenerateBins가 true이면 표준 빈들(A-01-01 형태)을 자동으로 생성합니다.',
@@ -123,7 +117,6 @@ export class LocationController {
 
   @RequirePermission('inventory.stock.read')
   @Get('/warehouses/:warehouseId/racks')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '창고의 모든 랙 조회' })
   @ApiParam({ name: 'warehouseId', description: '창고 ID' })
   @ApiQuery({ name: 'columnName', required: false, description: '열 이름 필터' })
@@ -141,7 +134,6 @@ export class LocationController {
 
   @RequirePermission('inventory.master.write')
   @Put('/racks/:rackId')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '랙 정보 수정' })
   @ApiParam({ name: 'rackId', description: '랙 ID' })
   @ApiBody({ type: UpdateRackDto })
@@ -161,7 +153,6 @@ export class LocationController {
 
   @RequirePermission('inventory.master.write')
   @Post('/warehouses/:warehouseId/zones')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: '새 구역 로케이션 생성',
     description: '한글 이름이 포함된 경우 자동으로 zone-N 형태의 바코드 코드를 생성합니다.',
@@ -185,7 +176,6 @@ export class LocationController {
 
   @RequirePermission('inventory.stock.read')
   @Get('/warehouses/:warehouseId')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '창고의 모든 로케이션 조회 (페이징, 필터링, 검색)',
     description: '표준 로케이션과 구역 로케이션을 모두 조회할 수 있습니다.',
@@ -203,7 +193,6 @@ export class LocationController {
 
   @RequirePermission('inventory.stock.read')
   @Get('/:locationId')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '특정 로케이션 상세 조회' })
   @ApiParam({ name: 'locationId', description: '로케이션 ID' })
   @ApiResponse({
@@ -224,7 +213,6 @@ export class LocationController {
 
   @RequirePermission('inventory.master.write')
   @Put('/:locationId')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '로케이션 정보 수정 (메타데이터만)' })
   @ApiParam({ name: 'locationId', description: '로케이션 ID' })
   @ApiBody({ type: UpdateLocationDto })
@@ -244,7 +232,6 @@ export class LocationController {
 
   @RequirePermission('inventory.master.write')
   @Post('/warehouses/:warehouseId/racks/custom-bins')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: '기존 랙에 커스텀 빈 추가',
     description: '기존 랙에 "바닥", "상단" 등의 특수 빈을 추가합니다.',

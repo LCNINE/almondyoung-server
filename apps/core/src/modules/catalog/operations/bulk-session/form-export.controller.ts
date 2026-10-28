@@ -1,6 +1,6 @@
-import { Body, Controller, Get, Header, HttpCode, Param, Post, Query, StreamableFile, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, Param, Post, Query, StreamableFile } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RolesGuard, User, RequirePermission } from '@app/authorization';
+import { User, RequirePermission } from '@app/authorization';
 import { FormExportService } from './services/form-export.service';
 import {
   CreateFormExportDto,
@@ -18,7 +18,6 @@ import { parsePage, parseLimit } from './pagination';
 // ⚠️ 배포 위험: "양식 다운로드"는 이미 라이브 노출 상태다. 실제 MD 계정 토큰의 `roles`
 // 클레임에 admin/master 가 없으면 배포 즉시 403 이 된다. 배포 전 실측이 선행조건 —
 // Task 13 체크리스트 항목, 이 자리에서 판단할 사안이 아니다.
-@UseGuards(RolesGuard('master', 'admin'))
 @Controller('product-forms')
 export class FormExportController {
   constructor(private readonly service: FormExportService) {}

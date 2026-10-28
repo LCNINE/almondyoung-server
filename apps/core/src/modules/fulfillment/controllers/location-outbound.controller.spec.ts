@@ -2,18 +2,18 @@ import { Server } from 'http';
 import { Request } from 'express';
 import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import {
-  AuthorizationService,
-  ScopeGuard,
-  PermissionCheckpoints,
-  createCheckpointsForTesting,
-} from '@app/authorization';
+import { enforcedPermissionProvidersForTesting } from '@app/authorization';
 import * as request from 'supertest';
 import { randomUUID } from 'crypto';
 import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter';
 import { LocationOutboundController } from './location-outbound.controller';
 import { LocationOutboundService } from '../services/location-outbound.service';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+
+// 역할별 권한 구성
+const byRole: Record<string, readonly string[]> = {
+  manager: ['fulfillment.warehouse.operate', 'fulfillment.shipment.read', 'fulfillment.dispatch.force'],
+  worker: ['fulfillment.warehouse.operate', 'fulfillment.shipment.read'],
+};
 
 describe('location outbound HTTP authorization and validation', () => {
   let app: INestApplication;
@@ -25,23 +25,8 @@ describe('location outbound HTTP authorization and validation', () => {
     const module = await Test.createTestingModule({
       controllers: [LocationOutboundController],
       providers: [
-        ScopeGuard,
-        { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting() },
-        {
-          provide: AuthorizationService,
-          useValue: {
-            getScopesByRoles: (roles: string[]) =>
-              Promise.resolve(
-                new Set(
-                  roles.includes('manager')
-                    ? [FULFILLMENT_SCOPE.WAREHOUSE_OPERATE, FULFILLMENT_SCOPE.DISPATCH_FORCE]
-                    : roles.includes('worker')
-                      ? [FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]
-                      : [],
-                ),
-              ),
-          },
-        },
+        // 라이브 enforce 와 같은 인가 — 권한 라우트는 새 판정이 정한다.
+        ...enforcedPermissionProvidersForTesting(byRole),
         {
           provide: LocationOutboundService,
           useValue: { start: mutation, getState: mutation, scan: mutation, force: mutation, resolveForce: mutation },
@@ -60,13 +45,16 @@ describe('location outbound HTTP authorization and validation', () => {
   });
   afterAll(() => app.close());
   beforeEach(() => mutation.mockClear());
-  it.each(['starts', 'scans', 'forces', 'force-resolutions'])('requires authenticated scope for %s', async (suffix) => {
-    await request(app.getHttpServer() as Server)
-      .post(`/shipments/${shipmentId}/location-outbound-${suffix}`)
-      .send({})
-      .expect(403);
-    expect(mutation).not.toHaveBeenCalled();
-  });
+  it.each(['starts', 'scans', 'forces', 'force-resolutions'])(
+    'requires an authenticated caller for %s',
+    async (suffix) => {
+      await request(app.getHttpServer() as Server)
+        .post(`/shipments/${shipmentId}/location-outbound-${suffix}`)
+        .send({})
+        .expect(401);
+      expect(mutation).not.toHaveBeenCalled();
+    },
+  );
   it('allows warehouse operators to resolve the original force body and key', async () => {
     const body = {
       warehouseId,
@@ -181,6 +169,6 @@ describe('location outbound HTTP authorization and validation', () => {
       .set('Idempotency-Key', randomUUID())
       .send({ warehouseId, reason: 'confirmed', items: [] })
       .expect(201);
-    expect(mutation.mock.calls[3][4]).toMatchObject({ scope: FULFILLMENT_SCOPE.DISPATCH_FORCE, granted: true });
+    expect(mutation.mock.calls[3][4]).toMatchObject({ permission: 'fulfillment.dispatch.force', granted: true });
   });
 });

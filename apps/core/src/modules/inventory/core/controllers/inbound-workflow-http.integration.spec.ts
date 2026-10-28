@@ -2,12 +2,7 @@ import { randomUUID } from 'crypto';
 import { Request } from 'express';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import {
-  AuthorizationService,
-  createCheckpointsForTesting,
-  PermissionCheckpoints,
-  ScopeGuard,
-} from '@app/authorization';
+import { enforcedPermissionProvidersForTesting } from '@app/authorization';
 import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter';
 import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -59,15 +54,8 @@ describeIfDb('inbound workflow capability → native runner → Core HTTP → Po
     const module = await Test.createTestingModule({
       controllers: [WarehouseWorkContextController, InboundController, MovementController],
       providers: [
-        { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting() },
-        ScopeGuard,
-        {
-          provide: AuthorizationService,
-          useValue: {
-            getScopesByRoles: (roles: string[]) =>
-              Promise.resolve(new Set(roles.includes('worker') ? ['inventory.operate'] : [])),
-          },
-        },
+        // 라이브 enforce 와 같은 인가 — worker 는 현장 재고 조회·작업 권한만 갖는다.
+        ...enforcedPermissionProvidersForTesting({ worker: ['inventory.stock.read', 'inventory.stock.operate'] }),
         {
           provide: InboundService,
           useValue: new InboundService(
@@ -84,7 +72,7 @@ describeIfDb('inbound workflow capability → native runner → Core HTTP → Po
       ],
     }).compile();
     app = module.createNestApplication();
-    // Synthetic local identity; the real ScopeGuard still authorizes every route.
+    // Synthetic local identity; the real PermissionGuard still authorizes every route.
     app.use((req: Request & { user?: { userId: string; roles: string[] } }, _res: unknown, next: () => void) => {
       if (req.headers.authorization === 'Bearer local-worker') req.user = { userId: actorId, roles: ['worker'] };
       next();
@@ -280,7 +268,7 @@ describeIfDb('inbound workflow capability → native runner → Core HTTP → Po
     expect(ledgers).toHaveLength(1);
     expect(ledgers[0].qty).toBe(10);
     const denied = await fetch(`${baseUrl}/inbound/lines/${f.line.id}/state?warehouseId=${f.warehouse.id}`);
-    expect(denied.status).toBe(403);
+    expect(denied.status).toBe(401);
     await expect(
       r.api.request({ path: `/inbound/lines/${f.line.id}/state?warehouseId=${randomUUID()}` }),
     ).rejects.toMatchObject({ status: 403 });

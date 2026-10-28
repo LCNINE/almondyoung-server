@@ -2,12 +2,7 @@ import { isPreparationBlocked } from './outbound-preparation-result';
 import { Server } from 'http';
 import { Test } from '@nestjs/testing';
 import { ValidationPipe } from '@nestjs/common';
-import {
-  AuthorizationService,
-  createCheckpointsForTesting,
-  PermissionCheckpoints,
-  ScopeGuard,
-} from '@app/authorization';
+import { enforcedPermissionProvidersForTesting, FIRST_GRANT_ROLE_PERMISSIONS } from '@app/authorization';
 import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter';
 import * as request from 'supertest';
 import { LocationOutboundController } from '../controllers/location-outbound.controller';
@@ -17,10 +12,9 @@ import { LocationOutboundService } from './location-outbound.service';
 import { SimpleOutboundService } from './simple-outbound.service';
 import { randomUUID } from 'crypto';
 import { and, eq, sql as sqlQuery } from 'drizzle-orm';
-import { SCOPE_AUTHORIZATION_DECISION_BRAND, ScopeAuthorizationDecision } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb, seedPickableShipment } from './__support__';
+import { grantedPermissionDecision } from './__support__/force-dispatch-decision';
 import { addSecondSimpleOutboundLine } from './__support__/simple-outbound-fixtures';
 import * as wiring from './__support__/simple-outbound-wiring';
 import { assembleLabels } from '../waybill/__support__/label-fixtures';
@@ -35,11 +29,7 @@ describeIfDb('location outbound service wiring', () => {
   });
 });
 
-const authorization: ScopeAuthorizationDecision = {
-  scope: FULFILLMENT_SCOPE.DISPATCH_FORCE,
-  granted: true,
-  [SCOPE_AUTHORIZATION_DECISION_BRAND]: true,
-};
+const authorization = grantedPermissionDecision('fulfillment.dispatch.force');
 
 async function setup(tx: DbTx, split = false) {
   const f = await seedPickableShipment(tx, 3);
@@ -654,23 +644,21 @@ describeIfDb('LocationOutboundService — real inventory', () => {
     await inRollbackTx(db, async (tx) => {
       const { f, service, actor, scan, b } = await setup(tx, true);
       let forceAllowed = true;
+      // 강제출고 권한을 도중에 거둘 수 있게 getter 로 둔다
+      const byRole = {
+        ...FIRST_GRANT_ROLE_PERMISSIONS,
+        get logistics_worker(): readonly string[] {
+          return [
+            ...FIRST_GRANT_ROLE_PERMISSIONS.logistics_worker,
+            ...(forceAllowed ? ['fulfillment.dispatch.force'] : []),
+          ];
+        },
+      };
       const module = await Test.createTestingModule({
         controllers: [SimpleOutboundController, LocationOutboundController],
         providers: [
-          { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting() },
-          ScopeGuard,
-          {
-            provide: AuthorizationService,
-            useValue: {
-              getScopesByRoles: () =>
-                Promise.resolve(
-                  new Set([
-                    FULFILLMENT_SCOPE.WAREHOUSE_OPERATE,
-                    ...(forceAllowed ? [FULFILLMENT_SCOPE.DISPATCH_FORCE] : []),
-                  ]),
-                ),
-            },
-          },
+          // 라이브 enforce 와 같은 인가 — 권한 라우트는 새 판정이 정한다.
+          ...enforcedPermissionProvidersForTesting(byRole),
           { provide: LocationOutboundService, useValue: service },
           { provide: SimpleOutboundService, useValue: wiring.assembleSimpleOutbound(tx) },
           {

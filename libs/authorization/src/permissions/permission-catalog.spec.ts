@@ -41,6 +41,15 @@ describe('permission catalog', () => {
     expect(violations.map((p) => p.key)).toEqual([]);
   });
 
+  it('keeps role and admin-account management out of every first grant (master only, as before)', () => {
+    const masterOnly = ['iam.role.read', 'iam.role.write', 'iam.role.assign', 'iam.admin_user.write'];
+    const granted = PERMISSION_CATALOG.filter(
+      (p) => masterOnly.includes(p.key) && p.grantOnFirstRegistration.length > 0,
+    );
+    expect(granted.map((p) => p.key)).toEqual([]);
+    expect(PERMISSION_CATALOG.filter((p) => masterOnly.includes(p.key))).toHaveLength(masterOnly.length);
+  });
+
   it('only grants to known staff roles and never lists master', () => {
     const allowed = new Set<string>(INITIAL_GRANT_ROLES);
     const unknown = PERMISSION_CATALOG.flatMap((p) => p.grantOnFirstRegistration.filter((role) => !allowed.has(role)));

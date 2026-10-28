@@ -2,7 +2,6 @@ import {
   Controller,
   Post,
   Get,
-  Patch,
   Delete,
   Body,
   Param,
@@ -10,11 +9,9 @@ import {
   HttpCode,
   HttpStatus,
   NotFoundException,
-  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
+import { RequirePermission } from '@app/authorization';
 import { UnifiedReservationService } from '../../shared/services/unified-reservation.service';
 import { FulfillmentReservationReconciliationService } from '../services/fulfillment-reservation-reconciliation.service';
 import { ReleaseReservationDto } from '../dto/reservation/reserve-stock.dto';
@@ -22,7 +19,6 @@ import { ReservationDto, ReservationSummaryDto } from '../dto/reservation/reserv
 
 @ApiTags('Inventory - Reservations')
 @Controller('inventory/reservations')
-@UseGuards(ScopeGuard)
 export class ReservationController {
   constructor(
     private readonly unifiedReservation: UnifiedReservationService,
@@ -35,7 +31,6 @@ export class ReservationController {
   @RequirePermission('inventory.stock.adjust')
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({
     summary: '예약 해제',
     description: '특정 예약을 해제하여 재고를 다시 할당 가능하게 만듭니다.',
@@ -70,7 +65,6 @@ export class ReservationController {
    */
   @RequirePermission('inventory.stock.read')
   @Get('by-target')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: 'Target별 예약 조회',
     description: 'FO가 예약한 모든 SKU 정보를 조회합니다.',
@@ -106,7 +100,6 @@ export class ReservationController {
    */
   @RequirePermission('inventory.stock.read')
   @Get('by-sku/:skuId')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: 'SKU별 예약 조회',
     description: '특정 SKU가 어떤 FO/Task에 예약되어 있는지 조회합니다.',
@@ -142,7 +135,6 @@ export class ReservationController {
    */
   @RequirePermission('inventory.stock.read')
   @Get('summary/:warehouseId')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '창고별 예약 통계',
     description: '특정 창고의 SKU별 예약 현황을 조회합니다.',
@@ -170,7 +162,6 @@ export class ReservationController {
   @RequirePermission('inventory.stock.adjust')
   @Post('reconcile')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({
     summary: '예약 정합성 정리',
     description: 'terminal FO(shipped/completed/canceled)에 남은 confirmed 예약(좀비)을 탐지·해제합니다.',

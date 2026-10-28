@@ -1,4 +1,4 @@
-import { MasterRoleGuard, RequirePermission, type JwtPayload } from '@app/authorization';
+import { RequirePermission, type JwtPayload } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, Query, UseGuards } from '@nestjs/common';
 import type {
@@ -19,9 +19,8 @@ import {
 } from './dto/wage-settlement.dto';
 import { WageSettlementService } from './wage-settlement.service';
 
-// 옛 가드: 판정·정산 권한은 오늘 master 만 가진다 — 근태 통계와 같은 옛 가드로 맞춘다.
 @Controller('attendance/wage')
-@UseGuards(MasterRoleGuard, ActiveAttendanceStaffGuard)
+@UseGuards(ActiveAttendanceStaffGuard)
 export class WageSettlementController {
   constructor(private readonly service: WageSettlementService) {}
 

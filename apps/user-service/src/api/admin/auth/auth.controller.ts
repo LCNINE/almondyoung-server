@@ -1,4 +1,4 @@
-import { JwtPayload, RequireScopes, RequirePermission } from '@app/authorization';
+import { JwtPayload, RequirePermission } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import { Body, Controller, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth } from '@nestjs/swagger';
@@ -14,14 +14,12 @@ export class AuthController {
 
   @RequirePermission('iam.admin_user.write')
   @Post()
-  @RequireScopes('master')
   async createAccount(@CurrentIamActor() actor: IamActor, @Body() createAccountDto: CreateAccountDto) {
     return this.authService.createAccount(createAccountDto, actor);
   }
 
   @RequirePermission('customer.profile.write')
   @Patch('change-password')
-  @RequireScopes('master', 'admin:users:modify')
   changePassword(@Body() changePasswordDto: ChangePasswordDto, @CurrentUser() user: JwtPayload) {
     return this.authService.changePassword(changePasswordDto, user);
   }

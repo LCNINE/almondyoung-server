@@ -1,5 +1,5 @@
-import { Public, RolesGuard, User, RequirePermission } from '@app/authorization';
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Public, User, RequirePermission } from '@app/authorization';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CreateSitePopupDto, SitePopupListQueryDto, SitePopupResponseDto, UpdateSitePopupDto } from './dto';
 import { SitePopupsService } from './site-popups.service';
@@ -12,7 +12,6 @@ export class SitePopupsController {
 
   @RequirePermission('marketing.display.write')
   @Post()
-  @UseGuards(RolesGuard('master', 'admin'))
   @ApiBearerAuth()
   @ApiOperation({ summary: '팝업 공지 생성 (관리자)' })
   @ApiBody({ type: CreateSitePopupDto })
@@ -23,7 +22,6 @@ export class SitePopupsController {
 
   @RequirePermission('marketing.display.read')
   @Get()
-  @UseGuards(RolesGuard('master', 'admin'))
   @ApiBearerAuth()
   @ApiOperation({ summary: '팝업 공지 목록 조회 (관리자)' })
   @ApiResponse({ status: 200, type: [SitePopupResponseDto] })
@@ -50,7 +48,6 @@ export class SitePopupsController {
 
   @RequirePermission('marketing.display.read')
   @Get(':id')
-  @UseGuards(RolesGuard('master', 'admin'))
   @ApiBearerAuth()
   @ApiOperation({ summary: '팝업 공지 상세 조회 (관리자)' })
   @ApiParam({ name: 'id', description: '팝업 ID' })
@@ -62,7 +59,6 @@ export class SitePopupsController {
 
   @RequirePermission('marketing.display.write')
   @Put(':id')
-  @UseGuards(RolesGuard('master', 'admin'))
   @ApiBearerAuth()
   @ApiOperation({ summary: '팝업 공지 수정 (관리자)' })
   @ApiParam({ name: 'id', description: '팝업 ID' })
@@ -79,7 +75,6 @@ export class SitePopupsController {
 
   @RequirePermission('marketing.display.write')
   @Post(':id/reset-dismissals')
-  @UseGuards(RolesGuard('master', 'admin'))
   @ApiBearerAuth()
   @ApiOperation({
     summary: '팝업 숨김 초기화 (관리자)',
@@ -96,7 +91,6 @@ export class SitePopupsController {
 
   @RequirePermission('marketing.display.write')
   @Delete(':id')
-  @UseGuards(RolesGuard('master', 'admin'))
   @ApiBearerAuth()
   @ApiOperation({ summary: '팝업 공지 삭제 (관리자, Soft Delete)' })
   @ApiParam({ name: 'id', description: '팝업 ID' })

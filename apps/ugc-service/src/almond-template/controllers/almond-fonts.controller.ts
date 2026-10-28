@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Public, RequirePermission, RequireScopes, User } from '@app/authorization';
+import { Public, RequirePermission, User } from '@app/authorization';
 import { AlmondFontResponseDto, CreateAlmondFontDto } from '../dto/almond-font.dto';
 import { AlmondFontsService } from '../services/almond-fonts.service';
 
@@ -20,7 +20,6 @@ export class AlmondFontsController {
   @RequirePermission('marketing.almond_template.write')
   @Post('admin/almond-fonts')
   @ApiBearerAuth()
-  @RequireScopes('admin:template:write')
   @ApiOperation({
     summary: '글꼴 등록',
     description: 'file-service 에 올린 글꼴 파일을 목록에 넣는다. 파일 앞머리로 TTF·OTF·WOFF·WOFF2 인지 확인한다',
@@ -37,7 +36,6 @@ export class AlmondFontsController {
   @Delete('admin/almond-fonts/:id')
   @HttpCode(204)
   @ApiBearerAuth()
-  @RequireScopes('admin:template:write')
   @ApiOperation({ summary: '글꼴 목록에서 빼기', description: '이미 그 글꼴을 쓴 시안은 그대로 보이고 인쇄된다' })
   @ApiResponse({ status: 204 })
   async remove(@Param('id', ParseUUIDPipe) id: string, @User('userId') userId: string): Promise<void> {

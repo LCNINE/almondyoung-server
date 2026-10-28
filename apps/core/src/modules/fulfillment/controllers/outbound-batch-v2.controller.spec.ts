@@ -1,4 +1,4 @@
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { REQUIRED_PERMISSIONS_KEY } from '@app/authorization';
 import { OutboundBatchV2Controller } from './outbound-batch-v2.controller';
 
 describe('OutboundBatchV2Controller read snapshot contract', () => {
@@ -23,10 +23,10 @@ describe('OutboundBatchV2Controller read snapshot contract', () => {
     expect(batches.getBatch).toHaveBeenCalledWith('batch-1');
   });
 
-  it('protects list/detail with warehouse operate scope', () => {
+  it('protects list/detail with the shipment read permission', () => {
     for (const name of ['list', 'detail'] as const) {
       const method = Object.getOwnPropertyDescriptor(OutboundBatchV2Controller.prototype, name)?.value as object;
-      expect(Reflect.getMetadata('required_scopes', method)).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
+      expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, method)).toEqual(['fulfillment.shipment.read']);
     }
   });
 

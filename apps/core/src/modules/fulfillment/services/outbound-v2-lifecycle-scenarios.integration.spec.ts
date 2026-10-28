@@ -120,7 +120,6 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
     const commands = new FulfillmentCommandService(dbService);
     const invariant = new FulfillmentInvariantService();
     const audit = new AuditService(dbService);
-    const authorization = { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never;
     const controlled = new BatchControlledStockGuard();
     const inventoryOutbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, inventoryOutbox);
@@ -143,7 +142,6 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       reservations,
       invariant,
       audit,
-      authorization,
       workflow,
       assembleBoxWithdrawal(dbService),
       createCheckpointsForTesting(),
@@ -175,7 +173,6 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
     const recall = new ShipmentRecallService(
       dbService,
       commands,
-      authorization,
       waybills,
       inventory,
       reservations,

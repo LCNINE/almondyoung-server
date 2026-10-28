@@ -117,7 +117,6 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     shipmentReservations,
     invariant,
     audit,
-    { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
     workflowGate,
     withdrawals,
     createCheckpointsForTesting(),
@@ -227,7 +226,6 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     aggregate,
     shortPick: new ShipmentShortPickService(
       commands,
-      { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
       audit,
       workflowGate,
       boxes,

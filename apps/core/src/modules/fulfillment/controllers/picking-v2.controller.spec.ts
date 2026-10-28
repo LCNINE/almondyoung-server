@@ -1,6 +1,6 @@
+import { REQUIRED_PERMISSIONS_KEY } from '@app/authorization';
 import { UnauthorizedException } from '@nestjs/common';
 import { validateSync } from 'class-validator';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { AggregateBulkCartScanDto, AggregateSortScanDto } from '../dto/picking-v2.dto';
 import { PickingCommandV2Controller, PickingV2Controller } from './picking-v2.controller';
 
@@ -94,15 +94,15 @@ describe('PickingV2Controller aggregate-then-sort contract', () => {
     expect(() => controller.bulkCartScan(bulkScan, 'key', {})).toThrow(UnauthorizedException);
   });
 
-  it('requires warehouse operate scope for both scan endpoints', () => {
+  it('requires the warehouse operate permission for both scan endpoints', () => {
     const metadata = (methodName: 'bulkCartScan' | 'sortScan' | 'cartHandoff') => {
       const method = Object.getOwnPropertyDescriptor(PickingV2Controller.prototype, methodName)?.value as object;
-      return Reflect.getMetadata('required_scopes', method) as string[] | undefined;
+      return Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, method) as string[] | undefined;
     };
 
-    expect(metadata('bulkCartScan')).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
-    expect(metadata('sortScan')).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
-    expect(metadata('cartHandoff')).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
+    expect(metadata('bulkCartScan')).toEqual(['fulfillment.warehouse.operate']);
+    expect(metadata('sortScan')).toEqual(['fulfillment.warehouse.operate']);
+    expect(metadata('cartHandoff')).toEqual(['fulfillment.warehouse.operate']);
   });
 
   it('validates all custody identities and does not accept a body actor', () => {
@@ -211,13 +211,13 @@ describe('PickingCommandV2Controller generic strategy contract', () => {
     );
   });
 
-  it('rejects missing/unsafe idempotency and requires warehouse scope', () => {
+  it('rejects missing/unsafe idempotency and requires the warehouse permission', () => {
     const controller = new PickingCommandV2Controller({} as never);
     expect(() => controller.start({ batchId: ids.batchId }, undefined, actor)).toThrow();
     expect(() => controller.start({ batchId: ids.batchId }, 'contains space', actor)).toThrow();
     for (const name of ['start', 'scan', 'handoff', 'complete'] as const) {
       const method = Object.getOwnPropertyDescriptor(PickingCommandV2Controller.prototype, name)?.value as object;
-      expect(Reflect.getMetadata('required_scopes', method)).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
+      expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, method)).toEqual(['fulfillment.warehouse.operate']);
     }
   });
 });

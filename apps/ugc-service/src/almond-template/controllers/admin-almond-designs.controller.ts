@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiProduces, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { RequireScopes, RequirePermission } from '@app/authorization';
+import { RequirePermission } from '@app/authorization';
 import { NotFoundError } from '@app/shared';
 import {
   ALMOND_PRINT_DEFAULT_DPI,
@@ -33,7 +33,6 @@ export class AdminAlmondDesignsController {
 
   @RequirePermission('marketing.almond_template.read')
   @Get(':id')
-  @RequireScopes('admin:template:write')
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiOperation({ summary: '고객 시안 조회' })
   @ApiResponse({ status: 200, type: AdminAlmondDesignResponseDto })
@@ -44,7 +43,6 @@ export class AdminAlmondDesignsController {
 
   @RequirePermission('marketing.almond_template.read')
   @Get(':id/preview/:side')
-  @RequireScopes('admin:template:write')
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiParam({ name: 'side', enum: ['front.jpg', 'back.jpg'] })
   @ApiOperation({
@@ -72,7 +70,6 @@ export class AdminAlmondDesignsController {
 
   @RequirePermission('marketing.almond_template.read')
   @Get(':id/print-link')
-  @RequireScopes('admin:template:write')
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiQuery({ name: 'format', enum: ['pdf', 'eps', 'jpg'] })
   @ApiQuery({ name: 'dpi', required: false, example: ALMOND_PRINT_DEFAULT_DPI })
@@ -99,7 +96,6 @@ export class AdminAlmondDesignsController {
 
   @RequirePermission('marketing.almond_template.read')
   @Get(':id/print.eps')
-  @RequireScopes('admin:template:write')
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiOperation({
     summary: '인쇄용 EPS (앞·뒷면 나란히 한 장, 글자 아웃라인, CMYK). 유포 시트지처럼 AI/EPS 만 받는 상품용',
@@ -113,7 +109,6 @@ export class AdminAlmondDesignsController {
 
   @RequirePermission('marketing.almond_template.read')
   @Get(':id/print.pdf')
-  @RequireScopes('admin:template:write')
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiOperation({
     summary: '인쇄용 PDF (앞면 1쪽·뒷면 2쪽, 글자 아웃라인, CMYK). 명함용 — PET·미니배너는 PDF 를 받지 않는다',
@@ -127,7 +122,6 @@ export class AdminAlmondDesignsController {
 
   @RequirePermission('marketing.almond_template.read')
   @Get(':id/print.jpg')
-  @RequireScopes('admin:template:write')
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiQuery({ name: 'dpi', required: false, example: ALMOND_PRINT_DEFAULT_DPI })
   @ApiOperation({

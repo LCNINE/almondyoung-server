@@ -1,4 +1,4 @@
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { REQUIRED_PERMISSIONS_KEY } from '@app/authorization';
 import { FulfillmentOperationController, ShipmentPlanningController } from './shipment-planning.controller';
 
 describe('Shipment planning read contract', () => {
@@ -34,20 +34,18 @@ describe('Shipment planning read contract', () => {
     expect(planning.getOperation).toHaveBeenCalledWith('operation-1');
   });
 
-  it('requires warehouse operate scope on both read surfaces', () => {
+  it('requires the shipment read permission on both read surfaces', () => {
     const detail = Object.getOwnPropertyDescriptor(ShipmentPlanningController.prototype, 'detail')?.value as object;
     const operation = Object.getOwnPropertyDescriptor(FulfillmentOperationController.prototype, 'get')?.value as object;
-    expect(Reflect.getMetadata('required_scopes', detail)).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
-    expect(Reflect.getMetadata('required_scopes', operation)).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, detail)).toEqual(['fulfillment.shipment.read']);
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, operation)).toEqual(['fulfillment.shipment.read']);
   });
 
-  it('requires the exact recipient override scope for recipient changes', () => {
-    const recipient = Object.getOwnPropertyDescriptor(
-      ShipmentPlanningController.prototype,
-      'reviseRecipient',
-    )?.value as object;
-    expect(Reflect.getMetadata('required_scopes', recipient)).toEqual([
-      FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT,
+  it('requires the exact recipient override permission for recipient changes', () => {
+    const recipient = Object.getOwnPropertyDescriptor(ShipmentPlanningController.prototype, 'reviseRecipient')
+      ?.value as object;
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, recipient)).toEqual([
+      'fulfillment.shipment.override_recipient',
     ]);
   });
 });

@@ -104,7 +104,7 @@ export class ResolveMatchingDto {
   @ApiProperty({
     description:
       '매칭 링크 목록. 각 항목은 기존 재고상품(skuId) 또는 새로 만들 재고상품(newSku) 중 하나다. ' +
-      'newSku 를 쓰려면 inventory.manage 권한이 필요하다. skuIds/skuMappings 보다 우선한다.',
+      'newSku 를 쓰려면 inventory.master.write 권한이 필요하다. skuIds/skuMappings 보다 우선한다.',
     type: [MatchingLinkInputDto],
     required: false,
   })

@@ -8,7 +8,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AuthorizationService, PermissionCheckpoints } from '@app/authorization';
+import { PermissionCheckpoints } from '@app/authorization';
 import { DbService, InjectTypedDb } from '@app/db';
 import {
   FULFILLMENT_V2_STREAM,
@@ -18,8 +18,7 @@ import {
 } from '@packages/event-contracts/streams';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import { and, asc, eq, inArray } from 'drizzle-orm';
-import { legacyHasFulfillmentScope } from '../../../platform/auth/fulfillment-authz';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { FULFILLMENT_PERMISSION } from '../../../platform/auth/fulfillment-permissions';
 import { authzSubjectOf } from '../../../platform/auth/system-actor';
 import { InventoryCommandService } from '../../inventory/core/services/inventory-command.service';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -98,7 +97,6 @@ export class ShipmentRecallService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly commands: FulfillmentCommandService,
-    private readonly authorization: AuthorizationService,
     private readonly waybills: WaybillService,
     @Inject(InventoryCommandService) private readonly inventory: RecallInventoryPort,
     @Inject(ShipmentReservationService) private readonly reservations: RecallReservationPort,
@@ -125,7 +123,7 @@ export class ShipmentRecallService {
     if (dto.dispatchAttemptId !== dispatchAttemptId) {
       throw new BadRequestException('dispatchAttemptId must identify one exact recall attempt');
     }
-    await this.requireScope(actor);
+    this.requirePermission(actor);
 
     const accepted = await this.commands.execute<ShipmentRecallResponseDto>(
       {
@@ -785,16 +783,11 @@ export class ShipmentRecallService {
     if (!SHIPMENT_RECALL_REASONS.includes(dto.reason)) throw new BadRequestException('Unsupported recall reason');
   }
 
-  private async requireScope(actor: ShipmentRecallActor): Promise<void> {
-    const legacy = await this.checkpoints.legacyVerdict(() =>
-      legacyHasFulfillmentScope(this.authorization, actor.roles, FULFILLMENT_SCOPE.DISPATCH_RECALL),
-    );
+  private requirePermission(actor: ShipmentRecallActor): void {
     if (
-      !this.checkpoints.compare('fulfillment.dispatch_recall', legacy, authzSubjectOf(actor), [
-        'fulfillment.dispatch.recall',
-      ])
+      !this.checkpoints.check('fulfillment.dispatch_recall', authzSubjectOf(actor), ['fulfillment.dispatch.recall'])
     ) {
-      throw new ForbiddenException(`Missing required scope: ${FULFILLMENT_SCOPE.DISPATCH_RECALL}`);
+      throw new ForbiddenException(`Missing required permission: ${FULFILLMENT_PERMISSION.DISPATCH_RECALL}`);
     }
   }
 

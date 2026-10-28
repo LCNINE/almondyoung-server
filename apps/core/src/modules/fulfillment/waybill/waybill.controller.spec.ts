@@ -1,5 +1,5 @@
+import { REQUIRED_PERMISSIONS_KEY } from '@app/authorization';
 import { UnauthorizedException } from '@nestjs/common';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { WaybillController } from './waybill.controller';
 
 describe('WaybillController', () => {
@@ -89,16 +89,16 @@ describe('WaybillController', () => {
     expect(() => controller['actor']({})).toThrow(UnauthorizedException);
   });
 
-  it('requires the expected scopes per route', () => {
-    const metadata = (method: (...args: never[]) => unknown) => Reflect.getMetadata('required_scopes', method);
+  it('requires the expected permissions per route', () => {
+    const metadata = (method: (...args: never[]) => unknown) => Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, method);
 
-    expect(metadata(WaybillController.prototype.issue)).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
-    expect(metadata(WaybillController.prototype.manual)).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
-    expect(metadata(WaybillController.prototype.batch)).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
-    expect(metadata(WaybillController.prototype.void)).toEqual([FULFILLMENT_SCOPE.SHIPMENT_REOPEN]);
-    expect(metadata(WaybillController.prototype.reissue)).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
-    // 현장에서 막혔을 때 관리자를 기다리지 않고 풀 수 있어야 한다 — SHIPMENT_REOPEN 이 아니라 발급과 같은 스코프다.
-    expect(metadata(WaybillController.prototype.abandon)).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
-    expect(metadata(WaybillController.prototype.active)).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
+    expect(metadata(WaybillController.prototype.issue)).toEqual(['fulfillment.warehouse.operate']);
+    expect(metadata(WaybillController.prototype.manual)).toEqual(['fulfillment.warehouse.operate']);
+    expect(metadata(WaybillController.prototype.batch)).toEqual(['fulfillment.warehouse.operate']);
+    expect(metadata(WaybillController.prototype.void)).toEqual(['fulfillment.shipment.reopen']);
+    expect(metadata(WaybillController.prototype.reissue)).toEqual(['fulfillment.warehouse.operate']);
+    // 현장에서 막혔을 때 관리자를 기다리지 않고 풀 수 있어야 한다 — 재개방 권한이 아니라 발급과 같은 권한이다.
+    expect(metadata(WaybillController.prototype.abandon)).toEqual(['fulfillment.warehouse.operate']);
+    expect(metadata(WaybillController.prototype.active)).toEqual(['fulfillment.shipment.read']);
   });
 });

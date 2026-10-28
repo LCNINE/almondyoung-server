@@ -20,7 +20,7 @@ import {
   VariantMatchingBatchItemDto,
   VariantMatchingBatchResponseDto,
 } from '../dto/variant-matching-batch.dto';
-import { NewSkuScopeGuard } from '../guards/new-sku-scope.guard';
+import { NewSkuPermissionGuard } from '../guards/new-sku-permission.guard';
 import { RequirePermission } from '@app/authorization';
 
 @ApiTags('Product Matchings')
@@ -74,7 +74,7 @@ export class ProductSkuMappingController {
 
   @RequirePermission('order.matching.write')
   @Put(':variantId')
-  @UseGuards(NewSkuScopeGuard)
+  @UseGuards(NewSkuPermissionGuard)
   async upsert(@Param('variantId') variantId: string, @Body() dto: UpsertMatchingDto) {
     try {
       return await this.service.upsert(variantId, dto);

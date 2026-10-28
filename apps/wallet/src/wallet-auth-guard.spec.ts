@@ -1,4 +1,9 @@
-import { JwtAuthGuard, PermissionAuthority, RequirePermission, RouteRequirementResolver } from '@app/authorization';
+import {
+  enforcedPermissionProvidersForTesting,
+  JwtAuthGuard,
+  PermissionGuard,
+  RequirePermission,
+} from '@app/authorization';
 import { ExecutionContext, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host';
@@ -12,15 +17,6 @@ class Routes {
 
   merchantCall(): void {}
 }
-
-const authority = (enforce: boolean) =>
-  new PermissionAuthority(new RouteRequirementResolver(new Reflector()), {
-    service: 'wallet',
-    enforce,
-    refreshIntervalMs: 30_000,
-    retryBaseMs: 1_000,
-    summaryIntervalMs: 300_000,
-  });
 
 /** 공용 JWT 전략이 남기는 모양(`userId`·`sub`). 토큰이 없으면 인증 실패로 본다. */
 const jwt = (roles: string[]): Pick<JwtAuthGuard, 'canActivate'> => ({
@@ -39,24 +35,44 @@ const contextFor = (handler: keyof Routes, authorization?: string): ExecutionCon
   return context;
 };
 
+// 라이브(enforce)와 같은 권한 가드 — 앱에서 WalletAuthGuard 다음 전역 가드다.
+const permissionGuard = (byRole: Readonly<Record<string, readonly string[]>>): PermissionGuard => {
+  const guard = enforcedPermissionProvidersForTesting(byRole)
+    .map((provider): unknown => ('useValue' in provider ? provider.useValue : undefined))
+    .find((value): value is PermissionGuard => value instanceof PermissionGuard);
+  if (!guard) throw new Error('PermissionGuard provider missing');
+  return guard;
+};
+
+/** 앱의 전역 가드 순서(WalletAuthGuard → PermissionGuard)대로 돌린다. */
+async function admit(roles: string[], authorization?: string): Promise<boolean> {
+  const context = contextFor('adminRead', authorization);
+  const authenticated = await new WalletAuthGuard(jwt(roles), new Reflector()).canActivate(context);
+  return authenticated && permissionGuard({ cs: ['payment.payment.read'], intern: [] }).canActivate(context);
+}
+
 describe('WalletAuthGuard admin path', () => {
-  it('skips the role check on an admin route once enforced', async () => {
-    const guard = new WalletAuthGuard(jwt(['intern']), new Reflector(), authority(true));
+  it('rejects an admin route without a valid jwt with 401', async () => {
+    await expect(admit(['cs'])).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('authenticates without comparing roles; the permission guard answers 403 for a role without the permission', async () => {
+    const guard = new WalletAuthGuard(jwt(['intern']), new Reflector());
     await expect(guard.canActivate(contextFor('adminRead', 'Bearer t'))).resolves.toBe(true);
+
+    const denied = admit(['intern'], 'Bearer t');
+    await expect(denied).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(denied).rejects.toMatchObject({
+      response: { message: 'Permission required', requiredPermissions: ['payment.payment.read'] },
+    });
   });
 
-  it('requires the admin role while off', async () => {
-    const guard = new WalletAuthGuard(jwt(['intern']), new Reflector(), authority(false));
-    await expect(guard.canActivate(contextFor('adminRead', 'Bearer t'))).rejects.toBeInstanceOf(ForbiddenException);
+  it('admits a role that holds the route permission, whatever its name', async () => {
+    await expect(admit(['cs'], 'Bearer t')).resolves.toBe(true);
   });
 
-  it('still requires a valid jwt on an admin route once enforced', async () => {
-    const guard = new WalletAuthGuard(jwt(['admin']), new Reflector(), authority(true));
-    await expect(guard.canActivate(contextFor('adminRead'))).rejects.toBeInstanceOf(UnauthorizedException);
-  });
-
-  it('keeps the merchant key path untouched once enforced', async () => {
-    const guard = new WalletAuthGuard(jwt(['admin']), new Reflector(), authority(true));
+  it('keeps the merchant key path untouched', async () => {
+    const guard = new WalletAuthGuard(jwt(['admin']), new Reflector());
     await expect(guard.canActivate(contextFor('merchantCall', 'Bearer not-the-key'))).rejects.toBeInstanceOf(
       UnauthorizedException,
     );

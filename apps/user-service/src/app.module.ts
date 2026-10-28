@@ -193,7 +193,7 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
       provide: APP_GUARD,
       useClass: ScopeGuard,
     },
-    // 권한 강제 — AUTHZ_ENFORCE=true 일 때만 일한다(기본 꺼짐). 기존 가드 뒤에 둔다.
+    // 권한 판정 — 라우트 인가를 결정한다(설정으로 끌 수 없다). 인증 가드 뒤에 둔다.
     { provide: APP_GUARD, useClass: PermissionGuard },
   ],
 })

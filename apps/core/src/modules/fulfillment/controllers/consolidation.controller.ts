@@ -1,6 +1,5 @@
-import { Body, Controller, Get, Headers, Post, Query, UnauthorizedException, UseGuards } from '@nestjs/common';
-import { RequireScopes, ScopeGuard, User, RequirePermission, PiiResponse, OPEN_WITH_RECIPIENT } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { Body, Controller, Get, Headers, Post, Query, UnauthorizedException } from '@nestjs/common';
+import { User, RequirePermission, PiiResponse, OPEN_WITH_RECIPIENT } from '@app/authorization';
 import { ConsolidationActor, ConsolidationCandidateQueryDto, CreateConsolidationDto } from '../dto/consolidation.dto';
 import { ConsolidationService } from '../services/consolidation.service';
 
@@ -12,7 +11,6 @@ type AuthenticatedUser = {
 };
 
 @Controller('shipments')
-@UseGuards(ScopeGuard)
 export class ConsolidationController {
   constructor(private readonly consolidation: ConsolidationService) {}
 
@@ -41,14 +39,12 @@ export class ConsolidationController {
   })
   @RequirePermission('fulfillment.shipment.read')
   @Get('consolidation-candidates')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   findCandidates(@Query() query: ConsolidationCandidateQueryDto) {
     return this.consolidation.findCandidates(query.warehouseId, query.sourceShipmentId);
   }
 
   @RequirePermission('fulfillment.shipment.consolidate')
   @Post('consolidations')
-  @RequireScopes(FULFILLMENT_SCOPE.SHIPMENT_CONSOLIDATE)
   consolidate(
     @Body() dto: CreateConsolidationDto,
     @Headers('idempotency-key') idempotencyKey: string | undefined,

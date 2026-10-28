@@ -62,7 +62,6 @@ export function makeSeedDeps(db: PostgresJsDatabase<typeof wmsSchema>): SeedDeps
     wired.shipmentReservations,
     invariant,
     new AuditService(svc),
-    { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
     workflowGate,
     assembleBoxWithdrawal(svc),
     createCheckpointsForTesting(),

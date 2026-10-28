@@ -1,4 +1,4 @@
-import { RequireScopes, RequirePermission, PiiResponse, PiiWrite } from '@app/authorization';
+import { RequirePermission, PiiResponse, PiiWrite } from '@app/authorization';
 import {
   Body,
   Controller,
@@ -32,7 +32,6 @@ export class UsersController {
   })
   @RequirePermission('customer.profile.read')
   @Get()
-  @RequireScopes('master', 'admin:users:read', 'admin:access')
   @ApiOperation({
     summary: '사용자 목록 조회',
     description: '사용자 목록을 조회합니다.',
@@ -48,7 +47,6 @@ export class UsersController {
 
   @RequirePermission('customer.profile.read')
   @Get('stats/daily-signups')
-  @RequireScopes('master', 'admin:users:read', 'admin:access')
   @ApiOperation({ summary: '일별 신규 가입자 수 — KST 달력일 귀속' })
   async getDailySignups(@Query() query: DateRangeQueryDto) {
     return this.usersService.getDailySignups(query.from, query.to);
@@ -56,7 +54,6 @@ export class UsersController {
 
   @RequirePermission('customer.profile.read')
   @Get('consents')
-  @RequireScopes('master', 'admin:users:read')
   @ApiOperation({
     summary: '모든 사용자 동의 정보 조회',
     description: '모든 사용자 동의 정보를 조회합니다.',
@@ -83,7 +80,6 @@ export class UsersController {
 
   @RequirePermission('customer.profile.read')
   @Get('consent/:userId')
-  @RequireScopes('master', 'admin:users:read')
   @ApiOperation({
     summary: '해당 사용자 동의 정보 조회',
     description: '해당 사용자 동의 정보를 조회합니다.',
@@ -110,7 +106,6 @@ export class UsersController {
   })
   @RequirePermission('customer.profile.read')
   @Get(':userId')
-  @RequireScopes('master', 'admin:users:read')
   @ApiOperation({
     summary: '사용자 상세 정보 조회',
     description: '사용자 ID로 상세 정보를 조회합니다.',
@@ -136,7 +131,6 @@ export class UsersController {
   @PiiWrite({ fields: ['username', 'phoneNumber', 'address'] })
   @RequirePermission('customer.profile.write')
   @Patch(':userId')
-  @RequireScopes('master', 'admin:users:modify')
   @HttpCode(HttpStatus.OK)
   async updateUser(@Param('userId') userId: string, @Body() updateUserDto: UpdateUserDto) {
     const updatedUser = await this.usersService.updateUser(userId, updateUserDto);

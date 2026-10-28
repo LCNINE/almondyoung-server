@@ -9,11 +9,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
+import { type PermissionDecision } from '@app/authorization';
 import {
+  FORCE_DISPATCH_AUTHORIZATION_SOURCE,
   forceDispatchDecisionKey,
-  forceDispatchDecisionSource,
   isForceDispatchDecision,
-  type ForceDispatchDecision,
 } from '../../../platform/auth/force-dispatch-authorization';
 import {
   FULFILLMENT_STREAM,
@@ -57,7 +57,7 @@ export interface ForceShipmentDispatchInput {
   note?: string;
   actor: ShipmentDispatchActor;
   idempotencyKey: string;
-  authorization: ForceDispatchDecision | undefined;
+  authorization: PermissionDecision | undefined;
 }
 
 export interface ShipmentDispatchResponse {
@@ -118,7 +118,6 @@ interface ForceDispatchContext {
   note: string | null;
   commandRequestId: string;
   authorizationScope: string;
-  authorizationSource: 'scope_guard' | 'permission_guard';
   beforeLineManifest: DispatchLineManifestEvidence[];
 }
 
@@ -361,7 +360,6 @@ export class ShipmentDispatchService {
           note: input.note?.trim() || null,
           commandRequestId,
           authorizationScope: forceDispatchDecisionKey(authorization),
-          authorizationSource: forceDispatchDecisionSource(authorization),
           beforeLineManifest,
         });
         return {
@@ -859,7 +857,11 @@ export class ShipmentDispatchService {
         { userId: actor.id },
         {
           commandRequestId: force.commandRequestId,
-          authorization: { scope: force.authorizationScope, granted: true, source: force.authorizationSource },
+          authorization: {
+            scope: force.authorizationScope,
+            granted: true,
+            source: FORCE_DISPATCH_AUTHORIZATION_SOURCE,
+          },
           reason: force.reason,
           csCaseId: force.csCaseId,
           note: force.note,

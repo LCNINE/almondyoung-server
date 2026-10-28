@@ -10,11 +10,9 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
-  UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
+import { RequirePermission } from '@app/authorization';
 import { ApiOkResponsePaginated } from '../../shared/decorators/api-paginated-response.decorator';
 import { PaginatedResponseDto } from '../../shared/dto';
 import { CurrentStockDto } from '../dto/current-stock.dto';
@@ -35,13 +33,11 @@ const SKU_ID_PIPE = new ParseUUIDPipe();
 
 @ApiTags('Inventory')
 @Controller('inventory')
-@UseGuards(ScopeGuard)
 export class StockProjectionController {
   constructor(private readonly stockProjection: StockProjectionService) {}
 
   @RequirePermission('inventory.stock.read')
   @Get('/stocks')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '재고 현황 조회 (창고별 논리적 재고)',
     description:
@@ -57,7 +53,6 @@ export class StockProjectionController {
 
   @RequirePermission('inventory.stock.read')
   @Get('/stocks/summary')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '재고 요약 목록 조회 (SKU × 창고)',
     description: 'SKU·창고별 재고 요약 목록을 조회합니다. 재고 움직임이 전혀 없는 SKU × 창고 조합은 제외됩니다.',
@@ -81,7 +76,6 @@ export class StockProjectionController {
 
   @RequirePermission('inventory.stock.read')
   @Get('/stocks/sku/:skuId/total')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU별 총 재고 조회 (모든 창고 합계)' })
   @ApiResponse({
     status: 200,
@@ -103,7 +97,6 @@ export class StockProjectionController {
 
   @RequirePermission('inventory.stock.read')
   @Get('/stocks/sku/:skuId/warehouse/:warehouseId')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU별 특정 창고 재고 상세 조회' })
   @ApiParam({ name: 'skuId', description: 'SKU ID' })
   @ApiParam({ name: 'warehouseId', description: '창고 ID' })
@@ -114,7 +107,6 @@ export class StockProjectionController {
 
   @RequirePermission('inventory.stock.read')
   @Get('/stocks/location/:locationId')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '로케이션 내용물 조회 (SKU·상태·수량)' })
   @ApiParam({ name: 'locationId', description: '로케이션 ID' })
   @ApiResponse({ status: 200, type: LocationContentsDto })
@@ -125,7 +117,6 @@ export class StockProjectionController {
 
   @RequirePermission('inventory.stock.read')
   @Get('/stocks/inbound-pipeline')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '공급 파이프라인 조회 (발주 잔량 · 이동 대기 · 이동 중)',
     description:
@@ -156,7 +147,6 @@ export class StockProjectionController {
 
   @RequirePermission('inventory.stock.read')
   @Get('/expected-arrivals')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '입고 대기 목록 — 남은 수량이 있는 문서(지금은 발주)별 묶음',
     description: '옛 GET /inbound/pending 을 대체한다(PR-B).',
@@ -171,7 +161,6 @@ export class StockProjectionController {
 
   @RequirePermission('inventory.stock.read')
   @Get('/stocks/history')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '재고 이벤트 이력 조회 (SKU, 창고, 기간 기준)' })
   @ApiQuery({ name: 'skuId', required: true, description: '조회할 SKU ID (UUID 형식)' })
   @ApiQuery({ name: 'warehouseId', required: false, description: '조회할 창고 ID (UUID 형식)' })
@@ -191,7 +180,6 @@ export class StockProjectionController {
   @RequirePermission('inventory.stock.adjust')
   @Post('/stocks/summary/:skuId/:warehouseId/rebuild')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({ summary: '재고 현황 재구축 (이벤트 소싱으로부터)' })
   @ApiParam({ name: 'skuId', description: 'SKU ID' })
   @ApiParam({ name: 'warehouseId', description: '창고 ID' })
@@ -204,7 +192,6 @@ export class StockProjectionController {
   @RequirePermission('inventory.stock.adjust')
   @Delete('/stocks/events/:eventId/cancel')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({ summary: '재고 이벤트 취소 (반대 이벤트 생성)' })
   @ApiParam({ name: 'eventId', description: '취소할 이벤트 ID' })
   @ApiResponse({ status: 204, description: '이벤트가 성공적으로 취소되었습니다.' })
@@ -215,7 +202,6 @@ export class StockProjectionController {
 
   @RequirePermission('inventory.stock.read')
   @Get('/skus/:id/stock-summary')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU 재고 요약 (창고별 + 합계)' })
   @ApiParam({ name: 'id', description: 'SKU ID' })
   @ApiResponse({ status: 200, type: SkuStockSummaryDto })

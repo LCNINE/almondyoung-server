@@ -1,4 +1,4 @@
-import { RequireScopes, RequirePermission, PiiResponse, PiiWrite } from '@app/authorization';
+import { RequirePermission, PiiResponse, PiiWrite } from '@app/authorization';
 import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { BusinessLicenseResponseDto } from '../../business-licenses/dto/business-license.response.dto';
@@ -29,7 +29,6 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 200, description: '사업자 등록 정보 조회 성공' })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 403, description: '권한 없음' })
-  @RequireScopes('user:read')
   async getBusinessLicensesByUserId(@Param('userId') userId: string): Promise<BusinessLicenseResponseDto | null> {
     return this.businessLicensesService.getBusinessLicensesByUserId(userId);
   }
@@ -41,7 +40,6 @@ export class BusinessLicensesController {
   @PiiWrite({ fields: ['representativeName'] })
   @RequirePermission('customer.business_verification.review')
   @Post('/user/:userId')
-  @RequireScopes('master', 'admin:users:modify')
   @ApiOperation({
     summary: '관리자가 특정 사용자의 사업자 등록 정보 등록/수정',
     description:
@@ -60,7 +58,6 @@ export class BusinessLicensesController {
 
   @RequirePermission('customer.profile.read')
   @Get('stats/daily')
-  @RequireScopes('master', 'admin:users:read')
   @ApiOperation({ summary: '일별 사업자 등록 신청 수 — 신청일 KST 귀속' })
   async getDailyApplications(@Query() query: DateRangeQueryDto) {
     return this.businessLicensesService.getDailyApplications(query.from, query.to);
@@ -77,7 +74,6 @@ export class BusinessLicensesController {
   })
   @RequirePermission('customer.profile.read')
   @Get()
-  @RequireScopes('master', 'admin:users:read')
   @ApiOperation({
     summary: '사업자 등록 목록 조회',
     description: '사업자 등록 신청 목록을 페이지네이션하여 조회합니다.',
@@ -97,7 +93,6 @@ export class BusinessLicensesController {
   })
   @RequirePermission('customer.profile.read')
   @Get(':id')
-  @RequireScopes('master', 'admin:users:read')
   @ApiOperation({
     summary: '사업자 등록 상세 조회',
     description: '특정 사업자 등록 신청의 상세 정보를 조회합니다.',
@@ -110,7 +105,6 @@ export class BusinessLicensesController {
 
   @RequirePermission('customer.business_verification.review')
   @Put(':businessId')
-  @RequireScopes('master', 'admin:users:modify')
   @ApiOperation({
     summary: '사업자 등록 정보 수정',
     description: '사업자 등록 신청 정보를 수정하고 상태를 변경합니다.',
@@ -128,7 +122,6 @@ export class BusinessLicensesController {
 
   @RequirePermission('customer.account.archive')
   @Delete(':id')
-  @RequireScopes('master', 'admin:users:archive', 'admin:users:purge')
   @ApiOperation({
     summary: '사업자 등록 정보 삭제',
     description: '사업자 등록 신청 정보를 삭제합니다.',

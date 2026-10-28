@@ -1,31 +1,18 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Post,
-  UnauthorizedException,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, UnauthorizedException } from '@nestjs/common';
 import { ApiCreatedResponse, ApiOkResponse } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { User, RequirePermission } from '@app/authorization';
 import { ConfirmLabelPrintDto, LabelPrintConfirmationDto, WaybillLabelResponseDto } from './dto/waybill.dto';
 import { WaybillLabelService } from './waybill-label.service';
 
 type AuthenticatedUser = { id?: string; userId?: string; sub?: string };
 
 @Controller()
-@UseGuards(ScopeGuard)
 export class WaybillLabelController {
   constructor(private readonly labels: WaybillLabelService) {}
 
   // 한진 자체출력 운송장(ZPL). 부작용 없음 — 재출력은 같은 호출을 한 번 더(#913).
   @RequirePermission('fulfillment.shipment.read')
   @Get('shipments/:shipmentId/waybill/label')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: WaybillLabelResponseDto })
   label(@Param('shipmentId') shipmentId: string) {
     return this.labels.renderLabel(shipmentId);
@@ -34,7 +21,6 @@ export class WaybillLabelController {
   // 배치 카드의 «재출력 필요 N» 과 「실패·미인쇄만 다시」 대상(never_printed·reprint_required). 조회 전용.
   @RequirePermission('fulfillment.shipment.read')
   @Get('outbound-batches/:batchId/waybill-label-states')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   labelStates(@Param('batchId') batchId: string) {
     return this.labels.statesForBatch(batchId);
   }
@@ -43,7 +29,6 @@ export class WaybillLabelController {
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('shipments/:shipmentId/waybill/label-prints')
   @HttpCode(HttpStatus.CREATED)
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiCreatedResponse({ type: LabelPrintConfirmationDto })
   confirmPrint(
     @Param('shipmentId') shipmentId: string,

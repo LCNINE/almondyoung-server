@@ -18,12 +18,12 @@ describe('역할 이름 검사기', () => {
 
   it('판정 지점 이름이 리터럴이 아닌 호출을 찾는다 — 여러 줄 호출도', () => {
     const source = [
-      "this.checkpoints.compare('a.b', true, subject, []);",
-      'this.checkpoints.compare(\n  point,\n  legacy,\n  subject,\n  [],\n);',
-      'this.checkpoints.compareDecision(`work.${id}`, true, request, []);',
-      'other.compare(point, 1);',
+      "this.checkpoints.check('a.b', subject, []);",
+      'this.checkpoints.check(\n  point,\n  subject,\n  [],\n);',
+      'this.checkpoints.checkRoute(`work.${id}`, request, []);',
+      'other.check(point, 1);',
     ].join('\n');
-    expect(nonLiteralCheckpointCalls(source)).toEqual([2, 8]);
+    expect(nonLiteralCheckpointCalls(source)).toEqual([2, 7]);
   });
 
   it('화면 파일(.tsx)은 JSX 로 읽어 그 안의 역할 이름 문자열도 센다', () => {

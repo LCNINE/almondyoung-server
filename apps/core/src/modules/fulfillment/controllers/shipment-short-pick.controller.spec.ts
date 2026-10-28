@@ -1,5 +1,4 @@
-import { REQUIRED_SCOPES_KEY } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { REQUIRED_PERMISSIONS_KEY } from '@app/authorization';
 import { ReportShipmentShortPickDto } from '../dto/shipment-short-pick.dto';
 import { ShipmentShortPickController } from './shipment-short-pick.controller';
 
@@ -22,7 +21,7 @@ describe('ShipmentShortPickController', () => {
     reason: 'inventory_shortage',
   };
 
-  it('requires shipment reopen or station short-pick scope and forwards the exact actor/idempotency command', async () => {
+  it('requires shipment reopen or station short-pick permission and forwards the exact actor/idempotency command', async () => {
     const shortPick = { report: jest.fn().mockResolvedValue({ operationId: 'operation-1' }) };
     const controller = new ShipmentShortPickController(shortPick as never);
 
@@ -31,9 +30,9 @@ describe('ShipmentShortPickController', () => {
       roles: ['logistics_manager'],
     });
 
-    expect(Reflect.getMetadata(REQUIRED_SCOPES_KEY, ShipmentShortPickController.prototype.report)).toEqual([
-      FULFILLMENT_SCOPE.SHIPMENT_REOPEN,
-      FULFILLMENT_SCOPE.SHIPMENT_SHORT_PICK,
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, ShipmentShortPickController.prototype.report)).toEqual([
+      'fulfillment.shipment.reopen',
+      'fulfillment.shipment.short_pick',
     ]);
     expect(shortPick.report).toHaveBeenCalledWith(shipmentId, dto, 'short-pick-key', {
       id: '77777777-7777-4777-8777-777777777777',

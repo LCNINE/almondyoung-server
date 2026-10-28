@@ -13,7 +13,7 @@ export const INTERNAL_KEY_ENV = 'INTERNAL_KEY_ENV';
 /**
  * 사람 JWT 가 없는 **서비스 간 호출** 전용 가드. 공유 시크릿을 `Authorization` 헤더로 받는다.
  *
- * 단독으로 쓰지 말고 `@InternalOnly()` 를 쓸 것 — 전역 `JwtAuthGuard`/`AdminRealmGuard` 면제와
+ * 단독으로 쓰지 말고 `@InternalOnly()` 를 쓸 것 — 전역 `JwtAuthGuard` 면제와
  * 이 가드의 바인딩이 **한 벌로** 붙어야 한다. 둘 중 하나만 붙으면 각각 "내부 호출자가 401" 이거나
  * "무인증 개방" 이 된다.
  */

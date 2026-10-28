@@ -358,8 +358,9 @@ Medusa 를 새로 부르면 `medusa-permissions.ts` 에 경로를 더한다(`med
 시스템 역할 보유자 규칙과 변경 이력이 거기서 같은 트랜잭션으로 묶인다(ADR-0048 §24~28). 새 권한을 추가할 때 같은 대상의
 `.read` 가 없으면 `requires` 나 `standalone` 을 적는다(`permission-dependencies.spec.ts` 가 빨갛다).
 
-서비스별 `AUTHZ_ENFORCE=true` 면 그 서비스의 권한 라우트는 새 판정만 결정하고 옛 인가 가드는 물러난다(ADR-0048 §37~39) — 새 인가 판정은
-옛 가드(`RolesGuard`·`@RequireScopes`)가 아니라 `@RequirePermission`·판정 지점(`PermissionCheckpoints`)으로 쓴다. 개인정보 원문을 본문으로
+권한 라우트는 언제나 `PermissionGuard` 가 결정한다 — 스위치는 없고, 되돌리기는 직전 `deploy/<stage>/…` 태그 커밋을 코드·배포 설정째 재배포한다(이미지만 돌리면 옛 가드가 판정한다, ADR-0048 §37~39).
+본문 조건·핸들러 안의 판정은 `PermissionCheckpoints.check`/`checkRoute` 로 권한만 보고 쓴다. 옛 가드(`RolesGuard`·`@RequireScopes`)는
+새로 달지 않는다(`@RequireScopes` 는 기존 고객 셀프서비스 라우트에만 남아 있다). 개인정보 원문을 본문으로
 받는 새 쓰기 라우트는 `@PiiWrite` 와 `PII_WRITE_ROUTES` 한 줄을 더한다(없으면 `pii-write-routes.spec.ts` 가 빨갛다).
 
 ### 크론 (`@app/cron-once`)

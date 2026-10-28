@@ -12,7 +12,7 @@ export class UgcServiceController {
     return this.ugcServiceService.getHello();
   }
 
-  // ALB/번들 헬스체크용. 전역 JwtAuthGuard/ScopeGuard 우회 위해 @Public() 필수.
+  // ALB/번들 헬스체크용. 전역 JwtAuthGuard/PermissionGuard 우회 위해 @Public() 필수.
   @Get('health')
   @Public()
   health() {

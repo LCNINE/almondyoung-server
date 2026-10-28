@@ -1,19 +1,7 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  Param,
-  Patch,
-  Post,
-  Query,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { ApiBody, ApiConsumes, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RolesGuard, User, RequirePermission } from '@app/authorization';
+import { User, RequirePermission } from '@app/authorization';
 import { BulkSessionService } from './services/bulk-session.service';
 import { readWorkbookUpload } from './services/bulk-upload.multipart';
 import {
@@ -54,7 +42,6 @@ function parseImageLimit(limit: string): number {
 // (양식 다운로드)는 이미 라이브 노출 상태라, 실제 MD 계정이 admin/master 롤을 갖고
 // 있지 않으면 배포 직후 403 이 된다. 배포 전 실측(라이브 DB 롤 매핑 확인)이 선행조건 —
 // Task 13 체크리스트 항목, 이 자리에서 판단할 사안이 아니다.
-@UseGuards(RolesGuard('master', 'admin'))
 @Controller('product-bulk-sessions')
 export class BulkSessionController {
   constructor(private readonly service: BulkSessionService) {}

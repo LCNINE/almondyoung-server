@@ -28,8 +28,7 @@ import { AttendanceCalendarService } from './services/attendance-calendar.servic
 import { AttendanceRequestManager } from './services/attendance-request.manager';
 import { AttendanceJobsService } from './services/attendance-jobs.service';
 import { AttendanceController } from './controllers/attendance.controller';
-import { MasterRoleGuard, type JwtPayload } from '@app/authorization';
-import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { REQUIRED_PERMISSIONS_KEY, type JwtPayload } from '@app/authorization';
 
 const run = process.env.REQUIRE_ATTENDANCE_DB === '1' ? describe : describe.skip;
 const owner = '00000000-0000-4000-8000-000000000001';
@@ -77,7 +76,6 @@ run('attendance PostgreSQL transactions', () => {
       new DatabaseRolePermissionSource(new RolePermissionsReader(new IamRepository(database))),
       {
         service: 'user-service',
-        enforce: false,
         refreshIntervalMs: 30000,
         retryBaseMs: 1000,
         summaryIntervalMs: 300000,
@@ -673,7 +671,7 @@ run('attendance PostgreSQL transactions', () => {
 
     // Metadata inspection reads the method reference without invoking it or losing its receiver.
     // eslint-disable-next-line @typescript-eslint/unbound-method
-    expect(Reflect.getMetadata(GUARDS_METADATA, controller.updateSite)).toContain(MasterRoleGuard);
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, controller.updateSite)).toEqual(['attendance.worksite.write']);
 
     const changed = await controller.updateSite(masterUser, site, input);
 

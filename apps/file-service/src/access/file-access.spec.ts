@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { AuthorizationService, createCheckpointsForTesting, PermissionCheckpoints } from '@app/authorization';
+import { createCheckpointsForTesting, PermissionCheckpoints } from '@app/authorization';
 import { NotFoundError, ForbiddenError } from '@app/shared';
 import { FileAccess } from './file-access';
 import { FileRepository } from '../shared/repositories/file.repository';
@@ -9,7 +9,6 @@ import { JwtPayload } from '../shared/types/jwt-payload.interface';
 describe('FileAccess', () => {
   let fileAccess: FileAccess;
   let repo: jest.Mocked<FileRepository>;
-  let authorization: jest.Mocked<AuthorizationService>;
 
   const ownerUser: JwtPayload = { userId: 'owner-1', email: 'o@x', roles: [] };
   const otherUser: JwtPayload = { userId: 'other-1', email: 'oo@x', roles: [] };
@@ -46,21 +45,12 @@ describe('FileAccess', () => {
           provide: FileRepository,
           useValue: { findById: jest.fn(), softDelete: jest.fn() },
         },
-        {
-          provide: AuthorizationService,
-          useValue: { hasScope: jest.fn() },
-        },
         { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting() },
       ],
     }).compile();
 
     fileAccess = module.get(FileAccess);
     repo = module.get(FileRepository) as jest.Mocked<FileRepository>;
-    authorization = module.get(AuthorizationService) as jest.Mocked<AuthorizationService>;
-
-    // 실제 authz DB 에는 'master' 역할→스코프 매핑이 시드돼 있지 않다.
-    // master 통과는 roles.includes('master') 단락 경로로만 동작해야 한다.
-    authorization.hasScope.mockResolvedValue(false);
   });
 
   describe('loadReadable', () => {

@@ -11,8 +11,6 @@ export const DEFAULT_SUMMARY_INTERVAL_MS = 300_000;
 
 export interface PermissionRuntimeOptions {
   readonly service: OwnerService;
-  /** true 면 PermissionGuard 가 판정을 강제한다. 기본 false — 그림자 판정만 한다. */
-  readonly enforce: boolean;
   readonly refreshIntervalMs: number;
   readonly retryBaseMs: number;
   readonly summaryIntervalMs: number;

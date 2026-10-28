@@ -5,7 +5,7 @@ import { SalesChannelsService } from './sales-channels.service';
 
 /**
  * channel-adapter 의 폴링 게이트(#654)가 부르는 내부 라우트다. 사람 JWT 가 없으므로 전역
- * JwtAuthGuard/AdminRealmGuard 를 면제하고 공유 키로 막는다.
+ * JwtAuthGuard/PermissionGuard 를 면제하고 공유 키로 막는다.
  *
  * 어드민용 `SalesChannelsController` 와 파일을 나눈 이유가 여기 있다 — 한 파일에 두 인증 체제가
  * 섞이면 나중에 핸들러를 더하는 사람이 어느 쪽 규칙인지 헷갈린다. 클래스 단위로 `@InternalOnly()`

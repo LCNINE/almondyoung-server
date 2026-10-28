@@ -3,7 +3,6 @@ import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { eq } from 'drizzle-orm';
 import { DbService } from '@app/db';
-import { FULFILLMENT_SCOPE } from '../../../../platform/auth/fulfillment-scopes';
 import { DbTx, wmsSchema, wmsTables } from '../../../inventory/schema/inventory.schema';
 import { AuditService } from '../../../inventory/shared/services/audit.service';
 import { ConsolidationService } from '../consolidation.service';
@@ -33,16 +32,6 @@ export function makeConsolidationService(
     wired.shipmentReservations,
     new FulfillmentInvariantService(),
     new AuditService(dbService),
-    {
-      getScopesByRoles: () =>
-        Promise.resolve(
-          new Set([
-            FULFILLMENT_SCOPE.SHIPMENT_CONSOLIDATE,
-            FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT,
-            FULFILLMENT_SCOPE.SHIPMENT_REOPEN,
-          ]),
-        ),
-    } as never,
     new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: mode })),
     createCheckpointsForTesting(),
   );

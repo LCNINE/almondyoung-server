@@ -110,7 +110,7 @@ export const notificationEnvSchema = z
     // FCM 토큰 등록 엔드포인트 JWT 검증용 (user-service와 동일한 AUTH_SECRET)
     JWT_ACCESS_SECRET: z.string().optional(),
 
-    // 전역 JwtAuthGuard/AdminRealmGuard 용. core 등 다른 서비스와 같은 dual-mode:
+    // 전역 JwtAuthGuard 용. core 등 다른 서비스와 같은 dual-mode:
     //   - HS256 legacy: AUTH_SECRET
     //   - RS256/OIDC:   OIDC_ISSUER_URL
     // 여기서 둘 다 optional 인 이유는 AuthorizationModule 의 AUTH_CONFIG 팩토리가 "둘 중 하나는

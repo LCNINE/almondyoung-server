@@ -1,8 +1,7 @@
-import { Injectable, CanActivate, ExecutionContext, Inject, Logger, Optional } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, Inject, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { REQUIRED_SCOPES_KEY } from '../decorators/require-scopes.decorator';
 import { AuthorizationService } from '../services/authorization.service';
-import { PermissionAuthority } from '../services/permission-authority';
 
 export const SCOPE_AUTHORIZATION_DECISION_BRAND: unique symbol = Symbol('scope-authorization-decision');
 const REQUEST_SCOPE_DECISIONS: unique symbol = Symbol('request-scope-decisions');
@@ -53,12 +52,9 @@ export class ScopeGuard implements CanActivate {
   constructor(
     private reflector: Reflector,
     @Inject(AuthorizationService) private authService: Pick<AuthorizationService, 'getScopesByRoles'>,
-    /** 새 권한 판정으로 넘어간 서비스의 권한 라우트에서는 물러난다(판정 낙인도 남기지 않는다). */
-    @Optional() @Inject(PermissionAuthority) private readonly authority?: Pick<PermissionAuthority, 'decides'>,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    if (this.authority?.decides(context)) return true;
     const requiredScopes = this.reflector.getAllAndOverride<string[]>(REQUIRED_SCOPES_KEY, [
       context.getHandler(),
       context.getClass(),
