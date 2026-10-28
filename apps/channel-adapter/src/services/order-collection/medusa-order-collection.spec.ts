@@ -1085,16 +1085,14 @@ describe('Medusa order collection (source + translator)', () => {
 
     it('상계액이 있으면 싣고, 0 이면 키가 없다(#1016 37번)', async () => {
       const provider = makeProvider({
-        listOrders: jest
-          .fn()
-          .mockResolvedValue([
-            order({
-              partialCancels: {
-                'req-a': { ...record, externalRefundApplied: 10000 },
-                'req-b': { ...record, externalRefundApplied: 0 },
-              },
-            }),
-          ]),
+        listOrders: jest.fn().mockResolvedValue([
+          order({
+            partialCancels: {
+              'req-a': { ...record, externalRefundApplied: 10000 },
+              'req-b': { ...record, externalRefundApplied: 0 },
+            },
+          }),
+        ]),
       });
       const [item] = (await provider.fetchOrders(null)).orders;
       expect(item.changes.cancelRequests?.[0]).toMatchObject({ requestId: 'req-a', externalRefundApplied: 10000 });
@@ -1158,16 +1156,21 @@ describe('Medusa order collection (source + translator)', () => {
       metadata: { almondExchange: { requestId: 'cr_1', sourceItemId: 'item_1', variantId: 'variant_1' } },
     };
 
-    it('대체 줄은 스냅샷 줄에 없고, 대체 줄 추가 전후 changes 가 같다', async () => {
+    it('대체 줄은 스냅샷 줄과 createPayload items 에서 빠진다', async () => {
       const before = await makeProvider({
         listOrders: jest.fn().mockResolvedValue([baseOrder([])]),
       } as any).fetchOrders(null);
       const after = await makeProvider({
-        listOrders: jest.fn().mockResolvedValue([baseOrder([replacement])]),
+        listOrders: jest
+          .fn()
+          .mockResolvedValue([{ ...baseOrder([{ ...replacement, unit_price: 7000 }]), total: 17000 }]),
       } as any).fetchOrders(null);
       expect(after.failures).toHaveLength(0);
       expect(after.orders[0].createPayload.items.map((i) => i.orderItemId)).toEqual(['item_1']);
-      expect(after.orders[0].changes).toEqual(before.orders[0].changes);
+      expect(after.orders[0].createPayload.items).toEqual(before.orders[0].createPayload.items);
+      // 실제 교환은 값이 V > 0 인 줄을 더해 order.total 이 V 만큼 오른다 — changes 에서 달라지는 칸은 totalAmount 뿐이다
+      // (core 변경 판정은 주소·줄만 비교하므로 no-op OrderModified 한 번으로 끝난다 — 수용된 동작).
+      expect(after.orders[0].changes).toEqual({ ...before.orders[0].changes, totalAmount: 17000 });
     });
   });
 });
