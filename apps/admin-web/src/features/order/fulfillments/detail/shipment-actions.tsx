@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { usePermissionCheck } from '@/hooks/use-permission';
+import { useDeliveryProfiles } from '@/lib/services/inventory/queries';
 import {
   SPLIT_QTY_ERROR,
   isSplitQtyAllowed,
@@ -116,6 +117,11 @@ export function ShipmentActions({
   const [shippingProfileId, setShippingProfileId] = useState(
     shipment.shippingProfileId ?? ''
   );
+  const profiles = useDeliveryProfiles();
+  // 프로필이 하나뿐이면 고를 것이 없다
+  const chosenProfileId =
+    shippingProfileId ||
+    (profiles.data?.length === 1 ? profiles.data[0].id : '');
   const [reason, setReason] = useState('');
   const [csCaseId, setCsCaseId] = useState('');
   const [note, setNote] = useState('');
@@ -270,12 +276,12 @@ export function ShipmentActions({
         return;
       }
       if (action === 'plan') {
-        if (!shippingProfileId.trim()) {
-          toast.error('shipping profile UUID를 입력하세요.');
+        if (!chosenProfileId) {
+          toast.error('배송 프로필을 고르세요.');
           return;
         }
         const data = {
-          shippingProfileId: shippingProfileId.trim(),
+          shippingProfileId: chosenProfileId,
           expectedManifestVersion: shipment.manifestVersion,
           expectedReservationVersion: shipment.reservationVersion,
         };
@@ -452,11 +458,33 @@ export function ShipmentActions({
 
           {action === 'plan' && (
             <div className="space-y-1.5">
-              <Label>shipping profile UUID</Label>
-              <Input
-                value={shippingProfileId}
-                onChange={(event) => setShippingProfileId(event.target.value)}
-              />
+              <Label>배송 프로필</Label>
+              <Select
+                value={chosenProfileId}
+                onValueChange={setShippingProfileId}
+                disabled={profiles.isLoading}
+              >
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={profiles.isLoading ? '불러오는 중…' : '배송 프로필 선택'}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {(profiles.data ?? []).map((profile) => (
+                    <SelectItem key={profile.id} value={profile.id}>
+                      {profile.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {profiles.isError && (
+                <p className="text-xs text-red-600">
+                  배송 프로필 목록을 불러오지 못했어요. 재고 조회 권한이 있는지 확인해 주세요.
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                상품에 지정된 배송 프로필과 같아야 해요. 모르면 재고 → 배송 프로필 화면에서 이 상품이 속한 프로필을 확인하세요.
+              </p>
             </div>
           )}
 
