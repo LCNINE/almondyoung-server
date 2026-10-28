@@ -81,6 +81,18 @@ export function setup(infra: SharedInfra) {
   const wowpressSenderZipcode = new sst.Secret('WowpressSenderZipcode', '');
   const wowpressSenderAddr1 = new sst.Secret('WowpressSenderAddr1', '');
   const wowpressSenderAddr2 = new sst.Secret('WowpressSenderAddr2', '');
+  // 한진 운송장(core waybill). DEV 앱 키와 LIVE 앱 키가 호스트·계약번호까지 통째로 갈리므로 URL 도 secret 으로 둔다.
+  const hanjinClientId = new sst.Secret('HanjinClientId');
+  const hanjinApiKey = new sst.Secret('HanjinApiKey');
+  const hanjinSecretKey = new sst.Secret('HanjinSecretKey');
+  const hanjinContractNo = new sst.Secret('HanjinContractNo');
+  const hanjinOrderBaseUrl = new sst.Secret('HanjinOrderBaseUrl');
+  const hanjinPrintBaseUrl = new sst.Secret('HanjinPrintBaseUrl');
+  const hanjinSenderName = new sst.Secret('HanjinSenderName');
+  const hanjinSenderZip = new sst.Secret('HanjinSenderZip');
+  const hanjinSenderBaseAddr = new sst.Secret('HanjinSenderBaseAddr');
+  const hanjinSenderDtlAddr = new sst.Secret('HanjinSenderDtlAddr');
+  const hanjinSenderTel = new sst.Secret('HanjinSenderTel');
 
   // Search — 서버 간(internal) 라우트 인증 키 (medusa 주문/백필 → search 판매량 색인)
   // 아래 searchEnv 와 Medusa **양쪽**에 같은 값이 들어가야 한다. search 쪽 라우트는
@@ -674,6 +686,18 @@ export function setup(infra: SharedInfra) {
       WOWPRESS_SENDER_ZIPCODE: wowpressSenderZipcode.value,
       WOWPRESS_SENDER_ADDR1: wowpressSenderAddr1.value,
       WOWPRESS_SENDER_ADDR2: wowpressSenderAddr2.value,
+      HANJIN_CLIENT_ID: hanjinClientId.value,
+      HANJIN_API_KEY: hanjinApiKey.value,
+      HANJIN_SECRET_KEY: hanjinSecretKey.value,
+      HANJIN_CONTRACT_NO: hanjinContractNo.value,
+      HANJIN_ORDER_BASE_URL: hanjinOrderBaseUrl.value,
+      HANJIN_PRINT_BASE_URL: hanjinPrintBaseUrl.value,
+      HANJIN_SENDER_NAME: hanjinSenderName.value,
+      HANJIN_SENDER_ZIP: hanjinSenderZip.value,
+      HANJIN_SENDER_BASE_ADDR: hanjinSenderBaseAddr.value,
+      HANJIN_SENDER_DTL_ADDR: hanjinSenderDtlAddr.value,
+      HANJIN_SENDER_TEL: hanjinSenderTel.value,
+      HANJIN_LABEL_TYPE: 'FS',
       UGC_SERVICE_URL: url('ugc'),
       UGC_INTERNAL_KEY: ugcInternalKey.value,
       // 켜기 전엔 print_orders 행만 쌓이고 와우프레스로 보내지 않는다. 첫 품목 검증 뒤 'true'.
