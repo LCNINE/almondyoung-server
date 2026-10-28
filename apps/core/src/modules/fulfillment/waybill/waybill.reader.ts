@@ -7,6 +7,7 @@ import { canonicalFulfillmentRequestHash } from '../services/fulfillment-command
 import { WAYBILL, WAYBILL_TERMINAL_STATUSES } from './waybill.constants';
 import type { IssueContext, LabelAllocation, WaybillRow } from './waybill.types';
 import { warehouseIdOf } from '../shipment/shipment-owner';
+import { labelLocationCode } from './label/label-items';
 
 const W = inventoryTables.waybills;
 
@@ -117,6 +118,8 @@ export class WaybillReader {
       .select({
         shipmentLineId: A.shipmentLineId,
         locationCode: inventoryTables.locations.code,
+        systemRole: inventoryTables.locations.systemRole,
+        shelfCode: inventoryTables.skuShelfPositions.positionCode,
         skuId: inventoryTables.shipmentLines.skuId,
         skuName: inventoryTables.skus.name,
         qty: A.qty,
@@ -125,6 +128,7 @@ export class WaybillReader {
       .innerJoin(inventoryTables.locations, eq(inventoryTables.locations.id, A.sourceLocationId))
       .innerJoin(inventoryTables.shipmentLines, eq(inventoryTables.shipmentLines.id, A.shipmentLineId))
       .innerJoin(inventoryTables.skus, eq(inventoryTables.skus.id, inventoryTables.shipmentLines.skuId))
+      .leftJoin(inventoryTables.skuShelfPositions, eq(inventoryTables.skuShelfPositions.skuId, inventoryTables.shipmentLines.skuId))
       .where(and(eq(A.workItemId, item.id), gt(A.qty, 0)))
       .orderBy(asc(inventoryTables.locations.code), asc(inventoryTables.shipmentLines.skuId));
     return {
@@ -132,7 +136,10 @@ export class WaybillReader {
       batchStarted: item.batchStartedAt !== null,
       withdrawing: active?.status === 'withdrawing',
       lines,
-      rows,
+      rows: rows.map(({ systemRole, shelfCode, ...row }) => ({
+        ...row,
+        locationCode: labelLocationCode({ locationCode: row.locationCode, systemRole, shelfCode }),
+      })),
     };
   }
 }

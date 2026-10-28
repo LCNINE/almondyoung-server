@@ -7,6 +7,7 @@
 - **Ⓒ 상자 종결 (일일, Ⓐ 직후)** — core 에 열린 채 남은 출고 상자를 닫고 거기 붙들린 예약을 푼다. Ⓑ 가 Medusa 쪽이라면 Ⓒ 는 **core 쪽 같은 병**이다.
 - **①③ 입고예정 (재고 동기화 때마다)** — 셀메이트 CSV 의 `입고예정일` 을 core 발주 라인으로 넣고(①) Medusa 로 옮겨(③) **스토어프론트에 입고예정일을 표시**한다.
 - **Ⓓ 기한 지난 발주 종결 (수시, ③ 직전)** — 예정일이 지났는데 미수령인 발주 라인을 잔량 포기로 닫는다. 안 하면 ③ 이 볼 후보가 과거로 오염된다.
+- **Ⓔ 선반 위치 (재고 동기화 때마다, Ⓐ 다음)** — 셀메이트 CSV 의 `상품위치` 를 core `sku_shelf_positions` 에 넣는다. **한진 송장 품목 줄의 `[CC-02-02]` 위치가 여기서 나온다.** 빼먹으면 새 상품·옮긴 상품의 송장에 `[RECEIVING_DEFAULT]` 가 찍힌다.
 
 > 이 문서는 "나중에 다시 돌릴 때 / Claude 에게 시킬 때" 를 위한 런북이다. 각 스크립트는 멱등(중복 실행 안전)하게 작성돼 있다.
 
@@ -19,6 +20,7 @@
    │ Ⓐ import-products → sync-stock → recalc-sellable   (재고 동기화 + 이벤트 발행)
    │      ↑ 반영값 = 현재재고 − 미발송주문수
    │ Ⓒ close-shipped-shipments  (core 유령 예약 해제 — Ⓐ 다음)
+   │ Ⓔ load-shelf-positions     (상품위치 → sku_shelf_positions, 송장 품목 줄 위치 — Ⓐ 다음)
    ▼
 core: skus / stock_events / stock_ledgers → ProductSellableQuantityChanged
    ▼
@@ -358,6 +360,24 @@ ORDER BY il.stocked_quantity DESC;
 
 예약의 유일한 정당한 역할은 **주문 ~ 다음 `sync-stock` 사이의 oversell 홀드**다. 그래서 스냅샷 이후 예약은
 남겨두고 이전 것만 지운다 — Ⓑ 의 `--before` 가 정확히 그 경계다.
+
+## Ⓔ 선반 위치 (재고 동기화 때마다, Ⓐ 다음) — `scripts/sellmate/load-shelf-positions.ts`
+
+core 재고는 셀메이트 동기화로 전부 **입고기본존(`RECEIVING_DEFAULT`)** 한 로케이션에 들어 있다(Ⓐ 가 수량만 맞춘다).
+그래서 한진 송장 품목 줄은 배정 로케이션이 시스템 로케이션이면 **셀메이트 `상품위치`(`sku_shelf_positions`)** 를 대신 찍는다
+(`apps/core/src/modules/fulfillment/waybill/label/label-items.ts` 의 `labelLocationCode`). 이 표를 채우는 게 Ⓔ 다.
+
+CSV 는 Ⓐ 와 같은 셀메이트 재고 목록(`stk_stockList_*.csv`)이고 **`상품위치` 열이 들어 있어야 한다.** `="T-01-20"` 엑셀 수식 꼴은
+파서가 벗긴다. 앞뒤 공백 제거 + 대문자화, 위치가 빈 행은 건너뛴다. `sku_id` 기준 upsert 라 같은 파일을 다시 돌려도 안전하다.
+
+```bash
+DRY_RUN=1 bash scripts/sellmate/run.sh live load-shelf-positions <csv>   # 위치 있는 SKU 수 · 매칭 안 된 코드 수
+bash scripts/sellmate/run.sh live load-shelf-positions <csv>
+```
+
+- **Ⓐ 다음에 돌린다** — 신규 SKU 는 `import-products` 가 만들어야 매칭된다.
+- 위치가 빈 행은 기존 값을 지우지 않는다. 셀메이트에서 위치를 지운 상품은 core 에 옛 위치가 남으니, 이상하면 그 SKU 를 직접 본다.
+- 송장은 인쇄할 때마다 다시 그리므로, 적재 뒤 **송장 인쇄를 다시 누르면** 새 위치로 나온다(이미 뽑은 송장은 "송장이 바뀌었어요" 로 재출력 대상이 된다).
 
 ## Ⓐ 재고 동기화 (일일) — `import-products` → `sync-stock` → `recalc-sellable`
 
