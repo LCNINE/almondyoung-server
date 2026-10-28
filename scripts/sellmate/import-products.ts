@@ -36,6 +36,7 @@
  *                       자동감지가 틀렸을 때 해당 "헤더 이름" 직접 지정
  *
  * ⚠️ 원시 SQL 로 skus 에 넣으므로 배송 프로필 필수 규칙(SkuCatalogManager, #923)을 우회한다 — 셀메이트 폐기와 함께 사라질 경로.
+ *    그래서 프로필이 빈 SKU 에는 가장 먼저 만든 자가출고 배송 프로필을 넣는다. 비어 있으면 계획 확정이 전부 막힌다.
  */
 import * as path from 'path';
 import * as fs from 'fs';
@@ -329,6 +330,10 @@ async function main() {
       }
 
       // 2) skus upsert (배치). skus 는 itemCode 로 이미 dedup 되어 code 가 유일하다.
+      const [defaultProfile] = (await tx`
+        SELECT id FROM delivery_profiles WHERE 'in_house' = ANY(supported_fulfillment_modes) ORDER BY created_at LIMIT 1
+      `) as unknown as { id: string }[];
+      const defaultProfileId = defaultProfile?.id ?? null;
       const skuIdByCode = new Map<string, string>();
       for (const part of chunk(skus)) {
         const rows = part.map((s) => ({
@@ -336,13 +341,16 @@ async function main() {
           code: s.code,
           option_key: s.optionKey,
           group_id: s.groupCode ? (groupIdByCode.get(s.groupCode) ?? null) : null,
+          delivery_profile_id: defaultProfileId,
           updated_at: now,
         }));
         const res = (await tx`
-          INSERT INTO skus ${tx(rows, 'name', 'code', 'option_key', 'group_id', 'updated_at')}
+          INSERT INTO skus ${tx(rows, 'name', 'code', 'option_key', 'group_id', 'delivery_profile_id', 'updated_at')}
           ON CONFLICT (code) DO UPDATE SET
             name = excluded.name, option_key = excluded.option_key,
-            group_id = excluded.group_id, updated_at = ${now}
+            group_id = excluded.group_id,
+            delivery_profile_id = COALESCE(skus.delivery_profile_id, excluded.delivery_profile_id),
+            updated_at = ${now}
           RETURNING id, code
         `) as unknown as { id: string; code: string }[];
         for (const r of res) skuIdByCode.set(r.code, r.id);
