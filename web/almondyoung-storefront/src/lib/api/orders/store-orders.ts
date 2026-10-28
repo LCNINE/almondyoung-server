@@ -238,19 +238,6 @@ export type ReturnReasonCode =
 
 export type ExchangeReasonCode = ReturnReasonCode
 
-export interface CreateReturnRequestLineDto {
-  salesOrderLineId: string
-  quantity: number
-  reasonCode?: string
-}
-
-export interface CreateReturnRequestDto {
-  lines: CreateReturnRequestLineDto[]
-  reasonCode: ReturnReasonCode
-  reasonDetail?: string
-  returnAddress?: object
-}
-
 export interface CreateExchangeRequestLineDto {
   salesOrderLineId: string
   quantity: number
@@ -268,16 +255,6 @@ export interface ClaimRequestItemResponse {
   quantity: number
 }
 
-export interface ReturnRequestResponse {
-  id: string
-  salesOrderId: string
-  status: string
-  reasonCode: ReturnReasonCode
-  reasonDetail?: string
-  items: ClaimRequestItemResponse[]
-  createdAt: string
-}
-
 export interface ExchangeRequestResponse {
   id: string
   salesOrderId: string
@@ -286,17 +263,6 @@ export interface ExchangeRequestResponse {
   reasonDetail?: string
   items: ClaimRequestItemResponse[]
   createdAt: string
-}
-
-export async function createReturnRequestByMedusaId(
-  medusaOrderId: string,
-  dto: CreateReturnRequestDto
-): Promise<ReturnRequestResponse> {
-  return api<ReturnRequestResponse>(
-    "wms",
-    `/store/orders/by-channel-order/${encodeURIComponent(medusaOrderId)}/return-requests`,
-    { method: "POST", body: dto, withAuth: true }
-  )
 }
 
 export async function createExchangeRequestByMedusaId(
