@@ -339,7 +339,12 @@ export default function CheckoutTemplate({
 
       const result = await initiatePaymentSession(cart, {
         provider_id: "pp_almond-payment_almond-payment",
-        data: { returnUrl, orderName, items: paymentItems },
+        data: {
+          returnUrl,
+          orderName,
+          items: paymentItems,
+          customerEmail: cart.email,
+        },
       })
 
       const intentId = (

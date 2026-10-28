@@ -3,6 +3,7 @@ import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout
 import { OrderDetailsDesktop } from "domains/order/details/components/order-details-desktop"
 import { OrderDetailsMobile } from "domains/order/details/components/order-details-mobile"
 import { getOrder } from "@/lib/api/medusa/orders"
+import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { getOrderReturns } from "@/lib/api/medusa/returns"
 import { getOrderActionsByMedusaId } from "@/lib/api/orders/store-orders"
 import { getCashReceipts, getBankTransferDepositAccount, getActiveRefundRequest } from "@/lib/api/wallet"
@@ -21,13 +22,22 @@ export default async function OrderDetailsPage({
   const { orderId } = await searchParams
 
   // 반품 목록은 부가 정보다 — 실패는 null(칸이 안 뜸), 인증 실패만 getOrderReturns 가 던져 error.tsx 로 간다
-  const [order, coreActions, returns] = await Promise.all([
+  const [rawOrder, customer, rawCoreActions, rawReturns] = await Promise.all([
     orderId ? getOrder(orderId) : Promise.resolve(null),
+    retrieveCustomer(),
     orderId
       ? getOrderActionsByMedusaId(orderId).catch(() => null)
       : Promise.resolve(null),
     orderId ? getOrderReturns(orderId) : Promise.resolve(null),
   ])
+
+  // /store/orders/:id 는 주인을 가리지 않으므로 남의 주문 id 로는 아무것도 보여주지 않는다
+  const isOwner = Boolean(
+    rawOrder?.customer_id && customer?.id === rawOrder.customer_id
+  )
+  const order = isOwner ? rawOrder : null
+  const coreActions = isOwner ? rawCoreActions : null
+  const returns = isOwner ? rawReturns : null
 
   // 결제 세션 data.intentId(wallet) 로 발급된 현금영수증 조회. 없으면 빈 배열.
   const intentId = (

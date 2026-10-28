@@ -120,6 +120,13 @@
       "when": 1792392705660,
       "tag": "20261019065145_almond-fonts-unique-active-name",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793166792224,
+      "tag": "20261028055312_add-purchase-satisfactions",
+      "breakpoints": true
     }
   ]
 }

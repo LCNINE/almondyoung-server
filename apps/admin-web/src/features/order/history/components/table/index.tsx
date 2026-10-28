@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { MouseEvent, ReactNode } from 'react';
+import { PurchaseSatisfactionSection } from '../purchase-satisfaction-section';
 import { MoreHorizontal } from 'lucide-react';
 import {
   cancelActionOf,
@@ -170,6 +171,7 @@ function OrderDetailPanel({ lines, onClose }: { lines: OrderLineRow[]; onClose: 
                   ))}
                 </ul>
               </section>
+              {o.channel === 'medusa' && <PurchaseSatisfactionSection medusaOrderId={o.channelOrderId} />}
               <dl className="grid grid-cols-[72px_1fr] gap-x-3 gap-y-2">
                 {fields.map(([k, v]) => (
                   <div key={k} className="contents">
