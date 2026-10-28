@@ -119,6 +119,33 @@ describe('/store/orders/:id/purchase-satisfaction', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it('ugc 400 본문을 읽다 실패하면 502', async () => {
+    fetchSpy.mockResolvedValue({ ok: false, status: 400, json: async () => Promise.reject(new Error('aborted')) } as any);
+    const res = makeRes();
+    await PUT(makeReq(ORDER, 'cust_1', { rating: 5 }), res);
+    expect(res.status).toHaveBeenCalledWith(502);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ type: 'ugc_unavailable' }));
+  });
+
+  it.each([
+    ['문자열', 'bad Bearer key here'],
+    ['배열', ['ok', 'Authorization: Bearer key']],
+  ])('ugc 400 메시지(%s)에 내부 키가 있어도 응답에 싣지 않는다', async (_n, message) => {
+    fetchSpy.mockResolvedValue(ugcOk({ message }, 400));
+    const res = makeRes();
+    await PUT(makeReq(ORDER, 'cust_1', { rating: 5 }), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(JSON.stringify(res.json.mock.calls)).not.toContain('key');
+  });
+
+  it('ugc 5xx 본문에 내부 키가 있어도 502 응답에 싣지 않는다', async () => {
+    fetchSpy.mockResolvedValue({ ok: false, status: 500, json: async () => ({ message: 'Bearer key' }) } as any);
+    const res = makeRes();
+    await GET(makeReq(ORDER), res);
+    expect(res.status).toHaveBeenCalledWith(502);
+    expect(JSON.stringify(res.json.mock.calls)).not.toContain('key');
+  });
+
   it('GET 은 ugc 404 를 404 로 돌려준다', async () => {
     fetchSpy.mockResolvedValue(ugcOk({}, 404));
     const res = makeRes();

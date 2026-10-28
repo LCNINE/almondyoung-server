@@ -33,6 +33,12 @@ async function loadOwnedOrder(req: AuthenticatedMedusaRequest): Promise<OwnedOrd
   return { displayId: order.display_id, almondUserId };
 }
 
+function safeValidationMessage(raw: unknown, key: string): string {
+  const text = Array.isArray(raw) ? raw.filter((m) => typeof m === 'string').join(', ') : raw;
+  if (typeof text !== 'string' || !text || text.includes(key)) return '입력값이 올바르지 않습니다';
+  return text;
+}
+
 async function callUgc(orderId: string, method: 'GET' | 'PUT', body?: unknown): Promise<UgcResult> {
   const baseUrl = process.env.UGC_SERVICE_URL;
   const key = process.env.UGC_INTERNAL_KEY;
@@ -46,9 +52,8 @@ async function callUgc(orderId: string, method: 'GET' | 'PUT', body?: unknown): 
     });
     if (response.status === 404) return { kind: 'not_found' };
     if (response.status === 400) {
-      const payload = (await response.json().catch(() => ({}))) as { message?: unknown };
-      const message = Array.isArray(payload.message) ? payload.message.join(', ') : payload.message;
-      return { kind: 'invalid', message: typeof message === 'string' ? message : '입력값이 올바르지 않습니다' };
+      const payload = (await response.json()) as { message?: unknown };
+      return { kind: 'invalid', message: safeValidationMessage(payload?.message, key) };
     }
     if (!response.ok) return { kind: 'unavailable' };
     return { kind: 'ok', body: (await response.json()) as Record<string, unknown> };
